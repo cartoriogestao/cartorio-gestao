@@ -32,6 +32,7 @@ from markupsafe import Markup
 
 import ouvidoria as OU
 import satisfacao as SAT
+import satisfacao_envio as ENVIO
 from bd_nativo import ERROS_DO_BANCO, banco
 from seguranca_web import PRATICA  # o AUDITOR vê e não grava
 
@@ -281,7 +282,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             fila = SAT.resumo_da_fila(con)
         return render_template("satisfacao_relatorio.html", r=r, fila=fila,
                                aberta=SAT.pagina_aberta(db.get_setting),
-                               e_admin=current_user()["role"] == "ADMIN")
+                               e_admin=current_user()["role"] == "ADMIN",
+                               vps_url=db.get_setting(ENVIO.CHAVE_URL, ""))
+
+    @app.route("/administrativo/satisfacao/vps", methods=["POST"])
+    @roles_required("ADMIN")
+    def satisfacao_endereco_vps():
+        """O endereço público da página da pesquisa na VPS (26/10/2026). É
+        configuração, e não código: o host não se escreve em lugar nenhum. Só
+        o oficial grava; o envio em si é o processo da automação."""
+        try:
+            with db.transaction() as con:
+                url = ENVIO.gravar_endereco(con, request.form.get("url"))
+        except ValueError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("satisfacao_relatorio"))
+        audit("SATISFACAO_ENDERECO_VPS", "settings", None, {"configurado": bool(url)})
+        flash("Endereço da página da pesquisa na VPS gravado." if url
+              else "Endereço da página da pesquisa na VPS apagado: nenhum convite sai por "
+                   "e-mail até haver um.", "success")
+        return redirect(url_for("satisfacao_relatorio"))
 
     @app.route("/administrativo/satisfacao/pagina", methods=["POST"])
     @roles_required("ADMIN")

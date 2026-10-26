@@ -8,8 +8,19 @@
   de um protocolo, que vai <strong>só ao cliente</strong>, pelo telefone e pelo e-mail do protocolo (decisão do oficial em 26/10/2026)
   — o balcão não vê o link. O servidor não é exposto à internet: o link só abre para quem está no Wi-Fi da serventia.</p>
   <p>Convites na fila de envio ao cliente: <strong>{{ fila.NA_FILA }}</strong>{% if fila.ENVIADO %} · enviados: {{ fila.ENVIADO }}{% endif %}{% if fila.FALHOU %} · com falha: {{ fila.FALHOU }}{% endif %}.
-  <span class="small muted">O sistema ainda não tem o canal que envia o convite sozinho (e-mail ou modelo de WhatsApp): os convites
-  esperam na fila, e nada é enviado a ninguém até esse canal existir.</span></p>
+  <span class="small muted">O convite por <strong>e-mail</strong> sai pelo processo «Convites da pesquisa de satisfação» da central da
+  automação (nasce desligado; o SMTP é o dos avisos de andamento), e o link abre a página da pesquisa <strong>na VPS</strong>, ao lado
+  do portal do cliente — o servidor da casa continua fora da internet. O <strong>WhatsApp</strong> fica na fila até haver modelo
+  aprovado pela Meta.</span></p>
+  <p>Página da pesquisa na VPS: {% if vps_url %}<code>{{ vps_url }}</code>{% else %}<span class="badge critica">sem endereço</span>
+  <span class="small muted">— sem ele, nenhum convite sai por e-mail.</span>{% endif %}</p>
+  {% if e_admin %}
+  <form method="post" action="{{ url_for('satisfacao_endereco_vps') }}" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Endereço (https://…/pesquisa) <input type="url" name="url" value="{{ vps_url }}" size="40"></label>
+    <button type="submit">Gravar o endereço</button>
+  </form>
+  {% endif %}
   <p>Página da pesquisa: {% if aberta %}<span class="badge ok">ABERTA</span> — <a href="{{ url_for('satisfacao_pagina') }}" target="_blank">abrir a página</a>{% else %}<span class="badge critica">FECHADA</span>{% endif %}</p>
   {% if e_admin %}
   <form method="post" action="{{ url_for('satisfacao_abrir_pagina') }}" class="inline-form">

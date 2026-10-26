@@ -85,6 +85,10 @@ CHAMADAS_POR_DIA = {
     "revisao_previa": 200,
     "ri_onus_ia": 100,
     "rc_leitura": 400,
+    # A LEITURA DO BALCÃO DAS NOTAS (26/10/2026): um RG ou um CRV são duas a
+    # quatro chamadas (a triagem e uma por página); duzentas por dia são
+    # cinquenta leituras, mais do que o balcão de firmas atende com documento.
+    "nt_leitura": 200,
     "robo_rascunho": 50,
     # O AGENTE DE MINUTAS (23/10/2026): cada pedido é UMA chamada ao Opus, com
     # os documentos inteiros — sessenta minutas e revisões por dia é mais do que
@@ -286,6 +290,34 @@ CATALOGO: tuple[dict[str, Any], ...] = (
         "nao_faz": "não lavra, não numera, não sela e não cobra",
         "teto": ("ia_catalogo", "CHAMADAS_POR_DIA", "chamadas ao provedor por dia",
                  "rc_leitura"),
+        "chave": CHAVE_FORA_DO_BANCO,
+    },
+    {
+        # 26/10/2026, o oficial: «autorizo ia sem mascara. trabalharemos com o
+        # prazo de retencao de 30 dias da api».
+        "codigo": "nt_leitura",
+        "nome": "Leitura de documentos do balcão das Notas",
+        "modulo": "nt_leitura_web",
+        "onde": "botão «Ler documento por IA» no cartão de autógrafo, no "
+                "reconhecimento de firma e na comunicação de venda de veículo",
+        "finalidade": "ler RG, CIN, CNH, CRLV, CRV e ATPV anexados e preencher, "
+                      "como rascunho, os campos do cartão de autógrafo e os dados "
+                      "do veículo e da venda",
+        "inciso": "II e III",
+        "enquadramento": "triagem e indexação de documentos",
+        "dado": "as imagens das páginas anexadas, inteiras, até o teto de "
+                "páginas por leitura (leitura_ia.MAXIMO_DE_PAGINAS); acima dele "
+                "a leitura é recusada antes de subir",
+        "mascara": "não, por decisão do oficial em 26/10/2026; retenção padrão "
+                   "da API, de 30 dias, gravada em cada leitura (nt_leituras)",
+        "mascarado": False,
+        "revisao_humana": "a tela volta preenchida como rascunho, com as dúvidas "
+                          "marcadas, e só grava com a caixa «conferi com o "
+                          "documento original» marcada",
+        "nao_faz": "não abre cartão, não reconhece firma, não comunica, não "
+                   "sela e não cobra",
+        "teto": ("ia_catalogo", "CHAMADAS_POR_DIA", "chamadas ao provedor por dia",
+                 "nt_leitura"),
         "chave": CHAVE_FORA_DO_BANCO,
     },
     {

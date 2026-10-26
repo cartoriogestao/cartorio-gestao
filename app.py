@@ -2864,6 +2864,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         "rc_termo": ("rcpn_assento",),
         "rc_assento": ("rcpn_assento",),
         "RC_LEITURA": ("rcpn_leitura_ficha",),
+        # A LEITURA POR IA DO BALCÃO DAS NOTAS (26/10/2026): o RG, a CNH, o CRV.
+        "NT_LEITURA": ("notas_leitura_ficha",),
         "HC_HABILITACAO": ("rcpn_habilitacao",),
         "USUCAPIAO_PECA": ("usucapiao_processo",),
         "RT_PECA": ("ri_retificacao",),
@@ -3064,6 +3066,10 @@ def create_app(test_config: dict | None = None) -> Flask:
                          nt_veiculo_detran):
         _modulo_lg04.registrar_rotas(app, db, login_required, roles_required,
                                      audit)
+    # A LEITURA POR IA DO BALCÃO DAS NOTAS (26/10/2026): o botão de ler o RG,
+    # a CNH, o CRV e o ATPV no cartão, no reconhecimento e na comunicação.
+    import nt_leitura_web
+    nt_leitura_web.registrar_rotas(app, db, login_required, roles_required, audit)
     # AS TELAS DA CENPROT vem DEPOIS das do Protesto, porque a fila delas
     # aponta para `pt_titulos` e os links levam a `protesto_titulo`.
     cenprot_web.registrar_rotas(app, db, login_required, roles_required, audit)

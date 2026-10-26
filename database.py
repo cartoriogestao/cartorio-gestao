@@ -44,6 +44,7 @@ from notas_schema import init_notas_schema
 from notas_certidao import init_notas_certidao_schema
 from nt_publica_forma import init_nt_publica_forma_schema
 from nt_veiculo_detran import init_nt_veiculo_detran_schema
+from nt_leitura_documentos import init_nt_leitura_schema
 from rg_livro_contabil import init_rg_livro_contabil_schema
 from rg_notificacao import init_rg_notificacao_schema
 import notas_modelos
@@ -925,6 +926,9 @@ class Database:
         init_rg_livro_contabil_schema(con)
         init_nt_publica_forma_schema(con)
         init_nt_veiculo_detran_schema(con)
+        # A leitura por IA do balcão das Notas (26/10/2026) — a tabela do
+        # registro de cada envio, com a retenção de 30 dias e o «sem máscara».
+        init_nt_leitura_schema(con)
         # FOLHA PRESA A ITEM JA CANCELADO VOLTA SOZINHA AO ESTOQUE. Esta
         # reconciliacao vem depois de TODOS os esquemas porque alcanca as
         # certidoes das quatro atribuicoes, os atos do RI e os assentos do

@@ -142,10 +142,10 @@ Decisões sobre os textos que a serventia emite, a organização das telas e das
 **Regra.** Cada uso de IA sobre documentos é descrito: titulares, dados pessoais e sensíveis, finalidade, base legal, operador, transferência internacional, o que sai, o que se registra, guarda na serventia e no operador, quem acessa e se há decisão automatizada. Cada envio guarda arquivo, página, modelo, tokens, data e usuário, com auditoria; a leitura vira rascunho conferido com o original e lavrado por pessoa.
 **Por quê.** Envio a provedor é transferência a operador; sem registro não se responde ao titular nem à correição; sem decisão automatizada, não incide o regime do art. 20.
 **Fundamento.** LGPD, arts. 7º, II e III; 11, II, «a» e «b»; 20; 23, § 4º; 33.
-**No código.** `rc_leitura_documentos.py`, `rc_leituras`.
+**No código.** `rc_leitura_documentos.py`, `rc_leituras`; desde 26/10/2026 também as Notas — `leitura_ia.py` (o motor comum), `nt_leitura_documentos.py`, `nt_leituras` (com `retencao_dias = 30` e `sem_mascara = 1` em cada linha).
 
 ### Anonimizar onde a finalidade permite; exceção delimitada e justificada
-**Regra.** A regra é mascarar o que sai. Quando a finalidade é transcrever o próprio dado (leitura de DNV, DO e documentos para o rascunho do assento), o envio sem máscara é exceção restrita a esse uso, justificada por escrito, só com as páginas daquele registro, sem deixar arquivos guardados no provedor, e com a retenção do operador conferida na fonte oficial, citada com data e revista a cada revisão do relatório.
+**Regra.** A regra é mascarar o que sai. Quando a finalidade é transcrever o próprio dado (leitura de DNV, DO e documentos para o rascunho do assento; e, desde 26/10/2026, de RG, CIN, CNH, CRLV, CRV e ATPV para o rascunho do cartão de autógrafo e do veículo nas Notas — «autorizo ia sem mascara. trabalharemos com o prazo de retencao de 30 dias da api», o oficial), o envio sem máscara é exceção restrita a esse uso, justificada por escrito, só com as páginas daquele registro, sem deixar arquivos guardados no provedor, e com a retenção do operador conferida na fonte oficial, citada com data e revista a cada revisão do relatório.
 **Por quê.** Mascarar inutilizaria o serviço e devolveria a digitação manual com mais erro; exceção sem limites viraria regra.
 **Fundamento.** LGPD, art. 11, II; Lei 6.015/1973, arts. 16 a 21, 54 e 80.
 

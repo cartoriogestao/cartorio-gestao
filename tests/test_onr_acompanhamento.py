@@ -473,3 +473,35 @@ def test_telas_do_balcao_ao_onr(cg_casa_logada, monkeypatch):
     assert "2 andamento(s) enviado(s)" in r
     ficha = c.get(f"/registro-imoveis/protocolo/{pid}").get_data(as_text=True)
     assert "Acompanhamento no ONR" in ficha and "Título nº 900 no ONR" in ficha
+
+
+def test_o_robo_nao_envia_nao_liga_e_nao_descarta(cg_casa, monkeypatch):
+    """Revisão de segurança de 26/10/2026 (PR #21): as quatro rotas do
+    acompanhamento estão vedadas ao robô pelo nome. A conta de robô (que só
+    pode ser USER ou AUDITOR) recebe 403 até na tela de leitura — que o papel
+    USER abriria —, e nenhum POST chega ao ONR nem muda o interruptor."""
+    import selo_robo as SR
+    for rota in ("onr_acompanhamento", "onr_acompanhamento_enviar",
+                 "onr_acompanhamento_ligar", "onr_acompanhamento_descartar"):
+        assert SR.rota_vedada_ao_robo(rota), rota
+    from conftest import cg_login
+    db = cg_casa["db"]
+    db.create_user("robo_onr", "Robo de Exemplo ONR", "Senha#12345", "USER", eh_robo=1)
+    c = cg_casa["c"]
+    cg_login(c, "robo_onr", "Senha#12345")
+
+    class SessaoQueNaoPodeSerUsada:
+        def __init__(self, **_):
+            raise AssertionError("o robô chegou ao ONR")
+
+    import onr_acompanhamento_web as AW
+    monkeypatch.setattr(AW.WS, "Sessao", SessaoQueNaoPodeSerUsada)
+    assert c.get("/ri/onr/acompanhamento").status_code == 403
+    tok = _token(c.get("/").get_data(as_text=True))
+    assert c.post("/ri/onr/acompanhamento/ligar",
+                  data={"csrf_token": tok, "ligar": "1"}).status_code == 403
+    assert c.post("/ri/onr/acompanhamento/enviar",
+                  data={"csrf_token": tok}).status_code == 403
+    assert c.post("/ri/onr/acompanhamento/1/descartar",
+                  data={"csrf_token": tok, "motivo": "teste do robô"}).status_code == 403
+    assert not A.ligado(db.get_setting)

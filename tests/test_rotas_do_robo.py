@@ -208,6 +208,10 @@ def test_o_robo_alcanca_a_rota_de_lancar_mas_nao_cancela(cg_casa, rota, campo, v
     antes de abrir transação — o registro nem precisa existir."""
     import re as _re
     c = _robo_logado(cg_casa)
+    # O PROTESTO NASCE SÓ DO OFICIAL (`modulo_protesto_alcance`): sem liberar o
+    # módulo, o robô é desviado (302) antes da rota, e a recusa por dentro —
+    # que é o que se prova aqui — nem chega a ser medida.
+    cg_casa["db"].set_settings({"modulo_protesto_alcance": "TODOS"})
     html = c.get("/").get_data(as_text=True)
     token = _re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
     r = c.post(rota, data={"csrf_token": token, campo: valor})

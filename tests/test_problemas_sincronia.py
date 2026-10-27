@@ -268,3 +268,274 @@ def test_recusa_schema_que_nao_existe_e_nao_o_cria(ambiente_da_casa,
     assert "cg_sincronia_nao_existe" in capsys.readouterr().err
     assert list(tmp_path.iterdir()) == []
     assert not banco_pg.schema_existe(cg_casa["banco"])   # nada nasceu
+
+
+# ===================================================================
+# FASE 2 — O RETORNO (27/10/2026)
+#
+# O desenvolvimento responde em `retorno/of-0035.md`; a produção importa como
+# nota do desenvolvimento. Nada aqui fecha problema, e quem é mais novo vence.
+# ===================================================================
+
+EM = "2026-10-28T14:00:00"
+DEPOIS_DO_EM = "2026-10-28T15:00:00"
+NOTA_DEV = "Corrigido na tela do caixa; tests/test_x.py; PR #60."
+
+
+def _exportado(db, pasta: Path, *ids: int) -> None:
+    PS.exportar(db, pasta, agora=AGORA, ambiente="OFICIAL")
+    for i in ids:
+        assert (pasta / "problemas" / f"of-{i:04d}.md").is_file()
+
+
+def _responder(pasta: Path, problema_id: int, **kw) -> Path:
+    kw.setdefault("estado", "NECESSARIO_TESTE")
+    kw.setdefault("nota", NOTA_DEV)
+    kw.setdefault("prova", "tests/test_x.py")
+    kw.setdefault("agora", EM)
+    return PS.responder(pasta, f"of-{problema_id:04d}", **kw)
+
+
+def _importar(db, pasta: Path) -> dict:
+    return PS.importar(db, pasta, agora=DEPOIS_DO_EM, ambiente="OFICIAL")
+
+
+def _linha(db, problema_id: int) -> dict:
+    return {p["id"]: p for p in _tabela(db)}[problema_id]
+
+
+def _auditorias(db, acao: str, problema_id: int) -> list[dict]:
+    with db.connect() as con:
+        return [dict(x) for x in banco(con).ler(
+            "SELECT * FROM audit_logs WHERE action=%s AND entity_id=%s ORDER BY id",
+            (acao, problema_id))]
+
+
+def _retorno_valido(problema_id: int, impressao: str, **kw) -> str:
+    dados = {"ambiente": "OFICIAL", "id": problema_id, "impressao": impressao,
+             "estado": "NECESSARIO_TESTE", "em": EM, "prova": "tests/test_x.py",
+             "reproducao": "", "nota": NOTA_DEV}
+    dados.update(kw)
+    return PS.texto_do_retorno(dados)
+
+
+def test_ida_e_volta_grava_a_nota_e_nao_fecha(db, com_cpf, tmp_path):
+    _exportado(db, tmp_path, com_cpf)
+    situacao = _linha(db, com_cpf)["situacao"]
+    _responder(tmp_path, com_cpf)
+    r = _importar(db, tmp_path)
+    assert r["gravados"] == [f"of-{com_cpf:04d}.md"] and not r["recusados"]
+    linha = _linha(db, com_cpf)
+    assert linha["nota_dev"] == NOTA_DEV
+    assert linha["nota_dev_estado"] == "NECESSARIO_TESTE"
+    assert linha["nota_dev_prova"] == "tests/test_x.py"
+    assert linha["nota_dev_em"] == EM
+    assert linha["nota_dev_por"] == PS.POR_DA_SINCRONIA
+    assert linha["situacao"] == situacao                  # não fechou
+    audit = _auditorias(db, "AJUDA_PROBLEMA_NOTA_DEV_SINCRONIA", com_cpf)
+    assert len(audit) == 1
+    assert audit[0]["agente"] == PS.ASSINATURA
+    assert NOTA_DEV not in (audit[0]["details"] or "")   # o texto não vai
+    # e a próxima exportação mostra o estado do retorno
+    PS.exportar(db, tmp_path, agora=AGORA, ambiente="OFICIAL")
+    assert "nota_dev_estado: NECESSARIO_TESTE" in (
+        tmp_path / "problemas" / f"of-{com_cpf:04d}.md").read_text(encoding="utf-8")
+
+
+def test_importar_duas_vezes_da_iguais_e_nao_audita_de_novo(db, com_cpf, tmp_path):
+    _exportado(db, tmp_path, com_cpf)
+    _responder(tmp_path, com_cpf)
+    _importar(db, tmp_path)
+    segunda = _importar(db, tmp_path)
+    assert segunda["gravados"] == [] and segunda["iguais"] == 1
+    assert len(_auditorias(db, "AJUDA_PROBLEMA_NOTA_DEV_SINCRONIA", com_cpf)) == 1
+
+
+def test_a_nota_da_tela_mais_nova_vence_o_arquivo(db, com_cpf, tmp_path):
+    _exportado(db, tmp_path, com_cpf)
+    _responder(tmp_path, com_cpf)
+    with db.transaction() as con:
+        AP.anotar_desenvolvimento(con, com_cpf, nota="Escrita pela tela depois.",
+                                  estado="EM_ANDAMENTO", agora=DEPOIS_DO_EM,
+                                  por=LOGIN)
+    r = _importar(db, tmp_path)
+    assert r["mais_antigos"] == [f"of-{com_cpf:04d}.md"] and r["gravados"] == []
+    assert _linha(db, com_cpf)["nota_dev"] == "Escrita pela tela depois."
+
+
+def test_o_mesmo_em_com_outro_conteudo_e_recusado(db, com_cpf, tmp_path):
+    _exportado(db, tmp_path, com_cpf)
+    _responder(tmp_path, com_cpf)
+    _importar(db, tmp_path)
+    _responder(tmp_path, com_cpf, nota="Outra nota, mesmo em.")
+    r = _importar(db, tmp_path)
+    assert "mudou sem mudar" in r["recusados"][0]["porque"]
+    assert _linha(db, com_cpf)["nota_dev"] == NOTA_DEV
+
+
+def test_impressao_trocada_e_recusada_e_os_outros_entram(db, com_cpf, tmp_path):
+    outro = _anotar(db, titulo="KeyError na tela do protocolo", onde="protocolo")
+    _exportado(db, tmp_path, com_cpf, outro)
+    impressao_do_outro = _linha(db, outro)["impressao"]
+    pasta = tmp_path / "retorno"
+    pasta.mkdir()
+    (pasta / f"of-{com_cpf:04d}.md").write_text(
+        _retorno_valido(com_cpf, impressao_do_outro), encoding="utf-8")
+    _responder(tmp_path, outro)
+    r = _importar(db, tmp_path)
+    assert [x["arquivo"] for x in r["recusados"]] == [f"of-{com_cpf:04d}.md"]
+    assert "impressão" in r["recusados"][0]["porque"]
+    assert r["gravados"] == [f"of-{outro:04d}.md"]
+    assert _linha(db, com_cpf)["nota_dev"] is None
+    assert PS.conferir_retorno(tmp_path)["recusados"][0]["arquivo"] == (
+        f"of-{com_cpf:04d}.md")
+
+
+def test_o_retorno_de_outro_ambiente_e_ignorado_e_contado(db, com_cpf, tmp_path):
+    pasta = tmp_path / "retorno"
+    pasta.mkdir()
+    (pasta / "sb-0012.md").write_text(
+        _retorno_valido(12, "abc", ambiente="SANDBOX"), encoding="utf-8")
+    r = _importar(db, tmp_path)
+    assert r["outro_ambiente"] == 1 and not r["recusados"] and not r["gravados"]
+
+
+@pytest.mark.parametrize("nome, texto, frase", [
+    ("of-0035.md", _retorno_valido(35, "abc").replace("em:", "quando:"),
+     "chave desconhecida"),
+    ("of-0035.md", _retorno_valido(35, "abc").replace("---\n", "", 1),
+     "não começa com"),
+    ("of-35.md", _retorno_valido(35, "abc"), "padrão"),
+    ("of-0036.md", _retorno_valido(35, "abc"), "id «35»"),
+    ("sb-0035.md", _retorno_valido(35, "abc"), "ambiente"),
+    ("of-0035.md", _retorno_valido(35, "abc", estado="ATENDIDO", prova=""),
+     "onde conferir"),
+    ("of-0035.md", _retorno_valido(35, "abc", estado="QUASE"),
+     "Não conheço o estado"),
+    ("of-0035.md", _retorno_valido(35, "abc", em="amanhã"), "data e hora"),
+    ("of-0035.md", _retorno_valido(35, "abc", reproducao="TALVEZ"),
+     "reprodução"),
+])
+def test_o_formato_errado_e_recusado_com_motivo(nome, texto, frase):
+    with pytest.raises(AP.ProblemaError) as erro:
+        PS.ler_retorno(texto, nome)
+    assert frase in str(erro.value)
+
+
+def test_nota_com_dado_de_pessoa_e_recusada_e_a_de_desenvolvimento_passa():
+    with pytest.raises(AP.ProblemaError) as erro:
+        PS.ler_retorno(_retorno_valido(35, "abc", nota=f"Era o CPF {CPF}."),
+                       "of-0035.md")
+    assert "CPF" in str(erro.value)
+    comum = "tests/test_x.py; PR #60; corrigido em 28/10/2026"
+    assert PS.ler_retorno(_retorno_valido(35, "abc", nota=comum),
+                          "of-0035.md")["nota"] == comum
+
+
+def test_responder_e_conferir_nao_precisam_do_banco(db, com_cpf, tmp_path,
+                                                    monkeypatch):
+    pasta = tmp_path / "repo"
+    _exportado(db, pasta, com_cpf)
+    monkeypatch.delenv("CG_PG_DSN", raising=False)
+    monkeypatch.delenv("CG_PG_SCHEMA", raising=False)
+    nota = tmp_path / "nota.txt"
+    nota.write_text("Primeira linha.\nSegunda linha.\n", encoding="utf-8")
+    assert PS.main(["responder", "--pasta", str(pasta),
+                    "--arquivo", f"of-{com_cpf:04d}", "--estado", "EM_ANDAMENTO",
+                    "--nota-arquivo", str(nota)]) == 0
+    assert "Segunda linha." in (
+        pasta / "retorno" / f"of-{com_cpf:04d}.md").read_text(encoding="utf-8")
+    assert PS.main(["conferir-retorno", "--pasta", str(pasta)]) == 0
+
+
+def test_importar_recusa_sem_banco(db, com_cpf, ambiente_da_casa, tmp_path,
+                                   monkeypatch):
+    _exportado(db, tmp_path, com_cpf)
+    _responder(tmp_path, com_cpf)
+    monkeypatch.delenv("CG_PG_DSN", raising=False)
+    assert PS.main(["importar", "--pasta", str(tmp_path)]) == 2
+    monkeypatch.undo()
+    assert _linha(db, com_cpf)["nota_dev"] is None
+
+
+def test_a_reproducao_do_retorno_muda_a_coluna_e_audita(db, com_cpf, tmp_path):
+    _exportado(db, tmp_path, com_cpf)
+    _responder(tmp_path, com_cpf, reproducao="AQUI_FICTICIOS")
+    _importar(db, tmp_path)
+    assert _linha(db, com_cpf)["reproducao"] == "AQUI_FICTICIOS"
+    audit = _auditorias(db, "AJUDA_PROBLEMA_REPRODUCAO", com_cpf)
+    assert len(audit) == 1 and audit[0]["agente"] == PS.ASSINATURA
+
+
+def test_arquivo_grande_e_recusado(db, com_cpf, tmp_path):
+    _exportado(db, tmp_path, com_cpf)
+    impressao = _linha(db, com_cpf)["impressao"]
+    pasta = tmp_path / "retorno"
+    pasta.mkdir()
+    (pasta / f"of-{com_cpf:04d}.md").write_text(
+        _retorno_valido(com_cpf, impressao, nota="x" * (17 * 1024)),
+        encoding="utf-8")
+    r = _importar(db, tmp_path)
+    assert "KB" in r["recusados"][0]["porque"]
+    assert _linha(db, com_cpf)["nota_dev"] is None
+
+
+def test_dry_run_do_importar_nao_grava(db, com_cpf, ambiente_da_casa, tmp_path,
+                                       capsys):
+    _exportado(db, tmp_path, com_cpf)
+    _responder(tmp_path, com_cpf)
+    assert PS.main(["importar", "--pasta", str(tmp_path), "--dry-run"]) == 0
+    saida = capsys.readouterr().out
+    assert "gravaria: 1" in saida and "nada foi gravado" in saida
+    assert _linha(db, com_cpf)["nota_dev"] is None
+    assert not _auditorias(db, "AJUDA_PROBLEMA_NOTA_DEV_SINCRONIA", com_cpf)
+
+
+def test_a_regra_da_nota_mora_num_lugar_so(db, com_cpf):
+    """`anotar_desenvolvimento` continua recusando com as mesmas frases — e
+    são as de `conferir_nota_dev`, que o retorno também usa."""
+    casos = [({"estado": "QUASE", "nota": "x", "prova": ""}, "Não conheço o estado"),
+             ({"estado": "EM_ANDAMENTO", "nota": "  ", "prova": ""},
+              "não pode ficar vazia"),
+             ({"estado": "ATENDIDO", "nota": "feito", "prova": ""}, "onde conferir")]
+    for kw, frase in casos:
+        with pytest.raises(AP.ProblemaError) as pela_funcao:
+            AP.conferir_nota_dev(kw["nota"], kw["estado"], kw["prova"])
+        with db.transaction() as con, pytest.raises(AP.ProblemaError) as pela_tela:
+            AP.anotar_desenvolvimento(con, com_cpf, agora=AGORA, **kw)
+        assert frase in str(pela_funcao.value)
+        assert str(pela_tela.value) == str(pela_funcao.value)
+
+
+# Revisão do #61 (27/10/2026).
+
+
+def test_em_mais_de_um_dia_no_futuro_e_recusado(db, com_cpf, tmp_path):
+    """Um `em` do futuro venceria toda nota que a tela escrevesse depois."""
+    outro = _anotar(db, titulo="KeyError na tela do protocolo", onde="protocolo")
+    _exportado(db, tmp_path, com_cpf, outro)
+    # DEPOIS_DO_EM (28/10, 15h) é o «agora» da importação
+    _responder(tmp_path, com_cpf, agora="2026-10-30T10:00:00")
+    _responder(tmp_path, outro, agora="2026-10-29T10:00:00")   # dentro da folga
+    r = _importar(db, tmp_path)
+    assert [x["arquivo"] for x in r["recusados"]] == [f"of-{com_cpf:04d}.md"]
+    assert "à frente de agora" in r["recusados"][0]["porque"]
+    assert r["gravados"] == [f"of-{outro:04d}.md"]
+    assert _linha(db, com_cpf)["nota_dev"] is None
+
+
+def test_retorno_fora_de_utf8_e_recusado_sem_derrubar(db, com_cpf, tmp_path,
+                                                      capsys):
+    outro = _anotar(db, titulo="KeyError na tela do protocolo", onde="protocolo")
+    _exportado(db, tmp_path, com_cpf, outro)
+    _responder(tmp_path, outro)
+    impressao = _linha(db, com_cpf)["impressao"]
+    (tmp_path / "retorno" / f"of-{com_cpf:04d}.md").write_bytes(
+        _retorno_valido(com_cpf, impressao,
+                        nota="Correção da emissão.").encode("latin-1"))
+    r = PS.conferir_retorno(tmp_path)
+    assert r["bons"] == [f"of-{outro:04d}.md"]
+    assert [x["arquivo"] for x in r["recusados"]] == [f"of-{com_cpf:04d}.md"]
+    assert "UTF-8" in r["recusados"][0]["porque"]
+    assert PS.main(["conferir-retorno", "--pasta", str(tmp_path)]) == 1
+    assert "UTF-8" in capsys.readouterr().err

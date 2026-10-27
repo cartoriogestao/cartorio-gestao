@@ -24,6 +24,23 @@ Código de Normas da CGJ/TJMA, lido no PDF da casa:
     art. 913, § 1º — ultrapassado o tríduo, o instrumento menciona o atraso e o
                      motivo que o justificou.
 
+O PRAZO-LIMITE DO DEVEDOR E O DIA DO PROTESTO SÃO DOIS DIAS — decisão do
+oficial em 27/10/2026: «no dia útil seguinte». Até essa data o termo inicial
+ERA o próprio prazo-limite (o dia que o aviso imprime), e na intimação pessoal
+feita antes do 3º dia útil o termo inicial e o final caíam no MESMO dia. Dava
+dois defeitos: o sistema aceitava lavrar no dia em que o devedor ainda podia
+pagar (art. 925, § 4º — ele paga até o final do prazo-limite; o edital diz o
+mesmo, art. 922, § 1º: «do final do primeiro dia útil»), e o protesto lavrado
+no dia útil seguinte saía ATRASADO, pedindo motivo e declarando atraso no
+instrumento (art. 913, § 1º). Agora:
+
+    prazo-limite  = o maior entre o 3º dia útil da protocolização e o 1º dia
+                    útil depois da intimação (a conta de
+                    `protesto_aviso.prazo_de_pagamento`, que vai no papel);
+    termo inicial = o dia útil seguinte ao prazo-limite;
+    termo final   = o mesmo dia útil seguinte — depois dele, é atraso
+                    (salvo a sustação revogada, art. 913, IV).
+
 AS DUAS PONTAS NÃO PESAM IGUAL, e é a norma que diz isso. Antes do termo
 inicial o protesto não se lavra — não há motivo que o torne lícito: o devedor
 ainda está no prazo que o aviso lhe deu. Depois do termo final ele se lavra,
@@ -97,10 +114,10 @@ def br(iso: Any) -> str:
 def contar(con, titulo_id: int, *, feriados: set[date] | None = None) -> dict:
     """As datas críticas do título. Só LÊ.
 
-    Devolve `termo_inicial` e `termo_final` (AAAA-MM-DD), os fatos de onde
-    saíram e a `regra`, com os artigos. Quando falta um fato, `sem_conta` diz
-    qual — e as duas pontas ficam `None`: prazo inventado é pior que prazo
-    nenhum.
+    Devolve `prazo_limite` (o último dia em que o devedor paga), `termo_inicial`
+    e `termo_final` (AAAA-MM-DD), os fatos de onde saíram e a `regra`, com os
+    artigos. Quando falta um fato, `sem_conta` diz qual — e as pontas ficam
+    `None`: prazo inventado é pior que prazo nenhum.
     """
     bd = banco(con)
     if feriados is None:
@@ -121,6 +138,7 @@ def contar(con, titulo_id: int, *, feriados: set[date] | None = None) -> dict:
     conta: dict[str, Any] = {
         "protocolizado_em": None, "de_onde": None, "termo_legal": None,
         "intimado_em": None, "modo": None, "revogada_em": None,
+        "prazo_limite": None,
         "termo_inicial": None, "termo_final": None, "regra": "",
         "sem_conta": None}
 
@@ -150,22 +168,35 @@ def contar(con, titulo_id: int, *, feriados: set[date] | None = None) -> dict:
     conta["intimado_em"] = intimado.isoformat()
     conta["modo"] = modo
 
+    # O PRAZO-LIMITE É O DO PAPEL, e o protesto é o dia útil SEGUINTE a ele
+    # (27/10/2026, decisão do oficial: «no dia útil seguinte»). Até essa data
+    # o termo inicial era o próprio prazo-limite — `inicial = legal` na
+    # intimação pessoal antes do 3º dia útil, com o final no mesmo dia —, e o
+    # sistema aceitava lavrar antes de o devedor terminar o prazo de pagar,
+    # enquanto o protesto do dia útil seguinte saía como ATRASADO. Nos três
+    # casos o prazo-limite é o maior entre o 3º dia útil e o 1º dia útil
+    # depois da intimação, a mesma conta do aviso
+    # (`protesto_aviso.prazo_de_pagamento`), para o papel e a régua não
+    # discordarem.
+    depois_da_intimacao = soma_dias_uteis(intimado, 1, feriados)
+    prazo = max(legal, depois_da_intimacao)
     if modo == "EDITAL":
-        depois_do_edital = soma_dias_uteis(intimado, 1, feriados)
-        inicial = max(legal, depois_do_edital)
-        regra = ("CN-MA art. 922, § 1º (edital: do final do primeiro dia útil "
-                 "depois da publicação) e art. 925, § 4º")
-        if depois_do_edital > legal:
+        regra = ("CN-MA art. 922, § 1º (edital: o devedor paga até o primeiro "
+                 "dia útil depois da publicação, e o protesto se lavra do final "
+                 "dele) e art. 925, § 4º")
+        if depois_da_intimacao > legal:
             regra += "; publicado no último dia do tríduo ou depois: art. 913, II"
     elif intimado >= legal:
-        inicial = soma_dias_uteis(intimado, 1, feriados)
         regra = ("CN-MA art. 913, II e III, e art. 924 (intimação no último dia "
-                 "do tríduo ou depois: só no primeiro dia útil seguinte)")
+                 "do tríduo ou depois: o prazo do devedor passa ao primeiro dia "
+                 "útil seguinte)")
     else:
-        inicial = legal
         regra = ("CN-MA art. 913, I e § 2º (três dias úteis da protocolização) "
-                 "e art. 925, § 4º (o prazo-limite do aviso é o dia da lavratura)")
-    final = max(legal, inicial)
+                 "e art. 925, § 4º (o devedor paga até o final do prazo-limite)")
+    regra += ("; o protesto se lavra no dia útil seguinte ao prazo-limite "
+              "(decisão do oficial de 27/10/2026)")
+    inicial = soma_dias_uteis(prazo, 1, feriados)
+    final = inicial
 
     revogada = _dia(revog["data_ato"]) if revog else None
     if revogada is not None:
@@ -176,6 +207,7 @@ def contar(con, titulo_id: int, *, feriados: set[date] | None = None) -> dict:
             regra += ("; sustação revogada: até o primeiro dia útil seguinte "
                       "(art. 913, IV; Lei 9.492/1997, art. 17, § 2º)")
 
+    conta["prazo_limite"] = prazo.isoformat()
     conta["termo_inicial"] = inicial.isoformat()
     conta["termo_final"] = final.isoformat()
     conta["regra"] = regra
@@ -208,12 +240,15 @@ def conferir_lavratura(con, titulo_id: int, *, hoje: Any,
     conta["situacao"] = onde
     conta["conferido_em"] = str(hoje or "")[:10]
     if onde == ANTES:
+        # A frase diz OS DOIS DIAS (27/10/2026): até quando o devedor paga e a
+        # partir de quando se protesta. Antes ela dizia um só, porque eram o
+        # mesmo — e o balcão lia «tem até 27/08» e protestava no dia 27.
         raise TriduoError(
-            f"Ainda não é dia de protestar: o devedor tem até "
-            f"{br(conta['termo_inicial'])} para pagar, e o protesto se lavra "
-            f"desse dia em diante ({conta['regra']}). Intimado em "
-            f"{br(conta['intimado_em'])}; protocolizado em "
-            f"{br(conta['protocolizado_em'])}.")
+            f"Ainda não é dia de protestar: o devedor pode pagar até o final "
+            f"de {br(conta['prazo_limite'])}, e o protesto só se lavra a "
+            f"partir de {br(conta['termo_inicial'])}, o dia útil seguinte "
+            f"({conta['regra']}). Intimado em {br(conta['intimado_em'])}; "
+            f"protocolizado em {br(conta['protocolizado_em'])}.")
     if onde in (ATRASADO, SEM_CONTA):
         motivo = " ".join(str(motivo_atraso or "").split())
         if len(motivo) < PISO_DO_MOTIVO:
@@ -250,6 +285,7 @@ def para_a_lista(con, linhas: list[dict], *, hoje: Any) -> list[dict]:
     feriados = feriados_da_casa(con)
     for linha in linhas:
         conta = contar(con, int(linha["id"]), feriados=feriados)
+        conta["prazo_limite_br"] = br(conta["prazo_limite"])
         conta["termo_inicial_br"] = br(conta["termo_inicial"])
         conta["termo_final_br"] = br(conta["termo_final"])
         linha["triduo"] = conta

@@ -450,8 +450,8 @@ Urgentes recentes:
 
 ## 14. Matrícula 4013 e regra de conferência por cabeçalho
 
-Em 13/09/2026 foi localizado no Proton Drive o arquivo
-`1. RI\LIVRO- 2\FICHAS MATRICULAS\4013\FICHA 4013-assinado.pdf`.
+Em 13/09/2026 foi localizado na pasta de rede da serventia o arquivo
+`<pasta das fichas>\4013\FICHA 4013-assinado.pdf`.
 
 Validação antes da importação:
 
@@ -493,8 +493,8 @@ Depois da 4013, restam duas pendências recentes:
 
 | Matrícula | Livro | Tipo | Abertura | Situação encontrada |
 |---:|---|---|---|---|
-| 168 | 2-A | ACERVO | 2026-07-16 | Há arquivo Word antigo `IMOVEIS\LIVRO- 2\168.doc`, útil para conferência e indicadores, mas não validado como imagem/ficha ONR. |
-| 2195 | 2M | ACERVO | 2026-07-21 | Há DOCX de certidão/inteiro teor em `MATRICULAS ANTIGAS EM DOC\CERTIDÕES\_INTEIRO TEOR\2195.docx`, útil para estruturação, mas não substitui ficha/imagem sem decisão do cartório. |
+| 168 | 2-A | ACERVO | 2026-07-16 | Há arquivo Word antigo `<pasta do Livro 2>\168.doc`, útil para conferência e indicadores, mas não validado como imagem/ficha ONR. |
+| 2195 | 2M | ACERVO | 2026-07-21 | Há DOCX de certidão/inteiro teor em `<pasta das matrículas em Word>\…\2195.docx`, útil para estruturação, mas não substitui ficha/imagem sem decisão do cartório. |
 
 Regra operacional: certidão e documento textual podem alimentar Indicador Real,
 Indicador Pessoal e conferência manual, mas não devem ser importados como

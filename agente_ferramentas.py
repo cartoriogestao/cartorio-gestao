@@ -777,9 +777,24 @@ def _desfeita(cursor: Any, abertura: str, *, confirmar: bool = False):
 #
 # QUEM CRIA O PAPEL É ESTA FERRAMENTA, na primeira consulta, e não um passo
 # de instalação: o usuário da casa no PostgreSQL portátil é o dono do cluster
-# (`trust` em 127.0.0.1). É também esta ferramenta que acerta o GRANT quando
-# nasce tabela ou coluna (`_preparar_o_papel`). Se o usuário da casa não
-# puder criar o papel, a consulta é recusada, e não lida sem ele.
+# (`trust` em 127.0.0.1) ou, sem superusuário, como recomenda a seção 2.2 de
+# `docs/SEGURANCA_IMPLANTACAO.md`, um usuário com CREATEROLE. É também esta
+# ferramenta que acerta o GRANT quando nasce tabela ou coluna
+# (`_preparar_o_papel`). Se o usuário da casa não puder criar o papel, a
+# consulta é recusada, e não lida sem ele.
+#
+# SEM SUPERUSUÁRIO, NO POSTGRESQL 16 EM DIANTE, CRIAR O PAPEL NÃO BASTA PARA
+# ASSUMI-LO (23/10/2026). O 16 separou a filiação em ADMIN, INHERIT e SET, e
+# quem cria um papel com CREATEROLE fica membro dele com ADMIN, mas sem SET;
+# sem SET, o SET ROLE da leitura é recusado. A pergunta
+# `pg_has_role(..., 'MEMBER')` respondia «sim» a essa filiação, e a
+# ferramenta não concedia o que faltava. Medido no computador de
+# desenvolvimento em 24/10/2026 (PostgreSQL 18.6, usuário `cg_teste`, com
+# CREATEROLE e sem superusuário): a filiação ficou `admin=t, set=f, inherit=f`, e 24 dos 159
+# testes de `tests/test_agente.py` caíram em «permission denied to set role».
+# Por isso, do 16 em diante, a pergunta é `'SET'`, e o GRANT que falta leva
+# `WITH SET TRUE, INHERIT FALSE` (`_filiacao_que_assume`). Com o
+# superusuário, que assume qualquer papel, o defeito não aparecia.
 #
 # O QUE O PAPEL NÃO FECHA, e por isso continua no texto:
 #   - `set_config('role', …)`: o SET ROLE confere o usuário da SESSÃO, e não
@@ -872,6 +887,28 @@ def _acertos_do_papel(cursor: Any) -> list[Any]:
     return acertos
 
 
+def _filiacao_que_assume(versao: int) -> tuple[str, Any]:
+    """`(pergunta, GRANT)` para o usuário da casa poder ASSUMIR o papel.
+
+    A pergunta é o privilégio que se passa a `pg_has_role`, e o GRANT é o
+    que falta quando ela responde «não». `versao` é
+    `pg.info.server_version` (`180006` é o 18.6).
+
+    Do PostgreSQL 16 em diante, ser membro (`'MEMBER'`) não basta: o membro
+    só com ADMIN não pode fazer SET ROLE (ver `PAPEL_DO_AGENTE`). O GRANT dá
+    o SET e não dá a herança, que o papel não empresta a ninguém. Antes do
+    16, `'SET'` não existe em `pg_has_role` (dá erro), e a filiação comum já
+    deixa assumir o papel.
+    """
+    S = psycopg.sql
+    papel = S.Identifier(PAPEL_DO_AGENTE)
+    if versao >= 160000:
+        return "SET", S.SQL(
+            "GRANT {} TO CURRENT_USER WITH SET TRUE, INHERIT FALSE").format(
+                papel)
+    return "MEMBER", S.SQL("GRANT {} TO CURRENT_USER").format(papel)
+
+
 def _preparar_o_papel(pg: Any) -> None:
     """Cria o papel do agente, se falta, e acerta o que ele enxerga.
 
@@ -888,18 +925,26 @@ def _preparar_o_papel(pg: Any) -> None:
     O papel não entra, não é superusuário e não herda privilégio de papel
     nenhum (`NOINHERIT`). Um papel com esse nome e mais poder do que isso é
     recusado, e não usado.
+
+    O QUE SE CONFERE É PODER ASSUMIR O PAPEL, e não só ser membro dele: no
+    PostgreSQL 16+, quem o criou sem ser superusuário é membro com ADMIN e
+    sem SET, e o SET ROLE da leitura seria recusado (ver `PAPEL_DO_AGENTE`).
+    A pergunta e o GRANT que falta vêm de `_filiacao_que_assume`.
     """
     S = psycopg.sql
     papel = S.Identifier(PAPEL_DO_AGENTE)
+    pergunta, concessao = _filiacao_que_assume(pg.info.server_version)
     for tentativa in (1, 2):
+        concedendo = False
         try:
             with pg.cursor() as cursor:
                 cursor.execute(
                     "SELECT r.rolsuper OR r.rolcanlogin OR r.rolinherit OR "
                     "r.rolbypassrls OR r.rolcreaterole OR r.rolcreatedb OR "
                     "r.rolreplication AS demais, "
-                    "pg_has_role(current_user, r.oid, 'MEMBER') AS membro "
-                    "FROM pg_roles r WHERE r.rolname = %s", (PAPEL_DO_AGENTE,))
+                    "pg_has_role(current_user, r.oid, %s) AS assume "
+                    "FROM pg_roles r WHERE r.rolname = %s",
+                    (pergunta, PAPEL_DO_AGENTE))
                 papel_de_hoje = cursor.fetchone()
                 if papel_de_hoje and papel_de_hoje[0]:
                     raise FerramentaError(
@@ -924,13 +969,14 @@ def _preparar_o_papel(pg: Any) -> None:
                             "NOCREATEDB NOCREATEROLE NOREPLICATION "
                             "NOBYPASSRLS").format(papel))
                     cursor.execute(
-                        "SELECT pg_has_role(current_user, %s, 'MEMBER')",
-                        (PAPEL_DO_AGENTE,))
+                        "SELECT pg_has_role(current_user, %s, %s)",
+                        (PAPEL_DO_AGENTE, pergunta))
                     if not cursor.fetchone()[0]:
                         # o superusuário assume qualquer papel; o usuário que
-                        # só cria papéis precisa ser membro deste
-                        cursor.execute(S.SQL("GRANT {} TO CURRENT_USER")
-                                       .format(papel))
+                        # só cria papéis precisa poder assumir este
+                        concedendo = True
+                        cursor.execute(concessao)
+                        concedendo = False
                     for acerto in _acertos_do_papel(cursor):
                         cursor.execute(acerto)
             return
@@ -939,6 +985,11 @@ def _preparar_o_papel(pg: Any) -> None:
             if tentativa == 2:
                 raise
         except psycopg.errors.InsufficientPrivilege as erro:
+            # no PostgreSQL 16+, o que faltou foi o SET da filiação
+            sem_o_set = (" E conceda o papel ao usuário da casa com SET TRUE "
+                         "(WITH SET TRUE, INHERIT FALSE): sem isso eu não "
+                         "consigo assumi-lo."
+                         if concedendo and pergunta == "SET" else "")
             raise FerramentaError(
                 f"Não consigo ler o banco com segurança: o usuário da casa no "
                 f"PostgreSQL não pode criar nem acertar o papel "
@@ -946,7 +997,7 @@ def _preparar_o_papel(pg: Any) -> None:
                 f"({erro.diag.message_primary}). Sem ele eu não leio. Quem "
                 f"cuida do servidor pode criá-lo (NOLOGIN NOINHERIT) e "
                 f"conceder SELECT nas tabelas, menos nas colunas de "
-                f"credencial.") from erro
+                f"credencial.{sem_o_set}") from erro
 
 
 def _ler_sem_escrever(con: Any, sql: str,

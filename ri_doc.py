@@ -3,7 +3,7 @@ Conferencia das matriculas digitadas em Word contra o acervo do sistema.
 
 DE ONDE VEM O ARQUIVO
     De `ri_doc_extrair.py`, que le a pasta das matriculas digitadas e produz
-    `matriculas_doc.jsonl`. Enquanto os arquivos estavam no Proton Drive em
+    `matriculas_doc.jsonl`. Enquanto os arquivos estavam numa pasta sincronizada em
     modo "sob demanda", so a maquina da serventia conseguia abri-los; depois
     que a pasta baixou por inteiro, a leitura passou a funcionar de qualquer
     lugar que enxergue o caminho.

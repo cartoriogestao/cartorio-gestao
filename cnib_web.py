@@ -20,6 +20,7 @@ import banco_pg
 import centrais_cred as CRED
 import cnib_api as API
 import cnib_atualizador as ATZ
+import identidade_do_robo as IDR
 
 # O MAIOR PEDAÇO QUE UMA IDA PODE PEDIR. Não é zelo: a fila desta serventia
 # tinha 341.697 ordens, e uma janela de anos numa tacada varreria o país num
@@ -294,8 +295,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # responde, quem tem de gritar é a tela que o usuário abriu.
             return
 
+        # A rotina de fundo diz quem é e a mando de quem age (26/10/2026).
+        identidade = {"agente": "atualizador automático do CNIB",
+                      "a_mando_de": IDR.PELO_RESPONSAVEL}
+
         def registrar(detalhes):
-            db.log(None, "SISTEMA", "CNIB_LEITURA", "CNIB", None, detalhes)
+            db.log(None, "SISTEMA", "CNIB_LEITURA", "CNIB", None, detalhes,
+                   **identidade)
 
         def trabalhar():
             try:
@@ -304,7 +310,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             except Exception as erro:  # noqa: BLE001 — ver acima
                 try:
                     db.log(None, "SISTEMA", "CNIB_LEITURA_FALHOU", "CNIB",
-                           None, {"erro": str(erro)[:400]})
+                           None, {"erro": str(erro)[:400]}, **identidade)
                 except Exception:   # noqa: BLE001,S110 — ver acima
                     pass
 

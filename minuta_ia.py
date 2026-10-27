@@ -167,11 +167,23 @@ class MinutaIAError(ValueError):
     """Erro de regra, com mensagem pronta para o balcão."""
 
 
+#: Colunas acrescentadas depois que a tabela já existia na produção (3.7.4).
+COLUNAS_NOVAS = {
+    # O PROTOCOLO GERAL ESCOLHIDO NO QUADRO — 23/10/2026, o oficial: «precisa
+    # ter campo de selecionar o protocolo e prenotação no RI para pegar os
+    # documentos pelo agente de minutas» e «no notas também».
+    "protocolo_id": "bigint",
+}
+
+
 def init_schema(con) -> None:
     bd = banco(con)
     for nome, comando in SCHEMA:
         if not bd.tem_tabela(nome):
             bd.escrever(comando)
+    for nome, tipo in COLUNAS_NOVAS.items():
+        if not bd.tem_coluna("mi_pedidos", nome):
+            bd.escrever(f"ALTER TABLE mi_pedidos ADD COLUMN {nome} {tipo}")
 
 
 def _agora() -> str:
@@ -266,7 +278,73 @@ def prenotacoes_da_matricula(con, matricula_id: int) -> list[dict]:
             ORDER BY (situacao = 'ABERTO') DESC, id DESC""", (int(matricula_id),))
 
 
-def documentos_disponiveis(con, atribuicao: str, alvo_id: int) -> list[dict]:
+def prenotacao_por_numero(con, numero) -> dict:
+    """A prenotação pelo número que a pessoa escolheu ou digitou. Só LÊ."""
+    bruto = re.sub(r"\D", "", str(numero or ""))
+    if not bruto:
+        raise MinutaIAError("Escolha a prenotação pelo número.")
+    p = banco(con).um("""SELECT id, numero, data_prenotacao, natureza_titulo, apresentante,
+                                situacao, matricula_id
+                           FROM ri_protocolos WHERE numero = %s ORDER BY id DESC LIMIT 1""",
+                      (int(bruto),))
+    if not p:
+        raise MinutaIAError(f"Não há prenotação nº {numero}.")
+    return dict(p)
+
+
+def protocolo_por_numero(con, numero) -> dict:
+    """O protocolo geral (do balcão) pelo número, como 2026.10.42. Só LÊ."""
+    numero = str(numero or "").strip()
+    if not numero:
+        raise MinutaIAError("Digite o número do protocolo geral, como 2026.10.42.")
+    p = banco(con).um("""SELECT id, numero, atribuicao, interessado, situacao, ri_protocolo_id
+                           FROM cx_protocolos WHERE numero = %s ORDER BY id LIMIT 1""",
+                      (numero,))
+    if not p:
+        raise MinutaIAError(f"Não há protocolo geral nº {numero}.")
+    return dict(p)
+
+
+def prenotacoes_para_escolher(con, matricula_id: int) -> list[dict]:
+    """As prenotações que o quadro oferece: as da matrícula e TODAS as abertas.
+
+    As abertas entram porque metade delas não aponta para matrícula nenhuma —
+    medido na produção em 23/10/2026: 11 das 22 abertas sem `matricula_id` —, e
+    o título dessas o quadro não veria pela matrícula. Só LÊ.
+    """
+    return banco(con).ler(
+        """SELECT id, numero, data_prenotacao, natureza_titulo, apresentante, situacao,
+                  matricula_id, (matricula_id = %s) AS desta_matricula
+             FROM ri_protocolos
+            WHERE matricula_id = %s OR situacao = 'ABERTO'
+            ORDER BY (matricula_id = %s) DESC, (situacao = 'ABERTO') DESC, id DESC
+            LIMIT 120""", (int(matricula_id), int(matricula_id), int(matricula_id)))
+
+
+def protocolos_recentes(con, atribuicao: str, limite: int = 80) -> list[dict]:
+    """Os protocolos gerais mais novos daquela atribuição, para a lista de sugestão
+    do campo. Só sugestão: o campo aceita qualquer número existente. Só LÊ."""
+    return banco(con).ler(
+        """SELECT numero, interessado, situacao FROM cx_protocolos
+            WHERE atribuicao = %s AND situacao <> 'CANCELADO'
+            ORDER BY id DESC LIMIT %s""", (atribuicao, int(limite)))
+
+
+def _da_prenotacao(con, p: dict, rotulo_extra: str = "") -> list[dict]:
+    import protocolo_documentos as PDOC
+    import ri_documentos as RDOC
+    rotulo = f"prenotação {p['numero']}{rotulo_extra}"
+    saida = [_anexo(d, rotulo) | {"prenotacao_id": p["id"]}
+             for d in RDOC.documentos_de(con, RDOC.ENTIDADE_RI, p["id"])
+             if not d.get("retirado_em")]
+    saida += [_anexo(d, f"protocolo geral {d.get('protocolo_numero')} (da {rotulo})")
+              | {"prenotacao_id": p["id"]}
+              for d in PDOC.da_prenotacao(con, p["id"])["ativos"]]
+    return saida
+
+
+def documentos_disponiveis(con, atribuicao: str, alvo_id: int, *,
+                           prenotacao_id=None, protocolo_id=None) -> list[dict]:
     """Os documentos que o sistema já guarda para aquele ato. Só LÊ.
 
     RI: os da prenotação (o título apresentado) e os do protocolo geral ligado a
@@ -274,19 +352,29 @@ def documentos_disponiveis(con, atribuicao: str, alvo_id: int) -> list[dict]:
     arquivamento) e os do protocolo geral ligado a ele. A escolha é de quem
     pede — e ela é conferida contra esta lista, para que nenhum outro arquivo da
     casa suba por um número digitado.
+
+    `prenotacao_id` (RI) e `protocolo_id` (RI e Notas) são os que a pessoa
+    ESCOLHEU no quadro — a prenotação que não aponta para esta matrícula, e o
+    protocolo geral que não está ligado ao ato. Os documentos deles entram na
+    lista; a conferência do pedido vale para eles do mesmo jeito.
     """
     import protocolo_documentos as PDOC
-    import ri_documentos as RDOC
     saida: list[dict] = []
     if atribuicao == RI:
+        vistas = set()
+        # Uma ou mais: na revisão, a do pedido anterior e a de onde veio o que
+        # se juntou agora.
+        escolhidas = (prenotacao_id if isinstance(prenotacao_id, (list, tuple, set))
+                      else [prenotacao_id])
+        for pid in [x for x in escolhidas if x]:
+            p = banco(con).um("SELECT id, numero FROM ri_protocolos WHERE id = %s",
+                              (int(pid),))
+            if p and int(p["id"]) not in vistas:
+                vistas.add(int(p["id"]))
+                saida += _da_prenotacao(con, dict(p), " (escolhida)")
         for p in prenotacoes_da_matricula(con, alvo_id):
-            rotulo = f"prenotação {p['numero']}"
-            for d in RDOC.documentos_de(con, RDOC.ENTIDADE_RI, p["id"]):
-                if not d.get("retirado_em"):
-                    saida.append(_anexo(d, rotulo) | {"prenotacao_id": p["id"]})
-            for d in PDOC.da_prenotacao(con, p["id"])["ativos"]:
-                saida.append(_anexo(d, f"protocolo geral {d.get('protocolo_numero')} "
-                                       f"(da {rotulo})") | {"prenotacao_id": p["id"]})
+            if int(p["id"]) not in vistas:
+                saida += _da_prenotacao(con, dict(p))
     elif atribuicao == NOTAS:
         tudo = PDOC.anexos_do_ato_de_notas(con, alvo_id)
         for d in tudo["do_ato"]:
@@ -294,6 +382,16 @@ def documentos_disponiveis(con, atribuicao: str, alvo_id: int) -> list[dict]:
         p = tudo["protocolo"]
         for d in tudo["do_protocolo"]:
             saida.append(_anexo(d, f"protocolo geral {p['numero'] if p else ''}"))
+    if protocolo_id:
+        pg = banco(con).um("SELECT id, numero FROM cx_protocolos WHERE id = %s",
+                           (int(protocolo_id),))
+        if pg:
+            for d in PDOC.documentos(con, pg["id"])["ativos"]:
+                saida.append(_anexo(d, f"protocolo geral {pg['numero']} (escolhido)")
+                             | ({"prenotacao_id": prenotacao_id}
+                                if prenotacao_id and not isinstance(prenotacao_id,
+                                                                    (list, tuple, set))
+                                else {}))
     # O mesmo arquivo pode estar em dois lugares (anexado na prenotação e no
     # protocolo): sobe uma vez só.
     vistos, unicos = set(), []
@@ -560,8 +658,11 @@ def em_andamento(con, atribuicao: str, alvo_id: int) -> dict | None:
 
 def pedir(con, atribuicao: str, alvo_id: int, *, anexos_ids, tipo_ato: str = "",
           instrucao: str = "", revisao: str = "", anterior_id=None,
-          prenotacao_id=None, usuario: str = "") -> int:
+          prenotacao_id=None, protocolo_id=None, usuario: str = "") -> int:
     """Guarda o pedido e devolve o id. ESCREVE (só `mi_pedidos`).
+
+    `prenotacao_id` e `protocolo_id` são a prenotação e o protocolo geral
+    ESCOLHIDOS no quadro; na revisão, sem eles, valem os do pedido anterior.
 
     A rede é depois, em segundo plano (`executar`). Aqui só se confere o que o
     balcão pode corrigir na hora: alvo, espécie, documentos e a instrução de
@@ -605,7 +706,17 @@ def pedir(con, atribuicao: str, alvo_id: int, *, anexos_ids, tipo_ato: str = "",
     else:
         tipo = (a["tipo"] or "").upper()
 
-    disponiveis = {d["anexo_id"]: d for d in documentos_disponiveis(bd, atribuicao, alvo_id)}
+    if prenotacao_id is None and anterior:
+        prenotacao_id = anterior.get("prenotacao_id")
+    if protocolo_id is None and anterior:
+        protocolo_id = anterior.get("protocolo_id")
+    if atribuicao != RI:
+        prenotacao_id = None
+    # Na revisão valem também os documentos da prenotação do pedido anterior —
+    # os que ele leu continuam sendo «deste ato».
+    prenotacoes = [x for x in (prenotacao_id, (anterior or {}).get("prenotacao_id")) if x]
+    disponiveis = {d["anexo_id"]: d for d in documentos_disponiveis(
+        bd, atribuicao, alvo_id, prenotacao_id=prenotacoes, protocolo_id=protocolo_id)}
     if anexos_ids is None and anterior:
         escolhidos = [d["anexo_id"] for d in json.loads(anterior["documentos_json"])]
     else:
@@ -632,8 +743,7 @@ def pedir(con, atribuicao: str, alvo_id: int, *, anexos_ids, tipo_ato: str = "",
             "fundamenta o ato (comprovante de pagamento, cópia repetida).")
 
     if prenotacao_id is None:
-        prenotacao_id = (anterior or {}).get("prenotacao_id")
-        if prenotacao_id is None and atribuicao == RI:
+        if atribuicao == RI:
             ligadas = {d.get("prenotacao_id") for d in docs if d.get("prenotacao_id")}
             prenotacao_id = ligadas.pop() if len(ligadas) == 1 else None
 
@@ -641,13 +751,14 @@ def pedir(con, atribuicao: str, alvo_id: int, *, anexos_ids, tipo_ato: str = "",
                                     "minuta_id": (anterior or {}).get("minuta_id")})
     novo = bd.escrever(
         """INSERT INTO mi_pedidos (atribuicao, alvo_id, anterior_id, versao, minuta_id,
-               tipo_ato, prenotacao_id, instrucao, revisao, documentos_json,
+               tipo_ato, prenotacao_id, protocolo_id, instrucao, revisao, documentos_json,
                alvo_hash_antes, situacao, pedido_em, pedido_por, modelo, esforco)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (atribuicao, int(alvo_id), int(anterior["id"]) if anterior else None,
          (int(anterior["versao"]) + 1) if anterior else 1,
          (anterior or {}).get("minuta_id"), tipo,
          int(prenotacao_id) if prenotacao_id else None,
+         int(protocolo_id) if protocolo_id else None,
          _texto(instrucao) or ((anterior or {}).get("instrucao") or None),
          _texto(revisao) or None,
          json.dumps([{k: d[k] for k in ("anexo_id", "nome", "sha256", "origem")}

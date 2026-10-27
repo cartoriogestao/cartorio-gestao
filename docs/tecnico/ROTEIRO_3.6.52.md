@@ -180,7 +180,7 @@ Do seu roteiro da tarde:
 
 **Não existe um único exemplar do arquivo de edital do CENPROT nem do de
 emolumentos** em lugar nenhum desta casa — procurei em `C:\ARPNET` inteiro e na
-pasta `8. CRA`. Construí-los seria inventar formato, e a regra é sua: onde não
+pasta da CRA. Construí-los seria inventar formato, e a regra é sua: onde não
 há padrão anterior, o sistema recusa e pergunta.
 
 **Com um arquivo de cada que já tenha subido e sido aceito, os dois se medem

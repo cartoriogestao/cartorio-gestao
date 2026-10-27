@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+{% block title %}{{ p.nome }} — Automação{% endblock %}
+{% block heading %}<h1>{{ p.nome }}</h1>{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('automacao_lista') }}">← todos os processos</a></p>
+
+<section class="panel">
+  <div class="panel-head"><h2>Situação</h2></div>
+  <p>{{ p.descricao }}</p>
+  <p><strong>{{ 'Ligado' if p.ativo else 'Desligado' }}</strong> · {{ agenda_texto }} · prazo {{ p.timeout_s }} s
+    · {{ nome_do_tipo[p.tipo] }}{% if p.pode_agir %} · <strong>pode agir sozinho</strong>{% endif %}</p>
+  {% if p.alerta_desde %}<p><span class="badge {{ selo(p.alerta_situacao).classe }}">{{ selo(p.alerta_situacao).texto }}</span>
+    problema em aberto desde {{ p.alerta_desde[:16]|replace('T', ' ') }}.</p>{% endif %}
+  {% if p.pedido_manual_em %}<p><span class="badge warning">na fila</span> Vai rodar no próximo minuto, pelo despachante.</p>{% endif %}
+  {% if batida.parado %}<p class="small"><span class="badge critica">despachante parado</span> Sem o despachante, nem «rodar agora» roda.</p>{% endif %}
+  {% if user.role == 'ADMIN' %}
+  <div class="actions">
+    <form method="post" action="{{ url_for('automacao_rodar', processo_id=p.id) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button primary" type="submit">Rodar agora</button>
+    </form>
+    <form method="post" action="{{ url_for('automacao_ligar', processo_id=p.id) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="ativo" value="{{ '0' if p.ativo else '1' }}">
+      <input type="hidden" name="voltar" value="processo">
+      <button class="button" type="submit">{{ 'Desligar' if p.ativo else 'Ligar' }}</button>
+    </form>
+  </div>
+  <p class="small muted">«Rodar agora» não roda nesta tela: marca o pedido, e o despachante o pega no próximo minuto.</p>
+  {% endif %}
+</section>
+
+{% if user.role == 'ADMIN' %}
+<section class="panel">
+  <div class="panel-head"><h2>Pode agir sozinho?</h2></div>
+  <p class="small">Desligado (o padrão), a parte que grava não roda: a verificação só lê, e o agente de IA
+    roda <strong>sem</strong> as ferramentas de escrita e propõe. Ligado, ele grava sem esperar o seu clique —
+    e tudo o que fizer vai para o relatório da rodada. A mudança fica na auditoria.</p>
+  <form method="post" action="{{ url_for('automacao_pode_agir', processo_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="pode_agir" value="{{ '0' if p.pode_agir else '1' }}">
+    <button class="button {{ '' if p.pode_agir else 'danger' }}" type="submit">{{ 'Voltar a só ler e propor' if p.pode_agir else 'Liberar para agir sozinho' }}</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Editar</h2></div>
+  <form method="post" action="{{ url_for('automacao_salvar', processo_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Nome <input name="nome" value="{{ p.nome }}" required></label>
+    <label>Descrição <textarea name="descricao" rows="2">{{ p.descricao }}</textarea></label>
+    <label>Setor <input name="setor" value="{{ p.setor }}"></label>
+    <label>Tipo <select name="tipo">{% for t in tipos %}<option value="{{ t }}" {% if t == p.tipo %}selected{% endif %}>{{ nome_do_tipo[t] }}</option>{% endfor %}</select></label>
+    <label>O que roda <input name="alvo" value="{{ p.alvo }}" list="automacao-catalogo"></label>
+    <datalist id="automacao-catalogo">{% for c in catalogo %}<option value="{{ c }}">{% endfor %}</datalist>
+    <p class="small muted">Verificação: uma das funções da lista («modulo:funcao»). Script: só os da pasta
+      «automacao_scripts» do programa (.py, ou .sh no macOS) — script novo entra por atualização do sistema.
+      Agente de IA: o pedido, em português.</p>
+    <fieldset><legend>Agenda</legend>
+      {% for d in dias %}<label style="display:inline"><input type="checkbox" name="dias" value="{{ loop.index0 }}" {% if loop.index0 in p.agenda.dias %}checked{% endif %}> {{ d }}</label> {% endfor %}
+      <p><label style="display:inline"><input type="radio" name="forma" value="horarios" {% if p.agenda.horarios %}checked{% endif %}> nos horários</label>
+        <input name="horarios" value="{{ (p.agenda.horarios or [])|join(', ') }}" placeholder="11:30, 14:10"></p>
+      <p><label style="display:inline"><input type="radio" name="forma" value="intervalo" {% if p.agenda.intervalo_min %}checked{% endif %}> a cada</label>
+        <input name="intervalo_min" value="{{ p.agenda.intervalo_min or '' }}" size="4"> minutos</p>
+      <p>Janela (opcional): das <input name="janela_inicio" value="{{ (p.agenda.janela or ['',''])[0] }}" size="5" placeholder="08:00">
+        às <input name="janela_fim" value="{{ (p.agenda.janela or ['',''])[1] }}" size="5" placeholder="17:00"></p>
+    </fieldset>
+    <label>Parâmetros (JSON) <textarea name="parametros" rows="4">{{ parametros_json }}</textarea></label>
+    <label>Prazo (segundos) <input name="timeout_s" value="{{ p.timeout_s }}" size="6"></label>
+    <label>Tentativas <input name="max_tentativas" value="{{ p.max_tentativas }}" size="2"></label>
+    <label>Responsável <select name="responsavel_user_id"><option value="">o oficial (padrão)</option>
+      {% for u in usuarios %}<option value="{{ u.id }}" {% if u.id == p.responsavel_user_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
+    <fieldset><legend>Avisar por</legend>
+      {% for c in canais %}<label style="display:inline"><input type="checkbox" name="canal_{{ c }}" value="1" {% if p.canais.get(c) %}checked{% endif %}> {{ nome_do_canal[c] }}</label> {% endfor %}
+      <p class="small muted">O WhatsApp ainda não envia: o aviso fica registrado como «não configurado».</p>
+    </fieldset>
+    <label>Lembrar o problema a cada (horas; vazio = o padrão da configuração) <input name="lembrar_a_cada_h" value="{{ p.lembrar_a_cada_h or '' }}" size="3"></label>
+    <label>Credencial do cofre (só script ou verificação) <select name="usa_credencial"><option value="">nenhuma</option>
+      {% for c in credenciais %}<option value="{{ c.nome }}" {% if c.nome == p.usa_credencial %}selected{% endif %}>{{ c.nome }} — {{ c.nome_do_tipo }}</option>{% endfor %}</select></label>
+    <label>Robô do quadro antigo (opcional) <input name="robo_oficial" value="{{ p.robo_oficial or '' }}" size="14"></label>
+    <button class="button primary" type="submit">Gravar</button>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><h2>Rodadas ({{ historico|length }} mais recentes)</h2></div>
+  <div class="table-wrap"><table><thead><tr><th>#</th><th>Início</th><th>Disparo</th><th>Situação</th><th>Relato</th></tr></thead><tbody>
+  {% for e in historico %}<tr><td><a href="{{ url_for('automacao_execucao', execucao_id=e.id) }}">{{ e.id }}</a></td>
+    <td class="small">{{ (e.iniciada_em or '')[:16]|replace('T', ' ') }}</td><td class="small">{{ e.disparo }}</td>
+    <td><span class="badge {{ e.selo.classe }}">{{ e.selo.texto }}</span></td>
+    <td class="small">{{ (e.relato or '')[:180] }}</td></tr>
+  {% else %}<tr><td colspan="5">Ainda não rodou.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

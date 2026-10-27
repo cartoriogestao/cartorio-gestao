@@ -133,7 +133,7 @@ apenas arquivo anexado fora do padrão ONR dentro do Cartório Gestão; para a
 carga, elas devem ser tratadas como sem imagem digital vinculada.
 
 Nova localização informada em 11/09/2026:
-`C:\Users\<usuario>\Proton Drive\<conta>\Shared with me\Cidade Exemplo\7. DIGITALIZAÇAO DE MATRICULAS`.
+`C:\caminho\da\pasta\das\digitalizacoes`.
 O cruzamento dessa pasta com as 74 pendências encontrou PDFs para 9 matrículas:
 3201, 3202, 3214, 3244, 3247, 3403, 4009, 4010 e 4011.
 
@@ -452,7 +452,7 @@ Somente após as etapas anteriores:
 | 12/09/2026 | Etapa 2 | Exportada a lista atual de matrículas sem imagem | Cartório/Codex | Criado `MATRICULAS_SEM_IMAGEM_ATUAL.csv`; 65 pendências: 61 `ACERVO` e 4 `ESTRUTURADA`; permanecem 4012 e 4013 sem ficha | Digitalizar/localizar as 65 pendências, priorizando estruturadas e matrículas recentes |
 | 12/09/2026 | Etapa 2 | Localizada e importada a ficha da matrícula 4012 | Cartório/Codex | Candidato forte `EXEMPLO_ficha_4012.pdf`; 6 imagens importadas; pendências caíram de 65 para 64; ONR agora com 11.291 arquivos e amostra 300/300 OK | Localizar/redigitalizar 168, 2195 e 4013; depois mutirão Livro 2-A |
 | 12/09/2026 | Etapa 2 | Priorizada a lista remanescente de matrículas sem imagem | Cartório/Codex | Criado `MATRICULAS_SEM_IMAGEM_PRIORIZADAS.csv`: 3 urgentes recentes, 2 estruturadas antigas, 55 Livro 2-A e 4 isoladas de acervo | Executar digitalização física dos 64 casos restantes |
-| 13/09/2026 | Etapa 2 | Localizada e importada a ficha da matrícula 4013 | Cartório/Codex | Candidato forte `FICHA 4013-assinado.pdf` no Proton Drive; primeira página validada por texto com matrícula 4013 e CNM 000000.2.0004013-90; 12 imagens importadas; validação: 1/1 coberta, 0 erros; pendências caíram para 63 | Localizar/redigitalizar 168 e 2195; depois priorizar 2693 e 2782 |
+| 13/09/2026 | Etapa 2 | Localizada e importada a ficha da matrícula 4013 | Cartório/Codex | Candidato forte `FICHA 4013-assinado.pdf` na pasta de rede da serventia; primeira página validada por texto com matrícula 4013 e CNM 000000.2.0004013-90; 12 imagens importadas; validação: 1/1 coberta, 0 erros; pendências caíram para 63 | Localizar/redigitalizar 168 e 2195; depois priorizar 2693 e 2782 |
 | 13/09/2026 | Etapa 2 | Detectada pasta interna incorreta em `ri\fichas\4013` | Cartório/Codex | Os arquivos `00003582.0001` a `00003582.0010` dentro da pasta 4013 são visualmente da matrícula/CNM 3582; a matrícula 3582 já possui 10 imagens registradas no banco; nada foi movido ou excluído | Tratar como inconsistência de acervo separado, sem usar esses arquivos para cumprir a 4013 |
 | 13/09/2026 | Etapa 2/5 | Criada fila de revisão para 168 e 2195 | Cartório/Codex | Criado `REVISAO_URGENTES_168_2195_INDICADORES.csv`; banco não tem anexos para ambas; documentos textuais encontrados servem para Indicador Real/Pessoal, mas não foram classificados como imagem ONR | Localizar ficha física/digitalizada de 168 e 2195 ou obter decisão expressa do cartório sobre a origem oficial |
 | 13/09/2026 | Etapa 2/5 | Criada fila de revisão para 2693 e 2782 | Cartório/Codex | Criado `REVISAO_ESTRUTURADAS_2693_2782_INDICADORES.csv`; 2693 tem DOCX textual conferido; 2782 tem certidão PDF; ambos servem para revisar estrutura, mas seguem sem imagem/ficha ONR | Definir se fichas estruturadas antigas serão impressas/renderizadas como imagem de acervo ou se serão redigitalizadas do livro físico |

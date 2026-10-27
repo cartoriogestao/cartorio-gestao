@@ -61,6 +61,7 @@ from typing import Any
 
 import ri_digitalizacao as RDIGI
 from bd_nativo import banco
+import identidade_do_robo as IDR
 from rc_schema import CHAVE_DO_CORTE_DA_DIGITALIZACAO
 from storage import hash_file, safe_component, unique_path
 
@@ -307,19 +308,27 @@ def _e_banco(db_ou_con) -> bool:
     return hasattr(db_ou_con, "transaction") and hasattr(db_ou_con, "connect")
 
 
+#: Quem anexa ou transcreve por programa (carga do acervo) se identifica
+#: (ordem do oficial, 26/10/2026). A carga pode dizer o próprio nome e a
+#: pessoa que mandou (`agente=`, `a_mando_de=`); sem isso, vale este nome e o
+#: responsável pelas rotinas automáticas.
+AGENTE_DA_CARGA = "carga por programa do RCPN"
+
+
 def _auditar(db_ou_con, quem: str, acao: str, assento_id: int, detalhes: dict,
-             agora: str) -> None:
+             agora: str, agente: Any = None, a_mando_de: Any = None) -> None:
     """Auditoria FORA da transação quando é o `Database` (regra da casa);
     com `con`, na mesma transação de quem chamou — o script decide o commit."""
+    agente = agente or AGENTE_DA_CARGA
+    a_mando_de = a_mando_de or IDR.PELO_RESPONSAVEL
     if _e_banco(db_ou_con):
-        db_ou_con.log(None, quem, acao, "rc_assentos", int(assento_id), detalhes)
+        db_ou_con.log(None, quem, acao, "rc_assentos", int(assento_id), detalhes,
+                      agente=agente, a_mando_de=a_mando_de)
         return
-    banco(db_ou_con).escrever(
-        """INSERT INTO audit_logs(ts, user_id, username_snapshot, action,
-               entity_type, entity_id, details, ip_address)
-           VALUES (%s, NULL, %s, %s, 'rc_assentos', %s, %s, NULL)""",
-        (agora, quem, acao, int(assento_id),
-         json.dumps(detalhes, ensure_ascii=False, default=str)))
+    IDR.registrar(db_ou_con, ts=agora, user_id=None, username=quem, action=acao,
+                  entity_type="rc_assentos", entity_id=int(assento_id),
+                  details=json.dumps(detalhes, ensure_ascii=False, default=str),
+                  agente=agente, a_mando_de=a_mando_de)
 
 
 def _raiz_para(db_ou_con, raiz: Path | str | None) -> Path:
@@ -360,7 +369,8 @@ def _copiar_conferindo(origem: Path, destino: Path, sha: str) -> Path:
 def anexar_digitalizacao(db_ou_con, assento_id: int, caminho_arquivo,
                          quem: str, origem: str = ORIGEM_ACERVO_TRANSCRITO, *,
                          raiz_arquivos: Path | str | None = None,
-                         agora: str | None = None) -> dict:
+                         agora: str | None = None, agente: str | None = None,
+                         a_mando_de: str | None = None) -> dict:
     """Anexa POR PROGRAMA o termo digitalizado de um assento. ESCREVE.
 
     Para a carga do acervo transcrito. Recebe o `Database` (abre a própria
@@ -414,7 +424,7 @@ def anexar_digitalizacao(db_ou_con, assento_id: int, caminho_arquivo,
                     "oficial_mantido": atual.get("digi_nome"),
                     "oficial_por": atual.get("digi_por")}
         _auditar(db_ou_con, quem, "RCPN_DIGITALIZACAO_REFERENCIA", assento_id,
-                 detalhes, agora)
+                 detalhes, agora, agente, a_mando_de)
         return {"acao": "REFERENCIA", "path": str(destino), "sha256": sha}
 
     pasta.mkdir(parents=True, exist_ok=True)
@@ -434,14 +444,15 @@ def anexar_digitalizacao(db_ou_con, assento_id: int, caminho_arquivo,
     _auditar(db_ou_con, quem, "RCPN_DIGITALIZACAO_ANEXADA", assento_id,
              {"nome": fonte.name, "sha256": sha, "origem": origem,
               "fonte": str(fonte), "substituiu": (atual or {}).get("digi_nome")},
-             agora)
+             agora, agente, a_mando_de)
     return {"acao": "OFICIAL", "path": str(destino.resolve()), "sha256": sha}
 
 
 def gravar_teor_transcrito(db_ou_con, assento_id: int, teor: str, quem: str,
                            origem: str = ORIGEM_ACERVO_TRANSCRITO, *,
                            formato: str = "texto",
-                           agora: str | None = None) -> bool:
+                           agora: str | None = None, agente: str | None = None,
+                           a_mando_de: str | None = None) -> bool:
     """Grava o teor transcrito SÓ onde o assento está sem teor. ESCREVE.
 
     Devolve True se gravou e False se o assento já tinha teor — o que está lá
@@ -475,7 +486,7 @@ def gravar_teor_transcrito(db_ou_con, assento_id: int, teor: str, quem: str,
     if gravou:
         _auditar(db_ou_con, quem, "RCPN_TEOR_TRANSCRITO", assento_id,
                  {"origem": (origem or "").upper(), "teor_len": len(texto)},
-                 agora)
+                 agora, agente, a_mando_de)
     return gravou
 
 

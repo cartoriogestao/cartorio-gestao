@@ -58,7 +58,7 @@ não como medida.
 
 ## A segunda medição, com o lote de 2026 — e o que ela fechou
 
-**24/08/2026, mais tarde.** O oficial indicou a pasta `8. CRA` do Proton Drive: 119
+**24/08/2026, mais tarde.** O oficial indicou a pasta da CRA na rede da serventia: 119
 arquivos, sufixo `.261`/`.262`, de 2026 — lote **mais novo** que o de
 `C:\ARPNET\CRA` (2022–23). São 40 retornos com 60 títulos, e **os 60 casaram
 com o acervo**, como os 383. Pool combinado: **443 registros, cobrindo quatro

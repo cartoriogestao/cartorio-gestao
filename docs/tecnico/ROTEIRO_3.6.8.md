@@ -3,7 +3,7 @@
 > **SUPERADO EM 26/08/2026 — use `ROTEIRO_3.6.9.md`.**
 >
 > A 3.6.8 não chegou a ser aplicada. Logo depois dela o oficial indicou a pasta
-> do Proton Drive, e um arquivo de 2026 fechou o layout da desistência.
+> de rede da serventia, e um arquivo de 2026 fechou o layout da desistência.
 >
 > Este arquivo fica como registro do que a 3.6.8 trazia.
 
@@ -32,7 +32,7 @@ backup_completo_20260825_120734.zip
 1.038 MB · 17.608 digitalizações · aberto e conferido depois de gravado
 ```
 
-Espelhado no Proton Drive, na pasta do Provimento CN-CNJ 213/2026.
+Espelhado na nuvem da serventia, na pasta do Provimento CN-CNJ 213/2026.
 
 > Se você aplicar a atualização noutro dia, **rode o backup de novo** antes:
 > `FERRAMENTAS\BACKUP_AGORA.cmd`. Não precisa de Administrador e não para o

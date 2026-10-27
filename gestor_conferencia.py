@@ -47,8 +47,14 @@ JANELA_DE_AVISO = 10
 #: A cópia local do CNIB é tida como parada quando a ordem mais nova é mais
 #: velha que isto. O CNIB nacional recebe dezenas de milhares de ordens por mês.
 CNIB_DIAS_TOLERADOS = 3
-#: Backup fora do servidor: o Provimento pede cópia diária.
+#: O pacote do dia (o diário do banco, ou um completo): o Provimento pede cópia
+#: diária. Um dia de folga porque a conferência roda de manhã (07h30) e o
+#: backup no horário sai às 18h: de manhã, o «do dia» é o da noite anterior.
 BACKUP_DIAS_TOLERADOS = 1
+#: O completo (banco + digitalizações + acervo): UMA VEZ POR SEMANA — decisão
+#: do oficial em 26/10/2026 («completo uma vez por semana»). Antes a regra
+#: cobrava o completo com a folga do diário, e acusava seis dias em sete.
+BACKUP_COMPLETO_DIAS_TOLERADOS = 7
 
 GRAVIDADES = ("CRITICO", "VENCIDO", "NAO_MEDIU", "PRAZO", "ATENCAO")
 
@@ -746,23 +752,43 @@ def regra_backup(con, hoje: date, pasta_dados: Path | None = None) -> list[dict]
         configurada = ""
     pastas = {pasta_das_copias.pasta_de_backups(Path(pasta_dados), configurada),
               Path(pasta_dados) / "backups"}
-    arquivos = sorted((p for pasta in pastas if pasta.is_dir()
-                       for p in pasta.glob("backup_completo_*.zip")),
-                      key=lambda p: p.stat().st_mtime)
-    if arquivos:
-        ultimo = datetime.fromtimestamp(arquivos[-1].stat().st_mtime).date()
-        if (hoje - ultimo).days <= BACKUP_DIAS_TOLERADOS:
-            return []
-        titulo = f"Último backup completo é de {ultimo:%d/%m/%Y}"
-    else:
-        titulo = "Nenhum backup completo encontrado"
+
+    def dia_do_mais_novo(*padroes: str):
+        achados = [p for pasta in pastas if pasta.is_dir()
+                   for padrao in padroes for p in pasta.glob(padrao)]
+        return (datetime.fromtimestamp(max(p.stat().st_mtime for p in achados)).date()
+                if achados else None)
+
     # O FUNDAMENTO MUDOU DE NORMA, NÃO DE REGRA: o 213/2026 revogou o 74/2018
     # (art. 26). A cópia completa em periodicidade da classe é o art. 12,
     # § 3º, I; o alerta ao responsável quando o backup falha, o § 10.
-    return [_achado(
-        "BACKUP:completo", "BACKUP", "CRITICO", "TI", titulo,
-        "Rodar FERRAMENTAS/BACKUP_AGORA.cmd, que também espelha fora do servidor.",
-        None, "Provimento CN/CNJ 213/2026, art. 12, § 3º, I, e § 10")]
+    fundamento = "Provimento CN/CNJ 213/2026, art. 12, § 3º, I, e § 10"
+    remedio = "Rodar FERRAMENTAS/BACKUP_AGORA.cmd, que também espelha fora do servidor."
+    # AS DUAS COBRANÇAS (decisão do oficial em 26/10/2026, «completo uma vez
+    # por semana»): o completo na SEMANA e o pacote do DIA. Até aqui a regra
+    # cobrava só o completo, com a folga de um dia — e o sistema gera o
+    # completo uma vez por semana, então acusava seis dias em sete. O pacote do
+    # dia é o diário do banco ou um completo (que também leva o banco).
+    completo = dia_do_mais_novo("backup_completo_*.zip")
+    do_dia = dia_do_mais_novo("backup_banco_*.zip", "backup_completo_*.zip")
+    if do_dia is None:
+        return [_achado("BACKUP:completo", "BACKUP", "CRITICO", "TI",
+                        "Nenhum backup encontrado", remedio, None, fundamento)]
+    saida = []
+    if completo is None or (hoje - completo).days > BACKUP_COMPLETO_DIAS_TOLERADOS:
+        saida.append(_achado(
+            "BACKUP:completo", "BACKUP", "CRITICO", "TI",
+            f"Último backup completo é de {completo:%d/%m/%Y}" if completo
+            else "Nenhum backup completo encontrado",
+            f"O completo (banco, digitalizações e acervo) sai uma vez por semana; o "
+            f"limite é {BACKUP_COMPLETO_DIAS_TOLERADOS} dias. " + remedio, None, fundamento))
+    if (hoje - do_dia).days > BACKUP_DIAS_TOLERADOS:
+        saida.append(_achado(
+            "BACKUP:diario", "BACKUP", "CRITICO", "TI",
+            f"Último backup do banco é de {do_dia:%d/%m/%Y}",
+            "O pacote do banco sai todo dia (o processo BACKUP_DIARIO, às 18h). " + remedio,
+            None, fundamento))
+    return saida
 
 
 #: abaixo disto o disco do servidor vira achado (em GB)
@@ -1437,6 +1463,48 @@ def regra_fiscal(con, hoje: date) -> list[dict]:
     return gestor_fiscal.conferir(con, hoje)
 
 
+def regra_pld(con, hoje: date) -> list[dict]:
+    """PLD/COAF — o caso selecionado que espera análise ou comunicação (23/10/2026).
+
+    A seleção roda logo antes, na rodada (`pld_coaf.selecionar`); aqui só se lê.
+    O prazo é o do art. 151 do CNN: 30 dias da operação para a comunicação que
+    independe de análise, 60 para a análise. Vencido ou dentro da janela, vira
+    achado; longe, não — alarme que soa sempre é alarme que ninguém ouve.
+
+    SIGILO (CNN, art. 154): o achado vai ao setor do oficial e diz o NÚMERO do
+    caso e a hipótese, nunca o nome de quem está no ato. Quem quiser saber mais
+    abre a tela do PLD, que é só do ADMIN.
+    """
+    import pld_coaf as PLD
+    bd = banco(con)
+    if not bd.tem_tabela("pld_casos"):
+        return []
+    saida = []
+    for c in bd.ler(
+            """SELECT id, atribuicao, hipotese, especie, fundamento, data_operacao,
+                      situacao FROM pld_casos
+                WHERE situacao IN ('A_ANALISAR', 'A_COMUNICAR') ORDER BY id"""):
+        dia = _dia(c["data_operacao"])
+        if dia is None or antes_do_corte(dia):
+            continue
+        dias = (PLD.DIAS_PARA_SELECIONAR if c["especie"] == PLD.AUTOMATICA
+                else PLD.DIAS_PARA_ANALISAR)
+        prazo = dia + timedelta(days=dias)
+        gravidade = _situacao_do_prazo(prazo, hoje)
+        if gravidade is None:
+            continue
+        o_que = ("comunicar ao COAF" if c["situacao"] == "A_COMUNICAR"
+                 else "analisar e decidir")
+        saida.append(_achado(
+            f"PLD:{c['id']}", "PLD_COAF", gravidade, "GESTAO",
+            f"PLD/COAF: caso nº {c['id']} ({c['atribuicao']}) para {o_que}",
+            f"Hipótese {c['hipotese']}, operação de {dia:%d/%m/%Y}. Abra "
+            "Administrativo → PLD/COAF: a análise se registra com fundamentação, "
+            "comunique-se ou não (CNN, art. 141, § 3º).",
+            prazo, c["fundamento"]))
+    return saida
+
+
 def regra_fechamento_do_mes(con, hoje: date) -> list[dict]:
     """Selos usados no mês × entradas do caixa no mês, por atribuição.
 
@@ -1486,6 +1554,52 @@ def regra_fechamento_do_mes(con, hoje: date) -> list[dict]:
             f"{sem_protocolo} lançamento(s) do caixa sem protocolo, que não dizem "
             "de que atribuição são. Pode ser gratuidade sem a marca no selo, ou "
             "dinheiro recebido por outro caminho — conferir.", None, ""))
+    return saida
+
+
+def regra_identidade_dos_robos(con, hoje: date) -> list[dict]:
+    """O que a auditoria gravou sem dizer quem agiu — e o robô sem responsável.
+
+    Ordem do oficial, 26/10/2026: «obrigação de todo robô se identificar e
+    dizer a mando de quem está agindo». ETAPA 1: o banco grava e esta regra
+    avisa ao oficial (setor GESTAO); a etapa 2 recusa, quando o aviso zerar —
+    a decisão mora em `identidade_do_robo.decidir`, e não aqui.
+
+    Conta pela ORIGEM (ação e entidade) e pela conta (`eh_robo`), e NUNCA lê o
+    texto procurando nome de IA: é ordem dele, «nada de marca contra robô».
+    Banco sem as colunas da identidade não mede, e não acusa nada.
+    """
+    import identidade_do_robo as IDR
+    c = IDR.conferencia(con, hoje)
+    if not c["medido"]:
+        return []
+    saida = []
+    if c["total_sem_identificacao"]:
+        origens = "; ".join(f"{s['action']}{' / ' + s['entity_type'] if s['entity_type'] else ''}: "
+                            f"{s['n']}" for s in c["sem_identificacao"][:8])
+        saida.append(_achado(
+            "IDENTIDADE:sem_identificacao", "IDENTIDADE_DOS_ROBOS", "ATENCAO", "GESTAO",
+            f"{c['total_sem_identificacao']} linha(s) da auditoria sem usuário e sem "
+            f"dizer quem agiu, desde {_d(c['desde'])}",
+            f"Por origem: {origens}"
+            + ("…" if len(c["sem_identificacao"]) > 8 else "")
+            + ". Quem grava por programa tem de passar agente= e a_mando_de= "
+              "(ver docs/IDENTIDADE_DOS_ROBOS.md). Hoje grava e avisa; quando "
+              "isto zerar, a etapa 2 passa a recusar.", None, ""))
+    for r in c["robos_sem_responsavel"]:
+        saida.append(_achado(
+            f"IDENTIDADE:robo:{r['id']}", "IDENTIDADE_DOS_ROBOS", "ATENCAO", "GESTAO",
+            f"Conta de robô sem responsável: {r['nome']}",
+            f"{r['linhas']} linha(s) de auditoria dela desde {_d(c['desde'])}. "
+            "Escolha a pessoa que responde por ela em Usuários, coluna Robô.",
+            None, ""))
+    if c["agentes_sem_mandante"]:
+        quais = "; ".join(f"{s['agente']}: {s['n']}" for s in c["agentes_sem_mandante"][:8])
+        saida.append(_achado(
+            "IDENTIDADE:agente_sem_mandante", "IDENTIDADE_DOS_ROBOS", "ATENCAO", "GESTAO",
+            "Agente(s) que disseram quem são, mas não a mando de quem",
+            f"{quais}. Configure o responsável pelas rotinas automáticas em Usuários.",
+            None, ""))
     return saida
 
 
@@ -1542,6 +1656,10 @@ REGRAS: tuple[tuple[str, Callable], ...] = (
     ("PROTESTO", regra_protesto),
     # o agente financeiro e das gratuidades (09/10/2026)
     ("FISCAL", regra_fiscal),
+    # o PLD/COAF — o caso que espera análise ou comunicação (23/10/2026)
+    ("PLD_COAF", regra_pld),
+    # todo robô diz quem é e a mando de quem age (26/10/2026)
+    ("IDENTIDADE_DOS_ROBOS", regra_identidade_dos_robos),
 )
 
 

@@ -827,7 +827,11 @@
         {# A NFS-e DOS RECIBOS (LG01) — a fila do que falta e do que ficou no
            meio. Ao lado do caixa, porque é do recibo pago que a nota nasce. #}
         <a href="{{ url_for('nfse_fila') }}">NFS-e</a>
-        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('caixa_recibos') }}">Recibos</a>
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('despesas_lista') }}">Despesas</a>
+        {# O CARNÊ-LEÃO (26/10/2026) é o imposto de renda PESSOAL do titular:
+           só o ADMIN o vê, e a rota recusa os outros perfis. #}
+        {% if user.role == 'ADMIN' %}<a href="{{ url_for('carne_leao') }}">Carnê-leão</a>{% endif %}
+        <a href="{{ url_for('caixa_recibos') }}">Recibos</a>
         <a href="{{ url_for('caixa_emolumentos') }}">Emolumentos</a>
         {# O RAZAO DOS SELOS — relato #33. Fica no dinheiro porque selo se
            compra. **É UM LINK SÓ desde 15/09/2026**: havia dois com este mesmo
@@ -939,6 +943,12 @@
            Isto é educação de menu; a recusa de verdade é do `roles_required`
            da rota e das funções de domínio. #}
         {% if user.role == 'ADMIN' and agente_no_menu %}<a href="{{ url_for('agente_console') }}">Agente do sistema</a>{% endif %}
+        {# A AUTOMAÇÃO (24/10/2026): a central das rotinas — o que roda sozinho,
+           quando rodou e se rodou bem. O gerente vê; o oficial mexe. #}
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('automacao_lista') }}">Automação (rotinas)</a>{% endif %}
+        {# OS AVISOS DE ANDAMENTO AO CLIENTE (26/10/2026): a fila do que saiu
+           ao cliente que pediu. O consentimento se marca no protocolo. #}
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('andamento_fila') }}">Avisos ao cliente (andamento)</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>
         {# OS MODELOS SAO DA CASA INTEIRA, e por isso moram aqui — relato #28.
            Havia dois lugares para editar modelo, os dois dentro do Registro de

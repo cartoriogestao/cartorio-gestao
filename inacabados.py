@@ -364,7 +364,8 @@ FONTES: tuple[dict, ...] = (
     #
     #   A Lei nº 8.560/1992 (art. 2º) manda remeter; o código de normas dá 30
     #   dias. O painel avisa aos VINTE, para a remessa não sair no último dia.
-    #   O termo NEGATIVO não entra: ele não se remete, fica arquivado.
+    #   O termo NEGATIVO não entra: ele não se remete, fica arquivado. E a
+    #   MÃE AUSENTE (27/10/2026) também não: sem suposto pai, não há remessa.
     {"chave": "RCPN_ALEGACAO_PATERNIDADE",
      "nome": "Termo de alegação de paternidade não remetido ao juiz",
      "atribuicao": "RCPN",

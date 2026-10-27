@@ -475,13 +475,22 @@
       <p style="grid-column:1/-1"><small>Só quando o pai foi declarado
         <strong>ignorado</strong>. A mãe pode indicar o suposto pai (termo de
         alegação, que vai ao juiz em até 30 dias) ou se recusar (termo
-        negativo, que fica arquivado na serventia).</small></p>
+        negativo, que fica arquivado na serventia). Se a mãe
+        <strong>não está no balcão</strong> — quem declara é a avó, o hospital,
+        o próprio registrado no registro tardio; mãe ausente ou falecida —,
+        escolha «a mãe não compareceu» e diga o motivo: não há termo para
+        assinar nem remessa ao juiz, e a ficha guarda a anotação.</small></p>
       <label>Termo
         <select name="paternidade_tipo">
           <option value="" {% if not form.get('paternidade_tipo') %}selected{% endif %}>— o pai está declarado —</option>
           <option value="ALEGACAO" {% if form.get('paternidade_tipo') == 'ALEGACAO' %}selected{% endif %}>Alegação: a mãe indica o suposto pai</option>
           <option value="NEGATIVO" {% if form.get('paternidade_tipo') == 'NEGATIVO' %}selected{% endif %}>Negativo: a mãe se recusa a indicar</option>
+          <option value="MAE_AUSENTE" {% if form.get('paternidade_tipo') == 'MAE_AUSENTE' %}selected{% endif %}>A mãe não compareceu: averiguação não iniciada</option>
         </select></label>
+      <label>Por que a mãe não está (só se ela não compareceu)
+        <input name="motivo_ausencia_mae" maxlength="300"
+               placeholder="ex.: falecida; ausente; registro tardio pelo próprio registrado"
+               value="{{ form.get('motivo_ausencia_mae','') }}"></label>
       <label>Nome do suposto pai
         <input name="suposto_pai_nome" value="{{ form.get('suposto_pai_nome','') }}"></label>
       <label>Profissão do suposto pai

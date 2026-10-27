@@ -72,8 +72,15 @@ Depois de instalar a versão que traz a sincronia:
 
    ```
    mkdir C:\ProgramData\CartorioGestao\sincronia
+   icacls C:\ProgramData\CartorioGestao\sincronia /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F
    ssh-keygen -t ed25519 -N "" -C "serventia-sincronia" -f C:\ProgramData\CartorioGestao\sincronia\chave_da_sincronia
    ```
+
+   O `icacls` vem **antes** do `ssh-keygen`, de propósito: deixa a pasta só
+   para SYSTEM e Administradores, e a chave já nasce assim. Sem ele, a pasta
+   herda as permissões do `ProgramData`, a chave privada nasce legível por
+   qualquer usuário da máquina, e o OpenSSH a recusa («UNPROTECTED PRIVATE KEY
+   FILE»), parando o ciclo.
 
 3. **Grave e confira a impressão do GitHub.** O ciclo só fala com servidor que
    esteja no `known_hosts` da sincronia (`StrictHostKeyChecking=yes`): nunca
@@ -112,8 +119,13 @@ Depois de instalar a versão que traz a sincronia:
    `CG_PG_DSN`, `CG_PG_SCHEMA` e `PGPASSFILE` que o servidor usa):
 
    ```
-   "C:\Program Files\CartorioGestao\runtime\Scripts\python.exe" "C:\Program Files\CartorioGestao\tools\problemas_sincronia.py" gerar-agendamento --repositorio C:\ProgramData\CartorioGestao\problemas --destino C:\ProgramData\CartorioGestao\sincronia_instalador
+   "C:\Program Files\CartorioGestao\runtime\Scripts\python.exe" "C:\Program Files\CartorioGestao\tools\problemas_sincronia.py" gerar-agendamento --repositorio C:\ProgramData\CartorioGestao\problemas --destino C:\ProgramData\CartorioGestao\sincronia
    ```
+
+   O destino é a pasta `sincronia`, a restrita do passo 2, e não outra: o
+   lançador roda como SYSTEM, e quem pudesse editá-lo rodaria os próprios
+   comandos como SYSTEM. Na pasta restrita, só SYSTEM e Administradores mexem
+   nele.
 
    Ele não abre o banco e não registra nada: só escreve
    `sincronia_problemas.cmd` (o lançador) e `registrar_sincronia.ps1`. Recusa se
@@ -127,7 +139,7 @@ Depois de instalar a versão que traz a sincronia:
 7. **Registre a tarefa**, no PowerShell **como administrador**:
 
    ```
-   powershell -ExecutionPolicy Bypass -File C:\ProgramData\CartorioGestao\sincronia_instalador\registrar_sincronia.ps1
+   powershell -ExecutionPolicy Bypass -File C:\ProgramData\CartorioGestao\sincronia\registrar_sincronia.ps1
    ```
 
    Ele restringe a pasta `sincronia` a SYSTEM e Administradores e registra a

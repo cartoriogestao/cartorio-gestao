@@ -11830,6 +11830,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               f"«Enviar à CRA» em «Arquivos gerados» (até 11h30); o andamento "
               f"em par com retorno ainda sobe pelo portal da CRA — o código "
               f"dele na Central não foi medido.", "success")
+        adiados = r.get("adiados") or []
+        if adiados:
+            flash(f"{len(adiados)} ato(s) ficaram para o próximo retorno: o "
+                  f"mesmo protocolo já vai neste arquivo com outra ocorrência, "
+                  f"e a CRA recusa o lote com protocolo repetido. Gere de novo "
+                  f"depois de enviar este.", "warning")
         return redirect(url_for("protesto_retornos"))
 
     @app.route("/protesto/retornos/<int:retorno_id>/enviar", methods=["POST"])

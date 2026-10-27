@@ -346,6 +346,35 @@ def test_titulo_com_dois_devedores_volta_numa_linha_so():
     assert PR.pendentes(con) == []
 
 
+def test_ato_do_mesmo_protocolo_com_outra_ocorrencia_fica_para_o_proximo():
+    # 27/10/2026: o corte «uma linha por protocolo» marcava como informado
+    # QUALQUER segundo ato do protocolo — um pago e um protestado no mesmo
+    # protocolo saíam só com um, e o outro ficava marcado sem ter ido à CRA.
+    # O irmão com outra ocorrência não entra no arquivo e continua pendente.
+    con = banco()
+    a = titulo(con, numero="8/1")
+    b = titulo(con, numero="8/1-B")
+    for tid in (a, b):
+        con.execute("UPDATE pt_titulos SET protocolo='2608250010' WHERE id=?",
+                    (tid,))
+    ate_o_protesto(con, a)
+    PT.lancar_apontamento(con, b, sv=SV, agora=AGORA, data_extenso="x")
+    PT.lancar_pagamento(con, b, sv=SV, agora=AGORA, data_extenso="x")
+    montado = PR.montar(con, apresentante_codigo="001", dia=HOJE, marca="A")
+    assert len(montado["arquivo"].titulos) == 1
+    assert len(montado["atos"]) == 1
+    assert len(montado["adiados"]) == 1
+    primeira = montado["arquivo"].titulos[0]["ocorrencia"]
+    PR.gerar(con, apresentante_codigo="001", dia=HOJE, agora=AGORA, marca="A")
+    # o outro continua esperando, e sai no arquivo seguinte com a SUA ocorrência
+    resto = PR.pendentes(con)
+    assert len(resto) == 1
+    r = PR.montar(con, apresentante_codigo="001", dia="2026-08-26", marca="A",
+                  numero_da_remessa=2)
+    segunda = r["arquivo"].titulos[0]["ocorrencia"]
+    assert {primeira, segunda} == {"C", "1"}
+
+
 def test_o_titulo_da_cenprot_e_contado_a_parte_e_nao_vai_a_cra():
     # `pendentes_da_cenprot` tinha uma segunda definição, no estilo do SQLite,
     # que sobrescrevia a desta casa; a conta tem de rodar no banco de hoje.

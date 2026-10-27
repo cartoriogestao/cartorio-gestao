@@ -323,14 +323,29 @@ def montar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
     # ENVIADO» (medido no retorno de um banco, 23/10). Vai a primeira linha de
     # cada protocolo; os atos das duas continuam em `atos` e são marcados
     # juntos como informados.
-    vistos: set[str] = set()
-    unicos = []
-    for t in titulos:
-        if t["protocolo"] in vistos:
-            continue
-        vistos.add(t["protocolo"])
-        unicos.append(t)
+    #
+    # SÓ O IRMÃO COM A MESMA OCORRÊNCIA VAI JUNTO — correção de 27/10/2026.
+    # O corte valia para QUALQUER segundo ato do protocolo, e `gerar` marcava
+    # todos como informados: um protesto (`C`) e um cancelamento (`A`) do mesmo
+    # protocolo no mesmo dia saíam só com o `C`, e o `A` ficava marcado sem ter
+    # ido — a CRA continuaria dando o título por protestado. Agora o ato com
+    # outra ocorrência fica FORA de `atos` (continua pendente e entra no
+    # arquivo seguinte), e só o irmão do título com dois devedores, que diz a
+    # mesma coisa, é marcado junto.
+    ocorrencia_do_protocolo: dict[str, str] = {}
+    unicos, atos_no_arquivo, adiados = [], [], []
+    for a, t in zip(atos, titulos):
+        prot = t["protocolo"]
+        if prot not in ocorrencia_do_protocolo:
+            ocorrencia_do_protocolo[prot] = t["ocorrencia"]
+            unicos.append(t)
+            atos_no_arquivo.append(a)
+        elif ocorrencia_do_protocolo[prot] == t["ocorrencia"]:
+            atos_no_arquivo.append(a)
+        else:
+            adiados.append(a)
     titulos = unicos
+    atos = atos_no_arquivo
 
     # O NOME DO APRESENTANTE VEM DO CABEÇALHO DA REMESSA — correção de
     # 13/10/2026. `pt_titulos.apresentante_nome` guarda o campo 005/019 do
@@ -365,6 +380,9 @@ def montar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
         "dia": str(dia)[:10],
         "marca": (titulos[0].get("reservado_566") if titulos else None),
         "atos": atos,
+        # Os atos do mesmo protocolo com outra ocorrência: não entram neste
+        # arquivo e continuam pendentes para o próximo.
+        "adiados": adiados,
         "arquivo": arquivo,
         "conteudo": conteudo,
         "soma_centavos": sum(int(t["saldo_a_protestar"]) for t in titulos),

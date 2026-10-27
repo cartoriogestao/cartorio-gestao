@@ -15,7 +15,9 @@ O QUE ESTES TESTES GUARDAM, E QUE O TESTE DE DOMINIO NAO ALCANCA
         chamadas ao aparelho, e segura-las poria a casa no `busy_timeout`;
       - a tela manda o `csrf_token` (dez formularios da casa nao mandavam, e o
         balcao levou «bad request error» em 27/08/2026);
-      - a tela DIZ que o prazo nao e calculado por este sistema.
+      - a tela DIZ a regua do triduo (tarefa 56, 23/10/2026): o que ainda nao
+        chegou ao termo inicial nao se marca, e o que passou do final pede o
+        motivo do atraso, titulo a titulo.
 """
 from __future__ import annotations
 
@@ -71,7 +73,7 @@ def _con(s) -> sqlite3.Connection:
 
 
 def intimado(s, *, numero="84713/1", nome="MARIA SANTOS",
-             data="2026-08-20") -> int:
+             data="2026-08-20", apontado="2026-08-18") -> int:
     """Um título intimado e sem movimentação, gravado direto no banco.
 
     Passar pela tela de apontar e intimar poria a montagem do cenário à mercê
@@ -93,8 +95,8 @@ def intimado(s, *, numero="84713/1", nome="MARIA SANTOS",
         con.execute(
             """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json,
                    origem, criado_em)
-               VALUES (?,'APONTAMENTO','2026-08-18','{}','MANUAL',?)""",
-            (tid, AGORA))
+               VALUES (?,'APONTAMENTO',?,'{}','MANUAL',?)""",
+            (tid, apontado, AGORA))
         con.execute(
             """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json,
                    origem, criado_em)
@@ -104,11 +106,17 @@ def intimado(s, *, numero="84713/1", nome="MARIA SANTOS",
     return tid
 
 
-def lavrar(s, ids):
+#: Os cenários daqui foram intimados em agosto de 2026: hoje o tríduo deles
+#: já venceu, e o lote pede o motivo do atraso de cada um (tarefa 56).
+MOTIVO = "Cenário de teste: tríduo vencido"
+
+
+def lavrar(s, ids, *, motivo=MOTIVO):
     tela = s["c"].get("/protesto/a-protestar").get_data(as_text=True)
-    return s["c"].post("/protesto/a-protestar/lavrar",
-                       data={"csrf_token": _token(tela),
-                             "titulo_id": [str(x) for x in ids]},
+    dados = {"csrf_token": _token(tela), "titulo_id": [str(x) for x in ids]}
+    if motivo:
+        dados.update({f"motivo_atraso_{x}": motivo for x in ids})
+    return s["c"].post("/protesto/a-protestar/lavrar", data=dados,
                        follow_redirects=True)
 
 
@@ -130,13 +138,54 @@ def test_a_tela_abre_e_mostra_o_intimado(s):
     assert "MARIA SANTOS" in html
 
 
-def test_a_tela_diz_que_o_prazo_NAO_e_calculado(s):
-    """Decisão do oficial de 24/08/2026, e ela precisa estar escrita onde a
-    decisão é tomada — não só num comentário do código."""
-    intimado(s)
+def test_a_tela_diz_a_regua_do_triduo(s):
+    """Tarefa 56 (23/10/2026), que substituiu a decisão de 24/08/2026 («o
+    prazo não é calculado»). A régua tem de estar escrita onde a decisão é
+    tomada — e o título vencido mostra o termo final e pede o motivo."""
+    tid = intimado(s)
     html = s["c"].get("/protesto/a-protestar").get_data(as_text=True)
-    assert "não é calculado" in html
-    assert "tríduo" in html
+    assert "O tríduo é contado pelo sistema" in html
+    assert "913, § 1º" in html
+    assert "21/08/2026" in html                    # 18/08 + três dias úteis
+    assert f'name="motivo_atraso_{tid}"' in html
+
+
+def test_vencido_sem_motivo_o_lote_recusa_e_diz_por_que(s):
+    tid = intimado(s)
+    resposta = lavrar(s, [tid], motivo="")
+    assert atos(s, tid) == 0
+    assert "motivo do atraso" in resposta.get_data(as_text=True)
+
+
+def test_o_motivo_do_atraso_fica_no_ato(s):
+    tid = intimado(s)
+    lavrar(s, [tid])
+    con = _con(s)
+    detalhe = con.execute(
+        "SELECT detalhe_json FROM pt_atos WHERE titulo_id=? AND tipo='PROTESTO'",
+        (tid,)).fetchone()[0]
+    con.close()
+    assert MOTIVO in detalhe and "ATRASADO" in detalhe
+
+
+def test_antes_do_termo_inicial_nao_ha_caixa_e_o_lote_recusa(s):
+    """Intimado hoje: o devedor tem até o terceiro dia útil para pagar."""
+    from datetime import date
+    hoje = date.today().isoformat()
+    tid = intimado(s, apontado=hoje, data=hoje)
+    html = s["c"].get("/protesto/a-protestar").get_data(as_text=True)
+    assert f'name="titulo_id" value="{tid}"' not in html
+    assert "o devedor está no prazo" in html
+    resposta = lavrar(s, [tid])
+    assert atos(s, tid) == 0
+    assert "Ainda não é dia de protestar" in resposta.get_data(as_text=True)
+
+
+def test_a_ficha_do_intimado_mostra_o_triduo_e_pede_o_motivo(s):
+    tid = intimado(s)
+    html = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
+    assert "O tríduo venceu" in html
+    assert 'name="motivo_atraso"' in html
 
 
 def test_a_tela_manda_o_csrf_token(s):
@@ -283,7 +332,8 @@ def test_titulo_id_que_nao_e_numero_e_descartado(s):
     tela = s["c"].get("/protesto/a-protestar").get_data(as_text=True)
     resposta = s["c"].post("/protesto/a-protestar/lavrar",
                            data={"csrf_token": _token(tela),
-                                 "titulo_id": ["", "abc", str(tid)]},
+                                 "titulo_id": ["", "abc", str(tid)],
+                                 f"motivo_atraso_{tid}": MOTIVO},
                            follow_redirects=True)
     assert resposta.status_code == 200
     assert atos(s, tid) == 1

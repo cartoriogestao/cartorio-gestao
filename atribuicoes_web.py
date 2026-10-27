@@ -120,6 +120,7 @@ import protesto_cenprot_xml as PCXML
 import protesto_roteiro as PROT
 import protesto_certidao as PCE
 import protesto_termo as PTERMO
+import protesto_triduo as TRIDUO
 import protesto_livros as PLIV
 import protesto_cra as CRA
 import protesto_desistencia as DS
@@ -3209,11 +3210,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         codigo_edital=_campo("codigo_edital") or None,
                         comprovante=_campo("comprovante") or None)
                 elif ato == "PROTESTO":
+                    # O TRÍDUO (tarefa 56): antes do termo inicial recusa;
+                    # depois do termo final exige o motivo do atraso.
                     r = PT.lancar_protesto(con, titulo_id, sv=sv(),
                                            agora=agora(),
                                            data_extenso=hoje_extenso(),
                                            usuario=usuario_nome(),
-                                           modelo_do_termo=_modelo_do_termo(con))
+                                           modelo_do_termo=_modelo_do_termo(con),
+                                           conferir_triduo=True,
+                                           motivo_atraso=_campo("motivo_atraso") or None)
                 elif ato == "DESISTENCIA":
                     r = PT.lancar_desistencia(con, titulo_id,
                                               motivo=_campo("motivo"),
@@ -3451,6 +3456,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # PAGO com protesto em pé — o legado do pagamento depois do
             # protesto, que a regra de 21/10/2026 não admite mais.
             catalogo = PT.hipoteses_que_cabem(_c, titulo)
+            # O TRÍDUO (tarefa 56): só no intimado, que é quando o protesto cabe.
+            triduo = (TRIDUO.para_a_lista(_c, [{"id": titulo_id}],
+                                          hoje=hoje())[0]
+                      if situacao == "INTIMADO" else None)
         pago_com_protesto = situacao == "PAGO" and bool(catalogo)
         cabem = []
         # O APONTAMENTO É O PRIMEIRO ATO DA VIDA DO TÍTULO — Lei 9.492/1997,
@@ -3510,7 +3519,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                entregadores=AV.ENTREGADORES,
                                catalogo=catalogo,
                                pago_com_protesto=pago_com_protesto,
-                               caracteres=PT.CARATER_DA_ORDEM)
+                               caracteres=PT.CARATER_DA_ORDEM,
+                               triduo=(triduo or {}).get("triduo"),
+                               triduo_situacao=(triduo or {}).get(
+                                   "triduo_situacao"))
 
     @app.route("/protesto/<int:titulo_id>/ordem/<int:ato_id>/marcar",
                methods=["POST"])
@@ -10913,14 +10925,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         sem tela nenhuma — o título intimado ficava esperando alguém lembrar
         dele, um a um, na lista geral.
 
-        O PRAZO NÃO SE CALCULA, e isso é decisão do oficial de 24/08/2026. A
-        tela mostra a data da intimação e quantos dias correram; **quem diz se
-        o tríduo venceu é quem assina.** Um sistema que decidisse isso estaria
-        decidindo sobre o ato mais grave desta atribuição — e o que menos se
-        desfaz.
+        O TRÍDUO SE CALCULA DESDE A TAREFA 56 (23/10/2026), que substituiu a
+        decisão do oficial de 24/08/2026 («contar, e não julgar»). A tela
+        mostra o termo inicial e o final de cada título; o que ainda não
+        chegou ao termo inicial não se marca, e o que passou do final pede o
+        motivo do atraso — a régua é `protesto_triduo`.
         """
         with db.connect() as con:
-            linhas = PT.esperando_protesto(con, hoje=hoje())
+            # O TRÍDUO DE CADA UM (tarefa 56, 23/10/2026): o termo inicial e o
+            # final, e onde hoje cai — a conta é `protesto_triduo`, a mesma
+            # que `lancar_protesto` confere ao lavrar.
+            linhas = TRIDUO.para_a_lista(
+                con, PT.esperando_protesto(con, hoje=hoje()), hoje=hoje())
             # AS DUAS PONTAS DA SUSTACAO JUDICIAL — Lei 9.492/1997, art. 17.
             #
             # `revogados` vem PRIMEIRO na tela: e o unico titulo do Protesto
@@ -10968,11 +10984,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         for titulo_id in escolhidos:
             try:
                 with db.transaction() as con:
-                    r = PT.lancar_protesto(con, titulo_id, sv=sv(),
-                                           agora=agora(),
-                                           data_extenso=hoje_extenso(),
-                                           usuario=usuario_nome(),
-                                           modelo_do_termo=_modelo_do_termo(con))
+                    # O motivo do atraso é por título: cada um tem o seu
+                    # tríduo, e o instrumento de cada um diz o seu motivo.
+                    r = PT.lancar_protesto(
+                        con, titulo_id, sv=sv(), agora=agora(),
+                        data_extenso=hoje_extenso(), usuario=usuario_nome(),
+                        modelo_do_termo=_modelo_do_termo(con),
+                        conferir_triduo=True,
+                        motivo_atraso=_campo(f"motivo_atraso_{titulo_id}") or None)
                 feitos.append((titulo_id, r))
             except (PT.ProtestoError, LN.LivroError,
                     PTERMO.TermoError) as erro:

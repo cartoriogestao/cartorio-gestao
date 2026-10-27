@@ -42,6 +42,10 @@
             <span class="small muted">({% if t.dias_para_o_prazo > 0 %}faltam {{ t.dias_para_o_prazo }} dia(s){% elif t.dias_para_o_prazo == 0 %}é hoje{% else %}passou há {{ -t.dias_para_o_prazo }} dia(s){% endif %} — contagem, e não juízo)</span>
           {% endif %}
         {% else %}—{% endif %}</td></tr>
+      {#- O devedor paga até o final do prazo-limite; o protesto é no dia útil
+          seguinte (decisão do oficial de 27/10/2026). #}
+      {% if t.em_andamento and t.protesto_a_partir_de and not t.sustado %}<tr><th>Protesto a partir de</th><td>{{ fmt_date(t.protesto_a_partir_de) }}
+        <span class="small muted">(o dia útil seguinte ao prazo-limite — no próprio prazo-limite o devedor ainda paga)</span></td></tr>{% endif %}
       {% if t.protesto %}<tr><th>Protesto</th><td>lavrado em {{ fmt_date(t.protesto.data_ato) }} {{ t.protesto.rotulo or '' }}</td></tr>{% endif %}
     </tbody>
   </table>

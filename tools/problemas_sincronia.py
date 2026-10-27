@@ -4,9 +4,17 @@ se reproduz.
     python tools/problemas_sincronia.py exportar --pasta <pasta do repositório privado>
     python tools/problemas_sincronia.py exportar --pasta <...> --dry-run
     python tools/problemas_sincronia.py classificar --id 35 --valor SO_PRODUCAO_DADOS --por <login>
+    python tools/problemas_sincronia.py importar --pasta <...> [--dry-run]
 
-Precisa de `CG_PG_DSN` e `CG_PG_SCHEMA` no ambiente (o mesmo do servidor) e
-recusa se o schema não existir: nunca cria banco. Não faz `git` e não envia
+No desenvolvimento, sem banco:
+
+    python tools/problemas_sincronia.py responder --pasta <...> --arquivo of-0035 --estado NECESSARIO_TESTE --prova "tests/test_x.py" --nota "..." [--reproducao AQUI_FICTICIOS]
+    python tools/problemas_sincronia.py conferir-retorno --pasta <...>
+
+`exportar`, `classificar` e `importar` precisam de `CG_PG_DSN` e
+`CG_PG_SCHEMA` no ambiente (o mesmo do servidor) e recusam se o schema não
+existir: nunca criam banco. `responder` e `conferir-retorno` não abrem banco
+(aceitam `--nota-arquivo` para nota de várias linhas). Não faz `git` e não envia
 nada pela rede — commit e envio do repositório privado são da operação.
 
 A linha de comando inteira mora em `problemas_sincronia.main`, na raiz (o

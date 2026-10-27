@@ -1836,17 +1836,24 @@ class Conexao:
         if m:
             self._pragma(cur, m.group("nome").lower(), m.group("valor"), m.group("arg"))
             return
-        m = re.match(r"^\s*VACUUM\s+(?:main\s+)?INTO\s+(\?|'([^']*)')\s*;?\s*$", texto, re.I)
+        m = re.match(r"^\s*VACUUM\s+(?:main\s+)?INTO\s+\?\s*;?\s*$", texto, re.I)
         if m:
             # A CÓPIA ANTES DE GRAVAR não pode virar nada calado: o script
             # seguiria achando que tem cópia. Vira um pg_dump do schema.
-            destino = m.group(2) if m.group(2) is not None else (
-                parametros[0] if isinstance(parametros, (list, tuple)) else None)
+            # SÓ A FORMA COM `?` (27/10/2026): a forma com o caminho escrito no
+            # SQL (`VACUUM INTO 'x'`) tirava o destino do pg_dump do texto do
+            # comando, e ninguém a usa (alerta do CodeQL).
+            destino = parametros[0] if isinstance(parametros, (list, tuple)) else None
             if not destino:
                 raise OperationalError("VACUUM INTO sem destino")
             copiar_para_arquivo(self.db_path, destino)
             cur._carregar((), [], -1)
             return
+        if (texto.lstrip()[:6].upper() == "VACUUM"
+                and "INTO" in texto.upper().split()):
+            # A cópia com o caminho no texto não cai no «não faz nada» abaixo.
+            raise OperationalError("VACUUM INTO só com o destino em parâmetro: "
+                                   "con.execute(\"VACUUM INTO ?\", (destino,))")
         if re.match(r"^\s*(VACUUM|ANALYZE|REINDEX|ATTACH|DETACH)\b", texto, re.I):
             cur._carregar((), [], -1)
             return
@@ -2446,29 +2453,38 @@ def copiar_para_arquivo(db_path: Any, destino: Any,
     que o balcão já mudou — e o teste de restauração, que compara a contagem
     restaurada com a do manifesto, acusaria divergência que não existe.
     """
-    import subprocess
     exe = binario_do_postgres("pg_dump")
     destino = Path(destino)
+    # O DESTINO NÃO VAI NA LINHA DE COMANDO (27/10/2026, alerta do CodeQL): o
+    # pg_dump escreve na saída padrão, e quem abre o arquivo é este código.
     destino.parent.mkdir(parents=True, exist_ok=True)
     schema = schema_do_caminho(db_path)
-    comando = [str(exe), "-d", dsn(), "-n", schema, "-Fc", "-f", str(destino)]
-    if contagens is None:
-        proc = subprocess.run(comando, capture_output=True, text=True)
-    else:
-        with psycopg.connect(dsn(), autocommit=True) as pg, pg.cursor() as c:
-            c.execute("BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-            try:
-                c.execute("SELECT pg_export_snapshot()")
-                instantaneo = c.fetchone()[0]
-                contagens.clear()
-                contagens.update(contar_linhas(c, schema))
-                proc = subprocess.run(comando[:1] + ["--snapshot", instantaneo] + comando[1:],
-                                      capture_output=True, text=True)
-            finally:
-                c.execute("COMMIT")
+    comando = [str(exe), "-d", dsn(), "-n", schema, "-Fc"]
+    with open(destino, "wb") as arquivo:
+        proc = _pg_dump_em(arquivo, comando, schema, contagens)
     if proc.returncode != 0:
-        raise OperationalError("pg_dump falhou: " + (proc.stderr or proc.stdout)[-500:])
+        # Cópia pela metade não é cópia: o arquivo sai, e o erro sobe.
+        destino.unlink(missing_ok=True)
+        raise OperationalError("pg_dump falhou: " + (proc.stderr or "")[-500:])
     return destino
+
+
+def _pg_dump_em(arquivo, comando: list[str], schema: str, contagens: dict | None):
+    """Roda o pg_dump com a saída no arquivo já aberto. Ver `copiar_para_arquivo`."""
+    import subprocess
+    if contagens is None:
+        return subprocess.run(comando, stdout=arquivo, stderr=subprocess.PIPE, text=True)
+    with psycopg.connect(dsn(), autocommit=True) as pg, pg.cursor() as c:
+        c.execute("BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        try:
+            c.execute("SELECT pg_export_snapshot()")
+            instantaneo = c.fetchone()[0]
+            contagens.clear()
+            contagens.update(contar_linhas(c, schema))
+            return subprocess.run(comando[:1] + ["--snapshot", instantaneo] + comando[1:],
+                                  stdout=arquivo, stderr=subprocess.PIPE, text=True)
+        finally:
+            c.execute("COMMIT")
 
 
 # ------------------------------------------------- a conferência da carga

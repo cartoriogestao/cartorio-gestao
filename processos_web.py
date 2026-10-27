@@ -75,8 +75,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN", "MANAGER")
     def processos_planilha():
         """A lista com os mesmos filtros da tela, em planilha. Só lê."""
-        import csv
         import io
+
+        import csv_seguro as CSVS
         from flask import Response
         vista = request.args.get("vista") or "ABERTOS"
         filtros = {k: (request.args.get(k) or "").strip() for k in PR.FILTROS}
@@ -84,7 +85,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             linhas = PR.listar(con, vista=vista if vista in PR.VISTAS else "ABERTOS", usuario_id=usuario_id(),
                                limite=100000, **filtros)
         saida = io.StringIO()
-        w = csv.writer(saida, delimiter=";")
+        # Sem fórmula na planilha (achado transversal 2, 26/10/2026).
+        w = CSVS.escritor(saida)
         w.writerow(["processo", "assunto", "origem", "tipo", "setor", "responsável", "substituto", "prioridade",
                     "prazo", "vencido", "situação", "último andamento", "dias parado"])
         for p in linhas:

@@ -848,6 +848,36 @@ _SCHEMAS_CRIADOS: list[str] = []
 _CHAVE_DO_PREPARO = 7_100_715_202_610_150
 _FUNCOES_PRONTAS: set[str] = set()
 
+# O QUE O SCHEMA DA CASA PEDE EMPRESTADO DO `public` (26/10/2026). As tabelas
+# usam a collation `public.cg_nocase`, os índices do imóvel usam o pg_trgm, e as
+# funções do SQLite moram em `public`. **O `pg_dump -n <schema>` do backup NÃO
+# leva nada disso** — e por isso o pacote, sozinho, não restaura num banco
+# vazio. Quem prepara o banco vazio antes do `pg_restore` (o teste de
+# restauração, e quem restaurar num servidor novo) usa os MESMOS comandos, daqui:
+# duas cópias deles divergiriam no primeiro conserto, e a restauração do dia do
+# desastre descobriria isso.
+_SQL_COLLATION_NOCASE = ("CREATE COLLATION IF NOT EXISTS public.cg_nocase "
+                         "(provider = icu, locale = 'und-u-ks-level2', deterministic = false)")
+_SQL_PG_TRGM = "CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA public"
+_SQL_UNACCENT = "CREATE EXTENSION IF NOT EXISTS unaccent SCHEMA public"
+
+
+def preparar_banco_vazio(c) -> None:
+    """Põe no `public` de um banco VAZIO o que o schema da casa pede: a collation,
+    as duas extensões e as funções de `banco_pg_funcoes.sql`. Sem cache e sem a
+    marca de `public.cg_funcoes` — é para um banco que acabou de nascer.
+
+    `c` é um cursor de psycopg ligado ao banco descartável. NUNCA chame isto no
+    banco da casa: lá quem prepara é `_instalar_funcoes`, com a trava do preparo.
+    """
+    texto = _DDL_ARQUIVO_FUNCOES.read_text(encoding="utf-8") if _DDL_ARQUIVO_FUNCOES.exists() else ""
+    c.execute(_SQL_COLLATION_NOCASE)
+    c.execute(_SQL_PG_TRGM)
+    c.execute(_SQL_UNACCENT)
+    if texto:
+        c.execute("SET search_path TO public")
+        c.execute(texto)
+
 
 def _instalar_funcoes(c, schema: str) -> None:
     """As funções do SQLite (strftime, date, group_concat, nome_da_casa…),
@@ -856,16 +886,15 @@ def _instalar_funcoes(c, schema: str) -> None:
         return
     texto = _DDL_ARQUIVO_FUNCOES.read_text(encoding="utf-8") if _DDL_ARQUIVO_FUNCOES.exists() else ""
     marca = hashlib.sha1(texto.encode("utf-8")).hexdigest()
-    c.execute("CREATE COLLATION IF NOT EXISTS public.cg_nocase "
-              "(provider = icu, locale = 'und-u-ks-level2', deterministic = false)")
+    c.execute(_SQL_COLLATION_NOCASE)
     # O pg_trgm (indice do imovel, ri_schema) nasce AQUI, sob a trava do preparo:
     # criado so no ri_schema, quatro processos subindo juntos num banco novo
     # batiam no `pg_extension_name_index` (medido na suite com -n 4, 18/10/2026).
-    c.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA public")
+    c.execute(_SQL_PG_TRGM)
     c.execute("CREATE TABLE IF NOT EXISTS public.cg_funcoes (marca TEXT PRIMARY KEY)")
     c.execute("SELECT 1 FROM public.cg_funcoes WHERE marca=%s", (marca,))
     if c.fetchone() is None:
-        c.execute("CREATE EXTENSION IF NOT EXISTS unaccent SCHEMA public")
+        c.execute(_SQL_UNACCENT)
         if texto:
             c.execute("SET search_path TO public")
             try:
@@ -2378,23 +2407,65 @@ def criar_por_reproducao(db_path: Any) -> bool:
 
 # ------------------------------------------------------------- a cópia
 
-def copiar_para_arquivo(db_path: Any, destino: Any) -> Path:
-    """O equivalente do `VACUUM INTO`/`.backup()`: um pg_dump do schema daquele
-    banco, em formato próprio (-Fc). Procura o pg_dump em `CG_PG_BIN` ou no
-    PATH."""
+def binario_do_postgres(nome: str) -> Path:
+    """O caminho de `pg_dump`, `pg_restore`… — em `CG_PG_BIN` ou no PATH."""
     import shutil
-    import subprocess
     pasta = (os.environ.get("CG_PG_BIN") or "").strip()
-    exe = (Path(pasta) / ("pg_dump.exe" if os.name == "nt" else "pg_dump")) if pasta else None
+    exe = (Path(pasta) / (f"{nome}.exe" if os.name == "nt" else nome)) if pasta else None
     if not exe or not exe.exists():
-        achado = shutil.which("pg_dump")
+        achado = shutil.which(nome)
         exe = Path(achado) if achado else None
     if not exe:
-        raise OperationalError("pg_dump não encontrado: defina CG_PG_BIN com a pasta bin do PostgreSQL.")
+        raise OperationalError(f"{nome} não encontrado: defina CG_PG_BIN com a pasta bin do PostgreSQL.")
+    return exe
+
+
+def contar_linhas(c, schema: str) -> dict[str, int]:
+    """Quantas linhas tem cada tabela do schema, pelo cursor recebido (e no
+    instantâneo da transação dele). Só LÊ."""
+    c.execute("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+              "WHERE n.nspname = %s AND c.relkind IN ('r', 'p') ORDER BY c.relname", (schema,))
+    tabelas = [linha[0] for linha in c.fetchall()]
+    saida: dict[str, int] = {}
+    for tabela in tabelas:
+        c.execute(f"SELECT count(*) FROM {_nome_sql(schema)}.{_nome_sql(tabela)}")
+        saida[tabela] = int(c.fetchone()[0])
+    return saida
+
+
+def copiar_para_arquivo(db_path: Any, destino: Any,
+                        contagens: dict | None = None) -> Path:
+    """O equivalente do `VACUUM INTO`/`.backup()`: um pg_dump do schema daquele
+    banco, em formato próprio (-Fc). Procura o pg_dump em `CG_PG_BIN` ou no
+    PATH.
+
+    COM `contagens` (um dicionário), ele é preenchido com as linhas de cada
+    tabela **no MESMO instantâneo do pg_dump** (26/10/2026): uma transação
+    REPEATABLE READ exporta o instantâneo, conta, e o pg_dump o importa com
+    `--snapshot`. Contar antes ou depois numa transação à parte daria números
+    que o balcão já mudou — e o teste de restauração, que compara a contagem
+    restaurada com a do manifesto, acusaria divergência que não existe.
+    """
+    import subprocess
+    exe = binario_do_postgres("pg_dump")
     destino = Path(destino)
     destino.parent.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.run([str(exe), "-d", dsn(), "-n", schema_do_caminho(db_path),
-                           "-Fc", "-f", str(destino)], capture_output=True, text=True)
+    schema = schema_do_caminho(db_path)
+    comando = [str(exe), "-d", dsn(), "-n", schema, "-Fc", "-f", str(destino)]
+    if contagens is None:
+        proc = subprocess.run(comando, capture_output=True, text=True)
+    else:
+        with psycopg.connect(dsn(), autocommit=True) as pg, pg.cursor() as c:
+            c.execute("BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            try:
+                c.execute("SELECT pg_export_snapshot()")
+                instantaneo = c.fetchone()[0]
+                contagens.clear()
+                contagens.update(contar_linhas(c, schema))
+                proc = subprocess.run(comando[:1] + ["--snapshot", instantaneo] + comando[1:],
+                                      capture_output=True, text=True)
+            finally:
+                c.execute("COMMIT")
     if proc.returncode != 0:
         raise OperationalError("pg_dump falhou: " + (proc.stderr or proc.stdout)[-500:])
     return destino

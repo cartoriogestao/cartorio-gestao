@@ -179,7 +179,11 @@ def test_o_pacote_volta_pela_automacao_e_a_origem_nao_e_tocada(cg_casa, pacote, 
 def test_contagem_que_nao_bate_e_divergencia_e_nao_ok(cg_casa, pacote, tmp_path, papel_restrito):
     def mais_um(m):
         m["banco_contagens"]["users"] += 1
-    adulterado = _com_outro_manifesto(pacote, tmp_path / "backup_banco_2026-10-26.zip", mais_um)
+    # o pacote numa pasta de backups AO LADO da pasta de dados, e não acima dela
+    # (a pasta de dados dentro da dos backups é recusada antes de abrir o pacote)
+    (tmp_path / "backups").mkdir()
+    adulterado = _com_outro_manifesto(pacote, tmp_path / "backups" / "backup_banco_2026-10-26.zip",
+                                      mais_um)
     # a casa «gerou» este pacote (o que se testa aqui é a contagem, não a origem)
     _registrar(cg_casa["db"], adulterado)
     r = REST.testar(adulterado, db=cg_casa["db"], pasta_dados=tmp_path / "dados")
@@ -197,7 +201,9 @@ def test_contagem_que_nao_bate_e_divergencia_e_nao_ok(cg_casa, pacote, tmp_path,
 
 class SqliteFalso:
     def backup_database(self, destino):
-        con = sqlite3.connect(destino)
+        # O SQLite DE VERDADE: com a suíte no PostgreSQL, `sqlite3.connect`
+        # está desviado para um schema e o arquivo nunca nasceria no disco.
+        con = getattr(banco_pg, "_CONNECT_ORIGINAL", sqlite3.connect)(destino)
         con.execute("CREATE TABLE t (id INTEGER)")
         con.commit()
         con.close()
@@ -205,7 +211,9 @@ class SqliteFalso:
 
 
 def test_pacote_de_antes_da_migracao_e_recusado_sem_criar_banco(cg_casa, tmp_path, monkeypatch):
-    p = BKP.gerar_pacote(SqliteFalso(), tmp_path / "backup_banco_2026-09-01.zip", tmp_path / "a",
+    pasta = tmp_path / "backups"
+    pasta.mkdir()
+    p = BKP.gerar_pacote(SqliteFalso(), pasta / "backup_banco_2026-09-01.zip", tmp_path / "a",
                          com_arquivos=False)
     _registrar(cg_casa["db"], p)
     monkeypatch.setattr(REST, "conferir_o_papel", lambda base: None)

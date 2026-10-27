@@ -288,7 +288,7 @@ def test_o_excesso_de_despesa_vai_para_o_mes_seguinte_ate_dezembro(casa):
     assert (novembro["excesso_anterior"], novembro["base"], novembro["excesso"]) == (30000, 170000, 0)
     assert novembro["imposto"] == 7000                 # 1.700 × 10% − 100
     with db.connect() as con:
-        ano = CL.resumo_do_ano(con, 2026, ate="2026-11")
+        _, ano = CL.apurar_com_o_ano(con, "2026-11", ate="2026-11")
     assert [m["excesso_anterior"] for m in ano][-2:] == [0, 30000]
     # Janeiro recomeça: o excesso não passa de um ano para o outro.
     _lancamento(db, "2026-12-03", "10,00", emolumentos="10,00")

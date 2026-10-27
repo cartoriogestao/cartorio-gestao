@@ -1013,11 +1013,6 @@ def apurar(con, comp: Any) -> dict:
     return _meses_do_ano(banco(con), int(comp[:4]), comp)[-1]
 
 
-def resumo_do_ano(con, ano: int, *, ate: str) -> list[dict]:
-    """Os meses do ano até `ate` (AAAA-MM), com os totais de cada um. Só LÊ."""
-    return [_resumo(a) for a in _meses_do_ano(banco(con), int(ano), ate)]
-
-
 def apurar_com_o_ano(con, comp: Any, *, ate: str) -> tuple[dict, list[dict]]:
     """O mês e o resumo do ano numa passada só — é o que a tela pede. Só LÊ."""
     comp = competencia(comp)

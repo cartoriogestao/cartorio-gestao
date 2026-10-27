@@ -41,6 +41,7 @@ from flask import Response, abort, flash, redirect, render_template, request, ur
 
 import acervo_carga as AC
 import atribuicoes as AT
+import encerramento_mensal as EM
 import escrituracao as ESC
 import implantacao as IMP
 import livro_nucleo as LN
@@ -319,8 +320,163 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             feitos = banco(con).ler(
                 """SELECT * FROM nu_encerramentos_diarios
                     ORDER BY dia DESC, id DESC LIMIT 60""")
+            mensal = _quadro_do_mes(con, _campo_get("mes") or EM.mes_anterior(hoje()))
         return render_template("nucleo_encerramento_diario.html",
-                               painel=painel, feitos=feitos, hoje=hoje())
+                               painel=painel, feitos=feitos, hoje=hoje(),
+                               mensal=mensal)
+
+    # ------------------------------- o mês, num PDF só, para assinar (A3)
+    #
+    # «junta tudo para assinar no final do mês, ainda que tenha encerramento
+    # diário; assinatura num PDF único assinado digitalmente» — o oficial,
+    # 23/10/2026. O termo de cada dia continua nascendo no dia, aqui em cima;
+    # o mês só os junta (`encerramento_mensal`), e quem assina é o A3 do
+    # delegatário, pelo mesmo serviço local do instrumento de protesto.
+    #
+    # NÃO HÁ ENCERRAMENTO EM LOTE, de propósito — decisão do oficial no mesmo
+    # dia: o encerramento continua manual, todo dia, como rotina de quem cuida
+    # do RCPJ/RTD. A tela do mês diz quais dias faltam e manda à tabela de
+    # cima; encerrar o mês inteiro no fim dele é o que a rotina evita.
+
+    def _campo_get(nome: str) -> str:
+        return (request.values.get(nome) or "").strip()
+
+    def _dia_util():
+        from ri_schema import eh_dia_util, ler_feriados_locais
+        locais = ler_feriados_locais(db.get_setting("ri_feriados_locais", ""))
+        return lambda d: eh_dia_util(d, locais)
+
+    def _quadro_do_mes(con, comp: str) -> dict:
+        """O que a tela mostra do mês: o que falta, o que já foi juntado."""
+        quadro = {"competencia": comp, "erro": "", "pendencias": [],
+                  "series": (), "meses": EM.lista_de_meses(con)}
+        try:
+            quadro["nome"] = EM.nome_do_mes(comp)
+            quadro["series"] = EM.series(db.get_setting)
+            quadro["nomes"] = [LN.serie(s).nome for s in quadro["series"]]
+            quadro["pendencias"] = EM.pendencias(
+                con, comp, series_do_mes=quadro["series"],
+                e_dia_util=_dia_util(), hoje=hoje())
+            quadro["juntado"] = EM.mensal(con, comp)
+        except EM.EncerramentoMensalError as erro:
+            quadro["erro"] = str(erro)
+        return quadro
+
+    @app.route("/nucleo/encerramento-mensal/juntar", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER")
+    def nucleo_encerramento_mensal_juntar():
+        """Junta os termos do mês e põe o PDF na fila de assinatura. ESCREVE."""
+        comp = _campo("mes")
+        volta = url_for("nucleo_encerramento_diario", mes=comp)
+        try:
+            with db.transaction() as con:
+                r = EM.gerar(con, comp, series_do_mes=EM.series(db.get_setting),
+                             e_dia_util=_dia_util(), hoje=hoje(), sv=sv(),
+                             agora=agora(), usuario=usuario_nome())
+        except (EM.EncerramentoMensalError, ValueError) as erro:
+            flash(str(erro), "danger")
+            return redirect(volta)
+        audit("NUCLEO_MES_JUNTADO", EM.ENTIDADE, r["id"],
+              {"mes": r["competencia"], "termos": r["quantidade"],
+               "refeito": r["refeito"]})
+        flash(f"{r['quantidade']} termo(s) de {EM.nome_do_mes(comp)} juntados. "
+              f"Confira o PDF e assine.", "success")
+        return redirect(volta)
+
+    def _pdf_do_mes(m: dict) -> bytes:
+        """O PDF do mês — UM papel só, para conferir e para assinar."""
+        import impressao_pdf as IMPPDF
+        odt = gerar_odt(html_para_odf(m["html"]),
+                        titulo=f"Termos de encerramento diário — {m['nome_do_mes']}")
+        return IMPPDF.pdf_de_odt(
+            odt, nome=f"encerramentos-diarios-{m['competencia']}",
+            get_setting=db.get_setting)
+
+    @app.route("/nucleo/encerramento-mensal/<int:mensal_id>/pdf")
+    @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    def nucleo_encerramento_mensal_pdf(mensal_id: int):
+        """O PDF do mês na tela. Assinado, é o arquivo que foi assinado."""
+        from pathlib import Path
+
+        import impressao_pdf as IMPPDF
+        with _ler() as con:
+            m = EM.mensal(con, mensal_id)
+        if not m:
+            abort(404)
+        caminho = m.get("caminho_documento")
+        if caminho and Path(caminho).exists():
+            pdf = Path(caminho).read_bytes()
+        else:
+            try:
+                pdf = _pdf_do_mes(m)
+            except IMPPDF.PdfError as erro:
+                flash(str(erro), "danger")
+                return redirect(url_for("nucleo_encerramento_diario",
+                                        mes=m["competencia"]))
+        return Response(pdf, mimetype="application/pdf", headers={
+            "Content-Disposition":
+                f'inline; filename="encerramentos-diarios-{m["competencia"]}.pdf"'})
+
+    @app.route("/nucleo/encerramento-mensal/<int:mensal_id>/assinado")
+    @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    def nucleo_encerramento_mensal_assinado(mensal_id: int):
+        """O pacote assinado (.p7s), para baixar e conferir no validador."""
+        from pathlib import Path
+        with _ler() as con:
+            m = EM.mensal(con, mensal_id)
+        if not m or not m.get("caminho_assinado") \
+                or not Path(m["caminho_assinado"]).exists():
+            abort(404)
+        return Response(Path(m["caminho_assinado"]).read_bytes(),
+                        mimetype="application/pkcs7-mime", headers={
+            "Content-Disposition":
+                f'attachment; filename="encerramentos-diarios-{m["competencia"]}.p7s"'})
+
+    @app.route("/nucleo/encerramento-mensal/<int:mensal_id>/assinar",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER")
+    def nucleo_encerramento_mensal_assinar(mensal_id: int):
+        """Assina o PDF do mês com o A3 do delegatário. ESCREVE.
+
+        O caminho é o do instrumento de protesto: o PDF vai ao serviço local de
+        assinatura (porta 8766, aberto pelo oficial na sessão dele), que devolve
+        o PKCS#7 com o PDF dentro. **O PIN não passa pelo sistema.**
+        """
+        import base64
+
+        import assinar_com_a3 as A3
+        import impressao_pdf as IMPPDF
+        volta = url_for("nucleo_encerramento_diario")
+        try:
+            with _ler() as con:
+                m = EM.conferir_antes_de_assinar(con, mensal_id)
+            volta = url_for("nucleo_encerramento_diario", mes=m["competencia"])
+            pdf = _pdf_do_mes(m)
+            resposta = A3.assinar_pdf_pelo_windows(pdf)
+            cms = resposta.get("cms_b64")
+            if not cms:
+                raise EM.EncerramentoMensalError(
+                    "O serviço de assinatura não devolveu o arquivo assinado.")
+            with db.transaction() as con:
+                r = EM.guardar_assinatura(
+                    con, mensal_id, pdf=pdf, p7s=base64.b64decode(cms),
+                    pasta_de_arquivos=app.extensions["archive_root"](),
+                    agora=agora(), usuario=usuario_nome())
+        except (A3.AssinarComA3Error, IMPPDF.PdfError,
+                EM.EncerramentoMensalError) as erro:
+            flash(str(erro), "danger")
+            return redirect(volta)
+        except OSError:
+            flash("O serviço de assinatura A3 não respondeu. Abra o serviço "
+                  "(a3_servico_local) nesta máquina, com o token plugado, e "
+                  "tente de novo.", "danger")
+            return redirect(volta)
+        audit("NUCLEO_MES_ASSINADO", EM.ENTIDADE, mensal_id,
+              {"mes": r["competencia"], "assinado_por": r["assinado_por"]})
+        flash(f"Termos de {EM.nome_do_mes(r['competencia'])} assinados por "
+              f"{r['assinado_por'] or 'certificado sem nome legível'}.",
+              "success")
+        return redirect(volta)
 
     # ---------------------------------------------------- a numeração
 

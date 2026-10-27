@@ -70,6 +70,7 @@ ACOES_DE_ENTREGA = {
     "NT_AUTENTICACAO": "autenticação",
     "RI_CERTIDAO_EMITIDA": "certidão do RI",
     "RI_CERTIDAO_NEGATIVA_EMITIDA": "certidão negativa do RI",
+    "RI_CERTIDAO_POSITIVA_EMITIDA": "certidão positiva por pessoa do RI",
     "RI_ATO_LAVRADO": "ato do RI lavrado",
     "RI_PRENOTACAO": "prenotação",
     "PROTOCOLO_ABERTO": "protocolo aberto",

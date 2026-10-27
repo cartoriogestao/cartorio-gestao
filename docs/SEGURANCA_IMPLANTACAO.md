@@ -255,8 +255,13 @@ sistema — para cada rotina, quem roda, de onde e com que nível.
   isso que ligar a cifra é decisão da casa, e não do instalador.
 - A rotina que faz o backup precisa **ler** a chave; confira que a conta dela
   consegue (§4).
-- Ensaie a restauração num banco descartável de tempos em tempos (a própria
-  rotina faz isso quando configurada; ver `BACKUP.md`, seção 6).
+- O teste de restauração é o processo **«Teste de restauração do backup»** da
+  central de automação (`BACKUP_TESTE_RESTAURACAO`): restaura o pacote mais
+  novo num banco **descartável**, confere as contagens contra o manifesto,
+  apaga e registra. Ele nasce **desligado** — ligue-o em Automação, e confira
+  que a conta do banco pode criar banco (CREATEDB). Ver `BACKUP.md`, seção 7.
+  (Até 26/10/2026 este item dizia que «a própria rotina» já fazia isso; não
+  havia teste de restauração nenhum no código.)
 
 ## 7. Usuários e papéis dentro do sistema
 

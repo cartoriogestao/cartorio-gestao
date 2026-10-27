@@ -482,9 +482,10 @@ class _DbFalso:
     connect = transaction
 
     def log(self, user_id, username, action, entity_type=None, entity_id=None,
-            details=None, ip_address=None):
+            details=None, ip_address=None, *, agente=None, a_mando_de=None):
         self.logs.append({"username": username, "action": action,
-                          "entity_id": entity_id, "details": details})
+                          "entity_id": entity_id, "details": details,
+                          "agente": agente, "a_mando_de": a_mando_de})
 
 
 class _CtxFalso:
@@ -532,6 +533,8 @@ def test_o_robo_envia_so_o_p7s_que_assinou_e_a_auditoria_diz_que_foi_ele(tmp_pat
     acoes = [x["action"] for x in ctx.db.logs]
     assert acoes == [AUTO.ACAO_ASSINADA, AUTO.ACAO_ENVIADA, AUTO.ACAO_FINALIZADA]
     assert all(x["username"] == "automacao" for x in ctx.db.logs)
+    # e diz quem é e a mando de quem agiu (PR #36): de quem aprovou o pedido
+    assert all(x["agente"] and x["a_mando_de"] == "Mario Exemplo" for x in ctx.db.logs)
     assert ctx.db.logs[0]["details"]["thumbprint"] == "AB12"
     assert AUTO.preparo(con, pid)["p7s_anexo_id"]
 

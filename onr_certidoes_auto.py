@@ -755,8 +755,15 @@ def rotulo_do_robo(quem_aprovou: Any, o_que: str = "aprovado") -> str:
 
 def _auditar_robo(ctx, acao: str, pedido_id: int, detalhes: dict) -> None:
     """Uma linha de auditoria por ação do robô. FORA de transação: `log` abre
-    a sua (a regra de `audit()` da casa)."""
-    ctx.db.log(None, USUARIO_DA_AUDITORIA, acao, "onr_cert_pedidos", int(pedido_id), detalhes)
+    a sua (a regra de `audit()` da casa).
+
+    O ROBÔ DIZ QUEM É E A MANDO DE QUEM AGE (PR #36): a mando do escrevente que
+    aprovou o pedido (ou as custas); sem ele, do responsável pelas rotinas."""
+    import identidade_do_robo as IDR
+    mandante = detalhes.get("aprovado_por") or detalhes.get("aprovadas_por")
+    ctx.db.log(None, USUARIO_DA_AUDITORIA, acao, "onr_cert_pedidos", int(pedido_id), detalhes,
+               agente="automação — certidões do ONR",
+               a_mando_de=mandante or IDR.PELO_RESPONSAVEL)
 
 
 # O ROBÔ SÓ ENVIA O `.p7s` QUE ELE MESMO ASSINOU (revisão de segurança dos PRs

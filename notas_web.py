@@ -358,12 +358,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN", "MANAGER", "USER", metodos=("POST",))
     def notas_cartoes():
         """Busca e cadastro do cartão de autógrafo."""
+        import nt_leitura_web as NTLW
         if request.method == "POST" and request.form.get("acao") == "novo":
             dados = {k: request.form.get(k) for k in request.form}
             nome = (dados.get("nome") or "").strip()
+            # A LEITURA POR IA (26/10/2026) volta junto em toda recusa: quem
+            # atende não perde o rascunho que a leitura montou.
+            com_leitura = ({"leitura_id": dados["leitura_id"]}
+                           if (dados.get("leitura_id") or "").strip().isdigit() else {})
             if not nome:
                 flash("Informe o nome.", "danger")
-                return redirect(url_for("notas_cartoes"))
+                return redirect(url_for("notas_cartoes", **com_leitura))
+            # O RASCUNHO DA LEITURA SÓ ENTRA CONFERIDO — quem atende marca que
+            # comparou cada campo com o documento original.
+            recusa_leitura = NTLW.recusa_da_conferencia(app, db, "CARTAO")
+            if recusa_leitura:
+                flash(recusa_leitura, "danger")
+                return redirect(url_for("notas_cartoes", busca=nome, **com_leitura))
             # Duplicata: avisa e só cria se o operador insistir.
             if not request.form.get("confirmar_duplicata"):
                 with db.connect() as con:
@@ -372,7 +383,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     nomes = ", ".join(f"{c['nome']} (nº {c['id']})" for c in iguais[:3])
                     flash(f"Já existe cartão para {nomes}. Se ainda assim for outra "
                           f"pessoa, marque a confirmação e grave de novo.", "warning")
-                    return redirect(url_for("notas_cartoes", busca=nome))
+                    return redirect(url_for("notas_cartoes", busca=nome, **com_leitura))
             with db.transaction() as con:
                 try:
                     novo = NP.criar_cartao(con, dados, db.now(), usuario_nome(),
@@ -399,6 +410,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                       "danger")
                 return redirect(url_for("notas_cartoes", busca=nome))
             audit("NT_CARTAO_ABERTO", "NT_CARTAO", novo, {"nome": nome})
+            NTLW.marcar_usada(app, db, audit, "CARTAO", tabela="nt_cartoes", ato_id=novo)
 
             # A FICHA ENTRA JUNTO, se o operador a escolheu no mesmo formulário.
             #
@@ -447,7 +459,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                            sem_assinatura
                        FROM nt_cartoes""")
         return render_template("notas_cartoes.html", busca=busca, achados=achados,
-                               aviso_busca=aviso_busca, resumo=resumo)
+                               aviso_busca=aviso_busca, resumo=resumo,
+                               leitura=NTLW.leitura_pedida(app, db, "CARTAO"))
 
     # ------------------------------------------- a ficha do cartao de autografo
     #
@@ -2135,6 +2148,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN", "MANAGER", "USER")
     def notas_reconhecimento():
         """O balcão: procura o cartão, confere a assinatura e reconhece."""
+        import nt_leitura_web as NTLW
         if request.method == "POST" and request.form.get("acao") == "reconhecer":
             ids = [n for n in map(numero_digitado, request.form.getlist("cartao_id"))
                    if n is not None]
@@ -2144,6 +2158,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 return redirect(url_for("notas_reconhecimento"))
             if especie not in ESPECIES_RECONHECIMENTO:
                 especie = "SEMELHANCA"
+            # OS DADOS DO VEÍCULO LIDOS POR IA (26/10/2026) só entram
+            # conferidos com o CRV/ATPV original — a caixa da conferência.
+            recusa_leitura = NTLW.recusa_da_conferencia(app, db, "RECONHECIMENTO")
+            if recusa_leitura:
+                flash(recusa_leitura, "danger")
+                volta = {k: (request.form.get(k) or "").strip()
+                         for k in ("busca", "leitura_id")}
+                return redirect(url_for("notas_reconhecimento",
+                                        **{k: v for k, v in volta.items() if v}))
 
             cartoes = [dict(r) for r in q(
                 f"SELECT * FROM nt_cartoes WHERE id IN ({','.join(['%s'] * len(ids))}) "
@@ -2251,6 +2274,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                       "NT_RECONHECIMENTO", rid,
                       {"especie": especie, "firmas": len(cartoes),
                        "servico": servico, "motivo": selado.get("motivo")})
+                NTLW.marcar_usada(app, db, audit, "RECONHECIMENTO",
+                                  tabela="nt_reconhecimentos", ato_id=rid)
                 flash(f"Reconhecimento nº {rid} SUSPENSO: o selo pago não saiu "
                       f"porque falta protocolo ou pagamento. Escolha o protocolo "
                       f"pago e clique em selar. Sem selo não se imprime etiqueta.",
@@ -2291,6 +2316,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 audit("NT_RECONHECIMENTO", "NT_RECONHECIMENTO", rid,
                       {"especie": especie, "firmas": len(cartoes),
                        "servico": servico, "selos": selado["selos"]})
+            NTLW.marcar_usada(app, db, audit, "RECONHECIMENTO",
+                              tabela="nt_reconhecimentos", ato_id=rid)
             flash(f"Reconhecimento nº {rid} lavrado — {len(cartoes)} firma(s)."
                   f"{selado['mensagem']}",
                   "success" if selado["ok"] else "warning")
@@ -2318,7 +2345,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                candidatos_selo=candidatos_selo,
                                atendendo=atendendo,
                                ESPECIES=ESPECIES_RECONHECIMENTO,
-                               DOCUMENTOS_DE_VEICULO=DOCUMENTOS_DE_VEICULO)
+                               DOCUMENTOS_DE_VEICULO=DOCUMENTOS_DE_VEICULO,
+                               leitura=NTLW.leitura_pedida(app, db, "RECONHECIMENTO"))
 
     @app.route("/notas/reconhecimento/<int:reconhecimento_id>", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")

@@ -56,6 +56,7 @@ ORDEM = (
     ("notas_schema", "init_notas_schema"),
     ("automacao_schema", "init_automacao_schema"),
     ("andamento_schema", "init_andamento_schema"),
+    ("backup_restauracao", "init_backup_restauracao_schema"),
 )
 
 

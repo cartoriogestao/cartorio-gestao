@@ -158,11 +158,14 @@ def test_os_processos_de_fabrica_nascem_desligados_e_nao_duplicam(casa):
             "ROTINA_CONFERENCIA_DIARIA", "ROTINA_COMPLIANCE", "ROTINA_CENSEC_ENVIO"} <= codigos
     cra = next(p for p in todos if p["codigo"] == "PROTESTO_CRA")
     assert cra["agenda"]["horarios"] == ["11:30", "14:10"]
-    # A função de fábrica está no catálogo da casa; a que outro módulo trouxe
-    # mora no módulo dele.
-    trazidos = {s["alvo"] for s in PROC.sementes_de_outros_modulos()}
-    assert all(p["alvo"] in PROC.CATALOGO or p["alvo"] in trazidos
+    de_fora = {s["alvo"] for s in PROC.sementes_de_outros_modulos()}
+    assert all(p["alvo"] in PROC.CATALOGO or p["alvo"] in de_fora
                for p in todos if p["tipo"] == SCH.FUNCAO)
+    # O alvo de quem vem de fora tem de existir — senão o processo nasce quebrado.
+    import importlib
+    for alvo in de_fora:
+        modulo, nome = alvo.split(":", 1)
+        assert callable(getattr(importlib.import_module(modulo), nome)), alvo
 
 
 def test_o_tique_lanca_o_que_venceu_e_so_uma_vez(casa):

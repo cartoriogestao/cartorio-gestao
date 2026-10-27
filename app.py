@@ -551,65 +551,66 @@ def create_app(test_config: dict | None = None) -> Flask:
                                 senha_da_cifra=BKP.senha_da_cifra(data_dir) or None)
 
     def automatic_backup_once():
-        """Backup diario do banco e backup completo semanal.
+        """Backup diario do banco e backup completo semanal — a RESERVA da automação.
 
         Racional: o banco muda todo dia e comprime bem; as digitalizacoes nao
         mudam nunca. Guardar 30 copias identicas de 161 MB gastaria ~4,8 GB
         para proteger exatamente o mesmo conteudo que uma copia ja protege.
+
+        DESDE 26/10/2026 QUEM FAZ O BACKUP NO HORARIO E A AUTOMACAO (processo
+        `BACKUP_DIARIO`, `backup_automacao.rodar_backup`), que independe de
+        alguem abrir o sistema e avisa quando falha. Isto aqui ficou como
+        reserva, e chama a MESMA rodada (`backup_rotina.rodada`): o pacote que
+        a automacao ja gerou hoje nao se repete, e a trava impede os dois ao
+        mesmo tempo.
+
+        E A MARCA PASSOU A SER DO DIA. Era `True` uma vez por PROCESSO: com o
+        servidor de pe tres dias seguidos, so o primeiro dia tinha backup.
+        `True` continua querendo dizer «nao rode» — e como os testes que nao
+        tratam de backup o desligam.
         """
-        if app.extensions.get("backup_checked"):
+        hoje = date.today()
+        marca = app.extensions.get("backup_checked")
+        if marca is True or marca == hoje:
             return
-        app.extensions["backup_checked"] = True
+        app.extensions["backup_checked"] = hoje
         if db.get_setting("auto_backup", "1") != "1":
             return
 
-        hoje = date.today()
-        pasta = backup_dir()
-
-        diario = pasta / f"backup_banco_{hoje.isoformat()}.zip"
-        if not diario.exists():
-            try:
-                full_backup(diario, com_arquivos=False)
-                db.log(None, "SISTEMA", "AUTO_BACKUP_BANCO", "BACKUP", None,
-                       {"path": str(diario), "bytes": diario.stat().st_size,
-                        "cifrado": BKP.e_cifrado(diario)}, agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
-            except Exception as exc:
-                db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
-                       {"error": str(exc), "tipo": "banco"}, agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
-
-        # Completo no dia da semana configurado (padrao: domingo), uma vez por semana.
+        import backup_rotina
+        import backup_restauracao
         try:
-            dia_semana = int(db.get_setting("backup_completo_dia", "6"))
-        except ValueError:
-            dia_semana = 6
-        ja_tem_semana = any(
-            datetime.fromtimestamp(p.stat().st_mtime).date() >= hoje - timedelta(days=6)
-            for p in pasta.glob("backup_completo_*.zip")
-        )
-        if hoje.weekday() == dia_semana and not ja_tem_semana:
-            completo = pasta / f"backup_completo_{hoje.isoformat()}.zip"
-            try:
-                full_backup(completo, com_arquivos=True)
-                db.log(None, "SISTEMA", "AUTO_BACKUP_COMPLETO", "BACKUP", None,
-                       {"path": str(completo), "bytes": completo.stat().st_size,
-                        "cifrado": BKP.e_cifrado(completo)}, agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
-            except Exception as exc:
-                db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
-                       {"error": str(exc), "tipo": "completo"}, agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
-
-        def expurgar(padrao: str, manter: int):
-            achados = sorted(pasta.glob(padrao), key=lambda p: p.stat().st_mtime, reverse=True)
-            for velho in achados[max(1, manter):]:
-                velho.unlink(missing_ok=True)
-
-        try:
-            expurgar("backup_banco_*.zip", max(3, int(db.get_setting("backup_retention", "30"))))
-            expurgar("backup_completo_*.zip",
-                     max(2, int(db.get_setting("backup_completo_retencao", "8"))))
-            # Formato antigo: um unico arquivo com tudo. Some por retencao.
-            expurgar("backup_automatico_*.zip", 2)
-        except Exception:
-            pass
+            r = backup_rotina.rodada(
+                backup_dir(), full_backup, hoje=hoje,
+                registrados=backup_restauracao.nomes_registrados(db),
+                **backup_rotina.parametros_da_casa(db.get_setting))
+        except backup_rotina.RodadaOcupada:
+            return                      # a automacao esta gerando agora
+        except Exception as exc:
+            db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
+                   {"error": str(exc), "tipo": "rodada"},
+                   agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
+            return
+        # O PACOTE GERADO FICA REGISTRADO, COM O SHA-256 (revisao de seguranca de
+        # 26/10/2026, PR #27 M1): a mesma funcao da automacao grava em
+        # `bk_pacotes` (a lista que o teste de restauracao confere antes do
+        # pg_restore) e na auditoria `AUTO_BACKUP_*`, agora com o SHA-256.
+        import backup_automacao
+        aviso = backup_automacao.registrar_os_feitos(
+            db, r["feitos"], origem="primeiro acesso do dia", agora=datetime.now(),
+            pasta=backup_dir())
+        if aviso:
+            db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
+                   {"error": aviso, "tipo": "registro"},
+                   agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
+        # O QUE A RETENCAO DE 5 DIAS APAGOU vai a auditoria, com o agente e a
+        # mando de quem (decisao do oficial de 26/10/2026).
+        backup_automacao.registrar_a_retencao(
+            db, r.get("retencao"), origem="primeiro acesso do dia", pasta=backup_dir())
+        for falha in r["falhas"]:
+            db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
+                   {"error": falha["erro"], "tipo": falha["tipo"]},
+                   agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
 
     def papel_de_quem_esta_logado():
         """O papel do usuario da sessao, ou None. So LE.
@@ -2667,7 +2668,12 @@ def create_app(test_config: dict | None = None) -> Flask:
                 # isso nunca chegava — e cada «salvar» gravava «0» por cima,
                 # desligando o envio que o oficial tentava ligar. Ela tem rota
                 # própria agora: `configuracoes_cra_envio`.
-                "backup_retention": str(max(3, parse_int(request.form.get("backup_retention")) or 30)),
+                # A RETENCAO E EM DIAS desde 26/10/2026 (decisao do oficial: 5
+                # dias), numa chave nova — `backup_retention` contava pacotes.
+                # Campo que nao veio nao se grava por cima.
+                **({"backup_retencao_dias": str(max(3, parse_int(
+                    request.form.get("backup_retencao_dias")) or 5))}
+                   if "backup_retencao_dias" in request.form else {}),
                 "archive_root": request.form.get("archive_root", "").strip(),
                 # Uma por linha, sem linha vazia (LX12): ver `pastas_da_casa`.
                 "pastas_de_importacao": "\n".join(

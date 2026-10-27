@@ -31,7 +31,10 @@ ROTULO_GUARDIAO = "com.cartoriogestao.automacao.guardiao"
 TAREFA_DESPACHANTE = "CartorioGestao-Automacao"
 TAREFA_GUARDIAO = "CartorioGestao-Automacao-Guardiao"
 #: As variáveis que o despachante e o guardião precisam herdar do servidor.
-VARIAVEIS = ("CARTORIO_GESTAO_DATA", "CG_PG_DSN", "CG_PG_SCHEMA", "CG_PG_BIN", "CG_COFRE_AUTOMACAO")
+#: `CG_PG_DSN_RESTAURACAO` (26/10/2026): o servidor onde o teste de restauração
+#: cria o banco descartável, quando não é o mesmo do banco da casa (opcional).
+VARIAVEIS = ("CARTORIO_GESTAO_DATA", "CG_PG_DSN", "CG_PG_SCHEMA", "CG_PG_BIN", "CG_COFRE_AUTOMACAO",
+             "CG_PG_DSN_RESTAURACAO")
 
 
 @dataclass

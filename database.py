@@ -85,6 +85,7 @@ from robo_schema import init_robo_schema
 from agente_schema import init_agente_schema
 from automacao_schema import init_automacao_schema
 from andamento_schema import init_andamento_schema
+from backup_restauracao import init_backup_restauracao_schema
 from ia_uso import init_ia_schema
 from dois_fatores import init_dois_fatores_schema
 from selo_portal import init_selo_portal_schema
@@ -151,11 +152,15 @@ DEFAULT_SETTINGS = {
     "session_absolute_hours": "12",
     "require_backup_assignee": "1",
     "auto_backup": "1",
-    "backup_retention": "30",
+    # A RETENCAO DOS BACKUPS AUTOMATICOS, EM DIAS (decisao do oficial em
+    # 26/10/2026: «salva os ultimos 5 dias»), e sem nunca apagar o completo-base
+    # — ver `backup_rotina.aplicar_retencao`. Substitui `backup_retention` (30
+    # pacotes) e `backup_completo_retencao` (8 completos), que contavam arquivos
+    # por tipo; as linhas antigas ficam na tabela, sem uso.
+    "backup_retencao_dias": "5",
     # Backup completo (banco + digitalizacoes) uma vez por semana. As imagens
     # sao imutaveis: repeti-las todo dia gastaria disco sem proteger mais nada.
     "backup_completo_dia": "6",
-    "backup_completo_retencao": "8",
     "archive_root": "",
     # AS PASTAS DE ONDE O BALCÃO IMPORTA, uma por linha (LX12, 19/10/2026).
     # Caminho digitado nas telas de importação (acervo, Livro 3, matrículas
@@ -867,6 +872,10 @@ class Database:
         # canal e a fila do que saiu. Não apontam para tabela nenhuma de fora
         # (o protocolo é guardado como origem + número), e por isso vêm aqui.
         init_andamento_schema(con)
+        # O TESTE DE RESTAURAÇÃO DO BACKUP (26/10/2026) — `bk_restauracoes`, uma
+        # linha por rodada (pacote, SHA-256, contagens, tempo), para a
+        # correição. Não aponta para tabela nenhuma.
+        init_backup_restauracao_schema(con)
         # O REGISTRO DO USO DE IA (LF01) — `ia_uso`, os incidentes e os dados
         # dos fornecedores, para o relatório anual à COGEX. Não aponta para
         # tabela nenhuma: a referência ao registro de origem é texto.
@@ -1984,11 +1993,14 @@ class Database:
                 "disputas_desde": disputas["primeira"],
                 "implantacao_abertas": int(falta or 0)}
 
-    def backup_database(self, dest_path: Path) -> Path:
+    def backup_database(self, dest_path: Path, contagens: dict | None = None) -> Path:
         dest_path.parent.mkdir(parents=True, exist_ok=True)
         # No PostgreSQL a cópia é um pg_dump do schema deste banco (o módulo é
         # nativo desde o lote L072: não há mais o caminho do SQLite).
-        return banco_pg.copiar_para_arquivo(self.db_path, dest_path)
+        # `contagens` (26/10/2026): as linhas de cada tabela no MESMO instantâneo
+        # do pg_dump, para o manifesto — é contra elas que o teste de
+        # restauração confere o que voltou.
+        return banco_pg.copiar_para_arquivo(self.db_path, dest_path, contagens=contagens)
 
 
 def _last_day(year: int, month: int) -> int:

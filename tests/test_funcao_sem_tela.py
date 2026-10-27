@@ -174,7 +174,9 @@ JA_SABIDAS: frozenset[str] = frozenset({
     "inicio_do_prazo", "inutilizar_sobra",
     "larguras_em_mm", "ler_tabela_de_custas", "liberar",
     "lugar_estrangeiro", "maior_citado", "paginas_de",
-    "para_conferir", "parciais", "partes_do", "pendencias_do_assento",
+    "para_conferir", "partes_do", "pendencias_do_assento",
+    # `backup.parciais` saiu daqui em 26/10/2026: o processo de backup da
+    # automacao (`backup_automacao.rodar_backup`) avisa os `.parcial` esquecidos.
     "prenomes_se_distinguem", "quantas_pendentes",
     "semelhanca_fina",
     # **`rc_cpf.solicitar` NAO TEM TELA DE PROPOSITO.** Ela existe para RECUSAR

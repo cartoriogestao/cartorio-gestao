@@ -647,7 +647,10 @@ ACHADAS_EM_26_10_2026: dict[str, str] = {
     "guardar_semente": _BANCO_DE_TESTE, "marca_do_codigo": _BANCO_DE_TESTE,
     "devolver_schema": _BANCO_DE_TESTE, "apagar_lixo": _BANCO_DE_TESTE,
     "tomar_da_reserva": _BANCO_DE_TESTE,
-    "schema_existe": _BANCO_DE_TESTE, "comecar_gravacao": _BANCO_DE_TESTE,
+    # `schema_existe` saiu em 27/10/2026: a linha de comando da sincronia dos
+    # problemas (`problemas_sincronia.main`) a usa para recusar schema que não
+    # existe, em vez de criá-lo vazio.
+    "comecar_gravacao": _BANCO_DE_TESTE,
     "terminar_gravacao": _BANCO_DE_TESTE, "criar_por_reproducao": _BANCO_DE_TESTE,
     "descartar_schema": _BANCO_DE_TESTE, "schemas_criados": _BANCO_DE_TESTE,
     # `instalar_desvio`, `registrar_banco`, `listar_certificados`, `assinar_pdf` e

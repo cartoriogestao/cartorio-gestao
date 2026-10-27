@@ -576,6 +576,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # conserto, e a tela passaria a oferecer estado que o módulo recusa.
             estados_dev=AP.ESTADOS_DO_DEV,
             rotulo_curto_dev=AP.ROTULO_CURTO_DEV,
+            reproducoes=AP.REPRODUCOES,
             exibir_badge_ambiente=exibir_badge_ambiente,
             exibir_filtro_ambiente=exibir_badge_ambiente,
             ambiente_filtro=ambiente_filtro,

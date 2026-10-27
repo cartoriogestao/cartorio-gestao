@@ -1,4 +1,6 @@
-"""Exporta fila de `aj_problemas` (oficial -> JSON) para import no sandbox.
+"""Legado (SQLite, sem máscara). Para levar problemas ao desenvolvimento, use `tools/problemas_sincronia.py`.
+
+Exporta fila de `aj_problemas` (oficial -> JSON) para import no sandbox.
 
 Leitura no SQLite de origem (padrao: ProgramData). Nao altera o banco.
 

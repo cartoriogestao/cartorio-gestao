@@ -1,4 +1,6 @@
-"""Importa fila de `aj_problemas` (JSON do oficial -> sandbox) por `impressao`.
+"""Legado (SQLite, sem máscara). Para levar problemas ao desenvolvimento, use `tools/problemas_sincronia.py`.
+
+Importa fila de `aj_problemas` (JSON do oficial -> sandbox) por `impressao`.
 
 Upsert: nunca apaga linhas que existem so no sandbox. Inserts usam o **mesmo id**
 do oficial (`id_oficial` no JSON) quando livre; ao final ajusta `sqlite_sequence`.

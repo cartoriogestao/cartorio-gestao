@@ -9,6 +9,7 @@ vêm da especificação da API Banking do Inter (exemplos do sandbox).
 from __future__ import annotations
 
 import binascii
+import json
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -375,3 +376,157 @@ def test_as_telas_abrem_e_o_cadastro_pela_tela_funciona(casa):
     assert r.status_code == 200 and "Aguardando a autorização do oficial" in r.get_data(as_text=True)
     with db.connect() as con:
         assert DP.listar(con)[0]["valor"] == 12345
+
+
+# --------------------- o reenvio e a credencial (revisão de segurança, 26/10/2026)
+
+class _BancoDeProducao:
+    """O transporte da PRODUÇÃO no teste: toda chamada a ele é o defeito."""
+
+    def __init__(self):
+        self.chamadas: list[tuple[str, str]] = []
+
+    def __call__(self, metodo, url, **_):
+        self.chamadas.append((metodo, url))
+        return INTER.Resposta(503, {})
+
+
+def _perder_o_primeiro_envio(casa, forma):
+    db, inter = casa["db"], casa["inter"]
+    i = _cadastrar(db, forma=forma)
+    _autorizar(db, i)
+    inter.perder_resposta = True
+    INTER.pagar(db, i, cliente=casa["cliente"], por="t", agora=AGORA)
+    d = _d(db, i)
+    assert (d["situacao"], d["banco_status"], d["ambiente"], d["tentativas"]) == \
+        (DP.ENVIADA, "SEM_RESPOSTA", "sandbox", 1)
+    return i
+
+
+@pytest.mark.parametrize("forma, trecho", [(DP.BOLETO, "/banking/v2/pagamento"),
+                                           (DP.PIX_COPIA_E_COLA, "/banking/v2/pix")])
+def test_o_envio_de_teste_sem_resposta_nunca_sai_na_producao(casa, forma, trecho):
+    """O achado ALTA: sandbox sem resposta + troca para a produção + pagamento ligado."""
+    db = casa["db"]
+    i = _perder_o_primeiro_envio(casa, forma)
+    with db.transaction() as con:
+        DP.gravar_configuracao(con, {**DP.configuracao(con), "despesas_ambiente": "producao",
+                                     "despesas_pagamento_ligado": "1"})
+    producao = _BancoDeProducao()
+    INTER.pagar_autorizadas(db, cliente=INTER.ClienteInter("producao", producao, CAMPOS),
+                            por="automação", agora=AGORA + timedelta(hours=1))
+    assert producao.chamadas == []
+    d = _d(db, i)
+    assert d["situacao"] == DP.FALHOU and "sandbox" in d["mensagem"]
+    assert len(casa["inter"].posts(trecho)) == 1
+
+
+def test_com_o_pagamento_desligado_o_pix_sem_resposta_nao_e_reenviado(casa):
+    db = casa["db"]
+    i = _perder_o_primeiro_envio(casa, DP.PIX_COPIA_E_COLA)
+    with db.transaction() as con:
+        DP.gravar_configuracao(con, {**DP.configuracao(con), "despesas_pagamento_ligado": ""})
+    r = INTER.atualizar(db, i, cliente=casa["cliente"], por="t", agora=AGORA)
+    assert "desligado" in r["mensagem"] and _d(db, i)["situacao"] == DP.ENVIADA
+    assert len(casa["inter"].posts("/banking/v2/pix")) == 1
+
+
+def test_boleto_sem_resposta_nao_se_reenvia_e_vira_falhou_depois_da_espera(casa):
+    db, inter = casa["db"], casa["inter"]
+    i = _perder_o_primeiro_envio(casa, DP.BOLETO)
+    INTER.atualizar(db, i, cliente=casa["cliente"], por="t", agora=AGORA + timedelta(minutes=1))
+    assert _d(db, i)["situacao"] == DP.ENVIADA
+    depois = AGORA + INTER.PRAZO_DE_ESPERA + timedelta(minutes=1)
+    INTER.atualizar(db, i, cliente=casa["cliente"], por="t", agora=depois)
+    d = _d(db, i)
+    assert d["situacao"] == DP.FALHOU and "Internet Banking" in d["mensagem"]
+    assert len(inter.posts("/banking/v2/pagamento")) == 1
+
+
+def test_o_pix_se_reenvia_uma_vez_so(casa):
+    db, inter = casa["db"], casa["inter"]
+    i = _perder_o_primeiro_envio(casa, DP.PIX_COPIA_E_COLA)
+    inter.perder_resposta = True                    # o reenvio também se perde
+    INTER.atualizar(db, i, cliente=casa["cliente"], por="t", agora=AGORA)
+    d = _d(db, i)
+    assert (d["situacao"], d["banco_status"], d["tentativas"]) == (DP.ENVIADA, "SEM_RESPOSTA", 2)
+    INTER.atualizar(db, i, cliente=casa["cliente"], por="t", agora=AGORA)
+    d = _d(db, i)
+    assert d["situacao"] == DP.FALHOU and "Internet Banking" in d["mensagem"]
+    assert len(inter.posts("/banking/v2/pix")) == 2
+
+
+def test_o_reenvio_em_curso_nao_e_repetido_por_outra_rodada(casa):
+    db, inter = casa["db"], casa["inter"]
+    i = _perder_o_primeiro_envio(casa, DP.PIX_COPIA_E_COLA)
+    with db.transaction() as con:           # o botão da ficha está no meio do reenvio
+        bd = banco(con)
+        bd.escrever("UPDATE dp_despesas SET banco_status = %s, tentativas = 2 WHERE id = %s",
+                    (INTER.REENVIANDO, i))
+        DP._evento(bd, i, INTER.REENVIAR, "em curso", "outra rodada", "t", DP._carimbo(AGORA))
+    r = INTER.atualizar(db, i, cliente=casa["cliente"], por="t", agora=AGORA + timedelta(minutes=1))
+    assert "em curso" in r["mensagem"] and _d(db, i)["situacao"] == DP.ENVIADA
+    depois = AGORA + INTER.PRAZO_DE_ESPERA + timedelta(minutes=1)
+    INTER.atualizar(db, i, cliente=casa["cliente"], por="t", agora=depois)
+    assert _d(db, i)["situacao"] == DP.FALHOU
+    assert len(inter.posts("/banking/v2/pix")) == 1
+
+
+def test_a_rodada_da_automacao_deixa_a_saida_de_dinheiro_na_auditoria(casa, monkeypatch):
+    db = casa["db"]
+    i = _cadastrar(db)
+    _autorizar(db, i)
+    monkeypatch.setattr(AUT, "_cliente", lambda contexto: casa["cliente"])
+    assert AUT.pagar(_Contexto(db))["situacao"] == "OK"
+    with db.connect() as con:
+        linhas = banco(con).ler(
+            "SELECT action, entity_id, username_snapshot FROM audit_logs "
+            "WHERE entity_type = 'dp_despesas' ORDER BY id")
+    assert [(l["action"], int(l["entity_id"]), l["username_snapshot"]) for l in linhas] == \
+        [("DESPESA_ENVIADA_AO_BANCO", i, "automação")]
+
+
+def _par_de_teste() -> tuple[str, str]:
+    """Um certificado autoassinado e a chave dele, gerados aqui (nada real)."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+    chave = ec.generate_private_key(ec.SECP256R1())
+    nome = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "teste ficticio")])
+    agora = datetime.now(timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(nome).issuer_name(nome)
+            .public_key(chave.public_key()).serial_number(1)
+            .not_valid_before(agora - timedelta(days=1))
+            .not_valid_after(agora + timedelta(days=30))
+            .sign(chave, hashes.SHA256()))
+    return (cert.public_bytes(serialization.Encoding.PEM).decode("ascii"),
+            chave.private_bytes(serialization.Encoding.PEM,
+                                serialization.PrivateFormat.PKCS8,
+                                serialization.NoEncryption()).decode("ascii"))
+
+
+def test_a_credencial_em_texto_claro_vai_para_o_arquivo_cifrado_e_some(tmp_path, monkeypatch):
+    monkeypatch.setattr(INTER, "_cofre", lambda: None)
+    antigo = tmp_path / INTER.ARQUIVO_ANTIGO
+    antigo.write_text(json.dumps({**CAMPOS, "client_secret": "segredo-ficticio-123"}),
+                      encoding="utf-8")
+    campos = INTER.credencial(tmp_path)
+    assert campos["client_secret"] == "segredo-ficticio-123"
+    assert not antigo.exists()
+    assert b"segredo-ficticio-123" not in (tmp_path / INTER.ARQUIVO_DA_CREDENCIAL).read_bytes()
+    assert INTER.credencial(tmp_path) == campos         # a segunda leitura vem do cifrado
+
+
+def test_gravar_pela_tela_cifra_e_apaga_o_arquivo_claro(tmp_path, monkeypatch):
+    monkeypatch.setattr(INTER, "_cofre", lambda: None)
+    (tmp_path / INTER.ARQUIVO_ANTIGO).write_text("{}", encoding="utf-8")
+    crt, key = _par_de_teste()
+    r = INTER.gravar_credencial({"client_id": "id-ficticio",
+                                 "client_secret": "segredo-ficticio-456",
+                                 "crt_pem": crt, "key_pem": key}, tmp_path)
+    assert r["onde"] == "arquivo cifrado da pasta de dados"
+    assert not (tmp_path / INTER.ARQUIVO_ANTIGO).exists()
+    bruto = (tmp_path / INTER.ARQUIVO_DA_CREDENCIAL).read_bytes()
+    assert b"segredo-ficticio-456" not in bruto and key.strip()[40:80].encode() not in bruto
+    assert INTER.credencial(tmp_path)["key_pem"] == key.strip()

@@ -943,6 +943,12 @@
            Isto é educação de menu; a recusa de verdade é do `roles_required`
            da rota e das funções de domínio. #}
         {% if user.role == 'ADMIN' and agente_no_menu %}<a href="{{ url_for('agente_console') }}">Agente do sistema</a>{% endif %}
+        {# A AUTOMAÇÃO (24/10/2026): a central das rotinas — o que roda sozinho,
+           quando rodou e se rodou bem. O gerente vê; o oficial mexe. #}
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('automacao_lista') }}">Automação (rotinas)</a>{% endif %}
+        {# OS AVISOS DE ANDAMENTO AO CLIENTE (26/10/2026): a fila do que saiu
+           ao cliente que pediu. O consentimento se marca no protocolo. #}
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('andamento_fila') }}">Avisos ao cliente (andamento)</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>
         {# OS MODELOS SAO DA CASA INTEIRA, e por isso moram aqui — relato #28.
            Havia dois lugares para editar modelo, os dois dentro do Registro de

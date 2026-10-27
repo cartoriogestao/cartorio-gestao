@@ -1,0 +1,22 @@
+{
+  "chave": "RI_CERTIDAO_POSITIVA_PESSOA",
+  "atribuicao": "Registro de Imóveis",
+  "nome": "Certidão de propriedade por pessoa (positiva)",
+  "formato": "JINJA",
+  "explica": "Busca por pessoa com achado: CONSTA em nome da pessoa escolhida, como proprietária na data, a relação das matrículas abertas — a decisão do oficial de 25/10/2026 («relação dos imóveis atuais»). Emite-se pelo Indicador Pessoal, escolhendo a pessoa entre as achadas, ou pelo pedido do ONR por pessoa.",
+  "campos": [
+    "criterio_rotulo",
+    "finalidade",
+    "hoje_extenso",
+    "hora_emissao",
+    "imoveis",
+    "lavrou_funcao",
+    "lavrou_nome",
+    "pesquisado",
+    "pesquisado_documento",
+    "protocolo",
+    "requerente",
+    "requerente_documento",
+    "serventia"
+  ]
+}

@@ -45,6 +45,19 @@ def _cliente(contexto) -> Any:
     return INTER.cliente_da_casa(cfg, pasta=getattr(contexto, "pasta_dados", None))
 
 
+def _auditar(contexto, acao: str, despesa_id: int, detalhes: dict) -> None:
+    """A saída de dinheiro pela automação entra em `audit_logs` (26/10/2026).
+
+    Revisão de segurança dos PRs abertos, MÉDIA: pela tela, a rota já chama
+    `audit`; pela rodada do despachante — o caminho normal — a mudança ficava
+    só em `dp_eventos`, fora da auditoria da casa. `db.log` abre conexão
+    própria: chama-se FORA de transação, depois de a rodada terminar.
+    """
+    log = getattr(contexto.db, "log", None)
+    if log is not None:
+        log(None, "automação", acao, "dp_despesas", int(despesa_id), detalhes)
+
+
 def _aviso_da_credencial(erro: Exception) -> dict:
     return {"situacao": "AVISO", "relato": str(erro), "achados": [], "acoes": []}
 
@@ -74,6 +87,15 @@ def pagar(contexto) -> dict:
     except INTER.InterError as erro:
         return {"situacao": "AVISO", "relato": f"O Inter não respondeu: {erro}",
                 "achados": [], "acoes": []}
+    for i, m in r["pagas"]:
+        _auditar(contexto, "DESPESA_ENVIADA_AO_BANCO", i, {"mensagem": m})
+    for i, m in r["falharam"]:
+        _auditar(contexto, "DESPESA_FALHOU_NO_PAGAMENTO", i, {"mensagem": m})
+    # A consultada que continua ENVIADA não muda nada: auditá-la a cada tique
+    # encheria a tabela sem dizer coisa nenhuma.
+    for i, s in r["atualizadas"]:
+        if s != DP.ENVIADA:
+            _auditar(contexto, "DESPESA_ATUALIZADA_PELO_BANCO", i, {"situacao": s})
     acoes = [f"despesa {i}: enviada ao banco" for i, _ in r["pagas"]]
     acoes += [f"despesa {i}: {s}" for i, s in r["atualizadas"]]
     situacao = "AVISO" if r["falharam"] or r["esperam"] else "OK"
@@ -103,6 +125,8 @@ def conciliar(contexto) -> dict:
     except INTER.InterError as erro:
         return {"situacao": "AVISO", "relato": f"O extrato não veio: {erro}",
                 "achados": [], "acoes": []}
+    for i in r["conciliadas"]:
+        _auditar(contexto, "DESPESA_CONCILIADA", i, {})
     sem = r["sem_despesa"]
     relato = (f"{len(r['conciliadas'])} conferida(s) no extrato; {len(sem)} débito(s) sem "
               f"despesa cadastrada.")

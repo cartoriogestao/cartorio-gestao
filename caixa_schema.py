@@ -547,6 +547,20 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     #   que o orçamento tinha de sair.
     ("cx_depositos", "orcamento", "TEXT"),
     ("cx_depositos", "lancamento_id", "bigint"),
+    # PRONTO PARA RETIRAR — o acompanhamento do protocolo (26/10/2026).
+    #
+    #   «quero que implementemos o acompanhamento de protocolo com notificacao
+    #    automatica para o cliente» — o oficial, 25/10/2026.
+    #
+    #   O protocolo geral tinha ABERTO, A_PAGAR, PAGO, ENTREGUE e CANCELADO, e
+    #   nenhuma palavra para «o serviço está pronto, falta o cliente buscar».
+    #   É MARCA, e não situação nova: `situacao` sai dos itens
+    #   (`_atualizar_situacao`) e um sexto valor ali faria as listas e o
+    #   painel dos inacabados lerem errado o que já leem certo. A marca guarda
+    #   quando e quem; desmarcar a apaga (o rastro fica na auditoria). Quem a
+    #   lê é a tela do protocolo e o aviso de andamento (`andamento_avisos`).
+    ("cx_protocolos", "pronto_retirar_em", "TEXT"),
+    ("cx_protocolos", "pronto_retirar_por", "TEXT"),
 )
 
 # Funcoes possiveis de quem atende ao balcao, na nomenclatura da Lei 8.935/94

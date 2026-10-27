@@ -610,8 +610,12 @@ def test_leitura_sem_dono_volta_para_a_caixa_e_nao_acusa_o_cadastro():
 def test_a_ia_so_le_quando_alguem_clica():
     """«a IA so vai ler se clicar no botao na emissao de certidao de onus. para
     cada matricula» — o oficial, 15/10/2026. A tela não pede leitura sozinha."""
-    tela = (Path(__file__).resolve().parent.parent / "templates" / "ri_ficha.html").read_text(
-        encoding="utf-8")
+    # O quadro da decisão mora em `_onus_decisao.html` desde 26/10/2026 (a ficha
+    # e o pedido do ONR no automático o incluem): a tela é a ficha com ele.
+    modelos = Path(__file__).resolve().parent.parent / "templates"
+    tela = (modelos / "ri_ficha.html").read_text(encoding="utf-8")
+    assert "{% include '_onus_decisao.html' %}" in tela
+    tela += (modelos / "_onus_decisao.html").read_text(encoding="utf-8")
     assert "Pedir a leitura à IA" in tela
     assert "pela_tela" not in tela and "lerSozinha" not in tela and "ler_sozinha" not in tela
     fonte = (Path(__file__).resolve().parent.parent / "ri_onus_ia.py").read_text(encoding="utf-8")

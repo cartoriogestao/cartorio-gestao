@@ -120,6 +120,8 @@ que acrescentam (nunca apagam coluna nem tabela).
 - Os `*.cred` e o `secret.key` **não** vão no backup do banco, de propósito:
   guarde-os à parte, em local seguro, para reinstalar o servidor.
 
+A sincronia dos problemas com o desenvolvimento tem manual próprio: [`SINCRONIA_DOS_PROBLEMAS.md`](SINCRONIA_DOS_PROBLEMAS.md).
+
 ## 7. Desinstalar
 
 Pelo **Configurações do Windows → Aplicativos instalados**. O desinstalador

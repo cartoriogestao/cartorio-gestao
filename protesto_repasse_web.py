@@ -84,15 +84,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         """
         with db.connect() as con:
             rel = REP.relatorio(con, hoje=hoje(), feriados=_feriados(con))
-        linhas = ["CANAL;PROTOCOLO;TITULO;APRESENTANTE;PAGO_EM;PRAZO;"
-                  "DIAS_DE_ATRASO;VALOR;VALOR_DE;OBSERVACAO"]
-        for p in rel["pendentes"]:
-            linhas.append(";".join(str(x) for x in (
-                p["canal"], p["protocolo"] or "", p["numero_titulo"] or "",
-                p["favorecido"], p["recebido_em"], p["prazo"],
-                p["dias_de_atraso"], reais(p["valor_centavos"]), p["valor_de"],
-                p["observacao"])))
-        corpo = ("\n".join(linhas) + "\n").encode("utf-8-sig")
+        # SEM FÓRMULA E SEM COLUNA PARTIDA (achado transversal 2, 26/10/2026):
+        # o `";".join` não punha aspas — um «;» na observação partia a linha, e
+        # um favorecido começando com «=» virava fórmula. Agora sai por
+        # `csv_seguro`, com o mesmo fim de linha e o mesmo BOM de antes.
+        import csv_seguro as CSVS
+        cabecalho = ["CANAL", "PROTOCOLO", "TITULO", "APRESENTANTE", "PAGO_EM",
+                     "PRAZO", "DIAS_DE_ATRASO", "VALOR", "VALOR_DE", "OBSERVACAO"]
+        linhas = [(p["canal"], p["protocolo"] or "", p["numero_titulo"] or "",
+                   p["favorecido"], p["recebido_em"], p["prazo"],
+                   p["dias_de_atraso"], reais(p["valor_centavos"]), p["valor_de"],
+                   p["observacao"]) for p in rel["pendentes"]]
+        corpo = CSVS.gerar(cabecalho, linhas, lineterminator="\n").encode("utf-8-sig")
         return Response(corpo, mimetype="text/csv", headers={
             "Content-Disposition":
                 f"attachment; filename=repasses_pendentes_{hoje()}.csv"})

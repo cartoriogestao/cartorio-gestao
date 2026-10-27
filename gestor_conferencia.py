@@ -1531,6 +1531,52 @@ def regra_fechamento_do_mes(con, hoje: date) -> list[dict]:
     return saida
 
 
+def regra_identidade_dos_robos(con, hoje: date) -> list[dict]:
+    """O que a auditoria gravou sem dizer quem agiu — e o robô sem responsável.
+
+    Ordem do oficial, 26/10/2026: «obrigação de todo robô se identificar e
+    dizer a mando de quem está agindo». ETAPA 1: o banco grava e esta regra
+    avisa ao oficial (setor GESTAO); a etapa 2 recusa, quando o aviso zerar —
+    a decisão mora em `identidade_do_robo.decidir`, e não aqui.
+
+    Conta pela ORIGEM (ação e entidade) e pela conta (`eh_robo`), e NUNCA lê o
+    texto procurando nome de IA: é ordem dele, «nada de marca contra robô».
+    Banco sem as colunas da identidade não mede, e não acusa nada.
+    """
+    import identidade_do_robo as IDR
+    c = IDR.conferencia(con, hoje)
+    if not c["medido"]:
+        return []
+    saida = []
+    if c["total_sem_identificacao"]:
+        origens = "; ".join(f"{s['action']}{' / ' + s['entity_type'] if s['entity_type'] else ''}: "
+                            f"{s['n']}" for s in c["sem_identificacao"][:8])
+        saida.append(_achado(
+            "IDENTIDADE:sem_identificacao", "IDENTIDADE_DOS_ROBOS", "ATENCAO", "GESTAO",
+            f"{c['total_sem_identificacao']} linha(s) da auditoria sem usuário e sem "
+            f"dizer quem agiu, desde {_d(c['desde'])}",
+            f"Por origem: {origens}"
+            + ("…" if len(c["sem_identificacao"]) > 8 else "")
+            + ". Quem grava por programa tem de passar agente= e a_mando_de= "
+              "(ver docs/IDENTIDADE_DOS_ROBOS.md). Hoje grava e avisa; quando "
+              "isto zerar, a etapa 2 passa a recusar.", None, ""))
+    for r in c["robos_sem_responsavel"]:
+        saida.append(_achado(
+            f"IDENTIDADE:robo:{r['id']}", "IDENTIDADE_DOS_ROBOS", "ATENCAO", "GESTAO",
+            f"Conta de robô sem responsável: {r['nome']}",
+            f"{r['linhas']} linha(s) de auditoria dela desde {_d(c['desde'])}. "
+            "Escolha a pessoa que responde por ela em Usuários, coluna Robô.",
+            None, ""))
+    if c["agentes_sem_mandante"]:
+        quais = "; ".join(f"{s['agente']}: {s['n']}" for s in c["agentes_sem_mandante"][:8])
+        saida.append(_achado(
+            "IDENTIDADE:agente_sem_mandante", "IDENTIDADE_DOS_ROBOS", "ATENCAO", "GESTAO",
+            "Agente(s) que disseram quem são, mas não a mando de quem",
+            f"{quais}. Configure o responsável pelas rotinas automáticas em Usuários.",
+            None, ""))
+    return saida
+
+
 #: A ordem é a de aperto: primeiro o que já venceu na lei, por último a casa.
 REGRAS: tuple[tuple[str, Callable], ...] = (
     ("SIRC", regra_sirc),
@@ -1586,6 +1632,8 @@ REGRAS: tuple[tuple[str, Callable], ...] = (
     ("FISCAL", regra_fiscal),
     # o PLD/COAF — o caso que espera análise ou comunicação (23/10/2026)
     ("PLD_COAF", regra_pld),
+    # todo robô diz quem é e a mando de quem age (26/10/2026)
+    ("IDENTIDADE_DOS_ROBOS", regra_identidade_dos_robos),
 )
 
 

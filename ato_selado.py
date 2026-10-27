@@ -72,6 +72,7 @@ from typing import Any
 import atribuicoes as ATR
 import custas as CU
 from bd_nativo import banco
+import identidade_do_robo as IDR
 
 # `selador` E O CONTRATO, e entra aqui para CONFERIR o caminho composto do
 # civil em vez de confiar nele. No topo porque `caminho_do_civil` e
@@ -3963,15 +3964,19 @@ def trava_ligada(con) -> bool:
 
 
 def _auditar(bd, *, acao: str, usuario: Any, usuario_id: Any, entidade: str,
-             entidade_id: Any, detalhes: dict, agora: str) -> None:
+             entidade_id: Any, detalhes: dict, agora: str,
+             agente: Any = None) -> None:
+    """Pela função da casa (`identidade_do_robo.registrar`, 26/10/2026). Com
+    `usuario_id`, a identidade sai da conta; sem ele, quem grava é a rotina do
+    selo (`agente`), a mando de quem pediu o selo (`usuario`) ou, sem ninguém,
+    do responsável pelas rotinas automáticas."""
     import json
-    bd.escrever(
-        """INSERT INTO audit_logs (ts, user_id, username_snapshot, action,
-                                   entity_type, entity_id, details)
-           VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-        (agora, usuario_id, usuario, acao, entidade,
-         int(entidade_id) if str(entidade_id or "").isdigit() else None,
-         json.dumps(detalhes, ensure_ascii=False, default=str)))
+    IDR.registrar(bd, ts=agora, user_id=usuario_id, username=usuario, action=acao,
+                  entity_type=entidade,
+                  entity_id=int(entidade_id) if str(entidade_id or "").isdigit() else None,
+                  details=json.dumps(detalhes, ensure_ascii=False, default=str),
+                  agente=agente if usuario_id is None else None,
+                  a_mando_de=(usuario or IDR.PELO_RESPONSAVEL) if usuario_id is None else None)
 
 
 def _so_admin(papel: Any, o_que: str) -> None:
@@ -4602,7 +4607,8 @@ def _estornar_reserva(con, reserva: dict | None, *, agora: str,
                     (linha["referencia"],))
     if bd.tem_tabela("audit_logs"):
         _auditar(bd, acao="SELO_RESERVA_ESTORNADA", usuario=linha.get("usuario"),
-                 usuario_id=None, entidade=linha.get("tabela") or "SELO",
+                 usuario_id=None, agente="estorno da reserva do selo",
+                 entidade=linha.get("tabela") or "SELO",
                  entidade_id=linha.get("ato_id"),
                  detalhes={"referencia": linha["referencia"],
                            "forma": linha.get("forma"),
@@ -4652,6 +4658,7 @@ def _resolver_reserva_orfa(bd, linha: dict, *, agora: str) -> str:
         if _confirmar_reserva(bd, linha, agora=agora) and bd.tem_tabela("audit_logs"):
             _auditar(bd, acao="SELO_RESERVA_CONFIRMADA_NA_CONFERENCIA",
                      usuario=linha.get("usuario"), usuario_id=None,
+                     agente="conferência das reservas órfãs do selo",
                      entidade=linha.get("tabela") or "SELO",
                      entidade_id=linha.get("ato_id"),
                      detalhes={"referencia": linha["referencia"],

@@ -133,6 +133,9 @@ Dúvidas sobre o sistema, a implantação ou a licença:
 Para relatar defeito ou propor mudança no código, prefira abrir uma *issue* ou
 um *pull request* aqui no GitHub — sem dado real de serventia ou de pessoa.
 
+**Falha de segurança não vai em *issue* pública**: relate em particular, como
+diz a [política de segurança](SECURITY.md).
+
 ## Estado
 
 Em uso de produção numa serventia de ofício único. A publicação do código é

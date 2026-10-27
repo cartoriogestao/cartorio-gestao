@@ -14,7 +14,13 @@ O QUE SE PROVA AQUI
     - cada envio e cada resposta gravada vão à auditoria com `agente` e
       `a_mando_de`, sem o e-mail do cliente;
     - o endereço da VPS é configuração do oficial, só https;
-    - (com a central da automação instalada) o processo está no catálogo.
+    - (com a central da automação instalada) o processo está no catálogo;
+    - (27/10/2026) o texto do e-mail é o papel OUVIDORIA_CONVITE_PESQUISA: o
+      padrão é o texto de fábrica palavra por palavra; o ajuste válido da casa
+      sai; o ajuste torto (CPF, link solto, sem {link}, claro desconhecido,
+      telefone, valor) é recusado na gravação e, se já gravado, a parte torta
+      sai do padrão com aviso no log; só ADMIN e gerente gravam;
+    - (27/10/2026) o cliente de protocolo do Protesto RECEBE o convite.
 
 AS OUTRAS PONTAS SÃO FALSAS DE PROPÓSITO
     O e-mail da automação e o portal entram por `sys.modules` (o
@@ -31,6 +37,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import logging
 import re
 import sys
 import types
@@ -443,3 +450,165 @@ def test_o_catalogo_declara_o_que_a_central_le():
     assert item["funcao"] == "satisfacao_envio.rodar" and callable(ENVIO.rodar)
     assert item["parametros"]["max_por_rodada"] == ENVIO.MAX_POR_RODADA_PADRAO
     assert item["parametros"]["max_tentativas"] == ENVIO.MAX_TENTATIVAS_PADRAO
+
+
+# ------------------------------------------------------------------ o texto da casa (27/10/2026)
+#
+# «quero poder editar o texto do e-mail» — o oficial, 27/10/2026. O texto é o
+# papel OUVIDORIA_CONVITE_PESQUISA do catálogo de modelos, com a régua do aviso
+# de andamento (PR #26): ele sai sozinho ao cliente, sem ninguém conferir.
+
+VALE = date(2026, 11, 26)
+LINK = URL + "/r/" + "A" * 32
+SERVENTIA = "SERVENTIA DE EXEMPLO"
+AJUSTE_VALIDO = ("===ASSUNTO===\nSua opinião sobre {serventia}\n===CORPO===\n"
+                 "Olá. Conte como foi o atendimento em {serventia}:\n{link}\n\n"
+                 "Vale até {validade}.\n")
+
+
+def _gravar_ajuste(casa, corpo: str):
+    import modelos_elementos as ELEM
+    with casa["db"].transaction() as con:
+        ELEM.salvar(con, atribuicao=ELEM.atribuicao_do_ato(ENVIO.MODELO), ato=ENVIO.MODELO,
+                    parte=ELEM.CORPO, corpo=corpo, quem="mario", agora=casa["db"].now())
+
+
+def _ajustado(casa) -> bool:
+    import modelos_elementos as ELEM
+    with casa["db"].connect() as con:
+        return ELEM.esta_ajustado(con, ENVIO.MODELO)
+
+
+def test_o_padrao_do_papel_e_o_texto_de_hoje(cg_casa):
+    """O padrão de fábrica do papel é, palavra por palavra, o texto que saía
+    até 26/10/2026 (`texto_do_convite`) — com e sem a conexão."""
+    import modelos_da_casa as MOD
+    hoje = ENVIO.texto_do_convite(SERVENTIA, LINK, VALE)
+    assert ENVIO.textos_do_convite(SERVENTIA, LINK, VALE) == hoje
+    with cg_casa["db"].connect() as con:
+        assert ENVIO.textos_do_convite(SERVENTIA, LINK, VALE, con) == hoje
+    assert ENVIO.conferir(MOD.padrao_de(ENVIO.MODELO)) == ""
+    assunto, corpo = hoje
+    assert assunto == "Pesquisa de satisfação — " + SERVENTIA
+    assert corpo.startswith("Olá!\n\nVocê foi atendido(a) recentemente por " + SERVENTIA + ".")
+    assert "Responda por este endereço:\n" + LINK + "\n\n" in corpo
+    assert "O convite vale até 26/11/2026 e pode ser respondido uma vez." in corpo
+    assert corpo.endswith("por este canal.\n\n" + SERVENTIA + "\n")
+
+
+def test_sem_o_padrao_carregado_sai_o_texto_de_fabrica(monkeypatch):
+    """O piso: sem as duas partes, o convite sai com o texto de fábrica."""
+    monkeypatch.setattr(ENVIO, "_padrao_do_papel", lambda: {})
+    assert (ENVIO.textos_do_convite(SERVENTIA, LINK, VALE)
+            == ENVIO.texto_do_convite(SERVENTIA, LINK, VALE))
+
+
+def test_ajuste_valido_da_casa_sai_no_email(cg_casa, tmp_path, pontas):
+    mario = _usuario(cg_casa, "mario", "MARIO EXEMPLO", "ADMIN")
+    _configurar(cg_casa)
+    _gravar_ajuste(cg_casa, AJUSTE_VALIDO)
+    p = _protocolo(cg_casa, "2026.10.860", mario)
+    _na_fila(cg_casa, p, mario)
+    r = ENVIO.rodar(_ctx(cg_casa, tmp_path))
+    assert r["situacao"] == "OK", r["relato"]
+    [enviado] = pontas["smtp"].enviados
+    assert enviado["assunto"].startswith("Sua opinião sobre ")
+    assert "\n" not in enviado["assunto"]
+    assert enviado["corpo"].startswith("Olá. Conte como foi o atendimento em ")
+    assert URL + "/r/" in enviado["corpo"]
+    vale = (date.today() + timedelta(days=SAT.DIAS_DO_CONVITE)).strftime("%d/%m/%Y")
+    assert f"Vale até {vale}." in enviado["corpo"]
+    assert "Pesquisa de satisfação" not in enviado["assunto"]
+
+
+AJUSTES_TORTOS = [
+    (AJUSTE_VALIDO.replace("Olá.", "Olá, CPF 000.000.001-91."), "CPF", "CORPO"),
+    (AJUSTE_VALIDO.replace("{link}", "{link} ou https://outro.exemplo.invalid/r"),
+     "endereço de internet", "CORPO"),
+    (AJUSTE_VALIDO.replace("{link}", "o endereço de sempre"), "{link}", "CORPO"),
+    (AJUSTE_VALIDO.replace("Vale até", "Ligue (99) 90000-0000. Vale até"), "telefone", "CORPO"),
+    (AJUSTE_VALIDO.replace("Vale até", "Taxa de R$ 10,00. Vale até"), "R$", "CORPO"),
+    (AJUSTE_VALIDO.replace("Sua opinião", "Ligue (99) 90000-0000: sua opinião"), "telefone",
+     "ASSUNTO"),
+]
+
+
+@pytest.mark.parametrize("corpo, motivo, parte", AJUSTES_TORTOS)
+def test_ajuste_torto_e_recusado_na_gravacao(cg_casa, corpo, motivo, parte):
+    import modelos_elementos as ELEM
+    erro = ENVIO.conferir(corpo)
+    assert motivo in erro and f"==={parte}===" in erro
+    with pytest.raises(ELEM.ElementoError):
+        _gravar_ajuste(cg_casa, corpo)
+    assert not _ajustado(cg_casa)
+
+
+def test_claro_desconhecido_e_falta_de_parte_sao_recusados():
+    assert "nome_do_cliente" in ENVIO.conferir(
+        AJUSTE_VALIDO.replace("{serventia}:", "{nome_do_cliente}:"))
+    assert "formatação" in ENVIO.conferir(AJUSTE_VALIDO.replace("{validade}", "{validade!r}"))
+    assert "===ASSUNTO===" in ENVIO.conferir("Olá {serventia}, responda: {link}")
+    assert ENVIO.conferir(AJUSTE_VALIDO) == ""
+
+
+@pytest.mark.parametrize("corpo, motivo, parte", AJUSTES_TORTOS)
+def test_ajuste_torto_ja_gravado_cai_no_padrao_com_aviso(cg_casa, monkeypatch, caplog,
+                                                        corpo, motivo, parte):
+    """Gravado ANTES da régua (ou por fora da tela): a parte torta sai do
+    padrão, a outra continua sendo a da casa, e o log diz por quê."""
+    import modelos_elementos as ELEM
+    # Sem o conferidor próprio, a conferência geral das chaves deixa passar —
+    # é o caso do ajuste gravado antes desta régua.
+    monkeypatch.delitem(ELEM.CONFERIDORES, ENVIO.MODELO, raising=False)
+    _gravar_ajuste(cg_casa, corpo)
+    assert _ajustado(cg_casa)
+    fabrica = ENVIO.texto_do_convite(SERVENTIA, LINK, VALE)
+    da_casa = ENVIO.montar_convite(ENVIO._partir(AJUSTE_VALIDO), SERVENTIA, LINK, VALE)
+    with caplog.at_level(logging.WARNING, logger="cartorio.satisfacao_envio"):
+        with cg_casa["db"].connect() as con:
+            assunto, saiu = ENVIO.textos_do_convite(SERVENTIA, LINK, VALE, con)
+    if parte == "CORPO":
+        assert saiu == fabrica[1] and assunto == da_casa[0]
+    else:
+        assert assunto == fabrica[0] and saiu == da_casa[1]
+    assert "descartada" in caplog.text and f"==={parte}===" in caplog.text
+    assert "000.000.001-91" not in saiu and "outro.exemplo" not in saiu
+
+
+def test_so_admin_e_gerente_gravam_e_a_tela_recusa_o_torto(cg_casa):
+    balcao = _entrar(cg_casa, "beatriz", "BEATRIZ EXEMPLO", "USER")
+    r = _post(balcao, "/modelos", chave=ENVIO.MODELO, corpo=AJUSTE_VALIDO, acao="salvar")
+    assert r.status_code in (302, 403)
+    assert not _ajustado(cg_casa)
+    oficial = _entrar(cg_casa, "mario", "MARIO EXEMPLO", "ADMIN")
+    _post(oficial, "/modelos", chave=ENVIO.MODELO, acao="salvar",
+          corpo=AJUSTE_VALIDO.replace("Olá.", "Olá, CPF 000.000.001-91."))
+    assert not _ajustado(cg_casa)
+    _post(oficial, "/modelos", chave=ENVIO.MODELO, corpo=AJUSTE_VALIDO, acao="salvar")
+    assert _ajustado(cg_casa)
+    gerente = _entrar(cg_casa, "carla", "CARLA EXEMPLO", "MANAGER")
+    _post(gerente, "/modelos", chave=ENVIO.MODELO, corpo="", acao="restaurar")
+    assert not _ajustado(cg_casa)
+
+
+# ------------------------------------------------------------------ o Protesto (27/10/2026)
+
+
+def test_protesto_tambem_recebe_o_convite(cg_casa, tmp_path, pontas):
+    """Decisão do oficial em 27/10/2026: «sim, recebe». O cliente de protocolo
+    do Protesto recebe o convite por e-mail como os outros; o sigilo alcança
+    só o nome da atribuição na VPS."""
+    mario = _usuario(cg_casa, "mario", "MARIO EXEMPLO", "ADMIN")
+    _configurar(cg_casa)
+    p = _protocolo(cg_casa, "2026.10.870", mario, atribuicao="PROTESTO")
+    _na_fila(cg_casa, p, mario)
+    assert {x["canal"] for x in _fila(cg_casa, p["id"])} >= {"EMAIL"}
+    r = ENVIO.rodar(_ctx(cg_casa, tmp_path))
+    assert r["situacao"] == "OK", r["relato"]
+    [enviado] = pontas["smtp"].enviados
+    assert enviado["para"] == [EMAIL_FICTICIO]
+    assert URL + "/r/" in enviado["corpo"]
+    fila = {x["canal"]: x for x in _fila(cg_casa, p["id"])}
+    assert fila["EMAIL"]["situacao"] == "ENVIADO"
+    with pontas["vps"]._con() as con:
+        assert [x[0] for x in con.execute("SELECT atribuicao FROM convites")] == [""]

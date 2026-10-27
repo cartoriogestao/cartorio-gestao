@@ -72,6 +72,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     usuario_id = app.extensions["usuario_id"]
     segredo = app.config["SECRET_KEY"]
 
+    # O PAPEL DO CONVITE DA PESQUISA (27/10/2026) se confere com a régua
+    # dele — os três claros, e nada escrito à mão que leve o cliente a
+    # outro lugar —, e não com o boneco geral da tela de Modelos. A forma
+    # é a do aviso de andamento (PR #26, `andamento_web`).
+    app.extensions.setdefault("conferidores_de_modelo", {})[ENVIO.MODELO] = (
+        ENVIO.conferir)
+    import modelos_elementos as ELEM
+    ELEM.CONFERIDORES[ENVIO.MODELO] = ENVIO.conferir
+
     # As tabelas nascem na subida do banco (`database`, `init_ouvidoria_schema`).
 
     def _usuarios():

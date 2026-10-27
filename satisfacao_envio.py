@@ -64,6 +64,27 @@ QUEM FAZ, E A MANDO DE QUEM (regra da casa desde 26/10/2026)
     auditoria deste ramo (`Database.log`) não tem colunas para os dois. O
     e-mail do cliente e o código NUNCA vão à auditoria.
 
+O TEXTO DO E-MAIL É DA CASA — decisão do oficial em 27/10/2026
+    «quero poder editar o texto do e-mail». O assunto e o corpo são o papel
+    OUVIDORIA_CONVITE_PESQUISA do catálogo (`modelos_padrao/caixa/`), em
+    chaves, com duas partes (===ASSUNTO=== e ===CORPO===) e três claros só:
+    {serventia}, {link} e {validade}. Edita-se em Administrativo → Modelos, e
+    quem grava é só o ADMIN e o gerente (`modelos_web.QUEM_GRAVA`). O texto de
+    fábrica é o de antes, palavra por palavra (`texto_do_convite`, que continua
+    sendo o caminho de fábrica e o piso de tudo).
+
+    O e-mail SAI SOZINHO AO CLIENTE, sem ninguém ler antes — a régua do aviso
+    de andamento (PR #26): a conferência (`conferir`) recusa claro que não
+    existe, CPF/CNPJ, valor, pix, telefone, e-mail e endereço de internet
+    escritos à mão (o link SÓ entra pelo {link}), e exige o {link} no corpo. O
+    ajuste torto que já estiver gravado (antes desta régua, ou por fora da
+    tela) NÃO cala o convite: a parte torta sai do padrão, e o log diz por quê.
+
+O PROTESTO TAMBÉM RECEBE O CONVITE — decisão do oficial em 27/10/2026
+    («sim, recebe»). O cliente de protocolo do Protesto entra na fila como os
+    outros; o que o Protesto tem de diferente é só o nome da atribuição, que
+    não vai à VPS (`ATRIBUICOES_SEM_NOME_NA_VPS`).
+
 PostgreSQL nativo, pelo `bd_nativo`. Data calculada no Python.
 """
 from __future__ import annotations
@@ -112,6 +133,9 @@ RE_CHAVE = re.compile(r"^[0-9a-f]{64}$")
 #: A atribuição que NÃO vai à VPS, nem como palavra: o protesto tem sigilo
 #: próprio (a regra dos avisos de andamento). O convite vai em branco, e a
 #: resposta volta para a atribuição certa — quem sabe é a fila daqui.
+#: **O CONVITE SAI MESMO ASSIM**: decisão do oficial em 27/10/2026, «sim,
+#: recebe» — o cliente de protocolo do Protesto recebe o convite da pesquisa.
+#: O sigilo alcança o NOME da atribuição na VPS, e não o convite.
 ATRIBUICOES_SEM_NOME_NA_VPS = frozenset({"PROTESTO"})
 
 #: As frases do motivo — a fila e o relato mostram exatamente estas.
@@ -183,8 +207,14 @@ def vence_em(criado_em: Any) -> date | None:
 
 
 def texto_do_convite(serventia: str, link: str, validade: date) -> tuple[str, str]:
-    """O assunto e o corpo do e-mail. SÓ o convite e o link: sem CPF, sem nome
-    de ninguém, sem valor, sem número de protocolo. Só calcula."""
+    """O assunto e o corpo do e-mail DE FÁBRICA. SÓ o convite e o link: sem
+    CPF, sem nome de ninguém, sem valor, sem número de protocolo. Só calcula.
+
+    **É O PISO** (27/10/2026): o texto que vale é o do papel
+    OUVIDORIA_CONVITE_PESQUISA (`textos_do_convite`), cujo padrão é este,
+    palavra por palavra — e há teste que compara os dois. Este continua aqui
+    para quando nem o padrão do catálogo carregar: um convite que não sai é
+    pior que um convite com o texto de fábrica."""
     nome = str(serventia or "").strip() or "A serventia"
     assunto = f"Pesquisa de satisfação — {nome}"
     corpo = (f"Olá!\n\n"
@@ -198,6 +228,217 @@ def texto_do_convite(serventia: str, link: str, validade: date) -> tuple[str, st
              f"serventia não pede pagamento, senha nem dados pessoais por este canal.\n\n"
              f"{nome}\n")
     return assunto, corpo
+
+
+# ------------------------------------------------------------------ o texto da casa (27/10/2026)
+
+#: O papel do catálogo de modelos (`modelos_papeis/caixa.py`). Na atribuição
+#: «Caixa e protocolo» porque o convite nasce do protocolo do balcão — a mesma
+#: casa do aviso de andamento ao cliente (PR #26, CAIXA_AVISO_ANDAMENTO).
+MODELO = "OUVIDORIA_CONVITE_PESQUISA"
+#: As duas partes do papel, nesta ordem.
+PARTES = ("ASSUNTO", "CORPO")
+#: Os claros — e SÓ estes. Nenhum é dado de pessoa, de propósito: o convite
+#: não diz quem foi atendido, por quem, nem em que protocolo.
+CLAROS = ("serventia", "link", "validade")
+
+
+def _partir(corpo: str) -> dict[str, str]:
+    """`{"ASSUNTO": ..., "CORPO": ...}` do texto do papel. Só calcula.
+
+    A forma é a do aviso de andamento (`andamento_avisos._partir`): cada parte
+    começa numa linha `===NOME===` e vai até a próxima."""
+    marca = re.compile(r"===(" + "|".join(PARTES) + r")===[ \t]*\n?", re.IGNORECASE)
+    pedacos = marca.split(str(corpo or ""))
+    return {nome.upper(): re.split(r"\n===", valor, maxsplit=1)[0].strip("\n")
+            for nome, valor in zip(pedacos[1::2], pedacos[2::2])}
+
+
+# O QUE NÃO PODE ESTAR NO TEXTO QUE SAI SOZINHO — a régua do aviso de
+# andamento (PR #26, revisão de segurança de 26/10/2026, achado M1).
+#
+#   O convite sai do remetente da serventia sem ninguém ler antes. Um ajuste
+#   que trouxesse «responda em <outro endereço>» ou «pague R$ X no PIX» seria
+#   o golpe com o nome da casa em cima. O link entra SÓ pelo {link}, que a
+#   rodada calcula; telefone, e-mail, endereço de internet, documento de
+#   pessoa e valor escritos à mão não cabem nele. A comparação é sem acento e
+#   sem caixa.
+#
+#   «PAGAMENTO» NÃO ESTÁ NA LISTA, ao contrário do aviso de andamento: o texto
+#   de fábrica diz que a serventia NÃO pede pagamento — e recusar a palavra
+#   recusaria o próprio padrão. O que se recusa é o meio de pagar (pix, R$,
+#   valor).
+_PROIBIDO_NO_CONVITE = (
+    (re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b"), "número de CPF"),
+    (re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b"), "número de CNPJ"),
+    (re.compile(r"https?://|www\.|\b[a-z0-9-]+\.(?:com|net|org|br|io|me|ly|app|gov|"
+                r"info|site|online|link)\b"), "endereço de internet escrito à mão"),
+    (re.compile(r"[^\s@{}]+@[^\s@{}]+\.[^\s@{}]+"), "endereço de e-mail escrito à mão"),
+    (re.compile(r"r\$"), "valor em reais («R$»)"),
+    (re.compile(r"\b\d{1,3}(?:\.\d{3})*,\d{2}\b"), "valor em dinheiro"),
+    (re.compile(r"\bpix\b"), "a palavra «pix»"),
+)
+_TELEFONE_A_MAO = re.compile(r"\+?\d[\d\s().-]{6,}\d")
+
+
+def _sem_acento(texto: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFKD", str(texto or "").lower())
+                   if not unicodedata.combining(c))
+
+
+def _torto(texto: str) -> str:
+    """O que o texto traz que não pode ir sozinho ao cliente, ou ``""``. Só calcula."""
+    limpo = _sem_acento(texto)
+    for padrao, o_que in _PROIBIDO_NO_CONVITE:
+        if padrao.search(limpo):
+            return o_que
+    for achado in _TELEFONE_A_MAO.finditer(limpo):
+        if sum(c.isdigit() for c in achado.group(0)) >= 8:
+            return "número de telefone escrito à mão"
+    return ""
+
+
+def _claros_ruins(texto: str) -> str:
+    """Claro que o convite não tem, ou claro com atributo, índice, conversão ou
+    formatação (`{link.x}`, `{link!r}`, `{validade:>90}`). Só calcula.
+
+    A régua da casa (`modelos_da_casa.conferir_claros`) só aceita NOME; a
+    conversão e a formatação ela deixa passar, e aqui elas também não cabem:
+    o claro sai como a rodada o calculou, e nada mais."""
+    import string
+
+    import modelos_da_casa as CASA
+    ruim = CASA.conferir_claros(texto, CLAROS)
+    if ruim:
+        return ruim
+    try:
+        for _, nome, formato, conversao in string.Formatter().parse(str(texto or "")):
+            if nome is not None and (formato or conversao):
+                return (f"O claro «{{{nome}}}» traz formatação; escreva só o nome entre "
+                        f"chaves, assim: {{{nome}}}.")
+    except ValueError as erro:
+        return f"Há um claro mal escrito ({erro}). Cada claro se escreve {{assim}}."
+    return ""
+
+
+def _problema_da_parte(parte: str, texto: str) -> str:
+    """O que impede aquela parte de sair, ou ``""``. **A MESMA RÉGUA NOS DOIS
+    LADOS**: a tela confere com ela antes de gravar (`conferir`) e a rodada
+    confere com ela antes de mandar (`modelo_do_convite`). Só calcula."""
+    texto = str(texto or "")
+    if not texto.strip():
+        return "está vazia"
+    ruim = _claros_ruins(texto)
+    if ruim:
+        return ruim
+    o_que = _torto(texto)
+    if o_que:
+        return (f"traz {o_que}. Este e-mail sai sozinho ao cliente, sem ninguém "
+                "conferir: o link entra só pelo claro {link}, e documento de pessoa, "
+                "valor, pix, telefone, e-mail e endereço de internet não cabem nele.")
+    if parte == "ASSUNTO" and len(texto.strip().splitlines()) > 1:
+        return "tem mais de uma linha; o assunto de um e-mail é uma linha só."
+    if parte == "CORPO" and "{link}" not in texto:
+        return ("não traz o claro {link}. Sem ele o convite não leva o endereço da "
+                "pesquisa, e o cliente não tem onde responder.")
+    return ""
+
+
+def conferir(corpo: str) -> str:
+    """O papel que a tela de Modelos vai gravar pode sair? Devolve o erro, ou ``""``.
+
+    É o conferidor próprio do papel (`app.extensions["conferidores_de_modelo"]`
+    e `modelos_elementos.CONFERIDORES`, registrados por `ouvidoria_web`)."""
+    partes = _partir(corpo)
+    faltam = [p for p in PARTES if p not in partes]
+    if faltam:
+        return ("Falta a parte " + ", ".join(f"==={p}===" for p in faltam)
+                + ". O papel tem duas partes, cada uma começando numa linha própria: "
+                  "===ASSUNTO=== (o assunto do e-mail) e ===CORPO=== (o texto).")
+    for parte in PARTES:
+        ruim = _problema_da_parte(parte, partes[parte])
+        if ruim:
+            return f"A parte ==={parte}===: {ruim}"
+    return ""
+
+
+def _padrao_do_papel() -> dict[str, str]:
+    import modelos_da_casa as CASA
+    try:
+        return _partir(CASA.padrao_de(MODELO))
+    except Exception as erro:                          # noqa: BLE001 — vai ao log
+        _LOG.warning("O padrão do %s não carregou (%s); sai o texto de fábrica do código.",
+                     MODELO, erro)
+        return {}
+
+
+def modelo_do_convite(con: Any = None) -> dict[str, str]:
+    """As partes que valem hoje — o ajuste da casa, parte a parte, ou o padrão. Só lê.
+
+    **O AJUSTE TORTO NÃO SAI, E NÃO CALA O CONVITE**: a parte do ajuste que não
+    passa na régua (`_problema_da_parte`) — gravada antes dela, ou por fora da
+    tela — é trocada pela do padrão, e o log diz qual e por quê. Sem `con`, só
+    o padrão."""
+    padrao = _padrao_do_papel()
+    if con is None:
+        return padrao
+    import modelos_da_casa as CASA
+    try:
+        ajuste = _partir(CASA.texto_do_papel(con, MODELO))
+    except Exception as erro:                          # noqa: BLE001 — vai ao log
+        _LOG.warning("O convite da pesquisa saiu sem o ajuste da casa: %s", erro)
+        ajuste = {}
+    partes: dict[str, str] = {}
+    for parte in PARTES:
+        texto = ajuste.get(parte)
+        if texto is not None and texto != padrao.get(parte):
+            ruim = _problema_da_parte(parte, texto)
+            if ruim:
+                _LOG.warning("A parte ===%s=== do %s ajustado foi descartada (%s); "
+                             "saiu a do padrão.", parte, MODELO, ruim)
+                texto = None
+        if texto is None:
+            texto = padrao.get(parte)
+        if texto is not None:
+            partes[parte] = texto
+    return partes
+
+
+def montar_convite(partes: dict[str, str], serventia: str, link: str,
+                   validade: date) -> tuple[str, str]:
+    """O assunto e o corpo, com os claros preenchidos. Só calcula.
+
+    Sem as duas partes (o padrão não carregou), ou com uma que não monta, sai
+    `texto_do_convite` — o texto de fábrica, que é o mesmo do padrão."""
+    nome = str(serventia or "").strip() or "A serventia"
+    claros = {"serventia": nome, "link": str(link or ""),
+              "validade": validade.strftime("%d/%m/%Y")}
+    if not all(partes.get(p) for p in PARTES):
+        return texto_do_convite(serventia, link, validade)
+    try:
+        assunto = partes["ASSUNTO"].format(**claros)
+        corpo = partes["CORPO"].format(**claros)
+    except (KeyError, ValueError, IndexError, AttributeError) as erro:
+        _LOG.warning("O %s não montou (%s); saiu o texto de fábrica.", MODELO, erro)
+        return texto_do_convite(serventia, link, validade)
+    # O assunto é UMA linha: quebra dentro dele viraria cabeçalho no e-mail.
+    assunto = " ".join(assunto.splitlines()).strip()
+    return assunto, corpo.strip("\n") + "\n"
+
+
+def textos_do_convite(serventia: str, link: str, validade: date,
+                      con: Any = None) -> tuple[str, str]:
+    """O assunto e o corpo que saem hoje — o papel da casa. Só lê."""
+    return montar_convite(modelo_do_convite(con), serventia, link, validade)
+
+
+def __getattr__(nome: str):
+    """`MODELO_CONVITE_PESQUISA`, o nome do papel no catálogo, lido da base. Só lê."""
+    if nome.startswith("__"):
+        raise AttributeError(nome)
+    import modelos_da_casa as _MODELOS
+    return _MODELOS.constante_antiga(__name__, nome)
 
 
 # ------------------------------------------------------------------ as outras pontas, guardadas
@@ -408,6 +649,9 @@ def enviar(db, *, url: str | None, segredo: str, hoje: date, agora: datetime,
     with db.connect() as con:
         fila = _por_email_na_fila(con, max_tentativas)
         cfg = AV.configuracao_de_email(con) if AV is not None else None
+        # O texto da casa (27/10/2026), lido UMA vez por rodada: o mesmo para
+        # todos os convites dela, e a leitura fora do laço da rede.
+        partes = modelo_do_convite(con) if fila else {}
     serventia = ""
     try:
         import serventia as SERV
@@ -439,8 +683,9 @@ def enviar(db, *, url: str | None, segredo: str, hoje: date, agora: datetime,
             continue
         tentados += 1
         pid = int(x["protocolo_id"])
-        assunto, corpo = texto_do_convite(
-            serventia, link_do_convite(url or "", codigo_do_convite(segredo, pid)), validade)
+        assunto, corpo = montar_convite(
+            partes, serventia, link_do_convite(url or "", codigo_do_convite(segredo, pid)),
+            validade)
         tentativa = int(x["tentativas"] or 0) + 1
         try:
             if not senha:

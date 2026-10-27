@@ -164,3 +164,9 @@ TIPOS_POR_CHAVE.update({
 TIPOS_POR_CHAVE.update({
     'NOTAS_CERTIDAO_BREVE_RELATO': ('TEXTO', 'Texto congelado em nt_certidoes na emissão'),
 })
+
+# 27/10/2026: o convite da pesquisa de satisfação ao cliente. Bloco à
+# parte, pelo motivo dos de cima.
+TIPOS_POR_CHAVE.update({
+    'OUVIDORIA_CONVITE_PESQUISA': ('TEXTO', 'E-mail do convite (===ASSUNTO=== e ===CORPO===); montado a cada rodada, não guardado'),
+})

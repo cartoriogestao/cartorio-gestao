@@ -99,7 +99,8 @@ def _minimo(especie):
                 "local_fato_nome": "Hospital Municipal",
                 "ibge_local": "1",    # relato #130: o SIRC exige
                 "filiacao1_nome": "MARIA TESTE", "filiacao2_nome": "IGNORADO",
-                "declarante_nome": "MARIA TESTE"}
+                "declarante_nome": "MARIA TESTE",
+                "paternidade_tipo": "NEGATIVO"}   # pai ignorado: termo (23/10/2026)
     return {"pessoa_nome": "FALECIDO TESTE FOLHA", "data_fato": "2026-10-01",
             "local_fato_nome": "Hospital Municipal", "numero_do": "98765",
             "filiacao1_nome": "IGNORADO", "filiacao2_nome": "IGNORADO",

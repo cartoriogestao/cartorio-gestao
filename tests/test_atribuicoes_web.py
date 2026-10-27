@@ -1102,6 +1102,7 @@ def test_abrir_registro_novo_com_selo_de_outra_serventia_nao_deixa_registro(s):
                       ibge_local="1",       # relato #130: o SIRC exige
                       filiacao1_nome="MARIA", filiacao2_nome="IGNORADO",
                       declarante_nome="MARIA",
+                      paternidade_tipo="NEGATIVO",   # termo (23/10/2026)
                       selo="AVESVD999999NARRKWVNJCRSVO21")
     assert "não é desta serventia" in html
     assert _con(s).execute("SELECT COUNT(*) FROM rc_assentos").fetchone()[0] == 0

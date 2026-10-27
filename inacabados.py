@@ -360,6 +360,24 @@ FONTES: tuple[dict, ...] = (
      "dias": 10,
      "tela": "rcpj_rtd_titulo", "parametro": "titulo_id"},
 
+    # O TERMO DE ALEGAÇÃO DE PATERNIDADE AINDA NÃO REMETIDO AO JUIZ — 23/10/2026.
+    #
+    #   A Lei nº 8.560/1992 (art. 2º) manda remeter; o código de normas dá 30
+    #   dias. O painel avisa aos VINTE, para a remessa não sair no último dia.
+    #   O termo NEGATIVO não entra: ele não se remete, fica arquivado.
+    {"chave": "RCPN_ALEGACAO_PATERNIDADE",
+     "nome": "Termo de alegação de paternidade não remetido ao juiz",
+     "atribuicao": "RCPN",
+     "tabela": "rc_termos_paternidade",
+     "onde": "tipo = 'ALEGACAO' AND remetido_em IS NULL",
+     "quando": "criado_em",
+     "rotulo": "registrado_nome",
+     "id": "assento_id",
+     "terminou": "quando a remessa ao juiz é registrada na ficha do assento",
+     "o_acervo": "não entra: a tabela nasceu em 23/10/2026 e só recebe o termo "
+                 "lavrado com o nascimento do balcão",
+     "dias": 20,
+     "tela": "rcpn_assento", "parametro": "assento_id"},
     # O DIA DE PROTOCOLO DO RCPJ/RTD SEM TERMO DE ENCERRAMENTO — 23/10/2026.
     #
     #   «o aviso no painel fica valendo enquanto houver dia de protocolo sem

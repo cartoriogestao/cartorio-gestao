@@ -36,6 +36,7 @@ TELA = {
     "OBITO_MENSAL": ("Registro Civil → Comunicações", "/rcpn/comunicacoes"),
     "IBGE": ("Registro Civil → IBGE", "/rcpn/ibge"),
     "PLD_COAF": ("Administrativo → PLD/COAF", "/administrativo/pld"),
+    "IDENTIDADE_DOS_ROBOS": ("Administrativo → Usuários", "/usuarios"),
     "ENVIOS": ("Administrativo → Envios às Centrais", "/administrativo/gestor/envios"),
     "LEITURAS": ("Administrativo → Leitura dos textos (IA)", "/administrativo/gestor/leituras"),
     "CAIXA": ("Caixa", "/caixa"),
@@ -235,6 +236,15 @@ GUIA: dict[str, tuple[str, list[str]]] = {
         ["Abra Administrativo → PLD/COAF e o caso pelo número.",
          "Analise com fundamentação e decida: comunicar no Siscoaf ou registrar a "
          "análise sem comunicação (art. 141, § 3º)."]),
+    "IDENTIDADE_DOS_ROBOS": (
+        "Todo robô diz quem é e a mando de quem age (ordem do oficial, "
+        "26/10/2026). Há linhas da auditoria gravadas sem usuário e sem dizer "
+        "quem agiu, ou conta de robô sem pessoa responsável. Hoje o sistema grava "
+        "e avisa; quando isto zerar, passa a recusar.",
+        ["Abra Administrativo → Usuários e escolha o responsável de cada robô "
+         "(coluna Robô) e o responsável pelas rotinas automáticas.",
+         "Para cada origem da lista, quem escreveu a rotina ou o script passa "
+         "agente= e a_mando_de= (docs/IDENTIDADE_DOS_ROBOS.md)."]),
     "FECHAMENTO_DO_MES": (
         "Os selos usados no mês não batem com as entradas do caixa no mês.",
         ["Compare em Relatórios → Selos e no Caixa do mês; explique a diferença "

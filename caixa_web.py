@@ -17,7 +17,13 @@ from flask import Response, abort, flash, redirect, render_template, request, ur
 import emolumentos as EMOL
 import fraude as FR
 import caixa_depositos as DEP
+import caixa_exigencia as CXEX
 import caixa_protocolo as CXP
+import impressao_web as IMPW
+# O PORTAL DO CLIENTE (26/10/2026): o código de acompanhamento no recibo e na
+# recepção, e o envio do retrato dos protocolos para a VPS.
+import acompanhamento_cliente as ACOMP
+import portal_cliente as PORTAL
 import contato_do_cliente as CONTATO
 import protocolo_documentos as PDOC
 import modelos_da_casa as MODELOS
@@ -74,6 +80,45 @@ SITUACOES = {
 # (19/10/2026): mora em `modelos_padrao/caixa/CAIXA_RECEPCAO.txt`, com os mesmos bytes, e
 # chega pela base dos padrões (`modelos_da_casa.padrao_de`). O nome antigo
 # continua respondendo — ver `__getattr__` no fim deste módulo.
+
+
+def html_do_recibo(con, r, *, settings, emitido_por, funcao, data_extenso,
+                   agora, acompanhamento=None) -> str:
+    """O recibo como ele sai no papel, em HTML. SÓ LÊ.
+
+    SAIU DE DENTRO DA ROTA (26/10/2026) porque passou a ter dois chamadores: a
+    reimpressão do balcão (`caixa_recibo_odt`) e o PDF que sobe para o portal do
+    cliente (`portal_cliente.pdf_do_recibo`), que roda fora de requisição. Dois
+    jeitos de montar o mesmo recibo divergiriam no primeiro conserto, e o
+    cliente baixaria no portal um papel diferente do que levou do balcão.
+
+    `acompanhamento` é o bloco do código (`acompanhamento_cliente.
+    codigo_para_o_papel`) — None no PDF do portal, onde o código não pode ir.
+    """
+    from jinja2.sandbox import SandboxedEnvironment
+    dados = json.loads(r["discriminacao"] or "{}")
+    env = SandboxedEnvironment(autoescape=False)
+    fundos = dados.get("fundos", {})
+    tem_fundos = any(centavos(v) for v in fundos.values())
+    modelo = MODELOS.corpo_de(con, "CAIXA_RECIBO")
+    # O recibo sai do cartorio com o cliente: CPF e telefone vao mascarados,
+    # na forma do art. 6, VII e VIII da Lei 13.709/2018 — o que identifica o
+    # titular basta, o resto nao precisa viajar no papel.
+    html = env.from_string(modelo).render(
+        r=dict(r), itens=dados.get("itens", []), fundos=fundos,
+        tem_fundos=tem_fundos, lancamento=dados.get("lancamento"),
+        # a discriminação do recibo do depósito prévio é ORÇAMENTO (art. 197)
+        orcamento=bool(dados.get("orcamento")),
+        sv=dados_serventia(settings),
+        documento=mascarar_documento(dados.get("documento")),
+        telefone=mascarar_telefone(dados.get("telefone")),
+        observacao=mascarar_texto(r["observacao"]),
+        data_extenso=data_extenso,
+        emitido_por=emitido_por, funcao=funcao, agora=agora,
+        acompanhamento=acompanhamento)
+    # O AJUSTE DA CASA SAI SEM O QUE EXECUTA (22/10/2026, A7); o padrão,
+    # como saía.
+    return MODELOS.sem_o_que_executa(modelo, html)
 
 
 def _atos_da_tabela(db, busca, limite=LIMITE_DA_BUSCA_DE_ATOS):
@@ -262,6 +307,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if acao == "lancar":
                 natureza = request.form.get("natureza") or "RECEBIMENTO"
                 sentido = NATUREZAS.get(natureza, ("ENTRADA", ""))[0]
+                # «Outra entrada»: quem lança diz se é receita do titular
+                # (carnê-leão). Ordem do oficial, 26/10/2026.
+                receita_titular = None
+                if natureza == "OUTRA_ENTRADA":
+                    resposta = request.form.get("receita_do_titular") or ""
+                    if resposta not in ("0", "1"):
+                        flash("«Outra entrada»: diga se é receita do titular (entra no "
+                              "carnê-leão) ou não. Lançamento não feito.", "danger")
+                        return redirect(url_for("caixa"))
+                    receita_titular = int(resposta)
                 valor = centavos(request.form.get("valor"))
                 if valor <= 0:
                     flash("Informe um valor maior que zero.", "danger")
@@ -299,8 +354,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                             natureza, sentido,
                             forma_pagamento, descricao, pagador, pagador_documento,
                             valor, emolumentos, ferc, fadep, femp, ferrfis, selo,
-                            hash_lancamento, criado_em)
-                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                            hash_lancamento, criado_em, receita_do_titular)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (numero_ordem, ano, aberto["id"], prot["id"] if prot else None,
                          date.today().isoformat(), datetime.now().strftime("%H:%M"),
                          natureza, sentido,
@@ -313,7 +368,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                            else None
                            for f in ("emolumentos", "ferc", "fadep", "femp", "ferrfis")],
                          (request.form.get("selo") or "").strip() or None,
-                         h, db.now()))
+                         h, db.now(), receita_titular))
                 audit("CAIXA_LANCAMENTO", "CAIXA", aberto["id"],
                       {"numero": f"{numero_ordem}/{ano}", "natureza": natureza,
                        "valor": reais(valor)})
@@ -412,13 +467,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash("Informe um valor maior que zero.", "danger")
                     return redirect(url_for("caixa"))
                 natureza = request.form.get("natureza") or l["natureza"]
+                receita_titular = None
+                if natureza == "OUTRA_ENTRADA":
+                    anterior = dict(l).get("receita_do_titular")
+                    resposta = (request.form.get("receita_do_titular")
+                                or ("" if anterior is None else str(anterior)))
+                    if resposta not in ("0", "1"):
+                        flash("«Outra entrada»: diga se é receita do titular (entra no "
+                              "carnê-leão) ou não. Alteração não feita.", "danger")
+                        return redirect(url_for("caixa"))
+                    receita_titular = int(resposta)
+                antes["receita_do_titular"] = dict(l).get("receita_do_titular")
                 with db.transaction() as con:
                     banco(con).escrever(
                         """UPDATE cx_lancamentos SET valor=%s, natureza=%s, sentido=%s,
                            forma_pagamento=%s, descricao=%s, pagador=%s,
                            pagador_documento=%s, emolumentos=%s, ferc=%s, fadep=%s,
                            femp=%s, ferrfis=%s, selo=%s, editado_em=%s, editado_por=%s,
-                           historico=%s WHERE id=%s""",
+                           historico=%s, receita_do_titular=%s WHERE id=%s""",
                         (reais(novo_valor), natureza,
                          NATUREZAS.get(natureza, (l["sentido"], ""))[0],
                          request.form.get("forma_pagamento") or l["forma_pagamento"],
@@ -430,7 +496,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                            for f in ("emolumentos", "ferc", "fadep", "femp", "ferrfis")],
                          (request.form.get("selo") or "").strip() or None,
                          db.now(), usuario_nome(),
-                         json.dumps(historico, ensure_ascii=False), lid))
+                         json.dumps(historico, ensure_ascii=False), receita_titular, lid))
                 audit("CAIXA_LANCAMENTO_EDITADO", "CAIXA", aberto["id"],
                       {"lancamento": lid, "antes": antes,
                        "depois": reais(novo_valor)})
@@ -1034,6 +1100,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                  corpo, corpo, r["observacao"], h, db.now()))[0]["id"])
             bd.escrever("UPDATE cx_lancamentos SET recibo_id=%s WHERE id=%s",
                         (recibo_id, lancamento_id))
+            # O CÓDIGO DE ACOMPANHAMENTO NASCE AQUI, no POST que emite o
+            # recibo (portal do cliente, 26/10/2026): a impressão logo abaixo
+            # é um GET, e GET não abre transação de escrita. Lançamento sem
+            # protocolo não tem o que acompanhar; protesto não ganha código.
+            if l["protocolo_id"]:
+                ACOMP.codigo_para_o_papel(con, l["protocolo_id"])
 
         audit("RECIBO_EMITIDO", "RECIBO", recibo_id,
               {"numero": numero, "ano": ano, "valor": l["valor"]})
@@ -1131,6 +1203,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             for i in itens:
                 bd.escrever("UPDATE cx_lancamentos SET recibo_id=%s WHERE id=%s",
                             (recibo_id, i["lancamento_id"]))
+            # O código de acompanhamento nasce no POST, como no recibo do
+            # lançamento — a impressão é o GET seguinte.
+            ACOMP.codigo_para_o_papel(con, protocolo_id)
 
         audit("RECIBO_DO_PROTOCOLO", "RECIBO", recibo_id,
               {"numero": numero, "ano": ano, "protocolo": p["numero"],
@@ -1143,32 +1218,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         r = q1("SELECT * FROM cx_recibos WHERE id=%s", (recibo_id,))
         if not r:
             abort(404)
-        dados = json.loads(r["discriminacao"] or "{}")
         s = db.get_settings()
-        from jinja2.sandbox import SandboxedEnvironment
-        env = SandboxedEnvironment(autoescape=False)
-        fundos = dados.get("fundos", {})
-        tem_fundos = any(centavos(v) for v in fundos.values())
-        # O recibo sai do cartorio com o cliente: CPF e telefone vao
-        # mascarados, na forma do art. 6, VII e VIII da Lei 13.709/2018 —
-        # o que identifica o titular basta, o resto nao precisa viajar no papel.
         with db.connect() as _c:
-            _modelo = MODELOS.corpo_de(_c, "CAIXA_RECIBO")
-        html = env.from_string(_modelo).render(
-            r=dict(r), itens=dados.get("itens", []), fundos=fundos,
-            tem_fundos=tem_fundos, lancamento=dados.get("lancamento"),
-            # a discriminação do recibo do depósito prévio é ORÇAMENTO (art. 197)
-            orcamento=bool(dados.get("orcamento")),
-            sv=bloco_serventia(),
-            documento=mascarar_documento(dados.get("documento")),
-            telefone=mascarar_telefone(dados.get("telefone")),
-            observacao=mascarar_texto(r["observacao"]),
-            data_extenso=fmt_date(r["data_emissao"]),
-            emitido_por=usuario_nome(), funcao=usuario_funcao(),
-            agora=datetime.now().strftime("%d/%m/%Y %H:%M"))
-        # O AJUSTE DA CASA SAI SEM O QUE EXECUTA (22/10/2026, A7); o padrão,
-        # como saía.
-        html = MODELOS.sem_o_que_executa(_modelo, html)
+            # O CÓDIGO DE ACOMPANHAMENTO, SÓ LIDO: a impressão é GET, e o
+            # código nasceu no POST que emitiu o recibo. Recibo de antes do
+            # portal sai sem ele — o botão da ficha do protocolo o cria.
+            acompanhamento = ACOMP.codigo_para_o_papel(
+                _c, r["protocolo_id"], endereco_do_portal=s.get(PORTAL.CHAVE_URL),
+                criar=False)
+            html = html_do_recibo(
+                _c, r, settings=s, emitido_por=usuario_nome(),
+                funcao=usuario_funcao(), data_extenso=fmt_date(r["data_emissao"]),
+                agora=datetime.now().strftime("%d/%m/%Y %H:%M"),
+                acompanhamento=acompanhamento)
         arquivo = gerar_odt(html_para_odf(html), titulo=f"Recibo {r['numero']}/{r['ano']}")
         audit("RECIBO_IMPRESSO", "RECIBO", recibo_id, {"numero": r["numero"]})
         return Response(arquivo, mimetype="application/vnd.oasis.opendocument.text",
@@ -1233,8 +1295,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                             interessado_documento, telefone, email, assunto,
                             observacao, previsao_entrega, tipo,
                             documento_tipo, documento_numero, documento_descricao,
-                            situacao, criado_em)
-                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'ABERTO', %s)
+                            situacao, criado_em, criado_por)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'ABERTO', %s, %s)
                            RETURNING id""",
                         (numero, hoje.isoformat(), datetime.now().strftime("%H:%M"),
                          request.form.get("atribuicao") or "OUTROS", interessado,
@@ -1249,7 +1311,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          (request.form.get("documento_tipo") or "").strip() or None,
                          (request.form.get("documento_numero") or "").strip() or None,
                          (request.form.get("documento_descricao") or "").strip() or None,
-                         db.now()))
+                         # Quem ABRIU o protocolo (26/10/2026): a coluna existia
+                         # e esta tela não a gravava. A pesquisa de satisfação
+                         # põe no convite quem atendeu — e quem atendeu é este.
+                         db.now(), usuario_id()))
                     pid = int(novo[0]["id"])
                     # Ponte com a prenotacao do RI: so quando o balcao escolheu.
                     # Sem escolha, a coluna fica vazia — lavrar nao adivinha.
@@ -1383,6 +1448,34 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   {"telefone": request.form.get("telefone"),
                    "email": request.form.get("email")})
             flash("Contato atualizado.", "success")
+            return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
+
+        # O CÓDIGO DE ACOMPANHAMENTO — portal do cliente, 26/10/2026. «Gerar»
+        # cria o código do protocolo que ainda não tem (o de antes do portal,
+        # ou o que só teve orçamento); «trocar» faz um novo e o de antes deixa
+        # de valer — o cliente perdeu o papel, ou o código foi visto por quem
+        # não devia. A regra mora em `acompanhamento_cliente`.
+        if request.method == "POST" and request.form.get("acao") in (
+                "acompanhamento_gerar", "acompanhamento_trocar"):
+            acao = request.form.get("acao")
+            try:
+                with db.transaction() as con:
+                    if acao == "acompanhamento_trocar":
+                        ACOMP.trocar_codigo(con, protocolo_id)
+                    else:
+                        ACOMP.codigo_do_protocolo(con, protocolo_id)
+            except (ACOMP.AcompanhamentoError, ValueError, RuntimeError) as e:
+                flash(f"O código de acompanhamento não foi gravado: {e}", "danger")
+                return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
+            # Sem o código na auditoria: ele é a senha do cliente.
+            audit("PROTOCOLO_ACOMPANHAMENTO_" + ("TROCADO" if acao.endswith("trocar")
+                                                 else "GERADO"),
+                  "PROTOCOLO", protocolo_id, {})
+            flash("Código novo gravado. O de antes deixou de valer — imprima o "
+                  "recibo ou a recepção de novo para o cliente."
+                  if acao.endswith("trocar") else
+                  "Código de acompanhamento gravado. Ele sai no recibo e no "
+                  "protocolo de recepção.", "success")
             return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
 
         # ENCERRAR E REABRIR — o débito «encerrar protocolo», de agosto.
@@ -1529,8 +1622,42 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # com outra cara.
         with db.connect() as con_doc:
             docs_qualificacao = PDOC.documentos(con_doc, protocolo_id)
+            # AS EXIGÊNCIAS ABERTAS DE TODA ATRIBUIÇÃO — 26/10/2026. A ficha
+            # pergunta à MESMA leitura que o portal do cliente e os avisos de
+            # andamento: a geral deste protocolo, a nota devolutiva da
+            # prenotação ligada e a qualificação negativa do título ligado.
+            exigencias_abertas = CXEX.exigencias_abertas_do_protocolo(
+                con_doc, protocolo_id)
+            # O código só aparece para quem pratica ato (o AUDITOR vê a ficha,
+            # mas o código é a senha do cliente). SÓ LÊ: a ficha é GET.
+            acompanhamento = {
+                "elegivel": ACOMP.elegivel(dict(p)),
+                "codigo": (ACOMP.formatar_codigo(ACOMP.codigo_ja_gravado(
+                    con_doc, protocolo_id) or "") or None)
+                if usuario_papel() in ("ADMIN", "MANAGER", "USER") else None,
+                "tem": bool(p["acompanhamento_hash"]),
+                "situacao": ACOMP.situacao_publica(con_doc, dict(p)),
+            }
+        # AS TAREFAS DO PROTOCOLO — 26/10/2026, o oficial: «precisamos poder
+        # criar uma tarefa a partir do protocolo e precisamos poder linkar um
+        # protocolo a uma tarefa nova ou preexistente». O vínculo é o da pasta
+        # do processo (`processo_pasta`), visto daqui.
+        import json as _json
+        import processo_pasta as PASTA
+        with db.connect() as con_tar:
+            tarefas_do_protocolo = PASTA.processos_da_peca(con_tar, "cx_protocolos", protocolo_id)
+            tarefas_abertas = PASTA.tarefas_abertas(con_tar)
+        try:
+            setores = _json.loads(db.get_setting("sectors", "[]") or "[]")
+        except ValueError:
+            setores = []
         return render_template("caixa_protocolo.html", p=p, atos=atos,
+                               tarefas_do_protocolo=tarefas_do_protocolo,
+                               tarefas_abertas=tarefas_abertas,
+                               usuarios_da_tarefa=db.list_users(active_only=True),
+                               setores_da_tarefa=setores if isinstance(setores, list) else [],
                                docs_qualificacao=docs_qualificacao,
+                               exigencias_abertas=exigencias_abertas,
                                TIPOS_DE_DOCUMENTO=PDOC.TIPOS_DE_DOCUMENTO,
                                PAPEIS_QUE_ANEXAM=PDOC.PAPEIS_QUE_ANEXAM,
                                fraudes=fraudes,
@@ -1547,7 +1674,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                TIPOS_DOCUMENTO=TIPOS_DOCUMENTO,
                                prenotacao_ligada=prenotacao_ligada,
                                prenotacoes_ri=prenotacoes_ri,
-                               acima_do_teto=acima_do_teto)
+                               acima_do_teto=acima_do_teto,
+                               acompanhamento=acompanhamento)
 
     # ---------------------------------------- documentos para qualificação
     #
@@ -1637,6 +1765,173 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         flash(f"«{r['original_name']}» retirado da lista. O arquivo continua "
               "guardado, e o motivo fica registrado.", "success")
         return redirect(volta)
+
+    # ------------------------------------------- nota de exigência geral
+    #
+    # «precisamos que todas as atribuições tenham nota de exigência» — o
+    # oficial, 26/10/2026. Notas, Registro Civil e Protesto não tinham nota
+    # nenhuma; o RI e o RCPJ/RTD continuam com as deles. A regra mora em
+    # `caixa_exigencia`; aqui só se ligam os fios.
+    #
+    # O CONFERIDOR DO PAPEL na tela de Modelos e em quem grava o ajuste: o
+    # boneco geral só tem `hoje`, `agora` e `sv`, e reprovaria todo ajuste.
+    import modelos_elementos as ELEM
+    app.extensions.setdefault("conferidores_de_modelo", {})[
+        CXEX.CHAVE_DO_PAPEL] = CXEX.conferir_modelo
+    ELEM.CONFERIDORES[CXEX.CHAVE_DO_PAPEL] = CXEX.conferir_modelo
+
+    def _tela_das_exigencias(p, *, form=None, avisos=()):
+        """A tela da nota de exigência do protocolo. Só LÊ."""
+        with db.connect() as con:
+            notas = CXEX.do_protocolo(con, p["id"])
+            abertas = CXEX.exigencias_abertas_do_protocolo(con, p["id"])
+        return render_template(
+            "caixa_exigencias.html", p=p, notas=notas,
+            # As das atribuições com nota própria aparecem aqui só para LER:
+            # quem as abre e as dá por cumpridas é a tela delas.
+            de_outras_atribuicoes=[x for x in abertas if x["origem"] != "GERAL"],
+            ATRIBUICOES=CXEX.ATRIBUICOES_DA_EXIGENCIA,
+            COM_NOTA_PROPRIA=CXEX.ATRIBUICOES_COM_NOTA_PROPRIA,
+            SITUACOES_DA_NOTA=CXEX.SITUACOES,
+            sugerida=CXEX.atribuicao_sugerida(p),
+            atribuicao_do_protocolo=(p["atribuicao"] or "").upper(),
+            encerrado=CXP.esta_encerrado(p["situacao"]),
+            form=form or {}, avisos=list(avisos),
+            hoje=date.today().isoformat())
+
+    @app.route("/caixa/protocolos/<int:protocolo_id>/exigencias",
+               methods=["GET", "POST"])
+    @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    # O AUDITOR vê; abrir a nota (POST) exige papel que pratica ato.
+    @roles_required("ADMIN", "MANAGER", "USER", metodos=("POST",))
+    def caixa_exigencias(protocolo_id):
+        """A nota de exigência do protocolo geral: abrir, ver e imprimir.
+
+        **A REGRA DO BALCÃO (o oficial, 26/10/2026):** o texto da exigência
+        não leva nome de terceiros, porque ele pode subir ao portal do
+        cliente. Quando o texto traz CPF/CNPJ ou o que parece nome em
+        maiúsculas, a tela AVISA e devolve o formulário preenchido; quem
+        escreveu confere e confirma. Não é recusa: falso positivo existe, e
+        a decisão é de quem está no balcão.
+        """
+        p = q1("SELECT * FROM cx_protocolos WHERE id=%s", (protocolo_id,))
+        if not p:
+            abort(404)
+        if request.method == "GET":
+            return _tela_das_exigencias(p)
+
+        form = {k: (request.form.get(k) or "").strip()
+                for k in ("texto", "atribuicao", "fundamento", "prazo_ate")}
+        avisos = CXEX.avisos_do_texto(form["texto"])
+        confirmou = request.form.get("revisei_o_texto") == "1"
+        if avisos and not confirmou:
+            return _tela_das_exigencias(p, form=form, avisos=avisos)
+        try:
+            with db.transaction() as con:
+                nova = CXEX.abrir(
+                    con, protocolo_id, texto=form["texto"],
+                    atribuicao=form["atribuicao"],
+                    fundamento=form["fundamento"],
+                    prazo_ate=form["prazo_ate"], quem=usuario_nome(),
+                    usuario_id=usuario_id(), agora=db.now())
+        except CXEX.ExigenciaError as e:
+            flash(str(e), "danger")
+            return _tela_das_exigencias(p, form=form)
+        # O TEXTO NÃO VAI À AUDITORIA: ele está na linha da nota, e a
+        # auditoria é lida por quem confere o sistema, e não o atendimento.
+        audit("PROTOCOLO_EXIGENCIA_ABERTA", "PROTOCOLO", protocolo_id,
+              {"protocolo": p["numero"], "exigencia": nova["id"],
+               "numero": nova["numero"], "atribuicao": nova["atribuicao"],
+               "itens": len(nova["itens"]),
+               "aviso_de_terceiro_confirmado": bool(avisos)})
+        flash(f"Nota de exigência nº {nova['numero']} aberta no protocolo "
+              f"{p['numero']}, com {len(nova['itens'])} exigência(s). Imprima "
+              "a nota para entregar ao interessado.", "success")
+        return redirect(url_for("caixa_exigencias", protocolo_id=protocolo_id)
+                        + f"#exigencia-{nova['id']}")
+
+    @app.route("/caixa/protocolos/<int:protocolo_id>/exigencias/"
+               "<int:exigencia_id>/cumprida", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def caixa_exigencia_cumprida(protocolo_id, exigencia_id):
+        """Dá a nota por cumprida: quem e quando. ESCREVE."""
+        volta = url_for("caixa_exigencias", protocolo_id=protocolo_id)
+        try:
+            with db.transaction() as con:
+                e = CXEX.dar_por_cumprida(
+                    con, protocolo_id, exigencia_id, quem=usuario_nome(),
+                    observacao=request.form.get("observacao"), agora=db.now())
+        except CXEX.ExigenciaError as erro:
+            flash(str(erro), "danger")
+            return redirect(volta)
+        audit("PROTOCOLO_EXIGENCIA_CUMPRIDA", "PROTOCOLO", protocolo_id,
+              {"exigencia": int(exigencia_id), "numero": e["numero"]})
+        flash(f"Nota de exigência nº {e['numero']} dada por cumprida.", "success")
+        return redirect(volta + f"#exigencia-{exigencia_id}")
+
+    @app.route("/caixa/protocolos/<int:protocolo_id>/exigencias/"
+               "<int:exigencia_id>/cancelar", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def caixa_exigencia_cancelar(protocolo_id, exigencia_id):
+        """Cancela a nota, com motivo escrito. Não apaga nada. ESCREVE."""
+        volta = url_for("caixa_exigencias", protocolo_id=protocolo_id)
+        try:
+            with db.transaction() as con:
+                e = CXEX.cancelar(
+                    con, protocolo_id, exigencia_id, quem=usuario_nome(),
+                    motivo=request.form.get("motivo"), agora=db.now())
+        except CXEX.ExigenciaError as erro:
+            flash(str(erro), "danger")
+            return redirect(volta)
+        audit("PROTOCOLO_EXIGENCIA_CANCELADA", "PROTOCOLO", protocolo_id,
+              {"exigencia": int(exigencia_id), "numero": e["numero"],
+               "motivo": e["cancelada_motivo"]})
+        flash(f"Nota de exigência nº {e['numero']} cancelada. Ela continua à "
+              "vista, com o motivo.", "success")
+        return redirect(volta + f"#exigencia-{exigencia_id}")
+
+    @app.route("/caixa/protocolos/<int:protocolo_id>/exigencias/"
+               "<int:exigencia_id>/papel")
+    @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    def caixa_exigencia_papel(protocolo_id, exigencia_id):
+        """O papel da nota — PDF, e o `.odt` com `?formato=odt`. Só LÊ o banco.
+
+        O modelo é o do catálogo (`CAIXA_EXIGENCIA`), que o oficial edita em
+        Modelos. A data do papel é a da NOTA, e não a de hoje: reimprimir
+        semanas depois não pode mudar a data do que se exigiu.
+        """
+        from ri_web import data_por_extenso
+        volta = url_for("caixa_exigencias", protocolo_id=protocolo_id)
+        p = q1("SELECT * FROM cx_protocolos WHERE id=%s", (protocolo_id,))
+        with db.connect() as con:
+            e = CXEX.uma(con, exigencia_id)
+            corpo = MODELOS.corpo_de(con, CXEX.CHAVE_DO_PAPEL)
+        if not p or not e or int(e["protocolo_id"]) != int(protocolo_id):
+            abort(404)
+        dia = str(e["aberta_em"] or "")[:10]
+        try:
+            html = CXEX.montar_papel(
+                modelo=corpo, sv=bloco_serventia(), p=dict(p), e=e,
+                itens=e["itens"],
+                documento=mascarar_documento(p["interessado_documento"]),
+                nome_da_atribuicao=e["atribuicao_nome"],
+                aberto_em=fmt_date(p["data_abertura"]),
+                emitida_em=fmt_date(dia),
+                prazo_ate=fmt_date(e["prazo_ate"]) if e["prazo_ate"] else "",
+                data_extenso=data_por_extenso(date.fromisoformat(dia)),
+                emitido_por=usuario_nome(),
+                funcao=usuario_funcao())
+        except Exception as erro:                       # noqa: BLE001 — o recado
+            flash("O modelo da nota de exigência tem um erro: "
+                  f"{SEGWEB.erro_do_modelo(erro, CXEX.CHAVE_DO_PAPEL)}", "danger")
+            return redirect(volta)
+        arquivo = gerar_odt(html_para_odf(html),
+                            titulo=f"Nota de exigência {p['numero']}-{e['numero']}")
+        audit("PROTOCOLO_EXIGENCIA_IMPRESSA", "PROTOCOLO", protocolo_id,
+              {"exigencia": int(exigencia_id), "numero": e["numero"]})
+        return IMPW.resposta_do_papel(
+            arquivo, nome=f"nota-de-exigencia-{p['numero']}-{e['numero']}",
+            get_setting=db.get_setting, voltar_para=volta)
 
     @app.route("/caixa/protocolos/novo", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -1756,10 +2051,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         from jinja2.sandbox import SandboxedEnvironment
         env = SandboxedEnvironment(autoescape=False)
+        # O CÓDIGO DE ACOMPANHAMENTO no comprovante de abertura (portal do
+        # cliente, 26/10/2026). Esta rota é POST e já grava a hora da
+        # recepção: o código nasce aqui na primeira vez, e nas outras é lido.
+        endereco_do_portal = db.get_setting(PORTAL.CHAVE_URL, "")
+        with db.transaction() as _t:
+            acompanhamento = ACOMP.codigo_para_o_papel(
+                _t, protocolo_id, endereco_do_portal=endereco_do_portal)
         with db.connect() as _c:
             _modelo = MODELOS.corpo_de(_c, "CAIXA_RECEPCAO")
         html = env.from_string(_modelo).render(
             p=dict(p), itens=itens, soma=soma, pendente=pendente,
+            acompanhamento=acompanhamento,
             sv=bloco_serventia(),
             documento=mascarar_documento(p["interessado_documento"]),
             telefone=mascarar_telefone(p["telefone"]),
@@ -1777,6 +2080,64 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return Response(arquivo, mimetype="application/vnd.oasis.opendocument.text",
                         headers={"Content-Disposition":
                                  f'attachment; filename="recepcao-{p["numero"]}.odt"'})
+
+    # ------------------------------------------------- portal do cliente
+    #
+    # «Portal do cliente para acompanhar o pedido e baixar o recibo», no VPS
+    # do WhatsApp — o oficial, 26/10/2026. O servidor EMPURRA o retrato para a
+    # VPS (saída, HTTPS, token no cofre); a VPS não alcança a casa. A regra
+    # mora em `portal_cliente`; aqui só se ligam os fios.
+
+    @app.route("/caixa/portal-do-cliente", methods=["GET", "POST"])
+    @roles_required("ADMIN", "MANAGER")
+    def caixa_portal_cliente():
+        if request.method == "POST":
+            # GRAVAR É SÓ DO ADMIN: a tela grava o endereço para onde o token
+            # vai. Aberta a mais gente, trocar o endereço pelo de fora
+            # entregaria o token no próximo envio — a regra do WhatsApp (LS01).
+            if usuario_papel() != "ADMIN":
+                abort(403)
+            acao = request.form.get("acao") or "gravar"
+            if acao == "enviar":
+                resumo = PORTAL.enviar(db)
+                audit("PORTAL_CLIENTE_ENVIO", "PORTAL", None, resumo)
+                if resumo.get("ok"):
+                    flash(f"Portal atualizado: {resumo['enviados']} protocolo(s) "
+                          f"enviado(s), {resumo['removidos']} retirado(s)"
+                          + (f", {resumo['incompletos']} sem o PDF do recibo "
+                             f"(sobe na próxima rodada)" if resumo["incompletos"]
+                             else "") + ".", "success")
+                else:
+                    flash(f"Nada subiu: {resumo.get('motivo')}.", "warning")
+                return redirect(url_for("caixa_portal_cliente"))
+            try:
+                with db.transaction() as con:
+                    PORTAL.gravar_configuracao(
+                        con, url=request.form.get("url"),
+                        ligado=bool(request.form.get("ligado")),
+                        token=request.form.get("token"),
+                        apagar_token=bool(request.form.get("apagar_token")))
+            except (PORTAL.PortalError, ValueError, RuntimeError) as e:
+                flash(f"A configuração não foi gravada: {e}", "danger")
+                return redirect(url_for("caixa_portal_cliente"))
+            # O token não vai para a auditoria — só se ele mudou.
+            audit("PORTAL_CLIENTE_CONFIG", "PORTAL", None,
+                  {"url": (request.form.get("url") or "").strip(),
+                   "ligado": bool(request.form.get("ligado")),
+                   "token_trocado": bool((request.form.get("token") or "").strip()),
+                   "token_apagado": bool(request.form.get("apagar_token"))})
+            flash("Configuração do portal gravada. O token não aparece na tela "
+                  "nem no log.", "success")
+            return redirect(url_for("caixa_portal_cliente"))
+        with db.connect() as con:
+            cfg = PORTAL.configuracao(con)
+        return render_template("caixa_portal_cliente.html", cfg=cfg,
+                               pode_gravar=usuario_papel() == "ADMIN",
+                               DIAS_DEPOIS_DE_ENCERRADO=PORTAL.DIAS_DEPOIS_DE_ENCERRADO,
+                               DIAS_DO_ABERTO=PORTAL.DIAS_DO_ABERTO,
+                               SEM_RECIBO=sorted(PORTAL.SEM_RECIBO_NO_PORTAL),
+                               LIBERADO=sorted(PORTAL.RECIBO_LIBERADO_NO_PORTAL),
+                               FORA=sorted(ACOMP.FORA_DO_ACOMPANHAMENTO))
 
     # ------------------------------------------------- itens e orçamento
 

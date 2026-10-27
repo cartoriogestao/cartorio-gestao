@@ -51,6 +51,18 @@ O QUE ESTE MÓDULO FAZ HOJE
     `onr_certidoes_web`, um clique por pedido. Ofício, penhora e e-Protocolo
     continuam só leitura.
 
+    **E, desde 26/10/2026, o ACOMPANHAMENTO DE TÍTULOS** (`acompanhamentotitulos
+    .asmx`, manual 4.43, cap. 3.2): o andamento das prenotações do RI que o
+    apresentante consulta na Central. Quem decide o que sobe é
+    `onr_acompanhamento`, por uma fila de fatos gravados; este módulo só sabe
+    falar com o serviço. **O WSDL dele NÃO está na casa** (as pastas
+    `homologacao` e `producao` têm os outros oito, e não este): os campos vão
+    na ORDEM DO MANUAL — que bateu com o WSDL nos dois métodos em que se pôde
+    conferir (`ListPedidosPO` e `FinalizarRespostaCertidao`) —, há teste que
+    compara com o texto do manual, e outro que compara com o WSDL no dia em
+    que ele for salvo em `FONTES_EXTERNAS/onr_wsoficio/producao`. **A primeira
+    chamada em homologação é a prova que falta.**
+
     **O BDLight recebe um LINK, e não o arquivo** (`ImportarArquivoBDL` leva
     `URLArquivo`; até 5 MB) — o ONR vai buscar o XML num endereço. Esta casa
     não tem endereço público, e por isso a importação não foi construída.
@@ -89,7 +101,15 @@ BASE = {PRODUCAO: "https://wsoficio.onr.org.br",
 SERVICOS = {"login": "login.asmx", "bdlight": "bdlight.asmx",
             "oficios": "oficios.asmx", "penhora": "penhoraonline.asmx",
             "certidoes": "Certidoes.asmx", "eprotocolo": "eprotocolo.asmx",
-            "matricula": "matriculaonline.asmx", "intimacoes": "intimacoes.asmx"}
+            "matricula": "matriculaonline.asmx", "intimacoes": "intimacoes.asmx",
+            # 26/10/2026 — o nome é o do manual (3.2, «acompanhamentotitulos
+            # .asmx?wsdl»), todo em minúsculas. NÃO MEDIDO no servidor: o WSDL
+            # dele não foi baixado (ver `SEM_WSDL_NA_CASA`).
+            "acompanhamento": "acompanhamentotitulos.asmx"}
+
+#: Os serviços cujo WSDL NÃO está em `FONTES_EXTERNAS/onr_wsoficio`. Os
+#: testes que abrem o contrato pulam estes — e recusam qualquer outro que falte.
+SEM_WSDL_NA_CASA = frozenset({"acompanhamento"})
 
 #: A ORDEM DOS CAMPOS DE CADA PEDIDO, transcrita do WSDL de produção. Em
 #: document/literal a `sequence` é posicional: campo fora de ordem o .NET
@@ -120,7 +140,56 @@ CAMPOS = {
     "EnviarAnexosListCertidao": ("Hash", "Protocolo", "AnexoList"),
     "FinalizarRespostaCertidao": ("Hash", "Protocolo", "Matriculas", "InteresseSocial"),
     "DevolverCertidao": ("Hash", "Protocolo", "Motivo"),
+    # ACOMPANHAMENTO DE TÍTULOS (manual 4.43, cap. 3.2, p. 18-29) — 26/10/2026.
+    # A ORDEM É A DO MANUAL, porque o WSDL deste serviço não está na casa
+    # (`SEM_WSDL_NA_CASA`); `tests/test_onr_acompanhamento.py` relê o manual e
+    # compara, e compara com o WSDL quando ele chegar.
+    "ListTitulosAT": ("Hash", "MaxRowPerPage", "PageNumber", "Protocolo",
+                      "DataProtocoloInicio", "DataProtocoloFinal", "IDTipoStatus",
+                      "Exportado", "Apresentante"),
+    "GetTituloAT": ("Hash", "IDTitulo"),
+    "ListStatusAT": ("Hash", "MaxRowPerPage", "PageNumber", "IDTitulo",
+                     "DataStatusInicio", "DataStatusFinal", "IDTipoStatus"),
+    "GetStatusAT": ("Hash", "IDStatus"),
+    "InsertTituloAT": ("Hash", "Protocolo", "ApresentanteNome", "ApresentanteEmail",
+                       "ApresentanteDDDTelefone", "ApresentanteNumeroTelefone",
+                       "ApresentanteCPFCNPJ", "ValorDeposito", "ValorEmolumentos",
+                       "DataProtocolo", "DataPrevisaoEntrega", "ModoNotificacaoStatus",
+                       "InteressadoNome", "InteressadoCPFCNPJ", "NaturezaTitulo",
+                       "CodigoVerificador", "TipoSolicitacao",
+                       "IDTipoStatus", "DataStatus", "DescricaoStatus"),
+    "UpdateTituloAT": ("Hash", "IDTitulo", "Protocolo", "ApresentanteNome",
+                       "ApresentanteEmail", "ApresentanteDDDTelefone",
+                       "ApresentanteNumeroTelefone", "ApresentanteCPFCNPJ",
+                       "ValorDeposito", "ValorEmolumentos", "DataProtocolo",
+                       "DataPrevisaoEntrega", "ModoNotificacaoStatus", "InteressadoNome",
+                       "InteressadoCPFCNPJ", "NaturezaTitulo", "CodigoVerificador",
+                       "TipoSolicitacao"),
+    "DeleteTituloAT": ("Hash", "IDTitulo"),
+    "InsertStatusAT": ("Hash", "IDTitulo", "IDTipoStatus", "DataStatus", "DescricaoStatus"),
+    "UpdateStatusAT": ("Hash", "IDStatus", "IDTipoStatus", "DataStatus", "DescricaoStatus"),
 }
+
+#: Os métodos do Acompanhamento de Títulos que MUDAM COISA NO ONR — e que o
+#: apresentante vê. Só `onr_acompanhamento` os chama, a partir de uma fila de
+#: fatos gravados; nunca uma tela com campo livre.
+ESCREVEM_NO_ACOMPANHAMENTO = frozenset({"InsertTituloAT", "UpdateTituloAT", "DeleteTituloAT",
+                                        "InsertStatusAT", "UpdateStatusAT"})
+
+#: Os tipos de status do Acompanhamento de Títulos (manual 3.2.1), por extenso
+#: como o manual os escreve. -1 («Todos») só vale como filtro.
+TIPO_STATUS_AT = {1: "Título com reingresso", 2: "Exame e cálculo cancelado",
+                  3: "Título pronto para retirada", 4: "Título prenotado",
+                  5: "Exame e cálculo concluído", 6: "Título registrado",
+                  7: "Nota de exigência", 8: "Título entregue",
+                  9: "Suscitação de dúvida", 10: "Dúvida julgada procedente",
+                  11: "Dúvida julgada improcedente", 12: "Exame e cálculo protocolado",
+                  13: "Exame e cálculo pronto para a retirada", 14: "Bloqueio de matrículas",
+                  15: "Prorrogado o prazo da prenotação",
+                  16: "Prorrogado o prazo de entrega e devolução",
+                  17: "Prorrogado o prazo da Penhora Online", 18: "Notificação",
+                  19: "Prorrogado o prazo da Notificação", 20: "Processamento",
+                  21: "Aguardando Pagamento"}
 #: Campo que é LISTA no contrato: o nome de cada item e os campos dele, em ordem.
 LISTAS = {"AnexoList": ("AnexoListCertidao_WSReq", ("NomeArquivo", "ArquivoBase64"))}
 SERVICO_DO_METODO = {
@@ -131,6 +200,11 @@ SERVICO_DO_METODO = {
     "ObterXMLSolicitacoes_v6": "certidoes", "InformarCustasCertidao": "certidoes",
     "EnviarAnexoCertidao": "certidoes", "EnviarAnexosListCertidao": "certidoes",
     "FinalizarRespostaCertidao": "certidoes", "DevolverCertidao": "certidoes",
+    "ListTitulosAT": "acompanhamento", "GetTituloAT": "acompanhamento",
+    "ListStatusAT": "acompanhamento", "GetStatusAT": "acompanhamento",
+    "InsertTituloAT": "acompanhamento", "UpdateTituloAT": "acompanhamento",
+    "DeleteTituloAT": "acompanhamento", "InsertStatusAT": "acompanhamento",
+    "UpdateStatusAT": "acompanhamento",
 }
 
 #: Os status do pedido de certidão (manual 3.6.5) e os tipos de certidão.
@@ -175,10 +249,15 @@ class WSOficioError(ValueError):
 
 
 class WSOficioRecusou(WSOficioError):
-    """O ONR respondeu RETORNO=false. Guarda o código e a descrição dele."""
+    """O ONR respondeu RETORNO=false. Guarda o código e a descrição dele — e a
+    resposta inteira, porque há recusa que traz dado: o erro 501 do
+    `InsertTituloAT` devolve o `IDTitulo` já cadastrado, e o do
+    `InsertStatusAT`, o `IDStatus` (manual 3.2.9 e 3.2.13)."""
 
-    def __init__(self, metodo: str, codigo: Any, descricao: str):
+    def __init__(self, metodo: str, codigo: Any, descricao: str,
+                 resposta: dict | None = None):
         self.metodo, self.codigo, self.descricao = metodo, codigo, descricao
+        self.resposta = dict(resposta or {})
         super().__init__(f"O ONR recusou {metodo} (código {codigo}): {descricao}")
 
 
@@ -451,7 +530,8 @@ class Sessao:
             if r.get("RETORNO") is True:
                 self.maiusculas = maiusculas
                 return r
-            ultimo = WSOficioRecusou(metodo, r.get("CODIGOERRO"), r.get("ERRODESCRICAO") or "")
+            ultimo = WSOficioRecusou(metodo, r.get("CODIGOERRO"), r.get("ERRODESCRICAO") or "",
+                                     resposta=r)
             descr = (r.get("ERRODESCRICAO") or "").strip().rstrip(".").lower()
             if descr != "hash inválido":
                 break
@@ -532,6 +612,38 @@ class Sessao:
 
     def devolver_certidao(self, protocolo: str, motivo: str) -> dict:
         return self.chamar("DevolverCertidao", Protocolo=str(protocolo), Motivo=motivo)
+
+    # -- o acompanhamento de títulos (manual 3.2). As leituras servem a tela de
+    #    conferência; as escritas, só `onr_acompanhamento.enviar_pendentes`,
+    #    que manda o que está na fila de fatos gravados — nunca texto da tela.
+    def titulos_no_acompanhamento(self, *, de: str, ate: str, protocolo: str = "",
+                                  tipo_status: int = -1, pagina: int = 1,
+                                  por_pagina: int = 50) -> dict:
+        """`ListTitulosAT`. As duas datas são obrigatórias (erros 14 e 15) e o
+        mínimo por página é 10 (erro 12)."""
+        return self.chamar("ListTitulosAT", MaxRowPerPage=max(10, int(por_pagina)),
+                           PageNumber=int(pagina), Protocolo=str(protocolo or ""),
+                           DataProtocoloInicio=de, DataProtocoloFinal=ate,
+                           IDTipoStatus=int(tipo_status), Exportado=-1, Apresentante="")
+
+    def status_no_acompanhamento(self, id_titulo: int, *, pagina: int = 1,
+                                 por_pagina: int = 50) -> dict:
+        """`ListStatusAT` de um título: o que o ONR mostra hoje ao apresentante."""
+        return self.chamar("ListStatusAT", MaxRowPerPage=max(10, int(por_pagina)),
+                           PageNumber=int(pagina), IDTitulo=int(id_titulo),
+                           DataStatusInicio="", DataStatusFinal="", IDTipoStatus=-1)
+
+    def cadastrar_titulo_no_acompanhamento(self, campos: dict) -> dict:
+        """`InsertTituloAT` — o título com o status inicial. `campos` vem
+        pronto de `onr_acompanhamento.campos_do_titulo`."""
+        return self.chamar("InsertTituloAT", **campos)
+
+    def cadastrar_status_no_acompanhamento(self, id_titulo: int, *, tipo_status: int,
+                                           data_status: str, descricao: str) -> dict:
+        """`InsertStatusAT`. A descrição é obrigatória aqui (erro 17)."""
+        return self.chamar("InsertStatusAT", IDTitulo=int(id_titulo),
+                           IDTipoStatus=int(tipo_status), DataStatus=data_status,
+                           DescricaoStatus=descricao)
 
 
 def _transporte_da_casa(url: str, corpo: bytes, acao: str) -> tuple[int, str]:

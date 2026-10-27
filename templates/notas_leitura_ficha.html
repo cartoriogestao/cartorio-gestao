@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Leitura nº {{ leitura.id }} — Notas{% endblock %}
+{% block heading %}<h1>Leitura de documentos nº {{ leitura.id }} — {{ destinos.get(leitura.destino, leitura.destino) }}</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_leituras') }}">&larr; Leituras</a>
+  {% if voltar %}<a class="button primary" href="{{ voltar }}">Abrir a tela preenchida</a>{% endif %}
+</div>
+
+<p class="small">Pedida por {{ leitura.criada_por or '—' }} em {{ leitura.criada_em }}.
+  {% if leitura.usada_tabela %}Conferida e usada por {{ leitura.usada_por or '—' }} em
+  {{ leitura.usada_em }} ({{ leitura.usada_tabela }} nº {{ leitura.usada_id }}).{% endif %}</p>
+
+{% if leitura.erro %}
+<div class="notice danger"><strong>A leitura não terminou:</strong> {{ leitura.erro }}</div>
+{% endif %}
+
+{% set sug = leitura.sugestao or {} %}
+{% if sug.campos %}
+<section class="panel">
+  <div class="panel-head"><span>O que vai para a tela — rascunho</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Campo</th><th>Valor</th><th>De onde</th></tr></thead>
+    <tbody>
+    {% for k, v in sug.campos.items() %}
+      <tr><th>{{ k }}</th><td>{{ v }}{% if k in (sug.duvidas or []) %} <span class="badge alta small">dúvida</span>{% endif %}</td>
+        <td class="small muted">{{ (sug.de_onde or {}).get(k, '') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% if sug.lido and sug.lido != sug.campos %}
+  <p class="small" style="padding:0 12px">Lido também:
+    {% for k, v in sug.lido.items() if k not in sug.campos %}{{ k }} = {{ v }}{% if not loop.last %}; {% endif %}{% endfor %}</p>
+  {% endif %}
+</section>
+{% endif %}
+
+<h2>O que conferir antes de gravar</h2>
+{% if leitura.conferencia %}
+<ul class="card">
+  {% for a in leitura.conferencia %}
+  <li><strong>{{ a.gravidade }}</strong> — {{ a.texto }}
+    {% if a.onde %}<span class="small muted">({{ a.onde }})</span>{% endif %}</li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="muted">A leitura não apontou nada — o que não quer dizer que esteja tudo
+  certo: confira com o original assim mesmo.</p>
+{% endif %}
+
+<h2>Documento por documento</h2>
+{% for d in leitura.documentos %}
+<details class="panel" {% if loop.first %}open{% endif %}>
+  <summary class="panel-head">{{ tipos.get(d.tipo, {}).get('nome', d.tipo) }} —
+    {{ d.arquivo }}, folha {{ d.n }}</summary>
+  <div style="padding:12px">
+    {% if d.attachment_id %}
+    <p><a href="{{ url_for('attachment_view', attachment_id=d.attachment_id) }}" target="_blank">
+      Abrir o documento original</a></p>
+    {% endif %}
+    <table>
+      <tbody>
+      {% for k, v in (d.dados or {}).items() %}
+        <tr><th>{{ k }}</th><td>{{ v if v is not none else '' }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endfor %}
+
+<details class="panel" open>
+  <summary class="panel-head">O que saiu da casa nesta leitura
+    (custo estimado US$ {{ '%.3f'|format(leitura.custo_estimado or 0) }})</summary>
+  <div style="padding:12px">
+    <table>
+      <thead><tr><th>Etapa</th><th>Modelo</th><th>Páginas</th><th>Entrada</th><th>Saída</th></tr></thead>
+      <tbody>
+      {% for e in leitura.envios %}
+        <tr><td>{{ e.etapa }}{% if e.tipo %} ({{ e.tipo }}){% endif %}</td><td>{{ e.modelo }}</td>
+          <td>{{ e.paginas|join(', ') }}</td><td>{{ e.entrada }}</td><td>{{ e.saida }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p>{{ o_que_sai }}</p>
+    <p class="small"><strong>Sem máscara: {{ 'sim' if leitura.sem_mascara else 'não' }} ·
+      retenção pela Anthropic: até {{ leitura.retencao_dias }} dias.</strong>
+      {{ aviso }}</p>
+    <p class="small"><em>«{{ decisao.texto }}»</em> — o oficial, {{ decisao.data }}.</p>
+    <p class="small">{{ base_legal }}</p>
+    <p class="small muted">{{ zdr.observacao }} Fonte: {{ zdr.fonte }}</p>
+    <p class="small muted">Páginas vistas e classificadas:
+      {% for p in leitura.paginas %}{{ p.arquivo }} p{{ p.n }} = {{ p.tipo }}{% if not loop.last %}; {% endif %}{% endfor %}</p>
+  </div>
+</details>
+{% endblock %}

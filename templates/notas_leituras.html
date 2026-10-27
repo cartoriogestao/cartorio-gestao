@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Leituras de documentos — Notas{% endblock %}
+{% block heading %}<h1>Leituras de documentos por IA — Notas</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a>
+</div>
+
+<p class="small notice warning">{{ aviso }}
+  <br><em>«{{ decisao.texto }}»</em> — o oficial, {{ decisao.data }}.
+  A leitura se pede na tela do cartão de autógrafo, do reconhecimento de firma
+  e da comunicação de venda de veículo; aqui fica o registro do que saiu.</p>
+
+<section class="panel">
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Para</th><th>Situação</th><th>Quem pediu</th><th>Quando</th>
+      <th>Custo (US$)</th><th>Retenção</th></tr></thead>
+    <tbody>
+    {% for l in leituras %}
+      <tr>
+        <td><a href="{{ url_for('notas_leitura_ficha', leitura_id=l.id) }}"><strong>{{ l.id }}</strong></a></td>
+        <td class="small">{{ destinos.get(l.destino, l.destino) }}</td>
+        <td class="small">{{ l.situacao }}</td>
+        <td class="small">{{ l.criada_por or '—' }}</td>
+        <td class="small">{{ l.criada_em }}</td>
+        <td class="small">{{ '%.3f'|format(l.custo_estimado or 0) }}</td>
+        <td class="small">{{ l.retencao_dias }} dias{% if l.sem_mascara %}, sem máscara{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">Nenhuma leitura ainda.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

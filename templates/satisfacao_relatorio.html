@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block title %}Pesquisa de satisfação{% endblock %}
+{% block heading %}<h1>Pesquisa de satisfação</h1>{% endblock %}
+{% block content %}
+<section class="panel">
+  <p>A pessoa dá uma nota de 1 a 5 e, se quiser, um comentário — sem se identificar. A página abre num tablet ou
+  celular <strong>da rede da casa</strong> (o tablet do balcão), ou pelo <a href="{{ url_for('satisfacao_convite') }}">convite</a>
+  de um protocolo, que vai <strong>só ao cliente</strong>, pelo telefone e pelo e-mail do protocolo (decisão do oficial em 26/10/2026)
+  — o balcão não vê o link. O servidor não é exposto à internet: o link só abre para quem está no Wi-Fi da serventia.</p>
+  <p>Convites na fila de envio ao cliente: <strong>{{ fila.NA_FILA }}</strong>{% if fila.ENVIADO %} · enviados: {{ fila.ENVIADO }}{% endif %}{% if fila.FALHOU %} · com falha: {{ fila.FALHOU }}{% endif %}.
+  <span class="small muted">O convite por <strong>e-mail</strong> sai pelo processo «Convites da pesquisa de satisfação» da central da
+  automação (nasce desligado; o SMTP é o dos avisos de andamento), e o link abre a página da pesquisa <strong>na VPS</strong>, ao lado
+  do portal do cliente — o servidor da casa continua fora da internet. O <strong>WhatsApp</strong> fica na fila até haver modelo
+  aprovado pela Meta.</span></p>
+  <p>Página da pesquisa na VPS: {% if vps_url %}<code>{{ vps_url }}</code>{% else %}<span class="badge critica">sem endereço</span>
+  <span class="small muted">— sem ele, nenhum convite sai por e-mail.</span>{% endif %}</p>
+  {% if e_admin %}
+  <form method="post" action="{{ url_for('satisfacao_endereco_vps') }}" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Endereço (https://…/pesquisa) <input type="url" name="url" value="{{ vps_url }}" size="40"></label>
+    <button type="submit">Gravar o endereço</button>
+  </form>
+  {% endif %}
+  <p>Página da pesquisa: {% if aberta %}<span class="badge ok">ABERTA</span> — <a href="{{ url_for('satisfacao_pagina') }}" target="_blank">abrir a página</a>{% else %}<span class="badge critica">FECHADA</span>{% endif %}</p>
+  {% if e_admin %}
+  <form method="post" action="{{ url_for('satisfacao_abrir_pagina') }}" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="aberta" value="{{ '0' if aberta else '1' }}">
+    <button type="submit">{{ 'Fechar a página' if aberta else 'Abrir a página na rede da casa' }}</button>
+    <span class="small muted">É a única tela do sistema que grava sem login: por isso nasce fechada e só o oficial a abre.</span>
+  </form>
+  {% endif %}
+</section>
+<section class="panel">
+  <form method="get" class="inline-form">
+    <label>De <input type="date" name="de" value="{{ r.de }}"></label>
+    <label>até <input type="date" name="ate" value="{{ r.ate }}"></label>
+    <button type="submit">Ver</button>
+    <button type="button" onclick="window.print()">Imprimir</button>
+  </form>
+</section>
+<div class="cards">
+  <div class="card stat"><span>Avaliações</span><strong>{{ r.total }}</strong></div>
+  <div class="card stat"><span>Média</span><strong>{{ '%.2f'|format(r.media) if r.media is not none else '—' }}</strong></div>
+  {% for d in r.distribuicao %}<div class="card stat {% if d.nota <= 2 and d.total %}danger{% endif %}"><span>{{ d.nota }} — {{ d.nome }}</span><strong>{{ d.total }}</strong></div>{% endfor %}
+</div>
+<div class="grid2">
+  <section class="panel"><h2>Por atendente</h2>
+    {% if r.por_atendente %}<table><thead><tr><th>Atendente</th><th>Avaliações</th><th>Média</th></tr></thead><tbody>
+    {% for a in r.por_atendente %}<tr><td>{{ a.nome }}</td><td>{{ a.total }}</td><td>{{ '%.2f'|format(a.media) }}</td></tr>{% endfor %}
+    </tbody></table>
+    <p class="small muted">Só entra no atendente a avaliação que veio pelo convite de um <strong>protocolo</strong> — e o
+    atendente é quem abriu o protocolo. A do tablet do balcão fica «sem vínculo».</p>
+    {% else %}<p class="muted">Nenhuma avaliação no período.</p>{% endif %}
+  </section>
+  <section class="panel"><h2>Por atribuição</h2>
+    {% if r.por_atribuicao %}<table><thead><tr><th>Atribuição</th><th>Avaliações</th><th>Média</th></tr></thead><tbody>
+    {% for a in r.por_atribuicao %}<tr><td>{{ a.atribuicao }}</td><td>{{ a.total }}</td><td>{{ '%.2f'|format(a.media) }}</td></tr>{% endfor %}
+    </tbody></table>{% else %}<p class="muted">Nenhuma avaliação no período.</p>{% endif %}
+  </section>
+</div>
+<section class="panel"><h2>Comentários</h2>
+  {% if r.comentarios %}<div class="table-wrap"><table><thead><tr><th>Dia</th><th>Nota</th><th>Comentário</th><th>Atendente</th></tr></thead><tbody>
+  {% for c in r.comentarios %}<tr><td>{{ fmt_date(c.dia) }}</td><td>{{ c.nota }}</td><td style="white-space:pre-wrap">{{ c.comentario }}</td><td>{{ c.atendente_nome or '—' }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  <p class="small muted">Comentário que pede providência vira manifestação na <a href="{{ url_for('ouvidoria_lista') }}">ouvidoria</a> — registre lá, como reclamação ou sugestão anônima, pelo canal «Balcão».</p>
+  {% else %}<p class="muted">Nenhum comentário no período.</p>{% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}Ouvidoria — relatório{% endblock %}
+{% block heading %}<h1>Ouvidoria — relatório por período</h1>{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('ouvidoria_lista') }}">← Ouvidoria</a></p>
+<section class="panel">
+  <form method="get" class="inline-form">
+    <label>Recebidas de <input type="date" name="de" value="{{ r.de }}"></label>
+    <label>até <input type="date" name="ate" value="{{ r.ate }}"></label>
+    <button type="submit">Ver</button>
+    <button type="button" onclick="window.print()">Imprimir</button>
+  </form>
+  <p class="small muted">Conta as manifestações RECEBIDAS no período. Nenhum dado de quem se manifestou entra no relatório.</p>
+</section>
+<div class="cards">
+  <div class="card stat"><span>Recebidas</span><strong>{{ r.total }}</strong></div>
+  <div class="card stat"><span>Em aberto</span><strong>{{ r.em_aberto }}</strong></div>
+  <div class="card stat danger"><span>Vencidas sem resposta</span><strong>{{ r.vencidas }}</strong></div>
+  <div class="card stat"><span>Respondidas no prazo</span><strong>{{ r.respondidas_no_prazo }} de {{ r.respondidas }}</strong></div>
+  <div class="card stat"><span>Dias até a resposta (média)</span><strong>{{ r.media_dias_resposta if r.media_dias_resposta is not none else '—' }}</strong></div>
+</div>
+<div class="grid2">
+  {% for titulo, lista in [('Por tipo', r.por_tipo), ('Por canal', r.por_canal), ('Por setor', r.por_setor), ('Por situação', r.por_situacao)] %}
+  <section class="panel"><h2>{{ titulo }}</h2>
+    {% if lista %}<table><tbody>{% for x in lista %}<tr><td>{{ x.nome }}</td><td style="text-align:right">{{ x.total }}</td></tr>{% endfor %}</tbody></table>
+    {% else %}<p class="muted">Nada no período.</p>{% endif %}
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

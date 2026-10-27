@@ -5,6 +5,7 @@
   "formato": "JINJA",
   "explica": "O que o cliente entregou no balcão, e quando.",
   "campos": [
+    "acompanhamento",
     "data",
     "documento",
     "email",

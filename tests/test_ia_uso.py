@@ -224,8 +224,11 @@ def test_o_teste_do_robo_chama_o_provedor_fora_da_transacao_e_registra(cg_casa_l
 def test_o_robo_sem_pasta_de_dados_segue_e_o_registro_vai_para_o_log(monkeypatch, caplog):
     monkeypatch.setattr(LLM, "_pedir", lambda *a, **k: {"texto": "ok", "modelo": "m",
                                                         "entrada": 1, "saida": 1})
+    # FINALIDADE SEM TETO DIÁRIO: desde 26/10/2026 a que TEM teto (como
+    # «robo_rascunho») não sobe sem pasta de dados — a cota falha fechada
+    # (tests/test_ia_cota.py::test_o_robo_sem_pasta_e_com_teto_nao_sobe).
     with caplog.at_level(logging.ERROR, logger="cartorio.ia"):
-        assert LLM.chamar_provedor("grok", "xai-k", "s", "u", finalidade="robo_rascunho") == "ok"
+        assert LLM.chamar_provedor("grok", "xai-k", "s", "u", finalidade="") == "ok"
     assert "USO DE IA NAO REGISTRADO" in caplog.text
 
 

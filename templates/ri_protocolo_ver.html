@@ -42,6 +42,33 @@
    Os arquivos vão para a mesma tabela `attachments` do expediente e da tarefa.
    Uma segunda tabela de anexo faria dois lugares para procurar o mesmo papel. #}
 {# REGRESSÃO 15/09/2026 — relato ajuda #60 (Carla): o painel «Documentos do título» NÃO pode ficar em {% block heading %} — heading só tem o <h1> (como as outras telas RI). Painel em heading ia para .page-heading no topbar e quebrava a tela do recibo/comprovante. Fica em {% block content %}, depois da barra de ações. #}
+{# A NOTA DEVOLUTIVA NO TOPO — pedido do oficial em 25/10/2026: «o sistema tem local
+   claro para cadastrar nota devolutiva no protocolo?». Medido antes: nenhuma nota tinha
+   sido cadastrada pela tela; as feitas em Word eram só anexadas, e o protocolo ficava
+   ABERTO, sem prazo de exigência. O lugar ficou no alto, ao lado da situação, e o
+   anexo abaixo aceita o próprio arquivo da nota. #}
+<section class="panel" id="nota-devolutiva">
+  <div class="panel-head"><span>Nota devolutiva</span>
+    <span class="small muted"><a href="{{ url_for('ri_nota_devolutiva', protocolo_id=p.id) }}">abrir as notas e o reingresso</a></span></div>
+  <div style="padding:10px 14px">
+    {% if nota_aberta %}
+      <p><span class="badge alta">Em exigência</span>
+        Nota nº {{ nota_aberta.numero }} de {{ fmt_date(nota_aberta.data_nota) }}, aguardando
+        cumprimento{% if p.data_limite %} — a prenotação vence em {{ fmt_date(p.data_limite) }}{% endif %}.</p>
+      <p class="small muted">Quando o interessado trouxer o que foi pedido, anexe abaixo com o tipo
+        «Cumprimento de exigência»: o reingresso é registrado sozinho.</p>
+    {% elif notas %}
+      <p class="small">{{ notas|length }} nota(s) devolutiva(s) neste protocolo, nenhuma aguardando cumprimento.</p>
+    {% endif %}
+    {% if nota_recusa %}
+      {% if not notas %}<p class="small muted">{{ nota_recusa }}</p>{% endif %}
+    {% else %}
+      <p><a class="button" href="{{ url_for('ri_nota_devolutiva', protocolo_id=p.id) }}">Emitir ou cadastrar nota devolutiva</a>
+        <span class="small muted">— ou anexe o arquivo da nota já redigida, logo abaixo, com o tipo «Nota devolutiva».</span></p>
+    {% endif %}
+  </div>
+</section>
+
 <section class="panel">
   <div class="panel-head"><span>Documentos do título</span>
     <span class="small muted">{{ documentos|length }}
@@ -49,12 +76,13 @@
   <div style="padding:14px">
     {% if documentos %}
     <div class="table-wrap"><table>
-      <thead><tr><th>Arquivo</th><th>Descrição</th><th>Quem enviou</th>
+      <thead><tr><th>Arquivo</th><th>Tipo</th><th>Descrição</th><th>Quem enviou</th>
         <th>Quando</th><th></th></tr></thead>
       <tbody>
       {% for d in documentos %}
         <tr>
           <td class="small">{{ d.original_name }}</td>
+          <td class="small">{{ ROTULO_DO_TIPO.get(d.documento_tipo, d.documento_tipo) if d.documento_tipo else '—' }}</td>
           <td class="small">{{ d.description or '—' }}</td>
           <td class="small">{{ d.enviado_por_nome or '—' }}</td>
           <td class="small">{{ fmt_dt(d.uploaded_at) }}</td>
@@ -75,8 +103,27 @@
           style="margin-top:12px">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label>Arquivos<input type="file" name="documento" multiple></label>
-      <label>O que é<input name="descricao"
+      <label>Tipo do documento
+        <select name="tipo" required>
+          <option value="">— escolha —</option>
+          {% for valor, rotulo in TIPOS_DO_TITULO %}
+          <option value="{{ valor }}">{{ rotulo }}</option>
+          {% endfor %}
+        </select></label>
+      <label class="span2">O que é<input name="descricao"
              placeholder="escritura de compra e venda, ITBI, certidão…"></label>
+      <details class="span2">
+        <summary class="small">Se for <strong>nota devolutiva</strong> ou <strong>cumprimento de exigência</strong></summary>
+        <div class="grid2" style="margin-top:6px">
+          <label>Data da nota<input type="date" name="data_nota"></label>
+          <label>Data do reingresso (cumprimento)<input type="date" name="data_reingresso"></label>
+          <p class="small muted span2">Vazia, vale hoje. Data passada que mantém a prioridade
+            de uma prenotação já vencida só o oficial ou o gerente registram, pela tela da nota.</p>
+          <label class="span2">Exigências — opcional quando o arquivo é a nota assinada (uma por linha)
+            <textarea name="exigencias" rows="4"></textarea></label>
+          <label class="span2">Fundamentação (opcional)<textarea name="fundamentacao" rows="2"></textarea></label>
+        </div>
+      </details>
       <div class="actions span2"><button class="primary">Anexar</button>
         <span class="small muted">Ele fica dentro da pasta de arquivos que o
           backup já varre.</span></div>
@@ -175,6 +222,8 @@
         <span class="badge alta">não encontrada no acervo</span>{% endif %}</div></div>
     <div><small class="muted">Contato</small><div>{{ p.telefone or '—' }}
       {%- if p.email %} · {{ p.email }}{% endif %}</div></div>
+    <div><small class="muted">Avisos ao cliente</small><div>
+      <a href="{{ url_for('andamento_prenotacao', protocolo_id=p.id) }}">exigência e prazo da prenotação — consentimento</a></div></div>
     {% if p.anotacao %}<div class="span2"><small class="muted">Anotação</small>
       <div>{{ p.anotacao }}</div></div>{% endif %}
   </div>
@@ -397,6 +446,32 @@
 </section>
 {% endif %}
 
+{% if acompanhamento_onr and acompanhamento_onr.eventos %}
+<section class="panel" id="acompanhamento-onr">
+  {# O QUE ESTE TITULO JA DISSE A CENTRAL (26/10/2026). O andamento so entra
+     na fila quando o fato foi gravado; aqui se ve o que subiu, o que espera e
+     por que — e o que subiu e depois deixou de ser verdade aqui. #}
+  <div class="panel-head"><span>Acompanhamento no ONR</span>
+    <span class="small muted"><a href="{{ url_for('onr_acompanhamento') }}">a fila inteira</a></span></div>
+  {% for t in acompanhamento_onr.titulos %}
+    <p class="small">Título nº {{ t.id_titulo_onr }} no ONR ({{ t.ambiente|lower }}),
+      {{ 'cadastrado' if t.como == 'CADASTRADO' else 'que já existia lá' }} em {{ (t.cadastrado_em or '')[:16]|replace('T', ' ') }}.</p>
+  {% endfor %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Andamento</th><th>Data</th><th>Texto</th><th>Situação</th><th>Observação</th></tr></thead>
+    <tbody>
+    {% for e in acompanhamento_onr.eventos %}
+      <tr><td class="small">{{ e.rotulo }}</td><td class="small">{{ e.data_status }}</td>
+          <td class="small" style="white-space:pre-line">{{ e.descricao }}</td>
+          <td class="small">{{ e.situacao|lower }}{% if e.ambiente %} ({{ e.ambiente|lower }}){% endif %}</td>
+          <td class="small">{% if e.fato_sumiu %}<strong class="danger">Enviado, mas {{ e.fato_sumiu }}: corrija no ONR.</strong>
+            {% else %}{{ e.ultimo_erro or e.motivo_fim or '' }}{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+
 <details class="panel">
   <summary>Corrigir os dados do título</summary>
   <div class="notice small">
@@ -425,7 +500,7 @@
     <tbody>
     {% for h in historico %}
       <tr><td class="small">{{ (h.ts or '')[:16].replace('T', ' ') }}</td>
-          <td class="small">{{ h.quem or '—' }}</td>
+          <td class="small">{{ h.quem or '—' }}{% if h.agente %}<br><span class="muted">praticado pelo agente {{ h.agente }}{% if h.a_mando_de %}, a mando de {{ h.a_mando_de }}{% else %}, sem dizer a mando de quem{% endif %}</span>{% endif %}</td>
           <td class="small">{{ h.action }}</td>
           <td class="small" style="word-break:break-word">{{ (h.details or '')[:220] }}</td></tr>
     {% endfor %}

@@ -25,6 +25,7 @@ documento(s) abaixo, para o fim indicado.</p>
 <p><b>TOTAL: R$ {{ soma.total }}</b>{% if pendente.total_centavos %} — <b>a quitar: R$ {{ pendente.total }}</b>{% endif %}.</p>
 {% endif %}
 {% if p.observacao %}<p><b>Observação:</b> {{ observacao }}</p>{% endif %}
+{% if acompanhamento %}<p><b>ACOMPANHE O SEU PEDIDO:</b> protocolo nº {{ acompanhamento.numero }}, código de acompanhamento <b>{{ acompanhamento.codigo }}</b>. {{ acompanhamento.como_consultar }}</p>{% endif %}
 <p>A retirada do documento depende da apresentação deste protocolo e da quitação
 dos emolumentos devidos.</p>
 <p>{{ sv.cidade_uf }}, {{ data }}.</p>

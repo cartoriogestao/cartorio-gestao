@@ -14,6 +14,7 @@ PAPEIS: tuple[dict, ...] = (
     {'chave': 'RI_CERTIDAO_DOMINIAL', 'padrao': ('ri_odt', 'MIOLO_CERTIDAO_DOMINIAL')},
     {'chave': 'RI_CERTIDAO_VINTENARIA', 'padrao': ('ri_odt', 'MIOLO_CERTIDAO_VINTENARIA')},
     {'chave': 'RI_CERTIDAO_NEGATIVA_IMOVEL', 'padrao': ('ri_certidao_negativa', 'MODELO_PADRAO')},
+    {'chave': 'RI_CERTIDAO_POSITIVA_PESSOA', 'padrao': ('ri_certidao_negativa', 'MODELO_POSITIVA')},
     {'chave': 'RI_NOTA', 'padrao': ('ri_odt', 'MODELO_NOTA_PADRAO')},
     {'chave': 'RI_PRENOTACAO', 'padrao': ('ri_web', 'MODELO_PRENOTACAO')},
     {'chave': 'RI_LIVRO3_FICHA', 'padrao': ('ra_ficha_odt', 'MODELO_FICHA_LIVRO3_PADRAO'), 'elementos_comuns': False},

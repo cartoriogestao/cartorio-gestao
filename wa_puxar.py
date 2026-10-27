@@ -197,15 +197,11 @@ def rodar_automacao(ctx) -> dict:
         confirmar(con, r.get("ids"))
     if r.get("aplicadas"):
         import identidade_do_robo as IDR
-        try:
-            ctx.db.log(None, "automação", "wa_puxar", "wa_conversa", None,
-                       {"ok": True, "aplicadas": r["aplicadas"], "repetidas": r["repetidas"]},
-                       agente="automação — caixa-postal do WhatsApp",
-                       a_mando_de=IDR.PELO_RESPONSAVEL)
-        except TypeError:
-            # um `log` antigo, sem os dois campos (o dos testes de mesa)
-            ctx.db.log(None, "automação", "wa_puxar", "wa_conversa", None,
-                       {"ok": True, "aplicadas": r["aplicadas"], "repetidas": r["repetidas"]})
+        # Sem o «log antigo» sem agente: o registro do robô diz sempre quem é (#36).
+        ctx.db.log(None, "automação", "wa_puxar", "wa_conversa", None,
+                   {"ok": True, "aplicadas": r["aplicadas"], "repetidas": r["repetidas"]},
+                   agente="automação — caixa-postal do WhatsApp",
+                   a_mando_de=IDR.PELO_RESPONSAVEL)
     return PROC.resultado(ASCH.OK, f"{r['aplicadas']} mensagem(ns) nova(s) na fila do balcão, "
                                    f"{r['repetidas']} repetida(s).")
 

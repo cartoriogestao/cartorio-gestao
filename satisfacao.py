@@ -63,6 +63,22 @@ O LINK VAI SÓ AO CLIENTE — DECISÃO DO OFICIAL EM 26/10/2026
       diz isso.
     - O tablet do balcão (a página sem convite e sem atendente) continua.
 
+O ENVIO PASSOU A EXISTIR — e a frase de cima («o envio em si não existe
+neste ramo») ficou como história (proposta aceita pelo oficial em 26/10/2026,
+«aceito a proposta, faça o PR curto»)
+    O convite por E-MAIL sai pelo mesmo SMTP dos avisos de andamento ao
+    cliente, numa rodada da automação que nasce DESLIGADA
+    (`satisfacao_envio`). O link do e-mail NÃO aponta para este servidor, que
+    continua fora da internet: aponta para a página da pesquisa na VPS, ao lado
+    do portal do cliente. O servidor EMPURRA para lá só a chave do convite (o
+    hash de um código que se recalcula aqui e não se guarda), a atribuição e a
+    data; a VPS mostra o formulário, guarda a resposta, e o servidor a PUXA de
+    volta e a grava aqui por `registrar`. O WhatsApp continua na fila, com o
+    motivo: não há modelo aprovado pela Meta.
+    - A fila ganhou as colunas do envio (`MIGRACOES`): as tentativas, quando
+      se tentou, e a chave que foi à VPS (o hash — nunca o código, que é o
+      voto pronto que a regra de cima proíbe guardar).
+
 PostgreSQL nativo, pelo `bd_nativo`. Data calculada no Python.
 """
 from __future__ import annotations
@@ -142,11 +158,33 @@ SCHEMA: tuple[tuple[str, str], ...] = (
 )
 
 
+#: As colunas do ENVIO do convite (26/10/2026, `satisfacao_envio`). Só ADD
+#: COLUMN: o banco que já tem a fila do PR da pesquisa as ganha sem perder nada.
+#: `chave_vps` é o sha256 do código do convite — o código não se guarda.
+MIGRACOES: tuple[tuple[str, str, str], ...] = (
+    ("ou_satisfacao_convites", "tentativas", "integer NOT NULL DEFAULT 0"),
+    ("ou_satisfacao_convites", "tentado_em", "TEXT"),
+    ("ou_satisfacao_convites", "chave_vps", "TEXT"),
+    ("ou_satisfacao_convites", "na_vps_em", "TEXT"),
+)
+#: Índice sobre coluna de migração: DEPOIS dela, nunca no `SCHEMA`.
+INDICES_DEPOIS_DA_MIGRACAO: tuple[tuple[str, str], ...] = (
+    ("ix_ou_satisfacao_convites_chave_vps",
+     "CREATE INDEX IF NOT EXISTS ix_ou_satisfacao_convites_chave_vps "
+     "ON ou_satisfacao_convites (chave_vps)"),
+)
+
+
 def init_satisfacao_schema(con) -> None:
     bd = banco(con)
     for nome, comando in SCHEMA:
         if not bd.tem_tabela(nome):
             bd.escrever(comando)
+    for tabela, coluna, tipo in MIGRACOES:
+        if not bd.tem_coluna(tabela, coluna):
+            bd.escrever(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
+    for _nome, comando in INDICES_DEPOIS_DA_MIGRACAO:
+        bd.escrever(comando)
 
 
 def pagina_aberta(get_setting) -> bool:

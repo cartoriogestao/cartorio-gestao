@@ -19,6 +19,7 @@ Atualizado em 2026-09-19 10:40 (America/Fortaleza).
 | `CAIXA_RECIBO` | Caixa e protocolo | Recibo | TEXTO | `caixa_web.MODELO_RECIBO` | JINJA |
 | `CAIXA_ORCAMENTO` | Caixa e protocolo | Orçamento | TEXTO | `caixa_web.MODELO_ORCAMENTO` | JINJA |
 | `CAIXA_RECEPCAO` | Caixa e protocolo | Comprovante de recepção | TEXTO | `caixa_web.MODELO_RECEPCAO` | JINJA |
+| `CAIXA_EXIGENCIA` | Caixa e protocolo | Nota de exigência — protocolo geral | TEXTO | `caixa_exigencia.MODELO_NOTA_DE_EXIGENCIA` | JINJA |
 | `NOTAS_TRASLADO` | Tabelionato de Notas | Traslado | TEXTO | `notas_web.MODELO_TRASLADO` | JINJA |
 | `NOTAS_TERMO_LIVRO` | Tabelionato de Notas | Termo do livro | TEXTO | `notas_web.MODELO_TERMO_LIVRO` | JINJA |
 | `NOTAS_CARTAO_FICHA` | Tabelionato de Notas | Cartão de autógrafo | TEXTO | `notas_web.MODELO_CARTAO_FICHA` | JINJA |

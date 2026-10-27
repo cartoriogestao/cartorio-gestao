@@ -1,0 +1,126 @@
+{% extends 'base.html' %}
+{% block title %}Nota de exigência — protocolo {{ p.numero }}{% endblock %}
+{% block heading %}<h1>Nota de exigência — protocolo {{ p.numero }}</h1>{% endblock %}
+{% block content %}
+{#  A NOTA DE EXIGÊNCIA GERAL — 26/10/2026. «precisamos que todas as
+    atribuições tenham nota de exigência» (o oficial). Esta é a das
+    atribuições que não têm nota própria: Notas, Registro Civil e Protesto.
+    O RI (nota devolutiva da prenotação) e o RCPJ/RTD (qualificação negativa
+    do título) continuam com as deles — e as que estiverem abertas aparecem
+    aqui só para LER. A regra mora em `caixa_exigencia.py`. #}
+<div class="actions">
+  <a class="button" href="{{ url_for('caixa_protocolo', protocolo_id=p.id) }}">&larr; Protocolo {{ p.numero }}</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Protocolo {{ p.numero }}</span>
+    <span class="small muted">{{ p.atribuicao or '—' }} · aberto em {{ fmt_date(p.data_abertura) }}</span></div>
+  <div class="grid2 detail">
+    <div><small class="muted">Interessado</small><div>{{ p.interessado or '—' }}</div></div>
+    <div><small class="muted">Assunto</small><div>{{ p.assunto or '—' }}</div></div>
+  </div>
+</section>
+
+{% if de_outras_atribuicoes %}
+<section class="panel">
+  <div class="panel-head"><span>Exigências abertas em atribuição com nota própria</span>
+    <span class="small muted">só leitura — cumpre-se na tela de cada uma</span></div>
+  <ul class="small" style="padding:0 30px 10px">
+    {% for x in de_outras_atribuicoes %}
+    <li><strong>{{ x.onde }}</strong>{% if x.prazo_ate %} — prazo {{ fmt_date(x.prazo_ate) }}{% endif %}
+      {% if x.prenotacao_id %} · <a href="{{ url_for('ri_nota_devolutiva', protocolo_id=x.prenotacao_id) }}">abrir a nota devolutiva</a>{% endif %}
+      {% if x.titulo_id %} · <a href="{{ url_for('rcpj_rtd_titulo', titulo_id=x.titulo_id) }}">abrir o título</a>{% endif %}
+      <ol>{% for item in x.itens %}<li>{{ item }}</li>{% endfor %}</ol></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% for n in notas %}
+<section class="panel" id="exigencia-{{ n.id }}">
+  <div class="panel-head">
+    <span><strong>Nota nº {{ n.numero }}</strong> — {{ n.atribuicao_nome }} — {{ fmt_date((n.aberta_em or '')[:10]) }}
+      {% if n.aberta_por %}<span class="small muted">· por {{ n.aberta_por }}</span>{% endif %}</span>
+    <span>{% if n.situacao == 'ABERTA' %}<span class="badge alta">{{ n.situacao_rotulo }}</span>
+          {% elif n.situacao == 'CUMPRIDA' %}<span class="badge ok">Cumprida em {{ fmt_date((n.cumprida_em or '')[:10]) }}{% if n.cumprida_por %} por {{ n.cumprida_por }}{% endif %}</span>
+          {% else %}<span class="badge critica">Cancelada em {{ fmt_date((n.cancelada_em or '')[:10]) }}</span>{% endif %}</span>
+  </div>
+  <div style="padding:12px 16px">
+    <ol class="small">{% for item in n.itens %}<li>{{ item }}</li>{% endfor %}</ol>
+    {% if n.fundamento %}<p class="small muted"><strong>Fundamento:</strong> {{ n.fundamento }}</p>{% endif %}
+    {% if n.prazo_ate %}<p class="small"><strong>Prazo para cumprir:</strong> {{ fmt_date(n.prazo_ate) }}
+      {% if n.situacao == 'ABERTA' and n.prazo_ate < hoje %}<span class="badge critica">vencido</span>{% endif %}</p>{% endif %}
+    {% if n.cumprida_observacao %}<p class="small muted"><strong>Ao cumprir:</strong> {{ n.cumprida_observacao }}</p>{% endif %}
+    {% if n.cancelada_motivo %}<p class="small muted"><strong>Motivo do cancelamento</strong>{% if n.cancelada_por %} ({{ n.cancelada_por }}){% endif %}: {{ n.cancelada_motivo }}</p>{% endif %}
+    <div class="actions">
+      <a class="button" href="{{ url_for('caixa_exigencia_papel', protocolo_id=p.id, exigencia_id=n.id) }}" target="_blank">Imprimir nota (PDF)</a>
+      <a class="button" href="{{ url_for('caixa_exigencia_papel', protocolo_id=p.id, exigencia_id=n.id, formato='odt') }}">.odt</a>
+    </div>
+    {% if n.situacao == 'ABERTA' and user.role in ('ADMIN', 'MANAGER', 'USER') %}
+    <form method="post" class="form-grid"
+          action="{{ url_for('caixa_exigencia_cumprida', protocolo_id=p.id, exigencia_id=n.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="span2">Observação (opcional — o que o interessado trouxe)
+        <input name="observacao"></label>
+      <div class="span2"><button class="primary">Dar por cumprida</button></div>
+    </form>
+    <form method="post" class="form-grid" style="margin-top:8px"
+          action="{{ url_for('caixa_exigencia_cancelar', protocolo_id=p.id, exigencia_id=n.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="span2">Motivo do cancelamento (pelo menos dez letras — a nota não se apaga)
+        <input name="motivo" required minlength="10" placeholder="ex.: emitida no protocolo errado"></label>
+      <div class="span2"><button onclick="return confirm('Cancelar a nota nº {{ n.numero }}? Ela continua à vista, com o motivo.')">Cancelar a nota</button></div>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endfor %}
+
+{% if user.role in ('ADMIN', 'MANAGER', 'USER') %}
+<details class="panel" {% if not notas or form or avisos %}open{% endif %} id="abrir-exigencia">
+  <summary><strong>Abrir nota de exigência</strong></summary>
+  {% if encerrado %}
+  <p class="small muted" style="padding:0 14px 14px">Protocolo encerrado: reabra-o (com o motivo) antes de abrir nota de exigência.</p>
+  {% elif atribuicao_do_protocolo in COM_NOTA_PROPRIA %}
+  <div class="notice warning" style="margin:0 14px 14px">{{ COM_NOTA_PROPRIA[atribuicao_do_protocolo] }}
+    Se este atendimento é também de outra atribuição, escolha-a abaixo.</div>
+  {% endif %}
+  {% if not encerrado %}
+  {% if avisos %}
+  <div class="flash warning" style="margin:0 14px">
+    <strong>Confira o texto antes de gravar — ele pode subir ao portal do cliente.</strong>
+    <ul class="small">{% for a in avisos %}<li>{{ a }}</li>{% endfor %}</ul>
+    <span class="small">Se o texto está certo assim (por exemplo, é o nome do próprio interessado ou de um órgão), marque a caixa abaixo e grave de novo.</span>
+  </div>
+  {% endif %}
+  <form method="post" class="form-grid" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Atribuição
+      <select name="atribuicao" required>
+        <option value="">— escolha —</option>
+        {% set escolhida = form.atribuicao or sugerida %}
+        {% for codigo, nome in ATRIBUICOES.items() %}
+          <option value="{{ codigo }}" {% if escolhida == codigo %}selected{% endif %}>{{ nome }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Prazo para cumprir (opcional)
+      <input type="date" name="prazo_ate" min="{{ hoje }}" value="{{ form.prazo_ate or '' }}"></label>
+    <label class="span2">Exigências — <strong>uma por linha</strong>: o que falta o interessado trazer ou fazer
+      <textarea name="texto" rows="7" required placeholder="Trazer a certidão de casamento atualizada (até 90 dias).&#10;Falta a anuência do cônjuge.&#10;Trazer a procuração com poderes específicos.">{{ form.texto or '' }}</textarea>
+      {# A REGRA DO BALCÃO — decisão do oficial em 26/10/2026. #}
+      <span class="small muted"><strong>Não escreva nome de terceiros nem CPF/CNPJ</strong>: escreva o papel
+        da pessoa — «falta a anuência do cônjuge», e não o nome dela. Este texto pode aparecer no
+        portal do cliente e nos avisos de andamento.</span>
+    </label>
+    <label class="span2">Fundamento (opcional)
+      <textarea name="fundamento" rows="2">{{ form.fundamento or '' }}</textarea></label>
+    {% if avisos %}
+    <label class="span2"><input type="checkbox" name="revisei_o_texto" value="1">
+      Revisei: o texto não leva nome nem documento de terceiro.</label>
+    {% endif %}
+    <div class="span2"><button class="primary">Abrir nota de exigência</button></div>
+  </form>
+  {% endif %}
+</details>
+{% endif %}
+{% endblock %}

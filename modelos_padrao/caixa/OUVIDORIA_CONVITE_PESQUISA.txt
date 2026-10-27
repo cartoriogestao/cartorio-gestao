@@ -1,0 +1,15 @@
+===ASSUNTO===
+Pesquisa de satisfação — {serventia}
+===CORPO===
+Olá!
+
+Você foi atendido(a) recentemente por {serventia}. Queremos saber como foi o atendimento: é uma nota de 1 a 5 e, se quiser, um comentário. A resposta é anônima e leva menos de um minuto.
+
+Responda por este endereço:
+{link}
+
+O convite vale até {validade} e pode ser respondido uma vez.
+
+Esta mensagem foi enviada automaticamente; não é preciso respondê-la. A serventia não pede pagamento, senha nem dados pessoais por este canal.
+
+{serventia}

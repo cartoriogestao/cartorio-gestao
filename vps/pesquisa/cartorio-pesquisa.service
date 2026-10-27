@@ -1,0 +1,32 @@
+# A pesquisa de satisfação na VPS — unidade do systemd. Ver LEIA-ME.md.
+# Copiar para /etc/systemd/system/cartorio-pesquisa.service.
+[Unit]
+Description=Cartorio Gestao - pesquisa de satisfacao (convite por e-mail)
+After=network.target
+
+[Service]
+Type=simple
+User=cartorio-pesquisa
+Group=cartorio-pesquisa
+WorkingDirectory=/opt/cartorio-pesquisa
+EnvironmentFile=/etc/cartorio-pesquisa/pesquisa.env
+ExecStart=/usr/bin/python3 -I /opt/cartorio-pesquisa/pesquisa_vps.py
+Restart=always
+RestartSec=5
+
+# O serviço só lê o programa e só escreve na pasta do banco.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cartorio-pesquisa
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

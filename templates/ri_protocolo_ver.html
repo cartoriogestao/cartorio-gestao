@@ -11,6 +11,8 @@
   <strong>Pendente de selo — o escrevente deve selar.</strong>
   <form method="post" action="{{ url_for('ri_selar_prenotacao', protocolo_id=p.id) }}">
     <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    <label>Apresentante <input name="apresentante" value="{{ p.apresentante or '' }}"></label>
+    <label>CPF/CNPJ <input name="apresentante_documento" value="{{ p.apresentante_documento or '' }}"></label>
     <label>Natureza / título <input name="natureza_titulo" value="{{ p.natureza_titulo or p.objeto or '' }}" required></label>
     <label>Item TJ <input name="codigo_tj" placeholder="ex.: 16.1"></label>
     {# O protocolo que paga o selo da prenotação (16.1) — 22/10/2026, trava do

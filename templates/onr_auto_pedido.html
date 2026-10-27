@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+{% block title %}ONR {{ p.protocolo }} — aprovar{% endblock %}
+{% block heading %}<h1>Pedido ONR {{ p.protocolo }} — o que o robô preparou</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('onr_auto_fila') }}">&larr; Preparados pelo robô</a>
+  <a class="button" href="{{ url_for('onr_certidao_ficha', pedido_id=p.id) }}">Ficha do pedido</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span><strong>Resumo do pedido</strong></span>
+    <span class="badge">{{ nome_da_etapa.get(a.etapa, a.etapa) }}</span></div>
+  <div style="padding:0 14px 12px">
+    <p><strong>Tipo pedido:</strong> {{ rotulo_do_tipo(p.tipo_certidao) }} ·
+       <strong>Status no ONR:</strong> {{ rotulo_do_status(p.status_onr) or '—' }} ·
+       <strong>Valor:</strong> {{ p.valor or '—' }}</p>
+    <p><strong>Solicitante:</strong> {{ p.solicitante or '—' }} ·
+       <strong>Pedido em:</strong> {{ (p.data_pedido or '')[:16]|replace('T', ' ') }}</p>
+    {% if p.matricula_id %}<p><strong>Matrícula:</strong>
+      <a href="{{ url_for('ri_ficha', matricula_id=p.matricula_id) }}">{{ p.matricula_numero }}</a></p>{% endif %}
+    {% if a.pessoa_busca %}<p><strong>Pessoa pesquisada:</strong> {{ a.pessoa_busca }}</p>{% endif %}
+    {% if a.motivo %}<p class="notice small">{{ a.motivo }}</p>{% endif %}
+    {% if a.erro %}<p class="warning small">{{ a.erro }}</p>{% endif %}
+    {% if not selo_pago_ligado and a.etapa in ('A_REVISAR', 'A_MAO', 'AGUARDANDO_PAGAMENTO') %}<p class="warning small">O selo pago no ONR está DESLIGADO (só o
+      oficial liga): este pedido não é emitido por aqui — a certidão segue a trava normal do selo
+      pago, pela tela de sempre.</p>{% endif %}
+    <details><summary class="small">Tudo o que o ONR mandou</summary>
+      <table class="small">{% for k, v in dados.items() %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}</table>
+    </details>
+  </div>
+</section>
+
+{% if a.etapa == 'CUSTAS_A_APROVAR' %}
+<section class="panel">
+  <div class="panel-head"><span><strong>Custas a informar ao ONR</strong></span></div>
+  <form method="post" action="{{ url_for('onr_auto_custas', pedido_id=p.id) }}" class="form-grid" style="padding:0 14px 12px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p class="span2 small">Calculado pela tabela do dia para a certidão de <strong>uma folha</strong>
+      ({{ a.tipo_ri or 'tipo a definir' }}). Confira e corrija se a certidão tiver mais folhas.</p>
+    <label>Valor (R$) <input name="valor" value="{{ a.custas_calculadas or '' }}" size="12"></label>
+    <div class="span2"><button class="primary">Aprovar as custas</button>
+      <span class="small muted">o robô as informa ao ONR na próxima rodada</span></div>
+  </form>
+</section>
+{% endif %}
+
+{% if a.etapa == 'A_REVISAR' %}
+<section class="panel">
+  <div class="panel-head"><span><strong>A certidão</strong></span>
+    <span class="muted">o clique em Aprovar EMITE a certidão, com selo, no seu nome</span></div>
+  <form method="post" action="{{ url_for('onr_auto_aprovar', pedido_id=p.id) }}" class="form-grid" style="padding:0 14px 12px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if a.via == 'MATRICULA' %}
+      <label>Tipo da certidão
+        <select name="tipo_ri" onchange="location='{{ url_for('onr_auto_pedido', pedido_id=p.id) }}?tipo_ri='+this.value">
+          {% for t in tipos %}<option value="{{ t }}" {% if t == tipo_ri %}selected{% endif %}>{{ t|replace('_', ' ')|lower }}</option>{% endfor %}
+        </select></label>
+      {% if tipo_ri == 'VINTENARIA' %}<label>Anos <input name="anos" placeholder="20" size="4"></label>{% endif %}
+      {% if tipo_ri == 'DOMINIAL' %}<label>Matrículas de origem <input name="origens" size="30"></label>{% endif %}
+      {% if tipo_ri == 'INTEIRO_TEOR' %}<label class="span2">Justificativa da transcrição (só se a tela pedir)
+        <input name="transcricao_justificativa" size="60"></label>{% endif %}
+      {% if tipo_ri == 'ONUS' %}
+        {% if onus_painel %}
+          {# O MESMO QUADRO DA FICHA (25/10/2026): a decisão do ônus é do escrevente. #}
+          {% include '_onus_decisao.html' %}
+        {% else %}<p class="warning small span2">O quadro do ônus não pôde ser montado ({{ previa_erro or 'sem quadro' }}).
+          Emita pela ficha da matrícula, ou marque o pedido para fazer à mão.</p>{% endif %}
+      {% else %}
+      <div class="span2">
+        <p class="small muted">Prévia — o texto que a certidão teria agora, sem número nem selo:</p>
+        {% if previa %}<div class="teor" style="border:1px dashed #999;padding:10px;max-height:28rem;overflow:auto">{{ previa|safe }}</div>
+        {% else %}<p class="warning small">A prévia não pôde ser montada ({{ previa_erro or 'sem prévia' }}). A emissão confere tudo de novo.</p>{% endif %}
+      </div>
+      {% endif %}
+    {% elif a.via == 'PESSOA' %}
+      {% if pessoas %}
+        <p class="span2">A busca achou {{ pessoas|length }} pessoa(s). Para a <strong>positiva</strong>,
+          escolha qual é a pedida e marque, uma a uma, as matrículas que são dela — a certidão sai só
+          com as marcadas (homônimos sem documento aparecem juntos).</p>
+        {% for item in pessoas %}
+        <div class="span2" style="border-top:1px solid #ddd;padding-top:6px">
+        <label class="check"><input type="radio" name="pessoa_chave" value="{{ item.grupo.chave }}" {% if pessoas|length == 1 %}checked{% endif %}>
+          <strong>{{ item.grupo.nome }}</strong> {{ item.grupo.doc or '(sem documento)' }}</label>
+        {% for m in item.imoveis %}<br><label class="check" style="margin-left:1.5rem"><input type="checkbox" name="matricula_marcada" value="{{ m.id }}">
+          Matrícula <strong>{{ m.numero }}</strong> — proprietário(s) na ficha:
+          {% for d in m.donos %}{{ d.nome }}{% if d.documento_numero %} ({{ d.documento_numero }}){% endif %}{% if not loop.last %}; {% endif %}{% endfor %}
+          {% if not m.da_pessoa %}<span class="badge alta">outro cadastro, mesmo nome</span>{% endif %}</label>{% endfor %}
+        {% if not item.imoveis %}<br><span class="small muted">não é dona de matrícula aberta</span>{% endif %}
+        </div>
+        {% endfor %}
+        <input type="hidden" name="tipo_ri" value="{{ tipo_positiva }}">
+      {% else %}
+        <p class="span2">A busca por «{{ a.pessoa_busca }}» não achou ninguém nos indicadores: sai a <strong>certidão negativa</strong>.</p>
+        <input type="hidden" name="tipo_ri" value="{{ tipo_negativa }}">
+      {% endif %}
+    {% endif %}
+    <div class="span2"><button class="primary">Aprovar e emitir</button>
+      <span class="small muted">confere o status no ONR agora; o robô assina e envia na próxima rodada</span></div>
+  </form>
+</section>
+{% endif %}
+
+{% if onus_painel and m %}
+{# As duas ações do quadro do ônus (ler com a IA; acatar o proprietário) voltam
+   para ESTA tela, e não para a ficha (`ri_onus_ia_web._volta`). #}
+<form id="form-onus-dono" method="post" hidden action="{{ url_for('ri_onus_acatar_proprietario', matricula_id=m.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="voltar" value="{{ url_for('onr_auto_pedido', pedido_id=p.id) }}"></form>
+<form id="form-onus-ia" method="post" hidden action="{{ url_for('ri_onus_sugerir', matricula_id=m.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="voltar" value="{{ url_for('onr_auto_pedido', pedido_id=p.id) }}"></form>
+{% endif %}
+
+{% if certidao %}
+<section class="panel">
+  <div class="panel-head"><span><strong>Certidão nº {{ certidao.numero }}/{{ certidao.ano }}</strong></span></div>
+  <div style="padding:0 14px 12px">
+    <a class="button" href="{{ url_for('ri_certidao_odt', certidao_id=certidao.id) }}">Ver o papel</a>
+    {% if a.etapa == 'SEM_SELO' %}
+    <form method="post" action="{{ url_for('onr_auto_selar', pedido_id=p.id) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="primary">Selar (confere o pagamento no ONR)</button></form>
+    {% endif %}
+    {% if pode_gerar_pdf and (a.etapa == 'ERRO' or not a.pdf_caminho) %}
+    <form method="post" action="{{ url_for('onr_auto_pdf', pedido_id=p.id) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button>Gerar o PDF de novo</button></form>
+    {% endif %}
+    {% if a.aprovado_por_nome %}<p class="small muted">Aprovada por {{ a.aprovado_por_nome }} em {{ (a.aprovado_em or '')[:16]|replace('T', ' ') }}.</p>{% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if a.etapa in ('A_REVISAR', 'A_MAO', 'ERRO', 'CUSTAS_A_APROVAR', 'AGUARDANDO_PAGAMENTO') %}
+<details style="margin-top:1rem"><summary>Fazer este pedido à mão</summary>
+  <form method="post" action="{{ url_for('onr_auto_a_mao', pedido_id=p.id) }}" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="span2">Por quê <input name="motivo" size="60"></label>
+    <div class="span2"><button>Marcar para fazer à mão</button></div>
+  </form>
+</details>
+{% endif %}
+{% endblock %}

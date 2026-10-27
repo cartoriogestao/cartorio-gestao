@@ -318,7 +318,8 @@ def test_o_quadro_traz_os_papeis_e_as_partes(con):
     # quê, quem conta é `test_modelos_da_casa`; aqui fica o 22 dos papéis.
     frases = {c["chave"] for c in CASA.CATALOGO if c["padrao"][0] == "ri_frases"}
     assert frases
-    assert len(q["atos"]) == 22 + len(frases)
+    # 25/10/2026: 22 → 23, com a certidão positiva por pessoa (pedidos do ONR).
+    assert len(q["atos"]) == 23 + len(frases)
     for a in q["atos"]:
         assert [p["parte"] for p in a["partes"]] == list(ESQ.PARTES)
 

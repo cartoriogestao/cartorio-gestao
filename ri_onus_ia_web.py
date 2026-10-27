@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import flash, jsonify, redirect, url_for
+from flask import flash, jsonify, redirect, request, url_for
 
 import ri_onus_ia as RONIA
 
@@ -22,10 +22,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     def pasta() -> Path:
         return Path(app.config["DATA_DIR"])
 
+    def _volta(matricula_id: int) -> str:
+        """A ficha — ou a aprovação do pedido do ONR que usa o mesmo quadro
+        (25/10/2026). Só esse outro destino é aceito: o `voltar` vem do
+        formulário, e redirecionar para qualquer endereço digitado é a porta
+        do redirecionamento aberto."""
+        import re
+        pedido = str(request.form.get("voltar") or "")
+        if re.fullmatch(r"/ri/onr/certidoes/\d+/automacao", pedido):
+            return pedido + "#certidao-onus"
+        return url_for("ri_ficha", matricula_id=matricula_id) + "#certidao-onus"
+
     @app.route("/registro-imoveis/<int:matricula_id>/onus/sugerir", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def ri_onus_sugerir(matricula_id: int):
-        volta = url_for("ri_ficha", matricula_id=matricula_id) + "#certidao-onus"
+        volta = _volta(matricula_id)
         with db.connect() as con:
             if RONIA.no_sandbox(con):
                 flash("No sistema de teste (SANDBOX) a sugestão por IA não existe — ordem "
@@ -59,7 +70,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         """«sendo acatada a sugestao, sistema tbm retifique no cadastro da
         matricula» — o oficial, 15/10/2026. Corrige o cadastro de partes pelo que
         a IA leu no teor; quem decide acatar é quem clica."""
-        volta = url_for("ri_ficha", matricula_id=matricula_id) + "#certidao-onus"
+        volta = _volta(matricula_id)
         try:
             with db.transaction() as con:
                 feito = RONIA.acatar_proprietarios(

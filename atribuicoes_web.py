@@ -10087,6 +10087,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 a["base_cadastro"] = PBE.cadastro(con, a["id"])
             contas = AV.contagens(con)
             do_dia = AV.editais_do_dia(con, hoje())
+            # O ENVIO À CENPROT, DIA A DIA, COM O COMPROVANTE (#142).
+            envios = AV.envios_do_edital(con, hoje())
         motivos = AV.motivos_para_escolher()
         destaque = [{"codigo": c, "motivo": AV.ROTULO_DO_DESTAQUE[c]}
                     for c in AV.MOTIVOS_EM_DESTAQUE]
@@ -10096,7 +10098,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                esperando=esperando, entregues=entregues,
                                sem_aviso=sem_aviso, antigos=antigos,
                                antigo_dias=AV.ANTIGO_DIAS,
-                               contas=contas, do_dia=do_dia, motivos=motivos,
+                               contas=contas, do_dia=do_dia, envios=envios,
+                               motivos=motivos,
                                motivos_destaque=destaque,
                                motivos_outros=outros,
                                entregadores=AV.ENTREGADORES, hoje=hoje())
@@ -10240,6 +10243,36 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               {"anexo_id": r["anexo_id"], "nome": r["nome"]})
         flash(f"Comprovante anexado ({r['nome']}).", "success")
         return redirect(url_for("protesto_avisos") + "#entregues")
+
+    @app.route("/protesto/editais/comprovante-cenprot", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_edital_comprovante_cenprot():
+        """Anexa o comprovante do envio dos editais do dia à CENPROT. ESCREVE.
+
+        Pedido do oficial, 26/10/2026 (problema #142): «vamos criar um campo
+        para anexar o comprovante de envio do edital». CN-MA art. 922, § 1º.
+        """
+        voltar = redirect(url_for("protesto_avisos") + "#envio-do-edital")
+        enviado = request.files.get("comprovante")
+        if not enviado or not enviado.filename:
+            flash("Escolha o arquivo do comprovante do envio.", "danger")
+            return voltar
+        dia = (_campo("dia") or hoje())[:10]
+        try:
+            with db.transaction() as con:
+                r = AV.guardar_comprovante_do_envio(
+                    con, dia, nome=enviado.filename, conteudo=enviado.read(),
+                    pasta_de_arquivos=pasta_dos_arquivos(), agora=agora(),
+                    usuario_id=usuario_id_do_sistema())
+        except AV.AvisoError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        audit("PROTESTO_EDITAL_ENVIO_CENPROT", "pt_editais", None,
+              {"dia": dia, "editais": r["editais"], "anexos": r["anexos"],
+               "nome": r["nome"]})
+        flash(f"Comprovante do envio à CENPROT anexado aos {r['editais']} "
+              f"edital(is) de {dia}.", "success")
+        return voltar
 
     @app.route("/protesto/avisos/<int:aviso_id>/resolve", methods=["POST"])
     # 21/10/2026: aberto às escreventes por ordem do oficial (era ("ADMIN", "MANAGER")).
@@ -11607,6 +11640,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         anterior, e quem esqueceu ontem precisa poder mandar hoje.
         """
         dia = (_campo("dia") or hoje())[:10]
+        # QUEM PEDIU DE «AVISOS E EDITAIS» VOLTA PARA LÁ (#142, 26/10/2026) —
+        # é onde o edital se publica, e o botão passou a morar lá também.
+        # Lista fechada: o destino não vem livre do formulário.
+        volta = {"avisos": "protesto_avisos"}.get(_campo("voltar"),
+                                                  "protesto_cenprot")
         config = db.get_settings()
         try:
             casa = PCEN.identidade_da_casa(config)
@@ -11615,7 +11653,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     con, dia=dia, comarca=casa["comarca"])
         except PCEN.CenprotError as erro:
             flash(str(erro), "danger")
-            return redirect(url_for("protesto_cenprot"))
+            return redirect(url_for(volta))
         if not arquivo["editais"]:
             # ARQUIVO SEM UM EDITAL NÃO SE MANDA: ele diria à Central que a
             # casa publicou nada naquele dia, que é diferente de não ter
@@ -11623,7 +11661,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash(f"Nenhum edital foi publicado em {dia}. O arquivo sai do que "
                   f"já foi publicado — publique em Avisos e editais primeiro.",
                   "warning")
-            return redirect(url_for("protesto_cenprot"))
+            return redirect(url_for(volta))
         audit("PROTESTO_CENPROT_EDITAL", "pt_editais", None,
               {"arquivo": arquivo["nome"], "dia": dia,
                "editais": arquivo["editais"], "fora": len(arquivo["fora"])})

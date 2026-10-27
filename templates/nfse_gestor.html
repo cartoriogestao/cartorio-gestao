@@ -17,6 +17,11 @@
 <section class="panel"><h2>O que falta</h2>
   <ul>{% for f in faltas %}<li>{{ f }}</li>{% endfor %}</ul></section>
 {% endif %}
+{% if avisos %}
+<section class="panel"><h2>A conferir</h2>
+  <p class="muted small">Não impedem a nota de sair, mas mudam o que ela declara.</p>
+  <ul>{% for a in avisos %}<li>{{ a }}</li>{% endfor %}</ul></section>
+{% endif %}
 
 <section class="panel">
   <h2>Dados fiscais</h2>
@@ -45,8 +50,41 @@
     <label><input type="checkbox" name="nfse_exige_endereco" value="1" {% if cfg.nfse_exige_endereco == '1' %}checked{% endif %}>
       {{ rotulos.nfse_exige_endereco }}</label>
     <label>{{ rotulos.nfse_inicio }} <input type="date" name="nfse_inicio" value="{{ cfg.nfse_inicio }}"></label>
+    <label>{{ rotulos.nfse_percentual_ferj }} <input name="nfse_percentual_ferj" value="{{ cfg.nfse_percentual_ferj }}" size="6">
+      <span class="muted small">no Maranhão, 12% (LC 48/2000, art. 3º, V): a base é o emolumento menos o FERJ; o FERC não se desconta</span></label>
+    <label>{{ rotulos.nfse_codigo_nbs }} <input name="nfse_codigo_nbs" value="{{ cfg.nfse_codigo_nbs }}" size="11">
+      <span class="muted small">113040000 = 1.1304.00.00, serviços notariais e de registro (Anexo B do emissor)</span></label>
+    <label>{{ rotulos.nfse_convenio_ativo }}
+      <select name="nfse_convenio_ativo">{% for k, v in convenios.items() %}<option value="{{ k }}" {% if k == cfg.nfse_convenio_ativo %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+      <span class="muted small">ativo e fora do Simples: a alíquota não vai na nota — a Sefin usa a do município (regra E0617)</span></label>
+    <h3>Reforma tributária — IBS e CBS</h3>
+    <p class="muted small">A nota não leva valor de IBS nem de CBS: leva a classificação, e a Sefin calcula.
+      CST e classificação são decisão de quem responde pelo tributo — confira com o contador. Vazios, a nota
+      sai sem o grupo (aceito pela NT 004 v2.0 enquanto as validações dele estão suspensas).</p>
+    <label>{{ rotulos.nfse_ibscbs_cst }} <input name="nfse_ibscbs_cst" value="{{ cfg.nfse_ibscbs_cst }}" size="4"></label>
+    <label>{{ rotulos.nfse_ibscbs_classificacao }} <input name="nfse_ibscbs_classificacao" value="{{ cfg.nfse_ibscbs_classificacao }}" size="7">
+      <span class="muted small">6 dígitos; os 3 primeiros são o CST</span></label>
+    <label>{{ rotulos.nfse_ibscbs_indicador_operacao }} <input name="nfse_ibscbs_indicador_operacao" value="{{ cfg.nfse_ibscbs_indicador_operacao }}" size="7">
+      <span class="muted small">100301 = demais serviços, onerosos, no domicílio do adquirente (Anexo C)</span></label>
     <button type="submit">Gravar</button>
   </form>
+</section>
+
+<section class="panel">
+  <h2>Parâmetros do município no emissor</h2>
+  <p class="muted small">O emissor diz se o convênio do município está ativo, a alíquota e o regime do
+    item 21.01 e o que ele sabe da serventia. Precisa do certificado A1 gravado. A resposta aparece como
+    veio: leia a do convênio e marque a situação no campo acima.</p>
+  <form method="post" action="{{ url_for('nfse_gestor') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="parametros">
+    <button type="submit">Consultar os parâmetros do município</button>
+  </form>
+  {% if parametros %}
+  <p class="small">Última consulta: {{ parametros.consultado_em }} · ambiente {{ parametros.ambiente }} ·
+    município {{ parametros.municipio }}</p>
+  <pre class="small" style="white-space:pre-wrap;max-height:24em;overflow:auto">{{ parametros_texto }}</pre>
+  {% endif %}
 </section>
 
 <section class="panel">

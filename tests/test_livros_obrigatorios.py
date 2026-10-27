@@ -30,6 +30,8 @@ import pytest
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
+import atribuicoes as ATR                    # noqa: E402
+import custas                                # noqa: E402
 import livro_deposito_previo as LDP          # noqa: E402
 import livro_diario as LD                    # noqa: E402
 import livro_nucleo as LN                    # noqa: E402
@@ -349,6 +351,141 @@ def test_a_fotografia_gerada_acusa_alteracao_posterior(db):
                             (json.dumps(conteudo), g["id"]))
     with db.connect() as con:
         assert not LD.geracao(con, g["id"])["integra"]
+
+
+# ------------------------------------------- o FERJ não é o FERC (25/10/2026)
+
+
+def _percentual_ferj(db, valor: str) -> None:
+    with db.transaction() as con:
+        banco(con).escrever("INSERT INTO settings (key, value) VALUES (%s, %s)",
+                            (custas.CHAVE_PERCENTUAL_FERJ, valor))
+
+
+def test_o_ferj_e_12_por_cento_do_emolumento_e_o_ferc_fica_na_coluna_dele(db):
+    """Art. 190, I, k. O oficial: «ferj e ferc são diferentes. ferj é uns 12%,
+    ferc é 3%, mas não abate dos emolumentos». O FERC é o que o selo declara;
+    o FERJ sai de dentro do emolumento, e não mexe na receita."""
+    _selo(db, "S1", usado_em="2026-09-03T10:00:00",
+          texto=_texto("13.23", "140,01", "125,01",
+                       "FERC R$ 3,75 FADEP R$ 5,00 FEMP R$ 5,00 FERRFIS R$ 1,25"))
+    _selo(db, "S2", usado_em="2026-09-03T11:00:00", atribuicao="CIVIL",
+          texto=_texto("16.1", "13,12", "12,38", "FERC R$ 0,37"))
+    with db.connect() as con:
+        livro = LD.apurar(con, "2026-09")
+    linhas = {r["selo"]: r for r in livro["dias"][0]["receitas"]}
+    assert linhas["S1"]["fundos"]["FERJ"] == 1500          # 12% de 125,01
+    assert linhas["S1"]["fundos"]["FERC"] == 375           # o do selo, intocado
+    assert linhas["S2"]["fundos"]["FERJ"] == 149           # 148,56 centavos sobe
+    assert livro["fundos"]["FERJ"] == 1500 + 149
+    assert livro["fundos"]["FERC"] == 375 + 37
+    assert livro["receita_bruta"] == 12501 + 1238          # o FERJ não abate
+    assert livro["ferj_percentual"] == 1200
+
+
+def test_nenhuma_coluna_do_livro_chama_o_ferc_de_ferj():
+    rotulos = dict(LD.FUNDOS)
+    assert rotulos["FERC"] == "FERC" and rotulos["FERJ"] == "FERJ"
+    # O FERJ vem logo depois do emolumento (art. 190, I, j e k), e o ISSQN
+    # fecha a linha (I, l).
+    assert LD.FUNDOS[0][0] == "FERJ" and LD.FUNDOS[-1][0] == "ISS"
+    fonte = (RAIZ / "livro_diario.py").read_text(encoding="utf-8")
+    assert '("FERC", "FERJ' not in fonte
+
+
+def test_o_percentual_do_ferj_e_configuracao_e_vai_gravado_no_livro(db):
+    _percentual_ferj(db, "10,00")
+    _selo(db, "S1", usado_em="2026-09-03T10:00:00", texto=_texto("13.23", "140,01", "125,01"))
+    with db.transaction() as con:
+        g = LD.gerar(con, "2026-09", hoje=HOJE, agora=AGORA, por=POR)
+    with db.connect() as con:
+        livro = LD.geracao(con, g["id"])["livro"]
+    assert livro["ferj_percentual"] == 1000
+    assert livro["fundos"]["FERJ"] == 1250                 # 10% de 125,01
+
+
+def test_isento_e_diferido_mostram_o_ferj_que_teriam_e_nao_somam(db):
+    base = dict(usado_em="2026-09-04T09:00:00")
+    _selo(db, "ISENTO", texto=_texto("16.3", "115,44", "100,00", marca="Selo Isento"), **base)
+    _selo(db, "DIFERIDO", texto=_texto("16.3", "50,00", "40,00", marca="Diferido"), **base)
+    _selo(db, "MUDO", texto="", **base)
+    with db.connect() as con:
+        livro = LD.apurar(con, "2026-09")
+    linhas = {r["selo"]: r for r in livro["dias"][0]["receitas"]}
+    assert linhas["ISENTO"]["fundos"]["FERJ"] == 1200
+    assert linhas["DIFERIDO"]["fundos"]["FERJ"] == 480
+    assert linhas["MUDO"]["fundos"]["FERJ"] is None        # sem valor: «—», não zero
+    assert livro["fundos"]["FERJ"] == 0
+
+
+def _como_se_gerado_antes_do_ferj(db, geracao_id: int) -> None:
+    """Regrava a fotografia na forma de antes de 25/10/2026, com o hash dela —
+    o que a produção tem para os meses gerados antes da correção."""
+    with db.transaction() as con:
+        bd = banco(con)
+        velho = LD._sem_ferj(json.loads(bd.valor(
+            "SELECT conteudo AS c FROM ld_geracoes WHERE id = %s", (geracao_id,))))
+        bd.escrever("UPDATE ld_geracoes SET conteudo = %s, hash = %s WHERE id = %s",
+                    (json.dumps(velho, ensure_ascii=False, sort_keys=True),
+                     LD._hash(velho), geracao_id))
+
+
+def test_o_livro_gerado_antes_do_ferj_e_reconhecido_e_nao_acusa_movimento(db):
+    _selo(db, "S1", usado_em="2026-09-03T10:00:00",
+          texto=_texto("13.23", "140,01", "125,01", "FERC R$ 3,75"))
+    with db.transaction() as con:
+        g = LD.gerar(con, "2026-09", hoje=HOJE, agora=AGORA, por=POR)
+    _como_se_gerado_antes_do_ferj(db, g["id"])
+    with db.connect() as con:
+        situacao = LD.situacao_do_mes(con, "2026-09", hoje=HOJE)
+        antiga = LD.geracao(con, g["id"])
+    assert situacao["gerado_antes_do_ferj"] and not situacao["movimento_mudou"]
+    assert antiga["integra"] and "ferj_percentual" not in antiga["livro"]
+    # Se o movimento também mudou, é isso que a tela diz.
+    with db.transaction() as con:
+        LD.lancar_despesa(con, hoje=HOJE, agora=AGORA, por=POR, data="2026-09-15",
+                          descricao="Manutenção da impressora do balcão",
+                          documento_especie="Nota fiscal", valor="200,00")
+    with db.connect() as con:
+        situacao = LD.situacao_do_mes(con, "2026-09", hoje=HOJE)
+    assert situacao["movimento_mudou"] and not situacao["gerado_antes_do_ferj"]
+
+
+def test_o_livro_gerado_ja_com_o_ferj_nao_se_diz_de_antes(db):
+    _selo(db, "S1", usado_em="2026-09-03T10:00:00", texto=_texto("13.23", "140,01", "125,01"))
+    with db.transaction() as con:
+        LD.gerar(con, "2026-09", hoje=HOJE, agora=AGORA, por=POR)
+    with db.connect() as con:
+        situacao = LD.situacao_do_mes(con, "2026-09", hoje=HOJE)
+    assert not situacao["gerado_antes_do_ferj"] and not situacao["movimento_mudou"]
+
+
+def test_a_regua_do_ferj_le_virgula_recusa_o_ilegivel_e_arredonda_ao_centavo(db):
+    assert custas.percentual_ferj({}) == 1200
+    assert custas.percentual_ferj({custas.CHAVE_PERCENTUAL_FERJ: ""}) == 1200
+    assert custas.percentual_ferj({custas.CHAVE_PERCENTUAL_FERJ: "12,5%"}) == 1250
+    for ruim in ("doze", "100", "-1"):
+        with pytest.raises(custas.CustasError, match="FERJ"):
+            custas.percentual_ferj({custas.CHAVE_PERCENTUAL_FERJ: ruim})
+    assert custas.ferj_do_emolumento(12501, 1200) == 1500   # 15,0012
+    assert custas.ferj_do_emolumento(1238, 1200) == 149     # 1,4856
+    assert custas.ferj_do_emolumento(0, 1200) == 0
+    with db.connect() as con:
+        assert custas.percentual_ferj_da_casa(con) == 1200  # nada gravado
+    _percentual_ferj(db, "11,75")
+    with db.connect() as con:
+        assert custas.percentual_ferj_da_casa(con) == 1175
+
+
+def test_o_ferc_nao_tem_o_nome_do_ferj_no_cadastro_de_fundos():
+    """O `tbFundo` do E-Ofício dá ao FERC o nome do FERJ; os dois cadastros
+    daqui o copiaram. O nome do FERC é o do Código de Normas, art. 217."""
+    nome_do_ferj = "Modernização e Reaparelhamento"
+    for cadastro in (ATR.FUNDOS, custas.FUNDOS):
+        ferc = next(f for f in cadastro if f["sigla"] == "FERC")
+        assert nome_do_ferj not in ferc["nome"]
+        assert "Registro Civil de Pessoas Naturais" in ferc["nome"]
+        assert ferc["percentual"] == 3
 
 
 def test_o_prazo_do_diario_e_o_quinto_dia_util_do_mes_seguinte():

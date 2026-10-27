@@ -46,6 +46,8 @@ AS TRÊS REGRAS QUE NÃO SE DOBRAM
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -413,16 +415,73 @@ def caminho_do_canal(caminho: Any = None) -> Path:
     return _caminho(caminho).parent / NOME_DO_CANAL
 
 
+class CanalNaoConfere(CofreTrancado):
+    """Quem atendeu na porta do `guardiao.json` não provou ter o token desta
+    sessão. Para quem depende do cofre, é o mesmo que trancado (o guardião de
+    verdade não está lá); a frase diz que NADA foi enviado."""
+
+
+# O CANAL PROVA QUEM ESTÁ DO OUTRO LADO ANTES DE RECEBER QUALQUER COISA
+# (revisão de segurança de 26/10/2026, PR #11, achado M1). Até aqui o pedido
+# ia numa linha só, com o token e a carga em claro — a senha-mestra no
+# `desbloquear`, os campos do segredo no `gravar`. O guardião só apaga o
+# `guardiao.json` na saída limpa; se ele cair, o arquivo fica apontando para
+# uma porta alta que QUALQUER processo da máquina, de qualquer conta, pode
+# ocupar — e quem a ocupasse receberia o token, a senha-mestra e o segredo.
+#
+# Agora são duas provas por HMAC-SHA256 com o token como chave, e o token
+# NUNCA viaja: (1) quem pede manda um desafio aleatório e o guardião devolve
+# HMAC(token, «guardiao|desafio»); sem essa prova, quem pede para ali e não
+# manda nada — nem a ação; (2) o guardião manda o seu desafio e quem pede
+# assina o pedido inteiro com HMAC(token, «cliente|desafio|corpo»). Os dois
+# papéis entram no texto assinado para que a prova de um lado não sirva de
+# prova do outro. Conferir só o PID do `guardiao.json` não bastaria (PID se
+# reaproveita) e, entre contas diferentes (o servidor como serviço, o
+# guardião na sessão do logon), o Windows pode negar a consulta e dar por
+# morto um guardião vivo — por isso a prova é a do token, e não a do PID.
+PAPEL_DO_GUARDIAO, PAPEL_DE_QUEM_PEDE = "guardiao", "cliente"
+TETO_DA_LINHA_DO_CANAL = 256 * 1024
+
+
+def prova_do_canal(token: str, papel: str, desafio: str, corpo: str = "") -> str:
+    """A prova de quem tem o token, sem mostrar o token. Usada pelos dois lados."""
+    texto = f"{papel}|{desafio}|{corpo}".encode("utf-8")
+    return hmac.new(str(token).encode("utf-8"), texto, hashlib.sha256).hexdigest()
+
+
+def _linha(s: socket.socket, dados: dict) -> None:
+    s.sendall((json.dumps(dados, ensure_ascii=False) + "\n").encode("utf-8"))
+
+
 def pedir(acao: str, *, caminho: Any = None, prazo: float = PRAZO_DO_CANAL_S, **dados) -> dict:
-    """Um pedido ao guardião, pelo canal local. Sem guardião, o cofre está trancado."""
+    """Um pedido ao guardião, pelo canal local. Sem guardião, o cofre está trancado.
+
+    Antes de mandar a ação, confere que quem atende na porta tem o token desta
+    sessão (ver o comentário acima). Quem não prova não recebe nada.
+    """
     canal = caminho_do_canal(caminho)
     try:
         info = json.loads(canal.read_text(encoding="utf-8"))
+        token = str(info["token"])
         with socket.create_connection(("127.0.0.1", int(info["porta"])), timeout=prazo) as s:
-            s.sendall((json.dumps({"token": info["token"], "acao": acao, **dados}) + "\n").encode("utf-8"))
             arquivo = s.makefile("rb")
+            desafio = secrets.token_hex(16)
+            _linha(s, {"desafio": desafio})
+            ola = json.loads(arquivo.readline(TETO_DA_LINHA_DO_CANAL).decode("utf-8") or "{}")
+            esperada = prova_do_canal(token, PAPEL_DO_GUARDIAO, desafio)
+            if not hmac.compare_digest(str(ola.get("prova") or ""), esperada):
+                raise CanalNaoConfere(
+                    "O cofre está trancado: quem atende no canal do guardião não provou ser o "
+                    "guardião desta sessão, e nada foi enviado a ele. Reinicie o guardião do "
+                    "cofre (ele abre no logon e pede a senha-mestra).")
+            corpo = json.dumps({"acao": acao, **dados}, sort_keys=True, ensure_ascii=False)
+            _linha(s, {"prova": prova_do_canal(token, PAPEL_DE_QUEM_PEDE,
+                                               str(ola.get("desafio") or ""), corpo),
+                       "corpo": corpo})
             linha = arquivo.readline()
-    except (OSError, ValueError, KeyError) as erro:
+    except CanalNaoConfere:
+        raise
+    except (OSError, ValueError, KeyError, AttributeError) as erro:
         raise CofreTrancado("O cofre está trancado: o guardião do cofre não está rodando nesta "
                             "máquina (ele abre no logon e pede a senha-mestra).") from erro
     resposta = json.loads(linha.decode("utf-8") or "{}")

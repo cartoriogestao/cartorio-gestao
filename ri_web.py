@@ -3418,7 +3418,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # O histórico sai da auditoria que o sistema já grava — não de uma
         # segunda tabela só para esta tela. Duas verdades sobre o mesmo ato é
         # como se perde a que vale.
-        historico = q("""SELECT ts, username_snapshot AS quem, action, details
+        historico = q("""SELECT ts, username_snapshot AS quem, action, details,
+                                agente, a_mando_de
                          FROM audit_logs
                          WHERE entity_type='RI_PROTOCOLO' AND entity_id=%s
                          ORDER BY id DESC LIMIT 30""", (protocolo_id,))

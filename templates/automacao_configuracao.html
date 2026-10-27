@@ -44,7 +44,10 @@
     <div class="panel-head"><h2>Lembretes e rotinas de fora</h2></div>
     <label>Lembrar o problema que continua a cada (horas) <input name="lembrar_a_cada_h" value="{{ cfg.lembrar_a_cada_h }}" size="3"></label>
     <label>Arquivo de estado do backup (ESTADO_DO_BACKUP.json) <input name="backup_estado_caminho" value="{{ cfg.backup_estado_caminho }}"></label>
-    <label>Log das minutas do CNIB <input name="cnib_minutas_log_caminho" value="{{ cfg.cnib_minutas_log_caminho }}"></label>
+    <label>Log das minutas do CNIB (.log ou .txt) <input name="cnib_minutas_log_caminho" value="{{ cfg.cnib_minutas_log_caminho }}"></label>
+    <p class="small muted">Os dois arquivos têm de estar dentro da pasta de dados do servidor ou da pasta das
+      cópias; caminho fora delas não é lido. Do log, a central só conta as linhas que bateram — o texto
+      não aparece na tela.</p>
   </section>
   <button class="button primary" type="submit">Gravar</button>
 </form>

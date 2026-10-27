@@ -53,7 +53,8 @@
     <label>Tipo <select name="tipo">{% for t in tipos %}<option value="{{ t }}" {% if t == p.tipo %}selected{% endif %}>{{ nome_do_tipo[t] }}</option>{% endfor %}</select></label>
     <label>O que roda <input name="alvo" value="{{ p.alvo }}" list="automacao-catalogo"></label>
     <datalist id="automacao-catalogo">{% for c in catalogo %}<option value="{{ c }}">{% endfor %}</datalist>
-    <p class="small muted">Verificação: «modulo:funcao». Script: caminho dentro da pasta do programa (.py, .cmd, .ps1).
+    <p class="small muted">Verificação: uma das funções da lista («modulo:funcao»). Script: só os da pasta
+      «automacao_scripts» do programa (.py, ou .sh no macOS) — script novo entra por atualização do sistema.
       Agente de IA: o pedido, em português.</p>
     <fieldset><legend>Agenda</legend>
       {% for d in dias %}<label style="display:inline"><input type="checkbox" name="dias" value="{{ loop.index0 }}" {% if loop.index0 in p.agenda.dias %}checked{% endif %}> {{ d }}</label> {% endfor %}

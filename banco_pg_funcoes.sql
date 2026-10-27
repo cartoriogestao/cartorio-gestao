@@ -1439,10 +1439,21 @@ END $$;
 -- bifurcar com dois balcões gravando ao mesmo tempo. O texto do hash é o
 -- de `auditoria_cadeia.hash_da_linha`, campo a campo, com `|` entre eles e
 -- vazio onde é NULL — os dois lados têm de bater byte a byte.
+--
+-- A VERSÃO 2 DA FÓRMULA (revisão de segurança de 26/10/2026): quem age por
+-- programa diz quem é (`agente`) e a mando de quem (`a_mando_de`), e essas
+-- duas colunas entram no hash — sem isso, trocar o mandante à mão não
+-- acusava. A linha leva a versão em `hash_versao` (2), e quem a escreve é
+-- este gatilho: as linhas de antes (NULL) conferem pela fórmula de 22/10, as
+-- de depois pela nova. As colunas se leem por `to_jsonb(NEW)`, e não por
+-- `NEW.agente`: a função mora em `public` e serve todo schema do banco, e um
+-- schema que ainda não migrou (sem as colunas) continua gravando pela fórmula
+-- velha em vez de estourar.
 CREATE OR REPLACE FUNCTION cg_auditoria_encadear() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   anterior text;
   bruto text;
+  linha jsonb;
 BEGIN
   PERFORM pg_advisory_xact_lock(hashtext(TG_TABLE_SCHEMA || '.audit_logs.cadeia'));
   EXECUTE format('SELECT hash_linha FROM %I.audit_logs WHERE hash_linha IS NOT NULL ORDER BY id DESC LIMIT 1',
@@ -1453,6 +1464,12 @@ BEGIN
         || coalesce(NEW.entity_type, '') || '|' || coalesce(NEW.entity_id::text, '') || '|'
         || coalesce(NEW.details, '') || '|' || coalesce(NEW.ip_address, '') || '|'
         || coalesce(anterior, '');
+  linha := to_jsonb(NEW);
+  IF linha ? 'hash_versao' THEN
+    bruto := bruto || '|' || coalesce(linha ->> 'agente', '')
+          || '|' || coalesce(linha ->> 'a_mando_de', '');
+    NEW := jsonb_populate_record(NEW, jsonb_build_object('hash_versao', 2));
+  END IF;
   NEW.hash_linha := encode(sha256(convert_to(bruto, 'UTF8')), 'hex');
   RETURN NEW;
 END $$;

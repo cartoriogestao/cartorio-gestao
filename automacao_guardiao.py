@@ -21,7 +21,15 @@ COMO FUNCIONA
 
 O QUE ELE RESPONDE
     estado · desbloquear · trancar · ler · gravar · remover — um pedido JSON
-    por linha, com o token. Pedido sem o token certo é recusado.
+    por linha, assinado com o token. Pedido sem a assinatura certa é recusado.
+
+    O TOKEN NÃO VIAJA (revisão de segurança de 26/10/2026, PR #11, M1). Antes
+    de qualquer pedido, o guardião prova que tem o token devolvendo
+    HMAC(token, «guardiao|desafio de quem pede»); quem pede só manda a ação
+    depois de conferir essa prova, e a assina com HMAC(token, «cliente|desafio
+    do guardião|corpo»). Um processo que ocupe a porta de um `guardiao.json`
+    velho (guardião caído) não prova nada e não recebe nada — nem a
+    senha-mestra, nem o segredo, nem o token.
 """
 from __future__ import annotations
 
@@ -135,10 +143,34 @@ class Guardiao:
             pass
 
     # -------------------------------------------------- o canal
-    def atender(self, pedido: dict) -> dict:
-        """Um pedido do canal. Nunca devolve a senha nem a chave."""
-        if not hmac.compare_digest(str(pedido.get("token") or ""), self.token):
-            return {"ok": False, "tipo": "recusado", "erro": "Pedido sem o token desta sessão."}
+    def prova(self, desafio: str) -> str:
+        """A prova de que ESTE processo tem o token (o primeiro passo do canal)."""
+        return C.prova_do_canal(self.token, C.PAPEL_DO_GUARDIAO, desafio)
+
+    def atender(self, mensagem: dict, desafio: str) -> dict:
+        """Um pedido do canal, assinado contra o desafio que este guardião mandou.
+        Nunca devolve a senha nem a chave.
+
+        Desde 26/10/2026 (revisão de segurança, PR #11, M1) o token não viaja:
+        quem pede assina o pedido inteiro com HMAC(token, «cliente|desafio|corpo»),
+        e o desafio é deste guardião e desta conexão — a assinatura não se
+        reaproveita noutra.
+        """
+        if not isinstance(mensagem, dict) or not desafio:
+            return {"ok": False, "tipo": "recusado", "erro": "Pedido sem a prova desta sessão."}
+        corpo = str(mensagem.get("corpo") or "")
+        esperada = C.prova_do_canal(self.token, C.PAPEL_DE_QUEM_PEDE, desafio, corpo)
+        if not hmac.compare_digest(str(mensagem.get("prova") or ""), esperada):
+            return {"ok": False, "tipo": "recusado", "erro": "Pedido sem a prova desta sessão."}
+        try:
+            pedido = json.loads(corpo)
+        except ValueError:
+            pedido = None
+        if not isinstance(pedido, dict):
+            return {"ok": False, "tipo": "erro", "erro": "Pedido ilegível."}
+        return self._executar(pedido)
+
+    def _executar(self, pedido: dict) -> dict:
         acao = pedido.get("acao")
         try:
             if acao == "estado":
@@ -165,12 +197,28 @@ class Guardiao:
         guardiao = self
 
         class _Atendente(socketserver.StreamRequestHandler):
+            timeout = C.PRAZO_DO_CANAL_S * 12          # quem conecta e não fala não prende a thread
+
+            def _escrever(self, dados: dict) -> None:
+                self.wfile.write((json.dumps(dados, ensure_ascii=False) + "\n").encode("utf-8"))
+
             def handle(self):
+                # 1º passo: o desafio de quem pede, e a prova deste guardião.
                 try:
-                    pedido = json.loads(self.rfile.readline(256 * 1024).decode("utf-8") or "{}")
-                except ValueError:
-                    pedido = {}
-                self.wfile.write((json.dumps(guardiao.atender(pedido), ensure_ascii=False) + "\n").encode("utf-8"))
+                    ola = json.loads(self.rfile.readline(4096).decode("utf-8") or "{}")
+                    desafio_de_la = str(ola.get("desafio") or "") if isinstance(ola, dict) else ""
+                except (ValueError, OSError):
+                    return
+                if not 16 <= len(desafio_de_la) <= 128:
+                    return
+                desafio_daqui = secrets.token_hex(16)
+                self._escrever({"prova": guardiao.prova(desafio_de_la), "desafio": desafio_daqui})
+                # 2º passo: o pedido, assinado contra o desafio daqui.
+                try:
+                    mensagem = json.loads(self.rfile.readline(C.TETO_DA_LINHA_DO_CANAL).decode("utf-8") or "{}")
+                except (ValueError, OSError):
+                    mensagem = {}
+                self._escrever(guardiao.atender(mensagem, desafio_daqui))
 
         socketserver.ThreadingTCPServer.allow_reuse_address = False
         self.servidor = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _Atendente)

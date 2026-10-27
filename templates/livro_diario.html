@@ -12,6 +12,14 @@
     <button class="button" type="submit">Abrir</button>
     <a href="{{ url_for('livros_obrigatorios') }}">Livros obrigatórios</a>
   </form>
+  {#- O PERCENTUAL DO FERJ ILEGÍVEL (27/10/2026): gravado fora da tela, ele
+      derrubava esta página com HTTP 500. Agora a página abre, diz o que
+      está errado e onde corrigir, e as despesas continuam à mão; o livro do
+      mês não se apura sem o FERJ, e por isso não aparece. #}
+  {% if erro_do_livro %}
+  <div class="notice danger"><strong>O livro do mês não se apura agora.</strong> {{ erro_do_livro }}</div>
+  {% endif %}
+  {% if situacao %}
   <p>Gerar até <strong>{{ situacao.prazo }}</strong> — o 5º dia útil do mês seguinte (art. 205).
   {% if situacao.aberto %}<span class="badge">mês em curso</span>
   {% elif situacao.gerado %}<span class="badge">gerado — {{ situacao.versoes }} versão(ões){% if not situacao.no_prazo %}, a primeira fora do prazo{% endif %}</span>
@@ -19,13 +27,17 @@
   {% else %}<span class="badge warning">ainda não gerado</span>{% endif %}
   {% if situacao.movimento_mudou %}<span class="badge danger">o movimento mudou depois da última geração — conferir e, se for o caso, retificar</span>{% endif %}
   {% if situacao.gerado_antes_do_ferj %}<span class="badge warning">a versão gerada é de antes da coluna do FERJ: nela, a coluna «FERJ (FERC no selo)» traz o FERC, e o FERJ não aparece — retificar é decisão do oficial</span>{% endif %}</p>
+  {% endif %}
+  {% if livro %}
   <p class="muted">A receita é o emolumento do ato praticado, lido do selo no dia em que ele foi usado
   (arts. 190, I, 191 e 203); FERC, FADEP, FEMP, FERRFIS e imposto vêm em coluna própria e não são receita.
   O FERJ (art. 190, I, k) é {{ em_reais(livro.ferj_percentual) }}% de dentro do emolumento de cada ato, recolhido por guia:
   não se soma nem se desconta da receita. Selo isento e diferido aparecem, mas não somam receita.
   Selo de homologação não entra.</p>
+  {% endif %}
 </section>
 
+{% if livro %}
 <section class="panel">
   <h2>Demonstrativo do mês (art. 190, IV)</h2>
   <div class="table-wrap"><table>
@@ -39,8 +51,9 @@
   <p class="small">O que o art. 190 pede e o sistema não tem de onde ler:</p>
   <ul class="small">{% for x in fora %}<li>{{ x }}</li>{% endfor %}</ul>
 </section>
+{% endif %}
 
-{% if pode_gerar and not situacao.aberto %}
+{% if pode_gerar and situacao and not situacao.aberto %}
 <section class="panel">
   <h2>{% if versoes %}Retificar o livro do mês{% else %}Gerar o livro do mês{% endif %}</h2>
   <form method="post" action="{{ url_for('livro_diario_gerar') }}">
@@ -107,6 +120,7 @@
   {% else %}<p class="muted">Nenhuma despesa lançada neste mês.</p>{% endif %}
 </section>
 
+{% if livro %}
 <section class="panel">
   <h2>Dia a dia (art. 190, I a III)</h2>
   {% for d in livro.dias %}
@@ -131,4 +145,5 @@
   <p class="muted">Nenhum selo usado e nenhuma despesa neste mês.</p>
   {% endfor %}
 </section>
+{% endif %}
 {% endblock %}

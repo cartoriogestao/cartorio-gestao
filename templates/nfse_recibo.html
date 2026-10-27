@@ -15,7 +15,7 @@
   <p>Emitido em {{ fmt_date(r.data_emissao) }} · total <strong>R$ {{ r.valor_total }}</strong>
     {% if r.protocolo_numero %}· protocolo {{ r.protocolo_numero }}{% endif %}
     {% if r.cancelado %}· <span class="badge alta">cancelado</span>{% endif %}</p>
-  <p>Valor do serviço (emolumento): <strong>R$ {{ reais(item.base) }}</strong>
+  <p>Valor do serviço (emolumento): <strong>{% if item.base is not none %}R$ {{ reais(item.base) }}{% else %}— (sem o percentual do FERJ não há base; veja abaixo){% endif %}</strong>
     {% if item.iss is not none %}· ISS R$ {{ reais(item.iss) }} ({{ cfg.nfse_aliquota }}%){% else %}· alíquota pelo cadastro do município{% endif %}</p>
   <p class="muted small">Os fundos (FERC, FADEP, FEMP, FERRFIS) são repasses e não entram no valor do serviço.
     {% if r.nfse_numero or r.nfse_chave %}<br>No recibo: NFS-e nº {{ r.nfse_numero or '—' }} · chave {{ r.nfse_chave }}{% endif %}</p>

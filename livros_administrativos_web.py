@@ -114,14 +114,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         except LD.DiarioError as erro:
             flash(str(erro), "danger")
             return redirect(url_for("livro_diario"))
+        # O LIVRO QUE NÃO SE APURA NÃO DERRUBA A PÁGINA (27/10/2026). Até essa
+        # data um percentual do FERJ ilegível gravado fora da tela levantava
+        # `CustasError` em `apurar`, que nada apanhava: HTTP 500 no balcão.
+        # Agora `apurar` recusa com `DiarioError`, e a página abre com a
+        # frase de onde corrigir — e as despesas, que não dependem do FERJ.
+        erro_do_livro = ""
         with db.connect() as con:
-            livro = LD.apurar(con, comp)
             despesas = LD.despesas_do_mes(con, comp, com_anuladas=True)
             versoes = LD.geracoes(con, comp)
-            situacao = LD.situacao_do_mes(con, comp, hoje=hoje.isoformat(),
-                                          feriados_locais=_feriados())
+            try:
+                livro = LD.apurar(con, comp)
+                situacao = LD.situacao_do_mes(con, comp, hoje=hoje.isoformat(),
+                                              feriados_locais=_feriados())
+            except LD.DiarioError as erro:
+                livro = situacao = None
+                erro_do_livro = str(erro)
         return render_template("livro_diario.html", livro=livro, despesas=despesas,
                                versoes=versoes, situacao=situacao, comp=comp,
+                               erro_do_livro=erro_do_livro,
                                fundos=LD.FUNDOS, fora=LD.FORA_DO_SISTEMA,
                                em_reais=LD.em_reais, hoje=hoje.isoformat(),
                                pode_lancar=usuario_papel() in LANCAM,

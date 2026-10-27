@@ -133,6 +133,22 @@ class DiarioError(ValueError):
     """Impedimento de regra, com a frase pronta para a tela."""
 
 
+def _percentual_do_ferj(con) -> int:
+    """O percentual do FERJ da casa, pela régua de `custas`. Só LÊ.
+
+    O ILEGÍVEL É RECUSA DO LIVRO, E NÃO HTTP 500 — correção de 27/10/2026. Até
+    essa data `custas.CustasError` subia de `apurar` sem que a tela o
+    esperasse (ela trata `DiarioError`), e `/livros-obrigatorios/diario` caía.
+    O livro não se apura sem o FERJ (art. 190, I, k): zero diria que não há
+    FERJ, e 12% por palpite contrariaria o que está gravado."""
+    try:
+        return custas.percentual_ferj_da_casa(con)
+    except custas.CustasError as erro:
+        raise DiarioError(
+            f"O Livro Diário não se apura sem o percentual do FERJ (art. 190, I, "
+            f"k). {erro}") from erro
+
+
 # ---------------------------------------------------------------- esquema
 
 SCHEMA: tuple[tuple[str, str], ...] = (
@@ -314,7 +330,7 @@ def receitas_do_mes(con, comp: str, pct_ferj: int | None = None) -> list[dict]:
     if not bd.tem_tabela("sd_selos"):
         return []
     if pct_ferj is None:
-        pct_ferj = custas.percentual_ferj_da_casa(bd)
+        pct_ferj = _percentual_do_ferj(bd)
     nomes = _descricoes(bd)
     saida = []
     for s in bd.ler(
@@ -362,7 +378,7 @@ def apurar(con, comp: str) -> dict:
     O resultado é JSON puro (texto e inteiro): é ele que a geração grava.
     """
     comp = competencia(comp)
-    pct_ferj = custas.percentual_ferj_da_casa(con)
+    pct_ferj = _percentual_do_ferj(con)
     receitas = receitas_do_mes(con, comp, pct_ferj)
     despesas = [{"dia": d["data"], "id": int(d["id"]), "descricao": d["descricao"],
                  "documento": " ".join(x for x in (d["documento_especie"],

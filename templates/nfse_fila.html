@@ -51,7 +51,7 @@
         <td>{{ i.recibo.numero }}/{{ i.recibo.ano }}{% if i.recibo.cancelado %}<br><span class="badge alta">recibo cancelado</span>{% endif %}</td>
         <td class="small">{{ fmt_date(i.recibo.data_emissao) }}</td>
         <td class="small">{{ i.tomador.nome or '—' }}<br><span class="muted">{{ i.documento_mascarado or 'sem CPF/CNPJ' }}</span></td>
-        <td style="text-align:right">{{ reais(i.base) }}</td>
+        <td style="text-align:right">{{ reais(i.base) if i.base is not none else '—' }}</td>
         <td style="text-align:right">{{ reais(i.iss) if i.iss is not none else '—' }}</td>
         <td class="small">{% if com_nota and i.nota %}{{ situacoes[i.nota.situacao] }}{% if i.nota.numero_nfse %} nº {{ i.nota.numero_nfse }}{% endif %}{% if i.nota.mensagem %}<br><span class="muted">{{ i.nota.mensagem }}</span>{% endif %}
           {% else %}{% for p in i.pendencias %}{{ p }}<br>{% else %}pronto para emitir{% endfor %}{% endif %}</td>

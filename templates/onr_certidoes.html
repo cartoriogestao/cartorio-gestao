@@ -19,6 +19,7 @@
       <input type="number" name="dias" value="30" min="1" max="90" style="width:5em"> dias</label>
     <button class="button primary" type="submit">Buscar pedidos no ONR</button>
   </form>
+  <a class="button" href="{{ url_for('onr_auto_fila') }}">Preparados pelo robô (aprovar)</a>
   {% if todos %}
     <a class="button" href="{{ url_for('onr_certidoes') }}">Só os em aberto</a>
   {% else %}

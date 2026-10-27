@@ -111,8 +111,13 @@ FORA_DO_SISTEMA: tuple[str, ...] = (
     "(art. 190, III, b a d; art. 192): não há onde lançar no sistema.",
     "Emolumento diferido (arts. 193 e 204): entra como receita no pagamento; "
     "o sistema só conta quantos selos diferidos houve.",
-    "Espaços de intervenção, interinidade e imposto de renda (art. 190, V a "
-    "VII): não se aplicam ao delegatário titular, e não há onde lançar.",
+    # O ESPAÇO DO IMPOSTO DE RENDA (VII) mudou de frase em 26/10/2026: a conta
+    # do titular passou a existir (`carne_leao`), mas é PESSOAL e só do ADMIN,
+    # e por isso não se imprime no livro da serventia.
+    "Espaços de intervenção e interinidade (art. 190, V e VI): não se aplicam "
+    "ao delegatário titular. O do imposto de renda (VII) não sai neste livro: "
+    "a apuração mensal do titular fica em Administrativo → Carnê-leão, só para "
+    "o oficial.",
 )
 
 MINIMO_DO_TEXTO = 10

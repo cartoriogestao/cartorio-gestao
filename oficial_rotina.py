@@ -316,12 +316,20 @@ def rodar(con: sqlite3.Connection, hoje: date, *, agora: datetime | None = None,
     saude += OR.saude_do_agendador(tarefas_agendador or [])
     resumo["saude"] = saude
     resumo["quadro"] = parte("quadro dos robôs", lambda: OR.quadro(con, agora)) or []
+    # O CARNÊ-LEÃO (26/10/2026): quando o oficial cadastrou a regra do prazo
+    # com a fonte, ela entra na agenda e sai da pergunta das não medidas.
+    def _carne_leao():
+        import carne_leao as CL
+        ob = CL.obrigacao_da_agenda(con)
+        return (ob,) if ob else ()
+    extras = parte("carnê-leão", _carne_leao) or ()
     if not so_ler:
         resumo["tarefas_dos_robos"] = parte(
             "tarefas dos robôs", lambda: sincronizar_tarefas_dos_robos(con, saude, hoje))
-        parte("decisões", lambda: OD.perguntar(con, **OO.pergunta_das_nao_medidas()))
+        parte("decisões", lambda: OD.perguntar(con, **OO.pergunta_das_nao_medidas(
+            tuple(o["codigo"] for o in extras))))
     resumo["decisoes"] = parte("decisões abertas", lambda: OD.abertas(con)) or []
-    resumo["agenda"] = parte("agenda", lambda: OO.agenda(hoje)) or []
+    resumo["agenda"] = parte("agenda", lambda: OO.agenda(hoje, extras=extras)) or []
     resumo["mesa"] = parte("mesa", lambda: OP.montar(
         con, hoje, pasta_dados=pasta_dados, ler_certificados=ler_certificados)) or {}
     if pasta_relatorio is not None:

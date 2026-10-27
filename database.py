@@ -65,6 +65,7 @@ from ri_mapa_onr import init_mapa_onr_schema
 from apostila import init_apostila_schema
 from livro_diario import init_livro_diario_schema
 from despesas import init_despesas_schema
+from carne_leao import init_carne_leao_schema
 from livro_visitas import init_livro_visitas_schema
 from centrais_schema import init_centrais_schema
 from onr_endereco_schema import init_ri_onr_endereco_schema
@@ -824,6 +825,9 @@ class Database:
         # AS DESPESAS (24/10/2026): cadastro, autorização, pagamento pelo Banco
         # Inter e conferência no extrato; a despesa conferida vai ao Diário.
         init_despesas_schema(con)
+        # O CARNÊ-LEÃO E O LIVRO-CAIXA DO TITULAR (26/10/2026): a marcação
+        # aponta para `ld_despesas`, que acabou de existir.
+        init_carne_leao_schema(con)
         # A FILA GENERICA DAS CENTRAIS e o log delas (marco (a), 05/10/2026).
         # Nao apontam para tabela de dominio nenhuma — `payload_ref` e texto —,
         # e por isso podem nascer em qualquer ponto; ficam ao lado do ONR.

@@ -455,6 +455,8 @@ def test_o_ajuste_torto_ja_gravado_nao_sai(casa):
 def test_so_o_gestor_grava_o_papel_que_vai_sozinho_ao_cliente():
     import modelos_da_casa as MOD
     assert AA.MODELO in MOD.PAPEIS_SO_DO_GESTOR
+    # o convite da pesquisa também sai sozinho ao cliente (27/10/2026)
+    assert "OUVIDORIA_CONVITE_PESQUISA" in MOD.PAPEIS_SO_DO_GESTOR
     assert MOD.recusa_ao_gravar("USER", [AA.MODELO])
     assert MOD.recusa_ao_gravar("AUDITOR", [AA.MODELO])
     assert MOD.recusa_ao_gravar("MANAGER", [AA.MODELO]) == ""

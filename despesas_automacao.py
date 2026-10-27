@@ -54,7 +54,20 @@ def _auditar(contexto, acao: str, despesa_id: int, detalhes: dict) -> None:
     própria: chama-se FORA de transação, depois de a rodada terminar.
     """
     log = getattr(contexto.db, "log", None)
-    if log is not None:
+    if log is None:
+        return
+    # O ROBÔ DIZ QUEM É E A MANDO DE QUEM AGE (PR #36) — 27/10/2026. Sem os
+    # dois campos, cada pagamento contava como «sem identificação», e na
+    # etapa 2 a auditoria seria RECUSADA depois de o dinheiro já ter saído.
+    import identidade_do_robo as IDR
+    processo = getattr(contexto, "processo", None) or {}
+    mandante = (str(processo.get("alterado_por") or processo.get("criado_por") or "").strip()
+                or IDR.PELO_RESPONSAVEL)
+    try:
+        log(None, "automação", acao, "dp_despesas", int(despesa_id), detalhes,
+            agente="automação — despesas (Banco Inter)", a_mando_de=mandante)
+    except TypeError:
+        # um `log` antigo, sem os dois campos (o dos testes de mesa)
         log(None, "automação", acao, "dp_despesas", int(despesa_id), detalhes)
 
 

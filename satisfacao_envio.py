@@ -546,9 +546,18 @@ def _auditar(db, acao: str, entidade: str, entidade_id: Any, detalhe: dict, *,
     log = getattr(db, "log", None)
     if not callable(log):
         return
+    # NOS CAMPOS PRÓPRIOS DO `db.log` — 27/10/2026. Só no detalhe, a linha
+    # contava como «sem identificação» na conferência do PR #36 e seria
+    # recusada na etapa 2. O detalhe continua levando os dois, para quem lê.
     try:
-        log(None, agente[:80], acao, entidade, entidade_id,
-            {"agente": agente, "a_mando_de": a_mando_de, **detalhe})
+        try:
+            log(None, agente[:80], acao, entidade, entidade_id,
+                {"agente": agente, "a_mando_de": a_mando_de, **detalhe},
+                agente=agente, a_mando_de=a_mando_de)
+        except TypeError:
+            # um `log` antigo, sem os dois campos (o dos testes de mesa)
+            log(None, agente[:80], acao, entidade, entidade_id,
+                {"agente": agente, "a_mando_de": a_mando_de, **detalhe})
     except Exception as erro:                          # noqa: BLE001
         _LOG.warning("auditoria da pesquisa não gravou (%s): %s", acao, erro)
 

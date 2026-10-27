@@ -148,7 +148,9 @@ def test_os_processos_de_fabrica_nascem_desligados_e_nao_duplicam(casa):
     with db.transaction() as con:
         assert AU.semear(con, SEG) == 0
         todos = AU.listar(con)
-    assert len(todos) == len(PROC.SEMENTES)
+    # As de fábrica MAIS as que outros módulos trazem (`MODULOS_COM_PROCESSOS`):
+    # contar só `SEMENTES` ficaria vermelho no primeiro módulo (as despesas).
+    assert len(todos) == len(PROC.todas_as_sementes())
     assert not any(p["ativo"] or p["pode_agir"] for p in todos)
     codigos = {p["codigo"] for p in todos}
     assert {"PROTESTO_CRA", "PROTESTO_CENPROT", "RI_ONR_FILA", "RI_WSOFICIO", "RI_CNIB", "RCPN_SIRC",
@@ -156,7 +158,11 @@ def test_os_processos_de_fabrica_nascem_desligados_e_nao_duplicam(casa):
             "ROTINA_CONFERENCIA_DIARIA", "ROTINA_COMPLIANCE", "ROTINA_CENSEC_ENVIO"} <= codigos
     cra = next(p for p in todos if p["codigo"] == "PROTESTO_CRA")
     assert cra["agenda"]["horarios"] == ["11:30", "14:10"]
-    assert all(p["alvo"] in PROC.CATALOGO for p in todos if p["tipo"] == SCH.FUNCAO)
+    # A função de fábrica está no catálogo da casa; a que outro módulo trouxe
+    # mora no módulo dele.
+    trazidos = {s["alvo"] for s in PROC.sementes_de_outros_modulos()}
+    assert all(p["alvo"] in PROC.CATALOGO or p["alvo"] in trazidos
+               for p in todos if p["tipo"] == SCH.FUNCAO)
 
 
 def test_o_tique_lanca_o_que_venceu_e_so_uma_vez(casa):

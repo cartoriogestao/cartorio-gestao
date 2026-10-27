@@ -38,6 +38,7 @@ AQUI = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(AQUI))
 
 import banco_pg  # noqa: E402
+import identidade_do_robo as IDR  # noqa: E402
 from bd_nativo import banco as abrir_banco  # noqa: E402
 
 #: A trava de quem cria tarefa por fora da tela: «já existe a mesma ABERTA?» e o
@@ -145,11 +146,14 @@ def main(argv=None) -> int:
                     "INSERT INTO attachments(entity_type,entity_id,original_name,stored_name,stored_path,sha256,size_bytes,description,uploaded_by,uploaded_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     ("TASK", tid, nome, nome, str(alvo), hashlib.sha256(dados).hexdigest(), len(dados),
                      "Malote Digital — " + (t.get("referencia") or ""), criador["id"], agora))
-            bd.escrever(
-                "INSERT INTO audit_logs(ts,user_id,username_snapshot,action,entity_type,entity_id,details,ip_address) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                (agora, criador["id"], criador["username"], "TASK_CREATED", "TASK", tid,
-                 json.dumps({"origem": "AGENTE MALOTE", "titulo": t["titulo"], "referencia": t.get("referencia")},
-                            ensure_ascii=False), None))
+            # O agente do malote age com a conta de quem o oficial designou: a
+            # linha diz isso (agente + a mando da pessoa) (26/10/2026).
+            IDR.registrar(
+                bd, ts=agora, user_id=criador["id"], username=criador["username"],
+                action="TASK_CREATED", entity_type="TASK", entity_id=tid,
+                details=json.dumps({"origem": "AGENTE MALOTE", "titulo": t["titulo"], "referencia": t.get("referencia")},
+                                   ensure_ascii=False),
+                agente="agente do malote (tools/malote_tarefas.py)")
             criadas.append((tid, t["titulo"], t["responsavel"]))
         con.commit()
     except BaseException:

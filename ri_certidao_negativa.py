@@ -41,6 +41,21 @@ NOME_DO_TIPO = "Certidão negativa de imóvel"
 # em `modelos_padrao/ri/` (LF06A); o oficial edita na tela sem tocar no codigo.
 CHAVE_MODELO = "RI_CERTIDAO_NEGATIVA_IMOVEL"
 
+# A POSITIVA POR PESSOA — 25/10/2026, o oficial («relação dos imóveis
+# atuais»), para os pedidos do ONR por pessoa (PEDIDO_POR 6). Até aqui só a
+# negativa existia por pessoa: quando a busca achava, nenhum papel dizia O QUE
+# se achou. Ela lista as matrículas ABERTAS em que a pessoa escolhida consta
+# HOJE como proprietária (`ri_partes.proprietario_ativo`). Mesma rota, mesmo
+# número, mesmo selo (16.24.1, o da negativa e da propriedade) e mesmo hash.
+#
+#   A PESSOA SE ESCOLHE, E NÃO SE DEDUZ. 71% das partes do acervo não têm
+#   documento, e a busca por nome devolve homônimos: a certidão afirma QUEM é o
+#   dono, e quem decide qual dos grupos é a pessoa pedida é o escrevente
+#   (`pessoa_chave`, a mesma chave do Indicador Pessoal).
+TIPO_POSITIVA = "POSITIVA_PESSOA"
+NOME_DO_TIPO_POSITIVA = "Certidão de propriedade por pessoa (positiva)"
+CHAVE_MODELO_POSITIVA = "RI_CERTIDAO_POSITIVA_PESSOA"
+
 
 class CertidaoNegativaError(ValueError):
     """Recusa de dominio: busca achou algo, ou faltou criterio."""
@@ -110,6 +125,130 @@ def buscar_por_imovel(con: Any, busca: str,
     )
 
 
+def _numero_da_matricula(numero: Any) -> int:
+    digitos = ""
+    for ch in str(numero or ""):
+        if not ch.isdigit():
+            break
+        digitos += ch
+    return int(digitos) if digitos else 0
+
+
+def candidatas_da_positiva(con: Any, chave: str) -> list[dict]:
+    """As matrículas que a positiva PODE listar para a pessoa escolhida, cada
+    uma com os proprietários como estão na ficha. Só LÊ.
+
+    O ESCREVENTE MARCA UMA A UMA (o oficial, 25/10/2026). A chave do
+    Indicador Pessoal junta homônimos sem documento e parte a mesma pessoa
+    que tem CPF numa matrícula e não noutra (revisão do Agente RI). Por isso
+    entram também as matrículas de OUTROS grupos com o mesmo nome — e a
+    certidão sai só com as que o escrevente conferiu e marcou.
+
+    O CPF NÃO INCLUI NEM EXCLUI SOZINHO — e houve regra que dizia o contrário,
+    revogada pelo oficial no mesmo dia (25/10/2026): «as matrículas aqui são
+    muito bagunçadas para excluir por CPF, tem gente com CPF de outra pessoa».
+    O documento só aparece na tela, para o escrevente decidir."""
+    bd = banco(con)
+    chave = (chave or "").strip()
+    nomes = [r["nome_norm"] for r in bd.ler(
+        """SELECT DISTINCT nome_norm FROM ri_partes
+            WHERE COALESCE(NULLIF(documento_numero,''), nome_norm) = %s
+              AND COALESCE(nome_norm,'') <> ''""", (chave,))]
+    marcas = ",".join(["%s"] * len(nomes)) or "NULL"
+    linhas = bd.ler(
+        f"""SELECT m.id, m.numero, m.livro_norm, m.tipo_imovel, m.rural_urbano,
+                   m.logradouro, m.numero_predial, m.complemento_endereco,
+                   m.bairro, m.cidade, m.uf, m.area_valor, m.area_unidade,
+                   MAX(CASE WHEN COALESCE(NULLIF(p.documento_numero,''), p.nome_norm) = %s
+                            THEN 1 ELSE 0 END) AS da_pessoa
+              FROM ri_partes p JOIN ri_matriculas m ON m.id = p.matricula_id
+             WHERE p.proprietario_ativo = 1 AND COALESCE(m.encerrada, 0) = 0
+               AND (COALESCE(NULLIF(p.documento_numero,''), p.nome_norm) = %s
+                    OR p.nome_norm IN ({marcas}))
+             GROUP BY m.id""", (chave, chave, *nomes))
+    # OS DONOS DE TODAS DE UMA VEZ (revisão do Agente RI): uma consulta por
+    # matrícula daria centenas para abrir o Indicador Pessoal num nome comum.
+    ids = [int(m["id"]) for m in linhas]
+    donos: dict[int, list[dict]] = {i: [] for i in ids}
+    if ids:
+        for d in bd.ler(
+                f"""SELECT matricula_id, nome, documento_numero FROM ri_partes
+                     WHERE proprietario_ativo = 1
+                       AND matricula_id IN ({",".join(["%s"] * len(ids))})
+                     ORDER BY id""", ids):
+            donos[int(d["matricula_id"])].append(
+                {"nome": d["nome"], "documento_numero": d["documento_numero"]})
+    saida = []
+    for m in sorted(linhas, key=lambda m: (_numero_da_matricula(m.get("numero")), m["id"])):
+        m = dict(m)
+        m["donos"] = donos.get(int(m["id"]), [])
+        saida.append(m)
+    return saida
+
+
+def conferir_marcadas(candidatas: list, marcadas: list) -> list[dict]:
+    """As matrículas marcadas pelo escrevente, conferidas contra as candidatas."""
+    ids = set()
+    for valor in marcadas or []:
+        try:
+            ids.add(int(valor))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        raise CertidaoNegativaError(
+            "Marque, uma a uma, as matrículas que são da pessoa pedida — a "
+            "certidão positiva sai só com as conferidas.")
+    por_id = {int(c["id"]): c for c in candidatas}
+    fora = ids - set(por_id)
+    if fora:
+        raise CertidaoNegativaError(
+            "Uma matrícula marcada não é de proprietário atual com este nome. "
+            "Busque de novo e marque outra vez.")
+    return [c for c in candidatas if int(c["id"]) in ids]
+
+
+def conferir_positiva(achados: list, pessoa_chave: str) -> dict:
+    """A pessoa escolhida está entre as achadas? Devolve o grupo dela.
+
+    Positiva só sai sobre a pessoa que o escrevente escolheu na busca: com mais
+    de um grupo e nada escolhido, recusa — escolher pelo sistema seria afirmar
+    a propriedade de um homônimo."""
+    pessoa_chave = (pessoa_chave or "").strip()
+    if not achados:
+        raise CertidaoNegativaError(
+            "A busca não achou ninguém: não há o que certificar como positiva. "
+            "Se nada consta, emita a certidão negativa.")
+    if not pessoa_chave:
+        if len(achados) > 1:
+            raise CertidaoNegativaError(
+                f"A busca achou {len(achados)} pessoas. Escolha qual delas é a "
+                "pedida antes de emitir a certidão positiva.")
+        return achados[0]
+    for grupo in achados:
+        if str(grupo.get("chave") or "") == pessoa_chave:
+            return grupo
+    raise CertidaoNegativaError(
+        "A pessoa escolhida não está entre as que a busca achou. Busque de novo.")
+
+
+def descricao_curta(m: dict) -> str:
+    """Uma linha do imóvel para a relação da positiva. Só calcula."""
+    endereco = ", ".join(x for x in (
+        str(m.get("logradouro") or "").strip(),
+        str(m.get("numero_predial") or "").strip(),
+        str(m.get("complemento_endereco") or "").strip()) if x)
+    partes = [str(m.get("tipo_imovel") or "").strip(), endereco,
+              str(m.get("bairro") or "").strip()]
+    lugar = "/".join(x for x in (str(m.get("cidade") or "").strip(),
+                                 str(m.get("uf") or "").strip()) if x)
+    if lugar:
+        partes.append(lugar)
+    area = str(m.get("area_valor") or "").strip()
+    if area:
+        partes.append(f"área {area} {str(m.get('area_unidade') or '').strip()}".strip())
+    return " — ".join(x for x in partes if x)
+
+
 def conferir_negativa(achados: list) -> None:
     """Negativa só sai quando a busca realmente não achou."""
     if achados:
@@ -158,9 +297,9 @@ def montar_identificacao(busca: str, *, modo: str, con=None) -> dict:
 
 
 def hash_do_corpo(numero: int, ano: int, corpo: str, data_emissao: str,
-                  criterio: str) -> str:
+                  criterio: str, tipo: str = TIPO) -> str:
     payload = json.dumps(
-        {"numero": int(numero), "ano": int(ano), "tipo": TIPO,
+        {"numero": int(numero), "ano": int(ano), "tipo": tipo,
          "criterio": (criterio or "").strip(), "corpo": corpo or "",
          "data": (data_emissao or "").strip()},
         ensure_ascii=False, sort_keys=True,

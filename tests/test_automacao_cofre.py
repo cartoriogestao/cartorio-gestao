@@ -150,7 +150,69 @@ def test_metadados_e_lista_funcionam_trancados_e_gravar_exige_aberto(guardiao):
 
 
 def test_o_canal_recusa_quem_nao_tem_o_token(guardiao):
-    assert guardiao.atender({"token": "errado", "acao": "estado"})["ok"] is False
+    corpo = json.dumps({"acao": "estado"}, sort_keys=True)
+    # o formato antigo (token em claro) não vale mais
+    assert guardiao.atender({"token": guardiao.token, "acao": "estado"}, "d" * 32)["ok"] is False
+    # assinatura com outro token, ou contra outro desafio: recusada
+    errada = C.prova_do_canal("outro-token", C.PAPEL_DE_QUEM_PEDE, "d" * 32, corpo)
+    assert guardiao.atender({"prova": errada, "corpo": corpo}, "d" * 32)["ok"] is False
+    certa = C.prova_do_canal(guardiao.token, C.PAPEL_DE_QUEM_PEDE, "d" * 32, corpo)
+    assert guardiao.atender({"prova": certa, "corpo": corpo}, "e" * 32)["ok"] is False
+    # a prova do GUARDIÃO não serve de prova de quem pede (papéis no texto assinado)
+    refletida = C.prova_do_canal(guardiao.token, C.PAPEL_DO_GUARDIAO, "d" * 32, corpo)
+    assert guardiao.atender({"prova": refletida, "corpo": corpo}, "d" * 32)["ok"] is False
+    assert guardiao.atender({"prova": certa, "corpo": corpo}, "d" * 32)["ok"] is True
+
+
+def test_quem_ocupa_a_porta_de_um_guardiao_caido_nao_recebe_nada(tmp_path):
+    """Revisão de segurança de 26/10/2026 (PR #11, M1): o guardião caiu e o
+    `guardiao.json` ficou; outro processo escuta naquela porta. Quem pede não
+    pode mandar a ele a senha-mestra, o segredo nem o token."""
+    import socket
+    import threading
+    pasta = tmp_path / C.NOME_DA_PASTA
+    pasta.mkdir()
+    caminho = pasta / C.NOME_DO_ARQUIVO
+    token = "token-da-sessao-que-caiu-0123456789"
+    impostor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    impostor.bind(("127.0.0.1", 0))
+    impostor.listen(4)
+    porta = impostor.getsockname()[1]
+    (pasta / C.NOME_DO_CANAL).write_text(json.dumps({"porta": porta, "token": token, "pid": 1}),
+                                         encoding="utf-8")
+    recebido: list[bytes] = []
+
+    def escutar():
+        for _ in range(3):
+            try:
+                conexao, _ = impostor.accept()
+            except OSError:
+                return
+            with conexao:
+                conexao.settimeout(2)
+                try:
+                    recebido.append(conexao.recv(65536))
+                    conexao.sendall(b'{"prova": "qualquer-coisa", "desafio": "' + b"a" * 32 + b'"}\n')
+                    recebido.append(conexao.recv(65536))
+                except OSError:
+                    pass
+
+    t = threading.Thread(target=escutar, daemon=True)
+    t.start()
+    try:
+        with pytest.raises(C.CofreTrancado) as e:
+            C.desbloquear(SENHA, caminho=caminho, confirmacao=SENHA)
+        assert isinstance(e.value, C.CanalNaoConfere) and "nada foi enviado" in str(e.value)
+        with pytest.raises(C.CofreTrancado):
+            C.gravar("item", {"senha": "segredo-de-teste-xyz"}, tipo=C.SENHA, por="mario", caminho=caminho)
+        assert C.estado(caminho=caminho)["aberto"] is False
+    finally:
+        impostor.close()
+        t.join(timeout=5)
+    tudo = b"".join(recebido)
+    assert tudo, "o impostor devia ter recebido ao menos o desafio"
+    for proibido in (SENHA, "segredo-de-teste-xyz", token, "desbloquear", "gravar"):
+        assert proibido.encode("utf-8") not in tudo, proibido
 
 
 def test_ler_recusa_dentro_da_requisicao_web(guardiao):
@@ -176,7 +238,9 @@ def test_nenhuma_tela_nem_o_agente_le_o_cofre():
                 if any(a.name in ("ler", "ler_com_chave", "pedir") for a in no.names):
                     achados.append(f"{p.name}: importa a leitura do cofre")
         for no in ast.walk(arvore):
-            if (isinstance(no, ast.Attribute) and no.attr in ("ler", "ler_com_chave")
+            # «pedir» entrou em 26/10/2026 (revisão de segurança, PR #11): `C.pedir("ler", ...)`
+            # numa tela passaria pela varredura que só olhava `ler`.
+            if (isinstance(no, ast.Attribute) and no.attr in ("ler", "ler_com_chave", "pedir")
                     and isinstance(no.value, ast.Name) and no.value.id in apelidos):
                 achados.append(f"{p.name}:{no.lineno} chama {no.value.id}.{no.attr}")
         if p.name.startswith("agente") and "automacao_cofre" in p.read_text(encoding="utf-8"):

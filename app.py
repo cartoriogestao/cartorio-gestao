@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import io
 import hashlib
 import hmac
@@ -45,6 +44,7 @@ from security import new_csrf_token, new_secret_key
 import arquivo_visivel as ARQVIS
 import html_sem_script as HSS
 import login_espera as LESP
+import identidade_do_robo as IDR
 import seguranca_web as SEGWEB
 from storage import hash_file, safe_component, save_upload
 from network_discovery import DiscoveryResponder, best_local_ip_for, lan_ipv4_addresses
@@ -442,7 +442,13 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     def audit(action: str, entity_type: str | None = None, entity_id: int | None = None, details=None):
         user = current_user()
-        db.log(user["id"] if user else None, user["username"] if user else None, action, entity_type, entity_id, details, request.remote_addr if request else None)
+        # QUEM GRAVA SEM NINGUEM LOGADO E O PROPRIO SERVIDOR (26/10/2026, ordem
+        # do oficial: todo robo diz quem e e a mando de quem age). E um EVENTO
+        # DO SERVIDOR: sem mandante, porque ninguem mandou a requisicao
+        # anonima (revisao de seguranca, 26/10). Com conta de robo, a
+        # identidade sai da conta (`identidade_do_robo.registrar`).
+        ident = {} if user else {"agente": IDR.AGENTE_SERVIDOR}
+        db.log(user["id"] if user else None, user["username"] if user else None, action, entity_type, entity_id, details, request.remote_addr if request else None, **ident)
 
     def login_required(view):
         @wraps(view)
@@ -582,7 +588,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             return                      # a automacao esta gerando agora
         except Exception as exc:
             db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
-                   {"error": str(exc), "tipo": "rodada"})
+                   {"error": str(exc), "tipo": "rodada"},
+                   agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
             return
         # O PACOTE GERADO FICA REGISTRADO, COM O SHA-256 (revisao de seguranca de
         # 26/10/2026, PR #27 M1): a mesma funcao da automacao grava em
@@ -594,14 +601,16 @@ def create_app(test_config: dict | None = None) -> Flask:
             pasta=backup_dir())
         if aviso:
             db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
-                   {"error": aviso, "tipo": "registro"})
+                   {"error": aviso, "tipo": "registro"},
+                   agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
         # O QUE A RETENCAO DE 5 DIAS APAGOU vai a auditoria, com o agente e a
         # mando de quem (decisao do oficial de 26/10/2026).
         backup_automacao.registrar_a_retencao(
             db, r.get("retencao"), origem="primeiro acesso do dia", pasta=backup_dir())
         for falha in r["falhas"]:
             db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
-                   {"error": falha["erro"], "tipo": falha["tipo"]})
+                   {"error": falha["erro"], "tipo": falha["tipo"]},
+                   agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
 
     def papel_de_quem_esta_logado():
         """O papel do usuario da sessao, ou None. So LE.
@@ -706,10 +715,17 @@ def create_app(test_config: dict | None = None) -> Flask:
             # abria usuários, atualizações, backup e caixa. A lista das rotas
             # vedadas mora em `selo_robo.ROTAS_VEDADAS_AO_ROBO`, ao lado da
             # regra que já dizia que robô não sela.
+            #
+            # E DESDE 26/10/2026 A RÉGUA É FECHADA (revisão de segurança dos
+            # PRs abertos, achado transversal 1): a lista de vedadas não pegava
+            # rota nova, e cinco PRs traziam rotas que o robô alcançaria sem
+            # ninguém ter decidido. Agora o robô só entra no que está em
+            # `rotas_do_robo.ROTAS_PERMITIDAS_AO_ROBO`; o resto é 403. As
+            # vedadas continuam por cima — vedada vence permitida.
             import selo_robo as SR
             _quem = current_user()
             if _quem is not None and SR.usuario_e_robo(_quem) and \
-                    SR.rota_vedada_ao_robo(request.endpoint):
+                    not SR.rota_permitida_ao_robo(request.endpoint):
                 abort(403)
         # Isentas do token de formulário: quem as chama não tem a sessão, e
         # cada uma se autentica por conta própria — o webhook pela assinatura
@@ -1087,7 +1103,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                 if fim:
                     # Em espera, a senha nem é conferida — e a tentativa não conta.
                     db.log(None, rastro, LESP.EM_ESPERA, "SESSION", None,
-                           LESP.detalhes(chave, ate=fim.isoformat()), ip)
+                           LESP.detalhes(chave, ate=fim.isoformat()), ip,
+                           agente=IDR.AGENTE_SERVIDOR)   # evento: ninguém mandou
                     row = None
                 else:
                     # `authenticate` gasta o mesmo PBKDF2 para o usuário que
@@ -1098,7 +1115,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                         # não vier, e aí este erro não entra na contagem: sob
                         # carga a espera fica mais branda, nunca mais dura.
                         db.log(None, rastro, LESP.FALHA, "SESSION", None,
-                               LESP.detalhes(chave), ip)
+                               LESP.detalhes(chave), ip,
+                               agente=IDR.AGENTE_SERVIDOR)   # evento: ninguém mandou
                         depois = LESP.espera(con, chave, ip, uid_alvo)
             if fim:
                 flash(LESP.recado(fim), "danger")
@@ -2117,12 +2135,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         return render_template("reports.html", stats=stats, tasks=tasks_rows, expedientes=exp_rows, service_metrics=service_metrics)
 
     def csv_response(filename: str, headers: list[str], rows: list[list[object]]):
-        output = io.StringIO()
-        writer = csv.writer(output, delimiter=";")
-        writer.writerow(headers)
-        writer.writerows(rows)
-        data = "\ufeff" + output.getvalue()
-        return Response(data, mimetype="text/csv; charset=utf-8", headers={"Content-Disposition": f"attachment; filename={filename}"})
+        # A PLANILHA NÃO LEVA FÓRMULA (revisão de segurança de 26/10/2026,
+        # achado transversal 2): todo CSV da casa sai por `csv_seguro`, que põe
+        # cada campo entre aspas e neutraliza o texto que começa com = + - @.
+        import csv_seguro as CSVS
+        return CSVS.resposta(filename, headers, rows)
 
     @app.route("/relatorios/tarefas.csv")
     @login_required
@@ -2149,9 +2166,28 @@ def create_app(test_config: dict | None = None) -> Flask:
                     flash(msg, "danger")
                 else:
                     try:
+                        # O ROBO TEM RESPONSAVEL (ordem do oficial, 26/10/2026):
+                        # a pessoa que responde por ele se escolhe na criacao, e
+                        # se confere ANTES de criar — conta pela metade nao fica.
+                        resp_id = parse_int(request.form.get("robo_responsavel_id"))
+                        if request.form.get("eh_robo") == "1" and resp_id:
+                            with db.connect() as con:
+                                IDR.validar_responsavel_de_robo(con, resp_id)
                         uid = db.create_user(request.form.get("username", ""), request.form.get("full_name", ""), password, request.form.get("role", "USER"), int(current_user()["id"]), eh_robo=1 if request.form.get("eh_robo") == "1" else 0)
                         audit("USER_CREATED", "USER", uid)
-                        flash("Usuário criado.", "success")
+                        criado = db.get_user(uid)
+                        if criado and int(criado["eh_robo"] or 0) and resp_id:
+                            with db.transaction() as con:
+                                IDR.definir_responsavel_do_robo(con, uid, resp_id)
+                            audit("USER_ROBO_RESPONSAVEL_ALTERADO", "USER", uid,
+                                  {"robo_responsavel_id": resp_id})
+                        if criado and int(criado["eh_robo"] or 0) and not resp_id:
+                            flash("Usuário criado. É conta de robô SEM responsável: o "
+                                  "login funciona, e toda ação dele fica com o aviso "
+                                  "«robô sem responsável» até alguém ser escolhido "
+                                  "na coluna Robô.", "warning")
+                        else:
+                            flash("Usuário criado.", "success")
                     except ValueError as exc:
                         flash(str(exc), "danger")
             elif action == "editar":
@@ -2193,11 +2229,41 @@ def create_app(test_config: dict | None = None) -> Flask:
                         flash("Robô só pode ter o perfil USER ou AUDITOR. Troque o "
                               "perfil antes de marcar como robô.", "danger")
                         return redirect(url_for("users"))
-                    with db.transaction() as con:
-                        banco(con).escrever("UPDATE users SET eh_robo=%s WHERE id=%s",
-                                            (marca, uid))
-                    audit("USER_EH_ROBO_ALTERADO", "USER", uid, {"eh_robo": marca})
-                    flash("Marca de robô atualizada.", "success")
+                    # O RESPONSAVEL VAI JUNTO COM A MARCA (26/10/2026): robo
+                    # diz a mando de quem age. Desmarcar limpa o responsavel —
+                    # a pessoa responde por si.
+                    resp_id = parse_int(request.form.get("robo_responsavel_id")) if marca else None
+                    try:
+                        with db.transaction() as con:
+                            banco(con).escrever("UPDATE users SET eh_robo=%s WHERE id=%s",
+                                                (marca, uid))
+                            IDR.definir_responsavel_do_robo(con, uid, resp_id)
+                    except ValueError as exc:
+                        flash(str(exc), "danger")
+                        return redirect(url_for("users"))
+                    audit("USER_EH_ROBO_ALTERADO", "USER", uid,
+                          {"eh_robo": marca, "robo_responsavel_id": resp_id})
+                    if marca and not resp_id:
+                        flash("Marca de robô gravada, SEM responsável: toda ação dele "
+                              "fica com o aviso «robô sem responsável».", "warning")
+                    else:
+                        flash("Marca de robô atualizada.", "success")
+            elif action == "responsavel_rotinas":
+                # QUEM RESPONDE PELAS ROTINAS AUTOMATICAS (26/10/2026): backup,
+                # CNIB, malote, envio a CENSEC, scripts. So ADMIN ou MANAGER
+                # (revisao de seguranca, 26/10). Vazio = o primeiro ADMIN ativo
+                # que nao e robo.
+                resp_id = parse_int(request.form.get("responsavel_rotinas"))
+                try:
+                    with db.connect() as con:
+                        IDR.validar_responsavel_das_rotinas(con, resp_id)
+                except ValueError as exc:
+                    flash(str(exc), "danger")
+                    return redirect(url_for("users"))
+                db.set_settings({IDR.CHAVE_RESPONSAVEL: str(resp_id) if resp_id else ""})
+                audit("RESPONSAVEL_ROTINAS_ALTERADO", "SETTINGS", None,
+                      {"user_id": resp_id})
+                flash("Responsável pelas rotinas automáticas gravado.", "success")
             elif action == "funcao":
                 # Em que qualidade a pessoa assina. Vai impressa embaixo da
                 # assinatura no orcamento, no protocolo de recepcao e no
@@ -2268,9 +2334,17 @@ def create_app(test_config: dict | None = None) -> Flask:
         linhas = db.list_users()
         with db.connect() as con:
             em_espera = LESP.em_espera_na_casa(con, linhas, secret_key)
+            # A IDENTIDADE DOS ROBOS (26/10/2026): quem pode responder, quem
+            # responde pelas rotinas, e o aviso do que grava sem dizer quem e.
+            pessoas = IDR.pessoas_que_podem_responder(con, por="robo")
+            pessoas_rotinas = IDR.pessoas_que_podem_responder(con, por="rotinas")
+            resp_rotinas = IDR.responsavel_das_rotinas(con)
+            identidade = IDR.conferencia(con)
         return render_template(
             "users.html", rows=linhas, roles=ROLES, em_espera=em_espera,
-            funcoes=json_list(db.get_setting("funcoes_cargos", ""), list(FUNCOES)))
+            funcoes=json_list(db.get_setting("funcoes_cargos", ""), list(FUNCOES)),
+            pessoas=pessoas, pessoas_rotinas=pessoas_rotinas,
+            resp_rotinas=resp_rotinas, identidade=identidade)
 
     @app.route("/saude")
     def health():
@@ -2553,7 +2627,8 @@ def create_app(test_config: dict | None = None) -> Flask:
     @login_required
     @roles_required("ADMIN", "AUDITOR")
     def audit_logs():
-        return render_template("audit.html", rows=db.list_logs(2000))
+        return render_template("audit.html", rows=db.list_logs(2000),
+                               agente_servidor=IDR.AGENTE_SERVIDOR)
 
     @app.route("/configuracoes", methods=["GET", "POST"])
     @login_required
@@ -2986,6 +3061,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     import nfse_web
     nfse_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
+    # AS DESPESAS (24/10/2026) — cadastrar, o oficial autoriza, o Banco Inter
+    # paga, o extrato confere e o Livro Diário recebe. Pagamento desligado por padrão.
+    import despesas_web
+    despesas_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
     import notas_web
     notas_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
@@ -3170,6 +3250,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     import onr_certidoes_web
     onr_certidoes_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                       fmt_date)
+    # A APROVAÇÃO DO QUE O ROBÔ PREPAROU (25/10/2026): o clique «Aprovar» é a
+    # emissão, pela rota da casa (`onr_certidoes_auto_web`).
+    import onr_certidoes_auto_web
+    onr_certidoes_auto_web.registrar_rotas(app, db, login_required, roles_required, audit)
 
     # A CONFERENCIA DO ENDERECO QUE VAI AO ONR — o que o teor da ficha diz,
     # ao lado do que a ficha tem, com a frase de onde cada campo saiu.
@@ -3367,6 +3451,13 @@ def create_app(test_config: dict | None = None) -> Flask:
     # não roda nada; quem roda é o despachante, fora do servidor.
     import automacao_web
     automacao_web.registrar_rotas(app, db, login_required, roles_required, audit,
+                                  fmt_date)
+
+    # OS AVISOS DE ANDAMENTO AO CLIENTE (26/10/2026) — o consentimento por
+    # canal, o «pronto para retirar» e a fila. A tela não manda nada; quem
+    # manda é a rotina AVISOS_ANDAMENTO da automação, fora do servidor.
+    import andamento_web
+    andamento_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                   fmt_date)
 
     import acervo_correcao_web

@@ -63,7 +63,11 @@ ROBOS = "robos.cred"
 WHATSAPP = "whatsapp.cred"
 BACKUP = "backup.cred"
 AVISOS = "avisos.cred"
-ARQUIVOS = (ROBOS, WHATSAPP, BACKUP, AVISOS)
+# A credencial do Banco Inter (`despesas_inter`): Client Secret e a chave
+# privada do certificado. Entrou em 26/10/2026 (revisão de segurança dos PRs
+# abertos): a primeira versão a gravava num `.json` em texto claro.
+BANCO_INTER = "banco_inter.cred"
+ARQUIVOS = (ROBOS, WHATSAPP, BACKUP, AVISOS, BANCO_INTER)
 
 FORMATO = "cg-cofre-1"
 CODIFICACAO = "utf-8-sig"

@@ -510,7 +510,6 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     "tem_cryptography": "selador_de_bancada — a bancada dos testes, e não peça do balcão",
     "numero_de_controle": "notas_doi — " + _TESTE,
     "reservar_processo": "recursos_da_maquina — " + _TESTE,
-    "servico_no_ar": "assinar_com_a3 — o serviço local do A3 roda fora do Flask; " + _TESTE,
     "status_payload": "a3_servico_local — resposta do serviço local do A3, fora do Flask",
     "sugerir_entrelinha": "notas_inutilizacao — " + _TESTE,
 }
@@ -547,7 +546,9 @@ ACHADAS_EM_14_10_2026: dict[str, str] = {
     "marcar_o_que_o_eoficio_ja_informou":
         "protesto_retorno — virada do protesto (13/10); a porta foi o script "
         "pontual tmp/protesto_virada_20261013/2_virada.py, fora do sistema",
-    "devolver_presos": _FILA, "enfileirar": _FILA,
+    # «enfileirar» saiu em 26/10/2026: o nome ganhou caminho até tela com os
+    # avisos de andamento (`andamento_avisos.enfileirar`), e o varredor é pelo nome.
+    "devolver_presos": _FILA,
     "espera_da_tentativa": _FILA, "marcar_confirmado": _FILA,
     "marcar_enviado": _FILA, "marcar_falha": _FILA, "pegar_proximo": _FILA,
     "processar_proximo": _FILA,

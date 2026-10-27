@@ -68,6 +68,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 import banco_pg  # noqa: E402
+import identidade_do_robo as IDR  # noqa: E402
 from bd_nativo import banco  # noqa: E402
 
 
@@ -212,19 +213,21 @@ def main() -> int:
                     (limpo, novo_hash, int(ato["id"])))
         # O RASTRO FICA NO BANCO, e nao so nesta tela. Quem conferir a ficha
         # daqui a um ano precisa achar por que o hash daquele ato mudou.
-        bd.escrever(
-            """INSERT INTO audit_logs (ts, user_id, username_snapshot, action,
-                   entity_type, entity_id, details)
-               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-            (agora, None, "tools/limpar_marcador_do_selo_no_teor.py",
-             "RI_ATO_TEOR_CORRIGIDO", "RI_ATO", int(ato["id"]),
-             (f'{{"ficha": "{ato["ficha"]}", '
-              f'"ato": "{ato["tipo"]}-{ato["numero"]:02d}", '
-              f'"motivo": "marcador do selo que o sistema acrescentou na '
-              f'lavratura, retirado por ordem do delegatario em '
-              f'{agora[:10]}", '
-              f'"hash_antes": "{ato["hash_ato"]}", '
-              f'"hash_depois": "{novo_hash}"}}')))
+        # Quem grava por programa diz quem e e a mando de quem (26/10/2026).
+        IDR.registrar(
+            bd, ts=agora, user_id=None,
+            username="tools/limpar_marcador_do_selo_no_teor.py",
+            action="RI_ATO_TEOR_CORRIGIDO", entity_type="RI_ATO",
+            entity_id=int(ato["id"]),
+            details=(f'{{"ficha": "{ato["ficha"]}", '
+                     f'"ato": "{ato["tipo"]}-{ato["numero"]:02d}", '
+                     f'"motivo": "marcador do selo que o sistema acrescentou na '
+                     f'lavratura, retirado por ordem do delegatario em '
+                     f'{agora[:10]}", '
+                     f'"hash_antes": "{ato["hash_ato"]}", '
+                     f'"hash_depois": "{novo_hash}"}}'),
+            agente="tools/limpar_marcador_do_selo_no_teor.py",
+            a_mando_de=IDR.PELO_RESPONSAVEL)
 
     print(f"\nTeor do ato {ato['id']} limpo, e o hash refeito sobre o texto "
           f"que de fato está escrito.")

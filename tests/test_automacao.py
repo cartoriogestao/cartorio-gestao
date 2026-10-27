@@ -148,7 +148,8 @@ def test_os_processos_de_fabrica_nascem_desligados_e_nao_duplicam(casa):
     with db.transaction() as con:
         assert AU.semear(con, SEG) == 0
         todos = AU.listar(con)
-    # As de fábrica MAIS as que outros módulos trazem (o backup, 26/10/2026).
+    # As de fábrica MAIS as que outros módulos trazem (`MODULOS_COM_PROCESSOS`):
+    # contar só `SEMENTES` ficaria vermelho no primeiro módulo (as despesas).
     assert len(todos) == len(PROC.todas_as_sementes())
     assert not any(p["ativo"] or p["pode_agir"] for p in todos)
     codigos = {p["codigo"] for p in todos}
@@ -237,11 +238,13 @@ def test_a_rodada_muito_alem_do_prazo_e_encerrada_a_forca(casa):
 
 def test_o_corredor_mata_o_script_que_passa_do_prazo(casa, tmp_path):
     db = casa["db"]
-    (tmp_path / "dorme.py").write_text("import time\ntime.sleep(60)\n", encoding="utf-8")
+    # desde 26/10/2026 (revisão de segurança, M2) só roda script da pasta própria
+    (tmp_path / AU.PASTA_DOS_SCRIPTS).mkdir()
+    (tmp_path / AU.PASTA_DOS_SCRIPTS / "dorme.py").write_text("import time\ntime.sleep(60)\n", encoding="utf-8")
     p = _processo(db, "CASA_DISCO")
     with db.transaction() as con:
         banco(con).escrever("UPDATE au_processos SET tipo=%s, alvo=%s, timeout_s=2 WHERE id=%s",
-                            (SCH.SCRIPT, "dorme.py", p["id"]))
+                            (SCH.SCRIPT, f"{AU.PASTA_DOS_SCRIPTS}/dorme.py", p["id"]))
         e = AU._criar_execucao(con, AU.obter(con, p["id"]), disparo=SCH.MANUAL, agendada_para=None,
                                quem="mario", agora=SEG)
     final = AU.executar(db, e, raiz=tmp_path, pasta_dados=tmp_path)
@@ -485,11 +488,12 @@ def test_o_sirc_vazio_esta_em_dia(casa, tmp_path):
 def test_processo_com_credencial_e_cofre_trancado_vira_aviso_e_os_outros_rodam(casa, tmp_path):
     """Máquina reiniciou e ninguém digitou a senha: AVISO «cofre trancado», sem erro técnico."""
     db = casa["db"]
-    (tmp_path / "usa_cred.py").write_text("print('nao devia rodar')\n", encoding="utf-8")
+    (tmp_path / AU.PASTA_DOS_SCRIPTS).mkdir()
+    (tmp_path / AU.PASTA_DOS_SCRIPTS / "usa_cred.py").write_text("print('nao devia rodar')\n", encoding="utf-8")
     p = _processo(db, "CASA_DISCO")
     with db.transaction() as con:
         banco(con).escrever("UPDATE au_processos SET tipo=%s, alvo=%s, usa_credencial=%s WHERE id=%s",
-                            (SCH.SCRIPT, "usa_cred.py", "banco_cobranca", p["id"]))
+                            (SCH.SCRIPT, f"{AU.PASTA_DOS_SCRIPTS}/usa_cred.py", "banco_cobranca", p["id"]))
         e = AU._criar_execucao(con, AU.obter(con, p["id"]), disparo=SCH.MANUAL, agendada_para=None,
                                quem="mario", agora=SEG)
     final = AU.executar(db, e, raiz=tmp_path, pasta_dados=tmp_path,
@@ -660,3 +664,141 @@ def test_outro_modulo_traz_processos_e_ausente_nao_quebra(monkeypatch):
     codigos = [s["codigo"] for s in todas]
     assert codigos.count("PROTESTO_CRA") == 1
     assert "DESPESAS_PAGAR" in codigos
+
+
+# ------------------------------------------- revisão de segurança de 26/10/2026 (PR #11)
+
+
+def test_a_tela_so_manda_rodar_funcao_da_lista_e_script_da_pasta_propria(casa, tmp_path):
+    """M2: o ADMIN da tela não ganha execução de código no sistema operacional."""
+    db = casa["db"]
+    p = _processo(db, "CASA_DISCO")
+    raiz = tmp_path / "programa"
+    (raiz / AU.PASTA_DOS_SCRIPTS).mkdir(parents=True)
+    (raiz / "automacao_processos.py").write_text("", encoding="utf-8")
+    (raiz / "tools").mkdir()
+    (raiz / "tools" / "migrar.py").write_text("print('perigo')\n", encoding="utf-8")
+    (raiz / AU.PASTA_DOS_SCRIPTS / "conferir.py").write_text("print('ok')\n", encoding="utf-8")
+    (raiz / AU.PASTA_DOS_SCRIPTS / "lancar.ps1").write_text("Write-Output 1\n", encoding="utf-8")
+    (raiz / AU.PASTA_DOS_SCRIPTS / "lancar.cmd").write_text("echo 1\n", encoding="utf-8")
+    recusados = [
+        (SCH.FUNCAO, "automacao_processos:resultado"),        # existe, mas não é verificação
+        (SCH.FUNCAO, "os:system"),
+        (SCH.SCRIPT, "tools/migrar.py"),                     # script do pacote, fora da pasta própria
+        (SCH.SCRIPT, f"{AU.PASTA_DOS_SCRIPTS}/../tools/migrar.py"),
+        (SCH.SCRIPT, f"{AU.PASTA_DOS_SCRIPTS}/lancar.ps1"),
+        (SCH.SCRIPT, f"{AU.PASTA_DOS_SCRIPTS}/lancar.cmd"),
+        (SCH.SCRIPT, f"{AU.PASTA_DOS_SCRIPTS}/nao_existe.py"),
+    ]
+    for tipo, alvo in recusados:
+        with db.transaction() as con, pytest.raises(AU.AutomacaoError):
+            AU.salvar(con, p["id"], {"tipo": tipo, "alvo": alvo}, usuario="mario", raiz=raiz)
+    with db.transaction() as con:
+        assert AU.salvar(con, p["id"], {"tipo": SCH.FUNCAO, "alvo": "automacao_processos:verificar_disco"},
+                         usuario="mario", raiz=raiz)["alvo"] == "automacao_processos:verificar_disco"
+        assert AU.salvar(con, p["id"], {"tipo": SCH.SCRIPT, "alvo": f"{AU.PASTA_DOS_SCRIPTS}/conferir.py"},
+                         usuario="mario", raiz=raiz)["tipo"] == SCH.SCRIPT
+    # toda semente de fábrica continua aceita
+    assert all(s["alvo"] in AU.funcoes_permitidas() for s in PROC.todas_as_sementes()
+               if s.get("tipo", SCH.FUNCAO) == SCH.FUNCAO)
+
+
+def test_alvo_gravado_por_fora_da_tela_tambem_nao_roda(casa, tmp_path):
+    """M2: a régua vale na hora de rodar — script fora da pasta não roda nem
+    recebe o segredo do cofre, e função fora da lista não importa módulo."""
+    db = casa["db"]
+    (tmp_path / "solto.py").write_text("print('nao devia rodar')\n", encoding="utf-8")
+    p = _processo(db, "CASA_DISCO")
+    with db.transaction() as con:
+        banco(con).escrever("UPDATE au_processos SET tipo=%s, alvo=%s, usa_credencial=%s WHERE id=%s",
+                            (SCH.SCRIPT, "solto.py", "banco_cobranca", p["id"]))
+        e = AU._criar_execucao(con, AU.obter(con, p["id"]), disparo=SCH.MANUAL, agendada_para=None,
+                               quem="mario", agora=SEG)
+    final = AU.executar(db, e, raiz=tmp_path, pasta_dados=tmp_path,
+                        rodar=lambda *a, **k: pytest.fail("rodou script fora da pasta própria"))
+    assert final["situacao"] == SCH.ERRO and AU.PASTA_DOS_SCRIPTS in final["relato"]
+    q = _processo(db, "CASA_SELADOR")
+    with db.transaction() as con:
+        banco(con).escrever("UPDATE au_processos SET alvo=%s WHERE id=%s", ("os:getcwd", q["id"]))
+        e2 = AU._criar_execucao(con, AU.obter(con, q["id"]), disparo=SCH.MANUAL, agendada_para=None,
+                                quem="mario", agora=SEG)
+    r = AU.trabalho(db, e2, pasta_dados=tmp_path)
+    assert r["situacao"] == SCH.ERRO and "não está na lista" in r["relato"]
+
+
+def test_a_auditoria_da_edicao_leva_os_parametros(casa):
+    c = _entrar(casa, "mario", "ADMIN")
+    p = _processo(casa["db"], "CASA_DISCO")
+    html = c.get(f"/automacao/{p['id']}").get_data(as_text=True)
+    dados = {"csrf_token": _token(html), "nome": p["nome"], "descricao": "", "setor": "TI",
+             "tipo": SCH.FUNCAO, "alvo": p["alvo"], "parametros": '{"aviso_gb": 31}',
+             "dias": ["0"], "forma": "horarios", "horarios": "07:00", "timeout_s": "60",
+             "max_tentativas": "1"}
+    c.post(f"/automacao/{p['id']}/salvar", data=dados, follow_redirects=True)
+    with casa["db"].connect() as con:
+        detalhe = banco(con).valor("SELECT details FROM audit_logs WHERE action='AUTOMACAO_ALTERADO' "
+                                   "ORDER BY id DESC LIMIT 1")
+    assert "aviso_gb" in str(detalhe) and "31" in str(detalhe)
+
+
+def test_a_verificacao_so_le_arquivo_das_pastas_da_casa_e_nao_mostra_o_texto(casa, tmp_path):
+    """M3: o caminho da configuração não abre qualquer arquivo da máquina, e o
+    texto do log não vai para `detalhe_tecnico` (que o gerente lê)."""
+    db = casa["db"]
+    dados = tmp_path / "dados"
+    fora = tmp_path / "fora"
+    (dados / "logs").mkdir(parents=True)
+    fora.mkdir()
+    segredo = "linha-secreta-do-arquivo-xyz"
+    params = {"chave_config": SCH.CHAVE_CNIB_LOG, "nome": "as minutas", "horas": 10 ** 6,
+              "padrao_erro": "."}
+    # fora da pasta de dados: não lê
+    (fora / "pgpass.log").write_text(segredo + "\n", encoding="utf-8")
+    with db.transaction() as con:
+        SCH.gravar_config(con, SCH.CHAVE_CNIB_LOG, str(fora / "pgpass.log"))
+    r = PROC.verificar_log(_ctx(db, dados, params))
+    assert r["situacao"] == SCH.AVISO and "fora da pasta" in r["relato"]
+    assert segredo not in json.dumps(r, ensure_ascii=False)
+    # dentro da pasta do cofre: não lê
+    (dados / "cofre_automacao").mkdir()
+    (dados / "cofre_automacao" / "guardiao.log").write_text(segredo + "\n", encoding="utf-8")
+    with db.transaction() as con:
+        SCH.gravar_config(con, SCH.CHAVE_CNIB_LOG, str(dados / "cofre_automacao" / "guardiao.log"))
+    assert PROC.verificar_log(_ctx(db, dados, params))["situacao"] == SCH.AVISO
+    # sufixo que não é de log: não lê
+    (dados / "logs" / "pgpass.conf").write_text(segredo + "\n", encoding="utf-8")
+    with db.transaction() as con:
+        SCH.gravar_config(con, SCH.CHAVE_CNIB_LOG, str(dados / "logs" / "pgpass.conf"))
+    assert PROC.verificar_log(_ctx(db, dados, params))["situacao"] == SCH.AVISO
+    # o log de verdade: lê, julga, e o texto NÃO sai
+    (dados / "logs" / "rotina.log").write_text("ERRO: " + segredo + "\n", encoding="utf-8")
+    with db.transaction() as con:
+        SCH.gravar_config(con, SCH.CHAVE_CNIB_LOG, str(dados / "logs" / "rotina.log"))
+    r = PROC.verificar_log(_ctx(db, dados, params))
+    assert r["situacao"] == SCH.ERRO
+    assert segredo not in json.dumps(r, ensure_ascii=False) and "1 linha" in r["detalhe_tecnico"]
+    # o estado do backup: só com o nome dele, e só nas pastas da casa
+    (fora / "ESTADO_DO_BACKUP.json").write_text(json.dumps({"ok": True, "terminou": SEG.isoformat()}),
+                                                encoding="utf-8")
+    (dados / "outro.json").write_text(json.dumps({"ok": True, "terminou": SEG.isoformat()}), encoding="utf-8")
+    for caminho in (fora / "ESTADO_DO_BACKUP.json", dados / "outro.json"):
+        with db.transaction() as con:
+            SCH.gravar_config(con, SCH.CHAVE_BACKUP_ESTADO, str(caminho))
+        assert PROC.verificar_backup(_ctx(db, dados))["situacao"] == SCH.AVISO, caminho
+
+
+def test_o_robo_nao_alcanca_a_central_da_automacao(casa):
+    """M4: nem a conta de robô que tenha ficado com papel de ADMIN (cadastro antigo)."""
+    import selo_robo as SR
+    app = casa["app"]
+    rotas = [r.endpoint for r in app.url_map.iter_rules() if r.endpoint.startswith("automacao")]
+    assert rotas and all(SR.rota_vedada_ao_robo(e) for e in rotas)
+    db = casa["db"]
+    db.create_user("robo_central", "Robo de Exemplo da Central", SENHA, "USER", eh_robo=1)
+    with db.transaction() as con:
+        banco(con).escrever("UPDATE users SET role='ADMIN' WHERE username=%s", ("robo_central",))
+    from tests.conftest import cg_login
+    c = app.test_client()
+    cg_login(c, "robo_central", SENHA)
+    for url in ("/automacao", "/automacao/configuracao", "/automacao/cofre"):
+        assert c.get(url).status_code == 403, url

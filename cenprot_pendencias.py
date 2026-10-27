@@ -656,3 +656,269 @@ _MANDA_DA_ESPECIE: dict[str, Any] = {
 }
 
 ESPECIES_QUE_SO_SE_BAIXAM: frozenset[str] = frozenset({CN.DECISAO_JUDICIAL})
+
+
+# ------------------------------------------- o pedido de protesto vira título
+#
+# PEDIDO DO OFICIAL, 27/10/2026: «chegou um título pela CENPROT. nossa
+# integração funciona para receber direto pelo sistema?» — e não funcionava. A
+# baixa trazia o pedido para a fila e procurava o título desta casa; **não
+# achando, parava ali**. Até 21/10 os títulos da CENPROT entravam pela cópia do
+# E-Ofício (93 na produção), e o E-Ofício foi desligado em 26/10.
+#
+# O PRECEDENTE É DESTA CASA: o 350574/1, cadastrado em 21/10/2026 por ordem do
+# oficial a partir do próprio pedido da CENPROT, pela mesma
+# `protesto.cadastrar_titulo` da remessa da CRA, com a chave de origem
+# `CENPROT-PEDIDO:<número do pedido>`. Isto é aquele script virando botão.
+#
+# O TÍTULO NASCE `RECEBIDO`, E NÃO APONTADO — quem aponta é a ficha do título,
+# com livro, número e auditoria. Este módulo não lavra ato (é a régua de
+# `test_o_modulo_nao_tem_funcao_que_lavre_ato`).
+PREFIXO_DA_ORIGEM_DO_PEDIDO = "CENPROT-PEDIDO:"
+# MEDIDOS nos 93 títulos de origem CENPROT da produção, em 27/10/2026: o
+# apresentante é «TAB» em 93 de 93, e o motivo do protesto, «1» (falta de
+# pagamento) em 93 de 93. O pedido não traz nenhum dos dois.
+APRESENTANTE_DOS_PEDIDOS = "TAB"
+MOTIVO_DOS_PEDIDOS = "1"
+ENTIDADE_DO_TITULO = "PT_TITULO"          # a mesma de `protesto_imagens`
+ARQUIVOS_DO_PEDIDO = (("pedido_pdf_b64", "pedido"), ("anexo_b64", "anexo"))
+
+
+def _txt(v: Any) -> str:
+    return str(v or "").strip()
+
+
+def _digitos(v: Any) -> str:
+    return "".join(c for c in str(v or "") if c.isdigit())
+
+
+def _codigo_da_descricao(tabela: dict, texto: Any) -> str | None:
+    """A CENPROT manda a DESCRIÇÃO («Comum», «Sem Endosso»); o contrato da CRA
+    quer o CÓDIGO. Sem tradução única, fica vazio — o campo é opcional, e
+    código inventado iria ao livro."""
+    t = _txt(texto)
+    if t in tabela:
+        return t
+    achados = [k for k, v in tabela.items() if v.lower() == t.lower()]
+    return achados[0] if len(achados) == 1 else None
+
+
+def _blocos(valor: Any) -> list[dict]:
+    if isinstance(valor, dict):
+        return [valor]
+    if isinstance(valor, list):
+        return [v for v in valor if isinstance(v, dict)]
+    return []
+
+
+def dados_do_pedido(teor: dict, *, praca: str) -> dict:
+    """O pedido da CENPROT no vocabulário de `protesto.cadastrar_titulo`. Só
+    calcula.
+
+    O APRESENTANTE É QUEM PEDIU (`dados_solicitante`); o CEDENTE é o
+    `dados_cedente`. O sacador não tem coluna em `pt_titulos`: ele continua no
+    teor congelado do pedido, e é de lá que o XML da CENPROT o lê.
+    """
+    teor = teor if isinstance(teor, dict) else {}
+    dp = teor.get("dados_pedido") or {}
+    tit = dp.get("dados_titulo") or teor.get("dados_titulo") or {}
+    ced = teor.get("dados_cedente") or {}
+    sol = teor.get("dados_solicitante") or {}
+    devedores = []
+    for d in (_blocos(teor.get("devedor")) + _blocos(teor.get("devedores"))
+              + _blocos(teor.get("codevedor")) + _blocos(teor.get("codevedores"))):
+        doc = _digitos(d.get("nm_nr_identificacao"))
+        devedor = {"nome": _txt(d.get("nm_devedor") or d.get("nm_codevedor")),
+                   "enderecos": [{"endereco": _txt(d.get("nm_endereco")),
+                                  "bairro": _txt(d.get("nm_bairro")),
+                                  "cep": _digitos(d.get("nm_nr_cep")),
+                                  "cidade": _txt(d.get("nm_cidade")),
+                                  "uf": _txt(d.get("sg_uf")).upper()}]}
+        if len(doc) == 14:
+            devedor["CNPJ"] = doc
+        elif doc:
+            devedor["CPF"] = doc
+        devedores.append(devedor)
+    import protesto_cra as CRA
+    falimentar = _txt(dp.get("fins_falimentares")).lower().startswith("s")
+    return {
+        "apresentante_codigo": APRESENTANTE_DOS_PEDIDOS,
+        "apresentante_nome": _txt(sol.get("nm_nome")) or None,
+        "apresentante_documento": _digitos(sol.get("nm_nr_documento")) or None,
+        "apresentante_endereco": _txt(sol.get("ds_endereco_solicitante")) or None,
+        "especie": _txt(tit.get("sg_especie")),
+        "numero_titulo": _txt(tit.get("nm_nr_titulo")),
+        "nosso_numero": _txt(tit.get("nm_nosso_numero")) or None,
+        "data_emissao": _txt(tit.get("dt_emissao"))[:10],
+        "data_vencimento": _txt(tit.get("dt_vencimento"))[:10] or None,
+        "tipo_moeda": "1",
+        "valor": tit.get("vl_titulo"),
+        "saldo": tit.get("vl_saldo") if tit.get("vl_saldo") not in (None, "")
+        else tit.get("vl_titulo"),
+        "praca_protesto": _txt(praca).upper(),
+        "tipo_protesto": ("F" if falimentar else _codigo_da_descricao(
+            CRA.TIPOS_DE_PROTESTO, dp.get("tipo_protesto"))),
+        "tipo_endosso": _codigo_da_descricao(CRA.TIPOS_DE_ENDOSSO,
+                                             dp.get("tipo_endosso")),
+        "aceite": "A" if _txt(dp.get("aceite")).lower().startswith("s") else "N",
+        "motivo_protesto": MOTIVO_DOS_PEDIDOS,
+        "cedente": {"nome": _txt(ced.get("nm_cedente")) or None,
+                    "documento": _digitos(ced.get("nm_nr_documento")) or None,
+                    "endereco": _txt(ced.get("nm_endereco")) or None,
+                    "cep": _digitos(ced.get("nm_nr_cep")) or None,
+                    "cidade": _txt(ced.get("nm_cidade")) or None,
+                    "uf": _txt(ced.get("sg_uf")).upper() or None},
+        "devedores": devedores,
+    }
+
+
+def registro_do_pedido(teor: dict) -> dict:
+    """O cedente e o sacador do pedido, com os nomes de campo do registro de
+    600 posições — que é o que o XML da CENPROT lê. Só calcula.
+
+    Na remessa da CRA o nome do favorecido é `cedente_nome`, o do sacador é
+    `cedente_nome_2`, e documento e endereço que vêm ao lado são os do
+    SACADOR (`protesto_cenprot_xml._cedente_e_sacador`). Sem sacador no
+    pedido, vai o cedente nos dois lugares.
+    """
+    teor = teor if isinstance(teor, dict) else {}
+    dp = teor.get("dados_pedido") or {}
+    ced = teor.get("dados_cedente") or {}
+    sac = teor.get("dados_sacador") or {}
+    quem = sac if _txt(sac.get("nm_sacador")) else ced
+    return {"cedente_nome": _txt(ced.get("nm_cedente")),
+            "cedente_nome_2": _txt(sac.get("nm_sacador")) or _txt(ced.get("nm_cedente")),
+            "cedente_documento": _digitos(quem.get("nm_nr_documento")),
+            "cedente_endereco": _txt(quem.get("nm_endereco")),
+            "cedente_cep": _digitos(quem.get("nm_nr_cep")),
+            "cedente_cidade": _txt(quem.get("nm_cidade")),
+            "cedente_uf": _txt(quem.get("sg_uf")).upper(),
+            "aceite": "A" if _txt(dp.get("aceite")).lower().startswith("s") else "N"}
+
+
+def teor_do_pedido(con: Any, numero_do_pedido: Any) -> dict | None:
+    """O teor congelado do pedido de protesto, pelo número dele. Só LÊ."""
+    linha = banco(con).um(
+        """SELECT teor FROM cn_pendencias
+            WHERE especie = %s AND ambiente = %s AND codigo = %s
+            ORDER BY id DESC LIMIT 1""",
+        (CN.PEDIDO_PROTESTO, CRED.PRODUCAO, _txt(numero_do_pedido)))
+    if not linha:
+        return None
+    try:
+        teor = json.loads(linha["teor"] or "{}")
+    except ValueError:
+        return None
+    return teor if isinstance(teor, dict) else None
+
+
+def cadastrar_titulo_do_pedido(con: Any, pendencia_id: int, *, agora: str,
+                               usuario: str | None = None,
+                               pasta_de_arquivos: Any = None,
+                               usuario_id: int | None = None) -> dict:
+    """Dá entrada no título que veio no pedido de protesto da CENPROT.
+    ESCREVE, e grava arquivo em disco.
+
+    Cadastra pela `protesto.cadastrar_titulo` (a mesma da remessa da CRA, com
+    a conferência do contrato), amarra a pendência ao título e anexa ao título
+    os PDFs que vieram no pedido. **Repetir devolve o mesmo título**: a chave
+    de origem é o número do pedido.
+    """
+    import protesto as PT
+    bd = banco(con)
+    p = uma(bd, pendencia_id)
+    if p is None:
+        raise PendenciaError(f"Pendência {pendencia_id} não encontrada.")
+    if p["especie"] != CN.PEDIDO_PROTESTO:
+        raise PendenciaError(
+            "Só o pedido de protesto vira título — esta pendência é "
+            f"{CN.NOME_DA_ESPECIE.get(p['especie'], p['especie'])}.")
+    if p["ambiente"] != CRED.PRODUCAO:
+        raise PendenciaError(
+            "Pedido de homologação não vira título: é teste da Central, e o "
+            "título entraria no livro de verdade.")
+    if p.get("titulo_id"):
+        raise PendenciaError(
+            f"Este pedido já está amarrado ao título {p['titulo_id']} — abra a "
+            f"ficha dele.")
+    teor = p.get("teor_aberto")
+    if not isinstance(teor, dict):
+        raise PendenciaError("O teor deste pedido não se lê — confira na "
+                             "Gestão de Pedidos da CENPROT.")
+    cidade = bd.um("SELECT value FROM settings WHERE key = 'ri_cidade'")
+    praca = _txt(cidade["value"] if cidade else "")
+    if not praca:
+        raise PendenciaError(
+            "A cidade da serventia não está configurada (Administrativo → "
+            "Configurações) — ela é a praça de protesto do título.")
+    dados = dados_do_pedido(teor, praca=praca)
+    try:
+        titulo_id = PT.cadastrar_titulo(
+            bd, dados, origem="CENPROT",
+            origem_chave=PREFIXO_DA_ORIGEM_DO_PEDIDO + _txt(p["codigo"]),
+            usuario=usuario, agora=agora)
+    except PT.ProtestoError as erro:
+        raise PendenciaError(f"O pedido {p['codigo']} não entrou: {erro}") from erro
+    # O PROTOCOLO SÓ ENTRA SE A CENTRAL JÁ O TEM — o pedido que já foi
+    # protocolado por esta casa antes. Pedido novo vem sem, e o protocolo
+    # nasce no apontamento.
+    protocolo = _txt((teor.get("dados_pedido") or {}).get("nm_nr_protocolo"))
+    if protocolo:
+        bd.escrever("UPDATE pt_titulos SET protocolo = %s WHERE id = %s "
+                    "AND (protocolo IS NULL OR protocolo = '')",
+                    (protocolo, titulo_id))
+    bd.escrever("UPDATE cn_pendencias SET titulo_id = %s WHERE id = %s",
+                (titulo_id, int(pendencia_id)))
+    anexos = []
+    if pasta_de_arquivos:
+        anexos = _anexar_os_arquivos_do_pedido(
+            bd, titulo_id, teor, codigo=_txt(p["codigo"]),
+            pasta_de_arquivos=pasta_de_arquivos, agora=agora,
+            usuario_id=usuario_id)
+    return {"titulo_id": titulo_id, "pendencia_id": int(pendencia_id),
+            "anexos": anexos}
+
+
+def _anexar_os_arquivos_do_pedido(bd: Any, titulo_id: int, teor: dict, *,
+                                  codigo: str, pasta_de_arquivos: Any,
+                                  agora: str, usuario_id: int | None) -> list[int]:
+    """Os PDFs do pedido (o pedido e o anexo, que é a imagem do título) vão
+    para `attachments`, com o mesmo dono da imagem que vem pela CRA. O mesmo
+    arquivo não entra duas vezes."""
+    import base64
+    import binascii
+    import hashlib
+    from pathlib import Path
+    arquivos = teor.get("arquivos") or {}
+    feitos: list[int] = []
+    for campo, nome in ARQUIVOS_DO_PEDIDO:
+        b64 = _txt(arquivos.get(campo))
+        if not b64:
+            continue
+        try:
+            conteudo = base64.b64decode(b64, validate=False)
+        except (binascii.Error, ValueError):
+            continue
+        if not conteudo.startswith(b"%PDF"):
+            # Arquivo que diz ser PDF e não é não se anexa: abriria em branco
+            # na tela, com cara de documento.
+            continue
+        sha = hashlib.sha256(conteudo).hexdigest()
+        if bd.um("""SELECT id FROM attachments WHERE entity_type = %s
+                     AND entity_id = %s AND sha256 = %s LIMIT 1""",
+                 (ENTIDADE_DO_TITULO, int(titulo_id), sha)):
+            continue
+        destino = Path(pasta_de_arquivos) / "Protesto" / "Titulos" / str(int(titulo_id))
+        destino.mkdir(parents=True, exist_ok=True)
+        arquivo = destino / f"cenprot-pedido-{codigo}-{nome}.pdf"
+        arquivo.write_bytes(conteudo)
+        feitos.append(int(bd.escrever(
+            """INSERT INTO attachments(entity_type, entity_id, original_name,
+                   stored_name, stored_path, sha256, size_bytes, description,
+                   uploaded_by, uploaded_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+            (ENTIDADE_DO_TITULO, int(titulo_id), arquivo.name, arquivo.name,
+             str(arquivo), sha, len(conteudo),
+             f"{'Pedido' if nome == 'pedido' else 'Anexo do pedido'} de "
+             f"protesto da CENPROT nº {codigo}", usuario_id, agora))[0]["id"]))
+    return feitos

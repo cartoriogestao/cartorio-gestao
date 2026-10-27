@@ -175,6 +175,23 @@ def _folhas(db) -> str:
     return f"{caixa['quantas']} folha(s) recebida(s)"
 
 
+def _com_os_selos_de_ensaio(db, passo) -> str:
+    """Roda `passo` com a trava do selo pago desligada, e a DEVOLVE como estava.
+
+    Os atos de exemplo levam selos de ENSAIO digitados (`SELO_ENSAIO`), e desde
+    a 3.7.0 (achado A9) o selo à mão passa pela cobertura do selo pago: sem
+    protocolo pago no caixa ele não entrava, e o RCPN e as Notas do sandbox
+    ficavam em «pulados». A trava volta ao fim, até se o passo falhar — quem
+    pratica ato no sandbox a encontra ligada, como na casa."""
+    import ato_selado as AS
+    antes = db.get_setting(AS.CHAVE_DA_TRAVA, "")
+    db.set_settings({AS.CHAVE_DA_TRAVA: AS.TRAVA_DESLIGADA})
+    try:
+        return passo(db)
+    finally:
+        db.set_settings({AS.CHAVE_DA_TRAVA: antes})
+
+
 def _rcpn(db) -> str:
     import rcpn_nascimento_ensaio as RNE
     import rcpn_obito_ensaio as ROE
@@ -311,8 +328,8 @@ PASSOS = (
     ("usuários", lambda db, app, pasta: _usuarios(db)),
     ("livros", lambda db, app, pasta: _livros(db)),
     ("folhas de segurança", lambda db, app, pasta: _folhas(db)),
-    ("RCPN", lambda db, app, pasta: _rcpn(db)),
-    ("Notas", lambda db, app, pasta: _notas(db)),
+    ("RCPN", lambda db, app, pasta: _com_os_selos_de_ensaio(db, _rcpn)),
+    ("Notas", lambda db, app, pasta: _com_os_selos_de_ensaio(db, _notas)),
     ("Protesto", lambda db, app, pasta: _protesto(db)),
     ("Registro de Imóveis", lambda db, app, pasta: _ri(db, app)),
 )

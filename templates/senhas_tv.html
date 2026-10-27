@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Painel de senhas</title>
+{# A TV DA RECEPÇÃO (26/10/2026). Abre sem login, pela chave do endereço, e
+   SÓ MOSTRA SENHA E GUICHÊ — o JSON que ela lê não traz outra coisa
+   (`senhas.estado_do_painel`). O aviso sonoro é do próprio navegador: os
+   navegadores só tocam som depois de um clique na página, e por isso há o
+   botão «Ligar o som» — clicado uma vez, vale até a TV ser recarregada. #}
+<style>
+  :root { --fundo: #0b1d2e; --texto: #ffffff; --destaque: #ffd84d; --apagado: #9fb3c8; --linha: #23405c; }
+  html, body { margin: 0; height: 100%; background: var(--fundo); color: var(--texto);
+               font-family: Arial, Helvetica, sans-serif; overflow: hidden; }
+  .tudo { display: grid; grid-template-columns: 2fr 1fr; height: 100vh; }
+  .atual { display: flex; flex-direction: column; justify-content: center; align-items: center;
+           border-right: 4px solid var(--linha); }
+  .rotulo { font-size: 4vw; color: var(--apagado); text-transform: uppercase; letter-spacing: .1em; }
+  .senha { font-size: 17vw; font-weight: bold; color: var(--destaque); line-height: 1; }
+  .guiche { font-size: 7vw; font-weight: bold; margin-top: 2vh; }
+  .vazio { font-size: 4vw; color: var(--apagado); }
+  .lado { display: flex; flex-direction: column; padding: 3vh 2vw; }
+  .lado h2 { font-size: 2.6vw; color: var(--apagado); margin: 0 0 2vh; font-weight: normal; text-transform: uppercase; }
+  .item { display: flex; justify-content: space-between; font-size: 3.6vw; padding: 1.4vh 0;
+          border-bottom: 2px solid var(--linha); }
+  .item .g { color: var(--apagado); }
+  .relogio { margin-top: auto; font-size: 3vw; color: var(--apagado); text-align: right; }
+  .piscar { animation: piscar 1s step-start 4; }
+  @keyframes piscar { 50% { opacity: 0; } }
+  .controles { position: fixed; left: 1vw; bottom: 1vh; font-size: 14px; opacity: .55; }
+  .controles button { font-size: 14px; margin-right: 6px; }
+  .controles label { color: var(--apagado); }
+  .falha { position: fixed; top: 1vh; left: 1vw; background: #8b1a1a; color: #fff; padding: 6px 12px;
+           font-size: 16px; display: none; }
+</style>
+</head>
+<body>
+<div class="tudo">
+  <div class="atual" id="atual"><div class="vazio">Aguarde a chamada</div></div>
+  <div class="lado">
+    <h2>Últimas chamadas</h2>
+    <div id="ultimas"></div>
+    <div class="relogio" id="relogio"></div>
+  </div>
+</div>
+<div class="falha" id="falha">Sem conexão com o sistema — tentando de novo…</div>
+<div class="controles">
+  <button type="button" id="som">Ligar o som</button>
+  <label><input type="checkbox" id="voz"> anunciar em voz</label>
+  <button type="button" id="cheia">Tela cheia</button>
+</div>
+<script>
+(function () {
+  "use strict";
+  var ENDERECO = {{ endereco_estado|tojson }};
+  var marcaAnterior = null, somLigado = false, ctx = null;
+
+  function el(tag, classe, texto) {
+    var e = document.createElement(tag);
+    if (classe) { e.className = classe; }
+    if (texto !== undefined) { e.textContent = texto; }
+    return e;
+  }
+
+  function bip() {
+    if (!somLigado || !ctx) { return; }
+    [0, 0.35].forEach(function (atraso, i) {
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = "sine"; o.frequency.value = i ? 660 : 880;
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + atraso);
+      g.gain.exponentialRampToValueAtTime(0.4, ctx.currentTime + atraso + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + atraso + 0.3);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(ctx.currentTime + atraso); o.stop(ctx.currentTime + atraso + 0.32);
+    });
+  }
+
+  function falar(item) {
+    if (!somLigado || !document.getElementById("voz").checked || !window.speechSynthesis) { return; }
+    // «P012» se lê «P, zero, um, dois» — separado, que é como se confere no papel.
+    var letras = item.senha.split("").join(" ");
+    var u = new SpeechSynthesisUtterance("Senha " + letras + ", guichê " + item.guiche);
+    u.lang = "pt-BR";
+    window.speechSynthesis.speak(u);
+  }
+
+  function desenhar(estado) {
+    var atual = document.getElementById("atual");
+    atual.textContent = "";
+    if (estado.atual) {
+      atual.appendChild(el("div", "rotulo", "Senha"));
+      atual.appendChild(el("div", "senha", estado.atual.senha));
+      atual.appendChild(el("div", "guiche", estado.atual.guiche ? "Guichê " + estado.atual.guiche : ""));
+    } else {
+      atual.appendChild(el("div", "vazio", "Aguarde a chamada"));
+    }
+    var lista = document.getElementById("ultimas");
+    lista.textContent = "";
+    (estado.ultimas || []).forEach(function (it) {
+      var linha = el("div", "item");
+      linha.appendChild(el("span", "", it.senha));
+      linha.appendChild(el("span", "g", it.guiche ? "Guichê " + it.guiche : ""));
+      lista.appendChild(linha);
+    });
+    var marca = estado.atual ? estado.atual.marca : null;
+    if (marca && marcaAnterior !== null && marca !== marcaAnterior) {
+      var s = atual.querySelector(".senha");
+      if (s) { s.classList.add("piscar"); }
+      bip();
+      falar(estado.atual);
+    }
+    marcaAnterior = marca || "";
+  }
+
+  function buscar() {
+    fetch(ENDERECO, { cache: "no-store", credentials: "same-origin" })
+      .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); })
+      .then(function (estado) { document.getElementById("falha").style.display = "none"; desenhar(estado); })
+      .catch(function () { document.getElementById("falha").style.display = "block"; })
+      .then(function () { setTimeout(buscar, 3000); });
+  }
+
+  function relogio() {
+    var d = new Date();
+    document.getElementById("relogio").textContent =
+      d.toLocaleDateString("pt-BR") + "  " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  document.getElementById("som").addEventListener("click", function () {
+    try {
+      ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.resume) { ctx.resume(); }
+      somLigado = true;
+      this.textContent = "Som ligado";
+      bip();
+    } catch (e) { this.textContent = "Este navegador não toca som"; }
+  });
+  document.getElementById("cheia").addEventListener("click", function () {
+    var d = document.documentElement;
+    if (d.requestFullscreen) { d.requestFullscreen(); }
+  });
+
+  relogio(); setInterval(relogio, 15000);
+  buscar();
+})();
+</script>
+</body>
+</html>

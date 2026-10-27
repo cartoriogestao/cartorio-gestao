@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block title %}Relatório do atendimento — Administrativo{% endblock %}
+{% block heading %}<h1>Atendimento por senha — relatório do período</h1>{% endblock %}
+{% macro tabela(titulo, grupos) %}
+<section class="panel"><h2>{{ titulo }}</h2>
+  {% if grupos %}
+  <div class="table-wrap"><table>
+    <thead><tr><th></th><th>Senhas</th><th>Atendidas</th><th>Desistências</th><th>Sem atendimento</th>
+      <th>Espera média</th><th>Maior espera</th><th>Atendimento médio</th></tr></thead>
+    <tbody>{% for g in grupos %}
+      <tr><td>{{ g.nome }}</td><td>{{ g.total }}</td><td>{{ g.atendidas }}</td><td>{{ g.desistencias }}</td>
+        <td>{{ g.sem_atendimento }}</td><td>{{ minutos(g.espera_media) }}</td><td>{{ minutos(g.espera_maior) }}</td>
+        <td>{{ minutos(g.atendimento_medio) }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="muted">Nenhuma senha no período.</p>{% endif %}
+</section>
+{% endmacro %}
+{% block content %}
+<section class="panel">
+  <form method="get" class="inline-form">
+    <label>De <input type="date" name="de" value="{{ m.inicio }}"></label>
+    <label>Até <input type="date" name="ate" value="{{ m.fim }}"></label>
+    <label>Atendente
+      <select name="atendente"><option value="">todos</option>
+        {% for u in atendentes %}<option value="{{ u.id }}" {% if atendente == u.id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
+      </select>
+    </label>
+    <button>Ver</button>
+    <a class="button" href="{{ url_for('senhas_relatorio_csv', de=m.inicio, ate=m.fim, atendente=atendente or '') }}">Exportar CSV</a>
+  </form>
+  {% set r = m.resumo %}
+  <div class="cards">
+    <div class="card stat"><span>Senhas</span><strong>{{ r.total }}</strong></div>
+    <div class="card stat"><span>Preferenciais</span><strong>{{ r.preferenciais }}</strong></div>
+    <div class="card stat"><span>Atendidas</span><strong>{{ r.atendidas }}</strong></div>
+    <div class="card stat"><span>Desistências</span><strong>{{ r.desistencias }}</strong></div>
+    <div class="card stat"><span>Sem atendimento</span><strong>{{ r.sem_atendimento }}</strong></div>
+    <div class="card stat"><span>Espera média</span><strong>{{ minutos(r.espera_media) }}</strong></div>
+    <div class="card stat"><span>Maior espera</span><strong>{{ minutos(r.espera_maior) }}</strong></div>
+    <div class="card stat"><span>Atendimento médio</span><strong>{{ minutos(r.atendimento_medio) }}</strong></div>
+    <div class="card stat"><span>Viraram protocolo</span><strong>{{ r.com_protocolo }}</strong></div>
+  </div>
+  <p class="small muted">Espera: da chegada (senha emitida) até a primeira chamada. Atendimento: do «Iniciar» ao
+     «Finalizar». Desistência: marcada no balcão («Desistiu» ou «Não compareceu»). Sem atendimento: senha de
+     dia já encerrado que ficou na fila ou sem «Finalizar». Por atendente é quem fez a última ação na senha.</p>
+</section>
+{{ tabela("Por atendente", m.por_atendente) }}
+{{ tabela("Por tipo de serviço", m.por_tipo) }}
+{{ tabela("Por prioridade", m.por_prioridade) }}
+{{ tabela("Por dia", m.por_dia) }}
+{% if m.por_hora %}
+<section class="panel"><h2>Chegadas por hora</h2>
+  <div class="table-wrap"><table><thead><tr><th>Hora</th><th>Chegadas</th></tr></thead>
+    <tbody>{% for h in m.por_hora %}<tr><td>{{ h.hour }}h</td><td>{{ h.count }}</td></tr>{% endfor %}</tbody></table></div>
+</section>
+{% endif %}
+<section class="panel"><h2>Histórico</h2>
+  {% if total_de_linhas > linhas|length %}<p class="small muted">Mostrando as últimas {{ linhas|length }} de {{ total_de_linhas }} senhas; o CSV leva todas.</p>{% endif %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Data</th><th>Senha</th><th>Tipo</th><th>Situação</th><th>Chegada</th><th>Espera</th><th>Atendimento</th><th>Guichê</th><th>Atendente</th><th>Protocolo</th></tr></thead>
+    <tbody>{% for x in linhas %}
+      <tr><td>{{ x.ticket_date }}</td><td>{{ x.senha }}</td><td>{{ x.service_type or 'Geral' }}</td><td>{{ x.situacao }}</td>
+        <td>{{ fmt_dt(x.created_at) }}</td><td>{{ minutos(x.espera_seg) }}</td><td>{{ minutos(x.atendimento_seg) }}</td>
+        <td>{{ x.guiche or '—' }}</td><td>{{ x.attendant_name or '—' }}</td><td>{{ x.protocolo_numero or '—' }}</td></tr>
+    {% else %}<tr><td colspan="10">Nenhuma senha no período.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endblock %}

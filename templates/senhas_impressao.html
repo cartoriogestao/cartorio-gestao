@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Senha {{ t.senha }}</title>
+{# O PAPEL DA SENHA (26/10/2026) — impressora térmica de 80 mm, pelo próprio
+   navegador e sem driver especial: a largura útil desses rolos é ~72 mm, e
+   `@page` sem margem deixa o navegador mandar a tira inteira. O papel leva só
+   o que a pessoa precisa: a senha, o tipo, a hora e quantas há na frente —
+   nenhum nome, porque o papel fica esquecido em cima do balcão. #}
+<style>
+  @page { size: 80mm auto; margin: 0; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+  body { width: 72mm; margin: 0 auto; font-family: Arial, Helvetica, sans-serif; text-align: center; }
+  .casa { font-size: 11pt; font-weight: bold; padding-top: 3mm; }
+  .rotulo { font-size: 10pt; margin-top: 3mm; }
+  .senha { font-size: 40pt; font-weight: bold; letter-spacing: 2px; line-height: 1.1; }
+  .pref { font-size: 12pt; font-weight: bold; border: 2px solid #000; display: inline-block; padding: 1mm 3mm; margin: 1mm 0; }
+  .linha { font-size: 10pt; margin: 1mm 0; }
+  .rodape { font-size: 9pt; margin: 3mm 0 6mm; }
+  .tela { margin: 6mm 0; font-size: 11pt; }
+  @media print { .tela { display: none; } }
+</style>
+</head>
+<body>
+  <div class="casa">{{ nome_da_casa }}</div>
+  <div class="rotulo">SUA SENHA</div>
+  <div class="senha">{{ t.senha }}</div>
+  {% if t.priority %}<div class="pref">PREFERENCIAL</div>{% endif %}
+  <div class="linha">{{ t.service_type or 'Geral' }}</div>
+  <div class="linha">Chegada: {{ fmt_dt(t.created_at) }}</div>
+  {% if t.status == 'AGUARDANDO' %}<div class="linha">Senhas à sua frente: {{ frente }}</div>{% endif %}
+  <div class="rodape">Acompanhe a chamada no painel.<br>Guarde este papel.</div>
+  <div class="tela">
+    <button onclick="window.print()">Imprimir de novo</button>
+    <a href="{{ url_for('service_queue') }}">voltar ao atendimento</a>
+  </div>
+  <script>window.addEventListener("load", function () { window.print(); });</script>
+</body>
+</html>

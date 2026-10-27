@@ -471,7 +471,9 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     # `cobranca` numa rota de `atribuicoes_web` (a do ato do protesto), e nome
     # igual conta como um só (ver «O QUE ELE NAO PROVA», no topo). A operação do
     # SAEC continua sem botão, como as vizinhas desta linha.
-    "atendimento": _SAEC, "atendimentos": _SAEC,
+    # «atendimento» saiu em 27/10/2026: o painel do celular (PR #28) lhe deu
+    # caminho até tela, e o varredor é pelo nome.
+    "atendimentos": _SAEC,
     "detalhes_do_protocolo": _SAEC, "gerar_cobranca": _SAEC,
     "interagir_no_atendimento": _SAEC, "tipos_de_pagamento": _SAEC,
     "validar_token_do_protocolo": _SAEC,

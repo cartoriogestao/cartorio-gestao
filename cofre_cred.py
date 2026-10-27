@@ -67,7 +67,11 @@ AVISOS = "avisos.cred"
 # privada do certificado. Entrou em 26/10/2026 (revisão de segurança dos PRs
 # abertos): a primeira versão a gravava num `.json` em texto claro.
 BANCO_INTER = "banco_inter.cred"
-ARQUIVOS = (ROBOS, WHATSAPP, BACKUP, AVISOS, BANCO_INTER)
+# A CHAVE QUE ASSINA O RETRATO DO PAINEL (26/10/2026, `painel_retrato`): a
+# privada Ed25519 com que o servidor assina os números agregados que empurra
+# para a VPS. Na VPS fica só a pública — quem a lê lá não forja retrato.
+PAINEL = "painel.cred"
+ARQUIVOS = (ROBOS, WHATSAPP, BACKUP, AVISOS, BANCO_INTER, PAINEL)
 
 FORMATO = "cg-cofre-1"
 CODIFICACAO = "utf-8-sig"

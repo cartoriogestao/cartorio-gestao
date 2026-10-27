@@ -3404,6 +3404,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     import gestor_web
     gestor_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
+    # O PAINEL NO CELULAR (26/10/2026): só números agregados, só do oficial
+    # titular («apenas eu»), e o retrato assinado que o servidor empurra à VPS.
+    import painel_celular_web
+    painel_celular_web.registrar_rotas(app, db, login_required, roles_required, audit)
+
     # A VERIFICAÇÃO EM DUAS ETAPAS (LG02, 19/10/2026): o segundo passo do
     # login, a tela da conta e a do Gestor. Publica o desvio que o `/login`
     # consulta depois da senha.

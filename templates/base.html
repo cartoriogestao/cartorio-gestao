@@ -900,6 +900,7 @@
            de quem responde pela serventia. #}
         <a href="{{ url_for('fraude_consultar') }}">Consultar fraudes</a>
         <a href="{{ url_for('reports') }}">Relatórios</a>
+        {% if user.role == 'ADMIN' %}<a href="{{ url_for('painel_celular') }}" title="Só do oficial titular">Painel no celular</a>{% endif %}
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">A casa</div>
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('fraudes') }}">Atenção para fraudes</a>{% endif %}
         <a href="{{ url_for('checklists') }}">Checklists</a>

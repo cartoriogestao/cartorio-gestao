@@ -13,7 +13,11 @@ O QUE ESTES TESTES GUARDAM
       - a alegação exige o nome do suposto pai; o negativo não guarda dados de
         suposto pai nenhum;
       - pai declarado, ou carga do acervo, não são alcançados;
-      - só a alegação se remete ao juiz, uma vez, e o painel a mostra até lá.
+      - só a alegação se remete ao juiz, uma vez, e o painel a mostra até lá;
+      - a TERCEIRA saída (27/10/2026, decisão do oficial): a mãe não
+        compareceu — exige o motivo, recusa quando a declarante é a própria
+        mãe, não guarda suposto pai, não tem termo para assinar, não se
+        remete e não entra no painel.
 """
 from __future__ import annotations
 
@@ -147,6 +151,100 @@ def test_a_alegacao_nao_remetida_aparece_no_painel_ate_ser_remetida():
                          data="2026-09-20", agora="2026-09-20T10:00:00")
     assert not [x for x in IN.lista(con, hoje="2026-09-20", chave="RCPN_ALEGACAO_PATERNIDADE")
                 if x["chave"] == "RCPN_ALEGACAO_PATERNIDADE"]
+
+
+# ------------------------------------- a mãe não compareceu (27/10/2026)
+#
+#   Quem declara é a avó (ou o hospital, ou o próprio registrado no tardio):
+#   a mãe não está no balcão, e nem a alegação nem o negativo são verdade.
+
+AVO_DECLARA = [
+    {"papel": "REGISTRADO", "nome": "JOÃO DA SILVA", "sexo": "M"},
+    {"papel": "MAE", "nome": "MARIA DA SILVA"},
+    {"papel": "PAI", "nome": "IGNORADO"},
+    {"papel": "DECLARANTE", "nome": "ANA AVÓ EXEMPLO"},
+]
+MAE_AUSENTE = {"paternidade_tipo": "MAE_AUSENTE",
+               "motivo_ausencia_mae": "mãe falecida no parto"}
+
+
+def test_a_mae_ausente_exige_o_motivo_e_nada_fica_gravado():
+    con = banco()
+    for motivo in ("", "  ", "x"):
+        with pytest.raises(RC.RcError, match="precisa do motivo"):
+            nascimento(con, pessoas=AVO_DECLARA,
+                       paternidade={"tipo": "MAE_AUSENTE",
+                                    "motivo_ausencia_mae": motivo})
+    assert _quantos(con, "rc_assentos") == 0
+    assert _quantos(con, "rc_termos_paternidade") == 0
+
+
+def test_o_motivo_e_texto_curto():
+    con = banco()
+    with pytest.raises(RC.RcError, match="texto curto"):
+        nascimento(con, pessoas=AVO_DECLARA,
+                   paternidade={"tipo": "MAE_AUSENTE",
+                                "motivo_ausencia_mae": "a" * 301})
+    assert _quantos(con, "rc_assentos") == 0
+
+
+def test_se_a_declarante_e_a_mae_ela_esta_no_balcao():
+    con = banco()
+    # o ajudante `nascimento` monta a mãe como declarante
+    with pytest.raises(RC.RcError, match="a própria mãe"):
+        nascimento(con, paternidade=dict(MAE_AUSENTE))
+    assert _quantos(con, "rc_assentos") == 0
+
+
+def test_a_mae_ausente_grava_o_motivo_sem_suposto_pai_nem_termo_a_assinar():
+    con = banco()
+    r = nascimento(con, pessoas=AVO_DECLARA,
+                   paternidade={**MAE_AUSENTE, "suposto_pai_nome": "QUALQUER"})
+    termo = RP.do_assento(con, r["assento_id"])
+    assert termo["tipo"] == "MAE_AUSENTE"
+    assert termo["motivo_ausencia_mae"] == "mãe falecida no parto"
+    assert termo["suposto_pai_nome"] is None
+    assert termo["tem_termo"] is False
+    assert termo["nome_do_tipo"] == "Mãe não compareceu — averiguação não iniciada"
+    assert termo["anotacao"] == ("mãe não compareceu — averiguação não "
+                                 "iniciada: mãe falecida no parto")
+    assert "MÃE NÃO COMPARECEU — AVERIGUAÇÃO NÃO INICIADA" in termo["teor"]
+    assert "Motivo informado: mãe falecida no parto." in termo["teor"]
+    assert "Declarante: ANA AVÓ EXEMPLO." in termo["teor"]
+    assert f"sob o n.º {r['numero_ordem']}" in termo["teor"]
+    # não é termo: não há quem assine
+    assert "assina com o oficial" not in termo["teor"]
+
+
+def test_os_dois_termos_continuam_tendo_papel_e_sem_anotacao():
+    con = banco()
+    r = nascimento(con, paternidade=ALEGACAO)
+    termo = RP.do_assento(con, r["assento_id"])
+    assert termo["tem_termo"] is True
+    assert termo["anotacao"] == ""
+    assert termo["motivo_ausencia_mae"] is None
+    neg = nascimento(con, nome="OUTRO", paternidade={
+        "tipo": "NEGATIVO", "motivo_ausencia_mae": "não vale aqui"})
+    assert RP.do_assento(con, neg["assento_id"])["motivo_ausencia_mae"] is None
+
+
+def test_a_mae_ausente_nao_se_remete_e_nao_entra_no_painel():
+    con = banco()
+    init_ex_schema(con)
+    r = nascimento(con, pessoas=AVO_DECLARA, paternidade=dict(MAE_AUSENTE))
+    with pytest.raises(RP.PaternidadeError, match="mãe não compareceu"):
+        RP.registrar_remessa(con, r["assento_id"], processo="X",
+                             data="2026-09-20", agora="2026-09-20T10:00:00")
+    assert not [x for x in IN.lista(con, hoje="2026-12-31",
+                                    chave="RCPN_ALEGACAO_PATERNIDADE")
+                if x["chave"] == "RCPN_ALEGACAO_PATERNIDADE"]
+
+
+def test_a_recusa_sem_escolha_oferece_as_tres_saidas():
+    con = banco()
+    with pytest.raises(RC.RcError) as erro:
+        nascimento(con, paternidade=None)
+    assert "a mãe não compareceu" in str(erro.value)
 
 
 def test_o_assento_cancelado_tira_a_alegacao_do_painel():

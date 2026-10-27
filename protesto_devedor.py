@@ -147,7 +147,9 @@ def _medir_alertas(bd: Any, titulos: list[dict], *, hoje: str) -> dict[int, list
                 WHERE a.situacao = 'NAO_ENTREGUE' AND a.titulo_id = ANY(%s)
                 ORDER BY a.titulo_id, a.id""", (ids,)):
         caminho = AV.depois_da_nao_entrega(bd, a)
-        if caminho["passo"] == "EDITAL":
+        # O que o edital ACEITA, e não só o que só tem o edital: a entrega
+        # sem leitura da Resolve (27/10/2026) também pode ir.
+        if caminho["edital"] == "LIBERADO":
             para_edital.setdefault(int(a["titulo_id"]), []).append(
                 {**dict(a), "frase": caminho["frase"]})
     a_conferir: dict[int, list] = {}

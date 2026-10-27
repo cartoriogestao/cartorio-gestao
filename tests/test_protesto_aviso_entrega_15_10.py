@@ -164,6 +164,81 @@ def test_sem_confirmacao_a_digital_nao_se_lavra(s):
                            (tid,)).fetchone()[0] == "APONTADO"
 
 
+# --------------------- a entrega sem leitura e o prazo do edital (27/10/2026)
+
+
+def test_resolve_entregue_sem_leitura_oferece_os_dois_caminhos(s):
+    """Relato do oficial: «não consegui mandar um título que foi pra intimação
+    digital para edital». ENTREGUE esperava para sempre atrás do motivo."""
+    tid, aid = _nao_entregue(s)
+    _com_chave(s, tid)
+    _na_resolve(s, tid, "ENTREGUE")
+    tela = s["c"].get("/protesto/avisos").get_data(as_text=True)
+    assert "Lavrar a intimação digital pela entrega" in tela
+    assert "919, § 1º" in tela
+    # o edital sai sem pedir motivo
+    html = _edital(s, aid)
+    assert "intimação por edital foi lavrada" in html
+    detalhe = json.loads(_con(s).execute(
+        "SELECT detalhe_json FROM pt_atos WHERE titulo_id=? AND tipo="
+        "'INTIMACAO'", (tid,)).fetchone()[0])
+    assert "entregue sem leitura" in detalhe["comprovante"]
+
+
+def test_resolve_entregue_lavra_a_digital_pela_entrega(s):
+    tid, aid = _nao_entregue(s)
+    _com_chave(s, tid)
+    _na_resolve(s, tid, "ENTREGUE")
+    tela = s["c"].get("/protesto/avisos").get_data(as_text=True)
+    html = s["c"].post(f"/protesto/avisos/{aid}/digital",
+                       data={"csrf_token": _token(tela)},
+                       follow_redirects=True).get_data(as_text=True)
+    assert "pela entrega comprovada" in html
+    con = _con(s)
+    assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
+                       (tid,)).fetchone()[0] == "INTIMADO"
+    detalhe = json.loads(con.execute(
+        "SELECT detalhe_json FROM pt_atos WHERE titulo_id=? AND tipo="
+        "'INTIMACAO'", (tid,)).fetchone()[0])
+    assert detalhe["digital"] is True
+    assert "sem leitura (CN-MA art. 919, § 1º)" in detalhe["comprovante"]
+    assert "921, § 6º, II" not in detalhe["comprovante"]
+
+
+def test_resolve_em_curso_deixa_o_edital_a_vista(s):
+    tid, aid = _nao_entregue(s)
+    _com_chave(s, tid)
+    _na_resolve(s, tid, "ENVIADO")
+    tela = s["c"].get("/protesto/avisos").get_data(as_text=True)
+    assert '<details style="margin-top:6px" open>' in tela
+
+
+def test_o_prazo_do_edital_e_o_primeiro_dia_util_depois_da_publicacao(s):
+    """CN-MA art. 922, §§ 1º e 3º. Até 27/10/2026 o edital imprimia o prazo
+    do aviso (3 dias úteis do protocolo), já vencido no dia do edital."""
+    from datetime import date
+    import protesto_aviso as AV
+    tid, aid = _nao_entregue(s)
+    _edital(s, aid)
+    con = _con(s)
+    teor = con.execute("SELECT teor, publicado_em FROM pt_editais "
+                       "WHERE aviso_id=?", (aid,)).fetchone()
+    esperado = AV.dia_util_seguinte(con, teor["publicado_em"])
+    assert esperado > str(teor["publicado_em"])[:10]
+    assert AV._br(esperado) in teor["teor"]
+    assert date.fromisoformat(esperado).weekday() < 5
+
+
+def test_o_dia_util_seguinte_pula_fim_de_semana_e_feriado_local(s):
+    import protesto_aviso as AV
+    con = _con(s)
+    assert AV.dia_util_seguinte(con, "2026-10-23") == "2026-10-26"  # sexta
+    with con:
+        con.execute("INSERT OR REPLACE INTO settings(key, value) "
+                    "VALUES ('ri_feriados_locais', '2026-10-26')")
+    assert AV.dia_util_seguinte(con, "2026-10-23") == "2026-10-27"
+
+
 def test_o_botao_da_resolve_manda_o_titulo_do_aviso(s, monkeypatch):
     import resolve_intimacao as RS
     tid, aid = _nao_entregue(s)

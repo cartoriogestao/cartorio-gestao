@@ -1108,6 +1108,59 @@ def test_abrir_registro_novo_com_selo_de_outra_serventia_nao_deixa_registro(s):
     assert _con(s).execute("SELECT COUNT(*) FROM rc_assentos").fetchone()[0] == 0
 
 
+# ------------------- a mãe não compareceu: a terceira saída (27/10/2026)
+
+
+def test_a_tela_do_nascimento_oferece_a_mae_ausente_com_o_motivo(s):
+    html = s["c"].get("/rcpn/novo/nascimento").get_data(as_text=True)
+    assert 'value="MAE_AUSENTE"' in html
+    assert 'name="motivo_ausencia_mae"' in html
+
+
+def test_ao_voltar_para_editar_a_mae_ausente_e_o_motivo_continuam(s):
+    c = s["c"]
+    token = _token(c.get("/rcpn/novo/nascimento").get_data(as_text=True))
+    html = c.post("/rcpn/novo/nascimento", data={
+        "csrf_token": token, "acao": "voltar_editar",
+        "pessoa_nome": "ANA", "paternidade_tipo": "MAE_AUSENTE",
+        "motivo_ausencia_mae": "registro tardio pelo próprio registrado",
+    }).get_data(as_text=True)
+    assert re.search(r'<option value="MAE_AUSENTE"\s+selected', html)
+    assert 'value="registro tardio pelo próprio registrado"' in html
+
+
+def _com_mae_ausente(s) -> int:
+    assento_id = _semear(s)["assento"]
+    con = _con(s)
+    with con:
+        con.execute(
+            """INSERT INTO rc_termos_paternidade(assento_id, tipo,
+                   registrado_nome, mae_nome, motivo_ausencia_mae, teor,
+                   hash_teor, criado_em)
+               VALUES (?, 'MAE_AUSENTE', 'JOÃO DA SILVA', 'MARIA DA SILVA',
+                       'mãe falecida', 'Texto de exemplo da anotação.', 'abc',
+                       '2026-10-27T09:00:00')""", (assento_id,))
+    con.close()
+    return assento_id
+
+
+def test_a_ficha_mostra_a_anotacao_e_nao_oferece_termo_nem_remessa(s):
+    assento_id = _com_mae_ausente(s)
+    html = s["c"].get(f"/rcpn/{assento_id}").get_data(as_text=True)
+    assert "mãe não compareceu — averiguação não iniciada: mãe falecida" in html
+    assert "Imprimir o termo (.odt)" not in html
+    assert "Registrar a remessa" not in html
+
+
+def test_o_odt_do_termo_nao_sai_para_a_mae_ausente(s):
+    assento_id = _com_mae_ausente(s)
+    r = s["c"].get(f"/rcpn/{assento_id}/paternidade/termo",
+                   follow_redirects=True)
+    html = r.get_data(as_text=True)
+    assert "não há termo de paternidade para imprimir" in html
+    assert r.mimetype != "application/vnd.oasis.opendocument.text"
+
+
 def test_abrir_registro_novo_cobra_no_caixa_o_que_foi_marcado(s):
     servico = _com_servico(s)
     caixa_id = _abrir_caixa(s)

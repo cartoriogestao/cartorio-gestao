@@ -1414,6 +1414,8 @@ def lavrar_assento(con: Any, *, especie: str, nome: str,
         raise RcError("O assento precisa do nome de quem é o registro.")
     # O NASCIMENTO SEM O PAI EXIGE O TERMO (23/10/2026), de alegação ou
     # negativo — Lei nº 8.560/1992, art. 2º. Confere aqui, antes de gravar.
+    # Desde 27/10/2026 há a terceira saída, `MAE_AUSENTE` (a mãe não
+    # compareceu, com o motivo): a conferência aceita as três.
     import rc_paternidade as RP
     try:
         pedido_paternidade = RP.conferir(especie, pessoas, origem, paternidade)

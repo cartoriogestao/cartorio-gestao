@@ -44,7 +44,12 @@ def app(cg_app):
 def cliente(app):
     d = app.extensions["db"]
     try:
-        d.create_user("menu", "Operador", "Senha#12345", "ADMIN")
+        # NOME DE GENTE (27/10/2026): «Operador» sozinho é rótulo de máquina
+        # (`nome_humano.eh_rotulo_de_maquina`), e conta de robô não pode ser
+        # ADMIN — o `create_user` recusava, o `except` engolia, ninguém logava
+        # e a tela de login virava /setup, sem `csrf_token`. Era essa a causa
+        # dos 28 testes estourando no setup.
+        d.create_user("menu", "Operador Exemplo", "Senha#12345", "ADMIN")
     except Exception:                                          # noqa: BLE001
         pass
     c = app.test_client()

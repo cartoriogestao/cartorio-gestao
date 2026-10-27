@@ -479,7 +479,7 @@ def _frase(con: Any, chave: str, **claros: Any) -> str:
 def montar_teor(*, modelo: str | None = None, serventia: str, praca: str,
                 motivo: str, copia_arquivada: bool,
                 intimacao: dict | None, descricao: str = "",
-                con: Any = None) -> str:
+                con: Any = None, atraso: dict | None = None) -> str:
     """O corpo do instrumento. Não grava.
 
     `copia_arquivada` decide a **menção do § único**, e por isso é obrigatório
@@ -524,6 +524,16 @@ def montar_teor(*, modelo: str | None = None, serventia: str, praca: str,
         raise InstrumentoError(
             f"O modelo do instrumento pede um campo que o sistema não sabe "
             f"preencher: {erro}. Confira o texto em Modelos da casa.") from erro
+    # O ATRASO DO TRÍDUO VAI NO FIM (tarefa 56, 23/10/2026): CN-MA art. 913,
+    # § 1º — «o tabelião deverá mencionar no instrumento a circunstância do
+    # atraso, indicando, de forma sucinta, o motivo». Sai depois do corpo, e
+    # não como claro do modelo: o modelo que o oficial já ajustou continua
+    # servindo, e a frase só aparece no protesto lavrado fora do tríduo.
+    if atraso:
+        pronto += " " + _frase(con, "PT_INSTRUMENTO_ATRASO",
+                               termo_final=_data_br(atraso.get("termo_final")),
+                               data=_data_br(atraso.get("lavrado_em")),
+                               motivo=_texto(atraso.get("motivo")))
     # SEM CLARO NENHUM NO QUE SAI — inclusive se o modelo que o oficial editar
     # no catálogo trouxer quebra de linha ou espaço duplo por engano.
     return " ".join(pronto.split())
@@ -579,6 +589,7 @@ def emitir(con, titulo_id: int, *, serventia: str,
     # «FALTA DE PAGAMENTO» por conta própria. O termo recusa; o instrumento,
     # que é a cópia que vai ao credor, recusa igual (CN-MA art. 914, X).
     import protesto_termo as TERMO
+    import protesto_triduo as TRIDUO
     motivo = TERMO.motivo_no_livro(t.get("motivo_protesto"), bd)
     if not motivo:
         raise InstrumentoError(
@@ -592,7 +603,8 @@ def emitir(con, titulo_id: int, *, serventia: str,
         motivo=motivo,
         copia_arquivada=d["copias_arquivadas"] > 0,
         intimacao=d["intimacao"],
-        descricao=descricao_do_documento(d, bd), con=bd)
+        descricao=descricao_do_documento(d, bd), con=bd,
+        atraso=TRIDUO.mencao_no_instrumento(prot.get("detalhe_json")))
 
     bd.travar("pt_instrumentos.numero")
     numero = proximo_numero(bd, ano)

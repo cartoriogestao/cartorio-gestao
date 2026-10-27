@@ -16,6 +16,12 @@ O ACHADO
     cifra do backup mora em `backup.cred`. No banco fica só o que não é
     segredo (o provedor padrão, o `phone_number_id`, a `caixa_url`).
 
+    `avisos.cred` (24/10/2026) guarda a senha do SMTP que a automação usa para
+    mandar os alertas por e-mail. Ela NÃO mora no cofre da senha-mestra
+    (`automacao_cofre`): depois de religar a máquina, até o oficial digitar a
+    senha-mestra, aquele cofre está trancado — e o aviso «o cofre está
+    trancado» é justamente um dos que precisam sair por e-mail.
+
 POR QUE CIFRADO, E O QUE A CIFRA NÃO FAZ
     O `.cred` é AES-GCM com uma chave de 256 bits do arquivo `cofre.key`, ao
     lado dele. Isto NÃO protege de quem tem o disco inteiro do servidor — o
@@ -56,7 +62,8 @@ NOME_DA_CHAVE = "cofre.key"
 ROBOS = "robos.cred"
 WHATSAPP = "whatsapp.cred"
 BACKUP = "backup.cred"
-ARQUIVOS = (ROBOS, WHATSAPP, BACKUP)
+AVISOS = "avisos.cred"
+ARQUIVOS = (ROBOS, WHATSAPP, BACKUP, AVISOS)
 
 FORMATO = "cg-cofre-1"
 CODIFICACAO = "utf-8-sig"

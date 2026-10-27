@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block title %}Automação — configuração{% endblock %}
+{% block heading %}<h1>Automação — configuração</h1>{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('automacao_lista') }}">← todos os processos</a> · <a href="{{ url_for('automacao_cofre') }}">cofre de credenciais</a></p>
+
+<section class="panel">
+  <div class="panel-head"><h2>O despachante</h2></div>
+  {% if batida.nunca %}
+    <p><span class="badge critica">nunca rodou</span> A tarefa do despachante ainda não foi registrada. Gere o instalador com <code>tools/gerar_instalador_automacao.py</code> e rode o de cada sistema (Agendador do Windows ou launchd do macOS) na máquina do servidor. Sem ela, nenhum processo roda.</p>
+  {% elif batida.parado %}
+    <p><span class="badge critica">parado</span> Último tique às {{ batida.hora }} — há mais de 5 minutos.</p>
+  {% else %}
+    <p><span class="badge ok">rodando</span> Último tique às {{ batida.hora }}.</p>
+  {% endif %}
+</section>
+
+<form method="post" action="{{ url_for('automacao_configuracao_salvar') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <section class="panel">
+    <div class="panel-head"><h2>E-mail (SMTP)</h2></div>
+    <label>Servidor SMTP <input name="smtp_host" value="{{ cfg.smtp_host }}" placeholder="smtp.exemplo.com.br"></label>
+    <label>Porta <input name="smtp_porta" value="{{ cfg.smtp_porta }}" size="5"></label>
+    <label>Segurança <select name="smtp_seguranca">{% for s in seguranca %}<option value="{{ s }}" {% if s == cfg.smtp_seguranca %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
+    <label>Usuário <input name="smtp_usuario" value="{{ cfg.smtp_usuario }}" autocomplete="off"></label>
+    <label>Senha <input type="password" name="smtp_senha" value="" autocomplete="new-password"
+      placeholder="{{ 'guardada — digite só para trocar' if senha_guardada else 'digite a senha' }}"></label>
+    <p class="small muted">A senha fica guardada cifrada, fora do banco, num arquivo que só o sistema lê, e não volta
+      para esta tela. Ela não depende do cofre da senha-mestra: o e-mail de alerta sai mesmo com o cofre trancado.
+      Campo vazio não apaga a senha guardada.</p>
+    <p class="small"><strong>Use uma conta de e-mail só para os alertas</strong>, com senha de app ou token SMTP
+      (no Gmail, «senha de app»; no Proton pago, «token SMTP», servidor smtp.protonmail.ch, porta 587).
+      Nunca a senha do seu e-mail pessoal nem a da serventia: se este arquivo vazar, o estrago fica em mandar e-mail.</p>
+    <label>Remetente <input name="smtp_remetente" value="{{ cfg.smtp_remetente }}"></label>
+    <label>Mandar para (separe por vírgula) <input name="email_destino" value="{{ cfg.email_destino }}"></label>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>WhatsApp <span class="badge">não configurado</span></h2></div>
+    <p class="small">O envio de WhatsApp ainda não existe nesta instalação. O destino fica guardado, e cada aviso
+      que iria por ele fica registrado como «não configurado» — nada se dá por enviado.</p>
+    <label>Número de destino <input name="whatsapp_destino" value="{{ cfg.whatsapp_destino }}"></label>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>Lembretes e rotinas de fora</h2></div>
+    <label>Lembrar o problema que continua a cada (horas) <input name="lembrar_a_cada_h" value="{{ cfg.lembrar_a_cada_h }}" size="3"></label>
+    <label>Arquivo de estado do backup (ESTADO_DO_BACKUP.json) <input name="backup_estado_caminho" value="{{ cfg.backup_estado_caminho }}"></label>
+    <label>Log das minutas do CNIB (.log ou .txt) <input name="cnib_minutas_log_caminho" value="{{ cfg.cnib_minutas_log_caminho }}"></label>
+    <p class="small muted">Os dois arquivos têm de estar dentro da pasta de dados do servidor ou da pasta das
+      cópias; caminho fora delas não é lido. Do log, a central só conta as linhas que bateram — o texto
+      não aparece na tela.</p>
+  </section>
+  <button class="button primary" type="submit">Gravar</button>
+</form>
+
+<form method="post" action="{{ url_for('automacao_testar_email') }}" style="margin-top:12px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button class="button" type="submit">Mandar um e-mail de teste</button>
+  <span class="small muted">sai pelo despachante no próximo minuto</span>
+</form>
+
+<section class="panel">
+  <div class="panel-head"><h2>Últimos avisos</h2></div>
+  <div class="table-wrap"><table><thead><tr><th>Quando</th><th>Canal</th><th>Motivo</th><th>Situação</th><th>Destino / erro</th></tr></thead><tbody>
+  {% for a in ultimos %}<tr><td class="small">{{ (a.criado_em or '')[:16]|replace('T', ' ') }}</td><td>{{ nome_do_canal.get(a.canal, a.canal) }}</td>
+    <td class="small">{{ a.motivo }}</td><td class="small">{{ a.situacao }}</td><td class="small">{{ a.destino or '' }}{% if a.erro %} — {{ a.erro }}{% endif %}</td></tr>
+  {% else %}<tr><td colspan="5">Nenhum aviso ainda.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

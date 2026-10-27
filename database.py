@@ -82,6 +82,7 @@ from rr_schema import init_rr_schema
 from wa_schema import init_wa_schema
 from robo_schema import init_robo_schema
 from agente_schema import init_agente_schema
+from automacao_schema import init_automacao_schema
 from ia_uso import init_ia_schema
 from dois_fatores import init_dois_fatores_schema
 from selo_portal import init_selo_portal_schema
@@ -853,6 +854,10 @@ class Database:
         # separado — e aqui as duas guardam mascara, que e o que torna a
         # separacao tambem uma questao de risco.
         init_agente_schema(con)
+        # A AUTOMAÇÃO (24/10/2026) — o cadastro das rotinas, as rodadas, os
+        # avisos, a trava do despachante e a config. Não aponta para tabela
+        # nenhuma de fora (o responsável é guardado como número).
+        init_automacao_schema(con)
         # O REGISTRO DO USO DE IA (LF01) — `ia_uso`, os incidentes e os dados
         # dos fornecedores, para o relatório anual à COGEX. Não aponta para
         # tabela nenhuma: a referência ao registro de origem é texto.

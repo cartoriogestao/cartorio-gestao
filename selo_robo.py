@@ -76,10 +76,13 @@ def reconhecimento_pendente() -> dict:
 #: `rotas_do_robo.ROTAS_PERMITIDAS_AO_ROBO` — fora dela, 403. Esta continua
 #: valendo por cima: vedada vence permitida, e um nome que alguém ponha na
 #: lista permitida por engano continua barrado aqui.
+#: «automacao» entrou em 26/10/2026 (revisão de segurança dos PRs abertos, PR #11,
+#: M4): a central edita o que roda, libera «pode agir», mexe no cofre e no destino
+#: dos e-mails — com a credencial do robô, nada disso.
 ROTAS_VEDADAS_AO_ROBO = ("users", "usuarios", "updates", "atualizacoes", "settings",
                          "configuracoes", "backup", "caixa_", "caixa", "selador",
                          "modelos", "agente", "robos", "dois_fatores", "permiss",
-                         "nucleo_", "implantacao")
+                         "nucleo_", "implantacao", "automacao")
 
 
 def rota_vedada_ao_robo(endpoint: Any) -> bool:

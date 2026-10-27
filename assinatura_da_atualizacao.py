@@ -18,11 +18,22 @@ COMO
 
 QUEM CONFIA EM QUEM
     `CHAVES_CONFIAVEIS` é a lista das chaves PÚBLICAS aceitas — chave pública
-    não é segredo, e mora no código instalado (que já é de confiança), e não na
-    pasta de dados, onde quem conseguisse escrever acrescentaria a sua.
+    não é segredo. Ela mora na pasta do PROGRAMA instalado (que já é de
+    confiança), no arquivo `chaves_de_atualizacao.json` ao lado deste módulo, e
+    não na pasta de dados, onde quem conseguisse escrever acrescentaria a sua.
     **Lista vazia = modo de transição**: o pacote sem assinatura é aceito, e a
     tela diz que ele não é assinado. Com uma chave cadastrada, pacote sem
-    assinatura ou com assinatura que não confere é RECUSADO.
+    assinatura ou com assinatura que não confere é RECUSADO. **Arquivo de
+    chaves que existe e não se lê recusa TODO pacote**: cair no modo de
+    transição por um arquivo estragado seria abrir a porta que ele fecha.
+
+A CHAVE É DA INSTALAÇÃO, E NÃO DO CÓDIGO PÚBLICO — 27/10/2026
+    Até a 3.7.5 a chave pública de UMA serventia vinha escrita aqui, e quem
+    baixasse o projeto do GitHub herdava uma instalação que só aceitava pacote
+    assinado por ela. Agora cada instalação cadastra a própria:
+    `tools/chave_de_atualizacao.py gerar --saida <pendrive>\\chave.pem
+    --instalacao "<pasta do programa>"` grava a pública no arquivo. O pacote
+    `.cgu` nunca leva esse arquivo, e por isso nunca o troca.
 
 O QUE ESTE MÓDULO NÃO FAZ
     Não guarda nem lê chave privada de lugar nenhum por conta própria: quem
@@ -33,17 +44,21 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+from pathlib import Path
 
 ALGORITMO = "Ed25519"
 NOME_NO_PACOTE = "update_manifest.sig.json"
 
+#: O arquivo das chaves públicas aceitas por ESTA instalação — ao lado do código.
+ARQUIVO_DAS_CHAVES = Path(__file__).resolve().with_name("chaves_de_atualizacao.json")
+
 # As chaves públicas aceitas, por id → chave pública em base64 (32 bytes crus).
-# Vazio até o oficial gerar a sua (`tools/chave_de_atualizacao.py gerar`).
-# 14/10/2026: gerada pelo oficial; a privada, cifrada pela senha dele, mora na
-# pasta compartilhada do cartório (14. PLATAFORMAS\CHAVE ATUALIZACAO SISTEMA).
-CHAVES_CONFIAVEIS: dict[str, str] = {
-    "94e13d44f1ee61bc": "atbBkN9HNd7Ud8QZWtpcMJ8SuefqOMoGnAdEig2cTHc=",
-}
+# Preenchidas no fim deste módulo, a partir de `ARQUIVO_DAS_CHAVES`
+# (`carregar_chaves_da_instalacao`). Sem arquivo, vazio: modo de transição.
+CHAVES_CONFIAVEIS: dict[str, str] = {}
+#: Por que o arquivo de chaves não se leu — e, enquanto houver motivo aqui,
+#: nenhum pacote é aceito (ver `conferir`).
+CHAVES_ILEGIVEIS: str = ""
 
 
 class AssinaturaRecusada(ValueError):
@@ -108,6 +123,11 @@ def conferir(manifesto: bytes, assinatura_json: bytes | None,
     `{"situacao": "NAO_ASSINADO"}` quando não há chave cadastrada e o pacote
     não traz assinatura (o modo de transição). Recusa em todos os outros casos.
     """
+    if chaves is None and CHAVES_ILEGIVEIS:
+        raise AssinaturaRecusada(
+            f"O arquivo das chaves de atualização desta instalação não se lê "
+            f"({CHAVES_ILEGIVEIS}). Nenhum pacote é aceito até ele ser corrigido "
+            f"— cadastre a chave de novo com tools/chave_de_atualizacao.py.")
     chaves = CHAVES_CONFIAVEIS if chaves is None else chaves
     if assinatura_json is None:
         if chaves:
@@ -146,3 +166,61 @@ def conferir(manifesto: bytes, assinatura_json: bytes | None,
             "assinado, ou não foi assinado pelo oficial. A atualização foi "
             "recusada.") from exc
     return {"situacao": "ASSINADO", "chave": chave_id}
+
+
+# -------------------------------------------- as chaves desta instalação
+
+
+def carregar_chaves_da_instalacao(arquivo: Path | None = None) -> tuple[dict[str, str], str]:
+    """As chaves do arquivo da instalação: `(chaves, motivo_se_ilegivel)`. SÓ LÊ.
+
+    Sem arquivo: `({}, "")` — modo de transição. Arquivo que existe e não se lê,
+    ou chave que não é Ed25519 de 32 bytes, ou id que não é o da chave: `({}, motivo)`,
+    e `conferir` recusa tudo. Cada id tem de ser o `id_da_chave` da pública que
+    ele nomeia — um id trocado à mão faria a tela dizer de quem é a assinatura
+    errado.
+    """
+    arquivo = Path(arquivo or ARQUIVO_DAS_CHAVES)
+    if not arquivo.is_file():
+        return {}, ""
+    try:
+        dados = json.loads(arquivo.read_text(encoding="utf-8"))
+        if not isinstance(dados, dict) or not isinstance(dados.get("chaves"), dict):
+            return {}, "falta o objeto «chaves»"
+        saida: dict[str, str] = {}
+        for chave_id, publica in dados["chaves"].items():
+            crua = base64.b64decode(str(publica), validate=True)
+            if len(crua) != 32:
+                return {}, f"a chave {chave_id} não tem 32 bytes"
+            if id_da_chave(crua) != str(chave_id):
+                return {}, f"o id {chave_id} não é o da chave que ele nomeia"
+            saida[str(chave_id)] = str(publica)
+        return saida, ""
+    except (OSError, ValueError) as exc:
+        return {}, f"ilegível: {exc}"
+
+
+def gravar_chave_na_instalacao(chave_id: str, publica: str,
+                               arquivo: Path | None = None) -> Path:
+    """Acrescenta uma chave pública ao arquivo da instalação. ESCREVE.
+
+    Não apaga as que já estão (troca de chave é acrescentar a nova e, depois,
+    tirar a velha à mão). Recusa arquivo que não se lê, em vez de sobrescrevê-lo.
+    """
+    arquivo = Path(arquivo or ARQUIVO_DAS_CHAVES)
+    chaves, motivo = carregar_chaves_da_instalacao(arquivo)
+    if motivo:
+        raise AssinaturaRecusada(
+            f"O arquivo {arquivo} existe e não se lê ({motivo}); conserte-o à "
+            f"mão antes de cadastrar outra chave.")
+    crua = base64.b64decode(publica, validate=True)
+    if len(crua) != 32 or id_da_chave(crua) != chave_id:
+        raise AssinaturaRecusada("A chave pública informada não confere com o id.")
+    chaves[chave_id] = publica
+    arquivo.write_text(json.dumps({"algoritmo": ALGORITMO, "chaves": chaves},
+                                  ensure_ascii=False, indent=2) + "\n",
+                       encoding="utf-8")
+    return arquivo
+
+
+CHAVES_CONFIAVEIS, CHAVES_ILEGIVEIS = carregar_chaves_da_instalacao()

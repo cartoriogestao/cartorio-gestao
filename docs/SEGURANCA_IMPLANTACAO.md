@@ -240,9 +240,15 @@ sistema — para cada rotina, quem roda, de onde e com que nível.
   Drive ou OneDrive é compartilhada: quem tem a pasta assina um pacote que o
   servidor aceita). Pendrive guardado com o oficial, ou cofre de senhas; e a
   senha da chave só ele.
+- **Cada instalação cadastra a própria chave pública.** O código não traz chave
+  de serventia nenhuma: ela fica em `chaves_de_atualizacao.json`, na pasta do
+  programa instalado (`tools\chave_de_atualizacao.py gerar --saida <pendrive>
+  --instalacao <pasta do programa>`, ou `cadastrar` para uma chave que já
+  existe). Sem o arquivo, a instalação aceita pacote sem assinatura e avisa;
+  com ele estragado, recusa todo pacote.
 - Se a chave vazou ou passou por pasta compartilhada: gerar par novo
-  (`tools\chave_de_atualizacao.py gerar`), cadastrar a pública no servidor
-  **antes** e aposentar a antiga.
+  (`tools\chave_de_atualizacao.py gerar --instalacao …`), que cadastra a
+  pública **antes**, e aposentar a antiga tirando-a do arquivo.
 - Quem aplica confere o SHA-256 informado com o pacote (tela de
   Atualizações). Pacote sem origem conhecida não se aplica.
 

@@ -17,8 +17,30 @@ ONDE MORA O ARQUIVO
     caminho, espécie, dedo, sha256, tamanho, quando e quem colheu. Nunca o
     blob. Recolher substitui o arquivo e a linha daquela espécie+dedo.
 
+QUEM FALA COM OS APARELHOS — corrigido em 26/10/2026
+    Este parágrafo dizia que o módulo «não fala com webcam, nem com o leitor
+    DigitalPersona». Continua verdade para ESTE ARQUIVO, e tinha deixado de
+    ser verdade para o sistema, que é como ele era lido: a foto vem da webcam
+    pelo navegador desde 07/09/2026 (`static/cadastro_captura.js`), e a
+    digital vem do leitor HID DigitalPersona pelo SDK web do fabricante desde
+    26/10/2026 (`static/leitor_digital.js`, `leitor_digital.py`). Os dois
+    caminhos terminam aqui, com os bytes da imagem; este módulo só guarda.
+
+    A digital guarda DE ONDE VEIO (`origem`: LEITOR ou ARQUIVO) e, se veio do
+    leitor, o identificador do aparelho que o SDK informou (`dispositivo`).
+    O que chega marcado como do leitor tem de ser PNG — é o que o SDK entrega.
+    A origem é DECLARADA PELO NAVEGADOR, e não provada (ver
+    `leitor_digital.ORIGEM_LEITOR`).
+
+    E ANTES DA PRIMEIRA DIGITAL, A CIÊNCIA DO TITULAR (26/10/2026): o cartão
+    guarda quando e por quem a finalidade foi lida para a pessoa
+    (`registrar_ciencia`); sem essa marca, `colher_digital` recusa.
+
 O QUE ELE NÃO FAZ
-    Não fala com webcam, nem com o leitor DigitalPersona, nem com o CCN.
+    Não fala com o CCN. Não compara digitais (a comparação 1:1 no
+    reconhecimento de firma é a próxima etapa, e entra como ALERTA, nunca como
+    trava). Não guarda template: o SDK web não entrega o padrão ISO/ANSI, e o
+    formato intermediário do fabricante não se colhe (ver `leitor_digital`).
     Não redesenha a ficha. Não impede abrir o cartão nem selar — foto e
     digital ficam para a próxima visita, e `estado().faltando` só avisa.
 """
@@ -29,6 +51,7 @@ from pathlib import Path
 from typing import Any
 
 from bd_nativo import banco
+import leitor_digital as LD
 
 # Códigos do CCN (1–10). Esta casa colhe os quatro de identificação:
 # polegar e indicador de cada mão. Decisão do oficial em 31/08/2026.
@@ -111,7 +134,8 @@ def _linha_existente(con: Any, cartao_id: int, especie: str,
 
 def _guardar(con: Any, *, cartao_id: int, especie: str,
              dedo: int | None, dados: bytes, agora: str, por: str | None,
-             destino: Path, presencial: int) -> dict:
+             destino: Path, presencial: int, origem: str | None = None,
+             dispositivo: str | None = None) -> dict:
     digest = _sha256(dados)
     tamanho = len(dados)
     nome = destino.name
@@ -124,20 +148,21 @@ def _guardar(con: Any, *, cartao_id: int, especie: str,
         banco(con).escrever(
             """UPDATE nt_cadastro_imagens
                   SET caminho=%s, nome_arquivo=%s, sha256=%s, bytes=%s,
-                      presencial=%s, colhido_em=%s, colhido_por=%s
+                      presencial=%s, colhido_em=%s, colhido_por=%s,
+                      origem=%s, dispositivo=%s
                 WHERE id=%s""",
             (caminho, nome, digest, tamanho, int(presencial), agora, quem,
-             anterior["id"]),
+             origem, dispositivo, anterior["id"]),
         )
         row_id = int(anterior["id"])
     else:
         row_id = int(banco(con).escrever(
             """INSERT INTO nt_cadastro_imagens
                (cartao_id, especie, dedo, caminho, nome_arquivo, sha256, bytes,
-                presencial, colhido_em, colhido_por)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                presencial, colhido_em, colhido_por, origem, dispositivo)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
             (int(cartao_id), especie, dedo, caminho, nome, digest, tamanho,
-             int(presencial), agora, quem),
+             int(presencial), agora, quem, origem, dispositivo),
         )[0]["id"])
 
     return {
@@ -152,6 +177,8 @@ def _guardar(con: Any, *, cartao_id: int, especie: str,
         "presencial": int(presencial),
         "colhido_em": agora,
         "colhido_por": quem,
+        "origem": origem,
+        "dispositivo": dispositivo,
     }
 
 
@@ -176,15 +203,76 @@ def colher_foto(con: Any, cartao_id: int, jpeg_bytes: bytes,
     )
 
 
+def ciencia(con: Any, cartao_id: int) -> dict | None:
+    """A ciência do titular registrada no cartão, ou `None`. Só LÊ.
+
+    Correção de segurança de 26/10/2026 (revisão do PR #31): ver
+    `leitor_digital.BASE_LEGAL`.
+    """
+    _cartao(con, cartao_id)
+    linha = banco(con).um(
+        """SELECT biometria_ciencia_em, biometria_ciencia_por
+             FROM nt_cartoes WHERE id=%s""", (int(cartao_id),))
+    if not linha or not linha["biometria_ciencia_em"]:
+        return None
+    return {"em": linha["biometria_ciencia_em"],
+            "por": linha["biometria_ciencia_por"]}
+
+
+def registrar_ciencia(con: Any, cartao_id: int, agora: str,
+                      por: str | None) -> dict:
+    """Registra que a finalidade foi lida para a pessoa — ciência como
+    TRANSPARÊNCIA (LGPD art. 9º), e não consentimento: a hipótese é o art. 11,
+    II, «g» (decisão do oficial em 26/10/2026). ESCREVE só a marca do cartão.
+
+    A primeira marca FICA: registrar de novo não regrava quem informou nem
+    quando — o fato é o do dia em que aconteceu.
+    """
+    ja = ciencia(con, cartao_id)
+    if ja:
+        return ja
+    quem = (por or "").strip()
+    if not quem:
+        raise CadastroBioError(
+            "Não sei quem está registrando a ciência. Entre de novo no sistema "
+            "e registre outra vez.")
+    banco(con).escrever(
+        """UPDATE nt_cartoes SET biometria_ciencia_em=%s, biometria_ciencia_por=%s
+            WHERE id=%s AND biometria_ciencia_em IS NULL""",
+        (agora, quem, int(cartao_id)))
+    return ciencia(con, cartao_id) or {"em": agora, "por": quem}
+
+
 def colher_digital(con: Any, cartao_id: int, dedo: int,
                    png_bytes: bytes, agora: str, por: str | None,
-                   pasta_base: Any) -> dict:
+                   pasta_base: Any, origem: str = LD.ORIGEM_ARQUIVO,
+                   dispositivo: str | None = None) -> dict:
     """Grava a digital de um dos quatro dedos da casa. ESCREVE arquivo e linha.
 
     Recolher o mesmo dedo substitui o arquivo e a linha. Dedo fora de
     `{1, 2, 6, 7}` recusa, dizendo o que usar.
+
+    `origem` diz de onde veio a imagem: `LEITOR` (o SDK do fabricante, na
+    tela) ou `ARQUIVO` (o envio manual, que continua como reserva). A do
+    leitor tem de ser PNG — é o que o SDK entrega quando se pede imagem; o que
+    chega marcado como do leitor e não é PNG não veio dele, e se recusa.
+    `dispositivo` é o identificador do aparelho que o SDK informou; só se
+    guarda quando a origem é o leitor.
+
+    E SEM A CIÊNCIA DO TITULAR REGISTRADA NO CARTÃO NÃO SE COLHE (correção de
+    segurança de 26/10/2026): ver `ciencia` e `leitor_digital.BASE_LEGAL`.
     """
     _cartao(con, cartao_id)
+    if not ciencia(con, cartao_id):
+        raise CadastroBioError(
+            "Antes de colher a digital, leia para a pessoa a finalidade da "
+            "coleta e registre a ciência dela no quadro «Digitais» do cartão. "
+            "Nada foi gravado.")
+    origem = str(origem or LD.ORIGEM_ARQUIVO).strip().upper()
+    if origem not in LD.ORIGENS:
+        raise CadastroBioError(
+            f"Origem da digital desconhecida: «{origem}». A digital vem do "
+            "leitor ou de um arquivo enviado; colha de novo pela tela.")
     try:
         codigo = int(dedo)
     except (TypeError, ValueError):
@@ -202,6 +290,14 @@ def colher_digital(con: Any, cartao_id: int, dedo: int,
             f"A digital do {nome_do_dedo(codigo)} veio vazia. Colha de novo "
             "no leitor DigitalPersona e tente outra vez."
         )
+    if origem == LD.ORIGEM_LEITOR and not LD.e_png(png_bytes):
+        raise CadastroBioError(
+            f"A digital do {nome_do_dedo(codigo)} não chegou como imagem do "
+            "leitor (o leitor entrega PNG). Colha de novo no leitor, ou envie "
+            "o arquivo pelo campo de envio manual.")
+    aparelho = None
+    if origem == LD.ORIGEM_LEITOR:
+        aparelho = (str(dispositivo or "").strip()[:120]) or None
     destino = (
         _pasta_do_cartao(pasta_base, cartao_id)
         / _ARQUIVO_DIGITAL.format(dedo=codigo)
@@ -209,7 +305,7 @@ def colher_digital(con: Any, cartao_id: int, dedo: int,
     return _guardar(
         con, cartao_id=cartao_id, especie=ESPECIE_DIGITAL, dedo=codigo,
         dados=bytes(png_bytes), agora=agora, por=por, destino=destino,
-        presencial=1,
+        presencial=1, origem=origem, dispositivo=aparelho,
     )
 
 
@@ -218,7 +314,8 @@ def imagens_do_cadastro(con: Any, cartao_id: int) -> list[dict]:
     _cartao(con, cartao_id)
     return banco(con).ler(
         """SELECT id, cartao_id, especie, dedo, caminho, nome_arquivo,
-                  sha256, bytes, presencial, colhido_em, colhido_por
+                  sha256, bytes, presencial, colhido_em, colhido_por,
+                  origem, dispositivo
              FROM nt_cadastro_imagens
             WHERE cartao_id=%s
             ORDER BY CASE especie WHEN 'FOTO' THEN 0 ELSE 1 END, dedo, id""",

@@ -33,7 +33,8 @@ A REVERSIBILIDADE É UM DADO, E NÃO UMA PROMESSA
 from __future__ import annotations
 
 import re
-from typing import Any
+from contextlib import contextmanager
+from typing import Any, Iterator
 
 from bd_nativo import banco
 
@@ -266,13 +267,38 @@ def teto_de_sessoes(con) -> int:
     return _inteiro(con, CHAVE_TETO_SESSOES, TETO_MAXIMO_DE_SESSOES)
 
 
+#: A ESCRITA DO PROCESSO DA AUTOMAÇÃO (24/10/2026). O processo de IA da
+#: central de automação roda num subprocesso só dele, e é o oficial quem diz,
+#: processo a processo, se o agente pode agir sozinho (`pode_agir`). Esta
+#: sobreposição vale para o PROCESSO do Python inteiro, e por isso só o
+#: trabalho do despachante (`automacao.py --trabalho`) a usa — nunca o
+#: servidor web, onde valeria para a sessão de outra pessoa.
+_ESCRITA_DO_PROCESSO: dict[str, bool] | None = None
+
+
+@contextmanager
+def escrita_do_processo(*, ligada: bool, sem_confirmacao: bool) -> Iterator[None]:
+    """Dentro do `with`, a escrita do agente é a do processo, e não a da config."""
+    global _ESCRITA_DO_PROCESSO
+    anterior = _ESCRITA_DO_PROCESSO
+    _ESCRITA_DO_PROCESSO = {"ligada": bool(ligada), "sem_confirmacao": bool(sem_confirmacao)}
+    try:
+        yield
+    finally:
+        _ESCRITA_DO_PROCESSO = anterior
+
+
 def escrita_ligada(con) -> bool:
     """Se as ferramentas que MUDAM o sistema estão liberadas. Nasce ligada=0."""
+    if _ESCRITA_DO_PROCESSO is not None:
+        return _ESCRITA_DO_PROCESSO["ligada"]
     return str(ler_config(con, CHAVE_ESCRITA)).strip() == "1"
 
 
 def escrita_sem_confirmacao(con) -> bool:
     """Se o agente aplica a mudança sozinho. Nasce 0: ele só propõe (M4)."""
+    if _ESCRITA_DO_PROCESSO is not None:
+        return _ESCRITA_DO_PROCESSO["sem_confirmacao"]
     return str(ler_config(con, CHAVE_SEM_CONFIRMACAO)).strip() == "1"
 
 

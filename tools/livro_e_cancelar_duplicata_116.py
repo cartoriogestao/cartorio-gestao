@@ -41,6 +41,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import banco_pg  # noqa: E402
+import identidade_do_robo as IDR  # noqa: E402
 from bd_nativo import banco as abrir_banco  # noqa: E402
 
 BANCO_PADRAO = r"C:\ProgramData\CartorioGestao\cartorio_gestao.sqlite3"
@@ -154,12 +155,12 @@ def main() -> int:
                   "motivo": "a semente vinha só do assento 116, cancelado; o "
                             "próximo número fica em aberto (pendência "
                             "numeracao:RC_E), por ordem do oficial"})):
-            bd.escrever(
-                "INSERT INTO audit_logs(ts, user_id, username_snapshot, action, "
-                "entity_type, entity_id, details, ip_address) "
-                "VALUES (%s, NULL, %s, %s, %s, %s, %s, NULL)",
-                (agora, "agente-rcpn", acao, tipo, eid,
-                 json.dumps(det, ensure_ascii=False)))
+            # Quem grava por programa diz quem e e a mando de quem (26/10/2026).
+            IDR.registrar(bd, ts=agora, user_id=None, username="agente-rcpn",
+                          action=acao, entity_type=tipo, entity_id=eid,
+                          details=json.dumps(det, ensure_ascii=False),
+                          agente="agente do RCPN (tools/livro_e_cancelar_duplicata_116.py)",
+                          a_mando_de=IDR.PELO_RESPONSAVEL)
         con.commit()
     except BaseException:
         con.rollback()

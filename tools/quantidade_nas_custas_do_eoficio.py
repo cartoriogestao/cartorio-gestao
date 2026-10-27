@@ -59,6 +59,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import banco_pg  # noqa: E402
+import identidade_do_robo as IDR  # noqa: E402
 # `banco` aqui e' o caminho do arquivo (parametro das funcoes), por isso o nome
 from bd_nativo import banco as banco_nativo  # noqa: E402
 from caixa_schema import centavos, reais  # noqa: E402
@@ -193,17 +194,18 @@ def aplicar(banco: Path, medicao: dict) -> Path:
         # A AUDITORIA A MAO, porque a rota nao foi usada — a mesma forma do
         # script que normalizou a situacao dos problemas.
         for x in medicao["a_corrigir"]:
-            bd.escrever(
-                """INSERT INTO audit_logs(ts, user_id, username_snapshot, action,
-                                          entity_type, entity_id, details)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-                (datetime.now().isoformat(timespec="seconds"), None,
-                 "quantidade_nas_custas_do_eoficio",
-                 "PROTOCOLO_ITEM_CORRIGIDO", "PROTOCOLO", x["protocolo_id"],
-                 json.dumps({"item": x["id"], "codigo_tj": x["codigo_ato"],
-                             "quantidade": x["quantidade"],
-                             "de": x["de"], "para": x["para"]},
-                            ensure_ascii=False)))
+            # Quem grava por programa diz quem e e a mando de quem (26/10/2026).
+            IDR.registrar(
+                bd, ts=datetime.now().isoformat(timespec="seconds"), user_id=None,
+                username="quantidade_nas_custas_do_eoficio",
+                action="PROTOCOLO_ITEM_CORRIGIDO", entity_type="PROTOCOLO",
+                entity_id=x["protocolo_id"],
+                details=json.dumps({"item": x["id"], "codigo_tj": x["codigo_ato"],
+                                    "quantidade": x["quantidade"],
+                                    "de": x["de"], "para": x["para"]},
+                                   ensure_ascii=False),
+                agente="tools/quantidade_nas_custas_do_eoficio.py",
+                a_mando_de=IDR.PELO_RESPONSAVEL)
         con.commit()
     finally:
         con.close()

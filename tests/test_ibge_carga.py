@@ -285,6 +285,8 @@ def _lavrar(con, especie="NASCIMENTO", **ibge):
         }
         if especie == "NATIMORTO":
             ibge.setdefault("numero_do", "12345")
+        else:
+            extra["paternidade"] = {"tipo": "NEGATIVO"}   # termo (23/10/2026)
     elif especie == "OBITO":
         extra = {
             "termo_dados": {"local_fato_nome": "Hospital Municipal"},
@@ -485,6 +487,8 @@ def test_so_o_casamento_se_lavra_a_vista_de_habilitacao(civil):
                 dados={"sexo": "M"} if especie == "NASCIMENTO" else None,
                 termo_dados={"local_fato_nome": "Hospital Municipal"},
                 ibge={"numero_do": "1"} if especie == "OBITO" else None,
+                paternidade=({"tipo": "NEGATIVO"} if especie == "NASCIMENTO"
+                             else None),          # termo (23/10/2026)
                 pessoas=(
                     [{"papel": "REGISTRADO", "nome": "FULANO", "sexo": "M"},
                      {"papel": "MAE", "nome": "M"},

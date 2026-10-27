@@ -53,6 +53,7 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 import banco_pg  # noqa: E402
+import identidade_do_robo as IDR  # noqa: E402
 # COM OUTRO NOME: `main` chama de `banco` o caminho do arquivo, e o nome curto
 # escondia a função — era o TypeError da revisão do L021.
 from bd_nativo import banco as abrir_banco  # noqa: E402
@@ -322,17 +323,19 @@ def main() -> int:
              campos["emolumentos"] or None,
              rural,
              agora, m["id"]))
-        bd.escrever(
-            """INSERT INTO audit_logs (ts, user_id, username_snapshot, action,
-                   entity_type, entity_id, details)
-               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-            (agora, None, "tools/importar_ficha_de_abertura.py",
-             "RI_ABERTURA_IMPORTADA", "RI_MATRICULA", int(m["id"]),
-             ('{"matricula": "%s", "arquivo": "%s", "partes": %d, '
-              '"motivo": "a ficha nasceu do transporte so com o teor; os '
-              'campos e as partes vieram do documento de abertura, por ordem '
-              'do delegatario. Nao selou e nao cobrou."}'
-              % (m["numero"], docx.name, len(partes)))))
+        # Quem grava por programa diz quem e e a mando de quem (26/10/2026).
+        IDR.registrar(
+            bd, ts=agora, user_id=None,
+            username="tools/importar_ficha_de_abertura.py",
+            action="RI_ABERTURA_IMPORTADA", entity_type="RI_MATRICULA",
+            entity_id=int(m["id"]),
+            details=('{"matricula": "%s", "arquivo": "%s", "partes": %d, '
+                     '"motivo": "a ficha nasceu do transporte so com o teor; os '
+                     'campos e as partes vieram do documento de abertura, por ordem '
+                     'do delegatario. Nao selou e nao cobrou."}'
+                     % (m["numero"], docx.name, len(partes))),
+            agente="tools/importar_ficha_de_abertura.py",
+            a_mando_de=IDR.PELO_RESPONSAVEL)
 
     print(f"\n{len(partes)} parte(s) gravadas e os campos preenchidos.")
     for d in bd.ler("""SELECT nome, documento_numero, proprietario_ativo

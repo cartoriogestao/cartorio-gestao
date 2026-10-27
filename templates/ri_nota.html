@@ -22,6 +22,10 @@
   Vencido o prazo, é preciso novo protocolo, com novos emolumentos.
 </div>
 
+{# A QUALIFICAÇÃO ASSISTIDA (26/10/2026): o rascunho das exigências pela IA.
+   O quadro não emite nada — a nota continua saindo do formulário abaixo. #}
+{% if qualificacao_ia %}{% include '_qualificacao_ia.html' %}{% endif %}
+
 {% for n in notas %}
 <section class="panel">
   <div class="panel-head">
@@ -31,19 +35,36 @@
           {% else %}<span class="badge critica">Reingresso fora do prazo</span>{% endif %}</span>
   </div>
   <div style="padding:12px 16px">
+    {% set lista = exigencias_da(n) %}
+    {% if lista %}
     <ol class="small">
-      {% for e in n.exigencias|fromjson %}<li>{{ e }}</li>{% endfor %}
+      {% for e in lista %}<li>{{ e }}</li>{% endfor %}
     </ol>
+    {% else %}
+    <p class="small">As exigências constam da nota assinada, anexada ao protocolo.</p>
+    {% endif %}
+    {% set arquivos = anexos_da_nota(n.numero) %}
+    {% if arquivos %}
+    <p class="small"><strong>Arquivo da nota:</strong>
+      {% for d in arquivos %}<a href="{{ url_for('attachment_view', attachment_id=d.id) }}" target="_blank">{{ d.original_name }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+    {% endif %}
     {% if n.fundamentacao %}<p class="small muted"><strong>Fundamentação:</strong> {{ n.fundamentacao }}</p>{% endif %}
     <div class="actions">
       <a class="button" href="{{ url_for('ri_nota_odt', nota_id=n.id) }}">Imprimir nota (PDF)</a>
       <a class="button" href="{{ url_for('ri_nota_odt', nota_id=n.id, formato='odt') }}">.odt</a>
     </div>
     {% if n.situacao == 'ABERTA' %}
-    <form method="post" action="{{ url_for('ri_reingresso', nota_id=n.id) }}" class="form-grid">
+    <form method="post" action="{{ url_for('ri_reingresso', nota_id=n.id) }}" class="form-grid"
+          enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>Data do reingresso<input type="date" name="data_reingresso" value="{{ hoje }}"></label>
+      <label>Data do reingresso<input type="date" name="data_reingresso" value="{{ hoje }}"
+             max="{{ hoje }}"></label>
       <label>Observação<input name="observacao"></label>
+      <p class="small muted span2">A data é o dia em que o título voltou ao balcão — nem antes
+        da nota, nem depois de hoje. Data passada que mantém a prioridade de uma prenotação
+        já vencida só o oficial ou o gerente registram, escrevendo na observação de onde vem a data.</p>
+      <label class="span2">Documentos que o interessado trouxe (opcional)
+        <input type="file" name="documento" multiple></label>
       <div class="span2"><button class="primary">Registrar reingresso do título</button></div>
     </form>
     {% endif %}
@@ -51,16 +72,29 @@
 </section>
 {% endfor %}
 
-<details class="panel" {% if not notas %}open{% endif %}>
-  <summary><strong>Emitir nova nota devolutiva</strong></summary>
-  <form method="post" class="form-grid">
+{% if por_que_nao_emite %}
+<div class="notice small">{{ por_que_nao_emite }}</div>
+{% else %}
+{% set preenche = qualificacao_ia.preenche if qualificacao_ia else none %}
+<details class="panel" id="emitir-nota" {% if not notas or preenche %}open{% endif %}>
+  <summary><strong>Emitir ou cadastrar nova nota devolutiva</strong></summary>
+  <form method="post" class="form-grid" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if preenche %}
+    <input type="hidden" name="qualificacao_ia_id" value="{{ preenche.id }}">
+    <div class="notice warning span2">As {{ preenche.quantas }} exigência(s) abaixo vieram da
+      <a href="{{ url_for('ri_qualificacao_ia_ver', pedido_id=preenche.id) }}">qualificação assistida nº {{ preenche.id }}</a>
+      (rascunho da IA, versão {{ preenche.versao }}). Confira com os originais, edite o que precisar e só então emita.</div>
+    {% endif %}
     <label>Data<input type="date" name="data_nota" value="{{ hoje }}"></label>
-    <label class="span2">Exigências — <strong>uma por linha</strong>
-      <textarea name="exigencias" rows="8" required placeholder="Apresentar certidão de quitação de tributos municipais.&#10;Regularizar a qualificação do adquirente, com estado civil e regime de bens.&#10;Juntar procuração com poderes específicos."></textarea>
+    <label>Arquivo da nota já redigida e assinada (Word ou PDF)
+      <input type="file" name="arquivo_nota" multiple></label>
+    <label class="span2">Exigências — <strong>uma por linha</strong>; opcional quando o arquivo da nota vai anexado
+      <textarea name="exigencias" rows="8" placeholder="Apresentar certidão de quitação de tributos municipais.&#10;Regularizar a qualificação do adquirente, com estado civil e regime de bens.&#10;Juntar procuração com poderes específicos.">{{ preenche.texto if preenche else '' }}</textarea>
     </label>
     <label class="span2">Fundamentação<textarea name="fundamentacao" rows="3"></textarea></label>
     <div class="span2"><button class="primary">Emitir nota devolutiva</button></div>
   </form>
 </details>
+{% endif %}
 {% endblock %}

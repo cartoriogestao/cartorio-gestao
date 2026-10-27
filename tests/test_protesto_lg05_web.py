@@ -104,8 +104,10 @@ def test_o_relatorio_de_pendencias_sai_em_csv_com_o_pagamento(s):
     r = s["c"].get("/protesto/repasses/pendencias.csv")
     assert r.status_code == 200
     texto = r.get_data().decode("utf-8-sig")
-    assert texto.splitlines()[0].startswith("CANAL;PROTOCOLO;TITULO")
-    assert "IEPTB;" in texto and "1.482,78" in texto
+    # Desde 26/10/2026 todo campo vai entre aspas (`csv_seguro`, achado
+    # transversal 2 da revisão de segurança).
+    assert texto.splitlines()[0].startswith('"CANAL";"PROTOCOLO";"TITULO"')
+    assert '"IEPTB";' in texto and "1.482,78" in texto
 
 
 def test_gerar_a_guia_pela_tela_deixa_rastro_sem_dado_de_pessoa(s):

@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% block title %}Avisos ao cliente — {{ AS.NOME_DA_ORIGEM[origem] }} {{ reg.numero }}{% endblock %}
+{% block heading %}<h1>Avisos de andamento ao cliente</h1>{% endblock %}
+{% block content %}
+<p>
+  {% if origem == AS.PROTOCOLO_GERAL %}
+    <a href="{{ url_for('caixa_protocolo', protocolo_id=origem_id) }}">← voltar ao protocolo geral {{ reg.numero }}</a>
+  {% else %}
+    <a href="{{ url_for('ri_protocolo_ver', protocolo_id=origem_id) }}">← voltar à prenotação {{ reg.numero }}</a>
+  {% endif %}
+  {% if user.role in ['ADMIN','MANAGER'] %} · <a href="{{ url_for('andamento_fila') }}">a fila de todos os avisos</a>{% endif %}
+</p>
+
+<section class="panel">
+  <div class="panel-head"><span>{{ AS.NOME_DA_ORIGEM[origem]|capitalize }} nº {{ reg.numero }}</span>
+    <span class="small muted">{{ reg.situacao }}{% if reg.atribuicao %} · {{ reg.atribuicao }}{% endif %}</span></div>
+  <div style="padding:14px">
+    <p class="small">O cliente que pedir recebe um aviso curto quando o protocolo <strong>recebe exigência</strong>
+      (nota devolutiva), quando fica <strong>pronto para retirar</strong> e quando a <strong>prenotação está perto de
+      vencer</strong>. O aviso diz só o número e o andamento — <strong>sem nome, documento, valor nem teor</strong>.
+      Sem o consentimento marcado aqui, nada sai.</p>
+    <p class="small muted">Telefone do cadastro: {{ reg.telefone or '—' }} · E-mail do cadastro: {{ reg.email or '—' }}.
+      O aviso vai para o endereço que estava no cadastro quando o consentimento foi marcado; mudou o contato, marque de novo.</p>
+  </div>
+</section>
+
+{% if protesto %}
+<section class="panel">
+  <div class="panel-head"><span>Protesto não recebe aviso de andamento</span></div>
+  <p style="padding:14px">O protesto tem sigilo próprio: protocolo do Protesto não aceita consentimento e nunca gera aviso automático.</p>
+</section>
+{% else %}
+<section class="panel">
+  <div class="panel-head"><span>O cliente quer ser avisado?</span></div>
+  <div class="table-wrap"><table><thead><tr><th>Canal</th><th>Situação</th><th>Para onde</th><th>Desde / por</th><th></th></tr></thead><tbody>
+  {% for canal in AS.CANAIS %}{% set c = ativos.get(canal) %}
+    <tr>
+      <td>{{ AS.NOME_DO_CANAL[canal] }}
+        {% if canal == AS.WHATSAPP %}<div class="small"><span class="badge media">envio não configurado</span> {{ SEM_MODELO_DA_META }}</div>{% endif %}</td>
+      <td>{% if c %}<span class="badge ok">quer ser avisado</span>{% else %}<span class="badge">não marcado</span>{% endif %}</td>
+      <td class="small">{{ c.destino if c else '' }}</td>
+      <td class="small">{% if c %}{{ (c.registrado_em or '')[:16]|replace('T', ' ') }} · {{ c.registrado_por or '—' }}{% endif %}</td>
+      <td>{% if user.role in ['ADMIN','MANAGER','USER'] %}
+        <form method="post" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="canal" value="{{ canal }}">
+          {% if c %}<button class="button" type="submit" name="acao" value="revogar">Desmarcar</button>
+          {% else %}<button class="button primary" type="submit" name="acao" value="consentir">O cliente autorizou — marcar</button>{% endif %}
+        </form>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody></table></div>
+  {% if ligados %}
+  <p class="small" style="padding:0 14px 14px">O consentimento dado no registro ligado também vale para os andamentos deste (é o mesmo serviço):
+    {% for o, i in ligados %}<a href="{{ url_for('andamento_prenotacao' if o == AS.PRENOTACAO else 'andamento_protocolo_geral', protocolo_id=i) }}">{{ AS.NOME_DA_ORIGEM[o] }} #{{ i }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if origem == AS.PROTOCOLO_GERAL %}
+<section class="panel">
+  <div class="panel-head"><span>Pronto para retirar</span>
+    {% if reg.pronto_retirar_em %}<span class="badge ok">pronto desde {{ (reg.pronto_retirar_em or '')[:16]|replace('T', ' ') }}</span>{% endif %}</div>
+  <div style="padding:14px">
+    {% if reg.pronto_retirar_em %}
+      <p class="small">Marcado por {{ reg.pronto_retirar_por or '—' }}. A marca sai sozinha da lista quando o protocolo é encerrado como entregue.</p>
+    {% else %}
+      <p class="small">Marque quando o serviço estiver pronto e só faltar o cliente buscar.</p>
+    {% endif %}
+    {% if user.role in ['ADMIN','MANAGER','USER'] and reg.situacao not in ['ENTREGUE', 'CANCELADO'] %}
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if reg.pronto_retirar_em %}
+        <button class="button" type="submit" name="acao" value="desfazer_pronto">Desfazer (marquei por engano)</button>
+      {% else %}
+        <button class="button primary" type="submit" name="acao" value="pronto">Marcar como pronto para retirar</button>
+      {% endif %}
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>O que já saiu (ou não pôde sair)</span></div>
+  <div class="table-wrap"><table><thead><tr><th>Quando</th><th>Andamento</th><th>Canal</th><th>Para onde</th><th>Situação</th><th>Detalhe</th></tr></thead><tbody>
+  {% for a in avisos %}{% set s = selo(a.situacao) %}
+    <tr><td class="small">{{ (a.enviado_em or a.criado_em or '')[:16]|replace('T', ' ') }}</td>
+      <td>{{ AS.NOME_DO_EVENTO.get(a.evento, a.evento) }}</td><td>{{ AS.NOME_DO_CANAL.get(a.canal, a.canal) }}</td>
+      <td class="small">{{ a.destino }}</td><td><span class="badge {{ s.classe }}">{{ s.texto }}</span></td>
+      <td class="small">{{ a.erro or '' }}</td></tr>
+  {% else %}<tr><td colspan="6">Nenhum aviso ainda.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+
+{% if historico %}
+<section class="panel">
+  <div class="panel-head"><span>Histórico dos consentimentos</span></div>
+  <div class="table-wrap"><table><thead><tr><th>Canal</th><th>Para onde</th><th>Marcado em / por</th><th>Desmarcado em / por</th></tr></thead><tbody>
+  {% for c in historico %}
+    <tr><td>{{ AS.NOME_DO_CANAL.get(c.canal, c.canal) }}</td><td class="small">{{ c.destino }}</td>
+      <td class="small">{{ (c.registrado_em or '')[:16]|replace('T', ' ') }} · {{ c.registrado_por or '—' }}</td>
+      <td class="small">{% if c.revogado_em %}{{ (c.revogado_em or '')[:16]|replace('T', ' ') }} · {{ c.revogado_por or '—' }}{% else %}ativo{% endif %}</td></tr>
+  {% endfor %}
+  </tbody></table></div>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import io
 import hashlib
 import hmac
@@ -45,6 +44,7 @@ from security import new_csrf_token, new_secret_key
 import arquivo_visivel as ARQVIS
 import html_sem_script as HSS
 import login_espera as LESP
+import identidade_do_robo as IDR
 import seguranca_web as SEGWEB
 from storage import hash_file, safe_component, save_upload
 from network_discovery import DiscoveryResponder, best_local_ip_for, lan_ipv4_addresses
@@ -442,7 +442,13 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     def audit(action: str, entity_type: str | None = None, entity_id: int | None = None, details=None):
         user = current_user()
-        db.log(user["id"] if user else None, user["username"] if user else None, action, entity_type, entity_id, details, request.remote_addr if request else None)
+        # QUEM GRAVA SEM NINGUEM LOGADO E O PROPRIO SERVIDOR (26/10/2026, ordem
+        # do oficial: todo robo diz quem e e a mando de quem age). E um EVENTO
+        # DO SERVIDOR: sem mandante, porque ninguem mandou a requisicao
+        # anonima (revisao de seguranca, 26/10). Com conta de robo, a
+        # identidade sai da conta (`identidade_do_robo.registrar`).
+        ident = {} if user else {"agente": IDR.AGENTE_SERVIDOR}
+        db.log(user["id"] if user else None, user["username"] if user else None, action, entity_type, entity_id, details, request.remote_addr if request else None, **ident)
 
     def login_required(view):
         @wraps(view)
@@ -545,65 +551,66 @@ def create_app(test_config: dict | None = None) -> Flask:
                                 senha_da_cifra=BKP.senha_da_cifra(data_dir) or None)
 
     def automatic_backup_once():
-        """Backup diario do banco e backup completo semanal.
+        """Backup diario do banco e backup completo semanal — a RESERVA da automação.
 
         Racional: o banco muda todo dia e comprime bem; as digitalizacoes nao
         mudam nunca. Guardar 30 copias identicas de 161 MB gastaria ~4,8 GB
         para proteger exatamente o mesmo conteudo que uma copia ja protege.
+
+        DESDE 26/10/2026 QUEM FAZ O BACKUP NO HORARIO E A AUTOMACAO (processo
+        `BACKUP_DIARIO`, `backup_automacao.rodar_backup`), que independe de
+        alguem abrir o sistema e avisa quando falha. Isto aqui ficou como
+        reserva, e chama a MESMA rodada (`backup_rotina.rodada`): o pacote que
+        a automacao ja gerou hoje nao se repete, e a trava impede os dois ao
+        mesmo tempo.
+
+        E A MARCA PASSOU A SER DO DIA. Era `True` uma vez por PROCESSO: com o
+        servidor de pe tres dias seguidos, so o primeiro dia tinha backup.
+        `True` continua querendo dizer «nao rode» — e como os testes que nao
+        tratam de backup o desligam.
         """
-        if app.extensions.get("backup_checked"):
+        hoje = date.today()
+        marca = app.extensions.get("backup_checked")
+        if marca is True or marca == hoje:
             return
-        app.extensions["backup_checked"] = True
+        app.extensions["backup_checked"] = hoje
         if db.get_setting("auto_backup", "1") != "1":
             return
 
-        hoje = date.today()
-        pasta = backup_dir()
-
-        diario = pasta / f"backup_banco_{hoje.isoformat()}.zip"
-        if not diario.exists():
-            try:
-                full_backup(diario, com_arquivos=False)
-                db.log(None, "SISTEMA", "AUTO_BACKUP_BANCO", "BACKUP", None,
-                       {"path": str(diario), "bytes": diario.stat().st_size,
-                        "cifrado": BKP.e_cifrado(diario)})
-            except Exception as exc:
-                db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
-                       {"error": str(exc), "tipo": "banco"})
-
-        # Completo no dia da semana configurado (padrao: domingo), uma vez por semana.
+        import backup_rotina
+        import backup_restauracao
         try:
-            dia_semana = int(db.get_setting("backup_completo_dia", "6"))
-        except ValueError:
-            dia_semana = 6
-        ja_tem_semana = any(
-            datetime.fromtimestamp(p.stat().st_mtime).date() >= hoje - timedelta(days=6)
-            for p in pasta.glob("backup_completo_*.zip")
-        )
-        if hoje.weekday() == dia_semana and not ja_tem_semana:
-            completo = pasta / f"backup_completo_{hoje.isoformat()}.zip"
-            try:
-                full_backup(completo, com_arquivos=True)
-                db.log(None, "SISTEMA", "AUTO_BACKUP_COMPLETO", "BACKUP", None,
-                       {"path": str(completo), "bytes": completo.stat().st_size,
-                        "cifrado": BKP.e_cifrado(completo)})
-            except Exception as exc:
-                db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
-                       {"error": str(exc), "tipo": "completo"})
-
-        def expurgar(padrao: str, manter: int):
-            achados = sorted(pasta.glob(padrao), key=lambda p: p.stat().st_mtime, reverse=True)
-            for velho in achados[max(1, manter):]:
-                velho.unlink(missing_ok=True)
-
-        try:
-            expurgar("backup_banco_*.zip", max(3, int(db.get_setting("backup_retention", "30"))))
-            expurgar("backup_completo_*.zip",
-                     max(2, int(db.get_setting("backup_completo_retencao", "8"))))
-            # Formato antigo: um unico arquivo com tudo. Some por retencao.
-            expurgar("backup_automatico_*.zip", 2)
-        except Exception:
-            pass
+            r = backup_rotina.rodada(
+                backup_dir(), full_backup, hoje=hoje,
+                registrados=backup_restauracao.nomes_registrados(db),
+                **backup_rotina.parametros_da_casa(db.get_setting))
+        except backup_rotina.RodadaOcupada:
+            return                      # a automacao esta gerando agora
+        except Exception as exc:
+            db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
+                   {"error": str(exc), "tipo": "rodada"},
+                   agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
+            return
+        # O PACOTE GERADO FICA REGISTRADO, COM O SHA-256 (revisao de seguranca de
+        # 26/10/2026, PR #27 M1): a mesma funcao da automacao grava em
+        # `bk_pacotes` (a lista que o teste de restauracao confere antes do
+        # pg_restore) e na auditoria `AUTO_BACKUP_*`, agora com o SHA-256.
+        import backup_automacao
+        aviso = backup_automacao.registrar_os_feitos(
+            db, r["feitos"], origem="primeiro acesso do dia", agora=datetime.now(),
+            pasta=backup_dir())
+        if aviso:
+            db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
+                   {"error": aviso, "tipo": "registro"},
+                   agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
+        # O QUE A RETENCAO DE 5 DIAS APAGOU vai a auditoria, com o agente e a
+        # mando de quem (decisao do oficial de 26/10/2026).
+        backup_automacao.registrar_a_retencao(
+            db, r.get("retencao"), origem="primeiro acesso do dia", pasta=backup_dir())
+        for falha in r["falhas"]:
+            db.log(None, "SISTEMA", "AUTO_BACKUP_FAILURE", "BACKUP", None,
+                   {"error": falha["erro"], "tipo": falha["tipo"]},
+                   agente="backup automático", a_mando_de=IDR.PELO_RESPONSAVEL)
 
     def papel_de_quem_esta_logado():
         """O papel do usuario da sessao, ou None. So LE.
@@ -708,10 +715,17 @@ def create_app(test_config: dict | None = None) -> Flask:
             # abria usuários, atualizações, backup e caixa. A lista das rotas
             # vedadas mora em `selo_robo.ROTAS_VEDADAS_AO_ROBO`, ao lado da
             # regra que já dizia que robô não sela.
+            #
+            # E DESDE 26/10/2026 A RÉGUA É FECHADA (revisão de segurança dos
+            # PRs abertos, achado transversal 1): a lista de vedadas não pegava
+            # rota nova, e cinco PRs traziam rotas que o robô alcançaria sem
+            # ninguém ter decidido. Agora o robô só entra no que está em
+            # `rotas_do_robo.ROTAS_PERMITIDAS_AO_ROBO`; o resto é 403. As
+            # vedadas continuam por cima — vedada vence permitida.
             import selo_robo as SR
             _quem = current_user()
             if _quem is not None and SR.usuario_e_robo(_quem) and \
-                    SR.rota_vedada_ao_robo(request.endpoint):
+                    not SR.rota_permitida_ao_robo(request.endpoint):
                 abort(403)
         # Isentas do token de formulário: quem as chama não tem a sessão, e
         # cada uma se autentica por conta própria — o webhook pela assinatura
@@ -1089,7 +1103,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                 if fim:
                     # Em espera, a senha nem é conferida — e a tentativa não conta.
                     db.log(None, rastro, LESP.EM_ESPERA, "SESSION", None,
-                           LESP.detalhes(chave, ate=fim.isoformat()), ip)
+                           LESP.detalhes(chave, ate=fim.isoformat()), ip,
+                           agente=IDR.AGENTE_SERVIDOR)   # evento: ninguém mandou
                     row = None
                 else:
                     # `authenticate` gasta o mesmo PBKDF2 para o usuário que
@@ -1100,7 +1115,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                         # não vier, e aí este erro não entra na contagem: sob
                         # carga a espera fica mais branda, nunca mais dura.
                         db.log(None, rastro, LESP.FALHA, "SESSION", None,
-                               LESP.detalhes(chave), ip)
+                               LESP.detalhes(chave), ip,
+                               agente=IDR.AGENTE_SERVIDOR)   # evento: ninguém mandou
                         depois = LESP.espera(con, chave, ip, uid_alvo)
             if fim:
                 flash(LESP.recado(fim), "danger")
@@ -1360,6 +1376,16 @@ def create_app(test_config: dict | None = None) -> Flask:
         sectors = json_list(s.get("sectors", "[]"), [])
         users = db.list_users(active_only=True)
         if request.method == "POST":
+            # A TAREFA QUE NASCE DE UMA PEÇA — 26/10/2026, o oficial: «precisamos
+            # poder criar uma tarefa a partir do protocolo». O protocolo manda o
+            # mesmo formulário para cá (uma regra só de criar) com a peça a ligar
+            # e a tela para onde voltar; a recusa volta para lá, e não para a
+            # lista de tarefas, onde o que se digitou se perderia.
+            import processo_pasta as PASTA
+            from seguranca_web import destino_interno
+            voltar = destino_interno(request.form.get("voltar"), "")
+            vincular_tabela = (request.form.get("vincular_tabela") or "").strip()
+            vincular_ref = (request.form.get("vincular_referencia") or "").strip()
             start_date = parse_date(request.form.get("start_date"))
             due_days = parse_int(request.form.get("due_days"))
             due_date = parse_date(request.form.get("due_date")) or calc_deadline(start_date, due_days)
@@ -1367,8 +1393,14 @@ def create_app(test_config: dict | None = None) -> Flask:
             backup = parse_int(request.form.get("backup_user_id"))
             if db.get_setting("require_backup_assignee", "1") == "1" and assigned and not backup:
                 flash("Defina um responsável substituto.", "danger")
+                if voltar:
+                    return redirect(voltar)
             elif not request.form.get("title", "").strip():
                 flash("Informe o título da tarefa.", "danger")
+                if voltar:
+                    return redirect(voltar)
+            elif vincular_ref and vincular_tabela not in PASTA.TIPOS:
+                flash("Essa peça não pode entrar na pasta de uma tarefa.", "danger")
             else:
                 user = current_user()
                 task_id = db.create_task({
@@ -1394,6 +1426,22 @@ def create_app(test_config: dict | None = None) -> Flask:
                         with db.transaction() as _c:
                             ESP.definir(_c, task_id, especie, agora=db.now(), por=int(user["id"]))
                 flash("Tarefa criada.", "success")
+                if vincular_ref:
+                    try:
+                        with db.transaction() as _c:
+                            PASTA.vincular(_c, task_id, vincular_tabela, vincular_ref,
+                                           agora=db.now(), por=int(user["id"]))
+                    except PASTA.PastaError as erro:
+                        flash(f"A tarefa #{task_id} foi criada, mas a peça não entrou na pasta "
+                              f"dela: {erro}", "warning")
+                    else:
+                        audit("PROCESSO_PASTA_VINCULOU", "TASK", task_id,
+                              {"tabela": vincular_tabela, "via": "criação"})
+                        flash(f"A tarefa #{task_id} ficou ligada a "
+                              f"{PASTA.TIPOS[vincular_tabela]['nome'].lower()} {vincular_ref}.",
+                              "success")
+                if voltar:
+                    return redirect(voltar)
                 return redirect(url_for("task_detail", task_id=task_id))
         status = request.args.get("status", "ABERTAS")
         sector = request.args.get("sector") or None
@@ -2119,12 +2167,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         return render_template("reports.html", stats=stats, tasks=tasks_rows, expedientes=exp_rows, service_metrics=service_metrics)
 
     def csv_response(filename: str, headers: list[str], rows: list[list[object]]):
-        output = io.StringIO()
-        writer = csv.writer(output, delimiter=";")
-        writer.writerow(headers)
-        writer.writerows(rows)
-        data = "\ufeff" + output.getvalue()
-        return Response(data, mimetype="text/csv; charset=utf-8", headers={"Content-Disposition": f"attachment; filename={filename}"})
+        # A PLANILHA NÃO LEVA FÓRMULA (revisão de segurança de 26/10/2026,
+        # achado transversal 2): todo CSV da casa sai por `csv_seguro`, que põe
+        # cada campo entre aspas e neutraliza o texto que começa com = + - @.
+        import csv_seguro as CSVS
+        return CSVS.resposta(filename, headers, rows)
 
     @app.route("/relatorios/tarefas.csv")
     @login_required
@@ -2151,9 +2198,28 @@ def create_app(test_config: dict | None = None) -> Flask:
                     flash(msg, "danger")
                 else:
                     try:
+                        # O ROBO TEM RESPONSAVEL (ordem do oficial, 26/10/2026):
+                        # a pessoa que responde por ele se escolhe na criacao, e
+                        # se confere ANTES de criar — conta pela metade nao fica.
+                        resp_id = parse_int(request.form.get("robo_responsavel_id"))
+                        if request.form.get("eh_robo") == "1" and resp_id:
+                            with db.connect() as con:
+                                IDR.validar_responsavel_de_robo(con, resp_id)
                         uid = db.create_user(request.form.get("username", ""), request.form.get("full_name", ""), password, request.form.get("role", "USER"), int(current_user()["id"]), eh_robo=1 if request.form.get("eh_robo") == "1" else 0)
                         audit("USER_CREATED", "USER", uid)
-                        flash("Usuário criado.", "success")
+                        criado = db.get_user(uid)
+                        if criado and int(criado["eh_robo"] or 0) and resp_id:
+                            with db.transaction() as con:
+                                IDR.definir_responsavel_do_robo(con, uid, resp_id)
+                            audit("USER_ROBO_RESPONSAVEL_ALTERADO", "USER", uid,
+                                  {"robo_responsavel_id": resp_id})
+                        if criado and int(criado["eh_robo"] or 0) and not resp_id:
+                            flash("Usuário criado. É conta de robô SEM responsável: o "
+                                  "login funciona, e toda ação dele fica com o aviso "
+                                  "«robô sem responsável» até alguém ser escolhido "
+                                  "na coluna Robô.", "warning")
+                        else:
+                            flash("Usuário criado.", "success")
                     except ValueError as exc:
                         flash(str(exc), "danger")
             elif action == "editar":
@@ -2195,11 +2261,41 @@ def create_app(test_config: dict | None = None) -> Flask:
                         flash("Robô só pode ter o perfil USER ou AUDITOR. Troque o "
                               "perfil antes de marcar como robô.", "danger")
                         return redirect(url_for("users"))
-                    with db.transaction() as con:
-                        banco(con).escrever("UPDATE users SET eh_robo=%s WHERE id=%s",
-                                            (marca, uid))
-                    audit("USER_EH_ROBO_ALTERADO", "USER", uid, {"eh_robo": marca})
-                    flash("Marca de robô atualizada.", "success")
+                    # O RESPONSAVEL VAI JUNTO COM A MARCA (26/10/2026): robo
+                    # diz a mando de quem age. Desmarcar limpa o responsavel —
+                    # a pessoa responde por si.
+                    resp_id = parse_int(request.form.get("robo_responsavel_id")) if marca else None
+                    try:
+                        with db.transaction() as con:
+                            banco(con).escrever("UPDATE users SET eh_robo=%s WHERE id=%s",
+                                                (marca, uid))
+                            IDR.definir_responsavel_do_robo(con, uid, resp_id)
+                    except ValueError as exc:
+                        flash(str(exc), "danger")
+                        return redirect(url_for("users"))
+                    audit("USER_EH_ROBO_ALTERADO", "USER", uid,
+                          {"eh_robo": marca, "robo_responsavel_id": resp_id})
+                    if marca and not resp_id:
+                        flash("Marca de robô gravada, SEM responsável: toda ação dele "
+                              "fica com o aviso «robô sem responsável».", "warning")
+                    else:
+                        flash("Marca de robô atualizada.", "success")
+            elif action == "responsavel_rotinas":
+                # QUEM RESPONDE PELAS ROTINAS AUTOMATICAS (26/10/2026): backup,
+                # CNIB, malote, envio a CENSEC, scripts. So ADMIN ou MANAGER
+                # (revisao de seguranca, 26/10). Vazio = o primeiro ADMIN ativo
+                # que nao e robo.
+                resp_id = parse_int(request.form.get("responsavel_rotinas"))
+                try:
+                    with db.connect() as con:
+                        IDR.validar_responsavel_das_rotinas(con, resp_id)
+                except ValueError as exc:
+                    flash(str(exc), "danger")
+                    return redirect(url_for("users"))
+                db.set_settings({IDR.CHAVE_RESPONSAVEL: str(resp_id) if resp_id else ""})
+                audit("RESPONSAVEL_ROTINAS_ALTERADO", "SETTINGS", None,
+                      {"user_id": resp_id})
+                flash("Responsável pelas rotinas automáticas gravado.", "success")
             elif action == "funcao":
                 # Em que qualidade a pessoa assina. Vai impressa embaixo da
                 # assinatura no orcamento, no protocolo de recepcao e no
@@ -2270,9 +2366,17 @@ def create_app(test_config: dict | None = None) -> Flask:
         linhas = db.list_users()
         with db.connect() as con:
             em_espera = LESP.em_espera_na_casa(con, linhas, secret_key)
+            # A IDENTIDADE DOS ROBOS (26/10/2026): quem pode responder, quem
+            # responde pelas rotinas, e o aviso do que grava sem dizer quem e.
+            pessoas = IDR.pessoas_que_podem_responder(con, por="robo")
+            pessoas_rotinas = IDR.pessoas_que_podem_responder(con, por="rotinas")
+            resp_rotinas = IDR.responsavel_das_rotinas(con)
+            identidade = IDR.conferencia(con)
         return render_template(
             "users.html", rows=linhas, roles=ROLES, em_espera=em_espera,
-            funcoes=json_list(db.get_setting("funcoes_cargos", ""), list(FUNCOES)))
+            funcoes=json_list(db.get_setting("funcoes_cargos", ""), list(FUNCOES)),
+            pessoas=pessoas, pessoas_rotinas=pessoas_rotinas,
+            resp_rotinas=resp_rotinas, identidade=identidade)
 
     @app.route("/saude")
     def health():
@@ -2555,7 +2659,8 @@ def create_app(test_config: dict | None = None) -> Flask:
     @login_required
     @roles_required("ADMIN", "AUDITOR")
     def audit_logs():
-        return render_template("audit.html", rows=db.list_logs(2000))
+        return render_template("audit.html", rows=db.list_logs(2000),
+                               agente_servidor=IDR.AGENTE_SERVIDOR)
 
     @app.route("/configuracoes", methods=["GET", "POST"])
     @login_required
@@ -2595,7 +2700,12 @@ def create_app(test_config: dict | None = None) -> Flask:
                 # isso nunca chegava — e cada «salvar» gravava «0» por cima,
                 # desligando o envio que o oficial tentava ligar. Ela tem rota
                 # própria agora: `configuracoes_cra_envio`.
-                "backup_retention": str(max(3, parse_int(request.form.get("backup_retention")) or 30)),
+                # A RETENCAO E EM DIAS desde 26/10/2026 (decisao do oficial: 5
+                # dias), numa chave nova — `backup_retention` contava pacotes.
+                # Campo que nao veio nao se grava por cima.
+                **({"backup_retencao_dias": str(max(3, parse_int(
+                    request.form.get("backup_retencao_dias")) or 5))}
+                   if "backup_retencao_dias" in request.form else {}),
                 "archive_root": request.form.get("archive_root", "").strip(),
                 # Uma por linha, sem linha vazia (LX12): ver `pastas_da_casa`.
                 "pastas_de_importacao": "\n".join(
@@ -2870,6 +2980,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         "USUCAPIAO_PECA": ("usucapiao_processo",),
         "RT_PECA": ("ri_retificacao",),
         "PT_AVISO": ("protesto_avisos",),
+        "PT_EDITAL_CENPROT": ("protesto_avisos",),
         "PT_TITULO": ("protesto_imagem",),
         "SELO_GRATUIDADE": ("gratuidade_comprovantes", "selo_gratuidades_portal"),
         "SELO_GRATUIDADE_CERTIDAO": ("selo_gratuidades_portal",),
@@ -3023,6 +3134,16 @@ def create_app(test_config: dict | None = None) -> Flask:
     import nfse_web
     nfse_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
+    # AS DESPESAS (24/10/2026) — cadastrar, o oficial autoriza, o Banco Inter
+    # paga, o extrato confere e o Livro Diário recebe. Pagamento desligado por padrão.
+    import despesas_web
+    despesas_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
+    # O CARNÊ-LEÃO E O LIVRO-CAIXA DO TITULAR (26/10/2026) — dado fiscal
+    # pessoal do delegatário: só o ADMIN vê.
+    import carne_leao_web
+    carne_leao_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
     import notas_web
     notas_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
@@ -3030,6 +3151,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     # matrícula e no ato em lavratura; prepara a minuta, não lavra.
     import minuta_ia_web
     minuta_ia_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
+    # A QUALIFICAÇÃO ASSISTIDA DO RI (26/10/2026) — o quadro na tela da nota
+    # devolutiva; rascunha as exigências, não emite a nota.
+    import ri_qualificacao_ia_web
+    ri_qualificacao_ia_web.registrar_rotas(app, db, login_required, roles_required, audit,
+                                           fmt_date)
 
     # O CADASTRO NO CCN (13/10/2026) — o lote e a ponte com a extensão.
     import ccn_web
@@ -3211,6 +3338,15 @@ def create_app(test_config: dict | None = None) -> Flask:
     import onr_certidoes_web
     onr_certidoes_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                       fmt_date)
+    # A APROVAÇÃO DO QUE O ROBÔ PREPAROU (25/10/2026): o clique «Aprovar» é a
+    # emissão, pela rota da casa (`onr_certidoes_auto_web`).
+    import onr_certidoes_auto_web
+    onr_certidoes_auto_web.registrar_rotas(app, db, login_required, roles_required, audit)
+
+    # O ANDAMENTO DAS PRENOTAÇÕES NO ACOMPANHAMENTO DE TÍTULOS DO ONR (26/10/2026)
+    # — a fila de fatos gravados e o botão que a manda; o envio nasce desligado.
+    import onr_acompanhamento_web
+    onr_acompanhamento_web.registrar_rotas(app, db, login_required, roles_required, audit)
 
     # A CONFERENCIA DO ENDERECO QUE VAI AO ONR — o que o teor da ficha diz,
     # ao lado do que a ficha tem, com a frase de onde cada campo saiu.
@@ -3312,6 +3448,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     import gestor_web
     gestor_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
+    # O PAINEL NO CELULAR (26/10/2026): só números agregados, só do oficial
+    # titular («apenas eu»), e o retrato assinado que o servidor empurra à VPS.
+    import painel_celular_web
+    painel_celular_web.registrar_rotas(app, db, login_required, roles_required, audit)
+
     # A VERIFICAÇÃO EM DUAS ETAPAS (LG02, 19/10/2026): o segundo passo do
     # login, a tela da conta e a do Gestor. Publica o desvio que o `/login`
     # consulta depois da senha.
@@ -3339,6 +3480,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     # boletim do RCPN numa janela do painel, e não em tarefa que se acumula.
     import relatos_diarios_web
     relatos_diarios_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
+    # A OUVIDORIA E A PESQUISA DE SATISFAÇÃO (26/10/2026): as manifestações com
+    # prazo e tarefa, e a nota do balcão — esta numa página sem login, só na rede
+    # da casa, que nasce fechada.
+    import ouvidoria_web
+    ouvidoria_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
     # A PASTA DO PROCESSO e o rascunho que vira processo (12/10/2026) — fase 1
     # do módulo único de Processos.
@@ -3402,6 +3549,20 @@ def create_app(test_config: dict | None = None) -> Flask:
     import agente_web
     agente_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                fmt_date)
+
+    # A AUTOMAÇÃO (24/10/2026) — a central única das rotinas: o cadastro, o
+    # relatório de cada rodada, a configuração dos avisos e o cofre. A tela
+    # não roda nada; quem roda é o despachante, fora do servidor.
+    import automacao_web
+    automacao_web.registrar_rotas(app, db, login_required, roles_required, audit,
+                                  fmt_date)
+
+    # OS AVISOS DE ANDAMENTO AO CLIENTE (26/10/2026) — o consentimento por
+    # canal, o «pronto para retirar» e a fila. A tela não manda nada; quem
+    # manda é a rotina AVISOS_ANDAMENTO da automação, fora do servidor.
+    import andamento_web
+    andamento_web.registrar_rotas(app, db, login_required, roles_required, audit,
+                                  fmt_date)
 
     import acervo_correcao_web
     acervo_correcao_web.registrar_rotas(app, db, login_required,

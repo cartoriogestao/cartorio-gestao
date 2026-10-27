@@ -65,6 +65,7 @@ from pathlib import Path
 
 import banco_pg
 from bd_nativo import banco
+import identidade_do_robo as IDR
 
 QUEM = "AGENTE MALOTE"
 ORIGEM = "Malote Digital"
@@ -442,10 +443,15 @@ def _proximo_protocolo(con: sqlite3.Connection) -> str:
 
 
 def _auditar(con, acao: str, entidade_id, detalhes: dict, agora: str) -> None:
-    banco(con).escrever(
-        """INSERT INTO audit_logs (ts, user_id, username_snapshot, action, entity_type,
-               entity_id, details) VALUES (%s, NULL, %s, %s, 'EXPEDIENTE', %s, %s)""",
-        (agora, QUEM, acao, entidade_id, json.dumps(detalhes, ensure_ascii=False, default=str)))
+    # O agente diz quem é e a mando de quem age (ordem do oficial, 26/10/2026):
+    # a pessoa em nome de quem o malote cadastra, e, sem ela, o responsável
+    # pelas rotinas automáticas.
+    em_nome_de = IDR.nome_da_pessoa(con, detalhes.get("em_nome_de"))
+    IDR.registrar(con, ts=agora, user_id=None, username=QUEM, action=acao,
+                  entity_type="EXPEDIENTE", entity_id=entidade_id,
+                  details=json.dumps(detalhes, ensure_ascii=False, default=str),
+                  agente="agente do malote",
+                  a_mando_de=em_nome_de or IDR.PELO_RESPONSAVEL)
 
 
 def cadastrar(con: sqlite3.Connection, g: Grupo, usuario_id: int, raiz_arquivos: Path,

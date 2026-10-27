@@ -189,7 +189,7 @@ def test_o_whatsapp_nao_manda_o_segredo_por_http(monkeypatch):
     import wa_puxar as WP
     monkeypatch.setattr(WP.WA, "ler_config",
                         lambda con, chave: "http://caixa.exemplo/puxar")
-    r = WP.puxar_pendentes(None)
+    r = WP.buscar_pendentes(None)
     assert r["ok"] is False and "https" in r["motivo"]
 
 

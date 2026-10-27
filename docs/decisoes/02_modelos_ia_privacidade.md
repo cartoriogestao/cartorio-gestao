@@ -154,6 +154,11 @@ Decisões sobre os textos que a serventia emite, a organização das telas e das
 **Por quê.** Cabeçalho que vem de fora não abre porta sozinho; sem isso era possível injetar mensagem falsa na fila do balcão.
 **No código.** `wa_balcao.py`, `wa_web.py`, `wa_puxar.py`.
 
+### O atendente com IA responde sozinho em quatro casos, e o resto passa a uma pessoa (26/10/2026)
+**Regra.** A regra «autoenvio desligado» acima foi revogada pelo titular em 26/10/2026 **só para quatro casos**: (1) andamento do protocolo, depois da identificação por número e código de acompanhamento impresso no recibo, com limite de tentativas por telefone e a mesma resposta quer o número exista quer não; (2) dúvidas gerais a partir de um texto-base aprovado pelo titular e editável na tela — resposta com número fora do texto-base, valor em dinheiro ou marcador de dado ocultado não sai; (3) valores pela tabela de emolumentos, sempre como estimativa, com o número calculado pelo motor de custas da casa e não pelo modelo, que só escolhe o item de uma lista aprovada; (4) transcrição do áudio do cliente. Tudo o mais — pedido do cliente, dúvida que a IA não sabe, protesto, registro civil, dado pessoal, reclamação — passa a uma pessoa com a conversa marcada para o setor. Interruptor geral desligado de fábrica (só o administrador liga, e só se responde o que chegou depois de ligado); cada resposta automática é registrada com o que a IA leu (mascarado), o que respondeu, provedor, tokens e custo. O que vai ao modelo passa pela máscara; o áudio vai inteiro ao provedor de transcrição, e a tela diz isso. Rede nunca dentro de transação.
+**Por quê.** Pedido do titular («é importante»). A regra antiga continua valendo para todo o resto: o que a IA pode afirmar ao cliente fica limitado ao que a casa aprovou ou calcula, e o que é sensível continua com uma pessoa.
+**No código.** `wa_atendente.py`, `wa_transcricao.py`, `wa_fila.py`, `wa_ia_registro`.
+
 ## Atenção para fraudes
 
 ### Alerta não é trava, a vítima se protege, e documento vem antes do nome

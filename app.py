@@ -3447,6 +3447,13 @@ def create_app(test_config: dict | None = None) -> Flask:
     automacao_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                   fmt_date)
 
+    # OS AVISOS DE ANDAMENTO AO CLIENTE (26/10/2026) — o consentimento por
+    # canal, o «pronto para retirar» e a fila. A tela não manda nada; quem
+    # manda é a rotina AVISOS_ANDAMENTO da automação, fora do servidor.
+    import andamento_web
+    andamento_web.registrar_rotas(app, db, login_required, roles_required, audit,
+                                  fmt_date)
+
     import acervo_correcao_web
     acervo_correcao_web.registrar_rotas(app, db, login_required,
                                         roles_required, audit, fmt_date)

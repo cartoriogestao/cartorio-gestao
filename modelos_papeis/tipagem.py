@@ -164,3 +164,9 @@ TIPOS_POR_CHAVE.update({
 TIPOS_POR_CHAVE.update({
     'NOTAS_CERTIDAO_BREVE_RELATO': ('TEXTO', 'Texto congelado em nt_certidoes na emissão'),
 })
+
+# 26/10/2026: o aviso de andamento ao cliente. Bloco à parte, pelo motivo dos
+# de cima.
+TIPOS_POR_CHAVE.update({
+    'CAIXA_AVISO_ANDAMENTO': ('TEXTO', 'E-mail por andamento (===PARTE===); o assunto gravado em av_avisos'),
+})

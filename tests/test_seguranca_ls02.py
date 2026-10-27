@@ -986,6 +986,8 @@ INSERTS_DE_ANEXO = {
     "protesto_imagens.py": "PT_TITULO", "onr_certidoes.py": "ONR_CERTIDAO",
     "database.py": None,
     "protesto_cra_imagens.py": "PT_TITULO",
+    # o pedido de protesto da CENPROT e os anexos dele, na ficha do título
+    "cenprot_pendencias.py": "PT_TITULO",
     # o documento da despesa (24/10/2026), na ficha `despesas_ficha`
     "despesas.py": "DESPESA",
 }

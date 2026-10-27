@@ -4,7 +4,7 @@ régua do tempo de espera.
 O QUE ESTES TESTES GUARDAM
     - a TV abre SEM login só com a chave certa, e o que ela recebe é senha e
       guichê — nenhum nome, tipo de serviço nem atendente;
-    - a chave mora no cofre (`painel.cred`), e não no banco;
+    - a chave mora no cofre (`senhas.cred`), e não no banco;
     - a fila só anda da situação certa: duas pessoas não chamam a mesma senha;
     - a espera vai da chegada até a PRIMEIRA chamada, e é a mesma régua em
       `/relatorios`, no relatório do período e no painel do gestor;
@@ -52,7 +52,7 @@ def casa(cg_casa):
         "carla": db.create_user("carla", "CARLA EXEMPLO SOUZA", SENHA, "AUDITOR"),
     }
     with db.connect() as con:
-        COFRE.gravar_segredo(con, COFRE.PAINEL, "chave_tv", "")
+        COFRE.gravar_segredo(con, COFRE.SENHAS, "chave_tv", "")
     cg_casa["ids"] = ids
     return cg_casa
 
@@ -250,7 +250,7 @@ def test_a_tv_abre_sem_login_so_com_a_chave_certa_e_nao_mostra_nome(casa):
     r = admin.post("/atendimento/painel-da-tv", data={"csrf_token": token, "acao": "gerar"})
     assert r.status_code == 302
     with db.connect() as con:
-        chave = COFRE.ler_segredo(con, COFRE.PAINEL, "chave_tv")
+        chave = COFRE.ler_segredo(con, COFRE.SENHAS, "chave_tv")
         em_settings = banco(con).valor(
             "SELECT COUNT(*) AS n FROM settings WHERE value LIKE %s", (f"%{chave}%",))
     assert len(chave) >= 40

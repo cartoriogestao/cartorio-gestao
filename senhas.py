@@ -38,7 +38,7 @@ A CHAVE DA TV
     (`prazo_absoluto_horas`) e cai por inatividade, e uma TV não digita senha.
     Ela abre um endereço com uma chave longa e aleatória, que o ADMIN gera e
     troca na tela «Painel da TV». A chave é segredo e mora no COFRE
-    (`painel.cred`), e não no banco — regra da casa. O que a chave abre é só
+    (`senhas.cred`), e não no banco — regra da casa. O que a chave abre é só
     senha e guichê: quem a tiver não vê nome, documento, tipo de serviço nem
     quem atende.
 """

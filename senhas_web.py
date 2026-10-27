@@ -10,7 +10,7 @@ A TV NÃO ENTRA COM LOGIN, E POR QUÊ
     inteiro aberto a quem passa. Um papel novo «só-leitura» teria de entrar nas
     réguas de papel da casa inteira, e continuaria sujeito ao prazo.
     A saída é a CHAVE DO PAINEL: um endereço com 256 bits aleatórios, gerado
-    pelo ADMIN, guardado no cofre (`painel.cred`, fora do banco) e trocado
+    pelo ADMIN, guardado no cofre (`senhas.cred`, fora do banco) e trocado
     quando ele quiser — trocar desliga a TV antiga na hora. O que a chave abre
     é só senha e guichê (`senhas.estado_do_painel` nem lê outra coluna); chave
     errada responde 404, como endereço que não existe.
@@ -27,7 +27,7 @@ import cofre_cred as COFRE
 import senhas as SEN
 from seguranca_web import PRATICA, numero_digitado
 
-#: O nome do segredo dentro de `painel.cred`.
+#: O nome do segredo dentro de `senhas.cred`.
 CHAVE_DA_TV = "chave_tv"
 
 #: Quem vê o relatório do período: os nomes de quem atendeu estão nele.
@@ -54,7 +54,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     def _chave_guardada() -> str:
         with db.connect() as con:
-            return COFRE.ler_segredo(con, COFRE.PAINEL, CHAVE_DA_TV)
+            return COFRE.ler_segredo(con, COFRE.SENHAS, CHAVE_DA_TV)
 
     # ------------------------------------------------------------ o balcão
 
@@ -194,13 +194,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             acao = (request.form.get("acao") or "").strip()
             if acao == "gerar":
                 with db.connect() as con:
-                    COFRE.gravar_segredo(con, COFRE.PAINEL, CHAVE_DA_TV, SEN.gerar_chave())
+                    COFRE.gravar_segredo(con, COFRE.SENHAS, CHAVE_DA_TV, SEN.gerar_chave())
                 audit("SENHAS_TV_CHAVE_TROCADA", "SETTINGS", None)
                 flash("Endereço novo gerado. A TV que usava o endereço anterior parou: "
                       "abra o endereço novo nela.", "success")
             elif acao == "desligar":
                 with db.connect() as con:
-                    COFRE.gravar_segredo(con, COFRE.PAINEL, CHAVE_DA_TV, "")
+                    COFRE.gravar_segredo(con, COFRE.SENHAS, CHAVE_DA_TV, "")
                 audit("SENHAS_TV_DESLIGADA", "SETTINGS", None)
                 flash("Painel da TV desligado. Nenhum endereço abre o painel agora.", "success")
             elif acao == "tipos":

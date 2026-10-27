@@ -58,8 +58,10 @@ WHATSAPP = "whatsapp.cred"
 BACKUP = "backup.cred"
 # A CHAVE DO ENDEREÇO DA TV DO PAINEL DE SENHAS (26/10/2026, `senhas_web`):
 # quem a tem abre a TV sem login, e por isso ela é segredo e mora aqui.
-PAINEL = "painel.cred"
-ARQUIVOS = (ROBOS, WHATSAPP, BACKUP, PAINEL)
+# Arquivo próprio, e não «painel.cred»: esse é o da chave que assina o retrato
+# do painel do gestor (PR #28), e um regravaria o segredo do outro.
+SENHAS = "senhas.cred"
+ARQUIVOS = (ROBOS, WHATSAPP, BACKUP, SENHAS)
 
 FORMATO = "cg-cofre-1"
 CODIFICACAO = "utf-8-sig"

@@ -392,8 +392,10 @@ def test_enviar_sem_token_4xx_nao_chama_rede(s):
             follow_redirects=False,
         )
         assert not m.called
-    assert r.status_code >= 400
-    assert r.status_code < 500
+    # 27/10/2026: a recusa volta à conversa com o aviso (302). Com o status 400
+    # o navegador não seguia o redirecionamento e mostrava «Redirecting…».
+    assert r.status_code == 302
+    assert f"/whatsapp/{cid}" in r.headers["Location"]
     import sqlite3
     con = sqlite3.connect(s["banco"])
     n_out = con.execute(

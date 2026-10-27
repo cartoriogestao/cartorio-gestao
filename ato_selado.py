@@ -5060,10 +5060,25 @@ def aguardando_cobertura(con, limite: int = 200) -> list[dict]:
     saida = []
     for r in bd.ler("""SELECT * FROM cx_selo_aguardando
                         ORDER BY desde, tabela, ato_id LIMIT %s""", (int(limite),)):
-        if r["tabela"] in TABELAS_DE_ATO and bd.um(
-                f"SELECT id FROM {r['tabela']} WHERE id = %s", (int(r["ato_id"]),)):
-            saida.append(r)
+        if r["tabela"] not in TABELAS_DE_ATO:
+            continue
+        ato = bd.um(f"SELECT * FROM {r['tabela']} WHERE id = %s", (int(r["ato_id"]),))
+        if not ato or _ato_cancelado(dict(ato)):
+            continue
+        saida.append(r)
     return saida
+
+
+def _ato_cancelado(ato: dict) -> bool:
+    """O ato foi cancelado (a materialização, o assento) e não há o que selar.
+
+    27/10/2026, revisão da 3.7.5: a materialização que a rota cancela por falta
+    de protocolo pago ficava na lista de «aguardando cobertura» para sempre —
+    a linha existe, só que cancelada. Lê as duas formas que a casa usa.
+    """
+    if ato.get("cancelada_em"):
+        return True
+    return str(ato.get("situacao") or "").strip().upper() in ("CANCELADO", "CANCELADA")
 
 
 def cobertura_de_verdade(con, tabela: str, ato_id: int) -> bool:

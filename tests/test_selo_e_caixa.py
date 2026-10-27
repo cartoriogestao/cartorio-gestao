@@ -250,6 +250,18 @@ def test_o_ato_sem_cobertura_fica_aguardando_com_o_motivo(aparelho):
     assert lista[0]["motivo"] == r["motivo"]
 
 
+@pytest.mark.parametrize("ato, cancelado", [
+    ({"cancelada_em": "2026-10-27T10:00"}, True),        # a materialização cancelada
+    ({"situacao": "CANCELADO"}, True),                    # o assento cancelado
+    ({"situacao": "ATIVO", "cancelada_em": None}, False),
+    ({}, False),
+])
+def test_o_ato_cancelado_nao_fica_aguardando_cobertura(ato, cancelado):
+    # 27/10/2026: a materialização cancelada por falta de protocolo pago ficava
+    # na lista de «aguardando cobertura» para sempre.
+    assert AS._ato_cancelado(ato) is cancelado
+
+
 def test_item_ligado_e_quitado_sela_e_tira_da_espera(aparelho):
     con = _casa()
     _selar(con)                                  # fica aguardando

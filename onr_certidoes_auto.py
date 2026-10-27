@@ -491,6 +491,12 @@ def marcar_emitindo(con, pedido_id: int, *, user_id: int, nome: str, status_onr:
     if a["etapa"] not in (A_REVISAR, EMITINDO):
         raise AutoError(f"Este pedido está em «{NOME_DA_ETAPA.get(a['etapa'], a['etapa'])}» "
                         "e não pode ser aprovado agora.")
+    if a["etapa"] == EMITINDO and certidoes_da_marca(con, pedido_id):
+        # A emissão anterior gravou a certidão e caiu antes de amarrá-la
+        # (27/10/2026): emitir de novo gastaria outro selo, e a primeira nunca
+        # iria ao ONR. Quem amarra é `retomar_emitindo_vencido`, antes daqui.
+        raise AutoError("A emissão anterior deste pedido já gravou a certidão. Abra o "
+                        "pedido de novo: ela será amarrada, sem emitir outra.")
     if not AS.status_onr_e_pago(status_onr):
         raise AutoError(f"O ONR diz que este pedido está «{status_onr or 'sem status'}» — "
                         "a certidão só sai com o pedido pago (Em aberto, Processando ou "
@@ -505,6 +511,25 @@ def marcar_emitindo(con, pedido_id: int, *, user_id: int, nome: str, status_onr:
             status_conferido_em=agora, finalidade_marca=marca, emitindo_desde=agora,
             formulario_json=json.dumps(formulario, ensure_ascii=False, default=str), erro=None)
     return {"marca": marca, "emitindo_desde": agora}
+
+
+def retomar_emitindo_vencido(con, pedido_id: int, *, agora: str) -> dict | None:
+    """O pedido parado em EMITINDO há mais do que o prazo: amarra o que a
+    emissão anterior gravou, ANTES de qualquer nova aprovação. ESCREVE.
+
+    27/10/2026, revisão da 3.7.5: a emissão que cai depois de gravar e selar a
+    certidão deixava o pedido em EMITINDO; passado o prazo, aprovar de novo
+    regravava `emitindo_desde`, e `certidoes_da_marca` já não enxergava a
+    primeira — a segunda emissão gastava outro selo e a primeira ficava sem ir
+    ao ONR. Devolve o resultado de `amarrar` (que, sem certidão gravada, volta
+    o pedido a A_REVISAR), ou None quando não há o que retomar.
+    """
+    a = preparo(con, pedido_id)
+    if not a or a.get("certidao_id") or a["etapa"] != EMITINDO:
+        return None
+    if not _antes(a.get("emitindo_desde"), agora, EMITINDO_VENCE_EM_MINUTOS):
+        return None                         # outro clique ainda está emitindo
+    return amarrar(con, pedido_id, agora=agora)
 
 
 def reconferir_status(con, pedido_id: int, *, status_onr: str, agora: str) -> None:

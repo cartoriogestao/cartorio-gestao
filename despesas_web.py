@@ -60,7 +60,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 raise DP.DespesaError(f"O processo {codigo} não está cadastrado na automação. "
                                       f"Cadastre-o lá (Automação → processos).")
             automacao.pedir_rodada(con, int(processo["id"]), usuario=usuario_nome())
-        flash("Pedido ao despachante da automação: roda no próximo minuto.", "info")
+        # A TELA NÃO PROMETE O QUE O PROCESSO NÃO FAZ — 27/10/2026. Com «pode
+        # agir» desligado (o padrão) o despachante só lê: nada é pago nem
+        # conferido, e a tela dizia «roda no próximo minuto».
+        if not int(processo.get("pode_agir") or 0):
+            flash(f"Pedido registrado, mas o processo {codigo} está sem «pode agir»: "
+                  f"o despachante só vai CONFERIR, sem pagar nem baixar nada. Ligue "
+                  f"«pode agir» em Automação → {codigo} para ele agir.", "warning")
+        elif not int(processo.get("ativo") or 0):
+            flash(f"Pedido registrado: o processo {codigo} está desligado na "
+                  f"automação, e o pedido roda uma vez no próximo minuto.", "info")
+        else:
+            flash("Pedido ao despachante da automação: roda no próximo minuto.", "info")
         return True
 
     @app.route("/administrativo/despesas")
@@ -268,6 +279,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash("Configuração gravada." if mudou else "Nada mudou.", "success")
             except DP.DespesaError as erro:
                 flash(str(erro), "danger")
+            except RuntimeError as erro:
+                # O cofre da automação trancado ou ainda não criado — 27/10/2026:
+                # `CofreTrancado` é `RuntimeError` e virava HTTP 500 justamente
+                # no passo «grave de novo a credencial» da instalação.
+                import automacao_cofre as COFRE  # type: ignore
+                if not isinstance(erro, COFRE.CofreError):
+                    raise
+                flash("A credencial NÃO foi gravada: o cofre da automação está "
+                      "trancado ou ainda não foi criado. Abra o cofre (Automação → "
+                      f"Cofre, na máquina do servidor) e grave de novo. ({erro})",
+                      "danger")
             return redirect(url_for("despesas_configuracao"))
         with db.connect() as con:
             cfg = DP.configuracao(con)

@@ -245,3 +245,14 @@ def test_a_recusa_sem_escolha_oferece_as_tres_saidas():
     with pytest.raises(RC.RcError) as erro:
         nascimento(con, paternidade=None)
     assert "a mãe não compareceu" in str(erro.value)
+
+
+def test_o_assento_cancelado_tira_a_alegacao_do_painel():
+    # 27/10/2026: o selo do nascimento falhou, a rota cancelou o assento, e o
+    # termo ficava no painel de inacabados para sempre.
+    con = banco()
+    init_ex_schema(con)
+    r = nascimento(con, paternidade=ALEGACAO)
+    con.execute("UPDATE rc_assentos SET situacao='CANCELADO' WHERE id=?", (r["assento_id"],))
+    assert not [x for x in IN.lista(con, hoje="2026-09-20", chave="RCPN_ALEGACAO_PATERNIDADE")
+                if x["chave"] == "RCPN_ALEGACAO_PATERNIDADE"]

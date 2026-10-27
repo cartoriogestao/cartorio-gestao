@@ -226,7 +226,8 @@ def test_orcamento_nao_tem_codigo(casa):
     ("ABERTO", (), "em atendimento"),
     ("A_PAGAR", ((0, 0),), "aguardando pagamento"),
     ("PAGO", ((1, 0),), "em atendimento"),
-    ("PAGO", ((1, 1),), "pronto para retirar"),
+    # 27/10/2026: itens gastos não bastam — «pronto» é a marca do balcão (#26)
+    ("PAGO", ((1, 1),), "em atendimento"),
     ("ENTREGUE", ((1, 1),), "entregue"),
     ("CANCELADO", (), "cancelado"),
 ])
@@ -236,6 +237,34 @@ def test_a_situacao_interna_vira_linguagem_simples(casa, situacao, itens, espera
         pid, _ = _protocolo(con, situacao=situacao, itens=itens)
     p = dict(con.execute("SELECT * FROM cx_protocolos WHERE id=?", (pid,)).fetchone())
     assert ACOMP.situacao_publica(con, p) == esperada
+
+
+def test_pronto_e_a_marca_do_balcao_e_nao_os_itens_gastos(casa):
+    # Ponto da junção do #26 com o #29 (27/10/2026): o e-mail do aviso sai
+    # quando o balcão marca «pronto para retirar»; o portal tem de dizer o mesmo.
+    con = _con(casa)
+    with con:
+        pid, _ = _protocolo(con, situacao="PAGO", itens=((1, 0),))
+        con.execute("UPDATE cx_protocolos SET pronto_retirar_em='2026-10-27T10:00' "
+                    "WHERE id=?", (pid,))
+    p = dict(con.execute("SELECT * FROM cx_protocolos WHERE id=?", (pid,)).fetchone())
+    assert ACOMP.situacao_publica(con, p) == "pronto para retirar"
+    assert ACOMP.dados_do_comprovante(con, p)["pronto"] is True
+
+
+def test_exigencia_geral_fora_do_ri_chega_ao_cliente(casa):
+    # 27/10/2026: a nota de exigência do balcão (Notas, RCPN…) não aparecia no
+    # portal — só a do RI. A leitura única do #39 passa a valer aqui.
+    import caixa_exigencia as CXE
+    con = _con(casa)
+    with con:
+        pid, _ = _protocolo(con, atribuicao="NOTAS", situacao="PAGO", itens=((1, 0),))
+        CXE.abrir(con, pid, texto="Trazer a certidão de casamento atualizada.",
+                  agora="2026-10-27T10:00", atribuicao="NOTAS", quem="carla")
+    p = dict(con.execute("SELECT * FROM cx_protocolos WHERE id=?", (pid,)).fetchone())
+    assert ACOMP.situacao_publica(con, p) == "aguardando documento/exigência"
+    exig = ACOMP.exigencias_pendentes(con, p)
+    assert exig and "certidão de casamento" in exig[0].lower()
 
 
 def test_ri_em_exigencia_diz_ao_cliente_que_falta_documento(casa):

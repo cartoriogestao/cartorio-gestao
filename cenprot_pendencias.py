@@ -32,6 +32,7 @@ escrito aqui saiu do contrato, e há teste que confere cada um contra ele.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import cenprot_api as API
@@ -812,10 +813,38 @@ def teor_do_pedido(con: Any, numero_do_pedido: Any) -> dict | None:
     return teor if isinstance(teor, dict) else None
 
 
+#: O protocolo desta casa: AAMMDD + o sequencial do dia (10 dígitos), medido
+#: em 928 dos 931 títulos de 2024 em diante (`protesto_retorno`).
+_PROTOCOLO_DA_CASA = re.compile(r"^\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{4}$")
+
+
+def _titulos_parecidos(bd: Any, dados: dict) -> list[dict]:
+    """Títulos que JÁ ESTÃO na casa com o mesmo número e o mesmo devedor. SÓ LÊ.
+
+    27/10/2026, revisão da 3.7.5: a única trava contra duplicata era a
+    pendência já amarrada. Os títulos da CENPROT que entraram pelo E-Ofício
+    têm outra chave de origem, e o `ON CONFLICT` não os pega — o botão criava
+    um segundo título para a mesma dívida.
+    """
+    numero = _txt(dados.get("numero_titulo"))
+    docs = sorted({_digitos(d.get("CPF") or d.get("CNPJ"))
+                   for d in dados.get("devedores") or []} - {""})
+    if not numero or not docs:
+        return []
+    marcas = ",".join(["%s"] * len(docs))
+    return [dict(r) for r in bd.ler(
+        f"""SELECT DISTINCT t.id, t.protocolo, t.situacao FROM pt_titulos t
+              JOIN pt_devedores d ON d.titulo_id = t.id
+             WHERE UPPER(TRIM(t.numero_titulo)) = UPPER(%s)
+               AND d.documento_numero IN ({marcas})
+             ORDER BY t.id""", (numero, *docs))]
+
+
 def cadastrar_titulo_do_pedido(con: Any, pendencia_id: int, *, agora: str,
                                usuario: str | None = None,
                                pasta_de_arquivos: Any = None,
-                               usuario_id: int | None = None) -> dict:
+                               usuario_id: int | None = None,
+                               mesmo_assim: bool = False) -> dict:
     """Dá entrada no título que veio no pedido de protesto da CENPROT.
     ESCREVE, e grava arquivo em disco.
 
@@ -852,6 +881,15 @@ def cadastrar_titulo_do_pedido(con: Any, pendencia_id: int, *, agora: str,
             "A cidade da serventia não está configurada (Administrativo → "
             "Configurações) — ela é a praça de protesto do título.")
     dados = dados_do_pedido(teor, praca=praca)
+    parecidos = _titulos_parecidos(bd, dados)
+    if parecidos and not mesmo_assim:
+        lista = ", ".join(f"{t['id']} (protocolo {t['protocolo'] or '—'}, "
+                          f"{t['situacao']})" for t in parecidos)
+        raise PendenciaError(
+            f"Já há título com o mesmo número e o mesmo devedor nesta casa: "
+            f"{lista}. Confira a ficha dele antes — entrar de novo criaria um "
+            f"segundo título para a mesma dívida. Se for mesmo outro título, marque "
+            f"«já conferi» e dê entrada de novo.")
     try:
         titulo_id = PT.cadastrar_titulo(
             bd, dados, origem="CENPROT",
@@ -862,8 +900,13 @@ def cadastrar_titulo_do_pedido(con: Any, pendencia_id: int, *, agora: str,
     # O PROTOCOLO SÓ ENTRA SE A CENTRAL JÁ O TEM — o pedido que já foi
     # protocolado por esta casa antes. Pedido novo vem sem, e o protocolo
     # nasce no apontamento.
+    #
+    # E SÓ NA FORMA DA CASA — 27/10/2026. O exemplo do contrato traz
+    # `'0000000001'`: fora de AAMMDD+sequencial, o aviso de intimação recusa
+    # sair («não diz a data da protocolização») e o tríduo perde a data. O que
+    # não tem a forma fica de fora, e o protocolo nasce no apontamento.
     protocolo = _txt((teor.get("dados_pedido") or {}).get("nm_nr_protocolo"))
-    if protocolo:
+    if protocolo and _PROTOCOLO_DA_CASA.match(protocolo):
         bd.escrever("UPDATE pt_titulos SET protocolo = %s WHERE id = %s "
                     "AND (protocolo IS NULL OR protocolo = '')",
                     (protocolo, titulo_id))

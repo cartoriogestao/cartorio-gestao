@@ -769,6 +769,36 @@ def test_o_pedido_nao_vira_dois_titulos(s, cg_casa):
         ("CENPROT-PEDIDO:3600001",)).fetchone()[0] == 1
 
 
+def test_titulo_parecido_ja_na_casa_pede_conferencia(s, cg_casa):
+    # 27/10/2026: o título que entrou pelo E-Ofício tem outra chave de origem,
+    # e o botão criava um segundo título para a mesma dívida. Outro pedido com
+    # o mesmo número e o mesmo devedor é recusado até alguém confirmar.
+    _dar_entrada(s, _pedido(s, cg_casa))
+    outro = _pedido(s, cg_casa, numero=3600002)
+    html = _dar_entrada(s, outro)
+    assert "mesmo número e o mesmo devedor" in html
+    assert _con(s).execute("SELECT COUNT(*) FROM pt_titulos WHERE numero_titulo=?",
+                           ("000777/1",)).fetchone()[0] == 1
+    ficha = s["c"].get(f"/protesto/cenprot/pendencias/{outro}").get_data(as_text=True)
+    html = s["c"].post(f"/protesto/cenprot/pendencias/{outro}/titulo",
+                       data={"csrf_token": _token(ficha), "mesmo_assim": "1"},
+                       follow_redirects=True).get_data(as_text=True)
+    assert "O título entrou (RECEBIDO)" in html
+
+
+def test_protocolo_fora_da_forma_da_casa_nao_entra(s, cg_casa):
+    # O exemplo do contrato traz «0000000001»: fora de AAMMDD+sequencial o aviso
+    # de intimação recusaria sair. O protocolo nasce no apontamento.
+    cg_casa["db"].set_settings({"ri_cidade": "Cidade Exemplo"})
+    teor = teor_do_pedido(3600003)
+    teor["dados_pedido"]["nm_nr_protocolo"] = "0000000001"
+    pid = pendencia(s, especie=CN.PEDIDO_PROTESTO, codigo="3600003", teor=teor)
+    _dar_entrada(s, pid)
+    t = _con(s).execute("SELECT protocolo FROM pt_titulos WHERE origem_chave=?",
+                        ("CENPROT-PEDIDO:3600003",)).fetchone()
+    assert t is not None and not t["protocolo"]
+
+
 def test_so_o_pedido_de_protesto_vira_titulo(s, cg_casa):
     pid = pendencia(s)                       # uma anuência
     html = s["c"].get(f"/protesto/cenprot/pendencias/{pid}").get_data(

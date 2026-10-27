@@ -550,7 +550,12 @@ def texto_do_papel(con: sqlite3.Connection, chave: str) -> str:
 #   CONFIRMADO PELO OFICIAL EM 26/10/2026 («quem grava o texto: ADMIN e
 #   gerente») — e os textos de fábrica do CAIXA_AVISO_ANDAMENTO foram
 #   aprovados por ele no mesmo dia.
-PAPEIS_SO_DO_GESTOR: frozenset[str] = frozenset({"CAIXA_AVISO_ANDAMENTO"})
+#
+#   O CONVITE DA PESQUISA ENTRA NA LISTA — 27/10/2026. Era um ponto da junção
+#   do #38 (texto que sai sozinho ao cliente, como o aviso de andamento) e
+#   ficou de fora; a revisão da 3.7.5 achou.
+PAPEIS_SO_DO_GESTOR: frozenset[str] = frozenset({"CAIXA_AVISO_ANDAMENTO",
+                                                 "OUVIDORIA_CONVITE_PESQUISA"})
 QUEM_GRAVA_PAPEL_DO_GESTOR: tuple[str, ...] = ("ADMIN", "MANAGER")
 
 

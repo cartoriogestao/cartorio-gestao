@@ -3,7 +3,10 @@
 A ROTA SO LIGA OS FIOS. O webhook local (teste ou reenvio da caixa-postal)
 chama `aplicar_entrada`. A tela le o que ja esta no SQLite.
 
-Envio a Cloud API e so no botao do escrevente. Autoenvio continua desligado.
+Envio a Cloud API e no botao do escrevente — e, desde 26/10/2026, tambem pelo
+atendente com IA (`wa_atendente`), so nos quatro casos que o oficial liberou e
+so com o interruptor geral ligado (ele nasce desligado). O resto continua
+rascunho conferido por pessoa.
 Nunca logar access_token, app_secret nem caixa_segredo — e, desde o LX14, eles
 nem moram no banco: `ler_config`/`gravar_config` os mandam ao cofre
 (`whatsapp.cred`, ver `wa_schema.SEGREDOS` e `cofre_cred`).
@@ -25,6 +28,7 @@ from bd_nativo import banco
 
 import cofre_cred as COFRE
 import serventia as SERV
+import wa_fila as FILA
 import wa_schema as WA
 import wa_textos as TEXTOS
 
@@ -235,9 +239,33 @@ def post_permitido(con: Any, header_teste: str = "",
     return post_de_teste_liberado(con, header_teste)
 
 
+# OS TIPOS DE MENSAGEM QUE TRAZEM MIDIA (26/10/2026). O `_texto_da_mensagem`
+# so lia texto, e o audio do cliente entrava como mensagem vazia — o balcao via
+# uma linha em branco e ninguem sabia que havia um audio ali. Agora o tipo e o
+# id da midia ficam gravados; quem baixa e transcreve e o atendente
+# (`wa_atendente`), fora da transacao, se a transcricao estiver ligada.
+TIPOS_COM_MIDIA = ("audio", "voice", "image", "document", "video", "sticker")
+
+
+def tipo_e_midia(msg: dict) -> tuple[str, str]:
+    """(tipo, id da midia) da mensagem da Meta. Texto devolve ("text", "")."""
+    if not isinstance(msg, dict):
+        return "text", ""
+    tipo = str(msg.get("type") or "").strip().lower()
+    for chave in TIPOS_COM_MIDIA:
+        bloco = msg.get(chave)
+        if isinstance(bloco, dict) and bloco.get("id"):
+            return ("audio" if chave == "voice" else chave), str(bloco["id"])
+    return (tipo or "text"), ""
+
+
 def _texto_da_mensagem(msg: dict) -> str:
     if not isinstance(msg, dict):
         return ""
+    for chave in TIPOS_COM_MIDIA:
+        bloco = msg.get(chave)
+        if isinstance(bloco, dict) and bloco.get("caption"):
+            return str(bloco.get("caption") or "").strip()
     texto = msg.get("text")
     if isinstance(texto, dict):
         return str(texto.get("body") or "").strip()
@@ -324,6 +352,7 @@ def aplicar_entrada(con: Any, payload_meta: Any,
         if not wa_id:
             continue
         texto = _texto_da_mensagem(msg)
+        tipo, midia_id = tipo_e_midia(msg)
         nome = str(nomes.get(wa_id) or msg.get("nome") or "").strip()
         etiqueta = classificar(texto)
         rascunho = rascunhar(texto, etiqueta, serventia, con=con)
@@ -331,13 +360,18 @@ def aplicar_entrada(con: Any, payload_meta: Any,
         existente = _conversa_por_wa(con, wa_id)
         if existente:
             cid = int(existente["id"])
+            # A CONVERSA RESOLVIDA QUE VOLTA, VOLTA PARA A IA (26/10/2026): a
+            # passagem para pessoa vale para aquele assunto; resolvido ele, a
+            # proxima pergunta comeca do atendimento de sempre. O setor fica.
             bd.escrever(
                 """UPDATE wa_conversa
                       SET nome=COALESCE(NULLIF(%s, ''), nome),
                           etiqueta=%s, rascunho=%s, status=%s,
+                          modo=CASE WHEN status=%s THEN NULL ELSE modo END,
                           auto_ok=0, atualizado_em=%s
                     WHERE id=%s""",
-                (nome, etiqueta, rascunho, WA.ABERTA, quando, cid),
+                (nome, etiqueta, rascunho, WA.ABERTA, WA.RESOLVIDA, quando,
+                 cid),
             )
         else:
             cid = int(bd.escrever(
@@ -350,26 +384,23 @@ def aplicar_entrada(con: Any, payload_meta: Any,
             )[0]["id"])
         bd.escrever(
             """INSERT INTO wa_mensagem
-                   (conversa_id, direcao, texto, bruto_json, criado_em, meta_id)
-               VALUES (%s, %s, %s, %s, %s, %s)""",
-            (cid, DIR_IN, texto, bruto, quando, meta_id or None),
+                   (conversa_id, direcao, texto, bruto_json, criado_em, meta_id,
+                    tipo, midia_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (cid, DIR_IN, texto, bruto, quando, meta_id or None, tipo,
+             midia_id or None),
         )
+        # A etiqueta da palavra-chave entra tambem na lista de varias
+        # (`wa_etiqueta`), como automatica. «outros» nao e etiqueta: e falta dela.
+        if etiqueta and etiqueta != "outros":
+            FILA.por_etiqueta(con, cid, etiqueta, origem=FILA.AUTO,
+                              por="palavra-chave", quando=quando)
+        if tipo == "audio":
+            FILA.por_etiqueta(con, cid, "audio", origem=FILA.AUTO,
+                              por="tipo da mensagem", quando=quando)
         criadas += 1
         ids.append(cid)
     return {"criadas": criadas, "repetidas": repetidas, "conversa_ids": ids}
-
-
-def listar_conversas(con: Any) -> list[dict]:
-    linhas = banco(con).ler(
-        """SELECT c.id, c.wa_id, c.nome, c.etiqueta, c.status, c.rascunho,
-                  c.auto_ok, c.atualizado_em,
-                  (SELECT m.texto FROM wa_mensagem m
-                    WHERE m.conversa_id=c.id
-                    ORDER BY m.id DESC LIMIT 1) AS ultimo_texto
-             FROM wa_conversa c
-            ORDER BY c.atualizado_em DESC, c.id DESC"""
-    )
-    return [dict(r) for r in linhas]
 
 
 def conversa(con: Any, conversa_id: int) -> dict | None:
@@ -406,7 +437,7 @@ def resolver(con: Any, conversa_id: int,
     quando = agora or agora_iso()
     banco(con).escrever(
         """UPDATE wa_conversa
-              SET status=%s, atualizado_em=%s
+              SET status=%s, modo=NULL, passagem_motivo=NULL, atualizado_em=%s
             WHERE id=%s""",
         (WA.RESOLVIDA, quando, int(conversa_id)),
     )
@@ -455,48 +486,68 @@ def _http_post_json(url: str, corpo: dict, headers: dict,
         ) from e
 
 
-def enviar_rascunho(con: Any, conversa_id: int,
-                    agora: str | None = None,
-                    http_post: Callable | None = None) -> dict:
-    """POST na Graph Cloud API. So o rascunho conferido. Nao autoenvia."""
-    d = conversa(con, conversa_id)
-    if not d:
-        raise EnvioErro("Conversa nao encontrada.")
-    texto = (d.get("rascunho") or "").strip()
+# O ENVIO EM TRES PEDACOS (26/10/2026): montar (le o banco), postar (fala com a
+# rede) e gravar (escreve). A rota e o atendente fazem os tres em ordem, com a
+# rede FORA de `db.transaction()` — a regra da casa: um POST de oito segundos
+# segurando a trava de escrita poria todo outro balcao no `lock_timeout`.
+# O antigo `enviar_rascunho`, que fazia os tres dentro da transacao da rota,
+# saiu; a listagem antiga (`listar_conversas`) tambem — quem lista e `wa_fila`.
+
+
+def montar_envio(con: Any, wa_id: str, texto: str) -> dict:
+    """O pedido pronto para a Graph: url, corpo e cabecalhos. So le."""
+    texto = (texto or "").strip()
     if not texto:
-        raise EnvioErro("Nao ha rascunho para enviar.")
+        raise EnvioErro("Nao ha texto para enviar.")
     token = ler_config(con, WA.CHAVE_TOKEN)
     phone = ler_config(con, WA.CHAVE_PHONE)
     if not token or not phone:
         raise EnvioErro("Falta access_token ou phone_number_id na configuracao.")
-    url = f"https://graph.facebook.com/{GRAPH_VER}/{phone}/messages"
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": d["wa_id"],
-        "type": "text",
-        "text": {"body": texto},
+    return {
+        "url": f"https://graph.facebook.com/{GRAPH_VER}/{phone}/messages",
+        "payload": {
+            "messaging_product": "whatsapp",
+            "to": str(wa_id),
+            "type": "text",
+            "text": {"body": texto},
+        },
+        "headers": {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
     }
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
+
+
+def postar_envio(pedido: dict, http_post: Callable | None = None) -> str | None:
+    """FALA COM A REDE. Devolve o id que a Graph deu, ou levanta EnvioErro."""
     fn = http_post or _http_post_json
-    status, bruto = fn(url, payload, headers)
+    status, bruto = fn(pedido["url"], pedido["payload"], pedido["headers"])
     if status < 200 or status >= 300:
         raise EnvioErro(_mensagem_erro_graph(bruto, status))
-    meta_id = _id_da_graph(bruto) or None
+    return _id_da_graph(bruto) or None
+
+
+def gravar_saida(con: Any, conversa_id: int, texto: str, meta_id: str | None,
+                 *, autor: str = "", agora: str | None = None) -> int:
+    """Grava a mensagem que saiu e poe a conversa em AGUARDANDO. ESCREVE.
+
+    `autor` e o nome de quem apertou o botao, ou `ia` para a resposta
+    automatica — e o que separa, no painel, o tempo de resposta da pessoa do
+    da IA."""
     quando = agora or agora_iso()
     bd = banco(con)
-    bd.escrever(
+    mid = int(bd.escrever(
         """INSERT INTO wa_mensagem
-               (conversa_id, direcao, texto, bruto_json, criado_em, meta_id)
-           VALUES (%s, %s, %s, %s, %s, %s)""",
-        (int(conversa_id), DIR_OUT, texto, None, quando, meta_id),
-    )
+               (conversa_id, direcao, texto, bruto_json, criado_em, meta_id,
+                tipo, autor)
+           VALUES (%s, %s, %s, %s, %s, %s, 'text', %s) RETURNING id""",
+        (int(conversa_id), DIR_OUT, texto, None, quando, meta_id,
+         (autor or "")[:80] or None),
+    )[0]["id"])
     bd.escrever(
         """UPDATE wa_conversa
               SET status=%s, atualizado_em=%s
             WHERE id=%s""",
         (WA.AGUARDANDO, quando, int(conversa_id)),
     )
-    return {"ok": True, "meta_id": meta_id}
+    return mid

@@ -24,8 +24,9 @@ O QUE SE GUARDA, E O QUE NÃO SE GUARDA
     backup sai da serventia.
 
 QUEM GRAVA
-    Os dois transportes — `agente_provedores.conversar` e
-    `robo_llm.chamar_provedor` —, e mais ninguém. Gravar no transporte, e não
+    Os transportes — `agente_provedores.conversar`,
+    `robo_llm.chamar_provedor` e, desde 26/10/2026, `wa_transcricao.transcrever`
+    (o áudio do WhatsApp) —, e mais ninguém. Gravar no transporte, e não
     em cada chamador, é o que impede um chamador novo de usar IA sem deixar
     rastro: ele pode esquecer a finalidade, mas não o registro.
 

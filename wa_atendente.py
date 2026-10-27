@@ -78,6 +78,7 @@ from bd_nativo import banco
 import agente_provedores as PROV
 import ajuda_privacidade as PRIV
 import ia_uso as USO
+import identidade_do_robo as IDR
 import wa_balcao as BALCAO
 import wa_fila as FILA
 import wa_schema as WA
@@ -834,9 +835,11 @@ def atender_conversa(db: Any, conversa_id: int, cfg: dict, *, agora: str,
         _registrar(con, conversa, decisao, enviado=enviado, meta_id=meta_id,
                    agora=agora, respondido=texto_saida)
     try:
+        # quem age é o atendente, a mando de quem responde pelas rotinas (PR #36)
         db.log(None, None, "WA_IA_RESPOSTA", "wa_conversa", int(conversa_id),
                {"caso": decisao["caso"], "enviado": enviado,
-                "passou_para": decisao.get("passar")})
+                "passou_para": decisao.get("passar")},
+               agente="atendente com IA do WhatsApp", a_mando_de=IDR.PELO_RESPONSAVEL)
     except Exception:                                   # noqa: BLE001
         LOG.exception("a resposta automática foi gravada, e a auditoria falhou")
     return {"caso": decisao["caso"], "enviado": enviado,

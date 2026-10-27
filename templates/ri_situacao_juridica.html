@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+{% block title %}Situação jurídica — Matrícula {{ s.m.numero }}{% endblock %}
+{% block heading %}<h1>Situação jurídica — Matrícula {{ s.m.numero }}{% if s.m.complemento %}-{{ s.m.complemento }}{% endif %}</h1>{% endblock %}
+{% block content %}
+{% set m = s.m %}
+{# A MARCA VEM PRIMEIRO E SAI NA IMPRESSAO. Ela nao e um botao nem um aviso
+   que se fecha: quem imprimir esta tela leva a frase junto. #}
+<div id="nao-e-certidao" role="note"
+     style="border:3px solid #a40016;color:#a40016;background:#fff;border-radius:8px;padding:14px 18px;margin:0 0 18px;font-size:1.15rem;font-weight:bold;text-align:center">
+  {{ s.marca }}
+</div>
+
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_ficha', matricula_id=m.id) }}">&larr; Ficha da matrícula</a>
+  <a class="button" href="{{ url_for('ri_certidoes') }}">Certidões</a>
+  <span class="muted small">Montado em {{ agora[:16] }}{% if quem %} para {{ quem }}{% endif %}.
+    Só lê: nada aqui é gravado, e nada aqui é decisão.</span>
+</div>
+
+{% if s.avisos %}
+<div class="notice warning">
+  <ul style="margin:0">{% for a in s.avisos %}<li>{{ a }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><strong>Imóvel</strong>
+    <span class="muted small">Livro {{ m.livro_norm or m.livro or '—' }}{% if m.folha %}, fl. {{ m.folha }}{% endif %}
+      {% if m.cnm %} · CNM {{ m.cnm }}{% endif %}
+      · {% if s.acervo %}ficha do acervo{% else %}ficha estruturada{% endif %}
+      · {{ s.atos_total }} ato(s) lavrado(s) no sistema{% if s.atos_cancelados %}, {{ s.atos_cancelados }} cancelado(s){% endif %}</span></div>
+  <div style="padding:8px 14px" class="small">
+    {{ m.logradouro or '' }}{% if m.numero_predial %}, {{ m.numero_predial }}{% endif %}{% if m.bairro %} — {{ m.bairro }}{% endif %}{% if m.cidade %} — {{ m.cidade }}{% endif %}
+    {% if m.area_valor %}· área {{ m.area_valor }} {{ m.area_unidade or '' }}{% endif %}
+    {% if not (m.logradouro or m.bairro or m.area_valor) %}<span class="muted">O endereço não está cadastrado em campos — confira a descrição no teor.</span>{% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><strong>Proprietários atuais</strong>
+    <span class="muted small">pelo cadastro das partes ({{ s.partes_total }} parte(s) na ficha)</span></div>
+  {% if s.proprietarios %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nome</th><th>Documento</th><th>Participação</th><th>Qualificação</th></tr></thead>
+    <tbody>{% for p in s.proprietarios %}
+      <tr><td>{{ p.nome }}</td>
+          <td>{% if p.documento_numero %}{{ p.documento_tipo or '' }} {{ p.documento_numero }}{% if p.documento_valido == 0 %} <span class="badge alta">dígito não confere</span>{% endif %}{% else %}<span class="muted">sem documento</span>{% endif %}</td>
+          <td>{{ p.participacao or '—' }}</td><td class="small">{{ (p.qualificacao or '')[:120] }}</td></tr>
+    {% endfor %}</tbody></table></div>
+  {% else %}
+  <p class="notice" style="margin:8px 14px">Nenhum proprietário atual cadastrado nas partes. O sistema
+    <strong>não sabe</strong> quem é o dono — leia a cadeia no teor da ficha.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><strong>Ônus e gravames</strong>
+    <span class="muted small">pela mesma regra da certidão de ônus</span></div>
+  <div style="padding:8px 14px">
+  {% if s.onus %}
+    <div class="small muted">Lavrados no sistema e não cancelados:</div>
+    <ul>{% for o in s.onus %}
+      <li><strong>{{ o.rotulo }}</strong> — {{ o.natureza_titulo or 'natureza não informada' }}
+        {% if o.data_ato %}<span class="muted">({{ o.data_ato }})</span>{% endif %}
+        {% if o.conferir %}<span class="badge alta">achado por palavra-chave — conferir</span>{% endif %}</li>
+    {% endfor %}</ul>
+  {% else %}
+    <p><strong>{{ s.frase_sem_onus }}</strong></p>
+  {% endif %}
+  {% if s.teor.onus %}
+    <div class="small muted" style="margin-top:8px">Possíveis ônus escritos no teor — o sistema
+      <strong>não sabe se estão vigentes ou cancelados</strong>; leia a ficha:</div>
+    <ul>{% for o in s.teor.onus %}
+      <li><strong>{{ o.rotulo }}</strong>
+        {% if o.cancelado_por %}<span class="badge">citado em parágrafo que fala em cancelamento: {{ o.cancelado_por|join(', ') }}</span>{% endif %}
+        {% if o.fala_em_cancelamento %}<span class="badge">este parágrafo fala em cancelamento</span>{% endif %}
+        <div class="small">{{ o.trecho }}{% if o.cortado %}…{% endif %}</div></li>
+    {% endfor %}</ul>
+  {% elif s.acervo and not s.onus %}
+    <p class="small muted">Nenhum parágrafo do teor desta ficha foi reconhecido como ônus pela leitura
+      do texto — e isso <strong>não</strong> prova ausência de ônus: a leitura do texto pode falhar.</p>
+  {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><strong>Cadeia dominial</strong>
+    <span class="muted small">transmissões, pela regra da certidão dominial</span></div>
+  <div style="padding:8px 14px">
+  {% if s.dominio %}
+    <ul>{% for d in s.dominio %}
+      <li><strong>{{ d.rotulo }}</strong> — {{ d.natureza_titulo or 'natureza não informada' }}
+        {% if d.data_ato %}<span class="muted">({{ d.data_ato }})</span>{% endif %}
+        {% if d.conferir %}<span class="badge alta">conferir</span>{% endif %}</li>
+    {% endfor %}</ul>
+  {% else %}
+    <p class="small">Nenhuma transmissão lavrada no sistema.</p>
+  {% endif %}
+  {% if s.teor.dominio %}
+    <div class="small muted">Possíveis transmissões escritas no teor (leitura do texto):</div>
+    <ul>{% for d in s.teor.dominio %}
+      <li><strong>{{ d.rotulo }}</strong><div class="small">{{ d.trecho }}{% if d.cortado %}…{% endif %}</div></li>
+    {% endfor %}</ul>
+  {% endif %}
+  {% if m.registro_anterior %}
+    <div class="small"><strong>Registro anterior:</strong> {{ m.registro_anterior }}</div>
+  {% endif %}
+  {% if s.origens %}
+    <div class="small">Matrículas citadas como origem:
+      {% for o in s.origens %}{% if o.id %}<a href="{{ url_for('ri_situacao_juridica', matricula_id=o.id) }}">{{ o.numero }}</a>{% else %}{{ o.numero }} <span class="muted">(não está no sistema)</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</div>
+  {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><strong>Indisponibilidade (CNIB)</strong>
+    <span class="muted small">cópia local{% if s.cnib.base %} até {{ s.cnib.base }}{% endif %}{% if s.cnib.base_n is not none %}, {{ s.cnib.base_n }} ordens ativas{% endif %} — consulta pelos nomes e documentos das partes</span></div>
+  <div style="padding:8px 14px">
+  {% if s.cnib.base_n == 0 %}
+    <p><strong>A cópia local da CNIB está vazia: a consulta não pôde ser feita.</strong></p>
+  {% elif s.cnib.ordens %}
+    <ul>{% for c in s.cnib.ordens %}
+      <li>{{ c.nome }}{% if c.documento %} — {{ c.documento }}{% endif %}; ordem {{ c.protocolo_cnib }}
+        {% if c.criterio == 'documento' %}<span class="badge critica">coincide pelo CPF/CNPJ</span>{% else %}<span class="badge alta">coincide só pelo nome — possível homônimo</span>{% endif %}
+        {% if c in s.cnib.pendentes %}<span class="badge alta">sem decisão registrada</span>{% endif %}</li>
+    {% endfor %}</ul>
+  {% else %}
+    <p class="small">Nenhuma ordem ativa na cópia local para as partes cadastradas. Partes que só
+      estão no teor não foram consultadas.</p>
+  {% endif %}
+  {% if s.cnib.decisoes %}
+    <div class="small muted">Decisões registradas: {% for d in s.cnib.decisoes %}{{ d.pessoa_nome }} ({{ d.decisao }}){% if not loop.last %}; {% endif %}{% endfor %}</div>
+  {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><strong>Prenotações abertas e notas devolutivas</strong>
+    <span class="muted small">a prioridade do título se conta da prenotação (Lei 6.015/1973, art. 186)</span></div>
+  <div style="padding:8px 14px">
+  {% if s.prenotacoes %}
+    <ul>{% for p in s.prenotacoes %}
+      <li>Protocolo <strong>{{ p.numero }}</strong> de {{ p.data_prenotacao }} — {{ p.natureza_titulo or 'natureza não informada' }}
+        <span class="badge">{{ p.etapa_rotulo }}</span>
+        {% if p.data_limite %}<span class="muted">prazo até {{ p.data_limite }}</span>{% endif %}
+        {% if not p.matricula_id %}<span class="badge alta">amarrada só pelo número digitado</span>{% endif %}</li>
+    {% endfor %}</ul>
+  {% else %}
+    <p class="small">Nenhuma prenotação aberta para esta matrícula no sistema.</p>
+  {% endif %}
+  {% if s.notas %}
+    <div class="small muted">Notas devolutivas sem resposta:</div>
+    <ul>{% for n in s.notas %}
+      <li>Nota {{ n.numero }} de {{ n.data_nota }} (protocolo {{ n.protocolo_numero }}){% if n.prazo_ate %} — prazo até {{ n.prazo_ate }}{% endif %}
+        <div class="small">{{ (n.exigencias or '')[:300] }}</div></li>
+    {% endfor %}</ul>
+  {% else %}
+    <p class="small">Nenhuma nota devolutiva aberta.</p>
+  {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><strong>Atos escritos no teor</strong>
+    <span class="muted small">rótulos que o texto da ficha atribui a esta matrícula</span></div>
+  <div style="padding:8px 14px" class="small">
+  {% if s.teor.citados %}
+    {% for c in s.teor.citados %}{{ c.rotulo }}{% if not loop.last %}, {% endif %}{% endfor %}.
+  {% else %}
+    Nenhum rótulo desta matrícula achado no teor.
+  {% endif %}
+    <div class="muted">Próximo número de ato: {{ s.piso.proximo }}
+      (maior lavrado no sistema: {{ s.piso.em_atos }}; maior escrito no teor: {{ s.piso.no_teor }}){% if s.piso.divergente %} — <strong>o teor passa à frente dos atos lavrados</strong>{% endif %}.</div>
+  </div>
+</section>
+
+<div id="nao-e-certidao-fim" class="notice" style="text-align:center;font-weight:bold">{{ s.marca }}</div>
+{% endblock %}

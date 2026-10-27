@@ -84,6 +84,40 @@
    porque é a prova do que está escrito acima. #}
 {% include '_rc_digitalizacao.html' %}
 
+{# O TERMO DE PATERNIDADE — 23/10/2026. Gerado com o assento; imprime-se para
+   a mãe e o oficial assinarem, e arquiva-se. O de alegação vai ao juiz. #}
+{% if termo_paternidade %}
+{% set tp = termo_paternidade %}
+<section class="panel{% if tp.tipo == 'ALEGACAO' and not tp.remetido_em %} critical{% endif %}" id="paternidade">
+  <div class="panel-head"><span>{{ tp.nome_do_tipo }}</span>
+    <small>Lei nº 8.560/1992, art. 2º</small></div>
+  <p style="padding:14px 14px 0">{{ tp.teor }}</p>
+  <div class="actions" style="padding:0 14px 14px">
+    <a class="button" href="{{ url_for('rcpn_paternidade_termo', assento_id=assento.id) }}">Imprimir o termo (.odt)</a>
+  </div>
+  {% if tp.tipo == 'ALEGACAO' %}
+    {% if tp.remetido_em %}
+      <p style="padding:0 14px 14px"><small>Remetido ao juiz em {{ tp.remetido_em }},
+        processo {{ tp.remessa_processo }}{% if tp.remetido_por %}, por {{ tp.remetido_por }}{% endif %}.</small></p>
+    {% elif user.role in ['ADMIN','MANAGER','USER'] %}
+      <form method="post" class="grid2" style="padding:0 14px 14px"
+            action="{{ url_for('rcpn_paternidade_remessa', assento_id=assento.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <p style="grid-column:1/-1"><small><strong>Ainda não remetido ao juiz.</strong>
+          O prazo é de 30 dias. Remeta pelo PJe, com a certidão integral do registro,
+          e registre aqui.</small></p>
+        <label>Número do processo no PJe <input name="remessa_processo"></label>
+        <label>Data da remessa <input type="date" name="remessa_data"></label>
+        <div class="actions"><button class="button">Registrar a remessa</button></div>
+      </form>
+    {% endif %}
+  {% else %}
+    <p style="padding:0 14px 14px"><small>O termo negativo não se remete ao juiz:
+      fica arquivado em pasta própria da serventia.</small></p>
+  {% endif %}
+</section>
+{% endif %}
+
 {% if assento.situacao == 'ATIVO' %}
 <section class="panel">
   <div class="panel-head"><span>Lançar no assento</span><small>uma tela para cada ato</small></div>

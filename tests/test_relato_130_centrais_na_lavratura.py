@@ -67,6 +67,7 @@ def nascimento(con, *, local_ibge=1, **kw):
                  {"papel": "MAE", "nome": "MARIA EXEMPLO"},
                  {"papel": "PAI", "nome": "IGNORADO"},
                  {"papel": "DECLARANTE", "nome": "MARIA EXEMPLO"}],
+        paternidade=kw.pop("paternidade", {"tipo": "NEGATIVO"}),  # 23/10/2026
         **kw)
 
 

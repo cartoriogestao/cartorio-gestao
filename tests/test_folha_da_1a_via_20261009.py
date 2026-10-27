@@ -70,7 +70,9 @@ def casa(tmp_path):
     banco = Path(glob.glob(f"{dados}/*.sqlite3")[0])
     db = Database(banco)
     db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
-    db.create_user("robo_teste", "Robo de Testes", SENHA, "ADMIN", eh_robo=1)
+    # ROBO NAO ADMINISTRA (A6, 22/10/2026): a conta de robo so pode ser USER ou
+    # AUDITOR. Lavrar e do USER, e e isso que estes testes medem.
+    db.create_user("robo_teste", "Robo de Testes", SENHA, "USER", eh_robo=1)
     con = sqlite3.connect(banco)
     with con:
         PP.receber_remessa(con, fornecedor="ARPENBRASIL", serie="IA",
@@ -97,7 +99,8 @@ def _minimo(especie):
                 "local_fato_nome": "Hospital Municipal",
                 "ibge_local": "1",    # relato #130: o SIRC exige
                 "filiacao1_nome": "MARIA TESTE", "filiacao2_nome": "IGNORADO",
-                "declarante_nome": "MARIA TESTE"}
+                "declarante_nome": "MARIA TESTE",
+                "paternidade_tipo": "NEGATIVO"}   # pai ignorado: termo (23/10/2026)
     return {"pessoa_nome": "FALECIDO TESTE FOLHA", "data_fato": "2026-10-01",
             "local_fato_nome": "Hospital Municipal", "numero_do": "98765",
             "filiacao1_nome": "IGNORADO", "filiacao2_nome": "IGNORADO",

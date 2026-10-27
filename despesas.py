@@ -825,17 +825,21 @@ def relatorio_do_mes(con, mes: str) -> dict:
             "total": total}
 
 
-def relatorio_csv(rel: Mapping[str, Any]) -> str:
-    """O relatório em CSV («;» e vírgula decimal), para a contabilidade."""
-    linhas = ["data_pagamento;natureza;categoria;descricao;favorecido;documento_favorecido;"
-              "especie_documento;numero_documento;valor;forma;situacao"]
-    for d in rel["linhas"]:
-        linhas.append(";".join(str(x).replace(";", ",") for x in (
-            d["paga_em"], d["natureza"], CATEGORIAS.get(d["categoria"], ("?",))[0],
-            d["descricao"], d["beneficiario_nome"], d["beneficiario_documento"],
-            d["documento_especie"], d["documento_numero"],
-            reais(int(d["valor"])).replace(".", ""), d["forma"], d["situacao"])))
-    return "\r\n".join(linhas) + "\r\n"
+#: O cabeçalho do relatório em CSV, para a contabilidade.
+CABECALHO_DO_CSV = ("data_pagamento", "natureza", "categoria", "descricao", "favorecido",
+                    "documento_favorecido", "especie_documento", "numero_documento",
+                    "valor", "forma", "situacao")
+
+
+def linhas_do_csv(rel: Mapping[str, Any]) -> list[tuple]:
+    """As linhas do relatório em CSV (vírgula decimal). A tela entrega pelo
+    `csv_seguro`, que põe tudo entre aspas e desarma fórmula — o «;» dentro do
+    campo já não precisa virar vírgula."""
+    return [(d["paga_em"], d["natureza"], CATEGORIAS.get(d["categoria"], ("?",))[0],
+             d["descricao"], d["beneficiario_nome"], d["beneficiario_documento"],
+             d["documento_especie"], d["documento_numero"],
+             reais(int(d["valor"])).replace(".", ""), d["forma"], d["situacao"])
+            for d in rel["linhas"]]
 
 
 def lancamentos_para_o_siaferj(rel: Mapping[str, Any]) -> list[dict]:

@@ -17,8 +17,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from flask import Response, abort, flash, redirect, render_template, request, url_for
+from flask import abort, flash, redirect, render_template, request, url_for
 
+import csv_seguro as CSVS
 import despesas as DP
 import despesas_inter as INTER
 
@@ -231,9 +232,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return redirect(url_for("despesas_relatorio"))
         if request.args.get("formato") == "csv":
             audit("DESPESAS_RELATORIO_EXPORTADO", "dp_despesas", None, {"mes": mes})
-            return Response(DP.relatorio_csv(rel).encode("utf-8-sig"), mimetype="text/csv",
-                            headers={"Content-Disposition":
-                                     f'attachment; filename="despesas-{mes}.csv"'})
+            # pelo `csv_seguro`: tudo entre aspas e fórmula desarmada (o nome do
+            # favorecido e a descrição vêm de quem cadastrou)
+            return CSVS.resposta(f"despesas-{mes}.csv", DP.CABECALHO_DO_CSV,
+                                 DP.linhas_do_csv(rel))
         return render_template("despesas_relatorio.html", rel=rel, mes=mes,
                                siaferj=DP.lancamentos_para_o_siaferj(rel),
                                categorias=DP.CATEGORIAS, naturezas=DP.NATUREZAS,

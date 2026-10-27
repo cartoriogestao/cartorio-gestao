@@ -8,15 +8,28 @@ GET /whatsapp e as demais — mesmo login do resto do app.
 
 UM RELOGIO SO PARA A CASA INTEIRA: as rotas passam `db.now()`, o mesmo que
 grava o resto do sistema.
+
+O ATENDENTE COM IA, AS ETIQUETAS, O SETOR E O PAINEL (26/10/2026)
+    /whatsapp/atendente — a configuracao do atendente (so o ADMIN grava) e o
+    registro das respostas automaticas; /whatsapp/painel — o prazo por setor;
+    na conversa, etiquetas, transferencia, assumir, passar para pessoa e
+    devolver a IA. NENHUMA rota fala com a rede dentro de `db.transaction()`:
+    o puxar busca fora e aplica dentro; o enviar monta, posta e grava.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from flask import abort, flash, redirect, render_template, request, url_for
 
+import agente_provedores as PROV
 import serventia as SERV
 import tetos_de_entrada as TETO
+import wa_atendente as ATENDENTE
 import wa_balcao as WA
+import wa_fila as FILA
 import wa_puxar as PUXAR
+import wa_schema as SCH
 from seguranca_web import PRATICA  # M2 (LX11): o AUDITOR vê e não grava
 
 
@@ -35,6 +48,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
 
     def _con():
         return db.connect()
+
+    def _quem() -> str:
+        try:
+            return app.extensions["usuario_nome"]() or ""
+        except Exception:                               # noqa: BLE001
+            return ""
+
+    def _pasta() -> Path:
+        return Path(app.config["DATA_DIR"])
 
     @app.route("/whatsapp/webhook", methods=["GET", "POST"])
     def whatsapp_webhook():
@@ -100,10 +122,84 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     @app.route("/whatsapp")
     @login_required
     def whatsapp_lista():
+        setor = request.args.get("setor", "")
+        etiqueta = request.args.get("etiqueta", "")
+        so = request.args.get("so", "")
         with _con() as con:
-            linhas = WA.listar_conversas(con)
+            linhas = FILA.listar(con, agora=db.now(), setor=setor,
+                                 etiqueta=etiqueta, so_abertas=(so == "abertas"),
+                                 so_vencidas=(so == "vencidas"))
             cfg = WA.config_para_tela(con)
-        return render_template("whatsapp_lista.html", linhas=linhas, cfg=cfg)
+            ia = ATENDENTE.configuracao(con)
+            etiquetas = FILA.etiquetas_em_uso(con)
+        return render_template("whatsapp_lista.html", linhas=linhas, cfg=cfg,
+                               ia=ia, setores=SCH.SETORES, etiquetas=etiquetas,
+                               filtro={"setor": setor, "etiqueta": etiqueta,
+                                       "so": so})
+
+    @app.route("/whatsapp/painel")
+    @login_required
+    def whatsapp_painel():
+        with _con() as con:
+            p = FILA.painel(con, agora=db.now())
+            hoje = ATENDENTE.resumo_do_dia(con, agora=db.now())
+            ia = ATENDENTE.configuracao(con)
+        return render_template("whatsapp_painel.html", p=p, hoje=hoje, ia=ia)
+
+    @app.route("/whatsapp/atendente", methods=["GET", "POST"])
+    @login_required
+    def whatsapp_atendente():
+        """O atendente com IA: ver é de todos; gravar é só do ADMIN — é ele que
+        liga a resposta automática e aprova o texto-base (26/10/2026)."""
+        if request.method == "POST":
+            if app.extensions["usuario_papel"]() != "ADMIN":
+                abort(403)
+            try:
+                with db.transaction() as con:
+                    avisos = ATENDENTE.gravar_configuracao(
+                        con, request.form, por=_quem(), agora=db.now())
+            except ATENDENTE.AtendenteErro as erro:
+                flash(str(erro), "danger")
+                return redirect(url_for("whatsapp_atendente"))
+            audit("wa_atendente_config", "wa_config", None,
+                  {"ia_ligada": request.form.get("ia_ligada") == "1",
+                   "audio_ligado": request.form.get("audio_ligado") == "1"})
+            for aviso in avisos:
+                flash(aviso, "warning")
+            flash("Configuração do atendente guardada.", "success")
+            return redirect(url_for("whatsapp_atendente"))
+        with _con() as con:
+            ia = ATENDENTE.configuracao(con)
+            linhas = ATENDENTE.registros(con, limite=100)
+            hoje = ATENDENTE.resumo_do_dia(con, agora=db.now())
+            pode_enviar = WA.pode_enviar_meta(con)
+        return render_template(
+            "whatsapp_atendente.html", ia=ia, linhas=linhas, hoje=hoje,
+            pode_enviar=pode_enviar,
+            # SÓ O NOME E SE HÁ CHAVE: nenhum pedaço da chave chega ao HTML
+            # desta tela, que todo login vê.
+            provedores=[{"id": p["id"], "nome": p["nome"], "tem_chave": p["tem_chave"]}
+                        for p in PROV.catalogo_para_tela(_pasta())],
+            rotulos=ATENDENTE.ROTULO_DO_CASO, exemplo=ATENDENTE.TEXTO_BASE_EXEMPLO,
+            tentativas=ATENDENTE.TENTATIVAS_POR_DIA,
+            e_admin=app.extensions["usuario_papel"]() == "ADMIN")
+
+    @app.route("/whatsapp/atendente/rodar", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def whatsapp_atendente_rodar():
+        r = ATENDENTE.rodada(db, pasta_de_dados=_pasta(),
+                             limite=ATENDENTE.CONVERSAS_NA_TELA)
+        audit("wa_atendente_rodada", "wa_conversa", None,
+              {"audios": r.get("audios"), "conversas": len(r.get("conversas") or [])})
+        if r.get("desligado"):
+            flash("O atendente e a transcrição estão desligados. Nada foi feito.",
+                  "warning")
+        else:
+            flash(f"Atendente: {len(r.get('conversas') or [])} conversa(s) "
+                  f"atendida(s), {r.get('audios') or 0} áudio(s) transcrito(s).",
+                  "success")
+        return redirect(url_for("whatsapp_lista"))
 
     @app.route("/whatsapp/config", methods=["GET", "POST"])
     @login_required
@@ -132,9 +228,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     @login_required
     @roles_required(*PRATICA)
     def whatsapp_puxar():
-        with db.transaction() as con:
-            r = PUXAR.puxar_pendentes(
-                con, serventia=_serventia(), agora=db.now())
+        # A REDE FORA DA TRANSAÇÃO (26/10/2026): busca com a conexão de
+        # leitura, e só a aplicação abre a transação de escrita.
+        with _con() as con:
+            achado = PUXAR.buscar_pendentes(con)
+        if achado.get("ok"):
+            with db.transaction() as con:
+                r = PUXAR.aplicar_itens(con, achado["itens"],
+                                        serventia=_serventia(), agora=db.now())
+        else:
+            r = achado
         audit("wa_puxar", "wa_conversa", None,
               {"ok": r.get("ok"), "aplicadas": r.get("aplicadas")})
         if r.get("ok"):
@@ -142,6 +245,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 f"Caixa-postal: {r.get('aplicadas') or 0} nova(s), "
                 f"{r.get('repetidas') or 0} ja vista(s).",
                 "success")
+            # O ATENDENTE RODA DEPOIS, FORA DA TRANSAÇÃO, e com poucas
+            # conversas: quem clicou espera a tela, e o resto fica para a
+            # rodada seguinte. Desligado, não faz nada.
+            atendeu = ATENDENTE.rodada(db, pasta_de_dados=_pasta(),
+                                       limite=ATENDENTE.CONVERSAS_NA_TELA)
+            if not atendeu.get("desligado") and (
+                    atendeu.get("conversas") or atendeu.get("audios")):
+                flash(f"Atendente: {len(atendeu.get('conversas') or [])} "
+                      f"conversa(s) atendida(s), {atendeu.get('audios') or 0} "
+                      "áudio(s) transcrito(s).", "success")
         else:
             flash(
                 "Nao puxei a caixa-postal: "
@@ -156,9 +269,120 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         with _con() as con:
             d = WA.conversa(con, conversa_id)
             pode = WA.pode_enviar_meta(con)
+            if d:
+                d["etiquetas"] = FILA.etiquetas(con, conversa_id)
+                d["eventos"] = FILA.eventos(con, conversa_id)
+                d["setor"] = FILA.setor_valido(d.get("setor")) or SCH.SETOR_PADRAO
+                d["modo"] = d.get("modo") or SCH.MODO_IA
+                d["registros"] = ATENDENTE.registros(con, conversa_id=conversa_id,
+                                                     limite=20)
+                usuarios = FILA.usuarios_ativos(con)
+                sugeridas = FILA.etiquetas_em_uso(con)
+                ia = ATENDENTE.configuracao(con)
         if not d:
             abort(404)
-        return render_template("whatsapp_conversa.html", c=d, pode_enviar=pode)
+        return render_template("whatsapp_conversa.html", c=d, pode_enviar=pode,
+                               setores=SCH.SETORES, usuarios=usuarios,
+                               sugeridas=sugeridas, ia=ia,
+                               rotulos_evento=FILA.ROTULO_DO_EVENTO,
+                               rotulos_caso=ATENDENTE.ROTULO_DO_CASO)
+
+    def _na_conversa(conversa_id: int, acao, auditoria: str, detalhe=None):
+        """Faz `acao(con)` na transação; ValueError vira aviso na tela."""
+        try:
+            with db.transaction() as con:
+                if not WA.conversa(con, conversa_id):
+                    abort(404)
+                acao(con)
+        except ValueError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
+        audit(auditoria, "wa_conversa", conversa_id, detalhe)
+        return None
+
+    @app.route("/whatsapp/<int:conversa_id>/etiqueta", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def whatsapp_etiqueta(conversa_id: int):
+        etiqueta = request.form.get("etiqueta", "")
+        tirar = request.form.get("acao") == "tirar"
+        if not FILA.normalizar_etiqueta(etiqueta):
+            flash("Escreva a etiqueta.", "warning")
+            return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
+
+        def acao(con):
+            if tirar:
+                FILA.tirar_etiqueta(con, conversa_id, etiqueta, por=_quem(),
+                                    quando=db.now())
+            else:
+                FILA.por_etiqueta(con, conversa_id, etiqueta, por=_quem(),
+                                  quando=db.now())
+        volta = _na_conversa(conversa_id, acao, "wa_etiqueta",
+                             {"etiqueta": FILA.normalizar_etiqueta(etiqueta),
+                              "tirar": tirar})
+        return volta or redirect(url_for("whatsapp_conversa",
+                                         conversa_id=conversa_id))
+
+    @app.route("/whatsapp/<int:conversa_id>/transferir", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def whatsapp_transferir(conversa_id: int):
+        bruto = (request.form.get("responsavel_id") or "").strip()
+        responsavel = int(bruto) if bruto.isdigit() else None
+        setor = request.form.get("setor", "")
+
+        def acao(con):
+            FILA.transferir(con, conversa_id, setor, responsavel_id=responsavel,
+                            por=_quem(), nota=request.form.get("nota", ""),
+                            quando=db.now())
+        volta = _na_conversa(conversa_id, acao, "wa_transferir",
+                             {"setor": setor, "responsavel_id": responsavel})
+        if volta:
+            return volta
+        flash(f"Conversa transferida para {FILA.nome_do_setor(setor)}.", "success")
+        return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
+
+    @app.route("/whatsapp/<int:conversa_id>/assumir", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def whatsapp_assumir(conversa_id: int):
+        uid = app.extensions["usuario_id"]()
+        volta = _na_conversa(
+            conversa_id, lambda con: FILA.assumir(con, conversa_id, uid,
+                                                  por=_quem(), quando=db.now()),
+            "wa_assumir", None)
+        return volta or redirect(url_for("whatsapp_conversa",
+                                         conversa_id=conversa_id))
+
+    @app.route("/whatsapp/<int:conversa_id>/passar", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def whatsapp_passar(conversa_id: int):
+        volta = _na_conversa(
+            conversa_id, lambda con: FILA.passar_para_pessoa(
+                con, conversa_id, setor=request.form.get("setor", ""),
+                motivo=request.form.get("motivo", "") or "passada pela tela",
+                por=_quem(), quando=db.now()),
+            "wa_passar", None)
+        if volta:
+            return volta
+        flash("A IA não responde mais nesta conversa até alguém a devolver.",
+              "success")
+        return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
+
+    @app.route("/whatsapp/<int:conversa_id>/devolver", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def whatsapp_devolver(conversa_id: int):
+        volta = _na_conversa(
+            conversa_id, lambda con: FILA.devolver_a_ia(
+                con, conversa_id, por=_quem(), quando=db.now()),
+            "wa_devolver", None)
+        if volta:
+            return volta
+        flash("Conversa devolvida ao atendente com IA (se ele estiver ligado).",
+              "success")
+        return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
 
     @app.route("/whatsapp/<int:conversa_id>/rascunho", methods=["POST"])
     @login_required
@@ -177,17 +401,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     @login_required
     @roles_required(*PRATICA)
     def whatsapp_enviar(conversa_id: int):
+        # MONTAR, POSTAR E GRAVAR (26/10/2026): o POST na Graph ficava dentro
+        # da transação, com a trava de escrita da casa presa até oito segundos.
         try:
-            with db.transaction() as con:
-                if not WA.conversa(con, conversa_id):
+            with _con() as con:
+                d = WA.conversa(con, conversa_id)
+                if not d:
                     abort(404)
-                WA.enviar_rascunho(con, conversa_id, agora=db.now())
+                texto = (d.get("rascunho") or "").strip()
+                if not texto:
+                    raise WA.EnvioErro("Nao ha rascunho para enviar.")
+                pedido = WA.montar_envio(con, d["wa_id"], texto)
+            meta_id = WA.postar_envio(pedido)
+            with db.transaction() as con:
+                WA.gravar_saida(con, conversa_id, texto, meta_id, autor=_quem(),
+                                agora=db.now())
         except WA.EnvioErro as e:
             flash(str(e), "danger")
             return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id)), 400
         audit("wa_enviar", "wa_conversa", conversa_id, {"ok": True})
-        flash("Mensagem enviada no WhatsApp. Autoenvio continua desligado.",
-              "success")
+        flash("Mensagem enviada no WhatsApp.", "success")
         return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
 
     @app.route("/whatsapp/<int:conversa_id>/resolver", methods=["POST"])

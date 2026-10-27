@@ -59,9 +59,42 @@ import os  # noqa: E402
 # próprio no PostgreSQL de teste, e o schema é apagado quando o teste acaba.
 # Sem a variável, a suíte roda no SQLite como sempre.
 BACKEND_PG = os.environ.get("CG_TEST_BACKEND", "").strip().lower() == "pg"
+def _banco_do_trabalhador(dsn: str, trabalhador: str) -> str:
+    """O DSN do banco próprio deste trabalhador do xdist (`<banco>_gw3`).
+
+    UM BANCO POR TRABALHADOR (27/10/2026): a trava consultiva do PostgreSQL vale
+    para o BANCO inteiro, e não para o schema. Com todos os trabalhadores no
+    mesmo banco, dois testes de schemas diferentes que pegam as travas de
+    assunto em ordem trocada (`nu_lugares.lugar` e `nu_numeracao.proximo`, cada
+    um atrás da trava única da SUA ponte) davam deadlock — `test_escrituracao`
+    caía de vez em quando. Em bancos separados, as travas não se cruzam.
+    O papel de teste que não pode criar banco continua no banco único, como era.
+    """
+    import psycopg
+    from psycopg import conninfo, sql
+    partes = conninfo.conninfo_to_dict(dsn)
+    atual = partes.get("dbname") or "postgres"
+    if atual.endswith(f"_{trabalhador}"):
+        # O processo filho de um teste herda o DSN já trocado (e a variável do
+        # trabalhador): trocar de novo o mandaria para outro banco, vazio.
+        return dsn
+    nome = f"{atual}_{trabalhador}"
+    try:
+        with psycopg.connect(dsn, autocommit=True) as pg:
+            if not pg.execute("SELECT 1 FROM pg_database WHERE datname = %s",
+                              (nome,)).fetchone():
+                pg.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(nome)))
+    except psycopg.Error:
+        return dsn
+    return conninfo.make_conninfo(dsn, dbname=nome)
+
+
 if BACKEND_PG:
     if not os.environ.get("CG_PG_DSN", "").strip():
         raise RuntimeError("CG_TEST_BACKEND=pg exige CG_PG_DSN")
+    if os.environ.get("PYTEST_XDIST_WORKER", "").strip():
+        os.environ["CG_PG_DSN"] = _banco_do_trabalhador(
+            os.environ["CG_PG_DSN"], os.environ["PYTEST_XDIST_WORKER"].strip())
     import banco_pg  # noqa: E402
 
     banco_pg.instalar_desvio()

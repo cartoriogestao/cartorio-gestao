@@ -3,6 +3,14 @@
 Fatia 1: classificador + rascunho por regras. Sem API paga de modelo.
 Autoenvio desligado: isto so monta texto para o escrevente conferir.
 
+REVOGADO EM PARTE PELO OFICIAL EM 26/10/2026: a IA passou a poder responder
+sozinha em QUATRO casos — andamento do protocolo (depois da identificacao por
+numero + codigo de acompanhamento), duvidas gerais pelo texto-base aprovado,
+valores pela tabela (sempre ESTIMATIVA) e transcricao do audio. Quem faz isso e
+`wa_atendente.py`, com interruptor geral desligado de fabrica e registro de
+cada resposta. ESTE modulo continua so montando rascunho: os textos daqui nao
+saem sozinhos, e o que ele diz abaixo segue valendo para o rascunho.
+
 NUNCA entra no rascunho: CPF, valor, protesto concreto, certidao, instrumento
 ou dado de livro. Assuntos livres no futuro: horario, endereco, lista de
 documentos — e mesmo esses, o horario de expediente NAO se inventa.

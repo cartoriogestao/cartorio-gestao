@@ -100,9 +100,11 @@ import revisao_transcricao as RTRANS
 import ri_dominial as RIDOM
 import ri_certidao_negativa as RINEG
 import ri_prenotacao_prazo as PRAZO
+import onr_acompanhamento as ACOMP  # o andamento no ONR (26/10/2026)
 import ri_pedidos as PED
 import ri_busca_acervo as BUSCA  # busca em texto livre no teor (26/10/2026)
 import ri_situacao_juridica as SITJ  # o resumo da situacao juridica (26/10/2026)
+import ri_nota_devolutiva as RND
 import ri_rascunho as RASC
 import ri_cnm as CNM
 import ri_correcoes as RC
@@ -970,7 +972,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         linha = q1("""SELECT details FROM audit_logs
                        WHERE entity_type='RI_CERTIDAO' AND entity_id=%s
                          AND action IN ('RI_CERTIDAO_EMITIDA',
-                                        'RI_CERTIDAO_NEGATIVA_EMITIDA')
+                                        'RI_CERTIDAO_NEGATIVA_EMITIDA',
+                                        'RI_CERTIDAO_POSITIVA_EMITIDA')
                        ORDER BY id DESC LIMIT 1""", (int(certidao_id),))
         if not linha or not linha["details"]:
             return None
@@ -1002,7 +1005,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     def _codigo_base_da_certidao() -> dict:
         """O item base de cada tipo de certidão do RI, a negativa inclusive. Só calcula."""
         return {**AS.CODIGO_DA_CERTIDAO_DO_RI,
-                RINEG.TIPO: AS.CODIGO_DA_CERTIDAO_NEGATIVA_DE_IMOVEL}
+                RINEG.TIPO: AS.CODIGO_DA_CERTIDAO_NEGATIVA_DE_IMOVEL,
+                RINEG.TIPO_POSITIVA: AS.CODIGO_DA_CERTIDAO_NEGATIVA_DE_IMOVEL}
 
     def _candidatos_da_certidao_do_ri(con, pedidos=None) -> list[dict]:
         """Os protocolos pagos que a escrevente pode escolher para a certidão. Só LÊ.
@@ -3113,6 +3117,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         criado_por=app.extensions["usuario_id"](),
                         ri_protocolo_id=novo)
                     geral_numero = geral["numero"]
+                # O ANDAMENTO NO ONR («Título prenotado») se anota NA MESMA
+                # transação: prenotação que não entra não deixa andamento na
+                # fila. O envio é outra rotina, fora de transação — e o gancho
+                # nunca derruba a prenotação (`onr_acompanhamento`).
+                ACOMP.anotar_prenotacao(con, novo, agora=db.now())
             # O SELO SAI AGORA, FORA DA TRANSACAO — «o selo deve ser emitido
             # quando praticado o ato». A prenotacao E ato: tem livro, numero,
             # custas e selo proprio, e 829 dela estao no acervo.
@@ -3418,7 +3427,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # O histórico sai da auditoria que o sistema já grava — não de uma
         # segunda tabela só para esta tela. Duas verdades sobre o mesmo ato é
         # como se perde a que vale.
-        historico = q("""SELECT ts, username_snapshot AS quem, action, details
+        historico = q("""SELECT ts, username_snapshot AS quem, action, details,
+                                agente, a_mando_de
                          FROM audit_logs
                          WHERE entity_type='RI_PROTOCOLO' AND entity_id=%s
                          ORDER BY id DESC LIMIT 30""", (protocolo_id,))
@@ -3450,11 +3460,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             with db.connect() as _pd:
                 docs_protocolo_geral = PDOC.documentos(
                     _pd, int(caixa_protocolo_id))["ativos"]
+        # O QUE ESTE TÍTULO JÁ DISSE AO ONR (Acompanhamento de Títulos) — só lê.
+        with db.connect() as _ac:
+            acompanhamento_onr = ACOMP.da_prenotacao(_ac, protocolo_id)
         return render_template("ri_protocolo_ver.html", p=dict(p),
+                               acompanhamento_onr=acompanhamento_onr,
                                documentos=documentos, e_imagem=RDOC.e_imagem,
                                docs_protocolo_geral=docs_protocolo_geral,
                                depositos=depositos, saldo=reais(saldo),
                                restam=restam, notas=notas, historico=historico,
+                               TIPOS_DO_TITULO=RND.TIPOS_DE_DOCUMENTO,
+                               ROTULO_DO_TIPO=RND.ROTULO_DO_TIPO,
+                               nota_aberta=next((n for n in notas
+                                                 if n["situacao"] == "ABERTA"), None),
+                               nota_recusa=RND.por_que_nao_emite(p),
                                qualificacoes=qualificacoes,
                                etapa_do_pedido=etapa_do_pedido,
                                ROTULO_DA_ETAPA=PED.ROTULO_DA_ETAPA,
@@ -3526,7 +3545,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN", "MANAGER")
     def ri_protocolo_prazo(protocolo_id):
         """Suspende ou retoma o prazo da prenotacao (TJMA 452, § 3º)."""
-        _protocolo_ou_404(protocolo_id)
+        antes = _protocolo_ou_404(protocolo_id)
         acao = request.form.get("acao")
         quem = (app.extensions["usuario_nome"]() or "").strip() or None
         try:
@@ -3536,10 +3555,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     PRAZO.suspender(con, protocolo_id, motivo=motivo,
                                     quem=quem, hoje=date.today())
                     feito = {"acao": "suspender", "motivo": motivo}
+                    # Suspensão por DÚVIDA é a «Suscitação de dúvida» do ONR;
+                    # as outras hipóteses não têm status lá (o gancho confere).
+                    ACOMP.anotar_duvida(con, protocolo_id, agora=db.now())
                 elif acao == "retomar":
                     feito = {"acao": "retomar"} | PRAZO.retomar(
                         con, protocolo_id, quem=quem, hoje=date.today(),
                         feriados=_feriados())
+                    # A retomada empurra o limite: é o «Prorrogado o prazo da
+                    # prenotação» do ONR (sem dia a mais, nada se anota).
+                    ACOMP.anotar_prorrogacao(
+                        con, protocolo_id, de=antes["data_limite"],
+                        para=feito["data_limite"], dias=feito["dias"], agora=db.now())
                 else:
                     raise PRAZO.PrazoError("Ação desconhecida.")
         except PRAZO.PrazoError as erro:
@@ -3785,19 +3812,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not arquivos:
             flash("Escolha o arquivo antes de anexar.", "danger")
             return redirect(url_for("ri_protocolo_ver", protocolo_id=protocolo_id))
-        pasta = _pasta_dos_documentos(p["numero"])
         descricao = (request.form.get("descricao") or "").strip() or None
-        uid = _usuario_id_atual()
-        nomes = []
-        ids = []
-        for arquivo in arquivos:
-            info = save_upload(arquivo, pasta)
-            anexo_id = db.add_attachment(
-                RDOC.ENTIDADE_RI, protocolo_id, info, uid, descricao)
-            nomes.append(info["original_name"])
-            ids.append(anexo_id)
-        audit("RI_PRENOTACAO_DOCUMENTO", "RI_PROTOCOLO", protocolo_id,
-              {"anexos": ids, "arquivos": nomes, "qtd": len(nomes)})
+        tipo = (request.form.get("tipo") or "").strip() or None
+        if tipo and tipo not in RND.ROTULO_DO_TIPO:
+            flash(f"«{tipo}» não é um tipo de documento que eu conheça.", "danger")
+            return redirect(url_for("ri_protocolo_ver", protocolo_id=protocolo_id))
+        # O ANEXO PODE SER A NOTA, OU O CUMPRIMENTO DELA — 25/10/2026. Medido: das
+        # notas desta casa, as feitas em Word só eram anexadas, e o protocolo ficava
+        # ABERTO, sem prazo de exigência; nenhuma tinha sido cadastrada pela tela.
+        if tipo == RND.NOTA:
+            return _emitir_nota_devolutiva(p, arquivos=arquivos, descricao=descricao)
+        if tipo == RND.CUMPRIMENTO:
+            with db.connect() as _c:
+                aberta = RND.nota_aberta(_c, protocolo_id)
+            if aberta:
+                return _registrar_reingresso(aberta, p, arquivos=arquivos, descricao=descricao)
+        ids, nomes = _anexar_ao_protocolo(p, arquivos, descricao, tipo=tipo)
+        if tipo == RND.CUMPRIMENTO:
+            flash("Não há nota devolutiva aguardando cumprimento neste protocolo: o "
+                  "documento foi anexado como cumprimento de exigência, sem registrar "
+                  "reingresso.", "warning")
+            return redirect(url_for("ri_protocolo_ver", protocolo_id=protocolo_id))
         if len(nomes) == 1:
             flash(f"{nomes[0]} anexado a prenotacao {p['numero']}. "
                   f"Ele aparece na tela de lavrar o ato que sair deste protocolo.",
@@ -3807,6 +3842,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   f"{', '.join(nomes)}. Aparecem na tela de lavrar o ato.",
                   "success")
         return redirect(url_for("ri_protocolo_ver", protocolo_id=protocolo_id))
+
+    def _anexar_ao_protocolo(p, arquivos, descricao, *, tipo=None):
+        """Guarda os arquivos na pasta do protocolo e os anexa a ele. GRAVA.
+
+        Devolve (ids, nomes). O tipo, quando escolhido, fica no próprio anexo
+        (`attachments.documento_tipo`) — a mesma coluna do protocolo geral.
+        """
+        pasta = _pasta_dos_documentos(p["numero"])
+        uid = _usuario_id_atual()
+        ids, nomes = [], []
+        for arquivo in arquivos:
+            info = save_upload(arquivo, pasta)
+            ids.append(db.add_attachment(RDOC.ENTIDADE_RI, p["id"], info, uid, descricao))
+            nomes.append(info["original_name"])
+        if tipo:
+            with db.transaction() as con:
+                for anexo in ids:
+                    RND.marcar_anexo(con, p["id"], anexo, tipo=tipo, descricao=descricao)
+        audit("RI_PRENOTACAO_DOCUMENTO", "RI_PROTOCOLO", p["id"],
+              {"anexos": ids, "arquivos": nomes, "qtd": len(nomes), "tipo": tipo})
+        return ids, nomes
 
     def _usuario_id_atual():
         from flask import session
@@ -8100,50 +8156,73 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      ORDER BY numero DESC, id DESC""", (protocolo_id,))
 
         if request.method == "GET":
+            with db.connect() as _c:
+                documentos = RDOC.documentos_de(_c, RDOC.ENTIDADE_RI, protocolo_id)
             return render_template("ri_nota.html", p=p, notas=notas,
-                                   hoje=date.today().isoformat())
+                                   hoje=date.today().isoformat(),
+                                   anexos_da_nota=lambda numero: RND.anexos_da_nota(
+                                       documentos, numero),
+                                   exigencias_da=RND.exigencias_da,
+                                   por_que_nao_emite=RND.por_que_nao_emite(p))
 
+        # O ARQUIVO DA NOTA PODE VIR JUNTO (25/10/2026): a nota desta casa é redigida
+        # em Word e assinada; com o arquivo, as exigências digitadas ficam opcionais.
+        arquivos = [f for f in request.files.getlist("arquivo_nota") if f and f.filename]
+        return _emitir_nota_devolutiva(p, arquivos=arquivos)
+
+    def _emitir_nota_devolutiva(p, *, arquivos, descricao=None):
+        """A nota devolutiva, pela tela da nota ou pelo anexo do protocolo — uma porta só.
+
+        A recusa vem antes de guardar o arquivo: arquivo guardado como «nota» de um
+        protocolo que não pode recebê-la seria um papel sem lugar.
+        """
         exigencias = [e.strip() for e in
                       (request.form.get("exigencias") or "").splitlines() if e.strip()]
-        if not exigencias:
-            flash("Informe ao menos uma exigência, uma por linha.", "danger")
-            return redirect(url_for("ri_nota_devolutiva", protocolo_id=protocolo_id))
-
-        with db.transaction() as con:
-            bd = banco(con)
-            bd.travar("ri_notas_devolutivas.numero")
-            ultimo = bd.valor("""SELECT MAX(numero) AS n FROM ri_notas_devolutivas
-                                 WHERE protocolo_id=%s""", (protocolo_id,))
-            numero = int((ultimo or 0)) + 1
-            nota_id = bd.escrever(
-                """INSERT INTO ri_notas_devolutivas
-                   (protocolo_id, numero, data_nota, exigencias, fundamentacao,
-                    prazo_ate, situacao, emitida_em)
-                   VALUES (%s,%s,%s,%s,%s,%s, 'ABERTA', %s)
-                   RETURNING id""",
-                (protocolo_id, numero,
-                 (request.form.get("data_nota") or "").strip() or db.now()[:10],
-                 json.dumps(exigencias, ensure_ascii=False),
-                 (request.form.get("fundamentacao") or "").strip() or None,
-                 p["data_limite"], db.now()),
-            )[0]["id"]
-            nota_id = int(nota_id)
-            bd.escrever("UPDATE ri_protocolos SET situacao='DEVOLVIDO' WHERE id=%s",
-                        (protocolo_id,))
-            # A NOTA É A QUALIFICAÇÃO NEGATIVA, e as duas nascem juntas: nota
-            # sem esta linha faria o painel dos pedidos dizer «a qualificar»
-            # de um título que já foi devolvido.
-            PED.registrar_negativa(
-                con, protocolo_id, nota_id=nota_id,
-                fundamentacao=(request.form.get("fundamentacao") or "").strip() or None,
-                quem=(app.extensions["usuario_nome"]() or "").strip() or None,
-                usuario_id=app.extensions["usuario_id"](), agora=db.now())
-
-        audit("RI_NOTA_DEVOLUTIVA", "RI_NOTA", nota_id,
-              {"protocolo": p["numero"], "numero": numero, "exigencias": len(exigencias)})
-        flash(f"Nota devolutiva nº {numero} emitida com {len(exigencias)} exigência(s). "
-              f"O protocolo passou a devolvido; a prenotação continua correndo.", "success")
-        return redirect(url_for("ri_nota_odt", nota_id=nota_id))
+        voltar = redirect(url_for("ri_nota_devolutiva", protocolo_id=p["id"]))
+        motivo = RND.por_que_nao_emite(p)
+        if motivo:
+            flash(motivo, "danger")
+            return voltar
+        if not exigencias and not arquivos:
+            flash("Informe ao menos uma exigência (uma por linha) ou anexe o arquivo da nota "
+                  "devolutiva.", "danger")
+            return voltar
+        anexos = _anexar_ao_protocolo(p, arquivos, descricao)[0] if arquivos else []
+        try:
+            with db.transaction() as con:
+                feito = RND.emitir(
+                    con, p, exigencias=exigencias,
+                    fundamentacao=request.form.get("fundamentacao"),
+                    data_nota=(request.form.get("data_nota") or "").strip() or db.now()[:10],
+                    quem=(app.extensions["usuario_nome"]() or "").strip() or None,
+                    usuario_id=app.extensions["usuario_id"](), agora=db.now(),
+                    anexos=anexos)
+                # «Nota de exigência» no Acompanhamento do ONR, com o texto da nota
+                # (o manual manda a nota de devolução nesse campo) — na transação dela.
+                ACOMP.anotar_nota_de_exigencia(con, feito["nota_id"], agora=db.now())
+                # A NOTA QUE NASCEU DA QUALIFICAÇÃO ASSISTIDA (26/10/2026): o
+                # rascunho da IA guarda qual nota a rota de sempre emitiu com as
+                # exigências dele — na mesma transação, para a ligação não ficar
+                # pela metade. Sem o campo (a nota escrita à mão), não faz nada.
+                import ri_qualificacao_ia as QIA
+                ligada_a_ia = QIA.ligar_a_nota(con, request.form.get("qualificacao_ia_id"),
+                                               p["id"], feito["nota_id"])
+        except RND.NotaError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        audit("RI_NOTA_DEVOLUTIVA", "RI_NOTA", feito["nota_id"],
+              {"protocolo": p["numero"], "numero": feito["numero"],
+               "exigencias": feito["exigencias"], "anexos": feito["anexos"],
+               "qualificacao_ia": (int(request.form["qualificacao_ia_id"])
+                                   if ligada_a_ia else None)})
+        if feito["anexos"]:
+            flash(f"Nota devolutiva nº {feito['numero']} cadastrada com o arquivo anexado. "
+                  f"O protocolo passou a devolvido; a prenotação continua correndo.", "success")
+            return redirect(url_for("ri_nota_devolutiva", protocolo_id=p["id"]))
+        flash(f"Nota devolutiva nº {feito['numero']} emitida com {feito['exigencias']} "
+              f"exigência(s). O protocolo passou a devolvido; a prenotação continua "
+              f"correndo.", "success")
+        return redirect(url_for("ri_nota_odt", nota_id=feito["nota_id"]))
 
     @app.route("/registro-imoveis/notas/<int:nota_id>.odt")
     @login_required
@@ -8159,7 +8238,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             lista = [n["exigencias"]]
 
         exig_html = "".join(
-            f"<p><b>{i}.</b> {e}</p>" for i, e in enumerate(lista, 1))
+            f"<p><b>{i}.</b> {e}</p>" for i, e in enumerate(lista, 1)) or (
+            # Nota cadastrada pelo ARQUIVO (25/10/2026): as exigências estão no papel
+            # assinado, anexado ao protocolo — dizer isso, e não imprimir lista vazia.
+            "<p>As exigências constam da nota devolutiva assinada, anexada ao "
+            "protocolo.</p>")
         contexto = {
             "nota": dict(n) | {"prazo_ate": fmt_date(n["prazo_ate"])},
             "protocolo": dict(p) | {"data_prenotacao": fmt_date(p["data_prenotacao"])},
@@ -8207,22 +8290,47 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not n:
             abort(404)
         p = q1("SELECT * FROM ri_protocolos WHERE id=%s", (n["protocolo_id"],))
-        quando = (request.form.get("data_reingresso") or "").strip() or db.now()[:10]
+        arquivos = [f for f in request.files.getlist("documento") if f and f.filename]
+        return _registrar_reingresso(n, p, arquivos=arquivos)
 
-        dentro_do_prazo = PRAZO.suspensa(p) or (
-            bool(p["data_limite"]) and quando <= p["data_limite"])
-        with db.transaction() as con:
-            bd = banco(con)
-            bd.escrever("""UPDATE ri_notas_devolutivas SET situacao=%s, data_reingresso=%s,
-                           observacao_reingresso=%s WHERE id=%s""",
-                        ("CUMPRIDA" if dentro_do_prazo else "FORA_DO_PRAZO", quando,
-                         (request.form.get("observacao") or "").strip() or None, nota_id))
-            if dentro_do_prazo:
-                bd.escrever("""UPDATE ri_protocolos SET situacao='ABERTO', data_reingresso=%s
-                               WHERE id=%s""", (quando, p["id"]))
+    def _registrar_reingresso(n, p, *, arquivos, descricao=None):
+        """O reingresso, pela tela da nota ou pelo anexo «cumprimento de exigência»."""
+        hoje = db.now()[:10]
+        quando = (request.form.get("data_reingresso") or "").strip() or hoje
+        observacao = request.form.get("observacao")
+        papel = app.extensions["usuario_papel"]()
+        if n["situacao"] != "ABERTA":
+            flash(f"A nota nº {n['numero']} não está aguardando cumprimento.", "danger")
+            return redirect(url_for("ri_nota_devolutiva", protocolo_id=p["id"]))
+        # A DATA SE CONFERE ANTES DE GUARDAR O ARQUIVO (revisão de segurança de
+        # 26/10/2026): ela decide a prioridade, e a recusa não pode deixar o
+        # documento do interessado gravado sem reingresso. A regra mora em
+        # `RND.conferir_data_do_reingresso`, e `RND.reingresso` a repete.
+        try:
+            quando = RND.conferir_data_do_reingresso(n, p, quando=quando, hoje=hoje,
+                                                     papel=papel, observacao=observacao)
+        except RND.NotaError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("ri_nota_devolutiva", protocolo_id=p["id"]))
+        anexos = _anexar_ao_protocolo(p, arquivos, descricao)[0] if arquivos else []
+        try:
+            with db.transaction() as con:
+                dentro_do_prazo = RND.reingresso(
+                    con, n, p, quando=quando, observacao=observacao, hoje=hoje,
+                    papel=papel, anexos=anexos)
+                if dentro_do_prazo:
+                    # «Título com reingresso» no ONR — só o reingresso no prazo, que
+                    # é o único que volta à mesma prenotação.
+                    ACOMP.anotar_reingresso(con, n["id"], agora=db.now())
+        except RND.NotaError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("ri_nota_devolutiva", protocolo_id=p["id"]))
+        nota_id = n["id"]
 
         audit("RI_REINGRESSO", "RI_NOTA", nota_id,
-              {"protocolo": p["numero"], "data": quando, "no_prazo": dentro_do_prazo})
+              {"protocolo": p["numero"], "data": quando, "no_prazo": dentro_do_prazo,
+               "registrado_em": hoje, "retroativo": quando < hoje, "papel": papel,
+               "anexos": anexos})
         if dentro_do_prazo:
             flash(f"Reingresso registrado no protocolo {p['numero']}, dentro da vigência "
                   f"da prenotação. O título aproveita o mesmo número de ordem.", "success")
@@ -8469,6 +8577,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                        params)
             total = len(grupos)
             for g in grupos:
+                # As candidatas da positiva (25/10/2026): só para quem é
+                # proprietário atual; o escrevente marca uma a uma.
+                g["candidatas"] = []
                 vinculos = q("""SELECT m.id, m.numero, m.livro_norm, m.logradouro,
                                        m.bairro, m.encerrada,
                                        MAX(p.proprietario_ativo) ativo, MAX(p.papel) papel
@@ -8477,6 +8588,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                 GROUP BY m.id
                                 ORDER BY coalesce(substring(m.numero FROM '^[0-9]+')::bigint, 0), m.id""",
                              (g["chave"],))
+                if any(v["ativo"] and not v["encerrada"] for v in vinculos):
+                    with db.connect() as _c_pos:
+                        g["candidatas"] = RINEG.candidatas_da_positiva(_c_pos, g["chave"])
                 pessoas.append({"pessoa": g, "matriculas": vinculos})
 
         with db.connect() as con_l:
@@ -8595,11 +8709,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/registro-imoveis/certidao-negativa", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def ri_emitir_certidao_negativa():
-        """Emite certidao negativa de imovel apos busca sem achado. ESCREVE."""
+        """Emite a certidao negativa (busca sem achado) — ou, por pessoa, a
+        POSITIVA com a relacao dos imoveis atuais (25/10/2026). ESCREVE."""
         modo = (request.form.get("modo") or "PESSOA").strip().upper()
         if modo not in ("PESSOA", "IMOVEL"):
             flash("Modo de busca invalido.", "danger")
             return redirect(url_for("ri_indicador_pessoal"))
+        # A POSITIVA POR PESSOA — 25/10/2026, o oficial: «relação dos imóveis
+        # atuais». É a mesma rota de propósito: o número, o hash e o selo
+        # (16.24.1) são os da negativa, e duas rotas dariam duas réguas.
+        positiva = (request.form.get("resultado") or "").strip().upper() == "POSITIVA"
+        if positiva and modo != "PESSOA":
+            flash("A certidão positiva é só da busca por pessoa.", "danger")
+            return redirect(url_for("ri_indicador_real"))
+        pessoa_chave = (request.form.get("pessoa_chave") or "").strip()
+        tipo_cert = RINEG.TIPO_POSITIVA if positiva else RINEG.TIPO
+        nome_cert = RINEG.NOME_DO_TIPO_POSITIVA if positiva else RINEG.NOME_DO_TIPO
         busca = (request.form.get("busca") or "").strip()
         bairro = (request.form.get("bairro") or "").strip()
         tipo_ru = (request.form.get("tipo_ru") or "").strip().upper()
@@ -8637,15 +8762,32 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         hoje = date.today()
         agora = datetime.now()
+        grupo = None
+        imoveis: list[dict] = []
         try:
             with db.connect() as con:
-                if modo == "PESSOA":
-                    achados = RINEG.buscar_por_pessoa(
-                        con, busca, so_proprietarios=so_prop)
+                if positiva:
+                    # A busca da positiva é a do Indicador Pessoal inteira (não
+                    # só proprietários): a pessoa escolhida tem de estar nela.
+                    grupo = RINEG.conferir_positiva(
+                        RINEG.buscar_por_pessoa(con, busca), pessoa_chave)
+                    candidatas = RINEG.candidatas_da_positiva(con, grupo["chave"])
+                    if not candidatas:
+                        raise RINEG.CertidaoNegativaError(
+                            "A pessoa escolhida não é proprietária atual de nenhuma "
+                            "matrícula aberta. Não há o que certificar como positiva.")
+                    # SÓ AS MARCADAS (o oficial, 25/10/2026): o escrevente
+                    # confere cada matrícula — homônimo e pessoa partida.
+                    imoveis = RINEG.conferir_marcadas(
+                        candidatas, request.form.getlist("matricula_marcada"))
                 else:
-                    achados = RINEG.buscar_por_imovel(
-                        con, busca, bairro=bairro, tipo=tipo_ru)
-            RINEG.conferir_negativa(achados)
+                    if modo == "PESSOA":
+                        achados = RINEG.buscar_por_pessoa(
+                            con, busca, so_proprietarios=so_prop)
+                    else:
+                        achados = RINEG.buscar_por_imovel(
+                            con, busca, bairro=bairro, tipo=tipo_ru)
+                    RINEG.conferir_negativa(achados)
         except RINEG.CertidaoNegativaError as erro:
             flash(str(erro), "danger")
             return _voltar_negativa(modo, busca, bairro, tipo_ru, so_prop)
@@ -8658,6 +8800,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 ids["imovel_busca"] = bairro
                 ids["criterio_rotulo"] = ri_frases.frase(
                     "RI_NEGATIVA_CRITERIO_BAIRRO", _c_frases, bairro=bairro)
+        if positiva:
+            # Quem a certidão nomeia é a pessoa ESCOLHIDA, e não o que se digitou.
+            ids["pesquisado"] = grupo.get("nome") or ids.get("pesquisado") or busca
+            ids["pesquisado_documento"] = grupo.get("doc") or ""
 
         _sv0 = dados_serventia(db.get_settings)
         sv = _sv0 | {
@@ -8694,12 +8840,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "lavrou_nome": lavrou_nome,
             "lavrou_funcao": lavrou_funcao,
             **ids,
+            "imoveis": [{"numero": i["numero"], "livro": i.get("livro_norm") or "",
+                         "descricao": RINEG.descricao_curta(i)} for i in imoveis],
         }
+        chave_modelo = RINEG.CHAVE_MODELO_POSITIVA if positiva else RINEG.CHAVE_MODELO
         try:
             with db.connect() as _c:
-                texto_modelo = MODELOS.corpo_de(_c, RINEG.CHAVE_MODELO)
+                texto_modelo = MODELOS.corpo_de(_c, chave_modelo)
             corpo = render_modelo(
-                texto_modelo or MODELOS.padrao_de(RINEG.CHAVE_MODELO), contexto)
+                texto_modelo or MODELOS.padrao_de(chave_modelo), contexto)
         except Exception as erro:
             flash("O modelo da certidao negativa tem um erro: "
                   f"{SEGWEB.erro_do_modelo(erro, 'ri_certidao_negativa')}",
@@ -8717,7 +8866,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             numero = int((ultimo or 0)) + 1
             criterio = ids.get("criterio_rotulo") or busca
             h = RINEG.hash_do_corpo(
-                numero, hoje.year, corpo, hoje.isoformat(), criterio)
+                numero, hoje.year, corpo, hoje.isoformat(), criterio, tipo_cert)
             certidao_id = bd.escrever(
                 """INSERT INTO ri_certidoes
                    (numero, ano, tipo, matricula_id, matricula_numero,
@@ -8729,7 +8878,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'html', %s,%s,%s,%s,
                            'MANUAL', %s, %s, %s, %s, %s, %s, 'TEXTO')
                    RETURNING id""",
-                (numero, hoje.year, RINEG.TIPO, None, None,
+                (numero, hoje.year, tipo_cert, None, None,
                  requerente or None, requerente_documento, finalidade,
                  hoje.isoformat(), validade, corpo, protocolo, None, None,
                  h, db.now(), app.extensions["usuario_id"](),
@@ -8739,9 +8888,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             )[0]["id"]
             certidao_id = int(certidao_id)
 
-        audit("RI_CERTIDAO_NEGATIVA_EMITIDA", "RI_CERTIDAO", certidao_id,
-              {"numero": numero, "ano": hoje.year, "tipo": RINEG.TIPO,
-               "modo": modo, "busca": busca, "hash": h, "achados": 0,
+        audit("RI_CERTIDAO_POSITIVA_EMITIDA" if positiva else "RI_CERTIDAO_NEGATIVA_EMITIDA",
+              "RI_CERTIDAO", certidao_id,
+              {"numero": numero, "ano": hoje.year, "tipo": tipo_cert,
+               "modo": modo, "busca": busca, "hash": h,
+               **({"pessoa_chave": grupo["chave"],
+                   "matriculas": [i["numero"] for i in imoveis],
+                   "conferidas_por": (app.extensions["usuario_nome"]() or "").strip()}
+                  if positiva else {"achados": 0}),
                **({"item_busca": item_busca} if item_busca else {})})
 
         # Selo automatico — sem bypass «mesmo se o selo falhar».
@@ -8757,7 +8911,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 f" {folhas} folha(s) contabilizada(s) pelo sistema."
                 if folhas else "")
             pedido = _pedir_os_selos_da_certidao_do_ri(
-                certidao_id=certidao_id, tipo=RINEG.TIPO, folhas=folhas,
+                certidao_id=certidao_id, tipo=tipo_cert, folhas=folhas,
                 requerente=requerente,
                 requerente_documento=requerente_documento, matricula="",
                 isento=isento, motivo_isencao=motivo_isencao)
@@ -8774,8 +8928,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # a certidão fica de pé, sem poder ser impressa, até o selo sair.
             audit("RI_CERTIDAO_AGUARDANDO_COBERTURA", "RI_CERTIDAO",
                   certidao_id, {"numero": numero, "ano": hoje.year,
-                                "tipo": RINEG.TIPO, "motivo": motivo_selo})
-            flash(f"{RINEG.NOME_DO_TIPO} n. {numero}/{hoje.year} gravada, "
+                                "tipo": tipo_cert, "motivo": motivo_selo})
+            flash(f"{nome_cert} n. {numero}/{hoje.year} gravada, "
                   f"mas SEM SELO: {motivo_selo} Ela não pode ser impressa "
                   "até o selo sair. Ligue o protocolo pago e clique em "
                   "«Selar» na lista de certidões.", "warning")
@@ -8793,7 +8947,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      certidao_id))
             audit("RI_CERTIDAO_NAO_EMITIDA_SELO_FALHOU", "RI_CERTIDAO",
                   certidao_id, {"numero": numero, "ano": hoje.year,
-                                "tipo": RINEG.TIPO, "hash": h,
+                                "tipo": tipo_cert, "hash": h,
                                 "motivo": motivo_selo})
             flash(
                 "Certidao NAO emitida: o selo nao saiu. "
@@ -8810,7 +8964,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             isento=isento, motivo_isencao=motivo_isencao)
 
         flash(
-            f"{RINEG.NOME_DO_TIPO} n. {numero}/{hoje.year} emitida. "
+            f"{nome_cert} n. {numero}/{hoje.year} emitida. "
             f"Valida ate {validade}. O teor foi congelado nesta data."
             f"{folhas_contadas_msg}{recado_do_selo}",
             "success")
@@ -10670,6 +10824,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 (procurado,))
         if linha is None:
             return {"achou": False, "numero": numero}
+        # «Título registrado» no Acompanhamento do ONR: o ato que citou esta
+        # prenotação ABERTA (o gancho confere a situação), na transação do ato.
+        # Sobe só depois do selo — `onr_acompanhamento.conferir_o_fato`.
+        ACOMP.anotar_registro(bd, int(linha["id"]), ato_id=int(ato_id), agora=db.now())
         if linha["ato_id"]:
             return {"achou": True, "numero": numero, "ja_tinha_ato": True}
         if str(linha["situacao"] or "") != "ABERTO":

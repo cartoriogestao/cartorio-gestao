@@ -36,6 +36,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from bd_nativo import banco
+import identidade_do_robo as IDR
 
 #: A conferência só olha da implantação para cá — o acervo o E-Ofício já mandou.
 DESDE = "2026-09-10"
@@ -96,13 +97,18 @@ def _quinzenas_desde(inicio: str, hoje: date) -> list[tuple[int, int, int]]:
     return saida
 
 
+#: Quem envia por conta própria diz quem é (ordem do oficial, 26/10/2026); a
+#: ordem é do responsável pelas rotinas automáticas (`identidade_do_robo`).
+AGENTE = "envio automático da CENSEC"
+
+
 def _audit(db, acao: str, detalhes: dict) -> None:
     with db.transaction() as con:
-        banco(con).escrever("""INSERT INTO audit_logs(ts, user_id, username_snapshot, action,
-                                              entity_type, entity_id, details, ip_address)
-                       VALUES (%s, NULL, 'envio-automatico', %s, 'NT_REMESSA', NULL, %s, NULL)""",
-                    (datetime.now().isoformat(timespec="seconds"), acao,
-                     json.dumps(detalhes, ensure_ascii=False, default=str)))
+        IDR.registrar(con, ts=datetime.now().isoformat(timespec="seconds"),
+                      user_id=None, username="envio-automatico", action=acao,
+                      entity_type="NT_REMESSA", entity_id=None,
+                      details=json.dumps(detalhes, ensure_ascii=False, default=str),
+                      agente=AGENTE, a_mando_de=IDR.PELO_RESPONSAVEL)
 
 
 def enviar(db, hoje: date, *, cns: str) -> list[dict]:

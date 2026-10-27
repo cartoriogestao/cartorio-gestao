@@ -1,0 +1,12 @@
+<p align="center"><b>{{ serventia.nome|upper }}</b></p>
+<p align="center">CNS {{ serventia.cns }} — {{ serventia.cidade }}/{{ serventia.uf }}</p>
+<p align="center"><b>CERTIDÃO DE PROPRIEDADE — BUSCA POR PESSOA</b></p>
+<p>Certifico, a pedido de parte interessada{% if requerente %} — <b>{{ requerente }}</b>{% if requerente_documento %}, {{ requerente_documento }}{% endif %}{% endif %}, que, feitas as buscas nos livros e indicadores do Registro de Imóveis a meu cargo{% if criterio_rotulo %} — <b>{{ criterio_rotulo }}</b>{% endif %} —, <b>CONSTA</b> em nome de <b>{{ pesquisado }}</b>{% if pesquisado_documento %}, {{ pesquisado_documento }}{% endif %}, como proprietário(a) na presente data, o(s) imóvel(is) objeto da(s) seguinte(s) matrícula(s) deste Registro:</p>
+{% for i in imoveis %}<p>Matrícula nº <b>{{ i.numero }}</b>{% if i.livro %}, Livro {{ i.livro }}{% endif %}{% if i.descricao %} — {{ i.descricao }}{% endif %}.</p>
+{% endfor %}<p>Relação conferida{% if lavrou_nome %} por {{ lavrou_nome }}{% endif %} nas matrículas citadas, na data da expedição. A descrição completa de cada imóvel, os ônus e as ações constam da respectiva matrícula, da qual se pode pedir certidão.</p>
+{% if finalidade %}<p><b>FINALIDADE: </b>{{ finalidade }}</p>{% endif %}
+{% if protocolo %}<p><b>PROTOCOLO/PRENOTAÇÃO: </b>{{ protocolo }}</p>{% endif %}
+<p><b>VALIDADE: </b>30 (trinta) dias contados da data de expedição, na forma do art. 553 do Código de Normas da CGJ/TJMA. Certidão emitida em {{ hoje_extenso }}{% if hora_emissao %}, às {{ hora_emissao }}{% endif %}. Dou fé.</p>
+<p align="center">{{ serventia.cidade }}/{{ serventia.uf }}, {{ hoje_extenso }}.</p>
+<p align="center">{{ lavrou_nome }}</p>
+<p align="center">{{ lavrou_funcao }}</p>

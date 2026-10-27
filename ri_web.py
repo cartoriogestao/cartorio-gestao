@@ -2652,6 +2652,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # a tela manda o valor do imovel (para 16.22.8.1); itens so-sem-valor
         # (16.5) precisam de caminho /sem-valor. Sem este corte, o TJ recusa
         # com «valor declarado fora da faixa».
+        # HOTFIX R-8/3359 (27/10/2026): subitem de faixa do caixa (16.45.33)
+        # vai ao TJ como o item (16.45); o TJ recusava o subitem.
+        import caixa_protocolo as _CXP_FAIXA
+        codigo_tj = _CXP_FAIXA.subitem_da_faixa(codigo_tj) or str(codigo_tj).strip()
         base_reais = (base_calculo or 0) / 100.0
         base_para_o_selo = AS.base_calculo_do_selo_ri(codigo_tj, base_reais)
         caminho = AS.caminho_do_ato_do_ri(base_para_o_selo)

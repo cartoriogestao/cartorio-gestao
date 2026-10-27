@@ -961,6 +961,22 @@ def encerrar_atendimento(con, usuario) -> None:
                         (_usuario(usuario),))
 
 
+#: HOTFIX R-8/3359 (27/10/2026): itens do TJMA cobrados no caixa por FAIXA de
+#: valor (16.45.1 ... 16.45.N), mas que o selador do TJ so conhece pelo item
+#: (16.45). Mandar "16.45.33" ao TJ da «Nao foi encontrado um ato para o
+#: codigo informado». Lista fechada: so entra item medido.
+CODIGOS_TJ_DE_FAIXA = frozenset({"16.45"})
+
+
+def subitem_da_faixa(codigo) -> str | None:
+    """"16.45.33" -> "16.45" quando o pai e item de faixa; senao None. So calcula."""
+    cod = str(codigo or "").strip()
+    pai, _, faixa = cod.rpartition(".")
+    if pai in CODIGOS_TJ_DE_FAIXA and faixa.isdigit():
+        return pai
+    return None
+
+
 def itens_para_o_selo(con, protocolo_id, codigo: str | None) -> list[dict]:
     """Os itens do protocolo que podem pagar o selo deste código. Só LÊ.
 
@@ -981,8 +997,17 @@ def itens_para_o_selo(con, protocolo_id, codigo: str | None) -> list[dict]:
         r["protocolo_atribuicao"] = (p or {}).get("atribuicao")
     codigo = str(codigo or "").strip()
     if codigo:
-        return [r for r in candidatos
-                if str(r.get("codigo_ato") or "").strip() == codigo]
+        iguais = [r for r in candidatos
+                  if str(r.get("codigo_ato") or "").strip() == codigo]
+        if iguais or codigo not in CODIGOS_TJ_DE_FAIXA:
+            return iguais
+        # Subitem de faixa (16.45.33) paga o selo do item do TJ (16.45) so
+        # quando o prefixo bate e ha UM subitem so: escolher entre duas
+        # faixas seria adivinhar qual servico o cliente pagou.
+        da_faixa = [r for r in candidatos
+                    if subitem_da_faixa(r.get("codigo_ato")) == codigo]
+        codigos = {str(r.get("codigo_ato") or "").strip() for r in da_faixa}
+        return da_faixa if len(codigos) == 1 else []
     return candidatos if len(candidatos) == 1 else []
 
 

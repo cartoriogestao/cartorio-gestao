@@ -68,6 +68,11 @@ class AgendadorDoWindows(Instalador):
         guardiao = "\r\n".join(["@echo off", *sets, f'cd /d "{l.raiz}"',
                                 f'start "" "{pythonw}" "{l.raiz / "tools" / "automacao_guardiao.py"}"', ""])
         cofre = l.pasta_dados / "cofre_automacao"
+        # OS LANÇADORES MORAM EM destino/windows/ — é lá que gerar os escreve.
+        # Até 27/10/2026 as tarefas apontavam para destino/, onde eles não
+        # existem: o despachante saía com código 1 a cada minuto e o guardião não
+        # abria no logon (medido na produção, na instalação da 3.7.5).
+        lancadores = l.destino / self.sistema
         usuario = l.usuario or "$env:USERDOMAIN\\$env:USERNAME"
         ps1 = f"""<#
   Registra as DUAS tarefas da automacao no Agendador do Windows (gerado por
@@ -87,13 +92,13 @@ New-Item -ItemType Directory -Force -Path $cofre | Out-Null
 & icacls.exe "{l.destino}" /grant "$($usuario):(OI)(CI)M" | Out-Null
 $quem = New-ScheduledTaskPrincipal -UserId $usuario -LogonType Interactive -RunLevel Highest
 $g = New-ScheduledTask -Principal $quem `
-  -Action (New-ScheduledTaskAction -Execute "$env:SystemRoot\\System32\\cmd.exe" -Argument '/d /c "{l.destino / "automacao_guardiao.cmd"}"') `
+  -Action (New-ScheduledTaskAction -Execute "$env:SystemRoot\\System32\\cmd.exe" -Argument '/d /c "{lancadores / "automacao_guardiao.cmd"}"') `
   -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $usuario) `
   -Settings (New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries)
 Register-ScheduledTask -TaskName '{TAREFA_GUARDIAO}' -InputObject $g -Force | Out-Null
 # PRIORIDADE 7 (abaixo do normal) de proposito: o servidor do balcao nasce com 3.
 $d = New-ScheduledTask -Principal $quem `
-  -Action (New-ScheduledTaskAction -Execute "$env:SystemRoot\\System32\\cmd.exe" -Argument '/d /c "{l.destino / "automacao_despachante.cmd"}"') `
+  -Action (New-ScheduledTaskAction -Execute "$env:SystemRoot\\System32\\cmd.exe" -Argument '/d /c "{lancadores / "automacao_despachante.cmd"}"') `
   -Trigger (New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1)) -RepetitionInterval (New-TimeSpan -Minutes 1)) `
   -Settings (New-ScheduledTaskSettingsSet -Priority 7 -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries)
 Register-ScheduledTask -TaskName '{TAREFA_DESPACHANTE}' -InputObject $d -Force | Out-Null

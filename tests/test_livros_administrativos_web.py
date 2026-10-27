@@ -160,6 +160,45 @@ def test_a_tela_e_o_papel_do_diario_tem_o_ferj_e_o_ferc_em_colunas_proprias(cg_c
     assert "FERJ (art. 190, I, k): 12,00% de dentro do emolumento" in papel
 
 
+def _ferj_gravado(casa, valor: str) -> None:
+    """Grava o percentual do FERJ direto na tabela, «fora da tela» — o caso
+    que derrubava a página do livro com HTTP 500 até 27/10/2026."""
+    import custas
+    casa["db"].set_settings({custas.CHAVE_PERCENTUAL_FERJ: valor})
+
+
+def test_ferj_ilegivel_gravado_fora_da_tela_nao_derruba_o_diario(cg_casa):
+    """Até 27/10/2026 o `CustasError` do percentual ilegível subia sem ser
+    apanhado e a tela dava HTTP 500. Agora ela abre, diz o que está errado e
+    onde corrigir, e as despesas continuam à mão; gerar também recusa com a
+    frase."""
+    _selo_de_setembro(cg_casa)
+    _ferj_gravado(cg_casa, "doze")
+    oficial = _entrar(cg_casa, "oficial", "ADMIN")
+    assert _post(oficial, "/livros-obrigatorios/diario/despesas", **DESPESA).status_code == 302
+    r = oficial.get("/livros-obrigatorios/diario?mes=2026-09")
+    assert r.status_code == 200
+    tela = r.get_data(as_text=True)
+    assert "O livro do mês não se apura agora" in tela
+    assert "Percentual do FERJ ilegível" in tela and "Gestor → NFS-e" in tela
+    assert "Energia elétrica da sede" in tela            # as despesas continuam
+    assert "Demonstrativo do mês" not in tela             # o livro não se inventa
+    r = _post(oficial, "/livros-obrigatorios/diario/gerar", mes="2026-09")
+    assert r.status_code == 302
+    assert "FERJ" in oficial.get(r.headers["Location"]).get_data(as_text=True)
+    assert not _rastro(cg_casa, "LIVRO_DIARIO_GERADO")
+
+
+def test_ferj_vazio_vale_12_por_cento_no_diario(cg_casa):
+    """Decisão do oficial em 27/10/2026: «12% para os dois» — vazio é 12,00
+    no Livro Diário e na NFS-e."""
+    _selo_de_setembro(cg_casa)
+    _ferj_gravado(cg_casa, "")
+    oficial = _entrar(cg_casa, "oficial", "ADMIN")
+    tela = oficial.get("/livros-obrigatorios/diario?mes=2026-09").get_data(as_text=True)
+    assert "12,00% de dentro do emolumento" in tela and "15,00" in tela
+
+
 def test_a_versao_gerada_antes_do_ferj_abre_e_diz_que_e_de_antes(cg_casa):
     import livro_diario as LD
     _selo_de_setembro(cg_casa)

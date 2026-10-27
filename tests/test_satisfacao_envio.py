@@ -617,3 +617,133 @@ def test_protesto_tambem_recebe_o_convite(cg_casa, tmp_path, pontas):
     assert fila["EMAIL"]["situacao"] == "ENVIADO"
     with pontas["vps"]._con() as con:
         assert [x[0] for x in con.execute("SELECT atribuicao FROM convites")] == [""]
+
+
+# ------------------------------------------------------------------ o WhatsApp pelo modelo da Meta
+#
+# 27/10/2026 (`wa_modelos`): com o interruptor «modelos aprovados pela Meta»
+# ligado, o convite por WhatsApp SOBE à VPS (o protocolo que só tem telefone
+# precisa da página lá) e sai pelo modelo `cartorio_pesquisa_satisfacao`.
+# Desligado, tudo como antes. A Graph é um falso, e o access_token mora no
+# `ler_segredo` falso das pontas.
+
+
+class _Graph:
+    def __init__(self):
+        self.pedidos: list[dict] = []
+
+    def __call__(self, url, payload, headers, timeout=None):
+        self.pedidos.append(payload)
+        return 200, json.dumps({"messages": [{"id": f"wamid.pesquisa-{len(self.pedidos)}"}]})
+
+
+def _whatsapp(casa, monkeypatch, *, ligado=True, graph=None):
+    import cofre_cred
+    import wa_balcao as WA
+    import wa_schema as WSCH
+    monkeypatch.setattr(cofre_cred, "ler_segredo", lambda con, nome, chave: (
+        TOKEN if nome == "portal.cred"
+        else "token-wa-de-teste" if chave == WSCH.CHAVE_TOKEN else ""))
+    with casa["db"].transaction() as con:
+        WA.gravar_config(con, WSCH.CHAVE_MODELOS_APROVADOS, "1" if ligado else "")
+        WA.gravar_config(con, WSCH.CHAVE_PHONE, "123456789")
+        WA.gravar_config(con, WSCH.CHAVE_NOME_NO_MODELO, "de Exemplo")
+
+    def proibido(*a, **k):
+        raise AssertionError("o teste tentou falar com a Meta de verdade")
+    monkeypatch.setattr(WA, "_http_post_json", graph or proibido)
+
+
+def _convites_na_vps(pontas) -> list[dict]:
+    with pontas["vps"]._con() as con:
+        return [dict(x) for x in con.execute("SELECT * FROM convites")]
+
+
+def test_desligado_o_convite_so_de_whatsapp_fica_na_fila_e_nao_sobe(cg_casa, tmp_path,
+                                                                    monkeypatch, pontas):
+    mario = _usuario(cg_casa, "mario", "MARIO EXEMPLO", "ADMIN")
+    _whatsapp(cg_casa, monkeypatch, ligado=False)          # a Graph é o guarda que estoura
+    _configurar(cg_casa)
+    p = _protocolo(cg_casa, "2026.10.901", mario, telefone=TELEFONE_FICTICIO, email=None)
+    _na_fila(cg_casa, p, mario)
+    r = ENVIO.rodar(_ctx(cg_casa, tmp_path))
+    (linha,) = _fila(cg_casa, p["id"])
+    assert linha["canal"] == "WHATSAPP" and linha["situacao"] == "NA_FILA"
+    assert linha["erro"] == ENVIO.SEM_MODELO_DA_META and not linha["na_vps_em"]
+    assert _convites_na_vps(pontas) == []
+    assert "WhatsApp na fila: 1 (sem modelo aprovado pela Meta)" in r["relato"]
+
+
+def test_ligado_o_convite_so_de_whatsapp_sobe_e_sai_pelo_modelo(cg_casa, tmp_path,
+                                                               monkeypatch, pontas):
+    mario = _usuario(cg_casa, "mario", "MARIO EXEMPLO", "ADMIN")
+    graph = _Graph()
+    _whatsapp(cg_casa, monkeypatch, graph=graph)
+    _configurar(cg_casa)
+    p = _protocolo(cg_casa, "2026.10.902", mario, telefone=TELEFONE_FICTICIO, email=None)
+    _na_fila(cg_casa, p, mario)
+    r = ENVIO.rodar(_ctx(cg_casa, tmp_path))
+    assert r["situacao"] == "OK", r["relato"]
+
+    # 1. Subiu à VPS — sem o número do protocolo e sem o telefone.
+    (convite,) = _convites_na_vps(pontas)
+    assert "2026.10.902" not in json.dumps(convite)
+    assert "99900000000" not in json.dumps(convite)
+
+    # 2. Saiu UM modelo, com as variáveis na ordem: cartório, protocolo, link.
+    (pedido,) = graph.pedidos
+    assert pedido["to"] == "5599900000000" and pedido["type"] == "template"
+    assert pedido["template"]["name"] == "cartorio_pesquisa_satisfacao"
+    assert pedido["template"]["language"] == {"code": "pt_BR"}
+    cartorio, numero, link = [x["text"] for x in pedido["template"]["components"][0]["parameters"]]
+    assert (cartorio, numero) == ("de Exemplo", "2026.10.902")
+    assert link.startswith(URL + "/r/")
+    # O link é o mesmo código que a VPS guarda (só o hash dele).
+    assert pontas["m"].chave_do_codigo(link.rsplit("/", 1)[1]) == convite["chave"]
+
+    # 3. A fila: ENVIADO, uma tentativa; nenhum e-mail.
+    (linha,) = _fila(cg_casa, p["id"])
+    assert linha["situacao"] == "ENVIADO" and int(linha["tentativas"]) == 1
+    assert pontas["smtp"].enviados == []
+
+    # 4. A auditoria diz o canal, e nunca o telefone nem o link.
+    with cg_casa["db"].connect() as con:
+        linhas = [json.dumps(dict(x), default=str) for x in banco(con).ler(
+            "SELECT * FROM audit_logs WHERE action = 'SATISFACAO_CONVITE_ENVIADO'")]
+    assert linhas and all("WHATSAPP" in x for x in linhas)
+    assert not any("99900000000" in x or "/r/" in x for x in linhas)
+
+    # 5. A rodada seguinte não manda de novo.
+    ENVIO.rodar(_ctx(cg_casa, tmp_path))
+    assert len(graph.pedidos) == 1
+
+
+def test_ligado_sem_a_vps_o_whatsapp_espera_e_nao_vai_a_rede(cg_casa, tmp_path, monkeypatch,
+                                                            pontas):
+    mario = _usuario(cg_casa, "mario", "MARIO EXEMPLO", "ADMIN")
+    _whatsapp(cg_casa, monkeypatch)                          # a Graph é o guarda que estoura
+    p = _protocolo(cg_casa, "2026.10.903", mario, telefone=TELEFONE_FICTICIO, email=None)
+    _na_fila(cg_casa, p, mario)                              # sem o endereço da VPS
+    r = ENVIO.rodar(_ctx(cg_casa, tmp_path))
+    (linha,) = _fila(cg_casa, p["id"])
+    assert linha["situacao"] == "NA_FILA" and linha["erro"] == ENVIO.SEM_URL
+    assert int(linha["tentativas"]) == 0
+    assert r["situacao"] == "AVISO"
+
+
+def test_ligado_a_vps_recebe_o_convite_do_whatsapp_junto_com_o_do_email(cg_casa, tmp_path,
+                                                                      monkeypatch, pontas):
+    with cg_casa["db"].connect() as con:
+        itens = ENVIO.a_empurrar(con, hoje=date.today(), segredo="s", max_tentativas=3,
+                                 canais=ENVIO.CANAIS_COM_WHATSAPP)
+    assert itens == []                                       # fila vazia, nada a subir
+    mario = _usuario(cg_casa, "mario", "MARIO EXEMPLO", "ADMIN")
+    p = _protocolo(cg_casa, "2026.10.904", mario, telefone=TELEFONE_FICTICIO)
+    _na_fila(cg_casa, p, mario)                              # e-mail E WhatsApp
+    with cg_casa["db"].connect() as con:
+        so_email = ENVIO.a_empurrar(con, hoje=date.today(), segredo="s", max_tentativas=3)
+        os_dois = ENVIO.a_empurrar(con, hoje=date.today(), segredo="s", max_tentativas=3,
+                                   canais=ENVIO.CANAIS_COM_WHATSAPP)
+    # Um código por protocolo, e não por canal: os dois canais levam o mesmo link.
+    assert len(so_email) == len(os_dois) == 1
+    assert so_email[0]["pacote"] == os_dois[0]["pacote"]

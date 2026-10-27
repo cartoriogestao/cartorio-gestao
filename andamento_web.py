@@ -105,12 +105,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 ligados.extend((AS.PROTOCOLO_GERAL, int(c["id"])) for c in banco(con).ler(
                     "SELECT id FROM cx_protocolos WHERE ri_protocolo_id=%s", (int(origem_id),)))
             avisos = _avisos_do_registro(con, origem, origem_id)
+            import serventia as SERV
+            whatsapp_motivo = AA.motivo_do_whatsapp(con, SERV.dados(db.get_settings))
         ativos = {c["canal"]: c for c in todos if c["ativo"]}
         return render_template(
             "andamento_registro.html", reg=reg, origem=origem, origem_id=origem_id,
             endpoint=endpoint, ativos=ativos, historico=todos, avisos=avisos, ligados=ligados,
             protesto=AA.e_protesto(reg), AS=AS, selo=AS.selo, mascarar=mascarar,
-            SEM_MODELO_DA_META=AA.SEM_MODELO_DA_META)
+            SEM_MODELO_DA_META=AA.SEM_MODELO_DA_META, whatsapp_motivo=whatsapp_motivo)
 
     @app.route("/andamento/protocolo-geral/<int:protocolo_id>", methods=["GET", "POST"])
     @roles_required(*VEEM)
@@ -145,9 +147,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             serventia = SERV.dados(db.get_settings)
             exemplo = {"numero": "0000", "data_limite": "2026-12-31", "dias": 3}
             previas = {e: AA.textos(e, exemplo, serventia, con) for e in AS.EVENTOS}
+            whatsapp_motivo = AA.motivo_do_whatsapp(con, serventia)
         dias, _tent, eventos = AA._parametros((processo or {}).get("parametros") or {})
         return render_template(
             "andamento_fila.html", ultimos=ultimos, contagem=contagem, consentidos=consentidos,
             processo=processo, email_configurado=bool(cfg["host"]), dias_antes=dias,
             eventos=eventos, previas=previas, situacao=situacao, AS=AS, selo=AS.selo,
-            mascarar=mascarar, SEM_MODELO_DA_META=AA.SEM_MODELO_DA_META)
+            mascarar=mascarar, SEM_MODELO_DA_META=AA.SEM_MODELO_DA_META,
+            whatsapp_motivo=whatsapp_motivo)

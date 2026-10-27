@@ -128,6 +128,28 @@
     <a href="{{ url_for('whatsapp_config') }}">configuração</a>.</p>
     {% endif %}
   </form>
+  {% if janela and janela.fora %}
+  <div class="small">
+    <p><span class="badge media">fora da janela de 24 h</span>
+      A última mensagem do cliente tem mais de 24 horas (ou ele ainda não escreveu):
+      a Meta recusa texto livre agora.</p>
+    {% if janela.ligado and not janela.falta %}
+    <form method="post" action="{{ url_for('whatsapp_reabrir', conversa_id=c.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button secondary">Reabrir com o modelo</button>
+      <span class="muted">Manda o modelo <code>{{ janela.modelo }}</code> («temos uma resposta
+        para a sua mensagem»). Quando o cliente responder, a janela reabre e o rascunho
+        pode ser enviado.</span>
+    </form>
+    {% elif janela.ligado %}
+    <p class="muted">O modelo de retomar não pode sair: {{ janela.falta }}.</p>
+    {% else %}
+    <p class="muted">Os modelos da Meta ainda não foram marcados como aprovados
+      (<a href="{{ url_for('whatsapp_config') }}">configuração</a>): por enquanto não há como
+      reabrir a conversa daqui.</p>
+    {% endif %}
+  </div>
+  {% endif %}
   {% if c.status != 'resolvida' %}
   <form method="post" action="{{ url_for('whatsapp_resolver', conversa_id=c.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

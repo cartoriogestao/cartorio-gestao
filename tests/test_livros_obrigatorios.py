@@ -477,6 +477,30 @@ def test_a_regua_do_ferj_le_virgula_recusa_o_ilegivel_e_arredonda_ao_centavo(db)
         assert custas.percentual_ferj_da_casa(con) == 1175
 
 
+def test_ferj_vazio_vale_12_e_o_ilegivel_e_recusa_do_livro_com_onde_corrigir(db):
+    """Decisão do oficial em 27/10/2026: «12% para os dois». Vazio vale 12,00
+    no livro (e na NFS-e, que passou a ler pela mesma função). O ilegível
+    gravado fora da tela é `DiarioError` com a frase de onde corrigir — até
+    essa data era `CustasError`, que a tela não apanhava (HTTP 500)."""
+    _selo(db, "S1", usado_em="2026-09-03T10:00:00", texto=_texto("13.23", "140,01", "125,01"))
+    _percentual_ferj(db, "")
+    with db.connect() as con:
+        livro = LD.apurar(con, "2026-09")
+    assert livro["ferj_percentual"] == 1200 and livro["fundos"]["FERJ"] == 1500
+    with db.transaction() as con:
+        banco(con).escrever("UPDATE settings SET value = %s WHERE key = %s",
+                            ("doze", custas.CHAVE_PERCENTUAL_FERJ))
+    with db.connect() as con:
+        with pytest.raises(LD.DiarioError, match="Gestor → NFS-e") as erro:
+            LD.apurar(con, "2026-09")
+        assert "doze" in str(erro.value)
+        with pytest.raises(LD.DiarioError, match="FERJ"):
+            LD.receitas_do_mes(con, "2026-09")
+    with db.transaction() as con:
+        with pytest.raises(LD.DiarioError, match="FERJ"):
+            LD.gerar(con, "2026-09", hoje=HOJE, agora=AGORA, por=POR)
+
+
 def test_o_ferc_nao_tem_o_nome_do_ferj_no_cadastro_de_fundos():
     """O `tbFundo` do E-Ofício dá ao FERC o nome do FERJ; os dois cadastros
     daqui o copiaram. O nome do FERC é o do Código de Normas, art. 217."""

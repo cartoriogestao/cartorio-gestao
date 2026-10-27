@@ -4084,7 +4084,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     paternidade=({c: _campo(c) for c in (
                         "paternidade_tipo", "suposto_pai_nome",
                         "suposto_pai_profissao", "suposto_pai_documento",
-                        "suposto_pai_residencia")}
+                        "suposto_pai_residencia",
+                        # a terceira saída (27/10/2026): por que a mãe não está
+                        "motivo_ausencia_mae")}
                         if especie == "NASCIMENTO" else None))
                 # O TERMO VAZIO SE ESCREVE PELO MODELO DA CASA (11/10/2026). É
                 # o caminho da importação sem robô: o arquivo traz os CAMPOS, e
@@ -4711,6 +4713,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             termo = RP.do_assento(con, assento_id)
         if not termo:
             flash("Este assento não tem termo de paternidade.", "warning")
+            return redirect(url_for("rcpn_assento", assento_id=assento_id))
+        if not termo["tem_termo"]:
+            # A MÃE NÃO COMPARECEU (27/10/2026): não há termo para ninguém
+            # assinar — só a anotação, que já está na ficha.
+            flash("Neste assento a mãe não compareceu: não há termo de "
+                  "paternidade para imprimir. A anotação está na ficha.",
+                  "warning")
             return redirect(url_for("rcpn_assento", assento_id=assento_id))
         from markupsafe import escape as esc
         s = sv()

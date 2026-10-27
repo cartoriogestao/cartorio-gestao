@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}Automação — cofre{% endblock %}
+{% block heading %}<h1>Automação — cofre de credenciais</h1>{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('automacao_lista') }}">← todos os processos</a> · <a href="{{ url_for('automacao_configuracao') }}">configuração</a></p>
+<section class="panel">
+  <div class="panel-head"><h2>Estado</h2></div>
+  {% if estado.aberto %}
+    <p><span class="badge ok">aberto</span> desde {{ (estado.desde or '')[:16]|replace('T', ' ') }}.</p>
+    <form method="post" action="{{ url_for('automacao_cofre_trancar') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button" type="submit">Trancar agora</button>
+    </form>
+  {% else %}
+    <p><span class="badge critica">trancado</span>
+      {% if not estado.guardiao %}o guardião do cofre não está rodando nesta máquina (ele abre no logon).
+      {% else %}desde {{ (estado.desde or '')[:16]|replace('T', ' ') }}{% if estado.bloqueado_ate %} — tentativas bloqueadas até {{ estado.bloqueado_ate[11:16] }}{% endif %}.{% endif %}
+      Os processos que precisam de credencial terminam como «cofre trancado» até alguém digitar a senha-mestra.</p>
+    {% if local and estado.guardiao %}<p><a class="button primary" href="{{ url_for('automacao_cofre_desbloquear') }}">Desbloquear</a></p>
+    {% else %}<p class="small muted">A senha-mestra se digita na janela do guardião ou nesta tela aberta na própria máquina do servidor (endereço 127.0.0.1).</p>{% endif %}
+  {% endif %}
+</section>
+<section class="panel">
+  <p class="small">O cofre é um arquivo fora do banco, cifrado com a senha-mestra (AES-256-GCM, chave por Argon2id/scrypt).
+    A tela mostra só o nome, o tipo, os nomes dos campos e as datas — o valor não volta para ela, não vai para o
+    log e nunca é mandado ao agente de IA. Quem o lê é o processo que roda fora do servidor, pelo guardião.</p>
+  <div class="table-wrap"><table><thead><tr><th>Nome</th><th>Tipo</th><th>Campos</th><th>Validade</th><th>Trocada</th><th></th></tr></thead><tbody>
+  {% for i in itens %}<tr><td>{{ i.nome }}</td><td>{{ i.nome_do_tipo }}</td><td class="small">{{ i.campos_presentes|join(', ') }}</td>
+    <td class="small">{% if i.validade %}{{ i.validade }}{% if i.dias_para_vencer is not none and i.dias_para_vencer <= 90 %} <span class="badge {{ 'critica' if i.dias_para_vencer < 0 else 'media' }}">{{ 'vencida' if i.dias_para_vencer < 0 else i.dias_para_vencer ~ ' dias' }}</span>{% endif %}{% else %}—{% endif %}</td>
+    <td class="small">{{ (i.alterado_em or '')[:16]|replace('T', ' ') }} {{ i.alterado_por or '' }}</td>
+    <td>{% if estado.aberto %}<form method="post" action="{{ url_for('automacao_cofre_remover') }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="nome" value="{{ i.nome }}">
+      <button class="button danger small" type="submit">Remover</button></form>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="6">Nenhuma credencial no cofre.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% if estado.aberto %}
+<section class="panel">
+  <div class="panel-head"><h2>Cadastrar ou trocar</h2></div>
+  <form method="post" action="{{ url_for('automacao_cofre_gravar') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Nome (sem espaço; o mesmo nome substitui) <input name="nome" required placeholder="banco_cobranca"></label>
+    <label>Tipo <select name="tipo">{% for t in tipos %}<option value="{{ t }}">{{ nome_do_tipo[t] }}</option>{% endfor %}</select></label>
+    <label>Validade (opcional — o processo «Validade do cofre» avisa 90 dias antes) <input type="date" name="validade"></label>
+    <fieldset><legend>Campos digitados</legend>
+      <p class="small muted">Nome do campo em minúsculas (ex.: usuario, senha, client_id, client_secret).</p>
+      {% for n in range(1, 6) %}<p><input name="campo_nome_{{ n }}" size="16" placeholder="nome do campo" autocomplete="off">
+        <input type="password" name="campo_valor_{{ n }}" size="40" placeholder="valor" autocomplete="new-password"></p>{% endfor %}
+    </fieldset>
+    <fieldset><legend>Arquivos (viram campos)</legend>
+      <label>Certificado .crt (campo crt_pem) <input type="file" name="arquivo_crt" accept=".crt,.pem,.cer"></label>
+      <label>Chave .key (campo key_pem) <input type="file" name="arquivo_key" accept=".key,.pem"></label>
+      <label>Certificado .pfx (campo pfx_base64) <input type="file" name="arquivo_pfx" accept=".pfx,.p12"></label>
+    </fieldset>
+    <p class="small muted">Certificado A3 (token físico) não se guarda aqui: a chave não sai do token.</p>
+    <button class="button primary" type="submit">Guardar no cofre</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

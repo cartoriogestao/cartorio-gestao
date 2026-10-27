@@ -72,6 +72,7 @@ from typing import Any
 import atribuicoes as ATR
 import custas as CU
 from bd_nativo import banco
+import identidade_do_robo as IDR
 
 # `selador` E O CONTRATO, e entra aqui para CONFERIR o caminho composto do
 # civil em vez de confiar nele. No topo porque `caminho_do_civil` e
@@ -2027,7 +2028,7 @@ def itens_da_certidao_do_ri(tipo: Any, folhas: int = 1) -> list[tuple[str, int]]
     """
     tipo_norm = str(tipo or "").strip().upper()
     base = CODIGO_DA_CERTIDAO_DO_RI.get(tipo_norm)
-    if not base and tipo_norm == "NEGATIVA_IMOVEL":
+    if not base and tipo_norm in ("NEGATIVA_IMOVEL", "POSITIVA_PESSOA"):
         base = CODIGO_DA_CERTIDAO_NEGATIVA_DE_IMOVEL
     if not base:
         raise AtoError(
@@ -2072,7 +2073,7 @@ def envelope_da_certidao_do_ri(*, tipo: Any, escrevente: Any, versao_tabela: Any
     codigo = (str(codigo_do_item).strip() if codigo_do_item else
               CODIGO_DA_CERTIDAO_DO_RI.get(tipo_norm)
               or (CODIGO_DA_CERTIDAO_NEGATIVA_DE_IMOVEL
-                  if tipo_norm == "NEGATIVA_IMOVEL" else None))
+                  if tipo_norm in ("NEGATIVA_IMOVEL", "POSITIVA_PESSOA") else None))
     if not codigo:
         raise AtoError(
             f"não há código de emolumento medido para a certidão do tipo "
@@ -3653,6 +3654,57 @@ CODIGO_CERTIDAO_ELETRONICA_CRC = "14.5.7"
 #   como `isentoGratuito: "ISENTO"` mais o motivo (17 dos 1.238).
 CAMINHO_CERTIDAO_ELETRONICA_CRC = "/selo/civil/atos-em-geral"
 
+# A CERTIDÃO DO RI PEDIDA PELO ONR — 25/10/2026, o oficial: «sim, estreita»
+# (a exceção «pago no ONR», no desenho da CENTRAL_CRC). O solicitante paga no
+# ONR, e o dinheiro chega pelo repasse da Central, não pelo caixa — a trava do
+# selo pago não o enxerga.
+#
+#   ESTREITA DE PROPÓSITO. Vale SÓ para a certidão do RI (`ri_certidoes`, item
+#   16.24.x no envelope) amarrada a UM pedido do ONR em `onr_cert_auto`
+#   (`onr_certidoes_auto`) que tenha, em colunas gravadas com data e hora:
+#     - a aprovação de um escrevente (`aprovado_por_user_id`, `aprovado_em`);
+#     - o status do pedido no ONR conferido AO VIVO (`status_onr_conferido`,
+#       `status_conferido_em`) há no máximo `JANELA_DO_STATUS_ONR_EM_MINUTOS`
+#       — a janela vale também no «selar depois»: selo pedido no dia seguinte
+#       exige nova conferência, que a tela do pedido faz antes de selar.
+#   A amarra é o `certidao_id` gravado no pedido; ou, no instante da emissão
+#   (a certidão nasce antes da amarra), a finalidade «Pedido ONR <protocolo>»
+#   da certidão igual à marca do pedido em EMITINDO, emitida depois da marca.
+#   Mais de um pedido casando a mesma certidão: NÃO cobre.
+#
+#   O FLUXO, NAS PALAVRAS DO OFICIAL (25/10/2026): «o pedido chega no
+#   protocolo para darmos orçamento; depois volta pro cliente, ele paga e
+#   recebemos o encaminhamento para certidão». Por isso a forma exige também
+#   que a CASA tenha informado as custas daquele pedido (`onr_cert_pedidos.
+#   custas_em`, gravado por `onr_certidoes.registrar_custas`) ANTES de o status
+#   vivo ser conferido: «Em aberto» sem o nosso orçamento não abre a trava.
+#   E só vale para a cobrança INTEGRAL (TipoCobranca 1; manual 4.43, linha
+#   ~4174): PREFEITURA (2) e ISENÇÃO TOTAL (3) não passam pelo pagamento do
+#   cliente, e a isenção exige motivo escrito no selo — ficam pela trava normal
+#   até o oficial decidir.
+#
+#   «VIVO» NÃO É «PAGO», e a ressalva fica escrita (Agente RI, 25/10/2026). O
+#   manual do WSOficio 4.43, cap. 3.6.5 (`onr_wsoficio.STATUS_CERTIDAO`), lista
+#   10 «Informar valor dos emolumentos» e 11 «Aguardando pagamento» como etapas
+#   ANTERIORES; os três aceitos (1 «Em aberto», 2 «Processando», 13 «Pendente
+#   de resposta») são os que o pedido só alcança depois delas. Isto é leitura
+#   do manual e NÃO medição: em 25/10/2026 a tabela `onr_cert_pedidos` da
+#   produção estava vazia, e nenhum pedido pago foi visto passar de 11 a 1.
+FORMA_CENTRAL_ONR = "CENTRAL_ONR"
+STATUS_ONR_PAGO = frozenset({"1", "2", "13", "em aberto", "processando",
+                             "pendente de resposta"})
+JANELA_DO_STATUS_ONR_EM_MINUTOS = 15
+PREFIXO_DA_FINALIDADE_ONR = "Pedido ONR "
+COBRANCA_INTEGRAL_ONR = frozenset({"1", "integral"})
+#: A FORMA CENTRAL_ONR NASCE DESLIGADA (revisão de segurança dos PRs abertos,
+#: 26/10/2026, PR #13, achado M5). O mapa de status acima é leitura do manual,
+#: e não medição: se o ONR puser um pedido em «Em aberto» antes do pagamento,
+#: o selo sairia sem o emolumento entrar. Até o oficial medir o primeiro pedido
+#: pago de verdade passar de 11 para um dos três, a forma não cobre nada — a
+#: certidão segue a trava normal do selo pago e o pedido vai à mão. Só o ADMIN
+#: liga (`ligar_selo_pago_no_onr`), com justificativa e auditoria; vale «1».
+CHAVE_SELO_PAGO_NO_ONR = "onr_certidoes_selo_pago_no_onr"
+
 
 def envelope_da_certidao_eletronica_crc(*, nome_parte: Any, documento: Any,
                                         escrevente: Any, versao_tabela: Any,
@@ -3687,7 +3739,7 @@ def envelope_da_certidao_eletronica_crc(*, nome_parte: Any, documento: Any,
 #: trava desligada deixam o selo sair, mas NÃO fecham a pendência.
 FORMAS_QUE_COBREM = frozenset({FORMA_ITEM_PAGO, FORMA_DEPOSITO,
                                FORMA_DIFERIDO, FORMA_LANCAMENTO,
-                               FORMA_CENTRAL_CRC})
+                               FORMA_CENTRAL_CRC, FORMA_CENTRAL_ONR})
 
 #: A cobertura enquanto o selo está sendo pedido, e depois que ele saiu.
 RESERVADA = "RESERVADA"
@@ -3866,6 +3918,76 @@ def e_certidao_eletronica_da_crc(bd, tabela: Any, ato_id: Any, dados: Any) -> bo
         FINALIDADE_CERTIDAO_ELETRONICA_CRC
 
 
+def status_onr_e_pago(status: Any) -> bool:
+    """O status do pedido no ONR é um dos aceitos como pago? Só calcula."""
+    return str(status or "").strip().lower() in STATUS_ONR_PAGO
+
+
+def cobranca_integral_do_pedido_onr(dados_json: Any) -> bool:
+    """O pedido do ONR é de cobrança INTEGRAL (TipoCobranca 1)? Só calcula."""
+    import json
+    try:
+        dados = json.loads(dados_json or "{}")
+    except (TypeError, ValueError):
+        return False
+    for chave, valor in (dados or {}).items():
+        if str(chave).upper().replace("_", "").endswith("TIPOCOBRANCA"):
+            return str(valor or "").strip().lower() in COBRANCA_INTEGRAL_ONR
+    return False
+
+
+def _dentro_da_janela_onr(conferido_em: Any, agora: Any) -> bool:
+    from datetime import datetime, timedelta
+    try:
+        quando = datetime.fromisoformat(str(conferido_em or "")[:19])
+        hoje = datetime.fromisoformat(str(agora or "")[:19])
+    except ValueError:
+        return False
+    return timedelta(0) <= hoje - quando <= timedelta(minutes=JANELA_DO_STATUS_ONR_EM_MINUTOS)
+
+
+def e_certidao_paga_no_onr(bd, tabela: Any, ato_id: Any, dados: Any, agora: Any) -> bool:
+    """O selo é o da certidão do RI paga no ONR (ver `FORMA_CENTRAL_ONR`)? SÓ LÊ.
+
+    Com o ajuste `CHAVE_SELO_PAGO_NO_ONR` desligado (o de fábrica), NUNCA
+    (26/10/2026, M5)."""
+    if tabela != "ri_certidoes" or ato_id is None:
+        return False
+    if _ler_setting(bd, CHAVE_SELO_PAGO_NO_ONR).strip() != "1":
+        return False
+    if not str(codigo_do_envelope(dados) or "").startswith("16.24"):
+        return False
+    if not bd.tem_tabela("onr_cert_auto"):
+        return False
+    certidao = bd.um("SELECT id, finalidade, emitida_em, cancelada FROM ri_certidoes "
+                     "WHERE id = %s", (int(ato_id),))
+    if not certidao or int(certidao["cancelada"] or 0):
+        return False
+    finalidade = str(certidao["finalidade"] or "").strip()
+    pedidos = bd.ler(
+        """SELECT a.certidao_id, a.etapa, a.finalidade_marca, a.emitindo_desde,
+                  a.aprovado_por_user_id, a.aprovado_em, a.status_onr_conferido,
+                  a.status_conferido_em, p.custas_em, p.dados_json
+             FROM onr_cert_auto a JOIN onr_cert_pedidos p ON p.id = a.pedido_id
+            WHERE a.certidao_id = %s
+               OR (a.certidao_id IS NULL AND a.etapa = 'EMITINDO'
+                   AND a.finalidade_marca = %s)""",
+        (int(ato_id), finalidade))
+    casados = [p for p in pedidos
+               if p["certidao_id"] is not None
+               or (finalidade.startswith(PREFIXO_DA_FINALIDADE_ONR)
+                   and str(certidao["emitida_em"] or "") >= str(p["emitindo_desde"] or "~"))]
+    if len(casados) != 1:
+        return False
+    p = casados[0]
+    return bool(p["aprovado_por_user_id"] and p["aprovado_em"]
+                and cobranca_integral_do_pedido_onr(p["dados_json"])
+                and p["custas_em"]
+                and str(p["custas_em"]) < str(p["status_conferido_em"] or "")
+                and status_onr_e_pago(p["status_onr_conferido"])
+                and _dentro_da_janela_onr(p["status_conferido_em"], agora))
+
+
 def codigo_do_envelope(dados: Any) -> str | None:
     """O item da tabela do TJ que o envelope sela (`13.1`, `16.3`). Só calcula.
 
@@ -3963,15 +4085,19 @@ def trava_ligada(con) -> bool:
 
 
 def _auditar(bd, *, acao: str, usuario: Any, usuario_id: Any, entidade: str,
-             entidade_id: Any, detalhes: dict, agora: str) -> None:
+             entidade_id: Any, detalhes: dict, agora: str,
+             agente: Any = None) -> None:
+    """Pela função da casa (`identidade_do_robo.registrar`, 26/10/2026). Com
+    `usuario_id`, a identidade sai da conta; sem ele, quem grava é a rotina do
+    selo (`agente`), a mando de quem pediu o selo (`usuario`) ou, sem ninguém,
+    do responsável pelas rotinas automáticas."""
     import json
-    bd.escrever(
-        """INSERT INTO audit_logs (ts, user_id, username_snapshot, action,
-                                   entity_type, entity_id, details)
-           VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-        (agora, usuario_id, usuario, acao, entidade,
-         int(entidade_id) if str(entidade_id or "").isdigit() else None,
-         json.dumps(detalhes, ensure_ascii=False, default=str)))
+    IDR.registrar(bd, ts=agora, user_id=usuario_id, username=usuario, action=acao,
+                  entity_type=entidade,
+                  entity_id=int(entidade_id) if str(entidade_id or "").isdigit() else None,
+                  details=json.dumps(detalhes, ensure_ascii=False, default=str),
+                  agente=agente if usuario_id is None else None,
+                  a_mando_de=(usuario or IDR.PELO_RESPONSAVEL) if usuario_id is None else None)
 
 
 def _so_admin(papel: Any, o_que: str) -> None:
@@ -4007,6 +4133,34 @@ def ligar_trava(con, *, ligada: bool, papel: Any, usuario: Any,
              usuario=usuario, usuario_id=usuario_id, entidade="SETTINGS",
              entidade_id=None, detalhes={"justificativa": motivo}, agora=agora)
     return {"ligada": bool(ligada)}
+
+
+def selo_pago_no_onr_ligado(con) -> bool:
+    """A forma CENTRAL_ONR está ligada pelo oficial? Só LÊ. Desligada por
+    padrão (26/10/2026, M5) — ver `CHAVE_SELO_PAGO_NO_ONR`."""
+    return _ler_setting(banco(con), CHAVE_SELO_PAGO_NO_ONR).strip() == "1"
+
+
+def ligar_selo_pago_no_onr(con, *, ligado: bool, papel: Any, usuario: Any,
+                           usuario_id: Any, justificativa: Any, agora: str) -> dict:
+    """Liga ou desliga a forma CENTRAL_ONR. ESCREVE. Só ADMIN.
+
+    O contrário da trava: aqui é LIGAR que abre a porta (o selo sai sem o
+    caixa ver o dinheiro), e por isso é ligar que pede justificativa — a
+    medição do primeiro pedido pago de verdade, nas palavras de quem mediu.
+    Desligar é sempre permitido ao ADMIN, sem frase mínima."""
+    _so_admin(papel, "ligar ou desligar o selo pago no ONR")
+    motivo = _justificativa(justificativa) if ligado else " ".join(
+        str(justificativa or "").split())
+    bd = banco(con)
+    bd.escrever(
+        """INSERT INTO settings (key, value) VALUES (%s, %s)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""",
+        (CHAVE_SELO_PAGO_NO_ONR, "1" if ligado else "0"))
+    _auditar(bd, acao="ONR_SELO_PAGO_LIGADO" if ligado else "ONR_SELO_PAGO_DESLIGADO",
+             usuario=usuario, usuario_id=usuario_id, entidade="SETTINGS",
+             entidade_id=None, detalhes={"justificativa": motivo}, agora=agora)
+    return {"ligado": bool(ligado)}
 
 
 def barra_da_trava(con) -> str | None:
@@ -4346,6 +4500,11 @@ def cobrir_o_selo(con, *, tabela: Any, ato_id: Any, referencia: Any,
         return _gravar_cobertura(bd, referencia=ref, tabela=tabela,
                                  ato_id=int(ato_id), forma=FORMA_CENTRAL_CRC,
                                  usuario=usuario, agora=agora)
+    if e_certidao_paga_no_onr(bd, tabela, ato_id, dados, agora):
+        # O valor foi pago no ONR, e não no caixa (25/10/2026).
+        return _gravar_cobertura(bd, referencia=ref, tabela=tabela,
+                                 ato_id=int(ato_id), forma=FORMA_CENTRAL_ONR,
+                                 usuario=usuario, agora=agora)
     if not trava_ligada(bd):
         return _gravar_cobertura(bd, referencia=ref, tabela=tabela, ato_id=ato_id,
                                  forma=FORMA_TRAVA_DESLIGADA, usuario=usuario,
@@ -4602,7 +4761,8 @@ def _estornar_reserva(con, reserva: dict | None, *, agora: str,
                     (linha["referencia"],))
     if bd.tem_tabela("audit_logs"):
         _auditar(bd, acao="SELO_RESERVA_ESTORNADA", usuario=linha.get("usuario"),
-                 usuario_id=None, entidade=linha.get("tabela") or "SELO",
+                 usuario_id=None, agente="estorno da reserva do selo",
+                 entidade=linha.get("tabela") or "SELO",
                  entidade_id=linha.get("ato_id"),
                  detalhes={"referencia": linha["referencia"],
                            "forma": linha.get("forma"),
@@ -4652,6 +4812,7 @@ def _resolver_reserva_orfa(bd, linha: dict, *, agora: str) -> str:
         if _confirmar_reserva(bd, linha, agora=agora) and bd.tem_tabela("audit_logs"):
             _auditar(bd, acao="SELO_RESERVA_CONFIRMADA_NA_CONFERENCIA",
                      usuario=linha.get("usuario"), usuario_id=None,
+                     agente="conferência das reservas órfãs do selo",
                      entidade=linha.get("tabela") or "SELO",
                      entidade_id=linha.get("ato_id"),
                      detalhes={"referencia": linha["referencia"],

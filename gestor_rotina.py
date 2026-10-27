@@ -163,6 +163,7 @@ ROTULOS = {
     "CAIXA_ABERTO": "Caixas esquecidos abertos",
     "FECHAMENTO_DO_MES": "Fechamento do mês: selos × caixa",
     "PLD_COAF": "PLD/COAF — casos que esperam análise ou comunicação",
+    "IDENTIDADE_DOS_ROBOS": "Robôs e rotinas que não dizem quem são nem a mando de quem",
 }
 # As cargas do RI ao ONR: os rótulos moram com o agente que as faz.
 ROTULOS.update(GCR.ROTULOS)

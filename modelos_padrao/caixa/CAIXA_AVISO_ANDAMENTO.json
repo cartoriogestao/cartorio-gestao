@@ -1,0 +1,16 @@
+{
+  "chave": "CAIXA_AVISO_ANDAMENTO",
+  "atribuicao": "Caixa e protocolo",
+  "nome": "Avisos de andamento ao cliente",
+  "formato": "CHAVES",
+  "explica": "O e-mail que avisa o cliente, quando ele pediu, da exigência na prenotação, do protocolo pronto para retirar e da prenotação perto de vencer — uma parte por andamento (===PRONTO===...) e o assunto de cada um (===PRONTO_ASSUNTO===). Só o status: sem nome, documento, valor nem teor. A assinatura (===ASSINATURA===) entra onde as outras partes pedem a assinatura.",
+  "campos": [
+    "serventia",
+    "telefone",
+    "email",
+    "numero",
+    "data_limite",
+    "dias",
+    "assinatura"
+  ]
+}

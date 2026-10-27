@@ -22,11 +22,30 @@ from typing import Any
 CAMPOS = ("ts", "user_id", "username_snapshot", "action", "entity_type",
           "entity_id", "details", "ip_address")
 
+#: A VERSÃO 2 DA FÓRMULA (revisão de segurança de 26/10/2026): depois do
+#: anterior entram `agente` e `a_mando_de` — quem agiu por programa e a mando
+#: de quem. A versão vem da própria linha (`hash_versao`, escrita pelo
+#: gatilho); sem ela (NULL, as linhas de antes da migração) vale a fórmula de
+#: 22/10. Quem ler a linha para conferir tem de trazer as três colunas
+#: (`SELECT *` basta).
+CAMPOS_DA_VERSAO_2 = ("agente", "a_mando_de")
+
+
+def versao_da_linha(linha: dict) -> int:
+    """1 (a fórmula de 22/10) ou 2 (com agente e a_mando_de)."""
+    try:
+        return int(linha.get("hash_versao") or 1)
+    except (TypeError, ValueError):
+        return 1
+
 
 def hash_da_linha(linha: dict, anterior: str | None) -> str:
     """O mesmo texto que o gatilho monta, com o mesmo SHA-256."""
     partes = ["" if linha.get(c) is None else str(linha.get(c)) for c in CAMPOS]
     partes.append(anterior or "")
+    if versao_da_linha(linha) >= 2:
+        partes.extend("" if linha.get(c) is None else str(linha.get(c))
+                      for c in CAMPOS_DA_VERSAO_2)
     return hashlib.sha256("|".join(partes).encode("utf-8")).hexdigest()
 
 

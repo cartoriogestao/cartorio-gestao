@@ -93,6 +93,9 @@ A_CONFIRMAR: tuple[dict, ...] = (
     # O Livro Diário Auxiliar virou obrigação medida (LG08). Fica o imposto de
     # renda: o Código de Normas só dá ao livro o espaço do IR (art. 190, VII,
     # e § 10, facultativo); o prazo do carnê-leão é da Receita Federal.
+    # DESDE 26/10/2026 o oficial pode cadastrar a regra do prazo, com a fonte,
+    # em Administrativo → Carnê-leão (`carne_leao.obrigacao_da_agenda`): então
+    # ela entra na agenda por `agenda(extras=...)` e sai desta pergunta.
     {"codigo": "CARNE_LEAO", "titulo": "Carnê-leão (imposto de renda mensal do delegatário)",
      "indicio": "o Código de Normas do MA só reserva espaço para o IR no Livro Diário "
                 "(art. 190, VII); o prazo não está em documento desta casa"},
@@ -109,8 +112,36 @@ def _dia_util(ano: int, mes: int, n: int) -> date:
     return soma_dias_uteis(date(ano, mes, 1) - timedelta(days=1), n)
 
 
+def _ultimo_dia_util(ano: int, mes: int) -> date:
+    """O último dia útil do mês, com os feriados nacionais de `ri_schema`."""
+    from ri_schema import eh_dia_util
+    dia = _ultimo_dia(ano, mes)
+    while not eh_dia_util(dia):
+        dia -= timedelta(days=1)
+    return dia
+
+
+def _mensal(hoje: date, prazo_do_mes) -> tuple[date, str]:
+    """O prazo deste mês é o da referência do mês passado; passado o prazo, o
+    próximo é o do mês que vem, que se refere a este."""
+    ano, mes = hoje.year, hoje.month
+    prazo = prazo_do_mes(ano, mes)
+    if prazo < hoje:
+        ano, mes = (ano + 1, 1) if mes == 12 else (ano, mes + 1)
+        prazo = prazo_do_mes(ano, mes)
+    ref_ano, ref_mes = (ano, mes - 1) if mes > 1 else (ano - 1, 12)
+    return prazo, f"referência {ref_mes:02d}/{ref_ano}"
+
+
 def proximo_vencimento(ob: dict, hoje: date) -> tuple[date, str]:
     """O próximo prazo da obrigação a partir de hoje, e a que período se refere."""
+    # O CARNÊ-LEÃO (26/10/2026) trouxe as duas formas que faltavam: o último
+    # dia útil e o dia fixo do mês. Elas só chegam aqui quando o oficial as
+    # cadastrou com a fonte (`carne_leao.obrigacao_da_agenda`).
+    if ob.get("ultimo_dia_util") and ob["periodicidade"] == "MENSAL":
+        return _mensal(hoje, _ultimo_dia_util)
+    if isinstance(ob.get("dia"), int) and ob["periodicidade"] == "MENSAL":
+        return _mensal(hoje, lambda a, m: date(a, m, min(ob["dia"], _ultimo_dia(a, m).day)))
     if ob.get("dia_util") and ob["periodicidade"] == "ANUAL":
         prazo = _dia_util(hoje.year, ob["mes"], ob["dia_util"])
         if prazo < hoje:
@@ -139,10 +170,14 @@ def proximo_vencimento(ob: dict, hoje: date) -> tuple[date, str]:
     raise ValueError(f"Periodicidade desconhecida: {ob['periodicidade']!r}")
 
 
-def agenda(hoje: date, horizonte_dias: int = 60) -> list[dict]:
-    """As obrigações do oficial com prazo dentro do horizonte, a mais próxima primeiro."""
+def agenda(hoje: date, horizonte_dias: int = 60, extras: tuple[dict, ...] = ()) -> list[dict]:
+    """As obrigações do oficial com prazo dentro do horizonte, a mais próxima primeiro.
+
+    `extras` são as obrigações que o oficial cadastrou com a fonte (hoje, o
+    carnê-leão), no mesmo formato de `OBRIGACOES`.
+    """
     fora = []
-    for ob in OBRIGACOES:
+    for ob in (*OBRIGACOES, *extras):
         prazo, referencia = proximo_vencimento(ob, hoje)
         faltam = (prazo - hoje).days
         if faltam > horizonte_dias:
@@ -157,9 +192,14 @@ def agenda(hoje: date, horizonte_dias: int = 60) -> list[dict]:
 PERGUNTA_DAS_OBRIGACOES = "OBRIGACOES_DO_DELEGATARIO_A_CONFIRMAR"
 
 
-def pergunta_das_nao_medidas() -> dict:
-    """A pergunta única sobre o que não está medido — vai à fila de decisões."""
-    linhas = "\n".join(f"- {o['titulo']} ({o['indicio']})" for o in A_CONFIRMAR)
+def pergunta_das_nao_medidas(medidas: tuple[str, ...] = ()) -> dict:
+    """A pergunta única sobre o que não está medido — vai à fila de decisões.
+
+    `medidas` são os códigos que o oficial já cadastrou com a fonte (o
+    carnê-leão): saem da pergunta, porque já estão na agenda.
+    """
+    linhas = "\n".join(f"- {o['titulo']} ({o['indicio']})" for o in A_CONFIRMAR
+                       if o["codigo"] not in medidas)
     return {
         "chave": PERGUNTA_DAS_OBRIGACOES,
         "origem": "OFICIAL",

@@ -71,7 +71,6 @@ BASE NORMATIVA (Prov. COGEX 28/2026, o PDF em `referencia/` manda)
 """
 from __future__ import annotations
 
-import csv
 import hashlib
 import io
 import re
@@ -576,7 +575,10 @@ def lista_csv(con, remessa_id: int) -> bytes:
     """
     r = remessa(con, remessa_id)
     saida = io.StringIO()
-    w = csv.writer(saida, delimiter=";", lineterminator="\r\n")
+    # Sem fórmula na planilha (achado transversal 2, 26/10/2026): a lista sai
+    # de casa, e o motivo do cancelamento é texto livre.
+    import csv_seguro as CSVS
+    w = CSVS.escritor(saida, delimiter=";", lineterminator="\r\n")
     if r["tipo"] == CANCELAMENTO:
         w.writerow(["Selo", "Ato", "Atribuição", "Obtido em", "Cancelado em", "Motivo"])
         for i in r["itens"]:

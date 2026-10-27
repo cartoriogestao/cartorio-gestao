@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}Nova cobrança{% endblock %}
+{% block heading %}<h1>Nova cobrança por boleto — {{ bancos[cfg.cobranca_banco] }}</h1>{% endblock %}
+{% block content %}
+{% if cfg.cobranca_ambiente != 'producao' %}
+<div class="notice">Ambiente de <strong>teste</strong>: este boleto não cobra ninguém de verdade.</div>
+{% endif %}
+
+{% if a_pagar %}
+<div class="card">
+  <p>Protocolo <strong>{{ a_pagar.protocolo.numero }}</strong> — {{ a_pagar.itens }} item(ns) a pagar,
+    R$ {{ reais(a_pagar.devido) }}{% if a_pagar.saldo_depositos %}, menos R$ {{ reais(a_pagar.saldo_depositos) }}
+    de depósito prévio{% endif %}. <strong>O valor abaixo é sugestão: confira antes de emitir.</strong></p>
+  {% if a_pagar.cobrancas_abertas %}
+  <p class="badge alta">Este protocolo já tem {{ a_pagar.cobrancas_abertas|length }} cobrança(s) em andamento:
+    {% for c in a_pagar.cobrancas_abertas %}<a href="{{ url_for('cobranca_ficha', cobranca_id=c.id) }}">#{{ c.id }}</a> {% endfor %}.
+    Emitir outra faz o cliente receber dois boletos.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<form method="post" class="form-grid">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="protocolo_id" value="{{ f.get('protocolo_id', '') }}">
+  <label>Valor (R$) <input name="valor" value="{{ f.get('valor', '') }}" required></label>
+  <label>Vencimento <input type="date" name="vencimento" value="{{ f.get('vencimento', '') }}" required></label>
+  <h3>Pagador <small class="muted">— o banco exige nome, CPF/CNPJ e endereço completo</small></h3>
+  <label>Nome ou razão social (até 40) <input name="nome" maxlength="40" value="{{ f.get('nome', '') }}" required></label>
+  <label>CPF ou CNPJ <input name="documento" value="{{ f.get('documento', '') }}" required></label>
+  <label>E-mail (opcional) <input name="email" maxlength="50" value="{{ f.get('email', '') }}"></label>
+  <label>Endereço <input name="logradouro" maxlength="60" value="{{ f.get('logradouro', '') }}" required></label>
+  <label>Número (até 5) <input name="numero" maxlength="5" value="{{ f.get('numero', '') }}"></label>
+  <label>Complemento <input name="complemento" maxlength="30" value="{{ f.get('complemento', '') }}"></label>
+  <label>Bairro <input name="bairro" maxlength="40" value="{{ f.get('bairro', '') }}"></label>
+  <label>Cidade <input name="cidade" maxlength="50" value="{{ f.get('cidade', '') }}" required></label>
+  <label>UF <select name="uf">{% for u in ufs %}<option{% if u == f.get('uf') %} selected{% endif %}>{{ u }}</option>{% endfor %}</select></label>
+  <label>CEP <input name="cep" value="{{ f.get('cep', '') }}" required></label>
+  <label>Mensagem no boleto <textarea name="mensagem" rows="2" maxlength="390">{{ f.get('mensagem', '') }}</textarea></label>
+  <button type="submit">{% if cfg.cobranca_ligada == '1' %}Cadastrar e emitir{% else %}Cadastrar (a emissão está desligada){% endif %}</button>
+</form>
+{% endblock %}

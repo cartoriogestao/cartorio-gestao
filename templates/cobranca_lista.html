@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block title %}Cobrança por boleto{% endblock %}
+{% block heading %}<h1>Cobrança por boleto</h1>{% endblock %}
+{% block content %}
+{# O CICLO: cadastrar a partir do protocolo → o banco registra → o cliente
+   paga → o balcão lança no caixa como depósito prévio. O robô acompanha o
+   banco; quem lança é quem está com o caixa aberto. #}
+<div class="actions">
+  <a class="button" href="{{ url_for('cobranca_nova') }}">Nova cobrança</a>
+  {% if papel == 'ADMIN' %}<a class="button" href="{{ url_for('cobranca_configuracao') }}">Configuração e credenciais</a>{% endif %}
+</div>
+
+{% if cfg.cobranca_ligada != '1' %}
+<div class="notice">A emissão de boletos está <strong>desligada</strong>: as cobranças cadastradas
+  esperam. Quem liga é o oficial, na configuração.</div>
+{% elif cfg.cobranca_ambiente != 'producao' %}
+<div class="notice">Ambiente de <strong>teste</strong> do {{ bancos[cfg.cobranca_banco] }}: nenhum boleto é de verdade.</div>
+{% endif %}
+
+{% if contagem.get('RECEBIDA') %}
+<div class="notice"><strong>{{ contagem.get('RECEBIDA') }}</strong> cobrança(s) paga(s) no banco esperando o
+  lançamento no caixa. <a href="{{ url_for('cobranca_lista', situacao='RECEBIDA') }}">Ver</a></div>
+{% endif %}
+
+<p class="filters">
+  <a href="{{ url_for('cobranca_lista') }}">Todas</a>
+  {% for k, v in situacoes.items() %} · <a href="{{ url_for('cobranca_lista', situacao=k) }}"{% if k == situacao %} class="ativo"{% endif %}>{{ v.split(' —')[0] }} ({{ contagem.get(k, 0) }})</a>{% endfor %}
+</p>
+
+{% if linhas %}
+<div class="table-wrap"><table>
+  <thead><tr><th>#</th><th>Banco</th><th>Protocolo</th><th>Pagador</th><th>Vencimento</th><th>Valor</th><th>Situação</th><th></th></tr></thead>
+  <tbody>{% for c in linhas %}<tr>
+    <td>{{ c.seu_numero }}</td><td>{{ bancos[c.banco] }}{% if c.ambiente != 'producao' %} <span class="badge">teste</span>{% endif %}</td>
+    <td>{{ c.protocolo_numero or '—' }}</td><td>{{ c.pagador_nome }}</td><td>{{ c.vencimento }}</td>
+    <td>R$ {{ reais(c.valor) }}</td>
+    <td>{{ situacoes[c.situacao].split(' —')[0] }}{% if c.pedido %} <span class="badge">pedido ao banco</span>{% endif %}</td>
+    <td><a class="small" href="{{ url_for('cobranca_ficha', cobranca_id=c.id) }}">abrir</a></td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p class="muted">Nenhuma cobrança {% if situacao %}nesta situação{% else %}cadastrada. Ela nasce do protocolo: abra o protocolo e use «Cobrar por boleto», ou o botão acima{% endif %}.</p>{% endif %}
+{% endblock %}

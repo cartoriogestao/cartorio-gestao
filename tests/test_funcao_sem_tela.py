@@ -628,12 +628,14 @@ _ENSAIO = ("roteiro de ensaio do sandbox — a porta é "
 ACHADAS_EM_26_10_2026: dict[str, str] = {
     "guardar_semente": _BANCO_DE_TESTE, "marca_do_codigo": _BANCO_DE_TESTE,
     "devolver_schema": _BANCO_DE_TESTE, "apagar_lixo": _BANCO_DE_TESTE,
-    "tomar_da_reserva": _BANCO_DE_TESTE, "instalar_desvio": _BANCO_DE_TESTE,
+    "tomar_da_reserva": _BANCO_DE_TESTE,
     "schema_existe": _BANCO_DE_TESTE, "comecar_gravacao": _BANCO_DE_TESTE,
     "terminar_gravacao": _BANCO_DE_TESTE, "criar_por_reproducao": _BANCO_DE_TESTE,
     "descartar_schema": _BANCO_DE_TESTE, "schemas_criados": _BANCO_DE_TESTE,
-    "registrar_banco": _BANCO_DE_TESTE, "esvaziar_reservatorio": _BANCO_DE_TESTE,
-    "listar_certificados": _A3, "assinar_pdf": _A3, "status_do_servico": _A3,
+    # `instalar_desvio`, `registrar_banco`, `listar_certificados`, `assinar_pdf` e
+    # `status_do_servico` saíram em 27/10/2026: os PRs que entraram antes deste
+    # (#11, #13, #27) lhes deram caminho até tela.
+    "esvaziar_reservatorio": _BANCO_DE_TESTE,
     "garantir_certidao": "rcpn_*_ensaio — " + _ENSAIO,
     "garantir_assento": "rcpn_*_ensaio — " + _ENSAIO,
     "assento_precisa_remontar": "rcpn_*_ensaio — " + _ENSAIO,

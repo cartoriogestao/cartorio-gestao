@@ -372,3 +372,67 @@ def test_a_janela_nao_promete_que_o_relato_nunca_sai_da_casa(admin):
     assert "Avisar um problema desta tela" in html
     assert "nada é enviado para fora" not in html
     assert "vai ao provedor de IA" in html
+
+
+# ------------------------------------------- onde o problema se reproduz
+#
+# Fase 2 da sincronia dos problemas (27/10/2026): a fase 1 só mostrava a
+# reprodução; agora quem anota o retorno do desenvolvimento também a escolhe.
+
+
+def _um_problema(cg_casa) -> int:
+    import ajuda_problemas as AP
+    with cg_casa["db"].transaction() as con:
+        return AP.anotar(con, origem="RELATADO", titulo="A certidão saiu torta",
+                         onde="certidao", agora="2026-10-27T10:00:00")["id"]
+
+
+def _reproducao(s, problema_id: int) -> tuple[str | None, str]:
+    con = _con(s)
+    linha = con.execute("SELECT reproducao, situacao FROM aj_problemas WHERE id=?",
+                        (problema_id,)).fetchone()
+    con.close()
+    return linha["reproducao"], linha["situacao"]
+
+
+def test_a_tela_escolhe_a_reproducao_e_audita(cg_casa):
+    pid = _um_problema(cg_casa)
+    s = _sessao(cg_casa, "ADMIN")
+    html = s["c"].get("/ajuda/problemas").get_data(as_text=True)
+    assert "Onde se reproduz" in html
+    r = s["c"].post(f"/ajuda/problemas/{pid}/reproducao",
+                    data={"csrf_token": _token(html),
+                          "reproducao": "SO_PRODUCAO_EQUIPAMENTO"},
+                    follow_redirects=True)
+    assert "Reprodução gravada" in r.get_data(as_text=True)
+    assert _reproducao(s, pid) == ("SO_PRODUCAO_EQUIPAMENTO", "ABERTO")
+    con = _con(s)
+    audit = con.execute(
+        "SELECT details FROM audit_logs WHERE action='AJUDA_PROBLEMA_REPRODUCAO' "
+        "AND entity_id=?", (pid,)).fetchall()
+    con.close()
+    assert len(audit) == 1
+    assert "A_CLASSIFICAR" in audit[0]["details"]          # o antes
+    assert "SO_PRODUCAO_EQUIPAMENTO" in audit[0]["details"]
+
+
+def test_a_tela_recusa_reproducao_fora_do_vocabulario(cg_casa):
+    pid = _um_problema(cg_casa)
+    s = _sessao(cg_casa, "ADMIN")
+    html = s["c"].get("/ajuda/problemas").get_data(as_text=True)
+    r = s["c"].post(f"/ajuda/problemas/{pid}/reproducao",
+                    data={"csrf_token": _token(html), "reproducao": "TALVEZ"},
+                    follow_redirects=True)
+    assert "Não conheço a reprodução" in r.get_data(as_text=True)
+    assert _reproducao(s, pid) == ("A_CLASSIFICAR", "ABERTO")
+
+
+def test_o_escrevente_nao_escolhe_a_reproducao(cg_casa):
+    pid = _um_problema(cg_casa)
+    s = _sessao(cg_casa, "USER")
+    html = s["c"].get("/").get_data(as_text=True)
+    r = s["c"].post(f"/ajuda/problemas/{pid}/reproducao",
+                    data={"csrf_token": _token(html),
+                          "reproducao": "AQUI_FICTICIOS"})
+    assert r.status_code in (302, 403)
+    assert _reproducao(s, pid) == ("A_CLASSIFICAR", "ABERTO")

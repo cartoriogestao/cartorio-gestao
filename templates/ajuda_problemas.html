@@ -356,6 +356,26 @@ ter várias linhas.</pre>
               <button class="button" type="submit">Gravar o retorno</button>
             </form>
           </details>
+          {# ONDE SE REPRODUZ — fase 2 da sincronia, 27/10/2026. Junto da nota
+             porque é a mesma conversa com quem conserta; não fecha nada. #}
+          <details class="cancelar-ato">
+            <summary><small>Onde se reproduz</small></summary>
+            <form method="post" action="{{ url_for('ajuda_problema_reproducao', problema_id=p.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="vista" value="{{ vista }}">
+              {% if exibir_filtro_ambiente and ambiente_filtro != 'todas' %}
+              <input type="hidden" name="ambiente" value="{{ ambiente_filtro }}">
+              {% endif %}
+              <select name="reproducao">
+                {% for chave, texto in reproducoes.items() %}
+                  <option value="{{ chave }}"
+                          {% if (p.reproducao or 'A_CLASSIFICAR') == chave %}selected{% endif %}>
+                    {{ texto }}</option>
+                {% endfor %}
+              </select>
+              <button class="button" type="submit">Gravar a reprodução</button>
+            </form>
+          </details>
           {% endif %}
 
           {% if liberado and tem_chave and not p.diagnostico %}

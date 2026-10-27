@@ -299,6 +299,14 @@ def test_interdicao_lavrada_pela_tela_leva_o_que_a_lei_manda(casa):
 #
 # «tela corrigir registro é importante fazer» — o oficial, 13/10/2026.
 
+def _assento_ativo(casa) -> None:
+    """A TRAVA DO SELO PAGO (3.7.0, achado A9) desliga aqui, à vista: sem
+    protocolo pago o selo não sai, a lavratura desfaz o assento (CANCELADO) e
+    a tela de corrigir — que só abre assento ATIVO — nem chega a ser medida. A
+    trava tem teste próprio (`test_selo_e_caixa`)."""
+    casa["db"].set_settings({"selo_trava_caixa": "DESLIGADA"})
+
+
 def _corrigir(casa, aid: int, **trocar):
     c = casa["c"]
     html = c.get(f"/rcpn/{aid}/editar").get_data(as_text=True)
@@ -315,6 +323,7 @@ def _corrigir(casa, aid: int, **trocar):
 
 
 def test_a_tela_de_corrigir_mostra_o_livro_e_preenchido(casa):
+    _assento_ativo(casa)
     a = _lavrar_pela_tela(casa, "INTERDICAO", **INTERDICAO)
     html = casa["c"].get(f"/rcpn/{a['id']}/editar").get_data(as_text=True)
     assert 'value="Vara Única da Comarca Exemplo"' in html
@@ -324,6 +333,7 @@ def test_a_tela_de_corrigir_mostra_o_livro_e_preenchido(casa):
 
 
 def test_corrigir_o_livro_e_grava_o_titulo_e_a_pessoa(casa):
+    _assento_ativo(casa)
     a = _lavrar_pela_tela(casa, "INTERDICAO", **INTERDICAO)
     _, r = _corrigir(casa, a["id"], livro_e_juizo="2ª Vara Exemplo",
                      livro_e_limites="atos patrimoniais",
@@ -340,6 +350,7 @@ def test_corrigir_o_livro_e_grava_o_titulo_e_a_pessoa(casa):
 
 
 def test_corrigir_o_regime_da_uniao_estavel(casa):
+    _assento_ativo(casa)
     a = _lavrar_pela_tela(
         casa, "UNIAO_ESTAVEL", nome="ANA EXEMPLO E BRUNO EXEMPLO",
         livro_e_titulo="TERMO", livro_e_titulo_data="2026-09-01",

@@ -7,15 +7,15 @@ O QUE SE MEDIU ANTES DE ESCREVER (11/10/2026, produção só lida, antes das 14h
     - 31 expedientes no sistema, 30 deles do Malote Digital, TODOS cadastrados à
       mão (28 pela mesma escrevente). O assunto é colado da lista do malote, com a quebra
       de linha dela dentro («AT IVIDA», «CIRCUL AR»).
-    - A equipe baixa o PDF do malote e o salva no Proton, em «6. MALOTE DIGITAL».
+    - A equipe baixa o PDF do malote e o salva na pasta do malote da serventia.
       Existe ali uma subpasta «PARA CADASTRAR»: o que ainda não entrou no
       sistema. Nela havia DOIS arquivos parados desde 23/09/2026 — um deles uma
       decisão de divórcio para averbar no nascimento (RCPN), dezoito dias fora do
       sistema e sem tarefa.
-    - Dos 34 PDFs salvos no Proton desde 10/09, 21 estão no sistema (o sha256 do
+    - Dos 34 PDFs salvos na pasta do malote desde 10/09, 21 estão no sistema (o sha256 do
       arquivo bate com um anexo de expediente) e 13 não. Dos 13, quatro são papel
       que a própria casa produziu (certidão emitida, etiqueta de selo) e não são
-      «recebidos»; os outros são circulares e decisões arquivadas no Proton sem
+      «recebidos»; os outros são circulares e decisões arquivadas na pasta sem
       expediente.
     - O Malote Digital do TJMA (versão 26.05, https://malote.tjma.jus.br) entra
       por LOGIN E SENHA, e a página de entrada avisa: «Habilitado duplo fator de
@@ -31,18 +31,18 @@ O QUE ISSO DECIDIU
        `.claude/agents/agente-malote.md`), e `sondar_malote_digital` só mede a
        porta, sem credencial nenhuma.
     2. Do arquivo baixado em diante, o agente faz tudo sozinho: acha o que chegou
-       (a pasta «PARA CADASTRAR» do Proton e a pasta de entrada do sistema),
+       (a subpasta «PARA CADASTRAR» da pasta do malote e a pasta de entrada do sistema),
        separa o que já está no sistema pelo sha256, separa o que é papel da casa,
        CADASTRA o expediente com os anexos — o mesmo expediente que a tela cria —
        e entrega à triagem que já existe (`gestor_expedientes`, que lê o PDF,
        decide setor e prazo e abre a tarefa).
-    3. O que foi arquivado no Proton sem expediente NÃO se cadastra sozinho: a
+    3. O que foi arquivado na pasta do malote sem expediente NÃO se cadastra sozinho: a
        equipe já o classificou, e pode ter sido de propósito (circular de
        ciência). Vai para o relatório, com o nome e a pasta.
 
 O QUE ELE NÃO FAZ
     Não responde ao remetente, não arquiva nem muda etapa de expediente, não move
-    nem apaga nada no Proton (a pasta é da equipe), não guarda senha e não digita
+    nem apaga nada na pasta do malote (ela é da equipe), não guarda senha e não digita
     senha. `expedientes.created_by` é NOT NULL e o sistema não tem usuário-robô
     (decisão dele de 06/10: não criar conta para agente); o oficial decidiu em
     11/10/2026 que o agente cadastra **em nome dele**, e que **só ele**
@@ -65,15 +65,14 @@ from pathlib import Path
 
 import banco_pg
 from bd_nativo import banco
+import identidade_do_robo as IDR
 
 QUEM = "AGENTE MALOTE"
 ORIGEM = "Malote Digital"
 
-#: O NOME da pasta em que a equipe guarda o malote no Proton. O caminho até ela
-#   (a conta e a pasta compartilhada) é desta casa e não se escreve no código
-#   (relato #111, anti-vazamento): vem de `settings.malote_pasta_proton`, ou é
-#   achado procurando esta pasta dentro do Proton Drive do usuário.
-NOME_DA_PASTA_DO_MALOTE = "6. MALOTE DIGITAL"
+#: A PASTA em que a equipe guarda o malote é configuração da serventia
+#   (`settings.malote_pasta`, na tela de Configurações): o código público não
+#   sabe onde ela fica nem como se chama (relato #111, anti-vazamento).
 SUBPASTA_A_CADASTRAR = "PARA CADASTRAR"
 #: A pasta de entrada do próprio sistema (ordem do oficial de 10/10/2026: nada
 #   novo fora de `arquivos\<atribuição>`). É onde o download assistido grava.
@@ -112,8 +111,8 @@ _IGNORAR = {".ds_store", "desktop.ini", "thumbs.db"}
 # código vai ao GitHub. Sem a configuração, o agente mede e não cadastra.
 EM_NOME_DE_PADRAO = ""
 
-#: A CAPA QUE O MALOTE DIGITAL PÕE NO PDF — medida em 11/10/2026 nos PDFs do
-#   Proton: 137 de 153 a têm, e nas 137 vêm os mesmos campos na mesma ordem
+#: A CAPA QUE O MALOTE DIGITAL PÕE NO PDF — medida em 11/10/2026 nos PDFs da
+#   pasta do malote: 137 de 153 a têm, e nas 137 vêm os mesmos campos na mesma ordem
 #   (Tipo de documento, Código de rastreabilidade, Nome original, Data,
 #   Remetente, Documento, Prioridade, Motivo de envio; Assunto em 133). É de lá
 #   que saem remetente, assunto e o código — que é o número do documento no
@@ -275,23 +274,18 @@ def e_da_casa(nome: str, cns: str = "") -> bool:
     return bool(cns) and re.search(rf"\b[A-Z]{{6}}{re.escape(cns)}[A-Z0-9]{{10,16}}\b", nome) is not None
 
 
-def pasta_proton_padrao(con: sqlite3.Connection | None = None) -> Path | None:
-    """A pasta do malote no Proton: `settings.malote_pasta_proton`, senão a que
-    se achar com o nome `NOME_DA_PASTA_DO_MALOTE` no Proton Drive do usuário
-    (conta/«Shared with me»/pasta compartilhada/…). Nenhuma: None."""
+def pasta_do_malote(con: sqlite3.Connection | None = None) -> Path | None:
+    """A pasta do malote da serventia: `settings.malote_pasta`, na tela de
+    Configurações. Sem ela, None — o código NÃO procura em lugar nenhum: onde a
+    casa guarda os arquivos e como chama as pastas é dela, e não do código."""
     if con is not None:
         try:
-            r = banco(con).um("SELECT value FROM settings WHERE key = 'malote_pasta_proton'")
+            r = banco(con).um("SELECT value FROM settings WHERE key = 'malote_pasta'")
         except sqlite3.Error:
             r = None
         if r and str(r["value"] or "").strip():
             return Path(str(r["value"]).strip())
-    proton = Path.home() / "Proton Drive"
-    if not proton.is_dir():
-        return None
-    achadas = sorted(proton.glob(f"*/Shared with me/*/{NOME_DA_PASTA_DO_MALOTE}")) \
-        or sorted(proton.glob(f"*/{NOME_DA_PASTA_DO_MALOTE}"))
-    return achadas[0] if achadas else None
+    return None
 
 
 def categoria_do_nome(nome: str) -> str:
@@ -306,10 +300,10 @@ def assunto_do_nome(nome: str) -> str:
     return " ".join(base.replace("_", " ").split())[:200] or "Sem assunto"
 
 
-def pastas_de_entrada(pasta_dados: Path, pasta_proton: Path | None) -> list[Path]:
+def pastas_de_entrada(pasta_dados: Path, pasta_malote: Path | None) -> list[Path]:
     pastas = [archive_root_de(pasta_dados) / SUBPASTA_ENTRADA]
-    if pasta_proton is not None:
-        pastas.append(pasta_proton / SUBPASTA_A_CADASTRAR)
+    if pasta_malote is not None:
+        pastas.append(pasta_malote / SUBPASTA_A_CADASTRAR)
     return pastas
 
 
@@ -449,10 +443,15 @@ def _proximo_protocolo(con: sqlite3.Connection) -> str:
 
 
 def _auditar(con, acao: str, entidade_id, detalhes: dict, agora: str) -> None:
-    banco(con).escrever(
-        """INSERT INTO audit_logs (ts, user_id, username_snapshot, action, entity_type,
-               entity_id, details) VALUES (%s, NULL, %s, %s, 'EXPEDIENTE', %s, %s)""",
-        (agora, QUEM, acao, entidade_id, json.dumps(detalhes, ensure_ascii=False, default=str)))
+    # O agente diz quem é e a mando de quem age (ordem do oficial, 26/10/2026):
+    # a pessoa em nome de quem o malote cadastra, e, sem ela, o responsável
+    # pelas rotinas automáticas.
+    em_nome_de = IDR.nome_da_pessoa(con, detalhes.get("em_nome_de"))
+    IDR.registrar(con, ts=agora, user_id=None, username=QUEM, action=acao,
+                  entity_type="EXPEDIENTE", entity_id=entidade_id,
+                  details=json.dumps(detalhes, ensure_ascii=False, default=str),
+                  agente="agente do malote",
+                  a_mando_de=em_nome_de or IDR.PELO_RESPONSAVEL)
 
 
 def cadastrar(con: sqlite3.Connection, g: Grupo, usuario_id: int, raiz_arquivos: Path,
@@ -460,7 +459,7 @@ def cadastrar(con: sqlite3.Connection, g: Grupo, usuario_id: int, raiz_arquivos:
     """Cria o expediente e copia os anexos — a forma da tela de expedientes.
 
     A cópia vai para `arquivos/Expedientes/<categoria>/<protocolo>`, como a tela
-    grava; o arquivo do Proton fica onde está. Tudo numa transação: anexo sem
+    grava; o arquivo da pasta do malote fica onde está. Tudo numa transação: anexo sem
     expediente ou expediente sem anexo não sobram.
     """
     from storage import copy_existing, safe_component
@@ -532,23 +531,23 @@ def cadastrar(con: sqlite3.Connection, g: Grupo, usuario_id: int, raiz_arquivos:
     return exp_id
 
 
-def arquivados_sem_expediente(con: sqlite3.Connection, pasta_proton: Path,
+def arquivados_sem_expediente(con: sqlite3.Connection, pasta_malote: Path,
                               desde: date | None = None) -> list[dict]:
-    """O que a equipe arquivou no Proton (fora de «PARA CADASTRAR») e que não
+    """O que a equipe arquivou na pasta do malote (fora de «PARA CADASTRAR») e que não
     tem expediente. SÓ RELATÓRIO: pode ser circular de ciência guardada de
     propósito, e quem decide é a pessoa."""
-    if not pasta_proton.is_dir():
+    if not pasta_malote.is_dir():
         return []
     saida = []
     cns = cns_da_casa(con)
-    for p in _arquivos_de(pasta_proton):
+    for p in _arquivos_de(pasta_malote):
         if SUBPASTA_A_CADASTRAR in p.parts or e_da_casa(p.name, cns):
             continue
         if desde and date.fromtimestamp(p.stat().st_mtime) < desde:
             continue
         sha = _sha256(p)
         if not _shas_no_sistema(con, [sha]):
-            saida.append({"arquivo": p.name, "pasta": str(p.parent.relative_to(pasta_proton)),
+            saida.append({"arquivo": p.name, "pasta": str(p.parent.relative_to(pasta_malote)),
                           "chegou_em": date.fromtimestamp(p.stat().st_mtime).isoformat()})
     return saida
 
@@ -570,7 +569,7 @@ def sondar_malote_digital(timeout: int = 20, abrir=None) -> dict:
             "aviso_2fa": bool(re.search(r"2FA|duplo fator", texto, re.I))}
 
 
-def rodada(con: sqlite3.Connection, pasta_dados: Path, *, pasta_proton: Path | None | str = "PADRAO",
+def rodada(con: sqlite3.Connection, pasta_dados: Path, *, pasta_malote: Path | None | str = "PADRAO",
            confirmar: bool = False, em_nome_de: str | None = None, triar: bool = False,
            hoje: date | None = None, sondar: bool = False, fraudes: bool = True,
            conversar=None) -> dict:
@@ -583,8 +582,8 @@ def rodada(con: sqlite3.Connection, pasta_dados: Path, *, pasta_proton: Path | N
     expediente; se a IA não ler, o arquivo FICA na pasta e o verificador acusa.
     `fraudes=False` desliga a leitura (e aí tudo vira expediente, como antes)."""
     hoje = hoje or date.today()
-    if pasta_proton == "PADRAO":
-        pasta_proton = pasta_proton_padrao(con)
+    if pasta_malote == "PADRAO":
+        pasta_malote = pasta_do_malote(con)
     init_schema(con)
     agora = datetime.now().isoformat(timespec="seconds")
     bd = banco(con)
@@ -593,7 +592,7 @@ def rodada(con: sqlite3.Connection, pasta_dados: Path, *, pasta_proton: Path | N
     con.commit()
     resumo: dict = {"grupos": [], "cadastrados": 0, "erros": [], "fraudes": []}
     try:
-        grupos = classificar(con, varrer(pastas_de_entrada(pasta_dados, pasta_proton)))
+        grupos = classificar(con, varrer(pastas_de_entrada(pasta_dados, pasta_malote)))
         usuario, motivo = None, ("não cadastrei: falta dizer em nome de quem o agente cadastra "
                                  "(settings.malote_cadastra_em_nome_de)")
         if confirmar:
@@ -648,8 +647,8 @@ def rodada(con: sqlite3.Connection, pasta_dados: Path, *, pasta_proton: Path | N
                                      "protocolo": g.protocolo, "recebido_em": g.recebido_em,
                                      "arquivos": [p.name for p in g.arquivos],
                                      "categoria": categoria_do_nome(g.nome), "capa": g.capa})
-        if pasta_proton is not None:
-            resumo["arquivados_sem_expediente"] = arquivados_sem_expediente(con, pasta_proton)
+        if pasta_malote is not None:
+            resumo["arquivados_sem_expediente"] = arquivados_sem_expediente(con, pasta_malote)
         if triar and resumo["cadastrados"]:
             import gestor_expedientes
             resumo["triagem"] = gestor_expedientes.triar_pendentes(con, pasta_dados, hoje)
@@ -710,7 +709,7 @@ td,th{{border:1px solid #ccc;padding:6px;font-size:13px;vertical-align:top}}th{{
 {bloco_fraudes}
 <h2>O que estava nas pastas de entrada</h2>
 <table><tr><th>arquivo ou pasta</th><th>situação</th><th>expediente</th><th>chegou em</th><th>categoria</th><th>nota</th></tr>{linhas}</table>
-<h2>Arquivados no Proton sem expediente no sistema</h2>
+<h2>Arquivados na pasta do malote sem expediente no sistema</h2>
 <p>Só para conferir: pode ser circular de ciência guardada de propósito. O agente não os cadastra.</p>
 <table><tr><th>arquivo</th><th>pasta</th><th>chegou em</th></tr>{arq or '<tr><td colspan=3>Nenhum.</td></tr>'}</table>
 {f'<h2>Erros</h2><ul>{erros}</ul>' if erros else ''}
@@ -722,9 +721,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Agente do malote: acha o que chegou, cadastra e entrega à triagem.")
     ap.add_argument("--banco", required=True)
     ap.add_argument("--pasta-dados", help="padrão: a pasta do banco")
-    ap.add_argument("--proton", default=None,
-                    help="pasta «6. MALOTE DIGITAL»; padrão: settings.malote_pasta_proton ou a achada no "
-                         "Proton Drive; '' desliga")
+    ap.add_argument("--pasta", default=None,
+                    help="pasta do malote da serventia; padrão: settings.malote_pasta; '' desliga")
     ap.add_argument("--confirmar", action="store_true", help="sem isto, só mede")
     ap.add_argument("--em-nome-de", help="login em nome de quem cadastrar")
     ap.add_argument("--triar", action="store_true", help="chama a triagem do gestor depois de cadastrar")
@@ -762,11 +760,11 @@ def main(argv=None) -> int:
         con = banco_pg.conectar(f"file:{banco.as_posix()}?mode=ro", uri=True)
     try:
         if a.confirmar:
-            resumo = rodada(con, Path(a.pasta_dados or banco.parent), pasta_proton=("PADRAO" if a.proton is None else (Path(a.proton) if a.proton else None)),
+            resumo = rodada(con, Path(a.pasta_dados or banco.parent), pasta_malote=("PADRAO" if a.pasta is None else (Path(a.pasta) if a.pasta else None)),
                             confirmar=True, em_nome_de=a.em_nome_de, triar=a.triar, sondar=a.sondar,
                             fraudes=not a.sem_fraudes)
         else:
-            resumo = medir(con, Path(a.pasta_dados or banco.parent), (pasta_proton_padrao(con) if a.proton is None else (Path(a.proton) if a.proton else None)), a.sondar)
+            resumo = medir(con, Path(a.pasta_dados or banco.parent), (pasta_do_malote(con) if a.pasta is None else (Path(a.pasta) if a.pasta else None)), a.sondar)
     finally:
         con.close()
     print(json.dumps(resumo, ensure_ascii=False, indent=1, default=str))
@@ -775,16 +773,16 @@ def main(argv=None) -> int:
     return 0
 
 
-def medir(con: sqlite3.Connection, pasta_dados: Path, pasta_proton: Path | None, sondar: bool = False) -> dict:
+def medir(con: sqlite3.Connection, pasta_dados: Path, pasta_malote: Path | None, sondar: bool = False) -> dict:
     """A rodada sem gravar nada — nem a linha de execução. Serve à produção lida em `mode=ro`."""
-    grupos = classificar(con, varrer(pastas_de_entrada(pasta_dados, pasta_proton)))
+    grupos = classificar(con, varrer(pastas_de_entrada(pasta_dados, pasta_malote)))
     resumo = {"cadastrados": 0, "erros": [], "so_mediu": True,
               "grupos": [{"nome": g.nome, "pasta": g.pasta_origem, "situacao": g.situacao, "nota": g.nota,
                           "expediente_id": g.expediente_id, "protocolo": None, "recebido_em": g.recebido_em,
                           "arquivos": [p.name for p in g.arquivos], "categoria": categoria_do_nome(g.nome), "capa": g.capa}
                          for g in grupos]}
-    if pasta_proton is not None:
-        resumo["arquivados_sem_expediente"] = arquivados_sem_expediente(con, pasta_proton)
+    if pasta_malote is not None:
+        resumo["arquivados_sem_expediente"] = arquivados_sem_expediente(con, pasta_malote)
     if sondar:
         resumo["malote_digital"] = sondar_malote_digital()
     return resumo

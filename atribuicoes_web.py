@@ -3181,6 +3181,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         regra de domínio na tela é como as duas divergem.
         """
         ato = _campo("ato")
+        # O ROBÔ NÃO CANCELA NEM CUMPRE ORDEM JUDICIAL (revisão de segurança,
+        # 26/10/2026): ele alcança esta rota para lavrar, e a recusa é aqui
+        # dentro, antes de abrir a transação.
+        import selo_robo as SR
+        if SR.lancamento_vedado_ao_robo(ato):
+            abort(403)
         voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_id))
         situacao_antes = situacao_depois = None
         try:
@@ -8654,6 +8660,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         nova, e no acervo cada ato é escritura à parte. É o oposto do RCPN.
         """
         tipo = _campo("tipo")
+        # O ROBÔ AVERBA, MAS NÃO CANCELA (revisão de segurança, 26/10/2026).
+        import selo_robo as SR
+        if SR.lancamento_vedado_ao_robo(tipo):
+            abort(403)
         voltar = redirect(url_for("rcpj_rtd_registro", registro_id=registro_id))
         try:
             with db.transaction() as con:
@@ -9662,6 +9672,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         averbação dizendo que foi cancelado e por quê.
         """
         tipo = _campo("tipo")
+        # O ROBÔ AVERBA, MAS NÃO CANCELA (revisão de segurança, 26/10/2026).
+        import selo_robo as SR
+        if SR.lancamento_vedado_ao_robo(tipo):
+            abort(403)
         voltar = redirect(url_for("livro3_registro", registro_id=registro_id))
         gerar_arquivamento = _campo("gerar_arquivamento") == "1"
         folhas_arquivamento = 0

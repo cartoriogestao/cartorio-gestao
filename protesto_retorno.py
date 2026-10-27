@@ -189,26 +189,6 @@ def pendentes_da_cenprot(con: sqlite3.Connection, *,
              WHERE {' AND '.join(onde)}""", params) or 0)
 
 
-def pendentes_da_cenprot(con: sqlite3.Connection, *,
-                         apresentante_codigo: str | None = None) -> int:
-    """Quantos atos de título VINDO DA CENPROT esperam ser informados. Só LÊ.
-
-    Eles não entram no retorno à CRA (ver `pendentes`); a conta existe para a
-    tela dizer onde eles vão, em vez de o apresentante parecer em dia.
-    """
-    onde = ["a.retorno_id IS NULL", "a.cenprot_xml_id IS NULL",
-            "COALESCE(a.cancelado, 0) = 0",
-            f"a.tipo IN ({','.join('?' * len(ATOS_QUE_VOLTAM))})",
-            "t.origem = 'CENPROT'"]
-    params: list[Any] = list(ATOS_QUE_VOLTAM)
-    if apresentante_codigo:
-        onde.append("t.apresentante_codigo = ?")
-        params.append(str(apresentante_codigo).strip())
-    return int(con.execute(
-        f"""SELECT COUNT(*) FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
-             WHERE {' AND '.join(onde)}""", params).fetchone()[0])
-
-
 def apresentantes_pendentes(con: sqlite3.Connection) -> list[dict]:
     """Quantos atos esperam retorno, por apresentante. So LE."""
     grupos: dict[str, dict] = {}
@@ -336,6 +316,22 @@ def montar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
             "data_ocorrencia": _data_arquivo(a["data_ato"]),
         })
 
+    # UMA LINHA POR PROTOCOLO — 23/10/2026. Título com dois devedores entra
+    # como duas linhas da remessa e dois títulos aqui, com o MESMO protocolo
+    # (35 no acervo; o E-Ofício fazia igual). No arquivo que volta, a CRA
+    # recusa o lote inteiro com 9999 «MESMO PROTOCOLO… ARQUIVO NÃO FOI
+    # ENVIADO» (medido no retorno de um banco, 23/10). Vai a primeira linha de
+    # cada protocolo; os atos das duas continuam em `atos` e são marcados
+    # juntos como informados.
+    vistos: set[str] = set()
+    unicos = []
+    for t in titulos:
+        if t["protocolo"] in vistos:
+            continue
+        vistos.add(t["protocolo"])
+        unicos.append(t)
+    titulos = unicos
+
     # O NOME DO APRESENTANTE VEM DO CABEÇALHO DA REMESSA — correção de
     # 13/10/2026. `pt_titulos.apresentante_nome` guarda o campo 005/019 do
     # registro do título («Agência / Código do Cedente», no layout da P21), e
@@ -447,7 +443,7 @@ def nome_do_arquivo(tipo: str, apresentante_codigo: str, dia: str,
     CORREÇÃO DE 13/10/2026. Até aqui o nome era `<tipo>-<apresentante>-<AAAAMMDD>-
     <remessa>.txt`, e este comentário dizia que «o E-Ofício nomeava de outro jeito
     em cada pasta, e não há padrão a imitar». HÁ, e a CRA o exige: medido nos 125
-    arquivos de 2026 da pasta `8. CRA` (C9871007.261, M3410408.261, R1LV1809.261…),
+    arquivos de 2026 da pasta da CRA (C9871007.261, M3410408.261, R1LV1809.261…),
     e é o que o manual da CRA21 e o layout do andamento da P21 descrevem. Nome fora
     dele a CRA recusa (código 0002, medido em 12/09); com ele, a confirmação
     `C2371609.263` voltou «0000» na homologação em 13/10/2026.

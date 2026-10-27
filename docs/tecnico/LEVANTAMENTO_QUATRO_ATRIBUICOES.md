@@ -172,7 +172,7 @@ o E-Ofício travava a edição depois de selar.
 > numeração**" é executável com precisão: os números de partida são estes, vindos do sistema
 > antigo, e não de estimativa.
 
-Também aparece o caminho da carga do IBGE, num Proton Drive: `.../2. RCPN/CARGAS IBEG/2º
+Também aparece o caminho da carga do IBGE, na pasta de rede da serventia: `.../<pasta das cargas do IBGE>/2º
 TRIMESTRES 2026`. Ou seja, a obrigação trimestral do IBGE já existe como rotina manual.
 
 ### O que o RCPN exige que nenhuma outra atribuição exige

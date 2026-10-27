@@ -105,7 +105,7 @@ O que sobra:
 * o acervo local hidratado do Registro Civil está em
   `.../CARTÓRIO EXEMPLO Dropbox/.../CARTORIO/PESSOAS NATURAIS`, com 7.300
   `.docx` — 2.156 em `LIVRO A- NASCIMENTOS` e 1.820 em `CERTIDÕES`. **Hidrate
-  antes de medir**: no Proton Drive cada leitura força um download, e a
+  antes de medir**: na pasta sincronizada da nuvem cada leitura força um download, e a
   passada não termina;
 * **o óbito e o casamento entraram no mesmo dia** — ver as seções no fim
   deste documento.

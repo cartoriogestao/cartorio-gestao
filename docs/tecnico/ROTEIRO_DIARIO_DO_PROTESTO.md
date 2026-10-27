@@ -62,7 +62,7 @@ sensível: título que o apresentante desistiu e a casa protestou é protesto qu
 se cancela depois, com carta.
 
 **E ela chega num arquivo que não é como os outros quatro** — achado em
-25/08/2026 e medido em 26/08, quando o oficial indicou a pasta do Proton Drive:
+25/08/2026 e medido em 26/08, quando o oficial indicou a pasta de rede da serventia:
 **127 posições e cinco tipos de registro**, contra 600 e três. O sistema não
 conseguia nem abri-lo. Está em `LAYOUT_DESISTENCIA_MEDIDO.md`, e a tela é
 *Protesto — desistências*.

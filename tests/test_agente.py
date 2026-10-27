@@ -1965,6 +1965,91 @@ def test_a_tabela_que_nasce_depois_entra_no_papel_sem_a_credencial(casa):
             banco(con).escrever("DROP TABLE IF EXISTS lx10_tabela_nova")
 
 
+def test_quem_so_administra_o_papel_ganha_o_set_e_le(casa):
+    """No PostgreSQL 16+, sem superusuário, quem cria o papel com CREATEROLE
+    fica membro dele com ADMIN e sem SET, e o `SET ROLE` da leitura era
+    recusado («permission denied to set role»): a ferramenta perguntava
+    `'MEMBER'`, que responde «sim» a essa filiação, e não concedia o SET
+    (23/10/2026). Parte dessa filiação e confere que a ferramenta lê e deixa
+    o usuário com SET. **MEXE NA FILIAÇÃO DO USUÁRIO DE TESTE** no papel do
+    agente — só na que ele mesmo concedeu —, e a devolve no fim."""
+    papel = FER.PAPEL_DO_AGENTE
+    with casa["db"].connect() as con:
+        bd = banco(con)
+        if bd.valor("SELECT current_setting('server_version_num')::int "
+                    "AS v") < 160000:
+            pytest.skip("antes do PostgreSQL 16 a filiação não separa o SET")
+        if bd.valor("SELECT rolsuper AS s FROM pg_roles "
+                    "WHERE rolname = current_user"):
+            pytest.skip("o superusuário assume qualquer papel: não há defeito")
+    if not _consulta_do_papel(
+            casa, "SELECT count(*) AS n FROM pg_roles WHERE rolname = %s"):
+        # o papel ainda não existe: a primeira consulta o cria
+        FER.executar(_ctx(casa), "consultar_banco", {"consulta": "SELECT 1"})
+
+    def concedi_eu():
+        return _consulta_do_papel(
+            casa, "SELECT count(*) AS n FROM pg_auth_members a "
+            "JOIN pg_roles r ON r.oid = a.roleid "
+            "JOIN pg_roles m ON m.oid = a.member "
+            "WHERE r.rolname = %s AND m.rolname = current_user "
+            "AND a.grantor = m.oid") > 0
+
+    def assumo():
+        return _consulta_do_papel(
+            casa, "SELECT pg_has_role(current_user, %s, 'SET') AS pode")
+
+    def mudar(comando):
+        with casa["db"].transaction() as con:
+            banco(con).escrever(comando)
+
+    revogar = f"REVOKE {papel} FROM CURRENT_USER GRANTED BY CURRENT_USER"
+    eu_tinha = concedi_eu()
+    try:
+        if eu_tinha:
+            mudar(revogar)
+        if assumo():
+            pytest.skip("o SET veio de uma concessão que não é do usuário de "
+                        "teste (à mão, por superusuário): sem ela não se "
+                        "monta a filiação só com ADMIN")
+        r = FER.executar(_ctx(casa), "consultar_banco", {
+            "consulta": "SELECT current_user AS quem"})
+        assert r["erro"] is False, r["conteudo"]
+        assert r["conteudo"].splitlines() == ["quem", papel]
+        assert assumo() is True
+        assert concedi_eu() is True
+    finally:
+        agora = concedi_eu()
+        if eu_tinha and not agora:
+            mudar(f"GRANT {papel} TO CURRENT_USER "
+                  f"WITH SET TRUE, INHERIT FALSE")
+        elif agora and not eu_tinha:
+            mudar(revogar)
+
+
+@pytest.mark.parametrize("versao, pergunta, concessao", [
+    (180006, "SET", 'GRANT "cg_agente_leitura" TO CURRENT_USER '
+                    'WITH SET TRUE, INHERIT FALSE'),
+    (160000, "SET", 'GRANT "cg_agente_leitura" TO CURRENT_USER '
+                    'WITH SET TRUE, INHERIT FALSE'),
+    (150004, "MEMBER", 'GRANT "cg_agente_leitura" TO CURRENT_USER'),
+])
+def test_a_pergunta_e_o_grant_da_filiacao_vem_da_versao(
+        versao, pergunta, concessao):
+    """Sem banco: do PostgreSQL 16 em diante, pergunta-se `'SET'` e o GRANT
+    dá o SET sem a herança; antes do 16, `'SET'` não existe em
+    `pg_has_role`, e fica a pergunta e o GRANT de antes."""
+    obtida, grant = FER._filiacao_que_assume(versao)
+    assert obtida == pergunta
+    assert grant.as_string() == concessao
+
+
+def _consulta_do_papel(casa, sql: str):
+    """Um valor do catálogo sobre o papel do agente, que entra como `%s`."""
+    with casa["db"].connect() as con:
+        return banco(con).valor(sql, (FER.PAPEL_DO_AGENTE,))
+
+
 def test_a_visao_materializada_com_o_hash_renomeado_nao_se_le_pelo_papel(
         casa, monkeypatch):
     """A visão materializada guarda o que a consulta de quem a criou leu, com o

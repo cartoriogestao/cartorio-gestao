@@ -58,6 +58,15 @@ A CIFRA DO PACOTE E OPCIONAL, E NASCE DESLIGADA (LX14, 19/10/2026; A7 do LS03)
     A conferencia do pacote cifrado nao confia na cifra: decifra de novo e
     compara o SHA-256 com o do zip que ja tinha passado na conferencia. So
     entao o nome definitivo aparece.
+
+A CONFERENCIA PROVA O ARQUIVO; SO A RESTAURACAO PROVA O BANCO (26/10/2026)
+    Zip integro e SHA-256 batendo dizem que o pacote e o que foi gravado — e
+    nao que ele volta a ser um banco. Por isso o manifesto leva agora o
+    formato do banco (`banco_formato`) e as linhas de cada tabela contadas no
+    MESMO instantaneo do pg_dump (`banco_contagens`), e o teste de restauracao
+    (`backup_restauracao`, processo da automacao) restaura num banco
+    descartavel e confere contra elas. A rodada automatica (o diario, o
+    completo e a retencao) mora em `backup_rotina`.
 """
 from __future__ import annotations
 
@@ -106,6 +115,35 @@ def _sha256(caminho: Path) -> str:
         for bloco in iter(lambda: fh.read(1024 * 1024), b""):
             h.update(bloco)
     return h.hexdigest()
+
+
+#: Os primeiros bytes do `pg_dump -Fc` e do arquivo do SQLite. O nome do banco
+#: dentro do pacote continua `cartorio_gestao.sqlite3` desde a migração (ver
+#: `docs/BACKUP.md`); quem diz o que ele é são estes bytes.
+MAGIA_DO_PG_DUMP = b"PGDMP"
+MAGIA_DO_SQLITE = b"SQLite format 3\x00"
+FORMATO_PG_DUMP = "pg_dump-Fc"
+FORMATO_SQLITE = "sqlite"
+
+
+def formato_do_banco(arquivo: Path) -> str:
+    """`pg_dump-Fc`, `sqlite` ou `desconhecido` — pelos primeiros bytes."""
+    with Path(arquivo).open("rb") as fh:
+        inicio = fh.read(len(MAGIA_DO_SQLITE))
+    if inicio.startswith(MAGIA_DO_PG_DUMP):
+        return FORMATO_PG_DUMP
+    if inicio.startswith(MAGIA_DO_SQLITE):
+        return FORMATO_SQLITE
+    return "desconhecido"
+
+
+def _aceita_contagens(db) -> bool:
+    """O `backup_database` deste banco sabe devolver as contagens?"""
+    import inspect
+    try:
+        return "contagens" in inspect.signature(db.backup_database).parameters
+    except (TypeError, ValueError, AttributeError):
+        return False
 
 
 # ------------------------------------------------------------- a cifra
@@ -304,8 +342,17 @@ def gerar_pacote(db, destino: Path, archive_root: Path,
 
     with TemporaryDirectory() as tmp:
         instantaneo = Path(tmp) / "cartorio_gestao.sqlite3"
-        db.backup_database(instantaneo)
+        # AS CONTAGENS DO MESMO INSTANTÂNEO VÃO NO MANIFESTO (26/10/2026): é
+        # contra elas que o teste de restauração (`backup_restauracao`) confere
+        # o que voltou. Quem não sabe contar (o banco de mentira dos testes
+        # antigos) gera o pacote como antes, sem elas.
+        contagens: dict | None = {} if _aceita_contagens(db) else None
+        if contagens is None:
+            db.backup_database(instantaneo)
+        else:
+            db.backup_database(instantaneo, contagens=contagens)
         sha_banco = _sha256(instantaneo)
+        formato_banco = formato_do_banco(instantaneo)
 
         arquivos: list[dict] = []
         raiz = Path(archive_root)
@@ -351,6 +398,8 @@ def gerar_pacote(db, destino: Path, archive_root: Path,
                 "tipo": "completo" if com_arquivos else "banco",
                 "cifrado": bool(senha_da_cifra),
                 "banco_sha256": sha_banco,
+                "banco_formato": formato_banco,
+                "banco_contagens": contagens,
                 "acervo_eoficio": bool(sha_acervo),
                 "acervo_sha256": sha_acervo,
                 "arquivos_incluidos": len(arquivos),

@@ -933,7 +933,7 @@ foi por edital. É o que a inspeção cobra, e é o que o sistema não tinha.
 ## 14. A desistência — e o que a pasta do oficial fechou numa manhã
 
 Em **26/08/2026** o oficial disse onde estavam mais arquivos da CRA:
-`Proton Drive\…\Cidade Exemplo\8. CRA`. **Cento e vinte e dois arquivos** — e
+`<pasta de rede da serventia>\…\<pasta da CRA>`. **Cento e vinte e dois arquivos** — e
 um deles resolveu o layout que estava travado desde a véspera.
 
 ### Um arquivo mudou o que dava para afirmar

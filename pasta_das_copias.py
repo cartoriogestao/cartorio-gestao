@@ -9,8 +9,8 @@ O QUE ACONTECEU
     serventia foi apagado junto com as cópias. A pasta tinha ~450 arquivos, e
     69 deles eram cópias com o nome quase igual ao do banco
     (`cartorio_gestao.antes-…sqlite3`), deixadas ali por 16 scripts de conserto
-    e por duas telas. Arquivo grande não vai para a Lixeira: voltou pelo Proton
-    Drive, inteiro até 14:31. No mesmo dia as cópias e os rascunhos foram
+    e por duas telas. Arquivo grande não vai para a Lixeira: voltou pela cópia
+    na nuvem, inteiro até 14:31. No mesmo dia as cópias e os rascunhos foram
     movidos para `C:\\CartorioGestao_Copias`.
 
 A REGRA, NUM LUGAR SÓ
@@ -60,6 +60,9 @@ FICA_NA_PASTA_DO_BANCO = frozenset({
 PASTAS_DA_PASTA_DO_BANCO = frozenset({
     "arquivos", "runtime", "updates", "libreoffice_perfil", "logs", "crc_selecoes",
     "importacoes_pendentes", "backups_patch", "programas_onr", "$Temp",
+    # A AUTOMAÇÃO (24/10/2026): o cofre (cifrado com a senha-mestra, com o
+    # canal do guardião) e os lançadores que o instalador gera.
+    "cofre_automacao", "automacao_instalador",
 })
 
 

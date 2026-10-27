@@ -10,7 +10,8 @@ não é preciso aplicar uma por uma.
 
 ## 3.7.5 — automação, despesas, NFS-e, WhatsApp, painéis e as travas novas do balcão
 
-São 44 mudanças juntadas desde a 3.7.4. As principais, por assunto:
+São 45 mudanças juntadas desde a 3.7.4, e a suíte de testes sai inteira
+verde no PostgreSQL. As principais, por assunto:
 
 **Rotinas, avisos e segurança**
 - **Central de automação**: um despachante único roda as rotinas da casa, com

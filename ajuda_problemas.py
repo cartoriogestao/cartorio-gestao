@@ -331,6 +331,12 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("aj_problemas", "reaberto_nota", "TEXT"),
     # OFICIAL = aberto na produção ou replicado dela; SANDBOX = criado no :8899.
     ("aj_problemas", "ambiente_abertura", "TEXT"),
+    # ONDE O PROBLEMA PODE SER REPRODUZIDO — 27/10/2026, sincronia dos
+    # problemas com o desenvolvimento. Quem conserta fora da serventia precisa
+    # saber, antes de começar, se dá para ver o defeito com dados fictícios ou
+    # se ele só existe no banco da casa ou no equipamento dela. Vocabulário em
+    # `REPRODUCOES`; linha antiga sem valor conta como `A_CLASSIFICAR`.
+    ("aj_problemas", "reproducao", "TEXT"),
 )
 
 AMBIENTES_ABERTURA = ("OFICIAL", "SANDBOX")
@@ -486,6 +492,33 @@ ROTULO_CURTO_DEV: dict[str, str] = {
 }
 
 
+# COMO O PROBLEMA PODE SER REPRODUZIDO — 27/10/2026. Vocabulário fechado, como
+# o do retorno: palavra solta na coluna faria a exportação e a tela dizerem
+# coisas diferentes do mesmo problema.
+#
+# A CONFERÊNCIA JÁ NASCE `SO_PRODUCAO_DADOS`: o que ela acha é medida do banco
+# da casa, e nenhum banco fictício mostra o mesmo achado. O resto nasce
+# `A_CLASSIFICAR`, porque quem anota (a tela que estourou, o balcão que
+# contou) não sabe onde o defeito se repete.
+REPRODUCOES: dict[str, str] = {
+    "A_CLASSIFICAR": "A classificar",
+    "AQUI_FICTICIOS": "Reproduzível no desenvolvimento, com dados fictícios",
+    "SO_PRODUCAO_DADOS": "Só na produção: depende dos dados do banco oficial",
+    "SO_PRODUCAO_EQUIPAMENTO": (
+        "Só na produção: depende de equipamento ou credencial "
+        "(selador, token A3, impressora, Central)"),
+}
+
+REPRODUCAO_PADRAO = "A_CLASSIFICAR"
+
+
+def reproducao_de(p: Any) -> str:
+    """A reprodução do problema, com a linha antiga (sem valor) como
+    `A_CLASSIFICAR`. Só lê — não se preenche em massa."""
+    valor = str((p or {}).get("reproducao") or "").strip().upper()
+    return valor if valor in REPRODUCOES else REPRODUCAO_PADRAO
+
+
 def init_problemas_schema(con) -> None:
     """Cria as tabelas dos problemas. Idempotente."""
     bd = banco(con)
@@ -539,6 +572,33 @@ def anotar_desenvolvimento(con, problema_id: int, *,
         (nota, estado, prova, agora, por, int(problema_id)))
     return {"id": int(problema_id), "estado": estado,
             "nome_do_estado": ESTADOS_DO_DEV[estado]}
+
+
+def classificar_reproducao(con, problema_id: int, valor: str, *,
+                           agora: str, por: str = "") -> dict:
+    """Diz onde o problema pode ser reproduzido. ESCREVE.
+
+    **NAO MEXE NA `situacao`.** Classificar é dizer a quem conserta por onde
+    começar, e não é fechar nem reabrir: isso continua sendo de quem relatou.
+
+    Não há coluna de quando nem de quem classificou: o rastro é a auditoria
+    que quem chama grava (`agora` e `por` voltam no retorno para isso).
+    """
+    valor = (valor or "").strip().upper()
+    if valor not in REPRODUCOES:
+        raise ProblemaError(
+            f"Não conheço a reprodução «{valor}». As que conheço: "
+            + ", ".join(REPRODUCOES) + ".")
+    bd = banco(con)
+    linha = bd.um("SELECT id, reproducao FROM aj_problemas WHERE id = %s",
+                  (int(problema_id),))
+    if not linha:
+        raise ProblemaError(f"Não achei o problema #{problema_id}.")
+    bd.escrever("UPDATE aj_problemas SET reproducao=%s WHERE id=%s",
+                (valor, int(problema_id)))
+    return {"id": int(problema_id), "reproducao": valor,
+            "antes": reproducao_de(linha),
+            "nome_da_reproducao": REPRODUCOES[valor], "em": agora, "por": por}
 
 
 # ------------------------------------------------------ a impressão digital
@@ -607,17 +667,20 @@ def anotar(con, *, origem: str, titulo: str,
                   (digital,))
     if linha is None:
         amb = ambiente_abertura_padrao(bd)
+        reproducao = ("SO_PRODUCAO_DADOS" if origem == "CONFERENCIA"
+                      else REPRODUCAO_PADRAO)
         novo_id = int(bd.escrever(
             """INSERT INTO aj_problemas(impressao, origem, onde, caminho,
                    titulo, detalhe, versao, vezes, primeira_em, ultima_em,
-                   ultimo_usuario, situacao, criado_por, ambiente_abertura)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,1,%s,%s,%s,'ABERTO',%s,%s)
+                   ultimo_usuario, situacao, criado_por, ambiente_abertura,
+                   reproducao)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,1,%s,%s,%s,'ABERTO',%s,%s,%s)
                RETURNING id""",
             (digital, origem, str(onde or "") or None,
              str(caminho or "") or None, texto[:400], corpo,
              str(versao or "") or None, agora, agora,
              str(usuario or "") or None, str(criado_por or "") or None,
-             amb))[0]["id"])
+             amb, reproducao))[0]["id"])
         if banco_e_sandbox(bd):
             atualizar_sqlite_sequence(bd)
         return {"id": novo_id, "vezes": 1, "nova": True}
@@ -1382,6 +1445,7 @@ def _bloco_do_problema(p: dict, mapa: dict | None) -> list[str]:
         f"- **Situação**: {p.get('situacao')}"
         + (f" (já relatado em {p.get('relatado_em')} e voltou a acontecer)"
            if p.get("relatado_em") and p.get("situacao") == "ABERTO" else ""),
+        f"- **Reprodução**: {REPRODUCOES[reproducao_de(p)]}",
     ]
     if p.get("detalhe"):
         linhas += ["", "```", str(p["detalhe"]).strip(), "```"]

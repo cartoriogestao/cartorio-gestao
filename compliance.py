@@ -311,9 +311,9 @@ def regra_cadeia_da_auditoria(ctx: Contexto) -> list[dict]:
     semente = banco(con).valor(
         """SELECT hash_linha FROM audit_logs
             WHERE ts < %s AND hash_linha IS NOT NULL ORDER BY id DESC LIMIT 1""", (desde,))
-    linhas = _linhas(con, """SELECT id, ts, user_id, username_snapshot, action, entity_type,
-                                    entity_id, details, ip_address, hash_anterior, hash_linha
-                               FROM audit_logs WHERE ts >= %s ORDER BY id""", (desde,))
+    # `SELECT *`: a fórmula da versão 2 (26/10/2026) lê também `hash_versao`,
+    # `agente` e `a_mando_de`, e o banco que ainda não as tem confere pela de 22/10.
+    linhas = _linhas(con, """SELECT * FROM audit_logs WHERE ts >= %s ORDER BY id""", (desde,))
     fora = AC.divergencias(linhas, semente)
     if not fora:
         return []

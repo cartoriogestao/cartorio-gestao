@@ -57,10 +57,15 @@ def _funcoes(*nomes: str) -> dict:
     Elas moram dentro da fábrica de rotas e só usam `banco` — e, desde o
     LD10, `numero_digitado`, a régua do tamanho do protocolo digitado, que mora
     no módulo; executar o fonte delas num espaço próprio é o que
-    `test_arquivamento_encerra_prenotacao` já faz.
+    `test_arquivamento_encerra_prenotacao` já faz. E, desde 26/10/2026, o
+    `ACOMP` (`onr_acompanhamento`): `amarrar_prenotacao` anota o «Título
+    registrado» na fila do ONR — o gancho nunca derruba a amarração —, com a
+    hora de `db.now()` (estático em `Database`).
     """
+    from database import Database
     fonte = WEB.read_text(encoding="utf-8")
-    ns: dict = {"banco": banco, "numero_digitado": ri_web.numero_digitado}
+    ns: dict = {"banco": banco, "numero_digitado": ri_web.numero_digitado,
+                "ACOMP": ri_web.ACOMP, "db": Database}
     for no in ast.walk(ast.parse(fonte)):
         if isinstance(no, ast.FunctionDef) and no.name in nomes:
             trecho = " " * no.col_offset + ast.get_source_segment(fonte, no)

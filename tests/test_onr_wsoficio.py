@@ -107,6 +107,10 @@ def test_a_ordem_dos_campos_e_a_do_wsdl_de_producao():
     req = {"LoginUsuarioCertificado": "Login_WSReq",
            "ObterXMLSolicitacoes_v6": "ObterXMLSolicitacoesv2_WSReq"}
     for metodo, campos in W.CAMPOS.items():
+        # O Acompanhamento de Títulos (26/10/2026) não tem WSDL na casa: a
+        # ordem dele se confere contra o MANUAL, em test_onr_acompanhamento.
+        if W.SERVICO_DO_METODO[metodo] in W.SEM_WSDL_NA_CASA:
+            continue
         nome = req.get(metodo, f"{metodo}_WSReq")
         assert tipos[nome] == campos, metodo
 
@@ -114,6 +118,10 @@ def test_a_ordem_dos_campos_e_a_do_wsdl_de_producao():
 @pytest.mark.skipif(not CONTRATO.is_dir(), reason="o contrato não está nesta árvore")
 def test_o_endereco_de_producao_e_o_do_contrato():
     for chave, asmx in W.SERVICOS.items():
+        if chave in W.SEM_WSDL_NA_CASA:
+            assert not (CONTRATO / asmx.replace(".asmx", ".wsdl")).is_file(), \
+                f"o WSDL de {chave} chegou: tire-o de SEM_WSDL_NA_CASA"
+            continue
         texto = (CONTRATO / asmx.replace(".asmx", ".wsdl")).read_text(encoding="utf-8")
         assert f'location="{W.BASE[W.PRODUCAO]}/{asmx}"' in texto, chave
 
@@ -125,9 +133,12 @@ RESPONDEM_CERTIDAO = {"ObterXMLSolicitacoes_v6", "InformarCustasCertidao", "Envi
                       "EnviarAnexosListCertidao", "FinalizarRespostaCertidao", "DevolverCertidao"}
 
 
+#: E EM 26/10/2026 O ACOMPANHAMENTO DE TÍTULOS: as escritas dele (cadastrar o
+#: título e os status) só saem da fila de fatos gravados (`onr_acompanhamento`).
 def test_so_le_salvo_as_certidoes():
     for metodo in W.CAMPOS:
-        assert re.match(r"^(Login|List|Get)", metodo) or metodo in RESPONDEM_CERTIDAO, metodo
+        assert (re.match(r"^(Login|List|Get)", metodo) or metodo in RESPONDEM_CERTIDAO
+                or metodo in W.ESCREVEM_NO_ACOMPANHAMENTO), metodo
     assert all(W.SERVICO_DO_METODO[m] == "certidoes" for m in RESPONDEM_CERTIDAO)
 
 

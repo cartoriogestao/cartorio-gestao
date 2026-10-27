@@ -72,7 +72,8 @@ def _lavrar(casa, folha, nome="CRIANCA DA FICHA"):
              "data_fato": "2026-10-01", "local_fato_nome": "Hospital",
              "ibge_local": "1",        # relato #130: o SIRC exige
              "filiacao1_nome": "MAE DA FICHA", "filiacao2_nome": "IGNORADO",
-             "declarante_nome": "MAE DA FICHA"}
+             "declarante_nome": "MAE DA FICHA",
+             "paternidade_tipo": "NEGATIVO"}   # pai ignorado: termo (23/10/2026)
     c.post("/rcpn/novo/nascimento", data=dados, follow_redirects=True)
     con = sqlite3.connect(casa["banco"])
     aid = con.execute("SELECT MAX(id) FROM rc_assentos").fetchone()[0]

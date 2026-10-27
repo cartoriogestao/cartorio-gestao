@@ -48,6 +48,7 @@ if str(RAIZ) not in sys.path:
 # divergiriam no dia em que a quarta nascesse, e a que ficasse velha seria esta.
 import ajuda_problemas as AP  # noqa: E402
 import banco_pg  # noqa: E402
+import identidade_do_robo as IDR  # noqa: E402
 from bd_nativo import banco  # noqa: E402
 
 for saida in (sys.stdout, sys.stderr):
@@ -152,18 +153,20 @@ def main() -> int:
             # A MESMA SERIALIZAÇÃO DE `db.log` (`json.dumps`, `ensure_ascii=False`),
             # e o `acao` dizendo o que a rota não tem como dizer: a rota grava
             # `fechar` e `reabrir`; esta mudança foi a palavra, e só ela.
-            bd.escrever(
-                """INSERT INTO audit_logs (ts, user_id, username_snapshot, action,
-                       entity_type, entity_id, details)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-                (agora, None, "tools/normalizar_situacao_dos_problemas.py",
-                 "AJUDA_PROBLEMA_SITUACAO", "aj_problemas", int(linha["id"]),
-                 json.dumps({"acao": "normalizar",
-                             "de": linha["situacao"], "para": destino,
-                             "nota": "palavra fora do vocabulário da lista, "
-                                     "escrita por fora do sistema; a nota e o "
-                                     "carimbo de fechamento ficaram como estavam"},
-                            ensure_ascii=False)))
+            # Quem grava por programa diz quem e e a mando de quem (26/10/2026).
+            IDR.registrar(
+                bd, ts=agora, user_id=None,
+                username="tools/normalizar_situacao_dos_problemas.py",
+                action="AJUDA_PROBLEMA_SITUACAO", entity_type="aj_problemas",
+                entity_id=int(linha["id"]),
+                details=json.dumps({"acao": "normalizar",
+                                    "de": linha["situacao"], "para": destino,
+                                    "nota": "palavra fora do vocabulário da lista, "
+                                            "escrita por fora do sistema; a nota e o "
+                                            "carimbo de fechamento ficaram como estavam"},
+                                   ensure_ascii=False),
+                agente="tools/normalizar_situacao_dos_problemas.py",
+                a_mando_de=IDR.PELO_RESPONSAVEL)
 
     print("\n=== como ficaram ===")
     for linha in elegiveis:

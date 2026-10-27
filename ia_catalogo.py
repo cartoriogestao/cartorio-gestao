@@ -81,6 +81,12 @@ CHAVE_FORA_DO_BANCO = "agente.cred, na pasta de dados — fora do banco"
 #   - robôs: é a tela de TESTAR o robô, e não atendimento.
 # Quem confere é `ia_uso.passou_do_teto`, chamado ANTES da rede por quem chama
 # o transporte; passou, a chamada não sai e a tela diz o porquê.
+#
+# E DESDE 26/10/2026 QUEM TRAVA É O TRANSPORTE (achado transversal 3 da
+# revisão de segurança): `ia_uso.reservar` toma a vaga antes da rede, em
+# `agente_provedores.conversar` e em `robo_llm.chamar_provedor`, e a chamada
+# que falha a devolve. A conferência de quem chama ficou como cortesia — recusa
+# cedo, antes de abrir linha ou ler documento.
 CHAMADAS_POR_DIA = {
     "revisao_previa": 200,
     "ri_onus_ia": 100,
@@ -90,6 +96,12 @@ CHAMADAS_POR_DIA = {
     # os documentos inteiros — sessenta minutas e revisões por dia é mais do que
     # o balcão produz, e segura um laço que engasgue.
     "minuta_ia": 60,
+    # A QUALIFICAÇÃO ASSISTIDA DO RI (26/10/2026): uma chamada ao Opus por
+    # pedido, com o título e o ITBI inteiros. VINTE POR DIA — decisão do oficial
+    # em 26/10/2026 (a proposta era 40). É o PADRÃO DE FÁBRICA: o ADMIN muda o
+    # número na configuração da qualificação assistida, com auditoria
+    # (`ri_qualificacao_ia.teto_do_dia`, `settings.qualificacao_ia_teto_dia`).
+    "ri_qualificacao_ia": 20,
 }
 
 # ------------------------------------------------------------------ o catálogo
@@ -314,6 +326,36 @@ CATALOGO: tuple[dict[str, Any], ...] = (
         "nao_faz": "não lavra, não numera, não sela, não cobra e não lança no livro",
         "teto": ("ia_catalogo", "CHAMADAS_POR_DIA", "chamadas ao provedor por dia",
                  "minuta_ia"),
+        "chave": CHAVE_FORA_DO_BANCO,
+    },
+    {
+        # 26/10/2026, o oficial: a IA cruza o título, a guia do ITBI e a
+        # matrícula e RASCUNHA a nota devolutiva, para o oficial revisar.
+        "codigo": "ri_qualificacao_ia",
+        "nome": "Qualificação assistida do RI (rascunho da nota devolutiva)",
+        "modulo": "ri_qualificacao_ia",
+        "onde": "quadro «Qualificação assistida» na tela da nota devolutiva da "
+                "prenotação (Registro de Imóveis)",
+        "finalidade": "cruzar o título apresentado, a guia ou certidão de ITBI e a "
+                      "matrícula e rascunhar as exigências, cada uma com fundamento "
+                      "e com o trecho do documento de onde saiu",
+        "inciso": "I",
+        "enquadramento": "análise — apoio à qualificação, que continua sendo do "
+                         "oficial; enquadramento a conferir",
+        "dado": "os documentos marcados da prenotação e do protocolo geral ligado, "
+                "inteiros (PDF e imagem), a ficha da matrícula com os atos e os "
+                "proprietários, a lista de conferência da espécie e as instruções",
+        "mascara": "não: documento digitalizado não se mascara (decisão do oficial "
+                   "de 12/10/2026, a mesma do agente de minutas)",
+        "mascarado": False,
+        "revisao_humana": "o resultado nasce como rascunho; a pessoa marca e edita as "
+                          "exigências, leva ao formulário da nota e emite pela rota "
+                          "de sempre; cada trecho citado é conferido letra por letra "
+                          "contra o texto do documento",
+        "nao_faz": "não decide a qualificação, não emite a nota devolutiva, não "
+                   "devolve o título e não muda a situação da prenotação",
+        "teto": ("ia_catalogo", "CHAMADAS_POR_DIA", "chamadas ao provedor por dia",
+                 "ri_qualificacao_ia"),
         "chave": CHAVE_FORA_DO_BANCO,
     },
     {

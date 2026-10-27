@@ -600,11 +600,9 @@ def esperando_protesto(con, *, hoje: str,
     movimentação, calcular, listar, gerar». Até 31/08/2026 ele não tinha tela
     nenhuma, e o título intimado ficava esperando alguém lembrar dele.
 
-    O PRAZO NÃO SE CALCULA AQUI, e isso é decisão do oficial de 24/08/2026: o
-    acervo nunca controlou data de intimação, e contar o tríduo é decisão
-    jurídica que esta casa não delegou ao programa. A lista devolve
-    `dias_desde_a_intimacao` — que é **contagem, e não juízo**: quem diz se o
-    prazo venceu, e se o protesto sai, é quem assina.
+    O PRAZO NÃO SE CALCULA AQUI: a lista devolve `dias_desde_a_intimacao`, que
+    é contagem. O tríduo — termo inicial e final — é de `protesto_triduo`
+    desde a tarefa 56 (23/10/2026), e a tela o acrescenta a cada linha.
 
     SEM MOVIMENTAÇÃO QUER DIZER SEM ATO POSTERIOR. Não basta a situação estar
     `INTIMADO`: um pagamento lançado hoje muda a situação, mas o que importa é
@@ -1151,13 +1149,21 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
                     agora: str, data_extenso: str,
                     usuario: str | None = None,
                     origem: str = "MANUAL",
-                    modelo_do_termo: str | None = None) -> dict:
+                    modelo_do_termo: str | None = None,
+                    conferir_triduo: bool = False,
+                    motivo_atraso: str | None = None) -> dict:
     """Lavra o protesto no Livro de Registro de Protestos. ESCREVE.
 
-    Exige que o título já tenha sido intimado (Lei 9.492/1997, art. 14) —
-    mas NÃO confere se o prazo da intimação venceu, pela mesma razão de
-    `lancar_intimacao()`: essa conta ainda não foi decidida pelo oficial.
+    Exige que o título já tenha sido intimado (Lei 9.492/1997, art. 14).
     Recusa protestar de novo o que já foi protestado ou desistido.
+
+    O TRÍDUO (tarefa 56, 23/10/2026): com `conferir_triduo`, recusa antes do
+    termo inicial e, depois do termo final, exige `motivo_atraso` — a conta é
+    `protesto_triduo`, e ela fica gravada no `detalhe_json` do ato, de onde o
+    instrumento tira a menção do atraso (CN-MA art. 913, § 1º). As duas rotas
+    que protestam passam `True`, e há teste que exige isso delas; o padrão
+    `False` é o das montagens de cenário dos testes, que lavram tudo no mesmo
+    instante.
 
     O lugar sai de `escrituracao.reservar()` na série PT_PROTESTO — um
     protesto por FACE, frente e verso (decisão do oficial em 14/10/2026; ver
@@ -1172,6 +1178,11 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
         raise ProtestoError(
             f"O título {tit['numero_titulo']} está com situação "
             f"{tit['situacao']} — só se protesta título já intimado.")
+    triduo = None
+    if conferir_triduo:
+        import protesto_triduo as TRIDUO
+        triduo = TRIDUO.conferir_lavratura(con, titulo_id, hoje=str(agora)[:10],
+                                           motivo_atraso=motivo_atraso)
 
     # O TEXTO QUE VAI NO LIVRO, montado dos fatos deste titulo — e ele
     # CONGELA aqui: e o que foi escrito naquele dia. Medido: o E-Oficio o
@@ -1212,10 +1223,12 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
     texto = _termo()
     bd = banco(con)
     ato_id = int(bd.escrever(
-        """INSERT INTO pt_atos(titulo_id, tipo, data_ato, teor, origem,
-               criado_em, criado_por)
-           VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-        (titulo_id, "PROTESTO", agora, texto, origem, agora, usuario))[0]["id"])
+        """INSERT INTO pt_atos(titulo_id, tipo, data_ato, teor, detalhe_json,
+               origem, criado_em, criado_por)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+        (titulo_id, "PROTESTO", agora, texto,
+         json.dumps({"triduo": triduo} if triduo else {}, ensure_ascii=False),
+         origem, agora, usuario))[0]["id"])
 
     lugar = ESC.reservar(con, SERIE_PROTESTO, "pt_atos", ato_id, sv=sv,
                          agora=agora, data_extenso=data_extenso, paginas=1,

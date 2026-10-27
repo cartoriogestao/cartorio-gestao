@@ -262,6 +262,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if acao == "lancar":
                 natureza = request.form.get("natureza") or "RECEBIMENTO"
                 sentido = NATUREZAS.get(natureza, ("ENTRADA", ""))[0]
+                # «Outra entrada»: quem lança diz se é receita do titular
+                # (carnê-leão). Ordem do oficial, 26/10/2026.
+                receita_titular = None
+                if natureza == "OUTRA_ENTRADA":
+                    resposta = request.form.get("receita_do_titular") or ""
+                    if resposta not in ("0", "1"):
+                        flash("«Outra entrada»: diga se é receita do titular (entra no "
+                              "carnê-leão) ou não. Lançamento não feito.", "danger")
+                        return redirect(url_for("caixa"))
+                    receita_titular = int(resposta)
                 valor = centavos(request.form.get("valor"))
                 if valor <= 0:
                     flash("Informe um valor maior que zero.", "danger")
@@ -299,8 +309,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                             natureza, sentido,
                             forma_pagamento, descricao, pagador, pagador_documento,
                             valor, emolumentos, ferc, fadep, femp, ferrfis, selo,
-                            hash_lancamento, criado_em)
-                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                            hash_lancamento, criado_em, receita_do_titular)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (numero_ordem, ano, aberto["id"], prot["id"] if prot else None,
                          date.today().isoformat(), datetime.now().strftime("%H:%M"),
                          natureza, sentido,
@@ -313,7 +323,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                            else None
                            for f in ("emolumentos", "ferc", "fadep", "femp", "ferrfis")],
                          (request.form.get("selo") or "").strip() or None,
-                         h, db.now()))
+                         h, db.now(), receita_titular))
                 audit("CAIXA_LANCAMENTO", "CAIXA", aberto["id"],
                       {"numero": f"{numero_ordem}/{ano}", "natureza": natureza,
                        "valor": reais(valor)})
@@ -412,13 +422,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash("Informe um valor maior que zero.", "danger")
                     return redirect(url_for("caixa"))
                 natureza = request.form.get("natureza") or l["natureza"]
+                receita_titular = None
+                if natureza == "OUTRA_ENTRADA":
+                    anterior = dict(l).get("receita_do_titular")
+                    resposta = (request.form.get("receita_do_titular")
+                                or ("" if anterior is None else str(anterior)))
+                    if resposta not in ("0", "1"):
+                        flash("«Outra entrada»: diga se é receita do titular (entra no "
+                              "carnê-leão) ou não. Alteração não feita.", "danger")
+                        return redirect(url_for("caixa"))
+                    receita_titular = int(resposta)
+                antes["receita_do_titular"] = dict(l).get("receita_do_titular")
                 with db.transaction() as con:
                     banco(con).escrever(
                         """UPDATE cx_lancamentos SET valor=%s, natureza=%s, sentido=%s,
                            forma_pagamento=%s, descricao=%s, pagador=%s,
                            pagador_documento=%s, emolumentos=%s, ferc=%s, fadep=%s,
                            femp=%s, ferrfis=%s, selo=%s, editado_em=%s, editado_por=%s,
-                           historico=%s WHERE id=%s""",
+                           historico=%s, receita_do_titular=%s WHERE id=%s""",
                         (reais(novo_valor), natureza,
                          NATUREZAS.get(natureza, (l["sentido"], ""))[0],
                          request.form.get("forma_pagamento") or l["forma_pagamento"],
@@ -430,7 +451,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                            for f in ("emolumentos", "ferc", "fadep", "femp", "ferrfis")],
                          (request.form.get("selo") or "").strip() or None,
                          db.now(), usuario_nome(),
-                         json.dumps(historico, ensure_ascii=False), lid))
+                         json.dumps(historico, ensure_ascii=False), receita_titular, lid))
                 audit("CAIXA_LANCAMENTO_EDITADO", "CAIXA", aberto["id"],
                       {"lancamento": lid, "antes": antes,
                        "depois": reais(novo_valor)})
@@ -1532,7 +1553,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # com outra cara.
         with db.connect() as con_doc:
             docs_qualificacao = PDOC.documentos(con_doc, protocolo_id)
+        # AS TAREFAS DO PROTOCOLO — 26/10/2026, o oficial: «precisamos poder
+        # criar uma tarefa a partir do protocolo e precisamos poder linkar um
+        # protocolo a uma tarefa nova ou preexistente». O vínculo é o da pasta
+        # do processo (`processo_pasta`), visto daqui.
+        import json as _json
+        import processo_pasta as PASTA
+        with db.connect() as con_tar:
+            tarefas_do_protocolo = PASTA.processos_da_peca(con_tar, "cx_protocolos", protocolo_id)
+            tarefas_abertas = PASTA.tarefas_abertas(con_tar)
+        try:
+            setores = _json.loads(db.get_setting("sectors", "[]") or "[]")
+        except ValueError:
+            setores = []
         return render_template("caixa_protocolo.html", p=p, atos=atos,
+                               tarefas_do_protocolo=tarefas_do_protocolo,
+                               tarefas_abertas=tarefas_abertas,
+                               usuarios_da_tarefa=db.list_users(active_only=True),
+                               setores_da_tarefa=setores if isinstance(setores, list) else [],
                                docs_qualificacao=docs_qualificacao,
                                TIPOS_DE_DOCUMENTO=PDOC.TIPOS_DE_DOCUMENTO,
                                PAPEIS_QUE_ANEXAM=PDOC.PAPEIS_QUE_ANEXAM,

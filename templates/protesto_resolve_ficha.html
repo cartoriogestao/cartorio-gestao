@@ -47,6 +47,11 @@
     assinatura. <strong>É o que se lê quando alguém perguntar por que o título
     foi a edital.</strong>
   </p>
+  <p class="small muted">
+    <strong>Entrega por e-mail ou WhatsApp pode não ter PDF.</strong> Quando a
+    Resolve não tem o PDF, o botão do comprovante traz o histórico, e é ele a
+    prova da entrega.
+  </p>
   <form method="post" style="display:inline"
         action="{{ url_for('protesto_resolve_historico', intimacao_id=i.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

@@ -41,6 +41,36 @@ def montar_corpo(matricula_id: int, tipo: str, *, certidao_numero: int | None = 
         return _corpo_certidao(str(tipo).strip().upper(), ctx)
 
 
+def previa_no_app_vivo(matricula_id: int, tipo: str) -> str:
+    """O corpo que a certidão teria HOJE, montado no servidor vivo — para a
+    tela de aprovação do pedido do ONR (25/10/2026). NÃO numera, não grava,
+    não sela: é a mesma montagem da emissão (`corpo_certidao` sobre o
+    `contexto_ficha`), dentro da requisição que já está em curso. Fora de uma
+    requisição, recusa (não abre app novo)."""
+    from flask import has_request_context
+    if not pronto() or not has_request_context():
+        raise RuntimeError("A prévia da certidão só se monta dentro do servidor vivo.")
+    ctx = _contexto_ficha(int(matricula_id), para_odt=False)
+    return _corpo_certidao(str(tipo).strip().upper(), ctx)
+
+
+def painel_do_onus_no_app_vivo(matricula_id: int, data_dir) -> dict:
+    """O quadro da decisão do ônus (`ri_onus_ia.painel`) para a aprovação do
+    pedido do ONR — com os MESMOS ônus vigentes e proprietários que a emissão
+    confere (`contexto_ficha`). Só LÊ; recusa fora do servidor vivo."""
+    from pathlib import Path
+
+    from flask import current_app, has_request_context
+
+    import ri_onus_ia as RONIA
+    if not pronto() or not has_request_context():
+        raise RuntimeError("O quadro do ônus só se monta dentro do servidor vivo.")
+    ctx = _contexto_ficha(int(matricula_id), para_odt=False)
+    with current_app.extensions["db"].connect() as con:
+        return RONIA.painel(con, int(matricula_id), ctx.get("onus") or [], Path(data_dir),
+                            proprietarios_cadastro=ctx.get("proprietarios") or [])
+
+
 def teor_precisa_remontar_modelo(corpo: str | None) -> bool:
     if not corpo or len(corpo) < 200:
         return True

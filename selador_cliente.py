@@ -59,6 +59,7 @@ from typing import Any
 import selador
 import selador_config as SC
 from bd_nativo import banco
+import identidade_do_robo as IDR
 
 # Prazo curto de proposito: quem espera e o balcao, com a parte na frente.
 PRAZO_PADRAO = 20          # segundos
@@ -722,12 +723,13 @@ def _recado_do_repetido(numero: str, gravado: dict, *, origem: str,
 
 def _auditar(bd, *, acao: str, usuario: Any, entidade_id: Any,
              detalhes: dict, agora: str) -> None:
-    bd.escrever(
-        """INSERT INTO audit_logs (ts, user_id, username_snapshot, action,
-                                   entity_type, entity_id, details)
-           VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-        (agora, None, usuario, acao, "SD_SELO", entidade_id,
-         json.dumps(detalhes, ensure_ascii=False, default=str)))
+    # Quem grava é o selador da casa, a mando de quem pediu o selo (o
+    # `usuario`); sem ele, o responsável pelas rotinas (26/10/2026).
+    IDR.registrar(bd, ts=agora, user_id=None, username=usuario, action=acao,
+                  entity_type="SD_SELO", entity_id=entidade_id,
+                  details=json.dumps(detalhes, ensure_ascii=False, default=str),
+                  agente="selador do sistema (conferência do selo repetido)",
+                  a_mando_de=usuario or IDR.PELO_RESPONSAVEL)
 
 
 def _auditar_por_fora(bd, *, acao: str, usuario: Any, entidade_id: Any,

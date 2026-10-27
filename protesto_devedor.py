@@ -8,6 +8,8 @@ boletos, pagamentos — e o que pede atenção agora:
 
     VENCE_HOJE ........ o prazo-limite é hoje: último dia para pagar (CN-MA
                         art. 925, § 4º — «o dia previsto para a lavratura»);
+                        o protesto só se lavra no dia útil seguinte (decisão
+                        do oficial de 27/10/2026);
     PRAZO_VENCIDO ..... passou o prazo-limite e o título continua apontado ou
                         intimado: o protesto é devido, ou falta lançar o que
                         aconteceu (Lei 9.492/1997, art. 12);
@@ -54,10 +56,17 @@ SITUACOES_EM_ANDAMENTO: tuple[str, ...] = ("RECEBIDO", "APONTADO", "INTIMADO")
 # A ORDEM É A DA URGÊNCIA, e é ela que ordena a lista: o que vence hoje vem
 # antes do que já venceu, porque hoje ainda dá para fazer alguma coisa.
 ALERTAS: dict[str, dict[str, str]] = {
+    # A FRASE DIZIA «AMANHÃ O PROTESTO PODE SER LAVRADO» até 27/10/2026, e
+    # estava errada duas vezes: «amanhã» pode ser sábado ou feriado, e a régua
+    # do tríduo tratava o protesto do dia útil seguinte como ATRASADO. Decisão
+    # do oficial em 27/10/2026: o devedor paga até o final do prazo-limite, e o
+    # protesto se lavra no dia útil seguinte — que o detalhe do alerta diz qual
+    # é (`protesto_triduo`).
     "VENCE_HOJE": {
         "rotulo": "Vence hoje",
-        "frase": "O prazo-limite para pagamento é hoje; amanhã o protesto "
-                 "pode ser lavrado.",
+        "frase": "O prazo-limite para pagamento é hoje: o devedor pode pagar "
+                 "até o final do expediente, e o protesto não se lavra hoje — "
+                 "só a partir do dia útil seguinte.",
         "base": "CN-MA art. 925, § 4º"},
     "AR_NAO_VOLTOU": {
         "rotulo": "AR não voltou",
@@ -106,7 +115,10 @@ def alertas_do_titulo(titulo: dict, *, hoje: str, prazo: str | None,
     em_prazo = situacao in ("APONTADO", "INTIMADO") and not sustado
     if em_prazo and prazo:
         if prazo == hoje:
-            fora.append(_alerta("VENCE_HOJE", f"prazo-limite {_br(prazo)}"))
+            seguinte = titulo.get("protesto_a_partir_de")
+            fora.append(_alerta(
+                "VENCE_HOJE", f"prazo-limite {_br(prazo)}"
+                + (f"; protesto a partir de {_br(seguinte)}" if seguinte else "")))
         elif prazo < hoje:
             fora.append(_alerta("PRAZO_VENCIDO", f"prazo-limite {_br(prazo)}"))
     if em_prazo:
@@ -174,6 +186,10 @@ def _medir_alertas(bd: Any, titulos: list[dict], *, hoje: str) -> dict[int, list
 def _com_prazo(bd: Any, titulo: dict) -> dict:
     t = dict(titulo)
     t["prazo_limite"] = AV.prazo_limite(bd, t)
+    # O DIA DO PROTESTO É O DIA ÚTIL SEGUINTE AO PRAZO-LIMITE (27/10/2026,
+    # decisão do oficial): no próprio prazo-limite o devedor ainda paga.
+    t["protesto_a_partir_de"] = (AV.dia_util_seguinte(bd, t["prazo_limite"])
+                                 if t["prazo_limite"] else None)
     t["sustado"] = bool(PT.sustacao_em_vigor(bd, int(t["id"])))
     return t
 

@@ -47,6 +47,23 @@ def test_vence_hoje_e_prazo_vencido_sao_contagem_do_prazo_limite():
     assert DEV.alertas_do_titulo(t, hoje="2026-10-21", prazo="2026-10-22", **base) == []
 
 
+def test_vence_hoje_diz_que_o_protesto_e_no_dia_util_seguinte():
+    """Decisão do oficial em 27/10/2026: «no dia útil seguinte». A frase dizia
+    «amanhã o protesto pode ser lavrado» — e amanhã pode ser sábado, e a régua
+    do tríduo tratava o protesto do dia útil seguinte como atrasado."""
+    frase = DEV.ALERTAS["VENCE_HOJE"]["frase"]
+    assert "amanhã" not in frase
+    assert "dia útil seguinte" in frase
+    base = dict(postagens_sem_retorno=[], avisos_para_edital=[],
+                boletos_a_conferir=[], sustado=False)
+    # Sexta 23/10/2026: o protesto é na segunda 26/10, e o detalhe diz o dia.
+    [a] = DEV.alertas_do_titulo(
+        {"situacao": "INTIMADO", "protesto_a_partir_de": "2026-10-26"},
+        hoje="2026-10-23", prazo="2026-10-23", **base)
+    assert a["codigo"] == "VENCE_HOJE"
+    assert "protesto a partir de 26/10/2026" in a["detalhe"]
+
+
 def test_sustado_e_titulo_encerrado_nao_vencem():
     base = dict(postagens_sem_retorno=[{"codigo_objeto": "X"}],
                 avisos_para_edital=[], boletos_a_conferir=[])
@@ -119,6 +136,13 @@ def test_o_painel_mostra_prazo_intimacao_pagamento_e_o_alerta_do_dia(db):
     assert primeiro["id"] == tid                      # em andamento primeiro
     assert primeiro["prazo_limite"] == limite and primeiro["dias_para_o_prazo"] == 0
     assert _codigos(primeiro["alertas"]) == ["VENCE_HOJE"]
+    # O DIA DO PROTESTO (27/10/2026): o dia útil seguinte ao prazo-limite.
+    with db.connect() as con:
+        seguinte = AV.dia_util_seguinte(con, limite)
+    assert seguinte > limite
+    assert primeiro["protesto_a_partir_de"] == seguinte
+    assert f"protesto a partir de {DEV._br(seguinte)}" in \
+        primeiro["alertas"][0]["detalhe"]
     assert primeiro["intimacoes"][0]["modo"] == "PESSOAL"
     assert segundo["situacao"] == "PAGO"
     assert segundo["pagamentos"][0]["forma"] == "por PIX"

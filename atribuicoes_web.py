@@ -10493,8 +10493,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash(str(erro), "danger")
             return redirect(url_for("protesto_avisos"))
         audit("PROTESTO_INTIMACAO_DIGITAL", "pt_avisos", aviso_id,
-              {"ato_id": r["ato_id"], "identificador": r["identificador"]})
-        flash("Intimação digital lavrada, com a confirmação da Resolve.",
+              {"ato_id": r["ato_id"], "identificador": r["identificador"],
+               "so_entregue": r.get("so_entregue")})
+        flash("Intimação digital lavrada, pela entrega comprovada na Resolve "
+              "(CN-MA art. 919, § 1º)." if r.get("so_entregue") else
+              "Intimação digital lavrada, com a confirmação da Resolve.",
               "success")
         return redirect(url_for("protesto_avisos"))
 

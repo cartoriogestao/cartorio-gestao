@@ -211,7 +211,7 @@ def texto_do_convite(serventia: str, link: str, validade: date) -> tuple[str, st
     CPF, sem nome de ninguém, sem valor, sem número de protocolo. Só calcula.
 
     **É O PISO** (27/10/2026): o texto que vale é o do papel
-    OUVIDORIA_CONVITE_PESQUISA (`textos_do_convite`), cujo padrão é este,
+    OUVIDORIA_CONVITE_PESQUISA (`modelo_do_convite` e `montar_convite`), cujo padrão é este,
     palavra por palavra — e há teste que compara os dois. Este continua aqui
     para quando nem o padrão do catálogo carregar: um convite que não sai é
     pior que um convite com o texto de fábrica."""
@@ -425,12 +425,6 @@ def montar_convite(partes: dict[str, str], serventia: str, link: str,
     # O assunto é UMA linha: quebra dentro dele viraria cabeçalho no e-mail.
     assunto = " ".join(assunto.splitlines()).strip()
     return assunto, corpo.strip("\n") + "\n"
-
-
-def textos_do_convite(serventia: str, link: str, validade: date,
-                      con: Any = None) -> tuple[str, str]:
-    """O assunto e o corpo que saem hoje — o papel da casa. Só lê."""
-    return montar_convite(modelo_do_convite(con), serventia, link, validade)
 
 
 def __getattr__(nome: str):

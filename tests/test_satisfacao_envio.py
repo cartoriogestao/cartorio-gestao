@@ -466,6 +466,11 @@ AJUSTE_VALIDO = ("===ASSUNTO===\nSua opinião sobre {serventia}\n===CORPO===\n"
                  "Vale até {validade}.\n")
 
 
+def _textos(con=None):
+    """O assunto e o corpo que saem hoje — o mesmo caminho de `enviar`."""
+    return ENVIO.montar_convite(ENVIO.modelo_do_convite(con), SERVENTIA, LINK, VALE)
+
+
 def _gravar_ajuste(casa, corpo: str):
     import modelos_elementos as ELEM
     with casa["db"].transaction() as con:
@@ -484,9 +489,9 @@ def test_o_padrao_do_papel_e_o_texto_de_hoje(cg_casa):
     até 26/10/2026 (`texto_do_convite`) — com e sem a conexão."""
     import modelos_da_casa as MOD
     hoje = ENVIO.texto_do_convite(SERVENTIA, LINK, VALE)
-    assert ENVIO.textos_do_convite(SERVENTIA, LINK, VALE) == hoje
+    assert _textos() == hoje
     with cg_casa["db"].connect() as con:
-        assert ENVIO.textos_do_convite(SERVENTIA, LINK, VALE, con) == hoje
+        assert _textos(con) == hoje
     assert ENVIO.conferir(MOD.padrao_de(ENVIO.MODELO)) == ""
     assunto, corpo = hoje
     assert assunto == "Pesquisa de satisfação — " + SERVENTIA
@@ -499,7 +504,7 @@ def test_o_padrao_do_papel_e_o_texto_de_hoje(cg_casa):
 def test_sem_o_padrao_carregado_sai_o_texto_de_fabrica(monkeypatch):
     """O piso: sem as duas partes, o convite sai com o texto de fábrica."""
     monkeypatch.setattr(ENVIO, "_padrao_do_papel", lambda: {})
-    assert (ENVIO.textos_do_convite(SERVENTIA, LINK, VALE)
+    assert (_textos()
             == ENVIO.texto_do_convite(SERVENTIA, LINK, VALE))
 
 
@@ -566,7 +571,7 @@ def test_ajuste_torto_ja_gravado_cai_no_padrao_com_aviso(cg_casa, monkeypatch, c
     da_casa = ENVIO.montar_convite(ENVIO._partir(AJUSTE_VALIDO), SERVENTIA, LINK, VALE)
     with caplog.at_level(logging.WARNING, logger="cartorio.satisfacao_envio"):
         with cg_casa["db"].connect() as con:
-            assunto, saiu = ENVIO.textos_do_convite(SERVENTIA, LINK, VALE, con)
+            assunto, saiu = _textos(con)
     if parte == "CORPO":
         assert saiu == fabrica[1] and assunto == da_casa[0]
     else:

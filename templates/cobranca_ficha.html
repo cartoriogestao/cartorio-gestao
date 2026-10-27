@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% block title %}Cobrança {{ c.seu_numero }}{% endblock %}
+{% block heading %}<h1>Cobrança {{ c.seu_numero }} — {{ bancos[c.banco] }}</h1>{% endblock %}
+{% block content %}
+{% if c.ambiente != 'producao' %}<div class="notice">Emitida no ambiente de <strong>teste</strong>.</div>{% endif %}
+
+<div class="card">
+  <p><strong>{{ situacoes[c.situacao] }}</strong>{% if c.banco_status %} <span class="muted">(o banco diz {{ c.banco_status }})</span>{% endif %}</p>
+  {% if c.banco_motivo %}<p>{{ c.banco_motivo }}</p>{% endif %}
+  {% if c.erro %}<p class="badge alta">{{ c.erro }}</p>{% endif %}
+  {% if pedido %}<p class="badge">Pedido esperando o banco: {{ pedidos[pedido.acao] }} (por {{ pedido.por }}, {{ pedido.em }}).</p>{% endif %}
+  <p>Valor R$ {{ reais(c.valor) }}{% if c.abatimento %} — abatimento pedido R$ {{ reais(c.abatimento) }}{% endif %} ·
+     vencimento {{ c.vencimento }}{% if c.dias_apos_vencimento %} (paga-se até {{ c.dias_apos_vencimento }} dia(s) depois){% endif %}</p>
+  <p>Protocolo: {% if protocolo %}{{ protocolo.numero }}{% else %}—{% endif %}</p>
+  <p>Pagador: {{ c.pagador_nome }} · {{ c.pagador_documento }}{% if c.pagador_email %} · {{ c.pagador_email }}{% endif %}<br>
+     {{ endereco.logradouro }}{% if endereco.numero %}, {{ endereco.numero }}{% endif %}{% if endereco.complemento %} {{ endereco.complemento }}{% endif %}{% if endereco.bairro %} — {{ endereco.bairro }}{% endif %}, {{ endereco.cidade }}/{{ endereco.uf }}, CEP {{ endereco.cep }}</p>
+  {% if c.linha_digitavel %}<p>Linha digitável: <code>{{ c.linha_digitavel }}</code></p>{% endif %}
+  {% if c.pix_copia_e_cola %}<p>Pix copia e cola: <code style="word-break:break-all">{{ c.pix_copia_e_cola }}</code></p>{% endif %}
+  {% if c.valor_recebido %}<p>Recebido R$ {{ reais(c.valor_recebido) }} em {{ c.data_pagamento or '?' }} ({{ c.forma_recebida|lower or 'boleto' }}).</p>{% endif %}
+  {% if c.deposito_id %}<p>Lançada no caixa: depósito prévio #{{ c.deposito_id }}.</p>{% endif %}
+</div>
+
+<div class="actions">
+  {% if c.pdf_guardado %}<a class="button" href="{{ url_for('cobranca_boleto_pdf', cobranca_id=c.id) }}" target="_blank" rel="noopener">Abrir o boleto (PDF)</a>{% endif %}
+  {% if c.situacao == 'A_EMITIR' and cfg.cobranca_ligada == '1' %}
+  <form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='emitir') }}" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Emitir no banco</button></form>
+  {% endif %}
+  {% if c.situacao in ['EMITINDO', 'ABERTA'] %}
+  <form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='atualizar') }}" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Consultar o banco agora</button></form>
+  {% endif %}
+  {% if c.situacao == 'ABERTA' and not c.pdf_guardado %}
+  <form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='baixar_pdf') }}" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Baixar o PDF do banco</button></form>
+  {% endif %}
+</div>
+{% if com_cofre %}<p class="muted small">Com o cofre da automação instalado, os botões que falam com o banco pedem a rodada
+  do despachante: o resultado aparece aqui no minuto seguinte.</p>{% endif %}
+
+{% if c.situacao == 'RECEBIDA' %}
+<form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='lancar') }}" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <p>O banco diz que o cliente pagou. Lançar no caixa cria um <strong>depósito prévio</strong> do protocolo,
+    no seu caixa de hoje; com o saldo dele se quitam os itens.</p>
+  {% if caixa %}<button type="submit">Lançar no meu caixa (aberto em {{ caixa.data }})</button>
+  {% else %}<p class="badge alta">Abra o seu caixa antes: <a href="{{ url_for('caixa') }}">Caixa</a>.</p>{% endif %}
+</form>
+{% endif %}
+
+{% if c.situacao in ['A_EMITIR', 'FALHOU'] %}
+<form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='descartar') }}" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Cancelar (ela não chegou ao banco) — motivo <input name="motivo" maxlength="50" required></label>
+  <button type="submit">Cancelar</button>
+</form>
+{% endif %}
+
+{% if c.situacao == 'ABERTA' and papel in ['ADMIN', 'MANAGER'] and not pedido %}
+<h3>Pedir ao banco</h3>
+{% if 'cancelar' in recursos %}
+<form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='cancelar') }}" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Cancelar o boleto no banco — motivo (até 50) <input name="motivo" maxlength="50" required></label>
+  <button type="submit">Pedir o cancelamento</button>
+</form>
+{% endif %}
+{% if 'abatimento' in recursos %}
+<form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='abatimento') }}" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <p class="muted small">Abatimento (instrução «piloto» da Unicred): reduz o valor a pagar; o último pedido vale.</p>
+  <label>Valor do abatimento (R$) <input name="valor" required></label>
+  <label>Justificativa <input name="justificativa" maxlength="200" required></label>
+  <button type="submit">Pedir o abatimento</button>
+</form>
+{% if c.abatimento %}
+<form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='cancelar_abatimento') }}" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Cancelar o abatimento — justificativa <input name="justificativa" maxlength="200" required></label>
+  <button type="submit">Pedir o cancelamento do abatimento</button>
+</form>
+{% endif %}
+{% endif %}
+{% if 'protesto_automatico' in recursos %}
+<form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='protesto') }}" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <p class="muted small">Protesto automático (instrução «piloto» da Unicred). Protesto é ato contra o cliente: decida antes de pedir.</p>
+  <label><input type="checkbox" name="ligado" value="1"> Enviar a protesto depois do vencimento</label>
+  <label>Dias depois do vencimento <input name="dias" value="0" size="3"></label>
+  <label><input type="checkbox" name="dias_uteis" value="1" checked> Contar só dias úteis</label>
+  <button type="submit">Pedir o ajuste do protesto</button>
+</form>
+{% endif %}
+{% endif %}
+
+<h3>Rastro</h3>
+<div class="table-wrap"><table>
+  <thead><tr><th>Quando</th><th>O quê</th><th>Resultado</th><th>Mensagem</th><th>Quem</th></tr></thead>
+  <tbody>{% for e in rastro %}<tr><td>{{ e.quando }}</td><td>{{ e.operacao }}</td><td>{{ e.resultado }}</td><td>{{ e.mensagem }}</td><td>{{ e.usuario }}</td></tr>{% endfor %}</tbody>
+</table></div>
+<p><a href="{{ url_for('cobranca_lista') }}">Voltar à lista</a></p>
+{% endblock %}

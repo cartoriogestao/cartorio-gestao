@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}Cobrança — configuração{% endblock %}
+{% block heading %}<h1>Cobrança por boleto — configuração</h1>{% endblock %}
+{% block content %}
+<form method="post" class="form-grid card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="parte" value="geral">
+  <label><input type="checkbox" name="cobranca_ligada" value="1"{% if cfg.cobranca_ligada == '1' %} checked{% endif %}> {{ rotulos.cobranca_ligada }}</label>
+  <label>{{ rotulos.cobranca_banco }} <select name="cobranca_banco">{% for k, v in bancos.items() %}<option value="{{ k }}"{% if k == cfg.cobranca_banco %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+  <label>{{ rotulos.cobranca_ambiente }} <select name="cobranca_ambiente">{% for k, v in ambientes.items() %}<option value="{{ k }}"{% if k == cfg.cobranca_ambiente %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+  <label>{{ rotulos.cobranca_dias_vencimento }} <input name="cobranca_dias_vencimento" value="{{ cfg.cobranca_dias_vencimento }}" size="4"></label>
+  <label>{{ rotulos.cobranca_dias_apos_vencimento }} <input name="cobranca_dias_apos_vencimento" value="{{ cfg.cobranca_dias_apos_vencimento }}" size="4"></label>
+  <label>{{ rotulos.cobranca_mensagem }} <input name="cobranca_mensagem" value="{{ cfg.cobranca_mensagem }}" maxlength="200"></label>
+  <button type="submit">Gravar</button>
+</form>
+
+<h2>Banco Inter</h2>
+<p>A cobrança usa <strong>a mesma credencial das despesas</strong> (Client ID, Client Secret, .crt e .key):
+  <a href="{{ url_for('despesas_configuracao') }}">Despesas → Configuração</a>. A integração no Internet Banking
+  precisa ter também os escopos <code>boleto-cobranca.read</code> e <code>boleto-cobranca.write</code>; sem eles o
+  Inter recusa o token da cobrança.</p>
+
+<h2>Unicred</h2>
+<p>Situação da credencial: {% if unicred and unicred.erro %}<span class="badge alta">{{ unicred.erro }}</span>
+  {% elif unicred %}gravada ({{ unicred.onde }}){% else %}<strong>não cadastrada</strong>{% endif %}.</p>
+<form method="post" class="form-grid card" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="parte" value="unicred">
+  {% for k, rotulo in rotulos_unicred.items() %}
+  <label>{{ rotulo }} <input name="{{ k }}" {% if k in ['senha', 'api_key'] %}type="password"{% endif %} required></label>
+  {% endfor %}
+  <button type="submit">Gravar a credencial da Unicred</button>
+</form>
+<div class="notice">
+  <p><strong>O que a documentação da Unicred não trouxe, e é preciso pedir ao gerente:</strong></p>
+  <ul>
+    <li><strong>A API de autenticação.</strong> Os sete documentos citam «o token gerado na API de autenticação», e
+      nenhum é ela. O endereço usado aqui vem da {{ procedencia_token }}.</li>
+    <li><strong>Pagar boletos e Pix, e o extrato da conta.</strong> Os documentos são só de cobrança. As despesas
+      continuam pagas pelo Inter.</li>
+    <li><strong>Busca por «seu número».</strong> Não existe; se a emissão ficar sem resposta, confira no internet
+      banking antes de emitir de novo.</li>
+  </ul>
+</div>
+{% endblock %}

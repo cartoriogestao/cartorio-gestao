@@ -828,6 +828,9 @@
         <a href="{{ url_for('caixa_protocolos') }}">Protocolo geral</a>
         <a href="{{ url_for('caixa_protocolos_parados') }}">Protocolos parados</a>
         <a href="{{ url_for('caixa_depositos') }}">Depósito prévio</a>
+        {# A COBRANÇA POR BOLETO (27/10/2026) — ao lado do depósito prévio, que é
+           onde o boleto pago entra. #}
+        <a href="{{ url_for('cobranca_lista') }}">Cobrança por boleto</a>
         {# A NFS-e DOS RECIBOS (LG01) — a fila do que falta e do que ficou no
            meio. Ao lado do caixa, porque é do recibo pago que a nota nasce. #}
         <a href="{{ url_for('nfse_fila') }}">NFS-e</a>

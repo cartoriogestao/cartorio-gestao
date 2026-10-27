@@ -240,6 +240,9 @@ PASTA_DO_RETORNO = "retorno"
 # nota de gente; o que passa disso é arquivo errado posto na pasta.
 LIMITE_DO_RETORNO = 16 * 1024
 
+# O QUANTO O `em` PODE ESTAR À FRENTE DA HORA DA IMPORTAÇÃO (fuso, relógio).
+DIAS_DE_FOLGA_DO_EM = 1
+
 _NOME_DO_ARQUIVO = re.compile(r"^(of|sb)-(\d{4})\.md$")
 _MARCADOR = re.compile(r"\[([A-Z_]+)_\d+\]")
 
@@ -433,7 +436,15 @@ def _ler_arquivo_do_retorno(raiz: Path, caminho: Path) -> dict:
         raise AP.ProblemaError(
             f"{caminho.name}: o arquivo passa de {LIMITE_DO_RETORNO // 1024} KB — "
             "retorno é nota, e não despejo.")
-    return ler_retorno(caminho.read_text(encoding="utf-8"), caminho.name)
+    try:
+        texto = caminho.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        # UM ARQUIVO SALVO NOUTRA CODIFICAÇÃO NÃO DERRUBA A CONFERÊNCIA: ele
+        # volta como recusado, e os outros seguem (revisão do #61).
+        raise AP.ProblemaError(
+            f"{caminho.name}: o arquivo não está em UTF-8 — salve-o de novo em "
+            "UTF-8.") from None
+    return ler_retorno(texto, caminho.name)
 
 
 def conferir_retorno(pasta: Any) -> dict:
@@ -477,10 +488,21 @@ def _decidir(r: dict, linha: dict, nome: str) -> str:
     return "iguais"
 
 
-def _importar_um(db, raiz: Path, caminho: Path, *, dry_run: bool) -> dict:
+def _importar_um(db, raiz: Path, caminho: Path, *, agora: str,
+                 dry_run: bool) -> dict:
     """Um arquivo, uma transação. Devolve o que aconteceu com ele."""
     r = _ler_arquivo_do_retorno(raiz, caminho)
     nome = caminho.name
+    # O `em` DO FUTURO VENCERIA TODA NOTA DA TELA, e para sempre: «quem é mais
+    # novo vence» compara o `em`, e um relógio errado (ou um ano digitado
+    # errado) passaria na frente de tudo o que o oficial escrever depois. Um dia
+    # de folga cobre fuso e relógio torto (revisão do #61).
+    if _instante(r["em"], nome) > _instante(agora, nome) + timedelta(
+            days=DIAS_DE_FOLGA_DO_EM):
+        raise AP.ProblemaError(
+            f"{nome}: o «em» {r['em']} está mais de {DIAS_DE_FOLGA_DO_EM} dia à "
+            f"frente de agora ({agora}). Confira o relógio de quem respondeu e "
+            "corrija o «em».")
     contexto = db.connect() if dry_run else db.transaction()
     with contexto as con:
         linha = AP.ler(con, r["id"])
@@ -533,7 +555,7 @@ def importar(db, pasta: Any, *, agora: str, ambiente: str | None = None,
             feito["outro_ambiente"] += 1
             continue
         try:
-            r = _importar_um(db, raiz, caminho, dry_run=dry_run)
+            r = _importar_um(db, raiz, caminho, agora=agora, dry_run=dry_run)
         except AP.ProblemaError as erro:
             feito["recusados"].append({"arquivo": caminho.name, "porque": str(erro)})
             continue

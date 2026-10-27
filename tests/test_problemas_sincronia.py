@@ -505,3 +505,37 @@ def test_a_regra_da_nota_mora_num_lugar_so(db, com_cpf):
             AP.anotar_desenvolvimento(con, com_cpf, agora=AGORA, **kw)
         assert frase in str(pela_funcao.value)
         assert str(pela_tela.value) == str(pela_funcao.value)
+
+
+# Revisão do #61 (27/10/2026).
+
+
+def test_em_mais_de_um_dia_no_futuro_e_recusado(db, com_cpf, tmp_path):
+    """Um `em` do futuro venceria toda nota que a tela escrevesse depois."""
+    outro = _anotar(db, titulo="KeyError na tela do protocolo", onde="protocolo")
+    _exportado(db, tmp_path, com_cpf, outro)
+    # DEPOIS_DO_EM (28/10, 15h) é o «agora» da importação
+    _responder(tmp_path, com_cpf, agora="2026-10-30T10:00:00")
+    _responder(tmp_path, outro, agora="2026-10-29T10:00:00")   # dentro da folga
+    r = _importar(db, tmp_path)
+    assert [x["arquivo"] for x in r["recusados"]] == [f"of-{com_cpf:04d}.md"]
+    assert "à frente de agora" in r["recusados"][0]["porque"]
+    assert r["gravados"] == [f"of-{outro:04d}.md"]
+    assert _linha(db, com_cpf)["nota_dev"] is None
+
+
+def test_retorno_fora_de_utf8_e_recusado_sem_derrubar(db, com_cpf, tmp_path,
+                                                      capsys):
+    outro = _anotar(db, titulo="KeyError na tela do protocolo", onde="protocolo")
+    _exportado(db, tmp_path, com_cpf, outro)
+    _responder(tmp_path, outro)
+    impressao = _linha(db, com_cpf)["impressao"]
+    (tmp_path / "retorno" / f"of-{com_cpf:04d}.md").write_bytes(
+        _retorno_valido(com_cpf, impressao,
+                        nota="Correção da emissão.").encode("latin-1"))
+    r = PS.conferir_retorno(tmp_path)
+    assert r["bons"] == [f"of-{outro:04d}.md"]
+    assert [x["arquivo"] for x in r["recusados"]] == [f"of-{com_cpf:04d}.md"]
+    assert "UTF-8" in r["recusados"][0]["porque"]
+    assert PS.main(["conferir-retorno", "--pasta", str(tmp_path)]) == 1
+    assert "UTF-8" in capsys.readouterr().err

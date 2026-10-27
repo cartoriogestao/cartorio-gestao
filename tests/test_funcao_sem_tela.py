@@ -604,6 +604,16 @@ ACHADAS_EM_20_10_2026: dict[str, str] = {
 }
 
 
+# 27/10/2026 — A DA PESQUISA DE SATISFAÇÃO (PR da ouvidoria). Sem tela DE
+# PROPÓSITO: o oficial decidiu que o link vai só ao cliente, e a tela do balcão
+# nunca mostra o token. Quem assina é o ENVIO do convite, que não existe neste
+# ramo — o convite fica na fila (`NA_FILA`) até haver o canal.
+ACHADAS_EM_27_10_2026: dict[str, str] = {
+    "assinar_convite": "satisfacao — quem assina é o envio do convite ao cliente, que "
+                       "não existe neste ramo; " + _TESTE,
+}
+
+
 def _conhecidas() -> set[str]:
     """As medições datadas que formam o piso do varredor."""
     return (set(JA_SABIDAS) | set(NASCIDAS_DEPOIS_DA_3_6_51)
@@ -617,7 +627,8 @@ def _conhecidas() -> set[str]:
             | set(ACHADAS_EM_13_10_2026)
             | set(ACHADAS_EM_14_10_2026)
             | set(ACHADAS_EM_19_10_2026)
-            | set(ACHADAS_EM_20_10_2026))
+            | set(ACHADAS_EM_20_10_2026)
+            | set(ACHADAS_EM_27_10_2026))
 
 
 def test_nenhuma_funcao_nova_fica_sem_tela():

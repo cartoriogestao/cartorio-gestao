@@ -141,6 +141,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             acao = (request.form.get("acao") or "salvar").strip()
             atribuicao_post = (
                 (request.form.get("atribuicao") or atribuicao or "").strip())
+            # O PAPEL QUE VAI SOZINHO AO CLIENTE (revisão de segurança de
+            # 26/10/2026, PR #26 M1): a regra mora em
+            # `MODELOS.PAPEIS_SO_DO_GESTOR`, e vale mesmo que `QUEM_GRAVA`
+            # um dia volte a abrir ao escrevente.
+            recusa = MODELOS.recusa_ao_gravar(app.extensions["usuario_papel"](),
+                                              [chave])
+            if recusa:
+                return render_template("error.html", code=403, message=recusa), 403
             try:
                 if acao == "restaurar":
                     with db.transaction() as con:

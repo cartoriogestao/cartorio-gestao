@@ -535,6 +535,41 @@ def texto_do_papel(con: sqlite3.Connection, chave: str) -> str:
     return corpo_de(con, chave)
 
 
+# OS PAPÉIS QUE SÓ O GESTOR GRAVA — revisão de segurança de 26/10/2026 (PR #26,
+# achado M1).
+#
+#   Todo papel da casa é gravado só por ADMIN e gerente desde o LX12 (19/10:
+#   `modelos_web.QUEM_GRAVA` e `modelos_elementos_web.QUEM_GRAVA`). Estes, além
+#   disso, SAEM SOZINHOS PARA O CLIENTE, sem ninguém ler antes de entregar — o
+#   e-mail do aviso de andamento vai a cada rodada do despachante, do remetente
+#   da serventia. Os outros papéis alguém confere no balcão antes de assinar;
+#   este, não. Por isso a regra deles é declarada AQUI, ao lado do catálogo, e
+#   não só na lista geral das telas: se um dia a gravação dos modelos voltar a
+#   abrir ao escrevente, estes continuam fechados.
+#
+#   CONFIRMADO PELO OFICIAL EM 26/10/2026 («quem grava o texto: ADMIN e
+#   gerente») — e os textos de fábrica do CAIXA_AVISO_ANDAMENTO foram
+#   aprovados por ele no mesmo dia.
+PAPEIS_SO_DO_GESTOR: frozenset[str] = frozenset({"CAIXA_AVISO_ANDAMENTO"})
+QUEM_GRAVA_PAPEL_DO_GESTOR: tuple[str, ...] = ("ADMIN", "MANAGER")
+
+
+def recusa_ao_gravar(papel_do_usuario: Any, chaves) -> str:
+    """A frase de recusa se quem está na tela não pode gravar aqueles papéis, ou ``""``.
+
+    `chaves` são os papéis que a gravação alcança — o próprio papel, ou todos
+    os de uma atribuição quando o ajuste é do nível da atribuição (o
+    encerramento e o rodapé dela entram no texto de cada papel). Só calcula.
+    """
+    alcancados = sorted({str(c or "").strip().upper() for c in chaves}
+                        & PAPEIS_SO_DO_GESTOR)
+    if not alcancados or str(papel_do_usuario or "") in QUEM_GRAVA_PAPEL_DO_GESTOR:
+        return ""
+    return ("Este texto vai sozinho ao cliente, sem ninguém conferir antes "
+            f"({', '.join(alcancados)}): só o oficial ou o gerente pode alterá-lo. "
+            "Peça a um deles.")
+
+
 def conferir_claros(texto: str, conhecidos) -> str:
     """O que há de errado nos claros `{nome}` de um texto CHAVES, ou ``""``. Só calcula.
 

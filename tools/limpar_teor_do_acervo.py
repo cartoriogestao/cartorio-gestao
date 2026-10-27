@@ -53,6 +53,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 import banco_pg  # noqa: E402
+import identidade_do_robo as IDR  # noqa: E402
 from bd_nativo import banco  # noqa: E402
 
 
@@ -220,19 +221,20 @@ def main() -> int:
                             (plano["teor"], plano["hash"], plano["id"]))
             # O RASTRO FICA NO BANCO. Quem conferir a ficha daqui a um ano
             # precisa achar por que o texto — e o hash — mudaram.
-            bd.escrever(
-                """INSERT INTO audit_logs (ts, user_id, username_snapshot,
-                       action, entity_type, entity_id, details)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-                (agora, None, "tools/limpar_teor_do_acervo.py",
-                 "RI_TEOR_LIMPO",
-                 "RI_MATRICULA" if plano["o_que"] == "ficha" else "RI_ATO",
-                 plano["id"],
-                 (f'{{"ficha": "{m["numero"]}", "onde": "{plano["o_que"]}", '
-                  f'"motivo": "ruido da importacao do E-Oficio (palavra de '
-                  f'conferencia, cabecalho repetido, separador e espaco '
-                  f'dobrado), retirado por ordem do delegatario em '
-                  f'{agora[:10]}"}}')))
+            # Quem grava por programa diz quem e e a mando de quem (26/10/2026).
+            IDR.registrar(
+                bd, ts=agora, user_id=None,
+                username="tools/limpar_teor_do_acervo.py",
+                action="RI_TEOR_LIMPO",
+                entity_type="RI_MATRICULA" if plano["o_que"] == "ficha" else "RI_ATO",
+                entity_id=plano["id"],
+                details=(f'{{"ficha": "{m["numero"]}", "onde": "{plano["o_que"]}", '
+                         f'"motivo": "ruido da importacao do E-Oficio (palavra de '
+                         f'conferencia, cabecalho repetido, separador e espaco '
+                         f'dobrado), retirado por ordem do delegatario em '
+                         f'{agora[:10]}"}}'),
+                agente="tools/limpar_teor_do_acervo.py",
+                a_mando_de=IDR.PELO_RESPONSAVEL)
 
     print(f"{len(planos)} teor(es) limpo(s). Nenhuma palavra do ato foi "
           f"reescrita — saiu só o ruído da importação.")

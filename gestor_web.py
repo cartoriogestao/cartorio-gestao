@@ -235,17 +235,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @app.route("/administrativo/gestor/erros.csv")
     @roles_required("ADMIN")
     def gestor_erros_csv():
-        import csv
         import io
 
         from flask import Response
 
+        import csv_seguro as CSVS
         import gestor_erros as GER
         filtros = _filtros_dos_erros()
         with db.connect() as con:
             r = GER.relatorio(con, **filtros)
         saida = io.StringIO()
-        w = csv.writer(saida, delimiter=";")
+        # Sem fórmula na planilha (achado transversal 2, 26/10/2026).
+        w = CSVS.escritor(saida)
         w.writerow(["visto em", "gravidade", "tipo", "quem praticou", "como se soube",
                     "ato", "o que é", "detalhe", "situação"])
         for l in r["linhas"]:

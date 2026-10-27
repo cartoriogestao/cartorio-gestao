@@ -55,6 +55,20 @@ def test_gerar_escreve_e_nao_executa(tmp_path):
     assert all(p.is_file() for p in escritos)
 
 
+def test_as_tarefas_chamam_os_lancadores_que_gerar_escreve(tmp_path):
+    # 27/10/2026, instalação da 3.7.5: as tarefas chamavam `destino/*.cmd` e
+    # `gerar` escreve em `destino/windows/*.cmd` — o despachante saía com 1 a
+    # cada minuto. O caminho que o .ps1 registra tem de ser um arquivo escrito.
+    import re
+    l = _lancamento(tmp_path, RAIZ, tmp_path / "dados", Path(sys.executable))
+    escritos = {str(p) for p in AG.gerar(l, ("windows",))}
+    ps1 = (Path(l.destino) / "windows" / "registrar_tarefas.ps1").read_text(encoding="utf-8")
+    chamados = re.findall(r"/d /c \"([^\"]+\.cmd)\"", ps1)
+    assert len(chamados) == 2
+    for caminho in chamados:
+        assert caminho in escritos, caminho
+
+
 def test_o_modulo_da_automacao_nao_tem_caminho_de_windows_escrito():
     """Portabilidade: nada de `C:\\` nem de comando exclusivo do Windows fora das funções de dois ramos."""
     for nome in ("automacao.py", "automacao_cofre.py", "automacao_guardiao.py", "automacao_processos.py",

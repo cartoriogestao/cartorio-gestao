@@ -422,7 +422,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                                 agora=db.now())
         except WA.EnvioErro as e:
             flash(str(e), "danger")
-            return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id)), 400
+            # Sem o `, 400`: redirecionamento com status 400 o navegador não
+            # segue, e o balcão via a página «Redirecting…» (27/10/2026).
+            return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
         audit("wa_enviar", "wa_conversa", conversa_id, {"ok": True})
         flash("Mensagem enviada no WhatsApp.", "success")
         return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))

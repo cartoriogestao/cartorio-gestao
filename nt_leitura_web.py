@@ -151,6 +151,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             erro = str(recusa)
         except AP.AgenteError as falha:
             erro = f"A IA não respondeu: {falha}"
+        except (OSError, ValueError) as falha:
+            # Arquivo que não abre como imagem (o PIL levanta
+            # `UnidentifiedImageError`, que é `OSError`) — 27/10/2026: subia cru,
+            # a tela dava HTTP 500 e a leitura ficava «LENDO» para sempre.
+            erro = (f"Um dos arquivos não pôde ser aberto ({type(falha).__name__}). "
+                    f"Confira se é uma foto ou um PDF legível.")
         with db.transaction() as con:
             NTL.concluir(con, leitura_id, arquivos=arquivos, lido=lido, erro=erro)
             leitura = NTL.uma(con, leitura_id)

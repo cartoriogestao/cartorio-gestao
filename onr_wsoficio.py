@@ -343,9 +343,19 @@ def certificados_do_windows(cpf: str = "") -> list[dict]:
           r"EMISSOR=([regex]::Match($_.Issuer,'CN=([^,]+)')).Groups[1].Value; "
           r"PUBLICKEY=$_.GetPublicKeyString(); SERIALNUMBER=$_.GetSerialNumberString(); "
           r"VALIDUNTIL=$_.GetExpirationDateString(); ASSUNTO=$_.Subject } } | ConvertTo-Json")
-    r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True,
-                       text=True, timeout=60)
-    dados = json.loads(r.stdout or "[]")
+    # A FALHA DE FORA VIRA RECUSA LEGÍVEL — 27/10/2026. O PowerShell que passa
+    # do prazo ou devolve texto que não é JSON subia cru, e as telas do ONR,
+    # que apanham `WSOficioError`, davam HTTP 500 no balcão.
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                           capture_output=True, text=True, timeout=60)
+        dados = json.loads(r.stdout or "[]")
+    except (subprocess.TimeoutExpired, OSError, ValueError) as erro:
+        raise WSOficioError(
+            "Não foi possível ler os certificados do Windows para entrar no "
+            f"Ofício Eletrônico ({type(erro).__name__}). Tente de novo; se "
+            "repetir, confira se o certificado está instalado na conta que roda "
+            "o servidor.") from erro
     lista = dados if isinstance(dados, list) else [dados]
     cpf = re.sub(r"\D", "", cpf or "")
     return [c for c in lista if not cpf or cpf in (c.get("ASSUNTO") or "")]
@@ -647,9 +657,17 @@ class Sessao:
 
 
 def _transporte_da_casa(url: str, corpo: bytes, acao: str) -> tuple[int, str]:
-    r = HTTP.requisitar("POST", url, corpo=corpo, cabecalhos={
-        "Content-Type": "text/xml; charset=utf-8", "SOAPAction": f'"{acao}"',
-        "Accept": "text/xml"}, prazo=60, tentativas=0)
+    # Rede fora do ar ou prazo esgotado: `CentralHttpError` é `RuntimeError`, e
+    # quem chama só apanha `WSOficioError` — o balcão levava HTTP 500, e a
+    # rodada do robô parava antes de assinar e enviar (27/10/2026).
+    try:
+        r = HTTP.requisitar("POST", url, corpo=corpo, cabecalhos={
+            "Content-Type": "text/xml; charset=utf-8", "SOAPAction": f'"{acao}"',
+            "Accept": "text/xml"}, prazo=60, tentativas=0)
+    except HTTP.CentralHttpError as erro:
+        raise WSOficioError(
+            f"O Ofício Eletrônico do ONR não respondeu: {erro}. Nada foi "
+            f"gravado; tente de novo em alguns minutos.") from erro
     return r.status, r.texto
 
 

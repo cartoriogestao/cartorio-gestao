@@ -382,12 +382,13 @@ def _prazo_limite(s, titulo: dict) -> str:
         return _br(prazo_limite(con, titulo))
 
 
-def _prazo_do_edital(s) -> str:
-    """O prazo-limite do EDITAL é o primeiro dia útil depois da publicação
-    (CN-MA art. 922, § 1º e § 3º), e não os três dias úteis do aviso."""
-    from protesto_aviso import dia_util_seguinte
+def _prazo_do_edital(s, titulo: dict) -> str:
+    """O prazo-limite do EDITAL é o MAIOR entre os três dias úteis da
+    protocolização e o primeiro dia útil depois da publicação (CN-MA art.
+    922, §§ 1º e 3º; art. 925, § 4º) — ordem do oficial em 27/10/2026."""
+    from protesto_aviso import prazo_de_pagamento
     with s["db"].connect() as con:
-        return _br(dia_util_seguinte(con, _hoje(s)))
+        return _br(prazo_de_pagamento(con, titulo, _hoje(s)))
 
 
 # ===================================================== o apontamento
@@ -638,7 +639,7 @@ def test_a_intimacao_chega_igual_ao_livro_ao_termo_e_ao_instrumento(s, modo):
         for esperado in (f"{DEVEDOR}, inscrito(a) no CPF/CNPJ sob o nº {CPF_DEVEDOR}",
                          f"Protocolo: {titulo['protocolo']}", "Título: NP-0001",
                          "Valor: R$ 1.234,56",
-                         f"Prazo-limite para pagamento: {_prazo_do_edital(s)}",
+                         f"Prazo-limite para pagamento: {_prazo_do_edital(s, titulo)}",
                          "Rua Exemplo, 100, Centro", "Telefone (98) 3000-0000",
                          f"Cidade Exemplo/MA, {_extenso(_hoje(s))}"):
             assert esperado in papel["texto"], (esperado, papel["texto"])

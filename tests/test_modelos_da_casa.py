@@ -5080,3 +5080,8 @@ def test_na_lavratura_o_termo_le_a_qualificacao_ajustada_pela_casa(casa):
             "MARIA DE EXEMPLO, inscrita no CPF n.º 000.000.001-91")
     assert LIVRO.qualificacao_inteira(maria) == (
         "MARIA DE EXEMPLO, brasileira, inscrita no CPF n.º 000.000.001-91")
+
+
+# A CERTIDÃO POSITIVA POR PESSOA — 25/10/2026, o oficial («relação dos imóveis
+# atuais»), para os pedidos do ONR por pessoa: `RI_CERTIDAO_POSITIVA_PESSOA`.
+NOVOS_NO_CATALOGO_ONR = 1

@@ -1836,17 +1836,18 @@ class Conexao:
         if m:
             self._pragma(cur, m.group("nome").lower(), m.group("valor"), m.group("arg"))
             return
-        m = re.match(r"^\s*VACUUM\s+(?:main\s+)?INTO\s+\?\s*;?\s*$", texto, re.I)
-        if m:
+        if texto.strip().rstrip(";").upper().split() in (
+                ["VACUUM", "INTO", "?"], ["VACUUM", "MAIN", "INTO", "?"]):
             # A CÓPIA ANTES DE GRAVAR não pode virar nada calado: o script
             # seguiria achando que tem cópia. Vira um pg_dump do schema.
-            # SÓ A FORMA COM `?` (27/10/2026): a forma com o caminho escrito no
-            # SQL (`VACUUM INTO 'x'`) tirava o destino do pg_dump do texto do
-            # comando, e ninguém a usa (alerta do CodeQL).
+            # SÓ A FORMA COM `?`, E SÓ PARA A PASTA DAS CÓPIAS (27/10/2026,
+            # alertas do CodeQL): a forma com o caminho escrito no SQL
+            # (`VACUUM INTO 'x'`) ninguém usa, e a regra da casa já manda a
+            # cópia para `pasta_das_copias.destino_da_copia`.
             destino = parametros[0] if isinstance(parametros, (list, tuple)) else None
             if not destino:
                 raise OperationalError("VACUUM INTO sem destino")
-            copiar_para_arquivo(self.db_path, destino)
+            copiar_para_arquivo(self.db_path, _na_pasta_das_copias(self.db_path, destino))
             cur._carregar((), [], -1)
             return
         if (texto.lstrip()[:6].upper() == "VACUUM"
@@ -2438,6 +2439,20 @@ def contar_linhas(c, schema: str) -> dict[str, int]:
         c.execute(f"SELECT count(*) FROM {_nome_sql(schema)}.{_nome_sql(tabela)}")
         saida[tabela] = int(c.fetchone()[0])
     return saida
+
+
+def _na_pasta_das_copias(db_path: Any, destino: Any) -> str:
+    """O destino do `VACUUM INTO ?`, se estiver dentro da raiz das cópias daquele
+    banco (`pasta_das_copias.raiz_das_copias`); senão, recusa. Só calcula."""
+    from pasta_das_copias import raiz_das_copias
+    pasta_do_banco = Path(_caminho_e_modo(db_path)[0]).parent
+    raiz = os.path.realpath(raiz_das_copias(pasta_do_banco))
+    alvo = os.path.realpath(str(destino))
+    if not alvo.startswith(raiz + os.sep):
+        raise OperationalError(
+            f"VACUUM INTO só grava na pasta das cópias ({raiz}); use "
+            f"pasta_das_copias.destino_da_copia para montar o destino.")
+    return alvo
 
 
 def copiar_para_arquivo(db_path: Any, destino: Any,

@@ -7,7 +7,8 @@
   pg_dump, e a ponte tirava esse destino do texto do SQL
   (`VACUUM INTO 'x'`) — py/command-line-injection. O destino agora não vai
   ao pg_dump (a saída padrão vai para o arquivo), e a ponte só aceita
-  `VACUUM INTO ?`.
+  `VACUUM INTO ?`, com o destino dentro da pasta das cópias do banco
+  (a regra da casa; sem ela, o CodeQL acusava o caminho sem controle).
 """
 from __future__ import annotations
 
@@ -73,17 +74,34 @@ def test_vacuum_into_com_o_caminho_no_texto_e_recusado_e_nao_finge_copia(tmp_pat
 
 
 @so_no_postgres
-def test_vacuum_into_com_parametro_continua_copiando(tmp_path):
+def test_vacuum_into_com_parametro_continua_copiando_para_a_pasta_das_copias():
+    from pasta_das_copias import destino_da_copia
     con = conexao_de_teste()
     con.execute("CREATE TABLE t_copia (x INTEGER)")
     con.commit()
-    destino = tmp_path / "copia.dump"
+    destino = destino_da_copia(Path("antes_do_teste.sqlite3"),
+                               Path(banco(con)._ponte.db_path))
     try:
         con.execute("VACUUM INTO ?", (str(destino),))
     finally:
         con.close()
     # o formato próprio do pg_dump (-Fc) começa por «PGDMP»
     assert destino.read_bytes()[:5] == b"PGDMP"
+
+
+@so_no_postgres
+@pytest.mark.parametrize("fora", ["fora.dump", "../fora.dump"])
+def test_vacuum_into_fora_da_pasta_das_copias_e_recusado(tmp_path, fora):
+    from pasta_das_copias import raiz_das_copias
+    con = conexao_de_teste()
+    raiz = raiz_das_copias(Path(banco(con)._ponte.db_path).parent)
+    destino = (tmp_path / fora) if fora == "fora.dump" else (raiz / fora)
+    try:
+        with pytest.raises(Exception, match="só grava na pasta das cópias"):
+            con.execute("VACUUM INTO ?", (str(destino),))
+    finally:
+        con.close()
+    assert not Path(destino).exists()
 
 
 @so_no_postgres

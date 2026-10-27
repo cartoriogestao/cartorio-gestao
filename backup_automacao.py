@@ -56,6 +56,7 @@ from typing import Any
 import backup as BKP
 import backup_restauracao as REST
 import backup_rotina as ROT
+import identidade_do_robo as IDR
 
 _TODOS = [0, 1, 2, 3, 4, 5, 6]
 
@@ -107,7 +108,8 @@ def registrar_os_feitos(db, feitos: list[dict], *, origem: str, agora: datetime,
                    "AUTO_BACKUP_COMPLETO" if f["tipo"] == "completo" else "AUTO_BACKUP_BANCO",
                    "BACKUP", None,
                    {"path": str(Path(pasta) / f["arquivo"]), "bytes": f["bytes"],
-                    "sha256": f["sha256"], "cifrado": f["cifrado"], "origem": origem})
+                    "sha256": f["sha256"], "cifrado": f["cifrado"], "origem": origem},
+                   agente=AGENTE_DA_PORTA.get(origem, origem), a_mando_de=IDR.PELO_RESPONSAVEL)
         except Exception:                      # noqa: BLE001 — a auditoria não derruba o backup
             pass
     return ""
@@ -126,14 +128,18 @@ def registrar_a_retencao(db, retencao: dict | None, *, origem: str, pasta: Path)
 
     Uma linha `AUTO_BACKUP_RETENCAO` por rodada que apagou alguma coisa, ou
     que deixou pacote velho por falta de registro, ou que não conseguiu
-    apagar. `db.log` não tem campo próprio de agente: `agente` e `a_mando_de`
-    vão no detalhe. A auditoria nunca derruba o backup.
+    apagar. `agente` e `a_mando_de` vão nos campos próprios do `db.log` (PR
+    #36), e continuam no detalhe. A auditoria nunca derruba o backup.
     """
     if not retencao or not (retencao.get("apagados") or retencao.get("sem_registro")
                             or retencao.get("falhas")):
         return
     fora_da_janela = {a: m for a, m in (retencao.get("mantidos") or {}).items()
                       if not m.startswith("dos últimos")}
+    agente = AGENTE_DA_PORTA.get(origem, origem)
+    mandante = ("oficial — retenção local de "
+                f"{retencao.get('dias')} dias decidida em 26/10/2026 "
+                "(Configurações → backup_retencao_dias)")
     try:
         db.log(None, "SISTEMA", "AUTO_BACKUP_RETENCAO", "BACKUP", None,
                {"pasta": str(pasta), "dias": retencao.get("dias"),
@@ -141,10 +147,8 @@ def registrar_a_retencao(db, retencao: dict | None, *, origem: str, pasta: Path)
                 "mantidos_fora_da_janela": fora_da_janela,
                 "sem_registro_nao_apagados": retencao.get("sem_registro") or [],
                 "falhas": retencao.get("falhas") or [], "origem": origem,
-                "agente": AGENTE_DA_PORTA.get(origem, origem),
-                "a_mando_de": ("oficial — retenção local de "
-                               f"{retencao.get('dias')} dias decidida em 26/10/2026 "
-                               "(Configurações → backup_retencao_dias)")})
+                "agente": agente, "a_mando_de": mandante},
+               agente=agente, a_mando_de=mandante)
     except Exception:                          # noqa: BLE001 — a auditoria não derruba o backup
         pass
 

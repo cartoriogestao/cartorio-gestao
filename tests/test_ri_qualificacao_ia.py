@@ -301,7 +301,7 @@ def test_no_sandbox_desligada_ou_sem_chave_o_botao_diz_por_que(casa, monkeypatch
     monkeypatch.setattr(AP, "tem_chave", lambda *a, **k: True)
 
     monkeypatch.setattr(TRAVA, "e_sandbox", lambda: True)
-    html = casa["c"].get(f"/registro-imoveis/protocolo/{pid}/nota").get_data(as_text=True)
+    html = casa["c"].get(f"/registro-imoveis/protocolo/{pid}").get_data(as_text=True)
     assert 'id="qualificacao-ia-bloqueio"' in html and "SANDBOX" in html
     assert "Pedir a qualificação assistida</button>" not in html
     r = casa["c"].post(f"/registro-imoveis/protocolo/{pid}/qualificacao-ia/pedir",
@@ -320,18 +320,23 @@ def test_no_sandbox_desligada_ou_sem_chave_o_botao_diz_por_que(casa, monkeypatch
     con.close()
 
 
-def test_o_quadro_aparece_na_nota_e_o_pedido_entra_em_segundo_plano(casa, monkeypatch):
+def test_o_quadro_aparece_no_protocolo_e_o_pedido_entra_em_segundo_plano(casa, monkeypatch):
+    # 27/10/2026, pergunta do oficial: «nao pode ser positiva e negativa? nao eh
+    # melhor ficar no protocolo?» — o quadro saiu da tela da nota e foi para a
+    # seção «Qualificação» do protocolo, logo depois dos dois botões de sempre.
     monkeypatch.setattr(AP, "tem_chave", lambda *a, **k: True)
     comecados = []
     monkeypatch.setattr(QIA, "preparar_em_segundo_plano",
                         lambda banco, pasta, pid: comecados.append(pid))
     _, pid = _prenotacao(casa)
     escritura, itbi = _titulo_e_itbi(casa, pid)
-    html = casa["c"].get(f"/registro-imoveis/protocolo/{pid}/nota").get_data(as_text=True)
+    html = casa["c"].get(f"/registro-imoveis/protocolo/{pid}").get_data(as_text=True)
     assert 'id="qualificacao-ia"' in html and "escritura.pdf" in html
-    assert "sem máscara" in html
-    # o quadro vem antes do formulário de emitir
-    assert html.index('id="qualificacao-ia"') < html.index('id="emitir-nota"')
+    assert "sem máscara" in html and "positiva ou negativa" in html
+    assert html.index('id="qualificar-positiva"') < html.index('id="qualificacao-ia"')
+    # a tela da nota não monta mais o quadro: aponta para o protocolo
+    nota = casa["c"].get(f"/registro-imoveis/protocolo/{pid}/nota").get_data(as_text=True)
+    assert 'id="qualificacao-ia"' not in nota and "Qualificação do protocolo" in nota
     # a espécie sugerida pela natureza do título
     assert 'value="R-COMPRA-VENDA" selected' in html
     r = casa["c"].post(f"/registro-imoveis/protocolo/{pid}/qualificacao-ia/pedir", data={
@@ -402,6 +407,130 @@ def test_sem_exigencia_marcada_nao_se_leva_nada(casa):
         QIA.levar(con, pedido, [], usuario="MARIO")
     with pytest.raises(QIA.QualificacaoIAError, match="não é deste pedido"):
         QIA.levar(con, pedido, [(99, "x")], usuario="MARIO")
+    con.close()
+
+
+# ------------------------------------------- positiva ou negativa (27/10/2026)
+#
+# Pergunta do oficial: «qualificacao assistida nao pode ser positiva e
+# negativa?». O rascunho aponta um dos dois caminhos e só preenche o formulário
+# daquele caminho; quem qualifica continua sendo a rota de sempre.
+
+TITULO_EM_ORDEM = {
+    "especie_do_titulo": "Escritura pública de compra e venda",
+    "exigencias": [],
+    "conferidos": [
+        {"item": "o comprador do título é o da qualificação", "documento": "escritura.pdf",
+         "trecho": "comprador MARIO EXEMPLO"},
+        {"item": "o imóvel do título é o desta matrícula", "documento": "matrícula",
+         "trecho": "lote 12 da quadra 3"},
+    ],
+    "duvidas": [],
+    "nao_lidos": [],
+    "observacoes": "",
+}
+
+
+@pytest.mark.parametrize("resultado,esperado", [
+    ({"exigencias": [{"exigencia": "Apresentar x"}], "conferidos": []}, QIA.SUGERE_NEGATIVA),
+    ({"exigencias": [], "conferidos": [{"item": "a", "citacao": "ESCRITO"}]},
+     QIA.SUGERE_POSITIVA),
+    ({"exigencias": [], "conferidos": [{"item": "a", "citacao": "ESCRITO"}],
+      "duvidas": ["CNIB"]}, QIA.SUGERE_DECIDIR),
+    ({"exigencias": [], "conferidos": [{"item": "a", "citacao": "ESCRITO"}],
+      "nao_lidos": ["itbi.pdf, ilegível"]}, QIA.SUGERE_DECIDIR),
+    ({"exigencias": [], "conferidos": [{"item": "a", "citacao": "ESCRITO"}],
+      "sem_texto_para_conferir": ["itbi.pdf"]}, QIA.SUGERE_DECIDIR),
+    ({"exigencias": [], "conferidos": [{"item": "a", "citacao": "NAO_ACHADO"}]},
+     QIA.SUGERE_DECIDIR),
+    ({"exigencias": [], "conferidos": []}, QIA.SUGERE_DECIDIR),
+])
+def test_o_rascunho_aponta_positiva_negativa_ou_a_decidir(resultado, esperado):
+    assert QIA.sugestao({"resultado": resultado})["resultado"] == esperado
+
+
+def test_o_rascunho_com_exigencia_aponta_a_nota_e_nao_preenche_a_positiva(casa):
+    _, pid = _prenotacao(casa)
+    escritura, itbi = _titulo_e_itbi(casa, pid)
+    pedido = _pedir_e_executar(casa, pid, [escritura, itbi], IA())
+    assert _pedido(casa, pedido)["sugestao"]["resultado"] == QIA.SUGERE_NEGATIVA
+    con = _con(casa)
+    assert QIA.preenchimento_positiva(con, pedido, pid) is None
+    with con:
+        assert QIA.ligar_a_positiva(con, pedido, pid, 999) is False
+    con.close()
+    pagina = casa["c"].get(f"/registro-imoveis/qualificacao-ia/{pedido}").get_data(as_text=True)
+    assert "aponta a qualificação negativa" in pagina
+    assert "Levar para a qualificação positiva" not in pagina
+
+
+def test_titulo_em_ordem_leva_a_fundamentacao_a_positiva_e_a_rota_de_sempre_liga(casa):
+    _, pid = _prenotacao(casa)
+    escritura = _anexar(casa, "RI_PROTOCOLO", pid, "escritura.pdf", ESCRITURA)
+    pedido = _pedir_e_executar(casa, pid, [escritura], IA(resposta=TITULO_EM_ORDEM))
+    p = _pedido(casa, pedido)
+    assert p["sugestao"]["resultado"] == QIA.SUGERE_POSITIVA, p["sugestao"]
+
+    # a tela do rascunho oferece a positiva, e o link só PREENCHE o protocolo
+    pagina = casa["c"].get(f"/registro-imoveis/qualificacao-ia/{pedido}").get_data(as_text=True)
+    assert "aponta a qualificação positiva" in pagina
+    assert "Levar para a qualificação positiva" in pagina
+    con = _con(casa)
+    assert con.execute("SELECT COUNT(*) FROM ri_qualificacoes WHERE protocolo_id = ?",
+                       (pid,)).fetchone()[0] == 0
+    con.close()
+    tela = casa["c"].get(f"/registro-imoveis/protocolo/{pid}?qualificacao={pedido}"
+                         ).get_data(as_text=True)
+    # a do formulário da positiva: a tela tem outra «fundamentacao» antes dela
+    caixa = re.search(r'id="qualificar-positiva".*?<textarea name="fundamentacao"[^>]*>(.*?)</textarea>',
+                      tela, re.S).group(1)
+    assert f"qualificação assistida nº {pedido}" in caixa
+    assert "o imóvel do título é o desta matrícula" in caixa
+    assert f'name="qualificacao_ia_id" value="{pedido}"' in tela
+
+    # quem qualifica é a rota de sempre, com o que a pessoa deixou no campo
+    r = casa["c"].post(f"/registro-imoveis/protocolo/{pid}/qualificar", data={
+        "csrf_token": _token(tela), "fundamentacao": "Título em ordem (conferido à mão).",
+        "qualificacao_ia_id": str(pedido)})
+    assert r.status_code == 302
+    con = _con(casa)
+    q = con.execute("SELECT * FROM ri_qualificacoes WHERE protocolo_id = ?", (pid,)).fetchone()
+    ligado = con.execute("SELECT qualificacao_id FROM ri_qualificacao_ia WHERE id = ?",
+                         (pedido,)).fetchone()[0]
+    assert q["resultado"] == "POSITIVA" and "à mão" in q["fundamentacao"] and ligado == q["id"]
+    # o mesmo rascunho não serve a uma segunda positiva nem vira nota
+    assert QIA.preenchimento_positiva(con, pedido, pid) is None
+    with con:
+        assert QIA.ligar_a_positiva(con, pedido, pid, q["id"] + 1) is False
+    with pytest.raises(QIA.QualificacaoIAError, match="qualificação positiva registrada"):
+        QIA.levar(con, pedido, [(0, "")], usuario="MARIO")
+    con.close()
+
+
+def test_o_preenchimento_da_positiva_nao_atravessa_de_prenotacao(casa):
+    _, pid = _prenotacao(casa)
+    escritura = _anexar(casa, "RI_PROTOCOLO", pid, "escritura.pdf", ESCRITURA)
+    pedido = _pedir_e_executar(casa, pid, [escritura], IA(resposta=TITULO_EM_ORDEM))
+    _, outra = _prenotacao(casa, numero=11803, com_matricula=False)
+    tela = casa["c"].get(f"/registro-imoveis/protocolo/{outra}?qualificacao={pedido}"
+                         ).get_data(as_text=True)
+    assert 'name="qualificacao_ia_id"' not in tela
+    con = _con(casa)
+    assert QIA.preenchimento_positiva(con, pedido, outra) is None
+    with con:
+        assert QIA.ligar_a_positiva(con, pedido, outra, 1) is False
+    con.close()
+
+
+def test_a_coluna_da_positiva_entra_na_instalacao_que_ja_tem_a_tabela(casa):
+    con = _con(casa)
+    with con:
+        con.execute("ALTER TABLE ri_qualificacao_ia DROP COLUMN qualificacao_id")
+    from bd_nativo import banco as _banco
+    assert not _banco(con).tem_coluna("ri_qualificacao_ia", "qualificacao_id")
+    with con:
+        QIA.init_schema(con)
+    assert _banco(con).tem_coluna("ri_qualificacao_ia", "qualificacao_id")
     con.close()
 
 
@@ -568,8 +697,8 @@ def test_todo_humano_que_pratica_ato_pede_a_qualificacao(casa, monkeypatch, pape
     pedido = _pedir_e_executar(casa, pid, [escritura, itbi], IA())
     pagina = c.get(f"/registro-imoveis/qualificacao-ia/{pedido}").get_data(as_text=True)
     assert "Levar para a nota devolutiva" in pagina
-    # e pede uma qualificação nova pela tela da nota
-    html = c.get(f"/registro-imoveis/protocolo/{pid}/nota").get_data(as_text=True)
+    # e pede uma qualificação nova pela tela do protocolo (o quadro mora lá)
+    html = c.get(f"/registro-imoveis/protocolo/{pid}").get_data(as_text=True)
     assert "Pedir a qualificação assistida" in html
     r = c.post(f"/registro-imoveis/protocolo/{pid}/qualificacao-ia/pedir", data={
         "csrf_token": _token(html), "anexo": [str(escritura), str(itbi)],

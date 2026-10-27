@@ -4,18 +4,26 @@
   o oficial ou o escrevente revisar, editar e assinar. Quem monta o que este
   quadro mostra é `ri_qualificacao_ia_web._qualificacao_ia_na_tela`.
 
-  O quadro NÃO emite nada: a nota sai pelo formulário de sempre, logo abaixo.
+  NO PROTOCOLO DESDE 27/10/2026 (pergunta do oficial: «nao pode ser positiva e
+  negativa?»): cada rascunho diz o caminho que aponta — a nota devolutiva ou a
+  qualificação positiva — e só PREENCHE o formulário daquele caminho.
+
+  O quadro NÃO emite nada e NÃO qualifica: a nota e a positiva saem pelos
+  formulários de sempre, logo acima e na tela da nota.
 #}
 {% set qa = qualificacao_ia %}
 <section class="panel" id="qualificacao-ia">
-  <div class="panel-head"><span>Qualificação assistida (IA) — rascunho da nota devolutiva</span>
+  <div class="panel-head"><span>Qualificação assistida (IA) — rascunho da qualificação, positiva ou negativa</span>
     <span class="small muted">{{ qa.modelo }} · esforço {{ qa.esforco }}</span></div>
   <div style="padding:0 14px 14px">
     <p class="small muted">A IA lê o título, a guia ou certidão do ITBI e a ficha da matrícula, cruza os três e
-      <strong>rascunha</strong> as exigências — cada uma com o fundamento e com o trecho do documento de onde saiu.
-      <strong>Ela não decide, não emite a nota e não devolve o título</strong>: a qualificação é ato do oficial
-      (Código de Normas do MA, arts. 169, 171 e 176). Você marca as exigências que aceita, edita e leva ao
-      formulário da nota; quem emite continua sendo o botão de sempre.
+      <strong>rascunha</strong> a qualificação: as exigências, cada uma com o fundamento e com o trecho do documento
+      de onde saiu, e o que ela cruzou e bateu. Com exigência, o rascunho aponta a <strong>negativa</strong>: você
+      marca as que aceita, edita e leva ao formulário da nota. Sem exigência, sem dúvida e com tudo lido, aponta a
+      <strong>positiva</strong>: o que ela conferiu vai para a fundamentação do formulário acima.
+      <strong>Ela não decide, não emite a nota, não qualifica e não devolve o título</strong>: a qualificação é ato do
+      oficial (Código de Normas do MA, arts. 169, 171 e 176), e quem a registra continua sendo um dos dois botões
+      de sempre.
       <strong>Os documentos sobem inteiros ao Claude, sem máscara</strong> — a mesma decisão do oficial de
       12/10/2026 que o agente de minutas segue; a chave do provedor fica fora do banco (agente.cred).</p>
 
@@ -58,8 +66,18 @@
             {{ (h.resultado.conferidos or [])|length }} ponto(s) conferido(s) ·
             {{ (h.resultado.duvidas or [])|length }} dúvida(s)
             {% if h.nota_id %} · <strong>levada à nota emitida</strong>
-            {% elif h.levado_em %} · levada ao formulário em {{ (h.levado_em or '')[:16]|replace('T', ' ') }}{% endif %}</span><br>
-          <a class="small" href="{{ url_for('ri_qualificacao_ia_ver', pedido_id=h.id) }}">ver o rascunho e escolher as exigências</a>
+            {% elif h.qualificacao_id %} · <strong>serviu à qualificação positiva registrada</strong>
+            {% elif h.levado_em %} · levada ao formulário da nota em {{ (h.levado_em or '')[:16]|replace('T', ' ') }}{% endif %}</span><br>
+          {% if h.sugestao %}
+          <span class="small">{% if h.sugestao.resultado == 'POSITIVA' %}<span class="badge baixa">aponta a positiva</span>
+            {% elif h.sugestao.resultado == 'NEGATIVA' %}<span class="badge alta">aponta a negativa</span>
+            {% else %}<span class="badge alta">a decidir</span>{% endif %} {{ h.sugestao.frase }}</span><br>
+          {% endif %}
+          <a class="small" href="{{ url_for('ri_qualificacao_ia_ver', pedido_id=h.id) }}">ver o rascunho{% if h.sugestao and h.sugestao.resultado == 'NEGATIVA' %} e escolher as exigências{% endif %}</a>
+          {% if h.sugestao and h.sugestao.resultado != 'NEGATIVA' and not h.nota_id and not h.qualificacao_id
+                and not h.levado_em and user.role in qa.papeis %}
+            · <a class="small" href="{{ url_for('ri_protocolo_ver', protocolo_id=qa.protocolo_id, qualificacao=h.id) }}#qualificar-positiva">levar para a qualificação positiva</a>
+          {% endif %}
         {% endif %}
       </div>
     {% endfor %}

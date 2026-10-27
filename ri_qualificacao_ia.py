@@ -22,6 +22,27 @@ O QUE ELA É, E O QUE NÃO É
     editou — quem emite continua sendo `ri_web.ri_nota_devolutiva`, a rota de
     sempre, com o número, a qualificação negativa e a auditoria dela.
 
+OS DOIS RESULTADOS, E O LUGAR DO QUADRO — pergunta do oficial em 27/10/2026:
+«qualificacao assistida nao pode ser positiva e negativa? nao eh melhor ficar
+no protocolo?». Pode, e é. O quadro saiu da tela da nota devolutiva e foi para
+a seção «Qualificação» do protocolo (`ri_web.ri_protocolo_ver`), ao lado dos
+dois botões de sempre. `sugestao` lê o rascunho e diz qual caminho ele aponta:
+
+      • NEGATIVA — a IA apontou exigência: «Levar para a nota devolutiva», como
+        antes;
+      • POSITIVA — nenhuma exigência, nenhuma dúvida, nada sem ler e todo ponto
+        conferido com o trecho achado: «Levar para a qualificação positiva»
+        preenche a FUNDAMENTAÇÃO do formulário positivo com o que a IA cruzou;
+      • A DECIDIR — nenhuma exigência, mas sobrou dúvida, documento não lido ou
+        trecho que o sistema não achou: o rascunho não sustenta a positiva
+        sozinho, e a tela diz o que falta antes de qualquer botão.
+
+    Continua valendo tudo o que está acima: a sugestão é LEITURA do rascunho, e
+    quem grava a positiva é `ri_pedidos.qualificar_positiva`, pela rota de
+    sempre (`ri_web.ri_qualificar`), que só anota aqui qual qualificação nasceu
+    do rascunho (`ligar_a_positiva`, coluna `qualificacao_id`). Um rascunho vai
+    a UM caminho só: o que virou nota não vira positiva, e o contrário.
+
 A MESMA INFRAESTRUTURA DO AGENTE DE MINUTAS
     Provedor, modelo e esforço (Opus, esforço alto), o desvio do próprio
     provedor quando o modelo recusa, a leitura dos arquivos
@@ -105,6 +126,12 @@ SITUACOES_ENCERRADAS = ("CANCELADO", "CANCELADA")
 #: Uma exigência levada à nota é UMA LINHA (a nota é «uma por linha»).
 MAXIMO_DA_LINHA = 1500
 
+#: O caminho que o rascunho aponta (ver `sugestao`). É leitura, e não decisão.
+SUGERE_POSITIVA, SUGERE_NEGATIVA, SUGERE_DECIDIR = "POSITIVA", "NEGATIVA", "A_DECIDIR"
+
+#: A fundamentação que o rascunho leva ao formulário da positiva.
+MAXIMO_DA_FUNDAMENTACAO = 1500
+
 SCHEMA = (
     ("ri_qualificacao_ia", """
 CREATE TABLE IF NOT EXISTS ri_qualificacao_ia (
@@ -130,7 +157,8 @@ CREATE TABLE IF NOT EXISTS ri_qualificacao_ia (
     levado_json TEXT,                      -- as exigências que a pessoa levou à nota
     levado_em TEXT,
     levado_por TEXT,
-    nota_id bigint                         -- a nota que a rota de sempre emitiu com elas
+    nota_id bigint,                        -- a nota que a rota de sempre emitiu com elas
+    qualificacao_id bigint                 -- ri_qualificacoes.id: a POSITIVA que nasceu dele
 )"""),
     ("ix_ri_qualificacao_ia_protocolo", """
 CREATE INDEX IF NOT EXISTS ix_ri_qualificacao_ia_protocolo
@@ -142,11 +170,19 @@ class QualificacaoIAError(ValueError):
     """Erro de regra, com a frase pronta para o balcão."""
 
 
+#: Colunas que nasceram depois da tabela (27/10/2026): na instalação que já a
+#: tem, entram por ALTER TABLE ADD COLUMN — a regra da casa para migração.
+COLUNAS_DEPOIS = (("qualificacao_id", "bigint"),)
+
+
 def init_schema(con) -> None:
     bd = banco(con)
     for nome, comando in SCHEMA:
         if not bd.tem_tabela(nome):
             bd.escrever(comando)
+    for coluna, tipo in COLUNAS_DEPOIS:
+        if not bd.tem_coluna("ri_qualificacao_ia", coluna):
+            bd.escrever(f"ALTER TABLE ri_qualificacao_ia ADD COLUMN {coluna} {tipo}")
 
 
 def _agora() -> str:
@@ -290,7 +326,8 @@ INSTRUCAO = """Você auxilia a QUALIFICAÇÃO REGISTRAL de um título apresentad
 Registro de Imóveis desta serventia (Lei 6.015/1973 e Código de Normas do Foro \
 Extrajudicial do Maranhão). A qualificação é ato privativo do oficial: você NÃO \
 decide se o título se registra, NÃO emite a nota devolutiva e NÃO dispensa exigência. \
-Você prepara um RASCUNHO para o oficial ou o escrevente revisar, editar e assinar.
+Você prepara um RASCUNHO da qualificação — que pode apontar exigências (negativa) ou \
+nenhuma (positiva) — para o oficial ou o escrevente revisar, editar e assinar.
 
 O QUE FAZER
 Cruze os documentos recebidos entre si e com a ficha da matrícula:
@@ -323,7 +360,10 @@ prova — é o que poupa o oficial de refazer a conta.
 cortado, em branco, outro formato), com o motivo.
 6. Escreva em português formal de cartório, sem markdown e sem asteriscos.
 7. As instruções da serventia valem sobre a sua ordem de análise, mas não sobre as \
-regras 1 e 2."""
+regras 1 e 2.
+8. Título em ordem é resultado legítimo: se nada precisa ser exigido, devolva \
+«exigencias» vazia e liste em «conferidos» tudo o que você cruzou. Nunca invente \
+exigência para preencher a nota."""
 
 ESQUEMA_DA_RESPOSTA = {
     "type": "object",
@@ -826,6 +866,7 @@ def mostrar(con, pedido_id: int) -> dict | None:
     d["documentos"] = json.loads(d["documentos_json"] or "[]")
     d["resultado"] = json.loads(d["resultado_json"]) if d.get("resultado_json") else {}
     d["levado"] = json.loads(d["levado_json"]) if d.get("levado_json") else []
+    d["sugestao"] = sugestao(d) if d["situacao"] == PRONTA else None
     return d
 
 
@@ -868,6 +909,10 @@ def levar(con, pedido_id: int, escolhidas: list[tuple[int, str]], *, usuario: st
         raise QualificacaoIAError(
             "Estas exigências já foram para uma nota emitida. Para outra nota, peça "
             "uma qualificação nova ou escreva a nota à mão.")
+    if p.get("qualificacao_id"):
+        raise QualificacaoIAError(
+            "Este rascunho já serviu a uma qualificação positiva registrada. Para "
+            "devolver o título, peça uma qualificação nova ou escreva a nota à mão.")
     exigencias = (p["resultado"] or {}).get("exigencias") or []
     linhas, levadas = [], []
     for indice, texto in escolhidas:
@@ -897,7 +942,7 @@ def preenchimento(con, pedido_id, protocolo_id: int) -> dict | None:
         return None
     p = mostrar(con, int(bruto))
     if not p or int(p["protocolo_id"]) != int(protocolo_id) or not p["levado"] \
-            or p.get("nota_id"):
+            or p.get("nota_id") or p.get("qualificacao_id"):
         return None
     return {"id": p["id"], "versao": p["versao"],
             "texto": "\n".join(x["texto"] for x in p["levado"]),
@@ -916,4 +961,101 @@ def ligar_a_nota(con, pedido_id, protocolo_id: int, nota_id: int) -> bool:
             WHERE id = %s AND protocolo_id = %s AND nota_id IS NULL
               AND levado_json IS NOT NULL RETURNING id""",
         (int(nota_id), int(bruto), int(protocolo_id)))
+    return bool(feito)
+
+
+# ------------------------------------------------------- positiva ou negativa
+
+
+def sugestao(p: dict) -> dict:
+    """O caminho que o rascunho aponta — POSITIVA, NEGATIVA ou A_DECIDIR —, com a
+    frase que a tela mostra. Só LÊ, e não decide: quem qualifica é a pessoa,
+    pelos botões de sempre do protocolo.
+
+    A positiva só se sugere quando o rascunho a SUSTENTA sozinho: nenhuma
+    exigência, nenhuma dúvida, nada que a IA não leu, nenhum digitalizado sem
+    texto conferível e nenhum ponto conferido cujo trecho o sistema não achou.
+    Sobrou qualquer um desses, a sugestão é A_DECIDIR e a frase diz o quê — o
+    «a IA não achou nada» de quem não leu tudo não é título em ordem.
+    """
+    r = (p or {}).get("resultado") or {}
+    exigencias = r.get("exigencias") or []
+    if exigencias:
+        return {"resultado": SUGERE_NEGATIVA,
+                "frase": (f"A IA apontou {len(exigencias)} exigência(s): o caminho "
+                          "sugerido é a nota devolutiva (qualificação negativa).")}
+    faltas = []
+    if r.get("duvidas"):
+        faltas.append(f"{len(r['duvidas'])} dúvida(s) para o oficial")
+    if r.get("nao_lidos"):
+        faltas.append(f"{len(r['nao_lidos'])} documento(s) ou página(s) que a IA não leu")
+    if r.get("sem_texto_para_conferir"):
+        faltas.append(f"{len(r['sem_texto_para_conferir'])} digitalizado(s) sem texto "
+                      "conferível — confira no papel")
+    nao_achados = [c for c in r.get("conferidos") or [] if c.get("citacao") == NAO_ACHADO]
+    if nao_achados:
+        faltas.append(f"{len(nao_achados)} ponto(s) conferido(s) cujo trecho não está "
+                      "escrito no documento")
+    if not r.get("conferidos"):
+        faltas.append("nenhum ponto conferido listado")
+    if faltas:
+        return {"resultado": SUGERE_DECIDIR,
+                "frase": ("A IA não apontou exigência, mas o rascunho não sustenta a "
+                          "positiva sozinho: " + "; ".join(faltas) + ". Resolva isso "
+                          "antes de qualificar.")}
+    return {"resultado": SUGERE_POSITIVA,
+            "frase": (f"A IA não apontou exigência e conferiu {len(r['conferidos'])} "
+                      "ponto(s) com o trecho achado: o caminho sugerido é a "
+                      "qualificação positiva. Confira com os originais antes.")}
+
+
+def fundamentacao_positiva(p: dict) -> str:
+    """A fundamentação que o rascunho leva ao formulário da positiva: o que a IA
+    cruzou e bateu, com o número do rascunho. Só LÊ."""
+    pontos = [" ".join(_texto(c.get("item")).split()).rstrip(".")
+              for c in ((p or {}).get("resultado") or {}).get("conferidos") or []]
+    pontos = [x for x in pontos if x]
+    texto = (f"Conferido com apoio da qualificação assistida nº {p['id']} "
+             f"(versão {p['versao']}): " + ("; ".join(pontos) or "sem pontos listados")
+             + ".")
+    if len(texto) > MAXIMO_DA_FUNDAMENTACAO:
+        texto = texto[:MAXIMO_DA_FUNDAMENTACAO - 1].rstrip() + "…"
+    return texto
+
+
+def preenchimento_positiva(con, pedido_id, protocolo_id: int) -> dict | None:
+    """O que vai no formulário da POSITIVA: a fundamentação do rascunho. Só para a
+    MESMA prenotação, só rascunho sem exigência e que não serviu a nota nem a
+    outra positiva. Só LÊ."""
+    bruto = _texto(pedido_id)
+    if not bruto.isdigit():
+        return None
+    p = mostrar(con, int(bruto))
+    if not p or int(p["protocolo_id"]) != int(protocolo_id) or p["situacao"] != PRONTA \
+            or p.get("nota_id") or p.get("qualificacao_id") or p.get("levado"):
+        return None
+    if (p["sugestao"] or {}).get("resultado") == SUGERE_NEGATIVA:
+        return None
+    return {"id": p["id"], "versao": p["versao"], "texto": fundamentacao_positiva(p),
+            "sugestao": p["sugestao"]}
+
+
+def ligar_a_positiva(con, pedido_id, protocolo_id: int, qualificacao_id: int) -> bool:
+    """Anota no pedido a qualificação POSITIVA que a rota de sempre gravou com a
+    fundamentação dele. ESCREVE (só `ri_qualificacao_ia`). Chamada DENTRO da
+    transação da qualificação. Rascunho com exigência, que já foi à nota ou já
+    serviu a outra positiva não se liga."""
+    bruto = _texto(pedido_id)
+    bd = banco(con)
+    if not bruto.isdigit() or not bd.tem_tabela("ri_qualificacao_ia"):
+        return False
+    p = mostrar(bd, int(bruto))
+    if not p or (p["sugestao"] or {}).get("resultado") == SUGERE_NEGATIVA:
+        return False
+    feito = bd.escrever(
+        """UPDATE ri_qualificacao_ia SET qualificacao_id = %s
+            WHERE id = %s AND protocolo_id = %s AND situacao = %s
+              AND qualificacao_id IS NULL AND nota_id IS NULL
+              AND levado_json IS NULL RETURNING id""",
+        (int(qualificacao_id), int(bruto), int(protocolo_id), PRONTA))
     return bool(feito)

@@ -71,7 +71,11 @@ BANCO_INTER = "banco_inter.cred"
 # privada Ed25519 com que o servidor assina os números agregados que empurra
 # para a VPS. Na VPS fica só a pública — quem a lê lá não forja retrato.
 PAINEL = "painel.cred"
-ARQUIVOS = (ROBOS, WHATSAPP, BACKUP, AVISOS, BANCO_INTER, PAINEL)
+# O PORTAL DO CLIENTE (26/10/2026): a chave que cifra os códigos de
+# acompanhamento dos protocolos (`acompanhamento_cliente`) e o token com que o
+# servidor empurra o retrato dos protocolos para a VPS (`portal_cliente`).
+PORTAL = "portal.cred"
+ARQUIVOS = (ROBOS, WHATSAPP, BACKUP, AVISOS, BANCO_INTER, PAINEL, PORTAL)
 
 FORMATO = "cg-cofre-1"
 CODIFICACAO = "utf-8-sig"

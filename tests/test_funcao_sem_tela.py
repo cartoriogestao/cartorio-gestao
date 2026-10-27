@@ -607,6 +607,16 @@ ACHADAS_EM_20_10_2026: dict[str, str] = {
 }
 
 
+# 27/10/2026 — A DA PESQUISA DE SATISFAÇÃO (PR da ouvidoria). Sem tela DE
+# PROPÓSITO: o oficial decidiu que o link vai só ao cliente, e a tela do balcão
+# nunca mostra o token. Quem assina é o ENVIO do convite, que não existe neste
+# ramo — o convite fica na fila (`NA_FILA`) até haver o canal.
+ACHADAS_EM_27_10_2026: dict[str, str] = {
+    "assinar_convite": "satisfacao — quem assina é o envio do convite ao cliente, que "
+                       "não existe neste ramo; " + _TESTE,
+}
+
+
 # ACHADAS EM 26/10/2026, NA ORDEM DO OFICIAL «não deixar nenhuma falha antiga
 # sem correção». Eram 33 e este teste estava vermelho no `main` desde a virada
 # para o PostgreSQL. Medido quem chama cada uma, na raiz, em `tests/`, em
@@ -672,7 +682,8 @@ def _conhecidas() -> set[str]:
             | set(ACHADAS_EM_14_10_2026)
             | set(ACHADAS_EM_19_10_2026)
             | set(ACHADAS_EM_20_10_2026)
-            | set(ACHADAS_EM_26_10_2026))
+            | set(ACHADAS_EM_26_10_2026)
+            | set(ACHADAS_EM_27_10_2026))
 
 
 def test_nenhuma_funcao_nova_fica_sem_tela():

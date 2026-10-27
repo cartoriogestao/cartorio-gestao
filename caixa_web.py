@@ -1254,8 +1254,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                             interessado_documento, telefone, email, assunto,
                             observacao, previsao_entrega, tipo,
                             documento_tipo, documento_numero, documento_descricao,
-                            situacao, criado_em)
-                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'ABERTO', %s)
+                            situacao, criado_em, criado_por)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'ABERTO', %s, %s)
                            RETURNING id""",
                         (numero, hoje.isoformat(), datetime.now().strftime("%H:%M"),
                          request.form.get("atribuicao") or "OUTROS", interessado,
@@ -1270,7 +1270,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          (request.form.get("documento_tipo") or "").strip() or None,
                          (request.form.get("documento_numero") or "").strip() or None,
                          (request.form.get("documento_descricao") or "").strip() or None,
-                         db.now()))
+                         # Quem ABRIU o protocolo (26/10/2026): a coluna existia
+                         # e esta tela não a gravava. A pesquisa de satisfação
+                         # põe no convite quem atendeu — e quem atendeu é este.
+                         db.now(), usuario_id()))
                     pid = int(novo[0]["id"])
                     # Ponte com a prenotacao do RI: so quando o balcao escolheu.
                     # Sem escolha, a coluna fica vazia — lavrar nao adivinha.

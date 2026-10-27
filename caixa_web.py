@@ -17,7 +17,9 @@ from flask import Response, abort, flash, redirect, render_template, request, ur
 import emolumentos as EMOL
 import fraude as FR
 import caixa_depositos as DEP
+import caixa_exigencia as CXEX
 import caixa_protocolo as CXP
+import impressao_web as IMPW
 import contato_do_cliente as CONTATO
 import protocolo_documentos as PDOC
 import modelos_da_casa as MODELOS
@@ -1529,8 +1531,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # com outra cara.
         with db.connect() as con_doc:
             docs_qualificacao = PDOC.documentos(con_doc, protocolo_id)
+            # AS EXIGÊNCIAS ABERTAS DE TODA ATRIBUIÇÃO — 26/10/2026. A ficha
+            # pergunta à MESMA leitura que o portal do cliente e os avisos de
+            # andamento: a geral deste protocolo, a nota devolutiva da
+            # prenotação ligada e a qualificação negativa do título ligado.
+            exigencias_abertas = CXEX.exigencias_abertas_do_protocolo(
+                con_doc, protocolo_id)
         return render_template("caixa_protocolo.html", p=p, atos=atos,
                                docs_qualificacao=docs_qualificacao,
+                               exigencias_abertas=exigencias_abertas,
                                TIPOS_DE_DOCUMENTO=PDOC.TIPOS_DE_DOCUMENTO,
                                PAPEIS_QUE_ANEXAM=PDOC.PAPEIS_QUE_ANEXAM,
                                fraudes=fraudes,
@@ -1637,6 +1646,173 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         flash(f"«{r['original_name']}» retirado da lista. O arquivo continua "
               "guardado, e o motivo fica registrado.", "success")
         return redirect(volta)
+
+    # ------------------------------------------- nota de exigência geral
+    #
+    # «precisamos que todas as atribuições tenham nota de exigência» — o
+    # oficial, 26/10/2026. Notas, Registro Civil e Protesto não tinham nota
+    # nenhuma; o RI e o RCPJ/RTD continuam com as deles. A regra mora em
+    # `caixa_exigencia`; aqui só se ligam os fios.
+    #
+    # O CONFERIDOR DO PAPEL na tela de Modelos e em quem grava o ajuste: o
+    # boneco geral só tem `hoje`, `agora` e `sv`, e reprovaria todo ajuste.
+    import modelos_elementos as ELEM
+    app.extensions.setdefault("conferidores_de_modelo", {})[
+        CXEX.CHAVE_DO_PAPEL] = CXEX.conferir_modelo
+    ELEM.CONFERIDORES[CXEX.CHAVE_DO_PAPEL] = CXEX.conferir_modelo
+
+    def _tela_das_exigencias(p, *, form=None, avisos=()):
+        """A tela da nota de exigência do protocolo. Só LÊ."""
+        with db.connect() as con:
+            notas = CXEX.do_protocolo(con, p["id"])
+            abertas = CXEX.exigencias_abertas_do_protocolo(con, p["id"])
+        return render_template(
+            "caixa_exigencias.html", p=p, notas=notas,
+            # As das atribuições com nota própria aparecem aqui só para LER:
+            # quem as abre e as dá por cumpridas é a tela delas.
+            de_outras_atribuicoes=[x for x in abertas if x["origem"] != "GERAL"],
+            ATRIBUICOES=CXEX.ATRIBUICOES_DA_EXIGENCIA,
+            COM_NOTA_PROPRIA=CXEX.ATRIBUICOES_COM_NOTA_PROPRIA,
+            SITUACOES_DA_NOTA=CXEX.SITUACOES,
+            sugerida=CXEX.atribuicao_sugerida(p),
+            atribuicao_do_protocolo=(p["atribuicao"] or "").upper(),
+            encerrado=CXP.esta_encerrado(p["situacao"]),
+            form=form or {}, avisos=list(avisos),
+            hoje=date.today().isoformat())
+
+    @app.route("/caixa/protocolos/<int:protocolo_id>/exigencias",
+               methods=["GET", "POST"])
+    @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    # O AUDITOR vê; abrir a nota (POST) exige papel que pratica ato.
+    @roles_required("ADMIN", "MANAGER", "USER", metodos=("POST",))
+    def caixa_exigencias(protocolo_id):
+        """A nota de exigência do protocolo geral: abrir, ver e imprimir.
+
+        **A REGRA DO BALCÃO (o oficial, 26/10/2026):** o texto da exigência
+        não leva nome de terceiros, porque ele pode subir ao portal do
+        cliente. Quando o texto traz CPF/CNPJ ou o que parece nome em
+        maiúsculas, a tela AVISA e devolve o formulário preenchido; quem
+        escreveu confere e confirma. Não é recusa: falso positivo existe, e
+        a decisão é de quem está no balcão.
+        """
+        p = q1("SELECT * FROM cx_protocolos WHERE id=%s", (protocolo_id,))
+        if not p:
+            abort(404)
+        if request.method == "GET":
+            return _tela_das_exigencias(p)
+
+        form = {k: (request.form.get(k) or "").strip()
+                for k in ("texto", "atribuicao", "fundamento", "prazo_ate")}
+        avisos = CXEX.avisos_do_texto(form["texto"])
+        confirmou = request.form.get("revisei_o_texto") == "1"
+        if avisos and not confirmou:
+            return _tela_das_exigencias(p, form=form, avisos=avisos)
+        try:
+            with db.transaction() as con:
+                nova = CXEX.abrir(
+                    con, protocolo_id, texto=form["texto"],
+                    atribuicao=form["atribuicao"],
+                    fundamento=form["fundamento"],
+                    prazo_ate=form["prazo_ate"], quem=usuario_nome(),
+                    usuario_id=usuario_id(), agora=db.now())
+        except CXEX.ExigenciaError as e:
+            flash(str(e), "danger")
+            return _tela_das_exigencias(p, form=form)
+        # O TEXTO NÃO VAI À AUDITORIA: ele está na linha da nota, e a
+        # auditoria é lida por quem confere o sistema, e não o atendimento.
+        audit("PROTOCOLO_EXIGENCIA_ABERTA", "PROTOCOLO", protocolo_id,
+              {"protocolo": p["numero"], "exigencia": nova["id"],
+               "numero": nova["numero"], "atribuicao": nova["atribuicao"],
+               "itens": len(nova["itens"]),
+               "aviso_de_terceiro_confirmado": bool(avisos)})
+        flash(f"Nota de exigência nº {nova['numero']} aberta no protocolo "
+              f"{p['numero']}, com {len(nova['itens'])} exigência(s). Imprima "
+              "a nota para entregar ao interessado.", "success")
+        return redirect(url_for("caixa_exigencias", protocolo_id=protocolo_id)
+                        + f"#exigencia-{nova['id']}")
+
+    @app.route("/caixa/protocolos/<int:protocolo_id>/exigencias/"
+               "<int:exigencia_id>/cumprida", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def caixa_exigencia_cumprida(protocolo_id, exigencia_id):
+        """Dá a nota por cumprida: quem e quando. ESCREVE."""
+        volta = url_for("caixa_exigencias", protocolo_id=protocolo_id)
+        try:
+            with db.transaction() as con:
+                e = CXEX.dar_por_cumprida(
+                    con, protocolo_id, exigencia_id, quem=usuario_nome(),
+                    observacao=request.form.get("observacao"), agora=db.now())
+        except CXEX.ExigenciaError as erro:
+            flash(str(erro), "danger")
+            return redirect(volta)
+        audit("PROTOCOLO_EXIGENCIA_CUMPRIDA", "PROTOCOLO", protocolo_id,
+              {"exigencia": int(exigencia_id), "numero": e["numero"]})
+        flash(f"Nota de exigência nº {e['numero']} dada por cumprida.", "success")
+        return redirect(volta + f"#exigencia-{exigencia_id}")
+
+    @app.route("/caixa/protocolos/<int:protocolo_id>/exigencias/"
+               "<int:exigencia_id>/cancelar", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def caixa_exigencia_cancelar(protocolo_id, exigencia_id):
+        """Cancela a nota, com motivo escrito. Não apaga nada. ESCREVE."""
+        volta = url_for("caixa_exigencias", protocolo_id=protocolo_id)
+        try:
+            with db.transaction() as con:
+                e = CXEX.cancelar(
+                    con, protocolo_id, exigencia_id, quem=usuario_nome(),
+                    motivo=request.form.get("motivo"), agora=db.now())
+        except CXEX.ExigenciaError as erro:
+            flash(str(erro), "danger")
+            return redirect(volta)
+        audit("PROTOCOLO_EXIGENCIA_CANCELADA", "PROTOCOLO", protocolo_id,
+              {"exigencia": int(exigencia_id), "numero": e["numero"],
+               "motivo": e["cancelada_motivo"]})
+        flash(f"Nota de exigência nº {e['numero']} cancelada. Ela continua à "
+              "vista, com o motivo.", "success")
+        return redirect(volta + f"#exigencia-{exigencia_id}")
+
+    @app.route("/caixa/protocolos/<int:protocolo_id>/exigencias/"
+               "<int:exigencia_id>/papel")
+    @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    def caixa_exigencia_papel(protocolo_id, exigencia_id):
+        """O papel da nota — PDF, e o `.odt` com `?formato=odt`. Só LÊ o banco.
+
+        O modelo é o do catálogo (`CAIXA_EXIGENCIA`), que o oficial edita em
+        Modelos. A data do papel é a da NOTA, e não a de hoje: reimprimir
+        semanas depois não pode mudar a data do que se exigiu.
+        """
+        from ri_web import data_por_extenso
+        volta = url_for("caixa_exigencias", protocolo_id=protocolo_id)
+        p = q1("SELECT * FROM cx_protocolos WHERE id=%s", (protocolo_id,))
+        with db.connect() as con:
+            e = CXEX.uma(con, exigencia_id)
+            corpo = MODELOS.corpo_de(con, CXEX.CHAVE_DO_PAPEL)
+        if not p or not e or int(e["protocolo_id"]) != int(protocolo_id):
+            abort(404)
+        dia = str(e["aberta_em"] or "")[:10]
+        try:
+            html = CXEX.montar_papel(
+                modelo=corpo, sv=bloco_serventia(), p=dict(p), e=e,
+                itens=e["itens"],
+                documento=mascarar_documento(p["interessado_documento"]),
+                nome_da_atribuicao=e["atribuicao_nome"],
+                aberto_em=fmt_date(p["data_abertura"]),
+                emitida_em=fmt_date(dia),
+                prazo_ate=fmt_date(e["prazo_ate"]) if e["prazo_ate"] else "",
+                data_extenso=data_por_extenso(date.fromisoformat(dia)),
+                emitido_por=usuario_nome(),
+                funcao=usuario_funcao())
+        except Exception as erro:                       # noqa: BLE001 — o recado
+            flash("O modelo da nota de exigência tem um erro: "
+                  f"{SEGWEB.erro_do_modelo(erro, CXEX.CHAVE_DO_PAPEL)}", "danger")
+            return redirect(volta)
+        arquivo = gerar_odt(html_para_odf(html),
+                            titulo=f"Nota de exigência {p['numero']}-{e['numero']}")
+        audit("PROTOCOLO_EXIGENCIA_IMPRESSA", "PROTOCOLO", protocolo_id,
+              {"exigencia": int(exigencia_id), "numero": e["numero"]})
+        return IMPW.resposta_do_papel(
+            arquivo, nome=f"nota-de-exigencia-{p['numero']}-{e['numero']}",
+            get_setting=db.get_setting, voltar_para=volta)
 
     @app.route("/caixa/protocolos/novo", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER")

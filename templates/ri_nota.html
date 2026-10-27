@@ -58,6 +58,11 @@
     <label>Data<input type="date" name="data_nota" value="{{ hoje }}"></label>
     <label class="span2">Exigências — <strong>uma por linha</strong>
       <textarea name="exigencias" rows="8" required placeholder="Apresentar certidão de quitação de tributos municipais.&#10;Regularizar a qualificação do adquirente, com estado civil e regime de bens.&#10;Juntar procuração com poderes específicos."></textarea>
+      {# A REGRA DO BALCÃO — decisão do oficial em 26/10/2026: só a
+         orientação; a regra da nota do RI não mudou. #}
+      <span class="small muted"><strong>Não escreva nome de terceiros nem CPF/CNPJ</strong>: escreva o papel
+        da pessoa — «falta a anuência do cônjuge», e não o nome dela. Este texto pode aparecer no
+        portal do cliente e nos avisos de andamento.</span>
     </label>
     <label class="span2">Fundamentação<textarea name="fundamentacao" rows="3"></textarea></label>
     <div class="span2"><button class="primary">Emitir nota devolutiva</button></div>

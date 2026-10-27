@@ -2688,6 +2688,14 @@ PAPEIS_DO_LG04 = {
 MINUTAS_DO_LG04 = {"NT-PROC-PREVIDENCIARIA", "NT-TESTAMENTO-CERRADO"}
 NOVOS_NO_CATALOGO_LG04 = 6
 
+# **EM 26/10/2026 O CATÁLOGO GANHOU 1 PAPEL**: a nota de exigência GERAL do
+# protocolo do balcão (`CAIXA_EXIGENCIA`), pedida pelo oficial — «precisamos
+# que todas as atribuições tenham nota de exigência». Notas, Registro Civil e
+# Protesto não tinham nota nenhuma; o RI e o RCPJ/RTD têm as deles. Sem
+# precedente de texto no E-Ofício: a forma imita a nota devolutiva do RCPJ/RTD
+# (`RCPJ_RTD_NOTA`), que é o precedente da casa. Ver `caixa_exigencia.py`.
+NOVOS_NO_CATALOGO_EXIGENCIA_GERAL = 1
+
 # O QUE O LD02 MUDOU DE PROPÓSITO NAS MINUTAS DE DEPOIS DO OURO — e só isto.
 #
 #   «corrija tudo» — o oficial, 21/10/2026, sobre os defeitos que o LT02 achou.

@@ -139,6 +139,30 @@
 </section>
 {% endif %}
 
+{# AS EXIGÊNCIAS DESTE ATENDIMENTO — 26/10/2026, «precisamos que todas as
+   atribuições tenham nota de exigência». A lista é a da leitura única
+   (`caixa_exigencia.exigencias_abertas_do_protocolo`), a mesma do portal do
+   cliente e dos avisos de andamento: a nota geral deste protocolo, a nota
+   devolutiva da prenotação ligada e a qualificação negativa do título
+   ligado. Abrir e cumprir a geral é na tela dela. #}
+<section class="panel" id="exigencias">
+  <div class="panel-head"><span>Exigências em aberto</span>
+    <span class="small muted">{{ exigencias_abertas|length }} nota(s) aguardando o interessado</span></div>
+  {% if exigencias_abertas %}
+  <ul class="small" style="padding:0 30px 6px">
+    {% for x in exigencias_abertas %}
+    <li><strong>{{ x.onde }}</strong>{% if x.prazo_ate %} — prazo {{ fmt_date(x.prazo_ate) }}{% endif %}
+      <ol>{% for item in x.itens %}<li>{{ item }}</li>{% endfor %}</ol></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted" style="padding:0 14px">Nenhuma exigência em aberto neste protocolo.</p>
+  {% endif %}
+  <div class="actions" style="padding:0 14px 14px">
+    <a class="button" href="{{ url_for('caixa_exigencias', protocolo_id=p.id) }}">Nota de exigência (abrir, imprimir, dar por cumprida)</a>
+  </div>
+</section>
+
 {# DOCUMENTOS PARA QUALIFICAÇÃO — relato #135, 15/10/2026. Os papéis que o
    cliente entrega no balcão ficam aqui, e o ato ligado a este protocolo os vê
    na tela de lavrar (Notas: «Protocolo geral do ato»; RI: a prenotação

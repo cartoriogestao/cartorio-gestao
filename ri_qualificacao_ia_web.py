@@ -1,10 +1,16 @@
 """As rotas da qualificação assistida do RI — ver `ri_qualificacao_ia.py`.
 
-O QUADRO MORA NA TELA DA NOTA DEVOLUTIVA (`ri_web.ri_nota_devolutiva`), que é
-onde a prenotação recebe a qualificação negativa: pedir, acompanhar, ver o
-rascunho e levar as exigências escolhidas para o formulário da nota — tudo no
-mesmo lugar onde a nota se emite. Nenhuma rota daqui emite nota, grava
-qualificação ou muda a situação da prenotação.
+O QUADRO MORA NO PROTOCOLO (`ri_web.ri_protocolo_ver`), na seção «Qualificação»
+— mudança de 27/10/2026, pergunta do oficial: «qualificacao assistida nao pode
+ser positiva e negativa? nao eh melhor ficar no protocolo?». Até ali ele morava
+na tela da nota devolutiva, que só serve à NEGATIVA. Do protocolo saem os dois
+caminhos: as exigências vão ao formulário da nota (`ri_qualificacao_ia_levar`)
+e a fundamentação de um rascunho sem exigência vai ao formulário da positiva
+(o link «Levar para a qualificação positiva», que só preenche). A tela da nota
+continua recebendo o preenchimento das exigências, e só isso.
+
+Nenhuma rota daqui emite nota, grava qualificação ou muda a situação da
+prenotação.
 """
 from __future__ import annotations
 
@@ -26,7 +32,9 @@ from bd_nativo import banco
 #: telas leem esta mesma tupla para mostrar ou esconder os botões.
 PAPEIS_QUE_PEDEM = tuple(SEGWEB.PRATICA)
 
-#: A tela que mostra o quadro (e recebe o preenchimento).
+#: A tela que mostra o quadro e recebe o preenchimento da POSITIVA.
+TELA_DO_QUADRO = "ri_protocolo_ver"
+#: A tela que recebe o preenchimento das exigências (a NEGATIVA).
 TELA_DA_NOTA = "ri_nota_devolutiva"
 
 
@@ -37,15 +45,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return Path(app.config["DATA_DIR"])
 
     def volta(protocolo_id: int, ancora: str = "qualificacao-ia", **args):
-        return redirect(url_for(TELA_DA_NOTA, protocolo_id=protocolo_id, **args)
+        return redirect(url_for(TELA_DO_QUADRO, protocolo_id=protocolo_id, **args)
                         + f"#{ancora}")
 
     @app.context_processor
     def _qualificacao_ia_na_tela() -> dict:
-        """O que o quadro e o formulário da nota precisam. Só LÊ, e só na tela
-        da nota devolutiva."""
+        """O que o quadro e os dois formulários precisam. Só LÊ. No protocolo, o
+        quadro inteiro e o preenchimento da positiva; na nota devolutiva, só o
+        preenchimento das exigências."""
         try:
-            if (request.endpoint or "") != TELA_DA_NOTA:
+            tela = request.endpoint or ""
+            if tela not in (TELA_DO_QUADRO, TELA_DA_NOTA):
                 return {}
             protocolo_id = (request.view_args or {}).get("protocolo_id")
         except RuntimeError:
@@ -54,9 +64,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return {}
         try:
             with db.connect() as con:
+                if tela == TELA_DA_NOTA:
+                    return {"qualificacao_ia": {
+                        "protocolo_id": protocolo_id, "so_preenche": True,
+                        "preenche": QIA.preenchimento(
+                            con, request.args.get("qualificacao"), protocolo_id)}}
                 saida = {"protocolo_id": protocolo_id,
                          "historico": QIA.historico(con, protocolo_id),
-                         "preenche": QIA.preenchimento(
+                         "preenche_positiva": QIA.preenchimento_positiva(
                              con, request.args.get("qualificacao"), protocolo_id),
                          "papeis": PAPEIS_QUE_PEDEM,
                          "teto": QIA.teto_do_dia(con),
@@ -80,7 +95,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     "especies": QIA.especies(),
                     "sugerida": QIA.sugerir_especie(p.get("natureza_titulo") or ""),
                     "andamento": QIA.em_andamento(con, protocolo_id)}}
-        except Exception as erro:                      # noqa: BLE001 — o quadro some, a nota abre
+        except Exception as erro:                      # noqa: BLE001 — o quadro some, a tela abre
             app.logger.error("Quadro da qualificação assistida não montou.", exc_info=erro)
             return {}
 
@@ -129,7 +144,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   for x in (p["resultado"] or {}).get("exigencias") or []]
         return render_template("ri_qualificacao_ia.html", p=p, linhas=linhas,
                                prenotacao_numero=prenot or "",
-                               papeis_que_pedem=PAPEIS_QUE_PEDEM)
+                               papeis_que_pedem=PAPEIS_QUE_PEDEM,
+                               SUGERE_POSITIVA=QIA.SUGERE_POSITIVA,
+                               SUGERE_NEGATIVA=QIA.SUGERE_NEGATIVA)
 
     @app.route("/registro-imoveis/qualificacao-ia/<int:pedido_id>/levar", methods=["POST"])
     @roles_required(*PAPEIS_QUE_PEDEM)
@@ -152,7 +169,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
               {"protocolo_id": p["protocolo_id"], "exigencias": len(linhas)})
         flash(f"{len(linhas)} exigência(s) no formulário da nota. Confira, edite o que "
               "precisar e emita — a nota só existe depois do botão «Emitir».", "success")
-        return volta(p["protocolo_id"], ancora="emitir-nota", qualificacao=pedido_id)
+        return redirect(url_for(TELA_DA_NOTA, protocolo_id=p["protocolo_id"],
+                                qualificacao=pedido_id) + "#emitir-nota")
 
     @app.route("/registro-imoveis/qualificacao-ia/configuracao", methods=["GET", "POST"])
     @roles_required("ADMIN")

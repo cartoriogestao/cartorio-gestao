@@ -3535,6 +3535,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """
         _protocolo_ou_404(protocolo_id)
         quem = (app.extensions["usuario_nome"]() or "").strip() or None
+        ligada_a_ia = False
         try:
             with db.transaction() as con:
                 feito = PED.qualificar_positiva(
@@ -3542,11 +3543,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     fundamentacao=request.form.get("fundamentacao"),
                     quem=quem, usuario_id=app.extensions["usuario_id"](),
                     agora=db.now())
+                # A POSITIVA QUE NASCEU DA QUALIFICAÇÃO ASSISTIDA (27/10/2026): o
+                # rascunho guarda qual qualificação a rota de sempre gravou com a
+                # fundamentação dele — na mesma transação, como a nota faz. Sem o
+                # campo (a positiva escrita à mão), não faz nada.
+                import ri_qualificacao_ia as QIA
+                ligada_a_ia = QIA.ligar_a_positiva(
+                    con, request.form.get("qualificacao_ia_id"), protocolo_id,
+                    feito["id"])
         except PED.PedidoError as erro:
             flash(str(erro), "danger")
         else:
             audit("RI_QUALIFICACAO_POSITIVA", "RI_PROTOCOLO", protocolo_id,
-                  {"ordem": feito["ordem"]})
+                  {"ordem": feito["ordem"],
+                   "qualificacao_ia": (int(request.form["qualificacao_ia_id"])
+                                       if ligada_a_ia else None)})
             flash(f"Qualificação positiva registrada ({feito['ordem']}ª). O título "
                   f"está apto para registro — o ato se lavra na matrícula, com "
                   f"número, selo e custas.", "success")

@@ -22,9 +22,12 @@
   Vencido o prazo, é preciso novo protocolo, com novos emolumentos.
 </div>
 
-{# A QUALIFICAÇÃO ASSISTIDA (26/10/2026): o rascunho das exigências pela IA.
-   O quadro não emite nada — a nota continua saindo do formulário abaixo. #}
-{% if qualificacao_ia %}{% include '_qualificacao_ia.html' %}{% endif %}
+{# A QUALIFICAÇÃO ASSISTIDA (26/10/2026): o quadro mora no PROTOCOLO desde
+   27/10/2026 — ela pode apontar a positiva ou a negativa, e as duas se registram
+   lá. Aqui fica só o preenchimento das exigências que a pessoa levou à nota. #}
+<p class="small muted">A qualificação assistida (IA) fica na seção
+  <a href="{{ url_for('ri_protocolo_ver', protocolo_id=p.id) }}#qualificacao-ia">Qualificação do protocolo</a>:
+  de lá as exigências que você escolher vêm para o formulário abaixo.</p>
 
 {% for n in notas %}
 <section class="panel">

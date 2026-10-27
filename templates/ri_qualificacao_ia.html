@@ -5,9 +5,19 @@
 {#
   O RASCUNHO DA QUALIFICAÇÃO ASSISTIDA (`ri_qualificacao_ia`). Daqui as
   exigências marcadas vão ao FORMULÁRIO da nota devolutiva — preenchido, e não
-  emitido: a nota sai pelo botão da tela da nota, depois de conferida.
+  emitido: a nota sai pelo botão da tela da nota, depois de conferida. E, desde
+  27/10/2026, o rascunho sem exigência leva a fundamentação ao formulário da
+  qualificação POSITIVA, no protocolo — também só preenchido.
 #}
-<p class="small"><a href="{{ url_for('ri_nota_devolutiva', protocolo_id=p.protocolo_id) }}#qualificacao-ia">voltar à nota devolutiva da prenotação</a></p>
+<p class="small"><a href="{{ url_for('ri_protocolo_ver', protocolo_id=p.protocolo_id) }}#qualificacao-ia">voltar à qualificação do protocolo</a></p>
+
+{% if p.sugestao %}
+<div class="notice {% if p.sugestao.resultado == SUGERE_POSITIVA %}ok{% else %}warning{% endif %}" id="sugestao">
+  <strong>{% if p.sugestao.resultado == SUGERE_POSITIVA %}O rascunho aponta a qualificação positiva.
+    {% elif p.sugestao.resultado == SUGERE_NEGATIVA %}O rascunho aponta a qualificação negativa.
+    {% else %}O rascunho não decide o caminho.{% endif %}</strong> {{ p.sugestao.frase }}
+</div>
+{% endif %}
 
 <div class="notice warning">
   <strong>Rascunho preparado por IA ({{ p.modelo or '—' }}, esforço {{ p.esforco or '—' }}).</strong>
@@ -26,6 +36,7 @@
       <a href="{{ url_for('attachment_view', attachment_id=d.anexo_id) }}" target="_blank">ver</a></li>{% endfor %}</ul>
     {% if p.erro %}<p><strong>Não saiu:</strong> {{ p.erro }}</p>{% endif %}
     {% if p.nota_id %}<p><strong>Estas exigências já foram para uma nota emitida.</strong></p>{% endif %}
+    {% if p.qualificacao_id %}<p><strong>Este rascunho já serviu a uma qualificação positiva registrada.</strong></p>{% endif %}
     <p class="muted">{{ p.tokens_entrada or 0 }} tokens de entrada · {{ p.tokens_saida or 0 }} de saída · {{ p.segundos or 0 }} s</p>
   </div>
 </section>
@@ -60,13 +71,21 @@
           <textarea name="texto_{{ loop.index0 }}" rows="2">{{ linhas[loop.index0] }}</textarea></label>
       </div>
       {% endfor %}
-      {% if p.situacao == 'PRONTA' and not p.nota_id and user.role in papeis_que_pedem %}
+      {% if p.situacao == 'PRONTA' and not p.nota_id and not p.qualificacao_id and user.role in papeis_que_pedem %}
       <button class="primary">Levar para a nota devolutiva</button>
       <span class="small muted">Preenche o formulário da nota com as marcadas; a nota só existe depois do botão «Emitir» de lá.</span>
       {% endif %}
     </form>
   {% else %}
-    <p class="muted">A IA não sugeriu exigência. Isso não é qualificação positiva: confira os pontos abaixo e decida.</p>
+    <p class="muted">A IA não sugeriu exigência. Isso ainda não é a qualificação positiva: confira os pontos abaixo
+      com os originais e decida.</p>
+    {% if p.situacao == 'PRONTA' and not p.nota_id and not p.qualificacao_id and not p.levado_em
+          and user.role in papeis_que_pedem %}
+    <p><a class="button{% if p.sugestao and p.sugestao.resultado == SUGERE_POSITIVA %} primary{% endif %}"
+          href="{{ url_for('ri_protocolo_ver', protocolo_id=p.protocolo_id, qualificacao=p.id) }}#qualificar-positiva">Levar para a qualificação positiva</a>
+      <span class="small muted">Preenche a fundamentação do formulário da positiva, no protocolo, com o que a IA conferiu;
+        a qualificação só existe depois do botão «Qualificação positiva» de lá.</span></p>
+    {% endif %}
   {% endif %}
   </div>
 </section>

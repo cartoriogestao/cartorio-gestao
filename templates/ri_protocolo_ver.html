@@ -413,11 +413,19 @@
   <p class="small muted" style="padding:6px 0">Nenhuma qualificação registrada ainda.</p>
   {% endif %}
   {% if p.situacao == 'ABERTO' and not p.ato_id and user.role in ['ADMIN','MANAGER','USER'] %}
+  {% set positiva = qualificacao_ia.preenche_positiva if qualificacao_ia else none %}
   <div class="grid2" style="padding:6px 0">
-    <form method="post" action="{{ url_for('ri_qualificar', protocolo_id=p.id) }}" class="stack">
+    <form method="post" action="{{ url_for('ri_qualificar', protocolo_id=p.id) }}" class="stack" id="qualificar-positiva">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if positiva %}
+      <input type="hidden" name="qualificacao_ia_id" value="{{ positiva.id }}">
+      <div class="notice warning small">A fundamentação abaixo veio da
+        <a href="{{ url_for('ri_qualificacao_ia_ver', pedido_id=positiva.id) }}">qualificação assistida nº {{ positiva.id }}</a>
+        (rascunho da IA, versão {{ positiva.versao }}). {{ positiva.sugestao.frase }}
+        A qualificação positiva só existe depois do botão.</div>
+      {% endif %}
       <label>Fundamentação (opcional)
-        <input name="fundamentacao" placeholder="ex.: título em ordem; ITBI quitado; matrícula confere"></label>
+        <textarea name="fundamentacao" rows="{{ 4 if positiva else 1 }}" placeholder="ex.: título em ordem; ITBI quitado; matrícula confere">{{ positiva.texto if positiva else '' }}</textarea></label>
       <button class="primary">Qualificação positiva — apto para registro</button>
     </form>
     <div>
@@ -428,6 +436,11 @@
   </div>
   {% endif %}
 </section>
+
+{# A QUALIFICAÇÃO ASSISTIDA (26/10/2026; no protocolo desde 27/10/2026, a
+   pedido do oficial): o rascunho da IA aponta a positiva ou a negativa, e quem
+   qualifica continua sendo um dos dois botões acima. #}
+{% if qualificacao_ia %}{% include '_qualificacao_ia.html' %}{% endif %}
 
 {% if notas %}
 <section class="panel">

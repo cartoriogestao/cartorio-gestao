@@ -432,9 +432,12 @@
         O sistema não conseguiu contar o tríduo: {{ triduo.sem_conta }}. Para
         lavrar assim mesmo, escreva o motivo — ele fica gravado no ato.
       {%- else %}
-        Tríduo: {% if triduo.termo_inicial != triduo.termo_final %}de {{ triduo.termo_inicial_br }} a {% endif %}<strong>{{ triduo.termo_final_br }}</strong>
+        {#- Os dois dias, separados (27/10/2026): o devedor paga até o final do
+            prazo-limite, e o protesto se lavra no dia útil seguinte. #}
+        Prazo do devedor: até o final de {{ triduo.prazo_limite_br }}.
+        Protesto: {% if triduo.termo_inicial != triduo.termo_final %}de {{ triduo.termo_inicial_br }} a {% endif %}<strong>{{ triduo.termo_final_br }}</strong>
         ({{ triduo.regra }}).
-        {% if triduo_situacao == 'ANTES' %}<strong>Ainda não é dia de protestar</strong> — o devedor está no prazo do aviso.
+        {% if triduo_situacao == 'ANTES' %}<strong>Ainda não é dia de protestar</strong> — o devedor está no prazo do aviso, e o protesto só se lavra a partir de {{ triduo.termo_inicial_br }}.
         {% elif triduo_situacao == 'ATRASADO' %}<strong>O tríduo venceu.</strong> O protesto se lavra com o motivo do atraso, que vai escrito no instrumento (CN-MA art. 913, § 1º).
         {% else %}É dia de protestar.{% endif %}
       {%- endif %}

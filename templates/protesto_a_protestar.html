@@ -17,10 +17,12 @@
   úteis da protocolização, sem contar o dia do apontamento; por edital, do
   final do primeiro dia útil depois da publicação (art. 922, § 1º); intimação
   no último dia ou depois, só no dia útil seguinte (art. 924). Os feriados são
-  os da lista da casa. <strong>Antes do termo inicial o protesto não se
-  lavra</strong> — o devedor ainda está no prazo do aviso (art. 925, § 4º).
-  <strong>Depois do termo final ele se lavra com o motivo do atraso</strong>,
-  que vai escrito no instrumento (art. 913, § 1º).
+  os da lista da casa. <strong>O devedor paga até o final do prazo-limite, e
+  o protesto se lavra no dia útil seguinte</strong> (decisão do oficial de
+  27/10/2026): no próprio prazo-limite ele não se lavra — o devedor ainda está
+  no prazo do aviso (art. 925, § 4º). <strong>Depois desse dia útil seguinte
+  ele se lavra com o motivo do atraso</strong>, que vai escrito no instrumento
+  (art. 913, § 1º).
 </div>
 
 {#
@@ -128,8 +130,9 @@
             {%- if t.triduo_situacao == 'SEM_CONTA' %}
               <small><strong>Não se contou:</strong> {{ tr.sem_conta }}</small>
             {%- else %}
-              <small>{% if tr.termo_inicial != tr.termo_final %}de {{ tr.termo_inicial_br }} a {% endif %}<strong>{{ tr.termo_final_br }}</strong>
-              <br>{% if t.triduo_situacao == 'ANTES' %}ainda não — o devedor está no prazo
+              <small>paga até {{ tr.prazo_limite_br }}
+              <br>protesto: {% if tr.termo_inicial != tr.termo_final %}de {{ tr.termo_inicial_br }} a {% endif %}<strong>{{ tr.termo_final_br }}</strong>
+              <br>{% if t.triduo_situacao == 'ANTES' %}ainda não — o devedor está no prazo; a partir de {{ tr.termo_inicial_br }}
                   {% elif t.triduo_situacao == 'ATRASADO' %}<strong>vencido</strong> — escreva o motivo
                   {% else %}no prazo — é dia de protestar{% endif %}</small>
             {%- endif %}

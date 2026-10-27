@@ -530,6 +530,33 @@ def init_problemas_schema(con) -> None:
             bd.escrever(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
 
 
+def conferir_nota_dev(nota: Any, estado: Any, prova: Any) -> tuple[str, str, str]:
+    """A regra da nota do desenvolvimento, sem banco. Só calcula.
+
+    Devolve `(nota, estado, prova)` normalizados, ou levanta `ProblemaError`
+    com a frase pronta. MORA NUM LUGAR SÓ — 27/10/2026, fase 2 da sincronia:
+    a tela, o documento `[#35]` e o arquivo de retorno do repositório gravam a
+    mesma nota, e três cópias da regra divergiriam no primeiro conserto.
+    """
+    estado = str(estado or "").strip().upper()
+    if estado not in ESTADOS_DO_DEV:
+        raise ProblemaError(
+            f"Não conheço o estado «{estado}». Os que conheço: "
+            + ", ".join(ESTADOS_DO_DEV) + ".")
+    nota = str(nota or "").strip()
+    if not nota:
+        raise ProblemaError(
+            "A nota do desenvolvimento não pode ficar vazia: um estado sem "
+            "explicação faz quem lê adivinhar o que aconteceu.")
+    prova = str(prova or "").strip()
+    if estado in ("ATENDIDO", "NECESSARIO_TESTE") and not prova:
+        raise ProblemaError(
+            "Para dizer que foi **atendido** ou que falta **teste no balcão** "
+            "é preciso dizer **onde conferir** — o nome do teste, o arquivo, "
+            "a tela. Sem isso é promessa, e promessa não se confere.")
+    return nota, estado, prova
+
+
 def anotar_desenvolvimento(con, problema_id: int, *,
                            nota: str, estado: str, prova: str = "",
                            agora: str, por: str = "") -> dict:
@@ -544,22 +571,7 @@ def anotar_desenvolvimento(con, problema_id: int, *,
     conferir e promessa, e promessa e o que este projeto ja quebrou: funcao
     pronta que nenhuma tela alcanca passou por aqui duas vezes num dia.
     """
-    estado = (estado or "").strip().upper()
-    if estado not in ESTADOS_DO_DEV:
-        raise ProblemaError(
-            f"Não conheço o estado «{estado}». Os que conheço: "
-            + ", ".join(ESTADOS_DO_DEV) + ".")
-    nota = (nota or "").strip()
-    if not nota:
-        raise ProblemaError(
-            "A nota do desenvolvimento não pode ficar vazia: um estado sem "
-            "explicação faz quem lê adivinhar o que aconteceu.")
-    prova = (prova or "").strip()
-    if estado in ("ATENDIDO", "NECESSARIO_TESTE") and not prova:
-        raise ProblemaError(
-            "Para dizer que foi **atendido** ou que falta **teste no balcão** "
-            "é preciso dizer **onde conferir** — o nome do teste, o arquivo, "
-            "a tela. Sem isso é promessa, e promessa não se confere.")
+    nota, estado, prova = conferir_nota_dev(nota, estado, prova)
     bd = banco(con)
     linha = bd.um("SELECT id FROM aj_problemas WHERE id = %s",
                   (int(problema_id),))

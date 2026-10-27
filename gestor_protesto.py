@@ -402,7 +402,14 @@ def _regras_do_fluxo(con, fluxo: dict, hoje: date, feriados) -> list[dict]:
                 None, "Lei 9.492/1997, arts. 12, 16, 17 e 26"))
         elif motivos:
             antigos.append(f"{prot} (protesto de {_br(quando)}: {motivos[0]})")
-        if apontado and quando > _uteis(apontado, 3, feriados) and not GC.antes_do_corte(quando):
+        # O DIA ÚTIL SEGUINTE AO PRAZO-LIMITE AINDA É NO PRAZO (27/10/2026,
+        # decisão do oficial: «no dia útil seguinte»). Até essa data a conta
+        # acusava todo protesto depois do 3º dia útil — e o protesto certo,
+        # agora, é justamente o do 4º. O arquivo da CRA não diz a data da
+        # intimação; a intimação tardia continua aparecendo aqui, e a ficha
+        # do título diz a conta inteira.
+        if apontado and quando > _uteis(apontado, 4, feriados) \
+                and not GC.antes_do_corte(quando):
             fora_do_triduo.append((quando, prot, apontado))
         tipo_doc = str(t.get("tipo_documento") or "")
         ruim = GC._documento_invalido(t.get("documento"),
@@ -568,8 +575,26 @@ def _regras_do_sistema(con, hoje: date, feriados,
                     f"Protesto lavrado em {_br(p['dia'])} que não devia ter saído — {rot}",
                     "; ".join(motivos).capitalize() + ".", None,
                     "Lei 9.492/1997, arts. 12, 14, 17 e 26"))
-            if apont and apont["dia"] and p["dia"] and \
-                    p["dia"] > _uteis(apont["dia"], 3, feriados):
+            # O PROTESTO NO DIA ÚTIL SEGUINTE AO PRAZO-LIMITE É NO PRAZO
+            # (27/10/2026, decisão do oficial). Até essa data a conta acusava
+            # todo protesto depois do 3º dia útil, que agora é o dia certo de
+            # protestar. Quando o ato gravou a conta do tríduo
+            # (`protesto_triduo`, no `detalhe_json`), vale ela — que já sabe da
+            # intimação tardia, do edital e da sustação revogada; sem ela, o
+            # prazo-limite é o maior entre o 3º dia útil e o 1º dia útil
+            # depois da última intimação, e o protesto, o dia útil seguinte.
+            conta = (p.get("detalhe") or {}).get("triduo") or {}
+            if conta.get("situacao"):
+                fora = conta["situacao"] == "ATRASADO"
+            elif apont and apont["dia"] and p["dia"]:
+                prazo = _uteis(apont["dia"], 3, feriados)
+                intim = [i for i in antes if i["dia"]]
+                if intim:
+                    prazo = max(prazo, _uteis(intim[-1]["dia"], 1, feriados))
+                fora = p["dia"] > _uteis(prazo, 1, feriados)
+            else:
+                fora = False
+            if fora and apont and apont["dia"] and p["dia"]:
                 saida.append(GC._achado(
                     f"PT_TRIDUO_ATO:{p['id']}", "PROTESTO_FORA_DO_TRIDUO", "ATENCAO", SETOR,
                     f"Protesto lavrado depois do tríduo — {rot}",

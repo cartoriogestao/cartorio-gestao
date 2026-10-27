@@ -846,6 +846,28 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               "success")
         return _volta_para_a_lista(problema_id)
 
+    @app.route("/ajuda/problemas/<int:problema_id>/reproducao", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER")
+    def ajuda_problema_reproducao(problema_id: int):
+        """Diz onde o problema pode ser reproduzido. ESCREVE.
+
+        Fase 2 da sincronia, 27/10/2026: a fase 1 só mostrava. Os papéis são
+        os da nota do desenvolvimento, e pela mesma razão: é o retorno de quem
+        conserta, e não o fechamento. **NÃO MEXE NA SITUAÇÃO.**
+        """
+        try:
+            with db.transaction() as con:
+                r = AP.classificar_reproducao(
+                    con, problema_id, request.form.get("reproducao", ""),
+                    agora=agora(), por=usuario_nome())
+        except ValueError as erro:
+            flash(str(erro), "danger")
+            return _volta_para_a_lista(problema_id)
+        audit("AJUDA_PROBLEMA_REPRODUCAO", "aj_problemas", problema_id,
+              {"antes": r["antes"], "reproducao": r["reproducao"]})
+        flash(f"Reprodução gravada: {r['nome_da_reproducao']}.", "success")
+        return _volta_para_a_lista(problema_id)
+
     @app.route("/ajuda/problemas/<int:problema_id>/ler", methods=["POST"])
     @roles_required("ADMIN", "MANAGER")
     def ajuda_problema_diagnosticar(problema_id: int):

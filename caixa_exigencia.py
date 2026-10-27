@@ -410,7 +410,7 @@ def exigencias_abertas_do_protocolo(con, protocolo_id) -> list[dict]:
         prazo_ate       "AAAA-MM-DD" | None
         aberta_em       "AAAA-MM-DD" | None
         onde            frase curta para a tela («Nota devolutiva nº 2 da
-                        prenotação 11573/1A»)
+                        prenotação 1234/1A»)
         prenotacao_id   int | None — só no RI
         titulo_id       int | None — só no RCPJ_RTD
 

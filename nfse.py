@@ -29,7 +29,9 @@ A BASE DO ISS É O EMOLUMENTO, E SÓ ELE — A ESCOLHA, E POR QUÊ
     3º, V), que a serventia recolhe toda semana ao Tribunal: sai de DENTRO do
     emolumento, e não é coluna do caixa. O FERC (3%) é cobrado por cima e
     não se desconta. O percentual é configuração (`nfse_percentual_ferj`,
-    12,00 por padrão), porque lei muda e outra unidade da federação não o tem.
+    12,00 por padrão — e vazio também vale 12,00, desde 27/10/2026), porque
+    lei muda e outra unidade da federação não o tem. A leitura é a de
+    `custas.percentual_ferj`, a mesma do Livro Diário.
 
     Por isso o valor do serviço na DPS é a SOMA DOS EMOLUMENTOS MENOS O FERJ
     dos lançamentos do recibo, e os fundos ficam fora — ditos na descrição, para
@@ -90,6 +92,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 import cpf_cnpj
+import custas as CU
 import nfse_dps as DPS
 import nfse_provedor as PROV
 from bd_nativo import banco
@@ -525,6 +528,12 @@ def pendencias_da_configuracao(cfg: Mapping[str, str], pasta: Any = None) -> lis
         faltas.append("Falta o CNPJ/CPF do prestador.")
     if len(DPS.digitos(cfg.get("nfse_codigo_tributacao"))) != 6:
         faltas.append("Falta o código de tributação nacional (210101 = item 21.01).")
+    # O FERJ ILEGÍVEL GRAVADO FORA DA TELA (27/10/2026) é falta da casa, e não
+    # HTTP 500: sem ele não há base, e nota nenhuma sai até corrigir.
+    try:
+        percentual_ferj(cfg)
+    except NfseError as erro:
+        faltas.append(str(erro))
     resumo = resumo_do_certificado(pasta)
     if resumo is None:
         faltas.append("Falta o certificado A1 da serventia.")
@@ -542,20 +551,26 @@ def _vazio(valor: Any) -> bool:
 
 
 def percentual_ferj(cfg: Mapping[str, Any]) -> int:
-    """O percentual do FERJ em centésimos de ponto (12,00% → 1200). Só calcula."""
-    texto = str(cfg.get("nfse_percentual_ferj") or "0").strip().replace("%", "").replace(",", ".")
+    """O percentual do FERJ em centésimos de ponto (12,00% → 1200). Só calcula.
+
+    UMA LEITURA SÓ DA CHAVE — correção de 27/10/2026 (decisão do oficial: «12%
+    para os dois»). Até essa data esta função lia `nfse_percentual_ferj` por
+    conta própria, e com a chave VAZIA dava 0% (`or "0"`), enquanto o Livro
+    Diário (`custas.percentual_ferj`) dava 12%: a nota saía com a base cheia e
+    o livro com o FERJ descontado, sobre o mesmo emolumento. Agora a leitura é
+    a de `custas`: vazio vale 12,00, e o ilegível é recusa com a frase de onde
+    corrigir — aqui como `NfseError`, que as telas da NFS-e já tratam.
+    """
     try:
-        numero = float(texto or "0")
-    except ValueError as erro:
-        raise NfseError(f"Percentual do FERJ ilegível: «{texto}».") from erro
-    if not 0 <= numero < 100:
-        raise NfseError("O percentual do FERJ fica entre 0 e 100.")
-    return round(numero * 100)
+        return CU.percentual_ferj(cfg)
+    except CU.CustasError as erro:
+        raise NfseError(str(erro)) from erro
 
 
 def ferj_do_emolumento(emolumento: int, pct_centesimos: int) -> int:
-    """O FERJ que sai de dentro do emolumento, em centavos, arredondado ao centavo."""
-    return (int(emolumento) * int(pct_centesimos) + 5000) // 10000
+    """O FERJ que sai de dentro do emolumento, em centavos, arredondado ao
+    centavo. É a conta de `custas` (27/10/2026), e não uma cópia dela."""
+    return CU.ferj_do_emolumento(emolumento, pct_centesimos)
 
 
 def base_do_recibo(recibo: Mapping[str, Any],
@@ -715,10 +730,22 @@ def avaliar(con, recibos: list[Mapping[str, Any]], cfg: Mapping[str, str]) -> li
              FROM nfse_notas WHERE recibo_id = ANY(%s) AND ambiente = %s
               AND situacao <> 'CANCELADA'
             ORDER BY recibo_id, id""", (ids, cfg.get("nfse_ambiente")))} if ids else {}
+    # O PERCENTUAL DO FERJ SE LÊ UMA VEZ, E O ILEGÍVEL VIRA PENDÊNCIA (27/10/2026).
+    # Até essa data um valor ilegível gravado fora da tela levantava
+    # `NfseError` aqui dentro, e a fila e a ficha do recibo — que não o
+    # esperam — davam HTTP 500. Sem percentual não há base: ela fica `None`
+    # («—» na tela), e não zero nem a base cheia.
+    try:
+        pct_ferj, erro_do_ferj = percentual_ferj(cfg), ""
+    except NfseError as erro:
+        pct_ferj, erro_do_ferj = 0, str(erro)
     saida = []
     for r in recibos:
         rid = int(r["id"])
-        base, pend = base_do_recibo(r, lancamentos[rid], percentual_ferj(cfg))
+        if erro_do_ferj:
+            base, pend = None, [erro_do_ferj]
+        else:
+            base, pend = base_do_recibo(r, lancamentos[rid], pct_ferj)
         tomador = tomadores[rid]
         pendencias = []
         if r.get("cancelado"):
@@ -729,7 +756,7 @@ def avaliar(con, recibos: list[Mapping[str, Any]], cfg: Mapping[str, str]) -> li
             pendencias.append("Sem emolumento a tributar (ato gratuito ou recibo só de fundos).")
         pendencias += pendencias_do_tomador(tomador, cfg)
         try:
-            iss = valor_do_iss(base, cfg.get("nfse_aliquota"))
+            iss = None if base is None else valor_do_iss(base, cfg.get("nfse_aliquota"))
         except DPS.DpsError as erro:
             iss, pendencias = None, pendencias + [str(erro)]
         saida.append({"recibo": dict(r), "base": base, "iss": iss, "tomador": tomador,

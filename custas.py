@@ -133,27 +133,44 @@ PERCENTUAIS: dict[str, int] = {f["campo"]: f["percentual"] for f in FUNDOS}
 # (`nfse_percentual_ferj`, PR #10): o nome diz onde ela nasceu, e o valor e o
 # mesmo para o livro e para a nota — duas chaves deixariam o oficial mudar o
 # FERJ num lugar e esquecer o outro.
+#
+# E UMA LEITURA SO, e nao duas — correcao de 27/10/2026 (decisao do oficial:
+# «12% para os dois»). Ate essa data a chave era uma so e as LEITURAS eram
+# duas: esta, em que vazio vale 12,00, e a de `nfse.percentual_ferj`, em que
+# vazio valia ZERO. Com a chave vazia, o Livro Diario descontava 12% e a NFS-e
+# saia com a base cheia. Agora a NFS-e chama `percentual_ferj` daqui.
 
 CHAVE_PERCENTUAL_FERJ = "nfse_percentual_ferj"
 PERCENTUAL_FERJ_PADRAO = "12,00"
+
+#: Onde o percentual se corrige — a frase da recusa diz isso ao balcao.
+ONDE_SE_CORRIGE_O_FERJ = ("Administrativo → Gestor → NFS-e, campo «Percentual "
+                          "do FERJ descontado da base (%)»")
 
 
 def percentual_ferj(cfg: Any) -> int:
     """O percentual do FERJ em centesimos de ponto (12,00% -> 1200). So calcula.
 
-    `cfg` e um mapeamento com a chave `CHAVE_PERCENTUAL_FERJ`; sem ela, vale o
-    padrao. Texto ilegivel ou fora de 0 a 100 e recusa, e nao zero: zero diria
-    que nao ha FERJ."""
+    `cfg` e um mapeamento com a chave `CHAVE_PERCENTUAL_FERJ`; sem ela, ou com
+    ela vazia, vale o padrao (12,00). Texto ilegivel ou fora de 0 a 100 e
+    recusa, e nao zero: zero diria que nao ha FERJ. E a UNICA leitura da chave
+    na casa: o Livro Diario e a NFS-e passam por aqui."""
     bruto = (cfg or {}).get(CHAVE_PERCENTUAL_FERJ)
     if bruto is None or not str(bruto).strip():
         bruto = PERCENTUAL_FERJ_PADRAO
     texto = str(bruto).strip().replace("%", "").replace(",", ".")
+    # A FRASE DIZ ONDE CORRIGIR (27/10/2026). Antes ela dizia so «ilegivel», e
+    # quem a lia no balcao nao sabia que o numero mora na configuracao da NFS-e.
     try:
         numero = float(texto)
     except ValueError as erro:
-        raise CustasError(f"Percentual do FERJ ilegível: «{bruto}».") from erro
+        raise CustasError(
+            f"Percentual do FERJ ilegível: «{bruto}» não é um número. Corrija em "
+            f"{ONDE_SE_CORRIGE_O_FERJ} — vazio vale {PERCENTUAL_FERJ_PADRAO}.") from erro
     if not 0 <= numero < 100:
-        raise CustasError("O percentual do FERJ fica entre 0 e 100.")
+        raise CustasError(
+            f"O percentual do FERJ fica entre 0 e 100, e está gravado «{bruto}». "
+            f"Corrija em {ONDE_SE_CORRIGE_O_FERJ}.")
     return round(numero * 100)
 
 

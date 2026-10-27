@@ -443,6 +443,56 @@ def test_a_base_e_o_emolumento_menos_o_ferj_e_os_fundos_ficam_fora_da_nota(casa)
     assert "TOMADORA" not in descricao             # a descrição não leva o nome
 
 
+def test_ferj_vazio_vale_12_por_cento_na_nota_como_no_livro():
+    """Decisão do oficial em 27/10/2026: «12% para os dois». Até essa data a
+    NFS-e lia a chave por conta própria e, vazia, dava 0% — a nota saía com a
+    base cheia enquanto o Livro Diário descontava 12%. Agora a leitura é uma
+    só: a de `custas`."""
+    import custas
+    for cfg in ({}, {"nfse_percentual_ferj": ""}, {"nfse_percentual_ferj": "  "},
+                {"nfse_percentual_ferj": None}):
+        assert NFSE.percentual_ferj(cfg) == 1200 == custas.percentual_ferj(cfg), cfg
+    assert NFSE.percentual_ferj({"nfse_percentual_ferj": "10,5"}) == 1050
+    with pytest.raises(NFSE.NfseError, match="Gestor → NFS-e"):
+        NFSE.percentual_ferj({"nfse_percentual_ferj": "doze"})
+    with pytest.raises(NFSE.NfseError, match="entre 0 e 100"):
+        NFSE.percentual_ferj({"nfse_percentual_ferj": "100"})
+    # E a configuração com o campo apagado é aceita — e vale 12,00.
+    assert NFSE.percentual_ferj(NFSE.conferir_configuracao(
+        {**NFSE.PADRAO, "nfse_percentual_ferj": ""})) == 1200
+
+
+def test_ferj_vazio_gravado_desconta_12_por_cento_da_base(casa):
+    db = casa["db"]
+    rid = _recibo(db, numero=901)
+    db.set_settings({"nfse_percentual_ferj": ""})
+    with db.connect() as con:
+        item = NFSE.avaliar_recibo(con, rid, _cfg(db))
+    assert item["base"] == 10563          # 120,03 − 14,40, e não os 120,03 cheios
+
+
+def test_ferj_ilegivel_gravado_fora_da_tela_vira_pendencia_e_nao_500(casa):
+    """Até 27/10/2026 o valor ilegível levantava `NfseError` dentro de
+    `avaliar`, e a fila e a ficha do recibo davam HTTP 500."""
+    db, c = casa["db"], casa["c"]
+    rid = _recibo(db, numero=902)
+    _endereco(db)
+    db.set_settings({"nfse_percentual_ferj": "doze"})
+    cfg = _cfg(db)
+    assert any("Percentual do FERJ ilegível" in f
+               for f in NFSE.pendencias_da_configuracao(cfg))
+    with db.connect() as con:
+        item = NFSE.avaliar_recibo(con, rid, cfg)
+    assert item["base"] is None and item["iss"] is None
+    assert any("Gestor → NFS-e" in p for p in item["pendencias"])
+    for rota in ("/caixa/nfse", f"/caixa/nfse/recibo/{rid}"):
+        resposta = c.get(rota)
+        assert resposta.status_code == 200, rota
+        assert "Percentual do FERJ ilegível" in resposta.get_data(as_text=True), rota
+    assert "Percentual do FERJ ilegível" in _emitir(casa, rid).get_data(as_text=True)
+    assert casa["sefin"].chamadas == []
+
+
 def test_recibo_sem_cpf_vira_pendencia_clara_e_nao_chama_o_emissor(casa):
     db = casa["db"]
     rid = _recibo(db, numero=102, documento=None)

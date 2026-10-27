@@ -1,0 +1,12 @@
+{
+  "chave": "OUVIDORIA_CONVITE_PESQUISA",
+  "atribuicao": "Caixa e protocolo",
+  "nome": "Convite da pesquisa de satisfação (e-mail)",
+  "formato": "CHAVES",
+  "explica": "O e-mail que convida o cliente do protocolo a responder a pesquisa de satisfação — o assunto (===ASSUNTO===, uma linha) e o texto (===CORPO===). Sai sozinho, sem ninguém conferir: só o convite e o link. O link entra SÓ pelo claro {link}, que tem de estar no corpo; documento de pessoa, valor, pix, telefone, e-mail e endereço de internet escritos à mão são recusados. Claros: {serventia}, {link} e {validade}.",
+  "campos": [
+    "serventia",
+    "link",
+    "validade"
+  ]
+}

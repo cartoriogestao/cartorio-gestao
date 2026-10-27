@@ -50,6 +50,7 @@ import tetos_de_entrada as TETOS
 import ri_imagens as RIMG
 import notas_partes as NP
 import cadastro_biometria as CB
+import leitor_digital as LD
 import ato_selado as AS
 import etiqueta as ETQ
 import notas_selo as NSELO
@@ -357,12 +358,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN", "MANAGER", "USER", metodos=("POST",))
     def notas_cartoes():
         """Busca e cadastro do cartão de autógrafo."""
+        import nt_leitura_web as NTLW
         if request.method == "POST" and request.form.get("acao") == "novo":
             dados = {k: request.form.get(k) for k in request.form}
             nome = (dados.get("nome") or "").strip()
+            # A LEITURA POR IA (26/10/2026) volta junto em toda recusa: quem
+            # atende não perde o rascunho que a leitura montou.
+            com_leitura = ({"leitura_id": dados["leitura_id"]}
+                           if (dados.get("leitura_id") or "").strip().isdigit() else {})
             if not nome:
                 flash("Informe o nome.", "danger")
-                return redirect(url_for("notas_cartoes"))
+                return redirect(url_for("notas_cartoes", **com_leitura))
+            # O RASCUNHO DA LEITURA SÓ ENTRA CONFERIDO — quem atende marca que
+            # comparou cada campo com o documento original.
+            recusa_leitura = NTLW.recusa_da_conferencia(app, db, "CARTAO")
+            if recusa_leitura:
+                flash(recusa_leitura, "danger")
+                return redirect(url_for("notas_cartoes", busca=nome, **com_leitura))
             # Duplicata: avisa e só cria se o operador insistir.
             if not request.form.get("confirmar_duplicata"):
                 with db.connect() as con:
@@ -371,7 +383,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     nomes = ", ".join(f"{c['nome']} (nº {c['id']})" for c in iguais[:3])
                     flash(f"Já existe cartão para {nomes}. Se ainda assim for outra "
                           f"pessoa, marque a confirmação e grave de novo.", "warning")
-                    return redirect(url_for("notas_cartoes", busca=nome))
+                    return redirect(url_for("notas_cartoes", busca=nome, **com_leitura))
             with db.transaction() as con:
                 try:
                     novo = NP.criar_cartao(con, dados, db.now(), usuario_nome(),
@@ -398,6 +410,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                       "danger")
                 return redirect(url_for("notas_cartoes", busca=nome))
             audit("NT_CARTAO_ABERTO", "NT_CARTAO", novo, {"nome": nome})
+            NTLW.marcar_usada(app, db, audit, "CARTAO", tabela="nt_cartoes", ato_id=novo)
 
             # A FICHA ENTRA JUNTO, se o operador a escolheu no mesmo formulário.
             #
@@ -446,7 +459,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                            sem_assinatura
                        FROM nt_cartoes""")
         return render_template("notas_cartoes.html", busca=busca, achados=achados,
-                               aviso_busca=aviso_busca, resumo=resumo)
+                               aviso_busca=aviso_busca, resumo=resumo,
+                               leitura=NTLW.leitura_pedida(app, db, "CARTAO"))
 
     # ------------------------------------------- a ficha do cartao de autografo
     #
@@ -809,11 +823,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # POST /notas/cartoes/<id>/foto. Pasta nao se cria aqui.
         with db.connect() as con_bio:
             bio = CB.estado(con_bio, cartao_id)
+            # De onde veio cada digital (leitor ou arquivo), para a tela dizer.
+            bio_por_dedo = {
+                int(i["dedo"]): dict(i)
+                for i in CB.imagens_do_cadastro(con_bio, cartao_id)
+                if i["especie"] == CB.ESPECIE_DIGITAL and i["dedo"] is not None}
+            ciencia_bio = CB.ciencia(con_bio, cartao_id)
         return render_template("notas_cartao.html", c=dados, imagens=imagens,
+                               ciencia_bio=ciencia_bio,
+                               texto_da_ciencia=LD.TEXTO_DA_CIENCIA,
+                               base_legal=LD.BASE_LEGAL,
+                               ve_a_digital=usuario_papel() in QUEM_VE_A_DIGITAL,
                                avisos=NP.avisos_do_cartao(dados), recentes=recentes,
                                atos=atos, total_rec=total_rec,
                                faltando=NP.campos_faltantes(dados, "ATO"),
-                               bio=bio,
+                               bio=bio, bio_por_dedo=bio_por_dedo,
+                               leitor=estado_do_leitor(),
                                # OS NOMES DOS DEDOS SAEM DO DOMINIO, e nao da
                                # tela: quem decide quais quatro a casa colhe e'
                                # `DEDOS_DA_CASA`, e uma lista escrita aqui
@@ -889,11 +914,63 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     # **E O APARELHO NAO E' ESTE SISTEMA.** O leitor de digital entrega uma
     # imagem; o que esta rota faz e' receber a imagem e guarda-la no cadastro.
     # Dizer que o sistema «le a digital» seria prometer driver que ele nao tem.
+    #
+    # **O LEITOR CHEGOU PELO NAVEGADOR — 26/10/2026.** Quem fala com o leitor
+    # HID DigitalPersona e' o cliente do fabricante, no Windows do balcao; o
+    # SDK web dele, carregado na tela do cartao, devolve a imagem PNG e a tela
+    # a manda para ESTA MESMA ROTA, com `origem=LEITOR`. Uma porta so para
+    # gravar: duas rotas (leitor e arquivo) divergiriam no primeiro conserto.
+    # Os arquivos do SDK sao do fabricante e o TI os instala; a rota abaixo so
+    # os serve, da lista fechada de `leitor_digital.ARQUIVOS_DO_SDK`.
+
+    def pasta_do_sdk_digital() -> Path:
+        dados = app.config.get("DATA_DIR") or Path(db.db_path).parent
+        return LD.pasta_do_sdk(db.get_setting(LD.CHAVE_DA_PASTA, ""), dados)
+
+    def estado_do_leitor() -> dict:
+        """O que a tela do cartao precisa para falar do leitor. SO LE."""
+        return {
+            "nome": LD.NOME_DO_LEITOR,
+            # 26/10/2026, decisão do oficial («esse mesmo»): o modelo esperado,
+            # e o cliente/SDK do fabricante que o TI instala para ele
+            "modelo": LD.MODELO_ESPERADO,
+            "cliente": LD.CLIENTE_DO_FABRICANTE,
+            "sdk_nome": LD.SDK_DO_LEITOR,
+            "finalidade": LD.FINALIDADE,
+            "sdk": LD.estado_do_sdk(pasta_do_sdk_digital()),
+            "arquivos_do_sdk": LD.ARQUIVOS_DO_SDK,
+            "origem_leitor": LD.ORIGEM_LEITOR,
+            "origem_arquivo": LD.ORIGEM_ARQUIVO,
+        }
+
+    @app.route("/notas/leitor-digital/sdk/<nome>")
+    @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    def notas_leitor_digital_sdk(nome):
+        """Um arquivo do SDK web do fabricante, da lista fechada. **SO LE.**
+
+        O nome da URL nunca vira caminho: fora da lista, ou sem o arquivo na
+        pasta, e 404. Quem instala os arquivos e o TI.
+        """
+        arquivo = LD.arquivo_do_sdk(pasta_do_sdk_digital(), nome)
+        if arquivo is None:
+            abort(404)
+        return Response(arquivo.read_bytes(),
+                        mimetype="application/javascript",
+                        headers={"Cache-Control": "private, max-age=3600"})
+
+    # QUEM VE A IMAGEM DA DIGITAL — correcao de seguranca de 26/10/2026
+    # (revisao do PR #31). A imagem e o dado biometrico inteiro (nao e
+    # template, nao e hash: e reversivel por definicao), e o AUDITOR a lia como
+    # le a auditoria. Agora so quem colhe e confere no balcao a ve; a ficha do
+    # AUDITOR diz «digital colhida em <data>», sem a imagem. E cada vez que a
+    # imagem sai, fica na auditoria — o precedente e o ATTACHMENT_VIEWED.
+    QUEM_VE_A_DIGITAL = ("ADMIN", "MANAGER", "USER")
 
     @app.route("/notas/cartoes/<int:cartao_id>/digital/<int:dedo>")
-    @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    @roles_required(*QUEM_VE_A_DIGITAL)
     def notas_cartao_digital(cartao_id, dedo):
-        """A digital de um dedo, como está no disco. **SÓ LÊ.**"""
+        """A digital de um dedo, como está no disco. **SÓ LÊ** (e anota na
+        auditoria que a imagem foi vista — o fato, nunca a imagem)."""
         try:
             with db.connect() as con:
                 imgs = CB.imagens_do_cadastro(con, cartao_id)
@@ -907,8 +984,40 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         caminho = Path(achada["caminho"])
         if not _e_arquivo(caminho):
             abort(404)
+        audit("NT_CADASTRO_DIGITAL_VISTA", "NT_CARTAO", cartao_id,
+              {"dedo": int(dedo)})
         return Response(caminho.read_bytes(), mimetype="image/png",
-                        headers={"Cache-Control": "private, no-cache"})
+                        headers={"Cache-Control": "private, no-store"})
+
+    @app.route("/notas/cartoes/<int:cartao_id>/biometria/ciencia", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def notas_cartao_biometria_ciencia(cartao_id):
+        """Registra que a finalidade da coleta foi lida para a pessoa (ciência
+        como TRANSPARÊNCIA, LGPD art. 9º — a hipótese é o art. 11, II, «g», por
+        decisão do oficial em 26/10/2026). **ESCREVE** só a marca do cartão.
+
+        Correcao de seguranca de 26/10/2026 (revisao do PR #31): a tela
+        mostrava a finalidade e nada guardava. A caixa e obrigatoria — marcar
+        e o ato de quem esta no balcao com a pessoa na frente.
+        """
+        if not q1("SELECT id FROM nt_cartoes WHERE id=%s", (cartao_id,)):
+            abort(404)
+        if request.form.get("confirmo") != "1":
+            flash("Marque a caixa depois de ler a finalidade para a pessoa — "
+                  "sem ela a ciência não se registra.", "danger")
+            return redirect(url_for("notas_cartao", cartao_id=cartao_id))
+        try:
+            with db.transaction() as con:
+                marca = CB.registrar_ciencia(con, cartao_id, db.now(),
+                                             usuario_nome())
+        except CB.CadastroBioError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("notas_cartao", cartao_id=cartao_id))
+        audit("NT_CADASTRO_BIOMETRIA_CIENCIA", "NT_CARTAO", cartao_id,
+              {"em": marca["em"], "hipotese": LD.BASE_LEGAL["hipotese"],
+               "decisao": LD.BASE_LEGAL["decisao"], "texto": LD.TEXTO_DA_CIENCIA})
+        flash("Ciência da pessoa registrada. Pode colher as digitais.", "success")
+        return redirect(url_for("notas_cartao", cartao_id=cartao_id))
 
     @app.route("/notas/cartoes/<int:cartao_id>/digital", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -927,15 +1036,34 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             dedo = 0
         arquivo = request.files.get("digital")
         dados = arquivo.read() if arquivo else b""
+        origem = (request.form.get("origem") or LD.ORIGEM_ARQUIVO).strip().upper()
+        # A ORIGEM E DECLARADA PELO NAVEGADOR (correcao de seguranca de
+        # 26/10/2026): «do leitor» sem o SDK instalado neste servidor nao pode
+        # ser verdade, e se recusa. O que sobra nao se distingue daqui — ver
+        # `leitor_digital.ORIGEM_LEITOR`.
+        recusa = LD.recusa_da_origem(
+            origem, LD.estado_do_sdk(pasta_do_sdk_digital())["instalado"])
+        if recusa:
+            flash(recusa, "danger")
+            return redirect(url_for("notas_cartao", cartao_id=cartao_id))
         try:
             with db.transaction() as con:
                 CB.colher_digital(con, cartao_id, dedo, dados, db.now(),
-                                  usuario_nome(), pasta_assinaturas_internas())
+                                  usuario_nome(), pasta_assinaturas_internas(),
+                                  origem=origem,
+                                  dispositivo=request.form.get("dispositivo"))
         except CB.CadastroBioError as erro:
             flash(str(erro), "danger")
             return redirect(url_for("notas_cartao", cartao_id=cartao_id))
-        audit("NT_CADASTRO_DIGITAL", "NT_CARTAO", cartao_id, {"dedo": dedo})
-        flash(f"Digital do {CB.nome_do_dedo(dedo)} colhida.", "success")
+        # A AUDITORIA LEVA O FATO, E NUNCA A IMAGEM: dedo e origem. Dado
+        # biometrico nao vai para log (LGPD art. 11).
+        audit("NT_CADASTRO_DIGITAL", "NT_CARTAO", cartao_id,
+              {"dedo": dedo, "origem": origem,
+               "origem_declarada_pelo_navegador": True})
+        no_leitor = (" (informada pela tela como do leitor)"
+                     if origem == LD.ORIGEM_LEITOR else "")
+        flash(f"Digital do {CB.nome_do_dedo(dedo)} colhida{no_leitor}.",
+              "success")
         return redirect(url_for("notas_cartao", cartao_id=cartao_id))
 
     # Que formato o navegador desenha sozinho dentro de um <img>, e qual
@@ -2020,6 +2148,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @roles_required("ADMIN", "MANAGER", "USER")
     def notas_reconhecimento():
         """O balcão: procura o cartão, confere a assinatura e reconhece."""
+        import nt_leitura_web as NTLW
         if request.method == "POST" and request.form.get("acao") == "reconhecer":
             ids = [n for n in map(numero_digitado, request.form.getlist("cartao_id"))
                    if n is not None]
@@ -2029,6 +2158,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 return redirect(url_for("notas_reconhecimento"))
             if especie not in ESPECIES_RECONHECIMENTO:
                 especie = "SEMELHANCA"
+            # OS DADOS DO VEÍCULO LIDOS POR IA (26/10/2026) só entram
+            # conferidos com o CRV/ATPV original — a caixa da conferência.
+            recusa_leitura = NTLW.recusa_da_conferencia(app, db, "RECONHECIMENTO")
+            if recusa_leitura:
+                flash(recusa_leitura, "danger")
+                volta = {k: (request.form.get(k) or "").strip()
+                         for k in ("busca", "leitura_id")}
+                return redirect(url_for("notas_reconhecimento",
+                                        **{k: v for k, v in volta.items() if v}))
 
             cartoes = [dict(r) for r in q(
                 f"SELECT * FROM nt_cartoes WHERE id IN ({','.join(['%s'] * len(ids))}) "
@@ -2136,6 +2274,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                       "NT_RECONHECIMENTO", rid,
                       {"especie": especie, "firmas": len(cartoes),
                        "servico": servico, "motivo": selado.get("motivo")})
+                NTLW.marcar_usada(app, db, audit, "RECONHECIMENTO",
+                                  tabela="nt_reconhecimentos", ato_id=rid)
                 flash(f"Reconhecimento nº {rid} SUSPENSO: o selo pago não saiu "
                       f"porque falta protocolo ou pagamento. Escolha o protocolo "
                       f"pago e clique em selar. Sem selo não se imprime etiqueta.",
@@ -2176,6 +2316,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 audit("NT_RECONHECIMENTO", "NT_RECONHECIMENTO", rid,
                       {"especie": especie, "firmas": len(cartoes),
                        "servico": servico, "selos": selado["selos"]})
+            NTLW.marcar_usada(app, db, audit, "RECONHECIMENTO",
+                              tabela="nt_reconhecimentos", ato_id=rid)
             flash(f"Reconhecimento nº {rid} lavrado — {len(cartoes)} firma(s)."
                   f"{selado['mensagem']}",
                   "success" if selado["ok"] else "warning")
@@ -2203,7 +2345,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                candidatos_selo=candidatos_selo,
                                atendendo=atendendo,
                                ESPECIES=ESPECIES_RECONHECIMENTO,
-                               DOCUMENTOS_DE_VEICULO=DOCUMENTOS_DE_VEICULO)
+                               DOCUMENTOS_DE_VEICULO=DOCUMENTOS_DE_VEICULO,
+                               leitura=NTLW.leitura_pedida(app, db, "RECONHECIMENTO"))
 
     @app.route("/notas/reconhecimento/<int:reconhecimento_id>", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")

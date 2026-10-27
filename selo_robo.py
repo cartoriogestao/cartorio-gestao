@@ -85,6 +85,14 @@ ROTAS_VEDADAS_AO_ROBO = ("users", "usuarios", "updates", "atualizacoes", "settin
                          "nucleo_", "implantacao", "automacao")
 
 
+# A BUSCA NO TEOR DO ACERVO TAMBÉM É DE GENTE (revisão de segurança de
+# 26/10/2026, PR #30): ela acha as fichas de uma pessoa pelo nome ou pelo CPF
+# no acervo inteiro — o que o AUDITOR já não alcança —, e a credencial do robô
+# mora num script. Em linha própria, e não dentro da tupla, para não colidir
+# com os acréscimos dos PRs #21 e #22 quando os três forem juntados.
+ROTAS_VEDADAS_AO_ROBO += ("ri_busca_no_acervo",)
+
+
 # AS CERTIDÕES DO ONR NO AUTOMÁTICO TAMBÉM SÃO DE GENTE (revisão de segurança
 # dos PRs abertos, 26/10/2026, PR #13, achado M1). A aprovação de um pedido
 # (`onr_auto_aprovar`) EMITE a certidão com selo pela rota da casa, e na rodada

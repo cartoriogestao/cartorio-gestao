@@ -102,6 +102,8 @@ import ri_certidao_negativa as RINEG
 import ri_prenotacao_prazo as PRAZO
 import onr_acompanhamento as ACOMP  # o andamento no ONR (26/10/2026)
 import ri_pedidos as PED
+import ri_busca_acervo as BUSCA  # busca em texto livre no teor (26/10/2026)
+import ri_situacao_juridica as SITJ  # o resumo da situacao juridica (26/10/2026)
 import ri_nota_devolutiva as RND
 import ri_rascunho as RASC
 import ri_cnm as CNM
@@ -2322,7 +2324,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         except (ValueError, TypeError, KeyError):
             return None
 
-    def _selar_a_prenotacao(protocolo_id: int, numero, form) -> str:
+    def _selar_a_prenotacao(protocolo_id: int, numero, form, *,
+                             gravado=None) -> str:
         """Pede o selo da prenotacao DEPOIS de ela existir. FALA COM A REDE.
 
         «Quando um titulo e prenotado no RI devemos emitir recibo ao cliente…
@@ -2359,13 +2362,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     "data é a tabela de custas em vigor, em Administrativo → "
                     "Configurações.")
         apresentante = (form.get("apresentante") or "").strip()
+        documento = form.get("apresentante_documento")
+        # SÓ NO «SELAR» DEPOIS — a rota passa `gravado`, a lavratura não.
+        # A faixa «Pendente de selo» não manda o apresentante; ele já está
+        # na prenotação. Sem este nome o envelope sai com parteAto vazio e
+        # o aparelho recusa «Os nomes das partes devem ser informados».
+        # O que o formulário trouxer continua valendo.
+        if not apresentante and gravado is not None:
+            apresentante = (gravado["apresentante"] or "").strip()
+            if apresentante and not str(documento or "").strip():
+                documento = gravado["apresentante_documento"]
+            if not apresentante:
+                return (" A prenotação foi lavrada SEM SELO: informe o "
+                        "apresentante — o selo exige os nomes das partes, e "
+                        "esta prenotação não tem apresentante gravado.")
         try:
             envelope = AS.envelope_da_prenotacao(
                 protocolo=numero,
                 escrevente=app.extensions["usuario_nome"](),
                 versao_tabela=versao, descricao_natureza=natureza,
-                partes=([{"nome": apresentante,
-                          "documento": form.get("apresentante_documento")}]
+                partes=([{"nome": apresentante, "documento": documento}]
                         if apresentante else []),
                 codigo_tj=item, isento=isento, motivo_isencao=motivo)
         except AS.AtoError as erro:
@@ -5362,7 +5378,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if recusa:
             flash(recusa, "danger")
             return redirect(url_for("ri_protocolo_ver", protocolo_id=protocolo_id))
-        selado = _selar_a_prenotacao(protocolo_id, p["numero"], request.form)
+        selado = _selar_a_prenotacao(protocolo_id, p["numero"], request.form,
+                                     gravado=p)
         motivo = _motivo_da_falha_do_selo(selado)
         if motivo:
             flash(f"Não selou a prenotação: {motivo}", "danger")
@@ -8596,6 +8613,94 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return render_template("ri_indicador_pessoal.html", pessoas=pessoas,
                                busca=busca, total=total, so_proprietarios=so_proprietarios,
                                lancamentos=lancamentos)
+
+    # ------------------------------------------- busca em texto livre no acervo
+    #
+    # Pedido do oficial, 26/10/2026: procurar no TEOR de todas as fichas — e
+    # nao so no numero, no endereco e nas partes cadastradas, que e o que a
+    # lista e os dois indicadores olham. O desenho, a escolha do indice e o que
+    # se mediu estao em `ri_busca_acervo`.
+    #
+    # QUEM USA: TODO USUARIO HUMANO LOGADO — decisao do oficial em 26/10/2026,
+    # «todos podem usar». ADMIN, MANAGER, USER e tambem o AUDITOR: ler o
+    # acervo e o papel dele, e a busca so le (a primeira versao deste PR a
+    # restringia a quem pratica ato). O ROBO CONTINUA VEDADO, pela lista de
+    # `selo_robo.ROTAS_VEDADAS_AO_ROBO` (revisao de seguranca de 26/10), que
+    # nao mudou. As outras duas guardas, na forma da busca do devedor do
+    # Protesto (`protesto_devedores_buscar`), ficam:
+    #   · O TERMO NAO VAI NO ENDERECO: a busca e POST, como a do devedor — CPF
+    #     em `?busca=` fica no historico do navegador e no log de quem estiver
+    #     no meio;
+    #   · TODA BUSCA VAI A AUDITORIA, com quem, quando, o tipo do termo, quantas
+    #     fichas e quais (as cinquenta primeiras) — e, NO LUGAR DO TERMO, a
+    #     impressao dele (`BUSCA.impressao_da_busca`), agora COM A CHAVE do
+    #     servidor: o sha256 puro de um CPF se desfaz percorrendo os CPFs
+    #     possiveis, e entao o CPF estaria no rastro. O CPF/CNPJ procurado vai
+    #     MASCARADO (so os dois ultimos digitos, a regua da auditoria da casa),
+    #     para quem audita ver que se procurou um documento sem ver qual.
+    #     Gravar o termo em claro e decisao do oficial.
+    QUEM_LE_O_ACERVO = ("ADMIN", "MANAGER", "USER", "AUDITOR")
+
+    @app.route("/registro-imoveis/busca-no-acervo", methods=["GET", "POST"])
+    @roles_required(*QUEM_LE_O_ACERVO)
+    def ri_busca_no_acervo():
+        """Procura no teor das fichas e dos atos. SO LE (grava so a auditoria)."""
+        termo = (request.form.get("termo") or "").strip() if request.method == "POST" else ""
+        modo = (request.form.get("modo") or "FRASE").strip().upper()
+        resultado, erro = None, None
+        if request.method == "POST":
+            try:
+                with db.connect() as con:
+                    resultado = BUSCA.buscar(con, termo, modo=modo)
+            except BUSCA.BuscaError as e:
+                erro = str(e)
+            if resultado is not None:
+                audit("RI_BUSCA_NO_ACERVO", "RI_MATRICULA", None, {
+                    "tipos": [p.tipo for p in resultado.termos],
+                    "modo": resultado.modo,
+                    "impressao": BUSCA.impressao_da_busca(termo, chave=app.secret_key),
+                    "documentos_mascarados": [
+                        BUSCA.documento_mascarado(p.termo)
+                        for p in resultado.termos if p.tipo == "DOCUMENTO"],
+                    "fichas": resultado.total,
+                    "ids": [f["id"] for f in resultado.fichas][:50],
+                    "agente": "pessoa — tela de busca no acervo do RI",
+                    "a_mando_de": app.extensions["usuario_nome"](),
+                })
+        return render_template("ri_busca_acervo.html", termo=termo, modo=modo,
+                               resultado=resultado, erro=erro,
+                               limite=BUSCA.LIMITE_DE_FICHAS)
+
+    # ------------------------------------- a situacao juridica, num clique
+    #
+    # Pedido do oficial, 26/10/2026. O que se junta e de onde vem esta em
+    # `ri_situacao_juridica`. QUEM USA: todo usuario humano logado («todos
+    # podem usar», 26/10) — os mesmos quatro papeis da busca, declarados na
+    # rota; e o resumo nao mostra nada que a ficha nao mostre, so junta. A
+    # consulta fica no rastro, como a da ficha (`RI_FICHA_CONSULTADA`). A
+    # lista do robo (`selo_robo`) nao foi tocada: hoje ela veda a busca e nao
+    # o resumo, como nao veda a ficha.
+    #   NAO E CERTIDAO, e a tela diz isso no alto; e NAO GRAVA nada alem da
+    #   linha de auditoria.
+
+    @app.route("/registro-imoveis/<int:matricula_id>/situacao-juridica")
+    @login_required
+    @roles_required(*QUEM_LE_O_ACERVO)
+    def ri_situacao_juridica(matricula_id):
+        base_data, base_n = cnib_referencia()
+        with db.connect() as con:
+            s = SITJ.montar(con, matricula_id, hoje=date.today(),
+                            cnib_base=base_data, cnib_ordens=base_n)
+        if s is None:
+            abort(404)
+        audit("RI_SITUACAO_JURIDICA_CONSULTADA", "RI_MATRICULA", matricula_id,
+              {"numero": s["m"]["numero"], "onus": len(s["onus"]),
+               "onus_no_teor": len(s["teor"]["onus"]),
+               "cnib": len(s["cnib"]["ordens"]),
+               "agente": "pessoa — tela do resumo da situação jurídica do RI",
+               "a_mando_de": app.extensions["usuario_nome"]()})
+        return render_template("ri_situacao_juridica.html", s=s,
+                               agora=db.now(), quem=app.extensions["usuario_nome"]())
 
 
     # ------------------------------------------- certidao negativa de imovel

@@ -864,6 +864,7 @@
         {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('livro_diario') }}">Livro Diário Auxiliar</a>{% endif %}
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Atendimento</div>
         <a href="{{ url_for('service_queue') }}">Atendimento / senhas</a>
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('senhas_relatorio') }}">Senhas: espera e atendimento</a>{% endif %}
         <a href="{{ url_for('whatsapp_lista') }}">WhatsApp</a>
         {# O PORTAL DO CLIENTE (26/10/2026): o cliente acompanha o pedido com o
            número e o código do recibo, numa página na VPS do WhatsApp. Ao lado

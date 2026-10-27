@@ -45,6 +45,7 @@ from notas_schema import init_notas_schema
 from notas_certidao import init_notas_certidao_schema
 from nt_publica_forma import init_nt_publica_forma_schema
 from nt_veiculo_detran import init_nt_veiculo_detran_schema
+from nt_leitura_documentos import init_nt_leitura_schema
 from rg_livro_contabil import init_rg_livro_contabil_schema
 from rg_notificacao import init_rg_notificacao_schema
 import notas_modelos
@@ -71,6 +72,7 @@ from livro_visitas import init_livro_visitas_schema
 from ouvidoria import init_ouvidoria_schema
 from centrais_schema import init_centrais_schema
 from onr_endereco_schema import init_ri_onr_endereco_schema
+import senhas as SEN
 from ri_schema import init_ri_schema
 from security import hash_password, validate_password_strength, verify_password
 from selador_config import init_selador_schema
@@ -128,15 +130,6 @@ def _pg(sql: str) -> str:
     passam pela ponte. Aqui, que executa nativo, a troca é feita no ponto de
     uso — como em `tarefa_processo._pg`. Sai quando eles entregarem `%s`."""
     return sql.replace("%", "%%").replace("?", "%s")
-
-
-def _segundos(inicio: str | None, fim: str | None) -> float | None:
-    """`fim - inicio` em segundos, das horas ISO gravadas. Hora que não se lê
-    não entra na média — como o `julianday` nulo que ela fazia no SQL."""
-    try:
-        return (datetime.fromisoformat(fim) - datetime.fromisoformat(inicio)).total_seconds()
-    except (TypeError, ValueError):
-        return None
 
 
 # AS SEMENTES DA IDENTIDADE DA SERVENTIA NASCEM VAZIAS — sanitização B2b,
@@ -944,6 +937,11 @@ class Database:
         self.sessoes_interrompidas_no_inicio = (
             AG.recuperar_sessoes_interrompidas(con, agora=self.now()))
         init_caixa_schema(con)
+        # O PAINEL DE SENHAS (26/10/2026) — o guichê de cada atendente e as
+        # colunas novas de `service_tickets` (guichê, rechamada, desistência,
+        # ligação ao protocolo geral). Logo depois do caixa: a tela da fila lê
+        # o número do protocolo em `cx_protocolos`.
+        SEN.init_senhas_schema(con)
         # A TRAVA DO SELO PAGO (LX16, 19/10/2026) — o rastro ato↔item, o
         # protocolo em atendimento, o diferimento do Protesto, o débito do
         # depósito, as liberações do ADMIN. Logo depois do caixa: o
@@ -973,6 +971,9 @@ class Database:
         init_rg_livro_contabil_schema(con)
         init_nt_publica_forma_schema(con)
         init_nt_veiculo_detran_schema(con)
+        # A leitura por IA do balcão das Notas (26/10/2026) — a tabela do
+        # registro de cada envio, com a retenção de 30 dias e o «sem máscara».
+        init_nt_leitura_schema(con)
         # FOLHA PRESA A ITEM JA CANCELADO VOLTA SOZINHA AO ESTOQUE. Esta
         # reconciliacao vem depois de TODOS os esquemas porque alcanca as
         # certidoes das quatro atribuicoes, os atos do RI e os assentos do
@@ -1900,45 +1901,26 @@ class Database:
             maior = banco(con).valor("SELECT MAX(ticket_no) AS maior FROM service_tickets WHERE ticket_date=%s", (ticket_date,))
             return int(maior or 0) + 1
 
-    def create_ticket(self, priority: bool, service_type: str | None = None) -> int:
-        d = date.today().isoformat()
-        with self.transaction() as con:
-            bd = banco(con)
-            bd.travar("service_tickets.ticket_no")
-            maior = bd.valor("SELECT MAX(ticket_no) AS maior FROM service_tickets WHERE ticket_date=%s", (d,))
-            n = int(maior or 0) + 1
-            novo = bd.escrever("INSERT INTO service_tickets(ticket_no,ticket_date,priority,service_type,status,created_at) VALUES (%s,%s,%s,%s, 'AGUARDANDO',%s) RETURNING id", (n,d,1 if priority else 0,service_type,self.now()))
-            return int(novo[0]["id"])
-
-    def list_tickets_today(self) -> list[dict]:
-        d = date.today().isoformat()
-        with self.connect() as con:
-            return banco(con).ler("SELECT s.*,u.full_name attendant_name FROM service_tickets s LEFT JOIN users u ON u.id=s.attendant_user_id WHERE ticket_date=%s ORDER BY CASE status WHEN 'CHAMADO' THEN 0 WHEN 'EM_ATENDIMENTO' THEN 1 WHEN 'AGUARDANDO' THEN 2 ELSE 3 END, priority DESC, ticket_no", (d,))
-
-    def update_ticket(self, ticket_id: int, action: str, user_id: int) -> None:
-        now = self.now()
-        with self.transaction() as con:
-            bd = banco(con)
-            if action == "call":
-                bd.escrever("UPDATE service_tickets SET status='CHAMADO',called_at=%s,attendant_user_id=%s WHERE id=%s", (now,user_id,ticket_id))
-            elif action == "start":
-                bd.escrever("UPDATE service_tickets SET status='EM_ATENDIMENTO',started_at=COALESCE(started_at,%s),attendant_user_id=%s WHERE id=%s", (now,user_id,ticket_id))
-            elif action == "finish":
-                bd.escrever("UPDATE service_tickets SET status='FINALIZADO',finished_at=%s,attendant_user_id=%s WHERE id=%s", (now,user_id,ticket_id))
+    # A FILA DE SENHAS MORA EM `senhas.py` desde 26/10/2026 — emitir, chamar,
+    # rechamar, iniciar, finalizar, desistir e ligar ao protocolo. Os três
+    # métodos que estavam aqui (`create_ticket`, `list_tickets_today`,
+    # `update_ticket`) saíram: a ação sem conferir a situação de partida
+    # deixava duas pessoas «chamarem» a mesma senha ao mesmo tempo.
 
     def service_metrics_today(self) -> dict[str, Any]:
+        """Os números de hoje para `/relatorios` — pela MESMA régua do
+        relatório do período (`senhas.metricas`). Até 26/10/2026 a espera ia
+        da chegada ao INÍCIO do atendimento; agora vai até a primeira
+        CHAMADA, que é o tempo em que a pessoa ficou esperando ser chamada."""
         d = date.today().isoformat()
         with self.connect() as con:
-            bd = banco(con)
-            total = bd.valor("SELECT COUNT(*) AS n FROM service_tickets WHERE ticket_date=%s", (d,))
-            priority = bd.valor("SELECT COUNT(*) AS n FROM service_tickets WHERE ticket_date=%s AND priority=1", (d,))
-            # A espera e o atendimento se calculam em Python (regra da casa:
-            # data e hora não se calculam no SQL).
-            horas = bd.ler("SELECT created_at, started_at, finished_at FROM service_tickets WHERE ticket_date=%s ORDER BY id", (d,))
-            waits = [s for s in (_segundos(r["created_at"], r["started_at"]) for r in horas if r["started_at"] is not None) if s is not None]
-            service = [s for s in (_segundos(r["started_at"], r["finished_at"]) for r in horas if r["finished_at"] is not None and r["started_at"] is not None) if s is not None]
-            hourly = bd.ler("SELECT substr(created_at,12,2) AS hour, COUNT(*) AS count FROM service_tickets WHERE ticket_date=%s GROUP BY substr(created_at,12,2) ORDER BY hour", (d,))
-        return {"total":int(total),"priority":int(priority),"avg_wait_seconds":(sum(waits)/len(waits) if waits else 0),"avg_service_seconds":(sum(service)/len(service) if service else 0),"hourly":hourly}
+            m = SEN.metricas(con, d, d, hoje=d)
+        r = m["resumo"]
+        return {"total": r["total"], "priority": r["preferenciais"],
+                "avg_wait_seconds": r["espera_media"],
+                "avg_service_seconds": r["atendimento_medio"],
+                "desistencias": r["desistencias"], "na_fila": r["na_fila"],
+                "hourly": m["por_hora"]}
 
     def dashboard_stats(self, alert_days: int = 5) -> dict[str, int]:
         today = date.today()

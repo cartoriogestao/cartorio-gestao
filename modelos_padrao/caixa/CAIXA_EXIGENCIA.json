@@ -1,0 +1,21 @@
+{
+  "chave": "CAIXA_EXIGENCIA",
+  "atribuicao": "Caixa e protocolo",
+  "nome": "Nota de exigência — protocolo geral",
+  "formato": "JINJA",
+  "explica": "A nota que volta ao interessado quando o pedido não pode prosseguir: o que falta trazer ou fazer, o fundamento e o prazo. Serve às atribuições sem nota própria (Notas, Registro Civil, Protesto); o RI e o RCPJ/RTD têm as delas. O texto da exigência não leva nome de terceiros — ele pode subir ao portal do cliente.",
+  "campos": [
+    "aberto_em",
+    "data_extenso",
+    "documento",
+    "e",
+    "emitida_em",
+    "emitido_por",
+    "funcao",
+    "itens",
+    "nome_da_atribuicao",
+    "p",
+    "prazo_ate",
+    "sv"
+  ]
+}

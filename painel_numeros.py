@@ -174,7 +174,9 @@ def _receita(con, jan, desde: str, pct_ferj: int) -> dict:
 def _atendimento_periodos(con, jan, desde: str, ate: str) -> dict:
     """Senhas emitidas e espera média, por janela. A hora se calcula em
     Python (regra da casa: data e hora não se calculam no SQL)."""
-    from database import _segundos
+    # a conta mora em `senhas` desde o painel de senhas (PR #32), que a tirou
+    # do `database` junto com a fila
+    from senhas import _segundos
     bd = banco(con)
     total = {p: 0 for p in PERIODOS}
     prioridade = {p: 0 for p in PERIODOS}

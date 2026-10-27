@@ -906,7 +906,9 @@ def main(argv=None) -> int:
             achado = PUXAR.buscar_pendentes(con)
         if achado.get("ok"):
             with db.transaction() as con:
-                PUXAR.aplicar_itens(con, achado["itens"], agora=db.now())
+                aplicado = PUXAR.aplicar_itens(con, achado["itens"], agora=db.now())
+            with db.connect() as con:          # o ack depois de aplicar, fora da transação
+                PUXAR.confirmar(con, aplicado.get("ids"))
         r = rodada(db, pasta_de_dados=pasta)
         print(json.dumps({"puxar": {k: v for k, v in achado.items() if k != "itens"},
                           "atendente": r}, ensure_ascii=False))

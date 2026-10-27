@@ -3,6 +3,11 @@
 {% block heading %}<h1>Reconhecer firma</h1>{% endblock %}
 {% block content %}
 {% set aqui = 'reconhecer' %}
+{# A LEITURA DO CRV/ATPV POR IA — 26/10/2026. Ela preenche os dados do veículo
+   como RASCUNHO e põe o nome de quem vende na busca do cartão; gravar exige a
+   caixa «conferi com o original». #}
+{% import '_leitura_notas.html' as LNT with context %}
+{% set pre = ((leitura.sugestao or {}).campos or {}) if leitura else {} %}
 {# cg-notas-nav-duplicata: abas internas já marcam a seção; suaviza item duplicado no menu lateral #}
 <style>
 body[data-notas-firma-aqui="reconhecer"] .sidebar a[href$="/notas/reconhecimento"],
@@ -43,8 +48,12 @@ body[data-notas-firma-aqui="reconhecer"] .sidebar a[href*="/notas/reconhecimento
 <form class="filters" method="get">
   <input name="busca" value="{{ busca }}" size="42" autofocus
          placeholder="Nome ou CPF de quem assinou — mínimo três letras">
+  {# a leitura acompanha a nova busca #}{% if leitura %}<input type="hidden" name="leitura_id" value="{{ leitura.id }}">{% endif %}
   <button class="primary">Procurar cartão</button>
 </form>
+
+{{ LNT.botao('RECONHECIMENTO', 'Firma em documento de veículo? Ler o CRV ou o ATPV por IA e preencher os dados do veículo', 'CRV ou ATPV, frente e verso') }}
+{{ LNT.quadro(leitura) }}
 
 {% if busca and not achados %}
 <div class="notice warning">
@@ -56,6 +65,7 @@ body[data-notas-firma-aqui="reconhecer"] .sidebar a[href*="/notas/reconhecimento
 {% if achados %}
 <form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="busca" value="{{ busca }}">
   <section class="panel">
     <div class="panel-head"><span>Confira a assinatura e marque quem está reconhecendo</span>
       <span class="small muted">Clique na assinatura para ampliar — as setas passam
@@ -92,19 +102,19 @@ body[data-notas-firma-aqui="reconhecer"] .sidebar a[href*="/notas/reconhecimento
     <div class="grid2" style="padding:14px">
       <label>Espécie
         <select name="especie">
-          {% for k, rot in ESPECIES.items() %}<option value="{{ k }}">{{ rot }}</option>{% endfor %}
+          {% for k, rot in ESPECIES.items() %}<option value="{{ k }}"{% if pre.especie == k %} selected{% endif %}>{{ rot }}</option>{% endfor %}
         </select></label>
       <label>Tipo do documento <input name="documento_tipo" placeholder="contrato, requerimento, DUT..."></label>
-      <label class="span2">Descrição do documento <input name="documento_descricao"></label>
-      <label class="check"><input type="checkbox" name="veiculo" value="1"> Documento de veículo (item 13.17.3)</label>
+      <label class="span2">Descrição do documento{{ LNT.duvida(leitura, 'documento_descricao') }} <input name="documento_descricao" value="{{ pre.documento_descricao or '' }}"></label>
+      <label class="check"><input type="checkbox" name="veiculo" value="1"{% if pre.veiculo %} checked{% endif %}> Documento de veículo (item 13.17.3)</label>
       <label class="check"><input type="checkbox" name="financeiro" value="1"> Conteúdo financeiro (item 13.17.4)</label>
       <label>Qual documento de veículo
         <select name="veiculo_documento">
-          {% for k, rot in DOCUMENTOS_DE_VEICULO.items() %}<option value="{{ k }}">{{ rot }}</option>{% endfor %}
+          {% for k, rot in DOCUMENTOS_DE_VEICULO.items() %}<option value="{{ k }}"{% if pre.veiculo_documento == k %} selected{% endif %}>{{ rot }}</option>{% endfor %}
         </select>
         <small>Transferência (CRV, DUT, ATPV ou procuração para esse fim) só por
           autenticidade — Código de Normas, art. 865, II.</small></label>
-      <label>Placa <input name="veiculo_placa" size="10"></label>
+      <label>Placa{{ LNT.duvida(leitura, 'veiculo_placa') }} <input name="veiculo_placa" size="10" value="{{ pre.veiculo_placa or '' }}"></label>
       <label class="check"><input type="checkbox" name="sinal_publico" value="1"> Reconhecer também o sinal público</label>
       {# O PROTOCOLO PAGO — 22/10/2026. O selo pago só sai com o item pago do
          protocolo que você atende; aqui ele se escolhe, sem ir a «Selo e caixa». #}
@@ -114,6 +124,7 @@ body[data-notas-firma-aqui="reconhecer"] .sidebar a[href*="/notas/reconhecimento
       </div>
       <label class="span2 check"><input type="checkbox" name="confirmar_bloqueio" value="1">
         Ciente de cartão bloqueado, reconheço assim mesmo</label>
+      {{ LNT.conferencia(leitura) }}
       <div class="span2">
         <button class="primary" name="acao" value="reconhecer">Reconhecer</button>
         <span class="small muted">O emolumento sai da tabela do tribunal; se o selo falhar, o ato não é lavrado e a tela informa o motivo.</span>

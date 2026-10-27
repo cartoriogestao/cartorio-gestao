@@ -111,8 +111,14 @@ def _semear(db) -> None:
             "primeiro_visto_em, ultimo_visto_em) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             ("TESTE:1", "TESTE", "VENCIDO", "RI_QUALIFICACAO",
              f"Prenotação de {NOME_DO_CLIENTE}", agora, agora))
-    db.create_ticket(True, "Certidão")
-    db.create_ticket(False, "Firma")
+        # duas senhas do balcão, direto na tabela: o painel de senhas (PR #32)
+        # tira `Database.create_ticket` e passa a emitir por `senhas.emitir`;
+        # a tabela e estas colunas são as mesmas nos dois.
+        for numero, preferencial, tipo in ((1, 1, "Certidão"), (2, 0, "Firma")):
+            bd.escrever(
+                "INSERT INTO service_tickets(ticket_no, ticket_date, priority, "
+                "service_type, status, created_at) VALUES (%s,%s,%s,%s,'AGUARDANDO',%s)",
+                (numero, hoje, preferencial, tipo, agora))
 
 
 def _todos_os_textos(obj) -> list[str]:

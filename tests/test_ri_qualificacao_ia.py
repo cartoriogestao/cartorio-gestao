@@ -481,7 +481,9 @@ def test_titulo_em_ordem_leva_a_fundamentacao_a_positiva_e_a_rota_de_sempre_liga
     con.close()
     tela = casa["c"].get(f"/registro-imoveis/protocolo/{pid}?qualificacao={pedido}"
                          ).get_data(as_text=True)
-    caixa = re.search(r'<textarea name="fundamentacao"[^>]*>(.*?)</textarea>', tela, re.S).group(1)
+    # a do formulário da positiva: a tela tem outra «fundamentacao» antes dela
+    caixa = re.search(r'id="qualificar-positiva".*?<textarea name="fundamentacao"[^>]*>(.*?)</textarea>',
+                      tela, re.S).group(1)
     assert f"qualificação assistida nº {pedido}" in caixa
     assert "o imóvel do título é o desta matrícula" in caixa
     assert f'name="qualificacao_ia_id" value="{pedido}"' in tela
@@ -695,8 +697,8 @@ def test_todo_humano_que_pratica_ato_pede_a_qualificacao(casa, monkeypatch, pape
     pedido = _pedir_e_executar(casa, pid, [escritura, itbi], IA())
     pagina = c.get(f"/registro-imoveis/qualificacao-ia/{pedido}").get_data(as_text=True)
     assert "Levar para a nota devolutiva" in pagina
-    # e pede uma qualificação nova pela tela da nota
-    html = c.get(f"/registro-imoveis/protocolo/{pid}/nota").get_data(as_text=True)
+    # e pede uma qualificação nova pela tela do protocolo (o quadro mora lá)
+    html = c.get(f"/registro-imoveis/protocolo/{pid}").get_data(as_text=True)
     assert "Pedir a qualificação assistida" in html
     r = c.post(f"/registro-imoveis/protocolo/{pid}/qualificacao-ia/pedir", data={
         "csrf_token": _token(html), "anexo": [str(escritura), str(itbi)],

@@ -12,6 +12,8 @@
 !.env.example
 *.cred
 *.cred.*
+# A chave pública de atualização é da INSTALAÇÃO (27/10/2026): nunca no git.
+chaves_de_atualizacao.json
 *.pem
 *.pfx
 *.p12

@@ -8,8 +8,15 @@ aparece na tela, não vai a arquivo nenhum e não passa por ninguém.
 
 `gerar` cria o par de chaves: a PRIVADA vai, cifrada pela senha, para o arquivo
 de `--saida` (o ideal é um pendrive guardado com o oficial); a PÚBLICA é
-impressa na tela, para ser cadastrada em
-`assinatura_da_atualizacao.CHAVES_CONFIAVEIS` — ela não é segredo.
+impressa na tela — ela não é segredo — e, com `--instalacao <pasta do
+programa>`, gravada no arquivo de chaves daquela instalação
+(`chaves_de_atualizacao.json`), que é o que ela passa a aceitar.
+
+    python tools\\chave_de_atualizacao.py cadastrar --chave E:\\chave_cartorio.pem ^
+        --instalacao "C:\\Program Files\\CartorioGestao"
+
+`cadastrar` faz só a segunda metade, para uma chave que já existe (outra
+máquina, ou instalação nova da mesma serventia).
 
 RECUSA gravar a chave privada dentro das árvores do projeto ou da pasta de
 dados do sistema: as duas viajam (git, pacote, backup), e a chave que viaja
@@ -95,8 +102,13 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="acao", required=True)
     g = sub.add_parser("gerar", help="cria a chave do oficial")
     g.add_argument("--saida", required=True, type=Path)
+    g.add_argument("--instalacao", type=Path,
+                   help="pasta do programa instalado: grava ali a parte pública")
     m = sub.add_parser("mostrar", help="mostra a parte pública de uma chave")
     m.add_argument("--chave", required=True, type=Path)
+    c = sub.add_parser("cadastrar", help="grava a parte pública numa instalação")
+    c.add_argument("--chave", required=True, type=Path)
+    c.add_argument("--instalacao", required=True, type=Path)
     a = ap.parse_args(argv)
 
     if a.acao == "gerar":
@@ -112,9 +124,16 @@ def main(argv: list[str] | None = None) -> int:
         import base64
         crua = ASS.publica_crua(privada)
         chave_id, publica = ASS.id_da_chave(crua), base64.b64encode(crua).decode("ascii")
-    print("\nA parte PÚBLICA (não é segredo) — cadastre esta linha em "
-          "assinatura_da_atualizacao.CHAVES_CONFIAVEIS:")
-    print(f'    "{chave_id}": "{publica}",')
+    print(f"\nA parte PÚBLICA (não é segredo): {chave_id} = {publica}")
+    instalacao = getattr(a, "instalacao", None)
+    if instalacao:
+        arquivo = ASS.gravar_chave_na_instalacao(
+            chave_id, publica, Path(instalacao) / ASS.ARQUIVO_DAS_CHAVES.name)
+        print(f"Cadastrada em {arquivo} — esta instalação passa a aceitar os "
+              f"pacotes assinados por esta chave.")
+    else:
+        print("Para a instalação aceitá-la, rode de novo com --instalacao "
+              "<pasta do programa> (ou use `cadastrar`).")
     return 0
 
 

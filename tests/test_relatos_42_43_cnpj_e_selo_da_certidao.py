@@ -258,9 +258,14 @@ def test_a_rota_da_certidao_do_RI_CHAMA_o_selo_automatico():
     fonte = (RAIZ / "ri_web.py").read_text(encoding="utf-8")
     trecho = fonte[fonte.index("def ri_emitir_certidao"):]
     trecho = trecho[:trecho.index("def ri_certidao_odt")]
-    assert "envelope_da_certidao_do_ri" in trecho
-    assert 'tabela="ri_certidoes"' in trecho
-    assert "selar_o_ato_lavrado" in trecho
+    # A rota pede os selos por uma auxiliar só, a mesma do «Selar depois»
+    # (`ri_certidao_selar`): é nela que o envelope se monta e o selador é chamado.
+    assert "_pedir_os_selos_da_certidao_do_ri(" in trecho
+    auxiliar = fonte[fonte.index("def _pedir_os_selos_da_certidao_do_ri"):]
+    auxiliar = auxiliar[:auxiliar.index("@app.route")]
+    assert "envelope_da_certidao_do_ri" in auxiliar
+    assert 'tabela="ri_certidoes"' in auxiliar
+    assert "selar_o_ato_lavrado" in auxiliar
 
 
 def test_SELAR_NAO_DERRUBA_a_certidao_que_ja_existe(s):

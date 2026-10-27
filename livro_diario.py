@@ -29,6 +29,11 @@ A RECEITA SAI DO SELO, E NÃO DO CAIXA
     sistema não sabe: a tela diz quantos houve. Selo do ambiente de
     homologação não é ato praticado e não entra.
 
+    O FERJ (art. 190, I, k) é a exceção: ele não está no selo, porque não é
+    cobrado por cima — são 12% que saem de DENTRO do emolumento e a serventia
+    recolhe por guia. A coluna dele se calcula do emolumento de cada ato, com o
+    percentual configurado (`custas.percentual_ferj`), e não mexe na receita.
+
 A DESPESA SE LANÇA AQUI
     No dia do efetivo pagamento, com descrição detalhada, espécie e número do
     documento e valor (art. 190, II). Não se edita nem se apaga: despesa
@@ -64,6 +69,7 @@ import re
 from datetime import date
 from typing import Any
 
+import custas
 import selo as SL
 from bd_nativo import banco
 from caixa_schema import centavos, reais
@@ -72,16 +78,26 @@ from caixa_schema import centavos, reais
 from gestor_financeiro import _ATRIB_DO_SELO as ESPECIALIDADE_DO_SELO
 from ri_schema import soma_dias_uteis
 
-# Os fundos na ordem do selo. O FERC do selo é o FERJ do art. 190, I, k
-# («Fundo Especial de Modernização e Reaparelhamento do Judiciário»,
-# `atribuicoes.FUNDOS`); o ISS só aparece quando o selo o declara.
-FUNDOS: tuple[tuple[str, str], ...] = (
-    ("FERC", "FERJ (FERC no selo)"),
+# Os fundos que o SELO declara, na ordem dele; o ISS só aparece quando o selo
+# o declara.
+FUNDOS_DO_SELO: tuple[tuple[str, str], ...] = (
+    ("FERC", "FERC"),
     ("FADP", "FADEP"),
     ("FEMP", "FEMP"),
     ("FERRFIS", "FERRFIS"),
     ("ISS", "ISSQN"),
 )
+
+# O FERJ DO ART. 190, I, k, NÃO É O FERC — correção do oficial em 25/10/2026:
+# «ferj e ferc são diferentes. ferj é uns 12%, ferc é 3%, mas não abate dos
+# emolumentos». Até aqui a coluna do FERC se chamava «FERJ (FERC no selo)», e
+# o comentário dizia que os dois eram o mesmo fundo. Não são: o FERC são os 3%
+# cobrados por cima do emolumento, que o selo declara; o FERJ é a taxa de
+# fiscalização de 12% que sai de DENTRO do emolumento, e o selo não o traz.
+# Por isso ele não se lê: se calcula, ato por ato, com a régua de `custas`
+# (a mesma da NFS-e), e o percentual usado vai gravado no livro.
+FERJ = "FERJ"
+FUNDOS: tuple[tuple[str, str], ...] = ((FERJ, "FERJ"),) + FUNDOS_DO_SELO
 
 NORMAL, ISENTO, DIFERIDO = "Normal", "Isento", "Diferido"
 
@@ -289,12 +305,16 @@ def _descricoes(bd) -> dict[str, str]:
     return saida
 
 
-def receitas_do_mes(con, comp: str) -> list[dict]:
-    """Um selo usado no mês por linha, com o que ele declara. Só LÊ."""
+def receitas_do_mes(con, comp: str, pct_ferj: int | None = None) -> list[dict]:
+    """Um selo usado no mês por linha, com o que ele declara e o FERJ que sai
+    do emolumento dele (`pct_ferj` em centésimos de ponto; sem ele, o da
+    casa). Só LÊ."""
     inicio, fim = _limites(competencia(comp))
     bd = banco(con)
     if not bd.tem_tabela("sd_selos"):
         return []
+    if pct_ferj is None:
+        pct_ferj = custas.percentual_ferj_da_casa(bd)
     nomes = _descricoes(bd)
     saida = []
     for s in bd.ler(
@@ -321,7 +341,10 @@ def receitas_do_mes(con, comp: str) -> list[dict]:
             "selo": s["numero"],
             "referencia": referencia,
             "emolumentos": emol,
-            "fundos": {f: _cent(fundos.get(f)) for f, _ in FUNDOS},
+            # Selo sem valor não tem de onde tirar o FERJ: «—», e não zero.
+            "fundos": {FERJ: (None if emol is None
+                              else custas.ferj_do_emolumento(emol, pct_ferj)),
+                       **{f: _cent(fundos.get(f)) for f, _ in FUNDOS_DO_SELO}},
             "sem_valor": emol is None,
             # Receita é o emolumento do ato praticado e cobrado (art. 191).
             "receita": (emol or 0) if tipo == NORMAL else 0,
@@ -339,7 +362,8 @@ def apurar(con, comp: str) -> dict:
     O resultado é JSON puro (texto e inteiro): é ele que a geração grava.
     """
     comp = competencia(comp)
-    receitas = receitas_do_mes(con, comp)
+    pct_ferj = custas.percentual_ferj_da_casa(con)
+    receitas = receitas_do_mes(con, comp, pct_ferj)
     despesas = [{"dia": d["data"], "id": int(d["id"]), "descricao": d["descricao"],
                  "documento": " ".join(x for x in (d["documento_especie"],
                                                    d["documento_numero"]) if x),
@@ -385,6 +409,9 @@ def apurar(con, comp: str) -> dict:
         "diferidos": sum(1 for r in receitas if r["tipo"] == DIFERIDO),
         "sem_valor": sum(1 for r in receitas if r["sem_valor"]),
         "fundos": acumulados_fundos,
+        # O percentual com que a coluna do FERJ foi calculada, em centésimos
+        # de ponto: a fotografia gerada diz com que régua saiu.
+        "ferj_percentual": pct_ferj,
         "receita_bruta": acumulada_receita,
         "despesas": acumulada_despesa,
         "receita_liquida": acumulada_receita - acumulada_despesa,
@@ -394,6 +421,24 @@ def apurar(con, comp: str) -> dict:
 def _hash(conteudo: dict) -> str:
     texto = json.dumps(conteudo, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(texto.encode("utf-8")).hexdigest()
+
+
+def _sem_ferj(conteudo: dict) -> dict:
+    """A apuração na forma de antes da coluna do FERJ (25/10/2026): sem o
+    percentual e sem a chave FERJ nos fundos. Só calcula, sobre uma cópia.
+
+    Serve para uma pergunta só: o livro gerado antes da correção confere com
+    o movimento de hoje? O hash dele foi tirado sem o FERJ, e comparar com a
+    apuração nova acusaria «o movimento mudou» num mês em que nada mudou."""
+    velho = json.loads(json.dumps(conteudo))
+    velho.pop("ferj_percentual", None)
+    velho["fundos"].pop(FERJ, None)
+    for dia in velho["dias"]:
+        dia["fundos_dia"].pop(FERJ, None)
+        dia["fundos_acumulados"].pop(FERJ, None)
+        for r in dia["receitas"]:
+            r["fundos"].pop(FERJ, None)
+    return velho
 
 
 # ---------------------------------------------------------------- geração
@@ -463,7 +508,15 @@ def situacao_do_mes(con, comp: str, *, hoje: str,
     versoes = geracoes(con, comp)
     primeira = versoes[-1] if versoes else None
     ultima = versoes[0] if versoes else None
-    mudou = bool(ultima) and _hash(apurar(con, comp)) != ultima["hash"]
+    mudou = antes_do_ferj = False
+    if ultima:
+        atual = apurar(con, comp)
+        if _hash(atual) != ultima["hash"]:
+            # Gerado antes da coluna do FERJ e com o mesmo movimento: não é
+            # movimento que mudou, é o livro que saiu com a coluna errada (o
+            # FERC sob o rótulo do FERJ). Retificar é decisão do oficial.
+            antes_do_ferj = _hash(_sem_ferj(atual)) == ultima["hash"]
+            mudou = not antes_do_ferj
     return {
         "competencia": comp,
         "prazo": prazo.isoformat(),
@@ -473,6 +526,7 @@ def situacao_do_mes(con, comp: str, *, hoje: str,
         "no_prazo": bool(primeira) and str(primeira["gerado_em"])[:10] <= prazo.isoformat(),
         "atrasado": not versoes and comp < str(hoje)[:7] and str(hoje)[:10] > prazo.isoformat(),
         "movimento_mudou": mudou,
+        "gerado_antes_do_ferj": antes_do_ferj,
     }
 
 

@@ -9,6 +9,7 @@
 <div class="actions">
   <a class="button" href="{{ url_for('caixa') }}">&larr; Caixa</a>
   {% if papel == 'ADMIN' %}<a class="button" href="{{ url_for('nfse_gestor') }}">Configuração (Gestor)</a>{% endif %}
+  {% if papel in ('ADMIN', 'MANAGER', 'AUDITOR') %}<a class="button" href="{{ url_for('nfse_apuracao') }}">Apuração do ISS do mês</a>{% endif %}
 </div>
 
 <div class="notice">

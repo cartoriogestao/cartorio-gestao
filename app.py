@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import io
 import hashlib
 import hmac
@@ -715,10 +714,17 @@ def create_app(test_config: dict | None = None) -> Flask:
             # abria usuários, atualizações, backup e caixa. A lista das rotas
             # vedadas mora em `selo_robo.ROTAS_VEDADAS_AO_ROBO`, ao lado da
             # regra que já dizia que robô não sela.
+            #
+            # E DESDE 26/10/2026 A RÉGUA É FECHADA (revisão de segurança dos
+            # PRs abertos, achado transversal 1): a lista de vedadas não pegava
+            # rota nova, e cinco PRs traziam rotas que o robô alcançaria sem
+            # ninguém ter decidido. Agora o robô só entra no que está em
+            # `rotas_do_robo.ROTAS_PERMITIDAS_AO_ROBO`; o resto é 403. As
+            # vedadas continuam por cima — vedada vence permitida.
             import selo_robo as SR
             _quem = current_user()
             if _quem is not None and SR.usuario_e_robo(_quem) and \
-                    SR.rota_vedada_ao_robo(request.endpoint):
+                    not SR.rota_permitida_ao_robo(request.endpoint):
                 abort(403)
         # Isentas do token de formulário: quem as chama não tem a sessão, e
         # cada uma se autentica por conta própria — o webhook pela assinatura
@@ -2128,12 +2134,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         return render_template("reports.html", stats=stats, tasks=tasks_rows, expedientes=exp_rows, service_metrics=service_metrics)
 
     def csv_response(filename: str, headers: list[str], rows: list[list[object]]):
-        output = io.StringIO()
-        writer = csv.writer(output, delimiter=";")
-        writer.writerow(headers)
-        writer.writerows(rows)
-        data = "\ufeff" + output.getvalue()
-        return Response(data, mimetype="text/csv; charset=utf-8", headers={"Content-Disposition": f"attachment; filename={filename}"})
+        # A PLANILHA NÃO LEVA FÓRMULA (revisão de segurança de 26/10/2026,
+        # achado transversal 2): todo CSV da casa sai por `csv_seguro`, que põe
+        # cada campo entre aspas e neutraliza o texto que começa com = + - @.
+        import csv_seguro as CSVS
+        return CSVS.resposta(filename, headers, rows)
 
     @app.route("/relatorios/tarefas.csv")
     @login_required

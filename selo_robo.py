@@ -164,3 +164,15 @@ def _usuario_da_sessao():
     except Exception:
         return None
     return None
+
+
+# O ACOMPANHAMENTO REGISTRAL DO ONR É CLIQUE DE GENTE (revisão de segurança de
+# 26/10/2026, PR #21). Enviar a fila ao ONR — que avisa o apresentante por
+# e-mail e SMS —, ligar o envio e descartar pendente são decisões de quem
+# responde pela casa; a credencial do robô mora num script. O prefixo veda
+# também a tela de leitura (`onr_acompanhamento`), o que a revisão aceitou: o
+# robô não tem o que fazer nela. Quando a automação chamar o envio, chama
+# `onr_acompanhamento.enviar_pendentes` por dentro, e não pela rota. Em linha
+# própria, e não dentro da tupla, para não colidir com os acréscimos dos PRs
+# #22 e #30 quando os três forem juntados.
+ROTAS_VEDADAS_AO_ROBO += ("onr_acompanhamento",)

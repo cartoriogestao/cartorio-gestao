@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}Despesas — relatório do mês{% endblock %}
+{% block heading %}<h1>Despesas pagas em {{ mes }}</h1>{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button" href="{{ url_for('despesas_lista') }}">&larr; Despesas</a>
+  <a class="button" href="{{ url_for('despesas_relatorio', mes=mes, formato='csv') }}">Baixar em CSV (contabilidade)</a>
+  <a class="button" href="{{ url_for('livro_diario', mes=mes) }}">Livro Diário do mês</a>
+</div>
+<form method="get" class="filters"><label>Mês <input type="month" name="mes" value="{{ mes }}"></label><button type="submit">Ver</button></form>
+
+<section class="panel">
+  <p>Despesas: <strong>R$ {{ reais(rel.total['DESPESA']) }}</strong> · Repasses de fundo (fora do Livro Diário): R$ {{ reais(rel.total['REPASSE_DE_FUNDO']) }}</p>
+  {% if rel.por_categoria %}<ul>{% for c, v in rel.por_categoria %}<li>{{ categorias[c][0] if c in categorias else c }}: R$ {{ reais(v) }}</li>{% endfor %}</ul>{% endif %}
+  {% if rel.linhas %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Pagamento</th><th>Natureza</th><th>Descrição</th><th>Favorecido</th><th>Documento</th><th>Valor</th></tr></thead>
+    <tbody>{% for d in rel.linhas %}<tr><td>{{ d.paga_em }}</td><td>{{ 'Repasse' if d.natureza == 'REPASSE_DE_FUNDO' else 'Despesa' }}</td>
+      <td>{{ d.descricao }}</td><td>{{ d.beneficiario_nome }}</td><td>{{ d.documento_especie }} {{ d.documento_numero }}</td><td>R$ {{ reais(d.valor) }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="muted">Nada pago e conferido neste mês.</p>{% endif %}
+  {% if rel.a_conferir %}<p class="small">{{ rel.a_conferir|length }} pagamento(s) enviado(s) ao banco ainda sem o débito no extrato — não entram aqui até a conferência.</p>{% endif %}
+</section>
+
+<section class="panel"><h2>Para o SIAFERJ-WEB</h2>
+  <p class="small">O SIAFERJ-WEB do TJMA não tem importação por arquivo nem API publicada: o lançamento é na tela,
+    até o dia 10 do mês seguinte (Res.-GP 74/2023). Estas são as linhas na ordem do pagamento, nas colunas do
+    art. 190, II, do Código de Normas. Repasse de fundo não entra.</p>
+  {% if siaferj %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Data do pagamento</th><th>Descrição</th><th>Documento (espécie e número)</th><th>Valor (R$)</th></tr></thead>
+    <tbody>{% for l in siaferj %}<tr><td>{{ l.data }}</td><td>{{ l.descricao }}</td><td>{{ l.documento }}</td><td>{{ l.valor }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="muted">Nenhuma despesa a lançar.</p>{% endif %}
+</section>
+{% endblock %}

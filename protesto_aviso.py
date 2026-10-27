@@ -818,6 +818,127 @@ def editais_do_dia(con: sqlite3.Connection, dia: str) -> list[dict]:
             WHERE e.publicado_em = %s ORDER BY e.numero, e.id""", (str(dia)[:10],))]
 
 
+# ------------------------------- o comprovante do envio do edital à CENPROT
+#
+# PEDIDO DO OFICIAL, 26/10/2026 (problema #142): «vamos criar um campo para
+# anexar o comprovante de envio do edital». O CN-MA art. 922, § 1º, manda
+# AFIXAR e PUBLICAR no site da CENPROT; a API dela não tem consulta de edital,
+# e o arquivo do dia sobe pelo portal. A prova de que subiu é o comprovante
+# (a tela do portal, salva em PDF ou imagem), e até aqui ela não tinha lugar.
+#
+# O ARQUIVO É UM POR DIA, e o comprovante vai para CADA edital daquele dia —
+# uma linha em `attachments` por edital, apontando para o mesmo arquivo em
+# disco. É assim que a pergunta da correição («este edital foi publicado na
+# CENPROT?») se responde edital a edital, e que o dia sem comprovante aparece.
+ENTIDADE_DO_ENVIO_DO_EDITAL = "PT_EDITAL_CENPROT"
+DIAS_DO_QUADRO_DE_ENVIO = 30
+
+
+def envios_do_edital(con: sqlite3.Connection, hoje: str,
+                     dias: int = DIAS_DO_QUADRO_DE_ENVIO) -> list[dict]:
+    """Os dias com edital publicado, e se o envio à CENPROT tem comprovante.
+    Só LÊ. O mais recente primeiro; os dias sem comprovante, no alto."""
+    from datetime import date as _date, timedelta as _td
+    desde = (_date.fromisoformat(str(hoje)[:10]) - _td(days=int(dias))).isoformat()
+    bd = banco(con)
+    linhas = bd.ler(
+        """SELECT e.publicado_em AS dia, COUNT(*) AS editais,
+                  SUM(CASE WHEN EXISTS (
+                        SELECT 1 FROM attachments a
+                         WHERE a.entity_type = %s AND a.entity_id = e.id)
+                      THEN 1 ELSE 0 END) AS com_comprovante
+             FROM pt_editais e
+            WHERE e.publicado_em >= %s
+            GROUP BY e.publicado_em
+            ORDER BY e.publicado_em DESC""",
+        (ENTIDADE_DO_ENVIO_DO_EDITAL, desde))
+    saida = []
+    for r in linhas:
+        d = {"dia": str(r["dia"])[:10], "editais": int(r["editais"]),
+             "com_comprovante": int(r["com_comprovante"] or 0)}
+        d["completo"] = d["com_comprovante"] == d["editais"]
+        d["anexos"] = [dict(a) for a in bd.ler(
+            """SELECT MIN(a.id) AS id, a.original_name, MIN(a.uploaded_at) AS uploaded_at
+                 FROM attachments a JOIN pt_editais e ON e.id = a.entity_id
+                WHERE a.entity_type = %s AND e.publicado_em = %s
+                GROUP BY a.sha256, a.original_name ORDER BY MIN(a.id)""",
+            (ENTIDADE_DO_ENVIO_DO_EDITAL, d["dia"]))]
+        saida.append(d)
+    # A consulta já vem do mais recente; a ordenação é estável, então os dias
+    # sem comprovante sobem sem perder essa ordem.
+    saida.sort(key=lambda d: d["completo"])
+    return saida
+
+
+def guardar_comprovante_do_envio(con: sqlite3.Connection, dia: str, *,
+                                 nome: Any, conteudo: bytes,
+                                 pasta_de_arquivos: Any, agora: str,
+                                 usuario_id: int | None = None) -> dict:
+    """Anexa a cada edital do dia o comprovante do envio à CENPROT. ESCREVE,
+    e grava o arquivo em disco uma vez.
+
+    Recusa o dia sem edital publicado (o comprovante afirmaria o envio de
+    nada), o arquivo que não é PDF/PNG/JPG de verdade e o mesmo arquivo
+    duas vezes. Não sobrescreve: um segundo comprovante é outro anexo.
+    """
+    dia = str(dia or "")[:10]
+    bd = banco(con)
+    editais = [int(r["id"]) for r in bd.ler(
+        "SELECT id FROM pt_editais WHERE publicado_em = %s ORDER BY id", (dia,))]
+    if not editais:
+        raise AvisoError(
+            f"Nenhum edital foi publicado em {dia}. O comprovante é do envio "
+            f"do arquivo dos editais do dia — publique o edital primeiro.")
+    nome_limpo = Path(str(nome or "")).name.strip()
+    ext = Path(nome_limpo).suffix.lower()
+    if ext not in ASSINATURA_DO_COMPROVANTE:
+        raise AvisoError(
+            "O comprovante tem de ser PDF, PNG ou JPG — a tela do portal da "
+            "CENPROT salva em PDF, ou uma captura dela.")
+    conteudo = bytes(conteudo or b"")
+    if not conteudo:
+        raise AvisoError("O arquivo do comprovante está vazio.")
+    if len(conteudo) > LIMITE_DO_COMPROVANTE:
+        raise AvisoError(
+            f"O comprovante passa de "
+            f"{LIMITE_DO_COMPROVANTE // 1024 // 1024} MB.")
+    if not conteudo.startswith(ASSINATURA_DO_COMPROVANTE[ext]):
+        raise AvisoError(
+            f"O arquivo diz ser {ext} e não é — o conteúdo não começa como um "
+            f"{ext[1:].upper()}. Salve de novo e anexe.")
+    sha = hashlib.sha256(conteudo).hexdigest()
+    ja = {int(r["entity_id"]) for r in bd.ler(
+        """SELECT entity_id FROM attachments
+            WHERE entity_type = %s AND sha256 = %s""",
+        (ENTIDADE_DO_ENVIO_DO_EDITAL, sha))}
+    faltam = [e for e in editais if e not in ja]
+    if not faltam:
+        raise AvisoError(
+            f"Este arquivo já está anexado aos editais de {dia}.")
+
+    destino = Path(pasta_de_arquivos) / "Protesto" / "Editais" / "CENPROT"
+    destino.mkdir(parents=True, exist_ok=True)
+    n = 1
+    arquivo = destino / f"envio-edital-{dia}-{n}{ext}"
+    while arquivo.exists():
+        n += 1
+        arquivo = destino / f"envio-edital-{dia}-{n}{ext}"
+    arquivo.write_bytes(conteudo)
+    anexos = []
+    for edital_id in faltam:
+        anexos.append(int(bd.escrever(
+            """INSERT INTO attachments(entity_type, entity_id, original_name,
+                   stored_name, stored_path, sha256, size_bytes, description,
+                   uploaded_by, uploaded_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+            (ENTIDADE_DO_ENVIO_DO_EDITAL, edital_id, nome_limpo or arquivo.name,
+             arquivo.name, str(arquivo), sha, len(conteudo),
+             f"Comprovante do envio à CENPROT dos editais de {dia}",
+             usuario_id, agora))[0]["id"]))
+    return {"dia": dia, "editais": len(faltam), "anexos": anexos,
+            "nome": arquivo.name}
+
+
 def edital(con: sqlite3.Connection, edital_id: int) -> dict | None:
     """O edital, com o teor congelado. So LE."""
     return banco(con).um("SELECT * FROM pt_editais WHERE id=%s",

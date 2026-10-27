@@ -60,6 +60,9 @@ FICA_NA_PASTA_DO_BANCO = frozenset({
 PASTAS_DA_PASTA_DO_BANCO = frozenset({
     "arquivos", "runtime", "updates", "libreoffice_perfil", "logs", "crc_selecoes",
     "importacoes_pendentes", "backups_patch", "programas_onr", "$Temp",
+    # A AUTOMAÇÃO (24/10/2026): o cofre (cifrado com a senha-mestra, com o
+    # canal do guardião) e os lançadores que o instalador gera.
+    "cofre_automacao", "automacao_instalador",
 })
 
 

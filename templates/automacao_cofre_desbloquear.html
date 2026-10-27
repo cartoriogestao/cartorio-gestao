@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block title %}Automação — desbloquear o cofre{% endblock %}
+{% block heading %}<h1>Desbloquear o cofre da automação</h1>{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('automacao_cofre') }}">← o cofre</a></p>
+<section class="panel">
+  {% if not estado.guardiao %}
+    <p><span class="badge critica">guardião parado</span> O guardião do cofre não está rodando nesta máquina. Ele é
+      iniciado no logon (veja o instalador da automação); sem ele não há onde guardar a chave.</p>
+  {% elif estado.aberto %}
+    <p><span class="badge ok">aberto</span> O cofre já está aberto, desde {{ (estado.desde or '')[:16]|replace('T', ' ') }}.</p>
+  {% else %}
+    <p class="small">A senha-mestra vai direto para o guardião, que guarda a chave só na memória. Ela não é gravada
+      em lugar nenhum — nem na auditoria. Cinco senhas erradas seguidas bloqueiam novas tentativas por 15 minutos.</p>
+    <form method="post" action="{{ url_for('automacao_cofre_desbloquear') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Senha-mestra <input type="password" name="senha" required autocomplete="off"></label>
+      {% if not estado.existe %}<label>Repita (o cofre ainda não existe e será criado com esta senha)
+        <input type="password" name="confirmacao" required autocomplete="off"></label>{% endif %}
+      <button class="button primary" type="submit">{{ 'Criar o cofre' if not estado.existe else 'Desbloquear' }}</button>
+    </form>
+  {% endif %}
+</section>
+{% endblock %}

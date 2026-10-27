@@ -56,9 +56,13 @@ LEMBRETE_FEDERAL = (
 
 # OS TRANSPORTES — os dois únicos lugares do sistema que falam com provedor
 # de IA. `rascunhar` entra porque é a porta do `chamar_provedor` para a tela.
+# O TERCEIRO (26/10/2026): `wa_transcricao.transcrever`, a transcrição do áudio
+# do WhatsApp pela OpenAI — o único provedor da casa que recebe áudio. Ele grava
+# a própria linha de `ia_uso`, como os outros dois.
 TRANSPORTES = {
     "agente_provedores": ("conversar",),
     "robo_llm": ("chamar_provedor", "rascunhar"),
+    "wa_transcricao": ("transcrever",),
 }
 
 CHAVE_FORA_DO_BANCO = "agente.cred, na pasta de dados — fora do banco"
@@ -81,6 +85,12 @@ CHAVE_FORA_DO_BANCO = "agente.cred, na pasta de dados — fora do banco"
 #   - robôs: é a tela de TESTAR o robô, e não atendimento.
 # Quem confere é `ia_uso.passou_do_teto`, chamado ANTES da rede por quem chama
 # o transporte; passou, a chamada não sai e a tela diz o porquê.
+#
+# E DESDE 26/10/2026 QUEM TRAVA É O TRANSPORTE (achado transversal 3 da
+# revisão de segurança): `ia_uso.reservar` toma a vaga antes da rede, em
+# `agente_provedores.conversar` e em `robo_llm.chamar_provedor`, e a chamada
+# que falha a devolve. A conferência de quem chama ficou como cortesia — recusa
+# cedo, antes de abrir linha ou ler documento.
 CHAMADAS_POR_DIA = {
     "revisao_previa": 200,
     "ri_onus_ia": 100,
@@ -90,6 +100,18 @@ CHAMADAS_POR_DIA = {
     # os documentos inteiros — sessenta minutas e revisões por dia é mais do que
     # o balcão produz, e segura um laço que engasgue.
     "minuta_ia": 60,
+    # O ATENDENTE DO WHATSAPP (26/10/2026): uma chamada por conversa atendida
+    # (as mensagens seguidas do mesmo cliente vão juntas). Quatrocentas por dia
+    # é várias vezes o movimento do balcão; o que passar disso vai para pessoa.
+    "wa_atendente": 400,
+    # A TRANSCRIÇÃO: uma chamada por áudio.
+    "wa_audio": 200,
+    # A QUALIFICAÇÃO ASSISTIDA DO RI (26/10/2026): uma chamada ao Opus por
+    # pedido, com o título e o ITBI inteiros. VINTE POR DIA — decisão do oficial
+    # em 26/10/2026 (a proposta era 40). É o PADRÃO DE FÁBRICA: o ADMIN muda o
+    # número na configuração da qualificação assistida, com auditoria
+    # (`ri_qualificacao_ia.teto_do_dia`, `settings.qualificacao_ia_teto_dia`).
+    "ri_qualificacao_ia": 20,
 }
 
 # ------------------------------------------------------------------ o catálogo
@@ -317,6 +339,36 @@ CATALOGO: tuple[dict[str, Any], ...] = (
         "chave": CHAVE_FORA_DO_BANCO,
     },
     {
+        # 26/10/2026, o oficial: a IA cruza o título, a guia do ITBI e a
+        # matrícula e RASCUNHA a nota devolutiva, para o oficial revisar.
+        "codigo": "ri_qualificacao_ia",
+        "nome": "Qualificação assistida do RI (rascunho da nota devolutiva)",
+        "modulo": "ri_qualificacao_ia",
+        "onde": "quadro «Qualificação assistida» na tela da nota devolutiva da "
+                "prenotação (Registro de Imóveis)",
+        "finalidade": "cruzar o título apresentado, a guia ou certidão de ITBI e a "
+                      "matrícula e rascunhar as exigências, cada uma com fundamento "
+                      "e com o trecho do documento de onde saiu",
+        "inciso": "I",
+        "enquadramento": "análise — apoio à qualificação, que continua sendo do "
+                         "oficial; enquadramento a conferir",
+        "dado": "os documentos marcados da prenotação e do protocolo geral ligado, "
+                "inteiros (PDF e imagem), a ficha da matrícula com os atos e os "
+                "proprietários, a lista de conferência da espécie e as instruções",
+        "mascara": "não: documento digitalizado não se mascara (decisão do oficial "
+                   "de 12/10/2026, a mesma do agente de minutas)",
+        "mascarado": False,
+        "revisao_humana": "o resultado nasce como rascunho; a pessoa marca e edita as "
+                          "exigências, leva ao formulário da nota e emite pela rota "
+                          "de sempre; cada trecho citado é conferido letra por letra "
+                          "contra o texto do documento",
+        "nao_faz": "não decide a qualificação, não emite a nota devolutiva, não "
+                   "devolve o título e não muda a situação da prenotação",
+        "teto": ("ia_catalogo", "CHAMADAS_POR_DIA", "chamadas ao provedor por dia",
+                 "ri_qualificacao_ia"),
+        "chave": CHAVE_FORA_DO_BANCO,
+    },
+    {
         "codigo": "agente",
         "nome": "Agente do sistema",
         "modulo": "agente",
@@ -382,6 +434,62 @@ CATALOGO: tuple[dict[str, Any], ...] = (
         # A EXCEÇÃO, DITA EM VOZ ALTA: os robôs guardam a chave em
         # `robo_config`, dentro do banco — que vai no backup.
         "chave": "robo_config, DENTRO do banco (exceção à regra da casa)",
+    },
+)
+
+# O ATENDENTE DO WHATSAPP (26/10/2026) — entradas acrescentadas fora da tupla
+# para o diff ficar só nelas. Decisão do oficial de 26/10/2026: a IA responde
+# sozinha em quatro casos e passa o resto a uma pessoa (ver `wa_atendente`).
+CATALOGO = CATALOGO + (
+    {
+        "codigo": "wa_atendente",
+        "nome": "Atendente com IA do WhatsApp",
+        "modulo": "wa_atendente",
+        "onde": "fila do WhatsApp, com o interruptor «atendente ligado» (só o "
+                "ADMIN liga, e nasce desligado)",
+        "finalidade": "responder sozinho ao cliente dúvidas gerais pelo texto-base "
+                      "aprovado pelo oficial e escolher o item da lista de valores "
+                      "(o valor é calculado pela tabela da casa, como ESTIMATIVA); "
+                      "o andamento do protocolo é respondido pelo sistema, sem IA, "
+                      "depois da identificação por número e código",
+        "inciso": "IV",
+        "enquadramento": "atendimento, com escalonamento para pessoa",
+        "dado": "a mensagem do cliente, mascarada; o texto-base e a lista de "
+                "valores da casa",
+        "mascara": "sim (preparar_saida): mensagem em que a máscara acha dado "
+                   "pessoal (fora o nome) não sobe — passa para uma pessoa",
+        "mascarado": True,
+        "revisao_humana": "protesto, registro civil, dado pessoal, reclamação, "
+                          "pedido de pessoa e tudo o que a IA não sabe passam a uma "
+                          "pessoa, com a conversa marcada para o setor; a resposta "
+                          "que escreve número fora do texto-base não sai; cada "
+                          "resposta fica registrada (wa_ia_registro)",
+        "nao_faz": "não lavra, não numera, não sela, não cobra, não informa valor "
+                   "que não venha do cálculo da casa",
+        "teto": ("ia_catalogo", "CHAMADAS_POR_DIA", "chamadas ao provedor por dia",
+                 "wa_atendente"),
+        "chave": CHAVE_FORA_DO_BANCO,
+    },
+    {
+        "codigo": "wa_audio",
+        "nome": "Transcrição do áudio do WhatsApp",
+        "modulo": "wa_atendente",
+        "onde": "fila do WhatsApp, com o interruptor «transcrever áudio» (só o "
+                "ADMIN liga, e nasce desligado)",
+        "finalidade": "transcrever o áudio que o cliente manda, para o atendente "
+                      "e para quem atende",
+        "inciso": "II",
+        "enquadramento": "triagem de documentos (transcrição)",
+        "dado": "o áudio inteiro, como chegou da Meta",
+        "mascara": "não: áudio não se mascara; a transcrição passa pela máscara "
+                   "antes de ir ao modelo que responde",
+        "mascarado": False,
+        "revisao_humana": "a transcrição aparece na conversa ao lado da mensagem, "
+                          "para quem atende conferir; ela não vira ato",
+        "nao_faz": "não responde sozinha, não lavra, não cobra",
+        "teto": ("ia_catalogo", "CHAMADAS_POR_DIA", "chamadas ao provedor por dia",
+                 "wa_audio"),
+        "chave": CHAVE_FORA_DO_BANCO,
     },
 )
 

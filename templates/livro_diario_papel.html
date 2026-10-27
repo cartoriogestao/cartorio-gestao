@@ -34,7 +34,10 @@
 {% if g.motivo %}<p><strong>Retificação (art. 206):</strong> {{ g.motivo }}</p>{% endif %}
 {% if not g.integra %}<p class="alerta">A fotografia gravada não confere com o hash da geração: este livro foi alterado depois de gerado.</p>{% endif %}
 <p class="muted">Código de Normas do Foro Extrajudicial do MA (Prov. COGEX nº 28/2026), arts. 188, II, e 190 a 207.
-   Receita por ato lida do selo no dia de uso; fundos e imposto não são receita (art. 191). Hash {{ g.hash[:16] }}…</p>
+   Receita por ato lida do selo no dia de uso; fundos e imposto não são receita (art. 191).
+   {% if livro.ferj_percentual is defined %}FERJ (art. 190, I, k): {{ em_reais(livro.ferj_percentual) }}% de dentro do emolumento de cada ato.
+   {% else %}Versão gerada antes de 25/10/2026: sem a coluna do FERJ; a coluna do FERC saiu, nela, com o rótulo «FERJ (FERC no selo)».{% endif %}
+   Hash {{ g.hash[:16] }}…</p>
 
 {% for d in livro.dias %}
 <h2>{{ d.dia }}</h2>
@@ -46,7 +49,7 @@
   <tr><td>{{ r.especialidade }}</td><td>{{ r.ato or '—' }}{% if r.descricao %} — {{ r.descricao }}{% endif %}</td>
       <td>{{ r.selo }}</td><td>{{ r.tipo }}</td><td>{{ r.referencia or '—' }}</td>
       <td class="n">{{ em_reais(r.emolumentos) }}</td>
-      {% for f, nome in fundos %}<td class="n">{{ em_reais(r.fundos[f]) }}</td>{% endfor %}</tr>
+      {% for f, nome in fundos %}<td class="n">{{ em_reais(r.fundos.get(f)) }}</td>{% endfor %}</tr>
   {% endfor %}
 </table>
 {% endif %}
@@ -68,7 +71,7 @@
   <tr><th>Receita bruta (emolumentos)</th><td class="n">R$ {{ em_reais(livro.receita_bruta) }}</td></tr>
   <tr><th>Despesas</th><td class="n">R$ {{ em_reais(livro.despesas) }}</td></tr>
   <tr><th>Receita líquida</th><td class="n">R$ {{ em_reais(livro.receita_liquida) }}</td></tr>
-  {% for f, nome in fundos %}<tr><th>{{ nome }}</th><td class="n">R$ {{ em_reais(livro.fundos[f]) }}</td></tr>{% endfor %}
+  {% for f, nome in fundos %}<tr><th>{{ nome }}</th><td class="n">R$ {{ em_reais(livro.fundos.get(f)) }}</td></tr>{% endfor %}
   {% for esp, v in livro.por_especialidade.items() %}<tr><th>Receita — {{ esp }}</th><td class="n">R$ {{ em_reais(v) }}</td></tr>{% endfor %}
 </table>
 <p class="muted">{{ livro.atos }} ato(s) com selo, {{ livro.isentos }} isento(s), {{ livro.diferidos }} diferido(s){% if livro.sem_valor %}, {{ livro.sem_valor }} sem valor no texto do selo{% endif %}.</p>

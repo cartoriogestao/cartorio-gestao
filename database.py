@@ -32,6 +32,7 @@ from caixa_schema import init_caixa_schema
 from nfse import init_nfse_schema
 from as_schema import init_as_schema
 from fr_schema import init_fr_schema
+from identidade_do_robo import init_identidade_schema
 # O RELATÓRIO DA INSPEÇÃO desta casa (12/08/2026) é dado dela, e não código:
 # instalado, vira o plano de ação na primeira configuração; ausente — o
 # repositório público não o leva (sanitização B2, 11/10/2026) —, não se
@@ -52,6 +53,7 @@ from cn_schema import init_cn_schema
 from pt_schema import init_pt_schema
 from ra_schema import init_ra_schema
 from rc_certidao import init_rc_certidao_schema
+from rc_materializacao import init_rc_materializacao_schema
 from rc_pedidos_schema import init_rc_pedidos_schema
 from rc_modelos_livres_schema import init_rc_modelos_livres_schema
 from modelos_elementos_schema import init_modelos_elementos_schema
@@ -63,7 +65,10 @@ from ri_onr_central_schema import init_ri_onr_central_schema
 from ri_mapa_onr import init_mapa_onr_schema
 from apostila import init_apostila_schema
 from livro_diario import init_livro_diario_schema
+from despesas import init_despesas_schema
+from carne_leao import init_carne_leao_schema
 from livro_visitas import init_livro_visitas_schema
+from ouvidoria import init_ouvidoria_schema
 from centrais_schema import init_centrais_schema
 from onr_endereco_schema import init_ri_onr_endereco_schema
 from ri_schema import init_ri_schema
@@ -81,6 +86,9 @@ from rr_schema import init_rr_schema
 from wa_schema import init_wa_schema
 from robo_schema import init_robo_schema
 from agente_schema import init_agente_schema
+from automacao_schema import init_automacao_schema
+from andamento_schema import init_andamento_schema
+from backup_restauracao import init_backup_restauracao_schema
 from ia_uso import init_ia_schema
 from dois_fatores import init_dois_fatores_schema
 from selo_portal import init_selo_portal_schema
@@ -95,6 +103,7 @@ from ri_onus_ia import init_schema as init_ri_onus_ia_schema
 from revisao_previa import init_schema as init_revisao_schema
 from revisao_anexos import init_schema as init_revisao_anexos_schema
 from minuta_ia import init_schema as init_minuta_ia_schema
+from ri_qualificacao_ia import init_schema as init_ri_qualificacao_ia_schema
 from revisao_transcricao_lote import init_schema as init_revisao_transcricao_schema
 from bd_nativo import banco
 
@@ -147,11 +156,15 @@ DEFAULT_SETTINGS = {
     "session_absolute_hours": "12",
     "require_backup_assignee": "1",
     "auto_backup": "1",
-    "backup_retention": "30",
+    # A RETENCAO DOS BACKUPS AUTOMATICOS, EM DIAS (decisao do oficial em
+    # 26/10/2026: «salva os ultimos 5 dias»), e sem nunca apagar o completo-base
+    # — ver `backup_rotina.aplicar_retencao`. Substitui `backup_retention` (30
+    # pacotes) e `backup_completo_retencao` (8 completos), que contavam arquivos
+    # por tipo; as linhas antigas ficam na tabela, sem uso.
+    "backup_retencao_dias": "5",
     # Backup completo (banco + digitalizacoes) uma vez por semana. As imagens
     # sao imutaveis: repeti-las todo dia gastaria disco sem proteger mais nada.
     "backup_completo_dia": "6",
-    "backup_completo_retencao": "8",
     "archive_root": "",
     # AS PASTAS DE ONDE O BALCÃO IMPORTA, uma por linha (LX12, 19/10/2026).
     # Caminho digitado nas telas de importação (acervo, Livro 3, matrículas
@@ -664,6 +677,15 @@ class Database:
         for coluna in ("hash_anterior", "hash_linha"):
             if not bd.tem_coluna("audit_logs", coluna):
                 bd.escrever(f"ALTER TABLE audit_logs ADD COLUMN {coluna} TEXT")
+        # QUEM AGE POR PROGRAMA DIZ QUEM E E A MANDO DE QUEM (ordem do
+        # oficial, 26/10/2026): `audit_logs.agente`, `audit_logs.a_mando_de` e
+        # `users.robo_responsavel_id`. So ADD COLUMN; quem preenche e
+        # `identidade_do_robo.registrar`, por onde passa o `log` daqui de baixo.
+        # E `audit_logs.hash_versao`: desde a revisao de seguranca de 26/10 as
+        # duas colunas ENTRAM no hash da corrente (formula 2), e a versao por
+        # linha deixa as antigas conferirem pela formula de 22/10
+        # (`cg_auditoria_encadear` e `auditoria_cadeia.hash_da_linha`).
+        init_identidade_schema(con)
         gatilho = ("CREATE OR REPLACE TRIGGER audit_logs_cadeia BEFORE INSERT ON audit_logs "
                    "FOR EACH ROW EXECUTE FUNCTION public.cg_auditoria_encadear()")
         # `_cru` porque a ponte recusa `CREATE TRIGGER` (o do SQLite nao se traduz)
@@ -701,6 +723,7 @@ class Database:
         init_as_schema(con)
         init_rc_schema(con)
         init_rc_certidao_schema(con)
+        init_rc_materializacao_schema(con)
         # A fila da Central de Certidoes vem DEPOIS de rc_assentos:
         # `rc_pedidos.assento_id` e `rc_certidoes_eletronicas.assento_id`
         # apontam para ela.
@@ -803,6 +826,16 @@ class Database:
         # tabela de outro módulo: a receita do Diário é LIDA do selo.
         init_livro_visitas_schema(con)
         init_livro_diario_schema(con)
+        # A OUVIDORIA E A PESQUISA DE SATISFAÇÃO (26/10/2026) — as manifestações,
+        # o andamento delas e as avaliações do balcão. Não apontam para tabela
+        # de outro módulo: o responsável e a tarefa são vínculo informativo.
+        init_ouvidoria_schema(con)
+        # AS DESPESAS (24/10/2026): cadastro, autorização, pagamento pelo Banco
+        # Inter e conferência no extrato; a despesa conferida vai ao Diário.
+        init_despesas_schema(con)
+        # O CARNÊ-LEÃO E O LIVRO-CAIXA DO TITULAR (26/10/2026): a marcação
+        # aponta para `ld_despesas`, que acabou de existir.
+        init_carne_leao_schema(con)
         # A FILA GENERICA DAS CENTRAIS e o log delas (marco (a), 05/10/2026).
         # Nao apontam para tabela de dominio nenhuma — `payload_ref` e texto —,
         # e por isso podem nascer em qualquer ponto; ficam ao lado do ONR.
@@ -843,6 +876,18 @@ class Database:
         # separado — e aqui as duas guardam mascara, que e o que torna a
         # separacao tambem uma questao de risco.
         init_agente_schema(con)
+        # A AUTOMAÇÃO (24/10/2026) — o cadastro das rotinas, as rodadas, os
+        # avisos, a trava do despachante e a config. Não aponta para tabela
+        # nenhuma de fora (o responsável é guardado como número).
+        init_automacao_schema(con)
+        # OS AVISOS DE ANDAMENTO AO CLIENTE (26/10/2026) — o consentimento por
+        # canal e a fila do que saiu. Não apontam para tabela nenhuma de fora
+        # (o protocolo é guardado como origem + número), e por isso vêm aqui.
+        init_andamento_schema(con)
+        # O TESTE DE RESTAURAÇÃO DO BACKUP (26/10/2026) — `bk_restauracoes`, uma
+        # linha por rodada (pacote, SHA-256, contagens, tempo), para a
+        # correição. Não aponta para tabela nenhuma.
+        init_backup_restauracao_schema(con)
         # O REGISTRO DO USO DE IA (LF01) — `ia_uso`, os incidentes e os dados
         # dos fornecedores, para o relatório anual à COGEX. Não aponta para
         # tabela nenhuma: a referência ao registro de origem é texto.
@@ -872,6 +917,9 @@ class Database:
         # O AGENTE DE MINUTAS (23/10/2026) — `mi_pedidos`, os pedidos e as
         # versões de cada minuta. Não aponta para tabela nenhuma.
         init_minuta_ia_schema(con)
+        # A QUALIFICAÇÃO ASSISTIDA DO RI (26/10/2026) — `ri_qualificacao_ia`,
+        # o rascunho das exigências. Não aponta para tabela nenhuma.
+        init_ri_qualificacao_ia_schema(con)
         # A REVISÃO DAS TRANSCRIÇÕES DO RI (LH11) também nasce aqui (LH12): a
         # emissão da certidão de inteiro teor grava em `ri_transcricao_
         # emissoes` dentro da transação que numera, e o DDL ali viria depois do
@@ -1105,7 +1153,7 @@ class Database:
         # ter a funcao preenchida, e a tela nao pode quebrar por isso.
         sql = ("SELECT id,username,full_name,role,active,created_at,"
                "COALESCE(funcao,'') funcao,"
-               "COALESCE(eh_robo,0) eh_robo FROM users")
+               "COALESCE(eh_robo,0) eh_robo, robo_responsavel_id FROM users")
         if active_only:
             sql += " WHERE active=1"
         sql += " ORDER BY full_name COLLATE public.cg_nocase, id"
@@ -1150,7 +1198,11 @@ class Database:
             for key, value in values.items():
                 bd.escrever("INSERT INTO settings(key,value) VALUES(%s,%s) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, str(value)))
 
-    def log(self, user_id: int | None, username: str | None, action: str, entity_type: str | None = None, entity_id: int | None = None, details: Any = None, ip_address: str | None = None) -> None:
+    def log(self, user_id: int | None, username: str | None, action: str, entity_type: str | None = None, entity_id: int | None = None, details: Any = None, ip_address: str | None = None, *, agente: str | None = None, a_mando_de: str | None = None) -> None:
+        # QUEM AGE POR PROGRAMA SE IDENTIFICA (26/10/2026): `agente` e
+        # `a_mando_de` sao para quem grava SEM usuario (rotina, agente, script);
+        # com usuario de robo, a identidade sai da conta dele. A regra «avisar
+        # ou recusar» mora em `identidade_do_robo.decidir`, e so la.
         # entity_id e INTEGER (no PostgreSQL compara-se com id numerico). Chave de
         # TEXTO (ex.: mo_elementos «ato/parte») vai para os detalhes, e a coluna
         # fica vazia - antes ia para a coluna e quebrava as telas (19/10/2026).
@@ -1178,10 +1230,12 @@ class Database:
                 bd = banco(con)
                 bd.ler("SET lock_timeout = '800ms'")
                 bd._escrita()
-                bd.escrever(
-                    "INSERT INTO audit_logs(ts,user_id,username_snapshot,action,entity_type,entity_id,details,ip_address) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                    (self.now(), user_id, username, action, entity_type, entity_id, payload, ip_address),
-                )
+                import identidade_do_robo as IDR
+                IDR.registrar(bd, ts=self.now(), user_id=user_id, username=username,
+                              action=action, entity_type=entity_type,
+                              entity_id=entity_id, details=payload,
+                              ip_address=ip_address, agente=agente,
+                              a_mando_de=a_mando_de)
                 con.commit()
         except sqlite3.OperationalError as erro:
             # BANCO TRAVADO POR OUTRO BALCAO.
@@ -1206,8 +1260,8 @@ class Database:
             # «omitido», texto cortado em 500 caracteres.
             import centrais_log
             logging.getLogger("cartorio.auditoria").error(
-                "AUDITORIA NAO GRAVADA (%s): %s user=%s acao=%s %s#%s %s",
-                type(erro).__name__, erro, username, action, entity_type,
+                "AUDITORIA NAO GRAVADA (%s): %s user=%s agente=%s a_mando_de=%s acao=%s %s#%s %s",
+                type(erro).__name__, erro, username, agente, a_mando_de, action, entity_type,
                 entity_id, json.dumps(centrais_log.sanitizar(details),
                                       ensure_ascii=False, default=str)
                 if details is not None else None)
@@ -1954,11 +2008,14 @@ class Database:
                 "disputas_desde": disputas["primeira"],
                 "implantacao_abertas": int(falta or 0)}
 
-    def backup_database(self, dest_path: Path) -> Path:
+    def backup_database(self, dest_path: Path, contagens: dict | None = None) -> Path:
         dest_path.parent.mkdir(parents=True, exist_ok=True)
         # No PostgreSQL a cópia é um pg_dump do schema deste banco (o módulo é
         # nativo desde o lote L072: não há mais o caminho do SQLite).
-        return banco_pg.copiar_para_arquivo(self.db_path, dest_path)
+        # `contagens` (26/10/2026): as linhas de cada tabela no MESMO instantâneo
+        # do pg_dump, para o manifesto — é contra elas que o teste de
+        # restauração confere o que voltou.
+        return banco_pg.copiar_para_arquivo(self.db_path, dest_path, contagens=contagens)
 
 
 def _last_day(year: int, month: int) -> int:

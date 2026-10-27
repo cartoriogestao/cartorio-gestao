@@ -5,6 +5,7 @@
   "formato": "JINJA",
   "explica": "A prova de pagamento do atendimento inteiro.",
   "campos": [
+    "acompanhamento",
     "agora",
     "data_extenso",
     "documento",

@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% block title %}Qualificação assistida — pedido {{ p.id }}{% endblock %}
+{% block heading %}<h1>Qualificação assistida — prenotação {{ prenotacao_numero }}, versão {{ p.versao }}</h1>{% endblock %}
+{% block content %}
+{#
+  O RASCUNHO DA QUALIFICAÇÃO ASSISTIDA (`ri_qualificacao_ia`). Daqui as
+  exigências marcadas vão ao FORMULÁRIO da nota devolutiva — preenchido, e não
+  emitido: a nota sai pelo botão da tela da nota, depois de conferida.
+#}
+<p class="small"><a href="{{ url_for('ri_nota_devolutiva', protocolo_id=p.protocolo_id) }}#qualificacao-ia">voltar à nota devolutiva da prenotação</a></p>
+
+<div class="notice warning">
+  <strong>Rascunho preparado por IA ({{ p.modelo or '—' }}, esforço {{ p.esforco or '—' }}).</strong>
+  A qualificação é do oficial: confira cada exigência com os documentos originais antes de levá-la à nota.
+  A marca ao lado de cada trecho diz o que o sistema conseguiu conferir, letra por letra, sem a IA.
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Pedido nº {{ p.id }}</span>
+    <span class="small muted">{{ p.situacao }} · {{ (p.pedido_em or '')[:16]|replace('T', ' ') }} · {{ p.pedido_por or '—' }}</span></div>
+  <div style="padding:0 14px 14px" class="small">
+    {% if p.especie %}<p><strong>Lista de conferência:</strong> {{ p.especie }}</p>{% endif %}
+    {% if p.instrucao %}<p><strong>Instruções:</strong> {{ p.instrucao }}</p>{% endif %}
+    <p><strong>Documentos lidos:</strong></p>
+    <ul>{% for d in p.documentos %}<li>{{ d.nome }} <span class="muted">({{ d.origem }})</span> —
+      <a href="{{ url_for('attachment_view', attachment_id=d.anexo_id) }}" target="_blank">ver</a></li>{% endfor %}</ul>
+    {% if p.erro %}<p><strong>Não saiu:</strong> {{ p.erro }}</p>{% endif %}
+    {% if p.nota_id %}<p><strong>Estas exigências já foram para uma nota emitida.</strong></p>{% endif %}
+    <p class="muted">{{ p.tokens_entrada or 0 }} tokens de entrada · {{ p.tokens_saida or 0 }} de saída · {{ p.segundos or 0 }} s</p>
+  </div>
+</section>
+
+{% macro marca(item) %}
+  {% if item.citacao == 'ESCRITO' %}<span class="badge ok" title="o trecho está escrito em {{ item.conferido_em }}">trecho conferido ({{ item.conferido_em }})</span>
+  {% elif item.citacao == 'NAO_ACHADO' %}<span class="badge critica" title="o documento tem texto e o trecho não está nele">trecho NÃO está escrito no documento — não leve sem conferir</span>
+  {% elif item.citacao == 'SEM_TEXTO' %}<span class="badge alta" title="documento digitalizado sem texto conferível">digitalizado — confira no papel</span>
+  {% elif item.citacao == 'FALTA' %}<span class="badge alta" title="exigência por ausência: não há trecho a citar">por ausência — confira que não veio</span>
+  {% endif %}
+{% endmacro %}
+
+{% if p.resultado %}
+{% set r = p.resultado %}
+{% if r.especie_do_titulo %}<p><strong>Título, como a IA o leu:</strong> {{ r.especie_do_titulo }}</p>{% endif %}
+
+<section class="panel" id="exigencias">
+  <div class="panel-head"><span>Exigências sugeridas</span><span class="small muted">{{ (r.exigencias or [])|length }}</span></div>
+  <div style="padding:0 14px 14px">
+  {% if r.exigencias %}
+    <form method="post" action="{{ url_for('ri_qualificacao_ia_levar', pedido_id=p.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% for x in r.exigencias %}
+      <div class="notice" style="margin-bottom:8px">
+        <label style="display:block"><input type="checkbox" name="escolhida" value="{{ loop.index0 }}" style="width:auto"
+          {% if x.citacao != 'NAO_ACHADO' %}checked{% endif %}> <strong>{{ loop.index }}.</strong> {{ x.exigencia }}</label>
+        <p class="small" style="margin:4px 0"><strong>Fundamento:</strong> {{ x.fundamento or '—' }}</p>
+        <p class="small" style="margin:4px 0"><strong>De onde saiu:</strong> {{ x.documento or '—' }}{% if x.pagina %}, pág. {{ x.pagina }}{% endif %}
+          {{ marca(x) }}</p>
+        {% if x.trecho %}<blockquote class="small" style="margin:4px 0 6px 12px">«{{ x.trecho }}»</blockquote>{% endif %}
+        <label class="small">Texto que vai à nota (edite se precisar)
+          <textarea name="texto_{{ loop.index0 }}" rows="2">{{ linhas[loop.index0] }}</textarea></label>
+      </div>
+      {% endfor %}
+      {% if p.situacao == 'PRONTA' and not p.nota_id and user.role in papeis_que_pedem %}
+      <button class="primary">Levar para a nota devolutiva</button>
+      <span class="small muted">Preenche o formulário da nota com as marcadas; a nota só existe depois do botão «Emitir» de lá.</span>
+      {% endif %}
+    </form>
+  {% else %}
+    <p class="muted">A IA não sugeriu exigência. Isso não é qualificação positiva: confira os pontos abaixo e decida.</p>
+  {% endif %}
+  </div>
+</section>
+
+{% if r.conferidos %}
+<section class="panel">
+  <div class="panel-head"><span>O que a IA cruzou e bateu</span><span class="small muted">{{ r.conferidos|length }}</span></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Ponto</th><th>Documento</th><th>Trecho</th></tr></thead>
+    <tbody>{% for c in r.conferidos %}<tr><td>{{ c.item }}</td><td class="small">{{ c.documento }}</td>
+      <td class="small">{% if c.trecho %}«{{ c.trecho }}»<br>{% endif %}{{ marca(c) }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% if r.duvidas %}
+<section class="panel">
+  <div class="panel-head"><span>Dúvidas para o oficial</span><span class="small muted">{{ r.duvidas|length }}</span></div>
+  <ul style="padding:0 30px 14px">{% for x in r.duvidas %}<li>{{ x }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+{% if r.nao_lidos or r.sem_texto_para_conferir %}
+<section class="panel">
+  <div class="panel-head"><span>O que a IA não conseguiu ler, e o que o sistema não pôde conferir</span></div>
+  <ul style="padding:0 30px 14px">
+    {% for x in r.nao_lidos %}<li>{{ x }}</li>{% endfor %}
+    {% for x in r.sem_texto_para_conferir or [] %}<li>{{ x }}: digitalizado sem texto conferível — os trechos tirados dele se conferem no papel.</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if r.observacoes %}
+<section class="panel">
+  <div class="panel-head"><span>Observações da IA</span></div>
+  <p style="padding:0 14px 14px">{{ r.observacoes }}</p>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

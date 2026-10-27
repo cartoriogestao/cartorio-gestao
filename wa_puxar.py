@@ -167,3 +167,55 @@ def confirmar(con: Any, ids: list[Any] | None, http_post: Callable | None = None
     if status < 200 or status >= 300:
         _LOG.warning("caixa-postal: ack falhou (HTTP %s)", status)
 
+
+# ------------------------------------------------------------------ a central da automação
+
+
+def rodar_automacao(ctx) -> dict:
+    """O processo WHATSAPP_CAIXA_POSTAL: busca, aplica e confirma — os três
+    passos do botão «puxar» (`wa_web.whatsapp_puxar`), na mesma ordem e com a
+    rede fora da transação. ESCREVE (a fila do balcão).
+
+    27/10/2026, na configuração da VPS: a busca só acontecia no botão, e a
+    mensagem do cliente ficava na VPS até alguém clicar. A auditoria só ganha
+    linha quando algo entrou — uma por minuto, vazia, afogaria o rastro.
+    """
+    import automacao_processos as PROC
+    import automacao_schema as ASCH
+    with ctx.db.connect() as con:
+        achado = buscar_pendentes(con)
+    if not achado.get("ok"):
+        return PROC.resultado(ASCH.AVISO, f"Caixa-postal não lida: {achado.get('motivo')}.")
+    try:
+        serventia = SERV.dados(ctx.db.get_settings)
+    except Exception:                                   # noqa: BLE001 — o padrão serve
+        serventia = None
+    with ctx.db.transaction() as con:
+        r = aplicar_itens(con, achado["itens"], serventia=serventia,
+                          agora=ctx.agora.isoformat(timespec="seconds"))
+    with ctx.db.connect() as con:
+        confirmar(con, r.get("ids"))
+    if r.get("aplicadas"):
+        import identidade_do_robo as IDR
+        try:
+            ctx.db.log(None, "automação", "wa_puxar", "wa_conversa", None,
+                       {"ok": True, "aplicadas": r["aplicadas"], "repetidas": r["repetidas"]},
+                       agente="automação — caixa-postal do WhatsApp",
+                       a_mando_de=IDR.PELO_RESPONSAVEL)
+        except TypeError:
+            # um `log` antigo, sem os dois campos (o dos testes de mesa)
+            ctx.db.log(None, "automação", "wa_puxar", "wa_conversa", None,
+                       {"ok": True, "aplicadas": r["aplicadas"], "repetidas": r["repetidas"]})
+    return PROC.resultado(ASCH.OK, f"{r['aplicadas']} mensagem(ns) nova(s) na fila do balcão, "
+                                   f"{r['repetidas']} repetida(s).")
+
+
+CATALOGO = (
+    {"codigo": "WHATSAPP_CAIXA_POSTAL", "nome": "WhatsApp — buscar na caixa-postal",
+     "setor": "GESTAO", "funcao": f"wa_puxar.{rodar_automacao.__name__}", "timeout_s": 120,
+     "agenda": {"dias": [0, 1, 2, 3, 4, 5, 6], "intervalo_min": 2,
+                "janela": ["06:00", "22:00"]},
+     "descricao": "De 2 em 2 minutos: traz da caixa-postal da VPS as mensagens que o "
+                  "WhatsApp entregou e põe na fila do balcão. O mesmo botão «puxar»."},
+)
+

@@ -727,8 +727,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
                     flash(str(erro), "danger")
             ultimas = listar(con)
             valor = preco(con)
+        # A LEITURA DO CRV/ATPV/CRLV POR IA (26/10/2026) preenche o resto do
+        # formulário — como RASCUNHO: o que veio do reconhecimento fica, e a
+        # tela só grava com a conferência marcada (`nt_leitura_web`).
+        import nt_leitura_web as NTLW
+        leitura = NTLW.leitura_pedida(app, db, "VEICULO")
+        if leitura:
+            lidos = (leitura.get("sugestao") or {}).get("campos") or {}
+            sugestao = {**lidos, **{k: v for k, v in sugestao.items() if v}}
         return render_template(
-            "notas_veiculos.html", ultimas=ultimas, sugestao=sugestao,
+            "notas_veiculos.html", ultimas=ultimas, sugestao=sugestao, leitura=leitura,
             preco=valor, DOCUMENTOS=DOCUMENTOS, SITUACOES=SITUACOES,
             ligada=ligada(db.get_setting), ambiente=ambiente(db.get_setting))
 
@@ -736,6 +744,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
     @login_required
     @roles_required(*QUEM_OPERA)
     def notas_veiculo_nova():
+        import nt_leitura_web as NTLW
+        recusa_leitura = NTLW.recusa_da_conferencia(app, db, "VEICULO")
+        if recusa_leitura:
+            flash(recusa_leitura, "danger")
+            volta = {k: _campo(k) for k in ("leitura_id", "reconhecimento_id") if _campo(k)}
+            return redirect(url_for("notas_veiculos", **volta))
         try:
             with db.transaction() as con:
                 cid = registrar(
@@ -751,10 +765,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
                     agora=db.now(), usuario=usuario_nome())
         except DetranError as erro:
             flash(str(erro), "danger")
-            return redirect(url_for("notas_veiculos"))
+            # Com a leitura, o rascunho volta: corrigir o dígito do RENAVAM
+            # não pode custar a digitação do resto.
+            volta = {k: _campo(k) for k in ("leitura_id", "reconhecimento_id") if _campo(k)}
+            return redirect(url_for("notas_veiculos", **volta))
         audit("NT_COMUNICACAO_VEICULO_REGISTRADA", "nt_comunicacoes_veiculo",
               cid, {"documento": _campo("documento").upper(),
-                    "reconhecimento_id": _campo("reconhecimento_id") or None})
+                    "reconhecimento_id": _campo("reconhecimento_id") or None,
+                    "leitura_id": _campo("leitura_id") or None})
+        NTLW.marcar_usada(app, db, audit, "VEICULO", tabela="nt_comunicacoes_veiculo",
+                          ato_id=cid)
         flash(f"Comunicação nº {cid} registrada. Sele e comunique.", "success")
         return redirect(url_for("notas_veiculo", com_id=cid))
 

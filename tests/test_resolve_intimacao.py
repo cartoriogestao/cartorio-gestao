@@ -601,3 +601,181 @@ def test_a_recusa_diz_qual_campo_a_central_apontou():
         API._resposta_ou_erro(r, "criar o lote")
     assert "intimação 1, credor.tipoDocumento" in str(erro.value)
     assert "não é permitida" in str(erro.value)
+
+
+# ------------------------------------- o comprovante e o edital (#142)
+#
+# «DIZ QUE TEM COMPROVANTE DE ENTREGA, MAS NAO APARECE … E DEIXAR CLARO O
+# CAMINHO PARA EMITIR O ARQUIVO DE EDITAL PARA A CENPROT» — problema #142,
+# 26/10/2026. A intimação ENTREGUE por e-mail não tem PDF na Resolve; a prova
+# é o histórico. E o arquivo do edital só se gerava longe de onde o edital se
+# publica.
+
+
+def _ficha_e_token(s, iid):
+    html = s["c"].get(f"/protesto/resolve/{iid}").get_data(as_text=True)
+    return _token(html)
+
+
+def test_sem_pdf_o_comprovante_traz_o_historico_e_diz_que_ele_e_a_prova(
+        s, monkeypatch):
+    iid = _intimacao_gravada(s)
+
+    def sem_pdf(*_a, **_k):
+        raise API.ResolveSemPdf("A Resolve ainda não tem o PDF.")
+    monkeypatch.setattr(API, "pdf_da_intimacao", sem_pdf)
+    monkeypatch.setattr(API, "historico_de", lambda *_a, **_k: {
+        "data": [{"canal": "EMAIL", "status": "ENTREGUE",
+                  "dataCriacao": "2026-10-23T11:01:45.000Z"}], "total": 1})
+    r = s["c"].post(f"/protesto/resolve/{iid}/pdf",
+                    data={"csrf_token": _ficha_e_token(s, iid)},
+                    follow_redirects=True)
+    html = " ".join(r.get_data(as_text=True).split())
+    assert "A prova da entrega que ela dá é o histórico" in html
+    assert "EMAIL" in html and "ENTREGUE" in html
+    con = sqlite3.connect(s["banco"])
+    guardado = con.execute("SELECT historico FROM rs_intimacoes WHERE id=?",
+                           (iid,)).fetchone()[0]
+    con.close()
+    assert "EMAIL" in guardado
+
+
+def test_com_pdf_o_comprovante_abre_em_vez_de_virar_texto(s, monkeypatch):
+    iid = _intimacao_gravada(s)
+    link = "https://bucket.s3.amazonaws.com/comprovante.pdf"
+    monkeypatch.setattr(API, "pdf_da_intimacao",
+                        lambda *_a, **_k: {"link": link})
+    r = s["c"].post(f"/protesto/resolve/{iid}/pdf",
+                    data={"csrf_token": _ficha_e_token(s, iid)})
+    assert r.status_code in (302, 303)
+    assert r.headers["Location"] == link
+
+
+def test_os_comprovantes_do_lote_saem_como_links_clicaveis(s, monkeypatch):
+    iid = _intimacao_gravada(s)
+    links = ["https://bucket.s3.amazonaws.com/a.pdf",
+             "https://bucket.s3.amazonaws.com/b.pdf"]
+    monkeypatch.setattr(API, "pdfs_do_lote", lambda *_a, **_k: {"links": links})
+    tela = s["c"].get("/protesto/resolve").get_data(as_text=True)
+    r = s["c"].post("/protesto/resolve/lote/68532a2a6e5df1d32d14a971/pdfs",
+                    data={"csrf_token": _token(tela)}, follow_redirects=True)
+    html = r.get_data(as_text=True)
+    for x in links:
+        assert f'href="{x}"' in html
+    assert iid
+
+
+def test_a_tela_de_avisos_gera_o_arquivo_do_edital_e_volta_para_ela(s):
+    tela = s["c"].get("/protesto/avisos").get_data(as_text=True)
+    assert "Gerar o arquivo do edital para a CENPROT" in tela
+    assert 'name="voltar" value="avisos"' in tela
+    r = s["c"].post("/protesto/cenprot/edital",
+                    data={"csrf_token": _token(tela), "dia": "2026-10-26",
+                          "voltar": "avisos"})
+    assert r.status_code in (302, 303)
+    assert r.headers["Location"].endswith("/protesto/avisos")
+
+
+def test_o_destino_da_volta_e_lista_fechada(s):
+    tela = s["c"].get("/protesto/avisos").get_data(as_text=True)
+    r = s["c"].post("/protesto/cenprot/edital",
+                    data={"csrf_token": _token(tela), "dia": "2026-10-26",
+                          "voltar": "https://exemplo.invalid/"})
+    assert r.headers["Location"].endswith("/protesto/cenprot")
+
+
+def test_a_tela_da_resolve_diz_o_caminho_ate_o_edital(s):
+    html = " ".join(s["c"].get("/protesto/resolve").get_data(as_text=True).split())
+    assert "arquivo do edital para a CENPROT" in html
+    assert "a prova é o histórico" in html
+
+
+# ----------------------------- o comprovante do envio do edital (#142)
+#
+# «vamos criar um campo para anexar o comprovante de envio do edital» — o
+# oficial, 26/10/2026. Um arquivo por dia; o comprovante vai para cada edital
+# daquele dia, e o dia sem comprovante aparece no alto.
+
+PDF = b"%PDF-1.4\n% comprovante de exemplo\n"
+
+
+def _edital(s, *, dia="2026-10-22", numero=41199) -> int:
+    tid = _titulo(s, numero_titulo=f"T-{numero}")
+    con = sqlite3.connect(s["banco"])
+    aid = con.execute(
+        """INSERT INTO pt_avisos(titulo_id, numero, ano, situacao, emitido_em,
+               criado_em) VALUES (?,?,?,?,?,?)""",
+        (tid, numero, 2026, "EDITAL", dia, dia)).lastrowid
+    eid = con.execute(
+        """INSERT INTO pt_editais(numero, ano, aviso_id, titulo_id,
+               publicado_em, teor, criado_em) VALUES (?,?,?,?,?,?,?)""",
+        (numero, 2026, aid, tid, dia, "teor do edital", dia)).lastrowid
+    con.commit()
+    con.close()
+    return int(eid)
+
+
+def _anexar(s, dia, conteudo=PDF, nome="confirmacao.pdf"):
+    import io
+    tela = s["c"].get("/protesto/avisos").get_data(as_text=True)
+    return s["c"].post("/protesto/editais/comprovante-cenprot",
+                       data={"csrf_token": _token(tela), "dia": dia,
+                             "comprovante": (io.BytesIO(conteudo), nome)},
+                       content_type="multipart/form-data",
+                       follow_redirects=True)
+
+
+def _anexos_do_edital(s, eid):
+    con = sqlite3.connect(s["banco"])
+    n = con.execute("SELECT COUNT(*) FROM attachments WHERE entity_type="
+                    "'PT_EDITAL_CENPROT' AND entity_id=?", (eid,)).fetchone()[0]
+    con.close()
+    return int(n)
+
+
+def test_o_comprovante_do_envio_vai_para_todos_os_editais_do_dia(s):
+    a = _edital(s, numero=41199)
+    b = _edital(s, numero=41200)
+    outro_dia = _edital(s, dia="2026-10-26", numero=41210)
+    r = _anexar(s, "2026-10-22")
+    html = " ".join(r.get_data(as_text=True).split())
+    assert "anexado aos 2 edital(is) de 2026-10-22" in html
+    assert _anexos_do_edital(s, a) == 1 and _anexos_do_edital(s, b) == 1
+    assert _anexos_do_edital(s, outro_dia) == 0
+
+
+def test_a_tela_mostra_o_dia_sem_comprovante_e_o_comprovado(s):
+    _edital(s, numero=41199)
+    _edital(s, dia="2026-10-26", numero=41210)
+    _anexar(s, "2026-10-26")
+    html = " ".join(s["c"].get("/protesto/avisos").get_data(as_text=True).split())
+    assert "Envio do edital à CENPROT" in html
+    assert "sem comprovante" in html and "comprovado" in html
+    assert 'name="comprovante"' in html and 'enctype="multipart/form-data"' in html
+
+
+def test_dia_sem_edital_e_arquivo_falso_sao_recusados(s):
+    _edital(s, numero=41199)
+    assert "Nenhum edital foi publicado em 2026-10-23" in _anexar(
+        s, "2026-10-23").get_data(as_text=True)
+    assert "não é" in _anexar(s, "2026-10-22", conteudo=b"texto",
+                               nome="x.pdf").get_data(as_text=True)
+
+
+def test_o_mesmo_comprovante_nao_entra_duas_vezes(s):
+    eid = _edital(s, numero=41199)
+    _anexar(s, "2026-10-22")
+    assert "já está anexado" in _anexar(s, "2026-10-22").get_data(as_text=True)
+    assert _anexos_do_edital(s, eid) == 1
+
+
+def test_o_comprovante_abre_pela_tela_dos_avisos(s):
+    eid = _edital(s, numero=41199)
+    _anexar(s, "2026-10-22")
+    con = sqlite3.connect(s["banco"])
+    anexo = con.execute("SELECT id FROM attachments WHERE entity_type="
+                        "'PT_EDITAL_CENPROT' AND entity_id=?", (eid,)).fetchone()[0]
+    con.close()
+    assert s["c"].get(f"/arquivo/{anexo}/ver").status_code == 200
+    assert s["app"].extensions["tela_do_anexo"]["PT_EDITAL_CENPROT"] == (
+        "protesto_avisos",)

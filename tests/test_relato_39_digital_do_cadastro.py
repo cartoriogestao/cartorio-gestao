@@ -79,8 +79,12 @@ def casa(cg_casa):
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
     con = sqlite3.connect(banco)
-    con.execute("INSERT INTO nt_cartoes (numero, nome, criado_em) "
-                "VALUES ('1','FULANO DE TAL','2026-09-07')")
+    # Com a ciência do titular já registrada: sem ela nenhuma digital se colhe
+    # (correção de segurança de 26/10/2026, revisão do PR #31).
+    con.execute("INSERT INTO nt_cartoes (numero, nome, criado_em, "
+                "biometria_ciencia_em, biometria_ciencia_por) "
+                "VALUES ('1','FULANO DE TAL','2026-09-07',"
+                "'2026-10-26T10:00:00','MARIO EXEMPLO DOS SANTOS')")
     con.commit()
     cid = int(con.execute("SELECT id FROM nt_cartoes").fetchone()[0])
     con.close()

@@ -96,7 +96,8 @@ def test_nascimento_com_pai_nao_tem_lavra():
         data_fato="2026-08-20", dados={"sexo": "M"},
         termo_dados={"local_fato_nome": "Hospital Municipal"},
         ibge={"local_nascimento": 1},        # relato #130: o SIRC exige
-        pessoas=pessoas_nascimento(pai="não tem"))
+        pessoas=pessoas_nascimento(pai="não tem"),
+        paternidade={"tipo": "NEGATIVO"})    # pai ignorado: termo (23/10/2026)
     assert r["serie"] == "RC_A"
 
 

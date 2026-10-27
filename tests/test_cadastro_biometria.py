@@ -71,10 +71,43 @@ def _abrir(casa):
     return casa["db"].connect()
 
 
-def _pessoa(con, **campos) -> int:
+def _pessoa(con, ciencia=True, **campos) -> int:
+    """O cartão, com a ciência do titular já registrada — sem ela nenhuma
+    digital se colhe (correção de segurança de 26/10/2026)."""
     dados = {"nome": "MARIA DAS DORES DA SILVA", "documento": "00000001082"}
     dados.update(campos)
-    return criar_cartao(con, dados, agora=AGORA)
+    cid = criar_cartao(con, dados, agora=AGORA)
+    if ciencia:
+        CB.registrar_ciencia(con, cid, AGORA, POR)
+    return cid
+
+
+# ------------------------------------------------------------- a ciência do titular
+
+
+def test_sem_a_ciencia_registrada_nenhuma_digital_se_colhe(casa):
+    """Correção de segurança de 26/10/2026 (revisão do PR #31): a finalidade
+    na tela não prova nada; a marca no cartão prova quem informou e quando."""
+    with _abrir(casa) as con:
+        cid = _pessoa(con, ciencia=False)
+        assert CB.ciencia(con, cid) is None
+        with pytest.raises(CB.CadastroBioError) as erro:
+            CB.colher_digital(con, cid, 1, PNG[1], AGORA, POR, casa["pasta"])
+    assert "ciência" in str(erro.value)
+    assert not (casa["pasta"] / str(cid)).exists()
+
+
+def test_a_primeira_ciencia_fica_e_nao_se_regrava(casa):
+    with _abrir(casa) as con:
+        cid = _pessoa(con, ciencia=False)
+        primeira = CB.registrar_ciencia(con, cid, AGORA, POR)
+        segunda = CB.registrar_ciencia(con, cid, "2026-10-27T09:00:00", "beatriz")
+        assert primeira == segunda == {"em": AGORA, "por": POR}
+        with pytest.raises(CB.CadastroBioError):
+            outra = _pessoa(con, ciencia=False, nome="BEATRIZ TESTE LIMA",
+                            documento="00000000191")
+            CB.registrar_ciencia(con, outra, AGORA, "")
+        CB.colher_digital(con, cid, 1, PNG[1], AGORA, POR, casa["pasta"])
 
 
 # ------------------------------------------------------------- foto no disco

@@ -73,6 +73,8 @@ def extras_legais(especie: str, nome="ALGUÉM") -> dict:
             # «Onde nasceu» — o SIRC recusa o nascimento sem ele, e desde o
             # relato #130 (14/10/2026) a lavratura também.
             extra["ibge"] = {"local_nascimento": 1}
+            # PAI IGNORADO EXIGE O TERMO (23/10/2026) — o negativo basta aqui.
+            extra["paternidade"] = {"tipo": "NEGATIVO"}
         return extra
     if especie in RC.ESPECIES_DE_CASAMENTO:
         return {
@@ -125,6 +127,12 @@ def nascimento(con, nome="JOÃO DA SILVA", **kw):
                 {"papel": "PAI", "nome": "IGNORADO"},
                 {"papel": "DECLARANTE", "nome": "MARIA DA SILVA"},
             ]
+        # PAI IGNORADO EXIGE O TERMO (23/10/2026): quem não diz qual, leva o
+        # negativo. Quem quer ver a recusa passa `paternidade=None`.
+        if "paternidade" not in kw:
+            import rc_paternidade as RP
+            if RP.exige_termo("NASCIMENTO", kw["pessoas"], "MANUAL"):
+                kw["paternidade"] = {"tipo": "NEGATIVO"}
     return RC.lavrar_assento(con, especie="NASCIMENTO", nome=nome, sv=SV,
                              agora=AGORA, data_extenso=EXTENSO, **kw)
 

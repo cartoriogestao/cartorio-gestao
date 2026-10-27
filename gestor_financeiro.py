@@ -152,14 +152,44 @@ def _ri_de_valor_alto(con, comp: str, minimo: float = 1000.0) -> list[dict]:
     return sorted(saida, key=lambda x: -x["total"])
 
 
+#: As naturezas de SAÍDA do caixa (`caixa_schema.NATUREZAS`). A importação do
+#: E-Ofício grava toda saída como OUTRA_SAIDA (`caixa_import`).
+_NATUREZAS_DE_SAIDA = ("DEVOLUCAO", "SANGRIA", "DESPESA", "OUTRA_SAIDA")
+
+
+def _e_saida(lan) -> bool:
+    return (str(lan["sentido"] or "").upper() == "SAIDA"
+            or str(lan["natureza"] or "").upper() in _NATUREZAS_DE_SAIDA)
+
+
 def apurar_mes(con, ano: int, mes: int) -> dict:
-    """Os números do mês. Só lê."""
+    """Os números do mês. Só lê.
+
+    A RECEITA É SÓ ENTRADA DE ATO — conserto de 26/10/2026 (PR #28, achado
+    no painel do celular; o oficial: «arrume o defeito»). Até aqui o laço
+    tirava da receita o troco, o estorno, o excluído, a gratuidade e o
+    depósito, e somava TODO o resto — inclusive as SAÍDAS (devolução de
+    depósito, sangria, despesa e as OUTRA_SAIDA que a importação do E-Ofício
+    grava), que o caixa guarda com valor positivo e `sentido = 'SAIDA'`. A
+    saída entrava SOMANDO na receita, no «por caixa» e no «dinheiro que
+    entrou». Agora:
+
+      * receita = natureza RECEBIMENTO de sentido ENTRADA (o recebimento de
+        ato), fora troco/saldo inicial, estorno, excluído e gratuidade — e
+        com o USO do depósito prévio, que continua receita reconhecida do
+        mês em que o ato saiu (a regra de 06/10, na docstring do módulo);
+      * a saída vai para `saidas` (quantidade, valor e por natureza);
+      * OUTRA_ENTRADA não é recebimento de ato: vai para `outras_entradas`
+        e para o «dinheiro que entrou», e não para a receita.
+    """
     import selo as SL
     comp = f"{ano:04d}-{mes:02d}"
     bd = banco(con)
     r: dict = {"comp": comp, "entrou": {}, "receita": {}, "por_operador": {},
                "troco": 0.0, "gratuitos": [0, 0.0], "excluidos": [0, 0.0],
-               "estornos": [0, 0.0], "incoerentes": [], "sem_atrib": 0}
+               "estornos": [0, 0.0], "incoerentes": [], "sem_atrib": 0,
+               "saidas": {"qtd": 0, "total": 0.0, "por_natureza": {}},
+               "outras_entradas": [0, 0.0]}
     lans = bd.ler(
         # O «nº» DO USO É O id DO DEPÓSITO, e não o número impresso
         # (DP2026.09.7): medido em 06/10/2026, «Uso do depósito prévio nº 10»
@@ -186,6 +216,13 @@ def apurar_mes(con, ano: int, mes: int) -> dict:
             r["estornos"][0] += 1
             r["estornos"][1] += valor
             continue
+        # A SAÍDA NÃO É RECEITA (26/10/2026): campo próprio, e nada mais.
+        if _e_saida(lan):
+            nat = str(lan["natureza"] or "SAIDA").upper()
+            r["saidas"]["qtd"] += 1
+            r["saidas"]["total"] += valor
+            r["saidas"]["por_natureza"][nat] = r["saidas"]["por_natureza"].get(nat, 0.0) + valor
+            continue
         if _e_troco(lan):
             r["troco"] += valor
             continue
@@ -201,6 +238,14 @@ def apurar_mes(con, ano: int, mes: int) -> dict:
         r["sem_atrib"] += atr == "sem identificação"
         if lan["natureza"] == "DEPOSITO_PREVIO":
             chave = "Depósito prévio lançado no caixa"
+            r["entrou"][chave] = r["entrou"].get(chave, 0.0) + valor
+            continue
+        # OUTRA ENTRADA (e qualquer natureza que não seja RECEBIMENTO): o
+        # dinheiro entrou, mas não é recebimento de ato.
+        if str(lan["natureza"] or "").upper() != "RECEBIMENTO":
+            r["outras_entradas"][0] += 1
+            r["outras_entradas"][1] += valor
+            chave = "Outras entradas (não são recebimento de ato)"
             r["entrou"][chave] = r["entrou"].get(chave, 0.0) + valor
             continue
         r["receita"][atr] = r["receita"].get(atr, 0.0) + valor
@@ -273,6 +318,8 @@ def relatorio_financeiro_html(con, ano: int, mes: int,
     fundos = "".join(f"<tr><td>{ROTULO_FUNDO[f]}</td><td class=n>R$ {_brl(v)}</td></tr>"
                      for f, v in s["fundos"].items())
     incoerentes = "".join(f"<li>{e(x)}</li>" for x in r["incoerentes"]) or "<li>nenhum</li>"
+    saidas = "".join(f"; {e(k.lower().replace('_', ' '))} R$ {_brl(v)}"
+                     for k, v in sorted(r["saidas"]["por_natureza"].items()))
     linhas_ri = "".join(
         "<tr><td>{}</td><td>{}</td><td>{}</td><td class=n>R$ {}</td><td>{}</td></tr>".format(
             x["dia"], e(x["ato"]), e(x["partes"]), _brl(x["total"]),
@@ -291,7 +338,8 @@ td.n{{text-align:right;font-variant-numeric:tabular-nums}}tr.t td{{font-weight:7
 Só leitura. Despesas da serventia, ISS e o que entrou fora do caixa do sistema não estão aqui.</small></p>
 
 <h2>1. Receita reconhecida no mês: R$ {_brl(receita)}</h2>
-<p><small>Inclui o uso de depósitos prévios (receita do ato que saiu). Exclui troco, gratuidades, estornos e excluídos.</small></p>
+<p><small>Só recebimento de ato, e inclui o uso de depósitos prévios (receita do ato que saiu). Exclui as saídas do caixa,
+as outras entradas, o troco, as gratuidades, os estornos e os excluídos.</small></p>
 <h3>Por atribuição</h3>{tabela(r['receita'])}
 <p><small>{r['sem_atrib']} lançamento(s) sem protocolo nem ato amarrado — a atribuição não se sabe.</small></p>
 <h3>Por caixa (quem recebeu)</h3>{tabela(r['por_operador'])}
@@ -327,6 +375,8 @@ Quem deposita nem sempre é a parte: «não achado» quer dizer «conferir», e 
 <ul><li>Lançamentos excluídos: {r['excluidos'][0]} (R$ {_brl(r['excluidos'][1])})</li>
 <li>Estornos: {r['estornos'][0]} (R$ {_brl(r['estornos'][1])})</li>
 <li>Movimento de troco (saldo inicial e complemento), fora da receita: R$ {_brl(r['troco'])}</li>
+<li>Saídas do caixa (devolução, sangria, despesa, outras saídas), fora da receita: {r['saidas']['qtd']} (R$ {_brl(r['saidas']['total'])}){saidas}</li>
+<li>Outras entradas, que não são recebimento de ato, fora da receita: {r['outras_entradas'][0]} (R$ {_brl(r['outras_entradas'][1])})</li>
 <li>Caixas do mês fechados e não conferidos: {r['caixas_sem_conferencia']}</li></ul>
 <h3>Lançamentos incoerentes</h3><ul>{incoerentes}</ul>
 </body></html>"""

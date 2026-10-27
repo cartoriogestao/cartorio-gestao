@@ -120,6 +120,7 @@ import protesto_cenprot_xml as PCXML
 import protesto_roteiro as PROT
 import protesto_certidao as PCE
 import protesto_termo as PTERMO
+import protesto_triduo as TRIDUO
 import protesto_livros as PLIV
 import protesto_cra as CRA
 import protesto_desistencia as DS
@@ -3180,6 +3181,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         regra de domínio na tela é como as duas divergem.
         """
         ato = _campo("ato")
+        # O ROBÔ NÃO CANCELA NEM CUMPRE ORDEM JUDICIAL (revisão de segurança,
+        # 26/10/2026): ele alcança esta rota para lavrar, e a recusa é aqui
+        # dentro, antes de abrir a transação.
+        import selo_robo as SR
+        if SR.lancamento_vedado_ao_robo(ato):
+            abort(403)
         voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_id))
         situacao_antes = situacao_depois = None
         try:
@@ -3203,11 +3210,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         codigo_edital=_campo("codigo_edital") or None,
                         comprovante=_campo("comprovante") or None)
                 elif ato == "PROTESTO":
+                    # O TRÍDUO (tarefa 56): antes do termo inicial recusa;
+                    # depois do termo final exige o motivo do atraso.
                     r = PT.lancar_protesto(con, titulo_id, sv=sv(),
                                            agora=agora(),
                                            data_extenso=hoje_extenso(),
                                            usuario=usuario_nome(),
-                                           modelo_do_termo=_modelo_do_termo(con))
+                                           modelo_do_termo=_modelo_do_termo(con),
+                                           conferir_triduo=True,
+                                           motivo_atraso=_campo("motivo_atraso") or None)
                 elif ato == "DESISTENCIA":
                     r = PT.lancar_desistencia(con, titulo_id,
                                               motivo=_campo("motivo"),
@@ -3445,6 +3456,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # PAGO com protesto em pé — o legado do pagamento depois do
             # protesto, que a regra de 21/10/2026 não admite mais.
             catalogo = PT.hipoteses_que_cabem(_c, titulo)
+            # O TRÍDUO (tarefa 56): só no intimado, que é quando o protesto cabe.
+            triduo = (TRIDUO.para_a_lista(_c, [{"id": titulo_id}],
+                                          hoje=hoje())[0]
+                      if situacao == "INTIMADO" else None)
         pago_com_protesto = situacao == "PAGO" and bool(catalogo)
         cabem = []
         # O APONTAMENTO É O PRIMEIRO ATO DA VIDA DO TÍTULO — Lei 9.492/1997,
@@ -3504,7 +3519,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                entregadores=AV.ENTREGADORES,
                                catalogo=catalogo,
                                pago_com_protesto=pago_com_protesto,
-                               caracteres=PT.CARATER_DA_ORDEM)
+                               caracteres=PT.CARATER_DA_ORDEM,
+                               triduo=(triduo or {}).get("triduo"),
+                               triduo_situacao=(triduo or {}).get(
+                                   "triduo_situacao"))
 
     @app.route("/protesto/<int:titulo_id>/ordem/<int:ato_id>/marcar",
                methods=["POST"])
@@ -4060,7 +4078,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     # commit — gravadas depois, ela as acharia sempre vazias.
                     marcas_do_obito=(
                         {k: _campo(k) for k in MARCA.CHAVES if _campo(k)}
-                        if especie == "OBITO" else None))
+                        if especie == "OBITO" else None),
+                    # O TERMO DE PATERNIDADE DO NASCIMENTO SEM O PAI (23/10/2026):
+                    # a lavratura recusa sem ele, e o gera junto.
+                    paternidade=({c: _campo(c) for c in (
+                        "paternidade_tipo", "suposto_pai_nome",
+                        "suposto_pai_profissao", "suposto_pai_documento",
+                        "suposto_pai_residencia")}
+                        if especie == "NASCIMENTO" else None))
                 # O TERMO VAZIO SE ESCREVE PELO MODELO DA CASA (11/10/2026). É
                 # o caminho da importação sem robô: o arquivo traz os CAMPOS, e
                 # o texto que vai ao livro sai deles, pelo mesmo `congelar` da
@@ -4672,6 +4697,60 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def rcpn_retificar(assento_id: int):
         return _rcpn_tela_lancamento(assento_id, "RETIFICACAO")
 
+    # ------------------------- o termo de paternidade (23/10/2026)
+
+    @app.route("/rcpn/<int:assento_id>/paternidade/termo")
+    @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    def rcpn_paternidade_termo(assento_id: int):
+        """O termo de alegação (ou negativo) em .odt, para a mãe e o oficial
+        assinarem e a serventia arquivar. O texto é o que foi gravado na
+        lavratura — não se remonta."""
+        import rc_paternidade as RP
+        from ri_odt import gerar_odt, html_para_odf
+        with db.connect() as con:
+            termo = RP.do_assento(con, assento_id)
+        if not termo:
+            flash("Este assento não tem termo de paternidade.", "warning")
+            return redirect(url_for("rcpn_assento", assento_id=assento_id))
+        from markupsafe import escape as esc
+        s = sv()
+        html = (f'<p align="center"><b>{esc(s.get("unit_name", ""))}</b></p>'
+                f'<p align="center">CNS {esc(s.get("ri_cns", ""))}</p><p></p>'
+                f'<p>{esc(termo["teor"])}</p><p></p><p></p>'
+                f'<p align="center">_________________________________</p>'
+                f'<p align="center">{esc(termo.get("mae_nome") or "a declarante")}</p>'
+                f'<p></p><p align="center">_________________________________</p>'
+                f'<p align="center">{esc(s.get("serventia_titular", ""))}</p>'
+                f'<p align="center">{esc(s.get("serventia_titulo", ""))}</p>')
+        arquivo = gerar_odt(html_para_odf(html), titulo=termo["nome_do_tipo"])
+        audit("RCPN_TERMO_PATERNIDADE_IMPRESSO", "rc_termos_paternidade",
+              termo["id"], {"assento_id": assento_id, "tipo": termo["tipo"]})
+        return Response(arquivo,
+                        mimetype="application/vnd.oasis.opendocument.text",
+                        headers={"Content-Disposition":
+                                 f'attachment; filename="termo-paternidade-{assento_id}.odt"'})
+
+    @app.route("/rcpn/<int:assento_id>/paternidade/remessa", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def rcpn_paternidade_remessa(assento_id: int):
+        """Grava a remessa do termo de alegação ao juiz (PJe). ESCREVE."""
+        import rc_paternidade as RP
+        try:
+            with db.transaction() as con:
+                r = RP.registrar_remessa(
+                    con, assento_id, processo=_campo("remessa_processo"),
+                    data=_campo("remessa_data"), agora=agora(),
+                    usuario=usuario_nome())
+        except RP.PaternidadeError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("rcpn_assento", assento_id=assento_id))
+        audit("RCPN_TERMO_PATERNIDADE_REMETIDO", "rc_termos_paternidade", None,
+              {"assento_id": assento_id, "processo": r["processo"],
+               "remetido_em": r["remetido_em"]})
+        flash(f"Remessa ao juiz registrada: processo {r['processo']}, em "
+              f"{r['remetido_em']}.", "success")
+        return redirect(url_for("rcpn_assento", assento_id=assento_id))
+
     @app.route("/rcpn/<int:assento_id>")
     @login_required
     def rcpn_assento(assento_id: int):
@@ -4749,6 +4828,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                                assento["especie"])
             habilitacao_vinculo = HAB.habilitacao_relacionada_ao_assento(
                 con, assento_id)
+            import rc_paternidade as RP
+            termo_paternidade = RP.do_assento(con, assento_id)
         # Os tres blocos que a inspecao cobra, cada um no seu lugar.
         blocos = {t: [a for a in atos if a["tipo"] == t]
                   for t in ("REGISTRO", "AVERBACAO", "ANOTACAO", "RETIFICACAO")}
@@ -4761,6 +4842,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                          especie=assento["especie"])
         return render_template("atrib_rcpn_ficha.html", assento=dict(assento),
                                habilitacao_vinculo=habilitacao_vinculo,
+                               termo_paternidade=termo_paternidade,
                                SITUACOES=HC.SITUACOES,
                                selagem=selagem,
                                blocos=blocos, dados=dados, receitas=receitas,
@@ -8297,16 +8379,135 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             t = banco(con).um("SELECT texto FROM sd_selos WHERE numero=%s",
                               (res["numero"],))
         valores = SP.linha_de_valores((t["texto"] if t else "") or "")
-        extras = "; ".join(f"{k}: {v}" for k, v in (res.get("extras") or {}).items()
-                           if str(v or "").strip())
         flash(f"Selo da certidão eletrônica: {res['numero']} — copie-o para a "
               f"CRC antes de subir o arquivo. "
               + (f"Valores: {valores}. " if valores else "")
-              + (f"O selador devolveu também: {extras}. " if extras else
-                 "O selador não devolveu código de validação nesta resposta. ")
+              + _recado_do_codigo_de_validacao(res["numero"], res.get("extras"))
               + f"Certidão n. {r['numero']}/{r['ano']} registrada com ele.",
               "success")
         return redirect(url_for("rcpn_certidao", certidao_id=certidao_id))
+
+    def _recado_do_codigo_de_validacao(numero: str, extras) -> str:
+        """A frase do aviso com o código de validação do selo. ESCREVE
+        (guarda o código em `sd_selos.qr_token`).
+
+        O CÓDIGO É O `valorQrCode` — medido na resposta do aparelho em
+        26/10/2026: o resumo traz `valorQrCode` (24 caracteres, o mesmo
+        `strvalorQRCode` do acervo) e `qrCode`, que é a IMAGEM do QR em base64
+        (~660 caracteres). O aviso mostrava os dois crus; agora mostra o
+        código com o nome dele, e a imagem não vai para a tela. O código fica
+        guardado em `sd_selos.qr_token`, a coluna dele, que ficou vazia desde a
+        carga — e NÃO vai para o papel: o oficial, em 23/10/2026, «não precisa
+        colocar na certidão»."""
+        resto = dict(extras or {})
+        codigo = str(resto.pop("valorQrCode", "") or "").strip()
+        resto.pop("qrCode", None)
+        if codigo:
+            try:
+                with db.transaction() as con:
+                    banco(con).escrever(
+                        """UPDATE sd_selos SET qr_token=%s
+                            WHERE numero=%s AND COALESCE(qr_token, '')=''""",
+                        (codigo, numero))
+            except sqlite3.Error:
+                # O código já está no aviso; perder a cópia no razão não
+                # desfaz o selo, mas fica no registro para quem conferir.
+                app.logger.exception("código de validação do selo %s", numero)
+        outros = "; ".join(f"{k}: {v}" for k, v in resto.items()
+                           if str(v or "").strip())
+        frase = ""
+        if codigo:
+            frase += f"Código de validação: {codigo}. "
+        if outros:
+            frase += f"O selador devolveu também: {outros}. "
+        if not frase:
+            frase = "O selador não devolveu código de validação nesta resposta. "
+        return frase
+
+    # A MATERIALIZAÇÃO DE CERTIDÃO DE OUTRA SERVENTIA — 26/10/2026, o oficial:
+    # «assim como criamos o emissor de selo para certidão eletrônica de
+    # registro do cartório, preciso que o sistema emita selo para a
+    # materialização de certidão vinda de outros cartórios para entrega a
+    # clientes». Item 14.5.1 e pagamento no caixa (decisões dele): o selo
+    # passa pela trava de sempre, com o protocolo em atendimento.
+    @app.route("/rcpn/materializacoes")
+    @login_required
+    def rcpn_materializacoes():
+        """O formulário e as materializações já seladas. Só LÊ."""
+        import rc_materializacao as RCM
+        with db.connect() as con:
+            linhas = RCM.listar(con, limite=100)
+        return render_template("rc_materializacoes.html", linhas=linhas,
+                               codigo_ato=RCM.CODIGO_ATO)
+
+    @app.route("/rcpn/materializacoes", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def rcpn_materializacao_selar():
+        """Registra a materialização e pede o selo. ESCREVE (a materialização
+        e o selo) e FALA COM A REDE (o selador), fora da transação."""
+        import rc_materializacao as RCM
+        import selo_robo as SR
+        volta = url_for("rcpn_materializacoes")
+        if not SR.pode_selar_automatico():
+            flash(SR.recado_pendente_selo(), "danger")
+            return redirect(volta)
+        try:
+            _grat_cod, motivo_selo, selo_isento = _gratuidade_do_form()
+        except AS.AtoError as erro:
+            flash(f"{erro} Escreva o motivo, ou desmarque «selo isento».",
+                  "danger")
+            return redirect(volta)
+        dados = {k: _campo(k) for k in (
+            "nome_parte", "requerente", "cartorio_nome", "cartorio_cidade",
+            "cartorio_uf", "funcionario_expedidor", "valor_emolumentos",
+            "especie", "matricula")}
+        # O ENVELOPE SE MONTA ANTES DE GRAVAR: o que falta no formulário ou no
+        # cadastro (a versão da tabela) recusa aqui, sem deixar materialização
+        # cancelada para trás.
+        try:
+            conferido = RCM.conferir(dados)
+            envelope = RCM.envelope(
+                conferido, escrevente=usuario_nome(),
+                versao_tabela=AS.versao_da_tabela_de_custas(
+                    RCM.CAMINHO, db.get_setting("selo_tabela_custas_em", "")),
+                isento=selo_isento, motivo_isencao=motivo_selo)
+            with db.transaction() as con:
+                mid = RCM.registrar(con, dados, agora=agora(),
+                                    usuario=usuario_nome())
+        except RCM.MaterializacaoError as erro:
+            flash(str(erro), "danger")
+            return redirect(volta)
+        try:
+            res = AS.selar_o_ato_lavrado(
+                db, Path(app.config["DATA_DIR"]), tabela=RCM.TABELA,
+                ato_id=mid, tipo="MATERIALIZACAO", atribuicao="RCPN",
+                agora=agora(), cns=sv().get("ri_cns"), usuario=usuario_nome(),
+                dados=envelope, caminho=RCM.CAMINHO,
+                referencia=f"{RCM.TABELA}:{mid}:{RCM.CODIGO_ATO}:1")
+        except (AS.AtoError, sqlite3.Error) as erro:
+            res = {"selado": False, "motivo": str(erro)}
+        if not res.get("selado") or not res.get("numero"):
+            motivo = str(res.get("motivo") or "o selador não devolveu número")
+            with db.transaction() as con:
+                RCM.cancelar(con, mid, motivo=f"Selo não emitido: {motivo}",
+                             agora=agora(), usuario=usuario_nome())
+            audit("RCPN_MATERIALIZACAO_SELO_FALHOU", RCM.TABELA, mid,
+                  {"motivo": motivo})
+            flash(f"O selo da materialização NÃO saiu: {motivo}.", "danger")
+            return redirect(volta)
+        audit("RCPN_MATERIALIZACAO_SELADA", RCM.TABELA, mid,
+              {"selo": res["numero"], "codigo": RCM.CODIGO_ATO,
+               "isento": bool(selo_isento)})
+        import selo_no_papel as SP
+        with db.connect() as con:
+            t = banco(con).um("SELECT texto FROM sd_selos WHERE numero=%s",
+                              (res["numero"],))
+        valores = SP.linha_de_valores((t["texto"] if t else "") or "")
+        flash(f"Selo da materialização: {res['numero']}. "
+              + (f"Valores: {valores}. " if valores else "")
+              + _recado_do_codigo_de_validacao(res["numero"], res.get("extras")),
+              "success")
+        return redirect(volta)
 
     @app.route("/rcpn/certidoes")
     @login_required
@@ -8642,6 +8843,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         nova, e no acervo cada ato é escritura à parte. É o oposto do RCPN.
         """
         tipo = _campo("tipo")
+        # O ROBÔ AVERBA, MAS NÃO CANCELA (revisão de segurança, 26/10/2026).
+        import selo_robo as SR
+        if SR.lancamento_vedado_ao_robo(tipo):
+            abort(403)
         voltar = redirect(url_for("rcpj_rtd_registro", registro_id=registro_id))
         try:
             with db.transaction() as con:
@@ -9650,6 +9855,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         averbação dizendo que foi cancelado e por quê.
         """
         tipo = _campo("tipo")
+        # O ROBÔ AVERBA, MAS NÃO CANCELA (revisão de segurança, 26/10/2026).
+        import selo_robo as SR
+        if SR.lancamento_vedado_ao_robo(tipo):
+            abort(403)
         voltar = redirect(url_for("livro3_registro", registro_id=registro_id))
         gerar_arquivamento = _campo("gerar_arquivamento") == "1"
         folhas_arquivamento = 0
@@ -9878,6 +10087,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 a["base_cadastro"] = PBE.cadastro(con, a["id"])
             contas = AV.contagens(con)
             do_dia = AV.editais_do_dia(con, hoje())
+            # O ENVIO À CENPROT, DIA A DIA, COM O COMPROVANTE (#142).
+            envios = AV.envios_do_edital(con, hoje())
         motivos = AV.motivos_para_escolher()
         destaque = [{"codigo": c, "motivo": AV.ROTULO_DO_DESTAQUE[c]}
                     for c in AV.MOTIVOS_EM_DESTAQUE]
@@ -9887,7 +10098,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                esperando=esperando, entregues=entregues,
                                sem_aviso=sem_aviso, antigos=antigos,
                                antigo_dias=AV.ANTIGO_DIAS,
-                               contas=contas, do_dia=do_dia, motivos=motivos,
+                               contas=contas, do_dia=do_dia, envios=envios,
+                               motivos=motivos,
                                motivos_destaque=destaque,
                                motivos_outros=outros,
                                entregadores=AV.ENTREGADORES, hoje=hoje())
@@ -10031,6 +10243,36 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               {"anexo_id": r["anexo_id"], "nome": r["nome"]})
         flash(f"Comprovante anexado ({r['nome']}).", "success")
         return redirect(url_for("protesto_avisos") + "#entregues")
+
+    @app.route("/protesto/editais/comprovante-cenprot", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_edital_comprovante_cenprot():
+        """Anexa o comprovante do envio dos editais do dia à CENPROT. ESCREVE.
+
+        Pedido do oficial, 26/10/2026 (problema #142): «vamos criar um campo
+        para anexar o comprovante de envio do edital». CN-MA art. 922, § 1º.
+        """
+        voltar = redirect(url_for("protesto_avisos") + "#envio-do-edital")
+        enviado = request.files.get("comprovante")
+        if not enviado or not enviado.filename:
+            flash("Escolha o arquivo do comprovante do envio.", "danger")
+            return voltar
+        dia = (_campo("dia") or hoje())[:10]
+        try:
+            with db.transaction() as con:
+                r = AV.guardar_comprovante_do_envio(
+                    con, dia, nome=enviado.filename, conteudo=enviado.read(),
+                    pasta_de_arquivos=pasta_dos_arquivos(), agora=agora(),
+                    usuario_id=usuario_id_do_sistema())
+        except AV.AvisoError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        audit("PROTESTO_EDITAL_ENVIO_CENPROT", "pt_editais", None,
+              {"dia": dia, "editais": r["editais"], "anexos": r["anexos"],
+               "nome": r["nome"]})
+        flash(f"Comprovante do envio à CENPROT anexado aos {r['editais']} "
+              f"edital(is) de {dia}.", "success")
+        return voltar
 
     @app.route("/protesto/avisos/<int:aviso_id>/resolve", methods=["POST"])
     # 21/10/2026: aberto às escreventes por ordem do oficial (era ("ADMIN", "MANAGER")).
@@ -10899,14 +11141,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         sem tela nenhuma — o título intimado ficava esperando alguém lembrar
         dele, um a um, na lista geral.
 
-        O PRAZO NÃO SE CALCULA, e isso é decisão do oficial de 24/08/2026. A
-        tela mostra a data da intimação e quantos dias correram; **quem diz se
-        o tríduo venceu é quem assina.** Um sistema que decidisse isso estaria
-        decidindo sobre o ato mais grave desta atribuição — e o que menos se
-        desfaz.
+        O TRÍDUO SE CALCULA DESDE A TAREFA 56 (23/10/2026), que substituiu a
+        decisão do oficial de 24/08/2026 («contar, e não julgar»). A tela
+        mostra o termo inicial e o final de cada título; o que ainda não
+        chegou ao termo inicial não se marca, e o que passou do final pede o
+        motivo do atraso — a régua é `protesto_triduo`.
         """
         with db.connect() as con:
-            linhas = PT.esperando_protesto(con, hoje=hoje())
+            # O TRÍDUO DE CADA UM (tarefa 56, 23/10/2026): o termo inicial e o
+            # final, e onde hoje cai — a conta é `protesto_triduo`, a mesma
+            # que `lancar_protesto` confere ao lavrar.
+            linhas = TRIDUO.para_a_lista(
+                con, PT.esperando_protesto(con, hoje=hoje()), hoje=hoje())
             # AS DUAS PONTAS DA SUSTACAO JUDICIAL — Lei 9.492/1997, art. 17.
             #
             # `revogados` vem PRIMEIRO na tela: e o unico titulo do Protesto
@@ -10954,11 +11200,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         for titulo_id in escolhidos:
             try:
                 with db.transaction() as con:
-                    r = PT.lancar_protesto(con, titulo_id, sv=sv(),
-                                           agora=agora(),
-                                           data_extenso=hoje_extenso(),
-                                           usuario=usuario_nome(),
-                                           modelo_do_termo=_modelo_do_termo(con))
+                    # O motivo do atraso é por título: cada um tem o seu
+                    # tríduo, e o instrumento de cada um diz o seu motivo.
+                    r = PT.lancar_protesto(
+                        con, titulo_id, sv=sv(), agora=agora(),
+                        data_extenso=hoje_extenso(), usuario=usuario_nome(),
+                        modelo_do_termo=_modelo_do_termo(con),
+                        conferir_triduo=True,
+                        motivo_atraso=_campo(f"motivo_atraso_{titulo_id}") or None)
                 feitos.append((titulo_id, r))
             except (PT.ProtestoError, LN.LivroError,
                     PTERMO.TermoError) as erro:
@@ -11391,6 +11640,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         anterior, e quem esqueceu ontem precisa poder mandar hoje.
         """
         dia = (_campo("dia") or hoje())[:10]
+        # QUEM PEDIU DE «AVISOS E EDITAIS» VOLTA PARA LÁ (#142, 26/10/2026) —
+        # é onde o edital se publica, e o botão passou a morar lá também.
+        # Lista fechada: o destino não vem livre do formulário.
+        volta = {"avisos": "protesto_avisos"}.get(_campo("voltar"),
+                                                  "protesto_cenprot")
         config = db.get_settings()
         try:
             casa = PCEN.identidade_da_casa(config)
@@ -11399,7 +11653,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     con, dia=dia, comarca=casa["comarca"])
         except PCEN.CenprotError as erro:
             flash(str(erro), "danger")
-            return redirect(url_for("protesto_cenprot"))
+            return redirect(url_for(volta))
         if not arquivo["editais"]:
             # ARQUIVO SEM UM EDITAL NÃO SE MANDA: ele diria à Central que a
             # casa publicou nada naquele dia, que é diferente de não ter
@@ -11407,7 +11661,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash(f"Nenhum edital foi publicado em {dia}. O arquivo sai do que "
                   f"já foi publicado — publique em Avisos e editais primeiro.",
                   "warning")
-            return redirect(url_for("protesto_cenprot"))
+            return redirect(url_for(volta))
         audit("PROTESTO_CENPROT_EDITAL", "pt_editais", None,
               {"arquivo": arquivo["nome"], "dia": dia,
                "editais": arquivo["editais"], "fora": len(arquivo["fora"])})

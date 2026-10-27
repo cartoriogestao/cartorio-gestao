@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}NFS-e — apuração do ISS{% endblock %}
+{% block heading %}<h1>Apuração do ISS do mês</h1>{% endblock %}
+{% block content %}
+{# O NÚMERO QUE A GUIA DEVE DAR, NOTA POR NOTA. A guia em si sai de quem cobra
+   o imposto: o Módulo de Apuração Nacional (se o município aderiu) ou o
+   sistema da prefeitura — esta tela não gera boleto. #}
+<div class="actions">
+  <a class="button" href="{{ url_for('nfse_fila') }}">&larr; Fila da NFS-e</a>
+  <a class="button" href="{{ url_for('nfse_apuracao', mes=mes, ambiente=a.ambiente, formato='csv') }}">Baixar em CSV (para o contador)</a>
+</div>
+
+<form method="get" action="{{ url_for('nfse_apuracao') }}" class="filters">
+  <label>Mês <input type="month" name="mes" value="{{ mes }}"></label>
+  <label>Ambiente
+    <select name="ambiente">{% for k, v in ambientes.items() %}<option value="{{ k }}" {% if k == a.ambiente %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+  <button type="submit">Ver</button>
+</form>
+
+<div class="notice">
+  A <strong>guia do ISS não sai daqui</strong>: quem a emite é quem cobra o imposto — o Módulo de Apuração
+  Nacional do emissor (se o município aderiu) ou o sistema da prefeitura. Este quadro diz quanto ela deve
+  dar e de quais notas, para conferir antes de pagar.
+  {% if a.ambiente == 'homologacao' %}<br><strong>Homologação:</strong> estas notas não têm valor fiscal.{% endif %}
+</div>
+
+<section class="panel">
+  <h2>{{ a.quantidade }} nota(s) emitida(s) com competência {{ mes }}</h2>
+  <p>Base (emolumentos): <strong>R$ {{ reais(a.total.base) }}</strong> ·
+     ISS: <strong>R$ {{ reais(a.total.iss) }}</strong> ·
+     IBS: R$ {{ reais(a.total.ibs) }} · CBS: R$ {{ reais(a.total.cbs) }}</p>
+  {% if a.total.estimadas %}
+  <p class="muted small">{{ a.total.estimadas }} nota(s) sem o XML da Sefin entram com o ISS
+    <strong>estimado</strong> pela alíquota configurada; as demais, com o ISS que a Sefin apurou.</p>
+  {% endif %}
+  {% if a.notas %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>NFS-e</th><th>DPS</th><th>Competência</th><th>Tomador</th><th>Base</th>
+      <th>Alíquota</th><th>ISS</th><th>IBS</th><th>CBS</th><th></th></tr></thead>
+    <tbody>{% for n in a.notas %}<tr>
+      <td>{{ n.numero or '—' }}</td><td>{{ n.dps }}</td><td>{{ n.competencia }}</td>
+      <td>{{ n.tomador }} <span class="muted small">{{ n.tomador_documento }}</span></td>
+      <td>R$ {{ reais(n.base) }}</td><td>{{ n.aliquota or '—' }}</td>
+      <td>R$ {{ reais(n.iss) }}{% if n.estimado %} <span class="badge">estimado</span>{% endif %}</td>
+      <td>R$ {{ reais(n.ibs) }}</td><td>R$ {{ reais(n.cbs) }}</td>
+      <td><a class="small" href="{{ url_for('nfse_recibo', recibo_id=n.recibo_id) }}">abrir</a></td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="muted">Nenhuma nota emitida com esta competência neste ambiente.</p>{% endif %}
+</section>
+
+{% if a.canceladas %}
+<section class="panel">
+  <h2>Canceladas no mês ({{ a.canceladas|length }}) — não somam</h2>
+  <ul>{% for n in a.canceladas %}<li>NFS-e {{ n.numero or n.dps }} · {{ n.tomador }} · R$ {{ reais(n.base) }}
+    · cancelada em {{ n.cancelada_em }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+{% endblock %}

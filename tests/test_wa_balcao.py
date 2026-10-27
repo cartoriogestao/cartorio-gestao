@@ -19,6 +19,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 import wa_balcao as WA
+import wa_fila as FILA
 import wa_puxar as PUXAR
 import wa_schema as SCH
 
@@ -416,7 +417,9 @@ def test_puxar_mock_aplica_pendente(s):
         corpo = _payload("qual o horario?", meta_id="wamid.caixa-1")
         return 200, json.dumps({"pendentes": [corpo]})
 
-    r = PUXAR.puxar_pendentes(con, http_get=http_get)
+    achado = PUXAR.buscar_pendentes(con, http_get=http_get)
+    assert achado["ok"] is True
+    r = PUXAR.aplicar_itens(con, achado["itens"])
     assert r["ok"] is True
     assert r["aplicadas"] == 1
     n = con.execute("SELECT COUNT(*) FROM wa_conversa").fetchone()[0]
@@ -438,14 +441,14 @@ def test_segunda_mensagem_sem_nome_guarda_o_nome_e_com_nome_troca(cg_casa):
                                   "text": {"body": "oi de novo"}}]}
         assert WA.aplicar_entrada(con, sem_nome)["criadas"] == 1
         con.commit()
-        assert [c["nome"] for c in WA.listar_conversas(con)] == ["Fulano da Silva"]
+        assert [c["nome"] for c in FILA.listar(con, agora=WA.agora_iso())] == ["Fulano da Silva"]
 
         com_nome = _payload("sou eu", meta_id="wamid.nome-3")
         contato = com_nome["entry"][0]["changes"][0]["value"]["contacts"][0]
         contato["profile"]["name"] = "Ciclano de Tal"
         WA.aplicar_entrada(con, com_nome)
         con.commit()
-        convs = WA.listar_conversas(con)
+        convs = FILA.listar(con, agora=WA.agora_iso())
         assert [c["nome"] for c in convs] == ["Ciclano de Tal"]
         assert len(WA.conversa(con, convs[0]["id"])["mensagens"]) == 3
     finally:

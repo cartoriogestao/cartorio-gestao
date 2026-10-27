@@ -59,9 +59,24 @@ LIXO_DE_PROGRAMACAO = re.compile(
 
 DATA_DD_MM_AAAA = re.compile(r"^\d{2}/\d{2}/\d{4}$")
 
-pytestmark = pytest.mark.skipif(
-    not PRODUCAO.exists(),
-    reason="o banco de produção não está nesta máquina")
+# A PRODUÇÃO ESTÁ NO POSTGRESQL DESDE 22/10/2026 (3.7.0). O arquivo SQLite que
+# fica no disco é retrato parado da véspera da virada, e com o banco de teste no
+# PostgreSQL a ponte de `sqlite3.connect` leva este caminho a um esquema VAZIO:
+# os 9 testes estouravam em `rc_assentos` antes do `montar()`. Auditar o retrato
+# velho também não diria nada sobre a carga de hoje. Por isso o ensaio só roda
+# no backend SQLite e com o arquivo presente — e a marca `lento` não se perde:
+# a segunda atribuição de `pytestmark` apagava a primeira.
+import os  # noqa: E402
+_BACKEND_PG = os.environ.get("CG_TEST_BACKEND", "").strip().lower() == "pg"
+pytestmark = [
+    pytest.mark.lento,
+    pytest.mark.skipif(not PRODUCAO.exists(),
+                       reason="o banco de produção não está nesta máquina"),
+    pytest.mark.skipif(_BACKEND_PG,
+                       reason="a produção está no PostgreSQL desde 22/10/2026; o "
+                              "SQLite em disco é retrato parado e a ponte do teste "
+                              "o leva a um esquema vazio"),
+]
 
 
 def _con() -> sqlite3.Connection:

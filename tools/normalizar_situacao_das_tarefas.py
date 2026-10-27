@@ -85,6 +85,7 @@ if str(RAIZ) not in sys.path:
 # A RÉGUA É A DO MÓDULO, e não uma lista escrita aqui: duas listas de situações
 # divergiriam no dia em que a sexta nascesse, e a que ficasse velha seria esta.
 import banco_pg
+import identidade_do_robo as IDR
 import tarefa_processo as TP
 from bd_nativo import banco as abrir_banco
 
@@ -266,19 +267,21 @@ def main() -> int:
                  linha["status"], destino, nota),
             )
             # A MESMA SERIALIZAÇÃO DE `db.log` (`json.dumps`, `ensure_ascii=False`).
-            bd.escrever(
-                """INSERT INTO audit_logs (ts, user_id, username_snapshot, action,
-                       entity_type, entity_id, details)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-                (agora, None, "tools/normalizar_situacao_das_tarefas.py",
-                 "TAREFA_SITUACAO", "tasks", int(linha["id"]),
-                 json.dumps({"acao": "normalizar", "de": linha["status"],
-                             "para": destino,
-                             "carimbo_apagado": apagou,
-                             "nota": "palavra fora do vocabulário da lista, "
-                                     "escrita pela própria rota de reabrir "
-                                     "antes de 17/09/2026"},
-                            ensure_ascii=False)))
+            # Quem grava por programa diz quem e e a mando de quem (26/10/2026).
+            IDR.registrar(
+                bd, ts=agora, user_id=None,
+                username="tools/normalizar_situacao_das_tarefas.py",
+                action="TAREFA_SITUACAO", entity_type="tasks",
+                entity_id=int(linha["id"]),
+                details=json.dumps({"acao": "normalizar", "de": linha["status"],
+                                    "para": destino,
+                                    "carimbo_apagado": apagou,
+                                    "nota": "palavra fora do vocabulário da lista, "
+                                            "escrita pela própria rota de reabrir "
+                                            "antes de 17/09/2026"},
+                                   ensure_ascii=False),
+                agente="tools/normalizar_situacao_das_tarefas.py",
+                a_mando_de=IDR.PELO_RESPONSAVEL)
             mudadas.append((linha, destino, apagou))
 
     print("\n=== como ficaram ===")

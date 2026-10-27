@@ -235,6 +235,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                             con, json.loads(p.get("dados_json") or "{}"))
             else:
                 raise AUTO.AutoError("Este pedido não tem caminho automático: faça à mão.")
+            # A emissão que caiu antes de amarrar (27/10/2026): amarra primeiro o
+            # que ela gravou, para a nova aprovação não gastar outro selo.
+            with db.transaction() as con:
+                retomado = AUTO.retomar_emitindo_vencido(con, pedido_id, agora=agora())
+            if retomado and retomado.get("certidao_id"):
+                flash("A emissão anterior deste pedido já tinha gravado a certidão; ela "
+                      "foi amarrada ao pedido, e nenhuma outra foi emitida.", "warning")
+                return _voltar(pedido_id)
+            if retomado and retomado.get("etapa") == AUTO.ERRO:
+                flash("A emissão anterior gravou mais de uma certidão para este pedido; "
+                      "nenhuma foi amarrada. O oficial decide qual cancelar.", "danger")
+                return _voltar(pedido_id)
             status = status_ao_vivo(p["protocolo"])            # rede, fora de transação
             onus = {}
             if tipo_ri == "ONUS":

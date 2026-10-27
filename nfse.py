@@ -851,6 +851,16 @@ def _evento(bd, nota_id: int, operacao: str, resultado: str, mensagem: str,
         (int(nota_id), quando, operacao, resultado, _curto(mensagem), usuario or ""))
 
 
+def _data_do_recibo(recibo: Mapping) -> Any:
+    """A data do recibo, que é a competência da nota (27/10/2026). Só calcula.
+    Data que não se lê devolve None — e a DPS fica com a data da emissão."""
+    from datetime import date
+    try:
+        return date.fromisoformat(str(recibo.get("data_emissao") or "")[:10])
+    except ValueError:
+        return None
+
+
 def preparar(con, recibo_id: int, *, cfg: Mapping[str, str],
              certificado: DPS.CertificadoA1, usuario: str,
              agora: datetime | None = None) -> dict:
@@ -899,7 +909,7 @@ def preparar(con, recibo_id: int, *, cfg: Mapping[str, str],
         xml = DPS.assinar(DPS.montar_dps(
             ambiente=cfg["nfse_ambiente"], emitida_em=quando, serie=serie, numero=numero,
             prestador=prestador, tomador=item["tomador"], servico=servico,
-            ibscbs=_ibscbs(cfg)), certificado)
+            ibscbs=_ibscbs(cfg), competencia=_data_do_recibo(r)), certificado)
     except DPS.DpsError as erro:
         raise NfseError(str(erro)) from erro
     # CONFERIR O QUE VAI SAIR ANTES DE SAIR: certificado trocado pela metade
@@ -1359,20 +1369,22 @@ def apuracao_do_mes(con, mes: str, *, ambiente: str = "producao") -> dict:
         inicio = datetime.strptime(mes, "%Y-%m")
     except ValueError as erro:
         raise NfseError("O mês é AAAA-MM.") from erro
-    fim = datetime(inicio.year + (inicio.month == 12), inicio.month % 12 + 1, 1)
-    # Uma folga de dois dias de cada lado no filtro do banco; quem decide a
+    # Uma folga de dois dias antes no filtro do banco; quem decide a
     # competência é o `dCompet`, lido em Python logo abaixo.
     de = (inicio.replace(day=1)).isoformat()[:10]
-    ate = fim.isoformat()[:10]
     linhas = banco(con).ler(
         """SELECT id, recibo_id, situacao, serie, numero_dps, numero_nfse, chave,
                   tomador_documento, tomador_nome, valor_servico, valor_iss, aliquota,
                   emitida_em, cancelada_em, xml_dps, xml_nfse
              FROM nfse_notas
             WHERE ambiente = %s AND situacao IN ('EMITIDA', 'CANCELADA')
-              AND emitida_em >= %s AND emitida_em < %s
+              AND emitida_em >= %s
             ORDER BY emitida_em, id""",
-        (ambiente, _deslocar(de, -2), _deslocar(ate, 2)))
+        # SÓ O PISO — 27/10/2026. A competência é a do recibo, e a nota pode ser
+        # emitida (ou reenviada) no mês seguinte: com teto na data da emissão,
+        # ela sumia das duas apurações. Nota não sai antes da competência, e o
+        # piso continua valendo; quem decide é o `dCompet`, lido abaixo.
+        (ambiente, _deslocar(de, -2)))
     notas, canceladas = [], []
     soma = {"base": 0, "iss": 0, "ibs": 0, "cbs": 0, "estimadas": 0}
     for n in linhas:

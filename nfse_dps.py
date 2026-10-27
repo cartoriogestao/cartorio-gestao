@@ -49,7 +49,7 @@ import base64
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from lxml import etree
@@ -251,7 +251,8 @@ def conferir_ibscbs(grupo: IbsCbs) -> IbsCbs:
 def montar_dps(*, ambiente: str, emitida_em: datetime, serie: Any, numero: int,
                prestador: Prestador, tomador: Tomador, servico: Servico,
                ibscbs: IbsCbs | None = None,
-               versao_aplicativo: str = "CartorioGestao") -> bytes:
+               versao_aplicativo: str = "CartorioGestao",
+               competencia: date | None = None) -> bytes:
     """O XML da DPS, SEM assinatura. Não grava nada.
 
     Sem `ibscbs` o grupo da reforma não vai — o que o XSD 1.01 permite e a NT
@@ -279,7 +280,11 @@ def montar_dps(*, ambiente: str, emitida_em: datetime, serie: Any, numero: int,
     _sub(inf, "verAplic", _texto(versao_aplicativo, 20))
     _sub(inf, "serie", digitos(serie))
     _sub(inf, "nDPS", int(numero))
-    _sub(inf, "dCompet", emitida_em.date().isoformat())
+    # A COMPETÊNCIA É A DO SERVIÇO, E NÃO A DA MONTAGEM — 27/10/2026. Um recibo
+    # de 31/10 emitido em 03/11 caía em novembro. Ela vem do recibo; nunca
+    # depois da emissão (a Sefin recusa competência futura).
+    compet = min(competencia, emitida_em.date()) if competencia else emitida_em.date()
+    _sub(inf, "dCompet", compet.isoformat())
     _sub(inf, "tpEmit", "1")              # 1 = o próprio prestador emite
     _sub(inf, "cLocEmi", digitos(prestador.municipio))
 

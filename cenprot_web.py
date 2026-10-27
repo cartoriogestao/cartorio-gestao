@@ -272,7 +272,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             with db.transaction() as con:
                 r = PEND.cadastrar_titulo_do_pedido(
                     con, pendencia_id, agora=db.now(), usuario=usuario_nome(),
-                    pasta_de_arquivos=app.extensions["archive_root"]())
+                    pasta_de_arquivos=app.extensions["archive_root"](),
+                    mesmo_assim=request.values.get("mesmo_assim") == "1")
         except RECUSAS_DO_BALCAO as erro:
             flash(str(erro), "danger")
             return redirect(url_for("protesto_pendencia",

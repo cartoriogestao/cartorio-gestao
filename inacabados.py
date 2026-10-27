@@ -369,7 +369,10 @@ FONTES: tuple[dict, ...] = (
      "nome": "Termo de alegação de paternidade não remetido ao juiz",
      "atribuicao": "RCPN",
      "tabela": "rc_termos_paternidade",
-     "onde": "tipo = 'ALEGACAO' AND remetido_em IS NULL",
+     # O assento cancelado (o selo do nascimento falhou) não tem termo a
+     # remeter: sem esta condição ele ficava no painel para sempre (27/10/2026).
+     "onde": "tipo = 'ALEGACAO' AND remetido_em IS NULL AND assento_id NOT IN "
+             "(SELECT id FROM rc_assentos WHERE situacao = 'CANCELADO')",
      "quando": "criado_em",
      "rotulo": "registrado_nome",
      "id": "assento_id",

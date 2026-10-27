@@ -262,6 +262,26 @@ def test_a_exigencia_chega_a_quem_consentiu_no_protocolo_ligado(casa, tmp_path):
     assert "certidão de ônus" not in casa["enviados"][0]["corpo"]      # o teor não sai
 
 
+def test_a_exigencia_geral_fora_do_ri_tambem_avisa(casa, tmp_path):
+    # 27/10/2026: só a nota devolutiva do RI gerava aviso; a nota de exigência
+    # do balcão (aqui, nas Notas) passa a avisar pela leitura única do #39.
+    import caixa_exigencia as CXE
+    db = casa["db"]
+    _smtp(db)
+    cx = _protocolo(db, numero="2026.10.077", atribuicao="NOTAS")
+    _consentir(db, AS.PROTOCOLO_GERAL, cx)
+    with db.transaction() as con:
+        CXE.abrir(con, cx, texto="Trazer a certidão de casamento atualizada.",
+                  agora="2026-10-26T08:00:00", atribuicao="NOTAS", quem="carla")
+    _rodar(db, tmp_path)
+    (a,) = _avisos(db)
+    assert a["evento"] == AS.EXIGENCIA and a["origem"] == AS.PROTOCOLO_GERAL
+    assert len(casa["enviados"]) == 1
+    assert "certidão de casamento" not in casa["enviados"][0]["corpo"]  # o teor não sai
+    assert "prenotação" not in casa["enviados"][0]["corpo"].lower()    # corpo próprio
+    assert "2026.10.077" in casa["enviados"][0]["corpo"]
+
+
 def test_o_prazo_avisa_a_n_dias_corridos_e_respeita_a_suspensao(casa, tmp_path):
     db = casa["db"]
     _smtp(db)
@@ -455,6 +475,8 @@ def test_o_ajuste_torto_ja_gravado_nao_sai(casa):
 def test_so_o_gestor_grava_o_papel_que_vai_sozinho_ao_cliente():
     import modelos_da_casa as MOD
     assert AA.MODELO in MOD.PAPEIS_SO_DO_GESTOR
+    # o convite da pesquisa também sai sozinho ao cliente (27/10/2026)
+    assert "OUVIDORIA_CONVITE_PESQUISA" in MOD.PAPEIS_SO_DO_GESTOR
     assert MOD.recusa_ao_gravar("USER", [AA.MODELO])
     assert MOD.recusa_ao_gravar("AUDITOR", [AA.MODELO])
     assert MOD.recusa_ao_gravar("MANAGER", [AA.MODELO]) == ""

@@ -545,7 +545,9 @@ ACHADAS_EM_14_10_2026: dict[str, str] = {
     "marcar_o_que_o_eoficio_ja_informou":
         "protesto_retorno — virada do protesto (13/10); a porta foi o script "
         "pontual tmp/protesto_virada_20261013/2_virada.py, fora do sistema",
-    "devolver_presos": _FILA, "enfileirar": _FILA,
+    # «enfileirar» saiu em 26/10/2026: o nome ganhou caminho até tela com os
+    # avisos de andamento (`andamento_avisos.enfileirar`), e o varredor é pelo nome.
+    "devolver_presos": _FILA,
     "espera_da_tentativa": _FILA, "marcar_confirmado": _FILA,
     "marcar_enviado": _FILA, "marcar_falha": _FILA, "pegar_proximo": _FILA,
     "processar_proximo": _FILA,

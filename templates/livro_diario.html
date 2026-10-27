@@ -17,10 +17,13 @@
   {% elif situacao.gerado %}<span class="badge">gerado — {{ situacao.versoes }} versão(ões){% if not situacao.no_prazo %}, a primeira fora do prazo{% endif %}</span>
   {% elif situacao.atrasado %}<span class="badge danger">não gerado e fora do prazo</span>
   {% else %}<span class="badge warning">ainda não gerado</span>{% endif %}
-  {% if situacao.movimento_mudou %}<span class="badge danger">o movimento mudou depois da última geração — conferir e, se for o caso, retificar</span>{% endif %}</p>
+  {% if situacao.movimento_mudou %}<span class="badge danger">o movimento mudou depois da última geração — conferir e, se for o caso, retificar</span>{% endif %}
+  {% if situacao.gerado_antes_do_ferj %}<span class="badge warning">a versão gerada é de antes da coluna do FERJ: nela, a coluna «FERJ (FERC no selo)» traz o FERC, e o FERJ não aparece — retificar é decisão do oficial</span>{% endif %}</p>
   <p class="muted">A receita é o emolumento do ato praticado, lido do selo no dia em que ele foi usado
-  (arts. 190, I, 191 e 203); fundos e imposto vêm em coluna própria e não são receita. Selo isento
-  e diferido aparecem, mas não somam receita. Selo de homologação não entra.</p>
+  (arts. 190, I, 191 e 203); FERC, FADEP, FEMP, FERRFIS e imposto vêm em coluna própria e não são receita.
+  O FERJ (art. 190, I, k) é {{ em_reais(livro.ferj_percentual) }}% de dentro do emolumento de cada ato, recolhido por guia:
+  não se soma nem se desconta da receita. Selo isento e diferido aparecem, mas não somam receita.
+  Selo de homologação não entra.</p>
 </section>
 
 <section class="panel">
@@ -29,7 +32,7 @@
     <tr><th>Receita bruta (emolumentos)</th><td>R$ {{ em_reais(livro.receita_bruta) }}</td></tr>
     <tr><th>Despesas</th><td>R$ {{ em_reais(livro.despesas) }}</td></tr>
     <tr><th>Receita líquida</th><td>R$ {{ em_reais(livro.receita_liquida) }}</td></tr>
-    {% for f, nome in fundos %}<tr><th>{{ nome }} (não é receita)</th><td>R$ {{ em_reais(livro.fundos[f]) }}</td></tr>{% endfor %}
+    {% for f, nome in fundos %}<tr><th>{{ nome }}{% if f == 'FERJ' %} (de dentro do emolumento){% else %} (não é receita){% endif %}</th><td>R$ {{ em_reais(livro.fundos.get(f)) }}</td></tr>{% endfor %}
     <tr><th>Atos (selos) no mês</th><td>{{ livro.atos }} — {{ livro.isentos }} isento(s), {{ livro.diferidos }} diferido(s){% if livro.sem_valor %}, <strong>{{ livro.sem_valor }} sem valor no texto do selo</strong>{% endif %}</td></tr>
     {% for esp, v in livro.por_especialidade.items() %}<tr><th>Receita — {{ esp }}</th><td>R$ {{ em_reais(v) }}</td></tr>{% endfor %}
   </table></div>
@@ -116,7 +119,7 @@
     <tr><td>{{ r.especialidade }}</td><td>{{ r.ato or '—' }}{% if r.descricao %} — {{ r.descricao }}{% endif %}</td>
         <td class="small">{{ r.selo }}</td><td>{{ r.tipo }}</td><td class="small">{{ r.referencia or '—' }}</td>
         <td>{{ em_reais(r.emolumentos) }}</td>
-        {% for f, nome in fundos %}<td>{{ em_reais(r.fundos[f]) }}</td>{% endfor %}</tr>
+        {% for f, nome in fundos %}<td>{{ em_reais(r.fundos.get(f)) }}</td>{% endfor %}</tr>
     {% endfor %}
   </table></div>
   {% endif %}

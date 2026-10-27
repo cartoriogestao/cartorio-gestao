@@ -81,6 +81,12 @@ CHAVE_FORA_DO_BANCO = "agente.cred, na pasta de dados — fora do banco"
 #   - robôs: é a tela de TESTAR o robô, e não atendimento.
 # Quem confere é `ia_uso.passou_do_teto`, chamado ANTES da rede por quem chama
 # o transporte; passou, a chamada não sai e a tela diz o porquê.
+#
+# E DESDE 26/10/2026 QUEM TRAVA É O TRANSPORTE (achado transversal 3 da
+# revisão de segurança): `ia_uso.reservar` toma a vaga antes da rede, em
+# `agente_provedores.conversar` e em `robo_llm.chamar_provedor`, e a chamada
+# que falha a devolve. A conferência de quem chama ficou como cortesia — recusa
+# cedo, antes de abrir linha ou ler documento.
 CHAMADAS_POR_DIA = {
     "revisao_previa": 200,
     "ri_onus_ia": 100,

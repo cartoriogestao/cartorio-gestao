@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% block title %}Carnê-leão — configuração{% endblock %}
+{% block heading %}<h1>Carnê-leão — configuração e tabela progressiva</h1>{% endblock %}
+{% block content %}
+{# SÓ DO ADMIN. Decisões do oficial em 26/10/2026: o depósito prévio só vira
+   receita no ato (sem opção), o prazo é o último dia do mês seguinte, a tabela
+   nacional entra com um clique, e a parte dos fundos do lançamento sem
+   separação sai desta configuração, que é de cada delegatário. #}
+<div class="actions"><a class="button" href="{{ url_for('carne_leao') }}">&larr; Carnê-leão</a></div>
+
+<section class="panel"><h2>Prazo e fundos</h2>
+  <p class="small">O depósito prévio conta como receita {{ modos['NO_USO']|lower }}.</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="geral">
+    <label>Prazo do carnê-leão na agenda do oficial
+      <select name="carne_leao_prazo_regra">{% for k, v in regras.items() %}<option value="{{ k }}" {% if k == cfg.carne_leao_prazo_regra %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+    <label>Dia (só para «dia fixo») <input name="carne_leao_prazo_dia" value="{{ cfg.carne_leao_prazo_dia }}" size="3"></label>
+    <label>De onde vem a regra do prazo (norma ou orientação escrita do contador)
+      <input name="carne_leao_prazo_fonte" value="{{ cfg.carne_leao_prazo_fonte }}" size="60"></label>
+    <label>Lançamento do caixa sem a separação dos fundos: como os fundos são calculados
+      <select name="carne_leao_fundos_forma">{% for k, v in formas_fundos.items() %}<option value="{{ k }}" {% if k == cfg.carne_leao_fundos_forma %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+    <label>Percentual dos fundos (%) <input name="carne_leao_fundos_percentual" value="{{ cfg.carne_leao_fundos_percentual }}" size="6"></label>
+    <button type="submit">Gravar</button>
+  </form>
+  <p class="small muted">Sem a fonte, o prazo não entra na agenda. O percentual dos fundos vale só para o lançamento que não
+    traz emolumento e fundos separados (e para o depósito prévio convertido): o padrão é a soma dos fundos cobrados na
+    tabela da casa. Ajuste à configuração da sua serventia.</p>
+</section>
+
+<section class="panel"><h2>Lista de categorias dedutíveis (sugestão)</h2>
+  <p class="small">{{ aviso_lista }}</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Categoria fiscal</th><th>Sugestão do sistema</th></tr></thead>
+    <tbody>{% for k, v in categorias.items() %}<tr><td>{{ v[0] }}</td><td>{{ {True: 'dedutível', False: 'não dedutível', None: 'sem sugestão'}[v[1]] }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% if cfg.carne_leao_lista_conferida %}<p>{{ cfg.carne_leao_lista_conferida }}</p>{% endif %}
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="lista_conferida">
+    <label>Conferi esta lista com <input name="contador" placeholder="nome do contador" size="30" required></label>
+    <button type="submit">Registrar a conferência</button>
+  </form>
+  <p class="small muted">A marcação de cada despesa continua sendo sua, despesa por despesa, na tela do mês.</p>
+</section>
+
+<section class="panel"><h2>Tabelas progressivas mensais cadastradas</h2>
+  {% if tabelas %}
+  {% for t in tabelas %}
+  <div class="panel">
+    <p><strong>{{ t.descricao }}</strong> — vigência desde {{ t.vigencia_inicio }}{% if t.anulada_em %} — <span class="badge">anulada em {{ t.anulada_em[:10] }}: {{ t.motivo_anulacao }}</span>{% endif %}</p>
+    <p class="small muted">Fonte: {{ t.fonte }} · cadastrada por {{ t.cadastrada_por }} em {{ t.cadastrada_em[:10] }}</p>
+    {% if t.reducao %}<p class="small">Com a redução mensal da Lei 15.270/2025: até R$ {{ reais(t.reducao.reducao_maxima) }}
+      para rendimentos até R$ {{ reais(t.reducao.isento_ate) }}; de lá até R$ {{ reais(t.reducao.teto) }}, R$ {{ reais(t.reducao.constante) }}
+      menos 0,133145 × rendimentos; sempre limitada ao imposto da tabela.</p>{% endif %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Faixa</th><th>Até (R$)</th><th>Alíquota</th><th>Parcela a deduzir (R$)</th></tr></thead>
+      <tbody>{% for f in t.faixas %}<tr><td>{{ loop.index }}</td><td>{% if f.ate is none %}acima{% else %}{{ reais(f.ate) }}{% endif %}</td>
+        <td>{{ percentual(f.aliquota_bp) }}%</td><td>{{ reais(f.deduzir) }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% if not t.anulada_em %}<form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="anular_tabela"><input type="hidden" name="tabela_id" value="{{ t.id }}">
+      <input name="motivo" placeholder="por que anular esta tabela" size="40" required><button type="submit">Anular</button>
+    </form>{% endif %}
+  </div>
+  {% endfor %}
+  {% else %}<p class="badge alta">Nenhuma tabela cadastrada: o imposto não é calculado em mês nenhum.</p>{% endif %}
+</section>
+
+<section class="panel"><h2>A tabela nacional da Receita Federal</h2>
+  <p class="small">A tabela progressiva é nacional. O sistema a traz lida na página da Receita Federal em 26/10/2026:</p>
+  <ul class="small">{% for t in nacionais %}<li><strong>{{ t.descricao }}</strong>, desde {{ t.vigencia_inicio }} — {{ t.fonte }}</li>{% endfor %}</ul>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="tabelas_nacionais">
+    <button type="submit">Cadastrar a tabela nacional</button>
+  </form>
+  <p class="small muted">Vigência que já tem tabela ativa não é tocada. Quando a Receita publicar tabela nova, ela entra
+    abaixo, à mão, ou com uma versão nova do sistema.</p>
+</section>
+
+<section class="panel"><h2>Cadastrar uma tabela</h2>
+  <p class="small">Copie as faixas da tabela progressiva MENSAL vigente, da norma da Receita ou da orientação do contador.
+    Uma faixa por linha: <code>até; alíquota %; parcela a deduzir</code>.
+    A última linha fica com o «até» vazio (acima da anterior). O exemplo abaixo é fictício.</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="tabela">
+    <label>Vigência desde <input type="date" name="vigencia_inicio" required></label>
+    <label>Nome <input name="descricao" size="40" placeholder="Tabela progressiva mensal de …" required></label>
+    <label>Fonte (norma e data, ou orientação do contador) <input name="fonte" size="60" required></label>
+    <label>Faixas <textarea name="faixas" rows="6" cols="50" placeholder="1.000,00; 0; 0&#10;2.000,00; 10; 100,00&#10;; 20; 300,00" required></textarea></label>
+    <button type="submit">Cadastrar</button>
+  </form>
+  <p class="small muted">Tabela cadastrada não se edita: errou, anule-a com o motivo e cadastre de novo. Vale, em cada mês,
+    a tabela vigente no dia 1º; quando outra começa no meio do mês, a tela do mês avisa.</p>
+</section>
+{% endblock %}

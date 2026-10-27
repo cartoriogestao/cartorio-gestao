@@ -13,11 +13,8 @@ O QUE ELES DEFENDEM
 """
 from __future__ import annotations
 
-import glob
-import os
 import re
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -28,31 +25,31 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 BASE_HTML = (RAIZ / "templates" / "base.html").read_text(encoding="utf-8")
-# A pasta leva o nome do nucleo que esta rodando. Este arquivo nao chegou a
-# ficar vermelho, mas tinha o mesmo defeito do `test_selador_web` — pasta de
-# nome fixo com a suite repartida teste a teste. Consertar o que ja doeu e
-# deixar o vizinho igual e esperar o segundo vermelho para aprender de novo.
-DADOS = str(Path(tempfile.gettempdir()) /
-            ("test_menu_dados_" + os.environ.get("PYTEST_XDIST_WORKER", "solo")))
 
 # Rotas que não são tela de menu: download, POST de formulário, arquivo. Não
 # precisam abrir módulo nenhum, e várias nem respondem a GET.
 NAO_SAO_TELA = ("static", "login", "logout", "saude", "health")
 
 
+# O APP E O DO `conftest` (`cg_app`, um por modulo) — 26/10/2026. Este arquivo
+# montava o proprio, numa pasta temporaria de nome fixo: com o banco de teste no
+# PostgreSQL esse banco nao passava pelo registro da ponte, a tela de login nao
+# vinha com o `csrf_token`, e os 28 testes estouravam no setup.
 @pytest.fixture(scope="module")
-def app():
-    from app import create_app
-    Path(DADOS).mkdir(parents=True, exist_ok=True)
-    return create_app({"DATA_DIR": DADOS})
+def app(cg_app):
+    return cg_app
 
 
 @pytest.fixture(scope="module")
 def cliente(app):
-    from database import Database
-    d = Database(Path(glob.glob(f"{DADOS}/*.sqlite3")[0]))
+    d = app.extensions["db"]
     try:
-        d.create_user("menu", "Operador", "Senha#12345", "ADMIN")
+        # NOME DE GENTE (27/10/2026): «Operador» sozinho é rótulo de máquina
+        # (`nome_humano.eh_rotulo_de_maquina`), e conta de robô não pode ser
+        # ADMIN — o `create_user` recusava, o `except` engolia, ninguém logava
+        # e a tela de login virava /setup, sem `csrf_token`. Era essa a causa
+        # dos 28 testes estourando no setup.
+        d.create_user("menu", "Operador Exemplo", "Senha#12345", "ADMIN")
     except Exception:                                          # noqa: BLE001
         pass
     c = app.test_client()

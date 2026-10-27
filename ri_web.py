@@ -8198,12 +8198,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 # «Nota de exigência» no Acompanhamento do ONR, com o texto da nota
                 # (o manual manda a nota de devolução nesse campo) — na transação dela.
                 ACOMP.anotar_nota_de_exigencia(con, feito["nota_id"], agora=db.now())
+                # A NOTA QUE NASCEU DA QUALIFICAÇÃO ASSISTIDA (26/10/2026): o
+                # rascunho da IA guarda qual nota a rota de sempre emitiu com as
+                # exigências dele — na mesma transação, para a ligação não ficar
+                # pela metade. Sem o campo (a nota escrita à mão), não faz nada.
+                import ri_qualificacao_ia as QIA
+                ligada_a_ia = QIA.ligar_a_nota(con, request.form.get("qualificacao_ia_id"),
+                                               p["id"], feito["nota_id"])
         except RND.NotaError as erro:
             flash(str(erro), "danger")
             return voltar
         audit("RI_NOTA_DEVOLUTIVA", "RI_NOTA", feito["nota_id"],
               {"protocolo": p["numero"], "numero": feito["numero"],
-               "exigencias": feito["exigencias"], "anexos": feito["anexos"]})
+               "exigencias": feito["exigencias"], "anexos": feito["anexos"],
+               "qualificacao_ia": (int(request.form["qualificacao_ia_id"])
+                                   if ligada_a_ia else None)})
         if feito["anexos"]:
             flash(f"Nota devolutiva nº {feito['numero']} cadastrada com o arquivo anexado. "
                   f"O protocolo passou a devolvido; a prenotação continua correndo.", "success")

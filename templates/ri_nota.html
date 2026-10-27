@@ -22,6 +22,10 @@
   Vencido o prazo, é preciso novo protocolo, com novos emolumentos.
 </div>
 
+{# A QUALIFICAÇÃO ASSISTIDA (26/10/2026): o rascunho das exigências pela IA.
+   O quadro não emite nada — a nota continua saindo do formulário abaixo. #}
+{% if qualificacao_ia %}{% include '_qualificacao_ia.html' %}{% endif %}
+
 {% for n in notas %}
 <section class="panel">
   <div class="panel-head">
@@ -71,15 +75,22 @@
 {% if por_que_nao_emite %}
 <div class="notice small">{{ por_que_nao_emite }}</div>
 {% else %}
-<details class="panel" {% if not notas %}open{% endif %}>
+{% set preenche = qualificacao_ia.preenche if qualificacao_ia else none %}
+<details class="panel" id="emitir-nota" {% if not notas or preenche %}open{% endif %}>
   <summary><strong>Emitir ou cadastrar nova nota devolutiva</strong></summary>
   <form method="post" class="form-grid" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if preenche %}
+    <input type="hidden" name="qualificacao_ia_id" value="{{ preenche.id }}">
+    <div class="notice warning span2">As {{ preenche.quantas }} exigência(s) abaixo vieram da
+      <a href="{{ url_for('ri_qualificacao_ia_ver', pedido_id=preenche.id) }}">qualificação assistida nº {{ preenche.id }}</a>
+      (rascunho da IA, versão {{ preenche.versao }}). Confira com os originais, edite o que precisar e só então emita.</div>
+    {% endif %}
     <label>Data<input type="date" name="data_nota" value="{{ hoje }}"></label>
     <label>Arquivo da nota já redigida e assinada (Word ou PDF)
       <input type="file" name="arquivo_nota" multiple></label>
     <label class="span2">Exigências — <strong>uma por linha</strong>; opcional quando o arquivo da nota vai anexado
-      <textarea name="exigencias" rows="8" placeholder="Apresentar certidão de quitação de tributos municipais.&#10;Regularizar a qualificação do adquirente, com estado civil e regime de bens.&#10;Juntar procuração com poderes específicos."></textarea>
+      <textarea name="exigencias" rows="8" placeholder="Apresentar certidão de quitação de tributos municipais.&#10;Regularizar a qualificação do adquirente, com estado civil e regime de bens.&#10;Juntar procuração com poderes específicos.">{{ preenche.texto if preenche else '' }}</textarea>
     </label>
     <label class="span2">Fundamentação<textarea name="fundamentacao" rows="3"></textarea></label>
     <div class="span2"><button class="primary">Emitir nota devolutiva</button></div>

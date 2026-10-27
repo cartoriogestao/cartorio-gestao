@@ -609,8 +609,11 @@ ACHADAS_EM_20_10_2026: dict[str, str] = {
 # nunca mostra o token. Quem assina é o ENVIO do convite, que não existe neste
 # ramo — o convite fica na fila (`NA_FILA`) até haver o canal.
 ACHADAS_EM_27_10_2026: dict[str, str] = {
-    "assinar_convite": "satisfacao — quem assina é o envio do convite ao cliente, que "
-                       "não existe neste ramo; " + _TESTE,
+    # O ENVIO EXISTE desde a pesquisa na VPS (26/10/2026), mas o link do e-mail
+    # leva `satisfacao_envio.codigo_do_convite`, e não este token: a página
+    # local do convite ficou sem quem assine.
+    "assinar_convite": "satisfacao — o envio por e-mail usa `codigo_do_convite` (a "
+                       "página na VPS); " + _SEM,
 }
 
 

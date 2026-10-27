@@ -60,6 +60,7 @@ WITH tabelas_de_ato(nome) AS (
            ('pt_certidoes'),
            ('at_certidoes'),
            ('rc_certidoes'),
+           ('rc_materializacoes'),
            ('rc_atos'),
            ('rg_atos'),
            ('ra_atos'),

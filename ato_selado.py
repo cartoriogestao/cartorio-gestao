@@ -105,6 +105,11 @@ TABELAS_DE_ATO: dict[str, str] = {
     # digitasse o selo emitia a certidao, via um aviso vermelho, e a CERTIDAO
     # SUMIA. Quem nao digitasse nunca veria nada.
     "rc_certidoes": "Registro Civil — certidões",
+    # A MATERIALIZAÇÃO DE CERTIDÃO DE OUTRA SERVENTIA (26/10/2026): a certidão
+    # é de lá, e o assento não mora aqui — por isso a tabela é própria
+    # (`rc_materializacao`), e sem ela aqui o selo seria recusado DEPOIS de
+    # comprado.
+    "rc_materializacoes": "Registro Civil — materialização de certidão",
     "rc_atos": "Registro Civil das Pessoas Naturais",
     "rg_atos": "RCPJ / RTD",
     "ra_atos": "Registro Auxiliar",
@@ -2132,6 +2137,11 @@ def caminho_do_ato(tabela: str, tipo: str,
     """
     if tabela in ("rc_atos", "rc_certidoes"):
         return caminho_do_civil(especie, tipo)
+    if tabela == "rc_materializacoes":
+        # Caminho próprio do contrato, sem espécie: a certidão é de outra
+        # serventia, e o que se sela aqui é a impressão (26/10/2026).
+        return CAMINHO_MATERIALIZACAO
+
     if tabela == "hc_habilitacoes":
         # O CONTRATO TEM O CAMINHO, e a casa nunca o usou — mas aqui nao vale a
         # regra do «nao se sela por caminho que a casa nunca usou»: aquela
@@ -3659,6 +3669,11 @@ CODIGO_CERTIDAO_ELETRONICA_CRC = "14.5.7"
 #   como `isentoGratuito: "ISENTO"` mais o motivo (17 dos 1.238).
 CAMINHO_CERTIDAO_ELETRONICA_CRC = "/selo/civil/atos-em-geral"
 
+# A MATERIALIZAÇÃO DE CERTIDÃO DE OUTRA SERVENTIA — 26/10/2026. Caminho
+# próprio do contrato (`DadosSeloCertidaoMaterializacao`), que a casa nunca
+# usou; o item é o 14.5.1 e o pagamento é no caixa, pela trava de sempre —
+# decisões do oficial. O envelope é montado em `rc_materializacao.envelope`.
+CAMINHO_MATERIALIZACAO = "/selo/civil/certidao/materializacao"
 # A CERTIDÃO DO RI PEDIDA PELO ONR — 25/10/2026, o oficial: «sim, estreita»
 # (a exceção «pago no ONR», no desenho da CENTRAL_CRC). O solicitante paga no
 # ONR, e o dinheiro chega pelo repasse da Central, não pelo caixa — a trava do
@@ -4315,6 +4330,7 @@ ATRIBUICOES_DO_ATO: dict[str, frozenset] = {
     "pt_certidoes": frozenset({"PROTESTO"}),
     "at_certidoes": frozenset({"RTD", "RCPJ", "RI"}),
     "rc_certidoes": frozenset({"RCPN"}),
+    "rc_materializacoes": frozenset({"RCPN"}),
     "rc_atos": frozenset({"RCPN"}),
     "hc_habilitacoes": frozenset({"RCPN"}),
     "rg_atos": frozenset({"RTD", "RCPJ"}),

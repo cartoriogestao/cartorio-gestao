@@ -8315,16 +8315,135 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             t = banco(con).um("SELECT texto FROM sd_selos WHERE numero=%s",
                               (res["numero"],))
         valores = SP.linha_de_valores((t["texto"] if t else "") or "")
-        extras = "; ".join(f"{k}: {v}" for k, v in (res.get("extras") or {}).items()
-                           if str(v or "").strip())
         flash(f"Selo da certidão eletrônica: {res['numero']} — copie-o para a "
               f"CRC antes de subir o arquivo. "
               + (f"Valores: {valores}. " if valores else "")
-              + (f"O selador devolveu também: {extras}. " if extras else
-                 "O selador não devolveu código de validação nesta resposta. ")
+              + _recado_do_codigo_de_validacao(res["numero"], res.get("extras"))
               + f"Certidão n. {r['numero']}/{r['ano']} registrada com ele.",
               "success")
         return redirect(url_for("rcpn_certidao", certidao_id=certidao_id))
+
+    def _recado_do_codigo_de_validacao(numero: str, extras) -> str:
+        """A frase do aviso com o código de validação do selo. ESCREVE
+        (guarda o código em `sd_selos.qr_token`).
+
+        O CÓDIGO É O `valorQrCode` — medido na resposta do aparelho em
+        26/10/2026: o resumo traz `valorQrCode` (24 caracteres, o mesmo
+        `strvalorQRCode` do acervo) e `qrCode`, que é a IMAGEM do QR em base64
+        (~660 caracteres). O aviso mostrava os dois crus; agora mostra o
+        código com o nome dele, e a imagem não vai para a tela. O código fica
+        guardado em `sd_selos.qr_token`, a coluna dele, que ficou vazia desde a
+        carga — e NÃO vai para o papel: o oficial, em 23/10/2026, «não precisa
+        colocar na certidão»."""
+        resto = dict(extras or {})
+        codigo = str(resto.pop("valorQrCode", "") or "").strip()
+        resto.pop("qrCode", None)
+        if codigo:
+            try:
+                with db.transaction() as con:
+                    banco(con).escrever(
+                        """UPDATE sd_selos SET qr_token=%s
+                            WHERE numero=%s AND COALESCE(qr_token, '')=''""",
+                        (codigo, numero))
+            except sqlite3.Error:
+                # O código já está no aviso; perder a cópia no razão não
+                # desfaz o selo, mas fica no registro para quem conferir.
+                app.logger.exception("código de validação do selo %s", numero)
+        outros = "; ".join(f"{k}: {v}" for k, v in resto.items()
+                           if str(v or "").strip())
+        frase = ""
+        if codigo:
+            frase += f"Código de validação: {codigo}. "
+        if outros:
+            frase += f"O selador devolveu também: {outros}. "
+        if not frase:
+            frase = "O selador não devolveu código de validação nesta resposta. "
+        return frase
+
+    # A MATERIALIZAÇÃO DE CERTIDÃO DE OUTRA SERVENTIA — 26/10/2026, o oficial:
+    # «assim como criamos o emissor de selo para certidão eletrônica de
+    # registro do cartório, preciso que o sistema emita selo para a
+    # materialização de certidão vinda de outros cartórios para entrega a
+    # clientes». Item 14.5.1 e pagamento no caixa (decisões dele): o selo
+    # passa pela trava de sempre, com o protocolo em atendimento.
+    @app.route("/rcpn/materializacoes")
+    @login_required
+    def rcpn_materializacoes():
+        """O formulário e as materializações já seladas. Só LÊ."""
+        import rc_materializacao as RCM
+        with db.connect() as con:
+            linhas = RCM.listar(con, limite=100)
+        return render_template("rc_materializacoes.html", linhas=linhas,
+                               codigo_ato=RCM.CODIGO_ATO)
+
+    @app.route("/rcpn/materializacoes", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def rcpn_materializacao_selar():
+        """Registra a materialização e pede o selo. ESCREVE (a materialização
+        e o selo) e FALA COM A REDE (o selador), fora da transação."""
+        import rc_materializacao as RCM
+        import selo_robo as SR
+        volta = url_for("rcpn_materializacoes")
+        if not SR.pode_selar_automatico():
+            flash(SR.recado_pendente_selo(), "danger")
+            return redirect(volta)
+        try:
+            _grat_cod, motivo_selo, selo_isento = _gratuidade_do_form()
+        except AS.AtoError as erro:
+            flash(f"{erro} Escreva o motivo, ou desmarque «selo isento».",
+                  "danger")
+            return redirect(volta)
+        dados = {k: _campo(k) for k in (
+            "nome_parte", "requerente", "cartorio_nome", "cartorio_cidade",
+            "cartorio_uf", "funcionario_expedidor", "valor_emolumentos",
+            "especie", "matricula")}
+        # O ENVELOPE SE MONTA ANTES DE GRAVAR: o que falta no formulário ou no
+        # cadastro (a versão da tabela) recusa aqui, sem deixar materialização
+        # cancelada para trás.
+        try:
+            conferido = RCM.conferir(dados)
+            envelope = RCM.envelope(
+                conferido, escrevente=usuario_nome(),
+                versao_tabela=AS.versao_da_tabela_de_custas(
+                    RCM.CAMINHO, db.get_setting("selo_tabela_custas_em", "")),
+                isento=selo_isento, motivo_isencao=motivo_selo)
+            with db.transaction() as con:
+                mid = RCM.registrar(con, dados, agora=agora(),
+                                    usuario=usuario_nome())
+        except RCM.MaterializacaoError as erro:
+            flash(str(erro), "danger")
+            return redirect(volta)
+        try:
+            res = AS.selar_o_ato_lavrado(
+                db, Path(app.config["DATA_DIR"]), tabela=RCM.TABELA,
+                ato_id=mid, tipo="MATERIALIZACAO", atribuicao="RCPN",
+                agora=agora(), cns=sv().get("ri_cns"), usuario=usuario_nome(),
+                dados=envelope, caminho=RCM.CAMINHO,
+                referencia=f"{RCM.TABELA}:{mid}:{RCM.CODIGO_ATO}:1")
+        except (AS.AtoError, sqlite3.Error) as erro:
+            res = {"selado": False, "motivo": str(erro)}
+        if not res.get("selado") or not res.get("numero"):
+            motivo = str(res.get("motivo") or "o selador não devolveu número")
+            with db.transaction() as con:
+                RCM.cancelar(con, mid, motivo=f"Selo não emitido: {motivo}",
+                             agora=agora(), usuario=usuario_nome())
+            audit("RCPN_MATERIALIZACAO_SELO_FALHOU", RCM.TABELA, mid,
+                  {"motivo": motivo})
+            flash(f"O selo da materialização NÃO saiu: {motivo}.", "danger")
+            return redirect(volta)
+        audit("RCPN_MATERIALIZACAO_SELADA", RCM.TABELA, mid,
+              {"selo": res["numero"], "codigo": RCM.CODIGO_ATO,
+               "isento": bool(selo_isento)})
+        import selo_no_papel as SP
+        with db.connect() as con:
+            t = banco(con).um("SELECT texto FROM sd_selos WHERE numero=%s",
+                              (res["numero"],))
+        valores = SP.linha_de_valores((t["texto"] if t else "") or "")
+        flash(f"Selo da materialização: {res['numero']}. "
+              + (f"Valores: {valores}. " if valores else "")
+              + _recado_do_codigo_de_validacao(res["numero"], res.get("extras")),
+              "success")
+        return redirect(volta)
 
     @app.route("/rcpn/certidoes")
     @login_required

@@ -539,3 +539,174 @@ def test_retorno_fora_de_utf8_e_recusado_sem_derrubar(db, com_cpf, tmp_path,
     assert "UTF-8" in r["recusados"][0]["porque"]
     assert PS.main(["conferir-retorno", "--pasta", str(tmp_path)]) == 1
     assert "UTF-8" in capsys.readouterr().err
+
+
+# ===================================================================
+# FASE 3 — A OPERAÇÃO (27/10/2026)
+#
+# O lançador e o registro da tarefa só se GERAM aqui: nenhum teste executa o
+# que foi gerado. O que se prova é a ordem do ciclo, que só `problemas/` e o
+# `INDICE.md` vão no commit, e que a recusa não deixa nada gravado.
+# ===================================================================
+
+DSN_SEM_SENHA = "host=127.0.0.1 port=5434 dbname=cartorio user=cg"
+
+
+@pytest.fixture
+def ambiente_da_serventia(monkeypatch, tmp_path):
+    """O ambiente do console do servidor, fictício e sem senha no DSN."""
+    dados = tmp_path / "dados"
+    monkeypatch.setenv("CARTORIO_GESTAO_DATA", str(dados))
+    monkeypatch.setenv("CG_PG_DSN", DSN_SEM_SENHA)
+    monkeypatch.setenv("CG_PG_SCHEMA", "cg_sincronia_nao_existe")
+    monkeypatch.setenv("PGPASSFILE", str(dados / "pgpass.conf"))
+    return dados
+
+
+def _gerados(tmp_path) -> tuple[str, str]:
+    destino = tmp_path / "gerados"
+    PS.gerar_agendamento(tmp_path / "repo", destino, raiz=tmp_path / "programa",
+                         python=tmp_path / "runtime" / "python.exe")
+    return ((destino / PS.LANCADOR_DA_SINCRONIA).read_text(encoding="utf-8"),
+            (destino / PS.REGISTRO_DA_SINCRONIA).read_text(encoding="utf-8"))
+
+
+def _linhas_do_git(cmd: str, subcomando: str) -> list[str]:
+    return [linha for linha in cmd.splitlines()
+            if linha.startswith("git ") and f" {subcomando} " in f"{linha} "]
+
+
+def _ssh(cmd: str) -> str:
+    return next(linha for linha in cmd.splitlines()
+                if linha.startswith('set "GIT_SSH_COMMAND='))
+
+
+def test_o_lancador_importa_antes_de_exportar_e_so_adiciona_problemas_e_indice(
+        ambiente_da_serventia, tmp_path):
+    cmd, _ = _gerados(tmp_path)
+    assert cmd.index(" importar --pasta ") < cmd.index(" exportar --pasta ")
+    assert cmd.index(" pull ") < cmd.index(" importar --pasta ")
+    adds = _linhas_do_git(cmd, "add")
+    assert len(adds) == 1
+    assert ' add -- problemas INDICE.md >>"%LOG%" 2>&1' in adds[0]
+    assert cmd.index(" exportar --pasta ") < cmd.index(adds[0]) < cmd.index(" push ")
+
+
+def test_o_lancador_nunca_adiciona_tudo_nem_o_retorno(ambiente_da_serventia, tmp_path):
+    cmd, _ = _gerados(tmp_path)
+    for linha in _linhas_do_git(cmd, "add"):
+        assert " add -A" not in linha and " add ." not in linha
+        assert "--all" not in linha and "retorno" not in linha
+    assert "commit -a" not in cmd and "commit --all" not in cmd
+
+
+def test_o_lancador_tem_safe_directory_a_chave_da_sincronia_e_o_autor_fixo(
+        ambiente_da_serventia, tmp_path):
+    cmd, _ = _gerados(tmp_path)
+    linhas_do_git = [linha for linha in cmd.splitlines() if linha.startswith("git ")]
+    assert linhas_do_git
+    assert all("-c safe.directory=" in linha for linha in linhas_do_git)
+    ssh = _ssh(cmd)
+    assert "sincronia/chave_da_sincronia" in ssh
+    assert "-o IdentitiesOnly=yes" in ssh
+    assert "sincronia/known_hosts" in ssh
+    assert '-c user.name="Serventia (sincronia)"' in cmd
+    assert "-c user.email=sincronia@cartorio-gestao.invalid" in cmd
+
+
+def test_o_lancador_nunca_aceita_servidor_ssh_novo_sozinho(ambiente_da_serventia,
+                                                           tmp_path):
+    cmd, _ = _gerados(tmp_path)
+    ssh = _ssh(cmd)
+    assert "-o StrictHostKeyChecking=yes" in ssh
+    assert "accept-new" not in cmd and "StrictHostKeyChecking=no" not in cmd
+
+
+def test_o_pull_tem_autostash(ambiente_da_serventia, tmp_path):
+    cmd, _ = _gerados(tmp_path)
+    (pull,) = _linhas_do_git(cmd, "pull")
+    assert " pull --rebase --autostash --quiet " in pull
+
+
+def test_o_lancador_confere_a_origem_ssh_antes_do_pull(ambiente_da_serventia, tmp_path):
+    cmd, _ = _gerados(tmp_path)
+    (origem,) = _linhas_do_git(cmd, "remote")
+    assert " remote get-url origin " in origem
+    confere = cmd.index('=="git@github.com:" (')
+    (pull,) = _linhas_do_git(cmd, "pull")
+    assert cmd.index(origem) < confere < cmd.index(pull)
+    # quem não bate para o ciclo ali mesmo, com código diferente de zero
+    bloco = cmd[confere:cmd.index("exit /b", confere) + len("exit /b 8")]
+    assert "call :registrar" in bloco and bloco.endswith("exit /b 8")
+
+
+@pytest.mark.parametrize("variavel", ["CG_PG_DSN", "CG_PG_SCHEMA"])
+def test_gerar_recusa_sem_a_variavel_do_banco_e_nao_grava(
+        ambiente_da_serventia, monkeypatch, tmp_path, capsys, variavel):
+    monkeypatch.delenv(variavel, raising=False)
+    destino = tmp_path / "gerados"
+    assert PS.main(["gerar-agendamento", "--repositorio", str(tmp_path / "repo"),
+                    "--destino", str(destino)]) == 2
+    assert variavel in capsys.readouterr().err
+    assert not destino.exists()
+
+
+@pytest.mark.parametrize("dsn", [DSN_SEM_SENHA + " password=segredo",
+                                 "postgresql://cg:segredo@127.0.0.1:5434/cartorio"])
+def test_gerar_recusa_senha_no_dsn_e_nao_grava(ambiente_da_serventia, monkeypatch,
+                                               tmp_path, capsys, dsn):
+    monkeypatch.setenv("CG_PG_DSN", dsn)
+    destino = tmp_path / "gerados"
+    assert PS.main(["gerar-agendamento", "--repositorio", str(tmp_path / "repo"),
+                    "--destino", str(destino)]) == 2
+    erro = capsys.readouterr().err
+    assert "pgpass" in erro and "segredo" not in erro
+    assert not destino.exists()
+
+
+def test_o_registro_poe_a_tarefa_como_system_com_prioridade_7_e_a_acl_dos_segredos(
+        ambiente_da_serventia, tmp_path):
+    _, ps1 = _gerados(tmp_path)
+    assert f"-TaskName '{PS.TAREFA_DA_SINCRONIA}'" in ps1
+    assert PS.TAREFA_DA_SINCRONIA == "CartorioGestao-Sincronia-Problemas"
+    assert "New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount" in ps1
+    assert "-Priority 7" in ps1 and "-MultipleInstances IgnoreNew" in ps1
+    assert "-ExecutionTimeLimit (New-TimeSpan -Minutes 15)" in ps1
+    assert "-StartWhenAvailable" in ps1
+    assert "-RepetitionInterval (New-TimeSpan -Hours 2)" in ps1
+    assert "-Daily -At '07:00'" in ps1
+    acl = next(linha for linha in ps1.splitlines()
+               if linha.startswith("& icacls.exe $pasta"))
+    assert '"*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F"' in acl
+    assert "/inheritance:r" in acl
+    assert str(ambiente_da_serventia / "sincronia") in ps1
+    # a parte B não é deste arquivo
+    assert "ssh-keygen" not in ps1 and "deploy-key" not in ps1
+
+
+def test_a_tarefa_aponta_para_o_lancador_onde_ele_foi_gravado(ambiente_da_serventia,
+                                                              tmp_path):
+    """A lição do #66: tarefa que aponta para onde o lançador não está falha
+    calada a cada ciclo."""
+    destino = tmp_path / "gerados"
+    escritos = PS.gerar_agendamento(tmp_path / "repo", destino, raiz=tmp_path / "p",
+                                    python=tmp_path / "python.exe")
+    (lancador,) = [p for p in escritos if p.name == PS.LANCADOR_DA_SINCRONIA]
+    ps1 = (destino / PS.REGISTRO_DA_SINCRONIA).read_text(encoding="utf-8")
+    assert f'$lancador = "{lancador}"' in ps1 and lancador.is_file()
+    assert "/d /c `\"$lancador`\"" in ps1
+
+
+def test_gerar_agendamento_pela_linha_de_comando_nao_abre_banco(
+        ambiente_da_serventia, tmp_path, capsys):
+    """O schema do ambiente não existe — e não precisa: nada se abre."""
+    destino = tmp_path / "gerados"
+    assert PS.main(["gerar-agendamento", "--repositorio", str(tmp_path / "repo"),
+                    "--destino", str(destino)]) == 0
+    assert sorted(p.name for p in destino.iterdir()) == sorted(
+        [PS.LANCADOR_DA_SINCRONIA, PS.REGISTRO_DA_SINCRONIA])
+    saida = capsys.readouterr().out
+    assert "Nada foi registrado" in saida and PS.REGISTRO_DA_SINCRONIA in saida
+    cmd = (destino / PS.LANCADOR_DA_SINCRONIA).read_text(encoding="utf-8")
+    assert 'set "CG_PG_SCHEMA=cg_sincronia_nao_existe"' in cmd
+    assert f'set "PGPASSFILE={ambiente_da_serventia / "pgpass.conf"}"' in cmd

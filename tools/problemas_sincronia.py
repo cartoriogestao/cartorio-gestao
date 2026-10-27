@@ -11,11 +11,16 @@ No desenvolvimento, sem banco:
     python tools/problemas_sincronia.py responder --pasta <...> --arquivo of-0035 --estado NECESSARIO_TESTE --prova "tests/test_x.py" --nota "..." [--reproducao AQUI_FICTICIOS]
     python tools/problemas_sincronia.py conferir-retorno --pasta <...>
 
+Na serventia, a operação (gera e não executa; sem banco):
+
+    python tools/problemas_sincronia.py gerar-agendamento --repositorio <pasta do clone privado> --destino <pasta>
+
 `exportar`, `classificar` e `importar` precisam de `CG_PG_DSN` e
 `CG_PG_SCHEMA` no ambiente (o mesmo do servidor) e recusam se o schema não
 existir: nunca criam banco. `responder` e `conferir-retorno` não abrem banco
 (aceitam `--nota-arquivo` para nota de várias linhas). Não faz `git` e não envia
-nada pela rede — commit e envio do repositório privado são da operação.
+nada pela rede — commit e envio do repositório privado são do lançador que
+`gerar-agendamento` escreve (`docs/SINCRONIA_DOS_PROBLEMAS.md`).
 
 A linha de comando inteira mora em `problemas_sincronia.main`, na raiz (o
 varredor de função sem tela só lê a raiz); este arquivo só a chama.

@@ -56,6 +56,7 @@ NASCIMENTO = {
     "ibge_local": "1",                 # relato #130: o SIRC exige
     "filiacao1_nome": "MARIA DA SILVA", "filiacao2_nome": "IGNORADO",
     "declarante_nome": "MARIA DA SILVA",
+    "paternidade_tipo": "NEGATIVO",   # pai ignorado: termo (23/10/2026)
 }
 
 

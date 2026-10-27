@@ -39,10 +39,9 @@ def test_o_formulario_de_quem_esta_logado_nao_cai_nos_500_kb_do_werkzeug(cg_casa
 
 def _linhas(db):
     with db.connect() as con:
-        return banco(con).ler(
-            """SELECT id, ts, user_id, username_snapshot, action, entity_type, entity_id,
-                      details, ip_address, hash_anterior, hash_linha
-                 FROM audit_logs ORDER BY id""")
+        # `SELECT *`: desde 26/10/2026 a linha leva `hash_versao`, `agente` e
+        # `a_mando_de`, que entram na fórmula da versão 2.
+        return banco(con).ler("SELECT * FROM audit_logs ORDER BY id")
 
 
 def test_toda_linha_de_auditoria_nasce_encadeada_e_o_python_recalcula_igual(cg_casa):

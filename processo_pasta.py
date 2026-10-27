@@ -230,6 +230,34 @@ def rotulo(con: Any, tabela: str, item_id: int) -> str:
     return f"#{item_id} — {r[0]}"
 
 
+def processos_da_peca(con: Any, tabela: str, item_id: int) -> list[dict]:
+    """O CAMINHO DE VOLTA: as tarefas em cuja pasta esta peça está. Só LÊ.
+
+    «precisamos poder criar uma tarefa a partir do protocolo e precisamos poder
+     linkar um protocolo a uma tarefa nova ou preexistente» — o oficial,
+     26/10/2026. A pasta do processo já ligava a tarefa ao protocolo; faltava o
+     protocolo saber das tarefas dele. O vínculo é o MESMO (`pr_vinculos`): uma
+     ligação só, vista dos dois lados."""
+    bd = banco(con)
+    init_schema(bd)
+    return [dict(r) for r in bd.ler(
+        """SELECT v.id AS vinculo_id, t.id, t.title, t.status, t.due_date,
+                  u.full_name AS responsavel
+             FROM pr_vinculos v JOIN tasks t ON t.id = v.task_id
+             LEFT JOIN users u ON u.id = t.assigned_user_id
+            WHERE v.tabela = %s AND v.item_id = %s
+            ORDER BY t.id DESC""", (tabela, int(item_id)))]
+
+
+def tarefas_abertas(con: Any, *, limite: int = 300) -> list[dict]:
+    """As tarefas que ainda andam, para escolher a quem ligar uma peça. Só LÊ."""
+    import tarefa_processo as TP
+    marcas = ",".join(["%s"] * len(TP.SITUACOES_ABERTAS))
+    return [dict(r) for r in banco(con).ler(
+        f"""SELECT id, title FROM tasks WHERE status IN ({marcas})
+             ORDER BY id DESC LIMIT %s""", (*TP.SITUACOES_ABERTAS, int(limite)))]
+
+
 def vinculos(con: Any, task_id: int) -> list[dict]:
     """As peças da pasta: a origem (o expediente de onde o processo nasceu) e
     as vinculadas à mão. Cada uma com o que precisa para virar link."""

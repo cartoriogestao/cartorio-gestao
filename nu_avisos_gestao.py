@@ -26,6 +26,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from bd_nativo import banco
+import identidade_do_robo as IDR
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS nu_avisos (
@@ -833,14 +834,12 @@ def _auditar(
     bd, *, user_id: int, username: str, acao: str, aviso_id: int,
     detalhes: dict, agora: str, ip: str | None,
 ) -> None:
-    """A linha do `audit_logs` na transação de quem grava — ou as duas, ou nada."""
-    bd.escrever(
-        """INSERT INTO audit_logs
-           (ts, user_id, username_snapshot, action, entity_type, entity_id, details, ip_address)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-        (agora, user_id, username, acao, "nu_avisos", aviso_id,
-         json.dumps(detalhes, ensure_ascii=False), ip),
-    )
+    """A linha do `audit_logs` na transação de quem grava — ou as duas, ou nada.
+    Pela função da casa (`identidade_do_robo.registrar`, 26/10/2026): conta de
+    robô sai com o nome dele e o responsável."""
+    IDR.registrar(bd, ts=agora, user_id=user_id, username=username, action=acao,
+                  entity_type="nu_avisos", entity_id=aviso_id,
+                  details=json.dumps(detalhes, ensure_ascii=False), ip_address=ip)
 
 
 def _barra_valendo(bd, aviso_id: int, h: str) -> tuple[dict, str]:

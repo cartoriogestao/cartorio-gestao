@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+{% block title %}Ouvidoria {{ m.numero }}{% endblock %}
+{% block heading %}<h1>Manifestação {{ m.numero }}</h1>{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('ouvidoria_lista') }}">← Ouvidoria</a></p>
+<section class="panel">
+  <dl class="detail">
+    <dt>Tipo</dt><dd>{{ m.tipo_nome }}</dd>
+    <dt>Canal</dt><dd>{{ m.canal_nome }}</dd>
+    <dt>Setor</dt><dd>{{ m.setor_nome }}</dd>
+    <dt>Recebida em</dt><dd>{{ fmt_date(m.recebida_em) }}</dd>
+    <dt>Prazo de resposta</dt><dd>{{ fmt_date(m.prazo) }} ({{ m.prazo_dias }} dias corridos){% if m.vencida %} <span class="badge critica">vencida</span>{% endif %}</dd>
+    <dt>Situação</dt><dd>{{ m.situacao_nome }}{% if m.no_prazo is sameas true %} — respondida no prazo{% elif m.no_prazo is sameas false %} — <strong>respondida depois do prazo</strong>{% endif %}</dd>
+    <dt>Responsável</dt><dd>{{ m.responsavel_nome or '—' }}</dd>
+    {% if m.protocolo_ref %}<dt>Protocolo relacionado</dt><dd>{{ m.protocolo_ref }}</dd>{% endif %}
+    {% if m.tarefa_id %}<dt>Tarefa</dt><dd><a href="{{ url_for('task_detail', task_id=m.tarefa_id) }}">#{{ m.tarefa_id }}</a></dd>{% endif %}
+    <dt>Assunto</dt><dd>{{ m.assunto }}</dd>
+  </dl>
+</section>
+
+<section class="panel">
+  <h2>Quem se manifestou</h2>
+  {% if m.anonima %}
+    <p>Manifestação <strong>anônima</strong>: nenhum dado de identificação foi gravado.</p>
+  {% elif m.identificacao_aberta %}
+    <dl class="detail">
+      <dt>Nome</dt><dd>{{ m.nome or '—' }}</dd>
+      <dt>Documento</dt><dd>{{ m.documento or '—' }}</dd>
+      <dt>Contato</dt><dd>{{ m.contato or '—' }}</dd>
+      <dt>Resposta por</dt><dd>{{ m.forma_resposta or '—' }}</dd>
+    </dl>
+    <p class="small muted">Esta consulta à identificação ficou registrada na auditoria.</p>
+  {% elif m.pode_ver_identificacao %}
+    <p>A identificação é protegida. <a class="button" href="{{ url_for('ouvidoria_ficha', manifestacao_id=m.id, identificacao=1) }}">Mostrar a identificação</a>
+    <span class="small muted">— a consulta fica registrada na auditoria.</span></p>
+  {% else %}
+    <p class="muted">Identificação reservada: só o oficial, o gerente e o responsável a veem{% if m.tipo == 'DENUNCIA' %} (na denúncia, só o oficial e o responsável){% endif %}.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Relato</h2>
+  {% if m.pode_ver_teor %}
+    <pre style="white-space:pre-wrap;font:inherit;margin:0">{{ m.relato }}</pre>
+  {% else %}
+    <p class="muted">Teor reservado: denúncia, com acesso restrito ao oficial, ao gerente e ao responsável.</p>
+  {% endif %}
+</section>
+
+{% if m.resposta %}
+<section class="panel">
+  <h2>Resposta dada</h2>
+  <pre style="white-space:pre-wrap;font:inherit;margin:0">{{ m.resposta }}</pre>
+  <p class="small muted">Registrada em {{ fmt_dt(m.respondida_em) }} por {{ m.respondida_por_nome or '—' }}.</p>
+</section>
+{% endif %}
+
+{% if m.pode_tratar and user.role in ['ADMIN','MANAGER','USER'] and m.situacao in ['ABERTA','EM_ANALISE'] %}
+<section class="panel">
+  <h2>Tratar a manifestação</h2>
+  <div class="grid2">
+    <form method="post" action="{{ url_for('ouvidoria_responder', manifestacao_id=m.id) }}" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Resposta dada à pessoa (o texto que foi ou vai para ela)
+        <textarea name="resposta" rows="6" required></textarea></label>
+      <button class="primary" type="submit">Registrar a resposta</button>
+      <p class="small muted">Registrar a resposta conclui a tarefa desta manifestação.</p>
+    </form>
+    <div class="stack">
+      {% if m.situacao == 'ABERTA' %}
+      <form method="post" action="{{ url_for('ouvidoria_em_analise', manifestacao_id=m.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit">Marcar como em análise</button>
+      </form>
+      {% endif %}
+      <form method="post" action="{{ url_for('ouvidoria_encaminhar', manifestacao_id=m.id) }}" class="stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Encaminhar para
+          <select name="responsavel_id" required>
+            <option value="">— escolha —</option>
+            {% for u in usuarios %}{% if u.id != m.responsavel_id %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endif %}{% endfor %}
+          </select></label>
+        <label>Por quê <input type="text" name="motivo" maxlength="1000"></label>
+        <button type="submit">Encaminhar (a tarefa vai junto)</button>
+      </form>
+      <form method="post" action="{{ url_for('ouvidoria_encerrar', manifestacao_id=m.id) }}" class="stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Encerrar sem resposta — motivo <input type="text" name="motivo" maxlength="1000" required></label>
+        <button type="submit">Encerrar</button>
+      </form>
+    </div>
+  </div>
+</section>
+{% elif m.pode_tratar and user.role in ['ADMIN','MANAGER','USER'] and m.situacao == 'RESPONDIDA' %}
+<section class="panel">
+  <form method="post" action="{{ url_for('ouvidoria_encerrar', manifestacao_id=m.id) }}" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Encerrar — motivo <input type="text" name="motivo" maxlength="1000" required placeholder="ex.: a pessoa confirmou que recebeu a resposta"></label>
+    <button type="submit">Encerrar</button>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Andamento</h2>
+  <div class="timeline">
+    {% for h in historico %}
+    <div><strong>{{ h.acao|replace('_', ' ')|capitalize }}</strong>{% if h.nota %} — {{ h.nota }}{% endif %}
+      <span class="small">{{ h.ts }} · {{ h.usuario_nome or '—' }}</span></div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

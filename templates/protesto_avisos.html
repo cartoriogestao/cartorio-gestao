@@ -378,6 +378,84 @@
       A folha do dia, para afixar</a>
   </div>
   {% endif %}
+  {#
+    O ARQUIVO DO EDITAL PARA A CENPROT MORA AQUI TAMBÉM (problema #142,
+    26/10/2026): «deixar claro o caminho para emitir o arquivo de edital». O
+    botão existia só na tela da chave do CENPROT, longe de onde o edital se
+    publica, e os 11 editais de 22/10 ficaram sem arquivo gerado pelo sistema.
+    CN-MA art. 922, § 1º: o edital é afixado E publicado no site da CENPROT.
+  #}
+  <div style="padding:0 14px 14px">
+    <p><small><strong>O caminho do edital, em quatro passos:</strong>
+      1. publique o edital do aviso não entregue (acima);
+      2. imprima a folha do dia e afixe;
+      3. gere aqui o arquivo do edital eletrônico do dia;
+      4. suba esse arquivo no portal da CENPROT (Edital Eletrônico).
+      O protesto só se lavra do final do primeiro dia útil depois da
+      publicação (CN-MA art. 922, § 1º).</small></p>
+    <form method="post" action="{{ url_for('protesto_cenprot_edital') }}"
+          class="grid2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="voltar" value="avisos">
+      <label>Dia dos editais
+        <input type="date" name="dia" value="{{ hoje }}"></label>
+      <div class="actions" style="grid-column:1/-1">
+        <button class="button primary">Gerar o arquivo do edital para a CENPROT</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+{#
+  O COMPROVANTE DO ENVIO À CENPROT (pedido do oficial, 26/10/2026, #142): o
+  passo 4 não deixava rastro. Os dias sem comprovante vêm no alto. Para
+  conferir depois: o site público da CENPROT tem «Edital Eletrônico — consulta
+  e emissão de edital eletrônico atualizado».
+#}
+<section class="panel" id="envio-do-edital">
+  <div class="panel-head">
+    <span>Envio do edital à CENPROT — comprovantes</span>
+    <small>últimos 30 dias</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    Depois de subir o arquivo do dia no portal da CENPROT, salve a tela de
+    confirmação (PDF ou imagem) e anexe aqui. O comprovante vale para todos os
+    editais daquele dia. Para conferir a publicação, use a consulta
+    «Edital Eletrônico» do site público da CENPROT.
+  </small></p>
+  {% if not envios %}
+    <p style="padding:14px">Nenhum edital publicado nos últimos 30 dias.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Dia</th><th>Editais</th><th>Comprovante</th><th>Anexar</th></tr></thead>
+    <tbody>
+      {% for d in envios %}
+      <tr>
+        <td><strong>{{ d.dia[8:10] }}/{{ d.dia[5:7] }}/{{ d.dia[:4] }}</strong></td>
+        <td>{{ d.editais }}</td>
+        <td>
+          {% if d.completo %}<span>comprovado</span>
+          {% elif d.com_comprovante %}<strong>{{ d.com_comprovante }} de {{ d.editais }}</strong>
+          {% else %}<strong>sem comprovante</strong>{% endif %}
+          {% for x in d.anexos %}
+            <div><small><a href="{{ url_for('attachment_view', attachment_id=x.id) }}"
+                 target="_blank" rel="noopener">{{ x.original_name }}</a></small></div>
+          {% endfor %}
+        </td>
+        <td>
+          <form method="post" enctype="multipart/form-data"
+                action="{{ url_for('protesto_edital_comprovante_cenprot') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="dia" value="{{ d.dia }}">
+            <input type="file" name="comprovante" accept=".pdf,.png,.jpg,.jpeg" required>
+            <button class="button small">Anexar</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
 </section>
 
 <div class="notice">

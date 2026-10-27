@@ -37,13 +37,15 @@ def con(cg_casa):
 
 
 def _lan(con, valor, *, natureza="RECEBIMENTO", forma="PIX", desc="CERTIDÃO",
-         emol=None, excluido=0, protocolo=None, origem="MANUAL", chave=None):
+         emol=None, excluido=0, protocolo=None, origem="MANUAL", chave=None,
+         sentido="ENTRADA", estornado=0):
     con.execute(
         """INSERT INTO cx_lancamentos (data, natureza, sentido, forma_pagamento,
                descricao, valor, emolumentos, excluido, protocolo_id, origem,
-               origem_chave, criado_em)
-           VALUES ('2026-09-20', ?, 'ENTRADA', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (natureza, forma, desc, valor, emol, excluido, protocolo, origem, chave, AGORA))
+               origem_chave, criado_em, estornado)
+           VALUES ('2026-09-20', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (natureza, sentido, forma, desc, valor, emol, excluido, protocolo, origem,
+         chave, AGORA, estornado))
 
 
 def test_as_quatro_coisas_do_caixa_saem_separadas(con):
@@ -169,3 +171,78 @@ def test_uso_do_deposito_com_o_protocolo_na_descricao(con):
                               "p_atr": None},
                              {dep: (dep, 7, None, "RI")})
     assert lan["dep_id"] == dep and lan["dep_ri"] == 7 and lan["p_atr"] == "RI"
+
+
+# ------------------------------------------------------------ a saída não é receita
+#
+# O DEFEITO ACHADO NO PAINEL DO CELULAR (PR #28, 26/10/2026; o oficial: «arrume
+# o defeito»): `apurar_mes` somava as SAÍDAS do caixa como receita — e também
+# no «por caixa» e no «dinheiro que entrou». O caixa grava a saída com valor
+# POSITIVO e `sentido = 'SAIDA'`, então ela entrava somando. A importação do
+# E-Ofício grava toda saída como OUTRA_SAIDA (`caixa_import`).
+
+
+def test_entradas_e_saidas_misturadas_so_o_recebimento_de_ato_e_receita(con):
+    _lan(con, "100,00")                                             # receita
+    _lan(con, "40,00", forma="DINHEIRO")                            # receita
+    _lan(con, "30,00", natureza="DEVOLUCAO", sentido="SAIDA",
+         forma="DINHEIRO", desc="Devolução do depósito prévio nº 3")
+    _lan(con, "500,00", natureza="SANGRIA", sentido="SAIDA",
+         forma="DINHEIRO", desc="retirada")
+    _lan(con, "70,00", natureza="DESPESA", sentido="SAIDA", forma="PIX",
+         desc="material de escritório")
+    _lan(con, "999,00", natureza="OUTRA_SAIDA", sentido="SAIDA", forma="DINHEIRO",
+         desc="saída importada", origem="EOFICIO", chave="777")
+    _lan(con, "25,00", natureza="OUTRA_ENTRADA", forma="DINHEIRO",
+         desc="reembolso")                                          # não é ato
+    _lan(con, "60,00", estornado=1)                                 # estornado
+    _lan(con, "60,00", natureza="ESTORNO", sentido="ESTORNO")       # o estorno
+    _lan(con, "80,00", excluido=1)                                  # excluído
+    _lan(con, "200,00", natureza="COMPLEMENTO", forma="DINHEIRO",
+         desc="SALDO INICIAL")                                      # troco
+    r = GF.apurar_mes(con, 2026, 9)
+    assert sum(r["receita"].values()) == pytest.approx(140.0)
+    assert sum(r["por_operador"].values()) == pytest.approx(140.0)
+    assert r["saidas"]["qtd"] == 4
+    assert r["saidas"]["total"] == pytest.approx(1599.0)
+    assert r["saidas"]["por_natureza"] == {
+        "DEVOLUCAO": 30.0, "SANGRIA": 500.0, "DESPESA": 70.0, "OUTRA_SAIDA": 999.0}
+    assert r["outras_entradas"] == [1, 25.0]
+    # o dinheiro que entrou também não leva saída nenhuma
+    assert r["entrou"]["PIX"] == pytest.approx(100.0)
+    assert r["entrou"]["Dinheiro"] == pytest.approx(40.0)
+    assert r["entrou"]["Outras entradas (não são recebimento de ato)"] == pytest.approx(25.0)
+    assert r["estornos"][0] == 2 and r["excluidos"] == [1, 80.0]
+    assert r["troco"] == 200.0
+
+
+def test_saida_marcada_so_pela_natureza_tambem_fica_fora(con):
+    # Linha antiga com o sentido em branco e a natureza de saída: a natureza
+    # basta (o sentido manda, mas não é o único sinal).
+    _lan(con, "10,00")
+    _lan(con, "45,00", natureza="SANGRIA", sentido="")
+    r = GF.apurar_mes(con, 2026, 9)
+    assert sum(r["receita"].values()) == pytest.approx(10.0)
+    assert r["saidas"]["por_natureza"] == {"SANGRIA": 45.0}
+
+
+def test_o_uso_do_deposito_continua_receita_e_a_saida_nao(con):
+    dep = con.execute(
+        """INSERT INTO cx_depositos (data, depositante, valor, saldo, criado_em)
+           VALUES ('2026-09-11', 'FULANO', '300,00', '0,00', ?)""", (AGORA,)).lastrowid
+    _lan(con, "300,00", forma="DEPOSITO_PREVIO",
+         desc=f"Uso do depósito prévio nº {dep}")
+    _lan(con, "300,00", natureza="DEVOLUCAO", sentido="SAIDA", forma="DINHEIRO",
+         desc=f"Devolução do depósito prévio nº {dep}: desistiu")
+    r = GF.apurar_mes(con, 2026, 9)
+    assert sum(r["receita"].values()) == pytest.approx(300.0)
+    assert r["saidas"]["total"] == pytest.approx(300.0)
+
+
+def test_o_relatorio_mostra_as_saidas_fora_da_receita(con):
+    _lan(con, "100,00")
+    _lan(con, "999,00", natureza="OUTRA_SAIDA", sentido="SAIDA", forma="DINHEIRO",
+         desc="saída importada")
+    texto = GF.relatorio_financeiro_html(con, 2026, 9, HOJE)
+    assert "Receita reconhecida no mês: R$ 100,00" in texto
+    assert "Saídas do caixa" in texto and "R$ 999,00" in texto

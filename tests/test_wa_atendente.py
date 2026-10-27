@@ -11,6 +11,7 @@ ausência dele o tira de lá.
 """
 from __future__ import annotations
 
+import itertools
 import json
 import re
 import sys
@@ -70,7 +71,14 @@ def portal(monkeypatch):
 
 
 class Graph:
-    """O falso da Graph: guarda o que iria e devolve um id."""
+    """O falso da Graph: guarda o que iria e devolve um id.
+
+    O id é único entre TODOS os falsos, como o da Meta: numerado por instância,
+    o teste que cria um `Graph()` a cada rodada repetia «wamid.out-1», a gravação
+    da saída batia no índice único de `wa_mensagem.meta_id` e a transação da
+    rodada voltava inteira — inclusive a tentativa contada."""
+
+    _ids = itertools.count(1)
 
     def __init__(self, status=200):
         self.enviados = []
@@ -78,7 +86,7 @@ class Graph:
 
     def __call__(self, url, payload, headers):
         self.enviados.append({"url": url, "payload": payload})
-        return self.status, json.dumps({"messages": [{"id": f"wamid.out-{len(self.enviados)}"}]})
+        return self.status, json.dumps({"messages": [{"id": f"wamid.out-{next(Graph._ids)}"}]})
 
 
 class Modelo:
@@ -614,7 +622,10 @@ def test_a_tela_nao_mostra_pedaco_da_chave(casa):
     db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
     PROV.gravar_chave(casa["pasta"], "claude", "sk-ant-segredo-XYZW9876")
     html = _entrar(app, "mario").get("/whatsapp/atendente").get_data(as_text=True)
-    assert "9876" not in html and "segredo" not in html
+    # Os pedaços que só a chave tem: «segredo» sozinho casava com a ajuda da
+    # tela («segredos são substituídos antes de qualquer envio»).
+    for pedaco in ("9876", "XYZW", "sk-ant", "ant-segredo"):
+        assert pedaco not in html, pedaco
 
 
 # ------------------------------- o teto e o tamanho (revisão de segurança, 26/10/2026)

@@ -488,9 +488,28 @@ def chave_da_situacao(con, protocolo: Mapping, *, hoje: str | None = None) -> st
         return "EXIGENCIA"
     if etapa in ("VENCIDA", "ENCERRADA_SEM_ATO"):
         return "PROCURE_O_CARTORIO"
+    # A EXIGÊNCIA DE QUALQUER ATRIBUIÇÃO — 27/10/2026. Só a prenotação do RI
+    # dizia «exigência»; a nota geral do balcão (Notas, RCPN, Protesto) e o
+    # título do RCPJ/RTD em exigência saíam «em atendimento». A leitura única é
+    # a do #39 (`caixa_exigencia.exigencias_abertas_do_protocolo`).
+    if _exigencias_abertas(con, protocolo):
+        return "EXIGENCIA"
     itens = _itens(con, int(protocolo["id"])) if protocolo.get("id") else []
     if any(not i.get("quitado") and not i.get("gratuito") for i in itens):
         return "AGUARDANDO_PAGAMENTO"
+    # «PRONTO» É A MARCA DO BALCÃO — 27/10/2026, ponto da junção do #26 com o
+    # #29. O e-mail do aviso sai quando o balcão marca «pronto para retirar»
+    # (`cx_protocolos.pronto_retirar_em`), e o portal decidia sozinho pelos
+    # itens gastos: os dois discordavam. Onde a coluna existe, só a marca diz
+    # «pronto»; a dedução pelos itens fica para a instalação sem ela.
+    if banco(con).tem_coluna("cx_protocolos", "pronto_retirar_em"):
+        marca = protocolo.get("pronto_retirar_em")
+        if marca is None and protocolo.get("id"):
+            linha = banco(con).um(
+                "SELECT pronto_retirar_em FROM cx_protocolos WHERE id = %s",
+                (int(protocolo["id"]),))
+            marca = linha["pronto_retirar_em"] if linha else None
+        return "PRONTO" if marca else "EM_ATENDIMENTO"
     if etapa == "REGISTRADO":
         return "PRONTO"
     if etapa is None and itens:
@@ -681,11 +700,38 @@ def servico_pedido(con, protocolo: Mapping, nomes: Any = ()) -> str | None:
     return texto[:TAMANHO_DO_SERVICO]
 
 
+def _exigencias_abertas(con, protocolo: Mapping) -> list[dict]:
+    """As exigências abertas do protocolo em QUALQUER atribuição, pela leitura
+    única do #39. SÓ LÊ. Falha de leitura não derruba o portal: devolve vazio
+    e fica no log (a situação é um refinamento)."""
+    if not protocolo.get("id"):
+        return []
+    try:
+        import caixa_exigencia as CXE
+        return CXE.exigencias_abertas_do_protocolo(con, int(protocolo["id"]))
+    except Exception:                                   # noqa: BLE001
+        LOG.exception("exigências do protocolo não puderam ser lidas")
+        return []
+
+
 def exigencias_pendentes(con, protocolo: Mapping, nomes: Any = ()) -> list[str]:
-    """O que falta o cliente trazer: as exigências da nota devolutiva ABERTA
-    da prenotação do RI, limpas. SÓ LÊ. Fora do RI (ou sem nota gravada no
-    sistema) a lista é vazia — e o comprovante diz «procure o cartório»
-    quando a situação é de exigência e a lista não diz o quê."""
+    """O que falta o cliente trazer, em QUALQUER atribuição, limpo. SÓ LÊ.
+
+    Desde 27/10/2026 lê a leitura única do #39 — a nota geral do balcão, a
+    nota devolutiva do RI e o título do RCPJ/RTD em exigência. Sem nota
+    gravada no sistema a lista é vazia — e o comprovante diz «procure o
+    cartório» quando a situação é de exigência e a lista não diz o quê."""
+    abertas = _exigencias_abertas(con, protocolo)
+    if abertas:
+        saida: list[str] = []
+        for nota in abertas:
+            for e in (nota.get("itens") or []):
+                limpa = texto_para_o_cliente(e, nomes, teto=TAMANHO_DA_EXIGENCIA)
+                if limpa:
+                    saida.append(limpa)
+        return saida[:EXIGENCIAS_NO_COMPROVANTE]
+    # O caminho antigo (só o RI, direto na tabela) fica para a instalação em
+    # que a leitura única não responde.
     import json
     if not protocolo.get("ri_protocolo_id"):
         return []

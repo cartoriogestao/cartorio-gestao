@@ -467,7 +467,7 @@ def test_desligado_o_balcao_continua_como_antes(cg_casa_logada, monkeypatch):
     assert "Reabrir com o modelo</button>" not in html
     # A rota recusa sem falar com a rede (o guarda estouraria).
     r = c.post(f"/whatsapp/{cid}/reabrir", data={"csrf_token": csrf})
-    assert r.status_code == 400
+    assert r.status_code == 302   # volta à conversa com o aviso (redirecionamento com 400 o navegador não segue)
     assert _saidas(db, cid) == []
 
 
@@ -481,7 +481,7 @@ def test_a_recusa_da_meta_por_janela_aponta_o_modelo(cg_casa_logada, monkeypatch
         WA.salvar_rascunho(con, cid, "Sua certidão está pronta.")
     csrf, _ = _csrf(c, f"/whatsapp/{cid}")
     r = c.post(f"/whatsapp/{cid}/enviar", data={"csrf_token": csrf})
-    assert r.status_code == 400
+    assert r.status_code == 302
     html = c.get(f"/whatsapp/{cid}").get_data(as_text=True)     # os avisos da tela
     assert "131047" in html and "Use «Reabrir com o modelo»" in html
     assert _saidas(db, cid) == []

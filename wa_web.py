@@ -447,7 +447,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 flash("Passaram as 24 horas da última mensagem do cliente: a Meta só "
                       "aceita um modelo aprovado. Use «Reabrir com o modelo» e, quando o "
                       "cliente responder, envie o rascunho.", "warning")
-            return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id)), 400
+            # Sem o `, 400`: redirecionamento com status 400 o navegador não
+            # segue, e o balcão via a página «Redirecting…» (27/10/2026).
+            return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
         audit("wa_enviar", "wa_conversa", conversa_id, {"ok": True})
         flash("Mensagem enviada no WhatsApp.", "success")
         return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
@@ -478,7 +480,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                                 autor=_quem(), agora=db.now(), tipo="modelo")
         except WA.EnvioErro as e:
             flash(str(e), "danger")
-            return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id)), 400
+            # Sem o `, 400`, pelo mesmo motivo do envio: o navegador não segue.
+            return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
         audit("wa_reabrir_modelo", "wa_conversa", conversa_id,
               {"ok": True, "modelo": pedido["modelo"]})
         flash("Modelo de retomar enviado. Quando o cliente responder, a janela de 24 h "

@@ -162,7 +162,14 @@ def normalizar_agenda(bruta: Any) -> dict:
         horarios = [h for h in re.split(r"[,;\s]+", horarios) if h]
     horarios = sorted({_hhmm(h).strftime("%H:%M") for h in horarios})
     intervalo = agenda.get("intervalo_min")
-    intervalo = int(intervalo) if str(intervalo or "").strip() not in ("", "0") else 0
+    # Intervalo que não é número inteiro («1,5», «abc») virava `ValueError` cru
+    # e HTTP 500 na tela de gravar o processo (27/10/2026).
+    try:
+        intervalo = int(intervalo) if str(intervalo or "").strip() not in ("", "0") else 0
+    except (TypeError, ValueError):
+        raise AutomacaoError(
+            f"O intervalo da agenda tem de ser um número inteiro de minutos "
+            f"(recebido: {intervalo!r}).") from None
     if horarios and intervalo:
         raise AutomacaoError("A agenda tem horários fixos OU um intervalo — não os dois.")
     if not horarios and not intervalo:

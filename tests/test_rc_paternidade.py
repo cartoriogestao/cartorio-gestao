@@ -147,3 +147,14 @@ def test_a_alegacao_nao_remetida_aparece_no_painel_ate_ser_remetida():
                          data="2026-09-20", agora="2026-09-20T10:00:00")
     assert not [x for x in IN.lista(con, hoje="2026-09-20", chave="RCPN_ALEGACAO_PATERNIDADE")
                 if x["chave"] == "RCPN_ALEGACAO_PATERNIDADE"]
+
+
+def test_o_assento_cancelado_tira_a_alegacao_do_painel():
+    # 27/10/2026: o selo do nascimento falhou, a rota cancelou o assento, e o
+    # termo ficava no painel de inacabados para sempre.
+    con = banco()
+    init_ex_schema(con)
+    r = nascimento(con, paternidade=ALEGACAO)
+    con.execute("UPDATE rc_assentos SET situacao='CANCELADO' WHERE id=?", (r["assento_id"],))
+    assert not [x for x in IN.lista(con, hoje="2026-09-20", chave="RCPN_ALEGACAO_PATERNIDADE")
+                if x["chave"] == "RCPN_ALEGACAO_PATERNIDADE"]

@@ -89,7 +89,7 @@ _LOG = logging.getLogger(__name__)
 
 MODELO = "CAIXA_AVISO_ANDAMENTO"
 PARTES = ("ASSINATURA", "EXIGENCIA_ASSUNTO", "EXIGENCIA", "PRONTO_ASSUNTO", "PRONTO",
-          "PRAZO_ASSUNTO", "PRAZO")
+          "PRAZO_ASSUNTO", "PRAZO", "EXIGENCIA_GERAL")
 _CLAROS_DO_EVENTO = ("numero", "serventia", "data_limite", "dias", "assinatura")
 #: Os claros de cada parte. Nenhum deles é dado de pessoa — de propósito.
 CLAROS = {"ASSINATURA": ("serventia", "telefone", "email"),
@@ -299,6 +299,46 @@ def _vencimento(texto: Any) -> date | None:
         return None
 
 
+def _exigencias_fora_do_ri(con) -> dict[str, dict]:
+    """As exigências abertas FORA do RI — a nota geral do balcão e o título do
+    RCPJ/RTD em exigência —, pela leitura única do #39. **SÓ LÊ.**
+
+    27/10/2026: o aviso de exigência só olhava a nota devolutiva do RI, e o
+    cliente de Notas, RCPN ou RTD com exigência aberta não recebia aviso
+    nenhum. A nota do RI continua saindo pela prenotação (acima); aqui entra o
+    resto, com a chave da própria nota — uma nota nova é outro aviso.
+    """
+    import caixa_exigencia as CXE
+    bd = banco(con)
+    candidatos: set[int] = set()
+    if bd.tem_tabela("cx_exigencias"):
+        candidatos |= {int(r["protocolo_id"]) for r in bd.ler(
+            "SELECT DISTINCT protocolo_id FROM cx_exigencias WHERE situacao = %s",
+            (CXE.ABERTA,))}
+    if bd.tem_tabela("rg_titulos") and bd.tem_coluna("rg_titulos", "protocolo_geral_id"):
+        import rg_titulo as TIT
+        candidatos |= {int(r["protocolo_geral_id"]) for r in bd.ler(
+            """SELECT DISTINCT protocolo_geral_id FROM rg_titulos
+                WHERE situacao = %s AND protocolo_geral_id IS NOT NULL""",
+            (TIT.EXIGENCIA,))}
+    vig: dict[str, dict] = {}
+    for pid in sorted(candidatos):
+        p = bd.um("SELECT id, numero, situacao, atribuicao FROM cx_protocolos WHERE id = %s",
+                  (pid,))
+        if not p or str(p["situacao"] or "").upper() in PROTOCOLO_ENCERRADO:
+            continue
+        if str(p["atribuicao"] or "").strip().upper() == "PROTESTO":
+            continue
+        for e in CXE.exigencias_abertas_do_protocolo(con, pid):
+            if e["origem"] == "RI":
+                continue
+            chave = f"{AS.EXIGENCIA}:{AS.PROTOCOLO_GERAL}:{pid}:{e['chave']}"
+            vig[chave] = {"evento": AS.EXIGENCIA, "origem": AS.PROTOCOLO_GERAL,
+                          "origem_id": pid, "numero": str(p["numero"]),
+                          "data_limite": e.get("prazo_ate"), "dias": None}
+    return vig
+
+
 def eventos_vigentes(con, *, hoje: date, feriados: set | None = None,
                      dias_antes: int = DIAS_ANTES_PADRAO,
                      eventos: Iterable[str] = AS.EVENTOS) -> dict[str, dict]:
@@ -324,6 +364,8 @@ def eventos_vigentes(con, *, hoje: date, feriados: set | None = None,
             vig[chave] = {"evento": AS.EXIGENCIA, "origem": AS.PRENOTACAO,
                           "origem_id": int(n["id"]), "numero": str(n["numero"]),
                           "data_limite": n["data_limite"], "dias": None}
+    if AS.EXIGENCIA in eventos:
+        vig.update(_exigencias_fora_do_ri(con))
     if AS.PRONTO in eventos and bd.tem_coluna("cx_protocolos", "pronto_retirar_em"):
         encerrado = ",".join(["%s"] * len(PROTOCOLO_ENCERRADO))
         for p in bd.ler(f"""SELECT id, numero FROM cx_protocolos
@@ -504,8 +546,13 @@ def textos(evento: str, info: dict, serventia: dict, con: Any = None) -> tuple[s
               "data_limite": _br(info.get("data_limite")),
               "dias": "" if info.get("dias") is None else str(info["dias"]),
               "assinatura": assinatura}
+    # A exigência FORA do RI (nota geral do balcão, título do RCPJ/RTD) tem
+    # corpo próprio: o do RI fala de prenotação, que ali não existe (27/10/2026).
+    corpo = evento
+    if evento == AS.EXIGENCIA and info.get("origem") == AS.PROTOCOLO_GERAL:
+        corpo = "EXIGENCIA_GERAL"
     return (_montar(f"{evento}_ASSUNTO", claros, con).strip(),
-            _montar(evento, claros, con))
+            _montar(corpo, claros, con))
 
 
 def conferir(corpo: str) -> str:

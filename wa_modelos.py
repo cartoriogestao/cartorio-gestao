@@ -176,7 +176,7 @@ def nome_do_modelo(con: Any, qual: str) -> str:
     """O nome cadastrado na Meta para aquele modelo: o da configuração ou o
     padrão. Só lê."""
     spec = _spec(qual)
-    gravado = WA.ler_config(con, spec["chave"]) if con is not None else ""
+    gravado = WA.ler_config(con, spec["chave"])
     return gravado or spec["padrao"]
 
 
@@ -205,7 +205,7 @@ def derivar_nome_no_modelo(serventia: Mapping[str, Any] | None) -> str:
 
 def nome_no_modelo(con: Any, serventia: Mapping[str, Any] | None = None) -> str:
     """O {{1}} dos cinco modelos: a configuração, ou o derivado da serventia. Só lê."""
-    gravado = WA.ler_config(con, SCH.CHAVE_NOME_NO_MODELO) if con is not None else ""
+    gravado = WA.ler_config(con, SCH.CHAVE_NOME_NO_MODELO)
     return " ".join(gravado.split()) or derivar_nome_no_modelo(serventia)
 
 

@@ -254,6 +254,34 @@ def test_a_amarra_e_pelo_banco():
                              formulario={}, agora=AGORA)
 
 
+def test_a_emissao_que_caiu_depois_de_gravar_e_amarrada_e_nao_emitida_de_novo():
+    # 27/10/2026: a emissão que gravou e selou a certidão e caiu antes de
+    # amarrar deixava o pedido em EMITINDO; passado o prazo, aprovar de novo
+    # regravava `emitindo_desde` e a segunda emissão gastava outro selo.
+    con = _con()
+    pid = _pronto_para_aprovar(con)
+    AUTO.marcar_emitindo(con, pid, user_id=1, nome="Mario", status_onr="Em aberto",
+                         formulario={"tipo_ri": "INTEIRO_TEOR"}, agora=AGORA)
+    cid = _certidao(con, emitida=AGORA)                    # gravou, e a tela caiu
+    depois = "2026-10-26T14:20:00"
+    # a nova aprovação recusa emitir de novo…
+    with pytest.raises(AUTO.AutoError, match="já gravou a certidão"):
+        AUTO.marcar_emitindo(con, pid, user_id=1, nome="Mario", status_onr="Em aberto",
+                             formulario={"tipo_ri": "INTEIRO_TEOR"}, agora=depois)
+    # …e a retomada amarra a que existe
+    assert AUTO.retomar_emitindo_vencido(con, pid, agora=depois) == \
+        {"certidao_id": cid, "etapa": AUTO.A_ASSINAR}
+
+
+def test_a_retomada_nao_mexe_no_clique_que_ainda_esta_emitindo():
+    con = _con()
+    pid = _pronto_para_aprovar(con)
+    AUTO.marcar_emitindo(con, pid, user_id=1, nome="Mario", status_onr="Em aberto",
+                         formulario={"tipo_ri": "INTEIRO_TEOR"}, agora=AGORA)
+    assert AUTO.retomar_emitindo_vencido(con, pid, agora="2026-10-26T14:05:00") is None
+    assert AUTO.preparo(con, pid)["etapa"] == AUTO.EMITINDO
+
+
 def test_duas_certidoes_para_o_mesmo_pedido_nao_amarram_nenhuma():
     con = _con()
     pid = _pronto_para_aprovar(con)

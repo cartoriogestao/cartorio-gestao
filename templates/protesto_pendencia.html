@@ -45,6 +45,11 @@
   <form method="post" style="margin-top:6px"
         action="{{ url_for('protesto_pendencia_titulo', pendencia_id=p.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {# Só vale quando o sistema avisou de título parecido já na casa (27/10/2026). #}
+    <label style="display:block;margin:4px 0">
+      <input type="checkbox" name="mesmo_assim" value="1">
+      já conferi: o título parecido que o sistema apontou é outro, e este ainda não está na casa
+    </label>
     <button class="button primary">Dar entrada no título</button>
   </form>
 </div>

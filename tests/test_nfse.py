@@ -22,7 +22,7 @@ import hashlib
 import json
 import re
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -400,6 +400,23 @@ def test_a_dps_assinada_passa_no_leiaute_e_na_assinatura_do_servidor_falso(pfx):
     assert raiz[0].get("Id") == f"DPS{MUNICIPIO}2{PRESTADOR}00001{7:015d}"
     assert raiz.findtext("n:infDPS/n:valores/n:vServPrest/n:vServ", namespaces=NS) == "120.03"
     assert raiz.findtext("n:infDPS/n:dhEmi", namespaces=NS) == "2026-10-19T10:00:00-03:00"
+
+
+@pytest.mark.parametrize("competencia, esperada", [
+    (date(2026, 10, 31), "2026-10-31"),   # recibo de 31/10 emitido em 03/11: outubro
+    (date(2026, 11, 5), "2026-11-03"),    # nunca depois da emissão
+    (None, "2026-11-03"),                 # sem a data do recibo, a da emissão
+])
+def test_a_competencia_e_a_do_recibo(competencia, esperada):
+    # 27/10/2026: a competência saía da data da montagem da DPS.
+    xml = DPS.montar_dps(
+        ambiente="homologacao", emitida_em=datetime(2026, 11, 3, 10, 0, tzinfo=timezone(
+            timedelta(hours=-3))), serie="1", numero=8,
+        prestador=DPS.Prestador(PRESTADOR, "12345", MUNICIPIO),
+        tomador=DPS.Tomador(TOMADOR, "TOMADORA FICTICIA"),
+        servico=DPS.Servico("210101", "Emolumentos", 12003, "5,00"),
+        competencia=competencia)
+    assert etree.fromstring(xml).findtext("n:infDPS/n:dCompet", namespaces=NS) == esperada
 
 
 def test_dps_mexida_depois_de_assinada_e_recusada_pela_assinatura(pfx):

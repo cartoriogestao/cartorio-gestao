@@ -149,7 +149,9 @@ def _colunas(bd) -> set[str]:
         """SELECT table_name, column_name FROM information_schema.columns
             WHERE table_schema = current_schema()
               AND ((table_name = 'audit_logs' AND column_name IN ('agente', 'a_mando_de'))
-                OR (table_name = 'users' AND column_name IN ('eh_robo', 'robo_responsavel_id')))""")}
+                OR (table_name = 'users' AND column_name IN ('eh_robo', 'robo_responsavel_id',
+                                                             'username', 'full_name',
+                                                             'active')))""")}
 
 
 def _nome(linha: Any) -> str:
@@ -176,17 +178,21 @@ def responsavel_das_rotinas(con) -> dict | None:
     bd = banco(con)
     if not bd.tem_tabela("users"):
         return None
+    if not (bd.tem_coluna("users", "role") and bd.tem_coluna("users", "active")):
+        return None      # banco mínimo de teste: sem papel nem ativo, não há a quem
     tem_robo = bd.tem_coluna("users", "eh_robo")
     pessoa = " AND COALESCE(eh_robo,0)=0" if tem_robo else ""
+    nomes = ", ".join(c if bd.tem_coluna("users", c) else f"NULL AS {c}"
+                      for c in ("username", "full_name"))
     valor = (bd.valor("SELECT value FROM settings WHERE key=%s", (CHAVE_RESPONSAVEL,))
              if bd.tem_tabela("settings") else None)
     if str(valor or "").strip().isdigit():
-        r = bd.um(f"SELECT id, username, full_name FROM users "
+        r = bd.um(f"SELECT id, {nomes} FROM users "
                   f"WHERE id=%s AND active=1 AND role IN ('ADMIN','MANAGER'){pessoa}",
                   (int(str(valor).strip()),))
         if r:
             return {"id": int(r["id"]), "nome": _nome(r), "configurado": True}
-    r = bd.um(f"SELECT id, username, full_name FROM users "
+    r = bd.um(f"SELECT id, {nomes} FROM users "
               f"WHERE role='ADMIN' AND active=1{pessoa} ORDER BY id LIMIT 1")
     return {"id": int(r["id"]), "nome": _nome(r), "configurado": False} if r else None
 
@@ -289,16 +295,24 @@ def identidade(con, user_id: Any = None, *, agente: Any = None,
     if uid is not None:
         cols = _cols if _cols is not None else _colunas(bd)
         robo_col = "COALESCE(u.eh_robo,0)" if "users.eh_robo" in cols else "0"
+        # O banco mínimo de teste de módulo tem `users` pela metade (`id,
+        # full_name`, ou `id, username`): a coluna que falta vem NULL, e pedir
+        # a ausente não derruba mais quem audita.
+        def col(alias: str, nome: str) -> str:
+            return f"{alias}.{nome}" if f"users.{nome}" in cols else "NULL"
         if "users.robo_responsavel_id" in cols:
             conta = bd.um(
-                f"""SELECT u.username, u.full_name, {robo_col} AS eh_robo,
-                           r.username AS r_username, r.full_name AS r_full_name,
-                           r.active AS r_active,
+                f"""SELECT {col("u", "username")} AS username, {col("u", "full_name")} AS full_name,
+                           {robo_col} AS eh_robo,
+                           {col("r", "username")} AS r_username,
+                           {col("r", "full_name")} AS r_full_name,
+                           {col("r", "active")} AS r_active,
                            {"COALESCE(r.eh_robo,0)" if "users.eh_robo" in cols else "0"} AS r_robo
                       FROM users u LEFT JOIN users r ON r.id = u.robo_responsavel_id
                      WHERE u.id = %s""", (uid,))
         elif "users.eh_robo" in cols or bd.tem_tabela("users"):
-            conta = bd.um(f"SELECT u.username, u.full_name, {robo_col} AS eh_robo "
+            conta = bd.um(f"SELECT {col('u', 'username')} AS username, "
+                          f"{col('u', 'full_name')} AS full_name, {robo_col} AS eh_robo "
                           f"FROM users u WHERE u.id = %s", (uid,))
         else:
             conta = None     # banco mínimo (teste de módulo) sem `users`

@@ -860,3 +860,77 @@ def test_o_robo_nao_alcanca_a_central_da_automacao(casa):
     cg_login(c, "robo_central", SENHA)
     for url in ("/automacao", "/automacao/configuracao", "/automacao/cofre"):
         assert c.get(url).status_code == 403, url
+
+
+# ------------------------------------------------------------------ o portal e a caixa-postal no horário
+
+
+class _Bd:
+    """O `connect()`/`transaction()` mínimo, para as rotinas que só os repassam."""
+
+    def __init__(self):
+        self.logs = []
+
+    def connect(self):
+        from contextlib import nullcontext
+        return nullcontext(None)
+
+    transaction = connect
+
+    def get_settings(self):
+        return {}
+
+    def log(self, *a, **k):
+        self.logs.append((a, k))
+
+
+def _ctx_falso():
+    from types import SimpleNamespace
+    return SimpleNamespace(db=_Bd(), agora=SEG, hoje=SEG.date(), processo={})
+
+
+def test_o_portal_e_a_caixa_postal_entram_na_central_desligados():
+    # 27/10/2026: os dois só rodavam no botão — o portal esperava uma tarefa do
+    # Agendador que ninguém instalou, e a caixa-postal nem isso.
+    sementes = {s["codigo"]: s for s in PROC.todas_as_sementes()}
+    assert sementes["PORTAL_ENVIO"]["alvo"] == "portal_cliente:rodar_automacao"
+    assert sementes["PORTAL_ENVIO"]["agenda"]["intervalo_min"] == 15
+    assert sementes["WHATSAPP_CAIXA_POSTAL"]["alvo"] == "wa_puxar:rodar_automacao"
+    assert sementes["WHATSAPP_CAIXA_POSTAL"]["agenda"]["intervalo_min"] == 2
+
+
+def test_a_rodada_do_portal_diz_o_que_subiu_e_o_que_impediu(monkeypatch):
+    import portal_cliente as PC
+    monkeypatch.setattr(PC, "enviar", lambda db, **k: {
+        "ok": True, "enviados": 3, "removidos": 1, "incompletos": 0, "motivo": ""})
+    r = PC.rodar_automacao(_ctx_falso())
+    assert r["situacao"] == SCH.OK and "3 protocolo(s) enviado(s)" in r["relato"]
+    monkeypatch.setattr(PC, "enviar", lambda db, **k: {
+        "ok": False, "enviados": 0, "removidos": 0, "incompletos": 0,
+        "motivo": "envio ao portal desligado nas configurações"})
+    assert PC.rodar_automacao(_ctx_falso())["situacao"] == SCH.AVISO
+    monkeypatch.setattr(PC, "enviar", lambda db, **k: {
+        "ok": False, "enviados": 0, "removidos": 0, "incompletos": 0,
+        "motivo": "a VPS respondeu HTTP 401: token"})
+    assert PC.rodar_automacao(_ctx_falso())["situacao"] == SCH.ERRO
+
+
+def test_a_rodada_da_caixa_postal_busca_aplica_confirma_e_so_audita_o_que_entrou(monkeypatch):
+    import wa_puxar as PX
+    confirmados = []
+    monkeypatch.setattr(PX, "buscar_pendentes", lambda con: {"ok": True, "itens": [{"id": "a"}]})
+    monkeypatch.setattr(PX, "aplicar_itens", lambda con, itens, **k: {
+        "ok": True, "aplicadas": 1, "repetidas": 0, "ids": ["a"]})
+    monkeypatch.setattr(PX, "confirmar", lambda con, ids: confirmados.append(ids))
+    ctx = _ctx_falso()
+    r = PX.rodar_automacao(ctx)
+    assert r["situacao"] == SCH.OK and "1 mensagem(ns) nova(s)" in r["relato"]
+    assert confirmados == [["a"]] and len(ctx.db.logs) == 1
+    assert ctx.db.logs[0][1].get("agente")                   # o robô diz quem é
+    monkeypatch.setattr(PX, "aplicar_itens", lambda con, itens, **k: {
+        "ok": True, "aplicadas": 0, "repetidas": 0, "ids": []})
+    ctx = _ctx_falso()
+    PX.rodar_automacao(ctx)
+    assert ctx.db.logs == []                                  # vazia não vira linha
+    monkeypatch.setattr(PX, "buscar_pendentes", lambda con: {"ok": False, "motivo": "caixa HTTP 401"})
+    assert PX.rodar_automacao(_ctx_falso())["situacao"] == SCH.AVISO

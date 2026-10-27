@@ -451,6 +451,43 @@ def _registrar(db, resumo: dict) -> None:
         _gravar_setting(con, CHAVE_ULTIMO, json.dumps(resumo, ensure_ascii=False))
 
 
+# ============================================================ a central da automação
+
+
+def rodar_automacao(ctx) -> dict:
+    """O processo PORTAL_ENVIO da central da automação: o mesmo `enviar` do
+    botão «Enviar agora», no horário. ESCREVE (as marcas e o resumo).
+
+    27/10/2026, na instalação da VPS: o envio a cada 15 minutos dependia de uma
+    tarefa do Agendador que a TI instalaria, e nenhuma existia — o portal só
+    recebia quando alguém clicava. Pelo despachante, que já roda, ele sai sem
+    tarefa nova no Windows. O interruptor continua sendo o da tela do portal.
+    """
+    import automacao_processos as PROC
+    import automacao_schema as SCH
+    r = enviar(ctx.db, hoje=ctx.hoje)
+    if r.get("ok"):
+        relato = (f"{r['enviados']} protocolo(s) enviado(s) e {r['removidos']} retirado(s) "
+                  f"do portal" + (f"; {r['incompletos']} sem o PDF, para a próxima rodada"
+                                  if r.get("incompletos") else "") + ".")
+        return PROC.resultado(SCH.OK, relato)
+    motivo = r.get("motivo") or "o envio não terminou"
+    situacao = SCH.ERRO if motivo.startswith("a VPS respondeu") else SCH.AVISO
+    return PROC.resultado(situacao, f"Nada subiu ao portal: {motivo}.")
+
+
+CATALOGO = (
+    {"codigo": "PORTAL_ENVIO", "nome": "Portal do cliente — enviar os protocolos à VPS",
+     "setor": "GESTAO", "funcao": f"portal_cliente.{rodar_automacao.__name__}",
+     "timeout_s": 600,
+     "agenda": {"dias": [0, 1, 2, 3, 4, 5, 6], "intervalo_min": 15,
+                "janela": ["07:00", "20:00"]},
+     "descricao": "De 15 em 15 minutos: sobe à VPS o retrato dos protocolos com código de "
+                  "acompanhamento que mudaram. O mesmo «Enviar agora» da tela do portal; "
+                  "nada sobe com o envio desligado lá."},
+)
+
+
 # ============================================================ linha de comando
 
 

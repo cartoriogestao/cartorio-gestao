@@ -17,13 +17,12 @@ A TV NÃO ENTRA COM LOGIN, E POR QUÊ
 """
 from __future__ import annotations
 
-import csv
-import io
 from datetime import date, timedelta
 
-from flask import Response, abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 
 import cofre_cred as COFRE
+import csv_seguro as CSVS
 import senhas as SEN
 from seguranca_web import PRATICA, numero_digitado
 
@@ -164,24 +163,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         inicio, fim, atendente = _periodo()
         with db.connect() as con:
             linhas = SEN.historico(con, inicio, fim, atendente_id=atendente)
-        saida = io.StringIO()
-        w = csv.writer(saida, delimiter=";")
-        w.writerow(["Data", "Senha", "Tipo", "Prioridade", "Situação", "Chegada", "Chamada",
-                    "Chamadas", "Guichê", "Início", "Fim", "Espera (min)",
-                    "Atendimento (min)", "Atendente", "Protocolo"])
-        for r in linhas:
-            w.writerow([r["ticket_date"], r["senha"], r.get("service_type") or "Geral",
-                        "Preferencial" if r.get("priority") else "Normal", r["situacao"],
-                        r.get("created_at") or "", r.get("called_at") or "",
-                        r.get("chamadas") or 0, r.get("guiche") or "",
-                        r.get("started_at") or "", r.get("finished_at") or "",
-                        "" if r["espera_seg"] is None else f"{r['espera_seg'] / 60:.1f}".replace(".", ","),
-                        "" if r["atendimento_seg"] is None else f"{r['atendimento_seg'] / 60:.1f}".replace(".", ","),
-                        r.get("attendant_name") or "", r.get("protocolo_numero") or ""])
+        cabecalho = ["Data", "Senha", "Tipo", "Prioridade", "Situação", "Chegada", "Chamada",
+                     "Chamadas", "Guichê", "Início", "Fim", "Espera (min)",
+                     "Atendimento (min)", "Atendente", "Protocolo"]
+        corpo = [[r["ticket_date"], r["senha"], r.get("service_type") or "Geral",
+                  "Preferencial" if r.get("priority") else "Normal", r["situacao"],
+                  r.get("created_at") or "", r.get("called_at") or "",
+                  r.get("chamadas") or 0, r.get("guiche") or "",
+                  r.get("started_at") or "", r.get("finished_at") or "",
+                  "" if r["espera_seg"] is None else f"{r['espera_seg'] / 60:.1f}".replace(".", ","),
+                  "" if r["atendimento_seg"] is None else f"{r['atendimento_seg'] / 60:.1f}".replace(".", ","),
+                  r.get("attendant_name") or "", r.get("protocolo_numero") or ""]
+                 for r in linhas]
         audit("SENHAS_RELATORIO_EXPORTADO", "TICKET", None, {"de": inicio, "ate": fim})
-        return Response("﻿" + saida.getvalue(), mimetype="text/csv; charset=utf-8",
-                        headers={"Content-Disposition":
-                                 f"attachment; filename=atendimento_{inicio}_{fim}.csv"})
+        # pelo `csv_seguro`: tudo entre aspas e fórmula desarmada (o tipo do
+        # atendimento e o nome vêm de cadastro)
+        return CSVS.resposta(f"atendimento_{inicio}_{fim}.csv", cabecalho, corpo)
 
     # ------------------------------------------------------------ a TV
 

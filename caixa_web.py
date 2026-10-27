@@ -1550,7 +1550,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # com outra cara.
         with db.connect() as con_doc:
             docs_qualificacao = PDOC.documentos(con_doc, protocolo_id)
+        # AS TAREFAS DO PROTOCOLO — 26/10/2026, o oficial: «precisamos poder
+        # criar uma tarefa a partir do protocolo e precisamos poder linkar um
+        # protocolo a uma tarefa nova ou preexistente». O vínculo é o da pasta
+        # do processo (`processo_pasta`), visto daqui.
+        import json as _json
+        import processo_pasta as PASTA
+        with db.connect() as con_tar:
+            tarefas_do_protocolo = PASTA.processos_da_peca(con_tar, "cx_protocolos", protocolo_id)
+            tarefas_abertas = PASTA.tarefas_abertas(con_tar)
+        try:
+            setores = _json.loads(db.get_setting("sectors", "[]") or "[]")
+        except ValueError:
+            setores = []
         return render_template("caixa_protocolo.html", p=p, atos=atos,
+                               tarefas_do_protocolo=tarefas_do_protocolo,
+                               tarefas_abertas=tarefas_abertas,
+                               usuarios_da_tarefa=db.list_users(active_only=True),
+                               setores_da_tarefa=setores if isinstance(setores, list) else [],
                                docs_qualificacao=docs_qualificacao,
                                TIPOS_DE_DOCUMENTO=PDOC.TIPOS_DE_DOCUMENTO,
                                PAPEIS_QUE_ANEXAM=PDOC.PAPEIS_QUE_ANEXAM,

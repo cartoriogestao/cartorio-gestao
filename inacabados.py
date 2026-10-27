@@ -378,6 +378,34 @@ FONTES: tuple[dict, ...] = (
                  "lavrado com o nascimento do balcão",
      "dias": 20,
      "tela": "rcpn_assento", "parametro": "assento_id"},
+    # O DIA DE PROTOCOLO DO RCPJ/RTD SEM TERMO DE ENCERRAMENTO — 23/10/2026.
+    #
+    #   «o aviso no painel fica valendo enquanto houver dia de protocolo sem
+    #   encerrar» — o oficial. O livro diário nasce no primeiro protocolo do
+    #   dia (`nu_livros.dia`), e o dia termina quando o termo é lavrado
+    #   (`nu_encerramentos_diarios`). UM DIA: o de hoje ainda não está parado,
+    #   o de ontem já está.
+    #
+    #   O dia útil SEM movimento não aparece aqui, porque não há livro dele
+    #   para olhar; quem o cobra é o PDF do mês, que recusa juntar enquanto
+    #   faltar termo de dia útil.
+    {"chave": "NUCLEO_DIA_SEM_ENCERRAR",
+     "nome": "Dia de protocolo do RCPJ/RTD sem termo de encerramento",
+     "atribuicao": "RCPJ_RTD",
+     "tabela": "nu_livros",
+     "onde": "serie IN ('PJ_PROTOCOLO','TD_PROTOCOLO') AND dia IS NOT NULL "
+             "AND NOT EXISTS (SELECT 1 FROM nu_encerramentos_diarios e "
+             "WHERE e.serie = nu_livros.serie AND e.dia = nu_livros.dia)",
+     "quando": "dia",
+     "rotulo": "serie",
+     "rotulo_2": "dia",
+     "rotulo_junta": " — ",
+     "terminou": "quando o dia é encerrado, com termo",
+     "o_acervo": "não entra: a carga do acervo não abre livro diário — ela "
+                 "não chama o núcleo, e o livro de protocolo do dia só nasce "
+                 "quando o sistema protocola",
+     "dias": 1,
+     "tela": "nucleo_livro", "parametro": "livro_id"},
 )
 
 CHAVES = tuple(f["chave"] for f in FONTES)

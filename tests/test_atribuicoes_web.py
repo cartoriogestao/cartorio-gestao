@@ -52,6 +52,11 @@ def _sessao(tmp_path, papel: str = "ADMIN"):
     # aqui, de proposito e a vista: eles provam que o modulo funciona
     # quando ele voltar, que e o que «fica para um futuro» quer dizer.
     db.set_settings({"modulo_protesto_ligado": "1"})
+    # A TRAVA DO SELO PAGO (3.7.0, 22/10/2026) TAMBEM SE DESLIGA AQUI, a vista:
+    # sem protocolo 'em atendimento' nenhum selo sai, e estes testes medem as
+    # TELAS das atribuicoes (selo digitado amarrado ao ato, certidao, averbacao),
+    # e nao a trava, que tem teste proprio em `test_selo_e_caixa`.
+    db.set_settings({"selo_trava_caixa": "DESLIGADA"})
     c = app.test_client()
     c.post("/login",
            data={"username": "tabeliao", "password": SENHA,

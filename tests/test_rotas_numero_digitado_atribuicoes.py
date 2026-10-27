@@ -79,8 +79,12 @@ TITULO_DO_PROTESTO = {
 def balcao(cg_casa_logada):
     """O ADMIN logado, o Protesto ligado e o cadastro do selo da casa."""
     db = cg_casa_logada["db"]
+    # A TRAVA DO SELO PAGO (3.7.0) desliga aqui, a vista: estes casos medem que
+    # numero ruim vira recado, e o preparo lavra com selo digitado. A trava tem
+    # teste proprio em `test_selo_e_caixa`.
     db.set_settings({"modulo_protesto_ligado": "1", "ri_cns": "000000",
-                     "selo_tabela_custas_em": "2026-01-01"})
+                     "selo_tabela_custas_em": "2026-01-01",
+                     "selo_trava_caixa": "DESLIGADA"})
     with cg_casa_logada["c"].session_transaction() as sessao:
         token = sessao["csrf_token"]
     return {**cg_casa_logada, "token": token}

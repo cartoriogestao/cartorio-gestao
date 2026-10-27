@@ -101,6 +101,7 @@ import ri_dominial as RIDOM
 import ri_certidao_negativa as RINEG
 import ri_prenotacao_prazo as PRAZO
 import ri_pedidos as PED
+import ri_nota_devolutiva as RND
 import ri_rascunho as RASC
 import ri_cnm as CNM
 import ri_correcoes as RC
@@ -3456,6 +3457,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                docs_protocolo_geral=docs_protocolo_geral,
                                depositos=depositos, saldo=reais(saldo),
                                restam=restam, notas=notas, historico=historico,
+                               TIPOS_DO_TITULO=RND.TIPOS_DE_DOCUMENTO,
+                               ROTULO_DO_TIPO=RND.ROTULO_DO_TIPO,
+                               nota_aberta=next((n for n in notas
+                                                 if n["situacao"] == "ABERTA"), None),
+                               nota_recusa=RND.por_que_nao_emite(p),
                                qualificacoes=qualificacoes,
                                etapa_do_pedido=etapa_do_pedido,
                                ROTULO_DA_ETAPA=PED.ROTULO_DA_ETAPA,
@@ -3786,19 +3792,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not arquivos:
             flash("Escolha o arquivo antes de anexar.", "danger")
             return redirect(url_for("ri_protocolo_ver", protocolo_id=protocolo_id))
-        pasta = _pasta_dos_documentos(p["numero"])
         descricao = (request.form.get("descricao") or "").strip() or None
-        uid = _usuario_id_atual()
-        nomes = []
-        ids = []
-        for arquivo in arquivos:
-            info = save_upload(arquivo, pasta)
-            anexo_id = db.add_attachment(
-                RDOC.ENTIDADE_RI, protocolo_id, info, uid, descricao)
-            nomes.append(info["original_name"])
-            ids.append(anexo_id)
-        audit("RI_PRENOTACAO_DOCUMENTO", "RI_PROTOCOLO", protocolo_id,
-              {"anexos": ids, "arquivos": nomes, "qtd": len(nomes)})
+        tipo = (request.form.get("tipo") or "").strip() or None
+        if tipo and tipo not in RND.ROTULO_DO_TIPO:
+            flash(f"«{tipo}» não é um tipo de documento que eu conheça.", "danger")
+            return redirect(url_for("ri_protocolo_ver", protocolo_id=protocolo_id))
+        # O ANEXO PODE SER A NOTA, OU O CUMPRIMENTO DELA — 25/10/2026. Medido: das
+        # notas desta casa, as feitas em Word só eram anexadas, e o protocolo ficava
+        # ABERTO, sem prazo de exigência; nenhuma tinha sido cadastrada pela tela.
+        if tipo == RND.NOTA:
+            return _emitir_nota_devolutiva(p, arquivos=arquivos, descricao=descricao)
+        if tipo == RND.CUMPRIMENTO:
+            with db.connect() as _c:
+                aberta = RND.nota_aberta(_c, protocolo_id)
+            if aberta:
+                return _registrar_reingresso(aberta, p, arquivos=arquivos, descricao=descricao)
+        ids, nomes = _anexar_ao_protocolo(p, arquivos, descricao, tipo=tipo)
+        if tipo == RND.CUMPRIMENTO:
+            flash("Não há nota devolutiva aguardando cumprimento neste protocolo: o "
+                  "documento foi anexado como cumprimento de exigência, sem registrar "
+                  "reingresso.", "warning")
+            return redirect(url_for("ri_protocolo_ver", protocolo_id=protocolo_id))
         if len(nomes) == 1:
             flash(f"{nomes[0]} anexado a prenotacao {p['numero']}. "
                   f"Ele aparece na tela de lavrar o ato que sair deste protocolo.",
@@ -3808,6 +3822,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   f"{', '.join(nomes)}. Aparecem na tela de lavrar o ato.",
                   "success")
         return redirect(url_for("ri_protocolo_ver", protocolo_id=protocolo_id))
+
+    def _anexar_ao_protocolo(p, arquivos, descricao, *, tipo=None):
+        """Guarda os arquivos na pasta do protocolo e os anexa a ele. GRAVA.
+
+        Devolve (ids, nomes). O tipo, quando escolhido, fica no próprio anexo
+        (`attachments.documento_tipo`) — a mesma coluna do protocolo geral.
+        """
+        pasta = _pasta_dos_documentos(p["numero"])
+        uid = _usuario_id_atual()
+        ids, nomes = [], []
+        for arquivo in arquivos:
+            info = save_upload(arquivo, pasta)
+            ids.append(db.add_attachment(RDOC.ENTIDADE_RI, p["id"], info, uid, descricao))
+            nomes.append(info["original_name"])
+        if tipo:
+            with db.transaction() as con:
+                for anexo in ids:
+                    RND.marcar_anexo(con, p["id"], anexo, tipo=tipo, descricao=descricao)
+        audit("RI_PRENOTACAO_DOCUMENTO", "RI_PROTOCOLO", p["id"],
+              {"anexos": ids, "arquivos": nomes, "qtd": len(nomes), "tipo": tipo})
+        return ids, nomes
 
     def _usuario_id_atual():
         from flask import session
@@ -8101,50 +8136,61 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      ORDER BY numero DESC, id DESC""", (protocolo_id,))
 
         if request.method == "GET":
+            with db.connect() as _c:
+                documentos = RDOC.documentos_de(_c, RDOC.ENTIDADE_RI, protocolo_id)
             return render_template("ri_nota.html", p=p, notas=notas,
-                                   hoje=date.today().isoformat())
+                                   hoje=date.today().isoformat(),
+                                   anexos_da_nota=lambda numero: RND.anexos_da_nota(
+                                       documentos, numero),
+                                   exigencias_da=RND.exigencias_da,
+                                   por_que_nao_emite=RND.por_que_nao_emite(p))
 
+        # O ARQUIVO DA NOTA PODE VIR JUNTO (25/10/2026): a nota desta casa é redigida
+        # em Word e assinada; com o arquivo, as exigências digitadas ficam opcionais.
+        arquivos = [f for f in request.files.getlist("arquivo_nota") if f and f.filename]
+        return _emitir_nota_devolutiva(p, arquivos=arquivos)
+
+    def _emitir_nota_devolutiva(p, *, arquivos, descricao=None):
+        """A nota devolutiva, pela tela da nota ou pelo anexo do protocolo — uma porta só.
+
+        A recusa vem antes de guardar o arquivo: arquivo guardado como «nota» de um
+        protocolo que não pode recebê-la seria um papel sem lugar.
+        """
         exigencias = [e.strip() for e in
                       (request.form.get("exigencias") or "").splitlines() if e.strip()]
-        if not exigencias:
-            flash("Informe ao menos uma exigência, uma por linha.", "danger")
-            return redirect(url_for("ri_nota_devolutiva", protocolo_id=protocolo_id))
-
-        with db.transaction() as con:
-            bd = banco(con)
-            bd.travar("ri_notas_devolutivas.numero")
-            ultimo = bd.valor("""SELECT MAX(numero) AS n FROM ri_notas_devolutivas
-                                 WHERE protocolo_id=%s""", (protocolo_id,))
-            numero = int((ultimo or 0)) + 1
-            nota_id = bd.escrever(
-                """INSERT INTO ri_notas_devolutivas
-                   (protocolo_id, numero, data_nota, exigencias, fundamentacao,
-                    prazo_ate, situacao, emitida_em)
-                   VALUES (%s,%s,%s,%s,%s,%s, 'ABERTA', %s)
-                   RETURNING id""",
-                (protocolo_id, numero,
-                 (request.form.get("data_nota") or "").strip() or db.now()[:10],
-                 json.dumps(exigencias, ensure_ascii=False),
-                 (request.form.get("fundamentacao") or "").strip() or None,
-                 p["data_limite"], db.now()),
-            )[0]["id"]
-            nota_id = int(nota_id)
-            bd.escrever("UPDATE ri_protocolos SET situacao='DEVOLVIDO' WHERE id=%s",
-                        (protocolo_id,))
-            # A NOTA É A QUALIFICAÇÃO NEGATIVA, e as duas nascem juntas: nota
-            # sem esta linha faria o painel dos pedidos dizer «a qualificar»
-            # de um título que já foi devolvido.
-            PED.registrar_negativa(
-                con, protocolo_id, nota_id=nota_id,
-                fundamentacao=(request.form.get("fundamentacao") or "").strip() or None,
-                quem=(app.extensions["usuario_nome"]() or "").strip() or None,
-                usuario_id=app.extensions["usuario_id"](), agora=db.now())
-
-        audit("RI_NOTA_DEVOLUTIVA", "RI_NOTA", nota_id,
-              {"protocolo": p["numero"], "numero": numero, "exigencias": len(exigencias)})
-        flash(f"Nota devolutiva nº {numero} emitida com {len(exigencias)} exigência(s). "
-              f"O protocolo passou a devolvido; a prenotação continua correndo.", "success")
-        return redirect(url_for("ri_nota_odt", nota_id=nota_id))
+        voltar = redirect(url_for("ri_nota_devolutiva", protocolo_id=p["id"]))
+        motivo = RND.por_que_nao_emite(p)
+        if motivo:
+            flash(motivo, "danger")
+            return voltar
+        if not exigencias and not arquivos:
+            flash("Informe ao menos uma exigência (uma por linha) ou anexe o arquivo da nota "
+                  "devolutiva.", "danger")
+            return voltar
+        anexos = _anexar_ao_protocolo(p, arquivos, descricao)[0] if arquivos else []
+        try:
+            with db.transaction() as con:
+                feito = RND.emitir(
+                    con, p, exigencias=exigencias,
+                    fundamentacao=request.form.get("fundamentacao"),
+                    data_nota=(request.form.get("data_nota") or "").strip() or db.now()[:10],
+                    quem=(app.extensions["usuario_nome"]() or "").strip() or None,
+                    usuario_id=app.extensions["usuario_id"](), agora=db.now(),
+                    anexos=anexos)
+        except RND.NotaError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        audit("RI_NOTA_DEVOLUTIVA", "RI_NOTA", feito["nota_id"],
+              {"protocolo": p["numero"], "numero": feito["numero"],
+               "exigencias": feito["exigencias"], "anexos": feito["anexos"]})
+        if feito["anexos"]:
+            flash(f"Nota devolutiva nº {feito['numero']} cadastrada com o arquivo anexado. "
+                  f"O protocolo passou a devolvido; a prenotação continua correndo.", "success")
+            return redirect(url_for("ri_nota_devolutiva", protocolo_id=p["id"]))
+        flash(f"Nota devolutiva nº {feito['numero']} emitida com {feito['exigencias']} "
+              f"exigência(s). O protocolo passou a devolvido; a prenotação continua "
+              f"correndo.", "success")
+        return redirect(url_for("ri_nota_odt", nota_id=feito["nota_id"]))
 
     @app.route("/registro-imoveis/notas/<int:nota_id>.odt")
     @login_required
@@ -8160,7 +8206,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             lista = [n["exigencias"]]
 
         exig_html = "".join(
-            f"<p><b>{i}.</b> {e}</p>" for i, e in enumerate(lista, 1))
+            f"<p><b>{i}.</b> {e}</p>" for i, e in enumerate(lista, 1)) or (
+            # Nota cadastrada pelo ARQUIVO (25/10/2026): as exigências estão no papel
+            # assinado, anexado ao protocolo — dizer isso, e não imprimir lista vazia.
+            "<p>As exigências constam da nota devolutiva assinada, anexada ao "
+            "protocolo.</p>")
         contexto = {
             "nota": dict(n) | {"prazo_ate": fmt_date(n["prazo_ate"])},
             "protocolo": dict(p) | {"data_prenotacao": fmt_date(p["data_prenotacao"])},
@@ -8208,22 +8258,43 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not n:
             abort(404)
         p = q1("SELECT * FROM ri_protocolos WHERE id=%s", (n["protocolo_id"],))
-        quando = (request.form.get("data_reingresso") or "").strip() or db.now()[:10]
+        arquivos = [f for f in request.files.getlist("documento") if f and f.filename]
+        return _registrar_reingresso(n, p, arquivos=arquivos)
 
-        dentro_do_prazo = PRAZO.suspensa(p) or (
-            bool(p["data_limite"]) and quando <= p["data_limite"])
-        with db.transaction() as con:
-            bd = banco(con)
-            bd.escrever("""UPDATE ri_notas_devolutivas SET situacao=%s, data_reingresso=%s,
-                           observacao_reingresso=%s WHERE id=%s""",
-                        ("CUMPRIDA" if dentro_do_prazo else "FORA_DO_PRAZO", quando,
-                         (request.form.get("observacao") or "").strip() or None, nota_id))
-            if dentro_do_prazo:
-                bd.escrever("""UPDATE ri_protocolos SET situacao='ABERTO', data_reingresso=%s
-                               WHERE id=%s""", (quando, p["id"]))
+    def _registrar_reingresso(n, p, *, arquivos, descricao=None):
+        """O reingresso, pela tela da nota ou pelo anexo «cumprimento de exigência»."""
+        hoje = db.now()[:10]
+        quando = (request.form.get("data_reingresso") or "").strip() or hoje
+        observacao = request.form.get("observacao")
+        papel = app.extensions["usuario_papel"]()
+        if n["situacao"] != "ABERTA":
+            flash(f"A nota nº {n['numero']} não está aguardando cumprimento.", "danger")
+            return redirect(url_for("ri_nota_devolutiva", protocolo_id=p["id"]))
+        # A DATA SE CONFERE ANTES DE GUARDAR O ARQUIVO (revisão de segurança de
+        # 26/10/2026): ela decide a prioridade, e a recusa não pode deixar o
+        # documento do interessado gravado sem reingresso. A regra mora em
+        # `RND.conferir_data_do_reingresso`, e `RND.reingresso` a repete.
+        try:
+            quando = RND.conferir_data_do_reingresso(n, p, quando=quando, hoje=hoje,
+                                                     papel=papel, observacao=observacao)
+        except RND.NotaError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("ri_nota_devolutiva", protocolo_id=p["id"]))
+        anexos = _anexar_ao_protocolo(p, arquivos, descricao)[0] if arquivos else []
+        try:
+            with db.transaction() as con:
+                dentro_do_prazo = RND.reingresso(
+                    con, n, p, quando=quando, observacao=observacao, hoje=hoje,
+                    papel=papel, anexos=anexos)
+        except RND.NotaError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("ri_nota_devolutiva", protocolo_id=p["id"]))
+        nota_id = n["id"]
 
         audit("RI_REINGRESSO", "RI_NOTA", nota_id,
-              {"protocolo": p["numero"], "data": quando, "no_prazo": dentro_do_prazo})
+              {"protocolo": p["numero"], "data": quando, "no_prazo": dentro_do_prazo,
+               "registrado_em": hoje, "retroativo": quando < hoje, "papel": papel,
+               "anexos": anexos})
         if dentro_do_prazo:
             flash(f"Reingresso registrado no protocolo {p['numero']}, dentro da vigência "
                   f"da prenotação. O título aproveita o mesmo número de ordem.", "success")

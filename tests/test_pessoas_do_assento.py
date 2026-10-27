@@ -630,7 +630,7 @@ def test_contra_o_acervo_nenhum_assento_tem_dois_pais(banco):
     AC.carregar_rcpn(banco, acervo, agora=AGORA)
     repetidos = banco.execute(
         "SELECT assento_id, papel, COUNT(*) n FROM rc_pessoas"
-        " WHERE papel IN ('PAI','MAE') GROUP BY 1,2 HAVING n > 1").fetchall()
+        " WHERE papel IN ('PAI','MAE') GROUP BY 1,2 HAVING COUNT(*) > 1").fetchall()
     assert not repetidos, [dict(r) for r in repetidos]
 
 

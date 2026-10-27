@@ -410,6 +410,25 @@ def dia_util_seguinte(con: Any, hoje: str) -> str:
                            _feriados(con)).isoformat()
 
 
+def prazo_de_pagamento(con: Any, titulo: Any, depois_de: Any) -> str | None:
+    """O prazo-limite que o papel imprime: o MAIOR entre o 3º dia útil da
+    protocolização e o 1º dia útil depois de `depois_de`. Só LÊ.
+
+    É a mesma conta do tríduo (`protesto_triduo.contar`): o prazo-limite é o
+    dia previsto para a lavratura (CN-MA art. 925, § 4º), e quando a
+    intimação chega no último dia do tríduo ou depois dele o protesto só se
+    lavra no primeiro dia útil seguinte (art. 913, II e III, e art. 924; para
+    o edital, art. 922, § 1º). Ordem do oficial em 27/10/2026: «prazo 1 dia
+    útil depois da entrega». Sem a data da protocolização devolve `None`.
+    """
+    legal = prazo_limite(con, titulo)
+    if not legal:
+        return None
+    if not str(depois_de or "").strip():
+        return legal
+    return max(legal, dia_util_seguinte(con, depois_de))
+
+
 def _br(iso: Any) -> str:
     s = str(iso or "")[:10]
     return f"{s[8:10]}/{s[5:7]}/{s[:4]}" if len(s) == 10 and s[4] == "-" else s
@@ -436,7 +455,12 @@ def montar_teor_do_aviso(con: sqlite3.Connection, aviso: Any, *,
             "(Código de Normas, art. 920), e ele não está configurado. "
             "Informe-o em Administrativo → Configurações "
             f"(«{CHAVE_DO_HORARIO}»).")
-    limite = prazo_limite(bd, t)
+    # O AVISO EMITIDO TARDE NÃO IMPRIME PRAZO VENCIDO (27/10/2026, ordem do
+    # oficial: «prazo 1 dia útil depois da entrega»). Na hora de imprimir a
+    # entrega ainda não aconteceu; o dia mais cedo em que ela pode acontecer é
+    # o da emissão, e é dele que se conta. Se a entrega vier depois, quem
+    # segura o protesto é o tríduo, que conta da intimação lavrada.
+    limite = prazo_de_pagamento(bd, t, av.get("emitido_em"))
     if not limite:
         raise AvisoError(
             f"O protocolo do título ({t.get('protocolo') or 'vazio'}) não diz a "
@@ -640,13 +664,13 @@ def publicar_edital(con: sqlite3.Connection, aviso_id: int, *, sv: dict,
     ano = int(str(hoje)[:4])
     bd.travar("pt_editais.numero")
     numero = proximo_numero_do_edital(bd, ano)
-    # O PRAZO-LIMITE DO EDITAL É O PRIMEIRO DIA ÚTIL DEPOIS DA PUBLICAÇÃO
-    # (CN-MA art. 922, §§ 1º e 3º) — 27/10/2026. Até aqui o edital imprimia o
-    # `prazo_limite` do AVISO (3 dias úteis da protocolização), que no dia do
-    # edital já estava vencido. Os 13 editais regularizados em 27/10 só saíram
+    # O PRAZO-LIMITE DO EDITAL NUNCA CAI ANTES DO 1º DIA ÚTIL DEPOIS DA
+    # PUBLICAÇÃO (CN-MA art. 922, §§ 1º e 3º) — 27/10/2026. Até aqui o edital
+    # imprimia só o 3º dia útil da protocolização, que no edital publicado
+    # tarde já estava vencido. Os 13 editais regularizados em 27/10 só saíram
     # com o prazo certo porque o script de regularização trocou este cálculo.
     teor = montar_teor_do_edital(aviso=aviso, titulo=tit, sv=sv, hoje=hoje,
-                                 limite=dia_util_seguinte(bd, hoje),
+                                 limite=prazo_de_pagamento(bd, tit, hoje),
                                  data_extenso=data_extenso, con=bd)
     codigo = f"ED-{ano}-{numero:04d}"
 

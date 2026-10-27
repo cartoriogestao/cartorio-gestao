@@ -213,20 +213,34 @@ def test_resolve_em_curso_deixa_o_edital_a_vista(s):
     assert '<details style="margin-top:6px" open>' in tela
 
 
-def test_o_prazo_do_edital_e_o_primeiro_dia_util_depois_da_publicacao(s):
-    """CN-MA art. 922, §§ 1º e 3º. Até 27/10/2026 o edital imprimia o prazo
-    do aviso (3 dias úteis do protocolo), já vencido no dia do edital."""
-    from datetime import date
+def test_o_prazo_do_edital_nunca_cai_antes_do_dia_util_seguinte(s):
+    """CN-MA art. 922, §§ 1º e 3º. Até 27/10/2026 o edital imprimia só o 3º
+    dia útil do protocolo, já vencido no edital publicado tarde."""
+    import protesto as PT
     import protesto_aviso as AV
     tid, aid = _nao_entregue(s)
     _edital(s, aid)
     con = _con(s)
     teor = con.execute("SELECT teor, publicado_em FROM pt_editais "
                        "WHERE aviso_id=?", (aid,)).fetchone()
-    esperado = AV.dia_util_seguinte(con, teor["publicado_em"])
-    assert esperado > str(teor["publicado_em"])[:10]
+    esperado = AV.prazo_de_pagamento(con, PT.titulo(con, tid),
+                                     teor["publicado_em"])
+    assert esperado >= AV.dia_util_seguinte(con, teor["publicado_em"])
     assert AV._br(esperado) in teor["teor"]
-    assert date.fromisoformat(esperado).weekday() < 5
+
+
+def test_o_prazo_de_pagamento_e_o_maior_dos_dois(monkeypatch):
+    """Ordem do oficial em 27/10/2026: «prazo 1 dia útil depois da entrega».
+    Dentro do tríduo vale o 3º dia útil do protocolo; fora dele, o dia útil
+    seguinte — a mesma conta de `protesto_triduo`."""
+    import protesto_aviso as AV
+    monkeypatch.setattr(AV, "_feriados", lambda con: set())
+    titulo = {"protocolo": "2610150001"}              # 3º dia útil: 20/10
+    assert AV.prazo_de_pagamento(None, titulo, "2026-10-15") == "2026-10-20"
+    assert AV.prazo_de_pagamento(None, titulo, "2026-10-20") == "2026-10-21"
+    assert AV.prazo_de_pagamento(None, titulo, "2026-10-23") == "2026-10-26"
+    assert AV.prazo_de_pagamento(None, titulo, "") == "2026-10-20"
+    assert AV.prazo_de_pagamento(None, {"protocolo": "0"}, "2026-10-23") is None
 
 
 def test_o_dia_util_seguinte_pula_fim_de_semana_e_feriado_local(s):
@@ -234,8 +248,9 @@ def test_o_dia_util_seguinte_pula_fim_de_semana_e_feriado_local(s):
     con = _con(s)
     assert AV.dia_util_seguinte(con, "2026-10-23") == "2026-10-26"  # sexta
     with con:
-        con.execute("INSERT OR REPLACE INTO settings(key, value) "
-                    "VALUES ('ri_feriados_locais', '2026-10-26')")
+        con.execute("INSERT INTO settings(key, value) "
+                    "VALUES ('ri_feriados_locais', '2026-10-26') "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value")
     assert AV.dia_util_seguinte(con, "2026-10-23") == "2026-10-27"
 
 

@@ -730,7 +730,9 @@ def transcrever_pendentes(db: Any, cfg: dict, *, agora: str, pasta_de_dados: Any
             audio, mime = TRANSC.baixar_audio(token, m["midia_id"], https=https)
             r = fn(pasta_de_dados, audio, mime, modelo=cfg["audio_modelo"],
                    preco_por_minuto=cfg["audio_preco_minuto"],
-                   modulo="wa_atendente", finalidade=FINALIDADE_AUDIO,
+                   # literal, e não FINALIDADE_AUDIO: o varredor do catálogo
+                   # (`test_ia_uso`) lê a finalidade escrita na chamada
+                   modulo="wa_atendente", finalidade="wa_audio",
                    usuario=AUTOR_IA, referencia=f"wa_mensagem:{m['id']}",
                    https=https)
             texto = r["texto"]

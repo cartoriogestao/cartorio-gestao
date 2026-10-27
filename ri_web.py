@@ -969,7 +969,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         linha = q1("""SELECT details FROM audit_logs
                        WHERE entity_type='RI_CERTIDAO' AND entity_id=%s
                          AND action IN ('RI_CERTIDAO_EMITIDA',
-                                        'RI_CERTIDAO_NEGATIVA_EMITIDA')
+                                        'RI_CERTIDAO_NEGATIVA_EMITIDA',
+                                        'RI_CERTIDAO_POSITIVA_EMITIDA')
                        ORDER BY id DESC LIMIT 1""", (int(certidao_id),))
         if not linha or not linha["details"]:
             return None
@@ -1001,7 +1002,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     def _codigo_base_da_certidao() -> dict:
         """O item base de cada tipo de certidão do RI, a negativa inclusive. Só calcula."""
         return {**AS.CODIGO_DA_CERTIDAO_DO_RI,
-                RINEG.TIPO: AS.CODIGO_DA_CERTIDAO_NEGATIVA_DE_IMOVEL}
+                RINEG.TIPO: AS.CODIGO_DA_CERTIDAO_NEGATIVA_DE_IMOVEL,
+                RINEG.TIPO_POSITIVA: AS.CODIGO_DA_CERTIDAO_NEGATIVA_DE_IMOVEL}
 
     def _candidatos_da_certidao_do_ri(con, pedidos=None) -> list[dict]:
         """Os protocolos pagos que a escrevente pode escolher para a certidão. Só LÊ.
@@ -3417,7 +3419,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # O histórico sai da auditoria que o sistema já grava — não de uma
         # segunda tabela só para esta tela. Duas verdades sobre o mesmo ato é
         # como se perde a que vale.
-        historico = q("""SELECT ts, username_snapshot AS quem, action, details
+        historico = q("""SELECT ts, username_snapshot AS quem, action, details,
+                                agente, a_mando_de
                          FROM audit_logs
                          WHERE entity_type='RI_PROTOCOLO' AND entity_id=%s
                          ORDER BY id DESC LIMIT 30""", (protocolo_id,))
@@ -8538,6 +8541,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                        params)
             total = len(grupos)
             for g in grupos:
+                # As candidatas da positiva (25/10/2026): só para quem é
+                # proprietário atual; o escrevente marca uma a uma.
+                g["candidatas"] = []
                 vinculos = q("""SELECT m.id, m.numero, m.livro_norm, m.logradouro,
                                        m.bairro, m.encerrada,
                                        MAX(p.proprietario_ativo) ativo, MAX(p.papel) papel
@@ -8546,6 +8552,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                 GROUP BY m.id
                                 ORDER BY coalesce(substring(m.numero FROM '^[0-9]+')::bigint, 0), m.id""",
                              (g["chave"],))
+                if any(v["ativo"] and not v["encerrada"] for v in vinculos):
+                    with db.connect() as _c_pos:
+                        g["candidatas"] = RINEG.candidatas_da_positiva(_c_pos, g["chave"])
                 pessoas.append({"pessoa": g, "matriculas": vinculos})
 
         with db.connect() as con_l:
@@ -8576,11 +8585,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/registro-imoveis/certidao-negativa", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def ri_emitir_certidao_negativa():
-        """Emite certidao negativa de imovel apos busca sem achado. ESCREVE."""
+        """Emite a certidao negativa (busca sem achado) — ou, por pessoa, a
+        POSITIVA com a relacao dos imoveis atuais (25/10/2026). ESCREVE."""
         modo = (request.form.get("modo") or "PESSOA").strip().upper()
         if modo not in ("PESSOA", "IMOVEL"):
             flash("Modo de busca invalido.", "danger")
             return redirect(url_for("ri_indicador_pessoal"))
+        # A POSITIVA POR PESSOA — 25/10/2026, o oficial: «relação dos imóveis
+        # atuais». É a mesma rota de propósito: o número, o hash e o selo
+        # (16.24.1) são os da negativa, e duas rotas dariam duas réguas.
+        positiva = (request.form.get("resultado") or "").strip().upper() == "POSITIVA"
+        if positiva and modo != "PESSOA":
+            flash("A certidão positiva é só da busca por pessoa.", "danger")
+            return redirect(url_for("ri_indicador_real"))
+        pessoa_chave = (request.form.get("pessoa_chave") or "").strip()
+        tipo_cert = RINEG.TIPO_POSITIVA if positiva else RINEG.TIPO
+        nome_cert = RINEG.NOME_DO_TIPO_POSITIVA if positiva else RINEG.NOME_DO_TIPO
         busca = (request.form.get("busca") or "").strip()
         bairro = (request.form.get("bairro") or "").strip()
         tipo_ru = (request.form.get("tipo_ru") or "").strip().upper()
@@ -8618,15 +8638,32 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         hoje = date.today()
         agora = datetime.now()
+        grupo = None
+        imoveis: list[dict] = []
         try:
             with db.connect() as con:
-                if modo == "PESSOA":
-                    achados = RINEG.buscar_por_pessoa(
-                        con, busca, so_proprietarios=so_prop)
+                if positiva:
+                    # A busca da positiva é a do Indicador Pessoal inteira (não
+                    # só proprietários): a pessoa escolhida tem de estar nela.
+                    grupo = RINEG.conferir_positiva(
+                        RINEG.buscar_por_pessoa(con, busca), pessoa_chave)
+                    candidatas = RINEG.candidatas_da_positiva(con, grupo["chave"])
+                    if not candidatas:
+                        raise RINEG.CertidaoNegativaError(
+                            "A pessoa escolhida não é proprietária atual de nenhuma "
+                            "matrícula aberta. Não há o que certificar como positiva.")
+                    # SÓ AS MARCADAS (o oficial, 25/10/2026): o escrevente
+                    # confere cada matrícula — homônimo e pessoa partida.
+                    imoveis = RINEG.conferir_marcadas(
+                        candidatas, request.form.getlist("matricula_marcada"))
                 else:
-                    achados = RINEG.buscar_por_imovel(
-                        con, busca, bairro=bairro, tipo=tipo_ru)
-            RINEG.conferir_negativa(achados)
+                    if modo == "PESSOA":
+                        achados = RINEG.buscar_por_pessoa(
+                            con, busca, so_proprietarios=so_prop)
+                    else:
+                        achados = RINEG.buscar_por_imovel(
+                            con, busca, bairro=bairro, tipo=tipo_ru)
+                    RINEG.conferir_negativa(achados)
         except RINEG.CertidaoNegativaError as erro:
             flash(str(erro), "danger")
             return _voltar_negativa(modo, busca, bairro, tipo_ru, so_prop)
@@ -8639,6 +8676,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 ids["imovel_busca"] = bairro
                 ids["criterio_rotulo"] = ri_frases.frase(
                     "RI_NEGATIVA_CRITERIO_BAIRRO", _c_frases, bairro=bairro)
+        if positiva:
+            # Quem a certidão nomeia é a pessoa ESCOLHIDA, e não o que se digitou.
+            ids["pesquisado"] = grupo.get("nome") or ids.get("pesquisado") or busca
+            ids["pesquisado_documento"] = grupo.get("doc") or ""
 
         _sv0 = dados_serventia(db.get_settings)
         sv = _sv0 | {
@@ -8675,12 +8716,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "lavrou_nome": lavrou_nome,
             "lavrou_funcao": lavrou_funcao,
             **ids,
+            "imoveis": [{"numero": i["numero"], "livro": i.get("livro_norm") or "",
+                         "descricao": RINEG.descricao_curta(i)} for i in imoveis],
         }
+        chave_modelo = RINEG.CHAVE_MODELO_POSITIVA if positiva else RINEG.CHAVE_MODELO
         try:
             with db.connect() as _c:
-                texto_modelo = MODELOS.corpo_de(_c, RINEG.CHAVE_MODELO)
+                texto_modelo = MODELOS.corpo_de(_c, chave_modelo)
             corpo = render_modelo(
-                texto_modelo or MODELOS.padrao_de(RINEG.CHAVE_MODELO), contexto)
+                texto_modelo or MODELOS.padrao_de(chave_modelo), contexto)
         except Exception as erro:
             flash("O modelo da certidao negativa tem um erro: "
                   f"{SEGWEB.erro_do_modelo(erro, 'ri_certidao_negativa')}",
@@ -8698,7 +8742,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             numero = int((ultimo or 0)) + 1
             criterio = ids.get("criterio_rotulo") or busca
             h = RINEG.hash_do_corpo(
-                numero, hoje.year, corpo, hoje.isoformat(), criterio)
+                numero, hoje.year, corpo, hoje.isoformat(), criterio, tipo_cert)
             certidao_id = bd.escrever(
                 """INSERT INTO ri_certidoes
                    (numero, ano, tipo, matricula_id, matricula_numero,
@@ -8710,7 +8754,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'html', %s,%s,%s,%s,
                            'MANUAL', %s, %s, %s, %s, %s, %s, 'TEXTO')
                    RETURNING id""",
-                (numero, hoje.year, RINEG.TIPO, None, None,
+                (numero, hoje.year, tipo_cert, None, None,
                  requerente or None, requerente_documento, finalidade,
                  hoje.isoformat(), validade, corpo, protocolo, None, None,
                  h, db.now(), app.extensions["usuario_id"](),
@@ -8720,9 +8764,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             )[0]["id"]
             certidao_id = int(certidao_id)
 
-        audit("RI_CERTIDAO_NEGATIVA_EMITIDA", "RI_CERTIDAO", certidao_id,
-              {"numero": numero, "ano": hoje.year, "tipo": RINEG.TIPO,
-               "modo": modo, "busca": busca, "hash": h, "achados": 0,
+        audit("RI_CERTIDAO_POSITIVA_EMITIDA" if positiva else "RI_CERTIDAO_NEGATIVA_EMITIDA",
+              "RI_CERTIDAO", certidao_id,
+              {"numero": numero, "ano": hoje.year, "tipo": tipo_cert,
+               "modo": modo, "busca": busca, "hash": h,
+               **({"pessoa_chave": grupo["chave"],
+                   "matriculas": [i["numero"] for i in imoveis],
+                   "conferidas_por": (app.extensions["usuario_nome"]() or "").strip()}
+                  if positiva else {"achados": 0}),
                **({"item_busca": item_busca} if item_busca else {})})
 
         # Selo automatico — sem bypass «mesmo se o selo falhar».
@@ -8738,7 +8787,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 f" {folhas} folha(s) contabilizada(s) pelo sistema."
                 if folhas else "")
             pedido = _pedir_os_selos_da_certidao_do_ri(
-                certidao_id=certidao_id, tipo=RINEG.TIPO, folhas=folhas,
+                certidao_id=certidao_id, tipo=tipo_cert, folhas=folhas,
                 requerente=requerente,
                 requerente_documento=requerente_documento, matricula="",
                 isento=isento, motivo_isencao=motivo_isencao)
@@ -8755,8 +8804,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # a certidão fica de pé, sem poder ser impressa, até o selo sair.
             audit("RI_CERTIDAO_AGUARDANDO_COBERTURA", "RI_CERTIDAO",
                   certidao_id, {"numero": numero, "ano": hoje.year,
-                                "tipo": RINEG.TIPO, "motivo": motivo_selo})
-            flash(f"{RINEG.NOME_DO_TIPO} n. {numero}/{hoje.year} gravada, "
+                                "tipo": tipo_cert, "motivo": motivo_selo})
+            flash(f"{nome_cert} n. {numero}/{hoje.year} gravada, "
                   f"mas SEM SELO: {motivo_selo} Ela não pode ser impressa "
                   "até o selo sair. Ligue o protocolo pago e clique em "
                   "«Selar» na lista de certidões.", "warning")
@@ -8774,7 +8823,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      certidao_id))
             audit("RI_CERTIDAO_NAO_EMITIDA_SELO_FALHOU", "RI_CERTIDAO",
                   certidao_id, {"numero": numero, "ano": hoje.year,
-                                "tipo": RINEG.TIPO, "hash": h,
+                                "tipo": tipo_cert, "hash": h,
                                 "motivo": motivo_selo})
             flash(
                 "Certidao NAO emitida: o selo nao saiu. "
@@ -8791,7 +8840,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             isento=isento, motivo_isencao=motivo_isencao)
 
         flash(
-            f"{RINEG.NOME_DO_TIPO} n. {numero}/{hoje.year} emitida. "
+            f"{nome_cert} n. {numero}/{hoje.year} emitida. "
             f"Valida ate {validade}. O teor foi congelado nesta data."
             f"{folhas_contadas_msg}{recado_do_selo}",
             "success")

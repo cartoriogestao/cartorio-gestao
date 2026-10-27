@@ -206,7 +206,7 @@
     <div><small class="muted">Natureza</small><div>{{ a.natureza or '—' }}</div></div>
     <div><small class="muted">Interessado</small><div>{{ a.interessado or '—' }}</div></div>
     <div><small class="muted">Selo</small><div>{{ a.selo or '— não anotado —' }}</div></div>
-    <div><small class="muted">Lavrado por</small><div>{{ a.lavrado_nome or '—' }}{% if a.lavrado_titulo %} — {{ a.lavrado_titulo }}{% endif %}</div></div>
+    <div><small class="muted">Lavrado por</small><div>{{ a.lavrado_nome or '—' }}{% if a.lavrado_titulo %} — {{ a.lavrado_titulo }}{% endif %}{% if agente_do_ato %}<br><small class="muted">{{ agente_do_ato }}</small>{% endif %}</div></div>
   </div>
 </section>
 

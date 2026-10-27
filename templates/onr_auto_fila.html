@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block title %}ONR — preparados pelo robô{% endblock %}
+{% block heading %}<h1>ONR — certidões preparadas pelo robô</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('onr_certidoes') }}">&larr; Certidões do ONR</a></div>
+
+<section class="card">
+  <p>O robô busca os pedidos às 8h, 11h, 14h e 17h e prepara cada um. Quem está em
+    <strong>a revisar e aprovar</strong> espera você: abra, confira o resumo e a prévia, e
+    clique em <strong>Aprovar</strong> — a certidão é emitida nesse clique, com o selo, e o robô
+    a assina com o A3 do oficial e a envia ao ONR na rodada seguinte.</p>
+  {% if selo_pago_ligado %}
+  <p class="notice small">O <strong>selo pago no ONR</strong> está LIGADO: a certidão aprovada aqui sai
+    com o selo coberto pelo pagamento feito no ONR (sem lançamento no caixa).</p>
+  {% else %}
+  <p class="warning small">O <strong>selo pago no ONR</strong> está DESLIGADO (o padrão, até o oficial
+    medir o primeiro pedido pago de verdade): o robô busca os pedidos e informa as custas aprovadas,
+    mas o pedido pago vai <strong>à mão</strong> — a certidão segue a trava normal do selo pago, pela
+    tela de sempre.</p>
+  {% endif %}
+  {% if e_admin %}
+  <details class="small"><summary>Ligar ou desligar o selo pago no ONR (só o oficial)</summary>
+    <form method="post" action="{{ url_for('onr_auto_selo_pago') }}" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="span2">Justificativa (para ligar: o pedido pago que você conferiu passar de
+        «Aguardando pagamento» para «Em aberto») <input name="justificativa" size="70"></label>
+      <div class="span2">
+        {% if selo_pago_ligado %}<button name="acao" value="desligar">Desligar</button>
+        {% else %}<button class="primary" name="acao" value="ligar">Ligar</button>{% endif %}
+      </div>
+    </form>
+  </details>
+  {% endif %}
+  <p class="small">
+  {% for e, n in contas.items() %}{% if n %}<span class="badge {{ 'alta' if e in esperam_gente else '' }}">{{ nome_da_etapa.get(e, e) }}: {{ n }}</span> {% endif %}{% endfor %}
+  </p>
+</section>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Protocolo ONR</th><th>Tipo</th><th>Solicitante</th><th>Matrícula / pessoa</th>
+    <th>Status no ONR</th><th>Etapa</th><th>Pedido em</th></tr></thead>
+  <tbody>
+  {% for a in lista %}
+    <tr>
+      <td><a href="{{ url_for('onr_auto_pedido', pedido_id=a.pedido_id) }}">{{ a.protocolo }}</a></td>
+      <td>{{ rotulo_do_tipo(a.tipo_certidao) }}</td>
+      <td>{{ a.solicitante or '—' }}</td>
+      <td>{{ a.matricula_numero or a.pessoa_busca or '—' }}</td>
+      <td>{{ rotulo_do_status(a.status_onr) or '—' }}</td>
+      <td><span class="badge {{ 'alta' if a.etapa in esperam_gente else '' }}">{{ nome_da_etapa.get(a.etapa, a.etapa) }}</span>
+        {% if a.motivo %}<div class="small muted">{{ a.motivo }}</div>{% endif %}
+        {% if a.erro %}<div class="small">{{ a.erro }}</div>{% endif %}</td>
+      <td>{{ (a.data_pedido or '')[:16]|replace('T', ' ') }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7">Nenhum pedido em aberto preparado pelo robô.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

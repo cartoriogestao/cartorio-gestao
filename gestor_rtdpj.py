@@ -50,6 +50,7 @@ from datetime import date, datetime
 from typing import Callable
 
 from bd_nativo import banco
+import identidade_do_robo as IDR
 
 QUEM = "gestor"
 
@@ -626,13 +627,12 @@ def conferir(con, hoje: date, *,
 
 def _auditar(con, acao: str, entidade: str, entidade_id, resumo: str,
              antes, depois, agora: str) -> None:
-    banco(con).escrever(
-        """INSERT INTO audit_logs (ts, user_id, username_snapshot, action,
-               entity_type, entity_id, details)
-           VALUES (%s, NULL, %s, %s, %s, %s, %s)""",
-        (agora, QUEM, acao, entidade, entidade_id,
-         json.dumps({"resumo": resumo, "antes": antes, "depois": depois},
-                    ensure_ascii=False, default=str)))
+    # O agente diz quem é e a mando de quem age (ordem do oficial, 26/10/2026).
+    IDR.registrar(con, ts=agora, user_id=None, username=QUEM, action=acao,
+                  entity_type=entidade, entity_id=entidade_id,
+                  details=json.dumps({"resumo": resumo, "antes": antes, "depois": depois},
+                                     ensure_ascii=False, default=str),
+                  agente="agente do RTD/PJ (gestor)", a_mando_de=IDR.PELO_RESPONSAVEL)
 
 
 def corrigir(con, hoje: date | None = None, *,

@@ -220,6 +220,8 @@
         <span class="badge alta">não encontrada no acervo</span>{% endif %}</div></div>
     <div><small class="muted">Contato</small><div>{{ p.telefone or '—' }}
       {%- if p.email %} · {{ p.email }}{% endif %}</div></div>
+    <div><small class="muted">Avisos ao cliente</small><div>
+      <a href="{{ url_for('andamento_prenotacao', protocolo_id=p.id) }}">exigência e prazo da prenotação — consentimento</a></div></div>
     {% if p.anotacao %}<div class="span2"><small class="muted">Anotação</small>
       <div>{{ p.anotacao }}</div></div>{% endif %}
   </div>
@@ -470,7 +472,7 @@
     <tbody>
     {% for h in historico %}
       <tr><td class="small">{{ (h.ts or '')[:16].replace('T', ' ') }}</td>
-          <td class="small">{{ h.quem or '—' }}</td>
+          <td class="small">{{ h.quem or '—' }}{% if h.agente %}<br><span class="muted">praticado pelo agente {{ h.agente }}{% if h.a_mando_de %}, a mando de {{ h.a_mando_de }}{% else %}, sem dizer a mando de quem{% endif %}</span>{% endif %}</td>
           <td class="small">{{ h.action }}</td>
           <td class="small" style="word-break:break-word">{{ (h.details or '')[:220] }}</td></tr>
     {% endfor %}

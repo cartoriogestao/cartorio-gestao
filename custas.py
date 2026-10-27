@@ -83,9 +83,20 @@ class CustasError(ValueError):
 #
 # `sigla` e o que sai no recibo. `no_total` diz se entra na conta da parte.
 
+#
+# CORRECAO DE 25/10/2026. O nome do FERC aqui era «Fundo Especial de
+# Modernizacao e Reaparelhamento do Judiciario», copiado do cadastro de fundos
+# do E-Oficio (`tbFundo`, codigo 1) — e esse e o nome do FERJ, que e outro
+# fundo. O oficial: «ferj e ferc sao diferentes. ferj e uns 12%, ferc e 3%,
+# mas nao abate dos emolumentos». O nome certo e o do Codigo de Normas do MA,
+# art. 217: «Fundo Especial das Serventias de Registro Civil de Pessoas
+# Naturais do Estado do Maranhao - FERC» (o que ressarce os atos gratuitos do
+# Registro Civil). O FERJ nao e linha desta lista: ver `percentual_ferj`.
+
 FUNDOS: tuple[dict, ...] = (
     {"campo": "ferc", "sigla": "FERC", "percentual": 3, "no_total": True,
-     "nome": "Fundo Especial de Modernização e Reaparelhamento do Judiciário",
+     "nome": "Fundo Especial das Serventias de Registro Civil de Pessoas "
+             "Naturais do Estado do Maranhão",
      "coluna_origem": "curFERMOJUPI"},
     {"campo": "femp", "sigla": "FEMP", "percentual": 4, "no_total": True,
      "nome": "Fundo Especial do Ministério Público Estadual",

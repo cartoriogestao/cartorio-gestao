@@ -51,6 +51,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import banco_pg  # noqa: E402
+import identidade_do_robo as IDR  # noqa: E402
 import rc_assento as RC  # noqa: E402
 from bd_nativo import banco as abrir_banco  # noqa: E402
 
@@ -132,15 +133,15 @@ def aplicar(banco: Path) -> tuple[Path, list[dict]]:
         con.commit()
         # A AUDITORIA À MÃO, porque a rota não foi usada.
         for g in gravados:
-            bd.escrever(
-                """INSERT INTO audit_logs(ts, user_id, username_snapshot,
-                                          action, entity_type, entity_id,
-                                          details)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-                (datetime.now().isoformat(timespec="seconds"), None,
-                 "naturalidade_dos_assentos_do_rcpn",
-                 "RCPN_NATURALIDADE_DERIVADA", "rc_assentos",
-                 g["assento_id"], json.dumps(g, ensure_ascii=False)))
+            # Quem grava por programa diz quem e e a mando de quem (26/10/2026).
+            IDR.registrar(bd, ts=datetime.now().isoformat(timespec="seconds"),
+                          user_id=None,
+                          username="naturalidade_dos_assentos_do_rcpn",
+                          action="RCPN_NATURALIDADE_DERIVADA",
+                          entity_type="rc_assentos", entity_id=g["assento_id"],
+                          details=json.dumps(g, ensure_ascii=False),
+                          agente="tools/naturalidade_dos_assentos_do_rcpn.py",
+                          a_mando_de=IDR.PELO_RESPONSAVEL)
         con.commit()
     finally:
         con.close()

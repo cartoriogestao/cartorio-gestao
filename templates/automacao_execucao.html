@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}Rodada #{{ e.id }} — Automação{% endblock %}
+{% block heading %}<h1>Rodada #{{ e.id }} — {{ p.nome if p else 'processo removido' }}</h1>{% endblock %}
+{% block content %}
+<p>{% if p %}<a href="{{ url_for('automacao_processo', processo_id=p.id) }}">← o processo</a> · {% endif %}<a href="{{ url_for('automacao_lista') }}">todos os processos</a></p>
+<section class="panel">
+  <div class="panel-head"><h2><span class="badge {{ e.selo.classe }}">{{ e.selo.texto }}</span></h2></div>
+  <p class="small muted">Disparo: {{ e.disparo }}{% if e.quem %} ({{ e.quem }}){% endif %} ·
+    início {{ (e.iniciada_em or '')[:19]|replace('T', ' ') }} · fim {{ (e.terminada_em or '—')[:19]|replace('T', ' ') }}
+    {% if e.duracao_s is not none %}· {{ e.duracao_s }} s{% endif %}{% if e.tentativas %} · {{ e.tentativas }} tentativa(s){% endif %}</p>
+  <pre style="white-space:pre-wrap;font:inherit">{{ e.relato or '(sem relato)' }}</pre>
+  {% if e.erro %}<p><strong>Erro:</strong> {{ e.erro }}</p>{% endif %}
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>O que fez ({{ e.acoes|length }})</h2></div>
+  {% if e.acoes %}<pre style="white-space:pre-wrap">{{ acoes_json }}</pre>{% else %}<p class="small muted">Nada: esta rodada só leu.</p>{% endif %}
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>O que achou ({{ e.achados|length }})</h2></div>
+  {% if e.achados %}<pre style="white-space:pre-wrap">{{ achados_json }}</pre>{% else %}<p class="small muted">Nenhum achado.</p>{% endif %}
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Avisos que saíram</h2></div>
+  <ul>{% for a in avisos %}<li>{{ nome_do_canal.get(a.canal, a.canal) }} ({{ a.motivo }}): {{ a.situacao }}{% if a.destino %} — {{ a.destino }}{% endif %}{% if a.erro %} — {{ a.erro }}{% endif %}</li>
+  {% else %}<li class="small muted">Nenhum (sem mudança desde a rodada anterior, ou tudo em ordem).</li>{% endfor %}</ul>
+</section>
+{% if e.detalhe_tecnico %}
+<section class="panel">
+  <details><summary>Detalhe técnico (para quem conserta)</summary>
+    <pre style="white-space:pre-wrap;font-size:12px">{{ e.detalhe_tecnico }}</pre></details>
+</section>
+{% endif %}
+{% endblock %}

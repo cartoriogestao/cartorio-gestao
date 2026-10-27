@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import banco_pg  # noqa: E402
+import identidade_do_robo as IDR  # noqa: E402
 from bd_nativo import banco as abrir_banco  # noqa: E402
 
 
@@ -108,9 +109,12 @@ def main(argv=None) -> int:
             if t["backup_user_id"] != novo_subst:
                 bd.escrever("INSERT INTO task_history(task_id,ts,user_id,action,old_value,new_value,note) VALUES (%s,%s,%s,%s,%s,%s,%s)",
                             (tid, agora, quem["id"], "ALTEROU_BACKUP_USER_ID", str(t["backup_user_id"]), str(novo_subst), a.motivo))
-            bd.escrever("INSERT INTO audit_logs(ts,user_id,username_snapshot,action,entity_type,entity_id,details) VALUES (%s,%s,%s,%s,%s,%s,%s)",
-                        (agora, quem["id"], quem["username"], "TASK_UPDATED", "TASK", tid,
-                         json.dumps({"responsavel": resp, "substituto": novo_subst, "motivo": a.motivo}, ensure_ascii=False)))
+            # O script age com a conta de uma pessoa: a linha diz que foi o
+            # script, a mando dela (26/10/2026).
+            IDR.registrar(bd, ts=agora, user_id=quem["id"], username=quem["username"],
+                          action="TASK_UPDATED", entity_type="TASK", entity_id=tid,
+                          details=json.dumps({"responsavel": resp, "substituto": novo_subst, "motivo": a.motivo}, ensure_ascii=False),
+                          agente="tools/tarefa_trocar_responsavel.py")
         con.commit()
     except BaseException:
         con.rollback()

@@ -58,7 +58,6 @@ PostgreSQL nativo, pelo `bd_nativo`.
 """
 from __future__ import annotations
 
-import csv
 import io
 from typing import Any, Iterable
 
@@ -266,7 +265,11 @@ def dados_do_mapa(con, matriculas: Iterable[Any] | None = None) -> list[dict]:
 def csv_do_mapa(linhas: Iterable[dict]) -> str:
     """O CSV para juntar à camada no QGIS, com os nomes de coluna do ONR."""
     saida = io.StringIO()
-    escritor = csv.writer(saida, delimiter=SEPARADOR_DO_CSV)
+    # Sem fórmula na planilha (achado transversal 2, 26/10/2026): o nome do
+    # proprietário é texto do acervo. A área formatada é número e sai sem
+    # apóstrofo; com QUOTE_ALL ela vai entre aspas — ver o PR.
+    import csv_seguro as CSVS
+    escritor = CSVS.escritor(saida, delimiter=SEPARADOR_DO_CSV)
     escritor.writerow(COLUNAS_DO_ONR)
     for r in linhas:
         area = r.get("area_ha")

@@ -7,10 +7,20 @@
   <a class="button" href="{{ url_for('protesto_retornos') }}">Retorno à CRA</a>
 </div>
 
+{#
+  O TRÍDUO É CALCULADO DESDE A TAREFA 56 (23/10/2026), e a tela diz a régua
+  inteira, porque é ela que recusa. Até ali a decisão era a do oficial de
+  24/08/2026 — contar, e não julgar —, e a tarefa é a decisão nova.
+#}
 <div class="notice">
-  <strong>O prazo não é calculado por este sistema.</strong> A coluna mostra
-  quantos dias correram desde a intimação — é <em>contagem</em>, e não juízo
-  sobre o tríduo. Quem decide se o prazo venceu, e se o protesto sai, é você.
+  <strong>O tríduo é contado pelo sistema</strong> (CN-MA art. 913): três dias
+  úteis da protocolização, sem contar o dia do apontamento; por edital, do
+  final do primeiro dia útil depois da publicação (art. 922, § 1º); intimação
+  no último dia ou depois, só no dia útil seguinte (art. 924). Os feriados são
+  os da lista da casa. <strong>Antes do termo inicial o protesto não se
+  lavra</strong> — o devedor ainda está no prazo do aviso (art. 925, § 4º).
+  <strong>Depois do termo final ele se lavra com o motivo do atraso</strong>,
+  que vai escrito no instrumento (art. 913, § 1º).
 </div>
 
 {#
@@ -95,14 +105,15 @@
         <tr>
           <th style="width:38px"></th>
           <th>Título</th><th>Devedor</th><th>Protocolo</th>
-          <th>Intimação</th><th>Dias</th><th>Valor</th>
+          <th>Intimação</th><th>Dias</th><th>Tríduo</th><th>Valor</th>
         </tr>
       </thead>
       <tbody>
       {% for t in linhas %}
+        {% set tr = t.triduo or {} %}
         <tr>
-          <td><input type="checkbox" name="titulo_id" value="{{ t.id }}"
-                     style="width:auto"></td>
+          <td>{% if t.triduo_situacao != 'ANTES' %}<input type="checkbox"
+                     name="titulo_id" value="{{ t.id }}" style="width:auto">{% endif %}</td>
           <td><a href="{{ url_for('protesto_titulo', titulo_id=t.id) }}"
                 >{{ t.numero_titulo }}</a>
               <br><small>{{ t.especie }}</small></td>
@@ -113,6 +124,20 @@
           <td>{% if t.dias_desde_a_intimacao is none %}
                 <small>—</small>
               {% else %}{{ t.dias_desde_a_intimacao }}{% endif %}</td>
+          <td>
+            {%- if t.triduo_situacao == 'SEM_CONTA' %}
+              <small><strong>Não se contou:</strong> {{ tr.sem_conta }}</small>
+            {%- else %}
+              <small>{% if tr.termo_inicial != tr.termo_final %}de {{ tr.termo_inicial_br }} a {% endif %}<strong>{{ tr.termo_final_br }}</strong>
+              <br>{% if t.triduo_situacao == 'ANTES' %}ainda não — o devedor está no prazo
+                  {% elif t.triduo_situacao == 'ATRASADO' %}<strong>vencido</strong> — escreva o motivo
+                  {% else %}no prazo — é dia de protestar{% endif %}</small>
+            {%- endif %}
+            {%- if t.triduo_situacao in ('ATRASADO', 'SEM_CONTA') %}
+              <br><input type="text" name="motivo_atraso_{{ t.id }}"
+                         placeholder="Motivo do atraso (vai no instrumento)">
+            {%- endif %}
+          </td>
           <td>R$ {{ '%.2f' | format((t.saldo_centavos or 0) / 100) }}</td>
         </tr>
       {% endfor %}

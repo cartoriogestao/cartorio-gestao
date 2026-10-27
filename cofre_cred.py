@@ -16,6 +16,12 @@ O ACHADO
     cifra do backup mora em `backup.cred`. No banco fica só o que não é
     segredo (o provedor padrão, o `phone_number_id`, a `caixa_url`).
 
+    `avisos.cred` (24/10/2026) guarda a senha do SMTP que a automação usa para
+    mandar os alertas por e-mail. Ela NÃO mora no cofre da senha-mestra
+    (`automacao_cofre`): depois de religar a máquina, até o oficial digitar a
+    senha-mestra, aquele cofre está trancado — e o aviso «o cofre está
+    trancado» é justamente um dos que precisam sair por e-mail.
+
 POR QUE CIFRADO, E O QUE A CIFRA NÃO FAZ
     O `.cred` é AES-GCM com uma chave de 256 bits do arquivo `cofre.key`, ao
     lado dele. Isto NÃO protege de quem tem o disco inteiro do servidor — o
@@ -56,11 +62,16 @@ NOME_DA_CHAVE = "cofre.key"
 ROBOS = "robos.cred"
 WHATSAPP = "whatsapp.cred"
 BACKUP = "backup.cred"
+AVISOS = "avisos.cred"
+# A credencial do Banco Inter (`despesas_inter`): Client Secret e a chave
+# privada do certificado. Entrou em 26/10/2026 (revisão de segurança dos PRs
+# abertos): a primeira versão a gravava num `.json` em texto claro.
+BANCO_INTER = "banco_inter.cred"
 # A CHAVE QUE ASSINA O RETRATO DO PAINEL (26/10/2026, `painel_retrato`): a
 # privada Ed25519 com que o servidor assina os números agregados que empurra
 # para a VPS. Na VPS fica só a pública — quem a lê lá não forja retrato.
 PAINEL = "painel.cred"
-ARQUIVOS = (ROBOS, WHATSAPP, BACKUP, PAINEL)
+ARQUIVOS = (ROBOS, WHATSAPP, BACKUP, AVISOS, BANCO_INTER, PAINEL)
 
 FORMATO = "cg-cofre-1"
 CODIFICACAO = "utf-8-sig"

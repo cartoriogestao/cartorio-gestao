@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Comprovantes do lote {{ lote_id }}</h1>{% endblock %}
+{% block content %}
+
+<p><a href="{{ url_for('protesto_resolve') }}">← voltar à Intimação Digital</a></p>
+
+{# OS LINKS SE CLICAM (problema #142, 26/10/2026): até aqui eles saíam como
+   texto dentro de um aviso, e o comprovante «não aparecia». #}
+<section class="cartao">
+  <h2>{{ links | length }} comprovante(s) em PDF</h2>
+  <p class="small muted">
+    Os arquivos ficam na Resolve; cada link abre o PDF de uma intimação. O
+    endereço vale por pouco tempo — se não abrir, volte e peça de novo.
+  </p>
+  <ol>
+    {% for link in links %}
+    <li><a href="{{ link }}" target="_blank" rel="noopener">Comprovante {{ loop.index }}</a></li>
+    {% endfor %}
+  </ol>
+</section>
+
+{% endblock %}

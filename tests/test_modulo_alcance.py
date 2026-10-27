@@ -65,8 +65,12 @@ def banco(app):
 
 
 def _entrar(app, banco, usuario, papel):
+    # NOME DE GENTE (27/10/2026): «Operador» sozinho é rótulo de máquina
+    # (`nome_humano.eh_rotulo_de_maquina`) — a conta nascia robô, o ADMIN era
+    # recusado (robô não administra) e o `suppress` engolia; o USER entrava como
+    # robô e, com a lista fechada das rotas do robô, levava 403 no Protesto.
     with contextlib.suppress(Exception):
-        banco.create_user(usuario, "Operador", "Senha#12345", papel)
+        banco.create_user(usuario, "Operador Exemplo", "Senha#12345", papel)
     c = app.test_client()
     pega = lambda h: re.search(r'name="csrf_token"[^>]*value="([^"]+)"', h).group(1)
     c.post("/login", data={"username": usuario, "password": "Senha#12345",

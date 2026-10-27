@@ -566,6 +566,23 @@ def test_as_telas_abrem_para_o_admin(casa):
     assert "Automação (rotinas)" in c.get("/").get_data(as_text=True)
 
 
+def test_o_painel_avisa_o_cofre_trancado_mesmo_sem_processo_de_credencial(casa, monkeypatch):
+    # 27/10/2026, pedido do oficial: «muito ruim de chegar e saber que está
+    # trancado». O aviso só saía com processo de `usa_credencial`, e nenhum
+    # dos de fábrica marca esse campo — o painel ficava calado.
+    import automacao_cofre as C
+    c = _entrar(casa, "mario", "ADMIN")
+    monkeypatch.setattr(C, "estado", lambda **k: {"existe": True, "aberto": False,
+                                                  "desde": "2026-10-27T18:06:34"})
+    html = c.get("/").get_data(as_text=True)
+    assert "cofre trancado" in html and "Abrir o cofre" in html
+    monkeypatch.setattr(C, "estado", lambda **k: {"existe": True, "aberto": True,
+                                                  "desde": "2026-10-27T18:09:39"})
+    assert "cofre trancado" not in c.get("/").get_data(as_text=True)
+    monkeypatch.setattr(C, "estado", lambda **k: {"existe": False, "aberto": False, "desde": ""})
+    assert "cofre trancado" not in c.get("/").get_data(as_text=True)   # instalação sem cofre
+
+
 def test_o_gerente_ve_e_nao_mexe(casa):
     c = _entrar(casa, "beatriz", "MANAGER")
     p = _processo(casa["db"], "PROTESTO_CENPROT")

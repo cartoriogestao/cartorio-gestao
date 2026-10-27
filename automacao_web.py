@@ -62,6 +62,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         SCH.init_automacao_schema(con)
         AU.semear(con)
 
+    #: Processos de fábrica que leem o cofre por dentro (o PIN do A3, a credencial
+    #: do Banco Inter) sem marcar `usa_credencial` — contam para o aviso do painel.
+    LEEM_O_COFRE_POR_DENTRO = frozenset({"RI_ONR_CERTIDOES", "DESPESAS_PAGAR",
+                                         "DESPESAS_CONCILIAR"})
+
     @app.context_processor
     def _automacao_no_painel() -> dict:
         vazio = {"automacao_no_painel": None}
@@ -76,8 +81,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 painel = {"problemas": AU.contar_problemas(con),
                           "despachante": AU.batida_do_despachante(con),
                           "ativos": sum(1 for p in processos if p["ativo"]),
-                          "precisam_do_cofre": sum(1 for p in processos if p["ativo"] and p.get("usa_credencial"))}
-            painel["cofre"] = COFRE.estado(caminho=cofre()) if painel["precisam_do_cofre"] else None
+                          "precisam_do_cofre": sum(1 for p in processos if p["ativo"] and (
+                              p.get("usa_credencial") or p["codigo"] in LEEM_O_COFRE_POR_DENTRO))}
+            # O COFRE TRANCADO APARECE SEMPRE QUE ELE EXISTE — 27/10/2026, pedido do
+            # oficial na configuração: «muito ruim de chegar e saber que está
+            # trancado». Antes só aparecia com processo de `usa_credencial`, e as
+            # rotinas que mais dependem dele (certidões do ONR, despesas) leem o
+            # cofre por dentro e não preenchem esse campo: o aviso nunca saía.
+            estado = COFRE.estado(caminho=cofre())
+            painel["cofre"] = estado if estado.get("existe") else None
+            painel["local"] = _local()
             return {"automacao_no_painel": painel}
         except (sqlite3.Error, RuntimeError, KeyError, TypeError):
             return vazio

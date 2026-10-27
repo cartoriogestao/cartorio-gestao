@@ -350,6 +350,47 @@ def test_a_senha_do_email_mora_fora_do_cofre_e_sai_com_ele_trancado(casa, tmp_pa
     assert r["situacao"] == SCH.ENVIADO
 
 
+def test_remetente_com_nome_e_acento_sai_com_o_endereco_do_usuario():
+    # 27/10/2026: o nome da serventia no campo «Remetente» (com acento, sem «@»)
+    # ia como ENDEREÇO, e o Proton recusava com SMTPNotSupportedError.
+    import email.utils
+
+    class _Smtp:
+        enviados: list = []
+
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def starttls(self, **k):
+            pass
+
+        def login(self, *a):
+            pass
+
+        def send_message(self, msg):
+            de = email.utils.getaddresses([msg["From"]])[0][1]
+            de.encode("ascii")                       # o que o smtplib exige
+            _Smtp.enviados.append((de, str(msg["From"])))
+
+    cfg = {"host": "smtp.exemplo.invalid", "porta": "587", "seguranca": "STARTTLS",
+           "usuario": "alertas@exemplo.invalid", "remetente": "Cartório de Exemplo",
+           "destinos": ["oficial@exemplo.invalid"]}
+    AV.mandar_email(cfg, "x", assunto="teste", corpo="teste", smtp_classe=_Smtp)
+    (de, cabecalho), = _Smtp.enviados
+    assert de == "alertas@exemplo.invalid"
+    assert "Exemplo" in cabecalho
+    assert AV.remetente({**cfg, "remetente": ""}) == "alertas@exemplo.invalid"
+    assert AV.remetente({**cfg, "remetente": "outro@exemplo.invalid"}) == "outro@exemplo.invalid"
+    with pytest.raises(ValueError, match="usuário do SMTP"):
+        AV.remetente({**cfg, "usuario": ""})
+
+
 def test_a_tela_grava_a_senha_do_email_no_arquivo_e_nao_no_cofre(casa):
     import automacao_cofre as AC
     c = _entrar(casa, "mario", "ADMIN")

@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}Despesas — configuração{% endblock %}
+{% block heading %}<h1>Despesas — configuração e Banco Inter</h1>{% endblock %}
+{% block content %}
+{# SÓ DO ADMIN. O pagamento nasce desligado e no sandbox, e os tetos nascem
+   baixos: ligar, ir para a produção e subir teto são decisões do oficial. #}
+<div class="actions"><a class="button" href="{{ url_for('despesas_lista') }}">&larr; Despesas</a></div>
+
+<section class="panel"><h2>Pagamento e tetos</h2>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label><input type="checkbox" name="despesas_pagamento_ligado" value="1" {% if cfg.despesas_pagamento_ligado == '1' %}checked{% endif %}> {{ rotulos.despesas_pagamento_ligado }}</label>
+    <label>{{ rotulos.despesas_ambiente }}
+      <select name="despesas_ambiente">{% for k, v in ambientes.items() %}<option value="{{ k }}" {% if k == cfg.despesas_ambiente %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+    <label>{{ rotulos.despesas_teto_por_pagamento }} <input name="despesas_teto_por_pagamento" value="{{ cfg.despesas_teto_por_pagamento }}" size="12"></label>
+    <label>{{ rotulos.despesas_teto_por_dia }} <input name="despesas_teto_por_dia" value="{{ cfg.despesas_teto_por_dia }}" size="12"></label>
+    <label><input type="checkbox" name="despesas_regra_guias_ligada" value="1" {% if cfg.despesas_regra_guias_ligada == '1' %}checked{% endif %}> {{ rotulos.despesas_regra_guias_ligada }}</label>
+    <label>{{ rotulos.despesas_teto_guia }} <input name="despesas_teto_guia" value="{{ cfg.despesas_teto_guia }}" size="12"></label>
+    <button type="submit">Gravar</button>
+  </form>
+  <p class="small muted">No Inter, a «Gestão de Aprovações» do Internet Banking decide se o pagamento feito pela API
+    sai direto ou espera aprovação no app. Os dois casos são tratados aqui; a despesa só vai ao Livro Diário quando o
+    débito aparece no extrato.</p>
+</section>
+
+<section class="panel"><h2>Credencial do Banco Inter</h2>
+  {% if credencial and not credencial.erro %}<p>Certificado válido até <strong>{{ credencial.valido_ate }}</strong>.</p>
+  {% elif credencial and credencial.erro %}<p class="badge alta">{{ credencial.erro }}</p>
+  {% else %}<p class="muted">Nenhuma credencial cadastrada.</p>{% endif %}
+  <p class="small muted">No Internet Banking PJ: Integrar → Nova integração, com os escopos de extrato, pagamento de
+    boleto e pagamento Pix. O Inter analisa o pedido e libera o Client ID, o Client Secret, o certificado (.crt) e a
+    chave (.key). Eles ficam fora do banco de dados — no cofre da automação, quando instalado; senão, num arquivo
+    cifrado da pasta de dados — e não aparecem em tela nem no rastro.</p>
+  <form method="post" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="credencial">
+    <label>Client ID <input name="client_id" autocomplete="off" required></label>
+    <label>Client Secret <input type="password" name="client_secret" autocomplete="off" required></label>
+    <label>Certificado (.crt) <input type="file" name="crt" accept=".crt,.pem" required></label>
+    <label>Chave (.key) <input type="file" name="key" accept=".key,.pem" required></label>
+    <label>Conta corrente (só se a integração tiver mais de uma conta) <input name="conta_corrente" size="12"></label>
+    <button type="submit">Gravar a credencial</button>
+  </form>
+</section>
+{% endblock %}

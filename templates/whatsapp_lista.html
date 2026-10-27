@@ -3,16 +3,27 @@
 {% block content %}
 <h1>WhatsApp</h1>
 <p class="small">
-  <a href="{{ url_for('whatsapp_config') }}">Configuração Meta</a>
+  <a href="{{ url_for('whatsapp_painel') }}">Painel do prazo</a>
+  · <a href="{{ url_for('whatsapp_atendente') }}">Atendente com IA</a>
+  · <a href="{{ url_for('whatsapp_config') }}">Configuração Meta</a>
 </p>
 
 <div class="card">
   <p class="small muted">
-    Fila do balcão pelo WhatsApp — API oficial da Meta. Autoenvio desligado.
-    CPF, valor, protesto, certidão, instrumento e dado de livro
-    <strong>não saem por aqui</strong>. O SERVIDOR do Cartório Gestão
-    <strong>não fica na internet</strong>: a Meta entrega no Apache de
+    Fila do balcão pelo WhatsApp — API oficial da Meta. O SERVIDOR do Cartório
+    Gestão <strong>não fica na internet</strong>: a Meta entrega no Apache de
     <code>equipetextual.com.br</code>; esta casa puxa. Porta 8765 fechada para o mundo.
+  </p>
+  <p class="small">
+    {% if ia and ia.ia_ligada %}
+    <strong>Atendente com IA: LIGADO</strong> desde {{ (ia.ia_ligada_em or '')[:16]|replace('T', ' ') }}
+    — responde sozinho só andamento (com número e código), dúvidas do texto-base,
+    valores como estimativa e transcreve áudio{% if not ia.audio_ligado %} (transcrição desligada){% endif %}.
+    O resto passa para uma pessoa, marcado para o setor.
+    {% else %}
+    <strong>Atendente com IA: desligado.</strong> Nada sai sozinho: tudo é
+    rascunho conferido por quem atende.
+    {% endif %}
   </p>
 </div>
 
@@ -22,12 +33,41 @@
   <span class="small muted">
     {% if cfg and cfg.caixa_url %}URL gravada (host XMPP).{% else %}
     Ainda sem URL — documentada: https://equipetextual.com.br/pendentes{% endif %}
+    {% if ia and (ia.ia_ligada or ia.audio_ligado) %} Depois de puxar, o atendente
+    responde as primeiras conversas novas.{% endif %}
   </span>
+</form>
+
+<form method="get" action="{{ url_for('whatsapp_lista') }}" class="small" style="margin:0 0 1em">
+  <label>setor
+    <select name="setor">
+      <option value="">todos</option>
+      {% for chave, nome in setores.items() %}
+      <option value="{{ chave }}" {% if filtro.setor == chave %}selected{% endif %}>{{ nome }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>etiqueta
+    <select name="etiqueta">
+      <option value="">todas</option>
+      {% for et in etiquetas %}
+      <option value="{{ et }}" {% if filtro.etiqueta == et %}selected{% endif %}>{{ et }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>mostrar
+    <select name="so">
+      <option value="">todas</option>
+      <option value="abertas" {% if filtro.so == 'abertas' %}selected{% endif %}>só não resolvidas</option>
+      <option value="vencidas" {% if filtro.so == 'vencidas' %}selected{% endif %}>só fora do prazo</option>
+    </select>
+  </label>
+  <button class="button secondary">filtrar</button>
 </form>
 
 {% if not linhas %}
 <div class="card">
-  <p><strong>Nenhuma conversa ainda.</strong></p>
+  <p><strong>Nenhuma conversa{% if filtro.setor or filtro.etiqueta or filtro.so %} com este filtro{% endif %}.</strong></p>
   <p class="small muted">
     Em desenvolvimento: POST local em <code>/whatsapp/webhook</code> com
     header <code>X-Wa-Test: 1</code>. Em produção: puxar da caixa-postal.
@@ -38,9 +78,10 @@
   <tr>
     <th>quando</th>
     <th>quem</th>
-    <th>etiqueta</th>
+    <th>setor · responsável</th>
+    <th>etiquetas</th>
     <th>último texto</th>
-    <th>rascunho</th>
+    <th>esperando</th>
     <th>status</th>
   </tr>
   {% for r in linhas %}
@@ -52,9 +93,18 @@
       </a>
       <br><span class="small muted">{{ r.wa_id }}</span>
     </td>
-    <td class="small">{{ r.etiqueta or '—' }}</td>
+    <td class="small">
+      {{ r.setor_nome }}
+      {% if r.responsavel_nome %}<br>{{ r.responsavel_nome }}{% endif %}
+      {% if r.modo == 'pessoa' %}<br><strong>com pessoa</strong>{% endif %}
+    </td>
+    <td class="small">{{ r.etiquetas|join(', ') or '—' }}</td>
     <td class="small">{{ (r.ultimo_texto or '')[:140] }}</td>
-    <td class="small">{{ (r.rascunho or '')[:140] }}</td>
+    <td class="small">
+      {% if r.esperando_min is none %}—
+      {% elif r.vencida %}<strong>{{ r.esperando_min }} min — fora do prazo</strong>
+      {% else %}{{ r.esperando_min }} min{% endif %}
+    </td>
     <td class="small">{{ r.status }}</td>
   </tr>
   {% endfor %}

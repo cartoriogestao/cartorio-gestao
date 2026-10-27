@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}WhatsApp · painel do prazo{% endblock %}
+{% block content %}
+<p class="small">
+  <a href="{{ url_for('whatsapp_lista') }}">← fila do WhatsApp</a>
+  · <a href="{{ url_for('whatsapp_atendente') }}">atendente com IA</a>
+</p>
+<h1>Painel do prazo</h1>
+<p class="small muted">
+  «Esperando» é a conversa cuja última mensagem do cliente ainda não teve resposta.
+  Passou de <strong>{{ p.prazo }} minutos</strong> (configurável na tela do atendente),
+  está <strong>fora do prazo</strong>. O tempo médio da primeira resposta é dos últimos
+  {{ p.dias }} dias, separado entre a IA e as pessoas. Conversa resolvida não conta.
+</p>
+
+<table class="tabela">
+  <tr>
+    <th>setor</th><th>abertas</th><th>com pessoa</th><th>esperando</th>
+    <th>fora do prazo</th><th>maior espera</th>
+    <th>1ª resposta — pessoa</th><th>1ª resposta — IA</th>
+  </tr>
+  {% for s in p.setores %}
+  <tr>
+    <td><a href="{{ url_for('whatsapp_lista', setor=s.setor) }}">{{ s.nome }}</a></td>
+    <td>{{ s.abertas }}</td>
+    <td>{{ s.com_pessoa }}</td>
+    <td>{{ s.esperando }}</td>
+    <td>{% if s.vencidas %}<strong>{{ s.vencidas }}</strong>{% else %}0{% endif %}</td>
+    <td>{% if s.maior_espera is not none %}{{ s.maior_espera }} min{% else %}—{% endif %}</td>
+    <td>{% if s.media_pessoa is not none %}{{ s.media_pessoa }} min ({{ s.respostas_pessoa }}){% else %}—{% endif %}</td>
+    <td>{% if s.media_ia is not none %}{{ s.media_ia }} min ({{ s.respostas_ia }}){% else %}—{% endif %}</td>
+  </tr>
+  {% endfor %}
+  <tr>
+    <td><strong>total</strong></td>
+    <td>{{ p.total.abertas }}</td><td>{{ p.total.com_pessoa }}</td>
+    <td>{{ p.total.esperando }}</td><td><strong>{{ p.total.vencidas }}</strong></td>
+    <td></td><td>{{ p.total.respostas_pessoa }}</td><td>{{ p.total.respostas_ia }}</td>
+  </tr>
+</table>
+
+<div class="card">
+  <h2>Fora do prazo agora</h2>
+  {% for c in p.vencidas %}
+  <p class="small">
+    <a href="{{ url_for('whatsapp_conversa', conversa_id=c.id) }}"><strong>{{ c.nome or c.wa_id }}</strong></a>
+    · {{ c.setor_nome }}{% if c.responsavel_nome %} · {{ c.responsavel_nome }}{% endif %}
+    · esperando há <strong>{{ c.esperando_min }} min</strong>
+    {% if c.etiquetas %} · {{ c.etiquetas|join(', ') }}{% endif %}
+  </p>
+  {% else %}
+  <p class="small muted">Nenhuma conversa fora do prazo.</p>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>Atendente com IA, hoje</h2>
+  <p class="small">
+    {% if ia.ia_ligada %}Ligado.{% else %}Desligado.{% endif %}
+    {{ hoje.respostas }} resposta(s) automática(s) · {{ hoje.passagens }} passagem(ns)
+    para pessoa · {{ hoje.audios }} áudio(s) · US$ {{ '%.4f'|format(hoje.custo_usd) }}
+  </p>
+</div>
+{% endblock %}

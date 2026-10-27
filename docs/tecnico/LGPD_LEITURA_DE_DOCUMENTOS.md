@@ -124,6 +124,42 @@ operador — **apagamento em até
 30 dias**, sem uso para treino, com as exceções declaradas em 2.2.2 —, pelo
 registro de cada envio e pela conferência humana antes de todo ato.
 
+---
+
+## 3. O balcão das Notas — decisão do oficial em 26/10/2026
+
+> «autorizo ia sem mascara. trabalharemos com o prazo de retencao de 30 dias
+> da api» — o oficial, **26/10/2026**.
+
+A mesma leitura passou a servir o **Tabelionato de Notas**, com o mesmo motor
+(`leitura_ia.py`, extraído de `rc_leitura_documentos.py` sem mudar o
+comportamento do Registro Civil). Item novo do inventário:
+
+| Campo | Conteúdo |
+|---|---|
+| **Processo** | Tabelionato de Notas — cadastro do cartão de autógrafo; reconhecimento de firma em documento de transferência de veículo; comunicação de venda de veículo ao DETRAN |
+| **Operação** | Leitura, por inteligência artificial, do documento apresentado no balcão, para preencher **como rascunho** a tela de onde o botão saiu |
+| **Onde, no sistema** | botão «Ler documento por IA» nas telas de Cartões de autógrafo, Reconhecer firma e Comunicação de venda de veículo (`nt_leitura_documentos.py`, `nt_leitura_web.py`, tabela `nt_leituras`); o registro fica em Notas → `/notas/leituras` |
+| **Documentos** | RG, CIN, CNH, cartão do CPF; CRLV/CRLV-e, CRV («DUT») e ATPV/ATPV-e |
+| **Titulares** | a pessoa do cartão; vendedor, comprador e proprietário do veículo; quem mais constar do documento |
+| **Dados pessoais** | nome, filiação, data e local de nascimento, CPF/CNPJ, RG e órgão, CNH, título de eleitor, endereço do comprador, placa, RENAVAM, chassi, valor e data da venda, assinatura e foto (constam da imagem) |
+| **Dados sensíveis** | biometria (impressão digital impressa no RG), foto |
+| **Finalidade** | adiantar a digitação do cadastro e do veículo; conferência dos dígitos (CPF, RENAVAM), da placa, do chassi e da coerência entre os documentos |
+| **Base legal** | LGPD art. 7º, II e III, e art. 23, § 4º (exercício da atribuição notarial — Lei 8.935/1994, arts. 6º e 7º); dados sensíveis: art. 11, II, «a» e «b» |
+| **Operador** | Anthropic (provedora do modelo Claude), por API |
+| **Transferência internacional** | Sim (LGPD art. 33) |
+| **O que sai da serventia** | as imagens das páginas anexadas, **sem máscara** — decisão do oficial em 26/10/2026. Nada mais do banco |
+| **Retenção pelo operador** | **até 30 dias** — a retenção padrão da API, decisão do oficial em 26/10/2026; exceções declaradas pela Anthropic as de 2.2.2. O número fica gravado em cada leitura (`nt_leituras.retencao_dias = 30`, `sem_mascara = 1`) e aparece ao lado do botão e na ficha da leitura |
+| **Registro do que saiu** | cada leitura guarda arquivo, página, modelo, tokens e custo estimado (`nt_leituras.envios_json`, `custo_estimado`), quem pediu e quando (`criada_por`, `criada_por_id`, `criada_em`); auditoria `NT_LEITURA_DE_DOCUMENTOS`; e o registro de uso de IA (`ia_uso`, finalidade `nt_leitura`, `mascarado = false`) |
+| **Guarda na serventia** | os documentos ficam como anexos da leitura (`attachments`, entidade `NT_LEITURA`) |
+| **Quem acessa** | quem atende no balcão das Notas (ADMIN, MANAGER, USER); cada um vê as leituras que pediu, e ADMIN e MANAGER veem todas. O AUDITOR não lê |
+| **Decisão automatizada** | **não há**: a tela volta preenchida como rascunho, com as dúvidas da leitura marcadas «conferir», e **só grava com a caixa «Conferi cada campo preenchido pela leitura com o documento original apresentado» marcada** (auditoria `NT_LEITURA_CONFERIDA_E_USADA`, com quem conferiu) |
+
+A justificativa de 2.2 a 2.2.2 vale igual: a finalidade é transcrever o
+próprio dado — mascará-lo tornaria a leitura inútil —, e a recomendação da
+inspeção 0000524 de anonimizar transferências a terceiros fica respondida pela
+mesma decisão, agora estendida às Notas pelo oficial em 26/10/2026.
+
 Cidade Exemplo/MA, ____ de __________ de 2026.
 
 ______________________________________

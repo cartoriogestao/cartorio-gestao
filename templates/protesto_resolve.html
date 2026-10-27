@@ -176,6 +176,15 @@
 
 <section class="cartao">
   <h2>O que já foi mandado</h2>
+  {# O CAMINHO ATÉ O EDITAL (problema #142, 26/10/2026). #}
+  <p class="small muted">
+    <strong>Não confirmou?</strong> O título segue para edital em
+    <a href="{{ url_for('protesto_avisos') }}">Avisos e editais</a>: publique o
+    edital, imprima a folha do dia e, ali mesmo, gere o
+    <strong>arquivo do edital para a CENPROT</strong> e suba-o no portal da
+    CENPROT. <strong>Comprovante:</strong> entrega por e-mail ou WhatsApp pode
+    não ter PDF; a prova é o histórico, na ficha de cada intimação.
+  </p>
   <form method="post" action="{{ url_for('protesto_resolve_atualizar') }}"
         style="display:inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

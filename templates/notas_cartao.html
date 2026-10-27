@@ -182,9 +182,9 @@
   A ficha impressa nao muda: foto e digital moram no cartao. Colher e POST
   /notas/cartoes/<id>/foto, JPEG, pela webcam no Chrome. GET nao grava.
   Digitais: a colheita tem tela desde 07/09/2026 (relato #39) — o dominio
-  ja existia e nenhuma tela o chamava. O APARELHO NAO E' ESTE SISTEMA: o
-  leitor entrega uma imagem, e o que a tela faz e' guarda-la. Dizer que o
-  sistema «le a digital» seria prometer driver que ele nao tem.
+  ja existia e nenhuma tela o chamava. O APARELHO NAO E' ESTE SISTEMA: quem
+  fala com o leitor e' o cliente do fabricante, pelo SDK web, no navegador
+  (26/10/2026); o servidor recebe a imagem e a guarda.
 #}
 <section class="panel" data-captura-foto>
   <div class="panel-head"><span>Fotografia</span>
@@ -226,21 +226,88 @@
 
   E RECOLHER O MESMO DEDO SUBSTITUI: quem colhe de novo e porque a primeira
   saiu ruim, e guardar as duas faria a conferencia ter de escolher entre elas.
+
+  O LEITOR (26/10/2026). O botao «Colher no leitor» e' do
+  `static/leitor_digital.js`, que usa o SDK web do fabricante servido por
+  `notas_leitor_digital_sdk` (os arquivos o TI instala; nao vem no
+  repositorio). A imagem vai pelo formulario escondido `data-leitor-form`,
+  marcada origem=LEITOR, para a MESMA rota do envio manual — uma porta so
+  para gravar. Sem SDK, sem cliente do fabricante ou sem leitor na USB, a
+  tela diz qual faltou e o envio manual continua embaixo de cada dedo.
 #}
-<section class="panel">
+<section class="panel" data-leitor-digital>
   <div class="panel-head"><span>Digitais</span>
     <span class="small muted">quatro dedos — polegar e indicador de cada mão</span></div>
   <div style="padding:14px">
-    <p class="small muted">
-      <strong>DigitalPersona:</strong> a integração direta com o leitor é a
-      próxima etapa. Por enquanto, exporte a imagem pelo programa do aparelho
-      e envie-a no dedo correspondente.
+    <p class="small" style="border-left:3px solid #888;padding-left:8px">
+      {{ leitor.finalidade }}
     </p>
+    {# A CIENCIA DO TITULAR (correcao de seguranca de 26/10/2026, revisao do
+       PR #31): a finalidade na tela nao prova nada; a marca no cartao prova
+       que ela foi lida para a pessoa, por quem e quando. Sem ela, nenhuma
+       digital se colhe (o servidor recusa; a tela nem oferece). Desde a
+       decisao do oficial de 26/10/2026 a hipotese e o art. 11, II, «g», e a
+       ciencia e TRANSPARENCIA (art. 9), e nao consentimento. #}
+    {% if ciencia_bio %}
+    <p class="small muted">Ciência da pessoa registrada em
+      {{ fmt_dt(ciencia_bio.em) }} por {{ ciencia_bio.por }}.</p>
+    {% elif ve_a_digital %}
+    <form method="post" class="small" style="margin:8px 0"
+          action="{{ url_for('notas_cartao_biometria_ciencia', cartao_id=c.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label><input type="checkbox" name="confirmo" value="1" required>
+        {{ texto_da_ciencia }}</label>
+      <button class="small primary">Registrar a ciência</button>
+      <div class="small muted">Sem a ciência registrada, as digitais não se colhem.
+        Base legal: {{ base_legal.hipotese }} ({{ base_legal.decisao }}).
+        {{ base_legal.situacao }}</div>
+    </form>
+    {% else %}
+    <p class="small muted">Sem ciência da pessoa registrada — nenhuma digital colhida
+      depois de 26/10/2026 pode estar neste cartão sem ela.</p>
+    {% endif %}
+    <p class="small">
+      <strong>Leitor {{ leitor.nome }}:</strong>
+      <span data-leitor-estado data-situacao="">{% if leitor.sdk.instalado %}verificando o leitor…{% else %}o SDK web do fabricante não está instalado no servidor — use o envio manual abaixo de cada dedo.{% endif %}</span>
+      <button type="button" class="small" data-leitor-parar hidden>Cancelar captura</button>
+    </p>
+    {% if not leitor.sdk.instalado %}
+    <p class="small muted">
+      Para colher direto no leitor, o TI copia do pacote do SDK do fabricante
+      {{ leitor.sdk.faltando|join(' e ') }} para
+      <code>{{ leitor.sdk.pasta }}</code>, e instala o cliente HID
+      DigitalPersona no computador do balcão.
+    </p>
+    {% endif %}
+    {# 26/10/2026 - decisao do oficial («esse mesmo»): o modelo e o U.are.U 4500. #}
+    <p class="small muted" data-leitor-modelo>
+      Modelo esperado: <strong>{{ leitor.modelo }}</strong>. O TI instala, em cada
+      computador do balcão, o {{ leitor.cliente }} (traz o driver do aparelho), e os
+      arquivos do {{ leitor.sdk_nome }} na pasta <code>{{ leitor.sdk.pasta }}</code>.
+    </p>
+    <noscript><p class="small muted">Sem JavaScript o leitor não é usado:
+      envie a imagem pelo campo de cada dedo.</p></noscript>
+    <div class="envio-recado small" data-leitor-recado hidden></div>
+    <form method="post" enctype="multipart/form-data" data-leitor-form hidden
+          action="{{ url_for('notas_cartao_digital_colher', cartao_id=c.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="origem" value="{{ leitor.origem_leitor }}">
+      <input type="hidden" name="dedo" value="">
+      <input type="hidden" name="dispositivo" value="">
+      <input type="file" name="digital" accept="image/png">
+    </form>
     <div style="display:flex;gap:16px;flex-wrap:wrap">
       {% for dedo, nome in dedos.items() %}
       <div style="text-align:center">
         <div class="small muted" style="margin-bottom:4px">{{ nome }}</div>
-        {% if bio and dedo in bio.dedos %}
+        {% if bio and dedo in bio.dedos and not ve_a_digital %}
+          {# O AUDITOR sabe que ha digital, e quando foi colhida — sem a imagem
+             (correcao de seguranca de 26/10/2026, revisao do PR #31). #}
+          <div style="height:150px;width:120px;border:1px solid #bbb;
+                      display:flex;align-items:center;justify-content:center"
+               class="small muted">digital colhida em
+            {{ fmt_dt(bio_por_dedo.get(dedo).colhido_em) if bio_por_dedo.get(dedo) else '—' }}</div>
+        {% elif bio and dedo in bio.dedos %}
           <img src="{{ url_for('notas_cartao_digital', cartao_id=c.id, dedo=dedo) }}"
                alt="Digital do {{ nome }} de {{ c.nome }}"
                style="height:150px;border:1px solid #bbb;background:#fff">
@@ -249,24 +316,41 @@
                       display:flex;align-items:center;justify-content:center"
                class="small muted">sem digital</div>
         {% endif %}
+        {% set colhida = bio_por_dedo.get(dedo) %}
+        {% if colhida %}
+          <div class="small muted">{% if colhida.origem == leitor.origem_leitor %}informada como do leitor{% elif colhida.origem %}de arquivo{% else %}origem não registrada{% endif %}</div>
+        {% endif %}
+        {% if ciencia_bio and ve_a_digital %}
+        <button type="button" class="small primary" style="margin-top:6px"
+                data-leitor-colher data-dedo="{{ dedo }}" data-nome="{{ nome }}"
+                disabled>Colher no leitor</button>
         <form method="post" enctype="multipart/form-data" style="margin-top:6px"
               action="{{ url_for('notas_cartao_digital_colher', cartao_id=c.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="dedo" value="{{ dedo }}">
+          <input type="hidden" name="origem" value="{{ leitor.origem_arquivo }}">
           <input type="file" name="digital" accept="image/png,image/jpeg"
                  required style="width:120px" class="small">
           <button class="small" style="margin-top:4px">
-            {% if bio and dedo in bio.dedos %}Recolher{% else %}Colher{% endif %}</button>
+            {% if bio and dedo in bio.dedos %}Recolher{% else %}Colher{% endif %} de arquivo</button>
         </form>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
     <p class="small muted" style="margin-top:12px">
-      <strong>O aparelho não é este sistema.</strong> O leitor de digital
-      entrega uma imagem; o que esta tela faz é <strong>guardá-la no
-      cadastro</strong>. Recolher o mesmo dedo substitui o anterior.
+      <strong>O aparelho não é este sistema.</strong> Quem fala com o leitor é
+      o cliente do fabricante, neste navegador; o sistema recebe a imagem e o
+      que ele faz é <strong>guardá-la no cadastro</strong>. Recolher o mesmo
+      dedo substitui o anterior. O envio de arquivo continua como reserva.
     </p>
   </div>
+  {% if leitor.sdk.instalado %}
+    {% for arq in leitor.arquivos_do_sdk %}
+  <script defer src="{{ url_for('notas_leitor_digital_sdk', nome=arq) }}"></script>
+    {% endfor %}
+  {% endif %}
+  <script defer src="{{ url_for('static', filename='leitor_digital.js') }}"></script>
 </section>
 
 {#

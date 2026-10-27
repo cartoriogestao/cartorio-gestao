@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+{% block title %}Despesa {{ d.id }}{% endblock %}
+{% block heading %}<h1>Despesa {{ d.id }} — {{ situacoes[d.situacao] }}</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('despesas_lista') }}">&larr; Despesas</a></div>
+
+<section class="panel">
+  <p><strong>{{ d.beneficiario_nome }}</strong>{% if d.beneficiario_documento %} · {{ d.beneficiario_documento }}{% endif %}</p>
+  <p>{{ d.descricao }}</p>
+  <p>R$ <strong>{{ reais(d.valor) }}</strong> · vence em {{ d.vencimento }} · {{ formas.get(d.forma, d.forma) }}
+    · {{ categorias[d.categoria][0] if d.categoria in categorias else d.categoria }} · {{ naturezas[d.natureza] }}</p>
+  <p class="small">Documento: {{ d.documento_especie }}{% if d.documento_numero %} nº {{ d.documento_numero }}{% endif %}
+    · cadastrada por {{ d.cadastrada_por }} em {{ d.cadastrada_em }} · origem {{ d.origem }}</p>
+  {% if d.codigo %}<p class="small">Código de pagamento: <code style="word-break:break-all">{{ d.codigo }}</code></p>{% endif %}
+  {% if d.divergencia %}<p class="badge alta">{{ d.divergencia }}</p>{% endif %}
+  {% if d.autorizada_em %}<p class="small">Autorizada por {{ d.autorizada_por }} em {{ d.autorizada_em }}{% if d.autorizada_pela_regra %} — {{ d.autorizada_pela_regra }}{% endif %}{% if d.acima_do_teto %} · <strong>acima do teto</strong>{% endif %}</p>{% endif %}
+  {% if d.banco_status %}<p class="small">Banco: {{ d.banco_status }}{% if d.banco_codigo %} · código {{ d.banco_codigo }}{% endif %}{% if d.data_pagamento %} · data do pagamento {{ d.data_pagamento }}{% endif %}{% if d.ambiente %} · ambiente {{ d.ambiente }}{% endif %}</p>{% endif %}
+  {% if d.mensagem %}<p class="small">{{ d.mensagem }}</p>{% endif %}
+  {% if d.paga_em %}<p class="small">Paga em {{ d.paga_em }}{% if d.ld_despesa_id %} · lançada no Livro Diário (linha {{ d.ld_despesa_id }}){% elif d.natureza == 'REPASSE_DE_FUNDO' %} · repasse, fora do Livro Diário{% endif %}</p>{% endif %}
+  {% if d.motivo_cancelamento %}<p class="small">Cancelada por {{ d.cancelada_por }}: {{ d.motivo_cancelamento }}</p>{% endif %}
+</section>
+
+{% if papel == 'ADMIN' and d.situacao == 'AGUARDANDO_AUTORIZACAO' and d.forma != 'MANUAL' %}
+<section class="panel"><h2>Autorizar o pagamento</h2>
+  <form method="post" action="{{ url_for('despesas_acao', despesa_id=d.id, acao='autorizar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if d.valor > tetos.pagamento %}<label><input type="checkbox" name="acima_do_teto" value="1"> Autorizo acima do teto por pagamento (R$ {{ reais(tetos.pagamento) }})</label>{% endif %}
+    {% if d.divergencia %}<label>Por que o valor está certo assim <input name="motivo" size="60"></label>{% endif %}
+    <button type="submit">Autorizar</button>
+  </form></section>
+{% endif %}
+
+{% if papel == 'ADMIN' and d.situacao == 'AUTORIZADA' %}
+<section class="panel"><h2>Pagar</h2>
+  <p class="small">Sai sozinho na próxima rodada da automação. Para não esperar:</p>
+  <form method="post" action="{{ url_for('despesas_acao', despesa_id=d.id, acao='pagar') }}" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Pagar agora pelo Inter</button></form>
+</section>
+{% endif %}
+{% if papel == 'ADMIN' and d.situacao in ['ENVIADA', 'PAGA'] %}
+<form method="post" action="{{ url_for('despesas_acao', despesa_id=d.id, acao='atualizar') }}" class="inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Perguntar ao Inter como está</button></form>
+{% endif %}
+
+{% if d.situacao in ['AGUARDANDO_AUTORIZACAO', 'AUTORIZADA', 'FALHOU'] %}
+<section class="panel"><h2>Outras ações</h2>
+  {% if papel == 'ADMIN' and d.situacao in ['AUTORIZADA', 'FALHOU'] %}
+  <form method="post" action="{{ url_for('despesas_acao', despesa_id=d.id, acao='devolver') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Devolver à autorização — motivo <input name="motivo" size="50"></label><button type="submit">Devolver</button></form>
+  {% endif %}
+  {% if papel == 'ADMIN' %}
+  <form method="post" action="{{ url_for('despesas_acao', despesa_id=d.id, acao='pago_fora') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Foi paga fora do banco (dinheiro, outra conta) em <input type="date" name="data_pagamento" max="{{ hoje }}"></label>
+    <button type="submit">Registrar o pagamento</button></form>
+  {% endif %}
+  <form method="post" action="{{ url_for('despesas_acao', despesa_id=d.id, acao='cancelar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Cancelar — motivo <input name="motivo" size="50"></label><button type="submit">Cancelar a despesa</button></form>
+</section>
+{% endif %}
+
+<section class="panel"><h2>Documentos</h2>
+  {% if arquivos %}<ul>{% for a in arquivos %}<li><a href="{{ url_for('attachment_view', attachment_id=a.id) }}" target="_blank">{{ a.original_name }}</a></li>{% endfor %}</ul>
+  {% else %}<p class="muted">Nenhum documento anexado.</p>{% endif %}
+  <form method="post" action="{{ url_for('despesas_acao', despesa_id=d.id, acao='documento') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="file" name="documento" accept=".pdf,.png,.jpg,.jpeg,.xml"> <button type="submit">Anexar</button></form>
+</section>
+
+<section class="panel"><h2>Rastro</h2>
+  <ul>{% for e in rastro %}<li class="small">{{ e.quando }} · {{ e.operacao }} · {{ e.resultado }} · {{ e.usuario }}{% if e.mensagem %} — {{ e.mensagem }}{% endif %}</li>{% endfor %}</ul>
+</section>
+{% endblock %}

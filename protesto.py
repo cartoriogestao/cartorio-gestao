@@ -1163,7 +1163,10 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
     instrumento tira a menção do atraso (CN-MA art. 913, § 1º). As duas rotas
     que protestam passam `True`, e há teste que exige isso delas; o padrão
     `False` é o das montagens de cenário dos testes, que lavram tudo no mesmo
-    instante.
+    instante. Desde 27/10/2026 (decisão do oficial, «no dia útil seguinte») o
+    termo inicial é o dia útil SEGUINTE ao prazo-limite do devedor: no próprio
+    prazo-limite a recusa diz até quando ele paga e a partir de quando se
+    protesta, e o protesto do dia útil seguinte é no prazo, sem motivo.
 
     O lugar sai de `escrituracao.reservar()` na série PT_PROTESTO — um
     protesto por FACE, frente e verso (decisão do oficial em 14/10/2026; ver

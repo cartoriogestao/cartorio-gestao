@@ -150,12 +150,52 @@ def test_protesto_regular_nao_acusa():
 
 
 def test_protesto_depois_do_triduo_e_relatado_sem_tarefa():
+    # Apontado na segunda 14/09: prazo-limite na quinta 17/09, protesto na
+    # sexta 18/09 (o dia útil seguinte, decisão do oficial de 27/10/2026).
+    # O de segunda, 21/09, já é depois.
+    p = "2609140001"
+    fluxo = _fluxo(confirmado={p: _conf(date(2026, 9, 14))},
+                   retorno={p: [_ret("C", date(2026, 9, 21))]})
+    r = _regras(GP._regras_do_fluxo(_banco(), fluxo, HOJE, set()))
+    assert r["PROTESTO_FORA_DO_TRIDUO"][0]["gravidade"] == "ATENCAO"
+    assert "PROTESTO_FORA_DO_TRIDUO" in GP.REGRAS_SEM_TAREFA
+
+
+def test_protesto_no_dia_util_seguinte_ao_prazo_limite_nao_e_fora_do_triduo():
+    """Decisão do oficial em 27/10/2026: «no dia útil seguinte». Até essa data
+    o protesto da sexta 18/09 (apontado na segunda 14/09) era acusado — e ele
+    é, agora, o protesto no dia certo."""
     p = "2609140001"
     fluxo = _fluxo(confirmado={p: _conf(date(2026, 9, 14))},
                    retorno={p: [_ret("C", date(2026, 9, 18))]})
     r = _regras(GP._regras_do_fluxo(_banco(), fluxo, HOJE, set()))
-    assert r["PROTESTO_FORA_DO_TRIDUO"][0]["gravidade"] == "ATENCAO"
-    assert "PROTESTO_FORA_DO_TRIDUO" in GP.REGRAS_SEM_TAREFA
+    assert "PROTESTO_FORA_DO_TRIDUO" not in r
+
+
+def test_o_protesto_lavrado_aqui_segue_a_regua_do_triduo():
+    """Apontado na segunda 21/09, intimado na terça: o devedor paga até a
+    quinta 24/09 e o protesto é na sexta 25/09 — no prazo. O de segunda, 28/09,
+    é depois. E quando o ato gravou a conta do tríduo, vale a conta dele."""
+    con = _banco()
+    no_dia = _titulo(con, "2609210001", "PROTESTADO")
+    _ato(con, no_dia, "APONTAMENTO", "2026-09-21")
+    _ato(con, no_dia, "INTIMACAO", "2026-09-22", '{"modo":"PESSOAL"}')
+    _ato(con, no_dia, "PROTESTO", "2026-09-25")
+    depois = _titulo(con, "2609210002", "PROTESTADO")
+    _ato(con, depois, "APONTAMENTO", "2026-09-21")
+    _ato(con, depois, "INTIMACAO", "2026-09-22", '{"modo":"PESSOAL"}')
+    _ato(con, depois, "PROTESTO", "2026-09-28")
+    revogada = _titulo(con, "2609210003", "PROTESTADO")
+    _ato(con, revogada, "APONTAMENTO", "2026-09-21")
+    _ato(con, revogada, "INTIMACAO", "2026-09-22", '{"modo":"PESSOAL"}')
+    _ato(con, revogada, "PROTESTO", "2026-09-30",
+         '{"triduo": {"situacao": "NO_PRAZO", "termo_final": "2026-09-30"}}')
+    r = _regras(GP._regras_do_sistema(con, HOJE, set()))
+    acusados = {a["chave"] for a in r.get("PROTESTO_FORA_DO_TRIDUO", [])}
+    ids = {int(c.split(":")[1]) for c in acusados}
+    linha = {int(x[0]) for x in con.execute(
+        "SELECT id FROM pt_atos WHERE tipo='PROTESTO' AND titulo_id=?", (depois,))}
+    assert ids == linha
 
 
 def test_remessa_sem_resposta_vira_prazo_e_o_andamento_a_resolve():

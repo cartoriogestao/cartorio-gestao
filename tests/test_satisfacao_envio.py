@@ -403,10 +403,11 @@ def _entrar(casa, usuario: str, nome: str, papel: str):
     return c
 
 
-def _post(c, url: str, **dados):
+def _post(c, rota: str, /, **dados):
+    # `rota`, e não `url`: o formulário do endereço da VPS tem um campo `url`.
     with c.session_transaction() as s:
         token = s["csrf_token"]
-    return c.post(url, data={"csrf_token": token, **dados})
+    return c.post(rota, data={"csrf_token": token, **dados})
 
 
 def test_so_o_oficial_grava_o_endereco_e_so_https(cg_casa):

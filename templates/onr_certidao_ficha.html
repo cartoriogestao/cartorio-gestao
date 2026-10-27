@@ -2,7 +2,8 @@
 {% block title %}ONR — pedido {{ p.protocolo }}{% endblock %}
 {% block heading %}<h1>Pedido de certidão ONR {{ p.protocolo }}</h1>{% endblock %}
 {% block content %}
-<div class="actions"><a class="button" href="{{ url_for('onr_certidoes') }}">&larr; Certidões do ONR</a></div>
+<div class="actions"><a class="button" href="{{ url_for('onr_certidoes') }}">&larr; Certidões do ONR</a>
+  <a class="button" href="{{ url_for('onr_auto_pedido', pedido_id=p.id) }}">O que o robô preparou</a></div>
 
 <section class="card">
   <p>

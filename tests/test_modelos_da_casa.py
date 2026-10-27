@@ -895,6 +895,26 @@ def test_os_papeis_do_ld04_estao_no_catalogo_e_a_tela_os_confere(casa):
             "Texto {claro_inventado_ld04}."), chave
 
 
+# **EM 23/10/2026 O CATÁLOGO GANHOU 1 LINHA (tarefa 56, o tríduo)**: a menção
+# do atraso no instrumento — CN-MA art. 913, § 1º. Peça que só sai no protesto
+# lavrado depois do termo final; o modelo do instrumento não mudou um byte.
+PAPEIS_DO_TRIDUO = {"PT_INSTRUMENTO_ATRASO"}
+NOVOS_NO_CATALOGO_TRIDUO = 1
+
+
+def test_a_mencao_do_atraso_do_triduo_esta_no_catalogo_e_a_tela_a_confere(casa):
+    assert len(PAPEIS_DO_TRIDUO) == NOVOS_NO_CATALOGO_TRIDUO
+    assert PAPEIS_DO_TRIDUO <= set(MOD.POR_CHAVE)
+    conferidores = casa["app"].extensions.get("conferidores_de_modelo", {})
+    for chave in PAPEIS_DO_TRIDUO:
+        c = MOD.POR_CHAVE[chave]
+        assert c["atribuicao"] == "Protesto" and c["formato"] == MOD.CHAVES, chave
+        assert c["nome"] != chave and c["explica"], chave
+        assert conferidores[chave](MOD.padrao_de(chave)) == "", chave
+        assert "claro_inventado_triduo" in conferidores[chave](
+            "Texto {claro_inventado_triduo}."), chave
+
+
 def test_o_que_mudou_depois_do_ouro_do_protesto_e_chamada_do_ouro(ouro_e):
     """A lista das mudanças de propósito só fala do que o ouro guarda — senão
     ela seria uma porta aberta, e não um registro."""
@@ -976,8 +996,8 @@ def test_a_peca_tem_ficha_propria_e_nao_herda_o_fecho_da_atribuicao():
     `elementos_comuns: False`: o encerramento da atribuição no meio de uma
     frase estragaria o papel."""
     # 35 do LF06E; a qualificação do registro e a intimação eletrônica no
-    # instrumento (LD04).
-    assert len(PECAS_DO_PROTESTO) == 35 + 2
+    # instrumento (LD04); a menção do atraso do tríduo (tarefa 56).
+    assert len(PECAS_DO_PROTESTO) == 35 + 2 + NOVOS_NO_CATALOGO_TRIDUO
     for chave in PECAS_DO_PROTESTO:
         c = MOD.POR_CHAVE[chave]
         assert c["atribuicao"] == "Protesto" and c["formato"] == MOD.CHAVES
@@ -1299,6 +1319,16 @@ def test_a_tela_confere_a_peca_com_os_claros_que_o_montador_preenche(casa, monke
                 "apresentante": {"endereco": "Rua de Exemplo, 1, Cidade Exemplo/MA"}})):
         saida = OURO_E.tenta(f)
         assert "ok" in saida and saida["ok"], saida
+    # A CHAMADA DA TAREFA 56 (23/10/2026): o instrumento do protesto lavrado
+    # depois do tríduo, que acrescenta a menção do atraso (CN-MA art. 913, § 1º).
+    saida = OURO_E.tenta(lambda: PTI.montar_teor(
+        serventia="SERVENTIA DE EXEMPLO", praca="Cidade Exemplo",
+        motivo="falta de pagamento", copia_arquivada=False,
+        intimacao={"modo": "PESSOAL", "data": "2026-09-08"},
+        descricao="Título de exemplo.",
+        atraso={"termo_final": "2026-09-10", "lavrado_em": "2026-09-14",
+                "motivo": "Comprovante devolvido depois do prazo"}))
+    assert "ok" in saida and saida["ok"], saida
     medidos: dict = {}
     for (chave, modelo), claros in passados.items():
         if chave not in PECAS.chaves_conferidas():
@@ -1723,6 +1753,34 @@ MUDOU_DEPOIS_DO_OURO["CAIXA_RECIBO"] = {
          "<p><b>DISCRIMINAÇÃO ORÇAMENTÁRIA — valores previstos para o serviço "
          "requerido (CN-MA art. 197)</b></p>"),
     ),
+}
+# O CÓDIGO DE ACOMPANHAMENTO NO RECIBO E NA RECEPÇÃO — portal do cliente,
+# 26/10/2026 («código no recibo», o oficial). Uma linha nova em cada papel,
+# antes da data: o número do protocolo, o código e como consultar. Sem o bloco
+# no contexto (o recibo sem protocolo, o protesto), o papel é o de antes. Na
+# prévia o boneco não tem amostra do bloco, e ele sai «[acompanhamento]».
+_ACOMPANHAMENTO = ("{% if acompanhamento %}<p><b>ACOMPANHE O SEU PEDIDO:</b> protocolo nº "
+                   "{{ acompanhamento.numero }}, código de acompanhamento <b>"
+                   "{{ acompanhamento.codigo }}</b>. {{ acompanhamento.como_consultar }}"
+                   "</p>{% endif %}\n")
+_ACOMPANHAMENTO_NA_PREVIA = ("<p><b>ACOMPANHE O SEU PEDIDO:</b> protocolo nº [acompanhamento], "
+                             "código de acompanhamento <b>[acompanhamento]</b>. "
+                             "[acompanhamento]</p>\n")
+_FIM_DA_OBSERVACAO_DO_RECIBO = "{% if r.observacao %}<p>{{ observacao }}</p>{% endif %}\n"
+MUDOU_DEPOIS_DO_OURO["CAIXA_RECIBO"] = {
+    "texto": MUDOU_DEPOIS_DO_OURO["CAIXA_RECIBO"]["texto"] + (
+        (_FIM_DA_OBSERVACAO_DO_RECIBO, _FIM_DA_OBSERVACAO_DO_RECIBO + _ACOMPANHAMENTO),),
+    "papel": MUDOU_DEPOIS_DO_OURO["CAIXA_RECIBO"]["papel"] + (
+        ("<p>[observacao]</p>\n<p>None, ",
+         "<p>[observacao]</p>\n" + _ACOMPANHAMENTO_NA_PREVIA + "<p>None, "),),
+}
+_FIM_DA_OBSERVACAO_DA_RECEPCAO = ("{% if p.observacao %}<p><b>Observação:</b> "
+                                  "{{ observacao }}</p>{% endif %}\n")
+MUDOU_DEPOIS_DO_OURO["CAIXA_RECEPCAO"] = {
+    "texto": ((_FIM_DA_OBSERVACAO_DA_RECEPCAO,
+               _FIM_DA_OBSERVACAO_DA_RECEPCAO + _ACOMPANHAMENTO),),
+    "papel": (("</p>\n\n\n<p>A retirada",
+               "</p>\n\n\n" + _ACOMPANHAMENTO_NA_PREVIA + "<p>A retirada"),),
 }
 MONTADORES_MUDADOS_DEPOIS_DO_OURO = {
     "notas_certidao.montar_teor(INTEIRO_TEOR)": (
@@ -5088,3 +5146,67 @@ def test_na_lavratura_o_termo_le_a_qualificacao_ajustada_pela_casa(casa):
             "MARIA DE EXEMPLO, inscrita no CPF n.º 000.000.001-91")
     assert LIVRO.qualificacao_inteira(maria) == (
         "MARIA DE EXEMPLO, brasileira, inscrita no CPF n.º 000.000.001-91")
+
+
+# ------------------------------------- 26/10/2026 — o aviso de andamento ao cliente
+#
+# **O CATÁLOGO GANHOU 1 PAPEL**: o e-mail que avisa o cliente, quando ele
+# pediu, da exigência, do pronto para retirar e da prenotação perto de vencer
+# (`andamento_avisos`). Texto da casa, sem precedente no E-Ofício, e por isso
+# no catálogo, editável — em chaves, uma parte por andamento, como o
+# CAIXA_WHATSAPP. Nenhum papel antigo mudou de texto.
+PAPEIS_DO_ANDAMENTO = {"CAIXA_AVISO_ANDAMENTO"}
+NOVOS_NO_CATALOGO_ANDAMENTO = 1
+
+
+def test_o_aviso_de_andamento_esta_no_catalogo_e_a_tela_o_confere(casa):
+    """A contagem bate com a lista; o conferidor próprio aceita o padrão e
+    recusa o claro que o aviso não preenche; e o padrão não pede dado de
+    pessoa — só número, serventia, datas e a assinatura."""
+    import modelos_elementos as ELEM
+    assert len(PAPEIS_DO_ANDAMENTO) == NOVOS_NO_CATALOGO_ANDAMENTO
+    assert PAPEIS_DO_ANDAMENTO <= set(MOD.POR_CHAVE)
+    for chave in PAPEIS_DO_ANDAMENTO:
+        assert MOD.formato_de(chave) == MOD.CHAVES
+        assert MOD.POR_CHAVE[chave]["elementos_comuns"] is False
+        assert ELEM.CONFERIDORES[chave](MOD.padrao_de(chave)) == ""
+        assert ELEM.CONFERIDORES[chave]("===PRONTO===\nOla {cpf}")
+        assert casa["app"].extensions["conferidores_de_modelo"][chave](
+            MOD.padrao_de(chave)) == ""
+        for proibido in ("{cpf}", "{nome_", "{valor", "{teor"):
+            assert proibido not in MOD.padrao_de(chave), proibido
+# A CERTIDÃO POSITIVA POR PESSOA — 25/10/2026, o oficial («relação dos imóveis
+# atuais»), para os pedidos do ONR por pessoa: `RI_CERTIDAO_POSITIVA_PESSOA`.
+NOVOS_NO_CATALOGO_ONR = 1
+
+
+# ------------------------------- 27/10/2026 — o convite da pesquisa de satisfação
+#
+# **O CATÁLOGO GANHOU 1 PAPEL**: o e-mail que convida o cliente do protocolo a
+# responder a pesquisa de satisfação (`satisfacao_envio`). «quero poder editar o
+# texto do e-mail» — o oficial, 27/10/2026. Em chaves, com duas partes
+# (===ASSUNTO=== e ===CORPO===), como o CAIXA_WHATSAPP e o aviso de andamento.
+# Nenhum papel antigo mudou de texto.
+PAPEIS_DA_PESQUISA = {"OUVIDORIA_CONVITE_PESQUISA"}
+NOVOS_NO_CATALOGO_PESQUISA = 1
+
+
+def test_o_convite_da_pesquisa_esta_no_catalogo_e_a_tela_o_confere(casa):
+    """A contagem bate com a lista; o conferidor próprio aceita o padrão e
+    recusa o claro que o convite não preenche; e o padrão só tem os três
+    claros — nenhum dado de pessoa."""
+    import modelos_elementos as ELEM
+    import satisfacao_envio as ENVIO
+    assert len(PAPEIS_DA_PESQUISA) == NOVOS_NO_CATALOGO_PESQUISA
+    assert PAPEIS_DA_PESQUISA <= set(MOD.POR_CHAVE)
+    for chave in PAPEIS_DA_PESQUISA:
+        assert MOD.formato_de(chave) == MOD.CHAVES
+        assert MOD.POR_CHAVE[chave]["elementos_comuns"] is False
+        assert MOD.POR_CHAVE[chave]["atribuicao"] == "Caixa e protocolo"
+        assert ELEM.CONFERIDORES[chave](MOD.padrao_de(chave)) == ""
+        assert ELEM.CONFERIDORES[chave]("===ASSUNTO===\nOi\n===CORPO===\n{cpf} {link}")
+        assert casa["app"].extensions["conferidores_de_modelo"][chave](
+            MOD.padrao_de(chave)) == ""
+        assert set(MOD.POR_CHAVE[chave]["campos"]) == set(ENVIO.CLAROS)
+        # O nome antigo responde o mesmo texto que o papel imprime.
+        assert ENVIO.MODELO_CONVITE_PESQUISA == MOD.padrao_de(chave)

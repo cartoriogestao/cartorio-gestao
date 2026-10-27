@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block title %}Nova despesa{% endblock %}
+{% block heading %}<h1>Nova despesa</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('despesas_lista') }}">&larr; Despesas</a></div>
+<div class="notice">A despesa nasce <strong>esperando a autorização do oficial</strong>. O código de
+  pagamento é conferido na hora: o boleto traz o valor e o vencimento dentro dele, e o Pix copia e cola
+  traz o valor — se não baterem com o que você digitou, o sistema recusa.</div>
+<form method="post" enctype="multipart/form-data" class="panel">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Categoria
+    <select name="categoria" required><option value="">—</option>
+      {% for k, v in categorias.items() %}<option value="{{ k }}" {% if f.categoria == k %}selected{% endif %}>{{ v[0] }}{% if v[1] != 'DESPESA' %} (repasse, fora do Livro Diário){% endif %}</option>{% endfor %}
+    </select></label>
+  <label>Descrição (o que é e a que se refere) <input name="descricao" value="{{ f.descricao or '' }}" size="60" required></label>
+  <label>Favorecido <input name="beneficiario_nome" value="{{ f.beneficiario_nome or '' }}" size="40" required></label>
+  <label>CPF/CNPJ do favorecido <input name="beneficiario_documento" value="{{ f.beneficiario_documento or '' }}" size="20"></label>
+  <label>Valor (R$) <input name="valor" value="{{ f.valor or '' }}" size="12" required></label>
+  <label>Vencimento <input type="date" name="vencimento" value="{{ f.vencimento or '' }}" required></label>
+  <label>Forma de pagamento
+    <select name="forma" required>{% for k, v in formas.items() %}<option value="{{ k }}" {% if f.forma == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+  <label>Código de pagamento (linha digitável, Pix copia e cola ou chave Pix)
+    <textarea name="codigo" rows="3" cols="60">{{ f.codigo or '' }}</textarea></label>
+  <label>Documento que comprova (espécie) <input name="documento_especie" value="{{ f.documento_especie or '' }}" placeholder="Nota fiscal, recibo, guia, boleto" size="30" required></label>
+  <label>Número do documento <input name="documento_numero" value="{{ f.documento_numero or '' }}" size="20"></label>
+  <label>Arquivo do documento (PDF, imagem ou XML) <input type="file" name="documento" accept=".pdf,.png,.jpg,.jpeg,.xml"></label>
+  <button type="submit">Cadastrar</button>
+</form>
+{% endblock %}

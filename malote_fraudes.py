@@ -47,6 +47,7 @@ from pathlib import Path
 
 import banco_pg
 from bd_nativo import banco
+import identidade_do_robo as IDR
 
 QUEM = "AGENTE MALOTE"
 PAPEIS = ("VITIMA", "ENVOLVIDO", "DOCUMENTO")
@@ -218,10 +219,12 @@ def aplicar(con: sqlite3.Connection, *, usuario: str, agora: str | None = None) 
         for p in aprovadas:
             alerta_id, novo = _aplicar_uma(con, p, usuario=usuario, agora=agora)
             (feitos if novo else ja_havia).append(alerta_id)
-        bd.escrever(
-            """INSERT INTO audit_logs (ts, user_id, username_snapshot, action, entity_type, details)
-               VALUES (%s, NULL, %s, 'FRAUDE_ALERTAS_DO_MALOTE', 'FR_ALERTAS', %s)""",
-            (agora, QUEM, json.dumps({"incluidos": feitos, "ja_havia": ja_havia, "em_nome_de": usuario})))
+        # O agente diz quem é e a mando de quem age (26/10/2026).
+        IDR.registrar(bd, ts=agora, user_id=None, username=QUEM,
+                      action="FRAUDE_ALERTAS_DO_MALOTE", entity_type="FR_ALERTAS",
+                      details=json.dumps({"incluidos": feitos, "ja_havia": ja_havia, "em_nome_de": usuario}),
+                      agente="agente do malote (fraudes)",
+                      a_mando_de=usuario or IDR.PELO_RESPONSAVEL)
         con.commit()
     except Exception:
         con.rollback()
@@ -657,13 +660,15 @@ def tratar_grupo(con: sqlite3.Connection, g, pasta_dados: Path, raiz_arquivos: P
                                visto_em = EXCLUDED.visto_em, situacao = EXCLUDED.situacao,
                                expediente_id = NULL, nota = EXCLUDED.nota""",
                         (c["sha256"], str(p), agora, nota))
-        bd.escrever(
-            """INSERT INTO audit_logs (ts, user_id, username_snapshot, action, entity_type, details)
-               VALUES (%s, NULL, %s, 'FRAUDE_ALERTAS_DO_MALOTE', 'FR_ALERTAS', %s)""",
-            (agora, QUEM, json.dumps({"caminho": "IA interna", "grupo": g.nome, "codigo": codigo,
-                                      "incluidos": [x["alerta_id"] for x in incluidos],
-                                      "ja_havia": [x["alerta_id"] for x in ja_havia],
-                                      "fora": lida["fora"], "em_nome_de": usuario}, ensure_ascii=False)))
+        # O agente diz quem é e a mando de quem age (26/10/2026).
+        IDR.registrar(bd, ts=agora, user_id=None, username=QUEM,
+                      action="FRAUDE_ALERTAS_DO_MALOTE", entity_type="FR_ALERTAS",
+                      details=json.dumps({"caminho": "IA interna", "grupo": g.nome, "codigo": codigo,
+                                          "incluidos": [x["alerta_id"] for x in incluidos],
+                                          "ja_havia": [x["alerta_id"] for x in ja_havia],
+                                          "fora": lida["fora"], "em_nome_de": usuario}, ensure_ascii=False),
+                      agente="agente do malote (fraudes, IA interna)",
+                      a_mando_de=usuario or IDR.PELO_RESPONSAVEL)
         con.commit()
     except Exception:
         con.rollback()

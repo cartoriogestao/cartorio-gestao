@@ -986,6 +986,8 @@ INSERTS_DE_ANEXO = {
     "protesto_imagens.py": "PT_TITULO", "onr_certidoes.py": "ONR_CERTIDAO",
     "database.py": None,
     "protesto_cra_imagens.py": "PT_TITULO",
+    # o documento da despesa (24/10/2026), na ficha `despesas_ficha`
+    "despesas.py": "DESPESA",
 }
 
 # O QUE SÓ A PRODUÇÃO TEM (LD14, 21/10/2026). `protesto_cra_imagens.py` veio

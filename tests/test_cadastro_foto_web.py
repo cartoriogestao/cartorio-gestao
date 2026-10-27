@@ -131,7 +131,10 @@ def test_a_tela_oferece_colher_e_avisa_a_digitalpersona(casa):
     assert 'data-captura-foto' in html
     assert "cadastro_captura.js" in html
     assert "DigitalPersona" in html
-    assert "proxima etapa" in html or "próxima etapa" in html
+    # O leitor deixou de ser «a próxima etapa» em 26/10/2026: a tela tem o
+    # quadro dele, com o botão do SDK do fabricante.
+    assert "data-leitor-digital" in html
+    assert "leitor_digital.js" in html
 
 
 # ------------------------------------------------------------- o que recusa

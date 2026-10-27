@@ -2,6 +2,9 @@
 {% block title %}Comunicação de venda de veículo — Notas{% endblock %}
 {% block heading %}<h1>Comunicação de venda de veículo</h1>{% endblock %}
 {% block content %}
+{# A LEITURA DO CRV/ATPV/CRLV POR IA — 26/10/2026. Ela preenche o formulário
+   (`sugestao`) como RASCUNHO; gravar exige a caixa «conferi com o original». #}
+{% import '_leitura_notas.html' as LNT with context %}
 <div class="actions">
   <a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a>
   <a class="button" href="{{ url_for('notas_veiculo_configuracao') }}">Configuração</a>
@@ -14,6 +17,9 @@
   {% if preco %}Item {{ preco.codigo_tj }}: {{ preco.total }}.{% endif %}
 </p>
 
+{{ LNT.botao('VEICULO', 'Ler o CRV, o ATPV ou o CRLV por IA e preencher a comunicação', 'CRV ou ATPV, e o CRLV se houver', sugestao.reconhecimento_id) }}
+{{ LNT.quadro(leitura) }}
+
 <section class="panel">
   <div class="panel-head"><span>Nova comunicação</span></div>
   <form method="post" action="{{ url_for('notas_veiculo_nova') }}" class="grid2" style="padding:14px">
@@ -21,16 +27,17 @@
     <input type="hidden" name="reconhecimento_id" value="{{ sugestao.reconhecimento_id or '' }}">
     {% if sugestao.reconhecimento_id %}<p class="span2 small">Do reconhecimento de firma nº {{ sugestao.reconhecimento_id }}.</p>{% endif %}
     <label>Documento
-      <select name="documento">{% for k, v in DOCUMENTOS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
-    <label>Placa <input name="placa" required value="{{ sugestao.placa or '' }}" placeholder="ABC1D23"></label>
-    <label>RENAVAM <input name="renavam" required inputmode="numeric"></label>
-    <label>Data da venda <input type="date" name="data_venda" required></label>
-    <label>Vendedor <input name="vendedor_nome" required value="{{ sugestao.vendedor_nome or '' }}"></label>
-    <label>CPF/CNPJ do vendedor <input name="vendedor_documento" required value="{{ sugestao.vendedor_documento or '' }}"></label>
-    <label>Comprador <input name="comprador_nome" required></label>
-    <label>CPF/CNPJ do comprador <input name="comprador_documento" required></label>
-    <label>Valor da venda <input name="valor" placeholder="25.000,00"></label>
-    <label>Município / UF <input name="municipio" size="18"> <input name="uf" size="2" maxlength="2"></label>
+      <select name="documento">{% for k, v in DOCUMENTOS.items() %}<option value="{{ k }}"{% if sugestao.documento == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+    <label>Placa{{ LNT.duvida(leitura, 'placa') }} <input name="placa" required value="{{ sugestao.placa or '' }}" placeholder="ABC1D23"></label>
+    <label>RENAVAM{{ LNT.duvida(leitura, 'renavam') }} <input name="renavam" required inputmode="numeric" value="{{ sugestao.renavam or '' }}"></label>
+    <label>Data da venda{{ LNT.duvida(leitura, 'data_venda') }} <input type="date" name="data_venda" required value="{{ sugestao.data_venda or '' }}"></label>
+    <label>Vendedor{{ LNT.duvida(leitura, 'vendedor_nome') }} <input name="vendedor_nome" required value="{{ sugestao.vendedor_nome or '' }}"></label>
+    <label>CPF/CNPJ do vendedor{{ LNT.duvida(leitura, 'vendedor_documento') }} <input name="vendedor_documento" required value="{{ sugestao.vendedor_documento or '' }}"></label>
+    <label>Comprador{{ LNT.duvida(leitura, 'comprador_nome') }} <input name="comprador_nome" required value="{{ sugestao.comprador_nome or '' }}"></label>
+    <label>CPF/CNPJ do comprador{{ LNT.duvida(leitura, 'comprador_documento') }} <input name="comprador_documento" required value="{{ sugestao.comprador_documento or '' }}"></label>
+    <label>Valor da venda{{ LNT.duvida(leitura, 'valor') }} <input name="valor" placeholder="25.000,00" value="{{ sugestao.valor or '' }}"></label>
+    <label>Município / UF{{ LNT.duvida(leitura, 'municipio') }} <input name="municipio" size="18" value="{{ sugestao.municipio or '' }}"> <input name="uf" size="2" maxlength="2" value="{{ sugestao.uf or '' }}"></label>
+    {{ LNT.conferencia(leitura) }}
     <div class="span2"><button class="primary">Registrar</button></div>
   </form>
 </section>

@@ -1,0 +1,16 @@
+{# A AUTOMAÇÃO NO PAINEL (24/10/2026) — o contador dos processos com problema e o
+   coração do despachante, só para o oficial e o gerente. Some quando não há o
+   que dizer: alarme que soa sempre é alarme que ninguém ouve. #}
+{% if automacao_no_painel and (automacao_no_painel.problemas or (automacao_no_painel.ativos and automacao_no_painel.despachante.parado) or (automacao_no_painel.cofre and not automacao_no_painel.cofre.aberto)) %}
+<section class="panel">
+  <div class="panel-head"><h2>Automação</h2><a href="{{ url_for('automacao_lista') }}">abrir a central</a></div>
+  {% if automacao_no_painel.problemas %}<p><span class="badge critica">{{ automacao_no_painel.problemas }}</span>
+    processo(s) com problema em aberto.</p>{% endif %}
+  {% if automacao_no_painel.ativos and automacao_no_painel.despachante.parado %}<p><span class="badge critica">despachante parado</span>
+    {% if automacao_no_painel.despachante.hora %}último tique às {{ automacao_no_painel.despachante.hora }}{% else %}nunca rodou{% endif %} —
+    há processo ligado que não está rodando.</p>{% endif %}
+  {% if automacao_no_painel.cofre and not automacao_no_painel.cofre.aberto %}<p><span class="badge critica">cofre trancado</span>
+    {{ automacao_no_painel.precisam_do_cofre }} processo(s) ligado(s) precisam da senha-mestra
+    {%- if automacao_no_painel.cofre.desde %} (trancado desde {{ automacao_no_painel.cofre.desde[:16]|replace('T', ' ') }}){% endif %}.</p>{% endif %}
+</section>
+{% endif %}

@@ -59,6 +59,9 @@ PAPEIS: tuple[dict, ...] = (
     _peca('PT_INSTRUMENTO_INTIMACAO_DIGITAL', 'protesto_instrumento',
           'FRASE_INTIMACAO_DIGITAL'),
     _peca('PT_INSTRUMENTO_SEM_INTIMACAO', 'protesto_instrumento', 'FRASE_SEM_INTIMACAO'),
+    # Tarefa 56 (23/10/2026): a menção do atraso do tríduo — CN-MA art. 913,
+    # § 1º. Só sai no protesto lavrado depois do termo final.
+    _peca('PT_INSTRUMENTO_ATRASO', 'protesto_instrumento', 'FRASE_ATRASO_DO_TRIDUO'),
     {'chave': 'PT_CERTIDAO_NEGATIVA', 'padrao': ('protesto_certidao', 'MODELO_CERTIDAO_NEGATIVA')},
     {'chave': 'PT_CERTIDAO_POSITIVA', 'padrao': ('protesto_certidao', 'MODELO_CERTIDAO_POSITIVA')},
     {'chave': 'PT_CERTIDAO_CANCELAMENTO', 'padrao': ('protesto_certidao', 'MODELO_CERTIDAO_CANCELAMENTO')},

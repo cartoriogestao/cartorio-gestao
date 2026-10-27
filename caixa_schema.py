@@ -461,6 +461,10 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # recibo tem de dizer isso com todas as letras, para nao ser confundido
     # com pagamento de ato.
     ("cx_protocolos", "tipo", "TEXT NOT NULL DEFAULT 'SERVICO'"),
+    # «OUTRA ENTRADA» DIZ SE É RECEITA DO TITULAR (26/10/2026, ordem do oficial:
+    # «pergunta pra quem cadastra dizer se é ou não»). 1 entra no carnê-leão, 0
+    # fica fora, NULL é a antiga, sem resposta.
+    ("cx_lancamentos", "receita_do_titular", "INTEGER"),
     # Quitacao item a item. Um protocolo pode ter tres atos e so um pago; sem
     # isto, "a pagar" e "pago" so existem no protocolo inteiro, e o balcao
     # perde a conta do que falta.
@@ -581,6 +585,37 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     #   que o orçamento tinha de sair.
     ("cx_depositos", "orcamento", "TEXT"),
     ("cx_depositos", "lancamento_id", "bigint"),
+    # **O PORTAL DO CLIENTE — «código no recibo» (o oficial, 26/10/2026).**
+    #
+    #   Cada protocolo ganha um código de acompanhamento aleatório, impresso no
+    #   recibo e no protocolo de recepção; com NÚMERO + CÓDIGO o cliente vê o
+    #   andamento sem entrar no servidor da casa. O código é senha do cliente:
+    #   `acompanhamento_hash` é o hash que confere (PBKDF2, e é ele que vai à
+    #   VPS); `acompanhamento_cifra` é o código cifrado com a chave do cofre,
+    #   FORA do banco, para reimprimir. Em claro, ele não fica em lugar nenhum.
+    #   Ver `acompanhamento_cliente.py`.
+    ("cx_protocolos", "acompanhamento_hash", "TEXT"),
+    ("cx_protocolos", "acompanhamento_cifra", "TEXT"),
+    ("cx_protocolos", "acompanhamento_em", "TEXT"),
+    #   O que já foi empurrado para a VPS (`portal_cliente.py`): a impressão
+    #   digital do último retrato aceito, para o mesmo retrato não subir de novo
+    #   a cada rodada, e quando subiu.
+    ("cx_protocolos", "portal_marca", "TEXT"),
+    ("cx_protocolos", "portal_enviado_em", "TEXT"),
+    # PRONTO PARA RETIRAR — o acompanhamento do protocolo (26/10/2026).
+    #
+    #   «quero que implementemos o acompanhamento de protocolo com notificacao
+    #    automatica para o cliente» — o oficial, 25/10/2026.
+    #
+    #   O protocolo geral tinha ABERTO, A_PAGAR, PAGO, ENTREGUE e CANCELADO, e
+    #   nenhuma palavra para «o serviço está pronto, falta o cliente buscar».
+    #   É MARCA, e não situação nova: `situacao` sai dos itens
+    #   (`_atualizar_situacao`) e um sexto valor ali faria as listas e o
+    #   painel dos inacabados lerem errado o que já leem certo. A marca guarda
+    #   quando e quem; desmarcar a apaga (o rastro fica na auditoria). Quem a
+    #   lê é a tela do protocolo e o aviso de andamento (`andamento_avisos`).
+    ("cx_protocolos", "pronto_retirar_em", "TEXT"),
+    ("cx_protocolos", "pronto_retirar_por", "TEXT"),
 )
 
 # Funcoes possiveis de quem atende ao balcao, na nomenclatura da Lei 8.935/94

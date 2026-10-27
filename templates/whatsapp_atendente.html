@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}WhatsApp · atendente com IA{% endblock %}
+{% block content %}
+<p class="small">
+  <a href="{{ url_for('whatsapp_lista') }}">← fila do WhatsApp</a>
+  · <a href="{{ url_for('whatsapp_painel') }}">painel do prazo</a>
+</p>
+<h1>Atendente com IA</h1>
+
+<div class="card">
+  <p><strong>{% if ia.ia_ligada %}LIGADO{% else %}DESLIGADO{% endif %}</strong>
+    {% if ia.ia_ligada %} — ligado por {{ ia.ia_ligada_por or '?' }} em
+    {{ (ia.ia_ligada_em or '')[:16]|replace('T', ' ') }}; só responde o que chegou depois disso.{% endif %}
+    · transcrição de áudio: <strong>{% if ia.audio_ligado %}ligada{% else %}desligada{% endif %}</strong>
+  </p>
+  <p class="small">
+    Decisão do oficial de 26/10/2026: a IA responde sozinha <strong>só</strong> em quatro casos —
+    (1) <strong>andamento do protocolo</strong>, depois que o cliente manda o número e o
+    <strong>código de acompanhamento</strong> impresso no recibo (até {{ tentativas }}
+    tentativas erradas por telefone em 24 h; a resposta de erro é a mesma quer o número
+    exista quer não); (2) <strong>dúvidas gerais</strong> pelo texto-base abaixo;
+    (3) <strong>valores</strong> dos itens da lista abaixo, calculados pela tabela de
+    emolumentos da casa e sempre como <strong>ESTIMATIVA</strong>; (4) <strong>transcrição
+    do áudio</strong>. Protesto, registro civil, dado pessoal, reclamação, pedido de falar
+    com alguém e tudo o que a IA não souber <strong>passam para uma pessoa</strong>, com a
+    conversa marcada para o setor.
+  </p>
+  <p class="small">
+    <strong>O que sai da serventia.</strong> Para o provedor que responde: a mensagem do
+    cliente <strong>mascarada</strong> (CPF, telefone, e-mail, documento e nomes viram
+    marcas; mensagem com dado pessoal nem sobe — vai para uma pessoa), mais o texto-base e
+    a lista de valores. O número do protocolo e o código <strong>nunca</strong> sobem: a
+    consulta é feita aqui, no portal do cliente. Para a OpenAI, na transcrição: o
+    <strong>áudio inteiro</strong> — áudio não se mascara. As chaves ficam em
+    <code>agente.cred</code>, fora do banco.
+  </p>
+  {% if not pode_enviar %}
+  <p class="small"><strong>Atenção:</strong> sem <code>access_token</code> e
+  <code>phone_number_id</code> a resposta automática não sai — a conversa vai para uma pessoa.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('whatsapp_atendente_rodar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button secondary">rodar o atendente agora</button>
+    <span class="small muted">Atende até 5 conversas novas. A rodada automática
+    (<code>wa_atendente.py --laco</code>) só existe se o oficial pedir a tarefa.</span>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Hoje</h2>
+  <p class="small">
+    {{ hoje.respostas }} resposta(s) automática(s) enviada(s) ·
+    {{ hoje.passagens }} passagem(ns) para pessoa ·
+    {{ hoje.audios }} áudio(s), {{ hoje.minutos_audio }} min ·
+    custo medido: US$ {{ '%.4f'|format(hoje.custo_usd) }}
+    {% if hoje.sem_custo %}(e {{ hoje.sem_custo }} chamada(s) sem preço configurado — custo não conhecido){% endif %}
+  </p>
+</div>
+
+<form method="post" action="{{ url_for('whatsapp_atendente') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="card">
+    <h2>Interruptores</h2>
+    {% if not e_admin %}<p class="small muted">Só o administrador grava esta tela.</p>{% endif %}
+    <p><label class="check"><input type="checkbox" name="ia_ligada" value="1" {% if ia.ia_ligada %}checked{% endif %}>
+      Atendente com IA ligado (responde sozinho nos quatro casos)</label></p>
+    <p><label class="check"><input type="checkbox" name="audio_ligado" value="1" {% if ia.audio_ligado %}checked{% endif %}>
+      Transcrever o áudio do cliente (OpenAI)</label></p>
+    <p><label class="check"><input type="checkbox" name="aviso_passagem" value="1" {% if ia.aviso_passagem %}checked{% endif %}>
+      Avisar o cliente quando a conversa passa para uma pessoa</label>
+      <br><span class="small muted">Desligado, quem passou para pessoa não recebe nada automático.</span></p>
+    <p><label>Prazo de resposta (minutos) — o painel marca «fora do prazo» depois disso
+      <input type="text" name="prazo_minutos" value="{{ ia.prazo_minutos }}" size="5"></label></p>
+  </div>
+
+  <div class="card">
+    <h2>Texto-base (aprovado pelo oficial)</h2>
+    <p class="small muted">
+      A IA só responde o que está aqui. Hora, endereço e telefone que não estiverem
+      escritos aqui <strong>não saem</strong>: a resposta com número fora deste texto é
+      barrada e a conversa vai para uma pessoa. Gravar este texto como administrador é a
+      aprovação.
+      {% if ia.texto_base_em %}Aprovado por {{ ia.texto_base_por }} em {{ ia.texto_base_em[:16]|replace('T', ' ') }}.{% else %}Ainda não aprovado.{% endif %}
+    </p>
+    <textarea name="texto_base" rows="14" style="width:100%" placeholder="{{ exemplo }}">{{ ia.texto_base }}</textarea>
+  </div>
+
+  <div class="card">
+    <h2>Valores que a IA pode informar (como estimativa)</h2>
+    <p class="small muted">
+      Um por linha: <code>código do Tribunal | nome que o cliente entende</code>
+      (ex.: <code>13.17.2 | Reconhecimento de firma</code>). O valor sai da tabela de
+      emolumentos importada, pela data de hoje; a IA só escolhe o item. Item de faixa
+      (que depende do valor do negócio) vai para uma pessoa.
+    </p>
+    <textarea name="valores" rows="8" style="width:100%">{{ ia.valores_texto }}</textarea>
+  </div>
+
+  <div class="card">
+    <h2>Provedores e custo</h2>
+    <p><label>Provedor que responde
+      <select name="provedor">
+        {% for p in provedores %}
+        <option value="{{ p.id }}" {% if p.id == ia.provedor %}selected{% endif %}>{{ p.nome }}{% if not p.tem_chave %} (sem chave){% endif %}</option>
+        {% endfor %}
+      </select></label>
+      <label>modelo <input type="text" name="modelo" value="{{ ia.modelo_gravado }}" placeholder="{{ ia.modelo }}"></label></p>
+    <p><label>US$ por milhão de tokens — entrada <input type="text" name="preco_entrada" size="6"
+      value="{{ '' if ia.preco_entrada is none else ia.preco_entrada }}"></label>
+      <label>saída <input type="text" name="preco_saida" size="6"
+      value="{{ '' if ia.preco_saida is none else ia.preco_saida }}"></label>
+      <span class="small muted">Vazio = o registro guarda os tokens e diz que o custo não é conhecido.</span></p>
+    <p><label>Transcrição: modelo <input type="text" name="audio_modelo" value="{{ ia.audio_modelo }}"></label>
+      <label>US$ por minuto <input type="text" name="audio_preco_minuto" size="6" value="{{ ia.audio_preco_minuto }}"></label>
+      <span class="small muted">Padrão: whisper-1 a 0,006 — conferir na tabela da OpenAI.</span></p>
+  </div>
+  {% if e_admin %}<p><button class="button">guardar</button></p>{% endif %}
+</form>
+
+<div class="card">
+  <h2>Registro das respostas automáticas</h2>
+  {% if not linhas %}<p class="small muted">Nada registrado ainda.</p>{% else %}
+  <table class="tabela small">
+    <tr><th>quando</th><th>conversa</th><th>caso</th><th>leu (mascarado)</th><th>respondeu</th><th>saiu?</th><th>provedor · tokens</th><th>custo</th></tr>
+    {% for r in linhas %}
+    <tr>
+      <td>{{ (r.quando or '')[:16]|replace('T', ' ') }}</td>
+      <td><a href="{{ url_for('whatsapp_conversa', conversa_id=r.conversa_id) }}">{{ r.nome or r.wa_id }}</a></td>
+      <td>{{ rotulos.get(r.caso, r.caso) }}{% if r.motivo %}<br><span class="muted">{{ r.motivo }}</span>{% endif %}
+        {% if r.passou_para %}<br>→ {{ r.passou_para }}{% endif %}</td>
+      <td>{{ (r.lido or '')[:160] }}</td>
+      <td>{{ (r.respondido or '')[:160] }}</td>
+      <td>{% if r.enviado %}sim{% else %}não{% endif %}{% if r.erro %}<br><span class="muted">{{ r.erro[:120] }}</span>{% endif %}</td>
+      <td>{{ r.provedor or '' }} {{ r.modelo or '' }}{% if r.tokens_entrada or r.tokens_saida %}<br>{{ r.tokens_entrada }} + {{ r.tokens_saida }}{% endif %}
+        {% if r.segundos_audio %}<br>{{ '%.0f'|format(r.segundos_audio) }} s de áudio{% endif %}</td>
+      <td>{% if r.custo_usd is not none %}US$ {{ '%.4f'|format(r.custo_usd) }}{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

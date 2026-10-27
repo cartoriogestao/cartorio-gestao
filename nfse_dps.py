@@ -14,18 +14,27 @@ POR QUE EXISTE (LG01, 19/10/2026)
     (`nfse_provedor`).
 
 O LEIAUTE
-    O da DPS versão 1.00, namespace `http://www.sped.fazenda.gov.br/nfse`, com
-    os grupos mínimos de um serviço tributável no município: prestador,
-    tomador, serviço (código de tributação nacional — item 21.01 da LC 116,
-    serviços de registros públicos, cartorários e notariais) e valores. Os
-    campos opcionais que a casa não usa ficam de fora de propósito: campo que
-    vai vazio é campo que a Sefin recusa.
+    O da DPS versão 1.01 (esquemas NFSe-ESQUEMAS_XSD-v1.01-20260209 e Anexo I
+    v1.01 de 09/02/2026, gov.br/nfse), namespace
+    `http://www.sped.fazenda.gov.br/nfse`, com os grupos mínimos de um serviço
+    tributável no município: prestador, tomador, serviço (código de tributação
+    nacional — item 21.01 da LC 116, serviços de registros públicos,
+    cartorários e notariais — e o NBS 1.1304.00.00 do Anexo B) e valores, mais
+    o grupo `IBSCBS` da reforma tributária (LC 214/2025) quando a casa o
+    configura. Os campos opcionais que a casa não usa ficam de fora de
+    propósito: campo que vai vazio é campo que a Sefin recusa.
+
+    CORREÇÃO DE 24/10/2026: este módulo escrevia a versão **1.00**, e os
+    leiautes até 28/09/2025 passaram a «antigos» no gov.br/nfse. Validado
+    contra os XSD oficiais, a 1.00 também recusava o pedido de cancelamento
+    deste módulo por dois motivos: o `Id` saía com 62 caracteres (o esquema
+    exige `PRE` + 56 dígitos — chave de 50 e o código do evento de 6, sem
+    número de pedido) e havia um `nPedRegEvento` que o leiaute não tem. Os
+    testes agora validam o XML contra o esquema oficial (`tests/xsd_nfse/`).
 
     **CONFERIR NA HOMOLOGAÇÃO** (a «produção restrita» da Sefin) antes de ligar
-    a produção: o algoritmo da assinatura (`ALGORITMO_*`), a forma do `Id` do
-    pedido de cancelamento e se o município aceita a alíquota informada na
-    DPS. Estão escritos aqui pelo manual do contribuinte que se conhecia em
-    19/10/2026, e o manual muda por nota técnica.
+    a produção: o algoritmo da assinatura (`ALGORITMO_*`) e a classificação do
+    IBS/CBS (`IbsCbs`), que o esquema aceita mas só a Sefin confere.
 
 A ASSINATURA
     XMLDSig envelopada, sobre o elemento `infDPS` (referência `#Id`), com C14N
@@ -47,7 +56,7 @@ from lxml import etree
 
 NS = "http://www.sped.fazenda.gov.br/nfse"
 NS_DS = "http://www.w3.org/2000/09/xmldsig#"
-VERSAO = "1.00"
+VERSAO = "1.01"
 
 ALGORITMO_C14N = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
 ALGORITMO_ENVELOPADA = "http://www.w3.org/2000/09/xmldsig#enveloped-signature"
@@ -106,6 +115,26 @@ class Servico:
     valor_centavos: int
     aliquota: str = ""        # «5,00» por cento; vazio = o município decide
     codigo_municipal: str = ""
+    codigo_nbs: str = ""      # cNBS, 9 dígitos (113040000 = notariais e de registro)
+
+
+# O GRUPO DA REFORMA TRIBUTÁRIA (`IBSCBS`, tipo TCRTCInfoIBSCBS do XSD 1.01).
+# A DPS não leva valor de IBS nem de CBS: leva a CLASSIFICAÇÃO, e quem calcula
+# é a Sefin («CALCULADORA» no Anexo I). Por isso os quatro códigos abaixo são
+# a única coisa que a casa declara — e são decisão de quem responde pelo
+# tributo, não do programa: este módulo confere a forma, e nada escolhe.
+INDICADORES_DE_DESTINATARIO = {"0": "O destinatário é o próprio tomador",
+                               "1": "O destinatário é outra pessoa"}
+
+
+@dataclass(frozen=True)
+class IbsCbs:
+    cst: str                  # CST do IBS e da CBS, 3 dígitos
+    classificacao: str        # cClassTrib, 6 dígitos (os 3 primeiros = CST)
+    indicador_operacao: str   # cIndOp, 6 dígitos (Anexo C)
+    finalidade: str = "0"     # finNFSe: 0 = NFS-e regular (o único valor do XSD)
+    destinatario: str = "0"   # indDest
+    consumo_pessoal: str = "" # indFinal: «0», «1» ou vazio (não informar)
 
 
 def digitos(valor: Any) -> str:
@@ -185,10 +214,51 @@ def _data_hora(quando: datetime) -> str:
     return quando.replace(microsecond=0).isoformat()
 
 
+def conferir_ibscbs(grupo: IbsCbs) -> IbsCbs:
+    """A forma dos códigos do IBS/CBS, como o XSD 1.01 a declara. Só calcula.
+
+    O que se confere é o que o esquema e a regra E0959 do Anexo I permitem
+    conferir sem a tabela da Receita: tamanhos, e o cClassTrib pertencer ao
+    grupo do CST (os três primeiros dígitos). Se o código EXISTE e serve aos
+    serviços notariais é a Sefin quem diz — e o contador, antes dela.
+    """
+    cst, classe, indop = (digitos(grupo.cst), digitos(grupo.classificacao),
+                          digitos(grupo.indicador_operacao))
+    if len(cst) != 3:
+        raise DpsError("O CST do IBS/CBS tem 3 dígitos.")
+    if len(classe) != 6:
+        raise DpsError("A classificação tributária do IBS/CBS (cClassTrib) tem 6 dígitos.")
+    if not classe.startswith(cst):
+        raise DpsError(f"A classificação {classe} não pertence ao CST {cst}: "
+                       "os três primeiros dígitos dela são o CST.")
+    if len(indop) != 6:
+        raise DpsError("O código indicador da operação (cIndOp, Anexo C) tem 6 dígitos.")
+    if grupo.finalidade != "0":
+        raise DpsError("A finalidade da NFS-e só pode ser 0 (regular) no leiaute 1.01.")
+    if grupo.destinatario not in INDICADORES_DE_DESTINATARIO:
+        raise DpsError("O indicador do destinatário é 0 ou 1.")
+    if grupo.destinatario == "1":
+        # O grupo `dest` (quem não é o tomador) a casa não guarda: recusar é
+        # melhor que declarar um destinatário sem dizer quem é (E0910).
+        raise DpsError("Destinatário diferente do tomador não é emitido por este sistema.")
+    if grupo.consumo_pessoal not in ("", "0", "1"):
+        raise DpsError("O indicador de consumo pessoal é 0, 1 ou vazio.")
+    return IbsCbs(cst=cst, classificacao=classe, indicador_operacao=indop,
+                  finalidade="0", destinatario=grupo.destinatario,
+                  consumo_pessoal=grupo.consumo_pessoal)
+
+
 def montar_dps(*, ambiente: str, emitida_em: datetime, serie: Any, numero: int,
                prestador: Prestador, tomador: Tomador, servico: Servico,
+               ibscbs: IbsCbs | None = None,
                versao_aplicativo: str = "CartorioGestao") -> bytes:
-    """O XML da DPS, SEM assinatura. Não grava nada."""
+    """O XML da DPS, SEM assinatura. Não grava nada.
+
+    Sem `ibscbs` o grupo da reforma não vai — o que o XSD 1.01 permite e a NT
+    004 v2.0 (10/12/2025) manteve aceito enquanto as validações dele estão
+    suspensas. Com ele, vai inteiro e conferido.
+    """
+    grupo = conferir_ibscbs(ibscbs) if ibscbs is not None else None
     if ambiente not in AMBIENTES:
         raise DpsError(f"Ambiente desconhecido: «{ambiente}».")
     if int(servico.valor_centavos) <= 0:
@@ -248,6 +318,11 @@ def montar_dps(*, ambiente: str, emitida_em: datetime, serie: Any, numero: int,
     if not descricao:
         raise DpsError("O serviço precisa de descrição.")
     _sub(cserv, "xDescServ", descricao)
+    nbs = digitos(servico.codigo_nbs)
+    if nbs:
+        if len(nbs) != 9:
+            raise DpsError("O código NBS tem 9 dígitos (1.1304.00.00 = 113040000).")
+        _sub(cserv, "cNBS", nbs)
 
     valores = _sub(inf, "valores")
     _sub(_sub(valores, "vServPrest"), "vServ", valor_decimal(servico.valor_centavos))
@@ -259,17 +334,35 @@ def montar_dps(*, ambiente: str, emitida_em: datetime, serie: Any, numero: int,
     if aliquota:
         _sub(mun, "pAliq", aliquota)
     _sub(_sub(trib, "totTrib"), "indTotTrib", "0")
+
+    if grupo is not None:
+        # A ordem é a do TCRTCInfoIBSCBS; os opcionais que a casa não usa
+        # (tpOper, gRefNFSe, tpEnteGov, dest, imovel, gReeRepRes, cCredPres,
+        # gTribRegular, gDif) ficam de fora.
+        rtc = _sub(inf, "IBSCBS")
+        _sub(rtc, "finNFSe", grupo.finalidade)
+        if grupo.consumo_pessoal:
+            _sub(rtc, "indFinal", grupo.consumo_pessoal)
+        _sub(rtc, "cIndOp", grupo.indicador_operacao)
+        _sub(rtc, "indDest", grupo.destinatario)
+        sit = _sub(_sub(_sub(rtc, "valores"), "trib"), "gIBSCBS")
+        _sub(sit, "CST", grupo.cst)
+        _sub(sit, "cClassTrib", grupo.classificacao)
     return etree.tostring(raiz, xml_declaration=True, encoding="UTF-8")
 
 
-def id_do_cancelamento(chave: str, sequencia: int = 1) -> str:
-    """«PRE» + chave da NFS-e + código do evento + número do pedido."""
-    return f"PRE{digitos(chave)}{EVENTO_CANCELAMENTO}{int(sequencia):03d}"
+def id_do_cancelamento(chave: str) -> str:
+    """«PRE» + chave da NFS-e (50) + código do evento (6): `PRE[0-9]{56}`.
+
+    CORREÇÃO DE 24/10/2026: acrescentava-se um número de pedido de 3 dígitos,
+    e o `Id` saía com 62 caracteres — o esquema (TSIdPedRegEvt, nas versões
+    1.00 e 1.01) o recusa. O cancelamento é um só por nota.
+    """
+    return f"PRE{digitos(chave)}{EVENTO_CANCELAMENTO}"
 
 
 def montar_cancelamento(*, ambiente: str, quando: datetime, autor: str,
                         chave: str, motivo: str, justificativa: str,
-                        sequencia: int = 1,
                         versao_aplicativo: str = "CartorioGestao") -> bytes:
     """O pedido de registro do evento de cancelamento, SEM assinatura."""
     if motivo not in MOTIVOS_DE_CANCELAMENTO:
@@ -283,14 +376,13 @@ def montar_cancelamento(*, ambiente: str, quando: datetime, autor: str,
     raiz = etree.Element(f"{{{NS}}}pedRegEvento", nsmap={None: NS})
     raiz.set("versao", VERSAO)
     inf = _sub(raiz, "infPedReg")
-    inf.set("Id", id_do_cancelamento(chave, sequencia))
+    inf.set("Id", id_do_cancelamento(chave))
     _sub(inf, "tpAmb", AMBIENTES[ambiente])
     _sub(inf, "verAplic", _texto(versao_aplicativo, 20))
     _sub(inf, "dhEvento", _data_hora(quando))
     doc = digitos(autor)
     _sub(inf, "CPFAutor" if len(doc) == 11 else "CNPJAutor", doc)
     _sub(inf, "chNFSe", digitos(chave))
-    _sub(inf, "nPedRegEvento", int(sequencia))
     ev = _sub(inf, f"e{EVENTO_CANCELAMENTO}")
     _sub(ev, "xDesc", "Cancelamento de NFS-e")
     _sub(ev, "cMotivo", motivo)

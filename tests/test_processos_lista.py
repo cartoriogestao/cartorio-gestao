@@ -197,4 +197,4 @@ def test_o_administrador_ve_o_controle_e_baixa_a_planilha(cg_casa_logada):
     assert "Balcão, atribuições e Centrais" not in html               # o quadro saiu (12/10/2026)
     r = c.get(f"/processos.csv?vista=ABERTOS&responsavel={uid}&prazo=VENCIDO")
     texto = r.get_data(as_text=True)
-    assert r.status_code == 200 and "processo;assunto" in texto and "Processo de exemplo da planilha" in texto
+    assert r.status_code == 200 and '"processo";"assunto"' in texto and "Processo de exemplo da planilha" in texto

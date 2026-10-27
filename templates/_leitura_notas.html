@@ -1,0 +1,74 @@
+{#
+  A LEITURA DE DOCUMENTOS POR IA NO BALCÃO DAS NOTAS — 26/10/2026.
+
+  Três peças, usadas pelas três telas que a leitura preenche (o cartão de
+  autógrafo, o reconhecimento de firma de veículo e a comunicação de venda):
+
+    botao(destino, ...)   o formulário de anexar e ler, com o aviso de que os
+                          documentos sobem SEM MÁSCARA e ficam até 30 dias na
+                          Anthropic — decisão do oficial, com a data;
+    quadro(leitura)       o que a leitura preencheu, o que ficou em dúvida e o
+                          que não fecha — à vista ANTES do formulário;
+    conferencia(leitura)  vai DENTRO do formulário que grava: o número da
+                          leitura e a caixa «conferi com o original», que a
+                          rota cobra (`nt_leitura_documentos.recusa_sem_conferencia`);
+    duvida(leitura, c)    a marca ao lado do campo em que a leitura ficou em
+                          dúvida.
+
+  Importe COM CONTEXTO: o formulário precisa do `csrf_token`.
+#}
+
+{% macro botao(destino, rotulo='Ler documento por IA', o_que='', reconhecimento_id=None) %}
+<details class="panel">
+  <summary>{{ rotulo }}</summary>
+  <form method="post" enctype="multipart/form-data"
+        action="{{ url_for('notas_leitura_ler') }}" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="destino" value="{{ destino }}">
+    {% if reconhecimento_id %}<input type="hidden" name="reconhecimento_id" value="{{ reconhecimento_id }}">{% endif %}
+    <label>Documento{% if o_que %} ({{ o_que }}){% endif %}
+      <input type="file" name="arquivos" multiple required
+             accept="image/*,application/pdf,.tif,.tiff"></label>
+    <p class="small">A IA lê e a tela volta preenchida como <strong>rascunho</strong>:
+      você confere cada campo com o documento original antes de gravar. Até
+      {{ nt_leitura_teto }} páginas por leitura.</p>
+    <p class="small notice warning">{{ nt_leitura_aviso }}
+      <br><em>«{{ nt_leitura_decisao.texto }}»</em> — o oficial, {{ nt_leitura_decisao.data }}.</p>
+    <button class="primary">Ler e preencher</button>
+    <a class="small" href="{{ url_for('notas_leituras') }}">Leituras feitas</a>
+  </form>
+</details>
+{% endmacro %}
+
+{% macro quadro(leitura) %}
+{% if leitura %}
+{% set sug = leitura.sugestao or {} %}
+<section class="notice warning">
+  <strong>RASCUNHO preenchido pela leitura por IA nº {{ leitura.id }}.</strong>
+  Confira cada campo com o documento original antes de gravar — a leitura
+  adiantou a digitação, e não decidiu nada.
+  <a href="{{ url_for('notas_leitura_ficha', leitura_id=leitura.id) }}">Ver o que foi lido</a>.
+  {% if sug.duvidas %}
+  <br>A leitura ficou em <strong>dúvida</strong> em:
+    {{ sug.duvidas|join(', ') }} — esses campos estão marcados «conferir».
+  {% endif %}
+  {% if leitura.conferencia %}
+  <ul class="small" style="margin:6px 0 0 18px">
+    {% for a in leitura.conferencia %}
+    <li><strong>{{ a.gravidade }}</strong> — {{ a.texto }}{% if a.onde %} <span class="muted">({{ a.onde }})</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}
+{% endmacro %}
+
+{% macro conferencia(leitura) %}
+{% if leitura %}
+<input type="hidden" name="leitura_id" value="{{ leitura.id }}">
+<label class="span2 check"><input type="checkbox" name="conferi_leitura" value="1" required>
+  {{ nt_leitura_frase }} (leitura nº {{ leitura.id }}).</label>
+{% endif %}
+{% endmacro %}
+
+{% macro duvida(leitura, campo) %}{% if leitura and campo in ((leitura.sugestao or {}).duvidas or []) %} <span class="badge alta small" title="A leitura ficou em dúvida neste campo">conferir</span>{% endif %}{% endmacro %}

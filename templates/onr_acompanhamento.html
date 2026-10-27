@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}ONR — acompanhamento de títulos{% endblock %}
+{% block heading %}<h1>ONR — andamento dos títulos no Acompanhamento Registral</h1>{% endblock %}
+{% block content %}
+
+<section class="card">
+  <p>
+    O que o apresentante vê na Central sobre o título que deixou no balcão:
+    prenotado, nota de exigência, reingresso, prorrogação do prazo, dúvida e
+    registro. <strong>Só entra na fila o que foi gravado de fato</strong>, na
+    mesma hora em que se gravou — e, na hora de subir, o sistema confere de novo:
+    o que foi desfeito sai como <em>anulado</em>, e o registro só sobe depois do selo.
+  </p>
+  {# 26/10/2026 — decisão do oficial: produção de fábrica; o ambiente fica à vista. #}
+  <p class="{{ 'warning' if producao else '' }}" style="font-size:1.1em">
+    Ambiente: <strong>{{ 'PRODUÇÃO' if producao else 'HOMOLOGAÇÃO (teste)' }}</strong>
+    — {{ endereco }}{% if de_fabrica %} (padrão de fábrica){% endif %}.
+    {% if producao %}O que for enviado aparece de verdade ao apresentante na Central do ONR.{% endif %}
+    <br>Envio: <strong>{{ 'LIGADO' if ligado else 'desligado' }}</strong>{% if not ligado %}
+    — nasce desligado; quem liga é o oficial, nesta tela{% endif %}.</p>
+  <p class="small muted">Nota de exigência: sobe com o texto inteiro (as exigências, a
+    fundamentação e o prazo), e o apresentante a lê na Central — decisão do oficial em
+    26/10/2026. {{ nota_sem_anexo }}.</p>
+  {% if not credencial.tem_chave %}
+  <p class="warning">Falta a credencial do Ofício Eletrônico (wsoficio.cred) neste ambiente.</p>
+  {% endif %}
+  <p class="small muted">Título entregue e o julgamento da dúvida não sobem: o sistema não
+    grava esses dois fatos. O ONR avisa o apresentante a cada andamento, pelo e-mail (ou,
+    sem e-mail, pelo telefone) da prenotação.</p>
+
+  {% if user.role in ['ADMIN','MANAGER'] %}
+  <form method="post" action="{{ url_for('onr_acompanhamento_enviar') }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button primary" type="submit" {% if not ligado %}disabled{% endif %}>
+      Enviar os pendentes ao ONR ({{ contagem.PENDENTE }})</button>
+  </form>
+  {% endif %}
+  {% if user.role == 'ADMIN' %}
+  <form method="post" action="{{ url_for('onr_acompanhamento_ligar') }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="ligar" value="{{ '0' if ligado else '1' }}">
+    <button class="button" type="submit">{{ 'Desligar o envio' if ligado else 'Ligar o envio' }}
+      ({{ 'produção' if producao else 'homologação' }})</button>
+  </form>
+  {% endif %}
+  {% if todos %}
+    <a class="button" href="{{ url_for('onr_acompanhamento') }}">Só os pendentes</a>
+  {% else %}
+    <a class="button" href="{{ url_for('onr_acompanhamento', todos=1) }}">Ver tudo, inclusive o enviado</a>
+  {% endif %}
+  <p class="small muted">Pendentes {{ contagem.PENDENTE }} · enviados {{ contagem.ENVIADO }} ·
+    anulados {{ contagem.ANULADO }} · descartados {{ contagem.DESCARTADO }}</p>
+</section>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Prenotação</th><th>Andamento</th><th>Data</th><th>Texto que sobe</th>
+    <th>Situação</th><th>Observação</th>{% if user.role == 'ADMIN' %}<th></th>{% endif %}</tr></thead>
+  <tbody>
+  {% for e in eventos %}
+    <tr>
+      <td><a href="{{ url_for('ri_protocolo_ver', protocolo_id=e.protocolo_id) }}">{{ e.protocolo_numero or e.protocolo_id }}</a>
+        <div class="small muted">{{ e.apresentante or '' }}</div></td>
+      <td>{{ e.rotulo }}</td>
+      <td>{{ e.data_status }}</td>
+      <td class="small" style="white-space:pre-line">{{ e.descricao }}</td>
+      <td>{{ e.situacao|lower }}{% if e.ambiente %} ({{ e.ambiente|lower }}){% endif %}</td>
+      <td class="small">{{ e.ultimo_erro or e.motivo_fim or '' }}</td>
+      {% if user.role == 'ADMIN' %}
+      <td>{% if e.situacao == 'PENDENTE' %}
+        <form method="post" action="{{ url_for('onr_acompanhamento_descartar', evento_id=e.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="text" name="motivo" placeholder="por que não vai" required minlength="10">
+          <button class="button" type="submit">Descartar</button>
+        </form>{% endif %}</td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="7">Nada {{ 'registrado' if todos else 'esperando subir' }}.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

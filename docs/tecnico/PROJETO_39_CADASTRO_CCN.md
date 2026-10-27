@@ -68,7 +68,7 @@ No disco, não no SQLite, iguais às fichas de hoje (`nt_cartao_imagens`, pasta 
 Na tela de cadastro do cartão (`/notas/cartoes/<id>` e no formulário de abertura):
 
 - **Foto:** a webcam do navegador (`getUserMedia`). Chrome no balcão. Sem programa extra. Recorte de rosto, uma foto, JPEG. Dá para refazer. Webcam não tem lista homologada; o CNB só sugere Full HD. Qualquer webcam do balcão serve.
-- **Digital:** o navegador **não fala com o leitor USB**. Precisa de um ajudante local na máquina do balcão, no mesmo espírito do BioCaptureApp do e-Notariado. Sem esse ajudante, a digital não entra neste sistema — só no site do CCN, e aí cobra licença por estação.
+- **Digital:** o navegador **não fala com o leitor USB** sozinho. Precisa de um ajudante local na máquina do balcão — e desde 26/10/2026 esse ajudante é o **do fabricante**: o cliente HID DigitalPersona, com o SDK web dele carregado na tela (ver «Fatia 2b — o leitor no navegador», abaixo). Sem o cliente ou sem o SDK, a tela diz qual faltou e o envio manual da imagem continua.
 
 GET não grava. Colher é POST. Erro de regra (leitor ausente, captura vazia, dedo repetido) é `ValueError` em português, dizendo o que fazer. Relatório de problema e auditoria **não levam a imagem** — só o fato de ter colhido.
 
@@ -101,7 +101,7 @@ O lote ao CCN pode sair antes, só com CPF, nome e a ficha que já temos nos out
 Os quatro pontos que travavam implementação estão decididos. 31/08/2026.
 
 1. **Onde colher a digital.** DECIDIDO em 31/08/2026: neste sistema, depois mandar ao CCN. Não colher no site do CCN. Sem licença por estação.
-2. **Qual leitor.** DECIDIDO em 31/08/2026: DigitalPersona U.are.U 4500 ou 4000b, homologado pelo CNB. Driver/SDK DigitalPersona. O ajudante local da máquina do balcão fala com esse aparelho.
+2. **Qual leitor.** DECIDIDO em 31/08/2026: DigitalPersona U.are.U 4500 ou 4000b, homologado pelo CNB. Driver/SDK DigitalPersona. O ajudante local da máquina do balcão fala com esse aparelho. **Confirmado em 26/10/2026** (o oficial: «esse mesmo»): **HID DigitalPersona U.are.U 4500** — ver a fatia 2b.
 3. **Quantos dedos.** DECIDIDO em 31/08/2026: os quatro de identificação — polegar direito, indicador direito, polegar esquerdo, indicador esquerdo (códigos CCN 1, 2, 6, 7).
 4. **Obrigatoriedade na abertura.** DECIDIDO em 31/08/2026: foto e digital NÃO são obrigatórias para abrir firma. Podem ficar para a próxima visita. O cadastro avisa o que falta. O selo de abertura não espera webcam nem leitor.
 
@@ -227,11 +227,48 @@ Fatia 1, 31/08/2026 — domínio, sem webcam, sem leitor, sem envio ao CCN:
 | `templates/notas_cartao.html` | bloco «Foto e digitais» no cadastro, não na ficha impressa |
 | `static/cadastro_captura.js` | `getUserMedia` (foto); POST da digital via ajudante |
 | `notas_web.py` | POST `/notas/cartoes/<id>/foto` e `/digital`; GET só lê `estado` |
-| ajudante Windows (fatia 2b) | DigitalPersona U.are.U 4500/4000b na máquina do balcão |
+| ajudante Windows (fatia 2b) | o cliente do fabricante (HID DigitalPersona) + o SDK web dele — ver abaixo |
 
 GET não grava. Sem leitor, a foto ainda funciona; a digital recusa em português («ligue o leitor DigitalPersona e tente de novo»).
 
 O `.odt` da ficha **não muda o desenho**. Se o cadastro tiver foto/digital, preenche os quadros que já existem; se não tiver, ficam em branco.
+
+### Fatia 2b — o leitor no navegador (26/10/2026)
+
+Decisão do oficial: integrar o leitor da casa, do padrão do e-Notariado, que ele chamou de «DigitalPersona U 7500». Na máquina de desenvolvimento não há driver, serviço nem programa da HID (medido com `Get-PnpDevice`, `Get-Service` e as pastas de programas, só leitura); a decisão de 31/08 fala em U.are.U 4500/4000b.
+
+**O modelo — decisão do oficial em 26/10/2026 («esse mesmo»): HID DigitalPersona U.are.U 4500** (`leitor_digital.MODELO_ESPERADO`, que a tela mostra no quadro «Digitais»). O SDK/driver que este ramo usa para ele é o do fabricante: o **HID DigitalPersona Lite Client** (também chamado «Authentication Device Client», que traz o driver do aparelho), instalado em cada computador do balcão, e o **DigitalPersona WebSDK** em JavaScript — `websdk.client.bundle.min.js` e `fingerprint.sdk.min.js`, copiados pelo TI para a pasta do SDK (`leitor_digital.CLIENTE_DO_FABRICANTE`, `SDK_DO_LEITOR`, `ARQUIVOS_DO_SDK`).
+
+**O caminho escolhido é o SDK web do fabricante, no próprio navegador**, e não um serviço local nosso no modelo do `a3_servico_local.py`:
+
+- o fabricante instala no Windows do balcão o cliente dele («HID DigitalPersona Lite Client» / «Authentication Device Client»), que fala com o aparelho e abre um canal só em 127.0.0.1 para o navegador. É o ajudante local que esta fatia pedia, e é o que o e-Notariado já exige no balcão — não se instala um segundo programa para o mesmo aparelho;
+- a DLL nativa do SDK carregada por processo nosso é o risco que o A3 já mostrou nesta casa (segfault derruba o processo); no navegador, se o cliente cair, cai a captura e não o servidor;
+- nenhuma porta nova nossa para vigiar.
+
+| arquivo | o que faz |
+|---|---|
+| `leitor_digital.py` | o nome do leitor, a **finalidade** (LGPD art. 11), a pasta do SDK, a lista fechada dos dois arquivos do SDK, `e_png` |
+| `static/leitor_digital.js` | usa `Fingerprint.WebApi`: procura o leitor, mostra o estado (sem SDK / cliente não respondeu / leitor não conectado / conectado), pede **PNG** do dedo escolhido e manda pelo formulário escondido com `origem=LEITOR` |
+| `notas_web.py` | `GET /notas/leitor-digital/sdk/<nome>` serve os dois arquivos do fabricante, só da lista; o POST `/notas/cartoes/<id>/digital` é **o mesmo** do envio manual e grava `origem` e `dispositivo` |
+| `cadastro_biometria.py` | `colher_digital(..., origem, dispositivo)`: do leitor, só PNG; o aparelho só se grava quando a imagem veio dele |
+| `notas_schema.py` | `nt_cadastro_imagens.origem` (LEITOR ou ARQUIVO) e `.dispositivo` — migração |
+| `tests/test_leitor_digital.py` | sem aparelho: o retorno do leitor **simulado** pelo formulário que o JS manda |
+
+**Os arquivos do SDK não estão no repositório**: são do fabricante. O TI copia `websdk.client.bundle.min.js` e `fingerprint.sdk.min.js` (os da amostra JavaScript do pacote do SDK) para `<pasta de dados>\terceiros\digitalpersona` — ou para a pasta da configuração `leitor_digital_sdk_pasta` — e instala o cliente HID DigitalPersona em cada computador do balcão. Sem os dois arquivos, a tela diz o que falta e onde pôr.
+
+**Template ISO/ANSI (FMD): o SDK web não entrega.** Os formatos dele são imagem crua, WSQ, PNG e o «intermediário» proprietário da DigitalPersona. Guarda-se o PNG, com sha256, no disco; **o intermediário não se colhe** — dado biométrico se colhe no mínimo que a finalidade pede (LGPD art. 6º, III), e um formato que só o fabricante lê não serve ao CCN.
+
+**Finalidade (LGPD, art. 11)** — o texto que a tela mostra acima dos dedos, de `leitor_digital.FINALIDADE`: as digitais servem para identificar quem abre a ficha de firma e quem volta para reconhecer firma, e para compor o CCN. Dado biométrico é dado pessoal sensível: fica só no cadastro desta serventia, não vai para relatório, auditoria, log nem para a ajuda. A auditoria leva **dedo e origem**, nunca a imagem; o JavaScript não escreve nada no console nem no armazenamento do navegador. **A hipótese legal — decisão do oficial em 26/10/2026, por recomendação; conferir com o encarregado de dados: LGPD, art. 11, II, «g»**, garantia da prevenção à fraude e da segurança do titular nos processos de identificação e autenticação de cadastro (`leitor_digital.BASE_LEGAL`). Deixou de ser consentimento (art. 11, I). A ciência do titular continua obrigatória antes de colher, agora como **transparência** (art. 9º), e não como consentimento.
+
+**Correções de segurança de 26/10/2026 (revisão do PR #31) — e os limites que ficam declarados:**
+
+- **A origem «do leitor» é declarada pelo navegador, e não provada.** É um campo do formulário: quem o edita manda um PNG qualquer como «do leitor». Sem canal assinado com o cliente do fabricante não há prova possível. O servidor recusa `LEITOR` quando o SDK nem está instalado nele (`leitor_digital.recusa_da_origem`), a auditoria grava `origem_declarada_pelo_navegador`, e a tela diz «informada como do leitor», e não «do leitor» como fato.
+- **A ciência do titular fica registrada no cartão** (`nt_cartoes.biometria_ciencia_em` / `_por`), com a caixa «Li para a pessoa a finalidade acima e a informei de que as suas digitais serão colhidas…» e a auditoria `NT_CADASTRO_BIOMETRIA_CIENCIA`. **Sem ela nenhuma digital se colhe** — nem do leitor, nem de arquivo. Até 26/10/2026 a hipótese estava A CONFERIR e valia a mais fechada (consentimento, art. 11, I); **desde a decisão do oficial de 26/10/2026 (por recomendação; conferir com o encarregado de dados) é o art. 11, II, «g»**, e a marca é registro de **transparência** (art. 9º), e não de consentimento.
+- **A imagem da digital não é mais servida ao AUDITOR**: a ficha dele diz «digital colhida em <data>», sem a imagem. Cada vez que a imagem sai para a tela, a auditoria anota `NT_CADASTRO_DIGITAL_VISTA` (o dedo, nunca a imagem).
+- **A imagem continua EM CLARO no disco** (`notas\firmas\<cartão>\digital_<dedo>.png`), na pasta de arquivos que o backup varre. **Decidido: não cifrar a imagem da digital, decisão do oficial em 26/10/2026** (`leitor_digital.IMAGEM_CIFRADA_NO_DISCO = False`). O que pesava na decisão: a `cofre.key` mora na pasta de dados e, perdida (máquina nova, restauração), **as digitais não abrem mais** — o contrário do «perder a chave não tranca nada» do cofre —, e o envio ao CCN (`ccn_envio`) teria de decifrar. Enquanto isso, o que protege a cópia externa é **ligar a cifra do backup** (`backup.cred`, AES-256-GCM).
+- **O canal do cliente HID em 127.0.0.1 não tem trava de origem da casa**, porque o canal não é nosso: qualquer página aberta no navegador do balcão que carregue o mesmo SDK consegue, em princípio, enumerar o leitor e pedir captura. A tela de colher só deve ficar aberta com o balcão presente.
+
+**Comparação 1:1 no reconhecimento de firma: PRÓXIMA ETAPA.** O SDK web não traz comparador (a comparação da DigitalPersona é do SDK nativo ou do servidor de autenticação dela). Quando vier, entra como **ALERTA** ao lado do reconhecimento — nunca como trava: recusar o ato é decisão de quem está no balcão, como no alerta de fraude.
 
 ### Fatia 3 — XML e envio ao CCN
 

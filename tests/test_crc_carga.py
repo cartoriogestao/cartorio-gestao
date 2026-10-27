@@ -943,3 +943,47 @@ def test_registro_com_cpf_e_documento_do_genitor_valida_contra_o_xsd(casa, xsd):
     assert "<CPFREGISTRADO>11144477735</CPFREGISTRADO>" in xml
     assert "<DONO>FILIACAO_NASCIMENTO</DONO>" in xml
     assert _validar(xsd, xml) == []
+
+
+# ------------------------------------------------ a IDADE da filiação
+
+
+@pytest.mark.parametrize("bruto,esperado", [
+    ("23", "23"), ("23 ANOS", "23"), (" 7 anos", "7"), ("100", "100"),
+    ("1234", ""), ("IGNORADA", ""), ("", ""), (None, "")])
+def test_a_idade_vai_so_com_o_numero(bruto, esperado):
+    assert CRC._idade_crc(bruto) == esperado
+
+
+def test_idade_digitada_com_texto_valida_contra_o_xsd(casa, xsd):
+    """**A CRC RECUSOU A CARGA INTEIRA — 26/10/2026.** No assento 8443 a
+    idade do pai estava «23 ANOS», e `IDADE` aceita até três caracteres:
+    um genitor derrubava os dezesseis registros do arquivo."""
+    con = _con(casa)
+    with con:
+        aid = _assento(con)
+        _pessoa(con, aid, "REGISTRADO", "MARIA", sexo="F")
+        _pessoa(con, aid, "PAI", "JOSE EXEMPLO", sexo="M",
+                idade_no_fato="23 ANOS")
+        _pessoa(con, aid, "MAE", "ANA EXEMPLO", sexo="F", idade_no_fato="21")
+    r = CRC.montar(con, [aid], cns=CNS)
+    assert r["quantos"] == 1, r["retidos"]
+    assert "<IDADE>23</IDADE>" in r["xml"]
+    assert "<IDADE>21</IDADE>" in r["xml"]
+    assert "ANOS</IDADE>" not in r["xml"]
+    assert _validar(xsd, r["xml"]) == []
+
+
+def test_idade_com_texto_avisa_para_corrigir_a_ficha(casa):
+    con = _con(casa)
+    with con:
+        aid = _assento(con)
+        _pessoa(con, aid, "REGISTRADO", "MARIA", sexo="F")
+        _pessoa(con, aid, "PAI", "JOSE EXEMPLO", sexo="M",
+                idade_no_fato="23 ANOS")
+        _pessoa(con, aid, "MAE", "ANA EXEMPLO", sexo="F", idade_no_fato="21")
+    r = CRC.montar(con, [aid], cns=CNS)
+    arrumar = " ".join(r["a_arrumar"][0]["arrumar"])
+    assert "«23 ANOS»" in arrumar and "«23»" in arrumar
+    assert "filiação 2 (pai)" in arrumar
+    assert "mãe" not in arrumar     # a idade certa da mãe não gera aviso

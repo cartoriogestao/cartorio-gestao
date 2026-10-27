@@ -148,7 +148,11 @@
        E O QUE O DECLARANTE DISSER MANDA: a conta so preenche o campo vazio. #}
     {% if perfil == 'completo' %}
     <label>Idade na ocasião do fato
+      {# SÓ O NÚMERO (26/10/2026): «23 ANOS» derrubou a carga da CRC, que
+         aceita até três algarismos na IDADE. #}
       <input name="{{ prefixo }}_idade_no_fato" size="6"
+             inputmode="numeric" pattern="[0-9]{1,3}"
+             title="Só o número de anos, por exemplo 23"
              data-idade-de="{{ prefixo }}_data_nascimento"
              value="{{ form.get(prefixo ~ '_idade_no_fato','') }}">
       <small>Vai no termo por extenso. <strong>Calculada</strong> da data de

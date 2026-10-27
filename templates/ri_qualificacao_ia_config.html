@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block title %}Qualificação assistida — teto do dia{% endblock %}
+{% block heading %}<h1>Qualificação assistida (RI) — teto do dia</h1>{% endblock %}
+{% block content %}
+{#
+  O TETO DIÁRIO DA QUALIFICAÇÃO ASSISTIDA — decisão do oficial em 26/10/2026:
+  20 leituras por dia de fábrica, e só o ADMIN o muda. Cada leitura é uma
+  chamada ao Opus com o título e o ITBI inteiros; o teto segura o gasto e o
+  clique repetido. Cada mudança fica na auditoria (RI_QUALIFICACAO_IA_TETO).
+#}
+<section class="panel">
+  <p>Teto em uso: <strong>{{ teto }} leitura(s) por dia</strong>, na casa inteira.
+    Hoje já foram feitas <strong>{{ feitas }}</strong>.
+    {% if gravado %}Este número foi gravado nesta tela; o padrão de fábrica é {{ padrao }}.
+    {% else %}É o padrão de fábrica ({{ padrao }}), decisão do oficial em 26/10/2026.{% endif %}</p>
+  <p class="small muted">Os pedidos que estão sendo lidos contam junto: quando o dia chega ao teto, o próximo
+    pedido é recusado antes de qualquer documento subir à IA, e o balcão qualifica à mão. O teto volta no dia seguinte.</p>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Leituras por dia ({{ minimo }} a {{ maximo }})
+      <input type="number" name="teto" min="{{ minimo }}" max="{{ maximo }}" value="{{ gravado }}" placeholder="{{ padrao }}"></label>
+    <div class="span2"><button type="submit">Gravar o teto</button>
+      <span class="small muted">Vazio volta ao padrão de fábrica. A mudança fica na auditoria.</span></div>
+  </form>
+</section>
+{% endblock %}

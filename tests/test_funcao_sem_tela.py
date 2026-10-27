@@ -174,7 +174,9 @@ JA_SABIDAS: frozenset[str] = frozenset({
     "inicio_do_prazo", "inutilizar_sobra",
     "larguras_em_mm", "ler_tabela_de_custas", "liberar",
     "lugar_estrangeiro", "maior_citado", "paginas_de",
-    "para_conferir", "parciais", "partes_do", "pendencias_do_assento",
+    "para_conferir", "partes_do", "pendencias_do_assento",
+    # `backup.parciais` saiu daqui em 26/10/2026: o processo de backup da
+    # automacao (`backup_automacao.rodar_backup`) avisa os `.parcial` esquecidos.
     "prenomes_se_distinguem", "quantas_pendentes",
     "semelhanca_fina",
     # **`rc_cpf.solicitar` NAO TEM TELA DE PROPOSITO.** Ela existe para RECUSAR
@@ -469,7 +471,9 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     # `cobranca` numa rota de `atribuicoes_web` (a do ato do protesto), e nome
     # igual conta como um só (ver «O QUE ELE NAO PROVA», no topo). A operação do
     # SAEC continua sem botão, como as vizinhas desta linha.
-    "atendimento": _SAEC, "atendimentos": _SAEC,
+    # «atendimento» saiu em 27/10/2026: o painel do celular (PR #28) lhe deu
+    # caminho até tela, e o varredor é pelo nome.
+    "atendimentos": _SAEC,
     "detalhes_do_protocolo": _SAEC, "gerar_cobranca": _SAEC,
     "interagir_no_atendimento": _SAEC, "tipos_de_pagamento": _SAEC,
     "validar_token_do_protocolo": _SAEC,
@@ -508,7 +512,6 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     "tem_cryptography": "selador_de_bancada — a bancada dos testes, e não peça do balcão",
     "numero_de_controle": "notas_doi — " + _TESTE,
     "reservar_processo": "recursos_da_maquina — " + _TESTE,
-    "servico_no_ar": "assinar_com_a3 — o serviço local do A3 roda fora do Flask; " + _TESTE,
     "status_payload": "a3_servico_local — resposta do serviço local do A3, fora do Flask",
     "sugerir_entrelinha": "notas_inutilizacao — " + _TESTE,
 }
@@ -545,7 +548,9 @@ ACHADAS_EM_14_10_2026: dict[str, str] = {
     "marcar_o_que_o_eoficio_ja_informou":
         "protesto_retorno — virada do protesto (13/10); a porta foi o script "
         "pontual tmp/protesto_virada_20261013/2_virada.py, fora do sistema",
-    "devolver_presos": _FILA, "enfileirar": _FILA,
+    # «enfileirar» saiu em 26/10/2026: o nome ganhou caminho até tela com os
+    # avisos de andamento (`andamento_avisos.enfileirar`), e o varredor é pelo nome.
+    "devolver_presos": _FILA,
     "espera_da_tentativa": _FILA, "marcar_confirmado": _FILA,
     "marcar_enviado": _FILA, "marcar_falha": _FILA, "pegar_proximo": _FILA,
     "processar_proximo": _FILA,
@@ -604,6 +609,70 @@ ACHADAS_EM_20_10_2026: dict[str, str] = {
 }
 
 
+# 27/10/2026 — A DA PESQUISA DE SATISFAÇÃO (PR da ouvidoria). Sem tela DE
+# PROPÓSITO: o oficial decidiu que o link vai só ao cliente, e a tela do balcão
+# nunca mostra o token. Quem assina é o ENVIO do convite, que não existe neste
+# ramo — o convite fica na fila (`NA_FILA`) até haver o canal.
+ACHADAS_EM_27_10_2026: dict[str, str] = {
+    # O ENVIO EXISTE desde a pesquisa na VPS (26/10/2026), mas o link do e-mail
+    # leva `satisfacao_envio.codigo_do_convite`, e não este token: a página
+    # local do convite ficou sem quem assine.
+    "assinar_convite": "satisfacao — o envio por e-mail usa `codigo_do_convite` (a "
+                       "página na VPS); " + _SEM,
+}
+
+
+# ACHADAS EM 26/10/2026, NA ORDEM DO OFICIAL «não deixar nenhuma falha antiga
+# sem correção». Eram 33 e este teste estava vermelho no `main` desde a virada
+# para o PostgreSQL. Medido quem chama cada uma, na raiz, em `tests/`, em
+# `tools/` e nos roteiros do SANDBOX:
+#   - **uma não tinha chamador em lugar nenhum** (`banco_pg.apagar_reservas`) e
+#     foi APAGADA, e não declarada;
+#   - as outras têm porta de verdade, que este varredor não enxerga porque só
+#     lê os módulos da raiz: o banco de teste (`tests/conftest.py`,
+#     `tests/banco_de_teste.py`), o serviço A3 — processo próprio, porta 8766 —
+#     e o cliente dele, os roteiros de ensaio chamados por
+#     `tools/carga_de_demonstracao.py`, e auxiliares testadas.
+_BANCO_DE_TESTE = ("banco_pg — infraestrutura do PostgreSQL de teste: quem a chama "
+                   "é `tests/conftest.py`/`tests/banco_de_teste.py`, ou outra "
+                   "função dela mesma a partir dali")
+_A3 = ("serviço A3 local (processo próprio, porta 8766) e o cliente dele "
+       "(`assinar_com_a3`): a porta é o HTTP do serviço e `tools/a3_ensaio_cli.py`")
+_ENSAIO = ("roteiro de ensaio do sandbox — a porta é "
+           "`tools/carga_de_demonstracao.py` (ou outra função do mesmo roteiro)")
+ACHADAS_EM_26_10_2026: dict[str, str] = {
+    "guardar_semente": _BANCO_DE_TESTE, "marca_do_codigo": _BANCO_DE_TESTE,
+    "devolver_schema": _BANCO_DE_TESTE, "apagar_lixo": _BANCO_DE_TESTE,
+    "tomar_da_reserva": _BANCO_DE_TESTE,
+    "schema_existe": _BANCO_DE_TESTE, "comecar_gravacao": _BANCO_DE_TESTE,
+    "terminar_gravacao": _BANCO_DE_TESTE, "criar_por_reproducao": _BANCO_DE_TESTE,
+    "descartar_schema": _BANCO_DE_TESTE, "schemas_criados": _BANCO_DE_TESTE,
+    # `instalar_desvio`, `registrar_banco`, `listar_certificados`, `assinar_pdf` e
+    # `status_do_servico` saíram em 27/10/2026: os PRs que entraram antes deste
+    # (#11, #13, #27) lhes deram caminho até tela.
+    "esvaziar_reservatorio": _BANCO_DE_TESTE,
+    "garantir_certidao": "rcpn_*_ensaio — " + _ENSAIO,
+    "garantir_assento": "rcpn_*_ensaio — " + _ENSAIO,
+    "assento_precisa_remontar": "rcpn_*_ensaio — " + _ENSAIO,
+    "certidao_precisa_remontar": "rcpn_*_ensaio — " + _ENSAIO,
+    "montar_teor_certidao": "rcpn_*_ensaio — " + _ENSAIO,
+    "teor_precisa_remontar": "notas_*_ensaio — " + _ENSAIO,
+    "garantir_registrado": "ri_certidao_emissao — " + _TESTE + " (ponte fora do request)",
+    "montar_corpo": "ri_certidao_emissao — " + _TESTE + " (ponte fora do request)",
+    "teor_precisa_remontar_modelo": "ri_certidao_emissao — " + _TESTE,
+    # REESCREVE O CORPO DE CERTIDÃO JÁ EMITIDA: só o roteiro de ensaio do
+    # SANDBOX (`ensaio_revisao_modular.py`, fora do repositório) a chama, e ela
+    # não deve ganhar botão — certidão emitida não se remonta no balcão.
+    "remontar_corpo_gravado": ("ri_certidao_emissao — só o roteiro de ensaio do "
+                               "SANDBOX a chama; não deve ganhar tela"),
+    "pagamentos_pendentes": "ato_selado — " + _TESTE,
+    "certidao_livro3_teor_precisa_modelo_novo": "atrib_certidao — " + _TESTE,
+    "remontar_teor_certidao_livro3": "atrib_certidao — " + _TESTE,
+    "novo_caminho": "pastas_da_casa — " + _TESTE,
+    "registrar_cancelamento": "selador_cliente — " + _TESTE + " (cancelamento de selo no aparelho)",
+}
+
+
 def _conhecidas() -> set[str]:
     """As medições datadas que formam o piso do varredor."""
     return (set(JA_SABIDAS) | set(NASCIDAS_DEPOIS_DA_3_6_51)
@@ -617,7 +686,9 @@ def _conhecidas() -> set[str]:
             | set(ACHADAS_EM_13_10_2026)
             | set(ACHADAS_EM_14_10_2026)
             | set(ACHADAS_EM_19_10_2026)
-            | set(ACHADAS_EM_20_10_2026))
+            | set(ACHADAS_EM_20_10_2026)
+            | set(ACHADAS_EM_26_10_2026)
+            | set(ACHADAS_EM_27_10_2026))
 
 
 def test_nenhuma_funcao_nova_fica_sem_tela():

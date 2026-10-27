@@ -622,6 +622,11 @@ ACHADAS_EM_27_10_2026: dict[str, str] = {
     # local do convite ficou sem quem assine.
     "assinar_convite": "satisfacao — o envio por e-mail usa `codigo_do_convite` (a "
                        "página na VPS); " + _SEM,
+    # A cobrança por boleto (PR #65): o processo da central de automação é
+    # chamado pelo catálogo (`CATALOGO` → «cobranca_automacao.acompanhar»,
+    # texto que este varredor não lê), e a tela dele é a da central.
+    "acompanhar": "cobranca_automacao — a porta é o catálogo da central de "
+                  "automação (`automacao_processos.MODULOS_COM_PROCESSOS`)",
 }
 
 

@@ -251,7 +251,9 @@ def test_o_seu_numero_e_o_da_linha_e_nao_se_repete(casa):
     assert (_c(casa, a)["seu_numero"], _c(casa, b)["seu_numero"]) == (f"CG{a}", f"CG{b}")
     # A recusa vem do índice único: a transação inteira cai, e por isso o
     # `raises` fica POR FORA dela (no PostgreSQL a transação abortada não comita).
-    with pytest.raises(Exception, match="ux_cb_cobrancas_seu_numero"):
+    # A ponte devolve a frase do SQLite («UNIQUE constraint failed: ...seu_numero»),
+    # e o PostgreSQL puro, o nome do índice: os dois trazem `seu_numero`.
+    with pytest.raises(Exception, match="seu_numero"):
         with casa["db"].transaction() as con:
             banco(con).escrever("UPDATE cb_cobrancas SET seu_numero = %s WHERE id = %s",
                                 (f"CG{a}", b))

@@ -29,3 +29,9 @@ Olá.
 A prenotação nº {numero} vence em {data_limite} (faltam {dias} dia(s) útil(eis)). Se houver exigência a cumprir, apresente o que falta antes dessa data para não perder a prioridade do título.
 
 {assinatura}
+===EXIGENCIA_GERAL===
+Olá.
+
+O pedido feito sob o protocolo nº {numero} foi examinado e recebeu nota de exigência. Para saber o que é preciso apresentar ou corrigir, procure o balcão da serventia com o número do protocolo.
+
+{assinatura}

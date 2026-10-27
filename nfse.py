@@ -83,8 +83,6 @@ BASE NORMATIVA
 """
 from __future__ import annotations
 
-import csv
-import io
 import json
 import os
 from datetime import datetime
@@ -1415,45 +1413,26 @@ def _deslocar(dia: str, dias: int) -> str:
 # balcão digita no cadastro do cliente — ia para a célula como veio. Um
 # cliente gravado como «=HYPERLINK(...)» ou «=cmd|' /C calc'!A0» virava
 # FÓRMULA quando o contador abrisse a apuração no Excel, fora da rede da casa.
-# Célula que começa com um destes caracteres a planilha lê como fórmula; o
-# apóstrofo na frente a faz ler como texto, e o valor continua legível.
-# O helper único da casa (o mesmo conserto para o `csv_response` do app.py) é
-# um achado transversal, de outra frente; este é o do próprio módulo.
-_INICIO_DE_FORMULA = ("=", "+", "-", "@", "\t", "\r")
+# Desde que o helper único da casa entrou (`csv_seguro`, PR #35), a tela entrega
+# por ele: tudo entre aspas e o texto que começa como fórmula com o apóstrofo
+# na frente; os valores em dinheiro continuam números.
+CABECALHO_DA_APURACAO = ("competencia", "numero_nfse", "dps", "chave", "tomador", "documento",
+                         "base", "aliquota", "iss", "iss_estimado", "ibs", "cbs")
 
 
-def _campo_csv(texto: Any) -> str:
-    """O campo de TEXTO que vai ao CSV, desarmado: o que começa como fórmula
-    ganha um apóstrofo na frente. Só os campos de texto passam por aqui; os
-    valores em dinheiro saem dos centavos gravados, e um «-» neles é sinal."""
-    t = "" if texto is None else str(texto)
-    return "'" + t if t.startswith(_INICIO_DE_FORMULA) else t
-
-
-def apuracao_csv(apuracao: Mapping[str, Any]) -> str:
-    """A apuração em CSV (separador «;», decimal com vírgula), para o contador.
-
-    Todo campo vai entre aspas (`QUOTE_ALL`) — o «;» ou a quebra de linha
-    dentro de um nome não desloca as colunas — e o texto passa por
-    `_campo_csv`, que desarma a fórmula."""
-    saida = io.StringIO()
-    escrever = csv.writer(saida, delimiter=";", quoting=csv.QUOTE_ALL,
-                          lineterminator="\r\n").writerow
-    escrever(("competencia", "numero_nfse", "dps", "chave", "tomador", "documento", "base",
-              "aliquota", "iss", "iss_estimado", "ibs", "cbs"))
-
+def linhas_da_apuracao(apuracao: Mapping[str, Any]) -> list[tuple]:
+    """As linhas da apuração em CSV (decimal com vírgula), para o contador; a
+    última é o TOTAL. A tela as entrega por `csv_seguro`."""
     def r(c: int) -> str:
         return DPS.valor_decimal(c).replace(".", ",") if c is not None else ""
-    for n in apuracao["notas"]:
-        escrever((_campo_csv(n["competencia"]), _campo_csv(n["numero"]), _campo_csv(n["dps"]),
-                  _campo_csv(n["chave"]), _campo_csv(n["tomador"]),
-                  _campo_csv(n["tomador_documento"]), r(n["base"]),
-                  str(n["aliquota"]).replace(".", ","), r(n["iss"]),
-                  "sim" if n["estimado"] else "nao", r(n["ibs"]), r(n["cbs"])))
+    linhas = [(n["competencia"], n["numero"], n["dps"], n["chave"], n["tomador"],
+               n["tomador_documento"], r(n["base"]), str(n["aliquota"]).replace(".", ","),
+               r(n["iss"]), "sim" if n["estimado"] else "nao", r(n["ibs"]), r(n["cbs"]))
+              for n in apuracao["notas"]]
     t = apuracao["total"]
-    escrever(("TOTAL", "", "", "", "", "", r(t["base"]), "", r(t["iss"]),
-              str(t["estimadas"]), r(t["ibs"]), r(t["cbs"])))
-    return saida.getvalue()
+    linhas.append(("TOTAL", "", "", "", "", "", r(t["base"]), "", r(t["iss"]),
+                   str(t["estimadas"]), r(t["ibs"]), r(t["cbs"])))
+    return linhas
 
 
 def para_o_rastro(n: Mapping[str, Any]) -> dict:

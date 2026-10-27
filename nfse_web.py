@@ -24,6 +24,7 @@ from datetime import date
 
 from flask import Response, abort, flash, redirect, render_template, request, url_for
 
+import csv_seguro as CSVS
 import nfse as NFSE
 import nfse_dps as DPS
 
@@ -333,9 +334,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if request.args.get("formato") == "csv":
             audit("NFSE_APURACAO_EXPORTADA", "nfse_notas", None,
                   {"mes": mes, "ambiente": ambiente, "notas": apuracao["quantidade"]})
-            return Response(NFSE.apuracao_csv(apuracao).encode("utf-8-sig"),
-                            mimetype="text/csv", headers={
-                                "Content-Disposition":
-                                    f'attachment; filename="apuracao-iss-{mes}.csv"'})
+            # pelo `csv_seguro`: tudo entre aspas e fórmula desarmada no tomador
+            return CSVS.resposta(f"apuracao-iss-{mes}.csv", NFSE.CABECALHO_DA_APURACAO,
+                                 NFSE.linhas_da_apuracao(apuracao))
         return render_template("nfse_apuracao.html", a=apuracao, mes=mes,
                                ambientes=NFSE.AMBIENTES, reais=NFSE.reais)

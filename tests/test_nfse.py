@@ -916,7 +916,8 @@ def test_o_csv_da_apuracao_desarma_a_formula_no_nome_do_tomador():
             "iss": 200, "estimado": False, "ibs": 0, "cbs": 0}
     apuracao = {"notas": [{**nota, "tomador": nome} for nome in perigosos],
                 "total": {"base": 60000, "iss": 1200, "estimadas": 0, "ibs": 0, "cbs": 0}}
-    texto = NFSE.apuracao_csv(apuracao)
+    import csv_seguro as CSVS
+    texto = CSVS.gerar(NFSE.CABECALHO_DA_APURACAO, NFSE.linhas_da_apuracao(apuracao))
     linhas = list(csv.reader(io.StringIO(texto), delimiter=";"))
     assert len(linhas) == 2 + len(perigosos)
     assert all(len(linha) == 12 for linha in linhas)

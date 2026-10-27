@@ -379,7 +379,7 @@ def prazo_limite(con: sqlite3.Connection, titulo: Any) -> str | None:
     vai ao devedor é pior que a recusa.
     """
     from datetime import date as _date
-    from ri_schema import ler_feriados_locais, soma_dias_uteis
+    from ri_schema import soma_dias_uteis
     s = "".join(c for c in str(dict(titulo).get("protocolo") or "") if c.isdigit())
     if len(s) < 6:
         return None
@@ -387,9 +387,46 @@ def prazo_limite(con: sqlite3.Connection, titulo: Any) -> str | None:
         dia = _date(2000 + int(s[:2]), int(s[2:4]), int(s[4:6]))
     except ValueError:
         return None
+    return soma_dias_uteis(dia, 3, _feriados(con)).isoformat()
+
+
+def _feriados(con: Any) -> set:
+    """Os feriados locais da casa (`ri_feriados_locais`). Só LÊ."""
+    from ri_schema import ler_feriados_locais
     linha = banco(con).um("SELECT value FROM settings WHERE key='ri_feriados_locais'")
-    feriados = ler_feriados_locais((linha["value"] if linha else "") or "")
-    return soma_dias_uteis(dia, 3, feriados).isoformat()
+    return ler_feriados_locais((linha["value"] if linha else "") or "")
+
+
+def dia_util_seguinte(con: Any, hoje: str) -> str:
+    """O primeiro dia útil depois de `hoje`. Só LÊ.
+
+    É O PRAZO-LIMITE DO EDITAL (27/10/2026): CN-MA art. 922, § 1º — o protesto
+    só se lavra «do final do primeiro dia útil subsequente da publicação» — e
+    § 3º, que manda o edital dizer esse prazo.
+    """
+    from datetime import date as _date
+    from ri_schema import soma_dias_uteis
+    return soma_dias_uteis(_date.fromisoformat(str(hoje)[:10]), 1,
+                           _feriados(con)).isoformat()
+
+
+def prazo_de_pagamento(con: Any, titulo: Any, depois_de: Any) -> str | None:
+    """O prazo-limite que o papel imprime: o MAIOR entre o 3º dia útil da
+    protocolização e o 1º dia útil depois de `depois_de`. Só LÊ.
+
+    É a mesma conta do tríduo (`protesto_triduo.contar`): o prazo-limite é o
+    dia previsto para a lavratura (CN-MA art. 925, § 4º), e quando a
+    intimação chega no último dia do tríduo ou depois dele o protesto só se
+    lavra no primeiro dia útil seguinte (art. 913, II e III, e art. 924; para
+    o edital, art. 922, § 1º). Ordem do oficial em 27/10/2026: «prazo 1 dia
+    útil depois da entrega». Sem a data da protocolização devolve `None`.
+    """
+    legal = prazo_limite(con, titulo)
+    if not legal:
+        return None
+    if not str(depois_de or "").strip():
+        return legal
+    return max(legal, dia_util_seguinte(con, depois_de))
 
 
 def _br(iso: Any) -> str:
@@ -418,7 +455,12 @@ def montar_teor_do_aviso(con: sqlite3.Connection, aviso: Any, *,
             "(Código de Normas, art. 920), e ele não está configurado. "
             "Informe-o em Administrativo → Configurações "
             f"(«{CHAVE_DO_HORARIO}»).")
-    limite = prazo_limite(bd, t)
+    # O AVISO EMITIDO TARDE NÃO IMPRIME PRAZO VENCIDO (27/10/2026, ordem do
+    # oficial: «prazo 1 dia útil depois da entrega»). Na hora de imprimir a
+    # entrega ainda não aconteceu; o dia mais cedo em que ela pode acontecer é
+    # o da emissão, e é dele que se conta. Se a entrega vier depois, quem
+    # segura o protesto é o tríduo, que conta da intimação lavrada.
+    limite = prazo_de_pagamento(bd, t, av.get("emitido_em"))
     if not limite:
         raise AvisoError(
             f"O protocolo do título ({t.get('protocolo') or 'vazio'}) não diz a "
@@ -622,8 +664,13 @@ def publicar_edital(con: sqlite3.Connection, aviso_id: int, *, sv: dict,
     ano = int(str(hoje)[:4])
     bd.travar("pt_editais.numero")
     numero = proximo_numero_do_edital(bd, ano)
+    # O PRAZO-LIMITE DO EDITAL NUNCA CAI ANTES DO 1º DIA ÚTIL DEPOIS DA
+    # PUBLICAÇÃO (CN-MA art. 922, §§ 1º e 3º) — 27/10/2026. Até aqui o edital
+    # imprimia só o 3º dia útil da protocolização, que no edital publicado
+    # tarde já estava vencido. Os 13 editais regularizados em 27/10 só saíram
+    # com o prazo certo porque o script de regularização trocou este cálculo.
     teor = montar_teor_do_edital(aviso=aviso, titulo=tit, sv=sv, hoje=hoje,
-                                 limite=prazo_limite(bd, tit),
+                                 limite=prazo_de_pagamento(bd, tit, hoje),
                                  data_extenso=data_extenso, con=bd)
     codigo = f"ED-{ano}-{numero:04d}"
 
@@ -987,11 +1034,27 @@ ROTULO_DO_DESTAQUE = {
 #   § 6º, II): lavra-se a intimação digital, e edital não cabe;
 #   pagou — o devedor pagou pela plataforma: o caminho é a baixa na ficha;
 #   não deu — terminou sem intimar: o edital está liberado;
+#   entregue — a mensagem chegou e o devedor não a abriu (27/10/2026): os dois
+#   caminhos ficam abertos, e quem escolhe é o oficial — ver abaixo;
 #   o resto — está correndo: o edital espera, ou vai com o motivo escrito.
 RESOLVE_CONFIRMOU = frozenset({"INTIMADO"})
 RESOLVE_PAGOU = frozenset({"PAGO"})
 RESOLVE_NAO_DEU = frozenset({"NAO_ENRIQUECIDO", "SEM_RESPOSTA", "REJEITADO",
                              "CANCELADO"})
+# A ENTREGA SEM LEITURA NÃO ESPERA PARA SEMPRE — 27/10/2026. Relato do oficial:
+# «não consegui mandar um título que foi pra intimação digital para edital».
+# `ENTREGUE` caía no «está correndo», e o edital ficava escondido atrás do
+# motivo escrito. O CN-MA, art. 919, § 1º, considera a intimação eletrônica
+# «cumprida quando comprovada por esse mesmo meio a entrega no referido
+# endereço» — então lavrar a digital é possível; mas a casa pode não ter a
+# entrega sem leitura por suficiente, e mandar ao edital. Os dois botões
+# aparecem lado a lado; o sistema não escolhe.
+#
+# E O § 2º NÃO VIROU REGRA AQUI, de propósito: ele fala da intimação «feita na
+# forma do caput» e manda refazê-la pelo art. 14 da Lei 9.492 — não diz que a
+# mensagem digital sem resposta em três dias libera o edital. Ler isso nele
+# seria a máquina decidindo o que a norma não decide.
+RESOLVE_ENTREGUE = frozenset({"ENTREGUE"})
 
 
 def _ultima_na_resolve(con: sqlite3.Connection, titulo_id: int) -> dict | None:
@@ -1013,7 +1076,8 @@ def _ultima_na_resolve(con: sqlite3.Connection, titulo_id: int) -> dict | None:
 def depois_da_nao_entrega(con: sqlite3.Connection, aviso: Any) -> dict:
     """O próximo passo do aviso que não foi entregue. Só LÊ.
 
-    Devolve `passo` (RESOLVE, AGUARDAR, LAVRAR_DIGITAL, PAGO ou EDITAL),
+    Devolve `passo` (RESOLVE, AGUARDAR, LAVRAR_DIGITAL, ENTREGUE, PAGO ou
+    EDITAL),
     `edital` (LIBERADO, JUSTIFICAR ou RECUSADO), a `frase` para a tela e o
     `resumo` que vai escrito no ato da intimação por edital.
 
@@ -1062,6 +1126,15 @@ def depois_da_nao_entrega(con: sqlite3.Connection, aviso: Any) -> dict:
         frase = (f"A Intimação Digital não deu certo (a Resolve diz "
                  f"«{estado}»). O caminho é o edital.")
         resumo = f"não deu ({ultima['identificador']}, {estado})"
+    elif estado in RESOLVE_ENTREGUE:
+        passo, edital = "ENTREGUE", "LIBERADO"
+        frase = ("A Resolve ENTREGOU a mensagem ao devedor, mas ele não a "
+                 "abriu. Pelo CN-MA art. 919, § 1º, a intimação eletrônica se "
+                 "considera cumprida com a entrega comprovada pelo mesmo meio "
+                 "— dá para lavrar a intimação digital. Se a casa não tiver a "
+                 "entrega sem leitura por suficiente, publique o edital. A "
+                 "escolha é do oficial.")
+        resumo = f"entregue sem leitura ({ultima['identificador']})"
     else:
         passo, edital = "AGUARDAR", "JUSTIFICAR"
         enviada = str(ultima.get("enviada_em") or "")[:10]
@@ -1097,25 +1170,35 @@ def lavrar_intimacao_digital(con: sqlite3.Connection, aviso_id: int, *,
             f"{aviso['situacao']}. A intimação digital entra no lugar do "
             f"aviso que não foi entregue.")
     caminho = depois_da_nao_entrega(bd, aviso)
-    if caminho["passo"] != "LAVRAR_DIGITAL":
+    # A ENTREGA SEM LEITURA TAMBÉM LAVRA (27/10/2026), quando o oficial a tem
+    # por suficiente — CN-MA art. 919, § 1º. O comprovante diz qual das duas
+    # foi, porque o termo e a certidão vão ser lidos por quem não estava aqui.
+    if caminho["passo"] not in ("LAVRAR_DIGITAL", "ENTREGUE"):
         raise AvisoError(
             "A Resolve ainda não confirmou a intimação deste devedor. "
             + caminho["frase"])
+    so_entregue = caminho["passo"] == "ENTREGUE"
     ultima = caminho["resolve"] or {}
     quando = str(ultima.get("estado_em") or "")[:10]
+    if so_entregue:
+        como = (", entregue no endereço eletrônico do devedor pela plataforma"
+                + (f" em {_br(quando)}" if quando else "")
+                + ", sem leitura (CN-MA art. 919, § 1º)")
+    else:
+        como = (", confirmada pela plataforma"
+                + (f" em {_br(quando)}" if quando else "")
+                + " (CN-MA art. 921, § 6º, II)")
     lavrado = PT.lancar_intimacao(
         con, int(aviso["titulo_id"]), modo="PESSOAL", digital=True,
         agora=agora, usuario=usuario,
         comprovante=(f"Intimação Digital (Resolve) {ultima.get('identificador')}"
-                     f", confirmada pela plataforma"
-                     + (f" em {_br(quando)}" if quando else "")
-                     + f" (CN-MA art. 921, § 6º, II); aviso "
-                       f"{aviso['numero']}/{aviso['ano']} não entregue: "
-                       f"{motivo_rotulo(aviso['motivo'])}"))
+                     + como + f"; aviso {aviso['numero']}/{aviso['ano']} não "
+                       f"entregue: {motivo_rotulo(aviso['motivo'])}"))
     bd.escrever("UPDATE pt_avisos SET ato_id=%s WHERE id=%s",
                 (lavrado["ato_id"], int(aviso_id)))
     return {"aviso_id": int(aviso_id), "ato_id": lavrado["ato_id"],
-            "identificador": ultima.get("identificador")}
+            "identificador": ultima.get("identificador"),
+            "so_entregue": so_entregue}
 
 
 # --------------------------------------- o comprovante da intimação entregue

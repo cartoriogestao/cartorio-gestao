@@ -267,6 +267,15 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="button primary">Lavrar a intimação digital</button>
             </form>
+          {% elif c.passo == 'ENTREGUE' %}
+            {# A ENTREGA SEM LEITURA (27/10/2026): os dois caminhos lado a lado —
+               a digital pela entrega (CN-MA art. 919, § 1º) e o edital logo
+               abaixo. Quem escolhe é o oficial. #}
+            <form method="post" style="display:inline"
+                  action="{{ url_for('protesto_aviso_digital', aviso_id=a.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="button">Lavrar a intimação digital pela entrega</button>
+            </form>
           {% elif c.passo == 'PAGO' %}
             <a class="button" href="{{ url_for('protesto_titulo', titulo_id=a.titulo_id) }}">
               Abrir a ficha do título</a>
@@ -278,7 +287,10 @@
               <button class="button primary">Publicar edital</button>
             </form>
           {% elif c.edital == 'JUSTIFICAR' %}
-            <details style="margin-top:6px">
+            {# Com a Resolve correndo, o caminho do edital fica À VISTA
+               (27/10/2026): escondido, o balcão não achava por onde mandar ao
+               edital o título que foi para a intimação digital. #}
+            <details style="margin-top:6px" {% if c.passo == 'AGUARDAR' %}open{% endif %}>
               <summary>Publicar o edital mesmo assim</summary>
               <form method="post" class="form"
                     action="{{ url_for('protesto_aviso_edital', aviso_id=a.id) }}">

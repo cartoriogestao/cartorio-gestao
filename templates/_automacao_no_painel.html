@@ -10,7 +10,9 @@
     {% if automacao_no_painel.despachante.hora %}último tique às {{ automacao_no_painel.despachante.hora }}{% else %}nunca rodou{% endif %} —
     há processo ligado que não está rodando.</p>{% endif %}
   {% if automacao_no_painel.cofre and not automacao_no_painel.cofre.aberto %}<p><span class="badge critica">cofre trancado</span>
-    {{ automacao_no_painel.precisam_do_cofre }} processo(s) ligado(s) precisam da senha-mestra
-    {%- if automacao_no_painel.cofre.desde %} (trancado desde {{ automacao_no_painel.cofre.desde[:16]|replace('T', ' ') }}){% endif %}.</p>{% endif %}
+    {% if automacao_no_painel.precisam_do_cofre %}{{ automacao_no_painel.precisam_do_cofre }} processo(s) ligado(s) precisam da senha-mestra{% else %}as rotinas que usam credencial ficam paradas até a senha-mestra{% endif %}
+    {%- if automacao_no_painel.cofre.desde %} (trancado desde {{ automacao_no_painel.cofre.desde[:16]|replace('T', ' ') }}){% endif %}.
+    {% if automacao_no_painel.local %}<a class="button primary" href="{{ url_for('automacao_cofre_desbloquear') }}">Abrir o cofre</a>
+    {% else %}Abra no navegador <strong>do próprio servidor</strong>: <code>http://127.0.0.1:8765{{ url_for('automacao_cofre_desbloquear') }}</code>{% endif %}</p>{% endif %}
 </section>
 {% endif %}

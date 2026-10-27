@@ -350,6 +350,47 @@ def test_a_senha_do_email_mora_fora_do_cofre_e_sai_com_ele_trancado(casa, tmp_pa
     assert r["situacao"] == SCH.ENVIADO
 
 
+def test_remetente_com_nome_e_acento_sai_com_o_endereco_do_usuario():
+    # 27/10/2026: o nome da serventia no campo «Remetente» (com acento, sem «@»)
+    # ia como ENDEREÇO, e o Proton recusava com SMTPNotSupportedError.
+    import email.utils
+
+    class _Smtp:
+        enviados: list = []
+
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def starttls(self, **k):
+            pass
+
+        def login(self, *a):
+            pass
+
+        def send_message(self, msg):
+            de = email.utils.getaddresses([msg["From"]])[0][1]
+            de.encode("ascii")                       # o que o smtplib exige
+            _Smtp.enviados.append((de, str(msg["From"])))
+
+    cfg = {"host": "smtp.exemplo.invalid", "porta": "587", "seguranca": "STARTTLS",
+           "usuario": "alertas@exemplo.invalid", "remetente": "Cartório de Exemplo",
+           "destinos": ["oficial@exemplo.invalid"]}
+    AV.mandar_email(cfg, "x", assunto="teste", corpo="teste", smtp_classe=_Smtp)
+    (de, cabecalho), = _Smtp.enviados
+    assert de == "alertas@exemplo.invalid"
+    assert "Exemplo" in cabecalho
+    assert AV.remetente({**cfg, "remetente": ""}) == "alertas@exemplo.invalid"
+    assert AV.remetente({**cfg, "remetente": "outro@exemplo.invalid"}) == "outro@exemplo.invalid"
+    with pytest.raises(ValueError, match="usuário do SMTP"):
+        AV.remetente({**cfg, "usuario": ""})
+
+
 def test_a_tela_grava_a_senha_do_email_no_arquivo_e_nao_no_cofre(casa):
     import automacao_cofre as AC
     c = _entrar(casa, "mario", "ADMIN")
@@ -564,6 +605,23 @@ def test_as_telas_abrem_para_o_admin(casa):
         assert r.status_code == 200, url
     assert "disco apertado" in c.get(f"/automacao/execucoes/{e['id']}").get_data(as_text=True)
     assert "Automação (rotinas)" in c.get("/").get_data(as_text=True)
+
+
+def test_o_painel_avisa_o_cofre_trancado_mesmo_sem_processo_de_credencial(casa, monkeypatch):
+    # 27/10/2026, pedido do oficial: «muito ruim de chegar e saber que está
+    # trancado». O aviso só saía com processo de `usa_credencial`, e nenhum
+    # dos de fábrica marca esse campo — o painel ficava calado.
+    import automacao_cofre as C
+    c = _entrar(casa, "mario", "ADMIN")
+    monkeypatch.setattr(C, "estado", lambda **k: {"existe": True, "aberto": False,
+                                                  "desde": "2026-10-27T18:06:34"})
+    html = c.get("/").get_data(as_text=True)
+    assert "cofre trancado" in html and "Abrir o cofre" in html
+    monkeypatch.setattr(C, "estado", lambda **k: {"existe": True, "aberto": True,
+                                                  "desde": "2026-10-27T18:09:39"})
+    assert "cofre trancado" not in c.get("/").get_data(as_text=True)
+    monkeypatch.setattr(C, "estado", lambda **k: {"existe": False, "aberto": False, "desde": ""})
+    assert "cofre trancado" not in c.get("/").get_data(as_text=True)   # instalação sem cofre
 
 
 def test_o_gerente_ve_e_nao_mexe(casa):

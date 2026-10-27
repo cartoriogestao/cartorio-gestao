@@ -24,7 +24,8 @@ O QUE ESTE MÓDULO NUNCA FAZ:
     nota do desenvolvimento, pela `anotar_desenvolvimento` da tela) e
     `classificar`, e nenhum dos dois mexe na `situacao`.
 
-A VOLTA (fase 2) está na seção «o retorno», mais abaixo.
+A VOLTA (fase 2) está na seção «o retorno», mais abaixo, e A OPERAÇÃO (fase 3:
+o lançador e a tarefa agendada que fazem o `git`) na seção «a operação».
 
 A LINHA DE COMANDO MORA AQUI, EM `main`, E NÃO EM `tools/`. O varredor de
 função sem tela (`tests/test_funcao_sem_tela.py`) só lê os módulos da raiz, e
@@ -587,6 +588,218 @@ def _auditar_importado(db, nome: str, r: dict) -> None:
                agente=ASSINATURA, a_mando_de=POR_DA_SINCRONIA)
 
 
+# ------------------------------------------------------------ a operação
+#
+# FASE 3, 27/10/2026: o ciclo roda sozinho na serventia, a cada 2 horas, como
+# SYSTEM:
+#
+#     git pull → importar (o retorno) → exportar (os problemas) → commit/push
+#                                                    (só problemas/ e INDICE.md)
+#
+# **IMPORTAR ANTES DE EXPORTAR**: o estado que acabou de voltar já sai na
+# exportação do mesmo ciclo. Cada lado só escreve na sua pasta (a serventia em
+# `problemas/` e `INDICE.md`, o desenvolvimento em `retorno/`), e por isso o
+# `pull --rebase` não tem conflito.
+#
+# No molde de `automacao_agendador`: **este código GERA o lançador e o registro
+# da tarefa e não executa nenhum** — quem registra é o oficial, como
+# administrador. Nenhum caminho desta máquina entra aqui: tudo vem do ambiente
+# de quem gera ou da linha de comando.
+
+TAREFA_DA_SINCRONIA = "CartorioGestao-Sincronia-Problemas"
+AUTOR_DA_SINCRONIA = ("Serventia (sincronia)", "sincronia@cartorio-gestao.invalid")
+LANCADOR_DA_SINCRONIA = "sincronia_problemas.cmd"
+REGISTRO_DA_SINCRONIA = "registrar_sincronia.ps1"
+#: O ciclo só fala SSH com o GitHub, e com a chave da sincronia.
+ORIGEM_DA_SINCRONIA = "git@github.com:"
+
+
+def _variaveis_da_sincronia() -> tuple[str, ...]:
+    """As do servidor que importam aqui — tiradas da lista da automação, e não
+    copiadas — mais o `PGPASSFILE`, onde mora a senha do banco."""
+    import automacao_agendador as AG
+    usadas = ("CARTORIO_GESTAO_DATA", "CG_PG_DSN", "CG_PG_SCHEMA")
+    return tuple(v for v in AG.VARIAVEIS if v in usadas) + ("PGPASSFILE",)
+
+
+_SENHA_NO_DSN = re.compile(r"(?i)\bpassword\s*=|://[^/@:\s]+:[^/@\s]*@")
+
+
+def ambiente_da_sincronia(environ: dict | None = None) -> dict[str, str]:
+    """O ambiente que o lançador repete, lido de quem gera. Recusa sem o banco
+    dito e com senha no DSN: a senha vai no `pgpass`
+    (`docs/SEGURANCA_REDE.md`, item 3), nunca num arquivo `.cmd`."""
+    environ = os.environ if environ is None else environ
+    ambiente = {v: str(environ.get(v) or "").strip() for v in _variaveis_da_sincronia()}
+    faltam = [v for v in ("CG_PG_DSN", "CG_PG_SCHEMA") if not ambiente.get(v)]
+    if faltam:
+        raise _Recusa(
+            "Falta no ambiente: " + " e ".join(faltam) + ". Gere no console com "
+            "o ambiente do servidor: o lançador repete o banco dele.")
+    if _SENHA_NO_DSN.search(ambiente["CG_PG_DSN"]):
+        raise _Recusa(
+            "O CG_PG_DSN tem senha. A senha vai no pgpass (PGPASSFILE), e não "
+            "no DSN — veja docs/SEGURANCA_REDE.md, item 3. Nada foi gravado.")
+    if not ambiente["CARTORIO_GESTAO_DATA"]:
+        import automacao_cofre as COFRE
+        ambiente["CARTORIO_GESTAO_DATA"] = str(COFRE.pasta_de_dados())
+    return {k: v for k, v in ambiente.items() if v}
+
+
+def _no_cmd(valor: Any) -> str:
+    """O valor dentro de `set "X=..."`: o `%` dobrado, para o cmd não expandir."""
+    return str(valor).replace("%", "%%")
+
+
+def _barra(caminho: Any) -> str:
+    """Caminho com `/`: o `ssh` e o `safe.directory` do Git entendem, e o shell
+    do Git não come a barra invertida."""
+    return str(caminho).replace("\\", "/")
+
+
+def _passo(nome: str, comando: str, *, segue_com: tuple[str, ...] = ("0",)) -> list[str]:
+    """Um passo do lançador: roda, anota o código no log e PARA se o código não
+    for um dos aceitos."""
+    linhas = [f'set "PASSO={nome}"', f'call :registrar "{nome}: inicio"',
+              f'{comando} >>"%LOG%" 2>&1', 'set "CODIGO=%errorlevel%"',
+              f'call :registrar "{nome}: codigo %CODIGO%"']
+    teste = " ".join(f'if not "%CODIGO%"=="{c}"' for c in segue_com)
+    return linhas + [f"{teste} goto :parar"]
+
+
+def arquivos_do_agendamento(repositorio: Any, destino: Any, *, raiz: Any, python: Any,
+                            ambiente: dict[str, str]) -> dict[str, str]:
+    """O texto do lançador e do registro da tarefa. Não grava nem executa.
+
+    A tarefa aponta para o lançador **onde ele vai ser gravado** (`destino`),
+    com o caminho inteiro: a lição do #66, em que as tarefas da automação
+    apontavam para uma pasta onde o lançador não estava."""
+    repo = Path(repositorio)
+    dados = Path(ambiente["CARTORIO_GESTAO_DATA"])
+    sincronia = dados / "sincronia"
+    logs = dados / "logs"
+    ferramenta = Path(raiz) / "tools" / "problemas_sincronia.py"
+    nome, email = AUTOR_DA_SINCRONIA
+    ssh = (f'ssh -i "{_barra(sincronia / "chave_da_sincronia")}" -o IdentitiesOnly=yes '
+           f'-o StrictHostKeyChecking=yes '
+           f'-o UserKnownHostsFile="{_barra(sincronia / "known_hosts")}"')
+    git = (f'git -C "{repo}" -c safe.directory="{_barra(repo)}" '
+           f'-c user.name="{nome}" -c user.email={email}')
+    py = f'"{python}" "{ferramenta}"'
+    linhas = [
+        "@echo off",
+        "rem A sincronia dos problemas, a cada 2 horas, como SYSTEM (gerado por",
+        "rem tools/problemas_sincronia.py gerar-agendamento; nao executado por ele).",
+        "rem pull -> importar -> exportar -> commit/push, so de problemas/ e INDICE.md.",
+        "setlocal",
+        *[f'set "{k}={_no_cmd(v)}"' for k, v in ambiente.items()],
+        f'set "GIT_SSH_COMMAND={_no_cmd(ssh)}"',
+        f'set "LOG={_no_cmd(logs / "sincronia_problemas.log")}"',
+        f'set "ORIGEM_LIDA={_no_cmd(logs / "sincronia_problemas.origem")}"',
+        f'if not exist "{logs}" mkdir "{logs}"',
+        f'cd /d "{raiz}"',
+        'set "PASSO=inicio"',
+        'set "CODIGO=0"',
+        'call :registrar "ciclo: inicio"',
+        "where git >nul 2>&1",
+        "if errorlevel 1 (",
+        '  call :registrar "ERRO: o git nao esta instalado (Git for Windows); veja docs/SINCRONIA_DOS_PROBLEMAS.md"',
+        "  exit /b 9",
+        ")",
+        # A ORIGEM TEM DE SER O ENDEREÇO SSH: com HTTPS, o git pediria senha ou
+        # usaria credencial de pessoa, e a chave da sincronia não valeria.
+        'set "PASSO=origem"',
+        'set "ORIGEM="',
+        f'{git} remote get-url origin >"%ORIGEM_LIDA%" 2>>"%LOG%"',
+        'set /p ORIGEM=<"%ORIGEM_LIDA%"',
+        'del "%ORIGEM_LIDA%" >nul 2>&1',
+        f'if not "%ORIGEM:~0,{len(ORIGEM_DA_SINCRONIA)}%"=="{ORIGEM_DA_SINCRONIA}" (',
+        f'  call :registrar "ERRO: a origem do repositorio nao comeca por {ORIGEM_DA_SINCRONIA} (lida: %ORIGEM%)"',
+        "  exit /b 8",
+        ")",
+        # `--autostash`: um ciclo que caiu no meio não trava os seguintes.
+        *_passo("pull", f"{git} pull --rebase --autostash --quiet"),
+        # Recusados no retorno (código 1) ficam no log e o ciclo segue.
+        *_passo("importar", f'{py} importar --pasta "{repo}"', segue_com=("0", "1")),
+        'if "%CODIGO%"=="1" call :registrar "importar: houve RECUSADO, veja acima; o ciclo segue"',
+        *_passo("exportar", f'{py} exportar --pasta "{repo}"'),
+        f'if not exist "{repo / PASTA_DOS_PROBLEMAS}" mkdir "{repo / PASTA_DOS_PROBLEMAS}"',
+        # SÓ ESSES DOIS: `retorno/` é do desenvolvimento.
+        *_passo("add", f"{git} add -- {PASTA_DOS_PROBLEMAS} {ARQUIVO_DO_INDICE}"),
+        f"{git} diff --cached --quiet",
+        'set "CODIGO=%errorlevel%"',
+        'if "%CODIGO%"=="0" (',
+        '  call :registrar "ciclo: nada a enviar; codigo 0"',
+        "  exit /b 0",
+        ")",
+        'set "PASSO=diff"',
+        'if not "%CODIGO%"=="1" goto :parar',
+        *_passo("commit", f'{git} commit --quiet -m "Sincronia: problemas da serventia"'),
+        *_passo("push", f"{git} push --quiet"),
+        'call :registrar "ciclo: fim; codigo 0"',
+        "exit /b 0",
+        "",
+        ":parar",
+        'call :registrar "CICLO PARADO no passo %PASSO% (codigo %CODIGO%)"',
+        "exit /b %CODIGO%",
+        "",
+        ":registrar",
+        '>>"%LOG%" echo [%date% %time%] %~1',
+        "exit /b 0",
+        "",
+    ]
+    import permissao_local as PL
+    ps1 = f"""<#
+  Registra a tarefa da sincronia dos problemas no Agendador do Windows (gerado
+  por tools/problemas_sincronia.py gerar-agendamento; nao executado por ele).
+  Rode como administrador.
+    - cria {sincronia} com a ACL dos segredos (SYSTEM e Administradores);
+    - {TAREFA_DA_SINCRONIA}: como SYSTEM, a cada 2 horas das 7h as 20h.
+  NAO gera a chave da sincronia e NAO fala com o GitHub: isso e a parte B do
+  docs/SINCRONIA_DOS_PROBLEMAS.md.
+#>
+$ErrorActionPreference = 'Stop'
+$pasta = "{sincronia}"
+$lancador = "{Path(destino) / LANCADOR_DA_SINCRONIA}"
+if (-not (Test-Path -LiteralPath $lancador)) {{ throw "o lancador nao esta em $lancador; gere de novo" }}
+New-Item -ItemType Directory -Force -Path $pasta | Out-Null
+# A ACL dos segredos: SYSTEM e Administradores; ninguem mais.
+& icacls.exe $pasta /inheritance:r /grant:r "{PL.SID_DO_SERVICO}:(OI)(CI)F" "{PL.SID_DOS_ADMINISTRADORES}:(OI)(CI)F" | Out-Null
+if ($LASTEXITCODE -ne 0) {{ throw "o icacls recusou a pasta $pasta" }}
+$quem = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+# Todo dia as 7h, repetindo a cada 2 horas por 13 horas: 7h, 9h, ..., 19h.
+$quando = New-ScheduledTaskTrigger -Daily -At '07:00'
+$quando.Repetition = (New-ScheduledTaskTrigger -Once -At '07:00' -RepetitionInterval (New-TimeSpan -Hours 2) -RepetitionDuration (New-TimeSpan -Hours 13)).Repetition
+# PRIORIDADE 7 (abaixo do normal) de proposito: o servidor do balcao nasce com 3.
+$t = New-ScheduledTask -Principal $quem `
+  -Action (New-ScheduledTaskAction -Execute "$env:SystemRoot\\System32\\cmd.exe" -Argument "/d /c `"$lancador`"") `
+  -Trigger $quando `
+  -Settings (New-ScheduledTaskSettingsSet -Priority 7 -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries)
+Register-ScheduledTask -TaskName '{TAREFA_DA_SINCRONIA}' -InputObject $t -Force | Out-Null
+Write-Host 'Tarefa registrada: {TAREFA_DA_SINCRONIA} (SYSTEM, a cada 2 horas das 7h as 20h).'
+Write-Host "O log fica em {logs / "sincronia_problemas.log"}."
+"""
+    return {LANCADOR_DA_SINCRONIA: "\r\n".join(linhas),
+            REGISTRO_DA_SINCRONIA: ps1.replace("\n", "\r\n")}
+
+
+def gerar_agendamento(repositorio: Any, destino: Any, *, raiz: Any, python: Any,
+                      environ: dict | None = None) -> list[Path]:
+    """Confere o ambiente e SÓ DEPOIS grava em `destino`: uma recusa não deixa
+    pasta nem arquivo. Não abre banco e não executa nada do que grava."""
+    ambiente = ambiente_da_sincronia(environ)
+    arquivos = arquivos_do_agendamento(repositorio, destino, raiz=raiz,
+                                       python=python, ambiente=ambiente)
+    pasta = Path(destino)
+    pasta.mkdir(parents=True, exist_ok=True)
+    escritos = []
+    for nome, texto in arquivos.items():
+        alvo = pasta / nome
+        alvo.write_text(texto, encoding="utf-8", newline="")
+        escritos.append(alvo)
+    return escritos
+
+
 # ----------------------------------------------------------- linha de comando
 
 
@@ -705,11 +918,36 @@ def _cmd_importar(db, args) -> int:
     return 1 if r["recusados"] else 0
 
 
+def _cmd_gerar_agendamento(args) -> int:
+    raiz = Path(__file__).resolve().parent
+    try:
+        escritos = gerar_agendamento(args.repositorio, args.destino, raiz=raiz,
+                                     python=sys.executable)
+    except _Recusa as erro:
+        print(f"RECUSA: {erro}", file=sys.stderr)
+        return 2
+    for alvo in escritos:
+        print(f"gerado: {alvo}")
+    if not (os.environ.get("PGPASSFILE") or "").strip():
+        print("AVISO: falta o PGPASSFILE no ambiente; a tarefa roda como SYSTEM "
+              "e não acharia a senha do banco. Repita o set do "
+              "iniciar_servidor_servico.cmd e gere de novo.")
+    print("Nada foi registrado nem executado. Próximos passos (parte B, em "
+          "docs/SINCRONIA_DOS_PROBLEMAS.md):\n"
+          "  1. a chave da sincronia e o known_hosts conferido, na pasta sincronia;\n"
+          "  2. a chave pública como chave de implantação, com escrita, só no "
+          "repositório privado;\n"
+          f"  3. como administrador: {REGISTRO_DA_SINCRONIA};\n"
+          "  4. a primeira exportação conferida a olho e o primeiro push à mão.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog="tools/problemas_sincronia.py",
         description="Exporta os problemas, mascarados, para o repositório "
-                    "privado; classifica onde cada um se reproduz.")
+                    "privado; classifica onde cada um se reproduz; gera o "
+                    "agendamento da sincronia.")
     sub = ap.add_subparsers(dest="comando", required=True)
     exp = sub.add_parser("exportar", help="um arquivo por problema, mascarado")
     exp.add_argument("--pasta", required=True,
@@ -745,14 +983,23 @@ def main(argv: list[str] | None = None) -> int:
     imp.add_argument("--pasta", required=True)
     imp.add_argument("--dry-run", action="store_true",
                      help="mostra o que gravaria e não grava")
+    ger = sub.add_parser("gerar-agendamento",
+                         help="gera o lançador e o registro da tarefa (sem banco)")
+    ger.add_argument("--repositorio", required=True,
+                     help="a pasta do clone do repositório privado")
+    ger.add_argument("--destino", required=True,
+                     help="onde gravar os dois arquivos")
     args = ap.parse_args(argv)
 
     # O QUE É DO DESENVOLVIMENTO NÃO ABRE BANCO: responder e conferir rodam na
-    # máquina de quem conserta, que não tem — nem deve ter — o da casa.
+    # máquina de quem conserta, que não tem — nem deve ter — o da casa. O
+    # gerar-agendamento também não: só escreve arquivos.
     if args.comando == "responder":
         return _cmd_responder(args)
     if args.comando == "conferir-retorno":
         return _cmd_conferir_retorno(args)
+    if args.comando == "gerar-agendamento":
+        return _cmd_gerar_agendamento(args)
 
     try:
         db = _banco_conferido()

@@ -128,12 +128,32 @@ def configuracao_de_email(con) -> dict:
                          if d.strip()]}
 
 
+def remetente(cfg: dict) -> Any:
+    """O cabeçalho From. Só calcula.
+
+    O CAMPO «REMETENTE» ACEITA UM NOME — 27/10/2026, na configuração da
+    produção: o oficial escreveu ali o nome da serventia (com acento e sem
+    «@»), o sistema o usou como ENDEREÇO, e o Proton recusou com
+    `SMTPNotSupportedError` (endereço com caractere fora do ASCII). Sem «@», o
+    campo é o NOME a mostrar, e o endereço é o do usuário do SMTP.
+    """
+    from email.headerregistry import Address
+    nome = str(cfg.get("remetente") or "").strip()
+    usuario = str(cfg.get("usuario") or "").strip()
+    if "@" in nome or not nome:
+        return nome or usuario
+    if not usuario:
+        raise ValueError("O remetente é um nome, e falta o endereço: preencha o "
+                         "usuário do SMTP (o e-mail que envia).")
+    return Address(display_name=nome, addr_spec=usuario)
+
+
 def mandar_email(cfg: dict, senha: str, *, assunto: str, corpo: str,
                  smtp_classe: Any = None) -> None:
     """Manda pelo SMTP. Levanta em falha — quem chama registra FALHOU."""
     msg = EmailMessage()
     msg["Subject"] = assunto
-    msg["From"] = cfg["remetente"] or cfg["usuario"]
+    msg["From"] = remetente(cfg)
     msg["To"] = ", ".join(cfg["destinos"])
     msg.set_content(corpo)
     porta = int(cfg["porta"] or (465 if cfg["seguranca"] == "SSL" else 587))

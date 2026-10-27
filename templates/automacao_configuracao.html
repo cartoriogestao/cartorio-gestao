@@ -31,7 +31,8 @@
     <p class="small"><strong>Use uma conta de e-mail só para os alertas</strong>, com senha de app ou token SMTP
       (no Gmail, «senha de app»; no Proton pago, «token SMTP», servidor smtp.protonmail.ch, porta 587).
       Nunca a senha do seu e-mail pessoal nem a da serventia: se este arquivo vazar, o estrago fica em mandar e-mail.</p>
-    <label>Remetente <input name="smtp_remetente" value="{{ cfg.smtp_remetente }}"></label>
+    <label>Remetente — o nome que aparece (ex.: o nome da serventia) ou um e-mail; em branco, vai o usuário
+      <input name="smtp_remetente" value="{{ cfg.smtp_remetente }}"></label>
     <label>Mandar para (separe por vírgula) <input name="email_destino" value="{{ cfg.email_destino }}"></label>
   </section>
   <section class="panel">

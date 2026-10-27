@@ -21,6 +21,10 @@ def raiz(tmp_path, monkeypatch):
     r = tmp_path / "raiz"
     r.mkdir()
     (r / "VERSAO.txt").write_bytes(b"9.9.1\n")
+    # A DENY-LIST LOCAL (3.7.2): sem ela o portão recusa antes de tudo. Esta é
+    # fictícia — a da casa nunca entra no Git.
+    (r / "ci").mkdir()
+    (r / "ci" / "denylist.local.txt").write_text("# fictícia\nNOME EXEMPLO\n", encoding="utf-8")
     monkeypatch.setattr(PP, "RAIZ", r)
     return r
 
@@ -90,3 +94,30 @@ def test_versao_nova_vira_segundo_commit(raiz, tmp_path, monkeypatch):
     assert PP.main(["--destino", str(destino)]) == 0
     assert _git(destino, "tag", "--list").splitlines() == ["v9.9.1", "v9.9.2"]
     assert _git(destino, "rev-list", "--count", "HEAD") == "2"
+
+
+
+# ------------------------------------------- a deny-list da casa (3.7.2)
+
+
+def test_sem_denylist_local_recusa_antes_de_exportar(raiz, tmp_path, monkeypatch, capsys):
+    (raiz / "ci" / "denylist.local.txt").unlink()
+    exportou = []
+    monkeypatch.setattr(PP.EXP, "main", lambda argv: exportou.append(argv) or 0)
+    assert PP.main(["--destino", str(tmp_path / "pub")]) != 0
+    assert exportou == []
+    assert "sem ci/denylist.local.txt" in capsys.readouterr().out
+
+
+def test_denylist_da_arvore_irma_mais_completa_recusa(tmp_path, monkeypatch, capsys):
+    """A v3.7.1 saiu com três nomes da equipe porque a lista do INSTALAR era
+    mais velha que a do SANDBOX: a árvore irmã com entrada a mais recusa."""
+    casa = tmp_path / "CartorioGestao"
+    minha = casa / "SERVIDOR" / "INSTALAR_CARTORIO_GESTAO"
+    irma = casa / "SANDBOX" / "sistema"
+    for arvore, linhas in ((minha, "NOME A\n"), (irma, "NOME A\nNOME B\n")):
+        (arvore / "ci").mkdir(parents=True)
+        (arvore / "ci" / "denylist.local.txt").write_text(linhas, encoding="utf-8")
+    monkeypatch.setattr(PP, "RAIZ", minha)
+    assert PP.conferir_denylist() is False
+    assert "1 entrada(s)" in capsys.readouterr().out

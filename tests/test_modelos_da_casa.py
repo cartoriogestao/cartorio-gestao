@@ -5170,3 +5170,35 @@ def test_o_aviso_de_andamento_esta_no_catalogo_e_a_tela_o_confere(casa):
 # A CERTIDÃO POSITIVA POR PESSOA — 25/10/2026, o oficial («relação dos imóveis
 # atuais»), para os pedidos do ONR por pessoa: `RI_CERTIDAO_POSITIVA_PESSOA`.
 NOVOS_NO_CATALOGO_ONR = 1
+
+
+# ------------------------------- 27/10/2026 — o convite da pesquisa de satisfação
+#
+# **O CATÁLOGO GANHOU 1 PAPEL**: o e-mail que convida o cliente do protocolo a
+# responder a pesquisa de satisfação (`satisfacao_envio`). «quero poder editar o
+# texto do e-mail» — o oficial, 27/10/2026. Em chaves, com duas partes
+# (===ASSUNTO=== e ===CORPO===), como o CAIXA_WHATSAPP e o aviso de andamento.
+# Nenhum papel antigo mudou de texto.
+PAPEIS_DA_PESQUISA = {"OUVIDORIA_CONVITE_PESQUISA"}
+NOVOS_NO_CATALOGO_PESQUISA = 1
+
+
+def test_o_convite_da_pesquisa_esta_no_catalogo_e_a_tela_o_confere(casa):
+    """A contagem bate com a lista; o conferidor próprio aceita o padrão e
+    recusa o claro que o convite não preenche; e o padrão só tem os três
+    claros — nenhum dado de pessoa."""
+    import modelos_elementos as ELEM
+    import satisfacao_envio as ENVIO
+    assert len(PAPEIS_DA_PESQUISA) == NOVOS_NO_CATALOGO_PESQUISA
+    assert PAPEIS_DA_PESQUISA <= set(MOD.POR_CHAVE)
+    for chave in PAPEIS_DA_PESQUISA:
+        assert MOD.formato_de(chave) == MOD.CHAVES
+        assert MOD.POR_CHAVE[chave]["elementos_comuns"] is False
+        assert MOD.POR_CHAVE[chave]["atribuicao"] == "Caixa e protocolo"
+        assert ELEM.CONFERIDORES[chave](MOD.padrao_de(chave)) == ""
+        assert ELEM.CONFERIDORES[chave]("===ASSUNTO===\nOi\n===CORPO===\n{cpf} {link}")
+        assert casa["app"].extensions["conferidores_de_modelo"][chave](
+            MOD.padrao_de(chave)) == ""
+        assert set(MOD.POR_CHAVE[chave]["campos"]) == set(ENVIO.CLAROS)
+        # O nome antigo responde o mesmo texto que o papel imprime.
+        assert ENVIO.MODELO_CONVITE_PESQUISA == MOD.padrao_de(chave)

@@ -263,7 +263,8 @@ def test_exportar_csv_colunas():
         data_registro="2026-10-05",
     )
     csv_txt = PR.exportar_csv(con, data_filtro="2026-10-05")
-    assert "Data;Responsável;Categoria;Tarefa" in csv_txt
+    # Todo campo entre aspas desde 26/10/2026 (`csv_seguro`).
+    assert '"Data";"Responsável";"Categoria";"Tarefa"' in csv_txt
     assert "CLIENTE" in csv_txt
 
 

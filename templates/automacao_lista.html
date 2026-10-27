@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block title %}Automação{% endblock %}
+{% block heading %}<h1>Automação — a central das rotinas</h1>{% endblock %}
+{% block content %}
+{# UM LUGAR SÓ PARA VER SE RODOU — decisão do oficial (24/10/2026). A tela não
+   roda nada: quem roda é o despachante, uma tarefa a cada minuto (Agendador do Windows ou launchd). #}
+<section class="panel">
+  <div class="panel-head"><h2>O despachante</h2>
+    {% if user.role == 'ADMIN' %}<a href="{{ url_for('automacao_configuracao') }}">configuração</a> ·
+    <a href="{{ url_for('automacao_cofre') }}">cofre de credenciais</a>{% endif %}</div>
+  {% if batida.nunca %}
+    <p><span class="badge critica">nunca rodou</span> A tarefa do despachante ainda não foi registrada. Gere o instalador com <code>tools/gerar_instalador_automacao.py</code> e rode o de cada sistema (Agendador do Windows ou launchd do macOS) na máquina do servidor. Sem ela, nenhum processo roda.</p>
+  {% elif batida.parado %}
+    <p><span class="badge critica">parado</span> Último tique às {{ batida.hora }} — há mais de 5 minutos.
+      Confira a tarefa «CartorioGestao-Automacao» (Agendador do Windows) ou o LaunchAgent do despachante (macOS).</p>
+  {% else %}
+    <p><span class="badge ok">rodando</span> Último tique às {{ batida.hora }}.</p>
+  {% endif %}
+  <p>Cofre: {% if cofre.aberto %}<span class="badge ok">aberto</span> desde {{ (cofre.desde or '')[:16]|replace('T', ' ') }}
+    {% elif not cofre.guardiao %}<span class="badge critica">trancado</span> (o guardião do cofre não está rodando)
+    {% else %}<span class="badge critica">trancado</span> desde {{ (cofre.desde or '')[:16]|replace('T', ' ') }}{% endif %}
+    {% if not cofre.aberto %}<span class="small muted">— os processos que usam credencial ficam em «cofre trancado».</span>{% endif %}</p>
+</section>
+
+{% if problemas %}
+<section class="panel">
+  <div class="panel-head"><h2>Problemas em aberto ({{ problemas|length }})</h2></div>
+  <ul>
+  {% for p in problemas %}<li><a href="{{ url_for('automacao_processo', processo_id=p.id) }}">{{ p.nome }}</a>
+    — <span class="badge {{ selo(p.alerta_situacao).classe }}">{{ selo(p.alerta_situacao).texto }}</span>
+    desde {{ (p.alerta_desde or '')[:16]|replace('T', ' ') }}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><h2>Processos</h2></div>
+  <p class="small muted">Todo processo nasce <strong>desligado</strong>. «Pode agir» é o oficial liberando o
+    processo a gravar sozinho; desligado, ele só lê e propõe.</p>
+  <div class="table-wrap"><table><thead><tr><th>Luz</th><th>Processo</th><th>Setor</th><th>Agenda</th>
+    <th>Última rodada</th><th>Próxima</th><th>Ligado</th></tr></thead><tbody>
+  {% for l in linhas %}
+  <tr>
+    <td>{% if l.luz == 'ok' %}<span class="badge ok">ok</span>{% elif l.luz == 'atencao' %}<span class="badge media">atenção</span>{% elif l.luz == 'problema' %}<span class="badge critica">problema</span>{% elif l.luz == 'rodando' %}<span class="badge">rodando</span>{% else %}<span class="badge">nunca rodou</span>{% endif %}</td>
+    <td><a href="{{ url_for('automacao_processo', processo_id=l.id) }}">{{ l.nome }}</a>
+      <div class="small muted">{{ l.nome_do_tipo }}{% if l.pode_agir %} · <strong>pode agir</strong>{% endif %}{% if l.na_fila %} · vai rodar no próximo minuto{% endif %}</div></td>
+    <td class="small">{{ l.setor }}</td>
+    <td class="small">{{ l.agenda_texto }}</td>
+    <td class="small">{% if l.ultima %}<a href="{{ url_for('automacao_execucao', execucao_id=l.ultima.id) }}">{{ (l.ultima.iniciada_em or '')[:16]|replace('T', ' ') }}</a>
+      <span class="badge {{ l.ultima.selo.classe }}">{{ l.ultima.selo.texto }}</span>{% else %}—{% endif %}</td>
+    <td class="small">{{ (l.proxima or '')[:16]|replace('T', ' ') if l.proxima else '—' }}</td>
+    <td>{% if user.role == 'ADMIN' %}
+      <form method="post" action="{{ url_for('automacao_ligar', processo_id=l.id) }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="ativo" value="{{ '0' if l.ativo else '1' }}">
+        <button class="button small" type="submit">{{ 'Desligar' if l.ativo else 'Ligar' }}</button>
+      </form>{% else %}{{ 'sim' if l.ativo else 'não' }}{% endif %}</td>
+  </tr>
+  {% else %}<tr><td colspan="7">Nenhum processo cadastrado.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

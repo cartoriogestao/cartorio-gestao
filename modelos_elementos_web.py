@@ -34,6 +34,7 @@ from __future__ import annotations
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 
 from bd_nativo import banco
+import modelos_da_casa as MODELOS
 import modelos_elementos as ELEM
 import modelos_previa as PREVIA
 import seguranca_web as SEGWEB  # B2 (LX11): exceção inesperada não vai para a tela
@@ -101,6 +102,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             corpo = request.form.get("corpo") or ""
             acao = (request.form.get("acao") or "salvar").strip()
             alvo = ato or "(toda a atribuição)"
+            # O PAPEL QUE VAI SOZINHO AO CLIENTE (revisão de segurança de
+            # 26/10/2026, PR #26 M1). Sem `ato`, o ajuste é da atribuição
+            # inteira — o encerramento e o rodapé dela entram no texto de
+            # cada papel dela —, e por isso alcança todos os papéis dela.
+            alcance = ([ato] if ato else
+                       [c for c in MODELOS.PAPEIS_SO_DO_GESTOR
+                        if ELEM.atribuicao_do_ato(c) == atrib])
+            recusa = MODELOS.recusa_ao_gravar(app.extensions["usuario_papel"](),
+                                              alcance)
+            if recusa:
+                return render_template("error.html", code=403, message=recusa), 403
             try:
                 if acao == "restaurar":
                     with db.transaction() as con:

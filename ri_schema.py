@@ -1432,6 +1432,7 @@ TIPOS_CERTIDAO = {
 ROTULOS_CERTIDAO_RI = {
     **TIPOS_CERTIDAO,
     "NEGATIVA_IMOVEL": "Certidão negativa de imóvel",
+    "POSITIVA_PESSOA": "Certidão de propriedade por pessoa (positiva)",
 }
 
 

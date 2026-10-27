@@ -1,0 +1,251 @@
+{# O QUADRO DA DECISÃO DO ÔNUS — saiu de `ri_ficha.html` em 25/10/2026, SEM
+   MUDAR UMA LINHA, para servir também à aprovação dos pedidos do ONR
+   (`onr_auto_pedido.html`): um formulário só, para a regra não divergir. Quem
+   inclui fornece `onus_painel` (`ri_onus_ia.painel`), `m` (a matrícula) e
+   `RESULTADOS_ONUS`, e põe as formas `form-onus-ia` e `form-onus-dono`.
+   O script acha o tipo por `select[name=tipo]` (ficha) ou
+   `select[name=tipo_ri]` (aprovação do ONR). #}
+    {% set op = onus_painel %}{% set s = op.sugestao %}{% set dono = op.proprietarios %}
+    {# O QUADRO EM PASSOS — 15/10/2026, «deixar o sistema mais seguro e
+       intuitivo», depois da certidão de ônus 64/2026 (matrícula 3371) sair com o
+       dono da matrícula-mãe e de cinco recusas seguidas no mesmo balcão. A
+       leitura da IA começa sozinha ao escolher a certidão de ônus; o
+       proprietário que o papel imprime é conferido com o teor; e a tela avisa
+       o que falta ANTES de enviar. Quem decide continua sendo quem emite, e a
+       rota confere tudo de novo (`ri_onus_ia.decidir`). #}
+    <fieldset class="span2" id="certidao-onus"
+              data-situacao="{{ s.situacao if s else '' }}"
+              data-url-andamento="{{ url_for('ri_onus_sugestao', matricula_id=m.id) }}"
+              data-ia-sugeriu-onus="{{ s.onus if s and s.situacao == 'PRONTA' and s.vale else '' }}"
+              data-ia-sugeriu-acoes="{{ s.acoes if s and s.situacao == 'PRONTA' and s.vale else '' }}"
+              style="border:1px solid var(--line,#ccc);padding:10px">
+      <legend><strong>Certidão de ônus — positiva ou negativa</strong>
+        <small class="muted">(só vale para a certidão de ônus)</small></legend>
+      <input type="hidden" name="onus_formulario" value="1">
+
+      {# ---------------------------------------------- 1. a leitura da IA #}
+      <div class="card" style="margin:0 0 8px">
+        <strong>1. Leitura da ficha pela IA</strong>
+        {% if op.ia_ligada %}
+        {# O botão pertence a OUTRO formulário (`form=`), e não a este: o primeiro
+           botão de envio de um formulário é o que o Enter aperta, e o Enter no
+           campo do requerente pediria leitura à IA em vez de emitir. #}
+        {% if not s or s.situacao not in ('PENDENTE', 'LENDO') %}
+        <button type="submit" class="secondary" form="form-onus-ia" style="margin-left:8px">
+          {% if s %}Ler de novo{% else %}Pedir a leitura à IA{% endif %}</button>
+        {% endif %}
+        {% endif %}
+        <p class="small" id="onus-ia-andamento" style="margin:6px 0 0">
+        {% if not op.ia_ligada %}
+          {% if op.no_sandbox %}No sistema de teste (SANDBOX) a IA não lê — ordem do oficial.
+          {% else %}A IA não está ligada nesta instalação.{% endif %}
+          Leia o teor da matrícula e preencha os passos abaixo.
+        {% elif not s %}
+          A IA só lê se você pedir: clique em «Pedir a leitura à IA» para ela conferir ônus,
+          ações e proprietário desta matrícula — ou preencha os passos lendo a ficha.
+        {% elif s.situacao == 'PRONTA' and not s.vale %}
+          A ficha mudou depois da última leitura da IA, e ela não vale mais. Peça a leitura de
+          novo, ou preencha os passos lendo a ficha.
+        {% elif s.situacao in ('PENDENTE', 'LENDO') %}
+          <strong>A IA está lendo a ficha</strong> (ônus, ações e proprietário). A tela se
+          atualiza sozinha quando ela terminar.
+        {% elif s.situacao == 'ERRO' %}
+          A leitura da IA não terminou ({{ s.erro or 'sem resposta' }}). Clique em «Ler de
+          novo», ou preencha lendo a ficha — o balcão não depende dela.
+        {% else %}
+          <strong>A IA leu a ficha:</strong> ônus <strong>{{ s.onus|lower }}</strong> ·
+          ações <strong>{{ s.acoes|lower }}</strong>.
+          {% if s.parecer %}<br>{{ s.parecer }}{% endif %}
+          {% if s.cancelados %}<br><span class="muted">Cancelados, segundo a leitura:
+            {% for c in s.cancelados %}{{ c.ato }}{% if c.cancelado_por %} (por {{ c.cancelado_por }}){% endif %}{% if not loop.last %}; {% endif %}{% endfor %}.</span>{% endif %}
+          <br><span class="muted">É sugestão: confira no teor antes de emitir.</span>
+        {% endif %}
+        </p>
+      </div>
+
+      {# ---------------------------------------------- 2. o proprietário #}
+      <div class="card" id="onus-proprietario" style="margin:0 0 8px">
+        <strong>2. Proprietário que a certidão vai imprimir</strong>
+        <p class="small" style="margin:6px 0 0">Cadastro da matrícula:
+          <strong>{% for p in dono.cadastro %}{{ p.nome }}{% if not loop.last %}; {% endif %}{% else %}ninguém — a certidão dirá que não consta titularidade{% endfor %}</strong></p>
+        {% if dono.situacao == 'CONFERE' %}
+          <p class="small" style="margin:4px 0 0">✔ <strong>Confere</strong> com o que a IA leu no
+            teor{% if dono.ato %} ({{ dono.ato }}){% endif %}.</p>
+        {% elif dono.situacao == 'DIVERGE' %}
+          <div class="notice warning small" style="margin:6px 0 0">
+            ✖ <strong>Não confere com o teor.</strong> A IA leu como dono(s) de hoje:
+            <strong>{% for p in dono.ia %}{{ p.nome }}{% if p.documento %} ({{ p.documento }}){% endif %}{% if not loop.last %}; {% endif %}{% else %}ninguém{% endfor %}</strong>{% if dono.ato %}, pelo {{ dono.ato }}{% endif %}.
+            {% if dono.trecho %}<br><span class="muted">«{{ dono.trecho[:400] }}{% if dono.trecho|length > 400 %}…{% endif %}»</span>{% endif %}
+            <br>Se a leitura estiver certa, <strong>acate</strong>: o sistema corrige o cadastro
+            de partes da matrícula (quem não é dono deixa de ser titular, e fica no histórico).
+            <br><button type="submit" class="secondary" form="form-onus-dono" style="margin:6px 0"
+                    onclick="return confirm('Corrigir o cadastro de partes desta matrícula pela leitura da IA? O valor anterior fica na auditoria.')">
+              Acatar a leitura e corrigir o cadastro</button>
+            <br>Se o cadastro estiver certo e a leitura errada, explique abaixo — a
+            justificativa fica gravada na certidão.
+            <label style="display:block;margin-top:6px">Justificativa do proprietário
+              <input name="proprietario_justificativa" maxlength="500"
+                     placeholder="ex.: a IA leu o vendedor; o R-3 transmitiu ao comprador do cadastro"></label>
+          </div>
+        {% elif dono.situacao == 'LENDO' and op.ia_ligada %}
+          <p class="small muted" style="margin:4px 0 0">A conferência sai junto com a leitura da IA.</p>
+        {% else %}
+          {% if dono.ia_sem_dono %}<p class="small muted" style="margin:4px 0 0">A leitura da IA não
+            disse quem é o dono de hoje — confira você no teor.</p>{% endif %}
+          <label class="small" style="display:flex;gap:6px;align-items:flex-start;margin:6px 0 0">
+            <input type="checkbox" name="proprietario_conferido" value="1">
+            <span>Conferi no teor da matrícula que o proprietário acima é o dono de hoje
+              (quem adquiriu pela última transmissão, e não o da matrícula de origem).</span></label>
+        {% endif %}
+      </div>
+
+      {# ---------------------------------------------- 3. ônus #}
+      <div class="card" style="margin:0 0 8px">
+        <strong>3. Ônus reais</strong>
+        {% for r in RESULTADOS_ONUS %}
+        <label style="display:inline-flex;gap:4px;margin-left:12px">
+          <input type="radio" name="resultado_onus" value="{{ r|lower }}"
+                 {% if op.sugerido.onus == r %}checked{% endif %}> {{ r|capitalize }}</label>
+        {% endfor %}
+        {% set candidatos = op.sistema + op.ia %}
+        <div data-so-positiva="resultado_onus">
+          {% for i in candidatos if i.categoria != 'ACAO' %}
+          {% if loop.first %}<p class="small" style="margin:8px 0 4px">Marque o que vai
+            <strong>transcrito</strong> — o texto sai do livro, palavra por palavra:</p>{% endif %}
+          <label style="display:flex;gap:8px;align-items:flex-start;margin:4px 0">
+            <input type="checkbox" name="onus_item" value="{{ i.chave }}"
+                   {% if not i.literal %}disabled{% elif i.origem == 'SISTEMA' or (op.sugerido.por == 'IA') %}checked{% endif %}>
+            <span><strong>{{ i.rotulo or '—' }}</strong> {% if i.natureza %}({{ i.natureza }}){% endif %}
+              <small class="muted">· {{ 'ato lavrado no sistema' if i.origem == 'SISTEMA' else 'apontado pela IA no teor' }}</small>
+              {% if i.conferir %}<br><small class="warning">entrou pela palavra do teor, sem natureza reconhecida — confira</small>{% endif %}
+              {% if not i.literal %}<br><small class="warning">o trecho que a IA indicou não está escrito na ficha
+                palavra por palavra — não pode ir à certidão; se o ônus existe, cole o texto abaixo</small>{% endif %}
+              <br><small>{{ i.texto[:600] }}{% if i.texto|length > 600 %}…{% endif %}</small></span>
+          </label>
+          {% endfor %}
+          <label style="display:block;margin-top:6px">Colar outro ônus
+            <small class="muted">— o texto do ato como está no teor (um por parágrafo, separados por
+            uma linha em branco). O sistema confere que ele está escrito na ficha.</small>
+            <textarea name="onus_transcricao" rows="3"></textarea></label>
+        </div>
+      </div>
+
+      {# ---------------------------------------------- 4. ações #}
+      <div class="card" style="margin:0 0 8px">
+        <strong>4. Citação de ações reais ou pessoais reipersecutórias</strong>
+        {% for r in RESULTADOS_ONUS %}
+        <label style="display:inline-flex;gap:4px;margin-left:12px">
+          <input type="radio" name="resultado_acoes" value="{{ r|lower }}"
+                 {% if op.sugerido.acoes == r %}checked{% endif %}> {{ r|capitalize }}</label>
+        {% endfor %}
+        <div data-so-positiva="resultado_acoes">
+          {% for i in candidatos if i.categoria == 'ACAO' %}
+          <label style="display:flex;gap:8px;align-items:flex-start;margin:4px 0">
+            <input type="checkbox" name="onus_item" value="{{ i.chave }}"
+                   {% if not i.literal %}disabled{% elif i.origem == 'SISTEMA' or (op.sugerido.por == 'IA') %}checked{% endif %}>
+            <span><strong>{{ i.rotulo or '—' }}</strong> {% if i.natureza %}({{ i.natureza }}){% endif %}
+              <br><small>{{ i.texto[:600] }}{% if i.texto|length > 600 %}…{% endif %}</small></span>
+          </label>
+          {% endfor %}
+          <label style="display:block;margin-top:6px">Colar a citação de ação
+            <textarea name="acao_transcricao" rows="2"></textarea></label>
+        </div>
+      </div>
+
+      {# A justificativa de NEGATIVA contra a IA só aparece quando é preciso. #}
+      <label class="span2" id="onus-justificativa" style="display:none">Por que NEGATIVA, se a IA
+        leu POSITIVA? <small class="muted">— fica gravada na certidão</small>
+        <input name="onus_justificativa" maxlength="500"
+               placeholder="ex.: hipoteca R-2 cancelada pela AV-5"></label>
+    </fieldset>
+    <script>
+      (function () {
+        var campo = document.getElementById('certidao-onus');
+        if (!campo) return;
+        var form = campo.closest('form');
+        var tipo = form.querySelector('select[name=tipo], select[name=tipo_ri]');
+        var emitir = form.querySelector('button.primary');
+        var CHAVE = 'cg-cert-ri-' + location.pathname;
+        var GUARDAR = ['requerente', 'requerente_documento', 'finalidade', 'emolumentos', 'protocolo'];
+        function ehOnus() { return tipo && tipo.value === 'ONUS'; }
+        function valor(nome) { var r = form.querySelector('input[name=' + nome + ']:checked'); return r ? r.value : ''; }
+        function lendo() { return campo.dataset.situacao === 'LENDO' || campo.dataset.situacao === 'PENDENTE'; }
+
+        // o que se digitou volta depois que a tela se atualiza sozinha
+        try {
+          var guardado = JSON.parse(sessionStorage.getItem(CHAVE) || 'null');
+          if (guardado) {
+            GUARDAR.forEach(function (n) { var e = form.elements[n]; if (e && !e.value && guardado[n]) e.value = guardado[n]; });
+            sessionStorage.removeItem(CHAVE);
+          }
+        } catch (x) {}
+        function guardarERecarregar() {
+          try { var d = {}; GUARDAR.forEach(function (n) { var e = form.elements[n]; if (e) d[n] = e.value; });
+                sessionStorage.setItem(CHAVE, JSON.stringify(d)); } catch (x) {}
+          location.hash = 'certidao-onus'; location.reload();
+        }
+
+        function acompanhar() {
+          setTimeout(function () {
+            fetch(campo.dataset.urlAndamento, {credentials: 'same-origin'})
+              .then(function (r) { return r.json(); })
+              .then(function (j) {
+                if (j.situacao === 'PRONTA' || j.situacao === 'ERRO') guardarERecarregar();
+                else acompanhar();
+              }).catch(function () { acompanhar(); });
+          }, 4000);
+        }
+        // A IA só lê quando alguém clica no botão (ordem do oficial, 15/10/2026);
+        // enquanto ela lê, a tela acompanha e se atualiza quando terminar.
+        function acompanharSeLendo() {
+          if (!lendo() || campo.dataset.acompanhando) return;
+          campo.dataset.acompanhando = '1';
+          acompanhar();
+        }
+
+        function atualizar() {
+          campo.style.display = ehOnus() ? '' : 'none';
+          Array.prototype.forEach.call(campo.querySelectorAll('[data-so-positiva]'), function (b) {
+            b.style.display = valor(b.dataset.soPositiva) === 'positiva' ? '' : 'none';
+          });
+          var j = document.getElementById('onus-justificativa');
+          var contra = (campo.dataset.iaSugeriuOnus === 'POSITIVA' && valor('resultado_onus') === 'negativa')
+                    || (campo.dataset.iaSugeriuAcoes === 'POSITIVA' && valor('resultado_acoes') === 'negativa');
+          if (j) j.style.display = contra ? '' : 'none';
+          if (emitir) {
+            emitir.disabled = ehOnus() && lendo();
+            emitir.title = emitir.disabled ? 'Espere a IA terminar de ler a ficha' : '';
+          }
+          if (ehOnus()) { var d = campo.closest('details'); if (d && !d.open) d.open = true; acompanharSeLendo(); }
+        }
+
+        // O QUE FALTA, DITO ANTES DE ENVIAR — a rota confere tudo de novo, mas
+        // ida e volta por um campo esquecido custou cinco recusas seguidas.
+        form.addEventListener('submit', function (ev) {
+          if (!ehOnus()) return;
+          var falta = [];
+          var po = valor('resultado_onus'), pa = valor('resultado_acoes');
+          if (!po) falta.push('3. escolha se há ônus (positiva ou negativa)');
+          if (!pa) falta.push('4. escolha se há citação de ação (positiva ou negativa)');
+          function temTexto(blocoNome, area) {
+            var b = campo.querySelector('[data-so-positiva=' + blocoNome + ']');
+            var marcado = b && b.querySelector('input[name=onus_item]:checked');
+            var t = form.elements[area]; return !!marcado || !!(t && t.value.trim());
+          }
+          if (po === 'positiva' && !temTexto('resultado_onus', 'onus_transcricao')) falta.push('3. marque o ônus a transcrever ou cole o texto dele');
+          if (pa === 'positiva' && !temTexto('resultado_acoes', 'acao_transcricao')) falta.push('4. marque a ação a transcrever ou cole o texto dela');
+          var conf = form.elements['proprietario_conferido'];
+          if (conf && !conf.checked) falta.push('2. confira o proprietário no teor e marque a caixa');
+          var jp = form.elements['proprietario_justificativa'];
+          if (jp && jp.value.replace(/[^A-Za-zÀ-ÿ]/g, '').length < 10) falta.push('2. o proprietário não confere: corrija o cadastro ou escreva a justificativa');
+          var jo = document.getElementById('onus-justificativa');
+          if (jo && jo.style.display !== 'none' && form.elements['onus_justificativa'].value.replace(/[^A-Za-zÀ-ÿ]/g, '').length < 10) falta.push('escreva por que NEGATIVA, se a IA leu POSITIVA');
+          if (falta.length) { ev.preventDefault(); alert('Antes de emitir:\n\n- ' + falta.join('\n- ')); }
+        });
+
+        if (location.hash === '#certidao-onus' && tipo) tipo.value = 'ONUS';
+        form.addEventListener('change', atualizar);
+        atualizar();
+        if (ehOnus() && lendo()) acompanhar();
+      })();
+    </script>

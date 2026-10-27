@@ -5131,7 +5131,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         doi_partes = [{"p": x, "lado": NDOI.lado_da_parte_no_ato(x),
                        "sugerido": _sugerido.get(x["id"], "")}
                       for x in _lista]
+        # QUEM PRATICOU, QUANDO FOI AGENTE (26/10/2026, ordem do oficial: todo
+        # robo diz quem e e a mando de quem age). A frase sai da auditoria do
+        # lancamento no livro; pessoa que lavrou por si nao tem frase.
+        import identidade_do_robo as IDR
+        with db.connect() as _c:
+            agente_do_ato = IDR.frase_da_entidade(_c, "NT_ATO", ato_id,
+                                                  ("NT_ATO_LANCADO",))
         return render_template("notas_ato.html", a=dict(a), partes=partes,
+                               agente_do_ato=agente_do_ato,
                                doi_partes=doi_partes,
                                fraudes=fraudes, modelo=modelo, familia=familia,
                                anexos=anexos,

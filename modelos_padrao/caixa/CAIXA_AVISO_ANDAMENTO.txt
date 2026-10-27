@@ -1,0 +1,31 @@
+===ASSINATURA===
+{serventia}
+Telefone: {telefone} - E-mail: {email}
+
+Mensagem automática, enviada porque você pediu para acompanhar o andamento deste protocolo. Por segurança, ela não traz nome, documento, valores nem o conteúdo do ato. Para não receber mais estes avisos, informe no balcão. Não responda a este e-mail.
+===EXIGENCIA_ASSUNTO===
+{serventia}: o protocolo nº {numero} tem exigência a cumprir
+===EXIGENCIA===
+Olá.
+
+O título apresentado sob o protocolo nº {numero} foi examinado e recebeu nota de exigência. Para saber o que é preciso apresentar ou corrigir, procure o balcão da serventia com o número do protocolo.
+
+A prenotação continua correndo enquanto a exigência não é cumprida.
+
+{assinatura}
+===PRONTO_ASSUNTO===
+{serventia}: o protocolo nº {numero} está pronto para retirar
+===PRONTO===
+Olá.
+
+O serviço do protocolo nº {numero} está pronto para ser retirado no balcão da serventia. Traga o comprovante do protocolo e um documento de identificação.
+
+{assinatura}
+===PRAZO_ASSUNTO===
+{serventia}: a prenotação nº {numero} vence em {data_limite}
+===PRAZO===
+Olá.
+
+A prenotação nº {numero} vence em {data_limite} (faltam {dias} dia(s) útil(eis)). Se houver exigência a cumprir, apresente o que falta antes dessa data para não perder a prioridade do título.
+
+{assinatura}

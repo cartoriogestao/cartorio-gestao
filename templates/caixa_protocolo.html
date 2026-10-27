@@ -72,6 +72,11 @@
     <div><small class="muted">Assunto</small><div>{{ p.assunto or '—' }}</div></div>
     <div><small class="muted">Telefone</small><div>{{ p.telefone or '—' }}</div></div>
     <div><small class="muted">E-mail</small><div>{{ p.email or '—' }}</div></div>
+    {# Avisos de andamento ao cliente (26/10/2026): o consentimento e o «pronto
+       para retirar» moram numa tela própria, a um clique daqui. #}
+    <div><small class="muted">Avisos ao cliente</small><div>
+      {% if p.pronto_retirar_em %}<span class="badge ok">pronto para retirar</span> {% endif %}
+      <a href="{{ url_for('andamento_protocolo_geral', protocolo_id=p.id) }}">consentimento e pronto para retirar</a></div></div>
     <div><small class="muted">Previsão de entrega</small><div>{{ fmt_date(p.previsao_entrega) if p.previsao_entrega else '—' }}</div></div>
     <div><small class="muted">Gratuito</small><div>{{ 'sim' if p.gratuito else 'não' }}</div></div>
     <div><small class="muted">Documento apresentado</small><div>{{ p.documento_tipo or '—' }}{% if p.documento_numero %} nº {{ p.documento_numero }}{% endif %}</div></div>

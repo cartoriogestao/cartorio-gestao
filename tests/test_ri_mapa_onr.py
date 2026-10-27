@@ -353,8 +353,10 @@ def test_o_download_do_mapa_fica_na_auditoria(cg_casa_logada):
     db = cg_casa_logada["db"]
     _matricula(db, 4015)
     assert cg_casa_logada["c"].get("/ri/mapa-onr.csv").status_code == 200
-    registro = db.list_logs(5)[0]
-    assert registro["action"] == "RI_MAPA_ONR_EXPORTADO"
+    recentes = db.list_logs(5)
+    # a rota anota o seu, e a regra geral (M9, 22/10/2026) anota EXPORTACAO depois
+    assert "EXPORTACAO" in [r["action"] for r in recentes]
+    registro = next(r for r in recentes if r["action"] == "RI_MAPA_ONR_EXPORTADO")
     assert registro["username_snapshot"] == "mario"
     assert '"imoveis": 1' in registro["details"]
 

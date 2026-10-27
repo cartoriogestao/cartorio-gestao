@@ -43,6 +43,12 @@ def s(cg_casa):
     cg_casa['db'].create_user("tabeliao", "MARIO EXEMPLO DOS SANTOS",
                                 SENHA, "ADMIN")
     cg_casa['db'].set_settings({
+        # A TRAVA DO SELO PAGO (3.7.0, achado A9) desliga aqui, à vista: estes
+        # testes medem o selo do ato do RCPJ/RTD (o pedido, o digitado, a prévia),
+        # e não a cobertura, que tem teste próprio (`test_selo_e_caixa`). Sem
+        # isso o selo digitado da abertura esperava protocolo pago e o registro
+        # não nascia.
+        "selo_trava_caixa": "DESLIGADA",
         "selo_tabela_custas_em": "20260101",
         "ri_cns": "000000",
     })
@@ -212,7 +218,8 @@ def test_quantidade_maior_que_um_pede_um_selo_com_mais_folhas(s):
                    interessado, situacao, criado_em)
                VALUES ('2026.09.002','2026-09-11','RTD','EMPRESA X','ABERTO',
                        '2026-09-11T09:00:00')""")
-        pid = con.execute("SELECT id FROM cx_protocolos").fetchone()[0]
+        pid = con.execute(  # o que acabou de entrar: abrir o registro já cria o protocolo dele
+            "SELECT id FROM cx_protocolos ORDER BY id DESC LIMIT 1").fetchone()[0]
         con.execute(
             """INSERT INTO cx_protocolo_atos(protocolo_id, codigo_ato, quantidade)
                VALUES (?, '15.9.1', 3)""", (pid,))
@@ -257,7 +264,8 @@ def test_autenticacao_de_copia_e_a_unica_excecao_por_unidade(s):
                    interessado, situacao, criado_em)
                VALUES ('2026.09.003','2026-09-11','RTD','EMPRESA X','ABERTO',
                        '2026-09-11T09:00:00')""")
-        pid = con.execute("SELECT id FROM cx_protocolos").fetchone()[0]
+        pid = con.execute(  # o que acabou de entrar: abrir o registro já cria o protocolo dele
+            "SELECT id FROM cx_protocolos ORDER BY id DESC LIMIT 1").fetchone()[0]
         con.execute(
             """INSERT INTO cx_protocolo_atos(protocolo_id, codigo_ato, quantidade)
                VALUES (?, '13.18', 4)""", (pid,))
@@ -423,7 +431,8 @@ def _abrir_protocolo(s, *, com_arquivamento: bool) -> int:
                    interessado, situacao, criado_em)
                VALUES ('2026.09.001','2026-09-11','RCPJ','EMPRESA X','ABERTO',
                        '2026-09-11T09:00:00')""")
-        pid = con.execute("SELECT id FROM cx_protocolos").fetchone()[0]
+        pid = con.execute(  # o que acabou de entrar: abrir o registro já cria o protocolo dele
+            "SELECT id FROM cx_protocolos ORDER BY id DESC LIMIT 1").fetchone()[0]
         con.execute(
             """INSERT INTO cx_protocolo_atos(protocolo_id, codigo_ato, quantidade)
                VALUES (?, '15.9.1', 1)""", (pid,))
@@ -757,7 +766,8 @@ def test_cobrar_protocolo_item_lanca_no_caixa(s):
                    interessado, situacao, criado_em)
                VALUES ('2026.09.005','2026-09-11','RCPJ','EMPRESA X','ABERTO',
                        '2026-09-11T09:00:00')""")
-        pid = con.execute("SELECT id FROM cx_protocolos").fetchone()[0]
+        pid = con.execute(  # o que acabou de entrar: abrir o registro já cria o protocolo dele
+            "SELECT id FROM cx_protocolos ORDER BY id DESC LIMIT 1").fetchone()[0]
         con.execute(
             """INSERT INTO cx_protocolo_atos(protocolo_id, codigo_ato,
                    quantidade, servico_codigo, descricao)

@@ -455,9 +455,14 @@ def test_a_subida_do_banco_chama_a_passada(cg_db):
     """**A passada não adianta se ninguém a chama** — e função pronta que
     nenhuma tela chama é o defeito mais repetido deste projeto. Aqui quem chama
     é a abertura do banco, e é ela que roda na máquina do balcão."""
-    assert hasattr(cg_db, "colunas_norm_preenchidas")
-    assert not isinstance(cg_db.colunas_norm_preenchidas, dict) or \
-        "erro" not in cg_db.colunas_norm_preenchidas
+    # ABRIR DE NOVO O BANCO QUE JÁ EXISTE é o caminho da máquina do balcão: ele
+    # passa pelo `init_schema`, que roda a passada. (O banco do fixture veio da
+    # reserva da suíte, que pula o `init_schema`.)
+    from database import Database
+    aberto = Database(cg_db.db_path)
+    assert hasattr(aberto, "colunas_norm_preenchidas")
+    assert not isinstance(aberto.colunas_norm_preenchidas, dict) or \
+        "erro" not in aberto.colunas_norm_preenchidas
     codigo = (RAIZ / "database.py").read_text(encoding="utf-8")
     assert "preencher_colunas_derivadas" in codigo
 

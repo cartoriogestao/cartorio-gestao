@@ -209,7 +209,10 @@ def test_a_senha_nunca_entra_no_banco(tmp_path):
     varredura que guarda a chave da API do Claude."""
     CC.gravar(CC.CENPROT, usuario="cidadeexemplo", senha=BOA, pasta=tmp_path)
     banco = tmp_path / "cartorio_gestao.sqlite3"
-    con = sqlite3.connect(banco)
+    # o arquivo de verdade: com a suíte no PostgreSQL o sqlite3.connect vai
+    # para um schema e não haveria bytes para varrer
+    import banco_pg
+    con = getattr(banco_pg, "_CONNECT_ORIGINAL", sqlite3.connect)(banco)
     con.execute("CREATE TABLE settings(key TEXT, value TEXT)")
     con.commit()
     con.close()

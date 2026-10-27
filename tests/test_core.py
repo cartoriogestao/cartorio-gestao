@@ -37,6 +37,10 @@ class CoreTests(unittest.TestCase):
 
     def test_inspection_seed_and_deadlines(self):
         iid = self.db.seed_inspection()
+        if not iid:
+            # o relatório da inspeção é dado da casa (`inspection_seed.py`), e o
+            # repositório público não o leva (sanitização B2, 11/10/2026)
+            self.skipTest("o relatório da inspeção só existe na instalação")
         tasks = [t for t in self.db.list_tasks(limit=2000) if t["inspection_id"] == iid]
         self.assertGreaterEqual(len(tasks), 70)
         self.assertTrue(all(t["due_date"] is None for t in tasks))

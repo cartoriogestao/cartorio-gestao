@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -167,6 +168,7 @@ def test_agendador_vazio_e_nao_mediu_e_nao_zero(con):
     assert [a["gravidade"] for a in achados] == ["NAO_MEDIU"]
 
 
+@pytest.mark.skipif(os.name != "nt", reason="o agendador e o .cmd das rotinas são do Windows: a regra só reconhece caminho C:\\…\\x.cmd")
 def test_log_da_rotina_le_so_a_ultima_rodada(con, tmp_path):
     cmd = tmp_path / "ROTINA.cmd"
     cmd.write_text("@echo off\n")

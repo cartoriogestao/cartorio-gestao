@@ -121,6 +121,7 @@ def test_a_situacao_le_o_que_a_reserva_escreveu():
     assert agora["piso_e_duro"] is True
 
 
+@so_no_windows
 def test_reservar_processo_INEXISTENTE_nao_levanta_e_diz_por_que():
     """Quem roda isto e o oficial, com o servidor no ar. Estourar na cara dele
     seria trocar um problema de desempenho por um erro de programa."""

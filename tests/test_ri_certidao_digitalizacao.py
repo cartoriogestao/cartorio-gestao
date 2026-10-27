@@ -200,7 +200,8 @@ def test_inteiro_teor_por_digitalizacao_congela_arquivo(casa):
     assert row["fonte_corpo"] == "DIGITALIZACAO"
     assert row["digi_path"] and Path(row["digi_path"]).is_file()
     assert row["digi_sha256"]
-    odt = c.get(f"/registro-imoveis/certidoes/{row['id']}.odt")
+    # o editável: sem o `formato`, a rota entrega o PDF, que pede o LibreOffice
+    odt = c.get(f"/registro-imoveis/certidoes/{row['id']}.odt?formato=odt")
     assert odt.status_code == 200
     assert odt.data[:2] == b"PK" or len(odt.data) > 100
     con.close()

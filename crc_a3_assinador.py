@@ -148,8 +148,11 @@ class Modulo:
     onde o `PyKCS11` quebrava. Ver o cabecalho do modulo."""
 
     def __init__(self, caminho: str) -> None:
+        carregar = getattr(ctypes, "WinDLL", None)
+        if carregar is None:   # fora do Windows o ctypes nem tem WinDLL
+            raise Pkcs11Error("o driver nao carregou: o assinador A3 so roda no Windows")
         try:
-            self._dll = ctypes.WinDLL(caminho)
+            self._dll = carregar(caminho)
         except OSError as exc:
             raise Pkcs11Error(f"o driver nao carregou: {exc}") from exc
 

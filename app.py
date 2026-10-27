@@ -3055,6 +3055,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     import nfse_web
     nfse_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
+    # AS DESPESAS (24/10/2026) — cadastrar, o oficial autoriza, o Banco Inter
+    # paga, o extrato confere e o Livro Diário recebe. Pagamento desligado por padrão.
+    import despesas_web
+    despesas_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
     import notas_web
     notas_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 

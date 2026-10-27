@@ -1023,36 +1023,39 @@ def apurar_com_o_ano(con, comp: Any, *, ate: str) -> tuple[dict, list[dict]]:
 
 # --------------------------------------------------------------- exportação
 
-def livro_caixa_csv(a: Mapping[str, Any]) -> str:
-    """O livro-caixa do mês em CSV («;» e vírgula decimal), legível.
+def livro_caixa_linhas(a: Mapping[str, Any]) -> list[list[str]]:
+    """O livro-caixa do mês, linha a linha, para o CSV («;» e vírgula decimal).
 
     NÃO é o leiaute de importação do Carnê-Leão Web (que falta nesta casa): as
-    três primeiras linhas dizem isso, e as últimas trazem os totais.
+    três primeiras linhas dizem isso, e as últimas trazem os totais. A tela
+    entrega pelo `csv_seguro` (tudo entre aspas, fórmula desarmada): o «;»
+    dentro do campo já não precisa virar vírgula.
     """
     def campo(x: Any) -> str:
-        return " ".join(str(x if x is not None else "").replace(";", ",").split())
+        return " ".join(str(x if x is not None else "").split())
 
-    linhas = [f"# Livro-caixa do titular — {a['competencia']} — regime de caixa",
-              f"# {AVISO_DO_LEIAUTE}",
-              f"# {AVISO_DA_LISTA}",
-              "data;tipo;origem;descricao;documento;valor;dedutivel;categoria_fiscal;observacao"]
+    linhas = [[f"# Livro-caixa do titular — {a['competencia']} — regime de caixa"],
+              [f"# {AVISO_DO_LEIAUTE}"],
+              [f"# {AVISO_DA_LISTA}"],
+              ["data", "tipo", "origem", "descricao", "documento", "valor", "dedutivel",
+               "categoria_fiscal", "observacao"]]
     for r in a["receitas"]:
         obs = (f"sem separação dos fundos; R$ {reais(r['fundos_estimados'])} de fundos "
                f"tirados pela configuração" if r.get("sem_discriminacao") else "")
-        linhas.append(";".join(campo(x) for x in (
+        linhas.append([campo(x) for x in (
             r["dia"], "RECEITA", r["origem"], r["descricao"], r.get("documento", ""),
-            reais(r["valor"]).replace(".", ""), "", "", obs)))
+            reais(r["valor"]).replace(".", ""), "", "", obs)])
     for d in a["despesas"]:
         marca = {True: "SIM", False: "NAO", None: "A CLASSIFICAR"}[d["dedutivel"]]
         rotulo = CATEGORIAS_FISCAIS.get(d["categoria_fiscal"], ("",))[0]
-        linhas.append(";".join(campo(x) for x in (
+        linhas.append([campo(x) for x in (
             d["dia"], "DESPESA", d["origem"], d["descricao"], d["documento"],
-            reais(d["valor"]).replace(".", ""), marca, rotulo, "")))
+            reais(d["valor"]).replace(".", ""), marca, rotulo, "")])
     imposto = "" if a["imposto"] is None else reais(a["imposto"]).replace(".", "")
     for rotulo, valor in (("TOTAL RECEITA", reais(a["receita"])),
                           ("TOTAL DESPESAS DEDUTIVEIS", reais(a["dedutiveis"])),
                           ("EXCESSO DOS MESES ANTERIORES", reais(a["excesso_anterior"])),
                           ("BASE", reais(a["base"])),
                           ("IMPOSTO PELA TABELA CADASTRADA", imposto or "sem tabela")):
-        linhas.append(f"# {rotulo};{valor.replace('.', '') if valor[:1].isdigit() else valor}")
-    return "\r\n".join(linhas) + "\r\n"
+        linhas.append([f"# {rotulo}", valor.replace(".", "") if valor[:1].isdigit() else valor])
+    return linhas

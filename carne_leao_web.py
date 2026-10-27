@@ -11,9 +11,10 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from flask import Response, flash, redirect, render_template, request, url_for
+from flask import flash, redirect, render_template, request, url_for
 
 import carne_leao as CL
+import csv_seguro as CSVS
 import oficial_obrigacoes as OO
 from caixa_schema import reais
 
@@ -139,9 +140,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         with db.connect() as con:
             a = CL.apurar(con, mes)
         audit("CARNE_LEAO_LIVRO_CAIXA_EXPORTADO", "cl_lancamentos", None, {"mes": mes})
-        return Response(CL.livro_caixa_csv(a).encode("utf-8-sig"), mimetype="text/csv",
-                        headers={"Content-Disposition":
-                                 f'attachment; filename="livro-caixa-{mes}.csv"'})
+        # pelo `csv_seguro`: tudo entre aspas e fórmula desarmada
+        return CSVS.resposta(f"livro-caixa-{mes}.csv", None, CL.livro_caixa_linhas(a))
 
     @app.route("/administrativo/carne-leao/configuracao", methods=["GET", "POST"])
     @login_required

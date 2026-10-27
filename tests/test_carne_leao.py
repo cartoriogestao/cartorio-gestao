@@ -13,6 +13,8 @@ Pessoas e documentos fictícios (mario, beatriz, carla).
 """
 from __future__ import annotations
 
+import csv as _csv
+import io
 import re
 import sys
 from datetime import date, datetime, timedelta, timezone
@@ -324,11 +326,15 @@ def test_o_csv_diz_que_nao_e_o_leiaute_oficial_e_nao_traz_codigo_de_barras(casa)
     db = casa["db"]
     _lancamento(db, "2026-09-02", "130,00", emolumentos="100,00", ferc="30,00")
     _despesa_ld(db, "2026-09-10", "20,00")
-    csv = CL.livro_caixa_csv(_apurar(db, "2026-09"))
+    import csv_seguro as CSVS
+    csv = CSVS.gerar(None, CL.livro_caixa_linhas(_apurar(db, "2026-09")))
+    linhas = list(_csv.reader(io.StringIO(csv), delimiter=";"))
     assert "leiaute de importação do Carnê-Leão Web não está nesta casa" in csv
-    assert "2026-09-02;RECEITA;Caixa" in csv and ";100,00;" in csv
-    assert "DESPESA;Livro Diário" in csv and "A CLASSIFICAR" in csv
-    assert "IMPOSTO PELA TABELA CADASTRADA;sem tabela" in csv
+    receita = next(r for r in linhas if r[:3] == ["2026-09-02", "RECEITA", "Caixa"])
+    assert receita[5] == "100,00"
+    assert any(r[1:3] == ["DESPESA", "Livro Diário"] for r in linhas if len(r) > 2)
+    assert "A CLASSIFICAR" in csv
+    assert ["# IMPOSTO PELA TABELA CADASTRADA", "sem tabela"] in linhas
     assert not re.search(r"\d{44,48}", csv)              # nada de código de barras
 
 

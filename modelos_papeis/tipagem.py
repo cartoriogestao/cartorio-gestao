@@ -165,6 +165,12 @@ TIPOS_POR_CHAVE.update({
     'NOTAS_CERTIDAO_BREVE_RELATO': ('TEXTO', 'Texto congelado em nt_certidoes na emissão'),
 })
 
+# 26/10/2026: a nota de exigência geral do protocolo do balcão. Bloco à parte,
+# pelo motivo dos de cima.
+TIPOS_POR_CHAVE.update({
+    'CAIXA_EXIGENCIA': ('TEXTO', 'Remontada na impressão, do que a nota guardou'),
+})
+
 # 26/10/2026: o aviso de andamento ao cliente. Bloco à parte, pelo motivo dos
 # de cima.
 TIPOS_POR_CHAVE.update({

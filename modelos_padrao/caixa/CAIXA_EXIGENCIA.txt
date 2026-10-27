@@ -1,0 +1,24 @@
+<p align="center"><b>{{ sv.unit_name }}</b></p>
+<p align="center">{{ sv.serventia_endereco }} — CEP {{ sv.serventia_cep }} — {{ sv.cidade_uf }}</p>
+<p align="center">CNS {{ sv.ri_cns }} — CNPJ {{ sv.serventia_cnpj }} — Telefone {{ sv.serventia_telefone }}{% if sv.serventia_email %} — {{ sv.serventia_email }}{% endif %}</p>
+<p align="center"><b>NOTA DE EXIGÊNCIA Nº {{ e.numero }} — PROTOCOLO Nº {{ p.numero }}</b></p>
+<p>Pelo presente, comunico ao interessado que o pedido abaixo identificado <b>não pôde prosseguir</b> nesta serventia, pelas exigências adiante lançadas.</p>
+<table border="1" cols="4.6cm,11.4cm">
+<tr><td><b>Atribuição</b></td><td>{{ nome_da_atribuicao }}</td></tr>
+<tr><td><b>Protocolo</b></td><td>nº {{ p.numero }}, aberto em {{ aberto_em }}</td></tr>
+<tr><td><b>Interessado</b></td><td>{{ p.interessado or '—' }}{% if documento %} — {{ documento }}{% endif %}</td></tr>
+<tr><td><b>Nota emitida em</b></td><td>{{ emitida_em }}</td></tr>
+</table>
+<p><b>EXIGÊNCIAS A CUMPRIR:</b></p>
+{% for item in itens %}<p><b>{{ loop.index }}.</b> {{ item }}</p>
+{% endfor %}
+{% if e.fundamento %}<p><b>FUNDAMENTO:</b> {{ e.fundamento }}</p>{% endif %}
+{% if prazo_ate %}<p>O interessado poderá cumprir as exigências até <b>{{ prazo_ate }}</b>, apresentando nesta serventia o que foi pedido, com a indicação do protocolo nº {{ p.numero }}.</p>
+{% else %}<p>O interessado poderá cumprir as exigências e apresentar nesta serventia o que foi pedido, com a indicação do protocolo nº {{ p.numero }}. Nesta nota não foi fixado prazo.</p>
+{% endif %}
+<p>{{ sv.cidade_uf }}, {{ data_extenso }}.</p>
+<p></p><p></p>
+<p align="center">_________________________________</p>
+<p align="center">{{ emitido_por }}</p>
+<p align="center">{{ funcao or 'Escrevente' }}</p>
+<p><small>Dados pessoais parcialmente ocultados na forma da Lei 13.709/2018 — LGPD.</small></p>

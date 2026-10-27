@@ -12,6 +12,10 @@ PAPEIS: tuple[dict, ...] = (
     # f-strings em `wa_textos`. Em chaves, e por isso fora do encerramento
     # comum do caixa (que é Jinja).
     {'chave': 'CAIXA_WHATSAPP', 'padrao': ('wa_textos', 'MODELO_WHATSAPP'), 'elementos_comuns': False},
+    # 26/10/2026: a nota de exigência GERAL do protocolo do balcão — a das
+    # atribuições que não têm nota própria (Notas, Registro Civil, Protesto).
+    # O texto nasceu na pasta; o nome responde por `caixa_exigencia.__getattr__`.
+    {'chave': 'CAIXA_EXIGENCIA', 'padrao': ('caixa_exigencia', 'MODELO_NOTA_DE_EXIGENCIA')},
     # 26/10/2026: o aviso de andamento ao cliente (`andamento_avisos`) — o
     # e-mail que sai sozinho, por isso em chaves e sem o encerramento comum.
     {'chave': 'CAIXA_AVISO_ANDAMENTO', 'padrao': ('andamento_avisos', 'MODELO_AVISO_ANDAMENTO'),

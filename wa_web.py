@@ -28,6 +28,7 @@ import tetos_de_entrada as TETO
 import wa_atendente as ATENDENTE
 import wa_balcao as WA
 import wa_fila as FILA
+import wa_modelos as MODELOS
 import wa_puxar as PUXAR
 import wa_schema as SCH
 from seguranca_web import PRATICA  # M2 (LX11): o AUDITOR vê e não grava
@@ -214,15 +215,28 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             # regra de `configuracoes_central`: credencial de central, só ADMIN.
             if app.extensions["usuario_papel"]() != "ADMIN":
                 abort(403)
-            with db.transaction() as con:
-                WA.gravar_tela_config(con, request.form)
-            audit("wa_config", "wa_config", None, {"ok": True})
+            try:
+                with db.transaction() as con:
+                    # OS MODELOS DA META PRIMEIRO (27/10/2026): eles conferem
+                    # tudo antes de gravar, e a recusa desfaz a transação antes
+                    # de o token ir ao cofre.
+                    MODELOS.gravar_tela(con, request.form)
+                    WA.gravar_tela_config(con, request.form)
+            except MODELOS.ModeloRecusado as erro:
+                flash(f"Nada foi guardado: {erro}", "danger")
+                return redirect(url_for("whatsapp_config"))
+            audit("wa_config", "wa_config", None,
+                  {"ok": True,
+                   "modelos_aprovados": request.form.get(SCH.CHAVE_MODELOS_APROVADOS) == "1"})
             flash("Configuracao do WhatsApp guardada. O token nao aparece no log.",
                   "success")
             return redirect(url_for("whatsapp_config"))
         with _con() as con:
             cfg = WA.config_para_tela(con)
-        return render_template("whatsapp_config.html", cfg=cfg)
+            modelos = MODELOS.config_para_tela(con, _serventia())
+        return render_template("whatsapp_config.html", cfg=cfg, modelos=modelos,
+                               SCH=SCH,
+                               e_admin=app.extensions["usuario_papel"]() == "ADMIN")
 
     @app.route("/whatsapp/puxar", methods=["POST"])
     @login_required
@@ -283,11 +297,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 usuarios = FILA.usuarios_ativos(con)
                 sugeridas = FILA.etiquetas_em_uso(con)
                 ia = ATENDENTE.configuracao(con)
+                # A JANELA DE 24 H (27/10/2026): passada ela, a Meta recusa o
+                # texto livre, e o caminho é o modelo de retomar.
+                janela = {"fora": MODELOS.fora_da_janela(d["mensagens"], db.now()),
+                          "ligado": MODELOS.ligado(con),
+                          "falta": MODELOS.falta_para_enviar(con, _serventia()),
+                          "modelo": MODELOS.nome_do_modelo(con, MODELOS.RETOMAR)}
         if not d:
             abort(404)
         return render_template("whatsapp_conversa.html", c=d, pode_enviar=pode,
                                setores=SCH.SETORES, usuarios=usuarios,
-                               sugeridas=sugeridas, ia=ia,
+                               sugeridas=sugeridas, ia=ia, janela=janela,
                                rotulos_evento=FILA.ROTULO_DO_EVENTO,
                                rotulos_caso=ATENDENTE.ROTULO_DO_CASO)
 
@@ -422,9 +442,47 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                                 agora=db.now())
         except WA.EnvioErro as e:
             flash(str(e), "danger")
+            if "131047" in str(e):
+                # A Meta recusou por janela de 24 h vencida: o caminho é o modelo.
+                flash("Passaram as 24 horas da última mensagem do cliente: a Meta só "
+                      "aceita um modelo aprovado. Use «Reabrir com o modelo» e, quando o "
+                      "cliente responder, envie o rascunho.", "warning")
             return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id)), 400
         audit("wa_enviar", "wa_conversa", conversa_id, {"ok": True})
         flash("Mensagem enviada no WhatsApp.", "success")
+        return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
+
+    @app.route("/whatsapp/<int:conversa_id>/reabrir", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def whatsapp_reabrir(conversa_id: int):
+        """REABRIR COM O MODELO (27/10/2026): fora da janela de 24 h, manda o
+        `cartorio_retomar_atendimento` — só o nome do cartório. A resposta de
+        verdade (o rascunho) vai em texto livre depois que o cliente responder,
+        porque é a resposta dele que reabre a janela. Montar (lê), postar (rede,
+        FORA da transação) e gravar."""
+        try:
+            with _con() as con:
+                d = WA.conversa(con, conversa_id)
+                if not d:
+                    abort(404)
+                falta = MODELOS.falta_para_enviar(con, _serventia())
+                if falta:
+                    raise MODELOS.ModeloRecusado(f"Não dá para reabrir: {falta}.")
+                pedido = MODELOS.montar_envio_modelo(
+                    con, d["wa_id"], MODELOS.RETOMAR,
+                    [MODELOS.nome_no_modelo(con, _serventia())])
+            meta_id = WA.postar_envio(pedido)
+            with db.transaction() as con:
+                WA.gravar_saida(con, conversa_id, pedido["texto"], meta_id,
+                                autor=_quem(), agora=db.now(), tipo="modelo")
+        except WA.EnvioErro as e:
+            flash(str(e), "danger")
+            return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id)), 400
+        audit("wa_reabrir_modelo", "wa_conversa", conversa_id,
+              {"ok": True, "modelo": pedido["modelo"]})
+        flash("Modelo de retomar enviado. Quando o cliente responder, a janela de 24 h "
+              "reabre e o rascunho pode ser enviado.", "success")
         return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
 
     @app.route("/whatsapp/<int:conversa_id>/resolver", methods=["POST"])

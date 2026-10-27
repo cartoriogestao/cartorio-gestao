@@ -36,7 +36,7 @@
   {% for canal in AS.CANAIS %}{% set c = ativos.get(canal) %}
     <tr>
       <td>{{ AS.NOME_DO_CANAL[canal] }}
-        {% if canal == AS.WHATSAPP %}<div class="small"><span class="badge media">envio não configurado</span> {{ SEM_MODELO_DA_META }}</div>{% endif %}</td>
+        {% if canal == AS.WHATSAPP %}{% if whatsapp_motivo is defined and not whatsapp_motivo %}<div class="small"><span class="badge ok">pelo modelo da Meta</span></div>{% else %}<div class="small"><span class="badge media">envio não configurado</span> {{ whatsapp_motivo if whatsapp_motivo is defined and whatsapp_motivo else SEM_MODELO_DA_META }}</div>{% endif %}{% endif %}</td>
       <td>{% if c %}<span class="badge ok">quer ser avisado</span>{% else %}<span class="badge">não marcado</span>{% endif %}</td>
       <td class="small">{{ c.destino if c else '' }}</td>
       <td class="small">{% if c %}{{ (c.registrado_em or '')[:16]|replace('T', ' ') }} · {{ c.registrado_por or '—' }}{% endif %}</td>

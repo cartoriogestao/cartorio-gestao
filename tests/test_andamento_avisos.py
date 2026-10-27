@@ -237,7 +237,9 @@ def test_o_whatsapp_fica_registrado_e_nunca_sai(casa, tmp_path):
     _smtp(db)
     cx = _protocolo(db)
     c = _consentir(db, AS.PROTOCOLO_GERAL, cx, canal=AS.WHATSAPP)
-    assert c["destino"] == "99999990000"
+    # Com o 55 do Brasil desde 27/10/2026 (`wa_modelos.telefone_e164`): é o
+    # formato que a Meta recebe.
+    assert c["destino"] == "5599999990000"
     _pronto(db, cx)
     r = _rodar(db, tmp_path)
     (a,) = _avisos(db)
@@ -505,3 +507,118 @@ def test_o_gerente_grava_o_papel(casa):
                                  "corpo": corpo, "acao": "salvar"})
     assert r.status_code == 302
     assert "Bom dia." in (_ajuste_gravado(casa["db"]) or "")
+
+
+# ------------------------------------------------------------------ o WhatsApp pelo modelo da Meta
+#
+# 27/10/2026 (`wa_modelos`): com o interruptor «modelos aprovados pela Meta»
+# ligado, o aviso por WhatsApp sai pelo modelo — e desligado, nada muda. A
+# Graph é um falso; o access_token mora num `ler_segredo` falso (nada vai ao
+# cofre de verdade).
+
+
+class _Graph:
+    def __init__(self):
+        self.pedidos: list[dict] = []
+
+    def __call__(self, url, payload, headers, timeout=None):
+        import json
+        self.pedidos.append(payload)
+        return 200, json.dumps({"messages": [{"id": f"wamid.aviso-{len(self.pedidos)}"}]})
+
+
+def _whatsapp(db, monkeypatch, *, ligado=True, nome="de Exemplo", graph=None):
+    import cofre_cred
+    import wa_balcao as WA
+    import wa_schema as WSCH
+    original = cofre_cred.ler_segredo
+    monkeypatch.setattr(cofre_cred, "ler_segredo", lambda con, nome_, chave: (
+        "token-wa-de-teste" if chave == WSCH.CHAVE_TOKEN else original(con, nome_, chave)))
+    with db.transaction() as con:
+        WA.gravar_config(con, WSCH.CHAVE_MODELOS_APROVADOS, "1" if ligado else "")
+        WA.gravar_config(con, WSCH.CHAVE_PHONE, "123456789")
+        WA.gravar_config(con, WSCH.CHAVE_NOME_NO_MODELO, nome)
+
+    def proibido(*a, **k):
+        raise AssertionError("o teste tentou falar com a Meta de verdade")
+    monkeypatch.setattr(WA, "_http_post_json", graph or proibido)
+
+
+def test_com_os_modelos_ligados_o_pronto_sai_pelo_modelo(casa, tmp_path, monkeypatch):
+    db = casa["db"]
+    graph = _Graph()
+    _whatsapp(db, monkeypatch, graph=graph)
+    cx = _protocolo(db)
+    _consentir(db, AS.PROTOCOLO_GERAL, cx, canal=AS.WHATSAPP)
+    _pronto(db, cx)
+    r = _rodar(db, tmp_path)
+    (a,) = _avisos(db)
+    assert a["situacao"] == AS.ENVIADO, a["erro"]
+    assert "cartorio_pronto_retirar" in a["assunto"]
+    (p,) = graph.pedidos
+    assert p["to"] == "5599999990000" and p["type"] == "template"
+    assert p["template"]["name"] == "cartorio_pronto_retirar"
+    assert p["template"]["language"] == {"code": "pt_BR"}
+    assert [x["text"] for x in p["template"]["components"][0]["parameters"]] == [
+        "de Exemplo", "2026.10.001"]
+    # Só o nome do cartório e o número: nada do cliente.
+    import json
+    tudo = json.dumps(p, ensure_ascii=False)
+    assert INTERESSADO not in tudo and DOCUMENTO not in tudo and EMAIL_CLIENTE not in tudo
+    assert casa["enviados"] == []                    # nenhum e-mail
+    assert r["situacao"] == SCH.OK
+    # A segunda rodada não manda de novo.
+    _rodar(db, tmp_path)
+    assert len(graph.pedidos) == 1
+
+
+def test_o_prazo_vai_ao_modelo_com_as_variaveis_na_ordem(casa, tmp_path, monkeypatch):
+    db = casa["db"]
+    graph = _Graph()
+    _whatsapp(db, monkeypatch, graph=graph)
+    ri = _prenotacao(db, numero=900007, limite="2026-10-30")    # 4 dias corridos de SEG
+    _consentir(db, AS.PRENOTACAO, ri, canal=AS.WHATSAPP)
+    _rodar(db, tmp_path)
+    (p,) = graph.pedidos
+    assert p["template"]["name"] == "cartorio_prenotacao_vencendo"
+    assert [x["text"] for x in p["template"]["components"][0]["parameters"]] == [
+        "de Exemplo", "900007", "30/10/2026"]
+
+
+def test_a_exigencia_vai_ao_modelo_dela(casa, tmp_path, monkeypatch):
+    db = casa["db"]
+    graph = _Graph()
+    _whatsapp(db, monkeypatch, graph=graph)
+    ri = _prenotacao(db, numero=900008)
+    _nota(db, ri)
+    _consentir(db, AS.PRENOTACAO, ri, canal=AS.WHATSAPP)
+    _rodar(db, tmp_path, eventos=[AS.EXIGENCIA])
+    (p,) = graph.pedidos
+    assert p["template"]["name"] == "cartorio_exigencia"
+    assert [x["text"] for x in p["template"]["components"][0]["parameters"]] == [
+        "de Exemplo", "900008"]
+
+
+def test_desligado_o_whatsapp_continua_nao_configurado_mesmo_com_token(casa, tmp_path,
+                                                                        monkeypatch):
+    db = casa["db"]
+    _whatsapp(db, monkeypatch, ligado=False)             # a Graph é o guarda que estoura
+    cx = _protocolo(db)
+    _consentir(db, AS.PROTOCOLO_GERAL, cx, canal=AS.WHATSAPP)
+    _pronto(db, cx)
+    r = _rodar(db, tmp_path)
+    (a,) = _avisos(db)
+    assert a["situacao"] == AS.PENDENTE_CONFIG and a["erro"] == AA.SEM_MODELO_DA_META
+    assert "1 por WhatsApp (sem modelo da Meta)" in r["relato"]
+
+
+def test_ligado_com_o_nome_do_cartorio_torto_espera_sem_ir_a_rede(casa, tmp_path, monkeypatch):
+    db = casa["db"]
+    _whatsapp(db, monkeypatch, nome="Cartório de Exemplo")   # repete «Cartório»
+    cx = _protocolo(db)
+    _consentir(db, AS.PROTOCOLO_GERAL, cx, canal=AS.WHATSAPP)
+    _pronto(db, cx)
+    _rodar(db, tmp_path)
+    (a,) = _avisos(db)
+    assert a["situacao"] == AS.PENDENTE_CONFIG
+    assert "nome do cartório no modelo" in a["erro"]

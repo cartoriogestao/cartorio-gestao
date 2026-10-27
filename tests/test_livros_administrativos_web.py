@@ -131,6 +131,57 @@ def test_o_gerente_lanca_a_despesa_mas_so_o_oficial_gera_o_diario(cg_casa):
     assert len(_rastro(cg_casa, "LIVRO_DIARIO_GERADO")) == 1
 
 
+def _selo_de_setembro(casa) -> None:
+    with casa["db"].transaction() as con:
+        banco(con).escrever(
+            """INSERT INTO sd_selos (numero, texto, atribuicao, referencia, ambiente,
+                   obtido_em, usado_em)
+               VALUES (%s, %s, 'NOTAS', 'protocolo 2026.09.1', 'PRODUCAO', %s, %s)""",
+            ("TESTEFERJ0001",
+             ("Selo: TESTE1323000000000000000000 03/09/2026 10:00:00, "
+              "Ato: 13.23, Parte(s): FULANA DE TESTE, Total R$ 140,01 Emol R$ 125,01 "
+              "FERC R$ 3,75 FADEP R$ 5,00 FEMP R$ 5,00 FERRFIS R$ 1,25 "
+              "Consulte em https://selo.exemplo.invalid"),
+             "2026-09-03T10:00:00", "2026-09-03T10:00:00"))
+
+
+def test_a_tela_e_o_papel_do_diario_tem_o_ferj_e_o_ferc_em_colunas_proprias(cg_casa):
+    """O FERJ do art. 190, I, k é 12% do emolumento (15,00 sobre 125,01), e o
+    FERC do selo (3,75) sai com o nome dele — não mais «FERJ (FERC no selo)»."""
+    _selo_de_setembro(cg_casa)
+    oficial = _entrar(cg_casa, "oficial", "ADMIN")
+    tela = oficial.get("/livros-obrigatorios/diario?mes=2026-09").get_data(as_text=True)
+    assert "FERC no selo" not in tela
+    assert "<th>FERJ</th>" in tela and "<th>FERC</th>" in tela
+    assert "15,00" in tela and "3,75" in tela and "12,00% de dentro do emolumento" in tela
+    r = _post(oficial, "/livros-obrigatorios/diario/gerar", mes="2026-09")
+    papel = oficial.get(r.headers["Location"]).get_data(as_text=True)
+    assert "FERC no selo" not in papel and "15,00" in papel
+    assert "FERJ (art. 190, I, k): 12,00% de dentro do emolumento" in papel
+
+
+def test_a_versao_gerada_antes_do_ferj_abre_e_diz_que_e_de_antes(cg_casa):
+    import livro_diario as LD
+    _selo_de_setembro(cg_casa)
+    oficial = _entrar(cg_casa, "oficial", "ADMIN")
+    r = _post(oficial, "/livros-obrigatorios/diario/gerar", mes="2026-09")
+    gid = int(r.headers["Location"].rstrip("/").rsplit("/", 1)[1])
+    with cg_casa["db"].transaction() as con:
+        bd = banco(con)
+        velho = LD._sem_ferj(json.loads(bd.valor(
+            "SELECT conteudo FROM ld_geracoes WHERE id = %s", (gid,))))
+        bd.escrever("UPDATE ld_geracoes SET conteudo = %s, hash = %s WHERE id = %s",
+                    (json.dumps(velho, ensure_ascii=False, sort_keys=True),
+                     LD._hash(velho), gid))
+    papel = oficial.get(r.headers["Location"])
+    assert papel.status_code == 200
+    texto = papel.get_data(as_text=True)
+    assert "Versão gerada antes de 25/10/2026" in texto and "3,75" in texto
+    tela = oficial.get("/livros-obrigatorios/diario?mes=2026-09").get_data(as_text=True)
+    assert "a versão gerada é de antes da coluna do FERJ" in tela
+    assert "o movimento mudou depois da última geração" not in tela
+
+
 def test_a_despesa_anulada_fica_na_tela_com_o_motivo(cg_casa):
     c = _entrar(cg_casa, "gerente", "MANAGER")
     _post(c, "/livros-obrigatorios/diario/despesas", **DESPESA)

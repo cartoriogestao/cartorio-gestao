@@ -36,6 +36,7 @@ O QUE ESTE MÓDULO NÃO FAZ
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 from typing import Any
 from xml.sax.saxutils import escape
@@ -420,6 +421,21 @@ def _uf_crc(v: Any) -> str:
 
 def _digitos(v: Any) -> str:
     return "".join(c for c in str(v or "") if c.isdigit())
+
+
+def _idade_crc(v: Any) -> str:
+    """A `IDADE` da filiação como o XSD a aceita: o número, até 3 algarismos.
+    Só calcula; devolve vazio quando não há número no começo.
+
+    **A CRC RECUSOU A CARGA INTEIRA POR UMA IDADE — 26/10/2026.** O campo é
+    livre na tela, e no assento 8443 a idade do pai foi digitada «23 ANOS»:
+    `IDADE` tem `maxLength` 3 no XSD, e um genitor derrubava o arquivo dos
+    dezesseis registros. A unidade já vai em `IDADE_DIAS_MESES_ANOS` («A»),
+    por isso o número basta. O que vier depois dele não sobe, e
+    `o_que_arrumar` avisa para a ficha ser corrigida.
+    """
+    achado = re.match(r"\s*(\d{1,3})(?!\d)", str(v or ""))
+    return achado.group(1) if achado else ""
 
 
 def _cpf(pessoa: dict) -> str:
@@ -851,6 +867,17 @@ def o_que_arrumar(con: sqlite3.Connection, assento: dict,
                 f"o sexo da {rotulo} («{nome}») — **sem ele esta filiação não "
                 "sobe**, e o nome já está no sistema. A CRC aceita masculino, "
                 "feminino e ignorado")
+        # A IDADE COM TEXTO DENTRO (26/10/2026, «23 ANOS» no assento 8443):
+        # o arquivo leva só o número, e a ficha continua dizendo outra coisa.
+        bruta = _texto(quem.get("idade_no_fato"))
+        numero = _idade_crc(bruta)
+        if bruta and bruta != numero:
+            faltas.append(
+                f"a idade da {rotulo} está gravada como «{bruta}» — a CRC "
+                "aceita só o número, até três algarismos. "
+                + (f"Ela sobe como «{numero}»; corrija na ficha para a ficha "
+                   "e o arquivo dizerem o mesmo" if numero else
+                   "Ela não sobe; corrija na ficha"))
 
     return faltas
 
@@ -1142,12 +1169,14 @@ def _filiacao(con: sqlite3.Connection, pessoa: dict, indice: int,
               _tag("NOME", nome), _tag("SEXO", sexo),
               _tag("CPF", _cpf(pessoa)),
               _tag("DATANASCIMENTO", _data(pessoa.get("data_nascimento")))]
-    if pessoa.get("idade_no_fato"):
+    idade = _idade_crc(pessoa.get("idade_no_fato"))
+    if idade:
         # **A ENUMERAÇÃO É A LETRA, E NÃO A PALAVRA** — `'', 'D', 'M', 'A'`.
         # Isto dizia `"ANOS"`, que não está no XSD e derrubaria o registro
         # inteiro por causa de um genitor com idade informada. Só se guarda
-        # a idade em ANOS nesta casa; por isso a letra é sempre `A`.
-        partes.append(_tag("IDADE", pessoa["idade_no_fato"]))
+        # a idade em ANOS nesta casa; por isso a letra é sempre `A`. E a
+        # IDADE vai só com o número (`_idade_crc`, 26/10/2026).
+        partes.append(_tag("IDADE", idade))
         partes.append(_tag("IDADE_DIAS_MESES_ANOS", "A"))
     for coluna, tag in (("endereco", "LOGRADOURO"), ("bairro", "BAIRRO")):
         if pessoa.get(coluna):

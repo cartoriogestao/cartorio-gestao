@@ -1,7 +1,6 @@
 """Controle diário de produtividade — planilha CARLA (SANDBOX)."""
 from __future__ import annotations
 
-import csv
 import io
 import re
 import sqlite3
@@ -1471,7 +1470,11 @@ def exportar_csv(
         con, data_filtro=data_filtro, responsavel_user_id=responsavel_user_id
     )
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=list(EXPORT_COLUNAS), delimiter=";")
+    # Sem fórmula na planilha (achado transversal 2, 26/10/2026): o campo
+    # «Observações» é texto livre do balcão. O «Desvio (min)» negativo continua
+    # número — `csv_seguro` não põe apóstrofo em número.
+    import csv_seguro as CSVS
+    writer = CSVS.escritor_de_dicionario(buf, list(EXPORT_COLUNAS))
     writer.writeheader()
     for row in linhas:
         writer.writerow(row)

@@ -63,6 +63,86 @@
   </small></p>
 </section>
 
+{#
+  O MÊS, NUM PDF SÓ, PARA O DELEGATÁRIO ASSINAR — 23/10/2026: «junta tudo para
+  assinar no final do mês, ainda que tenha encerramento diário». O termo de
+  cada dia continua nascendo acima; aqui ele só é juntado.
+#}
+<section class="panel" id="mes">
+  <div class="panel-head">
+    <span>Termos do mês, para assinar</span>
+    <small>{{ mensal.nomes | default([]) | join(' · ') }}</small>
+  </div>
+  <form method="get" class="grid2" style="padding:14px">
+    <label>Mês
+      <input type="month" name="mes" value="{{ mensal.competencia }}"></label>
+    <div class="actions"><button class="button">Ver o mês</button></div>
+  </form>
+  {% if mensal.erro %}
+    <div class="notice danger" style="margin:0 14px 14px">{{ mensal.erro }}</div>
+  {% else %}
+    {% if mensal.pendencias %}
+      <div class="notice" style="margin:0 14px 14px">
+        <strong>{{ mensal.pendencias | length }} dia(s) de {{ mensal.nome }} sem termo
+        de encerramento.</strong> O mês só se junta inteiro: o PDF afirma que o livro
+        não tem buraco.
+        <div><small>
+          {% for p in mensal.pendencias[:12] %}{{ p.dia }} ({{ p.nome }}, {{ p.motivo }}){% if not loop.last %}; {% endif %}{% endfor %}{% if mensal.pendencias | length > 12 %} …{% endif %}
+        </small></div>
+      </div>
+      <p style="padding:0 14px 14px"><small>
+        Encerre esses dias na tabela <strong>Encerrar o dia</strong>, acima, um por um.
+        O encerramento é da rotina de cada dia; o mês só junta os termos para a
+        assinatura do delegatário.
+      </small></p>
+    {% elif user.role in ['ADMIN','MANAGER'] and not (mensal.juntado and mensal.juntado.assinado_em) %}
+      <form method="post" action="{{ url_for('nucleo_encerramento_mensal_juntar') }}"
+            style="padding:0 14px 14px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="mes" value="{{ mensal.competencia }}">
+        <button class="button">{% if mensal.juntado %}Juntar de novo{% else %}Juntar os termos de {{ mensal.nome }}{% endif %}</button>
+      </form>
+    {% endif %}
+    {% if mensal.juntado %}
+      {% set m = mensal.juntado %}
+      <p style="padding:0 14px"><small>
+        {{ m.quantidade }} termo(s) juntados em {{ m.gerado_em }} por {{ m.gerado_por or '—' }}.
+        {% if m.assinado_em %}
+          <strong>Assinado</strong> em {{ m.assinado_em }} por {{ m.assinado_por or 'certificado sem nome legível' }}.
+        {% else %}
+          Esperando a assinatura do delegatário.
+        {% endif %}
+      </small></p>
+      <div class="actions" style="padding:0 14px 14px">
+        <a class="button" target="_blank" href="{{ url_for('nucleo_encerramento_mensal_pdf', mensal_id=m.id) }}">Ver o PDF</a>
+        {% if m.assinado_em %}
+          <a class="button" href="{{ url_for('nucleo_encerramento_mensal_assinado', mensal_id=m.id) }}">Baixar o assinado (.p7s)</a>
+        {% elif user.role in ['ADMIN','MANAGER'] %}
+          <form method="post" action="{{ url_for('nucleo_encerramento_mensal_assinar', mensal_id=m.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="button">Assinar com o certificado A3</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endif %}
+  {% endif %}
+  {% if mensal.meses %}
+  <table class="table">
+    <thead><tr><th>Mês</th><th>Termos</th><th>Assinatura</th><th></th></tr></thead>
+    <tbody>
+      {% for m in mensal.meses %}
+      <tr>
+        <td><a href="{{ url_for('nucleo_encerramento_diario', mes=m.competencia) }}#mes">{{ m.nome_do_mes }}</a></td>
+        <td>{{ m.quantidade }}</td>
+        <td><small>{% if m.assinado_em %}assinado em {{ m.assinado_em[:10] }}{% else %}esperando{% endif %}</small></td>
+        <td><a target="_blank" href="{{ url_for('nucleo_encerramento_mensal_pdf', mensal_id=m.id) }}">PDF</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
 <section class="panel">
   <div class="panel-head">
     <span>Dias já encerrados</span><small>{{ feitos | length }} mais recente(s)</small>

@@ -463,6 +463,37 @@
     {% endcall %}
   {% endif %}
 
+  {# O TERMO DE PATERNIDADE — 23/10/2026. Nascimento com o pai declarado
+     ignorado não se lavra sem o termo de alegação (a mãe indica o suposto pai)
+     ou o negativo (a mãe se recusa) — Lei nº 8.560/1992, art. 2º. O termo é
+     gerado e guardado junto com o assento, e sai na ficha para assinar. #}
+  {% if nascimento and not do_acervo %}
+  <section class="panel" style="grid-column:1/-1" id="paternidade">
+    <div class="panel-head"><span>Pai não declarado — termo de paternidade</span>
+      <small>Lei nº 8.560/1992, art. 2º</small></div>
+    <div class="grid2" style="padding:14px">
+      <p style="grid-column:1/-1"><small>Só quando o pai foi declarado
+        <strong>ignorado</strong>. A mãe pode indicar o suposto pai (termo de
+        alegação, que vai ao juiz em até 30 dias) ou se recusar (termo
+        negativo, que fica arquivado na serventia).</small></p>
+      <label>Termo
+        <select name="paternidade_tipo">
+          <option value="" {% if not form.get('paternidade_tipo') %}selected{% endif %}>— o pai está declarado —</option>
+          <option value="ALEGACAO" {% if form.get('paternidade_tipo') == 'ALEGACAO' %}selected{% endif %}>Alegação: a mãe indica o suposto pai</option>
+          <option value="NEGATIVO" {% if form.get('paternidade_tipo') == 'NEGATIVO' %}selected{% endif %}>Negativo: a mãe se recusa a indicar</option>
+        </select></label>
+      <label>Nome do suposto pai
+        <input name="suposto_pai_nome" value="{{ form.get('suposto_pai_nome','') }}"></label>
+      <label>Profissão do suposto pai
+        <input name="suposto_pai_profissao" value="{{ form.get('suposto_pai_profissao','') }}"></label>
+      <label>Documento de identidade do suposto pai
+        <input name="suposto_pai_documento" value="{{ form.get('suposto_pai_documento','') }}"></label>
+      <label style="grid-column:1/-1">Residência do suposto pai
+        <input name="suposto_pai_residencia" value="{{ form.get('suposto_pai_residencia','') }}"></label>
+    </div>
+  </section>
+  {% endif %}
+
   {# 4. AS PERGUNTAS DO ÓBITO — art. 80 da Lei 6.015/1973 e art. 255 do Código
      de Normas. «O oficial indagará, obrigatoriamente, a respeito de todos os
      itens» (§ 1º). Até 13/10/2026 as quatro marcas só se respondiam numa tela à

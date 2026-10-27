@@ -108,7 +108,7 @@ REMESSA_DA_CRA = (RAIZ / "tests" / "cra_remessa_exemplo.txt").read_bytes()
 
 
 @pytest.fixture()
-def s(cg_casa_logada):
+def s(cg_casa_logada, monkeypatch):
     """A casa logada como ADMIN, com a tabela de teste e o selador ligado.
 
     `protocolo_pago=False`: o protocolo pago É o que estes testes montam pela
@@ -130,6 +130,21 @@ def s(cg_casa_logada):
                        ferc, femp, fadep, ferrfis, total)
                    VALUES (%s,9001,%s,'0,00','0,00','0,00','0,00',%s)""",
                 (codigo, preco, preco))
+    # O TRÍDUO (tarefa 56, PR #9): a rota de lançar confere o termo inicial, e
+    # este fluxo aponta, intima e protesta no mesmo dia. Aqui o relógio da
+    # conferência anda até o termo inicial quando o protesto vem cedo — o resto
+    # da conta (atraso, motivo, o que fica gravado no ato) é o de verdade. A
+    # recusa antes do prazo é de `test_protesto_triduo`.
+    import protesto_triduo as TRIDUO
+    conferir = TRIDUO.conferir_lavratura
+
+    def no_termo_inicial(con, titulo_id, *, hoje, **outros):
+        inicio = TRIDUO.contar(con, titulo_id).get("termo_inicial")
+        if inicio and str(hoje or "")[:10] < inicio:
+            hoje = inicio
+        return conferir(con, titulo_id, hoje=hoje, **outros)
+
+    monkeypatch.setattr(TRIDUO, "conferir_lavratura", no_termo_inicial)
     with ligar_o_selador(cg_casa_logada, protocolo_pago=False) as aparelho:
         cg_casa_logada["aparelho"] = aparelho
         yield cg_casa_logada

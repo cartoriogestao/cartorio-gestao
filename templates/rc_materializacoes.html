@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Materializar certidão de outra serventia</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_certidoes') }}">&larr; Certidões</a>
+</div>
+
+{# A MATERIALIZAÇÃO — 26/10/2026. A certidão chega eletrônica de outro
+   cartório (pela CRC), e esta casa a imprime e entrega ao cliente. A
+   impressão leva selo desta casa, pelo caminho próprio do selador
+   (`/selo/civil/certidao/materializacao`), com o item {{ codigo_ato }} e o
+   pagamento no caixa — por isso o protocolo do balcão vem junto, como em
+   qualquer selo pago. Os campos são os que o contrato do selador exige: é a
+   certidão DE LÁ que se descreve. #}
+<section class="panel">
+  <div class="panel-head"><span>Selar a materialização</span></div>
+  <form method="post" class="grid2" style="padding:14px"
+        action="{{ url_for('rcpn_materializacao_selar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p style="grid-column:1/-1; margin:0"><small>
+      Emite o <strong>selo da materialização</strong> (item {{ codigo_ato }}) da
+      certidão eletrônica que veio de outro cartório. Preencha com o que está
+      <strong>na certidão recebida</strong>.
+    </small></p>
+    <label>Nome de quem é o registro
+      <input name="nome_parte" required></label>
+    <label>Requerente <small>(quem recebe no balcão — opcional)</small>
+      <input name="requerente"></label>
+    <label>Cartório que expediu
+      <input name="cartorio_nome" required></label>
+    <label>Cidade do cartório
+      <input name="cartorio_cidade" required></label>
+    <label>UF do cartório
+      <input name="cartorio_uf" required maxlength="2" placeholder="MA"></label>
+    <label>Quem expediu a certidão lá
+      <input name="funcionario_expedidor" required></label>
+    <label>Emolumentos da certidão de origem (R$)
+      <input name="valor_emolumentos" required inputmode="decimal" placeholder="0,00"></label>
+    <label>Espécie <small>(opcional)</small>
+      <select name="especie">
+        <option value="">—</option>
+        <option value="NASCIMENTO">Nascimento</option>
+        <option value="CASAMENTO">Casamento</option>
+        <option value="OBITO">Óbito</option>
+        <option value="OUTRA">Outra</option>
+      </select></label>
+    <label style="grid-column:1/-1">Matrícula <small>(os 32 dígitos, se a certidão trouxer)</small>
+      <input name="matricula" inputmode="numeric"></label>
+    <label style="display:flex; gap:6px; align-items:center">
+      <input type="checkbox" name="selo_gratuito" value="1" style="width:auto">
+      Selo isento (gratuidade)</label>
+    <label style="grid-column:1/-1">Motivo da gratuidade <small>(só se isento)</small>
+      <input name="motivo_gratuidade"></label>
+    <div style="grid-column:1/-1">
+      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
+      {% set s_selo = seletor_do_selo('rc_materializacoes', pedidos=[(codigo_ato, 1)]) %}
+      {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo) }}
+    </div>
+    <button class="button primary" style="grid-column:1/-1"
+            onclick="return confirm('Emitir o selo da materialização ({{ codigo_ato }})?');">
+      Emitir selo da materialização</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Materializações registradas</span></div>
+  {% if linhas %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Quando</th><th>De quem</th><th>Cartório de origem</th>
+               <th>Selo</th><th>Situação</th></tr></thead>
+    <tbody>
+    {% for m in linhas %}
+      <tr>
+        <td><small>{{ m.emitida_em }}</small><br><small>{{ m.emitida_por or '' }}</small></td>
+        <td>{{ m.nome_parte }}{% if m.requerente %}<br><small>pedido por {{ m.requerente }}</small>{% endif %}</td>
+        <td>{{ m.cartorio_nome }}<br><small>{{ m.cartorio_cidade }}/{{ m.cartorio_uf }}</small></td>
+        <td><small>{{ m.selo or '—' }}</small></td>
+        <td>{% if m.cancelada_em %}<span class="badge danger">cancelada</span>
+              <br><small>{{ m.cancelada_motivo }}</small>
+            {% elif m.selo %}<span class="badge ok">selada</span>
+            {% else %}<span class="badge">sem selo</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p style="padding:14px"><small>Nenhuma materialização registrada ainda. A
+    primeira aparece aqui assim que o selo dela sair.</small></p>
+  {% endif %}
+</section>
+{% endblock %}

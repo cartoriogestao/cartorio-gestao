@@ -34,6 +34,9 @@ def _banco(tmp_path, linhas=None):
         con.execute("INSERT INTO settings VALUES (?,?)", (k, v))
     con.commit()
     con.close()
+    # Com a suíte no PostgreSQL o `sqlite3.connect` vai para um schema e o
+    # arquivo não nasce; a ferramenta confere o ARQUIVO antes de abrir o banco.
+    banco.touch()
     return banco
 
 

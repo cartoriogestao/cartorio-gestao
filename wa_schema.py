@@ -125,6 +125,17 @@ CHAVE_TEXTO_BASE_EM = "ia_texto_base_aprovado_em"
 CHAVE_VALORES = "ia_valores"                   # "codigo_tj | nome", um por linha
 CHAVE_PRAZO_MINUTOS = "prazo_resposta_minutos"
 
+# OS MODELOS DA META (27/10/2026, `wa_modelos`). Nada disto e segredo. O
+# interruptor nasce VAZIO = desligado: enquanto a Meta nao aprovar, tudo
+# continua como era. Nome de modelo vazio = o padrao de `wa_modelos.MODELOS`.
+CHAVE_MODELOS_APROVADOS = "modelos_aprovados"    # "1" = a Meta aprovou, pode usar
+CHAVE_NOME_NO_MODELO = "nome_no_modelo"          # o {{1}}: «de Exemplo»
+CHAVE_MODELO_EXIGENCIA = "modelo_exigencia"
+CHAVE_MODELO_PRONTO = "modelo_pronto_retirar"
+CHAVE_MODELO_PRAZO = "modelo_prenotacao_vencendo"
+CHAVE_MODELO_PESQUISA = "modelo_pesquisa_satisfacao"
+CHAVE_MODELO_RETOMAR = "modelo_retomar_atendimento"
+
 CHAVES_CONFIG = (
     CHAVE_VERIFY, CHAVE_APP_SECRET, CHAVE_PHONE, CHAVE_TOKEN,
     CHAVE_CAIXA_URL, CHAVE_CAIXA_SEGREDO, CHAVE_MODO_TESTE,
@@ -134,6 +145,9 @@ CHAVES_CONFIG = (
     CHAVE_AUDIO_MODELO, CHAVE_AUDIO_PRECO_MINUTO, CHAVE_TEXTO_BASE,
     CHAVE_TEXTO_BASE_POR, CHAVE_TEXTO_BASE_EM, CHAVE_VALORES,
     CHAVE_PRAZO_MINUTOS,
+    CHAVE_MODELOS_APROVADOS, CHAVE_NOME_NO_MODELO, CHAVE_MODELO_EXIGENCIA,
+    CHAVE_MODELO_PRONTO, CHAVE_MODELO_PRAZO, CHAVE_MODELO_PESQUISA,
+    CHAVE_MODELO_RETOMAR,
 )
 
 # O QUE E SEGREDO, e por isso mora no cofre e nao em `wa_config` (LX14). O

@@ -105,6 +105,68 @@
     </p>
   </div>
 
-  <p><button class="button">guardar</button></p>
+  <div class="card">
+    <h2>Modelos aprovados pela Meta</h2>
+    <p class="small muted">
+      Fora da janela de 24 horas da última mensagem do cliente, a Meta só deixa a
+      serventia escrever por um <strong>modelo</strong> que ela aprovou
+      (categoria Utilidade, idioma <code>{{ modelos.idioma }}</code>). São eles que
+      levam os avisos de andamento, o convite da pesquisa e o «Reabrir com o
+      modelo» do balcão. A mensagem automática leva só o nome do cartório, o
+      número e a data (ou o link da pesquisa): nunca CPF, valor, nome de pessoa ou
+      o teor do ato.
+    </p>
+    <p>
+      <label class="check"><input type="checkbox" name="{{ SCH.CHAVE_MODELOS_APROVADOS }}" value="1"
+             {% if modelos.ligado %}checked{% endif %}>
+        <strong>Modelos aprovados pela Meta</strong> — ligar o envio por modelo</label>
+    </p>
+    <p class="small muted">
+      {% if modelos.ligado %}
+        {% if modelos.falta %}<span class="badge media">ligado, mas não sai</span> {{ modelos.falta }}.
+        {% else %}<span class="badge ok">ligado</span> os modelos estão sendo usados.{% endif %}
+      {% else %}<span class="badge media">desligado</span> Nada sai por modelo: os avisos por
+        WhatsApp ficam «não configurado» e o convite da pesquisa por WhatsApp fica na fila.
+        Ligue só quando a Meta tiver aprovado os cinco (Gerenciador do WhatsApp → Modelos
+        de mensagem).{% endif %}
+    </p>
+    <p>
+      <label>nome do cartório no modelo (o que vem depois de «Cartório»)<br>
+        <input type="text" name="{{ SCH.CHAVE_NOME_NO_MODELO }}"
+               value="{{ modelos.nome_no_modelo or '' }}" autocomplete="off" style="width:100%"
+               placeholder="{{ modelos.nome_derivado or 'de Exemplo' }}">
+      </label>
+    </p>
+    <p class="small muted">
+      Vazio = {% if modelos.nome_derivado %}«{{ modelos.nome_derivado }}», tirado dos dados da
+      serventia{% else %}nenhum (os dados da serventia não têm a cidade; preencha aqui){% endif %}.
+      Os modelos começam com «Cartório {{ '{{1}}' }}:», então escreva só o complemento,
+      com a preposição: «de …», «do …» ou «da …».
+    </p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Para quê</th><th>Nome cadastrado na Meta</th><th>Variáveis, nesta ordem</th><th>Como sai (exemplo)</th></tr></thead>
+      <tbody>
+      {% for m in modelos.modelos %}
+        <tr>
+          <td>{{ m.rotulo }}</td>
+          <td><input type="text" name="{{ m.campo }}" value="{{ m.gravado or '' }}"
+                     placeholder="{{ m.padrao }}" autocomplete="off"
+                     pattern="[a-z0-9_]*">
+              <div class="small muted">vazio = <code>{{ m.padrao }}</code></div></td>
+          <td class="small">{% for v in m.variaveis %}{{ '{{' ~ loop.index ~ '}}' }} {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
+          <td class="small">{{ m.exemplo }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <p class="small muted">
+      O texto que vale é o aprovado na Meta; a coluna «como sai» é a cópia que o
+      sistema guarda na conversa. Se a Meta pedir outro nome na aprovação, troque
+      aqui — sem versão nova.
+    </p>
+  </div>
+
+  <p><button class="button">guardar</button>
+    {% if not e_admin %}<span class="small muted">Só o administrador grava esta configuração.</span>{% endif %}</p>
 </form>
 {% endblock %}

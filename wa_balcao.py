@@ -460,6 +460,12 @@ def _mensagem_erro_graph(bruto: str, status: int) -> str:
         err = d.get("error") or {}
         msg = err.get("message") or err.get("error_user_msg")
         if msg:
+            # O CODIGO DA META VAI JUNTO (27/10/2026): e por ele que a tela
+            # reconhece a recusa por janela de 24 h vencida (131047) e oferece
+            # o modelo de retomar, em vez de so dizer que falhou.
+            codigo = err.get("code")
+            if codigo:
+                return f"A Graph recusou ({status}, código {codigo}): {msg}"
             return f"A Graph recusou ({status}): {msg}"
     except json.JSONDecodeError:
         pass
@@ -528,21 +534,23 @@ def postar_envio(pedido: dict, http_post: Callable | None = None) -> str | None:
 
 
 def gravar_saida(con: Any, conversa_id: int, texto: str, meta_id: str | None,
-                 *, autor: str = "", agora: str | None = None) -> int:
+                 *, autor: str = "", agora: str | None = None,
+                 tipo: str = "text") -> int:
     """Grava a mensagem que saiu e poe a conversa em AGUARDANDO. ESCREVE.
 
     `autor` e o nome de quem apertou o botao, ou `ia` para a resposta
     automatica — e o que separa, no painel, o tempo de resposta da pessoa do
-    da IA."""
+    da IA. `tipo` e `modelo` quando saiu um modelo da Meta (`wa_modelos`): a
+    conversa mostra que aquilo foi o modelo, e nao texto escrito por alguem."""
     quando = agora or agora_iso()
     bd = banco(con)
     mid = int(bd.escrever(
         """INSERT INTO wa_mensagem
                (conversa_id, direcao, texto, bruto_json, criado_em, meta_id,
                 tipo, autor)
-           VALUES (%s, %s, %s, %s, %s, %s, 'text', %s) RETURNING id""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (int(conversa_id), DIR_OUT, texto, None, quando, meta_id,
-         (autor or "")[:80] or None),
+         (tipo or "text")[:20], (autor or "")[:80] or None),
     )[0]["id"])
     bd.escrever(
         """UPDATE wa_conversa

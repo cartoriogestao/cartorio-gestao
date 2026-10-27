@@ -53,12 +53,16 @@ OS CANAIS
     EMAIL     pelo envio da automação (`automacao_avisos.mandar_email`, com a
               senha em `avisos.cred`) — o mesmo SMTP, outro destino. Sem SMTP
               configurado, o aviso fica PENDENTE_CONFIG.
-    WHATSAPP  o registro e a fila existem, e o envio NÃO: fora da janela de 24 h
-              a Meta só deixa a serventia iniciar conversa por MODELO aprovado
-              por ela, e esta casa não tem nenhum. Texto livre automático é
-              recusado pela Meta e contraria a regra da casa (autoenvio
-              desligado). Fica PENDENTE_CONFIG — ninguém conclui que mandou o
-              que não mandou.
+    WHATSAPP  fora da janela de 24 h a Meta só deixa a serventia iniciar
+              conversa por MODELO aprovado por ela. Texto livre automático é
+              recusado pela Meta e contraria a regra da casa — por isso o aviso
+              sai pelos modelos `cartorio_exigencia`, `cartorio_pronto_retirar`
+              e `cartorio_prenotacao_vencendo` (`wa_modelos`, 27/10/2026), só
+              com o nome do cartório, o número e a data. Enquanto o interruptor
+              «modelos aprovados pela Meta» estiver desligado (o de fábrica), o
+              aviso fica PENDENTE_CONFIG com a frase de sempre — ninguém conclui
+              que mandou o que não mandou. O telefone vai com o 55 na frente
+              (`wa_modelos.telefone_e164`).
 
 OS TEXTOS SÃO DA CASA
     Papel CAIXA_AVISO_ANDAMENTO do catálogo (`modelos_padrao/caixa/`), uma
@@ -171,10 +175,30 @@ def destino_do_canal(reg: dict, canal: str) -> str:
         if not tel:
             raise AndamentoError("Este registro não tem telefone. Corrija o contato antes de "
                                  "marcar o aviso por WhatsApp.")
-        if not 10 <= len(tel) <= 13:
-            raise AndamentoError("O telefone precisa do DDD (10 a 13 dígitos) para o WhatsApp.")
-        return tel
+        # O FORMATO DA META (27/10/2026): 55 + DDD + número. Antes aceitava 10 a
+        # 13 dígitos sem exigir o código do país, e o «99999990000» ia à Meta
+        # como se fosse de outro país.
+        import wa_modelos as WM
+        try:
+            return WM.telefone_e164(tel)
+        except WM.TelefoneInvalido as erro:
+            raise AndamentoError(f"{erro} (aviso por WhatsApp)") from None
     raise AndamentoError("Canal desconhecido.")
+
+
+def motivo_do_whatsapp(con, serventia: dict | None = None) -> str:
+    """Por que o aviso por WhatsApp NÃO pode sair agora, ou ``""``. Só lê.
+
+    Com o interruptor dos modelos desligado (o de fábrica), a frase é a de
+    sempre — `SEM_MODELO_DA_META` —, e o comportamento não muda."""
+    try:
+        import wa_modelos as WM
+    except ImportError:                       # sem o balcão do WhatsApp instalado
+        return SEM_MODELO_DA_META
+    if not WM.ligado(con):
+        return SEM_MODELO_DA_META
+    falta = WM.falta_para_enviar(con, serventia)
+    return f"WhatsApp por modelo da Meta: {falta}." if falta else ""
 
 
 # ------------------------------------------------------------------ o consentimento
@@ -396,17 +420,25 @@ def enfileirar(con, vigentes: dict[str, dict], *, agora: datetime) -> int:
     """Um aviso por evento, canal e destino — o índice único faz o «uma vez». ESCREVE."""
     bd = banco(con)
     novos = 0
+    motivo_whats: list[str] = []          # lido uma vez, e só se houver WhatsApp
     for chave, ev in vigentes.items():
         for c in destinatarios(con, ev["origem"], ev["origem_id"]):
             whats = c["canal"] == AS.WHATSAPP
+            if whats and not motivo_whats:
+                # Aqui só importa o interruptor: desligado, a frase de sempre;
+                # ligado, entra na fila, e quem confere o resto (credencial,
+                # nome do cartório, telefone) é o envio, logo em seguida.
+                motivo_whats.append(SEM_MODELO_DA_META if motivo_do_whatsapp(con)
+                                    == SEM_MODELO_DA_META else "")
+            espera = motivo_whats[0] if whats else ""
             bd.escrever(
                 """INSERT INTO av_avisos (evento, chave, origem, origem_id, canal, destino,
                        consentimento_id, situacao, criado_em, erro)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT (chave, canal, destino) DO NOTHING""",
                 (ev["evento"], chave, ev["origem"], ev["origem_id"], c["canal"], c["destino"],
-                 c["id"], AS.PENDENTE_CONFIG if whats else AS.PENDENTE, _iso(agora),
-                 SEM_MODELO_DA_META if whats else None))
+                 c["id"], AS.PENDENTE_CONFIG if espera else AS.PENDENTE, _iso(agora),
+                 espera or None))
             novos += max(0, int(getattr(bd, "linhas_afetadas", 0) or 0))
     return novos
 
@@ -573,6 +605,51 @@ def _gravar(db, aviso_id: int, *, situacao: str, agora: datetime, erro: str | No
              tentou, _iso(agora), situacao == AS.ENVIADO, _iso(agora), int(aviso_id)))
 
 
+#: Qual modelo da Meta leva cada andamento (`wa_modelos`).
+MODELO_DO_EVENTO = {AS.EXIGENCIA: "EXIGENCIA", AS.PRONTO: "PRONTO", AS.PRAZO: "PRAZO"}
+
+
+def variaveis_do_modelo(evento: str, info: dict, nome_no_modelo: str) -> list[str]:
+    """As variáveis do modelo daquele andamento, NA ORDEM do corpo aprovado:
+    {{1}} o cartório, {{2}} o número e, no prazo, {{3}} a data. Só calcula.
+
+    Nada de nome, CPF, valor ou teor: só o que o aviso por e-mail já diz."""
+    numero = str(info.get("numero") or "")
+    if evento == AS.PRAZO:
+        return [nome_no_modelo, numero, _br(info.get("data_limite"))]
+    return [nome_no_modelo, numero]
+
+
+def _mandar_whatsapp(db, a: dict, info: dict, serventia: dict, *, agora: datetime) -> str:
+    """Um aviso pelo modelo da Meta: monta (lê), posta (rede, FORA de
+    transação) e grava. Devolve a situação final. Nada aqui levanta."""
+    import wa_balcao as WA
+    import wa_modelos as WM
+    qual = MODELO_DO_EVENTO.get(a["evento"])
+    try:
+        para = WM.telefone_e164(a["destino"])
+        with db.connect() as con:
+            variaveis = variaveis_do_modelo(a["evento"], info,
+                                            WM.nome_no_modelo(con, serventia))
+            pedido = WM.montar_envio_modelo(con, para, qual, variaveis)
+    except (WM.TelefoneInvalido, WM.ModeloRecusado) as erro:
+        # Recusado ANTES da rede: o que está errado não se conserta sozinho na
+        # próxima rodada, mas conta tentativa — e para no limite.
+        _gravar(db, a["id"], situacao=AS.FALHOU, agora=agora,
+                erro=f"recusado antes de ir à Meta: {erro}", tentou=True)
+        return AS.FALHOU
+    try:
+        meta_id = WA.postar_envio(pedido)
+    except WA.EnvioErro as erro:
+        _gravar(db, a["id"], situacao=AS.FALHOU, agora=agora,
+                assunto=f"modelo {pedido['modelo']}", erro=str(erro), tentou=True)
+        return AS.FALHOU
+    _gravar(db, a["id"], situacao=AS.ENVIADO, agora=agora,
+            assunto=f"modelo {pedido['modelo']}" + (f" · {meta_id}" if meta_id else ""),
+            tentou=True)
+    return AS.ENVIADO
+
+
 def enviar_pendentes(db, *, agora: datetime, pasta_dados: Any, vigentes: dict[str, dict],
                      max_tentativas: int = MAX_TENTATIVAS_PADRAO) -> dict:
     """Manda o que está na fila. **A rede fica fora de toda transação.**
@@ -587,6 +664,10 @@ def enviar_pendentes(db, *, agora: datetime, pasta_dados: Any, vigentes: dict[st
     if not fila:
         return conta
     serventia = SERV.dados(db.get_settings)
+    motivo_whats = ""
+    if any(a["canal"] == AS.WHATSAPP for a in fila):
+        with db.connect() as con:
+            motivo_whats = motivo_do_whatsapp(con, serventia)
     senha: list[str] = []
     for a in fila:
         if not a["consentimento_ativo"]:
@@ -601,10 +682,14 @@ def enviar_pendentes(db, *, agora: datetime, pasta_dados: Any, vigentes: dict[st
             conta[AS.DESCARTADO] += 1
             continue
         if a["canal"] == AS.WHATSAPP:
-            if a["situacao"] != AS.PENDENTE_CONFIG or a["erro"] != SEM_MODELO_DA_META:
-                _gravar(db, a["id"], situacao=AS.PENDENTE_CONFIG, agora=agora,
-                        erro=SEM_MODELO_DA_META)
-            conta[AS.PENDENTE_CONFIG] += 1
+            if motivo_whats:
+                if a["situacao"] != AS.PENDENTE_CONFIG or a["erro"] != motivo_whats:
+                    _gravar(db, a["id"], situacao=AS.PENDENTE_CONFIG, agora=agora,
+                            erro=motivo_whats)
+                conta[AS.PENDENTE_CONFIG] += 1
+                continue
+            situacao = _mandar_whatsapp(db, a, vigentes[a["chave"]], serventia, agora=agora)
+            conta[situacao] += 1
             continue
         if not cfg["host"]:
             if a["situacao"] != AS.PENDENTE_CONFIG:
@@ -667,6 +752,7 @@ def rodar(ctx) -> dict:
         whats = int(banco(con).valor(
             "SELECT COUNT(*) FROM av_avisos WHERE canal=%s AND situacao=%s",
             (AS.WHATSAPP, AS.PENDENTE_CONFIG)) or 0)
+        whats_desligado = motivo_do_whatsapp(con) == SEM_MODELO_DA_META
     por_evento = {e: sum(1 for v in vigentes.values() if v["evento"] == e) for e in eventos}
     relato = (f"Andamentos vigentes: {por_evento.get(AS.EXIGENCIA, 0)} exigência(s), "
               f"{por_evento.get(AS.PRONTO, 0)} pronto(s) para retirar, "
@@ -674,10 +760,14 @@ def rodar(ctx) -> dict:
               f"vencimento. Avisos novos na fila: {novos}. Nesta rodada: "
               f"{conta[AS.ENVIADO]} enviado(s), {conta[AS.FALHOU]} falha(s), "
               f"{conta[AS.DESCARTADO]} descartado(s). Esperando configuração: "
-              f"{email_sem_config} por e-mail, {whats} por WhatsApp (sem modelo da Meta).")
+              f"{email_sem_config} por e-mail, {whats} por WhatsApp"
+              + (" (sem modelo da Meta)." if whats_desligado else
+                 " (modelos da Meta ligados; veja o motivo em Avisos ao cliente)."))
     achados = [{"vigentes": por_evento, "novos": novos, **{k.lower(): v for k, v in conta.items()},
-                "email_sem_config": email_sem_config, "whatsapp_sem_modelo": whats}]
-    acoes = ([{"acao": "mandou avisos de andamento por e-mail", "quantos": conta[AS.ENVIADO]}]
+                "email_sem_config": email_sem_config, "whatsapp_sem_modelo": whats,
+                "whatsapp_por_modelo": not whats_desligado}]
+    acoes = ([{"acao": "mandou avisos de andamento ao cliente (e-mail ou modelo do WhatsApp)",
+               "quantos": conta[AS.ENVIADO]}]
              if conta[AS.ENVIADO] else [])
     if conta[AS.FALHOU]:
         return PROC.resultado(SCH.AVISO, relato + " Veja as falhas em Avisos ao cliente.",
@@ -702,8 +792,9 @@ CATALOGO = (
                   "gravado no protocolo) da exigência na prenotação, do protocolo pronto para "
                   "retirar e da prenotação a N dias corridos de vencer (7 de fábrica). Só o "
                   "status — sem CPF, "
-                  "valor nem teor. E-mail pelo SMTP da automação; WhatsApp fica registrado e "
-                  "PENDENTE_CONFIG até haver modelo aprovado pela Meta. Protesto fica de fora."},
+                  "valor nem teor. E-mail pelo SMTP da automação; WhatsApp pelos modelos "
+                  "aprovados pela Meta, quando o interruptor deles estiver ligado (até lá, "
+                  "fica registrado e PENDENTE_CONFIG). Protesto fica de fora."},
 )
 
 

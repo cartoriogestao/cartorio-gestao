@@ -11,9 +11,13 @@ O QUE FALTAVA
     1. O E-MAIL sai pelo MESMO envio dos avisos de andamento ao cliente — o
        SMTP da automação (`automacao_avisos.configuracao_de_email`,
        `automacao_avisos.ENVIO["email"]`, a senha em `avisos.cred`). O WhatsApp
-       continua na fila, com a mesma frase dos avisos de andamento
-       (`andamento_avisos.SEM_MODELO_DA_META`): sem modelo aprovado pela Meta,
-       nada sai sozinho por ele.
+       sai pelo MODELO `cartorio_pesquisa_satisfacao` da Meta (`wa_modelos`,
+       27/10/2026) — só com o interruptor «modelos aprovados pela Meta»
+       ligado. Desligado (o de fábrica), ele continua na fila com a mesma
+       frase dos avisos de andamento (`andamento_avisos.SEM_MODELO_DA_META`), e
+       nada sai sozinho por ele. Ligado, o convite por WhatsApp também SOBE à
+       VPS (`a_empurrar` com o canal WHATSAPP): o protocolo que só tem telefone
+       precisa da página lá para o link abrir.
     2. A PÁGINA mora na VPS, ao lado do portal do cliente
        (`vps/pesquisa/pesquisa_vps.py`), e o servidor da casa continua fora da
        internet: ele EMPURRA o convite para lá e PUXA as respostas de volta —
@@ -565,20 +569,37 @@ def _auditar(db, acao: str, entidade: str, entidade_id: Any, detalhe: dict, *,
 # ------------------------------------------------------------------ a fila
 
 
-def _por_email_na_fila(con, max_tentativas: int) -> list[dict]:
+def _na_fila(con, max_tentativas: int, canal: str = "EMAIL") -> list[dict]:
+    """Os convites daquele canal na fila. O número do protocolo vem junto
+    porque o modelo da Meta o pede ({{2}}); ele NÃO vai à VPS. Só lê."""
     return [dict(x) for x in banco(con).ler(
-        """SELECT id, protocolo_id, destino, atendente_id, atribuicao, situacao, criado_em,
-                  erro, tentativas, chave_vps, na_vps_em
-             FROM ou_satisfacao_convites
-            WHERE canal = 'EMAIL' AND situacao = 'NA_FILA' AND tentativas < %s
-            ORDER BY id""", (int(max_tentativas),))]
+        """SELECT c.id, c.protocolo_id, c.destino, c.atendente_id, c.atribuicao, c.situacao,
+                  c.criado_em, c.erro, c.tentativas, c.chave_vps, c.na_vps_em, c.canal,
+                  p.numero AS protocolo_numero
+             FROM ou_satisfacao_convites c
+             LEFT JOIN cx_protocolos p ON p.id = c.protocolo_id
+            WHERE c.canal = %s AND c.situacao = 'NA_FILA' AND c.tentativas < %s
+            ORDER BY c.id""", (canal, int(max_tentativas)))]
 
 
-def a_empurrar(con, *, hoje: date, segredo: str, max_tentativas: int) -> list[dict]:
+def _por_email_na_fila(con, max_tentativas: int) -> list[dict]:
+    return _na_fila(con, max_tentativas, "EMAIL")
+
+
+#: Os canais cujo convite sobe à VPS. O WhatsApp entra só com os modelos da
+#: Meta ligados (`wa_modelos`, 27/10/2026): o convite SÓ de WhatsApp — o do
+#: protocolo sem e-mail — precisa da página na VPS para o link abrir.
+CANAIS_SO_EMAIL = ("EMAIL",)
+CANAIS_COM_WHATSAPP = ("EMAIL", "WHATSAPP")
+
+
+def a_empurrar(con, *, hoje: date, segredo: str, max_tentativas: int,
+               canais: tuple[str, ...] = CANAIS_SO_EMAIL) -> list[dict]:
     """Os convites que a VPS ainda não tem, um por protocolo, já no formato
-    dela. SÓ LÊ. Só os que vão sair por e-mail e ainda valem."""
+    dela. SÓ LÊ. Só os que vão sair pelos `canais` e ainda valem — de
+    fábrica, só o e-mail; com os modelos da Meta ligados, o WhatsApp também."""
     vistos: dict[int, dict] = {}
-    for x in _por_email_na_fila(con, max_tentativas):
+    for x in [linha for canal in canais for linha in _na_fila(con, max_tentativas, canal)]:
         validade = vence_em(x["criado_em"])
         if x["na_vps_em"] or validade is None or validade < hoje:
             continue
@@ -614,10 +635,11 @@ def _motivo(db, x: dict, motivo: str) -> None:
 
 
 def empurrar(db, *, url: str, token: str, segredo: str, hoje: date, agora: datetime,
-             max_tentativas: int) -> dict:
+             max_tentativas: int, canais: tuple[str, ...] = CANAIS_SO_EMAIL) -> dict:
     """Leva à VPS os convites novos. ESCREVE (a marca de que foram)."""
     with db.connect() as con:
-        itens = a_empurrar(con, hoje=hoje, segredo=segredo, max_tentativas=max_tentativas)
+        itens = a_empurrar(con, hoje=hoje, segredo=segredo, max_tentativas=max_tentativas,
+                           canais=canais)
     conta = {"empurrados": 0, "motivo": ""}
     for inicio in range(0, len(itens), LOTE_DO_EMPURRAO):
         lote = itens[inicio:inicio + LOTE_DO_EMPURRAO]
@@ -731,6 +753,89 @@ def marcar_whatsapp(db) -> int:
                                 WHERE canal = 'WHATSAPP' AND situacao = 'NA_FILA'""") or 0)
 
 
+def whatsapp_ligado(db) -> bool:
+    """Os modelos da Meta estão ligados? Sem o balcão do WhatsApp, não. Só lê."""
+    try:
+        import wa_modelos as WM
+    except ImportError:
+        return False
+    with db.connect() as con:
+        return WM.ligado(con)
+
+
+def enviar_whatsapp(db, *, url: str | None, segredo: str, hoje: date, agora: datetime,
+                    bloqueio: str, max_por_rodada: int, max_tentativas: int,
+                    serventia: dict, agente: str, a_mando_de: str) -> dict:
+    """Manda os convites por WhatsApp pelo modelo `cartorio_pesquisa_satisfacao`
+    (27/10/2026). Só roda com os modelos da Meta ligados. **A rede fica fora de
+    toda transação.**
+
+    As variáveis, na ordem do corpo aprovado: {{1}} o cartório, {{2}} o número
+    do protocolo e {{3}} o link. O número do protocolo vai à META (o texto
+    aprovado pelo oficial o traz), e continua NÃO indo à VPS. Como no e-mail,
+    o convite que ainda não chegou à VPS não sai: link que não abre é pior que
+    convite nenhum."""
+    import wa_balcao as WA
+    import wa_modelos as WM
+    conta = {"enviados": 0, "falhas": 0, "desistidos": 0, "vencidos": 0, "esperando": 0,
+             "fora_do_teto": 0, "motivo_da_espera": ""}
+    with db.connect() as con:
+        fila = _na_fila(con, max_tentativas, "WHATSAPP")
+        falta = WM.falta_para_enviar(con, serventia) if fila else ""
+        nome = WM.nome_no_modelo(con, serventia) if fila else ""
+    tentados = 0
+    for x in fila:
+        validade = vence_em(x["criado_em"])
+        if validade is None or validade < hoje:
+            _gravar(db, x["id"], situacao="FALHOU", erro=VENCIDO)
+            conta["vencidos"] += 1
+            continue
+        pronto_na_vps = bool(x["na_vps_em"] and url and segredo)
+        espera = (f"WhatsApp por modelo da Meta: {falta}" if falta
+                  else "" if pronto_na_vps
+                  else bloqueio or "o convite ainda não chegou à página da VPS")
+        if espera:
+            _motivo(db, x, espera)
+            conta["esperando"] += 1
+            conta["motivo_da_espera"] = conta["motivo_da_espera"] or espera
+            continue
+        if tentados >= max_por_rodada:
+            conta["fora_do_teto"] += 1
+            continue
+        tentados += 1
+        pid = int(x["protocolo_id"])
+        tentativa = int(x["tentativas"] or 0) + 1
+        link = link_do_convite(url or "", codigo_do_convite(segredo, pid))
+        try:
+            para = WM.telefone_e164(x["destino"])
+            with db.connect() as con:
+                pedido = WM.montar_envio_modelo(
+                    con, para, WM.PESQUISA, [nome, str(x.get("protocolo_numero") or ""), link])
+            WA.postar_envio(pedido)
+        except (WM.TelefoneInvalido, WA.EnvioErro) as erro:
+            # `ModeloRecusado` é `EnvioErro`: a recusa antes da rede cai aqui
+            # também, e conta tentativa — o que está errado não sai sozinho.
+            desiste = tentativa >= max_tentativas
+            _gravar(db, x["id"], situacao="FALHOU" if desiste else "NA_FILA",
+                    erro=f"{type(erro).__name__}: {erro}"[:500], tentativas=tentativa,
+                    tentado_em=_iso(agora))
+            conta["desistidos" if desiste else "falhas"] += 1
+            _auditar(db, "SATISFACAO_CONVITE_FALHOU", "ou_satisfacao_convites", x["id"],
+                     {"canal": "WHATSAPP", "protocolo_id": pid, "tentativa": tentativa,
+                      "desistiu": desiste, "erro": type(erro).__name__},
+                     agente=agente, a_mando_de=a_mando_de)
+            continue
+        _gravar(db, x["id"], situacao="ENVIADO", erro=None, tentativas=tentativa,
+                tentado_em=_iso(agora), enviado_em=_iso(agora))
+        conta["enviados"] += 1
+        # Sem o telefone do cliente e sem o link: o protocolo e o canal bastam.
+        _auditar(db, "SATISFACAO_CONVITE_ENVIADO", "ou_satisfacao_convites", x["id"],
+                 {"canal": "WHATSAPP", "protocolo_id": pid, "tentativa": tentativa,
+                  "modelo": pedido["modelo"], "vale_ate": validade.isoformat()},
+                 agente=agente, a_mando_de=a_mando_de)
+    return conta
+
+
 def _dia_da_resposta(texto: Any, hoje: date) -> date:
     try:
         dia = date.fromisoformat(str(texto or "")[:10])
@@ -840,15 +945,36 @@ def rodar(ctx) -> dict:
     if not bloqueio and not segredo:
         bloqueio = SEM_SEGREDO
 
+    # OS MODELOS DA META (27/10/2026): ligados, o convite por WhatsApp também
+    # sobe à VPS e sai pelo modelo; desligados (o de fábrica), tudo como antes.
+    com_whatsapp = whatsapp_ligado(ctx.db)
+    canais = CANAIS_COM_WHATSAPP if com_whatsapp else CANAIS_SO_EMAIL
     empurrao = {"empurrados": 0, "motivo": ""}
     if not bloqueio:
         empurrao = empurrar(ctx.db, url=url, token=token, segredo=segredo, hoje=hoje,
-                            agora=agora, max_tentativas=tentativas)
+                            agora=agora, max_tentativas=tentativas, canais=canais)
     envio = enviar(ctx.db, url=url, segredo=segredo, hoje=hoje, agora=agora,
                    pasta_dados=ctx.pasta_dados, bloqueio=bloqueio or empurrao["motivo"],
                    max_por_rodada=teto, max_tentativas=tentativas, agente=agente,
                    a_mando_de=mando)
-    whats = marcar_whatsapp(ctx.db)
+    envio_wa = None
+    if com_whatsapp:
+        servd: dict = {}
+        try:
+            import serventia as SERV
+            servd = dict(SERV.dados(ctx.db.get_settings))
+        except Exception:                               # noqa: BLE001 — sem serventia
+            servd = {}
+        envio_wa = enviar_whatsapp(ctx.db, url=url, segredo=segredo, hoje=hoje, agora=agora,
+                                   bloqueio=bloqueio or empurrao["motivo"],
+                                   max_por_rodada=teto, max_tentativas=tentativas,
+                                   serventia=servd, agente=agente, a_mando_de=mando)
+        with ctx.db.connect() as con:
+            whats = int(banco(con).valor(
+                """SELECT COUNT(*) FROM ou_satisfacao_convites
+                    WHERE canal = 'WHATSAPP' AND situacao = 'NA_FILA'""") or 0)
+    else:
+        whats = marcar_whatsapp(ctx.db)
     volta = {"registradas": 0, "repetidas": 0, "recusadas": 0, "sem_convite": 0, "motivo": ""}
     if not bloqueio:
         volta = puxar(ctx.db, url=url, token=token, segredo=segredo, hoje=hoje,
@@ -862,23 +988,39 @@ def rodar(ctx) -> dict:
               + (f" — {envio['motivo_da_espera']}" if envio["motivo_da_espera"] else "")
               + f". Convites levados à VPS: {empurrao['empurrados']}. Respostas trazidas: "
               f"{volta['registradas']} gravada(s), {volta['repetidas']} já avaliada(s), "
-              f"{volta['recusadas']} recusada(s), {volta['sem_convite']} sem convite aqui. "
-              f"WhatsApp na fila: {whats} (sem modelo aprovado pela Meta).")
+              f"{volta['recusadas']} recusada(s), {volta['sem_convite']} sem convite aqui. ")
+    if envio_wa is None:
+        relato += f"WhatsApp na fila: {whats} (sem modelo aprovado pela Meta)."
+    else:
+        relato += (f"Convites por WhatsApp (modelo da Meta): {envio_wa['enviados']} "
+                   f"enviado(s), {envio_wa['falhas']} falha(s), {envio_wa['desistidos']} "
+                   f"desistido(s), {envio_wa['vencidos']} vencido(s), esperando "
+                   f"{envio_wa['esperando']}"
+                   + (f" — {envio_wa['motivo_da_espera']}" if envio_wa["motivo_da_espera"]
+                      else "") + f". WhatsApp ainda na fila: {whats}.")
     problemas = [m for m in (empurrao["motivo"], volta["motivo"]) if m]
     if problemas:
         relato += " Problema com a VPS: " + "; ".join(problemas) + "."
+    wa = envio_wa or {}
     achados = [{"enviados": envio["enviados"], "falhas": envio["falhas"],
                 "desistidos": envio["desistidos"], "vencidos": envio["vencidos"],
                 "esperando": envio["esperando"], "fora_do_teto": envio["fora_do_teto"],
                 "na_vps": empurrao["empurrados"], "respostas": volta["registradas"],
-                "repetidas": volta["repetidas"], "whatsapp_sem_modelo": whats,
+                "repetidas": volta["repetidas"],
+                "whatsapp_sem_modelo": 0 if envio_wa is not None else whats,
+                "whatsapp_enviados": int(wa.get("enviados", 0)),
+                "whatsapp_na_fila": whats,
                 "bloqueio": bloqueio}]
     acoes = ([{"acao": "mandou convites da pesquisa por e-mail", "quantos": envio["enviados"]}]
              if envio["enviados"] else [])
+    if wa.get("enviados"):
+        acoes.append({"acao": "mandou convites da pesquisa pelo modelo do WhatsApp",
+                      "quantos": wa["enviados"]})
     if volta["registradas"]:
         acoes.append({"acao": "gravou respostas da pesquisa vindas da VPS",
                       "quantos": volta["registradas"]})
-    if problemas or envio["falhas"] or envio["desistidos"] or envio["esperando"]:
+    if (problemas or envio["falhas"] or envio["desistidos"] or envio["esperando"]
+            or wa.get("falhas") or wa.get("desistidos") or wa.get("esperando")):
         return _resultado("AVISO", relato, achados, acoes)
     return _resultado("OK", relato, achados, acoes)
 
@@ -900,5 +1042,6 @@ CATALOGO = (
                   "convites novos (só a chave, a atribuição e a data), manda o convite por "
                   "e-mail pelo SMTP da automação (até 30 por rodada, 3 tentativas) e traz as "
                   "respostas para o relatório da pesquisa. Sem CPF, nome nem valor. "
-                  "WhatsApp fica na fila até haver modelo aprovado pela Meta."},
+                  "WhatsApp sai pelo modelo aprovado pela Meta quando o interruptor dos "
+                  "modelos estiver ligado; até lá, fica na fila."},
 )

@@ -98,5 +98,21 @@
   incidentes e os dados dos fornecedores antes de assinar — e conferir o texto oficial do Código de Normas.</p>
 </section>
 {% endif %}
+{# O ATENDIMENTO DE HOJE (painel de senhas, 26/10/2026) — só ADMIN e gerente,
+   e só quando houve senha no dia. A régua é a de `senhas.metricas`, a mesma
+   do relatório do período. #}
+{% if senhas_no_painel %}{% set s = senhas_no_painel.r %}
+<section class="panel"><div class="panel-head"><h2>Atendimento de hoje</h2>
+  <a href="{{ url_for('senhas_relatorio') }}">ver o relatório</a></div>
+  <div class="cards">
+    <div class="card stat"><span>Senhas</span><strong>{{ s.total }}</strong></div>
+    <div class="card stat"><span>Na fila agora</span><strong>{{ s.na_fila }}</strong></div>
+    <div class="card stat"><span>Espera média</span><strong>{{ senhas_no_painel.minutos(s.espera_media) }}</strong></div>
+    <div class="card stat"><span>Maior espera</span><strong>{{ senhas_no_painel.minutos(s.espera_maior) }}</strong></div>
+    <div class="card stat"><span>Atendimento médio</span><strong>{{ senhas_no_painel.minutos(s.atendimento_medio) }}</strong></div>
+    <div class="card stat"><span>Desistências</span><strong>{{ s.desistencias }}</strong></div>
+  </div>
+</section>
+{% endif %}
 </div>
 {% endblock %}

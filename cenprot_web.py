@@ -258,6 +258,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         return redirect(url_for("protesto_pendencia",
                                 pendencia_id=pendencia_id))
 
+    @app.route("/protesto/cenprot/pendencias/<int:pendencia_id>/titulo",
+               methods=["POST"])
+    @roles_required(*QUEM_OPERA)
+    def protesto_pendencia_titulo(pendencia_id: int):
+        """Dá entrada no título que veio no pedido de protesto. ESCREVE.
+
+        Pedido do oficial, 27/10/2026: «chegou um título pela CENPROT. nossa
+        integração funciona para receber direto pelo sistema?». O título nasce
+        RECEBIDO; o apontamento é na ficha dele, como o de todo título.
+        """
+        try:
+            with db.transaction() as con:
+                r = PEND.cadastrar_titulo_do_pedido(
+                    con, pendencia_id, agora=db.now(), usuario=usuario_nome(),
+                    pasta_de_arquivos=app.extensions["archive_root"]())
+        except RECUSAS_DO_BALCAO as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_pendencia",
+                                    pendencia_id=pendencia_id))
+        audit("PROTESTO_TITULO_NOVO", "pt_titulos", r["titulo_id"],
+              {"origem": "pedido da CENPROT", "pendencia_id": pendencia_id,
+               "anexos": r["anexos"]})
+        flash(f"O título entrou (RECEBIDO), com {len(r['anexos'])} PDF(s) do "
+              f"pedido anexado(s). Agora aponte-o na ficha — e depois devolva "
+              f"o protocolo à CENPROT por esta mesma pendência.", "success")
+        return redirect(url_for("protesto_titulo", titulo_id=r["titulo_id"]))
+
     @app.route("/protesto/cenprot/pendencias/<int:pendencia_id>/dispensar",
                methods=["POST"])
     @roles_required(*QUEM_ENVIA)

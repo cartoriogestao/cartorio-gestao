@@ -99,8 +99,13 @@ def banco() -> sqlite3.Connection:
 
 
 def acervo_falso() -> sqlite3.Connection:
-    """Um acervo minimo, com as colunas que a carga le de verdade."""
-    con = conexao_de_teste()
+    """Um acervo minimo, com as colunas que a carga le de verdade.
+
+    SQLITE DE VERDADE, como o da producao (`acervo_carga.abrir_acervo` abre o
+    arquivo pela porta do SQLite): no PostgreSQL de teste o nome da coluna
+    viraria minusculo (`strsexo`), e o acervo do E-Oficio guarda `strSexo`."""
+    import banco_pg
+    con = getattr(banco_pg, "_CONNECT_ORIGINAL", sqlite3.connect)(":memory:")
     con.row_factory = sqlite3.Row
     con.executescript("""
         -- O DE-PARA DO IBGE, com o bastante para a carga rodar: um município

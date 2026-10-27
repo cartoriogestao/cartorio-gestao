@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import re
 import unittest
 import zipfile
@@ -137,7 +138,13 @@ class UpdateApprovalWebTests(unittest.TestCase):
             #   sistema nao tem como saber qual pasta e a instalacao — e a frase diz
             #   isso, e diz por onde se aplica.
             html = resposta.get_data(as_text=True)
-            self.assertIn("install.json", html)
+            # Fora do Windows a recusa vem antes: a aplicação automática só existe
+            # na instalação convencional dele. As duas frases dizem por onde se
+            # aplica, e a preparação continua intacta.
+            if os.name == "nt":
+                self.assertIn("install.json", html)
+            else:
+                self.assertIn("so existe na instalacao convencional do Windows", html)
             self.assertIn("ATUALIZAR_SISTEMA.cmd", html)
             self.assertEqual(
                 json.loads(meta_path.read_text(encoding="utf-8"))["state"],

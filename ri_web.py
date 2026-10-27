@@ -2324,7 +2324,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         except (ValueError, TypeError, KeyError):
             return None
 
-    def _selar_a_prenotacao(protocolo_id: int, numero, form) -> str:
+    def _selar_a_prenotacao(protocolo_id: int, numero, form, *,
+                             gravado=None) -> str:
         """Pede o selo da prenotacao DEPOIS de ela existir. FALA COM A REDE.
 
         «Quando um titulo e prenotado no RI devemos emitir recibo ao cliente…
@@ -2361,13 +2362,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     "data é a tabela de custas em vigor, em Administrativo → "
                     "Configurações.")
         apresentante = (form.get("apresentante") or "").strip()
+        documento = form.get("apresentante_documento")
+        # SÓ NO «SELAR» DEPOIS — a rota passa `gravado`, a lavratura não.
+        # A faixa «Pendente de selo» não manda o apresentante; ele já está
+        # na prenotação. Sem este nome o envelope sai com parteAto vazio e
+        # o aparelho recusa «Os nomes das partes devem ser informados».
+        # O que o formulário trouxer continua valendo.
+        if not apresentante and gravado is not None:
+            apresentante = (gravado["apresentante"] or "").strip()
+            if apresentante and not str(documento or "").strip():
+                documento = gravado["apresentante_documento"]
+            if not apresentante:
+                return (" A prenotação foi lavrada SEM SELO: informe o "
+                        "apresentante — o selo exige os nomes das partes, e "
+                        "esta prenotação não tem apresentante gravado.")
         try:
             envelope = AS.envelope_da_prenotacao(
                 protocolo=numero,
                 escrevente=app.extensions["usuario_nome"](),
                 versao_tabela=versao, descricao_natureza=natureza,
-                partes=([{"nome": apresentante,
-                          "documento": form.get("apresentante_documento")}]
+                partes=([{"nome": apresentante, "documento": documento}]
                         if apresentante else []),
                 codigo_tj=item, isento=isento, motivo_isencao=motivo)
         except AS.AtoError as erro:
@@ -5364,7 +5378,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if recusa:
             flash(recusa, "danger")
             return redirect(url_for("ri_protocolo_ver", protocolo_id=protocolo_id))
-        selado = _selar_a_prenotacao(protocolo_id, p["numero"], request.form)
+        selado = _selar_a_prenotacao(protocolo_id, p["numero"], request.form,
+                                     gravado=p)
         motivo = _motivo_da_falha_do_selo(selado)
         if motivo:
             flash(f"Não selou a prenotação: {motivo}", "danger")

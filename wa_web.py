@@ -236,6 +236,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             with db.transaction() as con:
                 r = PUXAR.aplicar_itens(con, achado["itens"],
                                         serventia=_serventia(), agora=db.now())
+            # A CONFIRMAÇÃO À CAIXA-POSTAL (27/10/2026) depois de aplicar e fora
+            # da transação: o ack também é rede.
+            with _con() as con:
+                PUXAR.confirmar(con, r.get("ids"))
         else:
             r = achado
         audit("wa_puxar", "wa_conversa", None,

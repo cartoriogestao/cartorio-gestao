@@ -143,6 +143,9 @@ def test_a_carga_de_demonstracao_roda_duas_vezes_sem_duplicar(cg_casa):
 
     primeira = CARGA.carregar(db, app=app)
     assert primeira["pulados"] == {}, primeira["pulados"]
+    # os selos de ensaio entram com a trava do selo pago desligada só durante a
+    # carga: quem pratica ato no sandbox a encontra LIGADA, como na casa
+    assert cg_casa["db"].get_setting("selo_trava_caixa", "") != "DESLIGADA"
     depois_da_primeira = _contagens(cg_casa["banco"])
     assert depois_da_primeira["users"] == len(CARGA.USUARIOS_DE_DEMONSTRACAO)
     assert depois_da_primeira["nu_livros"] > 0

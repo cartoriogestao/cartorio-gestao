@@ -176,6 +176,45 @@ def test_o_pacote_volta_pela_automacao_e_a_origem_nao_e_tocada(cg_casa, pacote, 
     assert gravada["duracao_s"] > 0
 
 
+def test_o_banco_descartavel_some_mesmo_com_outra_conexao_de_passagem(papel_restrito):
+    """O AUTOVACUUM NO BANCO RECÉM-RESTAURADO (27/10/2026). Logo depois do
+    pg_restore, o PostgreSQL manda um worker analisar as tabelas novas, e o
+    `WITH (FORCE)` do papel restrito não tem privilégio para derrubá-lo: o
+    banco descartável — e o papel dono dele — ficavam para trás, de vez em
+    quando. Aqui a conexão de passagem é a de outro papel comum, que sai em
+    seguida, como o worker: o apagamento espera e apaga."""
+    import secrets
+    import threading
+    import time
+
+    import psycopg
+    from psycopg import sql
+    from psycopg.conninfo import make_conninfo
+    base = banco_pg.dsn()
+    restrito = REST.conexao_de_origem()
+    nome = REST._novo_nome(datetime.now())
+    REST._criar_banco(restrito, nome)
+    outro, senha = f"cg_outro_teste_{secrets.token_hex(3)}", secrets.token_urlsafe(18)
+    with psycopg.connect(base, autocommit=True) as pg:
+        pg.execute(sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(
+            sql.Identifier(outro), sql.Literal(senha)))
+    try:
+        de_passagem = psycopg.connect(make_conninfo(base, dbname=nome, user=outro,
+                                                    password=senha), autocommit=True)
+        threading.Timer(1.5, de_passagem.close).start()
+        inicio = time.monotonic()
+        REST._apagar_banco(restrito, nome)
+        assert nome not in REST.bancos_descartaveis(base)
+        assert time.monotonic() - inicio >= 1.0       # esperou a conexão sair
+    finally:
+        if nome in REST.bancos_descartaveis(base):
+            with psycopg.connect(base, autocommit=True) as pg:
+                pg.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(
+                    sql.Identifier(nome)))
+        with psycopg.connect(base, autocommit=True) as pg:
+            pg.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(outro)))
+
+
 def test_contagem_que_nao_bate_e_divergencia_e_nao_ok(cg_casa, pacote, tmp_path, papel_restrito):
     def mais_um(m):
         m["banco_contagens"]["users"] += 1

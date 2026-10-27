@@ -791,6 +791,8 @@ def test_bloco_registrar_oferece_selo_e_cobrar(s):
 
 
 def test_registrar_com_selo_amarra_ao_rg_ato(s):
+    # o selo digitado é o objeto aqui; a cobertura do selo pago (A9) tem teste próprio
+    s["db"].set_settings({"selo_trava_caixa": "DESLIGADA"})
     titulo_id = receber(s)
     qualificar(s, titulo_id, TIT.POSITIVA)
     html = registrar(s, titulo_id, selo=SELO_BOM).get_data(as_text=True)
@@ -812,6 +814,8 @@ def test_a_etiqueta_sai_mesmo_sem_o_razao_dos_selos(s):
     própria e fora de transação — a etiqueta sai, só sem a linha de valores
     (revisão do L043). O banco é do módulo: a tabela volta no fim."""
     from bd_nativo import Banco
+    # o selo digitado é o objeto aqui; a cobertura do selo pago (A9) tem teste próprio
+    s["db"].set_settings({"selo_trava_caixa": "DESLIGADA"})
     titulo_id = receber(s)
     qualificar(s, titulo_id, TIT.POSITIVA)
     registrar(s, titulo_id, selo=SELO_BOM)

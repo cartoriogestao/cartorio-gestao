@@ -66,7 +66,7 @@ APP_NAME = "Gestão Integrada da Serventia"
 # servidor avisou «quem respondeu está na versão 3.6.137, e a instalada é
 # 3.6.138» sobre uma atualização que tinha funcionado (504 de 505 arquivos
 # batendo byte a byte). `tests/test_os_dois_carimbos_da_versao.py` guarda isso.
-VERSION = "3.7.4"
+VERSION = "3.7.5"
 # 3.6.286 - 06/10/2026 Release do sandbox para o oficial: centrais (fila/log/trava), A3, editor/motor de modelos, produtividade, selo robo, F10-F12 do RI, SIRC (cancelados)
 # 3.6.285 - CENPROT: POST /token com form usuario/senha (x-www-form-urlencoded)
 # 3.6.284 - Projetos lista: coluna Atualizado (DD/MM/AA - HH:MM, fuso local)
@@ -2109,19 +2109,47 @@ def create_app(test_config: dict | None = None) -> Flask:
     @login_required
     @roles_required(*PRATICA, metodos=("POST",))
     def service_queue():
+        # O PAINEL DE SENHAS (26/10/2026): a fila mora em `senhas.py`; a TV,
+        # o papel da senha, o guichê e o relatório, em `senhas_web.py`.
+        import senhas as SEN
         if request.method == "POST" and request.form.get("action") == "new":
-            tid = db.create_ticket(bool(request.form.get("priority")), request.form.get("service_type"))
-            audit("SERVICE_TICKET_CREATED", "TICKET", tid)
+            with db.transaction() as con:
+                nova = SEN.emitir(con, preferencial=bool(request.form.get("priority")),
+                                  tipo=request.form.get("service_type"), agora=db.now(),
+                                  dia=date.today().isoformat())
+            audit("SERVICE_TICKET_CREATED", "TICKET", nova["id"])
+            if request.form.get("imprimir"):
+                return redirect(url_for("senhas_imprimir", ticket_id=nova["id"]))
+            flash(f"Senha {nova['senha']} emitida.", "success")
             return redirect(url_for("service_queue"))
-        return render_template("service_queue.html", rows=db.list_tickets_today())
+        import caixa_protocolo as CXP
+        with db.connect() as con:
+            rows = SEN.fila_do_dia(con, date.today().isoformat())
+            guiche = SEN.guiche_de(con, int(current_user()["id"]))
+            # O PROTOCOLO EM ATENDIMENTO deste escrevente (`caixa_protocolo.
+            # atender`) vira sugestão de um clique para ligar à senha.
+            atendendo = CXP.em_atendimento(con, usuario_nome())
+        return render_template("service_queue.html", rows=rows, guiche=guiche,
+                               atendendo=atendendo,
+                               tipos=SEN.tipos_de_atendimento(db.get_setting),
+                               minutos=SEN.minutos)
 
     @app.route("/atendimento/<int:ticket_id>/<action>", methods=["POST"])
     @login_required
     @roles_required(*PRATICA)
     def ticket_action(ticket_id, action):
-        if action not in {"call", "start", "finish"}: abort(400)
-        db.update_ticket(ticket_id, action, int(current_user()["id"]))
+        import senhas as SEN
+        if action not in SEN.ACOES: abort(400)
+        try:
+            with db.transaction() as con:
+                feito = SEN.agir(con, ticket_id, action, user_id=int(current_user()["id"]),
+                                 agora=db.now())
+        except SEN.SenhaError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("service_queue"))
         audit("SERVICE_TICKET_ACTION", "TICKET", ticket_id, {"action": action})
+        if action in ("call", "recall"):
+            flash(f"Senha {feito['senha']} chamada para o guichê {feito['guiche']}.", "success")
         return redirect(url_for("service_queue"))
 
     @app.route("/relatorios/selos")
@@ -3452,6 +3480,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     # titular («apenas eu»), e o retrato assinado que o servidor empurra à VPS.
     import painel_celular_web
     painel_celular_web.registrar_rotas(app, db, login_required, roles_required, audit)
+
+    # O PAINEL DE SENHAS (26/10/2026): a TV da recepção (sem login, pela chave
+    # do cofre), o papel da senha, o guichê, o relatório do período e o quadro
+    # «Atendimento de hoje» no painel do ADMIN e do gerente.
+    import senhas_web
+    senhas_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
     # A VERIFICAÇÃO EM DUAS ETAPAS (LG02, 19/10/2026): o segundo passo do
     # login, a tela da conta e a do Gestor. Publica o desvio que o `/login`

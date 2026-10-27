@@ -659,3 +659,139 @@ def test_o_pedido_mostra_a_anuencia_os_emolumentos_e_leva_a_ficha(s):
     ficha = s["c"].get(link.group(1).replace("&amp;", "&")).get_data(as_text=True)
     assert re.search(r'value="ANUENCIA_CREDOR"\s+selected', ficha)
     assert "anuência nº 28655422 do credor" in ficha
+
+
+# ------------------- o pedido de protesto vira título (27/10/2026)
+#
+# Pedido do oficial: «chegou um título pela CENPROT. nossa integração funciona
+# para receber direto pelo sistema?». O teor tem a forma do contrato
+# (`/pedidos/consulta`, swagger 2.1.0), com dados fictícios.
+
+PDF_DO_PEDIDO = b"%PDF-1.4\n% pedido de teste\n%%EOF\n"
+
+
+def teor_do_pedido(numero=3600001) -> dict:
+    import base64
+    return {
+        "dados_pedido": {
+            "cd_pedido_protesto": numero, "nr_cartorio": "01",
+            "dt_pedido": "2026-10-27", "ds_status": "Aguardando protocolo",
+            "tipo_protesto": "Comum", "aceite": "Não",
+            "fins_falimentares": "Não", "tipo_endosso": "Sem Endosso",
+            "dados_titulo": {"nm_nr_titulo": "000777/1",
+                             "nm_nosso_numero": "000777/1",
+                             "vl_titulo": 1234.5, "vl_saldo": 1234.5,
+                             "dt_vencimento": "2026-09-30",
+                             "dt_emissao": "2026-08-30",
+                             "ds_especie": "Duplicata Mercantil por Indicação",
+                             "sg_especie": "DMI"}},
+        "devedor": {"nm_devedor": "FULANO DE TAL",
+                    "nm_nr_identificacao": "000.000.001-91",
+                    "nm_endereco": "Rua Exemplo, 100", "nm_nr_cep": "65000-000",
+                    "nm_bairro": "Centro", "nm_cidade": "Cidade Exemplo",
+                    "sg_uf": "MA"},
+        "dados_cedente": {"nm_cedente": "EMPRESA CEDENTE LTDA",
+                          "nm_nr_documento": "00.000.010/0001-27",
+                          "nm_endereco": "Av. Exemplo, 1000",
+                          "nm_nr_cep": "65000-001", "nm_bairro": "Centro",
+                          "nm_cidade": "Cidade Vizinha", "sg_uf": "MA"},
+        "dados_sacador": {"nm_sacador": "SACADOR EXEMPLO LTDA",
+                          "nm_nr_documento": "00.000.011/0001-71",
+                          "nm_endereco": "Rua Sacador, 50",
+                          "nm_cidade": "Cidade Vizinha", "sg_uf": "MA"},
+        "dados_solicitante": {"nm_nome": "EMPRESA CEDENTE LTDA",
+                              "nm_nr_documento": "00.000.010/0001-27",
+                              "ds_endereco_solicitante": "Av. Exemplo, 1000"},
+        "arquivos": {"pedido_pdf_b64": base64.b64encode(PDF_DO_PEDIDO).decode(),
+                     "anexo_b64": None},
+    }
+
+
+def _pedido(s, cg_casa, numero=3600001) -> int:
+    cg_casa["db"].set_settings({"ri_cidade": "Cidade Exemplo"})
+    return pendencia(s, especie=CN.PEDIDO_PROTESTO, codigo=str(numero),
+                     teor=teor_do_pedido(numero))
+
+
+def _dar_entrada(s, pid) -> str:
+    ficha = s["c"].get(f"/protesto/cenprot/pendencias/{pid}").get_data(
+        as_text=True)
+    return s["c"].post(f"/protesto/cenprot/pendencias/{pid}/titulo",
+                       data={"csrf_token": _token(ficha)},
+                       follow_redirects=True).get_data(as_text=True)
+
+
+def test_o_pedido_sem_titulo_oferece_dar_entrada(s, cg_casa):
+    pid = _pedido(s, cg_casa)
+    html = s["c"].get(f"/protesto/cenprot/pendencias/{pid}").get_data(
+        as_text=True)
+    assert "Dar entrada no título" in html
+    assert "não casou com título nenhum" not in html
+
+
+def test_o_pedido_de_protesto_vira_titulo_recebido(s, cg_casa):
+    pid = _pedido(s, cg_casa)
+    html = _dar_entrada(s, pid)
+    assert "O título entrou (RECEBIDO)" in html
+    con = _con(s)
+    t = con.execute("SELECT * FROM pt_titulos WHERE origem_chave=?",
+                    ("CENPROT-PEDIDO:3600001",)).fetchone()
+    assert t is not None
+    assert t["origem"] == "CENPROT" and t["situacao"] == "RECEBIDO"
+    assert t["apresentante_codigo"] == "TAB" and t["motivo_protesto"] == "1"
+    assert t["praca_protesto"] == "CIDADE EXEMPLO"
+    assert t["especie"] == "DMI" and t["numero_titulo"] == "000777/1"
+    assert t["valor_centavos"] == 123450 and t["tipo_endosso"] == "S"
+    assert t["aceite"] == "N" and t["tipo_protesto"] == "C"
+    assert t["cedente_nome"] == "EMPRESA CEDENTE LTDA"
+    d = con.execute("SELECT * FROM pt_devedores WHERE titulo_id=?",
+                    (t["id"],)).fetchall()
+    assert len(d) == 1 and d[0]["documento_numero"] == "00000000191"
+    assert con.execute("SELECT titulo_id FROM cn_pendencias WHERE id=?",
+                       (pid,)).fetchone()[0] == t["id"]
+    anexos = con.execute("SELECT original_name FROM attachments WHERE "
+                         "entity_type='PT_TITULO' AND entity_id=?",
+                         (t["id"],)).fetchall()
+    assert [a[0] for a in anexos] == ["cenprot-pedido-3600001-pedido.pdf"]
+
+
+def test_o_pedido_nao_vira_dois_titulos(s, cg_casa):
+    pid = _pedido(s, cg_casa)
+    _dar_entrada(s, pid)
+    html = s["c"].post(f"/protesto/cenprot/pendencias/{pid}/titulo",
+                       data={"csrf_token": _token(s["c"].get(
+                           f"/protesto/cenprot/pendencias/{pid}").get_data(
+                               as_text=True))},
+                       follow_redirects=True).get_data(as_text=True)
+    assert "já está amarrado ao título" in html
+    assert _con(s).execute(
+        "SELECT COUNT(*) FROM pt_titulos WHERE origem_chave=?",
+        ("CENPROT-PEDIDO:3600001",)).fetchone()[0] == 1
+
+
+def test_so_o_pedido_de_protesto_vira_titulo(s, cg_casa):
+    pid = pendencia(s)                       # uma anuência
+    html = s["c"].get(f"/protesto/cenprot/pendencias/{pid}").get_data(
+        as_text=True)
+    assert "Dar entrada no título" not in html
+    html = s["c"].post(f"/protesto/cenprot/pendencias/{pid}/titulo",
+                       data={"csrf_token": _token(html)},
+                       follow_redirects=True).get_data(as_text=True)
+    assert "Só o pedido de protesto vira título" in html
+
+
+def test_o_xml_da_cenprot_le_cedente_e_sacador_do_pedido(s, cg_casa):
+    """Sem remessa e sem E-Ofício, o XML recusava: «sem ele não se sabe quem
+    é o cedente e quem é o sacador». Agora eles vêm do pedido congelado."""
+    import protesto_cenprot_xml as X
+    pid = _pedido(s, cg_casa)
+    _dar_entrada(s, pid)
+    con = _con(s)
+    t = dict(con.execute("SELECT * FROM pt_titulos WHERE origem_chave=?",
+                         ("CENPROT-PEDIDO:3600001",)).fetchone())
+    reg = X.registro_da_cra(con, t)
+    assert reg["cedente_nome"] == "EMPRESA CEDENTE LTDA"
+    assert reg["cedente_nome_2"] == "SACADOR EXEMPLO LTDA"
+    assert reg["cedente_documento"] == "00000011000171"
+    cedente, sacador, endosso = X._cedente_e_sacador(reg)
+    assert endosso == "H" and sacador["nome"] == "SACADOR EXEMPLO LTDA"

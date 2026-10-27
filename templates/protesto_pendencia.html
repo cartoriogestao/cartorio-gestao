@@ -35,7 +35,20 @@
 </div>
 {% endif %}
 
-{% if not p.titulo_id %}
+{% if not p.titulo_id and p.especie == 'PEDIDO_PROTESTO' and p.ambiente == 'PRODUCAO' %}
+{# O PEDIDO DE PROTESTO VIRA TÍTULO AQUI (27/10/2026) — antes ele só entrava
+   pela cópia do E-Ofício, desligado em 26/10. #}
+<div class="alert alert-info">
+  <strong>Este pedido ainda não é título desta casa.</strong> Confira o teor
+  abaixo e dê entrada: o título nasce <strong>recebido</strong>, com os PDFs
+  do pedido anexados, e o apontamento se faz na ficha dele.
+  <form method="post" style="margin-top:6px"
+        action="{{ url_for('protesto_pendencia_titulo', pendencia_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button primary">Dar entrada no título</button>
+  </form>
+</div>
+{% elif not p.titulo_id %}
 <div class="alert alert-warning">
   <strong>Esta pendência não casou com título nenhum desta casa.</strong> Pode
   ser título que ainda não entrou (confira a remessa da CRA), pedido de outra

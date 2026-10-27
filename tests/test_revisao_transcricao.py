@@ -1013,12 +1013,16 @@ def test_duas_emissoes_ao_mesmo_tempo_esperam_pela_trava_do_numero_e_nao_pela_li
     try:
         fios[0].start()
         assert dentro.wait(30), "a primeira emissão não chegou à gravação"
+        # A emissão abre mais de uma transação (a dos selos é à parte, desde a
+        # 3.7.0): as da segunda são as que abrirem daqui em diante, e não uma
+        # posição fixa na lista.
+        da_primeira = len(pids)
         fios[1].start()
         for _ in range(200):
-            if len(pids) > 1:
+            if len(pids) > da_primeira:
                 esperou = [r["locktype"] for r in banco(vigia).ler(
-                    "SELECT locktype FROM pg_locks WHERE pid = %s AND NOT granted "
-                    "ORDER BY locktype", (pids[1],))]
+                    "SELECT locktype FROM pg_locks WHERE pid = ANY(%s) AND NOT granted "
+                    "ORDER BY locktype", (pids[da_primeira:],))]
                 if esperou:
                     break
             time.sleep(0.05)

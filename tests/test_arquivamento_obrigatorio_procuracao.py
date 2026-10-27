@@ -446,7 +446,8 @@ def _lancada_sem_selo(casa, tipo="PROCURACAO") -> int:
 
 
 def test_selo_do_ato_a_mao_nao_dispensa_o_arquivamento(casa):
-    casa["db"].set_settings({"ri_cns": "000000"})
+    # o selo à mão aqui é o objeto; a cobertura do selo pago (A9) tem teste próprio
+    casa["db"].set_settings({"ri_cns": "000000", "selo_trava_caixa": "DESLIGADA"})
     aid = _lancada_sem_selo(casa)
     html = _postar(casa, aid, acao="selo", selo="PROCUR000000ZZZZZZZZZZZZZZ12")
     r = _linha(casa, aid)
@@ -456,7 +457,8 @@ def test_selo_do_ato_a_mao_nao_dispensa_o_arquivamento(casa):
 
 
 def test_selo_de_arquivamento_a_mao_conclui_e_entra_no_razao(casa):
-    casa["db"].set_settings({"ri_cns": "000000"})
+    # o selo à mão aqui é o objeto; a cobertura do selo pago (A9) tem teste próprio
+    casa["db"].set_settings({"ri_cns": "000000", "selo_trava_caixa": "DESLIGADA"})
     aid = _lancada_sem_selo(casa)
     _postar(casa, aid, acao="selo", selo="PROCUR000000ZZZZZZZZZZZZZZ12")
     # sem anexo e sem confirmação, recusa

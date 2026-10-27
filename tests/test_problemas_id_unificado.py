@@ -72,6 +72,10 @@ def test_listar_filtro_ambiente_no_sandbox(monkeypatch):
         "CARTORIO_GESTAO_DATA",
         r"C:\Users\fulano\Downloads\CartorioGestao\SANDBOX\dados",
     )
+    # A conexao de teste tem arquivo proprio (um teste.sqlite3 temporario), e
+    # o caminho do banco vence a variavel; sem ele -- o psycopg puro -- e que
+    # `banco_e_sandbox` le CARTORIO_GESTAO_DATA, o caso que este teste quer.
+    monkeypatch.setattr(AP, "caminho_do_banco", lambda con: "")
     con = _con()
     _insere_amb(con, "of", "OFICIAL")
     _insere_amb(con, "sb", "SANDBOX")

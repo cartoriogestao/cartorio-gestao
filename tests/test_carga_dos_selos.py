@@ -209,7 +209,10 @@ def test_a_TRAVA_DO_SELO_REPETIDO_passa_a_ter_memoria():
     with pytest.raises(AS.AtoError) as erro:
         AS.registrar_selo_obtido_a_mao(
             con, SELO_USADO, tabela="pt_atos", ato_id=novo_ato,
-            atribuicao="PROTESTO", agora=AGORA, cns="000000")
+            atribuicao="PROTESTO", agora=AGORA, cns="000000",
+            # um escrevente: sem pessoa, o selo à mão é recusado antes (A6,
+            # «máquina não assina») e a memória do repetido nem é medida
+            usuario="MARIO EXEMPLO DOS SANTOS")
     assert "já" in str(erro.value).lower()
 
 

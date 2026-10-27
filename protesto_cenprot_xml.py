@@ -283,6 +283,15 @@ def registro_da_cra(con, titulo: dict,
             lido = PA.ler(linha["conteudo"])
             if posicao <= len(lido.titulos):
                 return lido.titulos[posicao - 1]
+    # O TÍTULO QUE ENTROU PELO PEDIDO DA CENPROT (27/10/2026) não tem
+    # remessa nem linha no E-Ofício: o cedente e o sacador estão no teor
+    # congelado do pedido.
+    import cenprot_pendencias as PEND
+    if chave.startswith(PEND.PREFIXO_DA_ORIGEM_DO_PEDIDO):
+        teor = PEND.teor_do_pedido(
+            bd, chave[len(PEND.PREFIXO_DA_ORIGEM_DO_PEDIDO):])
+        if teor is not None:
+            return PEND.registro_do_pedido(teor)
     protocolo = _txt(titulo.get("protocolo"))
     if acervo is not None and protocolo.isdigit():
         # O acervo do E-Ofício é um arquivo SQLite à parte, em só leitura: o

@@ -380,7 +380,8 @@ def test_sem_item_marcado_o_ato_fica_sem_selo_e_a_tela_diz(casa):
 def test_o_selo_a_mao_entra_no_razao(casa):
     """O buraco declarado em 01/09: a tela gravava a coluna e o razão ficava vazio."""
     aid = _ato(casa, situacao="LAVRADO", livro="30", folha="12")
-    casa["db"].set_settings({"ri_cns": "000000"})
+    # o selo à mão aqui é o objeto; a cobertura do selo pago (A9) tem teste próprio
+    casa["db"].set_settings({"ri_cns": "000000", "selo_trava_caixa": "DESLIGADA"})
     _postar(casa, aid, acao="selo", selo="ESCRIT000000ZZZZZZZZZZZZZZ12")
     con = sqlite3.connect(casa["banco"])
     con.row_factory = sqlite3.Row
@@ -395,7 +396,8 @@ def test_o_selo_a_mao_entra_no_razao(casa):
 def test_o_selo_de_outra_serventia_e_recusado(casa):
     """O CNS é conferido: selo de outro cartório digitado por engano não entra."""
     aid = _ato(casa, situacao="LAVRADO", livro="30", folha="12")
-    casa["db"].set_settings({"ri_cns": "000000"})
+    # o selo à mão aqui é o objeto; a cobertura do selo pago (A9) tem teste próprio
+    casa["db"].set_settings({"ri_cns": "000000", "selo_trava_caixa": "DESLIGADA"})
     html = _postar(casa, aid, acao="selo",
                    selo="ESCRIT999999ZZZZZZZZZZZZZZ12")
     assert "não é desta serventia" in html

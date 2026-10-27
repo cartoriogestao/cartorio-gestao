@@ -220,11 +220,37 @@ def _criar_banco(base: str, nome: str) -> None:
         c.execute(f'CREATE DATABASE "{nome}" TEMPLATE template0')
 
 
+#: Quantas vezes o DROP sem FORCE tenta, e quanto espera entre uma e outra.
+TENTATIVAS_DE_APAGAR = 3
+ESPERA_ENTRE_TENTATIVAS_S = 1.0
+
+
 def _apagar_banco(base: str, nome: str) -> None:
+    """Apaga o banco descartável.
+
+    O AUTOVACUUM ENTRA NO BANCO RECÉM-RESTAURADO (27/10/2026). Logo depois do
+    `pg_restore`, o PostgreSQL manda um worker analisar as tabelas novas, e o
+    `WITH (FORCE)` do papel restrito não tem privilégio para derrubá-lo
+    («permission denied to terminate process»): o banco ficava para trás, e o
+    papel dono dele também (`test_backup_restauracao`, intermitente). O DROP
+    SEM `FORCE` cancela sozinho o autovacuum e espera por ele; uma conexão de
+    passagem, ele espera a próxima tentativa."""
     import psycopg
     _conferir_nome(base, nome)
     with psycopg.connect(base, autocommit=True) as pg, pg.cursor() as c:
-        c.execute(f'DROP DATABASE IF EXISTS "{nome}" WITH (FORCE)')
+        try:
+            c.execute(f'DROP DATABASE IF EXISTS "{nome}" WITH (FORCE)')
+            return
+        except psycopg.errors.InsufficientPrivilege:
+            pass
+        for tentativa in range(1, TENTATIVAS_DE_APAGAR + 1):
+            try:
+                c.execute(f'DROP DATABASE IF EXISTS "{nome}"')
+                return
+            except psycopg.errors.ObjectInUse:
+                if tentativa == TENTATIVAS_DE_APAGAR:
+                    raise
+                time.sleep(ESPERA_ENTRE_TENTATIVAS_S)
 
 
 def bancos_descartaveis(base: str) -> list[str]:

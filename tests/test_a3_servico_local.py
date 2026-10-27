@@ -128,7 +128,9 @@ def test_listar_candidatos_nao_carrega_dll(monkeypatch, tmp_path):
     monkeypatch.setattr(SVC, "_windir", lambda: tmp_path / "Windows")
     monkeypatch.setattr(SVC, "_program_files", lambda: [])
 
-    with mock.patch("ctypes.WinDLL", side_effect=AssertionError("não carregar")):
+    # create=True: fora do Windows o ctypes não tem WinDLL, e o que se prova
+    # (a listagem não carrega DLL nenhuma) vale em qualquer sistema
+    with mock.patch("ctypes.WinDLL", side_effect=AssertionError("não carregar"), create=True):
         with mock.patch("ctypes.CDLL", side_effect=AssertionError("não carregar")):
             lista = SVC.listar_candidatos_no_disco()
 

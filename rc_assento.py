@@ -1363,8 +1363,14 @@ def lavrar_assento(con: Any, *, especie: str, nome: str,
                    termo_dados: dict | None = None,
                    pessoas: list[dict] | None = None,
                    forcar_motivo: str | None = None,
-                   marcas_do_obito: dict | None = None) -> dict:
+                   marcas_do_obito: dict | None = None,
+                   paternidade: dict | None = None) -> dict:
     """Lavra o assento e o ato de REGISTRO. ESCREVE.
+
+    `paternidade` é o termo que o nascimento sem o pai exige — de alegação ou
+    negativo (`rc_paternidade`, 23/10/2026). Ele é conferido ANTES de qualquer
+    gravação e lavrado depois do lugar no livro, porque o texto cita o livro,
+    a folha e o número.
 
     `marcas_do_obito` são as respostas do balcão às perguntas do óbito (era
     eleitor, deixou bens...). Entram AQUI, antes da conferência das centrais,
@@ -1406,6 +1412,13 @@ def lavrar_assento(con: Any, *, especie: str, nome: str,
             pessoas)
     if not (nome or "").strip():
         raise RcError("O assento precisa do nome de quem é o registro.")
+    # O NASCIMENTO SEM O PAI EXIGE O TERMO (23/10/2026), de alegação ou
+    # negativo — Lei nº 8.560/1992, art. 2º. Confere aqui, antes de gravar.
+    import rc_paternidade as RP
+    try:
+        pedido_paternidade = RP.conferir(especie, pessoas, origem, paternidade)
+    except RP.PaternidadeError as erro:
+        raise RcError(str(erro)) from None
     serie = SERIE_DA_ESPECIE[especie]
     bd = banco(con)
     if (origem or "MANUAL").strip().upper() == "MANUAL":
@@ -1579,6 +1592,20 @@ def lavrar_assento(con: Any, *, especie: str, nome: str,
     #   curto e o mais frequente.
     import rc_anotacao as ANOT
     ANOT.declarar(con, assento_id, agora=agora, usuario=usuario)
+
+    # O TERMO DE PATERNIDADE NASCE COM O ASSENTO, na mesma transação: ato sem
+    # termo não existe, e termo sem ato também não.
+    if pedido_paternidade:
+        mae = RP.nome_do_papel(pessoas, "MAE")
+        RP.lavrar_termo(
+            con, assento_id, pedido_paternidade,
+            teor=RP.montar_teor(
+                pedido_paternidade, registrado=nome.strip(), mae=mae,
+                data_nascimento=data_fato or "", livro=lugar.get("livro_numero"),
+                folha=lugar.get("rotulo") or lugar.get("folha"),
+                numero=lugar.get("numero_ordem"), data_extenso=data_extenso,
+                sv=sv or {}),
+            registrado=nome.strip(), mae=mae, agora=agora, usuario=usuario)
 
     # A CONFERÊNCIA DOS DADOS — termo × campos × pessoas (11/10/2026).
     #

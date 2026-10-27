@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block title %}Painel da TV — Administrativo{% endblock %}
+{% block heading %}<h1>Painel de senhas — a TV da recepção</h1>{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head"><h2>Endereço da TV</h2><a href="{{ url_for('service_queue') }}">voltar ao atendimento</a></div>
+  <p>A TV abre <strong>sem login</strong>, por um endereço com uma chave longa e aleatória.
+     Ela mostra <strong>só a senha e o guichê</strong> — nenhum nome, tipo de serviço ou atendente.
+     Quem tiver o endereço vê o que a recepção vê; por isso ele só aparece aqui, para o oficial,
+     e pode ser trocado a qualquer momento.</p>
+  {% if endereco %}
+    <p><strong>Abra este endereço no navegador do computador da TV</strong> (o computador precisa estar na
+       mesma rede do servidor) e clique em «Tela cheia» e em «Ligar o som»:</p>
+    <p><input readonly value="{{ endereco }}" style="width:100%" onclick="this.select()"></p>
+    <p class="small muted">Se este endereço começar com «localhost» ou «127.0.0.1», troque essa parte pelo
+       nome ou IP do servidor na rede antes de abrir na TV.</p>
+    <form method="post" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button name="acao" value="gerar" onclick="return confirm('Trocar o endereço? A TV que usa o atual para de funcionar.')">Trocar o endereço</button>
+      <button name="acao" value="desligar" onclick="return confirm('Desligar o painel da TV?')">Desligar o painel</button>
+    </form>
+  {% else %}
+    <p>O painel da TV está <strong>desligado</strong>: nenhum endereço o abre.</p>
+    <form method="post" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="primary" name="acao" value="gerar">Gerar o endereço da TV</button>
+    </form>
+  {% endif %}
+  <p class="small muted">A chave é guardada no cofre da pasta de dados (arquivo cifrado), e não no banco.</p>
+</section>
+
+<section class="panel">
+  <h2>Tipos de atendimento</h2>
+  <p>São as opções da tela de emitir senha, e o que agrupa o relatório. Um por linha;
+     em branco, valem os de fábrica.</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <textarea name="tipos" rows="10" style="width:100%" placeholder="{{ fabrica|join('\n') }}">{{ tipos_gravados }}</textarea>
+    <button name="acao" value="tipos">Gravar os tipos</button>
+  </form>
+  <p class="small muted">Em uso agora: {{ tipos|join(' · ') }}</p>
+</section>
+{% endblock %}

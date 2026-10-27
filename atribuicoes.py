@@ -202,9 +202,18 @@ CONFLITOS_NO_ACERVO: tuple[dict, ...] = (
 # DIVERGENCIA DE SIGLA, e nao e erro de digitacao: o cadastro de fundos
 # escreve FADP e o texto do selo do Tribunal escreve FADEP. E o mesmo
 # fundo, o da Defensoria. A leitura aceita as duas formas.
+#
+# CORRECAO DE 25/10/2026 — O NOME DO FERC. O `tbFundo` do E-Oficio da ao
+# codigo 1 (FERC) o nome «Fundo Especial de Modernizacao e Reaparelhamento do
+# Judiciario», e este arquivo o copiou. Esse nome e o do FERJ, que e OUTRO
+# fundo: o FERJ e a taxa de 12% que sai de dentro do emolumento; o FERC sao os
+# 3% cobrados por cima, que ressarcem os atos gratuitos do Registro Civil
+# (correcao do oficial: «ferj e ferc sao diferentes»). O nome agora e o do
+# Codigo de Normas do MA, art. 217. O codigo, a sigla e o percentual, que sao
+# o que o Tribunal reconhece, nao mudaram.
 
 FUNDOS: tuple[dict, ...] = (
-    {"codigo": 1, "sigla": "FERC", "percentual": 3, "nome": "Fundo Especial de Modernização e Reaparelhamento do Judiciário"},
+    {"codigo": 1, "sigla": "FERC", "percentual": 3, "nome": "Fundo Especial das Serventias de Registro Civil de Pessoas Naturais do Estado do Maranhão"},
     {"codigo": 2, "sigla": "FEMP", "percentual": 4, "nome": "Fundo Especial do Ministério Público Estadual"},
     {"codigo": 3, "sigla": "FADP", "percentual": 4, "nome": "Fundo de Aparelhamento da Defensoria Pública do Estado do Maranhão"},
     {"codigo": 4, "sigla": "ISS", "percentual": 5, "nome": "Imposto Sobre Serviços"},

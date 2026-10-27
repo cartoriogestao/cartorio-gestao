@@ -18,6 +18,17 @@ CAIXA = "https://caixa.exemplo/pendentes"
 SEGREDO = "segredo-teste"
 
 
+def _puxar(con, *, http_get=None, http_post=None, serventia=None, agora=None):
+    """A rodada da tela (`wa_web.whatsapp_puxar`): busca, aplica e só então
+    confirma — os três passos separados desde que a busca saiu da transação."""
+    achado = PUXAR.buscar_pendentes(con, http_get=http_get)
+    if not achado.get("ok"):
+        return achado
+    r = PUXAR.aplicar_itens(con, achado["itens"], serventia=serventia, agora=agora)
+    PUXAR.confirmar(con, r.get("ids"), http_post=http_post)
+    return r
+
+
 def _webhook(marca: str = "a") -> dict:
     return {"object": "whatsapp_business_account", "marca": marca, "entry": []}
 
@@ -100,7 +111,7 @@ def test_get_e_ack_levam_bearer_e_x_caixa_segredo(monkeypatch):
     _configurar(monkeypatch, caixa)
     _aplicar(monkeypatch)
 
-    r = PUXAR.puxar_pendentes(object())
+    r = _puxar(object())
 
     assert r["ok"] is True
     assert len(caixa.pedidos) == 2
@@ -124,9 +135,9 @@ def test_envelope_entrega_o_payload_e_confirma_os_ids(monkeypatch):
         {"criadas": 0, "repetidas": 1},
     ])
 
-    r = PUXAR.puxar_pendentes(object())
+    r = _puxar(object())
 
-    assert r == {"ok": True, "aplicadas": 1, "repetidas": 1}
+    assert r == {"ok": True, "aplicadas": 1, "repetidas": 1, "ids": ["evt-1", "evt-2"]}
     assert vistos == [primeiro, segundo]
     post = _post(caixa)
     assert post.full_url == CAIXA + "/ack"
@@ -141,7 +152,7 @@ def test_item_sem_envelope_passa_inteiro_e_nao_confirma(monkeypatch):
     _configurar(monkeypatch, caixa)
     vistos = _aplicar(monkeypatch)
 
-    r = PUXAR.puxar_pendentes(object())
+    r = _puxar(object())
 
     assert r["ok"] is True and r["aplicadas"] == 1
     assert vistos == [item]
@@ -158,9 +169,9 @@ def test_falha_no_ack_nao_quebra_a_puxada(monkeypatch, caplog):
     _aplicar(monkeypatch)
 
     with caplog.at_level(logging.WARNING, logger="wa_puxar"):
-        r = PUXAR.puxar_pendentes(object())
+        r = _puxar(object())
 
-    assert r == {"ok": True, "aplicadas": 1, "repetidas": 0}
+    assert r == {"ok": True, "aplicadas": 1, "repetidas": 0, "ids": ["evt-9"]}
     assert _post(caixa).full_url == CAIXA + "/ack"
     assert any("ack falhou" in rec.message for rec in caplog.records)
     assert SEGREDO not in caplog.text
@@ -181,7 +192,7 @@ def test_excecao_no_ack_nao_quebra_a_puxada(monkeypatch, caplog):
     vistos = _aplicar(monkeypatch)
 
     with caplog.at_level(logging.WARNING, logger="wa_puxar"):
-        r = PUXAR.puxar_pendentes(object(), http_get=http_get, http_post=http_post)
+        r = _puxar(object(), http_get=http_get, http_post=http_post)
 
     assert r["ok"] is True and r["aplicadas"] == 1
     assert vistos == [payload]
@@ -201,7 +212,7 @@ def test_sem_ids_nao_chama_ack(monkeypatch):
     _configurar(monkeypatch, caixa)
     vistos = _aplicar(monkeypatch)
 
-    r = PUXAR.puxar_pendentes(object())
+    r = _puxar(object())
 
     assert r["aplicadas"] == 2
     assert len(vistos) == 2

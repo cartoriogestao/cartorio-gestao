@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Painel no celular — o retrato que sai da casa</h1>{% endblock %}
+{% block content %}
+
+<section class="panel">
+  <p>O servidor <strong>não fica exposto à internet</strong>. Para ver os números
+  de fora, ele <strong>empurra uma cópia</strong> — só contagens e somas, sem nome,
+  sem CPF e sem teor — para a página do painel na VPS, por uma conexão de saída,
+  como a caixa-postal do WhatsApp. A cópia vai <strong>assinada</strong>: a VPS
+  guarda só a chave pública e recusa retrato que não tenha saído daqui, que seja
+  mais velho que o último ou que tenha mais de quinze minutos.</p>
+  <p class="muted">O painel é <strong>só do oficial titular</strong> (decisão de
+  26/10/2026, «apenas eu»): só ele abre o painel, configura e envia o retrato.
+  Nenhum outro usuário — nem outro ADMIN, nem o gerente — tem acesso.</p>
+</section>
+
+<section class="panel">
+  <h2>O titular do painel</h2>
+  {% if titular %}
+  <p>Titular: <strong>{{ titular.full_name }}</strong> ({{ titular.username }}).</p>
+  {% else %}
+  <p>Ainda não há titular. Escolha o oficial titular: só ele terá o painel.</p>
+  {% endif %}
+  {% if pode_escolher %}
+  <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="titular">
+    <label class="span2">{% if titular %}Passar o painel a outro ADMIN{% else %}Titular do painel{% endif %}
+      <select name="usuario_id">
+        {% for u in candidatos %}<option value="{{ u.id }}" {% if titular and u.id == titular.id %}selected{% endif %}>{{ u.full_name }} ({{ u.username }})</option>{% endfor %}
+      </select></label>
+    <div class="span2"><button type="submit">Guardar o titular</button></div>
+  </form>
+  <p class="muted">Só usuários ADMIN ativos (e pessoas, nunca conta de robô) podem ser
+  titulares. Depois de escolhido, só o próprio titular passa o painel a outro ADMIN.
+  A escolha fica na auditoria.</p>
+  {% else %}
+  <p class="muted">Só o titular passa o painel a outro ADMIN. Esta tela, para você,
+  mostra só quem é o titular.</p>
+  {% endif %}
+</section>
+
+{% if sou_eu %}
+<p class="muted">O seu painel: <a href="{{ url_for('painel_celular') }}">{{ url_for('painel_celular') }}</a>.</p>
+
+<section class="panel">
+  <h2>1. A chave que assina</h2>
+  {% if publica %}
+  <p>Chave pública (cole esta na VPS):</p>
+  <p><code style="word-break:break-all">{{ publica }}</code></p>
+  <p class="muted">Impressão para conferir de olho: <code>{{ impressao }}</code>. A chave
+  privada mora no cofre da pasta de dados (<code>painel.cred</code>), fora do banco.</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="gerar_chave">
+    <label class="check"><input type="checkbox" name="trocar" value="1"> trocar a chave (a VPS passa a recusar até receber a nova pública)</label>
+    <button type="submit">Gerar chave nova</button>
+  </form>
+  {% else %}
+  <p>Ainda não há chave.</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="gerar_chave">
+    <button type="submit" class="primary">Gerar a chave do painel</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>2. Para onde vai</h2>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="salvar">
+    <label class="span2">Endereço de recebimento na VPS (https)
+      <input name="url" value="{{ conf.url }}" placeholder="https://.../painel/retrato"></label>
+    <label class="check span2"><input type="checkbox" name="ligado" value="1" {% if conf.ligado %}checked{% endif %}>
+      envio automático ligado (quem envia de tempos em tempos é o Agendador do Windows, com <code>tools/painel_empurrar.py</code>)</label>
+    <div class="span2"><button type="submit">Guardar</button></div>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>3. Conferir e enviar</h2>
+  <p><a href="{{ url_for('painel_retrato_tela', ver='previa') }}">Ver exatamente o que sairia</a> — o mesmo dicionário que vai assinado, sem enviar nada.</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="enviar">
+    <button type="submit">Enviar um retrato agora</button>
+  </form>
+  {% if conf.ultimo %}
+  <p class="muted">Último envio: {{ conf.ultimo.em }} —
+    {% if conf.ultimo.ok %}aceito pela VPS ({{ conf.ultimo.bytes }} bytes){% else %}não aceito: {{ conf.ultimo.motivo }}{% endif %}</p>
+  {% else %}<p class="muted">Nenhum envio ainda.</p>{% endif %}
+  {% if previa %}<pre style="max-height:60vh;overflow:auto">{{ previa }}</pre>{% endif %}
+</section>
+{% endif %}
+
+{% endblock %}

@@ -142,10 +142,10 @@ Decisões sobre os textos que a serventia emite, a organização das telas e das
 **Regra.** Cada uso de IA sobre documentos é descrito: titulares, dados pessoais e sensíveis, finalidade, base legal, operador, transferência internacional, o que sai, o que se registra, guarda na serventia e no operador, quem acessa e se há decisão automatizada. Cada envio guarda arquivo, página, modelo, tokens, data e usuário, com auditoria; a leitura vira rascunho conferido com o original e lavrado por pessoa.
 **Por quê.** Envio a provedor é transferência a operador; sem registro não se responde ao titular nem à correição; sem decisão automatizada, não incide o regime do art. 20.
 **Fundamento.** LGPD, arts. 7º, II e III; 11, II, «a» e «b»; 20; 23, § 4º; 33.
-**No código.** `rc_leitura_documentos.py`, `rc_leituras`.
+**No código.** `rc_leitura_documentos.py`, `rc_leituras`; desde 26/10/2026 também as Notas — `leitura_ia.py` (o motor comum), `nt_leitura_documentos.py`, `nt_leituras` (com `retencao_dias = 30` e `sem_mascara = 1` em cada linha).
 
 ### Anonimizar onde a finalidade permite; exceção delimitada e justificada
-**Regra.** A regra é mascarar o que sai. Quando a finalidade é transcrever o próprio dado (leitura de DNV, DO e documentos para o rascunho do assento), o envio sem máscara é exceção restrita a esse uso, justificada por escrito, só com as páginas daquele registro, sem deixar arquivos guardados no provedor, e com a retenção do operador conferida na fonte oficial, citada com data e revista a cada revisão do relatório.
+**Regra.** A regra é mascarar o que sai. Quando a finalidade é transcrever o próprio dado (leitura de DNV, DO e documentos para o rascunho do assento; e, desde 26/10/2026, de RG, CIN, CNH, CRLV, CRV e ATPV para o rascunho do cartão de autógrafo e do veículo nas Notas — «autorizo ia sem mascara. trabalharemos com o prazo de retencao de 30 dias da api», o oficial), o envio sem máscara é exceção restrita a esse uso, justificada por escrito, só com as páginas daquele registro, sem deixar arquivos guardados no provedor, e com a retenção do operador conferida na fonte oficial, citada com data e revista a cada revisão do relatório.
 **Por quê.** Mascarar inutilizaria o serviço e devolveria a digitação manual com mais erro; exceção sem limites viraria regra.
 **Fundamento.** LGPD, art. 11, II; Lei 6.015/1973, arts. 16 a 21, 54 e 80.
 
@@ -153,6 +153,11 @@ Decisões sobre os textos que a serventia emite, a organização das telas e das
 **Regra.** Usa-se a API oficial do provedor; o servidor não recebe conexão de fora (caixa-postal externa recebe o webhook, o servidor busca por saída HTTPS). O webhook exige HMAC-SHA256 sobre o corpo cru, conferido com `hmac.compare_digest`; cabeçalho de teste não abre a porta havendo segredo; segredos fora do código. Autoenvio desligado; nunca se envia sozinho CPF, valor, protesto, certidão ou dado de livro, nem horário inventado. É a única rota que grava sem tela, declarada como exceção.
 **Por quê.** Cabeçalho que vem de fora não abre porta sozinho; sem isso era possível injetar mensagem falsa na fila do balcão.
 **No código.** `wa_balcao.py`, `wa_web.py`, `wa_puxar.py`.
+
+### O atendente com IA responde sozinho em quatro casos, e o resto passa a uma pessoa (26/10/2026)
+**Regra.** A regra «autoenvio desligado» acima foi revogada pelo titular em 26/10/2026 **só para quatro casos**: (1) andamento do protocolo, depois da identificação por número e código de acompanhamento impresso no recibo, com limite de tentativas por telefone e a mesma resposta quer o número exista quer não; (2) dúvidas gerais a partir de um texto-base aprovado pelo titular e editável na tela — resposta com número fora do texto-base, valor em dinheiro ou marcador de dado ocultado não sai; (3) valores pela tabela de emolumentos, sempre como estimativa, com o número calculado pelo motor de custas da casa e não pelo modelo, que só escolhe o item de uma lista aprovada; (4) transcrição do áudio do cliente. Tudo o mais — pedido do cliente, dúvida que a IA não sabe, protesto, registro civil, dado pessoal, reclamação — passa a uma pessoa com a conversa marcada para o setor. Interruptor geral desligado de fábrica (só o administrador liga, e só se responde o que chegou depois de ligado); cada resposta automática é registrada com o que a IA leu (mascarado), o que respondeu, provedor, tokens e custo. O que vai ao modelo passa pela máscara; o áudio vai inteiro ao provedor de transcrição, e a tela diz isso. Rede nunca dentro de transação.
+**Por quê.** Pedido do titular («é importante»). A regra antiga continua valendo para todo o resto: o que a IA pode afirmar ao cliente fica limitado ao que a casa aprovou ou calcula, e o que é sensível continua com uma pessoa.
+**No código.** `wa_atendente.py`, `wa_transcricao.py`, `wa_fila.py`, `wa_ia_registro`.
 
 ## Atenção para fraudes
 

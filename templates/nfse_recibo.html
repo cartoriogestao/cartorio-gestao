@@ -69,7 +69,8 @@
     {% if n.mensagem %}<br><span class="muted">{{ n.mensagem }}</span>{% endif %}
     {% if n.motivo_cancelamento %}<br>Cancelada em {{ n.cancelada_em }} por {{ n.cancelada_por }}: {{ n.motivo_cancelamento }}{% endif %}</p>
   <div class="actions">
-    {% if n.chave %}<a class="button" href="{{ url_for('nfse_danfse', nota_id=n.id) }}">DANFSe (PDF)</a>{% endif %}
+    {% if n.chave %}<a class="button" href="{{ url_for('nfse_danfse', nota_id=n.id) }}">DANFSe (PDF)</a>
+      <a class="small" href="{{ url_for('nfse_danfse', nota_id=n.id, formato='html') }}">folha para imprimir no navegador</a>{% endif %}
     {% if papel in ['ADMIN', 'MANAGER', 'AUDITOR'] %}<a class="button" href="{{ url_for('nfse_xml', nota_id=n.id) }}">XML</a>{% endif %}
   </div>
   {% if papel in quem_opera and ligada and n.situacao in ['ENVIANDO', 'REJEITADA'] %}

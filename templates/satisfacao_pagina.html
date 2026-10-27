@@ -1,0 +1,72 @@
+<!doctype html>
+{# A PÁGINA DA PESQUISA (26/10/2026) — sem login, para o tablet do balcão ou o
+   celular de quem foi atendido, NA REDE DA CASA. Não estende o `base.html`:
+   num tablet esquecido logado, o menu do sistema apareceria para o cliente.
+   Sem script: funciona em qualquer aparelho. #}
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  {% if obrigado and repetir %}<meta http-equiv="refresh" content="6;url={{ volta }}">{% endif %}
+  <title>Avalie o atendimento</title>
+  <style>
+    :root{--accent:#1f5f87;--texto:#1d2b36;--fundo:#f3f6f8;--borda:#cfd7de}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:var(--fundo);color:var(--texto);font-size:18px}
+    main{max-width:640px;margin:0 auto;padding:24px 16px}
+    .cartao{background:#fff;border:1px solid var(--borda);border-radius:14px;padding:24px}
+    h1{font-size:24px;margin:0 0 6px}
+    p{line-height:1.45}
+    .notas{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:18px 0}
+    .notas input{position:absolute;opacity:0;width:1px;height:1px}
+    .notas label{display:flex;flex-direction:column;align-items:center;gap:4px;border:2px solid var(--borda);
+      border-radius:12px;padding:14px 4px;cursor:pointer;font-size:13px;text-align:center;background:#fff}
+    .notas label b{font-size:30px}
+    .notas input:checked+label{border-color:var(--accent);background:#e7f1f8}
+    .notas input:focus-visible+label{outline:3px solid #b7d7ed}
+    textarea{width:100%;font:inherit;font-size:16px;padding:10px;border:1px solid var(--borda);border-radius:10px}
+    button{font:inherit;background:var(--accent);color:#fff;border:0;border-radius:10px;padding:14px 18px;width:100%;margin-top:14px;cursor:pointer}
+    .aviso{background:#fef3f2;border:1px solid #fecdca;color:#b42318;border-radius:10px;padding:12px;margin-bottom:12px}
+    .discreto{color:#5b6b77;font-size:14px}
+  </style>
+</head>
+<body>
+<main>
+  <div class="cartao">
+  {% if fechada %}
+    <h1>Pesquisa indisponível</h1>
+    <p>A pesquisa de satisfação não está aberta neste momento.</p>
+  {% elif obrigado %}
+    <h1>Obrigado!</h1>
+    <p>A sua avaliação foi registrada. Ela nos ajuda a atender melhor.</p>
+    {% if repetir %}<p class="discreto">Esta tela volta sozinha para a próxima pessoa.</p>{% endif %}
+  {% elif usado %}
+    <h1>Obrigado!</h1>
+    <p>Este atendimento já foi avaliado.</p>
+  {% else %}
+    <h1>Como foi o seu atendimento?</h1>
+    <p class="discreto">A avaliação é anônima: não pedimos nome, documento nem telefone.</p>
+    {% if erro %}<div class="aviso" role="alert">{{ erro }}</div>{% endif %}
+    <form method="post" action="{{ url_for('satisfacao_pagina') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if token %}<input type="hidden" name="t" value="{{ token }}">{% endif %}
+      <fieldset style="border:0;padding:0;margin:0">
+        <legend>Escolha uma nota</legend>
+        <div class="notas">
+          {% for n, nome in notas|dictsort %}
+          <input type="radio" name="nota" value="{{ n }}" id="nota-{{ n }}" required>
+          <label for="nota-{{ n }}"><b>{{ n }}</b>{{ nome }}</label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <label for="comentario">Quer deixar um comentário? (opcional)</label>
+      <textarea id="comentario" name="comentario" rows="4" maxlength="1000" placeholder="Não escreva nome, CPF ou telefone aqui."></textarea>
+      <button type="submit">Enviar avaliação</button>
+    </form>
+    <p class="discreto">Para uma reclamação que precisa de resposta, fale com o atendente: ela é registrada na ouvidoria da serventia.</p>
+  {% endif %}
+  </div>
+</main>
+</body>
+</html>

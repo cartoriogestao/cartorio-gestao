@@ -1,0 +1,32 @@
+# O portal do cliente na VPS — unidade do systemd. Ver LEIA-ME.md.
+# Copiar para /etc/systemd/system/cartorio-portal.service.
+[Unit]
+Description=Cartorio Gestao - portal do cliente (consulta de protocolo)
+After=network.target
+
+[Service]
+Type=simple
+User=cartorio-portal
+Group=cartorio-portal
+WorkingDirectory=/opt/cartorio-portal
+EnvironmentFile=/etc/cartorio-portal/portal.env
+ExecStart=/usr/bin/python3 -I /opt/cartorio-portal/portal_vps.py
+Restart=always
+RestartSec=5
+
+# O serviço só lê o programa e só escreve na pasta do banco.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cartorio-portal
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

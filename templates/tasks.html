@@ -21,6 +21,10 @@
       <label>Substituto<select name="backup_user_id"><option></option>{% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select></label>
       <label class="checkbox-label span2"><input type="checkbox" name="evidence_required" value="1"> Exigir evidência para concluir</label>
       <label class="span2">Referência normativa<input name="legal_ref"></label>
+      {# A TAREFA NOVA JÁ LIGADA A UM PROTOCOLO GERAL (26/10/2026, o oficial). #}
+      <input type="hidden" name="vincular_tabela" value="cx_protocolos">
+      <label class="span2">Protocolo geral (opcional)
+        <input name="vincular_referencia" placeholder="Ex.: 2026.10.31 — a tarefa nasce ligada a ele"></label>
       <label class="span2">Descrição<textarea name="description" rows="3"></textarea></label>
       <label>Tipo do andamento inicial
         <select name="tipo_andamento">

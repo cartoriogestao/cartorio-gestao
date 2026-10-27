@@ -65,7 +65,36 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         else:
             audit("PROCESSO_PASTA_TIROU", "TASK", task_id, {"vinculo_id": vinculo_id})
             flash("A peça saiu da pasta. Ela continua onde sempre esteve.", "info")
-        return redirect(url_for("task_detail", task_id=task_id) + "#pasta")
+        # Desligado a partir do protocolo (26/10/2026), volta para ele.
+        return redirect(destino_interno(request.form.get("voltar"),
+                                        url_for("task_detail", task_id=task_id) + "#pasta"))
+
+    @app.route("/caixa/protocolos/<int:protocolo_id>/tarefas/vincular", methods=["POST"])
+    @roles_required(*QUEM)
+    def caixa_protocolo_vincular_tarefa(protocolo_id: int):
+        """Liga o protocolo a uma tarefa QUE JÁ EXISTE — 26/10/2026, o oficial:
+        «linkar um protocolo a uma tarefa nova ou preexistente». É o mesmo
+        vínculo da pasta do processo (`processo_pasta.vincular`), feito daqui."""
+        volta = url_for("caixa_protocolo", protocolo_id=protocolo_id) + "#tarefas"
+        numero_da_tarefa = "".join(c for c in str(request.form.get("task_id") or "") if c.isdigit())
+        if not numero_da_tarefa:
+            flash("Informe o número da tarefa (o que aparece como #123).", "danger")
+            return redirect(volta)
+        task_id = int(numero_da_tarefa)
+        try:
+            with db.transaction() as con:
+                p = banco(con).um("SELECT numero FROM cx_protocolos WHERE id=%s", (protocolo_id,))
+                if not p:
+                    raise PASTA.PastaError("Este protocolo não existe.")
+                PASTA.vincular(con, task_id, "cx_protocolos", p["numero"],
+                               agora=db.now(), por=usuario_id())
+        except ValueError as erro:
+            flash(str(erro), "danger")
+            return redirect(volta)
+        audit("PROCESSO_PASTA_VINCULOU", "TASK", task_id,
+              {"tabela": "cx_protocolos", "via": "protocolo", "protocolo_id": protocolo_id})
+        flash(f"Protocolo ligado à tarefa #{task_id}.", "success")
+        return redirect(volta)
 
     @app.route("/tarefas/<int:task_id>/pasta/<int:vinculo_id>/ato-lavrado", methods=["POST"])
     @roles_required(*QUEM)

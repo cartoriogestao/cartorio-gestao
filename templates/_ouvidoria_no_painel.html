@@ -1,0 +1,19 @@
+{# O QUADRO DA OUVIDORIA E DA PESQUISA (26/10/2026) — no painel e nos
+   relatórios, só para o oficial e o gerente (o contexto vem vazio para os
+   demais). Números, e nenhum dado de quem se manifestou. #}
+{% if ouvidoria_no_painel %}
+{% set o = ouvidoria_no_painel.ouvidoria %}{% set s = ouvidoria_no_painel.satisfacao %}
+<section class="panel">
+  <div class="panel-head"><h2>Ouvidoria e satisfação</h2>
+    <span><a href="{{ url_for('ouvidoria_lista') }}">ouvidoria</a> · <a href="{{ url_for('satisfacao_relatorio') }}">pesquisa</a></span></div>
+  <div class="cards">
+    <div class="card stat"><span>Manifestações em aberto</span><strong>{{ o.abertas }}</strong></div>
+    <div class="card stat {% if o.vencidas %}danger{% endif %}"><span>Vencidas sem resposta</span><strong>{{ o.vencidas }}</strong></div>
+    <div class="card stat {% if o.vencem_em_5_dias %}warning{% endif %}"><span>Vencem em 5 dias</span><strong>{{ o.vencem_em_5_dias }}</strong></div>
+    <div class="card stat"><span>Recebidas em 30 dias</span><strong>{{ o.ultimos_30_dias }}</strong>
+      <small class="muted">{{ o.reclamacoes_30_dias }} reclamação(ões) · {{ o.elogios_30_dias }} elogio(s)</small></div>
+    <div class="card stat"><span>Satisfação — média em 30 dias</span><strong>{{ '%.2f'|format(s.media_30_dias) if s.media_30_dias is not none else '—' }}</strong>
+      <small class="muted">{{ s.total_30_dias }} avaliação(ões){% if s.notas_baixas_30_dias %} · {{ s.notas_baixas_30_dias }} com nota 1 ou 2{% endif %}</small></div>
+  </div>
+</section>
+{% endif %}

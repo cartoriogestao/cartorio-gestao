@@ -23,9 +23,9 @@ import serventia as SERV
 import wa_balcao as WA
 import wa_schema as SCH
 
-_LOG = logging.getLogger(__name__)
-
 TIMEOUT_PUXAR = 8
+
+_LOG = logging.getLogger(__name__)
 
 
 def _marcar_segredo(req: urllib.request.Request, segredo: str) -> None:
@@ -63,6 +63,21 @@ def _http_post(url: str, segredo: str, corpo: dict,
         return 0, str(e)
 
 
+def _desembrulhar(item: Any) -> tuple[Any, Any]:
+    """Envelope `{id, payload}` vira o webhook; o formato antigo passa inteiro."""
+    if isinstance(item, dict) and "payload" in item:
+        return item["payload"], item.get("id")
+    return item, None
+
+
+def _id_confirmavel(eid: Any) -> bool:
+    if eid is None:
+        return False
+    if isinstance(eid, str) and not eid.strip():
+        return False
+    return True
+
+
 def _itens(bruto: str) -> list[Any]:
     try:
         d = json.loads(bruto or "[]")
@@ -80,43 +95,18 @@ def _itens(bruto: str) -> list[Any]:
     return []
 
 
-def _desembrulhar(item: Any) -> tuple[Any, Any]:
-    """Envelope `{id, payload}` vira o webhook; o formato antigo passa inteiro."""
-    if isinstance(item, dict) and "payload" in item:
-        return item["payload"], item.get("id")
-    return item, None
+# BUSCAR E APLICAR SÃO DOIS PASSOS (26/10/2026). A rota punha o GET da
+# caixa-postal — oito segundos de prazo — dentro de `db.transaction()`, com a
+# trava de escrita da casa presa enquanto a VPS respondia. Agora a rota lê a
+# configuração, busca FORA da transação e só então abre a transação curta que
+# aplica. O antigo `puxar_pendentes`, que fazia os dois juntos, saiu: deixá-lo
+# seria deixar pronta a porta para a rede voltar a ficar dentro da transação.
 
 
-def _id_confirmavel(eid: Any) -> bool:
-    if eid is None:
-        return False
-    if isinstance(eid, str) and not eid.strip():
-        return False
-    return True
+def buscar_pendentes(con: Any, http_get: Callable | None = None) -> dict:
+    """Lê a configuração em `con` e FALA COM A REDE. Não grava nada.
 
-
-def _confirmar(caixa_url: str, segredo: str, ids: list[Any],
-               http_post: Callable | None = None) -> None:
-    """POST `<caixa_url>/ack`. Falha aqui não desfaz a puxada: só avisa."""
-    if not ids:
-        return
-    url = str(caixa_url).rstrip("/") + "/ack"
-    fn = http_post or _http_post
-    try:
-        status, _bruto = fn(url, segredo, {"ids": list(ids)})
-    except Exception:
-        _LOG.warning("caixa-postal: ack falhou")
-        return
-    if status < 200 or status >= 300:
-        _LOG.warning("caixa-postal: ack falhou (HTTP %s)", status)
-
-
-def puxar_pendentes(con: sqlite3.Connection, *,
-                    http_get: Callable | None = None,
-                    http_post: Callable | None = None,
-                    serventia: Any = None,
-                    agora: str | None = None) -> dict:
-    """Busca pendentes na caixa-postal e aplica na fila. Sem rede se mockado."""
+    Devolve {"ok": True, "itens": [...]} ou {"ok": False, "motivo": ...}."""
     url = WA.ler_config(con, SCH.CHAVE_CAIXA_URL)
     # O SEGREDO SÓ VIAJA EM HTTPS (revisão de segurança de 22/10/2026, M11):
     # o `Bearer` ia para a URL que o ADMIN gravasse, inclusive `http://`, e
@@ -134,17 +124,46 @@ def puxar_pendentes(con: sqlite3.Connection, *,
     if status < 200 or status >= 300:
         return {"ok": False, "motivo": f"caixa HTTP {status}",
                 "aplicadas": 0, "repetidas": 0}
+    return {"ok": True, "itens": _itens(bruto)}
+
+
+def aplicar_itens(con: Any, itens: list, *, serventia: Any = None,
+                  agora: str | None = None) -> dict:
+    """Aplica na fila o que a caixa-postal devolveu. ESCREVE; não fala com a rede."""
     if serventia is None:
         serventia = SERV.PADRAO
     aplicadas = 0
     repetidas = 0
     ids: list[Any] = []
-    for item in _itens(bruto):
+    for item in itens or []:
         corpo, eid = _desembrulhar(item)
         r = WA.aplicar_entrada(con, corpo, serventia=serventia, agora=agora)
         aplicadas += int(r.get("criadas") or 0)
         repetidas += int(r.get("repetidas") or 0)
         if _id_confirmavel(eid):
             ids.append(eid)
-    _confirmar(url, segredo, ids, http_post=http_post)
-    return {"ok": True, "aplicadas": aplicadas, "repetidas": repetidas}
+    return {"ok": True, "aplicadas": aplicadas, "repetidas": repetidas, "ids": ids}
+
+
+def confirmar(con: Any, ids: list[Any] | None, http_post: Callable | None = None) -> None:
+    """O TERCEIRO PASSO (envelope e confirmação, 27/10/2026): POST
+    `<caixa_url>/ack` com os ids do que `aplicar_itens` gravou. FALA COM A REDE
+    e não grava nada — quem chama confirma DEPOIS da transação que aplicou, e
+    fora dela, como a busca. Falha aqui não desfaz a puxada: só avisa (o item
+    volta na próxima busca e é contado como repetido). Lê a configuração em
+    `con`: o segredo não passa pelo resultado que a rodada imprime."""
+    if not ids:
+        return
+    url = WA.ler_config(con, SCH.CHAVE_CAIXA_URL)
+    if not url or not str(url).strip().lower().startswith("https://"):
+        return
+    segredo = WA.ler_config(con, SCH.CHAVE_CAIXA_SEGREDO)
+    fn = http_post or _http_post
+    try:
+        status, _bruto = fn(str(url).rstrip("/") + "/ack", segredo, {"ids": list(ids)})
+    except Exception:                                   # noqa: BLE001 — só avisa
+        _LOG.warning("caixa-postal: ack falhou")
+        return
+    if status < 200 or status >= 300:
+        _LOG.warning("caixa-postal: ack falhou (HTTP %s)", status)
+

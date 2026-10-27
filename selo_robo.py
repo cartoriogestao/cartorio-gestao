@@ -69,16 +69,93 @@ def reconhecimento_pendente() -> dict:
 #: 22/10/2026, achado A6): usuários, atualizações, backup, configurações, caixa,
 #: selador, modelos, agente, os próprios robôs, livros do núcleo e implantação.
 #: O robô gera minuta e lavra o que o seu papel deixa; o que é de gente é de gente.
+#:
+#: DESDE 26/10/2026 ESTA É A SEGUNDA TRAVA, e não a única. A régua por prefixo
+#: não cobria rota nova (revisão de segurança dos PRs abertos, achado
+#: transversal 1): a primeira trava passou a ser a LISTA FECHADA de
+#: `rotas_do_robo.ROTAS_PERMITIDAS_AO_ROBO` — fora dela, 403. Esta continua
+#: valendo por cima: vedada vence permitida, e um nome que alguém ponha na
+#: lista permitida por engano continua barrado aqui.
+#: «automacao» entrou em 26/10/2026 (revisão de segurança dos PRs abertos, PR #11,
+#: M4): a central edita o que roda, libera «pode agir», mexe no cofre e no destino
+#: dos e-mails — com a credencial do robô, nada disso.
 ROTAS_VEDADAS_AO_ROBO = ("users", "usuarios", "updates", "atualizacoes", "settings",
                          "configuracoes", "backup", "caixa_", "caixa", "selador",
                          "modelos", "agente", "robos", "dois_fatores", "permiss",
-                         "nucleo_", "implantacao")
+                         "nucleo_", "implantacao", "automacao")
+
+
+# A BUSCA NO TEOR DO ACERVO TAMBÉM É DE GENTE (revisão de segurança de
+# 26/10/2026, PR #30): ela acha as fichas de uma pessoa pelo nome ou pelo CPF
+# no acervo inteiro — o que o AUDITOR já não alcança —, e a credencial do robô
+# mora num script. Em linha própria, e não dentro da tupla, para não colidir
+# com os acréscimos dos PRs #21 e #22 quando os três forem juntados.
+ROTAS_VEDADAS_AO_ROBO += ("ri_busca_no_acervo",)
+
+
+# AS CERTIDÕES DO ONR NO AUTOMÁTICO TAMBÉM SÃO DE GENTE (revisão de segurança
+# dos PRs abertos, 26/10/2026, PR #13, achado M1). A aprovação de um pedido
+# (`onr_auto_aprovar`) EMITE a certidão com selo pela rota da casa, e na rodada
+# seguinte o robô a assina com o A3 do oficial e a envia: com a credencial da
+# conta-robô (papel USER) o laço fecharia sem ninguém da casa ter olhado. Todas
+# as rotas de `onr_certidoes_auto_web` começam por «onr_auto» — as de ação e as
+# duas telas, que o robô também não tem por que abrir.
+#
+# Bloco À PARTE, e não a tupla acima, de propósito: o PR #11 (a central da
+# automação, base deste) acrescenta «automacao» na própria tupla, e as duas
+# mudanças na mesma linha dariam conflito ao juntar.
+ROTAS_VEDADAS_AO_ROBO = ROTAS_VEDADAS_AO_ROBO + ("onr_auto",)
 
 
 def rota_vedada_ao_robo(endpoint: Any) -> bool:
     """A rota é das que o robô não entra? Só calcula."""
     nome = str(endpoint or "").strip()
     return bool(nome) and nome.startswith(ROTAS_VEDADAS_AO_ROBO)
+
+
+def rota_permitida_ao_robo(endpoint: Any) -> bool:
+    """O robô pode entrar nesta rota? Só calcula.
+
+    A RÉGUA É FECHADA (revisão de segurança de 26/10/2026, achado transversal
+    1): entra só o que está em `rotas_do_robo.ROTAS_PERMITIDAS_AO_ROBO`, e a
+    rota nova nasce fora — até alguém decidir, com o motivo escrito, que o robô
+    precisa dela. Vedada vence permitida (`rota_vedada_ao_robo`). Rota sem
+    nome (o 404, que não casa com regra nenhuma) também fica fora.
+    """
+    nome = str(endpoint or "").strip()
+    if not nome or rota_vedada_ao_robo(nome):
+        return False
+    import rotas_do_robo as RR
+    return nome in RR.ROTAS_PERMITIDAS_AO_ROBO
+
+
+#: Os LANÇAMENTOS que o robô não faz, mesmo nas rotas de lançar que ele
+#: alcança (`rotas_do_robo`): os que DESFAZEM ou SUSPENDEM ato — o
+#: cancelamento (RCPJ/RTD, Livro 3, Protesto) e as ordens judiciais do
+#: Protesto. Revisão de segurança de 26/10/2026: cancelar é decisão de gente.
+#: E, por ordem do oficial no mesmo dia, a DESISTÊNCIA (encerra o título) e o
+#: PAGAMENTO (é dinheiro) do Protesto também ficam com gente.
+LANCAMENTOS_VEDADOS_AO_ROBO = ("CANCELAMENTO", "SUSTACAO", "EFEITO_SUSPENSIVO",
+                               "REVOGACAO_EFEITO_SUSPENSIVO", "DESISTENCIA",
+                               "PAGAMENTO")
+
+
+def lancamento_vedado_ao_robo(tipo: Any, user: Any = None) -> bool:
+    """True = a rota de lançar deve responder 403: é robô pedindo um dos
+    `LANCAMENTOS_VEDADOS_AO_ROBO`. Só calcula."""
+    if str(tipo or "").strip().upper() not in LANCAMENTOS_VEDADOS_AO_ROBO:
+        return False
+    return usuario_e_robo(user)
+
+
+# A QUALIFICAÇÃO ASSISTIDA É PEDIDO DE GENTE (revisão de segurança de
+# 26/10/2026, PR #22): pedir sobe o título, a guia do ITBI e a ficha (com o CPF
+# dos proprietários) à IA e gasta o teto do dia; levar preenche a nota
+# devolutiva. A credencial do robô mora num script. O prefixo veda também a
+# tela do rascunho (`ri_qualificacao_ia_ver`) — o robô não tem o que ler nela.
+# Em linha própria, e não dentro da tupla, para não colidir com os acréscimos
+# dos PRs #21 e #30 quando os três forem juntados.
+ROTAS_VEDADAS_AO_ROBO += ("ri_qualificacao_ia",)
 
 
 def exige_humano_para_selar(user: Any = None) -> bool:
@@ -105,3 +182,15 @@ def _usuario_da_sessao():
     except Exception:
         return None
     return None
+
+
+# O ACOMPANHAMENTO REGISTRAL DO ONR É CLIQUE DE GENTE (revisão de segurança de
+# 26/10/2026, PR #21). Enviar a fila ao ONR — que avisa o apresentante por
+# e-mail e SMS —, ligar o envio e descartar pendente são decisões de quem
+# responde pela casa; a credencial do robô mora num script. O prefixo veda
+# também a tela de leitura (`onr_acompanhamento`), o que a revisão aceitou: o
+# robô não tem o que fazer nela. Quando a automação chamar o envio, chama
+# `onr_acompanhamento.enviar_pendentes` por dentro, e não pela rota. Em linha
+# própria, e não dentro da tupla, para não colidir com os acréscimos dos PRs
+# #22 e #30 quando os três forem juntados.
+ROTAS_VEDADAS_AO_ROBO += ("onr_acompanhamento",)

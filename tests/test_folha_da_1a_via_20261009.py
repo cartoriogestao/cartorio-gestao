@@ -70,7 +70,9 @@ def casa(tmp_path):
     banco = Path(glob.glob(f"{dados}/*.sqlite3")[0])
     db = Database(banco)
     db.create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
-    db.create_user("robo_teste", "Robo de Testes", SENHA, "ADMIN", eh_robo=1)
+    # ROBO NAO ADMINISTRA (A6, 22/10/2026): a conta de robo so pode ser USER ou
+    # AUDITOR. Lavrar e do USER, e e isso que estes testes medem.
+    db.create_user("robo_teste", "Robo de Testes", SENHA, "USER", eh_robo=1)
     con = sqlite3.connect(banco)
     with con:
         PP.receber_remessa(con, fornecedor="ARPENBRASIL", serie="IA",

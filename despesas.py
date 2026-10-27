@@ -258,21 +258,45 @@ def _data(valor: Any, rotulo: str) -> str:
         raise DespesaError(f"{rotulo} não é uma data válida (AAAA-MM-DD).") from erro
 
 
+def _so_digitos(texto: str) -> bool:
+    return bool(texto) and all("0" <= c <= "9" for c in texto)
+
+
+def _parte_inteira(texto: str) -> str | None:
+    """«1.234.567» ou «1234567» → «1234567»; o resto, None. Só calcula."""
+    grupos = texto.split(".")
+    if len(grupos) == 1:
+        return texto if _so_digitos(texto) else None
+    if not (_so_digitos(grupos[0]) and len(grupos[0]) <= 3):
+        return None
+    if not all(_so_digitos(g) and len(g) == 3 for g in grupos[1:]):
+        return None
+    return "".join(grupos)
+
+
 def centavos_da_tela(valor: Any) -> int:
-    """«1.234,56» → 123456. Recusa o que não é dinheiro em vez de adivinhar."""
+    """«1.234,56» → 123456. Recusa o que não é dinheiro em vez de adivinhar.
+
+    Aceita «1.234,56», «1234,56», «1234.56» e «1.234». **SEM EXPRESSÃO
+    REGULAR** (27/10/2026): a que havia aqui recuava em polinômio com uma fila
+    de zeros (alerta do CodeQL), e o valor vem do formulário."""
     if isinstance(valor, int):
         return valor
     texto = str(valor or "").strip().replace("R$", "").strip()
     if not texto:
         return 0
-    if not re.fullmatch(r"\d{1,3}(\.\d{3})*(,\d{1,2})?|\d+(,\d{1,2})?|\d+\.\d{1,2}", texto):
-        raise DespesaError(f"Valor ilegível: «{valor}». Use 1.234,56.")
-    if "," in texto:
-        inteiro, _, frac = texto.replace(".", "").partition(",")
-    elif re.fullmatch(r"\d+\.\d{1,2}", texto):
-        inteiro, _, frac = texto.partition(".")
+    inteiro, virgula, frac = texto.partition(",")
+    if virgula:
+        ok = _so_digitos(frac) and len(frac) <= 2
     else:
-        inteiro, frac = texto.replace(".", ""), ""
+        antes, ponto, depois = texto.partition(".")
+        if (ponto and "." not in depois and _so_digitos(antes)
+                and _so_digitos(depois) and len(depois) <= 2):
+            inteiro, frac = antes, depois          # «1234.56»
+        ok = True
+    inteiro = _parte_inteira(inteiro) if ok else None
+    if inteiro is None:
+        raise DespesaError(f"Valor ilegível: «{valor}». Use 1.234,56.")
     return int(inteiro) * 100 + int((frac + "00")[:2])
 
 

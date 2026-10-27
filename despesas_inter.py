@@ -387,7 +387,14 @@ def _frase(corpo: Any) -> str:
 
 
 class ClienteInter:
-    """O Banking v2 do Inter, por um transporte injetável."""
+    """O Banking v2 do Inter, por um transporte injetável.
+
+    `escopos` é atributo de classe para a cobrança (`cobranca_inter`) pedir os
+    dela com a MESMA credencial e o mesmo token: o Inter entrega um token por
+    conjunto de escopos, e a integração da conta pode ter os dois.
+    """
+
+    escopos = ESCOPOS
 
     def __init__(self, ambiente: str, transporte: Transporte, campos: dict):
         if ambiente not in ENDERECOS:
@@ -422,7 +429,7 @@ class ClienteInter:
         r = self._ir("POST", f"{self.base}/oauth/v2/token", form={
             "client_id": self._campos["client_id"],
             "client_secret": self._campos["client_secret"],
-            "grant_type": "client_credentials", "scope": ESCOPOS})
+            "grant_type": "client_credentials", "scope": self.escopos})
         if r.status != 200 or not isinstance(r.corpo, dict) or not r.corpo.get("access_token"):
             raise Recusa(f"O Inter recusou a credencial (HTTP {r.status}). Confira o Client "
                          f"ID, o Client Secret e os escopos da integração.")

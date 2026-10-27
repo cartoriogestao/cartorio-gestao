@@ -24,6 +24,9 @@
       nesta casa: *lista vazia que só mostra nada faz o operador achar que
       quebrou*. O lugar do botão passa a explicar e a apontar onde se resolve —
       e ele volta a aparecer sozinho assim que o primeiro item entrar. #}
+  {# COBRAR POR BOLETO (27/10/2026): a cobrança nasce do protocolo, com o
+     que falta pagar sugerido. #}
+  {% if atos %}<a class="button" href="{{ url_for('cobranca_nova', protocolo_id=p.id) }}">Cobrar por boleto</a>{% endif %}
   {% if atos %}<a class="button" href="{{ url_for('caixa_orcamento', protocolo_id=p.id) }}">
     {% if p.tipo == 'ORCAMENTO' %}Emitir cálculo de emolumentos{% else %}Emitir orçamento{% endif %}</a>
   {% else %}

@@ -67,6 +67,7 @@ from ri_mapa_onr import init_mapa_onr_schema
 from apostila import init_apostila_schema
 from livro_diario import init_livro_diario_schema
 from despesas import init_despesas_schema
+from cobranca import init_cobranca_schema
 from carne_leao import init_carne_leao_schema
 from livro_visitas import init_livro_visitas_schema
 from ouvidoria import init_ouvidoria_schema
@@ -826,6 +827,9 @@ class Database:
         # AS DESPESAS (24/10/2026): cadastro, autorização, pagamento pelo Banco
         # Inter e conferência no extrato; a despesa conferida vai ao Diário.
         init_despesas_schema(con)
+        # A COBRANÇA POR BOLETO (27/10/2026): Inter e Unicred. O depósito
+        # prévio que ela cria é o do caixa; `protocolo_id` é vínculo sem FK.
+        init_cobranca_schema(con)
         # O CARNÊ-LEÃO E O LIVRO-CAIXA DO TITULAR (26/10/2026): a marcação
         # aponta para `ld_despesas`, que acabou de existir.
         init_carne_leao_schema(con)

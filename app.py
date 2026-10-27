@@ -3167,6 +3167,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     import despesas_web
     despesas_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
+    # A COBRANÇA POR BOLETO (27/10/2026) — o protocolo manda o boleto (com Pix)
+    # pelo Banco Inter ou pela Unicred; o pago vira depósito prévio no caixa.
+    # Emissão desligada e ambiente de teste por padrão.
+    import cobranca_web
+    cobranca_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
     # O CARNÊ-LEÃO E O LIVRO-CAIXA DO TITULAR (26/10/2026) — dado fiscal
     # pessoal do delegatário: só o ADMIN vê.
     import carne_leao_web

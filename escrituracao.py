@@ -806,6 +806,15 @@ def encerrar_o_dia(con, serie: str, dia: str, *, sv: dict,
     if ja:
         raise LivroError(
             f"O dia {dia} de {s.nome} já foi encerrado em {ja['encerrado_em']}.")
+    # O MÊS ASSINADO FECHA (23/10/2026): um termo lavrado depois da assinatura
+    # ficaria ao lado dos que o delegatário assinou sem ter sido assinado.
+    import encerramento_mensal as EM
+    assinado = EM.mes_assinado(bd, serie, dia)
+    if assinado:
+        raise LivroError(
+            f"Os termos de {EM.nome_do_mes(assinado)} de {s.nome} já foram "
+            f"juntados e assinados pelo delegatário. O dia {dia} não recebe "
+            f"mais termo.")
     livro = bd.um(
         """SELECT * FROM nu_livros WHERE serie=%s AND dia=%s
             ORDER BY id DESC LIMIT 1""", (serie, dia))

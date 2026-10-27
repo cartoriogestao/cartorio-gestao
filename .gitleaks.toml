@@ -63,3 +63,15 @@ regexTarget = "secret"
 regexes = [
   '''^MDGaPtZuqUKD4FtmC82CK5al$''',
 ]
+
+# 27/10/2026 (PR #12, despesas): os segredos FICTÍCIOS dos testes da credencial
+# do Banco Inter (tests/test_despesas.py, «segredo-ficticio-123» e «-456»). Não
+# abrem nada: a credencial real vem do cofre (banco_inter.cred), fora do
+# repositório. A regra generic-api-key os pega pelo nome client_secret. Exceção
+# estreita: só estes dois valores exatos, como segredo.
+[[allowlists]]
+description = "Segredos fictícios dos testes da credencial do Banco Inter (não são credencial)"
+regexTarget = "secret"
+regexes = [
+  '''^segredo-ficticio-(?:123|456)$''',
+]

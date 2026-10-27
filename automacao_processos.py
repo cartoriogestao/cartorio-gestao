@@ -409,13 +409,68 @@ def verificar_censec(ctx: Contexto) -> dict:
     return resultado(SCH.OK, "CENSEC em dia: envio automático ligado e nada impedido.")
 
 
+# O ARQUIVO QUE A VERIFICAÇÃO LÊ TEM DE MORAR NAS PASTAS DA CASA (revisão de
+# segurança de 26/10/2026, PR #11, achado M3). Os caminhos do estado do backup
+# e do log do CNIB vêm da tela de configuração, e até aqui valia QUALQUER
+# arquivo da máquina: quem gravasse ali o `pgpass.conf`, o `guardiao.json` do
+# cofre ou o lançador do servidor, com `padrao_erro` «.», via o fim do arquivo
+# em `detalhe_tecnico` — que o gerente lê. Agora:
+#   - só arquivo DENTRO da pasta de dados do servidor ou da raiz das cópias
+#     (a de fábrica — a `backup_dir` da tela não conta, porque ela também se
+#     edita pela tela), e nunca dentro da pasta do cofre;
+#   - o estado do backup tem de se chamar `ESTADO_DO_BACKUP.json`, e o log
+#     tem de ser .log ou .txt;
+#   - o texto do log NÃO vai mais para a tela: vai só quantas linhas bateram.
+NOME_DO_ESTADO_DO_BACKUP = "ESTADO_DO_BACKUP.json"
+SUFIXOS_DE_LOG = (".log", ".txt")
+
+
+def _raizes_de_leitura(ctx: Contexto) -> list[Path]:
+    from pasta_das_copias import raiz_das_copias
+    raizes = [Path(ctx.pasta_dados)]
+    try:
+        raizes.append(raiz_das_copias(Path(ctx.pasta_dados)))
+    except Exception:                          # noqa: BLE001 — sem a raiz das cópias, vale só a de dados
+        pass
+    return [r.resolve() for r in raizes]
+
+
+def arquivo_de_leitura_permitido(ctx: Contexto, caminho: str, *, sufixos: tuple[str, ...] = (),
+                                 nome: str | None = None) -> Path:
+    """O caminho configurado, se ele mora nas pastas da casa. Senão, `ValueError` com a frase."""
+    import automacao_cofre as COFRE
+    alvo = Path(str(caminho or "").strip()).expanduser().resolve()
+    dentro = False
+    for raiz in _raizes_de_leitura(ctx):
+        try:
+            alvo.relative_to(raiz)
+            dentro = True
+            break
+        except ValueError:
+            continue
+    if not dentro:
+        raise ValueError("o arquivo configurado está fora da pasta de dados do servidor e da pasta "
+                         "das cópias — a verificação só lê arquivo de lá")
+    if COFRE.NOME_DA_PASTA in [p.lower() for p in alvo.parts]:
+        raise ValueError("a pasta do cofre não se lê por esta verificação")
+    if nome and alvo.name.lower() != nome.lower():
+        raise ValueError(f"o arquivo tem de se chamar {nome}")
+    if sufixos and alvo.suffix.lower() not in sufixos:
+        raise ValueError("o arquivo tem de ser " + " ou ".join(sufixos))
+    return alvo
+
+
 def verificar_backup(ctx: Contexto) -> dict:
     """O backup da noite terminou bem? Lê o `ESTADO_DO_BACKUP.json` configurado."""
     caminho = ctx.config(SCH.CHAVE_BACKUP_ESTADO).strip()
     if not caminho:
         return resultado(SCH.AVISO, "O caminho do estado do backup não está configurado — informe "
                          "em Automação → Configuração.", erro="caminho não configurado")
-    alvo = Path(caminho)
+    try:
+        alvo = arquivo_de_leitura_permitido(ctx, caminho, nome=NOME_DO_ESTADO_DO_BACKUP)
+    except ValueError as recusa:
+        return resultado(SCH.AVISO, f"O caminho do estado do backup não vale: {recusa}. Corrija em "
+                         "Automação → Configuração.", erro="caminho fora das pastas permitidas")
     if not alvo.is_file():
         return _nao_mediu("o backup", f"o arquivo de estado não existe ({alvo.name})")
     try:
@@ -457,7 +512,11 @@ def verificar_log(ctx: Contexto) -> dict:
     if not caminho:
         return resultado(SCH.AVISO, f"O caminho do log de {nome} não está configurado — informe "
                          "em Automação → Configuração.", erro="caminho não configurado")
-    alvo = Path(caminho)
+    try:
+        alvo = arquivo_de_leitura_permitido(ctx, caminho, sufixos=SUFIXOS_DE_LOG)
+    except ValueError as recusa:
+        return resultado(SCH.AVISO, f"O caminho do log de {nome} não vale: {recusa}. Corrija em "
+                         "Automação → Configuração.", erro="caminho fora das pastas permitidas")
     if not alvo.is_file():
         return _nao_mediu(nome, f"o log não existe ({alvo.name})")
     horas = int(p.get("horas", 26))
@@ -470,12 +529,16 @@ def verificar_log(ctx: Contexto) -> dict:
     if idade > horas:
         return resultado(SCH.ERRO, f"O log de {nome} não é escrito há {idade:.0f} h (limite {horas} h): "
                          "a rotina não está rodando.", achados)
+    # Só a CONTAGEM vai para a tela (26/10/2026, M3): o texto do arquivo não sai daqui.
     if p.get("padrao_erro") and re.search(p["padrao_erro"], texto):
+        bateram = sum(1 for linha in fim if re.search(p["padrao_erro"], linha))
         return resultado(SCH.ERRO, f"A última rodada de {nome} registrou erro no log.", achados,
-                         detalhe_tecnico=texto[-4000:])
+                         detalhe_tecnico=f"{bateram} linha(s) das últimas {len(fim)} do log bateram com o "
+                                         f"padrão de erro. Abra o log na máquina do servidor para ler.")
     if p.get("padrao_ok") and not re.search(p["padrao_ok"], texto):
         return resultado(SCH.AVISO, f"A última rodada de {nome} não registrou o fim esperado.", achados,
-                         detalhe_tecnico=texto[-4000:])
+                         detalhe_tecnico=f"Nenhuma das últimas {len(fim)} linhas do log bateu com o padrão "
+                                         f"de fim. Abra o log na máquina do servidor para ler.")
     return resultado(SCH.OK, f"{nome[:1].upper() + nome[1:]}: rodou há {idade:.0f} h e terminou bem.", achados)
 
 
@@ -761,9 +824,9 @@ SEMENTES: tuple[dict, ...] = (
 #: e opcionalmente descricao, agenda e timeout_s}. O primeiro é o das despesas
 #: e do Banco Inter (agente financeiro, 24/10/2026). O import é protegido:
 #: o PR de um pode entrar antes do outro, e módulo ausente só não semeia.
-#: O segundo é o dos avisos de andamento ao cliente (26/10/2026), que traz
+#: O terceiro é o dos avisos de andamento ao cliente (26/10/2026), que traz
 #: também os `parametros` de fábrica (os dias antes do vencimento).
-MODULOS_COM_PROCESSOS = ("despesas_automacao", "andamento_avisos")
+MODULOS_COM_PROCESSOS = ("despesas_automacao", "onr_certidoes_auto", "andamento_avisos")
 
 #: A agenda sugerida por quem escreveu o processo, para quando o catálogo
 #: dele não trouxer uma. O processo nasce DESLIGADO do mesmo jeito.

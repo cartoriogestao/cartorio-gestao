@@ -508,7 +508,6 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     "tem_cryptography": "selador_de_bancada — a bancada dos testes, e não peça do balcão",
     "numero_de_controle": "notas_doi — " + _TESTE,
     "reservar_processo": "recursos_da_maquina — " + _TESTE,
-    "servico_no_ar": "assinar_com_a3 — o serviço local do A3 roda fora do Flask; " + _TESTE,
     "status_payload": "a3_servico_local — resposta do serviço local do A3, fora do Flask",
     "sugerir_entrelinha": "notas_inutilizacao — " + _TESTE,
 }

@@ -128,7 +128,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             batida = AU.batida_do_despachante(con)
         return render_template("automacao_processo.html", p=p, historico=historico, batida=batida,
                                agenda_texto=AU.descrever_agenda(p["agenda"]),
-                               catalogo=sorted(PROC.CATALOGO), tipos=SCH.TIPOS,
+                               catalogo=sorted(AU.funcoes_permitidas()), tipos=SCH.TIPOS,
                                nome_do_tipo=SCH.NOME_DO_TIPO, canais=SCH.CANAIS,
                                nome_do_canal=SCH.NOME_DO_CANAL, dias=AU.DIAS,
                                usuarios=_usuarios(), credenciais=COFRE.listar(caminho=cofre()),
@@ -164,8 +164,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         except AU.AutomacaoError as erro:
             flash(str(erro), "danger")
             return redirect(url_for("automacao_processo", processo_id=processo_id))
+        # O rastro leva os PARÂMETROS inteiros (revisão de segurança de 26/10/2026,
+        # PR #11, M2): era só o `alvo`, e os `argumentos` do script ficavam de fora.
         audit("AUTOMACAO_ALTERADO", "au_processos", processo_id,
-              {"codigo": p["codigo"], "agenda": p["agenda"], "tipo": p["tipo"], "alvo": p["alvo"][:200]})
+              {"codigo": p["codigo"], "agenda": p["agenda"], "tipo": p["tipo"], "alvo": p["alvo"][:200],
+               "parametros": json.dumps(p.get("parametros") or {}, ensure_ascii=False, sort_keys=True)[:4000]})
         flash("Processo gravado.", "success")
         return redirect(url_for("automacao_processo", processo_id=processo_id))
 

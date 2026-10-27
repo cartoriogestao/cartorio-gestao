@@ -5109,3 +5109,6 @@ def test_o_aviso_de_andamento_esta_no_catalogo_e_a_tela_o_confere(casa):
             MOD.padrao_de(chave)) == ""
         for proibido in ("{cpf}", "{nome_", "{valor", "{teor"):
             assert proibido not in MOD.padrao_de(chave), proibido
+# A CERTIDÃO POSITIVA POR PESSOA — 25/10/2026, o oficial («relação dos imóveis
+# atuais»), para os pedidos do ONR por pessoa: `RI_CERTIDAO_POSITIVA_PESSOA`.
+NOVOS_NO_CATALOGO_ONR = 1

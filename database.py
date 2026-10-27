@@ -32,6 +32,7 @@ from caixa_schema import init_caixa_schema
 from nfse import init_nfse_schema
 from as_schema import init_as_schema
 from fr_schema import init_fr_schema
+from identidade_do_robo import init_identidade_schema
 # O RELATÓRIO DA INSPEÇÃO desta casa (12/08/2026) é dado dela, e não código:
 # instalado, vira o plano de ação na primeira configuração; ausente — o
 # repositório público não o leva (sanitização B2, 11/10/2026) —, não se
@@ -63,6 +64,7 @@ from ri_onr_central_schema import init_ri_onr_central_schema
 from ri_mapa_onr import init_mapa_onr_schema
 from apostila import init_apostila_schema
 from livro_diario import init_livro_diario_schema
+from despesas import init_despesas_schema
 from livro_visitas import init_livro_visitas_schema
 from centrais_schema import init_centrais_schema
 from onr_endereco_schema import init_ri_onr_endereco_schema
@@ -666,6 +668,15 @@ class Database:
         for coluna in ("hash_anterior", "hash_linha"):
             if not bd.tem_coluna("audit_logs", coluna):
                 bd.escrever(f"ALTER TABLE audit_logs ADD COLUMN {coluna} TEXT")
+        # QUEM AGE POR PROGRAMA DIZ QUEM E E A MANDO DE QUEM (ordem do
+        # oficial, 26/10/2026): `audit_logs.agente`, `audit_logs.a_mando_de` e
+        # `users.robo_responsavel_id`. So ADD COLUMN; quem preenche e
+        # `identidade_do_robo.registrar`, por onde passa o `log` daqui de baixo.
+        # E `audit_logs.hash_versao`: desde a revisao de seguranca de 26/10 as
+        # duas colunas ENTRAM no hash da corrente (formula 2), e a versao por
+        # linha deixa as antigas conferirem pela formula de 22/10
+        # (`cg_auditoria_encadear` e `auditoria_cadeia.hash_da_linha`).
+        init_identidade_schema(con)
         gatilho = ("CREATE OR REPLACE TRIGGER audit_logs_cadeia BEFORE INSERT ON audit_logs "
                    "FOR EACH ROW EXECUTE FUNCTION public.cg_auditoria_encadear()")
         # `_cru` porque a ponte recusa `CREATE TRIGGER` (o do SQLite nao se traduz)
@@ -805,6 +816,9 @@ class Database:
         # tabela de outro módulo: a receita do Diário é LIDA do selo.
         init_livro_visitas_schema(con)
         init_livro_diario_schema(con)
+        # AS DESPESAS (24/10/2026): cadastro, autorização, pagamento pelo Banco
+        # Inter e conferência no extrato; a despesa conferida vai ao Diário.
+        init_despesas_schema(con)
         # A FILA GENERICA DAS CENTRAIS e o log delas (marco (a), 05/10/2026).
         # Nao apontam para tabela de dominio nenhuma — `payload_ref` e texto —,
         # e por isso podem nascer em qualquer ponto; ficam ao lado do ONR.
@@ -1115,7 +1129,7 @@ class Database:
         # ter a funcao preenchida, e a tela nao pode quebrar por isso.
         sql = ("SELECT id,username,full_name,role,active,created_at,"
                "COALESCE(funcao,'') funcao,"
-               "COALESCE(eh_robo,0) eh_robo FROM users")
+               "COALESCE(eh_robo,0) eh_robo, robo_responsavel_id FROM users")
         if active_only:
             sql += " WHERE active=1"
         sql += " ORDER BY full_name COLLATE public.cg_nocase, id"
@@ -1160,7 +1174,11 @@ class Database:
             for key, value in values.items():
                 bd.escrever("INSERT INTO settings(key,value) VALUES(%s,%s) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, str(value)))
 
-    def log(self, user_id: int | None, username: str | None, action: str, entity_type: str | None = None, entity_id: int | None = None, details: Any = None, ip_address: str | None = None) -> None:
+    def log(self, user_id: int | None, username: str | None, action: str, entity_type: str | None = None, entity_id: int | None = None, details: Any = None, ip_address: str | None = None, *, agente: str | None = None, a_mando_de: str | None = None) -> None:
+        # QUEM AGE POR PROGRAMA SE IDENTIFICA (26/10/2026): `agente` e
+        # `a_mando_de` sao para quem grava SEM usuario (rotina, agente, script);
+        # com usuario de robo, a identidade sai da conta dele. A regra «avisar
+        # ou recusar» mora em `identidade_do_robo.decidir`, e so la.
         # entity_id e INTEGER (no PostgreSQL compara-se com id numerico). Chave de
         # TEXTO (ex.: mo_elementos «ato/parte») vai para os detalhes, e a coluna
         # fica vazia - antes ia para a coluna e quebrava as telas (19/10/2026).
@@ -1188,10 +1206,12 @@ class Database:
                 bd = banco(con)
                 bd.ler("SET lock_timeout = '800ms'")
                 bd._escrita()
-                bd.escrever(
-                    "INSERT INTO audit_logs(ts,user_id,username_snapshot,action,entity_type,entity_id,details,ip_address) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                    (self.now(), user_id, username, action, entity_type, entity_id, payload, ip_address),
-                )
+                import identidade_do_robo as IDR
+                IDR.registrar(bd, ts=self.now(), user_id=user_id, username=username,
+                              action=action, entity_type=entity_type,
+                              entity_id=entity_id, details=payload,
+                              ip_address=ip_address, agente=agente,
+                              a_mando_de=a_mando_de)
                 con.commit()
         except sqlite3.OperationalError as erro:
             # BANCO TRAVADO POR OUTRO BALCAO.
@@ -1216,8 +1236,8 @@ class Database:
             # «omitido», texto cortado em 500 caracteres.
             import centrais_log
             logging.getLogger("cartorio.auditoria").error(
-                "AUDITORIA NAO GRAVADA (%s): %s user=%s acao=%s %s#%s %s",
-                type(erro).__name__, erro, username, action, entity_type,
+                "AUDITORIA NAO GRAVADA (%s): %s user=%s agente=%s a_mando_de=%s acao=%s %s#%s %s",
+                type(erro).__name__, erro, username, agente, a_mando_de, action, entity_type,
                 entity_id, json.dumps(centrais_log.sanitizar(details),
                                       ensure_ascii=False, default=str)
                 if details is not None else None)

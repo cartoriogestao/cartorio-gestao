@@ -76,6 +76,7 @@ import ajuda_mapa as MAPA
 import ajuda_projeto as PROJ
 import ajuda_problemas as AP
 from bd_nativo import banco
+from seguranca_web import destino_interno  # M1: o «volte para» que vem de fora
 from seguranca_web import numero_digitado  # LD13: o número que a tela mandou
 from serventia import dados as dados_da_serventia
 
@@ -137,11 +138,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         para o que ele disser é abrir uma porta para levar o operador
         autenticado a um endereço estranho. Um caminho que não comece com uma
         barra só cai no painel.
+
+        A RÉGUA É A DA CASA (`destino_interno`), e não uma conta própria: a
+        daqui só recusava `//fora`, e deixava passar `/\\fora.exemplo` (o
+        navegador lê como `//fora.exemplo`) e `/<TAB>/fora` (o navegador apaga
+        o TAB) — o mesmo furo do LX20, achado pelo CodeQL em 28/10/2026.
         """
-        caminho = _campo("caminho")
-        if caminho.startswith("/") and not caminho.startswith("//"):
-            return caminho
-        return url_for("dashboard")
+        return destino_interno(_campo("caminho"), url_for("dashboard"))
 
     def _volta_para_a_lista(problema_id: int = 0):
         """Volta para a lista de problemas NA MESMA VISTA em que ela estava.

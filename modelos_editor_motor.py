@@ -11,12 +11,30 @@ Trocar só este arquivo quando o contrato do motor mudar.
 from __future__ import annotations
 
 import json
+import logging
 import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
 
+_LOG = logging.getLogger(__name__)
+
 AVISO_FALLBACK = "prévia aproximada — motor fiel ainda não disponível"
+
+# O TEXTO DA EXCEÇÃO DO MOTOR NÃO VAI PARA A TELA (CodeQL, 28/10/2026). Os
+# avisos daqui viajam no JSON do editor de modelos, e `str(err)` de um
+# `except Exception` levava a quem está logado o caminho do arquivo, o SQL ou
+# o texto da biblioteca. Quem conserta lê o registro do servidor; a tela diz
+# só que o motor falhou e que caiu na prévia aproximada.
+AVISO_MOTOR_FALHOU = ("o motor real falhou — o detalhe ficou no registro do "
+                      "servidor")
+
+
+def _falha_do_motor(err: BaseException, onde: str, frase: str = AVISO_MOTOR_FALHOU) -> str:
+    """Registra a exceção do motor no log e devolve a frase fixa da tela."""
+    _LOG.error("%s: %s: %s", onde, type(err).__name__, err,
+               exc_info=(type(err), err, err.__traceback__))
+    return frase
 
 
 class MotorIndisponivel(Exception):
@@ -50,7 +68,9 @@ def marcar_bloqueados(area: str, template_id: str, conteudo,
         import modelos_motor as MOTOR
         return MOTOR.marcar_bloqueados(area, template_id, conteudo), avisos
     except Exception as err:  # noqa: BLE001
-        avisos.append(f"marcar_bloqueados falhou: {err}")
+        avisos.append(_falha_do_motor(
+            err, "modelos_editor_motor.marcar_bloqueados",
+            "marcar_bloqueados falhou — o detalhe ficou no registro do servidor"))
         return conteudo, avisos
 
 
@@ -87,10 +107,13 @@ def _http_json(method: str, url: str, body: dict | None = None,
         if err.code == 404:
             raise MotorIndisponivel("404") from err
         raw = err.read().decode("utf-8", errors="replace") if err.fp else ""
+        # O código HTTP basta para a tela; o texto do erro vai para o log.
+        erro_fixo = {"ok": False, "erro": f"o motor respondeu HTTP {err.code}"}
+        _LOG.error("modelos_editor_motor._http_json: %s %s: %s", method, url, err)
         try:
-            return (json.loads(raw) if raw else {"ok": False, "erro": str(err)}), err.code
+            return (json.loads(raw) if raw else erro_fixo), err.code
         except json.JSONDecodeError:
-            return {"ok": False, "erro": str(err)}, err.code
+            return erro_fixo, err.code
     except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as err:
         raise MotorIndisponivel(str(err)) from err
 
@@ -308,8 +331,9 @@ def previa(con, *, area: str, template_id: str, conteudo: dict | str | None = No
             return normalizar_arquivo_resposta(
                 previa_via_motor_modulo(payload, sv=sv, con=con))
         except Exception as err:  # noqa: BLE001
-            # Se o motor quebrou, ainda tenta HTTP/fallback
-            motor_erro = str(err)
+            # Se o motor quebrou, ainda tenta HTTP/fallback — e a tela só
+            # fica sabendo que ele falhou, não o texto da exceção.
+            motor_erro = _falha_do_motor(err, "modelos_editor_motor.previa")
         else:
             motor_erro = None
     else:
@@ -331,7 +355,7 @@ def previa(con, *, area: str, template_id: str, conteudo: dict | str | None = No
     form["_papel_editor"] = payload["papel"]
     resp = previa_fallback_local(con, template_id, form)
     if motor_erro:
-        resp.setdefault("avisos", []).append(f"motor real falhou: {motor_erro}")
+        resp.setdefault("avisos", []).append(motor_erro)
     return normalizar_arquivo_resposta(resp)
 
 
@@ -344,7 +368,7 @@ def campos(*, area: str, tipo: str, app_url: str | None = None) -> dict:
                 "fonte": "motor",
             }
         except Exception as err:  # noqa: BLE001
-            avisos_extra = [f"motor real falhou: {err}"]
+            avisos_extra = [_falha_do_motor(err, "modelos_editor_motor.campos")]
         else:
             avisos_extra = []
     else:

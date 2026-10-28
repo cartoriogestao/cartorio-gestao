@@ -201,6 +201,10 @@ def espiar_certificado(base: str, prazo: int = PRAZO_PADRAO) -> Certificado:
     """
     hospedeiro, porta = _endereco(base)
     contexto = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    # TLS 1.2 no minimo, escrito: e o padrao do Python 3.11 desta casa
+    # (medido em 28/10/2026), e fica aqui para um runtime diferente nao
+    # aceitar TLS 1.0/1.1 calado.
+    contexto.minimum_version = ssl.TLSVersion.TLSv1_2
     contexto.check_hostname = False
     contexto.verify_mode = ssl.CERT_NONE
     try:
@@ -285,6 +289,10 @@ def _bater(base: str, metodo: str, caminho: str, *, cabecalhos: dict,
     """
     hospedeiro, porta = _endereco(base)
     contexto = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    # TLS 1.2 no minimo, escrito: e o padrao do Python 3.11 desta casa
+    # (medido em 28/10/2026), e fica aqui para um runtime diferente nao
+    # aceitar TLS 1.0/1.1 calado.
+    contexto.minimum_version = ssl.TLSVersion.TLSv1_2
     contexto.check_hostname = False
     contexto.verify_mode = ssl.CERT_NONE
     conexao = http.client.HTTPSConnection(hospedeiro, porta, timeout=prazo,

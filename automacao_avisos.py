@@ -26,6 +26,18 @@ SEM SPAM — A REGRA DA TRANSIÇÃO
     fecha a tarefa, apaga o aviso do painel e diz por e-mail que normalizou.
     Um processo que falha a cada minuto manda UM e-mail, e não sessenta.
 
+UM E-MAIL POR DIA, E NÃO UM POR AVISO — 28/10/2026
+    «não gostei de receber tantos e-mails dos robôs; não precisa me avisar
+     cada detalhe» — o oficial, no primeiro dia com a automação ligada.
+    Medido na produção: **21 e-mails em 13 horas**, de 13 processos. A regra
+    da transição segurava cada processo; o que ela não segurava era a SOMA:
+    vinte processos, cada um com o seu alerta, lembrete e normalizou. Desde
+    então o processo NOVO nasce sem o canal e-mail (`CANAIS_PADRAO`), e o que
+    sai é o RESUMO DO DIA (`enviar_resumo`): um e-mail, a partir da hora da
+    tela, com tudo o que segue com problema — e nenhum quando nada está. O
+    painel e a tarefa continuam avisando na hora. Quem quiser o e-mail na hora
+    de um processo marca o canal nele.
+
 O QUE VAI NA MENSAGEM
     O relato, que fala em números («3 comunicações vencidas»), o nome do
     processo e onde ver o relatório. **Nome de parte, CPF e teor não vão** —
@@ -202,25 +214,83 @@ def gravar_senha_do_smtp(pasta_dados: Any, senha: str) -> None:
 ENVIO = {"email": mandar_email}
 
 
-def _canal_email(db, processo, execucao, motivo, *, agora, pasta_dados) -> dict:
+def _enviar_email(db, assunto, corpo, *, motivo, execucao_id, processo_id, agora, pasta_dados) -> dict:
+    """Manda um e-mail e registra o que houve em `au_avisos`. Não levanta."""
     with db.connect() as con:
         cfg = configuracao_de_email(con)
     destino = ", ".join(cfg["destinos"])
     if not cfg["host"] or not cfg["destinos"]:
-        return _registrar(db, execucao_id=execucao and execucao.get("id"),
-                          processo_id=processo and processo.get("id"), canal=SCH.EMAIL, motivo=motivo,
-                          destino=destino or None, situacao=SCH.PENDENTE_CONFIG, agora=agora,
-                          erro="o e-mail não está configurado (servidor SMTP e destino)")
-    assunto, corpo = _texto(processo, execucao, motivo)
+        return _registrar(db, execucao_id=execucao_id, processo_id=processo_id, canal=SCH.EMAIL,
+                          motivo=motivo, destino=destino or None, situacao=SCH.PENDENTE_CONFIG,
+                          agora=agora, erro="o e-mail não está configurado (servidor SMTP e destino)")
     try:
         senha = _senha_do_smtp(pasta_dados, cfg)
         ENVIO["email"](cfg, senha, assunto=assunto, corpo=corpo)
     except Exception as erro:                 # noqa: BLE001 — registra e segue
-        return _registrar(db, execucao_id=execucao.get("id"), processo_id=processo.get("id"),
-                          canal=SCH.EMAIL, motivo=motivo, destino=destino, situacao=SCH.FALHOU,
-                          agora=agora, erro=f"{type(erro).__name__}: {erro}")
-    return _registrar(db, execucao_id=execucao.get("id"), processo_id=processo.get("id"),
-                      canal=SCH.EMAIL, motivo=motivo, destino=destino, situacao=SCH.ENVIADO, agora=agora)
+        return _registrar(db, execucao_id=execucao_id, processo_id=processo_id, canal=SCH.EMAIL,
+                          motivo=motivo, destino=destino, situacao=SCH.FALHOU, agora=agora,
+                          erro=f"{type(erro).__name__}: {erro}")
+    return _registrar(db, execucao_id=execucao_id, processo_id=processo_id, canal=SCH.EMAIL,
+                      motivo=motivo, destino=destino, situacao=SCH.ENVIADO, agora=agora)
+
+
+def _canal_email(db, processo, execucao, motivo, *, agora, pasta_dados) -> dict:
+    assunto, corpo = _texto(processo, execucao, motivo)
+    return _enviar_email(db, assunto, corpo, motivo=motivo, execucao_id=execucao.get("id"),
+                         processo_id=processo.get("id"), agora=agora, pasta_dados=pasta_dados)
+
+
+# ------------------------------------------------------------------ o resumo do dia
+
+#: Quanto do relato de cada processo vai no resumo. O relato fala em números;
+#: o teto é para um relato comprido não virar um e-mail de dez páginas.
+TETO_DO_RELATO_NO_RESUMO = 300
+
+
+def resumo_do_dia(con, *, agora: datetime) -> tuple[str, str] | None:
+    """O assunto e o corpo do resumo, ou None quando nada segue com problema. **SÓ MONTA.**
+
+    Entra quem está LIGADO e com alerta aberto (`alerta_desde`), o pior
+    primeiro. Quem rodou bem não aparece: o resumo é do que pede gente.
+    """
+    bd = banco(con)
+    abertos = bd.ler("""SELECT id, codigo, nome, alerta_situacao, alerta_desde FROM au_processos
+                         WHERE ativo = 1 AND alerta_desde IS NOT NULL""")
+    if not abertos:
+        return None
+    abertos.sort(key=lambda p: (-SCH.PESO.get(p["alerta_situacao"], 0), p["nome"]))
+    blocos = []
+    for p in abertos:
+        ultima = bd.um("""SELECT id, relato FROM au_execucoes WHERE processo_id = %s
+                           AND situacao <> %s ORDER BY id DESC LIMIT 1""", (p["id"], SCH.RODANDO))
+        relato = " ".join(str((ultima or {}).get("relato") or "(sem relato)").split())
+        if len(relato) > TETO_DO_RELATO_NO_RESUMO:
+            relato = relato[:TETO_DO_RELATO_NO_RESUMO - 1].rstrip() + "…"
+        desde = str(p["alerta_desde"] or "")[:16].replace("T", " ")
+        blocos.append(f"• {p['nome']} — {SCH.selo(p['alerta_situacao'])['texto']}, desde {desde}\n"
+                      f"  {relato}"
+                      + (f"\n  /automacao/execucoes/{ultima['id']}" if ultima else ""))
+    n = len(abertos)
+    assunto = (f"[Automação] Resumo de {agora:%d/%m}: "
+               + ("1 processo pede atenção" if n == 1 else f"{n} processos pedem atenção"))
+    corpo = (f"Resumo dos robôs em {agora:%d/%m/%Y, %H:%M}.\n\n"
+             + "\n\n".join(blocos)
+             + "\n\nOs processos que rodaram bem não aparecem. Este é o único e-mail da automação no "
+               "dia; o painel e as tarefas continuam mostrando cada problema na hora. O relatório "
+               "completo está no sistema, em Administrativo → Automação.")
+    return assunto, corpo
+
+
+def enviar_resumo(db, *, agora: datetime | None = None, pasta_dados: Any = None) -> dict | None:
+    """Manda o resumo do dia, se houver o que dizer. None = nada com problema, nada sai."""
+    agora = agora or datetime.now()
+    with db.connect() as con:
+        montado = resumo_do_dia(con, agora=agora)
+    if montado is None:
+        return None
+    assunto, corpo = montado
+    return _enviar_email(db, assunto, corpo, motivo=SCH.RESUMO, execucao_id=None, processo_id=None,
+                         agora=agora, pasta_dados=pasta_dados)
 
 
 def _canal_whatsapp(db, processo, execucao, motivo, *, agora) -> dict:

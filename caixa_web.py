@@ -1269,6 +1269,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             except CONTATO.ContatoError as e:
                 flash(str(e), "danger")
                 return redirect(url_for("caixa_protocolos"))
+            # SEM ATRIBUIÇÃO O PROTOCOLO NÃO ABRE. O formulário vinha com RI
+            # já marcado (a primeira opção), e a firma paga ficava fora da
+            # lista do selo, que só aceita FIRMAS, NOTAS ou vazio.
+            try:
+                atribuicao = CXP.atribuicao_escolhida(request.form.get("atribuicao"))
+            except CXP.ProtocoloError as e:
+                flash(str(e), "danger")
+                return redirect(url_for("caixa_protocolos"))
             hoje = date.today()
             # Numeracao no formato do E-Oficio: AAAA.MM.sequencial do mes.
             # Manter o mesmo padrao evita ter dois jeitos de citar protocolo
@@ -1299,7 +1307,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'ABERTO', %s, %s)
                            RETURNING id""",
                         (numero, hoje.isoformat(), datetime.now().strftime("%H:%M"),
-                         request.form.get("atribuicao") or "OUTROS", interessado,
+                         atribuicao, interessado,
                          (request.form.get("interessado_documento") or "").strip() or None,
                          (request.form.get("telefone") or "").strip() or None,
                          (request.form.get("email") or "").strip() or None,
@@ -1319,9 +1327,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     # Ponte com a prenotacao do RI: so quando o balcao escolheu.
                     # Sem escolha, a coluna fica vazia — lavrar nao adivinha.
                     ri_pid = (request.form.get("ri_protocolo_id") or "").strip()
-                    atrib = (request.form.get("atribuicao") or "").strip().upper()
                     ligacao = None
-                    if atrib == "RI" and ri_pid.isdigit():
+                    if atribuicao == "RI" and ri_pid.isdigit():
                         # Número que não é de prenotação nenhuma («²», dígitos
                         # demais) é o mesmo «não achei» do número que não existe.
                         ri_numero = numero_digitado(ri_pid)
@@ -1387,6 +1394,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                paginas=max(1, (total + POR_PAGINA - 1) // POR_PAGINA),
                                SITUACOES=SITUACOES,
                                TIPOS_DOCUMENTO=TIPOS_DOCUMENTO,
+                               atribuicoes_do_balcao=CXP.ATRIBUICOES_DO_BALCAO,
                                prenotacoes_ri=prenotacoes_ri)
 
     def _rotulo_do_consumidor(con, tabela: str | None, ato_id) -> str:

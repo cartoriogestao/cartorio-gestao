@@ -242,7 +242,8 @@ def _sessao(cg_casa):
                  "interessado": "MARIA DAS DORES",
                  # 10/10/2026: telefone OU e-mail obrigatório ao abrir
                  # protocolo (ordem do oficial; contato_do_cliente.py).
-                 "telefone": "(99) 98888-7777"}, follow_redirects=True)
+                 "telefone": "(99) 98888-7777",
+                 "atribuicao": "OUTROS"}, follow_redirects=True)
     con = sqlite3.connect(banco)
     con.row_factory = sqlite3.Row
     pid = con.execute(

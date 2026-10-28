@@ -12,7 +12,7 @@
   <form method="post" action="{{ url_for('notas_reconhecimento_selar', reconhecimento_id=r.id) }}">
     <input type="hidden" name="csrf_token" value="{{csrf_token}}">
     {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
-    {{ protocolo_do_selo(candidatos_selo, [], atendendo=atendendo) }}
+    {{ protocolo_do_selo(candidatos_selo, pedidos_selo, atendendo=atendendo) }}
     <button class="primary">Selar</button>
   </form>
   {% else %}

@@ -1689,9 +1689,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         """Dentro da pasta de arquivos que o backup varre — a régua da prenotação."""
         raiz = Path(db.get_setting("archive_root", "").strip()
                     or (Path(db.db_path).parent / "arquivos"))
-        seguro = "".join(c if (c.isalnum() or c in "-_.") else "_"
-                         for c in str(numero or "sem-numero"))[:60] or "sem-numero"
-        return raiz / "protocolo" / seguro / "qualificacao"
+        return PDOC.pasta_de_qualificacao(raiz, numero)
 
     @app.route("/caixa/protocolos/<int:protocolo_id>/documentos", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")

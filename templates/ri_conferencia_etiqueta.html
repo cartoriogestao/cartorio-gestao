@@ -1,0 +1,127 @@
+{#
+  A ETIQUETA DA CONFERÊNCIA DE DOCUMENTO ELETRÔNICO DO RI (16.42) — 28/10/2026.
+
+  É a forma da etiqueta do reconhecimento de firma (`notas_etiqueta.html`), e
+  pelas mesmas razões: NÃO estende o `base.html` (o navegador manda à
+  impressora o documento inteiro), e `@page` diz o tamanho real da tira.
+
+  A BOBINA É A DA FIRMA, 100 × 30 mm, e a letra é a da etiqueta de registro do
+  RTD/PJ (`etiqueta.medidas_registro_rtdpj`): o teor da conferência é mais
+  comprido que o de uma firma, e uma calibração da impressora vale para as três.
+
+  UMA TIRA POR DOCUMENTO: cada folha física conferida leva a sua, e a térmica
+  corta uma etiqueta por página.
+#}<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Etiqueta — conferência nº {{ c.id }}</title>
+<style>
+  @page {
+    size: {{ m.etiqueta_largura_mm }}mm {{ m.etiqueta_altura_mm }}mm;
+    margin: 0;
+  }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  body { font-family: "Arial Narrow", Arial, Helvetica, sans-serif; color: #000;
+         -webkit-print-color-adjust: exact; }
+  .etiqueta {
+    width: {{ m.etiqueta_largura_mm }}mm;
+    height: {{ m.etiqueta_altura_mm }}mm;
+    padding: {{ m.etiqueta_margem_mm }}mm;
+    transform: translate({{ m.etiqueta_deslocamento_x_mm }}mm,
+                         {{ m.etiqueta_deslocamento_y_mm }}mm);
+    box-sizing: border-box;
+    overflow: hidden;
+    display: flex;
+    gap: 0.8mm;
+    font-size: {{ m.etiqueta_corpo_pt }}pt;
+    line-height: {{ m.etiqueta_entrelinha }};
+  }
+  .coluna { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.4mm; }
+  .teor { font-weight: 700; text-align: justify; }
+  .selo { font-family: Consolas, "Courier New", monospace; font-weight: 700;
+          letter-spacing: -.15px; }
+  .valores { font-family: Consolas, "Courier New", monospace;
+             font-size: {{ (m.etiqueta_corpo_pt * 0.85)|round(2) }}pt;
+             letter-spacing: -.2px; line-height: 1.15; }
+  .qr { flex: 0 0 auto; width: {{ m.etiqueta_qr_mm }}mm; display: flex;
+        flex-direction: column; align-items: center; justify-content: center; }
+  .qr svg { display: block; width: {{ m.etiqueta_qr_mm }}mm; height: {{ m.etiqueta_qr_mm }}mm; }
+
+  .tela { padding: 18px; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; }
+  .moldura { border: 1px dashed #b9c9d6; display: inline-block; background: #fff;
+             box-shadow: 0 1px 6px rgba(16,24,40,.12); }
+  .barra { margin-bottom: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .barra a, .barra button { font: inherit; font-size: 13px; border: 1px solid #b9c5cd;
+    border-radius: 6px; background: #fff; color: #1d3443; padding: 8px 12px;
+    cursor: pointer; text-decoration: none; }
+  .barra .primary { background: #1f5e8c; border-color: #1f5e8c; color: #fff; }
+  .rotulo { font-size: 12px; color: #65727e; margin: 12px 0 6px; }
+  .aviso { color: #65727e; font-size: 12px; margin-top: 12px; max-width: 620px; line-height: 1.5; }
+  #estouro { color: #b42318; font-weight: 600; display: none; }
+  @media print {
+    .tela { padding: 0; }
+    .barra, .aviso, .rotulo { display: none !important; }
+    .moldura { border: 0; box-shadow: none; display: block; }
+    .moldura ~ .moldura { break-before: page; page-break-before: always; }
+  }
+</style>
+</head>
+<body>
+<div class="tela">
+  <div class="barra">
+    <button class="primary" onclick="window.print()">Imprimir</button>
+    <a href="{{ voltar }}">&larr; Voltar ao protocolo</a>
+    <span style="font-size:12px;color:#65727e">
+      {{ m.etiqueta_largura_mm|round|int }}&times;{{ m.etiqueta_altura_mm|round|int }} mm ·
+      {{ tiras|length }} tira(s)
+      {%- if vez > 1 %} · <strong>{{ vez }}ª impressão</strong>{% endif %}
+    </span>
+  </div>
+
+  {% for t in tiras %}
+  <div class="rotulo">Tira {{ loop.index }} de {{ tiras|length }} — {{ t.documento }}</div>
+  <div class="moldura">
+    <div class="etiqueta">
+      <div class="coluna">
+        <div class="teor">{{ t.texto }}</div>
+        <div class="selo">Selo {{ t.selo }}</div>
+        {% if t.valores %}<div class="valores">{{ t.valores }}</div>{% endif %}
+      </div>
+      {% if t.qr %}<div class="qr">{{ t.qr|safe }}</div>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="aviso">
+    Na janela de impressão, escolha a impressora térmica e deixe a escala em
+    <strong>100%</strong>. Saindo torta ou cortada, use
+    <a href="{{ url_for('rcpj_rtd_etiqueta_ajuste') }}">Ajustar etiqueta</a> — a mesma
+    calibração da bobina de 100 × 30 mm da firma.
+    {% if tiras and not tiras[0].qr and not tiras[0].qr_possivel %}
+    <br><br><strong>O QR não foi gerado:</strong> falta a biblioteca <code>segno</code> no servidor.
+    A etiqueta sai com o número do selo do mesmo jeito.
+    {% endif %}
+  </div>
+  <div class="aviso" id="estouro"></div>
+</div>
+<script>
+/* Teor cortado em silêncio é o pior defeito de uma etiqueta: a tira tem
+   `overflow: hidden`, e a tela avisa quando o texto não coube. */
+window.addEventListener("load", function () {
+  var sobra = 0;
+  document.querySelectorAll(".etiqueta").forEach(function (tira) {
+    sobra = Math.max(sobra, tira.scrollHeight - tira.clientHeight);
+  });
+  if (sobra > 1) {
+    var aviso = document.getElementById("estouro");
+    /* Não mandar «emitir de novo»: seria outro selo, pago outra vez. */
+    aviso.textContent = "O texto de pelo menos uma tira não coube e sairá cortado. " +
+      "Diminua a letra em «Ajustar etiqueta», ou use o comprovante em PDF, " +
+      "que traz o texto inteiro.";
+    aviso.style.display = "block";
+  }
+});
+</script>
+</body>
+</html>

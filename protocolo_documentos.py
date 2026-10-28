@@ -33,6 +33,8 @@ existia desde a importação e estava vazia em 280 de 280 atos (medido em
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import ri_documentos as RDOC
 from bd_nativo import banco
 
@@ -50,6 +52,9 @@ TIPOS_DE_DOCUMENTO: tuple[tuple[str, str], ...] = (
     ("TITULO", "Título apresentado (escritura, contrato, formal)"),
     ("TRIBUTO", "Guia ou quitação de tributo (ITBI, ITCMD, IPTU, ITR)"),
     ("COMPROVANTE", "Comprovante de endereço"),
+    # O COMPROVANTE DA CONFERÊNCIA DO RI (16.42, 28/10/2026): o sistema o gera
+    # e o anexa ao protocolo (`ri_conferencia_web`), já com o selo dentro.
+    ("CONFERENCIA", "Comprovante de conferência de documento eletrônico (16.42)"),
     ("OUTRO", "Outro documento"),
 )
 ROTULO_DO_TIPO = dict(TIPOS_DE_DOCUMENTO)
@@ -158,6 +163,18 @@ def medir_envio(arquivo) -> tuple[str, bytes, int]:
 
 
 # ------------------------------------------------------------ o protocolo
+
+
+def pasta_de_qualificacao(raiz, numero) -> Path:
+    """Onde os documentos do protocolo moram em disco. Só calcula.
+
+    Dentro da pasta de arquivos que o backup varre — a régua da prenotação. Mora
+    aqui, e não na rota, desde 28/10/2026: o comprovante da conferência do RI
+    (`ri_conferencia_web`) grava na mesma pasta, e duas cópias da conta
+    acabariam pondo o mesmo protocolo em dois lugares."""
+    seguro = "".join(c if (c.isalnum() or c in "-_.") else "_"
+                     for c in str(numero or "sem-numero"))[:60] or "sem-numero"
+    return Path(raiz) / "protocolo" / seguro / "qualificacao"
 
 
 def protocolo(con, protocolo_id) -> dict | None:

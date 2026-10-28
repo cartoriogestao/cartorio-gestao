@@ -189,6 +189,10 @@ TABELAS_DE_ATO: dict[str, str] = {
     "rg_livros_contabeis": "RCPJ — autenticação de livro",
     "nt_publicas_formas": "Notas — pública forma",
     "nt_comunicacoes_veiculo": "Notas — comunicação de venda de veículo",
+    # A CONFERÊNCIA DE DOCUMENTO ELETRÔNICO DO RI (28/10/2026), item 16.42,
+    # selada a partir do protocolo (`ri_conferencia`): não é ato de matrícula
+    # nem prenotação, e a razão da tabela própria é a da materialização.
+    "ri_conferencias": "Registro de Imóveis — conferência de documento eletrônico",
 }
 
 
@@ -2141,6 +2145,10 @@ def caminho_do_ato(tabela: str, tipo: str,
         # Caminho próprio do contrato, sem espécie: a certidão é de outra
         # serventia, e o que se sela aqui é a impressão (26/10/2026).
         return CAMINHO_MATERIALIZACAO
+    if tabela == "ri_conferencias":
+        # A conferência de documento eletrônico do RI (16.42, 28/10/2026) sai
+        # pelo caminho do arquivamento do RI — ver `ri_conferencia.CAMINHO`.
+        return CAMINHO_ARQUIVAMENTO_RI
 
     if tabela == "hc_habilitacoes":
         # O CONTRATO TEM O CAMINHO, e a casa nunca o usou — mas aqui nao vale a
@@ -4342,6 +4350,7 @@ ATRIBUICOES_DO_ATO: dict[str, frozenset] = {
     "ri_protocolos": frozenset({"RI"}),
     "ri_certidoes": frozenset({"RI"}),
     "ri_matriculas": frozenset({"RI"}),
+    "ri_conferencias": frozenset({"RI"}),
     "nt_atos": frozenset({"NOTAS"}),
     "nt_certidoes": frozenset({"NOTAS"}),
     "nt_publicas_formas": frozenset({"NOTAS", "FIRMAS"}),

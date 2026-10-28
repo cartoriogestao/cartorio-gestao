@@ -79,7 +79,8 @@ WITH tabelas_de_ato(nome) AS (
            ('rg_notificacao_certidoes'),
            ('rg_livros_contabeis'),
            ('nt_publicas_formas'),
-           ('nt_comunicacoes_veiculo')
+           ('nt_comunicacoes_veiculo'),
+           ('ri_conferencias')
 ), alvo(tabela) AS (
     VALUES ('cx_selo_coberturas'), ('sd_selos')
 ), lido AS (

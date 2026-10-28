@@ -738,3 +738,71 @@ def test_as_acoes_de_antes_continuam_e_voltam_para_a_conversa(s):
     assert r.status_code == 302 and r.headers["Location"].endswith("/whatsapp")
     assert _um(s, "SELECT status FROM wa_conversa WHERE id=%s",
                (cid,))["status"] == "resolvida"
+
+
+# -------------------------------------------- as perguntas automáticas e a sessão
+#
+# Revisão do #72: o `/novas` e a lista parcial são perguntas que a tela faz
+# sozinha. Elas conferem o prazo de inatividade como qualquer rota, mas não o
+# renovam: a tela aberta sem ninguém mexendo expira no prazo normal.
+
+from datetime import datetime, timedelta  # noqa: E402
+
+
+def _inatividade(s, minutos_atras):
+    marca = (datetime.now() - timedelta(minutes=minutos_atras)).isoformat(timespec="seconds")
+    with s["c"].session_transaction() as sessao:
+        sessao["last_activity"] = marca
+    return marca
+
+
+def _ultima_atividade(s):
+    with s["c"].session_transaction() as sessao:
+        return sessao.get("last_activity")
+
+
+def test_as_perguntas_automaticas_sao_rotas_de_verdade(s):
+    """O conjunto do `app.py` fala de endpoints pelo nome: um nome trocado
+    deixaria a pergunta renovar a sessão calada."""
+    endpoints = {regra.endpoint for regra in s["app"].url_map.iter_rules()}
+    assert {"whatsapp_novas", "whatsapp_lista_parcial"} <= endpoints
+    app_py = (RAIZ / "app.py").read_text(encoding="utf-8")
+    assert "ENDPOINTS_QUE_NAO_RENOVAM_A_SESSAO" in app_py
+    assert '"whatsapp_novas", "whatsapp_lista_parcial"' in app_py
+
+
+def test_novas_com_a_sessao_vencida_por_inatividade_vai_ao_login(s):
+    cid = _entrar(s, meta_id="wamid.sessao-vencida")
+    _inatividade(s, 24 * 60)
+    r = s["c"].get(f"/whatsapp/{cid}/novas?depois=0")
+    assert r.status_code in (302, 303) and "login" in r.headers["Location"]
+    assert s["c"].get(f"/whatsapp/{cid}").status_code in (302, 303)
+
+
+def test_uma_sequencia_de_novas_nao_adia_a_expiracao(s):
+    cid = _entrar(s, meta_id="wamid.sessao-seq")
+    marca = _inatividade(s, 50)
+    for _ in range(3):
+        assert s["c"].get(f"/whatsapp/{cid}/novas?depois=0").status_code == 200
+        assert s["c"].get("/whatsapp/lista-parcial").status_code == 200
+    assert _ultima_atividade(s) == marca, "a pergunta automática renovou a sessão"
+    # a mesma sessão, passado o prazo, é recusada: as perguntas não a seguraram
+    _inatividade(s, 24 * 60)
+    r = s["c"].get(f"/whatsapp/{cid}/novas?depois=0")
+    assert r.status_code in (302, 303) and "login" in r.headers["Location"]
+
+
+def test_abrir_a_conversa_renova_a_sessao(s):
+    cid = _entrar(s, meta_id="wamid.sessao-clique")
+    marca = _inatividade(s, 50)
+    assert s["c"].get(f"/whatsapp/{cid}").status_code == 200
+    assert _ultima_atividade(s) != marca
+
+
+def test_a_lista_parcial_se_identifica_e_o_js_para_na_resposta_estranha(s):
+    r = s["c"].get("/whatsapp/lista-parcial")
+    assert r.headers.get("X-Wa-Parcial") == "lista"
+    js = (RAIZ / "static" / "whatsapp_chat.js").read_text(encoding="utf-8")
+    assert "r.redirected" in js and "window.location.reload()" in js
+    assert '"X-Wa-Parcial"' in js and "application/json" in js
+    assert "clearInterval" in js

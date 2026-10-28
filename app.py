@@ -637,6 +637,14 @@ def create_app(test_config: dict | None = None) -> Flask:
             return None
         return u["funcao"] if "funcao" in u.keys() else None
 
+    # AS PERGUNTAS AUTOMÁTICAS NÃO SÃO ATIVIDADE (revisão do #72, 27/10/2026).
+    # A tela de conversa do WhatsApp pergunta sozinha, a cada poucos segundos,
+    # pelas mensagens novas e pela lista. Se essas perguntas renovassem o
+    # `last_activity`, a tela aberta sem ninguém mexendo nunca expiraria. O
+    # prazo é conferido nelas como em qualquer rota; só não é renovado.
+    ENDPOINTS_QUE_NAO_RENOVAM_A_SESSAO = frozenset({
+        "whatsapp_novas", "whatsapp_lista_parcial"})
+
     @app.before_request
     def before_request():
         if request.endpoint == "static":
@@ -708,7 +716,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                         return redirect(url_for("login"))
                 except Exception:
                     pass
-            session["last_activity"] = now.isoformat(timespec="seconds")
+            if request.endpoint not in ENDPOINTS_QUE_NAO_RENOVAM_A_SESSAO:
+                session["last_activity"] = now.isoformat(timespec="seconds")
             # O ROBÔ NÃO ENTRA NO QUE É DE GENTE (revisão de segurança de
             # 22/10/2026, A6). Até aqui a única guarda do robô era a do selo
             # automático; com a credencial dele — que mora num script — se

@@ -27,7 +27,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 from pathlib import Path
 
-from flask import abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import (abort, flash, jsonify, make_response, redirect, render_template, request,
+                   url_for)
 
 import agente_provedores as PROV
 import serventia as SERV
@@ -39,6 +40,10 @@ import wa_modelos as MODELOS
 import wa_puxar as PUXAR
 import wa_schema as SCH
 from seguranca_web import PRATICA  # M2 (LX11): o AUDITOR vê e não grava
+
+
+#: O cabeçalho que marca a resposta do `/whatsapp/lista-parcial` (o JS confere).
+CABECALHO_DO_PARCIAL = "X-Wa-Parcial"
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit):
@@ -172,13 +177,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     @app.route("/whatsapp/lista-parcial")
     @login_required
     def whatsapp_lista_parcial():
-        """A lista desenhada de novo, com os mesmos filtros. SÓ LÊ."""
+        """A lista desenhada de novo, com os mesmos filtros. SÓ LÊ.
+
+        O cabeçalho `X-Wa-Parcial` diz ao JS que veio a lista, e não outra
+        página: a do login também é HTML, e não pode ir parar dentro da lista
+        (revisão do #72)."""
         bruto = (request.args.get("aberta") or "").strip()
         with _con() as con:
             linhas = _lista(con, _filtro())
-        return render_template("_whatsapp_lista.html", linhas=linhas,
-                               aberta=int(bruto) if bruto.isdigit() else None,
-                               **_da_lista(_filtro()))
+        resposta = make_response(render_template(
+            "_whatsapp_lista.html", linhas=linhas,
+            aberta=int(bruto) if bruto.isdigit() else None, **_da_lista(_filtro())))
+        resposta.headers[CABECALHO_DO_PARCIAL] = "lista"
+        return resposta
 
     @app.route("/whatsapp/painel")
     @login_required

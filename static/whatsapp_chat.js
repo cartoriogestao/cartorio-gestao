@@ -22,6 +22,35 @@
   var CONVERSA_MS = 5000;
   var LISTA_MS = 15000;
   var FOLGA_DO_FIM = 40;
+  var CABECALHO_DO_PARCIAL = "X-Wa-Parcial";
+
+  /* A SESSÃO ACABOU (revisão do #72). Com o login vencido, o servidor redireciona
+   * ao login, e o `fetch` segue o redirecionamento calado: a resposta vira a
+   * página do login. Ela nunca vai parar dentro da lista. As perguntas param
+   * e a página recarrega, e quem está diante dela cai no login de verdade. */
+  var parado = false;
+  var relogios = [];
+
+  function pararERecarregar() {
+    if (parado) {
+      return;
+    }
+    parado = true;
+    relogios.forEach(function (relogio) { window.clearInterval(relogio); });
+    window.location.reload();
+  }
+
+  /* A resposta é a esperada? Redirecionada nunca é; a do `/novas` tem de ser
+   * JSON, e a da lista tem de trazer o cabeçalho do parcial. */
+  function respostaEsperada(r, tipo) {
+    if (r.redirected) {
+      return false;
+    }
+    if (tipo === "json") {
+      return (r.headers.get("Content-Type") || "").indexOf("application/json") === 0;
+    }
+    return r.headers.get(CABECALHO_DO_PARCIAL) === "lista";
+  }
 
   function visivel() {
     return document.visibilityState === "visible";
@@ -68,16 +97,22 @@
   var perguntandoConversa = false;
 
   function perguntarConversa() {
-    if (!caixa || perguntandoConversa || !visivel()) {
+    if (!caixa || parado || perguntandoConversa || !visivel()) {
       return;
     }
     perguntandoConversa = true;
     var url = caixa.getAttribute("data-novas-url") + "?depois=" +
       encodeURIComponent(caixa.getAttribute("data-ultimo") || "0");
     fetch(url, {credentials: "same-origin", headers: {"Accept": "application/json"}})
-      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (r) {
+        if (r.redirected || (r.ok && !respostaEsperada(r, "json"))) {
+          pararERecarregar();
+          return null;
+        }
+        return r.ok ? r.json() : null;
+      })
       .then(function (dados) {
-        if (!dados) {
+        if (!dados || parado) {
           return;
         }
         if (dados.html) {
@@ -124,14 +159,20 @@
   var perguntandoLista = false;
 
   function perguntarLista() {
-    if (!lista || perguntandoLista || !visivel()) {
+    if (!lista || parado || perguntandoLista || !visivel()) {
       return;
     }
     perguntandoLista = true;
     fetch(lista.getAttribute("data-url"), {credentials: "same-origin"})
-      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (r) {
+        if (r.redirected || (r.ok && !respostaEsperada(r, "lista"))) {
+          pararERecarregar();
+          return null;
+        }
+        return r.ok ? r.text() : null;
+      })
       .then(function (html) {
-        if (html === null) {
+        if (html === null || parado) {
           return;
         }
         var rolagem = lista.scrollTop;
@@ -203,10 +244,10 @@
   // ------------------------------------------------------------- começo
   if (caixa) {
     rolarParaOFim();
-    window.setInterval(perguntarConversa, CONVERSA_MS);
+    relogios.push(window.setInterval(perguntarConversa, CONVERSA_MS));
   }
   if (lista) {
-    window.setInterval(perguntarLista, LISTA_MS);
+    relogios.push(window.setInterval(perguntarLista, LISTA_MS));
   }
   if (busca) {
     busca.addEventListener("input", aplicarBusca);

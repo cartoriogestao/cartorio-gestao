@@ -1183,6 +1183,19 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
 @media(max-width:640px){.prod-rapida{right:10px;left:auto;bottom:68px}.prod-rapida-painel{width:min(380px,calc(100vw - 20px))}}
 @media(max-width:520px){.prod-rapida-linha{grid-template-columns:1fr 1fr}.prod-rapida-ou{display:none}.prod-rapida-rotulo{display:none}}
 @media print{.prod-rapida{display:none!important}}
+/* O ATALHO DO WHATSAPP COM O ALERTA (27/10/2026): logo acima do «Produtividade»
+   (que fica em bottom:72px e tem uns 40 px), com 12 px entre os dois. O alerta
+   é o das notificações de celular: o vermelho do `.nav-alert` do menu. */
+.wa-atalho{position:fixed;right:18px;bottom:124px;z-index:910;width:52px;height:52px;border-radius:50%;
+  display:grid;place-items:center;background:var(--accent);color:#fff;text-decoration:none;
+  box-shadow:0 4px 14px rgba(6,117,223,.32)}
+.wa-atalho:hover{background:var(--accent2);text-decoration:none}
+.wa-atalho:focus-visible{outline:3px solid #b7d7ed;outline-offset:2px}
+.wa-atalho-alerta{position:absolute;top:-4px;right:-4px;min-width:22px;height:22px;padding:0 6px;
+  border-radius:999px;background:#d92d20;color:#fff;border:2px solid var(--bg);font-size:11px;
+  font-weight:700;line-height:18px;text-align:center;font-variant-numeric:tabular-nums}
+@media(max-width:640px){.wa-atalho{right:10px;bottom:120px}}
+@media print{.wa-atalho{display:none!important}}
 
 /* LX17 — barra fixa dos avisos: no fluxo do <main>, antes do título, sem position — flutuando, cobriria o menu e os botões. */
 .barra-fixa{background:#b00020;color:#fff;padding:10px 18px;border-bottom:3px solid #6d0014;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 16px;font-size:15px}

@@ -463,6 +463,39 @@ def _da_aba(aba: str, usuario_id: int | None) -> tuple[str, list]:
     return "c.status <> %s", [WA.RESOLVIDA]                   # «todas» as abertas
 
 
+def nao_respondidas(con: Any, *, usuario_id: int | None) -> int:
+    """QUANTAS CONVERSAS ESPERAM RESPOSTA — o alerta do atalho (27/10/2026).
+
+    Não é «não lida»: o sistema não guarda leitura. É a régua do «esperando N
+    min» da lista (`_ESPERANDO_DESDE`): há mensagem do cliente depois da última
+    saída, de pessoa ou da IA. Só as que são de quem vê ou de ninguém — as
+    condições das abas «Sem responsável» e «Minhas» (`_da_aba`); a de outro
+    responsável não conta. Conta a CONVERSA: cinco mensagens seguidas do mesmo
+    cliente são uma pessoa esperando. Uma consulta, no banco."""
+    sem, args_sem = _da_aba("sem", usuario_id)
+    minhas, args_minhas = _da_aba("minhas", usuario_id)
+    r = banco(con).um(
+        f"""SELECT COUNT(*) AS n FROM wa_conversa c
+             WHERE (({sem}) OR ({minhas}))
+               AND {_ESPERANDO_DESDE} IS NOT NULL""",
+        (*args_sem, *args_minhas)) or {}
+    return int(r.get("n") or 0)
+
+
+def rotulo_do_atalho(n: int) -> dict:
+    """O que o atalho mostra, pronto: o número do alerta («99+» acima de 99) e
+    o rótulo por extenso do link. A rota e o template usam esta função, e o
+    JavaScript só copia o que vem dela."""
+    n = int(n or 0)
+    if n <= 0:
+        rotulo = "WhatsApp"
+    elif n == 1:
+        rotulo = "WhatsApp: 1 conversa esperando resposta"
+    else:
+        rotulo = f"WhatsApp: {n} conversas esperando resposta"
+    return {"n": n, "texto": "99+" if n > 99 else str(n), "rotulo": rotulo}
+
+
 def contar_por_aba(con: Any, *, agora: str, usuario_id: int | None,
                    setor: str = "", etiqueta: str = "",
                    so_vencidas: bool = False) -> dict[str, int]:

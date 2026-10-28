@@ -22,7 +22,59 @@
   <br><br>
   <strong>Nada sai duas vezes.</strong> Ato informado some desta lista; mandar o mesmo
   protesto de novo faz a Central registrar dois.
+  <br><br>
+  <strong>Ato desfeito não entra.</strong> O ato que se lavrou e foi desfeito (o selo
+  não saiu, ou foi tornado sem efeito) não existiu, e não vai à CRA.
 </div>
+
+{# ATO INFORMADO E DEPOIS DESFEITO — só AVISO, 28/10/2026. A Central ouviu
+   um ato que o livro não tem mais; o sistema não reenvia nada sozinho, porque
+   a providência (carta, contato com a CRA, novo ato) é decisão do oficial. #}
+{% if desfeitos %}
+<section class="panel">
+  <div class="panel-head">
+    <span class="danger">A CRA foi informada de ato que hoje está desfeito</span>
+    <small>{{ desfeitos | length }} ato(s) ·
+      {{ desfeitos | selectattr('ato_valido_id', 'none') | list | length }} sem outro ato válido do mesmo tipo no título</small>
+  </div>
+  <p style="padding:0 14px"><small>
+    Estes atos entraram num arquivo à CRA e depois foram desfeitos. <strong>O sistema
+    não manda correção sozinho</strong>: confira na Central o que ela registrou e decida a
+    providência. Onde o título não tem outro ato válido do mesmo tipo, a Central afirma
+    algo que o livro não tem.
+  </small></p>
+  <details style="padding:0 14px 14px">
+    <summary>Ver os atos</summary>
+    <table class="table">
+      <thead><tr><th>Título</th><th>Protocolo</th><th>Ato desfeito</th><th>Motivo</th>
+                 <th>Arquivo em que foi</th><th>Outro ato válido do mesmo tipo</th></tr></thead>
+      <tbody>
+        {% for d in desfeitos %}
+        <tr>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=d.titulo_id) }}">{{ d.numero_titulo }}</a>
+              <div><small>hoje: {{ d.situacao }}</small></div></td>
+          <td><small>{{ d.protocolo or '—' }}</small></td>
+          <td>{{ d.tipo }} <small>(ato {{ d.ato_id }}, {{ (d.data_ato or '')[:16] }})</small></td>
+          <td><small>{{ (d.motivo_cancelamento or '—')[:120] }}</small></td>
+          <td><small>{{ d.nome_arquivo or ('arquivo ' ~ d.retorno_id) }}<br>
+              {% if d.cra_enviado_ambiente == 'EOFICIO' %}informado pelo sistema antigo
+              {% elif d.cra_enviado_em %}enviado em {{ d.cra_enviado_em[:16] }}
+              {% else %}<span class="danger">gerado e ainda não enviado — confira antes de enviar</span>{% endif %}</small></td>
+          <td>
+            {% if d.ato_valido_id %}
+              <small>sim — ato {{ d.ato_valido_id }},
+                {% if d.ato_valido_retorno_id %}também informado{% else %}ainda não informado{% endif %}</small>
+            {% else %}
+              <strong class="danger">não</strong>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</section>
+{% endif %}
 
 <section class="panel">
   <div class="panel-head">

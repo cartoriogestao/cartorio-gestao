@@ -11802,8 +11802,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             grupos = PRE.apresentantes_pendentes(con)
             atos = PRE.pendentes(con)
             gerados = [dict(r) for r in PRE.listar(con, limite=60)]
+            # Só AVISO: o que a CRA ouviu e o livro desfez (28/10/2026).
+            desfeitos = [dict(r) for r in PRE.informados_e_desfeitos(con)]
         return render_template("protesto_retornos.html", grupos=grupos,
-                               atos=atos, gerados=gerados, hoje=hoje())
+                               atos=atos, gerados=gerados, hoje=hoje(),
+                               desfeitos=desfeitos)
 
     @app.route("/protesto/retornos/gerar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")

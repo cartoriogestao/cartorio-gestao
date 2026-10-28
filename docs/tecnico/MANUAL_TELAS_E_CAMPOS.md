@@ -1081,10 +1081,10 @@ Comandos: Gerar senha; Chamar; Iniciar; Finalizar.
 ### WhatsApp
 
 Caminho: Administrativo > Atendimento > WhatsApp.
-Tela-fonte: `templates/whatsapp_lista.html`.
-Campos da tela: nenhum campo de formulário nomeado nesta tela.
-Comandos: puxar caixa-postal.
-Acessos relacionados: Configuração Meta.
+Tela-fonte: `templates/whatsapp_chat.html` (a lista à esquerda e a conversa aberta à direita).
+Campos da tela: Busca por nome ou número; Mensagem [rascunho].
+Comandos: puxar caixa-postal; filtrar; assumir; resolver; detalhes; Enviar; guardar rascunho.
+Acessos relacionados: Painel do prazo; Atendente com IA; Configuração Meta.
 
 ### Robôs
 
@@ -2001,7 +2001,7 @@ Acessos relacionados: ← fila do WhatsApp.
 
 ### Whatsapp conversa
 
-Tela-fonte: `templates/whatsapp_conversa.html`.
-Campos da tela: Rascunho [rascunho].
-Comandos: guardar rascunho; Enviar no WhatsApp; marcar resolvida.
-Acessos relacionados: ← fila do WhatsApp; configuração.
+Tela-fonte: `templates/whatsapp_chat.html` (a mesma tela do WhatsApp, com a conversa aberta).
+Campos da tela: Mensagem [rascunho].
+Comandos: Enviar (Ctrl+Enter); guardar rascunho; assumir; resolver; detalhes.
+Acessos relacionados: ← conversas; configuração.

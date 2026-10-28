@@ -88,6 +88,13 @@ CREATE TABLE IF NOT EXISTS pt_titulos (
     -- apresentante mora em `pt_apresentantes`, pelo codigo.
     apresentante_documento TEXT,            -- so digitos
     apresentante_endereco TEXT,
+    -- O TIPO DO APRESENTANTE NO XML DA CENPROT (0, 1, 3, 4...), QUANDO O
+    -- APRESENTANTE E UM POR TITULO (28/10/2026). O codigo «TAB» (Gestao de
+    -- Pedidos da CENPROT) nao e um banco: e quem pediu. Medido nos XML reais
+    -- que o E-Oficio mandou: 18 titulos TAB, 8 apresentantes diferentes, com
+    -- tipos 0, 1 e 4 — o cadastro unico por codigo nao serve.
+    -- `protesto_cenprot_xml.APRESENTANTES_DO_TITULO`.
+    apresentante_tipo TEXT,
 
     -- O PROTOCOLO DA CASA, que volta no retorno na posicao 448.
     --
@@ -767,6 +774,9 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("pt_titulos", "apresentante_documento", "TEXT"),
     ("pt_titulos", "apresentante_endereco", "TEXT"),
     ("pt_apresentantes", "endereco", "TEXT"),
+    # o tipo do apresentante de UM TITULO SO (o «TAB» da Gestao de Pedidos da
+    # CENPROT) — `protesto_cenprot_xml.APRESENTANTES_DO_TITULO` (28/10/2026)
+    ("pt_titulos", "apresentante_tipo", "TEXT"),
     # A MARCA DA ORDEM QUE SUSPENDE OS EFEITOS DO PROTESTO (LH13, 21/10/2026)
     # — CNN art. 263-K (Prov. CN 253/2026), pela decisão do oficial: a decisão
     # PROVISÓRIA sai na certidão como «CONSTA COM SUSTAÇÃO JUDICIAL PRECÁRIA»,

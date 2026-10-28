@@ -206,7 +206,9 @@ def escrever(*, letra: str, uf: str, comarca: str, cartorio: str,
 # Medido nos 66 títulos da amostra contra o acervo (64 casaram pela chave):
 #
 #   apresentante   o código vem do título; nome, CNPJ e tipo vêm do CADASTRO
-#                  (`pt_apresentantes`, trazido de `tbCobrador`);
+#                  (`pt_apresentantes`, trazido de `tbCobrador`) — MENOS no
+#                  «TAB», em que vêm do PRÓPRIO TÍTULO (28/10/2026, ver
+#                  `APRESENTANTES_DO_TITULO`);
 #   cedente        o nome é o da posição 20 do registro da CRA; CNPJ e
 #                  endereço só quando o cedente É o sacador;
 #   sacador        nome na posição 65, documento na 110, endereço da 124 à 198
@@ -333,6 +335,198 @@ def _cedente_e_sacador(reg: dict) -> tuple[dict, dict, str]:
 def apresentante(con, codigo: Any) -> dict | None:
     return banco(con).um("SELECT * FROM pt_apresentantes WHERE codigo = %s",
                          (_txt(codigo),))
+
+
+# O APRESENTANTE QUE É UM POR TÍTULO — 28/10/2026.
+#
+# O «TAB» NÃO É UM BANCO: É O CÓDIGO DOS TÍTULOS QUE CHEGAM PELA GESTÃO DE
+# PEDIDOS DA CENPROT, e quem apresenta é quem pediu. Medido nos quatro XML
+# reais que o E-Ofício mandou à CENPROT (dois P de 10/08, o P de 31/08 e o D de
+# 21/10/2026): 18 títulos TAB e 8 apresentantes TAB diferentes — 8 nomes, 8
+# documentos (7 CNPJ e 1 CPF) e os tipos 0, 1 e 4. O bloco do arquivo é por
+# apresentante REAL: o P de 31/08 traz 29 blocos, 7 deles
+# `<apresentante codigo="TAB">`, e nenhum par código + documento se repete.
+#
+# POR ISSO O CADASTRO ÚNICO NÃO SERVE: `pt_apresentantes` tem uma linha por
+# código, e a do TAB tem um nome só — o título TAB sairia com o apresentante
+# de outra pessoa. Para estes códigos o nome, o CNPJ/CPF e o tipo vêm do
+# PRÓPRIO TÍTULO (`pt_titulos.apresentante_*`), e sem os três o título fica
+# FORA do arquivo com o motivo. Nunca se cai no cadastro.
+#
+# DE ONDE O E-OFÍCIO OS TIRAVA, medido no acervo em 28/10/2026: do
+# `tbCobrador` apontado POR TÍTULO em `tbAvisoProtesto.intCodigoCobrador` (e
+# não pelo código da CRA — o cobrador dos TAB tem `strCodigoBanco` vazio).
+# Reproduz os 18 TAB dos XML reais em nome, documento e tipo: 18 de 18. O nome
+# que a carga gravou no título (`tbSDT.Campo04`) NÃO é o que foi à CENPROT —
+# difere em 7 dos 18. `trazer_apresentantes_dos_titulos` faz essa passada.
+APRESENTANTES_DO_TITULO = frozenset({"TAB"})
+
+
+class ApresentanteDoTituloError(CenprotXmlError):
+    """Falta ao título TAB o seu próprio apresentante (nome, documento ou
+    tipo) — a frase diz qual e onde se informa."""
+
+
+def _apresentante_do_proprio_titulo(titulo: dict) -> dict:
+    codigo = _txt(titulo.get("apresentante_codigo"))
+    nome = _txt(titulo.get("apresentante_nome"))
+    documento = _so_digitos(titulo.get("apresentante_documento"))
+    tipo = _txt(titulo.get("apresentante_tipo"))
+    faltam = [rotulo for rotulo, ok in (
+        ("o nome", bool(nome)),
+        ("o CNPJ ou CPF", len(documento) in (11, 14)),
+        ("o tipo", tipo.isdigit())) if not ok]
+    if faltam:
+        erro = ApresentanteDoTituloError(
+            f"o apresentante {codigo} é um por título (quem pediu na CENPROT), "
+            f"e este título está sem {', '.join(faltam)} dele — traga do "
+            f"E-Ofício ou informe nesta tela; o cadastro único {codigo} não "
+            f"serve, porque é de outra pessoa")
+        # o que o título já tem, para a tela abrir o formulário preenchido
+        erro.atual = {"nome": nome, "documento": documento,
+                      "tipo_apresentante": tipo}
+        raise erro
+    return {"codigo": codigo, "nome": nome, "documento": documento,
+            "tipo_apresentante": tipo}
+
+
+def apresentante_do_xml(con, titulo: dict) -> dict:
+    """O apresentante com que o título vai ao XML. Só LÊ.
+
+    Nos códigos de `APRESENTANTES_DO_TITULO`, o do próprio título; nos outros,
+    o do cadastro pelo código. Recusa (CenprotXmlError) com a frase do que
+    falta — nunca sai com o apresentante de outro.
+    """
+    codigo = _txt(titulo.get("apresentante_codigo"))
+    if codigo in APRESENTANTES_DO_TITULO:
+        return _apresentante_do_proprio_titulo(titulo)
+    apr = apresentante(con, codigo)
+    if not apr or not apr.get("documento") or not _txt(apr.get("tipo_apresentante")):
+        raise CenprotXmlError(
+            f"o apresentante {codigo or '(sem código)'} "
+            f"não está cadastrado com CNPJ e tipo — cadastre-o nesta tela")
+    return {"codigo": _txt(apr["codigo"]), "nome": _txt(apr["nome"]),
+            "documento": _so_digitos(apr["documento"]),
+            "tipo_apresentante": _txt(apr["tipo_apresentante"])}
+
+
+def gravar_apresentante_do_titulo(con, titulo_id: int, *, nome: Any,
+                                  documento: Any, tipo_apresentante: Any) -> dict:
+    """Informa o apresentante de UM título TAB (nome, CNPJ/CPF e tipo). ESCREVE.
+
+    É o caminho do título que não veio do E-Ofício — o que nasce do pedido da
+    CENPROT traz nome e documento do solicitante, e o TIPO não: o pedido não
+    tem campo para ele (medido no `swagger` 2.1.0 da CENPROT em 28/10/2026:
+    `dados_solicitante` tem nome, documento, telefones e endereço). O tipo não
+    se deduz da pessoa — no acervo o tipo 1 e o tipo 4 aparecem tanto em
+    pessoa física quanto em jurídica. Quem sabe, informa.
+    """
+    bd = banco(con)
+    titulo = bd.um("SELECT id, apresentante_codigo FROM pt_titulos WHERE id = %s",
+                   (int(titulo_id),))
+    if titulo is None:
+        raise CenprotXmlError(f"Título {titulo_id} não encontrado.")
+    codigo = _txt(titulo["apresentante_codigo"])
+    if codigo not in APRESENTANTES_DO_TITULO:
+        raise CenprotXmlError(
+            f"O apresentante {codigo or '(sem código)'} é do cadastro, e não do "
+            f"título — corrija-o no cadastro dos apresentantes.")
+    nome, doc, tipo = _txt(nome), _so_digitos(documento), _txt(tipo_apresentante)
+    if not nome:
+        raise CenprotXmlError("Informe o nome do apresentante.")
+    if len(doc) not in (11, 14):
+        raise CenprotXmlError(
+            "O documento do apresentante tem de ser um CNPJ (14 dígitos) ou um "
+            "CPF (11).")
+    if not tipo.isdigit():
+        raise CenprotXmlError(
+            "Informe o tipo do apresentante (o número que o XML da CENPROT usa: "
+            "nos títulos TAB desta casa aparecem 0, 1 e 4).")
+    bd.escrever(
+        """UPDATE pt_titulos SET apresentante_nome=%s, apresentante_documento=%s,
+               apresentante_tipo=%s WHERE id=%s""",
+        (nome, doc, tipo, int(titulo_id)))
+    return {"titulo_id": int(titulo_id), "codigo": codigo}
+
+
+def trazer_apresentantes_dos_titulos(con, acervo: sqlite3.Connection) -> dict:
+    """Traz do E-Ofício o apresentante de cada título TAB que veio de lá. ESCREVE.
+
+    Fonte medida (ver `APRESENTANTES_DO_TITULO`): `tbAvisoProtesto` pela chave
+    de origem do título → `intCodigoCobrador` → `tbCobrador` (razão social,
+    CNPJ ou CPF, `intTipoApresentante`). 18 de 18 contra os XML reais.
+
+    SÓ PREENCHE O QUE ESTÁ VAZIO, e não sobrescreve quem informou:
+      - título SEM documento recebe os três juntos — nome, documento e tipo
+        são um par que não se mistura; o nome que a carga gravou
+        (`tbSDT.Campo04`) é trocado, e a conta diz quantos;
+      - título COM documento igual ao do acervo recebe só o tipo, se faltar;
+      - título com documento DIFERENTE do acervo fica como está, e entra na
+        conta das divergências — quem decide é quem confere;
+      - cobrador com código da CRA próprio (não é TAB no E-Ofício) ou sem
+        documento/tipo fica sem fonte — o título continua fora do XML, com
+        o motivo, até alguém informar.
+    """
+    bd = banco(con)
+    try:
+        cobradores = {
+            r[0]: r for r in acervo.execute(
+                """SELECT intCodigoCobrador, strRazaoSocial, strCGC, strCIC,
+                          intTipoApresentante, strCodigoBanco FROM tbCobrador""")}
+    except sqlite3.Error as erro:
+        raise CenprotXmlError(
+            f"O acervo do E-Ofício não tem o cadastro dos cobradores "
+            f"(tbCobrador): {erro}") from erro
+    marcas = ", ".join(["%s"] * len(APRESENTANTES_DO_TITULO))
+    faltam = bd.ler(
+        f"""SELECT id, origem_chave, apresentante_codigo, apresentante_nome,
+                   apresentante_documento, apresentante_tipo
+              FROM pt_titulos
+             WHERE apresentante_codigo IN ({marcas})
+               AND origem_chave LIKE 'tbAvisoProtesto:%%'
+               AND (TRIM(COALESCE(apresentante_documento, '')) = ''
+                    OR TRIM(COALESCE(apresentante_tipo, '')) = '')
+             ORDER BY id""", tuple(sorted(APRESENTANTES_DO_TITULO)))
+    conta = {"completos": 0, "so_o_tipo": 0, "nome_trocado": 0,
+             "divergentes": [], "sem_fonte": []}
+    for t in faltam:
+        try:
+            chave = float(_txt(t["origem_chave"]).split(":", 1)[1])
+            linha = acervo.execute(
+                "SELECT intCodigoCobrador FROM tbAvisoProtesto WHERE intChave = :c",
+                {"c": chave}).fetchone()
+        except (ValueError, sqlite3.Error):
+            linha = None
+        cob = cobradores.get(linha[0]) if linha is not None else None
+        codigo_cra = _txt(cob[5]) if cob is not None else ""
+        doc = (_so_digitos(cob[2]) or _so_digitos(cob[3])) if cob is not None else ""
+        tipo = "" if cob is None or cob[4] is None else str(int(cob[4]))
+        nome = _txt(cob[1]) if cob is not None else ""
+        if (cob is None or (codigo_cra and codigo_cra != _txt(t["apresentante_codigo"]))
+                or len(doc) not in (11, 14) or not tipo or not nome):
+            conta["sem_fonte"].append(int(t["id"]))
+            continue
+        doc_titulo = _so_digitos(t["apresentante_documento"])
+        if not doc_titulo:
+            # A GUARDA SE REPETE NO UPDATE: quem informou à mão entre a leitura
+            # e a gravação não é sobrescrito.
+            if bd.escrever(
+                    """UPDATE pt_titulos SET apresentante_nome=%s,
+                           apresentante_documento=%s, apresentante_tipo=%s
+                     WHERE id=%s AND TRIM(COALESCE(apresentante_documento, '')) = ''
+                    RETURNING id""", (nome, doc, tipo, int(t["id"]))):
+                conta["completos"] += 1
+                if not _mesmo_nome(nome, t["apresentante_nome"]):
+                    conta["nome_trocado"] += 1
+        elif doc_titulo == doc:
+            if bd.escrever(
+                    """UPDATE pt_titulos SET apresentante_tipo=%s
+                     WHERE id=%s AND TRIM(COALESCE(apresentante_tipo, '')) = ''
+                    RETURNING id""", (tipo, int(t["id"]))):
+                conta["so_o_tipo"] += 1
+        else:
+            conta["divergentes"].append(int(t["id"]))
+    return conta
 
 
 def apresentantes(con) -> list[dict]:
@@ -549,11 +743,8 @@ def montar_titulo(con, ato_id: int, *,
         raise CenprotXmlError(
             "o título não tem a chave do CENPROT — ela vem do XML que a "
             "Central devolve (tela «Chave do CENPROT»)")
-    apr = apresentante(bd, titulo.get("apresentante_codigo"))
-    if not apr or not apr.get("documento") or not _txt(apr.get("tipo_apresentante")):
-        raise CenprotXmlError(
-            f"o apresentante {titulo.get('apresentante_codigo') or '(sem código)'} "
-            f"não está cadastrado com CNPJ e tipo — cadastre-o nesta tela")
+    # O TAB vem do próprio título; os outros, do cadastro pelo código.
+    apr = apresentante_do_xml(bd, titulo)
     reg = registro_da_cra(bd, titulo, acervo)
     if reg is None:
         raise CenprotXmlError(
@@ -609,11 +800,7 @@ def montar_titulo(con, ato_id: int, *,
         t.update(num_livro="0", num_folha="0")
         if ato["tipo"] == "CANCELAMENTO":
             t["data_averbacao"] = t["data_ocorrencia"]
-    return {"letra": letra, "titulo": t,
-            "apresentante": {"codigo": _txt(apr["codigo"]),
-                             "nome": _txt(apr["nome"]),
-                             "documento": apr["documento"],
-                             "tipo_apresentante": _txt(apr["tipo_apresentante"])}}
+    return {"letra": letra, "titulo": t, "apresentante": apr}
 
 
 # ------------------------------------------------- o que falta mandar
@@ -639,14 +826,41 @@ def pendentes(con, letra: str, *,
                AND COALESCE(a.origem, '') <> 'EOFICIO'
              ORDER BY a.data_ato, a.id""", ATOS_DA_LETRA[letra])
     entram, fora = [], []
+    # O BLOCO DO ARQUIVO É POR APRESENTANTE REAL — código + documento (ver
+    # `APRESENTANTES_DO_TITULO`). Dois títulos com o mesmo documento e nome ou
+    # tipo diferentes não cabem no mesmo bloco: o segundo espera, com o motivo,
+    # em vez de sair com o nome ou o tipo do primeiro.
+    blocos: dict[tuple[str, str], dict] = {}
     for a in atos:
         base = {"ato_id": a["id"], "tipo": a["tipo"], "data_ato": a["data_ato"],
                 "titulo_id": a["titulo_id"], "protocolo": a["protocolo"]}
         try:
-            entram.append(dict(base, **montar_titulo(bd, a["id"], acervo=acervo)))
+            item = dict(base, **montar_titulo(bd, a["id"], acervo=acervo))
+        except ApresentanteDoTituloError as erro:
+            fora.append(dict(base, motivo=str(erro), apresentante_do_titulo=True,
+                             apresentante_atual=getattr(erro, "atual", {})))
+            continue
         except CenprotXmlError as erro:
             fora.append(dict(base, motivo=str(erro)))
+            continue
+        apr = item["apresentante"]
+        primeiro = blocos.setdefault(_chave_do_bloco(apr), apr)
+        if (not _mesmo_nome(primeiro["nome"], apr["nome"])
+                or primeiro["tipo_apresentante"] != apr["tipo_apresentante"]):
+            fora.append(dict(
+                base, apresentante_do_titulo=apr["codigo"] in APRESENTANTES_DO_TITULO,
+                apresentante_atual=apr,
+                motivo=(f"o apresentante {apr['codigo']} deste título tem o mesmo "
+                        f"documento de outro título do arquivo, com nome ou tipo "
+                        f"diferente — confira os dois; um bloco do XML é um "
+                        f"apresentante só")))
+            continue
+        entram.append(item)
     return {"entram": entram, "fora": fora}
+
+
+def _chave_do_bloco(apr: dict) -> tuple[str, str]:
+    return (_txt(apr["codigo"]), _so_digitos(apr["documento"]))
 
 
 def gerar(con, letra: str, *, uf: str, comarca: str,
@@ -668,10 +882,12 @@ def gerar(con, letra: str, *, uf: str, comarca: str,
             "Não há ato pronto para este arquivo"
             + (f" — {len(lista['fora'])} esperam o que falta (veja a lista)."
                if lista["fora"] else "."))
-    grupos: dict[str, dict] = {}
+    # Um bloco por apresentante REAL (código + documento), como o E-Ofício
+    # fazia — o TAB sai em tantos blocos quantos forem os solicitantes.
+    grupos: dict[tuple[str, str], dict] = {}
     for item in lista["entram"]:
         a = item["apresentante"]
-        grupos.setdefault(a["codigo"], dict(a, titulos=[]))["titulos"].append(
+        grupos.setdefault(_chave_do_bloco(a), dict(a, titulos=[]))["titulos"].append(
             item["titulo"])
     sequencial = 1 + int(bd.valor(
         "SELECT COUNT(*) AS n FROM pt_cenprot_xml WHERE letra = %s AND dia = %s",

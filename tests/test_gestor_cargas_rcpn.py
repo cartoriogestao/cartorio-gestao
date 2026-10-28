@@ -237,6 +237,15 @@ def test_o_registrado_na_tela_das_comunicacoes_deixa_de_ser_cobrado(casa):
 
 # ------------------------------------------------------------------ o IBGE
 
+def test_o_zip_do_ibge_se_chama_cartinf_zip():
+    """«diz nome errado» — 28/10/2026: o arquivo da pasta se chamava
+    `CARTINF_2026_T3.zip`, e o IBGE recebe `CARTINF.ZIP`. Com dois trimestres
+    esperando, os nomes precisam diferir na pasta."""
+    assert G._nome_do_zip_do_ibge(2026, 3, 1) == "CARTINF.ZIP"
+    assert G._nome_do_zip_do_ibge(2026, 4, 2) == "CARTINF_2026_T4.ZIP"
+    assert "CARTINF.ZIP".startswith(G.PREFIXO_DO_ARQUIVO["IBGE"])
+
+
 def test_os_trimestres_comecam_no_do_corte_e_so_os_fechados():
     assert G._trimestres(date(2026, 10, 9)) == [(2026, 3)]
     assert G._trimestres(date(2026, 9, 30)) == []

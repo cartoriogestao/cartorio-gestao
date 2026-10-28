@@ -248,3 +248,11 @@ def test_o_que_ainda_difere_esta_todo_explicado(gerado):
             f"{nome}: diferença nova e sem explicação em {sobrando}. "
             f"Ou o gerador mudou, ou o arquivo de referência mudou — nos dois "
             f"casos, meça antes de mexer no teste.")
+
+
+def test_o_resumo_rc10_sai_igual_ao_real(gerado):
+    """A folha RC-10 (`CARTINF10.TXT`) não era gerada — 28/10/2026. Ela sai
+    agora byte a byte igual à que a casa exportou do 2º trimestre de 2026:
+    uma linha por livro (A24, B04, C05), com o primeiro e o último número do
+    trimestre e os totais, e a última linha sem livro e zerada."""
+    assert gerado["arquivos"]["CARTINF10.TXT"] == _reais("CARTINF10.TXT")

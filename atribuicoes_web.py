@@ -7821,18 +7821,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         campos da linha para a direita, e o arquivo é de largura fixa. É a
         mesma lição do arquivo da CRA.
         """
-        memoria = io.BytesIO()
-        with zipfile.ZipFile(memoria, "w", zipfile.ZIP_DEFLATED) as z:
-            for nome, linhas in sorted(r["arquivos"].items()):
-                corpo = IBGE.FIM_DE_LINHA.join(linhas) + IBGE.FIM_DE_LINHA
-                z.writestr(nome, corpo.encode(IBGE.CODIFICACAO, "replace"))
-        memoria.seek(0)
+        memoria = io.BytesIO(IBGEG.zip_da_remessa(r))
         audit("RCPN_IBGE_REMESSA", "rc_assentos", None,
               {"ano": r["ano"], "trimestre": r["trimestre"],
                "linhas": r["linhas"]})
+        # O NOME É `CARTINF.ZIP`, e só ele (28/10/2026): com o ano e o
+        # trimestre no nome, o envio ao IBGE recusava o arquivo.
         return send_file(
             memoria, mimetype="application/zip", as_attachment=True,
-            download_name=f"CARTINF_{r['ano']}_T{r['trimestre']}.zip")
+            download_name=IBGEG.NOME_DO_ZIP)
 
     @app.route("/rcpn/<int:assento_id>/confirmar-livro", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")

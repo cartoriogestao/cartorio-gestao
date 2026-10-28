@@ -135,16 +135,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     def _filtro() -> dict:
         """A aba e os filtros pedidos. A aba que abre é «Sem responsável»."""
         aba = request.args.get("aba", "")
+        # SEM O FILTRO «ETIQUETA» (segunda revisão do #73): as etiquetas saíram
+        # da tela; os dados de `wa_etiqueta` ficam.
         return {"aba": aba if aba in dict(FILA.ABAS) else FILA.ABA_PADRAO,
                 "setor": request.args.get("setor", ""),
-                "etiqueta": request.args.get("etiqueta", ""),
                 "vencidas": "1" if request.args.get("vencidas") == "1" else ""}
 
     def _lista(con, filtro: dict) -> tuple[list[dict], bool]:
         """As conversas da aba, filtradas NO BANCO, e se sobrou alguma além do
         limite das resolvidas. Cada linha leva a cor do setor e as iniciais."""
         linhas = FILA.listar(con, agora=db.now(), setor=filtro["setor"],
-                             etiqueta=filtro["etiqueta"],
                              so_vencidas=bool(filtro["vencidas"]), aba=filtro["aba"],
                              usuario_id=app.extensions["usuario_id"]())
         ha_mais = len(linhas) > FILA.LIMITE_DAS_RESOLVIDAS
@@ -159,7 +159,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     def _contagens(con, filtro: dict) -> dict:
         return FILA.contar_por_aba(con, agora=db.now(),
                                    usuario_id=app.extensions["usuario_id"](),
-                                   setor=filtro["setor"], etiqueta=filtro["etiqueta"],
+                                   setor=filtro["setor"],
                                    so_vencidas=bool(filtro["vencidas"]))
 
     def _com_dias(mensagens: list[dict], dia_anterior: str = "") -> list[dict]:
@@ -183,7 +183,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
 
     def _da_lista(filtro: dict) -> dict:
         """O que o parcial da lista precisa além das linhas: o filtro só com o
-        que foi escolhido (para os endereços não levarem `?setor=&etiqueta=`),
+        que foi escolhido (para os endereços não levarem `?setor=&vencidas=`),
         quantos filtros estão ligados e o dia de hoje (a hora sem a data)."""
         escolhido = {k: v for k, v in filtro.items() if v and k != "aba"}
         manter = dict(escolhido)
@@ -396,13 +396,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             busca_automatica = PUXAR.busca_automatica_ligada(con)
             cfg = WA.config_para_tela(con)
             ia = ATENDENTE.configuracao(con)
-            etiquetas = FILA.etiquetas_em_uso(con)
             pode = WA.pode_enviar_meta(con)
             if conversa_id is not None:
                 d = WA.conversa(con, conversa_id)
                 if not d:
                     abort(404)
-                d["etiquetas"] = FILA.etiquetas(con, conversa_id)
                 d["eventos"] = FILA.eventos(con, conversa_id)
                 d["setor"] = FILA.setor_valido(d.get("setor")) or SCH.SETOR_PADRAO
                 d["modo"] = d.get("modo") or SCH.MODO_IA
@@ -420,12 +418,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                           "falta": MODELOS.falta_para_enviar(con, _serventia()),
                           "modelo": MODELOS.nome_do_modelo(con, MODELOS.RETOMAR)}
         return render_template("whatsapp_chat.html", linhas=linhas, cfg=cfg, ia=ia,
-                               setores=SCH.SETORES, etiquetas=etiquetas,
+                               setores=SCH.SETORES,
                                ha_mais=ha_mais, contagens=contagens,
                                busca_automatica=busca_automatica, vista=vista,
                                **_da_lista(filtro), aberta=conversa_id, c=d,
                                pode_enviar=pode, usuarios=usuarios,
-                               sugeridas=etiquetas, janela=janela,
+                               janela=janela,
                                rotulos_evento=FILA.ROTULO_DO_EVENTO,
                                rotulos_caso=ATENDENTE.ROTULO_DO_CASO)
 
@@ -507,6 +505,55 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
         audit(auditoria, "wa_conversa", conversa_id, detalhe)
         return None
+
+    @app.route("/whatsapp/<int:conversa_id>/detalhes", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def whatsapp_detalhes(conversa_id: int):
+        """O «OK» DA JANELINHA DE DETALHES (segunda revisão do #73, 27/10/2026):
+        setor, responsável e «Usa IA» de uma vez. Compara com o BANCO e aplica
+        só o que mudou, pelas funções de sempre — `FILA.transferir` (sem nota),
+        `FILA.passar_para_pessoa` e `FILA.devolver_a_ia` —, com a auditoria
+        com os nomes de sempre. Nada mudou: volta sem gravar."""
+        setor = FILA.setor_valido(request.form.get("setor", ""))
+        bruto = (request.form.get("responsavel_id") or "").strip()
+        responsavel = int(bruto) if bruto.isdigit() else None
+        usa_ia = request.form.get("usa_ia") == "1"
+        feitas: list[tuple[str, dict | None]] = []
+        try:
+            with db.transaction() as con:
+                c = WA.conversa(con, conversa_id)
+                if not c:
+                    abort(404)
+                setor_antes = FILA.setor_valido(c.get("setor")) or SCH.SETOR_PADRAO
+                setor = setor or setor_antes
+                resp_antes = c.get("responsavel_id")
+                resp_antes = int(resp_antes) if resp_antes else None
+                ia_antes = (c.get("modo") or SCH.MODO_IA) != SCH.MODO_PESSOA
+                if setor != setor_antes or responsavel != resp_antes:
+                    FILA.transferir(con, conversa_id, setor, responsavel_id=responsavel,
+                                    por=_quem(), nota="", quando=db.now())
+                    feitas.append(("wa_transferir",
+                                   {"setor": setor, "responsavel_id": responsavel}))
+                if usa_ia != ia_antes:
+                    if usa_ia:
+                        FILA.devolver_a_ia(con, conversa_id, por=_quem(), quando=db.now())
+                        feitas.append(("wa_devolver", None))
+                    else:
+                        FILA.passar_para_pessoa(con, conversa_id, setor=setor,
+                                                motivo="passada pela tela",
+                                                por=_quem(), quando=db.now())
+                        feitas.append(("wa_passar", None))
+        except ValueError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
+        if not feitas:
+            flash("Nada mudou.", "info")
+            return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
+        for acao, detalhe in feitas:
+            audit(acao, "wa_conversa", conversa_id, detalhe)
+        flash("Detalhes da conversa atualizados.", "success")
+        return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
 
     @app.route("/whatsapp/<int:conversa_id>/etiqueta", methods=["POST"])
     @login_required

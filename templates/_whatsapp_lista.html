@@ -1,7 +1,8 @@
 {#- A LISTA DE CONVERSAS (27/10/2026): primeira carga e `/whatsapp/lista-parcial`.
     Cada conversa é um cartão (o protótipo B): as iniciais num círculo tingido
-    da cor do setor e, embaixo da mensagem, as etiquetas NESTA ORDEM — o
-    responsável (ou «sem responsável»), o setor, o fora do prazo e o resto.
+    da cor do setor e, embaixo da mensagem, NESTA ORDEM: o responsável (ou
+    «sem responsável»), o setor, o fora do prazo e «com pessoa»/«resolvida».
+    As etiquetas de `wa_etiqueta` não aparecem mais (segunda revisão do #73).
     `data-busca` é o que a busca do navegador compara (nome e número). -#}
 {% for r in linhas %}
 {% set quando = r.atualizado_em or '' %}
@@ -27,7 +28,6 @@
       {% if r.vencida %}<span class="wa-etq wa-etq-prazo" data-wa-etq="prazo">{{ r.esperando_min }} min</span>{% endif %}
       {% if r.status == 'resolvida' %}<span class="wa-etq">resolvida</span>
       {% elif r.modo == 'pessoa' %}<span class="wa-etq">com pessoa</span>{% endif %}
-      {% for et in r.etiquetas %}<span class="wa-etq">{{ et }}</span>{% endfor %}
     </span>
   </span>
 </a>

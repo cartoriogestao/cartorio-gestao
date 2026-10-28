@@ -1272,36 +1272,37 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
 .wa-etq-prazo{background:#fee4e2;color:var(--danger)}
 .wa-vencida{border-color:color-mix(in srgb,var(--danger) 35%,transparent)}
 .wa-resolvida{opacity:.6}
-.wa-nome{border:0;background:transparent;padding:2px 6px;margin-left:-6px;border-radius:8px;min-height:0;
-  font:inherit;font-size:15px;color:var(--text);cursor:pointer}
-.wa-nome:hover{background:var(--bg)}
-.wa-seta{color:var(--muted);font-size:12px;display:inline-block}
-.wa-nome[aria-expanded="true"] .wa-seta{transform:rotate(180deg)}
+.wa-nome{font-size:15px}
 .wa-historico{align-self:center;margin:0 0 6px;background:var(--panel);border:1px solid var(--border);
   border-radius:999px;padding:3px 12px}
 .wa-retomada span{font-weight:600;color:var(--text)}
 .wa-coluna-conversa{display:flex;flex-direction:column;min-width:0;min-height:0}
-/* O menu dos detalhes, dentro da conversa, logo abaixo do cabeçalho. */
-.wa-menu{flex:none;max-height:55%;overflow-y:auto;padding:4px 14px 10px;background:var(--panel);
-  border-bottom:1px solid var(--border);box-shadow:0 6px 12px -10px rgba(0,0,0,.25)}
+/* OS DETALHES NUMA JANELINHA FLUTUANTE (segunda revisão do #73): a seta no
+   centro do topo da conversa abre um cartão por cima das mensagens, centrado
+   nela, sem empurrar nada. As listas têm a largura da opção mais longa (a regra
+   geral dá 100% e 40 px a todo select). */
+.wa-coluna-conversa{position:relative}
+.wa-puxador{position:relative;height:0;display:flex;justify-content:center;z-index:15}
+.wa-abrir-detalhes{position:absolute;top:-1px;width:30px;height:18px;min-height:0;padding:0;
+  border:1px solid var(--border);border-top:0;border-radius:0 0 10px 10px;background:var(--panel);
+  color:var(--muted);font-size:11px;line-height:1;cursor:pointer;box-shadow:0 2px 4px rgba(0,0,0,.06)}
+.wa-abrir-detalhes:hover{color:var(--accent);background:var(--panel)}
+.wa-abrir-detalhes[aria-expanded="true"]{color:var(--accent)}
+.wa-menu{position:absolute;top:22px;left:50%;transform:translateX(-50%);width:max-content;
+  max-width:min(380px,92%);max-height:min(70vh,520px);overflow-y:auto;padding:12px 14px;
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-small);
+  box-shadow:var(--shadow-float)}
 .wa-menu[hidden]{display:none}
-.wa-bloco{padding:8px 0;border-bottom:1px solid var(--hairline,var(--border))}
-.wa-bloco:last-child{border-bottom:0}
-.wa-bloco h2,.wa-bloco>summary{font-size:13px;font-weight:650;margin:0 0 6px}
-.wa-bloco>summary{cursor:pointer;margin:0}
-.wa-bloco[open]>summary{margin-bottom:6px}
-.wa-bloco p{margin:2px 0 6px}
-.wa-bloco form{margin:4px 0;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
-.wa-bloco .button{padding:5px 10px;min-height:0}
-.wa-bloco input[type=text],.wa-bloco select{min-height:0;padding:5px 8px}
-.wa-transferir{display:grid!important;grid-template-columns:1fr 1fr;gap:6px}
-.wa-transferir label{font-size:12px}
-.wa-transferir input[type=text]{grid-column:1/2}
-.wa-etiquetas-postas{display:flex;flex-wrap:wrap;gap:4px}
-.wa-etiquetas-postas form{margin:0}
-.wa-tirar{border:0;background:transparent;padding:0 0 0 2px;min-height:0;font-size:13px;line-height:1;color:var(--muted);cursor:pointer}
-.wa-tirar:hover{color:var(--danger);background:transparent}
-.wa-por-etiqueta input[type=text]{flex:1;min-width:120px}
+.wa-menu-campos{display:grid;grid-template-columns:auto auto;gap:8px 10px;align-items:center;margin:0}
+.wa-menu-campos>label:not(.check){font-size:12px;font-weight:600;color:#505055;margin:0}
+.wa-menu-campos select{width:auto;max-width:260px;min-height:32px;height:32px;padding:4px 8px}
+.wa-menu-campos .button{min-height:0;padding:5px 16px}
+.wa-usa-ia{font-size:13px;flex-wrap:wrap}
+.wa-menu-mais{margin-top:8px;border-top:1px solid var(--hairline,var(--border));padding-top:6px}
+.wa-menu-mais>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--muted)}
+.wa-menu-mais[open]>summary{color:var(--text)}
+.wa-menu-rolagem{max-height:180px;overflow-y:auto;margin-top:6px}
+.wa-menu-rolagem p{margin:2px 0 6px}
 /* A caixa de marcação com o tamanho natural, alinhada ao meio do texto
    (revisão do #73): a regra geral dá a todo input largura de 100% e 40 px. */
 .wa-chat label.check{display:flex;flex-direction:row;align-items:center;gap:7px;font-weight:500}

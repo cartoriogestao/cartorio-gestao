@@ -55,6 +55,7 @@ EV_ETIQUETA_TIRADA = "etiqueta_tirada"
 EV_RESPONSAVEL = "responsavel"
 EV_RETOMADA = "retomada"
 EV_SEM_RESPONSAVEL_NA_VOLTA = "sem_responsavel_na_volta"
+EV_SETOR_PELO_ASSUNTO = "setor_pelo_assunto"
 
 # O RESPONSÁVEL NA VOLTA DA RESOLVIDA (decisão do oficial, 27/10/2026): até 7
 # dias depois de resolvida, quem atendeu ainda lembra do caso, e a conversa
@@ -82,7 +83,37 @@ ROTULO_DO_EVENTO = {
     EV_RESPONSAVEL: "responsável",
     EV_RETOMADA: "atendimento retomado",
     EV_SEM_RESPONSAVEL_NA_VOLTA: "voltou sem responsável",
+    EV_SETOR_PELO_ASSUNTO: "setor pelo assunto",
 }
+
+# AS PALAVRAS QUE DIZEM O SETOR — UMA TABELA SÓ (27/10/2026, segunda revisão do
+# #73). As etiquetas por palavra-chave repetiam o setor e nenhum relatório as
+# lia; agora a palavra define o setor na chegada (`definir_setor_pelo_assunto`)
+# e o atendente com IA lê a MESMA tabela para os assuntos sensíveis
+# (`wa_atendente.assunto_sensivel`). Os três sensíveis vêm primeiro, com os
+# padrões que o atendente já usava — a ordem é a de antes. Sem acento e em
+# minúscula: o texto é comparado por `_sem_acento`. «certidão» sozinha não
+# entra: serve a vários setores.
+SETOR_POR_PALAVRA: tuple[tuple[str, str, re.Pattern], ...] = (
+    ("PROTESTO", "assunto de protesto", re.compile(
+        r"\b(protest\w*|cenprot|cra|intimac\w*)\b")),
+    ("RCPN", "assunto de registro civil", re.compile(
+        r"\b(nascimento|casamento|obito|registro civil|habilitac\w*|divorci\w*|"
+        r"natimort\w*|registrar (meu|minha|o|a) (filh\w*|bebe)|"
+        r"uniao estavel|certidao de (nascimento|casamento|obito))\b")),
+    ("GESTAO", "reclamação", re.compile(
+        r"\b(reclama\w*|ouvidoria|denunci\w*|procon|corregedoria|absurdo|"
+        r"descaso|pessim\w*|desrespeit\w*|processar voces)\b")),
+    ("NOTAS", "assunto de notas", re.compile(
+        r"\b(escritura\w*|procurac\w*|testamento\w*|ata notarial|"
+        r"reconhecimento de firma|reconhecer (a )?firma|autenticac\w*)\b")),
+    ("RI", "assunto de registro de imóveis", re.compile(
+        r"\b(matricula\w*|imove(l|is)|registro de imoveis|usucapiao|averbac\w*)\b")),
+    ("RCPJ_RTD", "assunto de títulos e documentos ou pessoa jurídica", re.compile(
+        r"\b(contrato social|estatuto\w*|ata de assembleia|titulos e documentos)\b")),
+)
+# Os que vão a uma pessoa sem passar pela IA (a regra do atendente, de antes).
+SETORES_SENSIVEIS = ("PROTESTO", "RCPN", "GESTAO")
 
 _ISO = "%Y-%m-%dT%H:%M:%S"
 
@@ -113,6 +144,32 @@ def normalizar_etiqueta(texto: Any) -> str:
     t = "".join(c for c in n if not (0x300 <= ord(c) <= 0x36F)).lower().strip()
     t = re.sub(r"[^a-z0-9]+", "_", t).strip("_")
     return t[:TAMANHO_DA_ETIQUETA]
+
+
+def _sem_acento(texto: Any) -> str:
+    n = normalize("NFD", str(texto or ""))
+    return "".join(c for c in n if not (0x300 <= ord(c) <= 0x36F)).lower()
+
+
+def setores_pelo_texto(texto: Any) -> list[tuple[str, str, str]]:
+    """[(setor, motivo, palavra)] — um por setor que a mensagem cita, na ordem
+    da tabela `SETOR_POR_PALAVRA`. Só calcula."""
+    t = _sem_acento(texto)
+    achados = []
+    for setor, motivo, padrao in SETOR_POR_PALAVRA:
+        m = padrao.search(t)
+        if m:
+            achados.append((setor, motivo, m.group(0)))
+    return achados
+
+
+def setor_pela_mensagem(texto: Any) -> tuple[str, str] | None:
+    """(setor, palavra) quando a mensagem cita UM setor só. Dois ou mais, ou
+    nenhum: None — melhor não adivinhar, e a conversa fica no Atendimento."""
+    achados = setores_pelo_texto(texto)
+    if len(achados) != 1:
+        return None
+    return achados[0][0], achados[0][2]
 
 
 def cor_do_setor(setor: Any) -> str:
@@ -221,13 +278,6 @@ def tirar_etiqueta(con: Any, conversa_id: int, etiqueta: str, *,
     return bool(tiradas)
 
 
-def etiquetas_em_uso(con: Any) -> list[str]:
-    """As de fábrica e as que a casa já usou, para a tela sugerir."""
-    usadas = [r["etiqueta"] for r in banco(con).ler(
-        "SELECT DISTINCT etiqueta FROM wa_etiqueta ORDER BY etiqueta")]
-    return sorted(set(WA.ETIQUETAS) | set(usadas))
-
-
 # ------------------------------------------- setor, responsável e modo
 
 
@@ -331,6 +381,34 @@ def retomar(con: Any, conversa: dict, *, desde_id: int, quando: str,
         (WA.ABERTA, int(desde_id), responsavel, quando, cid))
     _evento(con, cid, EV_RETOMADA, quando=quando, por=por, nota=motivo)
     return {"responsavel_id": responsavel, "saiu_o_responsavel": saiu}
+
+
+def definir_setor_pelo_assunto(con: Any, conversa_id: int, texto: Any, *,
+                               quando: str, na_retomada: bool = False) -> str | None:
+    """O SETOR PELA PALAVRA DA MENSAGEM QUE CHEGOU. ESCREVE. Devolve o setor
+    gravado, ou None.
+
+    Fora da retomada, só age na conversa SEM setor (nova, ou que nunca foi
+    transferida nem passada): nunca muda o setor que uma pessoa ou a IA
+    escolheu. NA RETOMADA de uma resolvida, a mensagem nova abre outro
+    atendimento, e o setor dela vale mesmo que a conversa tivesse outro. O
+    evento diz de qual para qual, e por qual palavra.
+    """
+    achado = setor_pela_mensagem(texto)
+    if not achado:
+        return None
+    c = _conversa(con, conversa_id) or {}
+    antes = setor_valido(c.get("setor"))
+    setor, palavra = achado
+    if antes == setor or (antes and not na_retomada):
+        return None
+    banco(con).escrever("UPDATE wa_conversa SET setor=%s WHERE id=%s",
+                        (setor, int(conversa_id)))
+    caminho = (f"{nome_do_setor(antes)} → " if antes else "") + nome_do_setor(setor)
+    _evento(con, conversa_id, EV_SETOR_PELO_ASSUNTO, quando=quando,
+            por="palavra da mensagem", de_setor=antes or None, para_setor=setor,
+            nota=f"setor pelo assunto: {caminho} (palavra «{palavra}»)")
+    return setor
 
 
 def usuarios_ativos(con: Any) -> list[dict]:

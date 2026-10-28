@@ -732,7 +732,11 @@ def test_as_acoes_de_antes_continuam_e_voltam_para_a_conversa(s):
         assert r.status_code == 302, rota
         assert r.headers["Location"].endswith(f"/whatsapp/{cid}"), rota
     html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
-    assert "retorno" in html and "Histórico da conversa" in html
+    # as etiquetas saíram da tela (segunda revisão do #73): a rota ficou, e a
+    # etiqueta posta está no banco
+    assert "Histórico da conversa" in html
+    assert _um(s, "SELECT count(*) AS n FROM wa_etiqueta WHERE conversa_id=%s "
+                  "AND etiqueta='retorno'", (cid,))["n"] == 1
     # o resolver volta à lista, como antes
     r = s["c"].post(f"/whatsapp/{cid}/resolver", data={"csrf_token": csrf})
     assert r.status_code == 302 and r.headers["Location"].endswith("/whatsapp")
@@ -1088,28 +1092,155 @@ def test_o_auditor_ve_o_historico_e_nao_resolve_nem_reativa(s):
 # -------------------------------------------------- revisão do #73 (27/10/2026)
 
 
-def test_os_detalhes_sao_um_menu_dentro_da_conversa_com_os_cinco_blocos(s):
+def _janelinha(html):
+    ini = html.index('<div class="wa-menu" id="wa-detalhes"')
+    return html[ini:html.index('id="wa-mensagens"')]
+
+
+def test_a_janelinha_abre_pela_seta_e_tem_so_os_campos_pedidos(s):
+    """Segunda revisão do #73: a seta no centro do topo abre uma janelinha com
+    Setor, Responsável, «Usa IA» e «OK» (que nasce desligado), mais os dois
+    recolhidos. O nome deixou de ser botão."""
     cid = _chegar(s, "5511900000121", "Mario Exemplo dos Santos", "oi", "wamid.menu-1")
     html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
-    menu = re.search(r'<div class="wa-menu" id="wa-detalhes" data-wa-painel hidden[^>]*>', html)
-    assert menu, "o menu recolhível não está na conversa"
-    # logo abaixo do cabeçalho, antes das mensagens, e aberto pelo nome
-    assert html.index("</header>") < menu.start() < html.index('id="wa-mensagens"')
-    assert 'class="wa-nome" data-wa-detalhes' in html and 'aria-controls="wa-detalhes"' in html
-    for bloco in ("setor-responsavel", "etiquetas", "atendimento", "ia", "historico"):
-        assert f'data-wa-bloco="{bloco}"' in html, bloco
-    # «O que a IA fez» e o histórico em <details> fechados, com a contagem
+    seta = re.search(r'<button type="button" class="wa-abrir-detalhes" data-wa-detalhes[^>]*>', html)
+    assert seta and 'aria-label="detalhes da conversa"' in seta.group(0)
+    assert 'aria-expanded="false"' in seta.group(0)
+    assert html.index("</header>") < seta.start() < html.index('id="wa-mensagens"')
+    assert '<strong class="wa-nome">' in html and "data-wa-detalhes-nome" not in html
+    janela = _janelinha(html)
+    assert f'action="/whatsapp/{cid}/detalhes"' in janela
+    assert 'name="setor"' in janela and 'name="responsavel_id"' in janela
+    assert 'type="checkbox" name="usa_ia"' in janela
+    assert re.search(r"<option value=\"\">ninguém \(sem responsável\)</option>", janela)
+    ok = re.search(r"<button[^>]*data-wa-detalhes-ok[^>]*>OK</button>", janela)
+    assert ok and "disabled" in ok.group(0)
     for bloco in ("ia", "historico"):
-        tag = re.search(r'<details class="wa-bloco" data-wa-bloco="%s"[^>]*>' % bloco, html).group(0)
-        assert " open" not in tag, bloco
-    assert re.search(r"Histórico da conversa <span class=\"wa-conta\">\d+</span>", html)
-    # os formulários de sempre: transferir, assumir, etiqueta, passar
-    for rota in ("transferir", "assumir", "etiqueta", "passar"):
-        assert f'action="/whatsapp/{cid}/{rota}"' in html, rota
-    # a terceira coluna saiu, e o CSS dela também
-    conversa = html[html.index('aria-label="Conversa"'):]
-    assert "<aside" not in conversa and 'class="wa-detalhes"' not in html
-    assert ".wa-detalhes" not in (RAIZ / "static" / "app.css").read_text(encoding="utf-8")
+        tag = re.search(r'<details class="wa-menu-mais" data-wa-bloco="%s"[^>]*>' % bloco, janela)
+        assert tag and " open" not in tag.group(0), bloco
+    assert re.search(r"Histórico da conversa <span class=\"wa-conta\">\d+</span>", janela)
+    # o que saiu: nota, Assumir, Transferir e as etiquetas
+    for fora in ('name="nota"', ">Assumir<", ">Transferir<", 'name="etiqueta"', "/etiqueta\"",
+                 "data-wa-bloco=\"etiquetas\""):
+        assert fora not in janela, fora
+    assert "o atendente com IA está desligado" in janela      # a IA nasce desligada
+    # o «assumir» continua no cabeçalho
+    assert f'action="/whatsapp/{cid}/assumir"' in html
+
+
+def _postar_detalhes(s, cid, **campos):
+    dados = {"csrf_token": _csrf(s["c"], f"/whatsapp/{cid}")}
+    dados.update({k: v for k, v in campos.items() if v is not None})
+    return s["c"].post(f"/whatsapp/{cid}/detalhes", data=dados)
+
+
+def _auditorias(s, cid):
+    return int(_um(s, "SELECT count(*) AS n FROM audit_logs WHERE entity_id=%s "
+                      "AND entity_type='wa_conversa' AND action IN "
+                      "('wa_transferir','wa_passar','wa_devolver')", (cid,))["n"])
+
+
+def test_o_ok_so_o_setor_transfere_sem_nota(s):
+    cid = _chegar(s, "5511900000131", "Mario Exemplo dos Santos", "oi", "wamid.ok-1")
+    r = _postar_detalhes(s, cid, setor="NOTAS", responsavel_id="", usa_ia="1")
+    assert r.status_code == 302 and r.headers["Location"].endswith(f"/whatsapp/{cid}")
+    c = _um(s, "SELECT setor, modo FROM wa_conversa WHERE id=%s", (cid,))
+    assert c["setor"] == "NOTAS" and (c["modo"] or "ia") == "ia"
+    with s["bd"].connect() as con:
+        ev = [e for e in _FILA.eventos(con, cid) if e["tipo"] == _FILA.EV_TRANSFERENCIA]
+    assert len(ev) == 1 and ev[0]["para_setor"] == "NOTAS" and not ev[0]["nota"]
+    assert _auditorias(s, cid) == 1
+
+
+def test_o_ok_so_a_caixa_passa_para_pessoa_e_devolve_a_ia(s):
+    cid = _chegar(s, "5511900000141", "Mario Exemplo dos Santos", "oi", "wamid.ok-2")
+    _postar_detalhes(s, cid, setor="ATENDIMENTO", responsavel_id="", usa_ia=None)
+    assert _um(s, "SELECT modo FROM wa_conversa WHERE id=%s", (cid,))["modo"] == "pessoa"
+    _postar_detalhes(s, cid, setor="ATENDIMENTO", responsavel_id="", usa_ia="1")
+    assert _um(s, "SELECT modo FROM wa_conversa WHERE id=%s", (cid,))["modo"] == "ia"
+    tipos = _eventos(s, cid)
+    assert _FILA.EV_PASSAGEM in tipos and _FILA.EV_DEVOLUCAO in tipos
+    assert _FILA.EV_TRANSFERENCIA not in tipos
+
+
+def test_o_ok_sem_mudanca_nao_grava_nada(s):
+    cid = _chegar(s, "5511900000151", "Mario Exemplo dos Santos", "oi", "wamid.ok-3")
+    antes = _eventos(s, cid)
+    r = _postar_detalhes(s, cid, setor="ATENDIMENTO", responsavel_id="", usa_ia="1")
+    assert r.status_code == 302
+    assert _eventos(s, cid) == antes and _auditorias(s, cid) == 0
+
+
+def test_o_auditor_nao_aplica_os_detalhes(s):
+    cid = _chegar(s, "5511900000161", "Mario Exemplo dos Santos", "oi", "wamid.ok-4")
+    s["bd"].create_user("fiscal", "Auditor Exemplo", SENHA, "AUDITOR")
+    fiscal = _logar(s["app"], "fiscal")
+    tela = fiscal.get(f"/whatsapp/{cid}").get_data(as_text=True)
+    r = fiscal.post(f"/whatsapp/{cid}/detalhes",
+                    data={"csrf_token": _token(tela), "setor": "NOTAS", "usa_ia": "1"})
+    assert r.status_code == 403
+    assert _um(s, "SELECT setor FROM wa_conversa WHERE id=%s", (cid,))["setor"] != "NOTAS"
+
+
+def test_as_etiquetas_sairam_da_tela_e_nao_nascem_mais(s):
+    cid = _chegar(s, "5511900000171", "Mario Exemplo dos Santos",
+                  "tenho um protesto para pagar", "wamid.etq-fim-1")
+    # nenhuma linha nova em wa_etiqueta, e o assunto do rascunho continua gravado
+    assert int(_um(s, "SELECT count(*) AS n FROM wa_etiqueta WHERE conversa_id=%s",
+                   (cid,))["n"]) == 0
+    assert _um(s, "SELECT etiqueta FROM wa_conversa WHERE id=%s", (cid,))["etiqueta"]
+    # uma posta à mão (pela rota antiga, que ficou) não aparece na tela
+    s["c"].post(f"/whatsapp/{cid}/etiqueta",
+                data={"csrf_token": _csrf(s["c"]), "etiqueta": "urgente_hoje"})
+    html = s["c"].get(f"/whatsapp/{cid}?aba=todas").get_data(as_text=True)
+    lista = html[html.index("data-wa-lista"):html.index('aria-label="Conversa"')]
+    campos = html[html.index("data-wa-detalhes-form"):html.index('class="wa-menu-mais"')]
+    assert "urgente_hoje" not in lista and "urgente_hoje" not in campos
+    # (o histórico da conversa ainda registra quem a pôs: é o que aconteceu)
+    assert 'name="etiqueta"' not in html, "o filtro «etiqueta» saiu"
+
+
+def test_a_palavra_define_o_setor_da_conversa_nova(s):
+    cid = _chegar(s, "5511900000181", "Mario Exemplo dos Santos",
+                  "quero fazer uma escritura", "wamid.sp-1")
+    assert _um(s, "SELECT setor FROM wa_conversa WHERE id=%s", (cid,))["setor"] == "NOTAS"
+    with s["bd"].connect() as con:
+        ev = [e for e in _FILA.eventos(con, cid) if e["tipo"] == _FILA.EV_SETOR_PELO_ASSUNTO]
+    assert len(ev) == 1 and "escritura" in ev[0]["nota"] and ev[0]["para_setor"] == "NOTAS"
+
+
+def test_dois_setores_ou_so_certidao_nao_escolhem_setor(s):
+    dois = _chegar(s, "5511900000191", "Mario Exemplo dos Santos",
+                   "a escritura do imóvel da matrícula", "wamid.sp-2")
+    certidao = _chegar(s, "5511900000192", "Cidade Exemplo", "preciso de uma certidão",
+                       "wamid.sp-3")
+    for cid in (dois, certidao):
+        assert not _um(s, "SELECT setor FROM wa_conversa WHERE id=%s", (cid,))["setor"]
+        assert _FILA.EV_SETOR_PELO_ASSUNTO not in _eventos(s, cid)
+
+
+def test_a_palavra_nao_muda_o_setor_escolhido(s):
+    cid = _chegar(s, "5511900000201", "Mario Exemplo dos Santos", "bom dia", "wamid.sp-4")
+    _postar_detalhes(s, cid, setor="RI", responsavel_id="", usa_ia="1")
+    _chegar(s, "5511900000201", "Mario Exemplo dos Santos", "e o protesto?", "wamid.sp-5")
+    assert _um(s, "SELECT setor FROM wa_conversa WHERE id=%s", (cid,))["setor"] == "RI"
+    assert _FILA.EV_SETOR_PELO_ASSUNTO not in _eventos(s, cid)
+
+
+def test_na_retomada_a_palavra_da_mensagem_nova_vale(s):
+    """Acréscimo do oficial (27/10/2026): a resolvida que volta abre outro atendimento, e o
+    setor da mensagem nova vale mesmo que a conversa tivesse outro."""
+    cid = _chegar(s, "5511900000211", "Mario Exemplo dos Santos", "tenho um protesto",
+                  "wamid.sp-6")
+    assert _um(s, "SELECT setor FROM wa_conversa WHERE id=%s", (cid,))["setor"] == "PROTESTO"
+    _resolver(s, cid)
+    _chegar(s, "5511900000211", "Mario Exemplo dos Santos", "quero fazer uma escritura",
+            "wamid.sp-7")
+    assert _um(s, "SELECT setor FROM wa_conversa WHERE id=%s", (cid,))["setor"] == "NOTAS"
+    with s["bd"].connect() as con:
+        ev = [e for e in _FILA.eventos(con, cid) if e["tipo"] == _FILA.EV_SETOR_PELO_ASSUNTO]
+    assert (ev[-1]["de_setor"], ev[-1]["para_setor"]) == ("PROTESTO", "NOTAS")
+    assert "Protesto → Notas" in ev[-1]["nota"]
 
 
 def test_as_quatro_abas_cabem_com_o_nome_inteiro_no_title(s):

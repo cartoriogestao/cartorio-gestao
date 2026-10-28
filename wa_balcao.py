@@ -398,14 +398,13 @@ def aplicar_entrada(con: Any, payload_meta: Any,
             FILA.retomar(con, existente, desde_id=mid, quando=quando,
                          por="mensagem do cliente",
                          motivo="o cliente escreveu de novo")
-        # A etiqueta da palavra-chave entra tambem na lista de varias
-        # (`wa_etiqueta`), como automatica. «outros» nao e etiqueta: e falta dela.
-        if etiqueta and etiqueta != "outros":
-            FILA.por_etiqueta(con, cid, etiqueta, origem=FILA.AUTO,
-                              por="palavra-chave", quando=quando)
-        if tipo == "audio":
-            FILA.por_etiqueta(con, cid, "audio", origem=FILA.AUTO,
-                              por="tipo da mensagem", quando=quando)
+        # A PALAVRA DEFINE O SETOR (27/10/2026): na conversa sem setor, e na
+        # resolvida que volta (outro atendimento). As etiquetas automaticas
+        # (`wa_etiqueta`) nao nascem mais: repetiam o setor, e nenhum
+        # relatorio as lia. A `etiqueta` da conversa (o assunto do rascunho)
+        # continua acima, como era.
+        FILA.definir_setor_pelo_assunto(con, cid, texto, quando=quando,
+                                        na_retomada=voltou)
         criadas += 1
         ids.append(cid)
     return {"criadas": criadas, "repetidas": repetidas, "conversa_ids": ids}

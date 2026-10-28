@@ -6183,7 +6183,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         from ri_web import procurar_arquivos
         if request.method == "POST":
             pasta = (request.form.get("pasta") or "").strip()
-            if not pasta:
+            if pasta:
+                # SÓ PASTA DA CASA (LS02 A3; LX12) — a mesma régua das outras
+                # importações digitadas. Achado do CodeQL (py/path-injection):
+                # a pasta digitada ia direto à carga, que abre os .jsonl dela
+                # como SYSTEM — `\\maquina\x` levava o servidor à rede. A busca
+                # automática abaixo não passa por aqui: ela não vem do balcão.
+                try:
+                    pasta = str(app.extensions["pasta_da_casa"](pasta))
+                except PDC.ForaDaCasa as recusa:
+                    flash(str(recusa), "danger")
+                    return redirect(url_for("notas_importar"))
+            else:
                 achados = procurar_arquivos("firma_cartao.jsonl", limite=3)
                 pasta = str(achados[0].parent) if achados else ""
             if not pasta or not Path(pasta).is_dir():

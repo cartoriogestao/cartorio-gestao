@@ -22,6 +22,7 @@ from flask import abort, flash, redirect, render_template, request, url_for
 import csv_seguro as CSVS
 import despesas as DP
 import despesas_inter as INTER
+import despesas_recorrentes as RC
 
 QUEM_VE = ("ADMIN", "MANAGER", "AUDITOR")
 QUEM_CADASTRA = ("ADMIN", "MANAGER")
@@ -85,10 +86,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             linhas = DP.listar(con, situacao=situacao)
             contagem = DP.contagem(con)
             cfg = DP.configuracao(con)
+            do_mes = RC.do_mes(con, date.today())
+            carregadas = len([d for d in DP.listar(con, situacao=DP.AGUARDANDO)
+                              if d["origem"] == RC.ORIGEM])
         return render_template("despesas_lista.html", linhas=linhas, contagem=contagem,
                                situacoes=DP.SITUACOES, situacao=situacao, cfg=cfg,
                                categorias=DP.CATEGORIAS, reais=DP.reais,
-                               papel=usuario_papel())
+                               papel=usuario_papel(), do_mes=do_mes,
+                               recorrentes_carregadas=carregadas)
 
     @app.route("/administrativo/despesas/nova", methods=["GET", "POST"])
     @login_required
@@ -100,9 +105,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             anexo = (arquivo.filename, arquivo.read()) if arquivo and arquivo.filename else None
             try:
                 with db.transaction() as con:
+                    # Vinda do botão de uma recorrente, a despesa leva a chave do
+                    # mês: é isso que tira o mês do aviso (`despesas_recorrentes`).
+                    origem, chave = RC.origem_do_formulario(
+                        con, f.get("recorrente_id"), f.get("competencia"))
                     novo = DP.cadastrar(
-                        con, agora=_agora(), por=usuario_nome(), origem="MANUAL",
-                        chave_origem=None, beneficiario_nome=f.get("beneficiario_nome"),
+                        con, agora=_agora(), por=usuario_nome(), origem=origem,
+                        chave_origem=chave, beneficiario_nome=f.get("beneficiario_nome"),
                         beneficiario_documento=f.get("beneficiario_documento"),
                         valor_centavos=DP.centavos_da_tela(f.get("valor")),
                         vencimento=f.get("vencimento"), forma=f.get("forma") or "",
@@ -119,8 +128,108 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   {"valor": f.get("valor"), "categoria": f.get("categoria")})
             flash("Despesa cadastrada. Ela espera a autorização do oficial.", "success")
             return _ficha(novo)
-        return render_template("despesas_nova.html", f={}, formas=DP.FORMAS,
+        preenchido: dict = {}
+        rid, comp = request.args.get("recorrente_id") or "", request.args.get("competencia") or ""
+        if rid.isdigit() and comp:
+            with db.connect() as con:
+                r = RC.recorrente(con, int(rid))
+            if r:
+                preenchido = RC.para_o_formulario(r, comp[:7])
+        return render_template("despesas_nova.html", f=preenchido, formas=DP.FORMAS,
                                categorias=DP.CATEGORIAS, naturezas=DP.NATUREZAS)
+
+    # ------------------------------------------------- as recorrentes (28/10/2026)
+
+    @app.route("/administrativo/despesas/recorrentes")
+    @login_required
+    @roles_required(*QUEM_VE)
+    def despesas_recorrentes():
+        with db.connect() as con:
+            linhas = RC.lista(con)
+            do_mes = RC.do_mes(con, date.today())
+        return render_template("despesas_recorrentes.html", linhas=linhas, do_mes=do_mes,
+                               formas=DP.FORMAS, categorias=DP.CATEGORIAS, reais=DP.reais,
+                               carrega_sozinho=RC.CARREGA_SOZINHO, papel=usuario_papel())
+
+    def _dados_da_recorrente(f) -> dict:
+        dados = {c: f.get(c) for c in RC.CAMPOS}
+        dados["valor"] = DP.centavos_da_tela(f.get("valor")) if f.get("valor") else 0
+        return dados
+
+    @app.route("/administrativo/despesas/recorrentes/nova", methods=["GET", "POST"])
+    @app.route("/administrativo/despesas/recorrentes/<int:recorrente_id>", methods=["GET", "POST"])
+    @login_required
+    @roles_required(*QUEM_CADASTRA)
+    def despesas_recorrente(recorrente_id: int | None = None):
+        r = None
+        if recorrente_id is not None:
+            with db.connect() as con:
+                r = RC.recorrente(con, recorrente_id)
+            if not r:
+                abort(404)
+        if request.method == "POST":
+            f = request.form
+            try:
+                with db.transaction() as con:
+                    if r:
+                        RC.alterar(con, recorrente_id, _dados_da_recorrente(f),
+                                   por=usuario_nome(), agora=_agora())
+                        rid = recorrente_id
+                    else:
+                        rid = RC.cadastrar(con, _dados_da_recorrente(f), por=usuario_nome(),
+                                           agora=_agora())
+            except DP.DespesaError as erro:
+                flash(str(erro), "danger")
+                return render_template("despesas_recorrente_form.html", f=f, r=r,
+                                       formas=DP.FORMAS, categorias=DP.CATEGORIAS)
+            audit("DESPESA_RECORRENTE_ALTERADA" if r else "DESPESA_RECORRENTE_CADASTRADA",
+                  "dp_recorrentes", rid, {"valor": f.get("valor"), "forma": f.get("forma")})
+            flash("Recorrente gravada. Ela vale dos próximos meses em diante.", "success")
+            return redirect(url_for("despesas_recorrentes"))
+        if r:
+            f = {**r, "valor": DP.reais(int(r["valor"])) if r["valor"] else ""}
+        else:
+            f = {"primeiro_mes": RC.mes(date.today()), "antecedencia_dias": RC.ANTECEDENCIA_PADRAO,
+                 "forma": DP.PIX_CHAVE}
+        return render_template("despesas_recorrente_form.html", f=f, r=r, formas=DP.FORMAS,
+                               categorias=DP.CATEGORIAS)
+
+    @app.route("/administrativo/despesas/recorrentes/<int:recorrente_id>/<acao>",
+               methods=["POST"])
+    @login_required
+    @roles_required(*QUEM_CADASTRA)
+    def despesas_recorrente_acao(recorrente_id: int, acao: str):
+        if acao not in ("encerrar", "reativar"):
+            abort(404)
+        with db.transaction() as con:
+            if not RC.recorrente(con, recorrente_id):
+                abort(404)
+            if acao == "encerrar":
+                RC.encerrar(con, recorrente_id, por=usuario_nome(), agora=_agora())
+            else:
+                RC.reativar(con, recorrente_id)
+        audit(f"DESPESA_RECORRENTE_{acao.upper()}", "dp_recorrentes", recorrente_id, {})
+        flash("Recorrente encerrada: não avisa nem carrega mais." if acao == "encerrar"
+              else "Recorrente reativada.", "success")
+        return redirect(url_for("despesas_recorrentes"))
+
+    @app.route("/administrativo/despesas/recorrentes/carregar", methods=["POST"])
+    @login_required
+    @roles_required(*QUEM_CADASTRA)
+    def despesas_recorrentes_carregar():
+        """O mesmo que o processo DESPESAS_RECORRENTES faz de manhã, agora."""
+        try:
+            with db.transaction() as con:
+                novas = RC.gerar(con, hoje=date.today(), agora=_agora(), por=usuario_nome())
+        except DP.DespesaError as erro:
+            flash(f"Não carreguei: {erro}", "danger")
+            return redirect(url_for("despesas_recorrentes"))
+        for i in novas:
+            audit("DESPESA_RECORRENTE_CARREGADA", "dp_despesas", i, {})
+        flash(f"{len(novas)} despesa(s) do mês carregada(s), esperando a autorização." if novas
+              else "Nenhuma despesa por Pix a carregar agora.", "success" if novas else "info")
+        return redirect(url_for("despesas_lista", situacao=DP.AGUARDANDO) if novas
+                        else url_for("despesas_recorrentes"))
 
     @app.route("/administrativo/despesas/<int:despesa_id>")
     @login_required

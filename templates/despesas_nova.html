@@ -8,6 +8,11 @@
   traz o valor — se não baterem com o que você digitou, o sistema recusa.</div>
 <form method="post" enctype="multipart/form-data" class="panel">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {# Vinda do botão de uma recorrente: a chave do mês tira o mês do aviso. #}
+  <input type="hidden" name="recorrente_id" value="{{ f.recorrente_id or '' }}">
+  <input type="hidden" name="competencia" value="{{ f.competencia or '' }}">
+  {% if f.recorrente_id %}<p class="notice">Despesa do mês {{ f.competencia }} da recorrente — confira o valor e
+    cole o código de pagamento da fatura deste mês.</p>{% endif %}
   <label>Categoria
     <select name="categoria" required><option value="">—</option>
       {% for k, v in categorias.items() %}<option value="{{ k }}" {% if f.categoria == k %}selected{% endif %}>{{ v[0] }}{% if v[1] != 'DESPESA' %} (repasse, fora do Livro Diário){% endif %}</option>{% endfor %}

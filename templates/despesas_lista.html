@@ -8,6 +8,7 @@
 <div class="actions">
   {% if papel in ['ADMIN', 'MANAGER'] %}<a class="button" href="{{ url_for('despesas_nova') }}">Nova despesa</a>{% endif %}
   <a class="button" href="{{ url_for('despesas_relatorio') }}">Relatório do mês e SIAFERJ</a>
+  <a class="button" href="{{ url_for('despesas_recorrentes') }}">Recorrentes</a>
   {% if papel == 'ADMIN' %}<a class="button" href="{{ url_for('despesas_configuracao') }}">Configuração e Banco Inter</a>{% endif %}
 </div>
 
@@ -16,6 +17,17 @@
   esperam. Quem liga é o oficial, na configuração.</div>
 {% elif cfg.despesas_ambiente != 'producao' %}
 <div class="notice">Ambiente de <strong>teste</strong> do Inter: nenhum pagamento é de verdade.</div>
+{% endif %}
+
+{# AS RECORRENTES DO MÊS (28/10/2026): o aviso mora aqui, e não num e-mail. #}
+{% if recorrentes_carregadas %}
+<div class="notice"><strong>{{ recorrentes_carregadas }}</strong> despesa(s) recorrente(s) por Pix já carregada(s),
+  esperando a sua confirmação (autorização). <a href="{{ url_for('despesas_lista', situacao='AGUARDANDO_AUTORIZACAO') }}">Ver</a></div>
+{% endif %}
+{% if do_mes %}
+<div class="notice"><strong>{{ do_mes|length }}</strong> recorrente(s) do mês sem despesa cadastrada:
+  {% for r in do_mes[:5] %}{{ r.descricao }} (vence {{ r.vencimento }}{% if r.atrasada %}, <strong>vencida</strong>{% endif %}){% if not loop.last %}; {% endif %}{% endfor %}{% if do_mes|length > 5 %}…{% endif %}
+  <a href="{{ url_for('despesas_recorrentes') }}">Abrir as recorrentes</a></div>
 {% endif %}
 
 <p class="filters">

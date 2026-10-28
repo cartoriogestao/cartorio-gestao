@@ -337,9 +337,16 @@ def apresentante_do_titulo(con, titulo: Any) -> dict:
     """
     t = dict(titulo or {})
     codigo = str(t.get("apresentante_codigo") or "").strip()
+    # O «TAB» NÃO TEM CADASTRO QUE SIRVA (28/10/2026): é um apresentante por
+    # título — quem pediu na Gestão de Pedidos da CENPROT —, e a linha TAB de
+    # `pt_apresentantes` é de UMA pessoa. Cair nela poria no aviso e no
+    # instrumento o CPF/CNPJ e o endereço de outro ao lado do nome deste.
+    # Medido nos XML reais do E-Ofício: 18 títulos TAB, 8 apresentantes.
+    from protesto_cenprot_xml import APRESENTANTES_DO_TITULO
     cadastro = (banco(con).um(
         "SELECT nome, documento, endereco FROM pt_apresentantes WHERE codigo = %s",
-        (codigo,)) if codigo else None) or {}
+        (codigo,)) if codigo and codigo not in APRESENTANTES_DO_TITULO
+        else None) or {}
 
     def _primeiro(*valores: Any) -> str:
         return next((str(v).strip() for v in valores

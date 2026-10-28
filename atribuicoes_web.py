@@ -11493,6 +11493,59 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               "success")
         return redirect(url_for("protesto_cenprot_xml"))
 
+    @app.route("/protesto/cenprot-xml/titulos-tab/acervo", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_cenprot_xml_titulos_tab_do_acervo():
+        """Traz do E-Ofício o apresentante de cada título TAB (um por título:
+        quem pediu na CENPROT). ESCREVE. Só preenche o que está vazio — a
+        regra mora em `protesto_cenprot_xml.trazer_apresentantes_dos_titulos`.
+        """
+        acervo = _acervo_se_houver()
+        if acervo is None:
+            flash("O acervo do E-Ofício não está nesta máquina — informe o "
+                  "apresentante de cada título TAB nesta tela.", "warning")
+            return redirect(url_for("protesto_cenprot_xml"))
+        try:
+            with db.transaction() as con:
+                r = PCXML.trazer_apresentantes_dos_titulos(con, acervo)
+        except PCXML.CenprotXmlError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_cenprot_xml"))
+        finally:
+            acervo.close()
+        audit("PROTESTO_APRESENTANTES_TAB_DO_ACERVO", "pt_titulos", None, r)
+        flash(f"{r['completos']} título(s) TAB receberam nome, CNPJ/CPF e tipo "
+              f"do E-Ofício ({r['nome_trocado']} com o nome trocado pelo que foi "
+              f"à CENPROT); {r['so_o_tipo']} receberam só o tipo. "
+              + (f"{len(r['divergentes'])} têm documento diferente do E-Ofício e "
+                 f"ficaram como estavam (títulos {', '.join(map(str, r['divergentes']))}). "
+                 if r["divergentes"] else "")
+              + (f"{len(r['sem_fonte'])} não têm fonte no E-Ofício e esperam "
+                 f"quem informe (títulos {', '.join(map(str, r['sem_fonte']))})."
+                 if r["sem_fonte"] else ""),
+              "warning" if (r["divergentes"] or r["sem_fonte"]) else "success")
+        return redirect(url_for("protesto_cenprot_xml"))
+
+    @app.route("/protesto/cenprot-xml/titulo/<int:titulo_id>/apresentante",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_cenprot_xml_apresentante_do_titulo(titulo_id: int):
+        """Informa o apresentante de UM título TAB — nome, CNPJ/CPF e tipo.
+        ESCREVE."""
+        try:
+            with db.transaction() as con:
+                PCXML.gravar_apresentante_do_titulo(
+                    con, titulo_id, nome=request.form.get("nome"),
+                    documento=request.form.get("documento"),
+                    tipo_apresentante=request.form.get("tipo_apresentante"))
+        except PCXML.CenprotXmlError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_cenprot_xml"))
+        audit("PROTESTO_APRESENTANTE_DO_TITULO_GRAVADO", "pt_titulos", titulo_id,
+              {"tipo_apresentante": (request.form.get("tipo_apresentante") or "").strip()})
+        flash(f"Apresentante do título {titulo_id} gravado.", "success")
+        return redirect(url_for("protesto_cenprot_xml"))
+
     @app.route("/protesto/cenprot", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def protesto_cenprot():

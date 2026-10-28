@@ -29,6 +29,14 @@
     <span>Esperando retorno</span>
     <small>{{ atos | length }} ato(s), {{ grupos | length }} apresentante(s)</small>
   </div>
+  {% set presos_em_recusados = gerados | selectattr('cra_recusado_em') | sum(attribute='atos_presos') %}
+  {% if presos_em_recusados %}
+    <p class="danger" style="padding:0 14px"><small>
+      Além destes, <strong>{{ presos_em_recusados }} ato(s)</strong> estão em arquivo que a
+      CRA <strong>recusou</strong> e <strong>não foram informados</strong> — veja o motivo em
+      «Arquivos gerados».
+    </small></p>
+  {% endif %}
 
   {% if not grupos %}
     <p style="padding:14px">
@@ -134,6 +142,35 @@
             <small>informado pelo sistema antigo antes da virada</small>
           {% elif g.cra_enviado_em %}
             <strong>enviado</strong><div><small>{{ g.cra_enviado_em[:16] }}</small></div>
+          {% elif g.cra_recusado_em %}
+            {# RECUSADO PELA CRA — 28/10/2026. Seis retornos recusados (2161,
+               «NENHUM REGISTRO FOI GRAVADO») apareciam aqui como «enviado».
+               A recusa tem situação própria, com o código e o motivo da
+               Central, e os atos do arquivo NÃO foram informados. #}
+            <strong class="danger">recusado pela CRA</strong>
+            <div><small>{{ g.cra_recusado_em[:16] }}{% if g.cra_recusa_codigo %} · código {{ g.cra_recusa_codigo }}{% endif %}</small></div>
+            {% if g.cra_recusa_motivo %}<div class="danger"><small>{{ g.cra_recusa_motivo[:240] }}</small></div>{% endif %}
+            {% if g.tipo != 'SDTBFOCRT' and g.atos_presos %}
+              <div><small>{{ g.atos_presos }} ato(s) deste arquivo <strong>não foram informados</strong> à Central.</small></div>
+              {% if user.role in ['ADMIN','MANAGER','USER'] %}
+              <form method="post" action="{{ url_for('protesto_retorno_enviar', retorno_id=g.id) }}" style="display:inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="button">Enviar de novo</button>
+              </form>
+              <form method="post" action="{{ url_for('protesto_retorno_devolver_atos', retorno_id=g.id) }}" style="display:inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="button">Devolver os atos à fila</button>
+              </form>
+              <div><small>Leia o motivo antes: se a Central já sabe destes atos, devolvê-los faz o próximo retorno ser recusado de novo.</small></div>
+              {% endif %}
+            {% elif g.tipo != 'SDTBFOCRT' and g.titulos %}
+              <div><small>Os atos deste arquivo voltaram a «Esperando retorno».</small></div>
+            {% else %}
+              <form method="post" action="{{ url_for('protesto_retorno_enviar', retorno_id=g.id) }}" style="display:inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="button">Enviar de novo</button>
+              </form>
+            {% endif %}
           {% else %}
             {% if g.cra_envio_erro %}<div class="danger"><small>{{ g.cra_envio_erro[:160] }}</small></div>{% endif %}
             <form method="post" action="{{ url_for('protesto_retorno_enviar', retorno_id=g.id) }}" style="display:inline">

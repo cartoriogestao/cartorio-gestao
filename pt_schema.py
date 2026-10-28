@@ -760,6 +760,13 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("pt_retornos", "cra_envio_resumo", "TEXT"),
     ("pt_retornos", "cra_envio_erro", "TEXT"),
     ("pt_retornos", "cra_enviado_por", "TEXT"),
+    # A RECUSA DA CRA TEM SITUAÇÃO PRÓPRIA — 28/10/2026. Seis retornos que a
+    # Central recusou (2161, «NENHUM REGISTRO FOI GRAVADO») ficaram como
+    # enviados. Recusado é `cra_recusado_em` preenchido e `cra_enviado_em`
+    # vazio; o código e o motivo da Central ficam ao lado, para a tela.
+    ("pt_retornos", "cra_recusado_em", "TEXT"),
+    ("pt_retornos", "cra_recusa_codigo", "TEXT"),
+    ("pt_retornos", "cra_recusa_motivo", "TEXT"),
     # quem paga os emolumentos, e quando — `protesto_posteriori` (LG05)
     ("pt_titulos", "emolumento_regime", "TEXT"),
     # o CPF/CNPJ e o endereco do apresentante — `protesto.apresentante_do_titulo`
@@ -842,3 +849,9 @@ def init_pt_schema(con) -> None:
             bd.escrever(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
     for indice in INDICES_DEPOIS_DA_MIGRACAO:
         bd.escrever(indice)
+    # A RESPOSTA GRAVADA SE RELÊ — 28/10/2026. O arquivo que a CRA recusou e
+    # o sistema deu por enviado passa a recusado, pelo código que a própria
+    # resposta gravada traz. Idempotente, e não mexe em ato nenhum. Importado
+    # aqui dentro porque o esquema é aberto antes do resto do Protesto.
+    from protesto_cra_envio import reclassificar_recusas_gravadas
+    reclassificar_recusas_gravadas(con)

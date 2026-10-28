@@ -1648,6 +1648,56 @@ def test_o_arquivo_baixa_em_600_posicoes_e_sem_utf8(s):
     assert linhas[1][457] == "C"          # a ocorrência medida do protesto
 
 
+def _retorno_recusado_pela_cra(s) -> int:
+    """Gera o retorno pela tela e o marca RECUSADO como `protesto_cra_envio`
+    marca (28/10/2026): `cra_recusado_em`, o código e o motivo da Central,
+    e `cra_enviado_em` vazio. A rede não roda aqui."""
+    _titulo_da_cra(s)
+    c = s["c"]
+    token = _token(c.get("/protesto/retornos").get_data(as_text=True))
+    c.post("/protesto/retornos/gerar",
+           data={"csrf_token": token, "apresentante_codigo": "001",
+                 "dia": "2026-08-25", "marca": "A"}, follow_redirects=True)
+    con = _con(s)
+    with con:
+        rid = con.execute(
+            "SELECT id FROM pt_retornos WHERE tipo='SDTBFORTP'").fetchone()[0]
+        con.execute(
+            """UPDATE pt_retornos SET cra_recusado_em='2026-08-25T14:32:41',
+                   cra_recusa_codigo='2161',
+                   cra_recusa_motivo='NENHUM REGISTRO FOI GRAVADO',
+                   cra_envio_erro='A CRA recusou (código 2161)',
+                   cra_enviado_ambiente='PRODUCAO'
+               WHERE id=?""", (rid,))
+    return int(rid)
+
+
+def test_o_retorno_recusado_aparece_recusado_com_o_motivo_e_nao_enviado(s):
+    """A TELA DIZIA «ENVIADO» SOBRE SEIS RECUSADOS — 28/10/2026."""
+    _retorno_recusado_pela_cra(s)
+    html = s["c"].get("/protesto/retornos").get_data(as_text=True)
+    assert "recusado pela CRA" in html
+    assert "código 2161" in html
+    assert "NENHUM REGISTRO FOI GRAVADO" in html
+    assert "não foram informados" in html
+    assert "Devolver os atos à fila" in html
+    assert "<strong>enviado</strong>" not in html
+
+
+def test_devolver_os_atos_do_recusado_pela_tela(s):
+    rid = _retorno_recusado_pela_cra(s)
+    c = s["c"]
+    token = _token(c.get("/protesto/retornos").get_data(as_text=True))
+    html = c.post(f"/protesto/retornos/{rid}/devolver-atos",
+                  data={"csrf_token": token},
+                  follow_redirects=True).get_data(as_text=True)
+    assert "voltaram a «Esperando retorno»" in html
+    assert "8888/1" in html                 # o protesto voltou à fila
+    assert _con(s).execute(
+        "SELECT COUNT(*) FROM pt_atos WHERE retorno_id=?",
+        (rid,)).fetchone()[0] == 0
+
+
 def test_apresentante_sem_historico_pergunta_a_letra(s):
     # Nos arquivos medidos o empate e exato: 74 «A» e 74 «P». Chutar seria
     # inventar.

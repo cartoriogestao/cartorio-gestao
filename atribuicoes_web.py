@@ -11073,8 +11073,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                        "nome": item["nome_arquivo"],
                        "codigo": item.get("codigo")})
             for falha in envio.get("falhas") or []:
-                audit("CRA_ENVIO_FALHA", "pt_retornos", falha["retorno_id"],
-                      {"operacao": falha["operacao"], "erro": falha["erro"]})
+                # A recusa da Central tem ação própria (28/10/2026).
+                audit("CRA_ENVIO_RECUSADO" if falha.get("recusado")
+                      else "CRA_ENVIO_FALHA", "pt_retornos",
+                      falha["retorno_id"],
+                      {"operacao": falha["operacao"], "erro": falha["erro"],
+                       "codigo": falha.get("codigo")})
             q_ok = len(envio.get("enviados") or [])
             q_err = len(envio.get("falhas") or [])
             if q_ok and not q_err:
@@ -11863,15 +11867,49 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             r = PCE_ENVIO.enviar_arquivo(db.transaction, retorno_id,
                                          usuario=usuario_nome(), forcar=forcar)
         except (PCE_ENVIO.CraEnvioError, CENTCRED.CredencialError) as erro:
-            audit("PROTESTO_ENVIO_CRA_FALHOU", "pt_retornos", retorno_id,
-                  {"erro": str(erro)[:300]})
-            flash(f"Não foi à CRA: {erro}", "danger")
+            # RECUSA DA CENTRAL NÃO É FALHA DE ENVIO (28/10/2026): a auditoria
+            # e a frase dizem qual das duas foi.
+            if isinstance(erro, PCE_ENVIO.CraEnvioRecusado):
+                audit("PROTESTO_ENVIO_CRA_RECUSADO", "pt_retornos", retorno_id,
+                      {"codigo": erro.codigo,
+                       "motivo": str(erro.motivo or "")[:300]})
+                flash(f"A CRA RECUSOU: {erro} O arquivo ficou como recusado, "
+                      f"e os atos dele NÃO foram informados — leia o motivo "
+                      f"em «Arquivos gerados».", "danger")
+            else:
+                audit("PROTESTO_ENVIO_CRA_FALHOU", "pt_retornos", retorno_id,
+                      {"erro": str(erro)[:300]})
+                flash(f"Não foi à CRA: {erro}", "danger")
             return redirect(url_for("protesto_retornos"))
         audit("PROTESTO_ENVIO_CRA", "pt_retornos", retorno_id,
               {"operacao": r.get("operacao"), "codigo": r.get("codigo"),
                "nome": r.get("nome_arquivo")})
         flash(f"«{r.get('nome_arquivo')}» entrou na CRA "
               f"(código {r.get('codigo') or 'sem código'}).", "success")
+        return redirect(url_for("protesto_retornos"))
+
+    @app.route("/protesto/retornos/<int:retorno_id>/devolver-atos",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_retorno_devolver_atos(retorno_id: int):
+        """Devolve à fila os atos de um arquivo que a CRA RECUSOU. ESCREVE.
+
+        28/10/2026: a recusa não solta os atos sozinha — quem lê o motivo da
+        Central decide (`protesto_retorno.devolver_atos_do_recusado`).
+        """
+        try:
+            with db.transaction() as con:
+                r = PRE.devolver_atos_do_recusado(
+                    con, retorno_id, agora=agora(), usuario=usuario_nome())
+        except PRE.RetornoError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_retornos"))
+        # `audit` abre transação própria: FORA do `with`.
+        audit("PROTESTO_RETORNO_ATOS_DEVOLVIDOS", "pt_retornos", retorno_id,
+              {"nome": r["nome_arquivo"], "atos": r["atos"]})
+        flash(f"{len(r['atos'])} ato(s) de «{r['nome_arquivo']}» voltaram a "
+              f"«Esperando retorno». O arquivo recusado fica gravado como foi; "
+              f"gere um retorno novo para informá-los.", "success")
         return redirect(url_for("protesto_retornos"))
 
     @app.route("/protesto/retornos/<int:retorno_id>/arquivo")

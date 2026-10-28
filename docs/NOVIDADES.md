@@ -8,6 +8,75 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.6 — protesto em dia com a CRA e a CENPROT, cobrança por boleto, WhatsApp
+
+São 38 mudanças juntadas desde a 3.7.5. A suíte roda na máquina da
+integração, e não na do desenvolvimento.
+
+**Atenção ao instalar**
+- **Seis retornos à CRA passam de «enviado» para «recusado»** sozinhos, quando
+  o esquema abre: são os de 28/10/2026 que a CRA recusou (código 2161) e a tela
+  mostrava como enviados. Os atos deles não contam como informados, e não voltam
+  à fila sem alguém mandar.
+- **O protesto passa a ser no dia útil seguinte ao prazo-limite do devedor**
+  (por edital ou pessoal). Antes desta versão o sistema aceitava protestar no
+  próprio prazo-limite.
+- **Títulos da CENPROT (código TAB)** ganham o apresentante próprio. Um botão
+  na tela do XML traz nome, documento e tipo do cadastro do E-Ofício, e o
+  clique troca o nome gravado onde ele não era o que foi à Central.
+
+**Protesto**
+- **Tríduo**: o protesto se lavra no dia útil seguinte ao prazo-limite (CN-MA
+  art. 922, § 1º, e art. 925, § 4º).
+- **Retorno à CRA**: o arquivo que a CRA recusa fica **recusado**, com o
+  código e o motivo na tela, e com botão para devolver os atos à fila. Ato
+  desfeito (selo que não saiu, protesto tornado sem efeito) não entra no
+  retorno, e o que já tinha ido aparece num aviso. Ato do mesmo protocolo com
+  outra ocorrência fica para o próximo arquivo.
+- **XML da CENPROT**: o apresentante TAB vem do próprio título, um bloco por
+  solicitante, como o E-Ofício mandava; o aviso, o instrumento e o termo deixam
+  de mostrar o documento de outra pessoa.
+- **Pedido de protesto da CENPROT** não cria título repetido nem grava
+  protocolo fora da forma da casa.
+
+**Dinheiro**
+- **Cobrança por boleto** pelo Banco Inter e pela Unicred, do protocolo ao
+  depósito prévio.
+- **Despesas recorrentes**: o Pix do mês se carrega esperando a autorização do
+  oficial; o resto avisa.
+- **FERJ** vazio vale 12% no Livro Diário e na NFS-e; a **NFS-e** usa a data do
+  recibo como competência.
+
+**Registro de Imóveis**
+- **Qualificação assistida** no protocolo, com os dois resultados (positiva ou
+  negativa).
+- **Selo da conferência de documento eletrônico** (16.42) a partir do
+  protocolo, com etiqueta e comprovante em PDF; o subitem de faixa do caixa
+  (16.45.33) vai ao TJ como o item (16.45).
+- **Certidões do ONR**: a emissão que caiu depois de gravar é amarrada, sem
+  gastar outro selo.
+
+**Registro Civil**
+- Terceira saída do **pai não declarado**: a mãe não compareceu, averiguação
+  não iniciada.
+- O que foi cancelado sai das listas de pendência; a remessa do **IBGE** sai
+  com o nome certo do CARTINF.ZIP, os seis arquivos e o RC-10.
+
+**Balcão, WhatsApp e avisos**
+- **WhatsApp**: tela de conversa como num aplicativo, atalho flutuante com as
+  não respondidas e envio por modelo da Meta (desligado de fábrica).
+- **Automação**: um e-mail por dia em vez de um por aviso; as rotinas rodam no
+  horário e sem abrir janela; o cofre trancado aparece sempre no painel.
+- **Portal e avisos**: exigência de qualquer atribuição e «pronto» pela marca
+  do balcão. O protocolo do caixa não abre mais com a atribuição RI marcada.
+- **Problemas relatados**: exportação mascarada, retorno do desenvolvimento e
+  a tarefa agendada que sincroniza a lista.
+
+**Segurança**
+- Telas que davam HTTP 500 passam a avisar; robôs se identificam.
+- Pastas digitadas no RI e nas Notas só dentro da casa; XML do CENPROT sem
+  entidade externa; TLS 1.2 no selador; alertas do CodeQL corrigidos.
+
 ## 3.7.5 — automação, despesas, NFS-e, WhatsApp, painéis e as travas novas do balcão
 
 São 45 mudanças juntadas desde a 3.7.4, e a suíte de testes sai inteira

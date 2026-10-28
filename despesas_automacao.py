@@ -36,6 +36,11 @@ CATALOGO = (
      "setor": "GESTAO", "funcao": "despesas_automacao.pagar"},
     {"codigo": "DESPESAS_CONCILIAR", "nome": "Despesas — conferir o extrato do Inter",
      "setor": "GESTAO", "funcao": "despesas_automacao.conciliar"},
+    # 28/10/2026: as recorrentes. Carrega as do Pix e AVISA as outras; o aviso
+    # vai no resumo do dia, e não num e-mail por despesa.
+    {"codigo": "DESPESAS_RECORRENTES", "nome": "Despesas — carregar e avisar as recorrentes do mês",
+     "setor": "GESTAO", "funcao": "despesas_automacao.recorrentes",
+     "agenda": {"dias": [0, 1, 2, 3, 4], "horarios": ["07:30"]}},
 )
 
 
@@ -146,3 +151,42 @@ def conciliar(contexto) -> dict:
     return {"situacao": "AVISO" if sem else "OK", "relato": relato,
             "achados": [{"tipo": "DEBITO_SEM_DESPESA", **s} for s in sem],
             "acoes": [f"despesa {i}: conferida no extrato" for i in r["conciliadas"]]}
+
+
+def recorrentes(contexto) -> dict:
+    """Carrega as despesas do mês das recorrentes por Pix e avisa as outras.
+
+    Carregar é gravar despesa: só com `pode_agir`. Desligado, ele lê e conta.
+    A despesa carregada nasce AGUARDANDO a autorização do oficial; nada aqui
+    autoriza nem paga.
+    """
+    import despesas_recorrentes as RC
+    hoje = contexto.agora.date()
+    with contexto.db.connect() as con:
+        abertas = RC.do_mes(con, hoje)
+    a_carregar = [r for r in abertas if r["carrega_sozinho"]]
+    a_avisar = [r for r in abertas if not r["carrega_sozinho"]]
+    novas: list[int] = []
+    if a_carregar and contexto.processo.get("pode_agir"):
+        with contexto.db.transaction() as con:
+            novas = RC.gerar(con, hoje=hoje, agora=contexto.agora, por="automação")
+        for i in novas:
+            _auditar(contexto, "DESPESA_RECORRENTE_CARREGADA", i, {})
+    achados = [{"tipo": "RECORRENTE_A_CADASTRAR", "recorrente_id": int(r["id"]),
+                "mes": r["competencia"], "vencimento": r["vencimento"],
+                "descricao": r["descricao"], "atrasada": r["atrasada"]} for r in a_avisar]
+    if a_carregar and not novas:
+        achados += [{"tipo": "RECORRENTE_A_CARREGAR", "recorrente_id": int(r["id"]),
+                     "mes": r["competencia"]} for r in a_carregar]
+    partes = []
+    if novas:
+        partes.append(f"{len(novas)} despesa(s) por Pix carregada(s), esperando a autorização")
+    elif a_carregar:
+        partes.append(f"{len(a_carregar)} por Pix a carregar (pode_agir desligado: só conta)")
+    if a_avisar:
+        partes.append(f"{len(a_avisar)} recorrente(s) do mês esperando o boleto ou a guia")
+    if not partes:
+        return {"situacao": "OK", "relato": "Nenhuma recorrente aberta neste mês.",
+                "achados": [], "acoes": []}
+    return {"situacao": "AVISO", "relato": "; ".join(partes) + ".", "achados": achados,
+            "acoes": [f"despesa {i}: carregada da recorrente" for i in novas]}

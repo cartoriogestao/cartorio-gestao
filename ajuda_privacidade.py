@@ -56,8 +56,13 @@ _CPF = re.compile(r"\b\d{3}[. ]?\d{3}[. ]?\d{3}[- ]?\d{2}\b")
 # O CNPJ (LS03 M2) — o do empresário individual é o CPF dele com outra cara. A
 # mesma forma que `malote_fraudes._CNPJ` já mascarava no caminho das fraudes.
 _CNPJ = re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b")
+# O TAMANHO DO E-MAIL TEM TETO (CodeQL py/polynomial-redos, 28/10/2026): com
+# `+` sem limite, uma fileira de `%` sem `@` fazia cada posição varrer até o
+# fim — 50 mil caracteres levavam uns 20 s, e esta barreira lê texto que vem
+# de fora. 64 antes do `@` e 255 depois são os limites do próprio e-mail
+# (RFC 5321); endereço real nenhum passa deles.
 _EMAIL = re.compile(
-    r"(?<![\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}(?![\w-])",
+    r"(?<![\w.+-])[A-Z0-9._%+-]{1,64}@[A-Z0-9.-]{1,255}\.[A-Z]{2,}(?![\w-])",
     re.I,
 )
 _TELEFONE = re.compile(

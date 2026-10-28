@@ -55,6 +55,7 @@ from pt_schema import init_pt_schema
 from ra_schema import init_ra_schema
 from rc_certidao import init_rc_certidao_schema
 from rc_materializacao import init_rc_materializacao_schema
+from ri_conferencia import init_ri_conferencia_schema
 from rc_pedidos_schema import init_rc_pedidos_schema
 from rc_modelos_livres_schema import init_rc_modelos_livres_schema
 from modelos_elementos_schema import init_modelos_elementos_schema
@@ -718,6 +719,9 @@ class Database:
         init_rc_schema(con)
         init_rc_certidao_schema(con)
         init_rc_materializacao_schema(con)
+        # A conferência de documento eletrônico do RI (16.42, 28/10/2026),
+        # selada a partir do protocolo do balcão — `ri_conferencia`.
+        init_ri_conferencia_schema(con)
         # A fila da Central de Certidoes vem DEPOIS de rc_assentos:
         # `rc_pedidos.assento_id` e `rc_certidoes_eletronicas.assento_id`
         # apontam para ela.

@@ -3203,6 +3203,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     ri_qualificacao_ia_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                            fmt_date)
 
+    # A CONFERÊNCIA DE DOCUMENTO ELETRÔNICO DO RI (28/10/2026) — o selo do 16.42
+    # sai da ficha do protocolo, com etiqueta e comprovante em PDF.
+    import ri_conferencia_web
+    ri_conferencia_web.registrar_rotas(app, db, login_required, roles_required, audit,
+                                       fmt_date)
+
     # O CADASTRO NO CCN (13/10/2026) — o lote e a ponte com a extensão.
     import ccn_web
     ccn_web.registrar_rotas(app, db, login_required, roles_required, audit)

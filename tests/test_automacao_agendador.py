@@ -47,6 +47,18 @@ def test_o_agendador_do_windows_registra_as_duas_tarefas_na_sessao_do_usuario(tm
     assert all("\r\n" in t for t in arquivos.values())
 
 
+def test_o_despachante_roda_sem_janela(tmp_path):
+    # 28/10/2026: a tarefa de cada minuto chamava o cmd.exe direto, na sessão
+    # interativa, e piscava uma janela na tela do oficial a cada tique.
+    import re
+    l = _lancamento(tmp_path, PureWindowsPath("D:/Programa"), PureWindowsPath("D:/Dados"),
+                    PureWindowsPath("D:/Programa/runtime/python.exe"))
+    ps1 = AG.AgendadorDoWindows().arquivos(l)["registrar_tarefas.ps1"]
+    bloco = ps1[ps1.index("$d = New-ScheduledTask"):ps1.index(f"-TaskName '{AG.TAREFA_DESPACHANTE}'")]
+    assert re.search(r'-Execute "[^"]*conhost\.exe" -Argument \'--headless ', bloco)
+    assert "automacao_despachante.cmd" in bloco
+
+
 def test_gerar_escreve_e_nao_executa(tmp_path):
     l = _lancamento(tmp_path, RAIZ, tmp_path / "dados", Path(sys.executable))
     escritos = AG.gerar(l)

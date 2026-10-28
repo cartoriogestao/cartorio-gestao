@@ -160,13 +160,8 @@ def _extrair_bloco(html_bloco: str) -> dict[str, Any] | None:
         r"(Comunica[cç][aã]o\s+de\s+[^\n<]+)", plano, re.I)
     if not m_titulo:
         # título às vezes cola na mesma linha; tenta no início
-        # `^[^\S\n]*`, e não `^\s*` (CodeQL py/polynomial-redos, 28/10/2026):
-        # com `re.M`, o `\s*` de cada começo de linha atravessava todas as
-        # linhas em branco seguintes, e um HTML da CRC com milhares delas
-        # custava tempo quadrático. O grupo e o fim do achado são os mesmos:
-        # a palavra tem de ser o primeiro não-branco da linha nas duas formas.
         m_titulo = re.search(
-            r"^[^\S\n]*(Comunica[cç][aã]o\s+de\s+.+?)(?:\s{2,}|\n|$)",
+            r"^\s*(Comunica[cç][aã]o\s+de\s+.+?)(?:\s{2,}|\n|$)",
             plano, re.I | re.M)
     if not m_titulo:
         return None

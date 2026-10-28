@@ -21,14 +21,19 @@ seria travar o balcão por um dado que ninguém tem à mão.
 """
 from __future__ import annotations
 
-import re
 
-# O `(?=[^@\s]*$)` confere de uma vez que o domínio vai até o fim sem `@` nem
-# branco (CodeQL py/polynomial-redos, 28/10/2026). Sem ele, um texto longo
-# com muitos pontos e um `@` ou espaço no fim fazia a expressão tentar cada
-# ponto como o separador — tempo quadrático. Aceita e recusa exatamente o
-# mesmo: a condição nova já estava implícita na antiga.
-_EMAIL = re.compile(r"^[^@\s]+@(?=[^@\s]*$)[^@\s]+\.[^@\s]+$")
+def _email_completo(texto: str) -> bool:
+    """`nome@dominio.tld`: um só `@`, nenhum branco e, no domínio, um ponto com
+    algo dos dois lados.
+
+    Sem expressão regular (CodeQL py/polynomial-redos, 28/10/2026): a antiga,
+    `^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$`, tentava cada ponto como o separador
+    num texto longo — tempo quadrático. Aceita e recusa o mesmo que ela (o
+    e-mail chega aqui sem branco nas pontas).
+    """
+    nome, arroba, dominio = texto.partition("@")
+    return (bool(nome) and bool(arroba) and "@" not in dominio
+            and not any(c.isspace() for c in texto) and "." in dominio[1:-1])
 
 
 class ContatoError(ValueError):
@@ -47,7 +52,7 @@ def exigir(telefone, email) -> tuple[str | None, str | None]:
         raise ContatoError(
             f"O telefone «{tel}» não serve para avisar o cliente: informe com DDD "
             f"(ex.: (99) 99999-9999).")
-    if mail and not _EMAIL.match(mail):
+    if mail and not _email_completo(mail):
         raise ContatoError(
             f"O e-mail «{mail}» não está completo (ex.: nome@provedor.com).")
     if not tel and not mail:

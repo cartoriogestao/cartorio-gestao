@@ -162,6 +162,25 @@ def test_o_atalho_nao_aparece_na_tela_do_whatsapp(s):
     assert _atalho(s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)) is None
 
 
+def test_o_novas_e_a_lista_parcial_nao_contam(s, monkeypatch):
+    """A contagem só roda quando o `base.html` desenha o atalho: os parciais e
+    as perguntas automáticas da tela não a disparam (revisão do #74)."""
+    cid = _chegar(s, "5511900000381", "oi", "wamid.at-14")
+    chamadas = []
+    original = FILA.nao_respondidas
+
+    def contar(con, **kw):
+        chamadas.append(kw)
+        return original(con, **kw)
+    monkeypatch.setattr(FILA, "nao_respondidas", contar)
+    assert s["c"].get(f"/whatsapp/{cid}/novas?depois=0").status_code == 200
+    assert s["c"].get("/whatsapp/lista-parcial").status_code == 200
+    assert chamadas == [], "o /novas ou a lista parcial contou as não respondidas"
+    # e a tela comum continua contando, uma vez
+    assert s["c"].get("/").status_code == 200
+    assert len(chamadas) == 1
+
+
 def test_com_zero_nao_ha_alerta(s):
     atalho = _atalho(s["c"].get("/").get_data(as_text=True))
     assert atalho and "wa-atalho-alerta" not in atalho

@@ -218,18 +218,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
 
     @app.context_processor
     def _atalho_do_whatsapp():
-        try:
-            if (not app.extensions["usuario_id"]()
-                    or request.endpoint in TELAS_SEM_ATALHO
-                    or not _pode_abrir_o_whatsapp()):
-                return {"wa_atalho": None}
-            with _con() as con:
-                n = FILA.nao_respondidas(con, usuario_id=app.extensions["usuario_id"]())
-            return {"wa_atalho": FILA.rotulo_do_atalho(n)}
-        except Exception:                               # noqa: BLE001
-            # uma contagem nunca derruba a tela: o atalho some, e o log diz
-            app.logger.exception("o atalho do WhatsApp não conseguiu contar")
-            return {"wa_atalho": None}
+        """Devolve uma FUNÇÃO, e não a contagem (revisão do #74): o
+        `_whatsapp_atalho.html` a chama, e a contagem só roda quando o
+        `base.html` desenha o atalho — nunca nos parciais, no `/novas` nem na
+        lista que a tela pede a cada poucos segundos."""
+        def wa_atalho():
+            try:
+                if (not app.extensions["usuario_id"]()
+                        or request.endpoint in TELAS_SEM_ATALHO
+                        or not _pode_abrir_o_whatsapp()):
+                    return None
+                with _con() as con:
+                    n = FILA.nao_respondidas(con, usuario_id=app.extensions["usuario_id"]())
+                return FILA.rotulo_do_atalho(n)
+            except Exception:                           # noqa: BLE001
+                # uma contagem nunca derruba a tela: o atalho some, e o log diz
+                app.logger.exception("o atalho do WhatsApp não conseguiu contar")
+                return None
+        return {"wa_atalho": wa_atalho}
 
     @app.route("/whatsapp/nao-respondidas")
     @login_required

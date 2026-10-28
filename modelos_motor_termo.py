@@ -548,7 +548,12 @@ def corrigir_texto_termo(texto: str, *, especie: str, pessoas: dict[str, dict],
     if parece_html(bruto) or "&lt;" in bruto:
         correcoes.append("tags HTML removidas")
     # texto corrido (art. 795, § 2º): quebras viram espaço
-    t = re.sub(r"\s*\n\s*", " ", t).strip()
+    # O `(?<!\s)` só deixa a busca começar no INÍCIO de um trecho de brancos
+    # (CodeQL py/polynomial-redos, 28/10/2026). Sem ele, um trecho longo de
+    # espaços sem quebra era varrido de novo a partir de cada espaço — tempo
+    # quadrático. O que casa é o mesmo: a primeira tentativa de um trecho já
+    # começava no início dele e o tomava inteiro.
+    t = re.sub(r"(?<!\s)\s*\n\s*", " ", t).strip()
     novo = normalizar_datas_no_texto(t, estilo_data)
     if novo != t:
         correcoes.append(f"datas no estilo «{estilo_de_data(estilo_data)}»")
@@ -572,7 +577,7 @@ def corrigir_texto_termo(texto: str, *, especie: str, pessoas: dict[str, dict],
     if mudou:
         correcoes.append("fecho «Eu, ____» preenchido")
     t = re.sub(r"[ \t]{2,}", " ", t)
-    t = re.sub(r"\s+([,.;:])", r"\1", t)
+    t = re.sub(r"(?<!\s)\s+([,.;:])", r"\1", t)  # `(?<!\s)`: ver a quebra acima
     return t.strip(), correcoes
 
 

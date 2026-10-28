@@ -23,7 +23,12 @@ from __future__ import annotations
 
 import re
 
-_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# O `(?=[^@\s]*$)` confere de uma vez que o domínio vai até o fim sem `@` nem
+# branco (CodeQL py/polynomial-redos, 28/10/2026). Sem ele, um texto longo
+# com muitos pontos e um `@` ou espaço no fim fazia a expressão tentar cada
+# ponto como o separador — tempo quadrático. Aceita e recusa exatamente o
+# mesmo: a condição nova já estava implícita na antiga.
+_EMAIL = re.compile(r"^[^@\s]+@(?=[^@\s]*$)[^@\s]+\.[^@\s]+$")
 
 
 class ContatoError(ValueError):

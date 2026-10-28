@@ -10877,7 +10877,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             ambiente = str(request.form.get("origem_xml_ambiente")
                            or CENTCRED.PRODUCAO).strip().upper()
             if isinstance(bruto, str):
-                bruto = re.sub(r"(?i)(<\?xml[^>]*encoding\s*=\s*['\"])(?:iso-8859-1|windows-1252)(['\"])",
+                # `[^>]{0,500}`, e não `[^>]*` (CodeQL py/polynomial-redos,
+                # 28/10/2026): o texto vem da CRA ou de arquivo enviado, e
+                # muitos `<?xml` sem `>` faziam cada um varrer até o fim —
+                # tempo quadrático. A declaração XML real tem menos de cem
+                # caracteres; o teto não muda o que ela casa.
+                bruto = re.sub(r"(?i)(<\?xml[^>]{0,500}encoding\s*=\s*['\"])(?:iso-8859-1|windows-1252)(['\"])",
                                r"\1UTF-8\2", bruto, count=1).encode("utf-8")
             try:
                 token = PCIMG.guardar_xml(pasta_dos_arquivos(), bruto)

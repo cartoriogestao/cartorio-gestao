@@ -1080,9 +1080,13 @@ def limpar(texto: str) -> str:
     Registro Civil.
     """
     import re
-    texto = re.sub(r"\s*\n\s*", " ", texto)
+    # O `(?<!\s)` só deixa a busca começar no início de um trecho de brancos
+    # (CodeQL py/polynomial-redos, 28/10/2026): sem ele, um trecho longo de
+    # espaços era varrido de novo a partir de cada espaço, em tempo
+    # quadrático. Casa o mesmo — a primeira tentativa já começava ali.
+    texto = re.sub(r"(?<!\s)\s*\n\s*", " ", texto)
     texto = re.sub(r"[ \t]{2,}", " ", texto)
-    texto = re.sub(r"\s+([,.;:])", r"\1", texto)
+    texto = re.sub(r"(?<!\s)\s+([,.;:])", r"\1", texto)
     return texto.strip()
 
 

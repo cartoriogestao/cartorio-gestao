@@ -65,8 +65,11 @@
   function irmas(img) {
     var g = img.getAttribute("data-lupa-grupo");
     if (!g) return [img];
+    // A barra invertida tambem se escapa (CodeQL js/incomplete-sanitization,
+    // 28/10/2026): numa string de seletor CSS ela e escape, e um grupo com
+    // `\` no nome quebraria o seletor. Os grupos de hoje sao fixos ou numero.
     var achadas = document.querySelectorAll(
-      '.ampliavel[data-lupa-grupo="' + g.replace(/"/g, '\\"') + '"]');
+      '.ampliavel[data-lupa-grupo="' + g.replace(/["\\]/g, '\\$&') + '"]');
     return Array.prototype.slice.call(achadas);
   }
 

@@ -30,7 +30,11 @@ from typing import Any
 
 # Mesmas expressões do editor (`modelos_editor.RE_*`) — copiadas, não
 # importadas, para o motor não depender do editor para validar.
-RE_DUPLO = re.compile(r"\{\{\s*([^{}#/][^{}]*?)\s*\}\}")
+# Sem `\s*` dos dois lados desde 28/10/2026 (CodeQL py/polynomial-redos): a
+# forma antiga era cúbica num `{{` sem fecho seguido de brancos. Casa os
+# mesmos trechos; o grupo traz os brancos das pontas, e os três leitores
+# daqui fazem `.strip()`. A razão inteira está em `modelos_editor`.
+RE_DUPLO = re.compile(r"\{\{(?=[^{}#/])([^{}]*)\}\}")
 RE_SIMPLES = re.compile(r"(?<!\{)\{([A-Za-z_][A-Za-z0-9_.]*)\}(?!\})")
 # `@campo` só quando o @ não está colado em palavra/ponto (e-mail fica).
 RE_ARROBA = re.compile(r"(?<![\w.@])@([A-Za-z_][A-Za-z0-9_]*)")

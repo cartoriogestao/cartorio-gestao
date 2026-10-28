@@ -101,7 +101,9 @@
       return;
     }
     perguntandoConversa = true;
-    var url = caixa.getAttribute("data-novas-url") + "?depois=" +
+    // A vista do histórico já leva `?historico=1` no endereço.
+    var base = caixa.getAttribute("data-novas-url");
+    var url = base + (base.indexOf("?") === -1 ? "?" : "&") + "depois=" +
       encodeURIComponent(caixa.getAttribute("data-ultimo") || "0");
     fetch(url, {credentials: "same-origin", headers: {"Accept": "application/json"}})
       .then(function (r) {
@@ -230,15 +232,60 @@
   }
 
   // ---------------------------------------------------- os detalhes
+  // A JANELINHA FLUTUANTE (segunda revisão do #73): abre e fecha pela seta, e
+  // fecha também pelo Esc e pelo clique fora dela.
   var botaoDetalhes = document.querySelector("[data-wa-detalhes]");
   var painel = document.querySelector("[data-wa-painel]");
+
+  function mostrarDetalhes(abrir) {
+    painel.hidden = !abrir;
+    botaoDetalhes.setAttribute("aria-expanded", abrir ? "true" : "false");
+  }
+
   if (botaoDetalhes && painel) {
     botaoDetalhes.addEventListener("click", function () {
-      var abrir = painel.hidden;
-      painel.hidden = !abrir;
-      botaoDetalhes.setAttribute("aria-expanded", abrir ? "true" : "false");
-      botaoDetalhes.textContent = abrir ? "detalhes ◂" : "detalhes ▸";
+      mostrarDetalhes(painel.hidden);
     });
+    document.addEventListener("keydown", function (evento) {
+      if (evento.key === "Escape" && !painel.hidden) {
+        mostrarDetalhes(false);
+        botaoDetalhes.focus();
+      }
+    });
+    document.addEventListener("click", function (evento) {
+      if (!painel.hidden && !painel.contains(evento.target) &&
+          !botaoDetalhes.contains(evento.target)) {
+        mostrarDetalhes(false);
+      }
+    });
+  }
+
+  // O «OK» só liga quando algum campo difere do que estava (`data-inicial`);
+  // a pessoa que volta o campo ao valor de antes o desliga de novo.
+  var formDetalhes = document.querySelector("form[data-wa-detalhes-form]");
+  var botaoOk = formDetalhes && formDetalhes.querySelector("[data-wa-detalhes-ok]");
+
+  function valorDoCampo(campo) {
+    if (campo.type === "checkbox") {
+      return campo.checked ? "1" : "";
+    }
+    return campo.value || "";
+  }
+
+  function conferirOk() {
+    var campos = formDetalhes.querySelectorAll("[data-inicial]");
+    var mudou = false;
+    for (var i = 0; i < campos.length; i++) {
+      if (valorDoCampo(campos[i]) !== campos[i].getAttribute("data-inicial")) {
+        mudou = true;
+      }
+    }
+    botaoOk.disabled = !mudou;
+  }
+
+  if (formDetalhes && botaoOk) {
+    formDetalhes.addEventListener("change", conferirOk);
+    formDetalhes.addEventListener("input", conferirOk);
   }
 
   // ------------------------------------------------------------- começo

@@ -1082,8 +1082,10 @@ Comandos: Gerar senha; Chamar; Iniciar; Finalizar.
 
 Caminho: Administrativo > Atendimento > WhatsApp.
 Tela-fonte: `templates/whatsapp_chat.html` (a lista à esquerda e a conversa aberta à direita).
-Campos da tela: Busca por nome ou número; Mensagem [rascunho].
-Comandos: puxar caixa-postal; filtrar; assumir; resolver; detalhes; Enviar; guardar rascunho.
+Abas da lista: Sem responsável (abre por padrão); Minhas; Todas (as abertas); Resolvidas (as 100 mais recentes, com a contagem de todas). Cada aba mostra a contagem.
+Campos da tela: Busca por nome ou número; Filtros [setor, etiqueta, vencidas]; Mensagem [rascunho].
+Comandos: atualizar (⟳, só com a busca automática da caixa-postal desligada); Filtros; assumir; resolver; Reativar conversa (na resolvida); Ver histórico / Ocultar histórico; Enviar; guardar rascunho. O nome da pessoa, no topo da conversa, abre os detalhes.
+Resolvida: sai das abas de trabalho e fica em «Resolvidas»; nada é apagado. Quando volta (o cliente escreve ou «Reativar conversa»), a tela mostra só o atendimento novo, com «Ver histórico» para o anterior; o responsável fica se ela estava resolvida havia até 7 dias.
 Acessos relacionados: Painel do prazo; Atendente com IA; Configuração Meta.
 
 ### Robôs
@@ -2003,5 +2005,5 @@ Acessos relacionados: ← fila do WhatsApp.
 
 Tela-fonte: `templates/whatsapp_chat.html` (a mesma tela do WhatsApp, com a conversa aberta).
 Campos da tela: Mensagem [rascunho].
-Comandos: Enviar (Ctrl+Enter); guardar rascunho; assumir; resolver; detalhes.
+Comandos: Enviar (Ctrl+Enter); guardar rascunho; assumir; resolver; Reativar conversa (na resolvida); Ver histórico [historico=1] / Ocultar histórico; o nome da pessoa abre os detalhes.
 Acessos relacionados: ← conversas; configuração.

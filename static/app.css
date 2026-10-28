@@ -1203,28 +1203,111 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
    leva «enviada» ou «(IA)» na hora: a diferença não está só na cor.
    ======================================================================== */
 .wa-links{margin:0 0 10px}
-.wa-chat{display:grid;grid-template-columns:minmax(260px,330px) minmax(0,1fr);height:calc(100vh - 170px);min-height:460px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-small);overflow:hidden}
-.wa-coluna-lista{display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--border)}
-.wa-lista-topo{padding:12px;border-bottom:1px solid var(--border);display:grid;gap:8px}
-.wa-lista-titulo{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.wa-lista-titulo h1{font-size:19px;margin:0}
-.wa-lista-titulo form{margin:0}
-.wa-filtros{display:flex;flex-wrap:wrap;gap:6px}
-.wa-filtros select{width:auto;flex:1 1 90px;padding:5px 6px}
-.wa-filtros .button{padding:5px 10px}
-.wa-lista{flex:1;overflow-y:auto;min-height:0}
-.wa-lista-vazia{padding:14px}
-.wa-item{display:grid;gap:2px;padding:10px 12px;border-bottom:1px solid var(--hairline,var(--border));color:var(--text);text-decoration:none}
-.wa-item:hover{background:var(--bg);text-decoration:none}
-.wa-item[aria-current="true"]{background:var(--balao-recebido);box-shadow:inset 3px 0 0 var(--accent)}
+/* A LISTA FINAL (27/10/2026): os protótipos A + B que o oficial escolheu.
+   Dois painéis separados, alinhados à esquerda, perto do menu; a conversa não
+   passa da largura que tinha. O painel, as abas em controle segmentado e a busca
+   são do A (o menu do sistema); cada conversa é um cartão do B, com as iniciais
+   tingidas da cor do setor (`--cor-setor`, a do módulo) e as etiquetas embaixo. */
+.wa-chat{display:grid;grid-template-columns:340px minmax(0,960px);gap:16px;justify-content:start;
+  height:calc(100vh - 170px);min-height:460px}
+.wa-painel{min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--panel);
+  border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-card);overflow:hidden}
+.wa-coluna-lista{background:var(--panel)}
+.wa-lista-topo{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 14px 6px}
+.wa-lista-topo h1{font-size:18px;margin:0;font-weight:650}
+.wa-lista-topo form{margin:0}
+/* O botão de atualizar é um círculo perfeito: o `button` do sistema tem
+   padding e altura mínima, e por isso ele saía oval. */
+.wa-atualizar{width:32px;height:32px;min-width:32px;min-height:32px;padding:0;border-radius:50%;
+  display:grid;place-items:center;border:1px solid var(--border);background:var(--panel);
+  font-size:16px;line-height:1;color:var(--muted)}
+.wa-atualizar:hover{color:var(--accent);background:var(--bg)}
+/* As quatro abas cabem inteiras nos 340 px, mesmo com contagem de 3 dígitos
+   (revisão do #73): fonte e espaçamento menores, a contagem num distintivo
+   pequeno e «Sem resp.» abreviado só na tela (o nome inteiro vai no title). */
+.wa-abas{display:flex;gap:2px;margin:4px 10px;padding:3px;background:rgba(60,60,67,.08);border-radius:10px}
+.wa-aba{flex:1 1 auto;min-width:0;display:flex;align-items:center;justify-content:center;gap:2px;padding:5px 3px;
+  border-radius:8px;font-size:11px;font-weight:600;color:#505055;text-decoration:none;white-space:nowrap}
+.wa-aba .wa-conta{min-width:0;padding:0 3px;font-size:9.5px;line-height:15px}
+.wa-aba:hover{text-decoration:none;color:var(--text)}
+.wa-aba[aria-current="true"]{background:#fff;color:var(--text);
+  box-shadow:0 1px 2px rgba(0,0,0,.08),0 0 0 1px rgba(60,60,67,.06)}
+.wa-conta{display:inline-block;min-width:18px;padding:0 5px;border-radius:999px;font-size:11px;
+  line-height:17px;text-align:center;background:rgba(60,60,67,.1);color:#505055}
+.wa-ferramentas{display:flex;gap:6px;padding:6px 12px 10px;position:relative}
+.wa-busca{flex:1;padding:7px 10px;border-radius:var(--radius-small)}
+.wa-filtros>summary{list-style:none;cursor:pointer;padding:7px 11px;border:1px solid #cfd7de;
+  border-radius:var(--radius-small);font-weight:600;font-size:13px;background:var(--panel);white-space:nowrap}
+.wa-filtros>summary::-webkit-details-marker{display:none}
+.wa-filtros[open]>summary{border-color:var(--accent);color:var(--accent)}
+.wa-filtros-painel{position:absolute;right:12px;top:46px;z-index:20;width:250px;display:grid;gap:8px;
+  padding:12px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-small);
+  box-shadow:var(--shadow-float)}
+.wa-filtros-acoes{display:flex;align-items:center;justify-content:space-between}
+.wa-lista{flex:1;overflow-y:auto;min-height:0;padding:2px 10px 12px;background:var(--bg)}
+.wa-lista-vazia{padding:14px 4px}
+.wa-lista-mais{text-align:center;margin:4px 0 0}
+.wa-item{display:flex;gap:10px;align-items:flex-start;margin:0 0 8px;padding:11px 12px;color:var(--text);
+  text-decoration:none;background:var(--panel);border:1px solid var(--hairline,var(--border));
+  border-radius:var(--radius-small);box-shadow:var(--shadow-card)}
+.wa-item:first-child{margin-top:8px}
+.wa-item:hover{text-decoration:none;box-shadow:0 1px 2px rgba(0,0,0,.05),0 12px 32px rgba(0,0,0,.08)}
+.wa-item[aria-current="true"]{background:color-mix(in srgb,var(--cor-setor) 9%,white);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--cor-setor) 30%,transparent),var(--shadow-card)}
+.wa-avatar{flex:none;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;
+  font-size:13px;font-weight:700;background:color-mix(in srgb,var(--cor-setor) 16%,white);
+  color:color-mix(in srgb,var(--cor-setor) 80%,black)}
+.wa-item-corpo{display:grid;gap:2px;min-width:0;flex:1}
 .wa-item-topo{display:flex;justify-content:space-between;gap:8px;min-width:0}
-.wa-item-nome{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wa-item-nome{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650}
 .wa-item-hora{font-size:12px;color:var(--muted);flex:none}
-.wa-item-numero,.wa-item-pe{font-size:12px;color:var(--muted)}
-.wa-item-texto{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wa-prazo{color:var(--danger)}
-.wa-vencida{box-shadow:inset 3px 0 0 var(--danger)}
-.wa-coluna-conversa{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg)}
+.wa-item-texto{font-size:13px;color:#505055;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wa-etiquetas{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:4px;max-height:44px;overflow:hidden}
+.wa-etq{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;
+  font-size:11px;font-weight:600;background:rgba(60,60,67,.08);color:#505055;white-space:nowrap}
+.wa-etq-setor{background:color-mix(in srgb,var(--cor-setor) 13%,white);color:color-mix(in srgb,var(--cor-setor) 78%,black)}
+.wa-mini{width:15px;height:15px;border-radius:50%;display:grid;place-items:center;font-size:8px;
+  background:#fff;color:#505055;box-shadow:0 0 0 1px rgba(60,60,67,.18)}
+.wa-etq-sem{background:transparent;box-shadow:inset 0 0 0 1px rgba(60,60,67,.25);font-style:italic}
+.wa-etq-prazo{background:#fee4e2;color:var(--danger)}
+.wa-vencida{border-color:color-mix(in srgb,var(--danger) 35%,transparent)}
+.wa-resolvida{opacity:.6}
+.wa-nome{font-size:15px}
+.wa-historico{align-self:center;margin:0 0 6px;background:var(--panel);border:1px solid var(--border);
+  border-radius:999px;padding:3px 12px}
+.wa-retomada span{font-weight:600;color:var(--text)}
+.wa-coluna-conversa{display:flex;flex-direction:column;min-width:0;min-height:0}
+/* OS DETALHES NUMA JANELINHA FLUTUANTE (segunda revisão do #73): a seta no
+   centro do topo da conversa abre um cartão por cima das mensagens, centrado
+   nela, sem empurrar nada. As listas têm a largura da opção mais longa (a regra
+   geral dá 100% e 40 px a todo select). */
+.wa-coluna-conversa{position:relative}
+.wa-puxador{position:relative;height:0;display:flex;justify-content:center;z-index:15}
+.wa-abrir-detalhes{position:absolute;top:-1px;width:30px;height:18px;min-height:0;padding:0;
+  border:1px solid var(--border);border-top:0;border-radius:0 0 10px 10px;background:var(--panel);
+  color:var(--muted);font-size:11px;line-height:1;cursor:pointer;box-shadow:0 2px 4px rgba(0,0,0,.06)}
+.wa-abrir-detalhes:hover{color:var(--accent);background:var(--panel)}
+.wa-abrir-detalhes[aria-expanded="true"]{color:var(--accent)}
+.wa-menu{position:absolute;top:22px;left:50%;transform:translateX(-50%);width:max-content;
+  max-width:min(380px,92%);max-height:min(70vh,520px);overflow-y:auto;padding:12px 14px;
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-small);
+  box-shadow:var(--shadow-float)}
+.wa-menu[hidden]{display:none}
+.wa-menu-campos{display:grid;grid-template-columns:auto auto;gap:8px 10px;align-items:center;margin:0}
+.wa-menu-campos>label:not(.check){font-size:12px;font-weight:600;color:#505055;margin:0}
+.wa-menu-campos select{width:auto;max-width:260px;min-height:32px;height:32px;padding:4px 8px}
+.wa-menu-campos .button{min-height:0;padding:5px 16px}
+.wa-usa-ia{font-size:13px;flex-wrap:wrap}
+.wa-menu-mais{margin-top:8px;border-top:1px solid var(--hairline,var(--border));padding-top:6px}
+.wa-menu-mais>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--muted)}
+.wa-menu-mais[open]>summary{color:var(--text)}
+.wa-menu-rolagem{max-height:180px;overflow-y:auto;margin-top:6px}
+.wa-menu-rolagem p{margin:2px 0 6px}
+/* A caixa de marcação com o tamanho natural, alinhada ao meio do texto
+   (revisão do #73): a regra geral dá a todo input largura de 100% e 40 px. */
+.wa-chat label.check{display:flex;flex-direction:row;align-items:center;gap:7px;font-weight:500}
+.wa-chat input[type=checkbox]{width:16px;height:16px;min-height:0;margin:0;padding:0;flex:none}
+.wa-coluna-conversa .wa-mensagens{background:var(--bg)}
 .wa-escolha{margin:auto;max-width:520px;padding:24px;text-align:center}
 .wa-cabecalho{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--border)}
 .wa-quem{flex:1;min-width:0}
@@ -1253,21 +1336,12 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
 .wa-escrever textarea{resize:vertical;min-height:62px;max-height:40vh}
 .wa-escrever-botoes{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
 .wa-escrever-nota{margin:6px 0 0}
-.wa-detalhes{width:330px;flex:none;overflow-y:auto;padding:12px 14px;background:var(--panel);border-left:1px solid var(--border)}
-.wa-detalhes[hidden]{display:none}
-.wa-detalhes h2{font-size:15px;margin:14px 0 8px}
-.wa-detalhes h2:first-child{margin-top:0}
-.wa-detalhes form{margin:6px 0}
-.wa-form-coluna{display:grid;gap:6px}
 .wa-registro{padding:6px 0;border-bottom:1px solid var(--border)}
 @media(max-width:768px){
   .wa-chat{grid-template-columns:minmax(0,1fr);height:auto;min-height:calc(100vh - 150px)}
-  .wa-coluna-lista{border-right:0}
   .wa-com-conversa .wa-coluna-lista{display:none}
   .wa-chat:not(.wa-com-conversa) .wa-coluna-conversa{display:none}
   .wa-voltar{display:inline-block}
   .wa-mensagens{max-height:60vh}
   .wa-balao{max-width:88%}
-  .wa-corpo{flex-direction:column}
-  .wa-detalhes{width:auto;border-left:0;border-top:1px solid var(--border)}
 }

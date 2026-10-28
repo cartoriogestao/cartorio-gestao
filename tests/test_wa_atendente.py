@@ -481,7 +481,9 @@ def test_audio_e_baixado_transcrito_registrado_e_respondido(casa):
     assert reg["segundos_audio"] == 30 and reg["custo_usd"] == pytest.approx(0.003)
     assert "horário" in modelo.chamadas[0]["conversa"][0]["texto"]
     assert len(graph.enviados) == 1
-    assert "audio" in [e["etiqueta"] for e in _ler(
+    # A ETIQUETA AUTOMÁTICA «audio» NÃO NASCE MAIS (segunda revisão do #73): o
+    # áudio aparece no próprio balão.
+    assert "audio" not in [e["etiqueta"] for e in _ler(
         db, "SELECT etiqueta FROM wa_etiqueta WHERE conversa_id=%s", (cid,))]
 
 
@@ -513,9 +515,12 @@ def test_audio_desligado_nao_transcreve(casa):
 def test_varias_etiquetas_setor_transferencia_e_prazo(casa):
     db = casa["db"]
     cid = _entrada(db, "preciso de certidão", meta_id="wamid.f-1")
+    # A etiqueta por palavra-chave não nasce mais (segunda revisão do #73); as
+    # postas à mão continuam funcionando.
     with db.connect() as con:
-        assert [e["etiqueta"] for e in FILA.etiquetas(con, cid)] == ["certidao"]
+        assert FILA.etiquetas(con, cid) == []
     with db.transaction() as con:
+        assert FILA.por_etiqueta(con, cid, "certidao", por="beatriz", quando=AGORA)
         assert FILA.por_etiqueta(con, cid, "Urgente Hoje", por="beatriz", quando=AGORA)
         assert not FILA.por_etiqueta(con, cid, "urgente_hoje", por="beatriz", quando=AGORA)
         assert FILA.tirar_etiqueta(con, cid, "certidao", por="beatriz", quando=AGORA)
@@ -612,9 +617,13 @@ def test_telas_do_atendente_do_painel_e_da_conversa(casa):
     c = _um(db, "SELECT setor, modo, responsavel_id FROM wa_conversa WHERE id=%s", (cid,))
     assert c["setor"] == "NOTAS" and c["modo"] == "ia" and c["responsavel_id"]
     tela = balcao.get(f"/whatsapp/{cid}").get_data(as_text=True)
-    assert "retorno" in tela and "Histórico da conversa" in tela
-    lista = balcao.get("/whatsapp?setor=NOTAS").get_data(as_text=True)
-    assert "retorno" in lista
+    # as etiquetas saíram da tela (segunda revisão do #73); a posta pela rota
+    # está no banco, e a conversa aparece na lista do setor
+    assert "Histórico da conversa" in tela
+    assert _um(db, "SELECT count(*) AS n FROM wa_etiqueta WHERE conversa_id=%s "
+                   "AND etiqueta='retorno'", (cid,))["n"] == 1
+    lista = balcao.get("/whatsapp?setor=NOTAS&aba=todas").get_data(as_text=True)
+    assert f"/whatsapp/{cid}" in lista
 
 
 def test_a_tela_nao_mostra_pedaco_da_chave(casa):

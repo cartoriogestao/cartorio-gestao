@@ -258,12 +258,24 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("wa_mensagem", "autor", "TEXT"),
     ("wa_mensagem", "ia_situacao", "TEXT"),
     ("wa_mensagem", "ia_desde", "TEXT"),
+    # A RESOLVIDA FICA GUARDADA E VOLTA COM O HISTÓRICO OCULTO (27/10/2026).
+    # Nada se apaga: `resolvida_em` diz quando ela saiu das abas de trabalho
+    # (e conta os 7 dias do responsável na volta), e `atendimento_desde_id` é
+    # o id da primeira mensagem do atendimento atual — a tela mostra dali em
+    # diante e guarda o resto atrás de «Ver histórico». As resolvidas de antes
+    # desta versão ficam com `resolvida_em` vazio e contam pelo `atualizado_em`;
+    # sem `atendimento_desde_id`, a conversa mostra tudo, como antes.
+    ("wa_conversa", "resolvida_em", "TEXT"),
+    ("wa_conversa", "atendimento_desde_id", "bigint"),
 )
 INDICES_DEPOIS_DA_MIGRACAO: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_wa_mensagem_ia "
     "ON wa_mensagem(direcao, ia_situacao, id)",
     "CREATE INDEX IF NOT EXISTS idx_wa_conversa_setor "
     "ON wa_conversa(setor, status)",
+    # A aba «Resolvidas» ordena pela data de resolver (27/10/2026).
+    "CREATE INDEX IF NOT EXISTS idx_wa_conversa_resolvida "
+    "ON wa_conversa(status, resolvida_em)",
 )
 
 

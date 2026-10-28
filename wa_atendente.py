@@ -300,17 +300,6 @@ def _sem_acento(texto: Any) -> str:
 _PEDE_PESSOA = re.compile(
     r"\b(atendente|humano|falar com (alguem|uma pessoa|um atendente|o cartorio|"
     r"a escrevente|o escrevente|o oficial|a oficial)|pessoa de verdade)\b")
-_SENSIVEL = (
-    ("PROTESTO", "assunto de protesto", re.compile(
-        r"\b(protest\w*|cenprot|cra|intimac\w*)\b")),
-    ("RCPN", "assunto de registro civil", re.compile(
-        r"\b(nascimento|casamento|obito|registro civil|habilitac\w*|divorci\w*|"
-        r"natimort\w*|registrar (meu|minha|o|a) (filh\w*|bebe)|"
-        r"uniao estavel|certidao de (nascimento|casamento|obito))\b")),
-    ("GESTAO", "reclamação", re.compile(
-        r"\b(reclama\w*|ouvidoria|denunci\w*|procon|corregedoria|absurdo|"
-        r"descaso|pessim\w*|desrespeit\w*|processar voces)\b")),
-)
 _QUER_ANDAMENTO = re.compile(
     r"\b(andamento|protocolo|ficou pronto|ficou pronta|esta pronto|esta pronta|"
     r"ja esta pronto|ja esta pronta|acompanhar|acompanhamento|situacao do)\b")
@@ -326,10 +315,13 @@ def pede_pessoa(texto: str) -> bool:
 
 
 def assunto_sensivel(texto: str) -> tuple[str, str] | None:
-    """(setor, motivo) do primeiro assunto sensível achado, ou None."""
-    t = _sem_acento(texto)
-    for setor, motivo, padrao in _SENSIVEL:
-        if padrao.search(t):
+    """(setor, motivo) do primeiro assunto sensível achado, ou None.
+
+    AS PALAVRAS MORAM NA TABELA ÚNICA (`wa_fila.SETOR_POR_PALAVRA`, 27/10/2026):
+    a mesma que define o setor na chegada. Aqui só valem os sensíveis
+    (`FILA.SETORES_SENSIVEIS`), na ordem de antes."""
+    for setor, motivo, _palavra in FILA.setores_pelo_texto(texto):
+        if setor in FILA.SETORES_SENSIVEIS:
             return setor, motivo
     return None
 

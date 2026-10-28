@@ -497,3 +497,244 @@ def test_a_entrada_confere_se_ja_chegou_dentro_da_trava(cg_casa, monkeypatch):
     assert r["criadas"] == 1
     assert vistas == [("meta_id", False), ("wa_id", False)], \
         "a conferencia rodou com a trava livre"
+
+
+# ===================================================================
+# A TELA DE CONVERSA (27/10/2026)
+#
+# `/whatsapp` e `/whatsapp/<id>` são a mesma tela: a lista à esquerda e a
+# conversa em balões à direita. O `/novas` só lê o banco. O envio manda o que
+# está na caixa: guarda como rascunho e segue o caminho de sempre.
+# ===================================================================
+
+from contextlib import contextmanager  # noqa: E402
+
+from bd_nativo import banco as _banco  # noqa: E402
+
+SCRIPT = "<script>alert(1)</script>"
+ESCAPADO = "&lt;script&gt;alert(1)&lt;/script&gt;"
+
+
+def _um(s, sql, args=()):
+    with s["bd"].connect() as con:
+        return _banco(con).um(sql, args)
+
+
+def _mensagens(s, cid):
+    with s["bd"].connect() as con:
+        return _banco(con).ler(
+            "SELECT * FROM wa_mensagem WHERE conversa_id=%s ORDER BY id", (cid,))
+
+
+def _saidas(s, cid):
+    return [m for m in _mensagens(s, cid) if m["direcao"] == "out"]
+
+
+def _mais_uma(s, texto, meta_id):
+    s["c"].post("/whatsapp/webhook", data=json.dumps(_payload(texto, meta_id=meta_id)),
+                content_type="application/json", headers={"X-Wa-Test": "1"})
+
+
+def _logar(app, usuario):
+    c = app.test_client()
+    c.post("/login",
+           data={"username": usuario, "password": SENHA,
+                 "csrf_token": _token(c.get("/login").get_data(as_text=True))},
+           follow_redirects=True)
+    return c
+
+
+def _com_token(s):
+    with s["bd"].transaction() as con:
+        WA.gravar_config(con, SCH.CHAVE_TOKEN, "EAAB-teste")
+        WA.gravar_config(con, SCH.CHAVE_PHONE, "123456789")
+
+
+def _saida(s, cid, texto, autor, meta_id):
+    with s["bd"].transaction() as con:
+        WA.gravar_saida(con, cid, texto, meta_id, autor=autor)
+
+
+def test_a_lista_pede_para_escolher_e_a_conversa_abre_na_mesma_tela(s):
+    cid = _entrar(s, texto="e a certidao?", meta_id="wamid.tela-1")
+    html = s["c"].get("/whatsapp").get_data(as_text=True)
+    assert "Escolha uma conversa" in html
+    assert "Fulano da Silva" in html and 'class="wa-item' in html
+    assert "wa-balao" not in html
+    r = s["c"].get(f"/whatsapp/{cid}")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "Escolha uma conversa" not in html
+    assert 'class="wa-item' in html and 'aria-current="true"' in html
+    assert "wa-balao wa-in" in html and "e a certidao?" in html
+    assert s["c"].get("/whatsapp/999999").status_code == 404
+
+
+def test_recebida_a_esquerda_enviada_a_direita_e_a_ia_marcada(s):
+    cid = _entrar(s, meta_id="wamid.lados")
+    _saida(s, cid, "Bom dia! Já saiu.", "ia", "wamid.saida-ia")
+    _saida(s, cid, "Pode retirar no balcão.", "MARIO EXEMPLO DOS SANTOS", "wamid.saida-p")
+    html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    assert html.count("wa-balao wa-in") == 1 and html.count("wa-balao wa-out") == 2
+    assert "resposta automática (IA)" in html
+    assert "enviada por MARIO EXEMPLO DOS SANTOS" in html
+    # o id da Meta vai no `title`, ao passar o mouse, e não no texto do balão
+    assert 'title="wamid.saida-ia"' in html and ">wamid.saida-ia<" not in html
+
+
+def test_os_baloes_tem_dois_tons_de_azul_do_sistema_e_nada_de_verde():
+    css = (RAIZ / "static" / "app.css").read_text(encoding="utf-8")
+    assert "--balao-recebido:#e7f1fc" in css and "--balao-enviado:var(--accent2)" in css
+    regras = "\n".join(linha for linha in css.splitlines() if linha.startswith(".wa-"))
+    assert "var(--balao-recebido)" in regras and "var(--balao-enviado)" in regras
+    for verde in ("#d9fdd3", "#25d366", "#dcf8c6", "#075e54", "green"):
+        assert verde not in regras.lower(), verde
+
+
+def test_o_texto_do_cliente_sai_escapado_na_tela_e_no_novas(s):
+    cid = _entrar(s, texto="primeira", meta_id="wamid.esc-0")
+    ultimo = _mensagens(s, cid)[-1]["id"]
+    _mais_uma(s, SCRIPT, "wamid.esc-1")
+    html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    assert SCRIPT not in html and ESCAPADO in html
+    novas = s["c"].get(f"/whatsapp/{cid}/novas?depois={ultimo}").get_json()
+    assert SCRIPT not in novas["html"] and ESCAPADO in novas["html"]
+    assert SCRIPT not in s["c"].get("/whatsapp/lista-parcial").get_data(as_text=True)
+
+
+def test_novas_traz_so_o_que_veio_depois(s, cg_casa):
+    cid = _entrar(s, texto="um", meta_id="wamid.nv-1")
+    _mais_uma(s, "msg 2", "wamid.nv-2")
+    _mais_uma(s, "msg 3", "wamid.nv-3")
+    ids = [m["id"] for m in _mensagens(s, cid)]
+    assert len(ids) == 3
+    r = s["c"].get(f"/whatsapp/{cid}/novas?depois={ids[0]}")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert re.findall(r'data-id="(\d+)"', d["html"]) == [str(i) for i in ids[1:]]
+    assert d["ultimo"] == ids[-1] and d["status"] and d["modo"]
+    assert "janela_fora" in d
+    # o separador do dia que já está na tela não se repete
+    assert "wa-dia" not in d["html"]
+    vazio = s["c"].get(f"/whatsapp/{cid}/novas?depois={ids[-1]}").get_json()
+    assert vazio["html"] == "" and vazio["ultimo"] == ids[-1]
+    assert s["c"].get("/whatsapp/999999/novas?depois=0").status_code == 404
+    r = cg_casa["app"].test_client().get(f"/whatsapp/{cid}/novas?depois=0")
+    assert r.status_code in (302, 303) and "login" in r.headers["Location"]
+
+
+def test_novas_e_a_lista_so_leem_o_banco_e_nao_falam_com_a_rede(s, monkeypatch):
+    cid = _entrar(s, meta_id="wamid.nv-rede")
+
+    def sem_escrita():
+        raise AssertionError("o /novas ou a lista abriu transação de escrita")
+    monkeypatch.setattr(s["bd"], "transaction", sem_escrita)
+    with patch("urllib.request.urlopen") as rede:
+        assert s["c"].get(f"/whatsapp/{cid}/novas?depois=0").status_code == 200
+        assert s["c"].get("/whatsapp/lista-parcial").status_code == 200
+    assert not rede.called
+
+
+def _transacao_vigiada(s, monkeypatch):
+    original = s["bd"].transaction
+    aberta = []
+
+    @contextmanager
+    def vigiada():
+        with original() as con:
+            aberta.append(1)
+            try:
+                yield con
+            finally:
+                aberta.pop()
+    monkeypatch.setattr(s["bd"], "transaction", vigiada)
+    return aberta
+
+
+def test_enviar_o_texto_da_caixa_guarda_posta_fora_da_transacao_e_grava(s, monkeypatch):
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.caixa")
+    aberta = _transacao_vigiada(s, monkeypatch)
+    postados = []
+
+    def postar(pedido):
+        postados.append(bool(aberta))
+        return "wamid.caixa-out"
+    monkeypatch.setattr(WA, "postar_envio", postar)
+    csrf = _csrf(s["c"], f"/whatsapp/{cid}")
+    r = s["c"].post(f"/whatsapp/{cid}/enviar",
+                    data={"csrf_token": csrf, "rascunho": "  A certidão já saiu.  "})
+    assert r.status_code == 302 and f"/whatsapp/{cid}" in r.headers["Location"]
+    assert postados == [False], "o postar_envio rodou dentro da transação"
+    assert _um(s, "SELECT rascunho FROM wa_conversa WHERE id=%s",
+               (cid,))["rascunho"] == "A certidão já saiu."
+    assert [(m["texto"], m["meta_id"]) for m in _saidas(s, cid)] == [
+        ("A certidão já saiu.", "wamid.caixa-out")]
+
+
+def test_enviar_com_a_caixa_vazia_e_recusado_sem_rede(s, monkeypatch):
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.vazia")
+    monkeypatch.setattr(WA, "postar_envio",
+                        lambda pedido: pytest.fail("a caixa vazia chamou a rede"))
+    csrf = _csrf(s["c"], f"/whatsapp/{cid}")
+    r = s["c"].post(f"/whatsapp/{cid}/enviar", data={"csrf_token": csrf, "rascunho": "   "})
+    assert r.status_code == 302 and f"/whatsapp/{cid}" in r.headers["Location"]
+    assert not _saidas(s, cid)
+    assert "Escreva a mensagem." in s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+
+
+def test_enviar_sem_o_campo_manda_o_rascunho_guardado(s, monkeypatch):
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.guardado")
+    with s["bd"].transaction() as con:
+        WA.salvar_rascunho(con, cid, "Rascunho guardado antes.")
+    monkeypatch.setattr(WA, "postar_envio", lambda pedido: "wamid.guardado-out")
+    csrf = _csrf(s["c"], f"/whatsapp/{cid}")
+    assert s["c"].post(f"/whatsapp/{cid}/enviar", data={"csrf_token": csrf}).status_code == 302
+    assert [m["texto"] for m in _saidas(s, cid)] == ["Rascunho guardado antes."]
+
+
+def test_o_auditor_ve_a_tela_e_o_novas_e_nao_envia(s, monkeypatch):
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.auditor")
+    s["bd"].create_user("fiscal", "Auditor Exemplo", SENHA, "AUDITOR")
+    fiscal = _logar(s["app"], "fiscal")
+    tela = fiscal.get(f"/whatsapp/{cid}")
+    assert tela.status_code == 200 and "wa-balao" in tela.get_data(as_text=True)
+    assert fiscal.get(f"/whatsapp/{cid}/novas?depois=0").status_code == 200
+    monkeypatch.setattr(WA, "postar_envio",
+                        lambda pedido: pytest.fail("o AUDITOR chegou à rede"))
+    r = fiscal.post(f"/whatsapp/{cid}/enviar",
+                    data={"csrf_token": _token(tela.get_data(as_text=True)),
+                          "rascunho": "não pode sair"})
+    assert r.status_code == 403
+    assert not _saidas(s, cid)
+
+
+def test_o_formulario_de_envio_tem_a_trava_contra_o_envio_em_dobro(s):
+    cid = _entrar(s, meta_id="wamid.dobro")
+    html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    form = re.search(r'<form[^>]*action="/whatsapp/%d/enviar"[^>]*>' % cid, html)
+    assert form and "data-wa-envio-unico" in form.group(0)
+    assert "/whatsapp_chat.js" in html
+    js = (RAIZ / "static" / "whatsapp_chat.js").read_text(encoding="utf-8")
+    assert "form[data-wa-envio-unico]" in js and "enviando…" in js
+
+
+def test_as_acoes_de_antes_continuam_e_voltam_para_a_conversa(s):
+    cid = _entrar(s, meta_id="wamid.acoes")
+    csrf = _csrf(s["c"], f"/whatsapp/{cid}")
+    for rota, dados in (("etiqueta", {"etiqueta": "retorno"}),
+                        ("transferir", {"setor": "NOTAS"}),
+                        ("assumir", {})):
+        r = s["c"].post(f"/whatsapp/{cid}/{rota}", data={"csrf_token": csrf, **dados})
+        assert r.status_code == 302, rota
+        assert r.headers["Location"].endswith(f"/whatsapp/{cid}"), rota
+    html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    assert "retorno" in html and "Histórico da conversa" in html
+    # o resolver volta à lista, como antes
+    r = s["c"].post(f"/whatsapp/{cid}/resolver", data={"csrf_token": csrf})
+    assert r.status_code == 302 and r.headers["Location"].endswith("/whatsapp")
+    assert _um(s, "SELECT status FROM wa_conversa WHERE id=%s",
+               (cid,))["status"] == "resolvida"

@@ -6,6 +6,12 @@ GET/POST /whatsapp/webhook — teste local e reenvio da caixa-postal.
 
 GET /whatsapp e as demais — mesmo login do resto do app.
 
+A TELA DE CONVERSA (27/10/2026): `/whatsapp` e `/whatsapp/<id>` são a MESMA
+tela, como num aplicativo — a lista à esquerda e a conversa em balões à
+direita (`whatsapp_chat.html`). O `/novas` e o `/lista-parcial` só leem o
+banco e devolvem o mesmo parcial da primeira carga: a tela mostra o que a
+caixa-postal já trouxe, e nenhuma das duas fala com a Meta.
+
 UM RELOGIO SO PARA A CASA INTEIRA: as rotas passam `db.now()`, o mesmo que
 grava o resto do sistema.
 
@@ -18,9 +24,10 @@ O ATENDENTE COM IA, AS ETIQUETAS, O SETOR E O PAINEL (26/10/2026)
 """
 from __future__ import annotations
 
+from datetime import date, timedelta
 from pathlib import Path
 
-from flask import abort, flash, redirect, render_template, request, url_for
+from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 
 import agente_provedores as PROV
 import serventia as SERV
@@ -120,23 +127,58 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 "a entrada do WhatsApp foi gravada, e a auditoria dela falhou")
         return ("", 200)
 
+    def _filtro() -> dict:
+        return {"setor": request.args.get("setor", ""),
+                "etiqueta": request.args.get("etiqueta", ""),
+                "so": request.args.get("so", "")}
+
+    def _lista(con, filtro: dict) -> list[dict]:
+        return FILA.listar(con, agora=db.now(), setor=filtro["setor"],
+                           etiqueta=filtro["etiqueta"],
+                           so_abertas=(filtro["so"] == "abertas"),
+                           so_vencidas=(filtro["so"] == "vencidas"))
+
+    def _com_dias(mensagens: list[dict], dia_anterior: str = "") -> list[dict]:
+        """Põe o separador de dia («hoje», «ontem», `dd/mm`) na mensagem em
+        que o dia muda. `dia_anterior` é o da última que a tela já tem: o
+        `/novas` não repete o separador do dia que já está na tela."""
+        hoje = str(db.now())[:10]
+        try:
+            ontem = (date.fromisoformat(hoje) - timedelta(days=1)).isoformat()
+        except ValueError:
+            ontem = ""
+        anterior = dia_anterior
+        for m in mensagens:
+            dia = str(m.get("criado_em") or "")[:10]
+            m["separador"] = ""
+            if dia and dia != anterior:
+                m["separador"] = ("hoje" if dia == hoje else "ontem" if dia == ontem
+                                  else f"{dia[8:10]}/{dia[5:7]}")
+            anterior = dia or anterior
+        return mensagens
+
+    def _da_lista(filtro: dict) -> dict:
+        """O que o parcial da lista precisa além das linhas: o filtro só com o
+        que foi escolhido (para os endereços não levarem `?setor=&so=`) e o
+        dia de hoje (a hora sem a data)."""
+        return {"filtro": filtro, "hoje": str(db.now())[:10],
+                "filtro_url": {k: v for k, v in filtro.items() if v}}
+
     @app.route("/whatsapp")
     @login_required
     def whatsapp_lista():
-        setor = request.args.get("setor", "")
-        etiqueta = request.args.get("etiqueta", "")
-        so = request.args.get("so", "")
+        return _tela(None)
+
+    @app.route("/whatsapp/lista-parcial")
+    @login_required
+    def whatsapp_lista_parcial():
+        """A lista desenhada de novo, com os mesmos filtros. SÓ LÊ."""
+        bruto = (request.args.get("aberta") or "").strip()
         with _con() as con:
-            linhas = FILA.listar(con, agora=db.now(), setor=setor,
-                                 etiqueta=etiqueta, so_abertas=(so == "abertas"),
-                                 so_vencidas=(so == "vencidas"))
-            cfg = WA.config_para_tela(con)
-            ia = ATENDENTE.configuracao(con)
-            etiquetas = FILA.etiquetas_em_uso(con)
-        return render_template("whatsapp_lista.html", linhas=linhas, cfg=cfg,
-                               ia=ia, setores=SCH.SETORES, etiquetas=etiquetas,
-                               filtro={"setor": setor, "etiqueta": etiqueta,
-                                       "so": so})
+            linhas = _lista(con, _filtro())
+        return render_template("_whatsapp_lista.html", linhas=linhas,
+                               aberta=int(bruto) if bruto.isdigit() else None,
+                               **_da_lista(_filtro()))
 
     @app.route("/whatsapp/painel")
     @login_required
@@ -281,35 +323,70 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 "danger")
         return redirect(url_for("whatsapp_lista"))
 
-    @app.route("/whatsapp/<int:conversa_id>")
-    @login_required
-    def whatsapp_conversa(conversa_id: int):
+    def _tela(conversa_id: int | None):
+        """A tela única: a lista e, se houver, a conversa aberta."""
+        filtro = _filtro()
+        d = janela = None
+        usuarios: list = []
         with _con() as con:
-            d = WA.conversa(con, conversa_id)
+            linhas = _lista(con, filtro)
+            cfg = WA.config_para_tela(con)
+            ia = ATENDENTE.configuracao(con)
+            etiquetas = FILA.etiquetas_em_uso(con)
             pode = WA.pode_enviar_meta(con)
-            if d:
+            if conversa_id is not None:
+                d = WA.conversa(con, conversa_id)
+                if not d:
+                    abort(404)
                 d["etiquetas"] = FILA.etiquetas(con, conversa_id)
                 d["eventos"] = FILA.eventos(con, conversa_id)
                 d["setor"] = FILA.setor_valido(d.get("setor")) or SCH.SETOR_PADRAO
                 d["modo"] = d.get("modo") or SCH.MODO_IA
                 d["registros"] = ATENDENTE.registros(con, conversa_id=conversa_id,
                                                      limite=20)
+                _com_dias(d["mensagens"])
                 usuarios = FILA.usuarios_ativos(con)
-                sugeridas = FILA.etiquetas_em_uso(con)
-                ia = ATENDENTE.configuracao(con)
                 # A JANELA DE 24 H (27/10/2026): passada ela, a Meta recusa o
                 # texto livre, e o caminho é o modelo de retomar.
                 janela = {"fora": MODELOS.fora_da_janela(d["mensagens"], db.now()),
                           "ligado": MODELOS.ligado(con),
                           "falta": MODELOS.falta_para_enviar(con, _serventia()),
                           "modelo": MODELOS.nome_do_modelo(con, MODELOS.RETOMAR)}
-        if not d:
-            abort(404)
-        return render_template("whatsapp_conversa.html", c=d, pode_enviar=pode,
-                               setores=SCH.SETORES, usuarios=usuarios,
-                               sugeridas=sugeridas, ia=ia, janela=janela,
+        return render_template("whatsapp_chat.html", linhas=linhas, cfg=cfg, ia=ia,
+                               setores=SCH.SETORES, etiquetas=etiquetas,
+                               **_da_lista(filtro), aberta=conversa_id, c=d,
+                               pode_enviar=pode, usuarios=usuarios,
+                               sugeridas=etiquetas, janela=janela,
                                rotulos_evento=FILA.ROTULO_DO_EVENTO,
                                rotulos_caso=ATENDENTE.ROTULO_DO_CASO)
+
+    @app.route("/whatsapp/<int:conversa_id>")
+    @login_required
+    def whatsapp_conversa(conversa_id: int):
+        return _tela(conversa_id)
+
+    @app.route("/whatsapp/<int:conversa_id>/novas")
+    @login_required
+    def whatsapp_novas(conversa_id: int):
+        """SÓ AS MENSAGENS NOVAS, desenhadas pelo mesmo parcial da primeira
+        carga, e o estado da conversa. SÓ LÊ O BANCO: nunca fala com a Meta nem
+        com a caixa-postal — quem traz a mensagem é o «puxar» ou a automação."""
+        bruto = (request.args.get("depois") or "").strip()
+        depois = int(bruto) if bruto.isdigit() else 0
+        with _con() as con:
+            d = WA.conversa(con, conversa_id)
+        if not d:
+            abort(404)
+        todas = d["mensagens"]
+        dia_anterior = next((str(m.get("criado_em") or "")[:10] for m in todas
+                             if int(m["id"]) == depois), "")
+        novas = _com_dias([m for m in todas if int(m["id"]) > depois], dia_anterior)
+        html = render_template("_whatsapp_baloes.html", mensagens=novas) if novas else ""
+        return jsonify({"html": html,
+                        "ultimo": max([depois] + [int(m["id"]) for m in novas]),
+                        "status": d.get("status") or "",
+                        "modo": d.get("modo") or SCH.MODO_IA,
+                        "janela_fora": MODELOS.fora_da_janela(todas, db.now())})
 
     def _na_conversa(conversa_id: int, acao, auditoria: str, detalhe=None):
         """Faz `acao(con)` na transação; ValueError vira aviso na tela."""
@@ -427,6 +504,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     def whatsapp_enviar(conversa_id: int):
         # MONTAR, POSTAR E GRAVAR (26/10/2026): o POST na Graph ficava dentro
         # da transação, com a trava de escrita da casa presa até oito segundos.
+        #
+        # O TEXTO DA CAIXA (27/10/2026): a tela de conversa manda o que está
+        # escrito, no campo `rascunho` (o mesmo do «guardar rascunho», que
+        # usa o mesmo formulário). Ele é guardado como rascunho, numa transação
+        # só dele, e daí em diante o caminho é o de sempre. Sem o campo, envia
+        # o rascunho guardado, como antes.
+        if "rascunho" in request.form:
+            escrito = (request.form.get("rascunho") or "").strip()
+            if not escrito:
+                flash("Escreva a mensagem.", "warning")
+                return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
+            with db.transaction() as con:
+                if not WA.conversa(con, conversa_id):
+                    abort(404)
+                WA.salvar_rascunho(con, conversa_id, escrito, agora=db.now())
         try:
             with _con() as con:
                 d = WA.conversa(con, conversa_id)

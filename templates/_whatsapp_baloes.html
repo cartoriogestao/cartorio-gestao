@@ -1,0 +1,27 @@
+{#- OS BALÕES DA CONVERSA (27/10/2026). O mesmo parcial desenha a primeira carga
+    (`whatsapp_chat.html`) e as mensagens novas do `/whatsapp/<id>/novas`: um
+    desenho só. O texto do cliente sai pelo escape automático do Jinja — um
+    cliente pode mandar `<script>` pelo WhatsApp —, e o JavaScript só pendura
+    este HTML já escapado, sem montar nada com o texto. -#}
+{% for m in mensagens %}
+{% if m.separador %}<div class="wa-dia" role="separator"><span>{{ m.separador }}</span></div>{% endif %}
+<div class="wa-balao {{ 'wa-out' if m.direcao == 'out' else 'wa-in' }}" data-id="{{ m.id }}"{% if m.meta_id %} title="{{ m.meta_id }}"{% endif %}>
+  {% if m.tipo == 'modelo' %}<span class="wa-marca">modelo</span>
+  {% elif m.tipo == 'audio' %}<span class="wa-marca">áudio</span>
+  {% elif m.tipo and m.tipo not in ('text', 'texto') %}<span class="wa-marca">{{ m.tipo }}</span>{% endif %}
+  {% if m.tipo == 'audio' %}
+  <div class="wa-transcricao">
+    {% if m.transcricao %}transcrição (IA, conferir): «{{ m.transcricao }}»
+    {% elif m.transcricao is not none %}a transcrição não saiu; ouça pelo aplicativo
+    {% else %}sem transcrição{% endif %}
+  </div>
+  {% endif %}
+  {% if m.texto or m.tipo != 'audio' %}<div class="wa-texto">{{ m.texto or '—' }}</div>{% endif %}
+  <div class="wa-hora">
+    {{ (m.criado_em or '')[11:16] }}
+    {% if m.direcao == 'out' %}
+    · {% if m.autor == 'ia' %}resposta automática (IA){% elif m.tipo == 'modelo' %}modelo enviado{% else %}enviada{% if m.autor %} por {{ m.autor }}{% endif %}{% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endfor %}

@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{#- A TELA DE CONVERSA DO WHATSAPP (27/10/2026): «uma janela de conversa como
+    a do WhatsApp», com as cores do sistema. `/whatsapp` e `/whatsapp/<id>`
+    são esta mesma tela; as ações (etiqueta, transferir, assumir, enviar...)
+    são as rotas de antes, com os mesmos formulários. -#}
+{% block title %}WhatsApp{% if c %} · {{ c.nome or c.wa_id }}{% endif %}{% endblock %}
+{% block content %}
+<p class="small wa-links">
+  <a href="{{ url_for('whatsapp_painel') }}">Painel do prazo</a>
+  · <a href="{{ url_for('whatsapp_atendente') }}">Atendente com IA</a>
+  · <a href="{{ url_for('whatsapp_config') }}">Configuração Meta</a>
+</p>
+
+<div class="wa-chat{% if c %} wa-com-conversa{% endif %}">
+
+  <section class="wa-coluna-lista" aria-label="Conversas">
+    <div class="wa-lista-topo">
+      <div class="wa-lista-titulo">
+        <h1>WhatsApp</h1>
+        <form method="post" action="{{ url_for('whatsapp_puxar') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button secondary" title="{% if cfg and cfg.caixa_url %}URL gravada (host XMPP).{% else %}Ainda sem URL — documentada: https://equipetextual.com.br/pendentes{% endif %}{% if ia and (ia.ia_ligada or ia.audio_ligado) %} Depois de puxar, o atendente responde as primeiras conversas novas.{% endif %}">puxar caixa-postal</button>
+        </form>
+      </div>
+      <input type="search" class="wa-busca" placeholder="buscar nome ou número"
+             aria-label="buscar nome ou número" data-wa-busca>
+      <form method="get" action="{{ url_for('whatsapp_lista') }}" class="wa-filtros small">
+        <select name="setor" aria-label="setor">
+          <option value="">setor: todos</option>
+          {% for chave, nome in setores.items() %}
+          <option value="{{ chave }}" {% if filtro.setor == chave %}selected{% endif %}>{{ nome }}</option>
+          {% endfor %}
+        </select>
+        <select name="etiqueta" aria-label="etiqueta">
+          <option value="">etiqueta: todas</option>
+          {% for et in etiquetas %}
+          <option value="{{ et }}" {% if filtro.etiqueta == et %}selected{% endif %}>{{ et }}</option>
+          {% endfor %}
+        </select>
+        <select name="so" aria-label="mostrar">
+          <option value="">mostrar: todas</option>
+          <option value="abertas" {% if filtro.so == 'abertas' %}selected{% endif %}>só não resolvidas</option>
+          <option value="vencidas" {% if filtro.so == 'vencidas' %}selected{% endif %}>só fora do prazo</option>
+        </select>
+        <button class="button secondary">filtrar</button>
+      </form>
+    </div>
+    <div class="wa-lista" data-wa-lista
+         data-url="{{ url_for('whatsapp_lista_parcial', aberta=aberta, **filtro_url) if aberta else url_for('whatsapp_lista_parcial', **filtro_url) }}">
+      {% include "_whatsapp_lista.html" %}
+    </div>
+  </section>
+
+  <section class="wa-coluna-conversa" aria-label="Conversa">
+  {% if not c %}
+    <div class="wa-escolha">
+      <p><strong>Escolha uma conversa</strong> na lista ao lado.</p>
+      <p class="small muted">
+        Fila do balcão pelo WhatsApp — API oficial da Meta. O SERVIDOR do Cartório
+        Gestão <strong>não fica na internet</strong>: a Meta entrega no Apache de
+        <code>equipetextual.com.br</code>; esta casa puxa. Porta 8765 fechada para o mundo.
+      </p>
+      <p class="small">
+        {% if ia and ia.ia_ligada %}
+        <strong>Atendente com IA: LIGADO</strong> desde {{ (ia.ia_ligada_em or '')[:16]|replace('T', ' ') }}
+        — responde sozinho só andamento (com número e código), dúvidas do texto-base,
+        valores como estimativa e transcreve áudio{% if not ia.audio_ligado %} (transcrição desligada){% endif %}.
+        O resto passa para uma pessoa, marcado para o setor.
+        {% else %}
+        <strong>Atendente com IA: desligado.</strong> Nada sai sozinho: tudo é
+        rascunho conferido por quem atende.
+        {% endif %}
+      </p>
+    </div>
+  {% else %}
+    <header class="wa-cabecalho">
+      <a class="wa-voltar" href="{{ url_for('whatsapp_lista', **filtro_url) }}">← conversas</a>
+      <div class="wa-quem">
+        <strong>{{ c.nome or c.wa_id }}</strong>{% if c.nome %} <span class="muted">· {{ c.wa_id }}</span>{% endif %}
+        <div class="small muted">
+          setor <strong>{{ setores[c.setor] }}</strong>
+          · <span data-wa-status>{{ c.status }}</span>
+          · <span data-wa-modo data-modo="{{ c.modo }}"
+                  data-texto-pessoa="com pessoa"
+                  data-texto-ia="{% if ia.ia_ligada %}com IA{% else %}atendente com IA desligado{% endif %}">{% if c.modo == 'pessoa' %}<strong>com pessoa</strong>{% if c.passagem_motivo %} ({{ c.passagem_motivo }}){% endif %}{% elif ia.ia_ligada %}com IA{% else %}atendente com IA desligado{% endif %}</span>
+        </div>
+      </div>
+      <div class="wa-acoes">
+        <form method="post" action="{{ url_for('whatsapp_assumir', conversa_id=c.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button secondary">assumir</button>
+        </form>
+        {% if c.status != 'resolvida' %}
+        <form method="post" action="{{ url_for('whatsapp_resolver', conversa_id=c.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button secondary">resolver</button>
+        </form>
+        {% endif %}
+        <button type="button" class="button secondary" data-wa-detalhes
+                aria-expanded="false" aria-controls="wa-detalhes">detalhes ▸</button>
+      </div>
+    </header>
+
+    <div class="wa-corpo">
+      <div class="wa-conversa">
+        <div class="wa-mensagens" id="wa-mensagens" data-wa-mensagens
+             data-ultimo="{{ (c.mensagens|last).id if c.mensagens else 0 }}"
+             data-novas-url="{{ url_for('whatsapp_novas', conversa_id=c.id) }}">
+          {% if c.mensagens %}
+          {% with mensagens=c.mensagens %}{% include "_whatsapp_baloes.html" %}{% endwith %}
+          {% else %}
+          <p class="small muted wa-sem-mensagem">Nenhuma mensagem nesta conversa.</p>
+          {% endif %}
+        </div>
+
+        {#- Só fora da janela, como antes: dentro dela não há botão de reabrir. Se
+            o cliente responder com a tela aberta, o JS esconde o aviso; a janela
+            que vence com a tela aberta aparece na próxima carga. -#}
+        {% if janela.fora %}
+        <div class="wa-janela small" data-wa-janela>
+          <p><span class="badge media">fora da janela de 24 h</span>
+            A última mensagem do cliente tem mais de 24 horas (ou ele ainda não escreveu):
+            a Meta recusa texto livre agora.</p>
+          {% if janela.ligado and not janela.falta %}
+          <form method="post" action="{{ url_for('whatsapp_reabrir', conversa_id=c.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="button secondary">Reabrir com o modelo</button>
+            <span class="muted">Manda o modelo <code>{{ janela.modelo }}</code> («temos uma resposta
+              para a sua mensagem»). Quando o cliente responder, a janela reabre e o rascunho
+              pode ser enviado.</span>
+          </form>
+          {% elif janela.ligado %}
+          <p class="muted">O modelo de retomar não pode sair: {{ janela.falta }}.</p>
+          {% else %}
+          <p class="muted">Os modelos da Meta ainda não foram marcados como aprovados
+            (<a href="{{ url_for('whatsapp_config') }}">configuração</a>): por enquanto não há como
+            reabrir a conversa daqui.</p>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {#- UM FORMULÁRIO, DOIS BOTÕES: «Enviar» manda o que está na caixa (a rota
+            guarda como rascunho e envia); «guardar rascunho» só guarda. O campo
+            é o `rascunho` das duas rotas. `data-wa-envio-unico`: o JS desliga o
+            Enviar no primeiro envio, contra o envio em dobro. -#}
+        <form method="post" action="{{ url_for('whatsapp_enviar', conversa_id=c.id) }}"
+              class="wa-escrever" data-wa-envio-unico>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <textarea name="rascunho" rows="3" data-wa-caixa aria-label="mensagem"
+                    placeholder="escreva a mensagem…">{{ c.rascunho or '' }}</textarea>
+          <div class="wa-escrever-botoes">
+            <button class="button primary" data-wa-enviar {% if not pode_enviar %}disabled{% endif %}>Enviar</button>
+            <button class="button secondary"
+                    formaction="{{ url_for('whatsapp_salvar_rascunho', conversa_id=c.id) }}">guardar rascunho</button>
+          </div>
+          <p class="small muted wa-escrever-nota">
+            <strong>Ctrl+Enter</strong> envia; Enter só pula linha. Guardar o rascunho
+            <strong>não envia</strong> à Meta. A IA só responde sozinha nos quatro casos
+            que o oficial liberou (ver <a href="{{ url_for('whatsapp_atendente') }}">atendente</a>).
+          </p>
+          {% if not pode_enviar %}
+          <p class="small muted">Falta token: grave <code>access_token</code> e
+          <code>phone_number_id</code> em
+          <a href="{{ url_for('whatsapp_config') }}">configuração</a>.</p>
+          {% endif %}
+        </form>
+      </div>
+
+      <aside class="wa-detalhes" id="wa-detalhes" data-wa-painel hidden aria-label="Detalhes da conversa">
+        <h2>Etiquetas</h2>
+        <p class="small">
+          {% for e in c.etiquetas %}
+          <form method="post" action="{{ url_for('whatsapp_etiqueta', conversa_id=c.id) }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="etiqueta" value="{{ e.etiqueta }}">
+            <input type="hidden" name="acao" value="tirar">
+            <span class="tag">{{ e.etiqueta }}{% if e.origem == 'auto' %} (automática){% endif %}</span>
+            <button class="button secondary" title="tirar a etiqueta">×</button>
+          </form>
+          {% else %}<span class="muted">nenhuma</span>{% endfor %}
+        </p>
+        <form method="post" action="{{ url_for('whatsapp_etiqueta', conversa_id=c.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="text" name="etiqueta" list="etiquetas_sugeridas" placeholder="nova etiqueta">
+          <datalist id="etiquetas_sugeridas">
+            {% for s in sugeridas %}<option value="{{ s }}">{% endfor %}
+          </datalist>
+          <button class="button secondary">pôr etiqueta</button>
+        </form>
+
+        <h2>Setor e responsável</h2>
+        <p class="small">
+          Setor: <strong>{{ setores[c.setor] }}</strong>
+          {% set resp = usuarios|selectattr('id', 'equalto', c.responsavel_id)|list %}
+          · responsável: <strong>{{ resp[0].full_name if resp else 'ninguém ainda' }}</strong>
+        </p>
+        <form method="post" action="{{ url_for('whatsapp_transferir', conversa_id=c.id) }}" class="wa-form-coluna">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label>transferir para
+            <select name="setor">
+              {% for chave, nome in setores.items() %}
+              <option value="{{ chave }}" {% if chave == c.setor %}selected{% endif %}>{{ nome }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>responsável
+            <select name="responsavel_id">
+              <option value="">o setor (sem dono)</option>
+              {% for u in usuarios %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
+            </select>
+          </label>
+          <input type="text" name="nota" placeholder="nota (opcional)">
+          <button class="button secondary">transferir</button>
+        </form>
+        {% if c.modo == 'pessoa' %}
+        <form method="post" action="{{ url_for('whatsapp_devolver', conversa_id=c.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button secondary">devolver ao atendente com IA</button>
+          <span class="small muted">A IA volta a poder responder as próximas mensagens (se estiver ligada).</span>
+        </form>
+        {% else %}
+        <form method="post" action="{{ url_for('whatsapp_passar', conversa_id=c.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="setor" value="{{ c.setor }}">
+          <button class="button secondary">tirar da IA (fica com pessoa)</button>
+        </form>
+        {% endif %}
+
+        {% if c.registros %}
+        <h2>O que o atendente com IA fez nesta conversa</h2>
+        {% for r in c.registros %}
+        <div class="small wa-registro">
+          <strong>{{ (r.quando or '')[:16]|replace('T', ' ') }}</strong>
+          · {{ rotulos_caso.get(r.caso, r.caso) }}{% if r.motivo %} <span class="muted">({{ r.motivo }})</span>{% endif %}
+          {% if r.lido %}<br>leu (mascarado): {{ (r.lido or '')[:200] }}{% endif %}
+          {% if r.respondido %}<br>respondeu: {{ (r.respondido or '')[:200] }}{% if not r.enviado %} <strong>(não saiu)</strong>{% endif %}{% endif %}
+          {% if r.passou_para %}<br>passou para: {{ setores.get(r.passou_para, '') }}{% endif %}
+          <br>custo: {% if r.custo_usd is not none %}US$ {{ '%.4f'|format(r.custo_usd) }}{% else %}—{% endif %}
+        </div>
+        {% endfor %}
+        {% endif %}
+
+        {% if c.eventos %}
+        <h2>Histórico da conversa</h2>
+        {% for e in c.eventos %}
+        <p class="small">
+          {{ (e.quando or '')[:16]|replace('T', ' ') }} · {{ rotulos_evento.get(e.tipo, e.tipo) }}
+          {% if e.de_setor or e.para_setor %} · {{ setores.get(e.de_setor, e.de_setor or '') }} → {{ setores.get(e.para_setor, e.para_setor or '') }}{% endif %}
+          {% if e.responsavel_nome %} · {{ e.responsavel_nome }}{% endif %}
+          {% if e.nota %} · {{ e.nota }}{% endif %}
+          {% if e.por %}<span class="muted"> · por {{ e.por }}</span>{% endif %}
+        </p>
+        {% endfor %}
+        {% endif %}
+      </aside>
+    </div>
+  {% endif %}
+  </section>
+</div>
+<script defer src="{{ url_for('static', filename='whatsapp_chat.js') }}?v={{ VERSION }}"></script>
+{% endblock %}

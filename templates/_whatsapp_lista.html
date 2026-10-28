@@ -1,0 +1,36 @@
+{#- A LISTA DE CONVERSAS (27/10/2026): primeira carga e `/whatsapp/lista-parcial`.
+    `data-busca` é o que a busca do navegador compara (nome e número). -#}
+{% if not linhas %}
+<div class="wa-lista-vazia small">
+  <p><strong>Nenhuma conversa{% if filtro.setor or filtro.etiqueta or filtro.so %} com este filtro{% endif %}.</strong></p>
+  <p class="muted">
+    Em desenvolvimento: POST local em <code>/whatsapp/webhook</code> com
+    header <code>X-Wa-Test: 1</code>. Em produção: puxar da caixa-postal.
+  </p>
+</div>
+{% else %}
+{% for r in linhas %}
+{% set quando = r.atualizado_em or '' %}
+<a class="wa-item{% if r.vencida %} wa-vencida{% endif %}"
+   href="{{ url_for('whatsapp_conversa', conversa_id=r.id, **filtro_url) }}"
+   data-busca="{{ r.nome or '' }} {{ r.wa_id }}"
+   {% if aberta == r.id %}aria-current="true"{% endif %}>
+  <span class="wa-item-topo">
+    <strong class="wa-item-nome">{{ r.nome or r.wa_id }}</strong>
+    <span class="wa-item-hora">{{ quando[11:16] if quando[:10] == hoje else (quando[8:10] ~ '/' ~ quando[5:7] if quando else '') }}</span>
+  </span>
+  {% if r.nome %}<span class="wa-item-numero">{{ r.wa_id }}</span>{% endif %}
+  <span class="wa-item-texto">{{ (r.ultimo_texto or '')[:90] }}</span>
+  <span class="wa-item-pe">
+    {% if r.esperando_min is not none %}
+      {% if r.vencida %}<strong class="wa-prazo">{{ r.esperando_min }} min — fora do prazo</strong>
+      {% else %}esperando {{ r.esperando_min }} min{% endif %} ·
+    {% endif %}
+    {{ r.setor_nome }}{% if r.responsavel_nome %} · {{ r.responsavel_nome }}{% endif %}
+    {% if r.modo == 'pessoa' %} · <strong>com pessoa</strong>{% endif %}
+    {% if r.etiquetas %} · {{ r.etiquetas|join(', ') }}{% endif %}
+    · {{ r.status }}
+  </span>
+</a>
+{% endfor %}
+{% endif %}

@@ -1222,9 +1222,13 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
   display:grid;place-items:center;border:1px solid var(--border);background:var(--panel);
   font-size:16px;line-height:1;color:var(--muted)}
 .wa-atualizar:hover{color:var(--accent);background:var(--bg)}
-.wa-abas{display:flex;gap:2px;margin:4px 12px;padding:3px;background:rgba(60,60,67,.08);border-radius:10px}
-.wa-aba{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;padding:6px 3px;
-  border-radius:8px;font-size:12px;font-weight:600;color:#505055;text-decoration:none;white-space:nowrap}
+/* As quatro abas cabem inteiras nos 340 px, mesmo com contagem de 3 dígitos
+   (revisão do #73): fonte e espaçamento menores, a contagem num distintivo
+   pequeno e «Sem resp.» abreviado só na tela (o nome inteiro vai no title). */
+.wa-abas{display:flex;gap:2px;margin:4px 10px;padding:3px;background:rgba(60,60,67,.08);border-radius:10px}
+.wa-aba{flex:1 1 auto;min-width:0;display:flex;align-items:center;justify-content:center;gap:2px;padding:5px 3px;
+  border-radius:8px;font-size:11px;font-weight:600;color:#505055;text-decoration:none;white-space:nowrap}
+.wa-aba .wa-conta{min-width:0;padding:0 3px;font-size:9.5px;line-height:15px}
 .wa-aba:hover{text-decoration:none;color:var(--text)}
 .wa-aba[aria-current="true"]{background:#fff;color:var(--text);
   box-shadow:0 1px 2px rgba(0,0,0,.08),0 0 0 1px rgba(60,60,67,.06)}
@@ -1277,6 +1281,31 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
   border-radius:999px;padding:3px 12px}
 .wa-retomada span{font-weight:600;color:var(--text)}
 .wa-coluna-conversa{display:flex;flex-direction:column;min-width:0;min-height:0}
+/* O menu dos detalhes, dentro da conversa, logo abaixo do cabeçalho. */
+.wa-menu{flex:none;max-height:55%;overflow-y:auto;padding:4px 14px 10px;background:var(--panel);
+  border-bottom:1px solid var(--border);box-shadow:0 6px 12px -10px rgba(0,0,0,.25)}
+.wa-menu[hidden]{display:none}
+.wa-bloco{padding:8px 0;border-bottom:1px solid var(--hairline,var(--border))}
+.wa-bloco:last-child{border-bottom:0}
+.wa-bloco h2,.wa-bloco>summary{font-size:13px;font-weight:650;margin:0 0 6px}
+.wa-bloco>summary{cursor:pointer;margin:0}
+.wa-bloco[open]>summary{margin-bottom:6px}
+.wa-bloco p{margin:2px 0 6px}
+.wa-bloco form{margin:4px 0;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.wa-bloco .button{padding:5px 10px;min-height:0}
+.wa-bloco input[type=text],.wa-bloco select{min-height:0;padding:5px 8px}
+.wa-transferir{display:grid!important;grid-template-columns:1fr 1fr;gap:6px}
+.wa-transferir label{font-size:12px}
+.wa-transferir input[type=text]{grid-column:1/2}
+.wa-etiquetas-postas{display:flex;flex-wrap:wrap;gap:4px}
+.wa-etiquetas-postas form{margin:0}
+.wa-tirar{border:0;background:transparent;padding:0 0 0 2px;min-height:0;font-size:13px;line-height:1;color:var(--muted);cursor:pointer}
+.wa-tirar:hover{color:var(--danger);background:transparent}
+.wa-por-etiqueta input[type=text]{flex:1;min-width:120px}
+/* A caixa de marcação com o tamanho natural, alinhada ao meio do texto
+   (revisão do #73): a regra geral dá a todo input largura de 100% e 40 px. */
+.wa-chat label.check{display:flex;flex-direction:row;align-items:center;gap:7px;font-weight:500}
+.wa-chat input[type=checkbox]{width:16px;height:16px;min-height:0;margin:0;padding:0;flex:none}
 .wa-coluna-conversa .wa-mensagens{background:var(--bg)}
 .wa-escolha{margin:auto;max-width:520px;padding:24px;text-align:center}
 .wa-cabecalho{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--border)}
@@ -1306,12 +1335,6 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
 .wa-escrever textarea{resize:vertical;min-height:62px;max-height:40vh}
 .wa-escrever-botoes{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
 .wa-escrever-nota{margin:6px 0 0}
-.wa-detalhes{width:330px;flex:none;overflow-y:auto;padding:12px 14px;background:var(--panel);border-left:1px solid var(--border)}
-.wa-detalhes[hidden]{display:none}
-.wa-detalhes h2{font-size:15px;margin:14px 0 8px}
-.wa-detalhes h2:first-child{margin-top:0}
-.wa-detalhes form{margin:6px 0}
-.wa-form-coluna{display:grid;gap:6px}
 .wa-registro{padding:6px 0;border-bottom:1px solid var(--border)}
 @media(max-width:768px){
   .wa-chat{grid-template-columns:minmax(0,1fr);height:auto;min-height:calc(100vh - 150px)}
@@ -1320,6 +1343,4 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
   .wa-voltar{display:inline-block}
   .wa-mensagens{max-height:60vh}
   .wa-balao{max-width:88%}
-  .wa-corpo{flex-direction:column}
-  .wa-detalhes{width:auto;border-left:0;border-top:1px solid var(--border)}
 }

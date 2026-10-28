@@ -1083,3 +1083,48 @@ def test_o_auditor_ve_o_historico_e_nao_resolve_nem_reativa(s):
     _resolver(s, cid)
     assert fiscal.post(f"/whatsapp/{cid}/reativar", data={"csrf_token": csrf}).status_code == 403
     assert _um(s, "SELECT status FROM wa_conversa WHERE id=%s", (cid,))["status"] == "resolvida"
+
+
+# -------------------------------------------------- revisão do #73 (27/10/2026)
+
+
+def test_os_detalhes_sao_um_menu_dentro_da_conversa_com_os_cinco_blocos(s):
+    cid = _chegar(s, "5511900000121", "Mario Exemplo dos Santos", "oi", "wamid.menu-1")
+    html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    menu = re.search(r'<div class="wa-menu" id="wa-detalhes" data-wa-painel hidden[^>]*>', html)
+    assert menu, "o menu recolhível não está na conversa"
+    # logo abaixo do cabeçalho, antes das mensagens, e aberto pelo nome
+    assert html.index("</header>") < menu.start() < html.index('id="wa-mensagens"')
+    assert 'class="wa-nome" data-wa-detalhes' in html and 'aria-controls="wa-detalhes"' in html
+    for bloco in ("setor-responsavel", "etiquetas", "atendimento", "ia", "historico"):
+        assert f'data-wa-bloco="{bloco}"' in html, bloco
+    # «O que a IA fez» e o histórico em <details> fechados, com a contagem
+    for bloco in ("ia", "historico"):
+        tag = re.search(r'<details class="wa-bloco" data-wa-bloco="%s"[^>]*>' % bloco, html).group(0)
+        assert " open" not in tag, bloco
+    assert re.search(r"Histórico da conversa <span class=\"wa-conta\">\d+</span>", html)
+    # os formulários de sempre: transferir, assumir, etiqueta, passar
+    for rota in ("transferir", "assumir", "etiqueta", "passar"):
+        assert f'action="/whatsapp/{cid}/{rota}"' in html, rota
+    # a terceira coluna saiu, e o CSS dela também
+    conversa = html[html.index('aria-label="Conversa"'):]
+    assert "<aside" not in conversa and 'class="wa-detalhes"' not in html
+    assert ".wa-detalhes" not in (RAIZ / "static" / "app.css").read_text(encoding="utf-8")
+
+
+def test_as_quatro_abas_cabem_com_o_nome_inteiro_no_title(s):
+    html = s["c"].get("/whatsapp").get_data(as_text=True)
+    assert re.search(r'data-wa-aba="sem"[^>]*title="Sem responsável"', html, re.S)
+    assert ">Sem resp. <span" in html
+    css = (RAIZ / "static" / "app.css").read_text(encoding="utf-8")
+    # medido com a Segoe UI semibold: as quatro, com 3 dígitos, somam ~306 px
+    # numa trilha de 312 px (340 menos borda, margem e trilha)
+    assert ".wa-aba .wa-conta{" in css and "font-size:11px" in css
+
+
+def test_a_caixa_de_marcacao_do_filtro_tem_tamanho_natural_e_alinhada():
+    css = (RAIZ / "static" / "app.css").read_text(encoding="utf-8")
+    regra = re.search(r"\.wa-chat input\[type=checkbox\]\{([^}]*)\}", css).group(1)
+    assert "width:16px" in regra and "min-height:0" in regra and "padding:0" in regra
+    rotulo = re.search(r"\.wa-chat label\.check\{([^}]*)\}", css).group(1)
+    assert "display:flex" in rotulo and "align-items:center" in rotulo and "gap:" in rotulo

@@ -37,7 +37,8 @@
       {% set na_aba = dict(filtros_url, aba=chave) if chave != 'sem' else filtros_url %}
       <a class="wa-aba" data-wa-aba="{{ chave }}"
          href="{{ url_for('whatsapp_conversa', conversa_id=aberta, **na_aba) if aberta else url_for('whatsapp_lista', **na_aba) }}"
-         {% if filtro.aba == chave %}aria-current="true"{% endif %}>{{ nome }} <span class="wa-conta">{{ contagens[chave] }}</span></a>
+         title="{{ nome }}"
+         {% if filtro.aba == chave %}aria-current="true"{% endif %}>{{ {'sem': 'Sem resp.'}.get(chave, nome) }} <span class="wa-conta">{{ contagens[chave] }}</span></a>
       {% endfor %}
     </nav>
 
@@ -139,6 +140,110 @@
       </div>
     </header>
 
+    {#- OS DETALHES (revisão do #73, 27/10/2026): um menu recolhível dentro da
+        própria conversa, logo abaixo do cabeçalho, aberto e fechado pelo nome da
+        pessoa. Antes era uma terceira coluna, que ficava fora da vista. Os
+        formulários e as rotas são os de sempre; só mudaram de lugar. -#}
+    <div class="wa-menu" id="wa-detalhes" data-wa-painel hidden aria-label="Detalhes da conversa">
+      <section class="wa-bloco" data-wa-bloco="setor-responsavel">
+        <h2>Setor e responsável</h2>
+        {% set resp = usuarios|selectattr('id', 'equalto', c.responsavel_id)|list %}
+        <p class="small muted">Agora: <strong>{{ setores[c.setor] }}</strong>
+          · <strong>{{ resp[0].full_name if resp else 'sem responsável' }}</strong></p>
+        <form method="post" action="{{ url_for('whatsapp_transferir', conversa_id=c.id) }}" class="wa-transferir">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label>Setor
+            <select name="setor">
+              {% for chave, nome in setores.items() %}
+              <option value="{{ chave }}" {% if chave == c.setor %}selected{% endif %}>{{ nome }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Responsável
+            <select name="responsavel_id">
+              <option value="">o setor (sem dono)</option>
+              {% for u in usuarios %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
+            </select>
+          </label>
+          <input type="text" name="nota" placeholder="nota (opcional)" aria-label="nota da transferência">
+          <button class="button secondary">Transferir</button>
+        </form>
+        <form method="post" action="{{ url_for('whatsapp_assumir', conversa_id=c.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button secondary">Assumir</button>
+        </form>
+      </section>
+
+      <section class="wa-bloco" data-wa-bloco="etiquetas">
+        <h2>Etiquetas</h2>
+        <div class="wa-etiquetas-postas">
+          {% for e in c.etiquetas %}
+          <form method="post" action="{{ url_for('whatsapp_etiqueta', conversa_id=c.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="etiqueta" value="{{ e.etiqueta }}">
+            <input type="hidden" name="acao" value="tirar">
+            <span class="wa-etq">{{ e.etiqueta }}{% if e.origem == 'auto' %} (automática){% endif %}
+              <button class="wa-tirar" title="tirar a etiqueta" aria-label="tirar a etiqueta {{ e.etiqueta }}">×</button></span>
+          </form>
+          {% else %}<span class="small muted">nenhuma</span>{% endfor %}
+        </div>
+        <form method="post" action="{{ url_for('whatsapp_etiqueta', conversa_id=c.id) }}" class="wa-por-etiqueta">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="text" name="etiqueta" list="etiquetas_sugeridas" placeholder="nova etiqueta" aria-label="nova etiqueta">
+          <datalist id="etiquetas_sugeridas">
+            {% for s in sugeridas %}<option value="{{ s }}">{% endfor %}
+          </datalist>
+          <button class="button secondary">pôr etiqueta</button>
+        </form>
+      </section>
+
+      <section class="wa-bloco" data-wa-bloco="atendimento">
+        <h2>Atendimento</h2>
+        {% if c.modo == 'pessoa' %}
+        <form method="post" action="{{ url_for('whatsapp_devolver', conversa_id=c.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <span class="small"><strong>com pessoa</strong>{% if c.passagem_motivo %} ({{ c.passagem_motivo }}){% endif %}</span>
+          <button class="button secondary">devolver ao atendente com IA</button>
+          <span class="small muted">A IA volta a poder responder as próximas mensagens (se estiver ligada).</span>
+        </form>
+        {% else %}
+        <form method="post" action="{{ url_for('whatsapp_passar', conversa_id=c.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="setor" value="{{ c.setor }}">
+          <span class="small"><strong>com IA</strong>{% if not ia.ia_ligada %} (o atendente com IA está desligado){% endif %}</span>
+          <button class="button secondary">tirar da IA (fica com pessoa)</button>
+        </form>
+        {% endif %}
+      </section>
+
+      <details class="wa-bloco" data-wa-bloco="ia">
+        <summary>O que a IA fez <span class="wa-conta">{{ c.registros|length }}</span></summary>
+        {% for r in c.registros %}
+        <div class="small wa-registro">
+          <strong>{{ (r.quando or '')[:16]|replace('T', ' ') }}</strong>
+          · {{ rotulos_caso.get(r.caso, r.caso) }}{% if r.motivo %} <span class="muted">({{ r.motivo }})</span>{% endif %}
+          {% if r.lido %}<br>leu (mascarado): {{ (r.lido or '')[:200] }}{% endif %}
+          {% if r.respondido %}<br>respondeu: {{ (r.respondido or '')[:200] }}{% if not r.enviado %} <strong>(não saiu)</strong>{% endif %}{% endif %}
+          {% if r.passou_para %}<br>passou para: {{ setores.get(r.passou_para, '') }}{% endif %}
+          <br>custo: {% if r.custo_usd is not none %}US$ {{ '%.4f'|format(r.custo_usd) }}{% else %}—{% endif %}
+        </div>
+        {% else %}<p class="small muted">O atendente com IA ainda não fez nada nesta conversa.</p>{% endfor %}
+      </details>
+
+      <details class="wa-bloco" data-wa-bloco="historico">
+        <summary>Histórico da conversa <span class="wa-conta">{{ c.eventos|length }}</span></summary>
+        {% for e in c.eventos %}
+        <p class="small">
+          {{ (e.quando or '')[:16]|replace('T', ' ') }} · {{ rotulos_evento.get(e.tipo, e.tipo) }}
+          {% if e.de_setor or e.para_setor %} · {{ setores.get(e.de_setor, e.de_setor or '') }} → {{ setores.get(e.para_setor, e.para_setor or '') }}{% endif %}
+          {% if e.responsavel_nome %} · {{ e.responsavel_nome }}{% endif %}
+          {% if e.nota %} · {{ e.nota }}{% endif %}
+          {% if e.por %}<span class="muted"> · por {{ e.por }}</span>{% endif %}
+        </p>
+        {% else %}<p class="small muted">Nada registrado ainda.</p>{% endfor %}
+      </details>
+    </div>
+
     <div class="wa-corpo">
       <div class="wa-conversa">
         <div class="wa-mensagens" id="wa-mensagens" data-wa-mensagens
@@ -215,94 +320,6 @@
           {% endif %}
         </form>
       </div>
-
-      <aside class="wa-detalhes" id="wa-detalhes" data-wa-painel hidden aria-label="Detalhes da conversa">
-        <h2>Etiquetas</h2>
-        <p class="small">
-          {% for e in c.etiquetas %}
-          <form method="post" action="{{ url_for('whatsapp_etiqueta', conversa_id=c.id) }}" style="display:inline">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="etiqueta" value="{{ e.etiqueta }}">
-            <input type="hidden" name="acao" value="tirar">
-            <span class="tag">{{ e.etiqueta }}{% if e.origem == 'auto' %} (automática){% endif %}</span>
-            <button class="button secondary" title="tirar a etiqueta">×</button>
-          </form>
-          {% else %}<span class="muted">nenhuma</span>{% endfor %}
-        </p>
-        <form method="post" action="{{ url_for('whatsapp_etiqueta', conversa_id=c.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <input type="text" name="etiqueta" list="etiquetas_sugeridas" placeholder="nova etiqueta">
-          <datalist id="etiquetas_sugeridas">
-            {% for s in sugeridas %}<option value="{{ s }}">{% endfor %}
-          </datalist>
-          <button class="button secondary">pôr etiqueta</button>
-        </form>
-
-        <h2>Setor e responsável</h2>
-        <p class="small">
-          Setor: <strong>{{ setores[c.setor] }}</strong>
-          {% set resp = usuarios|selectattr('id', 'equalto', c.responsavel_id)|list %}
-          · responsável: <strong>{{ resp[0].full_name if resp else 'ninguém ainda' }}</strong>
-        </p>
-        <form method="post" action="{{ url_for('whatsapp_transferir', conversa_id=c.id) }}" class="wa-form-coluna">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <label>transferir para
-            <select name="setor">
-              {% for chave, nome in setores.items() %}
-              <option value="{{ chave }}" {% if chave == c.setor %}selected{% endif %}>{{ nome }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label>responsável
-            <select name="responsavel_id">
-              <option value="">o setor (sem dono)</option>
-              {% for u in usuarios %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}
-            </select>
-          </label>
-          <input type="text" name="nota" placeholder="nota (opcional)">
-          <button class="button secondary">transferir</button>
-        </form>
-        {% if c.modo == 'pessoa' %}
-        <form method="post" action="{{ url_for('whatsapp_devolver', conversa_id=c.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <button class="button secondary">devolver ao atendente com IA</button>
-          <span class="small muted">A IA volta a poder responder as próximas mensagens (se estiver ligada).</span>
-        </form>
-        {% else %}
-        <form method="post" action="{{ url_for('whatsapp_passar', conversa_id=c.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <input type="hidden" name="setor" value="{{ c.setor }}">
-          <button class="button secondary">tirar da IA (fica com pessoa)</button>
-        </form>
-        {% endif %}
-
-        {% if c.registros %}
-        <h2>O que o atendente com IA fez nesta conversa</h2>
-        {% for r in c.registros %}
-        <div class="small wa-registro">
-          <strong>{{ (r.quando or '')[:16]|replace('T', ' ') }}</strong>
-          · {{ rotulos_caso.get(r.caso, r.caso) }}{% if r.motivo %} <span class="muted">({{ r.motivo }})</span>{% endif %}
-          {% if r.lido %}<br>leu (mascarado): {{ (r.lido or '')[:200] }}{% endif %}
-          {% if r.respondido %}<br>respondeu: {{ (r.respondido or '')[:200] }}{% if not r.enviado %} <strong>(não saiu)</strong>{% endif %}{% endif %}
-          {% if r.passou_para %}<br>passou para: {{ setores.get(r.passou_para, '') }}{% endif %}
-          <br>custo: {% if r.custo_usd is not none %}US$ {{ '%.4f'|format(r.custo_usd) }}{% else %}—{% endif %}
-        </div>
-        {% endfor %}
-        {% endif %}
-
-        {% if c.eventos %}
-        <h2>Histórico da conversa</h2>
-        {% for e in c.eventos %}
-        <p class="small">
-          {{ (e.quando or '')[:16]|replace('T', ' ') }} · {{ rotulos_evento.get(e.tipo, e.tipo) }}
-          {% if e.de_setor or e.para_setor %} · {{ setores.get(e.de_setor, e.de_setor or '') }} → {{ setores.get(e.para_setor, e.para_setor or '') }}{% endif %}
-          {% if e.responsavel_nome %} · {{ e.responsavel_nome }}{% endif %}
-          {% if e.nota %} · {{ e.nota }}{% endif %}
-          {% if e.por %}<span class="muted"> · por {{ e.por }}</span>{% endif %}
-        </p>
-        {% endfor %}
-        {% endif %}
-      </aside>
     </div>
   {% endif %}
   </section>

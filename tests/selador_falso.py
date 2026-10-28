@@ -163,6 +163,7 @@ class SeladorFalso:
                     **servidor.campos_a_mais}]})
 
         contexto = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        contexto.minimum_version = ssl.TLSVersion.TLSv1_2
         contexto.load_cert_chain(PEM)
         self.http = ThreadingHTTPServer(("127.0.0.1", 0), Mao)
         self.http.daemon_threads = True

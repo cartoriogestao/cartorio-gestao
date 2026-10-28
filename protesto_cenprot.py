@@ -191,6 +191,14 @@ def ler(conteudo) -> dict:
         texto = conteudo.decode("utf-8-sig", errors="replace")
     else:
         texto = str(conteudo).lstrip("\ufeff")
+    # O arquivo vem de fora (baixado da Central). DTD e entidade declarada nao
+    # existem no XML do CENPROT, e sao o caminho da "bomba" de expansao de
+    # entidades - a mesma recusa que a remessa XML da CRA ja faz
+    # (protesto_cra_xml.ler).
+    if "<!DOCTYPE" in texto.upper() or "<!ENTITY" in texto.upper():
+        raise CenprotError(
+            "Este arquivo traz DTD ou entidade declarada, e o XML do CENPROT "
+            "nao tem nenhum dos dois. Confira se e o arquivo certo.")
     try:
         raiz = ET.fromstring(texto)
     except ET.ParseError as e:

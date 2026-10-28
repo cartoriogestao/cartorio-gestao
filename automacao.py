@@ -328,7 +328,10 @@ def semear(con, agora: datetime | None = None) -> int:
 
 #: Os canais que um processo novo usa. O WhatsApp entra marcado de propósito:
 #: ele não existe ainda, e o aviso que ficou pendente por isso fica registrado.
-CANAIS_PADRAO = {SCH.PAINEL: True, SCH.TAREFA: True, SCH.EMAIL: True, SCH.WHATSAPP: True}
+#: O E-MAIL ENTRA DESMARCADO desde 28/10/2026 — «não precisa me avisar cada
+#: detalhe», o oficial: o e-mail é o resumo do dia (`_resumo_do_dia`), e o
+#: e-mail na hora é escolha por processo, na tela dele.
+CANAIS_PADRAO = {SCH.PAINEL: True, SCH.TAREFA: True, SCH.EMAIL: False, SCH.WHATSAPP: True}
 
 #: O que a tela de edição pode mudar. `pode_agir` e `ativo` NÃO estão aqui:
 #: cada um tem a sua função, e `pode_agir` é do ADMIN, com auditoria.
@@ -778,6 +781,10 @@ def tique(db, *, agora: datetime | None = None,
         resumo["recuperadas"] = recuperar(db, agora, vivo=vivo, matar=matar,
                                           pasta_dados=pasta_dados)
         _email_de_teste(db, agora, pasta_dados)
+        try:
+            _resumo_do_dia(db, agora, pasta_dados)
+        except Exception as erro:                # noqa: BLE001 — o resumo não para os processos
+            resumo["erros"].append(f"resumo do dia: {type(erro).__name__}: {erro}"[:300])
         with db.connect() as con:
             processos = listar(con)
         for p in processos:
@@ -851,6 +858,24 @@ def _email_de_teste(db, agora: datetime, pasta_dados: Any) -> None:
         SCH.gravar_config(con, SCH.CHAVE_TESTE_EMAIL_POR, "")
     import automacao_avisos as AV
     AV.enviar_teste(db, agora=agora, pasta_dados=pasta_dados, pedido_por=por)
+
+
+def _resumo_do_dia(db, agora: datetime, pasta_dados: Any) -> None:
+    """O e-mail único do dia, a partir da hora da tela (decisão do oficial, 28/10/2026).
+
+    A marca do dia se grava ANTES de mandar: se o SMTP falhar, a falha fica em
+    `au_avisos` e o despachante não tenta de novo a cada minuto — seria o spam
+    que o resumo existe para acabar.
+    """
+    with db.connect() as con:
+        hora = SCH.hora_do_resumo(con)
+        ultimo = SCH.ler_config(con, SCH.CHAVE_RESUMO_ENVIADO)
+    if hora is None or agora.hour < hora or str(ultimo)[:10] == agora.date().isoformat():
+        return
+    with db.transaction() as con:
+        SCH.gravar_config(con, SCH.CHAVE_RESUMO_ENVIADO, _iso(agora))
+    import automacao_avisos as AV
+    AV.enviar_resumo(db, agora=agora, pasta_dados=pasta_dados)
 
 
 # ------------------------------------------------------------------ finalizar

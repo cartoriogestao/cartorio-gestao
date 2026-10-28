@@ -649,14 +649,82 @@ def retorno(con: sqlite3.Connection, retorno_id: int) -> dict | None:
                          (int(retorno_id),))
 
 
+class RetornoNaoRecusadoError(RetornoError):
+    """Devolver os atos só cabe a arquivo que a CRA recusou."""
+
+
+def devolver_atos_do_recusado(con: sqlite3.Connection, retorno_id: int, *,
+                              agora: str, usuario: str | None = None) -> dict:
+    """Devolve à fila de «Esperando retorno» os atos de um arquivo RECUSADO. ESCREVE.
+
+    A CRA RECUSOU, ENTÃO OS ATOS NÃO FORAM INFORMADOS — 28/10/2026. Seis
+    retornos voltaram com 2161 «NENHUM REGISTRO FOI GRAVADO» e o sistema os
+    deu por enviados. A recusa agora se grava (`protesto_cra_envio`), e os
+    atos continuam presos ao arquivo recusado: fora da fila, e com a tela
+    dizendo que não foram informados.
+
+    POR QUE NÃO VOLTAM SOZINHOS. Medido na produção em 28/10/2026: os 16 atos
+    dos seis recusados são PROTESTOS relavrados, e o protesto anterior do
+    mesmo título (hoje desfeito) já tinha ido à CRA, aceito. A Central
+    recusou porque já sabia — e devolver sozinho faria o retorno seguinte
+    levá-los outra vez, e ser recusado outra vez. Quem decide é quem lê o
+    motivo da recusa: corrigido o que a CRA apontou (ou conferido na Central
+    que ela não sabe), o balcão devolve, e o próximo retorno os leva.
+
+    O ARQUIVO RECUSADO FICA como foi gerado, com o teor e a recusa; perde só
+    a amarração dos atos. E `protesto_cra_envio._preparar` passa a recusar
+    reenviá-lo — os atos dele estarão no arquivo seguinte.
+    """
+    # A MESMA TRAVA DE `gerar`: devolver muda os PENDENTES que um `gerar` ao
+    # mesmo tempo estaria lendo.
+    banco(con).travar("pt_retornos.nome_arquivo")
+    linha = retorno(con, retorno_id)
+    if not linha:
+        raise RetornoError(f"O arquivo #{retorno_id} não existe.")
+    if str(linha.get("cra_enviado_ambiente") or "") == "EOFICIO":
+        raise RetornoNaoRecusadoError(
+            "Esta linha não é um arquivo: é o registro do que o sistema antigo "
+            "já informou à CRA antes da virada. Não há o que devolver.")
+    if linha.get("cra_enviado_em") or not linha.get("cra_recusado_em"):
+        raise RetornoNaoRecusadoError(
+            f"«{linha['nome_arquivo']}» não está recusado pela CRA — "
+            + ("ela o aceitou, e os atos dele estão informados."
+               if linha.get("cra_enviado_em") else
+               "ele ainda não teve resposta da Central. Envie-o, ou confira o "
+               "erro de envio, antes de mexer nos atos."))
+    atos = banco(con).ler(
+        "SELECT id FROM pt_atos WHERE retorno_id = %s ORDER BY id",
+        (int(retorno_id),))
+    if not atos:
+        raise RetornoError(
+            f"Os atos de «{linha['nome_arquivo']}» já voltaram à fila — não "
+            f"há nada preso a este arquivo.")
+    banco(con).escrever(
+        "UPDATE pt_atos SET retorno_id = NULL WHERE retorno_id = %s",
+        (int(retorno_id),))
+    return {"retorno_id": int(retorno_id),
+            "nome_arquivo": linha["nome_arquivo"],
+            "atos": [int(a["id"]) for a in atos],
+            "devolvidos_em": agora, "devolvidos_por": usuario}
+
+
 def listar(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
-    """Os retornos gerados, do mais novo para o mais velho. So LE."""
+    """Os retornos gerados, do mais novo para o mais velho. So LE.
+
+    `atos_presos` conta os atos ainda amarrados ao arquivo: no RECUSADO
+    (28/10/2026) eles não foram informados, e a tela precisa dizer quantos.
+    """
     return banco(con).ler(
-        """SELECT id, tipo, par_id, apresentante_codigo, apresentante_nome,
-                  dia, numero_da_remessa, titulos, soma_centavos, nome_arquivo,
-                  hash_arquivo, gerado_em, gerado_por, cra_enviado_em,
-                  cra_enviado_ambiente, cra_envio_erro, cra_enviado_por
-             FROM pt_retornos ORDER BY id DESC LIMIT %s""", (int(limite),))
+        """SELECT r.id, r.tipo, r.par_id, r.apresentante_codigo,
+                  r.apresentante_nome, r.dia, r.numero_da_remessa, r.titulos,
+                  r.soma_centavos, r.nome_arquivo, r.hash_arquivo, r.gerado_em,
+                  r.gerado_por, r.cra_enviado_em, r.cra_enviado_ambiente,
+                  r.cra_envio_erro, r.cra_enviado_por, r.cra_recusado_em,
+                  r.cra_recusa_codigo, r.cra_recusa_motivo,
+                  (SELECT COUNT(*) FROM pt_atos a
+                    WHERE a.retorno_id = r.id) AS atos_presos
+             FROM pt_retornos r ORDER BY r.id DESC LIMIT %s""",
+        (int(limite),))
 
 
 def atos_do_retorno(con: sqlite3.Connection, retorno_id: int) -> list[dict]:

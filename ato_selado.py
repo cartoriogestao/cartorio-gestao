@@ -4445,8 +4445,15 @@ def seletor_do_ato(con, *, tabela: Any, usuario: Any, pedidos: Any = None,
     lista = sorted(juntos.values(), key=lambda c: (not c["pre_marcado"],
                                                    not c["cobre_tudo"],
                                                    -c["protocolo_id"]))
+    pedidos_da_lista = explicitos or [p for g in grupos for p in g]
+    # O protocolo em atendimento que o filtro tirou (atribuição RI numa firma,
+    # saldo zerado, encerrado, item de outro grupo) continua visível, com o
+    # motivo, e sem botão de escolher.
+    lista = CXP.acrescentar_o_atendimento_de_fora(
+        con, lista, protocolo_id=pre, pedidos=pedidos_da_lista,
+        atribuicoes=atribuicoes_do_ato(tabela))
     return {"candidatos": lista,
-            "pedidos": explicitos or [p for g in grupos for p in g],
+            "pedidos": pedidos_da_lista,
             "atendendo": dict(atendendo) if atendendo else None}
 
 
@@ -5008,10 +5015,14 @@ def quadro_para_selar(con, *, tabela: Any, ato_id: Any, usuario: Any = None,
             bd, tabela=tabela, pedidos=pedidos,
             pre_marcar_protocolo_id=(atendendo or {}).get("id"))
         do_atendido = next((c for c in candidatos if atendendo
+                            and c.get("selecionavel", True)
                             and c["protocolo_id"] == int(atendendo["id"])), None)
         faltam = (do_atendido["faltam"] if do_atendido else
                   [{"codigo": c, "pedidas": q, "saldo_pago": 0, "saldo": 0,
                     "faltam": q} for c, q in pedidos])
+        candidatos = CXP.acrescentar_o_atendimento_de_fora(
+            bd, candidatos, protocolo_id=(atendendo or {}).get("id"),
+            pedidos=pedidos, atribuicoes=atribuicoes_do_ato(tabela))
     return {"titulo": TITULO_DO_QUADRO, "pode_selar": pode, "gratuito": False,
             "itens": itens, "pedidos": pedidos, "candidatos": candidatos,
             "faltam": faltam}

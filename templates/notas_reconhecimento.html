@@ -120,7 +120,7 @@ body[data-notas-firma-aqui="reconhecer"] .sidebar a[href*="/notas/reconhecimento
          protocolo que você atende; aqui ele se escolhe, sem ir a «Selo e caixa». #}
       <div class="span2">
         {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
-        {{ protocolo_do_selo(candidatos_selo, [], atendendo=atendendo) }}
+        {{ protocolo_do_selo(candidatos_selo, pedidos_selo, atendendo=atendendo) }}
       </div>
       <label class="span2 check"><input type="checkbox" name="confirmar_bloqueio" value="1">
         Ciente de cartão bloqueado, reconheço assim mesmo</label>

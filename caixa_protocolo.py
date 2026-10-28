@@ -56,9 +56,31 @@ ENCERRAMENTOS: dict[str, str] = {
 # coisa. «ok», «nao veio» e «-» nao explicam nada a quem ler daqui a dois anos.
 MINIMO_DO_MOTIVO = 10
 
+#: O que o formulário de abrir protocolo oferece, na ordem do balcão.
+#: A primeira opção da tela não pode ser uma atribuição de verdade: o
+#: navegador manda a primeira marcada, e RI (que era a primeira) deixava o
+#: reconhecimento de firma invisível na lista do selo — ela só aceita
+#: FIRMAS, NOTAS ou atribuição em branco.
+ATRIBUICOES_DO_BALCAO = ("RI", "NOTAS", "PROTESTO", "RCPN", "RTD", "RCPJ",
+                         "FIRMAS", "OUTROS")
+
 
 class ProtocoloError(ValueError):
     """Erro de regra, com mensagem pronta para o balcao."""
+
+
+def atribuicao_escolhida(valor) -> str:
+    """A atribuição que a pessoa escolheu ao abrir o protocolo. Só calcula.
+
+    Vazio não vira RI nem OUTROS. Sem a escolha, o protocolo de firma abria
+    como Registro de Imóveis e sumia da lista «Protocolo que paga o selo».
+    """
+    atrib = str(valor or "").strip().upper()
+    if atrib in ATRIBUICOES_DO_BALCAO:
+        return atrib
+    raise ProtocoloError(
+        "Escolha a atribuição do protocolo (RI, Notas, Protesto, RCPN, RTD, "
+        "RCPJ, Firmas ou Outros). Sem essa escolha o protocolo não abre.")
 
 
 def proximo_numero(con, data_abertura: str) -> str:
@@ -1122,7 +1144,8 @@ def candidatos_para_o_selo(con, pedidos, *, atribuicoes=None,
             "atribuicao": atrib or None,
             "data_abertura": r.get("protocolo_data"),
             "situacao": r.get("protocolo_situacao"),
-            "itens": [], "por_codigo": {}})
+            "itens": [], "por_codigo": {},
+            "selecionavel": True, "motivo": None})
         pago = item_pago(r)
         c["itens"].append({"id": int(r["id"]), "codigo": str(r["codigo_ato"]).strip(),
                            "descricao": r.get("descricao"), "saldo": sobra,
@@ -1155,3 +1178,105 @@ def candidatos_para_o_selo(con, pedidos, *, atribuicoes=None,
     saida.sort(key=lambda c: (not c["pre_marcado"], not c["cobre_tudo"],
                               -c["protocolo_id"]))
     return saida[:max(1, int(limite))]
+
+
+def _item_do_pedido(codigo_item, pedidos) -> bool:
+    """Este código de item casa com algum pedido (exato ou família «13.*»)? Só calcula."""
+    cod = str(codigo_item or "").strip()
+    for pedido, _q in pedidos:
+        pedido = str(pedido or "").strip()
+        if not pedido:
+            continue
+        if pedido.endswith("*"):
+            if cod.startswith(pedido[:-1]):
+                return True
+        elif cod == pedido:
+            return True
+    return False
+
+
+def motivo_de_ficar_fora(protocolo, itens, pedidos, atribuicoes) -> str | None:
+    """Por que este protocolo não entra na lista do selo, ou None se entra. Só calcula.
+
+    A ordem é a que o balcão corrige: encerrado primeiro, depois a atribuição
+    (o caso do protocolo de firma aberto como RI), depois a falta do item do
+    grupo, depois o saldo zerado. Atribuição em branco continua valendo — é
+    o que a lista já aceitava.
+    """
+    if not protocolo:
+        return None
+    situacao = str(protocolo.get("situacao") or "").upper()
+    if esta_encerrado(situacao):
+        rotulo = "Entregue" if situacao == ENTREGUE else (
+            "Cancelado" if situacao == CANCELADO else situacao)
+        return f"encerrado ({rotulo})"
+    aceitas = ({str(a).upper() for a in atribuicoes}
+               if atribuicoes is not None else None)
+    atrib = str(protocolo.get("atribuicao") or "").strip().upper()
+    if aceitas is not None and atrib and atrib not in aceitas:
+        return (f"atribuição incompatível ({atrib}; este ato aceita "
+                f"{', '.join(sorted(aceitas))})")
+    pedidos = pedidos_do_selo(pedidos)
+    que_casam = [i for i in (itens or [])
+                 if _item_do_pedido(i.get("codigo_ato"), pedidos)]
+    if not que_casam:
+        return "sem item do grupo pedido"
+    if all(saldo_do_item(i) <= 0 for i in que_casam):
+        return "sem saldo do item"
+    return None
+
+
+def acrescentar_o_atendimento_de_fora(con, candidatos, *, protocolo_id,
+                                      pedidos, atribuicoes=None) -> list:
+    """Põe no topo da lista o protocolo em atendimento que ficou de fora. Só LÊ.
+
+    A linha vem com `selecionavel` falso e `motivo` em português. Não é
+    candidato: a tela mostra o motivo e não oferece o botão de escolher.
+    Quem já está na lista não se repete. Sem pedidos, não há o que explicar.
+    """
+    pedidos = pedidos_do_selo(pedidos)
+    if not pedidos:
+        return list(candidatos or [])
+    try:
+        pid = int(protocolo_id)
+    except (TypeError, ValueError):
+        return list(candidatos or [])
+    candidatos = list(candidatos or [])
+    if any(int(c["protocolo_id"]) == pid for c in candidatos):
+        return candidatos
+    bd = banco(con)
+    protocolo = bd.um("SELECT * FROM cx_protocolos WHERE id = %s", (pid,))
+    if not protocolo:
+        return candidatos
+    itens = bd.ler(
+        "SELECT * FROM cx_protocolo_atos WHERE protocolo_id = %s ORDER BY id",
+        (pid,))
+    motivo = motivo_de_ficar_fora(protocolo, itens, pedidos, atribuicoes)
+    if not motivo:
+        return candidatos
+    visiveis = []
+    for it in itens:
+        sobra = saldo_do_item(it)
+        visiveis.append({
+            "id": int(it["id"]),
+            "codigo": str(it.get("codigo_ato") or "").strip(),
+            "descricao": it.get("descricao"),
+            "saldo": sobra,
+            "pago": item_pago(it)})
+    atrib = str(protocolo.get("atribuicao") or "").strip().upper()
+    candidatos.insert(0, {
+        "protocolo_id": pid,
+        "numero": protocolo.get("numero"),
+        "interessado": protocolo.get("interessado"),
+        "atribuicao": atrib or None,
+        "data_abertura": protocolo.get("data_abertura"),
+        "situacao": protocolo.get("situacao"),
+        "itens": visiveis,
+        "por_codigo": {},
+        "faltam": [],
+        "cobre_tudo": False,
+        "pre_marcado": False,
+        "selecionavel": False,
+        "motivo": motivo,
+    })
+    return candidatos

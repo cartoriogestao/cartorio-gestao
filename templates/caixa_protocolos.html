@@ -40,10 +40,12 @@
         <option value="ORCAMENTO">Mero cálculo de emolumentos (orçamento)</option>
       </select></label>
     <label>Atribuição
-      <select name="atribuicao">
-        {% for a in ['RI','NOTAS','PROTESTO','RCPN','RTD','RCPJ','FIRMAS','OUTROS'] %}
+      <select name="atribuicao" required>
+        <option value="">escolha a atribuição</option>
+        {% for a in atribuicoes_do_balcao %}
           <option value="{{ a }}">{{ a }}</option>{% endfor %}
-      </select></label>
+      </select>
+      <span class="small muted">Obrigatória. Reconhecimento de firma: Firmas ou Notas.</span></label>
     <label>Previsão de entrega <input type="date" name="previsao_entrega"></label>
     <label>Documento apresentado
       <select name="documento_tipo">
@@ -89,7 +91,7 @@
   <label>Atribuição
     <select name="atribuicao" onchange="this.form.submit()">
       <option value="">todas</option>
-      {% for a in ['RI','NOTAS','PROTESTO','RCPN','RTD','RCPJ','FIRMAS','OUTROS'] %}
+      {% for a in atribuicoes_do_balcao %}
         <option value="{{ a }}" {% if atribuicao == a %}selected{% endif %}>{{ a }}</option>
       {% endfor %}
     </select></label>

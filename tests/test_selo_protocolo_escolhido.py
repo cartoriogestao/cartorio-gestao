@@ -238,6 +238,87 @@ def test_o_quadro_traz_os_candidatos_e_o_que_falta(aparelho):
     assert quadro["faltam"][0]["codigo"] == "16.1"
 
 
+def test_os_quatro_motivos_de_ficar_fora_da_lista():
+    """Atribuição, encerrado, item de outro grupo e saldo zerado — cada um
+    com a frase que a tela mostra. Quem pode entrar devolve None."""
+    pedidos = [("13.17.2", 1), ("13.17.3", 1), ("13.17.4", 1)]
+    aceitas = {"FIRMAS", "NOTAS"}
+    pago = {"codigo_ato": "13.17.2", "quantidade": 1, "quitado": 1}
+    assert CXP.motivo_de_ficar_fora(
+        {"situacao": "ABERTO", "atribuicao": "RI"}, [pago], pedidos, aceitas
+    ).startswith("atribuição incompatível")
+    assert CXP.motivo_de_ficar_fora(
+        {"situacao": "ENTREGUE", "atribuicao": "RI"}, [pago], pedidos, aceitas
+    ) == "encerrado (Entregue)"
+    assert CXP.motivo_de_ficar_fora(
+        {"situacao": "CANCELADO", "atribuicao": "FIRMAS"}, [pago], pedidos, aceitas
+    ) == "encerrado (Cancelado)"
+    assert CXP.motivo_de_ficar_fora(
+        {"situacao": "ABERTO", "atribuicao": "FIRMAS"},
+        [{"codigo_ato": "16.1", "quantidade": 1, "quitado": 1}],
+        pedidos, aceitas) == "sem item do grupo pedido"
+    assert CXP.motivo_de_ficar_fora(
+        {"situacao": "ABERTO", "atribuicao": "NOTAS"},
+        [{"codigo_ato": "13.17.2", "quantidade": 1, "quantidade_usada": 1,
+          "quitado": 1}],
+        pedidos, aceitas) == "sem saldo do item"
+    assert CXP.motivo_de_ficar_fora(
+        {"situacao": "ABERTO", "atribuicao": "FIRMAS"}, [pago], pedidos, aceitas
+    ) is None
+    assert CXP.motivo_de_ficar_fora(
+        {"situacao": "ABERTO", "atribuicao": ""}, [pago], pedidos, aceitas
+    ) is None
+    assert CXP.motivo_de_ficar_fora(
+        {"situacao": "ABERTO", "atribuicao": "NOTAS"},
+        [{"codigo_ato": "13.17.4", "quantidade": 1, "quitado": 1}],
+        [("13.*", 1)], aceitas) is None
+
+
+def test_o_em_atendimento_de_ri_aparece_sem_virar_candidato():
+    """Pago no 13.17.2 e em atendimento, mas aberto como RI: a lista que
+    escolhe o selo não o oferece, e a montagem da tela o mostra com o motivo.
+    Listar não pede selo."""
+    con = _casa()
+    ri = _protocolo(con, atribuicao="RI")
+    _item(con, ri["protocolo_id"], codigo="13.17.2", quitado=1)
+    firmas = _protocolo(con, atribuicao="FIRMAS")
+    _item(con, firmas["protocolo_id"], codigo="13.17.4", quitado=1)
+    CXP.atender(con, usuario=ESCREVENTE, protocolo=ri["numero"], agora=AGORA)
+    con.commit()
+    so_os_que_pagam = AS.candidatos_do_ato(
+        con, tabela="nt_reconhecimentos", pedidos=[("13.17.2", 1)],
+        pre_marcar_protocolo_id=ri["protocolo_id"], hoje=HOJE)
+    assert [c["protocolo_id"] for c in so_os_que_pagam] == []
+    s = AS.seletor_do_ato(con, tabela="nt_reconhecimentos", usuario=ESCREVENTE,
+                          hoje=HOJE)
+    por_id = {c["protocolo_id"]: c for c in s["candidatos"]}
+    assert por_id[ri["protocolo_id"]]["selecionavel"] is False
+    assert "atribuição incompatível" in por_id[ri["protocolo_id"]]["motivo"]
+    assert por_id[firmas["protocolo_id"]]["selecionavel"] is True
+    assert por_id[firmas["protocolo_id"]]["cobre_tudo"] is True
+    assert s["pedidos"] == [("13.*", 1)]
+
+
+def test_firmas_em_atendimento_continua_candidato_e_o_ri_do_imovel_tambem():
+    """FIRMAS paga a firma. RI com item 16 paga a certidão do imóvel. Nenhum
+    dos dois vira linha «de fora»."""
+    con = _casa()
+    firmas = _protocolo(con, atribuicao="FIRMAS")
+    _item(con, firmas["protocolo_id"], codigo="13.17.2", quitado=1)
+    CXP.atender(con, usuario=ESCREVENTE, protocolo=firmas["numero"], agora=AGORA)
+    imovel = _protocolo(con, atribuicao="RI")
+    _item(con, imovel["protocolo_id"], codigo="16.24.4", quitado=1)
+    con.commit()
+    firma = AS.seletor_do_ato(con, tabela="nt_reconhecimentos",
+                              usuario=ESCREVENTE, hoje=HOJE)
+    assert [c["protocolo_id"] for c in firma["candidatos"]] == [firmas["protocolo_id"]]
+    assert firma["candidatos"][0]["selecionavel"] is True
+    certidao = AS.candidatos_do_ato(con, tabela="ri_certidoes",
+                                    pedidos=[("16.24.4", 1)], hoje=HOJE)
+    assert [c["protocolo_id"] for c in certidao] == [imovel["protocolo_id"]]
+    assert certidao[0]["selecionavel"] is True
+
+
 def test_a_macro_marca_o_unico_e_nao_escolhe_quando_ha_dois():
     from jinja2 import Environment, FileSystemLoader
     env = Environment(loader=FileSystemLoader(str(RAIZ / "templates")))
@@ -252,9 +333,37 @@ def test_a_macro_marca_o_unico_e_nao_escolhe_quando_ha_dois():
     com_rota = str(macro(um, [("13.17.4", 1)], url_de_selar="/x/1/selar",
                          csrf_token="tok"))
     assert 'action="/x/1/selar"' in com_rota and "selar de novo" in com_rota
+    fora = {"protocolo_id": 9, "numero": "2099.10.77",
+            "interessado": "CLIENTE DE EXEMPLO",
+            "itens": [{"codigo": "13.17.2", "saldo": 1, "pago": True}],
+            "cobre_tudo": False, "faltam": [], "pre_marcado": False,
+            "selecionavel": False, "motivo": "atribuição incompatível (RI; este ato aceita FIRMAS, NOTAS)"}
+    sozinho = str(macro([fora], [("13.17.2", 1), ("13.17.3", 1), ("13.17.4", 1)],
+                        atendendo={"id": 9, "numero": "2099.10.77"}))
+    assert 'type="radio"' not in sozinho
+    assert "atribuição incompatível" in sozinho
+    assert "13.17.2" in sozinho and "13.17.3" in sozinho and "13.17.4" in sozinho
+    assert "não dá para escolher" in sozinho
+    # O outro protocolo, único de verdade, não vem marcado: quem está em
+    # atendimento é o que ficou de fora, e escolher o do vizinho gastaria
+    # o pagamento dele.
+    ao_lado = dict(um[0], protocolo_id=8, numero="2099.10.78")
+    junto = str(macro([fora, ao_lado], [("13.17.4", 1)],
+                      atendendo={"id": 9, "numero": "2099.10.77"}))
+    assert 'value="9"' not in junto and "checked" not in junto
+    assert 'value="8"' in junto
 
 
 # ------------------------------------------- todas as atribuições (22/10, tarde)
+
+
+def test_a_atribuicao_do_balcao_e_escolha_e_nao_padrao():
+    assert CXP.atribuicao_escolhida(" firmas ") == "FIRMAS"
+    for atrib in CXP.ATRIBUICOES_DO_BALCAO:
+        assert CXP.atribuicao_escolhida(atrib) == atrib
+    for vazio in ("", "   ", None, "XYZ"):
+        with pytest.raises(CXP.ProtocoloError, match="Escolha a atribuição"):
+            CXP.atribuicao_escolhida(vazio)
 
 
 def test_a_familia_do_codigo_acha_qualquer_item_do_grupo():

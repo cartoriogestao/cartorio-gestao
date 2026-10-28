@@ -23,10 +23,16 @@
 #}
 {% macro protocolo_do_selo(candidatos, pedidos, atendendo=None, url_de_selar=None,
                            csrf_token=None, nome_campo="protocolo_selo") %}
-{% set pre = (candidatos or [])|selectattr('pre_marcado')|list %}
-{% set marcado = (atendendo.id if atendendo else None) %}
+{# Quem ficou de fora (`selecionavel` falso) aparece com o motivo e sem
+   botão. Não conta como o candidato único: marcar o protocolo de outro
+   cliente só porque o que está em atendimento não serve gastaria o
+   pagamento de quem não está no balcão. #}
+{% set escolhiveis = (candidatos or [])|rejectattr('selecionavel', 'equalto', false)|list %}
+{% set pre = escolhiveis|selectattr('pre_marcado')|list %}
+{% set do_atendimento = escolhiveis|selectattr('protocolo_id', 'equalto', atendendo.id)|list if atendendo else [] %}
+{% set marcado = (do_atendimento[0].protocolo_id if do_atendimento else none) %}
 {% if marcado is none and pre %}{% set marcado = pre[0].protocolo_id %}{% endif %}
-{% if marcado is none and candidatos and candidatos|length == 1 %}{% set marcado = candidatos[0].protocolo_id %}{% endif %}
+{% if marcado is none and not atendendo and escolhiveis|length == 1 %}{% set marcado = escolhiveis[0].protocolo_id %}{% endif %}
 {% if url_de_selar %}
 <form method="post" action="{{ url_de_selar }}" class="protocolo-do-selo">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -47,16 +53,22 @@
     <tbody>
     {% for c in candidatos %}
       <tr>
+        {% if c.selecionavel is sameas false %}
+        <td>—</td>
+        <td>{{ c.numero }}</td>
+        {% else %}
         <td><input type="radio" name="{{ nome_campo }}" value="{{ c.protocolo_id }}"
                    id="{{ nome_campo }}-{{ c.protocolo_id }}"
                    {% if c.protocolo_id == marcado %}checked{% endif %}></td>
         <td><label for="{{ nome_campo }}-{{ c.protocolo_id }}">{{ c.numero }}</label></td>
+        {% endif %}
         <td>{{ c.interessado or '—' }}</td>
         <td>
           {% for it in c.itens %}{{ it.codigo }} ×{{ it.saldo }}{% if not it.pago %} (não pago){% endif %}{% if not loop.last %}; {% endif %}{% endfor %}
         </td>
         <td>
-          {% if c.cobre_tudo %}sim{% else %}
+          {% if c.selecionavel is sameas false %}{{ c.motivo }} — não dá para escolher
+          {% elif c.cobre_tudo %}sim{% else %}
             {% for f in c.faltam %}faltam {{ f.faltam }} do {{ f.codigo }}{% if not loop.last %}; {% endif %}{% endfor %}
             — acrescente no protocolo
           {% endif %}
@@ -65,13 +77,16 @@
     {% endfor %}
     </tbody>
   </table>
+  {% if escolhiveis %}
   <p class="muted">Confira se o protocolo é de quem está no balcão: o selo gasta o pagamento dele.</p>
-  {% else %}
+  {% endif %}
+  {% endif %}
+  {% if not escolhiveis %}
   <p>Nenhum protocolo pago desta atribuição tem
     {% for codigo, quantidade in pedidos %}{% if codigo.endswith('*') %}item do grupo {{ codigo[:-2] }}{% else %}{{ codigo }}{% endif %}{% if not loop.last %} / {% endif %}{% endfor %}
     com saldo nos últimos 30 dias. Abra o protocolo e registre o pagamento no caixa antes de selar.</p>
   {% endif %}
-  {% if url_de_selar and candidatos %}
+  {% if url_de_selar and escolhiveis %}
   <button type="submit">Atender este protocolo e selar de novo</button>
   {% endif %}
 </fieldset>

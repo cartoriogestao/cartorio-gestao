@@ -58,13 +58,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import io
 import json
 import sqlite3
 import sys
 import traceback
 import unicodedata
-import zipfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
@@ -88,7 +86,7 @@ CANAIS = ("SIRC", "CRC", "FUNAI", "OBITOS", "IBGE")
 #: Os prefixos dos arquivos que o agente escreve. É por eles — e só por eles —
 #: que ele limpa a pasta da carga: o que outra pessoa pôs ali não se apaga.
 PREFIXO_DO_ARQUIVO = {"SIRC": "SIRC_", "CRC": "CRC_", "FUNAI": "FUNAI_",
-                      "OBITOS": "OBITOS_", "IBGE": "CARTINF_"}
+                      "OBITOS": "OBITOS_", "IBGE": "CARTINF"}
 
 #: O destino da comunicação de óbito (`rc_comunicacoes`) e a Central em que o
 #: gestor registra o mesmo envio (`ge_envios`). São dois vocabulários para a
@@ -111,8 +109,9 @@ ONDE_SOBE = {
              "(o arquivo daqui sai com o lugar marcado), mande, e registre lá.",
     "OBITOS": "cada destino pelo seu meio (o eleitoral pelo INFODIP). Depois, "
               "registre cada um na tela «Comunicações de óbito» com o protocolo.",
-    "IBGE": "pelo meio que o IBGE indicar, o CARTINF.zip. Depois, registre a "
-            "entrega na tela do IBGE do sistema.",
+    "IBGE": "pelo meio que o IBGE indicar, o CARTINF.ZIP — com esse nome, e só "
+            "ele (se houver mais de um trimestre, renomeie cada um para CARTINF.ZIP "
+            "na hora de enviar). Depois, registre a entrega na tela do IBGE do sistema.",
 }
 
 FUNDAMENTO = {
@@ -504,15 +503,18 @@ def _trimestres(hoje: date) -> list[tuple[int, int]]:
 
 
 def zip_do_ibge(montado: dict) -> bytes:
-    """O `CARTINF.zip` como `atribuicoes_web._zip_do_ibge` o monta: ISO-8859-1 e
-    CRLF — o arquivo é de largura fixa, e acento em dois bytes empurraria a linha."""
-    import ibge_remessa as IBGE
-    memoria = io.BytesIO()
-    with zipfile.ZipFile(memoria, "w", zipfile.ZIP_DEFLATED) as z:
-        for nome, linhas in sorted(montado["arquivos"].items()):
-            corpo = IBGE.FIM_DE_LINHA.join(linhas) + IBGE.FIM_DE_LINHA
-            z.writestr(nome, corpo.encode(IBGE.CODIFICACAO, "replace"))
-    return memoria.getvalue()
+    """O `CARTINF.ZIP` do trimestre — o MESMO que a tela do IBGE baixa
+    (`ibge_geracao.zip_da_remessa`, 28/10/2026): os seis arquivos, com o RC-10."""
+    import ibge_geracao as IBGEG
+    return IBGEG.zip_da_remessa(montado)
+
+
+def _nome_do_zip_do_ibge(ano: int, tri: int, pendentes: int) -> str:
+    """`CARTINF.ZIP` quando só um trimestre espera — o nome que o IBGE aceita
+    (28/10/2026, «diz nome errado»). Com dois ou mais na mesma pasta, os nomes
+    precisam diferir, e o LEIA-ME manda renomear antes de enviar."""
+    import ibge_geracao as IBGEG
+    return IBGEG.NOME_DO_ZIP if pendentes == 1 else f"CARTINF_{ano}_T{tri}.ZIP"
 
 
 def preparar_ibge(con, hoje: date, *, s: dict, ret: dict[int, str]) -> dict:
@@ -552,7 +554,7 @@ def preparar_ibge(con, hoje: date, *, s: dict, ret: dict[int, str]) -> dict:
             r["transicao"].append({"competencia": f"{ano}-T{tri}", "do_acervo": acervo,
                                    "linhas": montado["linhas"]})
         if montado["linhas"]:
-            r["arquivos"].append({"nome": f"CARTINF_{ano}_T{tri}.zip",
+            r["arquivos"].append({"ano": ano, "tri": tri,
                                   "dados": zip_do_ibge(montado),
                                   "quantos": montado["linhas"],
                                   "competencia": f"{ano}-T{tri}"})
@@ -560,6 +562,9 @@ def preparar_ibge(con, hoje: date, *, s: dict, ret: dict[int, str]) -> dict:
         prazo = date(ano + 1, 1, 8) if mes > 12 else date(ano, mes, 8)
         r["prazo"] = min([x for x in (r["prazo"], prazo) if x], default=None)
         r["quantos"] += montado["linhas"]
+    for a in r["arquivos"]:
+        a["nome"] = _nome_do_zip_do_ibge(a.pop("ano"), a.pop("tri"),
+                                         len(r["arquivos"]))
     return r
 
 

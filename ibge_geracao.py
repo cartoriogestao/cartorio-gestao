@@ -35,7 +35,9 @@ O QUE AINDA NÃO SE PODE MONTAR DO ATO NOVO, E POR QUÊ (medido em 28/08/2026)
 """
 from __future__ import annotations
 
+import io
 import sqlite3
+import zipfile
 from typing import Any
 
 from bd_nativo import banco
@@ -578,6 +580,8 @@ def montar(con: sqlite3.Connection, *, ano: int, trimestre: int,
     de, ate = _do_trimestre(ano, trimestre)
     arquivos: dict[str, list[str]] = {}
     fora: list[dict] = []
+    por_livro: dict[str, dict] = {}
+    livros = _numero_dos_livros(con)
     # As colunas do ato levam apelido: com o mesmo nome do assento (`data_ato`),
     # o dict ficaria com a do ato, e a linha do banco dava a do assento.
     for assento in banco(con).ler(
@@ -596,17 +600,141 @@ def montar(con: sqlite3.Connection, *, ano: int, trimestre: int,
             fora.append({"especie": especie, "numero": assento["numero"]})
             continue
         arquivo, monta = alvo
+        assento = _com_o_livro_do_ato(assento, livros)
         arquivos.setdefault(arquivo, []).append(
             monta(con, assento, assento, cabeca=cabeca,
                   ano=ano, trimestre=trimestre))
+        _contar_no_livro(por_livro, assento, arquivo)
 
-    conferencia = {nome: conferir(linhas, IBGE.ARQUIVOS[nome])
-                   for nome, linhas in arquivos.items()}
+    # AS LINHAS DOS REGISTROS SE CONTAM ANTES DO RESUMO: o RC-10 resume o
+    # trimestre, e um trimestre sem registro não tem o que mandar.
+    linhas = sum(len(v) for v in arquivos.values())
+    if linhas:
+        arquivos["CARTINF10.TXT"] = linhas_do_resumo(
+            por_livro, cabeca=cabeca, ano=ano, trimestre=trimestre)
+    conferencia = {nome: conferir(linhas_do_arquivo, IBGE.ARQUIVOS[nome])
+                   for nome, linhas_do_arquivo in arquivos.items()}
     return {"ano": int(ano), "trimestre": int(trimestre),
             "de": de, "ate": ate,
             "arquivos": arquivos, "conferencia": conferencia,
             "fora_da_pesquisa": fora,
-            "linhas": sum(len(v) for v in arquivos.values())}
+            "linhas": linhas}
+
+
+# O LIVRO DO ASSENTO QUE ESTE SISTEMA LAVROU — 28/10/2026, achado montando o
+# 3º trimestre de 2026 da produção.
+#
+#   `livro_volume` é o volume do livro de PAPEL, e só os assentos que vieram do
+#   E-Ofício o têm. O que este sistema lavra ocupa lugar num livro aberto aqui
+#   (`rc_atos.livro_id` -> `nu_livros`), e `livro_volume` fica vazio: os
+#   nascimentos 19566 a 19568 e os óbitos 1981 e 1982 iam ao IBGE com o
+#   NUM-LIVRO em branco — e o RC-10 os juntava numa linha sem livro. O número do
+#   livro aberto é o volume (Livro A nº 24 é o A-24 do papel), e entra quando o
+#   assento não traz o seu.
+def _numero_dos_livros(con: sqlite3.Connection) -> dict[int, Any]:
+    """`nu_livros.id` -> número do livro. Só LÊ."""
+    bd = banco(con)
+    if not bd.tem_tabela("nu_livros"):
+        return {}
+    return {int(x["id"]): x["numero"]
+            for x in bd.ler("SELECT id, numero FROM nu_livros")}
+
+
+def _com_o_livro_do_ato(assento: Any, livros: dict[int, Any]) -> Any:
+    """O assento com `livro_volume` do livro do ato, se ele não tiver. Só calcula."""
+    proprio = str(_valor(assento, "livro_volume") or "").strip()
+    livro_id = _valor(assento, "ato_livro_id")
+    if any(c.isdigit() for c in proprio) or livro_id is None:
+        return assento
+    numero = livros.get(int(livro_id))
+    if numero is None:
+        return assento
+    return {**dict(assento), "livro_volume": str(numero)}
+
+
+# O RESUMO DO TRIMESTRE — a folha RC-10, `CARTINF10.TXT` (28/10/2026).
+#
+#   O layout estava medido desde 28/08 (`ibge_remessa.RC10`) e o arquivo nunca
+#   era gerado: o zip saía só com os modelos que tinham linha, e o E-Ofício
+#   mandava sempre o resumo junto. Medido no que a casa exportou do 2º
+#   trimestre de 2026 — quatro linhas:
+#
+#       A24  0019506 0019543  nascidos 28
+#       B04  0001010 0001011  casamentos 2
+#       C05  0001954 0001968  óbitos 13
+#       (sem livro)            tudo zero
+#
+#   Uma linha por livro, com o PRIMEIRO e o ÚLTIMO número do trimestre naquele
+#   livro e quantos registros de cada espécie foram mandados; e uma última
+#   linha sem livro e toda zerada. O que essa linha quer dizer não está medido
+#   — ela vai porque o E-Ofício a mandava e o IBGE aceitou, que é a régua da
+#   casa para o que não se entende.
+#
+#   ANULADOS e REPETIDOS saem zero, como no arquivo real: o assento cancelado
+#   não entra na remessa, e repetido o sistema não lavra.
+TOTAL_DO_ARQUIVO = {"CARTINF01.TXT": "TNASCIDOS", "CARTINF02.TXT": "TCASAMENTO",
+                    "CARTINF03.TXT": "TOBITOS"}
+
+
+def _contar_no_livro(por_livro: dict, assento: Any, arquivo: str) -> None:
+    """Soma o registro ao livro dele, para o RC-10. Só calcula."""
+    livro = numero_do_livro(assento)
+    conta = por_livro.setdefault(livro, {"numeros": [], "totais": {}})
+    numero = _numero(_valor(assento, "numero"))
+    if numero:
+        conta["numeros"].append(int(numero))
+    campo = TOTAL_DO_ARQUIVO[arquivo]
+    conta["totais"][campo] = conta["totais"].get(campo, 0) + 1
+
+
+def linhas_do_resumo(por_livro: dict, *, cabeca: dict, ano: int,
+                     trimestre: int) -> list[str]:
+    """As linhas de `CARTINF10.TXT`, na ordem dos livros. Só calcula."""
+    comum = {**cabeca, "TRIM-PESQUISA": str(int(trimestre)),
+             "ANO-PESQUISA": f"{int(ano) % 100:02d}"}
+    saida = []
+    for livro in sorted(por_livro):
+        conta = por_livro[livro]
+        numeros = conta["numeros"]
+        saida.append(IBGE.montar_linha(IBGE.RC10, {
+            **comum, "NUM-LIVRO": livro,
+            "PRI-TRIMES": str(min(numeros)) if numeros else "",
+            "ULT-TRIMES": str(max(numeros)) if numeros else "",
+            **{campo: str(n) for campo, n in conta["totais"].items()}}))
+    saida.append(IBGE.montar_linha(IBGE.RC10, comum))
+    return saida
+
+
+# O ZIP QUE O IBGE RECEBE — 28/10/2026, relato do balcão: «problema para
+# enviar arquivo cartinf, diz nome errado».
+#
+#   O nome é `CARTINF.ZIP`, e só ele: o sistema baixava `CARTINF_2026_T3.zip`,
+#   com o ano e o trimestre no nome, e o envio recusava pelo nome. O trimestre
+#   já vai dentro de toda linha (TRIM-PESQUISA, ANO-PESQUISA).
+#
+#   E vão os SEIS arquivos, mesmo os vazios — medido na exportação do E-Ofício
+#   de 23/07/2026: CARTINF01, 02, 03, 04, 10 e CONTROLE.SIS, com o 04 e o
+#   CONTROLE.SIS de zero byte. O zip daqui levava só os que tinham linha.
+NOME_DO_ZIP = "CARTINF.ZIP"
+ARQUIVOS_DO_ZIP = ("CARTINF01.TXT", "CARTINF02.TXT", "CARTINF03.TXT",
+                   "CARTINF04.TXT", "CARTINF10.TXT", "CONTROLE.SIS")
+
+
+def zip_da_remessa(montado: dict) -> bytes:
+    """O `CARTINF.ZIP` do trimestre, em bytes. Só calcula.
+
+    EM ISO-8859-1 E COM CRLF: o arquivo é de largura fixa, e acento em dois
+    bytes empurraria todos os campos da linha para a direita. Arquivo sem
+    linha vai vazio, com zero byte, como o E-Ofício o mandava.
+    """
+    memoria = io.BytesIO()
+    with zipfile.ZipFile(memoria, "w", zipfile.ZIP_DEFLATED) as z:
+        for nome in ARQUIVOS_DO_ZIP:
+            linhas = montado["arquivos"].get(nome) or []
+            corpo = (IBGE.FIM_DE_LINHA.join(linhas) + IBGE.FIM_DE_LINHA
+                     if linhas else "")
+            z.writestr(nome, corpo.encode(IBGE.CODIFICACAO, "replace"))
+    return memoria.getvalue()
 
 
 def _do_trimestre(ano: Any, trimestre: Any) -> tuple[str, str]:

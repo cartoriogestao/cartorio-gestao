@@ -806,3 +806,280 @@ def test_a_lista_parcial_se_identifica_e_o_js_para_na_resposta_estranha(s):
     assert "r.redirected" in js and "window.location.reload()" in js
     assert '"X-Wa-Parcial"' in js and "application/json" in js
     assert "clearInterval" in js
+
+
+# ===================================================================
+# A LISTA FINAL E O HISTÓRICO OCULTO NA RETOMADA (27/10/2026)
+#
+# As abas filtram no banco (Sem responsável · Minhas · Todas · Resolvidas); a
+# resolvida fica guardada, nada se apaga, e quando volta (o cliente escreve ou
+# «Reativar conversa») a tela retoma pela mensagem nova. O responsável fica até
+# 7 dias depois de resolvida.
+# ===================================================================
+
+import wa_fila as _FILA  # noqa: E402
+
+
+def _chegar(s, wa_id, nome, texto, meta_id):
+    corpo = _payload(texto, meta_id=meta_id, wa_id=wa_id)
+    corpo["entry"][0]["changes"][0]["value"]["contacts"][0]["profile"]["name"] = nome
+    s["c"].post("/whatsapp/webhook", data=json.dumps(corpo),
+                content_type="application/json", headers={"X-Wa-Test": "1"})
+    return int(_um(s, "SELECT id FROM wa_conversa WHERE wa_id=%s", (wa_id,))["id"])
+
+
+def _sql(s, comando, args=()):
+    with s["bd"].transaction() as con:
+        _banco(con).escrever(comando, args)
+
+
+def _eu(s):
+    return int(_um(s, "SELECT id FROM users WHERE username='tabeliao'")["id"])
+
+
+def _dias_atras(dias):
+    return (datetime.now() - timedelta(days=dias)).replace(microsecond=0).isoformat()
+
+
+def _resolver(s, cid):
+    r = s["c"].post(f"/whatsapp/{cid}/resolver", data={"csrf_token": _csrf(s["c"])})
+    assert r.status_code == 302
+
+
+def _nomes_da_aba(s, aba):
+    html = s["c"].get(f"/whatsapp?aba={aba}" if aba else "/whatsapp").get_data(as_text=True)
+    return re.findall(r'class="wa-item-nome">([^<]+)<', html), html
+
+
+def _conta(html, aba):
+    achado = re.search(r'data-wa-aba="%s".*?class="wa-conta">(\d+)<' % aba, html, re.S)
+    return int(achado.group(1))
+
+
+def test_as_abas_trazem_so_o_que_devem_e_sem_responsavel_abre(s):
+    s["bd"].create_user("beatriz", "Beatriz Exemplo", SENHA, "USER")
+    outra = int(_um(s, "SELECT id FROM users WHERE username='beatriz'")["id"])
+    sem = _chegar(s, "5511900000001", "Mario Exemplo dos Santos", "oi", "wamid.aba-1")
+    minha = _chegar(s, "5511900000002", "Cidade Exemplo", "oi", "wamid.aba-2")
+    dela = _chegar(s, "5511900000003", "Lúcia Exemplo", "oi", "wamid.aba-3")
+    resolvida = _chegar(s, "5511900000004", "Rafael Exemplo", "oi", "wamid.aba-4")
+    _sql(s, "UPDATE wa_conversa SET responsavel_id=%s WHERE id=%s", (_eu(s), minha))
+    _sql(s, "UPDATE wa_conversa SET responsavel_id=%s WHERE id=%s", (outra, dela))
+    _resolver(s, resolvida)
+    assert sem
+    nomes, html = _nomes_da_aba(s, "")
+    assert nomes == ["Mario Exemplo dos Santos"]
+    assert re.search(r'data-wa-aba="sem"[^>]*aria-current="true"', html)
+    assert [_conta(html, a) for a in ("sem", "minhas", "todas", "resolvidas")] == [1, 1, 3, 1]
+    assert _nomes_da_aba(s, "minhas")[0] == ["Cidade Exemplo"]
+    assert sorted(_nomes_da_aba(s, "todas")[0]) == sorted(
+        ["Mario Exemplo dos Santos", "Cidade Exemplo", "Lúcia Exemplo"])
+    assert _nomes_da_aba(s, "resolvidas")[0] == ["Rafael Exemplo"]
+    # «Abertas» e «Na fila» saíram
+    assert "Na fila" not in html and ">Abertas" not in html
+
+
+def test_as_resolvidas_vem_da_mais_recente_e_as_antigas_contam_pelo_atualizado_em(s):
+    velha = _chegar(s, "5511900000011", "Mario Exemplo dos Santos", "oi", "wamid.ord-1")
+    nova = _chegar(s, "5511900000012", "Cidade Exemplo", "oi", "wamid.ord-2")
+    antiga_sem_coluna = _chegar(s, "5511900000013", "Lúcia Exemplo", "oi", "wamid.ord-3")
+    _sql(s, "UPDATE wa_conversa SET status='resolvida', resolvida_em=%s, atualizado_em=%s WHERE id=%s",
+         (_dias_atras(5), _dias_atras(5), velha))
+    _sql(s, "UPDATE wa_conversa SET status='resolvida', resolvida_em=%s, atualizado_em=%s WHERE id=%s",
+         (_dias_atras(1), _dias_atras(1), nova))
+    _sql(s, "UPDATE wa_conversa SET status='resolvida', resolvida_em=NULL, atualizado_em=%s WHERE id=%s",
+         (_dias_atras(3), antiga_sem_coluna))
+    assert _nomes_da_aba(s, "resolvidas")[0] == [
+        "Cidade Exemplo", "Lúcia Exemplo", "Mario Exemplo dos Santos"]
+
+
+def test_o_responsavel_vem_antes_do_setor_e_sem_responsavel_aparece(s):
+    com = _chegar(s, "5511900000021", "Mario Exemplo dos Santos", "oi", "wamid.etq-1")
+    _chegar(s, "5511900000022", "Cidade Exemplo", "oi", "wamid.etq-2")
+    _sql(s, "UPDATE wa_conversa SET responsavel_id=%s, setor='NOTAS' WHERE id=%s", (_eu(s), com))
+    html = s["c"].get("/whatsapp?aba=todas").get_data(as_text=True)
+    cartoes = re.findall(r'<a class="wa-item.*?</a>', html, re.S)
+    assert len(cartoes) == 2
+    for cartao in cartoes:
+        assert cartao.index('data-wa-etq="responsavel"') < cartao.index('data-wa-etq="setor"')
+    com_resp = next(c for c in cartoes if "Mario Exemplo dos Santos" in c)
+    assert "MARIO EXEMPLO DOS SANTOS" in com_resp and "Notas" in com_resp
+    sem_resp = next(c for c in cartoes if "Cidade Exemplo" in c)
+    assert "sem responsável" in sem_resp
+    # as iniciais no círculo tingido da cor do setor
+    assert "--cor-setor:#70701f" in com_resp and 'class="wa-avatar"' in com_resp
+
+
+def test_resolver_grava_a_data_e_nao_apaga_mensagem(s):
+    cid = _chegar(s, "5511900000031", "Mario Exemplo dos Santos", "um", "wamid.res-1")
+    _chegar(s, "5511900000031", "Mario Exemplo dos Santos", "dois", "wamid.res-2")
+    antes = int(_um(s, "SELECT count(*) AS n FROM wa_mensagem")["n"])
+    _resolver(s, cid)
+    linha = _um(s, "SELECT status, resolvida_em FROM wa_conversa WHERE id=%s", (cid,))
+    assert linha["status"] == "resolvida" and linha["resolvida_em"]
+    assert int(_um(s, "SELECT count(*) AS n FROM wa_mensagem")["n"]) == antes
+
+
+def _pagina(s, cid, completo=False):
+    return s["c"].get(f"/whatsapp/{cid}" + ("?historico=1" if completo else "")).get_data(as_text=True)
+
+
+def _historico(s, cid, completo=False):
+    """Só a área das mensagens: o último texto também aparece no resumo da
+    lista, e o rascunho na caixa de escrever."""
+    html = _pagina(s, cid, completo)
+    return html[html.index('id="wa-mensagens"'):html.index('class="wa-escrever"')]
+
+
+def test_a_resolvida_que_volta_pelo_cliente_retoma_com_o_historico_oculto(s):
+    cid = _chegar(s, "5511900000041", "Mario Exemplo dos Santos", "pedido antigo", "wamid.volta-1")
+    _sql(s, "UPDATE wa_conversa SET modo='pessoa' WHERE id=%s", (cid,))
+    _resolver(s, cid)
+    _chegar(s, "5511900000041", "Mario Exemplo dos Santos", "pedido novo", "wamid.volta-2")
+    c = _um(s, "SELECT * FROM wa_conversa WHERE id=%s", (cid,))
+    nova = _mensagens(s, cid)[-1]
+    assert c["status"] != "resolvida" and c["resolvida_em"] is None
+    assert int(c["atendimento_desde_id"]) == int(nova["id"])
+    assert c["modo"] is None, "a resolvida que volta, volta para a IA"
+    curta = _historico(s, cid)
+    assert "pedido novo" in curta and "pedido antigo" not in curta
+    assert "Ver histórico" in curta and "atendimento retomado em" in curta
+    tudo = _historico(s, cid, completo=True)
+    assert "pedido antigo" in tudo and "pedido novo" in tudo
+    assert "— atendimento retomado em" in tudo and "Ocultar histórico" in tudo
+    assert tudo.index("pedido antigo") < tudo.index("— atendimento retomado") < tudo.index("pedido novo")
+    assert int(_um(s, "SELECT count(*) AS n FROM wa_mensagem WHERE conversa_id=%s",
+                   (cid,))["n"]) == 2
+
+
+def _resolvida_ha(s, wa_id, meta, dias, *, pela_coluna=True):
+    cid = _chegar(s, wa_id, "Mario Exemplo dos Santos", "antes", meta)
+    _sql(s, "UPDATE wa_conversa SET responsavel_id=%s, setor='RI' WHERE id=%s", (_eu(s), cid))
+    _resolver(s, cid)
+    if pela_coluna:
+        _sql(s, "UPDATE wa_conversa SET resolvida_em=%s WHERE id=%s", (_dias_atras(dias), cid))
+    else:
+        _sql(s, "UPDATE wa_conversa SET resolvida_em=NULL, atualizado_em=%s WHERE id=%s",
+             (_dias_atras(dias), cid))
+    return cid
+
+
+def _eventos(s, cid):
+    with s["bd"].connect() as con:
+        return [e["tipo"] for e in _FILA.eventos(con, cid)]
+
+
+def test_resolvida_ha_6_dias_volta_com_o_mesmo_responsavel(s):
+    cid = _resolvida_ha(s, "5511900000051", "wamid.r6-1", 6)
+    _chegar(s, "5511900000051", "Mario Exemplo dos Santos", "voltei", "wamid.r6-2")
+    assert _um(s, "SELECT responsavel_id FROM wa_conversa WHERE id=%s", (cid,))["responsavel_id"] == _eu(s)
+    assert "Mario Exemplo dos Santos" in _nomes_da_aba(s, "minhas")[0]
+    assert _FILA.EV_SEM_RESPONSAVEL_NA_VOLTA not in _eventos(s, cid)
+
+
+def test_resolvida_ha_8_dias_volta_sem_responsavel_com_o_setor_e_o_evento(s):
+    cid = _resolvida_ha(s, "5511900000061", "wamid.r8-1", 8)
+    _chegar(s, "5511900000061", "Mario Exemplo dos Santos", "voltei", "wamid.r8-2")
+    c = _um(s, "SELECT responsavel_id, setor FROM wa_conversa WHERE id=%s", (cid,))
+    assert c["responsavel_id"] is None and c["setor"] == "RI"
+    assert "Mario Exemplo dos Santos" in _nomes_da_aba(s, "")[0]
+    assert _FILA.EV_SEM_RESPONSAVEL_NA_VOLTA in _eventos(s, cid)
+    assert "resolvida havia mais de 7 dias" in _pagina(s, cid)
+
+
+def test_a_resolvida_antiga_sem_a_coluna_conta_pelo_atualizado_em(s):
+    cid = _resolvida_ha(s, "5511900000071", "wamid.ra-1", 8, pela_coluna=False)
+    _chegar(s, "5511900000071", "Mario Exemplo dos Santos", "voltei", "wamid.ra-2")
+    assert _um(s, "SELECT responsavel_id FROM wa_conversa WHERE id=%s", (cid,))["responsavel_id"] is None
+
+
+def test_o_reativar_segue_a_mesma_regra_dos_7_dias(s):
+    perto = _resolvida_ha(s, "5511900000081", "wamid.rr-1", 6)
+    longe = _resolvida_ha(s, "5511900000082", "wamid.rr-2", 8)
+    for cid in (perto, longe):
+        r = s["c"].post(f"/whatsapp/{cid}/reativar", data={"csrf_token": _csrf(s["c"])})
+        assert r.status_code == 302 and r.headers["Location"].endswith(f"/whatsapp/{cid}")
+    assert _um(s, "SELECT responsavel_id FROM wa_conversa WHERE id=%s", (perto,))["responsavel_id"] == _eu(s)
+    assert _um(s, "SELECT responsavel_id FROM wa_conversa WHERE id=%s", (longe,))["responsavel_id"] is None
+    assert _FILA.EV_SEM_RESPONSAVEL_NA_VOLTA in _eventos(s, longe)
+
+
+def test_reativar_abre_vazia_e_o_novas_nao_puxa_o_historico_de_volta(s):
+    cid = _chegar(s, "5511900000091", "Mario Exemplo dos Santos", "antiga um", "wamid.re-1")
+    _chegar(s, "5511900000091", "Mario Exemplo dos Santos", "antiga dois", "wamid.re-2")
+    _resolver(s, cid)
+    maior = max(int(m["id"]) for m in _mensagens(s, cid))
+    assert s["c"].post(f"/whatsapp/{cid}/reativar",
+                       data={"csrf_token": _csrf(s["c"])}).status_code == 302
+    c = _um(s, "SELECT status, atendimento_desde_id FROM wa_conversa WHERE id=%s", (cid,))
+    assert c["status"] != "resolvida" and int(c["atendimento_desde_id"]) == maior + 1
+    tela = _historico(s, cid)
+    assert "antiga um" not in tela and "antiga dois" not in tela
+    assert "Ver histórico" in tela and f'data-ultimo="{maior}"' in tela
+    # o /novas nunca devolve o atendimento anterior fora da vista do histórico
+    for depois in (0, maior - 1, maior):
+        assert s["c"].get(f"/whatsapp/{cid}/novas?depois={depois}").get_json()["html"] == ""
+    # e a mensagem seguinte aparece, no /novas e na tela
+    _chegar(s, "5511900000091", "Mario Exemplo dos Santos", "nova depois", "wamid.re-3")
+    novas = s["c"].get(f"/whatsapp/{cid}/novas?depois={maior}").get_json()
+    assert "nova depois" in novas["html"] and "antiga" not in novas["html"]
+    assert "nova depois" in _historico(s, cid)
+    # a vista do histórico continua trazendo tudo
+    tudo = s["c"].get(f"/whatsapp/{cid}/novas?depois=0&historico=1").get_json()["html"]
+    assert "antiga um" in tudo and "nova depois" in tudo
+
+
+def test_conversa_sem_inicio_de_atendimento_mostra_tudo(s):
+    cid = _chegar(s, "5511900000101", "Mario Exemplo dos Santos", "primeira", "wamid.st-1")
+    _chegar(s, "5511900000101", "Mario Exemplo dos Santos", "segunda", "wamid.st-2")
+    assert _um(s, "SELECT atendimento_desde_id FROM wa_conversa WHERE id=%s",
+               (cid,))["atendimento_desde_id"] is None
+    tela = _historico(s, cid)
+    assert "primeira" in tela and "segunda" in tela and "Ver histórico" not in tela
+
+
+def test_a_aba_resolvidas_mostra_as_100_mais_recentes_e_conta_todas(s):
+    with s["bd"].transaction() as con:
+        for n in range(103):
+            _banco(con).escrever(
+                "INSERT INTO wa_conversa (wa_id, nome, status, atualizado_em, resolvida_em, auto_ok) "
+                "VALUES (%s, %s, 'resolvida', %s, %s, 0)",
+                (f"55119{n:08d}", f"Cidade Exemplo {n:03d}", _dias_atras(1),
+                 (datetime.now() - timedelta(minutes=n)).replace(microsecond=0).isoformat()))
+    nomes, html = _nomes_da_aba(s, "resolvidas")
+    assert len(nomes) == 100 and nomes[0] == "Cidade Exemplo 000"
+    assert "Cidade Exemplo 102" not in nomes
+    assert _conta(html, "resolvidas") == 103
+    assert "mostrando as 100 mais recentes" in html
+    with s["bd"].connect() as con:
+        contagens = _FILA.contar_por_aba(con, agora=s["bd"].now(), usuario_id=_eu(s))
+    assert contagens == {"sem": 0, "minhas": 0, "todas": 0, "resolvidas": 103}
+    assert "mostrando as" not in s["c"].get("/whatsapp?aba=todas").get_data(as_text=True)
+
+
+def test_o_botao_de_atualizar_so_aparece_com_a_busca_automatica_desligada(s):
+    html = s["c"].get("/whatsapp").get_data(as_text=True)
+    assert "data-wa-atualizar" in html
+    assert "A busca automática está desligada: clique para buscar agora" in html
+    import automacao as AU
+    with s["bd"].transaction() as con:
+        AU.semear(con)
+        _banco(con).escrever("UPDATE au_processos SET ativo=1 WHERE codigo='WHATSAPP_CAIXA_POSTAL'")
+    assert "data-wa-atualizar" not in s["c"].get("/whatsapp").get_data(as_text=True)
+
+
+def test_o_auditor_ve_o_historico_e_nao_resolve_nem_reativa(s):
+    cid = _chegar(s, "5511900000111", "Mario Exemplo dos Santos", "antes", "wamid.au-1")
+    _resolver(s, cid)
+    _chegar(s, "5511900000111", "Mario Exemplo dos Santos", "depois", "wamid.au-2")
+    s["bd"].create_user("fiscal", "Auditor Exemplo", SENHA, "AUDITOR")
+    fiscal = _logar(s["app"], "fiscal")
+    curta = fiscal.get(f"/whatsapp/{cid}")
+    assert curta.status_code == 200 and "Ver histórico" in curta.get_data(as_text=True)
+    tudo = fiscal.get(f"/whatsapp/{cid}?historico=1")
+    assert tudo.status_code == 200 and "antes" in tudo.get_data(as_text=True)
+    csrf = _token(curta.get_data(as_text=True))
+    assert fiscal.post(f"/whatsapp/{cid}/resolver", data={"csrf_token": csrf}).status_code == 403
+    _resolver(s, cid)
+    assert fiscal.post(f"/whatsapp/{cid}/reativar", data={"csrf_token": csrf}).status_code == 403
+    assert _um(s, "SELECT status FROM wa_conversa WHERE id=%s", (cid,))["status"] == "resolvida"

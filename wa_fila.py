@@ -53,6 +53,25 @@ EV_DEVOLUCAO = "devolucao_ia"
 EV_ETIQUETA_POSTA = "etiqueta_posta"
 EV_ETIQUETA_TIRADA = "etiqueta_tirada"
 EV_RESPONSAVEL = "responsavel"
+EV_RETOMADA = "retomada"
+EV_SEM_RESPONSAVEL_NA_VOLTA = "sem_responsavel_na_volta"
+
+# O RESPONSÁVEL NA VOLTA DA RESOLVIDA (decisão do oficial, 27/10/2026): até 7
+# dias depois de resolvida, quem atendeu ainda lembra do caso, e a conversa
+# volta para ele («Minhas»). Passado isso, volta sem responsável («Sem
+# responsável»), e o setor fica. Conta pelo `resolvida_em`; nas resolvidas de
+# antes da coluna, pelo `atualizado_em`. A regra é uma só: a entrada do
+# cliente e o «Reativar conversa» chamam `retomar`.
+DIAS_COM_O_MESMO_RESPONSAVEL = 7
+
+# A ABA «RESOLVIDAS» MOSTRA AS MAIS RECENTES (27/10/2026): nada se apaga, e as
+# resolvidas se acumulam. A lista traz só estas; a contagem da aba diz o total.
+LIMITE_DAS_RESOLVIDAS = 100
+
+# AS ABAS DA LISTA, na ordem da tela; «sem» é a que abre por padrão.
+ABAS = (("sem", "Sem responsável"), ("minhas", "Minhas"), ("todas", "Todas"),
+        ("resolvidas", "Resolvidas"))
+ABA_PADRAO = "sem"
 
 ROTULO_DO_EVENTO = {
     EV_TRANSFERENCIA: "transferida",
@@ -61,6 +80,8 @@ ROTULO_DO_EVENTO = {
     EV_ETIQUETA_POSTA: "etiqueta posta",
     EV_ETIQUETA_TIRADA: "etiqueta tirada",
     EV_RESPONSAVEL: "responsável",
+    EV_RETOMADA: "atendimento retomado",
+    EV_SEM_RESPONSAVEL_NA_VOLTA: "voltou sem responsável",
 }
 
 _ISO = "%Y-%m-%dT%H:%M:%S"
@@ -92,6 +113,28 @@ def normalizar_etiqueta(texto: Any) -> str:
     t = "".join(c for c in n if not (0x300 <= ord(c) <= 0x36F)).lower().strip()
     t = re.sub(r"[^a-z0-9]+", "_", t).strip("_")
     return t[:TAMANHO_DA_ETIQUETA]
+
+
+def cor_do_setor(setor: Any) -> str:
+    """A cor do setor na lista: a do módulo do sistema (`modulos.MODULOS`). O
+    Atendimento usa o azul do sistema (`--accent`) e a Gestão o cinza do ADM,
+    porque não têm módulo próprio."""
+    import modulos as MOD
+    cores = {m["chave"]: m["cor"] for m in MOD.MODULOS}
+    s = setor_valido(setor) or WA.SETOR_PADRAO
+    if s == "GESTAO":
+        return cores.get("ADM", "#6c6f7a")
+    return cores.get(s, "#0675df")
+
+
+def iniciais(nome: Any, numero: Any = "") -> str:
+    """As iniciais do círculo: a primeira e a última palavra do nome; sem
+    nome, «#» e os dois últimos dígitos do número."""
+    partes = [p for p in str(nome or "").replace(".", " ").split()
+              if len(p) > 2 or p.isupper()]
+    if partes:
+        return (partes[0][0] + (partes[-1][0] if len(partes) > 1 else "")).upper()
+    return "#" + str(numero or "")[-2:]
 
 
 def setor_valido(setor: Any) -> str:
@@ -259,6 +302,37 @@ def devolver_a_ia(con: Any, conversa_id: int, *, por: str = "",
     _evento(con, conversa_id, EV_DEVOLUCAO, quando=quando, por=por)
 
 
+def retomar(con: Any, conversa: dict, *, desde_id: int, quando: str,
+            por: str = "", motivo: str = "") -> dict:
+    """A RESOLVIDA QUE VOLTA — pelo cliente ou pelo «Reativar conversa». ESCREVE.
+
+    `conversa` é a linha COMO ESTAVA, ainda resolvida. Ela volta aberta e para
+    a IA (como sempre voltou), sem nada apagado, e o atendimento atual começa
+    em `desde_id`: a tela mostra dali em diante e guarda o resto atrás de «Ver
+    histórico». O responsável fica até `DIAS_COM_O_MESMO_RESPONSAVEL` dias
+    depois de resolvida; passado isso, sai, e o evento diz por quê.
+    """
+    cid = int(conversa["id"])
+    responsavel = conversa.get("responsavel_id")
+    base = _dt(conversa.get("resolvida_em")) or _dt(conversa.get("atualizado_em"))
+    agora = _dt(quando)
+    saiu = bool(responsavel and base and agora
+                and agora - base > timedelta(days=DIAS_COM_O_MESMO_RESPONSAVEL))
+    if saiu:
+        responsavel = None
+        _evento(con, cid, EV_SEM_RESPONSAVEL_NA_VOLTA, quando=quando, por=por,
+                nota=f"voltou sem responsável: resolvida havia mais de "
+                     f"{DIAS_COM_O_MESMO_RESPONSAVEL} dias")
+    banco(con).escrever(
+        """UPDATE wa_conversa
+              SET status=%s, modo=NULL, passagem_motivo=NULL, resolvida_em=NULL,
+                  atendimento_desde_id=%s, responsavel_id=%s, atualizado_em=%s
+            WHERE id=%s""",
+        (WA.ABERTA, int(desde_id), responsavel, quando, cid))
+    _evento(con, cid, EV_RETOMADA, quando=quando, por=por, nota=motivo)
+    return {"responsavel_id": responsavel, "saiu_o_responsavel": saiu}
+
+
 def usuarios_ativos(con: Any) -> list[dict]:
     return [dict(r) for r in banco(con).ler(
         """SELECT id, username, full_name FROM users
@@ -276,14 +350,9 @@ _ESPERANDO_DESDE = """
                                 AND o.direcao = 'out'), 0))"""
 
 
-def listar(con: Any, *, agora: str, setor: str = "", etiqueta: str = "",
-           so_abertas: bool = False, so_vencidas: bool = False) -> list[dict]:
-    """A fila com setor, responsável, etiquetas e quanto o cliente espera.
-
-    `vencida` = esperando há mais que o prazo da casa. Conversa resolvida não
-    vence: quem a resolveu decidiu que não há o que responder.
-    """
-    bd = banco(con)
+def _filtros(con: Any, *, agora: str, setor: str, etiqueta: str,
+             so_vencidas: bool) -> tuple[list[str], list]:
+    """As condições comuns da lista e da contagem das abas (no banco)."""
     filtro, args = [], []
     s = setor_valido(setor)
     if s:
@@ -294,14 +363,84 @@ def listar(con: Any, *, agora: str, setor: str = "", etiqueta: str = "",
         filtro.append("EXISTS (SELECT 1 FROM wa_etiqueta e "
                       "WHERE e.conversa_id = c.id AND e.etiqueta = %s)")
         args.append(et)
-    if so_abertas or so_vencidas:
+    if so_vencidas:
+        # O MESMO CORTE DO `vencida` DE CADA LINHA, no banco: esperando desde
+        # antes de agora menos o prazo (as datas são texto ISO, comparáveis).
+        limite = _dt(agora)
+        corte = ((limite - timedelta(minutes=prazo_minutos(con))).strftime(_ISO)
+                 if limite else agora)
+        filtro.append(f"c.status <> %s AND {_ESPERANDO_DESDE} < %s")
+        args += [WA.RESOLVIDA, corte]
+    return filtro, args
+
+
+def _da_aba(aba: str, usuario_id: int | None) -> tuple[str, list]:
+    if aba == "resolvidas":
+        return "c.status = %s", [WA.RESOLVIDA]
+    if aba == "sem":
+        return "c.status <> %s AND c.responsavel_id IS NULL", [WA.RESOLVIDA]
+    if aba == "minhas":
+        return "c.status <> %s AND c.responsavel_id = %s", [WA.RESOLVIDA,
+                                                           int(usuario_id or 0)]
+    return "c.status <> %s", [WA.RESOLVIDA]                   # «todas» as abertas
+
+
+def contar_por_aba(con: Any, *, agora: str, usuario_id: int | None,
+                   setor: str = "", etiqueta: str = "",
+                   so_vencidas: bool = False) -> dict[str, int]:
+    """Quantas conversas há em cada aba, com os mesmos filtros. UMA consulta,
+    no banco: as resolvidas se acumulam e não se trazem para contar."""
+    filtro, args = _filtros(con, agora=agora, setor=setor, etiqueta=etiqueta,
+                            so_vencidas=so_vencidas)
+    onde = ("WHERE " + " AND ".join(filtro)) if filtro else ""
+    r = banco(con).um(
+        f"""SELECT
+              COALESCE(SUM(CASE WHEN c.status <> %s AND c.responsavel_id IS NULL
+                                THEN 1 ELSE 0 END), 0) AS sem,
+              COALESCE(SUM(CASE WHEN c.status <> %s AND c.responsavel_id = %s
+                                THEN 1 ELSE 0 END), 0) AS minhas,
+              COALESCE(SUM(CASE WHEN c.status <> %s THEN 1 ELSE 0 END), 0) AS todas,
+              COALESCE(SUM(CASE WHEN c.status = %s THEN 1 ELSE 0 END), 0) AS resolvidas
+              FROM wa_conversa c {onde}""",
+        (WA.RESOLVIDA, WA.RESOLVIDA, int(usuario_id or 0), WA.RESOLVIDA,
+         WA.RESOLVIDA, *args)) or {}
+    return {aba: int(r.get(aba) or 0) for aba, _ in ABAS}
+
+
+def listar(con: Any, *, agora: str, setor: str = "", etiqueta: str = "",
+           so_abertas: bool = False, so_vencidas: bool = False,
+           aba: str = "", usuario_id: int | None = None) -> list[dict]:
+    """A fila com setor, responsável, etiquetas e quanto o cliente espera.
+
+    `vencida` = esperando há mais que o prazo da casa. Conversa resolvida não
+    vence: quem a resolveu decidiu que não há o que responder.
+
+    `aba` (27/10/2026) filtra NO BANCO: «sem», «minhas», «todas» (as abertas)
+    ou «resolvidas» — estas da mais recente para a mais antiga, e só as
+    `LIMITE_DAS_RESOLVIDAS` + 1 primeiras (a de sobra diz que há mais). Sem
+    `aba`, a lista é a de antes.
+    """
+    bd = banco(con)
+    filtro, args = _filtros(con, agora=agora, setor=setor, etiqueta=etiqueta,
+                            so_vencidas=so_vencidas)
+    if so_abertas:
         filtro.append("c.status <> %s")
         args.append(WA.RESOLVIDA)
+    ordem, limite = "c.atualizado_em DESC, c.id DESC", ""
+    if aba:
+        condicao, mais = _da_aba(aba, usuario_id)
+        filtro.append(condicao)
+        args += mais
+        if aba == "resolvidas":
+            ordem = ("COALESCE(NULLIF(c.resolvida_em, ''), c.atualizado_em) DESC, "
+                     "c.id DESC")
+            limite = f"LIMIT {LIMITE_DAS_RESOLVIDAS + 1}"
     onde = ("WHERE " + " AND ".join(filtro)) if filtro else ""
     linhas = bd.ler(
         f"""SELECT c.id, c.wa_id, c.nome, c.etiqueta, c.status, c.rascunho,
                    c.auto_ok, c.atualizado_em, c.setor, c.modo,
                    c.responsavel_id, c.passagem_motivo,
+                   c.resolvida_em, c.atendimento_desde_id,
                    u.full_name AS responsavel_nome,
                    (SELECT m.texto FROM wa_mensagem m
                      WHERE m.conversa_id=c.id
@@ -309,7 +448,7 @@ def listar(con: Any, *, agora: str, setor: str = "", etiqueta: str = "",
                    {_ESPERANDO_DESDE} AS esperando_desde
               FROM wa_conversa c LEFT JOIN users u ON u.id = c.responsavel_id
               {onde}
-             ORDER BY c.atualizado_em DESC, c.id DESC""", tuple(args))
+             ORDER BY {ordem} {limite}""", tuple(args))
     prazo = prazo_minutos(con)
     tags: dict[int, list[str]] = {}
     for r in bd.ler("SELECT conversa_id, etiqueta FROM wa_etiqueta "

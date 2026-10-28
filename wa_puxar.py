@@ -206,6 +206,18 @@ def rodar_automacao(ctx) -> dict:
                                    f"{r['repetidas']} repetida(s).")
 
 
+def busca_automatica_ligada(con: Any) -> bool:
+    """O processo WHATSAPP_CAIXA_POSTAL está ligado? Ligado, ele busca de 2 em 2
+    minutos, e a tela não precisa do botão de atualizar; desligado (ou sem a
+    automação nesta instalação), o botão é o único jeito de trazer mensagem."""
+    try:
+        import automacao as AU
+        p = AU.por_codigo(con, CATALOGO[0]["codigo"])
+    except Exception:                                   # noqa: BLE001
+        return False
+    return bool(p and int(p.get("ativo") or 0) == 1)
+
+
 CATALOGO = (
     {"codigo": "WHATSAPP_CAIXA_POSTAL", "nome": "WhatsApp — buscar na caixa-postal",
      "setor": "GESTAO", "funcao": f"wa_puxar.{rodar_automacao.__name__}", "timeout_s": 120,

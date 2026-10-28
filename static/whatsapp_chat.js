@@ -101,7 +101,9 @@
       return;
     }
     perguntandoConversa = true;
-    var url = caixa.getAttribute("data-novas-url") + "?depois=" +
+    // A vista do histórico já leva `?historico=1` no endereço.
+    var base = caixa.getAttribute("data-novas-url");
+    var url = base + (base.indexOf("?") === -1 ? "?" : "&") + "depois=" +
       encodeURIComponent(caixa.getAttribute("data-ultimo") || "0");
     fetch(url, {credentials: "same-origin", headers: {"Accept": "application/json"}})
       .then(function (r) {
@@ -236,8 +238,9 @@
     botaoDetalhes.addEventListener("click", function () {
       var abrir = painel.hidden;
       painel.hidden = !abrir;
+      // O botão é o nome da pessoa: ele não troca de texto; a setinha gira
+      // pelo `aria-expanded` (o CSS).
       botaoDetalhes.setAttribute("aria-expanded", abrir ? "true" : "false");
-      botaoDetalhes.textContent = abrir ? "detalhes ◂" : "detalhes ▸";
     });
   }
 

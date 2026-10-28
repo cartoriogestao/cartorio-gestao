@@ -133,15 +133,34 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         return ("", 200)
 
     def _filtro() -> dict:
-        return {"setor": request.args.get("setor", ""),
+        """A aba e os filtros pedidos. A aba que abre é «Sem responsável»."""
+        aba = request.args.get("aba", "")
+        return {"aba": aba if aba in dict(FILA.ABAS) else FILA.ABA_PADRAO,
+                "setor": request.args.get("setor", ""),
                 "etiqueta": request.args.get("etiqueta", ""),
-                "so": request.args.get("so", "")}
+                "vencidas": "1" if request.args.get("vencidas") == "1" else ""}
 
-    def _lista(con, filtro: dict) -> list[dict]:
-        return FILA.listar(con, agora=db.now(), setor=filtro["setor"],
-                           etiqueta=filtro["etiqueta"],
-                           so_abertas=(filtro["so"] == "abertas"),
-                           so_vencidas=(filtro["so"] == "vencidas"))
+    def _lista(con, filtro: dict) -> tuple[list[dict], bool]:
+        """As conversas da aba, filtradas NO BANCO, e se sobrou alguma além do
+        limite das resolvidas. Cada linha leva a cor do setor e as iniciais."""
+        linhas = FILA.listar(con, agora=db.now(), setor=filtro["setor"],
+                             etiqueta=filtro["etiqueta"],
+                             so_vencidas=bool(filtro["vencidas"]), aba=filtro["aba"],
+                             usuario_id=app.extensions["usuario_id"]())
+        ha_mais = len(linhas) > FILA.LIMITE_DAS_RESOLVIDAS
+        linhas = linhas[:FILA.LIMITE_DAS_RESOLVIDAS]
+        for r in linhas:
+            r["cor_setor"] = FILA.cor_do_setor(r["setor"])
+            r["iniciais"] = FILA.iniciais(r.get("nome"), r.get("wa_id"))
+            r["iniciais_resp"] = (FILA.iniciais(r.get("responsavel_nome"))
+                                  if r.get("responsavel_id") else "")
+        return linhas, ha_mais
+
+    def _contagens(con, filtro: dict) -> dict:
+        return FILA.contar_por_aba(con, agora=db.now(),
+                                   usuario_id=app.extensions["usuario_id"](),
+                                   setor=filtro["setor"], etiqueta=filtro["etiqueta"],
+                                   so_vencidas=bool(filtro["vencidas"]))
 
     def _com_dias(mensagens: list[dict], dia_anterior: str = "") -> list[dict]:
         """Põe o separador de dia («hoje», «ontem», `dd/mm`) na mensagem em
@@ -164,10 +183,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
 
     def _da_lista(filtro: dict) -> dict:
         """O que o parcial da lista precisa além das linhas: o filtro só com o
-        que foi escolhido (para os endereços não levarem `?setor=&so=`) e o
-        dia de hoje (a hora sem a data)."""
-        return {"filtro": filtro, "hoje": str(db.now())[:10],
-                "filtro_url": {k: v for k, v in filtro.items() if v}}
+        que foi escolhido (para os endereços não levarem `?setor=&etiqueta=`),
+        quantos filtros estão ligados e o dia de hoje (a hora sem a data)."""
+        escolhido = {k: v for k, v in filtro.items() if v and k != "aba"}
+        manter = dict(escolhido)
+        if filtro["aba"] != FILA.ABA_PADRAO:
+            manter["aba"] = filtro["aba"]
+        return {"filtro": filtro, "hoje": str(db.now())[:10], "abas": FILA.ABAS,
+                "filtros_ligados": len(escolhido), "filtros_url": escolhido,
+                "filtro_url": manter, "limite_resolvidas": FILA.LIMITE_DAS_RESOLVIDAS}
 
     @app.route("/whatsapp")
     @login_required
@@ -184,9 +208,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         (revisão do #72)."""
         bruto = (request.args.get("aberta") or "").strip()
         with _con() as con:
-            linhas = _lista(con, _filtro())
+            linhas, ha_mais = _lista(con, _filtro())
         resposta = make_response(render_template(
-            "_whatsapp_lista.html", linhas=linhas,
+            "_whatsapp_lista.html", linhas=linhas, ha_mais=ha_mais,
             aberta=int(bruto) if bruto.isdigit() else None, **_da_lista(_filtro())))
         resposta.headers[CABECALHO_DO_PARCIAL] = "lista"
         return resposta
@@ -334,13 +358,42 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 "danger")
         return redirect(url_for("whatsapp_lista"))
 
+    def _vista(d: dict, historico: bool) -> dict:
+        """A VISTA DA CONVERSA RETOMADA (27/10/2026). Com `atendimento_desde_id`,
+        a vista curta mostra só o atendimento atual e conta o que ficou oculto;
+        com `historico`, mostra tudo e marca onde o atendimento foi retomado.
+        Sem `atendimento_desde_id`, mostra tudo, como antes. Nada se apaga."""
+        todas = d["mensagens"]
+        desde = int(d.get("atendimento_desde_id") or 0)
+        retomadas = [e for e in d.get("eventos") or []
+                     if e.get("tipo") == FILA.EV_RETOMADA]
+        quando = str((retomadas[-1].get("quando") if retomadas else "") or "")
+        vista = {"desde": desde, "historico": historico, "ocultas": 0,
+                 "retomada_em": f"{quando[8:10]}/{quando[5:7]}" if quando else "",
+                 # o /novas parte do maior id da conversa, MESMO OCULTO: depois
+                 # de um «Reativar», a tela vazia não puxa o histórico de volta
+                 "ultimo": max([int(m["id"]) for m in todas] or [0]),
+                 "todas": todas}
+        if not desde:
+            return vista
+        vista["ocultas"] = sum(1 for m in todas if int(m["id"]) < desde)
+        if historico:
+            primeira = next((m for m in todas if int(m["id"]) >= desde), None)
+            if primeira:
+                primeira["retomada"], primeira["retomada_em"] = True, vista["retomada_em"]
+        else:
+            d["mensagens"] = [m for m in todas if int(m["id"]) >= desde]
+        return vista
+
     def _tela(conversa_id: int | None):
         """A tela única: a lista e, se houver, a conversa aberta."""
         filtro = _filtro()
-        d = janela = None
+        d = janela = vista = None
         usuarios: list = []
         with _con() as con:
-            linhas = _lista(con, filtro)
+            linhas, ha_mais = _lista(con, filtro)
+            contagens = _contagens(con, filtro)
+            busca_automatica = PUXAR.busca_automatica_ligada(con)
             cfg = WA.config_para_tela(con)
             ia = ATENDENTE.configuracao(con)
             etiquetas = FILA.etiquetas_em_uso(con)
@@ -355,16 +408,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 d["modo"] = d.get("modo") or SCH.MODO_IA
                 d["registros"] = ATENDENTE.registros(con, conversa_id=conversa_id,
                                                      limite=20)
+                d["cor_setor"] = FILA.cor_do_setor(d["setor"])
+                vista = _vista(d, request.args.get("historico") == "1")
                 _com_dias(d["mensagens"])
                 usuarios = FILA.usuarios_ativos(con)
                 # A JANELA DE 24 H (27/10/2026): passada ela, a Meta recusa o
                 # texto livre, e o caminho é o modelo de retomar.
-                janela = {"fora": MODELOS.fora_da_janela(d["mensagens"], db.now()),
+                # a janela conta a última mensagem do cliente, MESMO OCULTA
+                janela = {"fora": MODELOS.fora_da_janela(vista["todas"], db.now()),
                           "ligado": MODELOS.ligado(con),
                           "falta": MODELOS.falta_para_enviar(con, _serventia()),
                           "modelo": MODELOS.nome_do_modelo(con, MODELOS.RETOMAR)}
         return render_template("whatsapp_chat.html", linhas=linhas, cfg=cfg, ia=ia,
                                setores=SCH.SETORES, etiquetas=etiquetas,
+                               ha_mais=ha_mais, contagens=contagens,
+                               busca_automatica=busca_automatica, vista=vista,
                                **_da_lista(filtro), aberta=conversa_id, c=d,
                                pode_enviar=pode, usuarios=usuarios,
                                sugeridas=etiquetas, janela=janela,
@@ -389,15 +447,53 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         if not d:
             abort(404)
         todas = d["mensagens"]
-        dia_anterior = next((str(m.get("criado_em") or "")[:10] for m in todas
-                             if int(m["id"]) == depois), "")
-        novas = _com_dias([m for m in todas if int(m["id"]) > depois], dia_anterior)
+        # O ATENDIMENTO ATUAL É O PISO (27/10/2026): fora da vista do histórico,
+        # nada de antes de `atendimento_desde_id` volta à tela — nem com
+        # `depois=0`, nem depois de um «Reativar».
+        desde = int(d.get("atendimento_desde_id") or 0)
+        piso = depois
+        if desde and request.args.get("historico") != "1":
+            piso = max(depois, desde - 1)
+        # o dia da última mensagem que a tela tem; com o piso subido, ela não
+        # tem nenhuma do atendimento atual, e o primeiro balão leva o seu dia
+        dia_anterior = "" if piso != depois else next(
+            (str(m.get("criado_em") or "")[:10] for m in todas if int(m["id"]) == depois), "")
+        novas = _com_dias([m for m in todas if int(m["id"]) > piso], dia_anterior)
         html = render_template("_whatsapp_baloes.html", mensagens=novas) if novas else ""
         return jsonify({"html": html,
                         "ultimo": max([depois] + [int(m["id"]) for m in novas]),
                         "status": d.get("status") or "",
                         "modo": d.get("modo") or SCH.MODO_IA,
                         "janela_fora": MODELOS.fora_da_janela(todas, db.now())})
+
+    @app.route("/whatsapp/<int:conversa_id>/reativar", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def whatsapp_reativar(conversa_id: int):
+        """«REATIVAR CONVERSA» (27/10/2026): a resolvida volta aberta sem esperar o
+        cliente. A mesma regra da entrada (`FILA.retomar`): os 7 dias do
+        responsável e o histórico oculto, que começa no próximo id — a tela abre
+        vazia, com o «Ver histórico», e a próxima mensagem já aparece. Não é o
+        «Reabrir com o modelo», que é a janela de 24 h da Meta."""
+        with db.transaction() as con:
+            d = WA.conversa(con, conversa_id)
+            if not d:
+                abort(404)
+            if d.get("status") != SCH.RESOLVIDA:
+                flash("Esta conversa não está resolvida: não há o que reativar.",
+                      "warning")
+                return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
+            proximo = max([int(m["id"]) for m in d["mensagens"]] or [0]) + 1
+            r = FILA.retomar(con, d, desde_id=proximo, quando=db.now(), por=_quem(),
+                             motivo="reativada pela tela")
+        audit("wa_reativar", "wa_conversa", conversa_id,
+              {"saiu_o_responsavel": r["saiu_o_responsavel"]})
+        flash("Conversa reativada. O atendimento anterior está em «Ver histórico».",
+              "success")
+        if r["saiu_o_responsavel"]:
+            flash(f"Ela voltou sem responsável: estava resolvida havia mais de "
+                  f"{FILA.DIAS_COM_O_MESMO_RESPONSAVEL} dias.", "warning")
+        return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
 
     def _na_conversa(conversa_id: int, acao, auditoria: str, detalhe=None):
         """Faz `acao(con)` na transação; ValueError vira aviso na tela."""

@@ -358,6 +358,10 @@ def aplicar_entrada(con: Any, payload_meta: Any,
         rascunho = rascunhar(texto, etiqueta, serventia, con=con)
         bruto = json.dumps(msg, ensure_ascii=False)
         existente = _conversa_por_wa(con, wa_id)
+        # A RESOLVIDA QUE VOLTA (27/10/2026): nada se apaga; a tela retoma pela
+        # mensagem nova, e o responsável segue a regra dos 7 dias
+        # (`FILA.retomar`, a mesma do «Reativar conversa»).
+        voltou = bool(existente) and existente.get("status") == WA.RESOLVIDA
         if existente:
             cid = int(existente["id"])
             # A CONVERSA RESOLVIDA QUE VOLTA, VOLTA PARA A IA (26/10/2026): a
@@ -382,14 +386,18 @@ def aplicar_entrada(con: Any, payload_meta: Any,
                    RETURNING id""",
                 (wa_id, nome, etiqueta, WA.ABERTA, rascunho, quando),
             )[0]["id"])
-        bd.escrever(
+        mid = int(bd.escrever(
             """INSERT INTO wa_mensagem
                    (conversa_id, direcao, texto, bruto_json, criado_em, meta_id,
                     tipo, midia_id)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
             (cid, DIR_IN, texto, bruto, quando, meta_id or None, tipo,
              midia_id or None),
-        )
+        )[0]["id"])
+        if voltou:
+            FILA.retomar(con, existente, desde_id=mid, quando=quando,
+                         por="mensagem do cliente",
+                         motivo="o cliente escreveu de novo")
         # A etiqueta da palavra-chave entra tambem na lista de varias
         # (`wa_etiqueta`), como automatica. «outros» nao e etiqueta: e falta dela.
         if etiqueta and etiqueta != "outros":
@@ -437,9 +445,10 @@ def resolver(con: Any, conversa_id: int,
     quando = agora or agora_iso()
     banco(con).escrever(
         """UPDATE wa_conversa
-              SET status=%s, modo=NULL, passagem_motivo=NULL, atualizado_em=%s
+              SET status=%s, modo=NULL, passagem_motivo=NULL, atualizado_em=%s,
+                  resolvida_em=%s
             WHERE id=%s""",
-        (WA.RESOLVIDA, quando, int(conversa_id)),
+        (WA.RESOLVIDA, quando, quando, int(conversa_id)),
     )
 
 

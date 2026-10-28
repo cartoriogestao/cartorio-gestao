@@ -287,6 +287,14 @@ def _avisos(db, codigo):
                               (_processo(db, codigo)["id"],))
 
 
+def _com_email(db, codigo):
+    """Marca o canal e-mail no processo. Desde 28/10/2026 o processo novo nasce sem ele."""
+    p = _processo(db, codigo)
+    with db.transaction() as con:
+        banco(con).escrever("UPDATE au_processos SET canais=%s WHERE id=%s",
+                            (json.dumps({**p["canais"], SCH.EMAIL: True}), p["id"]))
+
+
 def test_o_aviso_sai_na_transicao_e_lembra_a_cada_n_horas(casa, monkeypatch):
     db = casa["db"]
     enviados = []
@@ -295,6 +303,7 @@ def test_o_aviso_sai_na_transicao_e_lembra_a_cada_n_horas(casa, monkeypatch):
         SCH.gravar_config(con, SCH.CHAVE_SMTP_HOST, "smtp.exemplo.invalid")
         SCH.gravar_config(con, SCH.CHAVE_EMAIL_DESTINO, "oficial@exemplo.invalid")
         SCH.gravar_config(con, SCH.CHAVE_LEMBRAR, "4")
+    _com_email(db, "CASA_BACKUP")
     _finalizar(db, "CASA_BACKUP", SCH.ERRO, SEG, "o backup falhou")
     primeiro = _avisos(db, "CASA_BACKUP")
     assert {a["canal"] for a in primeiro} == {SCH.PAINEL, SCH.TAREFA, SCH.EMAIL, SCH.WHATSAPP}
@@ -323,9 +332,106 @@ def test_o_aviso_sai_na_transicao_e_lembra_a_cada_n_horas(casa, monkeypatch):
 
 def test_o_email_sem_configuracao_fica_pendente_e_nao_se_da_por_enviado(casa):
     db = casa["db"]
+    _com_email(db, "CASA_DISCO")
     _finalizar(db, "CASA_DISCO", SCH.AVISO, SEG)
     email = next(a for a in _avisos(db, "CASA_DISCO") if a["canal"] == SCH.EMAIL)
     assert email["situacao"] == SCH.PENDENTE_CONFIG
+
+
+
+def test_o_processo_novo_nao_manda_um_email_por_aviso(casa, monkeypatch):
+    # 28/10/2026: «não gostei de receber tantos e-mails dos robôs; não precisa me
+    # avisar cada detalhe» — 21 e-mails em 13 horas na produção. O processo novo
+    # nasce sem o canal e-mail; o painel e a tarefa continuam avisando na hora.
+    db = casa["db"]
+    enviados = []
+    monkeypatch.setitem(AV.ENVIO, "email", lambda cfg, senha, **k: enviados.append(k["assunto"]))
+    with db.transaction() as con:
+        SCH.gravar_config(con, SCH.CHAVE_SMTP_HOST, "smtp.exemplo.invalid")
+        SCH.gravar_config(con, SCH.CHAVE_EMAIL_DESTINO, "oficial@exemplo.invalid")
+    assert AU.CANAIS_PADRAO[SCH.EMAIL] is False
+    assert _processo(db, "CASA_BACKUP")["canais"][SCH.EMAIL] is False
+    _finalizar(db, "CASA_BACKUP", SCH.ERRO, SEG, "o backup falhou")
+    canais = {a["canal"] for a in _avisos(db, "CASA_BACKUP")}
+    assert {SCH.PAINEL, SCH.TAREFA} <= canais and SCH.EMAIL not in canais
+    assert enviados == []
+
+
+def _avisos_do_resumo(db):
+    with db.connect() as con:
+        return banco(con).ler("SELECT * FROM au_avisos WHERE motivo=%s ORDER BY id", (SCH.RESUMO,))
+
+
+def test_o_resumo_do_dia_sai_uma_vez_a_partir_da_hora_e_so_com_problema(casa, monkeypatch):
+    db = casa["db"]
+    enviados = []
+    monkeypatch.setitem(AV.ENVIO, "email",
+                        lambda cfg, senha, **k: enviados.append((k["assunto"], k["corpo"])))
+    with db.transaction() as con:
+        SCH.gravar_config(con, SCH.CHAVE_SMTP_HOST, "smtp.exemplo.invalid")
+        SCH.gravar_config(con, SCH.CHAVE_EMAIL_DESTINO, "oficial@exemplo.invalid")
+        SCH.gravar_config(con, SCH.CHAVE_RESUMO_HORA, "8")
+    dia = SEG.replace(hour=7, minute=0)
+    _ligar(db, "CASA_BACKUP", dia - timedelta(days=1))
+    _ligar(db, "CASA_DISCO", dia - timedelta(days=1))
+    _finalizar(db, "CASA_DISCO", SCH.AVISO, dia - timedelta(hours=2), "2 GB livres")
+    _finalizar(db, "CASA_BACKUP", SCH.ERRO, dia - timedelta(hours=1), "o backup falhou")
+    # antes da hora: nada
+    AU._resumo_do_dia(db, dia.replace(hour=7, minute=59), None)
+    assert enviados == []
+    # na hora: UM e-mail, com os dois, o pior primeiro
+    AU._resumo_do_dia(db, dia.replace(hour=8, minute=0), None)
+    assert len(enviados) == 1
+    assunto, corpo = enviados[0]
+    assert "2 processos" in assunto
+    nome_backup = _processo(db, "CASA_BACKUP")["nome"]
+    nome_disco = _processo(db, "CASA_DISCO")["nome"]
+    assert corpo.index(nome_backup) < corpo.index(nome_disco)       # o erro antes do aviso
+    assert "o backup falhou" in corpo and "2 GB livres" in corpo
+    r = _avisos_do_resumo(db)
+    assert len(r) == 1 and r[0]["situacao"] == SCH.ENVIADO and r[0]["processo_id"] is None
+    # o resto do dia: nada mais
+    AU._resumo_do_dia(db, dia.replace(hour=8, minute=1), None)
+    AU._resumo_do_dia(db, dia.replace(hour=23, minute=59), None)
+    assert len(enviados) == 1
+    # no dia seguinte, com tudo normalizado: nenhum e-mail
+    _finalizar(db, "CASA_BACKUP", SCH.OK, dia + timedelta(hours=10))
+    _finalizar(db, "CASA_DISCO", SCH.OK, dia + timedelta(hours=10))
+    AU._resumo_do_dia(db, dia.replace(hour=8) + timedelta(days=1), None)
+    assert len(enviados) == 1
+
+
+def test_o_resumo_desligado_nao_sai_e_a_falha_nao_repete_a_cada_minuto(casa, monkeypatch):
+    db = casa["db"]
+    tentativas = []
+
+    def falha(cfg, senha, **k):
+        tentativas.append(1)
+        raise OSError("o servidor SMTP não respondeu")
+    monkeypatch.setitem(AV.ENVIO, "email", falha)
+    with db.transaction() as con:
+        SCH.gravar_config(con, SCH.CHAVE_SMTP_HOST, "smtp.exemplo.invalid")
+        SCH.gravar_config(con, SCH.CHAVE_EMAIL_DESTINO, "oficial@exemplo.invalid")
+        SCH.gravar_config(con, SCH.CHAVE_RESUMO_HORA, "desligado")
+    _ligar(db, "CASA_BACKUP", SEG - timedelta(days=1))
+    _finalizar(db, "CASA_BACKUP", SCH.ERRO, SEG, "o backup falhou")
+    AU._resumo_do_dia(db, SEG.replace(hour=12), None)
+    assert tentativas == []
+    with db.transaction() as con:
+        SCH.gravar_config(con, SCH.CHAVE_RESUMO_HORA, "8")
+    AU._resumo_do_dia(db, SEG.replace(hour=12), None)
+    AU._resumo_do_dia(db, SEG.replace(hour=12, minute=1), None)
+    assert len(tentativas) == 1
+    assert _avisos_do_resumo(db)[0]["situacao"] == SCH.FALHOU
+
+
+def test_a_hora_do_resumo_le_numero_palavra_e_volta_ao_padrao(casa):
+    db = casa["db"]
+    with db.transaction() as con:
+        assert SCH.hora_do_resumo(con) == int(SCH.PADROES[SCH.CHAVE_RESUMO_HORA])
+        for valor, esperado in (("7", 7), ("0", 0), ("Desligado", None), ("25", 8), ("sete", 8)):
+            SCH.gravar_config(con, SCH.CHAVE_RESUMO_HORA, valor)
+            assert SCH.hora_do_resumo(con) == esperado, valor
 
 
 def test_a_senha_do_email_mora_fora_do_cofre_e_sai_com_ele_trancado(casa, tmp_path, monkeypatch):

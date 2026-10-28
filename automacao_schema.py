@@ -93,9 +93,10 @@ NOME_DO_CANAL = {PAINEL: "painel e sino", TAREFA: "tarefa do responsável",
                  EMAIL: "e-mail", WHATSAPP: "WhatsApp"}
 ENVIADO, FALHOU, PENDENTE_CONFIG = "ENVIADO", "FALHOU", "PENDENTE_CONFIG"
 #: Por que o aviso saiu: o problema começou, o lembrete do problema que segue,
-#: o problema que piorou, a volta ao normal, ou o e-mail de teste da tela.
-ALERTA, LEMBRETE, PIOROU, NORMALIZOU, TESTE = (
-    "ALERTA", "LEMBRETE", "PIOROU", "NORMALIZOU", "TESTE")
+#: o problema que piorou, a volta ao normal, o e-mail de teste da tela, ou o
+#: resumo do dia (o e-mail único com tudo o que segue com problema).
+ALERTA, LEMBRETE, PIOROU, NORMALIZOU, TESTE, RESUMO = (
+    "ALERTA", "LEMBRETE", "PIOROU", "NORMALIZOU", "TESTE", "RESUMO")
 
 # ---------------------------------------------------------------- a config
 
@@ -111,6 +112,12 @@ CHAVE_BACKUP_ESTADO = "backup_estado_caminho"
 CHAVE_CNIB_LOG = "cnib_minutas_log_caminho"
 CHAVE_TESTE_EMAIL = "email_teste_pedido_em"
 CHAVE_TESTE_EMAIL_POR = "email_teste_pedido_por"
+CHAVE_RESUMO_HORA = "email_resumo_hora"
+CHAVE_RESUMO_ENVIADO = "email_resumo_enviado_em"
+
+#: A palavra que desliga o resumo do dia. Campo vazio volta ao padrão (como
+#: toda a config), e por isso desligar precisa de uma palavra própria.
+RESUMO_DESLIGADO = "desligado"
 
 SEGURANCAS_SMTP = ("STARTTLS", "SSL", "NENHUMA")
 
@@ -127,6 +134,8 @@ PADROES: dict[str, str] = {
     CHAVE_CNIB_LOG: "",
     CHAVE_TESTE_EMAIL: "",
     CHAVE_TESTE_EMAIL_POR: "",
+    CHAVE_RESUMO_HORA: "8",
+    CHAVE_RESUMO_ENVIADO: "",
 }
 CHAVES_CONFIG = tuple(PADROES)
 
@@ -277,3 +286,24 @@ def lembrar_a_cada_h(con) -> int:
     except (TypeError, ValueError):
         n = int(PADROES[CHAVE_LEMBRAR])
     return max(1, min(72, n))
+
+
+def hora_valida_do_resumo(texto: Any) -> int | None:
+    """A hora (0 a 23) do resumo do dia, ou None se o texto não é uma. Só lê."""
+    t = str(texto or "").strip()
+    if t.isdigit() and 0 <= int(t) <= 23:
+        return int(t)
+    return None
+
+
+def hora_do_resumo(con) -> int | None:
+    """A partir de que hora sai o resumo do dia; None = desligado.
+
+    Valor que não é hora nem «desligado» volta ao padrão: um erro de digitação
+    não pode calar o único e-mail que sobrou.
+    """
+    valor = str(ler_config(con, CHAVE_RESUMO_HORA)).strip().lower()
+    if valor == RESUMO_DESLIGADO:
+        return None
+    hora = hora_valida_do_resumo(valor)
+    return hora if hora is not None else int(PADROES[CHAVE_RESUMO_HORA])

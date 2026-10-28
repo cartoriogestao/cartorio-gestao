@@ -43,6 +43,11 @@
   </section>
   <section class="panel">
     <div class="panel-head"><h2>Lembretes e rotinas de fora</h2></div>
+    <label>Resumo do dia por e-mail — a partir de que hora (0 a 23; «desligado» para não mandar)
+      <input name="email_resumo_hora" value="{{ cfg.email_resumo_hora }}" size="9"></label>
+    <p class="small muted">Um e-mail por dia, com todos os processos que seguem com problema; nenhum quando
+      está tudo bem. O painel e as tarefas avisam na hora. O e-mail na hora de cada aviso só sai nos processos
+      que marcarem o canal e-mail, na tela de cada um.</p>
     <label>Lembrar o problema que continua a cada (horas) <input name="lembrar_a_cada_h" value="{{ cfg.lembrar_a_cada_h }}" size="3"></label>
     <label>Arquivo de estado do backup (ESTADO_DO_BACKUP.json) <input name="backup_estado_caminho" value="{{ cfg.backup_estado_caminho }}"></label>
     <label>Log das minutas do CNIB (.log ou .txt) <input name="cnib_minutas_log_caminho" value="{{ cfg.cnib_minutas_log_caminho }}"></label>

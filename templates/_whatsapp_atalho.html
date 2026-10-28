@@ -1,0 +1,28 @@
+{#
+  O ATALHO DO WHATSAPP COM O ALERTA (27/10/2026) — em toda tela logada, logo
+  acima do «Produtividade».
+
+  O número é o de conversas ESPERANDO RESPOSTA (e não «não lidas»: o sistema
+  não guarda leitura), só as de quem vê ou de ninguém — `FILA.nao_respondidas`.
+  Quem decide se aparece é o servidor (`wa_atalho`, no `wa_web`): fora da
+  própria tela do WhatsApp e só para quem pode abri-la. A primeira carga já vem
+  com o número; o `whatsapp_atalho.js` atualiza a cada 30 s, sem renovar a
+  sessão. O ícone é desenhado aqui, em traço, sem nada de fora.
+#}
+{% if wa_atalho %}
+<a class="wa-atalho" href="{{ url_for('whatsapp_lista') }}" data-wa-atalho
+   data-url="{{ url_for('whatsapp_nao_respondidas') }}"
+   aria-label="{{ wa_atalho.rotulo }}" title="{{ wa_atalho.rotulo }}">
+  <svg class="wa-atalho-icone" viewBox="0 0 24 24" width="26" height="26" fill="none"
+       stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"
+       aria-hidden="true" focusable="false">
+    <path d="M3.6 20.4l1.25-4.05A8.4 8.4 0 1 1 8.1 19.5z"/>
+    <path d="M9.3 8.1c.35-.55.95-.55 1.25.05l.6 1.25c.15.3.05.65-.2.85l-.5.45
+             c.5 1.05 1.35 1.9 2.4 2.4l.45-.5c.2-.25.55-.35.85-.2l1.25.6
+             c.6.3.6.9.05 1.25-.75.5-1.75.6-2.65.2a8 8 0 0 1-3.7-3.7
+             c-.4-.9-.3-1.9.2-2.65z"/>
+  </svg>
+  {% if wa_atalho.n > 0 %}<span class="wa-atalho-alerta" data-wa-atalho-n>{{ wa_atalho.texto }}</span>{% endif %}
+</a>
+<script defer src="{{ url_for('static', filename='whatsapp_atalho.js') }}?v={{ VERSION }}"></script>
+{% endif %}

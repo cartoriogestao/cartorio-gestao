@@ -642,8 +642,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     # pelas mensagens novas e pela lista. Se essas perguntas renovassem o
     # `last_activity`, a tela aberta sem ninguém mexendo nunca expiraria. O
     # prazo é conferido nelas como em qualquer rota; só não é renovado.
+    # O alerta do atalho do WhatsApp (27/10/2026) pergunta a cada 30 s em toda
+    # tela logada: a mesma regra.
     ENDPOINTS_QUE_NAO_RENOVAM_A_SESSAO = frozenset({
-        "whatsapp_novas", "whatsapp_lista_parcial"})
+        "whatsapp_novas", "whatsapp_lista_parcial", "whatsapp_nao_respondidas"})
 
     @app.before_request
     def before_request():

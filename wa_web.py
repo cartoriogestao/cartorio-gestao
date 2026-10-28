@@ -198,6 +198,48 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     def whatsapp_lista():
         return _tela(None)
 
+    # O ATALHO COM O ALERTA (27/10/2026): o botão flutuante de toda tela logada
+    # (`_whatsapp_atalho.html`) mostra quantas conversas esperam resposta.
+    # Fica fora da própria tela do WhatsApp, onde seria redundante e cobriria
+    # a caixa de escrever, e só para quem pode abrir o `/whatsapp`.
+    TELAS_SEM_ATALHO = frozenset({"whatsapp_lista", "whatsapp_conversa"})
+
+    def _pode_abrir_o_whatsapp() -> bool:
+        """A mesma régua da guarda do `before_request` (o módulo da tela, o
+        papel e a função cadastrada de quem está logado)."""
+        import modulos as MOD
+        import modulos_ligados as MODLIG
+        u = app.extensions["current_user"]()
+        if not u:
+            return False
+        funcao = u["funcao"] if "funcao" in u.keys() else None
+        return MODLIG.pode_entrar(db.get_setting, MOD.modulo_da_tela("whatsapp_lista"),
+                                  u["role"], funcao)
+
+    @app.context_processor
+    def _atalho_do_whatsapp():
+        try:
+            if (not app.extensions["usuario_id"]()
+                    or request.endpoint in TELAS_SEM_ATALHO
+                    or not _pode_abrir_o_whatsapp()):
+                return {"wa_atalho": None}
+            with _con() as con:
+                n = FILA.nao_respondidas(con, usuario_id=app.extensions["usuario_id"]())
+            return {"wa_atalho": FILA.rotulo_do_atalho(n)}
+        except Exception:                               # noqa: BLE001
+            # uma contagem nunca derruba a tela: o atalho some, e o log diz
+            app.logger.exception("o atalho do WhatsApp não conseguiu contar")
+            return {"wa_atalho": None}
+
+    @app.route("/whatsapp/nao-respondidas")
+    @login_required
+    def whatsapp_nao_respondidas():
+        """O número do alerta do atalho. SÓ LÊ, e nunca fala com a Meta. É
+        pergunta automática: não renova a sessão (`app.py`)."""
+        with _con() as con:
+            n = FILA.nao_respondidas(con, usuario_id=app.extensions["usuario_id"]())
+        return jsonify(FILA.rotulo_do_atalho(n))
+
     @app.route("/whatsapp/lista-parcial")
     @login_required
     def whatsapp_lista_parcial():

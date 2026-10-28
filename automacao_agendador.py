@@ -97,8 +97,11 @@ $g = New-ScheduledTask -Principal $quem `
   -Settings (New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries)
 Register-ScheduledTask -TaskName '{TAREFA_GUARDIAO}' -InputObject $g -Force | Out-Null
 # PRIORIDADE 7 (abaixo do normal) de proposito: o servidor do balcao nasce com 3.
+# SEM JANELA (28/10/2026): a tarefa e interativa e roda a cada minuto; chamada
+# direto pelo cmd.exe, piscava uma janela preta na tela do oficial a cada tique.
+# O conhost --headless roda o mesmo .cmd sem abrir console.
 $d = New-ScheduledTask -Principal $quem `
-  -Action (New-ScheduledTaskAction -Execute "$env:SystemRoot\\System32\\cmd.exe" -Argument '/d /c "{lancadores / "automacao_despachante.cmd"}"') `
+  -Action (New-ScheduledTaskAction -Execute "$env:SystemRoot\\System32\\conhost.exe" -Argument '--headless cmd.exe /d /c "{lancadores / "automacao_despachante.cmd"}"') `
   -Trigger (New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(1)) -RepetitionInterval (New-TimeSpan -Minutes 1)) `
   -Settings (New-ScheduledTaskSettingsSet -Priority 7 -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries)
 Register-ScheduledTask -TaskName '{TAREFA_DESPACHANTE}' -InputObject $d -Force | Out-Null

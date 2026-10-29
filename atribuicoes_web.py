@@ -11553,9 +11553,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # a parcela protestada tinha a irmã «paga» com o mesmo valor — e
             # a lista não dizia que o protocolo tinha dois títulos.
             irmaos = IRM.irmaos_de_varios(con, [t["id"] for t in linhas])
+            # A TRAVA DO PROTESTO (decisão do oficial, 29/10/2026): o título
+            # cujo irmão de vencimento POSTERIOR está PAGO com o mesmo valor
+            # SAI da seleção, com o motivo à vista — só se protesta pela
+            # ficha, com afirmação expressa.
+            travas = IRM.travas_do_protesto(con, [t["id"] for t in linhas])
+            travados = [{**t, "trava": travas[t["id"]]} for t in linhas
+                        if t["id"] in travas]
+            linhas = [t for t in linhas if t["id"] not in travas]
         return render_template("protesto_a_protestar.html", linhas=linhas,
                                revogados=revogados, sustados=sustados,
-                               hoje=hoje(), irmaos=irmaos)
+                               hoje=hoje(), irmaos=irmaos, travados=travados)
 
     @app.route("/protesto/a-protestar/lavrar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -11622,6 +11630,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         # afirmação expressa DAQUELE título — a afirmação é
                         # por título, como o motivo do atraso.
                         afirmacao=_afirmacao_do_formulario(f"_{titulo_id}"))
+                    # A TRAVA DOS IRMÃOS NO PROTESTO (decisão do oficial,
+                    # 29/10/2026): o irmão de vencimento posterior PAGO com o
+                    # mesmo valor. O lote NÃO a vence — o título saiu da
+                    # seleção e se protesta pela ficha, afirmando. Recusa
+                    # aqui e desfaz o protesto dele, mesmo que o `titulo_id`
+                    # chegue direto, sem passar pela lista.
+                    IRM.conferir_e_anotar(con, titulo_id, "PROTESTO",
+                                          r["ato_id"], quem=usuario_nome(),
+                                          agora=agora(),
+                                          situacao_antes="INTIMADO")
                 feitos.append((titulo_id, r))
             except (PT.ProtestoError, LN.LivroError,
                     PTERMO.TermoError) as erro:

@@ -239,6 +239,52 @@ def test_o_irmao_ja_pago_nao_trava_mas_aparece_com_o_sinal():
     assert any("POSTERIOR" in s for s in irmao["sinais"])
 
 
+# ------------------------------------------------- a trava do protesto
+
+
+def test_O_CASO_REAL_o_protesto_trava_com_o_irmao_posterior_pago():
+    """Decisão do oficial, 29/10/2026: a /2 (vencimento posterior) PAGA com o
+    mesmo valor, e a /1 indo a protesto. Só a afirmação expressa vence."""
+    con = banco()
+    p1, p2 = _parcelas(con, situacao_1="INTIMADO", situacao_2="PAGO")
+    travas = IRM.travas_do_protesto(con, [p1, p2])
+    assert set(travas) == {p1}
+    assert travas[p1]["regra"] == IRM.REGRA_PROTESTO
+    assert IRM.quadro_da_ficha(con, p1)["trava_protesto"] is not None
+    ato = _ato(con, p1, "PROTESTO")
+    with pytest.raises(IRM.TituloIrmaoError) as erro:
+        _conferir(con, p1, ato, ato="PROTESTO", situacao_antes="INTIMADO")
+    assert "pela FICHA" in str(erro.value)
+    assert "POSTERIOR" in str(erro.value)
+    feito = _conferir(con, p1, ato, ato="PROTESTO", afirmo=True,
+                      afirmacao=AFIRMACAO_BOA, situacao_antes="INTIMADO")
+    assert feito["afirmacao_expressa"]["regra"] == IRM.REGRA_PROTESTO
+    assert _detalhe(con, ato)["afirmacao_expressa_irmaos"]["afirmacao"] == AFIRMACAO_BOA
+
+
+def test_o_protesto_nao_trava_quando_o_pago_e_o_anterior():
+    """A situação já corrigida do caso: pago o de vencimento ANTERIOR."""
+    con = banco()
+    p1, p2 = _parcelas(con, situacao_1="PAGO", situacao_2="INTIMADO")
+    assert IRM.travas_do_protesto(con, [p2]) == {}
+    assert _conferir(con, p2, _ato(con, p2, "PROTESTO"), ato="PROTESTO") is None
+
+
+def test_o_protesto_nao_trava_com_valor_diferente():
+    con = banco()
+    p1 = _titulo(con, "4321/1", "2026-05-27", situacao="INTIMADO")
+    _titulo(con, "4321/2", "2026-06-27", situacao="PAGO", valor="231.00")
+    assert IRM.travas_do_protesto(con, [p1]) == {}
+
+
+def test_robo_nao_vence_a_trava_do_protesto():
+    con = banco()
+    p1, _ = _parcelas(con, situacao_1="INTIMADO", situacao_2="PAGO")
+    with pytest.raises(IRM.TituloIrmaoError):
+        _conferir(con, p1, _ato(con, p1, "PROTESTO"), ato="PROTESTO",
+                  afirmo=True, afirmacao=AFIRMACAO_BOA, por_robo=True)
+
+
 # ------------------------------------------------------- a afirmação expressa
 
 
@@ -521,21 +567,99 @@ def test_a_afirmacao_pela_tela_vai_ao_ato_e_a_auditoria(s):
     assert "o_que_faltava" in det
 
 
-def test_o_lote_a_protestar_mostra_o_irmao(s):
-    p1, p2 = _parcelas_na_tela(s)
+def _intimar_e_pagar(s, intimado: int, pago: int) -> None:
+    """Um intimado (com apontamento e edital de agosto, e a PROVA da
+    intimação juntada — #106: sem ela o protesto não sai por outro motivo) e
+    o irmão PAGO."""
+    from prova_de_intimacao import juntar_prova
     con = _con_tela(s)
     with con:
-        con.execute("UPDATE pt_titulos SET situacao='INTIMADO' WHERE id=?", (p1,))
-        con.execute("UPDATE pt_titulos SET situacao='PAGO' WHERE id=?", (p2,))
-        con.execute(
-            """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json,
-                   origem, criado_em)
-               VALUES (?,'INTIMACAO','2026-10-20','{"modo": "EDITAL"}',
-                       'MANUAL',?)""", (p1, AGORA))
+        con.execute("UPDATE pt_titulos SET situacao='INTIMADO' WHERE id=?",
+                    (intimado,))
+        con.execute("UPDATE pt_titulos SET situacao='PAGO' WHERE id=?", (pago,))
+        for tipo, data, detalhe in (("APONTAMENTO", "2026-08-18", "{}"),
+                                    ("INTIMACAO", "2026-08-20",
+                                     '{"modo": "EDITAL"}')):
+            con.execute(
+                """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json,
+                       origem, criado_em) VALUES (?,?,?,?,'MANUAL',?)""",
+                (intimado, tipo, data, detalhe, AGORA))
+        juntar_prova(con, intimado)
     con.close()
+
+
+def _marcavel(html: str, titulo_id: int) -> bool:
+    """Se a lista oferece a caixa de marcar este título."""
+    return re.search(r'name="titulo_id"\s+value="%d"' % titulo_id, html) is not None
+
+
+def test_o_lote_a_protestar_mostra_o_irmao(s):
+    """O pago é o de vencimento ANTERIOR (a situação já corrigida do caso):
+    não trava, mas o lote mostra o irmão e o sinal do mesmo valor."""
+    p1, p2 = _parcelas_na_tela(s)
+    _intimar_e_pagar(s, intimado=p2, pago=p1)
     html = s["c"].get("/protesto/a-protestar").get_data(as_text=True)
-    assert f'data-irmaos-do-titulo="{p1}"' in html
+    assert f'data-irmaos-do-titulo="{p2}"' in html
     assert "mesmo valor" in html
+    assert "data-travados-pelo-irmao" not in html
+    assert _marcavel(html, p2)
+
+
+MOTIVO = "Cenário de teste: tríduo vencido"
+
+
+def test_O_CASO_REAL_no_lote_o_travado_sai_da_selecao_com_o_motivo(s):
+    """Decisão do oficial, 29/10/2026: o irmão de vencimento POSTERIOR está
+    PAGO com o mesmo valor — o título sai da seleção, com o motivo à vista, e
+    o lote não o protesta nem que o `titulo_id` chegue direto."""
+    p1, p2 = _parcelas_na_tela(s)
+    _intimar_e_pagar(s, intimado=p1, pago=p2)
+    html = s["c"].get("/protesto/a-protestar").get_data(as_text=True)
+    assert "data-travados-pelo-irmao" in html
+    assert "vencimento POSTERIOR" in html
+    assert not _marcavel(html, p1)
+    resposta = s["c"].post("/protesto/a-protestar/lavrar",
+                           data={"csrf_token": _token(html),
+                                 "titulo_id": [str(p1)],
+                                 f"motivo_atraso_{p1}": MOTIVO},
+                           follow_redirects=True).get_data(as_text=True)
+    assert "pela FICHA" in resposta
+    con = _con_tela(s)
+    assert con.execute("SELECT COUNT(*) FROM pt_atos WHERE tipo='PROTESTO'"
+                       ).fetchone()[0] == 0
+    assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
+                       (p1,)).fetchone()[0] == "INTIMADO"
+    con.close()
+
+
+def test_na_ficha_o_protesto_travado_pede_a_afirmacao_e_ela_fica_na_auditoria(s):
+    p1, p2 = _parcelas_na_tela(s)
+    _intimar_e_pagar(s, intimado=p1, pago=p2)
+    ficha = s["c"].get(f"/protesto/{p1}").get_data(as_text=True)
+    assert "data-trava-do-protesto" in ficha
+    assert "data-aviso-trava-do-protesto" in ficha
+    # sem afirmação: recusa, e nada se lavra
+    html = _lancar(s, p1, ato="PROTESTO", motivo_atraso=MOTIVO)
+    assert "pela FICHA" in html
+    con = _con_tela(s)
+    assert con.execute("SELECT COUNT(*) FROM pt_atos WHERE tipo='PROTESTO'"
+                       ).fetchone()[0] == 0
+    con.close()
+    # com afirmação: o ato leva o texto, e a auditoria a regra própria. O
+    # selo digitado à mão (#103: sem item, o ato que sela é recusado antes).
+    _lancar(s, p1, ato="PROTESTO", motivo_atraso=MOTIVO, afirmo="1",
+            afirmacao=AFIRMACAO_BOA, selo="AVESVD000000NARRKWVNJCRSVO21")
+    con = _con_tela(s)
+    ato = con.execute("SELECT detalhe_json FROM pt_atos WHERE tipo='PROTESTO'"
+                      ).fetchone()
+    linha = con.execute(
+        "SELECT details FROM audit_logs WHERE action='AFIRMACAO_EXPRESSA' "
+        "ORDER BY id DESC LIMIT 1").fetchone()
+    con.close()
+    assert ato is not None and linha is not None
+    af = json.loads(ato["detalhe_json"])["afirmacao_expressa_irmaos"]
+    assert af["regra"] == IRM.REGRA_PROTESTO
+    assert json.loads(linha["details"])["regra"] == IRM.REGRA_PROTESTO
 
 
 def test_a_conferencia_e_o_painel_abrem(s):

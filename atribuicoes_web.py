@@ -12067,8 +12067,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as con:
             conferencia = PRE.protocolos_com_mais_de_um_titulo(
                 con, apresentante_codigo=apresentante or None)
+            # A mesma lista que o roteiro do protesto mostra como pendência.
+            repetidos = PRE.protocolos_repetidos_na_fila(con)
+        if apresentante:
+            repetidos = [r for r in repetidos
+                         if str(r.get("apresentante_codigo") or "").strip()
+                         == apresentante]
         return render_template("protesto_retornos_protocolos.html",
-                               conferencia=conferencia)
+                               conferencia=conferencia, repetidos=repetidos)
 
     @app.route("/protesto/retornos/<int:retorno_id>/arquivo")
     @login_required

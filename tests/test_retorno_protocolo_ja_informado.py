@@ -436,6 +436,39 @@ def test_a_conferencia_mostra_o_protocolo_com_dois_titulos_e_a_repeticao():
         con, apresentante_codigo="341")["total"] == 0
 
 
+# ------------------------------------- o contrato do roteiro do protesto
+
+
+def test_o_roteiro_le_os_repetidos_na_fila_pelo_nome_combinado():
+    """O roteiro (PR #104, `protesto_roteiro.GANCHOS`) chama
+    `protocolos_repetidos_na_fila(con)` e lê `titulo_id`, `numero_titulo`,
+    `protocolo` e `explicacao` de cada linha."""
+    con = banco()
+    assert PR.protocolos_repetidos_na_fila(con) == []
+    caso = o_caso_do_protocolo_2610070011(con)
+    linhas = {int(l["ato_id"]): l for l in PR.protocolos_repetidos_na_fila(con)}
+    retido = linhas[caso["refeito_b"]]
+    assert {"titulo_id", "numero_titulo", "protocolo",
+            "explicacao"} <= set(retido)
+    assert retido["situacao"] == "RETIDO"
+    assert retido["titulo_id"] == caso["b"]
+    assert retido["protocolo"] == caso["protocolo"]
+    # O informante que explica é o protesto VÁLIDO do outro título.
+    assert retido["explicacao"].startswith(
+        f"já informado como protestado pelo título CDA-0001 #{caso['a']} "
+        f"em 26/10/2026")
+    assert caso["arquivo"] in retido["explicacao"]
+
+    PR.forcar_envio_de_protocolo_ja_informado(
+        con, caso["refeito_b"], afirmacao=AFIRMACAO,
+        agora="2026-10-29T10:00:00", usuario="ESCREVENTE")
+    linhas = {int(l["ato_id"]): l for l in PR.protocolos_repetidos_na_fila(con)}
+    liberado = linhas[caso["refeito_b"]]
+    assert liberado["situacao"] == "LIBERADO"
+    assert "afirmação expressa de ESCREVENTE em 29/10/2026" in liberado[
+        "explicacao"]
+
+
 # ------------------------------------------------------------- a tela
 
 

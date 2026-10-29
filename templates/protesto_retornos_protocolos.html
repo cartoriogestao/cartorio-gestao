@@ -51,6 +51,34 @@
   </table>
 </section>
 
+{# A PENDÊNCIA DO ROTEIRO — `protocolos_repetidos_na_fila`, a mesma lista que
+   o roteiro do protesto mostra: o ato retido porque a CRA já tem a ocorrência
+   do protocolo, e o liberado por afirmação expressa, que vai assim mesmo. #}
+{% if repetidos %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Atos do próximo retorno com protocolo já informado</span>
+    <small>{{ repetidos | selectattr('situacao', 'equalto', 'RETIDO') | list | length }} retido(s) ·
+      {{ repetidos | selectattr('situacao', 'equalto', 'LIBERADO') | list | length }} liberado(s) por afirmação</small>
+  </div>
+  <table class="table">
+    <thead><tr><th>Título</th><th>Protocolo</th><th>Ato</th><th>Situação</th><th>Por quê</th></tr></thead>
+    <tbody>
+      {% for r in repetidos %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=r.titulo_id) }}">{{ r.numero_titulo }}</a>
+            <small>#{{ r.titulo_id }}</small></td>
+        <td><small>{{ r.protocolo or '—' }}</small></td>
+        <td>{{ r.tipo }} <small>(ato {{ r.ato_id }})</small></td>
+        <td>{% if r.situacao == 'LIBERADO' %}<strong class="danger">liberado</strong>{% else %}retido{% endif %}</td>
+        <td><small>{{ r.explicacao }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
 {% if not conferencia.protocolos %}
 <section class="panel">
   <p style="padding:14px">

@@ -568,6 +568,103 @@ def ja_aceitas_fora_da_fila(con: sqlite3.Connection) -> list[dict]:
     return list(vistos.values())
 
 
+#: Como a explicação diz a ocorrência — a palavra do contrato da CRA.
+NOME_DA_OCORRENCIA = {"PROTESTO": "protestado", "PAGAMENTO": "pago",
+                      "DESISTENCIA": "retirado", "CANCELAMENTO": "cancelado",
+                      "APONTAMENTO": "apontado"}
+
+
+def _informante_principal(linha: dict) -> dict | None:
+    """O ato que mais explica a trava: o de OUTRO título, válido, primeiro;
+    depois o de outro título desfeito; depois o do próprio título. Só calcula."""
+    meu = str(linha.get("titulo_id"))
+    informantes = list(linha.get("informantes") or [])
+    for chave in (lambda i: str(i.get("titulo_id")) != meu
+                  and not int(i.get("desfeito") or 0),
+                  lambda i: str(i.get("titulo_id")) != meu,
+                  lambda i: True):
+        for i in informantes:
+            if chave(i):
+                return i
+    return None
+
+
+def _explicacao_do_repetido(linha: dict) -> str:
+    """«já informado como protestado pelo título X #id em dd/mm/aaaa». Só calcula."""
+    nome = NOME_DA_OCORRENCIA.get(str(linha.get("tipo") or ""),
+                                  f"ocorrência {linha.get('ocorrencia')}")
+    i = _informante_principal(linha)
+    if i is None:
+        # Só a marca manual do próprio ato sustenta a trava.
+        return (f"já informado como {nome} — marcado à mão pela serventia"
+                + (f" ({linha['arquivo_anterior']})"
+                   if linha.get("arquivo_anterior") else ""))
+    quando = _data_br(i.get("aceito_em") or i.get("marcado_em"))
+    texto = (f"já informado como {nome} pelo título "
+             f"{i.get('numero_titulo') or '—'} #{i.get('titulo_id')}"
+             + (f" em {quando}" if quando else ""))
+    if i.get("arquivo") and str(i.get("ambiente") or "") != "EOFICIO":
+        texto += f" ({i['arquivo']})"
+    elif str(i.get("ambiente") or "") == "EOFICIO":
+        texto += " (pelo sistema antigo, antes da virada)"
+    return texto
+
+
+def protocolos_repetidos_na_fila(con: sqlite3.Connection) -> list[dict]:
+    """Os atos do próximo retorno (ou andamento) cujo PROTOCOLO a CRA já tem
+    com aquela ocorrência. Só LÊ — o contrato do roteiro do protesto.
+
+    O ROTEIRO LÊ POR ESTE NOME (PR #104, `protesto_roteiro.GANCHOS`): passa
+    só a conexão e mostra cada linha como pendência, com `titulo_id`,
+    `numero_titulo`, `protocolo` e `explicacao` («já informado como
+    protestado pelo título X em dd/mm/aaaa»).
+
+    SÃO DUAS SITUAÇÕES, e as duas pedem olho:
+      - `RETIDO`: o ato ficou fora da fila (a régua de `pendentes`) porque a
+        mesma ocorrência já foi aceita pelo mesmo título ou pelo outro título
+        do protocolo — é o 2610070011 de 29/10/2026;
+      - `LIBERADO`: o ato voltou à fila por AFIRMAÇÃO EXPRESSA de alguém da
+        serventia, e vai no próximo arquivo mesmo assim — se a CRA o recusar,
+        é este o caso.
+    """
+    saida: list[dict] = []
+    for p in ja_aceitas_fora_da_fila(con):
+        saida.append({
+            "ato_id": int(p["ato_id"]), "tipo": p["tipo"],
+            "ocorrencia": p.get("ocorrencia"),
+            "titulo_id": int(p["titulo_id"]),
+            "numero_titulo": p.get("numero_titulo"),
+            "protocolo": p.get("protocolo"),
+            "apresentante_codigo": p.get("apresentante_codigo"),
+            "situacao": "RETIDO",
+            "por_outro_titulo": bool(p.get("por_outro_titulo")),
+            "explicacao": _explicacao_do_repetido(p)})
+    liberados: dict[int, dict] = {}
+    for qual in ("SDTBFORTP", "SDTBFOAND"):
+        for a in pendentes(con, tipo=qual):
+            if str(a.get("cra_reenvio_afirmado_em") or "").strip():
+                liberados[int(a["ato_id"])] = dict(a)
+    quem = quem_ja_informou(con, list(liberados))
+    for ato_id, a in liberados.items():
+        a["informantes"] = quem.get(ato_id, [])
+        a["ocorrencia"] = _letra_da_ocorrencia(a.get("tipo"))
+        saida.append({
+            "ato_id": ato_id, "tipo": a["tipo"], "ocorrencia": a["ocorrencia"],
+            "titulo_id": int(a["titulo_id"]),
+            "numero_titulo": a.get("numero_titulo"),
+            "protocolo": a.get("protocolo"),
+            "apresentante_codigo": a.get("apresentante_codigo"),
+            "situacao": "LIBERADO",
+            "por_outro_titulo": any(
+                str(i.get("titulo_id")) != str(a["titulo_id"])
+                for i in a["informantes"]),
+            "explicacao": (
+                f"{_explicacao_do_repetido(a)}; voltou à fila por afirmação "
+                f"expressa de {a.get('cra_reenvio_afirmado_por') or '—'} em "
+                f"{_data_br(a.get('cra_reenvio_afirmado_em'))}")})
+    return saida
+
+
 def pendentes_da_cenprot(con: sqlite3.Connection, *,
                          apresentante_codigo: str | None = None) -> int:
     """Quantos atos de título VINDO DA CENPROT esperam ser informados. Só LÊ.

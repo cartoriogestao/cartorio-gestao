@@ -463,6 +463,59 @@ def montar_cancelamento(*, modelo: str | None = None, data: Any,
     return _corrido(modelo, partes)
 
 
+# ------------------------------- a averbação de retificação, de ofício
+
+# A AVERBAÇÃO DE RETIFICAÇÃO DE ERRO MATERIAL (29/10/2026) — Lei 9.492/1997,
+# art. 25. O texto mora em `modelos_padrao/protesto/
+# PT_TERMO_AVERBACAO_RETIFICACAO.txt` e é do oficial; o nome
+# `TERMO_DA_AVERBACAO_RETIFICACAO` responde pelo `__getattr__` do fim deste
+# módulo. Não há precedente no E-Ofício (ver `protesto_averbacao`): a redação
+# segue a da averbação de retificação do Registro Civil desta casa
+# (`rc_averbacao_modelos`) — «constou erroneamente», «faço constar» —, que é a
+# que já foi aceita aqui.
+CHAVE_DA_AVERBACAO_RETIFICACAO = "PT_TERMO_AVERBACAO_RETIFICACAO"
+
+
+def montar_averbacao_retificacao(*, modelo: str | None = None, data: Any,
+                                 ato: str, elemento: str, constava: Any,
+                                 correto: str,
+                                 qualificacao_do_registro: dict | None = None,
+                                 con: Any = None) -> str:
+    """O texto da averbação de retificação de erro material. Só calcula.
+
+    O REGISTRO QUE SE RETIFICA SE IDENTIFICA COMO ELE MESMO SE IDENTIFICA —
+    lugar e data, protocolo e título —, com os pedaços do instrumento, a régua
+    de `montar_cancelamento`. SEM O DEVEDOR, de propósito: a averbação diz o
+    que se corrige, e o devedor não é o que se corrige aqui.
+
+    O ERRO E A OMISSÃO SÃO DUAS LINHAS DO MODELO, e a que não cabe some sozinha
+    (`linhas_com_fatos`): com `constava` vazio entra a da omissão; com ele, a
+    do erro. Quem escreve o modelo não precisa de condição.
+    """
+    if not modelo:
+        import modelos_da_casa as CASA
+        modelo = CASA.padrao_de(CHAVE_DA_AVERBACAO_RETIFICACAO)
+    fatos = qualificacao_do_registro or {}
+    p: dict = {}
+    if fatos.get("titulo"):
+        import protesto_instrumento as PI
+        p = PI.pedacos_da_descricao(
+            {"titulo": fatos["titulo"], "protesto": fatos.get("protesto"),
+             "apontado_em": fatos.get("apontado_em"),
+             "devedores": fatos.get("devedores") or []}, con)
+    el = _texto(elemento)
+    antes = _texto(constava)
+    partes = {"data": _data_br(data), "ato": _texto(ato),
+              "registro": p.get("registro", ""),
+              "protocolo": p.get("protocolo", ""), "titulo": p.get("titulo", ""),
+              "elemento_errado": el if antes else "", "constava": antes,
+              "elemento_omitido": "" if antes else el,
+              "elemento": el, "correto": _texto(correto)}
+    import protesto_pecas as PECAS
+    PECAS.preencher(modelo, CHAVE_DA_AVERBACAO_RETIFICACAO, TermoError, **partes)
+    return _corrido(modelo, partes)
+
+
 # ------------------------------------------------- o que o ato já sabe
 
 

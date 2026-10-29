@@ -20,9 +20,12 @@
   seguinte</strong> ao recebimento <small>({{ fundamento }})</small>.
   <br><br>
   <strong>Título da CRA ou da CENPROT</strong> volta pela <em>guia de pagamento
-  ao IEPTB</em>: gere aqui a relação, emita a guia no Instituto, registre-a,
-  registre o pagamento e concilie com a confirmação dele. O sistema
-  <strong>não gera o boleto</strong> — o código de barras é do Instituto.
+  ao IEPTB</em>: a relação nasce aqui (sozinha, pela rotina automática, quando
+  ela está ligada — uma por Central), a guia se <strong>emite no portal da
+  Central</strong>, e aqui se registra a guia, o pagamento e a conciliação. O
+  sistema <strong>não gera o boleto</strong>: nenhuma das duas Centrais tem
+  API para isso, e o código de barras é do Instituto. O pagamento
+  <strong>continua pendente até a guia ser paga</strong>.
   <br>
   <strong>Título do balcão</strong> se repassa direto: em espécie, cheque ou
   depósito na conta indicada — acima de R$ 300,00 só cheque ou depósito
@@ -31,6 +34,102 @@
   <small>O atraso é <strong>contagem, e não juízo</strong>. O valor é o pago,
   quando o balcão o informou; senão, o declarado pelo apresentante.</small>
 </div>
+
+{# O QUE FALTA PARA O REPASSE SAIR (29/10/2026) — a mesma lista que o roteiro
+   do dia lê (`protesto_repasse.pendencias_do_repasse`). Entrar na relação não
+   tira o pagamento daqui: ele sai quando a guia é paga. #}
+<section class="panel" id="o-que-falta">
+  <div class="panel-head"><span>O que falta para o repasse sair</span>
+    <small>{{ faltam | length }} pagamento(s){% if faltam | selectattr('vencido') | list %},
+      <strong class="danger">{{ faltam | selectattr('vencido') | list | length }} com o prazo vencido</strong>{% endif %}</small></div>
+  {% if not faltam %}
+    <p style="padding:14px">Todo pagamento lançado já foi repassado.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Título</th><th>Central</th><th>Etapa</th><th>Prazo</th><th>O que fazer</th></tr></thead>
+    <tbody>
+      {% for p in faltam %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}">{{ p.numero_titulo }}</a>
+            <div><small>protocolo {{ p.protocolo or '—' }}</small></div></td>
+        <td>{{ p.central or 'balcão' }}</td>
+        <td>{% if p.guia_id %}<a href="{{ url_for('protesto_repasse_guia', guia_id=p.guia_id) }}">guia {{ p.guia }}</a>
+            <div><small>{{ 'falta emitir e registrar' if p.etapa == 'GUIA_GERADA' else 'falta pagar' }}</small></div>
+            {% elif p.etapa == 'SEM_GUIA' %}sem relação{% else %}repasse direto{% endif %}</td>
+        <td>{{ p.prazo }}{% if p.vencido %} <strong class="danger">({{ p.dias_de_atraso }} dia(s) de atraso)</strong>{% endif %}</td>
+        <td><small>{{ p.explicacao }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Onde a guia se emite</span>
+    <small>o sistema não entra no portal — confira o passo na primeira vez</small></div>
+  <table class="table">
+    <thead><tr><th>Central</th><th>Onde</th><th>O passo</th><th>Precedente</th><th>A conferir</th></tr></thead>
+    <tbody>
+      {% for central, passo in portais.items() %}
+      <tr><td>{{ central }}</td><td>{{ passo.onde }}</td><td><small>{{ passo.passo }}</small></td>
+          <td><small>{{ passo.precedente }}</small></td><td><small>{{ passo.a_conferir }}</small></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Rotina automática da relação</span>
+    <small>Automação → «Protesto — relação da guia de repasse (CRA e CENPROT)»</small></div>
+  <div style="padding:14px">
+  {% if not rotina.existe %}
+    <p>A rotina não está disponível: {{ rotina.motivo }}.</p>
+  {% else %}
+    <p>{% if rotina.ativo %}<strong>Ligada</strong>{% else %}<strong class="danger">Desligada</strong>{% endif %}
+       ({{ rotina.agenda }}) —
+       {% if rotina.pode_agir %}gera a relação sozinha.{% else %}«pode agir» desligado: ela só conta, e a relação se gera pelo botão abaixo.{% endif %}</p>
+    {% if rotina.ultima %}
+    <p>Última rodada: {{ rotina.ultima.iniciada_em }} —
+      {% if rotina.ultima.situacao == 'ERRO' %}<strong class="danger">{{ rotina.ultima.situacao }}</strong>{% else %}{{ rotina.ultima.situacao }}{% endif %}
+      <br><small>{{ rotina.ultima.relato }}</small></p>
+    {% else %}
+    <p><small>Ainda não rodou.</small></p>
+    {% endif %}
+  {% endif %}
+  {% if user.role in pode_mexer %}
+  <form method="post" action="{{ url_for('protesto_repasse_guias_do_dia') }}" class="actions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button">Gerar agora as relações do dia (uma por Central)</button>
+  </form>
+  {% endif %}
+  </div>
+</section>
+
+{# O ROBÔ DO BOLETO DA CRA (29/10/2026): emite no portal, registra a guia e
+   lança a despesa para o oficial autorizar. Nunca paga. A falha dele aparece
+   aqui, onde o escrevente trabalha. #}
+<section class="panel">
+  <div class="panel-head"><span>Robô do boleto de repasse da CRA</span>
+    <small>Automação → «Protesto — emitir o boleto de repasse no portal da CRA»</small></div>
+  <div style="padding:14px">
+  {% if not robo.existe %}
+    <p>O robô não está disponível: {{ robo.motivo }}.</p>
+  {% else %}
+    <p>{% if robo.ativo %}<strong>Ligado</strong>{% else %}<strong class="danger">Desligado</strong>{% endif %}
+       ({{ robo.agenda }}) —
+       {% if robo.pode_agir %}gera o boleto, registra a guia e lança a despesa para a sua autorização.{% else %}«pode agir» desligado: ele entra no portal, lê e não clica nem grava nada.{% endif %}
+       <br><small>Entra com o usuário e a senha do item «cra_portal» do cofre (Automação → Cofre). Nunca paga: o pagamento é a autorização da despesa.</small></p>
+    {% if robo.ultima %}
+    <p>Última rodada: {{ robo.ultima.iniciada_em }} —
+      {% if robo.ultima.situacao == 'ERRO' %}<strong class="danger">{{ robo.ultima.situacao }}</strong>{% else %}{{ robo.ultima.situacao }}{% endif %}
+      <br><small>{{ robo.ultima.relato }}</small></p>
+    {% else %}
+    <p><small>Ainda não rodou.</small></p>
+    {% endif %}
+  {% endif %}
+  </div>
+</section>
 
 <section class="panel">
   <div class="panel-head"><span>Resumo</span>

@@ -23,9 +23,10 @@
   não manda de novo a ocorrência que ela já aceitou, e a tela do retorno mostra o ato que
   ficou de fora e quem já informou.
   <br><br>
-  <strong>Esta tela só mostra.</strong> Repetição (a mesma letra num arquivo depois de a
-  Central já tê-la aceito) e títulos do mesmo protocolo em situações diferentes são casos
-  para o oficial decidir — a CRA guarda uma ocorrência por protocolo.
+  <strong>Esta tela só mostra.</strong> Repetição (a mesma letra num arquivo depois de
+  outro que a CRA aceitou ou ainda não respondeu) e títulos do mesmo protocolo em
+  situações diferentes são casos para o oficial decidir — a CRA guarda uma ocorrência
+  por protocolo.
 </div>
 
 <section class="panel">
@@ -39,7 +40,7 @@
   </form>
   <table class="table">
     <tbody>
-      <tr><td>Com a mesma ocorrência repetida depois de aceita</td>
+      <tr><td>Com a mesma ocorrência repetida depois de aceita ou ainda sem resposta</td>
           <td><strong{% if conferencia.com_repeticao %} class="danger"{% endif %}>{{ conferencia.com_repeticao }}</strong></td></tr>
       <tr><td>Com ato preso em arquivo que a CRA recusou</td>
           <td><strong{% if conferencia.com_recusado %} class="danger"{% endif %}>{{ conferencia.com_recusado }}</strong></td></tr>

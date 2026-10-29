@@ -73,6 +73,7 @@ from cobranca import init_cobranca_schema
 from carne_leao import init_carne_leao_schema
 from livro_visitas import init_livro_visitas_schema
 from ouvidoria import init_ouvidoria_schema
+from correcoes_de_oficio import init_correcoes_de_oficio_schema
 from centrais_schema import init_centrais_schema
 from onr_endereco_schema import init_ri_onr_endereco_schema
 import senhas as SEN
@@ -693,6 +694,14 @@ class Database:
         bd._cru(gatilho)
         if getattr(bd, "_ponte", None) is not None:
             bd._ponte._anotar(None, gatilho, None)
+        # AS CONFIGURACOES QUE COBRAM A EQUIPE (29/10/2026): o gatilho que
+        # recusa, no banco, mudar uma chave de cobranca sem a aprovacao do
+        # oficial gravada antes na auditoria. De 27 a 28/10 o fim do
+        # expediente foi de 14h para 21h por script direto no banco, a pedido
+        # de quem o aviso cobrava. Rearma a cada abertura, e religa se alguem
+        # o desligou. Ver `config_de_cobranca`.
+        import config_de_cobranca as CC
+        CC.instalar_gatilho(bd)
         init_nucleo_schema(con)   # o nucleo primeiro: as outras apontam para ele
         init_pt_schema(con)
         # A INTIMACAO DIGITAL vem LOGO DEPOIS do Protesto, e nao antes:
@@ -829,6 +838,10 @@ class Database:
         # o andamento delas e as avaliações do balcão. Não apontam para tabela
         # de outro módulo: o responsável e a tarefa são vínculo informativo.
         init_ouvidoria_schema(con)
+        # A FILA DE CORREÇÕES DE OFÍCIO (29/10/2026). Não aponta para tabela
+        # nenhuma: o alvo vai como texto, e quem propôs ou decidiu é vínculo
+        # informativo — apagar um usuário não leva a proposta.
+        init_correcoes_de_oficio_schema(con)
         # AS DESPESAS (24/10/2026): cadastro, autorização, pagamento pelo Banco
         # Inter e conferência no extrato; a despesa conferida vai ao Diário.
         init_despesas_schema(con)

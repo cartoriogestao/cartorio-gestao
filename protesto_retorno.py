@@ -49,6 +49,11 @@ NADA SAI DUAS VEZES
     log (`forcar_envio_de_protocolo_ja_informado`). A conferencia
     `protocolos_com_mais_de_um_titulo` mostra cada caso para o oficial.
 
+    E O ARQUIVO SEM RESPOSTA TAMBEM SEGURA — decisao do oficial, 29/10/2026.
+    Retorno gerado e ainda nao respondido pela CRA segura a mesma ocorrencia
+    do mesmo titulo ou protocolo, como o aceito; recusado solta
+    (`_sql_arquivo_que_segura`).
+
 O ARQUIVO INTEIRO FICA GRAVADO
     Nao so o nome: o que saiu daqui e o que a Central recebeu, e quando ela
     reclamar de um titulo e este teor que se le. Mesma razao do teor congelado
@@ -67,6 +72,7 @@ from bd_nativo import banco
 from typing import Any
 
 import protesto_arquivo as PA
+import protesto_prova as PROVA
 
 # Que ocorrencia cada ato desta casa vira no arquivo. Ver o cabecalho.
 #
@@ -157,12 +163,34 @@ def _sql_mesmo_titulo_ou_protocolo(ato: str = "a", titulo: str = "t") -> str:
     )"""
 
 
+def _sql_arquivo_que_segura(r: str = "r", tipo_do_arquivo: str = "%s") -> str:
+    """O arquivo do ato antigo segura a ocorrência: existe, é do tipo que
+    leva aquele ato e a CRA NÃO o recusou. Só monta o SQL.
+
+    ACEITO OU AINDA SEM RESPOSTA — decisão do oficial, 29/10/2026. Até aqui só
+    segurava o arquivo que a CRA aceitou (`cra_enviado_em` preenchido). O
+    arquivo gerado e ainda sem resposta também segura: se ele subir, a CRA
+    grava a ocorrência, e o segundo arquivo com a mesma letra para o mesmo
+    protocolo seria recusado inteiro (2161). Recusado não segura — a Central
+    não gravou nada, e o ato se solta. `_gravar_envio` limpa a recusa e
+    `_registrar_recusa` limpa o envio, então «sem recusa» é aceito ou sem
+    resposta.
+
+    UMA DEFINIÇÃO SÓ: a fila, o nome do arquivo anterior e `quem_ja_informou`
+    a usam. Três cópias divergiriam no primeiro conserto.
+    """
+    return (f"({r}.id IS NOT NULL"
+            f" AND COALESCE(BTRIM({r}.cra_recusado_em), '') = ''"
+            f" AND {r}.tipo = {tipo_do_arquivo})")
+
+
 def _sql_ocorrencia_ja_aceita(ato: str = "a", titulo: str = "t") -> str:
-    """Verdadeiro se a CRA ja aceitou esta ocorrencia. Um `%s`: o tipo do arquivo.
+    """Verdadeiro se a CRA ja tem esta ocorrencia. Um `%s`: o tipo do arquivo.
 
     O ato antigo pode estar desfeito. O que a Central gravou nao se apaga
-    porque o selo daqui nao saiu. Retorno recusado nao conta: `cra_enviado_em`
-    vazio e ocorrencia que ela nao gravou. A marca manual
+    porque o selo daqui nao saiu. Retorno recusado nao conta: e ocorrencia
+    que ela nao gravou. O arquivo gerado e ainda sem resposta CONTA desde
+    29/10/2026 (`_sql_arquivo_que_segura`). A marca manual
     (`cra_ja_informado_em`) conta do mesmo jeito — foi o oficial quem disse
     que a Central ja tem esta ocorrencia.
 
@@ -183,9 +211,7 @@ def _sql_ocorrencia_ja_aceita(ato: str = "a", titulo: str = "t") -> str:
              WHERE antigo.id <> {ato}.id
                AND antigo.tipo = {ato}.tipo
                AND (
-                    (NULLIF(BTRIM(r.cra_enviado_em), '') IS NOT NULL
-                     AND COALESCE(BTRIM(r.cra_recusado_em), '') = ''
-                     AND r.tipo = %s)
+                    {_sql_arquivo_que_segura()}
                  OR antigo.cra_ja_informado_em IS NOT NULL
                )
                AND {_sql_mesmo_titulo_ou_protocolo(ato, titulo)}
@@ -228,19 +254,16 @@ MINIMO_DO_MOTIVO = 10
 # `audit("AFIRMACAO_EXPRESSA", "pt_atos", ato_id, {"regra", "afirmacao",
 # "o_que_faltava"})` FORA da transação, porque `audit` abre a sua.
 #
-# É O MESMO CONTRATO das outras travas da reestruturação do protesto (a
-# frase, o piso e a ação de auditoria são os mesmos de `protesto_prova`, em
-# PR paralelo). Quando os dois estiverem no `main`, a conferência do texto
-# fica num lugar só — duas réguas para «a afirmação vale?» divergiriam no
-# primeiro conserto.
+# É O MESMO CONTRATO das outras travas da reestruturação do protesto, e mora
+# num lugar só: `protesto_prova` (PR #106, no `main` desde 29/10/2026). A
+# frase, o piso, a ação de auditoria e a conferência do texto vêm de lá —
+# duas réguas para «a afirmação vale?» divergiriam no primeiro conserto.
+# (Até o #106 entrar, este módulo tinha uma cópia; ela saiu.)
 
 #: A frase com que a afirmação começa. A tela a mostra fixa, antes do texto.
-FRASE_DA_AFIRMACAO = "Afirmo, sob minha responsabilidade, que"
-#: Quantas LETRAS a afirmação precisa ter, além da frase. Letras, e não
-#: caracteres: «............» não diz nada.
-PISO_DA_AFIRMACAO = 30
-#: A ação da auditoria — a mesma em toda trava que se vence por afirmação.
-ACAO_DA_AFIRMACAO = "AFIRMACAO_EXPRESSA"
+FRASE_DA_AFIRMACAO = PROVA.FRASE_DA_AFIRMACAO
+#: Quantas LETRAS a afirmação precisa ter, além da frase.
+PISO_DA_AFIRMACAO = PROVA.PISO_DA_AFIRMACAO
 #: O nome curto desta trava, que a tela das afirmações filtra.
 REGRA_PROTOCOLO_JA_INFORMADO = "RETORNO_PROTOCOLO_JA_INFORMADO"
 
@@ -253,17 +276,8 @@ COMO_AFIRMAR = (
 
 def afirmacao_valida(texto: Any) -> str | None:
     """O texto inteiro da afirmação, já com a frase de abertura — ou `None`
-    se ela não vale. Só calcula.
-
-    A FRASE NÃO CONTA NO PISO: ela tem mais de trinta letras sozinha, e
-    contá-la deixaria passar a afirmação que não diz nada além dela.
-    """
-    corrido = " ".join(str(texto or "").split())
-    if corrido.lower().startswith(FRASE_DA_AFIRMACAO.lower()):
-        corrido = corrido[len(FRASE_DA_AFIRMACAO):].lstrip(" ,:;-—")
-    if sum(1 for c in corrido if c.isalpha()) < PISO_DA_AFIRMACAO:
-        return None
-    return f"{FRASE_DA_AFIRMACAO} {corrido}"
+    se ela não vale. Só calcula. A régua é a de `protesto_prova`."""
+    return PROVA.afirmacao_valida(texto)
 
 
 def _data_br(texto: Any) -> str:
@@ -289,8 +303,14 @@ def descrever_informante(i: dict) -> str:
         if str(i.get("ambiente") or "") == "EOFICIO":
             return f"{quem}, informado pelo sistema antigo antes da virada"
         quando = _data_br(i.get("aceito_em"))
-        return (f"{quem}, no arquivo {i['arquivo']}"
-                + (f", aceito pela CRA em {quando}" if quando else ""))
+        if not quando:
+            # Gerado e ainda sem resposta — segura desde 29/10/2026.
+            gerado = _data_br(i.get("gerado_em"))
+            return (f"{quem}, no arquivo {i['arquivo']}"
+                    + (f" gerado em {gerado}" if gerado else "")
+                    + ", ainda sem resposta da CRA")
+        return (f"{quem}, no arquivo {i['arquivo']}, aceito pela CRA em "
+                f"{quando}")
     marcado = _data_br(i.get("marcado_em"))
     return (f"{quem}, marcado à mão como já informado"
             + (f" em {marcado}" if marcado else "")
@@ -308,8 +328,9 @@ def frase_dos_pulados(pulados: list[dict], *, intro: str | None = None) -> str:
     if not pulados:
         return ""
     cabeca = intro or (
-        "Não entram neste retorno: a CRA já aceitou a mesma ocorrência "
-        "(mesmo título ou o mesmo protocolo)")
+        "Não entram neste retorno: a CRA já aceitou a mesma ocorrência, ou "
+        "ela já vai num arquivo que a CRA ainda não respondeu (mesmo título "
+        "ou o mesmo protocolo)")
 
     def uma(p: dict) -> str:
         arquivo = (str(p.get("arquivo_anterior") or "").strip()
@@ -395,7 +416,8 @@ def pendentes(con: sqlite3.Connection, *,
     # E O PROTOCOLO COM DOIS TÍTULOS — 29/10/2026. A mesma régua alcança o
     # título irmão: a CRA conhece o protocolo, e não o título. O ato liberado
     # por afirmação expressa (`cra_reenvio_afirmado_em`) volta, e a tela diz
-    # quem afirmou.
+    # quem afirmou. E o arquivo gerado e ainda sem resposta segura como o
+    # aceito (decisão do oficial no mesmo dia); o recusado solta.
     linhas = banco(con).ler(
         f"""SELECT a.id ato_id, a.tipo, a.data_ato, t.id titulo_id,
                    a.cra_reenvio_afirmado_em, a.cra_reenvio_afirmado_por,
@@ -420,10 +442,11 @@ def quem_ja_informou(con: sqlite3.Connection,
     pelo mesmo título ou pelo mesmo protocolo. Só LÊ.
 
     É a mesma régua de `_sql_ocorrencia_ja_aceita` — mesmo tipo, mesmo título
-    ou mesmo protocolo do mesmo apresentante, arquivo ACEITO do tipo que leva
-    aquele ato (o andamento leva o apontamento; o retorno, os atos finais), ou
-    a marca manual —, agora dizendo QUEM: o título, o ato, se ele está
-    desfeito, o arquivo e a data em que a Central aceitou.
+    ou mesmo protocolo do mesmo apresentante, arquivo ACEITO OU AINDA SEM
+    RESPOSTA do tipo que leva aquele ato (o andamento leva o apontamento; o
+    retorno, os atos finais), ou a marca manual —, agora dizendo QUEM: o
+    título, o ato, se ele está desfeito, o arquivo e a data em que a Central
+    aceitou (ou em que o arquivo foi gerado, se ela ainda não respondeu).
 
     POR QUE A TELA PRECISA DISSO — 29/10/2026. O protocolo 2610070011 tem dois
     títulos com o mesmo número (#9602 e #9603). O protesto do #9603 foi
@@ -434,20 +457,19 @@ def quem_ja_informou(con: sqlite3.Connection,
     ids = sorted({int(i) for i in ato_ids if i is not None})
     if not ids:
         return {}
-    # O arquivo que conta: aceito, sem recusa, do tipo que leva aquele ato.
-    # Escrito uma vez — vale para o SELECT (dizer se foi ele) e o WHERE.
-    aceito = """(NULLIF(BTRIM(r.cra_enviado_em), '') IS NOT NULL
-                 AND COALESCE(BTRIM(r.cra_recusado_em), '') = ''
-                 AND r.tipo = CASE WHEN a.tipo = 'APONTAMENTO'
-                                   THEN 'SDTBFOAND' ELSE 'SDTBFORTP' END)"""
+    # O arquivo que conta, do tipo que leva aquele ato — a régua da fila.
+    # Vale para o SELECT (dizer se foi ele) e para o WHERE.
+    segura = _sql_arquivo_que_segura(
+        "r", "CASE WHEN a.tipo = 'APONTAMENTO' THEN 'SDTBFOAND' "
+             "ELSE 'SDTBFORTP' END")
     linhas = banco(con).ler(
         f"""SELECT a.id alvo_id, antigo.id ato_id, antigo.tipo,
                    antigo.titulo_id, ta.numero_titulo,
                    COALESCE(antigo.cancelado, 0) desfeito, antigo.data_ato,
                    r.id retorno_id, r.nome_arquivo arquivo,
-                   r.cra_enviado_em aceito_em,
+                   r.cra_enviado_em aceito_em, r.gerado_em,
                    r.cra_enviado_ambiente ambiente,
-                   CASE WHEN {aceito} THEN 1 ELSE 0 END pelo_arquivo,
+                   CASE WHEN {segura} THEN 1 ELSE 0 END pelo_arquivo,
                    antigo.cra_ja_informado_em marcado_em,
                    antigo.cra_ja_informado_por marcado_por,
                    rm.nome_arquivo arquivo_marcado
@@ -460,7 +482,7 @@ def quem_ja_informou(con: sqlite3.Connection,
               LEFT JOIN pt_retornos rm
                 ON rm.id = antigo.cra_ja_informado_retorno_id
              WHERE a.id IN ({','.join(['%s'] * len(ids))})
-               AND ({aceito} OR antigo.cra_ja_informado_em IS NOT NULL)
+               AND ({segura} OR antigo.cra_ja_informado_em IS NOT NULL)
                AND {_sql_mesmo_titulo_ou_protocolo()}
              ORDER BY a.id, COALESCE(antigo.cancelado, 0), antigo.id""",
         ids)
@@ -509,7 +531,8 @@ def pulados_por_ocorrencia_aceita(con: sqlite3.Connection, *,
                                   apresentante_codigo: str | None = None,
                                   tipo: str = "SDTBFORTP") -> list[dict]:
     """Atos que entrariam na fila e ficam de fora porque a CRA já aceitou
-    a mesma ocorrência. Só LÊ.
+    a mesma ocorrência — ou ela já vai num arquivo que a CRA ainda não
+    respondeu (desde 29/10/2026). Só LÊ.
 
     É o avesso de `pendentes`: mesma régua, menos esta. A tela avisa quais
     são, e `montar` não os põe no arquivo.
@@ -530,11 +553,10 @@ def pulados_por_ocorrencia_aceita(con: sqlite3.Connection, *,
                       JOIN pt_retornos r ON r.id = antigo.retorno_id
                      WHERE antigo.id <> a.id
                        AND antigo.tipo = a.tipo
-                       AND NULLIF(BTRIM(r.cra_enviado_em), '') IS NOT NULL
-                       AND COALESCE(BTRIM(r.cra_recusado_em), '') = ''
-                       AND r.tipo = %s
+                       AND {_sql_arquivo_que_segura()}
                        AND {_sql_mesmo_titulo_ou_protocolo()}
-                     ORDER BY r.id DESC
+                     ORDER BY (NULLIF(BTRIM(r.cra_enviado_em), '') IS NULL),
+                              r.id DESC
                      LIMIT 1) arquivo_aceito,
                    (SELECT r.nome_arquivo
                       FROM pt_atos antigo
@@ -599,6 +621,14 @@ def _explicacao_do_repetido(linha: dict) -> str:
         return (f"já informado como {nome} — marcado à mão pela serventia"
                 + (f" ({linha['arquivo_anterior']})"
                    if linha.get("arquivo_anterior") else ""))
+    if i.get("arquivo") and not str(i.get("aceito_em") or "").strip():
+        # Arquivo gerado e ainda sem resposta — segura desde 29/10/2026.
+        gerado = _data_br(i.get("gerado_em"))
+        return (f"já vai como {nome} pelo título "
+                f"{i.get('numero_titulo') or '—'} #{i.get('titulo_id')} no "
+                f"arquivo {i['arquivo']}"
+                + (f", gerado em {gerado}" if gerado else "")
+                + ", ainda sem resposta da CRA")
     quando = _data_br(i.get("aceito_em") or i.get("marcado_em"))
     texto = (f"já informado como {nome} pelo título "
              f"{i.get('numero_titulo') or '—'} #{i.get('titulo_id')}"
@@ -1180,8 +1210,16 @@ def devolver_atos_do_recusado(con: sqlite3.Connection, retorno_id: int, *,
     reenviá-lo — os atos dele estarão no arquivo seguinte.
 
     DESDE 29/10/2026, soltar o ato não o põe na fila se a mesma ocorrência já
-    foi aceita num retorno anterior. `continuam_de_fora` são esses: a tela
-    avisa, em vez de dizer que voltaram a «Esperando retorno».
+    foi aceita num retorno anterior — ou se está noutro arquivo ainda sem
+    resposta. `continuam_de_fora` são esses: a tela avisa, em vez de dizer
+    que voltaram a «Esperando retorno».
+
+    E O ARQUIVO NÃO ENVIADO QUE LEVA ATO DESFEITO (29/10/2026) também solta
+    os atos: `protesto_cra_envio._preparar` recusa enviá-lo (a CRA ouviria
+    uma ocorrência sem ato que a sustente), e sem esta saída os atos VÁLIDOS
+    dele ficariam presos a um arquivo que não vai. O desfeito, solto, não
+    volta à fila (`pendentes` só lê ato válido); o válido volta, e o retorno
+    novo o leva.
     """
     # A MESMA TRAVA DE `gerar`: devolver muda os PENDENTES que um `gerar` ao
     # mesmo tempo estaria lendo.
@@ -1193,7 +1231,12 @@ def devolver_atos_do_recusado(con: sqlite3.Connection, retorno_id: int, *,
         raise RetornoNaoRecusadoError(
             "Esta linha não é um arquivo: é o registro do que o sistema antigo "
             "já informou à CRA antes da virada. Não há o que devolver.")
-    if linha.get("cra_enviado_em") or not linha.get("cra_recusado_em"):
+    leva_desfeito = (not linha.get("cra_enviado_em") and banco(con).um(
+        """SELECT 1 AS um FROM pt_atos
+            WHERE retorno_id = %s AND COALESCE(cancelado, 0) <> 0 LIMIT 1""",
+        (int(retorno_id),)) is not None)
+    if linha.get("cra_enviado_em") or not (linha.get("cra_recusado_em")
+                                           or leva_desfeito):
         raise RetornoNaoRecusadoError(
             f"«{linha['nome_arquivo']}» não está recusado pela CRA — "
             + ("ela o aceitou, e os atos dele estão informados."
@@ -1418,7 +1461,8 @@ def forcar_envio_de_protocolo_ja_informado(
     o_que_faltava = (
         f"O protocolo {prot} (apresentante "
         f"{str(ato['apresentante_codigo'] or '').strip() or '—'}) já foi "
-        f"informado à CRA com a ocorrência {letra} ({ato['tipo']}): "
+        f"informado à CRA com a ocorrência {letra} ({ato['tipo']}), ou ela já "
+        f"vai num arquivo que a CRA ainda não respondeu: "
         + "; ".join(descrever_informante(i) for i in informantes[:4])
         + ". Mandar a mesma ocorrência de novo faz a CRA recusar o arquivo "
           "inteiro (2161).")
@@ -1458,18 +1502,13 @@ def forcar_envio_de_protocolo_ja_informado(
             "afirmado_por": usuario}
 
 
-def para_a_auditoria(registro: dict) -> dict:
-    """O que vai em `audit("AFIRMACAO_EXPRESSA", ...)` — as três chaves do
-    contrato comum, e só elas. Só calcula."""
-    return {"regra": registro["regra"], "afirmacao": registro["afirmacao"],
-            "o_que_faltava": registro["o_que_faltava"]}
-
-
 def listar(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
     """Os retornos gerados, do mais novo para o mais velho. So LE.
 
     `atos_presos` conta os atos ainda amarrados ao arquivo: no RECUSADO
     (28/10/2026) eles não foram informados, e a tela precisa dizer quantos.
+    `atos_desfeitos` conta os que foram desfeitos depois de o arquivo ser
+    gerado (29/10/2026): o arquivo não enviado que os leva não vai à CRA.
     """
     return banco(con).ler(
         """SELECT r.id, r.tipo, r.par_id, r.apresentante_codigo,
@@ -1479,7 +1518,10 @@ def listar(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
                   r.cra_envio_erro, r.cra_enviado_por, r.cra_recusado_em,
                   r.cra_recusa_codigo, r.cra_recusa_motivo,
                   (SELECT COUNT(*) FROM pt_atos a
-                    WHERE a.retorno_id = r.id) AS atos_presos
+                    WHERE a.retorno_id = r.id) AS atos_presos,
+                  (SELECT COUNT(*) FROM pt_atos a
+                    WHERE a.retorno_id = r.id
+                      AND COALESCE(a.cancelado, 0) <> 0) AS atos_desfeitos
              FROM pt_retornos r ORDER BY r.id DESC LIMIT %s""",
         (int(limite),))
 
@@ -1589,8 +1631,9 @@ def _estado_do_ato(linha: dict, fora: set[int]) -> tuple[str, str]:
                 f"próximo arquivo")
     if int(linha["ato_id"]) in fora:
         return ("JA_INFORMADO",
-                "fora da fila: a CRA já tem esta ocorrência por este "
-                "título ou pelo outro título do protocolo")
+                "fora da fila: esta ocorrência já foi à CRA (aceita ou ainda "
+                "sem resposta) por este título ou pelo outro título do "
+                "protocolo")
     return ("NA_FILA", "em «Esperando retorno»")
 
 
@@ -1690,9 +1733,9 @@ def protocolos_com_mais_de_um_titulo(
     saida = []
     for p in protocolos.values():
         p["titulos"] = list(p["titulos"].values())
-        # REPETIÇÃO é a mesma letra num arquivo DEPOIS de a Central já a ter
-        # aceito noutro. Recusado seguido de aceito não é repetição — é o
-        # conserto que deu certo.
+        # REPETIÇÃO é a mesma letra num arquivo DEPOIS de outro que a segura
+        # (aceito, sistema antigo ou ainda sem resposta). Recusado seguido de
+        # aceito não é repetição — é o conserto que deu certo.
         p["repeticoes"] = [
             {"tipo": tipo, "ocorrencia": _letra_da_ocorrencia(tipo),
              "arquivos": [arquivos[k] for k in sorted(arquivos)]}
@@ -1725,11 +1768,12 @@ def protocolos_com_mais_de_um_titulo(
 
 
 def _repete_o_que_ja_foi_aceito(arquivos: dict[int, dict]) -> bool:
-    """Há arquivo gerado depois do primeiro que a Central aceitou (ou que o
-    sistema antigo informou)? A ordem é a do `id`. Só calcula."""
-    aceitos = [k for k, a in arquivos.items()
-               if a["situacao"] in ("ACEITO", "EOFICIO")]
-    return bool(aceitos) and any(k > min(aceitos) for k in arquivos)
+    """Há arquivo gerado depois do primeiro que segura a ocorrência — o que a
+    Central aceitou, o que o sistema antigo informou, ou o que ainda não teve
+    resposta (decisão do oficial, 29/10/2026)? A ordem é a do `id`. Recusado
+    não segura. Só calcula."""
+    seguram = [k for k, a in arquivos.items() if a["situacao"] != "RECUSADO"]
+    return bool(seguram) and any(k > min(seguram) for k in arquivos)
 
 
 def _ordem_decrescente(texto: Any) -> tuple:

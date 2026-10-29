@@ -1,0 +1,112 @@
+{#
+  OS PEDIDOS DA CRA — desistência (DP), cancelamento (CP) e autorização
+  (AC/AD) que vieram no clique diário da remessa (29/10/2026).
+
+  A DESISTÊNCIA se aplica sozinha no clique quando o título casa pelo
+  protocolo e pelo número e está numa situação que aceita desistir; o resto
+  fica aqui. CANCELAMENTO E AUTORIZAÇÃO NÃO se lavram sozinhos: exigem o
+  pagamento das custas pelo devedor, e ficam aqui até o ato ser lavrado na
+  ficha (e aí saem sozinhos) ou até alguém registrar por que não se lavra.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Pedidos da CRA</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_remessas') }}">&larr; Remessa da CRA</a>
+  <a class="button" href="{{ url_for('protesto_desistencias') }}">Desistências</a>
+</div>
+
+<div class="notice">
+  O clique <strong>«Baixar todas e conferir»</strong>, na tela da remessa,
+  traz junto as <strong>desistências (DP)</strong>, os
+  <strong>cancelamentos (CP)</strong> e as <strong>autorizações (AC)</strong>.
+  Cada resposta fica guardada inteira antes de qualquer leitura — baixar pela
+  API pode marcar o arquivo como baixado do lado da CRA.
+  <br><br>
+  A desistência entra sozinha quando o título casa pelo protocolo
+  <strong>e</strong> pelo número. Cancelamento e autorização
+  <strong>não se lavram sozinhos</strong>: o devedor paga as custas e o ato se
+  lavra na ficha do título — aí o pedido sai desta lista.
+</div>
+
+{% include '_protesto_cra_pedidos_do_dia.html' %}
+
+<section class="panel" data-cra-pendentes>
+  <div class="panel-head"><span>Esperando a casa</span><small>{{ pendentes | length }}</small></div>
+  {% if not pendentes %}
+    <p style="padding:14px">Nada do que veio da CRA espera a casa agora.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>O quê</th><th>Título</th><th>O que falta</th><th>Registrar por que não se lavra</th></tr></thead>
+    <tbody>
+    {% for p in pendentes %}
+      <tr{% if p.destaque == grave %} data-grave{% endif %}>
+        <td>
+          {% if p.destaque == grave %}<strong class="danger">GRAVE</strong><br>{% endif %}
+          <strong>{{ nome_do_tipo.get(p.tipo, p.tipo) }}</strong>
+          <div><small>{{ (p.recebido_em or '')[:16] | replace('T', ' ') }}</small></div>
+        </td>
+        <td>
+          {% if p.titulo_id %}
+            <a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}">{{ p.numero_titulo or 'título' }}</a>
+          {% else %}{{ p.numero_titulo or '—' }}{% endif %}
+          {% if p.protocolo %}<div><small>protocolo {{ p.protocolo }}</small></div>{% endif %}
+          {% if p.situacao_agora %}<div><small>agora: {{ p.situacao_agora }}</small></div>{% endif %}
+        </td>
+        <td>
+          {{ p.explicacao }}
+          {% if p.consulta_id %}<div><small><a href="{{ url_for('protesto_cra_consulta_arquivo', consulta_id=p.consulta_id) }}">baixar o arquivo da CRA</a></small></div>{% endif %}
+        </td>
+        <td>
+          {% if p.destaque == grave and papel not in quem_encerra_o_grave %}
+            <small>Só o oficial ou o substituto encerram a desistência de título já protestado: avise-os.</small>
+          {% elif p.pedido_id %}
+            <form method="post" action="{{ url_for('protesto_cra_pedido_tratar', pedido_id=p.pedido_id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <textarea name="motivo" rows="2" required
+                        placeholder="Por que não se lavra (pelo menos {{ minimo }} letras)"></textarea>
+              <div class="actions"><button class="button" type="submit">Registrar</button></div>
+            </form>
+          {% else %}
+            <form method="post" action="{{ url_for('protesto_cra_consulta_tratar', consulta_id=p.consulta_id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <textarea name="motivo" rows="2" required
+                        placeholder="O que se fez — por exemplo, conferido no portal da CRA (pelo menos {{ minimo }} letras)"></textarea>
+              <div class="actions"><button class="button" type="submit">Registrar</button></div>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>O que chegou</span><small>os {{ recentes | length }} mais recentes</small></div>
+  {% if not recentes %}
+    <p style="padding:14px">Nenhum pedido da CRA chegou ainda pelo clique do dia.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Chegou</th><th>O quê</th><th>Título</th><th>Situação</th><th>Estado</th></tr></thead>
+    <tbody>
+    {% for r in recentes %}
+      <tr>
+        <td>{{ (r.recebido_em or '')[:16] | replace('T', ' ') }}</td>
+        <td>{{ nome_do_tipo.get(r.tipo, r.tipo) }}
+            {% if r.destaque %}<div><small class="{{ 'danger' if r.destaque == grave else 'warning' }}">era {{ r.destaque }}</small></div>{% endif %}</td>
+        <td>{% if r.titulo_id %}<a href="{{ url_for('protesto_titulo', titulo_id=r.titulo_id) }}">{{ r.numero_titulo or 'título' }}</a>{% else %}{{ r.numero_titulo or '—' }}{% endif %}
+            <div><small>protocolo {{ r.protocolo or '—' }}</small></div></td>
+        <td>{{ r.situacao_ao_chegar or '—' }} &rarr; {{ r.situacao_agora or '—' }}</td>
+        <td><strong>{{ r.estado }}</strong>
+            {% if r.motivo %}<div><small>{{ r.tratado_por or '' }}: {{ r.motivo }}</small></div>
+            {% elif r.explicacao %}<div><small>{{ r.explicacao }}</small></div>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

@@ -65,7 +65,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     #: Processos de fábrica que leem o cofre por dentro (o PIN do A3, a credencial
     #: do Banco Inter) sem marcar `usa_credencial` — contam para o aviso do painel.
     LEEM_O_COFRE_POR_DENTRO = frozenset({"RI_ONR_CERTIDOES", "DESPESAS_PAGAR",
-                                         "DESPESAS_CONCILIAR", "MALOTE_CIENCIA_DIARIA"})
+                                         "DESPESAS_CONCILIAR",
+                                         "PROTESTO_REPASSE_BOLETO_CRA",
+                                         "MALOTE_CIENCIA_DIARIA"})
 
     @app.context_processor
     def _automacao_no_painel() -> dict:

@@ -63,8 +63,9 @@ def pago(con, *, origem="CRA", chave="REP:1", valor_pago=None,
                               origem_chave=None if origem == "MANUAL" else chave,
                               agora=PAGO)
     PT.lancar_apontamento(con, tid, sv=SV, agora=PAGO, data_extenso=EXTENSO)
+    # em espécie: PIX só se lavra com o crédito conferido (29/10/2026)
     r = PT.lancar_pagamento(con, tid, sv=SV, agora=PAGO, data_extenso=EXTENSO,
-                            valor_pago=valor_pago, forma_pagamento="PIX")
+                            valor_pago=valor_pago, forma_pagamento="ESPECIE")
     return {"titulo_id": tid, "ato_id": r["ato_id"]}
 
 

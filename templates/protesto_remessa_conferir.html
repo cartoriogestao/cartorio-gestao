@@ -17,6 +17,8 @@
   <a class="button" href="{{ url_for('protesto_remessas') }}">&larr; Remessas</a>
 </div>
 
+{% include '_protesto_cra_pedidos_do_dia.html' %}
+
 {% if xml_previa %}
 <div class="notice">
   <strong>Remessa XML da CRA — nenhum título foi recebido ainda.</strong>

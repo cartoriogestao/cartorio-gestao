@@ -38,6 +38,40 @@ O QUE NÃO FAZ
     Não fala com o IEPTB nem com banco nenhum: a guia é emitida pelo Instituto
     e paga pela casa, e aqui se REGISTRA cada passo. Não recebe juros (CN-MA
     art. 925, § 9º) nem decide o pagamento parcial — isso é do oficial.
+
+A GUIA SAI DO PORTAL, E NÃO DE API — MEDIDO EM 29/10/2026
+    Pedido do oficial: «emitir automático a guia de repasse do título pago no
+    cartório pela CRA e CENPROT». Não há por onde:
+      - a API da CENPROT para o cartório (contrato 2.1.0, baixado de novo no
+        dia: 21 caminhos) não tem guia, boleto, repasse nem liquidação;
+      - a API da Intimação Digital (Resolve 1.11.0) só fala do pagamento do
+        DEVEDOR (o relatório de pagamentos e o link de pagamento), e não do
+        repasse ao apresentante;
+      - o WSDL da CRA-MA (21 operações, o de produção conferido no dia contra
+        a cópia guardada) não tem operação de guia nem de repasse;
+      - o E-Ofício tinha as rotinas no menu («Gera repasse ao apresentante»,
+        «Repasse aos apresentantes») e NUNCA as usou nesta casa:
+        `tbAvisoProtesto.dtmRepasse_Data` vazia em 1.414 de 1.414 (os 142
+        pagos, todos vindos da Central, inclusive) e a conta de repasse do
+        apresentante (`tbCobrador.strFavorecido`) vazia em 106 de 106. Não há
+        precedente de canal, de leiaute nem de agrupamento a imitar.
+    A CENPROT tem o módulo de liquidação dos títulos pagos NO PORTAL, e é por
+    ele que um título da CENPROT desta casa foi liquidado em 27/10/2026. A
+    CRA-MA tem o boleto de repasse no portal dela — lido em 29/10/2026, só
+    lendo: menu Retorno → «Boletos de repasse», botão «GERAR BOLETO». Ele
+    NASCE DO RETORNO com a ocorrência «pago», um por data de retorno e conta,
+    e o identificador dele é o NOSSO NÚMERO.
+
+    POR ISSO O QUE ESTE MÓDULO AUTOMATIZA É O QUE É DA CASA:
+      - a relação da guia nasce sozinha, no dia do pagamento, pela rotina da
+        central de automação (`protesto_repasse_automacao`), UMA POR CENTRAL
+        (`gerar_guias_do_dia`): o título da CENPROT e o da CRA se acertam em
+        portais diferentes, e uma relação misturada não se emite em nenhum
+        dos dois — duas relações se emitem nos dois casos;
+      - o pagamento NÃO SAI DA PENDÊNCIA ao entrar na relação: ele continua
+        cobrado, com o prazo do art. 19, § 2º e o passo exato do portal
+        (`PASSO_NO_PORTAL`), até a guia ser registrada e paga
+        (`pendencias_do_repasse`, a lista que a tela e o roteiro leem).
 """
 from __future__ import annotations
 
@@ -77,6 +111,77 @@ FUNDAMENTO_DO_PRAZO = ("Lei 9.492/1997, art. 19, § 2º; CN-MA art. 929 — o va
 # repasse direto peguem o mesmo pagamento ao mesmo tempo.
 TRAVA_DA_GUIA = "pt_repasse_guias.numero"
 TRAVA_DO_REPASSE = "pt_repasses.ato"
+
+# O PASSO DO PORTAL, POR CENTRAL. É o que a pendência e a tela dizem a quem vai
+# emitir a guia. O que não se mediu está em `a_conferir`, e a tela mostra —
+# o sistema não entra em portal nenhum, e escrever o menu de memória seria
+# mandar o escrevente procurar um botão que talvez se chame de outro jeito.
+PASSO_NO_PORTAL: dict[str, dict[str, str]] = {
+    "CENPROT": {
+        "central": "CENPROT",
+        "onde": ("no portal da CENPROT, na área do cartório — a liquidação dos "
+                 "títulos pagos"),
+        "passo": ("Entre no portal da CENPROT com o acesso do cartório, abra a "
+                  "liquidação dos títulos pagos, marque os títulos desta relação "
+                  "(pela chave única ou pelo protocolo), emita a guia e pague-a. "
+                  "Registre aqui o número da guia (ou a referência da "
+                  "liquidação) e, depois de paga, o comprovante."),
+        "precedente": ("um título da CENPROT desta casa foi liquidado por esse "
+                       "caminho em 27/10/2026, e o portal devolveu o "
+                       "«Comprovante TED liquidação»"),
+        "a_conferir": ("o nome exato do menu, e se o portal emite boleto ou pede "
+                       "TED — o sistema não entra no portal"),
+    },
+    # O CAMINHO DA CRA FOI LIDO NO PORTAL, só lendo, em 29/10/2026: menu
+    # Retorno → «Boletos de repasse». O boleto NASCE DO RETORNO com a
+    # ocorrência «pago», um por data de retorno e conta — e sai no portal da
+    # CRA, e não na CENPROT.
+    "CRA": {
+        "central": "CRA",
+        "onde": ("no portal da CRA-MA, menu Retorno → «Boletos de repasse»"),
+        "passo": ("O boleto nasce do RETORNO com a ocorrência «pago», um por data "
+                  "de retorno e conta: mande antes o retorno do pagamento. No "
+                  "portal da CRA-MA, menu Retorno → «Boletos de repasse», filtre "
+                  "o período e a conta; o movimento aparece em «Boletos "
+                  "pendentes de geração» (Conta, Movimento, Repasse, Situação). "
+                  "Clique «GERAR BOLETO»: ele passa à lista dos boletos (Conta, "
+                  "Geração, Retorno, Nosso número, Repasse, Taxa, Valor, "
+                  "Situação). Registre aqui o NOSSO NÚMERO como o número da guia "
+                  "(mais de um boleto: separe por vírgula). Pague o boleto e "
+                  "registre o pagamento com o comprovante do banco — ou com a "
+                  "situação no portal, quando ela deixar de ser «AGUARDANDO "
+                  "PAGAMENTO»."),
+        "precedente": ("lido no portal em 29/10/2026: um boleto gerado do retorno "
+                       "de 26/10/2026, nosso número de 12 dígitos, taxa 0,00 e "
+                       "valor igual ao repasse, «AGUARDANDO PAGAMENTO» — pago "
+                       "pelo oficial no mesmo dia, sem a situação mudar no "
+                       "portal até a leitura"),
+        "a_conferir": ("a palavra que substitui «AGUARDANDO PAGAMENTO» depois da "
+                       "compensação, e em quanto tempo ela muda"),
+    },
+}
+
+#: Como o pagamento da guia se prova (`pagar_guia`): o comprovante do banco,
+#: ou a situação do boleto no portal da Central, lida por quem registra.
+PROVAS_DO_PAGAMENTO: dict[str, str] = {
+    "COMPROVANTE": "comprovante do pagamento (autenticação ou transação)",
+    "PORTAL": "situação do boleto no portal da Central",
+}
+#: A situação do portal que NÃO prova pagamento — a do boleto ainda em aberto.
+SITUACAO_EM_ABERTO_NO_PORTAL = "AGUARDANDO PAGAMENTO"
+
+#: As etapas da pendência — onde o dinheiro está parado, e o que falta.
+SEM_GUIA = "SEM_GUIA"            # da Central, ainda sem relação
+DIRETO_A_FAZER = "DIRETO"        # do balcão, sem repasse direto registrado
+GUIA_GERADA = "GUIA_GERADA"      # na relação, e a guia não foi emitida/registrada
+GUIA_REGISTRADA = "GUIA_REGISTRADA"  # guia registrada, e não paga
+ETAPAS = (SEM_GUIA, DIRETO_A_FAZER, GUIA_GERADA, GUIA_REGISTRADA)
+
+
+def central_do_titulo(origem: Any) -> str | None:
+    """CRA ou CENPROT para o título da Central; None para o do balcão."""
+    o = str(origem or "").strip().upper()
+    return o if o in ORIGENS_PELA_CENTRAL else None
 
 
 class RepasseError(ValueError):
@@ -155,9 +260,15 @@ def pendentes(con, *, hoje: str, feriados: set[date] | None = None,
                    a.numero_ordem,
                    t.id AS titulo_id, t.numero_titulo, t.protocolo, t.especie,
                    t.origem, t.apresentante_codigo, t.apresentante_nome,
-                   t.cedente_nome, t.saldo_centavos, t.valor_centavos
+                   t.cedente_nome, t.saldo_centavos, t.valor_centavos,
+                   t.chave_cenprot,
+                   a.retorno_id, a.cra_ja_informado_retorno_id,
+                   ret.dia AS retorno_dia,
+                   ret.cra_enviado_em AS retorno_enviado_em,
+                   ret.cra_recusado_em AS retorno_recusado_em
               FROM pt_atos a
               JOIN pt_titulos t ON t.id = a.titulo_id
+              LEFT JOIN pt_retornos ret ON ret.id = a.retorno_id
              WHERE a.tipo = 'PAGAMENTO' AND a.cancelado = 0
                AND a.origem <> 'EOFICIO' AND a.data_ato >= %s
                AND NOT EXISTS (SELECT 1 FROM pt_repasses r
@@ -182,6 +293,12 @@ def pendentes(con, *, hoje: str, feriados: set[date] | None = None,
                            "(CN-MA art. 927, parágrafo único)"
                            if d["forma_do_pagamento"] == "CHEQUE" else "")
         d["favorecido"] = d["apresentante_nome"] or d["cedente_nome"] or ""
+        # O BOLETO DA CRA NASCE DO RETORNO (lido no portal, 29/10/2026): sem o
+        # retorno com o «pago» aceito pela CRA não há boleto a gerar. Aceito é
+        # o arquivo enviado e não recusado — ou o ato marcado «já informado».
+        d["retorno_aceito"] = bool(
+            (d.get("retorno_enviado_em") and not d.get("retorno_recusado_em"))
+            or d.get("cra_ja_informado_retorno_id"))
         saida.append(d)
     return saida
 
@@ -205,27 +322,203 @@ def relatorio(con, *, hoje: str, feriados: set[date] | None = None) -> dict:
         """SELECT * FROM pt_repasse_guias
             WHERE situacao IN ('GERADA','REGISTRADA','PAGA')
             ORDER BY id""")
+    # O QUE ESTÁ NA RELAÇÃO E AINDA NÃO SAIU DA CASA (29/10/2026). Entrar na
+    # relação não é repassar: a rotina gera a relação sozinha, e o dinheiro só
+    # sai quando a guia é emitida no portal e paga.
+    em_guia = em_guia_sem_pagamento(bd, hoje=hoje)
     return {"pendentes": lista, "por_canal": por_canal,
             "total_centavos": sum(p["valor_centavos"] for p in lista),
             "vencidos": sum(int(p["vencido"]) for p in lista),
+            "em_guia": em_guia,
+            "vencidos_em_guia": sum(int(p["vencido"]) for p in em_guia),
             "guias_abertas": abertas,
             "a_conciliar": [g for g in abertas if g["situacao"] == "PAGA"]}
+
+
+# ------------------------------------------- o que falta para o repasse sair
+
+
+def _atraso(prazo: str, hoje_d: date) -> int:
+    return (hoje_d - date.fromisoformat(str(prazo)[:10])).days
+
+
+def em_guia_sem_pagamento(con, *, hoje: str) -> list[dict]:
+    """Os pagamentos que estão numa guia ainda não paga. Só LÊ.
+
+    Uma linha por pagamento, com a guia, a etapa (`GUIA_GERADA` — falta emitir
+    no portal e registrar; `GUIA_REGISTRADA` — falta pagar), a Central, o
+    prazo que o repasse já guarda e o atraso contado. `desfeito` marca o
+    pagamento cancelado depois de entrar na relação: a guia dele não pode ser
+    emitida como está.
+    """
+    bd = banco(con)
+    hoje_d = date.fromisoformat(str(hoje)[:10])
+    saida = []
+    for linha in bd.ler(
+            """SELECT r.id AS repasse_id, r.ato_id, r.titulo_id, r.valor_centavos,
+                      r.recebido_em, r.prazo, r.guia_id,
+                      g.numero AS guia_numero, g.ano AS guia_ano,
+                      g.situacao AS situacao_da_guia, g.identificador,
+                      g.vencimento,
+                      t.numero_titulo, t.protocolo, t.origem, t.chave_cenprot,
+                      a.cancelado
+                 FROM pt_repasses r
+                 JOIN pt_repasse_guias g ON g.id = r.guia_id
+                 JOIN pt_titulos t ON t.id = r.titulo_id
+                 JOIN pt_atos a ON a.id = r.ato_id
+                WHERE r.situacao = 'EM_GUIA'
+                  AND g.situacao IN ('GERADA','REGISTRADA')
+                ORDER BY r.prazo, r.id"""):
+        d = dict(linha)
+        atraso = _atraso(d["prazo"], hoje_d)
+        d["etapa"] = (GUIA_GERADA if d["situacao_da_guia"] == "GERADA"
+                      else GUIA_REGISTRADA)
+        d["canal"] = "IEPTB"
+        d["central"] = central_do_titulo(d["origem"])
+        d["guia"] = f"{d['guia_numero']}/{d['guia_ano']}"
+        d["dias_de_atraso"] = max(0, atraso)
+        d["vencido"] = atraso > 0
+        d["desfeito"] = bool(int(d.get("cancelado") or 0))
+        saida.append(d)
+    return saida
+
+
+def _frase_do_prazo(p: dict) -> str:
+    frase = (f"pago em {_br(p['recebido_em'])}; repasse até "
+             f"{_br(p['prazo'])}")
+    if p["vencido"]:
+        frase += f" — {p['dias_de_atraso']} dia(s) de atraso"
+    return frase
+
+
+def _explicacao(p: dict) -> str:
+    """A frase pronta da pendência: onde o dinheiro está e o passo que falta."""
+    prazo = _frase_do_prazo(p)
+    portal = PASSO_NO_PORTAL.get(p.get("central") or "")
+    onde = portal["onde"] if portal else "no portal da Central"
+    if p["etapa"] == DIRETO_A_FAZER:
+        return (f"{prazo}. Título do balcão: repasse direto ao apresentante "
+                f"(espécie até R$ 300,00, cheque ou depósito) e registre o "
+                f"comprovante em Repasses ao apresentante.")
+    da_cra = p.get("central") == "CRA"
+    if p["etapa"] == SEM_GUIA and da_cra and not p.get("retorno_aceito"):
+        return (f"{prazo}. O boleto de repasse da CRA nasce do RETORNO com a "
+                f"ocorrência «pago», e o retorno deste pagamento ainda não foi "
+                f"aceito pela CRA: mande o retorno (até as 11:30) — só depois o "
+                f"boleto aparece {onde}.")
+    if p["etapa"] == SEM_GUIA and da_cra:
+        aceito = (f" (retorno de {_br(p['retorno_dia'])})"
+                  if p.get("retorno_dia") else "")
+        return (f"{prazo}. O retorno com o «pago» foi aceito pela CRA{aceito}: "
+                f"{onde}, o movimento aparece em «Boletos pendentes de "
+                f"geração» — clique «GERAR BOLETO», registre aqui o nosso "
+                f"número (a rotina gera a relação quando ligada; senão, gere-a "
+                f"em Repasses ao apresentante) e pague o boleto.")
+    if p["etapa"] == SEM_GUIA:
+        return (f"{prazo}. Ainda sem relação de guia: gere-a em Repasses ao "
+                f"apresentante (a rotina automática a gera quando ligada), "
+                f"emita a guia {onde} e registre-a aqui.")
+    if p.get("desfeito"):
+        return (f"{prazo}. O pagamento foi desfeito depois de entrar na guia "
+                f"{p['guia']}: cancele essa guia (só o administrador) antes de "
+                f"emiti-la ou pagá-la, e gere outra.")
+    if p["etapa"] == GUIA_GERADA and da_cra:
+        return (f"{prazo}. Está na relação da guia {p['guia']}, ainda NÃO "
+                f"registrada: {onde}, gere o boleto («GERAR BOLETO», em "
+                f"«Boletos pendentes de geração») e registre aqui o nosso "
+                f"número dele.")
+    if p["etapa"] == GUIA_GERADA:
+        return (f"{prazo}. Está na relação da guia {p['guia']}, que ainda NÃO "
+                f"foi emitida: emita-a {onde} e registre aqui o número da guia "
+                f"(ou a referência da liquidação).")
+    vence = f", que vence em {_br(p['vencimento'])}" if p.get("vencimento") else ""
+    numero = "nosso número" if da_cra else "guia"
+    portal = (" — ou com a situação do boleto no portal, quando ela deixar de "
+              "ser «AGUARDANDO PAGAMENTO»") if da_cra else ""
+    return (f"{prazo}. A guia {p['guia']} está registrada ({numero} "
+            f"{p.get('identificador') or '—'}){vence}, e ainda NÃO foi paga: "
+            f"pague-a e registre o pagamento com o comprovante{portal}.")
+
+
+def pendencias_do_repasse(con, *, hoje: Any = None,
+                          feriados: set[date] | None = None) -> list[dict]:
+    """TODO pagamento cujo repasse ainda não saiu da casa. Só LÊ.
+
+    É a lista que o roteiro do dia lê (`protesto_roteiro.GANCHOS`, que chama
+    `funcao(con)`) e a que a tela de repasses mostra no alto — uma régua só
+    para «o que falta repassar».
+
+    ENTRAR NA RELAÇÃO NÃO TIRA DA LISTA. Aqui estão as quatro etapas: o
+    pagamento da Central ainda sem relação (`SEM_GUIA`), o do balcão sem
+    repasse direto (`DIRETO`), o que está numa guia que ninguém emitiu ou
+    registrou (`GUIA_GERADA`) e o que está numa guia registrada e não paga
+    (`GUIA_REGISTRADA`). O pagamento só sai quando a guia é paga — é nesse dia
+    que o dinheiro sai da casa e que o art. 19, § 2º se cumpre.
+
+    O CONTRATO DO ROTEIRO: cada linha traz `titulo_id`, `numero_titulo`,
+    `protocolo` e `explicacao` — a frase pronta, com o prazo e o passo do
+    portal. E mais `etapa`, `central`, `guia`, `prazo`, `vencido`,
+    `dias_de_atraso`, `valor_centavos` e `data_ato` — as chaves que a cobrança
+    da conduta 10 do roteiro já lê. Nenhuma linha é do acervo: o
+    pagamento trazido do E-Ofício já foi repassado fora daqui (`pendentes`).
+
+    `hoje` é `AAAA-MM-DD`; sem ele, o dia do relógio da máquina — o roteiro
+    chama só com `con`. `feriados`, sem eles, os da casa.
+    """
+    dia = str(hoje or date.today().isoformat())[:10]
+    if feriados is None:
+        feriados = feriados_da_casa(con)
+    saida = []
+    for p in pendentes(con, hoje=dia, feriados=feriados):
+        linha = {k: p.get(k) for k in (
+            "ato_id", "titulo_id", "numero_titulo", "protocolo", "canal",
+            "data_ato", "recebido_em", "prazo", "vencido", "dias_de_atraso",
+            "valor_centavos", "chave_cenprot", "retorno_aceito", "retorno_dia")}
+        linha.update(etapa=(SEM_GUIA if p["canal"] == "IEPTB" else DIRETO_A_FAZER),
+                     central=central_do_titulo(p["origem"]), guia=None,
+                     guia_id=None, desfeito=False)
+        saida.append(linha)
+    for p in em_guia_sem_pagamento(con, hoje=dia):
+        linha = {k: p.get(k) for k in (
+            "ato_id", "titulo_id", "numero_titulo", "protocolo", "canal",
+            "recebido_em", "prazo", "vencido", "dias_de_atraso",
+            "valor_centavos", "chave_cenprot", "etapa", "central", "guia",
+            "guia_id", "desfeito", "identificador", "vencimento")}
+        linha["data_ato"] = p.get("recebido_em")
+        linha["retorno_aceito"], linha["retorno_dia"] = None, None
+        saida.append(linha)
+    for linha in saida:
+        linha["explicacao"] = _explicacao(linha)
+        portal = PASSO_NO_PORTAL.get(linha.get("central") or "")
+        linha["onde"] = portal["onde"] if portal else ""
+    saida.sort(key=lambda x: (str(x["prazo"]), int(x["ato_id"])))
+    return saida
 
 
 # ---------------------------------------------------------------- a guia
 
 
 def _relacao_da_guia(numero: int, ano: int, itens: list[dict]) -> str:
-    """O teor da relação que a guia paga — uma linha por título, por apresentante."""
+    """O teor da relação que a guia paga — uma linha por título, por apresentante.
+
+    AS TRÊS COLUNAS DO FIM (29/10/2026) são para quem vai ao portal: o PRAZO do
+    art. 19, § 2º, a CENTRAL por onde o título veio (é ela que diz em que
+    portal a guia se emite) e a CHAVE única da CENPROT, que é como o portal
+    acha o título. Não há leiaute de guia a imitar — o E-Ofício nunca a
+    gerou nesta casa —; a relação é a lista de conferência de quem a emite.
+    """
     linhas = [f"GUIA DE REPASSE AO IEPTB Nº {numero}/{ano}",
-              "PROTOCOLO;TITULO;ESPECIE;APRESENTANTE;PAGO_EM;VALOR"]
+              ("PROTOCOLO;TITULO;ESPECIE;APRESENTANTE;PAGO_EM;VALOR;PRAZO;"
+               "CENTRAL;CHAVE_CENPROT")]
     for i in sorted(itens, key=lambda x: (str(x["apresentante_codigo"] or ""),
                                           x["recebido_em"], x["ato_id"])):
         linhas.append(";".join([
             str(i["protocolo"] or ""), str(i["numero_titulo"] or ""),
             str(i["especie"] or ""),
             f"{i['apresentante_codigo'] or ''} {i['apresentante_nome'] or ''}".strip(),
-            _br(i["recebido_em"]), reais(i["valor_centavos"])]))
+            _br(i["recebido_em"]), reais(i["valor_centavos"]),
+            _br(i.get("prazo")), str(central_do_titulo(i.get("origem")) or ""),
+            str(i.get("chave_cenprot") or "")]))
     total = sum(i["valor_centavos"] for i in itens)
     linhas.append(f"TOTAL;{len(itens)} título(s);;;;{reais(total)}")
     return "\n".join(linhas) + "\n"
@@ -233,16 +526,25 @@ def _relacao_da_guia(numero: int, ano: int, itens: list[dict]) -> str:
 
 def gerar_guia(con, *, hoje: str, agora: str, usuario: str | None = None,
                ato_ids: list[int] | None = None,
-               feriados: set[date] | None = None) -> dict:
+               feriados: set[date] | None = None,
+               origem: str | None = None) -> dict:
     """Gera a guia de repasse ao IEPTB com os pagamentos da Central. ESCREVE.
 
     A TRAVA VEM ANTES DA LISTA: ler os pendentes e só depois travar deixaria
     duas guias geradas ao mesmo tempo pegarem o mesmo pagamento. Sem `ato_ids`,
-    entram todos os pendentes do canal IEPTB.
+    entram todos os pendentes do canal IEPTB — e, com `origem` (CRA ou
+    CENPROT), só os da Central dita (`gerar_guias_do_dia`).
 
     Recusa pagamento de título do balcão (esse se repassa direto) e pagamento
     que já está noutra guia — dizendo qual.
     """
+    central = None
+    if origem is not None:
+        central = central_do_titulo(origem)
+        if not central:
+            raise RepasseError(
+                f"Central desconhecida: {origem!r}. A guia é da CRA ou da "
+                f"CENPROT.")
     bd = banco(con)
     bd.travar(TRAVA_DO_REPASSE)
     bd.travar(TRAVA_DA_GUIA)
@@ -261,9 +563,18 @@ def gerar_guia(con, *, hoje: str, agora: str, usuario: str | None = None,
                 "Título do balcão não vai na guia do IEPTB — o repasse dele é "
                 "direto ao apresentante: "
                 + ", ".join(str(p["numero_titulo"]) for p in diretos) + ".")
-    lista = [p for p in lista if p["canal"] == "IEPTB"]
+        outra = [p for p in lista if central
+                 and central_do_titulo(p["origem"]) != central]
+        if outra:
+            raise RepasseError(
+                f"Esta guia é da {central}, e estes títulos vieram por outra "
+                f"Central: " + ", ".join(str(p["numero_titulo"]) for p in outra)
+                + ".")
+    lista = [p for p in lista if p["canal"] == "IEPTB"
+             and (central is None or central_do_titulo(p["origem"]) == central)]
     if not lista:
-        raise RepasseError("Não há pagamento de título da Central esperando repasse.")
+        raise RepasseError("Não há pagamento de título da Central esperando repasse"
+                           + (f" (da {central})." if central else "."))
 
     ano = int(str(hoje)[:4])
     numero = int(bd.valor(
@@ -294,7 +605,44 @@ def gerar_guia(con, *, hoje: str, agora: str, usuario: str | None = None,
                 f"O pagamento do título {p['numero_titulo']} entrou noutro "
                 f"repasse enquanto esta guia se montava. Gere de novo.")
     return {"guia_id": guia_id, "numero": numero, "ano": ano,
-            "titulos": len(lista), "total_centavos": total}
+            "titulos": len(lista), "total_centavos": total,
+            "central": central,
+            "prazo": min(str(p["prazo"]) for p in lista)}
+
+
+def gerar_guias_do_dia(con, *, hoje: str, agora: str,
+                       usuario: str | None = None,
+                       feriados: set[date] | None = None) -> list[dict]:
+    """As relações do dia: uma por Central, com os pagamentos dela ainda sem
+    guia. ESCREVE. É o que a rotina automática faz.
+
+    UMA POR CENTRAL, e não uma para todas: o título da CENPROT se liquida no
+    portal da CENPROT e o da CRA no boleto de repasse da CRA-MA, e uma
+    relação misturada não se emite em nenhum dos dois. Duas relações se
+    emitem nos dois casos — inclusive se um dia os dois portais forem o mesmo.
+
+    O DA CRA SÓ ENTRA COM O RETORNO ACEITO (lido no portal, 29/10/2026): o
+    boleto de repasse da CRA nasce do retorno com a ocorrência «pago». Antes
+    dele não há boleto a gerar, e o pagamento fica na pendência dizendo que
+    falta o retorno — a relação dele sai na rodada seguinte ao envio.
+
+    Sem pagamento esperando, não gera nada e devolve lista vazia: guia vazia
+    seria número consumido sem dinheiro nenhum. Rodar duas vezes no mesmo dia
+    não repete pagamento — o que já está numa relação não está mais em
+    `pendentes`.
+    """
+    bd = banco(con)
+    bd.travar(TRAVA_DO_REPASSE)
+    bd.travar(TRAVA_DA_GUIA)
+    prontos: dict[str, list[int]] = {c: [] for c in ORIGENS_PELA_CENTRAL}
+    for p in pendentes(bd, hoje=hoje, feriados=feriados, canal="IEPTB"):
+        central = central_do_titulo(p["origem"])
+        if central == "CRA" and not p["retorno_aceito"]:
+            continue
+        prontos[central].append(int(p["ato_id"]))
+    return [gerar_guia(bd, hoje=hoje, agora=agora, usuario=usuario,
+                       feriados=feriados, origem=central, ato_ids=atos)
+            for central, atos in prontos.items() if atos]
 
 
 def guia_para_gravar(con, guia_id: int) -> dict | None:
@@ -322,14 +670,20 @@ def registrar_guia(con, guia_id: int, *, identificador: str,
 
     O identificador (número da guia ou linha digitável) é obrigatório: é por
     ele que o pagamento se confere no extrato, e guia paga sem ele é dinheiro
-    que saiu sem endereço.
+    que saiu sem endereço. No boleto de repasse da CRA ele é o NOSSO NÚMERO
+    que o portal mostra na lista dos boletos (12 dígitos no lido em
+    29/10/2026), com os zeros da frente — guardado como texto, sem conta.
+    Mais de um boleto para a mesma relação: os nossos números separados por
+    vírgula.
     """
     bd = banco(con)
     guia = _exigir(guia_para_gravar(bd, guia_id), guia_id, "GERADA")
     ident = " ".join(str(identificador or "").split())
     if len(ident) < 5:
         raise RepasseError(
-            "Informe o número da guia (ou a linha digitável) que o IEPTB emitiu.")
+            "Informe o número da guia que o portal emitiu — no boleto de "
+            "repasse da CRA, o nosso número; na CENPROT, o número da guia ou a "
+            "referência da liquidação.")
     bd.escrever(
         """UPDATE pt_repasse_guias
               SET situacao='REGISTRADA', identificador=%s, vencimento=%s,
@@ -342,12 +696,18 @@ def registrar_guia(con, guia_id: int, *, identificador: str,
 
 
 def pagar_guia(con, guia_id: int, *, paga_em: str, comprovante: str,
-               agora: str, usuario: str | None = None) -> dict:
+               agora: str, usuario: str | None = None,
+               prova: str = "COMPROVANTE") -> dict:
     """Registra o pagamento da guia — e com ele o repasse dos títulos. ESCREVE.
 
     O REPASSE SE CUMPRE AQUI, e não na conciliação: o dinheiro saiu da casa no
     dia em que a guia foi paga, e é contra esse dia que o prazo do art. 19,
     § 2º se mede. A conciliação é a confirmação do Instituto, e vem depois.
+
+    A PROVA É O COMPROVANTE DO BANCO OU A SITUAÇÃO NO PORTAL (`prova`,
+    29/10/2026): é só com uma das duas que o título sai da pendência. A
+    situação «AGUARDANDO PAGAMENTO» é a do boleto em aberto e NÃO prova nada
+    — lido no portal da CRA: o boleto pago no dia continuava nela.
     """
     bd = banco(con)
     guia = _exigir(guia_para_gravar(bd, guia_id), guia_id, "REGISTRADA")
@@ -357,11 +717,23 @@ def pagar_guia(con, guia_id: int, *, paga_em: str, comprovante: str,
         raise RepasseError("Informe o dia em que a guia foi paga.") from None
     if dia < str(guia["dia"])[:10]:
         raise RepasseError("A guia não pode ter sido paga antes de ser gerada.")
+    forma_da_prova = str(prova or "COMPROVANTE").strip().upper()
+    if forma_da_prova not in PROVAS_DO_PAGAMENTO:
+        raise RepasseError(
+            f"Prova do pagamento desconhecida: {prova!r}. As que valem são: "
+            f"{'; '.join(PROVAS_DO_PAGAMENTO.values())}.")
     prova = " ".join(str(comprovante or "").split())
     if len(prova) < 3:
         raise RepasseError(
             "Informe o comprovante do pagamento da guia (autenticação ou "
-            "número da transação).")
+            "número da transação) — ou a situação do boleto no portal.")
+    if "AGUARDANDO" in prova.upper():
+        raise RepasseError(
+            f"«{SITUACAO_EM_ABERTO_NO_PORTAL}» é a situação do boleto em aberto, "
+            f"e não prova o pagamento: registre com o comprovante do banco, ou "
+            f"espere a situação mudar no portal.")
+    if forma_da_prova == "PORTAL":
+        prova = f"situação no portal: {prova}"
     bd.escrever(
         """UPDATE pt_repasse_guias
               SET situacao='PAGA', paga_em=%s, comprovante=%s, paga_por=%s
@@ -373,7 +745,8 @@ def pagar_guia(con, guia_id: int, *, paga_em: str, comprovante: str,
             WHERE guia_id=%s AND situacao='EM_GUIA'""",
         (dia, prova, int(guia_id)))
     return {"guia_id": int(guia_id), "numero": guia["numero"], "paga_em": dia,
-            "total_centavos": int(guia["total_centavos"])}
+            "total_centavos": int(guia["total_centavos"]),
+            "prova": forma_da_prova}
 
 
 def conciliar_guia(con, guia_id: int, *, valor_confirmado: Any,
@@ -440,16 +813,30 @@ def guias(con, limite: int = 60) -> list[dict]:
         "LIMIT %s", (int(limite),))
 
 
-def guia(con, guia_id: int) -> dict | None:
-    """A guia e os repasses dela. Só LÊ."""
+def guia(con, guia_id: int, *, hoje: str | None = None) -> dict | None:
+    """A guia e os repasses dela, com o passo do portal e o prazo. Só LÊ.
+
+    `centrais` são as Centrais dos títulos da relação, e `passos` o que se faz
+    no portal de cada uma (`PASSO_NO_PORTAL`). `prazo` é o mais curto dos
+    repasses dela — é contra ele que a guia não paga atrasa. Com `hoje`,
+    `vencida` diz se ele já passou com a guia ainda não paga.
+    """
     bd = banco(con)
     g = bd.um("SELECT * FROM pt_repasse_guias WHERE id=%s", (int(guia_id),))
     if not g:
         return None
     g["repasses"] = bd.ler(
-        """SELECT r.*, t.numero_titulo, t.protocolo
+        """SELECT r.*, t.numero_titulo, t.protocolo, t.origem
              FROM pt_repasses r JOIN pt_titulos t ON t.id = r.titulo_id
             WHERE r.guia_id=%s ORDER BY r.id""", (int(guia_id),))
+    g["centrais"] = sorted({c for c in (central_do_titulo(r["origem"])
+                                         for r in g["repasses"]) if c})
+    g["passos"] = [PASSO_NO_PORTAL[c] for c in g["centrais"]]
+    prazos = [str(r["prazo"])[:10] for r in g["repasses"] if r.get("prazo")]
+    g["prazo"] = min(prazos) if prazos else None
+    g["vencida"] = bool(
+        hoje and g["prazo"] and g["situacao"] in ("GERADA", "REGISTRADA")
+        and str(hoje)[:10] > g["prazo"])
     return g
 
 

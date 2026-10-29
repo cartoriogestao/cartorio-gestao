@@ -343,7 +343,7 @@ CASOS_DE_ATRIBUICOES = [
           {"ato": "APONTAMENTO", "cobrar_protocolo_item": "1", "protocolo_id": "{x}"}),
     _caso("protesto-cobrar-diferidos-protocolo", "protesto_com_devido", "POST",
           "/protesto/{titulo_id}/lancar",
-          {"ato": "PAGAMENTO", "forma_pagamento": "PIX", "cobrar_diferidos": "1",
+          {"ato": "PAGAMENTO", "forma_pagamento": "ESPECIE", "cobrar_diferidos": "1",
            "protocolo_id": "{x}"}),
     # --- o lote de avisos e a lista a protestar
     _caso("protesto-lote-folhas", "lote", "GET", "/protesto/avisos/lote/{sha}/folhas?p={x}"),

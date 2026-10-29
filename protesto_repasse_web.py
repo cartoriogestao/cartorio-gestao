@@ -27,6 +27,8 @@ from flask import (Response, flash, redirect, render_template, request,
 import protesto_posteriori as POST
 import protesto_relacao as REL
 import protesto_repasse as REP
+import protesto_repasse_automacao as RA
+import protesto_repasse_portal as PRP
 from caixa_schema import reais
 from seguranca_web import numero_digitado  # LD13: o número que a tela mandou
 from serventia import dados as dados_serventia
@@ -44,6 +46,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     """Pendura as telas do repasse e da relação no app já construído."""
 
     usuario_nome = app.extensions["usuario_nome"]
+    # O PDF DO BOLETO que o robô baixa do portal da CRA (#121) abre para quem
+    # abre a ficha da guia — é nela que ele aparece.
+    app.extensions.setdefault("tela_do_anexo", {})[PRP.ENTIDADE_DO_ANEXO] = (
+        "protesto_repasse_guia",)
 
     def agora() -> str:
         return db.now()
@@ -63,12 +69,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     @login_required
     @roles_required(*QUEM_VE)
     def protesto_repasses():
-        """As pendências de repasse e as guias. Só LÊ."""
+        """As pendências de repasse e as guias. Só LÊ.
+
+        No alto, `faltam`: a MESMA lista que o roteiro do dia lê
+        (`pendencias_do_repasse`) — o pagamento só sai dela quando a guia é
+        paga. E a rotina automática, com a última rodada: a falha dela aparece
+        aqui, onde o escrevente trabalha.
+        """
         with db.connect() as con:
-            rel = REP.relatorio(con, hoje=hoje(), feriados=_feriados(con))
+            feriados = _feriados(con)
+            rel = REP.relatorio(con, hoje=hoje(), feriados=feriados)
+            faltam = REP.pendencias_do_repasse(con, hoje=hoje(),
+                                               feriados=feriados)
             guias = REP.guias(con)
+            rotina = RA.situacao_da_rotina(con)
+            robo = RA.situacao_da_rotina(con, codigo=PRP.CODIGO)
         return render_template(
             "protesto_repasses.html", rel=rel, guias=guias, hoje=hoje(),
+            faltam=faltam, rotina=rotina, robo=robo, portais=REP.PASSO_NO_PORTAL,
             formas=REP.FORMAS_DE_REPASSE_DIRETO, reais=reais,
             fundamento=REP.FUNDAMENTO_DO_PRAZO,
             pode_mexer=QUEM_MEXE_NO_DINHEIRO)
@@ -89,12 +107,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         # um favorecido começando com «=» virava fórmula. Agora sai por
         # `csv_seguro`, com o mesmo fim de linha e o mesmo BOM de antes.
         import csv_seguro as CSVS
+        # A COLUNA ETAPA E AS LINHAS DE GUIA NÃO PAGA (29/10/2026): o pagamento
+        # que entrou numa relação continua pendente até a guia ser paga, e o
+        # relatório diz o mesmo que a tela.
         cabecalho = ["CANAL", "PROTOCOLO", "TITULO", "APRESENTANTE", "PAGO_EM",
-                     "PRAZO", "DIAS_DE_ATRASO", "VALOR", "VALOR_DE", "OBSERVACAO"]
+                     "PRAZO", "DIAS_DE_ATRASO", "VALOR", "VALOR_DE", "OBSERVACAO",
+                     "ETAPA"]
         linhas = [(p["canal"], p["protocolo"] or "", p["numero_titulo"] or "",
                    p["favorecido"], p["recebido_em"], p["prazo"],
                    p["dias_de_atraso"], reais(p["valor_centavos"]), p["valor_de"],
-                   p["observacao"]) for p in rel["pendentes"]]
+                   p["observacao"],
+                   REP.SEM_GUIA if p["canal"] == "IEPTB" else REP.DIRETO_A_FAZER)
+                  for p in rel["pendentes"]]
+        linhas += [(p["canal"], p["protocolo"] or "", p["numero_titulo"] or "",
+                    "", p["recebido_em"], p["prazo"], p["dias_de_atraso"],
+                    reais(p["valor_centavos"]), "",
+                    f"guia {p['guia']}" + (" — pagamento desfeito"
+                                           if p["desfeito"] else ""),
+                    p["etapa"]) for p in rel["em_guia"]]
         corpo = CSVS.gerar(cabecalho, linhas, lineterminator="\n").encode("utf-8-sig")
         return Response(corpo, mimetype="text/csv", headers={
             "Content-Disposition":
@@ -131,18 +161,56 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
               f"relação e registre-a aqui.", "success")
         return redirect(url_for("protesto_repasse_guia", guia_id=g["guia_id"]))
 
+    @app.route("/protesto/repasses/guias/do-dia", methods=["POST"])
+    @login_required
+    @roles_required(*QUEM_MEXE_NO_DINHEIRO)
+    def protesto_repasse_guias_do_dia():
+        """As relações do dia, uma por Central — o que a rotina faz. ESCREVE.
+
+        É a MESMA função da rotina automática (`gerar_guias_do_dia`): o botão
+        existe para o dia em que a rotina estiver desligada, ou falhar.
+        """
+        try:
+            with db.transaction() as con:
+                geradas = REP.gerar_guias_do_dia(
+                    con, hoje=hoje(), agora=agora(), usuario=usuario_nome(),
+                    feriados=_feriados(con))
+        except RECUSAS as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_repasses"))
+        if not geradas:
+            flash("Nenhum pagamento da Central esperando relação: nenhuma guia "
+                  "foi gerada.", "info")
+            return redirect(url_for("protesto_repasses"))
+        for g in geradas:
+            audit("PROTESTO_REPASSE_GUIA_GERADA", "pt_repasse_guias",
+                  g["guia_id"], {"numero": g["numero"], "ano": g["ano"],
+                                 "central": g["central"], "titulos": g["titulos"],
+                                 "total_centavos": g["total_centavos"]})
+        flash("Relação gerada: " + "; ".join(
+            f"guia {g['numero']}/{g['ano']} ({g['central']}), {g['titulos']} "
+            f"título(s), R$ {reais(g['total_centavos'])}" for g in geradas)
+            + ". Emita cada guia no portal da Central e registre-a aqui.",
+            "success")
+        return redirect(url_for("protesto_repasses"))
+
     @app.route("/protesto/repasses/guias/<int:guia_id>")
     @login_required
     @roles_required(*QUEM_VE)
     def protesto_repasse_guia(guia_id: int):
-        """A ficha da guia: a relação congelada e os repasses dela. Só LÊ."""
+        """A ficha da guia: a relação congelada, os repasses dela e o passo do
+        portal de cada Central. Só LÊ."""
         with db.connect() as con:
-            g = REP.guia(con, guia_id)
+            g = REP.guia(con, guia_id, hoje=hoje())
+            arquivos = PRP.anexos(con, guia_id) if g else []
         if not g:
             flash("Guia não encontrada.", "danger")
             return redirect(url_for("protesto_repasses"))
         return render_template("protesto_repasse_guia.html", g=g, hoje=hoje(),
-                               reais=reais, pode_mexer=QUEM_MEXE_NO_DINHEIRO)
+                               arquivos=arquivos,
+                               reais=reais, pode_mexer=QUEM_MEXE_NO_DINHEIRO,
+                               provas=REP.PROVAS_DO_PAGAMENTO,
+                               em_aberto=REP.SITUACAO_EM_ABERTO_NO_PORTAL)
 
     @app.route("/protesto/repasses/guias/<int:guia_id>/relacao.txt")
     @login_required
@@ -195,7 +263,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             lambda con: REP.pagar_guia(
                 con, guia_id, paga_em=_campo("paga_em"),
                 comprovante=_campo("comprovante"), agora=agora(),
-                usuario=usuario_nome()),
+                usuario=usuario_nome(),
+                prova=_campo("prova") or "COMPROVANTE"),
             lambda r: (f"Guia {r['numero']} paga em {r['paga_em']}: "
                        f"R$ {reais(r['total_centavos'])} repassados. Falta "
                        f"conciliar com a confirmação do IEPTB."))

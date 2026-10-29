@@ -1431,8 +1431,17 @@ def entregues(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
     # alto como «falta o comprovante». A coluna `origem` chega ao esquema com
     # a carga dos avisos do E-Ofício (LH07); antes dela não há aviso dessa
     # origem, e a lista é a de sempre.
-    fora_o_eoficio = ("AND COALESCE(a.origem, '') <> 'EOFICIO'"
-                      if bd.tem_coluna("pt_avisos", "origem") else "")
+    #
+    # MAS A ENTREGA REGISTRADA AQUI É TRABALHO DAQUI (29/10/2026): o aviso
+    # que veio do E-Ofício e teve a entrega lançada NESTE sistema (a intimação
+    # é ato daqui) volta à lista — foi o caso do 2610070003, entregue em
+    # 22/10 sem o nome de quem recebeu e sem o comprovante, e invisível nesta
+    # lista por causa da origem do aviso.
+    fora_o_eoficio = (
+        "AND (COALESCE(a.origem, '') <> 'EOFICIO' OR EXISTS ("
+        "SELECT 1 FROM pt_atos i WHERE i.id = a.ato_id "
+        "AND COALESCE(i.origem, '') <> 'EOFICIO'))"
+        if bd.tem_coluna("pt_avisos", "origem") else "")
     linhas = [dict(r) for r in bd.ler(
         f"""SELECT a.*, t.numero_titulo, t.protocolo,
                   (SELECT COUNT(*) FROM attachments x
@@ -1444,6 +1453,7 @@ def entregues(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
             ORDER BY CASE WHEN (SELECT COUNT(*) FROM attachments x
                                  WHERE x.entity_type = %s
                                    AND x.entity_id = a.id) = 0
+                            OR COALESCE(a.recebido_por, '') = ''
                           THEN 0 ELSE 1 END,
                      a.entrega_em DESC NULLS LAST, a.id DESC
             LIMIT %s""",
@@ -1452,6 +1462,127 @@ def entregues(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
         linha["n_comprovantes"] = int(linha["n_comprovantes"])
         linha["comprovantes"] = comprovantes(bd, linha["id"])
     return linhas
+
+
+# ------------------------------------------- quem recebeu, completado depois
+#
+# DECISÃO DO OFICIAL, 29/10/2026: «canhoto de entrega precisa ter o campo pra
+# botar o nome de quem recebeu. se faltar, avisar escrevente pra completar».
+# A entrega sem o nome só entra com afirmação expressa (`registrar_entrega`);
+# quando entra assim — ou quando veio de antes da regra —, o nome se completa
+# DEPOIS, lido do canhoto anexado, e a tarefa que avisou a escrevente fecha.
+# O nome que já existe não se sobrescreve: corrigir exige afirmação expressa.
+
+#: A origem da tarefa que avisa a escrevente — uma por aviso.
+TAREFA_SEM_RECEBEDOR = "PT_AVISO_SEM_RECEBEDOR"
+#: Quantas letras, no mínimo, o nome de quem recebeu tem de ter.
+PISO_DO_NOME = 3
+
+
+def _sem_nome(aviso: Any) -> bool:
+    return not str((aviso or {}).get("recebido_por") or "").strip()
+
+
+def tarefa_para_completar(con: sqlite3.Connection, aviso_id: int, *,
+                          hoje: str, dono: int | None) -> dict | None:
+    """A tarefa que avisa, NA HORA, que falta o nome de quem recebeu. Só LÊ.
+
+    Devolve os dados para `db.create_task` (que abre transação própria e por
+    isso a rota chama fora do `with`), ou `None` quando não falta nada. A
+    tarefa é de quem registrou a entrega (`dono`) e do setor do Protesto; é
+    painel e tarefa, sem e-mail por evento (decisão de 28/10/2026). Fecha
+    sozinha quando o nome é completado (`completar_quem_recebeu`).
+    """
+    bd = banco(con)
+    aviso = ler(bd, aviso_id)
+    if not aviso or aviso["situacao"] != "ENTREGUE" or not _sem_nome(aviso):
+        return None
+    tit = bd.um("SELECT numero_titulo, protocolo FROM pt_titulos WHERE id = %s",
+                (int(aviso["titulo_id"]),)) or {}
+    nome = f"{aviso['numero']}/{aviso['ano']}"
+    return {
+        "source_type": TAREFA_SEM_RECEBEDOR,
+        "source_ref": f"pt_avisos:{int(aviso_id)}",
+        "title": f"[Protesto] Completar quem recebeu o aviso {nome}",
+        "description": (
+            f"O aviso {nome} (título {tit.get('numero_titulo') or '—'}, "
+            f"protocolo {tit.get('protocolo') or '—'}) foi registrado como "
+            f"ENTREGUE sem o nome de quem recebeu. Leia o nome no canhoto "
+            f"assinado e complete em Protesto → Avisos e editais, lista "
+            f"«Entregues — comprovante da intimação», aviso {nome}. Sem o "
+            f"nome, o protesto deste título só sai com afirmação expressa."),
+        "sector": "PROTESTO", "system_name": "Protesto", "priority": "ALTA",
+        "status": "ABERTA", "start_date": str(hoje)[:10],
+        "due_date": str(hoje)[:10], "assigned_user_id": dono,
+        "evidence_required": 0}
+
+
+def completar_quem_recebeu(con: sqlite3.Connection, aviso_id: int, *,
+                           recebido_por: Any, agora: str,
+                           afirmacao: str | None = None) -> dict:
+    """Completa (ou corrige) o nome de quem recebeu um aviso ENTREGUE. ESCREVE.
+
+    **SÓ COM O COMPROVANTE ANEXADO**: o nome se lê no canhoto assinado, e
+    completar de memória seria pôr no sistema o que nenhum papel diz. **O
+    NOME QUE JÁ EXISTE NÃO SE SOBRESCREVE**: corrigir exige a afirmação
+    expressa (regra `CORRECAO_DE_QUEM_RECEBEU`). A intimação lavrada não se
+    reescreve — o que muda é o aviso, e a auditoria (que a rota grava, fora
+    da transação) diz quem completou e quando. A tarefa que avisava fecha.
+    """
+    bd = banco(con)
+    aviso = _aviso_para_gravar(bd, aviso_id)
+    if not aviso:
+        raise AvisoError(f"Aviso {aviso_id} não encontrado.")
+    nome_do_aviso = f"{aviso['numero']}/{aviso['ano']}"
+    if aviso["situacao"] != "ENTREGUE":
+        raise AvisoError(
+            f"O aviso {nome_do_aviso} está {aviso['situacao']}. Quem recebeu "
+            f"se completa no aviso ENTREGUE.")
+    nome = " ".join(str(recebido_por or "").split())
+    if sum(1 for c in nome if c.isalpha()) < PISO_DO_NOME:
+        raise AvisoError("Escreva o nome de quem recebeu, como está no canhoto "
+                         "assinado.")
+    if not comprovantes(bd, aviso_id):
+        raise AvisoError(
+            f"O aviso {nome_do_aviso} não tem o comprovante anexado. Anexe "
+            f"primeiro o canhoto assinado — o nome de quem recebeu se lê nele.")
+    antes = " ".join(str(aviso["recebido_por"] or "").split())
+    afirmacoes: list[dict] = []
+    if antes:
+        if antes.casefold() == nome.casefold():
+            raise AvisoError(f"O aviso {nome_do_aviso} já diz que quem recebeu "
+                             f"foi {antes}.")
+        afirmacoes.append(PROVA.vencer_ou_recusar(
+            PROVA.REGRA_CORRECAO_DO_RECEBEDOR,
+            f"O aviso {nome_do_aviso} já diz que quem recebeu foi «{antes}»; "
+            f"trocar o nome registrado exige afirmação expressa.",
+            afirmacao, erro=AvisoError))
+    bd.escrever("UPDATE pt_avisos SET recebido_por = %s WHERE id = %s",
+                (nome, int(aviso_id)))
+    fechadas = []
+    if bd.tem_tabela("tasks"):
+        for t in bd.ler(
+                """SELECT id, status FROM tasks
+                    WHERE source_type = %s AND source_ref = %s
+                      AND status NOT IN ('CONCLUIDA', 'CANCELADA')
+                    ORDER BY id""",
+                (TAREFA_SEM_RECEBEDOR, f"pt_avisos:{int(aviso_id)}")):
+            bd.escrever("""UPDATE tasks SET status = 'CONCLUIDA',
+                                  completed_at = %s, updated_at = %s
+                            WHERE id = %s""", (agora, agora, t["id"]))
+            if bd.tem_tabela("task_history"):
+                bd.escrever(
+                    """INSERT INTO task_history (task_id, ts, user_id, action,
+                           old_value, new_value, note)
+                       VALUES (%s, %s, NULL, 'ALTEROU_STATUS', %s,
+                               'CONCLUIDA', %s)""",
+                    (t["id"], agora, t["status"],
+                     f"Nome de quem recebeu completado no aviso "
+                     f"{nome_do_aviso} — fechada sozinha."))
+            fechadas.append(int(t["id"]))
+    return {"aviso_id": int(aviso_id), "recebido_por": nome,
+            "antes": antes or None, "afirmacoes": afirmacoes,
+            "tarefas_fechadas": fechadas}
 
 
 # ------------------------------------------- o canhoto que volta ao cartório

@@ -1,0 +1,108 @@
+{#
+  O PIX DO TÍTULO (29/10/2026). Ordem do oficial: PIX só conta como pago com o
+  comprovante anexado E com o crédito localizado no banco. O PIX se registra
+  aqui, AGUARDANDO O CRÉDITO — não é ato, não sela, não vai à CRA nem à
+  CENPROT, e o título não vira PAGO. Conferido o crédito, o pagamento se lavra
+  no formulário de sempre, logo abaixo, que já leva o PIX.
+
+  Lê `pix_ficha` (`protesto_pix.para_a_ficha`), que a ficha monta antes de
+  incluir este bloco.
+#}
+{% from '_protesto_pix_acoes.html' import acoes with context %}
+{% if pix_ficha %}
+{% set p = pix_ficha.ativo %}
+{% set pode_confirmar = user and user.role in ['ADMIN', 'MANAGER'] %}
+{% if p or (cabem and 'PAGAMENTO' in cabem) or pix_ficha.historico or pix_ficha.creditos_sem_pagamento %}
+<section class="panel" id="pix" data-pix-do-titulo>
+  <div class="panel-head">
+    <span>Pagamento por PIX</span>
+    <small>só conta como pago com o comprovante e o crédito conferido no banco ·
+      <a href="{{ url_for('protesto_pix_lista') }}">todos os PIX</a></small>
+  </div>
+
+  {% for c in pix_ficha.creditos_sem_pagamento %}
+  {# O DINHEIRO QUE ENTROU E PARECE SER DESTE TÍTULO (29/10/2026). #}
+  <div class="notice danger" data-credito-sem-pagamento style="margin:14px">
+    <p><strong>DINHEIRO RECEBIDO SEM PAGAMENTO LANÇADO:</strong> {{ c.tipo or 'crédito' }} de
+      R$ {{ c.valor_centavos | centavos_reais }} em {{ c.dia }}{% if c.pagador %}, de {{ c.pagador }}{% endif %},
+      que bate com este título ({{ c.candidatos[0].motivo if c.candidatos else 'pelo valor' }}).
+      Lance o pagamento — registre o PIX com o comprovante —, ou peça ao oficial ou ao gerente que
+      o tire da lista em <a href="{{ url_for('protesto_pix_lista') }}">PIX do Protesto</a>, se o
+      dinheiro não for deste título.</p>
+  </div>
+  {% endfor %}
+
+  {% if p and p.situacao == 'AGUARDANDO_CREDITO' %}
+  <div class="notice danger" data-pix-aguardando style="margin:14px">
+    <p><strong>PIX AGUARDANDO O CRÉDITO — o título NÃO está pago.</strong>
+      R$ {{ p.valor_centavos | centavos_reais }} de {{ p.data_pix }}
+      {% if p.e2eid %}· E2E {{ p.e2eid }}{% if p.e2eid_lido_do_comprovante %} <small>(lido do comprovante)</small>{% endif %}{% endif %}
+      · lançado em {{ (p.lancado_em or '')[:16] }} por {{ p.lancado_por or '—' }}.</p>
+    <p><small>Enquanto o crédito não for conferido, este título não se protesta, não se
+      desiste e não recebe outro pagamento — o devedor diz que pagou. Nada foi à CRA nem à
+      CENPROT, e nada foi selado.
+      {% if p.ultima_consulta %}<br><strong>Última consulta ao extrato</strong>
+        ({{ (p.ultima_consulta_em or '')[:16] }}): {{ p.ultima_consulta }}{% endif %}</small></p>
+    {% for h in pix_ficha.historico if h.id == p.id %}{% for x in h.comprovantes %}
+      <div><small>comprovante: <a href="{{ url_for('attachment_view', attachment_id=x.id) }}"
+        target="_blank" rel="noopener">{{ x.original_name }}</a></small></div>
+    {% endfor %}{% endfor %}
+    <div style="margin-top:8px">{{ acoes(p, 'ficha', pode_confirmar, modelo_da_afirmacao_pix(p), minimo_da_afirmacao_pix) }}</div>
+    {% if not pode_confirmar %}<p><small>Confirmar o crédito à mão, ou dá-lo por não
+      confirmado, é do oficial ou do gerente.</small></p>{% endif %}
+  </div>
+  {% elif p and p.situacao == 'CONFIRMADO' %}
+  <div class="notice" data-pix-confirmado style="margin:14px">
+    <p><strong>Crédito do PIX conferido</strong> — R$ {{ p.valor_centavos | centavos_reais }},
+      creditado em {{ p.credito_data or '—' }}
+      ({{ 'no extrato do banco' if p.confirmacao_modo == 'BANCO' else 'à mão, por ' ~ (p.confirmado_por or '—') ~ ', com afirmação expressa' }}).
+      <strong>Lance o pagamento</strong> no formulário «Pagamento», abaixo: ele já leva este PIX.</p>
+    <div>{{ acoes(p, 'ficha', pode_confirmar, '', minimo_da_afirmacao_pix) }}</div>
+  </div>
+  {% elif cabem and 'PAGAMENTO' in cabem %}
+  <form method="post" action="{{ url_for('protesto_pix_registrar', titulo_id=titulo.id) }}"
+        enctype="multipart/form-data" class="grid2" style="padding:14px" data-pix-registrar>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Valor do PIX <input name="valor_pix" required placeholder="1.482,78"></label>
+    <label>Data do PIX <small>(a do comprovante)</small>
+      <input name="data_pix" type="date" required></label>
+    <label style="grid-column:1/-1">Comprovante do PIX <small>(obrigatório — PDF, PNG ou JPG)</small>
+      <input type="file" name="comprovante" accept=".pdf,.png,.jpg,.jpeg" required></label>
+    <label style="grid-column:1/-1">Identificador do PIX (E2E) <small>(opcional: os 32 caracteres que
+      começam com «E» no comprovante; no PDF, o sistema tenta ler sozinho)</small>
+      <input name="e2eid" maxlength="40"></label>
+    <p style="grid-column:1/-1"><small>O PIX fica <strong>aguardando o crédito</strong>: o título
+      não vira PAGO, nada vai à CRA nem à CENPROT e nada se sela até o crédito ser localizado no
+      extrato do banco — ou confirmado pelo oficial ou pelo gerente, com afirmação expressa.
+      Depois, o pagamento se lavra pelo caminho de sempre.</small></p>
+    <div class="actions"><button class="button">Registrar o PIX (aguardando o crédito)</button></div>
+  </form>
+  {% endif %}
+
+  {% set resolvidos = pix_ficha.historico | rejectattr('id', 'equalto', p.id if p else 0) | list %}
+  {% if resolvidos %}
+  <details style="padding:0 14px 14px">
+    <summary>PIX anteriores deste título ({{ resolvidos | length }})</summary>
+    <table class="table">
+      <thead><tr><th>PIX</th><th>Valor</th><th>Data</th><th>Situação</th><th>Comprovante</th></tr></thead>
+      <tbody>
+      {% for h in resolvidos %}
+        <tr>
+          <td>nº {{ h.id }}</td>
+          <td>R$ {{ h.valor_centavos | centavos_reais }}</td>
+          <td>{{ h.data_pix }}</td>
+          <td>{% if h.situacao == 'NAO_CONFIRMADO' %}crédito não confirmado
+                <div><small>{{ h.motivo_nao_confirmado }} — {{ h.nao_confirmado_por or '—' }}</small></div>
+              {% elif h.lavrado %}pagamento lavrado <small>(ato {{ h.ato_id }})</small>
+              {% else %}{{ h.situacao }}{% endif %}</td>
+          <td>{% for x in h.comprovantes %}<a href="{{ url_for('attachment_view', attachment_id=x.id) }}"
+                target="_blank" rel="noopener">{{ x.original_name }}</a> {% endfor %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+</section>
+{% endif %}
+{% endif %}

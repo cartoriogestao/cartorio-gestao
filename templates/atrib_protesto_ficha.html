@@ -75,6 +75,60 @@
 </div>
 {% endif %}
 
+{# OS PEDIDOS DA CRA PARA ESTE TÍTULO (29/10/2026): desistência, cancelamento
+   e autorização que vieram no clique da remessa. Cancelamento e autorização
+   não se lavram sozinhos — o devedor paga as custas e o ato se lança aqui;
+   quando o título chega à situação que o pedido pede, ele sai da lista. #}
+{% if pedidos_cra and pedidos_cra.abertos %}
+{% set grave_aqui = pedidos_cra.abertos | selectattr('destaque', 'equalto', 'PROTESTADO') | list %}
+<div class="notice {{ 'danger' if grave_aqui else 'warning' }}" data-pedidos-cra>
+  <strong>Pedido(s) da CRA esperando este título:</strong>
+  <ul style="margin:6px 0 0 18px">
+  {% for p in pedidos_cra.abertos %}
+    <li>
+      <strong>{{ p.tipo }}</strong> — {{ p.explicacao }}
+      <small>(chegou em {{ (p.recebido_em or '')[:16] | replace('T', ' ') }};
+        <a href="{{ url_for('protesto_cra_consulta_arquivo', consulta_id=p.consulta_id) }}">arquivo da CRA</a>)</small>
+      {% if p.destaque == 'PROTESTADO' and user.role not in quem_encerra_o_grave %}
+        <div><small>Só o oficial ou o substituto encerram a desistência de título já protestado: avise-os.</small></div>
+      {% else %}
+      <form method="post" action="{{ url_for('protesto_cra_pedido_tratar', pedido_id=p.id) }}" class="grid2" style="margin-top:6px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="voltar" value="ficha">
+        <label style="grid-column:1/-1">Não vai lavrar? Registre por quê
+          <small>(pelo menos {{ minimo_do_motivo_cra }} letras; fica com o pedido e na auditoria)</small>
+          <textarea name="motivo" rows="2" required></textarea></label>
+        <div class="actions"><button class="button" type="submit">Registrar o motivo</button></div>
+      </form>
+      {% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{# O REGISTRO QUE NÃO TRAZ O CREDOR DO CADASTRO (29/10/2026). O termo congelou
+   o credor do dia da lavratura; quando ele discorda do cadastro, o instrumento
+   não sai (`protesto_instrumento.emitir`) até a averbação de retificação do
+   art. 25. Só mostra; quem lavra é o oficial, no quadro mais abaixo. #}
+{% if averbacao.divergencias %}
+<div class="notice danger" data-credor-a-averbar>
+  <strong>O texto lavrado não traz o credor do cadastro:</strong>
+  <ul style="margin:6px 0 0 18px">
+  {% for d in averbacao.divergencias %}
+    <li>{{ d.nome_do_ato }} (ato {{ d.ato_id }}) —
+      {% if d.forma == 'OMITIDO' %}não indica credor nenhum{% else %}indica
+      «{{ d.constava }}»{% endif %}; o cadastro diz «{{ d.correto }}».</li>
+  {% endfor %}
+  </ul>
+  <p style="margin:8px 0 0">O instrumento não sai contra o registro. A saída é a
+    <strong>averbação de retificação de erro material, de ofício</strong> (Lei
+    9.492/1997, art. 25): o texto lavrado fica como está, e a averbação o corrige.
+    {% if user.role == 'ADMIN' %}O formulário está <a href="#averbacao-retificacao">mais
+    abaixo</a>, já preenchido.{% else %}Ela é do oficial: avise-o.{% endif %}</p>
+</div>
+{% endif %}
+
 <section class="panel">
   <div class="panel-head"><span>O título</span><small>{{ titulo.situacao }}</small></div>
   <table class="table">
@@ -175,7 +229,7 @@
 
   O AVISO É LISTA, e não um só: 255 dos 1.361 títulos do acervo têm mais de um.
 #}
-<section class="panel">
+<section class="panel" id="avisos">
   <div class="panel-head">
     <span>Avisos de intimação</span><small>{{ avisos | length }}</small>
   </div>
@@ -202,6 +256,18 @@
             <strong>entregue</strong> em {{ a.entrega_em[:10] }}
             {% if a.recebido_por %}
               <div><small>recebido por {{ a.recebido_por }}</small></div>
+            {% else %}
+              {#- FALTA O NOME DE QUEM RECEBEU (29/10/2026): completa-se aqui
+                  também, porque a lista dos entregues deixa de fora o aviso
+                  cuja entrega foi lançada no E-Ofício. #}
+              <form method="post" class="form" style="margin-top:4px"
+                    action="{{ url_for('protesto_aviso_recebido_por', aviso_id=a.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="de" value="ficha">
+                <div><strong>falta o nome de quem recebeu</strong></div>
+                <input name="recebido_por" placeholder="Nome de quem assinou o canhoto" required>
+                <button class="button small primary">Completar quem recebeu</button>
+              </form>
             {% endif %}
           {% elif a.situacao == 'NAO_ENTREGUE' %}
             <strong class="danger">não entregue</strong>
@@ -461,6 +527,12 @@
 </section>
 {% endif %}
 
+{# O PIX DO TÍTULO (29/10/2026): só é pagamento com o comprovante e o
+   crédito conferido. O bloco registra o PIX e mostra o que espera; o
+   formulário do pagamento, abaixo, leva o PIX conferido. #}
+{% set pix_ficha = pix_do_titulo(titulo.id) if pix_do_titulo is defined else none %}
+{% include '_protesto_pix.html' %}
+
 {% if cabem %}
 <section class="panel">
   <div class="panel-head">
@@ -473,11 +545,35 @@
     o motivo da falha.
   </small></p>
 
+  {#- A CONFERÊNCIA DA CENPROT, UMA VEZ SÓ PARA A FICHA: o bloco de cada
+      formulário a lê daqui (`cc_da_ficha`), em vez de remontá-la por ato. #}
+  {% set cc_da_ficha = conferencia_cenprot_da_ficha(titulo) %}
+  {% set pedida = g.get('protesto_afirmacao_pedida') %}
+  {% set separadas = g.get('protesto_travas_a_afirmar') %}
   {% for ato in cabem %}
   {# O FORMULÁRIO VOLTA PREENCHIDO (29/10/2026): quando a rota recusa antes de
      lavrar (o selo não ia sair), ela desenha esta ficha com o que foi postado,
      e o formulário do ato recusado lê daqui. Nos outros, `v_ato` é vazio. #}
   {% set v_ato = request.form if (request.method == 'POST' and request.form.get('ato') == ato) else {} %}
+  {#- UMA AFIRMAÇÃO POR TRAVA (decisão do oficial, integração de 29/10/2026).
+      As travas que podem pedir afirmação NESTE formulário: a CENPROT, a prova
+      da intimação, o irmão e o selo (este, só depois de a rota o recusar).
+      Com uma só, ela usa a caixa comum (`afirmo` + `afirmacao`); com duas ou
+      mais, cada uma tem o seu campo (`afirmo_<trava>` + `afirmacao_<trava>`),
+      com o que falta naquela regra — e a rota as valida e grava uma a uma. #}
+  {% set pedem = [] %}
+  {% if ato in ('PROTESTO', 'APONTAMENTO', 'INTIMACAO', 'DESISTENCIA') and cc_da_ficha
+        and (ato == 'PROTESTO' or cc_da_ficha.contraria_o_pago) %}{% set _ = pedem.append('cenprot') %}{% endif %}
+  {% if ato == 'PROTESTO' and prova and not prova.completa %}{% set _ = pedem.append('prova') %}{% endif %}
+  {% if irmaos and ((ato == 'PROTESTO' and irmaos.trava_protesto)
+                    or (ato != 'PROTESTO' and irmaos.trava and ato in irmaos.atos_com_trava)) %}{% set _ = pedem.append('irmaos') %}{% endif %}
+  {% if pedida and pedida.ato == ato %}{% set _ = pedem.append('selo') %}{% endif %}
+  {% if separadas and separadas.ato == ato %}{% for t in separadas.travas %}{% if t not in pedem %}{% set _ = pedem.append(t) %}{% endif %}{% endfor %}{% endif %}
+  {% set separar = pedem | length > 1 %}
+  {% set sufixo_cenprot = '_cenprot' if separar else '' %}
+  {% set sufixo_prova = '_prova' if separar else '' %}
+  {% set sufixo_irmaos = '_irmaos' if separar else '' %}
+  {% set sufixo_selo = '_selo' if separar else '' %}
   <form method="post" action="{{ url_for('protesto_lancar', titulo_id=titulo.id) }}"
         id="lancar-{{ ato }}"
         class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
@@ -524,14 +620,25 @@
           afirmação expressa, que fica recolhida, com a frase de alerta. #}
       <div style="grid-column:1/-1">{{ prova_da_intimacao(prova) }}</div>
       {% if prova and not prova.completa %}
-        {{ afirmacao('', prova.frase) }}
+        {{ afirmacao(sufixo_prova, prova.frase,
+                     rotulo='Insistir mesmo assim — afirmação expressa (prova da intimação)') }}
       {% endif %}
     {% elif ato == 'DESISTENCIA' %}
       <label style="grid-column:1/-1">Motivo da desistência
         <input name="motivo" required placeholder="Credor desistiu antes do protesto"
                value="{{ v_ato.get('motivo', '') }}"></label>
     {% elif ato == 'PAGAMENTO' %}
-      <label>Valor pago <input name="valor_pago" placeholder="1.482,78" value="{{ v_ato.get('valor_pago', '') }}"></label>
+      {# PIX SÓ COM O CRÉDITO CONFERIDO (29/10/2026): com o crédito conferido, o
+         formulário leva o PIX; sem ele, a forma PIX não se escolhe aqui — o PIX
+         se registra no bloco «Pagamento por PIX», com o comprovante. #}
+      {% set pix_lavrar = pix_ficha.para_lavrar if pix_ficha else none %}
+      {% if pix_lavrar %}
+      <input type="hidden" name="pix_id" value="{{ pix_lavrar.id }}">
+      <div style="grid-column:1/-1" class="notice" data-pix-para-lavrar><small>
+        <strong>Crédito do PIX conferido</strong> — R$ {{ pix_lavrar.valor_centavos | centavos_reais }},
+        creditado em {{ pix_lavrar.credito_data or '—' }}. O pagamento se lavra com ele, por PIX.</small></div>
+      {% endif %}
+      <label>Valor pago <input name="valor_pago" placeholder="1.482,78" value="{{ v_ato.get('valor_pago', '') or ((pix_lavrar.valor_centavos | centavos_reais) if pix_lavrar else '') }}"></label>
       <label>Emolumentos <input name="emolumentos" placeholder="82,64" value="{{ v_ato.get('emolumentos', '') }}"></label>
       <label>Forma de pagamento
         <select name="forma_pagamento" required>
@@ -540,7 +647,11 @@
                                ('PIX', 'por PIX'),
                                ('TRANSFERENCIA', 'por transferência bancária'),
                                ('BOLETO', 'por boleto'), ('CARTAO', 'por cartão')) %}
-          <option value="{{ k }}"{% if v_ato.get('forma_pagamento') == k %} selected{% endif %}>{{ rotulo }}</option>
+          {% if k == 'PIX' and not pix_lavrar %}
+          <option value="PIX" disabled>por PIX — só com o crédito conferido (registre em «Pagamento por PIX»)</option>
+          {% else %}
+          <option value="{{ k }}"{% if v_ato.get('forma_pagamento') == k or (k == 'PIX' and pix_lavrar and not v_ato.get('forma_pagamento')) %} selected{% endif %}>{{ rotulo }}</option>
+          {% endif %}
           {% endfor %}
         </select>
         <small>O Livro de Pagamentos exige (Código de Normas, art. 930).</small></label>
@@ -627,6 +738,8 @@
                value="{{ v_ato.get('fundamento') or request.args.get('fundamento', '') }}"
                placeholder="O que aconteceu neste título — não basta a hipótese"></label>
     {% endif %}
+    {# A CENPROT CONFERIDA ANTES DO ATO (29/10/2026) — só no título de origem CENPROT. #}
+    {% if ato in ('PROTESTO', 'APONTAMENTO', 'INTIMACAO', 'DESISTENCIA') %}{% include '_protesto_cenprot_afirmacao.html' %}{% endif %}
 
     {% if ato not in ('SUSTACAO', 'REVOGACAO_SUSTACAO',
                   'EFEITO_SUSPENSIVO', 'REVOGACAO_EFEITO_SUSPENSIVO') %}
@@ -636,16 +749,17 @@
     {% endif %}
     {# A AFIRMAÇÃO EXPRESSA (29/10/2026) só aparece no formulário que a rota
        acabou de recusar por uma trava que ela vence — o item que não saiu em
-       selo por este caminho. O que se afirma vai ao ato e à auditoria. #}
-    {% set pedida = g.get('protesto_afirmacao_pedida') %}
+       selo por este caminho. O que se afirma vai ao ato e à auditoria. O
+       campo é o DO SELO (`afirmo_selo`) quando outra trava também pede. #}
     {% if pedida and pedida.ato == ato %}
     <div style="grid-column:1/-1" class="notice" data-afirmacao-expressa>
-      <label><input type="checkbox" name="afirmo" value="1"{% if v_ato.get('afirmo') %} checked{% endif %}>
+      {% if pedida.o_que_faltava %}<div><small><strong>Selo:</strong> {{ pedida.o_que_faltava }}</small></div>{% endif %}
+      <label><input type="checkbox" name="afirmo{{ sufixo_selo }}" value="1"{% if v_ato.get('afirmo' ~ sufixo_selo) %} checked{% endif %}>
         Afirmo que o item serve para este ato, mesmo fora da lista</label>
-      <label>Por quê <small>(pelo menos {{ minimo_da_afirmacao }} letras; fica no ato
-        e na auditoria com o seu nome)</small>
-        <textarea name="afirmacao" rows="2"
-                  placeholder="{{ modelo_da_afirmacao }}">{{ v_ato.get('afirmacao', '') }}</textarea></label>
+      <label>Por quê <small>(pelo menos {{ minimo_da_afirmacao }} letras além de
+        «{{ modelo_da_afirmacao }}»; fica no ato e na auditoria com o seu nome)</small>
+        <textarea name="afirmacao{{ sufixo_selo }}" rows="2"
+                  placeholder="{{ modelo_da_afirmacao }}">{{ v_ato.get('afirmacao' ~ sufixo_selo, '') }}</textarea></label>
     </div>
     {% endif %}
     {% set cob = emolumento.por_ato.get(ato) if emolumento else none %}
@@ -658,7 +772,15 @@
         pela tabela de {{ cob.data_da_tabela }}</label>
       {% endif %}
     {% endif %}
-    {{ IRM.confere(irmaos, ato) }}
+    {# A TRAVA DOS IRMÃOS TEM O SEU CAMPO (integração de 29/10/2026): com outra
+       trava pedindo afirmação no mesmo ato, `afirmo_irmaos`; sozinha, a caixa
+       comum. Antes, a afirmação da prova ou do selo valia também para ela. #}
+    {{ IRM.confere(irmaos, ato, sufixo=sufixo_irmaos) }}
+    {% if separar %}
+    <p style="grid-column:1/-1" data-afirmacao-por-trava><small><strong>Mais de uma
+      regra pede afirmação neste ato</strong> ({{ pedem | join(', ') }}): cada uma
+      tem o seu campo, e o mesmo texto em duas é recusado.</small></p>
+    {% endif %}
     <div class="actions"><button class="button">Lançar {{ ato | lower }}</button></div>
 
     {{ quadro(receitas.get(ato), caixa, protocolos) }}
@@ -670,6 +792,57 @@
   Não há ato a lançar: o título está <strong>{{ titulo.situacao }}</strong>, que é
   situação final para este módulo.
 </div>
+{% endif %}
+
+{# A AVERBAÇÃO DE RETIFICAÇÃO DE ERRO MATERIAL, DE OFÍCIO (29/10/2026) — Lei
+   9.492/1997, art. 25: «sob responsabilidade do Tabelião». Só o oficial (ADMIN)
+   lavra, com a afirmação expressa; o texto lavrado não muda, e a averbação é ato
+   novo, à margem dele. Não sela e não cobra (`protesto_averbacao`). #}
+{% macro form_averbacao(ato_id, elemento, constava, correto, botao) %}
+<form method="post" action="{{ url_for('protesto_averbacao_retificacao', titulo_id=titulo.id) }}"
+      class="grid2" style="padding:0 14px 14px" data-averbacao-retificacao>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% if ato_id %}
+  <input type="hidden" name="ato_id" value="{{ ato_id }}">
+  {% else %}
+  <label style="grid-column:1/-1">Ato lavrado que se retifica
+    <select name="ato_id" required>
+      <option value="">— escolha —</option>
+      {% for x in averbacao.atos %}<option value="{{ x.id }}">{{ x.nome }} de {{ x.data_br }} (ato {{ x.id }})</option>{% endfor %}
+    </select></label>
+  {% endif %}
+  <label>O que se retifica <small>(com o artigo)</small>
+    <input name="elemento" value="{{ elemento }}" maxlength="80" required></label>
+  <label>O que constou errado <small>(em branco se o texto o omitiu)</small>
+    <input name="constava" value="{{ constava }}" maxlength="400"></label>
+  <label style="grid-column:1/-1">O que passa a constar
+    <input name="correto" value="{{ correto }}" maxlength="400" required></label>
+  <label style="grid-column:1/-1"><input type="checkbox" name="afirmo" value="1" style="width:auto">
+    Afirmo — averbação de retificação de erro material, de ofício, sob a minha responsabilidade</label>
+  <label style="grid-column:1/-1">Por quê <small>(pelo menos {{ minimo_da_afirmacao }}
+    letras; fica no ato e na auditoria com o seu nome)</small>
+    <textarea name="afirmacao" rows="2" required
+              placeholder="{{ modelo_da_afirmacao }}"></textarea></label>
+  <div class="actions"><button class="button">{{ botao }}</button></div>
+</form>
+{% endmacro %}
+{% if user.role == 'ADMIN' and averbacao.atos %}
+<section class="panel" id="averbacao-retificacao">
+  <div class="panel-head"><span>Averbação de retificação de erro material</span>
+    <small>de ofício · Lei 9.492/1997, art. 25 · só o oficial</small></div>
+  <p style="padding:0 14px"><small>O texto lavrado fica como está: a averbação é ato
+    novo, à margem dele, e é ela que o corrige. Não sela e não cobra — erro do
+    próprio serviço não se cobra de ninguém, e o Protesto não tem selo de
+    averbação. O instrumento e a certidão passam a mencioná-la.</small></p>
+  {% for d in averbacao.divergencias %}
+  {{ form_averbacao(d.ato_id, d.elemento, d.constava, d.correto,
+                    'Averbar a retificação do credor — ' ~ d.nome_do_ato ~ ' (ato ' ~ d.ato_id ~ ')') }}
+  {% endfor %}
+  <details style="padding:0 14px 14px"{% if not averbacao.divergencias %} open{% endif %}>
+    <summary><small><strong>Outra retificação</strong> — escolha o ato e diga o que se corrige</small></summary>
+    {{ form_averbacao(None, '', '', '', 'Averbar a retificação') }}
+  </details>
+</section>
 {% endif %}
 
 <section class="panel">
@@ -722,6 +895,11 @@
             <div style="white-space:pre-wrap; padding:8px 0 4px; font-size:.92em">{{ a.teor }}</div>
             <small>Congelado em {{ a.data_ato }} — corrigir protesto é averbar
             ao lado, e não reescrever este texto.</small>
+            {% for av in averbacao.por_ato.get(a.id, []) %}
+            <div style="margin-top:6px" data-averbado-a-margem><small><strong>À margem:</strong>
+              averbação de retificação de {{ av.data_br }} (ato {{ av.id }}) — o texto
+              dela está na linha da averbação.</small></div>
+            {% endfor %}
           </details>
         </td>
       </tr>

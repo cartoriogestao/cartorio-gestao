@@ -11,6 +11,14 @@
 <div class="actions">
   <a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a>
   <a class="button" href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>
+  <a class="button" href="{{ url_for('protesto_cra_pedidos') }}">Pedidos da CRA</a>
+</div>
+
+<div class="notice">
+  <strong>Desde 29/10/2026 a desistência também chega sozinha</strong>: o clique
+  «Baixar todas e conferir», na remessa, traz o arquivo DP da CRA, guarda-o e
+  aplica nos títulos que casam pelo protocolo e pelo número. O que não casou,
+  ou não cabe, está em <a href="{{ url_for('protesto_cra_pedidos') }}">Pedidos da CRA</a>.
 </div>
 
 <div class="notice">

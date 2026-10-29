@@ -380,16 +380,48 @@ def _preparar(linha: Any, *, con: Any | None = None,
     # Os atos dele já estão esperando o próximo retorno; mandar este de novo
     # informaria duas vezes o que o arquivo seguinte também vai levar.
     recusado_em = _campo_da_linha(linha, "cra_recusado_em")
-    if (recusado_em and con is not None and tipo != "SDTBFOCRT"
-            and int(_campo_da_linha(linha, "titulos") or 0) > 0
-            and not banco(con).um(
-                "SELECT 1 FROM pt_atos WHERE retorno_id = %s LIMIT 1",
-                (int(retorno_id),))):
+    sem_atos = (con is not None and tipo != "SDTBFOCRT"
+                and int(_campo_da_linha(linha, "titulos") or 0) > 0
+                and not banco(con).um(
+                    "SELECT 1 FROM pt_atos WHERE retorno_id = %s LIMIT 1",
+                    (int(retorno_id),)))
+    if recusado_em and sem_atos:
         raise CraEnvioError(
             f"A CRA recusou «{linha['nome_arquivo']}» em "
             f"{str(recusado_em)[:16]}, e os atos dele já voltaram à fila de "
             f"«Esperando retorno». Gere um retorno novo em vez de reenviar "
             f"este.")
+    # E O QUE NUNCA FOI ENVIADO E TEVE OS ATOS DEVOLVIDOS (29/10/2026) — o
+    # arquivo que levava ato desfeito (abaixo): os atos válidos dele esperam o
+    # próximo retorno, e este não vai mais.
+    if sem_atos and not linha["cra_enviado_em"]:
+        raise CraEnvioError(
+            f"Os atos de «{linha['nome_arquivo']}» voltaram à fila de «Esperando "
+            f"retorno» antes de ele ser enviado. Gere um retorno novo em vez de "
+            f"enviar este.")
+    # O ARQUIVO QUE LEVA ATO DESFEITO NÃO VAI À CRA — 29/10/2026. O ato é
+    # lavrado numa transação e o selo é pedido depois, fora dela; se o selo
+    # falha, o ato é desfeito segundos depois. Um retorno gerado nesse
+    # intervalo — ou antes de qualquer outro desfazimento — leva a ocorrência
+    # de um ato que o livro não tem mais, e o envio a mandava assim mesmo: foi
+    # como a CRA ouviu «1 — pago» de um título sem pagamento válido. Não há
+    # afirmação que vença isto, e `forcar` também não: informar à Central uma
+    # ocorrência sem ato que a sustente é afirmar um fato que não existe.
+    if con is not None and tipo != "SDTBFOCRT":
+        desfeitos = banco(con).ler(
+            """SELECT a.id, a.tipo, t.numero_titulo, t.protocolo
+                 FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
+                WHERE a.retorno_id = %s AND COALESCE(a.cancelado, 0) <> 0
+                ORDER BY a.id""", (int(retorno_id),))
+        if desfeitos:
+            quais = "; ".join(
+                f"{d['tipo'].lower()} do título {d['numero_titulo']} (protocolo "
+                f"{d['protocolo'] or '—'}, ato {d['id']})" for d in desfeitos)
+            raise CraEnvioError(
+                f"«{linha['nome_arquivo']}» leva {len(desfeitos)} ato(s) que foram "
+                f"DESFEITOS depois de ele ser gerado — {quais}. Enviá-lo informaria "
+                f"à CRA uma ocorrência sem ato válido que a sustente. Use «Devolver "
+                f"os atos à fila» e gere um retorno novo: ele leva só os válidos.")
     operacao = OPERACAO_POR_TIPO.get(tipo)
     if not operacao:
         raise CraEnvioError(

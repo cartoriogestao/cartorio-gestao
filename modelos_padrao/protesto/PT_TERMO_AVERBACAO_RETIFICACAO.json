@@ -1,0 +1,19 @@
+{
+  "chave": "PT_TERMO_AVERBACAO_RETIFICACAO",
+  "atribuicao": "Protesto",
+  "nome": "Termo da averbação de retificação de erro material, de ofício",
+  "formato": "CHAVES",
+  "explica": "A averbação de retificação de erro material do próprio serviço, lavrada de ofício pelo Tabelião — Lei 9.492/1997, art. 25: «A averbação de retificação de erros materiais pelo serviço poderá ser efetuada de ofício ou a requerimento do interessado, sob responsabilidade do Tabelião de Protesto de Títulos». Fica no próprio ato da averbação, à margem do registro do protesto ou do termo do cancelamento, e congela nele; o texto lavrado do ato retificado não muda. Não há precedente no E-Ofício: a redação segue a da averbação de retificação do Registro Civil desta casa («constou erroneamente», «faço constar»). Monta-se de frases inteiras, uma por linha: {data} é a da averbação; {ato} diz qual texto se retifica («registro do protesto» ou «termo do cancelamento de …»); {registro}, {protocolo} e {titulo} identificam o protesto com a MESMA redação do registro e do instrumento; {elemento} é o que se retifica, com o artigo («o credor (sacador/favorecido)»); {constava} é o que o texto escreveu errado e {correto} o que passa a constar. A linha do erro ({elemento_errado} e {constava}) e a da omissão ({elemento_omitido}) são excludentes: a que fica sem fato some.",
+  "campos": [
+    "data",
+    "ato",
+    "registro",
+    "protocolo",
+    "titulo",
+    "elemento_errado",
+    "constava",
+    "elemento_omitido",
+    "elemento",
+    "correto"
+  ]
+}

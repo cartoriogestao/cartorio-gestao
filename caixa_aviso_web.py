@@ -31,11 +31,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         try:
             nome = usuario_nome()
             with db.connect() as con:
-                papel = banco(con).valor("SELECT role FROM users WHERE id = %s",
-                                         (session.get("user_id"),))
-                e_admin = papel == "ADMIN"
+                quem = banco(con).um("SELECT role, username FROM users WHERE id = %s",
+                                     (session.get("user_id"),)) or {}
+                e_admin = quem.get("role") == "ADMIN"
                 fim = db.get_setting(CA.CHAVE_FIM, CA.FIM_PADRAO)
-                aviso = CA.situacao(con, nome, datetime.now(), fim, e_admin=e_admin)
+                # O TURNO DE QUEM TEM TURNO (29/10/2026): para ele o aviso
+                # começa no fim do turno DELE, e não no fim do expediente.
+                turno = CA.turno_de(con, quem.get("username"))
+                aviso = CA.situacao(con, nome, datetime.now(), fim, e_admin=e_admin,
+                                    turno_do_operador=turno)
         except (sqlite3.Error, RuntimeError, KeyError):
             return vazio
         if aviso:

@@ -1,0 +1,76 @@
+{#
+  O QUADRO DOS PEDIDOS DA CRA NO CLIQUE DO DIA (29/10/2026) — desistências
+  (DP), cancelamentos (CP) e autorizações (AC), trazidos no mesmo clique da
+  remessa. Aparece na tela da remessa, na conferência e na lista dos pedidos.
+
+  A LINHA DA CONTAGEM vem do registro das Centrais (`centrais_log`): toda
+  chamada à CRA se anota lá, venha deste clique ou da tela técnica da API.
+  Sem a tabela ela diz «sem medida», e nunca zero.
+#}
+{% if cra_do_dia %}
+<section class="panel" data-cra-pedidos-do-dia>
+  <div class="panel-head">
+    <span>Desistências, cancelamentos e autorizações da CRA</span>
+    <small><a href="{{ url_for('protesto_cra_pedidos') }}">Pedidos da CRA</a></small>
+  </div>
+  <div style="padding:14px">
+  {% if cra_do_dia.erro %}
+    <div class="notice danger">O quadro dos pedidos da CRA não abriu:
+      {{ cra_do_dia.erro }}</div>
+  {% else %}
+    {% set c = cra_do_dia.contagem %}
+    <p data-contagem-desde-a-virada>
+      <strong>Desde {{ c.desde_br }}:</strong>
+      {% if c.DP is none %}
+        sem medida — o registro das Centrais não está neste banco.
+      {% else %}
+        <strong>{{ c.DP }}</strong> consulta(s) de desistência (DP),
+        <strong>{{ c.CP }}</strong> de cancelamento (CP) e
+        <strong>{{ c.AC }}</strong> de autorização (AC) à CRA.
+      {% endif %}
+    </p>
+
+    {% if cra_do_dia.graves %}
+    <div class="notice danger" data-cra-grave>
+      <strong>{{ cra_do_dia.graves }} desistência(s) de título JÁ PROTESTADO.</strong>
+      O protesto pode ter sido lavrado depois de o credor desistir —
+      <a href="{{ url_for('protesto_cra_pedidos') }}">veja os pedidos da CRA</a>
+      e avise o oficial.
+    </div>
+    {% endif %}
+    {% if cra_do_dia.pendentes %}
+    <p><strong>{{ cra_do_dia.pendentes }}</strong> pedido(s) da CRA esperando a casa —
+      <a href="{{ url_for('protesto_cra_pedidos') }}">abrir a lista</a>.</p>
+    {% endif %}
+
+    {% if cra_do_dia.consultas %}
+    <table class="table">
+      <thead><tr><th>Hoje</th><th>O quê</th><th>Resultado</th><th>Títulos</th><th></th></tr></thead>
+      <tbody>
+      {% for q in cra_do_dia.consultas %}
+        <tr>
+          <td>{{ (q.pedida_em or '')[11:16] }}<div><small>{{ q.pedida_por or '' }}</small></div></td>
+          <td><strong>{{ q.tipo }}</strong><div><small>{{ q.nome_pedido or '' }}</small></div></td>
+          <td>
+            {% if q.resultado == 'RECEBIDO' %}<span class="ok">veio arquivo</span>
+            {% elif q.resultado == 'NADA' %}<span class="muted">nada veio</span>
+            {% elif q.resultado == 'AVISO' %}<span class="warning">resposta não medida</span>
+            {% elif q.resultado == 'FALHA' %}<span class="danger">falhou{% if q.incerta %} — confira no portal da CRA{% endif %}</span>
+            {% else %}<span class="danger">veio e não foi lido</span>{% endif %}
+            {% if q.mensagem %}<div><small>{{ q.mensagem }}</small></div>{% endif %}
+          </td>
+          <td>{{ q.titulos or 0 }}</td>
+          <td>{% if q.resultado != 'FALHA' %}<a href="{{ url_for('protesto_cra_consulta_arquivo', consulta_id=q.id) }}">baixar a resposta</a>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Hoje ainda não se consultou a CRA para desistências,
+      cancelamentos e autorizações. O botão «Baixar todas e conferir» traz
+      as três junto com a remessa.</p>
+    {% endif %}
+  {% endif %}
+  </div>
+</section>
+{% endif %}

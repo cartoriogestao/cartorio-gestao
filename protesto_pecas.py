@@ -144,9 +144,11 @@ VOCABULARIOS: tuple[str, ...] = (
 
 # OS PAPÉIS INTEIROS QUE ESTA RÉGUA CONFERE: os dois do LF06E e os dois do LD04
 # (21/10/2026) — o termo do cancelamento e a quitação, que nasceram sem ajuste
-# antigo nenhum a aceitar, e por isso não ficam no conferidor geral.
+# antigo nenhum a aceitar, e por isso não ficam no conferidor geral. E o termo
+# da averbação de retificação (29/10/2026), pelo mesmo motivo.
 PAPEIS_CONFERIDOS = ("PT_AVISO_INTIMACAO", "PT_EDITAL_INTIMACAO",
-                     "PT_TERMO_CANCELAMENTO", "PT_QUITACAO")
+                     "PT_TERMO_CANCELAMENTO", "PT_QUITACAO",
+                     "PT_TERMO_AVERBACAO_RETIFICACAO")
 
 
 def chaves_conferidas() -> tuple[str, ...]:

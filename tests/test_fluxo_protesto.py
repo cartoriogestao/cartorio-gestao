@@ -946,9 +946,11 @@ def test_o_pagamento_antes_do_protesto_vai_ao_livro_de_pagamentos_e_nao_a_certid
     p = _protocolo(s, PROTESTO, RETIRADA, CERTIDAO)
     tid = _apontado(s, p, p["itens"][0])
     titulo = _um(s, "SELECT * FROM pt_titulos WHERE id=%s", (tid,))
+    # A FORMA COM IDENTIFICAÇÃO é a transferência desde 29/10/2026: PIX só se
+    # lavra com o crédito conferido (`protesto_pix`, e o teste próprio dele).
     r = _lancar(s, tid, "PAGAMENTO", p, p["itens"][1], valor_pago="1.234,56",
-                emolumentos="30,00", forma_pagamento="PIX",
-                forma_identificacao="PIX E2E 0001")
+                emolumentos="30,00", forma_pagamento="TRANSFERENCIA",
+                forma_identificacao="TED 0001")
     assert _lancado(r, "Pagamento"), _avisos(r)
     ato = _ato(s, tid, "PAGAMENTO")
     assert ato["livro_serie"] == "PT_PAGAMENTO"
@@ -963,7 +965,7 @@ def test_o_pagamento_antes_do_protesto_vai_ao_livro_de_pagamentos_e_nao_a_certid
     [linha] = _linhas_do_livro(s, "pagamentos")
     assert linha == ["1", _br(_hoje(s)), titulo["protocolo"], "Nota Promissória",
                      "1.234,56", "30,00", DEVEDOR, CREDOR,
-                     "pago por PIX — PIX E2E 0001"]
+                     "pago por transferência bancária — TED 0001"]
     [protocolo] = _linhas_do_livro(s, "protocolo")
     assert f"pago em {_br(_hoje(s))}" in protocolo[OCORRENCIAS]
 
@@ -979,7 +981,7 @@ def test_o_pagamento_da_ao_devedor_a_quitacao_do_titulo(s):
     p = _protocolo(s, PROTESTO, RETIRADA)
     tid = _apontado(s, p, p["itens"][0])
     r = _lancar(s, tid, "PAGAMENTO", p, p["itens"][1], valor_pago="1.234,56",
-                emolumentos="30,00", forma_pagamento="PIX")
+                emolumentos="30,00", forma_pagamento="ESPECIE")
     assert _lancado(r, "Pagamento"), _avisos(r)
     ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
     achado = re.search(r'href="([^"]*quita[^"]*)"', ficha)
@@ -1007,7 +1009,7 @@ def test_a_quitacao_so_sai_do_pagamento_que_ficou_lancado(s):
     tid = _apontado(s, p, p["itens"][0])
     s["aparelho"].recusar_com = (400, {"message": "recusado pelo teste"})
     r = _lancar(s, tid, "PAGAMENTO", p, p["itens"][1], valor_pago="1.234,56",
-                forma_pagamento="PIX")
+                forma_pagamento="ESPECIE")
     assert any("Ato NÃO lançado" in a for a in _avisos(r)), _avisos(r)
     s["aparelho"].recusar_com = None
     anulado = _um(s, "SELECT * FROM pt_atos WHERE titulo_id=%s AND tipo='PAGAMENTO' "
@@ -1036,7 +1038,7 @@ def test_a_quitacao_pede_o_papel_de_quem_lanca_o_pagamento(s):
     p = _protocolo(s, PROTESTO, RETIRADA)
     tid = _apontado(s, p, p["itens"][0])
     r = _lancar(s, tid, "PAGAMENTO", p, p["itens"][1], valor_pago="1.234,56",
-                forma_pagamento="PIX")
+                forma_pagamento="ESPECIE")
     assert _lancado(r, "Pagamento"), _avisos(r)
     ato = _ato(s, tid, "PAGAMENTO")
     rota = f"/protesto/pagamentos/{ato['id']}/quitacao.odt?formato=odt"
@@ -1420,7 +1422,8 @@ def test_a_marca_da_ordem_e_obrigatoria_ao_lancar(s):
 
 ANTES_DO_ATO = {
     "PROTESTO": {},
-    "PAGAMENTO": {"forma_pagamento": "PIX"},
+    # em espécie: PIX só se lavra com o crédito conferido (29/10/2026)
+    "PAGAMENTO": {"forma_pagamento": "ESPECIE"},
     "DESISTENCIA": {"motivo": "O credor desistiu antes do protesto."},
 }
 

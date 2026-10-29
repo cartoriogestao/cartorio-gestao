@@ -123,9 +123,13 @@ import protesto_certidao as PCE
 import protesto_termo as PTERMO
 import protesto_triduo as TRIDUO
 import protesto_selo_previo as PSELO
+import protesto_averbacao as PAV
 import protesto_livros as PLIV
 import protesto_cra as CRA
 import protesto_desistencia as DS
+# OS PEDIDOS DA CRA NO CLIQUE DO DIA (29/10/2026): desistência, cancelamento e
+# autorização, trazidos no mesmo clique da remessa.
+import protesto_cra_pedidos as PCP
 import protesto_imagens as PIMG
 import protesto_instrumento as PI
 import protesto_remessa as PRM
@@ -1016,8 +1020,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 # (`ato_selado.cobrir_o_selo`, passo 2)
                 "lancamento_com_protocolo": cobra_item and protocolo is not None,
                 "selo_digitado": bool(_campo("selo")),
-                "afirmo": bool(request.form.get("afirmo")),
-                "afirmacao": _campo("afirmacao")}
+                # A AFIRMAÇÃO DO SELO É A DELE (integração de 29/10/2026): o
+                # campo `afirmo_selo`, ou a caixa comum quando só ele pede. E
+                # robô não afirma.
+                **_afirmacao_do_selo()}
+
+    def _afirmacao_do_selo() -> dict:
+        af = _afirmacao_da_trava("selo")
+        return {"afirmo": af["afirmo"], "afirmacao": af["texto"],
+                "robo": af["robo"]}
 
     def _selar_o_protesto(tabela: str, ato_id: int, tipo: str) -> str:
         """Um selo para cada item cobrado. FALA COM A REDE.
@@ -3281,6 +3292,110 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 audit(PROVA.ACAO_DA_AUDITORIA, entity_type, entity_id,
                       PROVA.para_a_auditoria(registro))
 
+    def _afirmacao_da_trava(trava: str, *, so_propria: bool = False) -> dict:
+        """A afirmação de UMA trava, lida do formulário. Só LÊ.
+
+        UMA AFIRMAÇÃO POR TRAVA (decisão do oficial, integração de 29/10/2026).
+        Cada trava tem o seu campo — `afirmo_<trava>` + `afirmacao_<trava>` —,
+        que a ficha desenha quando mais de uma trava pede afirmação no mesmo
+        ato. Sem ele vale a caixa comum (`afirmo` + `afirmacao`), e a afirmação
+        sai marcada `campo_comum`: `afirmacoes_expressas.uma_por_trava` recusa
+        a caixa comum que vença duas travas. `so_propria`: a tela em que a
+        caixa comum é de OUTRA trava (a dos avisos, onde ela é da entrega).
+
+        Devolve `{afirmo, texto, campo_comum, robo}`. A conta de robô vem com
+        `robo` marcado, e o contrato a recusa com a frase dele.
+        """
+        import selo_robo as SR
+        robo = SR.usuario_e_robo()
+        if request.form.get(f"afirmo_{trava}") or _campo(f"afirmacao_{trava}"):
+            return {"afirmo": bool(request.form.get(f"afirmo_{trava}")),
+                    "texto": _campo(f"afirmacao_{trava}") or "",
+                    "campo_comum": False, "robo": robo}
+        if not so_propria and (request.form.get("afirmo")
+                               or _campo("afirmacao")):
+            return {"afirmo": bool(request.form.get("afirmo")),
+                    "texto": _campo("afirmacao") or "",
+                    "campo_comum": True, "robo": robo}
+        return {"afirmo": False, "texto": "", "campo_comum": False,
+                "robo": robo}
+
+    def _texto_para_o_dominio(af: dict) -> str | None:
+        """O texto que o domínio confere (`protesto_prova`): só com a caixa
+        marcada, e nunca de robô — a recusa dele é a da trava."""
+        if not af.get("afirmo") or af.get("robo"):
+            return None
+        return af.get("texto") or None
+
+    def _vencida(trava: str, registro: dict | None, af: dict) -> dict | None:
+        """A trava que a afirmação venceu, na forma de `uma_por_trava`."""
+        if not registro:
+            return None
+        return {**registro, "trava": trava,
+                "campo_comum": bool(af.get("campo_comum"))}
+
+    def _afirmacoes_por_regra(sufixo: str = "") -> dict | None:
+        """As afirmações das regras de UMA trava que tem várias (a entrega e o
+        comprovante do aviso, `protesto_prova.vencer_todas`): `{"": caixa
+        comum, REGRA: texto}`. Os campos são `afirmo_<REGRA><sufixo>` e
+        `afirmacao_<REGRA><sufixo>`; o robô não afirma
+        (`_afirmacao_do_formulario`). Nenhuma, None."""
+        import protesto_prova as PROVA
+        saida = {}
+        comum = _afirmacao_do_formulario(sufixo)
+        if comum:
+            saida[""] = comum
+        for regra in PROVA.REGRAS_DO_AVISO:
+            texto = _afirmacao_do_formulario(f"_{regra}{sufixo}")
+            if texto:
+                saida[regra] = texto
+        return saida or None
+
+    def _titulo_do_aviso(aviso_id: int) -> tuple[int | None, str]:
+        """O título e a situação de um aviso. Só LÊ, numa conexão própria."""
+        with db.connect() as con:
+            linha = banco(con).um(
+                "SELECT titulo_id, situacao FROM pt_avisos WHERE id = %s",
+                (int(aviso_id),))
+        if not linha or not linha["titulo_id"]:
+            return None, ""
+        return int(linha["titulo_id"]), str(linha["situacao"] or "")
+
+    def _trava_cenprot_da_intimacao(aviso_id: int, *,
+                                    onde_afirmar: str = "") -> tuple:
+        """A TRAVA DA CENPROT NAS OUTRAS PORTAS DA INTIMAÇÃO (integração de
+        29/10/2026). O PR #105 a ligou só na ficha; a entrega pela tela dos
+        avisos, o edital e a intimação digital lavravam a intimação sem
+        passar por ela. Só o PAGO POR LIQUIDAÇÃO trava, sem rede, e se vence
+        com a afirmação expressa da CENPROT — `afirmo_cenprot` +
+        `afirmacao_cenprot`, o campo PRÓPRIO dela: nesta tela a caixa comum é
+        da entrega. Devolve `(titulo_id, afirmação aceita ou None)`; recusa
+        com `ConferenciaError`."""
+        import cenprot_conferencia as CCONF
+        titulo_id, situacao = _titulo_do_aviso(aviso_id)
+        # O aviso já entregue não lavra intimação de novo (anexar o
+        # comprovante a ele não é intimar): a trava não se aplica.
+        if titulo_id is None or situacao == "ENTREGUE":
+            return titulo_id, None
+        af = _afirmacao_da_trava("cenprot", so_propria=True)
+        with db.connect() as con:
+            aceita = CCONF.trava_sem_rede(
+                con, titulo_id, "INTIMACAO", afirmo=af["afirmo"],
+                afirmacao=af["texto"], robo=af["robo"],
+                onde_afirmar=onde_afirmar)
+        return titulo_id, aceita
+
+    def _auditar_a_cenprot_da_intimacao(titulo_id, aceita: dict | None,
+                                        ato_id, aviso_id: int) -> None:
+        """A afirmação que venceu a trava da CENPROT na intimação, na
+        auditoria — FORA da transação, como todo `audit`."""
+        if not aceita:
+            return
+        import cenprot_conferencia as CCONF
+        audit(CCONF.ACAO_DA_AUDITORIA, "pt_titulos", titulo_id,
+              {**CCONF.detalhe_da_auditoria(aceita), "ato": "INTIMACAO",
+               "ato_id": ato_id, "aviso_id": aviso_id})
+
     @app.route("/protesto/<int:titulo_id>/lancar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def protesto_lancar(titulo_id: int):
@@ -3299,6 +3414,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if SR.lancamento_vedado_ao_robo(ato):
             abort(403)
         voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_id))
+        # A CENPROT CONFERIDA ANTES DO ATO — 29/10/2026, ordem do oficial
+        # depois do 350574/1 (pago na Central por Liquidação no portal e
+        # protestado aqui no dia seguinte). No PROTESTO a Central é consultada
+        # FORA de transação; o PAGO POR LIQUIDAÇÃO (imutável na CENPROT) trava
+        # também o apontamento, a intimação e a desistência. Só a afirmação
+        # expressa do contrato comum (`afirmo` + `afirmacao`) passa. A regra é
+        # de `cenprot_conferencia`; aqui só se ligam os fios.
+        import cenprot_conferencia as CCONF
+        afirmacao_cenprot = None
+        # UMA AFIRMAÇÃO POR TRAVA (integração de 29/10/2026): cada trava lê o
+        # seu campo, e a caixa comum vale para uma só (`uma_por_trava`, mais
+        # abaixo, dentro da transação).
+        af_cenprot = _afirmacao_da_trava("cenprot")
+        af_prova = _afirmacao_da_trava("prova")
+        af_irmaos = _afirmacao_da_trava("irmaos")
+        af_selo = _afirmacao_da_trava("selo")
+        if ato in CCONF.ATOS_QUE_A_CENPROT_TRAVA:
+            try:
+                afirmacao_cenprot = CCONF.trava_do_ato(
+                    db, titulo_id, ato, afirmo=af_cenprot["afirmo"],
+                    afirmacao=af_cenprot["texto"], quem=usuario_nome(),
+                    robo=af_cenprot["robo"])
+            except CCONF.ConferenciaError as erro:
+                # O FORMULÁRIO VOLTA PREENCHIDO, como na trava do selo: a ficha
+                # se desenha com o que foi postado.
+                flash(str(erro), "danger")
+                return app.view_functions["protesto_titulo"](titulo_id=titulo_id)
         situacao_antes = situacao_depois = None
         # Lida FORA da transação (`get_setting` abre conexão própria): é a data
         # que o envelope do selo leva, e a conferência de antes precisa dela.
@@ -3336,8 +3478,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                            conferir_triduo=True,
                                            motivo_atraso=_campo("motivo_atraso") or None,
                                            # A PROVA DA INTIMAÇÃO (29/10/2026):
-                                           # sem ela, só com afirmação expressa.
-                                           afirmacao=_afirmacao_do_formulario())
+                                           # sem ela, só com afirmação expressa
+                                           # — a DELA (`afirmo_prova`).
+                                           afirmacao=_texto_para_o_dominio(af_prova))
                 elif ato == "DESISTENCIA":
                     r = PT.lancar_desistencia(con, titulo_id,
                                               motivo=_campo("motivo"),
@@ -3351,7 +3494,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         usuario=usuario_nome(),
                         forma_pagamento=_campo("forma_pagamento") or None,
                         forma_identificacao=_campo("forma_identificacao") or None,
-                        emolumentos=_campo("emolumentos") or None)
+                        emolumentos=_campo("emolumentos") or None,
+                        # PIX SÓ COM O CRÉDITO CONFERIDO (29/10/2026): o
+                        # formulário leva o PIX conferido; sem ele, o domínio
+                        # recusa a forma PIX.
+                        pix_id=numero_digitado(_campo("pix_id"),
+                                               maximo=MAIOR_INTEGER))
                 elif ato == "CANCELAMENTO":
                     r = PT.lancar_cancelamento(
                         con, titulo_id, hipotese=_campo("hipotese"),
@@ -3404,6 +3552,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 else:
                     raise PT.ProtestoError(
                         f"Ato desconhecido: {ato!r}.")
+                if afirmacao_cenprot:
+                    # A afirmação que venceu a trava da CENPROT vai ao
+                    # `detalhe_json` do ato, na MESMA transação: ato sem a
+                    # afirmação que o permitiu é ato que ninguém explica.
+                    CCONF.anotar_afirmacao_no_ato(
+                        con, r["ato_id"], afirmacao_cenprot,
+                        quem=usuario_nome(), agora=agora())
                 # QUAL TÍTULO ESTÁ NO PAPEL — 29/10/2026. Com irmão em aberto
                 # no mesmo protocolo, o pagamento, a desistência e o
                 # cancelamento só passam com o número e o vencimento do papel
@@ -3414,9 +3569,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     con, titulo_id, ato, r["ato_id"],
                     numero=_campo("irmao_numero") or None,
                     vencimento=_campo("irmao_vencimento") or None,
-                    afirmo=bool(request.form.get("afirmo")),
-                    afirmacao=_campo("afirmacao") or None,
-                    por_robo=SR.usuario_e_robo(), quem=usuario_nome(),
+                    afirmo=af_irmaos["afirmo"],
+                    afirmacao=af_irmaos["texto"] or None,
+                    por_robo=af_irmaos["robo"], quem=usuario_nome(),
                     agora=agora(), situacao_antes=situacao_antes)
                 depois = PT.titulo(con, titulo_id)
                 situacao_depois = depois["situacao"] if depois else None
@@ -3440,6 +3595,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     selo_automatico=SR.pode_selar_automatico(),
                     **_o_que_o_selo_vai_conferir(con, cobranca=cobranca,
                                                  titulo_id=titulo_id))
+                # CADA ERRO SE AFIRMA POR SI (decisão do oficial, integração
+                # de 29/10/2026). Até aqui a caixa comum vencia ao mesmo tempo
+                # a CENPROT, a prova, os irmãos e o selo, e cada trava gravava
+                # a sua linha com o MESMO texto. A caixa comum vale para uma
+                # trava; com duas ou mais, cada uma tem o seu campo, e o mesmo
+                # texto em duas é recusado. A recusa desfaz a transação inteira.
+                AFX.uma_por_trava([
+                    _vencida("cenprot", afirmacao_cenprot, af_cenprot),
+                    _vencida("prova", r.get("afirmacao_expressa"), af_prova),
+                    _vencida("irmaos", (irmao or {}).get("afirmacao_expressa"),
+                             af_irmaos),
+                    _vencida("selo", afirmacao_aceita, af_selo)])
                 if afirmacao_aceita:
                     PSELO.anotar_afirmacao_no_ato(
                         con, r["ato_id"], afirmacao_aceita,
@@ -3462,6 +3629,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                             and request.form.get("cobrar_diferidos")):
                         aviso += _cobrar_os_diferidos(con, titulo_id,
                                                       r["ato_id"], cobranca)
+        except AFX.AfirmacoesSeparadasError as erro:
+            # UMA AFIRMAÇÃO POR TRAVA: a ficha volta preenchida, com um campo
+            # para cada trava que pediu — e o que falta em cada uma.
+            flash(str(erro), "danger")
+            g.protesto_travas_a_afirmar = {
+                "ato": ato,
+                "travas": {t["trava"]: t.get("o_que_faltava") or ""
+                           for t in erro.travas}}
+            if "selo" in g.protesto_travas_a_afirmar["travas"]:
+                g.protesto_afirmacao_pedida = {
+                    "ato": ato, "regra": PSELO.REGRA_ITEM_FORA_DO_CAMINHO,
+                    "o_que_faltava":
+                        g.protesto_travas_a_afirmar["travas"]["selo"]}
+            return app.view_functions["protesto_titulo"](titulo_id=titulo_id)
         except PSELO.SeloNaoVaiSairError as erro:
             # O FORMULÁRIO VOLTA PREENCHIDO: a ficha se desenha com o que foi
             # postado, em vez de redirecionar e perder o que se digitou. E a
@@ -3469,12 +3650,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # formulário do ato recusado.
             flash(str(erro), "danger")
             if erro.vencivel:
-                g.protesto_afirmacao_pedida = {"ato": ato, "regra": erro.regra}
+                g.protesto_afirmacao_pedida = {
+                    "ato": ato, "regra": erro.regra,
+                    "o_que_faltava": erro.o_que_faltava}
             return app.view_functions["protesto_titulo"](titulo_id=titulo_id)
         except (PT.ProtestoError, AS.AtoError, LN.LivroError,
                 PTERMO.TermoError, POST.PosterioriError) as erro:
             flash(str(erro), "danger")
             return voltar
+        if afirmacao_cenprot:
+            # A AFIRMAÇÃO QUE VENCEU A TRAVA DA CENPROT (29/10/2026) — o
+            # contrato comum: `audit` FORA do `with`, o texto já no ato.
+            audit(CCONF.ACAO_DA_AUDITORIA, "pt_titulos", titulo_id,
+                  {**CCONF.detalhe_da_auditoria(afirmacao_cenprot),
+                   "ato": ato, "ato_id": r["ato_id"]})
         # A AFIRMAÇÃO EXPRESSA QUE VENCEU A TRAVA DA PROVA fica na auditoria
         # já aqui, antes do selo: ela foi feita e o ato foi lavrado, mesmo que
         # o selo falhe adiante e o ato seja anulado — o log é do que a pessoa
@@ -3584,9 +3773,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_id))
         try:
             with db.transaction() as con:
+                # ROBÔ NÃO AFIRMA (integração de 29/10/2026).
+                af = _afirmacao_da_trava("situacao")
                 feito = PSELO.corrigir_situacao_de_oficio(
-                    con, titulo_id, afirmo=bool(request.form.get("afirmo")),
-                    afirmacao=_campo("afirmacao"))
+                    con, titulo_id, afirmo=af["afirmo"],
+                    afirmacao=af["texto"], robo=af["robo"])
         except PSELO.SituacaoError as erro:
             flash(str(erro), "danger")
             return voltar
@@ -3600,6 +3791,49 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               "afirmação ficou na auditoria. Se o ato deve existir, lance-o "
               "agora; e confira se a CRA já recebeu a ocorrência antiga.",
               "success")
+        return voltar
+
+    @app.route("/protesto/<int:titulo_id>/averbacao-retificacao",
+               methods=["POST"])
+    @roles_required("ADMIN")
+    def protesto_averbacao_retificacao(titulo_id: int):
+        """A AVERBAÇÃO DE RETIFICAÇÃO DE ERRO MATERIAL, DE OFÍCIO. ESCREVE.
+
+        Lei 9.492/1997, art. 25: «A averbação de retificação de erros
+        materiais pelo serviço poderá ser efetuada de ofício ou a requerimento
+        do interessado, sob responsabilidade do Tabelião de Protesto de
+        Títulos». Por isso SÓ O ADMIN, em pessoa: a conta de robô leva 403 aqui
+        (e esta rota não está em `rotas_do_robo`), e o domínio
+        (`protesto_averbacao.lavrar`) recusa de novo. A afirmação expressa é o
+        contrato comum da casa — caixa `afirmo` e o texto `afirmacao` —, e a
+        auditoria (`AFIRMACAO_EXPRESSA` e o ato) vai FORA da transação, porque
+        `audit` abre a sua. O ato retificado não se toca: a averbação é ato
+        novo, à margem dele. Não sela e não cobra (ver o módulo).
+        """
+        import selo_robo as SR
+        if SR.usuario_e_robo():
+            abort(403)
+        voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_id))
+        try:
+            with db.transaction() as con:
+                feito = PAV.lavrar(
+                    con, _campo("ato_id"), elemento=_campo("elemento"),
+                    constava=_campo("constava"), correto=_campo("correto"),
+                    afirmo=bool(request.form.get("afirmo")),
+                    afirmacao=_campo("afirmacao"), agora=agora(),
+                    usuario=usuario_nome(), papel=_papel_atual(),
+                    eh_robo=SR.usuario_e_robo(), titulo_id=titulo_id,
+                    modelo=_modelo_do_termo(
+                        con, PTERMO.CHAVE_DA_AVERBACAO_RETIFICACAO))
+        except PAV.AverbacaoError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        for linha in PAV.para_a_auditoria(feito):
+            audit(*linha)
+        flash(f"Averbação de retificação lavrada (ato {feito['ato_id']}), à "
+              f"margem do ato {feito['ato_retificado_id']}. O texto lavrado "
+              "ficou como estava; o instrumento e a certidão passam a "
+              "mencioná-la. A afirmação ficou na auditoria.", "success")
         return voltar
 
     @app.route("/protesto/<int:titulo_id>")
@@ -3701,6 +3935,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # (29/10/2026): as obrigações que o selo deixou neste título.
             sem_ato = PSELO.situacao_sem_ato(_c, titulo_id)
             pendencias_do_selo = PSELO.pendencias_do_selo(_c, titulo_id=titulo_id)
+            # OS PEDIDOS DA CRA (29/10/2026): desistência, cancelamento e
+            # autorização que vieram da Central e ainda esperam a casa.
+            pedidos_cra = PCP.do_titulo(_c, titulo_id)
+            # A AVERBAÇÃO DE RETIFICAÇÃO (29/10/2026) — Lei 9.492/1997, art. 25:
+            # os atos com texto lavrado, o registro que diz um credor diferente
+            # do cadastro (ou nenhum), e as averbações já lavradas de cada ato.
+            averbacao = {"atos": PAV.atos_que_se_retificam(_c, titulo_id),
+                         "divergencias": PAV.divergencias_do_titulo(_c, titulo_id),
+                         "por_ato": {}}
+            for _av in PAV.averbacoes_do_titulo(_c, titulo_id):
+                averbacao["por_ato"].setdefault(
+                    int(_av["ato_retificado_id"] or 0), []).append(_av)
         pago_com_protesto = situacao == "PAGO" and bool(catalogo)
         cabem = []
         # O APONTAMENTO É O PRIMEIRO ATO DA VIDA DO TÍTULO — Lei 9.492/1997,
@@ -3748,6 +3994,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return render_template("atrib_protesto_ficha.html", titulo=dict(titulo),
                                sem_ato=sem_ato,
                                pendencias_do_selo=pendencias_do_selo,
+                               averbacao=averbacao,
                                modelo_da_afirmacao=PSELO.MODELO_DA_AFIRMACAO,
                                minimo_da_afirmacao=PSELO.MINIMO_DE_LETRAS_DA_AFIRMACAO,
                                emolumento=emolumento, apresentante=apresentante,
@@ -3769,7 +4016,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                triduo_situacao=(triduo or {}).get(
                                    "triduo_situacao"),
                                irmaos=irmaos, cedente_origem=cedente_origem,
-                               prova=prova)
+                               prova=prova, pedidos_cra=pedidos_cra,
+                               minimo_do_motivo_cra=PCP.MINIMO_DE_LETRAS,
+                               quem_encerra_o_grave=PCP.QUEM_ENCERRA_O_GRAVE)
 
     @app.route("/protesto/<int:titulo_id>/ordem/<int:ato_id>/marcar",
                methods=["POST"])
@@ -10349,6 +10598,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             import protesto_prova as PROVA
             sem_prova = [x for x in PROVA.intimacoes_sem_prova(con, hoje=hoje())
                          if x["origem"] != "ACERVO"]
+            # A TRAVA DA CENPROT NESTA TELA (integração de 29/10/2026): o
+            # título que a Central dá por PAGO POR LIQUIDAÇÃO não se intima
+            # sem afirmação — e a tela mostra isso, com o campo da afirmação
+            # da CENPROT, na entrega, no edital e na intimação digital.
+            import cenprot_conferencia as CCONF
+            cenprot_pago = CCONF.pagos_por_liquidacao(con)
         motivos = AV.motivos_para_escolher()
         destaque = [{"codigo": c, "motivo": AV.ROTULO_DO_DESTAQUE[c]}
                     for c in AV.MOTIVOS_EM_DESTAQUE]
@@ -10363,6 +10618,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                motivos=motivos,
                                motivos_destaque=destaque,
                                motivos_outros=outros,
+                               cenprot_pago=cenprot_pago,
                                entregadores=AV.ENTREGADORES, hoje=hoje())
 
     @app.route("/protesto/<int:titulo_id>/aviso", methods=["POST"])
@@ -10414,6 +10670,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         # entrega — o balcão corrige e manda de novo, sem meia operação.
         enviado = request.files.get("comprovante")
         tem_arquivo = bool(enviado and enviado.filename)
+        # A ENTREGA LAVRA A INTIMAÇÃO, e a intimação passa pela trava da
+        # CENPROT como na ficha (integração de 29/10/2026, a brecha do #105).
+        titulo_cenprot, cenprot_aceita = None, None
+        if entregue:
+            import cenprot_conferencia as CCONF
+            try:
+                titulo_cenprot, cenprot_aceita = _trava_cenprot_da_intimacao(
+                    aviso_id)
+            except CCONF.ConferenciaError as erro:
+                flash(str(erro), "danger")
+                return redirect(url_for("protesto_avisos"))
         try:
             with db.transaction() as con:
                 r = AV.registrar_entrega(
@@ -10431,22 +10698,40 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     pasta_de_arquivos=(pasta_dos_arquivos()
                                        if entregue and tem_arquivo else None),
                     usuario_id=usuario_id_do_sistema(),
-                    afirmacao=_afirmacao_do_formulario())
-        except (AV.AvisoError, PT.ProtestoError) as erro:
+                    # UMA AFIRMAÇÃO POR REGRA (integração de 29/10/2026): a
+                    # caixa comum vence uma; com duas, cada uma no seu campo.
+                    afirmacao=_afirmacoes_por_regra())
+                if cenprot_aceita and r.get("ato_id"):
+                    import cenprot_conferencia as CCONF
+                    CCONF.anotar_afirmacao_no_ato(
+                        con, r["ato_id"], cenprot_aceita, quem=usuario_nome(),
+                        agora=agora())
+                    AFX.uma_por_trava(
+                        [dict(cenprot_aceita, trava="cenprot")]
+                        + [dict(x, trava=x["regra"])
+                           for x in r.get("afirmacoes") or []])
+        except (AV.AvisoError, PT.ProtestoError, AFX.AfirmacaoError) as erro:
             flash(str(erro), "danger")
             return redirect(url_for("protesto_avisos"))
+        _auditar_a_cenprot_da_intimacao(titulo_cenprot, cenprot_aceita,
+                                        r.get("ato_id"), aviso_id)
         audit("PROTESTO_AVISO_ENTREGA", "pt_avisos", aviso_id,
               {"entregue": entregue, "motivo": _campo("motivo") or None,
                "ato_id": r["ato_id"],
                "comprovante": r.get("anexo_id")})
         _auditar_afirmacoes("pt_avisos", aviso_id, r.get("afirmacoes"))
+        sem_nome = entregue and _avisar_que_falta_quem_recebeu(aviso_id)
         if entregue:
             flash("Entrega registrada, e a intimação pessoal foi lavrada."
                   + (" O comprovante ficou anexado." if r.get("anexo_id") else
                      " SEM o comprovante, por afirmação expressa — anexe-o "
                      "na lista «Entregues» desta tela: sem ele, o protesto "
-                     "também só sai com afirmação."),
-                  "success" if r.get("anexo_id") else "warning")
+                     "também só sai com afirmação.")
+                  + (" FALTA O NOME DE QUEM RECEBEU: complete-o na lista "
+                     "«Entregues» («Completar quem recebeu») — a tarefa ficou "
+                     "aberta para você." if sem_nome else ""),
+                  "success" if r.get("anexo_id") and not sem_nome
+                  else "warning")
         else:
             flash(f"Não-entrega registrada: "
                   f"{AV.motivo_rotulo(_campo('motivo'))}. O aviso está na "
@@ -10463,6 +10748,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         código era digitado à mão na ficha — e edital que só existe como texto
         num campo não se confere depois.
         """
+        # O EDITAL LAVRA A INTIMAÇÃO, e ela passa pela trava da CENPROT como
+        # na ficha (integração de 29/10/2026, a brecha do #105).
+        import cenprot_conferencia as CCONF
+        try:
+            titulo_cenprot, cenprot_aceita = _trava_cenprot_da_intimacao(
+                aviso_id)
+        except CCONF.ConferenciaError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_avisos"))
         try:
             with db.transaction() as con:
                 r = AV.publicar_edital(con, aviso_id, sv=sv(), hoje=hoje(),
@@ -10470,9 +10764,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                        data_extenso=hoje_extenso(),
                                        usuario=usuario_nome(),
                                        justificativa=_campo("justificativa"))
+                if cenprot_aceita and r.get("ato_id"):
+                    CCONF.anotar_afirmacao_no_ato(
+                        con, r["ato_id"], cenprot_aceita, quem=usuario_nome(),
+                        agora=agora())
         except (AV.AvisoError, PT.ProtestoError) as erro:
             flash(str(erro), "danger")
             return redirect(url_for("protesto_avisos"))
+        _auditar_a_cenprot_da_intimacao(titulo_cenprot, cenprot_aceita,
+                                        r.get("ato_id"), aviso_id)
         audit("PROTESTO_EDITAL", "pt_editais", r["edital_id"],
               {"aviso_id": aviso_id, "codigo": r["codigo"],
                "ato_id": r["ato_id"],
@@ -10480,6 +10780,57 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         flash(f"Edital {r['codigo']} publicado, e a intimação por edital foi "
               f"lavrada. Imprima a folha do dia e afixe.", "success")
         return redirect(url_for("protesto_avisos"))
+
+    def _avisar_que_falta_quem_recebeu(aviso_id: int) -> bool:
+        """SE FALTAR O NOME DE QUEM RECEBEU, A ESCREVENTE É AVISADA NA HORA
+        (decisão do oficial, 29/10/2026: «se faltar, avisar escrevente pra
+        completar») — uma tarefa para quem registrou a entrega, no setor do
+        Protesto, que fecha sozinha quando o nome é completado. Painel e
+        tarefa, sem e-mail por evento (28/10/2026). `db.create_task` abre
+        transação própria: chame FORA do `with`. Devolve se faltava."""
+        with db.connect() as con:
+            dados = AV.tarefa_para_completar(con, aviso_id, hoje=hoje(),
+                                             dono=usuario_id_do_sistema())
+        if dados:
+            db.create_task(dados, usuario_id_do_sistema())
+        return bool(dados)
+
+    @app.route("/protesto/avisos/<int:aviso_id>/recebido-por", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_aviso_recebido_por(aviso_id: int):
+        """Completa o nome de quem recebeu o aviso já entregue. ESCREVE.
+
+        Decisão do oficial, 29/10/2026: «canhoto de entrega precisa ter o campo
+        pra botar o nome de quem recebeu. se faltar, avisar escrevente pra
+        completar». O nome se lê no canhoto anexado; o que já existe só se
+        troca com afirmação expressa. A auditoria diz quem completou e quando,
+        e com o nome completado o protesto passa sem afirmação.
+        """
+        # A volta é escolhida, e não lida de um endereço do formulário: a
+        # ficha do título ou a lista dos entregues.
+        voltar_a_ficha = _campo("de") == "ficha"
+        titulo_id = None
+        try:
+            with db.transaction() as con:
+                titulo_id = (AV.ler(con, aviso_id) or {}).get("titulo_id")
+                r = AV.completar_quem_recebeu(
+                    con, aviso_id, recebido_por=_campo("recebido_por"),
+                    agora=agora(), afirmacao=_afirmacao_do_formulario())
+        except (AV.AvisoError, PT.ProtestoError) as erro:
+            flash(str(erro), "danger")
+            r = None
+        if r is not None:
+            audit("PROTESTO_AVISO_RECEBIDO_POR", "pt_avisos", aviso_id,
+                  {"recebido_por": r["recebido_por"], "antes": r["antes"],
+                   "tarefas_fechadas": r["tarefas_fechadas"]})
+            _auditar_afirmacoes("pt_avisos", aviso_id, r.get("afirmacoes"))
+            flash(f"Quem recebeu: {r['recebido_por']}. "
+                  + ("Nome corrigido, com a afirmação gravada."
+                     if r["antes"] else "Nome completado."), "success")
+        if voltar_a_ficha and titulo_id:
+            return redirect(url_for("protesto_titulo",
+                                    titulo_id=int(titulo_id)) + "#avisos")
+        return redirect(url_for("protesto_avisos") + f"#aviso-{int(aviso_id)}")
 
     @app.route("/protesto/avisos/<int:aviso_id>/comprovante", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -10504,8 +10855,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     usuario_id=usuario_id_do_sistema(),
                     # O ARQUIVO SUSPEITO (29/10/2026) — o mesmo de outro aviso,
                     # ou o protocolo de outro título no nome — só entra com
-                    # afirmação expressa.
-                    afirmacao=_afirmacao_do_formulario())
+                    # afirmação expressa; UMA POR REGRA quando caem as duas.
+                    afirmacao=_afirmacoes_por_regra())
         except AV.AvisoError as erro:
             flash(str(erro), "danger")
             return redirect(url_for("protesto_avisos"))
@@ -10719,7 +11070,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash("Nenhum aviso foi marcado.", "warning")
             return redirect(url_for("protesto_avisos_lote"))
         feitos, falhas = [], []
+        import cenprot_conferencia as CCONF
         for aviso_id in marcados:
+            # A TRAVA DA CENPROT NA ENTREGA (integração de 29/10/2026, a
+            # brecha do #105). No PDF com várias intimações ela não se vence:
+            # a afirmação da CENPROT é aviso a aviso, na tela dos avisos — a
+            # régua do lote «A protestar».
+            # Só a ENTREGA lavra a intimação; a tentativa não passa pela trava.
+            vai_entregar = (str(_campo(f"desfecho_{aviso_id}") or PILOTE.ENTREGUE)
+                            .strip().upper() == PILOTE.ENTREGUE)
+            try:
+                if vai_entregar:
+                    _trava_cenprot_da_intimacao(aviso_id, onde_afirmar=(
+                        "No PDF com várias intimações a afirmação da CENPROT "
+                        "não se faz: registre a entrega deste aviso pela tela "
+                        "«Avisos e editais», onde ela se afirma."))
+            except CCONF.ConferenciaError as erro:
+                falhas.append(str(erro))
+                continue
             try:
                 with db.transaction() as con:
                     r = PILOTE.registrar_um(
@@ -10732,7 +11100,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         # QUEM RECEBEU, linha a linha (29/10/2026): a entrega
                         # só entra com ele, ou com a afirmação DAQUELE aviso.
                         recebido_por=_campo(f"recebido_por_{aviso_id}") or None,
-                        afirmacao=_afirmacao_do_formulario(f"_{aviso_id}"))
+                        afirmacao=_afirmacoes_por_regra(f"_{aviso_id}"))
             except (PILOTE.LoteError, AV.AvisoError, PT.ProtestoError) as erro:
                 falhas.append(str(erro))
                 continue
@@ -10742,6 +11110,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                    "anexo_id": r["anexo_id"], "paginas": r["paginas"],
                    "lote": sha})
             _auditar_afirmacoes("pt_avisos", aviso_id, r.get("afirmacoes"))
+            # A ENTREGA SEM O NOME (só por afirmação) abre a tarefa de completar.
+            if r["acao"] == "ENTREGA" and _avisar_que_falta_quem_recebeu(aviso_id):
+                falhas.append(f"Aviso {r['aviso']}: entregue SEM o nome de quem "
+                              f"recebeu — complete-o na lista «Entregues»; a "
+                              f"tarefa ficou aberta para você.")
         if feitos:
             entregas = sum(1 for r in feitos if r["acao"] == "ENTREGA")
             tentativas = sum(1 for r in feitos if r["acao"] == "TENTATIVA")
@@ -10761,13 +11134,28 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         Só com a confirmação da plataforma (CN-MA art. 921, § 6º, II) — a
         recusa está no domínio, e diz o que falta.
         """
+        # A INTIMAÇÃO DIGITAL TAMBÉM PASSA PELA TRAVA DA CENPROT (integração
+        # de 29/10/2026, a brecha do #105).
+        import cenprot_conferencia as CCONF
+        try:
+            titulo_cenprot, cenprot_aceita = _trava_cenprot_da_intimacao(
+                aviso_id)
+        except CCONF.ConferenciaError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_avisos"))
         try:
             with db.transaction() as con:
                 r = AV.lavrar_intimacao_digital(con, aviso_id, agora=agora(),
                                                 usuario=usuario_nome())
+                if cenprot_aceita and r.get("ato_id"):
+                    CCONF.anotar_afirmacao_no_ato(
+                        con, r["ato_id"], cenprot_aceita, quem=usuario_nome(),
+                        agora=agora())
         except (AV.AvisoError, PT.ProtestoError) as erro:
             flash(str(erro), "danger")
             return redirect(url_for("protesto_avisos"))
+        _auditar_a_cenprot_da_intimacao(titulo_cenprot, cenprot_aceita,
+                                        r.get("ato_id"), aviso_id)
         audit("PROTESTO_INTIMACAO_DIGITAL", "pt_avisos", aviso_id,
               {"ato_id": r["ato_id"], "identificador": r["identificador"],
                "so_entregue": r.get("so_entregue")})
@@ -11072,6 +11460,79 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
     # --------------------------------------- a remessa que CHEGA da CRA
 
+    def _cra_do_dia() -> dict:
+        """O quadro dos pedidos da CRA (DP, CP, AC) para a tela. Só LÊ.
+
+        NÃO DERRUBA A TELA DA REMESSA: se o quadro não abrir, a tela diz isso
+        em vermelho — nunca um quadro vazio com cara de «nada pendente». O
+        detalhe do erro vai ao registro do servidor, e não à página.
+        """
+        try:
+            with db.connect() as con:
+                return PCP.quadro_do_dia(con, dia=hoje())
+        except Exception:  # noqa: BLE001 — a remessa não cai pelo quadro
+            app.logger.exception("quadro dos pedidos da CRA não abriu")
+            return {"erro": "o quadro não pôde ser lido agora; o detalhe "
+                            "ficou no registro do servidor"}
+
+    def _trazer_pedidos_da_cra() -> list[dict]:
+        """DP, CP e AC no MESMO clique da remessa, depois dela (29/10/2026).
+
+        A PORTA DA CRA É A MESMA DA REMESSA — `cra21_web._trazer` —, de
+        propósito: uma porta só para a Central, e quem a simula num teste
+        simula as quatro chamadas de uma vez. A rede fica fora da transação
+        (`PCP.trazer_do_dia` abre as suas, curtas), e a auditoria vai FORA
+        dela: `cra_baixar` com o `o_que` de cada uma é o que o roteiro do
+        protesto lê para saber que a consulta foi feita — inclusive quando
+        nada veio. NUNCA estoura: a falha de um não derruba os outros nem a
+        remessa, e aparece em vermelho.
+        """
+        import cra21_web as CRAW
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _transacao():
+            with db.transaction() as con:
+                yield con
+
+        def _pela_cra(o_que: str, nome: str, com_imagem: bool):
+            return CRAW._trazer(o_que, nome, CENTCRED.PRODUCAO,
+                                com_imagem=com_imagem)
+
+        try:
+            linhas = PCP.trazer_do_dia(
+                _transacao, _pela_cra, dia=hoje(), agora=agora(),
+                usuario=usuario_nome(), pasta_reserva=pasta_dos_arquivos())
+        except Exception as erro:  # noqa: BLE001 — o clique não cai por isto
+            flash(f"Desistências, cancelamentos e autorizações não foram "
+                  f"consultados: {erro}", "danger")
+            return []
+        for r in linhas:
+            detalhe = {"o_que": r["o_que"], "nome": r["nome"],
+                       "tamanho": r["tamanho"], "resultado": r["resultado"],
+                       "codigo": r["codigo"], "titulos": r["titulos"],
+                       "pendentes": r["pendentes"],
+                       "pelo_clique_do_dia": True}
+            if r["resultado"] == PCP.FALHA:
+                audit("cra_baixar_falha", "pt_cra_consultas",
+                      r["consulta_id"],
+                      {**detalhe, "incerta": r["incerta"],
+                       "erro": str(r["mensagem"])[:300]})
+            else:
+                audit("cra_baixar", "pt_cra_consultas", r["consulta_id"],
+                      detalhe)
+            if r.get("desistencia_id"):
+                audit("PROTESTO_DESISTENCIA", "pt_desistencias",
+                      r["desistencia_id"],
+                      {"apresentante": r.get("apresentante"),
+                       "aplicados": r["aplicados"],
+                       "recusados": r["recusados"],
+                       "pendentes": r["pendentes"],
+                       "graves": r["graves"],
+                       "de": "clique do dia (CRA pela API)"})
+            flash(r["frase"], r["cor"])
+        return linhas
+
     @app.route("/protesto/remessas")
     @login_required
     def protesto_remessas():
@@ -11084,7 +11545,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as con:
             recebidas = PRM.listar(con)
         return render_template("protesto_remessas.html", recebidas=recebidas,
-                               hoje=hoje(), remessas_salvas=PCIMG.listar_xml(pasta_dos_arquivos()))
+                               hoje=hoje(), remessas_salvas=PCIMG.listar_xml(pasta_dos_arquivos()),
+                               cra_do_dia=_cra_do_dia())
 
     @app.route("/protesto/remessas/conferir", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -11116,6 +11578,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
         BAIXAR MARCA DO LADO DE LÁ (manual da CRA): por isso é botão, e não
         relógio.
+
+        E NO MESMO CLIQUE, DEPOIS DA REMESSA, AS DESISTÊNCIAS, OS
+        CANCELAMENTOS E AS AUTORIZAÇÕES (29/10/2026). Medido na produção:
+        desde a virada de 14/10 nenhuma chamada a `Desistencia`,
+        `Cancelamento` ou `Autorizacao` — a consulta era um passo de papel, e
+        a escrevente já clicava aqui todo dia. Cada uma guarda a resposta
+        inteira antes de ler (`protesto_cra_pedidos`); a falha de uma não
+        derruba as outras nem a remessa, e a remessa que falha não impede as
+        três.
         """
         import cra21_web as CRAW
         qual = (_campo("o_que") or "remessa").strip()
@@ -11123,17 +11594,35 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash("Só a remessa do dia e as pendentes vão à conferência.", "warning")
             return redirect(url_for("protesto_remessas"))
         nome = _campo("nome")
+        texto = None
         try:
             PCIMG.preparar_pasta(pasta_dos_arquivos())
             texto = CRAW._trazer(qual, nome, CENTCRED.PRODUCAO,
                                  com_imagem=_campo("com_imagem") != "0")
         except (*CRAW.RECUSAS_DO_BALCAO, PCIMG.ImagemCraError) as erro:
             flash(str(erro), "danger")
-            return redirect(url_for("protesto_remessas"))
-        audit("cra_baixar_e_conferir", None, None,
-              {"o_que": qual, "nome": nome, "tamanho": len(texto or "")})
+        if texto is not None:
+            audit("cra_baixar_e_conferir", None, None,
+                  {"o_que": qual, "nome": nome, "tamanho": len(texto or "")})
+            if not str(texto).strip():
+                flash("A CRA não devolveu remessa nenhuma agora.", "warning")
+        # OS PEDIDOS DA CRA, DEPOIS DA REMESSA — e mesmo quando ela falhou.
+        linhas = _trazer_pedidos_da_cra()
+        # NEM O BANCO NEM O DISCO ACEITARAM UMA RESPOSTA: ela vai ao navegador,
+        # com a remessa junto (que ainda não foi guardada), para nada sumir
+        # das duas pontas — a CRA pode já tê-las marcado como baixadas.
+        perdidos = [l for l in linhas if l.get("bruto_sem_lugar") is not None]
+        if perdidos:
+            partes = [f"=== {l['nome']} ({l['rotulo']}) ===\n"
+                      f"{l['bruto_sem_lugar']}" for l in perdidos]
+            if str(texto or "").strip():
+                partes.append(f"=== remessa ({nome or qual}) ===\n{texto}")
+            return Response(
+                "\n\n".join(partes).encode("utf-8", errors="replace"),
+                mimetype="text/plain; charset=utf-8",
+                headers={"Content-Disposition":
+                         'attachment; filename="cra-recuperar.txt"'})
         if not str(texto or "").strip():
-            flash("A CRA não devolveu remessa nenhuma agora.", "warning")
             return redirect(url_for("protesto_remessas"))
         return _conferir_a_remessa(texto, nome or f"cra-{qual}")
 
@@ -11171,7 +11660,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 "protesto_remessa_conferir.html", visto=visto,
                 nome_arquivo=nome_arquivo, conteudo="", origem_xml_token=token,
                 hoje=hoje(), xml_previa=previa,
-                origem_xml_ambiente=ambiente)
+                origem_xml_ambiente=ambiente, cra_do_dia=_cra_do_dia())
         try:
             with db.connect() as con:
                 visto = PRM.conferir(con, bruto)
@@ -11180,7 +11669,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return redirect(url_for("protesto_remessas"))
         return render_template("protesto_remessa_conferir.html", visto=visto,
                                nome_arquivo=nome_arquivo,
-                               conteudo=PRM.normalizar(bruto), hoje=hoje())
+                               conteudo=PRM.normalizar(bruto), hoje=hoje(),
+                               cra_do_dia=_cra_do_dia())
 
     @app.route("/protesto/remessas/salvas/<token>")
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -11458,9 +11948,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # a parcela protestada tinha a irmã «paga» com o mesmo valor — e
             # a lista não dizia que o protocolo tinha dois títulos.
             irmaos = IRM.irmaos_de_varios(con, [t["id"] for t in linhas])
+            # A TRAVA DO PROTESTO (decisão do oficial, 29/10/2026): o título
+            # cujo irmão de vencimento POSTERIOR está PAGO com o mesmo valor
+            # SAI da seleção, com o motivo à vista — só se protesta pela
+            # ficha, com afirmação expressa.
+            travas = IRM.travas_do_protesto(con, [t["id"] for t in linhas])
+            travados = [{**t, "trava": travas[t["id"]]} for t in linhas
+                        if t["id"] in travas]
+            linhas = [t for t in linhas if t["id"] not in travas]
         return render_template("protesto_a_protestar.html", linhas=linhas,
                                revogados=revogados, sustados=sustados,
-                               hoje=hoje(), irmaos=irmaos)
+                               hoje=hoje(), irmaos=irmaos, travados=travados)
 
     @app.route("/protesto/a-protestar/lavrar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -11494,6 +11992,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return redirect(url_for("protesto_a_protestar"))
 
         feitos, falharam = [], []
+        # A CENPROT CONFERIDA ANTES DE PROTESTAR (29/10/2026) — a mesma trava
+        # da ficha, FORA da transação de cada título. A AFIRMAÇÃO DA CENPROT
+        # NÃO SE FAZ NO LOTE: a caixa do lote é a da prova da intimação, e a
+        # divergência com a Central pede o portal aberto — o título recusado
+        # sai da leva, e a afirmação é na ficha dele. Caída a Central num
+        # título, os seguintes não esperam a rede de novo (`perguntar=False`)
+        # — e também não passam.
+        import cenprot_conferencia as CCONF
+        rede_caiu = False
+        for titulo_id in list(escolhidos):
+            try:
+                CCONF.trava_do_protesto(db, titulo_id, quem=usuario_nome(),
+                                        em_lote=True, perguntar=not rede_caiu)
+            except CCONF.ConferenciaError as erro:
+                rede_caiu = rede_caiu or erro.sem_rede
+                falharam.append((titulo_id, str(erro)))
+                escolhidos.remove(titulo_id)
         for titulo_id in escolhidos:
             try:
                 with db.transaction() as con:
@@ -11510,6 +12025,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         # afirmação expressa DAQUELE título — a afirmação é
                         # por título, como o motivo do atraso.
                         afirmacao=_afirmacao_do_formulario(f"_{titulo_id}"))
+                    # A TRAVA DOS IRMÃOS NO PROTESTO (decisão do oficial,
+                    # 29/10/2026): o irmão de vencimento posterior PAGO com o
+                    # mesmo valor. O lote NÃO a vence — o título saiu da
+                    # seleção e se protesta pela ficha, afirmando. Recusa
+                    # aqui e desfaz o protesto dele, mesmo que o `titulo_id`
+                    # chegue direto, sem passar pela lista.
+                    IRM.conferir_e_anotar(con, titulo_id, "PROTESTO",
+                                          r["ato_id"], quem=usuario_nome(),
+                                          agora=agora(),
+                                          situacao_antes="INTIMADO")
                 feitos.append((titulo_id, r))
             except (PT.ProtestoError, LN.LivroError,
                     PTERMO.TermoError) as erro:
@@ -11729,12 +12254,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         outros pedidos, e a que estourar desfaz só a leitura — nunca a
         transação que grava.
         """
+        import selo_robo as SR
+        voltar = redirect(url_for("protesto_painel") + "#encerrar-o-dia")
+        # ROBÔ NÃO ENCERRA NEM REABRE (decisão do oficial, 29/10/2026): o
+        # encerramento é a palavra de uma pessoa sobre o dia.
+        if SR.usuario_e_robo():
+            flash("Conta de robô não encerra o dia: é a escrevente quem "
+                  "encerra.", "danger")
+            return voltar
         quando = agora()
         afirmacoes = {
             chave: (_campo(f"afirmo_{chave}") == "1",
                     request.form.get(f"afirmacao_{chave}") or "")
             for chave in request.form.getlist("item")}
-        voltar = redirect(url_for("protesto_painel") + "#encerrar-o-dia")
         try:
             with db.connect() as con:
                 conferido = PROT.conferir_o_encerramento(
@@ -11759,6 +12291,42 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   f"afirmado(s). Eles abrem o roteiro de amanhã.", "warning")
         else:
             flash("Dia encerrado: todas as condutas feitas.", "success")
+        return voltar
+
+    @app.route("/protesto/roteiro/reabrir", methods=["POST"])
+    @roles_required("ADMIN")
+    def protesto_reabrir_o_dia():
+        """REABRE O DIA DE HOJE. ESCREVE. Só o oficial.
+
+        Decisão dele em 29/10/2026: a escrevente encerra; só o oficial (ADMIN
+        humano — robô não) reabre, com o motivo por afirmação expressa
+        (contrato comum: caixa `afirmo` + texto `afirmacao`, 30 letras ou
+        mais). A reabertura fica na própria linha de `pt_encerramentos_do_dia`
+        e vai à auditoria como `DIA_REABERTO` e como `AFIRMACAO_EXPRESSA`.
+        """
+        import selo_robo as SR
+        voltar = redirect(url_for("protesto_painel") + "#encerrar-o-dia")
+        if SR.usuario_e_robo():
+            flash("Conta de robô não reabre o dia: só o oficial.", "danger")
+            return voltar
+        quando = agora()
+        try:
+            texto = AFX.validar(
+                _campo("afirmo") == "1", request.form.get("afirmacao"),
+                por_que="Reabrir o dia exige o motivo, por afirmação expressa.")
+            with db.transaction() as con:
+                r = PROT.reabrir_o_dia(con, agora=quando, afirmacao=texto,
+                                       usuario=usuario_nome())
+        except (AFX.AfirmacaoError, PROT.EncerramentoError) as erro:
+            flash(str(erro), "danger")
+            return voltar
+        # `audit` abre transação própria: FORA do `with`.
+        audit(PROT.REGRA_DA_REABERTURA, "pt_encerramentos_do_dia", r["id"],
+              {"dia": r["dia"], "afirmacao": texto})
+        audit("AFIRMACAO_EXPRESSA", "pt_encerramentos_do_dia", r["id"],
+              {"regra": PROT.REGRA_DA_REABERTURA, "afirmacao": texto,
+               "o_que_faltava": f"o dia {r['dia']} estava encerrado"})
+        flash("Dia reaberto. Ele volta a pedir encerramento.", "warning")
         return voltar
 
     # ------------------- a chave do CENPROT, que o XML devolve
@@ -11786,7 +12354,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             with db.connect() as con:
                 listas = {letra: PCXML.pendentes(con, letra, acervo=acervo)
                           for letra in ("P", "D")}
-                feitos = PCXML.arquivos(con)
+                feitos = [dict(f) for f in PCXML.arquivos(con)]
+                # O COMPROVANTE DA SUBIDA, por arquivo (29/10/2026).
+                for f in feitos:
+                    f["comprovantes"] = PCXML.comprovantes(con, f["id"])
                 cadastro = PCXML.apresentantes(con)
         finally:
             if acervo is not None:
@@ -11794,6 +12365,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return render_template(
             "protesto_cenprot_xml.html", listas=listas, feitos=feitos,
             cadastro=cadastro, tem_acervo=acervo is not None,
+            minimo_de_letras=AFX.MINIMO_DE_LETRAS,
+            modelo_da_afirmacao=AFX.MODELO,
             ocorrencias={"PROTESTO": "2 — protestado", "PAGAMENTO": "1 — pago",
                          "DESISTENCIA": "3 — retirado",
                          "CANCELAMENTO": "A — cancelado"})
@@ -11844,6 +12417,66 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             bytes(arq["conteudo"]), mimetype="application/xml",
             headers={"Content-Disposition":
                      f'attachment; filename="{arq["nome_arquivo"]}"'})
+
+    # O COMPROVANTE DA SUBIDA DO XML NO PORTAL (29/10/2026, decisão do
+    # oficial). A tela do anexo é a do XML — e é ela que o oferece.
+    app.extensions.setdefault("tela_do_anexo", {})[
+        PCXML.ENTIDADE_DO_ENVIO_DO_XML] = ("protesto_cenprot_xml",)
+
+    @app.route("/protesto/cenprot-xml/<int:xml_id>/comprovante",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_cenprot_xml_comprovante(xml_id: int):
+        """Anexa ao arquivo gerado o comprovante da subida no portal da
+        CENPROT. ESCREVE. Sem ele a conduta 8 do roteiro não fica feita."""
+        voltar = redirect(url_for("protesto_cenprot_xml") + "#arquivos-gerados")
+        enviado = request.files.get("comprovante")
+        if not enviado or not enviado.filename:
+            flash("Escolha o arquivo do comprovante da subida.", "danger")
+            return voltar
+        try:
+            with db.transaction() as con:
+                r = PCXML.guardar_comprovante_do_envio(
+                    con, xml_id, nome=enviado.filename,
+                    conteudo=enviado.read(),
+                    pasta_de_arquivos=pasta_dos_arquivos(), agora=agora(),
+                    usuario_id=usuario_id_do_sistema())
+        except PCXML.CenprotXmlError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        audit("PROTESTO_CENPROT_XML_COMPROVANTE", "pt_cenprot_xml", xml_id,
+              {"arquivo": r["nome_arquivo"], "anexo": r["anexo_id"]})
+        flash(f"Comprovante anexado a «{r['nome_arquivo']}».", "success")
+        return voltar
+
+    @app.route("/protesto/cenprot-xml/<int:xml_id>/afirmar", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_cenprot_xml_afirmar(xml_id: int):
+        """A subida sem comprovante, por AFIRMAÇÃO EXPRESSA (contrato comum:
+        caixa `afirmo` + texto `afirmacao`, 30 letras ou mais). ESCREVE na
+        linha do arquivo, e a auditoria vai depois da transação."""
+        voltar = redirect(url_for("protesto_cenprot_xml") + "#arquivos-gerados")
+        try:
+            import selo_robo as SR
+            texto = AFX.validar(
+                _campo("afirmo") == "1", request.form.get("afirmacao"),
+                por_que="O arquivo sobe com o comprovante; sem ele, só com a "
+                        "sua afirmação expressa.",
+                robo=SR.usuario_e_robo())
+            with db.transaction() as con:
+                r = PCXML.afirmar_envio_sem_comprovante(
+                    con, xml_id, afirmacao=texto, agora=agora(),
+                    usuario=usuario_nome())
+        except (AFX.AfirmacaoError, PCXML.CenprotXmlError) as erro:
+            flash(str(erro), "danger")
+            return voltar
+        audit("AFIRMACAO_EXPRESSA", "pt_cenprot_xml", xml_id,
+              {"regra": PCXML.REGRA_DO_XML_SEM_COMPROVANTE, "afirmacao": texto,
+               "o_que_faltava": f"o comprovante da subida de "
+                                f"{r['nome_arquivo']} no portal da CENPROT"})
+        flash(f"Subida de «{r['nome_arquivo']}» afirmada sem comprovante.",
+              "warning")
+        return voltar
 
     @app.route("/protesto/cenprot-xml/apresentantes", methods=["POST"])
     # 21/10/2026: aberto às escreventes por ordem do oficial (era ("ADMIN", "MANAGER")).
@@ -12228,6 +12861,101 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                desistencia=dict(linha), atos=atos,
                                achados=achados)
 
+    # ------------------- os pedidos da CRA que vieram no clique do dia
+
+    @app.route("/protesto/cra/pedidos")
+    @login_required
+    def protesto_cra_pedidos():
+        """O que veio da CRA (DP, CP, AC) e ainda espera a casa. Só LÊ.
+
+        A lista é a mesma que o roteiro do protesto lê
+        (`protesto_desistencia.pendencias_da_cra`): a desistência de título
+        já protestado vem primeiro, destacada.
+        """
+        with db.connect() as con:
+            quadro = PCP.quadro_do_dia(con, dia=hoje())
+            pendentes = DS.pendencias_da_cra(con)
+            recentes = PCP.recentes(con, limite=80)
+        return render_template(
+            "protesto_cra_pedidos.html", quadro=quadro, cra_do_dia=quadro,
+            pendentes=pendentes, recentes=recentes, hoje=hoje(),
+            minimo=PCP.MINIMO_DE_LETRAS, papel=_papel_atual(),
+            quem_encerra_o_grave=PCP.QUEM_ENCERRA_O_GRAVE,
+            grave=PCP.GRAVE, nome_do_tipo=PCP.NOME_DO_TIPO)
+
+    @app.route("/protesto/cra/pedidos/<int:pedido_id>/tratar",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_cra_pedido_tratar(pedido_id: int):
+        """Registra por que o pedido da CRA não vira ato. ESCREVE.
+
+        Cancelamento e autorização se lavram na ficha, quando o devedor paga
+        as custas — e aí o pedido se fecha sozinho. Este botão é o outro
+        caminho: a escrevente diz por que NÃO lavra, e isso fica com o pedido
+        e na auditoria.
+        """
+        try:
+            with db.transaction() as con:
+                r = PCP.tratar_pedido(con, pedido_id, motivo=_campo("motivo"),
+                                      agora=agora(), usuario=usuario_nome(),
+                                      papel=_papel_atual())
+        except PCP.PedidoCraError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_cra_pedidos"))
+        # `audit` abre transação própria: FORA do `with`.
+        audit("PROTESTO_CRA_PEDIDO_TRATADO", "pt_cra_pedidos", pedido_id,
+              {"tipo": r["tipo"], "titulo_id": r.get("titulo_id"),
+               "protocolo": r.get("protocolo"), "destaque": r.get("destaque"),
+               "motivo": r["motivo"]})
+        flash("Registrado: o pedido da CRA saiu da lista com o seu motivo.",
+              "success")
+        # A volta é lista fechada: o destino não vem livre do formulário.
+        if _campo("voltar") == "ficha" and r.get("titulo_id"):
+            return redirect(url_for("protesto_titulo",
+                                    titulo_id=int(r["titulo_id"])))
+        return redirect(url_for("protesto_cra_pedidos"))
+
+    @app.route("/protesto/cra/consultas/<int:consulta_id>/tratar",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_cra_consulta_tratar(consulta_id: int):
+        """Registra o que se fez com a consulta que pedia ação — o arquivo que
+        veio e não se leu, ou a falha em que não se sabe se a CRA marcou o
+        arquivo como baixado. ESCREVE."""
+        try:
+            with db.transaction() as con:
+                r = PCP.tratar_consulta(con, consulta_id,
+                                        motivo=_campo("motivo"),
+                                        agora=agora(), usuario=usuario_nome())
+        except PCP.PedidoCraError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_cra_pedidos"))
+        audit("PROTESTO_CRA_CONSULTA_TRATADA", "pt_cra_consultas",
+              consulta_id, {"tipo": r["tipo"], "resultado": r["resultado"],
+                            "motivo": r["motivo"]})
+        flash("Registrado: a consulta saiu da lista com o seu motivo.",
+              "success")
+        return redirect(url_for("protesto_cra_pedidos"))
+
+    @app.route("/protesto/cra/consultas/<int:consulta_id>/arquivo")
+    @login_required
+    def protesto_cra_consulta_arquivo(consulta_id: int):
+        """A resposta da CRA como CHEGOU, guardada inteira. Só LÊ.
+
+        É o arquivo que talvez não exista mais do lado de lá — baixar pela
+        API pode marcá-lo como baixado.
+        """
+        with db.connect() as con:
+            linha = PCP.consulta(con, consulta_id)
+        if not linha or linha.get("bruto") is None:
+            abort(404)
+        return Response(
+            str(linha["bruto"]).encode("utf-8", errors="replace"),
+            mimetype="text/plain; charset=utf-8",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{PCP.nome_para_baixar(linha)}"',
+                     "X-Content-Type-Options": "nosniff"})
+
     @app.route("/protesto/desistencias/<int:desistencia_id>/arquivo")
     @login_required
     def protesto_desistencia_arquivo(desistencia_id: int):
@@ -12375,8 +13103,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if fora:
             flash(PRE.frase_dos_pulados(
                 fora, intro=("Estes atos não voltam à fila: a CRA já aceitou "
-                             "a mesma ocorrência (mesmo título ou o mesmo "
-                             "protocolo)")), "warning")
+                             "a mesma ocorrência, ou ela já vai noutro "
+                             "arquivo ainda sem resposta (mesmo título ou o "
+                             "mesmo protocolo)")), "warning")
         return redirect(url_for("protesto_retornos"))
 
     @app.route("/protesto/retornos/ato/<int:ato_id>/ja-informado",
@@ -12423,15 +13152,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
         Ordem do oficial, 29/10/2026: o sistema impede; «se a escrevente
         insistir, só com afirmação expressa e log». Vale a caixa `afirmo`
-        marcada E o texto `afirmacao`; quem confere o texto é o domínio
-        (`protesto_retorno.forcar_envio_de_protocolo_ja_informado`). Conta
-        de robô não afirma «sob minha responsabilidade» (26/10/2026): para
-        ela, a caixa vale como desmarcada.
+        marcada E o texto `afirmacao` — `_afirmacao_do_formulario`, o mesmo
+        leitor das outras travas (#106), em que conta de robô não afirma —, e
+        quem confere o texto é o domínio
+        (`protesto_retorno.forcar_envio_de_protocolo_ja_informado`).
         """
-        import selo_robo as SR
-        afirmacao = (_campo("afirmacao") or None
-                     if request.form.get("afirmo") and not SR.usuario_e_robo()
-                     else None)
+        afirmacao = _afirmacao_do_formulario()
         try:
             with db.transaction() as con:
                 r = PRE.forcar_envio_de_protocolo_ja_informado(
@@ -12441,8 +13167,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash(str(erro), "danger")
             return redirect(url_for("protesto_retornos"))
         # `audit` abre transação própria: FORA do `with`, como no resto da casa.
-        audit(PRE.ACAO_DA_AFIRMACAO, "pt_atos", ato_id,
-              PRE.para_a_auditoria(r))
+        _auditar_afirmacoes("pt_atos", ato_id, [r])
         flash(f"Ato {ato_id} ({r['tipo']}, título {r['numero_titulo']} "
               f"#{r['titulo_id']}, protocolo {r['protocolo']}) voltou a "
               f"«Esperando retorno» pela sua afirmação expressa, que ficou na "

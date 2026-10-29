@@ -73,9 +73,10 @@ def _titulo(s, *, origem="CRA", chave="WEB:1", pagar=True, quando=None) -> dict:
         PT.lancar_apontamento(con, tid, sv=SV, agora=quando, data_extenso=EXTENSO)
         ato = None
         if pagar:
+            # em espécie: PIX só com o crédito conferido (29/10/2026)
             ato = PT.lancar_pagamento(con, tid, sv=SV, agora=quando,
                                       data_extenso=EXTENSO,
-                                      forma_pagamento="PIX")["ato_id"]
+                                      forma_pagamento="ESPECIE")["ato_id"]
     return {"titulo_id": tid, "ato_id": ato}
 
 
@@ -223,7 +224,7 @@ def test_o_pagamento_diferido_cobra_pela_tabela_da_protocolizacao(s):
                      data_do_ato="2026-01-15", agora="2026-01-15T09:00:00")
     with ligar_o_selador(s):
         html = _lancar(s, p["titulo_id"], ato="PAGAMENTO",
-                       forma_pagamento="PIX", cobrar=str(servico),
+                       forma_pagamento="ESPECIE", cobrar=str(servico),
                        cobrar_diferidos="1")
     assert "A posteriori: R$ 10,00" in html
     valores = [r["valor"] for r in _ler(

@@ -206,6 +206,76 @@ def verificar_cenprot(ctx: Contexto) -> dict:
                      achados, acoes)
 
 
+def verificar_conferencia_cenprot(ctx: Contexto) -> dict:
+    """A conferência CENPROT × sistema do dia — decisão do oficial, 29/10/2026.
+
+    COM «PODE AGIR», pergunta à CENPROT por cada pedido (`GET /pedidos/
+    consulta`, que lá só LÊ) e grava a resposta em `cn_conferencias`, que é da
+    casa. **NUNCA GRAVA NADA NA CENPROT.** Sem «pode agir», lê a última
+    conferência guardada e diz o que ela mostra. O relato é em NÚMEROS; quais
+    títulos, a tela da conferência diz.
+    """
+    import cenprot_api as API
+    import cenprot_conferencia as CONF
+    import centrais_cred as CRED
+    if not CRED.tem(CRED.CENPROT, CRED.PRODUCAO, ctx.pasta_dados):
+        return _sem_credencial("CENPROT", "Administrativo → Configurações → Centrais")
+    with ctx.db.connect() as con:
+        faltam = CONF.faltam_tabelas(con)
+    if faltam:
+        return _nao_mediu("a conferência CENPROT × sistema",
+                          f"as tabelas {', '.join(faltam)} não existem")
+    acoes = []
+    if ctx.pode_agir:
+        try:
+            r = CONF.consultar(ctx.db, quem="AUTOMACAO", pasta=ctx.pasta_dados)
+        except (API.CenprotError, CRED.CredencialError, CONF.ConferenciaError) as erro:
+            return _nao_mediu("a conferência CENPROT × sistema", erro)
+        acoes.append({"acao": "consultou a CENPROT pedido a pedido e guardou a conferência "
+                              "do dia (nada foi gravado na CENPROT)", **{
+            k: r.get(k) for k in ("titulos", "achados", "nao_achados", "sem_pedido",
+                                  "com_erro", "nao_perguntados")}})
+        if r.get("parou"):
+            # «NÃO MEDIU» NÃO É «ZERO»: a Central caiu no meio, e o que ficou sem
+            # perguntar continua com a resposta de antes.
+            return resultado(
+                SCH.ERRO, (f"A conferência CENPROT parou: a Central não respondeu "
+                           f"({r['parou']}). {r['nao_perguntados']} título(s) ficaram com "
+                           f"a resposta anterior.")[:600], [], acoes,
+                erro=str(r["parou"])[:500])
+    with ctx.db.connect() as con:
+        q = CONF.quadro(con)
+    c = q["contagem"]
+    travam = sum(1 for linha in q["linhas"] if linha["trava"])
+    pago = sum(1 for linha in q["linhas"] if linha["contraria_o_pago"])
+    reenviar = sum(1 for linha in q["linhas"] for a in linha["achados"]
+                   if a["regra"] == "REENVIAR_XML")
+    # OS ACHADOS SÃO NÚMEROS E CÓDIGOS DE REGRA — o título pelo id, e nenhum nome.
+    achados = [{"titulos": c["titulos"], "divergem": c["divergem"],
+                "a_conferir": c["conferir"], "travam_o_protesto": travam,
+                "pagos_por_liquidacao": pago, "reenviar_xml": reenviar,
+                "nunca_consultados": c["nunca_consultados"], "com_erro": c["com_erro"],
+                "ultima_consulta": q["ultima_consulta"]}]
+    achados += [{"titulo_id": linha["id"],
+                 "regras": sorted({a["regra"] for a in linha["achados"]})}
+                for linha in q["linhas"] if linha["nivel"] == CONF.DIVERGE]
+    if not q["ultima_consulta"]:
+        return resultado(
+            SCH.AVISO, ("A conferência CENPROT × sistema ainda não consultou a Central: "
+                        "ligue «pode agir» neste processo para a rodada da manhã gravar a "
+                        "conferência (na CENPROT ela só lê)."), achados, acoes)
+    relato = (f"Conferência CENPROT × sistema ({str(q['ultima_consulta'])[:16].replace('T', ' ')}): "
+              f"{c['titulos']} título(s) de origem CENPROT, {c['divergem']} divergem "
+              f"({travam} travam o protesto, {pago} pagos por liquidação na CENPROT, "
+              f"{reenviar} esperam o XML com a situação nova), {c['conferir']} a conferir")
+    if c["com_erro"]:
+        relato += f", {c['com_erro']} com erro na última tentativa"
+    if c["divergem"] or c["com_erro"]:
+        return resultado(SCH.AVISO, relato + ". Veja em Protesto → Conferência CENPROT × "
+                         "sistema.", achados, acoes)
+    return resultado(SCH.OK, relato + ".", achados, acoes)
+
+
 # ------------------------------------------------------------------ RI
 
 
@@ -708,6 +778,7 @@ def rodar_agente(ctx: Contexto) -> dict:
 CATALOGO: dict[str, Any] = {
     "automacao_processos:verificar_cra": verificar_cra,
     "automacao_processos:verificar_cenprot": verificar_cenprot,
+    "automacao_processos:verificar_conferencia_cenprot": verificar_conferencia_cenprot,
     "automacao_processos:verificar_onr_fila": verificar_onr_fila,
     "automacao_processos:verificar_wsoficio": verificar_wsoficio,
     "automacao_processos:verificar_cnib": verificar_cnib,
@@ -743,6 +814,17 @@ SEMENTES: tuple[dict, ...] = (
      "agenda": {"dias": _UTEIS, "intervalo_min": 60, "janela": ["08:00", "17:00"]},
      "descricao": "De hora em hora: pedidos que chegaram na CENPROT e ainda não foram baixados, e os "
                   "que esperam resposta. Com «pode agir», baixa os de hoje para o sistema."},
+    # A CONFERÊNCIA CENPROT × SISTEMA TODA MANHÃ — decisão do oficial, 29/10/2026.
+    # O horário proposto é 08:15 (antes do balcão abrir os protestos do dia);
+    # muda-se na agenda do processo, sem versão nova.
+    {"codigo": "PROTESTO_CONFERENCIA_CENPROT", "nome": "CENPROT × sistema — a conferência do dia",
+     "setor": "PROTESTO", "alvo": "automacao_processos:verificar_conferencia_cenprot",
+     "robo_oficial": "PROTESTO", "timeout_s": 1200,
+     "agenda": {"dias": _UTEIS, "horarios": ["08:15"]},
+     "descricao": "Às 08:15 (horário proposto; mude na agenda): com «pode agir», pergunta à CENPROT "
+                  "a situação de cada pedido de protesto e grava a conferência do dia; sem, lê a "
+                  "última. NUNCA grava nada na CENPROT. O relato vai em números; os títulos estão "
+                  "em Protesto → Conferência CENPROT × sistema."},
     {"codigo": "RI_ONR_FILA", "nome": "ONR — fila dos envios", "setor": "RI",
      "alvo": "automacao_processos:verificar_onr_fila", "robo_oficial": "CARGAS_RI", "timeout_s": 180,
      "agenda": {"dias": _UTEIS, "horarios": ["09:00", "15:00"]},
@@ -831,10 +913,17 @@ SEMENTES: tuple[dict, ...] = (
 #: estado de uma rotina de backup que roda FORA do pacote.
 #: Os dois últimos (27/10/2026, na instalação da VPS): o envio do portal do
 #: cliente e a busca na caixa-postal do WhatsApp, que só aconteciam no botão.
-#: E o robô do malote (29/10/2026): a ciência diária das 8h, com a senha do cofre.
+#: E a relação da guia de repasse do Protesto (29/10/2026), que nasce sozinha
+#: no dia do pagamento — a guia em si sai do portal da Central —, e o robô que
+#: emite o boleto de repasse no portal da CRA (29/10/2026, ordem do oficial).
 MODULOS_COM_PROCESSOS = ("despesas_automacao", "onr_certidoes_auto", "andamento_avisos",
                          "backup_automacao", "satisfacao_envio", "cobranca_automacao",
-                         "portal_cliente", "wa_puxar", "malote_robo")
+                         "portal_cliente", "wa_puxar", "protesto_repasse_automacao",
+                         "protesto_repasse_portal",
+                         # o crédito dos PIX do Protesto no extrato (29/10/2026)
+                         "protesto_pix",
+                         # o robô do malote: a ciência diária das 8h (29/10/2026)
+                         "malote_robo")
 
 #: A agenda sugerida por quem escreveu o processo, para quando o catálogo
 #: dele não trouxer uma. O processo nasce DESLIGADO do mesmo jeito.

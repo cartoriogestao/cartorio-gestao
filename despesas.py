@@ -651,11 +651,15 @@ def guardar_anexo(con, despesa_id: int, *, nome_arquivo: str, conteudo: bytes,
     if pasta is None:
         raise DespesaError("Não há pasta de arquivos configurada para guardar o documento.")
     nome_arquivo = Path(nome_arquivo or "").name
-    if not nome_arquivo.lower().endswith(EXTENSOES):
+    # A EXTENSÃO DO DISCO É A DA LISTA, e não a que veio no nome (CodeQL #285,
+    # py/path-injection, 29/10/2026): o nome do arquivo chega do navegador e
+    # dos robôs, e só o item de `EXTENSOES` que ele confere vai ao caminho.
+    extensao = next((e for e in EXTENSOES if nome_arquivo.lower().endswith(e)), None)
+    if extensao is None:
         raise DespesaError("Documento em PDF, imagem (JPG, PNG) ou XML.")
     sha = hashlib.sha256(conteudo).hexdigest()
     pasta.mkdir(parents=True, exist_ok=True)
-    destino = pasta / f"despesa_{int(despesa_id)}_{sha[:10]}{Path(nome_arquivo).suffix.lower()}"
+    destino = pasta / f"despesa_{int(despesa_id)}_{sha[:10]}{extensao}"
     destino.write_bytes(conteudo)
     novo = banco(con).escrever(
         "INSERT INTO attachments(entity_type, entity_id, original_name, stored_name, "

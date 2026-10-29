@@ -250,3 +250,39 @@ def test_brancos_depois_do_codigo_nao_travam():
     inicio = time.monotonic()
     CRC._pegar(_CODIGO_NOVO.pattern, "codigo da comunicacao" + " " * 50_000 + "x")
     assert time.monotonic() - inicio < 1.0
+
+
+
+# ------------------------- a extensão do documento da despesa (#285, 29/10/2026)
+
+
+@pytest.mark.parametrize("nome,extensao", [
+    ("nota.PDF", ".pdf"), ("foto.JPEG", ".jpeg"), ("foto.jpg", ".jpg"),
+    ("x.png", ".png"), ("nfe.XML", ".xml"), ("../../a.pdf", ".pdf"),
+    ("a.tar.pdf", ".pdf"),
+])
+def test_o_documento_da_despesa_vai_ao_disco_com_a_extensao_da_lista(
+        nome, extensao, tmp_path):
+    from prova_de_intimacao import garantir_anexos
+    con = conexao_de_teste()
+    try:
+        garantir_anexos(con)
+        aid = DP.guardar_anexo(con, 7, nome_arquivo=nome, conteudo=b"%PDF-1.4",
+                               pasta=tmp_path, usuario_id=None,
+                               agora="2026-10-29T10:00:00")
+        linha = banco(con).um(
+            "SELECT stored_name, original_name FROM attachments WHERE id = %s",
+            (aid,))
+    finally:
+        con.close()
+    assert linha["stored_name"].startswith("despesa_7_")
+    assert linha["stored_name"].endswith(extensao)
+    assert linha["original_name"] == Path(nome).name
+    assert (tmp_path / linha["stored_name"]).exists()
+
+
+@pytest.mark.parametrize("nome", ["virus.exe", "nota.pdf.exe", "semextensao", ""])
+def test_o_documento_fora_da_lista_continua_recusado(nome, tmp_path):
+    with pytest.raises(DP.DespesaError, match="PDF, imagem"):
+        DP.guardar_anexo(None, 7, nome_arquivo=nome, conteudo=b"x", pasta=tmp_path,
+                         usuario_id=None, agora="2026-10-29T10:00:00")

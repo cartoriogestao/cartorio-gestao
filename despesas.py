@@ -782,9 +782,16 @@ def registrar_pago_fora(con, despesa_id: int, *, agora: datetime, hoje: str, por
 # --------------------------------------------------------------- as listas
 
 def listar(con, *, situacao: str | None = None, mes: str | None = None,
-           limite: int = 300) -> list[dict]:
-    """As despesas, as mais novas primeiro. Só LÊ."""
+           limite: int = 300, cadastrada_por: str | None = None) -> list[dict]:
+    """As despesas, as mais novas primeiro. Só LÊ.
+
+    `cadastrada_por` é a lista de quem só cadastra (o perfil USER, 28/10/2026):
+    ele vê as que cadastrou, e não a folha de pagamento da casa.
+    """
     filtros, parametros = [], []
+    if cadastrada_por is not None:
+        filtros.append("cadastrada_por = %s")
+        parametros.append(cadastrada_por)
     if situacao:
         filtros.append("situacao = %s")
         parametros.append(situacao)
@@ -806,7 +813,11 @@ def _limites_do_mes(mes: str) -> tuple[str, str]:
     return inicio.isoformat(), fim.isoformat()
 
 
-def contagem(con) -> dict[str, int]:
+def contagem(con, *, cadastrada_por: str | None = None) -> dict[str, int]:
+    if cadastrada_por is not None:
+        return {r["situacao"]: int(r["n"]) for r in banco(con).ler(
+            "SELECT situacao, count(*) AS n FROM dp_despesas WHERE cadastrada_por = %s "
+            "GROUP BY situacao", (cadastrada_por,))}
     return {r["situacao"]: int(r["n"]) for r in banco(con).ler(
         "SELECT situacao, count(*) AS n FROM dp_despesas GROUP BY situacao")}
 

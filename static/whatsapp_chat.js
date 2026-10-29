@@ -301,8 +301,7 @@
       }
       var nome = respostas.getAttribute("data-nome") || "";
       var pronto = modelo.split("{nome}").join(nome).replace(/\s+([,.!?])/g, "$1");
-      texto.value = texto.value.trim() ? texto.value.replace(/\s+$/, "") + "
-" + pronto
+      texto.value = texto.value.trim() ? texto.value.replace(/\s+$/, "") + "\n" + pronto
                                        : pronto;
       respostas.selectedIndex = 0;
       texto.focus();

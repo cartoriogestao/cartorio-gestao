@@ -140,6 +140,13 @@ def acervo_falso() -> sqlite3.Connection:
             intCodigoPessoa REAL, strRazaoSocial TEXT, strTipoPessoa TEXT,
             strCGC TEXT, strCIC TEXT, strEndereco TEXT, strNumero TEXT,
             strBairro TEXT, strCep TEXT, strCidade TEXT, strUF TEXT);
+        -- O CEDENTE MORA AQUI, e nao em `tbPessoa` (29/10/2026): o
+        -- `intCodigoCedente` do aviso e chave desta tabela.
+        CREATE TABLE tbCedente (
+            intCodigoCedente REAL, strRazaoSocial TEXT, strNomeFantasia TEXT,
+            strTipoPessoa TEXT, strCGC TEXT, strCIC TEXT, strEndereco TEXT,
+            strNumero TEXT, strComplemento TEXT, strBairro TEXT, strCep TEXT,
+            strCidade TEXT, strUF TEXT);
         CREATE TABLE tbRegistroNascimento (
             intChave REAL, strNomeNascido TEXT, dtmDataNascimento TEXT,
             dtmDataAssento TEXT, strNumeroMatricula TEXT,
@@ -209,11 +216,20 @@ def acervo_falso() -> sqlite3.Connection:
            VALUES (1,'MARIA SANTOS DA SILVA','F','','04785512388',
                    'PCA SANTANINHA','341','CENTRO','65936000',
                    'Cidade Exemplo','MA')""")
+    # O CEDENTE ESTA EM `tbCedente`, e `tbPessoa` TEM OUTRA PESSOA NO MESMO
+    # NUMERO — a armadilha de 29/10/2026: a carga lia o cedente em `tbPessoa`
+    # e todo titulo do acervo saiu com o credor errado. Os dois espacos de id
+    # se cruzam de verdade no acervo desta casa.
+    con.execute(
+        """INSERT INTO tbCedente(intCodigoCedente, strRazaoSocial,
+               strTipoPessoa, strCGC, strCIC, strEndereco, strCidade, strUF)
+           VALUES (2,'BANCO DO NORDESTE DO BRASIL SA','J','00000017000149','',
+                   'AV PARANJANA','Fortaleza','CE')""")
     con.execute(
         """INSERT INTO tbPessoa(intCodigoPessoa, strRazaoSocial, strTipoPessoa,
                strCGC, strCIC, strEndereco, strCidade, strUF)
-           VALUES (2,'BANCO DO NORDESTE DO BRASIL SA','J','00000017000149','',
-                   'AV PARANJANA','Fortaleza','CE')""")
+           VALUES (2,'PESSOA DE OUTRA TABELA COM O MESMO CODIGO','F','',
+                   '00000004189','RUA DO DEVEDOR','Cidade Exemplo','MA')""")
     con.execute(
         """INSERT INTO tbRegistroNascimento(intChave, strNomeNascido,
                dtmDataNascimento, dtmDataAssento, strNumeroMatricula,
@@ -367,18 +383,125 @@ def test_o_cedente_entra_no_titulo_com_o_documento_do_tipo_dele():
     assert t["cedente_uf"] == "CE"
 
 
+def test_o_cedente_vem_de_tbCedente_e_nao_da_pessoa_de_mesmo_codigo():
+    # A ARMADILHA DE 29/10/2026. `intCodigoCedente` e chave de `tbCedente`; a
+    # carga o procurava em `tbPessoa`, que e outro espaco de id — e no mesmo
+    # numero `tbPessoa` tem outra pessoa. Medido na producao: dos 1.409
+    # titulos do acervo, NENHUM com o credor certo (488 vazios, 921 com o nome
+    # de outra pessoa). O acervo falso tem o numero 2 nas duas tabelas, com
+    # nomes diferentes, e o credor tem de ser o de `tbCedente`.
+    con, acervo = banco(), acervo_falso()
+    assert acervo.execute(
+        "SELECT strRazaoSocial FROM tbPessoa WHERE intCodigoPessoa = 2"
+        ).fetchone()[0] == "PESSOA DE OUTRA TABELA COM O MESMO CODIGO"
+    AC.carregar_protesto(con, acervo, agora=AGORA)
+    t = con.execute("SELECT * FROM pt_titulos").fetchone()
+    assert t["cedente_nome"] == "BANCO DO NORDESTE DO BRASIL SA"
+    assert t["cedente_documento"] == "00000017000149"      # strCGC, tipo 'J'
+    assert t["cedente_endereco"] == "AV PARANJANA"
+    assert t["cedente_cidade"] == "Fortaleza"
+    # nada da pessoa de `tbPessoa` com o mesmo numero chega ao titulo
+    assert t["cedente_endereco"] != "RUA DO DEVEDOR"
+    # e o devedor continua sendo o de `tbPessoa`, pelo codigo DELE
+    d = con.execute("SELECT nome FROM pt_devedores").fetchone()
+    assert d["nome"] == "MARIA SANTOS DA SILVA"
+
+
+def _com_registro_da_cra(acervo, *, nome: str, documento: str) -> None:
+    """Liga o titulo do acervo falso a uma linha de `tbSDT` — o registro da
+    CRA —, pelo protocolo, como o acervo real liga."""
+    acervo.execute("ALTER TABLE tbAvisoProtesto ADD COLUMN intProtocolo REAL")
+    acervo.execute("UPDATE tbAvisoProtesto SET intProtocolo = 2206010001")
+    acervo.executescript("""
+        CREATE TABLE tbSDT (
+            intChave REAL, intProtocolo REAL, Campo01 TEXT, Campo02 TEXT,
+            Campo03 TEXT, Campo04 TEXT, Campo05 TEXT, Campo06 TEXT,
+            Campo07 TEXT, Campo08 TEXT, Campo09 TEXT, Campo10 TEXT);""")
+    # Duas linhas do mesmo protocolo: vale a PRIMEIRA (`intChave`), como em
+    # `_o_que_o_retorno_precisa`.
+    for chave, campo04 in ((7, nome), (8, "SEGUNDA LINHA QUE NAO VALE")):
+        acervo.execute(
+            """INSERT INTO tbSDT(intChave, intProtocolo, Campo01, Campo02,
+                   Campo04, Campo05, Campo06, Campo07, Campo09, Campo10)
+               VALUES (?, 2206010001, '1', '237', ?, 'SACADOR DE EXEMPLO LTDA',
+                       ?, 'RUA DO SACADOR', 'Cidade Exemplo', 'MA')""",
+            (chave, campo04, documento))
+
+
+def test_o_nome_do_cedente_e_o_do_registro_da_cra_e_o_resto_e_de_tbCedente():
+    # O E-OFICIO IMPRIMIA O NOME DO REGISTRO DA CRA (`tbSDT.Campo04`): no
+    # aviso, 1.673 de 1.675; na certidao positiva, 25 de 25 — e a razao
+    # social de `tbCedente` nunca onde as duas divergem. O documento e o
+    # endereco ficam com `tbCedente`: no registro da CRA eles sao do SACADOR.
+    con, acervo = banco(), acervo_falso()
+    _com_registro_da_cra(acervo, nome="BANCO DO NORDESTE - AGENCIA EXEMPLO",
+                         documento="00000018000193")
+    r = AC.carregar_protesto(con, acervo, agora=AGORA).como_dict()
+    t = con.execute("SELECT * FROM pt_titulos").fetchone()
+    assert t["cedente_nome"] == "BANCO DO NORDESTE - AGENCIA EXEMPLO"
+    assert t["cedente_documento"] == "00000017000149"       # o de tbCedente
+    assert t["cedente_endereco"] == "AV PARANJANA"
+    assert r["contagens"][
+        "títulos em que o nome do cedente é o do registro da CRA, "
+        "diferente da razão social de `tbCedente`"] == 1
+
+
+def test_o_documento_do_sacador_na_cra_nao_vira_documento_do_cedente():
+    # Cedente e sacador diferentes: a linha do cedente em `tbCedente` nao tem
+    # documento (medido: 410 de 410 assim), e o `Campo06` do registro da CRA e
+    # o CNPJ do SACADOR. Completar um com o outro daria ao credor o CNPJ de
+    # outra empresa — o titulo fica sem documento, e isso e o certo.
+    con, acervo = banco(), acervo_falso()
+    acervo.execute("UPDATE tbCedente SET strCGC = '', strEndereco = NULL, "
+                   "strCidade = NULL, strUF = NULL")
+    _com_registro_da_cra(acervo, nome="BANCO DO NORDESTE DO BRASIL SA",
+                         documento="00000018000193")
+    AC.carregar_protesto(con, acervo, agora=AGORA)
+    t = con.execute("SELECT * FROM pt_titulos").fetchone()
+    assert t["cedente_nome"] == "BANCO DO NORDESTE DO BRASIL SA"
+    assert t["cedente_documento"] is None
+    assert t["cedente_endereco"] is None and t["cedente_uf"] is None
+
+
+def test_sem_linha_em_tbCedente_o_cedente_entra_so_com_o_nome_da_cra():
+    con, acervo = banco(), acervo_falso()
+    acervo.execute("UPDATE tbAvisoProtesto SET intCodigoCedente = 999")
+    _com_registro_da_cra(acervo, nome="CREDOR SO DA CRA LTDA",
+                         documento="00000018000193")
+    r = AC.carregar_protesto(con, acervo, agora=AGORA).como_dict()
+    t = con.execute("SELECT * FROM pt_titulos").fetchone()
+    assert t["cedente_nome"] == "CREDOR SO DA CRA LTDA"
+    assert t["cedente_documento"] is None
+    assert r["contagens"]["títulos sem linha em `tbCedente`: o cedente entrou "
+                          "só com o nome do registro da CRA"] == 1
+
+
 def test_titulo_sem_cedente_no_acervo_entra_do_mesmo_jeito_e_e_contado():
-    # 458 dos 1.366 titulos apontam para cedente que `tbPessoa` nao tem mais.
-    # O titulo entra inteiro: o cedente e quem apresentou, e a falta dele nao
-    # apaga o protesto. Mas o numero aparece, porque nada entra calado.
+    # Titulo cujo cedente nao esta nem em `tbCedente` nem no registro da CRA.
+    # O titulo entra inteiro: a falta do cedente nao apaga o protesto. Mas o
+    # numero aparece, porque nada entra calado.
     con, acervo = banco(), acervo_falso()
     acervo.execute("UPDATE tbAvisoProtesto SET intCodigoCedente = 999")
     r = AC.carregar_protesto(con, acervo, agora=AGORA).como_dict()
     assert r["inseridos"] == 1
-    assert r["contagens"]["títulos sem cedente em `tbPessoa` no acervo"] == 1
+    assert r["contagens"]["títulos sem cedente no acervo (nem em `tbCedente`, "
+                          "nem no registro da CRA)"] == 1
     t = con.execute("SELECT * FROM pt_titulos").fetchone()
     assert t["cedente_nome"] is None
     # E o devedor continua entrando: uma ligacao quebrada nao leva a outra.
+    assert con.execute("SELECT COUNT(*) FROM pt_devedores").fetchone()[0] == 1
+
+
+def test_acervo_sem_tbCedente_nao_derruba_a_carga_e_diz_o_que_faltou():
+    con, acervo = banco(), acervo_falso()
+    acervo.execute("DROP TABLE tbCedente")
+    r = AC.carregar_protesto(con, acervo, agora=AGORA).como_dict()
+    assert r["inseridos"] == 1
+    assert ("acervo sem `tbCedente`: o cedente vem só do registro da CRA, "
+            "onde houver") in r["contagens"]
+    t = con.execute("SELECT * FROM pt_titulos").fetchone()
+    # e NAO cai para `tbPessoa`: nome trocado e pior que nome faltando
+    assert t["cedente_nome"] is None
     assert con.execute("SELECT COUNT(*) FROM pt_devedores").fetchone()[0] == 1
 
 
@@ -641,7 +764,8 @@ def test_contra_o_acervo_real():
     #
     #   - os oito protestos novos sao todos de pessoa fisica (CPF 980 -> 988) e
     #     nenhum tem cedente em `tbPessoa` (sem cedente 458 -> 466) — por isso
-    #     CNPJ (386) e títulos com cedente (908) ficaram PARADOS;
+    #     CNPJ (386) e títulos com cedente (908) ficaram PARADOS (e o cedente
+    #     NAO e de `tbPessoa`: ver a correcao de 29/10/2026, mais abaixo);
     #   - o mesmo-cedente-e-devedor (28), os devedores sem endereço (16), as
     #     intimações (1.176) e as quatro series de numeração que nao sao do
     #     protesto (RC_A, RC_C, PJ_A, TD_B) também ficaram parados.
@@ -677,17 +801,37 @@ def test_contra_o_acervo_real():
         """SELECT documento_tipo, COUNT(*) FROM pt_devedores
             GROUP BY documento_tipo"""))
     assert por_tipo == {"CPF": 988, "CNPJ": 386}   # nenhum sem documento
-    assert con.execute(
-        "SELECT COUNT(*) FROM pt_titulos WHERE cedente_nome IS NOT NULL"
-        ).fetchone()[0] == 908
+    # O CEDENTE, CORRIGIDO EM 29/10/2026. Os «908 com cedente» e os «466 sem
+    # cedente em `tbPessoa`» que estavam aqui mediam o ENGANO: a carga lia o
+    # cedente em `tbPessoa`, e o `intCodigoCedente` e chave de `tbCedente`.
+    # Saiu tambem «o mesmo cedente e devedor» (28), que comparava numeros de
+    # duas tabelas diferentes. A conferencia agora e a REGRA contra o proprio
+    # acervo, e nao um numero congelado: o nome e o do registro da CRA
+    # (primeira linha de `tbSDT` do protocolo), e sem ele a razao social de
+    # `tbCedente` — o que o E-Oficio imprimia no aviso e na certidao.
+    def _t(v):
+        return (str(v).strip() or None) if v is not None else None
+    regra = {
+        f"tbAvisoProtesto:{chave}": _t(cra) or _t(razao)
+        for chave, razao, cra in acervo.execute(
+            """SELECT a.intChave, c.strRazaoSocial, s.Campo04
+                 FROM tbAvisoProtesto a
+                 LEFT JOIN tbCedente c ON c.intCodigoCedente = a.intCodigoCedente
+                 LEFT JOIN (SELECT intProtocolo, MIN(intChave) chave FROM tbSDT
+                             GROUP BY intProtocolo) sp
+                        ON sp.intProtocolo = a.intProtocolo
+                 LEFT JOIN tbSDT s ON s.intChave = sp.chave""")}
+    gravado = {k: v for k, v in con.execute(
+        """SELECT origem_chave, cedente_nome FROM pt_titulos
+            WHERE origem_chave LIKE 'tbAvisoProtesto:%'""")}
+    assert gravado
+    assert {k: v for k, v in gravado.items() if regra[k] != v} == {}
     # A VIDA DOS TÍTULOS (14/10/2026, virada do protesto) acrescenta as suas
     # contagens — pagamentos, desistências, situações acertadas, o motivo da
     # remessa da CRA —, e elas são medidas em `test_vida_dos_titulos_*`. Aqui
     # se confere que as de antes continuam IGUAIS, e não que não há outras.
     esperado = {
         "devedores trazidos do acervo": 1374,
-        "títulos sem cedente em `tbPessoa` no acervo": 466,
-        "títulos em que o acervo traz o mesmo cedente e devedor": 28,
         "devedores sem endereço no acervo": 16,
         "protestos sem livro e folha no acervo": 1,
         # O QUE O RETORNO À CRA PRECISA, acrescentado em 01/09/2026 — e o que

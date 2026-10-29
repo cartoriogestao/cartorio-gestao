@@ -74,7 +74,8 @@ import json
 import re
 import sqlite3
 from typing import Any
-import xml.etree.ElementTree as ET
+
+from lxml import etree as LXML
 
 from bd_nativo import banco
 import protesto as PT
@@ -355,6 +356,16 @@ def _texto_do_xml(conteudo: str | bytes) -> str:
     return texto.lstrip("\ufeff")
 
 
+def _parser_seguro() -> "LXML.XMLParser":
+    """O parser do XML que vem de fora: sem expandir entidade, sem DTD, sem
+    rede e sem `huge_tree`. Um por leitura — o do lxml nao se divide entre
+    linhas de execucao."""
+    return LXML.XMLParser(resolve_entities=False, no_network=True,
+                          load_dtd=False, dtd_validation=False,
+                          huge_tree=False, remove_comments=True,
+                          remove_pis=True)
+
+
 def _sem_espaco_de_nomes(tag: Any) -> str:
     return str(tag).rsplit("}", 1)[-1].strip().lower()
 
@@ -376,7 +387,10 @@ def _ler_xml(conteudo: str | bytes) -> dict:
     Devolve a MESMA forma de `ler` — cabecalho, rodape, pracas, titulos,
     totais e achados —, para a conferencia e a aplicacao nao saberem de que
     forma o arquivo veio. DTD e entidade propria se recusam antes do parser,
-    como na remessa XML (`protesto_cra_xml.ler`).
+    como na remessa XML (`protesto_cra_xml.ler`) — E O PARSER E O DO LXML,
+    que nao expande entidade, nao le DTD e nao vai a rede
+    (`_PARSER_SEGURO`): o arquivo chega pela tela de qualquer escrevente, e a
+    guarda de texto sozinha e uma linha que alguem tira sem saber.
     """
     texto = _texto_do_xml(conteudo)
     alto = texto.upper()
@@ -390,8 +404,8 @@ def _ler_xml(conteudo: str | bytes) -> dict:
     # declaracao «ISO-8859-1» faria o parser decodificar de novo.
     texto = _DECLARACAO_XML.sub("", texto, count=1)
     try:
-        raiz = ET.fromstring(texto)
-    except ET.ParseError as erro:
+        raiz = LXML.fromstring(texto, _parser_seguro())
+    except (LXML.XMLSyntaxError, ValueError) as erro:
         raise DesistenciaError(f"O XML não abre: {erro}.") from erro
     nome_da_raiz = _sem_espaco_de_nomes(raiz.tag)
     if nome_da_raiz in ("relatorio", "erro"):
@@ -421,6 +435,8 @@ def _ler_xml(conteudo: str | bytes) -> dict:
     praca: dict | None = None
     cidade: str | None = None
     for el in raiz.iter():
+        if not isinstance(el.tag, str):
+            continue            # comentario ou instrucao: nao e registro
         nome = _sem_espaco_de_nomes(el.tag)
         a = {k: str(v or "") for k, v in el.attrib.items()}
         if nome == "hdb":
@@ -473,7 +489,8 @@ def _ler_xml(conteudo: str | bytes) -> dict:
         elif nome == "codmun":
             cidade = _texto(el.text or "") or None
         elif nome == "titulo":
-            filhos = {_sem_espaco_de_nomes(f.tag): (f.text or "") for f in el}
+            filhos = {_sem_espaco_de_nomes(f.tag): (f.text or "") for f in el
+                      if isinstance(f.tag, str)}
             arquivo["titulos"].append({
                 "protocolo": _texto(filhos.get("numero_protocolo", "")),
                 "data": _data(filhos.get("data_protocolo", "")),

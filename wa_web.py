@@ -35,6 +35,7 @@ import serventia as SERV
 import tetos_de_entrada as TETO
 import wa_atendente as ATENDENTE
 import wa_balcao as WA
+import wa_contato as CONTATO
 import wa_fila as FILA
 import wa_midia as MIDIA
 import wa_modelos as MODELOS
@@ -595,6 +596,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 d["registros"] = ATENDENTE.registros(con, conversa_id=conversa_id,
                                                      limite=20)
                 d["cor_setor"] = FILA.cor_do_setor(d["setor"])
+                # QUEM É (29/10/2026): a Meta não manda a foto do cliente; o
+                # que a casa tem é o cartão de firma e o protocolo com o
+                # mesmo telefone (`wa_contato`).
+                d["contato"] = CONTATO.quem_e(con, d.get("wa_id"))
+                d["iniciais"] = FILA.iniciais(d.get("nome"), d.get("wa_id"))
                 vista = _vista(d, request.args.get("historico") == "1")
                 _com_dias(d["mensagens"])
                 usuarios = FILA.usuarios_ativos(con)

@@ -1271,6 +1271,11 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
   font-size:13px;font-weight:700;background:color-mix(in srgb,var(--cor-setor) 16%,white);
   color:color-mix(in srgb,var(--cor-setor) 80%,black)}
 .wa-item-corpo{display:grid;gap:2px;min-width:0;flex:1}
+/* QUEM É (29/10/2026): o círculo do cabeçalho da conversa, maior que o da
+   lista, com a foto do cartão de firma quando houver. */
+.wa-avatar-grande{width:44px;height:44px;font-size:15px;overflow:hidden}
+.wa-avatar-grande img{width:100%;height:100%;object-fit:cover;display:block}
+.wa-contato{margin-top:3px;display:grid;gap:1px}
 .wa-item-topo{display:flex;justify-content:space-between;gap:8px;min-width:0}
 .wa-item-nome{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650}
 .wa-item-hora{font-size:12px;color:var(--muted);flex:none}

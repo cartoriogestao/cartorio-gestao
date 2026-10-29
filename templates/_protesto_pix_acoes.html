@@ -1,0 +1,56 @@
+{#
+  AS AÇÕES SOBRE O PIX QUE AINDA NÃO É PAGAMENTO (29/10/2026) — o mesmo
+  formulário na ficha do título e na lista dos PIX. Uma cópia só: duas
+  divergiriam no primeiro conserto, e a afirmação expressa é o pedaço que não
+  pode divergir.
+
+  Importe com contexto: `{% from '_protesto_pix_acoes.html' import acoes with context %}`.
+#}
+{% macro acoes(p, volta, pode_confirmar, modelo, minimo) %}
+  {% if p.situacao == 'AGUARDANDO_CREDITO' %}
+  <form method="post" action="{{ url_for('protesto_pix_conferir') }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="titulo_id" value="{{ p.titulo_id }}">
+    <input type="hidden" name="volta" value="{{ volta }}">
+    <button class="button">Conferir no banco agora</button>
+  </form>
+  {% endif %}
+  {% if pode_confirmar %}
+    {% if p.situacao == 'AGUARDANDO_CREDITO' %}
+    <details data-pix-confirmar-a-mao>
+      <summary>Confirmar o crédito à mão <small>(oficial ou gerente — nunca quem lançou)</small></summary>
+      <form method="post" action="{{ url_for('protesto_pix_confirmar', pix_id=p.id) }}" class="grid2" style="padding-top:8px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="titulo_id" value="{{ p.titulo_id }}">
+        <input type="hidden" name="volta" value="{{ volta }}">
+        <label>Data em que o crédito entrou <input type="date" name="credito_data" required></label>
+        <label>Conta em que entrou <input name="conta" required minlength="3"
+               placeholder="banco, agência e conta"></label>
+        <label style="grid-column:1/-1"><input type="checkbox" name="afirmo" value="1">
+          Afirmo que conferi o extrato e que o crédito deste PIX entrou na conta</label>
+        <label style="grid-column:1/-1">Afirmação expressa <small>(pelo menos {{ minimo }} letras,
+          com o valor; fica no PIX e na auditoria, com o seu nome)</small>
+          <textarea name="afirmacao" rows="2" required>{{ modelo }}</textarea></label>
+        <p style="grid-column:1/-1"><small>Use só quando o sistema não localizou o crédito
+          (o PIX caiu noutra conta, a credencial do banco falta, o extrato não alcança).
+          Confirmado, o pagamento se lavra na ficha, pelo caminho de sempre.</small></p>
+        <div class="actions"><button class="button">Confirmar o crédito</button></div>
+      </form>
+    </details>
+    {% endif %}
+    <details data-pix-nao-confirmado>
+      <summary>O crédito não entrou</summary>
+      <form method="post" action="{{ url_for('protesto_pix_nao_confirmado', pix_id=p.id) }}" class="grid2" style="padding-top:8px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="titulo_id" value="{{ p.titulo_id }}">
+        <input type="hidden" name="volta" value="{{ volta }}">
+        <label style="grid-column:1/-1">Por quê <small>(pelo menos 10 letras)</small>
+          <textarea name="motivo" rows="2" required minlength="10"
+                    placeholder="conferido o extrato do período, nenhum PIX desse valor"></textarea></label>
+        <p style="grid-column:1/-1"><small>O PIX fica «crédito não confirmado», com o
+          comprovante, e o título volta a andar: protesto, desistência ou outro pagamento.</small></p>
+        <div class="actions"><button class="button">Dar o PIX por não confirmado</button></div>
+      </form>
+    </details>
+  {% endif %}
+{% endmacro %}

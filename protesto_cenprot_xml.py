@@ -720,6 +720,25 @@ def _devedores(con, titulo_id: int, reg: dict,
             for d in gravados]
 
 
+def _data_da_ocorrencia(ato: dict) -> str:
+    """A data da ocorrência no XML. Só calcula.
+
+    NO PAGAMENTO, A DATA É A DO CRÉDITO quando o ato a guarda
+    (`detalhe_json.data_do_pagamento`, ordem do oficial de 29/10/2026): o PIX
+    que entrou em 16/10 e foi lançado em 21/10 foi pago em 16/10. Nos outros
+    atos, e no pagamento que não a guarda, a do ato.
+    """
+    if ato.get("tipo") == "PAGAMENTO":
+        try:
+            detalhe = json.loads(ato.get("detalhe_json") or "{}") or {}
+        except (TypeError, ValueError):
+            detalhe = {}
+        pago_em = _txt(detalhe.get("data_do_pagamento"))[:10]
+        if pago_em:
+            return pago_em
+    return _txt(ato.get("data_ato"))[:10]
+
+
 def montar_titulo(con, ato_id: int, *,
                   acervo: sqlite3.Connection | None = None,
                   com_instrumento: bool = True) -> dict:
@@ -774,7 +793,7 @@ def montar_titulo(con, ato_id: int, *,
          "protocolo": _txt(titulo.get("protocolo")),
          "data_protocolo": entrada,
          "ocorrencia": OCORRENCIA_DO_ATO[ato["tipo"]],
-         "data_ocorrencia": _txt(ato.get("data_ato"))[:10],
+         "data_ocorrencia": _data_da_ocorrencia(ato),
          "tipo_protesto": _txt(titulo.get("tipo_protesto")).upper() or "C",
          "acervo_herdado": False,
          "anuencia": _anuencia(bd, titulo["id"])}

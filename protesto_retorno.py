@@ -1182,6 +1182,13 @@ def devolver_atos_do_recusado(con: sqlite3.Connection, retorno_id: int, *,
     DESDE 29/10/2026, soltar o ato não o põe na fila se a mesma ocorrência já
     foi aceita num retorno anterior. `continuam_de_fora` são esses: a tela
     avisa, em vez de dizer que voltaram a «Esperando retorno».
+
+    E O ARQUIVO NÃO ENVIADO QUE LEVA ATO DESFEITO (29/10/2026) também solta
+    os atos: `protesto_cra_envio._preparar` recusa enviá-lo (a CRA ouviria
+    uma ocorrência sem ato que a sustente), e sem esta saída os atos VÁLIDOS
+    dele ficariam presos a um arquivo que não vai. O desfeito, solto, não
+    volta à fila (`pendentes` só lê ato válido); o válido volta, e o retorno
+    novo o leva.
     """
     # A MESMA TRAVA DE `gerar`: devolver muda os PENDENTES que um `gerar` ao
     # mesmo tempo estaria lendo.
@@ -1193,7 +1200,12 @@ def devolver_atos_do_recusado(con: sqlite3.Connection, retorno_id: int, *,
         raise RetornoNaoRecusadoError(
             "Esta linha não é um arquivo: é o registro do que o sistema antigo "
             "já informou à CRA antes da virada. Não há o que devolver.")
-    if linha.get("cra_enviado_em") or not linha.get("cra_recusado_em"):
+    leva_desfeito = (not linha.get("cra_enviado_em") and banco(con).um(
+        """SELECT 1 AS um FROM pt_atos
+            WHERE retorno_id = %s AND COALESCE(cancelado, 0) <> 0 LIMIT 1""",
+        (int(retorno_id),)) is not None)
+    if linha.get("cra_enviado_em") or not (linha.get("cra_recusado_em")
+                                           or leva_desfeito):
         raise RetornoNaoRecusadoError(
             f"«{linha['nome_arquivo']}» não está recusado pela CRA — "
             + ("ela o aceitou, e os atos dele estão informados."
@@ -1470,6 +1482,8 @@ def listar(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
 
     `atos_presos` conta os atos ainda amarrados ao arquivo: no RECUSADO
     (28/10/2026) eles não foram informados, e a tela precisa dizer quantos.
+    `atos_desfeitos` conta os que foram desfeitos depois de o arquivo ser
+    gerado (29/10/2026): o arquivo não enviado que os leva não vai à CRA.
     """
     return banco(con).ler(
         """SELECT r.id, r.tipo, r.par_id, r.apresentante_codigo,
@@ -1479,7 +1493,10 @@ def listar(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
                   r.cra_envio_erro, r.cra_enviado_por, r.cra_recusado_em,
                   r.cra_recusa_codigo, r.cra_recusa_motivo,
                   (SELECT COUNT(*) FROM pt_atos a
-                    WHERE a.retorno_id = r.id) AS atos_presos
+                    WHERE a.retorno_id = r.id) AS atos_presos,
+                  (SELECT COUNT(*) FROM pt_atos a
+                    WHERE a.retorno_id = r.id
+                      AND COALESCE(a.cancelado, 0) <> 0) AS atos_desfeitos
              FROM pt_retornos r ORDER BY r.id DESC LIMIT %s""",
         (int(limite),))
 

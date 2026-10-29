@@ -833,7 +833,9 @@ SEMENTES: tuple[dict, ...] = (
 #: cliente e a busca na caixa-postal do WhatsApp, que só aconteciam no botão.
 MODULOS_COM_PROCESSOS = ("despesas_automacao", "onr_certidoes_auto", "andamento_avisos",
                          "backup_automacao", "satisfacao_envio", "cobranca_automacao",
-                         "portal_cliente", "wa_puxar")
+                         "portal_cliente", "wa_puxar",
+                         # o crédito dos PIX do Protesto no extrato (29/10/2026)
+                         "protesto_pix")
 
 #: A agenda sugerida por quem escreveu o processo, para quando o catálogo
 #: dele não trouxer uma. O processo nasce DESLIGADO do mesmo jeito.

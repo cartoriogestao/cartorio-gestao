@@ -990,6 +990,8 @@ INSERTS_DE_ANEXO = {
     "cenprot_pendencias.py": "PT_TITULO",
     # o documento da despesa (24/10/2026), na ficha `despesas_ficha`
     "despesas.py": "DESPESA",
+    # o comprovante do PIX do Protesto (29/10/2026), na lista `protesto_pix_lista`
+    "protesto_pix.py": "PT_PIX",
 }
 
 # O QUE SÓ A PRODUÇÃO TEM (LD14, 21/10/2026). `protesto_cra_imagens.py` veio

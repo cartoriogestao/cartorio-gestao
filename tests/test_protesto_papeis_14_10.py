@@ -26,6 +26,7 @@ import protesto_termo as TERMO
 import sys as _sys
 _sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from banco_de_teste import conexao_de_teste  # noqa: E402
+from prova_de_intimacao import juntar_prova  # noqa: E402
 
 SV = {"unit_name": "SERVENTIA EXTRAJUDICIAL DE CIDADE EXEMPLO",
       "serventia_titular": "MARIO EXEMPLO DOS SANTOS",
@@ -209,6 +210,7 @@ def _protestado(s, motivo="1") -> int:
     with con:
         con.execute("UPDATE pt_titulos SET motivo_protesto=? WHERE id=?",
                     (motivo, tid))
+        juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
         PT.lancar_protesto(con, tid, sv=SV, agora="2026-10-14T10:00:00",
                            data_extenso="x")
     con.close()

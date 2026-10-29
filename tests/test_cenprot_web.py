@@ -492,6 +492,14 @@ def test_toda_tela_que_o_roteiro_cita_existe(cg_app):
         if tela:
             assert tela in existentes, (
                 f"o roteiro aponta para «{tela}», que não é rota nenhuma")
+    # DESDE 29/10/2026 O ROTEIRO É FEITO DE CONDUTAS, e cada uma leva a tela
+    # que faz aquilo por um botão: o botão que aponta para rota inexistente é
+    # o mesmo defeito, um nível acima.
+    for conduta in R.CONDUTAS_DO_DIA:
+        for botao in conduta["botoes"]:
+            assert botao["tela"] in existentes, (
+                f"a conduta «{conduta['titulo']}» aponta para "
+                f"«{botao['tela']}», que não é rota nenhuma")
 
 
 # ------------------------------------------- a régua do domínio

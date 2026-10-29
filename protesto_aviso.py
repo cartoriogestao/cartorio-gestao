@@ -58,6 +58,7 @@ from pathlib import Path
 from typing import Any
 
 import protesto as PT
+import protesto_prova as PROVA
 from bd_nativo import banco
 from protesto_certidao import formatar_documento
 
@@ -266,13 +267,32 @@ def registrar_entrega(con: sqlite3.Connection, aviso_id: int, *,
                       entregador: str = ENTREGADOR_DA_CASA,
                       motivo: Any = None, recebido_por: str | None = None,
                       observacao: str | None = None,
-                      usuario: str | None = None) -> dict:
+                      usuario: str | None = None,
+                      comprovante_nome: Any = None,
+                      comprovante_conteudo: bytes | None = None,
+                      pasta_de_arquivos: Any = None,
+                      usuario_id: int | None = None,
+                      afirmacao: str | None = None) -> dict:
     """Registra o que aconteceu com o aviso. ESCREVE.
 
     ENTREGA COM EXITO LAVRA A INTIMACAO PESSOAL. E o unico lugar em que os
     dois se juntam, e e o certo: o devedor recebeu o papel na mao, e isso e a
     intimacao pessoal do art. 14 da Lei 9.492/1997. Quem lavra e
     `protesto.lancar_intimacao` — a regra nao se repete aqui.
+
+    A ENTREGA SÓ SE REGISTRA COM O COMPROVANTE E COM QUEM RECEBEU, NO MESMO
+    ATO (ordem do oficial, 29/10/2026). Até aqui o comprovante podia vir
+    depois, e em outubro quatro avisos foram dados por entregues e
+    protestados minutos depois, com canhotos sem a assinatura de quem
+    recebeu. Sem os dois, a entrega só se registra com a `afirmacao` expressa
+    (regra `ENTREGA_SEM_COMPROVANTE`); o arquivo suspeito — o mesmo já
+    anexado a outro aviso, ou com o protocolo de outro título no nome — também
+    (`COMPROVANTE_DE_OUTRO_TITULO`/`_AVISO`). As afirmações voltam em
+    `afirmacoes`, e a rota grava a auditoria fora da transação.
+
+    O COMPROVANTE DEPOIS CONTINUA EXISTINDO PARA A TENTATIVA (o aviso NÃO
+    entregue), de propósito: o canhoto com as tentativas anotadas volta ao
+    cartório depois, e é ele que fundamenta o edital (`guardar_comprovante`).
 
     ENTREGA SEM EXITO NAO LAVRA NADA. E tentativa, e o titulo continua
     apontado. O que ela produz e o caminho do edital.
@@ -301,6 +321,34 @@ def registrar_entrega(con: sqlite3.Connection, aviso_id: int, *,
                 "; ".join(f"{k} — {v['motivo']}"
                           for k, v in sorted(MOTIVOS_NAO_ENTREGA.items())) +
                 ". Sem o motivo não se sabe se o caso vai a edital.")
+
+    afirmacoes: list[dict] = []
+    conferido = None
+    if entregue:
+        # A CONFERÊNCIA VEM ANTES DE QUALQUER GRAVAÇÃO: a intimação lavrada e
+        # o comprovante recusado depois deixariam meia operação para trás.
+        faltas_da_entrega = []
+        if not str(recebido_por or "").strip():
+            faltas_da_entrega.append(
+                "falta o nome de quem recebeu o aviso — é quem assinou o "
+                "canhoto")
+        if not comprovante_conteudo:
+            faltas_da_entrega.append(
+                "falta o comprovante assinado — o canhoto do aviso, escaneado "
+                "ou fotografado, anexado neste mesmo registro")
+        faltas = ([(PROVA.REGRA_ENTREGA, "; ".join(faltas_da_entrega))]
+                  if faltas_da_entrega else [])
+        if comprovante_conteudo:
+            if pasta_de_arquivos is None:
+                raise AvisoError("O comprovante veio, e o sistema não sabe em "
+                                 "que pasta guardá-lo. Avise o administrador.")
+            conferido = _conferir_comprovante(bd, aviso, nome=comprovante_nome,
+                                              conteudo=comprovante_conteudo)
+            faltas += conferido["suspeitas"]
+        afirmacoes = PROVA.vencer_todas(
+            faltas, afirmacao, erro=AvisoError,
+            abertura=(f"A entrega do aviso {aviso['numero']}/{aviso['ano']} "
+                      f"não se registra assim"))
 
     ato_id = None
     situacao = "ENTREGUE" if entregue else "NAO_ENTREGUE"
@@ -333,9 +381,17 @@ def registrar_entrega(con: sqlite3.Connection, aviso_id: int, *,
         (situacao, 1 if entregue else 0, (quando or agora), entregador,
          (None if entregue else _inteiro(motivo)), recebido_por, observacao,
          ato_id, int(aviso_id)))
+    anexo = None
+    if conferido is not None:
+        anexo = _gravar_comprovante(bd, {**dict(aviso), "situacao": situacao},
+                                    conferido,
+                                    pasta_de_arquivos=pasta_de_arquivos,
+                                    agora=agora, usuario_id=usuario_id)
     return {"aviso_id": int(aviso_id), "situacao": situacao, "ato_id": ato_id,
             "vai_para_edital": (not entregue),
-            "tentativas": len(tentativas(bd, aviso_id))}
+            "tentativas": len(tentativas(bd, aviso_id)),
+            "anexo_id": (anexo or {}).get("anexo_id"),
+            "afirmacoes": afirmacoes}
 
 
 # ----------------------------------------------------------------- o edital
@@ -1242,7 +1298,8 @@ LIMITE_DO_COMPROVANTE = 25 * 1024 * 1024     # 25 MB, o da imagem do título
 
 def guardar_comprovante(con: sqlite3.Connection, aviso_id: int, *, nome: Any,
                         conteudo: bytes, pasta_de_arquivos: Any, agora: str,
-                        usuario_id: int | None = None) -> dict:
+                        usuario_id: int | None = None,
+                        afirmacao: str | None = None) -> dict:
     """Anexa ao aviso o comprovante da intimação entregue. ESCREVE, e grava
     arquivo em disco.
 
@@ -1251,6 +1308,11 @@ def guardar_comprovante(con: sqlite3.Connection, aviso_id: int, *, nome: Any,
     outra. **E NÃO SE SOBRESCREVE**: o segundo arquivo do mesmo aviso é outro
     anexo — a frente e o verso, ou a via corrigida —, e o mesmo arquivo duas
     vezes é recusado pelo conteúdo.
+
+    **O ARQUIVO SUSPEITO SÓ ENTRA COM AFIRMAÇÃO EXPRESSA** (29/10/2026): o
+    mesmo arquivo já anexado a outro aviso, ou o nome que cita o protocolo de
+    outro título — foi o «2610070012.pdf» anexado ao aviso do 2610070007, em
+    outubro. As afirmações voltam em `afirmacoes`, para a auditoria.
     """
     bd = banco(con)
     aviso = _aviso_para_gravar(bd, aviso_id)
@@ -1266,6 +1328,25 @@ def guardar_comprovante(con: sqlite3.Connection, aviso_id: int, *, nome: Any,
             f"O aviso {aviso['numero']}/{aviso['ano']} está "
             f"{aviso['situacao']}. O comprovante é da entrega ou da tentativa "
             f"— registre o desfecho do aviso primeiro.")
+    conferido = _conferir_comprovante(bd, aviso, nome=nome, conteudo=conteudo)
+    afirmacoes = PROVA.vencer_todas(
+        conferido["suspeitas"], afirmacao, erro=AvisoError,
+        abertura=(f"O comprovante não se anexa ao aviso "
+                  f"{aviso['numero']}/{aviso['ano']} assim"))
+    anexo = _gravar_comprovante(bd, aviso, conferido,
+                                pasta_de_arquivos=pasta_de_arquivos,
+                                agora=agora, usuario_id=usuario_id)
+    return {**anexo, "afirmacoes": afirmacoes}
+
+
+def _conferir_comprovante(bd: Any, aviso: dict, *, nome: Any,
+                          conteudo: bytes) -> dict:
+    """O arquivo é um comprovante que se possa anexar a ESTE aviso? Só LÊ.
+
+    Recusa na hora o que não é arquivo de verdade (tipo, tamanho, assinatura
+    dos primeiros bytes, repetido no mesmo aviso). O SUSPEITO não se recusa
+    aqui: volta em `suspeitas`, e quem chama decide com a afirmação.
+    """
     nome_limpo = Path(str(nome or "")).name.strip()
     ext = Path(nome_limpo).suffix.lower()
     if ext not in ASSINATURA_DO_COMPROVANTE:
@@ -1289,9 +1370,22 @@ def guardar_comprovante(con: sqlite3.Connection, aviso_id: int, *, nome: Any,
             """SELECT id FROM attachments
                 WHERE entity_type=%s AND entity_id=%s AND sha256=%s
                 ORDER BY id LIMIT 1""",
-            (ENTIDADE_DO_COMPROVANTE, int(aviso_id), sha)):
+            (ENTIDADE_DO_COMPROVANTE, int(aviso["id"]), sha)):
         raise AvisoError("Este arquivo já está anexado a este aviso.")
+    return {"nome_limpo": nome_limpo, "ext": ext, "conteudo": conteudo,
+            "sha256": sha,
+            "suspeitas": PROVA.suspeitas_do_comprovante(
+                bd, aviso, nome=nome_limpo, sha256=sha)}
 
+
+def _gravar_comprovante(bd: Any, aviso: dict, conferido: dict, *,
+                        pasta_de_arquivos: Any, agora: str,
+                        usuario_id: int | None = None) -> dict:
+    """Grava em disco e em `attachments` o comprovante já conferido.
+    ESCREVE."""
+    aviso_id = int(aviso["id"])
+    nome_limpo, ext = conferido["nome_limpo"], conferido["ext"]
+    conteudo, sha = conferido["conteudo"], conferido["sha256"]
     destino = (Path(pasta_de_arquivos) / "Protesto" / "Intimacoes"
                / str(int(aviso["titulo_id"])))
     destino.mkdir(parents=True, exist_ok=True)

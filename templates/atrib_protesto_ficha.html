@@ -2,6 +2,7 @@
 {% block heading %}<h1>Título {{ titulo.numero_titulo }}</h1>{% endblock %}
 {% block content %}
 {% from '_cobrar.html' import quadro, cobrado %}
+{% from '_protesto_afirmacao.html' import afirmacao, prova_da_intimacao %}
 {% import '_protesto_irmaos.html' as IRM %}
 {% include '_serventia.html' %}
 <div class="actions"><a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a></div>
@@ -12,6 +13,18 @@
   número dele, mas o protesto aconteceu — tem espécie, valor e situação. Entrou
   marcado, e não foi descartado, porque protesto que existiu e não aparece faz a
   certidão dizer que a pessoa está limpa quando não está.
+</div>
+{% endif %}
+
+{# A SITUAÇÃO SEM O ATO QUE A SUSTENTE (29/10/2026): o título afirma um fato
+   que o livro não tem — o 9614 ficou PAGO com o pagamento desfeito. A
+   conferência (`protesto_selo_previo`) só mostra; não corrige. #}
+{% if sem_ato %}
+<div class="notice danger" data-situacao-sem-ato>
+  <strong>A situação {{ sem_ato.situacao }} não tem o ato que a sustente:</strong>
+  não há ato de {{ sem_ato.ato_esperado }} válido neste título. {{ sem_ato.explicacao }}
+  O livro, a certidão e o retorno à CRA leem a situação; conserte só com a
+  decisão do oficial.
 </div>
 {% endif %}
 
@@ -414,6 +427,10 @@
   </small></p>
 
   {% for ato in cabem %}
+  {# O FORMULÁRIO VOLTA PREENCHIDO (29/10/2026): quando a rota recusa antes de
+     lavrar (o selo não ia sair), ela desenha esta ficha com o que foi postado,
+     e o formulário do ato recusado lê daqui. Nos outros, `v_ato` é vazio. #}
+  {% set v_ato = request.form if (request.method == 'POST' and request.form.get('ato') == ato) else {} %}
   <form method="post" action="{{ url_for('protesto_lancar', titulo_id=titulo.id) }}"
         class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -423,13 +440,14 @@
     {% if ato == 'INTIMACAO' %}
       <label>Como foi intimado
         <select name="modo">
-          {% for m in modos %}<option value="{{ m }}">{{ m | capitalize }}</option>{% endfor %}
+          {% for m in modos %}<option value="{{ m }}"{% if v_ato.get('modo') == m %} selected{% endif %}>{{ m | capitalize }}</option>{% endfor %}
         </select></label>
       <label>Código do edital <small>(só na intimação por edital)</small>
-        <input name="codigo_edital" placeholder="ED-2026-014"></label>
+        <input name="codigo_edital" placeholder="ED-2026-014" value="{{ v_ato.get('codigo_edital', '') }}"></label>
       <label style="grid-column:1/-1">Comprovante / o que aconteceu
-        <input name="comprovante" placeholder="AR 123, assinado por João — ou: não encontrado no endereço"></label>
-      <label><input type="checkbox" name="digital"> Intimação eletrônica</label>
+        <input name="comprovante" placeholder="AR 123, assinado por João — ou: não encontrado no endereço"
+               value="{{ v_ato.get('comprovante', '') }}"></label>
+      <label><input type="checkbox" name="digital"{% if v_ato.get('digital') %} checked{% endif %}> Intimação eletrônica</label>
     {% elif ato == 'PROTESTO' and triduo %}
       {# O TRÍDUO (tarefa 56): a conta de `protesto_triduo`, a mesma que a rota confere. #}
       <div style="grid-column:1/-1"><small>
@@ -450,27 +468,36 @@
       {% if triduo_situacao in ('ATRASADO', 'SEM_CONTA') %}
       <label style="grid-column:1/-1">Motivo do atraso
         <input name="motivo_atraso" required minlength="10"
-               placeholder="Comprovante da intimação devolvido pelo entregador depois do prazo"></label>
+               placeholder="Comprovante da intimação devolvido pelo entregador depois do prazo"
+               value="{{ v_ato.get('motivo_atraso', '') }}"></label>
+      {% endif %}
+      {#- A PROVA DA INTIMAÇÃO (29/10/2026): a mesma conferência que a rota
+          faz ao lavrar. Sem ela o protesto não sai — a não ser com a
+          afirmação expressa, que fica recolhida, com a frase de alerta. #}
+      <div style="grid-column:1/-1">{{ prova_da_intimacao(prova) }}</div>
+      {% if prova and not prova.completa %}
+        {{ afirmacao('', prova.frase) }}
       {% endif %}
     {% elif ato == 'DESISTENCIA' %}
       <label style="grid-column:1/-1">Motivo da desistência
-        <input name="motivo" required placeholder="Credor desistiu antes do protesto"></label>
+        <input name="motivo" required placeholder="Credor desistiu antes do protesto"
+               value="{{ v_ato.get('motivo', '') }}"></label>
     {% elif ato == 'PAGAMENTO' %}
-      <label>Valor pago <input name="valor_pago" placeholder="1.482,78"></label>
-      <label>Emolumentos <input name="emolumentos" placeholder="82,64"></label>
+      <label>Valor pago <input name="valor_pago" placeholder="1.482,78" value="{{ v_ato.get('valor_pago', '') }}"></label>
+      <label>Emolumentos <input name="emolumentos" placeholder="82,64" value="{{ v_ato.get('emolumentos', '') }}"></label>
       <label>Forma de pagamento
         <select name="forma_pagamento" required>
           <option value="">— escolha —</option>
-          <option value="ESPECIE">em espécie</option>
-          <option value="CHEQUE">por cheque</option>
-          <option value="PIX">por PIX</option>
-          <option value="TRANSFERENCIA">por transferência bancária</option>
-          <option value="BOLETO">por boleto</option>
-          <option value="CARTAO">por cartão</option>
+          {% for k, rotulo in (('ESPECIE', 'em espécie'), ('CHEQUE', 'por cheque'),
+                               ('PIX', 'por PIX'),
+                               ('TRANSFERENCIA', 'por transferência bancária'),
+                               ('BOLETO', 'por boleto'), ('CARTAO', 'por cartão')) %}
+          <option value="{{ k }}"{% if v_ato.get('forma_pagamento') == k %} selected{% endif %}>{{ rotulo }}</option>
+          {% endfor %}
         </select>
         <small>O Livro de Pagamentos exige (Código de Normas, art. 930).</small></label>
       <label>Identificação <small>(banco e n.º do cheque, ou do comprovante)</small>
-        <input name="forma_identificacao"></label>
+        <input name="forma_identificacao" value="{{ v_ato.get('forma_identificacao', '') }}"></label>
     {% elif ato == 'SUSTACAO' %}
       <label>Juízo <small>(de onde veio a ordem)</small>
         <input name="juizo" required
@@ -544,19 +571,20 @@
            a hipótese e o fundamento chegam pelo endereço, e quem lança confere. #}
         <select name="hipotese" required>
           {% for k, v in catalogo.items() %}
-            <option value="{{ k }}"{% if request.args.get('hipotese') == k %} selected{% endif %}>{{ v.rotulo }}</option>
+            <option value="{{ k }}"{% if (v_ato.get('hipotese') or request.args.get('hipotese')) == k %} selected{% endif %}>{{ v.rotulo }}</option>
           {% endfor %}
         </select></label>
       <label style="grid-column:1/-1">Fundamento deste caso
         <input name="fundamento" required minlength="10"
-               value="{{ request.args.get('fundamento', '') }}"
+               value="{{ v_ato.get('fundamento') or request.args.get('fundamento', '') }}"
                placeholder="O que aconteceu neste título — não basta a hipótese"></label>
     {% endif %}
 
     {% if ato not in ('SUSTACAO', 'REVOGACAO_SUSTACAO',
                   'EFEITO_SUSPENSIVO', 'REVOGACAO_EFEITO_SUSPENSIVO') %}
     <label>Selo <small>(opcional)</small>
-      <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"></label>
+      <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"
+             value="{{ v_ato.get('selo', '') }}"></label>
     {% endif %}
     {% set cob = emolumento.por_ato.get(ato) if emolumento else none %}
     {% if cob and cob.regime == 'DIFERIDO' %}

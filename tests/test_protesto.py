@@ -43,6 +43,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from banco_de_teste import conexao_de_teste  # noqa: E402
+from prova_de_intimacao import juntar_prova  # noqa: E402
 
 import banco_pg                                  # noqa: E402
 import protesto as PT                            # noqa: E402
@@ -270,6 +271,8 @@ def _titulo_intimado(con) -> int:
     titulo_id = _titulo_apontado(con)
     PT.lancar_intimacao(con, titulo_id, modo="PESSOAL", agora=AGORA,
                         comprovante="AR 123")
+    # A PROVA DA INTIMAÇÃO (29/10/2026): sem ela o protesto não se lavra.
+    juntar_prova(con, titulo_id)
     return titulo_id
 
 

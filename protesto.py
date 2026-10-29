@@ -1158,11 +1158,23 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
                     origem: str = "MANUAL",
                     modelo_do_termo: str | None = None,
                     conferir_triduo: bool = False,
-                    motivo_atraso: str | None = None) -> dict:
+                    motivo_atraso: str | None = None,
+                    afirmacao: str | None = None) -> dict:
     """Lavra o protesto no Livro de Registro de Protestos. ESCREVE.
 
     Exige que o título já tenha sido intimado (Lei 9.492/1997, art. 14).
     Recusa protestar de novo o que já foi protestado ou desistido.
+
+    A PROVA DA INTIMAÇÃO É CONFERIDA SEMPRE (ordem do oficial, 29/10/2026:
+    «nao deixar protestar sem aviso de que foi intimado (com comprovante
+    juntado) ou comprovacao do envio do edital na cenprot»). Não há chave
+    para desligar, ao contrário do tríduo: guarda que se pode esquecer de
+    pedir é guarda que um dia não é pedido, e em outubro de 2026 os 21
+    protestos que o sistema lavrou não a teriam passado. A régua é
+    `protesto_prova.exigir`; sem a prova, só lavra com a `afirmacao`
+    expressa de quem está no balcão, e ela fica no `detalhe_json` do ato
+    (`afirmacao_expressa`) e volta no retorno, para a rota gravar a
+    auditoria fora da transação.
 
     O TRÍDUO (tarefa 56, 23/10/2026): com `conferir_triduo`, recusa antes do
     termo inicial e, depois do termo final, exige `motivo_atraso` — a conta é
@@ -1193,6 +1205,17 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
         import protesto_triduo as TRIDUO
         triduo = TRIDUO.conferir_lavratura(con, titulo_id, hoje=str(agora)[:10],
                                            motivo_atraso=motivo_atraso)
+    # A PROVA DEPOIS DO TRÍDUO: o «ainda não é dia» não se vence por
+    # afirmação nenhuma, e a afirmação escrita para a prova não pode ser
+    # pedida a quem nem poderia protestar hoje.
+    import protesto_prova as PROVA
+    prova = PROVA.exigir(con, titulo_id, hoje=str(agora)[:10],
+                         afirmacao=afirmacao)
+    detalhe: dict = {"prova": PROVA.resumo_para_o_ato(prova)}
+    if triduo:
+        detalhe["triduo"] = triduo
+    if prova["afirmacao_expressa"]:
+        detalhe["afirmacao_expressa"] = prova["afirmacao_expressa"]
 
     # O TEXTO QUE VAI NO LIVRO, montado dos fatos deste titulo — e ele
     # CONGELA aqui: e o que foi escrito naquele dia. Medido: o E-Oficio o
@@ -1237,7 +1260,7 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
                origem, criado_em, criado_por)
            VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (titulo_id, "PROTESTO", agora, texto,
-         json.dumps({"triduo": triduo} if triduo else {}, ensure_ascii=False),
+         json.dumps(detalhe, ensure_ascii=False),
          origem, agora, usuario))[0]["id"])
 
     lugar = ESC.reservar(con, SERIE_PROTESTO, "pt_atos", ato_id, sv=sv,
@@ -1251,7 +1274,8 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
     bd.escrever("UPDATE pt_atos SET teor=%s WHERE id=%s", (_termo(), ato_id))
     bd.escrever("UPDATE pt_titulos SET situacao='PROTESTADO' WHERE id=%s",
                (titulo_id,))
-    return {"ato_id": ato_id, "titulo_id": titulo_id, **lugar}
+    return {"ato_id": ato_id, "titulo_id": titulo_id, **lugar,
+            "afirmacao_expressa": prova["afirmacao_expressa"]}
 
 
 def lancar_desistencia(con, titulo_id: int, *,

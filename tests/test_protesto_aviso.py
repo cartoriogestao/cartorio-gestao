@@ -736,8 +736,28 @@ def test_o_aviso_entregue_do_eoficio_nao_e_trabalho_de_upload(con):
                 (daqui["aviso_id"],))
     bd.escrever("UPDATE pt_avisos SET origem='EOFICIO' WHERE id=%s",
                 (de_la["aviso_id"],))
+    # A ENTREGA DO AVISO DO E-OFÍCIO TAMBÉM FOI LÁ: a intimação é ato de lá.
+    bd.escrever("""UPDATE pt_atos SET origem='EOFICIO'
+                    WHERE id = (SELECT ato_id FROM pt_avisos WHERE id=%s)""",
+                (de_la["aviso_id"],))
     ids = {a["id"] for a in AV.entregues(con)}
     assert ids == {daqui["aviso_id"], sem_origem["aviso_id"]}
+
+
+def test_o_aviso_do_eoficio_com_a_entrega_lancada_aqui_e_trabalho_daqui(con):
+    """O caso do 2610070003 (29/10/2026): aviso trazido do E-Ofício, entrega
+    lançada NESTE sistema sem o nome de quem recebeu — ele tem de aparecer na
+    lista, que é onde o nome se completa."""
+    bd = _com_anexos(con)
+    bd.escrever("ALTER TABLE pt_avisos ADD COLUMN IF NOT EXISTS origem TEXT")
+    r = AV.emitir(con, titulo(con, numero="73/1"), hoje=HOJE, agora=AGORA)
+    AV.registrar_entrega(con, r["aviso_id"], entregue=True, agora=AGORA,
+                         afirmacao="o canhoto voltou sem o nome legível de quem "
+                                   "recebeu e será conferido")
+    bd.escrever("UPDATE pt_avisos SET origem='EOFICIO' WHERE id=%s",
+                (r["aviso_id"],))
+    [linha] = AV.entregues(con)
+    assert linha["id"] == r["aviso_id"] and not linha["recebido_por"]
 
 
 def test_sem_a_coluna_origem_a_lista_do_upload_e_a_de_sempre(con):

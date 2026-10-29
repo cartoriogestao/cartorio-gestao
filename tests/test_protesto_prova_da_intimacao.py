@@ -494,6 +494,61 @@ def test_titulo_que_nao_esta_intimado_nao_entra_na_pendencia(con):
     assert PROVA.intimacoes_sem_prova(con, hoje=HOJE) == []
 
 
+# --------------------------- quem recebeu, completado depois (29/10/2026)
+
+
+def test_sem_o_nome_de_quem_recebeu_a_prova_diz_onde_completar(con):
+    tid = titulo(con)
+    aviso = AV.emitir(con, tid, hoje=HOJE, agora=AGORA)
+    AV.registrar_entrega(con, aviso["aviso_id"], entregue=True, agora=AGORA,
+                         comprovante_nome="canhoto.pdf",
+                         comprovante_conteudo=PDF_DE_TESTE,
+                         pasta_de_arquivos=pasta(), afirmacao=AFIRMACAO)
+    prova = PROVA.conferir(con, tid, hoje=HOJE)
+    assert not prova["completa"] and prova["falta_quem_recebeu"]
+    assert prova["aviso_id"] == aviso["aviso_id"]
+    assert "falta o nome de quem recebeu" in prova["frase"]
+    assert "Completar quem recebeu" in prova["frase"]
+
+    tarefa = AV.tarefa_para_completar(con, aviso["aviso_id"], hoje=HOJE, dono=7)
+    assert tarefa["source_type"] == AV.TAREFA_SEM_RECEBEDOR
+    assert tarefa["source_ref"] == f"pt_avisos:{aviso['aviso_id']}"
+    assert tarefa["assigned_user_id"] == 7 and tarefa["sector"] == "PROTESTO"
+
+    r = AV.completar_quem_recebeu(con, aviso["aviso_id"],
+                                  recebido_por="  MARIA   EXEMPLO ", agora=AGORA)
+    assert r["recebido_por"] == "MARIA EXEMPLO" and r["antes"] is None
+    assert AV.tarefa_para_completar(con, aviso["aviso_id"], hoje=HOJE,
+                                    dono=7) is None
+    assert PROVA.conferir(con, tid, hoje=HOJE)["completa"]
+    protestar(con, tid)                           # sem afirmação
+    assert len(protestos(con, tid)) == 1
+
+
+def test_completar_quem_recebeu_recusa_o_que_nao_cabe(con):
+    tid = titulo(con)
+    aviso = AV.emitir(con, tid, hoje=HOJE, agora=AGORA)
+    with pytest.raises(AV.AvisoError, match="aviso ENTREGUE"):
+        AV.completar_quem_recebeu(con, aviso["aviso_id"],
+                                  recebido_por="MARIA EXEMPLO", agora=AGORA)
+    entregar_com_comprovante(con, aviso["aviso_id"], agora=AGORA, pasta=pasta(),
+                             recebido_por="MARIA EXEMPLO")
+    with pytest.raises(AV.AvisoError, match="Escreva o nome"):
+        AV.completar_quem_recebeu(con, aviso["aviso_id"], recebido_por=" a ",
+                                  agora=AGORA)
+    with pytest.raises(AV.AvisoError, match="já diz que quem recebeu"):
+        AV.completar_quem_recebeu(con, aviso["aviso_id"],
+                                  recebido_por="maria exemplo", agora=AGORA)
+    with pytest.raises(AV.AvisoError, match="exige afirmação expressa"):
+        AV.completar_quem_recebeu(con, aviso["aviso_id"],
+                                  recebido_por="JOSÉ EXEMPLO", agora=AGORA)
+    r = AV.completar_quem_recebeu(con, aviso["aviso_id"],
+                                  recebido_por="JOSÉ EXEMPLO", agora=AGORA,
+                                  afirmacao=AFIRMACAO)
+    assert r["antes"] == "MARIA EXEMPLO"
+    assert [x["regra"] for x in r["afirmacoes"]] == ["CORRECAO_DE_QUEM_RECEBEU"]
+
+
 # ------------------------------------------------- quem pede a afirmação
 
 

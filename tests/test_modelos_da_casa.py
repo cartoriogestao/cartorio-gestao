@@ -790,6 +790,19 @@ NOVOS_NO_CATALOGO_LF06E = 37
 #     quem lê o livro por posição. No ouro, a MARIA tem CPF e o JOÃO não tem
 #     documento. (O retrato do banco é dicionário serializado com as chaves em
 #     ordem: a posição da coluna só aparece na moldura impressa.)
+#
+#   - O CANHOTO DO AVISO PEDE O NOME DE QUEM RECEBEU COM ESSAS PALAVRAS
+#     (decisão do oficial, 29/10/2026: «canhoto de entrega precisa ter o campo
+#     pra botar o nome de quem recebeu»). As duas primeiras linhas de
+#     `PT_AVISO_CANHOTO_CAMPOS` trocaram de rótulo e de ordem — «Nome de quem
+#     recebeu» e «Documento», depois «Data» e «Assinatura» —, e continuam
+#     TRÊS linhas: com cinco, o canhoto passava para a segunda folha.
+_CANHOTO_29_10 = (
+    ("Recebido em ___/___/______ às ___:___   Assinatura: __________________________",
+     "Nome de quem recebeu: ___________________________   Documento: _______________"),
+    ("Nome legível: _____________________________   Documento: _______________",
+     "Data: ___/___/______ às ___:___   Assinatura: ______________________________"),
+)
 MUDOU_DEPOIS_DO_OURO_LF06E = {
     "banco": {
         "livro_de_protocolo": (
@@ -797,8 +810,11 @@ MUDOU_DEPOIS_DO_OURO_LF06E = {
              '"devedor": "MARIA DE EXEMPLO", "documento": "000.000.001-91", '),
             ('"devedor": "JOÃO DE EXEMPLO", ',
              '"devedor": "JOÃO DE EXEMPLO", "documento": "", ')),
+        "canhoto(cheio)": _CANHOTO_29_10,
+        "canhoto(magro)": _CANHOTO_29_10,
     },
     "molduras": {
+        "aviso": _CANHOTO_29_10,
         "livro_protocolo": (
             ("<th>Ocorrências</th></tr>",
              "<th>Ocorrências</th><th>CPF/CNPJ do devedor</th></tr>"),

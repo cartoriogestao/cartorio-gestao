@@ -337,7 +337,10 @@
             <div><small>{{ (x.modo or '') | lower }}</small></div></td>
         <td><small>{{ x.protocolo or '—' }}</small></td>
         <td><small>{{ x.explicacao }}</small></td>
-        <td><small>{{ x.onde }}</small></td>
+        <td><small>{{ x.onde }}</small>
+            {%- if x.aviso_id %}
+            <div><a class="button small" href="#aviso-{{ x.aviso_id }}">{% if x.falta_quem_recebeu %}Completar quem recebeu{% else %}Ir ao aviso{% endif %}</a></div>
+            {%- endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -364,7 +367,25 @@
                  protocolo {{ a.protocolo }}{% endif %}</small></div></td>
         <td>{{ a.devedor_nome or '—' }}</td>
         <td>{{ (a.entrega_em or '')[:10] }}
-            {% if a.recebido_por %}<div><small>por {{ a.recebido_por }}</small></div>{% endif %}</td>
+            {% if a.recebido_por %}<div><small>por {{ a.recebido_por }}</small></div>{% endif %}
+            {#- QUEM RECEBEU SE COMPLETA AQUI (decisão do oficial, 29/10/2026:
+                «se faltar, avisar escrevente pra completar»). O nome se lê no
+                canhoto anexado; o que já existe só se troca com afirmação. #}
+            <form method="post" class="form" style="margin-top:4px"
+                  action="{{ url_for('protesto_aviso_recebido_por', aviso_id=a.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              {% if not a.recebido_por %}
+                <div><strong>falta o nome de quem recebeu</strong></div>
+                <input name="recebido_por" placeholder="Nome de quem assinou o canhoto" required>
+                <button class="button small primary">Completar quem recebeu</button>
+              {% else %}
+                <details><summary><small>Corrigir o nome</small></summary>
+                  <input name="recebido_por" placeholder="O nome certo, como está no canhoto" required>
+                  {{ afirmacao('', 'O nome de quem recebeu já está registrado; trocá-lo exige afirmação expressa.', 'Corrigir — afirmação expressa') }}
+                  <button class="button small">Corrigir o nome</button>
+                </details>
+              {% endif %}
+            </form></td>
         <td>
           {% for x in a.comprovantes %}
             <div><a href="{{ url_for('attachment_view', attachment_id=x.id) }}"

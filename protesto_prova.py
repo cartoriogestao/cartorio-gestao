@@ -89,6 +89,8 @@ REGRA_PROTESTO = "PROTESTO_SEM_PROVA_DA_INTIMACAO"
 REGRA_ENTREGA = "ENTREGA_SEM_COMPROVANTE"
 REGRA_OUTRO_TITULO = "COMPROVANTE_DE_OUTRO_TITULO"
 REGRA_OUTRO_AVISO = "COMPROVANTE_DE_OUTRO_AVISO"
+#: Trocar o nome de quem recebeu, já registrado no aviso (29/10/2026).
+REGRA_CORRECAO_DO_RECEBEDOR = "CORRECAO_DE_QUEM_RECEBEU"
 
 COMO_AFIRMAR = (
     f"Se você tem certeza de que isto não é erro, marque «Afirmo» e escreva "
@@ -212,7 +214,11 @@ def _prova_pessoal(bd, intimacao_id: int) -> tuple[list[str], list[str], str]:
         faltas.append(f"o aviso {nome} não está registrado como entregue "
                       f"(está {str(aviso['situacao']).lower()})")
     if not str(aviso["recebido_por"] or "").strip():
-        faltas.append(f"o aviso {nome} não diz quem recebeu")
+        # SE FALTAR, AVISAR A ESCREVENTE PARA COMPLETAR (decisão do oficial,
+        # 29/10/2026) — a frase diz onde, e completado o nome a prova fecha.
+        faltas.append(f"falta o nome de quem recebeu o aviso {nome} — complete "
+                      f"em {TELA_DOS_AVISOS}, lista «Entregues», «Completar "
+                      f"quem recebeu»")
     else:
         tem.append(f"aviso {nome} entregue, recebido por quem assinou")
     comprovantes = _anexos(bd, AV.ENTIDADE_DO_COMPROVANTE, aviso["id"])
@@ -376,9 +382,18 @@ def conferir(con, titulo_id: int, *, hoje: Any,
     if faltas:
         frase = (f"Não se protesta sem a prova da intimação: "
                  f"{'; '.join(faltas)}. Onde se resolve: {onde}.")
+    # O AVISO QUE LAVROU A INTIMAÇÃO, para a tela apontar a ação certa (o
+    # «Completar quem recebeu», 29/10/2026). `None` quando não há.
+    aviso = (bd.um("SELECT id, recebido_por FROM pt_avisos WHERE ato_id = %s "
+                   "ORDER BY id DESC LIMIT 1", (intimacao_id,))
+             if intimacao_id else None)
     return {"completa": not faltas, "modo": modo,
             "intimacao_id": intimacao_id, "faltas": faltas, "tem": tem,
-            "onde": onde, "frase": frase}
+            "onde": onde, "frase": frase,
+            "aviso_id": int(aviso["id"]) if aviso else None,
+            "falta_quem_recebeu": bool(
+                aviso and modo == "PESSOAL"
+                and not str(aviso["recebido_por"] or "").strip())}
 
 
 def exigir(con, titulo_id: int, *, hoje: Any,
@@ -423,7 +438,10 @@ def intimacoes_sem_prova(con, *, hoje: Any = None) -> list[dict]:
     mandaria resolver o que a trava não pede (ou calaria o que ela recusa).
 
     Cada linha leva `titulo_id`, `numero_titulo`, `protocolo`, `explicacao`
-    (o que falta, curto), `onde` (a tela que resolve), `modo` e `origem`.
+    (o que falta, curto), `onde` (a tela que resolve), `modo` e `origem` — e
+    `aviso_id` e `link`, o endereço da linha do aviso na tela dos avisos,
+    onde se completa quem recebeu e se anexa o comprovante (29/10/2026: «se
+    faltar, avisar escrevente pra completar»).
     A INTIMAÇÃO VINDA DO E-OFÍCIO sai com `origem = "ACERVO"`: o papel dela é
     do arquivo do E-Ofício, e o acervo não vira atraso — quem lê a lista
     (o roteiro) a deixa de fora; ela continua aqui para quem quiser contar.
@@ -452,6 +470,11 @@ def intimacoes_sem_prova(con, *, hoje: Any = None) -> list[dict]:
             "modo": prova["modo"],
             "origem": ("ACERVO" if linha["origem_da_intimacao"] == "EOFICIO"
                        else "SISTEMA"),
+            "aviso_id": prova.get("aviso_id"),
+            "falta_quem_recebeu": bool(prova.get("falta_quem_recebeu")),
+            "link": (f"/protesto/avisos#aviso-{prova['aviso_id']}"
+                     if prova.get("aviso_id") else
+                     f"/protesto/{int(linha['id'])}"),
         })
     return saida
 

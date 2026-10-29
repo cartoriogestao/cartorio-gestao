@@ -72,6 +72,7 @@ from bd_nativo import banco
 from typing import Any
 
 import protesto_arquivo as PA
+import protesto_prova as PROVA
 
 # Que ocorrencia cada ato desta casa vira no arquivo. Ver o cabecalho.
 #
@@ -253,19 +254,16 @@ MINIMO_DO_MOTIVO = 10
 # `audit("AFIRMACAO_EXPRESSA", "pt_atos", ato_id, {"regra", "afirmacao",
 # "o_que_faltava"})` FORA da transação, porque `audit` abre a sua.
 #
-# É O MESMO CONTRATO das outras travas da reestruturação do protesto (a
-# frase, o piso e a ação de auditoria são os mesmos de `protesto_prova`, em
-# PR paralelo). Quando os dois estiverem no `main`, a conferência do texto
-# fica num lugar só — duas réguas para «a afirmação vale?» divergiriam no
-# primeiro conserto.
+# É O MESMO CONTRATO das outras travas da reestruturação do protesto, e mora
+# num lugar só: `protesto_prova` (PR #106, no `main` desde 29/10/2026). A
+# frase, o piso, a ação de auditoria e a conferência do texto vêm de lá —
+# duas réguas para «a afirmação vale?» divergiriam no primeiro conserto.
+# (Até o #106 entrar, este módulo tinha uma cópia; ela saiu.)
 
 #: A frase com que a afirmação começa. A tela a mostra fixa, antes do texto.
-FRASE_DA_AFIRMACAO = "Afirmo, sob minha responsabilidade, que"
-#: Quantas LETRAS a afirmação precisa ter, além da frase. Letras, e não
-#: caracteres: «............» não diz nada.
-PISO_DA_AFIRMACAO = 30
-#: A ação da auditoria — a mesma em toda trava que se vence por afirmação.
-ACAO_DA_AFIRMACAO = "AFIRMACAO_EXPRESSA"
+FRASE_DA_AFIRMACAO = PROVA.FRASE_DA_AFIRMACAO
+#: Quantas LETRAS a afirmação precisa ter, além da frase.
+PISO_DA_AFIRMACAO = PROVA.PISO_DA_AFIRMACAO
 #: O nome curto desta trava, que a tela das afirmações filtra.
 REGRA_PROTOCOLO_JA_INFORMADO = "RETORNO_PROTOCOLO_JA_INFORMADO"
 
@@ -278,17 +276,8 @@ COMO_AFIRMAR = (
 
 def afirmacao_valida(texto: Any) -> str | None:
     """O texto inteiro da afirmação, já com a frase de abertura — ou `None`
-    se ela não vale. Só calcula.
-
-    A FRASE NÃO CONTA NO PISO: ela tem mais de trinta letras sozinha, e
-    contá-la deixaria passar a afirmação que não diz nada além dela.
-    """
-    corrido = " ".join(str(texto or "").split())
-    if corrido.lower().startswith(FRASE_DA_AFIRMACAO.lower()):
-        corrido = corrido[len(FRASE_DA_AFIRMACAO):].lstrip(" ,:;-—")
-    if sum(1 for c in corrido if c.isalpha()) < PISO_DA_AFIRMACAO:
-        return None
-    return f"{FRASE_DA_AFIRMACAO} {corrido}"
+    se ela não vale. Só calcula. A régua é a de `protesto_prova`."""
+    return PROVA.afirmacao_valida(texto)
 
 
 def _data_br(texto: Any) -> str:
@@ -1499,13 +1488,6 @@ def forcar_envio_de_protocolo_ja_informado(
             "informantes": informantes,
             "afirmado_em": agora,
             "afirmado_por": usuario}
-
-
-def para_a_auditoria(registro: dict) -> dict:
-    """O que vai em `audit("AFIRMACAO_EXPRESSA", ...)` — as três chaves do
-    contrato comum, e só elas. Só calcula."""
-    return {"regra": registro["regra"], "afirmacao": registro["afirmacao"],
-            "o_que_faltava": registro["o_que_faltava"]}
 
 
 def listar(con: sqlite3.Connection, limite: int = 100) -> list[dict]:

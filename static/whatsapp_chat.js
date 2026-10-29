@@ -74,6 +74,27 @@
     caixa.scrollTop = caixa.scrollHeight;
   }
 
+  /* A ENTREGA AO VIVO (29/10/2026): o servidor manda o estado das últimas
+   * enviadas, com a marca e o título prontos; aqui só se troca o atributo, o
+   * título e o `textContent` do span que o balão já tem. */
+  function atualizarEntregas(entregas) {
+    (entregas || []).forEach(function (e) {
+      var marca = document.querySelector('[data-wa-entrega-de="' + Number(e.id) + '"]');
+      if (!marca) {
+        return;
+      }
+      marca.setAttribute("data-wa-entrega", e.entrega || "");
+      if (e.titulo) {
+        marca.setAttribute("title", e.titulo);
+      } else {
+        marca.removeAttribute("title");
+      }
+      if (marca.textContent !== (e.marca || "")) {
+        marca.textContent = e.marca || "";
+      }
+    });
+  }
+
   function atualizarEstado(dados) {
     var status = document.querySelector("[data-wa-status]");
     if (status && dados.status && status.textContent !== dados.status) {
@@ -133,6 +154,7 @@
           caixa.setAttribute("data-ultimo", String(dados.ultimo));
         }
         atualizarEstado(dados);
+        atualizarEntregas(dados.entregas);
       })
       .catch(function () { /* a próxima pergunta tenta de novo */ })
       .then(function () { perguntandoConversa = false; });

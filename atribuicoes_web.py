@@ -3299,6 +3299,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if SR.lancamento_vedado_ao_robo(ato):
             abort(403)
         voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_id))
+        # A CENPROT CONFERIDA ANTES DO ATO — 29/10/2026, ordem do oficial
+        # depois do 350574/1 (pago na Central por Liquidação no portal e
+        # protestado aqui no dia seguinte). No PROTESTO a Central é consultada
+        # FORA de transação; o PAGO POR LIQUIDAÇÃO (imutável na CENPROT) trava
+        # também o apontamento, a intimação e a desistência. Só a afirmação
+        # expressa do contrato comum (`afirmo` + `afirmacao`) passa. A regra é
+        # de `cenprot_conferencia`; aqui só se ligam os fios.
+        import cenprot_conferencia as CCONF
+        afirmacao_cenprot = None
+        if ato in CCONF.ATOS_QUE_A_CENPROT_TRAVA:
+            texto_afirmado = _afirmacao_do_formulario()
+            try:
+                afirmacao_cenprot = CCONF.trava_do_ato(
+                    db, titulo_id, ato, afirmo=bool(texto_afirmado),
+                    afirmacao=texto_afirmado or "", quem=usuario_nome(),
+                    robo=SR.usuario_e_robo())
+            except CCONF.ConferenciaError as erro:
+                # O FORMULÁRIO VOLTA PREENCHIDO, como na trava do selo: a ficha
+                # se desenha com o que foi postado.
+                flash(str(erro), "danger")
+                return app.view_functions["protesto_titulo"](titulo_id=titulo_id)
         situacao_antes = situacao_depois = None
         # Lida FORA da transação (`get_setting` abre conexão própria): é a data
         # que o envelope do selo leva, e a conferência de antes precisa dela.
@@ -3404,6 +3425,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 else:
                     raise PT.ProtestoError(
                         f"Ato desconhecido: {ato!r}.")
+                if afirmacao_cenprot:
+                    # A afirmação que venceu a trava da CENPROT vai ao
+                    # `detalhe_json` do ato, na MESMA transação: ato sem a
+                    # afirmação que o permitiu é ato que ninguém explica.
+                    CCONF.anotar_afirmacao_no_ato(
+                        con, r["ato_id"], afirmacao_cenprot,
+                        quem=usuario_nome(), agora=agora())
                 # QUAL TÍTULO ESTÁ NO PAPEL — 29/10/2026. Com irmão em aberto
                 # no mesmo protocolo, o pagamento, a desistência e o
                 # cancelamento só passam com o número e o vencimento do papel
@@ -3475,6 +3503,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 PTERMO.TermoError, POST.PosterioriError) as erro:
             flash(str(erro), "danger")
             return voltar
+        if afirmacao_cenprot:
+            # A AFIRMAÇÃO QUE VENCEU A TRAVA DA CENPROT (29/10/2026) — o
+            # contrato comum: `audit` FORA do `with`, o texto já no ato.
+            audit(CCONF.ACAO_DA_AUDITORIA, "pt_titulos", titulo_id,
+                  {**CCONF.detalhe_da_auditoria(afirmacao_cenprot),
+                   "ato": ato, "ato_id": r["ato_id"]})
         # A AFIRMAÇÃO EXPRESSA QUE VENCEU A TRAVA DA PROVA fica na auditoria
         # já aqui, antes do selo: ela foi feita e o ato foi lavrado, mesmo que
         # o selo falhe adiante e o ato seja anulado — o log é do que a pessoa
@@ -11494,6 +11528,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return redirect(url_for("protesto_a_protestar"))
 
         feitos, falharam = [], []
+        # A CENPROT CONFERIDA ANTES DE PROTESTAR (29/10/2026) — a mesma trava
+        # da ficha, FORA da transação de cada título. A AFIRMAÇÃO DA CENPROT
+        # NÃO SE FAZ NO LOTE: a caixa do lote é a da prova da intimação, e a
+        # divergência com a Central pede o portal aberto — o título recusado
+        # sai da leva, e a afirmação é na ficha dele. Caída a Central num
+        # título, os seguintes não esperam a rede de novo (`perguntar=False`)
+        # — e também não passam.
+        import cenprot_conferencia as CCONF
+        rede_caiu = False
+        for titulo_id in list(escolhidos):
+            try:
+                CCONF.trava_do_protesto(db, titulo_id, quem=usuario_nome(),
+                                        em_lote=True, perguntar=not rede_caiu)
+            except CCONF.ConferenciaError as erro:
+                rede_caiu = rede_caiu or erro.sem_rede
+                falharam.append((titulo_id, str(erro)))
+                escolhidos.remove(titulo_id)
         for titulo_id in escolhidos:
             try:
                 with db.transaction() as con:

@@ -1,0 +1,51 @@
+{#
+  A CONFERÊNCIA COM A CENPROT NO FORMULÁRIO DO ATO — 29/10/2026, ordem do
+  oficial depois do 350574/1 (pago na Central por Liquidação no portal e
+  protestado aqui no dia seguinte). Só aparece no título de origem CENPROT.
+
+  A TRAVA É NA ROTA, E NÃO AQUI (`cenprot_conferencia.trava_do_ato`): no
+  PROTESTO a Central é consultada na hora; no apontamento, na intimação e na
+  desistência vale a última conferência, e só o PAGO POR LIQUIDAÇÃO trava —
+  na CENPROT ele não se altera. A situação que veio do NOSSO XML não trava: é
+  pendência de reenviar o XML com a situação nova.
+
+  A AFIRMAÇÃO É A DO CONTRATO COMUM (`afirmo` + `afirmacao`), e UMA SÓ POR
+  FORMULÁRIO: se a prova da intimação ou a trava do selo já abriram a caixa
+  dela, esta não abre outra — dois campos com o mesmo nome fariam o texto de
+  um sumir no outro.
+#}
+{% from '_protesto_afirmacao.html' import afirmacao %}
+{% set cc = conferencia_cenprot_da_ficha(titulo) %}
+{% if cc and (ato == 'PROTESTO' or cc.contraria_o_pago) %}
+{% set travas = cc.trava if ato == 'PROTESTO' else cc.contraria_o_pago %}
+<div style="grid-column:1/-1" class="notice{% if travas %} danger{% endif %}">
+  <small><strong>Título de origem CENPROT</strong> (pedido {{ cc.pedido or 'não achado no título' }}).
+  {% if ato == 'PROTESTO' %}
+    Ao lançar, o sistema consulta a Central antes de lavrar: se ela der o título
+    por pago por liquidação, ou por saído por outro caminho dela — ou se não der
+    para conferir —, o protesto <strong>não sai</strong> sem afirmação expressa.
+  {% else %}
+    A CENPROT dá este título por <strong>pago por liquidação</strong>, e lá isso
+    não se altera: este ato só sai com afirmação expressa.
+  {% endif %}
+  {% if cc.conferencia and cc.conferencia.consultada_em %}
+    Última consulta: {{ cc.conferencia.consultada_em[:16]|replace('T',' ') }}{% if cc.conferencia.central_status or cc.conferencia.central_ocorrencia %} — «{{ cc.conferencia.central_status or '' }}{% if cc.conferencia.central_ocorrencia %} / {{ cc.conferencia.central_ocorrencia }}{% endif %}»{% endif %}.
+  {% endif %}</small>
+  {% for a in travas %}
+    <div><small><strong>{{ a.frase }}</strong> <em>Caminho:</em> {{ a.caminho }}</small></div>
+  {% endfor %}
+  {% for a in cc.achados if a.regra == 'REENVIAR_XML' %}
+    <div><small>{{ a.frase }} <em>{{ a.caminho }}</em></small></div>
+  {% endfor %}
+  <div><small><a href="{{ url_for('protesto_cenprot_conferencia') }}#titulo-{{ titulo.id }}">Conferência CENPROT × sistema</a></small></div>
+</div>
+{% set pedida = g.get('protesto_afirmacao_pedida') %}
+{% if ato == 'PROTESTO' and prova and not prova.completa %}
+  <div style="grid-column:1/-1"><small>A afirmação expressa da prova da
+    intimação, acima, vale também para a conferência com a CENPROT — se for
+    usá-la, diga nela o que conferiu no portal.</small></div>
+{% elif not (pedida and pedida.ato == ato) %}
+  {{ afirmacao('', (travas[0].frase if travas else 'A conferência com a CENPROT pode recusar este ato.'),
+               rotulo='Insistir mesmo assim — afirmação expressa (CENPROT)') }}
+{% endif %}
+{% endif %}

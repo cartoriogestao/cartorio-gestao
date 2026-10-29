@@ -627,6 +627,8 @@
                value="{{ v_ato.get('fundamento') or request.args.get('fundamento', '') }}"
                placeholder="O que aconteceu neste título — não basta a hipótese"></label>
     {% endif %}
+    {# A CENPROT CONFERIDA ANTES DO ATO (29/10/2026) — só no título de origem CENPROT. #}
+    {% if ato in ('PROTESTO', 'APONTAMENTO', 'INTIMACAO', 'DESISTENCIA') %}{% include '_protesto_cenprot_afirmacao.html' %}{% endif %}
 
     {% if ato not in ('SUSTACAO', 'REVOGACAO_SUSTACAO',
                   'EFEITO_SUSPENSIVO', 'REVOGACAO_EFEITO_SUSPENSIVO') %}

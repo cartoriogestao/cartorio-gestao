@@ -1,0 +1,220 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>CENPROT × sistema — a conferência dos pedidos</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_painel') }}">O roteiro do dia</a>
+  <a class="button" href="{{ url_for('protesto_pendencias') }}">Pendências da CENPROT</a>
+  <a class="button" href="{{ url_for('protesto_a_protestar') }}">A protestar</a>
+  <a class="button" href="{{ url_for('protesto_cenprot_xml') }}">XML da CENPROT (P e D)</a>
+</div>
+
+{#
+  29/10/2026 — ORDEM DO OFICIAL depois do 350574/1: pago na Central por uma
+  Liquidação feita no portal, e protestado aqui no dia seguinte. A tela
+  COMPARA e diz o caminho de cada correção; ela não corrige nada.
+#}
+<div class="alert alert-warning">
+  <strong>Esta tela compara, e não corrige.</strong> Para cada título que veio
+  da Gestão de Pedidos da CENPROT, ela mostra o que a Central disse do pedido
+  na última consulta e o que o título é aqui <em>agora</em>. Onde os dois não
+  cabem juntos, a linha diz o que fazer — quem faz é você, na ficha do título
+  ou no portal da CENPROT.
+</div>
+
+{% if not tem_credencial %}
+<div class="alert alert-danger">
+  A credencial <strong>de PRODUÇÃO</strong> da CENPROT <strong>ainda não foi
+  informada</strong> — sem ela a Central não se consulta, e a trava do protesto
+  recusa os títulos de origem CENPROT dizendo que não deu para conferir. Ela se
+  informa em <a href="{{ url_for('settings') }}">Administrativo → Configurações
+  → Centrais</a>.
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <span>O quadro</span>
+    <small>{% if q.ultima_consulta %}última consulta à Central: {{ q.ultima_consulta[:16]|replace('T',' ') }}{% else %}a Central ainda não foi consultada por aqui{% endif %}</small>
+  </div>
+  <table class="table">
+    <tbody>
+      <tr><td>Títulos de origem CENPROT</td><td style="text-align:right">{{ q.contagem.titulos }}</td></tr>
+      <tr><td><strong>Com divergência</strong></td><td style="text-align:right"><strong>{{ q.contagem.divergem }}</strong></td></tr>
+      <tr><td>A conferir (pode ser só o arquivo do dia ainda não lido pela Central)</td><td style="text-align:right">{{ q.contagem.conferir }}</td></tr>
+      <tr><td>Nunca consultados na Central</td><td style="text-align:right">{{ q.contagem.nunca_consultados }}</td></tr>
+      <tr><td>Com erro na última tentativa</td><td style="text-align:right">{{ q.contagem.com_erro }}</td></tr>
+    </tbody>
+  </table>
+  <form method="post" action="{{ url_for('protesto_cenprot_conferencia_consultar') }}"
+        style="padding:.75rem">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button" type="submit">Consultar a CENPROT agora (todos os títulos)</button>
+    <small class="muted">Um pedido por chamada; só lê na Central. Se a Central
+      não responder, a consulta para no primeiro erro e o resto fica com a
+      resposta anterior.</small>
+  </form>
+</section>
+
+{% set problemas = q.linhas | selectattr('nivel') | list %}
+<section class="panel">
+  <div class="panel-head">
+    <span>O que não bate</span>
+    <small>{{ problemas | length }} título(s)</small>
+  </div>
+  {% if problemas %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr><th>Título</th><th>Pedido</th><th>Aqui</th><th>Na Central</th>
+          <th>O que não bate, e o caminho</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for r in problemas %}
+      <tr id="titulo-{{ r.id }}">
+        <td>
+          <a href="{{ url_for('protesto_titulo', titulo_id=r.id) }}">{{ r.numero_titulo or ('título ' ~ r.id) }}</a>
+          <div><small>título {{ r.id }}{% if r.protocolo %} · protocolo {{ r.protocolo }}{% endif %}</small></div>
+          {% if r.nivel == DIVERGE %}<div><strong>DIVERGE</strong></div>{% else %}<div><small>a conferir</small></div>{% endif %}
+        </td>
+        <td>{{ r.pedido or '—' }}
+          {% for n, fonte in r.pedidos %}<div><small>{{ n }}: {{ fonte }}</small></div>{% endfor %}</td>
+        <td>{{ r.situacao }}</td>
+        <td>
+          {% set c = r.conferencia %}
+          {% if c and c.resultado == 'ACHOU' %}
+            <strong>{{ nome_do_estado.get(c.central_estado, c.central_estado) }}</strong>
+            {% if c.central_status %}<div><small>«{{ c.central_status }}»</small></div>{% endif %}
+            {% if c.central_ocorrencia %}<div><small>ocorrência «{{ c.central_ocorrencia }}»{% if c.central_codigo %} ({{ c.central_codigo }}){% endif %}{% if c.central_data %} em {{ c.central_data }}{% endif %}</small></div>{% endif %}
+            {% if c.central_cedente %}<div><small>cedente: {{ c.central_cedente }}</small></div>{% endif %}
+          {% elif c and c.resultado == 'NAO_ACHOU' %}<em>a Central não devolveu o pedido</em>
+          {% elif c and c.resultado == 'SEM_PEDIDO' %}<em>sem número de pedido</em>
+          {% else %}<em>nunca consultado</em>{% endif %}
+          {% if c and c.consultada_em %}<div><small>consultado em {{ c.consultada_em[:16]|replace('T',' ') }}</small></div>{% endif %}
+          {% if c and c.erro %}<div><small><strong>última tentativa falhou</strong> ({{ (c.tentada_em or '')[:16]|replace('T',' ') }}): {{ c.erro }}</small></div>{% endif %}
+        </td>
+        <td>
+          {% for a in r.achados %}
+          <div style="margin-bottom:.5rem">
+            <div>{% if a.nivel == DIVERGE %}<strong>{{ a.frase }}</strong>{% else %}{{ a.frase }}{% endif %}
+              {% if a.trava %}<small>(impede protestar sem afirmação expressa)</small>{% endif %}</div>
+            <div><small><em>Caminho:</em> {{ a.caminho }}</small></div>
+          </div>
+          {% endfor %}
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('protesto_cenprot_conferencia_consultar') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="titulo_id" value="{{ r.id }}">
+            <button class="button" type="submit">Consultar só este</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted" style="padding:.75rem">
+    Nada a mostrar. <strong>Isto não quer dizer «tudo certo» se a Central nunca
+    foi consultada</strong> — veja no quadro acima quantos nunca foram.
+  </p>
+  {% endif %}
+</section>
+
+{% set conferem = q.linhas | rejectattr('nivel') | list %}
+<section class="panel">
+  <details>
+    <summary style="padding:.75rem">Os que conferem — {{ conferem | length }} título(s)</summary>
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Título</th><th>Pedido</th><th>Aqui</th><th>Na Central</th><th>Consultado em</th></tr></thead>
+      <tbody>
+        {% for r in conferem %}
+        <tr id="titulo-{{ r.id }}">
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=r.id) }}">{{ r.numero_titulo or ('título ' ~ r.id) }}</a></td>
+          <td>{{ r.pedido or '—' }}</td>
+          <td>{{ r.situacao }}</td>
+          <td>{% if r.conferencia and r.conferencia.central_estado %}{{ nome_do_estado.get(r.conferencia.central_estado, r.conferencia.central_estado) }}{% else %}—{% endif %}</td>
+          <td>{% if r.conferencia and r.conferencia.consultada_em %}{{ r.conferencia.consultada_em[:16]|replace('T',' ') }}{% else %}nunca{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </details>
+</section>
+
+<section class="panel" id="liquidacao">
+  <div class="panel-head">
+    <span>Liquidação feita no portal da CENPROT</span>
+    <small>registro manual, com afirmação de qual título</small>
+  </div>
+  {#
+    A API NÃO DIZ NADA DE LIQUIDAÇÃO — medido no swagger.yaml 2.1.0 em
+    29/10/2026: nenhum caminho fala de liquidação, TED, boleto ou repasse. O
+    «pago» que a consulta devolve não diz se veio de um D desta casa ou do botão
+    «Liquidação» do portal. Por isso o registro é à mão.
+  #}
+  <p style="padding:.75rem .75rem 0">
+    O botão <strong>«Liquidação»</strong> do portal gera o boleto do repasse ao
+    apresentante, e a Central passa a dar o pedido por <strong>pago</strong>. A
+    API da CENPROT <strong>não informa</strong> liquidação nenhuma: quem liquida
+    no portal registra aqui <strong>o número do pedido</strong>, conferido na tela
+    do portal, e <strong>afirma de qual título desta casa ele é</strong>. Se o
+    pedido não for o do título — ou o título não estiver pago aqui —, a
+    conferência mostra na hora.
+  </p>
+  <form method="post" action="{{ url_for('protesto_cenprot_conferencia_liquidacao') }}"
+        class="grid2" style="padding:.75rem">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Pedido liquidado no portal <small>(o número da Gestão de Pedidos)</small>
+      <input name="pedido" required inputmode="numeric"></label>
+    <label>Título desta casa <small>(o número da ficha)</small>
+      <input name="titulo_id" required inputmode="numeric"></label>
+    <label>Liquidado em <input name="liquidada_em" type="date"></label>
+    <label style="grid-column:1/-1"><input type="checkbox" name="afirmo" value="1">
+      Afirmo — o registro é a minha afirmação de que este pedido foi liquidado
+      no portal e de que ele é deste título</label>
+    <label style="grid-column:1/-1">Afirmação expressa
+      <small>(pelo menos {{ minimo }} letras; fica no registro e na auditoria, com o seu nome)</small>
+      <textarea name="afirmacao" rows="3" required
+                placeholder="{{ modelo }}"></textarea></label>
+    <div class="actions"><button class="button" type="submit">Registrar a liquidação</button></div>
+  </form>
+
+  {% if q.liquidacoes %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Pedido</th><th>Título</th><th>Liquidado em</th><th>Registrado</th><th>Afirmação</th><th></th></tr></thead>
+    <tbody>
+      {% for l in q.liquidacoes %}
+      <tr>
+        <td>{{ l.pedido }}</td>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=l.titulo_id) }}">{{ l.numero_titulo or ('título ' ~ l.titulo_id) }}</a>
+          <div><small>título {{ l.titulo_id }} · {{ l.titulo_situacao or '—' }}</small></div></td>
+        <td>{{ l.liquidada_em or '—' }}</td>
+        <td><small>{{ (l.registrada_em or '')[:16]|replace('T',' ') }} · {{ l.registrada_por or '—' }}</small></td>
+        <td><small>{{ l.afirmacao }}</small></td>
+        <td>
+          {% if l.anulada_em %}
+            <small><strong>anulado</strong> em {{ l.anulada_em[:16]|replace('T',' ') }} por {{ l.anulada_por or '—' }}: {{ l.anulada_motivo }}</small>
+          {% else %}
+          <form method="post" action="{{ url_for('protesto_cenprot_conferencia_liquidacao_anular', liquidacao_id=l.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input name="motivo" required minlength="10" placeholder="por que este registro está errado">
+            <button class="button" type="submit">Anular o registro</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted" style="padding:0 .75rem .75rem">Nenhuma liquidação registrada.</p>
+  {% endif %}
+</section>
+{% endblock %}

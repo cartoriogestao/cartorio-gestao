@@ -37,6 +37,7 @@ import pytest
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from prova_de_intimacao import juntar_prova  # noqa: E402
 
 import protesto_instrumento as PI  # noqa: E402
 
@@ -285,6 +286,7 @@ def _protestado_pela_casa(s, n: int = 1) -> int:
                             agora="2026-10-10T10:00:00")
         con.execute("UPDATE pt_titulos SET motivo_protesto='1' WHERE id=?",
                     (tid,))
+        juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
         PT.lancar_protesto(con, tid, sv=SV, agora="2026-10-14T10:00:00",
                            data_extenso="x")
     con.close()

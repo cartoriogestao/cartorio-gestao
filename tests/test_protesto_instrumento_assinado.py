@@ -32,6 +32,7 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+from prova_de_intimacao import juntar_prova  # noqa: E402
 
 import a3_windows as A3W  # noqa: E402
 import cades  # noqa: E402
@@ -81,6 +82,7 @@ def _instrumento(s) -> int:
                             agora="2026-10-10T10:00:00")
         con.execute("UPDATE pt_titulos SET motivo_protesto='1' WHERE id=?",
                     (tid,))
+        juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
         PT.lancar_protesto(con, tid, sv=SV, agora="2026-10-14T10:00:00",
                            data_extenso="x")
         r = PI.emitir(con, tid, serventia=SV["unit_name"],

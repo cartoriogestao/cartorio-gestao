@@ -30,6 +30,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from banco_de_teste import conexao_de_teste  # noqa: E402
+from prova_de_intimacao import juntar_prova  # noqa: E402
 
 import banco_pg
 import protesto as PT
@@ -78,6 +79,7 @@ def titulo(con, *, numero="9911/1", apresentante="001",
 def ate_o_protesto(con, titulo_id: int) -> None:
     PT.lancar_apontamento(con, titulo_id, sv=SV, agora=AGORA, data_extenso="x")
     PT.lancar_intimacao(con, titulo_id, modo="PESSOAL", agora=AGORA)
+    juntar_prova(con, titulo_id)   # a prova da intimação (29/10/2026)
     PT.lancar_protesto(con, titulo_id, sv=SV, agora=AGORA, data_extenso="x")
 
 

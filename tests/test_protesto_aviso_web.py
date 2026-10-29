@@ -13,6 +13,7 @@ POR QUE ELES EXISTEM SEPARADOS DOS DE DOMINIO
 from __future__ import annotations
 
 import glob
+import io
 import re
 import sqlite3
 import sys
@@ -106,10 +107,19 @@ def aviso_id(s) -> int:
     return _con(s).execute("SELECT MAX(id) i FROM pt_avisos").fetchone()["i"]
 
 
-def registrar(s, aid: int, **extra):
+def registrar(s, aid: int, *, sem_comprovante: bool = False, **extra):
+    """O desfecho do aviso, pela tela. A ENTREGUE leva o canhoto assinado
+    junto (29/10/2026: sem ele a entrega só entra com afirmação expressa) — um
+    arquivo próprio de cada aviso; `sem_comprovante` manda sem, para o teste
+    da recusa."""
     tela = s["c"].get("/protesto/avisos").get_data(as_text=True)
     dados = {"csrf_token": _token(tela)}
     dados.update(extra)
+    if (dados.get("entregue") == "1" and "comprovante" not in dados
+            and not sem_comprovante):
+        dados["comprovante"] = (
+            io.BytesIO(b"%PDF-1.4 canhoto do aviso " + str(aid).encode()),
+            f"canhoto-aviso-{aid}.pdf")
     return s["c"].post(f"/protesto/avisos/{aid}/entrega", data=dados,
                        follow_redirects=True)
 

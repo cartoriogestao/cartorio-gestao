@@ -25,6 +25,7 @@ import protesto as PT
 import protesto_cenprot_xml as X
 import protesto_instrumento as PI
 from bd_nativo import banco
+from prova_de_intimacao import juntar_prova  # noqa: E402
 
 from test_protesto_aviso_web import _con, _token, s, titulo_apontado  # noqa: F401
 from test_protesto_instrumento_assinado import (PDF, SV, _assinar,  # noqa: F401
@@ -55,6 +56,7 @@ def pronto(s, chave_e_cert, tmp_path, monkeypatch):
                             agora="2026-10-10T10:00:00")
         con.execute("UPDATE pt_titulos SET motivo_protesto='1', chave_cenprot=? "
                     "WHERE id=?", (CHAVE, tid))
+        juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
         PT.lancar_protesto(con, tid, sv=SV, agora="2026-10-14T10:00:00",
                            data_extenso="x")
         con.execute("UPDATE pt_atos SET folha=COALESCE(folha, 12), detalhe_json="
@@ -184,6 +186,7 @@ def test_a_tela_mostra_o_motivo_de_quem_fica_de_fora(s):
     with con:
         PT.lancar_intimacao(con, tid, modo="PESSOAL", agora="2026-10-10T10:00:00")
         con.execute("UPDATE pt_titulos SET motivo_protesto='1' WHERE id=?", (tid,))
+        juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
         PT.lancar_protesto(con, tid, sv=SV, agora="2026-10-14T10:00:00",
                            data_extenso="x")
     html = s["c"].get("/protesto/cenprot-xml").get_data(as_text=True)
@@ -230,6 +233,7 @@ def test_o_cnpj_e_o_endereco_do_cadastro_vao_a_ficha_ao_aviso_e_ao_instrumento(s
             con, AV.ler(con, aviso["aviso_id"]), sv=SV)
         PT.lancar_intimacao(con, tid, modo="PESSOAL", agora="2026-10-10T10:00:00")
         bd.escrever("UPDATE pt_titulos SET motivo_protesto='1' WHERE id=%s", (tid,))
+        juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
         PT.lancar_protesto(con, tid, sv=SV, agora="2026-10-14T10:00:00",
                            data_extenso="x")
         instrumento = PI.emitir(con, tid, serventia=SV["unit_name"],

@@ -805,7 +805,8 @@ def test_os_ganchos_declarados_apontam_para_condutas_que_existem():
     assert {(g["modulo"], g["funcao"]) for g in PR.GANCHOS} >= {
         ("protesto_selo_previo", "pendencias_do_selo"),
         ("protesto_selo_previo", "titulos_sem_ato_que_sustente"),
-        ("cenprot_conferencia", "quantos_divergem")}
+        ("cenprot_conferencia", "quantos_divergem"),
+        ("protesto_prova", "intimacoes_sem_prova")}
 
 
 # ------------------------------------------------- o encerramento pela tela

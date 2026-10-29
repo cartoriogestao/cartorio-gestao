@@ -118,6 +118,7 @@ import pastas_da_casa as PDC
 import protesto_cenprot as PCEN
 import protesto_cenprot_xml as PCXML
 import protesto_roteiro as PROT
+import afirmacoes_expressas as AFX
 import protesto_certidao as PCE
 import protesto_termo as PTERMO
 import protesto_triduo as TRIDUO
@@ -11354,19 +11355,39 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         que gerar retorno, gerar andamento».
 
         **`@login_required`, e não `@roles_required`**: o pedido é «amplo
-        acesso dos escreventes», e esta tela **não faz nada** — lista o
-        roteiro, aponta a tela de cada passo e conta o que já aconteceu hoje.
-        Trancá-la por perfil seria trancar a instrução, e não o ato.
+        acesso dos escreventes», e esta tela **não faz nada** — cada botão leva
+        à tela que faz. Trancá-la por perfil seria trancar a instrução.
 
-        E **ela conta, mas não julga**: um zero pode ser «ainda não fiz» ou
-        «hoje não veio nada da Central», e o sistema não tem como saber qual.
-        Dizer «atrasado» sobre um dia em que nada chegou é o alarme que soa
-        sempre.
+        **DESDE 29/10/2026 ELA COBRA** — ordem do oficial: «vincular cada
+        obrigação a uma conduta». Cada conduta vem com FEITO, PENDENTE ou
+        ATRASADO calculado do banco (`protesto_roteiro.cobrar_o_dia`), e o
+        atrasado só sai com prazo provado. Por isso passa `agora()`, e não só
+        o dia: a hora do papel é o que separa pendente de atrasado.
         """
         with db.connect() as con:
-            dados = PROT.roteiro(con, hoje=hoje())
+            dados = PROT.roteiro(con, agora=agora())
+            afirmacoes = AFX.contar(con, hoje=hoje())
         return render_template("protesto_painel.html", r=dados,
-                               cobertura=PROT.quantos_o_sistema_faz())
+                               cobertura=PROT.quantos_o_sistema_faz(),
+                               afirmacoes_7_dias=afirmacoes)
+
+    @app.route("/protesto/afirmacoes")
+    @roles_required("ADMIN")
+    def protesto_afirmacoes():
+        """As AFIRMAÇÕES EXPRESSAS, para o oficial. SÓ LÊ.
+
+        Ordem do oficial em 29/10/2026: «se insistir em algo que eh erro,
+        precisa afirmar expressamente e deixar log». As travas gravam pelo
+        contrato comum (`afirmacoes_expressas`, ação `AFIRMACAO_EXPRESSA`);
+        aqui se confere, por período e por regra. É do ADMIN: é o oficial quem
+        responde pelo que se afirmou em nome da casa.
+        """
+        with db.connect() as con:
+            lista = AFX.listar(con, hoje=hoje(), de=request.args.get("de"),
+                               ate=request.args.get("ate"),
+                               regra=request.args.get("regra"))
+        return render_template("protesto_afirmacoes.html", lista=lista,
+                               limite=AFX.LIMITE)
 
     # ------------------- a chave do CENPROT, que o XML devolve
 

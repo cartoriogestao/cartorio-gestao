@@ -1,64 +1,82 @@
 {% extends 'base.html' %}
-{% block title %}Painel do dia — Protesto{% endblock %}
-{% block heading %}<h1>Protesto — o painel do dia</h1>{% endblock %}
+{% block title %}Roteiro do dia — Protesto{% endblock %}
+{% block heading %}<h1>Protesto — o roteiro do dia</h1>{% endblock %}
 {% block content %}
 {% include '_serventia.html' %}
-{# O PAINEL DO DIA — pedido do oficial em 14/10/2026, o primeiro dia operando o
-   protesto no sistema: «botão claro e bem posicionado para cada parte da
-   rotina do protesto» e «um fluxo natural». As etapas vêm de
-   protesto_roteiro.ETAPAS_DO_DIA, na ordem em que o título anda; o roteiro do
-   TJMA (o papel) continua embaixo, recolhido — ele é a fonte, e o painel é por
-   onde se trabalha. A contagem CONTA e não julga: o traço quer dizer «não deu
-   para medir», e zero é medido. #}
+{# O ROTEIRO COBRADO — ordem do oficial em 29/10/2026: «ter apenas itens
+   necessarios», «vincular a operacao» e «vincular cada obrigacao a uma
+   conduta». Cada conduta vem de protesto_roteiro.CONDUTAS_DO_DIA, com o botao
+   que leva a tela que FAZ aquilo e as obrigacoes medidas no banco. ATRASADO
+   so sai com prazo provado (a hora do papel ou o prazo da norma); o traco
+   quer dizer «nao deu para medir», e zero e medido. O papel do TJMA continua
+   embaixo, recolhido, como fonte — com o que saiu do roteiro e a prova. #}
 <style>
-  .pd-relogio{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 14px}
-  .pd-relogio a{display:flex;flex-direction:column;gap:2px;min-width:180px;
+  .rt-resumo{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 14px}
+  .rt-resumo .card{padding:10px 14px;min-width:150px}
+  .rt-resumo strong{font-size:1.6em;display:block;line-height:1.1}
+  .rt-relogio{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 14px}
+  .rt-relogio a{display:flex;flex-direction:column;gap:2px;min-width:180px;
     padding:10px 14px;border:1px solid var(--border);border-radius:12px;
     background:var(--panel);color:var(--text);text-decoration:none}
-  .pd-relogio a:hover{border-color:var(--accent)}
-  .pd-relogio strong{font-size:1.5em;line-height:1.1}
-  .pd-relogio small{color:var(--muted)}
-  .pd-estado{margin:0 0 14px}
-  .pd-estado ul{margin:6px 0 0 18px;padding:0}
-  .pd-sim{color:var(--ok);font-weight:700}
-  .pd-nao{color:var(--warning);font-weight:700}
-  .pd-etapas{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px}
-  .pd-etapa{margin:0}
-  .pd-cab{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px 6px}
-  .pd-num{display:inline-flex;align-items:center;justify-content:center;
+  .rt-relogio a:hover{border-color:var(--accent)}
+  .rt-relogio strong{font-size:1.5em;line-height:1.1}
+  .rt-relogio small{color:var(--muted)}
+  .rt-sim{color:var(--ok);font-weight:700}
+  .rt-nao{color:var(--warning);font-weight:700}
+  .rt-condutas{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px}
+  .rt-conduta{margin:0;border-left:5px solid var(--border)}
+  .rt-conduta.s-ATRASADO{border-left-color:var(--danger)}
+  .rt-conduta.s-PENDENTE{border-left-color:var(--warning)}
+  .rt-conduta.s-FEITO{border-left-color:var(--ok)}
+  .rt-cab{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .rt-num{display:inline-flex;align-items:center;justify-content:center;
     width:34px;height:34px;border-radius:50%;background:var(--accent);
     color:#fff;font-weight:700;flex:0 0 auto}
-  .pd-cab h2{margin:0;font-size:1.15em;flex:1 1 auto}
-  .pd-hora{padding:4px 10px;border-radius:999px;border:1px solid var(--border);
+  .rt-cab h2{margin:0;font-size:1.15em;flex:1 1 auto}
+  .rt-hora{padding:4px 10px;border-radius:999px;border:1px solid var(--border);
     font-size:.9em;white-space:nowrap}
-  .pd-hora strong{font-size:1.05em}
-  .pd-corpo{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;padding:6px 16px 4px}
-  @media (max-width:760px){.pd-corpo{grid-template-columns:1fr}}
-  .pd-acoes{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
-  .pd-acoes .button{font-size:1.02em}
-  .pd-acoes .button.primary{padding:11px 18px;font-weight:700;width:auto}
-  .pd-quem{color:var(--muted);font-size:.85em;margin-left:4px}
-  .pd-sem{border:1px dashed var(--warning);border-radius:8px;padding:8px 10px;
-    color:var(--warning);font-size:.92em;max-width:100%}
-  .pd-contagens{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-content:start}
-  .pd-contagens dt{font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
-  .pd-contagens dd{margin:0;color:var(--muted)}
-  .pd-texto{padding:4px 16px 14px;margin:0}
-  .pd-texto p{margin:6px 0}
-  .pd-falta{border-left:3px solid var(--warning);padding-left:10px}
-  details.pd-papel{margin-top:22px}
-  details.pd-papel > summary{cursor:pointer;font-weight:700;padding:8px 0}
+  .rt-sit{display:inline-block;border-radius:999px;padding:4px 10px;font-weight:700;
+    font-size:.85em;white-space:nowrap;background:#eef2f4;color:#344054}
+  .rt-sit.s-ATRASADO{background:#fee4e2;color:#b42318}
+  .rt-sit.s-PENDENTE{background:#fffaeb;color:#b54708}
+  .rt-sit.s-FEITO{background:#dcfae6;color:#067647}
+  .rt-acoes{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+  .rt-acoes .button.primary{font-weight:700}
+  .rt-obrig{border-top:1px solid var(--hairline,#e7ecef);padding:8px 0}
+  .rt-obrig > div{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+  .rt-faltam{font-weight:700;font-variant-numeric:tabular-nums;min-width:2.5em;text-align:right}
+  .rt-lista{margin:6px 0 0 3.2em;padding:0}
+  .rt-lista li{margin:2px 0}
+  .rt-lista .atrasado{color:#b42318;font-weight:600}
+  .rt-papel-do-passo{color:var(--muted);font-size:.85em}
+  details.rt-fonte{margin-top:22px}
+  details.rt-fonte > summary{cursor:pointer;font-weight:700;padding:8px 0}
 </style>
 
 <nav class="notice" aria-label="Nesta página" style="margin-bottom:12px">
-  <strong>As etapas:</strong>
-  {% for e in r.etapas %}<a href="#{{ e.ancora }}">{{ e.n }}. {{ e.titulo }}</a>{% if not loop.last %} · {% endif %}{% endfor %}
-  · <a href="#roteiro-das-centrais">O roteiro das Centrais (o papel)</a>
+  <strong>As condutas:</strong>
+  {% for c in r.condutas %}<a href="#{{ c.ancora }}">{{ c.n }}. {{ c.titulo }}</a>{% if not loop.last %} · {% endif %}{% endfor %}
+  · <a href="#o-que-saiu">O que saiu do roteiro</a>
+  · <a href="#roteiro-das-centrais">O papel das Centrais</a>
 </nav>
 
-{# O RELÓGIO PRIMEIRO: é a única parte do dia com HORA MARCADA. Cada cartão
-   leva à etapa daquele horário. #}
-<section class="pd-relogio" aria-label="Horários da CRA de hoje" id="relogio">
+{# O RESUMO: quantas condutas em cada situação, e quantas vezes alguém
+   insistiu no que a regra diz que é erro. #}
+<section class="rt-resumo" aria-label="Resumo do dia">
+  {% for s in ['ATRASADO', 'PENDENTE', 'FEITO'] %}
+    <div class="card"><span class="rt-sit s-{{ s }}">{{ r.rotulo_da_situacao[s] }}</span>
+      <strong>{{ r.total[s] }}</strong><small>conduta(s)</small></div>
+  {% endfor %}
+  <div class="card" id="afirmacoes-do-roteiro">
+    <span class="rt-sit">Insistência no erro</span>
+    <strong>{% if afirmacoes_7_dias is none %}—{% else %}{{ afirmacoes_7_dias }}{% endif %}</strong>
+    <small>{% if afirmacoes_7_dias is none %}não deu para contar as afirmações{% else %}{{ afirmacoes_7_dias }} afirmações nos últimos 7 dias{% endif %}
+      {% if user.role == 'ADMIN' %}· <a href="{{ url_for('protesto_afirmacoes') }}">ver as afirmações expressas</a>{% endif %}</small>
+  </div>
+</section>
+
+{# O RELÓGIO: a parte do dia com HORA MARCADA, cada cartão leva à conduta. #}
+<section class="rt-relogio" aria-label="Horários da CRA de hoje" id="relogio">
   {% for h in r.relogio %}
     <a href="#{{ h.ancora }}">
       <strong>{{ h.hora }}</strong>
@@ -68,105 +86,104 @@
   {% endfor %}
 </section>
 
-{# O QUE DECIDE SE A CONFIRMAÇÃO E O ANDAMENTO SOBEM SOZINHOS. Sem isto o
-   escrevente supõe que subiram — e a Central não sabe de nada. #}
 {% set est = r.estado %}
-<section class="notice pd-estado" aria-label="Envio às Centrais">
+<section class="notice" aria-label="Envio às Centrais">
   <strong>Envio automático à CRA (produção):</strong>
   {% if est.cra_envio_automatico_producao is none %}
-    <span>não deu para ler a configuração.</span>
+    não deu para ler a configuração.
   {% elif est.cra_envio_automatico_producao %}
-    <span class="pd-sim">ligado</span> — a confirmação e o andamento sobem pela
-    API logo depois de receber a remessa.
+    <span class="rt-sim">ligado</span> — a confirmação e o andamento do
+    apontamento sobem pela API logo depois de receber a remessa. O que falhar
+    aparece na conduta 2.
   {% else %}
-    <span class="pd-nao">desligado</span> — a confirmação e o andamento são
-    gerados, mas <strong>não sobem sozinhos</strong>: baixe-os na ficha da
-    remessa e suba no site da CRA. Quem liga é o administrador, em
+    <span class="rt-nao">desligado</span> — a confirmação e o andamento são
+    gerados, mas <strong>não sobem sozinhos</strong>, e a conduta 2 os cobra
+    até as 14:10. Quem liga é o administrador, em
     <a href="{{ url_for('settings') }}">Configurações</a>.
   {% endif %}
-  <ul>
-    {% for nome, tem in est.credenciais_de_producao.items() %}
-      <li>Credencial de produção da {{ nome }}:
-        {% if tem is none %}não deu para conferir
-        {% elif tem %}<span class="pd-sim">informada</span>
-        {% else %}<span class="pd-nao">não informada</span> — sem ela nada sobe pela API{% endif %}
-      </li>
-    {% endfor %}
-  </ul>
+  {% for nome, tem in est.credenciais_de_producao.items() %}
+    · Credencial da {{ nome }}:
+    {% if tem is none %}não deu para conferir{% elif tem %}<span class="rt-sim">informada</span>{% else %}<span class="rt-nao">não informada</span>{% endif %}
+  {% endfor %}
 </section>
 
-<ol class="pd-etapas">
-{% for e in r.etapas %}
+<ol class="rt-condutas">
+{% for c in r.condutas %}
   <li>
-  <section class="panel pd-etapa" id="{{ e.ancora }}">
-    <div class="pd-cab">
-      <span class="pd-num" aria-hidden="true">{{ e.n }}</span>
-      <h2>{{ e.titulo }}</h2>
-      {% if e.hora_limite %}
-        <span class="pd-hora">
-          {% if e.hora_quem == 'a CRA manda' %}a CRA disponibiliza às <strong>{{ e.hora_limite }}</strong>
-          {% else %}enviar até <strong>{{ e.hora_limite }}</strong>{% endif %}
-        </span>
-      {% endif %}
+  <section class="panel rt-conduta s-{{ c.situacao }}" id="{{ c.ancora }}">
+    <div class="rt-cab">
+      <span class="rt-num" aria-hidden="true">{{ c.n }}</span>
+      <h2>{{ c.titulo }}</h2>
+      {% if c.hora_limite %}<span class="rt-hora">até <strong>{{ c.hora_limite }}</strong></span>{% endif %}
+      <span class="rt-sit s-{{ c.situacao }}">{{ r.rotulo_da_situacao[c.situacao] }}{% if c.faltam %} · falta(m) {{ c.faltam }}{% endif %}{% if c.atrasados %} · {{ c.atrasados }} atrasado(s){% endif %}</span>
     </div>
-    <div class="pd-corpo">
-      <div class="pd-acoes">
-        {% for b in e.botoes %}
-          <span>
-            <a class="button {{ 'primary' if loop.first else 'secondary' }}"
-               href="{{ url_for(b.tela, **b.args) }}">{{ b.rotulo }}</a>
-            {% if b.quem %}<span class="pd-quem">({{ b.quem }})</span>{% endif %}
-          </span>
-        {% endfor %}
-        {% if e.sem_botao %}
-          {# SEM BOTÃO, DE PROPÓSITO: a peça não existe no sistema, e um botão
-             que baixasse um arquivo faria o passo parecer feito. #}
-          <div class="pd-sem"><strong>Sem botão:</strong> {{ e.sem_botao }}.</div>
+    <p style="margin:8px 0 0"><strong>A conduta:</strong> {{ c.conduta }}</p>
+    <div class="rt-acoes">
+      {% for b in c.botoes %}
+        <a class="button {{ 'primary' if loop.first else 'secondary' }}"
+           href="{{ url_for(b.tela, **b.args) }}{% if b.get('ancora') %}#{{ b.ancora }}{% endif %}">{{ b.rotulo }}</a>
+      {% endfor %}
+    </div>
+    {% for o in c.obrigacoes %}
+      <div class="rt-obrig">
+        <div>
+          <span class="rt-faltam">{% if o.faltam is none %}—{% else %}{{ o.faltam }}{% endif %}</span>
+          <span class="rt-sit s-{{ o.situacao }}">{{ r.rotulo_da_situacao[o.situacao] }}</span>
+          <span>{{ o.rotulo }}</span>
+          <small class="muted">— {{ o.regra }}</small>
+        </div>
+        {% if o.feito %}<p class="rt-lista small" style="margin-top:4px">{{ o.feito }}.</p>{% endif %}
+        {% if o.motivo %}<p class="rt-lista small" style="margin-top:4px">Não deu para medir: {{ o.motivo }}.</p>{% endif %}
+        {% if o.lista %}
+          <ul class="rt-lista small">
+            {% for i in o.lista %}
+              <li class="{{ 'atrasado' if i.atrasado }}">
+                {% if i.tela %}<a href="{{ url_for(i.tela, **i.args) }}">{{ i.texto }}</a>{% else %}{{ i.texto }}{% endif %}
+                {% if i.quando %}<span class="muted">· {{ i.quando }}</span>{% endif %}
+                {% if i.prazo %}<span class="muted">· prazo {{ i.prazo }}</span>{% endif %}
+                {% if i.atrasado %}· <strong>atrasado</strong>{% endif %}
+              </li>
+            {% endfor %}
+            {% if o.mais %}<li class="muted">e mais {{ o.mais }}.</li>{% endif %}
+          </ul>
         {% endif %}
+        {% if o.nota %}<p class="rt-lista small muted" style="margin-top:4px">{{ o.nota }}</p>{% endif %}
       </div>
-      <dl class="pd-contagens" aria-label="O que espera nesta etapa">
-        {% for c in e.contagens %}
-          <dt>{% if c.valor is none %}—{% else %}{{ c.valor }}{% endif %}</dt>
-          <dd>{{ c.rotulo }}</dd>
-        {% endfor %}
-      </dl>
-    </div>
-    <div class="pd-texto">
-      <p><strong>O que esta tela faz:</strong> {{ e.faz }}</p>
-      {% if e.falta %}<p class="pd-falta"><strong>O que ela não faz:</strong> {{ e.falta }}</p>{% endif %}
-      {% if e.mostra_envio_automatico %}
-        <p><small>Envio automático à CRA em produção:
-          {% if est.cra_envio_automatico_producao is none %}não deu para ler
-          {% elif est.cra_envio_automatico_producao %}ligado{% else %}<strong>desligado</strong>{% endif %}.
-        </small></p>
-      {% endif %}
-    </div>
+    {% endfor %}
+    {% if c.papel %}<p class="rt-papel-do-passo">No papel: {{ c.papel | join('; ') }}.</p>{% endif %}
   </section>
   </li>
 {% endfor %}
 </ol>
 
 <p><small>
-  Os números <strong>contam, e não julgam</strong>: um zero pode ser «ainda não
-  fiz» ou «hoje não veio nada da Central», e o sistema não tem como saber qual.
-  O traço <strong>—</strong> quer dizer que não deu para medir nesta instalação.
+  <strong>Atrasado</strong> só aparece quando o banco prova que passou da hora
+  — a hora do papel da CRA ou o prazo da norma. A obrigação sem prazo escrito
+  fica <strong>pendente</strong>. O traço <strong>—</strong> quer dizer que não
+  deu para medir nesta instalação.
 </small></p>
 
-<details class="pd-papel" id="roteiro-das-centrais">
+<section class="panel" id="o-que-saiu">
+  <div class="panel-head"><span>O que saiu do roteiro, e a prova</span></div>
+  <p class="small">O sistema faz sozinho — e por isso não é conduta de ninguém.
+    O que não tinha prova ficou no roteiro.</p>
+  <table class="table">
+    <thead><tr><th>O passo</th><th>Por que saiu</th><th>A prova</th></tr></thead>
+    <tbody>
+    {% for f in r.fora_do_roteiro %}
+      <tr>
+        <td><strong>{{ f.o_que }}</strong></td>
+        <td><small>{{ f.por_que }}</small></td>
+        <td><small>{{ f.codigo }}.<br>{{ f.medido }}</small></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<details class="rt-fonte" id="roteiro-das-centrais">
 <summary>O roteiro das Centrais — o papel do TJMA e do IEPTB-MA, passo a passo</summary>
 
-<nav class="notice" aria-label="No roteiro" style="margin:8px 0 12px">
-  <a href="#horarios-cra">Horários da CRA</a> ·
-  <a href="#roteiro-cra">CRA — o dia</a> ·
-  <a href="#roteiro-cenprot">CENPROT</a> ·
-  <a href="#coluna-hoje">Coluna «Hoje»</a> ·
-  <a href="#so-tabeliao">Só tabelião/substituto</a> ·
-  <a href="#fontes-roteiro">Fontes do roteiro</a>
-</nav>
-
-{# OS HORARIOS PRIMEIRO, e nao no fim: e a unica coisa desta tela que tem
-   HORA MARCADA. Perder as 11h30 do retorno nao e atraso de um dia — e o
-   apresentante sem resposta, e o titulo pago aparecendo como protestado. #}
 <section class="panel" id="horarios-cra">
   <div class="panel-head">
     <span>Horários da CRA</span>
@@ -184,71 +201,34 @@
     {% endfor %}
     </tbody>
   </table>
-  <p style="padding:0 14px 14px"><small>
-    Três dos quatro horários são de arquivo que <strong>sai daqui</strong>. O
-    envio da remessa, às 12:30, é a CRA quem manda — é a hora em que o arquivo
-    do dia fica disponível para baixar.
-  </small></p>
 </section>
 
-{% macro lista(passos, titulo, quantos, total, ancora='') %}
-<section class="panel"{% if ancora %} id="{{ ancora }}"{% endif %}>
+<section class="panel" id="papel-passos">
   <div class="panel-head">
-    <span>{{ titulo }}</span>
-    <small>{{ quantos }} dos {{ total }} passos têm tela neste sistema</small>
+    <span>Os passos do papel, e para onde cada um foi</span>
+    <small>CRA: {{ cobertura.cra_com_tela }} de {{ cobertura.cra_total }} com tela ·
+      CENPROT: {{ cobertura.cenprot_com_tela }} de {{ cobertura.cenprot_total }} com tela</small>
   </div>
   <table class="table">
-    <thead><tr>
-      <th style="width:38%">O passo</th><th>Onde se faz</th>
-      <th style="width:14%">Hoje</th>
-    </tr></thead>
+    <thead><tr><th>Central</th><th style="width:38%">O passo</th><th>Onde está no roteiro</th></tr></thead>
     <tbody>
-    {% for p in passos %}
+    {% for p in r.papel %}
       <tr>
+        <td>{{ p.central }}</td>
         <td>
           <strong>{{ p.passo }}</strong>
-          {% if p.norma %}<br><small>{{ p.norma }}</small>{% endif %}
-          {% if p.nota %}<br><small style="opacity:.8">{{ p.nota }}</small>{% endif %}
+          {% if p.get('norma') %}<br><small>{{ p.norma }}</small>{% endif %}
+          {% if p.get('nota') %}<br><small style="opacity:.8">{{ p.nota }}</small>{% endif %}
         </td>
         <td>
-          {% if p.o_sistema_faz %}
-            <a class="button" href="{{ url_for(p.tela) }}">Abrir a tela</a>
-            {% if p.onde %}<br><small>{{ p.onde }}</small>{% endif %}
-          {% else %}
-            {# O PASSO SEM TELA DIZ ONDE SE FAZ. Calar aqui faria o escrevente
-               procurar no sistema o que nao existe, e concluir que errou o
-               caminho. #}
-            <small><strong>o sistema não faz este passo</strong><br>
-            {{ p.onde }}</small>
-          {% endif %}
-        </td>
-        <td>
-          {% if p.quantos_hoje is none %}
-            <small>—</small>
-          {% else %}
-            <strong>{{ p.quantos_hoje }}</strong>
-          {% endif %}
+          {% if p.conduta_n %}<a href="#{{ p.conduta_ancora }}">conduta {{ p.conduta_n }}</a>
+          {% elif p.fora_o_que %}<small><strong>saiu do roteiro:</strong> {{ p.fora_o_que }} — o sistema faz sozinho</small>{% endif %}
+          {% if p.get('onde') %}<br><small>{{ p.onde }}</small>{% endif %}
         </td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
-</section>
-{% endmacro %}
-
-{{ lista(r.cra, 'CRA — o dia', cobertura.cra_com_tela, cobertura.cra_total, 'roteiro-cra') }}
-{{ lista(r.cenprot, 'CENPROT — a alimentação diária',
-         cobertura.cenprot_com_tela, cobertura.cenprot_total, 'roteiro-cenprot') }}
-
-<section class="panel" id="coluna-hoje">
-  <div class="panel-head"><span>A coluna «Hoje»</span></div>
-  <p style="padding:14px"><small>
-    Ela <strong>conta, e não julga</strong>. Um zero pode ser «ainda não fiz»
-    ou «hoje não veio nada da Central», e o sistema não tem como saber qual —
-    dizer «atrasado» sobre um dia em que nada chegou seria alarme que soa
-    sempre. O traço <strong>—</strong> quer dizer que aquele passo não deixa
-    rastro no banco, e por isso não há o que contar.
-  </small></p>
 </section>
 
 <section class="panel" id="so-tabeliao">

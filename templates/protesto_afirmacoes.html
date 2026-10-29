@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block title %}Afirmações expressas — Protesto{% endblock %}
+{% block heading %}<h1>Afirmações expressas</h1>{% endblock %}
+{% block content %}
+{# AS AFIRMAÇÕES EXPRESSAS — ordem do oficial em 29/10/2026: «se insistir em
+   algo que eh erro, precisa afirmar expressamente e deixar log». Cada linha é
+   uma de `audit_logs` com action = 'AFIRMACAO_EXPRESSA', no contrato comum
+   ({"regra", "afirmacao", "o_que_faltava"}). A tela só LÊ: o que se afirmou
+   fica, e quem confere é o oficial. O filtro vai por GET — não grava nada. #}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_painel') }}">&larr; O roteiro do dia</a>
+</div>
+
+<section class="panel">
+  <p class="small" style="margin-top:0">
+    Quando a escrevente insiste numa coisa que a regra do sistema diz que é
+    erro, ela tem de <strong>afirmar expressamente</strong> — com as próprias
+    palavras — por que segue assim. Cada afirmação fica aqui, com quem, quando,
+    a regra que ela passou por cima e o que faltava.
+  </p>
+  <form method="get" action="{{ url_for('protesto_afirmacoes') }}" class="inline-form">
+    <label>De <input type="date" name="de" value="{{ lista.de }}"></label>
+    <label>Até <input type="date" name="ate" value="{{ lista.ate }}"></label>
+    <label>Regra
+      <select name="regra">
+        <option value="">todas as regras</option>
+        {% for nome in lista.regras %}
+          <option value="{{ nome }}"{% if nome == lista.regra %} selected{% endif %}>{{ nome }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="primary">Filtrar</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>{% if lista.total is none %}Não deu para ler a auditoria nesta instalação{% else %}{{ lista.total }} afirmação(ões) de {{ lista.de }} a {{ lista.ate }}{% if lista.regra %} — regra «{{ lista.regra }}»{% endif %}{% endif %}</span>
+  </div>
+  {% if lista.cortado %}
+    <p class="notice">A lista passou de {{ limite }} linhas e foi cortada nas
+      mais recentes: estreite o período para ver as outras.</p>
+  {% endif %}
+  {% if lista.linhas %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr>
+        <th>Quando</th><th>Quem</th><th>Regra</th><th>Onde</th>
+        <th style="width:34%">O que a pessoa afirmou</th><th>O que faltava</th>
+      </tr></thead>
+      <tbody>
+      {% for a in lista.linhas %}
+        <tr>
+          <td><small>{{ a.ts[:10] }} {{ a.ts[11:16] }}</small></td>
+          <td>{{ a.quem }}</td>
+          <td><strong>{{ a.regra }}</strong></td>
+          <td><small>{{ a.entidade or '—' }}{% if a.entidade_id not in (none, '') %} #{{ a.entidade_id }}{% endif %}</small></td>
+          <td>{{ a.afirmacao or '—' }}</td>
+          <td><small>{{ a.o_que_faltava or '—' }}</small></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif lista.total is not none %}
+    <p class="muted">Nenhuma afirmação expressa neste período{% if lista.regra %} para esta regra{% endif %}.
+      As travas que pedem a afirmação gravam aqui quando alguém insiste.</p>
+  {% endif %}
+</section>
+{% endblock %}

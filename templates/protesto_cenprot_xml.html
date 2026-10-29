@@ -44,7 +44,18 @@
         <td>{{ r.data_ato }}</td>
         <td><a href="{{ url_for('protesto_titulo', titulo_id=r.titulo_id) }}">{{ r.protocolo or r.titulo_id }}</a></td>
         <td>{{ ocorrencias.get(r.tipo, r.tipo) }}</td>
-        <td><span class="badge warning">fora</span> {{ r.motivo }}</td>
+        <td><span class="badge warning">fora</span> {{ r.motivo }}
+          {% if r.apresentante_do_titulo %}
+          {% set atual = r.apresentante_atual or {} %}
+          <form method="post" action="{{ url_for('protesto_cenprot_xml_apresentante_do_titulo', titulo_id=r.titulo_id) }}" style="margin-top:6px">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>Nome <input name="nome" size="26" value="{{ atual.nome or '' }}" required></label>
+            <label>CNPJ ou CPF <input name="documento" size="16" value="{{ atual.documento or '' }}" required></label>
+            <label>Tipo <input name="tipo_apresentante" size="2" value="{{ atual.tipo_apresentante or '' }}" required></label>
+            <button type="submit">Gravar o apresentante deste título</button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -95,6 +106,19 @@
     instrumento do protesto, o <strong>endereço</strong> (Lei 9.492/1997, art.
     22, II). O que faltar, cadastre aqui.
   </p>
+  <p style="padding:0 14px">
+    <strong>O código TAB não tem cadastro único</strong>: são os títulos da
+    Gestão de Pedidos da CENPROT, e o apresentante é quem pediu — um por
+    título. O nome, o CNPJ/CPF e o tipo de cada um ficam no próprio título, e
+    o título sem eles espera na lista acima, com o formulário ao lado.
+  </p>
+  {% if tem_acervo %}
+  <form method="post" action="{{ url_for('protesto_cenprot_xml_titulos_tab_do_acervo') }}" style="padding:0 14px 14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Trazer do E-Ofício o apresentante dos títulos TAB</button>
+    <small>Só preenche o que está vazio; o que alguém informou fica.</small>
+  </form>
+  {% endif %}
   {# O botão «Trazer do E-Ofício» (o cadastro tbCobrador do acervo) saiu em
      17/10/2026: a importação terminou. A rota
      protesto_cenprot_xml_apresentantes_do_acervo fica, sem botão. #}

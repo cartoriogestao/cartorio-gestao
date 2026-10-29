@@ -2714,7 +2714,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             #   sem selo, e o segundo tem correcao tao clara quanto o primeiro.
             return {"recado": f" O ato foi lavrado SEM SELO: {r['motivo']}",
                     "suspende": True}
-        return {"recado": f" Selo {r['numero']}.", "suspende": False}
+        recado = f" Selo {r['numero']}."
+        if isento:
+            # ATO ISENTO COM ITEM COBRADO NO PROTOCOLO EM ATENDIMENTO: não
+            # recusa — o mesmo protocolo pode ter atos pagos —, mas avisa
+            # (28/10/2026, o protocolo do INCRA). O item LIGADO ao ato já
+            # recusa antes, na trava (`ato_selado.cobrir_o_selo`).
+            with db.connect() as con:
+                avisos = AS.avisos_do_ato_isento(
+                    con, usuario=app.extensions["usuario_nome"](), codigo=codigo_tj)
+            if avisos:
+                recado += " ATENÇÃO: " + " ".join(avisos)
+        return {"recado": recado, "suspende": False}
 
     
 
@@ -5403,6 +5414,63 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   {"via": "botao_selar"})
             flash(f"Prenotação {p['numero']} selada.{selado}", "success")
         return redirect(url_for("ri_protocolo_ver", protocolo_id=protocolo_id))
+
+    @app.route("/registro-imoveis/ato/<int:ato_id>/selo-cancelado", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER")
+    def ri_selo_cancelado_no_portal(ato_id):
+        """O selo deste ato foi CANCELADO no Portal do Selo: o sistema registra.
+
+        28/10/2026, o oficial, sobre a AV-9/2 (selo pago num ato gratuito):
+        «cancela e abre botao pra emitir outro selo gratuito». O aparelho da
+        casa não cancela selo no Tribunal; quem cancela é a pessoa, no Portal,
+        e confirma aqui. Depois disso o ato fica sem selo, a cobertura do caixa
+        volta, e «Selar este ato» pede o selo novo pela tentativa seguinte do
+        SID — marcando «isento», com o motivo, quando o ato é gratuito.
+        ESCREVE. Só ADMIN e MANAGER: desfazer selo é decisão de quem responde.
+        """
+        a = q1("SELECT * FROM ri_atos WHERE id=%s", (ato_id,))
+        if not a:
+            abort(404)
+        volta = redirect(url_for("ri_ficha", matricula_id=a["matricula_id"])
+                         + f"#selar-ato-{ato_id}")
+        numero = str(a["selo_texto"] or "").strip()
+        if not numero:
+            flash("Este ato não tem selo gravado para cancelar.", "danger")
+            return volta
+        if request.form.get("confirmo_portal") != "1":
+            flash("Cancele o selo no Portal do Selo do TJMA primeiro e marque a "
+                  "confirmação: o sistema não cancela selo no Tribunal, e dois "
+                  "selos vivos para o mesmo ato é o que não pode acontecer.",
+                  "danger")
+            return volta
+        motivo = (request.form.get("motivo") or "").strip()
+        if len(motivo) < 10:
+            flash("Escreva o motivo do cancelamento (pelo menos dez letras): é ele "
+                  "que explica, depois, por que este ato tem dois selos.", "danger")
+            return volta
+        try:
+            with db.transaction() as con:
+                feito = AS.registrar_cancelamento_no_portal(
+                    con, numero=numero, motivo=motivo, agora=db.now(),
+                    usuario=app.extensions["usuario_nome"]())
+                bd = banco(con)
+                # O CARIMBO DO SELO CANCELADO SAI DO ATO JUNTO (o QR e a
+                # etiqueta de valores), como no R-01/4019: papel novo do ato
+                # não pode sair com o QR de um selo que não vale.
+                bd.escrever("""UPDATE ri_atos SET selo_qr=NULL, selo_qr_mime=NULL,
+                                   selo_qr_2=NULL, selo_qr_2_mime=NULL,
+                                   emolumentos=NULL
+                                WHERE id=%s""", (int(ato_id),))
+        except (AS.AtoError, ValueError, RuntimeError) as erro:
+            flash(str(erro), "danger")
+            return volta
+        audit("RI_SELO_CANCELADO_NO_PORTAL", "RI_ATO", ato_id,
+              {"selo": numero, "motivo": motivo, "cobertura": feito.get("cobertura")})
+        flash(f"Selo {numero} registrado como cancelado no Portal. O ato está sem "
+              "selo: use «Selar este ato» — marque «isento», com o motivo, se o "
+              "ato é gratuito. O selo novo sai com outra identificação (SID), e o "
+              "cancelado não volta.", "success")
+        return volta
 
     @app.route("/registro-imoveis/ato/<int:ato_id>/selar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -9146,6 +9214,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         nova = (request.form.get("raiz") or "").strip()
         if nova:
+            # A PASTA DIGITADA TEM DE MORAR NA CASA (LS02 A1–A3; LX12) — a
+            # régua de `pastas_da_casa.dentro_da_casa`, a mesma das outras
+            # importações. Esta tela ficou de fora da passada de 19/10/2026
+            # (achado do CodeQL, py/path-injection): a pasta digitada era
+            # gravada e varrida inteira (`os.walk`) pelo serviço, que roda
+            # como SYSTEM — `\\maquina\x` abria SMB para fora com a credencial
+            # da máquina, e qualquer pasta do servidor virava «ficha» ligada
+            # às matrículas. O padrão (`eoficio\ONR_IMAGENS`) já mora na casa.
+            try:
+                nova = str(app.extensions["pasta_da_casa"](nova))
+            except PDC.ForaDaCasa as recusa:
+                flash(str(recusa), "danger")
+                return redirect(url_for("ri_resolver_imagens"))
             db.set_settings({"ri_imagens_raiz": nova})
             raiz = Path(nova)
         if not RIMG.e_pasta(raiz):

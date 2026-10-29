@@ -171,11 +171,21 @@ class CraRecusou(CraError):
     `bruto` é a resposta INTEIRA da Central, quando há uma — à parte da frase.
     A frase vai à tela (e o `flash` mora no cookie da sessão, que não leva
     XML de vários KB); o bruto vai só para o campo de erro do arquivo
-    (`pt_retornos.cra_envio_erro`), que é onde se confere depois (LH08)."""
+    (`pt_retornos.cra_envio_erro`), que é onde se confere depois (LH08).
 
-    def __init__(self, mensagem: str = "", *, bruto: str = "") -> None:
+    `codigo` e `motivo` vêm SÓ QUANDO A CENTRAL DISSE NÃO COM TODAS AS LETRAS
+    — um código de recusa no `<relatorio>`, ou o texto dela marcando o
+    arquivo como inválido. É o que separa a RECUSA (o arquivo não entrou, e
+    os atos dele não foram informados) da resposta duvidosa (vazia, fora do
+    XML, falha SOAP), em que não dá para saber o que a Central gravou
+    (28/10/2026, `protesto_cra_envio`)."""
+
+    def __init__(self, mensagem: str = "", *, bruto: str = "",
+                 codigo: str | None = None, motivo: str | None = None) -> None:
         super().__init__(mensagem)
         self.bruto = str(bruto or "")
+        self.codigo = str(codigo or "").strip() or None
+        self.motivo = str(motivo or "").strip() or None
 
 
 # O PADRÃO É PRODUÇÃO DESDE 14/10/2026 — ordem do oficial no primeiro dia do

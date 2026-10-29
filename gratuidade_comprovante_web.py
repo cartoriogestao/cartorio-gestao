@@ -419,6 +419,12 @@ def registrar_rotas_do_selo_e_caixa(app, db, login_required, roles_required, aud
                 con, tabela=tabela, pedidos=pedidos,
                 pre_marcar_protocolo_id=(atendendo or {}).get("id"))
                 if pedidos else [])
+            if pedidos:
+                candidatos = CXP.acrescentar_o_atendimento_de_fora(
+                    con, candidatos,
+                    protocolo_id=(atendendo or {}).get("id"),
+                    pedidos=pedidos,
+                    atribuicoes=AS.atribuicoes_do_ato(tabela))
         selar = str(request.args.get("selar") or "").strip()
         # Só caminho DESTA casa: «/algo», nunca «//outro-site» nem endereço.
         url_de_selar = selar if selar.startswith("/") and not selar.startswith("//") else None

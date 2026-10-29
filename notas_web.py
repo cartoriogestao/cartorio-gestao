@@ -2098,6 +2098,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     #: Os itens da tabela que pagam o selo do reconhecimento (comum, veículo,
     #: financeiro). O 13.17.1 é do cartão, e não entra.
     CODIGOS_DA_FIRMA = ("13.17.2", "13.17.3", "13.17.4")
+    PEDIDOS_DA_FIRMA = [(codigo, 1) for codigo in CODIGOS_DA_FIRMA]
 
     def _candidatos_da_firma() -> tuple[list[dict], dict | None]:
         """Os protocolos pagos que o escrevente pode escolher para a firma. Só LÊ.
@@ -2125,12 +2126,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     ids = {i["id"] for i in ja["itens"]}
                     ja["itens"] += [i for i in c["itens"] if i["id"] not in ids]
                     ja["cobre_tudo"] = ja["cobre_tudo"] or c["cobre_tudo"]
-        lista = list(juntos.values())
-        for c in lista:
-            if c["cobre_tudo"]:
-                c["faltam"] = []
-        lista.sort(key=lambda c: (not c["pre_marcado"], not c["cobre_tudo"],
-                                  -c["protocolo_id"]))
+            lista = list(juntos.values())
+            for c in lista:
+                if c["cobre_tudo"]:
+                    c["faltam"] = []
+            lista.sort(key=lambda c: (not c["pre_marcado"], not c["cobre_tudo"],
+                                      -c["protocolo_id"]))
+            # Aberto como RI (a primeira opção antiga do caixa) paga o item e
+            # mesmo assim ficava invisível. Mostra o motivo; não vira escolha.
+            lista = CXP.acrescentar_o_atendimento_de_fora(
+                con, lista, protocolo_id=pre, pedidos=PEDIDOS_DA_FIRMA,
+                atribuicoes=AS.atribuicoes_do_ato("nt_reconhecimentos"))
         return lista, (dict(atendendo) if atendendo else None)
 
     def _suspenso_sem_cobertura(reconhecimento_id) -> bool:
@@ -2343,6 +2349,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return render_template("notas_reconhecimento.html", busca=busca,
                                achados=achados, hoje=hoje, precos=precos,
                                candidatos_selo=candidatos_selo,
+                               pedidos_selo=PEDIDOS_DA_FIRMA,
                                atendendo=atendendo,
                                ESPECIES=ESPECIES_RECONHECIMENTO,
                                DOCUMENTOS_DE_VEICULO=DOCUMENTOS_DE_VEICULO,
@@ -2411,7 +2418,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                       else ([], None))
         return render_template("notas_reconhecimento_ver.html", r=dict(r), partes=partes,
                                presencas=presencas, suspenso=suspenso,
-                               candidatos_selo=candidatos_selo, atendendo=atendendo,
+                               candidatos_selo=candidatos_selo,
+                               pedidos_selo=PEDIDOS_DA_FIRMA,
+                               atendendo=atendendo,
                                emolumento=emolumento_do_servico(r["servico_codigo"],
                                                                 r["quantidade"] or 1),
                                sv=dados_serventia(db.get_settings))
@@ -6183,7 +6192,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         from ri_web import procurar_arquivos
         if request.method == "POST":
             pasta = (request.form.get("pasta") or "").strip()
-            if not pasta:
+            if pasta:
+                # SÓ PASTA DA CASA (LS02 A3; LX12) — a mesma régua das outras
+                # importações digitadas. Achado do CodeQL (py/path-injection):
+                # a pasta digitada ia direto à carga, que abre os .jsonl dela
+                # como SYSTEM — `\\maquina\x` levava o servidor à rede. A busca
+                # automática abaixo não passa por aqui: ela não vem do balcão.
+                try:
+                    pasta = str(app.extensions["pasta_da_casa"](pasta))
+                except PDC.ForaDaCasa as recusa:
+                    flash(str(recusa), "danger")
+                    return redirect(url_for("notas_importar"))
+            else:
                 achados = procurar_arquivos("firma_cartao.jsonl", limite=3)
                 pasta = str(achados[0].parent) if achados else ""
             if not pasta or not Path(pasta).is_dir():

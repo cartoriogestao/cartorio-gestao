@@ -144,7 +144,19 @@ def pendentes(con: sqlite3.Connection, *,
     # CRA» (código 2154) — a remessa nunca passou por ela. O pagamento entrou
     # na CENPROT pelo XML «D» (aceito no mesmo dia). Esses atos vão pela tela
     # «XML do CENPROT»; `pendentes_da_cenprot` os conta para a tela dizer isso.
+    #
+    # ATO DESFEITO NÃO VAI À CRA — 28/10/2026. Até aqui a lista não olhava
+    # `cancelado`, e o ato que se lavrou e foi desfeito (o selo não saiu, ou
+    # foi tornado sem efeito) entrava no retorno como se existisse. Caso
+    # real: no título 1353 o CANCELAMENTO (ato 4104) foi desfeito às 13h57
+    # por falta de selo, o retorno R3412810.261 saiu às 14h32 dizendo «A —
+    # protesto cancelado», a CRA aceitou — e hoje a Central diz «cancelado»
+    # enquanto o livro diz «protestado». Medido na produção nesse dia: 19
+    # atos desfeitos já tinham sido informados (16 protestos, 2
+    # cancelamentos, 1 pagamento). É o filtro que a certidão, o XML da
+    # CENPROT e `pendentes_da_cenprot` já faziam.
     onde = ["a.retorno_id IS NULL",
+            "COALESCE(a.cancelado, 0) = 0",
             f"a.tipo IN ({','.join(['%s'] * len(quais))})",
             "t.origem = 'CRA'"]
     params: list[Any] = list(quais)
@@ -159,6 +171,7 @@ def pendentes(con: sqlite3.Connection, *,
                    t.apresentante_nome, t.cra_identificacao, t.situacao,
                    (SELECT data_ato FROM pt_atos e
                      WHERE e.titulo_id = t.id AND e.tipo = 'APONTAMENTO'
+                       AND COALESCE(e.cancelado, 0) = 0
                      ORDER BY e.id LIMIT 1) data_entrada
               FROM pt_atos a
               JOIN pt_titulos t ON t.id = a.titulo_id
@@ -636,14 +649,82 @@ def retorno(con: sqlite3.Connection, retorno_id: int) -> dict | None:
                          (int(retorno_id),))
 
 
+class RetornoNaoRecusadoError(RetornoError):
+    """Devolver os atos só cabe a arquivo que a CRA recusou."""
+
+
+def devolver_atos_do_recusado(con: sqlite3.Connection, retorno_id: int, *,
+                              agora: str, usuario: str | None = None) -> dict:
+    """Devolve à fila de «Esperando retorno» os atos de um arquivo RECUSADO. ESCREVE.
+
+    A CRA RECUSOU, ENTÃO OS ATOS NÃO FORAM INFORMADOS — 28/10/2026. Seis
+    retornos voltaram com 2161 «NENHUM REGISTRO FOI GRAVADO» e o sistema os
+    deu por enviados. A recusa agora se grava (`protesto_cra_envio`), e os
+    atos continuam presos ao arquivo recusado: fora da fila, e com a tela
+    dizendo que não foram informados.
+
+    POR QUE NÃO VOLTAM SOZINHOS. Medido na produção em 28/10/2026: os 16 atos
+    dos seis recusados são PROTESTOS relavrados, e o protesto anterior do
+    mesmo título (hoje desfeito) já tinha ido à CRA, aceito. A Central
+    recusou porque já sabia — e devolver sozinho faria o retorno seguinte
+    levá-los outra vez, e ser recusado outra vez. Quem decide é quem lê o
+    motivo da recusa: corrigido o que a CRA apontou (ou conferido na Central
+    que ela não sabe), o balcão devolve, e o próximo retorno os leva.
+
+    O ARQUIVO RECUSADO FICA como foi gerado, com o teor e a recusa; perde só
+    a amarração dos atos. E `protesto_cra_envio._preparar` passa a recusar
+    reenviá-lo — os atos dele estarão no arquivo seguinte.
+    """
+    # A MESMA TRAVA DE `gerar`: devolver muda os PENDENTES que um `gerar` ao
+    # mesmo tempo estaria lendo.
+    banco(con).travar("pt_retornos.nome_arquivo")
+    linha = retorno(con, retorno_id)
+    if not linha:
+        raise RetornoError(f"O arquivo #{retorno_id} não existe.")
+    if str(linha.get("cra_enviado_ambiente") or "") == "EOFICIO":
+        raise RetornoNaoRecusadoError(
+            "Esta linha não é um arquivo: é o registro do que o sistema antigo "
+            "já informou à CRA antes da virada. Não há o que devolver.")
+    if linha.get("cra_enviado_em") or not linha.get("cra_recusado_em"):
+        raise RetornoNaoRecusadoError(
+            f"«{linha['nome_arquivo']}» não está recusado pela CRA — "
+            + ("ela o aceitou, e os atos dele estão informados."
+               if linha.get("cra_enviado_em") else
+               "ele ainda não teve resposta da Central. Envie-o, ou confira o "
+               "erro de envio, antes de mexer nos atos."))
+    atos = banco(con).ler(
+        "SELECT id FROM pt_atos WHERE retorno_id = %s ORDER BY id",
+        (int(retorno_id),))
+    if not atos:
+        raise RetornoError(
+            f"Os atos de «{linha['nome_arquivo']}» já voltaram à fila — não "
+            f"há nada preso a este arquivo.")
+    banco(con).escrever(
+        "UPDATE pt_atos SET retorno_id = NULL WHERE retorno_id = %s",
+        (int(retorno_id),))
+    return {"retorno_id": int(retorno_id),
+            "nome_arquivo": linha["nome_arquivo"],
+            "atos": [int(a["id"]) for a in atos],
+            "devolvidos_em": agora, "devolvidos_por": usuario}
+
+
 def listar(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
-    """Os retornos gerados, do mais novo para o mais velho. So LE."""
+    """Os retornos gerados, do mais novo para o mais velho. So LE.
+
+    `atos_presos` conta os atos ainda amarrados ao arquivo: no RECUSADO
+    (28/10/2026) eles não foram informados, e a tela precisa dizer quantos.
+    """
     return banco(con).ler(
-        """SELECT id, tipo, par_id, apresentante_codigo, apresentante_nome,
-                  dia, numero_da_remessa, titulos, soma_centavos, nome_arquivo,
-                  hash_arquivo, gerado_em, gerado_por, cra_enviado_em,
-                  cra_enviado_ambiente, cra_envio_erro, cra_enviado_por
-             FROM pt_retornos ORDER BY id DESC LIMIT %s""", (int(limite),))
+        """SELECT r.id, r.tipo, r.par_id, r.apresentante_codigo,
+                  r.apresentante_nome, r.dia, r.numero_da_remessa, r.titulos,
+                  r.soma_centavos, r.nome_arquivo, r.hash_arquivo, r.gerado_em,
+                  r.gerado_por, r.cra_enviado_em, r.cra_enviado_ambiente,
+                  r.cra_envio_erro, r.cra_enviado_por, r.cra_recusado_em,
+                  r.cra_recusa_codigo, r.cra_recusa_motivo,
+                  (SELECT COUNT(*) FROM pt_atos a
+                    WHERE a.retorno_id = r.id) AS atos_presos
+             FROM pt_retornos r ORDER BY r.id DESC LIMIT %s""",
+        (int(limite),))
 
 
 def atos_do_retorno(con: sqlite3.Connection, retorno_id: int) -> list[dict]:
@@ -653,6 +734,54 @@ def atos_do_retorno(con: sqlite3.Connection, retorno_id: int) -> list[dict]:
                   t.nosso_numero, t.protocolo, t.saldo_centavos
              FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
             WHERE a.retorno_id = %s ORDER BY a.id""", (int(retorno_id),))
+
+
+def informados_e_desfeitos(con: sqlite3.Connection, *,
+                           apresentante_codigo: str | None = None
+                           ) -> list[dict]:
+    """Os atos que entraram num arquivo à CRA e hoje estão DESFEITOS. Só LÊ.
+
+    O QUE A CENTRAL OUVIU NÃO É O QUE O LIVRO DIZ, e a tela tem de mostrar
+    isso. Medido na produção em 28/10/2026: **19** atos com `retorno_id` e
+    `cancelado = 1`, todos em retornos já enviados à CRA de produção — 16
+    protestos tornados sem efeito, 2 cancelamentos e 1 pagamento desfeitos
+    porque o selo não saiu. Em 17 deles há outro ato válido do mesmo tipo no
+    título; em 2 (o cancelamento do título 1353 e um pagamento) não há, e ali
+    a Central afirma o que não aconteceu.
+
+    NÃO SE REENVIA NADA SOZINHO. O contrato da CRA não tem ocorrência medida
+    para «desfaça o que eu disse», e qual providência cabe (carta, contato
+    com a Central, novo ato) é decisão do oficial. Esta função só junta os
+    fatos — o arquivo em que o ato foi, se ele já subiu, o motivo de ter sido
+    desfeito e se o título tem outro ato válido do mesmo tipo — para a tela
+    avisar. Os arquivos da virada (o E-Ofício) entram também: o que ele
+    informou a Central ouviu do mesmo jeito.
+    """
+    onde = ["a.retorno_id IS NOT NULL", "COALESCE(a.cancelado, 0) = 1"]
+    params: list[Any] = []
+    if apresentante_codigo:
+        onde.append("t.apresentante_codigo = %s")
+        params.append(str(apresentante_codigo).strip())
+    return banco(con).ler(
+        f"""SELECT a.id ato_id, a.tipo, a.data_ato, a.motivo_cancelamento,
+                   a.retorno_id, t.id titulo_id, t.numero_titulo,
+                   t.protocolo, t.situacao, t.apresentante_codigo,
+                   r.tipo tipo_arquivo, r.nome_arquivo, r.gerado_em,
+                   r.cra_enviado_em, r.cra_enviado_ambiente,
+                   (SELECT v.id FROM pt_atos v
+                     WHERE v.titulo_id = a.titulo_id AND v.tipo = a.tipo
+                       AND COALESCE(v.cancelado, 0) = 0
+                     ORDER BY v.id DESC LIMIT 1) ato_valido_id,
+                   (SELECT v.retorno_id FROM pt_atos v
+                     WHERE v.titulo_id = a.titulo_id AND v.tipo = a.tipo
+                       AND COALESCE(v.cancelado, 0) = 0
+                     ORDER BY v.id DESC LIMIT 1) ato_valido_retorno_id
+              FROM pt_atos a
+              JOIN pt_titulos t ON t.id = a.titulo_id
+              LEFT JOIN pt_retornos r ON r.id = a.retorno_id
+             WHERE {' AND '.join(onde)}
+             ORDER BY a.id DESC""",
+        params)
 
 
 # ------------------------------------------ o que o E-Ofício já mandou à CRA

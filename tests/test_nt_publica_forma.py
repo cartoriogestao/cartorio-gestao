@@ -511,7 +511,8 @@ def test_o_balcao_abre_o_protocolo_paga_e_a_autenticacao_sela_pelas_telas(
     ida = c.get("/caixa/protocolos/novo")
     assert ida.status_code == 302 and "/caixa/protocolos" in ida.headers["Location"]
     _clicar(c, "/caixa/protocolos", "/caixa/protocolos", acao="novo",
-            interessado="FULANO DE TAL EXEMPLO", telefone="(99) 90000-0000")
+            interessado="FULANO DE TAL EXEMPLO", telefone="(99) 90000-0000",
+            atribuicao="NOTAS")
     p = _linhas(casa["db"], "SELECT id, numero FROM cx_protocolos "
                             "WHERE interessado = %s ORDER BY id",
                 ("FULANO DE TAL EXEMPLO",))[0]

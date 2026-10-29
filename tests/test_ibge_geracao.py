@@ -364,10 +364,22 @@ def test_o_arquivo_baixa_zipado_e_em_iso_8859_1(casa):
 
     r = _pedir(casa, ano=2026, trimestre=2, acao="baixar")
     assert r.mimetype == "application/zip"
+    # O NOME É `CARTINF.ZIP`, e só ele — 28/10/2026, «diz nome errado».
+    assert "CARTINF.ZIP" in r.headers["Content-Disposition"]
     with zipfile.ZipFile(_io.BytesIO(r.get_data())) as z:
         nomes = z.namelist()
-        assert "CARTINF01.TXT" in nomes
+        # OS SEIS, como o E-Ofício exportava, mesmo os que não têm linha
+        assert nomes == list(G.ARQUIVOS_DO_ZIP)
+        assert z.read("CARTINF04.TXT") == b"" and z.read("CONTROLE.SIS") == b""
+        resumo = z.read("CARTINF10.TXT").decode("latin-1").splitlines()
         bruto = z.read("CARTINF01.TXT")
+    # o RC-10: o livro com o primeiro e o último número, e a linha zerada
+    campos = IBGE.ler_linha(IBGE.RC10, resumo[0])
+    assert campos["NUM-LIVRO"].strip() == "A24"
+    assert campos["PRI-TRIMES"] == "0000900" == campos["ULT-TRIMES"]
+    assert campos["TNASCIDOS"] == "00001"
+    assert IBGE.ler_linha(IBGE.RC10, resumo[1])["NUM-LIVRO"].strip() == ""
+    assert len(resumo) == 2
     # ISO-8859-1 e terminador CRLF, como o layout pede
     # O TERMINADOR É CRLF, e a constante é a do layout: escrever o
     # literal aqui deixaria o teste concordar com um engano meu.
@@ -444,3 +456,14 @@ def test_o_codigo_do_municipio_e_o_do_ibge_e_o_banco_nao_inventa_outro():
                            'cidade exemplo', '2026-08-28')""")
     finally:
         con.close()
+
+
+def test_assento_lavrado_aqui_vai_com_o_livro_do_ato():
+    """28/10/2026: os assentos que este sistema lavra não têm `livro_volume`
+    (que é o volume do livro de papel do acervo), e iam ao IBGE sem livro. O
+    livro deles é o do ato, aberto aqui."""
+    novo = {"especie": "NASCIMENTO", "livro_volume": None, "ato_livro_id": 2}
+    assert G.numero_do_livro(G._com_o_livro_do_ato(novo, {2: 24})) == "A24"
+    do_acervo = {"especie": "OBITO", "livro_volume": "5", "ato_livro_id": 9}
+    assert G._com_o_livro_do_ato(do_acervo, {9: 7}) is do_acervo
+

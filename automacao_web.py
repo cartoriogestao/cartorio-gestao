@@ -255,9 +255,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         campos = (SCH.CHAVE_SMTP_HOST, SCH.CHAVE_SMTP_PORTA, SCH.CHAVE_SMTP_USUARIO,
                   SCH.CHAVE_SMTP_REMETENTE, SCH.CHAVE_SMTP_SEGURANCA, SCH.CHAVE_EMAIL_DESTINO,
                   SCH.CHAVE_WHATSAPP_DESTINO, SCH.CHAVE_LEMBRAR, SCH.CHAVE_BACKUP_ESTADO,
-                  SCH.CHAVE_CNIB_LOG)
+                  SCH.CHAVE_CNIB_LOG, SCH.CHAVE_RESUMO_HORA)
         if (f.get(SCH.CHAVE_SMTP_SEGURANCA) or "STARTTLS") not in SCH.SEGURANCAS_SMTP:
             flash("Escolha a segurança do SMTP: STARTTLS, SSL ou nenhuma.", "danger")
+            return redirect(url_for("automacao_configuracao"))
+        hora_resumo = (f.get(SCH.CHAVE_RESUMO_HORA) or "").strip().lower()
+        if (hora_resumo and hora_resumo != SCH.RESUMO_DESLIGADO
+                and SCH.hora_valida_do_resumo(hora_resumo) is None):
+            flash("A hora do resumo do dia é um número de 0 a 23, ou a palavra «desligado».", "danger")
             return redirect(url_for("automacao_configuracao"))
         with db.transaction() as con:
             for c in campos:

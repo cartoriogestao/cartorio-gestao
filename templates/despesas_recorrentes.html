@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block title %}Despesas recorrentes{% endblock %}
+{% block heading %}<h1>Despesas recorrentes</h1>{% endblock %}
+{% block content %}
+{# 28/10/2026, pedido do oficial: «o sistema me avisa todo mês para pagar; as que é
+   só Pix, já deixa carregado pendente de confirmação». O Pix por chave de valor fixo
+   se carrega sozinho, esperando a autorização; o resto o sistema AVISA, porque o
+   código do boleto muda todo mês. #}
+<div class="actions">
+  <a class="button" href="{{ url_for('despesas_lista') }}">&larr; Despesas</a>
+  {% if papel in ['ADMIN', 'MANAGER'] %}<a class="button" href="{{ url_for('despesas_recorrente') }}">Nova recorrente</a>{% endif %}
+</div>
+
+<div class="notice">
+  <strong>Pix por chave, de valor fixo:</strong> todo mês a despesa já aparece cadastrada, <strong>esperando a sua
+  autorização</strong> — ela só se paga depois de autorizada. <strong>Boleto, conta, guia, Pix copia e cola:</strong>
+  o código muda todo mês; o sistema avisa e abre a despesa preenchida para você colar o código da fatura.
+  O aviso abre alguns dias antes do vencimento (a «antecedência» de cada uma).
+</div>
+
+<h2>Deste mês, ainda sem despesa</h2>
+{% if do_mes %}
+{% if papel in ['ADMIN', 'MANAGER'] and do_mes|selectattr('carrega_sozinho')|list %}
+<form method="post" action="{{ url_for('despesas_recorrentes_carregar') }}" class="inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button type="submit">Carregar agora as do Pix</button>
+</form>
+{% endif %}
+<div class="table-wrap"><table>
+  <thead><tr><th>Mês</th><th>Vence</th><th>Despesa</th><th>Favorecido</th><th>Valor</th><th></th></tr></thead>
+  <tbody>{% for r in do_mes %}<tr>
+    <td>{{ r.competencia }}</td>
+    <td>{{ r.vencimento }}{% if r.atrasada %} <span class="badge alta">vencida</span>{% endif %}</td>
+    <td>{{ r.descricao }}</td><td>{{ r.beneficiario_nome }}</td>
+    <td>{% if r.valor %}R$ {{ reais(r.valor) }}{% else %}—{% endif %}</td>
+    <td>{% if r.carrega_sozinho %}<span class="muted small">carrega sozinha de manhã</span>
+        {% elif papel in ['ADMIN', 'MANAGER'] %}<a class="small" href="{{ url_for('despesas_nova', recorrente_id=r.id, competencia=r.competencia) }}">cadastrar a deste mês</a>{% endif %}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p class="muted">Nenhuma recorrente esperando neste mês.</p>{% endif %}
+
+<h2>Cadastradas</h2>
+{% if linhas %}
+<div class="table-wrap"><table>
+  <thead><tr><th>Dia</th><th>Despesa</th><th>Favorecido</th><th>Forma</th><th>Valor</th><th>Vigência</th><th>Situação</th><th></th></tr></thead>
+  <tbody>{% for r in linhas %}<tr>
+    <td>{{ r.dia_vencimento }}</td><td>{{ r.descricao }}</td><td>{{ r.beneficiario_nome }}</td>
+    <td>{{ formas[r.forma] if r.forma in formas else r.forma }}{% if r.forma in carrega_sozinho %} <span class="badge">carrega sozinha</span>{% endif %}</td>
+    <td>{% if r.valor %}R$ {{ reais(r.valor) }}{% else %}varia{% endif %}</td>
+    <td>{{ r.primeiro_mes }}{% if r.ultimo_mes %} a {{ r.ultimo_mes }}{% else %} em diante{% endif %}</td>
+    <td>{% if r.ativa %}ativa{% else %}encerrada{% endif %}</td>
+    <td>{% if papel in ['ADMIN', 'MANAGER'] %}
+      <a class="small" href="{{ url_for('despesas_recorrente', recorrente_id=r.id) }}">alterar</a>
+      <form method="post" action="{{ url_for('despesas_recorrente_acao', recorrente_id=r.id, acao='encerrar' if r.ativa else 'reativar') }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="small">{% if r.ativa %}encerrar{% else %}reativar{% endif %}</button>
+      </form>{% endif %}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p class="muted">Nenhuma recorrente cadastrada.</p>{% endif %}
+{% endblock %}

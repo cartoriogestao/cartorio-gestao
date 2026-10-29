@@ -1,0 +1,83 @@
+{#
+  A CONFERÊNCIA DE DOCUMENTO ELETRÔNICO DO RI (item 16.42) — 28/10/2026, o
+  oficial: «a emissao do selo pode ser feita a partir do protocolo, gerando uma
+  etiqueta para colar na folha fisica (tipo etiqueta de reconhecimento de
+  firma) ou comprovante anexado ao arquivamento digital (pdf)». Quem monta o
+  que este quadro mostra é `ri_conferencia_web._conferencia_digital_na_tela`.
+
+  O selo gasta as unidades do item 16.42 DESTE protocolo — uma por documento —,
+  e é por elas que a trava do selo pago acha o pagamento.
+#}
+{% set cd = conferencia_digital %}
+<section class="panel" id="conferencia-digital">
+  <div class="panel-head"><span>Conferência de documento eletrônico (item {{ cd.codigo }}) — selo</span>
+    <span class="small muted">{{ cd.feitas|length }} conferência(s)</span></div>
+  <div style="padding:0 14px 14px">
+    <p class="small muted">Para a CND, o recibo do ITR, a certidão eletrônica e os demais documentos
+      públicos conferidos <strong>na fonte que os emitiu, pela internet</strong>. O selo sai daqui, com um
+      documento por linha; depois imprima a <strong>etiqueta</strong> (uma tira por documento, para colar
+      na folha física) ou <strong>anexe o comprovante em PDF</strong> aos documentos deste protocolo — a
+      prenotação ligada a ele já os mostra.</p>
+
+    {% if not cd.e_do_ri %}
+      <p class="muted">Este protocolo não é do Registro de Imóveis: o selo da conferência sai pelo
+        protocolo do RI.</p>
+    {% elif not cd.itens %}
+      <p class="muted" id="conferencia-sem-item">Este protocolo não tem item {{ cd.codigo }} com unidade
+        sobrando. Acrescente o item «Conferência de documentos públicos, via internet, por documento»,
+        com a quantidade de documentos, e receba o pagamento — a trava do selo pago confere os dois.</p>
+    {% elif user.role in cd.papeis and not encerrado %}
+    <form method="post" class="form-grid" id="emitir-conferencia"
+          action="{{ url_for('ri_conferencia_emitir', protocolo_id=cd.protocolo_id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Item do protocolo que paga
+        <select name="item_id">
+          {% for i in cd.itens %}<option value="{{ i.id }}">{{ i.codigo_ato }} — {{ i.saldo }} unidade(s) sobrando{% if i.descricao %} · {{ i.descricao[:60] }}{% endif %}</option>{% endfor %}
+        </select></label>
+      <div class="small muted" style="align-self:end">Cada linha é um documento e gasta uma unidade
+        (até {{ cd.maximo }} por selo).</div>
+      <label class="span2">Documentos conferidos — <strong>um por linha</strong> (nome, número e órgão emissor)
+        <textarea name="documentos" rows="4" required placeholder="CND de débitos relativos a tributos federais nº ...&#10;Recibo de entrega da DITR 2026 — NIRF ..."></textarea></label>
+      <div class="span2"><button class="primary">Emitir o selo da conferência</button>
+        <span class="small muted">O selo sai na hora, pelo selador; se não sair, as unidades voltam ao item.</span></div>
+    </form>
+    {% endif %}
+
+    {% if cd.feitas %}
+    <div class="table-wrap" style="margin-top:12px"><table>
+      <thead><tr><th>Nº</th><th>Documentos</th><th>Selo</th><th>Emitida</th><th></th></tr></thead>
+      <tbody>{% for c in cd.feitas %}
+        <tr>
+          <td class="small">{{ c.id }}</td>
+          <td class="small">{% for d in c.lista %}{{ loop.index }}. {{ d }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+          <td class="small">{% if c.selo %}<code>{{ c.selo }}</code>
+            {% elif c.cancelada_em %}<span class="badge critica">cancelada</span><br>{{ c.cancelada_motivo }}
+            {% else %}—{% endif %}</td>
+          <td class="small">{{ c.emitida_por or '—' }}<br>{{ (c.emitida_em or '')[:16]|replace('T', ' ') }}</td>
+          <td class="small">
+            {% if c.selo and not c.cancelada_em %}
+              {% if user.role in cd.papeis %}
+              <form method="post" style="display:inline"
+                    action="{{ url_for('ri_conferencia_etiqueta', conferencia_id=c.id) }}" target="_blank">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="small">Imprimir etiqueta{% if c.lista|length > 1 %}s ({{ c.lista|length }}){% endif %}</button>
+              </form>
+              {% endif %}
+              <a href="{{ url_for('ri_conferencia_comprovante', conferencia_id=c.id) }}" target="_blank">comprovante PDF</a>
+              {% if c.comprovante_anexo_id %}
+                · <span class="badge ok">anexado ao protocolo</span>
+              {% elif user.role in cd.papeis and not encerrado %}
+              <form method="post" style="margin-top:6px"
+                    action="{{ url_for('ri_conferencia_anexar', conferencia_id=c.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="small">Anexar o comprovante aos documentos</button>
+              </form>
+              {% endif %}
+              {% if c.etiqueta_impressoes %}<br><span class="muted">etiqueta impressa {{ c.etiqueta_impressoes }}×</span>{% endif %}
+            {% endif %}</td>
+        </tr>
+      {% endfor %}</tbody>
+    </table></div>
+    {% endif %}
+  </div>
+</section>

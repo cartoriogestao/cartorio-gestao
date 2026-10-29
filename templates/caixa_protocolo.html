@@ -330,6 +330,10 @@
   {% endif %}
 </section>
 
+{# A CONFERÊNCIA DE DOCUMENTO ELETRÔNICO DO RI (16.42, 28/10/2026): o selo sai
+   daqui, com etiqueta e comprovante em PDF — `ri_conferencia_web`. #}
+{% if conferencia_digital %}{% include '_ri_conferencia.html' %}{% endif %}
+
 <section class="cards">
   <div class="stat"><strong>{{ soma.total }}</strong><small>total do protocolo</small></div>
   <div class="stat"><strong>{{ pendente.total }}</strong><small>ainda a quitar</small></div>

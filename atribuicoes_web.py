@@ -7821,18 +7821,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         campos da linha para a direita, e o arquivo é de largura fixa. É a
         mesma lição do arquivo da CRA.
         """
-        memoria = io.BytesIO()
-        with zipfile.ZipFile(memoria, "w", zipfile.ZIP_DEFLATED) as z:
-            for nome, linhas in sorted(r["arquivos"].items()):
-                corpo = IBGE.FIM_DE_LINHA.join(linhas) + IBGE.FIM_DE_LINHA
-                z.writestr(nome, corpo.encode(IBGE.CODIFICACAO, "replace"))
-        memoria.seek(0)
+        memoria = io.BytesIO(IBGEG.zip_da_remessa(r))
         audit("RCPN_IBGE_REMESSA", "rc_assentos", None,
               {"ano": r["ano"], "trimestre": r["trimestre"],
                "linhas": r["linhas"]})
+        # O NOME É `CARTINF.ZIP`, e só ele (28/10/2026): com o ano e o
+        # trimestre no nome, o envio ao IBGE recusava o arquivo.
         return send_file(
             memoria, mimetype="application/zip", as_attachment=True,
-            download_name=f"CARTINF_{r['ano']}_T{r['trimestre']}.zip")
+            download_name=IBGEG.NOME_DO_ZIP)
 
     @app.route("/rcpn/<int:assento_id>/confirmar-livro", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -11078,8 +11075,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                        "nome": item["nome_arquivo"],
                        "codigo": item.get("codigo")})
             for falha in envio.get("falhas") or []:
-                audit("CRA_ENVIO_FALHA", "pt_retornos", falha["retorno_id"],
-                      {"operacao": falha["operacao"], "erro": falha["erro"]})
+                # A recusa da Central tem ação própria (28/10/2026).
+                audit("CRA_ENVIO_RECUSADO" if falha.get("recusado")
+                      else "CRA_ENVIO_FALHA", "pt_retornos",
+                      falha["retorno_id"],
+                      {"operacao": falha["operacao"], "erro": falha["erro"],
+                       "codigo": falha.get("codigo")})
             q_ok = len(envio.get("enviados") or [])
             q_err = len(envio.get("falhas") or [])
             if q_ok and not q_err:
@@ -11498,6 +11499,59 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               "success")
         return redirect(url_for("protesto_cenprot_xml"))
 
+    @app.route("/protesto/cenprot-xml/titulos-tab/acervo", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_cenprot_xml_titulos_tab_do_acervo():
+        """Traz do E-Ofício o apresentante de cada título TAB (um por título:
+        quem pediu na CENPROT). ESCREVE. Só preenche o que está vazio — a
+        regra mora em `protesto_cenprot_xml.trazer_apresentantes_dos_titulos`.
+        """
+        acervo = _acervo_se_houver()
+        if acervo is None:
+            flash("O acervo do E-Ofício não está nesta máquina — informe o "
+                  "apresentante de cada título TAB nesta tela.", "warning")
+            return redirect(url_for("protesto_cenprot_xml"))
+        try:
+            with db.transaction() as con:
+                r = PCXML.trazer_apresentantes_dos_titulos(con, acervo)
+        except PCXML.CenprotXmlError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_cenprot_xml"))
+        finally:
+            acervo.close()
+        audit("PROTESTO_APRESENTANTES_TAB_DO_ACERVO", "pt_titulos", None, r)
+        flash(f"{r['completos']} título(s) TAB receberam nome, CNPJ/CPF e tipo "
+              f"do E-Ofício ({r['nome_trocado']} com o nome trocado pelo que foi "
+              f"à CENPROT); {r['so_o_tipo']} receberam só o tipo. "
+              + (f"{len(r['divergentes'])} têm documento diferente do E-Ofício e "
+                 f"ficaram como estavam (títulos {', '.join(map(str, r['divergentes']))}). "
+                 if r["divergentes"] else "")
+              + (f"{len(r['sem_fonte'])} não têm fonte no E-Ofício e esperam "
+                 f"quem informe (títulos {', '.join(map(str, r['sem_fonte']))})."
+                 if r["sem_fonte"] else ""),
+              "warning" if (r["divergentes"] or r["sem_fonte"]) else "success")
+        return redirect(url_for("protesto_cenprot_xml"))
+
+    @app.route("/protesto/cenprot-xml/titulo/<int:titulo_id>/apresentante",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_cenprot_xml_apresentante_do_titulo(titulo_id: int):
+        """Informa o apresentante de UM título TAB — nome, CNPJ/CPF e tipo.
+        ESCREVE."""
+        try:
+            with db.transaction() as con:
+                PCXML.gravar_apresentante_do_titulo(
+                    con, titulo_id, nome=request.form.get("nome"),
+                    documento=request.form.get("documento"),
+                    tipo_apresentante=request.form.get("tipo_apresentante"))
+        except PCXML.CenprotXmlError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_cenprot_xml"))
+        audit("PROTESTO_APRESENTANTE_DO_TITULO_GRAVADO", "pt_titulos", titulo_id,
+              {"tipo_apresentante": (request.form.get("tipo_apresentante") or "").strip()})
+        flash(f"Apresentante do título {titulo_id} gravado.", "success")
+        return redirect(url_for("protesto_cenprot_xml"))
+
     @app.route("/protesto/cenprot", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def protesto_cenprot():
@@ -11810,8 +11864,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             grupos = PRE.apresentantes_pendentes(con)
             atos = PRE.pendentes(con)
             gerados = [dict(r) for r in PRE.listar(con, limite=60)]
+            # Só AVISO: o que a CRA ouviu e o livro desfez (28/10/2026).
+            desfeitos = [dict(r) for r in PRE.informados_e_desfeitos(con)]
         return render_template("protesto_retornos.html", grupos=grupos,
-                               atos=atos, gerados=gerados, hoje=hoje())
+                               atos=atos, gerados=gerados, hoje=hoje(),
+                               desfeitos=desfeitos)
 
     @app.route("/protesto/retornos/gerar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -11868,15 +11925,49 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             r = PCE_ENVIO.enviar_arquivo(db.transaction, retorno_id,
                                          usuario=usuario_nome(), forcar=forcar)
         except (PCE_ENVIO.CraEnvioError, CENTCRED.CredencialError) as erro:
-            audit("PROTESTO_ENVIO_CRA_FALHOU", "pt_retornos", retorno_id,
-                  {"erro": str(erro)[:300]})
-            flash(f"Não foi à CRA: {erro}", "danger")
+            # RECUSA DA CENTRAL NÃO É FALHA DE ENVIO (28/10/2026): a auditoria
+            # e a frase dizem qual das duas foi.
+            if isinstance(erro, PCE_ENVIO.CraEnvioRecusado):
+                audit("PROTESTO_ENVIO_CRA_RECUSADO", "pt_retornos", retorno_id,
+                      {"codigo": erro.codigo,
+                       "motivo": str(erro.motivo or "")[:300]})
+                flash(f"A CRA RECUSOU: {erro} O arquivo ficou como recusado, "
+                      f"e os atos dele NÃO foram informados — leia o motivo "
+                      f"em «Arquivos gerados».", "danger")
+            else:
+                audit("PROTESTO_ENVIO_CRA_FALHOU", "pt_retornos", retorno_id,
+                      {"erro": str(erro)[:300]})
+                flash(f"Não foi à CRA: {erro}", "danger")
             return redirect(url_for("protesto_retornos"))
         audit("PROTESTO_ENVIO_CRA", "pt_retornos", retorno_id,
               {"operacao": r.get("operacao"), "codigo": r.get("codigo"),
                "nome": r.get("nome_arquivo")})
         flash(f"«{r.get('nome_arquivo')}» entrou na CRA "
               f"(código {r.get('codigo') or 'sem código'}).", "success")
+        return redirect(url_for("protesto_retornos"))
+
+    @app.route("/protesto/retornos/<int:retorno_id>/devolver-atos",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_retorno_devolver_atos(retorno_id: int):
+        """Devolve à fila os atos de um arquivo que a CRA RECUSOU. ESCREVE.
+
+        28/10/2026: a recusa não solta os atos sozinha — quem lê o motivo da
+        Central decide (`protesto_retorno.devolver_atos_do_recusado`).
+        """
+        try:
+            with db.transaction() as con:
+                r = PRE.devolver_atos_do_recusado(
+                    con, retorno_id, agora=agora(), usuario=usuario_nome())
+        except PRE.RetornoError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_retornos"))
+        # `audit` abre transação própria: FORA do `with`.
+        audit("PROTESTO_RETORNO_ATOS_DEVOLVIDOS", "pt_retornos", retorno_id,
+              {"nome": r["nome_arquivo"], "atos": r["atos"]})
+        flash(f"{len(r['atos'])} ato(s) de «{r['nome_arquivo']}» voltaram a "
+              f"«Esperando retorno». O arquivo recusado fica gravado como foi; "
+              f"gere um retorno novo para informá-los.", "success")
         return redirect(url_for("protesto_retornos"))
 
     @app.route("/protesto/retornos/<int:retorno_id>/arquivo")

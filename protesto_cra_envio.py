@@ -68,6 +68,61 @@ _CODIGOS_OK = frozenset({"0000", "0001"})
 _OCORRENCIA = re.compile(r"<ocorrencia>(.*?)</ocorrencia>", re.IGNORECASE | re.DOTALL)
 _DECLARACAO_XML = re.compile(r"^\s*<\?xml[^>]*\?>", re.IGNORECASE)
 
+# TODOS OS PARES <codigo>/<ocorrencia> DO RELATÓRIO, E NÃO SÓ O PRIMEIRO —
+# correção de 28/10/2026. A CRA responde a recusa do retorno com DOIS códigos
+# no mesmo `<relatorio>`: primeiro `0000` com o apresentante (em vermelho) e
+# DEPOIS `2161 — NENHUM REGISTRO FOI GRAVADO`. Medido na produção nesse dia:
+# 6 dos 8 retornos enviados (R9872810, R9012810, R1LV2810, R1MF2810, R2372810,
+# R7482810) voltaram assim, e o `search` do primeiro `<codigo>` lia `0000` e
+# dava os seis por «enviado». Os dois aceitos (R0012810, R3412810) trazem um
+# par só, `0000`, sem cor.
+_PAR_DO_RELATORIO = re.compile(
+    r"<codigo>\s*(\d+)\s*</codigo>\s*(?:<ocorrencia>(.*?)</ocorrencia>)?",
+    re.IGNORECASE | re.DOTALL)
+# A MARCA VERMELHA DA CRA. Nos 6 recusados de 28/10/2026 a ocorrência do
+# apresentante vem em `<FONT COLOR='RED'>` (escapada no XML); nos 2 aceitos e
+# nas confirmações aceitas, nunca. Sozinha ela não traz código, e por isso só
+# decide quando o relatório não trouxe código de recusa nenhum.
+_EM_VERMELHO = re.compile(
+    r"FONT\s+COLOR\s*=\s*(?:&apos;|&quot;|['\"])?\s*RED", re.IGNORECASE)
+_MARCACAO = re.compile(r"<[^>]*>")
+
+
+def _ocorrencia_limpa(texto: str) -> str:
+    """A ocorrência como a CRA a escreveu, sem as marcas de HTML. Só calcula.
+
+    A CRA escapa `<FONT COLOR='RED'>` dentro do XML; desfeito o escape, a
+    marca sai, e fica a frase dela.
+    """
+    from xml.sax.saxutils import unescape
+    liso = unescape(str(texto or ""), {"&apos;": "'", "&quot;": '"'})
+    return " ".join(_MARCACAO.sub(" ", liso).split())
+
+
+def recusa_no_relatorio(texto: str) -> dict[str, Any] | None:
+    """A recusa que o `<relatorio>` da CRA traz, ou `None`. SÓ CALCULA.
+
+    Lê TODOS os pares código/ocorrência: o primeiro código fora de
+    `0000`/`0001` é a recusa, com a ocorrência que vem logo depois dele. Sem
+    código de recusa, a marca vermelha da Central também recusa (`codigo`
+    `None`) — ela só apareceu, medida, em resposta recusada. Devolve
+    `{"codigo", "motivo", "ocorrencias"}`.
+    """
+    bruto = str(texto or "")
+    pares = [(c.strip(), _ocorrencia_limpa(o))
+             for c, o in _PAR_DO_RELATORIO.findall(bruto)]
+    for codigo, ocorrencia in pares:
+        if codigo not in _CODIGOS_OK:
+            return {"codigo": codigo, "motivo": ocorrencia,
+                    "ocorrencias": [o for _c, o in pares if o]}
+    if _EM_VERMELHO.search(bruto):
+        vermelha = next((o for _c, o in pares if o), "")
+        return {"codigo": None,
+                "motivo": ("a CRA marcou a resposta em vermelho, sem código "
+                           "de recusa" + (f": {vermelha}" if vermelha else "")),
+                "ocorrencias": [o for _c, o in pares if o]}
+    return None
+
 #: O que da recusa vai à TELA: o motivo da `<ocorrencia>` até este tamanho e um
 #: trecho curto do começo da resposta. A resposta INTEIRA vai só para
 #: `pt_retornos.cra_envio_erro`, até `CORTE_DO_ERRO` (LH08, revisão do LH07).
@@ -78,6 +133,46 @@ CORTE_DO_ERRO = 4000
 
 class CraEnvioError(CRA.CraError):
     """Falha ao enviar arquivo à CRA, com frase para o balcão."""
+
+
+class CraEnvioRecusado(CraEnvioError):
+    """A CRA RECUSOU o arquivo, com código ou motivo dela — 28/10/2026.
+
+    Não é falha de rede: a Central respondeu e não gravou. O arquivo fica
+    como recusado (`pt_retornos.cra_recusado_em`), e os atos dele NÃO foram
+    informados."""
+
+    def __init__(self, mensagem: str = "", *, codigo: str | None = None,
+                 motivo: str | None = None) -> None:
+        super().__init__(mensagem)
+        self.codigo = codigo
+        self.motivo = motivo
+
+
+def _campo_da_linha(linha: Any, campo: str) -> Any:
+    """O campo da linha de `pt_retornos`, ou `None` se ela não o tem. Só lê.
+
+    Linha montada à mão (sem as colunas de 28/10/2026) não estoura aqui."""
+    try:
+        return linha[campo]
+    except (KeyError, IndexError):
+        return None
+
+
+def _recusa_da_central(erro: BaseException) -> dict[str, Any] | None:
+    """`{codigo, motivo}` quando a CRA disse NÃO com todas as letras. Só calcula.
+
+    Só `CraRecusou` com código ou motivo conta: a resposta vazia, fora do
+    XML ou a falha SOAP não dizem o que a Central gravou, e ficam como erro de
+    envio, que se pode repetir depois de conferir.
+    """
+    if not isinstance(erro, CRA.CraRecusou):
+        return None
+    codigo = getattr(erro, "codigo", None)
+    motivo = getattr(erro, "motivo", None)
+    if not (codigo or motivo):
+        return None
+    return {"codigo": codigo, "motivo": motivo or ""}
 
 
 def ambiente_da_remessa(lote: dict, *, padrao: str = CRED.PRODUCAO) -> str:
@@ -126,14 +221,20 @@ def interpretar_resposta_envio(texto: str, *, o_que: str) -> dict[str, Any]:
             f"se o arquivo entrou antes de repetir.")
     achado = _CODIGO_RELATORIO.search(bruto)
     if achado:
-        codigo = achado.group(1)
-        if codigo in _CODIGOS_OK:
-            return {"ok": True, "codigo": codigo, "resposta": bruto}
-        explicacao = CRA.CODIGOS_MEDIDOS.get(codigo)
+        # O PRIMEIRO `<codigo>` NÃO DECIDE SOZINHO — 28/10/2026. Ver
+        # `_PAR_DO_RELATORIO`: a recusa do retorno vem como `0000` +
+        # `2161`, e ler só o primeiro dava por enviados seis arquivos que
+        # a Central não gravou.
+        recusa = recusa_no_relatorio(bruto)
+        if recusa is None:
+            return {"ok": True, "codigo": achado.group(1), "resposta": bruto}
+        codigo = recusa["codigo"]
+        explicacao = CRA.CODIGOS_MEDIDOS.get(codigo or "")
         if explicacao:
             raise CRA.CraRecusou(
                 f"A CRA recusou ao {o_que} (código {codigo}): {explicacao}",
-                bruto=bruto)
+                bruto=bruto, codigo=codigo,
+                motivo=recusa["motivo"] or explicacao)
         # A explicação da CRA mora em <ocorrencia>, DEPOIS do cabeçalho do
         # relatório; os 240 primeiros caracteres eram só o cabeçalho, e o
         # código 2154 do retorno RTAB2110.261 (21/10/2026) ficou gravado sem
@@ -141,17 +242,19 @@ def interpretar_resposta_envio(texto: str, *, o_que: str) -> dict[str, Any]:
         # resposta (o nome do arquivo que ela cita). O bruto INTEIRO ia junto
         # na frase — para a tela, o `flash` no cookie da sessão e a auditoria
         # (revisão do LH07); agora vai à parte, só para o campo de erro.
-        ocorrencia = _OCORRENCIA.search(bruto)
-        motivo = (_trecho(ocorrencia.group(1)) if ocorrencia
+        # O ponto final da CRA sai: a frase põe o dela (28/10/2026).
+        motivo = (_trecho(recusa["motivo"]).rstrip(".") if recusa["motivo"]
                   else "a resposta não traz <ocorrencia>")
         inicio = _trecho(_DECLARACAO_XML.sub("", bruto), TRECHO_DA_RESPOSTA)
+        qual = f" (código {codigo})" if codigo else ""
         raise CRA.CraRecusou(
-            f"A CRA recusou ao {o_que} (código {codigo}): {motivo}. "
-            f"Início da resposta: {inicio}", bruto=bruto)
+            f"A CRA recusou ao {o_que}{qual}: {motivo}. "
+            f"Início da resposta: {inicio}", bruto=bruto,
+            codigo=codigo, motivo=motivo)
     upper = bruto.upper()
     if "INVÁLIDO" in upper or "INVALIDO" in upper or "CORROMPIDO" in upper:
         raise CRA.CraRecusou(f"A CRA recusou ao {o_que}: {bruto[:240]}",
-                             bruto=bruto)
+                             bruto=bruto, motivo=_trecho(bruto))
     return {"ok": True, "codigo": None, "resposta": bruto}
 
 
@@ -235,7 +338,7 @@ def interpretar_resposta_complemento(texto: str, *, o_que: str) -> dict[str, Any
                              bruto=bruto)
     if raiz.tag == "relatorio":
         return interpretar_resposta_envio(bruto, o_que=o_que)
-    recusas, aceitos = [], 0
+    recusas, aceitos, primeiro_codigo = [], 0, None
     for titulo in raiz.iter("titulo"):
         for msg in titulo.iter("mensagens"):
             for item in msg:
@@ -243,12 +346,22 @@ def interpretar_resposta_complemento(texto: str, *, o_que: str) -> dict[str, Any
                 if codigo in _COMPLEMENTO_OK:
                     aceitos += 1
                 else:
+                    primeiro_codigo = primeiro_codigo or codigo
                     recusas.append(f"{titulo.findtext('protocolo')}: {codigo} "
                                    f"{(item.findtext('descricao') or '').strip()}")
-    if recusas or not aceitos:
+    if recusas:
+        # TÍTULO RECUSADO COM CÓDIGO É RECUSA DA CENTRAL (28/10/2026): leva
+        # código e motivo, e o arquivo fica como recusado, e não como «erro
+        # de envio» a repetir.
+        motivo = "; ".join(recusas[:10])
+        raise CRA.CraRecusou(f"A CRA recusou ao {o_que}: {motivo}",
+                             bruto=bruto, codigo=primeiro_codigo,
+                             motivo=motivo)
+    if not aceitos:
+        # Sem título confirmado e sem título recusado não se sabe o que a
+        # Central gravou: fica como erro, sem código, e não como recusa.
         raise CRA.CraRecusou(
-            f"A CRA recusou ao {o_que}: " + ("; ".join(recusas[:10])
-                                             or "nenhum título confirmado"),
+            f"A CRA recusou ao {o_que}: nenhum título confirmado",
             bruto=bruto)
     return {"ok": True, "codigo": "2322", "resposta": bruto[:500]}
 
@@ -263,6 +376,20 @@ def _preparar(linha: Any, *, con: Any | None = None,
             f"{str(linha['cra_enviado_em'])[:16]}. Não repita sem conferir "
             f"na Central — envio duplicado pode registrar duas vezes.")
     tipo = str(linha["tipo"] or "").strip()
+    # O ARQUIVO RECUSADO CUJOS ATOS VOLTARAM À FILA NÃO SE REENVIA (28/10/2026).
+    # Os atos dele já estão esperando o próximo retorno; mandar este de novo
+    # informaria duas vezes o que o arquivo seguinte também vai levar.
+    recusado_em = _campo_da_linha(linha, "cra_recusado_em")
+    if (recusado_em and con is not None and tipo != "SDTBFOCRT"
+            and int(_campo_da_linha(linha, "titulos") or 0) > 0
+            and not banco(con).um(
+                "SELECT 1 FROM pt_atos WHERE retorno_id = %s LIMIT 1",
+                (int(retorno_id),))):
+        raise CraEnvioError(
+            f"A CRA recusou «{linha['nome_arquivo']}» em "
+            f"{str(recusado_em)[:16]}, e os atos dele já voltaram à fila de "
+            f"«Esperando retorno». Gere um retorno novo em vez de reenviar "
+            f"este.")
     operacao = OPERACAO_POR_TIPO.get(tipo)
     if not operacao:
         raise CraEnvioError(
@@ -316,8 +443,12 @@ def _gravar_envio(con: Any, preparado: dict, lido: dict, *,
                   agora: str | None = None) -> dict[str, Any]:
     agora = agora or _agora_local()
     banco(con).escrever(
+        # Aceito agora, a recusa de uma tentativa anterior deixa de valer: o
+        # arquivo ESTÁ na Central, e a tela não pode dizer as duas coisas.
         """UPDATE pt_retornos SET cra_enviado_em=%s, cra_enviado_ambiente=%s,
-               cra_envio_resumo=%s, cra_enviado_por=%s, cra_envio_erro=NULL
+               cra_envio_resumo=%s, cra_enviado_por=%s, cra_envio_erro=NULL,
+               cra_recusado_em=NULL, cra_recusa_codigo=NULL,
+               cra_recusa_motivo=NULL
            WHERE id=%s""",
         (agora, qual, (lido.get("resposta") or "")[:500], usuario,
          int(preparado["retorno_id"])))
@@ -340,6 +471,42 @@ def _registrar_falha(con: Any, retorno_id: int, *,
         """UPDATE pt_retornos SET cra_envio_erro=%s, cra_enviado_ambiente=%s
            WHERE id=%s""",
         (str(erro)[:CORTE_DO_ERRO], str(ambiente or "")[:20], int(retorno_id)))
+
+
+#: O motivo da recusa que vai à TELA, gravado à parte do erro inteiro.
+CORTE_DO_MOTIVO = 500
+
+
+def _registrar_recusa(con: Any, retorno_id: int, *, ambiente: str,
+                      erro: str, recusa: dict[str, Any],
+                      agora: str | None = None) -> None:
+    """A CRA RECUSOU: situação própria, e o arquivo NÃO é «enviado». ESCREVE.
+
+    O ARQUIVO RECUSADO ERA DADO POR ENVIADO — 28/10/2026. Seis retornos
+    recusados com 2161 «NENHUM REGISTRO FOI GRAVADO» ficaram com
+    `cra_enviado_em` preenchido, e a tela os mostrou como enviados. Agora a
+    recusa tem colunas próprias (quando, o código e o motivo da Central), o
+    `cra_enviado_em` fica vazio, e `cra_envio_erro` guarda a frase e a
+    resposta inteira, como já guardava para o erro de envio.
+
+    OS ATOS DO ARQUIVO NÃO SE SOLTAM AQUI. Eles continuam presos a ele (e
+    portanto fora de `protesto_retorno.pendentes`), e a tela diz que NÃO
+    foram informados; quem os devolve à fila é o balcão, depois de ler o
+    motivo (`protesto_retorno.devolver_atos_do_recusado`). Medido em
+    28/10/2026: os 16 atos dos seis recusados são PROTESTOS relavrados de
+    títulos cujo protesto anterior (desfeito) já tinha sido informado — a CRA
+    recusou porque já sabia. Devolvê-los sozinha faria o próximo retorno
+    levá-los de novo, e ser recusado de novo.
+    """
+    banco(con).escrever(
+        """UPDATE pt_retornos SET cra_enviado_em=NULL, cra_recusado_em=%s,
+               cra_recusa_codigo=%s, cra_recusa_motivo=%s,
+               cra_envio_erro=%s, cra_enviado_ambiente=%s
+           WHERE id=%s""",
+        (agora or _agora_local(), recusa.get("codigo"),
+         str(recusa.get("motivo") or "")[:CORTE_DO_MOTIVO],
+         str(erro)[:CORTE_DO_ERRO], str(ambiente or "")[:20],
+         int(retorno_id)))
 
 
 def enviar_pos_remessa(
@@ -400,7 +567,10 @@ def enviar_pos_remessa(
 
     # (preparado, o que a CRA respondeu, a frase da tela, o que vai ao campo de
     # erro) — a frase é curta; o campo de erro leva também a resposta (LH08).
-    resultados: list[tuple[dict, dict | None, str | None, str | None]] = []
+    # O quinto elemento é a recusa da Central (`_recusa_da_central`), quando
+    # houve: ela se grava como RECUSA, e não como erro de envio (28/10/2026).
+    resultados: list[tuple[dict, dict | None, str | None, str | None,
+                           dict | None]] = []
     confirmacao_falhou = any(f["operacao"] == "Confirmacao" for f in falhas)
     for preparado in preparados:                   # 2. a rede — sem transação
         if preparado["operacao"] == "TituloComplemento" and confirmacao_falhou:
@@ -408,14 +578,15 @@ def enviar_pos_remessa(
             # ela a Central recusaria título a título. Espera o reenvio.
             espera = ("A confirmação do lote não entrou na CRA; o "
                       "andamento espera por ela.")
-            resultados.append((preparado, None, espera, espera))
+            resultados.append((preparado, None, espera, espera, None))
             continue
         try:
             resultados.append((preparado, _transmitir(preparado, qual, pasta),
-                               None, None))
+                               None, None, None))
         except (CRA.CraError, CRED.CredencialError) as erro:
             resultados.append((preparado, None, str(erro),
-                               _o_que_se_guarda(erro)))
+                               _o_que_se_guarda(erro),
+                               _recusa_da_central(erro)))
             if preparado["operacao"] == "Confirmacao":
                 confirmacao_falhou = True
 
@@ -424,10 +595,17 @@ def enviar_pos_remessa(
         for falha in falhas:                       # as da preparação
             _registrar_falha(con, falha["retorno_id"], ambiente=qual,
                              erro=falha["erro"])
-        for preparado, lido, erro, guardado in resultados:
+        for preparado, lido, erro, guardado, recusa in resultados:
             if erro is None:
                 enviados.append(_gravar_envio(con, preparado, lido, qual=qual,
                                               usuario=usuario))
+            elif recusa is not None:
+                _registrar_recusa(con, preparado["retorno_id"], ambiente=qual,
+                                  erro=guardado, recusa=recusa)
+                falhas.append({"retorno_id": preparado["retorno_id"],
+                               "operacao": preparado["operacao"], "erro": erro,
+                               "recusado": True,
+                               "codigo": recusa.get("codigo")})
             else:
                 _registrar_falha(con, preparado["retorno_id"], ambiente=qual,
                                  erro=guardado)
@@ -470,13 +648,72 @@ def enviar_arquivo(transacao: Callable[[], Any], retorno_id: int, *,
                 "Esta linha não é um arquivo: é o registro de que o sistema antigo já "
                 "informou a CRA antes da virada (14/10/2026). Não há o que enviar.")
         preparado = _preparar(linha, con=con, forcar=forcar)
-    erro = guardado = None
+    erro = guardado = recusa = None
     try:                                           # 2. a rede — sem transação
         lido = _transmitir(preparado, qual, pasta)
     except (CRA.CraError, CRED.CredencialError) as e:
         lido, erro, guardado = None, str(e), _o_que_se_guarda(e)
+        recusa = _recusa_da_central(e)
     with transacao() as con:                       # 3. gravar — curta
         if erro is None:
             return _gravar_envio(con, preparado, lido, qual=qual, usuario=usuario)
-        _registrar_falha(con, int(retorno_id), ambiente=qual, erro=guardado)
+        if recusa is not None:
+            _registrar_recusa(con, int(retorno_id), ambiente=qual,
+                              erro=guardado, recusa=recusa)
+        else:
+            _registrar_falha(con, int(retorno_id), ambiente=qual, erro=guardado)
+    if recusa is not None:
+        # A frase é a mesma do erro gravado (a tela acrescenta o que a
+        # recusa quer dizer para os atos).
+        raise CraEnvioRecusado(erro, codigo=recusa.get("codigo"),
+                               motivo=recusa.get("motivo"))
     raise CraEnvioError(erro)
+
+
+def reclassificar_recusas_gravadas(con: Any) -> int:
+    """Relê a resposta GRAVADA dos arquivos dados por enviados. ESCREVE.
+
+    OS SEIS DE 28/10/2026 FICARAM COMO «ENVIADO», e a resposta que os recusa
+    está gravada neles (`cra_envio_resumo`, os 500 primeiros caracteres): o
+    `<relatorio>` com `0000` e depois `2161 — NENHUM REGISTRO FOI GRAVADO`.
+    Esta passada lê essa resposta com a régua de agora e passa a RECUSADO o
+    arquivo que ela PROVA recusado — por código de recusa, e só por ele: a
+    marca vermelha sozinha não basta aqui, porque o resumo pode ter sido
+    cortado antes do código (é o caso do R1LV2310.261, de 23/10/2026, medido:
+    vermelho e cortado, sem código à vista; fica como está, a conferir na
+    Central). Idempotente: o que já é recusado não volta a ser lido.
+
+    NÃO MEXE NOS ATOS. Eles continuam presos ao arquivo, e a tela diz que
+    não foram informados; devolvê-los à fila é do balcão.
+    """
+    bd = banco(con)
+    linhas = bd.ler(
+        """SELECT id, nome_arquivo, cra_enviado_em, cra_envio_resumo
+             FROM pt_retornos
+            WHERE cra_enviado_em IS NOT NULL AND cra_recusado_em IS NULL
+              AND cra_envio_resumo LIKE %s""", ("%<relatorio%",))
+    feitos = 0
+    for linha in linhas:
+        resumo = str(linha["cra_envio_resumo"] or "")
+        recusa = recusa_no_relatorio(resumo)
+        if not recusa or not recusa["codigo"]:
+            continue
+        # O resumo guarda 500 caracteres, e pode cortar a ocorrência no meio
+        # (R1MF2810.261, medido em 28/10/2026: o código 2161 à vista, o
+        # motivo cortado). O código basta para provar a recusa.
+        motivo = _trecho(recusa["motivo"]
+                         or "o resumo gravado foi cortado antes do motivo "
+                            "da CRA").rstrip(".")
+        bd.escrever(
+            """UPDATE pt_retornos SET cra_recusado_em=cra_enviado_em,
+                   cra_enviado_em=NULL, cra_recusa_codigo=%s,
+                   cra_recusa_motivo=%s, cra_envio_erro=%s
+               WHERE id=%s AND cra_enviado_em IS NOT NULL""",
+            (recusa["codigo"], motivo[:CORTE_DO_MOTIVO],
+             (f"A CRA recusou «{linha['nome_arquivo']}» (código "
+              f"{recusa['codigo']}): {motivo}. O sistema o dera por enviado; "
+              f"reclassificado pela resposta gravada (28/10/2026). Resposta: "
+              f"{resumo}")[:CORTE_DO_ERRO],
+             int(linha["id"])))
+        feitos += 1
+    return feitos

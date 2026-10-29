@@ -30,6 +30,7 @@ from flask import (abort, flash, make_response, redirect, render_template,
 
 import dois_fatores as DF
 from security import new_csrf_token
+from seguranca_web import destino_interno
 
 # OS PAPÉIS DA CASA — os mesmos de `app.ROLES` e de `database.create_user`. Não
 # se importa de `app` porque `app` importa este módulo; há teste que compara.
@@ -39,11 +40,15 @@ _CHAVES_DA_MEIA_SESSAO = ("df_uid", "df_desde", "df_next", "df_cadastro")
 
 
 def destino_seguro(proximo: str | None, padrao: str) -> str:
-    """Só caminho DESTE sistema: `/algo`, e não `//outro-site` nem `http://`."""
-    proximo = str(proximo or "")
-    if proximo.startswith("/") and not proximo.startswith("//") and "\\" not in proximo:
-        return proximo
-    return padrao
+    """Só caminho DESTE sistema: `/algo`, e não `//outro-site` nem `http://`.
+
+    Delega à régua da casa (`destino_interno`). A conta que morava aqui não
+    recusava caractere de controle, e o navegador apaga TAB e quebra de linha
+    do endereço: `/<TAB>/fora` virava `//fora` (CodeQL, 28/10/2026). Hoje o
+    `/login` já entrega o `next` filtrado, mas a régua não pode depender de
+    quem a chama.
+    """
+    return destino_interno(proximo, padrao)
 
 
 def _sem_cache(resposta):

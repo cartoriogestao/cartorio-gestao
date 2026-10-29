@@ -294,7 +294,8 @@ def test_o_mesmo_atendimento_nao_sai_em_dois_recibos(cg_casa_logada,
     c.post("/caixa/protocolos",
            data={"csrf_token": _token(c, "/caixa/protocolos"), "acao": "novo",
                  "interessado": "CONSTRUTORA ALFA LTDA",
-                 "telefone": "(99) 90000-0000"}, follow_redirects=True)
+                 "telefone": "(99) 90000-0000", "atribuicao": "OUTROS"},
+           follow_redirects=True)
     pid = int(_um(db, "SELECT max(id) AS id FROM cx_protocolos")["id"])
     with db.transaction() as con:
         item = banco(con).escrever(

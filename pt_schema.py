@@ -88,6 +88,13 @@ CREATE TABLE IF NOT EXISTS pt_titulos (
     -- apresentante mora em `pt_apresentantes`, pelo codigo.
     apresentante_documento TEXT,            -- so digitos
     apresentante_endereco TEXT,
+    -- O TIPO DO APRESENTANTE NO XML DA CENPROT (0, 1, 3, 4...), QUANDO O
+    -- APRESENTANTE E UM POR TITULO (28/10/2026). O codigo «TAB» (Gestao de
+    -- Pedidos da CENPROT) nao e um banco: e quem pediu. Medido nos XML reais
+    -- que o E-Oficio mandou: 18 titulos TAB, 8 apresentantes diferentes, com
+    -- tipos 0, 1 e 4 — o cadastro unico por codigo nao serve.
+    -- `protesto_cenprot_xml.APRESENTANTES_DO_TITULO`.
+    apresentante_tipo TEXT,
 
     -- O PROTOCOLO DA CASA, que volta no retorno na posicao 448.
     --
@@ -760,6 +767,13 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("pt_retornos", "cra_envio_resumo", "TEXT"),
     ("pt_retornos", "cra_envio_erro", "TEXT"),
     ("pt_retornos", "cra_enviado_por", "TEXT"),
+    # A RECUSA DA CRA TEM SITUAÇÃO PRÓPRIA — 28/10/2026. Seis retornos que a
+    # Central recusou (2161, «NENHUM REGISTRO FOI GRAVADO») ficaram como
+    # enviados. Recusado é `cra_recusado_em` preenchido e `cra_enviado_em`
+    # vazio; o código e o motivo da Central ficam ao lado, para a tela.
+    ("pt_retornos", "cra_recusado_em", "TEXT"),
+    ("pt_retornos", "cra_recusa_codigo", "TEXT"),
+    ("pt_retornos", "cra_recusa_motivo", "TEXT"),
     # quem paga os emolumentos, e quando — `protesto_posteriori` (LG05)
     ("pt_titulos", "emolumento_regime", "TEXT"),
     # o CPF/CNPJ e o endereco do apresentante — `protesto.apresentante_do_titulo`
@@ -767,6 +781,9 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("pt_titulos", "apresentante_documento", "TEXT"),
     ("pt_titulos", "apresentante_endereco", "TEXT"),
     ("pt_apresentantes", "endereco", "TEXT"),
+    # o tipo do apresentante de UM TITULO SO (o «TAB» da Gestao de Pedidos da
+    # CENPROT) — `protesto_cenprot_xml.APRESENTANTES_DO_TITULO` (28/10/2026)
+    ("pt_titulos", "apresentante_tipo", "TEXT"),
     # A MARCA DA ORDEM QUE SUSPENDE OS EFEITOS DO PROTESTO (LH13, 21/10/2026)
     # — CNN art. 263-K (Prov. CN 253/2026), pela decisão do oficial: a decisão
     # PROVISÓRIA sai na certidão como «CONSTA COM SUSTAÇÃO JUDICIAL PRECÁRIA»,
@@ -842,3 +859,9 @@ def init_pt_schema(con) -> None:
             bd.escrever(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
     for indice in INDICES_DEPOIS_DA_MIGRACAO:
         bd.escrever(indice)
+    # A RESPOSTA GRAVADA SE RELÊ — 28/10/2026. O arquivo que a CRA recusou e
+    # o sistema deu por enviado passa a recusado, pelo código que a própria
+    # resposta gravada traz. Idempotente, e não mexe em ato nenhum. Importado
+    # aqui dentro porque o esquema é aberto antes do resto do Protesto.
+    from protesto_cra_envio import reclassificar_recusas_gravadas
+    reclassificar_recusas_gravadas(con)

@@ -3635,6 +3635,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     automacao_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                   fmt_date)
 
+    # O ROBÔ DO MALOTE (29/10/2026) — a tela onde o oficial digita o código de
+    # dois fatores quando o malote pede. Ela grava no cofre e pede a rodada;
+    # quem entra no malote é o despachante, fora do servidor.
+    import malote_robo_web
+    malote_robo_web.registrar_rotas(app, db, login_required, roles_required, audit)
+
     # OS AVISOS DE ANDAMENTO AO CLIENTE (26/10/2026) — o consentimento por
     # canal, o «pronto para retirar» e a fila. A tela não manda nada; quem
     # manda é a rotina AVISOS_ANDAMENTO da automação, fora do servidor.

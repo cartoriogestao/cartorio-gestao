@@ -921,7 +921,9 @@ MODULOS_COM_PROCESSOS = ("despesas_automacao", "onr_certidoes_auto", "andamento_
                          "portal_cliente", "wa_puxar", "protesto_repasse_automacao",
                          "protesto_repasse_portal",
                          # o crédito dos PIX do Protesto no extrato (29/10/2026)
-                         "protesto_pix")
+                         "protesto_pix",
+                         # o robô do malote: a ciência diária das 8h (29/10/2026)
+                         "malote_robo")
 
 #: A agenda sugerida por quem escreveu o processo, para quando o catálogo
 #: dele não trouxer uma. O processo nasce DESLIGADO do mesmo jeito.

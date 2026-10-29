@@ -2077,6 +2077,31 @@ document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('has
         {% if a.motivo_isencao %}<br>{{ a.motivo_isencao }}{% endif %}
       </div>
       {% endif %}
+      {# O SELO CANCELADO NO PORTAL DO SELO — 28/10/2026, o oficial, sobre a
+         AV-9/2 (selo pago num ato gratuito): «cancela e abre botao pra emitir
+         outro selo gratuito». O sistema não cancela no Tribunal: a pessoa
+         cancela no Portal e confirma aqui. Depois, «Selar este ato» aparece e
+         pede o selo novo com outra identificação (SID). #}
+      {% if a.selo_texto and not a.cancelado and user.role in ['ADMIN','MANAGER'] %}
+      <details id="selo-cancelado-{{ a.id }}" class="small" style="margin-top:6px">
+        <summary>O selo {{ a.selo_texto }} foi cancelado no Portal do Selo?</summary>
+        <form method="post" class="form-grid" style="margin-top:6px"
+              action="{{ url_for('ri_selo_cancelado_no_portal', ato_id=a.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <p class="span2 muted">Primeiro cancele o selo <strong>{{ a.selo_texto }}</strong> no
+            Portal do Selo do TJMA. Depois registre aqui: o ato fica sem selo, o pagamento
+            que o cobriu volta ao protocolo, e «Selar este ato» emite o selo novo —
+            marque «isento», com o motivo, se o ato é gratuito.</p>
+          <label class="span2">Motivo do cancelamento (pelo menos dez letras)
+            <input name="motivo" required minlength="10"
+                   placeholder="ex.: selo saiu cobrado em ato gratuito (mandado do INCRA)"></label>
+          <label class="span2" style="display:flex;gap:8px">
+            <input type="checkbox" name="confirmo_portal" value="1" required style="width:auto">
+            <span>Confirmo que o selo {{ a.selo_texto }} já foi cancelado no Portal do Selo.</span></label>
+          <div class="span2"><button type="submit">Registrar o cancelamento do selo</button></div>
+        </form>
+      </details>
+      {% endif %}
       {# SELAR ATO JÁ LAVRADO — pedido do oficial em 15/09/2026. O selo do RI só
          existia dentro da lavratura: ato que nascesse sem selo (máquina fora do
          ar, ou minuta que entrou como ato) não tinha por onde ser selado

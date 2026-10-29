@@ -857,6 +857,43 @@ def item_pago(linha) -> bool:
             or _sim(linha.get("gratuito")))
 
 
+#: A forma de pagamento do lançamento que quita um item sem dinheiro.
+FORMA_GRATUITA = "GRATUITO"
+
+
+def item_gratuito(linha, con=None) -> bool:
+    """O item é gratuito — não há dinheiro nele? Só LÊ.
+
+    `item_pago` conta o gratuito como «pago» (não há o que receber), e é certo
+    para a ficha do protocolo. Para o SELO não é (28/10/2026, o oficial: «evitar
+    que item gratuito pague selo pago»): item gratuito só cobre selo isento.
+
+    SÃO DUAS MARCAS, E A SEGUNDA É A DO BALCÃO. O item tem `gratuito`; mas
+    quitar «em lote» com a forma «Ato gratuito» grava a gratuidade só no
+    LANÇAMENTO (`cx_lancamentos.forma_pagamento = 'GRATUITO'`) e deixa
+    `gratuito = 0` no item. Medido no protocolo 2026.10.121 (INCRA,
+    28/10/2026): oito itens quitados assim, e o selo da AV-9/2 saiu pago
+    «coberto» por um deles. Com `con`, a forma do lançamento também conta.
+    """
+    if _sim(linha.get("gratuito")):
+        return True
+    forma = linha.get("lancamento_forma")
+    if forma is None and con is not None and linha.get("lancamento_id"):
+        bd = banco(con)
+        if bd.tem_tabela("cx_lancamentos"):
+            forma = bd.valor("SELECT forma_pagamento FROM cx_lancamentos WHERE id = %s",
+                             (int(linha["lancamento_id"]),))
+    return str(forma or "").strip().upper() == FORMA_GRATUITA
+
+
+def item_cobrado(linha, con=None) -> bool:
+    """O item foi cobrado — há dinheiro registrado nele? Só LÊ.
+
+    É o pago que não é gratuito (nas duas marcas de `item_gratuito`). Ligado a
+    ato ISENTO, quer dizer que o cliente pagou por um ato que não se paga."""
+    return item_pago(linha) and not item_gratuito(linha, con)
+
+
 def item_diferido(linha) -> bool:
     """O item tem o registro do diferimento — quem paga e quando? Só calcula."""
     return bool(str(linha.get("diferido_quem") or "").strip()

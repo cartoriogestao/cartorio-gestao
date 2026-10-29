@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+{% block title %}Correções de ofício{% endblock %}
+{% block heading %}<h1>Correções de ofício</h1>{% endblock %}
+{% block content %}
+{# A FILA DE CORREÇÕES DE OFÍCIO — decisão do oficial em 29/10/2026: a
+   escrita é do sistema, com usuário. O agente ou a escrevente PROPÕE, o
+   oficial APROVA com afirmação expressa, e o servidor executa. As quatro abas
+   são as quatro situações da proposta; nada some — a recusada e a que falhou
+   ficam no histórico. A tela só LÊ. #}
+<section class="panel">
+  <p class="small" style="margin-top:0">
+    A correção que antes se fazia por script direto no banco agora é uma
+    <strong>proposta</strong>: quem propõe não altera nada — a proposta guarda
+    o que está no banco agora e o que vai mudar. Quem decide é o oficial, com a
+    afirmação expressa; e é o próprio sistema que executa, conferindo antes que
+    nada mudou desde a proposta.
+  </p>
+  {% if atribuicao %}
+    <p class="small">Só as do <strong>{{ nome_da_atribuicao }}</strong> ·
+      <a href="{{ url_for('correcoes_de_oficio_lista', aba=aba) }}">ver as de todas as atribuições</a></p>
+  {% endif %}
+  <div class="actions" style="margin-bottom:0">
+    {% for chave, rotulo in abas.items() %}
+      <a class="button{% if chave == aba %} primary{% endif %}"
+         href="{{ url_for('correcoes_de_oficio_lista', aba=chave, atribuicao=atribuicao) if atribuicao else url_for('correcoes_de_oficio_lista', aba=chave) }}">{{ rotulo }} ({{ contagem[chave] }})</a>
+    {% endfor %}
+    {% if pode_propor %}<a class="button" href="{{ url_for('correcoes_de_oficio_nova') }}">Propor uma correção</a>{% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>{{ abas[aba] }}</h2></div>
+  {% if lista.cortado %}
+    <p class="notice">A lista passou de {{ limite }} propostas e mostra as mais recentes.</p>
+  {% endif %}
+  {% if lista.linhas %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Nº</th><th>Atribuição</th><th>Tipo</th><th style="width:38%">O que muda</th>
+        <th>Proposta</th>{% if aba != 'PROPOSTA' %}<th>Decisão</th>{% endif %}
+      </tr></thead>
+      <tbody>
+      {% for c in lista.linhas %}
+        <tr>
+          <td><a href="{{ url_for('correcoes_de_oficio_ficha', correcao_id=c.id) }}">{{ c.id }}</a></td>
+          <td>{{ c.nome_da_atribuicao }}</td>
+          <td>{{ c.rotulo_do_tipo }}</td>
+          <td><small>{{ c.resumo }}</small></td>
+          <td><small>{{ fmt_dt(c.proposta_em) }} · {{ c.proposta_por or '—' }}
+            {% if c.frase_do_agente %}<br>{{ c.frase_do_agente }}{% endif %}</small></td>
+          {% if aba != 'PROPOSTA' %}
+          <td><small>{{ fmt_dt(c.decidida_em) }} · {{ c.decidida_por or '—' }}
+            {% if c.falha %}<br><strong>Falhou:</strong> {{ c.falha }}{% endif %}
+            {% if c.motivo_da_recusa %}<br><strong>Recusada:</strong> {{ c.motivo_da_recusa }}{% endif %}</small></td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="muted">Nenhuma proposta nesta aba.</p>
+  {% endif %}
+</section>
+
+{# OS TÍTULOS DO PROTESTO QUE ESPERAM A DECISÃO — a mesma lista que o roteiro
+   do dia lê (`correcoes_de_oficio.pendentes`), um título por linha. #}
+{% if aba == 'PROPOSTA' and pendencias %}
+<section class="panel">
+  <div class="panel-head"><h2>Títulos do Protesto com correção proposta ({{ pendencias | length }})</h2></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Título</th><th>Nº do título</th><th>Protocolo</th><th>Proposta</th><th>O que espera</th></tr></thead>
+      <tbody>
+      {% for p in pendencias %}
+        <tr>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}">{{ p.titulo_id }}</a></td>
+          <td>{{ p.numero_titulo or '—' }}</td>
+          <td>{{ p.protocolo or '—' }}</td>
+          <td><a href="{{ url_for('correcoes_de_oficio_ficha', correcao_id=p.correcao_id) }}">nº {{ p.correcao_id }}</a></td>
+          <td><small>{{ p.explicacao }}</small></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

@@ -73,6 +73,7 @@ from cobranca import init_cobranca_schema
 from carne_leao import init_carne_leao_schema
 from livro_visitas import init_livro_visitas_schema
 from ouvidoria import init_ouvidoria_schema
+from correcoes_de_oficio import init_correcoes_de_oficio_schema
 from centrais_schema import init_centrais_schema
 from onr_endereco_schema import init_ri_onr_endereco_schema
 import senhas as SEN
@@ -837,6 +838,10 @@ class Database:
         # o andamento delas e as avaliações do balcão. Não apontam para tabela
         # de outro módulo: o responsável e a tarefa são vínculo informativo.
         init_ouvidoria_schema(con)
+        # A FILA DE CORREÇÕES DE OFÍCIO (29/10/2026). Não aponta para tabela
+        # nenhuma: o alvo vai como texto, e quem propôs ou decidiu é vínculo
+        # informativo — apagar um usuário não leva a proposta.
+        init_correcoes_de_oficio_schema(con)
         # AS DESPESAS (24/10/2026): cadastro, autorização, pagamento pelo Banco
         # Inter e conferência no extrato; a despesa conferida vai ao Diário.
         init_despesas_schema(con)

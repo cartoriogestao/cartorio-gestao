@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% block title %}Propor correção de ofício{% endblock %}
+{% block heading %}<h1>Propor correção de ofício</h1>{% endblock %}
+{% block content %}
+{# PROPOR É PREPARAR: nada muda no banco além da própria fila. A «prévia»
+   mostra o antes lido agora e o depois que a aprovação gravaria, sem gravar
+   nada; «propor» grava a proposta e abre a tarefa do oficial. O catálogo é
+   fechado — os campos de cada tipo vêm de `correcoes_de_oficio`, e a tela não
+   inventa nenhum. #}
+<div class="actions">
+  <a class="button" href="{{ url_for('correcoes_de_oficio_lista') }}">&larr; A fila</a>
+</div>
+
+<section class="panel">
+  <h2>O que corrigir</h2>
+  <div class="actions" style="margin-bottom:0">
+    {% for t in tipos %}
+      <a class="button{% if escolhido and escolhido.chave == t.chave %} primary{% endif %}"
+         href="{{ url_for('correcoes_de_oficio_nova', tipo=t.chave) }}">{{ t.nome_da_atribuicao }} — {{ t.rotulo }}</a>
+    {% endfor %}
+  </div>
+  {% if not escolhido %}
+    <p class="muted" style="margin-bottom:0">Escolha o tipo da correção. O catálogo é fechado: o que
+      não está aqui não se corrige pela fila.</p>
+  {% endif %}
+</section>
+
+{% if resultado %}
+<section class="panel">
+  <h2>{% if resultado.recusas %}A proposta não pode ser feita assim{% else %}Prévia — nada foi gravado{% endif %}</h2>
+  {% if resultado.recusas %}
+    <div class="notice critical"><ul style="margin:0 0 0 18px">
+      {% for r in resultado.recusas %}<li>{{ r }}</li>{% endfor %}
+    </ul></div>
+  {% endif %}
+  {% if resultado.avisos %}
+    <div class="notice"><strong>Atenção — o que esta correção não faz, ou o que ela vai provocar:</strong>
+      <ul style="margin:6px 0 0 18px">{% for a in resultado.avisos %}<li>{{ a }}</li>{% endfor %}</ul></div>
+  {% endif %}
+  {% if resultado.resumo %}<p><strong>{{ resultado.resumo }}</strong></p>{% endif %}
+  {% if resultado.linhas %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Onde</th><th>Campo</th><th>Antes (lido agora)</th><th>Depois</th></tr></thead>
+      <tbody>
+      {% for m in resultado.linhas %}
+        {% for campo, novo in m.depois.items() %}
+        <tr>
+          <td>{{ m.rotulo }}{% if m.titulo_id %} <small class="muted">(título {{ m.titulo_id }})</small>{% endif %}</td>
+          <td>{{ campo }}</td>
+          <td><small>{{ m.antes.get(campo) if m.antes.get(campo) is not none else '—' }}</small></td>
+          <td><small>{{ novo if novo is not none else '(vazio)' }}</small></td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if escolhido %}
+<section class="panel">
+  <h2>{{ escolhido.rotulo }}</h2>
+  <p class="small" style="margin-top:0">{{ escolhido.descricao }}</p>
+  <form method="post" action="{{ url_for('correcoes_de_oficio_propor') }}" enctype="multipart/form-data" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="tipo" value="{{ escolhido.chave }}">
+    {% for f in escolhido.campos %}
+      {% if f.widget == 'caixa' %}
+        <label class="check"><input type="checkbox" name="{{ f.nome }}" value="1" style="width:auto"
+          {% if not valores or valores.get(f.nome) == '1' %}checked{% endif %}> {{ f.rotulo }}</label>
+        {% if f.ajuda %}<small class="muted">{{ f.ajuda }}</small>{% endif %}
+      {% elif f.widget == 'cadastro' %}
+        <fieldset>
+          <legend><strong>{{ f.rotulo }}</strong> <small class="muted">— {{ f.ajuda }}</small></legend>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Corrigir</th><th>Campo</th><th>Valor certo</th></tr></thead>
+            <tbody>
+            {% for c in campos_do_cadastro %}
+              <tr>
+                <td><input type="checkbox" name="corrigir__{{ c.nome }}" value="1" style="width:auto"
+                  {% if valores.get('corrigir__' ~ c.nome) == '1' %}checked{% endif %}></td>
+                <td>{{ c.rotulo }}</td>
+                <td><input name="{{ c.nome }}" value="{{ valores.get(c.nome, '') }}"></td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table></div>
+        </fieldset>
+      {% else %}
+        <label>{{ f.rotulo }}
+          <input name="{{ f.nome }}" value="{{ valores.get(f.nome, '') }}"
+                 {% if f.widget == 'numero' %}inputmode="numeric"{% endif %}>
+          {% if f.ajuda %}<small class="muted" style="font-weight:400">{{ f.ajuda }}</small>{% endif %}</label>
+      {% endif %}
+    {% endfor %}
+    <label>Motivo — o que aconteceu e de onde se sabe
+      <small class="muted" style="font-weight:400">(pelo menos {{ minimo_do_motivo }} letras; vai para a
+        proposta, para o ato quando ele leva motivo, e para a auditoria)</small>
+      <textarea name="motivo" rows="4" required>{{ valores.get('motivo', '') }}</textarea></label>
+    <label>Preparado por um agente? <small class="muted" style="font-weight:400">(opcional: o nome do agente
+      que preparou esta proposta; a conta de robô já se identifica sozinha)</small>
+      <input name="agente" value="{{ valores.get('agente', '') }}"></label>
+    <label>Prova (arquivos) <small class="muted" style="font-weight:400">(vão com a proposta; na prévia
+      eles não são guardados — escolha-os de novo ao propor)</small>
+      <input type="file" name="anexos" multiple></label>
+    <div class="actions">
+      <button type="submit" name="acao" value="previa">Ver a prévia (não grava nada)</button>
+      <button type="submit" name="acao" value="propor" class="primary">Propor ao oficial</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

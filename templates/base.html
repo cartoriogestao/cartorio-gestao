@@ -502,7 +502,10 @@
            deixar log». Secao propria, no fim do grupo, e so para o ADMIN:
            secao que o balcao veria vazia e a que o teste recusa. #}
         {% if user.role == 'ADMIN' %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Do oficial</div>
-        <a href="{{ url_for('protesto_afirmacoes') }}">Afirmações expressas</a>{% endif %}
+        <a href="{{ url_for('protesto_afirmacoes') }}">Afirmações expressas</a>
+        {# A FILA DE CORREÇÕES DE OFÍCIO (29/10/2026) — a do Protesto, filtrada:
+           a fila inteira mora no Administrativo, e a porta de lá é outra. #}
+        <a href="{{ url_for('correcoes_de_oficio_lista', atribuicao='PROTESTO') }}">Correções de ofício do Protesto</a>{% endif %}
       </details>
       {% endif %}
 
@@ -928,6 +931,9 @@
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">A casa</div>
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('fraudes') }}">Atenção para fraudes</a>{% endif %}
         <a href="{{ url_for('checklists') }}">Checklists</a>
+        {# A FILA DE CORREÇÕES DE OFÍCIO (29/10/2026): o balcão e o robô propõem,
+           o oficial decide. Todo login vê; propor e decidir a rota separa. #}
+        <a href="{{ url_for('correcoes_de_oficio_lista') }}">Correções de ofício</a>
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('recurrences') }}">Obrigações recorrentes</a>{% endif %}
         {# OS LIVROS OBRIGATÓRIOS (LG08): o que o Código de Normas do MA manda
            ter, e onde cada livro está — com os três administrativos do art.

@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% block title %}Correção de ofício nº {{ c.id }}{% endblock %}
+{% block heading %}<h1>Correção de ofício nº {{ c.id }}</h1>{% endblock %}
+{% block content %}
+{# A PROPOSTA INTEIRA: quem propôs (a pessoa, o agente e a mando de quem), o
+   antes lido do banco na hora da proposta, o depois que a aprovação grava, a
+   prova e a decisão. Aprovar e recusar são do oficial — a rota e o domínio
+   recusam quem não é ADMIN de gente; aqui o formulário só aparece para ele. #}
+<div class="actions">
+  <a class="button" href="{{ url_for('correcoes_de_oficio_lista', aba=c.situacao) }}">&larr; A fila</a>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><h2>{{ c.nome_da_atribuicao }} — {{ c.rotulo_do_tipo }}</h2>
+    <span class="badge{% if c.situacao == 'APROVADA_EXECUTADA' %} ok{% elif c.situacao == 'FALHOU' %} critica{% elif c.situacao == 'RECUSADA' %} alta{% else %} media{% endif %}">{{ c.rotulo_da_situacao }}</span></div>
+  <p><strong>{{ c.resumo }}</strong></p>
+  <dl class="detail">
+    <dt>Motivo</dt><dd>{{ c.motivo }}</dd>
+    <dt>Proposta</dt><dd>{{ fmt_dt(c.proposta_em) }} por {{ c.proposta_por or '—' }}{% if c.frase_do_agente %} — {{ c.frase_do_agente }}{% endif %}</dd>
+    <dt>Alvo</dt><dd>{{ c.alvo_tabela }} {{ c.alvo_ids[:30] | join(', ') }}{% if c.alvo_ids | length > 30 %} … e mais {{ c.alvo_ids | length - 30 }}{% endif %}</dd>
+    {% if c.tarefa_id %}<dt>Tarefa do oficial</dt><dd><a href="{{ url_for('task_detail', task_id=c.tarefa_id) }}">nº {{ c.tarefa_id }}</a></dd>{% endif %}
+    {% if c.decidida_em %}<dt>Decisão</dt><dd>{{ fmt_dt(c.decidida_em) }} por {{ c.decidida_por or '—' }}</dd>{% endif %}
+    {% if c.afirmacao %}<dt>Afirmação expressa</dt><dd>{{ c.afirmacao }}</dd>{% endif %}
+    {% if c.motivo_da_recusa %}<dt>Por que foi recusada</dt><dd>{{ c.motivo_da_recusa }}</dd>{% endif %}
+    {% if c.falha %}<dt>Por que falhou</dt><dd class="danger"><strong>{{ c.falha }}</strong></dd>{% endif %}
+    {% if c.resultado %}<dt>Resultado</dt><dd><small>{% for k, v in c.resultado.items() %}{{ k }}: {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</small></dd>{% endif %}
+  </dl>
+</section>
+
+{% if c.avisos %}
+<section class="panel">
+  <div class="notice" style="margin-bottom:0"><strong>O que esta correção não faz, ou o que ela vai provocar:</strong>
+    <ul style="margin:6px 0 0 18px">{% for a in c.avisos %}<li>{{ a }}</li>{% endfor %}</ul></div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><h2>Antes e depois</h2>
+    <small class="muted">o «antes» foi lido do banco na hora da proposta; a aprovação o confere de novo antes de executar</small></div>
+  {% if c.total_de_linhas > c.linhas | length %}
+    <p class="notice">São {{ c.total_de_linhas }} linhas; a tela mostra as {{ c.linhas | length }} primeiras.</p>
+  {% endif %}
+  {% if c.linhas %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Onde</th><th>Título</th><th>Campo</th><th>Antes</th><th>Depois</th></tr></thead>
+      <tbody>
+      {% for m in c.linhas %}
+        {% set r = c.rotulos.get(m.titulo_id | string) if m.titulo_id else none %}
+        {% for campo, novo in m.depois.items() %}
+        <tr>
+          <td>{{ m.rotulo }}</td>
+          <td>{% if m.titulo_id %}<a href="{{ url_for('protesto_titulo', titulo_id=m.titulo_id) }}">{{ m.titulo_id }}</a>{% if r %} <small class="muted">nº {{ r.numero_titulo or '—' }} · prot. {{ r.protocolo or '—' }}</small>{% endif %}{% else %}—{% endif %}</td>
+          <td>{{ campo }}</td>
+          <td><small>{{ (m.antes.get(campo) if m.antes.get(campo) is not none else '—') | string | truncate(300) }}</small></td>
+          <td><small>{{ (novo if novo is not none else '(vazio)') | string | truncate(300) }}</small></td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="muted">Esta proposta não tem linhas a mostrar (o tipo dela saiu do catálogo).</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Prova ({{ anexos | length }})</h2></div>
+  {% if anexos %}
+  <ul class="file-list">
+    {% for a in anexos %}
+      <li><a href="{{ url_for('attachment_view', attachment_id=a.id) }}" target="_blank" rel="noopener">{{ a.original_name }}</a>
+        <small>{{ fmt_dt(a.uploaded_at) }} · {{ a.uploader_name or '—' }}</small></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+    <p class="muted">Nenhum arquivo junto.</p>
+  {% endif %}
+  {% if pode_anexar %}
+  <form method="post" action="{{ url_for('correcoes_de_oficio_anexar', correcao_id=c.id) }}"
+        enctype="multipart/form-data" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="file" name="anexos" multiple style="width:auto">
+    <button type="submit">Juntar à proposta</button>
+  </form>
+  {% endif %}
+</section>
+
+{% if pode_decidir %}
+<section class="panel">
+  <h2>A decisão do oficial</h2>
+  <p class="small" style="margin-top:0">Ao aprovar, o servidor confere de novo que o «antes» é o que está no
+    banco; se alguém mexeu desde a proposta, nada se executa e a proposta fica como <strong>FALHOU</strong>,
+    dizendo o que mudou. Executada, ficam gravadas a auditoria de cada linha tocada e a sua afirmação.</p>
+  <form method="post" action="{{ url_for('correcoes_de_oficio_aprovar', correcao_id=c.id) }}" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="check"><input type="checkbox" name="afirmo" value="1" style="width:auto">
+      Afirmo — aprovo esta correção de ofício e mando executá-la</label>
+    <label>Por quê <small class="muted" style="font-weight:400">(pelo menos {{ minimo_da_afirmacao }} letras;
+      fica na auditoria com o seu nome)</small>
+      <textarea name="afirmacao" rows="3" required placeholder="{{ modelo_da_afirmacao }}"></textarea></label>
+    <div class="actions"><button type="submit" class="primary">Aprovar e executar</button></div>
+  </form>
+  <form method="post" action="{{ url_for('correcoes_de_oficio_recusar', correcao_id=c.id) }}" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Recusar — o motivo <small class="muted" style="font-weight:400">(pelo menos {{ minimo_da_recusa }}
+      letras; a proposta fica no histórico)</small>
+      <textarea name="motivo_da_recusa" rows="2" required></textarea></label>
+    <div class="actions"><button type="submit">Recusar a proposta</button></div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

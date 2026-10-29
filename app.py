@@ -3710,6 +3710,19 @@ def main():
     # antes, e nao o fim do expediente.
     import ajuda
     ajuda.fotografar(db, app, versao=VERSION, agora=db.now())
+
+    # O VIGIA DO WHATSAPP (29/10/2026): busca a caixa-postal de 20 em 20
+    # segundos, baixa os arquivos, roda o atendente com IA e o aviso de fora do
+    # horario (`wa_vigia`). Aqui, e nao em `create_app`, pela razao da
+    # fotografia: a suite monta milhares de aplicacoes e nenhuma deve buscar.
+    # Sem a caixa-postal configurada ele so espera; e falha nele nao derruba o
+    # servidor.
+    try:
+        import wa_vigia
+        wa_vigia.iniciar(db, pasta_dados=Path(app.config["DATA_DIR"]),
+                         pasta_arquivos=app.extensions["archive_root"])
+    except Exception as exc:  # noqa: BLE001
+        print(f"Vigia do WhatsApp nao ligou: {exc}")
     host = db.get_setting("network_host", "0.0.0.0") or "0.0.0.0"
     # Para a instalacao oficial em rede, 127.0.0.1 impediria os clientes.
     if "--service" in sys.argv and host in {"127.0.0.1", "localhost"}:

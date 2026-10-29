@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from pathlib import Path
 import urllib.error
 import urllib.request
 from typing import Any, Callable
@@ -134,15 +135,18 @@ def aplicar_itens(con: Any, itens: list, *, serventia: Any = None,
         serventia = SERV.PADRAO
     aplicadas = 0
     repetidas = 0
+    entregas = 0
     ids: list[Any] = []
     for item in itens or []:
         corpo, eid = _desembrulhar(item)
         r = WA.aplicar_entrada(con, corpo, serventia=serventia, agora=agora)
         aplicadas += int(r.get("criadas") or 0)
         repetidas += int(r.get("repetidas") or 0)
+        entregas += int(r.get("entregas") or 0)
         if _id_confirmavel(eid):
             ids.append(eid)
-    return {"ok": True, "aplicadas": aplicadas, "repetidas": repetidas, "ids": ids}
+    return {"ok": True, "aplicadas": aplicadas, "repetidas": repetidas,
+            "entregas": entregas, "ids": ids}
 
 
 def confirmar(con: Any, ids: list[Any] | None, http_post: Callable | None = None) -> None:
@@ -172,38 +176,31 @@ def confirmar(con: Any, ids: list[Any] | None, http_post: Callable | None = None
 
 
 def rodar_automacao(ctx) -> dict:
-    """O processo WHATSAPP_CAIXA_POSTAL: busca, aplica e confirma — os três
-    passos do botão «puxar» (`wa_web.whatsapp_puxar`), na mesma ordem e com a
-    rede fora da transação. ESCREVE (a fila do balcão).
+    """O processo WHATSAPP_CAIXA_POSTAL: a mesma volta do vigia do servidor
+    (`wa_vigia.um_ciclo`) — busca, aplica e confirma; baixa os arquivos; roda
+    o atendente com IA; manda o aviso de fora do horário; resolve as paradas.
+    ESCREVE (a fila do balcão).
 
-    27/10/2026, na configuração da VPS: a busca só acontecia no botão, e a
-    mensagem do cliente ficava na VPS até alguém clicar. A auditoria só ganha
-    linha quando algo entrou — uma por minuto, vazia, afogaria o rastro.
-    """
+    27/10/2026, na configuração da VPS: a busca só acontecia no botão. 29/10:
+    o atendente com IA não rodava em lugar nenhum sozinho — só no clique —, e
+    os arquivos dos clientes nunca eram baixados. Desde então a automação é a
+    RESERVA do vigia: as duas podem rodar juntas sem dobrar nada (ver
+    `wa_vigia`)."""
     import automacao_processos as PROC
     import automacao_schema as ASCH
-    with ctx.db.connect() as con:
-        achado = buscar_pendentes(con)
-    if not achado.get("ok"):
-        return PROC.resultado(ASCH.AVISO, f"Caixa-postal não lida: {achado.get('motivo')}.")
-    try:
-        serventia = SERV.dados(ctx.db.get_settings)
-    except Exception:                                   # noqa: BLE001 — o padrão serve
-        serventia = None
-    with ctx.db.transaction() as con:
-        r = aplicar_itens(con, achado["itens"], serventia=serventia,
-                          agora=ctx.agora.isoformat(timespec="seconds"))
-    with ctx.db.connect() as con:
-        confirmar(con, r.get("ids"))
-    if r.get("aplicadas"):
-        import identidade_do_robo as IDR
-        # Sem o «log antigo» sem agente: o registro do robô diz sempre quem é (#36).
-        ctx.db.log(None, "automação", "wa_puxar", "wa_conversa", None,
-                   {"ok": True, "aplicadas": r["aplicadas"], "repetidas": r["repetidas"]},
-                   agente="automação — caixa-postal do WhatsApp",
-                   a_mando_de=IDR.PELO_RESPONSAVEL)
-    return PROC.resultado(ASCH.OK, f"{r['aplicadas']} mensagem(ns) nova(s) na fila do balcão, "
-                                   f"{r['repetidas']} repetida(s).")
+    import wa_vigia as VIGIA
+    pasta = Path(ctx.db.db_path).parent
+    r = VIGIA.um_ciclo(ctx.db, pasta_dados=pasta,
+                       pasta_arquivos=VIGIA.pasta_de_arquivos(ctx.db, pasta),
+                       agora=ctx.agora.isoformat(timespec="seconds"), encerrar=True)
+    if r.get("caixa"):
+        return PROC.resultado(ASCH.AVISO, f"Caixa-postal não lida: {r['caixa']}.")
+    texto = (f"{r['aplicadas']} mensagem(ns) nova(s) na fila do balcão, "
+             f"{r['repetidas']} repetida(s); {r['arquivos']} arquivo(s) baixado(s); "
+             f"{r['ia']} conversa(s) com a IA; {r['avisos']} aviso(s) de fora do horário.")
+    if r["erros"]:
+        return PROC.resultado(ASCH.AVISO, texto + " Falhou: " + ", ".join(r["erros"]) + ".")
+    return PROC.resultado(ASCH.OK, texto)
 
 
 def busca_automatica_ligada(con: Any) -> bool:
@@ -223,7 +220,9 @@ CATALOGO = (
      "setor": "GESTAO", "funcao": f"wa_puxar.{rodar_automacao.__name__}", "timeout_s": 120,
      "agenda": {"dias": [0, 1, 2, 3, 4, 5, 6], "intervalo_min": 2,
                 "janela": ["06:00", "22:00"]},
-     "descricao": "De 2 em 2 minutos: traz da caixa-postal da VPS as mensagens que o "
-                  "WhatsApp entregou e põe na fila do balcão. O mesmo botão «puxar»."},
+     "descricao": "De 2 em 2 minutos: a reserva do vigia do servidor (que busca de "
+                  "20 em 20 segundos). Traz da caixa-postal da VPS as mensagens que o "
+                  "WhatsApp entregou, baixa os arquivos, roda o atendente com IA e o "
+                  "aviso de fora do horário."},
 )
 

@@ -136,6 +136,33 @@ CHAVE_MODELO_PRAZO = "modelo_prenotacao_vencendo"
 CHAVE_MODELO_PESQUISA = "modelo_pesquisa_satisfacao"
 CHAVE_MODELO_RETOMAR = "modelo_retomar_atendimento"
 
+# O BALCÃO QUE FUNCIONA SOZINHO (29/10/2026). Pedido do oficial: «preciso que
+# o whatsapp seja mais funcional, preciso que atualize em tempo real (se nao
+# possivel com frequencia de 30s […]), receba arquivos enviados na conversa,
+# configure a IA para fazer o primeiro atendimento, passando para atendente
+# quando houver justo motivo». Nada disto é segredo.
+#   - `vigia_segundos`: de quantos em quantos segundos o servidor busca na
+#     caixa-postal (`wa_vigia`). Vazio = o padrão (20 s); «0» = desligada.
+#   - `horario_atendimento`: «seg-sex 08:00-17:00», uma faixa por linha
+#     (`wa_horario`). Vazio = sem horário: nada de aviso de fora do horário.
+#   - `fora_horario_ligado` / `fora_horario_texto`: o aviso automático a quem
+#     escreve com o balcão fechado — uma vez por período fechado.
+#   - `respostas_prontas`: «atalho | texto», uma por linha, para quem atende.
+#   - `encerrar_aguardando_dias`: a conversa respondida em que o cliente não
+#     voltou se resolve sozinha depois de N dias. Vazio = o padrão; «0» = nunca.
+CHAVE_VIGIA_SEGUNDOS = "vigia_segundos"
+CHAVE_HORARIO = "horario_atendimento"
+CHAVE_FORA_HORARIO_LIGADO = "fora_horario_ligado"
+CHAVE_FORA_HORARIO_TEXTO = "fora_horario_texto"
+CHAVE_RESPOSTAS_PRONTAS = "respostas_prontas"
+CHAVE_ENCERRAR_DIAS = "encerrar_aguardando_dias"
+
+# A SITUAÇÃO DO ARQUIVO QUE O CLIENTE MANDOU (`wa_mensagem.midia_situacao`).
+# NULL = ainda não baixado; «baixando» é a trava de quem o pegou.
+MIDIA_BAIXANDO = "baixando"
+MIDIA_OK = "ok"
+MIDIA_ERRO = "erro"
+
 CHAVES_CONFIG = (
     CHAVE_VERIFY, CHAVE_APP_SECRET, CHAVE_PHONE, CHAVE_TOKEN,
     CHAVE_CAIXA_URL, CHAVE_CAIXA_SEGREDO, CHAVE_MODO_TESTE,
@@ -148,6 +175,8 @@ CHAVES_CONFIG = (
     CHAVE_MODELOS_APROVADOS, CHAVE_NOME_NO_MODELO, CHAVE_MODELO_EXIGENCIA,
     CHAVE_MODELO_PRONTO, CHAVE_MODELO_PRAZO, CHAVE_MODELO_PESQUISA,
     CHAVE_MODELO_RETOMAR,
+    CHAVE_VIGIA_SEGUNDOS, CHAVE_HORARIO, CHAVE_FORA_HORARIO_LIGADO,
+    CHAVE_FORA_HORARIO_TEXTO, CHAVE_RESPOSTAS_PRONTAS, CHAVE_ENCERRAR_DIAS,
 )
 
 # O QUE E SEGREDO, e por isso mora no cofre e nao em `wa_config` (LX14). O
@@ -267,6 +296,26 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # sem `atendimento_desde_id`, a conversa mostra tudo, como antes.
     ("wa_conversa", "resolvida_em", "TEXT"),
     ("wa_conversa", "atendimento_desde_id", "bigint"),
+    # O ARQUIVO QUE O CLIENTE MANDA (29/10/2026): até aqui só o tipo e o id da
+    # mídia ficavam gravados, e a foto ou o PDF nunca chegavam ao balcão. Agora
+    # `wa_midia` baixa da Meta e guarda o arquivo na pasta da casa; estas
+    # colunas dizem onde ele está, o nome, o tipo, o tamanho e o sha256. O
+    # arquivo que SAI (enviado por quem atende) usa as mesmas colunas.
+    ("wa_mensagem", "midia_situacao", "TEXT"),
+    ("wa_mensagem", "midia_desde", "TEXT"),
+    ("wa_mensagem", "arquivo_nome", "TEXT"),
+    ("wa_mensagem", "arquivo_caminho", "TEXT"),
+    ("wa_mensagem", "arquivo_mime", "TEXT"),
+    ("wa_mensagem", "arquivo_bytes", "bigint"),
+    ("wa_mensagem", "arquivo_sha256", "TEXT"),
+    ("wa_mensagem", "arquivo_erro", "TEXT"),
+    # A ENTREGA DO QUE SAIU (29/10/2026): a Meta devolve «sent», «delivered»,
+    # «read» ou «failed» para cada mensagem enviada, e isso era jogado fora.
+    ("wa_mensagem", "entrega", "TEXT"),
+    ("wa_mensagem", "entrega_em", "TEXT"),
+    ("wa_mensagem", "entrega_erro", "TEXT"),
+    # O AVISO DE FORA DO HORÁRIO sai uma vez por período fechado (`wa_rotina`).
+    ("wa_conversa", "fora_horario_avisado_em", "TEXT"),
 )
 INDICES_DEPOIS_DA_MIGRACAO: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_wa_mensagem_ia "
@@ -276,6 +325,9 @@ INDICES_DEPOIS_DA_MIGRACAO: tuple[str, ...] = (
     # A aba «Resolvidas» ordena pela data de resolver (27/10/2026).
     "CREATE INDEX IF NOT EXISTS idx_wa_conversa_resolvida "
     "ON wa_conversa(status, resolvida_em)",
+    # O vigia procura, a cada volta, o arquivo que ainda não foi baixado.
+    "CREATE INDEX IF NOT EXISTS idx_wa_mensagem_midia "
+    "ON wa_mensagem(midia_situacao, id) WHERE midia_id IS NOT NULL",
 )
 
 

@@ -9,9 +9,18 @@
   própria tela do WhatsApp e só para quem pode abri-la. A primeira carga já vem
   com o número; o `whatsapp_atalho.js` atualiza a cada 30 s, sem renovar a
   sessão. O ícone é desenhado aqui, em traço, sem nada de fora.
+
+  O AVISO DE MENSAGEM NOVA (29/10/2026): o `data-wa-avisos` vai em toda tela de
+  quem pode abrir o WhatsApp — inclusive a do próprio WhatsApp, onde o atalho
+  não aparece —, e o `whatsapp_atalho.js` avisa a mensagem nova pelo Windows,
+  pelo som e pelo cartão no canto.
 #}
 {% set atalho = wa_atalho() if wa_atalho is defined else none %}
 {% if atalho %}
+<span hidden data-wa-avisos data-url="{{ url_for('whatsapp_nao_respondidas') }}"
+      data-conversa-url="{{ url_for('whatsapp_lista') }}"
+      data-relogio="{{ url_for('static', filename='whatsapp_relogio.js') }}?v={{ VERSION }}"></span>
+{% if not atalho.escondido %}
 <a class="wa-atalho" href="{{ url_for('whatsapp_lista') }}" data-wa-atalho
    data-url="{{ url_for('whatsapp_nao_respondidas') }}"
    aria-label="{{ atalho.rotulo }}" title="{{ atalho.rotulo }}">
@@ -26,5 +35,6 @@
   </svg>
   {% if atalho.n > 0 %}<span class="wa-atalho-alerta" data-wa-atalho-n>{{ atalho.texto }}</span>{% endif %}
 </a>
+{% endif %}
 <script defer src="{{ url_for('static', filename='whatsapp_atalho.js') }}?v={{ VERSION }}"></script>
 {% endif %}

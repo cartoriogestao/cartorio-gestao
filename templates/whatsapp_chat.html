@@ -14,6 +14,9 @@
   <a href="{{ url_for('whatsapp_painel') }}">Painel do prazo</a>
   · <a href="{{ url_for('whatsapp_atendente') }}">Atendente com IA</a>
   · <a href="{{ url_for('whatsapp_config') }}">Configuração Meta</a>
+  · <button type="button" class="wa-ligar-avisos" data-wa-ligar-avisos>🔔 Ligar os avisos do Windows</button>
+  <span class="muted" data-wa-avisos-situacao></span>
+  {% if rotina and rotina.horario_descrito %}· <span class="muted">atendimento {{ rotina.horario_descrito }}</span>{% endif %}
 </p>
 
 <div class="wa-chat{% if c %} wa-com-conversa{% endif %}">
@@ -252,6 +255,16 @@
         <form method="post" action="{{ url_for('whatsapp_enviar', conversa_id=c.id) }}"
               class="wa-escrever" data-wa-envio-unico>
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          {#- AS RESPOSTAS PRONTAS (29/10/2026, `wa_rotina`): escolher uma põe o
+              texto na caixa, com {nome} trocado pelo primeiro nome do cliente.
+              Não envia: quem atende confere e aperta Enviar. -#}
+          {% if respostas %}
+          <select class="wa-respostas" data-wa-respostas aria-label="respostas prontas"
+                  data-nome="{{ (c.nome or '').split(' ')[0] }}">
+            <option value="">respostas prontas…</option>
+            {% for r in respostas %}<option value="{{ loop.index0 }}" data-texto="{{ r.texto }}">{{ r.atalho }}</option>{% endfor %}
+          </select>
+          {% endif %}
           <textarea name="rascunho" rows="3" data-wa-caixa aria-label="mensagem"
                     placeholder="escreva a mensagem…">{{ c.rascunho or '' }}</textarea>
           <div class="wa-escrever-botoes">
@@ -270,6 +283,22 @@
           <a href="{{ url_for('whatsapp_config') }}">configuração</a>.</p>
           {% endif %}
         </form>
+        {#- MANDAR UM ARQUIVO (29/10/2026): formulário próprio, porque leva o
+            arquivo (multipart). A legenda vai junto na foto, no vídeo e no
+            documento. -#}
+        <details class="wa-anexar">
+          <summary class="small">📎 mandar arquivo</summary>
+          <form method="post" action="{{ url_for('whatsapp_enviar_arquivo', conversa_id=c.id) }}"
+                enctype="multipart/form-data" class="wa-anexar-form" data-wa-envio-unico>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="file" name="arquivo" required aria-label="arquivo a mandar">
+            <input type="text" name="legenda" maxlength="1000" placeholder="legenda (opcional)"
+                   aria-label="legenda do arquivo">
+            <button class="button primary" {% if not pode_enviar %}disabled{% endif %}>Mandar</button>
+            <p class="small muted">Aceitos: {{ aceitos_no_envio }}. Foto até 5 MB; áudio e vídeo
+              até 16 MB; documento até 25 MB. A casa guarda uma cópia do que mandou.</p>
+          </form>
+        </details>
       </div>
     </div>
   {% endif %}

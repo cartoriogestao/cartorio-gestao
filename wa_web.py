@@ -28,7 +28,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from flask import (abort, flash, jsonify, make_response, redirect, render_template, request,
-                   url_for)
+                   send_file, url_for)
 
 import agente_provedores as PROV
 import serventia as SERV
@@ -36,8 +36,10 @@ import tetos_de_entrada as TETO
 import wa_atendente as ATENDENTE
 import wa_balcao as WA
 import wa_fila as FILA
+import wa_midia as MIDIA
 import wa_modelos as MODELOS
 import wa_puxar as PUXAR
+import wa_rotina as ROTINA
 import wa_schema as SCH
 from seguranca_web import PRATICA  # M2 (LX11): o AUDITOR vê e não grava
 
@@ -225,9 +227,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         def wa_atalho():
             try:
                 if (not app.extensions["usuario_id"]()
-                        or request.endpoint in TELAS_SEM_ATALHO
                         or not _pode_abrir_o_whatsapp()):
                     return None
+                if request.endpoint in TELAS_SEM_ATALHO:
+                    # O AVISO DE MENSAGEM NOVA VALE AQUI TAMBÉM (29/10/2026):
+                    # sem o atalho, e sem contar — o JS pergunta sozinho.
+                    return {"escondido": True}
                 with _con() as con:
                     n = FILA.nao_respondidas(con, usuario_id=app.extensions["usuario_id"]())
                 return FILA.rotulo_do_atalho(n)
@@ -244,7 +249,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         pergunta automática: não renova a sessão (`app.py`)."""
         with _con() as con:
             n = FILA.nao_respondidas(con, usuario_id=app.extensions["usuario_id"]())
-        return jsonify(FILA.rotulo_do_atalho(n))
+            ultima = FILA.ultima_entrada(con, usuario_id=app.extensions["usuario_id"]())
+        resposta = FILA.rotulo_do_atalho(n)
+        # A ÚLTIMA MENSAGEM DE CLIENTE (29/10/2026): é por ela que o navegador
+        # sabe que chegou coisa nova e avisa pelo Windows (`whatsapp_atalho.js`).
+        resposta["ultima"] = ultima
+        return jsonify(resposta)
 
     @app.route("/whatsapp/lista-parcial")
     @login_required
@@ -299,6 +309,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             linhas = ATENDENTE.registros(con, limite=100)
             hoje = ATENDENTE.resumo_do_dia(con, agora=db.now())
             pode_enviar = WA.pode_enviar_meta(con)
+            rotina = ROTINA.config(con)
         return render_template(
             "whatsapp_atendente.html", ia=ia, linhas=linhas, hoje=hoje,
             pode_enviar=pode_enviar,
@@ -306,6 +317,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             # desta tela, que todo login vê.
             provedores=[{"id": p["id"], "nome": p["nome"], "tem_chave": p["tem_chave"]}
                         for p in PROV.catalogo_para_tela(_pasta())],
+            rotina=rotina, texto_fora_padrao=ROTINA.TEXTO_FORA_PADRAO,
+            vigia_padrao=ROTINA.VIGIA_PADRAO_S, encerrar_padrao=ROTINA.ENCERRAR_PADRAO_DIAS,
             rotulos=ATENDENTE.ROTULO_DO_CASO, exemplo=ATENDENTE.TEXTO_BASE_EXEMPLO,
             tentativas=ATENDENTE.TENTATIVAS_POR_DIA,
             e_admin=app.extensions["usuario_papel"]() == "ADMIN")
@@ -326,6 +339,127 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                   f"atendida(s), {r.get('audios') or 0} áudio(s) transcrito(s).",
                   "success")
         return redirect(url_for("whatsapp_lista"))
+
+    @app.route("/whatsapp/balcao", methods=["POST"])
+    @login_required
+    def whatsapp_balcao_config():
+        """A ROTINA DO BALCÃO (29/10/2026): a busca do vigia, o horário, o aviso de
+        fora do horário, as respostas prontas e o encerramento da conversa
+        parada. Gravar é só do ADMIN, como o resto da configuração do WhatsApp."""
+        if app.extensions["usuario_papel"]() != "ADMIN":
+            abort(403)
+        try:
+            with db.transaction() as con:
+                avisos = ROTINA.gravar(con, request.form)
+        except ROTINA.RotinaErro as erro:
+            flash(f"Nada foi guardado: {erro}", "danger")
+            return redirect(url_for("whatsapp_atendente") + "#balcao")
+        audit("wa_balcao_config", "wa_config", None,
+              {"vigia_segundos": request.form.get("vigia_segundos", ""),
+               "fora_ligado": request.form.get("fora_ligado") == "1",
+               "encerrar_dias": request.form.get("encerrar_dias", "")})
+        for aviso in avisos:
+            flash(aviso, "warning")
+        flash("Rotina do balcão guardada.", "success")
+        return redirect(url_for("whatsapp_atendente") + "#balcao")
+
+    def _mensagem(mensagem_id: int) -> dict:
+        with _con() as con:
+            from bd_nativo import banco
+            m = banco(con).um("SELECT * FROM wa_mensagem WHERE id=%s", (int(mensagem_id),))
+        if not m:
+            abort(404)
+        return dict(m)
+
+    @app.route("/whatsapp/midia/<int:mensagem_id>")
+    @login_required
+    def whatsapp_midia(mensagem_id: int):
+        """O ARQUIVO DA CONVERSA (29/10/2026): a foto, o PDF, o áudio e o vídeo
+        abrem na tela; o resto baixa (`wa_midia.MOSTRA_NA_TELA`, a razão de
+        `arquivo_visivel`). `?baixar=1` baixa sempre. A guarda é a do módulo:
+        quem não abre o WhatsApp recebe 404, pelo `before_request`."""
+        if not _pode_abrir_o_whatsapp():
+            abort(404)
+        m = _mensagem(mensagem_id)
+        caminho = Path(m.get("arquivo_caminho") or "")
+        if not m.get("arquivo_caminho") or not caminho.is_file():
+            abort(404)
+        mime, em_linha = MIDIA.tipo_para_servir(m)
+        baixar = request.args.get("baixar") == "1" or not em_linha
+        audit("wa_midia_aberta", "wa_mensagem", int(mensagem_id),
+              {"conversa_id": m.get("conversa_id"), "baixou": baixar})
+        resposta = send_file(caminho, mimetype=mime, as_attachment=baixar,
+                             download_name=m.get("arquivo_nome") or caminho.name,
+                             max_age=0)
+        # Os MESMOS cabeçalhos de quem mostra anexo (`arquivo_visivel`): nada de
+        # adivinhar o tipo, e nenhum script na página servida.
+        import arquivo_visivel as ARQVIS
+        for chave, valor in ARQVIS.cabecalhos_para_mostrar().items():
+            resposta.headers[chave] = valor
+        return resposta
+
+    @app.route("/whatsapp/midia/<int:mensagem_id>/tentar", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def whatsapp_midia_tentar(mensagem_id: int):
+        """O arquivo que não baixou volta à fila do vigia."""
+        m = _mensagem(mensagem_id)
+        with db.transaction() as con:
+            voltou = MIDIA.tentar_de_novo(con, mensagem_id)
+        flash("O arquivo volta a ser baixado em alguns segundos." if voltou
+              else "Este arquivo não estava com erro.", "success" if voltou else "info")
+        return redirect(url_for("whatsapp_conversa", conversa_id=int(m["conversa_id"])))
+
+    @app.route("/whatsapp/<int:conversa_id>/arquivo", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def whatsapp_enviar_arquivo(conversa_id: int):
+        """MANDAR UM ARQUIVO AO CLIENTE (29/10/2026): foto, PDF, documento,
+        planilha, áudio ou vídeo, com legenda. Guardar (a casa fica com a cópia
+        do que mandou), subir à Meta e mandar — a rede fora da transação — e
+        gravar a saída com o arquivo, para o balão mostrá-lo."""
+        enviado = request.files.get("arquivo")
+        legenda = (request.form.get("legenda") or "").strip()
+        if not enviado or not enviado.filename:
+            flash("Escolha o arquivo.", "warning")
+            return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
+        dados = enviado.read(MIDIA.TETO_DE_BYTES + 1)
+        nome = Path(enviado.filename).name
+        salvo = None
+        try:
+            if len(dados) > MIDIA.TETO_DE_BYTES:
+                raise MIDIA.MidiaErro("O arquivo passa de 25 MB.")
+            tipo, mime = MIDIA.conferir_envio(nome, len(dados))
+            with _con() as con:
+                d = WA.conversa(con, conversa_id)
+                if not d:
+                    abort(404)
+                token = WA.ler_config(con, SCH.CHAVE_TOKEN)
+                phone = WA.ler_config(con, SCH.CHAVE_PHONE)
+            salvo = MIDIA.guardar(MIDIA.pasta_do_mes(app.extensions["archive_root"](),
+                                                     db.now()), nome, dados)
+            midia_id = MIDIA.subir(token, phone, dados, mime, salvo["nome"])
+            with _con() as con:
+                pedido = MIDIA.montar_envio(con, d["wa_id"], tipo, midia_id,
+                                            legenda=legenda, nome=salvo["nome"])
+            meta_id = WA.postar_envio(pedido)
+            with db.transaction() as con:
+                WA.gravar_saida(con, conversa_id, legenda, meta_id, autor=_quem(),
+                                agora=db.now(), tipo=tipo,
+                                arquivo={**salvo, "mime": mime})
+        except (MIDIA.MidiaErro, WA.EnvioErro) as erro:
+            # O que não saiu não fica guardado como se tivesse saído.
+            if salvo:
+                Path(salvo["caminho"]).unlink(missing_ok=True)
+            flash(str(erro), "danger")
+            if "131047" in str(erro):
+                flash("Passaram as 24 horas da última mensagem do cliente: a Meta só "
+                      "aceita um modelo aprovado. Use «Reabrir com o modelo».", "warning")
+            return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
+        audit("wa_enviar_arquivo", "wa_conversa", conversa_id,
+              {"tipo": tipo, "bytes": salvo["bytes"], "sha256": salvo["sha256"]})
+        flash(f"Arquivo «{salvo['nome']}» enviado no WhatsApp.", "success")
+        return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
 
     @app.route("/whatsapp/config", methods=["GET", "POST"])
     @login_required
@@ -445,6 +579,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             cfg = WA.config_para_tela(con)
             ia = ATENDENTE.configuracao(con)
             pode = WA.pode_enviar_meta(con)
+            rotina = ROTINA.config(con)
             if conversa_id is not None:
                 d = WA.conversa(con, conversa_id)
                 if not d:
@@ -471,7 +606,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                                busca_automatica=busca_automatica, vista=vista,
                                **_da_lista(filtro), aberta=conversa_id, c=d,
                                pode_enviar=pode, usuarios=usuarios,
-                               janela=janela,
+                               janela=janela, rotina=rotina,
+                               respostas=rotina["respostas"],
+                               aceitos_no_envio=", ".join(sorted(MIDIA.ENVIO_POR_EXTENSAO)),
+                               como_mostrar=MIDIA.como_mostrar,
                                rotulos_evento=FILA.ROTULO_DO_EVENTO,
                                rotulos_caso=ATENDENTE.ROTULO_DO_CASO)
 
@@ -505,7 +643,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         dia_anterior = "" if piso != depois else next(
             (str(m.get("criado_em") or "")[:10] for m in todas if int(m["id"]) == depois), "")
         novas = _com_dias([m for m in todas if int(m["id"]) > piso], dia_anterior)
-        html = render_template("_whatsapp_baloes.html", mensagens=novas) if novas else ""
+        html = (render_template("_whatsapp_baloes.html", mensagens=novas,
+                                como_mostrar=MIDIA.como_mostrar) if novas else "")
         return jsonify({"html": html,
                         "ultimo": max([depois] + [int(m["id"]) for m in novas]),
                         "status": d.get("status") or "",

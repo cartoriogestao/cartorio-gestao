@@ -8,8 +8,32 @@
 {% if m.separador %}<div class="wa-dia" role="separator"><span>{{ m.separador }}</span></div>{% endif %}
 <div class="wa-balao {{ 'wa-out' if m.direcao == 'out' else 'wa-in' }}" data-id="{{ m.id }}"{% if m.meta_id %} title="{{ m.meta_id }}"{% endif %}>
   {% if m.tipo == 'modelo' %}<span class="wa-marca">modelo</span>
+  {% elif m.tipo == 'aviso' %}<span class="wa-marca">aviso automático</span>
   {% elif m.tipo == 'audio' %}<span class="wa-marca">áudio</span>
-  {% elif m.tipo and m.tipo not in ('text', 'texto') %}<span class="wa-marca">{{ m.tipo }}</span>{% endif %}
+  {% elif m.tipo and m.tipo not in ('text', 'texto') %}<span class="wa-marca">{{ {'image': 'foto', 'document': 'documento', 'video': 'vídeo', 'sticker': 'figurinha'}.get(m.tipo, m.tipo) }}</span>{% endif %}
+  {#- O ARQUIVO DA CONVERSA (29/10/2026, `wa_midia`): a foto, o PDF, o áudio e o
+      vídeo aparecem aqui; o resto tem o link de baixar. O endereço é o da rota
+      do WhatsApp, e o nome do arquivo sai pelo escape do Jinja. -#}
+  {% set mostrar = como_mostrar(m) if como_mostrar is defined else '' %}
+  {% if mostrar %}
+  {% set link = url_for('whatsapp_midia', mensagem_id=m.id) %}
+  <div class="wa-arquivo">
+    {% if mostrar == 'foto' %}<a href="{{ link }}" target="_blank" rel="noopener"><img class="wa-foto" src="{{ link }}" alt="foto enviada na conversa" loading="lazy"></a>
+    {% elif mostrar == 'audio' %}<audio controls preload="none" src="{{ link }}"></audio>
+    {% elif mostrar == 'video' %}<video class="wa-video" controls preload="none" src="{{ link }}"></video>
+    {% elif mostrar == 'pdf' %}<a href="{{ link }}" target="_blank" rel="noopener">📄 abrir o PDF</a>{% endif %}
+    <a class="wa-baixar" href="{{ url_for('whatsapp_midia', mensagem_id=m.id, baixar=1) }}">⬇ {{ m.arquivo_nome or 'baixar' }}{% if m.arquivo_bytes %} <span class="muted">({{ (m.arquivo_bytes / 1024)|round(0)|int }} KB)</span>{% endif %}</a>
+  </div>
+  {% elif m.midia_id and m.direcao == 'in' %}
+  <div class="wa-arquivo small">
+    {% if m.midia_situacao == 'erro' %}o arquivo não foi baixado: {{ m.arquivo_erro or 'falhou' }}
+    <form method="post" action="{{ url_for('whatsapp_midia_tentar', mensagem_id=m.id) }}" class="wa-tentar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button secondary">tentar de novo</button>
+    </form>
+    {% else %}baixando o arquivo…{% endif %}
+  </div>
+  {% endif %}
   {% if m.tipo == 'audio' %}
   <div class="wa-transcricao">
     {% if m.transcricao %}transcrição (IA, conferir): «{{ m.transcricao }}»
@@ -21,7 +45,12 @@
   <div class="wa-hora">
     {{ (m.criado_em or '')[11:16] }}
     {% if m.direcao == 'out' %}
-    · {% if m.autor == 'ia' %}resposta automática (IA){% elif m.tipo == 'modelo' %}modelo enviado{% else %}enviada{% if m.autor %} por {{ m.autor }}{% endif %}{% endif %}
+    · {% if m.tipo == 'aviso' %}aviso automático{% elif m.autor == 'ia' %}resposta automática (IA){% elif m.tipo == 'modelo' %}modelo enviado{% else %}enviada{% if m.autor %} por {{ m.autor }}{% endif %}{% endif %}
+    {#- A ENTREGA (29/10/2026): ✓ saiu, ✓✓ chegou, ✓✓ azul leu, ⚠ não chegou. -#}
+    {% if m.entrega == 'read' %}<span class="wa-entrega wa-lida" title="o cliente leu">✓✓</span>
+    {% elif m.entrega == 'delivered' %}<span class="wa-entrega" title="chegou ao celular do cliente">✓✓</span>
+    {% elif m.entrega == 'sent' %}<span class="wa-entrega" title="saiu para o WhatsApp">✓</span>
+    {% elif m.entrega == 'failed' %}<span class="wa-entrega wa-falhou" title="{{ m.entrega_erro or 'não chegou' }}">⚠ não chegou{% if m.entrega_erro %}: {{ m.entrega_erro }}{% endif %}</span>{% endif %}
     {% endif %}
   </div>
 </div>

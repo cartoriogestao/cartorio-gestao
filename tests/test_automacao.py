@@ -1021,8 +1021,32 @@ def test_a_rodada_do_portal_diz_o_que_subiu_e_o_que_impediu(monkeypatch):
     assert PC.rodar_automacao(_ctx_falso())["situacao"] == SCH.ERRO
 
 
-def test_a_rodada_da_caixa_postal_busca_aplica_confirma_e_so_audita_o_que_entrou(monkeypatch):
+def _sem_os_passos_do_vigia(monkeypatch, feitos=None):
+    """Os passos depois da busca (arquivos, IA, aviso, paradas) trocados por
+    falsos: aqui só se mede a busca, a aplicação, a confirmação e a auditoria.
+    29/10/2026: a rodada da automação passou a ser a volta do vigia."""
+    import wa_atendente as AT
+    import wa_midia as MIDIA
+    import wa_rotina as ROTINA
+    feitos = feitos if feitos is not None else []
+    monkeypatch.setattr(MIDIA, "baixar_pendentes",
+                        lambda db, **k: feitos.append("arquivos") or {"baixados": 0})
+    monkeypatch.setattr(AT, "rodada",
+                        lambda db, **k: feitos.append("ia") or {"conversas": []})
+    monkeypatch.setattr(ROTINA, "avisar_fora_do_horario",
+                        lambda db, **k: feitos.append("avisos") or 0)
+    monkeypatch.setattr(ROTINA, "encerrar_paradas",
+                        lambda db, **k: feitos.append("encerradas") or 0)
+    return feitos
+
+
+def test_a_rodada_da_caixa_postal_busca_aplica_confirma_e_so_audita_o_que_entrou(monkeypatch,
+                                                                                 tmp_path):
     import wa_puxar as PX
+    import wa_vigia as VIGIA
+    feitos = _sem_os_passos_do_vigia(monkeypatch)
+    monkeypatch.setattr(VIGIA, "pasta_de_arquivos", lambda db, pasta: tmp_path)
+    monkeypatch.setattr(_Bd, "db_path", str(tmp_path / "banco.sqlite3"), raising=False)
     confirmados = []
     monkeypatch.setattr(PX, "buscar_pendentes", lambda con: {"ok": True, "itens": [{"id": "a"}]})
     monkeypatch.setattr(PX, "aplicar_itens", lambda con, itens, **k: {
@@ -1038,5 +1062,9 @@ def test_a_rodada_da_caixa_postal_busca_aplica_confirma_e_so_audita_o_que_entrou
     ctx = _ctx_falso()
     PX.rodar_automacao(ctx)
     assert ctx.db.logs == []                                  # vazia não vira linha
+    # A VOLTA INTEIRA (29/10/2026): depois da busca vêm os arquivos, a IA, o
+    # aviso de fora do horário e as paradas — o atendente com IA não rodava
+    # sozinho em lugar nenhum.
+    assert feitos[:4] == ["arquivos", "ia", "avisos", "encerradas"]
     monkeypatch.setattr(PX, "buscar_pendentes", lambda con: {"ok": False, "motivo": "caixa HTTP 401"})
     assert PX.rodar_automacao(_ctx_falso())["situacao"] == SCH.AVISO

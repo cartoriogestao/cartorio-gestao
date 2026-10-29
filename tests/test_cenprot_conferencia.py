@@ -53,6 +53,8 @@ AGORA = "2026-10-29T10:00:00"
 CPF = "00000000191"                 # fictício (tests/fixtures/anti_vazamento)
 OUTRO_CPF = "00000000272"           # fictício
 PROTOCOLO = "2610210001"
+TEXTO_DA_LIQUIDACAO = ("Afirmo, sob minha responsabilidade, que liquidei no "
+                       "portal o pedido conferido na tela da Gestão de Pedidos.")
 
 CONTRATO = (RAIZ.parent.parent / "FONTES_EXTERNAS" / "cra21"
             / "cenprot_swagger_v2.1.0.yaml")
@@ -97,6 +99,11 @@ class BancoDeMesa:
         finally:
             self.dentro = False
 
+    @contextmanager
+    def connect(self):
+        """Só LER — sem a trava de escrita, como o `db.connect()` do app."""
+        yield self.con
+
     def now(self) -> str:
         return AGORA
 
@@ -128,6 +135,27 @@ def ato(con, titulo_id, tipo, *, origem="MANUAL", data="2026-08-11",
         """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json,
                origem, criado_em) VALUES (?,?,?,?,?,?)""",
         (titulo_id, tipo, data, detalhe, origem, AGORA))
+    con.commit()
+    return int(cur.lastrowid)
+
+
+def informado(con, titulo_id, tipo, *, cancelado=1, letra="D",
+              dia="2026-10-21", sequencial=1, data="2026-08-11") -> int:
+    """Um ato que a Central RECEBEU num XML desta casa — tornado sem efeito
+    aqui depois, por padrão: é o caso do 350574/2 (D de 21/10/2026)."""
+    nome = f"MA-2199999-01-{letra}-{dia.replace('-', '')}-{sequencial:02d}.xml"
+    xml_id = int(con.execute(
+        """INSERT INTO pt_cenprot_xml(letra, dia, sequencial, nome_arquivo,
+               conteudo, sha256, titulos, gerado_em)
+           VALUES (?,?,?,?,?,?,1,?)""",
+        (letra, dia, sequencial, nome, b"<x/>", "0" * 64,
+         dia + "T13:45:00")).lastrowid)
+    cur = con.execute(
+        """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json, origem,
+               criado_em, cancelado, motivo_cancelamento, cenprot_xml_id)
+           VALUES (?,?,?,'{}','MANUAL',?,?,?,?)""",
+        (titulo_id, tipo, data, AGORA, int(cancelado),
+         "TORNADO SEM EFEITO (teste)" if cancelado else None, xml_id))
     con.commit()
     return int(cur.lastrowid)
 
@@ -383,8 +411,12 @@ def test_o_caso_do_350574_aparece_inteiro(monkeypatch):
     a, b = _o_caso(con, monkeypatch, db)
     la = linha_de(con, a)
     assert la["nivel"] == C.DIVERGE
-    pago = next(x for x in la["achados"] if x["regra"] == "CENTRAL_ENCERROU_PAGO")
+    # Pago na Central, e nenhum D desta casa disse pago: é a Liquidação do
+    # portal — imutável lá, e contraria todo ato daqui (o oficial, 29/10/2026).
+    pago = next(x for x in la["achados"]
+                if x["regra"] == "PAGO_NA_CENPROT_POR_LIQUIDACAO")
     assert "nunca lavrou pagamento" in pago["frase"]
+    assert pago["contraria_o_pago"] and pago["trava"]
     assert "PROTOCOLO_EM_DOIS_TITULOS" in regras(con, a)
     lb = linha_de(con, b)
     saiu = next(x for x in lb["achados"]
@@ -427,11 +459,14 @@ def test_a_liquidacao_no_pedido_errado_aparece_nos_dois(monkeypatch):
     with db.transaction() as c:
         r = C.registrar_liquidacao(
             c, pedido="9900001", titulo_id=b, liquidada_em="2026-10-27",
-            afirmo=True, afirmacao=("Afirmo, sob minha responsabilidade, que "
-                                    "liquidei este pedido no portal."),
+            afirmo=True, afirmacao=TEXTO_DA_LIQUIDACAO,
             quem="ESCREVENTE DE TESTE", agora=AGORA)
     assert "LIQUIDACAO_EM_PEDIDO_DE_OUTRO_TITULO" in {x["regra"] for x in r["achados"]}
-    assert "LIQUIDACAO_DESTE_PEDIDO_POR_OUTRO_TITULO" in regras(con, a)
+    # Para o título do pedido liquidado, a liquidação registrada é o pago
+    # imutável da CENPROT — ainda que registrada em nome de outro título.
+    pago = next(x for x in linha_de(con, a)["achados"]
+                if x["regra"] == "PAGO_NA_CENPROT_POR_LIQUIDACAO")
+    assert "em nome de 123/2" in pago["frase"]
 
 
 def test_a_liquidacao_exige_a_afirmacao_e_titulo_cenprot(monkeypatch):
@@ -440,7 +475,7 @@ def test_a_liquidacao_exige_a_afirmacao_e_titulo_cenprot(monkeypatch):
     tid = titulo(con, origem_chave="CENPROT-PEDIDO:9900001")
     banco_tid = titulo(con, numero="9/9", origem="CRA", apresentante="001",
                        protocolo="9", origem_chave="CRA:1:1")
-    texto = "Afirmo, sob minha responsabilidade, que liquidei no portal."
+    texto = TEXTO_DA_LIQUIDACAO
     with db.transaction() as c:
         with pytest.raises(C.ConferenciaError, match="Afirmo"):
             C.registrar_liquidacao(c, pedido="9900001", titulo_id=tid,
@@ -465,7 +500,7 @@ def test_anular_exige_motivo_e_nao_apaga(monkeypatch):
     with db.transaction() as c:
         r = C.registrar_liquidacao(
             c, pedido="9900001", titulo_id=tid, afirmo=True,
-            afirmacao="Afirmo, sob minha responsabilidade, que liquidei no portal.",
+            afirmacao=TEXTO_DA_LIQUIDACAO,
             agora=AGORA)
         with pytest.raises(C.ConferenciaError, match="motivo"):
             C.anular_liquidacao(c, r["id"], motivo="curto")
@@ -515,7 +550,7 @@ def test_a_central_da_por_pago_e_o_protesto_nao_sai(monkeypatch):
     central(monkeypatch, {"9900001": pedido(status="Pago")}, db=db)
     with pytest.raises(C.ConferenciaError, match="NÃO lavrado") as e:
         C.trava_do_protesto(db, tid)
-    assert e.value.regra == C.REGRA_DIVERGENTE
+    assert e.value.regra == C.REGRA_PAGO_POR_LIQUIDACAO
     # E a consulta da trava fica guardada para a tela.
     assert con.execute("SELECT central_estado FROM cn_conferencias "
                        "WHERE titulo_id = ?", (tid,)).fetchone()[0] == C.PAGO
@@ -527,7 +562,7 @@ def test_com_a_afirmacao_passa_e_devolve_o_contrato(monkeypatch):
     tid = titulo(con, origem_chave="CENPROT-PEDIDO:9900001")
     central(monkeypatch, {"9900001": pedido(status="Pago")}, db=db)
     r = C.trava_do_protesto(db, tid, afirmo=True, afirmacao=TEXTO)
-    assert r["regra"] == C.REGRA_DIVERGENTE and r["afirmacao"] == TEXTO
+    assert r["regra"] == C.REGRA_PAGO_POR_LIQUIDACAO and r["afirmacao"] == TEXTO
     assert "pago" in r["o_que_faltava"] and r["pedido"] == "9900001"
     assert set(C.detalhe_da_auditoria(r)) == {"regra", "afirmacao",
                                               "o_que_faltava", "pedido"}
@@ -615,7 +650,7 @@ def test_a_liquidacao_registrada_trava_o_protesto_do_titulo(monkeypatch):
     central(monkeypatch, {"9900001": pedido()}, db=db)
     with pytest.raises(C.ConferenciaError) as e:
         C.trava_do_protesto(db, tid)
-    assert e.value.regra == C.REGRA_DIVERGENTE
+    assert e.value.regra == C.REGRA_PAGO_POR_LIQUIDACAO
 
 
 def test_a_afirmacao_vai_ao_detalhe_do_ato_sem_apagar_o_que_havia():
@@ -655,17 +690,258 @@ def test_o_modulo_nao_tem_funcao_que_corrija():
 
 
 def test_quem_fala_com_a_rede_recebe_db_e_quem_le_recebe_con():
-    for f in (C.consultar, C.trava_do_protesto):
+    for f in (C.consultar, C.trava_do_protesto, C.trava_do_ato):
         assert next(iter(inspect.signature(f).parameters)) == "db", f.__name__
     for f in (C.quadro, C.da_ficha, C.quantos_divergem, C.registrar_liquidacao,
-              C.anular_liquidacao, C.anotar_afirmacao_no_ato, C.liquidacoes):
+              C.anular_liquidacao, C.anotar_afirmacao_no_ato, C.liquidacoes,
+              C.faltam_tabelas):
         assert next(iter(inspect.signature(f).parameters)) == "con", f.__name__
 
 
-def test_o_painel_do_protesto_conta_as_divergencias(monkeypatch):
-    import protesto_roteiro as PR
+
+# --------------------------------------------- a regra do oficial (29/10/2026)
+#
+# «na CENPROT não podemos alterar o título que já pagamos a guia… a situação
+# dos títulos na CENPROT é só enviar de novo o XML com a situação nova, que
+# ele recebe, exceto esse que já foi pago».
+
+
+def test_o_estado_de_cada_ato_informado_vem_da_tabela_do_xml():
+    assert C.ESTADO_DO_ATO_INFORMADO == {
+        "PROTESTO": C.PROTESTADO, "PAGAMENTO": C.PAGO,
+        "DESISTENCIA": C.RETIRADO, "CANCELAMENTO": C.CANCELADO}
+
+
+def test_de_onde_veio_o_estado():
+    pagamento = {"tipo": "PAGAMENTO", "cancelado": 1, "cenprot_xml_id": 1}
+    liquidacao = [{"pedido": "9900001", "titulo_id": 1}]
+    assert C.de_onde_veio_o_estado(C.PAGO, [pagamento], liquidacao)[0] == (
+        C.DE_LIQUIDACAO_REGISTRADA), "a liquidação registrada vence o nosso D"
+    assert C.de_onde_veio_o_estado(C.PAGO, [pagamento], []) == (
+        C.DO_NOSSO_XML, pagamento)
+    assert C.de_onde_veio_o_estado(C.LIQUIDADO, [pagamento], [])[0] == C.DO_NOSSO_XML
+    assert C.de_onde_veio_o_estado(C.PAGO, [], [])[0] == C.DE_LIQUIDACAO_PRESUMIDA
+    assert C.de_onde_veio_o_estado(C.RETIRADO, [pagamento], [])[0] == C.DA_CENTRAL
+    protesto = {"tipo": "PROTESTO", "cancelado": 1, "cenprot_xml_id": 2}
+    assert C.de_onde_veio_o_estado(C.PROTESTADO, [protesto], [])[0] == C.DO_NOSSO_XML
+
+
+def _o_350574_2(con, monkeypatch, db, *, status="", codigo="1", ocorrencia="Pago"):
+    """O 1355 de 29/10/2026, com números fictícios: INTIMADO aqui, e «1-Pago»
+    na CENPROT pelo D desta casa de 21/10 — com o pagamento tornado sem
+    efeito aqui depois."""
+    tid = titulo(con, origem_chave="tbAvisoProtesto:7.0", cra="000000009900002")
+    informado(con, tid, "PAGAMENTO", cancelado=1)
+    central(monkeypatch, {"9900002": pedido(
+        "9900002", status=status, codigo=codigo, ocorrencia=ocorrencia)}, db=db)
+    return tid
+
+
+def test_o_pago_que_veio_do_nosso_d_nao_trava_o_protesto(monkeypatch):
+    """O CASO REAL: o protesto do 350574/2 TEM de passar, e o P dele é o que
+    corrige a CENPROT."""
     con = banco()
     db = BancoDeMesa(con)
-    assert PR.medir_o_dia(con, hoje="2026-10-29")["cenprot_divergencias"] == 0
+    tid = _o_350574_2(con, monkeypatch, db)
+    assert C.trava_do_protesto(db, tid) is None
+    linha = linha_de(con, tid)
+    [pend] = [a for a in linha["achados"] if a["regra"] == "REENVIAR_XML"]
+    assert pend["nivel"] == C.DIVERGE and not pend["trava"]
+    assert "tornado sem efeito aqui" in pend["frase"]
+    assert "MA-2199999-01-D-20261021-01.xml" in pend["frase"]
+    assert "NÃO TRAVA" in pend["caminho"]
+    assert not linha["trava"] and not linha["contraria_o_pago"]
+
+
+def test_o_pago_do_nosso_d_nao_trava_os_outros_atos(monkeypatch):
+    con = banco()
+    db = BancoDeMesa(con)
+    tid = _o_350574_2(con, monkeypatch, db)
+    C.consultar(db)
+    for ato_ in ("INTIMACAO", "DESISTENCIA", "APONTAMENTO", "PROTESTO"):
+        assert C.trava_do_ato(db, tid, ato_) is None, ato_
+
+
+def test_gerado_o_xml_novo_a_pendencia_sai(monkeypatch):
+    """«some quando o próximo XML com a situação do sistema for gerado»."""
+    con = banco()
+    db = BancoDeMesa(con)
+    tid = _o_350574_2(con, monkeypatch, db)
+    con.execute("UPDATE pt_titulos SET situacao = 'PROTESTADO' WHERE id = ?", (tid,))
+    con.commit()
+    informado(con, tid, "PROTESTO", cancelado=0, letra="P", dia="2026-10-31",
+              data="2026-10-31")
+    C.consultar(db)                       # a Central ainda não leu o P
+    rs = regras(con, tid)
+    assert "REENVIAR_XML" not in rs and "XML_NOVO_A_CONFERIR" in rs
+    [nova] = [a for a in linha_de(con, tid)["achados"]
+              if a["regra"] == "XML_NOVO_A_CONFERIR"]
+    assert nova["nivel"] == C.CONFERIR and "P-20261031" in nova["frase"]
+
+
+def test_o_protestado_que_veio_do_nosso_p_tambem_nao_trava(monkeypatch):
+    """O protesto tornado sem efeito aqui e já dito no P: a Central fica
+    «protestado» até o XML novo — e isso não impede lavrar de novo."""
+    con = banco()
+    db = BancoDeMesa(con)
+    tid = titulo(con, origem_chave="CENPROT-PEDIDO:9900001")
+    informado(con, tid, "PROTESTO", cancelado=1, letra="P")
+    central(monkeypatch, {"9900001": pedido(status="Apontado / em andamento",
+                                            ocorrencia="Protestado",
+                                            codigo="2")}, db=db)
+    assert C.trava_do_protesto(db, tid) is None
+    assert "REENVIAR_XML" in regras(con, tid)
+
+
+def test_o_pago_por_liquidacao_trava_a_intimacao_a_desistencia_e_o_apontamento(
+        monkeypatch):
+    """O CASO (a): a guia paga no portal não se altera na CENPROT, e todo
+    ato que contraria o pago só sai com afirmação. Sem rede: vale a última
+    conferência guardada."""
+    con = banco()
+    db = BancoDeMesa(con)
+    tid = titulo(con, situacao="APONTADO", origem_chave="CENPROT-PEDIDO:9900001")
+    chamadas = central(monkeypatch, {"9900001": pedido(status="Pago")}, db=db)
+    C.consultar(db)
+    assert chamadas == ["9900001"]
+    for ato_ in ("INTIMACAO", "DESISTENCIA", "APONTAMENTO"):
+        with pytest.raises(C.ConferenciaError, match="Ato NÃO lançado") as e:
+            C.trava_do_ato(db, tid, ato_)
+        assert e.value.regra == C.REGRA_PAGO_POR_LIQUIDACAO
+    assert chamadas == ["9900001"], "fora do protesto a trava não fala com a rede"
+    r = C.trava_do_ato(db, tid, "INTIMACAO", afirmo=True, afirmacao=TEXTO)
+    assert r["regra"] == C.REGRA_PAGO_POR_LIQUIDACAO and r["afirmacao"] == TEXTO
+    # O pagamento não contraria o pago; o cancelamento e a ordem judicial
+    # não passam por esta trava.
+    for ato_ in ("PAGAMENTO", "CANCELAMENTO", "SUSTACAO"):
+        assert C.trava_do_ato(db, tid, ato_) is None, ato_
+
+
+def test_a_liquidacao_registrada_trava_a_intimacao_sem_consulta(monkeypatch):
+    con = banco()
+    db = BancoDeMesa(con)
+    tid = titulo(con, situacao="APONTADO", origem_chave="CENPROT-PEDIDO:9900001")
+    chamadas = central(monkeypatch, {}, db=db)
+    with db.transaction() as c:
+        C.registrar_liquidacao(c, pedido="9900001", titulo_id=tid, afirmo=True,
+                               afirmacao=TEXTO, agora=AGORA)
+    with pytest.raises(C.ConferenciaError) as e:
+        C.trava_do_ato(db, tid, "INTIMACAO")
+    assert e.value.regra == C.REGRA_PAGO_POR_LIQUIDACAO and chamadas == []
+
+
+def test_protocolo_repetido_com_titulo_que_ja_saiu_nao_trava(monkeypatch):
+    """O 1355 e o 9617 têm o mesmo protocolo; o 9617 ficou PAGO na correção
+    de 29/10/2026, e o protesto do 1355 não pode parar por isso."""
+    con = banco()
+    db = BancoDeMesa(con)
+    vivo = titulo(con, numero="1/1", origem_chave="CENPROT-PEDIDO:9900001")
+    pago = titulo(con, numero="1/2", situacao="PAGO",
+                  origem_chave="CENPROT-PEDIDO:9900002")
+    [r_vivo] = [a for a in linha_de(con, vivo)["achados"]
+                if a["regra"] == "PROTOCOLO_EM_DOIS_TITULOS"]
+    assert r_vivo["nivel"] == C.DIVERGE and not r_vivo["trava"]
+    assert "já saiu do protesto" in r_vivo["caminho"]
+    con.execute("UPDATE pt_titulos SET situacao = 'INTIMADO' WHERE id = ?", (pago,))
+    con.commit()
+    [r_dois] = [a for a in linha_de(con, vivo)["achados"]
+                if a["regra"] == "PROTOCOLO_EM_DOIS_TITULOS"]
+    assert r_dois["trava"], "dois títulos vivos no mesmo protocolo travam"
+
+
+# --------------------------------------------- o gancho do roteiro
+
+
+def test_o_roteiro_le_a_conferencia_pelo_gancho():
+    import protesto_roteiro as PR
+    [g] = [g for g in PR.GANCHOS if g["modulo"] == "cenprot_conferencia"]
+    assert g["funcao"] == "quantos_divergem"
+    assert g["tela"] == "protesto_cenprot_conferencia"
+
+
+def test_o_gancho_conta_e_nao_mediu_nao_e_zero(monkeypatch):
+    con = banco()
+    db = BancoDeMesa(con)
+    assert C.quantos_divergem(con) == 0
     _o_caso(con, monkeypatch, db)
-    assert PR.medir_o_dia(con, hoje="2026-10-29")["cenprot_divergencias"] == 2
+    assert C.quantos_divergem(con) == 2
+    vazio = conexao_de_teste()
+    vazio.row_factory = sqlite3.Row
+    with pytest.raises(C.ConferenciaError, match="não existem"):
+        C.quantos_divergem(vazio)
+
+
+# --------------------------------------------- a rodada da manhã (automação)
+
+
+def _ctx(db, tmp_path, *, pode_agir):
+    from types import SimpleNamespace
+    from datetime import datetime
+    return SimpleNamespace(db=db, pasta_dados=tmp_path, pode_agir=pode_agir,
+                           agora=datetime(2026, 10, 29, 8, 15), parametros={},
+                           processo={"codigo": "PROTESTO_CONFERENCIA_CENPROT"})
+
+
+def test_a_automacao_esta_no_catalogo_desligada_e_as_08_15():
+    import automacao_processos as PROC
+    alvo = "automacao_processos:verificar_conferencia_cenprot"
+    assert PROC.CATALOGO[alvo] is PROC.verificar_conferencia_cenprot
+    [s] = [s for s in PROC.SEMENTES if s["codigo"] == "PROTESTO_CONFERENCIA_CENPROT"]
+    assert s["alvo"] == alvo and s["agenda"]["horarios"] == ["08:15"]
+    assert not s.get("ativo") and not s.get("pode_agir")
+    assert "NUNCA grava nada na CENPROT" in s["descricao"]
+
+
+def test_a_automacao_sem_credencial_e_aviso(monkeypatch, tmp_path):
+    import automacao_processos as PROC
+    import automacao_schema as SCH
+    monkeypatch.setattr(CRED, "tem", lambda *a, **k: False)
+    r = PROC.verificar_conferencia_cenprot(_ctx(BancoDeMesa(banco()), tmp_path,
+                                                pode_agir=True))
+    assert r["situacao"] == SCH.AVISO and "credencial" in r["relato"]
+
+
+def test_a_automacao_sem_pode_agir_so_le_e_nao_chama_a_central(monkeypatch, tmp_path):
+    import automacao_processos as PROC
+    import automacao_schema as SCH
+    monkeypatch.setattr(CRED, "tem", lambda *a, **k: True)
+    con = banco()
+    db = BancoDeMesa(con)
+    titulo(con, origem_chave="CENPROT-PEDIDO:9900001")
+    chamadas = central(monkeypatch, {}, db=db)
+    r = PROC.verificar_conferencia_cenprot(_ctx(db, tmp_path, pode_agir=False))
+    assert chamadas == [] and r["acoes"] == []
+    # NÃO MEDIU NÃO É ZERO: a Central nunca foi consultada, e isso se diz.
+    assert r["situacao"] == SCH.AVISO and "ainda não consultou" in r["relato"]
+
+
+def test_a_automacao_com_pode_agir_consulta_grava_e_relata_em_numeros(
+        monkeypatch, tmp_path):
+    import automacao_processos as PROC
+    import automacao_schema as SCH
+    monkeypatch.setattr(CRED, "tem", lambda *a, **k: True)
+    con = banco()
+    db = BancoDeMesa(con)
+    a, b = _o_caso(con, monkeypatch, db)
+    con.execute("DELETE FROM cn_conferencias")
+    con.commit()
+    r = PROC.verificar_conferencia_cenprot(_ctx(db, tmp_path, pode_agir=True))
+    assert r["acoes"] and "nada foi gravado na CENPROT" in r["acoes"][0]["acao"]
+    assert con.execute("SELECT COUNT(*) FROM cn_conferencias").fetchone()[0] == 2
+    assert r["situacao"] == SCH.AVISO and "2 divergem" in r["relato"]
+    # EM NÚMEROS, E SEM NOMES: nem o devedor nem o cedente vão no relato.
+    for nome in ("DEVEDOR FICTICIO", "EMPRESA FICTICIA", "123/1", "123/2"):
+        assert nome not in r["relato"], nome
+    assert {x.get("titulo_id") for x in r["achados"][1:]} == {a, b}
+
+
+def test_a_automacao_com_a_central_fora_e_erro_e_nao_zero(monkeypatch, tmp_path):
+    import automacao_processos as PROC
+    import automacao_schema as SCH
+    monkeypatch.setattr(CRED, "tem", lambda *a, **k: True)
+    con = banco()
+    db = BancoDeMesa(con)
+    titulo(con, origem_chave="CENPROT-PEDIDO:9900001")
+    central(monkeypatch, {"9900001": API.CenprotError("fora do ar")}, db=db)
+    r = PROC.verificar_conferencia_cenprot(_ctx(db, tmp_path, pode_agir=True))
+    assert r["situacao"] == SCH.ERRO and "fora do ar" in r["relato"]

@@ -1,17 +1,20 @@
-"""As TELAS da conferência CENPROT × sistema e a trava do protesto (29/10/2026).
+"""As TELAS da conferência CENPROT × sistema e a trava (29/10/2026).
 
 O QUE ESTES TESTES GUARDAM, E QUE O DE DOMÍNIO NÃO ALCANÇA
-      - a tela existe, está no menu e no painel do Protesto, e abre SEM falar
-        com a rede (a Central de mentira estoura se for chamada);
-      - todo formulário dela manda o `csrf_token`;
-      - a ficha recusa protestar o título que a Central dá por pago — e o ato
-        não nasce;
-      - com a afirmação expressa ele nasce, e a afirmação fica no
-        `detalhe_json` do ato e na auditoria (`AFIRMACAO_EXPRESSA`);
-      - o lote «A protestar» recusa o mesmo título e manda afirmar na ficha;
-      - o título de banco continua sendo protestado como sempre, sem rede.
+      - a tela existe, está no menu, e abre SEM falar com a rede (a Central
+        de mentira estoura se for chamada); todo formulário manda o token;
+      - a ficha recusa protestar o título que a CENPROT dá por PAGO POR
+        LIQUIDAÇÃO — e o ato não nasce; com a afirmação expressa do contrato
+        comum ele nasce, e a afirmação fica no ato e na auditoria;
+      - o pago por liquidação recusa também a INTIMAÇÃO na ficha;
+      - O CASO DO 350574/2: o «pago» que veio do NOSSO D não trava — o lote
+        lavra o protesto, e é o P dele que corrige a CENPROT;
+      - o lote recusa o pago por liquidação e manda afirmar na ficha, sem
+        derrubar o título de banco da mesma leva.
 
-Números de pedido e documentos fictícios.
+Números de pedido e documentos fictícios. Os títulos saem do ajudante do
+«A protestar» (`intimado`, com a prova da intimação juntada) e viram de
+origem CENPROT por um UPDATE.
 """
 from __future__ import annotations
 
@@ -24,35 +27,16 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_protesto_a_protestar_web import (MOTIVO, _con, _token, atos,  # noqa: E402,F401
+                                           intimado, lavrar, s)
 
 import cenprot_api as API  # noqa: E402
 import cenprot_conferencia as C  # noqa: E402
-from bd_nativo import banco as nativo  # noqa: E402
 
-SENHA = "Senha#12345"
-CPF = "00000000191"
-TEXTO = ("Afirmo, sob minha responsabilidade, que conferi o pedido no portal "
-         "da CENPROT e que o título não foi pago pelo devedor.")
-MOTIVO = "Cenário de teste: tríduo vencido"
-
-
-def _token(html: str) -> str:
-    achado = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html)
-    assert achado, "a tela não trouxe csrf_token"
-    return achado.group(1)
-
-
-@pytest.fixture()
-def s(cg_casa):
-    bd = cg_casa["db"]
-    bd.create_user("tabeliao", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
-    bd.set_settings({"modulo_protesto_alcance": "TODOS"})
-    c = cg_casa["app"].test_client()
-    c.post("/login",
-           data={"username": "tabeliao", "password": SENHA,
-                 "csrf_token": _token(c.get("/login").get_data(as_text=True))},
-           follow_redirects=True)
-    return {"app": cg_casa["app"], "c": c, "db": bd}
+TEXTO = ("conferi o pedido no portal da CENPROT e o dinheiro da liquidação é "
+         "de outro título, conforme o comprovante")
+CPF_DO_AJUDANTE = "04785512388"
 
 
 def central(monkeypatch, respostas: dict) -> list:
@@ -69,62 +53,44 @@ def central(monkeypatch, respostas: dict) -> list:
     return chamadas
 
 
-def pedido(numero="9900001", *, status="Apontado / em andamento") -> dict:
+def pedido(numero="9900001", *, status="Apontado / em andamento", codigo="",
+           ocorrencia="", numero_titulo="84713/1") -> dict:
     return {"dados_pedido": {"cd_pedido_protesto": int(numero),
-                             "ds_status": status, "ocorrencia": "",
-                             "ds_ocorrencia": "", "dt_ocorrencia": "2026-10-27",
-                             "nm_nr_protocolo": "2608310001",
-                             "dados_titulo": {"nm_nr_titulo": "84713/1",
+                             "ds_status": status, "ocorrencia": ocorrencia,
+                             "ds_ocorrencia": codigo, "dt_ocorrencia": "2026-10-27",
+                             "dados_titulo": {"nm_nr_titulo": numero_titulo,
                                               "vl_titulo": 1482.78}},
             "devedor": {"nm_devedor": "DEVEDOR FICTICIO",
-                        "nm_nr_identificacao": "000.000.001-91"},
+                        "nm_nr_identificacao": CPF_DO_AJUDANTE},
             "dados_cedente": {"nm_cedente": "CREDOR FICTICIO"}}
 
 
-def intimado(s, *, cenprot=True, numero="84713/1",
-             protocolo="2608310001") -> int:
-    """Um título intimado em agosto (tríduo vencido), gravado direto."""
-    agora = s["db"].now()
-    with s["db"].transaction() as con:
-        bd = nativo(con)
-        tid = int(bd.escrever(
-            """INSERT INTO pt_titulos(especie, numero_titulo, nosso_numero,
-                   valor_centavos, saldo_centavos, situacao, protocolo,
-                   origem, origem_chave, apresentante_codigo, criado_em,
-                   motivo_protesto, cedente_nome)
-               VALUES ('DMI',%s,'00200000991',148278,148278,'INTIMADO',%s,
-                       %s,%s,%s,%s,'1','CREDOR FICTICIO') RETURNING id""",
-            (numero, protocolo, "CENPROT" if cenprot else "CRA",
-             "CENPROT-PEDIDO:9900001" if cenprot else f"CRA:9:{numero}",
-             "TAB" if cenprot else "001", agora))[0]["id"])
-        bd.escrever("""INSERT INTO pt_devedores(titulo_id, nome, documento_tipo,
-                           documento_numero) VALUES (%s,'DEVEDOR FICTICIO','CPF',%s)""",
-                    (tid, CPF))
-        for tipo, data, det in (("APONTAMENTO", "2026-08-18", "{}"),
-                                ("INTIMACAO", "2026-08-20", '{"modo": "EDITAL"}')):
-            bd.escrever("""INSERT INTO pt_atos(titulo_id, tipo, data_ato,
-                               detalhe_json, origem, criado_em)
-                           VALUES (%s,%s,%s,%s,'MANUAL',%s)""",
-                        (tid, tipo, data, det, agora))
+def da_cenprot(s, tid, *, pedido_=9900001, protocolo=None) -> int:
+    """O título do ajudante vira de origem CENPROT (Gestão de Pedidos)."""
+    con = _con(s)
+    with con:
+        con.execute("""UPDATE pt_titulos SET origem='CENPROT', apresentante_codigo='TAB',
+                           origem_chave=?, protocolo=COALESCE(?, protocolo)
+                        WHERE id=?""",
+                    (f"CENPROT-PEDIDO:{pedido_}", protocolo, tid))
+    con.close()
     return tid
 
 
-def _ler(s, sql, parametros=None) -> list[dict]:
-    with s["db"].connect() as con:
-        return [dict(r) for r in nativo(con).ler(sql, parametros)]
+def _auditoria(s, tid) -> list:
+    con = _con(s)
+    linhas = con.execute(
+        """SELECT * FROM audit_logs WHERE action='AFIRMACAO_EXPRESSA'
+            AND entity_type='pt_titulos' AND entity_id=?""", (tid,)).fetchall()
+    con.close()
+    return linhas
 
 
-def _lancar(s, tid, **campos):
+def _lancar(s, tid, **campos) -> str:
     html = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
     return s["c"].post(f"/protesto/{tid}/lancar",
-                       data={"csrf_token": _token(html), "ato": "PROTESTO",
-                             "motivo_atraso": MOTIVO, **campos},
+                       data={"csrf_token": _token(html), **campos},
                        follow_redirects=True).get_data(as_text=True)
-
-
-def _protestos(s, tid) -> list[dict]:
-    return _ler(s, "SELECT * FROM pt_atos WHERE titulo_id=%s AND tipo='PROTESTO'",
-                (tid,))
 
 
 # ------------------------------------------------------------- a tela
@@ -132,7 +98,7 @@ def _protestos(s, tid) -> list[dict]:
 
 def test_a_tela_abre_sem_falar_com_a_rede_e_esta_no_menu(s, monkeypatch):
     central(monkeypatch, {"9900001": AssertionError("a tela falou com a rede")})
-    intimado(s)
+    da_cenprot(s, intimado(s))
     r = s["c"].get("/protesto/cenprot/conferencia")
     assert r.status_code == 200
     html = r.get_data(as_text=True)
@@ -145,16 +111,8 @@ def test_a_tela_abre_sem_falar_com_a_rede_e_esta_no_menu(s, monkeypatch):
         assert "csrf_token" in f
 
 
-def test_o_painel_do_protesto_leva_a_conferencia(s):
-    import protesto_roteiro as PR
-    botoes = [b["tela"] for e in PR.ETAPAS_DO_DIA for b in e["botoes"]]
-    assert "protesto_cenprot_conferencia" in botoes
-    html = s["c"].get("/protesto/roteiro").get_data(as_text=True)
-    assert 'href="/protesto/cenprot/conferencia"' in html
-
-
 def test_consultar_pela_tela_mostra_a_divergencia_e_o_caminho(s, monkeypatch):
-    tid = intimado(s)
+    tid = da_cenprot(s, intimado(s))
     chamadas = central(monkeypatch, {"9900001": pedido(status="Pago")})
     tela = s["c"].get("/protesto/cenprot/conferencia").get_data(as_text=True)
     html = s["c"].post("/protesto/cenprot/conferencia/consultar",
@@ -162,7 +120,7 @@ def test_consultar_pela_tela_mostra_a_divergencia_e_o_caminho(s, monkeypatch):
                        follow_redirects=True).get_data(as_text=True)
     assert chamadas == ["9900001"]
     assert f'id="titulo-{tid}"' in html and "DIVERGE" in html
-    assert "NÃO PROTESTE" in html
+    assert "PAGO POR LIQUIDAÇÃO" in html and "NÃO PROTESTE" in html
 
 
 def test_o_numero_que_nao_se_le_nao_derruba_a_tela(s, monkeypatch):
@@ -177,54 +135,101 @@ def test_o_numero_que_nao_se_le_nao_derruba_a_tela(s, monkeypatch):
 # ------------------------------------------------------------- a trava
 
 
-def test_a_ficha_recusa_protestar_o_que_a_central_da_por_pago(s, monkeypatch):
-    tid = intimado(s)
+def test_a_ficha_recusa_protestar_o_pago_por_liquidacao(s, monkeypatch):
+    tid = da_cenprot(s, intimado(s))
     central(monkeypatch, {"9900001": pedido(status="Pago")})
-    html = _lancar(s, tid)
+    html = _lancar(s, tid, ato="PROTESTO", motivo_atraso=MOTIVO)
     assert "Protesto NÃO lavrado" in html
-    assert _protestos(s, tid) == []
-    # A ficha mostra a caixa da afirmação para o título de origem CENPROT.
+    assert atos(s, tid) == 0
+    # A ficha oferece a afirmação do contrato comum para o título da CENPROT.
     ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
     assert 'name="afirmo"' in ficha and 'name="afirmacao"' in ficha
+    assert "afirmação expressa (CENPROT)" in ficha
 
 
 def test_com_a_afirmacao_o_texto_vai_ao_ato_e_a_auditoria(s, monkeypatch):
-    tid = intimado(s)
+    import protesto_selo_previo as PSELO
+    # O SELO PRÉVIO NÃO É O QUE SE TESTA AQUI: sem aparelho na bancada ele
+    # recusaria antes de o ato existir.
+    monkeypatch.setattr(PSELO, "conferir_antes_de_lavrar", lambda *a, **k: None)
+    tid = da_cenprot(s, intimado(s))
     central(monkeypatch, {"9900001": pedido(status="Pago")})
-    _lancar(s, tid, afirmo="1", afirmacao=TEXTO)
-    [rastro] = _ler(s, """SELECT * FROM audit_logs WHERE action=%s
-                           AND entity_type='pt_titulos' AND entity_id=%s""",
-                    (C.ACAO_DA_AUDITORIA, tid))
+    _lancar(s, tid, ato="PROTESTO", motivo_atraso=MOTIVO, afirmo="1",
+            afirmacao=TEXTO)
+    [rastro] = _auditoria(s, tid)
     det = json.loads(rastro["details"])
-    assert det["regra"] == C.REGRA_DIVERGENTE and det["afirmacao"] == TEXTO
-    assert det["o_que_faltava"]
-    [p] = _protestos(s, tid)
-    detalhe = json.loads(p["detalhe_json"])
-    assert detalhe[C.CHAVE_NO_DETALHE][0]["afirmacao"] == TEXTO
+    assert det["regra"] == C.REGRA_PAGO_POR_LIQUIDACAO
+    assert TEXTO in det["afirmacao"] and det["o_que_faltava"]
+    assert det["ato"] == "PROTESTO"
+    con = _con(s)
+    [detalhe] = [json.loads(r[0]) for r in con.execute(
+        "SELECT detalhe_json FROM pt_atos WHERE titulo_id=? AND tipo='PROTESTO'",
+        (tid,)).fetchall()]
+    con.close()
+    assert TEXTO in detalhe[C.CHAVE_NO_DETALHE][0]["afirmacao"]
 
 
-def test_o_titulo_de_banco_nao_passa_pela_central(s, monkeypatch):
-    tid = intimado(s, cenprot=False, numero="555/1", protocolo="2608310002")
-    chamadas = central(monkeypatch, {})
-    ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
-    assert 'name="afirmo"' not in ficha
-    _lancar(s, tid)
-    assert chamadas == []
-    assert len(_protestos(s, tid)) == 1
+def test_o_pago_por_liquidacao_recusa_a_intimacao_na_ficha(s, monkeypatch):
+    tid = da_cenprot(s, intimado(s))
+    central(monkeypatch, {"9900001": pedido(status="Pago")})
+    tela = s["c"].get("/protesto/cenprot/conferencia").get_data(as_text=True)
+    s["c"].post("/protesto/cenprot/conferencia/consultar",
+                data={"csrf_token": _token(tela)}, follow_redirects=True)
+    con = _con(s)
+    with con:
+        con.execute("UPDATE pt_titulos SET situacao='APONTADO' WHERE id=?", (tid,))
+    con.close()
+    antes = atos(s, tid, "INTIMACAO")
+    html = _lancar(s, tid, ato="INTIMACAO", modo="PESSOAL",
+                   comprovante="Recebido pelo próprio devedor")
+    assert "Ato NÃO lançado (intimação)" in html
+    assert atos(s, tid, "INTIMACAO") == antes
+
+
+def test_o_pago_do_nosso_d_nao_trava_e_o_lote_protesta(s, monkeypatch):
+    """O 350574/2 de 29/10/2026: «1-Pago» na CENPROT pelo D desta casa, com o
+    pagamento tornado sem efeito aqui. O protesto TEM de passar — o P dele é
+    que corrige a Central."""
+    tid = da_cenprot(s, intimado(s), pedido_=9900002)
+    con = _con(s)
+    with con:
+        xml = con.execute(
+            """INSERT INTO pt_cenprot_xml(letra, dia, sequencial, nome_arquivo,
+                   conteudo, sha256, titulos, gerado_em)
+               VALUES ('D','2026-10-21',1,'MA-2199999-01-D-20261021-01.xml',?,?,1,
+                       '2026-10-21T13:45:00')""", (b"<x/>", "0" * 64)).lastrowid
+        con.execute(
+            """INSERT INTO pt_atos(titulo_id, tipo, data_ato, detalhe_json, origem,
+                   criado_em, cancelado, motivo_cancelamento, cenprot_xml_id)
+               VALUES (?,'PAGAMENTO','2026-08-11','{}','MANUAL','2026-08-11T10:00:00',
+                       1,'TORNADO SEM EFEITO (teste)',?)""", (tid, xml))
+    con.close()
+    central(monkeypatch, {"9900002": pedido("9900002", codigo="1",
+                                            ocorrencia="Pago")})
+    lavrar(s, [tid])
+    assert atos(s, tid) == 1
 
 
 def test_o_lote_recusa_e_manda_afirmar_na_ficha(s, monkeypatch):
-    tid = intimado(s)
-    banco_tid = intimado(s, cenprot=False, numero="555/1", protocolo="2608310002")
+    tid = da_cenprot(s, intimado(s))
+    banco_tid = intimado(s, numero="555/1")
+    con = _con(s)
+    with con:   # protocolos distintos: aqui não se testa o protocolo repetido
+        con.execute("UPDATE pt_titulos SET protocolo='2608310002' WHERE id=?",
+                    (banco_tid,))
+    con.close()
     central(monkeypatch, {"9900001": pedido(status="Pago")})
-    tela = s["c"].get("/protesto/a-protestar").get_data(as_text=True)
-    html = s["c"].post("/protesto/a-protestar/lavrar",
-                       data={"csrf_token": _token(tela),
-                             "titulo_id": [str(tid), str(banco_tid)],
-                             f"motivo_atraso_{tid}": MOTIVO,
-                             f"motivo_atraso_{banco_tid}": MOTIVO},
-                       follow_redirects=True).get_data(as_text=True)
+    html = lavrar(s, [tid, banco_tid]).get_data(as_text=True)
     assert "abra a ficha" in html
-    assert _protestos(s, tid) == []
+    assert atos(s, tid) == 0
     # O de banco, na mesma leva, sai como sempre — um não derruba o outro.
-    assert len(_protestos(s, banco_tid)) == 1
+    assert atos(s, banco_tid) == 1
+
+
+def test_o_titulo_de_banco_nao_passa_pela_central(s, monkeypatch):
+    tid = intimado(s, numero="555/1")
+    chamadas = central(monkeypatch, {})
+    ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
+    assert "afirmação expressa (CENPROT)" not in ficha
+    lavrar(s, [tid])
+    assert chamadas == [] and atos(s, tid) == 1

@@ -569,14 +569,16 @@ def test_uma_traz_o_valor_do_titulo_para_a_sugestao_ter_de_onde_sair(
     assert p["titulo_valor_centavos"] == 20095
 
 
-def test_o_roteiro_conta_o_que_ENTROU_hoje_da_cenprot(monkeypatch):
-    """**O roteiro conta o que JÁ ACONTECEU; o painel conta o que ESPERA.**
-    São duas perguntas, e responder uma com a outra faria a coluna «hoje»
-    mostrar um número que nunca zera.
+def test_o_roteiro_COBRA_o_que_a_cenprot_mandou_e_espera_resposta(monkeypatch):
+    """**Desde 29/10/2026 o roteiro cobra, e não só conta** — ordem do
+    oficial: «vincular cada obrigação a uma conduta». Até essa data este teste
+    conferia a coluna «hoje» (`o_que_ja_aconteceu_hoje`, o que ENTROU no dia);
+    a coluna saiu, e a pergunta passou a ser a da conduta: o que a CENPROT
+    mandou e ainda espera resposta.
 
-    Sem esta contagem, os três passos que ganharam tela em 02/09/2026
-    ficariam com a coluna vazia — tela nova com medida em branco é o roteiro
-    dizendo que não sabe de um passo que ele passou a fazer.
+    **E ELA NUNCA FICA VERMELHA**: o papel lista os pedidos sem hora, e
+    atrasado só sai com prazo provado. A pendência baixada ontem continua
+    pendente — e não some no dia seguinte, ao contrário da coluna antiga.
     """
     import protesto_roteiro as R
 
@@ -584,20 +586,21 @@ def test_o_roteiro_conta_o_que_ENTROU_hoje_da_cenprot(monkeypatch):
     api_devolve(monkeypatch, [anuencia(1), anuencia(2)], db=db)
     P.baixar(db, CN.ANUENCIA)
 
-    hoje = R.o_que_ja_aconteceu_hoje(db.con, hoje=AGORA[:10])
-    assert hoje["anuencia_baixada"] == 2
-    assert hoje["cancelamento_cenprot_baixado"] == 0
-    assert hoje["pedido_protesto_baixado"] == 0
-    # **O DIA SEGUINTE COMEÇA EM ZERO** — a faixa é do dia, e não «tudo o que
-    # existe». Se contasse tudo, a coluna nunca zeraria e o escrevente
-    # deixaria de olhar.
-    assert R.o_que_ja_aconteceu_hoje(
-        db.con, hoje="2026-09-03")["anuencia_baixada"] == 0
+    for agora in (AGORA, "2026-09-03T18:00:00"):
+        condutas = R.cobrar_o_dia(db.con, agora=agora)
+        cenprot = next(c for c in condutas if c["chave"] == "cenprot")
+        esperando = next(o for o in cenprot["obrigacoes"]
+                         if o["chave"] == "cenprot_esperando")
+        assert esperando["faltam"] == 2
+        assert esperando["situacao"] == R.PENDENTE
 
-    # e o roteiro aponta para as medidas que existem
-    medidas = {p.get("medida") for p in R.ROTEIRO_DA_CENPROT if p.get("medida")}
-    assert medidas <= set(hoje), (
-        f"o roteiro cita medida que ninguém conta: {medidas - set(hoje)}")
+    # e os passos da CENPROT que ganharam tela em 02/09/2026 apontam para a
+    # conduta que os cobra
+    for passo in ("Recebimento dos pedidos de anuencia",
+                  "Recebimento de pedido de cancelamento",
+                  "Recebimento de remessa (menu Gestao de Pedidos)"):
+        p = next(x for x in R.ROTEIRO_DA_CENPROT if x["passo"] == passo)
+        assert p["conduta"] == "cenprot", passo
 
 
 def test_a_decidida_e_nao_enviada_aparece_no_QUE_FICOU_PELO_CAMINHO(

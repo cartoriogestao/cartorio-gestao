@@ -166,6 +166,9 @@ def test_o_lote_confere_registra_e_anexa_so_as_folhas_de_cada_um(s):
         data={"csrf_token": _token(tela), "aviso_id": [a1["id"], a2["id"]],
               f"desfecho_{a1['id']}": "ENTREGUE",
               f"desfecho_{a2['id']}": "ENTREGUE",
+              # QUEM RECEBEU, linha a linha (29/10/2026)
+              f"recebido_por_{a1['id']}": "MARIA DA SILVA",
+              f"recebido_por_{a2['id']}": "JOSÉ DA SILVA",
               f"quando_{a1['id']}": "2026-10-14"},
         follow_redirects=True).get_data(as_text=True)
     assert "2 aviso(s) do PDF registrados: 2 entrega(s)" in html
@@ -196,7 +199,8 @@ def test_registrar_de_novo_nao_duplica(s):
         return s["c"].post(f"/protesto/avisos/lote/{sha}/registrar",
                            data={"csrf_token": _token(t),
                                  "aviso_id": a1["id"],
-                                 f"desfecho_{a1['id']}": "ENTREGUE"},
+                                 f"desfecho_{a1['id']}": "ENTREGUE",
+                                 f"recebido_por_{a1['id']}": "MARIA DA SILVA"},
                            follow_redirects=True).get_data(as_text=True)
 
     assert "1 entrega(s)" in registrar()

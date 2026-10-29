@@ -33,6 +33,15 @@ O QUE ESTE MÓDULO FAZ
        que fica no ato e na auditoria com o nome dela;
     3. REGISTRA A LIQUIDAÇÃO DO PORTAL (`registrar_liquidacao`), com a
        afirmação de qual título — porque a API não diz nada de liquidação.
+    4. RODA SOZINHA DE MANHÃ (`automacao_processos.verificar_conferencia_
+       cenprot`, decisão do oficial em 29/10/2026), gravando a conferência do
+       dia — e nunca nada na CENPROT.
+
+A REGRA DO OFICIAL SOBRE A SITUAÇÃO NA CENPROT (29/10/2026): o PAGO POR
+LIQUIDAÇÃO (guia paga no portal) não se altera lá, e o sistema segue a
+CENPROT — trava o protesto e todo ato que contrarie o pago; a situação que
+veio do NOSSO XML (P ou D) se corrige mandando o XML com a situação nova — é
+pendência, e não trava (`de_onde_veio_o_estado`).
 
 O QUE ELE NÃO FAZ: CORRIGIR. Nenhuma função daqui lavra, desfaz, cancela,
 paga ou manda coisa à Central (há teste que varre os nomes públicos). Cada
@@ -71,6 +80,7 @@ from typing import Any
 import cenprot_api as API
 import centrais_cred as CRED
 import cn_schema as CN
+import protesto_cenprot_xml as PCXML
 from bd_nativo import banco
 
 
@@ -190,6 +200,49 @@ ESPERADO_NA_CENTRAL: dict[str, frozenset] = {
     "DEVOLVIDO": frozenset({DEVOLVIDO}),
 }
 
+# AS SITUAÇÕES DAQUI EM QUE O TÍTULO JÁ SAIU DO PROTESTO. O protocolo repetido
+# com um título assim continua defeito de dado, mas não põe dois títulos vivos
+# no mesmo lugar, e por isso não trava.
+SITUACOES_QUE_SAIRAM = frozenset({"PAGO", "DESISTIDO", "RETIRADO", "CANCELADO",
+                                  "DEVOLVIDO"})
+ORIGEM_EOFICIO = "EOFICIO"
+
+# A SITUAÇÃO NA CENPROT TEM DUAS ORIGENS, E SÓ UMA É IMUTÁVEL — regra do
+# oficial, 29/10/2026: «na CENPROT não podemos alterar o título que já pagamos
+# a guia… a situação dos títulos na CENPROT é só enviar de novo o XML com a
+# situação nova, que ele recebe, exceto esse que já foi pago».
+#
+#   (a) PAGO POR LIQUIDAÇÃO — a guia paga no portal («Comprovante TED
+#       liquidação»). Não se altera lá: o sistema segue a CENPROT, e isso TRAVA
+#       o protesto e todo ato que contrarie o pago (com afirmação para vencer).
+#       É o 350574/1 (9617, pedido 3597193), liquidado em 27/10/2026.
+#   (b) A SITUAÇÃO QUE VEIO DO NOSSO XML — o P ou o D desta casa (ou do
+#       E-Ofício). NÃO trava: é a pendência «reenviar o XML com a situação
+#       nova», que some quando o XML novo do título é gerado. É o 350574/2
+#       (1355, pedido 3597208): «1-Pago» na CENPROT pelo nosso D de 21/10, com
+#       o pagamento tornado sem efeito aqui — e o P do protesto é que corrige.
+DE_LIQUIDACAO_REGISTRADA = "LIQUIDACAO_REGISTRADA"
+DE_LIQUIDACAO_PRESUMIDA = "LIQUIDACAO_PRESUMIDA"
+DO_NOSSO_XML = "NOSSO_XML"
+DA_CENTRAL = "CENTRAL"
+
+# O ESTADO QUE CADA ATO INFORMADO PÕE NA CENTRAL: a ocorrência que o XML leva
+# (`protesto_cenprot_xml.OCORRENCIA_DO_ATO`), lida pelo código da CRA — uma
+# tabela só, e não uma segunda escrita à mão.
+ESTADO_DO_ATO_INFORMADO: dict[str, str] = {
+    tipo: ESTADO_DO_CODIGO[codigo]
+    for tipo, codigo in PCXML.OCORRENCIA_DO_ATO.items()}
+
+# OS ATOS QUE A CENPROT TRAVA. O PROTESTO consulta a Central na hora; os
+# outros leem a última conferência guardada e só param no PAGO POR LIQUIDAÇÃO,
+# que eles contrariam. O pagamento não contraria o pago; o cancelamento é o
+# caminho de quem foi protestado por cima dele; e ordem judicial não para por
+# conferência nenhuma.
+ATOS_QUE_A_CENPROT_TRAVA: tuple[str, ...] = ("PROTESTO", "APONTAMENTO",
+                                             "INTIMACAO", "DESISTENCIA")
+NOME_DO_ATO: dict[str, str] = {"PROTESTO": "protesto", "APONTAMENTO": "apontamento",
+                               "INTIMACAO": "intimação", "DESISTENCIA": "desistência"}
+
 # --------------------------------------------------- o que se guarda
 
 # A CONSULTA. `ACHOU` e `NAO_ACHOU` são respostas da Central; `SEM_PEDIDO` é
@@ -214,6 +267,7 @@ ACAO_DA_AUDITORIA = "AFIRMACAO_EXPRESSA"
 REGRA_NAO_CONFERIDO = "PROTESTO_CENPROT_NAO_CONFERIDO"
 REGRA_DIVERGENTE = "PROTESTO_CENPROT_DIVERGENTE"
 REGRA_LIQUIDACAO = "CENPROT_LIQUIDACAO_NO_PORTAL"
+REGRA_PAGO_POR_LIQUIDACAO = "CENPROT_PAGO_POR_LIQUIDACAO"
 MINIMO_DE_LETRAS_DA_AFIRMACAO = 30
 MODELO_DA_AFIRMACAO = "Afirmo, sob minha responsabilidade, que…"
 # A CHAVE NO `detalhe_json` É UMA LISTA, e não um texto: o mesmo ato pode
@@ -494,10 +548,15 @@ def _protocolos_repetidos(con: Any) -> dict[int, list[dict]]:
     9617 —, e é o par do 350574. O protocolo é AAMMDD + sequencial do dia;
     dois títulos com o mesmo número é defeito de dado, e é o tipo de defeito
     que faz o pagamento de um ir parar no outro.
+
+    VEM COM A SITUAÇÃO DO OUTRO (29/10/2026): com ele já fora do protesto (o
+    9617 ficou PAGO na correção do dia), o defeito continua à vista, mas não
+    trava — dois títulos vivos no mesmo protocolo é que travam.
     """
     onde, valores = _filtro()
     linhas = banco(con).ler(
-        f"""SELECT t.id, o.id AS outro, o.numero_titulo AS outro_numero
+        f"""SELECT t.id, o.id AS outro, o.numero_titulo AS outro_numero,
+                   o.situacao AS outro_situacao
               FROM pt_titulos t
               JOIN pt_titulos o ON o.protocolo = t.protocolo AND o.id <> t.id
              WHERE {onde} AND TRIM(COALESCE(t.protocolo, '')) <> ''
@@ -505,13 +564,62 @@ def _protocolos_repetidos(con: Any) -> dict[int, list[dict]]:
     fora: dict[int, list[dict]] = {}
     for r in linhas:
         fora.setdefault(int(r["id"]), []).append(
-            {"id": int(r["outro"]), "numero_titulo": r["outro_numero"]})
+            {"id": int(r["outro"]), "numero_titulo": r["outro_numero"],
+             "situacao": r["outro_situacao"]})
     return fora
 
 
 def _conferencias(con: Any) -> dict[int, dict]:
     linhas = banco(con).ler(
         "SELECT * FROM cn_conferencias WHERE ambiente = %s", (CRED.PRODUCAO,))
+    return {int(r["titulo_id"]): dict(r) for r in linhas}
+
+
+def _informados(con: Any) -> dict[int, list[dict]]:
+    """Os atos de cada título que a Central já recebeu num XML — VIVOS OU
+    NÃO. Só LÊ.
+
+    O ATO TORNADO SEM EFEITO AQUI CONTINUA DITO LÁ, e é ele que explica a
+    situação da Central: medido em 29/10/2026, o 350574/2 aparece «1-Pago»
+    na CENPROT pelo D de 21/10/2026, com o pagamento depois tornado sem
+    efeito. O ato do E-Ofício entra também: o E-Ofício mandava os XML dele
+    (`protesto_cenprot_xml.pendentes` não os repete).
+    """
+    onde, valores = _filtro()
+    tipos = sorted(ESTADO_DO_ATO_INFORMADO)
+    marcas = ", ".join(["%s"] * len(tipos))
+    linhas = banco(con).ler(
+        f"""SELECT a.id, a.titulo_id, a.tipo, a.data_ato, a.origem,
+                   a.cancelado, a.cenprot_xml_id, x.nome_arquivo AS xml_nome,
+                   x.gerado_em AS xml_gerado_em
+              FROM pt_atos a
+              JOIN pt_titulos t ON t.id = a.titulo_id
+              LEFT JOIN pt_cenprot_xml x ON x.id = a.cenprot_xml_id
+             WHERE a.tipo IN ({marcas})
+               AND (a.cenprot_xml_id IS NOT NULL OR a.origem = %s)
+               AND {onde}
+             ORDER BY a.id""", (*tipos, ORIGEM_EOFICIO, *valores))
+    fora: dict[int, list[dict]] = {}
+    for r in linhas:
+        fora.setdefault(int(r["titulo_id"]), []).append(dict(r))
+    return fora
+
+
+def _ultimos_xml(con: Any) -> dict[int, dict]:
+    """O XML mais novo desta casa em que cada título foi. Só LÊ.
+
+    É ele que diz se a pendência «reenviar o XML» já se cumpriu: gerado um XML
+    mais novo com o título, a situação nova já saiu daqui.
+    """
+    onde, valores = _filtro()
+    linhas = banco(con).ler(
+        f"""SELECT a.titulo_id, x.id, x.letra, x.nome_arquivo, x.gerado_em
+              FROM pt_atos a
+              JOIN pt_titulos t ON t.id = a.titulo_id
+              JOIN pt_cenprot_xml x ON x.id = a.cenprot_xml_id
+             WHERE {onde}
+             ORDER BY x.id""", valores)
+    # ORDENADO PELO XML: o último que se escreve no dicionário é o mais novo.
     return {int(r["titulo_id"]): dict(r) for r in linhas}
 
 
@@ -533,9 +641,13 @@ def _rotulo(t: dict) -> str:
 
 
 def _achado(regra: str, nivel: str, frase: str, caminho: str, *,
-            trava: bool = False) -> dict:
+            trava: bool = False, contraria_o_pago: bool = False) -> dict:
+    """Um achado da conferência. `trava` impede o PROTESTO sem afirmação;
+    `contraria_o_pago` impede também apontar, intimar e desistir — é o pago
+    por liquidação, que na CENPROT não se altera (o oficial, 29/10/2026)."""
     return {"regra": regra, "nivel": nivel, "frase": frase,
-            "caminho": caminho, "trava": trava}
+            "caminho": caminho, "trava": bool(trava or contraria_o_pago),
+            "contraria_o_pago": bool(contraria_o_pago)}
 
 
 def _o_que_a_central_disse_em_frase(c: dict) -> str:
@@ -555,7 +667,7 @@ def _caminho_do_d(ato: dict | None, pedido: str) -> str:
         return ("Não há ato vivo que explique a situação deste título — abra a "
                 "ficha e confira a vida dele antes de qualquer outra coisa.")
     quando = _br(ato.get("data_ato"))
-    if _txt(ato.get("origem")).upper() == "EOFICIO":
+    if _txt(ato.get("origem")).upper() == ORIGEM_EOFICIO:
         return (f"O ato ({ato['tipo'].lower()} de {quando}) veio do E-Ofício, "
                 f"que mandava o D por conta própria — e a Central não o tem. O "
                 f"XML desta casa não reenvia ato do E-Ofício: confira no portal "
@@ -570,18 +682,131 @@ def _caminho_do_d(ato: dict | None, pedido: str) -> str:
             f"em Protesto → XML da CENPROT (letra D) e suba-o pelo portal.")
 
 
+def _casa_com_o_estado(tipo_informado: Any, estado: str) -> bool:
+    """O ato que a casa informou explica aquele estado da Central?"""
+    informado = ESTADO_DO_ATO_INFORMADO.get(_txt(tipo_informado).upper())
+    return bool(informado) and (informado == estado or (
+        informado == PAGO and estado == LIQUIDADO))
+
+
+def de_onde_veio_o_estado(estado: str, informados: Any,
+                          liquidacoes_do_pedido: Any) -> tuple[str, dict | None]:
+    """De onde veio o que a CENPROT diz do pedido. Só calcula.
+
+    A REGRA É DO OFICIAL (29/10/2026): «na CENPROT não podemos alterar o
+    título que já pagamos a guia… a situação dos títulos na CENPROT é só
+    enviar de novo o XML com a situação nova, que ele recebe, exceto esse que
+    já foi pago». Na ordem em que se decide:
+
+      1. LIQUIDAÇÃO REGISTRADA aqui para o pedido → o pago é dela, imutável;
+      2. um XML desta casa (ou do E-Ofício) disse aquilo → é nosso, e se
+         corrige com o XML novo (devolve o ato informado mais recente);
+      3. PAGO sem XML nosso que o explique → é a Liquidação do portal,
+         presumida — imutável do mesmo jeito;
+      4. o resto (retirado, cancelado, devolvido) veio da própria Central.
+    """
+    if estado in (PAGO, LIQUIDADO) and liquidacoes_do_pedido:
+        return DE_LIQUIDACAO_REGISTRADA, None
+    casam = [i for i in (informados or ())
+             if _casa_com_o_estado(i.get("tipo"), estado)]
+    if casam:
+        return DO_NOSSO_XML, casam[-1]
+    if estado in (PAGO, LIQUIDADO):
+        return DE_LIQUIDACAO_PRESUMIDA, None
+    return DA_CENTRAL, None
+
+
+def _pago_por_liquidacao(t: dict, rot: str, situacao: str, pedido: str, *,
+                         disse: str | None, registradas: list[dict],
+                         titulos_por_id: dict[int, dict],
+                         nunca_pagou_aqui: bool) -> dict:
+    """O achado do PAGO POR LIQUIDAÇÃO — o caso (a) da regra do oficial."""
+    if registradas:
+        liq = registradas[-1]
+        dono = int(liq["titulo_id"])
+        de_quem = ("" if dono == t["id"] else
+                   f", em nome de {_rotulo(titulos_por_id.get(dono) or {'id': dono})}")
+        origem = (f"a Liquidação deste pedido no portal foi registrada aqui "
+                  f"({_br(liq.get('liquidada_em') or liq.get('registrada_em'))}"
+                  f"{de_quem})")
+    else:
+        origem = ("nenhum XML desta casa disse pago" +
+                  (" e este sistema nunca lavrou pagamento deste título"
+                   if nunca_pagou_aqui else "") +
+                  ": é a Liquidação feita no portal")
+    frase = (f"A CENPROT dá o pedido {pedido} por PAGO POR LIQUIDAÇÃO — "
+             + (f"{disse}; " if disse else "") + origem
+             + f" — e aqui {rot} está {situacao}. Na CENPROT o pago por "
+               f"liquidação não se altera (o oficial, 29/10/2026): o sistema "
+               f"segue a CENPROT.")
+    if situacao == "PROTESTADO":
+        caminho = ("O protesto lavrado contraria o pago da CENPROT. Confira no "
+                   f"portal (Gestão de Pedidos → pedido {pedido}) de qual título "
+                   "é o dinheiro e leve ao oficial: o protesto só se desfaz por "
+                   "cancelamento, na ficha, com hipótese e fundamento.")
+    else:
+        caminho = ("NÃO PROTESTE, e não aponte, intime nem lance desistência: "
+                   "o pago da CENPROT não muda. Se o dinheiro é deste título, "
+                   "lance o pagamento na ficha — o sistema passa a dizer o "
+                   "mesmo que a Central. Se a liquidação foi no pedido errado, "
+                   "só a CENPROT corrige: peça a ela, com o comprovante.")
+    return _achado("PAGO_NA_CENPROT_POR_LIQUIDACAO", DIVERGE, frase, caminho,
+                   contraria_o_pago=True)
+
+
+def _pendencia_do_xml(rot: str, situacao: str, pedido: str, estado: str,
+                      disse: str, informado: dict,
+                      ultimo_xml: dict | None) -> dict:
+    """O achado da situação que veio do NOSSO XML — o caso (b): NÃO trava."""
+    letra = "P" if _txt(informado.get("tipo")).upper() == "PROTESTO" else "D"
+    if informado.get("xml_nome"):
+        arquivo = (f"arquivo {informado['xml_nome']}, de "
+                   f"{_br(informado.get('xml_gerado_em'))}")
+    else:
+        arquivo = "mandado pelo E-Ofício"
+    estado_do_ato = ("tornado sem efeito aqui" if int(informado.get("cancelado") or 0)
+                     else "ainda de pé aqui")
+    frase = (f"A CENPROT dá o pedido {pedido} por {NOME_DO_ESTADO[estado]} — "
+             f"{disse} — porque o {letra} desta casa disse isso ({arquivo}: "
+             f"{_txt(informado.get('tipo')).lower()} de "
+             f"{_br(informado.get('data_ato'))}, {estado_do_ato}). Aqui {rot} "
+             f"está {situacao}.")
+    gerado_depois = bool(ultimo_xml) and (
+        not informado.get("cenprot_xml_id")
+        or int(ultimo_xml["id"]) > int(informado["cenprot_xml_id"]))
+    if gerado_depois:
+        return _achado(
+            "XML_NOVO_A_CONFERIR", CONFERIR,
+            frase + (f" O XML mais novo com este título já foi gerado "
+                     f"({ultimo_xml['nome_arquivo']}, "
+                     f"{_br(ultimo_xml['gerado_em'])})."),
+            "Confira no portal da CENPROT se esse arquivo subiu e foi aceito; "
+            "a próxima consulta deve trazer a situação nova.")
+    return _achado(
+        "REENVIAR_XML", DIVERGE, frase,
+        "NÃO TRAVA. Na CENPROT, a situação que veio do XML desta casa se "
+        "corrige mandando o XML com a situação nova (o oficial, 29/10/2026). "
+        "Quando o título andar — o protesto vai no P; o pagamento, a "
+        "desistência e o cancelamento no D —, gere o XML do dia em Protesto → "
+        "XML da CENPROT e suba-o pelo portal. Esta pendência sai quando o XML "
+        "novo deste título for gerado.")
+
+
 def avaliar(t: dict, conf: dict | None, *, pedidos: list[tuple[str, str]],
             atos: dict[str, dict], liquidacoes_vivas: list[dict],
             dono_do_pedido: dict[str, list[int]],
-            repetidos: list[dict], titulos_por_id: dict[int, dict]) -> list[dict]:
+            repetidos: list[dict], titulos_por_id: dict[int, dict],
+            informados: Any = (), ultimo_xml: dict | None = None) -> list[dict]:
     """Os achados de UM título. Só calcula — quem lê o banco é `quadro`.
 
-    `trava` marca o que impede o protesto sem afirmação expressa.
+    `trava` marca o que impede o PROTESTO sem afirmação expressa;
+    `contraria_o_pago` o que impede também apontar, intimar e desistir.
     """
     achados: list[dict] = []
     rot = _rotulo(t)
     situacao = _txt(t.get("situacao")).upper()
     pedido = pedidos[0][0] if pedidos else ""
+    aqui_vivo = situacao in ABERTAS or situacao == "PROTESTADO"
 
     # --- o número do pedido
     if not pedidos:
@@ -609,15 +834,28 @@ def avaliar(t: dict, conf: dict | None, *, pedidos: list[tuple[str, str]],
             "este pedido antes de lavrar ou pagar qualquer um dos dois.",
             trava=True))
     if repetidos:
+        vivos = [o for o in repetidos
+                 if _txt(o.get("situacao")).upper() not in SITUACOES_QUE_SAIRAM]
         outros = ", ".join(
-            f"{_txt(o.get('numero_titulo'))} (título {o['id']})" for o in repetidos)
+            f"{_txt(o.get('numero_titulo'))} (título {o['id']}, "
+            f"{_txt(o.get('situacao')) or '—'})" for o in repetidos)
         achados.append(_achado(
             "PROTOCOLO_EM_DOIS_TITULOS", DIVERGE,
             f"{rot} tem o mesmo protocolo ({_txt(t.get('protocolo'))}) que "
             f"{outros}. Protocolo é um por título.",
-            "Pode ser o mesmo título entrado duas vezes. Compare as duas fichas "
-            "com o pedido no portal e leve ao oficial antes de lavrar, pagar ou "
-            "liquidar qualquer um dos dois.", trava=True))
+            ("Pode ser o mesmo título entrado duas vezes. Compare as fichas "
+             "com o pedido no portal e leve ao oficial antes de lavrar, pagar "
+             "ou liquidar qualquer um deles." if vivos else
+             "O outro título já saiu do protesto, e por isso isto não trava; o "
+             "protocolo repetido continua sendo defeito de dado a acertar com o "
+             "oficial."),
+            trava=bool(vivos)))
+
+    # As liquidações do portal registradas aqui PARA ESTE PEDIDO.
+    liq_do_pedido = [x for x in liquidacoes_vivas
+                     if pedido and _txt(x["pedido"]) == pedido]
+    pago_por_liquidacao = False
+    nunca_pagou_aqui = "PAGAMENTO" not in atos
 
     # --- o que a Central disse
     if conf and conf.get("resultado") == NAO_ACHOU:
@@ -631,7 +869,10 @@ def avaliar(t: dict, conf: dict | None, *, pedidos: list[tuple[str, str]],
         estado = _txt(conf.get("central_estado")) or DESCONHECIDO
         disse = _o_que_a_central_disse_em_frase(conf)
         quando = _br(conf.get("consultada_em"))
-        nunca_pagou_aqui = "PAGAMENTO" not in atos
+        contraria = ((estado in ESTADOS_QUE_ENCERRAM and aqui_vivo)
+                     or (estado == PROTESTADO and situacao in ABERTAS))
+        de_onde, informado = de_onde_veio_o_estado(estado, informados,
+                                                   liq_do_pedido)
         if estado == DESCONHECIDO:
             achados.append(_achado(
                 "CENTRAL_ILEGIVEL", CONFERIR,
@@ -639,26 +880,25 @@ def avaliar(t: dict, conf: dict | None, *, pedidos: list[tuple[str, str]],
                 f"sistema não sabe ler isso (consulta de {quando}).",
                 "Confira no portal o status do pedido; se for um status novo da "
                 "Central, ele precisa entrar na leitura deste módulo."))
-        elif estado in ESTADOS_QUE_ENCERRAM and (situacao in ABERTAS
-                                                 or situacao == "PROTESTADO"):
+        elif contraria and de_onde == DO_NOSSO_XML:
+            # (b) A SITUAÇÃO QUE VEIO DO NOSSO XML: pendência, e não trava.
+            achados.append(_pendencia_do_xml(rot, situacao, pedido, estado,
+                                             disse, informado, ultimo_xml))
+        elif contraria and de_onde in (DE_LIQUIDACAO_REGISTRADA,
+                                       DE_LIQUIDACAO_PRESUMIDA):
+            # (a) O PAGO POR LIQUIDAÇÃO: imutável na CENPROT, e trava.
+            pago_por_liquidacao = True
+            achados.append(_pago_por_liquidacao(
+                t, rot, situacao, pedido, disse=disse, registradas=liq_do_pedido,
+                titulos_por_id=titulos_por_id,
+                nunca_pagou_aqui=nunca_pagou_aqui))
+        elif estado in ESTADOS_QUE_ENCERRAM and aqui_vivo:
+            # O RETIRADO, O CANCELADO E O DEVOLVIDO QUE VIERAM DA CENTRAL, e
+            # não de um XML desta casa.
             frase = (f"A CENPROT dá o pedido {pedido} por "
                      f"{NOME_DO_ESTADO[estado]} — {disse} — e aqui {rot} está "
-                     f"{situacao}.")
-            if estado in (PAGO, LIQUIDADO) and nunca_pagou_aqui:
-                frase += (" Este sistema nunca lavrou pagamento deste título: o "
-                          "«pago» da Central não veio de um D desta casa — o "
-                          "mais provável é a Liquidação feita no portal neste "
-                          "pedido.")
-            if situacao == "PROTESTADO" and estado in (PAGO, LIQUIDADO):
-                caminho = (
-                    f"Confira no portal (Gestão de Pedidos → pedido {pedido}) o "
-                    f"comprovante e de qual título é a liquidação. Se foi feita "
-                    f"no pedido errado, peça à CENPROT a correção e registre "
-                    f"abaixo a liquidação certa. Se o devedor pagou mesmo este "
-                    f"título, leve ao oficial: o protesto lavrado só se desfaz "
-                    f"por cancelamento, na ficha, com hipótese e fundamento — "
-                    f"a decisão é dele.")
-            elif situacao == "PROTESTADO" and estado == CANCELADO:
+                     f"{situacao}. Nenhum XML desta casa disse isso.")
+            if situacao == "PROTESTADO" and estado == CANCELADO:
                 caminho = (
                     "Veja se há pedido de cancelamento em Pendências da CENPROT; "
                     "o cancelamento se lavra na ficha do título, com a hipótese "
@@ -667,12 +907,6 @@ def avaliar(t: dict, conf: dict | None, *, pedidos: list[tuple[str, str]],
                 caminho = ("Leve ao oficial com o portal aberto no pedido: a "
                            "Central e o livro desta casa dizem coisas que não "
                            "cabem juntas.")
-            elif estado in (PAGO, LIQUIDADO):
-                caminho = (
-                    f"NÃO PROTESTE. Confira o comprovante no portal (pedido "
-                    f"{pedido}). Se o devedor pagou, lance o pagamento na "
-                    f"ficha (o D sai no XML da CENPROT); se a liquidação foi "
-                    f"no pedido errado, peça a correção à CENPROT.")
             elif estado == RETIRADO:
                 caminho = ("NÃO PROTESTE. O apresentante retirou o pedido na "
                            "Central: lance a desistência na ficha do título (o "
@@ -703,7 +937,7 @@ def avaliar(t: dict, conf: dict | None, *, pedidos: list[tuple[str, str]],
             achados.append(_achado(
                 "CENTRAL_JA_PROTESTADO", DIVERGE,
                 f"A CENPROT já dá o pedido {pedido} por protestado — {disse} — "
-                f"e aqui {rot} está {situacao}.",
+                f"e aqui {rot} está {situacao}. Nenhum P desta casa disse isso.",
                 "NÃO PROTESTE de novo sem conferir: pode ser outro título desta "
                 "casa com o mesmo pedido, e o protesto sairia em dobro.",
                 trava=True))
@@ -729,7 +963,7 @@ def avaliar(t: dict, conf: dict | None, *, pedidos: list[tuple[str, str]],
                 "diferentes. Confira no portal qual é o certo."))
         elif situacao == "PROTESTADO" and estado == EM_ANDAMENTO:
             ato = atos.get("PROTESTO") or {}
-            if ato and _txt(ato.get("origem")).upper() != "EOFICIO" \
+            if ato and _txt(ato.get("origem")).upper() != ORIGEM_EOFICIO \
                     and not ato.get("cenprot_xml_id"):
                 caminho = ("O P deste protesto ainda não saiu: gere-o em "
                            "Protesto → XML da CENPROT (letra P) e suba-o pelo "
@@ -790,10 +1024,24 @@ def avaliar(t: dict, conf: dict | None, *, pedidos: list[tuple[str, str]],
                 "devolveu pela pendência do pedido."))
 
     # --- a liquidação feita no portal
+    #
+    # A LIQUIDAÇÃO REGISTRADA PARA ESTE PEDIDO é o pago imutável da CENPROT
+    # mesmo sem consulta nenhuma: quem a registrou afirmou que a guia foi paga.
+    if liq_do_pedido and not pago_por_liquidacao and aqui_vivo:
+        pago_por_liquidacao = True
+        achados.append(_pago_por_liquidacao(
+            t, rot, situacao, pedido, disse=None, registradas=liq_do_pedido,
+            titulos_por_id=titulos_por_id, nunca_pagou_aqui=nunca_pagou_aqui))
+    elif liq_do_pedido and situacao in SITUACOES_QUE_SAIRAM - {"PAGO"}:
+        achados.append(_achado(
+            "LIQUIDADO_E_SAIU_DE_OUTRO_JEITO", CONFERIR,
+            f"O pedido {pedido} foi liquidado no portal (registro aqui), e "
+            f"{rot} está {situacao}.",
+            "Na CENPROT o pago por liquidação não se altera: confira com o "
+            "oficial por que este título saiu de outro jeito aqui."))
     for liq in liquidacoes_vivas:
         dono = int(liq["titulo_id"])
         numero = _txt(liq["pedido"])
-        quando = _br(liq.get("liquidada_em") or liq.get("registrada_em"))
         if dono == t["id"] and pedido and numero != pedido:
             donos = [i for i in dono_do_pedido.get(numero, []) if i != t["id"]]
             de_quem = (f"; e o pedido {numero} é de "
@@ -802,35 +1050,17 @@ def avaliar(t: dict, conf: dict | None, *, pedidos: list[tuple[str, str]],
             achados.append(_achado(
                 "LIQUIDACAO_EM_PEDIDO_DE_OUTRO_TITULO", DIVERGE,
                 f"Registrou-se a liquidação no portal do pedido {numero} "
-                f"({quando}) afirmando ser de {rot} — mas o pedido de {rot} é "
+                f"({_br(liq.get('liquidada_em') or liq.get('registrada_em'))}) "
+                f"afirmando ser de {rot} — mas o pedido de {rot} é "
                 f"{pedido}{de_quem}.",
-                f"Confira no portal qual pedido foi liquidado. Se foi o errado, "
-                f"peça à CENPROT a correção da liquidação do pedido {numero} e "
-                f"liquide o pedido {pedido}; depois anule este registro e "
-                f"registre o certo.", trava=True))
-        if dono != t["id"] and pedido and numero == pedido:
-            achados.append(_achado(
-                "LIQUIDACAO_DESTE_PEDIDO_POR_OUTRO_TITULO", DIVERGE,
-                f"O pedido {pedido}, que é de {rot}, foi liquidado no portal "
-                f"({quando}) em nome de "
-                f"{_rotulo(titulos_por_id.get(dono) or {'id': dono})}.",
-                f"Para a Central, {rot} está pago. Confira de qual título era o "
-                f"dinheiro e, se a liquidação foi no pedido errado, peça a "
-                f"correção à CENPROT antes de qualquer outro ato.", trava=True))
-        if dono == t["id"] and situacao != "PAGO":
-            achados.append(_achado(
-                "LIQUIDACAO_SEM_PAGAMENTO_AQUI", DIVERGE,
-                f"Registrou-se a liquidação no portal do pedido {numero} "
-                f"({quando}) para {rot}, e aqui ele está {situacao} — não há "
-                f"pagamento lavrado.",
-                "A Liquidação do portal repassa ao apresentante o que o devedor "
-                "pagou. Se ele não pagou, a liquidação foi no pedido errado: "
-                "peça a correção à CENPROT. Se pagou, lance o pagamento na "
-                "ficha.", trava=situacao in ABERTAS))
+                f"Na CENPROT o pedido {numero} fica pago (a liquidação não se "
+                f"altera lá). Confira no portal de qual título era o dinheiro; "
+                f"se foi o pedido errado, só a CENPROT corrige — peça a ela. "
+                f"Depois anule este registro e registre o certo.", trava=True))
     pagamento = atos.get("PAGAMENTO")
     liquidados = {_txt(x["pedido"]) for x in liquidacoes_vivas}
     if (situacao == "PAGO" and pagamento
-            and _txt(pagamento.get("origem")).upper() != "EOFICIO"
+            and _txt(pagamento.get("origem")).upper() != ORIGEM_EOFICIO
             and pedido and pedido not in liquidados):
         achados.append(_achado(
             "PAGO_SEM_LIQUIDACAO_REGISTRADA", CONFERIR,
@@ -843,7 +1073,7 @@ def avaliar(t: dict, conf: dict | None, *, pedidos: list[tuple[str, str]],
 
 
 def _contexto(con: Any) -> dict:
-    """Tudo o que a avaliação precisa, em sete consultas. Só LÊ."""
+    """Tudo o que a avaliação precisa, em nove consultas. Só LÊ."""
     titulos = _titulos(con)
     pendencias = _pedidos_das_pendencias(con)
     pedidos = {t["id"]: pedidos_do_titulo(t, da_pendencia=pendencias.get(t["id"]))
@@ -856,6 +1086,7 @@ def _contexto(con: Any) -> dict:
     return {"titulos": titulos, "pedidos": pedidos, "dono": dono,
             "atos": _atos(con), "conferencias": _conferencias(con),
             "repetidos": _protocolos_repetidos(con), "liquidacoes": vivas,
+            "informados": _informados(con), "ultimos_xml": _ultimos_xml(con),
             "por_id": {t["id"]: t for t in titulos}}
 
 
@@ -869,13 +1100,15 @@ def _linha(t: dict, ctx: dict) -> dict:
         t, ctx["conferencias"].get(tid), pedidos=pedidos,
         atos=ctx["atos"].get(tid, {}), liquidacoes_vivas=da_conta,
         dono_do_pedido=ctx["dono"], repetidos=ctx["repetidos"].get(tid, []),
-        titulos_por_id=ctx["por_id"])
+        titulos_por_id=ctx["por_id"], informados=ctx["informados"].get(tid, []),
+        ultimo_xml=ctx["ultimos_xml"].get(tid))
     nivel = (DIVERGE if any(a["nivel"] == DIVERGE for a in achados)
              else CONFERIR if achados else "")
     return {**t, "pedido": pedido, "pedidos": pedidos,
             "conferencia": ctx["conferencias"].get(tid),
             "achados": achados, "nivel": nivel,
-            "trava": [a for a in achados if a["trava"]]}
+            "trava": [a for a in achados if a["trava"]],
+            "contraria_o_pago": [a for a in achados if a["contraria_o_pago"]]}
 
 
 def quadro(con: Any) -> dict:
@@ -909,8 +1142,26 @@ def quadro(con: Any) -> dict:
     }
 
 
+TABELAS_DA_CONFERENCIA = ("pt_titulos", "pt_atos", "pt_cenprot_xml",
+                          "cn_pendencias", "cn_conferencias",
+                          "cn_liquidacoes_portal")
+
+
+def faltam_tabelas(con: Any) -> list[str]:
+    """As tabelas da conferência que esta instalação não tem. Só LÊ."""
+    bd = banco(con)
+    return [t for t in TABELAS_DA_CONFERENCIA if not bd.tem_tabela(t)]
+
+
 def quantos_divergem(con: Any) -> int:
-    """Para a linha do painel do Protesto. Só LÊ."""
+    """Para o gancho do roteiro do Protesto (`protesto_roteiro.GANCHOS`). Só
+    LÊ. **«Não mediu» não é zero**: sem as tabelas, recusa com o motivo — e o
+    roteiro mostra «não respondeu», e não um zero com cara de medição."""
+    faltam = faltam_tabelas(con)
+    if faltam:
+        raise ConferenciaError(
+            f"as tabelas da conferência não existem nesta instalação: "
+            f"{', '.join(faltam)}")
     return quadro(con)["contagem"]["divergem"]
 
 
@@ -1051,25 +1302,62 @@ def consultar(db, *, titulo_id: int | None = None, quem: str = "",
 def validar_afirmacao(afirmo: Any, afirmacao: Any, *, por_que: str = "") -> str:
     """A afirmação expressa do contrato comum da casa. Só calcula.
 
-    Devolve o texto limpo, ou recusa com a frase: a caixa «Afirmo» marcada E
-    pelo menos 30 LETRAS (espaço e pontuação não contam — «.......» não é
-    afirmação de ninguém).
+    A RÉGUA É UMA SÓ, A DO CONTRATO (`protesto_prova.afirmacao_valida`): a
+    caixa «Afirmo» marcada E o texto com pelo menos 30 LETRAS além da frase
+    «Afirmo, sob minha responsabilidade, que» — que vem junto no que se grava,
+    e não conta no piso (sozinha ela passaria dele). Espaço e pontuação não
+    contam: «.......» não é afirmação de ninguém.
     """
-    texto = " ".join(str(afirmacao or "").split())
-    letras = sum(1 for c in texto if c.isalpha())
-    if afirmo and letras >= MINIMO_DE_LETRAS_DA_AFIRMACAO:
+    import protesto_prova as PROVA
+    texto = PROVA.afirmacao_valida(afirmacao) if afirmo else None
+    if texto:
         return texto
+    corrido = " ".join(str(afirmacao or "").split())
+    if corrido.lower().startswith(PROVA.FRASE_DA_AFIRMACAO.lower()):
+        corrido = corrido[len(PROVA.FRASE_DA_AFIRMACAO):]
+    letras = sum(1 for c in corrido if c.isalpha())
     falta = []
     if not afirmo:
         falta.append("marque a caixa «Afirmo»")
-    if letras < MINIMO_DE_LETRAS_DA_AFIRMACAO:
+    if letras < PROVA.PISO_DA_AFIRMACAO:
         falta.append(f"escreva a afirmação com pelo menos "
-                     f"{MINIMO_DE_LETRAS_DA_AFIRMACAO} letras (vieram {letras})")
+                     f"{PROVA.PISO_DA_AFIRMACAO} letras além de "
+                     f"«{PROVA.FRASE_DA_AFIRMACAO}» (vieram {letras})")
     raise ConferenciaError(
         (por_que + " " if por_que else "")
         + "Para seguir assim mesmo, " + " e ".join(falta)
-        + f", começando por «{MODELO_DA_AFIRMACAO}». Ela fica gravada no ato e "
-          f"na auditoria, com o seu nome.")
+        + f", depois de «{PROVA.FRASE_DA_AFIRMACAO}». Ela fica gravada no ato "
+          f"e na auditoria, com o seu nome.")
+
+
+def _lendo(db):
+    """Uma conexão para LER: a do app (`connect`) quando há, senão a
+    transação curta do `db` de mesa. Ler não precisa da trava de escrita."""
+    ler = getattr(db, "connect", None)
+    return ler() if callable(ler) else db.transaction()
+
+
+def _exigir_afirmacao(frase: str, *, regra: str, o_que: str, pedido: str,
+                      titulo_id: int, afirmo: Any, afirmacao: Any, robo: bool,
+                      em_lote: bool, sem_rede: bool) -> dict:
+    """A recusa que só a afirmação expressa vence. Devolve o contrato comum
+    (`regra`, `afirmacao`, `o_que_faltava`) quando ela veio."""
+    if em_lote:
+        raise ConferenciaError(
+            frase + " A afirmação expressa da CENPROT é título a título: abra "
+                    "a ficha do título, confira e, se for o caso, afirme por lá.",
+            regra=regra, sem_rede=sem_rede)
+    if robo:
+        raise ConferenciaError(
+            frase + " Afirmação expressa é de pessoa — conta de robô não "
+                    "afirma.", regra=regra, sem_rede=sem_rede)
+    try:
+        texto = validar_afirmacao(afirmo, afirmacao, por_que=frase)
+    except ConferenciaError as erro:
+        raise ConferenciaError(str(erro), regra=regra,
+                               sem_rede=sem_rede) from None
+    return {"regra": regra, "afirmacao": texto, "o_que_faltava": o_que,
+            "pedido": pedido or None, "titulo_id": int(titulo_id)}
 
 
 def trava_do_protesto(db, titulo_id: int, *, afirmo: Any = False,
@@ -1082,17 +1370,20 @@ def trava_do_protesto(db, titulo_id: int, *, afirmo: Any = False,
     Devolve:
       - `None` — pode protestar sem afirmação: o título não veio da CENPROT,
         não está intimado (o domínio recusa por conta própria), ou a Central
-        confere;
+        não diz nada que impeça — e a situação que veio do NOSSO XML não
+        impede (o oficial, 29/10/2026: ela se corrige com o XML novo, e o P
+        deste protesto é justamente o que a corrige);
       - a afirmação aceita — `{regra, afirmacao, o_que_faltava, pedido}` —,
         que a rota grava no ato (`anotar_afirmacao_no_ato`) e na auditoria.
 
-    Recusa (`ConferenciaError`) quando a Central diz que o título saiu, quando
-    não deu para conferir, ou quando o próprio título está em conflito (o
-    protocolo de outro, o pedido de outro, a liquidação de outro) — e a
-    afirmação expressa não veio. **No lote não se afirma**: a afirmação é
-    título a título, na ficha, depois de olhar.
+    Recusa (`ConferenciaError`) quando a CENPROT dá o título por PAGO POR
+    LIQUIDAÇÃO (imutável lá), quando ela diz que ele saiu por outro caminho
+    dela, quando não deu para conferir, ou quando o próprio título está em
+    conflito (o pedido de outro, dois títulos vivos no mesmo protocolo, a
+    liquidação de outro) — e a afirmação expressa não veio. **No lote não se
+    afirma**: a afirmação da CENPROT é título a título, na ficha.
     """
-    with db.transaction() as con:
+    with _lendo(db) as con:
         linhas = _titulos(con, titulo_id)
         if not linhas or _txt(linhas[0].get("situacao")).upper() != "INTIMADO":
             return None
@@ -1138,7 +1429,9 @@ def trava_do_protesto(db, titulo_id: int, *, afirmo: Any = False,
                       f"sistema não sabe ler isso")
     travas = linha.get("trava") or []
     if travas:
-        regra = REGRA_DIVERGENTE
+        regra = (REGRA_PAGO_POR_LIQUIDACAO
+                 if any(a.get("contraria_o_pago") for a in travas)
+                 else REGRA_DIVERGENTE)
         o_que = " ".join(a["frase"] for a in travas)
         if faltou:
             o_que += " Além disso, " + "; ".join(faltou) + "."
@@ -1153,22 +1446,44 @@ def trava_do_protesto(db, titulo_id: int, *, afirmo: Any = False,
                  f"no portal da CENPROT antes de lavrar.")
     else:
         return None
-    if em_lote:
-        raise ConferenciaError(
-            frase + " A afirmação expressa é título a título: abra a ficha "
-                    "do título, confira e, se for o caso, afirme por lá.",
-            regra=regra, sem_rede=sem_rede)
-    if robo:
-        raise ConferenciaError(
-            frase + " Afirmação expressa é de pessoa — conta de robô não "
-                    "afirma.", regra=regra, sem_rede=sem_rede)
-    try:
-        texto = validar_afirmacao(afirmo, afirmacao, por_que=frase)
-    except ConferenciaError as erro:
-        raise ConferenciaError(str(erro), regra=regra,
-                               sem_rede=sem_rede) from None
-    return {"regra": regra, "afirmacao": texto, "o_que_faltava": o_que,
-            "pedido": pedido or None, "titulo_id": int(t["id"])}
+    return _exigir_afirmacao(frase, regra=regra, o_que=o_que, pedido=pedido,
+                             titulo_id=t["id"], afirmo=afirmo,
+                             afirmacao=afirmacao, robo=robo, em_lote=em_lote,
+                             sem_rede=sem_rede)
+
+
+def trava_do_ato(db, titulo_id: int, ato: Any, *, afirmo: Any = False,
+                 afirmacao: Any = "", quem: str = "", robo: bool = False,
+                 ambiente: Any = CRED.PRODUCAO, pasta=None) -> dict | None:
+    """A trava da CENPROT para o ato que se vai lançar na ficha. RECEBE `db`.
+
+    O PROTESTO é `trava_do_protesto` (consulta a Central na hora). O
+    APONTAMENTO, a INTIMAÇÃO e a DESISTÊNCIA não falam com a rede: leem a
+    última conferência guardada (a da manhã, pela automação) e as
+    liquidações registradas aqui, e só param no PAGO POR LIQUIDAÇÃO — o que
+    na CENPROT não se altera, e que esses atos contrariam (o oficial,
+    29/10/2026). Os outros atos não passam por aqui.
+    """
+    qual = _txt(ato).upper()
+    if qual == "PROTESTO":
+        return trava_do_protesto(db, titulo_id, afirmo=afirmo,
+                                 afirmacao=afirmacao, quem=quem, robo=robo,
+                                 ambiente=ambiente, pasta=pasta)
+    if qual not in ATOS_QUE_A_CENPROT_TRAVA:
+        return None
+    with _lendo(db) as con:
+        linha = da_ficha(con, int(titulo_id))
+    travas = (linha or {}).get("contraria_o_pago") or []
+    if not travas:
+        return None
+    o_que = " ".join(a["frase"] for a in travas)
+    frase = (f"Ato NÃO lançado ({NOME_DO_ATO.get(qual, qual.lower())}): "
+             f"{o_que} Caminho: {travas[0]['caminho']}")
+    return _exigir_afirmacao(frase, regra=REGRA_PAGO_POR_LIQUIDACAO, o_que=o_que,
+                             pedido=linha.get("pedido") or "",
+                             titulo_id=int(titulo_id), afirmo=afirmo,
+                             afirmacao=afirmacao, robo=robo, em_lote=False,
+                             sem_rede=False)
 
 
 def anotar_afirmacao_no_ato(con: Any, ato_id: int, afirmacao: dict, *,

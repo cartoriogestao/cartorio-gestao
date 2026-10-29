@@ -36,6 +36,8 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from banco_de_teste import conexao_de_teste  # noqa: E402
+from prova_de_intimacao import (entregar_com_comprovante,  # noqa: E402
+                               garantir_anexos)
 
 import banco_pg
 import protesto as PT
@@ -63,6 +65,9 @@ def con():
     c.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
     c.executemany("INSERT OR REPLACE INTO settings VALUES (?, ?)",
                   [("ibge_uf", "21"), ("ibge_municipio", "98765")])
+    # A ENTREGA LEVA O COMPROVANTE NO MESMO ATO (29/10/2026), e ele mora
+    # em `attachments` — que o banco do Protesto sozinho não tem.
+    garantir_anexos(c)
     yield c
     c.close()
 
@@ -197,7 +202,7 @@ def test_o_proximo_numero_nao_consome_nada(con):
 def test_entrega_com_exito_lavra_a_intimacao_PESSOAL(con):
     tid = titulo(con)
     r = AV.emitir(con, tid, hoje=HOJE, agora=AGORA)
-    volta = AV.registrar_entrega(con, r["aviso_id"], entregue=True,
+    volta = entregar_com_comprovante(con, r["aviso_id"],
                                  agora=AGORA, recebido_por="MARIA DA SILVA",
                                  usuario="tabeliao")
     assert volta["situacao"] == "ENTREGUE" and volta["ato_id"]
@@ -242,9 +247,9 @@ def test_nao_entrega_exige_motivo_do_catalogo(con):
 def test_entrega_registrada_duas_vezes_e_recusada(con):
     tid = titulo(con)
     r = AV.emitir(con, tid, hoje=HOJE, agora=AGORA)
-    AV.registrar_entrega(con, r["aviso_id"], entregue=True, agora=AGORA)
+    entregar_com_comprovante(con, r["aviso_id"], agora=AGORA)
     with pytest.raises(AV.AvisoError) as erro:
-        AV.registrar_entrega(con, r["aviso_id"], entregue=True, agora=AGORA)
+        entregar_com_comprovante(con, r["aviso_id"], agora=AGORA)
     assert "já foi registrada" in str(erro.value)
 
 
@@ -304,9 +309,9 @@ def test_duas_entregas_do_mesmo_aviso_ao_mesmo_tempo_lavram_uma_intimacao(con):
     r = AV.emitir(con, tid, hoje=HOJE, agora=AGORA)
     erro = _ao_mesmo_tempo(
         con,
-        lambda pg: AV.registrar_entrega(pg, r["aviso_id"], entregue=True,
+        lambda pg: entregar_com_comprovante(pg, r["aviso_id"],
                                         agora=AGORA),
-        lambda pg: AV.registrar_entrega(pg, r["aviso_id"], entregue=True,
+        lambda pg: entregar_com_comprovante(pg, r["aviso_id"],
                                         agora=AGORA))
     assert isinstance(erro, AV.AvisoError), erro
     assert "já foi registrada" in str(erro)
@@ -325,7 +330,7 @@ def test_edital_que_chega_durante_a_entrega_e_recusado(con):
                          agora=AGORA)
     erro = _ao_mesmo_tempo(
         con,
-        lambda pg: AV.registrar_entrega(pg, r["aviso_id"], entregue=True,
+        lambda pg: entregar_com_comprovante(pg, r["aviso_id"],
                                         agora=AGORA),
         lambda pg: AV.publicar_edital(pg, r["aviso_id"], sv=SV, hoje=HOJE,
                                       agora=AGORA))
@@ -342,7 +347,7 @@ def test_a_segunda_tentativa_do_mesmo_aviso_e_permitida(con):
     r = AV.emitir(con, tid, hoje=HOJE, agora=AGORA)
     AV.registrar_entrega(con, r["aviso_id"], entregue=False, motivo=11,
                          agora=AGORA)
-    volta = AV.registrar_entrega(con, r["aviso_id"], entregue=True,
+    volta = entregar_com_comprovante(con, r["aviso_id"],
                                  agora=AGORA)
     assert volta["situacao"] == "ENTREGUE"
     assert volta["tentativas"] == 2
@@ -377,7 +382,7 @@ def test_a_tentativa_ANTERIOR_nao_se_perde(con):
 def test_a_entrega_que_deu_certo_tambem_e_uma_tentativa(con):
     tid = titulo(con)
     r = AV.emitir(con, tid, hoje=HOJE, agora=AGORA)
-    AV.registrar_entrega(con, r["aviso_id"], entregue=True, agora=AGORA,
+    entregar_com_comprovante(con, r["aviso_id"], agora=AGORA,
                          recebido_por="MARIA")
     houve = AV.tentativas(con, r["aviso_id"])
     assert len(houve) == 1
@@ -423,7 +428,7 @@ def test_edital_sem_tentativa_e_recusado(con):
 def test_edital_de_aviso_entregue_e_recusado(con):
     tid = titulo(con)
     r = AV.emitir(con, tid, hoje=HOJE, agora=AGORA)
-    AV.registrar_entrega(con, r["aviso_id"], entregue=True, agora=AGORA)
+    entregar_com_comprovante(con, r["aviso_id"], agora=AGORA)
     with pytest.raises(AV.AvisoError):
         AV.publicar_edital(con, r["aviso_id"], sv=SV, hoje=HOJE, agora=AGORA)
 
@@ -477,7 +482,7 @@ def test_as_listas_mostram_o_que_esta_esperando(con):
     rc = AV.emitir(con, c, hoje=HOJE, agora=AGORA)
     AV.registrar_entrega(con, rb["aviso_id"], entregue=False, motivo=11,
                          agora=AGORA)
-    AV.registrar_entrega(con, rc["aviso_id"], entregue=True, agora=AGORA)
+    entregar_com_comprovante(con, rc["aviso_id"], agora=AGORA)
 
     esperando = AV.esperando_entrega(con)
     assert [x["id"] for x in esperando] == [ra["aviso_id"]]
@@ -509,7 +514,7 @@ def test_a_folha_do_dia_junta_os_editais_publicados(con):
 def test_aviso_que_nao_existe_nao_estoura(con):
     assert AV.ler(con, 9999) is None
     with pytest.raises(AV.AvisoError):
-        AV.registrar_entrega(con, 9999, entregue=True, agora=AGORA)
+        entregar_com_comprovante(con, 9999, agora=AGORA)
     with pytest.raises(AV.AvisoError):
         AV.publicar_edital(con, 9999, sv=SV, hoje=HOJE, agora=AGORA)
 
@@ -726,7 +731,7 @@ def test_o_aviso_entregue_do_eoficio_nao_e_trabalho_de_upload(con):
     de_la = AV.emitir(con, titulo(con, numero="71/1"), hoje=HOJE, agora=AGORA)
     sem_origem = AV.emitir(con, titulo(con, numero="72/1"), hoje=HOJE, agora=AGORA)
     for r in (daqui, de_la, sem_origem):
-        AV.registrar_entrega(con, r["aviso_id"], entregue=True, agora=AGORA)
+        entregar_com_comprovante(con, r["aviso_id"], agora=AGORA)
     bd.escrever("UPDATE pt_avisos SET origem='SISTEMA' WHERE id=%s",
                 (daqui["aviso_id"],))
     bd.escrever("UPDATE pt_avisos SET origem='EOFICIO' WHERE id=%s",
@@ -741,5 +746,5 @@ def test_sem_a_coluna_origem_a_lista_do_upload_e_a_de_sempre(con):
     bd = _com_anexos(con)
     bd.escrever("ALTER TABLE pt_avisos DROP COLUMN IF EXISTS origem")
     r = AV.emitir(con, titulo(con, numero="80/1"), hoje=HOJE, agora=AGORA)
-    AV.registrar_entrega(con, r["aviso_id"], entregue=True, agora=AGORA)
+    entregar_com_comprovante(con, r["aviso_id"], agora=AGORA)
     assert [a["id"] for a in AV.entregues(con)] == [r["aviso_id"]]

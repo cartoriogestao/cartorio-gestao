@@ -47,6 +47,8 @@ sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(RAIZ / "tests"))
 
 from bd_nativo import banco as nativo            # noqa: E402
+from prova_de_intimacao import (entregar_com_comprovante,  # noqa: E402
+                               juntar_prova)
 
 PASTA_DOS_MODELOS = RAIZ / "modelos_padrao" / "protesto"
 
@@ -160,9 +162,10 @@ def papeis(cg_app) -> dict[str, str]:
         aviso = AV.emitir(con, um, hoje=APONTADO_EM[:10], agora=APONTADO_EM)
         saida["aviso"] = AV.montar_teor_do_aviso(
             con, AV.ler(con, aviso["aviso_id"]), sv=sv)
-        AV.registrar_entrega(con, aviso["aviso_id"], entregue=True,
-                             agora=INTIMADO_EM, quando=INTIMADO_EM,
-                             recebido_por=DEVEDOR)
+        # A ENTREGA COM O COMPROVANTE E QUEM RECEBEU (29/10/2026).
+        entregar_com_comprovante(con, aviso["aviso_id"],
+                                 agora=INTIMADO_EM, quando=INTIMADO_EM,
+                                 recebido_por=DEVEDOR)
         PT.lancar_protesto(con, um, sv=sv, agora=PROTESTADO_EM,
                            data_extenso=EXTENSO)
         saida["termo"] = nativo(con).valor(
@@ -194,6 +197,7 @@ def papeis(cg_app) -> dict[str, str]:
         quatro = novo(con, _titulo("DMI-4/2026", devedor=CREDOR, cpf="00000001163",
                                    chave="req:4"))
         PT.lancar_intimacao(con, quatro, modo="PESSOAL", agora=INTIMADO_EM)
+        juntar_prova(con, quatro)   # a prova da intimação (29/10/2026)
         PT.lancar_protesto(con, quatro, sv=sv, agora=PROTESTADO_EM,
                            data_extenso=EXTENSO)
         PT.lancar_cancelamento(con, quatro, hipotese="ANUENCIA_CREDOR",
@@ -206,6 +210,7 @@ def papeis(cg_app) -> dict[str, str]:
                                   cpf="00000001244", chave="req:5"))
         PT.lancar_intimacao(con, cinco, modo="PESSOAL", digital=True,
                             agora=INTIMADO_EM)
+        juntar_prova(con, cinco)    # a Resolve confirmada, com o histórico
         PT.lancar_protesto(con, cinco, sv=sv, agora=PROTESTADO_EM,
                            data_extenso=EXTENSO)
         saida["termo_eletronico"] = nativo(con).valor(
@@ -219,6 +224,7 @@ def papeis(cg_app) -> dict[str, str]:
         seis = novo(con, _titulo("DMI-6/2026", devedor=SUSPENSO, cpf=CPF_SUSPENSO,
                                  chave="req:6"))
         PT.lancar_intimacao(con, seis, modo="PESSOAL", agora=INTIMADO_EM)
+        juntar_prova(con, seis)
         PT.lancar_protesto(con, seis, sv=sv, agora=PROTESTADO_EM,
                            data_extenso=EXTENSO)
         PT.lancar_efeito_suspensivo(con, seis, juizo=JUIZO_DA_ORDEM,

@@ -291,13 +291,21 @@ def registrar_um(con: sqlite3.Connection, pdf: bytes, aviso_id: int, *,
                  quando: str | None, pasta_de_arquivos: Any, agora: str,
                  desfecho: Any = ENTREGUE, observacao: str | None = None,
                  usuario: str | None = None,
-                 usuario_id: int | None = None) -> dict:
+                 usuario_id: int | None = None,
+                 recebido_por: str | None = None,
+                 afirmacao: str | None = None) -> dict:
     """Registra UM aviso do lote. ESCREVE.
 
     **CONFERE DE NOVO**, a partir do PDF guardado: entre a tela e o clique o
     aviso pode ter sido registrado por outra pessoa, e o que vale é o que o
     banco diz agora. A entrega passa por `registrar_entrega` — o mesmo caminho
     do botão —, e o comprovante por `guardar_comprovante`.
+
+    A ENTREGA LEVA AS FOLHAS E QUEM RECEBEU NO MESMO ATO (29/10/2026, ordem
+    do oficial): as folhas do canhoto vão a `registrar_entrega` como o
+    comprovante, e o nome de quem assinou vem da tela, linha a linha. Sem o
+    nome, a entrega só entra com a `afirmacao` expressa daquele aviso. As
+    afirmações voltam em `afirmacoes`, para a rota gravar a auditoria.
     """
     lido = agrupar(ler_paginas(pdf))
     grupo = next((g for g in lido["grupos"]
@@ -317,6 +325,9 @@ def registrar_um(con: sqlite3.Connection, pdf: bytes, aviso_id: int, *,
                         f"já foram registradas — nada foi feito de novo.")
     ato_id = None
     feito = situacao["acao"]
+    nome_das_folhas = f"intimacao-{grupo['numero']}-{grupo['ano']}.pdf"
+    anexo_id = None
+    afirmacoes: list[dict] = []
     if situacao["acao"] == "REGISTRA":
         entregue = str(desfecho or "").strip().upper() == ENTREGUE
         if not entregue and AV._inteiro(desfecho) not in AV.TODOS_OS_MOTIVOS:
@@ -326,18 +337,28 @@ def registrar_um(con: sqlite3.Connection, pdf: bytes, aviso_id: int, *,
             con, int(aviso_id), entregue=entregue, agora=agora,
             quando=(quando or None), entregador=AV.ENTREGADOR_DA_CASA,
             motivo=(None if entregue else desfecho),
+            recebido_por=(recebido_por or None) if entregue else None,
             observacao=(observacao or "canhoto lido do PDF do lote, pelo QR "
                         "do aviso"),
-            usuario=usuario)
+            usuario=usuario,
+            comprovante_nome=nome_das_folhas if entregue else None,
+            comprovante_conteudo=parte if entregue else None,
+            pasta_de_arquivos=pasta_de_arquivos if entregue else None,
+            usuario_id=usuario_id,
+            afirmacao=afirmacao if entregue else None)
         ato_id = r["ato_id"]
+        anexo_id = r.get("anexo_id")
+        afirmacoes += list(r.get("afirmacoes") or [])
         feito = "ENTREGA" if entregue else "TENTATIVA"
-    anexo = AV.guardar_comprovante(
-        con, int(aviso_id),
-        nome=f"intimacao-{grupo['numero']}-{grupo['ano']}.pdf",
-        conteudo=parte,
-        pasta_de_arquivos=pasta_de_arquivos, agora=agora,
-        usuario_id=usuario_id)
+    if anexo_id is None:
+        anexo = AV.guardar_comprovante(
+            con, int(aviso_id), nome=nome_das_folhas, conteudo=parte,
+            pasta_de_arquivos=pasta_de_arquivos, agora=agora,
+            usuario_id=usuario_id, afirmacao=afirmacao)
+        anexo_id = anexo["anexo_id"]
+        afirmacoes += list(anexo.get("afirmacoes") or [])
     return {"aviso_id": int(aviso_id), "acao": feito,
-            "ato_id": ato_id, "anexo_id": anexo["anexo_id"],
+            "ato_id": ato_id, "anexo_id": anexo_id,
             "paginas": grupo["paginas"],
-            "aviso": f"{grupo['numero']}/{grupo['ano']}"}
+            "aviso": f"{grupo['numero']}/{grupo['ano']}",
+            "afirmacoes": afirmacoes}

@@ -171,8 +171,9 @@ def test_buscar_de_novo_nao_assenta_duas_vezes(casa):
     tid = APOIO.titulo_apontado(db)
     aviso = APOIO.aviso_emitido(db, tid)
     r, transporte = _postar(casa, aviso)
+    # QUEM RECEBEU VEM NO AR (29/10/2026: entrega só com ele e o comprovante).
     transporte.simular_retorno(r["codigo_objeto"], entregue=True,
-                               data="2026-10-20")
+                               data="2026-10-20", recebedor="BELTRANO EXEMPLO")
     _buscar(casa, transporte)
     segundo = _buscar(casa, transporte)
     assert segundo["olhadas"] == 0
@@ -229,7 +230,8 @@ def test_ar_de_titulo_pago_no_meio_do_caminho_fica_para_conferir(casa):
         PT.lancar_pagamento(con, tid, sv=APOIO.SV, agora=db.now(),
                             data_extenso="vinte de outubro", valor_pago="1310.45")
     transporte.simular_retorno(r["codigo_objeto"], entregue=True,
-                               data="2026-10-21")
+                               data="2026-10-21",
+                               recebedor="BELTRANO EXEMPLO")
     voltou = _buscar(casa, transporte)
     assert voltou["voltaram"][0]["situacao"] == AR.CONFERIR
     p = APOIO.um(db, "SELECT * FROM pt_ar_postagens")
@@ -247,10 +249,31 @@ def test_ar_que_volta_depois_do_prazo_avisa_o_art_924(casa):
     aviso = APOIO.aviso_emitido(db, tid)
     r, transporte = _postar(casa, aviso)
     transporte.simular_retorno(r["codigo_objeto"], entregue=True,
-                               data="2026-12-01")
+                               data="2026-12-01", recebedor="BELTRANO EXEMPLO")
     _buscar(casa, transporte)
     obs = APOIO.um(db, "SELECT observacao FROM pt_ar_postagens")["observacao"]
     assert "art. 924" in obs
+
+
+def test_ar_entregue_sem_quem_recebeu_fica_para_conferir(casa):
+    """29/10/2026, ordem do oficial: a entrega só se registra com o
+    comprovante e com o nome de quem recebeu. O AR que volta sem o recebedor
+    não lavra a intimação sozinho — o robô não afirma nada por ninguém —, e a
+    postagem vai para CONFERIR com a frase."""
+    db = casa["db"]
+    tid = APOIO.titulo_apontado(db)
+    aviso = APOIO.aviso_emitido(db, tid)
+    r, transporte = _postar(casa, aviso)
+    transporte.simular_retorno(r["codigo_objeto"], entregue=True,
+                               data="2026-10-20")
+    voltou = _buscar(casa, transporte)
+    assert voltou["voltaram"][0]["situacao"] == AR.CONFERIR
+    p = APOIO.um(db, "SELECT * FROM pt_ar_postagens")
+    assert "quem recebeu" in p["observacao"]
+    assert APOIO.um(db, "SELECT situacao FROM pt_avisos WHERE id=%s",
+                    (aviso,))["situacao"] == "EMITIDO"
+    assert APOIO.ler(db, "SELECT id FROM pt_atos WHERE titulo_id=%s AND "
+                         "tipo='INTIMACAO' ORDER BY id", (tid,)) == []
 
 
 def test_em_homologacao_o_retorno_nao_lavra_nem_anexa(casa):

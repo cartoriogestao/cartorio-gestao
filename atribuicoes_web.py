@@ -11389,6 +11389,54 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return render_template("protesto_afirmacoes.html", lista=lista,
                                limite=AFX.LIMITE)
 
+    @app.route("/protesto/roteiro/encerrar", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_encerrar_o_dia():
+        """ENCERRA O DIA DO PROTESTO. ESCREVE.
+
+        Acréscimo do oficial em 29/10/2026: «garantir que todos processos
+        sejam concluídos todos os dias; não deixar margem para a escrevente
+        esquecer ou fazer errado». Só se encerra com as condutas feitas; o que
+        ficar exige a afirmação expressa de CADA item (caixa `afirmo_<item>`
+        e texto `afirmacao_<item>`, 30 letras ou mais), e cada uma vai à
+        auditoria pelo contrato comum, `AFIRMACAO_EXPRESSA`.
+
+        A conferência é numa LEITURA, antes da escrita: ela lê as peças dos
+        outros pedidos, e a que estourar desfaz só a leitura — nunca a
+        transação que grava.
+        """
+        quando = agora()
+        afirmacoes = {
+            chave: (_campo(f"afirmo_{chave}") == "1",
+                    request.form.get(f"afirmacao_{chave}") or "")
+            for chave in request.form.getlist("item")}
+        voltar = redirect(url_for("protesto_painel") + "#encerrar-o-dia")
+        try:
+            with db.connect() as con:
+                conferido = PROT.conferir_o_encerramento(
+                    con, agora=quando, afirmacoes=afirmacoes)
+            with db.transaction() as con:
+                r = PROT.gravar_o_encerramento(con, conferido, agora=quando,
+                                               usuario=usuario_nome())
+        except PROT.EncerramentoError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        # `audit` abre transação própria: FORA do `with`.
+        for a in r["afirmacoes"]:
+            audit("AFIRMACAO_EXPRESSA", "pt_encerramentos_do_dia", r["id"],
+                  {"regra": PROT.REGRA_DO_ENCERRAMENTO,
+                   "afirmacao": a["afirmacao"],
+                   "o_que_faltava": a["o_que_faltava"]})
+        audit("PROTESTO_DIA_ENCERRADO", "pt_encerramentos_do_dia", r["id"],
+              {"dia": r["dia"], "situacao": r["situacao"],
+               "afirmados": len(r["afirmacoes"])})
+        if r["afirmacoes"]:
+            flash(f"Dia encerrado com {len(r['afirmacoes'])} item(ns) "
+                  f"afirmado(s). Eles abrem o roteiro de amanhã.", "warning")
+        else:
+            flash("Dia encerrado: todas as condutas feitas.", "success")
+        return voltar
+
     # ------------------- a chave do CENPROT, que o XML devolve
 
     def _acervo_se_houver():

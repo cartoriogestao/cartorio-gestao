@@ -107,7 +107,8 @@ def test_todo_passo_do_papel_vai_para_uma_conduta_ou_sai_com_prova():
     for c in PR.CONDUTAS_DO_DIA:
         assert any(p.get("conduta") == c["chave"]
                    for p in PR.ROTEIRO_DA_CRA + PR.ROTEIRO_DA_CENPROT
-                   ) or c["chave"] in ("entregas", "protestos"), c["chave"]
+                   ) or c["chave"] in ("entregas", "protestos", "encerrar"), \
+            c["chave"]
 
 
 def test_so_saiu_o_que_o_sistema_faz_sozinho_e_cada_um_com_a_prova():
@@ -173,8 +174,11 @@ def test_o_cadastro_de_usuario_e_do_tabeliao():
 def test_as_obrigacoes_dos_erros_de_outubro_tem_conduta():
     chaves = [c["chave"] for c in PR.CONDUTAS_DO_DIA]
     for k in ("retorno", "remessa", "pedidos_cra", "entregas", "editais",
-              "protestos", "instrumentos", "xml", "cenprot", "repasse"):
+              "protestos", "instrumentos", "xml", "cenprot", "repasse",
+              "encerrar"):
         assert k in chaves, k
+    # ENCERRAR O DIA E A ULTIMA — ela confere todas as outras.
+    assert chaves[-1] == "encerrar"
     assert [c["n"] for c in PR.CONDUTAS_DO_DIA] == list(
         range(1, len(PR.CONDUTAS_DO_DIA) + 1))
     n = {c["chave"]: c["n"] for c in PR.CONDUTAS_DO_DIA}
@@ -222,7 +226,9 @@ def test_toda_tela_das_condutas_existe_e_aceita_os_argumentos(cg_casa):
                            ("protesto_avisos", {}),
                            ("protesto_remessas", {}),
                            ("protesto_cra_api", {}),
-                           ("protesto_afirmacoes", {}), ("settings", {})):
+                           ("protesto_afirmacoes", {}), ("settings", {}),
+                           ("protesto_encerrar_o_dia", {}),
+                           ("nucleo_encerramento_diario", {})):
             url_for(tela, **args)
 
 
@@ -598,9 +604,235 @@ def test_a_tela_conta_as_afirmacoes_e_o_link_e_so_do_oficial(s):
     assert 'href="/protesto/afirmacoes"' not in html
 
 
-def test_o_painel_nao_tem_formulario(s):
-    """Os botoes LEVAM a tela que faz — nenhum faz por aqui, e o GET so le."""
+def test_o_unico_formulario_do_painel_e_o_encerramento(s):
+    """Os botoes LEVAM a tela que faz — nenhum faz por aqui. A excecao e o
+    encerramento do dia (29/10/2026), e ele manda o csrf_token."""
     html = s.get("/protesto/roteiro").get_data(as_text=True)
     painel = html.split('id="relogio"', 1)[1].split(
         'id="roteiro-das-centrais"', 1)[0]
-    assert "<form" not in painel
+    formularios = re.findall(r"<form\b[^>]*>", painel)
+    assert len(formularios) == 1
+    assert 'action="/protesto/roteiro/encerrar"' in formularios[0]
+    corpo = painel.split(formularios[0], 1)[1].split("</form>", 1)[0]
+    assert 'name="csrf_token"' in corpo
+
+
+# ================================================== o encerramento do dia
+#
+# Acrescimo do oficial em 29/10/2026: «garantir que todos processos sejam
+# concluidos todos os dias; nao deixar margem para a escrevente esquecer ou
+# fazer errado». O dia so se encerra com tudo feito; o que ficar exige a
+# afirmacao de CADA item, e o dia seguinte abre mostrando isso.
+
+AFIRMACAO = ("Afirmo, sob minha responsabilidade, que a CRA ficou fora do ar "
+             "a tarde inteira")
+
+
+def _todas(pendencias: list[dict], texto: str = AFIRMACAO) -> dict:
+    return {p["chave"]: (True, texto) for p in pendencias}
+
+
+def test_o_dia_com_pendencia_nao_se_encerra_sem_afirmacao(casa):
+    agora = HOJE + "T18:00:00"
+    with pytest.raises(PR.EncerramentoError) as recusa:
+        PR.conferir_o_encerramento(casa, agora=agora, afirmacoes={})
+    assert "não se encerra" in str(recusa.value)
+    assert "Trazer e receber a remessa da CRA" in str(recusa.value), (
+        "a recusa diz O QUE falta, item por item")
+    pend = PR.pendencias_para_encerrar(PR.cobrar_o_dia(casa, agora=agora))
+    assert pend and all(p["situacao"] in (PR.PENDENTE, PR.ATRASADO)
+                        for p in pend)
+    assert PR.OBRIGACAO_DO_PROPRIO_ENCERRAMENTO not in {p["chave"]
+                                                        for p in pend}
+
+
+def test_a_afirmacao_e_por_item_com_caixa_e_trinta_letras(casa):
+    agora = HOJE + "T18:00:00"
+    pend = PR.pendencias_para_encerrar(PR.cobrar_o_dia(casa, agora=agora))
+    primeiro, *resto = pend
+    afirm = _todas(resto)
+    for ruim in ((False, AFIRMACAO),                  # sem a caixa
+                 (True, "Afirmo que sim."),           # poucas letras
+                 (True, "." * 80 + " 1234567890")):   # pontuacao nao conta
+        afirm[primeiro["chave"]] = ruim
+        with pytest.raises(PR.EncerramentoError) as recusa:
+            PR.conferir_o_encerramento(casa, agora=agora, afirmacoes=afirm)
+        assert primeiro["rotulo"] in str(recusa.value)
+    afirm[primeiro["chave"]] = (True, AFIRMACAO)
+    conferido = PR.conferir_o_encerramento(casa, agora=agora, afirmacoes=afirm)
+    assert len(conferido["afirmacoes"]) == len(pend)
+    assert all(a["afirmacao"] == AFIRMACAO and a["o_que_faltava"]
+               for a in conferido["afirmacoes"])
+
+
+def test_o_encerramento_grava_uma_vez_e_o_dia_seguinte_abre_com_ele(casa):
+    agora = ONTEM + "T18:00:00"
+    pend = PR.pendencias_para_encerrar(PR.cobrar_o_dia(casa, agora=agora))
+    conferido = PR.conferir_o_encerramento(casa, agora=agora,
+                                           afirmacoes=_todas(pend))
+    r = PR.gravar_o_encerramento(casa, conferido, agora=agora, usuario="MARIA")
+    casa.commit()
+    assert r["situacao"] == "COM_PENDENCIA" and r["id"]
+    with pytest.raises(PR.EncerramentoError):
+        PR.conferir_o_encerramento(casa, agora=ONTEM + "T19:00:00",
+                                   afirmacoes={})
+    with pytest.raises(PR.EncerramentoError):
+        PR.gravar_o_encerramento(casa, conferido, agora=agora, usuario="MARIA")
+    # O DIA SEGUINTE ABRE MOSTRANDO O QUE FICOU, sem depender de memoria.
+    r = PR.roteiro(casa, agora=HOJE + "T08:00:00")
+    ontem = r["de_ontem"]
+    assert ontem["dia_util_anterior"] == ONTEM
+    assert ontem["anterior_encerrado"] is True
+    assert ontem["ultimo"]["dia"] == ONTEM
+    assert [a["afirmacao"] for a in ontem["ultimo"]["afirmacoes"]] == [
+        AFIRMACAO] * len(pend)
+    assert _obrigacao(r, "dias_sem_encerramento")["situacao"] == PR.FEITO
+    assert _obrigacao(r, "dia_encerrado")["situacao"] == PR.PENDENTE
+
+
+def test_o_dia_que_ficou_sem_encerrar_e_cobrado_ate_o_proximo(casa):
+    casa.execute(
+        """INSERT INTO pt_encerramentos_do_dia(dia, situacao, encerrado_em,
+               encerrado_por) VALUES ('2026-10-27', 'COMPLETO',
+               '2026-10-27T18:00:00', 'MARIA')""")
+    casa.commit()
+    r = PR.roteiro(casa, agora=HOJE + "T08:00:00")
+    o = _obrigacao(r, "dias_sem_encerramento")
+    assert o["situacao"] == PR.ATRASADO and o["faltam"] == 1
+    assert "28/10" in o["lista"][0]["texto"]
+    assert r["de_ontem"]["anterior_encerrado"] is False
+    # Encerrar hoje exige afirmar tambem o dia que ficou — e, encerrado, ele
+    # deixa de ser cobrado.
+    pend = PR.pendencias_para_encerrar(r["condutas"])
+    assert "dias_sem_encerramento" in {p["chave"] for p in pend}
+    conferido = PR.conferir_o_encerramento(casa, agora=HOJE + "T18:00:00",
+                                           afirmacoes=_todas(pend))
+    PR.gravar_o_encerramento(casa, conferido, agora=HOJE + "T18:00:00",
+                             usuario="MARIA")
+    casa.commit()
+    depois = PR.roteiro(casa, agora=HOJE + "T18:05:00")
+    assert _obrigacao(depois, "dias_sem_encerramento")["situacao"] == PR.FEITO
+    assert _obrigacao(depois, "dia_encerrado")["situacao"] == PR.FEITO
+
+
+def test_sem_encerramento_nenhum_nao_ha_dia_atrasado(casa):
+    """A obrigacao nasce com o primeiro encerramento — sem alarme no primeiro
+    dia da instalacao, sobre um dever que ainda nao existia."""
+    o = _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T09:00:00"),
+                   "dias_sem_encerramento")
+    assert o["situacao"] == PR.FEITO
+
+
+def test_sem_medida_nao_prende_o_dia():
+    condutas = [{"n": 1, "titulo": "X", "obrigacoes": [
+        {"chave": "a", "rotulo": "a", "situacao": PR.SEM_MEDIDA, "faltam": None,
+         "atrasados": 0},
+        {"chave": "b", "rotulo": "b", "situacao": PR.FEITO, "faltam": 0,
+         "atrasados": 0},
+        {"chave": PR.OBRIGACAO_DO_PROPRIO_ENCERRAMENTO, "rotulo": "c",
+         "situacao": PR.PENDENTE, "faltam": 1, "atrasados": 0}]}]
+    assert PR.pendencias_para_encerrar(condutas) == []
+
+
+def test_o_livro_de_protocolo_que_nao_esta_aberto_nao_e_cobrado(casa):
+    """Medido em 29/10/2026: o Livro de Protocolo do Protesto nunca foi aberto
+    no nucleo. Cobrar termo de livro que a casa nao usa seria o alarme que
+    soa sempre; com o livro aberto, o dia com movimento sem termo e cobrado."""
+    tem = casa.execute("SELECT 1 FROM nu_livros WHERE serie = ?",
+                       (PR.SERIE_DO_PROTOCOLO,)).fetchone()
+    o = _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T09:00:00"),
+                   "termo_do_protocolo")
+    if not tem:
+        assert o["situacao"] == PR.SEM_MEDIDA and "não se aplica" in o["motivo"]
+
+
+# ------------------------------------------------- os ganchos das outras pecas
+
+
+def _gancho(monkeypatch, funcao, **extra):
+    import types
+    modulo = types.ModuleType("peca_de_teste_do_roteiro")
+    if funcao is not None:
+        modulo.pendencias = funcao
+    monkeypatch.setitem(sys.modules, "peca_de_teste_do_roteiro", modulo)
+    g = {"chave": "peca_de_teste", "conduta": "protestos",
+         "rotulo": "a peça de teste", "modulo": "peca_de_teste_do_roteiro",
+         "funcao": "pendencias", "de_onde": "o teste", **extra}
+    monkeypatch.setattr(PR, "GANCHOS", (g,))
+
+
+def test_gancho_ausente_e_ainda_nao_instalado_e_nao_prende_o_dia(
+        casa, monkeypatch):
+    _gancho(monkeypatch, None)
+    o = _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T09:00:00"),
+                   "peca_de_teste")
+    assert o["situacao"] == PR.SEM_MEDIDA
+    assert "ainda não instalada" in o["motivo"]
+
+
+def test_gancho_que_conta_e_que_lista_vira_pendencia(casa, monkeypatch):
+    _gancho(monkeypatch, lambda con: 3, tela="protesto_titulos")
+    o = _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T09:00:00"),
+                   "peca_de_teste")
+    assert o["situacao"] == PR.PENDENTE and o["faltam"] == 3
+    _gancho(monkeypatch, lambda con: [
+        {"titulo_id": 7, "protocolo": "2610290001", "explicacao": "sem ato"},
+        {"titulo_id": 8, "origem": "ACERVO", "explicacao": "do acervo"}])
+    o = _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T09:00:00"),
+                   "peca_de_teste")
+    assert o["faltam"] == 1, "o acervo nao vira trabalho de hoje"
+    assert o["lista"][0]["args"] == {"titulo_id": 7}
+    assert o["situacao"] == PR.PENDENTE, "gancho nao tem prazo aqui"
+
+
+def test_gancho_que_estoura_nao_derruba_o_roteiro(casa, monkeypatch):
+    def quebra(con):
+        con.execute("SELECT * FROM tabela_que_nao_existe_no_roteiro")
+    _gancho(monkeypatch, quebra)
+    r = PR.roteiro(casa, agora=HOJE + "T09:00:00")
+    o = _obrigacao(r, "peca_de_teste")
+    assert o["situacao"] == PR.SEM_MEDIDA and "não respondeu" in o["motivo"]
+    assert r["de_ontem"]["dia_util_anterior"] == ONTEM, (
+        "a leitura desfeita nao leva junto o resto do roteiro")
+
+
+def test_os_ganchos_declarados_apontam_para_condutas_que_existem():
+    chaves = {c["chave"] for c in PR.CONDUTAS_DO_DIA}
+    for g in PR.GANCHOS:
+        assert g["conduta"] in chaves and g["conduta"] != "encerrar", g
+        for campo in ("chave", "rotulo", "modulo", "funcao", "de_onde"):
+            assert g[campo], (g, campo)
+    assert {(g["modulo"], g["funcao"]) for g in PR.GANCHOS} >= {
+        ("protesto_selo_previo", "pendencias_do_selo"),
+        ("protesto_selo_previo", "titulos_sem_ato_que_sustente"),
+        ("cenprot_conferencia", "quantos_divergem")}
+
+
+# ------------------------------------------------- o encerramento pela tela
+
+
+def test_a_tela_encerra_com_afirmacao_e_grava_a_auditoria(s, cg_casa):
+    html = s.get("/protesto/roteiro").get_data(as_text=True)
+    assert 'id="o-que-ficou"' in html and "Primeiro: o que ficou de antes" in html
+    itens = re.findall(r'name="item" value="([^"]+)"', html)
+    token = _token(html)
+    sem = s.post("/protesto/roteiro/encerrar",
+                 data={"csrf_token": token, "item": itens},
+                 follow_redirects=True).get_data(as_text=True)
+    if itens:
+        assert "não se encerra" in sem
+    dados = {"csrf_token": token, "item": itens}
+    for chave in itens:
+        dados[f"afirmo_{chave}"] = "1"
+        dados[f"afirmacao_{chave}"] = AFIRMACAO
+    fim = s.post("/protesto/roteiro/encerrar", data=dados,
+                 follow_redirects=True).get_data(as_text=True)
+    assert "O dia de hoje está encerrado" in fim
+    con = sqlite3.connect(cg_casa["banco"])
+    con.row_factory = sqlite3.Row
+    assert con.execute(
+        "SELECT COUNT(*) FROM pt_encerramentos_do_dia").fetchone()[0] == 1
+    regras = [json.loads(x["details"])["regra"] for x in con.execute(
+        "SELECT details FROM audit_logs WHERE action = 'AFIRMACAO_EXPRESSA'")]
+    assert regras == [PR.REGRA_DO_ENCERRAMENTO] * len(itens)
+    con.close()

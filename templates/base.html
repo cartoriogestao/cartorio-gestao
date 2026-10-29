@@ -484,12 +484,6 @@
         <a href="{{ url_for('protesto_cenprot') }}">Chave do CENPROT</a>
         {# «Trazer protesto do E-Ofício» saiu em 17/10/2026 (importação
            terminada); a rota fica, sem link. #}
-        {# AS AFIRMACOES EXPRESSAS SAO DO OFICIAL — ordem dele em 29/10/2026:
-           «se insistir em algo que eh erro, precisa afirmar expressamente e
-           deixar log». Secao propria, e so para o ADMIN: secao que o balcao
-           veria vazia e a que o teste recusa. #}
-        {% if user.role == 'ADMIN' %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Do oficial</div>
-        <a href="{{ url_for('protesto_afirmacoes') }}">Afirmações expressas</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>
         {# O SUBMODULO DE MODELOS DESTA ATRIBUICAO — 07/09/2026, ordem do
            oficial. Cada papel e corpo + encerramento + rodape, e o que se
@@ -497,6 +491,12 @@
            **O cabecalho nao entra**, por decisao dele no mesmo dia: fica onde
            esta, para manter a forma. #}
         <a href="{{ url_for('protesto_modelos_papeis') }}">Modelos dos documentos</a>{% endif %}
+        {# AS AFIRMACOES EXPRESSAS SAO DO OFICIAL — ordem dele em 29/10/2026:
+           «se insistir em algo que eh erro, precisa afirmar expressamente e
+           deixar log». Secao propria, no fim do grupo, e so para o ADMIN:
+           secao que o balcao veria vazia e a que o teste recusa. #}
+        {% if user.role == 'ADMIN' %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Do oficial</div>
+        <a href="{{ url_for('protesto_afirmacoes') }}">Afirmações expressas</a>{% endif %}
       </details>
       {% endif %}
 

@@ -43,9 +43,24 @@ O QUE SAIU DO ROTEIRO, E A PROVA
     prova continua sendo conduta. E a excecao do automatico (o envio que
     falhou) continua cobrada, dentro da conduta da remessa.
 
-ESTE MODULO NAO FAZ NADA — ele COBRA. Nao gera arquivo, nao lavra ato, nao
-marca passo como feito. Quem faz e a tela de cada botao; quem diz se foi feito e
-o banco.
+O FECHAMENTO DO DIA, E O DIA SEGUINTE (acrescimo do oficial, 29/10/2026)
+    *«garantir que todos processos sejam concluidos todos os dias; nao deixar
+    margem para a escrevente esquecer ou fazer errado»*. A conduta 11, ENCERRAR
+    O DIA, so se conclui com as outras feitas; o que ficar exige a afirmacao
+    expressa de CADA item (`conferir_o_encerramento`), e o encerramento fica
+    gravado (`pt_encerramentos_do_dia`) com o que estava pendente e o que se
+    afirmou. No dia seguinte, `o_que_ficou` abre a tela com isso — e com o que
+    esta atrasado agora —, sem depender da memoria de ninguem.
+
+OS GANCHOS DAS OUTRAS PECAS (`GANCHOS`)
+    As pendencias que os outros pedidos da reestruturacao medem (selo previo,
+    situacao sem ato, prova da intimacao, conferencia CENPROT, titulos irmaos,
+    protocolo repetido) entram nas condutas por import tolerante: peca ausente
+    e a linha «ainda nao instalada», e nao erro.
+
+ESTE MODULO SO GRAVA O ENCERRAMENTO — o resto ele COBRA. Nao gera arquivo, nao
+lavra ato, nao marca passo como feito. Quem faz e a tela de cada botao; quem diz
+se foi feito e o banco.
 """
 from __future__ import annotations
 
@@ -370,6 +385,73 @@ CONDUTAS_DO_DIA: tuple[dict, ...] = (
                  "balcão)."),
      "botoes": ({"rotulo": "Repasses ao apresentante",
                  "tela": "protesto_repasses", "args": {}},)},
+    # O FECHAMENTO DO DIA (29/10/2026) — acrescimo do oficial: «garantir que
+    # todos processos sejam concluidos todos os dias; nao deixar margem para a
+    # escrevente esquecer ou fazer errado». So se conclui com as outras dez
+    # FEITAS; o que ficar exige afirmacao expressa POR ITEM, e o dia seguinte
+    # abre mostrando isso primeiro.
+    {"n": 11, "chave": "encerrar", "ancora": "conduta-encerrar",
+     "titulo": "Encerrar o dia",
+     "hora": None,
+     "conduta": ("No fim do expediente, encerre o dia no fim desta página. Ele "
+                 "só se encerra com as outras condutas feitas; o que ficar "
+                 "exige a sua afirmação expressa, item por item, e aparece "
+                 "primeiro no roteiro do dia seguinte. Encerre também o termo "
+                 "diário do Livro de Protocolo, quando ele estiver aberto no "
+                 "núcleo."),
+     "botoes": ({"rotulo": "Encerrar o dia",
+                 "tela": "protesto_painel", "args": {},
+                 "ancora": "encerrar-o-dia"},
+                {"rotulo": "Termo diário do Livro de Protocolo",
+                 "tela": "nucleo_encerramento_diario", "args": {}})},
+)
+
+# ------------------------------------------- os ganchos das outras pecas
+
+# AS PENDENCIAS QUE AS OUTRAS PECAS DA REESTRUTURACAO DE 29/10/2026 MEDEM. Cada
+# uma mora no modulo dela, e o roteiro so as LE — por import tolerante: modulo
+# ou funcao que ainda nao existe no main vira a linha «ainda nao instalada», e
+# nao erro, para este roteiro nao depender da ordem em que os pedidos entram.
+#
+# A FUNCAO RECEBE `con` E DEVOLVE O QUE TEM: um numero (quantos), ou uma lista
+# de linhas (dicionarios com `titulo_id`, `protocolo`, `numero_titulo`,
+# `explicacao`/`texto`/`motivo`). Linha com `origem = 'ACERVO'` nao entra: o
+# acervo nao vira trabalho de hoje. NENHUM GANCHO TEM PRAZO AQUI — quem sabe
+# o prazo e a peca dele; o roteiro cobra como pendente.
+#
+# `nome_a_confirmar`: o nome do modulo e da funcao foi escrito antes de a peca
+# existir no main; quando ela entrar com outro nome, corrige-se aqui, numa
+# linha so — e ate la a linha diz «ainda nao instalada», que e a verdade.
+GANCHOS: tuple[dict, ...] = (
+    {"chave": "atos_sem_selo", "conduta": "protestos",
+     "rotulo": "atos que esperam o selo (selo prévio)",
+     "modulo": "protesto_selo_previo", "funcao": "pendencias_do_selo",
+     "de_onde": "PR #103, o selo conferido antes de lavrar"},
+    {"chave": "situacao_sem_ato", "conduta": "protestos",
+     "rotulo": "títulos cuja situação não tem o ato que a sustente",
+     "modulo": "protesto_selo_previo",
+     "funcao": "titulos_sem_ato_que_sustente",
+     "de_onde": "PR #103, a situação sem ato"},
+    {"chave": "intimacao_sem_prova", "conduta": "entregas",
+     "rotulo": "intimações sem a prova que o protesto exige",
+     "modulo": "protesto_prova_intimacao", "funcao": "intimacoes_sem_prova",
+     "de_onde": "a trava do protesto pela prova da intimação",
+     "nome_a_confirmar": True},
+    {"chave": "cenprot_diverge", "conduta": "cenprot",
+     "rotulo": "títulos em que a CENPROT e o sistema divergem",
+     "modulo": "cenprot_conferencia", "funcao": "quantos_divergem",
+     "tela": "protesto_cenprot_conferencia",
+     "de_onde": "PR #105, a conferência CENPROT × sistema"},
+    {"chave": "titulos_irmaos", "conduta": "remessa",
+     "rotulo": "títulos irmãos a conferir",
+     "modulo": "protesto_titulos_irmaos", "funcao": "pendencias_dos_irmaos",
+     "de_onde": "a conferência dos títulos irmãos",
+     "nome_a_confirmar": True},
+    {"chave": "protocolo_repetido", "conduta": "retorno",
+     "rotulo": "atos do retorno com protocolo repetido",
+     "modulo": "protesto_retorno", "funcao": "protocolos_repetidos_na_fila",
+     "de_onde": "o retorno com protocolo repetido",
+     "nome_a_confirmar": True},
 )
 
 
@@ -476,7 +558,8 @@ def _item(texto: str, *, quando=None, prazo: datetime | None, ctx: dict,
 
 def _obrigacao(chave: str, rotulo: str, itens: list[dict] | None, *,
                regra: str, tem_prazo: bool, motivo: str = "",
-               feito: str = "", nota: str = "") -> dict:
+               feito: str = "", nota: str = "",
+               quantos: int | None = None) -> dict:
     """A obrigacao pronta para a tela, com a situacao calculada.
 
     `itens` None e «nao deu para medir»; lista vazia e «nada falta» — medido.
@@ -496,8 +579,12 @@ def _obrigacao(chave: str, rotulo: str, itens: list[dict] | None, *,
     # OS ATRASADOS VEM PRIMEIRO: e o que a escrevente tem de fazer antes.
     ordem = sorted(itens, key=lambda i: not i["atrasado"])
     situacao = (ATRASADO if atrasados else PENDENTE if itens else FEITO)
+    # `quantos`: quando a fonte so diz o numero (uma linha na lista, «N
+    # titulos — abra a tela»), o que falta e o numero, e nao a linha.
     return {"chave": chave, "rotulo": rotulo, "regra": regra,
-            "situacao": situacao, "faltam": len(itens),
+            "situacao": situacao,
+            "faltam": (int(quantos) if quantos is not None and itens
+                       else len(itens)),
             "atrasados": atrasados, "lista": ordem[:LINHAS_NA_LISTA],
             "mais": max(0, len(itens) - LINHAS_NA_LISTA), "motivo": motivo,
             "feito": feito if not itens else "", "nota": nota}
@@ -1180,6 +1267,218 @@ def _cobrar_repasse(con, ctx: dict) -> list[dict]:
                        feito="todo pagamento tem repasse")]
 
 
+# ------------------------------------------------------- 11. encerrar o dia
+
+#: A serie do Livro de Protocolo do Protesto no nucleo (`livro_nucleo`).
+SERIE_DO_PROTOCOLO = "PT_PROTOCOLO"
+#: Quantos dias para tras se procura dia sem encerramento. Mais que isso e
+#: outra conversa — e a lista que nao cabe na tela ja e outro problema.
+DIAS_PARA_TRAS = 30
+
+
+def encerramento_do_dia(con, dia: str) -> dict | None:
+    """O encerramento gravado daquele dia, com as listas lidas. SO LE."""
+    if not _existe(con, "pt_encerramentos_do_dia"):
+        return None
+    linha = banco(con).um(
+        "SELECT * FROM pt_encerramentos_do_dia WHERE dia = %s",
+        (str(dia)[:10],))
+    return _encerramento_lido(linha)
+
+
+def _encerramento_lido(linha) -> dict | None:
+    if not linha:
+        return None
+    e = dict(linha)
+    for campo in ("pendencias_json", "afirmacoes_json"):
+        try:
+            e[campo[:-5]] = json.loads(e.get(campo) or "[]")
+        except (TypeError, ValueError):
+            e[campo[:-5]] = []
+    return e
+
+
+def _dia_util_anterior(dia: date, ctx: dict) -> date:
+    from ri_schema import eh_dia_util
+    anterior = dia - timedelta(days=1)
+    for _ in range(DIAS_PARA_TRAS):
+        if eh_dia_util(anterior, ctx["feriados"]):
+            break
+        anterior -= timedelta(days=1)
+    return anterior
+
+
+def _cobrar_encerramento(con, ctx: dict) -> list[dict]:
+    """O termo do livro de protocolo, os dias que ficaram sem fechar e hoje.
+
+    O TERMO DIARIO DO NUCLEO E OUTRA COISA, E ENTRA COMO ITEM: aquele e ato
+    escrito no Livro de Protocolo (`escrituracao.encerrar_o_dia`), e este e a
+    conferencia do dia de trabalho. Medido na producao em 29/10/2026: o Livro
+    de Protocolo do Protesto NUNCA foi aberto no nucleo (zero livros
+    `PT_PROTOCOLO`, zero termos diarios) — e por isso, sem livro, o item diz
+    «nao se aplica», em vez de cobrar termo de livro que a casa nao usa.
+    """
+    saida = []
+    chave, rotulo = ("termo_do_protocolo",
+                     "dias com movimento no Livro de Protocolo sem o termo "
+                     "de encerramento diário")
+    regra = "o livro diário se encerra no dia (Lei 9.492/1997, art. 33)"
+    if not _existe(con, "nu_livros", "nu_encerramentos_diarios"):
+        saida.append(_sem_tabela(chave, rotulo, regra, "nu_livros"))
+    elif not banco(con).um("SELECT 1 AS um FROM nu_livros WHERE serie = %s "
+                           "LIMIT 1", (SERIE_DO_PROTOCOLO,)):
+        saida.append(_obrigacao(
+            chave, rotulo, None, regra=regra, tem_prazo=False,
+            motivo=("não se aplica: o Livro de Protocolo do Protesto não está "
+                    "aberto no núcleo")))
+    else:
+        import escrituracao as ESC
+        itens = []
+        for dia in ESC.dias_sem_encerrar(con, SERIE_DO_PROTOCOLO):
+            d = _dia(dia)
+            itens.append(_item(f"termo diário de {_br(dia)}", quando=dia,
+                               prazo=_as(d, "23:59") if d else None, ctx=ctx,
+                               tela="nucleo_encerramento_diario"))
+        saida.append(_obrigacao(chave, rotulo, itens, regra=regra,
+                                tem_prazo=True,
+                                feito="todo dia com movimento tem termo"))
+
+    chave, rotulo = ("dias_sem_encerramento",
+                     "dias de expediente que ficaram sem encerrar o roteiro")
+    regra = ("todo dia de expediente se encerra; conta a partir do último "
+             "encerramento gravado")
+    if not _existe(con, "pt_encerramentos_do_dia"):
+        saida.append(_sem_tabela(chave, rotulo, regra,
+                                 "pt_encerramentos_do_dia"))
+        saida.append(_sem_tabela("dia_encerrado", "o dia de hoje foi encerrado",
+                                 "", "pt_encerramentos_do_dia"))
+        return saida
+    from ri_schema import eh_dia_util
+    hoje = encerramento_do_dia(con, ctx["dia"])
+    linha = banco(con).um(
+        "SELECT MAX(dia) AS ultimo FROM pt_encerramentos_do_dia WHERE dia < %s",
+        (ctx["dia"],))
+    ultimo = _dia((linha or {}).get("ultimo"))
+    # SEM NENHUM ENCERRAMENTO GRAVADO NAO HA DIA ATRASADO: a obrigacao nasce
+    # com o primeiro. Cobrar os dias de antes dela seria o alarme do primeiro
+    # dia da instalacao, sobre um dever que ainda nao existia. E O DIA DE HOJE,
+    # JA ENCERRADO, COBRIU OS DE ANTES: para encerrar, cada um deles foi
+    # afirmado — esta lista estava entre as pendencias.
+    itens = []
+    if ultimo is not None and not hoje:
+        d = max(ultimo + timedelta(days=1),
+                ctx["hoje"] - timedelta(days=DIAS_PARA_TRAS))
+        while d < ctx["hoje"]:
+            if eh_dia_util(d, ctx["feriados"]):
+                itens.append(_item(f"{_br(d.isoformat())} não foi encerrado",
+                                   quando=d.isoformat(),
+                                   prazo=_as(d, "23:59"), ctx=ctx,
+                                   tela="protesto_painel"))
+            d += timedelta(days=1)
+    saida.append(_obrigacao(
+        chave, rotulo, itens, regra=regra, tem_prazo=True,
+        feito=("nenhum dia ficou sem encerrar" if ultimo or hoje
+               else "nenhum encerramento gravado ainda — a conta começa no "
+                    "primeiro")))
+
+    saida.append(_obrigacao(
+        "dia_encerrado", "o dia de hoje foi encerrado",
+        [] if hoje else [_item("o dia de hoje ainda não foi encerrado",
+                               prazo=None, ctx=ctx, tela="protesto_painel")],
+        regra="no fim do expediente", tem_prazo=False,
+        feito=(f"encerrado por {hoje.get('encerrado_por') or '—'} às "
+               f"{str(hoje.get('encerrado_em') or '')[11:16]}"
+               + (f", com {hoje.get('pendencias')} item(ns) afirmado(s)"
+                  if hoje.get("pendencias") else ", com tudo feito")
+               if hoje else "")))
+    return saida
+
+
+# --------------------------------------------------- os ganchos, lidos
+
+
+def _desfazer_a_leitura(con) -> None:
+    """Depois de uma consulta que estourou, a transacao de leitura do
+    PostgreSQL fica abortada, e a proxima consulta tambem estouraria. So se
+    desfaz LEITURA aqui: os ganchos rodam fora de qualquer escrita."""
+    desfazer = getattr(con, "rollback", None)
+    if callable(desfazer):
+        desfazer()
+
+
+def _itens_do_gancho(achado, g: dict, ctx: dict) -> tuple[list | None, int | None]:
+    """O que a peca devolveu, como linhas do roteiro. (None, None) quando a
+    forma nao e nenhuma das combinadas — e a linha diz isso."""
+    if isinstance(achado, bool):
+        achado = int(achado)
+    if isinstance(achado, int):
+        if not achado:
+            return [], None
+        return [_item(f"{achado} — abra a tela para ver quais", prazo=None,
+                      ctx=ctx, tela=g.get("tela"))], achado
+    if isinstance(achado, dict):
+        achado = (achado.get("linhas") or achado.get("itens")
+                  or achado.get("lista") or [])
+    if not isinstance(achado, (list, tuple)):
+        return None, None
+    itens = []
+    for linha in achado:
+        if not isinstance(linha, dict):
+            itens.append(_item(str(linha), prazo=None, ctx=ctx))
+            continue
+        if str(linha.get("origem") or "").upper() == "ACERVO":
+            continue
+        partes = [p for p in (
+            (f"título {linha['numero_titulo']}" if linha.get("numero_titulo")
+             else ""),
+            (f"protocolo {linha['protocolo']}" if linha.get("protocolo")
+             else ""),
+            str(linha.get("explicacao") or linha.get("texto")
+                or linha.get("motivo") or "")) if p]
+        tid = linha.get("titulo_id")
+        itens.append(_item(" — ".join(partes) or json.dumps(
+            linha, ensure_ascii=False, default=str)[:200], prazo=None, ctx=ctx,
+            tela="protesto_titulo" if tid else g.get("tela"),
+            args={"titulo_id": tid} if tid else None))
+    return itens, None
+
+
+def _rodar_gancho(con, ctx: dict, g: dict) -> dict:
+    """Le a pendencia de outra peca. Ausente = «ainda nao instalada»."""
+    import importlib
+    regra = f"medido por {g['de_onde']}"
+    try:
+        modulo = importlib.import_module(g["modulo"])
+    except ImportError:
+        modulo = None
+    funcao = getattr(modulo, g["funcao"], None) if modulo else None
+    if not callable(funcao):
+        return _obrigacao(
+            g["chave"], g["rotulo"], None, regra=regra, tem_prazo=False,
+            motivo=(f"ainda não instalada ({g['de_onde']}: "
+                    f"{g['modulo']}.{g['funcao']})"))
+    # O GANCHO QUE ESTOURA NAO DERRUBA O ROTEIRO: ele vira «nao respondeu»,
+    # com o erro a vista — nunca zero. E a peca de outro pedido, e o roteiro
+    # inteiro fora do ar por causa dela seria o balcao sem roteiro nenhum.
+    try:
+        achado = funcao(con)
+    except Exception as erro:  # noqa: BLE001 — o motivo vai a tela
+        _desfazer_a_leitura(con)
+        return _obrigacao(
+            g["chave"], g["rotulo"], None, regra=regra, tem_prazo=False,
+            motivo=(f"{g['modulo']}.{g['funcao']} não respondeu: "
+                    f"{type(erro).__name__}: {erro}"[:300]))
+    itens, quantos = _itens_do_gancho(achado, g, ctx)
+    if itens is None:
+        return _obrigacao(
+            g["chave"], g["rotulo"], None, regra=regra, tem_prazo=False,
+            motivo=(f"{g['modulo']}.{g['funcao']} respondeu numa forma que o "
+                    f"roteiro não lê ({type(achado).__name__})"))
+    return _obrigacao(g["chave"], g["rotulo"], itens, regra=regra,
+                      tem_prazo=False, quantos=quantos,
+                      feito="nada pendente")
+
+
 _COBRANCA_DA_CONDUTA = {
     "retorno": _cobrar_retorno,
     "remessa": _cobrar_remessa,
@@ -1191,6 +1490,7 @@ _COBRANCA_DA_CONDUTA = {
     "xml": _cobrar_xml,
     "cenprot": _cobrar_cenprot,
     "repasse": _cobrar_repasse,
+    "encerrar": _cobrar_encerramento,
 }
 
 
@@ -1222,13 +1522,158 @@ def cobrar_o_dia(con: sqlite3.Connection, *, agora: str) -> list[dict]:
         h = horas.get(c.get("hora") or "")
         linha["hora_limite"] = h["hora"] if h else None
         linha["obrigacoes"] = _COBRANCA_DA_CONDUTA[c["chave"]](con, ctx)
-        linha["situacao"] = _situacao_da_conduta(linha["obrigacoes"])
-        linha["faltam"] = sum(o["faltam"] or 0 for o in linha["obrigacoes"])
-        linha["atrasados"] = sum(o["atrasados"] for o in linha["obrigacoes"])
         linha["papel"] = [f"{central}: {p['passo']}" for central, p in papel
                           if p.get("conduta") == c["chave"]]
         saida.append(linha)
+    # OS GANCHOS RODAM POR ULTIMO: a peca de outro pedido que estoura desfaz a
+    # leitura, e o que ja foi medido nao se perde. Cada um entra na conduta
+    # dele, antes do encerramento — que so se calcula com eles dentro.
+    por_chave = {c["chave"]: c for c in saida}
+    for g in GANCHOS:
+        por_chave[g["conduta"]]["obrigacoes"].append(_rodar_gancho(con, ctx, g))
+    for linha in saida:
+        linha["situacao"] = _situacao_da_conduta(linha["obrigacoes"])
+        linha["faltam"] = sum(o["faltam"] or 0 for o in linha["obrigacoes"])
+        linha["atrasados"] = sum(o["atrasados"] for o in linha["obrigacoes"])
     return saida
+
+
+# ------------------------------------------------------ o encerramento
+
+#: A regra que a afirmacao do encerramento grava — o contrato comum da casa.
+REGRA_DO_ENCERRAMENTO = "DIA_ENCERRADO_COM_PENDENCIA"
+#: O piso da afirmacao: LETRAS, e nao caracteres — «.......» nao e afirmacao
+#: de ninguem. E o mesmo piso das outras travas da reestruturacao.
+MINIMO_DE_LETRAS_DA_AFIRMACAO = 30
+MODELO_DA_AFIRMACAO = "Afirmo, sob minha responsabilidade, que"
+#: A obrigacao que o encerramento CUMPRE nao entra na lista do que ele cobra.
+OBRIGACAO_DO_PROPRIO_ENCERRAMENTO = "dia_encerrado"
+
+
+class EncerramentoError(ValueError):
+    """O dia nao se encerra — a frase diz o que falta."""
+
+
+def pendencias_para_encerrar(condutas: list[dict]) -> list[dict]:
+    """O que esta PENDENTE ou ATRASADO no dia, item por item. So calcula.
+
+    SEM MEDIDA NAO PRENDE O DIA: o que nao deu para medir nesta instalacao (a
+    tabela que nao existe, a peca ainda nao instalada) nao e pendencia de
+    ninguem — e dizer que e seria o alarme que soa sempre.
+    """
+    saida = []
+    for c in condutas:
+        for o in c["obrigacoes"]:
+            if o["chave"] == OBRIGACAO_DO_PROPRIO_ENCERRAMENTO:
+                continue
+            if o["situacao"] in (PENDENTE, ATRASADO):
+                saida.append({
+                    "chave": o["chave"], "conduta_n": c["n"],
+                    "conduta": c["titulo"], "rotulo": o["rotulo"],
+                    "situacao": o["situacao"], "faltam": o["faltam"],
+                    "atrasados": o["atrasados"],
+                    "o_que_faltava": (
+                        f"conduta {c['n']} ({c['titulo']}): {o['rotulo']} — "
+                        f"{o['faltam']} pendente(s)"
+                        + (f", {o['atrasados']} atrasado(s)"
+                           if o["atrasados"] else ""))})
+    return saida
+
+
+def _letras(texto: str) -> int:
+    return sum(1 for ch in texto if ch.isalpha())
+
+
+def conferir_o_encerramento(con, *, agora: str,
+                            afirmacoes: dict) -> dict:
+    """Confere se o dia pode ser encerrado. SO LE; recusa com a lista.
+
+    `afirmacoes` e `{chave da obrigacao: (afirmo, texto)}` — o contrato comum
+    da casa, item por item: a caixa «Afirmo» marcada E pelo menos 30 letras.
+    O que se confere e a lista calculada AQUI, e nao a que veio do
+    formulario: item que a tela nao mostrou continua pendente, e chave que
+    nao e pendencia e ignorada.
+    """
+    if not _existe(con, "pt_encerramentos_do_dia"):
+        raise EncerramentoError(
+            "Esta instalação ainda não tem onde guardar o encerramento do dia "
+            "— atualize o sistema antes de encerrar.")
+    dia = str(agora)[:10]
+    ja = encerramento_do_dia(con, dia)
+    if ja:
+        raise EncerramentoError(
+            f"O dia {_br(dia)} já foi encerrado por "
+            f"{ja.get('encerrado_por') or '—'} às "
+            f"{str(ja.get('encerrado_em') or '')[11:16]}.")
+    pendencias = pendencias_para_encerrar(cobrar_o_dia(con, agora=agora))
+    afirmadas, sem = [], []
+    for p in pendencias:
+        afirmo, texto = afirmacoes.get(p["chave"]) or (False, "")
+        texto = " ".join(str(texto or "").split())
+        if afirmo and _letras(texto) >= MINIMO_DE_LETRAS_DA_AFIRMACAO:
+            afirmadas.append(dict(p, afirmacao=texto))
+        else:
+            sem.append(p)
+    if sem:
+        lista = "; ".join(f"{p['conduta_n']}. {p['conduta']} — {p['rotulo']} "
+                          f"({p['faltam']})" for p in sem)
+        raise EncerramentoError(
+            f"O dia não se encerra: {len(sem)} item(ns) pendente(s) sem "
+            f"afirmação — {lista}. Faça o que falta, ou, em CADA item, marque "
+            f"«Afirmo» e escreva pelo menos {MINIMO_DE_LETRAS_DA_AFIRMACAO} "
+            f"letras, começando por «{MODELO_DA_AFIRMACAO}…». A afirmação fica "
+            f"gravada com o seu nome e aparece primeiro amanhã.")
+    return {"dia": dia, "pendencias": pendencias, "afirmacoes": afirmadas}
+
+
+def gravar_o_encerramento(con, conferido: dict, *, agora: str,
+                          usuario: str | None) -> dict:
+    """Grava o encerramento conferido. ESCREVE; recusa o dia ja encerrado.
+
+    A conferencia roda numa leitura antes (`conferir_o_encerramento`), e esta
+    escrita so confere de novo o que a trava do banco garante: um por dia.
+    """
+    bd = banco(con)
+    dia = conferido["dia"]
+    if bd.um("SELECT 1 AS um FROM pt_encerramentos_do_dia WHERE dia = %s",
+             (dia,)):
+        raise EncerramentoError(f"O dia {_br(dia)} já foi encerrado.")
+    situacao = "COM_PENDENCIA" if conferido["afirmacoes"] else "COMPLETO"
+    novo = bd.escrever(
+        """INSERT INTO pt_encerramentos_do_dia(dia, situacao, pendencias,
+               pendencias_json, afirmacoes_json, encerrado_em, encerrado_por)
+           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+        (dia, situacao, len(conferido["afirmacoes"]),
+         json.dumps(conferido["pendencias"], ensure_ascii=False),
+         json.dumps(conferido["afirmacoes"], ensure_ascii=False),
+         agora, usuario))
+    return {"id": int(novo[0]["id"]), "dia": dia, "situacao": situacao,
+            "afirmacoes": conferido["afirmacoes"]}
+
+
+def o_que_ficou(con, *, agora: str, condutas: list[dict]) -> dict:
+    """O que o dia seguinte mostra PRIMEIRO, sem depender da memoria. SO LE.
+
+    O ultimo encerramento antes de hoje (com o que ficou e o que se afirmou),
+    se o dia util anterior foi encerrado, e o que esta atrasado agora — que e,
+    por definicao, o que veio de antes.
+    """
+    ctx = _contexto(con, agora)
+    anterior = _dia_util_anterior(ctx["hoje"], ctx).isoformat()
+    ultimo = None
+    if _existe(con, "pt_encerramentos_do_dia"):
+        ultimo = _encerramento_lido(banco(con).um(
+            """SELECT * FROM pt_encerramentos_do_dia WHERE dia < %s
+                ORDER BY dia DESC LIMIT 1""", (ctx["dia"],)))
+    atrasados = [{"n": c["n"], "titulo": c["titulo"], "ancora": c["ancora"],
+                  "rotulo": o["rotulo"], "atrasados": o["atrasados"]}
+                 for c in condutas for o in c["obrigacoes"]
+                 if o["situacao"] == ATRASADO]
+    return {"dia_util_anterior": anterior,
+            "anterior_encerrado": (None if not _existe(
+                con, "pt_encerramentos_do_dia")
+                else bool(ultimo and ultimo["dia"] == anterior)),
+            "ultimo": ultimo, "atrasados": atrasados}
 
 
 def estado_do_envio(con: sqlite3.Connection) -> dict:
@@ -1317,6 +1762,13 @@ def roteiro(con: sqlite3.Connection, *, agora: str) -> dict:
             papel.append(linha)
     return {"condutas": condutas, "relogio": relogio, "total": total,
             "estado": estado_do_envio(con),
+            # O FECHAMENTO E O DIA SEGUINTE (29/10/2026): o que ficou de ontem
+            # abre a tela; o que falta para encerrar hoje fecha.
+            "de_ontem": o_que_ficou(con, agora=agora, condutas=condutas),
+            "para_encerrar": pendencias_para_encerrar(condutas),
+            "encerrado_hoje": encerramento_do_dia(con, str(agora)[:10]),
+            "minimo_de_letras": MINIMO_DE_LETRAS_DA_AFIRMACAO,
+            "modelo_da_afirmacao": MODELO_DA_AFIRMACAO,
             "fora_do_roteiro": [dict(f) for f in FORA_DO_ROTEIRO],
             "papel": papel, "horarios": [dict(h) for h in HORARIOS_DA_CRA],
             "so_o_tabeliao": list(SO_O_TABELIAO), "fontes": list(FONTES),

@@ -60,6 +60,44 @@
   · <a href="#roteiro-das-centrais">O papel das Centrais</a>
 </nav>
 
+{# PRIMEIRO, O QUE FICOU DE ANTES — acréscimo do oficial em 29/10/2026: «não
+   deixar margem para a escrevente esquecer». O último encerramento (com o
+   que se afirmou), se o dia útil anterior foi encerrado, e o que está
+   atrasado agora — sem depender da memória de ninguém. #}
+{% set ontem = r.de_ontem %}
+{% macro br(d) %}{{ d[8:10] }}/{{ d[5:7] }}/{{ d[:4] }}{% endmacro %}
+<section class="panel rt-conduta {{ 's-ATRASADO' if ontem.atrasados or ontem.anterior_encerrado == false else 's-FEITO' }}" id="o-que-ficou">
+  <div class="panel-head"><span>Primeiro: o que ficou de antes</span>
+    <small>dia útil anterior: {{ br(ontem.dia_util_anterior) }}</small></div>
+  {% if ontem.anterior_encerrado is none %}
+    <p class="small">Esta instalação ainda não guarda o encerramento do dia.</p>
+  {% elif not ontem.anterior_encerrado %}
+    <p class="atrasado" style="color:#b42318"><strong>O dia útil anterior ({{ br(ontem.dia_util_anterior) }}) não foi encerrado.</strong></p>
+  {% endif %}
+  {% if ontem.ultimo %}
+    <p class="small">Último encerramento: <strong>{{ br(ontem.ultimo.dia) }}</strong>,
+      por {{ ontem.ultimo.encerrado_por or '—' }} às {{ (ontem.ultimo.encerrado_em or '')[11:16] }} —
+      {% if ontem.ultimo.afirmacoes %}<strong>{{ ontem.ultimo.afirmacoes | length }} item(ns) ficaram, com afirmação:</strong>{% else %}com tudo feito.{% endif %}</p>
+    {% if ontem.ultimo.afirmacoes %}
+      <ul class="rt-lista small">
+        {% for a in ontem.ultimo.afirmacoes %}
+          <li><strong>{{ a.o_que_faltava }}</strong><br><em>«{{ a.afirmacao }}»</em></li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% endif %}
+  {% if ontem.atrasados %}
+    <p style="margin-bottom:0"><strong>Atrasado agora — faça antes do resto:</strong></p>
+    <ul class="rt-lista small">
+      {% for x in ontem.atrasados %}
+        <li class="atrasado"><a href="#{{ x.ancora }}">{{ x.n }}. {{ x.titulo }}</a> — {{ x.rotulo }} ({{ x.atrasados }})</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="small">Nada atrasado.</p>
+  {% endif %}
+</section>
+
 {# O RESUMO: quantas condutas em cada situação, e quantas vezes alguém
    insistiu no que a regra diz que é erro. #}
 <section class="rt-resumo" aria-label="Resumo do dia">
@@ -151,6 +189,46 @@
       </div>
     {% endfor %}
     {% if c.papel %}<p class="rt-papel-do-passo">No papel: {{ c.papel | join('; ') }}.</p>{% endif %}
+    {% if c.chave == 'encerrar' %}
+      {# O ENCERRAMENTO — o único formulário desta tela. A lista do que falta
+         vem do servidor, e o servidor confere de novo: item que esta tela não
+         mostrou continua pendente. Cada item pendente pede a caixa «Afirmo» e
+         o texto (o contrato comum da casa), e vai à auditoria. #}
+      <div id="encerrar-o-dia" class="rt-obrig">
+      {% if r.encerrado_hoje %}
+        <p><strong>O dia de hoje está encerrado</strong> — por
+          {{ r.encerrado_hoje.encerrado_por or '—' }} às
+          {{ (r.encerrado_hoje.encerrado_em or '')[11:16] }}{% if r.encerrado_hoje.afirmacoes %},
+          com {{ r.encerrado_hoje.afirmacoes | length }} item(ns) afirmado(s){% endif %}.</p>
+      {% else %}
+        <form method="post" action="{{ url_for('protesto_encerrar_o_dia') }}" class="stack">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          {% if r.para_encerrar %}
+            <p style="margin:0"><strong>Falta(m) {{ r.para_encerrar | length }} item(ns).</strong>
+              Faça o que falta. Se for encerrar assim mesmo, em <strong>cada</strong> item
+              marque «Afirmo» e escreva por quê — pelo menos {{ r.minimo_de_letras }} letras.
+              A afirmação fica gravada com o seu nome e abre o roteiro de amanhã.</p>
+            {% for p in r.para_encerrar %}
+              <fieldset style="border:1px solid var(--border);border-radius:8px;padding:8px 12px">
+                <input type="hidden" name="item" value="{{ p.chave }}">
+                <legend><span class="rt-sit s-{{ p.situacao }}">{{ r.rotulo_da_situacao[p.situacao] }}</span>
+                  {{ p.conduta_n }}. {{ p.conduta }} — {{ p.rotulo }} ({{ p.faltam }}{% if p.atrasados %}, {{ p.atrasados }} atrasado(s){% endif %})</legend>
+                <label class="check"><input type="checkbox" name="afirmo_{{ p.chave }}" value="1">
+                  Afirmo — encerro o dia com este item pendente</label>
+                <label>Afirmação expressa
+                  <textarea name="afirmacao_{{ p.chave }}" rows="2"
+                            placeholder="{{ r.modelo_da_afirmacao }}…"></textarea></label>
+              </fieldset>
+            {% endfor %}
+            <div><button type="submit" class="primary">Encerrar o dia com os itens afirmados</button></div>
+          {% else %}
+            <p style="margin:0">Todas as condutas do dia estão feitas.</p>
+            <div><button type="submit" class="primary">Encerrar o dia</button></div>
+          {% endif %}
+        </form>
+      {% endif %}
+      </div>
+    {% endif %}
   </section>
   </li>
 {% endfor %}

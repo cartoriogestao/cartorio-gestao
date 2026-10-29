@@ -12,6 +12,27 @@
   <a class="button" href="{{ url_for('protesto_repasse_guia_relacao', guia_id=g.id) }}">Baixar a relação</a>
 </div>
 
+{% if g.situacao in ('GERADA', 'REGISTRADA') %}
+<section class="panel">
+  <div class="panel-head"><span>Onde emitir e pagar esta guia</span>
+    <small>repasse até {{ g.prazo or '—' }}{% if g.vencida %} — <strong class="danger">prazo vencido</strong>{% endif %}</small></div>
+  {% if g.centrais | length > 1 %}
+  <p style="padding:14px 14px 0"><strong class="danger">Esta relação mistura títulos de
+    {{ g.centrais | join(' e ') }}</strong>: cada Central se acerta no seu portal. Se o
+    portal não aceitar os dois juntos, cancele-a e gere as relações do dia (uma por Central).</p>
+  {% endif %}
+  <table class="table">
+    <thead><tr><th>Central</th><th>Onde</th><th>O passo</th><th>A conferir</th></tr></thead>
+    <tbody>
+      {% for passo in g.passos %}
+      <tr><td>{{ passo.central }}</td><td>{{ passo.onde }}</td>
+          <td><small>{{ passo.passo }}</small></td><td><small>{{ passo.a_conferir }}</small></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
 <section class="panel">
   <div class="panel-head"><span>A guia</span><small>{{ g.situacao }}</small></div>
   <table class="table">
@@ -37,7 +58,7 @@
   <form method="post" action="{{ url_for('protesto_repasse_guia_registrar', guia_id=g.id) }}"
         class="grid2" style="padding:14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>Número da guia (ou linha digitável) que o IEPTB emitiu
+    <label>Número da guia (ou linha digitável, ou referência da liquidação) que o portal emitiu
       <input name="identificador" required></label>
     <label>Vencimento <input type="date" name="vencimento"></label>
     <div class="actions"><button class="button">Registrar a guia</button></div>

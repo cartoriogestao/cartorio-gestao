@@ -687,23 +687,112 @@ def do_titulo(con, titulo_id: int) -> list[dict]:
         (int(titulo_id),))
 
 
-def a_entregar(con, limite: int = 200) -> list[dict]:
+# QUAIS PROTESTOS A FILA MOSTRA — pedido do oficial, 29/10/2026: «não quero
+# ter que clicar um por um». A fila MISTURA DUAS COISAS, e isso foi medido na
+# produção nesse dia (só leitura): **1.207** protestos sem instrumento, dos
+# quais **1.186** vieram do acervo do E-Ofício (`pt_atos.origem = 'EOFICIO'`)
+# e **21** foram lavrados neste sistema — 18 deles em 28/10. Os do acervo não
+# são trabalho de hoje (a regra «o acervo não vira atraso»), e sem separá-los
+# os 18 do dia ficavam afogados em mil e duzentos.
+#
+# A RÉGUA É A ORIGEM DO ATO, E NÃO A DO TÍTULO: `pt_titulos.origem` diz por
+# onde o título ENTROU (CRA, CENPROT, MANUAL) e não quem lavrou o protesto —
+# medido, nenhum título da fila tem origem EOFICIO.
+QUAIS_DA_FILA: dict[str, str] = {
+    "sistema": "lavrados neste sistema",
+    "acervo": "do acervo do E-Ofício",
+    "todos": "todos",
+}
+
+# OS ATALHOS DE DATA, em dias CORRIDOS contados para trás a partir de hoje
+# (0 = só hoje; 1 = hoje e ontem). Não são prazo — o art. 20 não se julga
+# aqui —, são só o recorte que o balcão pede para achar «os de ontem».
+ATALHOS_DE_DATA: dict[str, tuple[str, int]] = {
+    "hoje": ("hoje", 0),
+    "ontem": ("hoje e ontem", 1),
+    "semana": ("últimos 7 dias", 6),
+}
+
+
+def desde_do_atalho(atalho: str | None, hoje: str) -> str | None:
+    """A data (`AAAA-MM-DD`) de onde o atalho começa, ou `None`. Só calcula."""
+    from datetime import date, timedelta
+    escolha = ATALHOS_DE_DATA.get(str(atalho or ""))
+    if escolha is None:
+        return None
+    try:
+        dia = date.fromisoformat(_texto(hoje)[:10])
+    except ValueError:
+        return None
+    return (dia - timedelta(days=escolha[1])).isoformat()
+
+
+def _recorte_da_fila(quais: str, desde: str | None) -> tuple[str, list]:
+    """O pedaço de `WHERE` do recorte da fila, e os parâmetros dele."""
+    sql, params = "", []
+    if quais == "sistema":
+        sql += " AND a.origem <> 'EOFICIO'"
+    elif quais == "acervo":
+        sql += " AND a.origem = 'EOFICIO'"
+    if desde:
+        # `data_ato` é TEXTO — `AAAA-MM-DD`, às vezes com a hora junto (21
+        # dos 1.207 medidos) —, e a comparação de texto acerta as duas formas.
+        sql += " AND a.data_ato >= %s"
+        params.append(str(desde)[:10])
+    return sql, params
+
+
+def a_entregar(con, limite: int = 200, *, quais: str = "todos",
+               desde: str | None = None) -> list[dict]:
     """Os protestos lavrados que ainda não têm instrumento. Só LÊ.
 
     **CONTA, E NÃO JULGA** — a mesma regra do roteiro das Centrais. O art. 20
     põe o instrumento à disposição do apresentante no primeiro dia útil
     seguinte ao registro; quem diz se o prazo correu é quem tem o calendário
     do balcão, e não uma lista.
+
+    `quais` e `desde` recortam (29/10/2026): o mais novo vem primeiro, e o
+    acervo do E-Ofício pode ficar de fora sem sumir da contagem.
     """
+    recorte, params = _recorte_da_fila(quais, desde)
     return banco(con).ler(
-        """SELECT a.titulo_id, a.data_ato, t.protocolo, t.numero_titulo,
-                  t.apresentante_nome
+        f"""SELECT a.titulo_id, a.data_ato, a.origem, t.protocolo,
+                  t.numero_titulo, t.apresentante_nome
              FROM pt_atos a
              JOIN pt_titulos t ON t.id = a.titulo_id
             WHERE a.tipo = 'PROTESTO' AND a.cancelado = 0
               AND NOT EXISTS (SELECT 1 FROM pt_instrumentos i
-                               WHERE i.titulo_id = a.titulo_id)
-            ORDER BY a.data_ato DESC, a.id DESC LIMIT %s""", (int(limite),))
+                               WHERE i.titulo_id = a.titulo_id){recorte}
+            ORDER BY a.data_ato DESC, a.id DESC LIMIT %s""",
+        (*params, int(limite)))
+
+
+def quadro_da_fila(con, *, hoje: str) -> dict:
+    """Quantos esperam instrumento, separados como a tela os oferece. Só LÊ.
+
+    É o número que deixa claro o tamanho de cada pedaço: sem ele, «marcar
+    todos» numa fila de 200 linhas não diz se são os 18 do dia ou o acervo.
+    """
+    bd = banco(con)
+
+    def _conta(quais: str, desde: str | None = None) -> int:
+        recorte, params = _recorte_da_fila(quais, desde)
+        linha = bd.um(
+            f"""SELECT COUNT(*) AS c FROM pt_atos a
+                 WHERE a.tipo = 'PROTESTO' AND a.cancelado = 0
+                   AND NOT EXISTS (SELECT 1 FROM pt_instrumentos i
+                                    WHERE i.titulo_id = a.titulo_id){recorte}""",
+            tuple(params) or None)
+        return int(linha["c"] if linha else 0)
+
+    # `por_atalho[quais][atalho]`: o número ao lado de cada atalho é o do
+    # recorte que está na tela — «hoje (18)» sobre o acervo seria mentira.
+    return {"todos": _conta("todos"), "sistema": _conta("sistema"),
+            "acervo": _conta("acervo"),
+            "por_atalho": {
+                quais: {chave: _conta(quais, desde_do_atalho(chave, hoje))
+                        for chave in ATALHOS_DE_DATA}
+                for quais in QUAIS_DA_FILA}}
 
 
 def contagens(con) -> dict:
@@ -789,6 +878,212 @@ def assinado_do_titulo(con, titulo_id: int) -> bytes | None:
     if not caminho or not Path(caminho).exists():
         return None
     return Path(caminho).read_bytes()
+
+
+# ------------------------------------------------------------- em lote
+#
+# Pedido do oficial, 29/10/2026: «não quero ter que clicar um por um, tem que
+# ter a opção de selecionar todos instrumentos pendentes». Havia 18 protestos
+# de 28/10 esperando, e a tela pedia «Emitir» em cada um e depois «Assinar» em
+# cada instrumento.
+#
+# O QUE SE JUNTA É O CLIQUE, E NÃO O ATO — a régua do «A protestar». Cada
+# instrumento continua sendo o seu: número do exercício, teor congelado, hash
+# e linha própria na fila de assinatura. E UM QUE FALHA NÃO DERRUBA OS OUTROS:
+# cada título vai na sua própria transação, e a tela diz quais saíram e quais
+# não, com o motivo de cada um.
+
+
+class JaTemInstrumento(InstrumentoError):
+    """O título já tem instrumento — segunda via não sai em lote."""
+
+
+class JaAssinado(InstrumentoError):
+    """O instrumento já está assinado — assinar de novo gastaria o PIN à toa."""
+
+
+class AssinaturaInterrompida(InstrumentoError):
+    """A falha é do TOKEN ou do serviço, e não do papel: o lote para aqui.
+
+    Serviço fora do ar, janela do PIN cancelada, PIN recusado, token fora da
+    sessão — tudo isso se repetiria no papel seguinte. E **PIN errado em
+    sequência BLOQUEIA o token do delegatário** (está em
+    `a3_servico_local.origem_recusada`): seguir pedindo assinatura depois de
+    uma recusa seria arriscar o bloqueio por um clique.
+    """
+
+
+# O TETO DE CADA LOTE. A emissão é local e rápida, e o teto é o tamanho da
+# página da fila. A assinatura é UMA JANELA DO TOKEN POR PAPEL (ver
+# `assinar_lote`), e cada uma espera o oficial digitar: 25 cobre o dia mais
+# cheio medido (18 em 28/10/2026) sem deixar um clique virar uma hora de tela
+# presa.
+LIMITE_DO_LOTE_DE_EMISSAO = 200
+LIMITE_DO_LOTE_DE_ASSINATURA = 25
+
+
+def _unicos(ids: Any) -> list[int]:
+    """Os números marcados, sem repetição e na ordem em que vieram."""
+    vistos: list[int] = []
+    for x in ids or ():
+        try:
+            n = int(x)
+        except (TypeError, ValueError):
+            continue
+        if n > 0 and n not in vistos:
+            vistos.append(n)
+    return vistos
+
+
+def emitir_lote(transacao: Any, titulo_ids: Any, *, serventia: str,
+                agora: str, usuario: str | None = None,
+                modelo_de: Any = None) -> dict:
+    """Emite o instrumento de cada título marcado. ESCREVE.
+
+    `transacao` é quem abre a transação (`db.transaction`): **uma por título**,
+    para que um que falha não leve os outros junto. `modelo_de(con)` devolve o
+    texto ajustado da casa (ou `None`, e vale o padrão), lido dentro da
+    transação de cada um — a mesma leitura da emissão de um só.
+
+    **TÍTULO QUE JÁ TEM INSTRUMENTO NÃO SAI DE NOVO AQUI.** Segunda via é outro
+    instrumento, com outro número (ver o topo deste módulo); no lote ela só
+    nasceria por engano — a mesma tela aberta em dois balcões, ou o lote
+    reenviado —, e por isso se recusa, dizendo que a segunda via sai pela
+    ficha do título.
+
+    Devolve `{"feitos": [...], "falharam": [{"titulo_id", "motivo"}]}`.
+    """
+    ids = _unicos(titulo_ids)
+    if not ids:
+        raise InstrumentoError(
+            "Marque os protestos cujo instrumento vai ser emitido — a lista "
+            "não emite sozinha.")
+    if len(ids) > LIMITE_DO_LOTE_DE_EMISSAO:
+        raise InstrumentoError(
+            f"São {len(ids)} marcados, e o lote emite até "
+            f"{LIMITE_DO_LOTE_DE_EMISSAO} de cada vez. Desmarque alguns e "
+            f"emita em duas vezes.")
+    feitos: list[dict] = []
+    falharam: list[dict] = []
+    for titulo_id in ids:
+        try:
+            with transacao() as con:
+                bd = banco(con)
+                # A MESMA TRAVA DO NÚMERO que `emitir` pega: com ela antes da
+                # pergunta, dois lotes do mesmo título não passam os dois.
+                bd.travar("pt_instrumentos.numero")
+                ja = bd.um(
+                    """SELECT numero, ano FROM pt_instrumentos
+                        WHERE titulo_id = %s ORDER BY id DESC LIMIT 1""",
+                    (titulo_id,))
+                if ja is not None:
+                    raise JaTemInstrumento(
+                        f"já tem o instrumento n.º {ja['numero']}/{ja['ano']}. "
+                        f"Segunda via se emite pela ficha do título, uma de "
+                        f"cada vez.")
+                modelo = modelo_de(con) if modelo_de else None
+                r = emitir(con, titulo_id, serventia=serventia, agora=agora,
+                           modelo=modelo, usuario=usuario)
+            feitos.append({"titulo_id": titulo_id, **r})
+        except InstrumentoError as erro:
+            falharam.append({"titulo_id": titulo_id, "motivo": str(erro)})
+        except Exception as erro:  # noqa: BLE001 — um não derruba os outros
+            # O QUE NÃO É REGRA TAMBÉM NÃO PODE DERRUBAR O LOTE: os títulos de
+            # antes já foram gravados, e a tela de erro esconderia de quem
+            # emitiu quais saíram. Vai como falha, com o nome do erro, para o
+            # suporte achar.
+            falharam.append({
+                "titulo_id": titulo_id,
+                "motivo": (f"erro inesperado do sistema "
+                           f"({type(erro).__name__}: {erro}) — avise o suporte")})
+    return {"feitos": feitos, "falharam": falharam}
+
+
+def a_assinar(con, limite: int = 200) -> list[dict]:
+    """Os instrumentos emitidos e ainda NÃO assinados, do mais novo. Só LÊ."""
+    return banco(con).ler(
+        """SELECT i.id, i.numero, i.ano, i.emitido_em, i.titulo_id,
+                  t.protocolo
+             FROM pt_instrumentos i
+             JOIN as_documentos d ON d.entidade = %s AND d.entidade_id = i.id
+             LEFT JOIN pt_titulos t ON t.id = i.titulo_id
+            WHERE d.assinado_em IS NULL
+            ORDER BY i.id DESC LIMIT %s""",
+        (ENTIDADE_DA_ASSINATURA, int(limite)))
+
+
+def conferir_antes_de_assinar(con, instrumento_id: int) -> dict:
+    """O instrumento existe, está na fila e ainda não foi assinado. Só LÊ.
+
+    Pergunta-se ANTES de chamar o token: assinar o que já está assinado faria
+    o oficial digitar o PIN por nada e trocaria o `.p7s` guardado.
+    """
+    ins = instrumento(con, instrumento_id)
+    if not ins:
+        raise InstrumentoError(f"Instrumento {instrumento_id} não encontrado.")
+    linha = banco(con).um(
+        """SELECT assinado_em FROM as_documentos
+            WHERE entidade = %s AND entidade_id = %s""",
+        (ENTIDADE_DA_ASSINATURA, int(instrumento_id)))
+    if linha is None:
+        raise InstrumentoError(
+            "Este instrumento não está na fila de assinatura da casa — emita-o "
+            "de novo pela ficha do título.")
+    if linha.get("assinado_em"):
+        raise JaAssinado(
+            f"o instrumento {ins['numero']}/{ins['ano']} já foi assinado em "
+            f"{_texto(linha['assinado_em'])[:16]}.")
+    return ins
+
+
+def assinar_lote(instrumento_ids: Any, assinar_um: Any) -> dict:
+    """Assina os instrumentos marcados, um depois do outro. ESCREVE (por
+    `assinar_um`, que guarda cada um na sua própria transação).
+
+    **O PIN É PEDIDO A CADA INSTRUMENTO — medido no código, 29/10/2026.** O
+    instrumento se assina por `/assinar/pdf-windows` do serviço local
+    (`a3_servico_local` → `a3_windows.assinar_pdf`), e cada chamada abre um
+    PowerShell NOVO, que assina UM PDF e termina. O serviço não tem rota de
+    vários PDFs nem guarda sessão, e o Cartório Gestão não vê o PIN — quem o
+    pede é a janela do próprio token. Se o driver do token lembrar o PIN de
+    uma janela para a outra, ela não reaparece; isso é do driver, e não foi
+    medido aqui. O que o lote junta é o clique: um botão, e as janelas do
+    token vêm uma atrás da outra.
+
+    **E O LOTE PARA NA PRIMEIRA FALHA DO TOKEN** (`AssinaturaInterrompida`):
+    os que faltavam voltam em `nao_tentados`, para a tela dizer quais. Falha
+    do PAPEL (a assinatura não confere, o PDF não saiu) não para: é daquele
+    instrumento só.
+
+    Devolve `{"feitos", "falharam", "nao_tentados", "parou"}`.
+    """
+    ids = _unicos(instrumento_ids)
+    if not ids:
+        raise InstrumentoError(
+            "Marque os instrumentos que vão ser assinados.")
+    if len(ids) > LIMITE_DO_LOTE_DE_ASSINATURA:
+        raise InstrumentoError(
+            f"São {len(ids)} marcados, e o lote assina até "
+            f"{LIMITE_DO_LOTE_DE_ASSINATURA} de cada vez — cada um abre a "
+            f"janela do token. Desmarque alguns e assine em duas vezes.")
+    feitos: list[dict] = []
+    falharam: list[dict] = []
+    nao_tentados: list[int] = []
+    parou = False
+    for posicao, instrumento_id in enumerate(ids):
+        try:
+            feitos.append(assinar_um(instrumento_id))
+        except AssinaturaInterrompida as erro:
+            falharam.append({"instrumento_id": instrumento_id,
+                             "motivo": str(erro)})
+            nao_tentados = ids[posicao + 1:]
+            parou = True
+            break
+        except InstrumentoError as erro:
+            falharam.append({"instrumento_id": instrumento_id,
+                             "motivo": str(erro)})
+    return {"feitos": feitos, "falharam": falharam,
+            "nao_tentados": nao_tentados, "parou": parou}
 
 
 def __getattr__(nome: str):

@@ -13384,9 +13384,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @app.route("/protesto/instrumentos")
     @roles_required("ADMIN", "MANAGER", "USER")
     def protesto_instrumentos():
-        """Fila dos protestos lavrados sem instrumento. Só LÊ."""
+        """Fila dos protestos lavrados sem instrumento. Só LÊ.
+
+        O RECORTE (29/10/2026): `quais` separa os lavrados neste sistema do
+        acervo do E-Ofício, e `desde` é um dos atalhos de data. A tela abre
+        nos lavrados neste sistema quando há algum — medido nesse dia, 21 de
+        1.207; o resto é acervo, e continua a um clique, com o número à vista.
+        """
         with db.connect() as con:
-            fila = PI.a_entregar(con)
+            quadro_fila = PI.quadro_da_fila(con, hoje=hoje())
+            quais = request.args.get("quais") or ""
+            if quais not in PI.QUAIS_DA_FILA:
+                quais = "sistema" if quadro_fila["sistema"] else "todos"
+            atalho = request.args.get("desde") or ""
+            if atalho not in PI.ATALHOS_DE_DATA:
+                atalho = ""
+            fila = PI.a_entregar(con, quais=quais,
+                                 desde=PI.desde_do_atalho(atalho, hoje()))
+            a_assinar = PI.a_assinar(con)
             quadro = PI.contagens(con)
             emitidos = banco(con).ler(
                 """SELECT i.id, i.numero, i.ano, i.emitido_em, i.titulo_id,
@@ -13399,7 +13414,60 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     ORDER BY i.id DESC LIMIT 30""")
         return render_template(
             "protesto_instrumentos.html", fila=fila, quadro=quadro,
-            emitidos=emitidos)
+            emitidos=emitidos, a_assinar=a_assinar, quadro_fila=quadro_fila,
+            quais=quais, atalho=atalho, QUAIS=PI.QUAIS_DA_FILA,
+            ATALHOS=PI.ATALHOS_DE_DATA,
+            limite_assinatura=PI.LIMITE_DO_LOTE_DE_ASSINATURA)
+
+    @app.route("/protesto/instrumentos/emitir-lote", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_instrumentos_emitir_lote():
+        """Emite o instrumento dos protestos MARCADOS. ESCREVE — sem upload.
+
+        Pedido do oficial, 29/10/2026: «não quero ter que clicar um por um». A
+        regra mora em `PI.emitir_lote`: uma transação por título, um que falha
+        não derruba os outros, e título que já tem instrumento não ganha
+        segunda via por engano. Aqui só se ligam os fios.
+        """
+        escolhidos = [n for n in (numero_digitado(x)
+                                  for x in request.form.getlist("titulo_id"))
+                      if n is not None]
+        volta = destino_interno(request.form.get("voltar"),
+                                url_for("protesto_instrumentos"))
+        s = sv()
+        serventia = (s.get("unit_name") or "").strip() or "Serventia"
+
+        def _modelo(con):
+            try:
+                import modelos_da_casa as MODELOS
+                return MODELOS.corpo_de(con, "PT_INSTRUMENTO_PROTESTO") or None
+            except Exception:                    # noqa: BLE001 — padrão
+                return None
+
+        try:
+            r = PI.emitir_lote(db.transaction, escolhidos, serventia=serventia,
+                               agora=agora(), usuario=usuario_nome(),
+                               modelo_de=_modelo)
+        except PI.InstrumentoError as erro:
+            flash(str(erro), "warning")
+            return redirect(volta)
+        # `audit` abre transação própria: FORA de qualquer `with`.
+        for feito in r["feitos"]:
+            audit("PROTESTO_INSTRUMENTO", "pt_instrumentos", feito.get("id"),
+                  {"titulo_id": feito["titulo_id"],
+                   "numero": feito.get("numero"), "ano": feito.get("ano"),
+                   "em_lote": True})
+        if r["feitos"]:
+            numeros = ", ".join(f"{f['numero']}/{f['ano']}" for f in r["feitos"])
+            flash(f"{len(r['feitos'])} instrumento(s) emitido(s): {numeros}. "
+                  f"Eles entraram na fila de assinatura — assine-os logo "
+                  f"abaixo, em «Instrumentos a assinar».", "success")
+        if r["falharam"]:
+            flash(f"{len(r['falharam'])} não saíram — o motivo de cada um "
+                  f"vem a seguir.", "danger")
+        for falha in r["falharam"]:
+            flash(f"Título {falha['titulo_id']}: {falha['motivo']}", "danger")
+        return redirect(volta)
 
     @app.route("/protesto/<int:titulo_id>/instrumento", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -13464,33 +13532,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         instrumentos que esta casa mandou à CENPROT. **O PIN não passa pelo
         sistema**: a janela do próprio token o pede ao oficial.
         """
-        import assinar_com_a3 as A3
-        import impressao_pdf as IMPPDF
         volta = destino_interno(request.form.get("voltar"), url_for("protesto_instrumentos"))
         try:
-            ins, odt = _odt_do_instrumento(instrumento_id)
-            pdf = IMPPDF.pdf_de_odt(
-                odt, nome=f"instrumento-{ins['numero']}-{ins['ano']}",
-                get_setting=db.get_setting)
-            resposta = A3.assinar_pdf_pelo_windows(pdf)
-            cms = resposta.get("cms_b64")
-            if not cms:
-                raise PI.InstrumentoError(
-                    "O serviço de assinatura não devolveu o arquivo assinado.")
-            import base64 as _b64
-            with db.transaction() as con:
-                r = PI.guardar_assinatura(
-                    con, instrumento_id, pdf=pdf, p7s=_b64.b64decode(cms),
-                    pasta_de_arquivos=pasta_dos_arquivos(), agora=agora(),
-                    usuario=usuario_nome())
-        except (A3.AssinarComA3Error, IMPPDF.PdfError,
-                PI.InstrumentoError) as erro:
+            r = _assinar_um_instrumento(instrumento_id)
+        except PI.InstrumentoError as erro:
             flash(str(erro), "danger")
-            return redirect(volta)
-        except OSError:
-            flash("O serviço de assinatura A3 não respondeu. Abra o serviço "
-                  "(a3_servico_local) nesta máquina, com o token plugado, e "
-                  "tente de novo.", "danger")
             return redirect(volta)
         audit("PROTESTO_INSTRUMENTO_ASSINADO", "pt_instrumentos",
               instrumento_id, {"assinado_por": r["assinado_por"]})
@@ -13498,6 +13544,97 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               f"{r['assinado_por'] or 'certificado sem nome legível'}.",
               "success")
         return redirect(volta)
+
+    @app.route("/protesto/instrumentos/assinar-lote", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_instrumentos_assinar_lote():
+        """Assina com o A3 os instrumentos MARCADOS, um depois do outro.
+        ESCREVE.
+
+        **UM CLIQUE, E UMA JANELA DO TOKEN POR INSTRUMENTO** — medido no
+        código em 29/10/2026 (ver `PI.assinar_lote`): o serviço local assina
+        um PDF por chamada, num processo novo, e o PIN é pedido pela janela do
+        próprio token; o sistema não o vê e não o guarda. E o lote PARA na
+        primeira falha do token: PIN errado em sequência bloqueia o A3.
+        """
+        escolhidos = [n for n in (numero_digitado(x)
+                                  for x in request.form.getlist("instrumento_id"))
+                      if n is not None]
+        volta = destino_interno(request.form.get("voltar"),
+                                url_for("protesto_instrumentos"))
+        try:
+            r = PI.assinar_lote(escolhidos, _assinar_um_instrumento)
+        except PI.InstrumentoError as erro:
+            flash(str(erro), "warning")
+            return redirect(volta)
+        for feito in r["feitos"]:
+            audit("PROTESTO_INSTRUMENTO_ASSINADO", "pt_instrumentos",
+                  feito["instrumento_id"],
+                  {"assinado_por": feito["assinado_por"], "em_lote": True})
+        if r["feitos"]:
+            numeros = ", ".join(f"{f['numero']}/{f['ano']}" for f in r["feitos"])
+            flash(f"{len(r['feitos'])} instrumento(s) assinado(s): {numeros}.",
+                  "success")
+        for falha in r["falharam"]:
+            flash(f"Instrumento (id {falha['instrumento_id']}): "
+                  f"{falha['motivo']}", "danger")
+        if r["parou"] and r["nao_tentados"]:
+            flash(f"O lote parou na falha do token, e {len(r['nao_tentados'])} "
+                  f"instrumento(s) marcado(s) não foram tentados — continuam "
+                  f"na lista. Confira o token e o serviço e assine de novo.",
+                  "warning")
+        return redirect(volta)
+
+    def _assinar_um_instrumento(instrumento_id: int) -> dict:
+        """Assina UM instrumento com o A3: o papel da impressão vira PDF, vai ao
+        serviço local e volta assinado, e se guarda na sua própria transação.
+        ESCREVE. Serve o botão de cada linha e o lote — um caminho só.
+
+        A FALHA DO TOKEN VIRA `AssinaturaInterrompida` (o lote para nela); a
+        do PAPEL, `InstrumentoError` (o lote segue). Quem decide o que fazer
+        com cada uma é `PI.assinar_lote`.
+        """
+        import base64 as _b64
+
+        import assinar_com_a3 as A3
+        import impressao_pdf as IMPPDF
+        with db.connect() as con:
+            PI.conferir_antes_de_assinar(con, instrumento_id)
+        ins, odt = _odt_do_instrumento(instrumento_id)
+        try:
+            pdf = IMPPDF.pdf_de_odt(
+                odt, nome=f"instrumento-{ins['numero']}-{ins['ano']}",
+                get_setting=db.get_setting)
+        except IMPPDF.PdfError as erro:
+            raise PI.InstrumentoError(str(erro)) from erro
+        try:
+            resposta = A3.assinar_pdf_pelo_windows(pdf)
+        except A3.AssinarComA3Error as erro:
+            raise PI.AssinaturaInterrompida(str(erro)) from erro
+        except OSError as erro:
+            raise PI.AssinaturaInterrompida(
+                "O serviço de assinatura A3 não respondeu. Abra o serviço "
+                "(a3_servico_local) nesta máquina, com o token plugado, e "
+                "tente de novo.") from erro
+        cms = resposta.get("cms_b64")
+        if not cms:
+            raise PI.AssinaturaInterrompida(
+                "O serviço de assinatura não devolveu o arquivo assinado.")
+        try:
+            with db.transaction() as con:
+                return PI.guardar_assinatura(
+                    con, instrumento_id, pdf=pdf, p7s=_b64.b64decode(cms),
+                    pasta_de_arquivos=pasta_dos_arquivos(), agora=agora(),
+                    usuario=usuario_nome())
+        except OSError as erro:
+            # A PASTA DOS ARQUIVOS, e não o token: a transação voltou atrás,
+            # e o instrumento continua na lista do que falta assinar. O LOTE
+            # PARA AQUI TAMBÉM: a pasta falharia no seguinte, e cada tentativa
+            # custaria ao oficial mais uma digitação do PIN.
+            raise PI.AssinaturaInterrompida(
+                "O instrumento foi assinado, mas o arquivo não pôde ser "
+                "gravado na pasta dos arquivos da casa — nada foi guardado. "
+                "Confira a pasta e assine de novo.") from erro
 
     def _odt_do_instrumento(instrumento_id: int):
         """O `.odt` do instrumento — UM papel só, para imprimir e para

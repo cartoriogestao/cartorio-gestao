@@ -17,9 +17,7 @@
 #}
 {% set atalho = wa_atalho() if wa_atalho is defined else none %}
 {% if atalho %}
-<span hidden data-wa-avisos data-url="{{ url_for('whatsapp_nao_respondidas') }}"
-      data-conversa-url="{{ url_for('whatsapp_lista') }}"
-      data-relogio="{{ url_for('static', filename='whatsapp_relogio.js') }}?v={{ VERSION }}"></span>
+<span hidden data-wa-avisos data-url="{{ url_for('whatsapp_nao_respondidas') }}"></span>
 {% if not atalho.escondido %}
 <a class="wa-atalho" href="{{ url_for('whatsapp_lista') }}" data-wa-atalho
    data-url="{{ url_for('whatsapp_nao_respondidas') }}"

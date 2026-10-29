@@ -449,7 +449,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                                 arquivo={**salvo, "mime": mime})
         except (MIDIA.MidiaErro, WA.EnvioErro) as erro:
             # O que não saiu não fica guardado como se tivesse saído.
-            if salvo:
+            if salvo and salvo.get("novo"):
                 Path(salvo["caminho"]).unlink(missing_ok=True)
             flash(str(erro), "danger")
             if "131047" in str(erro):

@@ -37,7 +37,9 @@
     return;
   }
   var url = (avisos || atalho).getAttribute("data-url");
-  var conversaUrl = avisos ? avisos.getAttribute("data-conversa-url") : "";
+  // O ENDEREÇO DA CONVERSA É MONTADO AQUI, de um caminho fixo e do NÚMERO que
+  // a rota mandou — e não lido da página (revisão do CodeQL no #94).
+  var CAMINHO_DA_CONVERSA = "/whatsapp/";
   var parado = false;
   var perguntando = false;
   var relogio = null;
@@ -160,8 +162,11 @@
   }
 
   function avisar(ultima) {
-    var endereco = conversaUrl ? conversaUrl.replace(/\/?$/, "/") + ultima.conversa_id
-                               : "/whatsapp/" + ultima.conversa_id;
+    var numero = Math.floor(Number(ultima.conversa_id));
+    if (!(numero > 0)) {
+      return;
+    }
+    var endereco = CAMINHO_DA_CONVERSA + String(numero);
     tocar();
     if (document.visibilityState !== "visible") {
       piscar("(nova) WhatsApp · " + ultima.nome);
@@ -228,8 +233,7 @@
     }
   }, VISIVEL_MS);
   try {
-    worker = new Worker((avisos && avisos.getAttribute("data-relogio")) ||
-                        "/static/whatsapp_relogio.js");
+    worker = new Worker("/static/whatsapp_relogio.js");
     worker.onmessage = function () {
       if (document.visibilityState !== "visible") {
         perguntar();

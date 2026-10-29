@@ -244,13 +244,38 @@ def pasta_do_mes(pasta_arquivos: Path, agora: str) -> Path:
     return Path(pasta_arquivos) / "whatsapp" / str(agora)[:7]
 
 
+# AS EXTENSÕES COM QUE A CASA GRAVA. O nome do arquivo em disco NÃO vem de
+# fora (revisão do CodeQL no #94, 29/10/2026): é o sha256 do conteúdo mais uma
+# extensão desta lista. O nome que o cliente ou o atendente deu fica só em
+# `arquivo_nome`, para a tela — com ele no caminho, um «..\..\x» escreveria
+# fora da pasta da casa.
+EXTENSOES_GUARDADAS = tuple(sorted(set(EXTENSAO_DO_MIME.values())
+                                   | set(ENVIO_POR_EXTENSAO) | {"bin", "jpeg"}))
+
+
+def _extensao_da_casa(nome: str) -> str:
+    """A extensão de `nome`, mas como a string DA LISTA (e não a que veio de
+    fora); o que não está na lista vira «bin»."""
+    pedida = extensao(nome)
+    return next((e for e in EXTENSOES_GUARDADAS if e == pedida), "bin")
+
+
 def guardar(pasta: Path, nome: str, dados: bytes) -> dict:
-    """Grava os bytes na pasta com nome único. Devolve caminho, sha e tamanho."""
+    """Grava os bytes na pasta da casa. Devolve caminho, nome (o de exibição),
+    sha e tamanho. O arquivo em disco se chama `<sha256>.<extensão da lista>`:
+    o mesmo conteúdo guardado duas vezes ocupa um arquivo só."""
+    sha = hashlib.sha256(dados).hexdigest()
+    pasta = Path(pasta)
     pasta.mkdir(parents=True, exist_ok=True)
-    destino = ARQ.unique_path(pasta, nome)
-    destino.write_bytes(dados)
-    return {"caminho": str(destino.resolve()), "nome": destino.name,
-            "sha256": hashlib.sha256(dados).hexdigest(), "bytes": len(dados)}
+    destino = pasta / f"{sha}.{_extensao_da_casa(nome)}"
+    novo = not destino.exists()
+    if novo:
+        destino.write_bytes(dados)
+    exibido = ARQ.safe_component(Path(str(nome or "")).name, "arquivo")[:120]
+    # `novo`: o arquivo nasceu agora. Só o que nasceu agora se apaga quando o
+    # envio falha — o mesmo conteúdo pode ser o de outra mensagem.
+    return {"caminho": str(destino.resolve()), "nome": exibido, "sha256": sha,
+            "bytes": len(dados), "novo": novo}
 
 
 def como_mostrar(mensagem: dict) -> str:

@@ -1024,7 +1024,14 @@ def encerrar_atendimento(con, usuario) -> None:
 #: valor (16.45.1 ... 16.45.N), mas que o selador do TJ so conhece pelo item
 #: (16.45). Mandar "16.45.33" ao TJ da «Nao foi encontrado um ato para o
 #: codigo informado». Lista fechada: so entra item medido.
-CODIGOS_TJ_DE_FAIXA = frozenset({"16.45"})
+#:
+#: O 17.1 E O 17.4 DO PROTESTO ENTRARAM EM 29/10/2026, pela mesma medicao: o
+#: aparelho recusou o 17.1.7 e o 17.4.5 com a mesma frase (ato 4127, titulo
+#: 1353, reservas estornadas 2 vezes cada), e o E-Oficio mandava o item — 17.1
+#: em 70 selos de protesto, 17.4 em 190 de pagamento e retirada —, com o valor
+#: do titulo no envelope. Quem decide quando a faixa vira o item no selo do
+#: Protesto e `protesto_selo_previo.codigo_para_o_selo`.
+CODIGOS_TJ_DE_FAIXA = frozenset({"16.45", "17.1", "17.4"})
 
 
 def subitem_da_faixa(codigo) -> str | None:

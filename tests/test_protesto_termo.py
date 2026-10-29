@@ -44,6 +44,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from banco_de_teste import conexao_de_teste  # noqa: E402
+from prova_de_intimacao import juntar_prova  # noqa: E402
 
 import modelos_da_casa as MOD
 import protesto as PT
@@ -203,6 +204,7 @@ def test_o_protesto_lavrado_GRAVA_o_texto():
     PT.lancar_apontamento(con, tid, sv=SV, agora=AGORA, data_extenso="x")
     PT.lancar_intimacao(con, tid, modo="EDITAL", agora="2026-08-20",
                         codigo_edital="ED-2026-014")
+    juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
     r = PT.lancar_protesto(con, tid, sv=SV, agora=AGORA, data_extenso="x")
     teor = con.execute("SELECT teor FROM pt_atos WHERE id=?",
                        (r["ato_id"],)).fetchone()[0]
@@ -219,6 +221,7 @@ def test_o_termo_CONGELA():
     PT.lancar_apontamento(con, tid, sv=SV, agora=AGORA, data_extenso="x")
     PT.lancar_intimacao(con, tid, modo="EDITAL", agora="2026-08-20",
                         codigo_edital="ED-2026-014")
+    juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
     r = PT.lancar_protesto(con, tid, sv=SV, agora=AGORA, data_extenso="x")
     antes = con.execute("SELECT teor FROM pt_atos WHERE id=?",
                         (r["ato_id"],)).fetchone()[0]
@@ -286,6 +289,7 @@ def test_o_protesto_lavrado_leva_o_motivo_do_titulo():
     PT.lancar_apontamento(con, tid, sv=SV, agora=AGORA, data_extenso="x")
     PT.lancar_intimacao(con, tid, modo="EDITAL", agora="2026-08-20",
                         codigo_edital="ED-2026-014")
+    juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
     r = PT.lancar_protesto(con, tid, sv=SV, agora=AGORA, data_extenso="x")
     teor = con.execute("SELECT teor FROM pt_atos WHERE id=?",
                        (r["ato_id"],)).fetchone()[0]
@@ -355,6 +359,7 @@ def test_a_ficha_MOSTRA_o_texto_que_foi_ao_livro(cg_casa):
         PT.lancar_apontamento(con, tid, sv=SV, agora=AGORA, data_extenso="x")
         PT.lancar_intimacao(con, tid, modo="EDITAL", agora="2026-08-20",
                             codigo_edital="ED-2026-014")
+        juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
         PT.lancar_protesto(con, tid, sv=SV, agora=AGORA, data_extenso="x")
     con.close()
 

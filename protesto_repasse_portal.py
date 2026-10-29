@@ -253,6 +253,13 @@ def registrar_boleto(con, *, atos: list[dict], nosso_numero: str,
             "titulos": len(ids), "total_centavos": int(guia["total_centavos"])}
 
 
+def anexos(con, guia_id: int) -> list[dict]:
+    """Os PDFs de boleto anexados à guia, para a ficha dela. Só LÊ."""
+    return banco(con).ler(
+        "SELECT * FROM attachments WHERE entity_type = %s AND entity_id = %s "
+        "ORDER BY id", (ENTIDADE_DO_ANEXO, int(guia_id)))
+
+
 def anexar_pdf(con, guia_id: int, conteudo: bytes, *, pasta: Path,
                nosso_numero: str, agora: str) -> int:
     """O PDF do boleto, anexado à guia. ESCREVE (arquivo e `attachments`).

@@ -132,4 +132,9 @@
     </tbody>
   </table>
 </section>
+
+<section class="panel"><h2>Boletos anexados</h2>
+  {% if arquivos %}<ul>{% for a in arquivos %}<li><a href="{{ url_for('attachment_view', attachment_id=a.id) }}" target="_blank">{{ a.original_name }}</a> <small class="muted">{{ a.uploaded_at }}</small></li>{% endfor %}</ul>
+  {% else %}<p class="muted">Nenhum boleto anexado. O robô do portal da CRA anexa o PDF aqui quando gera o boleto.</p>{% endif %}
+</section>
 {% endblock %}

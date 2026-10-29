@@ -631,6 +631,11 @@ ACHADAS_EM_27_10_2026: dict[str, str] = {
     # catálogo de `despesas_automacao` («despesas_automacao.recorrentes»).
     "recorrentes": "despesas_automacao — a porta é o catálogo da central de "
                    "automação (`automacao_processos.MODULOS_COM_PROCESSOS`)",
+    # A conferência CENPROT × sistema (PR #105): o roteiro do protesto a lê
+    # pelo gancho (`protesto_roteiro.GANCHOS`, módulo e função em texto, que
+    # este varredor não lê), e a tela dela é a conduta 9 do roteiro.
+    "quantos_divergem": "cenprot_conferencia — a porta é o gancho do roteiro "
+                        "do protesto (`protesto_roteiro.GANCHOS`)",
 }
 
 

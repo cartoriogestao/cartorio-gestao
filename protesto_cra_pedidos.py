@@ -389,6 +389,10 @@ def receber_desistencias(con, bruto: str, *, consulta_id: int,
               "desistencia_id": desistencia_id,
               "apresentante": visto.get("apresentante_codigo"),
               "recusados": len(recusados)}
+    # O TÍTULO SE CONTA UMA VEZ: dois devedores do mesmo protocolo são duas
+    # linhas do arquivo, e cada uma casa com os dois irmãos — o ato sai uma
+    # vez por título (`aplicar`), e o resumo contava linha × título.
+    contados: set[int] = set()
     for linha in visto["titulos"]:
         if not linha["titulos"]:
             _gravar_pedido(con, consulta_id=consulta_id, tipo="DP",
@@ -410,8 +414,10 @@ def receber_desistencias(con, bruto: str, *, consulta_id: int,
                         + (" — o título estava INTIMADO: confira que nenhum "
                            "protesto dele ficou preparado." if por_pouco
                            else ".")))
-                resumo["aplicados"] += 1
-                resumo["por_pouco"] += int(por_pouco)
+                if tid not in contados:
+                    contados.add(tid)
+                    resumo["aplicados"] += 1
+                    resumo["por_pouco"] += int(por_pouco)
             elif x["situacao"] == "DESISTIDO":
                 _gravar_pedido(con, consulta_id=consulta_id, tipo="DP",
                                pedido=linha, titulo=x, estado=RESOLVIDO,

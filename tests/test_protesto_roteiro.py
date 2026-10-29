@@ -523,7 +523,9 @@ def test_protesto_sem_instrumento_trava_o_xml_e_os_dois_sao_cobrados(casa):
         "o protesto do E-Oficio nao e trabalho deste sistema")
     xml = _obrigacao(condutas, "atos_sem_xml")
     assert xml["situacao"] == PR.ATRASADO and xml["faltam"] == 1
-    assert "portal da CENPROT" in xml["nota"]
+    # A subida no portal da CENPROT tem obrigação própria desde o #114
+    # (`xml_sem_comprovante`); a nota do XML diz quantos se geraram hoje.
+    assert "arquivo(s) gerado(s) hoje" in xml["nota"]
 
 
 def test_pendencia_da_cenprot_nunca_fica_vermelha(casa):

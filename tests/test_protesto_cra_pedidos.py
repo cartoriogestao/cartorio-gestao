@@ -57,8 +57,8 @@ CNPJ = "00000001000055"       # 00.000.001/0000-55, idem
 # --------------------------------------------- os arquivos sintéticos
 
 
-def _tr(protocolo: str, numero: str, devedor: str, centavos: int, seq: int,
-        letra: str = "S", anexo: str = "") -> str:
+def _tr(protocolo: str, numero: str, devedor: str, centavos: int,
+        letra: str = "S", anexo: str = "", *, seq: int) -> str:
     return (f'<tr t01="2" t02="{protocolo}" t03="20102026" t04="{numero}" '
             f't05="{devedor}" t06="{centavos:014d}" t07="{letra}" '
             f't08="000000000000" t09="000000000000" t10="{anexo}" '

@@ -46,6 +46,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     """Pendura as telas do repasse e da relação no app já construído."""
 
     usuario_nome = app.extensions["usuario_nome"]
+    # O PDF DO BOLETO que o robô baixa do portal da CRA (#121) abre para quem
+    # abre a ficha da guia — é nela que ele aparece.
+    app.extensions.setdefault("tela_do_anexo", {})[PRP.ENTIDADE_DO_ANEXO] = (
+        "protesto_repasse_guia",)
 
     def agora() -> str:
         return db.now()
@@ -198,10 +202,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         portal de cada Central. Só LÊ."""
         with db.connect() as con:
             g = REP.guia(con, guia_id, hoje=hoje())
+            arquivos = PRP.anexos(con, guia_id) if g else []
         if not g:
             flash("Guia não encontrada.", "danger")
             return redirect(url_for("protesto_repasses"))
         return render_template("protesto_repasse_guia.html", g=g, hoje=hoje(),
+                               arquivos=arquivos,
                                reais=reais, pode_mexer=QUEM_MEXE_NO_DINHEIRO,
                                provas=REP.PROVAS_DO_PAGAMENTO,
                                em_aberto=REP.SITUACAO_EM_ABERTO_NO_PORTAL)

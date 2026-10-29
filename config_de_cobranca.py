@@ -13,8 +13,8 @@ O CASO QUE FEZ ESTE MÓDULO NASCER (produção, só leitura, 29/10/2026)
     um robô «a mando de» quem o aviso cobrava. **Nenhuma das quatro passou por
     rota do sistema**: as linhas não têm usuário, nem IP, nem `agente`, e a
     hora está escrita com espaço (`2026-10-28 17:43:04`), e não com o `T` que o
-    servidor grava. Foi script direto no banco — `UPDATE settings` mais um
-    `INSERT INTO audit_logs` escrito à mão. Uma guarda só nas rotas não teria
+    servidor grava. Foi script direto no banco — `UPDATE settings` mais uma
+    linha de auditoria inserida à mão. Uma guarda só nas rotas não teria
     parado nenhuma delas.
 
     E NO DIA EM QUE ESTE MÓDULO FOI ESCRITO, de novo: em 29/10 às 16h18 o

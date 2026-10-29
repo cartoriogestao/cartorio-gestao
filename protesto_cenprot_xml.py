@@ -987,13 +987,23 @@ def guardar_comprovante_do_envio(con, xml_id: int, *, nome: Any,
              (ENTIDADE_DO_ENVIO_DO_XML, int(xml_id), sha)):
         raise CenprotXmlError(
             f"Este arquivo já está anexado a «{xml['nome_arquivo']}».")
+    # O NOME EM DISCO NAO LEVA NADA DO QUE VEIO DE FORA (CodeQL
+    # py/path-injection, 29/10/2026): a extensao sai do CONTEUDO ja conferido
+    # — a assinatura dos primeiros bytes —, e nao do nome que o navegador
+    # mandou. O nome original fica so na coluna `original_name`.
+    if conteudo.startswith(b"%PDF"):
+        no_disco = ".pdf"
+    elif conteudo.startswith(b"\x89PNG"):
+        no_disco = ".png"
+    else:
+        no_disco = ".jpg"
     destino = Path(pasta_de_arquivos) / "Protesto" / "CenprotXml" / "Comprovantes"
     destino.mkdir(parents=True, exist_ok=True)
     n = 1
-    arquivo_em_disco = destino / f"envio-xml-{int(xml_id)}-{n}{ext}"
+    arquivo_em_disco = destino / f"envio-xml-{int(xml_id)}-{n}{no_disco}"
     while arquivo_em_disco.exists():
         n += 1
-        arquivo_em_disco = destino / f"envio-xml-{int(xml_id)}-{n}{ext}"
+        arquivo_em_disco = destino / f"envio-xml-{int(xml_id)}-{n}{no_disco}"
     arquivo_em_disco.write_bytes(conteudo)
     novo = bd.escrever(
         """INSERT INTO attachments(entity_type, entity_id, original_name,

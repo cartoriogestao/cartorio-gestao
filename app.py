@@ -3625,6 +3625,13 @@ def create_app(test_config: dict | None = None) -> Flask:
     acervo_correcao_web.registrar_rotas(app, db, login_required,
                                         roles_required, audit, fmt_date)
 
+    # A FILA DE CORREÇÕES DE OFÍCIO (29/10/2026): o agente ou a escrevente
+    # propõe, o oficial aprova com afirmação expressa, e o servidor executa.
+    # Módulo próprio, com as rotas registradas à parte.
+    import correcoes_de_oficio_web
+    correcoes_de_oficio_web.registrar_rotas(app, db, login_required,
+                                            roles_required, audit)
+
     @app.errorhandler(403)
     def forbidden(_):
         return render_template("error.html", code=403, message="Você não tem permissão para acessar esta área."), 403

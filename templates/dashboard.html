@@ -28,6 +28,12 @@
   {% if stats.tarefas_fora_do_vocabulario %}
   <div class="card stat warning" title="A situação do processo não é nenhuma das que o sistema conhece. Ele não sabe se ainda pede alguma coisa — abra em «Processos», vista «Todos»."><span>Fora das vistas</span><strong>{{ stats.tarefas_fora_do_vocabulario }}</strong></div>
   {% endif %}
+  {# AS CORREÇÕES DE OFÍCIO QUE ESPERAM A DECISÃO (29/10/2026) — só o oficial
+     (ADMIN de gente) as vê, e só quando há proposta: o contexto vem vazio
+     para os demais (`correcoes_de_oficio_web`). #}
+  {% if correcoes_de_oficio_no_painel %}
+  <div class="card stat warning" title="Propostas de correção de ofício esperando a sua decisão: aprovar, com a afirmação expressa, ou recusar."><span><a href="{{ url_for('correcoes_de_oficio_lista') }}">Correções de ofício</a></span><strong>{{ correcoes_de_oficio_no_painel.pendentes }}</strong></div>
+  {% endif %}
   <div class="card stat"><span>Aguardando terceiro</span><strong>{{ stats.waiting }}</strong></div>
 </div>
 

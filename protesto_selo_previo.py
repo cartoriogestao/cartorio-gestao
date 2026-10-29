@@ -487,7 +487,10 @@ def pendencias_do_selo(con, *, titulo_id: int | None = None,
     mesmo título — uma linha por título e tipo, com a última tentativa e
     quantas foram. `SELAR`: o ato válido que o robô lavrou e ficou sem selo.
 
-    É o que o roteiro do dia lê, e o que o painel e a ficha mostram.
+    É o que o roteiro do dia lê (`protesto_roteiro.GANCHOS`), e o que o painel
+    e a ficha mostram. O CONTRATO DO ROTEIRO: cada linha traz `titulo_id`,
+    `numero_titulo`, `protocolo` e `explicacao` — a frase pronta, que o
+    roteiro mostra como está.
     """
     bd = banco(con)
     filtro, args = "", [f"{PREFIXO_DO_DESFEITO}%"]
@@ -496,8 +499,9 @@ def pendencias_do_selo(con, *, titulo_id: int | None = None,
     grupos: dict[tuple[int, str], dict] = {}
     for r in bd.ler(
             f"""SELECT a.id, a.titulo_id, a.tipo, a.criado_em, a.criado_por,
-                       a.motivo_cancelamento
+                       a.motivo_cancelamento, t.numero_titulo, t.protocolo
                   FROM pt_atos a
+                  JOIN pt_titulos t ON t.id = a.titulo_id
                  WHERE COALESCE(a.cancelado, 0) <> 0
                    AND a.motivo_cancelamento LIKE %s{filtro}
                    AND NOT EXISTS (
@@ -513,6 +517,8 @@ def pendencias_do_selo(con, *, titulo_id: int | None = None,
         grupos[chave] = {
             "especie": ESPECIE_REFAZER,
             "titulo_id": int(r["titulo_id"]), "tipo": str(r["tipo"]),
+            "numero_titulo": r.get("numero_titulo"),
+            "protocolo": r.get("protocolo"),
             "ato": O_ATO.get(str(r["tipo"]), "o ato"),
             "ato_id": int(r["id"]), "quando": str(r["criado_em"] or ""),
             "quando_br": _data_br(r["criado_em"]),
@@ -520,6 +526,12 @@ def pendencias_do_selo(con, *, titulo_id: int | None = None,
             "quem_tentou": str(r["criado_por"] or "") or "não gravado",
             "tentativas": (anterior or {}).get("tentativas", 0) + 1,
         }
+    for p in grupos.values():
+        p["explicacao"] = (
+            f"refazer {p['ato']}: desfeito em {p['quando_br']} porque o selo "
+            f"não saiu ({p['motivo']}); tentou: {p['quem_tentou']}"
+            + (f", {p['tentativas']} tentativas" if p["tentativas"] > 1 else "")
+            + ". Sai da lista quando o ato for lançado de novo.")
     saida = list(grupos.values())
     robos = _robos(bd)
     lugares = ",".join(["%s"] * len(TIPOS_QUE_SELAM))
@@ -530,8 +542,10 @@ def pendencias_do_selo(con, *, titulo_id: int | None = None,
     if titulo_id is not None:
         filtro_t, args_t = " AND a.titulo_id = %s", args_t + [int(titulo_id)]
     for r in bd.ler(
-            f"""SELECT a.id, a.titulo_id, a.tipo, a.criado_em, a.criado_por
+            f"""SELECT a.id, a.titulo_id, a.tipo, a.criado_em, a.criado_por,
+                       t.numero_titulo, t.protocolo
                   FROM pt_atos a
+                  JOIN pt_titulos t ON t.id = a.titulo_id
                  WHERE COALESCE(a.cancelado, 0) = 0
                    AND a.tipo IN ({lugares})
                    AND COALESCE(a.origem, '') <> 'EOFICIO'
@@ -539,15 +553,21 @@ def pendencias_do_selo(con, *, titulo_id: int | None = None,
                  ORDER BY a.id""", args_t):
         if not _e_robo(r["criado_por"], robos):
             continue
+        ato = O_ATO.get(str(r["tipo"]), "o ato")
         saida.append({
             "especie": ESPECIE_SELAR,
             "titulo_id": int(r["titulo_id"]), "tipo": str(r["tipo"]),
-            "ato": O_ATO.get(str(r["tipo"]), "o ato"),
+            "numero_titulo": r.get("numero_titulo"),
+            "protocolo": r.get("protocolo"),
+            "ato": ato,
             "ato_id": int(r["id"]), "quando": str(r["criado_em"] or ""),
             "quando_br": _data_br(r["criado_em"]),
             "motivo": "lavrado pelo robô, que não pede selo",
             "quem_tentou": str(r["criado_por"] or ""),
             "tentativas": 0,
+            "explicacao": (f"selar {ato} (ato {int(r['id'])}, de "
+                           f"{_data_br(r['criado_em'])}): lavrado pelo robô, "
+                           "que não pede selo — quem sela é o escrevente."),
         })
     saida.sort(key=lambda p: (p["quando"], p["ato_id"]))
     return saida[:max(1, int(limite))]

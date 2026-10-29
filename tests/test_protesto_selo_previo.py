@@ -436,6 +436,29 @@ def test_o_ato_desfeito_pelo_selo_e_obrigacao_ate_ser_lancado(casa):
         con, titulo_id=ids["desfeito"])] == ["PAGAMENTO"]
 
 
+def test_o_contrato_do_roteiro(casa):
+    """O roteiro do dia (#104, `protesto_roteiro.GANCHOS`) lê as duas listas
+    por nome e mostra `numero_titulo`, `protocolo` e `explicacao` de cada
+    linha, com o link pelo `titulo_id`. Linha sem eles vira um JSON cru na tela
+    da escrevente."""
+    import protesto_roteiro as ROT
+    nomes = {(g["modulo"], g["funcao"]) for g in ROT.GANCHOS}
+    assert ("protesto_selo_previo", "pendencias_do_selo") in nomes
+    assert ("protesto_selo_previo", "titulos_sem_ato_que_sustente") in nomes
+    con, ids = casa
+    pend = PSELO.pendencias_do_selo(con)
+    sem = PSELO.titulos_sem_ato_que_sustente(con)
+    assert pend and sem
+    for linha in pend + sem:
+        assert {"titulo_id", "numero_titulo", "protocolo", "explicacao"} <= set(linha)
+        assert linha["numero_titulo"] and linha["protocolo"] == "2610290001"
+        assert linha["explicacao"].strip()
+    [tres] = [p for p in pend if p["titulo_id"] == ids["tres"]]
+    assert tres["numero_titulo"] == "T8"
+    assert "3 tentativas" in tres["explicacao"]
+    assert "sai da lista quando o ato for lançado" in tres["explicacao"].lower()
+
+
 def test_o_ato_do_robo_sem_selo_e_obrigacao_e_o_de_gente_nao(casa):
     """O robô não pede selo (regra de 05/10/2026): o ato dele fica para o
     escrevente selar. O de gente sem selo (o lote, que não sela) e o do

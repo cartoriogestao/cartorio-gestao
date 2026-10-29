@@ -75,6 +75,38 @@
 </div>
 {% endif %}
 
+{# OS PEDIDOS DA CRA PARA ESTE TÍTULO (29/10/2026): desistência, cancelamento
+   e autorização que vieram no clique da remessa. Cancelamento e autorização
+   não se lavram sozinhos — o devedor paga as custas e o ato se lança aqui;
+   quando o título chega à situação que o pedido pede, ele sai da lista. #}
+{% if pedidos_cra and pedidos_cra.abertos %}
+{% set grave_aqui = pedidos_cra.abertos | selectattr('destaque', 'equalto', 'PROTESTADO') | list %}
+<div class="notice {{ 'danger' if grave_aqui else 'warning' }}" data-pedidos-cra>
+  <strong>Pedido(s) da CRA esperando este título:</strong>
+  <ul style="margin:6px 0 0 18px">
+  {% for p in pedidos_cra.abertos %}
+    <li>
+      <strong>{{ p.tipo }}</strong> — {{ p.explicacao }}
+      <small>(chegou em {{ (p.recebido_em or '')[:16] | replace('T', ' ') }};
+        <a href="{{ url_for('protesto_cra_consulta_arquivo', consulta_id=p.consulta_id) }}">arquivo da CRA</a>)</small>
+      {% if p.destaque == 'PROTESTADO' and user.role not in quem_encerra_o_grave %}
+        <div><small>Só o oficial ou o substituto encerram a desistência de título já protestado: avise-os.</small></div>
+      {% else %}
+      <form method="post" action="{{ url_for('protesto_cra_pedido_tratar', pedido_id=p.id) }}" class="grid2" style="margin-top:6px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="voltar" value="ficha">
+        <label style="grid-column:1/-1">Não vai lavrar? Registre por quê
+          <small>(pelo menos {{ minimo_do_motivo_cra }} letras; fica com o pedido e na auditoria)</small>
+          <textarea name="motivo" rows="2" required></textarea></label>
+        <div class="actions"><button class="button" type="submit">Registrar o motivo</button></div>
+      </form>
+      {% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 <section class="panel">
   <div class="panel-head"><span>O título</span><small>{{ titulo.situacao }}</small></div>
   <table class="table">

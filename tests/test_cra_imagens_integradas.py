@@ -222,7 +222,10 @@ def test_botao_pede_imagens_salva_xml_e_recebe_anexos(s, monkeypatch):
     r = c.post('/protesto/remessas/da-cra', data={'csrf_token': _token(tela), 'o_que': 'pendentes'}, follow_redirects=True)
     html = r.get_data(as_text=True)
     assert r.status_code == 200
-    assert chamadas == [('pendentes', True)]
+    # A remessa pede as imagens; depois dela vêm DP, CP e AC no mesmo clique
+    # (29/10/2026), pela mesma porta.
+    assert chamadas[0] == ('pendentes', True)
+    assert len(chamadas) == 4
     token = re.search(r'name="origem_xml_token" value="([0-9a-f]+)"', html).group(1)
     assert 'documento(s)/imagem(ns)' in html
     assert 'name="conteudo"' not in html
@@ -235,7 +238,7 @@ def test_botao_pede_imagens_salva_xml_e_recebe_anexos(s, monkeypatch):
     assert 'Conferir cópia salva' in listado
     r = c.post('/protesto/remessas/salvas/' + token + '/conferir',
         data={'csrf_token': _token(listado)}, follow_redirects=True)
-    assert chamadas == [('pendentes', True)]  # retomada não consulta a CRA
+    assert len(chamadas) == 4  # retomada não consulta a CRA
     html = r.get_data(as_text=True)
     r = c.post('/protesto/remessas/receber', data={
         'csrf_token': _token(html), 'origem_xml_token': token, 'apontar': '0'}, follow_redirects=True)
@@ -266,15 +269,20 @@ def test_usuario_sem_login_nao_abre_copia_salva(s):
 
 
 def test_sem_permissao_para_copia_nao_chama_a_cra(s, monkeypatch):
+    """Sem a cópia local a REMESSA não se baixa (ela se perderia). As
+    desistências, os cancelamentos e as autorizações vão assim mesmo
+    (29/10/2026): o bruto deles se guarda no banco, e a falha de um não
+    derruba os outros."""
     import cra21_web as CRAW
     chamadas = []
-    monkeypatch.setattr(CRAW, '_trazer', lambda *a, **k: chamadas.append(1))
+    monkeypatch.setattr(CRAW, '_trazer', lambda qual, *a, **k: chamadas.append(qual))
     def falhar(*a):
         raise IMG.ImagemCraError('Não foi possível preparar a cópia local')
     monkeypatch.setattr(IMG, 'preparar_pasta', falhar)
     tela = s['c'].get('/protesto/remessas').get_data(as_text=True)
     s['c'].post('/protesto/remessas/da-cra', data={'csrf_token': _token(tela), 'o_que': 'pendentes'})
-    assert chamadas == []
+    assert 'pendentes' not in chamadas
+    assert chamadas == ['desistencias', 'cancelamentos', 'autorizacoes']
 
 
 def test_falha_no_disco_devolve_xml_ao_navegador_sem_repetir_download(s, monkeypatch):

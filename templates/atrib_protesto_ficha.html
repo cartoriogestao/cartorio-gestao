@@ -596,7 +596,7 @@
         pela tabela de {{ cob.data_da_tabela }}</label>
       {% endif %}
     {% endif %}
-    {{ IRM.confere(irmaos, ato) }}
+    {{ IRM.confere(irmaos, ato, ja_tem_afirmacao=(ato == 'PROTESTO' and prova and not prova.completa)) }}
     <div class="actions"><button class="button">Lançar {{ ato | lower }}</button></div>
 
     {{ quadro(receitas.get(ato), caixa, protocolos) }}

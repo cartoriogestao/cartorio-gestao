@@ -8,6 +8,9 @@
   dizia que o protocolo tinha dois títulos. A regra é `protesto_titulos_irmaos`.
 #}
 
+{# A afirmação expressa é a macro COMUM da casa (o contrato de 29/10/2026). #}
+{% from '_protesto_afirmacao.html' import afirmacao %}
+
 {# O quadro da ficha: este título e os irmãos, lado a lado. #}
 {% macro quadro(q) %}
 {% if q %}
@@ -16,6 +19,12 @@
     <span>Títulos irmãos — o mesmo protocolo {{ q.protocolo }}</span>
     <small>{{ q.irmaos | length }} irmão(s)</small>
   </div>
+  {% if q.trava_protesto %}
+  <div class="notice danger" style="margin:14px" data-aviso-trava-do-protesto>
+    <strong>Este título não vai a protesto sem afirmação expressa.</strong>
+    {{ q.trava_protesto.motivo }}
+  </div>
+  {% endif %}
   {% if q.trava %}
   <div class="notice warning" style="margin:14px">
     <strong>Este protocolo tem outro título em aberto.</strong> Antes de lançar
@@ -62,8 +71,30 @@
    campos NÃO vêm preenchidos: preencher com o número da tela seria fazer a
    conferência pela pessoa — e o reflexo de confirmar o que a tela mostra foi
    o erro do caso real. #}
-{% macro confere(q, ato) %}
-{% if q and q.trava and ato in q.atos_com_trava %}
+{% macro confere(q, ato, ja_tem_afirmacao=false) %}
+{#- `ja_tem_afirmacao`: o formulário JÁ traz os campos da afirmação (a prova
+    da intimação, no protesto). Repeti-los daria dois `afirmo` e dois
+    `afirmacao` no mesmo formulário, e a rota leria só o primeiro — a pessoa
+    escreveria no segundo e a afirmação sairia vazia. Ali a mesma afirmação
+    vale para as duas travas, e cada uma grava a sua linha de auditoria. #}
+{% if q and ato == 'PROTESTO' and q.trava_protesto %}
+{# A TRAVA DO PROTESTO (decisão do oficial, 29/10/2026): não há papel a
+   digitar — só a afirmação expressa vence. #}
+<div style="grid-column:1/-1" data-trava-do-protesto>
+  <div class="notice danger" style="margin:6px 0">
+    <strong>O irmão de vencimento posterior está pago.</strong>
+    {{ q.trava_protesto.motivo }}
+    {% if ja_tem_afirmacao %}
+      <br><strong>A afirmação expressa acima vale também para esta trava:</strong>
+      escreva nela por que o protesto DESTE título é o certo.
+    {% endif %}
+  </div>
+  {% if not ja_tem_afirmacao %}
+    {{ afirmacao('', 'O protesto não se lavra sem afirmação expressa.',
+                 'Protestar mesmo assim — afirmação expressa') }}
+  {% endif %}
+</div>
+{% elif q and q.trava and ato in q.atos_com_trava %}
 <fieldset style="grid-column:1/-1; border:2px solid var(--warning); border-radius:8px; padding:10px 12px"
           data-qual-titulo>
   <legend><strong>Qual título está no papel?</strong></legend>
@@ -77,15 +108,10 @@
     <input name="irmao_numero" autocomplete="off" placeholder="ex.: 1234/1"></label>
   <label>Vencimento, como está no papel
     <input name="irmao_vencimento" type="date"></label>
-  <details style="grid-column:1/-1; margin-top:8px">
-    <summary><small>O papel não traz número nem vencimento — afirmar expressamente</small></summary>
-    <label><input type="checkbox" name="afirmo" value="1" style="width:auto">
-      Afirmo, sob minha responsabilidade, que este é o título certo</label>
-    <label style="display:block">Afirmação <small>(pelo menos {{ q.minimo_de_letras }} letras além da fórmula)</small>
-      <textarea name="afirmacao" rows="2"
-                placeholder="{{ q.formula }} o devedor apresentou … e conferi …"></textarea></label>
-    <small>A afirmação fica gravada no ato e no registro de auditoria, com o seu nome.</small>
-  </details>
+  {% if not ja_tem_afirmacao %}
+    {{ afirmacao('', 'O papel não traz número nem vencimento, ou você confere que é mesmo este título.',
+                 'O papel não traz número nem vencimento — afirmação expressa') }}
+  {% endif %}
 </fieldset>
 {% endif %}
 {% endmacro %}

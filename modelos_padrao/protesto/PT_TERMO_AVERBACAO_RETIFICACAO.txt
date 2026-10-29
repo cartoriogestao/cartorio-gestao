@@ -1,0 +1,7 @@
+AVERBAÇÃO DE RETIFICAÇÃO DE ERRO MATERIAL.
+Em {data}, de ofício, por se tratar de erro material deste serviço, que não exige qualquer indagação para a constatação imediata da necessidade de sua correção, venho retificar o {ato} abaixo identificado.
+{registro} {protocolo} {titulo}
+Nele, {elemento_errado} constou erroneamente como “{constava}”.
+Nele deixou de constar {elemento_omitido}.
+Diante disto, faço constar {elemento}: “{correto}”, dando cumprimento ao art. 25 da Lei 9.492/1997, retificando o registro. O texto lavrado permanece como foi escrito, e é esta averbação que o retifica.
+O referido é verdade e dou fé.

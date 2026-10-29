@@ -737,7 +737,11 @@ def create_app(test_config: dict | None = None) -> Flask:
             _quem = current_user()
             if _quem is not None and SR.usuario_e_robo(_quem) and \
                     not SR.rota_permitida_ao_robo(request.endpoint):
-                abort(403)
+                # A CONFIGURAÇÃO QUE COBRA A EQUIPE (29/10/2026): o robô que
+                # tenta mudá-la fica na auditoria como TENTATIVA, e o oficial
+                # recebe a tarefa — a recusa é a mesma, mas não é calada.
+                import config_de_cobranca_web as CCW
+                abort(403, description=CCW.robo_barrado(db, _quem, request))
         # Isentas do token de formulário: quem as chama não tem a sessão, e
         # cada uma se autentica por conta própria — o webhook pela assinatura
         # da Meta; a ponte do CCN (13/10/2026) pelo código do lote, e só
@@ -3021,6 +3025,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         "PT_AVISO": ("protesto_avisos",),
         "PT_EDITAL_CENPROT": ("protesto_avisos",),
         "PT_TITULO": ("protesto_imagem",),
+        # O COMPROVANTE DO PIX DO PROTESTO (29/10/2026): abre para quem abre a
+        # lista dos PIX — o balcão que o registra e quem confere o crédito.
+        "PT_PIX": ("protesto_pix_lista",),
         "SELO_GRATUIDADE": ("gratuidade_comprovantes", "selo_gratuidades_portal"),
         "SELO_GRATUIDADE_CERTIDAO": ("selo_gratuidades_portal",),
         "ONR_CERTIDAO": ("onr_certidao_ficha",),
@@ -3303,6 +3310,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     import protesto_repasse_web
     protesto_repasse_web.registrar_rotas(app, db, login_required,
                                          roles_required, audit)
+    # O PIX DO PROTESTO (29/10/2026): só é pagamento com o comprovante e o
+    # crédito conferido. As telas apontam para `protesto_titulo`, e a ficha
+    # dele lê o PIX pelo `context_processor` daqui.
+    import protesto_pix_web
+    protesto_pix_web.registrar_rotas(app, db, login_required,
+                                     roles_required, audit)
     # O PAINEL DAS CENTRAIS — fila generica, ultimas falhas e o cofre (so
     # «informada/nao informada»). Marco (a) da base comum, 05/10/2026. Vem
     # depois da CRA e da CENPROT porque e o painel comum delas; so le, e o
@@ -3521,6 +3534,14 @@ def create_app(test_config: dict | None = None) -> Flask:
     import caixa_aviso_web
     caixa_aviso_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
+    # AS CONFIGURAÇÕES QUE COBRAM A EQUIPE (29/10/2026): o fim do expediente,
+    # o turno de cada operador, os horários do cronômetro esquecido e as
+    # travas e prazos que ninguém mais grava. Só o oficial altera, com
+    # afirmação expressa; robô nunca; e o histórico de cada chave.
+    import config_de_cobranca_web
+    config_de_cobranca_web.registrar_rotas(app, db, login_required, roles_required, audit,
+                                           fmt_date)
+
     # O COMPROVANTE DA GRATUIDADE (11/10/2026): aviso insistente ao USUÁRIO que
     # obteve selo isento, em toda tela, até guardar o comprovante. Não trava o ato.
     import gratuidade_comprovante_web
@@ -3624,6 +3645,13 @@ def create_app(test_config: dict | None = None) -> Flask:
     import acervo_correcao_web
     acervo_correcao_web.registrar_rotas(app, db, login_required,
                                         roles_required, audit, fmt_date)
+
+    # A FILA DE CORREÇÕES DE OFÍCIO (29/10/2026): o agente ou a escrevente
+    # propõe, o oficial aprova com afirmação expressa, e o servidor executa.
+    # Módulo próprio, com as rotas registradas à parte.
+    import correcoes_de_oficio_web
+    correcoes_de_oficio_web.registrar_rotas(app, db, login_required,
+                                            roles_required, audit)
 
     @app.errorhandler(403)
     def forbidden(_):

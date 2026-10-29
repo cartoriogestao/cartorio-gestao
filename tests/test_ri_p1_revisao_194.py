@@ -243,8 +243,22 @@ def test_consulta_positiva_e_protocolo_da_central_ficam_gravados(casa):
     assert "ordem(ns) ativa(s)" in html
 
 
+def _exigir_o_protocolo(casa):
+    """A exigência é chave de cobrança desde 29/10/2026 (`config_de_cobranca`):
+    só o oficial a muda, pela tela, com afirmação expressa — e o banco recusa o
+    atalho do `set_settings`. Liga-se como o oficial ligaria."""
+    c = casa["oficial"]
+    token = _token(c.get("/configuracoes/cobranca").get_data(as_text=True))
+    c.post("/configuracoes/cobranca/alterar", data={
+        "csrf_token": token, "chave": "ri_cnib_exigir_protocolo_na_lavratura",
+        "valor": "1", "afirmo": "1",
+        "afirmacao": "a casa passa a exigir o protocolo da consulta na Central "
+                     "antes de lavrar alienação ou oneração"})
+    assert casa["db"].get_setting("ri_cnib_exigir_protocolo_na_lavratura", "") == "1"
+
+
 def test_casa_que_exige_protocolo_recusa_oneracao_sem_ele(casa):
-    casa["db"].set_settings({"ri_cnib_exigir_protocolo_na_lavratura": "1"})
+    _exigir_o_protocolo(casa)
     con = _con(casa)
     with con:
         mid = _ficha(con, "3303")

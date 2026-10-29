@@ -12,6 +12,27 @@
   <a class="button" href="{{ url_for('protesto_repasse_guia_relacao', guia_id=g.id) }}">Baixar a relação</a>
 </div>
 
+{% if g.situacao in ('GERADA', 'REGISTRADA') %}
+<section class="panel">
+  <div class="panel-head"><span>Onde emitir e pagar esta guia</span>
+    <small>repasse até {{ g.prazo or '—' }}{% if g.vencida %} — <strong class="danger">prazo vencido</strong>{% endif %}</small></div>
+  {% if g.centrais | length > 1 %}
+  <p style="padding:14px 14px 0"><strong class="danger">Esta relação mistura títulos de
+    {{ g.centrais | join(' e ') }}</strong>: o boleto da CRA sai no portal da CRA-MA e a
+    liquidação da CENPROT no portal da CENPROT. Cancele-a e gere as relações do dia (uma por Central).</p>
+  {% endif %}
+  <table class="table">
+    <thead><tr><th>Central</th><th>Onde</th><th>O passo</th><th>A conferir</th></tr></thead>
+    <tbody>
+      {% for passo in g.passos %}
+      <tr><td>{{ passo.central }}</td><td>{{ passo.onde }}</td>
+          <td><small>{{ passo.passo }}</small></td><td><small>{{ passo.a_conferir }}</small></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
 <section class="panel">
   <div class="panel-head"><span>A guia</span><small>{{ g.situacao }}</small></div>
   <table class="table">
@@ -37,8 +58,13 @@
   <form method="post" action="{{ url_for('protesto_repasse_guia_registrar', guia_id=g.id) }}"
         class="grid2" style="padding:14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>Número da guia (ou linha digitável) que o IEPTB emitiu
+    {% if 'CRA' in g.centrais %}
+    <label>Nosso número do boleto de repasse (portal da CRA-MA, Retorno → «Boletos de repasse»; mais de um, separe por vírgula)
+      <input name="identificador" required inputmode="numeric"></label>
+    {% else %}
+    <label>Número da guia (ou linha digitável, ou referência da liquidação) que o portal emitiu
       <input name="identificador" required></label>
+    {% endif %}
     <label>Vencimento <input type="date" name="vencimento"></label>
     <div class="actions"><button class="button">Registrar a guia</button></div>
   </form>
@@ -47,11 +73,17 @@
         class="grid2" style="padding:14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Paga em <input type="date" name="paga_em" value="{{ hoje }}" required></label>
-    <label>Comprovante <input name="comprovante" required
-           placeholder="autenticação bancária ou número da transação"></label>
+    <label>Conferido por
+      <select name="prova" required>
+        {% for k, v in provas.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+      </select></label>
+    <label>Comprovante ou situação no portal <input name="comprovante" required
+           placeholder="autenticação bancária, nº da transação, ou a situação que o portal mostra"></label>
     <div class="actions"><button class="button">Registrar o pagamento</button></div>
     <p style="grid-column:1/-1"><small>O repasse se cumpre aqui: é o dia em que o
-      dinheiro saiu da casa que se mede contra o prazo.</small></p>
+      dinheiro saiu da casa que se mede contra o prazo. «{{ em_aberto }}» é a
+      situação do boleto em aberto e não prova o pagamento — com ela, registre
+      pelo comprovante do banco.</small></p>
   </form>
   {% elif g.situacao == 'PAGA' %}
   <form method="post" action="{{ url_for('protesto_repasse_guia_conciliar', guia_id=g.id) }}"
@@ -99,5 +131,10 @@
       {% endfor %}
     </tbody>
   </table>
+</section>
+
+<section class="panel"><h2>Boletos anexados</h2>
+  {% if arquivos %}<ul>{% for a in arquivos %}<li><a href="{{ url_for('attachment_view', attachment_id=a.id) }}" target="_blank">{{ a.original_name }}</a> <small class="muted">{{ a.uploaded_at }}</small></li>{% endfor %}</ul>
+  {% else %}<p class="muted">Nenhum boleto anexado. O robô do portal da CRA anexa o PDF aqui quando gera o boleto.</p>{% endif %}
 </section>
 {% endblock %}

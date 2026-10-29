@@ -117,6 +117,12 @@ CATEGORIAS: dict[str, tuple[str, str]] = {
     "FUNDO_FADEP": ("Guia do FADEP", REPASSE),
     "FUNDO_FEMP": ("Guia do FEMP", REPASSE),
     "FUNDO_FERRFIS": ("Guia do FERRFIS", REPASSE),
+    # O REPASSE AO APRESENTANTE DO TÍTULO PAGO (29/10/2026): o boleto que o robô
+    # emite no portal da CRA (`protesto_repasse_portal`). É dinheiro de
+    # terceiro que passou pela casa — não é despesa da serventia —, e por isso
+    # fica fora do Livro Diário e do SIAFERJ, como o repasse de fundo.
+    "REPASSE_APRESENTANTE": ("Repasse ao apresentante — título pago no Protesto",
+                             REPASSE),
 }
 
 BOLETO, ARRECADACAO, PIX_COPIA_E_COLA, PIX_CHAVE, MANUAL = (

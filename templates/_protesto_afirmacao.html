@@ -35,6 +35,44 @@
 {% endmacro %}
 
 {#
+  UMA AFIRMAÇÃO POR REGRA (decisão do oficial, integração de 29/10/2026). A
+  entrega e o comprovante do aviso podem cair em mais de uma regra no mesmo
+  registro (`protesto_prova.vencer_todas`): sem o comprovante ou sem quem
+  recebeu, arquivo que cita outro título, arquivo de outro aviso. A caixa
+  comum, acima, vence UMA; com duas ou mais, cada regra pede a sua — os campos
+  `afirmo_<REGRA><sufixo>` e `afirmacao_<REGRA><sufixo>`, que a rota lê
+  (`_afirmacoes_por_regra`). O mesmo texto em duas regras é recusado.
+
+  Os códigos são os de `protesto_prova.REGRAS_DO_AVISO` — e há teste que os
+  compara (`tests/test_protesto_afirmacao_por_trava.py`).
+#}
+{% macro afirmacao_por_regra(sufixo='', regras=none) %}
+{% set regras = regras or [
+     ('ENTREGA_SEM_COMPROVANTE', 'Entrega sem o comprovante assinado ou sem o nome de quem recebeu'),
+     ('COMPROVANTE_DE_OUTRO_TITULO', 'Arquivo cujo nome cita o protocolo de outro título'),
+     ('COMPROVANTE_DE_OUTRO_AVISO', 'Arquivo igual ao já anexado a outro aviso')] %}
+<details class="afirmacao-expressa" style="grid-column:1/-1; margin-top:6px" data-afirmacao-por-regra>
+  <summary><small><strong>Recusou por mais de uma regra? Uma afirmação para cada</strong></small></summary>
+  <div class="notice danger" style="margin:6px 0">
+    Quando o sistema recusa por <strong>mais de uma regra</strong> no mesmo
+    registro, a caixa de cima não vale para todas: cada regra pede a sua
+    afirmação, e o mesmo texto em duas é recusado. Preencha só as regras que a
+    recusa citou.
+  </div>
+  {% for codigo, rotulo in regras %}
+  <fieldset style="margin:6px 0">
+    <legend><small><strong>{{ rotulo }}</strong></small></legend>
+    <label style="display:block"><input type="checkbox" name="afirmo_{{ codigo }}{{ sufixo }}"
+           value="1" style="width:auto"> Afirmo</label>
+    <label style="display:block">Afirmo, sob minha responsabilidade, que
+      <textarea name="afirmacao_{{ codigo }}{{ sufixo }}" rows="2"
+                placeholder="o que aconteceu NESTA regra e por que não é erro (pelo menos 30 letras)"></textarea></label>
+  </fieldset>
+  {% endfor %}
+</details>
+{% endmacro %}
+
+{#
   A PROVA DA INTIMAÇÃO de um título, para a ficha e para o lote: o que há,
   o que falta e onde se resolve (`protesto_prova.conferir`).
 #}

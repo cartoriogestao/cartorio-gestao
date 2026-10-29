@@ -1,0 +1,140 @@
+{#
+  OS PIX DO PROTESTO (29/10/2026). Ordem do oficial: PIX só conta como pago
+  com o comprovante anexado E com o crédito localizado no banco. Esta é a
+  lista dos que ainda não viraram pagamento — os que esperam o crédito e os de
+  crédito conferido sem o pagamento lavrado — e, no alto, os que passaram de
+  um dia útil (`protesto_pix.pendencias_do_pix`).
+#}
+{% extends 'base.html' %}
+{% from '_protesto_pix_acoes.html' import acoes with context %}
+{% block heading %}<h1>PIX do Protesto</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a>
+  <form method="post" action="{{ url_for('protesto_pix_conferir') }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="volta" value="lista">
+    <button class="button primary">Conferir no banco agora</button>
+  </form>
+</div>
+
+<div class="notice">
+  <strong>PIX não é pagamento até o crédito ser conferido.</strong> Lançado na ficha do título,
+  com o comprovante, o PIX fica <em>aguardando o crédito</em>: o título não vira PAGO, nada vai à
+  CRA nem à CENPROT e nada se sela. O crédito se localiza no <strong>extrato do Banco Inter</strong>
+  (só leitura{% if com_cofre %}, pelo processo «{{ processo }}» da automação, porque a credencial
+  mora no cofre{% endif %}) — pelo identificador do PIX (E2E), ou pelo valor e pelo dia quando o
+  crédito é um só. Quando não dá, a confirmação é <strong>à mão, do oficial ou do gerente</strong>,
+  nunca de quem lançou, com afirmação expressa. Conferido, o pagamento se lavra na ficha.
+</div>
+
+{% if pendencias %}
+<section class="panel" data-pendencias-do-pix>
+  <div class="panel-head">
+    <span class="danger">Pendências</span>
+    <small>{{ pendencias | length }} · o PIX que espera há mais de {{ tolerancia }} dia útil, e o
+      dinheiro recebido sem pagamento lançado desde o dia do crédito</small>
+  </div>
+  <ul style="padding:0 14px 14px 30px">
+    {% for d in pendencias %}
+    <li>{% if d.atrasado %}<strong class="danger">ATRASADO</strong> {% endif %}
+      {% if d.titulo_id %}<a href="{{ url_for('protesto_titulo', titulo_id=d.titulo_id) }}#pix">título {{ d.numero_titulo }}</a>{% endif %}
+      <small>(protocolo {{ d.protocolo or '—' }})</small> — {{ d.explicacao }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{# A CONCILIAÇÃO AO CONTRÁRIO (29/10/2026): o dinheiro que entrou no banco e
+   bate com um título em aberto, sem pagamento lançado. No caso que trouxe isto,
+   o PIX estava na conta desde 16/10 e o pagamento só foi lançado em 21/10. #}
+<section class="panel" data-dinheiro-sem-pagamento>
+  <div class="panel-head">
+    <span{% if sem_pagamento %} class="danger"{% endif %}>Dinheiro recebido sem pagamento lançado</span>
+    <small>{{ sem_pagamento | length }} · PIX e TED do extrato que batem com título apontado ou
+      intimado — pelo saldo mais as custas, e pelo pagador</small>
+  </div>
+  {% if not sem_pagamento %}
+    <p style="padding:14px"><small>Nenhum crédito do extrato esperando pagamento lançado.</small></p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Crédito</th><th>Título provável</th><th>Por quê</th><th></th></tr></thead>
+    <tbody>
+    {% for c in sem_pagamento %}
+      <tr>
+        <td>{{ c.tipo or 'crédito' }} de R$ {{ c.valor_centavos | centavos_reais }} em {{ c.dia }}
+          {% if c.pagador %}<div><small>de {{ c.pagador }}</small></div>{% endif %}
+          {% if c.e2eid %}<div><small>E2E {{ c.e2eid }}</small></div>{% endif %}</td>
+        <td>{% if c.titulo_id %}<a href="{{ url_for('protesto_titulo', titulo_id=c.titulo_id) }}#pix">{{ c.numero_titulo }}</a>
+            <div><small>protocolo {{ c.protocolo or '—' }} · hoje {{ c.situacao_titulo or '—' }}</small></div>{% endif %}
+          {% if c.candidatos | length > 1 %}<div><small>ou: {% for x in c.candidatos[1:] %}{{ x.numero_titulo }}{% if not loop.last %}, {% endif %}{% endfor %}</small></div>{% endif %}</td>
+        <td><small>{{ (c.candidatos[0].motivo if c.candidatos else '') }}</small></td>
+        <td>{% if pode_confirmar %}
+          <details><summary>Não é deste título</summary>
+            <form method="post" action="{{ url_for('protesto_pix_credito_descartar', credito_id=c.id) }}" class="grid2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="volta" value="lista">
+              <label style="grid-column:1/-1">De quem é este dinheiro <small>(pelo menos 10 letras)</small>
+                <textarea name="motivo" rows="2" required minlength="10"></textarea></label>
+              <div class="actions"><button class="button">Tirar da lista</button></div>
+            </form>
+          </details>
+          {% else %}<small>Lance o pagamento na ficha do título.</small>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Ainda não viraram pagamento</span><small>{{ dados.esperando | length }}</small></div>
+  {% if not dados.esperando %}
+    <p style="padding:14px"><small>Nenhum PIX esperando.</small></p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Título</th><th>PIX</th><th>Situação</th><th>Comprovante</th><th></th></tr></thead>
+    <tbody>
+    {% for p in dados.esperando %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}#pix">{{ p.numero_titulo }}</a>
+          <div><small>protocolo {{ p.protocolo or '—' }} · hoje {{ p.situacao_titulo }}</small></div></td>
+        <td>nº {{ p.id }} · R$ {{ p.valor_centavos | centavos_reais }} de {{ p.data_pix }}
+          {% if p.e2eid %}<div><small>E2E {{ p.e2eid }}</small></div>{% endif %}
+          <div><small>lançado em {{ (p.lancado_em or '')[:16] }} por {{ p.lancado_por or '—' }}</small></div></td>
+        <td>{% if p.situacao == 'CONFIRMADO' %}<strong>crédito conferido</strong> em {{ p.credito_data or '—' }}
+              <div><small>{{ modos.get(p.confirmacao_modo, p.confirmacao_modo) }} — falta lavrar o pagamento</small></div>
+            {% else %}<strong class="danger">aguardando o crédito</strong>
+              {% if p.ultima_consulta %}<div><small>{{ (p.ultima_consulta_em or '')[:16] }}: {{ p.ultima_consulta }}</small></div>{% endif %}
+            {% endif %}</td>
+        <td>{% for x in p.comprovantes %}<a href="{{ url_for('attachment_view', attachment_id=x.id) }}"
+              target="_blank" rel="noopener">{{ x.original_name }}</a> {% endfor %}</td>
+        <td>{{ acoes(p, 'lista', pode_confirmar, modelo_da_afirmacao_pix(p) if p.situacao == 'AGUARDANDO_CREDITO' else '', minimo_da_afirmacao_pix) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+{% if dados.resolvidos %}
+<section class="panel">
+  <div class="panel-head"><span>Resolvidos</span><small>{{ dados.resolvidos | length }}</small></div>
+  <table class="table">
+    <thead><tr><th>Título</th><th>PIX</th><th>Como terminou</th></tr></thead>
+    <tbody>
+    {% for p in dados.resolvidos %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}#pix">{{ p.numero_titulo }}</a></td>
+        <td>nº {{ p.id }} · R$ {{ p.valor_centavos | centavos_reais }} de {{ p.data_pix }}</td>
+        <td>{% if p.situacao == 'NAO_CONFIRMADO' %}crédito não confirmado — <small>{{ p.motivo_nao_confirmado }}
+              ({{ p.nao_confirmado_por or '—' }}, {{ (p.nao_confirmado_em or '')[:10] }})</small>
+            {% else %}pagamento lavrado <small>(ato {{ p.ato_id }}; crédito {{ modos.get(p.confirmacao_modo, p.confirmacao_modo) }})</small>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

@@ -179,9 +179,15 @@ def test_ato_substituto_de_ocorrencia_aceita_nao_reenfileira():
 
     substituto = novo_ato(con, tid, "CANCELAMENTO", "2026-10-29T09:00:00")
     assert substituto not in ids_pendentes(con)
-    # Sem o aceite, a fila voltaria a ver o ato — era só o `retorno_id` dele.
+    # SEM RESPOSTA DA CRA, O ARQUIVO AINDA SEGURA — decisão do oficial,
+    # 29/10/2026. Até aqui este teste dizia que, sem o aceite, a fila voltava
+    # a ver o ato; mas o arquivo que ainda não subiu leva o «A», e se subir a
+    # Central o grava — o segundo «A» seria recusado com 2161.
     con.execute("UPDATE pt_retornos SET cra_enviado_em=NULL WHERE id=?",
                 (r_canc["retorno_id"],))
+    assert substituto not in ids_pendentes(con)
+    # RECUSADO, SOLTA: a CRA não gravou nada daquele arquivo.
+    recusar(con, r_canc["retorno_id"])
     assert substituto in ids_pendentes(con)
     aceitar(con, r_canc["retorno_id"])
     assert substituto not in ids_pendentes(con)

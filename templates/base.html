@@ -457,6 +457,10 @@
           manda conferir TRES VEZES POR DIA, e o que menos se desfaz.
         #}
         <a href="{{ url_for('protesto_desistencias') }}">Desistências</a>
+        {# OS PEDIDOS DA CRA (29/10/2026): DP, CP e AC que vieram no clique da
+           remessa e esperam a casa — antes do «A protestar», pela mesma razão
+           da desistência. #}
+        <a href="{{ url_for('protesto_cra_pedidos') }}">Pedidos da CRA</a>
         <a href="{{ url_for('protesto_a_protestar') }}">A protestar</a>
         <a href="{{ url_for('protesto_retornos') }}">Retorno à CRA</a>
         {#
@@ -482,6 +486,8 @@
         <a href="{{ url_for('protesto_pendencias') }}">Pendências da CENPROT</a>
         <a href="{{ url_for('protesto_resolve') }}">Intimação Digital</a>
         <a href="{{ url_for('protesto_cenprot') }}">Chave do CENPROT</a>
+        {# 29/10/2026: o que a Central diz de cada pedido × o que o título é aqui. #}
+        <a href="{{ url_for('protesto_cenprot_conferencia') }}">Conferência CENPROT × sistema</a>
         {# «Trazer protesto do E-Ofício» saiu em 17/10/2026 (importação
            terminada); a rota fica, sem link. #}
         {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>
@@ -496,7 +502,10 @@
            deixar log». Secao propria, no fim do grupo, e so para o ADMIN:
            secao que o balcao veria vazia e a que o teste recusa. #}
         {% if user.role == 'ADMIN' %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Do oficial</div>
-        <a href="{{ url_for('protesto_afirmacoes') }}">Afirmações expressas</a>{% endif %}
+        <a href="{{ url_for('protesto_afirmacoes') }}">Afirmações expressas</a>
+        {# A FILA DE CORREÇÕES DE OFÍCIO (29/10/2026) — a do Protesto, filtrada:
+           a fila inteira mora no Administrativo, e a porta de lá é outra. #}
+        <a href="{{ url_for('correcoes_de_oficio_lista', atribuicao='PROTESTO') }}">Correções de ofício do Protesto</a>{% endif %}
       </details>
       {% endif %}
 
@@ -922,6 +931,9 @@
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">A casa</div>
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('fraudes') }}">Atenção para fraudes</a>{% endif %}
         <a href="{{ url_for('checklists') }}">Checklists</a>
+        {# A FILA DE CORREÇÕES DE OFÍCIO (29/10/2026): o balcão e o robô propõem,
+           o oficial decide. Todo login vê; propor e decidir a rota separa. #}
+        <a href="{{ url_for('correcoes_de_oficio_lista') }}">Correções de ofício</a>
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('recurrences') }}">Obrigações recorrentes</a>{% endif %}
         {# OS LIVROS OBRIGATÓRIOS (LG08): o que o Código de Normas do MA manda
            ter, e onde cada livro está — com os três administrativos do art.

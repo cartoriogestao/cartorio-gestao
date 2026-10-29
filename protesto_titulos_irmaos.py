@@ -51,6 +51,19 @@ A TRAVA — pagamento, desistência e cancelamento
     nosso número do boleto, e a desistência da CRA vem no arquivo. A trava é
     da ficha, onde quem escolhe o título é uma pessoa.
 
+A TRAVA DO PROTESTO — decisão do oficial, 29/10/2026
+    O PROTESTO TRAVA quando um irmão de vencimento POSTERIOR está PAGO com o
+    MESMO valor. É a assinatura do caso: a /2 «paga» e a /1, anterior e de
+    mesmo valor, indo a protesto — o pagamento lançado na /2 era da /1. Não há
+    papel a digitar aqui (quem vai a protesto não trouxe comprovante): a trava
+    se vence SÓ com afirmação expressa, regra própria
+    («PROTESTO_IRMAO_POSTERIOR_PAGO»), gravada no ato e na auditoria. Vale na
+    ficha e no lote «A protestar»; no lote o travado SAI da seleção, com o
+    motivo à vista, e só se protesta pela ficha, afirmando.
+    Medido em 29/10/2026: entre os títulos intimados (os que podem ir a
+    protesto), ela pega ZERO — o caso já foi corrigido. Antes da correção
+    pegaria a /1.
+
 A AFIRMAÇÃO EXPRESSA — o contrato comum da casa (29/10/2026)
     A trava se vence só com a caixa `afirmo` marcada E o texto `afirmacao`
     com pelo menos 30 letras («Afirmo, sob minha responsabilidade, que…»). O
@@ -76,6 +89,12 @@ A CONFERÊNCIA — só lê, não corrige
        `tbCedente` bate com o registro da CRA em 1.100 de 1.403). Isto NÃO se
        conserta aqui: a conferência mostra, e o conserto do dado e da carga é
        decisão do oficial.
+       E O DADO FOI CONSERTADO NO MESMO DIA, por fora deste módulo: às 15h41
+       a correção da carga (auditoria `PROTESTO_CORRECAO_CEDENTE_CARGA`,
+       1.409 linhas). Medido depois dela: sobra **1** — a /1 do caso, que
+       entrou pelo pedido da CENPROT e se confere contra a linha do E-Ofício.
+       A conferência continua: é ela que diz se a correção pegou, e pega o
+       próximo.
 """
 from __future__ import annotations
 
@@ -86,6 +105,7 @@ from datetime import datetime
 from collections.abc import Iterable
 from typing import Any
 
+import afirmacoes_expressas as AFX
 import protesto as PT
 import protesto_arquivo as PA
 from bd_nativo import banco
@@ -105,15 +125,19 @@ ATOS_COM_TRAVA = ("PAGAMENTO", "DESISTENCIA", "CANCELAMENTO")
 # anuência de um protesto é o caso típico de dois protestos no protocolo.
 SITUACOES_EM_ABERTO = ("RECEBIDO", "APONTADO", "INTIMADO", "PROTESTADO")
 
-# O código da regra na auditoria `AFIRMACAO_EXPRESSA`.
+# O código da regra na auditoria `AFIRMACAO_EXPRESSA`: a do papel (pagamento,
+# desistência, cancelamento) e a do protesto, que são duas decisões
+# diferentes e se contam separadas.
 REGRA = "PROTESTO_IRMAO_EM_ABERTO"
+REGRA_PROTESTO = "PROTESTO_IRMAO_POSTERIOR_PAGO"
 
-# O contrato comum da afirmação expressa (29/10/2026).
-MINIMO_DE_LETRAS = 30
-FORMULA = "Afirmo, sob minha responsabilidade, que"
+# O contrato comum da afirmação expressa (29/10/2026) — a régua mora em
+# `afirmacoes_expressas` desde a integração.
+MINIMO_DE_LETRAS = AFX.MINIMO_DE_LETRAS
+FORMULA = AFX.MODELO
 
 O_ATO = {"PAGAMENTO": "o pagamento", "DESISTENCIA": "a desistência",
-         "CANCELAMENTO": "o cancelamento"}
+         "CANCELAMENTO": "o cancelamento", "PROTESTO": "o protesto"}
 # Onde se confere, com a preposição: «confira NO comprovante».
 NO_PAPEL = {"PAGAMENTO": "no comprovante ou no boleto do pagamento",
             "DESISTENCIA": "no pedido de desistência do credor",
@@ -297,6 +321,44 @@ def irmaos_de_varios(con, titulo_ids: Iterable[Any]) -> dict[int, list[dict]]:
             for tid, (_, outros) in _grupos_de(banco(con), titulo_ids).items()}
 
 
+def _trava_do_protesto(este: dict, irmaos: list[dict]) -> dict | None:
+    """A trava do protesto (decisão do oficial, 29/10/2026): um irmão de
+    vencimento POSTERIOR está PAGO com o MESMO valor deste. Só calcula.
+
+    Sem vencimento deste ou do irmão não há «posterior» a medir, e a regra
+    não se aplica — ela é a assinatura das parcelas, que vencem em datas.
+    """
+    ve = _vencimento(este.get("data_vencimento"))
+    if not ve:
+        return None
+    valor = int(este.get("valor_centavos") or 0)
+    pagos = [i for i in irmaos
+             if i["situacao"] == "PAGO"
+             and _vencimento(i.get("data_vencimento")) > ve
+             and int(i.get("valor_centavos") or 0) == valor]
+    if not pagos:
+        return None
+    motivo = (
+        f"O irmão {'; '.join(_rotulo(i) for i in pagos)} — mesmo protocolo "
+        f"{este['protocolo']}, vencimento POSTERIOR e o mesmo valor deste — "
+        f"está PAGO, e este ({_rotulo(este)}) iria a protesto. É a assinatura "
+        f"do caso de 29/10/2026: o pagamento lançado no irmão era deste. "
+        f"Confira no comprovante qual dos dois foi pago antes de protestar.")
+    return {"regra": REGRA_PROTESTO, "motivo": motivo, "irmaos": pagos}
+
+
+def travas_do_protesto(con, titulo_ids: Iterable[Any]) -> dict[int, dict]:
+    """Os títulos que NÃO vão a protesto sem afirmação expressa: id → a trava
+    (regra, motivo e os irmãos pagos). Só LÊ. É o que tira o título da
+    seleção do lote «A protestar»."""
+    saida: dict[int, dict] = {}
+    for tid, (este, outros) in _grupos_de(banco(con), titulo_ids).items():
+        trava = _trava_do_protesto(este, outros)
+        if trava:
+            saida[tid] = trava
+    return saida
+
+
 def quadro_da_ficha(con, titulo_id: int) -> dict | None:
     """O quadro «Títulos irmãos» da ficha: este título e os irmãos lado a lado,
     e se a trava vale. None quando o título não tem irmão. Só LÊ."""
@@ -308,22 +370,19 @@ def quadro_da_ficha(con, titulo_id: int) -> dict | None:
     return {"protocolo": este["protocolo"], "este": este,
             "irmaos": irmaos, "trava": bool(travam), "travam": travam,
             "atos_com_trava": ATOS_COM_TRAVA,
+            "trava_protesto": _trava_do_protesto(este, irmaos),
             "minimo_de_letras": MINIMO_DE_LETRAS, "formula": FORMULA}
 
 
 # ------------------------------------------------------------ a trava
 
 
-def _so_letras(v: Any) -> str:
-    return "".join(c for c in _nome(v) if c.isalpha())
-
-
 def _letras(texto: Any) -> int:
     """Quantas LETRAS a afirmação tem ALÉM da fórmula. Sem tirar a fórmula, a
     frase-modelo sozinha («Afirmo, sob minha responsabilidade, que») já teria
-    as trinta letras, e a afirmação passaria sem dizer nada."""
-    letras, formula = _so_letras(texto), _so_letras(FORMULA)
-    return len(letras.removeprefix(formula))
+    as trinta letras, e a afirmação passaria sem dizer nada. A régua é a do
+    contrato (`afirmacoes_expressas.letras_alem_da_frase`)."""
+    return AFX.letras_alem_da_frase(texto)
 
 
 def _afirmacao(afirmo: bool, afirmacao: Any, *, por_robo: bool,
@@ -338,14 +397,18 @@ def _afirmacao(afirmo: bool, afirmacao: Any, *, por_robo: bool,
             "Robô não faz afirmação expressa: ela é de uma pessoa, sob a "
             "responsabilidade dela. Lance este ato com o usuário de quem "
             "conferiu o papel. Nada foi lançado.")
-    if not afirmo or _letras(texto) < MINIMO_DE_LETRAS:
+    valido = AFX.texto_valido(texto) if afirmo else None
+    if not valido:
         raise TituloIrmaoError(
-            f"Para lançar {O_ATO.get(ato, 'o ato')} sem a conferência, marque "
+            f"Para lançar {O_ATO.get(ato, 'o ato')} assim mesmo, marque "
             f"«Afirmo» E escreva a afirmação com pelo menos {MINIMO_DE_LETRAS} "
             f"letras além de «{FORMULA}…» — o que você conferiu e por que este "
             f"é o título certo. O que faltava: {o_que_faltava} Nada foi "
             f"lançado.")
-    return texto
+    # A FRASE INTEIRA FICA GRAVADA: a tela comum da casa mostra a abertura
+    # fora da caixa de texto, e quem escreve só o resto afirmou a frase toda
+    # (`afirmacoes_expressas.texto_valido` a põe na frente).
+    return valido
 
 
 def _bate(t: dict, numero: str, vencimento: str) -> bool:
@@ -376,7 +439,17 @@ def conferir_e_anotar(con, titulo_id: int, ato: str, ato_id: int, *,
     aberto que se distinga deste); senão, o que ficou gravado no ato —
     `titulo_conferido` ou `afirmacao_expressa`. Quem chama grava a auditoria
     da afirmação FORA da transação.
+
+    NO PROTESTO a trava é outra (decisão do oficial, 29/10/2026): o irmão de
+    vencimento posterior pago com o mesmo valor. Ali não há papel a digitar, e
+    ela se vence só com a afirmação — regra `REGRA_PROTESTO`. O lote não
+    afirma: chamado sem `afirmo`, recusa, e o título se protesta pela ficha.
     """
+    if ato == "PROTESTO":
+        return _conferir_o_protesto(con, titulo_id, ato_id, afirmo=afirmo,
+                                    afirmacao=afirmacao, por_robo=por_robo,
+                                    quem=quem, agora=agora,
+                                    situacao_antes=situacao_antes)
     if ato not in ATOS_COM_TRAVA:
         return None
     quadro = quadro_da_ficha(con, titulo_id)
@@ -446,7 +519,12 @@ def conferir_e_anotar(con, titulo_id: int, ato: str, ato_id: int, *,
         detalhe = {"afirmacao_expressa": {
             "regra": REGRA, "afirmacao": texto, "o_que_faltava": falta,
             "ato": ato, "por": quem, "em": agora}}
+    return _gravar_no_ato(con, ato_id, detalhe)
 
+
+def _gravar_no_ato(con, ato_id: int, detalhe: dict) -> dict:
+    """Junta a conferência ao `detalhe_json` do ato, sem apagar o que o
+    domínio já gravou ali. ESCREVE."""
     bd = banco(con)
     linha = bd.um("SELECT detalhe_json FROM pt_atos WHERE id=%s", (int(ato_id),))
     try:
@@ -459,6 +537,40 @@ def conferir_e_anotar(con, titulo_id: int, ato: str, ato_id: int, *,
     bd.escrever("UPDATE pt_atos SET detalhe_json=%s WHERE id=%s",
                 (json.dumps(atual, ensure_ascii=False), int(ato_id)))
     return detalhe
+
+
+def _conferir_o_protesto(con, titulo_id: int, ato_id: int, *, afirmo: bool,
+                         afirmacao: Any, por_robo: bool, quem: str | None,
+                         agora: str | None,
+                         situacao_antes: str | None) -> dict | None:
+    """A trava do protesto: o irmão de vencimento posterior PAGO com o mesmo
+    valor. Vence só com a afirmação expressa. ESCREVE no ato quando vence."""
+    achado = _grupos_de(banco(con), [titulo_id]).get(int(titulo_id))
+    if not achado:
+        return None
+    este, irmaos = achado
+    if situacao_antes:
+        este = {**este, "situacao": situacao_antes}
+    trava = _trava_do_protesto(este, irmaos)
+    if not trava:
+        return None
+    falta = trava["motivo"]
+    texto = _afirmacao(afirmo, afirmacao, por_robo=por_robo,
+                       o_que_faltava=falta, ato="PROTESTO")
+    if texto is None:
+        raise TituloIrmaoError(
+            f"{falta} O protesto deste título só se lavra pela FICHA, com "
+            f"afirmação expressa — marque «Afirmo» e escreva por que este é o "
+            f"título certo; fica gravada no ato e na auditoria, com o seu "
+            f"nome. Nada foi lavrado.")
+    af = {"regra": REGRA_PROTESTO, "afirmacao": texto, "o_que_faltava": falta,
+          "ato": "PROTESTO", "por": quem, "em": agora}
+    # NO ATO DO PROTESTO A CHAVE `afirmacao_expressa` É DA PROVA DA INTIMAÇÃO
+    # (`protesto.lancar_protesto`, 29/10/2026). As duas travas podem ser
+    # vencidas no mesmo ato, e gravar por cima apagaria a outra: a dos irmãos
+    # fica ao lado, com nome próprio. A rota recebe a de sempre e audita.
+    _gravar_no_ato(con, ato_id, {"afirmacao_expressa_irmaos": af})
+    return {"afirmacao_expressa": af}
 
 
 # ------------------------------------------------------------ a conferência
@@ -688,9 +800,10 @@ def resumo_para_o_painel(con, acervo=None) -> dict:
 
 # A ORIGEM DE CADA PENDÊNCIA, como o roteiro do protesto a lê. O roteiro
 # ignora a linha com origem «ACERVO» — o cedente que só se confere contra a
-# linha do E-Ofício, e que está errado em quase todo o acervo (1.404 de 1.407
-# em 29/10/2026): no roteiro do dia ele afogaria o resto. Ele continua na
-# conferência inteira, em «Conferência dos títulos».
+# linha do E-Ofício, e que estava errado em quase todo o acervo (1.404 de
+# 1.407 em 29/10/2026, antes da correção das 15h41): no roteiro do dia ele
+# afogaria o resto. Ele continua na conferência inteira, em «Conferência dos
+# títulos».
 ORIGEM_IRMAOS = "IRMAOS"
 
 

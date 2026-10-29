@@ -1,0 +1,49 @@
+{#
+  A CONFERÊNCIA COM A CENPROT NO FORMULÁRIO DO ATO — 29/10/2026, ordem do
+  oficial depois do 350574/1 (pago na Central por Liquidação no portal e
+  protestado aqui no dia seguinte). Só aparece no título de origem CENPROT.
+
+  A TRAVA É NA ROTA, E NÃO AQUI (`cenprot_conferencia.trava_do_ato`): no
+  PROTESTO a Central é consultada na hora; no apontamento, na intimação e na
+  desistência vale a última conferência, e só o PAGO POR LIQUIDAÇÃO trava —
+  na CENPROT ele não se altera. A situação que veio do NOSSO XML não trava: é
+  pendência de reenviar o XML com a situação nova.
+
+  A AFIRMAÇÃO É A DO CONTRATO COMUM, e UMA POR TRAVA (decisão do oficial,
+  integração de 29/10/2026): até então este bloco não abria caixa quando a
+  prova da intimação ou o selo já tinham aberto a deles, e a mesma afirmação
+  vencia as duas travas. Agora a CENPROT tem o seu campo (`afirmo_cenprot` +
+  `afirmacao_cenprot`) sempre que outra trava também pede afirmação no ato.
+#}
+{% from '_protesto_afirmacao.html' import afirmacao %}
+{% set cc = cc_da_ficha if cc_da_ficha is defined else conferencia_cenprot_da_ficha(titulo) %}
+{% if cc and (ato == 'PROTESTO' or cc.contraria_o_pago) %}
+{% set travas = cc.trava if ato == 'PROTESTO' else cc.contraria_o_pago %}
+<div style="grid-column:1/-1" class="notice{% if travas %} danger{% endif %}">
+  <small><strong>Título de origem CENPROT</strong> (pedido {{ cc.pedido or 'não achado no título' }}).
+  {% if ato == 'PROTESTO' %}
+    Ao lançar, o sistema consulta a Central antes de lavrar: se ela der o título
+    por pago por liquidação, ou por saído por outro caminho dela — ou se não der
+    para conferir —, o protesto <strong>não sai</strong> sem afirmação expressa.
+  {% else %}
+    A CENPROT dá este título por <strong>pago por liquidação</strong>, e lá isso
+    não se altera: este ato só sai com afirmação expressa.
+  {% endif %}
+  {% if cc.conferencia and cc.conferencia.consultada_em %}
+    Última consulta: {{ cc.conferencia.consultada_em[:16]|replace('T',' ') }}{% if cc.conferencia.central_status or cc.conferencia.central_ocorrencia %} — «{{ cc.conferencia.central_status or '' }}{% if cc.conferencia.central_ocorrencia %} / {{ cc.conferencia.central_ocorrencia }}{% endif %}»{% endif %}.
+  {% endif %}</small>
+  {% for a in travas %}
+    <div><small><strong>{{ a.frase }}</strong> <em>Caminho:</em> {{ a.caminho }}</small></div>
+  {% endfor %}
+  {% for a in cc.achados if a.regra == 'REENVIAR_XML' %}
+    <div><small>{{ a.frase }} <em>{{ a.caminho }}</em></small></div>
+  {% endfor %}
+  <div><small><a href="{{ url_for('protesto_cenprot_conferencia') }}#titulo-{{ titulo.id }}">Conferência CENPROT × sistema</a></small></div>
+</div>
+{#- UMA AFIRMAÇÃO POR TRAVA (integração de 29/10/2026): a da CENPROT é a dela.
+    Quando outra trava também pede afirmação neste ato (a prova da intimação,
+    o selo, o irmão), a ficha manda `sufixo_cenprot` = «_cenprot», e cada uma
+    tem o seu campo; sozinha, ela usa a caixa comum. #}
+{{ afirmacao(sufixo_cenprot | default(''), (travas[0].frase if travas else 'A conferência com a CENPROT pode recusar este ato.'),
+             rotulo='Insistir mesmo assim — afirmação expressa (CENPROT)') }}
+{% endif %}

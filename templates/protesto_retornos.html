@@ -35,7 +35,8 @@
   <strong>A CRA conhece o protocolo, e não o título.</strong> Título com dois devedores
   é um protocolo só na Central: o que um título já informou vale para o outro. O ato do
   segundo título com a mesma ocorrência fica numa lista própria, com o título que já
-  informou. Ocorrência <em>diferente</em> (protestado e depois cancelado, por exemplo)
+  informou. <strong>O arquivo gerado e ainda sem resposta da CRA também segura</strong>
+  (decisão do oficial, 29/10/2026): se ela o recusar, o ato se solta. Ocorrência <em>diferente</em> (protestado e depois cancelado, por exemplo)
   não é repetição, e segue. Quem insistir em mandar de novo só consegue com
   <strong>afirmação expressa</strong>, que fica gravada com o nome de quem afirmou.
 </div>
@@ -106,10 +107,10 @@
 {% for grupo in [
      {'linhas': por_outro,
       'titulo': 'Já informado por outro título do mesmo protocolo',
-      'texto': 'Este protocolo tem mais de um título (um por devedor), e a CRA só conhece o protocolo. Outro título dele já levou esta mesma ocorrência e a Central a aceitou (ou a serventia a marcou como já informada) — mandar de novo faz ela recusar o arquivo inteiro.'},
+      'texto': 'Este protocolo tem mais de um título (um por devedor), e a CRA só conhece o protocolo. Outro título dele já levou esta mesma ocorrência — a Central a aceitou, ou ela está num arquivo que a CRA ainda não respondeu, ou a serventia a marcou como já informada. Mandar de novo faz a CRA recusar o arquivo inteiro.'},
      {'linhas': do_mesmo,
       'titulo': 'Não entram de novo: a CRA já aceitou esta ocorrência',
-      'texto': 'A mesma ocorrência deste título já foi aceita pela CRA (o ato que a levou pode ter sido desfeito depois), ou alguém da serventia marcou o ato como já informado.'}] if grupo.linhas %}
+      'texto': 'A mesma ocorrência deste título já foi aceita pela CRA, ou já vai num arquivo que ela ainda não respondeu (o ato que a levou pode ter sido desfeito depois), ou alguém da serventia marcou o ato como já informado.'}] if grupo.linhas %}
 <section class="panel">
   <div class="panel-head">
     <span>{{ grupo.titulo }}</span>
@@ -349,6 +350,23 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button class="button">Enviar de novo</button>
               </form>
+            {% endif %}
+          {% elif g.tipo != 'SDTBFOCRT' and g.titulos and not g.atos_presos %}
+            {# OS ATOS VOLTARAM À FILA ANTES DO ENVIO (29/10/2026): este não vai mais. #}
+            <div><small>Os atos deste arquivo voltaram a «Esperando retorno» antes do
+              envio — gere um retorno novo.</small></div>
+          {% elif g.atos_desfeitos %}
+            {# O ARQUIVO QUE LEVA ATO DESFEITO NÃO VAI À CRA (29/10/2026): a
+               Central ouviria uma ocorrência sem ato válido que a sustente. #}
+            <div class="danger" data-retorno-com-desfeito><small><strong>Não enviar:</strong>
+              {{ g.atos_desfeitos }} ato(s) deste arquivo foram desfeitos depois de ele
+              ser gerado. Devolva os atos à fila e gere um retorno novo — ele leva só os
+              válidos.</small></div>
+            {% if user.role in ['ADMIN','MANAGER','USER'] %}
+            <form method="post" action="{{ url_for('protesto_retorno_devolver_atos', retorno_id=g.id) }}" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="button">Devolver os atos à fila</button>
+            </form>
             {% endif %}
           {% else %}
             {% if g.cra_envio_erro %}<div class="danger"><small>{{ g.cra_envio_erro[:160] }}</small></div>{% endif %}

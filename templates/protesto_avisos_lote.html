@@ -7,7 +7,7 @@
   PASSOS: esta tela mostra o que o PDF traz, e nada é lavrado até o clique.
 #}
 {% extends 'base.html' %}
-{% from '_protesto_afirmacao.html' import afirmacao %}
+{% from '_protesto_afirmacao.html' import afirmacao, afirmacao_por_regra %}
 {% block heading %}<h1>Intimações entregues — PDF com várias</h1>{% endblock %}
 {% block content %}
 {% include '_serventia.html' %}
@@ -107,6 +107,7 @@
                 <input name="recebido_por_{{ g.aviso_id }}"
                        placeholder="Nome de quem assinou o canhoto">
                 {{ afirmacao('_' ~ g.aviso_id, 'Entrega sem o nome de quem recebeu, ou folhas iguais às de outro aviso, só se registram com afirmação expressa.') }}
+                {{ afirmacao_por_regra('_' ~ g.aviso_id) }}
               {% else %}—{% endif %}</td>
         </tr>
         {% endfor %}

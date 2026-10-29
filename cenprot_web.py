@@ -26,15 +26,19 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import sqlite3
 
 from flask import Response, flash, redirect, render_template, request, url_for
 
 import cenprot_api as API
+import cenprot_conferencia as CONF
 import cenprot_pendencias as PEND
 import centrais_cred as CENTCRED
 import cn_schema as CN
 import protesto_cenprot as PCEN
+import selo_robo as SR
+from seguranca_web import numero_digitado
 
 # QUEM ENTRA. É o mesmo trio das outras telas do Protesto — a guarda de
 # alcance do módulo vem antes, no `before_request`, e é ela que decide se o
@@ -448,6 +452,147 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                     f"em Configurações → Centrais → status.)")
         flash(d["motivo"] + nota, "success" if d["ok"] else "danger")
         return redirect(url_for("protesto_pendencias", ambiente=ambiente))
+
+    # ------------------------------------ a conferência CENPROT × sistema
+    #
+    # 29/10/2026 — ORDEM DO OFICIAL depois do 350574/1, pago na Central por uma
+    # Liquidação feita no portal e protestado aqui no dia seguinte: «o sistema
+    # tem de impedir que a mão de obra erre». A tela COMPARA e diz o caminho;
+    # não corrige nada. Quem compara é `cenprot_conferencia`.
+
+    def _voltar_a_conferencia(titulo_id=None):
+        destino = url_for("protesto_cenprot_conferencia")
+        return redirect(destino + (f"#titulo-{int(titulo_id)}" if titulo_id else ""))
+
+    @app.route("/protesto/cenprot/conferencia")
+    @roles_required(*QUEM_OPERA)
+    def protesto_cenprot_conferencia():
+        """CENPROT × sistema: o que a Central disse da última consulta, contra
+        a situação do título AGORA. SÓ LÊ — e não fala com a rede."""
+        with db.connect() as con:
+            q = CONF.quadro(con)
+        return render_template(
+            "protesto_cenprot_conferencia.html", q=q,
+            tem_credencial=CENTCRED.tem(CENTCRED.CENPROT, ambiente_pedido()),
+            nome_do_estado=CONF.NOME_DO_ESTADO, DIVERGE=CONF.DIVERGE,
+            CONFERIR=CONF.CONFERIR, modelo=CONF.MODELO_DA_AFIRMACAO,
+            minimo=CONF.MINIMO_DE_LETRAS_DA_AFIRMACAO)
+
+    @app.route("/protesto/cenprot/conferencia/consultar", methods=["POST"])
+    @roles_required(*QUEM_OPERA)
+    def protesto_cenprot_conferencia_consultar():
+        """Pergunta à CENPROT por todos os pedidos (ou por um) e guarda a
+        resposta. **Não muda nada na Central nem no título** — o `GET
+        /pedidos/consulta` só lê."""
+        bruto = str(request.form.get("titulo_id") or "").strip()
+        titulo_id = numero_digitado(bruto) if bruto else None
+        if bruto and titulo_id is None:
+            flash("O número do título não se lê — use o botão da linha.",
+                  "danger")
+            return _voltar_a_conferencia()
+        try:
+            r = CONF.consultar(db, titulo_id=titulo_id, quem=usuario_nome(),
+                               ambiente=ambiente_pedido())
+        except RECUSAS_DO_BALCAO + (CONF.ConferenciaError,) as erro:
+            flash(str(erro), "danger")
+            return _voltar_a_conferencia(titulo_id)
+        audit("cenprot_conferencia", "pt_titulos", titulo_id,
+              {k: v for k, v in r.items() if k != "parou"}
+              | {"parou": bool(r.get("parou"))})
+        frase = (f"Consultados {r['titulos']} título(s) de origem CENPROT: "
+                 f"{r['achados']} pedido(s) achado(s) na Central, "
+                 f"{r['nao_achados']} não achado(s), {r['sem_pedido']} sem "
+                 f"número de pedido.")
+        if r["parou"]:
+            flash(frase + f" A CONSULTA PAROU: {r['parou']} "
+                  f"{r['nao_perguntados']} ficaram com a resposta anterior.",
+                  "danger")
+        elif r["com_erro"]:
+            flash(frase + f" {r['com_erro']} voltaram com recusa da Central — "
+                  f"veja a linha de cada um.", "warning")
+        else:
+            flash(frase, "success")
+        return _voltar_a_conferencia(titulo_id)
+
+    @app.route("/protesto/cenprot/conferencia/liquidacao", methods=["POST"])
+    @roles_required(*QUEM_OPERA)
+    def protesto_cenprot_conferencia_liquidacao():
+        """«Liquidei no portal o pedido N, e ele é do título T.» ESCREVE só
+        nesta casa — a Central não fica sabendo de nada por aqui."""
+        titulo_id = numero_digitado(request.form.get("titulo_id"))
+        if titulo_id is None:
+            flash("Informe o número do título desta casa (o da ficha) de que "
+                  "a liquidação é.", "danger")
+            return _voltar_a_conferencia()
+        try:
+            with db.transaction() as con:
+                r = CONF.registrar_liquidacao(
+                    con, pedido=request.form.get("pedido"), titulo_id=titulo_id,
+                    liquidada_em=request.form.get("liquidada_em"),
+                    afirmo=bool(request.form.get("afirmo")),
+                    afirmacao=request.form.get("afirmacao"),
+                    quem=usuario_nome(), agora=db.now(),
+                    # ROBÔ NÃO AFIRMA (integração de 29/10/2026)
+                    robo=SR.usuario_e_robo())
+        except CONF.ConferenciaError as erro:
+            flash(str(erro), "danger")
+            return _voltar_a_conferencia()
+        # O CONTRATO COMUM DA AFIRMAÇÃO EXPRESSA — `audit` abre transação
+        # própria, e por isso fica FORA do `with`.
+        audit(CONF.ACAO_DA_AUDITORIA, "pt_titulos", r["titulo_id"],
+              {"regra": CONF.REGRA_LIQUIDACAO, "afirmacao": r["afirmacao"],
+               "o_que_faltava": ("a API da CENPROT não informa liquidação: o "
+                                 "registro é a afirmação de quem liquidou no "
+                                 "portal"),
+               "pedido": r["pedido"], "liquidacao_id": r["id"]})
+        divergem = [a["frase"] for a in r["achados"]
+                    if a["regra"].startswith("LIQUIDACAO")]
+        if divergem:
+            flash("Liquidação registrada — e ela NÃO BATE: " + " ".join(divergem),
+                  "danger")
+        else:
+            flash(f"Liquidação do pedido {r['pedido']} registrada para o título "
+                  f"{r['titulo_id']}.", "success")
+        return _voltar_a_conferencia(r["titulo_id"])
+
+    @app.route("/protesto/cenprot/conferencia/liquidacao/<int:liquidacao_id>"
+               "/anular", methods=["POST"])
+    @roles_required(*QUEM_OPERA)
+    def protesto_cenprot_conferencia_liquidacao_anular(liquidacao_id: int):
+        """Anula um registro de liquidação feito por engano, com motivo. A
+        linha fica; na Central nada muda."""
+        try:
+            with db.transaction() as con:
+                r = CONF.anular_liquidacao(
+                    con, liquidacao_id, motivo=request.form.get("motivo"),
+                    quem=usuario_nome(), agora=db.now())
+        except CONF.ConferenciaError as erro:
+            flash(str(erro), "danger")
+            return _voltar_a_conferencia()
+        audit("cenprot_liquidacao_anulada", "pt_titulos", r["titulo_id"],
+              {"liquidacao_id": r["id"], "pedido": r["pedido"],
+               "motivo": r["motivo"]})
+        flash(f"Registro da liquidação do pedido {r['pedido']} anulado. A "
+              f"linha fica, com o motivo.", "success")
+        return _voltar_a_conferencia(r["titulo_id"])
+
+    def _conferencia_da_ficha(titulo):
+        """O quadro da CENPROT junto do botão de protestar, na ficha. SÓ LÊ.
+
+        É `jinja_env.globals` (a forma de `seletor_do_selo`) para a rota da
+        ficha não precisar mudar. **A ficha não cai por causa dele**: sem
+        quadro, a trava continua valendo na rota de lançar.
+        """
+        try:
+            if not titulo or not CONF.e_de_origem_cenprot(dict(titulo)):
+                return None
+            with db.connect() as con:
+                return CONF.da_ficha(con, int(titulo["id"]))
+        except (sqlite3.Error, KeyError, TypeError, ValueError):
+            logging.getLogger(__name__).exception("conferência CENPROT da ficha")
+            return None
+
+    app.jinja_env.globals["conferencia_cenprot_da_ficha"] = _conferencia_da_ficha
 
 
 def _decisao_do_formulario(p: dict) -> dict:

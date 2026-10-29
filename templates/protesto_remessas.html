@@ -40,14 +40,21 @@
     <input type="hidden" name="com_imagem" value="1">
     <p>Baixa <strong>todas as remessas disponíveis</strong> na CRA, de qualquer
       data e apresentante, <strong>com as imagens disponíveis</strong>. Não precisa informar número nem nome de arquivo.</p>
-    <p><small>Elas vão para a <strong>conferência</strong> — nada entra antes de você conferir
-      e clicar em Receber. Baixar marca as remessas como baixadas na CRA.
+    <p>No mesmo clique, depois da remessa, traz também as
+      <strong>desistências (DP)</strong>, os <strong>cancelamentos (CP)</strong> e
+      as <strong>autorizações (AC)</strong>: a desistência que casa com o título
+      se aplica, e o resto fica em <a href="{{ url_for('protesto_cra_pedidos') }}">Pedidos da CRA</a>.</p>
+    <p><small>As remessas vão para a <strong>conferência</strong> — nada entra antes de você conferir
+      e clicar em Receber. Baixar marca os arquivos como baixados na CRA, e por isso
+      cada resposta fica guardada inteira no sistema.
       Desde 21/10/2026 as escreventes também trazem, por ordem do oficial.</small></p>
     <div class="actions">
       <button class="button primary" type="submit">Baixar todas e conferir</button>
     </div>
   </form>
 </section>
+
+{% include '_protesto_cra_pedidos_do_dia.html' %}
 
 {% if remessas_salvas %}
 <section class="panel">

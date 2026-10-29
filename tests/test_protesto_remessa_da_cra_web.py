@@ -97,7 +97,11 @@ def test_todas_as_remessas_sem_numero_vao_a_conferencia_sem_gravar(s, monkeypatc
     r = s["c"].post("/protesto/remessas/da-cra", data={
         "csrf_token": _token(tela), "o_que": "pendentes"}, follow_redirects=True)
     assert r.status_code == 200
-    assert chamadas == [("pendentes", "")]
+    # A REMESSA VEM PRIMEIRO, e no mesmo clique, depois dela, as desistências,
+    # os cancelamentos e as autorizações (29/10/2026) — pela MESMA porta.
+    assert chamadas[0] == ("pendentes", "")
+    assert [q for q, _ in chamadas[1:]] == ["desistencias", "cancelamentos",
+                                            "autorizacoes"]
     assert "Receber" in r.get_data(as_text=True)
     with _con(s) as con:
         assert con.execute("SELECT COUNT(*) FROM pt_remessas").fetchone()[0] == 0

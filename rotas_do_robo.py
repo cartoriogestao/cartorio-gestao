@@ -145,9 +145,23 @@ DAS_FICHAS: tuple[str, ...] = (
     "ri_ficha",                # ri_ficha.html → ri_lavrar_ato
 )
 
+# A FILA DE CORREÇÕES DE OFÍCIO (29/10/2026) — e este grupo não é do selo.
+# Decisão do oficial: a leitura do banco é livre para os robôs e os agentes;
+# a ESCRITA é do sistema, com usuário. A correção de ofício que um agente
+# fazia por script direto no banco passa a ser PROPOSTA, pela conta de robô —
+# e propor é PREPARAR: grava só a própria fila, a tarefa do oficial e a
+# auditoria. FICAM DE FORA aprovar, recusar e anexar: decidir é de gente, e
+# as duas rotas de decisão recusam o robô também por dentro
+# (`correcoes_de_oficio_web`), e o domínio uma terceira vez.
+DA_FILA_DE_CORRECOES: tuple[str, ...] = (
+    "correcoes_de_oficio_nova",     # o formulário (GET, só mostra)
+    "correcoes_de_oficio_propor",   # a prévia e a proposta (POST, formulário ou JSON)
+    "correcoes_de_oficio_ficha",    # a proposta, depois de feita (GET, só lê)
+)
+
 #: A LISTA FECHADA. `selo_robo.rota_permitida_ao_robo` a consulta; vedada
 #: (`selo_robo.ROTAS_VEDADAS_AO_ROBO`) vence permitida.
 ROTAS_PERMITIDAS_AO_ROBO: frozenset[str] = frozenset(
     DA_SESSAO + DOS_AVISOS + DO_SELO_AUTOMATICO_ATRIBUICOES
     + DO_SELO_AUTOMATICO_NOTAS + DO_SELO_AUTOMATICO_NOTIFICACAO
-    + DO_SELO_AUTOMATICO_RI + DAS_FICHAS)
+    + DO_SELO_AUTOMATICO_RI + DAS_FICHAS + DA_FILA_DE_CORRECOES)

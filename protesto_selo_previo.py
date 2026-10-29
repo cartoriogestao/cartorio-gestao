@@ -67,6 +67,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable, Iterable
 
+import afirmacoes_expressas as AFX
 import ato_selado as AS
 import atribuicoes as ATR
 from bd_nativo import banco
@@ -80,9 +81,14 @@ from bd_nativo import banco
 # As ordens judiciais não são ato da serventia (cumprimento de ordem de fora);
 # o apontamento não sela desde 21/10/2026 — dos 1.409 do E-Ofício, 1.161 não
 # têm selo, e os 248 que têm trazem o do ato POSTERIOR.
+#
+# A AVERBAÇÃO DE RETIFICAÇÃO DE OFÍCIO (29/10/2026, Lei 9.492/1997, art. 25)
+# também não sela: sem precedente de selo no E-Ofício (o «Retifica protesto»,
+# rotina 82, nunca selou) e sem caminho de averbação no aparelho do Protesto.
+# Se o oficial decidir que há selo, ela sai desta lista por decisão dele.
 ATOS_SEM_SELO_PROPRIO = frozenset({
     "SUSTACAO", "REVOGACAO_SUSTACAO", "EFEITO_SUSPENSIVO",
-    "REVOGACAO_EFEITO_SUSPENSIVO", "APONTAMENTO",
+    "REVOGACAO_EFEITO_SUSPENSIVO", "APONTAMENTO", "AVERBACAO_RETIFICACAO",
 })
 
 # O nome do ato na frase do balcão. O que não está aqui sai como «o ato».
@@ -116,8 +122,9 @@ REGRA_SITUACAO_SEM_ATO = "SITUACAO_SEM_ATO"
 # `regra`, `afirmacao` e `o_que_faltava`, e o texto no `detalhe_json` do ato —
 # na mesma chave que os outros módulos do Protesto usam.
 ACAO_DA_AFIRMACAO = "AFIRMACAO_EXPRESSA"
-MINIMO_DE_LETRAS_DA_AFIRMACAO = 30
-MODELO_DA_AFIRMACAO = "Afirmo, sob minha responsabilidade, que…"
+# O piso e a frase moram em `afirmacoes_expressas` (integração de 29/10/2026).
+MINIMO_DE_LETRAS_DA_AFIRMACAO = AFX.MINIMO_DE_LETRAS
+MODELO_DA_AFIRMACAO = AFX.MODELO + "…"
 CHAVE_NO_DETALHE = "afirmacoes_expressas"
 
 
@@ -184,29 +191,23 @@ def codigo_para_o_selo(codigo: Any, caminho: Any) -> str:
     return cod
 
 
-def validar_afirmacao(afirmo: Any, afirmacao: Any) -> str | None:
+def validar_afirmacao(afirmo: Any, afirmacao: Any, *,
+                      robo: bool = False) -> str | None:
     """O texto da afirmação expressa, se ela cumpre o contrato; None se não
-    veio nenhuma. Só calcula. Recusa a afirmação pela metade.
+    veio nenhuma. Só calcula. Recusa a afirmação pela metade, e a de robô.
 
-    Pelo menos 30 LETRAS: espaço e pontuação não contam — «.......» não é
-    afirmação de ninguém.
+    A RÉGUA É A DO CONTRATO (`afirmacoes_expressas.validar`) desde a
+    integração de 29/10/2026: pelo menos 30 LETRAS ALÉM da frase de abertura.
+    A cópia que morava aqui contava a frase — e ela sozinha tem 33 letras.
     """
     texto = " ".join(str(afirmacao or "").split())
     if not afirmo and not texto:
         return None
-    letras = sum(1 for c in texto if c.isalpha())
-    if afirmo and letras >= MINIMO_DE_LETRAS_DA_AFIRMACAO:
-        return texto
-    falta = []
-    if not afirmo:
-        falta.append("marque a caixa «Afirmo»")
-    if letras < MINIMO_DE_LETRAS_DA_AFIRMACAO:
-        falta.append(f"escreva a afirmação com pelo menos "
-                     f"{MINIMO_DE_LETRAS_DA_AFIRMACAO} letras (vieram {letras})")
-    raise SituacaoError(
-        "A afirmação expressa está incompleta: " + " e ".join(falta)
-        + f", começando por «{MODELO_DA_AFIRMACAO}». Ela fica gravada no ato e "
-          "na auditoria, com o seu nome.")
+    try:
+        return AFX.validar(afirmo, texto, robo=robo)
+    except AFX.AfirmacaoError as erro:
+        raise SituacaoError(
+            f"A afirmação expressa está incompleta. {erro}") from None
 
 
 def _servem_ao_caminho(con, caminho: str, tabela: str) -> list[str]:
@@ -288,7 +289,8 @@ def conferir_antes_de_lavrar(tipo: Any,
                              caixa_aberto: bool | None = None,
                              lancamento_com_protocolo: bool = False,
                              afirmo: Any = False,
-                             afirmacao: Any = "") -> dict | None:
+                             afirmacao: Any = "",
+                             robo: bool = False) -> dict | None:
     """Recusa, ANTES de o ato existir, o lançamento cujo selo não vai sair.
     Só LÊ.
 
@@ -356,7 +358,7 @@ def conferir_antes_de_lavrar(tipo: Any,
                  f"em selo por este caminho ({caminho}); os que servem: "
                  f"{', '.join(servem) or 'nenhum medido'}")
         try:
-            texto = validar_afirmacao(afirmo, afirmacao)
+            texto = validar_afirmacao(afirmo, afirmacao, robo=robo)
         except SituacaoError as metade:
             # A AFIRMAÇÃO PELA METADE CONTINUA SENDO A MESMA TRAVA: a tela
             # devolve o formulário com a caixa, e não uma página de erro.
@@ -736,7 +738,7 @@ def situacao_sem_ato(con, titulo_id: int) -> dict | None:
 
 
 def corrigir_situacao_de_oficio(con, titulo_id: int, *, afirmo: Any,
-                                afirmacao: Any) -> dict:
+                                afirmacao: Any, robo: bool = False) -> dict:
     """Volta o título à situação que os atos válidos sustentam. ESCREVE.
 
     É a CORREÇÃO DE OFÍCIO, e só com afirmação expressa: quem decide é quem
@@ -753,7 +755,7 @@ def corrigir_situacao_de_oficio(con, titulo_id: int, *, afirmo: Any,
         raise SituacaoError(
             "Nada a corrigir: a situação do título já tem o ato válido que a "
             "sustenta.")
-    texto = validar_afirmacao(afirmo, afirmacao)
+    texto = validar_afirmacao(afirmo, afirmacao, robo=robo)
     if texto is None:
         raise SituacaoError(
             "A correção de ofício exige a afirmação expressa: marque «Afirmo» e "

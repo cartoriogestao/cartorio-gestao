@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% block title %}Configurações que cobram a equipe — Administrativo{% endblock %}
+{% block heading %}<h1>Configurações que cobram a equipe</h1>{% endblock %}
+{% block content %}
+{# AS CHAVES DE COBRANÇA — ver config_de_cobranca.py. São as configurações
+   cujo afrouxamento cala um aviso ou abre uma trava sobre a equipe. Só o
+   oficial (ADMIN humano) as altera, com afirmação expressa; robô nunca; quem
+   é cobrado nunca. O banco recusa a mudança feita por fora desta tela
+   (gatilho settings_cobranca). O histórico é só do ADMIN. #}
+<div class="actions"><a class="button" href="{{ url_for('settings') }}">&larr; Configurações</a></div>
+
+<section class="panel">
+  <p class="notice warning" style="margin-top:0">
+    <strong>Estas configurações cobram a equipe</strong>: cada uma decide quando um
+    aviso aparece ou se uma trava vale. Só o oficial as altera, aqui, com
+    <strong>afirmação expressa</strong> — e toda alteração vira tarefa do oficial.
+    Robô nunca altera, nem a pedido de alguém. Mudança gravada direto no banco
+    (script ou robô) é recusada pelo próprio banco.
+  </p>
+  {% if not e_admin %}
+    <p class="notice danger"><strong>Só o oficial altera estas configurações. Peça ao oficial.</strong>
+      Uma tentativa por esta tela é recusada e fica registrada.</p>
+  {% endif %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Configuração</th><th>Vale agora</th><th>O que ela cobra</th><th>Afrouxar é</th></tr></thead>
+      <tbody>
+      {% for c in q.chaves %}
+        <tr>
+          <td><strong>{{ c.nome }}</strong><br><small class="muted">{{ c.chave }}</small></td>
+          <td>{% if c.valor is none %}<span class="muted">padrão:</span> {{ c.padrao or '—' }}{% elif c.valor == '' %}<span class="muted">vazio</span>{% else %}<strong>{{ c.valor }}</strong>{% endif %}</td>
+          <td><small>{{ c.cobra }}</small></td>
+          <td><small>{{ c.afrouxar }}</small></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% macro afirmacao_expressa() %}
+  <div class="notice danger" style="margin:6px 0">
+    <strong>Afirmação expressa.</strong> {{ q.regra_da_afirmacao }}
+  </div>
+  <label style="display:block"><input type="checkbox" name="afirmo" value="1" style="width:auto"> Afirmo</label>
+  <label style="display:block">Afirmo, sob minha responsabilidade, que
+    <textarea name="afirmacao" rows="2" placeholder="por que muda, e por que não é erro (pelo menos 30 letras)"></textarea></label>
+{% endmacro %}
+
+{% if e_admin %}
+<section class="panel" id="alterar">
+  <h2>Alterar uma configuração</h2>
+  <form method="post" action="{{ url_for('configuracoes_cobranca_alterar') }}" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Configuração
+      <select name="chave" required>
+        {% for c in q.chaves %}<option value="{{ c.chave }}">{{ c.nome }}</option>{% endfor %}
+      </select></label>
+    <label>Novo valor <input name="valor" autocomplete="off"
+      placeholder="hora 14:00 · dias 3 · data 13/10/2026 · LIGADO/DESLIGADO ou 1/0 · números separados por vírgula"></label>
+    <div style="grid-column:1/-1">{{ afirmacao_expressa() }}</div>
+    <button type="submit" class="primary">Alterar</button>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel" id="turnos">
+  <h2>Turno por operador (aviso do caixa)</h2>
+  <p class="small">O fim do expediente vale para a equipe do dia
+    (<strong>{{ q.fim_do_expediente }}</strong>). Para quem tem turno próprio, o aviso do caixa começa no
+    <strong>fim do turno dele</strong>, e o caixa aberto antes do começo do turno atual tranca as outras telas.
+    Turno vazio: vale o fim do expediente. Ninguém define o próprio turno.</p>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Operador</th><th>Login</th><th>Papel</th><th>Turno</th></tr></thead>
+      <tbody>
+      {% for t in q.turnos %}
+        <tr><td>{{ t.nome }}</td><td><small>{{ t.login }}</small></td><td><small>{{ t.papel }}</small></td>
+          <td>{% if t.turno %}<strong>{{ t.turno }}</strong>{% else %}<span class="muted">fim do expediente</span>{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if e_admin %}
+  <form method="post" action="{{ url_for('configuracoes_cobranca_alterar') }}" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Operador
+      <select name="chave" required>
+        {% for t in q.turnos %}<option value="{{ t.chave }}">{{ t.nome }} ({{ t.login }})</option>{% endfor %}
+      </select></label>
+    <label>Turno <input name="valor" autocomplete="off" placeholder="18:00-23:30 (vazio tira o turno)"></label>
+    <div style="grid-column:1/-1">{{ afirmacao_expressa() }}</div>
+    <button type="submit" class="primary">Gravar o turno</button>
+  </form>
+  {% endif %}
+</section>
+
+{% if e_admin and hist %}
+<section class="panel" id="historico">
+  <h2>Histórico</h2>
+  <form method="get" action="{{ url_for('configuracoes_cobranca') }}#historico" class="inline-form">
+    <label>Últimos <input type="number" name="dias" min="1" max="3650" value="{{ hist.dias }}" style="width:6em"> dias</label>
+    <button type="submit">Filtrar</button>
+  </form>
+  <p class="small">Entram as alterações desta tela, as tentativas recusadas e as mudanças gravadas
+    <strong>por fora</strong> antes desta guarda (scripts e robôs, com os nomes que eles mesmos escreveram).
+    A recusa feita pelo próprio banco não aparece aqui: o banco desfaz a transação inteira, e ela fica no log do
+    PostgreSQL.</p>
+  {% if hist.cortado %}<p class="notice">A lista foi cortada nas mais recentes: diminua o período para ver as outras.</p>{% endif %}
+  {% if hist.linhas %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Quando</th><th>Quem</th><th>A mando de</th><th>Configuração</th><th>De</th><th>Para</th>
+        <th>O que foi</th><th style="width:28%">Afirmação ou motivo</th></tr></thead>
+      <tbody>
+      {% for h in hist.linhas %}
+        <tr>
+          <td><small>{{ h.ts[:10] }} {{ h.ts[11:16] }}</small></td>
+          <td>{{ h.quem }}{% if h.agente %}<br><small class="muted">agente: {{ h.agente }}</small>{% endif %}</td>
+          <td><small>{{ h.a_mando_de or '—' }}</small></td>
+          <td>{{ h.nome }}<br><small class="muted">{{ h.chave }}</small></td>
+          <td><small>{{ h.de or '—' }}</small></td>
+          <td><small>{{ h.para or '—' }}</small></td>
+          <td>{% if h.o_que == 'ALTERADA' %}alterada pelo oficial{% elif h.o_que == 'RECUSADA' %}<strong>RECUSADA</strong>{% else %}<strong>gravada por fora</strong><br><small class="muted">{{ h.acao }}</small>{% endif %}
+            {% if h.afrouxa %}<br><span class="badge alta">afrouxou</span>{% endif %}</td>
+          <td><small>{{ h.afirmacao or h.motivo or '—' }}</small></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif hist.medido %}
+    <p class="muted">Nenhuma mudança nestas configurações no período.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>O que tem o mesmo papel e ficou fora desta lista</h2>
+  <ul class="small">
+    {% for nome, razao in q.fora %}<li><strong>{{ nome }}</strong> — {{ razao }}</li>{% endfor %}
+  </ul>
+</section>
+{% endblock %}

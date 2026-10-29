@@ -55,6 +55,7 @@ from typing import Any
 
 import cancelamento_certidao as CANC
 import protesto as PT
+import protesto_averbacao as PAV
 import protesto_pecas as PECAS
 from bd_nativo import banco
 from caixa_schema import reais
@@ -410,6 +411,12 @@ def buscar(con: Any, *, nome: str | None = None,
             "motivo_cancelamento": (baixa["motivo_cancelamento"]
                                     if baixa else None),
         })
+        # A AVERBAÇÃO DE RETIFICAÇÃO (29/10/2026) — Lei 9.492/1997, art. 25. A
+        # linha a menciona (`_linha_do_protesto`); a chave só existe quando há
+        # averbação viva, e a certidão sem ela sai byte a byte a de antes.
+        averbacoes = PAV.mencoes(con, int(r["titulo_id"]))
+        if averbacoes:
+            achados[-1]["averbacoes"] = averbacoes
     # O QUE A LEI DEIXA CERTIFICAR. Sem autorização, o cancelado e o suspenso
     # ficam de fora — e então a negativa é o que cabe se não sobrar nada. A
     # sustação precária (LH13) é a exceção: ela SAI, e é a certidão positiva
@@ -595,6 +602,16 @@ def _linha_do_protesto(a: dict, i: int, con: Any = None) -> str:
         _p("protestado", data=_dia(a["data_protesto"])),
         lugar,
     ]
+    # A AVERBAÇÃO DE RETIFICAÇÃO (29/10/2026) — Lei 9.492/1997, art. 25: uma
+    # menção por averbação viva, depois dos dados do registro. Os dados acima
+    # já são os certos (vêm do cadastro); a menção diz que o registro foi
+    # retificado, e quando — sem repetir o que constou errado. É a peça
+    # `PT_CERTIDAO_AVERBACAO`, que o oficial edita.
+    for av in a.get("averbacoes") or ():
+        partes.append(_frase(con, "PT_CERTIDAO_AVERBACAO",
+                             ato=str(av.get("ato") or "registro do protesto"),
+                             data=_dia(av.get("data")),
+                             elemento=str(av.get("elemento") or "")))
     if a.get("sustacao_precaria"):
         # CNN art. 263-K, III (LH13): os dados do registro ficam acima, e
         # aqui vão a sustação, o caráter provisório e o número da ação; o

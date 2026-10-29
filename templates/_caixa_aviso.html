@@ -29,7 +29,7 @@
     O SEU CAIXA DE {% for d in a.dias %}{{ d[8:10] }}/{{ d[5:7] }}{% if not loop.last %}, {% endif %}{% endfor %} AINDA ESTÁ ABERTO.
     <a href="{{ url_for('caixa') }}">Feche agora</a> — caixa que atravessa a noite mistura o dinheiro de dois dias.
   {% else %}
-    O EXPEDIENTE ACABOU ÀS {{ a.fim }} E O SEU CAIXA DE HOJE CONTINUA ABERTO.
+    {% if a.turno %}O SEU TURNO ACABOU ÀS {{ a.fim }} E O SEU CAIXA DO TURNO CONTINUA ABERTO.{% else %}O EXPEDIENTE ACABOU ÀS {{ a.fim }} E O SEU CAIXA DE HOJE CONTINUA ABERTO.{% endif %}
     <a href="{{ url_for('caixa') }}">Feche o caixa antes de sair</a>.
   {% endif %}
   {% if a.outros and a.nivel != 'OUTROS' %}<br><small>Também abertos de outros dias:
@@ -47,7 +47,7 @@
       — conte o dinheiro e feche na tela do caixa.</p>
       <a class="caixa-aviso-botao" href="{{ url_for('caixa') }}">Ir para o caixa e fechar</a>
     {% else %}
-      <h2 id="caixa-aviso-titulo">Fim do expediente: feche o caixa</h2>
+      <h2 id="caixa-aviso-titulo">{% if a.turno %}Fim do seu turno{% else %}Fim do expediente{% endif %}: feche o caixa</h2>
       <p>Já passou das {{ a.fim }} e o seu caixa de hoje está aberto. Caixa que fica
       aberto de um dia para o outro <strong>trava o sistema amanhã</strong> até ser fechado.</p>
       <a class="caixa-aviso-botao" href="{{ url_for('caixa') }}">Fechar o caixa agora</a>

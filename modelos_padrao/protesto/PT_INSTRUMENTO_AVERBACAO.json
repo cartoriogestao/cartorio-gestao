@@ -1,0 +1,11 @@
+{
+  "chave": "PT_INSTRUMENTO_AVERBACAO",
+  "atribuicao": "Protesto",
+  "nome": "Instrumento de protesto — menção da averbação de retificação",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: sai no fim do instrumento, uma por averbação de retificação viva do registro do protesto (Lei 9.492/1997, art. 25). O instrumento descreve o título com os dados do cadastro, que já são os certos; a menção diz que o registro foi retificado e quando — sem repetir o que constou errado, que em geral é o nome de outra pessoa. {data} é a da averbação e {elemento} o que ela retificou, com o artigo. Não há precedente no E-Ofício, que não guardava instrumento.",
+  "campos": [
+    "data",
+    "elemento"
+  ]
+}

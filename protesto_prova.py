@@ -68,27 +68,39 @@ import re
 from datetime import date
 from typing import Any
 
+import afirmacoes_expressas as AFX
 import protesto as PT
 import protesto_triduo as TRIDUO
 from bd_nativo import banco
 from ri_schema import soma_dias_uteis
 
 # ------------------------------------------- o contrato da afirmação expressa
+#
+# A RÉGUA MORA EM `afirmacoes_expressas` desde a integração de 29/10/2026 —
+# era aqui, e havia mais cinco cópias pela casa, que já divergiam. Os nomes
+# abaixo continuam valendo para quem os importa; o que eles dizem vem de lá.
+
 
 #: A frase com que a afirmação começa — a tela a mostra fixa, antes da caixa
 #: de texto, e quem a digitar de novo não a vê repetida no registro.
-FRASE_DA_AFIRMACAO = "Afirmo, sob minha responsabilidade, que"
+FRASE_DA_AFIRMACAO = AFX.MODELO
 #: Quantas LETRAS o texto precisa ter, além da frase. Letras, e não
 #: caracteres: «............» não diz nada.
-PISO_DA_AFIRMACAO = 30
+PISO_DA_AFIRMACAO = AFX.MINIMO_DE_LETRAS
 #: A ação da auditoria — a mesma em toda trava desta reestruturação.
-ACAO_DA_AUDITORIA = "AFIRMACAO_EXPRESSA"
+ACAO_DA_AUDITORIA = AFX.ACAO
 
 #: Os códigos das regras desta trava (MAIÚSCULAS, como o contrato pede).
 REGRA_PROTESTO = "PROTESTO_SEM_PROVA_DA_INTIMACAO"
 REGRA_ENTREGA = "ENTREGA_SEM_COMPROVANTE"
 REGRA_OUTRO_TITULO = "COMPROVANTE_DE_OUTRO_TITULO"
 REGRA_OUTRO_AVISO = "COMPROVANTE_DE_OUTRO_AVISO"
+#: Trocar o nome de quem recebeu, já registrado no aviso (29/10/2026).
+REGRA_CORRECAO_DO_RECEBEDOR = "CORRECAO_DE_QUEM_RECEBEU"
+#: As regras da entrega e do comprovante do aviso, que podem cair juntas no
+#: mesmo registro — e cada uma pede a sua afirmação (`vencer_todas`). A tela
+#: desenha um campo para cada uma, nesta ordem.
+REGRAS_DO_AVISO = (REGRA_ENTREGA, REGRA_OUTRO_TITULO, REGRA_OUTRO_AVISO)
 
 COMO_AFIRMAR = (
     f"Se você tem certeza de que isto não é erro, marque «Afirmo» e escreva "
@@ -101,23 +113,14 @@ class ProvaError(PT.ProtestoError):
     """A intimação não está provada, e ninguém afirmou expressamente."""
 
 
-def _letras(texto: str) -> int:
-    return sum(1 for c in texto if c.isalpha())
-
-
 def afirmacao_valida(texto: Any) -> str | None:
     """O texto inteiro da afirmação, já com a frase de abertura — ou `None`
-    se ela não vale. Só calcula.
+    se ela não vale. Só calcula. É `afirmacoes_expressas.texto_valido`.
 
     A FRASE NÃO CONTA NO PISO: ela tem mais de trinta letras sozinha, e
     contá-la deixaria passar a afirmação que não diz nada além dela.
     """
-    corrido = " ".join(str(texto or "").split())
-    if corrido.lower().startswith(FRASE_DA_AFIRMACAO.lower()):
-        corrido = corrido[len(FRASE_DA_AFIRMACAO):].lstrip(" ,:;-—")
-    if _letras(corrido) < PISO_DA_AFIRMACAO:
-        return None
-    return f"{FRASE_DA_AFIRMACAO} {corrido}"
+    return AFX.texto_valido(texto)
 
 
 def vencer_ou_recusar(regra: str, o_que_faltava: str, afirmacao: Any, *,
@@ -143,18 +146,40 @@ def vencer_todas(faltas: list[tuple[str, str]], afirmacao: Any, *,
 
     A RECUSA DIZ TODAS DE UMA VEZ — quem afirma tem de ter lido tudo o que
     está afirmando; recusar uma por vez faria a segunda aparecer depois de a
-    afirmação já estar escrita para a primeira. Com a afirmação válida, cada
-    regra vencida vira um registro próprio (e uma linha própria de
-    auditoria), com a mesma afirmação.
+    afirmação já estar escrita para a primeira.
+
+    UMA AFIRMAÇÃO POR REGRA (decisão do oficial, integração de 29/10/2026).
+    `afirmacao` é o texto da caixa comum, ou `{regra: texto}` quando o
+    formulário trouxe um campo por regra (a chave `""` é a caixa comum). A
+    caixa comum vence UMA regra; com duas ou mais, cada uma precisa do seu
+    texto, e o mesmo texto em duas é recusado — antes disto a mesma
+    afirmação ia para as três regras, e cada uma gravava a sua linha com ele.
     """
     if not faltas:
         return []
-    frase = f"{abertura}: {'; '.join(f for _, f in faltas)}."
-    vencer_ou_recusar(faltas[0][0], frase, afirmacao, erro=erro)
-    texto = afirmacao_valida(afirmacao)
-    return [{"regra": regra, "afirmacao": texto,
-             "o_que_faltava": f"{abertura}: {f}."}
-            for regra, f in faltas]
+    por_regra = (dict(afirmacao) if isinstance(afirmacao, dict)
+                 else {"": afirmacao})
+    comum = por_regra.get("")
+    if len(faltas) == 1:
+        regra, falta = faltas[0]
+        return [vencer_ou_recusar(regra, f"{abertura}: {falta}.",
+                                  por_regra.get(regra) or comum, erro=erro)]
+    sem_texto = [(r, f) for r, f in faltas if not str(por_regra.get(r) or "").strip()]
+    if sem_texto:
+        lista = "; ".join(f for _, f in faltas)
+        recado = (" A caixa comum não vale para mais de uma regra: escreva a "
+                  "afirmação de cada uma no campo dela."
+                  if str(comum or "").strip() else "")
+        raise erro(f"{abertura}: {lista}.{recado} Cada regra pede a sua "
+                   f"afirmação expressa. {COMO_AFIRMAR}")
+    registros = [vencer_ou_recusar(r, f"{abertura}: {f}.", por_regra[r],
+                                   erro=erro)
+                 for r, f in faltas]
+    try:
+        AFX.uma_por_trava([dict(x, trava=x["regra"]) for x in registros])
+    except AFX.AfirmacaoError as repetida:
+        raise erro(str(repetida)) from None
+    return registros
 
 
 def para_a_auditoria(registro: dict) -> dict:
@@ -212,7 +237,11 @@ def _prova_pessoal(bd, intimacao_id: int) -> tuple[list[str], list[str], str]:
         faltas.append(f"o aviso {nome} não está registrado como entregue "
                       f"(está {str(aviso['situacao']).lower()})")
     if not str(aviso["recebido_por"] or "").strip():
-        faltas.append(f"o aviso {nome} não diz quem recebeu")
+        # SE FALTAR, AVISAR A ESCREVENTE PARA COMPLETAR (decisão do oficial,
+        # 29/10/2026) — a frase diz onde, e completado o nome a prova fecha.
+        faltas.append(f"falta o nome de quem recebeu o aviso {nome} — complete "
+                      f"em {TELA_DOS_AVISOS}, lista «Entregues», «Completar "
+                      f"quem recebeu»")
     else:
         tem.append(f"aviso {nome} entregue, recebido por quem assinou")
     comprovantes = _anexos(bd, AV.ENTIDADE_DO_COMPROVANTE, aviso["id"])
@@ -376,9 +405,18 @@ def conferir(con, titulo_id: int, *, hoje: Any,
     if faltas:
         frase = (f"Não se protesta sem a prova da intimação: "
                  f"{'; '.join(faltas)}. Onde se resolve: {onde}.")
+    # O AVISO QUE LAVROU A INTIMAÇÃO, para a tela apontar a ação certa (o
+    # «Completar quem recebeu», 29/10/2026). `None` quando não há.
+    aviso = (bd.um("SELECT id, recebido_por FROM pt_avisos WHERE ato_id = %s "
+                   "ORDER BY id DESC LIMIT 1", (intimacao_id,))
+             if intimacao_id else None)
     return {"completa": not faltas, "modo": modo,
             "intimacao_id": intimacao_id, "faltas": faltas, "tem": tem,
-            "onde": onde, "frase": frase}
+            "onde": onde, "frase": frase,
+            "aviso_id": int(aviso["id"]) if aviso else None,
+            "falta_quem_recebeu": bool(
+                aviso and modo == "PESSOAL"
+                and not str(aviso["recebido_por"] or "").strip())}
 
 
 def exigir(con, titulo_id: int, *, hoje: Any,
@@ -423,7 +461,10 @@ def intimacoes_sem_prova(con, *, hoje: Any = None) -> list[dict]:
     mandaria resolver o que a trava não pede (ou calaria o que ela recusa).
 
     Cada linha leva `titulo_id`, `numero_titulo`, `protocolo`, `explicacao`
-    (o que falta, curto), `onde` (a tela que resolve), `modo` e `origem`.
+    (o que falta, curto), `onde` (a tela que resolve), `modo` e `origem` — e
+    `aviso_id` e `link`, o endereço da linha do aviso na tela dos avisos,
+    onde se completa quem recebeu e se anexa o comprovante (29/10/2026: «se
+    faltar, avisar escrevente pra completar»).
     A INTIMAÇÃO VINDA DO E-OFÍCIO sai com `origem = "ACERVO"`: o papel dela é
     do arquivo do E-Ofício, e o acervo não vira atraso — quem lê a lista
     (o roteiro) a deixa de fora; ela continua aqui para quem quiser contar.
@@ -452,6 +493,11 @@ def intimacoes_sem_prova(con, *, hoje: Any = None) -> list[dict]:
             "modo": prova["modo"],
             "origem": ("ACERVO" if linha["origem_da_intimacao"] == "EOFICIO"
                        else "SISTEMA"),
+            "aviso_id": prova.get("aviso_id"),
+            "falta_quem_recebeu": bool(prova.get("falta_quem_recebeu")),
+            "link": (f"/protesto/avisos#aviso-{prova['aviso_id']}"
+                     if prova.get("aviso_id") else
+                     f"/protesto/{int(linha['id'])}"),
         })
     return saida
 

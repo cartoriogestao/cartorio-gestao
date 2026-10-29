@@ -631,6 +631,23 @@ ACHADAS_EM_27_10_2026: dict[str, str] = {
     # catálogo de `despesas_automacao` («despesas_automacao.recorrentes»).
     "recorrentes": "despesas_automacao — a porta é o catálogo da central de "
                    "automação (`automacao_processos.MODULOS_COM_PROCESSOS`)",
+    # A conferência CENPROT × sistema (PR #105): o roteiro do protesto a lê
+    # pelo gancho (`protesto_roteiro.GANCHOS`, módulo e função em texto, que
+    # este varredor não lê), e a tela dela é a conduta 9 do roteiro.
+    "quantos_divergem": "cenprot_conferencia — a porta é o gancho do roteiro "
+                        "do protesto (`protesto_roteiro.GANCHOS`)",
+}
+
+
+# 29/10/2026 — A RELAÇÃO DA GUIA DE REPASSE DO PROTESTO. A rotina é chamada pelo
+# catálogo de `protesto_repasse_automacao` («...gerar_a_relacao_do_dia», texto
+# que este varredor não lê); o que ela faz tem porta própria na tela de
+# repasses (`gerar_guias_do_dia`, `pendencias_do_repasse`), e só a casca da
+# rotina fica sem tela.
+ACHADAS_EM_29_10_2026_REPASSE: dict[str, str] = {
+    "gerar_a_relacao_do_dia": "protesto_repasse_automacao — a porta é o catálogo "
+                              "da central de automação "
+                              "(`automacao_processos.MODULOS_COM_PROCESSOS`)",
 }
 
 
@@ -702,7 +719,8 @@ def _conhecidas() -> set[str]:
             | set(ACHADAS_EM_19_10_2026)
             | set(ACHADAS_EM_20_10_2026)
             | set(ACHADAS_EM_26_10_2026)
-            | set(ACHADAS_EM_27_10_2026))
+            | set(ACHADAS_EM_27_10_2026)
+            | set(ACHADAS_EM_29_10_2026_REPASSE))
 
 
 def test_nenhuma_funcao_nova_fica_sem_tela():

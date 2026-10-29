@@ -42,6 +42,10 @@ PAPEIS: tuple[dict, ...] = (
     # LD04 (21/10/2026): o termo do cancelamento, que não existia — o ato
     # gravava a hipótese e o fundamento, e nenhum texto (Lei 9.492, art. 26, § 6º).
     {'chave': 'PT_TERMO_CANCELAMENTO', 'padrao': ('protesto_termo', 'TERMO_DO_CANCELAMENTO')},
+    # 29/10/2026: a averbação de retificação de erro material, de ofício (Lei
+    # 9.492/1997, art. 25) — o texto que vai à margem do registro e congela no ato.
+    {'chave': 'PT_TERMO_AVERBACAO_RETIFICACAO',
+     'padrao': ('protesto_termo', 'TERMO_DA_AVERBACAO_RETIFICACAO')},
     {'chave': 'PT_INSTRUMENTO_PROTESTO', 'padrao': ('protesto_instrumento', 'INSTRUMENTO_DE_PROTESTO')},
     _peca('PT_INSTRUMENTO_PRACA', 'protesto_instrumento', 'PRACA_NAO_INFORMADA'),
     _peca('PT_INSTRUMENTO_DESCRICAO', 'protesto_instrumento', 'DESCRICAO_DO_DOCUMENTO'),
@@ -62,6 +66,9 @@ PAPEIS: tuple[dict, ...] = (
     # Tarefa 56 (23/10/2026): a menção do atraso do tríduo — CN-MA art. 913,
     # § 1º. Só sai no protesto lavrado depois do termo final.
     _peca('PT_INSTRUMENTO_ATRASO', 'protesto_instrumento', 'FRASE_ATRASO_DO_TRIDUO'),
+    # 29/10/2026: a menção da averbação de retificação (art. 25) no fim do
+    # instrumento — só sai quando o registro tem averbação viva.
+    _peca('PT_INSTRUMENTO_AVERBACAO', 'protesto_instrumento', 'FRASE_DA_AVERBACAO'),
     {'chave': 'PT_CERTIDAO_NEGATIVA', 'padrao': ('protesto_certidao', 'MODELO_CERTIDAO_NEGATIVA')},
     {'chave': 'PT_CERTIDAO_POSITIVA', 'padrao': ('protesto_certidao', 'MODELO_CERTIDAO_POSITIVA')},
     {'chave': 'PT_CERTIDAO_CANCELAMENTO', 'padrao': ('protesto_certidao', 'MODELO_CERTIDAO_CANCELAMENTO')},
@@ -75,6 +82,9 @@ PAPEIS: tuple[dict, ...] = (
     _peca('PT_CERTIDAO_FECHO_UM', 'protesto_certidao', 'FRASE_FECHO_UM'),
     _peca('PT_CERTIDAO_FECHO_VARIOS', 'protesto_certidao', 'FRASE_FECHO_VARIOS'),
     _peca('PT_CERTIDAO_LINHA', 'protesto_certidao', 'LINHA_DO_PROTESTO'),
+    # 29/10/2026: a menção da averbação de retificação (art. 25) na linha do
+    # protesto — só sai quando o título tem averbação viva.
+    _peca('PT_CERTIDAO_AVERBACAO', 'protesto_certidao', 'FRASE_DA_AVERBACAO'),
     {'chave': 'PT_AVISO_INTIMACAO', 'padrao': ('protesto_aviso', 'AVISO_DE_INTIMACAO')},
     _peca('PT_AVISO_ROTULOS', 'protesto_aviso', 'ROTULOS_DO_AVISO'),
     _peca('PT_AVISO_CANHOTO_TITULO', 'protesto_aviso', 'CANHOTO_TITULO'),

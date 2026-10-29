@@ -97,10 +97,17 @@ def livro_de_pagamentos(con, *, de: str | None = None,
         codigo = str(d.get("forma_pagamento") or "").upper()
         forma = rotulo[codigo] if codigo in PT.FORMAS_DE_PAGAMENTO else None
         ocorr = []
+        ident = str(d.get("forma_identificacao") or "")
+        # A DATA DO PAGAMENTO É A DO CRÉDITO (29/10/2026): quando o ato a
+        # guarda e ela não é a do assentamento, ela vai junto da forma — a
+        # coluna «data» do livro é a do assentamento (CN-MA art. 930, b).
+        pago_em = str(d.get("data_do_pagamento") or "")[:10]
+        if pago_em and pago_em != str(r["data_ato"] or "")[:10]:
+            ident = (f"{ident} — " if ident else "") + f"crédito em {_br(pago_em)}"
         if forma:
             ocorr.append(_p("pago_com_identificacao", forma=forma,
-                            identificacao=d["forma_identificacao"])
-                         if d.get("forma_identificacao") else _p("pago", forma=forma))
+                            identificacao=ident)
+                         if ident else _p("pago", forma=forma))
         if r["origem"] == "EOFICIO":
             ocorr.append(_p("eoficio"))
         linhas.append({

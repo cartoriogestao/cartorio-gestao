@@ -84,6 +84,16 @@ quem apresentou é quem foi protestado — o que não acontece na vida real, e
 provavelmente é digitação do começo do E-Ofício. **A carga copia o que está
 lá e conta**; corrigir por conta própria seria inventar.
 
+> **CORREÇÃO DE 29/10/2026 — o cedente desta seção estava errado.**
+> `intCodigoCedente` é chave de **`tbCedente`**, e não de `tbPessoa`: os dois
+> são espaços de id diferentes, e no mesmo número `tbPessoa` traz outra pessoa.
+> Os «908 que resolvem», os «458 sem cedente» e os «28 com o mesmo cedente e
+> devedor» mediam esse engano. Medido na produção: dos 1.409 títulos do acervo,
+> nenhum tinha o credor certo — 488 vazios e 921 com o nome de outra pessoa.
+> A carga passou a ler o cedente em `tbCedente`, com o **nome do registro da
+> CRA** (`tbSDT.Campo04`), que é o que o E-Ofício imprimia no aviso (1.673 de
+> 1.675) e na certidão (25 de 25). Ver `acervo_carga._cedente_do_titulo`.
+
 ---
 
 ## 2. O apontamento não existia na tela

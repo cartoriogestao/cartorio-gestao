@@ -320,6 +320,73 @@ def _pessoa(r: dict, prefixo: str) -> dict | None:
             "cidade": campo("cidade"), "uf": campo("uf")}
 
 
+# O CEDENTE MORA EM `tbCedente`, E NAO EM `tbPessoa` — correcao de 29/10/2026.
+#
+# `tbAvisoProtesto.intCodigoCedente` e chave de `tbCedente` (322 linhas, com
+# razao social, tipo, CNPJ/CPF e endereco proprios). A carga a resolvia em
+# `tbPessoa`, que e OUTRO espaco de id: no mesmo numero o `tbCedente` traz a
+# empresa credora e o `tbPessoa`, o nome de um devedor qualquer. Medido na
+# producao em 29/10/2026, so leitura: dos 1.409 titulos
+# do acervo, NENHUM tinha o cedente certo — 488 vazios e 921 com o nome de
+# outra pessoa. E o erro que o Livro 3 ja registrou com o `tbOrtoga` (mais
+# abaixo): a tabela escolhida pelo nome, e nao pelo dado.
+#
+# O NOME E O DO REGISTRO DA CRA (`tbSDT.Campo04`, a posicao 20 do registro de
+# `protesto_arquivo.TITULO_NA_REMESSA`) quando o titulo tem um; sem ele, a
+# razao social de `tbCedente`. E o que o E-Oficio imprimia, medido no acervo
+# em 29/10/2026:
+#
+#   aviso de intimacao   `tbBoletoApto.strCedenteTitulo` e o `Campo04` em
+#                        1.673 de 1.675; a razao social de `tbCedente` em
+#                        1.399 — e NUNCA onde as duas divergem (as 2 excecoes
+#                        sao um titulo so, com o nome de um banco);
+#   certidao positiva    `tbProtesto_Certidao_Itens.campo8` e o `Campo04` em
+#                        25 de 25; a razao social em 21, e as 4 que divergem
+#                        sairam com o da CRA;
+#   XML do CENPROT       o nome do cedente e o da posicao 20
+#                        (`protesto_cenprot_xml`, «DE ONDE VEM CADA CAMPO»).
+#
+# O DOCUMENTO E O ENDERECO SAO SO DE `tbCedente`, com a regra do tipo de
+# `_pessoa` (`strCGC` no 'J', `strCIC` no 'F'), e NAO se completam com o
+# registro da CRA: as posicoes 110 a 198 dele sao do SACADOR, e nao do cedente
+# (`protesto_cenprot_xml`). Medido: nos 410 titulos em que cedente e sacador
+# sao pessoas diferentes, a linha do cedente em `tbCedente` nao tem documento
+# nenhum — completar com o `Campo06` daria ao credor o CNPJ de outro. Onde os
+# dois tem documento, ele e o mesmo em 847 de 847. E o endereco que o E-Oficio
+# mandava a CENPROT era o do cadastro dele, e nao o do arquivo.
+
+
+def _cedente_do_titulo(r: dict) -> tuple[dict | None, str | None]:
+    """O cedente (o credor) de um titulo do acervo, e o que contar. So calcula.
+
+    `r` traz as colunas de `tbCedente` com o prefixo `ced` e o nome do registro
+    da CRA em `cra_cedente_nome` — as que faltarem contam como vazias. Devolve
+    o cedente na forma de `_pessoa` (ou None, sem nenhum dos dois) e o rotulo
+    da contagem que a linha merece, ou None.
+    """
+    cadastro = _pessoa(r, "ced")
+    try:
+        nome_da_cra = _txt(r["cra_cedente_nome"])
+    except (IndexError, KeyError):
+        nome_da_cra = None
+    if not nome_da_cra:
+        if cadastro is None:
+            return None, ("títulos sem cedente no acervo (nem em `tbCedente`, "
+                          "nem no registro da CRA)")
+        return cadastro, None
+    if cadastro is None:
+        vazio = dict.fromkeys(("documento_tipo", "documento_numero", "endereco",
+                               "bairro", "cep", "cidade", "uf"))
+        return ({"nome": nome_da_cra, **vazio},
+                "títulos sem linha em `tbCedente`: o cedente entrou só com o "
+                "nome do registro da CRA")
+    rotulo = None
+    if normalizar_nome(nome_da_cra) != normalizar_nome(cadastro["nome"]):
+        rotulo = ("títulos em que o nome do cedente é o do registro da CRA, "
+                  "diferente da razão social de `tbCedente`")
+    return dict(cadastro, nome=nome_da_cra), rotulo
+
+
 # O TIPO DE LIVRO DENTRO DA MATRICULA DE 32 DIGITOS.
 #
 #   A estrutura esta medida em `CLAUDE.md`: CNS 6 + acervo 2 + servico 2 +
@@ -474,11 +541,14 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
                       *, agora: str) -> Carga:
     """Os titulos de `tbAvisoProtesto`, o devedor, o cedente e o apontamento.
 
-    O DEVEDOR E O CEDENTE VEM DE `tbPessoa`, e ate 25/08/2026 nao vinham. O
-    titulo entrava sem ninguem, e sem devedor nao se acha protesto por nome
-    nem por CPF — que e o que o balcao pede numa certidao. Medido: os 1.366
-    titulos que a carga aceita tem devedor, e ele resolve em `tbPessoa` em
-    100% deles.
+    O DEVEDOR VEM DE `tbPessoa`, e ate 25/08/2026 nao vinha. O titulo entrava
+    sem ninguem, e sem devedor nao se acha protesto por nome nem por CPF — que
+    e o que o balcao pede numa certidao. Medido: os 1.366 titulos que a carga
+    aceita tem devedor, e ele resolve em `tbPessoa` em 100% deles.
+
+    O CEDENTE VEM DE `tbCedente` (e o nome, do registro da CRA), e nao de
+    `tbPessoa` — que era como esta carga o lia ate 29/10/2026, com o credor de
+    todos os titulos errado ou vazio. Ver `_cedente_do_titulo`.
 
     O apontamento entra com o livro, a folha e o numero de ordem QUE O ACERVO
     JA TEM (`intLivroApontamento`, `intFolhaApontamento`,
@@ -492,22 +562,42 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
     carga = Carga("protesto")
     if not _tem_tabela(acervo, "tbAvisoProtesto"):
         raise CargaError("O acervo não tem `tbAvisoProtesto`.")
-    # O devedor e o cedente moram em `tbPessoa`. Se ela nao estiver no acervo,
-    # o titulo entra do mesmo jeito e sem devedor — carga que para inteira
-    # por causa de uma tabela ligada seria pior do que carga incompleta que
-    # diz o que faltou.
+    # O devedor mora em `tbPessoa`. Se ela nao estiver no acervo, o titulo
+    # entra do mesmo jeito e sem devedor — carga que para inteira por causa de
+    # uma tabela ligada seria pior do que carga incompleta que diz o que
+    # faltou.
     # Algumas exportacoes parciais trazem `tbPessoa`, mas a tabela de avisos
-    # nao traz as duas chaves de ligacao. Testar so a existencia da tabela
-    # montava um JOIN com `a.intCodigoPessoa` inexistente e derrubava a carga
-    # inteira. A ligacao existe apenas quando o contrato completo existe.
+    # nao traz a chave de ligacao. Testar so a existencia da tabela montava um
+    # JOIN com `a.intCodigoPessoa` inexistente e derrubava a carga inteira. A
+    # ligacao existe apenas quando o contrato completo existe.
     tem_pessoa = (
         _tem_tabela(acervo, "tbPessoa")
         and _tem_coluna(acervo, "tbPessoa", "intCodigoPessoa")
         and _tem_coluna(acervo, "tbAvisoProtesto", "intCodigoPessoa")
-        and _tem_coluna(acervo, "tbAvisoProtesto", "intCodigoCedente")
     )
     if not tem_pessoa:
         carga.contar("acervo sem `tbPessoa`: títulos entraram sem devedor")
+    # O CEDENTE MORA EM `tbCedente` — e ate 29/10/2026 esta carga o procurava
+    # em `tbPessoa`, que e outro espaco de id (`_cedente_do_titulo`). Mesma
+    # regra das duas pontas da ligacao, e o mesmo «diz o que faltou».
+    tem_cedente = (
+        _tem_tabela(acervo, "tbCedente")
+        and _tem_coluna(acervo, "tbCedente", "intCodigoCedente")
+        and _tem_coluna(acervo, "tbAvisoProtesto", "intCodigoCedente")
+    )
+    if not tem_cedente:
+        carga.contar("acervo sem `tbCedente`: o cedente vem só do registro "
+                     "da CRA, onde houver")
+    # O NOME DO CEDENTE e o do registro da CRA, quando o titulo tem um — e o
+    # que o E-Oficio imprimia no aviso e na certidao. A ligacao e a de
+    # `_o_que_o_retorno_precisa`: `tbSDT.intProtocolo` com o do titulo, e a
+    # PRIMEIRA linha (`intChave`) quando houver mais de uma.
+    tem_nome_da_cra = (
+        _tem_tabela(acervo, "tbSDT")
+        and all(_tem_coluna(acervo, "tbSDT", c)
+                for c in ("intChave", "intProtocolo", "Campo04"))
+        and _tem_coluna(acervo, "tbAvisoProtesto", "intProtocolo")
+    )
     # A CHAVE DO CENPROT JA ESTA NO ACERVO — coluna medida em 31/08/2026:
     # `tbAvisoProtesto.strChaveUnicaCENPROT` (1.194 de 1.370 preenchidas).
     # `pt_titulos.chave_cenprot` existia desde o comeco e a carga NUNCA a
@@ -554,22 +644,18 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
             carga.avisar(r["intChave"],
                          "título sem número no acervo — entrou marcado",
                          dict(r))
-        # O CEDENTE NAO VEM SEMPRE. `intCodigoCedente` esta preenchido nos
-        # 1.366, mas so 908 apontam para linha que existe em `tbPessoa` — os
-        # outros 458 apontam para pessoa que o acervo nao tem mais. O titulo
-        # entra inteiro de todo jeito: o cedente e quem apresentou, e a falta
-        # dele nao apaga o protesto. Fica contado, para a tela dizer quantos.
-        cedente = _pessoa(r, "ced") if tem_pessoa else None
-        if tem_pessoa and not cedente:
-            carga.contar("títulos sem cedente em `tbPessoa` no acervo")
-        # 28 titulos apontam a MESMA pessoa como cedente e como devedor. Isso
-        # e o acervo dizendo que quem apresentou e quem foi protestado, o que
-        # nao acontece na vida real — e provavelmente e digitacao do comeco.
-        # A carga copia o que esta la e CONTA; corrigir por conta seria
-        # inventar, e este projeto nao inventa.
-        if (cedente and _inteiro(r["intCodigoCedente"])
-                and _inteiro(r["intCodigoCedente"]) == _inteiro(r["intCodigoPessoa"])):
-            carga.contar("títulos em que o acervo traz o mesmo cedente e devedor")
+        # O CEDENTE: de `tbCedente`, com o nome do registro da CRA. O titulo
+        # entra inteiro de todo jeito — a falta do cedente nao apaga o
+        # protesto —, e o que nao fecha fica CONTADO, para a tela dizer
+        # quantos.
+        #
+        # E SAIU A CONTAGEM «o acervo traz o mesmo cedente e devedor» (28): ela
+        # comparava `intCodigoCedente` com `intCodigoPessoa`, numeros de duas
+        # tabelas diferentes (`tbCedente` e `tbPessoa`). Coincidencia de
+        # numero, e nao a mesma pessoa — era o mesmo engano da ligacao.
+        cedente, rotulo = _cedente_do_titulo(r)
+        if rotulo:
+            carga.contar(rotulo)
 
         dados = {
             "especie": especie or SEM_ESPECIE,
@@ -738,20 +824,35 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
     # A ordem por intChave e a ordem em que o E-Oficio criou, e e a que faz o
     # numero de apontamento sair crescente.
     #
-    # O DEVEDOR E O CEDENTE VEM NA MESMA CONSULTA, por LEFT JOIN em
-    # `tbPessoa`: `intCodigoPessoa` e o devedor (quem foi protestado) e
-    # `intCodigoCedente` e o credor. Sao 1.370 linhas — buscar pessoa por
-    # pessoa seriam 2.740 consultas a mais para ler a mesma coisa. LEFT e nao
-    # INNER porque titulo sem cedente ainda e titulo, e nao pode sumir da
-    # carga por causa de uma ligacao quebrada.
-    com_pessoa = f"""SELECT a.*, {_colunas_pessoa('d', 'dev')},
-                            {_colunas_pessoa('c', 'ced')}
-             FROM tbAvisoProtesto a
-             LEFT JOIN tbPessoa d ON d.intCodigoPessoa = a.intCodigoPessoa
-             LEFT JOIN tbPessoa c ON c.intCodigoPessoa = a.intCodigoCedente
-            ORDER BY a.intChave"""
-    sem_pessoa = "SELECT a.* FROM tbAvisoProtesto a ORDER BY a.intChave"
-    linhas = _ler_acervo(acervo, com_pessoa if tem_pessoa else sem_pessoa)
+    # O DEVEDOR E O CEDENTE VEM NA MESMA CONSULTA, por LEFT JOIN:
+    # `intCodigoPessoa` e o devedor (quem foi protestado), em `tbPessoa`, e
+    # `intCodigoCedente` e o credor, em `tbCedente` — ATE 29/10/2026 ESTE JOIN
+    # IA A `tbPessoa` TAMBEM, e todo cedente do acervo saiu errado ou vazio. Sao
+    # 1.414 linhas — buscar pessoa por pessoa seriam milhares de consultas a
+    # mais para ler a mesma coisa. LEFT e nao INNER porque titulo sem cedente
+    # ainda e titulo, e nao pode sumir da carga por causa de uma ligacao
+    # quebrada.
+    #
+    # A CONSULTA SE MONTA COM AS PARTES QUE EXISTEM, como em
+    # `_o_que_o_retorno_precisa`: cada tabela ligada responde por uma parte.
+    colunas, juntas = ["a.*"], []
+    if tem_pessoa:
+        colunas.append(_colunas_pessoa("d", "dev"))
+        juntas.append(
+            "LEFT JOIN tbPessoa d ON d.intCodigoPessoa = a.intCodigoPessoa")
+    if tem_cedente:
+        colunas.append(_colunas_pessoa("c", "ced"))
+        juntas.append(
+            "LEFT JOIN tbCedente c ON c.intCodigoCedente = a.intCodigoCedente")
+    if tem_nome_da_cra:
+        colunas.append("s.Campo04 cra_cedente_nome")
+        juntas.append(
+            "LEFT JOIN (SELECT intProtocolo, MIN(intChave) chave FROM tbSDT "
+            "GROUP BY intProtocolo) sp ON sp.intProtocolo = a.intProtocolo")
+        juntas.append("LEFT JOIN tbSDT s ON s.intChave = sp.chave")
+    linhas = _ler_acervo(
+        acervo, f"SELECT {', '.join(colunas)} FROM tbAvisoProtesto a "
+                f"{' '.join(juntas)} ORDER BY a.intChave")
     _executar(bd, carga, "pt_titulos", linhas, mapear,
               lambda r: r["intChave"], depois=atos)
     devedores_que_faltam(bd)

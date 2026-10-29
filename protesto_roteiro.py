@@ -393,6 +393,8 @@ MEDIDAS_DO_DIA: dict[str, str] = {
     "retornos_e_andamentos_aceitos_hoje": "deles, aceitos pela CRA "
                                           "(API, produção)",
     "cenprot_esperando": "pendências da CENPROT esperando resposta (produção)",
+    "cenprot_divergencias": "títulos de origem CENPROT em que a Central e o "
+                            "sistema divergem (última consulta à Central)",
     "editais_hoje": "editais publicados hoje",
     "emolumentos_enviados_hoje": "arquivos de emolumentos enviados pela API hoje",
     "certidoes_hoje": "certidões de protesto emitidas hoje",
@@ -554,6 +556,9 @@ ETAPAS_DO_DIA: tuple[dict, ...] = (
           "tela": "protesto_cenprot", "args": {}},
          {"rotulo": "Arquivo XML diário (P e D)",
           "tela": "protesto_cenprot_xml", "args": {}},
+         # 29/10/2026 — o que a Central diz de cada pedido × o título aqui.
+         {"rotulo": "Conferência CENPROT × sistema",
+          "tela": "protesto_cenprot_conferencia", "args": {}},
      ),
      "faz": ("Pendências: baixa da CENPROT, você decide, e a resposta sobe pela "
              "API. Chave única: lê o XML que a CENPROT devolve e grava a chave "
@@ -564,7 +569,7 @@ ETAPAS_DO_DIA: tuple[dict, ...] = (
                "sistema GERA desde 15/10/2026; o envio é pelo portal da "
                "CENPROT, porque a API dela não tem caminho para ele."),
      "medidas": ("cenprot_esperando", "abertos_sem_chave", "editais_hoje",
-                 "emolumentos_enviados_hoje"),
+                 "emolumentos_enviados_hoje", "cenprot_divergencias"),
      "sem_botao": ("o ENVIO do XML diário — o arquivo se gera aqui e se "
                    "sobe pelo portal da CENPROT")},
     {"n": 10, "ancora": "etapa-certidoes",
@@ -738,6 +743,15 @@ def medir_o_dia(con: sqlite3.Connection, *, hoje: str) -> dict:
         m["a_protestar"] = None
         m["atos_esperando_retorno"] = None
         m["atos_esperando_andamento"] = None
+    # A CONFERÊNCIA CENPROT × SISTEMA (29/10/2026) também tem regra própria —
+    # o que diverge é `cenprot_conferencia.quadro`, e não uma contagem daqui.
+    # Ela NÃO fala com a rede: compara a última resposta guardada.
+    if _existe(con, "pt_titulos", "pt_atos", "pt_cenprot_xml",
+               "cn_pendencias", "cn_conferencias", "cn_liquidacoes_portal"):
+        import cenprot_conferencia as CCONF
+        m["cenprot_divergencias"] = CCONF.quantos_divergem(con)
+    else:
+        m["cenprot_divergencias"] = None
     return m
 
 

@@ -1,0 +1,36 @@
+{#
+  A CONFERÊNCIA COM A CENPROT ANTES DE PROTESTAR — 29/10/2026, ordem do
+  oficial depois do 350574/1 (pago na Central por Liquidação no portal e
+  protestado aqui no dia seguinte). Só aparece no título de origem CENPROT.
+
+  A TRAVA É NA ROTA, E NÃO AQUI: ao lançar o protesto, `cenprot_conferencia.
+  trava_do_protesto` consulta a Central; se ela disser pago, liquidado,
+  retirado ou cancelado — ou se não der para conferir —, o protesto não sai.
+  Este bloco só mostra o que se sabe e oferece a AFIRMAÇÃO EXPRESSA, que é o
+  contrato comum da casa: caixa `afirmo` + texto `afirmacao` (30 letras ou
+  mais), gravados no ato e na auditoria (`AFIRMACAO_EXPRESSA`).
+#}
+{% set cc = conferencia_cenprot_da_ficha(titulo) %}
+{% if cc %}
+<div style="grid-column:1/-1" class="alert {% if cc.trava %}alert-danger{% else %}alert-info{% endif %}">
+  <strong>Título de origem CENPROT</strong> (pedido {{ cc.pedido or 'não achado no título' }}).
+  Ao lançar, o sistema consulta a Central antes de lavrar: se ela disser pago,
+  liquidado, retirado ou cancelado — ou se não der para conferir —, o protesto
+  <strong>não sai</strong>.
+  {% if cc.conferencia and cc.conferencia.consultada_em %}
+    <div><small>Última consulta: {{ cc.conferencia.consultada_em[:16]|replace('T',' ') }}
+      {% if cc.conferencia.central_status or cc.conferencia.central_ocorrencia %}— «{{ cc.conferencia.central_status or '' }}{% if cc.conferencia.central_ocorrencia %} / {{ cc.conferencia.central_ocorrencia }}{% endif %}»{% endif %}</small></div>
+  {% endif %}
+  {% for a in cc.achados if a.trava %}
+    <div><strong>{{ a.frase }}</strong> <small><em>Caminho:</em> {{ a.caminho }}</small></div>
+  {% endfor %}
+  <div><small><a href="{{ url_for('protesto_cenprot_conferencia') }}#titulo-{{ titulo.id }}">Conferência CENPROT × sistema</a></small></div>
+</div>
+<label style="grid-column:1/-1"><input type="checkbox" name="afirmo" value="1">
+  Afirmo — só marque se a conferência recusar e, depois de conferir no portal
+  da CENPROT, você decidir lavrar assim mesmo</label>
+<label style="grid-column:1/-1">Afirmação expressa
+  <small>(só com a caixa acima; pelo menos 30 letras — fica no ato e na auditoria, com o seu nome)</small>
+  <textarea name="afirmacao" rows="3"
+            placeholder="Afirmo, sob minha responsabilidade, que…"></textarea></label>
+{% endif %}

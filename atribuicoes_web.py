@@ -3188,6 +3188,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if SR.lancamento_vedado_ao_robo(ato):
             abort(403)
         voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_id))
+        # A CENPROT CONFERIDA ANTES DE PROTESTAR — 29/10/2026, ordem do oficial
+        # depois do 350574/1 (pago na Central por Liquidação no portal e
+        # protestado aqui no dia seguinte). Título de origem CENPROT: a Central
+        # é consultada FORA de transação; se ela diz que o título saiu, ou se
+        # não deu para conferir, só a AFIRMAÇÃO EXPRESSA passa. A regra é de
+        # `cenprot_conferencia`; aqui só se ligam os fios.
+        afirmacao_cenprot = None
+        if ato == "PROTESTO":
+            import cenprot_conferencia as CCONF
+            try:
+                afirmacao_cenprot = CCONF.trava_do_protesto(
+                    db, titulo_id, afirmo=bool(request.form.get("afirmo")),
+                    afirmacao=request.form.get("afirmacao") or "",
+                    quem=usuario_nome(), robo=SR.usuario_e_robo())
+            except CCONF.ConferenciaError as erro:
+                flash(str(erro), "danger")
+                return voltar
         situacao_antes = situacao_depois = None
         try:
             with db.transaction() as con:
@@ -3219,6 +3236,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                            modelo_do_termo=_modelo_do_termo(con),
                                            conferir_triduo=True,
                                            motivo_atraso=_campo("motivo_atraso") or None)
+                    if afirmacao_cenprot:
+                        # O texto da afirmação vai no `detalhe_json` do ato,
+                        # na MESMA transação: ato sem a afirmação que o
+                        # permitiu é ato que ninguém explica depois.
+                        CCONF.anotar_afirmacao_no_ato(
+                            con, r["ato_id"], afirmacao_cenprot,
+                            quem=usuario_nome(), agora=agora())
                 elif ato == "DESISTENCIA":
                     r = PT.lancar_desistencia(con, titulo_id,
                                               motivo=_campo("motivo"),
@@ -3316,6 +3340,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 PTERMO.TermoError, POST.PosterioriError) as erro:
             flash(str(erro), "danger")
             return voltar
+        if afirmacao_cenprot:
+            # O CONTRATO COMUM DA AFIRMAÇÃO EXPRESSA (29/10/2026): `audit` abre
+            # transação própria, e por isso fica FORA do `with`.
+            audit(CCONF.ACAO_DA_AUDITORIA, "pt_titulos", titulo_id,
+                  CCONF.detalhe_da_auditoria(afirmacao_cenprot))
         # O SELO SAI AGORA, com o ato lavrado — um para cada item cobrado.
         recado_do_selo = ""
         # Ordens judiciais não são atos cobrados/selados da serventia. Elas
@@ -11215,6 +11244,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return redirect(url_for("protesto_a_protestar"))
 
         feitos, falharam = [], []
+        # A CENPROT CONFERIDA ANTES DE PROTESTAR (29/10/2026) — a mesma trava
+        # da ficha, FORA da transação de cada título. NO LOTE NÃO SE AFIRMA: o
+        # título que a trava recusa sai da leva, e a afirmação expressa é na
+        # ficha dele, depois de olhar. Caída a Central num título, os seguintes
+        # não esperam a rede de novo (`perguntar=False`) — e também não passam.
+        import cenprot_conferencia as CCONF
+        rede_caiu = False
+        for titulo_id in list(escolhidos):
+            try:
+                CCONF.trava_do_protesto(db, titulo_id, quem=usuario_nome(),
+                                        em_lote=True, perguntar=not rede_caiu)
+            except CCONF.ConferenciaError as erro:
+                rede_caiu = rede_caiu or erro.sem_rede
+                falharam.append((titulo_id, str(erro)))
+                escolhidos.remove(titulo_id)
         for titulo_id in escolhidos:
             try:
                 with db.transaction() as con:

@@ -482,6 +482,8 @@
         <a href="{{ url_for('protesto_pendencias') }}">Pendências da CENPROT</a>
         <a href="{{ url_for('protesto_resolve') }}">Intimação Digital</a>
         <a href="{{ url_for('protesto_cenprot') }}">Chave do CENPROT</a>
+        {# 29/10/2026: o que a Central diz de cada pedido × o que o título é aqui. #}
+        <a href="{{ url_for('protesto_cenprot_conferencia') }}">Conferência CENPROT × sistema</a>
         {# «Trazer protesto do E-Ofício» saiu em 17/10/2026 (importação
            terminada); a rota fica, sem link. #}
         {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>

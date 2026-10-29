@@ -123,6 +123,9 @@ import protesto_certidao as PCE
 import protesto_termo as PTERMO
 import protesto_triduo as TRIDUO
 import protesto_selo_previo as PSELO
+# O SELO QUE FALTOU, EMITIDO DEPOIS (30/10/2026): o item pago no protocolo
+# cujo selo falhou num ato que ficou de pé (o 4131, com o 17.4.5).
+import protesto_selo_que_faltou as PSF
 import protesto_averbacao as PAV
 import protesto_livros as PLIV
 import protesto_cra as CRA
@@ -1030,6 +1033,83 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return {"afirmo": af["afirmo"], "afirmacao": af["texto"],
                 "robo": af["robo"]}
 
+    def _contexto_do_selo_do_protesto(con, tabela: str, ato_id: int) -> dict:
+        """O que o envelope do selo do Protesto lê do ato: o título, o livro e
+        quem vai nas partes. Só LÊ.
+
+        UMA LEITURA PARA OS DOIS PEDIDOS (30/10/2026): o selo que sai no
+        lançamento (`_selar_o_protesto`) e o selo que faltou, emitido depois
+        (`protesto_selo_que_faltou`). Duas leituras divergiriam no primeiro
+        conserto, e o selo de depois declararia outro livro ou outro devedor.
+        """
+        # A CERTIDÃO NÃO TEM TÍTULO — quem vai nas partes é a pessoa
+        # pesquisada, como em 53 dos 57 envelopes do acervo (15/10/2026).
+        pesquisado = (banco(con).um(
+            "SELECT nome, documento FROM pt_certidoes WHERE id=%s",
+            (int(ato_id),))
+            if tabela == "pt_certidoes" else None)
+        # O LIVRO DO SELO É O NÚMERO DO LIVRO, e não o `id` da tabela de
+        # livros (LT04, 20/10/2026). Mandava-se `livro_id`: o selo do
+        # primeiro protesto desta casa declarava «livro 2» (o 1 é o de
+        # apontamento) enquanto o registro, o instrumento e a certidão
+        # dizem Livro 1 — a consulta pública do selo apontava outro livro.
+        dados = (banco(con).um(
+            """SELECT a.*, t.protocolo, t.valor_centavos, t.especie,
+                      (SELECT v.numero FROM nu_livros v
+                        WHERE v.id = a.livro_id) AS livro_numero
+                 FROM pt_atos a
+                 LEFT JOIN pt_titulos t ON t.id = a.titulo_id
+                WHERE a.id=%s""", (int(ato_id),))
+            if tabela == "pt_atos" else None)
+        # O ATO DO TÍTULO LEVA O DEVEDOR NAS PARTES — é o que os 1.308
+        # selos do protesto do acervo fizeram (`ato_selado.
+        # envelope_do_protesto`: «com o nome em `parteAto`»). Ia vazio, e
+        # a consulta do selo não dizia contra quem era o ato.
+        devedores = (banco(con).ler(
+            """SELECT nome, documento_numero FROM pt_devedores
+                WHERE titulo_id=%s ORDER BY id""", (int(dados["titulo_id"]),))
+            if dados and dados.get("titulo_id") else [])
+        return {"pesquisado": pesquisado, "dados": dados,
+                "devedores": devedores}
+
+    def _envelope_do_selo_do_protesto(tabela: str, tipo: str, codigo_tj: str,
+                                      versao, contexto: dict) -> dict:
+        """O envelope de UM selo do Protesto, para um item. Só calcula.
+
+        Sobe `ato_selado.AtoError` quando falta o que o aparelho exige. É o
+        mesmo envelope no lançamento e no selo que faltou (30/10/2026).
+        """
+        dados = contexto["dados"]
+        pesquisado = contexto["pesquisado"]
+        # A INTIMAÇÃO SELA PELO MODO EM QUE ACONTECEU — por edital é
+        # outra natureza (`ato_selado.NATUREZA_DA_INTIMACAO`). Sem o
+        # modo, a lançada pela ficha selava sempre como pessoal.
+        modo = (json.loads(dados["detalhe_json"] or "{}").get("modo")
+                if dados and tipo == "INTIMACAO" else None)
+        return AS.envelope_do_protesto(
+            tipo=tipo, tabela=tabela, codigo_tj=codigo_tj, modo=modo,
+            escrevente=usuario_nome(),
+            protocolo=(dados["protocolo"] if dados else None),
+            versao_tabela=versao,
+            livro=(dados["livro_numero"] if dados else None),
+            folha=(dados["folha"] if dados else None),
+            valor_centavos=(dados["valor_centavos"] if dados else None),
+            partes=([{"nome": pesquisado["nome"],
+                      "documento": pesquisado["documento"]}]
+                    if pesquisado and pesquisado["nome"] else
+                    [{"nome": d["nome"], "documento": d["documento_numero"]}
+                     for d in contexto["devedores"] if d["nome"]] or None))
+
+    def _pedir_um_selo_do_protesto(tabela: str, ato_id: int, tipo: str,
+                                   envelope: dict, *, referencia: str) -> dict:
+        """Pede UM selo do Protesto ao aparelho. FALA COM A REDE, e nunca
+        estoura (`ato_selado.selar_o_ato_lavrado`). FORA de transação."""
+        return AS.selar_o_ato_lavrado(
+            db, Path(app.config["DATA_DIR"]), tabela=tabela, ato_id=ato_id,
+            tipo=tipo, atribuicao="PROTESTO", agora=agora(),
+            cns=sv().get("ri_cns"), usuario=usuario_nome(), dados=envelope,
+            referencia=referencia)
+
     def _selar_o_protesto(tabela: str, ato_id: int, tipo: str) -> str:
         """Um selo para cada item cobrado. FALA COM A REDE.
 
@@ -1048,32 +1128,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # A mesma régua que confere antes de lavrar (29/10/2026).
             itens = _itens_do_selo_do_protesto(con, tabela, tipo,
                                                ids_do_protocolo)
-            # A CERTIDÃO NÃO TEM TÍTULO — quem vai nas partes é a pessoa
-            # pesquisada, como em 53 dos 57 envelopes do acervo (15/10/2026).
-            pesquisado = (banco(con).um(
-                "SELECT nome, documento FROM pt_certidoes WHERE id=%s",
-                (int(ato_id),))
-                if tabela == "pt_certidoes" else None)
-            # O LIVRO DO SELO É O NÚMERO DO LIVRO, e não o `id` da tabela de
-            # livros (LT04, 20/10/2026). Mandava-se `livro_id`: o selo do
-            # primeiro protesto desta casa declarava «livro 2» (o 1 é o de
-            # apontamento) enquanto o registro, o instrumento e a certidão
-            # dizem Livro 1 — a consulta pública do selo apontava outro livro.
-            dados = banco(con).um(
-                f"""SELECT a.*, t.protocolo, t.valor_centavos, t.especie,
-                           (SELECT v.numero FROM nu_livros v
-                             WHERE v.id = a.livro_id) AS livro_numero
-                      FROM {tabela} a
-                      LEFT JOIN pt_titulos t ON t.id = a.titulo_id
-                     WHERE a.id=%s""", (int(ato_id),))                 if tabela == "pt_atos" else None
-            # O ATO DO TÍTULO LEVA O DEVEDOR NAS PARTES — é o que os 1.308
-            # selos do protesto do acervo fizeram (`ato_selado.
-            # envelope_do_protesto`: «com o nome em `parteAto`»). Ia vazio, e
-            # a consulta do selo não dizia contra quem era o ato.
-            devedores = (banco(con).ler(
-                """SELECT nome, documento_numero FROM pt_devedores
-                    WHERE titulo_id=%s ORDER BY id""", (int(dados["titulo_id"]),))
-                if dados and dados.get("titulo_id") else [])
+            # O QUE O ENVELOPE LÊ DO ATO — a mesma leitura do selo que
+            # faltou, emitido depois (30/10/2026).
+            contexto = _contexto_do_selo_do_protesto(con, tabela, ato_id)
         # A CERTIDÃO LIGA O ITEM DO PROTOCOLO ESCOLHIDO ANTES DO SELO (LD06),
         # como a do RTD. O protocolo escolhido no formulário dava o código ao
         # envelope, mas a trava do selo procura o item LIGADO AO ATO — e, sem a
@@ -1107,31 +1164,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             ocorrencias[codigo_tj] = ocorrencias.get(codigo_tj, 0) + 1
             indice = ocorrencias[codigo_tj]
             try:
-                # A INTIMAÇÃO SELA PELO MODO EM QUE ACONTECEU — por edital é
-                # outra natureza (`ato_selado.NATUREZA_DA_INTIMACAO`). Sem o
-                # modo, a lançada pela ficha selava sempre como pessoal.
-                modo = (json.loads(dados["detalhe_json"] or "{}").get("modo")
-                        if dados and tipo == "INTIMACAO" else None)
-                envelope = AS.envelope_do_protesto(
-                    tipo=tipo, tabela=tabela, codigo_tj=codigo_tj, modo=modo,
-                    escrevente=usuario_nome(),
-                    protocolo=(dados["protocolo"] if dados else None),
-                    versao_tabela=versao,
-                    livro=(dados["livro_numero"] if dados else None),
-                    folha=(dados["folha"] if dados else None),
-                    valor_centavos=(dados["valor_centavos"] if dados else None),
-                    partes=([{"nome": pesquisado["nome"],
-                              "documento": pesquisado["documento"]}]
-                            if pesquisado and pesquisado["nome"] else
-                            [{"nome": d["nome"], "documento": d["documento_numero"]}
-                             for d in devedores if d["nome"]] or None))
+                envelope = _envelope_do_selo_do_protesto(
+                    tabela, tipo, codigo_tj, versao, contexto)
             except AS.AtoError as erro:
                 faltou.append(str(erro))
                 continue
-            r = AS.selar_o_ato_lavrado(
-                db, Path(app.config["DATA_DIR"]), tabela=tabela, ato_id=ato_id,
-                tipo=tipo, atribuicao="PROTESTO", agora=agora(),
-                cns=sv().get("ri_cns"), usuario=usuario_nome(), dados=envelope,
+            r = _pedir_um_selo_do_protesto(
+                tabela, ato_id, tipo, envelope,
                 referencia=f"{tabela}:{int(ato_id)}:{codigo_tj}:{indice}")
             recusou_o_aparelho = recusou_o_aparelho or not r["selado"]
             (saiu if r["selado"] else faltou).append(
@@ -1139,8 +1178,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if saiu and not faltou:
             return f" {len(saiu)} selo(s) obtido(s): {', '.join(saiu)}."
         if saiu:
+            # O QUE FALTOU NÃO SE PERDE (30/10/2026): o ato fica de pé, e o
+            # item pago sem selo vira obrigação na ficha, onde o oficial o
+            # emite depois (`protesto_selo_que_faltou`).
+            depois = (" O selo que faltou fica como obrigação na ficha do "
+                      "título, para o oficial emitir («Emitir o selo que "
+                      "faltou»)." if tabela == "pt_atos" else "")
             return (f" {len(saiu)} selo(s) obtido(s), e {len(faltou)} não: "
-                    f"{faltou[0]}")
+                    f"{faltou[0]}{depois}")
         marcar = (AS.recado_de_recusa if recusou_o_aparelho
                   else AS.recado_de_falta)
         return marcar(
@@ -3791,6 +3836,101 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               "afirmação ficou na auditoria. Se o ato deve existir, lance-o "
               "agora; e confira se a CRA já recebeu a ocorrência antiga.",
               "success")
+        return voltar
+
+    @app.route("/protesto/<int:titulo_id>/atos/<int:ato_id>/selo-que-faltou",
+               methods=["POST"])
+    @roles_required("ADMIN")
+    def protesto_selo_que_faltou(titulo_id: int, ato_id: int):
+        """EMITIR O SELO QUE FALTOU, pelo item já pago no protocolo. ESCREVE e
+        FALA COM A REDE.
+
+        O caso do ato 4131 (29/10/2026): o pagamento ficou de pé com sete
+        selos, e o do item 17.4.5 falhou — pedido pela faixa, que o aparelho
+        não conhece. Esta rota pede o selo DEPOIS, pelo mesmo caminho do
+        lançamento (`_contexto_do_selo_do_protesto`,
+        `_envelope_do_selo_do_protesto`, `_pedir_um_selo_do_protesto`), com a
+        faixa já convertida no item (`protesto_selo_previo.codigo_para_o_selo`).
+
+        SÓ O OFICIAL, EM PESSOA: a conta de robô leva 403 aqui (e a rota não
+        está em `rotas_do_robo`), e o domínio recusa de novo. Em três passos,
+        como o selo pago: `preparar` confere e liga o item ao ato numa
+        transação curta; o pedido ao aparelho vai sem nada preso; `concluir`
+        gasta a unidade se o selo saiu, e `desfazer` tira a ligação se não
+        saiu — falha do selador não muda nada. Nenhum ato novo se lavra e nada
+        se cobra de novo. A auditoria `SELO_EMITIDO_DEPOIS` vai FORA da
+        transação, como todo `audit`.
+        """
+        import selo_robo as SR
+        if SR.usuario_e_robo():
+            abort(403)
+        voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_id)
+                          + "#pendencias-do-selo")
+        try:
+            with db.transaction() as con:
+                preparo = PSF.preparar(
+                    con, ato_id=ato_id, titulo_id=titulo_id,
+                    item_id=numero_digitado(_campo("item_id"),
+                                            maximo=MAIOR_INTEGER),
+                    papel=_papel_atual(), eh_robo=SR.usuario_e_robo(),
+                    usuario=usuario_nome(), agora=agora(),
+                    afirmo=bool(request.form.get("afirmo")),
+                    afirmacao=_campo("afirmacao"))
+        except PSF.SeloQueFaltouError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        if preparo.get("afirmacao"):
+            # O CONTRATO COMUM: a afirmação vai à auditoria FORA da transação,
+            # e fica mesmo que o aparelho recuse — o log é do que a pessoa
+            # afirmou, e não do destino do pedido.
+            audit(PSELO.ACAO_DA_AFIRMACAO, "pt_atos", ato_id,
+                  {**preparo["afirmacao"], "item_id": preparo["item_id"],
+                   "selo_que_faltou": True})
+        versao = AS.versao_da_tabela_de_custas(
+            preparo["caminho"], db.get_setting("selo_tabela_custas_em", ""))
+        try:
+            with db.connect() as con:
+                contexto = _contexto_do_selo_do_protesto(con, PSF.TABELA, ato_id)
+            envelope = _envelope_do_selo_do_protesto(
+                PSF.TABELA, preparo["tipo"], preparo["codigo_selo"], versao,
+                contexto)
+        except AS.AtoError as erro:
+            r = {"selado": False, "motivo": str(erro)}
+        else:
+            r = _pedir_um_selo_do_protesto(
+                PSF.TABELA, ato_id, preparo["tipo"], envelope,
+                referencia=preparo["referencia"])
+        item = f"o item {preparo['codigo']}"  # «do item», «para o item»
+        if not r.get("selado"):
+            with db.transaction() as con:
+                desfeito = PSF.desfazer(con, preparo, agora=agora(),
+                                        usuario=usuario_nome())
+            if desfeito:
+                flash(f"O selo d{item} NÃO saiu, e nada mudou: o ato, o "
+                      "item do protocolo e o caixa ficaram como estavam. "
+                      f"Motivo: {r.get('motivo') or 'não informado'}. A "
+                      "pendência continua na ficha; corrija o motivo e tente "
+                      "de novo.", "danger")
+            else:
+                flash(f"O selo d{item} saiu, mas não se amarrou ao ato: "
+                      f"{r.get('motivo') or 'motivo não informado'} O pagamento "
+                      "do item foi usado, e o selo está na lista de selo "
+                      "obtido e não usado.", "danger")
+            return voltar
+        with db.transaction() as con:
+            gastas = PSF.concluir(con, preparo, agora=agora(),
+                                  usuario=usuario_nome())
+        audit(PSF.ACAO_DA_AUDITORIA, "pt_atos", ato_id,
+              PSF.para_a_auditoria(preparo, r, gastas))
+        como = (f" (saiu como {preparo['codigo_selo']}, o item do Tribunal)"
+                if preparo["codigo_selo"] != preparo["codigo"] else "")
+        onde = preparo.get("protocolo_numero") or preparo["protocolo_id"]
+        flash(f"Selo {r.get('numero')} emitido para {item}{como}, do ato "
+              f"{ato_id}, pelo item pago no protocolo {onde}. Nenhum ato novo "
+              "foi lavrado e nada foi cobrado de novo."
+              + ("" if gastas or not preparo.get("consumir", True) else
+                 " Atenção: o item já não tinha unidade livre no protocolo — "
+                 "confira no caixa."), "success")
         return voltar
 
     @app.route("/protesto/<int:titulo_id>/averbacao-retificacao",

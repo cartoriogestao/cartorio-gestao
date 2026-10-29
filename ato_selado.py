@@ -4706,10 +4706,19 @@ def cobrir_o_selo(con, *, tabela: Any, ato_id: Any, referencia: Any,
     # que o pagasse. Se nenhum item ligado tem o código do envelope — o ato
     # lavrado do RI, cujo envelope leva o `codigo_tj` do formulário —, vale
     # qualquer item ligado, como antes.
+    #
+    # E A FAIXA LIGADA PAGA O SELO DO ITEM DO TRIBUNAL (30/10/2026). Desde o
+    # PR #109 o envelope do Protesto leva o item (17.4) e o caixa cobra a faixa
+    # (17.4.5): sem isto o item ligado da faixa não casava pelo código, e com
+    # outro item ligado ao mesmo ato o selo podia sair coberto pelo item errado
+    # — é o que o selo que faltou, emitido depois, encontra. O igual vem antes
+    # da faixa; a regra da faixa é a do caixa (`caixa_protocolo.subitem_da_faixa`).
     ligados = CXP.itens_do_ato(bd, tabela, ato_id)
     codigo = codigo_do_envelope(dados)
-    do_codigo = [it for it in ligados
-                 if codigo and str(it.get("codigo_ato") or "").strip() == codigo]
+    do_codigo = ([it for it in ligados
+                  if codigo and str(it.get("codigo_ato") or "").strip() == codigo]
+                 or [it for it in ligados
+                     if codigo and CXP.subitem_da_faixa(it.get("codigo_ato")) == codigo])
     for it in (do_codigo or ligados):
         achou = _cobre_o_item(bd, it, tabela=tabela, ato_id=ato_id,
                               usuario=usuario, agora=agora)

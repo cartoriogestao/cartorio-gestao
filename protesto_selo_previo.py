@@ -55,6 +55,12 @@ refazer» até haver um ato válido do mesmo tipo, lançado depois, no mesmo
 título — e some sozinha, porque é calculada. Junto vão os atos do robô que
 ficaram sem selo.
 
+**E O ITEM PAGO QUE FICOU SEM SELO TAMBÉM É OBRIGAÇÃO** (30/10/2026): o ato
+que ficou de pé com parte dos selos — o 4131, pagamento do 9614, com sete selos
+e o do 17.4.5 recusado — tem o item pago no protocolo e nenhum selo para ele. A
+conta é de `protesto_selo_que_faltou`, e a saída é a ação «Emitir o selo que
+faltou», na ficha, do oficial em pessoa.
+
 **E O TÍTULO NUNCA FICA NUMA SITUAÇÃO SEM O ATO QUE A SUSTENTE.**
 `titulos_sem_ato_que_sustente` é a conferência; `corrigir_situacao_de_oficio`
 é a saída, por decisão de quem responde: volta o título à situação que os atos
@@ -454,6 +460,9 @@ def anotar_afirmacao_no_ato(con, ato_id: int, afirmacao: dict, *,
 
 ESPECIE_REFAZER = "REFAZER"
 ESPECIE_SELAR = "SELAR"
+# O item pago no protocolo cujo selo não saiu, num ato que ficou de pé
+# (30/10/2026) — `protesto_selo_que_faltou`.
+ESPECIE_ITEM_SEM_SELO = "ITEM_SEM_SELO"
 
 # Os atos da ficha que selam — os de `ATOS_SEM_SELO_PROPRIO` ficam de fora.
 TIPOS_QUE_SELAM = ("INTIMACAO", "PROTESTO", "PAGAMENTO", "DESISTENCIA",
@@ -488,6 +497,9 @@ def pendencias_do_selo(con, *, titulo_id: int | None = None,
     aparelho), enquanto não houver ato válido do mesmo tipo lançado DEPOIS no
     mesmo título — uma linha por título e tipo, com a última tentativa e
     quantas foram. `SELAR`: o ato válido que o robô lavrou e ficou sem selo.
+    `ITEM_SEM_SELO`: o ato válido com item pago no protocolo e sem o selo
+    dele — «falta o selo do item X — emita na ficha» (30/10/2026), uma linha
+    por item, com `ato_id` e `item_id` para o botão da ficha.
 
     É o que o roteiro do dia lê (`protesto_roteiro.GANCHOS`), e o que o painel
     e a ficha mostram. O CONTRATO DO ROTEIRO: cada linha traz `titulo_id`,
@@ -571,6 +583,10 @@ def pendencias_do_selo(con, *, titulo_id: int | None = None,
                            f"{_data_br(r['criado_em'])}): lavrado pelo robô, "
                            "que não pede selo — quem sela é o escrevente."),
         })
+    # O ITEM PAGO SEM SELO (30/10/2026). A conta mora no módulo da ação, e
+    # este só a junta: duas réguas para «falta selo?» divergiriam.
+    import protesto_selo_que_faltou as PSF
+    saida += PSF.pendencias(con, titulo_id=titulo_id, limite=limite)
     saida.sort(key=lambda p: (p["quando"], p["ato_id"]))
     return saida[:max(1, int(limite))]
 

@@ -52,9 +52,12 @@
 {% endif %}
 
 {# O ATO A REFAZER (29/10/2026): a falha do aparelho depois de lavrar vira
-   obrigação, e não esquecimento — e some sozinha quando o ato é lançado. #}
+   obrigação, e não esquecimento — e some sozinha quando o ato é lançado.
+   O ITEM PAGO SEM SELO (30/10/2026): o ato ficou de pé e um selo não saiu; o
+   oficial, em pessoa, emite o que faltou pelo item já pago no protocolo — sem
+   ato novo e sem cobrar de novo (`protesto_selo_que_faltou`). #}
 {% if pendencias_do_selo %}
-<div class="notice danger" data-pendencias-do-selo>
+<div class="notice danger" id="pendencias-do-selo" data-pendencias-do-selo>
   <strong>Obrigação deste título:</strong>
   <ul style="margin:6px 0 0 18px">
   {% for p in pendencias_do_selo %}
@@ -65,6 +68,30 @@
       {{ p.tentativas }} tentativas{% endif %}.
       {% if p.tipo in cabem %}<a href="#lancar-{{ p.tipo }}">Lançar de novo</a>.{% else %}
       A situação de agora não deixa lançá-lo: veja acima.{% endif %}
+    {% elif p.especie == 'ITEM_SEM_SELO' %}
+      <strong>Falta o selo do item {{ p.codigo }}</strong> — {{ p.ato }}
+      (ato {{ p.ato_id }}, de {{ p.quando_br }}) tem o item pago no protocolo
+      {{ p.protocolo_do_item }}{% if p.unidades > 1 %}, {{ p.unidades }} unidades
+      sem selo{% endif %}{% if p.codigo_selo != p.codigo %}; o selo sai como
+      {{ p.codigo_selo }}, o item do Tribunal{% endif %}{% if p.tentativas %}; o
+      aparelho recusou a primeira tentativa{% endif %}. Nenhum ato novo se lavra
+      e nada se cobra de novo.
+      {% if not p.serve %}<br><strong>Atenção:</strong> o código {{ p.codigo_selo }}
+      nunca saiu em selo pelo caminho deste ato — pedir de novo só com
+      afirmação expressa, e o aparelho pode recusar outra vez. Se o item não
+      serve a este ato, acerte-o no caixa.{% endif %}
+      {% if user.role == 'ADMIN' and not user.eh_robo %}
+      <form method="post" {% if p.serve %}style="display:inline"{% endif %}
+            action="{{ url_for('protesto_selo_que_faltou', titulo_id=titulo.id, ato_id=p.ato_id) }}"
+            data-selo-que-faltou>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="item_id" value="{{ p.item_id }}">
+        {% if not p.serve %}{{ afirmacao(o_que_falta=p.o_que_falta ~ '.') }}{% endif %}
+        <button class="button">Emitir o selo que faltou</button>
+      </form>
+      {% else %}
+      <small>Quem emite é o oficial, em pessoa: avise-o.</small>
+      {% endif %}
     {% else %}
       <strong>Selar {{ p.ato }}</strong> (ato {{ p.ato_id }}, de {{ p.quando_br }}) —
       {{ p.motivo }}. Quem sela é o escrevente.

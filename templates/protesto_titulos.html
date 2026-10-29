@@ -75,13 +75,15 @@
 <section class="panel" data-pendencias-do-selo>
   <div class="panel-head">
     <span>Atos a refazer ou a selar</span>
-    <small>{{ pendencias_do_selo | length }} — saem da lista quando o ato é lançado</small>
+    <small>{{ pendencias_do_selo | length }} — saem da lista quando o ato é lançado
+      ou o selo que faltou é emitido</small>
   </div>
   <ul style="padding:6px 14px 14px 32px; margin:0">
     {% for p in pendencias_do_selo %}
     <li><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}">título {{ p.titulo_id }}</a>
       — {% if p.especie == 'REFAZER' %}refazer {{ p.ato }}, desfeito em {{ p.quando_br }}
       ({{ p.motivo }}); tentou: {{ p.quem_tentou }}{% if p.tentativas > 1 %}, {{ p.tentativas }} tentativas{% endif %}.
+      {% elif p.especie == 'ITEM_SEM_SELO' %}{{ p.explicacao }}
       {% else %}selar {{ p.ato }} (ato {{ p.ato_id }}, de {{ p.quando_br }}) — {{ p.motivo }}.{% endif %}</li>
     {% endfor %}
   </ul>

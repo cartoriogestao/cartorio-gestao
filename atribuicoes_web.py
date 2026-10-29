@@ -12021,6 +12021,55 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               "success")
         return redirect(url_for("protesto_retornos"))
 
+    @app.route("/protesto/retornos/ato/<int:ato_id>/forcar-envio",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_retorno_forcar_envio(ato_id: int):
+        """Devolve à fila o ato cujo protocolo a CRA já tem — SÓ COM
+        AFIRMAÇÃO EXPRESSA. ESCREVE.
+
+        Ordem do oficial, 29/10/2026: o sistema impede; «se a escrevente
+        insistir, só com afirmação expressa e log». Vale a caixa `afirmo`
+        marcada E o texto `afirmacao`; quem confere o texto é o domínio
+        (`protesto_retorno.forcar_envio_de_protocolo_ja_informado`). Conta
+        de robô não afirma «sob minha responsabilidade» (26/10/2026): para
+        ela, a caixa vale como desmarcada.
+        """
+        import selo_robo as SR
+        afirmacao = (_campo("afirmacao") or None
+                     if request.form.get("afirmo") and not SR.usuario_e_robo()
+                     else None)
+        try:
+            with db.transaction() as con:
+                r = PRE.forcar_envio_de_protocolo_ja_informado(
+                    con, ato_id, afirmacao=afirmacao, agora=agora(),
+                    usuario=usuario_nome())
+        except PRE.RetornoError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_retornos"))
+        # `audit` abre transação própria: FORA do `with`, como no resto da casa.
+        audit(PRE.ACAO_DA_AFIRMACAO, "pt_atos", ato_id,
+              PRE.para_a_auditoria(r))
+        flash(f"Ato {ato_id} ({r['tipo']}, título {r['numero_titulo']} "
+              f"#{r['titulo_id']}, protocolo {r['protocolo']}) voltou a "
+              f"«Esperando retorno» pela sua afirmação expressa, que ficou na "
+              f"auditoria. Ele sai no próximo arquivo do apresentante; se a "
+              f"CRA o recusar, devolver os atos daquele arquivo apaga a "
+              f"afirmação.", "warning")
+        return redirect(url_for("protesto_retornos"))
+
+    @app.route("/protesto/retornos/protocolos")
+    @login_required
+    def protesto_retornos_protocolos():
+        """Protocolos com mais de um título, e o que cada título já disse à
+        CRA. Só LÊ — a conferência do oficial (29/10/2026)."""
+        apresentante = (request.args.get("apresentante") or "").strip()[:20]
+        with db.connect() as con:
+            conferencia = PRE.protocolos_com_mais_de_um_titulo(
+                con, apresentante_codigo=apresentante or None)
+        return render_template("protesto_retornos_protocolos.html",
+                               conferencia=conferencia)
+
     @app.route("/protesto/retornos/<int:retorno_id>/arquivo")
     @login_required
     def protesto_retorno_arquivo(retorno_id: int):

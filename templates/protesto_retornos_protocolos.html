@@ -1,0 +1,117 @@
+{#
+  Protocolos com mais de um título — a conferência do oficial. Só LÊ.
+
+  A CRA CONHECE O PROTOCOLO, E NÃO O TÍTULO — 29/10/2026. A CDA com dois
+  devedores entra nesta casa como dois títulos com o mesmo protocolo, e o
+  que um deles informa vale para os dois do outro lado. O protocolo
+  2610070011 foi protestado e aceito no R9012310.261; o protesto refeito de
+  um dos títulos voltou no R9012810.261, e a CRA recusou o arquivo inteiro
+  (2161). Esta tela mostra cada protocolo assim, título por título, com o
+  que cada ato já disse à Central. Ela não decide nada: a providência é do
+  oficial.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Protocolos com mais de um título</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions"><a class="button" href="{{ url_for('protesto_retornos') }}">&larr; Retorno à CRA</a></div>
+
+<div class="notice">
+  Um título com dois devedores entra aqui como <strong>dois títulos com o mesmo
+  protocolo</strong>, e a CRA só conhece o protocolo. O que um título informa — protestado,
+  pago, retirado, cancelado — a Central grava para o protocolo inteiro. Por isso o sistema
+  não manda de novo a ocorrência que ela já aceitou, e a tela do retorno mostra o ato que
+  ficou de fora e quem já informou.
+  <br><br>
+  <strong>Esta tela só mostra.</strong> Repetição (a mesma letra num arquivo depois de a
+  Central já tê-la aceito) e títulos do mesmo protocolo em situações diferentes são casos
+  para o oficial decidir — a CRA guarda uma ocorrência por protocolo.
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Resumo</span>
+    <small>{{ conferencia.total }} protocolo(s), {{ conferencia.titulos }} título(s)</small>
+  </div>
+  <form method="get" action="{{ url_for('protesto_retornos_protocolos') }}" class="grid2" style="padding:0 14px">
+    <label>Apresentante <input name="apresentante" value="{{ conferencia.apresentante_codigo }}" maxlength="20"></label>
+    <div class="actions"><button class="button">Filtrar</button></div>
+  </form>
+  <table class="table">
+    <tbody>
+      <tr><td>Com a mesma ocorrência repetida depois de aceita</td>
+          <td><strong{% if conferencia.com_repeticao %} class="danger"{% endif %}>{{ conferencia.com_repeticao }}</strong></td></tr>
+      <tr><td>Com ato preso em arquivo que a CRA recusou</td>
+          <td><strong{% if conferencia.com_recusado %} class="danger"{% endif %}>{{ conferencia.com_recusado }}</strong></td></tr>
+      <tr><td>Com ato fora da fila porque a CRA já tem a ocorrência</td>
+          <td><strong>{{ conferencia.com_ato_fora_da_fila }}</strong></td></tr>
+      <tr><td>Com os títulos em situações diferentes</td>
+          <td><strong{% if conferencia.divergentes %} class="danger"{% endif %}>{{ conferencia.divergentes }}</strong></td></tr>
+    </tbody>
+  </table>
+</section>
+
+{% if not conferencia.protocolos %}
+<section class="panel">
+  <p style="padding:14px">
+    Nenhum protocolo com mais de um título vindo da CRA{% if conferencia.apresentante_codigo %} para o apresentante {{ conferencia.apresentante_codigo }}{% endif %}.
+  </p>
+</section>
+{% endif %}
+
+{% for p in conferencia.protocolos %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Protocolo <strong>{{ p.protocolo }}</strong> · apresentante {{ p.apresentante_codigo or '—' }}</span>
+    <small>
+      {{ p.titulos | length }} títulos
+      {% if p.precisa_olhar %} · <strong class="danger">precisa olhar</strong>{% endif %}
+    </small>
+  </div>
+  {% if p.repeticoes %}
+  <p class="danger" style="padding:0 14px"><small>
+    {% for r in p.repeticoes %}
+      <strong>Ocorrência {{ r.ocorrencia }} ({{ r.tipo }}) em {{ r.arquivos | length }} arquivos:</strong>
+      {% for a in r.arquivos %}{{ a.nome_arquivo }} —
+        {% if a.situacao == 'ACEITO' %}aceito{% elif a.situacao == 'EOFICIO' %}sistema antigo{% elif a.situacao == 'RECUSADO' %}recusado{% if a.codigo %} ({{ a.codigo }}){% endif %}{% else %}sem resposta{% endif %}{% if not loop.last %}; {% endif %}
+      {% endfor %}<br>
+    {% endfor %}
+  </small></p>
+  {% endif %}
+  {% if p.situacoes_divergentes %}
+  <p class="danger" style="padding:0 14px"><small>
+    Os títulos estão em situações diferentes ({{ p.situacoes | join(', ') }}). A CRA guarda
+    uma ocorrência por protocolo: a última que ela aceitou é a que vale lá.
+  </small></p>
+  {% endif %}
+  <table class="table">
+    <thead><tr><th>Título</th><th>Situação</th><th>Ato</th><th>Ocorrência</th>
+               <th>O que já disse à CRA</th></tr></thead>
+    <tbody>
+      {% for t in p.titulos %}
+        {% for a in t.atos %}
+        <tr>
+          {% if loop.first %}
+          <td rowspan="{{ t.atos | length }}"><a href="{{ url_for('protesto_titulo', titulo_id=t.titulo_id) }}">{{ t.numero_titulo }}</a>
+              <small>#{{ t.titulo_id }}</small></td>
+          <td rowspan="{{ t.atos | length }}"><small>{{ t.situacao or '—' }}</small></td>
+          {% endif %}
+          <td>{{ a.tipo }} <small>(ato {{ a.ato_id }}, {{ (a.data_ato or '')[:10] }})</small>
+              {% if a.desfeito %}<div><small class="danger">desfeito</small></div>{% endif %}</td>
+          <td>{{ a.ocorrencia }}</td>
+          <td><small{% if a.estado in ['RECUSADO', 'LIBERADO'] %} class="danger"{% endif %}>{{ a.frase }}</small></td>
+        </tr>
+        {% else %}
+        <tr>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=t.titulo_id) }}">{{ t.numero_titulo }}</a>
+              <small>#{{ t.titulo_id }}</small></td>
+          <td><small>{{ t.situacao or '—' }}</small></td>
+          <td colspan="3"><small>nenhum ato que vá à CRA</small></td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
+{% endblock %}

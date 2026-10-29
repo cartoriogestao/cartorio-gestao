@@ -95,7 +95,10 @@ def turno(texto: Any) -> tuple[int, int] | None:
     calaria o aviso de quem não tem turno nenhum."""
     if isinstance(texto, tuple):
         return texto if len(texto) == 2 else None
-    m = re.fullmatch(r"\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*", str(texto or ""))
+    # O texto vem da tela: corta-se e apara-se ANTES, e a expressão não tem
+    # repetição aberta nas pontas (CodeQL, expressão polinomial em dado de fora).
+    m = re.fullmatch(r"(\d{1,2}):(\d{2}) {0,3}- {0,3}(\d{1,2}):(\d{2})",
+                     str(texto or "").strip()[:40])
     if not m:
         return None
     h1, m1, h2, m2 = (int(x) for x in m.groups())

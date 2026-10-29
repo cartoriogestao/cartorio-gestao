@@ -301,7 +301,9 @@ def _hhmm(minutos: int) -> str:
 
 
 def _hora(texto: Any) -> str | None:
-    m = re.fullmatch(r"\s*(\d{1,2})\s*[:h]\s*(\d{2})?\s*", str(texto or ""))
+    # Aparado e cortado antes; sem repetição aberta (CodeQL: expressão
+    # polinomial em dado vindo da tela).
+    m = re.fullmatch(r"(\d{1,2}) ?[:h] ?(\d{2})?", str(texto or "").strip()[:20])
     if not m or int(m.group(1)) > 23 or int(m.group(2) or 0) > 59:
         return None
     return f"{int(m.group(1)):02d}:{int(m.group(2) or 0):02d}"

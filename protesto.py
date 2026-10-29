@@ -168,7 +168,10 @@ FORMAS_DE_PAGAMENTO = {
 TIPOS_ATO = ("APONTAMENTO", "INTIMACAO", "PROTESTO", "PAGAMENTO",
              "CANCELAMENTO", "ARQUIVAMENTO", "CERTIDAO", "DESISTENCIA",
              "RETIRADA", "SUSTACAO", "REVOGACAO_SUSTACAO",
-             "EFEITO_SUSPENSIVO", "REVOGACAO_EFEITO_SUSPENSIVO")
+             "EFEITO_SUSPENSIVO", "REVOGACAO_EFEITO_SUSPENSIVO",
+             # 29/10/2026: a averbação de retificação de erro material, de
+             # ofício (Lei 9.492/1997, art. 25) — `protesto_averbacao`.
+             "AVERBACAO_RETIFICACAO")
 
 # OS DOIS INSTITUTOS, e o E-Oficio guarda os dois na mesma tabela:
 # `tbProtesto_TipoEfeitoTitulo` tem `1 = Suspensivo` e `2 = Sustado`.

@@ -932,6 +932,33 @@ def test_a_mencao_do_atraso_do_triduo_esta_no_catalogo_e_a_tela_a_confere(casa):
             "Texto {claro_inventado_triduo}."), chave
 
 
+# **EM 29/10/2026 O CATÁLOGO GANHOU 3 LINHAS (a averbação de retificação de
+# erro material, de ofício — Lei 9.492/1997, art. 25)**: o termo da averbação
+# (papel inteiro, que congela no ato) e as menções dela no fim do instrumento e
+# na linha da certidão (duas peças). Sem precedente no E-Ofício; o texto é do
+# oficial. Os papéis de antes não mudaram um byte: a menção só sai com
+# averbação viva, e nenhum contexto do ouro tem uma.
+PAPEIS_DA_AVERBACAO = {"PT_TERMO_AVERBACAO_RETIFICACAO",
+                       "PT_INSTRUMENTO_AVERBACAO", "PT_CERTIDAO_AVERBACAO"}
+NOVOS_NO_CATALOGO_AVERBACAO = 3
+PECAS_DA_AVERBACAO = 2
+
+
+def test_a_averbacao_de_retificacao_esta_no_catalogo_e_a_tela_a_confere(casa):
+    assert len(PAPEIS_DA_AVERBACAO) == NOVOS_NO_CATALOGO_AVERBACAO
+    assert PAPEIS_DA_AVERBACAO <= set(MOD.POR_CHAVE)
+    assert sum(1 for c in PAPEIS_DA_AVERBACAO
+               if MOD.POR_CHAVE[c].get("peca")) == PECAS_DA_AVERBACAO
+    conferidores = casa["app"].extensions.get("conferidores_de_modelo", {})
+    for chave in PAPEIS_DA_AVERBACAO:
+        c = MOD.POR_CHAVE[chave]
+        assert c["atribuicao"] == "Protesto" and c["formato"] == MOD.CHAVES, chave
+        assert c["nome"] != chave and c["explica"], chave
+        assert conferidores[chave](MOD.padrao_de(chave)) == "", chave
+        assert "claro_inventado_averbacao" in conferidores[chave](
+            "Texto {claro_inventado_averbacao}."), chave
+
+
 def test_o_que_mudou_depois_do_ouro_do_protesto_e_chamada_do_ouro(ouro_e):
     """A lista das mudanças de propósito só fala do que o ouro guarda — senão
     ela seria uma porta aberta, e não um registro."""
@@ -1013,8 +1040,10 @@ def test_a_peca_tem_ficha_propria_e_nao_herda_o_fecho_da_atribuicao():
     `elementos_comuns: False`: o encerramento da atribuição no meio de uma
     frase estragaria o papel."""
     # 35 do LF06E; a qualificação do registro e a intimação eletrônica no
-    # instrumento (LD04); a menção do atraso do tríduo (tarefa 56).
-    assert len(PECAS_DO_PROTESTO) == 35 + 2 + NOVOS_NO_CATALOGO_TRIDUO
+    # instrumento (LD04); a menção do atraso do tríduo (tarefa 56); as duas
+    # menções da averbação de retificação (29/10/2026).
+    assert len(PECAS_DO_PROTESTO) == (35 + 2 + NOVOS_NO_CATALOGO_TRIDUO
+                                      + PECAS_DA_AVERBACAO)
     for chave in PECAS_DO_PROTESTO:
         c = MOD.POR_CHAVE[chave]
         assert c["atribuicao"] == "Protesto" and c["formato"] == MOD.CHAVES
@@ -1240,11 +1269,12 @@ def test_cada_peca_do_protesto_tem_conferidor_que_aceita_o_padrao_e_recusa_o_res
     não confere."""
     conferidores = casa["app"].extensions.get("conferidores_de_modelo", {})
     conferidas = PECAS.chaves_conferidas()
-    # os dois papéis inteiros do LF06E e os dois do LD04 (o termo do
-    # cancelamento e a quitação), que nasceram sem ajuste antigo a aceitar
+    # os dois papéis inteiros do LF06E, os dois do LD04 (o termo do
+    # cancelamento e a quitação) e o termo da averbação de retificação
+    # (29/10/2026), que nasceram sem ajuste antigo a aceitar
     assert set(conferidas) == set(PECAS_DO_PROTESTO) | {
         "PT_AVISO_INTIMACAO", "PT_EDITAL_INTIMACAO", "PT_TERMO_CANCELAMENTO",
-        "PT_QUITACAO"}
+        "PT_QUITACAO", "PT_TERMO_AVERBACAO_RETIFICACAO"}
     assert set(PECAS.VOCABULARIOS) <= set(PECAS_DO_PROTESTO)
     for chave in conferidas:
         padrao = MOD.padrao_de(chave)
@@ -1347,6 +1377,30 @@ def test_a_tela_confere_a_peca_com_os_claros_que_o_montador_preenche(casa, monke
         atraso={"termo_final": "2026-09-10", "lavrado_em": "2026-09-14",
                 "motivo": "Comprovante devolvido depois do prazo"}))
     assert "ok" in saida and saida["ok"], saida
+    # AS CHAMADAS DA AVERBAÇÃO DE RETIFICAÇÃO (29/10/2026, Lei 9.492/1997, art.
+    # 25): o termo dela nas duas formas (o erro e a omissão), a menção no fim
+    # do instrumento e a menção na linha da certidão.
+    averbacao = [{"data": "2026-10-29", "elemento": "o credor (sacador/favorecido)",
+                  "ato": "registro do protesto"}]
+    for f in (
+            lambda: PTT.montar_averbacao_retificacao(
+                data="2026-10-29", ato="registro do protesto",
+                elemento="o credor (sacador/favorecido)",
+                constava="NOME QUE CONSTOU", correto="EMPRESA DE EXEMPLO LTDA",
+                qualificacao_do_registro=protestado),
+            lambda: PTT.montar_averbacao_retificacao(
+                data="2026-10-29", ato="registro do protesto",
+                elemento="o credor (sacador/favorecido)", constava="",
+                correto="EMPRESA DE EXEMPLO LTDA",
+                qualificacao_do_registro=protestado),
+            lambda: PTI.montar_teor(
+                serventia="SERVENTIA DE EXEMPLO", praca="Cidade Exemplo",
+                motivo="falta de pagamento", copia_arquivada=False,
+                intimacao={"modo": "PESSOAL", "data": "2026-09-08"},
+                descricao="Título de exemplo.", averbacoes=averbacao),
+            lambda: PTC._linha_do_protesto(OURO_E._achado(averbacoes=averbacao), 3)):
+        saida = OURO_E.tenta(f)
+        assert "ok" in saida and saida["ok"], saida
     medidos: dict = {}
     for (chave, modelo), claros in passados.items():
         if chave not in PECAS.chaves_conferidas():

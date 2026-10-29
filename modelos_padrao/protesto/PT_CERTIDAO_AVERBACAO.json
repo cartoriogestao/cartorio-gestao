@@ -1,0 +1,12 @@
+{
+  "chave": "PT_CERTIDAO_AVERBACAO",
+  "atribuicao": "Protesto",
+  "nome": "Certidão positiva e de cancelamento — menção da averbação de retificação",
+  "formato": "CHAVES",
+  "explica": "Pedaço da linha de cada protesto na certidão, que a REGRA põe depois dos dados do registro, um por averbação de retificação viva do título (Lei 9.492/1997, art. 25). A certidão já sai com os dados certos, lidos do cadastro; a menção diz que o registro (ou o termo do cancelamento) foi retificado, e quando — sem repetir o que constou errado. {ato} é «registro do protesto» ou «termo do cancelamento»; {data} é a da averbação; {elemento} o que ela retificou, com o artigo. O «; » que a junta à linha e o ponto do fim são juntura.",
+  "campos": [
+    "ato",
+    "data",
+    "elemento"
+  ]
+}

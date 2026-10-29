@@ -123,6 +123,7 @@ import protesto_certidao as PCE
 import protesto_termo as PTERMO
 import protesto_triduo as TRIDUO
 import protesto_selo_previo as PSELO
+import protesto_averbacao as PAV
 import protesto_livros as PLIV
 import protesto_cra as CRA
 import protesto_desistencia as DS
@@ -3639,6 +3640,49 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               "success")
         return voltar
 
+    @app.route("/protesto/<int:titulo_id>/averbacao-retificacao",
+               methods=["POST"])
+    @roles_required("ADMIN")
+    def protesto_averbacao_retificacao(titulo_id: int):
+        """A AVERBAÇÃO DE RETIFICAÇÃO DE ERRO MATERIAL, DE OFÍCIO. ESCREVE.
+
+        Lei 9.492/1997, art. 25: «A averbação de retificação de erros
+        materiais pelo serviço poderá ser efetuada de ofício ou a requerimento
+        do interessado, sob responsabilidade do Tabelião de Protesto de
+        Títulos». Por isso SÓ O ADMIN, em pessoa: a conta de robô leva 403 aqui
+        (e esta rota não está em `rotas_do_robo`), e o domínio
+        (`protesto_averbacao.lavrar`) recusa de novo. A afirmação expressa é o
+        contrato comum da casa — caixa `afirmo` e o texto `afirmacao` —, e a
+        auditoria (`AFIRMACAO_EXPRESSA` e o ato) vai FORA da transação, porque
+        `audit` abre a sua. O ato retificado não se toca: a averbação é ato
+        novo, à margem dele. Não sela e não cobra (ver o módulo).
+        """
+        import selo_robo as SR
+        if SR.usuario_e_robo():
+            abort(403)
+        voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_id))
+        try:
+            with db.transaction() as con:
+                feito = PAV.lavrar(
+                    con, _campo("ato_id"), elemento=_campo("elemento"),
+                    constava=_campo("constava"), correto=_campo("correto"),
+                    afirmo=bool(request.form.get("afirmo")),
+                    afirmacao=_campo("afirmacao"), agora=agora(),
+                    usuario=usuario_nome(), papel=_papel_atual(),
+                    eh_robo=SR.usuario_e_robo(), titulo_id=titulo_id,
+                    modelo=_modelo_do_termo(
+                        con, PTERMO.CHAVE_DA_AVERBACAO_RETIFICACAO))
+        except PAV.AverbacaoError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        for linha in PAV.para_a_auditoria(feito):
+            audit(*linha)
+        flash(f"Averbação de retificação lavrada (ato {feito['ato_id']}), à "
+              f"margem do ato {feito['ato_retificado_id']}. O texto lavrado "
+              "ficou como estava; o instrumento e a certidão passam a "
+              "mencioná-la. A afirmação ficou na auditoria.", "success")
+        return voltar
+
     @app.route("/protesto/<int:titulo_id>")
     @login_required
     def protesto_titulo(titulo_id: int):
@@ -3741,6 +3785,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # OS PEDIDOS DA CRA (29/10/2026): desistência, cancelamento e
             # autorização que vieram da Central e ainda esperam a casa.
             pedidos_cra = PCP.do_titulo(_c, titulo_id)
+            # A AVERBAÇÃO DE RETIFICAÇÃO (29/10/2026) — Lei 9.492/1997, art. 25:
+            # os atos com texto lavrado, o registro que diz um credor diferente
+            # do cadastro (ou nenhum), e as averbações já lavradas de cada ato.
+            averbacao = {"atos": PAV.atos_que_se_retificam(_c, titulo_id),
+                         "divergencias": PAV.divergencias_do_titulo(_c, titulo_id),
+                         "por_ato": {}}
+            for _av in PAV.averbacoes_do_titulo(_c, titulo_id):
+                averbacao["por_ato"].setdefault(
+                    int(_av["ato_retificado_id"] or 0), []).append(_av)
         pago_com_protesto = situacao == "PAGO" and bool(catalogo)
         cabem = []
         # O APONTAMENTO É O PRIMEIRO ATO DA VIDA DO TÍTULO — Lei 9.492/1997,
@@ -3788,6 +3841,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return render_template("atrib_protesto_ficha.html", titulo=dict(titulo),
                                sem_ato=sem_ato,
                                pendencias_do_selo=pendencias_do_selo,
+                               averbacao=averbacao,
                                modelo_da_afirmacao=PSELO.MODELO_DA_AFIRMACAO,
                                minimo_da_afirmacao=PSELO.MINIMO_DE_LETRAS_DA_AFIRMACAO,
                                emolumento=emolumento, apresentante=apresentante,

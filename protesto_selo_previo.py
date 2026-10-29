@@ -80,9 +80,14 @@ from bd_nativo import banco
 # As ordens judiciais não são ato da serventia (cumprimento de ordem de fora);
 # o apontamento não sela desde 21/10/2026 — dos 1.409 do E-Ofício, 1.161 não
 # têm selo, e os 248 que têm trazem o do ato POSTERIOR.
+#
+# A AVERBAÇÃO DE RETIFICAÇÃO DE OFÍCIO (29/10/2026, Lei 9.492/1997, art. 25)
+# também não sela: sem precedente de selo no E-Ofício (o «Retifica protesto»,
+# rotina 82, nunca selou) e sem caminho de averbação no aparelho do Protesto.
+# Se o oficial decidir que há selo, ela sai desta lista por decisão dele.
 ATOS_SEM_SELO_PROPRIO = frozenset({
     "SUSTACAO", "REVOGACAO_SUSTACAO", "EFEITO_SUSPENSIVO",
-    "REVOGACAO_EFEITO_SUSPENSIVO", "APONTAMENTO",
+    "REVOGACAO_EFEITO_SUSPENSIVO", "APONTAMENTO", "AVERBACAO_RETIFICACAO",
 })
 
 # O nome do ato na frase do balcão. O que não está aqui sai como «o ato».

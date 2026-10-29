@@ -10440,13 +10440,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                "ato_id": r["ato_id"],
                "comprovante": r.get("anexo_id")})
         _auditar_afirmacoes("pt_avisos", aviso_id, r.get("afirmacoes"))
+        sem_nome = entregue and _avisar_que_falta_quem_recebeu(aviso_id)
         if entregue:
             flash("Entrega registrada, e a intimação pessoal foi lavrada."
                   + (" O comprovante ficou anexado." if r.get("anexo_id") else
                      " SEM o comprovante, por afirmação expressa — anexe-o "
                      "na lista «Entregues» desta tela: sem ele, o protesto "
-                     "também só sai com afirmação."),
-                  "success" if r.get("anexo_id") else "warning")
+                     "também só sai com afirmação.")
+                  + (" FALTA O NOME DE QUEM RECEBEU: complete-o na lista "
+                     "«Entregues» («Completar quem recebeu») — a tarefa ficou "
+                     "aberta para você." if sem_nome else ""),
+                  "success" if r.get("anexo_id") and not sem_nome
+                  else "warning")
         else:
             flash(f"Não-entrega registrada: "
                   f"{AV.motivo_rotulo(_campo('motivo'))}. O aviso está na "
@@ -10480,6 +10485,57 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         flash(f"Edital {r['codigo']} publicado, e a intimação por edital foi "
               f"lavrada. Imprima a folha do dia e afixe.", "success")
         return redirect(url_for("protesto_avisos"))
+
+    def _avisar_que_falta_quem_recebeu(aviso_id: int) -> bool:
+        """SE FALTAR O NOME DE QUEM RECEBEU, A ESCREVENTE É AVISADA NA HORA
+        (decisão do oficial, 29/10/2026: «se faltar, avisar escrevente pra
+        completar») — uma tarefa para quem registrou a entrega, no setor do
+        Protesto, que fecha sozinha quando o nome é completado. Painel e
+        tarefa, sem e-mail por evento (28/10/2026). `db.create_task` abre
+        transação própria: chame FORA do `with`. Devolve se faltava."""
+        with db.connect() as con:
+            dados = AV.tarefa_para_completar(con, aviso_id, hoje=hoje(),
+                                             dono=usuario_id_do_sistema())
+        if dados:
+            db.create_task(dados, usuario_id_do_sistema())
+        return bool(dados)
+
+    @app.route("/protesto/avisos/<int:aviso_id>/recebido-por", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_aviso_recebido_por(aviso_id: int):
+        """Completa o nome de quem recebeu o aviso já entregue. ESCREVE.
+
+        Decisão do oficial, 29/10/2026: «canhoto de entrega precisa ter o campo
+        pra botar o nome de quem recebeu. se faltar, avisar escrevente pra
+        completar». O nome se lê no canhoto anexado; o que já existe só se
+        troca com afirmação expressa. A auditoria diz quem completou e quando,
+        e com o nome completado o protesto passa sem afirmação.
+        """
+        # A volta é escolhida, e não lida de um endereço do formulário: a
+        # ficha do título ou a lista dos entregues.
+        voltar_a_ficha = _campo("de") == "ficha"
+        titulo_id = None
+        try:
+            with db.transaction() as con:
+                titulo_id = (AV.ler(con, aviso_id) or {}).get("titulo_id")
+                r = AV.completar_quem_recebeu(
+                    con, aviso_id, recebido_por=_campo("recebido_por"),
+                    agora=agora(), afirmacao=_afirmacao_do_formulario())
+        except (AV.AvisoError, PT.ProtestoError) as erro:
+            flash(str(erro), "danger")
+            r = None
+        if r is not None:
+            audit("PROTESTO_AVISO_RECEBIDO_POR", "pt_avisos", aviso_id,
+                  {"recebido_por": r["recebido_por"], "antes": r["antes"],
+                   "tarefas_fechadas": r["tarefas_fechadas"]})
+            _auditar_afirmacoes("pt_avisos", aviso_id, r.get("afirmacoes"))
+            flash(f"Quem recebeu: {r['recebido_por']}. "
+                  + ("Nome corrigido, com a afirmação gravada."
+                     if r["antes"] else "Nome completado."), "success")
+        if voltar_a_ficha and titulo_id:
+            return redirect(url_for("protesto_titulo",
+                                    titulo_id=int(titulo_id)) + "#avisos")
+        return redirect(url_for("protesto_avisos") + f"#aviso-{int(aviso_id)}")
 
     @app.route("/protesto/avisos/<int:aviso_id>/comprovante", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -10742,6 +10798,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                    "anexo_id": r["anexo_id"], "paginas": r["paginas"],
                    "lote": sha})
             _auditar_afirmacoes("pt_avisos", aviso_id, r.get("afirmacoes"))
+            # A ENTREGA SEM O NOME (só por afirmação) abre a tarefa de completar.
+            if r["acao"] == "ENTREGA" and _avisar_que_falta_quem_recebeu(aviso_id):
+                falhas.append(f"Aviso {r['aviso']}: entregue SEM o nome de quem "
+                              f"recebeu — complete-o na lista «Entregues»; a "
+                              f"tarefa ficou aberta para você.")
         if feitos:
             entregas = sum(1 for r in feitos if r["acao"] == "ENTREGA")
             tentativas = sum(1 for r in feitos if r["acao"] == "TENTATIVA")

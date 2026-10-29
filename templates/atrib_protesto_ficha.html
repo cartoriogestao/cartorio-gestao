@@ -175,7 +175,7 @@
 
   O AVISO É LISTA, e não um só: 255 dos 1.361 títulos do acervo têm mais de um.
 #}
-<section class="panel">
+<section class="panel" id="avisos">
   <div class="panel-head">
     <span>Avisos de intimação</span><small>{{ avisos | length }}</small>
   </div>
@@ -202,6 +202,18 @@
             <strong>entregue</strong> em {{ a.entrega_em[:10] }}
             {% if a.recebido_por %}
               <div><small>recebido por {{ a.recebido_por }}</small></div>
+            {% else %}
+              {#- FALTA O NOME DE QUEM RECEBEU (29/10/2026): completa-se aqui
+                  também, porque a lista dos entregues deixa de fora o aviso
+                  cuja entrega foi lançada no E-Ofício. #}
+              <form method="post" class="form" style="margin-top:4px"
+                    action="{{ url_for('protesto_aviso_recebido_por', aviso_id=a.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="de" value="ficha">
+                <div><strong>falta o nome de quem recebeu</strong></div>
+                <input name="recebido_por" placeholder="Nome de quem assinou o canhoto" required>
+                <button class="button small primary">Completar quem recebeu</button>
+              </form>
             {% endif %}
           {% elif a.situacao == 'NAO_ENTREGUE' %}
             <strong class="danger">não entregue</strong>

@@ -669,9 +669,22 @@ def matar_arvore(pid: Any) -> None:
 
 
 def _flags_desacoplado() -> int:
+    """Grupo próprio e console SEM JANELA — e não DETACHED_PROCESS.
+
+    A JANELA DO PYTHON A CADA 15 MINUTOS (29/10/2026, relato do oficial: «pq
+    esta abrindo toda hora janelas pyton»). Com DETACHED_PROCESS o Windows
+    ignora o CREATE_NO_WINDOW, e o corredor nasce sem console nenhum. Só que
+    `sys.executable` é o `python.exe` do venv, que é um LANÇADOR: ele abre o
+    `python.exe` de verdade como filho, e um programa de console que nasce de
+    quem não tem console ganha um console NOVO e VISÍVEL. Medido nesta máquina
+    com as duas formas: DETACHED|NO_WINDOW deixa uma janela visível do
+    `python.exe` filho; só NO_WINDOW, nenhuma. Sem DETACHED, o corredor ganha
+    um console próprio e invisível, que o filho herda, e continua fora do
+    console da tarefa do minuto, que pode acabar antes dele.
+    """
     if os.name != "nt":
         return 0
-    return (subprocess.CREATE_NEW_PROCESS_GROUP | 0x00000008      # DETACHED_PROCESS
+    return (subprocess.CREATE_NEW_PROCESS_GROUP
             | 0x08000000)                                          # CREATE_NO_WINDOW
 
 

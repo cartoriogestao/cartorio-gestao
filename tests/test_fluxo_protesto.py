@@ -48,6 +48,7 @@ sys.path.insert(0, str(RAIZ / "tests"))
 
 from bd_nativo import banco as nativo            # noqa: E402
 from navegador_de_teste import postar_e_seguir   # noqa: E402
+from prova_de_intimacao import juntar_prova      # noqa: E402
 
 # A SERVENTIA DE TESTE. O horário entra porque o aviso RECUSA sem ele (CN-MA
 # art. 920 manda o horário de funcionamento no papel).
@@ -102,6 +103,11 @@ TITULO = {
 SOBRAS = ("{", "}", "None", "%s", "()", " , ", " ;")
 
 REMESSA_DA_CRA = (RAIZ / "tests" / "cra_remessa_exemplo.txt").read_bytes()
+
+# O COMEÇO DE UM PDF, para o canhoto assinado e o comprovante do envio à
+# CENPROT: desde 29/10/2026 a entrega e o protesto por edital só saem com o
+# papel anexado, e o anexo confere os primeiros bytes.
+PDF_DO_CANHOTO = b"%PDF-1.4\n%"
 
 
 # ------------------------------------------------------------ a bancada
@@ -345,10 +351,20 @@ def _aviso(s, titulo_id: int) -> dict:
                (titulo_id,))
 
 
+def _canhoto(aviso: dict) -> tuple:
+    """O canhoto assinado do aviso, como o balcão o anexa: desde 29/10/2026
+    a entrega só se registra com ele e com quem recebeu, no mesmo ato. Um
+    arquivo por aviso — o mesmo arquivo em dois avisos é suspeito."""
+    conteudo = (PDF_DO_CANHOTO + b" canhoto do aviso "
+                + str(aviso["id"]).encode())
+    return (io.BytesIO(conteudo), f"canhoto-aviso-{aviso['id']}.pdf")
+
+
 def _intimado_em_maos(s, titulo_id: int) -> dict:
     aviso = _aviso(s, titulo_id)
     r = _post(s, f"/protesto/avisos/{aviso['id']}/entrega", "/protesto/avisos",
-              entregue="1", recebido_por=DEVEDOR, quando=_hoje(s))
+              entregue="1", recebido_por=DEVEDOR, quando=_hoje(s),
+              comprovante=_canhoto(aviso))
     assert any("intimação pessoal foi lavrada" in a for a in _avisos(r)), _avisos(r)
     return aviso
 
@@ -619,7 +635,8 @@ def test_a_intimacao_chega_igual_ao_livro_ao_termo_e_ao_instrumento(s, modo):
 
     if modo == "PESSOAL":
         r = _post(s, f"/protesto/avisos/{aviso['id']}/entrega", "/protesto/avisos",
-                  entregue="1", recebido_por=DEVEDOR, quando=_hoje(s))
+                  entregue="1", recebido_por=DEVEDOR, quando=_hoje(s),
+                  comprovante=_canhoto(aviso))
         assert any("intimação pessoal foi lavrada" in a for a in _avisos(r))
         no_livro = f"intimado pessoalmente em {hoje}"
         no_termo = f"O devedor foi intimado pessoalmente em {hoje}."
@@ -645,6 +662,15 @@ def test_a_intimacao_chega_igual_ao_livro_ao_termo_e_ao_instrumento(s, modo):
             assert esperado in papel["texto"], (esperado, papel["texto"])
         _confere_a_serventia_no_papel(papel)
         _sem_sobra(edital["teor"])
+        # A PROVA DO EDITAL (29/10/2026): o comprovante do envio do arquivo
+        # dos editais do dia à CENPROT (CN-MA art. 922, § 1º). Sem ele o
+        # protesto por edital não se lavra.
+        r = _post(s, "/protesto/editais/comprovante-cenprot", "/protesto/avisos",
+                  dia=_hoje(s),
+                  comprovante=(io.BytesIO(PDF_DO_CANHOTO + b" envio a CENPROT"),
+                               "envio-cenprot.pdf"))
+        assert any("Comprovante do envio à CENPROT anexado" in a
+                   for a in _avisos(r)), _avisos(r)
         no_livro = f"intimado por edital em {hoje}"
         no_termo = f"O devedor foi intimado por Edital em {hoje}."
         no_instrumento = ("CERTIFICO que a intimação foi feita por EDITAL, "
@@ -693,6 +719,10 @@ def test_a_intimacao_eletronica_sai_igual_no_termo_e_no_instrumento(s):
     r = _lancar(s, tid, "INTIMACAO", p, p["itens"][1], modo="PESSOAL",
                 digital="on")
     assert _lancado(r, "Intimacao"), _avisos(r)
+    # A PROVA DA INTIMAÇÃO DIGITAL (29/10/2026): a confirmação da Resolve e o
+    # histórico guardado — o que este teste confere é o texto do termo.
+    with s["db"].transaction() as con:
+        juntar_prova(con, tid)
     r = _lancar(s, tid, "PROTESTO", p, p["itens"][2])
     assert _lancado(r, "Protesto"), _avisos(r)
     hoje = _br(_hoje(s))
@@ -851,7 +881,8 @@ def test_o_titulo_do_balcao_leva_o_apresentante_ao_aviso_e_ao_instrumento(s):
     papel = _papel(s, f"/protesto/avisos/{aviso['id']}.odt")
     assert f"Apresentante: {CREDOR}" in papel["texto"], papel["texto"]
     r = _post(s, f"/protesto/avisos/{aviso['id']}/entrega", "/protesto/avisos",
-              entregue="1", recebido_por=DEVEDOR, quando=_hoje(s))
+              entregue="1", recebido_por=DEVEDOR, quando=_hoje(s),
+              comprovante=_canhoto(aviso))
     assert any("intimação pessoal foi lavrada" in a for a in _avisos(r)), _avisos(r)
     r = _lancar(s, tid, "PROTESTO", p, p["itens"][1])
     assert _lancado(r, "Protesto"), _avisos(r)
@@ -880,7 +911,8 @@ def test_o_balcao_pede_o_documento_e_o_endereco_do_apresentante_e_eles_vao_aos_p
     papel = _papel(s, f"/protesto/avisos/{aviso['id']}.odt")
     assert f"Apresentante: {CREDOR}, CPF/CNPJ {CPF_CREDOR}" in papel["texto"], papel["texto"]
     r = _post(s, f"/protesto/avisos/{aviso['id']}/entrega", "/protesto/avisos",
-              entregue="1", recebido_por=DEVEDOR, quando=_hoje(s))
+              entregue="1", recebido_por=DEVEDOR, quando=_hoje(s),
+              comprovante=_canhoto(aviso))
     assert any("intimação pessoal foi lavrada" in a for a in _avisos(r)), _avisos(r)
     r = _lancar(s, tid, "PROTESTO", p, p["itens"][1])
     assert _lancado(r, "Protesto"), _avisos(r)

@@ -31,6 +31,7 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+from prova_de_intimacao import juntar_prova  # noqa: E402
 
 SENHA = "Senha#12345"
 AGORA = "2026-08-31T15:00:00"
@@ -73,11 +74,15 @@ def _con(s) -> sqlite3.Connection:
 
 
 def intimado(s, *, numero="84713/1", nome="MARIA SANTOS",
-             data="2026-08-20", apontado="2026-08-18") -> int:
+             data="2026-08-20", apontado="2026-08-18",
+             provado: bool = True) -> int:
     """Um título intimado e sem movimentação, gravado direto no banco.
 
     Passar pela tela de apontar e intimar poria a montagem do cenário à mercê
     de outras duas telas — e o que se testa aqui é a do protesto.
+
+    `provado` junta a PROVA DA INTIMAÇÃO (29/10/2026): o edital publicado e o
+    comprovante do envio à CENPROT — sem ela o lote não lavra.
     """
     con = _con(s)
     with con:
@@ -102,6 +107,8 @@ def intimado(s, *, numero="84713/1", nome="MARIA SANTOS",
                    origem, criado_em)
                VALUES (?,'INTIMACAO',?,'{"modo": "EDITAL"}','MANUAL',?)""",
             (tid, data, AGORA))
+        if provado:
+            juntar_prova(con, tid)
     con.close()
     return tid
 

@@ -117,6 +117,25 @@ class MidiaErro(ValueError):
     """O arquivo não pôde ser baixado, guardado ou enviado. Mensagem pronta."""
 
 
+class MidiaPassageira(MidiaErro):
+    """A Graph respondeu 5xx ou 429: passa, e vale tentar de novo depois."""
+
+
+# O ERRO PASSAGEIRO NÃO VIRA DEFINITIVO (29/10/2026): rede caída, tempo
+# esgotado e a Graph com 5xx ou 429 devolvem a mensagem à fila, e só a terceira
+# vez grava o erro. A espera entre as tentativas existe porque o vigia roda a
+# cada poucos segundos: sem ela, as três se gastariam em menos de um minuto.
+TENTATIVAS_DA_MIDIA = 3
+ESPERA_ENTRE_TENTATIVAS_MIN = 2
+PASSAGEIROS = (MidiaPassageira, OSError, http.client.HTTPException)
+
+
+def _http(status: int, texto: str) -> MidiaErro:
+    """O erro de HTTP da Graph: 5xx e 429 passam; o resto é definitivo."""
+    passa = status == 429 or 500 <= status <= 599
+    return (MidiaPassageira if passa else MidiaErro)(texto)
+
+
 # ------------------------------------------------------------- a rede
 
 
@@ -145,8 +164,8 @@ def baixar(token: str, midia_id: str, *, https: Callable | None = None) -> tuple
     cab = {"Authorization": f"Bearer {token}"}
     status, bruto = fn(GRAPH_HOST, "GET", f"/{GRAPH_VER}/{midia_id}", cabecalhos=cab)
     if status != 200:
-        raise MidiaErro(f"A Meta não entregou o endereço do arquivo (HTTP {status}). "
-                        "Depois de 30 dias ela apaga a mídia.")
+        raise _http(status, f"A Meta não entregou o endereço do arquivo (HTTP {status}). "
+                            "Depois de 30 dias ela apaga a mídia.")
     try:
         info = json.loads(bruto.decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as erro:
@@ -163,7 +182,7 @@ def baixar(token: str, midia_id: str, *, https: Callable | None = None) -> tuple
                         "outro meio, ou abra pelo celular.")
     status, dados = fn(host, "GET", caminho, cabecalhos=cab)
     if status != 200:
-        raise MidiaErro(f"A Meta não entregou o arquivo (HTTP {status}).")
+        raise _http(status, f"A Meta não entregou o arquivo (HTTP {status}).")
     if len(dados) > TETO_DE_BYTES:
         raise MidiaErro(f"O arquivo passa de {TETO_DE_BYTES // (1024 * 1024)} MB e não "
                         "foi guardado.")
@@ -318,11 +337,14 @@ def _soltar_presas(db: Any, *, agora: str) -> None:
 def baixar_pendentes(db: Any, *, pasta_arquivos: Path, agora: str,
                      limite: int = POR_VOLTA, https: Callable | None = None) -> dict:
     """Baixa e guarda os arquivos que os clientes mandaram. **FALA COM A REDE**,
-    e nunca de dentro de uma transação. Devolve {"baixados", "erros"}."""
+    e nunca de dentro de uma transação. Devolve {"baixados", "erros",
+    "adiados"} — adiado é o erro passageiro que volta à fila."""
     import wa_balcao as BALCAO
     _soltar_presas(db, agora=agora)
     inicio = (datetime.fromisoformat(str(agora)[:19]) - timedelta(days=DIAS_DA_META)
               ).strftime("%Y-%m-%dT%H:%M:%S")
+    espera = (datetime.fromisoformat(str(agora)[:19])
+              - timedelta(minutes=ESPERA_ENTRE_TENTATIVAS_MIN)).strftime("%Y-%m-%dT%H:%M:%S")
     with db.connect() as con:
         token = BALCAO.ler_config(con, WA.CHAVE_TOKEN)
         if not token:
@@ -331,14 +353,16 @@ def baixar_pendentes(db: Any, *, pasta_arquivos: Path, agora: str,
             """SELECT id FROM wa_mensagem
                 WHERE direcao='in' AND midia_id IS NOT NULL AND midia_id <> ''
                   AND midia_situacao IS NULL AND criado_em >= %s
-                ORDER BY id LIMIT %s""", (inicio, int(limite)))
-    baixados = erros = 0
+                  AND (COALESCE(midia_tentativas, 0) = 0
+                       OR midia_desde IS NULL OR midia_desde < %s)
+                ORDER BY id LIMIT %s""", (inicio, espera, int(limite)))
+    baixados = erros = adiados = 0
     for c in candidatos:
         with db.transaction() as con:
             pega = banco(con).escrever(
                 """UPDATE wa_mensagem SET midia_situacao=%s, midia_desde=%s
                     WHERE id=%s AND midia_situacao IS NULL
-                RETURNING id, midia_id, bruto_json, tipo""",
+                RETURNING id, midia_id, bruto_json, tipo, midia_tentativas""",
                 (WA.MIDIA_BAIXANDO, agora, int(c["id"])))
         if not pega:
             continue                         # outra volta pegou primeiro
@@ -347,7 +371,28 @@ def baixar_pendentes(db: Any, *, pasta_arquivos: Path, agora: str,
             dados, mime = baixar(token, m["midia_id"], https=https)
             salvo = guardar(pasta_do_mes(pasta_arquivos, agora), nome_do_arquivo(m, mime),
                             dados)
-        except (MidiaErro, OSError) as falha:
+        except PASSAGEIROS as falha:
+            tentativas = int(m.get("midia_tentativas") or 0) + 1
+            if tentativas < TENTATIVAS_DA_MIDIA:
+                with db.transaction() as con:
+                    banco(con).escrever(
+                        """UPDATE wa_mensagem SET midia_situacao=NULL, midia_desde=%s,
+                                  midia_tentativas=%s WHERE id=%s""",
+                        (agora, tentativas, int(m["id"])))
+                LOG.info("o arquivo da mensagem %s volta à fila (tentativa %s): %s",
+                         m["id"], tentativas, falha)
+                adiados += 1
+                continue
+            with db.transaction() as con:
+                banco(con).escrever(
+                    """UPDATE wa_mensagem SET midia_situacao=%s, arquivo_erro=%s,
+                              midia_tentativas=%s WHERE id=%s""",
+                    (WA.MIDIA_ERRO, f"{str(falha)[:260]} ({tentativas} tentativas)",
+                     tentativas, int(m["id"])))
+            LOG.warning("o arquivo da mensagem %s não foi baixado: %s", m["id"], falha)
+            erros += 1
+            continue
+        except MidiaErro as falha:
             with db.transaction() as con:
                 banco(con).escrever(
                     "UPDATE wa_mensagem SET midia_situacao=%s, arquivo_erro=%s WHERE id=%s",
@@ -365,13 +410,14 @@ def baixar_pendentes(db: Any, *, pasta_arquivos: Path, agora: str,
                 (WA.MIDIA_OK, salvo["nome"], salvo["caminho"], mime, salvo["bytes"],
                  salvo["sha256"], int(m["id"])))
         baixados += 1
-    return {"baixados": baixados, "erros": erros}
+    return {"baixados": baixados, "erros": erros, "adiados": adiados}
 
 
 def tentar_de_novo(con: Any, mensagem_id: int) -> bool:
     """Devolve a mensagem com erro à fila de baixar. ESCREVE."""
     linha = banco(con).escrever(
-        """UPDATE wa_mensagem SET midia_situacao=NULL, arquivo_erro=NULL
+        """UPDATE wa_mensagem SET midia_situacao=NULL, arquivo_erro=NULL,
+                  midia_tentativas=0
             WHERE id=%s AND midia_situacao=%s RETURNING id""",
         (int(mensagem_id), WA.MIDIA_ERRO))
     return bool(linha)

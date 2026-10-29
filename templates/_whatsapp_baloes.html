@@ -46,11 +46,12 @@
     {{ (m.criado_em or '')[11:16] }}
     {% if m.direcao == 'out' %}
     · {% if m.tipo == 'aviso' %}aviso automático{% elif m.autor == 'ia' %}resposta automática (IA){% elif m.tipo == 'modelo' %}modelo enviado{% else %}enviada{% if m.autor %} por {{ m.autor }}{% endif %}{% endif %}
-    {#- A ENTREGA (29/10/2026): ✓ saiu, ✓✓ chegou, ✓✓ azul leu, ⚠ não chegou. -#}
-    {% if m.entrega == 'read' %}<span class="wa-entrega wa-lida" title="o cliente leu">✓✓</span>
-    {% elif m.entrega == 'delivered' %}<span class="wa-entrega" title="chegou ao celular do cliente">✓✓</span>
-    {% elif m.entrega == 'sent' %}<span class="wa-entrega" title="saiu para o WhatsApp">✓</span>
-    {% elif m.entrega == 'failed' %}<span class="wa-entrega wa-falhou" title="{{ m.entrega_erro or 'não chegou' }}">⚠ não chegou{% if m.entrega_erro %}: {{ m.entrega_erro }}{% endif %}</span>{% endif %}
+    {#- A ENTREGA (29/10/2026): ✓ saiu, ✓✓ chegou, ✓✓ azul leu, ⚠ não chegou. O
+        span sai SEMPRE, mesmo vazio: o `/novas` atualiza por atributo e
+        `textContent`, sem montar HTML. O texto é o do `rotulo_da_entrega`. -#}
+    {% set ent = wa_rotulo_da_entrega(m.entrega, m.entrega_erro) %}
+    <span class="wa-entrega" data-wa-entrega-de="{{ m.id }}" data-wa-entrega="{{ ent.entrega }}"
+          {% if ent.titulo %}title="{{ ent.titulo }}"{% endif %}>{{ ent.marca }}</span>
     {% endif %}
   </div>
 </div>

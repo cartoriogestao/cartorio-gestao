@@ -598,6 +598,9 @@ def listar(con: Any, *, agora: str, setor: str = "", etiqueta: str = "",
                    (SELECT m.texto FROM wa_mensagem m
                      WHERE m.conversa_id=c.id
                      ORDER BY m.id DESC LIMIT 1) AS ultimo_texto,
+                   (SELECT o.entrega FROM wa_mensagem o
+                     WHERE o.conversa_id=c.id AND o.direcao='out'
+                     ORDER BY o.id DESC LIMIT 1) AS ultima_entrega,
                    {_ESPERANDO_DESDE} AS esperando_desde
               FROM wa_conversa c LEFT JOIN users u ON u.id = c.responsavel_id
               {onde}

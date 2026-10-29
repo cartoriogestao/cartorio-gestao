@@ -1086,6 +1086,8 @@ Abas da lista: Sem responsável (abre por padrão); Minhas; Todas (as abertas); 
 Campos da tela: Busca por nome ou número; Filtros [setor, etiqueta, vencidas]; Mensagem [rascunho].
 Comandos: atualizar (⟳, só com a busca automática da caixa-postal desligada); Filtros; assumir; resolver; Reativar conversa (na resolvida); Ver histórico / Ocultar histórico; Enviar; guardar rascunho. O nome da pessoa, no topo da conversa, abre os detalhes.
 Resolvida: sai das abas de trabalho e fica em «Resolvidas»; nada é apagado. Quando volta (o cliente escreve ou «Reativar conversa»), a tela mostra só o atendimento novo, com «Ver histórico» para o anterior; o responsável fica se ela estava resolvida havia até 7 dias.
+Entrega das enviadas: ✓ saiu, ✓✓ chegou, ✓✓ azul leu, «⚠ não chegou: <motivo>», atualizada sozinha na conversa aberta; um «não chegou» que chega depois de entregue ou lida é ignorado. Para os códigos 131047 e 131026 da Meta o motivo é uma frase pronta. O cartão da lista mostra «não entregue» quando a última enviada não chegou.
+Arquivo do cliente que não baixa por falha passageira (rede, tempo esgotado, a Meta com 5xx ou 429) volta à fila sozinho, até 3 tentativas; só então mostra o erro e o «tentar de novo».
 Acessos relacionados: Painel do prazo; Atendente com IA; Configuração Meta.
 
 ### Robôs

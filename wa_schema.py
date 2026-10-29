@@ -311,6 +311,10 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("wa_mensagem", "arquivo_erro", "TEXT"),
     # A ENTREGA DO QUE SAIU (29/10/2026): a Meta devolve «sent», «delivered»,
     # «read» ou «failed» para cada mensagem enviada, e isso era jogado fora.
+    # O ERRO PASSAGEIRO VOLTA À FILA (29/10/2026): a rede que caiu, o tempo
+    # esgotado e a Graph com 5xx ou 429 não viram erro na hora; contam aqui, e a
+    # mensagem tenta de novo sozinha até `wa_midia.TENTATIVAS_DA_MIDIA` vezes.
+    ("wa_mensagem", "midia_tentativas", "INTEGER"),
     ("wa_mensagem", "entrega", "TEXT"),
     ("wa_mensagem", "entrega_em", "TEXT"),
     ("wa_mensagem", "entrega_erro", "TEXT"),

@@ -150,8 +150,23 @@ def test_a_entrega_so_avanca_e_guarda_o_motivo_da_falha(casa):
     assert status("read") == 1
     assert _um(db, "SELECT entrega FROM wa_mensagem WHERE meta_id='wamid.saiu-1'")[
         "entrega"] == "read"
-    assert status("failed", errors=[{"title": "Mensagem não entregue"}]) == 1
-    m = _um(db, "SELECT entrega, entrega_erro FROM wa_mensagem WHERE meta_id='wamid.saiu-1'")
+    # «FAILED» NÃO DESFAZ O QUE CHEGOU (29/10/2026, decisão do oficial): até o #94
+    # este teste esperava o «failed» por cima do «read».
+    assert status("failed", errors=[{"title": "Mensagem não entregue"}]) == 0
+    assert _um(db, "SELECT entrega FROM wa_mensagem WHERE meta_id='wamid.saiu-1'")[
+        "entrega"] == "read"
+    # depois de só «saiu», a falha ainda é gravada, com o motivo
+    with db.transaction() as con:
+        WA.gravar_saida(con, cid, "Outra.", "wamid.saiu-2", autor="MARIO", agora=AGORA)
+    corpo = {"entry": [{"changes": [{"value": {"statuses": [
+        {"id": "wamid.saiu-2", "status": "sent"}]}}]}]}
+    with db.transaction() as con:
+        WA.aplicar_entrada(con, corpo, agora=AGORA)
+    corpo["entry"][0]["changes"][0]["value"]["statuses"][0].update(
+        status="failed", errors=[{"title": "Mensagem não entregue"}])
+    with db.transaction() as con:
+        assert WA.aplicar_entrada(con, corpo, agora=AGORA)["entregas"] == 1
+    m = _um(db, "SELECT entrega, entrega_erro FROM wa_mensagem WHERE meta_id='wamid.saiu-2'")
     assert m["entrega"] == "failed" and "não entregue" in m["entrega_erro"]
 
 
@@ -274,7 +289,7 @@ def test_o_arquivo_que_nao_baixa_fica_com_erro_e_volta_pelo_botao(casa, tmp_path
     def https(host, metodo, caminho, corpo=None, cabecalhos=None, prazo=60):
         return 404, b"{}"
     r = MIDIA.baixar_pendentes(db, pasta_arquivos=tmp_path, agora=AGORA, https=https)
-    assert r == {"baixados": 0, "erros": 1}
+    assert r == {"baixados": 0, "erros": 1, "adiados": 0}     # o 404 é definitivo
     m = _um(db, "SELECT id, midia_situacao, arquivo_erro FROM wa_mensagem "
                 "WHERE meta_id='wamid.f-2'")
     assert m["midia_situacao"] == SCH.MIDIA_ERRO and "HTTP 404" in m["arquivo_erro"]
@@ -473,3 +488,171 @@ def test_a_rotina_do_balcao_so_grava_o_que_se_le(s):
         cfg = ROTINA.config(con)
     assert cfg["vigia_segundos"] == 15 and cfg["encerrar_dias"] == 5 and cfg["fora_ligado"]
     assert cfg["respostas"] == [{"atalho": "bom dia", "texto": "Bom dia, {nome}!"}]
+
+
+
+# ===================================================================
+# AS DIFERENÇAS DO ROTEIRO DE ANEXOS E ENTREGA, SOBRE O #94 (29/10/2026)
+# ===================================================================
+
+DEPOIS = "2026-10-28T20:03:00"       # passada a espera entre as tentativas
+MAIS_DEPOIS = "2026-10-28T20:06:00"
+
+
+def _https_que_responde(*respostas):
+    """Um `https` falso que, na Graph, responde na ordem dada: um número é o
+    HTTP do endereço; "ok" entrega o endereço e o arquivo; uma exceção sobe."""
+    fila = list(respostas)
+
+    def https(host, metodo, caminho, corpo=None, cabecalhos=None, prazo=60):
+        if host == "lookaside.fbsbx.com":
+            return 200, b"\xff\xd8foto-falsa"
+        r = fila.pop(0)
+        if isinstance(r, BaseException):
+            raise r
+        if r == "ok":
+            return 200, json.dumps({"url": "https://lookaside.fbsbx.com/m?id=1",
+                                    "mime_type": "image/jpeg", "file_size": 9}).encode()
+        return int(r), b"{}"
+    return https
+
+
+def _foto_da_vez(db, meta_id):
+    _token_e_telefone(db)
+    _entrada(db, meta_id=meta_id, msg=_foto(meta_id))
+    return _um(db, "SELECT id FROM wa_mensagem WHERE meta_id=%s", (meta_id,))["id"]
+
+
+def test_um_503_volta_a_fila_e_a_passada_seguinte_baixa(casa, tmp_path):
+    db = casa["db"]
+    mid = _foto_da_vez(db, "wamid.p-1")
+    https = _https_que_responde(503, "ok")
+    r = MIDIA.baixar_pendentes(db, pasta_arquivos=tmp_path, agora=AGORA, https=https)
+    assert r == {"baixados": 0, "erros": 0, "adiados": 1}
+    m = _um(db, "SELECT midia_situacao, midia_tentativas, arquivo_erro FROM wa_mensagem "
+                "WHERE id=%s", (mid,))
+    assert m["midia_situacao"] is None and m["midia_tentativas"] == 1 and not m["arquivo_erro"]
+    # antes da espera, a passada não tenta de novo
+    assert MIDIA.baixar_pendentes(db, pasta_arquivos=tmp_path, agora=AGORA,
+                                  https=https)["adiados"] == 0
+    r = MIDIA.baixar_pendentes(db, pasta_arquivos=tmp_path, agora=DEPOIS, https=https)
+    assert r["baixados"] == 1
+    m = _um(db, "SELECT midia_situacao, arquivo_erro, arquivo_caminho FROM wa_mensagem "
+                "WHERE id=%s", (mid,))
+    assert m["midia_situacao"] == SCH.MIDIA_OK and m["arquivo_erro"] is None
+    assert Path(m["arquivo_caminho"]).read_bytes() == b"\xff\xd8foto-falsa"
+
+
+def test_tres_erros_passageiros_viram_erro_e_o_botao_zera(casa, tmp_path):
+    db = casa["db"]
+    mid = _foto_da_vez(db, "wamid.p-2")
+    https = _https_que_responde(503, OSError("a rede caiu"), 429, "ok")
+    for quando in (AGORA, DEPOIS):
+        assert MIDIA.baixar_pendentes(db, pasta_arquivos=tmp_path, agora=quando,
+                                      https=https)["adiados"] == 1
+    r = MIDIA.baixar_pendentes(db, pasta_arquivos=tmp_path, agora=MAIS_DEPOIS, https=https)
+    assert r == {"baixados": 0, "erros": 1, "adiados": 0}
+    m = _um(db, "SELECT midia_situacao, midia_tentativas, arquivo_erro FROM wa_mensagem "
+                "WHERE id=%s", (mid,))
+    assert m["midia_situacao"] == SCH.MIDIA_ERRO and m["midia_tentativas"] == 3
+    assert "HTTP 429" in m["arquivo_erro"] and "3 tentativas" in m["arquivo_erro"]
+    with db.transaction() as con:
+        assert MIDIA.tentar_de_novo(con, int(mid))
+    m = _um(db, "SELECT midia_situacao, midia_tentativas FROM wa_mensagem WHERE id=%s", (mid,))
+    assert m["midia_situacao"] is None and m["midia_tentativas"] == 0
+    assert MIDIA.baixar_pendentes(db, pasta_arquivos=tmp_path, agora=MAIS_DEPOIS,
+                                  https=https)["baixados"] == 1
+
+
+def test_o_4xx_da_graph_e_definitivo_na_hora(casa, tmp_path):
+    db = casa["db"]
+    mid = _foto_da_vez(db, "wamid.p-3")
+    r = MIDIA.baixar_pendentes(db, pasta_arquivos=tmp_path, agora=AGORA,
+                               https=_https_que_responde(400))
+    assert r == {"baixados": 0, "erros": 1, "adiados": 0}
+    assert _um(db, "SELECT midia_situacao FROM wa_mensagem WHERE id=%s",
+               (mid,))["midia_situacao"] == SCH.MIDIA_ERRO
+
+
+def _saida_com_status(db, meta_id, *avisos, wa_id="5599900000201"):
+    cid = _entrada(db, meta_id=f"in-{meta_id}", wa_id=wa_id)
+    with db.transaction() as con:
+        WA.gravar_saida(con, cid, "Respondido.", meta_id, autor="MARIO", agora=AGORA)
+    for status, extra in avisos:
+        corpo = {"entry": [{"changes": [{"value": {"statuses": [
+            {"id": meta_id, "status": status, **extra}]}}]}]}
+        with db.transaction() as con:
+            WA.aplicar_entrada(con, corpo, agora=AGORA)
+    return cid
+
+
+def test_failed_depois_de_entregue_nao_muda(casa):
+    db = casa["db"]
+    _saida_com_status(db, "wamid.e-1", ("delivered", {}),
+                      ("failed", {"errors": [{"code": 131026, "title": "Undeliverable"}]}))
+    m = _um(db, "SELECT entrega, entrega_erro FROM wa_mensagem WHERE meta_id='wamid.e-1'")
+    assert m["entrega"] == "delivered" and m["entrega_erro"] is None
+
+
+def test_as_frases_prontas_da_falha():
+    assert WA.rotulo_da_entrega("failed", "131047: Re-engagement message")["marca"] == (
+        "⚠ não chegou: passaram as 24 horas: use «Reabrir com o modelo»")
+    assert WA.rotulo_da_entrega("failed", "131026: Message undeliverable")["titulo"] == (
+        "o número não recebe mensagens do WhatsApp")
+    # código desconhecido mostra o texto da Meta; o registro antigo, sem código, também
+    assert WA.rotulo_da_entrega("failed", "131000: Something went wrong")["titulo"] == (
+        "Something went wrong")
+    assert WA.rotulo_da_entrega("failed", "Mensagem não entregue")["titulo"] == (
+        "Mensagem não entregue")
+    assert WA.rotulo_da_entrega("read", None) == {"entrega": "read", "marca": "✓✓",
+                                                   "titulo": "o cliente leu"}
+    assert WA.rotulo_da_entrega(None)["marca"] == ""
+
+
+def test_o_balao_mostra_a_frase_do_131047_e_guarda_o_codigo(s):
+    db = s["bd"]
+    cid = _saida_com_status(db, "wamid.e-2", ("failed", {"errors": [
+        {"code": 131047, "title": "Re-engagement message"}]}))
+    assert _um(db, "SELECT entrega_erro FROM wa_mensagem WHERE meta_id='wamid.e-2'")[
+        "entrega_erro"].startswith("131047: ")
+    html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    assert "⚠ não chegou: passaram as 24 horas: use «Reabrir com o modelo»" in html
+    assert 'data-wa-entrega="failed"' in html
+
+
+def test_o_novas_traz_a_entrega_das_enviadas_ao_vivo(s):
+    db = s["bd"]
+    cid = _saida_com_status(db, "wamid.e-3")
+    tela = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    mid = _um(db, "SELECT id FROM wa_mensagem WHERE meta_id='wamid.e-3'")["id"]
+    # o span existe mesmo antes do primeiro aviso, para o JS só trocar o atributo
+    assert f'data-wa-entrega-de="{mid}" data-wa-entrega=""' in tela
+    ultimo = _um(db, "SELECT max(id) AS n FROM wa_mensagem WHERE conversa_id=%s", (cid,))["n"]
+    antes = s["c"].get(f"/whatsapp/{cid}/novas?depois={ultimo}").get_json()["entregas"]
+    assert antes == [{"id": mid, "entrega": "", "marca": "", "titulo": ""}]
+    corpo = {"entry": [{"changes": [{"value": {"statuses": [
+        {"id": "wamid.e-3", "status": "read"}]}}]}]}
+    with db.transaction() as con:
+        WA.aplicar_entrada(con, corpo, agora=AGORA)
+    depois = s["c"].get(f"/whatsapp/{cid}/novas?depois={ultimo}").get_json()
+    assert depois["html"] == ""                    # nada novo para desenhar...
+    assert depois["entregas"] == [{"id": mid, "entrega": "read", "marca": "✓✓",
+                                   "titulo": "o cliente leu"}]   # ...mas a entrega anda
+    js = (Path(__file__).resolve().parent.parent / "static" / "whatsapp_chat.js").read_text(
+        encoding="utf-8")
+    trecho = js[js.index("function atualizarEntregas"):js.index("function atualizarEstado")]
+    assert "data-wa-entrega" in trecho and "textContent" in trecho
+    assert "innerHTML" not in trecho
+
+
+def test_o_cartao_da_lista_marca_nao_entregue(s):
+    db = s["bd"]
+    falhou = _saida_com_status(db, "wamid.e-4", ("failed", {"errors": [
+        {"code": 131026, "title": "Undeliverable"}]}), wa_id="5599900000204")
+    chegou = _saida_com_status(db, "wamid.e-5", ("delivered", {}), wa_id="5599900000205")
+    html = s["c"].get("/whatsapp?aba=todas").get_data(as_text=True)
+    import re
+    cartoes = {int(i): c for i, c in re.findall(
+        r'href="/whatsapp/(\d+)[^"]*"(.*?)</a>', html, re.S)}
+    assert 'data-wa-etq="nao-entregue">não entregue</span>' in cartoes[falhou]
+    assert "não entregue" not in cartoes[chegou]

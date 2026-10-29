@@ -343,6 +343,36 @@ def quando_da_meta(msg: dict, padrao: str) -> str:
 # fora. A ordem impede que um aviso atrasado desfaça um mais novo: «delivered»
 # que chega depois do «read» não volta o balão para «entregue».
 ORDEM_DA_ENTREGA = {"sent": 1, "delivered": 2, "read": 3, "failed": 4}
+# «FAILED» NÃO DESFAZ O QUE CHEGOU (29/10/2026): a mensagem entregue ou lida já
+# está no celular do cliente, e um «failed» atrasado não muda isso.
+JA_CHEGOU = ("delivered", "read")
+
+# AS FRASES PRONTAS DA FALHA (29/10/2026), pelo código da Meta. O que não está
+# aqui mostra o texto que a Meta mandou.
+MOTIVO_DA_ENTREGA = {
+    "131047": "passaram as 24 horas: use «Reabrir com o modelo»",
+    "131026": "o número não recebe mensagens do WhatsApp",
+}
+_ROTULO_DA_ENTREGA = {
+    "read": ("✓✓", "o cliente leu"),
+    "delivered": ("✓✓", "chegou ao celular do cliente"),
+    "sent": ("✓", "saiu para o WhatsApp"),
+}
+
+
+def rotulo_da_entrega(entrega: Any, entrega_erro: Any = "") -> dict:
+    """{"entrega", "marca", "titulo"} do balão enviado — UMA regra para a tela e
+    para o `/novas` (o JavaScript só copia o que vem daqui)."""
+    estado = str(entrega or "")
+    if estado == "failed":
+        erro = str(entrega_erro or "").strip()
+        codigo, _, resto = erro.partition(":")
+        motivo = MOTIVO_DA_ENTREGA.get(codigo.strip()) or (
+            resto.strip() if codigo.strip().isdigit() else erro)
+        texto = f"⚠ não chegou: {motivo}" if motivo else "⚠ não chegou"
+        return {"entrega": estado, "marca": texto, "titulo": motivo or "não chegou"}
+    marca, titulo = _ROTULO_DA_ENTREGA.get(estado, ("", ""))
+    return {"entrega": estado, "marca": marca, "titulo": titulo}
 
 
 def _entregas_do_payload(payload: Any) -> list[dict]:
@@ -377,6 +407,9 @@ def aplicar_entregas(con: Any, payload: Any, *, agora: str) -> int:
         for e in s.get("errors") or []:
             if isinstance(e, dict):
                 erro = str(e.get("title") or e.get("message") or e.get("code") or "")
+                # o CÓDIGO vai na frente: é ele que escolhe a frase pronta
+                if e.get("code") and str(e.get("code")) != erro:
+                    erro = f"{e.get('code')}: {erro}"
                 detalhe = (e.get("error_data") or {}).get("details") if isinstance(
                     e.get("error_data"), dict) else ""
                 if detalhe:
@@ -388,6 +421,8 @@ def aplicar_entregas(con: Any, payload: Any, *, agora: str) -> int:
             continue
         antes = ORDEM_DA_ENTREGA.get(str(linha.get("entrega") or ""), 0)
         if ORDEM_DA_ENTREGA[situacao] <= antes:
+            continue
+        if situacao == "failed" and str(linha.get("entrega") or "") in JA_CHEGOU:
             continue
         bd.escrever(
             "UPDATE wa_mensagem SET entrega=%s, entrega_em=%s, entrega_erro=%s WHERE id=%s",

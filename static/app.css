@@ -1360,9 +1360,10 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
 .wa-tentar{display:inline;margin:0 0 0 6px}
 .wa-tentar .button{padding:2px 8px;font-size:12px}
 .wa-entrega{margin-left:4px;font-weight:700;letter-spacing:-2px}
-.wa-lida{color:#53bdeb}
-.wa-falhou{letter-spacing:0;color:#fecdca}
-.wa-in .wa-falhou{color:#b42318}
+/* O estado vem no atributo (29/10/2026): o `/novas` só troca o atributo. */
+.wa-entrega[data-wa-entrega="read"]{color:#53bdeb}
+.wa-entrega[data-wa-entrega="failed"]{letter-spacing:0;color:#fecdca}
+.wa-in .wa-entrega[data-wa-entrega="failed"]{color:#b42318}
 .wa-respostas{width:auto;max-width:100%;min-height:0;padding:4px 8px;margin-bottom:6px;font-size:13px}
 .wa-anexar{padding:0 14px 10px;background:var(--panel)}
 .wa-anexar summary{cursor:pointer;color:var(--accent)}

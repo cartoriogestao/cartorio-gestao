@@ -26,6 +26,7 @@
       {% endif %}
       <span class="wa-etq wa-etq-setor" data-wa-etq="setor">{{ r.setor_nome }}</span>
       {% if r.vencida %}<span class="wa-etq wa-etq-prazo" data-wa-etq="prazo">{{ r.esperando_min }} min</span>{% endif %}
+      {% if r.ultima_entrega == 'failed' %}<span class="wa-etq wa-etq-prazo" data-wa-etq="nao-entregue">não entregue</span>{% endif %}
       {% if r.status == 'resolvida' %}<span class="wa-etq">resolvida</span>
       {% elif r.modo == 'pessoa' %}<span class="wa-etq">com pessoa</span>{% endif %}
     </span>

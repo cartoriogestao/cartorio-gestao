@@ -44,12 +44,17 @@ import wa_schema as SCH
 from seguranca_web import PRATICA  # M2 (LX11): o AUDITOR vê e não grava
 
 
+#: Quantas enviadas o `/novas` devolve com o estado da entrega (29/10/2026).
+ENTREGAS_NO_NOVAS = 30
+
 #: O cabeçalho que marca a resposta do `/whatsapp/lista-parcial` (o JS confere).
 CABECALHO_DO_PARCIAL = "X-Wa-Parcial"
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit):
     """Pendura a fila do WhatsApp no app ja construido."""
+    # O texto da entrega no balão sai da mesma regra do `/novas`.
+    app.jinja_env.globals["wa_rotulo_da_entrega"] = WA.rotulo_da_entrega
 
     def _serventia() -> dict:
         return SERV.dados(db.get_settings)
@@ -645,7 +650,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         novas = _com_dias([m for m in todas if int(m["id"]) > piso], dia_anterior)
         html = (render_template("_whatsapp_baloes.html", mensagens=novas,
                                 como_mostrar=MIDIA.como_mostrar) if novas else "")
-        return jsonify({"html": html,
+        # A ENTREGA AO VIVO (29/10/2026): o estado das últimas enviadas, pronto
+        # pelo `rotulo_da_entrega`, para o JS atualizar os balões que já estão
+        # na tela.
+        enviadas = [m for m in todas if m.get("direcao") == WA.DIR_OUT][-ENTREGAS_NO_NOVAS:]
+        entregas = [{"id": int(m["id"]), **WA.rotulo_da_entrega(m.get("entrega"),
+                                                              m.get("entrega_erro"))}
+                    for m in enviadas]
+        return jsonify({"html": html, "entregas": entregas,
                         "ultimo": max([depois] + [int(m["id"]) for m in novas]),
                         "status": d.get("status") or "",
                         "modo": d.get("modo") or SCH.MODO_IA,

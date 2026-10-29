@@ -208,16 +208,17 @@ def gerar_a_relacao_do_dia(contexto) -> dict:
             "achados": q["achados"], "acoes": acoes}
 
 
-def situacao_da_rotina(con) -> dict:
+def situacao_da_rotina(con, codigo: str = CODIGO) -> dict:
     """A rotina na central de automação: ligada? pode agir? e a última rodada.
     Só LÊ. É o que a tela de repasses mostra — a falha da rotina aparece onde
-    o escrevente trabalha, e não só na central."""
+    o escrevente trabalha, e não só na central. `codigo` serve também ao robô
+    do boleto da CRA (`protesto_repasse_portal`)."""
     bd = banco(con)
     if not bd.tem_tabela("au_processos"):
         return {"existe": False,
                 "motivo": "a central de automação não está instalada nesta casa"}
     import automacao as AU
-    p = AU.por_codigo(con, CODIGO)
+    p = AU.por_codigo(con, codigo)
     if not p:
         return {"existe": False,
                 "motivo": ("a rotina ainda não aparece na central de automação — "

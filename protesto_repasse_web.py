@@ -28,6 +28,7 @@ import protesto_posteriori as POST
 import protesto_relacao as REL
 import protesto_repasse as REP
 import protesto_repasse_automacao as RA
+import protesto_repasse_portal as PRP
 from caixa_schema import reais
 from seguranca_web import numero_digitado  # LD13: o número que a tela mandou
 from serventia import dados as dados_serventia
@@ -78,9 +79,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                                                feriados=feriados)
             guias = REP.guias(con)
             rotina = RA.situacao_da_rotina(con)
+            robo = RA.situacao_da_rotina(con, codigo=PRP.CODIGO)
         return render_template(
             "protesto_repasses.html", rel=rel, guias=guias, hoje=hoje(),
-            faltam=faltam, rotina=rotina, portais=REP.PASSO_NO_PORTAL,
+            faltam=faltam, rotina=rotina, robo=robo, portais=REP.PASSO_NO_PORTAL,
             formas=REP.FORMAS_DE_REPASSE_DIRETO, reais=reais,
             fundamento=REP.FUNDAMENTO_DO_PRAZO,
             pode_mexer=QUEM_MEXE_NO_DINHEIRO)

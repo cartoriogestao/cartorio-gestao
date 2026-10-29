@@ -832,10 +832,12 @@ SEMENTES: tuple[dict, ...] = (
 #: Os dois últimos (27/10/2026, na instalação da VPS): o envio do portal do
 #: cliente e a busca na caixa-postal do WhatsApp, que só aconteciam no botão.
 #: E a relação da guia de repasse do Protesto (29/10/2026), que nasce sozinha
-#: no dia do pagamento — a guia em si sai do portal da Central.
+#: no dia do pagamento — a guia em si sai do portal da Central —, e o robô que
+#: emite o boleto de repasse no portal da CRA (29/10/2026, ordem do oficial).
 MODULOS_COM_PROCESSOS = ("despesas_automacao", "onr_certidoes_auto", "andamento_avisos",
                          "backup_automacao", "satisfacao_envio", "cobranca_automacao",
-                         "portal_cliente", "wa_puxar", "protesto_repasse_automacao")
+                         "portal_cliente", "wa_puxar", "protesto_repasse_automacao",
+                         "protesto_repasse_portal")
 
 #: A agenda sugerida por quem escreveu o processo, para quando o catálogo
 #: dele não trouxer uma. O processo nasce DESLIGADO do mesmo jeito.

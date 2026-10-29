@@ -917,7 +917,9 @@ SEMENTES: tuple[dict, ...] = (
 #: no dia do pagamento — a guia em si sai do portal da Central.
 MODULOS_COM_PROCESSOS = ("despesas_automacao", "onr_certidoes_auto", "andamento_avisos",
                          "backup_automacao", "satisfacao_envio", "cobranca_automacao",
-                         "portal_cliente", "wa_puxar", "protesto_repasse_automacao")
+                         "portal_cliente", "wa_puxar", "protesto_repasse_automacao",
+                         # o crédito dos PIX do Protesto no extrato (29/10/2026)
+                         "protesto_pix")
 
 #: A agenda sugerida por quem escreveu o processo, para quando o catálogo
 #: dele não trouxer uma. O processo nasce DESLIGADO do mesmo jeito.

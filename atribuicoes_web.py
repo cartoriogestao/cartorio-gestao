@@ -3376,7 +3376,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         usuario=usuario_nome(),
                         forma_pagamento=_campo("forma_pagamento") or None,
                         forma_identificacao=_campo("forma_identificacao") or None,
-                        emolumentos=_campo("emolumentos") or None)
+                        emolumentos=_campo("emolumentos") or None,
+                        # PIX SÓ COM O CRÉDITO CONFERIDO (29/10/2026): o
+                        # formulário leva o PIX conferido; sem ele, o domínio
+                        # recusa a forma PIX.
+                        pix_id=numero_digitado(_campo("pix_id"),
+                                               maximo=MAIOR_INTEGER))
                 elif ato == "CANCELAMENTO":
                     r = PT.lancar_cancelamento(
                         con, titulo_id, hipotese=_campo("hipotese"),

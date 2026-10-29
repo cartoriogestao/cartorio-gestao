@@ -43,6 +43,14 @@ SOBRE O PAGAMENTO
     Nao confere o valor pago contra o saldo do titulo: decidir o que fazer
     com pagamento parcial e do oficial, nao deste modulo.
 
+    PIX SO E PAGAMENTO COM O CREDITO CONFERIDO (29/10/2026, ordem do
+    oficial). Pagamento por PIX nao se lavra direto: o PIX se registra em
+    `protesto_pix` (com o comprovante, AGUARDANDO_CREDITO), e
+    `lancar_pagamento` so o aceita com `pix_id` de um PIX de credito
+    conferido — pelo extrato do banco, ou a mao pelo oficial ou pelo gerente
+    com afirmacao expressa. Enquanto o PIX espera, o titulo nao se protesta,
+    nao se desiste e nao recebe outro pagamento.
+
 SOBRE O CANCELAMENTO
     O acervo tem UM cadastro so de motivo — "Erro Material" — e os 56
     cancelamentos reais saíram todos dele ou de campo livre: metade não diz
@@ -1203,6 +1211,10 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
         raise ProtestoError(
             f"O título {tit['numero_titulo']} está com situação "
             f"{tit['situacao']} — só se protesta título já intimado.")
+    # O DEVEDOR DIZ QUE PAGOU POR PIX (29/10/2026): enquanto o crédito não for
+    # conferido — ou dado por não confirmado —, o protesto não se lavra.
+    import protesto_pix as PIX
+    PIX.recusar_se_esperando(con, titulo_id, "o protesto")
     triduo = None
     if conferir_triduo:
         import protesto_triduo as TRIDUO
@@ -1301,6 +1313,10 @@ def lancar_desistencia(con, titulo_id: int, *,
         raise ProtestoError(
             f"O título {tit['numero_titulo']} está com situação "
             f"{tit['situacao']} — só se desiste antes do protesto lavrado.")
+    # O PIX QUE ESPERA O CRÉDITO (29/10/2026): o dinheiro do devedor pode
+    # estar na conta; desistir por cima dele o deixaria sem destino.
+    import protesto_pix as PIX
+    PIX.recusar_se_esperando(con, titulo_id, "a desistência")
     razao = (motivo or "").strip()
     if len(razao) < 5:
         raise ProtestoError("Escreva o motivo da desistência.")
@@ -1321,13 +1337,41 @@ def lancar_desistencia(con, titulo_id: int, *,
 # ------------------------------------------------------------- o pagamento
 
 
+def recusar_pagamento_na_situacao(tit: dict) -> None:
+    """Recusa o pagamento que a situação do título não comporta. Só calcula.
+
+    Uma régua só para as duas portas do pagamento — `lancar_pagamento` e o
+    registro do PIX (`protesto_pix.registrar`): se as duas divergissem, o PIX
+    entraria esperando o crédito num título em que o pagamento nunca caberia.
+    """
+    if tit["situacao"] == "PROTESTADO":
+        raise ProtestoError(
+            f"O título {tit['numero_titulo']} já está PROTESTADO, e protesto "
+            f"lavrado não se paga mais nesta serventia (decisão do oficial de "
+            f"21/10/2026). O devedor paga diretamente ao credor e pede o "
+            f"CANCELAMENTO do protesto com a carta de anuência do credor, com "
+            f"firma reconhecida (Lei 9.492/1997, art. 26, § 1º; Código de "
+            f"Normas do TJMA, art. 942, § 2º).")
+    if tit["situacao"] in SITUACOES_FINAIS:
+        raise ProtestoError(
+            f"O título {tit['numero_titulo']} está com situação "
+            f"{tit['situacao']} — não há como registrar pagamento.")
+
+
 def lancar_pagamento(con, titulo_id: int, *, sv: dict,
                      agora: str, data_extenso: str,
                      valor_pago: Any = None, usuario: str | None = None,
                      origem: str = "MANUAL", forma_pagamento: Any = None,
                      forma_identificacao: Any = None,
-                     emolumentos: Any = None) -> dict:
+                     emolumentos: Any = None, pix_id: Any = None) -> dict:
     """Registra o pagamento do título, com baixa. ESCREVE.
+
+    PIX SÓ COM O CRÉDITO CONFERIDO (29/10/2026). Forma PIX exige `pix_id`:
+    o PIX registrado em `protesto_pix` e com o crédito conferido (pelo
+    extrato do banco, ou à mão com afirmação expressa). Sem ele, recusa — e a
+    frase diz o caminho. O valor é o do crédito conferido, a identificação no
+    Livro sai do PIX quando ninguém a escreveu, e o PIX fica amarrado ao ato.
+    Com PIX do título ainda esperando o crédito, nenhum OUTRO pagamento entra.
 
     O LIVRO DE PAGAMENTOS TEM COLUNAS QUE O ATO NÃO GUARDAVA — Código de
     Normas do TJMA (Prov. 28/2026), art. 930: valor do pagamento, valor dos
@@ -1361,28 +1405,50 @@ def lancar_pagamento(con, titulo_id: int, *, sv: dict,
     # Receber o dinheiro de um titulo que o juiz mandou parar e tao
     # grave quanto lavrar o ato.
     _recusar_se_sustado(con, titulo_id, "o pagamento")
-    if tit["situacao"] == "PROTESTADO":
+    recusar_pagamento_na_situacao(tit)
+
+    forma = str(forma_pagamento or "").strip().upper()
+    if forma and forma not in FORMAS_DE_PAGAMENTO:
         raise ProtestoError(
-            f"O título {tit['numero_titulo']} já está PROTESTADO, e protesto "
-            f"lavrado não se paga mais nesta serventia (decisão do oficial de "
-            f"21/10/2026). O devedor paga diretamente ao credor e pede o "
-            f"CANCELAMENTO do protesto com a carta de anuência do credor, com "
-            f"firma reconhecida (Lei 9.492/1997, art. 26, § 1º; Código de "
-            f"Normas do TJMA, art. 942, § 2º).")
-    if tit["situacao"] in SITUACOES_FINAIS:
+            f"Forma de pagamento desconhecida: {forma!r}. As que existem "
+            f"são: {', '.join(FORMAS_DE_PAGAMENTO.values())}.")
+    # PIX NÃO É PAGAMENTO ATÉ O CRÉDITO SER CONFERIDO — 29/10/2026. O PIX
+    # entrou em 16/10/2026 e foi lançado só em 21/10, «por PIX», sem
+    # comprovante e sem item marcado; o selo falhou, o ato se desfez, o título
+    # ficou PAGO e a CRA foi informada com a data do lançamento — e o oficial
+    # levou 8 dias para conseguir confirmar se o dinheiro tinha entrado. A
+    # recusa vale para toda tela que chame esta função.
+    import protesto_pix as PIX
+    pix = None
+    if forma in PIX.FORMAS_QUE_ESPERAM_O_CREDITO:
+        if pix_id in (None, ""):
+            raise ProtestoError(
+                "PIX NÃO É PAGAMENTO ATÉ O CRÉDITO SER CONFERIDO (ordem do "
+                "oficial, 29/10/2026). Registre o PIX em «Pagamento por PIX», na "
+                "ficha do título, com o COMPROVANTE anexado: ele fica aguardando "
+                "o crédito, o título não vira PAGO, e o pagamento se lavra quando "
+                "o crédito for localizado no banco — ou confirmado pelo oficial "
+                "ou pelo gerente, com afirmação expressa.")
+        pix = PIX.para_o_pagamento(con, titulo_id, pix_id)
+        if (valor_pago not in (None, "")
+                and centavos(valor_pago) != int(pix["valor_centavos"])):
+            raise ProtestoError(
+                f"O valor pago tem de ser o do crédito conferido: R$ "
+                f"{PIX.reais(int(pix['valor_centavos']))}.")
+        valor_pago = PIX.reais(int(pix["valor_centavos"]))
+        if not str(forma_identificacao or "").strip():
+            forma_identificacao = PIX.identificacao_para_o_livro(pix)
+    elif pix_id not in (None, ""):
         raise ProtestoError(
-            f"O título {tit['numero_titulo']} está com situação "
-            f"{tit['situacao']} — não há como registrar pagamento.")
+            "O crédito conferido é de um PIX: lance o pagamento com a forma "
+            "«por PIX».")
+    PIX.recusar_se_esperando(con, titulo_id, "outro pagamento",
+                             exceto_pix_id=pix["id"] if pix else None)
 
     detalhe: dict[str, Any] = {}
     if valor_pago is not None:
         detalhe["valor_pago_centavos"] = centavos(valor_pago)
-    forma = str(forma_pagamento or "").strip().upper()
     if forma:
-        if forma not in FORMAS_DE_PAGAMENTO:
-            raise ProtestoError(
-                f"Forma de pagamento desconhecida: {forma!r}. As que existem "
-                f"são: {', '.join(FORMAS_DE_PAGAMENTO.values())}.")
         detalhe["forma_pagamento"] = forma
         ident = str(forma_identificacao or "").strip()
         if forma == "CHEQUE" and not ident:
@@ -1394,6 +1460,12 @@ def lancar_pagamento(con, titulo_id: int, *, sv: dict,
             detalhe["forma_identificacao"] = ident
     if emolumentos is not None and str(emolumentos).strip():
         detalhe["emolumentos_centavos"] = centavos(emolumentos)
+    if pix:
+        detalhe["pix"] = PIX.para_o_detalhe(pix)
+        # A DATA DO PAGAMENTO É A DO CRÉDITO, e não a do lançamento (ordem do
+        # oficial, 29/10/2026). `data_ato` continua a do assentamento (CN-MA
+        # art. 930, b); esta sai no Livro de Pagamentos e no D da CENPROT.
+        detalhe["data_do_pagamento"] = PIX.data_do_pagamento(pix)
 
     bd = banco(con)
     ato_id = int(bd.escrever(
@@ -1402,6 +1474,8 @@ def lancar_pagamento(con, titulo_id: int, *, sv: dict,
            VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (titulo_id, "PAGAMENTO", agora, json.dumps(detalhe, ensure_ascii=False),
          origem, agora, usuario))[0]["id"])
+    if pix:
+        PIX.vincular_ao_ato(con, int(pix["id"]), ato_id)
 
     lugar = ESC.reservar(con, SERIE_PAGAMENTO, "pt_atos", ato_id, sv=sv,
                          agora=agora, data_extenso=data_extenso, paginas=1,

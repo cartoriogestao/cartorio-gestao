@@ -351,6 +351,23 @@
                 <button class="button">Enviar de novo</button>
               </form>
             {% endif %}
+          {% elif g.tipo != 'SDTBFOCRT' and g.titulos and not g.atos_presos %}
+            {# OS ATOS VOLTARAM À FILA ANTES DO ENVIO (29/10/2026): este não vai mais. #}
+            <div><small>Os atos deste arquivo voltaram a «Esperando retorno» antes do
+              envio — gere um retorno novo.</small></div>
+          {% elif g.atos_desfeitos %}
+            {# O ARQUIVO QUE LEVA ATO DESFEITO NÃO VAI À CRA (29/10/2026): a
+               Central ouviria uma ocorrência sem ato válido que a sustente. #}
+            <div class="danger" data-retorno-com-desfeito><small><strong>Não enviar:</strong>
+              {{ g.atos_desfeitos }} ato(s) deste arquivo foram desfeitos depois de ele
+              ser gerado. Devolva os atos à fila e gere um retorno novo — ele leva só os
+              válidos.</small></div>
+            {% if user.role in ['ADMIN','MANAGER','USER'] %}
+            <form method="post" action="{{ url_for('protesto_retorno_devolver_atos', retorno_id=g.id) }}" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="button">Devolver os atos à fila</button>
+            </form>
+            {% endif %}
           {% else %}
             {% if g.cra_envio_erro %}<div class="danger"><small>{{ g.cra_envio_erro[:160] }}</small></div>{% endif %}
             <form method="post" action="{{ url_for('protesto_retorno_enviar', retorno_id=g.id) }}" style="display:inline">

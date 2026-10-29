@@ -3025,6 +3025,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         "PT_AVISO": ("protesto_avisos",),
         "PT_EDITAL_CENPROT": ("protesto_avisos",),
         "PT_TITULO": ("protesto_imagem",),
+        # O COMPROVANTE DO PIX DO PROTESTO (29/10/2026): abre para quem abre a
+        # lista dos PIX — o balcão que o registra e quem confere o crédito.
+        "PT_PIX": ("protesto_pix_lista",),
         "SELO_GRATUIDADE": ("gratuidade_comprovantes", "selo_gratuidades_portal"),
         "SELO_GRATUIDADE_CERTIDAO": ("selo_gratuidades_portal",),
         "ONR_CERTIDAO": ("onr_certidao_ficha",),
@@ -3307,6 +3310,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     import protesto_repasse_web
     protesto_repasse_web.registrar_rotas(app, db, login_required,
                                          roles_required, audit)
+    # O PIX DO PROTESTO (29/10/2026): só é pagamento com o comprovante e o
+    # crédito conferido. As telas apontam para `protesto_titulo`, e a ficha
+    # dele lê o PIX pelo `context_processor` daqui.
+    import protesto_pix_web
+    protesto_pix_web.registrar_rotas(app, db, login_required,
+                                     roles_required, audit)
     # O PAINEL DAS CENTRAIS — fila generica, ultimas falhas e o cofre (so
     # «informada/nao informada»). Marco (a) da base comum, 05/10/2026. Vem
     # depois da CRA e da CENPROT porque e o painel comum delas; so le, e o

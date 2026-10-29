@@ -129,7 +129,7 @@ def test_o_painel_mostra_prazo_intimacao_pagamento_e_o_alerta_do_dia(db):
                             comprovante="entregue em mãos")
         PT.lancar_pagamento(con, pago, sv=APOIO.SV, agora=db.now(),
                             data_extenso="vinte de outubro",
-                            valor_pago="1310.45", forma_pagamento="PIX")
+                            valor_pago="1310.45", forma_pagamento="ESPECIE")
     with db.connect() as con:
         p = DEV.painel(con, DEV.achar(con, APOIO.CPF), hoje=limite)
     primeiro, segundo = p["titulos"]
@@ -145,7 +145,8 @@ def test_o_painel_mostra_prazo_intimacao_pagamento_e_o_alerta_do_dia(db):
         primeiro["alertas"][0]["detalhe"]
     assert primeiro["intimacoes"][0]["modo"] == "PESSOAL"
     assert segundo["situacao"] == "PAGO"
-    assert segundo["pagamentos"][0]["forma"] == "por PIX"
+    # (em espécie: PIX só se lavra com o crédito conferido, 29/10/2026)
+    assert segundo["pagamentos"][0]["forma"] == "em espécie"
     assert segundo["pagamentos"][0]["valor_centavos"] == 131045
     assert p["resumo"]["em_andamento"] == 1
 

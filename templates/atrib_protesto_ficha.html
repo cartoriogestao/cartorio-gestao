@@ -527,6 +527,12 @@
 </section>
 {% endif %}
 
+{# O PIX DO TÍTULO (29/10/2026): só é pagamento com o comprovante e o
+   crédito conferido. O bloco registra o PIX e mostra o que espera; o
+   formulário do pagamento, abaixo, leva o PIX conferido. #}
+{% set pix_ficha = pix_do_titulo(titulo.id) if pix_do_titulo is defined else none %}
+{% include '_protesto_pix.html' %}
+
 {% if cabem %}
 <section class="panel">
   <div class="panel-head">
@@ -597,7 +603,17 @@
         <input name="motivo" required placeholder="Credor desistiu antes do protesto"
                value="{{ v_ato.get('motivo', '') }}"></label>
     {% elif ato == 'PAGAMENTO' %}
-      <label>Valor pago <input name="valor_pago" placeholder="1.482,78" value="{{ v_ato.get('valor_pago', '') }}"></label>
+      {# PIX SÓ COM O CRÉDITO CONFERIDO (29/10/2026): com o crédito conferido, o
+         formulário leva o PIX; sem ele, a forma PIX não se escolhe aqui — o PIX
+         se registra no bloco «Pagamento por PIX», com o comprovante. #}
+      {% set pix_lavrar = pix_ficha.para_lavrar if pix_ficha else none %}
+      {% if pix_lavrar %}
+      <input type="hidden" name="pix_id" value="{{ pix_lavrar.id }}">
+      <div style="grid-column:1/-1" class="notice" data-pix-para-lavrar><small>
+        <strong>Crédito do PIX conferido</strong> — R$ {{ pix_lavrar.valor_centavos | centavos_reais }},
+        creditado em {{ pix_lavrar.credito_data or '—' }}. O pagamento se lavra com ele, por PIX.</small></div>
+      {% endif %}
+      <label>Valor pago <input name="valor_pago" placeholder="1.482,78" value="{{ v_ato.get('valor_pago', '') or ((pix_lavrar.valor_centavos | centavos_reais) if pix_lavrar else '') }}"></label>
       <label>Emolumentos <input name="emolumentos" placeholder="82,64" value="{{ v_ato.get('emolumentos', '') }}"></label>
       <label>Forma de pagamento
         <select name="forma_pagamento" required>
@@ -606,7 +622,11 @@
                                ('PIX', 'por PIX'),
                                ('TRANSFERENCIA', 'por transferência bancária'),
                                ('BOLETO', 'por boleto'), ('CARTAO', 'por cartão')) %}
-          <option value="{{ k }}"{% if v_ato.get('forma_pagamento') == k %} selected{% endif %}>{{ rotulo }}</option>
+          {% if k == 'PIX' and not pix_lavrar %}
+          <option value="PIX" disabled>por PIX — só com o crédito conferido (registre em «Pagamento por PIX»)</option>
+          {% else %}
+          <option value="{{ k }}"{% if v_ato.get('forma_pagamento') == k or (k == 'PIX' and pix_lavrar and not v_ato.get('forma_pagamento')) %} selected{% endif %}>{{ rotulo }}</option>
+          {% endif %}
           {% endfor %}
         </select>
         <small>O Livro de Pagamentos exige (Código de Normas, art. 930).</small></label>

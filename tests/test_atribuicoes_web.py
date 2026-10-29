@@ -433,11 +433,13 @@ def test_sem_item_o_pagamento_recusado_nao_consome_o_numero_do_livro(s):
     con = _con(s)
     titulo_id = con.execute("SELECT id FROM pt_titulos").fetchone()["id"]
     _post(s, f"/protesto/{titulo_id}/lancar", ato="APONTAMENTO")
+    # PIX SÓ COM O CRÉDITO CONFERIDO (29/10/2026): a forma aqui é incidental, e
+    # PIX não se lavra mais direto (`protesto_pix`) — o teste usa espécie.
     recusado = _post(s, f"/protesto/{titulo_id}/lancar", ato="PAGAMENTO",
-                     forma_pagamento="PIX", valor_pago="1.482,78")
+                     forma_pagamento="ESPECIE", valor_pago="1.482,78")
     assert "Ato NÃO lançado, e nada foi gravado" in recusado
     assert 'value="1.482,78"' in recusado
-    assert '<option value="PIX" selected>' in recusado
+    assert '<option value="ESPECIE" selected>' in recusado
     con = _con(s)
     assert con.execute(
         "SELECT COUNT(*) FROM pt_atos WHERE tipo='PAGAMENTO'").fetchone()[0] == 0
@@ -445,7 +447,7 @@ def test_sem_item_o_pagamento_recusado_nao_consome_o_numero_do_livro(s):
                        (titulo_id,)).fetchone()[0] == "APONTADO"
     # Com o selo digitado à mão o selo não depende de item, e o ato entra.
     html = _post(s, f"/protesto/{titulo_id}/lancar", ato="PAGAMENTO",
-                 forma_pagamento="PIX", valor_pago="1.482,78", selo=SELO_BOM)
+                 forma_pagamento="ESPECIE", valor_pago="1.482,78", selo=SELO_BOM)
     assert "Pagamento lançado" in html and "NÃO lançado" not in html
     con = _con(s)
     ato = con.execute("SELECT * FROM pt_atos WHERE tipo='PAGAMENTO'").fetchone()
@@ -1163,8 +1165,9 @@ def test_a_faixa_do_pagamento_sai_pelo_item_do_tribunal(s):
     titulo_id = _titulo_apontado(s)
     servico = _com_servico(s, codigo=2, codigo_tj="17.4.5")
     _abrir_caixa(s)
+    # A forma é incidental (PIX só com o crédito conferido, 29/10/2026).
     html = _post(s, f"/protesto/{titulo_id}/lancar", ato="PAGAMENTO",
-                 forma_pagamento="PIX", valor_pago="1.310,45", cobrar=str(servico))
+                 forma_pagamento="ESPECIE", valor_pago="1.310,45", cobrar=str(servico))
     assert "Pagamento lançado" in html and "NÃO lançado" not in html
     con = _con(s)
     ato = con.execute("SELECT id FROM pt_atos WHERE tipo='PAGAMENTO'").fetchone()
@@ -1275,8 +1278,9 @@ def test_a_correcao_de_oficio_pela_ficha(s):
         "SELECT COUNT(*) FROM audit_logs "
         "WHERE action='PROTESTO_SITUACAO_CORRIGIDA_DE_OFICIO'").fetchone()[0] == 1
     # E AGORA O PAGAMENTO SE LANÇA DE NOVO, e a obrigação some sozinha.
+    # (Em espécie: PIX só com o crédito conferido, 29/10/2026.)
     lancado = _post(s, f"/protesto/{tid}/lancar", ato="PAGAMENTO",
-                    forma_pagamento="PIX", selo=SELO_BOM)
+                    forma_pagamento="ESPECIE", selo=SELO_BOM)
     assert "Pagamento lançado" in lancado
     ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
     assert "data-pendencias-do-selo" not in ficha

@@ -59,3 +59,9 @@ psycopg[binary]>=3.1,<4
 # sem essas duas funcoes sem saber por que.
 numpy>=1.26,<3
 opencv-python-headless>=4.8,<6
+# Fala com o Malote Digital do TJMA como o navegador fala (a sessao com os
+# cookies e o JSF) no robo da ciencia diaria (`malote_robo`, PR #123).
+# Importada so na hora do uso: faltando, o processo da automacao registra o
+# erro e o resto do sistema segue. Nenhum requirements a declarava, e a
+# instalacao nova a partir deste arquivo deixava o robo sem cliente HTTP.
+requests>=2.31,<3

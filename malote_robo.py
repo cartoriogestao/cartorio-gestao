@@ -239,7 +239,7 @@ def _botao(formulario: dict, *, termina_em: str = "") -> dict | None:
     return None
 
 
-def parametros_do_jsfcljs(onclick: str) -> tuple[str, dict] | None:
+def _parametros_do_jsfcljs(onclick: str) -> tuple[str, dict] | None:
     """`jsfcljs(document.getElementById('FORM'),{'a':'b',...},'')` → ('FORM', {'a': 'b'})."""
     m = re.search(r"jsfcljs\(document\.getElementById\('([^']+)'\),\{([^}]*)\}", onclick or "")
     if not m:
@@ -247,7 +247,7 @@ def parametros_do_jsfcljs(onclick: str) -> tuple[str, dict] | None:
     return m.group(1), dict(re.findall(r"'([^']*)'\s*:\s*'([^']*)'", m.group(2)))
 
 
-def nao_lidos_da_pagina(html: str) -> list[dict]:
+def _nao_lidos_da_pagina(html: str) -> list[dict]:
     """Cada linha da lista de não lidos: o id interno, o código de rastreabilidade e o texto."""
     saida: list[dict] = []
     vistos: set[str] = set()
@@ -271,12 +271,12 @@ def nao_lidos_da_pagina(html: str) -> list[dict]:
 # ------------------------------------------------------------------ o pote de cookies
 
 
-def exportar_cookies(sessao) -> list[dict]:
+def _exportar_cookies(sessao) -> list[dict]:
     return [{"name": c.name, "value": c.value, "domain": c.domain, "path": c.path,
              "expires": c.expires, "secure": bool(c.secure)} for c in sessao.cookies]
 
 
-def importar_cookies(sessao, cookies: list[dict]) -> None:
+def _importar_cookies(sessao, cookies: list[dict]) -> None:
     for c in cookies or ():
         sessao.cookies.set(c["name"], c["value"], domain=c.get("domain") or "", path=c.get("path") or "/",
                            expires=c.get("expires"), secure=bool(c.get("secure")))
@@ -355,12 +355,12 @@ class ClienteMalote:
                        and "jsfcljs" in a["onclick"]), None)
         if ancora is None:
             raise MaloteRoboError("O menu do malote não tem o item «Não Lidos» — a tela mudou.")
-        form_id, params = parametros_do_jsfcljs(ancora["onclick"])
+        form_id, params = _parametros_do_jsfcljs(ancora["onclick"])
         f = next((f for f in leitor.formularios if f["id"] == form_id), None)
         if f is None:
             raise MaloteRoboError("O formulário do menu do malote não foi achado — a tela mudou.")
         r = self._post(urljoin(r.url or URL_INICIAL, f["action"].split(";")[0]), serializar(f, extra=params))
-        return r.text, nao_lidos_da_pagina(r.text)
+        return r.text, _nao_lidos_da_pagina(r.text)
 
     def ler(self, html_da_lista: str, ident: str) -> bytes:
         """ABRE o documento — é a ciência — e devolve o PDF."""
@@ -434,7 +434,7 @@ def _codigo_valido(COFRE, caminho) -> str | None:
 
 
 def _guardar_sessao(COFRE, caminho, cliente: ClienteMalote, formulario_2fa: dict | None = None) -> None:
-    campos = {"cookies": json.dumps(exportar_cookies(cliente.s), ensure_ascii=False)}
+    campos = {"cookies": json.dumps(_exportar_cookies(cliente.s), ensure_ascii=False)}
     if formulario_2fa:
         campos["formulario_2fa"] = json.dumps(formulario_2fa, ensure_ascii=False)
     COFRE.gravar(SESSAO, campos, tipo=COFRE.TOKEN, por="robô do malote", caminho=caminho)
@@ -450,12 +450,12 @@ def _guardar_pagina_para_conferir(ctx, html: str, nome: str) -> str:
     return str(alvo)
 
 
-def entrar_com_o_cofre(ctx, cliente: ClienteMalote) -> str:
+def _entrar_com_o_cofre(ctx, cliente: ClienteMalote) -> str:
     """Entra no malote: retoma o pote de cookies, usa o código se houver, ou entra com a senha."""
     COFRE, caminho = _cofre(ctx)
     sessao = _ler_ou_vazio(COFRE, caminho, SESSAO)
     if sessao.get("cookies"):
-        importar_cookies(cliente.s, json.loads(sessao["cookies"]))
+        _importar_cookies(cliente.s, json.loads(sessao["cookies"]))
     guardado = json.loads(sessao["formulario_2fa"]) if sessao.get("formulario_2fa") else None
     if guardado:
         codigo = _codigo_valido(COFRE, caminho)
@@ -505,7 +505,7 @@ def ciencia_diaria(ctx, *, cliente: ClienteMalote | None = None, cadastrar=None,
     import malote_agente as MA
     cliente = cliente or ClienteMalote()
     try:
-        entrar_com_o_cofre(ctx, cliente)
+        _entrar_com_o_cofre(ctx, cliente)
     except PrecisaDoCodigo as aviso:
         return {"situacao": "AVISO", "relato": str(aviso), "achados": [], "acoes": [],
                 "erro": "aguardando o código de dois fatores"}

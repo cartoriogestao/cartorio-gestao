@@ -195,12 +195,12 @@ def test_reconhece_as_tres_paginas():
 
 
 def test_a_lista_traz_id_e_codigo_de_rastreabilidade():
-    linhas = MR.nao_lidos_da_pagina(_lista([("101", "81020265990001"), ("102", "81020265990002")]))
+    linhas = MR._nao_lidos_da_pagina(_lista([("101", "81020265990001"), ("102", "81020265990002")]))
     assert [(l["id"], l["codigo"]) for l in linhas] == [("101", "81020265990001"), ("102", "81020265990002")]
 
 
 def test_o_jsfcljs_vira_formulario_e_parametros():
-    form, params = MR.parametros_do_jsfcljs(
+    form, params = MR._parametros_do_jsfcljs(
         "jsfcljs(document.getElementById('menuLateral:m'),{'a:b':'a:b','c':'1'},'')")
     assert form == "menuLateral:m" and params == {"a:b": "a:b", "c": "1"}
 

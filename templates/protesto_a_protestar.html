@@ -103,6 +103,37 @@
 </section>
 {% endif %}
 
+{% if travados %}
+{# A TRAVA DO PROTESTO (decisão do oficial, 29/10/2026): o irmão de vencimento
+   POSTERIOR está PAGO com o mesmo valor — a assinatura do caso em que o
+   pagamento entrou na parcela errada e a paga foi protestada. Fora do lote, e
+   com o motivo à vista: só se protesta pela ficha, com afirmação expressa. #}
+<section class="panel" data-travados-pelo-irmao>
+  <div class="panel-head">
+    <span>Fora do lote — o irmão de vencimento posterior está pago</span>
+    <small>{{ travados | length }}</small>
+  </div>
+  <table class="table">
+    <thead><tr><th>Título</th><th>Devedor</th><th>Por que saiu do lote</th><th></th></tr></thead>
+    <tbody>
+    {% for t in travados %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=t.id) }}">{{ t.numero_titulo }}</a></td>
+        <td>{% for d in t.devedores %}{{ d.nome }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+        <td><small>{{ t.trava.motivo }}</small></td>
+        <td><a class="button" href="{{ url_for('protesto_titulo', titulo_id=t.id) }}"
+              >Conferir na ficha</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p style="padding:0 14px 14px"><small>
+    O protesto destes só se lavra pela ficha, com afirmação expressa — ela fica
+    gravada no ato e no registro de auditoria, com o nome de quem afirmou.
+  </small></p>
+</section>
+{% endif %}
+
 <section class="panel">
   <div class="panel-head">
     <span>Títulos intimados e sem movimentação</span>

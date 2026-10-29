@@ -223,3 +223,30 @@ def test_o_titulo_da_crc_nao_trava_em_linhas_em_branco():
 ])
 def test_o_volte_para_continua_so_dentro_da_casa(pedido, vai):
     assert destino_interno(pedido, "P") == vai
+
+
+# --------------------------- o código da comunicação da CRC (#274, 29/10/2026)
+
+_CODIGO_ANTIGO = re.compile(r"C[oó]digo\s+da\s+comunica[cç][aã]o\s*:?\s*(\d+)",
+                            re.I | re.S)
+_CODIGO_NOVO = re.compile(r"C[oó]digo\s+da\s+comunica[cç][aã]o\s*(?::\s*)?(\d+)",
+                          re.I | re.S)
+
+
+def test_o_codigo_da_comunicacao_casa_como_antes():
+    sorte = random.Random(274)
+    pedacos = ["Código da comunicação", "codigo da comunicacao", " ", "\n", ":",
+               "12345", "x", "  :  ", "\t"]
+    for _ in range(4000):
+        texto = "".join(sorte.choice(pedacos) for _ in range(sorte.randint(0, 8)))
+        a, b = _CODIGO_ANTIGO.search(texto), _CODIGO_NOVO.search(texto)
+        assert (a and (a.span(), a.group(1))) == (b and (b.span(), b.group(1))), repr(texto)
+        assert _CODIGO_ANTIGO.split(texto, maxsplit=1) == \
+            _CODIGO_NOVO.split(texto, maxsplit=1), repr(texto)
+
+
+def test_brancos_depois_do_codigo_nao_travam():
+    import rc_anotacao_crc as CRC
+    inicio = time.monotonic()
+    CRC._pegar(_CODIGO_NOVO.pattern, "codigo da comunicacao" + " " * 50_000 + "x")
+    assert time.monotonic() - inicio < 1.0

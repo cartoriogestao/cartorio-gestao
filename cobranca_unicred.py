@@ -46,15 +46,23 @@ de protesto automático)
     cooperativa, e não um campo de tela.
 
 O QUE NÃO VEIO NA DOCUMENTAÇÃO, E FICA DECLARADO
-    1. **A AUTENTICAÇÃO.** Os sete documentos dizem «o token gerado na API de
-       autenticação» e «o mesmo usuário e senha já fornecidos», e nenhum é a
-       API de autenticação. O que está escrito aqui vem da ÚNICA fonte
-       pública — a biblioteca PHP `gildonei/unicred` (2022):
-       POST {base}/oauth2/v2/grant-token {nomeUsuario, senha} com o
-       cabeçalho `apiKey`, resposta {accessToken}. **A CONFERIR na
-       homologação**: se falhar, é aqui, e a frase da tela diz isso.
-       E sem `expires_in` medido o token não se guarda além de uma rodada
-       (`VIDA_DO_TOKEN`): guardar «para sempre» faria a casa mandar token
+    1. **A AUTENTICAÇÃO — CONFIRMADA EM 28/10/2026.** Os sete documentos não
+       a traziam, e a primeira versão usou a única fonte pública (a biblioteca
+       PHP `gildonei/unicred`, de 2022). O oficial então mandou o curl que a
+       própria Unicred entregou, e ele CONFIRMA o caminho e acrescenta a
+       validade:
+           POST {base}/oauth2/v2/grant-token   (homologação: /homolog/oauth2/...)
+           Content-Type: application/json, apiKey: {apiKey}
+           {"nomeUsuario": ..., "senha": ...}
+         → {"accessToken", "tokenExpirationTime": 28800,
+            "refreshToken", "refreshTokenExpirationTime": 36000}
+       O token usado é o `accessToken`; ele vale `tokenExpirationTime`
+       segundos (8 horas no exemplo) e se guarda até um minuto antes disso.
+       O `refreshToken` NÃO é usado: pedir outro token com a credencial é o
+       mesmo caminho de sempre, e um segundo caminho para o mesmo token seria
+       mais um ponto a falhar sem ganho — a rodada é de meia em meia hora.
+       Sem a validade na resposta, o token não se guarda além de
+       `VIDA_DO_TOKEN`: guardar «para sempre» faria a casa mandar token
        vencido sem saber.
     2. **A busca por seu número.** Não há: `procurar` devolve None, e a
        emissão que ficou sem resposta vira FALHOU com a frase que manda
@@ -91,7 +99,9 @@ ENDERECOS = {
     "sandbox": "https://api.e-unicred.com.br/homolog",
 }
 CAMINHO_DO_TOKEN = "/oauth2/v2/grant-token"
-PROCEDENCIA_DO_TOKEN = "biblioteca gildonei/unicred (2022) — A CONFERIR na homologação"
+PROCEDENCIA_DO_TOKEN = "curl de autenticação enviado pela Unicred (28/10/2026)"
+#: O teto da validade guardada: o exemplo da Unicred traz 28.800 s (8 h).
+VIDA_MAXIMA_DO_TOKEN = 8 * 3600
 NOME_NO_COFRE = "banco_unicred"
 ARQUIVO_DA_CREDENCIAL = "banco_unicred.cred"
 CAMPOS_DA_CREDENCIAL = ("api_key", "usuario", "senha", "cooperativa", "beneficiario",
@@ -315,12 +325,16 @@ class ClienteCobrancaUnicred:
         corpo = r.corpo if isinstance(r.corpo, dict) else {}
         token = corpo.get("accessToken") or corpo.get("access_token")
         if r.status not in (200, 201) or not token:
-            raise Recusa(f"A Unicred recusou a autenticação (HTTP {r.status}). Confira usuário, "
-                         f"senha e apiKey. O endereço do token veio da {PROCEDENCIA_DO_TOKEN}: "
-                         f"se a credencial estiver certa, é ele que precisa ser conferido.")
-        vida = int(corpo.get("expires_in") or corpo.get("expiresIn") or VIDA_DO_TOKEN)
+            raise Recusa(f"A Unicred recusou a autenticação (HTTP {r.status}). Confira o "
+                         f"usuário, a senha e a apiKey — e se o ambiente escolhido (teste ou "
+                         f"produção) é o da credencial.")
+        try:
+            vida = int(corpo.get("tokenExpirationTime") or corpo.get("expires_in")
+                       or VIDA_DO_TOKEN)
+        except (TypeError, ValueError):
+            vida = VIDA_DO_TOKEN
         self._token = str(token)
-        self._vence = time.monotonic() + max(30, min(vida, 3600) - 60)
+        self._vence = time.monotonic() + max(30, min(vida, VIDA_MAXIMA_DO_TOKEN) - 60)
         return self._token
 
     def _cab(self) -> dict:

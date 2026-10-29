@@ -120,7 +120,9 @@ class UnicredFalsa:
         if caminho == CUNI.CAMINHO_DO_TOKEN:
             assert cab.get("apiKey") == "chave"
             assert json_corpo == {"nomeUsuario": "usuario", "senha": "senha"}
-            return INTER.Resposta(200, {"accessToken": "tok-u"})
+            # A forma do curl que a Unicred mandou ao oficial (28/10/2026).
+            return INTER.Resposta(200, {"accessToken": "tok-u", "tokenExpirationTime": 28800,
+                                        "refreshToken": "r", "refreshTokenExpirationTime": 36000})
         assert cab.get("Authorization") == "Bearer tok-u"
         assert cab.get("cooperativa") == "0001" and cab.get("apiKey") == "chave"
         m = re.fullmatch(rf"/cobranca/(v1|v2)/beneficiarios/{BENEFICIARIO}/titulos(.*)", caminho)
@@ -410,6 +412,22 @@ def test_o_id_do_titulo_se_le_nas_duas_formas_do_documento():
     ident = "0000008d56aa461796227f0e30c7f5f2"
     assert CUNI.id_do_titulo({"id_titulo": ident}) == ident
     assert CUNI.id_do_titulo(f"Preview: id_titulo:{ident}".encode()) == ident
+
+
+def test_o_token_da_unicred_vale_a_validade_que_ela_devolve(casa, monkeypatch):
+    """`tokenExpirationTime` (8 h no curl da Unicred): um token só para a rodada inteira."""
+    relogio = [1000.0]
+    monkeypatch.setattr(CUNI.time, "monotonic", lambda: relogio[0])
+    cliente = casa["c_uni"]
+    cliente.token()
+    relogio[0] += 4 * 3600
+    cliente.token()
+    tokens = [u for m, u, _ in casa["unicred"].chamadas if u.endswith(CUNI.CAMINHO_DO_TOKEN)]
+    assert len(tokens) == 1, "dentro das 8 horas o token se reaproveita"
+    relogio[0] += 4 * 3600
+    cliente.token()
+    tokens = [u for m, u, _ in casa["unicred"].chamadas if u.endswith(CUNI.CAMINHO_DO_TOKEN)]
+    assert len(tokens) == 2, "vencido, pede outro"
 
 
 def test_credencial_da_unicred_com_campo_torto_e_recusada():

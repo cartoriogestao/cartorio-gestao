@@ -47,7 +47,15 @@
     // JÁ MARCADO, DESMARCA. Apertar negrito duas vezes na mesma seleção tem de
     // desfazer — senão o teor acumula `<b><b>`, que o LibreOffice até aceita e
     // que ninguém consegue mais limpar à mão.
-    if (dentro.indexOf(abre) === 0 && dentro.lastIndexOf(fecha) === dentro.length - fecha.length) {
+    //
+    // A SELEÇÃO TEM DE CABER AS DUAS MARCAS (CodeQL js/incorrect-suffix-check,
+    // 28/10/2026). O `lastIndexOf` devolve -1 quando o fecho não está lá, e
+    // -1 é igual a `dentro.length - fecha.length` quando a seleção tem um
+    // caractere a menos que o fecho: selecionar exatamente `<b>` e apertar
+    // negrito APAGAVA o `<b>` em vez de envolvê-lo.
+    if (dentro.length >= abre.length + fecha.length &&
+        dentro.indexOf(abre) === 0 &&
+        dentro.slice(dentro.length - fecha.length) === fecha) {
       var limpo = dentro.slice(abre.length, dentro.length - fecha.length);
       campo.value = texto.slice(0, inicio) + limpo + texto.slice(fim);
       campo.selectionStart = inicio;
@@ -116,12 +124,76 @@
   //   quebra de linha — e transformar um `<` digitado em etiqueta, mostrando
   //   uma coisa e gravando outra. `textContent` é o `escape` do lado do
   //   navegador, e o `white-space` do CSS é o `<pre>`.
+  //
+  // E O HTML DA PRÉVIA PASSA PELO CRIVO DA TELA (CodeQL js/xss-through-dom,
+  // 28/10/2026). A caixa abre com o teor GRAVADO — que pode ter vindo do
+  // acervo ou de arquivo — e a prévia do servidor sai por `sem_script`
+  // (`html_sem_script.limpar`). Esta, a do que se digita, ia crua para o
+  // `innerHTML`: um `<img src=x onerror=...>` gravado rodava na sessão de quem
+  // apertasse a primeira tecla. Agora o texto é lido num documento inerte
+  // (`DOMParser`, que não roda script nem carrega imagem), perde o que o
+  // filtro do servidor tira — as etiquetas que executam ou trazem outro
+  // documento, todo `on...`, `form`/`action`/`formaction`, endereço
+  // `javascript:`/`vbscript:`/`file:`, `data:` que não seja imagem, `//rede` —
+  // e só então os nós entram na tela. O `style` com `url(`, `@import`,
+  // `expression` ou escape sai inteiro: o servidor decodifica e confere, e
+  // aqui, na dúvida, a prévia perde um enfeite em vez de buscar o que é de fora.
+  var SAI_COM_O_CONTEUDO = "script,iframe,object,embed,applet,frame,frameset," +
+    "template,svg,math,title,noscript,noembed,noframes,base,link,meta";
+  var DE_ENDERECO = /^(href|src|action|formaction|xlink:href|background|poster|data|codebase|cite|longdesc|lowsrc|dynsrc|srcset|ping|manifest|icon|profile|usemap)$/;
+  var CSS_QUE_BUSCA_FORA = /url\(|image-set|@import|expression|javascript:|\\/i;
+
+  function atributoPerigoso(nome, valor) {
+    var limpo = String(valor).replace(/[\x00-\x20\x7f-\x9f]+/g, "").toLowerCase();
+    if (nome.indexOf("on") === 0 || nome === "form" || nome === "action" ||
+        nome === "formaction") return true;
+    if (/^(javascript|vbscript|file|livescript):/.test(limpo) ||
+        limpo.indexOf("javascript:") !== -1) return true;
+    if (nome === "style") return CSS_QUE_BUSCA_FORA.test(limpo);
+    if (DE_ENDERECO.test(nome)) {
+      if (limpo.indexOf("data:") === 0) {
+        return limpo.indexOf("data:image/") !== 0 || limpo.indexOf("data:image/svg") === 0;
+      }
+      if (/^[\/\\]{2}/.test(limpo)) return true;
+    }
+    return false;
+  }
+
+  function semScript(html) {
+    var doc = new DOMParser().parseFromString(html, "text/html");
+    var fora = doc.querySelectorAll(SAI_COM_O_CONTEUDO);
+    for (var i = 0; i < fora.length; i++) {
+      if (fora[i].parentNode) fora[i].parentNode.removeChild(fora[i]);
+    }
+    var todos = doc.querySelectorAll("*");
+    for (var j = 0; j < todos.length; j++) {
+      var el = todos[j];
+      for (var k = el.attributes.length - 1; k >= 0; k--) {
+        var at = el.attributes[k];
+        if (atributoPerigoso(at.name.toLowerCase(), at.value)) el.removeAttribute(at.name);
+      }
+      if (el.tagName === "STYLE" && CSS_QUE_BUSCA_FORA.test(el.textContent)) {
+        el.textContent = "";
+      }
+    }
+    var pedaco = document.createDocumentFragment();
+    // O `<style>` do documento colado do Word cai no `<head>` do leitor: ele
+    // volta à frente, como o servidor o mantém.
+    var estilos = doc.head ? doc.head.querySelectorAll("style") : [];
+    for (var e = 0; e < estilos.length; e++) pedaco.appendChild(estilos[e]);
+    while (doc.body && doc.body.firstChild) pedaco.appendChild(doc.body.firstChild);
+    return pedaco;
+  }
+
   function ligarPrevia(campo, formato) {
     var previa = document.querySelector("[data-teor-previa]");
     if (!previa) return;
     var atualizar = (formato === "texto")
       ? function () { previa.textContent = campo.value; }
-      : function () { previa.innerHTML = campo.value; };
+      : function () {
+          previa.textContent = "";
+          previa.appendChild(semScript(campo.value));
+        };
     campo.addEventListener("input", atualizar);
   }
 

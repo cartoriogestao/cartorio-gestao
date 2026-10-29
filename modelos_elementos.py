@@ -260,7 +260,11 @@ def legenda_do_ato(ato: str, texto: str) -> list[dict[str, str]]:
     else:
         # Expressões simples são os claros clicáveis. Laços e condições
         # continuam visíveis no código, mas não viram um botão enganoso.
-        for expr in re.findall(r"{{\s*([^{}]+?)\s*}}", texto or ""):
+        # `{{([^{}]+)}}`, e não `{{\s*([^{}]+?)\s*}}` (CodeQL, 28/10/2026):
+        # a forma antiga era cúbica num `{{` sem fecho seguido de brancos.
+        # Casa os mesmos trechos, e o `.strip()` de baixo tira os brancos das
+        # pontas que o grupo agora traz.
+        for expr in re.findall(r"{{([^{}]+)}}", texto or ""):
             base = expr.split("|", 1)[0].strip()
             if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", base):
                 juntar("{{ " + base + " }}", base)

@@ -53,7 +53,15 @@ MOLDES_RCPN: tuple[str, ...] = tuple(m["chave"] for m in MOLDES.MOLDES)
 
 TEMPLATES_RCPN: tuple[str, ...] = TERMOS_RCPN + MOLDES_RCPN
 
-RE_PLACEHOLDER_DUPLO = re.compile(r"\{\{\s*([^{}#/][^{}]*?)\s*\}\}")
+# O CLARO `{{ x }}` SEM `\s*` DOS DOIS LADOS (CodeQL py/polynomial-redos,
+# 28/10/2026). Era `\{\{\s*([^{}#/][^{}]*?)\s*\}\}`: três quantificadores
+# disputando o mesmo branco, e um `{{` sem fecho seguido de brancos custava
+# tempo CÚBICO — mil espaços, um segundo; dois mil, oito. A forma nova casa
+# os mesmos trechos (miolo sem chave, que não começa por `#` nem `/`); o
+# grupo vem agora com os brancos das pontas, e todo leitor dele já faz
+# `.strip()` — o resultado é o mesmo. A cópia de `modelos_motor_placeholders`
+# mudou junto.
+RE_PLACEHOLDER_DUPLO = re.compile(r"\{\{(?=[^{}#/])([^{}]*)\}\}")
 RE_PLACEHOLDER_SIMPLES = re.compile(r"(?<!\{)\{([A-Za-z_][A-Za-z0-9_]*)\}(?!\})")
 RE_PLACEHOLDER_ARROBA = re.compile(r"@[A-Za-z_0-9]+")
 RE_BLOQUEADO = re.compile(

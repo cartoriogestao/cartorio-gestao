@@ -1080,9 +1080,14 @@ def limpar(texto: str) -> str:
     Registro Civil.
     """
     import re
-    texto = re.sub(r"\s*\n\s*", " ", texto)
+    # A expressão pega o trecho de brancos inteiro e a função decide
+    # (CodeQL py/polynomial-redos, 28/10/2026): `\s*\n\s*` e `\s+([,.;:])`
+    # varriam de novo um trecho longo a partir de cada espaço, em tempo
+    # quadrático. O resultado é o mesmo: o trecho com quebra vira um espaço,
+    # e o que vem antes da pontuação sai.
+    texto = re.sub(r"\s+", lambda m: " " if "\n" in m.group() else m.group(), texto)
     texto = re.sub(r"[ \t]{2,}", " ", texto)
-    texto = re.sub(r"\s+([,.;:])", r"\1", texto)
+    texto = re.sub(r"\s+([,.;:]?)", lambda m: m.group(1) or m.group(), texto)
     return texto.strip()
 
 

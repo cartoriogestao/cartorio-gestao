@@ -548,7 +548,11 @@ def corrigir_texto_termo(texto: str, *, especie: str, pessoas: dict[str, dict],
     if parece_html(bruto) or "&lt;" in bruto:
         correcoes.append("tags HTML removidas")
     # texto corrido (art. 795, § 2º): quebras viram espaço
-    t = re.sub(r"\s*\n\s*", " ", t).strip()
+    # A expressão pega o trecho de brancos inteiro e a função decide: com
+    # quebra, vira um espaço; sem, fica (CodeQL py/polynomial-redos,
+    # 28/10/2026). `\s*\n\s*` varria de novo um trecho longo sem quebra a
+    # partir de cada espaço — tempo quadrático. O resultado é o mesmo.
+    t = re.sub(r"\s+", lambda m: " " if "\n" in m.group() else m.group(), t).strip()
     novo = normalizar_datas_no_texto(t, estilo_data)
     if novo != t:
         correcoes.append(f"datas no estilo «{estilo_de_data(estilo_data)}»")
@@ -572,7 +576,8 @@ def corrigir_texto_termo(texto: str, *, especie: str, pessoas: dict[str, dict],
     if mudou:
         correcoes.append("fecho «Eu, ____» preenchido")
     t = re.sub(r"[ \t]{2,}", " ", t)
-    t = re.sub(r"\s+([,.;:])", r"\1", t)
+    # brancos antes da pontuação saem; os outros ficam (ver a quebra acima)
+    t = re.sub(r"\s+([,.;:]?)", lambda m: m.group(1) or m.group(), t)
     return t.strip(), correcoes
 
 

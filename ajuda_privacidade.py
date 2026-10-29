@@ -56,8 +56,13 @@ _CPF = re.compile(r"\b\d{3}[. ]?\d{3}[. ]?\d{3}[- ]?\d{2}\b")
 # O CNPJ (LS03 M2) — o do empresário individual é o CPF dele com outra cara. A
 # mesma forma que `malote_fraudes._CNPJ` já mascarava no caminho das fraudes.
 _CNPJ = re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b")
+# O TAMANHO DO E-MAIL TEM TETO (CodeQL py/polynomial-redos, 28/10/2026): com
+# `+` sem limite, uma fileira de `%` sem `@` fazia cada posição varrer até o
+# fim — 50 mil caracteres levavam uns 20 s, e esta barreira lê texto que vem
+# de fora. 64 antes do `@` e 255 depois são os limites do próprio e-mail
+# (RFC 5321); endereço real nenhum passa deles.
 _EMAIL = re.compile(
-    r"(?<![\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}(?![\w-])",
+    r"(?<![\w.+-])[A-Z0-9._%+-]{1,64}@[A-Z0-9.-]{1,255}\.[A-Z]{2,}(?![\w-])",
     re.I,
 )
 _TELEFONE = re.compile(
@@ -71,16 +76,23 @@ _TELEFONE_LOCAL = re.compile(
     r"(?<![\d/.,-])(?!(?:19|20)\d{2}-(?:19|20)\d{2}(?!\d))"
     r"(?:9 ?\d{4}|[2-5]\d{3})-\d{4}(?![\d/-])"
 )
+# O BRANCO ENTRE O RÓTULO E O VALOR É UM SÓ `\s*` (CodeQL py/polynomial-redos,
+# 28/10/2026). Era `\s*[:=]?\s*`: sem os dois pontos, os dois `\s*` ficam
+# colados e disputam o mesmo branco, e um rótulo seguido de milhares de
+# espaços ou quebras sem valor (texto de PDF recebido de fora, que passa por
+# aqui antes de ir ao modelo) custava tempo quadrático — 4 mil brancos, meio
+# segundo; 50 mil, minutos. `(?:[:=]\s*)?` casa exatamente o mesmo: o segundo
+# branco só existe depois do `:`/`=`, e sem eles o primeiro já o consome.
 _TELEFONE_ROTULADO = re.compile(
     r"(?P<inicio>\b(?:telefone|tel|fone|celular|cel|whatsapp|whats|zap)\b\.?"
-    r"\s*(?:n[ºo°]\.?\s*)?[:=]?\s*)"
+    r"\s*(?:n[ºo°]\.?\s*)?(?:[:=]\s*)?)"
     r"(?P<valor>\+?\d[\d ().-]{6,18}\d)",
     re.I,
 )
 # O CEP (LS03 M2): com o hífen, ou com o rótulo.
 _CEP = re.compile(r"(?<![\d.,/-])\d{2}\.?\d{3}-\d{3}(?![\d-])")
 _CEP_ROTULADO = re.compile(
-    r"(?P<inicio>\bCEP\b\.?\s*(?:n[ºo°]\.?\s*)?[:=]?\s*)"
+    r"(?P<inicio>\bCEP\b\.?\s*(?:n[ºo°]\.?\s*)?(?:[:=]\s*)?)"
     r"(?P<valor>\d{2}\.?\d{3}-?\d{3})\b",
     re.I,
 )
@@ -109,7 +121,7 @@ _CAMINHO_USUARIO = re.compile(r"(?P<inicio>\b[A-Z]:\\Users\\)(?P<valor>[^\\\s]+)
 
 _DOCUMENTO_ROTULADO = re.compile(
     r"(?P<inicio>\b(?:RG|CNH|PIS|PASEP|NIS|CTPS|titulo\s+de\s+eleitor|"
-    r"t[ií]tulo\s+eleitoral)\s*(?:n[ºo°]\.?\s*)?[:=]?\s*)"
+    r"t[ií]tulo\s+eleitoral)\s*(?:n[ºo°]\.?\s*)?(?:[:=]\s*)?)"
     r"(?P<valor>[A-Z0-9./-]{3,30})",
     re.I,
 )
@@ -117,13 +129,13 @@ _DOCUMENTO_ROTULADO = re.compile(
 # dele» não é número de documento.
 _IDENTIDADE = re.compile(
     r"(?P<inicio>\b(?:carteira\s+de\s+identidade|c[eé]dula\s+de\s+identidade|"
-    r"identidade|passaporte|RNE|RNM)\s*(?:n[ºo°]\.?\s*)?[:=]?\s*)"
+    r"identidade|passaporte|RNE|RNM)\s*(?:n[ºo°]\.?\s*)?(?:[:=]\s*)?)"
     r"(?=[A-Z0-9./-]*\d)(?P<valor>[A-Z0-9][A-Z0-9./-]{2,29})",
     re.I,
 )
 _REFERENCIA_REGISTRAL = re.compile(
     r"(?P<inicio>\b(?:matr[ií]cula|termo|livro|folha|selo|protocolo|"
-    r"processo|t[ií]tulo)\s*(?:n[ºo°]\.?\s*)?[:=#-]?\s*)"
+    r"processo|t[ií]tulo)\s*(?:n[ºo°]\.?\s*)?(?:[:=#-]\s*)?)"
     # A REFERÊNCIA TEM DÍGITO ? achado em 08/09/2026, com o sistema ajuda
     # mascarando as próprias perguntas do balcão. "protocolo RCPN" e "titulo
     # RCPJ" caíam aqui: o valor virava [REFERENCIA_REGISTRAL_01] com "RCPN" ?
@@ -137,7 +149,7 @@ _REFERENCIA_REGISTRAL = re.compile(
 )
 _DADO_FINANCEIRO = re.compile(
     r"(?P<inicio>\b(?:conta|ag[eê]ncia|chave\s+pix|cart[aã]o|IBAN)\b"
-    r"\s*[:=]?\s*)(?P<valor>[^\n;,]{3,100})",
+    r"\s*(?:[:=]\s*)?)(?P<valor>[^\n;,]{3,100})",
     re.I,
 )
 _DADO_SENSIVEL = re.compile(
@@ -148,7 +160,7 @@ _DADO_SENSIVEL = re.compile(
     # A CAUSA DA MORTE (LS03 M2): está na DO e no assento de óbito, e é dado
     # de saúde como qualquer outro.
     r"causa\s+(?:da\s+morte|do\s+[oó]bito|mortis)|causa\s+morte|"
-    r"motivo\s+do\s+[oó]bito|CID-?10)\b\s*[:=]?\s*)"
+    r"motivo\s+do\s+[oó]bito|CID-?10)\b\s*(?:[:=]\s*)?)"
     r"(?P<valor>[^\n;,]{2,160})",
     re.I,
 )
@@ -171,15 +183,18 @@ _ARQUIVO_BIOMETRIA = re.compile(
 # «NASCEU EM» (LS03 M2): a régua tinha «nascido em» e não o verbo, e não
 # conhecia a data por extenso («12 de março de 1980»).
 _DATA_PESSOAL = re.compile(
-    r"(?P<inicio>\b(?:nascimento|nascid[oa]\s+em|nasceu\s+(?:no\s+dia\s+|em\s+)|"
-    r"data\s+de\s+nascimento|[oó]bito\s+em|faleceu\s+(?:no\s+dia\s+|em\s+)|"
-    r"falecid[oa]\s+em)\s*[:=]?\s*)"
+    # «nasceu em» termina num branco só (`em\s`, e não `em\s+`): o `\s*` logo
+    # adiante já toma o resto, e dois quantificadores colados no mesmo branco
+    # eram o retrocesso quadrático da nota de `_TELEFONE_ROTULADO`.
+    r"(?P<inicio>\b(?:nascimento|nascid[oa]\s+em|nasceu\s+(?:no\s+dia\s|em\s)|"
+    r"data\s+de\s+nascimento|[oó]bito\s+em|faleceu\s+(?:no\s+dia\s|em\s)|"
+    r"falecid[oa]\s+em)\s*(?:[:=]\s*)?)"
     r"(?P<valor>\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|"
     r"\d{1,2}º?\s+de\s+[a-zç]{4,9}\s+de\s+\d{4})",
     re.I,
 )
 _ENDERECO_ROTULADO = re.compile(
-    r"(?P<inicio>\b(?:endere[cç]o|domic[ií]lio|resid[eê]ncia)\b\s*[:=]?\s*)"
+    r"(?P<inicio>\b(?:endere[cç]o|domic[ií]lio|resid[eê]ncia)\b\s*(?:[:=]\s*)?)"
     r"(?P<valor>[^\n;]{4,180})",
     re.I,
 )
@@ -192,7 +207,7 @@ _NOME_ROTULADO = re.compile(
     r"(?P<inicio>\b(?:nome|titular|registrando|registrada|registrado|falecida|"
     r"falecido|nubente|devedor(?:a)?|credor(?:a)?|requerente|interessad[oa]|"
     r"outorgante|outorgad[oa]|testemunha|pai|m[aã]e|filia[cç][aã]o|"
-    r"c[oô]njuge|companheir[oa])\b\s*[:=]?\s*)"
+    r"c[oô]njuge|companheir[oa])\b\s*(?:[:=]\s*)?)"
     r"(?P<valor>[^\n;,.]{2,140})",
     re.I,
 )

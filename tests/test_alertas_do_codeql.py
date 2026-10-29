@@ -125,3 +125,54 @@ def test_o_destino_nao_vai_na_linha_de_comando_e_a_copia_que_falha_some(tmp_path
     assert chamadas and all(str(destino) not in parte for parte in chamadas[0])
     assert "-f" not in chamadas[0]
     assert not destino.exists()
+
+
+# ------------------------------------- as expressões do PR #80 (28/10/2026)
+# As réguas antigas, para comparar: as novas têm de dar exatamente o mesmo.
+
+import random  # noqa: E402
+import re  # noqa: E402
+
+import contato_do_cliente as CC  # noqa: E402
+import rc_modelos_do_livro as RML  # noqa: E402
+
+_EMAIL_ANTIGO = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _limpar_antigo(texto):
+    texto = re.sub(r"\s*\n\s*", " ", texto)
+    texto = re.sub(r"[ \t]{2,}", " ", texto)
+    texto = re.sub(r"\s+([,.;:])", r"\1", texto)
+    return texto.strip()
+
+
+def _sorteados(letras, quantos=4000, semente=80):
+    sorte = random.Random(semente)
+    for _ in range(quantos):
+        yield "".join(sorte.choice(letras) for _ in range(sorte.randint(0, 14)))
+
+
+@pytest.mark.parametrize("texto", [
+    "a@b.c", "nome@provedor.com.br", "a@.c", "a@b.", "a@bc", "@b.c", "a@@b.c",
+    "a@b@c.d", "a b@c.d", "a@b .c", "a@b.c\t", "ä@ç.ö", "a@b..c", "a@b.c.",
+])
+def test_o_email_aceita_e_recusa_como_antes(texto):
+    assert CC._email_completo(texto) == bool(_EMAIL_ANTIGO.match(texto))
+
+
+def test_o_email_sorteado_bate_com_a_regua_antiga():
+    for texto in _sorteados("a.@ b\t"):
+        if texto == texto.strip():
+            assert CC._email_completo(texto) == bool(_EMAIL_ANTIGO.match(texto)), texto
+
+
+def test_o_limpar_do_livro_sorteado_bate_com_o_antigo():
+    for texto in _sorteados("a \n\t,.;:\r"):
+        assert RML.limpar(texto) == _limpar_antigo(texto), repr(texto)
+
+
+def test_brancos_longos_nao_travam():
+    inicio = time.monotonic()
+    RML.limpar("a" + " " * 50_000 + "b")
+    CC._email_completo("a@" + "." * 50_000 + "@")
+    assert time.monotonic() - inicio < 1.0

@@ -45,6 +45,7 @@ import protesto as PT  # noqa: E402
 import protesto_retorno as PR  # noqa: E402
 from nucleo_schema import init_nucleo_schema  # noqa: E402
 from pt_schema import init_pt_schema  # noqa: E402
+from prova_de_intimacao import juntar_prova  # noqa: E402
 
 AGORA = "2026-10-23T13:25:00"
 DIA_1 = "2026-10-23"
@@ -92,6 +93,8 @@ def titulo(con, *, chave: str, numero: str = "CDA-0001",
 def apontar_e_intimar(con, titulo_id: int) -> None:
     PT.lancar_apontamento(con, titulo_id, sv=SV, agora=AGORA, data_extenso="x")
     PT.lancar_intimacao(con, titulo_id, modo="PESSOAL", agora=AGORA)
+    # A PROVA DA INTIMAÇÃO (trava do #106): o que se confere aqui é o retorno.
+    juntar_prova(con, titulo_id)
 
 
 def protestar(con, titulo_id: int) -> None:

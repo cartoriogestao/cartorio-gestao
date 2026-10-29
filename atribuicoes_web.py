@@ -11866,9 +11866,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             gerados = [dict(r) for r in PRE.listar(con, limite=60)]
             # Só AVISO: o que a CRA ouviu e o livro desfez (28/10/2026).
             desfeitos = [dict(r) for r in PRE.informados_e_desfeitos(con)]
+            # Ocorrência que a CRA já aceitou: o substituto não volta à fila
+            # (29/10/2026). A tela diz quais atos ficaram de fora.
+            ja_aceitas = PRE.ja_aceitas_fora_da_fila(con)
         return render_template("protesto_retornos.html", grupos=grupos,
                                atos=atos, gerados=gerados, hoje=hoje(),
-                               desfeitos=desfeitos)
+                               desfeitos=desfeitos, ja_aceitas=ja_aceitas)
 
     @app.route("/protesto/retornos/gerar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -11907,6 +11910,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   f"mesmo protocolo já vai neste arquivo com outra ocorrência, "
                   f"e a CRA recusa o lote com protocolo repetido. Gere de novo "
                   f"depois de enviar este.", "warning")
+        pulados = r.get("pulados") or []
+        if pulados:
+            flash(PRE.frase_dos_pulados(pulados), "warning")
         return redirect(url_for("protesto_retornos"))
 
     @app.route("/protesto/retornos/<int:retorno_id>/enviar", methods=["POST"])
@@ -11964,10 +11970,55 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return redirect(url_for("protesto_retornos"))
         # `audit` abre transação própria: FORA do `with`.
         audit("PROTESTO_RETORNO_ATOS_DEVOLVIDOS", "pt_retornos", retorno_id,
-              {"nome": r["nome_arquivo"], "atos": r["atos"]})
-        flash(f"{len(r['atos'])} ato(s) de «{r['nome_arquivo']}» voltaram a "
-              f"«Esperando retorno». O arquivo recusado fica gravado como foi; "
-              f"gere um retorno novo para informá-los.", "success")
+              {"nome": r["nome_arquivo"], "atos": r["atos"],
+               "continuam_de_fora": [p["ato_id"]
+                                     for p in r.get("continuam_de_fora") or []]})
+        fora = r.get("continuam_de_fora") or []
+        voltaram = len(r["atos"]) - len(fora)
+        if voltaram:
+            flash(f"{voltaram} ato(s) de «{r['nome_arquivo']}» voltaram a "
+                  f"«Esperando retorno». O arquivo recusado fica gravado como foi; "
+                  f"gere um retorno novo para informá-los.", "success")
+        if fora:
+            flash(PRE.frase_dos_pulados(
+                fora, intro=("Estes atos não voltam à fila: a CRA já aceitou "
+                             "a mesma ocorrência (mesmo título ou o mesmo "
+                             "protocolo)")), "warning")
+        return redirect(url_for("protesto_retornos"))
+
+    @app.route("/protesto/retornos/ato/<int:ato_id>/ja-informado",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER")
+    def protesto_retorno_ja_informado(ato_id: int):
+        """Marca o ato como já informado à CRA, sem enviar. ESCREVE.
+
+        29/10/2026. ADMIN ou MANAGER, com motivo e o retorno anterior que a
+        Central aceitou. A auditoria fica fora da transação, como nas outras
+        rotas do retorno.
+        """
+        retorno_id = numero_digitado(_campo("retorno_id"), maximo=MAIOR_INTEGER)
+        if not retorno_id:
+            flash("Informe o número do arquivo de retorno que a CRA já aceitou "
+                  "(está em «Arquivos gerados»).", "danger")
+            return redirect(url_for("protesto_retornos"))
+        try:
+            with db.transaction() as con:
+                r = PRE.marcar_ja_informado_a_cra(
+                    con, ato_id, retorno_id=retorno_id, motivo=_campo("motivo"),
+                    agora=agora(), usuario=usuario_nome())
+        except PRE.RetornoError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_retornos"))
+        audit("PROTESTO_ATO_JA_INFORMADO_CRA", "pt_atos", ato_id,
+              {"motivo": r["motivo"], "retorno_id": r["retorno_id"],
+               "nome_arquivo": r["nome_arquivo"], "titulo_id": r["titulo_id"],
+               "protocolo": r["protocolo"], "tipo": r["tipo"],
+               "ocorrencia": r["ocorrencia"],
+               "apresentante": r["apresentante_codigo"]})
+        flash(f"Ato {ato_id} ({r['tipo']}, título {r['numero_titulo']}) "
+              f"marcado como já informado à CRA, pelo arquivo "
+              f"«{r['nome_arquivo']}». Saiu da fila e não será enviado.",
+              "success")
         return redirect(url_for("protesto_retornos"))
 
     @app.route("/protesto/retornos/<int:retorno_id>/arquivo")

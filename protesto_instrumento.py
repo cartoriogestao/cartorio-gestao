@@ -284,9 +284,17 @@ def dados(con, titulo_id: int) -> dict:
             WHERE entity_type = 'pt_titulos' AND entity_id = %s""",
         (int(titulo_id),))
 
+    # AS AVERBAÇÕES DE RETIFICAÇÃO DO REGISTRO (29/10/2026) — Lei 9.492/1997,
+    # art. 25. O instrumento as menciona no fim (`montar_teor`); só as do ATO
+    # DE PROTESTO que vale, e não as do termo do cancelamento.
+    import protesto_averbacao as PAV
+    averbacoes = (PAV.mencoes(bd, int(titulo_id), ato_id=int(protesto["id"]))
+                  if protesto is not None else [])
+
     # O APRESENTANTE COM O ENDEREÇO (LD08) — do título ou do cadastro.
     import protesto as PT
     return {"titulo": dict(titulo),
+            "averbacoes": averbacoes,
             "apresentante": PT.apresentante_do_titulo(bd, titulo),
             "protesto": dict(protesto) if protesto is not None else None,
             "apontado_em": (apontamento["data_ato"]
@@ -479,7 +487,8 @@ def _frase(con: Any, chave: str, **claros: Any) -> str:
 def montar_teor(*, modelo: str | None = None, serventia: str, praca: str,
                 motivo: str, copia_arquivada: bool,
                 intimacao: dict | None, descricao: str = "",
-                con: Any = None, atraso: dict | None = None) -> str:
+                con: Any = None, atraso: dict | None = None,
+                averbacoes: list[dict] | None = None) -> str:
     """O corpo do instrumento. Não grava.
 
     `copia_arquivada` decide a **menção do § único**, e por isso é obrigatório
@@ -534,6 +543,17 @@ def montar_teor(*, modelo: str | None = None, serventia: str, praca: str,
                                termo_final=_data_br(atraso.get("termo_final")),
                                data=_data_br(atraso.get("lavrado_em")),
                                motivo=_texto(atraso.get("motivo")))
+    # A AVERBAÇÃO DE RETIFICAÇÃO VAI DEPOIS DE TUDO (29/10/2026) — Lei
+    # 9.492/1997, art. 25. Uma menção por averbação viva do registro, na ordem
+    # em que se lavraram. A descrição acima já sai com os dados certos (ela lê
+    # o cadastro); a menção diz que o registro foi retificado, e quando — e
+    # NÃO repete o que constou errado, que em geral é o nome de outra pessoa.
+    # É peça do catálogo (`PT_INSTRUMENTO_AVERBACAO`), e o modelo do
+    # instrumento que o oficial já ajustou continua servindo.
+    for averbacao in averbacoes or ():
+        pronto += " " + _frase(con, "PT_INSTRUMENTO_AVERBACAO",
+                               data=_data_br(averbacao.get("data")),
+                               elemento=_texto(averbacao.get("elemento")))
     # SEM CLARO NENHUM NO QUE SAI — inclusive se o modelo que o oficial editar
     # no catálogo trouxer quebra de linha ou espaço duplo por engano.
     return " ".join(pronto.split())
@@ -596,6 +616,26 @@ def emitir(con, titulo_id: int, *, serventia: str,
             "O título não diz o motivo do protesto (falta de pagamento, de "
             "aceite ou de devolução), e o instrumento o declara. Informe-o na "
             "ficha do título.")
+    # O INSTRUMENTO NÃO SAI CONTRA O REGISTRO (29/10/2026). Ele descreve o
+    # credor pelo CADASTRO, e o registro lavrado congelou o credor do dia da
+    # lavratura: quando os dois discordam — o caso dos protestos lavrados
+    # sobre a carga errada do acervo —, o papel assinado afirmaria um credor
+    # que o livro não tem (Lei 9.492/1997, art. 22; CN-MA art. 914, «o registro
+    # do protesto e a sua consequente certidão do instrumento»). A saída é a
+    # averbação de retificação do art. 25, e depois dela o instrumento sai,
+    # com a menção. Só olha o registro QUALIFICADO (o que escreve credor): o
+    # protesto do acervo do E-Ofício não tem texto aqui, e não é alcançado.
+    import protesto_averbacao as PAV
+    divergencia = PAV.divergencia_do_credor(bd, prot)
+    if divergencia:
+        o_que = ("não indica credor nenhum" if divergencia["forma"] == PAV.OMITIDO
+                 else "indica outro credor")
+        raise InstrumentoError(
+            f"O registro deste protesto {o_que}, e o cadastro do título diz "
+            f"«{divergencia['correto']}». O instrumento afirma o que o registro "
+            f"diz (Lei 9.492/1997, art. 22): antes de emiti-lo, o oficial lavra "
+            f"a averbação de retificação de erro material, de ofício (art. 25), "
+            f"na ficha do título.")
     teor = montar_teor(
         modelo=modelo, serventia=serventia,
         praca=(_texto(t.get("praca_protesto"))
@@ -604,12 +644,17 @@ def emitir(con, titulo_id: int, *, serventia: str,
         copia_arquivada=d["copias_arquivadas"] > 0,
         intimacao=d["intimacao"],
         descricao=descricao_do_documento(d, bd), con=bd,
-        atraso=TRIDUO.mencao_no_instrumento(prot.get("detalhe_json")))
+        atraso=TRIDUO.mencao_no_instrumento(prot.get("detalhe_json")),
+        averbacoes=d["averbacoes"])
 
     bd.travar("pt_instrumentos.numero")
     numero = proximo_numero(bd, ano)
+    # A AVERBAÇÃO SÓ ENTRA NO CORPO QUANDO EXISTE: o instrumento sem ela
+    # continua com o mesmo corpo — e o mesmo hash — de antes de 29/10/2026.
+    extra = ({"averbacoes": d["averbacoes"]} if d["averbacoes"] else {})
     corpo = json.dumps(
-        {"titulo": {k: t.get(k) for k in (
+        {**extra,
+         "titulo": {k: t.get(k) for k in (
             "especie", "numero_titulo", "nosso_numero", "chave_cenprot",
             "data_emissao", "data_vencimento", "valor_centavos",
             "saldo_centavos", "tipo_protesto", "motivo_protesto",

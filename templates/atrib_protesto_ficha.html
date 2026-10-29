@@ -75,6 +75,28 @@
 </div>
 {% endif %}
 
+{# O REGISTRO QUE NÃO TRAZ O CREDOR DO CADASTRO (29/10/2026). O termo congelou
+   o credor do dia da lavratura; quando ele discorda do cadastro, o instrumento
+   não sai (`protesto_instrumento.emitir`) até a averbação de retificação do
+   art. 25. Só mostra; quem lavra é o oficial, no quadro mais abaixo. #}
+{% if averbacao.divergencias %}
+<div class="notice danger" data-credor-a-averbar>
+  <strong>O texto lavrado não traz o credor do cadastro:</strong>
+  <ul style="margin:6px 0 0 18px">
+  {% for d in averbacao.divergencias %}
+    <li>{{ d.nome_do_ato }} (ato {{ d.ato_id }}) —
+      {% if d.forma == 'OMITIDO' %}não indica credor nenhum{% else %}indica
+      «{{ d.constava }}»{% endif %}; o cadastro diz «{{ d.correto }}».</li>
+  {% endfor %}
+  </ul>
+  <p style="margin:8px 0 0">O instrumento não sai contra o registro. A saída é a
+    <strong>averbação de retificação de erro material, de ofício</strong> (Lei
+    9.492/1997, art. 25): o texto lavrado fica como está, e a averbação o corrige.
+    {% if user.role == 'ADMIN' %}O formulário está <a href="#averbacao-retificacao">mais
+    abaixo</a>, já preenchido.{% else %}Ela é do oficial: avise-o.{% endif %}</p>
+</div>
+{% endif %}
+
 <section class="panel">
   <div class="panel-head"><span>O título</span><small>{{ titulo.situacao }}</small></div>
   <table class="table">
@@ -672,6 +694,57 @@
 </div>
 {% endif %}
 
+{# A AVERBAÇÃO DE RETIFICAÇÃO DE ERRO MATERIAL, DE OFÍCIO (29/10/2026) — Lei
+   9.492/1997, art. 25: «sob responsabilidade do Tabelião». Só o oficial (ADMIN)
+   lavra, com a afirmação expressa; o texto lavrado não muda, e a averbação é ato
+   novo, à margem dele. Não sela e não cobra (`protesto_averbacao`). #}
+{% macro form_averbacao(ato_id, elemento, constava, correto, botao) %}
+<form method="post" action="{{ url_for('protesto_averbacao_retificacao', titulo_id=titulo.id) }}"
+      class="grid2" style="padding:0 14px 14px" data-averbacao-retificacao>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% if ato_id %}
+  <input type="hidden" name="ato_id" value="{{ ato_id }}">
+  {% else %}
+  <label style="grid-column:1/-1">Ato lavrado que se retifica
+    <select name="ato_id" required>
+      <option value="">— escolha —</option>
+      {% for x in averbacao.atos %}<option value="{{ x.id }}">{{ x.nome }} de {{ x.data_br }} (ato {{ x.id }})</option>{% endfor %}
+    </select></label>
+  {% endif %}
+  <label>O que se retifica <small>(com o artigo)</small>
+    <input name="elemento" value="{{ elemento }}" maxlength="80" required></label>
+  <label>O que constou errado <small>(em branco se o texto o omitiu)</small>
+    <input name="constava" value="{{ constava }}" maxlength="400"></label>
+  <label style="grid-column:1/-1">O que passa a constar
+    <input name="correto" value="{{ correto }}" maxlength="400" required></label>
+  <label style="grid-column:1/-1"><input type="checkbox" name="afirmo" value="1" style="width:auto">
+    Afirmo — averbação de retificação de erro material, de ofício, sob a minha responsabilidade</label>
+  <label style="grid-column:1/-1">Por quê <small>(pelo menos {{ minimo_da_afirmacao }}
+    letras; fica no ato e na auditoria com o seu nome)</small>
+    <textarea name="afirmacao" rows="2" required
+              placeholder="{{ modelo_da_afirmacao }}"></textarea></label>
+  <div class="actions"><button class="button">{{ botao }}</button></div>
+</form>
+{% endmacro %}
+{% if user.role == 'ADMIN' and averbacao.atos %}
+<section class="panel" id="averbacao-retificacao">
+  <div class="panel-head"><span>Averbação de retificação de erro material</span>
+    <small>de ofício · Lei 9.492/1997, art. 25 · só o oficial</small></div>
+  <p style="padding:0 14px"><small>O texto lavrado fica como está: a averbação é ato
+    novo, à margem dele, e é ela que o corrige. Não sela e não cobra — erro do
+    próprio serviço não se cobra de ninguém, e o Protesto não tem selo de
+    averbação. O instrumento e a certidão passam a mencioná-la.</small></p>
+  {% for d in averbacao.divergencias %}
+  {{ form_averbacao(d.ato_id, d.elemento, d.constava, d.correto,
+                    'Averbar a retificação do credor — ' ~ d.nome_do_ato ~ ' (ato ' ~ d.ato_id ~ ')') }}
+  {% endfor %}
+  <details style="padding:0 14px 14px"{% if not averbacao.divergencias %} open{% endif %}>
+    <summary><small><strong>Outra retificação</strong> — escolha o ato e diga o que se corrige</small></summary>
+    {{ form_averbacao(None, '', '', '', 'Averbar a retificação') }}
+  </details>
+</section>
+{% endif %}
+
 <section class="panel">
   <div class="panel-head"><span>A vida do título</span><small>{{ atos | length }} ato(s)</small></div>
   <table class="table">
@@ -722,6 +795,11 @@
             <div style="white-space:pre-wrap; padding:8px 0 4px; font-size:.92em">{{ a.teor }}</div>
             <small>Congelado em {{ a.data_ato }} — corrigir protesto é averbar
             ao lado, e não reescrever este texto.</small>
+            {% for av in averbacao.por_ato.get(a.id, []) %}
+            <div style="margin-top:6px" data-averbado-a-margem><small><strong>À margem:</strong>
+              averbação de retificação de {{ av.data_br }} (ato {{ av.id }}) — o texto
+              dela está na linha da averbação.</small></div>
+            {% endfor %}
           </details>
         </td>
       </tr>

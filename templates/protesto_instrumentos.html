@@ -18,38 +18,140 @@
   <div class="stat"><strong>{{ quadro.protestos }}</strong><small>Protestos lavrados</small></div>
   <div class="stat"><strong>{{ quadro.com_instrumento }}</strong><small>Com instrumento</small></div>
   <div class="stat"><strong>{{ quadro.sem_instrumento }}</strong><small>A emitir</small></div>
+  <div class="stat"><strong>{{ quadro_fila.sistema }}</strong><small>A emitir — lavrados neste sistema</small></div>
+  <div class="stat"><strong>{{ quadro_fila.acervo }}</strong><small>A emitir — do acervo do E-Ofício</small></div>
+  <div class="stat"><strong>{{ a_assinar | length }}</strong><small>Emitidos e não assinados</small></div>
 </section>
 
-<section class="panel">
+{#
+  EM LOTE (29/10/2026), pedido do oficial: «não quero ter que clicar um por
+  um». O que se junta é o clique: cada instrumento continua com o seu número,
+  o seu teor e a sua linha na fila de assinatura, e cada título vai na sua
+  própria transação (`protesto_instrumento.emitir_lote`).
+#}
+<section class="panel" id="a-emitir">
   <div class="panel-head">
     <span>Protestos sem instrumento</span>
-    <small>{{ fila | length }}</small>
+    <small>{{ QUAIS[quais] }}{% if atalho %} · {{ ATALHOS[atalho][0] }}{% endif %} — {{ fila | length }} na lista, do mais novo para o mais antigo</small>
   </div>
+
+  <div class="actions" style="padding:8px 14px 0">
+    {% for chave, nome in QUAIS.items() %}
+      <a class="button{% if chave == quais %} primary{% else %} secondary{% endif %}"
+         href="{{ url_for('protesto_instrumentos', quais=chave, desde=atalho or None) }}#a-emitir">{{ nome }} ({{ quadro_fila[chave] }})</a>
+    {% endfor %}
+  </div>
+  <div class="actions" style="padding:6px 14px 0">
+    <small class="muted">Data do protesto:</small>
+    <a class="button{% if not atalho %} primary{% else %} secondary{% endif %}"
+       href="{{ url_for('protesto_instrumentos', quais=quais) }}#a-emitir">qualquer data</a>
+    {% for chave, par in ATALHOS.items() %}
+      <a class="button{% if chave == atalho %} primary{% else %} secondary{% endif %}"
+         href="{{ url_for('protesto_instrumentos', quais=quais, desde=chave) }}#a-emitir">{{ par[0] }} ({{ quadro_fila.por_atalho[quais][chave] }})</a>
+    {% endfor %}
+  </div>
+  {% if quadro_fila.acervo %}
+  <p class="small muted" style="padding:6px 14px 0">
+    {{ quadro_fila.acervo }} dos {{ quadro_fila.todos }} protestos sem instrumento vieram do
+    <strong>acervo do E-Ofício</strong> — a casa antiga não guardava instrumento. Eles ficam
+    contados e a um clique, sem atrapalhar os lavrados neste sistema.
+  </p>
+  {% endif %}
+
   {% if not fila %}
-    <p style="padding:14px">Nenhum protesto lavrado aguardando instrumento.</p>
+    <p style="padding:14px">Nenhum protesto lavrado aguardando instrumento neste recorte.</p>
   {% else %}
-  <table class="table">
-    <thead><tr>
-      <th>Data do ato</th><th>Protocolo</th><th>Título</th>
-      <th>Apresentante</th><th></th>
-    </tr></thead>
-    <tbody>
-      {% for r in fila %}
-      <tr>
-        <td>{{ r.data_ato or '—' }}</td>
-        <td><a href="{{ url_for('protesto_titulo', titulo_id=r.titulo_id) }}">{{ r.protocolo or r.titulo_id }}</a></td>
-        <td>{{ r.numero_titulo or '—' }}</td>
-        <td>{{ r.apresentante_nome or '—' }}</td>
-        <td>
-          <form method="post" action="{{ url_for('protesto_instrumento_emitir', titulo_id=r.titulo_id) }}" style="display:inline">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button class="button">Emitir</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <form method="post" action="{{ url_for('protesto_instrumentos_emitir_lote') }}" id="form-emitir-lote">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="voltar" value="{{ url_for('protesto_instrumentos', quais=quais, desde=atalho or None) }}">
+    <div class="actions" style="padding:8px 14px">
+      <button class="button secondary" type="button" data-marcar="titulo_id">Marcar todos os {{ fila | length }}</button>
+      <button class="button primary" type="submit">Emitir os marcados</button>
+      <small class="muted">cada um sai com o seu número e entra na fila de assinatura; um que falhar não impede os outros</small>
+    </div>
+    <table class="table">
+      <thead><tr>
+        <th><input type="checkbox" data-marcar-cabecalho="titulo_id" aria-label="Marcar todos"></th>
+        <th>Data do ato</th><th>Protocolo</th><th>Título</th>
+        <th>Apresentante</th><th>Origem</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for r in fila %}
+        <tr>
+          <td><input type="checkbox" name="titulo_id" value="{{ r.titulo_id }}"
+                     aria-label="Marcar o protesto {{ r.protocolo or r.titulo_id }}"></td>
+          <td>{{ (r.data_ato or '—')[:10] }}</td>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=r.titulo_id) }}">{{ r.protocolo or r.titulo_id }}</a></td>
+          <td>{{ r.numero_titulo or '—' }}</td>
+          <td>{{ r.apresentante_nome or '—' }}</td>
+          <td><small>{% if r.origem == 'EOFICIO' %}acervo E-Ofício{% else %}este sistema{% endif %}</small></td>
+          <td>
+            {# Um só, como antes: abre o papel para imprimir logo. #}
+            <button class="button" type="submit" formnovalidate
+                    formaction="{{ url_for('protesto_instrumento_emitir', titulo_id=r.titulo_id) }}">Emitir só este</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if fila | length < (quadro_fila.por_atalho[quais][atalho] if atalho else quadro_fila[quais]) %}
+    <p class="small muted" style="padding:6px 14px">A lista mostra os {{ fila | length }} mais novos deste recorte; emitidos estes, os seguintes aparecem.</p>
+    {% endif %}
+  </form>
+  {% endif %}
+</section>
+
+{#
+  ASSINAR EM LOTE (29/10/2026). MEDIDO NO CÓDIGO: o instrumento se assina pela
+  rota `/assinar/pdf-windows` do serviço local, que assina UM PDF por chamada,
+  num processo novo — o serviço não tem rota de vários nem guarda sessão. O PIN
+  é pedido pela JANELA DO PRÓPRIO TOKEN e não passa pelo sistema. Por isso o
+  lote é um clique só, e a janela do token pode aparecer uma vez por
+  instrumento. E ele PARA na primeira falha do token: PIN errado em sequência
+  bloqueia o A3.
+#}
+<section class="panel" id="a-assinar">
+  <div class="panel-head">
+    <span>Instrumentos a assinar</span>
+    <small>emitidos e ainda sem a assinatura A3 — {{ a_assinar | length }}</small>
+  </div>
+  {% if not a_assinar %}
+    <p style="padding:14px">Nenhum instrumento esperando assinatura.</p>
+  {% else %}
+  <form method="post" action="{{ url_for('protesto_instrumentos_assinar_lote') }}" id="form-assinar-lote">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="voltar" value="{{ url_for('protesto_instrumentos', quais=quais, desde=atalho or None) }}">
+    <div class="notice" style="margin:8px 14px">
+      <strong>Como o PIN funciona no lote:</strong> o sistema não vê nem guarda o PIN — quem o pede é a
+      janela do próprio token, na sua tela. O serviço de assinatura assina <strong>um instrumento por
+      vez</strong>, então <strong>conte com a janela do PIN uma vez para cada instrumento</strong>
+      marcado (se o seu token lembrar o PIN, ela não volta). O lote <strong>para na primeira falha do
+      token</strong> — PIN recusado, janela cancelada, serviço fora do ar —, porque PIN errado em
+      sequência bloqueia o A3. Até {{ limite_assinatura }} por vez.
+    </div>
+    <div class="actions" style="padding:8px 14px">
+      <button class="button secondary" type="button" data-marcar="instrumento_id"
+              data-limite="{{ limite_assinatura }}">Marcar {% if a_assinar | length > limite_assinatura %}os {{ limite_assinatura }} mais novos{% else %}todos os {{ a_assinar | length }}{% endif %}</button>
+      <button class="button primary" type="submit">Assinar os marcados com o A3</button>
+    </div>
+    <table class="table">
+      <thead><tr>
+        <th></th><th>Instrumento</th><th>Emitido em</th><th>Título</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for e in a_assinar %}
+        <tr>
+          <td><input type="checkbox" name="instrumento_id" value="{{ e.id }}"
+                     aria-label="Marcar o instrumento {{ e.numero }}/{{ e.ano }}"></td>
+          <td>{{ e.numero }}/{{ e.ano }}</td>
+          <td>{{ (e.emitido_em or '')[:16] }}</td>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=e.titulo_id) }}">{{ e.protocolo or e.titulo_id }}</a></td>
+          <td><a class="button" href="{{ url_for('protesto_instrumento_odt', instrumento_id=e.id) }}">Imprimir</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </form>
   {% endif %}
 </section>
 
@@ -92,4 +194,39 @@
   </table>
   {% endif %}
 </section>
+
+<script>
+/* MARCAR TODOS (29/10/2026). O botão marca as caixas do formulário dele — no
+   lote da assinatura, só até o limite, porque cada uma abre a janela do token.
+   Clicar de novo desmarca. A caixa do cabeçalho faz o mesmo. */
+(function () {
+  function caixas(nome) {
+    return Array.prototype.slice.call(
+      document.querySelectorAll('input[type="checkbox"][name="' + nome + '"]'));
+  }
+  function alternar(nome, limite, marcar) {
+    var todas = caixas(nome);
+    if (marcar === undefined) {
+      marcar = todas.some(function (x) { return !x.checked; });
+    }
+    todas.forEach(function (x, i) {
+      x.checked = marcar && (!limite || i < limite);
+    });
+    return marcar;
+  }
+  document.querySelectorAll('[data-marcar]').forEach(function (botao) {
+    var original = botao.textContent;
+    botao.addEventListener('click', function () {
+      var limite = parseInt(botao.getAttribute('data-limite') || '0', 10);
+      var marcou = alternar(botao.getAttribute('data-marcar'), limite);
+      botao.textContent = marcou ? 'Desmarcar todos' : original;
+    });
+  });
+  document.querySelectorAll('[data-marcar-cabecalho]').forEach(function (caixa) {
+    caixa.addEventListener('change', function () {
+      alternar(caixa.getAttribute('data-marcar-cabecalho'), 0, caixa.checked);
+    });
+  });
+})();
+</script>
 {% endblock %}

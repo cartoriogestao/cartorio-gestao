@@ -2,6 +2,8 @@
 {% block heading %}<h1>Título {{ titulo.numero_titulo }}</h1>{% endblock %}
 {% block content %}
 {% from '_cobrar.html' import quadro, cobrado %}
+{% from '_protesto_afirmacao.html' import afirmacao, prova_da_intimacao %}
+{% import '_protesto_irmaos.html' as IRM %}
 {% include '_serventia.html' %}
 <div class="actions"><a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a></div>
 
@@ -88,6 +90,10 @@
         <th>Chave de origem</th><td><small>{{ titulo.origem_chave or '—' }}</small></td></tr>
   </table>
 </section>
+
+{# OS TÍTULOS IRMÃOS E O CEDENTE DA ORIGEM (29/10/2026) — `protesto_titulos_irmaos`. #}
+{{ IRM.quadro(irmaos) }}
+{{ IRM.cedente(cedente_origem) }}
 
 {# O APRESENTANTE (LD08, 21/10/2026), como os papéis o escrevem: o do título
    (balcão) ou o do cadastro dos apresentantes, pelo código da CRA. O CPF/CNPJ
@@ -513,6 +519,13 @@
                placeholder="Comprovante da intimação devolvido pelo entregador depois do prazo"
                value="{{ v_ato.get('motivo_atraso', '') }}"></label>
       {% endif %}
+      {#- A PROVA DA INTIMAÇÃO (29/10/2026): a mesma conferência que a rota
+          faz ao lavrar. Sem ela o protesto não sai — a não ser com a
+          afirmação expressa, que fica recolhida, com a frase de alerta. #}
+      <div style="grid-column:1/-1">{{ prova_da_intimacao(prova) }}</div>
+      {% if prova and not prova.completa %}
+        {{ afirmacao('', prova.frase) }}
+      {% endif %}
     {% elif ato == 'DESISTENCIA' %}
       <label style="grid-column:1/-1">Motivo da desistência
         <input name="motivo" required placeholder="Credor desistiu antes do protesto"
@@ -645,6 +658,7 @@
         pela tabela de {{ cob.data_da_tabela }}</label>
       {% endif %}
     {% endif %}
+    {{ IRM.confere(irmaos, ato) }}
     <div class="actions"><button class="button">Lançar {{ ato | lower }}</button></div>
 
     {{ quadro(receitas.get(ato), caixa, protocolos) }}

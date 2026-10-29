@@ -7,6 +7,7 @@
   Quem trata edital como exceção desenha a tela errada.
 #}
 {% extends 'base.html' %}
+{% from '_protesto_afirmacao.html' import afirmacao %}
 {% block heading %}<h1>Avisos de intimação</h1>{% endblock %}
 {% block content %}
 {% include '_serventia.html' %}
@@ -118,7 +119,11 @@
                 action="{{ url_for('protesto_aviso_entrega', aviso_id=a.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="entregue" value="1">
-            <label>Quem recebeu
+            {#- O COMPROVANTE E QUEM RECEBEU SÃO OBRIGATÓRIOS NO MESMO ATO
+                (29/10/2026). Os campos não levam `required` de propósito: a
+                afirmação expressa precisa poder chegar ao servidor, e quem
+                recusa é o domínio (`registrar_entrega`). #}
+            <label>Quem recebeu <small>(obrigatório)</small>
               <input name="recebido_por" placeholder="Nome de quem assinou"></label>
             <label>Quando
               <input type="date" name="quando" value="{{ hoje }}"></label>
@@ -126,8 +131,9 @@
               <select name="entregador">
                 {% for e in entregadores %}<option>{{ e }}</option>{% endfor %}
               </select></label>
-            <label>Comprovante assinado <small>(PDF, PNG ou JPG — pode anexar depois)</small>
+            <label>Comprovante assinado <small>(obrigatório — o canhoto deste aviso, PDF, PNG ou JPG)</small>
               <input type="file" name="comprovante" accept=".pdf,.png,.jpg,.jpeg"></label>
+            {{ afirmacao('', 'Entrega sem o comprovante assinado ou sem quem recebeu, ou com um arquivo de outro aviso ou de outro título, só se registra com afirmação expressa.') }}
             <div class="actions">
               <button class="button primary">Entregue — lavrar a intimação</button></div>
           </form>
@@ -310,6 +316,35 @@
   {% endif %}
 </section>
 
+{% if sem_prova %}
+{#
+  OS INTIMADOS SEM A PROVA DA INTIMAÇÃO (29/10/2026, ordem do oficial). É o
+  que a trava do protesto vai recusar, dito antes — e esta é a tela em que a
+  prova se junta: o comprovante do aviso entregue, ou o do envio do edital à
+  CENPROT. A régua é a do protesto (`protesto_prova.intimacoes_sem_prova`).
+#}
+<section class="panel" id="sem-prova">
+  <div class="panel-head">
+    <span>Intimados sem a prova da intimação — o protesto não sai</span>
+    <small>{{ sem_prova | length }}</small>
+  </div>
+  <table class="table">
+    <thead><tr><th>Título</th><th>Protocolo</th><th>O que falta</th><th>Onde se resolve</th></tr></thead>
+    <tbody>
+      {% for x in sem_prova %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=x.titulo_id) }}">{{ x.numero_titulo or '—' }}</a>
+            <div><small>{{ (x.modo or '') | lower }}</small></div></td>
+        <td><small>{{ x.protocolo or '—' }}</small></td>
+        <td><small>{{ x.explicacao }}</small></td>
+        <td><small>{{ x.onde }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
 <section class="panel" id="entregues">
   <div class="panel-head">
     <span>Entregues — comprovante da intimação</span><small>{{ entregues | length }}</small>
@@ -343,6 +378,7 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="file" name="comprovante" accept=".pdf,.png,.jpg,.jpeg" required>
             <button class="button small">Anexar</button>
+            {{ afirmacao('', 'O arquivo já anexado a outro aviso, ou cujo nome cita o protocolo de outro título, só se anexa com afirmação expressa.', 'Anexar mesmo assim — afirmação expressa') }}
           </form>
           {% if a.base_cadastro %}
             <div><small>endereço na base da CENPROT desde {{ a.base_cadastro.feito_em[:10] }}</small></div>

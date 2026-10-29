@@ -429,17 +429,31 @@ def _assentar(con: Any, postagem_id: int, *, estado: str, data: str,
             raise ArError(
                 f"o motivo dos Correios «{motivo_correios or 'vazio'}» não tem "
                 f"tradução no catálogo de não-entrega da casa")
+        # O AR ENTREGUE LEVA A IMAGEM NO MESMO ATO (29/10/2026, ordem do
+        # oficial: entrega só com o comprovante e com quem recebeu). Sem a
+        # imagem ou sem o recebedor, `registrar_entrega` recusa — e a recusa
+        # põe a postagem em CONFERIR, com a frase: o robô não afirma nada por
+        # ninguém, e quem resolve é o balcão, na tela dos avisos.
+        entregue = estado == ENTREGUE
+        imagem_da_entrega = retorno.get("imagem") if entregue else None
         r = AV.registrar_entrega(
-            con, int(aviso["id"]), entregue=(estado == ENTREGUE), agora=agora,
+            con, int(aviso["id"]), entregue=entregue, agora=agora,
             quando=data, entregador=ENTREGADOR_CORREIOS, motivo=motivo,
-            recebido_por=recebedor, observacao="; ".join(obs), usuario=quem or None)
+            recebido_por=recebedor, observacao="; ".join(obs), usuario=quem or None,
+            comprovante_nome=((retorno.get("imagem_nome") or f"AR-{codigo}.png")
+                              if imagem_da_entrega else None),
+            comprovante_conteudo=imagem_da_entrega or None,
+            pasta_de_arquivos=(pasta_de_arquivos if imagem_da_entrega
+                               else None),
+            usuario_id=usuario_id)
         ato_id = r["ato_id"]
+        anexo_id = r.get("anexo_id")
     else:
         obs.append(f"o aviso já estava {str(aviso['situacao']).lower()} — o AR "
                    f"ficou registrado sem lavrar ato")
 
     imagem = retorno.get("imagem")
-    if producao and imagem:
+    if producao and imagem and anexo_id is None:
         agora_aviso = AV.ler(bd, int(aviso["id"]))
         if agora_aviso and agora_aviso["situacao"] in AV.SITUACOES_COM_COMPROVANTE:
             try:

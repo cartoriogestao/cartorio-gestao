@@ -1,6 +1,8 @@
 {% extends 'base.html' %}
+{% from '_protesto_afirmacao.html' import afirmacao, prova_da_intimacao %}
 {% block heading %}<h1>A protestar — intimados sem movimentação</h1>{% endblock %}
 {% block content %}
+{% import '_protesto_irmaos.html' as IRM %}
 {% include '_serventia.html' %}
 <div class="actions">
   <a class="button" href="{{ url_for('protesto_avisos') }}">Avisos e editais</a>
@@ -23,6 +25,21 @@
   no prazo do aviso (art. 925, § 4º). <strong>Depois desse dia útil seguinte
   ele se lavra com o motivo do atraso</strong>, que vai escrito no instrumento
   (art. 913, § 1º).
+</div>
+
+{#
+  A PROVA DA INTIMAÇÃO — ordem do oficial, 29/10/2026: «nao deixar protestar
+  sem aviso de que foi intimado (com comprovante juntado) ou comprovacao do
+  envio do edital na cenprot». A coluna diz, título a título, o que falta e
+  onde se resolve; o lote não lavra o que não tem prova.
+#}
+<div class="notice">
+  <strong>Sem a prova da intimação, o título marcado não se lavra.</strong>
+  Pessoal: o aviso entregue, com quem recebeu e o comprovante anexado.
+  Digital: a confirmação da Resolve, com o histórico guardado. Edital: o
+  edital publicado e o comprovante do envio do arquivo daquele dia à CENPROT
+  (CN-MA art. 922, § 1º). Quem insistir tem de afirmar expressamente, título a
+  título — e a afirmação fica gravada, com o nome.
 </div>
 
 {#
@@ -107,7 +124,8 @@
         <tr>
           <th style="width:38px"></th>
           <th>Título</th><th>Devedor</th><th>Protocolo</th>
-          <th>Intimação</th><th>Dias</th><th>Tríduo</th><th>Valor</th>
+          <th>Intimação</th><th>Dias</th><th>Tríduo</th>
+          <th>Prova da intimação</th><th>Valor</th>
         </tr>
       </thead>
       <tbody>
@@ -141,8 +159,23 @@
                          placeholder="Motivo do atraso (vai no instrumento)">
             {%- endif %}
           </td>
+          <td>
+            {#- A PROVA DA INTIMAÇÃO (29/10/2026): sem ela o título marcado NÃO
+                se lavra — a não ser com a afirmação expressa DESTE título. #}
+            {{ prova_da_intimacao(t.prova) }}
+            {%- if t.prova and not t.prova.completa %}
+              {{ afirmacao('_' ~ t.id, t.prova.frase) }}
+            {%- endif %}
+          </td>
           <td>R$ {{ '%.2f' | format((t.saldo_centavos or 0) / 100) }}</td>
         </tr>
+        {# OS IRMÃOS DO PROTOCOLO (29/10/2026): a parcela protestada do caso
+           que motivou tinha a irmã «paga» com o mesmo valor, e esta lista
+           não dizia que o protocolo tinha dois títulos. #}
+        {% if irmaos and irmaos.get(t.id) %}
+        <tr data-irmaos-do-titulo="{{ t.id }}"><td></td>
+          <td colspan="7">{{ IRM.curto(irmaos.get(t.id)) }}</td></tr>
+        {% endif %}
       {% endfor %}
       </tbody>
     </table>

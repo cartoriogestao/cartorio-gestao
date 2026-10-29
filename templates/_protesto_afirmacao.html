@@ -1,0 +1,55 @@
+{#
+  A AFIRMAÇÃO EXPRESSA, numa macro só — o contrato comum da casa (ordem do
+  oficial, 29/10/2026: «se insistir em algo que eh erro, precisa afirmar
+  expressamente e deixar log»).
+
+  São dois campos e uma frase: a caixa `afirmo` marcada E o texto
+  `afirmacao`, que a tela mostra começando com «Afirmo, sob minha
+  responsabilidade, que». Sem a caixa não há afirmação, por mais que o texto
+  esteja escrito; e o texto precisa de pelo menos 30 letras além da frase —
+  quem confere é o domínio (`protesto_prova.afirmacao_valida`), e não o
+  navegador.
+
+  ELA VEM RECOLHIDA, de propósito: é o caminho de exceção, com a frase de
+  alerta à vista de quem o abre. Aberta, viraria o caminho de sempre.
+
+  `sufixo` separa os campos quando a mesma tela tem um por linha — o lote
+  «A protestar» manda `afirmo_<id>` e `afirmacao_<id>`, um por título.
+#}
+
+{% macro afirmacao(sufixo='', o_que_falta='', rotulo='Insistir mesmo assim — afirmação expressa') %}
+<details class="afirmacao-expressa" style="grid-column:1/-1; margin-top:6px">
+  <summary><small><strong>{{ rotulo }}</strong></small></summary>
+  <div class="notice danger" style="margin:6px 0">
+    <strong>Atenção: o sistema recusa porque isto parece erro.</strong>
+    {% if o_que_falta %}{{ o_que_falta }}{% endif %}
+    Só continue se tiver certeza de que não é. A afirmação fica gravada no
+    ato e na auditoria, <strong>com o seu nome</strong>.
+  </div>
+  <label style="display:block"><input type="checkbox" name="afirmo{{ sufixo }}"
+         value="1" style="width:auto"> Afirmo</label>
+  <label style="display:block">Afirmo, sob minha responsabilidade, que
+    <textarea name="afirmacao{{ sufixo }}" rows="2"
+              placeholder="o que aconteceu e por que não é erro (pelo menos 30 letras)"></textarea></label>
+</details>
+{% endmacro %}
+
+{#
+  A PROVA DA INTIMAÇÃO de um título, para a ficha e para o lote: o que há,
+  o que falta e onde se resolve (`protesto_prova.conferir`).
+#}
+{% macro prova_da_intimacao(prova) %}
+{% if prova %}
+  {% if prova.completa %}
+    <div><small><strong>Prova da intimação completa</strong>
+      ({{ (prova.modo or '') | lower }}){% for x in prova.tem %} · {{ x }}{% endfor %}</small></div>
+  {% else %}
+    <div class="notice warning" style="margin:4px 0">
+      <small><strong>Falta a prova da intimação</strong>
+      ({{ (prova.modo or 'sem intimação') | lower }}):
+      {{ prova.faltas | join('; ') }}.
+      <br><strong>Onde se resolve:</strong> {{ prova.onde }}.</small>
+    </div>
+  {% endif %}
+{% endif %}
+{% endmacro %}

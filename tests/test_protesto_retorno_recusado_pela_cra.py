@@ -32,6 +32,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from banco_de_teste import conexao_de_teste  # noqa: E402
+from prova_de_intimacao import juntar_prova  # noqa: E402
 
 import centrais_cred as CRED
 import cra21_api as API
@@ -93,6 +94,7 @@ def titulo_protestado(con, numero="9911/1") -> int:
                               origem_chave=f"lote:{numero}", agora=AGORA)
     PT.lancar_apontamento(con, tid, sv=SV, agora=AGORA, data_extenso="x")
     PT.lancar_intimacao(con, tid, modo="PESSOAL", agora=AGORA)
+    juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
     PT.lancar_protesto(con, tid, sv=SV, agora=AGORA, data_extenso="x")
     return tid
 

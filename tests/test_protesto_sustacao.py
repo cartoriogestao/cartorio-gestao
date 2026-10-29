@@ -52,6 +52,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from banco_de_teste import conexao_de_teste  # noqa: E402
+from prova_de_intimacao import juntar_prova  # noqa: E402
 
 import protesto as PT
 from nucleo_schema import init_nucleo_schema
@@ -90,6 +91,9 @@ def titulo(con, *, numero="84713/1") -> int:
 def ate_a_intimacao(con, tid) -> None:
     PT.lancar_apontamento(con, tid, sv=SV, agora=AGORA, data_extenso="x")
     PT.lancar_intimacao(con, tid, modo="PESSOAL", agora=AGORA)
+    # A PROVA DA INTIMAÇÃO (29/10/2026): o que se testa aqui é a ordem
+    # judicial, e o protesto, quando cabe, sai com a prova junta.
+    juntar_prova(con, tid)
 
 
 def sustar(con, tid, **k):

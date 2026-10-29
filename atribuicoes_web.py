@@ -137,6 +137,9 @@ import protesto_lista as PLISTA
 # O EMOLUMENTO A POSTERIORI (LG05, 19/10/2026): quem paga cada ato do título
 # diferido, quando, e por qual tabela — CN-MA art. 925, §§ 11 e 12.
 import protesto_posteriori as POST
+# OS TÍTULOS IRMÃOS — os do mesmo protocolo (29/10/2026): lado a lado na
+# ficha e no lote, a trava de «qual título está no papel?» e a conferência.
+import protesto_titulos_irmaos as IRM
 import ra_correcoes as CORR
 # A VARREDURA DA FICHA DO LIVRO 3 — e dela que sai a certidao por reproducao.
 import ra_digitalizacao as RADIGI
@@ -3249,6 +3252,35 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         except Exception:                       # noqa: BLE001 — cai no padrão
             return None
 
+    def _afirmacao_do_formulario(sufixo: str = "") -> str | None:
+        """A AFIRMAÇÃO EXPRESSA do formulário — o contrato comum da casa
+        (ordem do oficial, 29/10/2026: «se insistir em algo que eh erro,
+        precisa afirmar expressamente e deixar log»). Vale a caixa `afirmo`
+        marcada E o texto `afirmacao`; sem a caixa não há afirmação, por mais
+        que o texto esteja escrito. Quem confere o texto é o domínio
+        (`protesto_prova.afirmacao_valida`).
+
+        E A AFIRMAÇÃO É DE GENTE: conta de robô não afirma «sob minha
+        responsabilidade» (26/10/2026, «todo robô se identifica»); para ela o
+        formulário vale como se a caixa estivesse desmarcada.
+        """
+        if not request.form.get(f"afirmo{sufixo}"):
+            return None
+        import selo_robo as SR
+        if SR.usuario_e_robo():
+            return None
+        return _campo(f"afirmacao{sufixo}") or None
+
+    def _auditar_afirmacoes(entity_type: str, entity_id: object,
+                            registros: object) -> None:
+        """Uma linha de `AFIRMACAO_EXPRESSA` por trava vencida. `audit` abre
+        transação própria: chame FORA do `with`, como no resto da casa."""
+        import protesto_prova as PROVA
+        for registro in registros or []:
+            if registro:
+                audit(PROVA.ACAO_DA_AUDITORIA, entity_type, entity_id,
+                      PROVA.para_a_auditoria(registro))
+
     @app.route("/protesto/<int:titulo_id>/lancar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def protesto_lancar(titulo_id: int):
@@ -3272,6 +3304,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         # que o envelope do selo leva, e a conferência de antes precisa dela.
         data_da_tabela = db.get_setting("selo_tabela_custas_em", "")
         afirmacao_aceita = None
+        irmao = None
         try:
             with db.transaction() as con:
                 # A SITUAÇÃO DE ANTES DO ATO, lida com a linha presa — é para
@@ -3301,7 +3334,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                            usuario=usuario_nome(),
                                            modelo_do_termo=_modelo_do_termo(con),
                                            conferir_triduo=True,
-                                           motivo_atraso=_campo("motivo_atraso") or None)
+                                           motivo_atraso=_campo("motivo_atraso") or None,
+                                           # A PROVA DA INTIMAÇÃO (29/10/2026):
+                                           # sem ela, só com afirmação expressa.
+                                           afirmacao=_afirmacao_do_formulario())
                 elif ato == "DESISTENCIA":
                     r = PT.lancar_desistencia(con, titulo_id,
                                               motivo=_campo("motivo"),
@@ -3368,6 +3404,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 else:
                     raise PT.ProtestoError(
                         f"Ato desconhecido: {ato!r}.")
+                # QUAL TÍTULO ESTÁ NO PAPEL — 29/10/2026. Com irmão em aberto
+                # no mesmo protocolo, o pagamento, a desistência e o
+                # cancelamento só passam com o número e o vencimento do papel
+                # conferidos (ou com afirmação expressa). Depois do domínio,
+                # que recusa primeiro o que não cabe; a recusa daqui
+                # (`ProtestoError`) desfaz o ato inteiro.
+                irmao = IRM.conferir_e_anotar(
+                    con, titulo_id, ato, r["ato_id"],
+                    numero=_campo("irmao_numero") or None,
+                    vencimento=_campo("irmao_vencimento") or None,
+                    afirmo=bool(request.form.get("afirmo")),
+                    afirmacao=_campo("afirmacao") or None,
+                    por_robo=SR.usuario_e_robo(), quem=usuario_nome(),
+                    agora=agora(), situacao_antes=situacao_antes)
                 depois = PT.titulo(con, titulo_id)
                 situacao_depois = depois["situacao"] if depois else None
                 # O EMOLUMENTO A POSTERIORI (LG05). No título diferido, o ato
@@ -3425,6 +3475,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 PTERMO.TermoError, POST.PosterioriError) as erro:
             flash(str(erro), "danger")
             return voltar
+        # A AFIRMAÇÃO EXPRESSA QUE VENCEU A TRAVA DA PROVA fica na auditoria
+        # já aqui, antes do selo: ela foi feita e o ato foi lavrado, mesmo que
+        # o selo falhe adiante e o ato seja anulado — o log é do que a pessoa
+        # afirmou, e não do destino do ato. FORA da transação.
+        _auditar_afirmacoes("pt_atos", r["ato_id"],
+                            [r.get("afirmacao_expressa")])
+
+        # A AFIRMAÇÃO EXPRESSA (o contrato comum da casa, 29/10/2026): quem
+        # venceu a trava dos irmãos afirmando, fica no registro de auditoria —
+        # FORA da transação, como todo `audit`. O texto já está no
+        # `detalhe_json` do ato.
+        if irmao and irmao.get("afirmacao_expressa"):
+            af = irmao["afirmacao_expressa"]
+            audit("AFIRMACAO_EXPRESSA", "pt_titulos", titulo_id,
+                  {"regra": af["regra"], "afirmacao": af["afirmacao"],
+                   "o_que_faltava": af["o_que_faltava"], "ato": ato,
+                   "ato_id": r["ato_id"]})
+
         if afirmacao_aceita:
             # O CONTRATO COMUM: a afirmação vai à auditoria FORA da transação.
             audit(PSELO.ACAO_DA_AFIRMACAO, "pt_atos", r["ato_id"],
@@ -3552,6 +3620,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # precisa do documento à vista — é a mesma razão do relato #25,
             # sobre o título apresentado na prenotação do RI.
             imagens = PIMG.imagens_do_titulo(con, titulo_id)
+            # OS TÍTULOS IRMÃOS (29/10/2026): os do mesmo protocolo, lado a
+            # lado — número, vencimento, valor, situação e último ato. É deles
+            # que a trava do pagamento, da desistência e do cancelamento fala.
+            irmaos = IRM.quadro_da_ficha(con, titulo_id)
             atos = bd.ler(
                 "SELECT * FROM pt_atos WHERE titulo_id=%s ORDER BY id",
                 (titulo_id,))
@@ -3586,6 +3658,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                  "papel_no_ato": "credor"},
             ])
 
+        # O CEDENTE CONTRA O REGISTRO DE ORIGEM (29/10/2026) — a remessa, o
+        # pedido da CENPROT ou a linha do E-Ofício. Só mostra; não corrige.
+        _acervo = _acervo_se_houver()
+        try:
+            with db.connect() as _c:
+                cedente_origem = IRM.cedente_da_origem(_c, titulo, _acervo)
+        finally:
+            if _acervo is not None:
+                _acervo.close()
+
         situacao = titulo["situacao"]
         # A ORDEM JUDICIAL DE SUSTACAO, se houver — Lei 9.492/1997, art. 17.
         # Ela decide o que a ficha oferece, e por isso vem antes da lista.
@@ -3609,6 +3691,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             triduo = (TRIDUO.para_a_lista(_c, [{"id": titulo_id}],
                                           hoje=hoje())[0]
                       if situacao == "INTIMADO" else None)
+            # A PROVA DA INTIMAÇÃO (29/10/2026): a mesma conferência que
+            # `lancar_protesto` faz, para a ficha dizer ANTES do clique o que
+            # falta e onde se resolve.
+            import protesto_prova as PROVA
+            prova = (PROVA.conferir(_c, titulo_id, hoje=hoje())
+                     if situacao == "INTIMADO" else None)
             # A SITUAÇÃO SEM O ATO QUE A SUSTENTE e O ATO A REFAZER
             # (29/10/2026): as obrigações que o selo deixou neste título.
             sem_ato = PSELO.situacao_sem_ato(_c, titulo_id)
@@ -3679,7 +3767,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                caracteres=PT.CARATER_DA_ORDEM,
                                triduo=(triduo or {}).get("triduo"),
                                triduo_situacao=(triduo or {}).get(
-                                   "triduo_situacao"))
+                                   "triduo_situacao"),
+                               irmaos=irmaos, cedente_origem=cedente_origem,
+                               prova=prova)
 
     @app.route("/protesto/<int:titulo_id>/ordem/<int:ato_id>/marcar",
                methods=["POST"])
@@ -10252,6 +10342,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             do_dia = AV.editais_do_dia(con, hoje())
             # O ENVIO À CENPROT, DIA A DIA, COM O COMPROVANTE (#142).
             envios = AV.envios_do_edital(con, hoje())
+            # OS INTIMADOS SEM A PROVA DA INTIMAÇÃO (29/10/2026): o que a
+            # trava do protesto vai recusar, dito ANTES — aqui, que é onde se
+            # junta o comprovante. O acervo do E-Ofício fica de fora: o papel
+            # dele é do arquivo do E-Ofício. A mesma lista o roteiro lê.
+            import protesto_prova as PROVA
+            sem_prova = [x for x in PROVA.intimacoes_sem_prova(con, hoje=hoje())
+                         if x["origem"] != "ACERVO"]
         motivos = AV.motivos_para_escolher()
         destaque = [{"codigo": c, "motivo": AV.ROTULO_DO_DESTAQUE[c]}
                     for c in AV.MOTIVOS_EM_DESTAQUE]
@@ -10262,6 +10359,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                sem_aviso=sem_aviso, antigos=antigos,
                                antigo_dias=AV.ANTIGO_DIAS,
                                contas=contas, do_dia=do_dia, envios=envios,
+                               sem_prova=sem_prova,
                                motivos=motivos,
                                motivos_destaque=destaque,
                                motivos_outros=outros,
@@ -10308,13 +10406,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         sido intimado, e o protesto sairia em cima disso.
         """
         entregue = _campo("entregue") == "1"
-        # O COMPROVANTE PODE VIR JUNTO DA ENTREGA (15/10/2026), na mesma
-        # transação: entrega que não entra não deixa comprovante solto, e
-        # comprovante recusado desfaz a entrega — o balcão corrige e manda de
-        # novo, sem meia operação gravada.
+        # O COMPROVANTE VEM JUNTO DA ENTREGA, na mesma transação — e desde
+        # 29/10/2026 é OBRIGATÓRIO, com o nome de quem recebeu (ordem do
+        # oficial). Quem confere é o domínio (`registrar_entrega`), e sem os
+        # dois a entrega só entra com afirmação expressa. Entrega que não
+        # entra não deixa comprovante solto, e comprovante recusado desfaz a
+        # entrega — o balcão corrige e manda de novo, sem meia operação.
         enviado = request.files.get("comprovante")
         tem_arquivo = bool(enviado and enviado.filename)
-        anexo = None
         try:
             with db.transaction() as con:
                 r = AV.registrar_entrega(
@@ -10324,26 +10423,30 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     motivo=_campo("motivo") or None,
                     recebido_por=_campo("recebido_por") or None,
                     observacao=_campo("observacao") or None,
-                    usuario=usuario_nome())
-                if entregue and tem_arquivo:
-                    anexo = AV.guardar_comprovante(
-                        con, aviso_id, nome=enviado.filename,
-                        conteudo=enviado.read(),
-                        pasta_de_arquivos=pasta_dos_arquivos(), agora=agora(),
-                        usuario_id=usuario_id_do_sistema())
+                    usuario=usuario_nome(),
+                    comprovante_nome=(enviado.filename
+                                      if entregue and tem_arquivo else None),
+                    comprovante_conteudo=(enviado.read()
+                                          if entregue and tem_arquivo else None),
+                    pasta_de_arquivos=(pasta_dos_arquivos()
+                                       if entregue and tem_arquivo else None),
+                    usuario_id=usuario_id_do_sistema(),
+                    afirmacao=_afirmacao_do_formulario())
         except (AV.AvisoError, PT.ProtestoError) as erro:
             flash(str(erro), "danger")
             return redirect(url_for("protesto_avisos"))
         audit("PROTESTO_AVISO_ENTREGA", "pt_avisos", aviso_id,
               {"entregue": entregue, "motivo": _campo("motivo") or None,
                "ato_id": r["ato_id"],
-               "comprovante": (anexo or {}).get("anexo_id")})
+               "comprovante": r.get("anexo_id")})
+        _auditar_afirmacoes("pt_avisos", aviso_id, r.get("afirmacoes"))
         if entregue:
             flash("Entrega registrada, e a intimação pessoal foi lavrada."
-                  + (" O comprovante ficou anexado." if anexo else
-                     " Falta anexar o comprovante assinado — é a lista "
-                     "«Entregues» desta tela."),
-                  "success")
+                  + (" O comprovante ficou anexado." if r.get("anexo_id") else
+                     " SEM o comprovante, por afirmação expressa — anexe-o "
+                     "na lista «Entregues» desta tela: sem ele, o protesto "
+                     "também só sai com afirmação."),
+                  "success" if r.get("anexo_id") else "warning")
         else:
             flash(f"Não-entrega registrada: "
                   f"{AV.motivo_rotulo(_campo('motivo'))}. O aviso está na "
@@ -10398,12 +10501,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     con, aviso_id, nome=enviado.filename,
                     conteudo=enviado.read(),
                     pasta_de_arquivos=pasta_dos_arquivos(), agora=agora(),
-                    usuario_id=usuario_id_do_sistema())
+                    usuario_id=usuario_id_do_sistema(),
+                    # O ARQUIVO SUSPEITO (29/10/2026) — o mesmo de outro aviso,
+                    # ou o protocolo de outro título no nome — só entra com
+                    # afirmação expressa.
+                    afirmacao=_afirmacao_do_formulario())
         except AV.AvisoError as erro:
             flash(str(erro), "danger")
             return redirect(url_for("protesto_avisos"))
         audit("PROTESTO_AVISO_COMPROVANTE", "pt_avisos", aviso_id,
               {"anexo_id": r["anexo_id"], "nome": r["nome"]})
+        _auditar_afirmacoes("pt_avisos", aviso_id, r.get("afirmacoes"))
         flash(f"Comprovante anexado ({r['nome']}).", "success")
         return redirect(url_for("protesto_avisos") + "#entregues")
 
@@ -10620,7 +10728,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         desfecho=_campo(f"desfecho_{aviso_id}") or None,
                         pasta_de_arquivos=pasta_dos_arquivos(), agora=agora(),
                         usuario=usuario_nome(),
-                        usuario_id=usuario_id_do_sistema())
+                        usuario_id=usuario_id_do_sistema(),
+                        # QUEM RECEBEU, linha a linha (29/10/2026): a entrega
+                        # só entra com ele, ou com a afirmação DAQUELE aviso.
+                        recebido_por=_campo(f"recebido_por_{aviso_id}") or None,
+                        afirmacao=_afirmacao_do_formulario(f"_{aviso_id}"))
             except (PILOTE.LoteError, AV.AvisoError, PT.ProtestoError) as erro:
                 falhas.append(str(erro))
                 continue
@@ -10629,6 +10741,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   {"acao": r["acao"], "ato_id": r["ato_id"],
                    "anexo_id": r["anexo_id"], "paginas": r["paginas"],
                    "lote": sha})
+            _auditar_afirmacoes("pt_avisos", aviso_id, r.get("afirmacoes"))
         if feitos:
             entregas = sum(1 for r in feitos if r["acao"] == "ENTREGA")
             tentativas = sum(1 for r in feitos if r["acao"] == "TENTATIVA")
@@ -11328,6 +11441,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # que `lancar_protesto` confere ao lavrar.
             linhas = TRIDUO.para_a_lista(
                 con, PT.esperando_protesto(con, hoje=hoje()), hoje=hoje())
+            # A PROVA DA INTIMAÇÃO DE CADA UM (29/10/2026) — a mesma que
+            # `lancar_protesto` exige, para a tela dizer o que falta antes de
+            # marcar.
+            import protesto_prova as PROVA
+            linhas = PROVA.para_a_lista(con, linhas, hoje=hoje())
             # AS DUAS PONTAS DA SUSTACAO JUDICIAL — Lei 9.492/1997, art. 17.
             #
             # `revogados` vem PRIMEIRO na tela: e o unico titulo do Protesto
@@ -11336,9 +11454,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # disposicao do Juizo que ninguem enxerga e titulo esquecido.
             revogados = PT.sustacao_revogada(con, hoje=hoje())
             sustados = PT.sustados(con)
+            # OS TÍTULOS IRMÃOS DE CADA UM (29/10/2026): no caso que motivou,
+            # a parcela protestada tinha a irmã «paga» com o mesmo valor — e
+            # a lista não dizia que o protocolo tinha dois títulos.
+            irmaos = IRM.irmaos_de_varios(con, [t["id"] for t in linhas])
         return render_template("protesto_a_protestar.html", linhas=linhas,
                                revogados=revogados, sustados=sustados,
-                               hoje=hoje())
+                               hoje=hoje(), irmaos=irmaos)
 
     @app.route("/protesto/a-protestar/lavrar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -11382,7 +11504,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         data_extenso=hoje_extenso(), usuario=usuario_nome(),
                         modelo_do_termo=_modelo_do_termo(con),
                         conferir_triduo=True,
-                        motivo_atraso=_campo(f"motivo_atraso_{titulo_id}") or None)
+                        motivo_atraso=_campo(f"motivo_atraso_{titulo_id}") or None,
+                        # A PROVA DA INTIMAÇÃO (29/10/2026): o título sem
+                        # prova NÃO se lavra no lote, a não ser com a
+                        # afirmação expressa DAQUELE título — a afirmação é
+                        # por título, como o motivo do atraso.
+                        afirmacao=_afirmacao_do_formulario(f"_{titulo_id}"))
                 feitos.append((titulo_id, r))
             except (PT.ProtestoError, LN.LivroError,
                     PTERMO.TermoError) as erro:
@@ -11393,6 +11520,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             audit("PROTESTO_LAVRADO", "pt_atos", r.get("ato_id"),
                   {"titulo_id": titulo_id, "numero_ordem": r.get("numero_ordem"),
                    "em_lote": True})
+            _auditar_afirmacoes("pt_atos", r.get("ato_id"),
+                                [r.get("afirmacao_expressa")])
         if feitos:
             flash(f"{len(feitos)} protesto(s) lavrado(s). Eles ainda não têm "
                   f"selo nem cobrança — veja em «Atos sem selo» e «Atos sem "
@@ -11523,10 +11652,49 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as con:
             dados = PROT.roteiro(con, agora=agora())
             afirmacoes = AFX.contar(con, hoje=hoje())
+        conferencia_titulos = _conferencia_dos_titulos(resumo=True)
         return render_template("protesto_painel.html", r=dados,
                                cobertura=PROT.quantos_o_sistema_faz(),
-                               afirmacoes_7_dias=afirmacoes)
+                               afirmacoes_7_dias=afirmacoes,
+                               conferencia_titulos=conferencia_titulos)
+    def _conferencia_dos_titulos(*, resumo: bool) -> dict | None:
+        """A conferência dos irmãos e do cedente, com o acervo do E-Ofício
+        aberto e fechado aqui. SÓ LÊ. None quando ela não deu para medir — e a
+        tela diz isso, em vez de mostrar um zero com cara de medição."""
+        acervo = _acervo_se_houver()
+        try:
+            with db.connect() as con:
+                if resumo:
+                    return IRM.resumo_para_o_painel(con, acervo)
+                # `pendencias` é a MESMA lista que o roteiro do protesto lê
+                # (`pendencias_dos_irmaos`): a tela mostra o que vai a ele.
+                return {"irmaos": IRM.irmaos_incoerentes(con),
+                        "cedentes": IRM.cedentes_divergentes(con, acervo),
+                        "pendencias": IRM.pendencias_dos_irmaos(con)}
+        except Exception:                               # noqa: BLE001
+            app.logger.exception("conferência dos títulos irmãos e do cedente")
+            return None
+        finally:
+            if acervo is not None:
+                acervo.close()
 
+    @app.route("/protesto/titulos-irmaos")
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_titulos_irmaos():
+        """A CONFERÊNCIA DOS TÍTULOS — os irmãos e o cedente. SÓ LÊ.
+
+        Ordem do oficial, 29/10/2026, depois do caso das duas parcelas do
+        mesmo protocolo (a paga protestada, a não paga «paga»): mostrar os
+        títulos IRMÃOS — os que dividem o protocolo — cujas situações não se
+        explicam juntas, e os títulos cujo CEDENTE diverge do registro de
+        origem (a remessa da CRA, o pedido da CENPROT ou a linha do E-Ofício).
+
+        **NÃO CORRIGE DADO NENHUM.** O que fazer com cada um é decisão do
+        oficial; a tela diz o que está diferente e de onde veio a comparação.
+        """
+        conferencia = _conferencia_dos_titulos(resumo=False)
+        return render_template("protesto_titulos_irmaos.html",
+                               conferencia=conferencia)
     @app.route("/protesto/afirmacoes")
     @roles_required("ADMIN")
     def protesto_afirmacoes():
@@ -12245,6 +12413,61 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               f"«{r['nome_arquivo']}». Saiu da fila e não será enviado.",
               "success")
         return redirect(url_for("protesto_retornos"))
+
+    @app.route("/protesto/retornos/ato/<int:ato_id>/forcar-envio",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_retorno_forcar_envio(ato_id: int):
+        """Devolve à fila o ato cujo protocolo a CRA já tem — SÓ COM
+        AFIRMAÇÃO EXPRESSA. ESCREVE.
+
+        Ordem do oficial, 29/10/2026: o sistema impede; «se a escrevente
+        insistir, só com afirmação expressa e log». Vale a caixa `afirmo`
+        marcada E o texto `afirmacao`; quem confere o texto é o domínio
+        (`protesto_retorno.forcar_envio_de_protocolo_ja_informado`). Conta
+        de robô não afirma «sob minha responsabilidade» (26/10/2026): para
+        ela, a caixa vale como desmarcada.
+        """
+        import selo_robo as SR
+        afirmacao = (_campo("afirmacao") or None
+                     if request.form.get("afirmo") and not SR.usuario_e_robo()
+                     else None)
+        try:
+            with db.transaction() as con:
+                r = PRE.forcar_envio_de_protocolo_ja_informado(
+                    con, ato_id, afirmacao=afirmacao, agora=agora(),
+                    usuario=usuario_nome())
+        except PRE.RetornoError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_retornos"))
+        # `audit` abre transação própria: FORA do `with`, como no resto da casa.
+        audit(PRE.ACAO_DA_AFIRMACAO, "pt_atos", ato_id,
+              PRE.para_a_auditoria(r))
+        flash(f"Ato {ato_id} ({r['tipo']}, título {r['numero_titulo']} "
+              f"#{r['titulo_id']}, protocolo {r['protocolo']}) voltou a "
+              f"«Esperando retorno» pela sua afirmação expressa, que ficou na "
+              f"auditoria. Ele sai no próximo arquivo do apresentante; se a "
+              f"CRA o recusar, devolver os atos daquele arquivo apaga a "
+              f"afirmação.", "warning")
+        return redirect(url_for("protesto_retornos"))
+
+    @app.route("/protesto/retornos/protocolos")
+    @login_required
+    def protesto_retornos_protocolos():
+        """Protocolos com mais de um título, e o que cada título já disse à
+        CRA. Só LÊ — a conferência do oficial (29/10/2026)."""
+        apresentante = (request.args.get("apresentante") or "").strip()[:20]
+        with db.connect() as con:
+            conferencia = PRE.protocolos_com_mais_de_um_titulo(
+                con, apresentante_codigo=apresentante or None)
+            # A mesma lista que o roteiro do protesto mostra como pendência.
+            repetidos = PRE.protocolos_repetidos_na_fila(con)
+        if apresentante:
+            repetidos = [r for r in repetidos
+                         if str(r.get("apresentante_codigo") or "").strip()
+                         == apresentante]
+        return render_template("protesto_retornos_protocolos.html",
+                               conferencia=conferencia, repetidos=repetidos)
 
     @app.route("/protesto/retornos/<int:retorno_id>/arquivo")
     @login_required

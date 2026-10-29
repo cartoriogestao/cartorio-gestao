@@ -13,7 +13,8 @@
 {% block heading %}<h1>Retorno à CRA</h1>{% endblock %}
 {% block content %}
 {% include '_serventia.html' %}
-<div class="actions"><a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a></div>
+<div class="actions"><a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a>
+  <a class="button" href="{{ url_for('protesto_retornos_protocolos') }}">Protocolos com mais de um título</a></div>
 
 <div class="notice">
   O retorno devolve ao apresentante o que a casa fez com o título que ele mandou:
@@ -30,6 +31,13 @@
   esta letra para o mesmo título ou o mesmo protocolo, o ato novo — mesmo no lugar
   de um que foi desfeito — fica de fora. Mandar o segundo «A» ou «C» faz a Central
   recusar o arquivo inteiro.
+  <br><br>
+  <strong>A CRA conhece o protocolo, e não o título.</strong> Título com dois devedores
+  é um protocolo só na Central: o que um título já informou vale para o outro. O ato do
+  segundo título com a mesma ocorrência fica numa lista própria, com o título que já
+  informou. Ocorrência <em>diferente</em> (protestado e depois cancelado, por exemplo)
+  não é repetição, e segue. Quem insistir em mandar de novo só consegue com
+  <strong>afirmação expressa</strong>, que fica gravada com o nome de quem afirmou.
 </div>
 
 {# ATO INFORMADO E DEPOIS DESFEITO — só AVISO, 28/10/2026. A Central ouviu
@@ -84,40 +92,87 @@
 {# OCORRÊNCIA JÁ ACEITA — 29/10/2026. O substituto do ato desfeito não volta
    à fila. A lista diz qual arquivo a CRA já aceitou, para o balcão não
    procurar o ato em «Esperando retorno». #}
-{% if ja_aceitas %}
+{# JÁ INFORMADO POR OUTRO TÍTULO DO MESMO PROTOCOLO — 29/10/2026. A CRA
+   conhece o protocolo, e não o título: o protocolo 2610070011 (dois títulos,
+   o mesmo número de CDA) foi protestado e aceito no R9012310.261, e o
+   protesto refeito de um dos títulos voltou à CRA no R9012810.261, que ela
+   recusou inteiro (2161). As duas listas são a mesma régua; o que as separa
+   é QUEM já informou — o outro título do protocolo, ou o próprio título.
+   NENHUMA TEM BOTÃO DE ENVIAR. Insistir só com afirmação expressa (o
+   contrato comum da casa: caixa `afirmo` + texto `afirmacao`), e a rota
+   grava AFIRMACAO_EXPRESSA na auditoria. #}
+{% set por_outro = ja_aceitas | selectattr('por_outro_titulo') | list %}
+{% set do_mesmo = ja_aceitas | rejectattr('por_outro_titulo') | list %}
+{% for grupo in [
+     {'linhas': por_outro,
+      'titulo': 'Já informado por outro título do mesmo protocolo',
+      'texto': 'Este protocolo tem mais de um título (um por devedor), e a CRA só conhece o protocolo. Outro título dele já levou esta mesma ocorrência e a Central a aceitou (ou a serventia a marcou como já informada) — mandar de novo faz ela recusar o arquivo inteiro.'},
+     {'linhas': do_mesmo,
+      'titulo': 'Não entram de novo: a CRA já aceitou esta ocorrência',
+      'texto': 'A mesma ocorrência deste título já foi aceita pela CRA (o ato que a levou pode ter sido desfeito depois), ou alguém da serventia marcou o ato como já informado.'}] if grupo.linhas %}
 <section class="panel">
   <div class="panel-head">
-    <span>Não entram de novo: a CRA já aceitou esta ocorrência</span>
-    <small>{{ ja_aceitas | length }} ato(s)</small>
+    <span>{{ grupo.titulo }}</span>
+    <small>{{ grupo.linhas | length }} ato(s)</small>
   </div>
   <p style="padding:0 14px"><small>
-    Estes atos estão lavrados e sem retorno próprio, mas a mesma ocorrência
-    (mesmo título ou mesmo protocolo) já foi aceita pela CRA, ou alguém da
-    serventia marcou o ato como já informado. <strong>Não vão num arquivo
-    novo.</strong> Se a Central não tiver o que o livro diz, a providência é
-    com o oficial — o sistema não manda a letra outra vez.
+    {{ grupo.texto }} <strong>Estes atos não vão num arquivo novo.</strong> Se a
+    Central não tiver o que o livro diz, a providência é com o oficial — o sistema
+    não manda a letra outra vez sozinho.
   </small></p>
   <table class="table">
     <thead><tr><th>Título</th><th>Protocolo</th><th>Ato</th><th>Ocorrência</th>
-               <th>Arquivo em que a CRA aceitou</th></tr></thead>
+               <th>Quem já informou à CRA — arquivo e data</th><th>Insistir</th></tr></thead>
     <tbody>
-      {% for p in ja_aceitas %}
+      {% for p in grupo.linhas %}
       <tr>
         <td><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}">{{ p.numero_titulo }}</a>
+            <small>#{{ p.titulo_id }}</small>
             <div><small>{{ p.apresentante_codigo or '—' }}</small></div></td>
         <td><small>{{ p.protocolo or '—' }}</small></td>
         <td>{{ p.tipo }} <small>(ato {{ p.ato_id }})</small></td>
         <td>{{ p.ocorrencia }}</td>
-        <td><small>{{ p.arquivo_anterior or 'retorno anterior' }}
-            {% if p.cra_ja_informado_motivo %}
-            <br>marcado à mão: {{ p.cra_ja_informado_motivo[:160] }}
-            {% endif %}</small></td>
+        <td>
+          {% for i in p.informantes %}
+            <div><small><a href="{{ url_for('protesto_titulo', titulo_id=i.titulo_id) }}">#{{ i.titulo_id }}</a> · {{ i.frase }}</small></div>
+          {% else %}
+            <small>{{ p.arquivo_anterior or 'retorno anterior' }}</small>
+          {% endfor %}
+          {% if p.cra_ja_informado_motivo %}
+            <div><small>marcado à mão: {{ p.cra_ja_informado_motivo[:160] }}</small></div>
+          {% endif %}
+        </td>
+        <td>
+          {% if p.pode_insistir and user.role in ['ADMIN','MANAGER','USER'] %}
+          <details>
+            <summary>Insistir em mandar (afirmação expressa)</summary>
+            <form method="post" action="{{ url_for('protesto_retorno_forcar_envio', ato_id=p.ato_id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <p><small>A CRA já tem esta ocorrência para este protocolo. Só continue
+                se você tem certeza de que a Central <strong>não</strong> a tem — o ato
+                volta a «Esperando retorno» e sai no próximo arquivo.</small></p>
+              <label><input type="checkbox" name="afirmo" value="1" required> Afirmo</label>
+              <label>Afirmo, sob minha responsabilidade, que…
+                <textarea name="afirmacao" rows="3" required maxlength="2000"
+                          placeholder="… a CRA não tem esta ocorrência, porque …"></textarea>
+              </label>
+              <div><small>Pelo menos 30 letras além da frase. Fica gravada no ato e
+                na auditoria, com o seu nome.</small></div>
+              <button class="button">Devolver à fila com a afirmação</button>
+            </form>
+          </details>
+          {% elif p.cra_ja_informado_em %}
+            <small>marcado à mão como já informado — fale com o oficial</small>
+          {% else %}
+            <small>—</small>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </section>
-{% endif %}
+{% endfor %}
 
 <section class="panel">
   <div class="panel-head">
@@ -200,7 +255,13 @@
           {% if a.protocolo %}{{ a.protocolo }}
           {% else %}<small class="danger">sem protocolo</small>{% endif %}
         </td>
-        <td>{{ a.tipo }}</td>
+        <td>{{ a.tipo }}
+          {% if a.cra_reenvio_afirmado_em %}
+            {# Liberado por AFIRMAÇÃO EXPRESSA — 29/10/2026: a CRA já tinha esta
+               ocorrência pelo protocolo, e alguém afirmou que não tem. #}
+            <div><small class="danger">liberado por afirmação expressa de
+              {{ a.cra_reenvio_afirmado_por or '—' }} em {{ (a.cra_reenvio_afirmado_em or '')[:16] }}</small></div>
+          {% endif %}</td>
         <td>{{ a.data_ato }}</td>
         <td><small>{{ a.apresentante_codigo or '—' }}</small></td>
         {% if user.role in ['ADMIN', 'MANAGER'] %}

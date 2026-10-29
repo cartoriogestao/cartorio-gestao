@@ -36,6 +36,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from banco_de_teste import conexao_de_teste  # noqa: E402
+from prova_de_intimacao import juntar_prova  # noqa: E402
 
 import protesto as PT
 import protesto_instrumento as PI
@@ -89,6 +90,9 @@ def intimado(con, *, intimado_em: str, modo: str = "PESSOAL",
                           data_extenso="x")
     PT.lancar_intimacao(con, tid, modo=modo, agora=f"{intimado_em}T10:00:00",
                         codigo_edital="ED-2026-0001" if modo == "EDITAL" else None)
+    # A PROVA DA INTIMAÇÃO (29/10/2026): o tríduo é o que se testa aqui, e
+    # a prova vai junto, do jeito que a casa a junta.
+    juntar_prova(con, tid)
     return tid
 
 

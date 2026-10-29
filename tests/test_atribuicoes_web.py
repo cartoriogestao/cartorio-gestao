@@ -26,6 +26,7 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+from prova_de_intimacao import juntar_prova  # noqa: E402
 from navegador_de_teste import postar_e_seguir  # noqa: E402
 
 SENHA = "Senha#12345"
@@ -1914,6 +1915,7 @@ def _titulo_da_cra(s, numero="8888/1", apresentante="001") -> int:
         }, origem="CRA", origem_chave=f"lote:{numero}", agora=agora)
         PT.lancar_apontamento(con, tid, sv=sv, agora=agora, data_extenso="x")
         PT.lancar_intimacao(con, tid, modo="PESSOAL", agora=agora)
+        juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
         PT.lancar_protesto(con, tid, sv=sv, agora=agora, data_extenso="x")
     con.close()
     return tid

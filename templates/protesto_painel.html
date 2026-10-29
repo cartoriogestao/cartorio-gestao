@@ -124,6 +124,12 @@
   {% endfor %}
 </section>
 
+{# A CONFERÊNCIA DOS TÍTULOS (29/10/2026): os irmãos do mesmo protocolo em
+   situações que não se explicam juntas, e o cedente diferente do registro de
+   origem. Só mostra — `protesto_titulos_irmaos`. #}
+{% import '_protesto_irmaos.html' as IRM %}
+{{ IRM.linha_do_painel(conferencia_titulos) }}
+
 {% set est = r.estado %}
 <section class="notice" aria-label="Envio às Centrais">
   <strong>Envio automático à CRA (produção):</strong>

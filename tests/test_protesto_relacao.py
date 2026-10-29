@@ -25,6 +25,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from banco_de_teste import conexao_de_teste  # noqa: E402
+from prova_de_intimacao import juntar_prova  # noqa: E402
 
 import protesto as PT                            # noqa: E402
 import protesto_relacao as REL                   # noqa: E402
@@ -69,6 +70,7 @@ def protestado(con, *, chave="REL:1", devedores=1) -> int:
     PT.lancar_apontamento(con, tid, sv=SV, agora="2026-10-10T09:00:00",
                           data_extenso=EXTENSO)
     PT.lancar_intimacao(con, tid, modo="PESSOAL", agora="2026-10-11T09:00:00")
+    juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
     PT.lancar_protesto(con, tid, sv=SV, agora=LAVRADO, data_extenso=EXTENSO)
     return tid
 

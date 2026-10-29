@@ -68,6 +68,7 @@ import json
 import sqlite3
 from datetime import date, datetime, time, timedelta
 
+import afirmacoes_expressas as AFX
 from bd_nativo import banco
 
 # ------------------------------------------------------------------ a CRA
@@ -316,9 +317,10 @@ CONDUTAS_DO_DIA: tuple[dict, ...] = (
     {"n": 3, "chave": "pedidos_cra", "ancora": "conduta-pedidos-cra",
      "titulo": "Desistências e pedidos da CRA",
      "hora": None,
-     "conduta": ("Traga as desistências pela API e aplique-as ANTES de lavrar "
-                 "qualquer protesto (o papel manda conferir três vezes por "
-                 "dia); consulte também os cancelamentos e as autorizações."),
+     "conduta": ("Consulte a CRA — desistências, cancelamentos e "
+                 "autorizações (DP, CP e AC) — e aplique o que veio ANTES de "
+                 "lavrar qualquer protesto (o papel manda conferir três vezes "
+                 "por dia)."),
      "botoes": ({"rotulo": "Conferir e aplicar desistências",
                  "tela": "protesto_desistencias", "args": {}},
                 {"rotulo": "Trazer da CRA pela API",
@@ -361,8 +363,9 @@ CONDUTAS_DO_DIA: tuple[dict, ...] = (
      "titulo": "XML diário P e D à CENPROT",
      "hora": None,
      "conduta": ("Gere o XML P (protestos) e o D (pagos, retirados e "
-                 "cancelados) e suba os dois no portal da CENPROT no mesmo dia "
-                 "(art. 4º da Resolução n. 1 do IEPTB-BR)."),
+                 "cancelados), suba os dois no portal da CENPROT no mesmo dia "
+                 "(art. 4º da Resolução n. 1 do IEPTB-BR) e anexe a cada "
+                 "arquivo o comprovante da subida."),
      "botoes": ({"rotulo": "Gerar o XML P e D",
                  "tela": "protesto_cenprot_xml", "args": {}},)},
     {"n": 9, "chave": "cenprot", "ancora": "conduta-cenprot",
@@ -423,6 +426,15 @@ CONDUTAS_DO_DIA: tuple[dict, ...] = (
 # existir no main; quando ela entrar com outro nome, corrige-se aqui, numa
 # linha so — e ate la a linha diz «ainda nao instalada», que e a verdade.
 GANCHOS: tuple[dict, ...] = (
+    # O QUE A CONSULTA DO DIA TROUXE (DP, CP e AC) E AINDA NAO SE APLICOU —
+    # a peca que faz o clique da remessa trazer os tres e guardar cada
+    # arquivo (decisao do oficial, 29/10/2026).
+    {"chave": "pendencias_da_cra", "conduta": "pedidos_cra",
+     "rotulo": "títulos com desistência, cancelamento ou autorização da CRA "
+               "por aplicar",
+     "modulo": "protesto_desistencia", "funcao": "pendencias_da_cra",
+     "de_onde": "o clique diário que traz DP, CP e AC",
+     "nome_a_confirmar": True},
     {"chave": "atos_sem_selo", "conduta": "protestos",
      "rotulo": "atos que esperam o selo (selo prévio)",
      "modulo": "protesto_selo_previo", "funcao": "pendencias_do_selo",
@@ -812,15 +824,19 @@ def _cobrar_remessa(con, ctx: dict) -> list[dict]:
 
 # ------------------------------------------------- 3. desistencias e pedidos
 
-ACOES_DA_CONSULTA_A_CRA = ("cra_baixar",)
-O_QUE_E_DESISTENCIA = ("desistencias",)
-O_QUE_E_CANCELAMENTO = ("cancelamentos", "autorizacoes", "ordem")
+#: AS TRES OPERACOES DA CRA QUE TRAZEM PEDIDO SOBRE TITULO JA APONTADO: a
+#: desistencia (DP), o cancelamento (CP) e a autorizacao (AC). Decisao do
+#: oficial em 29/10/2026: elas deixam de ser tres passos e viram UMA conduta
+#: — consultar a CRA no dia —, provada em `centrais_log`, que grava toda
+#: chamada pela API (inclusive a que nao trouxe nada). Medido na producao no
+#: mesmo dia: NENHUMA chamada a essas tres operacoes desde 14/10/2026.
+OPERACOES_DOS_PEDIDOS_DA_CRA = ("Desistencia", "Cancelamento", "Autorizacao")
 
 
 def _desistencias_por_aplicar(con, ctx: dict) -> list[dict]:
     """O arquivo de desistencia com titulo ainda nao aplicado. Sem prazo no
     papel — pendente, e nunca vermelho: o que fica atrasado e o protesto
-    lavrado antes da conferencia, cobrado ao lado."""
+    lavrado antes da consulta, cobrado ao lado."""
     chave, rotulo = ("desistencias_por_aplicar",
                      "arquivos de desistência com título ainda não aplicado")
     regra = "aplicar antes de lavrar o protesto do título"
@@ -839,37 +855,31 @@ def _desistencias_por_aplicar(con, ctx: dict) -> list[dict]:
                        feito="toda desistência recebida foi aplicada")]
 
 
-def _cobrar_pedidos_da_cra(con, ctx: dict) -> list[dict]:
-    """Desistencia ANTES do protesto — e e isso que o banco consegue provar.
+def _consulta_dos_pedidos_da_cra(con, ctx: dict) -> dict:
+    """A CRA foi consultada hoje sobre desistencia, cancelamento e AC?
 
-    A CONSULTA DE DESISTENCIA FICA ATRASADA EM UM CASO SO: houve protesto
-    lavrado hoje e nenhuma consulta de desistencia antes dele. E exatamente o
-    erro que o papel manda evitar conferindo tres vezes por dia.
+    EM DIA UTIL, SEM CONSULTA, PENDENTE. ATRASADO EM UM CASO SO: houve
+    protesto lavrado hoje ANTES de qualquer consulta — e exatamente o erro de
+    protestar titulo de que o credor desistiu, que o papel manda evitar
+    conferindo tres vezes por dia. Sabado, domingo e feriado nao cobram.
     """
-    saida = []
-    if not _existe(con, "audit_logs"):
-        # SEM A AUDITORIA NAO HA PROVA DA CONSULTA — nem de que houve, nem de
-        # que nao houve. «Ninguem conferiu» seria afirmar o que nao se mediu.
-        return [
-            _sem_tabela("consulta_de_desistencia",
-                        "as desistências foram conferidas hoje",
-                        "a desistência se confere antes de lavrar protesto",
-                        "audit_logs"),
-            *_desistencias_por_aplicar(con, ctx),
-            _sem_tabela("consulta_de_cancelamento",
-                        "cancelamentos e autorizações (AC) consultados na CRA "
-                        "hoje", "o papel lista o passo sem hora",
-                        "audit_logs")]
-    consultas = _auditoria_do_dia(con, ctx, *ACOES_DA_CONSULTA_A_CRA)
-    de_desistencia = [x["ts"] for x in consultas
-                      if x["detalhe"].get("o_que") in O_QUE_E_DESISTENCIA]
-    if _existe(con, "pt_desistencias"):
-        de_desistencia += [str(r["recebida_em"]) for r in banco(con).ler(
-            """SELECT recebida_em FROM pt_desistencias
-                WHERE recebida_em >= %s AND recebida_em < %s""",
-            (ctx["dia"], ctx["ate"]))]
-    de_desistencia.sort()
-    primeiro_protesto = None
+    chave = "consulta_da_cra"
+    rotulo = "desistências, cancelamentos e autorizações consultados na CRA hoje"
+    regra = ("a CRA se consulta antes de lavrar protesto — o papel manda três "
+             "vezes por dia")
+    if not _existe(con, "centrais_log"):
+        return _sem_tabela(chave, rotulo, regra, "centrais_log")
+    if not ctx["dia_util"]:
+        return _obrigacao(chave, rotulo, [], regra=regra, tem_prazo=False,
+                          feito="hoje não é dia útil")
+    import centrais_cred as CRED
+    marcas = ", ".join(["%s"] * len(OPERACOES_DOS_PEDIDOS_DA_CRA))
+    consultas = sorted(str(r["quando"]) for r in banco(con).ler(
+        f"""SELECT quando FROM centrais_log
+             WHERE central = %s AND operacao IN ({marcas})
+               AND nivel <> 'ERRO' AND quando >= %s AND quando < %s""",
+        (CRED.CRA, *OPERACOES_DOS_PEDIDOS_DA_CRA, ctx["dia"], ctx["ate"])))
+    primeiro = ""
     if _existe(con, "pt_atos"):
         linha = banco(con).um(
             """SELECT MIN(data_ato) AS primeiro FROM pt_atos
@@ -877,51 +887,37 @@ def _cobrar_pedidos_da_cra(con, ctx: dict) -> list[dict]:
                   AND COALESCE(origem, '') <> 'EOFICIO'
                   AND data_ato >= %s AND data_ato < %s""",
             (ctx["dia"], ctx["ate"]))
-        primeiro_protesto = (linha or {}).get("primeiro")
-    regra = ("a desistência se confere antes de lavrar protesto — o papel manda "
-             "três vezes por dia")
+        primeiro = str((linha or {}).get("primeiro") or "")
     # A ORDEM SO SE PROVA QUANDO O PROTESTO TEM HORA. `data_ato` so com a data
     # (o caso do acervo e de teste antigo) nao diz se veio antes ou depois da
-    # conferencia — e o que nao se prova nao vira atraso.
-    primeiro = str(primeiro_protesto or "")
+    # consulta — e o que nao se prova nao vira atraso.
     com_hora = len(primeiro) > 10
-    antes = [ts for ts in de_desistencia if not com_hora or ts < primeiro]
+    antes = [q for q in consultas if not com_hora or q < primeiro]
     if com_hora and not antes:
         lavrado = _instante(primeiro)
-        saida.append(_obrigacao(
-            "consulta_de_desistencia", "as desistências foram conferidas hoje",
-            [_item(f"o primeiro protesto de hoje ({primeiro[11:16]}) foi "
-                   f"lavrado antes de qualquer conferência de desistência",
-                   prazo=lavrado - timedelta(seconds=1) if lavrado else None,
-                   ctx=ctx, tela="protesto_cra_api")],
-            regra=regra, tem_prazo=True))
-    elif de_desistencia:
-        saida.append(_obrigacao(
-            "consulta_de_desistencia", "as desistências foram conferidas hoje",
-            [], regra=regra, tem_prazo=True,
-            feito=(f"{len(de_desistencia)} conferência(s) hoje, a última às "
-                   f"{de_desistencia[-1][11:16] or '—'} (o papel manda três)")))
-    else:
-        saida.append(_obrigacao(
-            "consulta_de_desistencia", "as desistências foram conferidas hoje",
-            [_item("ninguém conferiu as desistências hoje", prazo=None, ctx=ctx,
-                   tela="protesto_cra_api")],
-            regra=regra, tem_prazo=False))
+        return _obrigacao(chave, rotulo, [_item(
+            f"o primeiro protesto de hoje ({primeiro[11:16]}) foi lavrado "
+            f"antes de qualquer consulta de desistência, cancelamento ou "
+            f"autorização na CRA",
+            prazo=lavrado - timedelta(seconds=1) if lavrado else None,
+            ctx=ctx, tela="protesto_cra_api")], regra=regra, tem_prazo=True)
+    if consultas:
+        return _obrigacao(
+            chave, rotulo, [], regra=regra, tem_prazo=True,
+            feito=(f"{len(consultas)} consulta(s) hoje, a última às "
+                   f"{consultas[-1][11:16]} (o papel manda três)"))
+    return _obrigacao(chave, rotulo, [_item(
+        "ninguém consultou a CRA hoje sobre desistência, cancelamento ou "
+        "autorização", prazo=None, ctx=ctx, tela="protesto_cra_api")],
+        regra=regra, tem_prazo=False)
 
-    saida += _desistencias_por_aplicar(con, ctx)
 
-    cancelamento = [x["ts"] for x in consultas
-                    if x["detalhe"].get("o_que") in O_QUE_E_CANCELAMENTO]
-    saida.append(_obrigacao(
-        "consulta_de_cancelamento",
-        "cancelamentos e autorizações (AC) consultados na CRA hoje",
-        [] if cancelamento else [_item(
-            "ninguém consultou cancelamentos nem autorizações hoje",
-            prazo=None, ctx=ctx, tela="protesto_cra_api")],
-        regra="o papel lista o passo sem hora", tem_prazo=False,
-        feito=(f"consultados às {cancelamento[-1][11:16]}" if cancelamento
-               else "")))
-    return saida
+def _cobrar_pedidos_da_cra(con, ctx: dict) -> list[dict]:
+    """A consulta do dia (DP, CP e AC juntos) e as desistencias por aplicar.
+    O que a consulta trouxe e nao foi aplicado vem pelo gancho
+    `pendencias_da_cra` (`GANCHOS`)."""
+    return [_consulta_dos_pedidos_da_cra(con, ctx),
+            *_desistencias_por_aplicar(con, ctx)]
 
 
 # ---------------------------------------------------------- 4. as entregas
@@ -1173,8 +1169,47 @@ def _cobrar_xml(con, ctx: dict) -> list[dict]:
     return [_obrigacao(
         chave, rotulo, itens, regra=regra, tem_prazo=True,
         feito="todo ato lavrado já foi num XML",
-        nota=(f"{gerados or 0} arquivo(s) gerado(s) hoje. A subida no portal "
-              f"da CENPROT não deixa prova neste sistema: confira lá."))]
+        nota=f"{gerados or 0} arquivo(s) gerado(s) hoje."),
+        _xml_sem_comprovante(con, ctx)]
+
+
+def _xml_sem_comprovante(con, ctx: dict) -> dict:
+    """O arquivo gerado sem o comprovante da subida no portal da CENPROT.
+
+    DECISAO DO OFICIAL, 29/10/2026: a conduta 8 so fica feita com o
+    comprovante. Sem ele, PENDENTE; a partir do dia util seguinte ao arquivo,
+    ATRASADO. Vencer sem comprovante so por afirmacao expressa, gravada na
+    linha do arquivo (`protesto_cenprot_xml.afirmar_envio_sem_comprovante`).
+    """
+    chave, rotulo = ("xml_sem_comprovante",
+                     "arquivos XML gerados sem o comprovante da subida na "
+                     "CENPROT")
+    regra = ("o comprovante se anexa no dia; no dia útil seguinte, é atraso")
+    if not _existe(con, "pt_cenprot_xml", "attachments"):
+        return _sem_tabela(chave, rotulo, regra, "pt_cenprot_xml")
+    import protesto_cenprot_xml as PCXML
+    sem_afirmacao = ("AND x.envio_afirmado_em IS NULL"
+                     if banco(con).tem_coluna("pt_cenprot_xml",
+                                              "envio_afirmado_em") else "")
+    itens = []
+    for x in banco(con).ler(
+            f"""SELECT x.id, x.letra, x.nome_arquivo, x.gerado_em
+                  FROM pt_cenprot_xml x
+                 WHERE x.gerado_em >= %s {sem_afirmacao}
+                   AND NOT EXISTS (SELECT 1 FROM attachments a
+                                    WHERE a.entity_type = %s
+                                      AND a.entity_id = x.id)
+                 ORDER BY x.id""",
+            (VIRADA_DO_PROTESTO, PCXML.ENTIDADE_DO_ENVIO_DO_XML)):
+        x = dict(x)
+        d = _dia(x.get("gerado_em"))
+        prazo = (datetime.combine(_util_seguinte(d, ctx), time(0, 0))
+                 if d else None)
+        itens.append(_item(f"XML {x['letra']} — {x['nome_arquivo']}",
+                           quando=x.get("gerado_em"), prazo=prazo, ctx=ctx,
+                           tela="protesto_cenprot_xml"))
+    return _obrigacao(chave, rotulo, itens, regra=regra, tem_prazo=True,
+                      feito="todo arquivo gerado tem o comprovante da subida")
 
 
 # ------------------------------------------------------------- 9. a CENPROT
@@ -1276,7 +1311,8 @@ DIAS_PARA_TRAS = 30
 
 
 def encerramento_do_dia(con, dia: str) -> dict | None:
-    """O encerramento gravado daquele dia, com as listas lidas. SO LE."""
+    """A linha do encerramento daquele dia — encerrado OU reaberto —, com as
+    listas lidas. SO LE. Quem pergunta «esta encerrado?» usa `_fechado`."""
     if not _existe(con, "pt_encerramentos_do_dia"):
         return None
     linha = banco(con).um(
@@ -1285,15 +1321,25 @@ def encerramento_do_dia(con, dia: str) -> dict | None:
     return _encerramento_lido(linha)
 
 
+def _fechado(e: dict | None) -> bool:
+    """Encerrado e nao reaberto. A linha reaberta continua existindo — e a
+    prova de que se encerrou e de quem reabriu —, mas o dia esta aberto."""
+    return bool(e) and not e.get("reaberto_em")
+
+
 def _encerramento_lido(linha) -> dict | None:
+    """A linha com as listas JSON lidas, em chaves PROPRIAS: `pendencias` e a
+    coluna com o numero de itens afirmados, e nao se sobrescreve."""
     if not linha:
         return None
     e = dict(linha)
-    for campo in ("pendencias_json", "afirmacoes_json"):
+    for campo, chave in (("pendencias_json", "lista_de_pendencias"),
+                         ("afirmacoes_json", "afirmacoes"),
+                         ("reaberturas_json", "reaberturas")):
         try:
-            e[campo[:-5]] = json.loads(e.get(campo) or "[]")
+            e[chave] = json.loads(e.get(campo) or "[]")
         except (TypeError, ValueError):
-            e[campo[:-5]] = []
+            e[chave] = []
     return e
 
 
@@ -1353,10 +1399,12 @@ def _cobrar_encerramento(con, ctx: dict) -> list[dict]:
                                  "", "pt_encerramentos_do_dia"))
         return saida
     from ri_schema import eh_dia_util
-    hoje = encerramento_do_dia(con, ctx["dia"])
+    linha_de_hoje = encerramento_do_dia(con, ctx["dia"])
+    hoje = linha_de_hoje if _fechado(linha_de_hoje) else None
+    # O DIA REABERTO NAO CONTA COMO ENCERRADO: o ultimo e o ultimo FECHADO.
     linha = banco(con).um(
-        "SELECT MAX(dia) AS ultimo FROM pt_encerramentos_do_dia WHERE dia < %s",
-        (ctx["dia"],))
+        """SELECT MAX(dia) AS ultimo FROM pt_encerramentos_do_dia
+            WHERE dia < %s AND reaberto_em IS NULL""", (ctx["dia"],))
     ultimo = _dia((linha or {}).get("ultimo"))
     # SEM NENHUM ENCERRAMENTO GRAVADO NAO HA DIA ATRASADO: a obrigacao nasce
     # com o primeiro. Cobrar os dias de antes dela seria o alarme do primeiro
@@ -1385,6 +1433,10 @@ def _cobrar_encerramento(con, ctx: dict) -> list[dict]:
         [] if hoje else [_item("o dia de hoje ainda não foi encerrado",
                                prazo=None, ctx=ctx, tela="protesto_painel")],
         regra="no fim do expediente", tem_prazo=False,
+        nota=(f"reaberto por {linha_de_hoje.get('reaberto_por') or '—'} às "
+              f"{str(linha_de_hoje.get('reaberto_em') or '')[11:16]}: "
+              f"«{linha_de_hoje.get('reabertura_afirmacao') or ''}»"
+              if linha_de_hoje and not hoje else ""),
         feito=(f"encerrado por {hoje.get('encerrado_por') or '—'} às "
                f"{str(hoje.get('encerrado_em') or '')[11:16]}"
                + (f", com {hoje.get('pendencias')} item(ns) afirmado(s)"
@@ -1541,10 +1593,12 @@ def cobrar_o_dia(con: sqlite3.Connection, *, agora: str) -> list[dict]:
 
 #: A regra que a afirmacao do encerramento grava — o contrato comum da casa.
 REGRA_DO_ENCERRAMENTO = "DIA_ENCERRADO_COM_PENDENCIA"
-#: O piso da afirmacao: LETRAS, e nao caracteres — «.......» nao e afirmacao
-#: de ninguem. E o mesmo piso das outras travas da reestruturacao.
-MINIMO_DE_LETRAS_DA_AFIRMACAO = 30
-MODELO_DA_AFIRMACAO = "Afirmo, sob minha responsabilidade, que"
+#: A regra da reabertura, que so o oficial faz (decisao dele, 29/10/2026).
+REGRA_DA_REABERTURA = "DIA_REABERTO"
+#: O piso e o modelo da afirmacao moram no contrato (`afirmacoes_expressas`):
+#: uma regua so, para o encerramento e para as travas dos outros pedidos.
+MINIMO_DE_LETRAS_DA_AFIRMACAO = AFX.MINIMO_DE_LETRAS
+MODELO_DA_AFIRMACAO = AFX.MODELO
 #: A obrigacao que o encerramento CUMPRE nao entra na lista do que ele cobra.
 OBRIGACAO_DO_PROPRIO_ENCERRAMENTO = "dia_encerrado"
 
@@ -1580,7 +1634,7 @@ def pendencias_para_encerrar(condutas: list[dict]) -> list[dict]:
 
 
 def _letras(texto: str) -> int:
-    return sum(1 for ch in texto if ch.isalpha())
+    return AFX.letras(texto)
 
 
 def conferir_o_encerramento(con, *, agora: str,
@@ -1599,7 +1653,7 @@ def conferir_o_encerramento(con, *, agora: str,
             "— atualize o sistema antes de encerrar.")
     dia = str(agora)[:10]
     ja = encerramento_do_dia(con, dia)
-    if ja:
+    if _fechado(ja):
         raise EncerramentoError(
             f"O dia {_br(dia)} já foi encerrado por "
             f"{ja.get('encerrado_por') or '—'} às "
@@ -1634,10 +1688,28 @@ def gravar_o_encerramento(con, conferido: dict, *, agora: str,
     """
     bd = banco(con)
     dia = conferido["dia"]
-    if bd.um("SELECT 1 AS um FROM pt_encerramentos_do_dia WHERE dia = %s",
-             (dia,)):
+    ja = _encerramento_lido(bd.um(
+        "SELECT * FROM pt_encerramentos_do_dia WHERE dia = %s", (dia,)))
+    if _fechado(ja):
         raise EncerramentoError(f"O dia {_br(dia)} já foi encerrado.")
     situacao = "COM_PENDENCIA" if conferido["afirmacoes"] else "COMPLETO"
+    if ja:
+        # O DIA REABERTO SE ENCERRA NA MESMA LINHA: os campos voltam a dizer o
+        # encerramento de agora, e o anterior ficou em `reaberturas_json`,
+        # gravado por quem reabriu.
+        bd.escrever(
+            """UPDATE pt_encerramentos_do_dia
+                  SET situacao = %s, pendencias = %s, pendencias_json = %s,
+                      afirmacoes_json = %s, encerrado_em = %s,
+                      encerrado_por = %s, reaberto_em = NULL,
+                      reaberto_por = NULL, reabertura_afirmacao = NULL
+                WHERE id = %s""",
+            (situacao, len(conferido["afirmacoes"]),
+             json.dumps(conferido["pendencias"], ensure_ascii=False),
+             json.dumps(conferido["afirmacoes"], ensure_ascii=False),
+             agora, usuario, int(ja["id"])))
+        return {"id": int(ja["id"]), "dia": dia, "situacao": situacao,
+                "afirmacoes": conferido["afirmacoes"]}
     novo = bd.escrever(
         """INSERT INTO pt_encerramentos_do_dia(dia, situacao, pendencias,
                pendencias_json, afirmacoes_json, encerrado_em, encerrado_por)
@@ -1648,6 +1720,45 @@ def gravar_o_encerramento(con, conferido: dict, *, agora: str,
          agora, usuario))
     return {"id": int(novo[0]["id"]), "dia": dia, "situacao": situacao,
             "afirmacoes": conferido["afirmacoes"]}
+
+
+def reabrir_o_dia(con, *, agora: str, afirmacao: str,
+                  usuario: str | None) -> dict:
+    """Reabre o dia de HOJE. ESCREVE. So o oficial — a rota confere o papel
+    (ADMIN) e recusa o robo, por decisao dele em 29/10/2026.
+
+    O motivo e a afirmacao expressa do contrato comum, ja validada
+    (`afirmacoes_expressas.validar`), e fica NA PROPRIA LINHA: quem reabriu,
+    quando, por que, e o encerramento que havia antes, em `reaberturas_json`.
+    Nada se apaga — e o dia volta a pedir encerramento.
+    """
+    bd = banco(con)
+    dia = str(agora)[:10]
+    e = _encerramento_lido(bd.um(
+        "SELECT * FROM pt_encerramentos_do_dia WHERE dia = %s", (dia,)))
+    if not e:
+        raise EncerramentoError(
+            f"O dia {_br(dia)} não foi encerrado — não há o que reabrir.")
+    if not _fechado(e):
+        raise EncerramentoError(
+            f"O dia {_br(dia)} já está reaberto, por "
+            f"{e.get('reaberto_por') or '—'} às "
+            f"{str(e.get('reaberto_em') or '')[11:16]}.")
+    historico = list(e.get("reaberturas") or []) + [{
+        "reaberto_em": agora, "reaberto_por": usuario, "afirmacao": afirmacao,
+        "encerramento": {
+            "situacao": e.get("situacao"), "encerrado_em": e.get("encerrado_em"),
+            "encerrado_por": e.get("encerrado_por"),
+            "pendencias": e.get("lista_de_pendencias") or [],
+            "afirmacoes": e.get("afirmacoes") or []}}]
+    bd.escrever(
+        """UPDATE pt_encerramentos_do_dia
+              SET reaberto_em = %s, reaberto_por = %s,
+                  reabertura_afirmacao = %s, reaberturas_json = %s
+            WHERE id = %s""",
+        (agora, usuario, afirmacao,
+         json.dumps(historico, ensure_ascii=False), int(e["id"])))
+    return {"id": int(e["id"]), "dia": dia, "afirmacao": afirmacao}
 
 
 def o_que_ficou(con, *, agora: str, condutas: list[dict]) -> dict:
@@ -1661,8 +1772,10 @@ def o_que_ficou(con, *, agora: str, condutas: list[dict]) -> dict:
     anterior = _dia_util_anterior(ctx["hoje"], ctx).isoformat()
     ultimo = None
     if _existe(con, "pt_encerramentos_do_dia"):
+        # O ULTIMO FECHADO: o dia reaberto e nao reencerrado esta aberto.
         ultimo = _encerramento_lido(banco(con).um(
-            """SELECT * FROM pt_encerramentos_do_dia WHERE dia < %s
+            """SELECT * FROM pt_encerramentos_do_dia
+                WHERE dia < %s AND reaberto_em IS NULL
                 ORDER BY dia DESC LIMIT 1""", (ctx["dia"],)))
     atrasados = [{"n": c["n"], "titulo": c["titulo"], "ancora": c["ancora"],
                   "rotulo": o["rotulo"], "atrasados": o["atrasados"]}
@@ -1765,7 +1878,10 @@ def roteiro(con: sqlite3.Connection, *, agora: str) -> dict:
             # abre a tela; o que falta para encerrar hoje fecha.
             "de_ontem": o_que_ficou(con, agora=agora, condutas=condutas),
             "para_encerrar": pendencias_para_encerrar(condutas),
-            "encerrado_hoje": encerramento_do_dia(con, str(agora)[:10]),
+            # A LINHA DE HOJE (encerrada ou reaberta) e se ela esta fechada.
+            "encerramento_de_hoje": encerramento_do_dia(con, str(agora)[:10]),
+            "encerrado_hoje": _fechado(encerramento_do_dia(
+                con, str(agora)[:10])),
             "minimo_de_letras": MINIMO_DE_LETRAS_DA_AFIRMACAO,
             "modelo_da_afirmacao": MODELO_DA_AFIRMACAO,
             "fora_do_roteiro": [dict(f) for f in FORA_DO_ROTEIRO],

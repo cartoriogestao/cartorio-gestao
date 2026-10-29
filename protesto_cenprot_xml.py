@@ -913,10 +913,120 @@ def gerar(con, letra: str, *, uf: str, comarca: str,
 def arquivos(con, limite: int = 60) -> list[dict]:
     return banco(con).ler(
         """SELECT id, letra, dia, sequencial, nome_arquivo, sha256, titulos,
-                  gerado_em, gerado_por FROM pt_cenprot_xml
+                  gerado_em, gerado_por, envio_afirmado_em,
+                  envio_afirmado_por, envio_afirmacao FROM pt_cenprot_xml
             ORDER BY id DESC LIMIT %s""", (int(limite),))
 
 
 def arquivo(con, xml_id: int) -> dict | None:
     return banco(con).um("SELECT * FROM pt_cenprot_xml WHERE id = %s",
                          (int(xml_id),))
+
+
+# --------------------------------- o comprovante da subida no portal
+#
+# DECISAO DO OFICIAL, 29/10/2026: «comprovante da subida do XML P/D na
+# CENPROT». O arquivo se gera aqui e sobe pelo portal (a API da CENPROT nao tem
+# caminho para ele), e ate esta data a subida nao deixava prova nenhuma no
+# sistema. Agora cada arquivo gerado recebe o seu comprovante — a tela do
+# portal salva em PDF ou imagem —, na forma do comprovante do envio do edital
+# (`protesto_aviso.ENTIDADE_DO_ENVIO_DO_EDITAL`): uma linha em `attachments`
+# com entidade propria. Sem comprovante, o roteiro cobra; vencer sem ele so
+# por afirmacao expressa, gravada na propria linha do arquivo.
+ENTIDADE_DO_ENVIO_DO_XML = "PT_CENPROT_XML_ENVIO"
+REGRA_DO_XML_SEM_COMPROVANTE = "XML_CENPROT_SEM_COMPROVANTE"
+
+
+def comprovantes(con, xml_id: int) -> list[dict]:
+    """Os comprovantes da subida daquele arquivo. Só LÊ."""
+    return [dict(r) for r in banco(con).ler(
+        """SELECT id, original_name, size_bytes, uploaded_at
+             FROM attachments WHERE entity_type = %s AND entity_id = %s
+            ORDER BY id""", (ENTIDADE_DO_ENVIO_DO_XML, int(xml_id)))]
+
+
+def guardar_comprovante_do_envio(con, xml_id: int, *, nome: Any,
+                                 conteudo: bytes, pasta_de_arquivos: Any,
+                                 agora: str,
+                                 usuario_id: int | None = None) -> dict:
+    """Anexa ao arquivo gerado o comprovante da subida no portal. ESCREVE, e
+    grava o arquivo em disco.
+
+    A mesma régua do comprovante do edital: PDF, PNG ou JPG de verdade (os
+    primeiros bytes conferidos), até o mesmo teto, e o mesmo arquivo não entra
+    duas vezes no mesmo XML.
+    """
+    import hashlib
+    from pathlib import Path
+    from protesto_aviso import (ASSINATURA_DO_COMPROVANTE,
+                                LIMITE_DO_COMPROVANTE)
+    bd = banco(con)
+    xml = bd.um("SELECT id, nome_arquivo FROM pt_cenprot_xml WHERE id = %s",
+                (int(xml_id),))
+    if not xml:
+        raise CenprotXmlError(f"O arquivo #{xml_id} não existe.")
+    nome_limpo = Path(str(nome or "")).name.strip()
+    ext = Path(nome_limpo).suffix.lower()
+    if ext not in ASSINATURA_DO_COMPROVANTE:
+        raise CenprotXmlError(
+            "O comprovante tem de ser PDF, PNG ou JPG — a tela do portal da "
+            "CENPROT salva em PDF, ou uma captura dela.")
+    conteudo = bytes(conteudo or b"")
+    if not conteudo:
+        raise CenprotXmlError("O arquivo do comprovante está vazio.")
+    if len(conteudo) > LIMITE_DO_COMPROVANTE:
+        raise CenprotXmlError(
+            f"O comprovante passa de {LIMITE_DO_COMPROVANTE // 1024 // 1024} MB.")
+    if not conteudo.startswith(ASSINATURA_DO_COMPROVANTE[ext]):
+        raise CenprotXmlError(
+            f"O arquivo diz ser {ext} e não é — o conteúdo não começa como um "
+            f"{ext[1:].upper()}. Salve de novo e anexe.")
+    sha = hashlib.sha256(conteudo).hexdigest()
+    if bd.um("""SELECT 1 AS um FROM attachments
+                 WHERE entity_type = %s AND entity_id = %s AND sha256 = %s""",
+             (ENTIDADE_DO_ENVIO_DO_XML, int(xml_id), sha)):
+        raise CenprotXmlError(
+            f"Este arquivo já está anexado a «{xml['nome_arquivo']}».")
+    destino = Path(pasta_de_arquivos) / "Protesto" / "CenprotXml" / "Comprovantes"
+    destino.mkdir(parents=True, exist_ok=True)
+    n = 1
+    arquivo_em_disco = destino / f"envio-xml-{int(xml_id)}-{n}{ext}"
+    while arquivo_em_disco.exists():
+        n += 1
+        arquivo_em_disco = destino / f"envio-xml-{int(xml_id)}-{n}{ext}"
+    arquivo_em_disco.write_bytes(conteudo)
+    novo = bd.escrever(
+        """INSERT INTO attachments(entity_type, entity_id, original_name,
+               stored_name, stored_path, sha256, size_bytes, description,
+               uploaded_by, uploaded_at)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+        (ENTIDADE_DO_ENVIO_DO_XML, int(xml_id),
+         nome_limpo or arquivo_em_disco.name, arquivo_em_disco.name,
+         str(arquivo_em_disco), sha, len(conteudo),
+         f"Comprovante da subida de {xml['nome_arquivo']} no portal da CENPROT",
+         usuario_id, agora))
+    return {"xml_id": int(xml_id), "anexo_id": int(novo[0]["id"]),
+            "nome": arquivo_em_disco.name,
+            "nome_arquivo": xml["nome_arquivo"]}
+
+
+def afirmar_envio_sem_comprovante(con, xml_id: int, *, afirmacao: str,
+                                  agora: str, usuario: str | None) -> dict:
+    """Grava na linha do arquivo a afirmação de que ele subiu sem comprovante.
+    ESCREVE. O texto já vem validado pelo contrato
+    (`afirmacoes_expressas.validar`); a rota grava a auditoria depois.
+    """
+    bd = banco(con)
+    xml = bd.um("""SELECT id, nome_arquivo, envio_afirmado_em
+                     FROM pt_cenprot_xml WHERE id = %s""", (int(xml_id),))
+    if not xml:
+        raise CenprotXmlError(f"O arquivo #{xml_id} não existe.")
+    if xml.get("envio_afirmado_em"):
+        raise CenprotXmlError(
+            f"A subida de «{xml['nome_arquivo']}» já foi afirmada em "
+            f"{str(xml['envio_afirmado_em'])[:16]}.")
+    bd.escrever(
+        """UPDATE pt_cenprot_xml SET envio_afirmado_em = %s,
+                  envio_afirmado_por = %s, envio_afirmacao = %s
+            WHERE id = %s""", (agora, usuario, afirmacao, int(xml_id)))
+    return {"xml_id": int(xml_id), "nome_arquivo": xml["nome_arquivo"]}

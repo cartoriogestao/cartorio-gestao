@@ -11405,12 +11405,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         outros pedidos, e a que estourar desfaz só a leitura — nunca a
         transação que grava.
         """
+        import selo_robo as SR
+        voltar = redirect(url_for("protesto_painel") + "#encerrar-o-dia")
+        # ROBÔ NÃO ENCERRA NEM REABRE (decisão do oficial, 29/10/2026): o
+        # encerramento é a palavra de uma pessoa sobre o dia.
+        if SR.usuario_e_robo():
+            flash("Conta de robô não encerra o dia: é a escrevente quem "
+                  "encerra.", "danger")
+            return voltar
         quando = agora()
         afirmacoes = {
             chave: (_campo(f"afirmo_{chave}") == "1",
                     request.form.get(f"afirmacao_{chave}") or "")
             for chave in request.form.getlist("item")}
-        voltar = redirect(url_for("protesto_painel") + "#encerrar-o-dia")
         try:
             with db.connect() as con:
                 conferido = PROT.conferir_o_encerramento(
@@ -11435,6 +11442,42 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   f"afirmado(s). Eles abrem o roteiro de amanhã.", "warning")
         else:
             flash("Dia encerrado: todas as condutas feitas.", "success")
+        return voltar
+
+    @app.route("/protesto/roteiro/reabrir", methods=["POST"])
+    @roles_required("ADMIN")
+    def protesto_reabrir_o_dia():
+        """REABRE O DIA DE HOJE. ESCREVE. Só o oficial.
+
+        Decisão dele em 29/10/2026: a escrevente encerra; só o oficial (ADMIN
+        humano — robô não) reabre, com o motivo por afirmação expressa
+        (contrato comum: caixa `afirmo` + texto `afirmacao`, 30 letras ou
+        mais). A reabertura fica na própria linha de `pt_encerramentos_do_dia`
+        e vai à auditoria como `DIA_REABERTO` e como `AFIRMACAO_EXPRESSA`.
+        """
+        import selo_robo as SR
+        voltar = redirect(url_for("protesto_painel") + "#encerrar-o-dia")
+        if SR.usuario_e_robo():
+            flash("Conta de robô não reabre o dia: só o oficial.", "danger")
+            return voltar
+        quando = agora()
+        try:
+            texto = AFX.validar(
+                _campo("afirmo") == "1", request.form.get("afirmacao"),
+                por_que="Reabrir o dia exige o motivo, por afirmação expressa.")
+            with db.transaction() as con:
+                r = PROT.reabrir_o_dia(con, agora=quando, afirmacao=texto,
+                                       usuario=usuario_nome())
+        except (AFX.AfirmacaoError, PROT.EncerramentoError) as erro:
+            flash(str(erro), "danger")
+            return voltar
+        # `audit` abre transação própria: FORA do `with`.
+        audit(PROT.REGRA_DA_REABERTURA, "pt_encerramentos_do_dia", r["id"],
+              {"dia": r["dia"], "afirmacao": texto})
+        audit("AFIRMACAO_EXPRESSA", "pt_encerramentos_do_dia", r["id"],
+              {"regra": PROT.REGRA_DA_REABERTURA, "afirmacao": texto,
+               "o_que_faltava": f"o dia {r['dia']} estava encerrado"})
+        flash("Dia reaberto. Ele volta a pedir encerramento.", "warning")
         return voltar
 
     # ------------------- a chave do CENPROT, que o XML devolve
@@ -11462,7 +11505,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             with db.connect() as con:
                 listas = {letra: PCXML.pendentes(con, letra, acervo=acervo)
                           for letra in ("P", "D")}
-                feitos = PCXML.arquivos(con)
+                feitos = [dict(f) for f in PCXML.arquivos(con)]
+                # O COMPROVANTE DA SUBIDA, por arquivo (29/10/2026).
+                for f in feitos:
+                    f["comprovantes"] = PCXML.comprovantes(con, f["id"])
                 cadastro = PCXML.apresentantes(con)
         finally:
             if acervo is not None:
@@ -11470,6 +11516,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return render_template(
             "protesto_cenprot_xml.html", listas=listas, feitos=feitos,
             cadastro=cadastro, tem_acervo=acervo is not None,
+            minimo_de_letras=AFX.MINIMO_DE_LETRAS,
+            modelo_da_afirmacao=AFX.MODELO,
             ocorrencias={"PROTESTO": "2 — protestado", "PAGAMENTO": "1 — pago",
                          "DESISTENCIA": "3 — retirado",
                          "CANCELAMENTO": "A — cancelado"})
@@ -11520,6 +11568,64 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             bytes(arq["conteudo"]), mimetype="application/xml",
             headers={"Content-Disposition":
                      f'attachment; filename="{arq["nome_arquivo"]}"'})
+
+    # O COMPROVANTE DA SUBIDA DO XML NO PORTAL (29/10/2026, decisão do
+    # oficial). A tela do anexo é a do XML — e é ela que o oferece.
+    app.extensions.setdefault("tela_do_anexo", {})[
+        PCXML.ENTIDADE_DO_ENVIO_DO_XML] = ("protesto_cenprot_xml",)
+
+    @app.route("/protesto/cenprot-xml/<int:xml_id>/comprovante",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_cenprot_xml_comprovante(xml_id: int):
+        """Anexa ao arquivo gerado o comprovante da subida no portal da
+        CENPROT. ESCREVE. Sem ele a conduta 8 do roteiro não fica feita."""
+        voltar = redirect(url_for("protesto_cenprot_xml") + "#arquivos-gerados")
+        enviado = request.files.get("comprovante")
+        if not enviado or not enviado.filename:
+            flash("Escolha o arquivo do comprovante da subida.", "danger")
+            return voltar
+        try:
+            with db.transaction() as con:
+                r = PCXML.guardar_comprovante_do_envio(
+                    con, xml_id, nome=enviado.filename,
+                    conteudo=enviado.read(),
+                    pasta_de_arquivos=pasta_dos_arquivos(), agora=agora(),
+                    usuario_id=usuario_id_do_sistema())
+        except PCXML.CenprotXmlError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        audit("PROTESTO_CENPROT_XML_COMPROVANTE", "pt_cenprot_xml", xml_id,
+              {"arquivo": r["nome_arquivo"], "anexo": r["anexo_id"]})
+        flash(f"Comprovante anexado a «{r['nome_arquivo']}».", "success")
+        return voltar
+
+    @app.route("/protesto/cenprot-xml/<int:xml_id>/afirmar", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_cenprot_xml_afirmar(xml_id: int):
+        """A subida sem comprovante, por AFIRMAÇÃO EXPRESSA (contrato comum:
+        caixa `afirmo` + texto `afirmacao`, 30 letras ou mais). ESCREVE na
+        linha do arquivo, e a auditoria vai depois da transação."""
+        voltar = redirect(url_for("protesto_cenprot_xml") + "#arquivos-gerados")
+        try:
+            texto = AFX.validar(
+                _campo("afirmo") == "1", request.form.get("afirmacao"),
+                por_que="O arquivo sobe com o comprovante; sem ele, só com a "
+                        "sua afirmação expressa.")
+            with db.transaction() as con:
+                r = PCXML.afirmar_envio_sem_comprovante(
+                    con, xml_id, afirmacao=texto, agora=agora(),
+                    usuario=usuario_nome())
+        except (AFX.AfirmacaoError, PCXML.CenprotXmlError) as erro:
+            flash(str(erro), "danger")
+            return voltar
+        audit("AFIRMACAO_EXPRESSA", "pt_cenprot_xml", xml_id,
+              {"regra": PCXML.REGRA_DO_XML_SEM_COMPROVANTE, "afirmacao": texto,
+               "o_que_faltava": f"o comprovante da subida de "
+                                f"{r['nome_arquivo']} no portal da CENPROT"})
+        flash(f"Subida de «{r['nome_arquivo']}» afirmada sem comprovante.",
+              "warning")
+        return voltar
 
     @app.route("/protesto/cenprot-xml/apresentantes", methods=["POST"])
     # 21/10/2026: aberto às escreventes por ordem do oficial (era ("ADMIN", "MANAGER")).

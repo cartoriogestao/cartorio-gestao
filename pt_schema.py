@@ -735,7 +735,15 @@ CREATE TABLE IF NOT EXISTS pt_encerramentos_do_dia (
     pendencias_json TEXT NOT NULL DEFAULT '[]',
     afirmacoes_json TEXT NOT NULL DEFAULT '[]',
     encerrado_em TEXT NOT NULL,
-    encerrado_por TEXT
+    encerrado_por TEXT,
+    -- SO O OFICIAL REABRE (decisao dele, 29/10/2026), com o motivo por
+    -- afirmacao expressa, e a reabertura fica NA PROPRIA LINHA. Reencerrado,
+    -- o dia volta a ter os campos de cima, e o que havia antes de cada
+    -- reabertura fica em `reaberturas_json` — nada se apaga.
+    reaberto_em TEXT,
+    reaberto_por TEXT,
+    reabertura_afirmacao TEXT,
+    reaberturas_json TEXT NOT NULL DEFAULT '[]'
 );
 """
 
@@ -756,6 +764,13 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("pt_atos", "retorno_id", "INTEGER"),
     # em que XML da CENPROT o ato já foi (15/10/2026) — nada sai duas vezes
     ("pt_atos", "cenprot_xml_id", "INTEGER"),
+    # A SUBIDA DO XML SEM COMPROVANTE, AFIRMADA (29/10/2026, decisão do
+    # oficial): a conduta 8 do roteiro só fica feita com o comprovante anexado
+    # (`attachments`, entidade PT_CENPROT_XML_ENVIO); vencer sem ele só por
+    # afirmação expressa, que fica na própria linha do arquivo.
+    ("pt_cenprot_xml", "envio_afirmado_em", "TEXT"),
+    ("pt_cenprot_xml", "envio_afirmado_por", "TEXT"),
+    ("pt_cenprot_xml", "envio_afirmacao", "TEXT"),
     # DE ONDE O AVISO E O EDITAL VIERAM (21/10/2026): os do E-Ofício entram
     # com `tbBoletoApto:<intChave>` e `tbEdital:<intchave>`, e a carga roda de
     # novo sem duplicar. Os nascidos aqui ficam com as duas vazias.

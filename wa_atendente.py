@@ -771,13 +771,19 @@ def transcrever_pendentes(db: Any, cfg: dict, *, agora: str, pasta_de_dados: Any
 
 def respostas_automaticas(con: Any, conversa_id: int, *, agora: str) -> int:
     """Quantas respostas automáticas saíram nesta conversa nas últimas 24 h
-    (o aviso de passagem não conta: ele não é resposta). SÓ LÊ."""
+    (o aviso de passagem não conta: ele não é resposta). SÓ LÊ.
+
+    A identificação que não confere também não conta: ela tem o limite dela
+    (`TENTATIVAS_POR_DIA` respostas iguais e, na seguinte, a pessoa). Contada
+    aqui, a insistência passava a conversa antes da última tentativa ter
+    resposta."""
     inicio = ((FILA._dt(agora) or datetime.now()) - timedelta(hours=24)
               ).strftime("%Y-%m-%dT%H:%M:%S")
     return int(banco(con).valor(
         """SELECT count(*) AS n FROM wa_ia_registro
-            WHERE conversa_id=%s AND enviado=1 AND caso <> %s AND quando >= %s""",
-        (int(conversa_id), CASO_PASSAGEM, inicio)) or 0)
+            WHERE conversa_id=%s AND enviado=1 AND caso NOT IN (%s, %s)
+              AND quando >= %s""",
+        (int(conversa_id), CASO_PASSAGEM, CASO_IDENTIFICACAO_FALHOU, inicio)) or 0)
 
 
 def _soltar_presas(db: Any, *, agora: str) -> None:

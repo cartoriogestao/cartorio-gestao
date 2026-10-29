@@ -3885,11 +3885,26 @@ def registrar_cancelamento_no_portal(con, *, numero: Any, motivo: Any,
     selo = bd.um("SELECT * FROM sd_selos WHERE numero = %s", (num,)) if num else None
     if not selo:
         raise AtoError(f"O selo «{num}» não está no razão desta casa.")
-    if selo.get("cancelado_em"):
-        raise AtoError(f"O selo {num} já consta cancelado desde {selo['cancelado_em']}.")
-    CL.registrar_cancelamento(con, num, motivo=str(motivo or ""), agora=agora,
-                              usuario=str(usuario or "") or None)
     tabela, ato_id = selo.get("tabela"), selo.get("ato_id")
+    # O SELO QUE JÁ CONSTA CANCELADO NO RAZÃO (29/10/2026): o da AV-9/2 foi
+    # registrado cancelado por script, a pedido do oficial, enquanto o botão
+    # ainda não estava na versão instalada — e o selo ficou no ato de
+    # propósito, para o «Selar» antigo não reaparecer. O botão então só termina
+    # o que falta (cobertura, se sobrou, e o selo do ato). Recusa apenas quando
+    # não há mais nada a fazer.
+    ja_cancelado = bool(selo.get("cancelado_em"))
+    if ja_cancelado:
+        coluna = COLUNA_DO_SELO.get(tabela, "selo") if tabela in TABELAS_DE_ATO else None
+        ainda_no_ato = bool(coluna and ato_id is not None and bd.valor(
+            f"SELECT count(*) FROM {tabela} WHERE id = %s AND {coluna} = %s",
+            (int(ato_id), num)))
+        if not ainda_no_ato:
+            raise AtoError(f"O selo {num} já consta cancelado desde "
+                           f"{selo['cancelado_em']}, e o ato já está sem ele: não "
+                           f"há o que registrar.")
+    else:
+        CL.registrar_cancelamento(con, num, motivo=str(motivo or ""), agora=agora,
+                                  usuario=str(usuario or "") or None)
     desfeita = None
     if bd.tem_tabela("cx_selo_coberturas") and selo.get("referencia"):
         grafias = grafias_da_referencia(selo["referencia"], tabela, ato_id)
@@ -3907,7 +3922,8 @@ def registrar_cancelamento_no_portal(con, *, numero: Any, motivo: Any,
         coluna = COLUNA_DO_SELO.get(tabela, "selo")
         bd.escrever(f"UPDATE {tabela} SET {coluna} = NULL WHERE id = %s AND {coluna} = %s",
                     (int(ato_id), num))
-    return {"numero": num, "tabela": tabela, "ato_id": ato_id, "cobertura": desfeita}
+    return {"numero": num, "tabela": tabela, "ato_id": ato_id, "cobertura": desfeita,
+            "ja_cancelado": ja_cancelado}
 
 SCHEMA_DA_TRAVA = """
 CREATE TABLE IF NOT EXISTS cx_selo_coberturas (

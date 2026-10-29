@@ -2839,9 +2839,13 @@ def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
                 do_sid = _selo_ja_obtido(
                     banco(con), cns=cns, atribuicao=atribuicao,
                     referencias=grafias_da_referencia(recebida, tabela, ato_id))
+                # O SELO CANCELADO NO PORTAL NÃO VOLTA (28/10/2026): a
+                # tentativa anda enquanto o SID só tiver selo cancelado.
+                tentativa = (1 if do_sid else proxima_tentativa(
+                    con, cns=cns, atribuicao=atribuicao, referencia=referencia))
                 selos = CL.selar(con, pasta_de_dados, caminho, dados,
                                  referencia=do_sid or referencia,
-                                 atribuicao=atribuicao,
+                                 atribuicao=atribuicao, tentativa=tentativa,
                                  agora=agora, cns=cns, usuario=usuario)
             except Exception:
                 con.rollback()
@@ -3791,6 +3795,119 @@ POR_QUE_PAGAMENTO = ("selo pago só sai com o dinheiro registrado — pago no "
 POR_QUE_GRATUITO = ("o Portal do Selo pede o comprovante de cada selo "
                     "gratuito.")
 O_QUE_VAI_NO_PDF = "um PDF com: comprovante + certidão do ato"
+# AS DUAS RECUSAS DE 28/10/2026 — o oficial: «evitar que item gratuito pague
+# selo pago e ato isento com item cobrado».
+POR_QUE_ITEM_GRATUITO = ("item gratuito não tem dinheiro: com ele o selo sairia "
+                         "cobrado sem pagamento. Ato gratuito sela isento.")
+POR_QUE_ISENTO_COBRADO = ("ou o ato não é isento, ou o caixa cobrou o que não se "
+                          "cobra: estorne o item (ou quite-o como gratuito) ou "
+                          "desmarque «isento» — e peça o selo de novo.")
+
+
+def itens_cobrados_do_ato(con, tabela: Any, ato_id: Any) -> list[dict]:
+    """Os itens LIGADOS ao ato em que há dinheiro registrado. Só LÊ.
+
+    É a recusa do ato isento (28/10/2026): item cobrado ligado a ato que não
+    se paga é o cliente pagando o que não deve."""
+    import caixa_protocolo as CXP
+    if tabela is None or ato_id is None or not str(ato_id).strip().isdigit():
+        return []
+    bd = banco(con)
+    if not bd.tem_tabela("cx_protocolo_atos"):
+        return []
+    return [i for i in CXP.itens_do_ato(bd, str(tabela), int(ato_id))
+            if CXP.item_cobrado(i, bd)]
+
+
+def avisos_do_ato_isento(con, *, usuario: Any, codigo: Any) -> list[str]:
+    """O protocolo em atendimento tem item COBRADO do mesmo código de um ato isento?
+
+    Não recusa — o mesmo protocolo pode ter atos pagos e um isento —, mas
+    avisa, com o número do item, para o balcão conferir se cobrou o que não
+    devia. Foi o que faltou dizer no protocolo do INCRA em 28/10/2026. Só LÊ.
+    """
+    import caixa_protocolo as CXP
+    bd = banco(con)
+    atendendo = CXP.em_atendimento(bd, usuario)
+    if not atendendo or not str(codigo or "").strip():
+        return []
+    saida = []
+    for it in CXP.itens_para_o_selo(bd, atendendo["id"], str(codigo).strip()):
+        if CXP.item_cobrado(it, bd):
+            saida.append(f"o item {it.get('codigo_ato') or ''} do protocolo "
+                         f"{atendendo['numero']} foi cobrado (R$ "
+                         f"{it.get('valor_total') or '—'}) e este ato é isento — "
+                         f"confira se o cliente pagou por ato gratuito.")
+    return saida
+
+
+def proxima_tentativa(con, *, cns: Any, atribuicao: Any, referencia: Any,
+                      maximo: int = 20) -> int:
+    """A tentativa do SID para pedir o selo deste ato agora. Só LÊ.
+
+    O SID sai da referência e da tentativa (`selador.sid`), e o aparelho
+    devolve o MESMO selo para o mesmo SID — é o que impede vender dois. Mas
+    quando o selo daquele SID foi CANCELADO no Portal do Selo (o selo pago de
+    ato gratuito, 28/10/2026), pedir de novo com o mesmo SID traria de volta o
+    selo cancelado. A tentativa anda enquanto o SID só tiver selo cancelado; o
+    primeiro SID sem selo, ou com selo vivo, é o que vale. É a «tentativa=2»
+    do script que regularizou o R-01/4019, agora no caminho de todo selo.
+    """
+    bd = banco(con)
+    if not cns or not bd.tem_tabela("sd_selos"):
+        return 1
+    for t in range(1, maximo + 1):
+        chave = selador.sid(cns, atribuicao, referencia, t)
+        linhas = bd.ler("SELECT cancelado_em FROM sd_selos WHERE sid = %s", (chave,))
+        if not linhas or any(not r["cancelado_em"] for r in linhas):
+            return t
+    return maximo + 1
+
+
+def registrar_cancelamento_no_portal(con, *, numero: Any, motivo: Any,
+                                     agora: str, usuario: Any) -> dict:
+    """O selo foi CANCELADO no Portal do Selo do TJMA: o sistema registra. ESCREVE.
+
+    O aparelho da casa não cancela selo no Tribunal — quem cancela é a pessoa,
+    no Portal. Aqui se registra o que ela fez, na mesma transação:
+      1. o selo vira cancelado no razão, com o motivo
+         (`selador_cliente.registrar_cancelamento`);
+      2. a cobertura do caixa daquele selo sai, e a unidade (ou o débito do
+         depósito) volta — o pagamento serve ao selo novo, ou se estorna;
+      3. a coluna do selo do ato fica vazia, e o ato volta a aparecer para
+         «Selar este ato» — que pede pela tentativa seguinte do SID
+         (`proxima_tentativa`), e não traz o cancelado de volta.
+    Nada se apaga do razão. Devolve a tabela, o ato e a cobertura desfeita.
+    """
+    import selador_cliente as CL
+    bd = banco(con)
+    num = str(numero or "").strip()
+    selo = bd.um("SELECT * FROM sd_selos WHERE numero = %s", (num,)) if num else None
+    if not selo:
+        raise AtoError(f"O selo «{num}» não está no razão desta casa.")
+    if selo.get("cancelado_em"):
+        raise AtoError(f"O selo {num} já consta cancelado desde {selo['cancelado_em']}.")
+    CL.registrar_cancelamento(con, num, motivo=str(motivo or ""), agora=agora,
+                              usuario=str(usuario or "") or None)
+    tabela, ato_id = selo.get("tabela"), selo.get("ato_id")
+    desfeita = None
+    if bd.tem_tabela("cx_selo_coberturas") and selo.get("referencia"):
+        grafias = grafias_da_referencia(selo["referencia"], tabela, ato_id)
+        linha = _cobertura_gravada(bd, grafias)
+        if linha:
+            if linha.get("forma") == FORMA_DEPOSITO and linha.get("deposito_id"):
+                _devolver_ao_deposito(bd, linha, agora=agora,
+                                      motivo=f"selo {num} cancelado no Portal do Selo")
+            _devolver_a_unidade(bd, linha)
+            bd.escrever("DELETE FROM cx_selo_coberturas WHERE referencia = %s",
+                        (linha["referencia"],))
+            desfeita = {k: linha.get(k) for k in ("referencia", "forma", "item_id",
+                                                  "deposito_id", "unidades_gastas")}
+    if tabela in TABELAS_DE_ATO and ato_id is not None:
+        coluna = COLUNA_DO_SELO.get(tabela, "selo")
+        bd.escrever(f"UPDATE {tabela} SET {coluna} = NULL WHERE id = %s AND {coluna} = %s",
+                    (int(ato_id), num))
+    return {"numero": num, "tabela": tabela, "ato_id": ato_id, "cobertura": desfeita}
 
 SCHEMA_DA_TRAVA = """
 CREATE TABLE IF NOT EXISTS cx_selo_coberturas (
@@ -4480,6 +4597,13 @@ def _cobre_o_item(bd, it: dict, *, tabela: str, ato_id: int, usuario: Any,
     """Este item paga o selo? (forma, débito) ou None. Pode ESCREVER (débito)."""
     import caixa_depositos as DEP
     import caixa_protocolo as CXP
+    # ITEM GRATUITO NÃO PAGA SELO PAGO (28/10/2026, o oficial: «evitar que item
+    # gratuito pague selo pago»). Aqui só chega envelope pago — o isento sai
+    # antes, em `cobrir_o_selo` —, e `item_pago` conta o gratuito como pago:
+    # o selo cobrado saía «coberto» por um item em que não entrou dinheiro. O
+    # caminho certo é o ato isento, com o motivo; o quadro diz isso.
+    if CXP.item_gratuito(it, bd):
+        return None
     if CXP.item_pago(it):
         return FORMA_ITEM_PAGO, None
     if tabela in CXP.TABELAS_QUE_DIFEREM and CXP.item_diferido(it):
@@ -4508,6 +4632,15 @@ def cobrir_o_selo(con, *, tabela: Any, ato_id: Any, referencia: Any,
     import caixa_protocolo as CXP
     bd = banco(con)
     if selo_e_gratuito(dados):
+        # ATO ISENTO COM ITEM COBRADO LIGADO A ELE NÃO SELA (28/10/2026): ou o
+        # ato não é isento, ou o caixa cobrou o que não se cobra — e o selo
+        # isento sairia com o dinheiro do cliente parado no caixa. Quem resolve
+        # é a pessoa, no caixa ou no ato; o quadro diz qual item.
+        if tabela is not None and ato_id is not None and \
+                itens_cobrados_do_ato(bd, tabela, ato_id):
+            quadro = quadro_para_selar(bd, tabela=tabela, ato_id=ato_id,
+                                       usuario=usuario, dados=dados)
+            return {"coberto": False, "quadro": quadro, "faltam": []}
         return {"coberto": True, "forma": FORMA_GRATUITO}
     # A mesma grafia de `obter_selo`: chamada direta, sem passar por lá,
     # também não abre segunda cobertura para o mesmo ato. A procura é pela
@@ -4929,6 +5062,19 @@ def quadro_para_selar(con, *, tabela: Any, ato_id: Any, usuario: Any = None,
     from caixa_schema import reais
     bd = banco(con)
     if selo_e_gratuito(dados):
+        cobrados = (itens_cobrados_do_ato(bd, tabela, ato_id)
+                    if tabela and ato_id is not None else [])
+        if cobrados:
+            it = cobrados[0]
+            return {"titulo": TITULO_DO_QUADRO, "pode_selar": False, "gratuito": True,
+                    "itens": [_linha(
+                        False,
+                        f"O ato está marcado isento, e o item "
+                        f"{it.get('codigo_ato') or ''} do protocolo "
+                        f"{it.get('protocolo_numero') or ''} ligado a ele foi "
+                        f"cobrado (R$ {it.get('valor_total') or '—'}).",
+                        POR_QUE_ISENTO_COBRADO, "Abrir protocolo",
+                        "abrir_protocolo")]}
         return {"titulo": TITULO_DO_QUADRO, "pode_selar": True, "gratuito": True,
                 "itens": [_linha(True, "Ato gratuito: sela sem pagamento."),
                           _linha(True, f"Depois do ato, junte {O_QUE_VAI_NO_PDF}.",
@@ -4970,12 +5116,22 @@ def quadro_para_selar(con, *, tabela: Any, ato_id: Any, usuario: Any = None,
                             POR_QUE_PROTOCOLO, "Abrir protocolo",
                             "abrir_protocolo"))
 
-    # 2. o dinheiro
-    pago = bool(lanc) or any(CXP.item_pago(i) for i in possiveis) or any(
+    # 2. o dinheiro — o item GRATUITO não conta (28/10/2026): ele não paga
+    # selo pago, e o caminho é o ato isento.
+    pago = bool(lanc) or any(CXP.item_cobrado(i, bd) for i in possiveis) or any(
         tabela in CXP.TABELAS_QUE_DIFEREM and CXP.item_diferido(i)
         for i in possiveis)
+    gratuitos = [i for i in possiveis if CXP.item_gratuito(i, bd)]
     if pago:
         itens.append(_linha(True, "Pagamento registrado no caixa."))
+    elif gratuitos:
+        alvo = gratuitos[0]
+        itens.append(_linha(False, f"O item {alvo.get('codigo_ato') or ''} do "
+                                   f"protocolo {alvo.get('protocolo_numero') or ''} "
+                                   f"é gratuito: marque o ato como isento, com o "
+                                   f"motivo, e peça o selo de novo.",
+                            POR_QUE_ITEM_GRATUITO, "Abrir protocolo",
+                            "abrir_protocolo"))
     elif possiveis:
         alvo = possiveis[0]
         saldo = DEP.saldo_do_protocolo(bd, alvo["protocolo_id"], tabela=tabela,

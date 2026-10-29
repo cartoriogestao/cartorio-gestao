@@ -684,7 +684,6 @@ ACHADAS_EM_26_10_2026: dict[str, str] = {
     "certidao_livro3_teor_precisa_modelo_novo": "atrib_certidao — " + _TESTE,
     "remontar_teor_certidao_livro3": "atrib_certidao — " + _TESTE,
     "novo_caminho": "pastas_da_casa — " + _TESTE,
-    "registrar_cancelamento": "selador_cliente — " + _TESTE + " (cancelamento de selo no aparelho)",
 }
 
 

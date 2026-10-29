@@ -93,6 +93,10 @@ def test_o_que_ja_tem_instrumento_nao_ganha_segunda_via_no_lote():
     con = banco()
     a = protestado(con)
     PI.emitir(con, a, serventia=SERVENTIA, agora=AGORA)
+    # O título que falha tem a transação desfeita; nesta conexão única do
+    # teste, sem gravar antes, o desfazer levava junto as tabelas criadas
+    # acima (no PostgreSQL a criação de tabela entra na transação).
+    con.commit()
     r = PI.emitir_lote(_transacao_de(con), [a], serventia=SERVENTIA,
                        agora=AGORA)
     assert r["feitos"] == []

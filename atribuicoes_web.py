@@ -13584,6 +13584,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         sistema**: a janela do próprio token o pede ao oficial.
         """
         volta = destino_interno(request.form.get("voltar"), url_for("protesto_instrumentos"))
+        # O instrumento que não existe é 404, como era antes do lote: a
+        # conferência de `_assinar_um_instrumento` o diria em aviso e 302, e
+        # o 404 é o que prova que quem chamou passou pelas guardas.
+        with db.connect() as con:
+            if not PI.instrumento(con, instrumento_id):
+                abort(404)
         try:
             r = _assinar_um_instrumento(instrumento_id)
         except PI.InstrumentoError as erro:

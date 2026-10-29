@@ -43,6 +43,7 @@ from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import protesto as PT  # noqa: E402
 import protesto_retorno as PR  # noqa: E402
+import protesto_prova as PROVA  # noqa: E402
 from nucleo_schema import init_nucleo_schema  # noqa: E402
 from pt_schema import init_pt_schema  # noqa: E402
 from prova_de_intimacao import juntar_prova  # noqa: E402
@@ -369,7 +370,7 @@ def test_a_afirmacao_devolve_a_fila_e_o_recusado_a_apaga():
     assert registro["afirmacao"].startswith(PR.FRASE_DA_AFIRMACAO)
     assert caso["arquivo"] in registro["o_que_faltava"]
     assert f"#{caso['a']}" in registro["o_que_faltava"]
-    assert set(PR.para_a_auditoria(registro)) == {
+    assert set(PROVA.para_a_auditoria(registro)) == {
         "regra", "afirmacao", "o_que_faltava"}
     gravado = con.execute(
         """SELECT cra_reenvio_afirmado_em, cra_reenvio_afirmado_por,

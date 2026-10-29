@@ -12227,15 +12227,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
         Ordem do oficial, 29/10/2026: o sistema impede; «se a escrevente
         insistir, só com afirmação expressa e log». Vale a caixa `afirmo`
-        marcada E o texto `afirmacao`; quem confere o texto é o domínio
-        (`protesto_retorno.forcar_envio_de_protocolo_ja_informado`). Conta
-        de robô não afirma «sob minha responsabilidade» (26/10/2026): para
-        ela, a caixa vale como desmarcada.
+        marcada E o texto `afirmacao` — `_afirmacao_do_formulario`, o mesmo
+        leitor das outras travas (#106), em que conta de robô não afirma —, e
+        quem confere o texto é o domínio
+        (`protesto_retorno.forcar_envio_de_protocolo_ja_informado`).
         """
-        import selo_robo as SR
-        afirmacao = (_campo("afirmacao") or None
-                     if request.form.get("afirmo") and not SR.usuario_e_robo()
-                     else None)
+        afirmacao = _afirmacao_do_formulario()
         try:
             with db.transaction() as con:
                 r = PRE.forcar_envio_de_protocolo_ja_informado(
@@ -12245,8 +12242,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash(str(erro), "danger")
             return redirect(url_for("protesto_retornos"))
         # `audit` abre transação própria: FORA do `with`, como no resto da casa.
-        audit(PRE.ACAO_DA_AFIRMACAO, "pt_atos", ato_id,
-              PRE.para_a_auditoria(r))
+        _auditar_afirmacoes("pt_atos", ato_id, [r])
         flash(f"Ato {ato_id} ({r['tipo']}, título {r['numero_titulo']} "
               f"#{r['titulo_id']}, protocolo {r['protocolo']}) voltou a "
               f"«Esperando retorno» pela sua afirmação expressa, que ficou na "

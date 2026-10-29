@@ -192,3 +192,27 @@ def test_cancelar_no_portal_desfaz_a_cobertura_e_o_isento_sai_depois(aparelho):
     r2 = _selar(con, dados=ISENTO)
     assert r2["selado"] is True and r2["numero"] != numero
     assert len(aparelho) == 2
+
+
+def test_selo_ja_cancelado_no_razao_mas_ainda_no_ato_o_botao_termina(aparelho):
+    """O caso da AV-9/2 (29/10/2026): o cancelamento foi registrado no razão por
+    script, e o selo ficou no ato de propósito. O botão só termina o que falta."""
+    con = _casa()
+    p = _protocolo(con)
+    _item(con, p["protocolo_id"], quitado=1)
+    CXP.atender(con, usuario=ESCREVENTE, protocolo=p["numero"], agora=AGORA)
+    con.commit()
+    numero = _selar(con, dados=PAGO)["numero"]
+    bd = _banco(con)
+    bd.escrever("UPDATE sd_selos SET cancelado_em = %s, motivo_cancelamento = %s "
+                "WHERE numero = %s", (AGORA, "registrado por script antes", numero))
+    con.commit()
+    feito = AS.registrar_cancelamento_no_portal(
+        con, numero=numero, motivo="o botão termina o que faltou", agora=AGORA,
+        usuario=ESCREVENTE)
+    con.commit()
+    assert feito["ja_cancelado"] is True
+    assert bd.valor("SELECT selo FROM pt_atos WHERE id = 1") is None
+    # o motivo gravado antes não é trocado
+    assert bd.valor("SELECT motivo_cancelamento FROM sd_selos WHERE numero = %s",
+                    (numero,)) == "registrado por script antes"

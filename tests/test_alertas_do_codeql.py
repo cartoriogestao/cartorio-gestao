@@ -176,3 +176,50 @@ def test_brancos_longos_nao_travam():
     RML.limpar("a" + " " * 50_000 + "b")
     CC._email_completo("a@" + "." * 50_000 + "@")
     assert time.monotonic() - inicio < 1.0
+
+
+# ------------------------------------- os três alertas que ficaram (29/10/2026)
+
+import rc_anotacao_crc as CRC  # noqa: E402
+from seguranca_web import destino_interno  # noqa: E402
+
+# A forma de antes, para comparar: o CodeQL acusou o `.+?` contra o
+# `\s{2,}` e o `^\s*` que atravessa linha em branco (alerta #189).
+_TITULO_ANTIGO = re.compile(
+    r"^\s*(Comunica[cç][aã]o\s+de\s+.+?)(?:\s{2,}|\n|$)", re.I | re.M)
+
+
+def _titulo_antigo(texto):
+    m = _TITULO_ANTIGO.search(texto)
+    return (m.group(1), m.end()) if m else None
+
+
+def test_o_titulo_da_crc_sorteado_bate_com_a_expressao_antiga():
+    pecas = ["Comunicação de", "comunicacao de", "COMUNICAÇÃO DE", " ", "  ",
+             "\n", "\n\n", "\t", "\r\n", "<", "<b>", "X", "Nascimento",
+             "\xa0", "a b"]
+    sorteio = random.Random(189)
+    for _ in range(20_000):
+        texto = "".join(sorteio.choice(pecas)
+                        for _ in range(sorteio.randint(0, 12)))
+        assert CRC._titulo_no_inicio_da_linha(texto) == _titulo_antigo(texto), \
+            repr(texto)
+
+
+def test_o_titulo_da_crc_nao_trava_em_linhas_em_branco():
+    # Medido em 29/10/2026: a expressão antiga levava 9,5 s neste texto.
+    inicio = time.monotonic()
+    CRC._titulo_no_inicio_da_linha("\n" * 20_000 + "x")
+    CRC._titulo_no_inicio_da_linha("comunicacao de " + " " * 20_000 + "\n")
+    assert time.monotonic() - inicio < 1.0
+
+
+@pytest.mark.parametrize("pedido,vai", [
+    ("/ajuda", "/ajuda"), ("/ajuda?vista=todos#problema-8",
+                           "/ajuda?vista=todos#problema-8"),
+    ("//fora.exemplo", "P"), ("/\fora.exemplo", "P"), ("/\t/fora", "P"),
+    ("http://fora.exemplo", "P"), ("javascript:alert(1)", "P"),
+    ("ajuda", "P"), ("", "P"), (None, "P"), ("/a\x7fb", "P"),
+])
+def test_o_volte_para_continua_so_dentro_da_casa(pedido, vai):
+    assert destino_interno(pedido, "P") == vai

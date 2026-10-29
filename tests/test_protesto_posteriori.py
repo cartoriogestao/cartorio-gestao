@@ -26,6 +26,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from banco_de_teste import conexao_de_teste  # noqa: E402
+from prova_de_intimacao import juntar_prova  # noqa: E402
 
 import ato_selado as AS                          # noqa: E402
 import protesto as PT                            # noqa: E402
@@ -219,6 +220,7 @@ def test_cancelamento_do_diferido_cobra_pela_tabela_do_dia_do_pedido():
     tid = titulo(con)
     apontar(con, tid)
     PT.lancar_intimacao(con, tid, modo="PESSOAL", agora=PROTOCOLADO)
+    juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
     PT.lancar_protesto(con, tid, sv=SV, agora=PROTOCOLADO, data_extenso=EXTENSO)
     can = PT.lancar_cancelamento(con, tid, hipotese="PAGAMENTO",
                                  fundamento="Quitado, com o título original.",

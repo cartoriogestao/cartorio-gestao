@@ -29,6 +29,7 @@ import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+from prova_de_intimacao import juntar_prova  # noqa: E402
 
 import modelos_da_casa as MOD                                    # noqa: E402
 
@@ -1106,6 +1107,7 @@ def _protesto_lancado(con, i: int, *, modo: str, digital: bool = False,
                     (json.dumps({"modo": modo, "digital": digital,
                                  "motivo_nao_entrega": motivo_nao_entrega}),
                      intimacao["ato_id"]))
+    juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
     r = PT.lancar_protesto(con, tid, sv=sv, agora="2026-09-20T10:00:00",
                            data_extenso="x")
     teor = bd.valor("SELECT teor FROM pt_atos WHERE id = %s", (r["ato_id"],))

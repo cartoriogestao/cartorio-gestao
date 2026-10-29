@@ -7,6 +7,7 @@
   PASSOS: esta tela mostra o que o PDF traz, e nada é lavrado até o clique.
 #}
 {% extends 'base.html' %}
+{% from '_protesto_afirmacao.html' import afirmacao %}
 {% block heading %}<h1>Intimações entregues — PDF com várias</h1>{% endblock %}
 {% block content %}
 {% include '_serventia.html' %}
@@ -66,6 +67,7 @@
       <thead><tr>
         <th>Registrar</th><th>Aviso</th><th>Devedor</th><th>Folhas</th>
         <th>O que acontece</th><th>Desfecho</th><th>Data</th>
+        <th>Quem recebeu <small>(se entregue)</small></th>
       </tr></thead>
       <tbody>
         {% for g in visto.grupos %}
@@ -98,6 +100,14 @@
           <td>{% if g.acao == 'REGISTRA' %}
                 <input type="date" name="quando_{{ g.aviso_id }}" value="{{ hoje }}">
               {% else %}—{% endif %}</td>
+          <td>{% if g.acao == 'REGISTRA' %}
+                {#- QUEM RECEBEU É OBRIGATÓRIO NA ENTREGA (29/10/2026): o nome
+                    de quem assinou o canhoto, como está no papel. Sem ele, a
+                    entrega só entra com a afirmação expressa deste aviso. #}
+                <input name="recebido_por_{{ g.aviso_id }}"
+                       placeholder="Nome de quem assinou o canhoto">
+                {{ afirmacao('_' ~ g.aviso_id, 'Entrega sem o nome de quem recebeu, ou folhas iguais às de outro aviso, só se registram com afirmação expressa.') }}
+              {% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -109,6 +119,9 @@
       a tentativa</strong> com a data — use a data anotada no canhoto —, e é
       esse rastro, com o canhoto anexado, que fundamenta o edital (art. 922).
       Em todos os casos as folhas ficam anexadas ao aviso.
+      <strong>Na entrega, escreva o nome de quem assinou o canhoto</strong>:
+      sem ele a entrega não entra, a não ser com afirmação expressa daquele
+      aviso (ordem do oficial, 29/10/2026).
     </div>
     <div class="actions" style="padding:0 14px 14px">
       <button class="button primary">Registrar os marcados</button>

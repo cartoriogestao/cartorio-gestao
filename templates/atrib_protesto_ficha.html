@@ -2,6 +2,7 @@
 {% block heading %}<h1>Título {{ titulo.numero_titulo }}</h1>{% endblock %}
 {% block content %}
 {% from '_cobrar.html' import quadro, cobrado %}
+{% from '_protesto_afirmacao.html' import afirmacao, prova_da_intimacao %}
 {% include '_serventia.html' %}
 <div class="actions"><a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a></div>
 
@@ -446,6 +447,13 @@
       <label style="grid-column:1/-1">Motivo do atraso
         <input name="motivo_atraso" required minlength="10"
                placeholder="Comprovante da intimação devolvido pelo entregador depois do prazo"></label>
+      {% endif %}
+      {#- A PROVA DA INTIMAÇÃO (29/10/2026): a mesma conferência que a rota
+          faz ao lavrar. Sem ela o protesto não sai — a não ser com a
+          afirmação expressa, que fica recolhida, com a frase de alerta. #}
+      <div style="grid-column:1/-1">{{ prova_da_intimacao(prova) }}</div>
+      {% if prova and not prova.completa %}
+        {{ afirmacao('', prova.frase) }}
       {% endif %}
     {% elif ato == 'DESISTENCIA' %}
       <label style="grid-column:1/-1">Motivo da desistência

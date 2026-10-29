@@ -7,6 +7,7 @@
   Quem trata edital como exceção desenha a tela errada.
 #}
 {% extends 'base.html' %}
+{% from '_protesto_afirmacao.html' import afirmacao %}
 {% block heading %}<h1>Avisos de intimação</h1>{% endblock %}
 {% block content %}
 {% include '_serventia.html' %}
@@ -118,7 +119,11 @@
                 action="{{ url_for('protesto_aviso_entrega', aviso_id=a.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="entregue" value="1">
-            <label>Quem recebeu
+            {#- O COMPROVANTE E QUEM RECEBEU SÃO OBRIGATÓRIOS NO MESMO ATO
+                (29/10/2026). Os campos não levam `required` de propósito: a
+                afirmação expressa precisa poder chegar ao servidor, e quem
+                recusa é o domínio (`registrar_entrega`). #}
+            <label>Quem recebeu <small>(obrigatório)</small>
               <input name="recebido_por" placeholder="Nome de quem assinou"></label>
             <label>Quando
               <input type="date" name="quando" value="{{ hoje }}"></label>
@@ -126,8 +131,9 @@
               <select name="entregador">
                 {% for e in entregadores %}<option>{{ e }}</option>{% endfor %}
               </select></label>
-            <label>Comprovante assinado <small>(PDF, PNG ou JPG — pode anexar depois)</small>
+            <label>Comprovante assinado <small>(obrigatório — o canhoto deste aviso, PDF, PNG ou JPG)</small>
               <input type="file" name="comprovante" accept=".pdf,.png,.jpg,.jpeg"></label>
+            {{ afirmacao('', 'Entrega sem o comprovante assinado ou sem quem recebeu, ou com um arquivo de outro aviso ou de outro título, só se registra com afirmação expressa.') }}
             <div class="actions">
               <button class="button primary">Entregue — lavrar a intimação</button></div>
           </form>
@@ -343,6 +349,7 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="file" name="comprovante" accept=".pdf,.png,.jpg,.jpeg" required>
             <button class="button small">Anexar</button>
+            {{ afirmacao('', 'O arquivo já anexado a outro aviso, ou cujo nome cita o protocolo de outro título, só se anexa com afirmação expressa.', 'Anexar mesmo assim — afirmação expressa') }}
           </form>
           {% if a.base_cadastro %}
             <div><small>endereço na base da CENPROT desde {{ a.base_cadastro.feito_em[:10] }}</small></div>

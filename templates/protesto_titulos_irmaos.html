@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+{% block title %}Conferência dos títulos — Protesto{% endblock %}
+{% block heading %}<h1>Protesto — conferência dos títulos irmãos e do cedente</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+{#
+  A CONFERÊNCIA DOS TÍTULOS (29/10/2026) — `protesto_titulos_irmaos`. Só lê, e não
+  corrige dado nenhum: o que fazer com cada linha é decisão do oficial.
+
+  Nasceu do caso das duas parcelas do mesmo protocolo: o pagamento entrou na
+  parcela errada, a paga foi protestada, e o cedente gravado nas duas não era
+  o do registro de origem.
+#}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_painel') }}">&larr; Painel do protesto</a>
+  <a class="button" href="{{ url_for('protesto_a_protestar') }}">A protestar</a>
+</div>
+
+{% if conferencia is none %}
+<div class="notice danger">
+  <strong>A conferência não deu para medir agora.</strong> O erro ficou no
+  registro do sistema. Isto não quer dizer que está tudo certo — quer dizer
+  que não se sabe.
+</div>
+{% else %}
+{% set irm = conferencia.irmaos %}
+{% set ced = conferencia.cedentes %}
+
+{# O QUE VAI AO ROTEIRO DO PROTESTO — a mesma lista que ele lê
+   (`pendencias_dos_irmaos`): os irmãos incoerentes e o cedente que diverge da
+   remessa ou do pedido que estão no sistema. O cedente que só se confere
+   contra a linha do E-Ofício fica de fora dele, e aparece embaixo. #}
+<section class="panel">
+  <div class="panel-head">
+    <span>O que vai ao roteiro do protesto</span>
+    <small>{{ conferencia.pendencias | length }}</small>
+  </div>
+  {% if conferencia.pendencias %}
+  <table class="table">
+    <thead><tr><th>Título</th><th>Protocolo</th><th>O que conferir</th></tr></thead>
+    <tbody>
+    {% for p in conferencia.pendencias %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}">{{ p.numero_titulo }}</a></td>
+        <td><small>{{ p.protocolo or '—' }}</small></td>
+        <td><small>{{ p.explicacao }}</small></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="padding:14px">Nada desta conferência vai hoje ao roteiro.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Títulos irmãos em situações que não se explicam juntas</span>
+    <small>{{ irm.incoerentes | length }} de {{ irm.protocolos }} protocolo(s) com mais de um título</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    <strong>Irmão é título com o mesmo protocolo.</strong> A maioria é o mesmo
+    título com dois devedores (a remessa da CRA manda uma linha por devedor);
+    o resto são parcelas. A lista mostra o protocolo em que um título está
+    pago e o irmão protestado com o mesmo valor, em que foi pago o de
+    vencimento posterior e o anterior continua em aberto, em que um está pago
+    e o outro nem foi intimado, e em que a mesma dívida tem dois desfechos.
+  </small></p>
+  {% if irm.incoerentes %}
+  <table class="table">
+    <thead><tr><th>Protocolo</th><th>Títulos</th><th>O que não se explica</th></tr></thead>
+    <tbody>
+    {% for g in irm.incoerentes %}
+      <tr>
+        <td>{{ g.protocolo }}</td>
+        <td><small>
+          {% for t in g.titulos %}
+            <a href="{{ url_for('protesto_titulo', titulo_id=t.id) }}">{{ t.numero_titulo }}</a>
+            · venc. {{ t.vencimento_br }} · {{ t.valor_br }} · <strong>{{ t.situacao }}</strong>
+            {%- if t.ultimo_ato %} (último ato: {{ t.ultimo_ato.tipo }} em {{ t.ultimo_ato.data }}){% endif %}<br>
+          {% endfor %}
+        </small></td>
+        <td><small>{% for f in g.frases %}{{ f }}{% if not loop.last %}<br>{% endif %}{% endfor %}</small></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="padding:14px">Nenhum protocolo com irmãos em situações incoerentes.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Cedente diferente do registro de origem</span>
+    <small>{{ ced.divergentes | length }} de {{ ced.conferidos }} conferido(s){% if ced.vazios %} · {{ ced.vazios }} com o cedente vazio{% endif %}</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    O registro de origem é o que chegou da Central: a linha de 600 posições
+    da remessa da CRA, o pedido da CENPROT ou a linha que o E-Ofício guardou
+    dela. A comparação é sem acento e sem pontuação, e aceita o nome cortado
+    nas 45 posições do arquivo; vale o cedente ou o sacador do registro.
+    {% if ced.sem_registro %}{{ ced.sem_registro }} título(s) não têm registro
+    de origem com nome, e ficam fora da conta.{% endif %}
+    <strong>É este nome que vai ao aviso, ao edital e ao instrumento</strong> —
+    e o sistema não o corrige sozinho.
+  </small></p>
+  {% if ced.divergentes %}
+  <table class="table">
+    <thead><tr><th>Título</th><th>Protocolo</th><th>Situação</th>
+               <th>Cedente gravado</th><th>No registro de origem</th><th>De onde</th></tr></thead>
+    <tbody>
+    {% for d in ced.divergentes %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=d.id) }}">{{ d.numero_titulo }}</a></td>
+        <td><small>{{ d.protocolo or '—' }}</small></td>
+        <td><small>{{ d.situacao }}</small></td>
+        <td><small>{{ d.cedente_nome or 'vazio' }}</small></td>
+        <td><small>{{ d.nomes_na_origem | join(' / ') }}</small></td>
+        <td><small>{{ d.de_onde }}</small></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="padding:14px">Nenhum título com o cedente diferente do registro de origem.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

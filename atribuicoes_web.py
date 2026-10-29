@@ -137,6 +137,9 @@ import protesto_lista as PLISTA
 # O EMOLUMENTO A POSTERIORI (LG05, 19/10/2026): quem paga cada ato do título
 # diferido, quando, e por qual tabela — CN-MA art. 925, §§ 11 e 12.
 import protesto_posteriori as POST
+# OS TÍTULOS IRMÃOS — os do mesmo protocolo (29/10/2026): lado a lado na
+# ficha e no lote, a trava de «qual título está no papel?» e a conferência.
+import protesto_titulos_irmaos as IRM
 import ra_correcoes as CORR
 # A VARREDURA DA FICHA DO LIVRO 3 — e dela que sai a certidao por reproducao.
 import ra_digitalizacao as RADIGI
@@ -3247,6 +3250,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             abort(403)
         voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_id))
         situacao_antes = situacao_depois = None
+        irmao = None
         try:
             with db.transaction() as con:
                 # A SITUAÇÃO DE ANTES DO ATO, lida com a linha presa — é para
@@ -3346,6 +3350,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 else:
                     raise PT.ProtestoError(
                         f"Ato desconhecido: {ato!r}.")
+                # QUAL TÍTULO ESTÁ NO PAPEL — 29/10/2026. Com irmão em aberto
+                # no mesmo protocolo, o pagamento, a desistência e o
+                # cancelamento só passam com o número e o vencimento do papel
+                # conferidos (ou com afirmação expressa). Depois do domínio,
+                # que recusa primeiro o que não cabe; a recusa daqui
+                # (`ProtestoError`) desfaz o ato inteiro.
+                irmao = IRM.conferir_e_anotar(
+                    con, titulo_id, ato, r["ato_id"],
+                    numero=_campo("irmao_numero") or None,
+                    vencimento=_campo("irmao_vencimento") or None,
+                    afirmo=bool(request.form.get("afirmo")),
+                    afirmacao=_campo("afirmacao") or None,
+                    por_robo=SR.usuario_e_robo(), quem=usuario_nome(),
+                    agora=agora(), situacao_antes=situacao_antes)
                 depois = PT.titulo(con, titulo_id)
                 situacao_depois = depois["situacao"] if depois else None
                 # O SELO CONFERIDO ANTES DE O ATO EXISTIR — ordem do oficial,
@@ -3400,6 +3418,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         # afirmou, e não do destino do ato. FORA da transação.
         _auditar_afirmacoes("pt_atos", r["ato_id"],
                             [r.get("afirmacao_expressa")])
+
+        # A AFIRMAÇÃO EXPRESSA (o contrato comum da casa, 29/10/2026): quem
+        # venceu a trava dos irmãos afirmando, fica no registro de auditoria —
+        # FORA da transação, como todo `audit`. O texto já está no
+        # `detalhe_json` do ato.
+        if irmao and irmao.get("afirmacao_expressa"):
+            af = irmao["afirmacao_expressa"]
+            audit("AFIRMACAO_EXPRESSA", "pt_titulos", titulo_id,
+                  {"regra": af["regra"], "afirmacao": af["afirmacao"],
+                   "o_que_faltava": af["o_que_faltava"], "ato": ato,
+                   "ato_id": r["ato_id"]})
         # O SELO SAI AGORA, com o ato lavrado — um para cada item cobrado.
         recado_do_selo = ""
         # Ordens judiciais não são atos cobrados/selados da serventia. Elas
@@ -3486,6 +3515,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # precisa do documento à vista — é a mesma razão do relato #25,
             # sobre o título apresentado na prenotação do RI.
             imagens = PIMG.imagens_do_titulo(con, titulo_id)
+            # OS TÍTULOS IRMÃOS (29/10/2026): os do mesmo protocolo, lado a
+            # lado — número, vencimento, valor, situação e último ato. É deles
+            # que a trava do pagamento, da desistência e do cancelamento fala.
+            irmaos = IRM.quadro_da_ficha(con, titulo_id)
             atos = bd.ler(
                 "SELECT * FROM pt_atos WHERE titulo_id=%s ORDER BY id",
                 (titulo_id,))
@@ -3519,6 +3552,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                  "documento": titulo["cedente_documento"],
                  "papel_no_ato": "credor"},
             ])
+
+        # O CEDENTE CONTRA O REGISTRO DE ORIGEM (29/10/2026) — a remessa, o
+        # pedido da CENPROT ou a linha do E-Ofício. Só mostra; não corrige.
+        _acervo = _acervo_se_houver()
+        try:
+            with db.connect() as _c:
+                cedente_origem = IRM.cedente_da_origem(_c, titulo, _acervo)
+        finally:
+            if _acervo is not None:
+                _acervo.close()
 
         situacao = titulo["situacao"]
         # A ORDEM JUDICIAL DE SUSTACAO, se houver — Lei 9.492/1997, art. 17.
@@ -3615,6 +3658,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                triduo=(triduo or {}).get("triduo"),
                                triduo_situacao=(triduo or {}).get(
                                    "triduo_situacao"),
+                               irmaos=irmaos, cedente_origem=cedente_origem,
                                prova=prova)
 
     @app.route("/protesto/<int:titulo_id>/ordem/<int:ato_id>/marcar",
@@ -11300,9 +11344,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # disposicao do Juizo que ninguem enxerga e titulo esquecido.
             revogados = PT.sustacao_revogada(con, hoje=hoje())
             sustados = PT.sustados(con)
+            # OS TÍTULOS IRMÃOS DE CADA UM (29/10/2026): no caso que motivou,
+            # a parcela protestada tinha a irmã «paga» com o mesmo valor — e
+            # a lista não dizia que o protocolo tinha dois títulos.
+            irmaos = IRM.irmaos_de_varios(con, [t["id"] for t in linhas])
         return render_template("protesto_a_protestar.html", linhas=linhas,
                                revogados=revogados, sustados=sustados,
-                               hoje=hoje())
+                               hoje=hoje(), irmaos=irmaos)
 
     @app.route("/protesto/a-protestar/lavrar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -11494,10 +11542,49 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as con:
             dados = PROT.roteiro(con, agora=agora())
             afirmacoes = AFX.contar(con, hoje=hoje())
+        conferencia_titulos = _conferencia_dos_titulos(resumo=True)
         return render_template("protesto_painel.html", r=dados,
                                cobertura=PROT.quantos_o_sistema_faz(),
-                               afirmacoes_7_dias=afirmacoes)
+                               afirmacoes_7_dias=afirmacoes,
+                               conferencia_titulos=conferencia_titulos)
+    def _conferencia_dos_titulos(*, resumo: bool) -> dict | None:
+        """A conferência dos irmãos e do cedente, com o acervo do E-Ofício
+        aberto e fechado aqui. SÓ LÊ. None quando ela não deu para medir — e a
+        tela diz isso, em vez de mostrar um zero com cara de medição."""
+        acervo = _acervo_se_houver()
+        try:
+            with db.connect() as con:
+                if resumo:
+                    return IRM.resumo_para_o_painel(con, acervo)
+                # `pendencias` é a MESMA lista que o roteiro do protesto lê
+                # (`pendencias_dos_irmaos`): a tela mostra o que vai a ele.
+                return {"irmaos": IRM.irmaos_incoerentes(con),
+                        "cedentes": IRM.cedentes_divergentes(con, acervo),
+                        "pendencias": IRM.pendencias_dos_irmaos(con)}
+        except Exception:                               # noqa: BLE001
+            app.logger.exception("conferência dos títulos irmãos e do cedente")
+            return None
+        finally:
+            if acervo is not None:
+                acervo.close()
 
+    @app.route("/protesto/titulos-irmaos")
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_titulos_irmaos():
+        """A CONFERÊNCIA DOS TÍTULOS — os irmãos e o cedente. SÓ LÊ.
+
+        Ordem do oficial, 29/10/2026, depois do caso das duas parcelas do
+        mesmo protocolo (a paga protestada, a não paga «paga»): mostrar os
+        títulos IRMÃOS — os que dividem o protocolo — cujas situações não se
+        explicam juntas, e os títulos cujo CEDENTE diverge do registro de
+        origem (a remessa da CRA, o pedido da CENPROT ou a linha do E-Ofício).
+
+        **NÃO CORRIGE DADO NENHUM.** O que fazer com cada um é decisão do
+        oficial; a tela diz o que está diferente e de onde veio a comparação.
+        """
+        conferencia = _conferencia_dos_titulos(resumo=False)
+        return render_template("protesto_titulos_irmaos.html",
+                               conferencia=conferencia)
     @app.route("/protesto/afirmacoes")
     @roles_required("ADMIN")
     def protesto_afirmacoes():

@@ -303,8 +303,11 @@ def _pago_da_cra(db, *, saldo: str = "200.00", chave: str = "CRAB:1") -> dict:
     with db.transaction() as con:
         tid = PT.cadastrar_titulo(con, d, origem="CRA", origem_chave=chave, agora=quando)
         PT.lancar_apontamento(con, tid, sv=SV, agora=quando, data_extenso=EXTENSO)
+        # A forma é incidental aqui, e não pode ser PIX: desde o PR #119 o PIX
+        # só é pagamento com o crédito conferido (`pix_id`). Trocado na
+        # integração de 29/10/2026.
         ato = PT.lancar_pagamento(con, tid, sv=SV, agora=quando, data_extenso=EXTENSO,
-                                  forma_pagamento="PIX")["ato_id"]
+                                  forma_pagamento="TRANSFERENCIA")["ato_id"]
         rid = nativo(con).escrever(
             """INSERT INTO pt_retornos(tipo, apresentante_codigo, dia, nome_arquivo,
                    conteudo, gerado_em, cra_enviado_em)

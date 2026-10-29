@@ -45,6 +45,29 @@
 </div>
 
 {#
+  A SITUAÇÃO SEM O ATO QUE A SUSTENTE — ordem do oficial, 29/10/2026. O título
+  PAGO sem pagamento válido, o CANCELADO sem cancelamento: o livro, a certidão e
+  o retorno à CRA leem a situação, e ela afirma um fato que o livro não tem. A
+  conferência (`protesto_selo_previo`) só MOSTRA; corrigir é decisão do
+  oficial. Só o número do título no sistema e a situação — nada da pessoa.
+#}
+{% if sem_ato %}
+<section class="panel" data-situacao-sem-ato>
+  <div class="panel-head">
+    <span>Situação sem o ato que a sustente</span>
+    <small>{{ sem_ato | length }} título(s) — só leitura</small>
+  </div>
+  <ul style="padding:6px 14px 14px 32px; margin:0">
+    {% for x in sem_ato %}
+    <li><a href="{{ url_for('protesto_titulo', titulo_id=x.titulo_id) }}">título {{ x.titulo_id }}</a>
+      — {{ x.situacao }} sem ato de {{ x.ato_esperado }} válido.
+      <small>{{ x.explicacao }}</small></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{#
   AS TRÊS VISTAS, com o número de cada uma no botão — a forma da lista de
   problemas da ajuda (relato #82). O número vem da MESMA régua que filtra a
   lista (os outros filtros valem para a contagem; só a vista e a situação não).

@@ -121,6 +121,7 @@ import protesto_roteiro as PROT
 import protesto_certidao as PCE
 import protesto_termo as PTERMO
 import protesto_triduo as TRIDUO
+import protesto_selo_previo as PSELO
 import protesto_livros as PLIV
 import protesto_cra as CRA
 import protesto_desistencia as DS
@@ -956,6 +957,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 ORDER BY id""", (str(tabela), int(ato_id)))
                 for _ in range(max(1, int(r["quantidade"] or 1)))]
 
+    def _itens_do_selo_do_protesto(con, tabela: str,
+                                   ids_usados: list | None = None) -> list[str]:
+        """Os códigos que o selo do Protesto vai pedir, um por selo. Só LÊ.
+
+        UMA FUNÇÃO PARA AS DUAS PERGUNTAS — 29/10/2026: o selo a usa depois de
+        lavrar, e `protesto_selo_previo` a usa ANTES, para recusar o ato cujo
+        selo não vai sair. Duas réguas para «há item?» divergiriam no primeiro
+        conserto.
+
+        A BUSCA DA CERTIDÃO NÃO SAI POR AQUI — 15/10/2026. Os 51 selos de busca
+        do Protesto no acervo saíram por `atos-em-geral`, e não pelo caminho da
+        certidão; quem os sela é `_selar_a_busca_da_certidao_do_protesto`,
+        ainda que o item tenha vindo do protocolo.
+        """
+        # O envelope do Protesto não tem campo de quantidade — um selo por
+        # unidade, como sempre (ver `_itens_para_selar_expandido`).
+        itens = _itens_para_selar_expandido(con, ids_usados)
+        if tabela == "pt_certidoes":
+            itens = [c for c in itens if not BU.e_item_de_busca(c)]
+        return itens
+
     def _selar_o_protesto(tabela: str, ato_id: int, tipo: str) -> str:
         """Um selo para cada item cobrado. FALA COM A REDE.
 
@@ -971,16 +993,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return SR.recado_pendente_selo()
         ids_do_protocolo: list[int] = []
         with db.connect() as con:
-            # O envelope do Protesto não tem campo de quantidade — um selo
-            # por unidade, como sempre (ver `_itens_para_selar_expandido`).
-            itens = _itens_para_selar_expandido(con, ids_do_protocolo)
-            # A BUSCA DA CERTIDÃO NÃO SAI POR AQUI — 15/10/2026. Os 51 selos de
-            # busca do Protesto no acervo saíram por `atos-em-geral`, e não
-            # pelo caminho da certidão; quem os sela é
-            # `_selar_a_busca_da_certidao_do_protesto`, ainda que o item tenha
-            # vindo do protocolo.
-            if tabela == "pt_certidoes":
-                itens = [c for c in itens if not BU.e_item_de_busca(c)]
+            # A mesma régua que confere antes de lavrar (29/10/2026).
+            itens = _itens_do_selo_do_protesto(con, tabela, ids_do_protocolo)
             # A CERTIDÃO NÃO TEM TÍTULO — quem vai nas partes é a pessoa
             # pesquisada, como em 53 dos 57 envelopes do acervo (15/10/2026).
             pesquisado = (banco(con).um(
@@ -2372,11 +2386,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as con:
             r = PLISTA.listar(con, filtro, hoje=hoje(), pagina=pagina)
             apresentantes = PLISTA.apresentantes(con)
+            # OS TÍTULOS NUMA SITUAÇÃO SEM O ATO QUE A SUSTENTE (29/10/2026).
+            sem_ato = PSELO.titulos_sem_ato_que_sustente(con)
         session["protesto_lista_filtro"] = PLISTA.params(
             filtro, pagina=r["pagina"] if r["pagina"] > 1 else None)
         contagem_vistas = r.pop("vistas")
         return render_template(
             "protesto_titulos.html", filtro=filtro, lembrado=lembrado,
+            sem_ato=sem_ato,
             apresentantes=apresentantes, vistas=PLISTA.VISTAS,
             contagem_vistas=contagem_vistas,
             ordens=PLISTA.ORDENS, filtro_sustado=PLISTA.FILTRO_SUSTADO,
@@ -2588,6 +2605,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     usuario=usuario_nome(),
                     autorizacao=_campo("autorizacao") or None,
                     autorizacao_ref=_campo("autorizacao_ref") or None)
+                # O SELO CONFERIDO ANTES (29/10/2026): sem item a certidão não
+                # sela, e a recusa desfaz a transação inteira — o número do
+                # exercício não se consome e nada fica gravado.
+                import selo_robo as SR
+                PSELO.conferir_antes_de_lavrar(
+                    r["tipo"],
+                    lambda: _itens_do_selo_do_protesto(con, "pt_certidoes"),
+                    tabela="pt_certidoes", selo_digitado=bool(_campo("selo")),
+                    selo_automatico=SR.pode_selar_automatico(),
+                    protocolo_escolhido=numero_digitado(
+                        _campo("protocolo_id")) is not None)
                 selo_a_mao = _selar_se_pedido(con, "pt_certidoes",
                                               r["certidao_id"], "PROTESTO")
                 aviso = selo_a_mao
@@ -3319,6 +3347,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         f"Ato desconhecido: {ato!r}.")
                 depois = PT.titulo(con, titulo_id)
                 situacao_depois = depois["situacao"] if depois else None
+                # O SELO CONFERIDO ANTES DE O ATO EXISTIR — ordem do oficial,
+                # 29/10/2026. Sem item marcado nem protocolo com item, o selo
+                # não sai, e até aqui isso só se descobria depois de lavrar: o
+                # ato era desfeito, e o 9614 ficou PAGO sem pagamento. Depois
+                # das regras do domínio (que dizem se o ato cabe) e antes de
+                # cobrar: a recusa desfaz a transação inteira, e nada fica.
+                PSELO.conferir_antes_de_lavrar(
+                    ato, lambda: _itens_do_selo_do_protesto(con, "pt_atos"),
+                    selo_digitado=bool(_campo("selo")),
+                    selo_automatico=SR.pode_selar_automatico(),
+                    protocolo_escolhido=numero_digitado(
+                        _campo("protocolo_id")) is not None)
                 # O SELO DIGITADO A MAO FICA NUMA VARIAVEL PROPRIA, e nao
                 # somado ao resto: e ele, e so ele, que impede o pedido
                 # automatico. Perguntar por `aviso` faria a cobranca —
@@ -3344,6 +3384,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                             and request.form.get("cobrar_diferidos")):
                         aviso += _cobrar_os_diferidos(con, titulo_id,
                                                       r["ato_id"], cobranca)
+        except PSELO.SeloSemItemError as erro:
+            # O FORMULÁRIO VOLTA PREENCHIDO: a ficha se desenha com o que foi
+            # postado, em vez de redirecionar e perder o que se digitou.
+            flash(str(erro), "danger")
+            return app.view_functions["protesto_titulo"](titulo_id=titulo_id)
         except (PT.ProtestoError, AS.AtoError, LN.LivroError,
                 PTERMO.TermoError, POST.PosterioriError) as erro:
             flash(str(erro), "danger")
@@ -3367,10 +3412,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         # remessa da CRA também não sela. Pedir selo aqui fazia o 900001/1
         # (ato 4043) sair lavrado no livro e marcado cancelado, com o título
         # já APONTADO — o estado que nenhuma tela desfaz.
-        atos_sem_selo_proprio = {
-            "SUSTACAO", "REVOGACAO_SUSTACAO", "EFEITO_SUSPENSIVO",
-            "REVOGACAO_EFEITO_SUSPENSIVO", "APONTAMENTO",
-        }
+        # A LISTA MORA EM `protesto_selo_previo` desde 29/10/2026: é a mesma que
+        # decide se o ato é conferido ANTES de lavrar.
+        atos_sem_selo_proprio = PSELO.ATOS_SEM_SELO_PROPRIO
         if not selo_a_mao and ato not in atos_sem_selo_proprio:
             recado_do_selo = _selar_o_protesto("pt_atos", r["ato_id"], ato)
             aviso += recado_do_selo
@@ -3504,6 +3548,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             import protesto_prova as PROVA
             prova = (PROVA.conferir(_c, titulo_id, hoje=hoje())
                      if situacao == "INTIMADO" else None)
+            # A SITUAÇÃO SEM O ATO QUE A SUSTENTE (29/10/2026): só mostra.
+            sem_ato = PSELO.situacao_sem_ato(_c, titulo_id)
         pago_com_protesto = situacao == "PAGO" and bool(catalogo)
         cabem = []
         # O APONTAMENTO É O PRIMEIRO ATO DA VIDA DO TÍTULO — Lei 9.492/1997,
@@ -3549,6 +3595,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         elif situacao == "PROTESTADO":
             cabem.append("EFEITO_SUSPENSIVO")
         return render_template("atrib_protesto_ficha.html", titulo=dict(titulo),
+                               sem_ato=sem_ato,
                                emolumento=emolumento, apresentante=apresentante,
                                imagens=imagens, sustacao=sustacao,
                                suspensao=suspensao,

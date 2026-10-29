@@ -23,8 +23,55 @@
 <div class="notice danger" data-situacao-sem-ato>
   <strong>A situação {{ sem_ato.situacao }} não tem o ato que a sustente:</strong>
   não há ato de {{ sem_ato.ato_esperado }} válido neste título. {{ sem_ato.explicacao }}
-  O livro, a certidão e o retorno à CRA leem a situação; conserte só com a
-  decisão do oficial.
+  O livro, a certidão e o retorno à CRA leem a situação.
+  <p style="margin:8px 0 0"><strong>Como se resolve:</strong> os atos válidos
+    sustentam a situação <strong>{{ sem_ato.situacao_sustentada }}</strong>. A
+    correção de ofício devolve o título a ela — e, se o ato de
+    {{ sem_ato.ato_esperado }} deve existir, ele se lança de novo logo depois,
+    pela ficha, com o item marcado. Se o fato está só no livro de papel ou no
+    E-Ofício, decida antes de corrigir. Confira também se a CRA já recebeu a
+    ocorrência.</p>
+  {% if user.role in ['ADMIN', 'MANAGER'] %}
+  <form method="post" action="{{ url_for('protesto_situacao_corrigir', titulo_id=titulo.id) }}"
+        class="grid2" style="margin-top:8px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label style="grid-column:1/-1"><input type="checkbox" name="afirmo" value="1">
+      Afirmo — correção de ofício, de {{ sem_ato.situacao }} para
+      {{ sem_ato.situacao_sustentada }}</label>
+    <label style="grid-column:1/-1">Por quê <small>(pelo menos {{ minimo_da_afirmacao }}
+      letras; fica na auditoria com o seu nome)</small>
+      <textarea name="afirmacao" rows="2" required
+                placeholder="{{ modelo_da_afirmacao }}"></textarea></label>
+    <div class="actions"><button class="button">Corrigir a situação de ofício</button></div>
+  </form>
+  {% else %}
+  <p style="margin:8px 0 0"><small>A correção de ofício é do oficial ou do
+    substituto: avise-os.</small></p>
+  {% endif %}
+</div>
+{% endif %}
+
+{# O ATO A REFAZER (29/10/2026): a falha do aparelho depois de lavrar vira
+   obrigação, e não esquecimento — e some sozinha quando o ato é lançado. #}
+{% if pendencias_do_selo %}
+<div class="notice danger" data-pendencias-do-selo>
+  <strong>Obrigação deste título:</strong>
+  <ul style="margin:6px 0 0 18px">
+  {% for p in pendencias_do_selo %}
+    <li>
+    {% if p.especie == 'REFAZER' %}
+      <strong>Refazer {{ p.ato }}</strong> — desfeito em {{ p.quando_br }}
+      porque o selo não saiu ({{ p.motivo }}); tentou: {{ p.quem_tentou }}{% if p.tentativas > 1 %},
+      {{ p.tentativas }} tentativas{% endif %}.
+      {% if p.tipo in cabem %}<a href="#lancar-{{ p.tipo }}">Lançar de novo</a>.{% else %}
+      A situação de agora não deixa lançá-lo: veja acima.{% endif %}
+    {% else %}
+      <strong>Selar {{ p.ato }}</strong> (ato {{ p.ato_id }}, de {{ p.quando_br }}) —
+      {{ p.motivo }}. Quem sela é o escrevente.
+    {% endif %}
+    </li>
+  {% endfor %}
+  </ul>
 </div>
 {% endif %}
 
@@ -432,6 +479,7 @@
      e o formulário do ato recusado lê daqui. Nos outros, `v_ato` é vazio. #}
   {% set v_ato = request.form if (request.method == 'POST' and request.form.get('ato') == ato) else {} %}
   <form method="post" action="{{ url_for('protesto_lancar', titulo_id=titulo.id) }}"
+        id="lancar-{{ ato }}"
         class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="ato" value="{{ ato }}">
@@ -585,6 +633,20 @@
     <label>Selo <small>(opcional)</small>
       <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"
              value="{{ v_ato.get('selo', '') }}"></label>
+    {% endif %}
+    {# A AFIRMAÇÃO EXPRESSA (29/10/2026) só aparece no formulário que a rota
+       acabou de recusar por uma trava que ela vence — o item que não saiu em
+       selo por este caminho. O que se afirma vai ao ato e à auditoria. #}
+    {% set pedida = g.get('protesto_afirmacao_pedida') %}
+    {% if pedida and pedida.ato == ato %}
+    <div style="grid-column:1/-1" class="notice" data-afirmacao-expressa>
+      <label><input type="checkbox" name="afirmo" value="1"{% if v_ato.get('afirmo') %} checked{% endif %}>
+        Afirmo que o item serve para este ato, mesmo fora da lista</label>
+      <label>Por quê <small>(pelo menos {{ minimo_da_afirmacao }} letras; fica no ato
+        e na auditoria com o seu nome)</small>
+        <textarea name="afirmacao" rows="2"
+                  placeholder="{{ modelo_da_afirmacao }}">{{ v_ato.get('afirmacao', '') }}</textarea></label>
+    </div>
     {% endif %}
     {% set cob = emolumento.por_ato.get(ato) if emolumento else none %}
     {% if cob and cob.regime == 'DIFERIDO' %}

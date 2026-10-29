@@ -184,6 +184,20 @@
     {{ campo_busca(busca_da_certidao('PROTESTO', anos=anos), pede_data=True) }}
     {{ quadro(receita, caixa, protocolos) }}
 
+    {# A AFIRMAÇÃO EXPRESSA (29/10/2026): só vence a trava do item que não saiu
+       em selo de certidão. Quem o sistema recusou por isso marca, escreve, e
+       emite de novo; o que se afirma vai à auditoria com o nome de quem
+       afirmou. #}
+    <details style="grid-column:1/-1" data-afirmacao-expressa>
+      <summary><small>Afirmação expressa — só se a emissão foi recusada porque o
+        item não saiu em selo de certidão, e ele serve mesmo</small></summary>
+      <label><input type="checkbox" name="afirmo" value="1">
+        Afirmo que o item serve para esta certidão, mesmo fora da lista</label>
+      <label>Por quê <small>(pelo menos 30 letras)</small>
+        <textarea name="afirmacao" rows="2"
+                  placeholder="Afirmo, sob minha responsabilidade, que…"></textarea></label>
+    </details>
+
     <div class="actions" style="grid-column:1/-1">
       <button class="button">Emitir certidão</button>
     </div>

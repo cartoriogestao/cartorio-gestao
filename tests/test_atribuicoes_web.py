@@ -1004,27 +1004,45 @@ def test_ato_cancelado_por_falta_de_selo_devolve_a_situacao_do_titulo(s, monkeyp
     à situação de antes, com `situacao_restaurada` na auditoria. Com o item
     marcado — sem ele, a recusa vem antes (29/10/2026) — e o selo falhando
     depois de o ato estar lavrado."""
-    _post_novo(s, "/protesto/novo", **TITULO, **DEVEDOR)
-    con = _con(s)
-    titulo_id = con.execute("SELECT id FROM pt_titulos").fetchone()["id"]
+    titulo_id = _titulo_apontado(s)
     servico = _com_servico(s, codigo_tj="17.4")
     _abrir_caixa(s)
     _o_selo_falha_depois_de_lavrar(monkeypatch)
     html = _post(s, f"/protesto/{titulo_id}/lancar", ato="DESISTENCIA",
                  motivo="Credor desistiu antes do protesto", cobrar=str(servico))
     assert "NÃO lançado" in html
+    assert "ato a refazer" in html
     con = _con(s)
     ato = con.execute("SELECT * FROM pt_atos WHERE tipo='DESISTENCIA'").fetchone()
     assert int(ato["cancelado"]) == 1
     assert "Selo não emitido" in ato["motivo_cancelamento"]
     assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
-                       (titulo_id,)).fetchone()[0] == "RECEBIDO"
+                       (titulo_id,)).fetchone()[0] == "APONTADO"
     detalhe = _auditoria_da_falha(s)
     assert detalhe["ato"] == "DESISTENCIA"
-    assert detalhe["situacao_restaurada"] == "RECEBIDO"
-    # E a ficha deixa lançar de novo — o que o 900001/1 não deixava.
-    ficha = s["c"].get(f"/protesto/{titulo_id}").get_data(as_text=True)
+    assert detalhe["situacao_restaurada"] == "APONTADO"
+    # E a ficha deixa lançar de novo — o que o 900001/1 não deixava. E A
+    # FALHA VIROU OBRIGAÇÃO (29/10/2026): o ato a refazer, na ficha e no painel.
+    ficha = " ".join(s["c"].get(f"/protesto/{titulo_id}").get_data(as_text=True).split())
     assert 'value="DESISTENCIA"' in ficha
+    assert "data-pendencias-do-selo" in ficha
+    assert "Refazer a desistência" in ficha
+    assert 'href="#lancar-DESISTENCIA"' in ficha
+    painel = s["c"].get("/protesto").get_data(as_text=True)
+    assert "data-pendencias-do-selo" in painel
+    assert f'href="/protesto/{titulo_id}"' in painel
+
+
+def _titulo_apontado(s) -> int:
+    """O título do balcão, apontado: o protocolo dele nasce aqui, e o selo do
+    Protesto não sai sem ele."""
+    _post_novo(s, "/protesto/novo", **TITULO, **DEVEDOR)
+    con = _con(s)
+    titulo_id = con.execute("SELECT id FROM pt_titulos").fetchone()["id"]
+    con.close()
+    html = _post(s, f"/protesto/{titulo_id}/lancar", ato="APONTAMENTO")
+    assert "Apontamento lançado" in html
+    return titulo_id
 
 
 def test_a_volta_da_situacao_nao_passa_por_cima_de_outro_balcao(s, monkeypatch):
@@ -1032,17 +1050,14 @@ def test_a_volta_da_situacao_nao_passa_por_cima_de_outro_balcao(s, monkeypatch):
     balcão mexeu no título nesse meio-tempo, a volta não o desfaz — e a
     auditoria diz que não voltou (None), em vez de afirmar uma volta que não
     houve."""
-    _post_novo(s, "/protesto/novo", **TITULO, **DEVEDOR)
-    con = _con(s)
-    titulo_id = con.execute("SELECT id FROM pt_titulos").fetchone()["id"]
-    con.close()
+    titulo_id = _titulo_apontado(s)
     servico = _com_servico(s, codigo_tj="17.4")
     _abrir_caixa(s)
 
     def outro_balcao_mexe_antes():
         de_fora = _con(s)
         with de_fora:
-            de_fora.execute("UPDATE pt_titulos SET situacao='APONTADO' WHERE id=?",
+            de_fora.execute("UPDATE pt_titulos SET situacao='INTIMADO' WHERE id=?",
                             (titulo_id,))
         de_fora.close()
 
@@ -1052,7 +1067,7 @@ def test_a_volta_da_situacao_nao_passa_por_cima_de_outro_balcao(s, monkeypatch):
     assert "NÃO lançado" in html
     con = _con(s)
     assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
-                       (titulo_id,)).fetchone()[0] == "APONTADO"
+                       (titulo_id,)).fetchone()[0] == "INTIMADO"
     assert _auditoria_da_falha(s)["situacao_restaurada"] is None
 
 
@@ -1092,6 +1107,209 @@ def test_titulo_em_ordem_nao_aparece_na_conferencia(s):
     do lugar não mostra o quadro."""
     html = s["c"].get("/protesto").get_data(as_text=True)
     assert "data-situacao-sem-ato" not in html
+    assert "data-pendencias-do-selo" not in html
+
+
+AFIRMACAO_BOA = ("Afirmo, sob minha responsabilidade, que este item serve "
+                 "para este ato, conforme a tabela do Tribunal.")
+
+
+def test_o_4127_e_recusado_antes_e_a_afirmacao_vence(s):
+    """O ato 4127 (título 1353, 29/10/2026 às 08h43): o cancelamento saiu com
+    a faixa 17.4.5, que o aparelho não conhece, e foi desfeito. Agora a ficha
+    recusa ANTES, diz quais itens servem e abre a afirmação expressa; com ela,
+    o ato entra, e a afirmação fica no ato e na auditoria."""
+    ids = _semear(s)
+    servico = _com_servico(s, codigo=2, codigo_tj="17.4.5")
+    _abrir_caixa(s)
+    campos = dict(ato="CANCELAMENTO", hipotese="PAGAMENTO",
+                  fundamento="Título quitado, com prova.", cobrar=str(servico))
+    html = _post(s, f"/protesto/{ids['titulo']}/lancar", **campos)
+    texto = " ".join(html.split())
+    assert "Ato NÃO lançado, e nada foi gravado" in texto
+    assert "17.4.5" in texto and "17.2" in texto       # o que serve
+    assert "data-afirmacao-expressa" in html           # a caixa se abriu
+    con = _con(s)
+    assert con.execute(
+        "SELECT COUNT(*) FROM pt_atos WHERE tipo='CANCELAMENTO'").fetchone()[0] == 0
+    assert con.execute(
+        "SELECT COUNT(*) FROM cx_lancamentos WHERE origem='ATO'").fetchone()[0] == 0
+    # A AFIRMAÇÃO PELA METADE CONTINUA SENDO A TRAVA.
+    meia = _post(s, f"/protesto/{ids['titulo']}/lancar", afirmo="1",
+                 afirmacao="Afirmo que serve.", **campos)
+    assert "afirmação expressa está incompleta" in meia
+    # COM ELA, o ato entra.
+    feito = _post(s, f"/protesto/{ids['titulo']}/lancar", afirmo="1",
+                  afirmacao=AFIRMACAO_BOA, **campos)
+    assert "Cancelamento lançado" in feito
+    con = _con(s)
+    ato = con.execute("SELECT * FROM pt_atos WHERE tipo='CANCELAMENTO'").fetchone()
+    import json
+    [afirmada] = json.loads(ato["detalhe_json"])["afirmacoes_expressas"]
+    assert afirmada["regra"] == "SELO_ITEM_FORA_DO_CAMINHO"
+    assert afirmada["afirmacao"] == AFIRMACAO_BOA
+    linha = con.execute(
+        "SELECT entity_type, entity_id, details FROM audit_logs "
+        "WHERE action='AFIRMACAO_EXPRESSA' ORDER BY id DESC LIMIT 1").fetchone()
+    assert (linha["entity_type"], int(linha["entity_id"])) == ("pt_atos", ato["id"])
+    detalhes = json.loads(linha["details"])
+    assert set(detalhes) >= {"regra", "afirmacao", "o_que_faltava"}
+    assert "17.4.5" in detalhes["o_que_faltava"]
+
+
+def test_a_faixa_do_pagamento_sai_pelo_item_do_tribunal(s):
+    """O pagamento pago pela faixa 17.4.5 sela pelo 17.4 — o que o E-Ofício
+    mandou em 141 selos de pagamento, e o que o aparelho conhece."""
+    titulo_id = _titulo_apontado(s)
+    servico = _com_servico(s, codigo=2, codigo_tj="17.4.5")
+    _abrir_caixa(s)
+    html = _post(s, f"/protesto/{titulo_id}/lancar", ato="PAGAMENTO",
+                 forma_pagamento="PIX", valor_pago="1.310,45", cobrar=str(servico))
+    assert "Pagamento lançado" in html and "NÃO lançado" not in html
+    con = _con(s)
+    ato = con.execute("SELECT id FROM pt_atos WHERE tipo='PAGAMENTO'").fetchone()
+    referencias = [r[0] for r in con.execute(
+        "SELECT referencia FROM sd_selos WHERE tabela='pt_atos' AND ato_id=?",
+        (ato["id"],)).fetchall()]
+    assert referencias and all(":17.4:" in r for r in referencias), referencias
+
+
+def test_o_titulo_sem_protocolo_e_recusado_antes(s):
+    """O protocolo do título nasce no apontamento, e o envelope do selo do
+    Protesto o exige: a desistência do título ainda RECEBIDO não sai."""
+    _post_novo(s, "/protesto/novo", **TITULO, **DEVEDOR)
+    con = _con(s)
+    titulo_id = con.execute("SELECT id FROM pt_titulos").fetchone()["id"]
+    servico = _com_servico(s, codigo_tj="17.4")
+    _abrir_caixa(s)
+    html = _post(s, f"/protesto/{titulo_id}/lancar", ato="DESISTENCIA",
+                 motivo="Credor desistiu antes do protesto", cobrar=str(servico))
+    assert "aponte o título antes" in " ".join(html.split())
+    assert 'value="Credor desistiu antes do protesto"' in html
+    con = _con(s)
+    assert con.execute(
+        "SELECT COUNT(*) FROM pt_atos WHERE tipo='DESISTENCIA'").fetchone()[0] == 0
+
+
+def test_o_item_do_protocolo_nao_pago_e_recusado_antes(s):
+    """A trava do selo pago (3.7.0): com o protocolo escolhido e o item dele
+    não quitado, sem depósito prévio, o selo não sai — e a ficha diz antes."""
+    s["db"].set_settings({"selo_trava_caixa": "LIGADA"})
+    ids = _semear(s)
+    con = _con(s)
+    with con:
+        con.execute(
+            """INSERT INTO cx_protocolos(numero, data_abertura, atribuicao,
+                   interessado, situacao, criado_em)
+               VALUES ('2026.10.900', '2026-10-29','PROTESTO','CICERO','ABERTO',
+                       '2026-10-29T09:00:00')""")
+        prot = con.execute("SELECT id FROM cx_protocolos").fetchone()[0]
+        con.execute(
+            """INSERT INTO cx_protocolo_atos(protocolo_id, descricao, codigo_ato,
+                   quantidade, valor_total)
+               VALUES (?, 'Cancelamento', '17.3', 1, '40,00')""", (prot,))
+    con.close()
+    html = _post(s, f"/protesto/{ids['titulo']}/lancar", ato="CANCELAMENTO",
+                 hipotese="PAGAMENTO", fundamento="Título quitado, com prova.",
+                 protocolo_id=str(prot))
+    texto = " ".join(html.split())
+    assert "o selo pago só sai com o item pago" in texto
+    assert "2026.10.900" in texto and "17.3" in texto
+    assert _con(s).execute(
+        "SELECT COUNT(*) FROM pt_atos WHERE tipo='CANCELAMENTO'").fetchone()[0] == 0
+
+
+def test_a_correcao_de_oficio_pela_ficha(s):
+    """O 9614: PAGO com o pagamento desfeito. A ficha mostra o caminho — a
+    correção de ofício, com afirmação expressa — e ela volta o título à
+    situação que os atos válidos sustentam, deixando o rastro."""
+    con = _con(s)
+    with con:
+        cur = con.execute(
+            """INSERT INTO pt_titulos(especie, numero_titulo, protocolo,
+                   valor_centavos, saldo_centavos, situacao, origem,
+                   origem_chave, criado_em)
+               VALUES ('DMI','9614/T','2610210001',10000,10000,'PAGO','CRA',
+                       't:9614','2026-10-21T08:00:00')""")
+        tid = int(cur.lastrowid)
+        con.execute(
+            """INSERT INTO pt_atos(titulo_id, tipo, data_ato, origem, criado_em)
+               VALUES (?,'APONTAMENTO','2026-10-13','EOFICIO',
+                       '2026-10-14T08:13:17')""", (tid,))
+        con.execute(
+            """INSERT INTO pt_atos(titulo_id, tipo, data_ato, origem,
+                   cancelado, motivo_cancelamento, criado_em, criado_por)
+               VALUES (?,'PAGAMENTO','2026-10-21','MANUAL',1,
+                       'Selo não emitido: sem item.','2026-10-21T08:19:38',
+                       'MARIO EXEMPLO DOS SANTOS')""", (tid,))
+    con.close()
+    bruto = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
+    ficha = " ".join(bruto.split())
+    assert "Corrigir a situação de ofício" in ficha
+    assert "os atos válidos sustentam a situação <strong>APONTADO</strong>" in ficha
+    assert "Refazer o pagamento" in ficha                 # e o ato a refazer
+    rota = f"/protesto/{tid}/situacao/corrigir"
+
+    def corrigir(**campos) -> str:
+        return postar_e_seguir(s["c"], rota, {"csrf_token": _token(bruto), **campos}
+                               ).get_data(as_text=True)
+
+    sem = corrigir(afirmacao="")
+    assert "exige a afirmação expressa" in sem
+    assert _con(s).execute("SELECT situacao FROM pt_titulos WHERE id=?",
+                           (tid,)).fetchone()[0] == "PAGO"
+    feito = corrigir(afirmo="1", afirmacao=(
+        "Afirmo, sob minha responsabilidade, que o pagamento não aconteceu: "
+        "o selo falhou e o título não voltou."))
+    assert "Situação corrigida de ofício: PAGO → APONTADO" in feito
+    con = _con(s)
+    assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
+                       (tid,)).fetchone()[0] == "APONTADO"
+    import json
+    linha = con.execute(
+        "SELECT entity_type, details FROM audit_logs "
+        "WHERE action='AFIRMACAO_EXPRESSA' ORDER BY id DESC LIMIT 1").fetchone()
+    assert linha["entity_type"] == "pt_titulos"
+    assert json.loads(linha["details"])["regra"] == "SITUACAO_SEM_ATO"
+    assert con.execute(
+        "SELECT COUNT(*) FROM audit_logs "
+        "WHERE action='PROTESTO_SITUACAO_CORRIGIDA_DE_OFICIO'").fetchone()[0] == 1
+    # E AGORA O PAGAMENTO SE LANÇA DE NOVO, e a obrigação some sozinha.
+    lancado = _post(s, f"/protesto/{tid}/lancar", ato="PAGAMENTO",
+                    forma_pagamento="PIX", selo=SELO_BOM)
+    assert "Pagamento lançado" in lancado
+    ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
+    assert "data-pendencias-do-selo" not in ficha
+    assert "data-situacao-sem-ato" not in ficha
+
+
+def test_a_correcao_de_oficio_nao_e_do_balcao(tmp_path):
+    """Corrigir a situação é decisão de quem responde: o escrevente vê o aviso
+    e a quem pedir, e a rota recusa."""
+    s = _sessao(tmp_path, papel="USER")
+    con = _con(s)
+    with con:
+        cur = con.execute(
+            """INSERT INTO pt_titulos(especie, numero_titulo, protocolo,
+                   valor_centavos, saldo_centavos, situacao, origem,
+                   origem_chave, criado_em)
+               VALUES ('DMI','9614/U','2610210002',10000,10000,'PAGO','CRA',
+                       't:9614u','2026-10-21T08:00:00')""")
+        tid = int(cur.lastrowid)
+    con.close()
+    ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
+    assert "data-situacao-sem-ato" in ficha
+    assert "Corrigir a situação de ofício" not in ficha
+    assert "é do oficial ou do" in " ".join(ficha.split())
+    # O token vem de uma tela do balcão: a ficha do título PAGO não tem
+    # formulário para quem não pode corrigir.
+    token = _token(s["c"].get("/protesto/novo").get_data(as_text=True))
+    r = s["c"].post(f"/protesto/{tid}/situacao/corrigir",
+                    data={"csrf_token": token, "afirmo": "1",
+                          "afirmacao": AFIRMACAO_BOA})
+    assert r.status_code in (302, 403)
+    assert _con(s).execute("SELECT situacao FROM pt_titulos WHERE id=?",
+                           (tid,)).fetchone()[0] == "PAGO"
 
 
 def test_ninguem_procura_na_auditoria_o_nome_antigo_da_volta_do_titulo():

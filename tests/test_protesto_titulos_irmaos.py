@@ -500,8 +500,11 @@ def test_a_rota_recusa_o_papel_do_irmao_e_nada_e_lancado(s):
 
 def test_a_afirmacao_pela_tela_vai_ao_ato_e_a_auditoria(s):
     _, p2 = _parcelas_na_tela(s)
+    # O selo digitado à mão (#103: sem item marcado, o ato que sela é
+    # recusado antes); o que se confere aqui é a afirmação dos irmãos.
     _lancar(s, p2, ato="PAGAMENTO", forma_pagamento="ESPECIE",
-            afirmo="1", afirmacao=AFIRMACAO_BOA)
+            afirmo="1", afirmacao=AFIRMACAO_BOA,
+            selo="AVESVD000000NARRKWVNJCRSVO21")
     con = _con_tela(s)
     ato = con.execute("SELECT * FROM pt_atos WHERE tipo='PAGAMENTO'").fetchone()
     assert ato is not None

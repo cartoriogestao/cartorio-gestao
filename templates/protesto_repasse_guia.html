@@ -18,8 +18,8 @@
     <small>repasse até {{ g.prazo or '—' }}{% if g.vencida %} — <strong class="danger">prazo vencido</strong>{% endif %}</small></div>
   {% if g.centrais | length > 1 %}
   <p style="padding:14px 14px 0"><strong class="danger">Esta relação mistura títulos de
-    {{ g.centrais | join(' e ') }}</strong>: cada Central se acerta no seu portal. Se o
-    portal não aceitar os dois juntos, cancele-a e gere as relações do dia (uma por Central).</p>
+    {{ g.centrais | join(' e ') }}</strong>: o boleto da CRA sai no portal da CRA-MA e a
+    liquidação da CENPROT no portal da CENPROT. Cancele-a e gere as relações do dia (uma por Central).</p>
   {% endif %}
   <table class="table">
     <thead><tr><th>Central</th><th>Onde</th><th>O passo</th><th>A conferir</th></tr></thead>
@@ -58,8 +58,13 @@
   <form method="post" action="{{ url_for('protesto_repasse_guia_registrar', guia_id=g.id) }}"
         class="grid2" style="padding:14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if 'CRA' in g.centrais %}
+    <label>Nosso número do boleto de repasse (portal da CRA-MA, Retorno → «Boletos de repasse»; mais de um, separe por vírgula)
+      <input name="identificador" required inputmode="numeric"></label>
+    {% else %}
     <label>Número da guia (ou linha digitável, ou referência da liquidação) que o portal emitiu
       <input name="identificador" required></label>
+    {% endif %}
     <label>Vencimento <input type="date" name="vencimento"></label>
     <div class="actions"><button class="button">Registrar a guia</button></div>
   </form>
@@ -68,11 +73,17 @@
         class="grid2" style="padding:14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Paga em <input type="date" name="paga_em" value="{{ hoje }}" required></label>
-    <label>Comprovante <input name="comprovante" required
-           placeholder="autenticação bancária ou número da transação"></label>
+    <label>Conferido por
+      <select name="prova" required>
+        {% for k, v in provas.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+      </select></label>
+    <label>Comprovante ou situação no portal <input name="comprovante" required
+           placeholder="autenticação bancária, nº da transação, ou a situação que o portal mostra"></label>
     <div class="actions"><button class="button">Registrar o pagamento</button></div>
     <p style="grid-column:1/-1"><small>O repasse se cumpre aqui: é o dia em que o
-      dinheiro saiu da casa que se mede contra o prazo.</small></p>
+      dinheiro saiu da casa que se mede contra o prazo. «{{ em_aberto }}» é a
+      situação do boleto em aberto e não prova o pagamento — com ela, registre
+      pelo comprovante do banco.</small></p>
   </form>
   {% elif g.situacao == 'PAGA' %}
   <form method="post" action="{{ url_for('protesto_repasse_guia_conciliar', guia_id=g.id) }}"

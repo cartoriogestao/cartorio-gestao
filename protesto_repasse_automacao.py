@@ -12,6 +12,11 @@ O QUE SE MEDIU ANTES, E QUE DECIDE O DESENHO
     `protesto_repasse`.
 
 O PROCESSO
+    O BOLETO DA CRA NASCE DO RETORNO (lido no portal da CRA-MA em 29/10/2026,
+    menu Retorno → «Boletos de repasse»): o pagamento da CRA só entra na
+    relação depois que o retorno com o «pago» foi aceito; antes, ele é contado
+    como «esperando o retorno».
+
     PROTESTO_REPASSE_GUIA — no horário da agenda (de fábrica, 08:00 e 17:00
     nos dias úteis; o oficial muda na central de automação), gera a RELAÇÃO
     de cada Central com os pagamentos que ainda não estão em guia
@@ -116,6 +121,9 @@ def _quadro(pendencias: list[dict]) -> dict[str, Any]:
             "vencidos": sum(1 for p in da_central if p["vencido"]),
             "desfeitos": sum(1 for p in da_central if p.get("desfeito")),
             "do_balcao": sum(1 for p in pendencias if p["canal"] != "IEPTB"),
+            # O BOLETO DA CRA NASCE DO RETORNO: sem ele aceito, não há relação.
+            "cra_sem_retorno": sum(1 for p in sem_guia if p.get("central") == "CRA"
+                                   and not p.get("retorno_aceito")),
             "achados": achados}
 
 
@@ -127,12 +135,17 @@ def _relato(q: dict, geradas: list[dict], *, pode_agir: bool) -> str:
             f"guia {g['numero']}/{g['ano']} ({g['central']}), {g['titulos']} "
             f"título(s), R$ {reais(g['total_centavos'])}, repasse até "
             f"{_br(g['prazo'])}" for g in geradas) + ".")
-    if n[REP.SEM_GUIA]:
+    prontos = n[REP.SEM_GUIA] - q["cra_sem_retorno"]
+    if prontos:
         partes.append(
-            f"{n[REP.SEM_GUIA]} pagamento(s) da Central ainda sem relação"
+            f"{prontos} pagamento(s) da Central ainda sem relação"
             + ("." if pode_agir else
                " — «pode agir» está desligado: a rotina só conta; ligue-o "
                "para ela gerar a relação."))
+    if q["cra_sem_retorno"]:
+        partes.append(f"{q['cra_sem_retorno']} pagamento(s) da CRA esperando o "
+                      f"retorno com o «pago» aceito — o boleto de repasse nasce "
+                      f"dele.")
     if n[REP.GUIA_GERADA]:
         partes.append(f"{n[REP.GUIA_GERADA]} pagamento(s) em relação que ainda "
                       f"não foi emitida no portal da Central nem registrada.")

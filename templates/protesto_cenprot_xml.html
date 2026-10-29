@@ -72,13 +72,17 @@
 </section>
 {% endfor %}
 
-<section class="panel">
+<section class="panel" id="arquivos-gerados">
   <div class="panel-head"><span>Arquivos gerados</span><small>{{ feitos | length }}</small></div>
+  {# O COMPROVANTE DA SUBIDA — decisão do oficial em 29/10/2026. O arquivo sobe
+     pelo portal da CENPROT, e a prova da subida é a tela do portal salva em
+     PDF ou imagem, anexada aqui. Sem ela o roteiro cobra (conduta 8); sem
+     comprovante, só com afirmação expressa (caixa «Afirmo» + 30 letras). #}
   {% if not feitos %}
     <p style="padding:14px">Nenhum arquivo gerado ainda.</p>
   {% else %}
   <table class="table">
-    <thead><tr><th>Arquivo</th><th>Títulos</th><th>Gerado em</th><th>Por</th><th></th></tr></thead>
+    <thead><tr><th>Arquivo</th><th>Títulos</th><th>Gerado em</th><th>Por</th><th></th><th>Subida no portal</th></tr></thead>
     <tbody>
       {% for f in feitos %}
       <tr>
@@ -87,6 +91,30 @@
         <td>{{ f.gerado_em }}</td>
         <td>{{ f.gerado_por or '—' }}</td>
         <td><a class="button" href="{{ url_for('protesto_cenprot_xml_baixar', xml_id=f.id) }}">Baixar</a></td>
+        <td>
+          {% for c in f.comprovantes %}
+            <div><small>Comprovante: <a href="{{ url_for('attachment_view', attachment_id=c.id) }}" target="_blank" rel="noopener">{{ c.original_name }}</a> ({{ (c.uploaded_at or '')[:16] }})</small></div>
+          {% endfor %}
+          {% if f.envio_afirmado_em %}
+            <div><small>Subida afirmada sem comprovante por {{ f.envio_afirmado_por or '—' }} em {{ (f.envio_afirmado_em or '')[:16] }}: «{{ f.envio_afirmacao }}»</small></div>
+          {% endif %}
+          <form method="post" enctype="multipart/form-data" action="{{ url_for('protesto_cenprot_xml_comprovante', xml_id=f.id) }}" class="inline-form" style="margin-top:4px">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="file" name="comprovante" accept=".pdf,.png,.jpg,.jpeg" required>
+            <button type="submit">Anexar comprovante</button>
+          </form>
+          {% if not f.comprovantes and not f.envio_afirmado_em %}
+          <details style="margin-top:4px"><summary><small>Sem comprovante? Afirmar a subida</small></summary>
+            <form method="post" action="{{ url_for('protesto_cenprot_xml_afirmar', xml_id=f.id) }}" class="stack">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label class="check"><input type="checkbox" name="afirmo" value="1"> Afirmo — o arquivo subiu e não tenho o comprovante</label>
+              <label>Afirmação expressa <small>(pelo menos {{ minimo_de_letras }} letras)</small>
+                <textarea name="afirmacao" rows="2" placeholder="{{ modelo_da_afirmacao }}…"></textarea></label>
+              <div><button type="submit">Afirmar a subida</button></div>
+            </form>
+          </details>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>

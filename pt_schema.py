@@ -802,6 +802,15 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("pt_atos", "cra_ja_informado_por", "TEXT"),
     ("pt_atos", "cra_ja_informado_motivo", "TEXT"),
     ("pt_atos", "cra_ja_informado_retorno_id", "INTEGER"),
+    # O PROTOCOLO JÁ INFORMADO SÓ VOLTA À CRA POR AFIRMAÇÃO EXPRESSA —
+    # 29/10/2026. Protocolo com dois títulos (um por devedor) vai à Central
+    # numa linha só; o título que fica para depois não volta à fila se a CRA
+    # já aceitou a mesma ocorrência para o protocolo. Quem insiste afirma por
+    # escrito (`protesto_retorno.forcar_envio_de_protocolo_ja_informado`), e
+    # a afirmação vale para UM envio: o arquivo recusado a apaga ao devolver.
+    ("pt_atos", "cra_reenvio_afirmado_em", "TEXT"),
+    ("pt_atos", "cra_reenvio_afirmado_por", "TEXT"),
+    ("pt_atos", "cra_reenvio_afirmacao", "TEXT"),
     # quem paga os emolumentos, e quando — `protesto_posteriori` (LG05)
     ("pt_titulos", "emolumento_regime", "TEXT"),
     # o CPF/CNPJ e o endereco do apresentante — `protesto.apresentante_do_titulo`

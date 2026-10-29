@@ -486,6 +486,16 @@ GANCHOS: tuple[dict, ...] = (
      "tela": "protesto_pix_lista",
      "de_onde": "PR #119, o PIX só com o crédito conferido",
      "com_o_dia": True, "prazo_da_peca": True},
+    # AS CORREÇÕES DE OFÍCIO PROPOSTAS QUE ESPERAM O OFICIAL (PR #120): a
+    # correção que hoje se faz por script vai pela fila — alguém propõe, o
+    # oficial aprova com afirmação expressa, o servidor executa. Uma linha por
+    # título tocado. Na conduta 6, porque é a situação do título que ela muda,
+    # e a proposta pendente decide se ele se protesta.
+    {"chave": "correcoes_de_oficio", "conduta": "protestos",
+     "rotulo": "correções de ofício propostas que esperam o oficial",
+     "modulo": "correcoes_de_oficio", "funcao": "pendentes",
+     "tela": "correcoes_de_oficio_lista",
+     "de_onde": "PR #120, a fila das correções de ofício"},
 )
 
 

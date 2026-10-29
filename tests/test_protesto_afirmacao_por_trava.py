@@ -229,6 +229,8 @@ def test_os_ganchos_ligados_na_integracao():
     assert pix["conduta"] == "repasse"
     assert pix.get("com_o_dia") and pix.get("prazo_da_peca")
     assert ("cenprot_conferencia", "quantos_divergem") in por_funcao
+    # a fila das correções de ofício (#120), que entrou na integração depois
+    assert por_funcao[("correcoes_de_oficio", "pendentes")]["conduta"] == "protestos"
     # a lista do repasse NÃO é gancho: as etapas sem guia apareceriam duas vezes
     assert ("protesto_repasse", "pendencias_do_repasse") not in por_funcao
     fonte = (RAIZ / "protesto_roteiro.py").read_text(encoding="utf-8")

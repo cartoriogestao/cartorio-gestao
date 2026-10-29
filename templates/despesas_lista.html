@@ -6,13 +6,18 @@
    → a despesa entra no Livro Diário. A guia de fundo é repasse: paga e
    conferida, mas fora do livro (decisão do oficial, 24/10/2026). #}
 <div class="actions">
-  {% if papel in ['ADMIN', 'MANAGER'] %}<a class="button" href="{{ url_for('despesas_nova') }}">Nova despesa</a>{% endif %}
+  <a class="button" href="{{ url_for('despesas_nova') }}">Nova despesa</a>
+  {% if not so_as_proprias %}
   <a class="button" href="{{ url_for('despesas_relatorio') }}">Relatório do mês e SIAFERJ</a>
   <a class="button" href="{{ url_for('despesas_recorrentes') }}">Recorrentes</a>
+  {% endif %}
   {% if papel == 'ADMIN' %}<a class="button" href="{{ url_for('despesas_configuracao') }}">Configuração e Banco Inter</a>{% endif %}
 </div>
 
-{% if cfg.despesas_pagamento_ligado != '1' %}
+{% if so_as_proprias %}
+<div class="notice">Aqui aparecem as despesas que <strong>você</strong> cadastrou. Toda despesa espera a
+  autorização do oficial antes de ser paga.</div>
+{% elif cfg.despesas_pagamento_ligado != '1' %}
 <div class="notice">O pagamento automático está <strong>desligado</strong>: as despesas autorizadas
   esperam. Quem liga é o oficial, na configuração.</div>
 {% elif cfg.despesas_ambiente != 'producao' %}

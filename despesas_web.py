@@ -1,8 +1,12 @@
 """As telas das despesas — cadastrar, autorizar, pagar, conferir e o relatório do mês.
 
-QUEM FAZ O QUÊ (decisões do oficial, 24/10/2026)
+QUEM FAZ O QUÊ (decisões do oficial, 24/10/2026 e 28/10/2026)
     - Ver: ADMIN, MANAGER e AUDITOR.
-    - Cadastrar e cancelar: ADMIN e MANAGER.
+    - Cadastrar: todos (28/10/2026, «libere o acesso para cadastramento de
+      despesas para todos usuários»). O USER vê só as que ELE cadastrou — a
+      lista inteira traz salários e honorários, e o pedido foi cadastrar, não
+      ver. Ele também não abre as recorrentes nem o relatório do mês.
+    - Cancelar e cuidar das recorrentes: ADMIN e MANAGER.
     - Autorizar, devolver à autorização, registrar pago fora do banco,
       configurar e cadastrar a credencial do Inter: só o ADMIN.
 
@@ -25,7 +29,11 @@ import despesas_inter as INTER
 import despesas_recorrentes as RC
 
 QUEM_VE = ("ADMIN", "MANAGER", "AUDITOR")
-QUEM_CADASTRA = ("ADMIN", "MANAGER")
+QUEM_CADASTRA = ("ADMIN", "MANAGER", "USER")
+QUEM_GERENCIA = ("ADMIN", "MANAGER")
+#: Quem entra na lista e na ficha. O USER entra, e vê só as próprias.
+QUEM_ENTRA = (*QUEM_VE, "USER")
+SO_AS_PROPRIAS = ("USER",)
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str):
@@ -75,25 +83,31 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             flash("Pedido ao despachante da automação: roda no próximo minuto.", "info")
         return True
 
+    def _so_minhas() -> str | None:
+        """O nome de quem só vê as próprias despesas; None para quem vê todas."""
+        return usuario_nome() if usuario_papel() in SO_AS_PROPRIAS else None
+
     @app.route("/administrativo/despesas")
     @login_required
-    @roles_required(*QUEM_VE)
+    @roles_required(*QUEM_ENTRA)
     def despesas_lista():
         situacao = request.args.get("situacao") or None
         if situacao and situacao not in DP.SITUACOES:
             abort(400)
+        minhas = _so_minhas()
         with db.connect() as con:
-            linhas = DP.listar(con, situacao=situacao)
-            contagem = DP.contagem(con)
+            linhas = DP.listar(con, situacao=situacao, cadastrada_por=minhas)
+            contagem = DP.contagem(con, cadastrada_por=minhas)
             cfg = DP.configuracao(con)
-            do_mes = RC.do_mes(con, date.today())
-            carregadas = len([d for d in DP.listar(con, situacao=DP.AGUARDANDO)
-                              if d["origem"] == RC.ORIGEM])
+            do_mes = [] if minhas is not None else RC.do_mes(con, date.today())
+            carregadas = 0 if minhas is not None else len(
+                [d for d in DP.listar(con, situacao=DP.AGUARDANDO) if d["origem"] == RC.ORIGEM])
         return render_template("despesas_lista.html", linhas=linhas, contagem=contagem,
                                situacoes=DP.SITUACOES, situacao=situacao, cfg=cfg,
                                categorias=DP.CATEGORIAS, reais=DP.reais,
                                papel=usuario_papel(), do_mes=do_mes,
-                               recorrentes_carregadas=carregadas)
+                               recorrentes_carregadas=carregadas,
+                               so_as_proprias=minhas is not None)
 
     @app.route("/administrativo/despesas/nova", methods=["GET", "POST"])
     @login_required
@@ -107,8 +121,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 with db.transaction() as con:
                     # Vinda do botão de uma recorrente, a despesa leva a chave do
                     # mês: é isso que tira o mês do aviso (`despesas_recorrentes`).
-                    origem, chave = RC.origem_do_formulario(
-                        con, f.get("recorrente_id"), f.get("competencia"))
+                    origem, chave = ("MANUAL", None) if _so_minhas() is not None else \
+                        RC.origem_do_formulario(con, f.get("recorrente_id"), f.get("competencia"))
                     novo = DP.cadastrar(
                         con, agora=_agora(), por=usuario_nome(), origem=origem,
                         chave_origem=chave, beneficiario_nome=f.get("beneficiario_nome"),
@@ -130,7 +144,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return _ficha(novo)
         preenchido: dict = {}
         rid, comp = request.args.get("recorrente_id") or "", request.args.get("competencia") or ""
-        if rid.isdigit() and comp:
+        if rid.isdigit() and comp and _so_minhas() is None:
             with db.connect() as con:
                 r = RC.recorrente(con, int(rid))
             if r:
@@ -159,7 +173,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/administrativo/despesas/recorrentes/nova", methods=["GET", "POST"])
     @app.route("/administrativo/despesas/recorrentes/<int:recorrente_id>", methods=["GET", "POST"])
     @login_required
-    @roles_required(*QUEM_CADASTRA)
+    @roles_required(*QUEM_GERENCIA)
     def despesas_recorrente(recorrente_id: int | None = None):
         r = None
         if recorrente_id is not None:
@@ -197,7 +211,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/administrativo/despesas/recorrentes/<int:recorrente_id>/<acao>",
                methods=["POST"])
     @login_required
-    @roles_required(*QUEM_CADASTRA)
+    @roles_required(*QUEM_GERENCIA)
     def despesas_recorrente_acao(recorrente_id: int, acao: str):
         if acao not in ("encerrar", "reativar"):
             abort(404)
@@ -215,7 +229,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     @app.route("/administrativo/despesas/recorrentes/carregar", methods=["POST"])
     @login_required
-    @roles_required(*QUEM_CADASTRA)
+    @roles_required(*QUEM_GERENCIA)
     def despesas_recorrentes_carregar():
         """O mesmo que o processo DESPESAS_RECORRENTES faz de manhã, agora."""
         try:
@@ -233,12 +247,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     @app.route("/administrativo/despesas/<int:despesa_id>")
     @login_required
-    @roles_required(*QUEM_VE)
+    @roles_required(*QUEM_ENTRA)
     def despesas_ficha(despesa_id: int):
         with db.connect() as con:
             d = DP.despesa(con, despesa_id)
             if not d:
                 abort(404)
+            minhas = _so_minhas()
+            if minhas is not None and d["cadastrada_por"] != minhas:
+                abort(403)
             rastro = DP.eventos(con, despesa_id)
             arquivos = DP.anexos(con, despesa_id)
             cfg = DP.configuracao(con)
@@ -250,7 +267,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     @app.route("/administrativo/despesas/<int:despesa_id>/<acao>", methods=["POST"])
     @login_required
-    @roles_required(*QUEM_CADASTRA)
+    @roles_required(*QUEM_GERENCIA)
     def despesas_acao(despesa_id: int, acao: str):
         f, papel = request.form, usuario_papel()
         try:

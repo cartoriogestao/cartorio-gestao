@@ -834,6 +834,9 @@
         {# A NFS-e DOS RECIBOS (LG01) — a fila do que falta e do que ficou no
            meio. Ao lado do caixa, porque é do recibo pago que a nota nasce. #}
         <a href="{{ url_for('nfse_fila') }}">NFS-e</a>
+        {# 28/10/2026: o cadastro de despesas é de todos; o USER vê só as que cadastrou.
+           O {% if %} da linha seguinte continua abrindo o bloco dos recibos. #}
+        {% if user.role == 'USER' %}<a href="{{ url_for('despesas_lista') }}">Despesas</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('despesas_lista') }}">Despesas</a>
         {# O CARNÊ-LEÃO (26/10/2026) é o imposto de renda PESSOAL do titular:
            só o ADMIN o vê, e a rota recusa os outros perfis. #}

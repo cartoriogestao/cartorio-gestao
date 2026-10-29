@@ -33,6 +33,10 @@ NADA SAI DUAS VEZES
     ainda nao foi. Mandar o mesmo protesto duas vezes faz a Central registrar
     dois — e desfazer isso e trabalho de carta.
 
+    A OCORRENCIA TAMBEM NAO SAI DUAS VEZES — 29/10/2026. Desfazer o ato e
+    lancar outro no lugar nao apaga o que a CRA ja aceitou. O substituto, com
+    a mesma ocorrencia no mesmo titulo ou protocolo, nao volta a fila.
+
 O ARQUIVO INTEIRO FICA GRAVADO
     Nao so o nome: o que saiu daqui e o que a Central recebeu, e quando ela
     reclamar de um titulo e este teor que se le. Mesma razao do teor congelado
@@ -111,6 +115,117 @@ class RetornoError(ValueError):
     """Impedimento de regra, com mensagem pronta para o balcao."""
 
 
+def _letra_da_ocorrencia(tipo_ato: str | None) -> str:
+    """A letra que o ato vira no arquivo. So calcula.
+
+    Cada ato de `OCORRENCIA_DO_ATO` tem uma letra so. Casar o tipo do ato e
+    casar a ocorrencia — e o teste que conta as letras guarda isso.
+    """
+    tipo = str(tipo_ato or "")
+    if tipo == "APONTAMENTO":
+        return OCORRENCIA_DO_ANDAMENTO
+    return OCORRENCIA_DO_ATO.get(tipo, "?")
+
+
+def _sql_mesmo_titulo_ou_protocolo(ato: str = "a", titulo: str = "t") -> str:
+    """O outro ato e do mesmo titulo, ou do mesmo protocolo do mesmo apresentante.
+
+    Protocolo vazio nao casa com protocolo vazio. O apresentante entra no
+    protocolo porque cada retorno e de um banco: o protocolo de outro
+    apresentante nao e este titulo na CRA.
+    """
+    return f"""(
+        antigo.titulo_id = {ato}.titulo_id
+        OR (
+            COALESCE(ta.apresentante_codigo, '')
+                = COALESCE({titulo}.apresentante_codigo, '')
+            AND NULLIF(BTRIM(COALESCE(ta.protocolo, '')), '') IS NOT NULL
+            AND BTRIM(ta.protocolo) = BTRIM(COALESCE({titulo}.protocolo, ''))
+        )
+    )"""
+
+
+def _sql_ocorrencia_ja_aceita(ato: str = "a", titulo: str = "t") -> str:
+    """Verdadeiro se a CRA ja aceitou esta ocorrencia. Um `%s`: o tipo do arquivo.
+
+    O ato antigo pode estar desfeito. O que a Central gravou nao se apaga
+    porque o selo daqui nao saiu. Retorno recusado nao conta: `cra_enviado_em`
+    vazio e ocorrencia que ela nao gravou. A marca manual
+    (`cra_ja_informado_em`) conta do mesmo jeito — foi o oficial quem disse
+    que a Central ja tem esta ocorrencia.
+    """
+    return f"""(
+        {ato}.cra_ja_informado_em IS NOT NULL
+        OR EXISTS (
+            SELECT 1
+              FROM pt_atos antigo
+              JOIN pt_titulos ta ON ta.id = antigo.titulo_id
+              LEFT JOIN pt_retornos r ON r.id = antigo.retorno_id
+             WHERE antigo.id <> {ato}.id
+               AND antigo.tipo = {ato}.tipo
+               AND (
+                    (NULLIF(BTRIM(r.cra_enviado_em), '') IS NOT NULL
+                     AND COALESCE(BTRIM(r.cra_recusado_em), '') = ''
+                     AND r.tipo = %s)
+                 OR antigo.cra_ja_informado_em IS NOT NULL
+               )
+               AND {_sql_mesmo_titulo_ou_protocolo(ato, titulo)}
+        )
+    )"""
+
+
+def _where_da_fila(tipo: str, apresentante: str | None, *,
+                   ja_aceita: bool) -> tuple[str, list[Any]]:
+    """O filtro de `pendentes`, ou o inverso (os que a CRA ja aceitou).
+
+    Os `%s`, nesta ordem: os tipos de ato, o tipo do arquivo (o `%s` de
+    `_sql_ocorrencia_ja_aceita`) e, se houver, o apresentante.
+    """
+    quais = ATOS_POR_TIPO_DE_ARQUIVO.get(str(tipo), ATOS_QUE_VOLTAM)
+    marca = _sql_ocorrencia_ja_aceita()
+    onde = [
+        "a.retorno_id IS NULL",
+        "COALESCE(a.cancelado, 0) = 0",
+        f"a.tipo IN ({','.join(['%s'] * len(quais))})",
+        "t.origem = 'CRA'",
+        (marca if ja_aceita else f"NOT {marca}"),
+    ]
+    params: list[Any] = [*quais, str(tipo)]
+    if apresentante:
+        onde.append("t.apresentante_codigo = %s")
+        params.append(str(apresentante).strip())
+    return " AND ".join(onde), params
+
+
+#: Motivo escrito da marca manual — o mesmo piso das outras razoes da casa.
+MINIMO_DO_MOTIVO = 10
+
+
+def frase_dos_pulados(pulados: list[dict], *, intro: str | None = None) -> str:
+    """A frase da tela: quais atos ficaram de fora, e em que arquivo a CRA
+    ja aceitou a ocorrencia. So calcula."""
+    if not pulados:
+        return ""
+    cabeca = intro or (
+        "Não entram neste retorno: a CRA já aceitou a mesma ocorrência "
+        "(mesmo título ou o mesmo protocolo)")
+
+    def uma(p: dict) -> str:
+        arquivo = (str(p.get("arquivo_anterior") or "").strip()
+                   or "um retorno anterior")
+        letra = p.get("ocorrencia") or _letra_da_ocorrencia(p.get("tipo"))
+        return (f"ato {p.get('ato_id')} ({p.get('tipo')}, ocorrência {letra}, "
+                f"título {p.get('numero_titulo') or '—'}, "
+                f"protocolo {p.get('protocolo') or 'sem protocolo'}) "
+                f"— arquivo {arquivo}")
+
+    mostrados = list(pulados)[:8]
+    texto = "; ".join(uma(p) for p in mostrados)
+    if len(pulados) > len(mostrados):
+        texto += f"; e mais {len(pulados) - len(mostrados)}"
+    return f"{cabeca} — {texto}."
+
+
 def _data_arquivo(data: Any) -> str:
     """`2026-08-25` -> `25082026`, que e como o arquivo escreve data."""
     s = str(data or "")[:10]
@@ -136,7 +251,6 @@ def pendentes(con: sqlite3.Connection, *,
     «Apontamento» sobre um titulo que acabara de ser protestado. Ver
     `ATOS_POR_TIPO_DE_ARQUIVO`, com a medicao ao lado.
     """
-    quais = ATOS_POR_TIPO_DE_ARQUIVO.get(str(tipo), ATOS_QUE_VOLTAM)
     # TÍTULO QUE VEIO DA CENPROT NÃO VOLTA PELA CRA — 21/10/2026. Até aqui
     # entrava `t.origem IN ('CRA', 'CENPROT')`, e o retorno do 900001/2
     # (pedido 9000002 da Gestão de Pedidos) foi recusado três vezes:
@@ -155,14 +269,17 @@ def pendentes(con: sqlite3.Connection, *,
     # atos desfeitos já tinham sido informados (16 protestos, 2
     # cancelamentos, 1 pagamento). É o filtro que a certidão, o XML da
     # CENPROT e `pendentes_da_cenprot` já faziam.
-    onde = ["a.retorno_id IS NULL",
-            "COALESCE(a.cancelado, 0) = 0",
-            f"a.tipo IN ({','.join(['%s'] * len(quais))})",
-            "t.origem = 'CRA'"]
-    params: list[Any] = list(quais)
-    if apresentante_codigo:
-        onde.append("t.apresentante_codigo = %s")
-        params.append(str(apresentante_codigo).strip())
+    #
+    # OCORRÊNCIA JÁ ACEITA NÃO VOLTA — 29/10/2026. No mesmo título 1353 o
+    # cancelamento 4104 saiu no R3412810.261 (pt_retornos 26), a CRA aceitou
+    # com 0000, o ato foi desfeito por falta de selo e o 4128, novo
+    # cancelamento do mesmo título, entrou de novo na fila. A lista só olhava
+    # se ESTE ato tinha `retorno_id`. Mandar o segundo «A» faz a CRA recusar
+    # o arquivo inteiro com 2161 «NENHUM REGISTRO FOI GRAVADO». Fica de fora
+    # o ato cuja ocorrência (mesmo título ou mesmo protocolo, mesma letra) já
+    # foi aceita, ou que o oficial marcou como já informada.
+    onde, params = _where_da_fila(
+        str(tipo), apresentante_codigo, ja_aceita=False)
 
     linhas = banco(con).ler(
         f"""SELECT a.id ato_id, a.tipo, a.data_ato, t.id titulo_id,
@@ -175,10 +292,84 @@ def pendentes(con: sqlite3.Connection, *,
                      ORDER BY e.id LIMIT 1) data_entrada
               FROM pt_atos a
               JOIN pt_titulos t ON t.id = a.titulo_id
-             WHERE {' AND '.join(onde)}
+             WHERE {onde}
              ORDER BY t.apresentante_codigo, a.data_ato, a.id""",
         params)
     return linhas
+
+
+def _completar_pulados(linhas: list[dict]) -> list[dict]:
+    """Junta o nome do arquivo anterior e a letra. Só calcula."""
+    for linha in linhas:
+        linha["arquivo_anterior"] = (
+            linha.get("arquivo_aceito")
+            or linha.get("arquivo_marcado")
+            or linha.get("arquivo_proprio")
+            or "")
+        linha["ocorrencia"] = _letra_da_ocorrencia(linha.get("tipo"))
+    return linhas
+
+
+def pulados_por_ocorrencia_aceita(con: sqlite3.Connection, *,
+                                  apresentante_codigo: str | None = None,
+                                  tipo: str = "SDTBFORTP") -> list[dict]:
+    """Atos que entrariam na fila e ficam de fora porque a CRA já aceitou
+    a mesma ocorrência. Só LÊ.
+
+    É o avesso de `pendentes`: mesma régua, menos esta. A tela avisa quais
+    são, e `montar` não os põe no arquivo.
+    """
+    onde, params_da_fila = _where_da_fila(
+        str(tipo), apresentante_codigo, ja_aceita=True)
+    # O `%s` do nome do arquivo aceito vem no SELECT, antes dos da fila.
+    params: list[Any] = [str(tipo), *params_da_fila]
+    linhas = banco(con).ler(
+        f"""SELECT a.id ato_id, a.tipo, a.data_ato,
+                   a.cra_ja_informado_motivo, t.id titulo_id,
+                   t.numero_titulo, t.protocolo, t.apresentante_codigo,
+                   t.apresentante_nome,
+                   (SELECT r.nome_arquivo
+                      FROM pt_atos antigo
+                      JOIN pt_titulos ta ON ta.id = antigo.titulo_id
+                      JOIN pt_retornos r ON r.id = antigo.retorno_id
+                     WHERE antigo.id <> a.id
+                       AND antigo.tipo = a.tipo
+                       AND NULLIF(BTRIM(r.cra_enviado_em), '') IS NOT NULL
+                       AND COALESCE(BTRIM(r.cra_recusado_em), '') = ''
+                       AND r.tipo = %s
+                       AND {_sql_mesmo_titulo_ou_protocolo()}
+                     ORDER BY r.id DESC
+                     LIMIT 1) arquivo_aceito,
+                   (SELECT r.nome_arquivo
+                      FROM pt_atos antigo
+                      JOIN pt_titulos ta ON ta.id = antigo.titulo_id
+                      LEFT JOIN pt_retornos r
+                        ON r.id = antigo.cra_ja_informado_retorno_id
+                     WHERE antigo.id <> a.id
+                       AND antigo.tipo = a.tipo
+                       AND antigo.cra_ja_informado_em IS NOT NULL
+                       AND {_sql_mesmo_titulo_ou_protocolo()}
+                     ORDER BY antigo.id DESC
+                     LIMIT 1) arquivo_marcado,
+                   (SELECT r.nome_arquivo FROM pt_retornos r
+                     WHERE r.id = a.cra_ja_informado_retorno_id
+                   ) arquivo_proprio
+              FROM pt_atos a
+              JOIN pt_titulos t ON t.id = a.titulo_id
+             WHERE {onde}
+             ORDER BY t.apresentante_codigo, a.data_ato, a.id""",
+        params)
+    return _completar_pulados(linhas)
+
+
+def ja_aceitas_fora_da_fila(con: sqlite3.Connection) -> list[dict]:
+    """Os atos fora da fila do retorno e do andamento por ocorrência já
+    aceita. Só LÊ. A tela de retornos mostra a lista."""
+    vistos: dict[int, dict] = {}
+    for qual in ("SDTBFORTP", "SDTBFOAND"):
+        for p in pulados_por_ocorrencia_aceita(con, tipo=qual):
+            vistos[int(p["ato_id"])] = p
+    return list(vistos.values())
 
 
 def pendentes_da_cenprot(con: sqlite3.Connection, *,
@@ -278,8 +469,14 @@ def montar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
         raise RetornoError(
             "Informe o apresentante: o retorno volta para quem mandou, e sem o "
             "código dele não há nem cabeçalho nem a letra da posição 566.")
+    # Antes dos pendentes: se a fila está vazia porque a ocorrência já foi
+    # aceita, a frase diz quais atos ficaram de fora — e não só «não há ato».
+    pulados = pulados_por_ocorrencia_aceita(
+        con, apresentante_codigo=codigo, tipo=tipo)
     atos = pendentes(con, apresentante_codigo=codigo, tipo=tipo)
     if not atos:
+        if pulados:
+            raise RetornoError(frase_dos_pulados(pulados))
         qual = ("apontamento" if tipo == "SDTBFOAND" else "ato")
         da_cenprot = (pendentes_da_cenprot(con, apresentante_codigo=codigo)
                       if tipo == "SDTBFORTP" else 0)
@@ -396,6 +593,8 @@ def montar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
         # Os atos do mesmo protocolo com outra ocorrência: não entram neste
         # arquivo e continuam pendentes para o próximo.
         "adiados": adiados,
+        # Atos da mesma ocorrência já aceita pela CRA: não entram no arquivo.
+        "pulados": pulados,
         "arquivo": arquivo,
         "conteudo": conteudo,
         "soma_centavos": sum(int(t["saldo_a_protestar"]) for t in titulos),
@@ -612,11 +811,23 @@ def gerar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
                                 (quem, int(a["ato_id"])))
 
     principal = retorno_montado or andamento_montado
+    pulados: list[dict] = []
+    vistos: set[int] = set()
+    for montado in (retorno_montado, andamento_montado):
+        if not montado:
+            continue
+        for p in montado.get("pulados") or []:
+            chave = int(p["ato_id"])
+            if chave in vistos:
+                continue
+            vistos.add(chave)
+            pulados.append(p)
     return {**principal, "retorno_id": retorno_id,
             "andamento_id": andamento_id,
             "retorno": retorno_montado,
             "andamento": andamento_montado,
             "recusas": recusas,
+            "pulados": pulados,
             "hash": hash_retorno(principal["conteudo"])}
 
 
@@ -674,6 +885,10 @@ def devolver_atos_do_recusado(con: sqlite3.Connection, retorno_id: int, *,
     O ARQUIVO RECUSADO FICA como foi gerado, com o teor e a recusa; perde só
     a amarração dos atos. E `protesto_cra_envio._preparar` passa a recusar
     reenviá-lo — os atos dele estarão no arquivo seguinte.
+
+    DESDE 29/10/2026, soltar o ato não o põe na fila se a mesma ocorrência já
+    foi aceita num retorno anterior. `continuam_de_fora` são esses: a tela
+    avisa, em vez de dizer que voltaram a «Esperando retorno».
     """
     # A MESMA TRAVA DE `gerar`: devolver muda os PENDENTES que um `gerar` ao
     # mesmo tempo estaria lendo.
@@ -699,13 +914,132 @@ def devolver_atos_do_recusado(con: sqlite3.Connection, retorno_id: int, *,
         raise RetornoError(
             f"Os atos de «{linha['nome_arquivo']}» já voltaram à fila — não "
             f"há nada preso a este arquivo.")
+    ids = [int(a["id"]) for a in atos]
     banco(con).escrever(
         "UPDATE pt_atos SET retorno_id = NULL WHERE retorno_id = %s",
         (int(retorno_id),))
+    marcas = {int(p["ato_id"]): p
+              for p in ja_aceitas_fora_da_fila(con)}
+    fora = [marcas[i] for i in ids if i in marcas]
     return {"retorno_id": int(retorno_id),
             "nome_arquivo": linha["nome_arquivo"],
-            "atos": [int(a["id"]) for a in atos],
+            "atos": ids,
+            "continuam_de_fora": fora,
             "devolvidos_em": agora, "devolvidos_por": usuario}
+
+
+def _retorno_foi_aceito(linha: dict) -> bool:
+    """A CRA gravou este arquivo. Recusado não é aceito. Só calcula."""
+    if not str(linha.get("cra_enviado_em") or "").strip():
+        return False
+    if str(linha.get("cra_recusado_em") or "").strip():
+        return False
+    return True
+
+
+def marcar_ja_informado_a_cra(con: sqlite3.Connection, ato_id: int, *,
+                              retorno_id: int, motivo: str, agora: str,
+                              usuario: str | None = None) -> dict:
+    """Marca o ato como já informado à CRA, sem gerar arquivo. ESCREVE.
+
+    Quem chama é o ADMIN ou o MANAGER, pela tela. O motivo e o retorno
+    anterior ficam no ato; a auditoria da rota guarda o mesmo. O ato sai da
+    fila. Um substituto posterior, da mesma ocorrência, também sai — a marca
+    é a prova de que a Central já tem esta ocorrência.
+
+    Não grava `retorno_id`: o ato não estava naquele arquivo, e a tela dos
+    atos do arquivo mentiria.
+    """
+    razao = " ".join(str(motivo or "").split())
+    if len(razao) < MINIMO_DO_MOTIVO:
+        raise RetornoError(
+            "Escreva o motivo com pelo menos dez letras: por que este ato "
+            "já foi informado à CRA e não deve sair de novo.")
+    # A mesma trava de `gerar`: marcar muda quem está pendente.
+    banco(con).travar("pt_retornos.nome_arquivo")
+    bd = banco(con)
+    ato = bd.um(
+        """SELECT a.id, a.tipo, a.cancelado, a.retorno_id,
+                  a.cra_ja_informado_em, t.id titulo_id, t.numero_titulo,
+                  t.protocolo, t.apresentante_codigo, t.origem
+             FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
+            WHERE a.id = %s""", (int(ato_id),))
+    if not ato:
+        raise RetornoError(f"O ato {int(ato_id)} não existe.")
+    if int(ato["cancelado"] or 0):
+        raise RetornoError(
+            f"O ato {int(ato_id)} está desfeito e já não entra no retorno à CRA.")
+    if ato["retorno_id"]:
+        raise RetornoError(
+            f"O ato {int(ato_id)} já está amarrado ao arquivo "
+            f"#{int(ato['retorno_id'])}. Não se marca de novo o que já saiu.")
+    if str(ato["cra_ja_informado_em"] or "").strip():
+        raise RetornoError(
+            f"O ato {int(ato_id)} já foi marcado como informado à CRA em "
+            f"{str(ato['cra_ja_informado_em'])[:16]}.")
+    tipos_da_fila = set(ATOS_QUE_VOLTAM) | {"APONTAMENTO"}
+    if ato["tipo"] not in tipos_da_fila or str(ato["origem"] or "") != "CRA":
+        raise RetornoError(
+            f"O ato {int(ato_id)} ({ato['tipo']}) não entra no retorno à CRA — "
+            f"não há fila de onde tirá-lo.")
+    linha = retorno(con, int(retorno_id))
+    if not linha:
+        raise RetornoError(
+            f"O retorno #{int(retorno_id)} não existe. Cite o arquivo que a "
+            f"CRA já aceitou.")
+    if not _retorno_foi_aceito(linha):
+        if str(linha.get("cra_recusado_em") or "").strip():
+            codigo = str(linha.get("cra_recusa_codigo") or "").strip()
+            com_codigo = f" (código {codigo})" if codigo else ""
+            raise RetornoError(
+                f"«{linha['nome_arquivo']}» foi recusado pela CRA{com_codigo}. "
+                f"A ocorrência não foi gravada — não serve de prova de que a "
+                f"Central já a recebeu.")
+        raise RetornoError(
+            f"«{linha['nome_arquivo']}» ainda não foi aceito pela CRA. "
+            f"Cite o retorno anterior que ela aceitou (código 0000).")
+    codigo_arquivo = str(linha.get("apresentante_codigo") or "").strip()
+    codigo_titulo = str(ato["apresentante_codigo"] or "").strip()
+    if codigo_arquivo and codigo_arquivo != codigo_titulo:
+        raise RetornoError(
+            f"«{linha['nome_arquivo']}» é do apresentante {codigo_arquivo}, "
+            f"e este título é do {codigo_titulo}. Cite o retorno que a CRA "
+            f"aceitou para este apresentante.")
+    esperado = "SDTBFOAND" if ato["tipo"] == "APONTAMENTO" else "SDTBFORTP"
+    if str(linha.get("tipo") or "") != esperado:
+        nome_do = {"SDTBFOAND": "um andamento", "SDTBFOCRT": "uma confirmação",
+                   "SDTBFORTP": "um retorno"}.get(str(linha.get("tipo") or ""),
+                                                  "um arquivo")
+        nome_esperado = ("um andamento" if esperado == "SDTBFOAND"
+                         else "um retorno")
+        raise RetornoError(
+            f"«{linha['nome_arquivo']}» é {nome_do}, e este ato se informa em "
+            f"{nome_esperado}. Cite o arquivo em que a CRA aceitou esta "
+            f"ocorrência.")
+    gravou = bd.escrever(
+        """UPDATE pt_atos
+              SET cra_ja_informado_em=%s, cra_ja_informado_por=%s,
+                  cra_ja_informado_motivo=%s, cra_ja_informado_retorno_id=%s
+            WHERE id=%s AND retorno_id IS NULL
+              AND COALESCE(BTRIM(cra_ja_informado_em), '') = ''
+            RETURNING id""",
+        (agora, usuario, razao, int(linha["id"]), int(ato_id)))
+    if not gravou:
+        raise RetornoError(
+            f"O ato {int(ato_id)} mudou enquanto era marcado — confira a fila "
+            f"e tente de novo.")
+    return {"ato_id": int(ato_id),
+            "tipo": ato["tipo"],
+            "titulo_id": int(ato["titulo_id"]),
+            "numero_titulo": ato["numero_titulo"],
+            "protocolo": ato["protocolo"],
+            "apresentante_codigo": codigo_titulo,
+            "retorno_id": int(linha["id"]),
+            "nome_arquivo": linha["nome_arquivo"],
+            "motivo": razao,
+            "ocorrencia": _letra_da_ocorrencia(ato["tipo"]),
+            "marcado_em": agora,
+            "marcado_por": usuario}
 
 
 def listar(con: sqlite3.Connection, limite: int = 100) -> list[dict]:

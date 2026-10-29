@@ -774,6 +774,14 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("pt_retornos", "cra_recusado_em", "TEXT"),
     ("pt_retornos", "cra_recusa_codigo", "TEXT"),
     ("pt_retornos", "cra_recusa_motivo", "TEXT"),
+    # JÁ INFORMADO À CRA, SEM ENVIAR DE NOVO — 29/10/2026. O oficial ou o
+    # gerente marca o ato (motivo e o retorno anterior que a Central aceitou)
+    # para tirá-lo da fila. Não é `retorno_id`: o ato não estava naquele
+    # arquivo, e amarrá-lo ali faria a tela dizer que o teor o levou.
+    ("pt_atos", "cra_ja_informado_em", "TEXT"),
+    ("pt_atos", "cra_ja_informado_por", "TEXT"),
+    ("pt_atos", "cra_ja_informado_motivo", "TEXT"),
+    ("pt_atos", "cra_ja_informado_retorno_id", "INTEGER"),
     # quem paga os emolumentos, e quando — `protesto_posteriori` (LG05)
     ("pt_titulos", "emolumento_regime", "TEXT"),
     # o CPF/CNPJ e o endereco do apresentante — `protesto.apresentante_do_titulo`

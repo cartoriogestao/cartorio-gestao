@@ -658,7 +658,11 @@
         pela tabela de {{ cob.data_da_tabela }}</label>
       {% endif %}
     {% endif %}
-    {{ IRM.confere(irmaos, ato, ja_tem_afirmacao=(ato == 'PROTESTO' and prova and not prova.completa)) }}
+    {# Os campos `afirmo`/`afirmacao` não se repetem no formulário: se a prova da
+       intimação ou o item do selo já os pediram aqui, a mesma afirmação vale
+       para a trava dos irmãos (a rota lê só o primeiro campo de cada nome). #}
+    {{ IRM.confere(irmaos, ato, ja_tem_afirmacao=((ato == 'PROTESTO' and prova and not prova.completa)
+                                                 or (pedida and pedida.ato == ato))) }}
     <div class="actions"><button class="button">Lançar {{ ato | lower }}</button></div>
 
     {{ quadro(receitas.get(ato), caixa, protocolos) }}

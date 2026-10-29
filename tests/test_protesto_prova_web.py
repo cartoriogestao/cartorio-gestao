@@ -111,6 +111,16 @@ def test_a_ficha_mostra_a_prova_e_a_ficha_recusa_sem_afirmacao(s):
     assert atos(s, tid) == 0
 
 
+def test_a_tela_dos_avisos_lista_os_intimados_sem_prova(s):
+    """A pendência que o roteiro lê aparece onde a prova se junta."""
+    sem = intimado(s, numero="sem/1", provado=False)
+    intimado(s, numero="com/1")
+    html = s["c"].get("/protesto/avisos").get_data(as_text=True)
+    assert "Intimados sem a prova da intimação" in html
+    assert f"/protesto/{sem}" in html and "sem/1" in html
+    assert "com/1" not in html.split('id="sem-prova"', 1)[1].split("</section>", 1)[0]
+
+
 def test_a_ficha_do_titulo_provado_nao_oferece_afirmacao(s):
     tid = intimado(s)
     html = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)

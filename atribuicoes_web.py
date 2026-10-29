@@ -10140,6 +10140,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             do_dia = AV.editais_do_dia(con, hoje())
             # O ENVIO À CENPROT, DIA A DIA, COM O COMPROVANTE (#142).
             envios = AV.envios_do_edital(con, hoje())
+            # OS INTIMADOS SEM A PROVA DA INTIMAÇÃO (29/10/2026): o que a
+            # trava do protesto vai recusar, dito ANTES — aqui, que é onde se
+            # junta o comprovante. O acervo do E-Ofício fica de fora: o papel
+            # dele é do arquivo do E-Ofício. A mesma lista o roteiro lê.
+            import protesto_prova as PROVA
+            sem_prova = [x for x in PROVA.intimacoes_sem_prova(con, hoje=hoje())
+                         if x["origem"] != "ACERVO"]
         motivos = AV.motivos_para_escolher()
         destaque = [{"codigo": c, "motivo": AV.ROTULO_DO_DESTAQUE[c]}
                     for c in AV.MOTIVOS_EM_DESTAQUE]
@@ -10150,6 +10157,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                sem_aviso=sem_aviso, antigos=antigos,
                                antigo_dias=AV.ANTIGO_DIAS,
                                contas=contas, do_dia=do_dia, envios=envios,
+                               sem_prova=sem_prova,
                                motivos=motivos,
                                motivos_destaque=destaque,
                                motivos_outros=outros,

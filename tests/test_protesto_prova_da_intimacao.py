@@ -445,6 +445,55 @@ def test_o_comprovante_depois_tambem_recusa_o_arquivo_de_outro_aviso(con):
     assert [x["regra"] for x in r["afirmacoes"]] == ["COMPROVANTE_DE_OUTRO_AVISO"]
 
 
+# --------------------------------- a pendência que o roteiro do Protesto lê
+
+
+def test_intimacoes_sem_prova_lista_so_o_que_a_trava_recusaria(con):
+    """A régua é a do protesto (`conferir`): o provado não entra; o pessoal
+    sem comprovante, o edital sem o envio à CENPROT e o digital sem a Resolve
+    entram, cada um com o que falta."""
+    provado = titulo(con, "7001/1")
+    aviso = AV.emitir(con, provado, hoje=HOJE, agora=AGORA)
+    entregar_com_comprovante(con, aviso["aviso_id"], agora=AGORA, pasta=pasta())
+
+    a_mao = titulo(con, "7002/1")
+    PT.lancar_intimacao(con, a_mao, modo="PESSOAL", agora=AGORA)
+    edital, _ = _por_edital(con, "7003/1")
+    digital = titulo(con, "7004/1")
+    PT.lancar_intimacao(con, digital, modo="PESSOAL", digital=True, agora=AGORA)
+
+    linhas = {x["titulo_id"]: x for x in PROVA.intimacoes_sem_prova(con, hoje=HOJE)}
+    assert set(linhas) == {a_mao, edital, digital}
+    assert "lançada à mão" in linhas[a_mao]["explicacao"]
+    assert "envio do arquivo dos editais" in linhas[edital]["explicacao"]
+    assert linhas[edital]["numero_titulo"] == "7003/1"
+    assert linhas[digital]["modo"] == "DIGITAL"
+    for x in linhas.values():
+        assert set(x) >= {"titulo_id", "numero_titulo", "protocolo",
+                          "explicacao", "onde", "origem"}
+        assert x["origem"] == "SISTEMA"
+
+    # sem `hoje`, vale o dia de hoje — e a lista não muda por isso
+    assert {x["titulo_id"] for x in PROVA.intimacoes_sem_prova(con)} == set(linhas)
+
+
+def test_intimacoes_sem_prova_marca_o_acervo_do_eoficio(con):
+    """O papel da intimação do E-Ofício é do arquivo do E-Ofício: ela sai com
+    `origem = "ACERVO"`, que o roteiro deixa de fora (o acervo não vira
+    atraso)."""
+    tid = titulo(con)
+    r = PT.lancar_intimacao(con, tid, modo="PESSOAL", agora=AGORA,
+                            origem="EOFICIO")
+    assert r["ato_id"]
+    [linha] = PROVA.intimacoes_sem_prova(con, hoje=HOJE)
+    assert linha["titulo_id"] == tid and linha["origem"] == "ACERVO"
+
+
+def test_titulo_que_nao_esta_intimado_nao_entra_na_pendencia(con):
+    titulo(con)                                   # só apontado
+    assert PROVA.intimacoes_sem_prova(con, hoje=HOJE) == []
+
+
 # ------------------------------------------------- quem pede a afirmação
 
 

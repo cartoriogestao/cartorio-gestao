@@ -413,6 +413,49 @@ def para_a_lista(con, linhas: list[dict], *, hoje: Any) -> list[dict]:
     return linhas
 
 
+def intimacoes_sem_prova(con, *, hoje: Any = None) -> list[dict]:
+    """Os títulos INTIMADOS cuja intimação NÃO tem a prova que o protesto
+    exige — a pendência que o roteiro do Protesto lê. Só LÊ.
+
+    A RÉGUA É A MESMA DO PROTESTO: cada título passa por `conferir` (por
+    `para_a_lista`), e não por uma consulta parecida — duas réguas para «esta
+    intimação está provada?» divergiriam no primeiro conserto, e a lista
+    mandaria resolver o que a trava não pede (ou calaria o que ela recusa).
+
+    Cada linha leva `titulo_id`, `numero_titulo`, `protocolo`, `explicacao`
+    (o que falta, curto), `onde` (a tela que resolve), `modo` e `origem`.
+    A INTIMAÇÃO VINDA DO E-OFÍCIO sai com `origem = "ACERVO"`: o papel dela é
+    do arquivo do E-Ofício, e o acervo não vira atraso — quem lê a lista
+    (o roteiro) a deixa de fora; ela continua aqui para quem quiser contar.
+    """
+    dia = str(hoje or date.today().isoformat())[:10]
+    linhas = [dict(r) for r in banco(con).ler(
+        """SELECT t.id, t.numero_titulo, t.protocolo,
+                  (SELECT a.origem FROM pt_atos a
+                    WHERE a.titulo_id = t.id AND a.tipo = 'INTIMACAO'
+                      AND a.cancelado = 0
+                    ORDER BY a.id DESC LIMIT 1) AS origem_da_intimacao
+             FROM pt_titulos t
+            WHERE t.situacao = 'INTIMADO'
+            ORDER BY t.id""")]
+    saida = []
+    for linha in para_a_lista(con, linhas, hoje=dia):
+        prova = linha["prova"]
+        if prova["completa"]:
+            continue
+        saida.append({
+            "titulo_id": int(linha["id"]),
+            "numero_titulo": linha["numero_titulo"],
+            "protocolo": linha["protocolo"],
+            "explicacao": "; ".join(prova["faltas"]),
+            "onde": prova["onde"],
+            "modo": prova["modo"],
+            "origem": ("ACERVO" if linha["origem_da_intimacao"] == "EOFICIO"
+                       else "SISTEMA"),
+        })
+    return saida
+
+
 # ------------------------------------- o comprovante suspeito, no aviso
 
 _PROTOCOLO_NO_NOME = re.compile(r"(?<!\d)(\d{10})(?!\d)")

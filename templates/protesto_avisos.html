@@ -316,6 +316,35 @@
   {% endif %}
 </section>
 
+{% if sem_prova %}
+{#
+  OS INTIMADOS SEM A PROVA DA INTIMAÇÃO (29/10/2026, ordem do oficial). É o
+  que a trava do protesto vai recusar, dito antes — e esta é a tela em que a
+  prova se junta: o comprovante do aviso entregue, ou o do envio do edital à
+  CENPROT. A régua é a do protesto (`protesto_prova.intimacoes_sem_prova`).
+#}
+<section class="panel" id="sem-prova">
+  <div class="panel-head">
+    <span>Intimados sem a prova da intimação — o protesto não sai</span>
+    <small>{{ sem_prova | length }}</small>
+  </div>
+  <table class="table">
+    <thead><tr><th>Título</th><th>Protocolo</th><th>O que falta</th><th>Onde se resolve</th></tr></thead>
+    <tbody>
+      {% for x in sem_prova %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=x.titulo_id) }}">{{ x.numero_titulo or '—' }}</a>
+            <div><small>{{ (x.modo or '') | lower }}</small></div></td>
+        <td><small>{{ x.protocolo or '—' }}</small></td>
+        <td><small>{{ x.explicacao }}</small></td>
+        <td><small>{{ x.onde }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
 <section class="panel" id="entregues">
   <div class="panel-head">
     <span>Entregues — comprovante da intimação</span><small>{{ entregues | length }}</small>

@@ -219,8 +219,11 @@ def _extrair_bloco(html_bloco: str) -> dict[str, Any] | None:
         fim_titulo = achado[1]
     tipo = _tipo_do_titulo(titulo)
 
+    # `\s*(?::\s*)?`, e não `\s*:?\s*` (CodeQL #274, 29/10/2026): os dois
+    # `\s*` em volta do `:` opcional disputavam os mesmos brancos, e uma
+    # fileira deles sem número no fim custava tempo quadrático. Casa o mesmo.
     codigo = _pegar(
-        r"C[oó]digo\s+da\s+comunica[cç][aã]o\s*:?\s*(\d+)", plano_n)
+        r"C[oó]digo\s+da\s+comunica[cç][aã]o\s*(?::\s*)?(\d+)", plano_n)
     if not codigo:
         return None
 
@@ -254,7 +257,7 @@ def _extrair_bloco(html_bloco: str) -> dict[str, Any] | None:
     if not texto_corpo:
         # fallback: tudo depois do codigo
         apos = re.split(
-            r"C[oó]digo\s+da\s+comunica[cç][aã]o\s*:?\s*\d+",
+            r"C[oó]digo\s+da\s+comunica[cç][aã]o\s*(?::\s*)?\d+",
             plano_n, maxsplit=1, flags=re.I)
         texto_corpo = _corpo_normalizado(apos[1] if len(apos) > 1 else "")
         texto_corpo = re.sub(

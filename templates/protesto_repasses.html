@@ -106,6 +106,31 @@
   </div>
 </section>
 
+{# O ROBÔ DO BOLETO DA CRA (29/10/2026): emite no portal, registra a guia e
+   lança a despesa para o oficial autorizar. Nunca paga. A falha dele aparece
+   aqui, onde o escrevente trabalha. #}
+<section class="panel">
+  <div class="panel-head"><span>Robô do boleto de repasse da CRA</span>
+    <small>Automação → «Protesto — emitir o boleto de repasse no portal da CRA»</small></div>
+  <div style="padding:14px">
+  {% if not robo.existe %}
+    <p>O robô não está disponível: {{ robo.motivo }}.</p>
+  {% else %}
+    <p>{% if robo.ativo %}<strong>Ligado</strong>{% else %}<strong class="danger">Desligado</strong>{% endif %}
+       ({{ robo.agenda }}) —
+       {% if robo.pode_agir %}gera o boleto, registra a guia e lança a despesa para a sua autorização.{% else %}«pode agir» desligado: ele entra no portal, lê e não clica nem grava nada.{% endif %}
+       <br><small>Entra com o usuário e a senha do item «cra_portal» do cofre (Automação → Cofre). Nunca paga: o pagamento é a autorização da despesa.</small></p>
+    {% if robo.ultima %}
+    <p>Última rodada: {{ robo.ultima.iniciada_em }} —
+      {% if robo.ultima.situacao == 'ERRO' %}<strong class="danger">{{ robo.ultima.situacao }}</strong>{% else %}{{ robo.ultima.situacao }}{% endif %}
+      <br><small>{{ robo.ultima.relato }}</small></p>
+    {% else %}
+    <p><small>Ainda não rodou.</small></p>
+    {% endif %}
+  {% endif %}
+  </div>
+</section>
+
 <section class="panel">
   <div class="panel-head"><span>Resumo</span>
     <small>{{ rel.pendentes | length }} pendente(s), {{ rel.vencidos }} com o prazo vencido</small></div>

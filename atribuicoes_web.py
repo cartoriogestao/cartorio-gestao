@@ -126,6 +126,9 @@ import protesto_selo_previo as PSELO
 import protesto_livros as PLIV
 import protesto_cra as CRA
 import protesto_desistencia as DS
+# OS PEDIDOS DA CRA NO CLIQUE DO DIA (29/10/2026): desistência, cancelamento e
+# autorização, trazidos no mesmo clique da remessa.
+import protesto_cra_pedidos as PCP
 import protesto_imagens as PIMG
 import protesto_instrumento as PI
 import protesto_remessa as PRM
@@ -3701,6 +3704,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # (29/10/2026): as obrigações que o selo deixou neste título.
             sem_ato = PSELO.situacao_sem_ato(_c, titulo_id)
             pendencias_do_selo = PSELO.pendencias_do_selo(_c, titulo_id=titulo_id)
+            # OS PEDIDOS DA CRA (29/10/2026): desistência, cancelamento e
+            # autorização que vieram da Central e ainda esperam a casa.
+            pedidos_cra = PCP.do_titulo(_c, titulo_id)
         pago_com_protesto = situacao == "PAGO" and bool(catalogo)
         cabem = []
         # O APONTAMENTO É O PRIMEIRO ATO DA VIDA DO TÍTULO — Lei 9.492/1997,
@@ -3769,7 +3775,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                triduo_situacao=(triduo or {}).get(
                                    "triduo_situacao"),
                                irmaos=irmaos, cedente_origem=cedente_origem,
-                               prova=prova)
+                               prova=prova, pedidos_cra=pedidos_cra,
+                               minimo_do_motivo_cra=PCP.MINIMO_DE_LETRAS,
+                               quem_encerra_o_grave=PCP.QUEM_ENCERRA_O_GRAVE)
 
     @app.route("/protesto/<int:titulo_id>/ordem/<int:ato_id>/marcar",
                methods=["POST"])
@@ -11072,6 +11080,79 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
     # --------------------------------------- a remessa que CHEGA da CRA
 
+    def _cra_do_dia() -> dict:
+        """O quadro dos pedidos da CRA (DP, CP, AC) para a tela. Só LÊ.
+
+        NÃO DERRUBA A TELA DA REMESSA: se o quadro não abrir, a tela diz isso
+        em vermelho — nunca um quadro vazio com cara de «nada pendente». O
+        detalhe do erro vai ao registro do servidor, e não à página.
+        """
+        try:
+            with db.connect() as con:
+                return PCP.quadro_do_dia(con, dia=hoje())
+        except Exception:  # noqa: BLE001 — a remessa não cai pelo quadro
+            app.logger.exception("quadro dos pedidos da CRA não abriu")
+            return {"erro": "o quadro não pôde ser lido agora; o detalhe "
+                            "ficou no registro do servidor"}
+
+    def _trazer_pedidos_da_cra() -> list[dict]:
+        """DP, CP e AC no MESMO clique da remessa, depois dela (29/10/2026).
+
+        A PORTA DA CRA É A MESMA DA REMESSA — `cra21_web._trazer` —, de
+        propósito: uma porta só para a Central, e quem a simula num teste
+        simula as quatro chamadas de uma vez. A rede fica fora da transação
+        (`PCP.trazer_do_dia` abre as suas, curtas), e a auditoria vai FORA
+        dela: `cra_baixar` com o `o_que` de cada uma é o que o roteiro do
+        protesto lê para saber que a consulta foi feita — inclusive quando
+        nada veio. NUNCA estoura: a falha de um não derruba os outros nem a
+        remessa, e aparece em vermelho.
+        """
+        import cra21_web as CRAW
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _transacao():
+            with db.transaction() as con:
+                yield con
+
+        def _pela_cra(o_que: str, nome: str, com_imagem: bool):
+            return CRAW._trazer(o_que, nome, CENTCRED.PRODUCAO,
+                                com_imagem=com_imagem)
+
+        try:
+            linhas = PCP.trazer_do_dia(
+                _transacao, _pela_cra, dia=hoje(), agora=agora(),
+                usuario=usuario_nome(), pasta_reserva=pasta_dos_arquivos())
+        except Exception as erro:  # noqa: BLE001 — o clique não cai por isto
+            flash(f"Desistências, cancelamentos e autorizações não foram "
+                  f"consultados: {erro}", "danger")
+            return []
+        for r in linhas:
+            detalhe = {"o_que": r["o_que"], "nome": r["nome"],
+                       "tamanho": r["tamanho"], "resultado": r["resultado"],
+                       "codigo": r["codigo"], "titulos": r["titulos"],
+                       "pendentes": r["pendentes"],
+                       "pelo_clique_do_dia": True}
+            if r["resultado"] == PCP.FALHA:
+                audit("cra_baixar_falha", "pt_cra_consultas",
+                      r["consulta_id"],
+                      {**detalhe, "incerta": r["incerta"],
+                       "erro": str(r["mensagem"])[:300]})
+            else:
+                audit("cra_baixar", "pt_cra_consultas", r["consulta_id"],
+                      detalhe)
+            if r.get("desistencia_id"):
+                audit("PROTESTO_DESISTENCIA", "pt_desistencias",
+                      r["desistencia_id"],
+                      {"apresentante": r.get("apresentante"),
+                       "aplicados": r["aplicados"],
+                       "recusados": r["recusados"],
+                       "pendentes": r["pendentes"],
+                       "graves": r["graves"],
+                       "de": "clique do dia (CRA pela API)"})
+            flash(r["frase"], r["cor"])
+        return linhas
+
     @app.route("/protesto/remessas")
     @login_required
     def protesto_remessas():
@@ -11084,7 +11165,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as con:
             recebidas = PRM.listar(con)
         return render_template("protesto_remessas.html", recebidas=recebidas,
-                               hoje=hoje(), remessas_salvas=PCIMG.listar_xml(pasta_dos_arquivos()))
+                               hoje=hoje(), remessas_salvas=PCIMG.listar_xml(pasta_dos_arquivos()),
+                               cra_do_dia=_cra_do_dia())
 
     @app.route("/protesto/remessas/conferir", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -11116,6 +11198,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
         BAIXAR MARCA DO LADO DE LÁ (manual da CRA): por isso é botão, e não
         relógio.
+
+        E NO MESMO CLIQUE, DEPOIS DA REMESSA, AS DESISTÊNCIAS, OS
+        CANCELAMENTOS E AS AUTORIZAÇÕES (29/10/2026). Medido na produção:
+        desde a virada de 14/10 nenhuma chamada a `Desistencia`,
+        `Cancelamento` ou `Autorizacao` — a consulta era um passo de papel, e
+        a escrevente já clicava aqui todo dia. Cada uma guarda a resposta
+        inteira antes de ler (`protesto_cra_pedidos`); a falha de uma não
+        derruba as outras nem a remessa, e a remessa que falha não impede as
+        três.
         """
         import cra21_web as CRAW
         qual = (_campo("o_que") or "remessa").strip()
@@ -11123,17 +11214,35 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash("Só a remessa do dia e as pendentes vão à conferência.", "warning")
             return redirect(url_for("protesto_remessas"))
         nome = _campo("nome")
+        texto = None
         try:
             PCIMG.preparar_pasta(pasta_dos_arquivos())
             texto = CRAW._trazer(qual, nome, CENTCRED.PRODUCAO,
                                  com_imagem=_campo("com_imagem") != "0")
         except (*CRAW.RECUSAS_DO_BALCAO, PCIMG.ImagemCraError) as erro:
             flash(str(erro), "danger")
-            return redirect(url_for("protesto_remessas"))
-        audit("cra_baixar_e_conferir", None, None,
-              {"o_que": qual, "nome": nome, "tamanho": len(texto or "")})
+        if texto is not None:
+            audit("cra_baixar_e_conferir", None, None,
+                  {"o_que": qual, "nome": nome, "tamanho": len(texto or "")})
+            if not str(texto).strip():
+                flash("A CRA não devolveu remessa nenhuma agora.", "warning")
+        # OS PEDIDOS DA CRA, DEPOIS DA REMESSA — e mesmo quando ela falhou.
+        linhas = _trazer_pedidos_da_cra()
+        # NEM O BANCO NEM O DISCO ACEITARAM UMA RESPOSTA: ela vai ao navegador,
+        # com a remessa junto (que ainda não foi guardada), para nada sumir
+        # das duas pontas — a CRA pode já tê-las marcado como baixadas.
+        perdidos = [l for l in linhas if l.get("bruto_sem_lugar") is not None]
+        if perdidos:
+            partes = [f"=== {l['nome']} ({l['rotulo']}) ===\n"
+                      f"{l['bruto_sem_lugar']}" for l in perdidos]
+            if str(texto or "").strip():
+                partes.append(f"=== remessa ({nome or qual}) ===\n{texto}")
+            return Response(
+                "\n\n".join(partes).encode("utf-8", errors="replace"),
+                mimetype="text/plain; charset=utf-8",
+                headers={"Content-Disposition":
+                         'attachment; filename="cra-recuperar.txt"'})
         if not str(texto or "").strip():
-            flash("A CRA não devolveu remessa nenhuma agora.", "warning")
             return redirect(url_for("protesto_remessas"))
         return _conferir_a_remessa(texto, nome or f"cra-{qual}")
 
@@ -11171,7 +11280,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 "protesto_remessa_conferir.html", visto=visto,
                 nome_arquivo=nome_arquivo, conteudo="", origem_xml_token=token,
                 hoje=hoje(), xml_previa=previa,
-                origem_xml_ambiente=ambiente)
+                origem_xml_ambiente=ambiente, cra_do_dia=_cra_do_dia())
         try:
             with db.connect() as con:
                 visto = PRM.conferir(con, bruto)
@@ -11180,7 +11289,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return redirect(url_for("protesto_remessas"))
         return render_template("protesto_remessa_conferir.html", visto=visto,
                                nome_arquivo=nome_arquivo,
-                               conteudo=PRM.normalizar(bruto), hoje=hoje())
+                               conteudo=PRM.normalizar(bruto), hoje=hoje(),
+                               cra_do_dia=_cra_do_dia())
 
     @app.route("/protesto/remessas/salvas/<token>")
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -12227,6 +12337,101 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return render_template("protesto_desistencia.html",
                                desistencia=dict(linha), atos=atos,
                                achados=achados)
+
+    # ------------------- os pedidos da CRA que vieram no clique do dia
+
+    @app.route("/protesto/cra/pedidos")
+    @login_required
+    def protesto_cra_pedidos():
+        """O que veio da CRA (DP, CP, AC) e ainda espera a casa. Só LÊ.
+
+        A lista é a mesma que o roteiro do protesto lê
+        (`protesto_desistencia.pendencias_da_cra`): a desistência de título
+        já protestado vem primeiro, destacada.
+        """
+        with db.connect() as con:
+            quadro = PCP.quadro_do_dia(con, dia=hoje())
+            pendentes = DS.pendencias_da_cra(con)
+            recentes = PCP.recentes(con, limite=80)
+        return render_template(
+            "protesto_cra_pedidos.html", quadro=quadro, cra_do_dia=quadro,
+            pendentes=pendentes, recentes=recentes, hoje=hoje(),
+            minimo=PCP.MINIMO_DE_LETRAS, papel=_papel_atual(),
+            quem_encerra_o_grave=PCP.QUEM_ENCERRA_O_GRAVE,
+            grave=PCP.GRAVE, nome_do_tipo=PCP.NOME_DO_TIPO)
+
+    @app.route("/protesto/cra/pedidos/<int:pedido_id>/tratar",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_cra_pedido_tratar(pedido_id: int):
+        """Registra por que o pedido da CRA não vira ato. ESCREVE.
+
+        Cancelamento e autorização se lavram na ficha, quando o devedor paga
+        as custas — e aí o pedido se fecha sozinho. Este botão é o outro
+        caminho: a escrevente diz por que NÃO lavra, e isso fica com o pedido
+        e na auditoria.
+        """
+        try:
+            with db.transaction() as con:
+                r = PCP.tratar_pedido(con, pedido_id, motivo=_campo("motivo"),
+                                      agora=agora(), usuario=usuario_nome(),
+                                      papel=_papel_atual())
+        except PCP.PedidoCraError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_cra_pedidos"))
+        # `audit` abre transação própria: FORA do `with`.
+        audit("PROTESTO_CRA_PEDIDO_TRATADO", "pt_cra_pedidos", pedido_id,
+              {"tipo": r["tipo"], "titulo_id": r.get("titulo_id"),
+               "protocolo": r.get("protocolo"), "destaque": r.get("destaque"),
+               "motivo": r["motivo"]})
+        flash("Registrado: o pedido da CRA saiu da lista com o seu motivo.",
+              "success")
+        # A volta é lista fechada: o destino não vem livre do formulário.
+        if _campo("voltar") == "ficha" and r.get("titulo_id"):
+            return redirect(url_for("protesto_titulo",
+                                    titulo_id=int(r["titulo_id"])))
+        return redirect(url_for("protesto_cra_pedidos"))
+
+    @app.route("/protesto/cra/consultas/<int:consulta_id>/tratar",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_cra_consulta_tratar(consulta_id: int):
+        """Registra o que se fez com a consulta que pedia ação — o arquivo que
+        veio e não se leu, ou a falha em que não se sabe se a CRA marcou o
+        arquivo como baixado. ESCREVE."""
+        try:
+            with db.transaction() as con:
+                r = PCP.tratar_consulta(con, consulta_id,
+                                        motivo=_campo("motivo"),
+                                        agora=agora(), usuario=usuario_nome())
+        except PCP.PedidoCraError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_cra_pedidos"))
+        audit("PROTESTO_CRA_CONSULTA_TRATADA", "pt_cra_consultas",
+              consulta_id, {"tipo": r["tipo"], "resultado": r["resultado"],
+                            "motivo": r["motivo"]})
+        flash("Registrado: a consulta saiu da lista com o seu motivo.",
+              "success")
+        return redirect(url_for("protesto_cra_pedidos"))
+
+    @app.route("/protesto/cra/consultas/<int:consulta_id>/arquivo")
+    @login_required
+    def protesto_cra_consulta_arquivo(consulta_id: int):
+        """A resposta da CRA como CHEGOU, guardada inteira. Só LÊ.
+
+        É o arquivo que talvez não exista mais do lado de lá — baixar pela
+        API pode marcá-lo como baixado.
+        """
+        with db.connect() as con:
+            linha = PCP.consulta(con, consulta_id)
+        if not linha or linha.get("bruto") is None:
+            abort(404)
+        return Response(
+            str(linha["bruto"]).encode("utf-8", errors="replace"),
+            mimetype="text/plain; charset=utf-8",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{PCP.nome_para_baixar(linha)}"',
+                     "X-Content-Type-Options": "nosniff"})
 
     @app.route("/protesto/desistencias/<int:desistencia_id>/arquivo")
     @login_required

@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>A protestar — intimados sem movimentação</h1>{% endblock %}
 {% block content %}
+{% import '_protesto_irmaos.html' as IRM %}
 {% include '_serventia.html' %}
 <div class="actions">
   <a class="button" href="{{ url_for('protesto_avisos') }}">Avisos e editais</a>
@@ -143,6 +144,13 @@
           </td>
           <td>R$ {{ '%.2f' | format((t.saldo_centavos or 0) / 100) }}</td>
         </tr>
+        {# OS IRMÃOS DO PROTOCOLO (29/10/2026): a parcela protestada do caso
+           que motivou tinha a irmã «paga» com o mesmo valor, e esta lista
+           não dizia que o protocolo tinha dois títulos. #}
+        {% if irmaos and irmaos.get(t.id) %}
+        <tr data-irmaos-do-titulo="{{ t.id }}"><td></td>
+          <td colspan="7">{{ IRM.curto(irmaos.get(t.id)) }}</td></tr>
+        {% endif %}
       {% endfor %}
       </tbody>
     </table>

@@ -2,6 +2,7 @@
 {% block heading %}<h1>Título {{ titulo.numero_titulo }}</h1>{% endblock %}
 {% block content %}
 {% from '_cobrar.html' import quadro, cobrado %}
+{% import '_protesto_irmaos.html' as IRM %}
 {% include '_serventia.html' %}
 <div class="actions"><a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a></div>
 
@@ -29,6 +30,10 @@
         <th>Chave de origem</th><td><small>{{ titulo.origem_chave or '—' }}</small></td></tr>
   </table>
 </section>
+
+{# OS TÍTULOS IRMÃOS E O CEDENTE DA ORIGEM (29/10/2026) — `protesto_titulos_irmaos`. #}
+{{ IRM.quadro(irmaos) }}
+{{ IRM.cedente(cedente_origem) }}
 
 {# O APRESENTANTE (LD08, 21/10/2026), como os papéis o escrevem: o do título
    (balcão) ou o do cadastro dos apresentantes, pelo código da CRA. O CPF/CNPJ
@@ -563,6 +568,7 @@
         pela tabela de {{ cob.data_da_tabela }}</label>
       {% endif %}
     {% endif %}
+    {{ IRM.confere(irmaos, ato) }}
     <div class="actions"><button class="button">Lançar {{ ato | lower }}</button></div>
 
     {{ quadro(receitas.get(ato), caixa, protocolos) }}

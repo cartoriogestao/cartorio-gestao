@@ -1068,3 +1068,21 @@ def test_a_rodada_da_caixa_postal_busca_aplica_confirma_e_so_audita_o_que_entrou
     assert feitos[:4] == ["arquivos", "ia", "avisos", "encerradas"]
     monkeypatch.setattr(PX, "buscar_pendentes", lambda con: {"ok": False, "motivo": "caixa HTTP 401"})
     assert PX.rodar_automacao(_ctx_falso())["situacao"] == SCH.AVISO
+
+
+# ------------------------------------------------- a janela do python (29/10)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="flags de processo do Windows")
+def test_o_corredor_nasce_com_console_sem_janela_e_nao_desacoplado():
+    """«pq esta abrindo toda hora janelas pyton» — o oficial, 29/10/2026.
+
+    DETACHED_PROCESS faz o Windows ignorar o CREATE_NO_WINDOW; o lançador do
+    venv abre o python de verdade como filho, e ele ganhava console visível.
+    """
+    import subprocess
+
+    flags = AU._flags_desacoplado()
+    assert flags & 0x08000000, "sem CREATE_NO_WINDOW"
+    assert not flags & 0x00000008, "DETACHED_PROCESS volta a abrir a janela do python filho"
+    assert flags & subprocess.CREATE_NEW_PROCESS_GROUP

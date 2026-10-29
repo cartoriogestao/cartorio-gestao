@@ -693,6 +693,14 @@ class Database:
         bd._cru(gatilho)
         if getattr(bd, "_ponte", None) is not None:
             bd._ponte._anotar(None, gatilho, None)
+        # AS CONFIGURACOES QUE COBRAM A EQUIPE (29/10/2026): o gatilho que
+        # recusa, no banco, mudar uma chave de cobranca sem a aprovacao do
+        # oficial gravada antes na auditoria. De 27 a 28/10 o fim do
+        # expediente foi de 14h para 21h por script direto no banco, a pedido
+        # de quem o aviso cobrava. Rearma a cada abertura, e religa se alguem
+        # o desligou. Ver `config_de_cobranca`.
+        import config_de_cobranca as CC
+        CC.instalar_gatilho(bd)
         init_nucleo_schema(con)   # o nucleo primeiro: as outras apontam para ele
         init_pt_schema(con)
         # A INTIMACAO DIGITAL vem LOGO DEPOIS do Protesto, e nao antes:

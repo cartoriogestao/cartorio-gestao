@@ -357,6 +357,9 @@
     <a class="button" href="{{url_for('integrity')}}">Verificar integridade dos anexos</a>
     {# LX16: ligar/desligar a trava do selo pago — só o ADMIN, com justificativa. #}
     <a class="button" href="{{url_for('selo_conferencia')}}#trava">Trava do selo pago (selo × caixa)</a>
+    {# 29/10/2026: as configurações que cobram a equipe — só o oficial altera,
+       com afirmação expressa, e o histórico de cada uma. #}
+    <a class="button" href="{{url_for('configuracoes_cobranca')}}">Configurações que cobram a equipe (expediente, turnos, travas)</a>
   </div>
 </section>
 </div>

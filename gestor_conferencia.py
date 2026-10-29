@@ -1332,21 +1332,34 @@ def regra_caixa_do_dia(con, hoje: date) -> list[dict]:
         return []
     linha = banco(con).um("SELECT value FROM settings WHERE key = %s",
                           (CA.CHAVE_FIM,))
-    hora, minuto = CA.fim_do_expediente(linha["value"] if linha else None)
+    fim = linha["value"] if linha else None
     agora = _relogio()
-    if (agora.hour, agora.minute) < (hora, minuto):
+    # Antes do turno, a regra parava aqui antes das 14h sem ler o caixa; com o
+    # turno por operador ela lê sempre — e banco de ensaio sem o caixa não tem
+    # o que dizer.
+    if not banco(con).tem_tabela("cx_caixas"):
         return []
     saida = []
     for r in banco(con).ler(
-            """SELECT id, operador_nome FROM cx_caixas
+            """SELECT id, data, aberto_em, operador_id, operador_nome FROM cx_caixas
                 WHERE data = %s AND situacao = 'ABERTO' AND fechado_em IS NULL
                 ORDER BY id""",
             (hoje.isoformat(),)):
+        # O TURNO DE QUEM TEM TURNO (29/10/2026): a escrevente da noite não
+        # vira tarefa crítica às 14h — o fim dela é o do turno dela.
+        turno = None
+        if r["operador_id"] is not None:
+            login = banco(con).valor("SELECT username FROM users WHERE id = %s",
+                                     (r["operador_id"],))
+            turno = CA.turno_de(con, login)
+        passou, hora_do_fim = CA.passou_do_fim(r, agora, fim, turno)
+        if not passou:
+            continue
         saida.append(_achado(
             f"CAIXA_HOJE:{r['id']}", "CAIXA_DO_DIA_ABERTO", "CRITICO",
             _pessoa_do_operador(con, r["operador_nome"]),
-            f"O expediente acabou às {hora:02d}:{minuto:02d} e o caixa de hoje "
-            f"({r['operador_nome']}) está aberto",
+            f"O {'turno' if turno else 'expediente'} acabou às {hora_do_fim} e o "
+            f"caixa de hoje ({r['operador_nome']}) está aberto",
             "Conte o dinheiro e feche o caixa antes de sair. Caixa que fica aberto "
             "de um dia para o outro mistura o dinheiro de dois dias.", hoje, ""))
     return saida

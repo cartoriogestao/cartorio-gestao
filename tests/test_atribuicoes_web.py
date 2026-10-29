@@ -397,18 +397,71 @@ def test_cancelamento_sem_fundamento_proprio_e_recusado_na_tela(s):
     assert "dez letras" in html
 
 
-def test_sem_item_o_lancamento_nao_fica_ativo_sem_selo(s):
-    # Campo vazio não autoriza ato sem selo: falta o item que define o pedido.
+def test_sem_item_o_lancamento_e_recusado_antes_de_o_ato_existir(s):
+    """Campo vazio não autoriza ato sem selo: falta o item que define o pedido.
+
+    ATÉ 29/10/2026 ISTO SE DESCOBRIA DEPOIS: o ato era lavrado, o selo não
+    saía, e ele ficava no livro marcado `cancelado=1` — foi assim com o 1353
+    (28/10, o cancelamento desfeito foi à CRA) e o 9614 (21/10, PAGO sem
+    pagamento). Ordem do oficial do mesmo dia: a recusa vem ANTES, o ato não
+    chega a existir, e o formulário volta preenchido."""
     ids = _semear(s)
-    _post(s, f"/protesto/{ids['titulo']}/lancar", ato="CANCELAMENTO",
-          hipotese="PAGAMENTO", fundamento="Título quitado, com prova.",
-          selo="")
+    html = _post(s, f"/protesto/{ids['titulo']}/lancar", ato="CANCELAMENTO",
+                 hipotese="PAGAMENTO", fundamento="Título quitado, com prova.",
+                 selo="")
+    assert "Ato NÃO lançado, e nada foi gravado" in html
     con = _con(s)
-    ato = con.execute(
-        "SELECT * FROM pt_atos WHERE tipo='CANCELAMENTO'").fetchone()
-    assert ato is not None
-    assert int(ato["cancelado"] or 0) == 1
-    assert "Selo não emitido" in (ato["motivo_cancelamento"] or "")
+    assert con.execute(
+        "SELECT COUNT(*) FROM pt_atos WHERE tipo='CANCELAMENTO'").fetchone()[0] == 0
+    assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
+                       (ids["titulo"],)).fetchone()[0] == "PROTESTADO"
+    # Não houve ato a desfazer — a auditoria do desfeito não aparece.
+    assert con.execute(
+        "SELECT COUNT(*) FROM audit_logs "
+        "WHERE action='PROTESTO_ATO_NAO_LAVRADO_SELO_FALHOU'").fetchone()[0] == 0
+    # O FORMULÁRIO VOLTA PREENCHIDO: falta só marcar o item e lançar de novo.
+    assert 'value="Título quitado, com prova."' in html
+    assert '<option value="PAGAMENTO" selected>' in html
+
+
+def test_sem_item_o_pagamento_recusado_nao_consome_o_numero_do_livro(s):
+    """A recusa desfaz a transação inteira: o lugar no Livro de Pagamentos que
+    o domínio reservou volta, e o pagamento lançado depois toma o número que
+    o recusado teria tomado."""
+    _post_novo(s, "/protesto/novo", **TITULO, **DEVEDOR)
+    con = _con(s)
+    titulo_id = con.execute("SELECT id FROM pt_titulos").fetchone()["id"]
+    _post(s, f"/protesto/{titulo_id}/lancar", ato="APONTAMENTO")
+    recusado = _post(s, f"/protesto/{titulo_id}/lancar", ato="PAGAMENTO",
+                     forma_pagamento="PIX", valor_pago="1.482,78")
+    assert "Ato NÃO lançado, e nada foi gravado" in recusado
+    assert 'value="1.482,78"' in recusado
+    assert '<option value="PIX" selected>' in recusado
+    con = _con(s)
+    assert con.execute(
+        "SELECT COUNT(*) FROM pt_atos WHERE tipo='PAGAMENTO'").fetchone()[0] == 0
+    assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
+                       (titulo_id,)).fetchone()[0] == "APONTADO"
+    # Com o selo digitado à mão o selo não depende de item, e o ato entra.
+    html = _post(s, f"/protesto/{titulo_id}/lancar", ato="PAGAMENTO",
+                 forma_pagamento="PIX", valor_pago="1.482,78", selo=SELO_BOM)
+    assert "Pagamento lançado" in html and "NÃO lançado" not in html
+    con = _con(s)
+    ato = con.execute("SELECT * FROM pt_atos WHERE tipo='PAGAMENTO'").fetchone()
+    assert int(ato["cancelado"] or 0) == 0
+    assert ato["numero_ordem"] == 1        # o recusado não gastou o número 1
+
+
+def test_a_certidao_sem_item_e_recusada_antes_de_tomar_numero(s):
+    """A certidão sela sempre: sem item e sem selo digitado, ela não chega a
+    existir — e o número do exercício não se gasta."""
+    html = _emitir(s, nome="MARIA DAS DORES", anos="5", tipo="NEGATIVA",
+                   selo="")
+    assert "Certidão NÃO emitida, e nada foi gravado" in html
+    assert _con(s).execute("SELECT COUNT(*) FROM pt_certidoes").fetchone()[0] == 0
+    _emitir(s, nome="MARIA DAS DORES", anos="5", tipo="NEGATIVA")
+    assert _con(s).execute(
+        "SELECT numero FROM pt_certidoes").fetchone()["numero"] == 1
 
 
 def test_o_selo_digitado_entra_amarrado_ao_ato(s):
@@ -930,15 +983,34 @@ def _auditoria_da_falha(s) -> dict:
     return json.loads(linha["details"])
 
 
-def test_ato_cancelado_por_falta_de_selo_devolve_a_situacao_do_titulo(s):
+def _o_selo_falha_depois_de_lavrar(monkeypatch, antes_de_falhar=None):
+    """A falha que NÃO se sabe antes — a do pedido ao aparelho. Desde
+    29/10/2026 a falta de item é recusada antes de lavrar
+    (`protesto_selo_previo`), e o caminho do desfeito só se exercita com o
+    item marcado e o selo falhando depois."""
+    import ato_selado as AS
+
+    def falha(**_kw):
+        if antes_de_falhar:
+            antes_de_falhar()
+        raise AS.AtoError("o aparelho não respondeu (ensaio).")
+
+    monkeypatch.setattr(AS, "envelope_do_protesto", falha)
+
+
+def test_ato_cancelado_por_falta_de_selo_devolve_a_situacao_do_titulo(s, monkeypatch):
     """O caminho do erro (P-B, 900001/1): o ato sai cancelado e o título volta
-    à situação de antes, com `situacao_restaurada` na auditoria. Sem item
-    marcado o selo da desistência não sai — sempre, neste banco de teste."""
+    à situação de antes, com `situacao_restaurada` na auditoria. Com o item
+    marcado — sem ele, a recusa vem antes (29/10/2026) — e o selo falhando
+    depois de o ato estar lavrado."""
     _post_novo(s, "/protesto/novo", **TITULO, **DEVEDOR)
     con = _con(s)
     titulo_id = con.execute("SELECT id FROM pt_titulos").fetchone()["id"]
+    servico = _com_servico(s, codigo_tj="17.4")
+    _abrir_caixa(s)
+    _o_selo_falha_depois_de_lavrar(monkeypatch)
     html = _post(s, f"/protesto/{titulo_id}/lancar", ato="DESISTENCIA",
-                 motivo="Credor desistiu antes do protesto")
+                 motivo="Credor desistiu antes do protesto", cobrar=str(servico))
     assert "NÃO lançado" in html
     con = _con(s)
     ato = con.execute("SELECT * FROM pt_atos WHERE tipo='DESISTENCIA'").fetchone()
@@ -959,29 +1031,66 @@ def test_a_volta_da_situacao_nao_passa_por_cima_de_outro_balcao(s, monkeypatch):
     balcão mexeu no título nesse meio-tempo, a volta não o desfaz — e a
     auditoria diz que não voltou (None), em vez de afirmar uma volta que não
     houve."""
-    import ato_selado as AS
     _post_novo(s, "/protesto/novo", **TITULO, **DEVEDOR)
     con = _con(s)
     titulo_id = con.execute("SELECT id FROM pt_titulos").fetchone()["id"]
     con.close()
-    original = AS.recado_de_falta
+    servico = _com_servico(s, codigo_tj="17.4")
+    _abrir_caixa(s)
 
-    def outro_balcao_mexe_antes(texto):
+    def outro_balcao_mexe_antes():
         de_fora = _con(s)
         with de_fora:
             de_fora.execute("UPDATE pt_titulos SET situacao='APONTADO' WHERE id=?",
                             (titulo_id,))
         de_fora.close()
-        return original(texto)
 
-    monkeypatch.setattr(AS, "recado_de_falta", outro_balcao_mexe_antes)
+    _o_selo_falha_depois_de_lavrar(monkeypatch, outro_balcao_mexe_antes)
     html = _post(s, f"/protesto/{titulo_id}/lancar", ato="DESISTENCIA",
-                 motivo="Credor desistiu antes do protesto")
+                 motivo="Credor desistiu antes do protesto", cobrar=str(servico))
     assert "NÃO lançado" in html
     con = _con(s)
     assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
                        (titulo_id,)).fetchone()[0] == "APONTADO"
     assert _auditoria_da_falha(s)["situacao_restaurada"] is None
+
+
+def test_a_ficha_e_a_lista_mostram_a_situacao_sem_o_ato_que_a_sustente(s):
+    """O 9614 da produção (29/10/2026): PAGO, com o pagamento desfeito pelo
+    selo. A conferência só MOSTRA — na ficha e na lista —, e não corrige."""
+    con = _con(s)
+    with con:
+        cur = con.execute(
+            """INSERT INTO pt_titulos(especie, numero_titulo, protocolo,
+                   valor_centavos, saldo_centavos, situacao, origem,
+                   origem_chave, criado_em)
+               VALUES ('DMI','9614/T','2610210001',10000,10000,'PAGO','CRA',
+                       't:9614','2026-10-21T08:00:00')""")
+        tid = int(cur.lastrowid)
+        con.execute(
+            """INSERT INTO pt_atos(titulo_id, tipo, data_ato, origem,
+                   cancelado, motivo_cancelamento, criado_em)
+               VALUES (?,'PAGAMENTO','2026-10-21','MANUAL',1,
+                       'Selo não emitido: sem item.','2026-10-21T08:19:38')""",
+            (tid,))
+    con.close()
+    ficha = " ".join(s["c"].get(f"/protesto/{tid}").get_data(as_text=True).split())
+    assert "data-situacao-sem-ato" in ficha
+    assert "A situação PAGO não tem o ato que a sustente" in ficha
+    assert "foi desfeito" in ficha and "21/10/2026" in ficha
+    lista = s["c"].get("/protesto").get_data(as_text=True)
+    assert "data-situacao-sem-ato" in lista
+    assert f'href="/protesto/{tid}"' in lista
+    # SÓ MOSTRA: a situação continua a mesma depois de olhar.
+    assert _con(s).execute("SELECT situacao FROM pt_titulos WHERE id=?",
+                           (tid,)).fetchone()[0] == "PAGO"
+
+
+def test_titulo_em_ordem_nao_aparece_na_conferencia(s):
+    """Alarme que soa sempre é alarme que ninguém ouve: a lista sem nada fora
+    do lugar não mostra o quadro."""
+    html = s["c"].get("/protesto").get_data(as_text=True)
+    assert "data-situacao-sem-ato" not in html
 
 
 def test_ninguem_procura_na_auditoria_o_nome_antigo_da_volta_do_titulo():

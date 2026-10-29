@@ -146,9 +146,11 @@ def test_resolve_confirmada_lavra_a_digital_e_recusa_o_edital(s):
         "'INTIMACAO'", (tid,)).fetchone()[0])
     assert detalhe["digital"] is True and detalhe["modo"] == "PESSOAL"
     assert "921, § 6º, II" in detalhe["comprovante"]
-    # o título intimado sai da lista do edital
+    # o título intimado sai da lista do edital: o botão DESTE aviso some. O
+    # nome do botão ainda pode aparecer na dica da lista «sem a prova da
+    # intimação» (29/10/2026), que é outra coisa.
     tela = s["c"].get("/protesto/avisos").get_data(as_text=True)
-    assert "Lavrar a intimação digital" not in tela
+    assert f"/protesto/avisos/{aid}/digital" not in tela
 
 
 def test_sem_confirmacao_a_digital_nao_se_lavra(s):

@@ -8,6 +8,12 @@ para emitir a guia — ela sai do portal. O que se automatiza é o que é da cas
 O QUE ELES CONFEREM
       - a relação do dia sai UMA POR CENTRAL, só com o que ainda não está em
         guia, e nunca vazia; rodar duas vezes não repete pagamento;
+      - o pagamento da CRA só entra com o retorno do «pago» aceito — o boleto
+        de repasse nasce dele (lido no portal da CRA-MA em 29/10/2026) — e a
+        pendência diz o caminho: Retorno → «Boletos de repasse»;
+      - a guia da CRA se registra pelo nosso número, com os zeros da frente;
+        «AGUARDANDO PAGAMENTO» não prova o pagamento, e o título só sai da
+        pendência pelo comprovante ou pela situação paga no portal;
       - entrar na relação NÃO tira o pagamento da pendência: ele segue com o
         prazo e o passo do portal até a guia ser paga
         (`pendencias_do_repasse`, a lista que o roteiro lê);
@@ -91,10 +97,26 @@ def pago(con, *, origem="CENPROT", chave="GR:1", numero="GR/1",
     return {"titulo_id": tid, "ato_id": r["ato_id"]}
 
 
+def retorno(con, ato_id: int, *, dia: str = "2026-10-19",
+            recusado: bool = False) -> int:
+    """O retorno à CRA que levou o «pago» deste ato — aceito, ou recusado."""
+    rid = int(nativo(con).escrever(
+        """INSERT INTO pt_retornos(tipo, apresentante_codigo, dia, nome_arquivo,
+               conteudo, gerado_em, cra_enviado_em, cra_recusado_em)
+           VALUES ('SDTBFORTP', '999', %s, 'RTESTE.TXT', 'arquivo de teste',
+                   %s, %s, %s) RETURNING id""",
+        (dia, dia + "T10:00:00", None if recusado else dia + "T11:00:00",
+         dia + "T11:00:00" if recusado else None))[0]["id"])
+    nativo(con).escrever("UPDATE pt_atos SET retorno_id=%s WHERE id=%s",
+                         (rid, int(ato_id)))
+    return rid
+
+
 def _as_tres(con) -> dict:
+    cra = pago(con, origem="CRA", chave="GR:2", numero="GR/2", saldo="200.00")
+    retorno(con, cra["ato_id"])
     return {"cenprot": pago(con, origem="CENPROT", chave="GR:1", numero="GR/1"),
-            "cra": pago(con, origem="CRA", chave="GR:2", numero="GR/2",
-                        saldo="200.00"),
+            "cra": cra,
             "balcao": pago(con, origem="MANUAL", numero="GR/3", saldo="100.00")}
 
 
@@ -243,6 +265,77 @@ def test_pagamento_desfeito_dentro_de_guia_nao_paga_aparece_com_o_conserto():
     assert "cancele essa guia" in linha["explicacao"]
 
 
+# ------------------------------------------- a CRA: o boleto nasce do retorno
+
+
+def test_o_pagamento_da_cra_sem_retorno_aceito_espera_o_retorno():
+    con = banco()
+    sem = pago(con, origem="CRA", chave="GR:2", numero="GR/2")
+    recusado = pago(con, origem="CRA", chave="GR:4", numero="GR/4")
+    retorno(con, recusado["ato_id"], recusado=True)
+    assert REP.gerar_guias_do_dia(con, hoje=HOJE, agora=AGORA) == []
+    lista = REP.pendencias_do_repasse(con, hoje=HOJE)
+    for ato in (sem["ato_id"], recusado["ato_id"]):
+        linha = _linha(lista, ato)
+        assert (linha["etapa"], linha["retorno_aceito"]) == (REP.SEM_GUIA, False)
+        assert "nasce do RETORNO" in linha["explicacao"]
+        assert "mande o retorno" in linha["explicacao"]
+
+
+def test_com_o_retorno_aceito_a_pendencia_diz_o_caminho_do_portal_da_cra():
+    con = banco()
+    p = pago(con, origem="CRA", chave="GR:2", numero="GR/2")
+    retorno(con, p["ato_id"], dia="2026-10-19")
+    linha = _linha(REP.pendencias_do_repasse(con, hoje=HOJE), p["ato_id"])
+    assert linha["retorno_aceito"] is True
+    assert "menu Retorno → «Boletos de repasse»" in linha["explicacao"]
+    assert "«GERAR BOLETO»" in linha["explicacao"]
+    assert "retorno de 19/10/2026" in linha["explicacao"]
+    [g] = REP.gerar_guias_do_dia(con, hoje=HOJE, agora=AGORA)
+    assert g["central"] == "CRA"
+    gerada = _linha(REP.pendencias_do_repasse(con, hoje=HOJE), p["ato_id"])
+    assert "Boletos pendentes de geração" in gerada["explicacao"]
+    assert "nosso número" in gerada["explicacao"]
+
+
+def test_a_guia_da_cra_se_registra_pelo_nosso_numero_com_os_zeros():
+    con = banco()
+    p = pago(con, origem="CRA", chave="GR:2", numero="GR/2")
+    retorno(con, p["ato_id"])
+    [g] = REP.gerar_guias_do_dia(con, hoje=HOJE, agora=AGORA)
+    REP.registrar_guia(con, g["guia_id"], identificador="000000000123",
+                       vencimento=None, agora=AGORA, usuario="beatriz")
+    assert REP.guia(con, g["guia_id"])["identificador"] == "000000000123"
+    linha = _linha(REP.pendencias_do_repasse(con, hoje=HOJE), p["ato_id"])
+    assert linha["etapa"] == REP.GUIA_REGISTRADA
+    assert "nosso número 000000000123" in linha["explicacao"]
+    assert "AGUARDANDO PAGAMENTO" in linha["explicacao"]
+
+
+def test_aguardando_pagamento_nao_prova_e_o_titulo_fica_na_pendencia():
+    con = banco()
+    p = pago(con, origem="CRA", chave="GR:2", numero="GR/2")
+    retorno(con, p["ato_id"])
+    [g] = REP.gerar_guias_do_dia(con, hoje=HOJE, agora=AGORA)
+    REP.registrar_guia(con, g["guia_id"], identificador="000000000123",
+                       vencimento=None, agora=AGORA, usuario="beatriz")
+    for prova in ("PORTAL", "COMPROVANTE"):
+        with pytest.raises(REP.RepasseError, match="não prova o pagamento"):
+            REP.pagar_guia(con, g["guia_id"], paga_em=HOJE,
+                           comprovante="AGUARDANDO PAGAMENTO", agora=AGORA,
+                           usuario="carla", prova=prova)
+    with pytest.raises(REP.RepasseError, match="Prova do pagamento desconhecida"):
+        REP.pagar_guia(con, g["guia_id"], paga_em=HOJE, comprovante="PAGO",
+                       agora=AGORA, usuario="carla", prova="PALPITE")
+    assert _linha(REP.pendencias_do_repasse(con, hoje=HOJE),
+                  p["ato_id"])["etapa"] == REP.GUIA_REGISTRADA
+    r = REP.pagar_guia(con, g["guia_id"], paga_em=HOJE, comprovante="PAGO",
+                       agora=AGORA, usuario="carla", prova="PORTAL")
+    assert r["prova"] == "PORTAL"
+    assert REP.guia(con, g["guia_id"])["comprovante"] == "situação no portal: PAGO"
+    assert REP.pendencias_do_repasse(con, hoje=HOJE) == []
+
+
 # ------------------------------------------------ a rotina da automação
 
 
@@ -300,6 +393,15 @@ def test_a_rotina_com_pode_agir_gera_no_dia_e_avisa_que_falta_o_portal():
     assert "DEVEDOR" not in tudo and "CREDOR" not in tudo and CPF not in tudo
 
 
+def test_a_rotina_conta_a_cra_esperando_o_retorno_sem_gerar():
+    con = banco()
+    pago(con, origem="CRA", chave="GR:2", numero="GR/2")
+    r = RA.gerar_a_relacao_do_dia(_contexto(con, pode_agir=True))
+    assert r["situacao"] == "AVISO" and r["acoes"] == []
+    assert "esperando o retorno" in r["relato"]
+    assert nativo(con).ler("SELECT id FROM pt_repasse_guias") == []
+
+
 def test_a_rotina_sem_nada_esperando_fica_ok():
     con = banco()
     r = RA.gerar_a_relacao_do_dia(_contexto(con, pode_agir=True))
@@ -333,8 +435,9 @@ def test_a_rotina_esta_no_catalogo_da_automacao():
 
 def test_a_rotina_nao_fala_com_rede_nem_com_central():
     fonte = (RAIZ / "protesto_repasse_automacao.py").read_text(encoding="utf-8")
-    proibidos = r"^\s*(?:import|from)\s+(requests|urllib|http|socket|cenprot_api|" \
-                r"cra21_api|resolve_api|centrais_cred|automacao_cofre)\b"
+    proibidos = (r"^\s*(?:import|from)\s+(requests|urllib|http|socket|"
+                 r"cenprot_api|cra21_api|resolve_api|centrais_cred|"
+                 r"automacao_cofre)\b")
     assert not re.search(proibidos, fonte, re.MULTILINE)
 
 
@@ -349,8 +452,10 @@ def s(cg_casa_logada):
 
 def _pago_na_tela(s, *, origem="CENPROT", chave="GRW:1") -> dict:
     with s["db"].transaction() as con:
-        return pago(con, origem=origem, chave=chave,
-                    numero=chave.replace(":", "/"))
+        p = pago(con, origem=origem, chave=chave, numero=chave.replace(":", "/"))
+        if origem == "CRA":
+            retorno(con, p["ato_id"])
+        return p
 
 
 def _token(s) -> str:
@@ -382,6 +487,17 @@ def test_o_botao_gera_as_relacoes_do_dia_e_o_titulo_continua_pendente(s):
     assert sorted(json.loads(x["details"])["central"] for x in rastro) == [
         "CENPROT", "CRA"]
     assert all("DEVEDOR" not in (x["details"] or "") for x in rastro)
+
+
+def test_a_ficha_da_guia_da_cra_pede_o_nosso_numero(s):
+    _pago_na_tela(s, origem="CRA", chave="GRW:2")
+    s["c"].post("/protesto/repasses/guias/do-dia",
+                data={"csrf_token": _token(s)})
+    with s["db"].connect() as con:
+        [g] = nativo(con).ler("SELECT id FROM pt_repasse_guias")
+    html = s["c"].get(f"/protesto/repasses/guias/{g['id']}").get_data(as_text=True)
+    assert "Nosso número do boleto de repasse" in html
+    assert "Boletos de repasse" in html
 
 
 def test_o_csv_leva_a_etapa_e_a_guia_nao_paga(s):

@@ -200,7 +200,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             flash("Guia não encontrada.", "danger")
             return redirect(url_for("protesto_repasses"))
         return render_template("protesto_repasse_guia.html", g=g, hoje=hoje(),
-                               reais=reais, pode_mexer=QUEM_MEXE_NO_DINHEIRO)
+                               reais=reais, pode_mexer=QUEM_MEXE_NO_DINHEIRO,
+                               provas=REP.PROVAS_DO_PAGAMENTO,
+                               em_aberto=REP.SITUACAO_EM_ABERTO_NO_PORTAL)
 
     @app.route("/protesto/repasses/guias/<int:guia_id>/relacao.txt")
     @login_required
@@ -253,7 +255,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             lambda con: REP.pagar_guia(
                 con, guia_id, paga_em=_campo("paga_em"),
                 comprovante=_campo("comprovante"), agora=agora(),
-                usuario=usuario_nome()),
+                usuario=usuario_nome(),
+                prova=_campo("prova") or "COMPROVANTE"),
             lambda r: (f"Guia {r['numero']} paga em {r['paga_em']}: "
                        f"R$ {reais(r['total_centavos'])} repassados. Falta "
                        f"conciliar com a confirmação do IEPTB."))

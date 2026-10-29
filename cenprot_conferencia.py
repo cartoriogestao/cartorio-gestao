@@ -77,6 +77,7 @@ import unicodedata
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+import afirmacoes_expressas as AFX
 import cenprot_api as API
 import centrais_cred as CRED
 import cn_schema as CN
@@ -268,8 +269,10 @@ REGRA_NAO_CONFERIDO = "PROTESTO_CENPROT_NAO_CONFERIDO"
 REGRA_DIVERGENTE = "PROTESTO_CENPROT_DIVERGENTE"
 REGRA_LIQUIDACAO = "CENPROT_LIQUIDACAO_NO_PORTAL"
 REGRA_PAGO_POR_LIQUIDACAO = "CENPROT_PAGO_POR_LIQUIDACAO"
-MINIMO_DE_LETRAS_DA_AFIRMACAO = 30
-MODELO_DA_AFIRMACAO = "Afirmo, sob minha responsabilidade, que…"
+# A régua da afirmação mora em `afirmacoes_expressas` (integração de
+# 29/10/2026): o piso e a frase vêm de lá, e não se repetem aqui.
+MINIMO_DE_LETRAS_DA_AFIRMACAO = AFX.MINIMO_DE_LETRAS
+MODELO_DA_AFIRMACAO = AFX.MODELO + "…"
 # A CHAVE NO `detalhe_json` É UMA LISTA, e não um texto: o mesmo ato pode
 # precisar de duas afirmações (a desta trava e a da prova da intimação), e
 # uma chave só faria a segunda apagar a primeira.
@@ -1299,35 +1302,19 @@ def consultar(db, *, titulo_id: int | None = None, quem: str = "",
 # ===================================================== a trava do protesto
 
 
-def validar_afirmacao(afirmo: Any, afirmacao: Any, *, por_que: str = "") -> str:
+def validar_afirmacao(afirmo: Any, afirmacao: Any, *, por_que: str = "",
+                      robo: bool = False) -> str:
     """A afirmação expressa do contrato comum da casa. Só calcula.
 
-    A RÉGUA É UMA SÓ, A DO CONTRATO (`protesto_prova.afirmacao_valida`): a
+    A RÉGUA É UMA SÓ, A DO CONTRATO (`afirmacoes_expressas.validar`): a
     caixa «Afirmo» marcada E o texto com pelo menos 30 LETRAS além da frase
     «Afirmo, sob minha responsabilidade, que» — que vem junto no que se grava,
     e não conta no piso (sozinha ela passaria dele). Espaço e pontuação não
-    contam: «.......» não é afirmação de ninguém.
+    contam: «.......» não é afirmação de ninguém. A cópia que morava aqui
+    saiu na integração de 29/10/2026.
     """
-    import protesto_prova as PROVA
-    texto = PROVA.afirmacao_valida(afirmacao) if afirmo else None
-    if texto:
-        return texto
-    corrido = " ".join(str(afirmacao or "").split())
-    if corrido.lower().startswith(PROVA.FRASE_DA_AFIRMACAO.lower()):
-        corrido = corrido[len(PROVA.FRASE_DA_AFIRMACAO):]
-    letras = sum(1 for c in corrido if c.isalpha())
-    falta = []
-    if not afirmo:
-        falta.append("marque a caixa «Afirmo»")
-    if letras < PROVA.PISO_DA_AFIRMACAO:
-        falta.append(f"escreva a afirmação com pelo menos "
-                     f"{PROVA.PISO_DA_AFIRMACAO} letras além de "
-                     f"«{PROVA.FRASE_DA_AFIRMACAO}» (vieram {letras})")
-    raise ConferenciaError(
-        (por_que + " " if por_que else "")
-        + "Para seguir assim mesmo, " + " e ".join(falta)
-        + f", depois de «{PROVA.FRASE_DA_AFIRMACAO}». Ela fica gravada no ato "
-          f"e na auditoria, com o seu nome.")
+    return AFX.validar(afirmo, afirmacao, por_que=por_que, robo=robo,
+                       erro=ConferenciaError)
 
 
 def _lendo(db):
@@ -1472,18 +1459,76 @@ def trava_do_ato(db, titulo_id: int, ato: Any, *, afirmo: Any = False,
     if qual not in ATOS_QUE_A_CENPROT_TRAVA:
         return None
     with _lendo(db) as con:
-        linha = da_ficha(con, int(titulo_id))
+        return trava_sem_rede(con, titulo_id, qual, afirmo=afirmo,
+                              afirmacao=afirmacao, robo=robo)
+
+
+def trava_sem_rede(con: Any, titulo_id: int, ato: Any, *, afirmo: Any = False,
+                   afirmacao: Any = "", robo: bool = False,
+                   onde_afirmar: str = "") -> dict | None:
+    """A trava do PAGO POR LIQUIDAÇÃO para o apontamento, a intimação e a
+    desistência, com a conexão na mão. Só LÊ; recusa com `ConferenciaError`.
+
+    A MESMA TRAVA PARA TODA PORTA DA INTIMAÇÃO (integração de 29/10/2026). O
+    PR #105 a ligou na ficha; a intimação lançada pela tela dos avisos (a
+    entrega), pelo edital, pela intimação digital e pelo AR dos Correios não
+    passava por ela — e é justamente por essas portas que a intimação se lavra
+    quase sempre. Aqui ela recebe `con`, para o AR (que roda dentro da
+    transação da automação) e as rotas a usarem igual à ficha.
+
+    O título que não veio da CENPROT sai na primeira consulta, sem montar o
+    contexto inteiro da conferência. `onde_afirmar`: a frase que diz onde a
+    afirmação se faz, quando não é na tela de quem chamou (o lote do PDF, o AR).
+    """
+    qual = _txt(ato).upper()
+    if qual not in ATOS_QUE_A_CENPROT_TRAVA or qual == "PROTESTO":
+        return None
+    bd = banco(con)
+    if not bd.tem_tabela("pt_titulos"):
+        return None
+    titulo = bd.um(
+        """SELECT id, apresentante_codigo, origem, origem_chave
+             FROM pt_titulos WHERE id = %s""", (int(titulo_id),))
+    if not titulo or not e_de_origem_cenprot(dict(titulo)):
+        return None
+    if faltam_tabelas(con):
+        return None
+    linha = da_ficha(con, int(titulo_id))
     travas = (linha or {}).get("contraria_o_pago") or []
     if not travas:
         return None
     o_que = " ".join(a["frase"] for a in travas)
     frase = (f"Ato NÃO lançado ({NOME_DO_ATO.get(qual, qual.lower())}): "
              f"{o_que} Caminho: {travas[0]['caminho']}")
+    if onde_afirmar:
+        raise ConferenciaError(f"{frase} {onde_afirmar}",
+                               regra=REGRA_PAGO_POR_LIQUIDACAO)
     return _exigir_afirmacao(frase, regra=REGRA_PAGO_POR_LIQUIDACAO, o_que=o_que,
                              pedido=linha.get("pedido") or "",
                              titulo_id=int(titulo_id), afirmo=afirmo,
                              afirmacao=afirmacao, robo=robo, em_lote=False,
                              sem_rede=False)
+
+
+def pagos_por_liquidacao(con: Any) -> dict[int, str]:
+    """Os títulos em que a trava SEM REDE para o ato (o PAGO POR
+    LIQUIDAÇÃO), com a frase de cada um. Só LÊ.
+
+    Para a tela dos avisos (integração de 29/10/2026): ela lista muitos
+    avisos, e montar a conferência título a título seria montar o contexto
+    inteiro uma vez por linha. Aqui ele se monta uma vez. Sem as tabelas da
+    conferência, nenhum — e a trava de cada rota continua valendo.
+    """
+    if faltam_tabelas(con):
+        return {}
+    ctx = _contexto(con)
+    saida: dict[int, str] = {}
+    for tid, t in ctx["por_id"].items():
+        travas = _linha(t, ctx).get("contraria_o_pago") or []
+        if travas:
+            saida[int(tid)] = (" ".join(a["frase"] for a in travas)
+                               + f" Caminho: {travas[0]['caminho']}")
+    return saida
 
 
 def anotar_afirmacao_no_ato(con: Any, ato_id: int, afirmacao: dict, *,
@@ -1534,7 +1579,7 @@ _DATA = re.compile(r"^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$")
 def registrar_liquidacao(con: Any, *, pedido: Any, titulo_id: int,
                          liquidada_em: Any = None, afirmo: Any = False,
                          afirmacao: Any = "", quem: str = "",
-                         agora: str = "") -> dict:
+                         agora: str = "", robo: bool = False) -> dict:
     """«Liquidei no portal o pedido N, e ele é do título T.» ESCREVE.
 
     A casa precisa saber que liquidou, e de qual título — a API não conta
@@ -1565,7 +1610,7 @@ def registrar_liquidacao(con: Any, *, pedido: Any, titulo_id: int,
         raise ConferenciaError("A data da liquidação não se lê — use o "
                                "calendário da tela.")
     texto = validar_afirmacao(
-        afirmo, afirmacao,
+        afirmo, afirmacao, robo=robo,
         por_que="O registro da liquidação é uma afirmação de qual título ela é.")
     if bd.um("""SELECT id FROM cn_liquidacoes_portal
                  WHERE pedido = %s AND titulo_id = %s AND anulada_em IS NULL""",

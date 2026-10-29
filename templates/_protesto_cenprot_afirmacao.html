@@ -9,13 +9,14 @@
   na CENPROT ele não se altera. A situação que veio do NOSSO XML não trava: é
   pendência de reenviar o XML com a situação nova.
 
-  A AFIRMAÇÃO É A DO CONTRATO COMUM (`afirmo` + `afirmacao`), e UMA SÓ POR
-  FORMULÁRIO: se a prova da intimação ou a trava do selo já abriram a caixa
-  dela, esta não abre outra — dois campos com o mesmo nome fariam o texto de
-  um sumir no outro.
+  A AFIRMAÇÃO É A DO CONTRATO COMUM, e UMA POR TRAVA (decisão do oficial,
+  integração de 29/10/2026): até então este bloco não abria caixa quando a
+  prova da intimação ou o selo já tinham aberto a deles, e a mesma afirmação
+  vencia as duas travas. Agora a CENPROT tem o seu campo (`afirmo_cenprot` +
+  `afirmacao_cenprot`) sempre que outra trava também pede afirmação no ato.
 #}
 {% from '_protesto_afirmacao.html' import afirmacao %}
-{% set cc = conferencia_cenprot_da_ficha(titulo) %}
+{% set cc = cc_da_ficha if cc_da_ficha is defined else conferencia_cenprot_da_ficha(titulo) %}
 {% if cc and (ato == 'PROTESTO' or cc.contraria_o_pago) %}
 {% set travas = cc.trava if ato == 'PROTESTO' else cc.contraria_o_pago %}
 <div style="grid-column:1/-1" class="notice{% if travas %} danger{% endif %}">
@@ -39,13 +40,10 @@
   {% endfor %}
   <div><small><a href="{{ url_for('protesto_cenprot_conferencia') }}#titulo-{{ titulo.id }}">Conferência CENPROT × sistema</a></small></div>
 </div>
-{% set pedida = g.get('protesto_afirmacao_pedida') %}
-{% if ato == 'PROTESTO' and prova and not prova.completa %}
-  <div style="grid-column:1/-1"><small>A afirmação expressa da prova da
-    intimação, acima, vale também para a conferência com a CENPROT — se for
-    usá-la, diga nela o que conferiu no portal.</small></div>
-{% elif not (pedida and pedida.ato == ato) %}
-  {{ afirmacao('', (travas[0].frase if travas else 'A conferência com a CENPROT pode recusar este ato.'),
-               rotulo='Insistir mesmo assim — afirmação expressa (CENPROT)') }}
-{% endif %}
+{#- UMA AFIRMAÇÃO POR TRAVA (integração de 29/10/2026): a da CENPROT é a dela.
+    Quando outra trava também pede afirmação neste ato (a prova da intimação,
+    o selo, o irmão), a ficha manda `sufixo_cenprot` = «_cenprot», e cada uma
+    tem o seu campo; sozinha, ela usa a caixa comum. #}
+{{ afirmacao(sufixo_cenprot | default(''), (travas[0].frase if travas else 'A conferência com a CENPROT pode recusar este ato.'),
+             rotulo='Insistir mesmo assim — afirmação expressa (CENPROT)') }}
 {% endif %}

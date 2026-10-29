@@ -435,6 +435,22 @@ def _assentar(con: Any, postagem_id: int, *, estado: str, data: str,
         # põe a postagem em CONFERIR, com a frase: o robô não afirma nada por
         # ninguém, e quem resolve é o balcão, na tela dos avisos.
         entregue = estado == ENTREGUE
+        if entregue:
+            # A TRAVA DA CENPROT TAMBÉM NO AR (integração de 29/10/2026). O
+            # título que a Central dá por PAGO POR LIQUIDAÇÃO não se intima —
+            # lá isso não se altera (o oficial, 29/10/2026, PR #105). Na ficha
+            # a escrevente vence a trava afirmando; o AR é robô, e robô não
+            # afirma: a recusa põe a postagem em CONFERIR, com a frase.
+            import cenprot_conferencia as CCONF
+            try:
+                CCONF.trava_sem_rede(
+                    con, int(aviso["titulo_id"]), "INTIMACAO", robo=True,
+                    onde_afirmar=(
+                        "O AR não afirma por ninguém: confira a CENPROT e, se "
+                        "for o caso, registre a entrega deste aviso pela tela "
+                        "«Avisos e editais», onde a afirmação se faz."))
+            except CCONF.ConferenciaError as erro:
+                raise ArError(str(erro)) from None
         imagem_da_entrega = retorno.get("imagem") if entregue else None
         r = AV.registrar_entrega(
             con, int(aviso["id"]), entregue=entregue, agora=agora,

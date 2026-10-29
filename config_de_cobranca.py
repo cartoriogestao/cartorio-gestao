@@ -69,6 +69,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from bd_nativo import banco
+import afirmacoes_expressas as AFX
 import caixa_aviso as CA
 import identidade_do_robo as IDR
 
@@ -376,17 +377,16 @@ def _valor_atual(bd, chave: str) -> str | None:
 
 
 def _afirmacao(afirmo: Any, texto: Any) -> str | None:
-    """O texto da afirmação, já com a frase — ou None. Régua da casa."""
-    from protesto_prova import afirmacao_valida
+    """O texto da afirmação, já com a frase — ou None. Régua da casa
+    (`afirmacoes_expressas.texto_valido`)."""
     if not afirmo:
         return None
-    return afirmacao_valida(texto)
+    return AFX.texto_valido(texto)
 
 
 def regra_da_afirmacao() -> str:
-    from protesto_prova import FRASE_DA_AFIRMACAO, PISO_DA_AFIRMACAO
-    return (f"Marque «Afirmo» e escreva «{FRASE_DA_AFIRMACAO} …» com pelo menos "
-            f"{PISO_DA_AFIRMACAO} letras: por que muda, e por que não é erro. Fica "
+    return (f"Marque «Afirmo» e escreva «{AFX.MODELO} …» com pelo menos "
+            f"{AFX.MINIMO_DE_LETRAS} letras: por que muda, e por que não é erro. Fica "
             f"na auditoria com o seu nome, e o oficial recebe tarefa.")
 
 

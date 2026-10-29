@@ -86,8 +86,12 @@ def pago(con, *, origem="CENPROT", chave="GR:1", numero="GR/1",
                               origem_chave=None if origem == "MANUAL" else chave,
                               agora=quando)
     PT.lancar_apontamento(con, tid, sv=SV, agora=quando, data_extenso=EXTENSO)
+    # A FORMA É INCIDENTAL AQUI, e não pode ser PIX: desde o PR #119 o PIX só
+    # é pagamento com o crédito conferido (`pix_id`), e `lancar_pagamento`
+    # recusa sem ele. Os dois PRs nasceram em paralelo — trocado na
+    # integração de 29/10/2026, como o #119 fez nos testes que já existiam.
     r = PT.lancar_pagamento(con, tid, sv=SV, agora=quando, data_extenso=EXTENSO,
-                            forma_pagamento="PIX")
+                            forma_pagamento="TRANSFERENCIA")
     return {"titulo_id": tid, "ato_id": r["ato_id"]}
 
 

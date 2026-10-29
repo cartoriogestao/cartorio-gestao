@@ -37,6 +37,7 @@ import cenprot_pendencias as PEND
 import centrais_cred as CENTCRED
 import cn_schema as CN
 import protesto_cenprot as PCEN
+import selo_robo as SR
 from seguranca_web import numero_digitado
 
 # QUEM ENTRA. É o mesmo trio das outras telas do Protesto — a guarda de
@@ -530,7 +531,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                     liquidada_em=request.form.get("liquidada_em"),
                     afirmo=bool(request.form.get("afirmo")),
                     afirmacao=request.form.get("afirmacao"),
-                    quem=usuario_nome(), agora=db.now())
+                    quem=usuario_nome(), agora=db.now(),
+                    # ROBÔ NÃO AFIRMA (integração de 29/10/2026)
+                    robo=SR.usuario_e_robo())
         except CONF.ConferenciaError as erro:
             flash(str(erro), "danger")
             return _voltar_a_conferencia()

@@ -923,6 +923,15 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("pt_cenprot_xml", "envio_afirmado_em", "TEXT"),
     ("pt_cenprot_xml", "envio_afirmado_por", "TEXT"),
     ("pt_cenprot_xml", "envio_afirmacao", "TEXT"),
+    # A REABERTURA DO DIA NA PRÓPRIA LINHA (PR #114). O `pt_encerramentos_do_dia`
+    # nasceu no `main` pelo PR #104 sem estas quatro colunas, e o #114 só as pôs
+    # no `CREATE TABLE` — que não muda tabela que já existe. Num banco que abriu
+    # com o #104, o roteiro leria `reaberto_em` e estouraria. Acrescentadas na
+    # integração de 29/10/2026.
+    ("pt_encerramentos_do_dia", "reaberto_em", "TEXT"),
+    ("pt_encerramentos_do_dia", "reaberto_por", "TEXT"),
+    ("pt_encerramentos_do_dia", "reabertura_afirmacao", "TEXT"),
+    ("pt_encerramentos_do_dia", "reaberturas_json", "TEXT NOT NULL DEFAULT '[]'"),
     # DE ONDE O AVISO E O EDITAL VIERAM (21/10/2026): os do E-Ofício entram
     # com `tbBoletoApto:<intChave>` e `tbEdital:<intchave>`, e a carga roda de
     # novo sem duplicar. Os nascidos aqui ficam com as duas vazias.

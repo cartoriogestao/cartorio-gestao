@@ -68,21 +68,27 @@ import re
 from datetime import date
 from typing import Any
 
+import afirmacoes_expressas as AFX
 import protesto as PT
 import protesto_triduo as TRIDUO
 from bd_nativo import banco
 from ri_schema import soma_dias_uteis
 
 # ------------------------------------------- o contrato da afirmação expressa
+#
+# A RÉGUA MORA EM `afirmacoes_expressas` desde a integração de 29/10/2026 —
+# era aqui, e havia mais cinco cópias pela casa, que já divergiam. Os nomes
+# abaixo continuam valendo para quem os importa; o que eles dizem vem de lá.
+
 
 #: A frase com que a afirmação começa — a tela a mostra fixa, antes da caixa
 #: de texto, e quem a digitar de novo não a vê repetida no registro.
-FRASE_DA_AFIRMACAO = "Afirmo, sob minha responsabilidade, que"
+FRASE_DA_AFIRMACAO = AFX.MODELO
 #: Quantas LETRAS o texto precisa ter, além da frase. Letras, e não
 #: caracteres: «............» não diz nada.
-PISO_DA_AFIRMACAO = 30
+PISO_DA_AFIRMACAO = AFX.MINIMO_DE_LETRAS
 #: A ação da auditoria — a mesma em toda trava desta reestruturação.
-ACAO_DA_AUDITORIA = "AFIRMACAO_EXPRESSA"
+ACAO_DA_AUDITORIA = AFX.ACAO
 
 #: Os códigos das regras desta trava (MAIÚSCULAS, como o contrato pede).
 REGRA_PROTESTO = "PROTESTO_SEM_PROVA_DA_INTIMACAO"
@@ -91,6 +97,10 @@ REGRA_OUTRO_TITULO = "COMPROVANTE_DE_OUTRO_TITULO"
 REGRA_OUTRO_AVISO = "COMPROVANTE_DE_OUTRO_AVISO"
 #: Trocar o nome de quem recebeu, já registrado no aviso (29/10/2026).
 REGRA_CORRECAO_DO_RECEBEDOR = "CORRECAO_DE_QUEM_RECEBEU"
+#: As regras da entrega e do comprovante do aviso, que podem cair juntas no
+#: mesmo registro — e cada uma pede a sua afirmação (`vencer_todas`). A tela
+#: desenha um campo para cada uma, nesta ordem.
+REGRAS_DO_AVISO = (REGRA_ENTREGA, REGRA_OUTRO_TITULO, REGRA_OUTRO_AVISO)
 
 COMO_AFIRMAR = (
     f"Se você tem certeza de que isto não é erro, marque «Afirmo» e escreva "
@@ -103,23 +113,14 @@ class ProvaError(PT.ProtestoError):
     """A intimação não está provada, e ninguém afirmou expressamente."""
 
 
-def _letras(texto: str) -> int:
-    return sum(1 for c in texto if c.isalpha())
-
-
 def afirmacao_valida(texto: Any) -> str | None:
     """O texto inteiro da afirmação, já com a frase de abertura — ou `None`
-    se ela não vale. Só calcula.
+    se ela não vale. Só calcula. É `afirmacoes_expressas.texto_valido`.
 
     A FRASE NÃO CONTA NO PISO: ela tem mais de trinta letras sozinha, e
     contá-la deixaria passar a afirmação que não diz nada além dela.
     """
-    corrido = " ".join(str(texto or "").split())
-    if corrido.lower().startswith(FRASE_DA_AFIRMACAO.lower()):
-        corrido = corrido[len(FRASE_DA_AFIRMACAO):].lstrip(" ,:;-—")
-    if _letras(corrido) < PISO_DA_AFIRMACAO:
-        return None
-    return f"{FRASE_DA_AFIRMACAO} {corrido}"
+    return AFX.texto_valido(texto)
 
 
 def vencer_ou_recusar(regra: str, o_que_faltava: str, afirmacao: Any, *,
@@ -145,18 +146,40 @@ def vencer_todas(faltas: list[tuple[str, str]], afirmacao: Any, *,
 
     A RECUSA DIZ TODAS DE UMA VEZ — quem afirma tem de ter lido tudo o que
     está afirmando; recusar uma por vez faria a segunda aparecer depois de a
-    afirmação já estar escrita para a primeira. Com a afirmação válida, cada
-    regra vencida vira um registro próprio (e uma linha própria de
-    auditoria), com a mesma afirmação.
+    afirmação já estar escrita para a primeira.
+
+    UMA AFIRMAÇÃO POR REGRA (decisão do oficial, integração de 29/10/2026).
+    `afirmacao` é o texto da caixa comum, ou `{regra: texto}` quando o
+    formulário trouxe um campo por regra (a chave `""` é a caixa comum). A
+    caixa comum vence UMA regra; com duas ou mais, cada uma precisa do seu
+    texto, e o mesmo texto em duas é recusado — antes disto a mesma
+    afirmação ia para as três regras, e cada uma gravava a sua linha com ele.
     """
     if not faltas:
         return []
-    frase = f"{abertura}: {'; '.join(f for _, f in faltas)}."
-    vencer_ou_recusar(faltas[0][0], frase, afirmacao, erro=erro)
-    texto = afirmacao_valida(afirmacao)
-    return [{"regra": regra, "afirmacao": texto,
-             "o_que_faltava": f"{abertura}: {f}."}
-            for regra, f in faltas]
+    por_regra = (dict(afirmacao) if isinstance(afirmacao, dict)
+                 else {"": afirmacao})
+    comum = por_regra.get("")
+    if len(faltas) == 1:
+        regra, falta = faltas[0]
+        return [vencer_ou_recusar(regra, f"{abertura}: {falta}.",
+                                  por_regra.get(regra) or comum, erro=erro)]
+    sem_texto = [(r, f) for r, f in faltas if not str(por_regra.get(r) or "").strip()]
+    if sem_texto:
+        lista = "; ".join(f for _, f in faltas)
+        recado = (" A caixa comum não vale para mais de uma regra: escreva a "
+                  "afirmação de cada uma no campo dela."
+                  if str(comum or "").strip() else "")
+        raise erro(f"{abertura}: {lista}.{recado} Cada regra pede a sua "
+                   f"afirmação expressa. {COMO_AFIRMAR}")
+    registros = [vencer_ou_recusar(r, f"{abertura}: {f}.", por_regra[r],
+                                   erro=erro)
+                 for r, f in faltas]
+    try:
+        AFX.uma_por_trava([dict(x, trava=x["regra"]) for x in registros])
+    except AFX.AfirmacaoError as repetida:
+        raise erro(str(repetida)) from None
+    return registros
 
 
 def para_a_auditoria(registro: dict) -> dict:

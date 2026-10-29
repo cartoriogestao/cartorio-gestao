@@ -105,6 +105,7 @@ from datetime import datetime
 from collections.abc import Iterable
 from typing import Any
 
+import afirmacoes_expressas as AFX
 import protesto as PT
 import protesto_arquivo as PA
 from bd_nativo import banco
@@ -130,9 +131,10 @@ SITUACOES_EM_ABERTO = ("RECEBIDO", "APONTADO", "INTIMADO", "PROTESTADO")
 REGRA = "PROTESTO_IRMAO_EM_ABERTO"
 REGRA_PROTESTO = "PROTESTO_IRMAO_POSTERIOR_PAGO"
 
-# O contrato comum da afirmação expressa (29/10/2026).
-MINIMO_DE_LETRAS = 30
-FORMULA = "Afirmo, sob minha responsabilidade, que"
+# O contrato comum da afirmação expressa (29/10/2026) — a régua mora em
+# `afirmacoes_expressas` desde a integração.
+MINIMO_DE_LETRAS = AFX.MINIMO_DE_LETRAS
+FORMULA = AFX.MODELO
 
 O_ATO = {"PAGAMENTO": "o pagamento", "DESISTENCIA": "a desistência",
          "CANCELAMENTO": "o cancelamento", "PROTESTO": "o protesto"}
@@ -375,16 +377,12 @@ def quadro_da_ficha(con, titulo_id: int) -> dict | None:
 # ------------------------------------------------------------ a trava
 
 
-def _so_letras(v: Any) -> str:
-    return "".join(c for c in _nome(v) if c.isalpha())
-
-
 def _letras(texto: Any) -> int:
     """Quantas LETRAS a afirmação tem ALÉM da fórmula. Sem tirar a fórmula, a
     frase-modelo sozinha («Afirmo, sob minha responsabilidade, que») já teria
-    as trinta letras, e a afirmação passaria sem dizer nada."""
-    letras, formula = _so_letras(texto), _so_letras(FORMULA)
-    return len(letras.removeprefix(formula))
+    as trinta letras, e a afirmação passaria sem dizer nada. A régua é a do
+    contrato (`afirmacoes_expressas.letras_alem_da_frase`)."""
+    return AFX.letras_alem_da_frase(texto)
 
 
 def _afirmacao(afirmo: bool, afirmacao: Any, *, por_robo: bool,
@@ -399,7 +397,8 @@ def _afirmacao(afirmo: bool, afirmacao: Any, *, por_robo: bool,
             "Robô não faz afirmação expressa: ela é de uma pessoa, sob a "
             "responsabilidade dela. Lance este ato com o usuário de quem "
             "conferiu o papel. Nada foi lançado.")
-    if not afirmo or _letras(texto) < MINIMO_DE_LETRAS:
+    valido = AFX.texto_valido(texto) if afirmo else None
+    if not valido:
         raise TituloIrmaoError(
             f"Para lançar {O_ATO.get(ato, 'o ato')} assim mesmo, marque "
             f"«Afirmo» E escreva a afirmação com pelo menos {MINIMO_DE_LETRAS} "
@@ -408,10 +407,8 @@ def _afirmacao(afirmo: bool, afirmacao: Any, *, por_robo: bool,
             f"lançado.")
     # A FRASE INTEIRA FICA GRAVADA: a tela comum da casa mostra a abertura
     # fora da caixa de texto, e quem escreve só o resto afirmou a frase toda
-    # (a mesma forma de `protesto_prova.afirmacao_valida`).
-    if not _so_letras(texto).startswith(_so_letras(FORMULA)):
-        texto = f"{FORMULA} {texto}"
-    return texto
+    # (`afirmacoes_expressas.texto_valido` a põe na frente).
+    return valido
 
 
 def _bate(t: dict, numero: str, vencimento: str) -> bool:

@@ -323,6 +323,10 @@ CONDUTAS_DO_DIA: tuple[dict, ...] = (
                  "por dia)."),
      "botoes": ({"rotulo": "Conferir e aplicar desistências",
                  "tela": "protesto_desistencias", "args": {}},
+                # O que o clique da remessa trouxe (DP, CP e AC) e espera a
+                # casa — PR #116, ligado na integração de 29/10/2026.
+                {"rotulo": "Pedidos da CRA (DP, CP e AC)",
+                 "tela": "protesto_cra_pedidos", "args": {}},
                 {"rotulo": "Trazer da CRA pela API",
                  "tela": "protesto_cra_api", "args": {}})},
     {"n": 4, "chave": "entregas", "ancora": "conduta-entregas",
@@ -387,7 +391,10 @@ CONDUTAS_DO_DIA: tuple[dict, ...] = (
                  "IEPTB (título da CRA ou da CENPROT) ou direto (título do "
                  "balcão)."),
      "botoes": ({"rotulo": "Repasses ao apresentante",
-                 "tela": "protesto_repasses", "args": {}},)},
+                 "tela": "protesto_repasses", "args": {}},
+                # O PIX que ainda não virou pagamento (PR #119).
+                {"rotulo": "PIX e créditos sem pagamento",
+                 "tela": "protesto_pix_lista", "args": {}})},
     # O FECHAMENTO DO DIA (29/10/2026) — acrescimo do oficial: «garantir que
     # todos processos sejam concluidos todos os dias; nao deixar margem para a
     # escrevente esquecer ou fazer errado». So se conclui com as outras dez
@@ -425,6 +432,13 @@ CONDUTAS_DO_DIA: tuple[dict, ...] = (
 # `nome_a_confirmar`: o nome do modulo e da funcao foi escrito antes de a peca
 # existir no main; quando ela entrar com outro nome, corrige-se aqui, numa
 # linha so — e ate la a linha diz «ainda nao instalada», que e a verdade.
+#
+# DUAS MARCAS NOVAS, da integracao de 29/10/2026:
+#   `com_o_dia`: a funcao recebe tambem `hoje` e `feriados` do roteiro (a
+#   instancia da cobranca, e nao o relogio da maquina);
+#   `prazo_da_peca`: a peca sabe o prazo dela e devolve `atrasado` em cada
+#   linha — o roteiro o respeita, em vez de cobrar tudo como pendente. Sem a
+#   marca, a regra de cima continua: gancho nao tem prazo aqui.
 GANCHOS: tuple[dict, ...] = (
     # O QUE A CONSULTA DO DIA TROUXE (DP, CP e AC) E AINDA NAO SE APLICOU —
     # a peca que faz o clique da remessa trazer os tres e guardar cada
@@ -433,8 +447,7 @@ GANCHOS: tuple[dict, ...] = (
      "rotulo": "títulos com desistência, cancelamento ou autorização da CRA "
                "por aplicar",
      "modulo": "protesto_desistencia", "funcao": "pendencias_da_cra",
-     "de_onde": "o clique diário que traz DP, CP e AC",
-     "nome_a_confirmar": True},
+     "de_onde": "PR #116, o clique diário que traz DP, CP e AC"},
     {"chave": "atos_sem_selo", "conduta": "protestos",
      "rotulo": "atos que esperam o selo (selo prévio)",
      "modulo": "protesto_selo_previo", "funcao": "pendencias_do_selo",
@@ -461,6 +474,18 @@ GANCHOS: tuple[dict, ...] = (
      "rotulo": "atos do retorno com protocolo repetido",
      "modulo": "protesto_retorno", "funcao": "protocolos_repetidos_na_fila",
      "de_onde": "PR #107, o retorno com protocolo repetido"},
+    # O DINHEIRO DO TITULO PAGO QUE AINDA NAO VIROU PAGAMENTO (PR #119): o PIX
+    # que espera o credito, o de credito conferido e nao lavrado, e o
+    # dinheiro recebido sem pagamento lancado. Na conduta 10, porque sem o
+    # pagamento lavrado nao ha repasse. O prazo e da peca: o credito sem
+    # pagamento atrasa no dia util seguinte.
+    {"chave": "pix_e_creditos", "conduta": "repasse",
+     "rotulo": "PIX sem crédito conferido e dinheiro recebido sem pagamento "
+               "lançado",
+     "modulo": "protesto_pix", "funcao": "pendencias_do_pix",
+     "tela": "protesto_pix_lista",
+     "de_onde": "PR #119, o PIX só com o crédito conferido",
+     "com_o_dia": True, "prazo_da_peca": True},
 )
 
 
@@ -834,21 +859,35 @@ OPERACOES_DOS_PEDIDOS_DA_CRA = ("Desistencia", "Cancelamento", "Autorizacao")
 def _desistencias_por_aplicar(con, ctx: dict) -> list[dict]:
     """O arquivo de desistencia com titulo ainda nao aplicado. Sem prazo no
     papel — pendente, e nunca vermelho: o que fica atrasado e o protesto
-    lavrado antes da consulta, cobrado ao lado."""
+    lavrado antes da consulta, cobrado ao lado.
+
+    SO O ARQUIVO TRAZIDO A MAO (integracao de 29/10/2026). O que veio no
+    clique do dia (PR #116) tem uma linha por titulo em `pt_cra_pedidos`, e
+    quem o cobra e o gancho `pendencias_da_cra` — que sabe o que foi tratado
+    com motivo (o DP grave, o protocolo de outra serventia). Contado aqui
+    tambem, ele ficaria pendente para sempre depois do motivo registrado,
+    porque `aplicados < titulos` nao muda. O arquivo carregado pela tela das
+    desistencias nao tem `pt_cra_pedidos`, e por isso continua aqui."""
     chave, rotulo = ("desistencias_por_aplicar",
-                     "arquivos de desistência com título ainda não aplicado")
+                     "arquivos de desistência trazidos à mão com título "
+                     "ainda não aplicado")
     regra = "aplicar antes de lavrar o protesto do título"
     if not _existe(con, "pt_desistencias"):
         return [_sem_tabela(chave, rotulo, regra, "pt_desistencias")]
+    do_clique = ("""AND NOT EXISTS (SELECT 1 FROM pt_cra_consultas c
+                                    WHERE c.desistencia_id = d.id)"""
+                 if _existe(con, "pt_cra_consultas") else "")
     itens = [_item(
         f"{r['nome_arquivo'] or 'arquivo #' + str(r['id'])} — "
         f"{r['aplicados']} de {r['titulos']} aplicados",
         quando=r["recebida_em"], prazo=None, ctx=ctx,
         tela="protesto_desistencia", args={"desistencia_id": r["id"]})
         for r in banco(con).ler(
-            """SELECT id, nome_arquivo, titulos, aplicados, recebida_em
-                 FROM pt_desistencias WHERE aplicados < titulos
-                ORDER BY id""")]
+            f"""SELECT d.id, d.nome_arquivo, d.titulos, d.aplicados,
+                       d.recebida_em
+                  FROM pt_desistencias d
+                 WHERE d.aplicados < d.titulos {do_clique}
+                 ORDER BY d.id""")]
     return [_obrigacao(chave, rotulo, itens, regra=regra, tem_prazo=False,
                        feito="toda desistência recebida foi aplicada")]
 
@@ -1279,24 +1318,37 @@ def _cobrar_cenprot(con, ctx: dict) -> list[dict]:
 
 
 def _cobrar_repasse(con, ctx: dict) -> list[dict]:
-    """O pagamento sem repasse — a fila de `protesto_repasse`, com o prazo dela."""
-    chave, rotulo = ("repasses", "pagamentos ainda sem repasse ao apresentante")
+    """O pagamento cujo repasse ainda nao saiu da casa — a lista de
+    `protesto_repasse.pendencias_do_repasse` (PR #118), com o prazo dela.
+
+    INTEGRACAO DE 29/10/2026: ate aqui a fonte era `REP.pendentes`, que deixa
+    de listar o pagamento que entrou numa relacao de guia — e a conduta
+    dizia «todo pagamento tem repasse» com a guia ainda por emitir ou por
+    pagar. A lista do #118 tem as quatro etapas (sem guia, direto, guia
+    gerada, guia registrada), e o pagamento so sai dela com a guia paga. Ela
+    NAO entra tambem como gancho: as etapas sem guia apareceriam duas vezes.
+    """
+    chave, rotulo = ("repasses",
+                     "pagamentos cujo repasse ainda não saiu (sem guia, guia "
+                     "por emitir ou por pagar)")
     regra = ("o valor fica à disposição do apresentante no primeiro dia útil "
              "seguinte (Lei 9.492/1997, art. 19, § 2º)")
-    if not _existe(con, "pt_atos", "pt_titulos", "pt_repasses"):
-        return [_sem_tabela(chave, rotulo, regra, "pt_repasses")]
+    if not _existe(con, "pt_atos", "pt_titulos", "pt_repasses",
+                   "pt_repasse_guias"):
+        return [_sem_tabela(chave, rotulo, regra, "pt_repasses",
+                            "pt_repasse_guias")]
     import protesto_repasse as REP
     itens = []
-    for p in REP.pendentes(con, hoje=ctx["dia"], feriados=ctx["feriados"]):
+    for p in REP.pendencias_do_repasse(con, hoje=ctx["dia"],
+                                       feriados=ctx["feriados"]):
         prazo_dia = _dia(p.get("prazo"))
         itens.append(_item(
-            f"{_titulo_do_ato(p)} — pago em {_br(p.get('recebido_em'))}, "
-            f"repasse até {_br(p.get('prazo'))} ({p.get('canal')})",
+            f"{_titulo_do_ato(p)} — {p.get('explicacao') or ''}".rstrip(" —"),
             quando=p.get("data_ato"),
             prazo=_as(prazo_dia, "23:59") if prazo_dia else None, ctx=ctx,
             tela="protesto_repasses"))
     return [_obrigacao(chave, rotulo, itens, regra=regra, tem_prazo=True,
-                       feito="todo pagamento tem repasse")]
+                       feito="todo pagamento tem o repasse pago")]
 
 
 # ------------------------------------------------------- 11. encerrar o dia
@@ -1485,10 +1537,15 @@ def _itens_do_gancho(achado, g: dict, ctx: dict) -> tuple[list | None, int | Non
             str(linha.get("explicacao") or linha.get("texto")
                 or linha.get("motivo") or "")) if p]
         tid = linha.get("titulo_id")
-        itens.append(_item(" — ".join(partes) or json.dumps(
+        item = _item(" — ".join(partes) or json.dumps(
             linha, ensure_ascii=False, default=str)[:200], prazo=None, ctx=ctx,
             tela="protesto_titulo" if tid else g.get("tela"),
-            args={"titulo_id": tid} if tid else None))
+            args={"titulo_id": tid} if tid else None)
+        # O PRAZO DA PECA (`prazo_da_peca`): quem sabe o prazo e ela, e a
+        # linha diz se ja passou. Sem a marca, o gancho nao tem prazo aqui.
+        if g.get("prazo_da_peca") and linha.get("atrasado") is True:
+            item["atrasado"] = True
+        itens.append(item)
     return itens, None
 
 
@@ -1510,7 +1567,8 @@ def _rodar_gancho(con, ctx: dict, g: dict) -> dict:
     # com o erro a vista — nunca zero. E a peca de outro pedido, e o roteiro
     # inteiro fora do ar por causa dela seria o balcao sem roteiro nenhum.
     try:
-        achado = funcao(con)
+        achado = (funcao(con, hoje=ctx["dia"], feriados=ctx["feriados"])
+                  if g.get("com_o_dia") else funcao(con))
     except Exception as erro:  # noqa: BLE001 — o motivo vai a tela
         _desfazer_a_leitura(con)
         return _obrigacao(
@@ -1524,7 +1582,7 @@ def _rodar_gancho(con, ctx: dict, g: dict) -> dict:
             motivo=(f"{g['modulo']}.{g['funcao']} respondeu numa forma que o "
                     f"roteiro não lê ({type(achado).__name__})"))
     return _obrigacao(g["chave"], g["rotulo"], itens, regra=regra,
-                      tem_prazo=False, quantos=quantos,
+                      tem_prazo=bool(g.get("prazo_da_peca")), quantos=quantos,
                       feito="nada pendente")
 
 
@@ -1631,10 +1689,6 @@ def pendencias_para_encerrar(condutas: list[dict]) -> list[dict]:
     return saida
 
 
-def _letras(texto: str) -> int:
-    return AFX.letras(texto)
-
-
 def conferir_o_encerramento(con, *, agora: str,
                             afirmacoes: dict) -> dict:
     """Confere se o dia pode ser encerrado. SO LE; recusa com a lista.
@@ -1660,8 +1714,11 @@ def conferir_o_encerramento(con, *, agora: str,
     afirmadas, sem = [], []
     for p in pendencias:
         afirmo, texto = afirmacoes.get(p["chave"]) or (False, "")
-        texto = " ".join(str(texto or "").split())
-        if afirmo and _letras(texto) >= MINIMO_DE_LETRAS_DA_AFIRMACAO:
+        # A RÉGUA DO CONTRATO (`afirmacoes_expressas.texto_valido`): 30 letras
+        # ALÉM da frase de abertura. A conta que morava aqui somava a frase,
+        # que sozinha tem 33 letras (integração de 29/10/2026).
+        texto = AFX.texto_valido(texto) if afirmo else None
+        if texto:
             afirmadas.append(dict(p, afirmacao=texto))
         else:
             sem.append(p)

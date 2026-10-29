@@ -7,7 +7,21 @@
   Quem trata edital como exceção desenha a tela errada.
 #}
 {% extends 'base.html' %}
-{% from '_protesto_afirmacao.html' import afirmacao %}
+{% from '_protesto_afirmacao.html' import afirmacao, afirmacao_por_regra %}
+{#- A TRAVA DA CENPROT NESTA TELA (integração de 29/10/2026, a brecha do PR
+    #105): a entrega, o edital e a intimação digital lavram a intimação, e o
+    título que a Central dá por PAGO POR LIQUIDAÇÃO só se intima com a
+    afirmação expressa DA CENPROT — o campo dela (`afirmo_cenprot`), e não a
+    caixa comum, que aqui é da entrega. A rota confere de novo. #}
+{% macro trava_cenprot(pagos, titulo_id) %}
+{% if pagos and titulo_id in pagos %}
+<div class="notice danger" style="margin:6px 0" data-trava-cenprot-aviso>
+  <small><strong>CENPROT: pago por liquidação.</strong> {{ pagos[titulo_id] }}
+  Intimar só com a afirmação expressa da CENPROT.</small>
+</div>
+{{ afirmacao('_cenprot', pagos[titulo_id], 'Intimar mesmo assim — afirmação expressa (CENPROT)') }}
+{% endif %}
+{% endmacro %}
 {% block heading %}<h1>Avisos de intimação</h1>{% endblock %}
 {% block content %}
 {% include '_serventia.html' %}
@@ -134,6 +148,8 @@
             <label>Comprovante assinado <small>(obrigatório — o canhoto deste aviso, PDF, PNG ou JPG)</small>
               <input type="file" name="comprovante" accept=".pdf,.png,.jpg,.jpeg"></label>
             {{ afirmacao('', 'Entrega sem o comprovante assinado ou sem quem recebeu, ou com um arquivo de outro aviso ou de outro título, só se registra com afirmação expressa.') }}
+            {{ afirmacao_por_regra() }}
+            {{ trava_cenprot(cenprot_pago, a.titulo_id) }}
             <div class="actions">
               <button class="button primary">Entregue — lavrar a intimação</button></div>
           </form>
@@ -271,6 +287,7 @@
             <form method="post" style="display:inline"
                   action="{{ url_for('protesto_aviso_digital', aviso_id=a.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              {{ trava_cenprot(cenprot_pago, a.titulo_id) }}
               <button class="button primary">Lavrar a intimação digital</button>
             </form>
           {% elif c.passo == 'ENTREGUE' %}
@@ -280,6 +297,7 @@
             <form method="post" style="display:inline"
                   action="{{ url_for('protesto_aviso_digital', aviso_id=a.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              {{ trava_cenprot(cenprot_pago, a.titulo_id) }}
               <button class="button">Lavrar a intimação digital pela entrega</button>
             </form>
           {% elif c.passo == 'PAGO' %}
@@ -290,6 +308,7 @@
             <form method="post" style="display:inline"
                   action="{{ url_for('protesto_aviso_edital', aviso_id=a.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              {{ trava_cenprot(cenprot_pago, a.titulo_id) }}
               <button class="button primary">Publicar edital</button>
             </form>
           {% elif c.edital == 'JUSTIFICAR' %}
@@ -304,6 +323,7 @@
                 <label style="grid-column:1/-1">Por que o edital agora
                   <input name="justificativa" required minlength="10"
                          placeholder="Ex.: sem e-mail nem telefone do devedor; o prazo não comporta esperar a Resolve"></label>
+                {{ trava_cenprot(cenprot_pago, a.titulo_id) }}
                 <div class="actions"><button class="button">Publicar edital</button></div>
               </form>
             </details>
@@ -400,6 +420,7 @@
             <input type="file" name="comprovante" accept=".pdf,.png,.jpg,.jpeg" required>
             <button class="button small">Anexar</button>
             {{ afirmacao('', 'O arquivo já anexado a outro aviso, ou cujo nome cita o protocolo de outro título, só se anexa com afirmação expressa.', 'Anexar mesmo assim — afirmação expressa') }}
+            {{ afirmacao_por_regra(regras=[('COMPROVANTE_DE_OUTRO_TITULO', 'Arquivo cujo nome cita o protocolo de outro título'), ('COMPROVANTE_DE_OUTRO_AVISO', 'Arquivo igual ao já anexado a outro aviso')]) }}
           </form>
           {% if a.base_cadastro %}
             <div><small>endereço na base da CENPROT desde {{ a.base_cadastro.feito_em[:10] }}</small></div>

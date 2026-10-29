@@ -438,7 +438,7 @@ GANCHOS: tuple[dict, ...] = (
     {"chave": "atos_sem_selo", "conduta": "protestos",
      "rotulo": "atos que esperam o selo (selo prévio)",
      "modulo": "protesto_selo_previo", "funcao": "pendencias_do_selo",
-     "de_onde": "PR #103, o selo conferido antes de lavrar"},
+     "de_onde": "PR #103 e #109, o selo conferido antes de lavrar"},
     {"chave": "situacao_sem_ato", "conduta": "protestos",
      "rotulo": "títulos cuja situação não tem o ato que a sustente",
      "modulo": "protesto_selo_previo",
@@ -456,13 +456,11 @@ GANCHOS: tuple[dict, ...] = (
     {"chave": "titulos_irmaos", "conduta": "remessa",
      "rotulo": "títulos irmãos a conferir",
      "modulo": "protesto_titulos_irmaos", "funcao": "pendencias_dos_irmaos",
-     "de_onde": "a conferência dos títulos irmãos",
-     "nome_a_confirmar": True},
+     "de_onde": "PR #108, a conferência dos títulos irmãos"},
     {"chave": "protocolo_repetido", "conduta": "retorno",
      "rotulo": "atos do retorno com protocolo repetido",
      "modulo": "protesto_retorno", "funcao": "protocolos_repetidos_na_fila",
-     "de_onde": "o retorno com protocolo repetido",
-     "nome_a_confirmar": True},
+     "de_onde": "PR #107, o retorno com protocolo repetido"},
 )
 
 

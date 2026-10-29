@@ -832,7 +832,22 @@ def test_os_ganchos_declarados_apontam_para_condutas_que_existem():
         ("protesto_selo_previo", "pendencias_do_selo"),
         ("protesto_selo_previo", "titulos_sem_ato_que_sustente"),
         ("cenprot_conferencia", "quantos_divergem"),
-        ("protesto_prova", "intimacoes_sem_prova")}
+        ("protesto_prova", "intimacoes_sem_prova"),
+        ("protesto_titulos_irmaos", "pendencias_dos_irmaos"),
+        ("protesto_retorno", "protocolos_repetidos_na_fila"),
+        ("protesto_desistencia", "pendencias_da_cra")}
+
+
+def test_gancho_com_nome_certo_acha_a_funcao_na_arvore():
+    """«nome_a_confirmar» sai quando a peca entra no main com aquele nome; o
+    gancho sem a marca, cujo modulo existe, TEM de achar a funcao — senao a
+    linha diria «ainda nao instalada» sobre peca instalada com outro nome."""
+    import importlib
+    for g in PR.GANCHOS:
+        if g.get("nome_a_confirmar") or not (RAIZ / f"{g['modulo']}.py").exists():
+            continue
+        modulo = importlib.import_module(g["modulo"])
+        assert callable(getattr(modulo, g["funcao"], None)), g
 
 
 # ------------------------------------------------- o encerramento pela tela

@@ -1372,8 +1372,8 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
 .wa-ligar-avisos{background:none;border:0;padding:0;color:var(--accent);cursor:pointer;font:inherit}
 .wa-cartao-aviso{position:fixed;right:18px;bottom:190px;z-index:920;max-width:320px;display:flex;flex-direction:column;gap:2px;
   padding:10px 34px 10px 12px;border-radius:10px;background:var(--panel);color:var(--text);border:1px solid var(--border);
-  border-left:5px solid #25d366;box-shadow:0 6px 24px rgba(0,0,0,.18);text-decoration:none}
-.wa-cartao-aviso:hover{text-decoration:none;border-color:#25d366}
+  border-left:5px solid var(--accent);box-shadow:0 6px 24px rgba(0,0,0,.18);text-decoration:none}
+.wa-cartao-aviso:hover{text-decoration:none;border-color:var(--accent2)}
 .wa-cartao-aviso span{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
 .wa-cartao-fechar{position:absolute;top:4px;right:6px;background:none;border:0;font-size:18px;line-height:1;cursor:pointer;color:var(--muted);padding:2px 6px}
 @media print{.wa-cartao-aviso{display:none!important}}

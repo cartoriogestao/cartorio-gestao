@@ -137,7 +137,8 @@ def test_envelope_entrega_o_payload_e_confirma_os_ids(monkeypatch):
 
     r = _puxar(object())
 
-    assert r == {"ok": True, "aplicadas": 1, "repetidas": 1, "ids": ["evt-1", "evt-2"]}
+    assert r == {"ok": True, "aplicadas": 1, "repetidas": 1, "entregas": 0,
+                 "ids": ["evt-1", "evt-2"]}
     assert vistos == [primeiro, segundo]
     post = _post(caixa)
     assert post.full_url == CAIXA + "/ack"
@@ -171,7 +172,8 @@ def test_falha_no_ack_nao_quebra_a_puxada(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="wa_puxar"):
         r = _puxar(object())
 
-    assert r == {"ok": True, "aplicadas": 1, "repetidas": 0, "ids": ["evt-9"]}
+    assert r == {"ok": True, "aplicadas": 1, "repetidas": 0, "entregas": 0,
+                 "ids": ["evt-9"]}
     assert _post(caixa).full_url == CAIXA + "/ack"
     assert any("ack falhou" in rec.message for rec in caplog.records)
     assert SEGREDO not in caplog.text

@@ -831,9 +831,10 @@ SEMENTES: tuple[dict, ...] = (
 #: estado de uma rotina de backup que roda FORA do pacote.
 #: Os dois últimos (27/10/2026, na instalação da VPS): o envio do portal do
 #: cliente e a busca na caixa-postal do WhatsApp, que só aconteciam no botão.
+#: E o robô do malote (29/10/2026): a ciência diária das 8h, com a senha do cofre.
 MODULOS_COM_PROCESSOS = ("despesas_automacao", "onr_certidoes_auto", "andamento_avisos",
                          "backup_automacao", "satisfacao_envio", "cobranca_automacao",
-                         "portal_cliente", "wa_puxar")
+                         "portal_cliente", "wa_puxar", "malote_robo")
 
 #: A agenda sugerida por quem escreveu o processo, para quando o catálogo
 #: dele não trouxer uma. O processo nasce DESLIGADO do mesmo jeito.

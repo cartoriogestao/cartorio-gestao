@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}Automação — malote: código de dois fatores{% endblock %}
+{% block heading %}<h1>Malote: código de dois fatores</h1>{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('automacao_lista') }}">← a automação</a></p>
+<section class="panel">
+  <p class="small">O robô do malote entra todo dia útil às 8h com o usuário e a senha guardados no cofre
+    (credencial «{{ nome_da_credencial }}», campos <code>usuario</code> e <code>senha</code>). Quando o malote pede
+    o código de dois fatores, a rodada para e avisa; digite aqui o código que chegou. Ele vai para o cofre, vale
+    15 minutos e é apagado assim que o robô o usa.</p>
+  {% if not credencial %}
+    <p><span class="badge critica">sem credencial</span> A credencial «{{ nome_da_credencial }}» ainda não está no
+      cofre. Cadastre-a em <a href="{{ url_for('automacao_cofre') }}">Automação → Cofre</a>, do tipo usuário e senha.</p>
+  {% endif %}
+  {% if not cofre.aberto %}
+    <p><span class="badge critica">cofre trancado</span> Com o cofre trancado o código não tem onde ser guardado,
+      e o robô não lê a senha. <a href="{{ url_for('automacao_cofre') }}">Abra o cofre</a> primeiro.</p>
+  {% endif %}
+  {% if not processo %}
+    <p><span class="badge critica">sem processo</span> O processo do robô do malote ainda não está no cadastro da automação.</p>
+  {% else %}
+    <p>Processo: <a href="{{ url_for('automacao_processo', processo_id=processo.id) }}">{{ processo.nome }}</a>
+      {% if not processo.ativo %}<span class="badge">desligado</span>{% endif %}
+      {% if not processo.pode_agir %}<span class="badge">sem «pode agir»: só conta os não lidos</span>{% endif %}</p>
+    {% if ultima %}
+      <p>Última rodada: {{ (ultima.iniciada_em or '')[:16]|replace('T', ' ') }} —
+        <span class="badge {{ ultima.selo.classe }}">{{ ultima.selo.texto }}</span>
+        {{ ultima.relato }}</p>
+    {% endif %}
+    {% if esperando %}
+      <p><span class="badge alta">esperando o código</span> O malote pediu o código na última rodada.</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('malote_robo_codigo') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Código <input type="text" name="codigo" required autocomplete="one-time-code" inputmode="numeric"
+        maxlength="12" pattern="[A-Za-z0-9 ]{4,14}"></label>
+      <button class="button primary" type="submit" {% if not cofre.aberto %}disabled{% endif %}>Guardar e rodar agora</button>
+    </form>
+  {% endif %}
+</section>
+{% endblock %}

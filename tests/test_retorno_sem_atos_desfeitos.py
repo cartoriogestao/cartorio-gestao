@@ -206,7 +206,16 @@ def test_o_aviso_diz_quando_ha_outro_ato_valido_do_mesmo_tipo():
     assert d["ato_id"] == velho
     assert d["ato_valido_id"] == novo
     assert d["ato_valido_retorno_id"] is None   # o novo ainda não foi
-    # O novo, válido, segue para o próximo retorno; o velho não volta.
+    # O ARQUIVO SEM RESPOSTA SEGURA O NOVO — decisão do oficial, 29/10/2026.
+    # Até aqui o novo seguia direto para o próximo retorno; mas o arquivo do
+    # velho ainda não subiu e leva o «C» do mesmo título — se subir, a CRA o
+    # grava, e o segundo «C» seria recusado com 2161. Recusado aquele
+    # arquivo, o novo se solta; o velho não volta nunca.
+    assert PR.pendentes(con) == []
+    assert novo in [p["ato_id"] for p in PR.ja_aceitas_fora_da_fila(con)]
+    con.execute(
+        """UPDATE pt_retornos SET cra_recusado_em=?, cra_recusa_codigo='2161'
+            WHERE tipo='SDTBFORTP'""", (AGORA,))
     assert [p["ato_id"] for p in PR.pendentes(con)] == [novo]
 
 

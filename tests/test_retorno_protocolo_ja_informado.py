@@ -277,6 +277,43 @@ def test_o_apontamento_do_irmao_tambem_nao_repete_o_andamento():
     assert fora[apontamento_b]["ocorrencia"] == "0"
 
 
+def test_o_arquivo_sem_resposta_tambem_segura_e_o_recusado_solta():
+    """Decisão do oficial, 29/10/2026: o retorno gerado e ainda sem resposta
+    da CRA segura o título irmão (e o mesmo título); se ela recusar aquele
+    arquivo, o título se solta."""
+    con = banco()
+    a = titulo(con, chave="1")
+    b = titulo(con, chave="2", cpf="00000000272")
+    apontar_e_intimar(con, a)
+    apontar_e_intimar(con, b)
+    mesmo_protocolo(con, a, b)
+    protestar(con, a)
+    r = gerar(con)                   # gerado, e a CRA ainda não respondeu
+    protestar(con, b)
+    do_irmao = ato_id(con, b, "PROTESTO")
+    assert do_irmao not in ids_pendentes(con)
+    fora = {int(p["ato_id"]): p for p in PR.ja_aceitas_fora_da_fila(con)}
+    assert fora[do_irmao]["por_outro_titulo"] is True
+    assert fora[do_irmao]["arquivo_anterior"] == r["nome_arquivo"]
+    [quem] = fora[do_irmao]["informantes"]
+    assert int(quem["ato_id"]) == ato_id(con, a, "PROTESTO")
+    assert "ainda sem resposta da CRA" in quem["frase"]
+    [linha] = [l for l in PR.protocolos_repetidos_na_fila(con)
+               if int(l["ato_id"]) == do_irmao]
+    assert linha["explicacao"].startswith("já vai como protestado pelo título")
+    assert "ainda sem resposta da CRA" in linha["explicacao"]
+
+    # O mesmo título também: o protesto desfeito e refeito com o arquivo do
+    # primeiro ainda sem resposta.
+    desfazer(con, ato_id(con, a, "PROTESTO"))
+    refeito_a = novo_ato(con, a, "PROTESTO", "2026-10-23T15:00:00")
+    assert refeito_a not in ids_pendentes(con)
+
+    # Recusado o arquivo, os dois se soltam: a CRA não gravou nada dele.
+    recusar(con, r["retorno_id"])
+    assert {do_irmao, refeito_a} <= set(ids_pendentes(con))
+
+
 # ------------------------------------------- ocorrência diferente não repete
 
 

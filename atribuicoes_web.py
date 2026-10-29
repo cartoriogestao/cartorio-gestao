@@ -12375,8 +12375,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if fora:
             flash(PRE.frase_dos_pulados(
                 fora, intro=("Estes atos não voltam à fila: a CRA já aceitou "
-                             "a mesma ocorrência (mesmo título ou o mesmo "
-                             "protocolo)")), "warning")
+                             "a mesma ocorrência, ou ela já vai noutro "
+                             "arquivo ainda sem resposta (mesmo título ou o "
+                             "mesmo protocolo)")), "warning")
         return redirect(url_for("protesto_retornos"))
 
     @app.route("/protesto/retornos/ato/<int:ato_id>/ja-informado",

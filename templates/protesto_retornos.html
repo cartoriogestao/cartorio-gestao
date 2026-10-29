@@ -25,6 +25,11 @@
   <br><br>
   <strong>Ato desfeito não entra.</strong> O ato que se lavrou e foi desfeito (o selo
   não saiu, ou foi tornado sem efeito) não existiu, e não vai à CRA.
+  <br><br>
+  <strong>Ocorrência já aceita também não entra de novo.</strong> Se a CRA já gravou
+  esta letra para o mesmo título ou o mesmo protocolo, o ato novo — mesmo no lugar
+  de um que foi desfeito — fica de fora. Mandar o segundo «A» ou «C» faz a Central
+  recusar o arquivo inteiro.
 </div>
 
 {# ATO INFORMADO E DEPOIS DESFEITO — só AVISO, 28/10/2026. A Central ouviu
@@ -73,6 +78,44 @@
       </tbody>
     </table>
   </details>
+</section>
+{% endif %}
+
+{# OCORRÊNCIA JÁ ACEITA — 29/10/2026. O substituto do ato desfeito não volta
+   à fila. A lista diz qual arquivo a CRA já aceitou, para o balcão não
+   procurar o ato em «Esperando retorno». #}
+{% if ja_aceitas %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Não entram de novo: a CRA já aceitou esta ocorrência</span>
+    <small>{{ ja_aceitas | length }} ato(s)</small>
+  </div>
+  <p style="padding:0 14px"><small>
+    Estes atos estão lavrados e sem retorno próprio, mas a mesma ocorrência
+    (mesmo título ou mesmo protocolo) já foi aceita pela CRA, ou alguém da
+    serventia marcou o ato como já informado. <strong>Não vão num arquivo
+    novo.</strong> Se a Central não tiver o que o livro diz, a providência é
+    com o oficial — o sistema não manda a letra outra vez.
+  </small></p>
+  <table class="table">
+    <thead><tr><th>Título</th><th>Protocolo</th><th>Ato</th><th>Ocorrência</th>
+               <th>Arquivo em que a CRA aceitou</th></tr></thead>
+    <tbody>
+      {% for p in ja_aceitas %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}">{{ p.numero_titulo }}</a>
+            <div><small>{{ p.apresentante_codigo or '—' }}</small></div></td>
+        <td><small>{{ p.protocolo or '—' }}</small></td>
+        <td>{{ p.tipo }} <small>(ato {{ p.ato_id }})</small></td>
+        <td>{{ p.ocorrencia }}</td>
+        <td><small>{{ p.arquivo_anterior or 'retorno anterior' }}
+            {% if p.cra_ja_informado_motivo %}
+            <br>marcado à mão: {{ p.cra_ja_informado_motivo[:160] }}
+            {% endif %}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </section>
 {% endif %}
 
@@ -145,7 +188,9 @@
   <div class="panel-head" style="border-top:1px solid #e5e7eb"><span>O que vai neles</span></div>
   <table class="table">
     <thead><tr><th>Título</th><th>Nosso número</th><th>Protocolo</th><th>Ato</th>
-               <th>Data</th><th>Apresentante</th></tr></thead>
+               <th>Data</th><th>Apresentante</th>
+               {% if user.role in ['ADMIN', 'MANAGER'] %}<th>Já informado</th>{% endif %}
+               </tr></thead>
     <tbody>
       {% for a in atos %}
       <tr>
@@ -158,6 +203,27 @@
         <td>{{ a.tipo }}</td>
         <td>{{ a.data_ato }}</td>
         <td><small>{{ a.apresentante_codigo or '—' }}</small></td>
+        {% if user.role in ['ADMIN', 'MANAGER'] %}
+        <td>
+          {# Marca manual, sem enviar — 29/10/2026. O motivo e o retorno
+             anterior ficam no ato e na auditoria. #}
+          <details>
+            <summary>Marcar como já informado à CRA</summary>
+            <form method="post" action="{{ url_for('protesto_retorno_ja_informado', ato_id=a.ato_id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label>Retorno anterior (id)
+                <input name="retorno_id" inputmode="numeric" required>
+              </label>
+              <label>Motivo
+                <input name="motivo" required maxlength="500"
+                       placeholder="A CRA já aceitou esta ocorrência em R3412810.261">
+              </label>
+              <button class="button">Já informado à CRA</button>
+            </form>
+            <small>Tira o ato da fila sem gerar arquivo. Só o oficial ou o gerente.</small>
+          </details>
+        </td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>

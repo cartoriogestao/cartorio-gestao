@@ -201,12 +201,30 @@
          mostrou continua pendente. Cada item pendente pede a caixa «Afirmo» e
          o texto (o contrato comum da casa), e vai à auditoria. #}
       <div id="encerrar-o-dia" class="rt-obrig">
+      {% set enc = r.encerramento_de_hoje %}
       {% if r.encerrado_hoje %}
         <p><strong>O dia de hoje está encerrado</strong> — por
-          {{ r.encerrado_hoje.encerrado_por or '—' }} às
-          {{ (r.encerrado_hoje.encerrado_em or '')[11:16] }}{% if r.encerrado_hoje.afirmacoes %},
-          com {{ r.encerrado_hoje.afirmacoes | length }} item(ns) afirmado(s){% endif %}.</p>
+          {{ enc.encerrado_por or '—' }} às
+          {{ (enc.encerrado_em or '')[11:16] }}{% if enc.afirmacoes %},
+          com {{ enc.afirmacoes | length }} item(ns) afirmado(s){% endif %}.</p>
+        {# SÓ O OFICIAL REABRE (decisão dele, 29/10/2026), com o motivo por
+           afirmação expressa. A rota recusa robô e quem não é ADMIN. #}
+        {% if user.role == 'ADMIN' %}
+        <details><summary><small>Reabrir o dia (só o oficial)</small></summary>
+          <form method="post" action="{{ url_for('protesto_reabrir_o_dia') }}" class="stack">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="check"><input type="checkbox" name="afirmo" value="1"> Afirmo — reabro o dia encerrado</label>
+            <label>Motivo, por afirmação expressa <small>(pelo menos {{ r.minimo_de_letras }} letras)</small>
+              <textarea name="afirmacao" rows="2" placeholder="{{ r.modelo_da_afirmacao }}…"></textarea></label>
+            <div><button type="submit">Reabrir o dia</button></div>
+          </form>
+        </details>
+        {% endif %}
       {% else %}
+        {% if enc and enc.reaberto_em %}
+          <p class="small"><strong>Reaberto</strong> por {{ enc.reaberto_por or '—' }} às
+            {{ (enc.reaberto_em or '')[11:16] }}: «{{ enc.reabertura_afirmacao }}». Encerre de novo.</p>
+        {% endif %}
         <form method="post" action="{{ url_for('protesto_encerrar_o_dia') }}" class="stack">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           {% if r.para_encerrar %}

@@ -425,26 +425,52 @@ def test_a_confirmacao_que_nao_subiu_vence_as_14h10(casa):
                       "confirmacoes_nao_aceitas")["situacao"] == PR.ATRASADO
 
 
-def test_protesto_lavrado_antes_de_conferir_a_desistencia_e_atraso(casa):
-    """O erro que o papel manda evitar conferindo tres vezes por dia."""
+def _consulta_a_cra(con, quando, operacao, *, nivel="INFO") -> None:
+    con.execute(
+        """INSERT INTO centrais_log(quando, central, operacao, ambiente, nivel,
+               evento) VALUES (?, 'CRA', ?, 'PRODUCAO', ?, 'RESPOSTA')""",
+        (quando, operacao, nivel))
+    con.commit()
+
+
+def test_protesto_lavrado_antes_de_consultar_a_cra_e_atraso(casa):
+    """O erro que o papel manda evitar conferindo tres vezes por dia. DP, CP
+    e AC sao UMA conduta desde 29/10/2026 (decisao do oficial), provada em
+    `centrais_log`."""
     tid = _titulo(casa, origem="MANUAL", situacao="PROTESTADO")
     _ato(casa, tid, "PROTESTO", HOJE + "T14:31:00")
     o = _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T15:00:00"),
-                   "consulta_de_desistencia")
+                   "consulta_da_cra")
     assert o["situacao"] == PR.ATRASADO and "14:31" in o["lista"][0]["texto"]
-    # Conferida DEPOIS do protesto: continua atrasado — o protesto ja saiu.
-    _auditoria(casa, "cra_baixar", HOJE + "T14:40:00", {"o_que": "desistencias"})
+    # Consultada DEPOIS do protesto: continua atrasado — o protesto ja saiu.
+    _consulta_a_cra(casa, HOJE + "T14:40:00", "Desistencia")
+    # A chamada que deu ERRO nao e consulta.
+    _consulta_a_cra(casa, HOJE + "T09:00:00", "Cancelamento", nivel="ERRO")
     assert _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T15:00:00"),
-                      "consulta_de_desistencia")["situacao"] == PR.ATRASADO
-    _auditoria(casa, "cra_baixar", HOJE + "T10:00:00", {"o_que": "desistencias"})
+                      "consulta_da_cra")["situacao"] == PR.ATRASADO
+    _consulta_a_cra(casa, HOJE + "T10:00:00", "Autorizacao")
     assert _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T15:00:00"),
-                      "consulta_de_desistencia")["situacao"] == PR.FEITO
+                      "consulta_da_cra")["situacao"] == PR.FEITO
 
 
-def test_sem_protesto_a_desistencia_nao_conferida_e_so_pendente(casa):
+def test_sem_protesto_a_cra_nao_consultada_e_so_pendente(casa):
     o = _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T17:00:00"),
-                   "consulta_de_desistencia")
+                   "consulta_da_cra")
     assert o["situacao"] == PR.PENDENTE
+    # Fora do expediente nao se cobra.
+    assert _obrigacao(PR.cobrar_o_dia(casa, agora=SABADO + "T17:00:00"),
+                      "consulta_da_cra")["situacao"] == PR.FEITO
+
+
+def test_a_consulta_de_cancelamento_e_AC_deixou_de_ser_passo_separado():
+    con = _casa_minima()
+    pedidos = next(c for c in PR.cobrar_o_dia(con, agora=HOJE + "T10:00:00")
+                   if c["chave"] == "pedidos_cra")
+    chaves = {o["chave"] for o in pedidos["obrigacoes"]}
+    assert "consulta_de_cancelamento" not in chaves
+    assert "pendencias_da_cra" in chaves, "o gancho da peça que traz DP, CP e AC"
+    assert PR.OPERACOES_DOS_PEDIDOS_DA_CRA == (
+        "Desistencia", "Cancelamento", "Autorizacao")
 
 
 def test_entrega_sem_comprovante_atrasa_no_dia_seguinte(casa):
@@ -837,3 +863,158 @@ def test_a_tela_encerra_com_afirmacao_e_grava_a_auditoria(s, cg_casa):
         "SELECT details FROM audit_logs WHERE action = 'AFIRMACAO_EXPRESSA'")]
     assert regras == [PR.REGRA_DO_ENCERRAMENTO] * len(itens)
     con.close()
+
+
+# ======================================== decisoes do oficial de 29/10/2026
+#
+# A escrevente encerra; SO O OFICIAL (ADMIN humano) reabre, com o motivo por
+# afirmacao expressa, e a reabertura fica na propria linha. Robo nao encerra
+# nem reabre. E a subida do XML P/D so fica feita com o comprovante.
+
+
+def test_so_o_oficial_reabre_e_a_reabertura_fica_na_linha(casa):
+    with pytest.raises(PR.EncerramentoError):
+        PR.reabrir_o_dia(casa, agora=HOJE + "T18:00:00", afirmacao=AFIRMACAO,
+                         usuario="OFICIAL")
+    agora = HOJE + "T18:00:00"
+    pend = PR.pendencias_para_encerrar(PR.cobrar_o_dia(casa, agora=agora))
+    primeiro = PR.gravar_o_encerramento(
+        casa, PR.conferir_o_encerramento(casa, agora=agora,
+                                         afirmacoes=_todas(pend)),
+        agora=agora, usuario="MARIA")
+    casa.commit()
+    PR.reabrir_o_dia(casa, agora=HOJE + "T18:30:00", afirmacao=AFIRMACAO,
+                     usuario="OFICIAL")
+    casa.commit()
+    e = PR.encerramento_do_dia(casa, HOJE)
+    assert e["reaberto_por"] == "OFICIAL" and e["reabertura_afirmacao"]
+    assert e["reaberturas"][0]["encerramento"]["encerrado_por"] == "MARIA"
+    with pytest.raises(PR.EncerramentoError):
+        PR.reabrir_o_dia(casa, agora=HOJE + "T18:31:00", afirmacao=AFIRMACAO,
+                         usuario="OFICIAL")
+    o = _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T18:40:00"),
+                   "dia_encerrado")
+    assert o["situacao"] == PR.PENDENTE and "reaberto por OFICIAL" in o["nota"]
+    # REENCERRADO NA MESMA LINHA, e o encerramento de antes nao se perde.
+    agora = HOJE + "T19:00:00"
+    pend = PR.pendencias_para_encerrar(PR.cobrar_o_dia(casa, agora=agora))
+    segundo = PR.gravar_o_encerramento(
+        casa, PR.conferir_o_encerramento(casa, agora=agora,
+                                         afirmacoes=_todas(pend)),
+        agora=agora, usuario="MARIA")
+    casa.commit()
+    assert segundo["id"] == primeiro["id"]
+    e = PR.encerramento_do_dia(casa, HOJE)
+    assert not e["reaberto_em"] and len(e["reaberturas"]) == 1
+    assert casa.execute("SELECT COUNT(*) FROM pt_encerramentos_do_dia "
+                        "WHERE dia = ?", (HOJE,)).fetchone()[0] == 1
+
+
+def test_a_afirmacao_do_contrato_e_uma_regua_so():
+    import afirmacoes_expressas as AFX
+    assert PR.MINIMO_DE_LETRAS_DA_AFIRMACAO == AFX.MINIMO_DE_LETRAS == 30
+    assert AFX.validar(True, AFIRMACAO) == AFIRMACAO
+    for afirmo, texto in ((False, AFIRMACAO), (True, "curto demais"),
+                          (True, "!" * 60)):
+        with pytest.raises(AFX.AfirmacaoError):
+            AFX.validar(afirmo, texto)
+
+
+def _entrar(cg_casa, usuario: str, papel: str):
+    cg_casa["db"].create_user(usuario, usuario.upper(), SENHA, papel)
+    cg_casa["db"].set_settings({"modulo_protesto_ligado": "1"})
+    c = cg_casa["app"].test_client()
+    c.post("/login", data={"username": usuario, "password": SENHA,
+                           "csrf_token": _token(
+                               c.get("/login").get_data(as_text=True))},
+           follow_redirects=True)
+    return c
+
+
+def _encerrar_pela_tela(c) -> str:
+    html = c.get("/protesto/roteiro").get_data(as_text=True)
+    itens = re.findall(r'name="item" value="([^"]+)"', html)
+    dados = {"csrf_token": _token(html), "item": itens}
+    for chave in itens:
+        dados[f"afirmo_{chave}"] = "1"
+        dados[f"afirmacao_{chave}"] = AFIRMACAO
+    return c.post("/protesto/roteiro/encerrar", data=dados,
+                  follow_redirects=True).get_data(as_text=True)
+
+
+def test_a_escrevente_encerra_e_nao_reabre(cg_casa):
+    c = _entrar(cg_casa, "escrevente", "USER")
+    assert "O dia de hoje está encerrado" in _encerrar_pela_tela(c)
+    html = c.get("/protesto/roteiro").get_data(as_text=True)
+    assert "Reabrir o dia" not in html
+    r = c.post("/protesto/roteiro/reabrir",
+               data={"csrf_token": _token(html), "afirmo": "1",
+                     "afirmacao": AFIRMACAO})
+    assert r.status_code == 403
+
+
+def test_o_oficial_reabre_com_afirmacao_e_fica_na_auditoria(cg_casa):
+    c = _entrar(cg_casa, "oficial", "ADMIN")
+    _encerrar_pela_tela(c)
+    html = c.get("/protesto/roteiro").get_data(as_text=True)
+    assert "Reabrir o dia" in html
+    sem = c.post("/protesto/roteiro/reabrir",
+                 data={"csrf_token": _token(html), "afirmacao": AFIRMACAO},
+                 follow_redirects=True).get_data(as_text=True)
+    assert "Afirmo" in sem and "Dia reaberto" not in sem
+    com = c.post("/protesto/roteiro/reabrir",
+                 data={"csrf_token": _token(html), "afirmo": "1",
+                       "afirmacao": AFIRMACAO},
+                 follow_redirects=True).get_data(as_text=True)
+    assert "Dia reaberto" in com and "Reaberto" in com
+    con = sqlite3.connect(cg_casa["banco"])
+    con.row_factory = sqlite3.Row
+    assert con.execute("SELECT COUNT(*) FROM audit_logs WHERE action = ?",
+                       (PR.REGRA_DA_REABERTURA,)).fetchone()[0] == 1
+    regras = [json.loads(x["details"])["regra"] for x in con.execute(
+        "SELECT details FROM audit_logs WHERE action = 'AFIRMACAO_EXPRESSA'")]
+    assert PR.REGRA_DA_REABERTURA in regras
+    con.close()
+
+
+def _xml(con, *, nome: str, gerado_em: str) -> int:
+    cur = con.execute(
+        """INSERT INTO pt_cenprot_xml(letra, dia, sequencial, nome_arquivo,
+               conteudo, sha256, titulos, gerado_em)
+           VALUES ('D', ?, 1, ?, ?, 'x', 1, ?)""",
+        (gerado_em[:10], nome, b"<xml/>", gerado_em))
+    con.commit()
+    return cur.lastrowid
+
+
+def test_o_xml_sem_comprovante_atrasa_no_dia_util_seguinte(casa, tmp_path):
+    import protesto_cenprot_xml as PCXML
+    um = _xml(casa, nome="D2107001281026.xml", gerado_em=ONTEM + "T16:00:00")
+    no_dia = _obrigacao(PR.cobrar_o_dia(casa, agora=ONTEM + "T17:00:00"),
+                        "xml_sem_comprovante")
+    assert no_dia["situacao"] == PR.PENDENTE
+    seguinte = _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T08:00:00"),
+                          "xml_sem_comprovante")
+    assert seguinte["situacao"] == PR.ATRASADO
+    with pytest.raises(PCXML.CenprotXmlError):
+        PCXML.guardar_comprovante_do_envio(
+            casa, um, nome="c.pdf", conteudo=b"nao sou pdf",
+            pasta_de_arquivos=tmp_path, agora=HOJE + "T09:00:00")
+    PCXML.guardar_comprovante_do_envio(
+        casa, um, nome="c.pdf", conteudo=b"%PDF-1.4 portal",
+        pasta_de_arquivos=tmp_path, agora=HOJE + "T09:00:00")
+    casa.commit()
+    assert _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T09:30:00"),
+                      "xml_sem_comprovante")["situacao"] == PR.FEITO
+    # SEM COMPROVANTE, SO POR AFIRMACAO — gravada na linha do arquivo.
+    dois = _xml(casa, nome="P2107001281026.xml", gerado_em=ONTEM + "T16:05:00")
+    PCXML.afirmar_envio_sem_comprovante(casa, dois, afirmacao=AFIRMACAO,
+                                        agora=HOJE + "T10:00:00",
+                                        usuario="MARIA")
+    casa.commit()
+    assert _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T10:30:00"),
+                      "xml_sem_comprovante")["situacao"] == PR.FEITO
+    with pytest.raises(PCXML.CenprotXmlError):
+        PCXML.afirmar_envio_sem_comprovante(casa, dois, afirmacao=AFIRMACAO,
+                                            agora=HOJE + "T10:40:00",
+                                            usuario="MARIA")

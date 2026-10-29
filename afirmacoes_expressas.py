@@ -41,6 +41,41 @@ LIMITE = 1000
 
 SEM_REGRA = "(sem regra declarada)"
 
+#: O PISO DA AFIRMACAO: LETRAS, e nao caracteres — «.......» nao e afirmacao
+#: de ninguem. O mesmo das outras travas da reestruturacao de 29/10/2026.
+MINIMO_DE_LETRAS = 30
+MODELO = "Afirmo, sob minha responsabilidade, que"
+
+
+class AfirmacaoError(ValueError):
+    """A afirmacao nao cumpre o contrato — a frase diz o que falta."""
+
+
+def letras(texto: Any) -> int:
+    """Quantas letras o texto tem. Espaco, pontuacao e numero nao contam."""
+    return sum(1 for ch in str(texto or "") if ch.isalpha())
+
+
+def validar(afirmo: Any, afirmacao: Any, *, por_que: str = "") -> str:
+    """O contrato comum: a caixa «Afirmo» marcada E pelo menos 30 letras.
+
+    Devolve o texto limpo, ou recusa dizendo o que falta. Quem grava a
+    auditoria e a rota, depois da transacao (`audit` abre a sua).
+    """
+    texto = " ".join(str(afirmacao or "").split())
+    if afirmo and letras(texto) >= MINIMO_DE_LETRAS:
+        return texto
+    falta = []
+    if not afirmo:
+        falta.append("marque a caixa «Afirmo»")
+    if letras(texto) < MINIMO_DE_LETRAS:
+        falta.append(f"escreva a afirmação com pelo menos {MINIMO_DE_LETRAS} "
+                     f"letras (vieram {letras(texto)})")
+    raise AfirmacaoError(
+        (por_que + " " if por_que else "") + "Para seguir, "
+        + " e ".join(falta) + f", começando por «{MODELO}…». Ela fica gravada "
+        f"com o seu nome.")
+
 
 def _detalhes(texto: Any) -> dict:
     """Os detalhes gravados. Linha fora do contrato não some: vira afirmação."""

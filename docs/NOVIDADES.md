@@ -8,6 +8,58 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.7 — WhatsApp em tempo real, selo gratuito e cancelado, segurança
+
+São 8 mudanças juntadas desde a 3.7.6. A suíte roda na máquina da
+integração, e não na do desenvolvimento.
+
+**Atenção ao instalar**
+- **O WhatsApp passa a buscar mensagens de 20 em 20 segundos, 24 horas por
+  dia**, dentro do servidor, sempre que a caixa-postal estiver configurada. O
+  atendente com IA e o aviso de fora do horário continuam dependendo de cada
+  um estar ligado na tela; nada disso nasce ligado.
+- **Colunas novas no WhatsApp** (arquivos do cliente e entrega da mensagem),
+  todas acrescentadas sem mexer no que existe.
+- **Selo cancelado no Portal**: na AV-9 da matrícula 2, o botão «O selo … foi
+  cancelado no Portal do Selo?» termina o que o script de 28/10 deixou, e em
+  seguida «Selar este ato» marcado **isento**, com o motivo.
+
+**WhatsApp**
+- A mensagem do cliente chega à tela em segundos, com a hora em que ele a
+  mandou (e não a hora em que o sistema a buscou).
+- Aviso do Windows, som, título piscando e cartão no canto quando chega
+  mensagem nova. Nos balcões que abrem o sistema por `http://<ip>:8765` o
+  aviso do Windows depende de política do Chrome ou de `https`; o som, o
+  título e o cartão funcionam.
+- Foto, PDF, documento, áudio e vídeo do cliente ficam guardados e abrem na
+  conversa; a casa também manda arquivo com legenda.
+- A entrega aparece em cada mensagem: enviada, entregue, lida ou não chegou.
+- A IA passa a conversa para uma pessoa quando o cliente manda arquivo ou
+  insiste depois de quatro respostas automáticas; o aviso de passagem não
+  conta mais como resposta.
+- Horário de atendimento, aviso de fora do horário, respostas prontas e
+  conversa parada resolvida depois de alguns dias, na tela do atendente.
+
+**Selo**
+- **Item gratuito não paga selo pago**, e ato isento não sela com item
+  cobrado ligado a ele. A tela diz qual item é e o que fazer.
+- **O selo cancelado no Portal não volta**: a nova tentativa pede outro selo,
+  e não o mesmo. Botão na ficha do RI para registrar o cancelamento feito no
+  Portal.
+
+**Despesas e cobrança**
+- **Todos os usuários cadastram despesa**; o escrevente vê só as que
+  cadastrou. Toda despesa continua esperando a autorização do oficial.
+- **Unicred**: autenticação confirmada com o modelo da própria Unicred, e o
+  token vale 8 horas.
+
+**Segurança**
+- A prévia do teor das Notas não roda script vindo do texto gravado.
+- Expressões que travavam com textos grandes (a barreira de privacidade da
+  ajuda, o editor de modelos, o título da comunicação da CRC) passam a
+  responder em milissegundos.
+- O «volte para» das telas continua aceitando só caminho do próprio sistema.
+
 ## 3.7.6 — protesto em dia com a CRA e a CENPROT, cobrança por boleto, WhatsApp
 
 São 38 mudanças juntadas desde a 3.7.5. A suíte roda na máquina da

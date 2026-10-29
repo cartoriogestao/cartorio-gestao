@@ -311,6 +311,92 @@ def _mensagens_do_payload(payload: Any) -> list[tuple[dict, dict]]:
     return saida
 
 
+# A HORA DA MENSAGEM É A DO CLIENTE (29/10/2026). A mensagem entrava com a hora
+# em que a casa a PUXOU da caixa-postal: a que chegava às 23h só era puxada às
+# 6h e ficava gravada às 6h — o prazo de resposta, a janela de 24 h da Meta e o
+# «esperando há N min» contavam errado. A Meta manda `timestamp` (segundos
+# desde 1970) em toda mensagem; vale ele, convertido para a hora local da
+# casa. Sem ele, ou com um valor absurdo (no futuro, ou mais velho que a
+# janela da Meta), vale a hora da puxada, como antes.
+FOLGA_DO_RELOGIO_S = 300
+IDADE_MAXIMA_DIAS = 30
+
+
+def quando_da_meta(msg: dict, padrao: str) -> str:
+    """A hora local em que o cliente escreveu, ou `padrao`. Só calcula."""
+    try:
+        segundos = int(str(msg.get("timestamp") or "").strip())
+        quando = datetime.fromtimestamp(segundos)
+        referencia = datetime.strptime(str(padrao)[:19], _ISO)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return padrao
+    if (quando - referencia).total_seconds() > FOLGA_DO_RELOGIO_S:
+        return padrao
+    if (referencia - quando).days > IDADE_MAXIMA_DIAS:
+        return padrao
+    return quando.replace(microsecond=0).strftime(_ISO)
+
+
+# A ENTREGA DO QUE SAIU (29/10/2026): a Meta avisa, para cada mensagem enviada,
+# «sent» (saiu), «delivered» (chegou ao celular), «read» (o cliente leu) e
+# «failed» (não chegou, com o motivo). Vinham na caixa-postal e eram jogados
+# fora. A ordem impede que um aviso atrasado desfaça um mais novo: «delivered»
+# que chega depois do «read» não volta o balão para «entregue».
+ORDEM_DA_ENTREGA = {"sent": 1, "delivered": 2, "read": 3, "failed": 4}
+
+
+def _entregas_do_payload(payload: Any) -> list[dict]:
+    saida: list[dict] = []
+    if not isinstance(payload, dict):
+        return saida
+    for entry in payload.get("entry") or []:
+        if not isinstance(entry, dict):
+            continue
+        for change in entry.get("changes") or []:
+            if not isinstance(change, dict):
+                continue
+            for s in (change.get("value") or {}).get("statuses") or []:
+                if isinstance(s, dict) and s.get("id") and s.get("status"):
+                    saida.append(s)
+    for s in payload.get("statuses") or []:
+        if isinstance(s, dict) and s.get("id") and s.get("status"):
+            saida.append(s)
+    return saida
+
+
+def aplicar_entregas(con: Any, payload: Any, *, agora: str) -> int:
+    """Grava em `wa_mensagem.entrega` o que a Meta disse das mensagens que
+    saíram. ESCREVE. Devolve quantas mudaram."""
+    bd = banco(con)
+    mudaram = 0
+    for s in _entregas_do_payload(payload):
+        situacao = str(s.get("status") or "").strip().lower()
+        if situacao not in ORDEM_DA_ENTREGA:
+            continue
+        erro = ""
+        for e in s.get("errors") or []:
+            if isinstance(e, dict):
+                erro = str(e.get("title") or e.get("message") or e.get("code") or "")
+                detalhe = (e.get("error_data") or {}).get("details") if isinstance(
+                    e.get("error_data"), dict) else ""
+                if detalhe:
+                    erro = f"{erro}: {detalhe}"
+                break
+        linha = bd.um("SELECT id, entrega FROM wa_mensagem WHERE meta_id=%s AND direcao=%s",
+                      (str(s["id"]), DIR_OUT))
+        if not linha:
+            continue
+        antes = ORDEM_DA_ENTREGA.get(str(linha.get("entrega") or ""), 0)
+        if ORDEM_DA_ENTREGA[situacao] <= antes:
+            continue
+        bd.escrever(
+            "UPDATE wa_mensagem SET entrega=%s, entrega_em=%s, entrega_erro=%s WHERE id=%s",
+            (situacao, quando_da_meta(s, agora), (erro or "")[:300] or None,
+             int(linha["id"])))
+        mudaram += 1
+    return mudaram
+
+
 def _ja_tem_meta(con: Any, meta_id: str) -> bool:
     if not meta_id:
         return False
@@ -339,7 +425,10 @@ def aplicar_entrada(con: Any, payload_meta: Any,
     criadas = 0
     repetidas = 0
     ids: list[int] = []
+    entregas = aplicar_entregas(con, payload_meta, agora=quando)
+    puxada = quando
     for msg, nomes in _mensagens_do_payload(payload_meta):
+        quando = quando_da_meta(msg, puxada)
         meta_id = str(msg.get("id") or msg.get("meta_id") or "").strip()
         # "Ja chegou?" e "ja tem conversa deste numero?" valem ate o INSERT.
         # O BEGIN IMMEDIATE do SQLite punha duas entradas iguais em fila;
@@ -407,7 +496,8 @@ def aplicar_entrada(con: Any, payload_meta: Any,
                                         na_retomada=voltou)
         criadas += 1
         ids.append(cid)
-    return {"criadas": criadas, "repetidas": repetidas, "conversa_ids": ids}
+    return {"criadas": criadas, "repetidas": repetidas, "conversa_ids": ids,
+            "entregas": entregas}
 
 
 def conversa(con: Any, conversa_id: int) -> dict | None:
@@ -543,7 +633,7 @@ def postar_envio(pedido: dict, http_post: Callable | None = None) -> str | None:
 
 def gravar_saida(con: Any, conversa_id: int, texto: str, meta_id: str | None,
                  *, autor: str = "", agora: str | None = None,
-                 tipo: str = "text") -> int:
+                 tipo: str = "text", arquivo: dict | None = None) -> int:
     """Grava a mensagem que saiu e poe a conversa em AGUARDANDO. ESCREVE.
 
     `autor` e o nome de quem apertou o botao, ou `ia` para a resposta
@@ -560,6 +650,22 @@ def gravar_saida(con: Any, conversa_id: int, texto: str, meta_id: str | None,
         (int(conversa_id), DIR_OUT, texto, None, quando, meta_id,
          (tipo or "text")[:20], (autor or "")[:80] or None),
     )[0]["id"])
+    if arquivo:
+        # O ARQUIVO QUE SAIU (29/10/2026, `wa_midia`): as mesmas colunas do que
+        # entra, e o balão mostra a foto ou o link do documento enviado.
+        bd.escrever(
+            """UPDATE wa_mensagem
+                  SET midia_situacao=%s, arquivo_nome=%s, arquivo_caminho=%s,
+                      arquivo_mime=%s, arquivo_bytes=%s, arquivo_sha256=%s
+                WHERE id=%s""",
+            (WA.MIDIA_OK, arquivo.get("nome"), arquivo.get("caminho"),
+             arquivo.get("mime"), arquivo.get("bytes"), arquivo.get("sha256"), mid))
+    if (tipo or "") == "aviso":
+        # O AVISO AUTOMÁTICO NÃO É RESPOSTA (29/10/2026, `wa_rotina`): a
+        # conversa continua esperando uma pessoa.
+        bd.escrever("UPDATE wa_conversa SET atualizado_em=%s WHERE id=%s",
+                    (quando, int(conversa_id)))
+        return mid
     bd.escrever(
         """UPDATE wa_conversa
               SET status=%s, atualizado_em=%s

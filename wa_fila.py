@@ -56,6 +56,9 @@ EV_RESPONSAVEL = "responsavel"
 EV_RETOMADA = "retomada"
 EV_SEM_RESPONSAVEL_NA_VOLTA = "sem_responsavel_na_volta"
 EV_SETOR_PELO_ASSUNTO = "setor_pelo_assunto"
+# A conversa respondida em que o cliente não voltou, resolvida pela rotina
+# depois de N dias (`wa_rotina.encerrar_paradas`, 29/10/2026).
+EV_ENCERRADA = "encerrada_parada"
 
 # O RESPONSÁVEL NA VOLTA DA RESOLVIDA (decisão do oficial, 27/10/2026): até 7
 # dias depois de resolvida, quem atendeu ainda lembra do caso, e a conversa
@@ -84,6 +87,7 @@ ROTULO_DO_EVENTO = {
     EV_RETOMADA: "atendimento retomado",
     EV_SEM_RESPONSAVEL_NA_VOLTA: "voltou sem responsável",
     EV_SETOR_PELO_ASSUNTO: "setor pelo assunto",
+    EV_ENCERRADA: "resolvida sozinha (o cliente não voltou)",
 }
 
 # AS PALAVRAS QUE DIZEM O SETOR — UMA TABELA SÓ (27/10/2026, segunda revisão do
@@ -226,6 +230,12 @@ def _evento(con: Any, conversa_id: int, tipo: str, *, quando: str,
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
         (int(conversa_id), quando, tipo, de_setor, para_setor, responsavel_id,
          (por or "")[:80], (nota or "")[:500]))
+
+
+def registrar_evento(con: Any, conversa_id: int, tipo: str, *, quando: str,
+                     por: str = "", nota: str = "") -> None:
+    """O rastro de uma ação de rotina na conversa. ESCREVE."""
+    _evento(con, conversa_id, tipo, quando=quando, por=por, nota=nota)
 
 
 def eventos(con: Any, conversa_id: int) -> list[dict]:
@@ -420,12 +430,18 @@ def usuarios_ativos(con: Any) -> list[dict]:
 # ------------------------------------------------------------- o prazo
 
 
+# O AVISO AUTOMÁTICO NÃO É RESPOSTA (29/10/2026, `wa_rotina.TIPO_AVISO`): o
+# aviso de passagem da IA e o de fora do horário saem como `tipo='aviso'` e não
+# contam aqui. Antes contavam, e a conversa que a IA passou para uma pessoa
+# sumia do alerta no minuto em que o cliente recebia «sua mensagem foi passada
+# para a equipe» — justamente a que precisava de alguém.
 _ESPERANDO_DESDE = """
     (SELECT min(m.criado_em) FROM wa_mensagem m
       WHERE m.conversa_id = c.id AND m.direcao = 'in'
         AND m.id > COALESCE((SELECT max(o.id) FROM wa_mensagem o
                               WHERE o.conversa_id = c.id
-                                AND o.direcao = 'out'), 0))"""
+                                AND o.direcao = 'out'
+                                AND COALESCE(o.tipo, '') <> 'aviso'), 0))"""
 
 
 def _filtros(con: Any, *, agora: str, setor: str, etiqueta: str,
@@ -480,6 +496,32 @@ def nao_respondidas(con: Any, *, usuario_id: int | None) -> int:
                AND {_ESPERANDO_DESDE} IS NOT NULL""",
         (*args_sem, *args_minhas)) or {}
     return int(r.get("n") or 0)
+
+
+def ultima_entrada(con: Any, *, usuario_id: int | None) -> dict | None:
+    """A ÚLTIMA MENSAGEM DE CLIENTE que quem vê deve ver — o aviso do Windows
+    (29/10/2026, `whatsapp_atalho.js`). As mesmas abas do alerta: as conversas
+    sem responsável e as de quem vê. O navegador guarda o id da última que
+    avisou e só avisa a que for maior. SÓ LÊ."""
+    sem, args_sem = _da_aba("sem", usuario_id)
+    minhas, args_minhas = _da_aba("minhas", usuario_id)
+    r = banco(con).um(
+        f"""SELECT m.id, m.conversa_id, m.texto, m.tipo, m.transcricao,
+                   c.nome, c.wa_id
+              FROM wa_mensagem m JOIN wa_conversa c ON c.id = m.conversa_id
+             WHERE m.direcao = 'in' AND (({sem}) OR ({minhas}))
+             ORDER BY m.id DESC LIMIT 1""",
+        (*args_sem, *args_minhas))
+    if not r:
+        return None
+    texto = (r.get("texto") or r.get("transcricao") or "").strip()
+    if not texto:
+        texto = {"image": "📷 foto", "document": "📄 documento", "audio": "🎤 áudio",
+                 "video": "🎬 vídeo", "sticker": "figurinha"}.get(r.get("tipo") or "",
+                                                               "mensagem")
+    return {"id": int(r["id"]), "conversa_id": int(r["conversa_id"]),
+            "nome": r.get("nome") or r.get("wa_id") or "cliente",
+            "trecho": texto[:120]}
 
 
 def rotulo_do_atalho(n: int) -> dict:
@@ -591,6 +633,7 @@ def _primeiras_respostas(con: Any, desde: str) -> list[dict]:
                   COALESCE(NULLIF(c.setor, ''), %s) AS setor
              FROM wa_mensagem m JOIN wa_conversa c ON c.id = m.conversa_id
             WHERE m.criado_em >= %s AND m.direcao IN ('in', 'out')
+              AND COALESCE(m.tipo, '') <> 'aviso'
             ORDER BY m.conversa_id, m.id""", (WA.SETOR_PADRAO, desde))
     saida, aberta = [], {}
     for m in msgs:

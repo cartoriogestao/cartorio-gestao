@@ -125,6 +125,17 @@ TAMANHO_DA_RESPOSTA = 1200
 TAMANHO_DA_PERGUNTA = 2000
 FOLGA_DO_PEDIDO = 16_384   # bytes além da instrução: a pergunta (até ~8 KB em UTF-8) e o envelope
 CONTEXTO_ANTERIOR = 4
+# O JUSTO MOTIVO DA PASSAGEM (29/10/2026). Pedido do oficial: «configure a IA
+# para fazer o primeiro atendimento, passando para atendente quando houver
+# justo motivo». Às regras de antes (pediu pessoa, assunto sensível, dado
+# pessoal, fora do texto-base…) somam-se duas:
+#   - o cliente MANDOU UM ARQUIVO (foto, documento, vídeo): documento se confere
+#     por gente, e a IA não lê o arquivo — responder à legenda fingindo ter
+#     visto o documento seria pior que passar;
+#   - o cliente CONTINUA ESCREVENDO depois de `RESPOSTAS_ANTES_DE_PESSOA`
+#     respostas automáticas em 24 h: a IA não está resolvendo.
+TIPOS_QUE_PASSAM = ("image", "document", "video")
+RESPOSTAS_ANTES_DE_PESSOA = 4
 
 RODAPE = ("\n\n— Resposta automática do atendimento. Para falar com uma "
           "pessoa, escreva ATENDENTE.")
@@ -137,6 +148,11 @@ TEXTO_NAO_CONFERE = (
     "assim: protocolo NÚMERO código CÓDIGO.")
 TEXTO_PASSAGEM = ("Sua mensagem foi passada para a equipe ({setor}). "
                   "Respondemos no horário de atendimento.")
+# Com o horário gravado e o balcão aberto, a frase diz que já há alguém vendo;
+# fechado, `wa_rotina.complemento_da_passagem` diz o horário e quando a casa
+# responde (29/10/2026).
+TEXTO_PASSAGEM_ABERTO = ("Sua mensagem foi passada para a equipe ({setor}); "
+                         "uma pessoa responde em seguida.")
 TEXTO_BASE_EXEMPLO = (
     "HORÁRIO: [preencha os dias e o horário de atendimento]\n"
     "ENDEREÇO: [preencha o endereço completo]\n"
@@ -695,7 +711,8 @@ def transcrever_pendentes(db: Any, cfg: dict, *, agora: str, pasta_de_dados: Any
               ).strftime("%Y-%m-%dT%H:%M:%S")
     with db.connect() as con:
         candidatos = banco(con).ler(
-            """SELECT m.id, m.midia_id, c.id AS conversa_id, c.wa_id
+            """SELECT m.id, m.midia_id, c.id AS conversa_id, c.wa_id,
+                      m.arquivo_caminho, m.arquivo_mime, m.arquivo_sha256
                  FROM wa_mensagem m JOIN wa_conversa c ON c.id = m.conversa_id
                 WHERE m.direcao='in' AND m.tipo='audio' AND m.transcricao IS NULL
                   AND m.midia_id IS NOT NULL AND m.criado_em >= %s
@@ -720,7 +737,14 @@ def transcrever_pendentes(db: Any, cfg: dict, *, agora: str, pasta_de_dados: Any
                    "provedor": TRANSC.PROVEDOR, "modelo": cfg["audio_modelo"]}
         texto = ""
         try:
-            audio, mime = TRANSC.baixar_audio(token, m["midia_id"], https=https)
+            # O ÁUDIO QUE O VIGIA JÁ GUARDOU (29/10/2026, `wa_midia`) não se
+            # baixa de novo; sem ele, baixa como antes.
+            import wa_midia as MIDIA
+            guardado = MIDIA.bytes_guardados(dict(m))
+            if guardado:
+                audio, mime = guardado[0], guardado[1] or "audio/ogg"
+            else:
+                audio, mime = TRANSC.baixar_audio(token, m["midia_id"], https=https)
             r = fn(pasta_de_dados, audio, mime, modelo=cfg["audio_modelo"],
                    preco_por_minuto=cfg["audio_preco_minuto"],
                    # literal, e não FINALIDADE_AUDIO: o varredor do catálogo
@@ -743,6 +767,17 @@ def transcrever_pendentes(db: Any, cfg: dict, *, agora: str, pasta_de_dados: Any
                        respondido="(transcrição gravada na mensagem)" if texto else "")
         feitos += 1
     return feitos
+
+
+def respostas_automaticas(con: Any, conversa_id: int, *, agora: str) -> int:
+    """Quantas respostas automáticas saíram nesta conversa nas últimas 24 h
+    (o aviso de passagem não conta: ele não é resposta). SÓ LÊ."""
+    inicio = ((FILA._dt(agora) or datetime.now()) - timedelta(hours=24)
+              ).strftime("%Y-%m-%dT%H:%M:%S")
+    return int(banco(con).valor(
+        """SELECT count(*) AS n FROM wa_ia_registro
+            WHERE conversa_id=%s AND enviado=1 AND caso <> %s AND quando >= %s""",
+        (int(conversa_id), CASO_PASSAGEM, inicio)) or 0)
 
 
 def _soltar_presas(db: Any, *, agora: str) -> None:
@@ -791,15 +826,43 @@ def atender_conversa(db: Any, conversa_id: int, cfg: dict, *, agora: str,
         if t:
             partes.append(t)
     texto = "\n".join(partes)
-    decisao = decidir(db, conversa, texto, cfg, agora=agora,
-                      pasta_de_dados=pasta_de_dados, conversar=conversar)
+    setor_atual = FILA.setor_valido(conversa.get("setor")) or WA.SETOR_PADRAO
+    with db.connect() as con:
+        ja_respondeu = respostas_automaticas(con, conversa_id, agora=agora)
+        import wa_rotina as ROTINA
+        rotina = ROTINA.config(con)
+    if any((p.get("tipo") or "") in TIPOS_QUE_PASSAM for p in pegas):
+        decisao = {"caso": CASO_PASSAGEM, "resposta": "", "passar": setor_atual,
+                   "motivo": "o cliente mandou arquivo (foto ou documento) — "
+                             "precisa de pessoa para conferir",
+                   "lido": "(arquivo — não subiu à IA)", "provedor": None,
+                   "modelo": None, "entrada": 0, "saida": 0, "custo": None, "erro": ""}
+    elif ja_respondeu >= RESPOSTAS_ANTES_DE_PESSOA:
+        decisao = {"caso": CASO_PASSAGEM, "resposta": "", "passar": setor_atual,
+                   "motivo": f"o cliente seguiu escrevendo depois de {ja_respondeu} "
+                             "respostas automáticas",
+                   "lido": "(insistência — não subiu à IA)", "provedor": None,
+                   "modelo": None, "entrada": 0, "saida": 0, "custo": None, "erro": ""}
+    else:
+        decisao = decidir(db, conversa, texto, cfg, agora=agora,
+                          pasta_de_dados=pasta_de_dados, conversar=conversar)
 
     enviar = decisao["resposta"]
+    e_aviso = False
     if not enviar and decisao.get("passar") and cfg["aviso_passagem"]:
-        enviar = TEXTO_PASSAGEM.format(setor=FILA.nome_do_setor(decisao["passar"]))
+        quando = FILA._dt(agora) or datetime.now()
+        setor = FILA.nome_do_setor(decisao["passar"])
+        complemento = ROTINA.complemento_da_passagem(rotina, quando)
+        if rotina["regra"] and not complemento:
+            enviar = TEXTO_PASSAGEM_ABERTO.format(setor=setor)
+        elif complemento:
+            enviar = f"Sua mensagem foi passada para a equipe ({setor}).{complemento}"
+        else:
+            enviar = TEXTO_PASSAGEM.format(setor=setor)
+        e_aviso = True
     meta_id, enviado, texto_saida = None, False, ""
     if enviar:
-        texto_saida = enviar + RODAPE
+        texto_saida = enviar if e_aviso else enviar + RODAPE
         try:
             with db.connect() as con:
                 pedido = BALCAO.montar_envio(con, conversa["wa_id"], texto_saida)
@@ -815,8 +878,11 @@ def atender_conversa(db: Any, conversa_id: int, cfg: dict, *, agora: str,
     situacao = (WA.IA_PASSADA if decisao.get("passar") else WA.IA_RESPONDIDA)
     with db.transaction() as con:
         if enviado:
+            # O AVISO DE PASSAGEM NÃO É RESPOSTA (29/10/2026): sai como `aviso`, e a
+            # conversa continua esperando a pessoa (`wa_rotina.TIPO_AVISO`).
             BALCAO.gravar_saida(con, conversa_id, texto_saida, meta_id,
-                                autor=AUTOR_IA, agora=agora)
+                                autor=AUTOR_IA, agora=agora,
+                                tipo=ROTINA.TIPO_AVISO if e_aviso else "text")
         if decisao.get("passar"):
             FILA.passar_para_pessoa(con, conversa_id, setor=decisao["passar"],
                                     motivo=decisao.get("motivo") or "",

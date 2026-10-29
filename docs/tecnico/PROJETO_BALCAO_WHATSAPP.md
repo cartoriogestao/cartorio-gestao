@@ -8,6 +8,33 @@ O oficial disse «vamos fazer isso». Depois: o servidor do cartório **não** v
 
 ---
 
+## O balcão que funciona sozinho (29/10/2026)
+
+> «preciso que o whatsapp seja mais funcional, preciso que atualize em tempo real (se nao possivel com frequencia de 30s (se abrir uma janela ou aviso no windows), receba arquivos enviados na conversa, configure a IA para fazer o primeiro atendimento, passando para atendente quando houver justo motivo» — o oficial
+
+Este trecho vale mais que o resto do arquivo quando os dois discordarem: as fatias abaixo descrevem como o balcão nasceu.
+
+| o quê | onde | como |
+|---|---|---|
+| a mensagem chega em segundos | `wa_vigia` | uma linha de execução do próprio servidor busca a caixa-postal de 20 em 20 s (`vigia_segundos`), 24 h por dia; a automação de 2 em 2 min fica de reserva, e as duas juntas não dobram nada |
+| o aviso no Windows | `static/whatsapp_atalho.js` | de 15 em 15 s (30 com a aba escondida, pelo relógio de um Worker): aviso do Windows (se a pessoa ligar), som, título piscando e cartão no canto |
+| a hora certa | `wa_balcao.quando_da_meta` | a mensagem guarda a hora em que o cliente escreveu (o `timestamp` da Meta), e não a da puxada |
+| ✓ ✓✓ lida, não chegou | `wa_balcao.aplicar_entregas` | os `statuses` da Meta, que eram jogados fora |
+| os arquivos do cliente | `wa_midia` | foto, PDF, documento, áudio e vídeo são baixados e guardados em `<arquivos>/whatsapp/AAAA-MM/`; o balão mostra ou baixa (`/whatsapp/midia/<id>`) |
+| mandar arquivo | `/whatsapp/<id>/arquivo` | sobe à Meta (`/media`) e envia, com legenda; a casa guarda a cópia |
+| a IA no primeiro atendimento | `wa_atendente` (rodado pelo vigia) | as regras de 26/10, e mais duas de passagem: o cliente mandou arquivo; o cliente seguiu escrevendo depois de 4 respostas automáticas |
+| horário e fora do horário | `wa_horario`, `wa_rotina` | o aviso de passagem diz quando a casa responde; o aviso de fora do horário sai uma vez por período fechado |
+| respostas prontas | `wa_rotina.ler_respostas` | «atalho \| texto», com {nome} |
+| conversa parada | `wa_rotina.encerrar_paradas` | respondida e sem volta do cliente há N dias (padrão 3) → resolvida, com o rastro |
+
+**O aviso automático não é resposta.** O aviso de passagem e o de fora do horário saem com `tipo='aviso'`: não contam no «esperando resposta», nem no tempo da primeira resposta, e não põem a conversa em «aguardando». Até 29/10/2026 contavam, e a conversa que a IA passava para uma pessoa sumia do alerta.
+
+**O aviso do Windows exige endereço seguro.** O navegador só libera a notificação do sistema em `https` ou no próprio servidor (`127.0.0.1`); nos balcões em `http://<ip>:8765` ficam o som, o título e o cartão, até o Chrome receber a política `OverrideSecurityRestrictionsOnInsecureOrigin` com o endereço do servidor (ou o sistema ganhar `https` na rede).
+
+**A FAZER:** feriado no horário; vincular a conversa a protocolo e cliente; a pesquisa de satisfação ao resolver (o modelo da Meta já existe, falta a aprovação).
+
+---
+
 ## O que o oficial pediu
 
 Atender o público pelo WhatsApp, com o Cartório Gestão no meio — não um programa paralelo. Sem expor a porta 8765. Sem túnel no SERVIDOR.

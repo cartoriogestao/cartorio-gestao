@@ -41,8 +41,9 @@
   <form method="post" action="{{ url_for('whatsapp_atendente_rodar') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button class="button secondary">rodar o atendente agora</button>
-    <span class="small muted">Atende até 5 conversas novas. A rodada automática
-    (<code>wa_atendente.py --laco</code>) só existe se o oficial pedir a tarefa.</span>
+    <span class="small muted">Atende até 5 conversas novas agora. Com a busca automática
+    do servidor ligada (abaixo, «Rotina do balcão»), o atendente roda sozinho a cada
+    volta — não é preciso clicar.</span>
   </form>
 </div>
 
@@ -115,6 +116,59 @@
       <span class="small muted">Padrão: whisper-1 a 0,006 — conferir na tabela da OpenAI.</span></p>
   </div>
   {% if e_admin %}<p><button class="button">guardar</button></p>{% endif %}
+</form>
+
+{#- A ROTINA DO BALCÃO (29/10/2026, `wa_rotina`): o que faz o WhatsApp funcionar
+    sozinho — a busca do servidor, o horário, o aviso de fora do horário, as
+    respostas prontas e o encerramento da conversa parada. Gravar é do ADMIN. -#}
+<form method="post" action="{{ url_for('whatsapp_balcao_config') }}" id="balcao">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="card">
+    <h2>Rotina do balcão</h2>
+    <p class="small">
+      O servidor busca as mensagens na caixa-postal sozinho, baixa os arquivos que os
+      clientes mandam, roda o atendente com IA (se ligado) e manda o aviso de fora do
+      horário (se ligado). A tela e o atalho avisam a mensagem nova — pelo Windows, pelo
+      som e por um cartão no canto da tela.
+    </p>
+    <label>Buscar a cada (segundos)
+      <input name="vigia_segundos" value="{{ rotina.vigia_gravado }}" inputmode="numeric"
+             placeholder="{{ vigia_padrao }} (padrão)" {% if not e_admin %}disabled{% endif %}>
+      <span class="small muted">De 10 a 600; vazio = {{ vigia_padrao }} s; 0 desliga a busca do
+        servidor (fica só a automação de 2 em 2 minutos, se ligada).</span>
+    </label>
+    <label>Horário de atendimento pelo WhatsApp
+      <textarea name="horario" rows="3" placeholder="seg-sex 08:00-12:00 13:00-17:00&#10;sab 08:00-12:00"
+                {% if not e_admin %}disabled{% endif %}>{{ rotina.horario_texto }}</textarea>
+      <span class="small muted">Uma faixa por linha: dias e horários. Lido como:
+        <strong>{{ rotina.horario_descrito or 'sem horário' }}</strong>. Feriado não entra.</span>
+    </label>
+    <label class="check"><input type="checkbox" name="fora_ligado" value="1"
+           {% if rotina.fora_ligado %}checked{% endif %} {% if not e_admin %}disabled{% endif %}>
+      Mandar o aviso de fora do horário (uma vez por período fechado, só se a IA não respondeu)</label>
+    <label>Texto do aviso de fora do horário
+      <textarea name="fora_texto" rows="3" placeholder="{{ texto_fora_padrao }}"
+                {% if not e_admin %}disabled{% endif %}>{{ rotina.fora_texto }}</textarea>
+      <span class="small muted">Vazio = o padrão. Pode usar {horario} e {quando_abre}.</span>
+    </label>
+    <label>Respostas prontas (para quem atende)
+      <textarea name="respostas" rows="6"
+                placeholder="documentos firma | Para reconhecer firma, traga o documento de identidade original.&#10;bom dia | Bom dia, {nome}! Como posso ajudar?"
+                {% if not e_admin %}disabled{% endif %}>{{ rotina.respostas_texto }}</textarea>
+      <span class="small muted">«atalho | texto», uma por linha. {nome} vira o primeiro nome do
+        cliente. Na conversa, a lista «respostas prontas…» põe o texto na caixa — não envia
+        sozinha.</span>
+    </label>
+    <label>Resolver a conversa parada depois de (dias)
+      <input name="encerrar_dias" value="{{ rotina.encerrar_gravado }}" inputmode="numeric"
+             placeholder="{{ encerrar_padrao }} (padrão)" {% if not e_admin %}disabled{% endif %}>
+      <span class="small muted">A conversa em que a casa respondeu por último e o cliente não
+        voltou sai das abas de trabalho. Se ele escrever de novo, ela volta com o histórico.
+        0 = nunca.</span>
+    </label>
+    {% if e_admin %}<button class="button primary">Guardar a rotina</button>
+    {% else %}<p class="small muted">Só o administrador grava a rotina.</p>{% endif %}
+  </div>
 </form>
 
 <div class="card">

@@ -288,6 +288,38 @@
     formDetalhes.addEventListener("input", conferirOk);
   }
 
+  // ------------------------------------------------------------- respostas prontas
+  // (29/10/2026) Escolher uma põe o texto na caixa — no fim do que já estiver
+  // escrito —, com {nome} trocado pelo primeiro nome do cliente. Não envia.
+  var respostas = document.querySelector("[data-wa-respostas]");
+  if (respostas && texto) {
+    respostas.addEventListener("change", function () {
+      var opcao = respostas.options[respostas.selectedIndex];
+      var modelo = opcao && opcao.getAttribute("data-texto");
+      if (!modelo) {
+        return;
+      }
+      var nome = respostas.getAttribute("data-nome") || "";
+      var pronto = modelo.split("{nome}").join(nome).replace(/\s+([,.!?])/g, "$1");
+      texto.value = texto.value.trim() ? texto.value.replace(/\s+$/, "") + "
+" + pronto
+                                       : pronto;
+      respostas.selectedIndex = 0;
+      texto.focus();
+    });
+  }
+
+  // O ARQUIVO SAI UMA VEZ SÓ (29/10/2026): o botão desliga no primeiro clique.
+  var anexar = document.querySelector("form.wa-anexar-form");
+  if (anexar) {
+    anexar.addEventListener("submit", function () {
+      var b = anexar.querySelector("button");
+      if (b) {
+        window.setTimeout(function () { b.disabled = true; b.textContent = "Mandando…"; }, 0);
+      }
+    });
+  }
+
   // ------------------------------------------------------------- começo
   if (caixa) {
     rolarParaOFim();

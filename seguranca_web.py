@@ -10,7 +10,7 @@ escrita uma vez aqui, para a próxima tela não nascer com o furo:
 from __future__ import annotations
 
 import logging
-from urllib.parse import urlsplit
+from urllib.parse import urlparse, urlsplit
 
 _LOG = logging.getLogger("cartorio.tela")
 
@@ -88,10 +88,16 @@ def destino_interno(proximo, padrao: str) -> str:
     if (not texto.startswith("/") or texto.startswith("//") or "\\" in texto
             or any(ord(c) < 0x20 or ord(c) == 0x7F for c in texto)):
         return padrao
-    partes = urlsplit(texto)
-    if partes.scheme or partes.netloc:
-        return padrao
-    return texto
+    # A FORMA DO FIM É A QUE O CODEQL RECONHECE COMO CONFERIDA (alertas #209
+    # e #210, 29/10/2026): tirar a barra invertida e só então perguntar
+    # `urlparse(...).netloc` e `.scheme`. A régua não mudou — a barra
+    # invertida já foi recusada acima, e o `replace` não tira nada —, mas
+    # a conta com `urlsplit` numa variável à parte ele não enxergava, e o
+    # alerta continuava aberto sobre um caminho que já estava fechado.
+    texto = texto.replace("\\", "")
+    if not urlparse(texto).netloc and not urlparse(texto).scheme:
+        return texto
+    return padrao
 
 
 def volta_do_referer(referer, host: str, padrao: str) -> str:

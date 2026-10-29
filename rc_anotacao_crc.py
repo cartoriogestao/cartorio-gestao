@@ -149,6 +149,55 @@ def _pegar(padrao: str, texto: str, flags: int = re.I | re.S) -> str:
     return _espacos(m.group(1)) if m else ""
 
 
+_INICIO_DO_TITULO = re.compile(r"Comunica[cç][aã]o\s+de(\s+)", re.I)
+
+
+def _titulo_no_inicio_da_linha(plano: str) -> tuple[str, int] | None:
+    """O título no começo de uma linha: o texto e onde o achado termina.
+
+    ERA UMA EXPRESSÃO SÓ — `^\\s*(Comunicação\\s+de\\s+.+?)(?:\\s{2,}|\\n|$)`,
+    com `re.M` —, e o CodeQL a acusou (alerta #189): o `.+?` e o `\\s{2,}`
+    disputam os mesmos brancos, e o `^\\s*` atravessa linha em branco a
+    partir de cada começo de linha. Um bloco com milhares de brancos fazia
+    a conta crescer pelo quadrado. Aqui o mesmo resultado sai de uma
+    passada: o começo de cada linha, os brancos pulados uma vez só, o
+    prefixo conferido no lugar, e o fim procurado para a frente. Devolve o
+    mesmo texto e o mesmo fim que a expressão devolvia — conferido contra
+    ela em textos sorteados (29/10/2026).
+    """
+    n = len(plano)
+    p = 0
+    while p <= n:
+        q = p
+        while q < n and plano[q].isspace():
+            q += 1
+        m = _INICIO_DO_TITULO.match(plano, q)
+        if m:
+            # O `.+?` começa no último lugar que o `\s+` greedy deixa:
+            # pelo menos um branco depois do «de», e nunca numa quebra.
+            s = m.end()
+            while s > m.start(1) + 1 and (s >= n or plano[s] == "\n"):
+                s -= 1
+            if s < n and plano[s] != "\n":
+                e = s + 1
+                while e < n and plano[e] != "\n" and not (
+                        plano[e].isspace() and e + 1 < n
+                        and plano[e + 1].isspace()):
+                    e += 1
+                fim = e
+                if e + 1 < n and plano[e].isspace() and plano[e + 1].isspace():
+                    while fim < n and plano[fim].isspace():
+                        fim += 1
+                elif e < n:
+                    fim = e + 1
+                return plano[q:e], fim
+        quebra = plano.find("\n", q)
+        if quebra < 0:
+            return None
+        p = quebra + 1
+    return None
+
+
 def _extrair_bloco(html_bloco: str) -> dict[str, Any] | None:
     """Lê um bloco entre <hr>. Devolve None se não parecer comunicação."""
     plano = _texto_plano(html_bloco)
@@ -158,14 +207,16 @@ def _extrair_bloco(html_bloco: str) -> dict[str, Any] | None:
 
     m_titulo = re.search(
         r"(Comunica[cç][aã]o\s+de\s+[^\n<]+)", plano, re.I)
-    if not m_titulo:
+    if m_titulo:
+        titulo = _espacos(m_titulo.group(1))
+        fim_titulo = m_titulo.end()
+    else:
         # título às vezes cola na mesma linha; tenta no início
-        m_titulo = re.search(
-            r"^\s*(Comunica[cç][aã]o\s+de\s+.+?)(?:\s{2,}|\n|$)",
-            plano, re.I | re.M)
-    if not m_titulo:
-        return None
-    titulo = _espacos(m_titulo.group(1))
+        achado = _titulo_no_inicio_da_linha(plano)
+        if not achado:
+            return None
+        titulo = _espacos(achado[0])
+        fim_titulo = achado[1]
     tipo = _tipo_do_titulo(titulo)
 
     codigo = _pegar(
@@ -176,7 +227,7 @@ def _extrair_bloco(html_bloco: str) -> dict[str, Any] | None:
     # Origem / destino: linhas tipicas entre o titulo e o codigo
     origem = ""
     destino = ""
-    trecho_cab = plano[: m_titulo.end() + 400] if m_titulo else plano[:600]
+    trecho_cab = plano[: fim_titulo + 400]
     linhas_cab = [_espacos(x) for x in trecho_cab.splitlines() if _espacos(x)]
     # Filtra titulo e codigo
     uteis = []

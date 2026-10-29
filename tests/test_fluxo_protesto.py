@@ -1402,7 +1402,10 @@ def test_selo_recusado_devolve_o_titulo_a_situacao_de_antes(s, ato):
     anulado, a ficha não oferecia mais o ato, o domínio recusava o segundo, e
     o título ficava no meio do caminho com um ato que não existiu."""
     campos = ANTES_DO_ATO[ato]
-    p = _protocolo(s, PROTESTO, PROTESTO)
+    # O ITEM DE CADA ATO (29/10/2026): o pagamento e a desistência selam pelo
+    # 17.4 — o 17.1 do protesto não sai em selo deles, e desde a conferência
+    # de antes (`protesto_selo_previo`) a ficha recusa o item que não serve.
+    p = _protocolo(s, PROTESTO, PROTESTO if ato == "PROTESTO" else RETIRADA)
     tid = _apontado(s, p, p["itens"][0])
     _intimado_em_maos(s, tid)
     s["aparelho"].recusar_com = (400, {"message": "recusado pelo teste"})

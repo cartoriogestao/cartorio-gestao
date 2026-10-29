@@ -957,7 +957,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 ORDER BY id""", (str(tabela), int(ato_id)))
                 for _ in range(max(1, int(r["quantidade"] or 1)))]
 
-    def _itens_do_selo_do_protesto(con, tabela: str,
+    def _itens_do_selo_do_protesto(con, tabela: str, tipo: str,
                                    ids_usados: list | None = None) -> list[str]:
         """Os códigos que o selo do Protesto vai pedir, um por selo. Só LÊ.
 
@@ -970,13 +970,50 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         do Protesto no acervo saíram por `atos-em-geral`, e não pelo caminho da
         certidão; quem os sela é `_selar_a_busca_da_certidao_do_protesto`,
         ainda que o item tenha vindo do protocolo.
+
+        A FAIXA VIRA O ITEM DO TRIBUNAL — 29/10/2026. O aparelho recusou o
+        17.4.5 e o 17.1.7 («Não foi encontrado um ato para o código
+        informado», ato 4127) e o E-Ofício mandava 17.4 e 17.1 com o valor do
+        título: `protesto_selo_previo.codigo_para_o_selo`.
         """
         # O envelope do Protesto não tem campo de quantidade — um selo por
         # unidade, como sempre (ver `_itens_para_selar_expandido`).
         itens = _itens_para_selar_expandido(con, ids_usados)
         if tabela == "pt_certidoes":
             itens = [c for c in itens if not BU.e_item_de_busca(c)]
-        return itens
+        caminho = AS.caminho_do_ato(tabela, tipo)
+        return [PSELO.codigo_para_o_selo(c, caminho) for c in itens]
+
+    def _o_que_o_selo_vai_conferir(con, *, cobranca: dict | None = None,
+                                   titulo_id: int | None = None) -> dict:
+        """O que o formulário diz ao selo, para a conferência de antes. Só LÊ.
+
+        As mesmas leituras que a cobrança e o selo fazem depois — os números
+        que não são número são nenhum (LD13), como em `_cobrar_se_pedido`.
+        """
+        servicos = [n for n in (numero_digitado(s)
+                                for s in request.form.getlist("cobrar"))
+                    if n is not None]
+        ids_item = [n for n in (numero_digitado(x) for x in
+                                request.form.getlist("cobrar_protocolo_item"))
+                    if n is not None]
+        diferir = bool(cobranca and cobranca.get("diferir"))
+        cobra_item = bool(servicos or ids_item) and not diferir
+        cobra_devido = bool(
+            cobranca and cobranca.get("cobra_diferidos")
+            and request.form.get("cobrar_diferidos") and titulo_id is not None
+            and POST.pendentes(con, titulo_id))
+        protocolo = numero_digitado(_campo("protocolo_id"), maximo=MAIOR_INTEGER)
+        return {"protocolo_id": protocolo,
+                "protocolo_escolhido": protocolo is not None,
+                "vai_cobrar_no_caixa": cobra_item or cobra_devido,
+                "caixa_aberto": _caixa_aberto(con) is not None,
+                # o lançamento do próprio ato, com protocolo, cobre o selo pago
+                # (`ato_selado.cobrir_o_selo`, passo 2)
+                "lancamento_com_protocolo": cobra_item and protocolo is not None,
+                "selo_digitado": bool(_campo("selo")),
+                "afirmo": bool(request.form.get("afirmo")),
+                "afirmacao": _campo("afirmacao")}
 
     def _selar_o_protesto(tabela: str, ato_id: int, tipo: str) -> str:
         """Um selo para cada item cobrado. FALA COM A REDE.
@@ -994,7 +1031,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         ids_do_protocolo: list[int] = []
         with db.connect() as con:
             # A mesma régua que confere antes de lavrar (29/10/2026).
-            itens = _itens_do_selo_do_protesto(con, tabela, ids_do_protocolo)
+            itens = _itens_do_selo_do_protesto(con, tabela, tipo,
+                                               ids_do_protocolo)
             # A CERTIDÃO NÃO TEM TÍTULO — quem vai nas partes é a pessoa
             # pesquisada, como em 53 dos 57 envelopes do acervo (15/10/2026).
             pesquisado = (banco(con).um(
@@ -2386,14 +2424,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as con:
             r = PLISTA.listar(con, filtro, hoje=hoje(), pagina=pagina)
             apresentantes = PLISTA.apresentantes(con)
-            # OS TÍTULOS NUMA SITUAÇÃO SEM O ATO QUE A SUSTENTE (29/10/2026).
+            # AS OBRIGAÇÕES QUE O SELO DEIXOU (29/10/2026): os títulos numa
+            # situação sem o ato que a sustente e os atos a refazer.
             sem_ato = PSELO.titulos_sem_ato_que_sustente(con)
+            pendencias_do_selo = PSELO.pendencias_do_selo(con)
         session["protesto_lista_filtro"] = PLISTA.params(
             filtro, pagina=r["pagina"] if r["pagina"] > 1 else None)
         contagem_vistas = r.pop("vistas")
         return render_template(
             "protesto_titulos.html", filtro=filtro, lembrado=lembrado,
-            sem_ato=sem_ato,
+            sem_ato=sem_ato, pendencias_do_selo=pendencias_do_selo,
             apresentantes=apresentantes, vistas=PLISTA.VISTAS,
             contagem_vistas=contagem_vistas,
             ordens=PLISTA.ORDENS, filtro_sustado=PLISTA.FILTRO_SUSTADO,
@@ -2591,6 +2631,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash(str(_erro_busca), "danger")
             return redirect(url_for("protesto_certidoes", nome=nome,
                                     documento=documento, anos=anos))
+        # FORA da transação (`get_setting` abre conexão própria).
+        data_da_tabela = db.get_setting("selo_tabela_custas_em", "")
+        afirmacao_aceita = None
         try:
             with db.transaction() as con:
                 achados = PCE.buscar(con, nome=nome, documento=documento,
@@ -2605,17 +2648,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     usuario=usuario_nome(),
                     autorizacao=_campo("autorizacao") or None,
                     autorizacao_ref=_campo("autorizacao_ref") or None)
-                # O SELO CONFERIDO ANTES (29/10/2026): sem item a certidão não
-                # sela, e a recusa desfaz a transação inteira — o número do
-                # exercício não se consome e nada fica gravado.
+                # O SELO CONFERIDO ANTES (29/10/2026): o que se sabe antes —
+                # a data da tabela, o item, o caixa, o item que não serve, o
+                # item não pago — recusa aqui, e a recusa desfaz a transação
+                # inteira: o número do exercício não se consome.
                 import selo_robo as SR
-                PSELO.conferir_antes_de_lavrar(
+                afirmacao_aceita = PSELO.conferir_antes_de_lavrar(
                     r["tipo"],
-                    lambda: _itens_do_selo_do_protesto(con, "pt_certidoes"),
-                    tabela="pt_certidoes", selo_digitado=bool(_campo("selo")),
+                    lambda: _itens_do_selo_do_protesto(con, "pt_certidoes",
+                                                       r["tipo"]),
+                    tabela="pt_certidoes", con=con,
+                    data_da_tabela=data_da_tabela,
                     selo_automatico=SR.pode_selar_automatico(),
-                    protocolo_escolhido=numero_digitado(
-                        _campo("protocolo_id")) is not None)
+                    **_o_que_o_selo_vai_conferir(con))
                 selo_a_mao = _selar_se_pedido(con, "pt_certidoes",
                                               r["certidao_id"], "PROTESTO")
                 aviso = selo_a_mao
@@ -2626,6 +2671,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash(str(erro), "danger")
             return redirect(url_for("protesto_certidoes", nome=nome,
                                     documento=documento, anos=anos))
+        if afirmacao_aceita:
+            # O CONTRATO COMUM: a afirmação vai à auditoria FORA da transação.
+            # A certidão não tem `detalhe_json`: o rastro é a auditoria.
+            audit(PSELO.ACAO_DA_AFIRMACAO, "pt_certidoes", r["certidao_id"],
+                  afirmacao_aceita)
         # O SELO SAI AGORA — um para cada item cobrado, como no ato.
         recado_do_selo = ""
         if not selo_a_mao:
@@ -3217,6 +3267,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             abort(403)
         voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_id))
         situacao_antes = situacao_depois = None
+        # Lida FORA da transação (`get_setting` abre conexão própria): é a data
+        # que o envelope do selo leva, e a conferência de antes precisa dela.
+        data_da_tabela = db.get_setting("selo_tabela_custas_em", "")
+        afirmacao_aceita = None
         try:
             with db.transaction() as con:
                 # A SITUAÇÃO DE ANTES DO ATO, lida com a linha presa — é para
@@ -3315,18 +3369,30 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         f"Ato desconhecido: {ato!r}.")
                 depois = PT.titulo(con, titulo_id)
                 situacao_depois = depois["situacao"] if depois else None
+                # O EMOLUMENTO A POSTERIORI (LG05). No título diferido, o ato
+                # antes do desfecho sela e fica DEVENDO; o desfecho cobra o
+                # que se marcou e o que ficou devido, pela tabela que o CN-MA
+                # art. 925, § 11 manda. Título antecipado: como sempre.
+                cobranca = (POST.cobranca_do_ato(con, titulo_id, ato,
+                                                 hoje=hoje())
+                            if ato in POST.MOMENTO_DO_ATO else None)
                 # O SELO CONFERIDO ANTES DE O ATO EXISTIR — ordem do oficial,
-                # 29/10/2026. Sem item marcado nem protocolo com item, o selo
-                # não sai, e até aqui isso só se descobria depois de lavrar: o
-                # ato era desfeito, e o 9614 ficou PAGO sem pagamento. Depois
-                # das regras do domínio (que dizem se o ato cabe) e antes de
-                # cobrar: a recusa desfaz a transação inteira, e nada fica.
-                PSELO.conferir_antes_de_lavrar(
-                    ato, lambda: _itens_do_selo_do_protesto(con, "pt_atos"),
-                    selo_digitado=bool(_campo("selo")),
+                # 29/10/2026. Tudo o que se sabe antes (o caminho e a data da
+                # tabela, o protocolo do título, o item, o caixa, o item que
+                # não serve ao ato, o item não pago) até aqui só se descobria
+                # depois de lavrar: o ato era desfeito, e o 9614 ficou PAGO sem
+                # pagamento. Depois das regras do domínio (que dizem se o ato
+                # cabe) e antes de cobrar: a recusa desfaz a transação inteira.
+                afirmacao_aceita = PSELO.conferir_antes_de_lavrar(
+                    ato, lambda: _itens_do_selo_do_protesto(con, "pt_atos", ato),
+                    con=con, titulo=depois, data_da_tabela=data_da_tabela,
                     selo_automatico=SR.pode_selar_automatico(),
-                    protocolo_escolhido=numero_digitado(
-                        _campo("protocolo_id")) is not None)
+                    **_o_que_o_selo_vai_conferir(con, cobranca=cobranca,
+                                                 titulo_id=titulo_id))
+                if afirmacao_aceita:
+                    PSELO.anotar_afirmacao_no_ato(
+                        con, r["ato_id"], afirmacao_aceita,
+                        quem=usuario_nome(), agora=agora())
                 # O SELO DIGITADO A MAO FICA NUMA VARIAVEL PROPRIA, e nao
                 # somado ao resto: e ele, e so ele, que impede o pedido
                 # automatico. Perguntar por `aviso` faria a cobranca —
@@ -3335,13 +3401,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 selo_a_mao = _selar_se_pedido(con, "pt_atos", r["ato_id"],
                                               "PROTESTO")
                 aviso = selo_a_mao
-                # O EMOLUMENTO A POSTERIORI (LG05). No título diferido, o ato
-                # antes do desfecho sela e fica DEVENDO; o desfecho cobra o
-                # que se marcou e o que ficou devido, pela tabela que o CN-MA
-                # art. 925, § 11 manda. Título antecipado: como sempre.
-                cobranca = (POST.cobranca_do_ato(con, titulo_id, ato,
-                                                 hoje=hoje())
-                            if ato in POST.MOMENTO_DO_ATO else None)
                 if cobranca and cobranca["diferir"]:
                     aviso += _diferir_se_pedido(con, titulo_id, r["ato_id"], ato)
                 else:
@@ -3352,15 +3411,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                             and request.form.get("cobrar_diferidos")):
                         aviso += _cobrar_os_diferidos(con, titulo_id,
                                                       r["ato_id"], cobranca)
-        except PSELO.SeloSemItemError as erro:
+        except PSELO.SeloNaoVaiSairError as erro:
             # O FORMULÁRIO VOLTA PREENCHIDO: a ficha se desenha com o que foi
-            # postado, em vez de redirecionar e perder o que se digitou.
+            # postado, em vez de redirecionar e perder o que se digitou. E a
+            # trava que se vence com afirmação expressa abre a caixa dela no
+            # formulário do ato recusado.
             flash(str(erro), "danger")
+            if erro.vencivel:
+                g.protesto_afirmacao_pedida = {"ato": ato, "regra": erro.regra}
             return app.view_functions["protesto_titulo"](titulo_id=titulo_id)
         except (PT.ProtestoError, AS.AtoError, LN.LivroError,
                 PTERMO.TermoError, POST.PosterioriError) as erro:
             flash(str(erro), "danger")
             return voltar
+        if afirmacao_aceita:
+            # O CONTRATO COMUM: a afirmação vai à auditoria FORA da transação.
+            audit(PSELO.ACAO_DA_AFIRMACAO, "pt_atos", r["ato_id"],
+                  afirmacao_aceita)
         # O SELO SAI AGORA, com o ato lavrado — um para cada item cobrado.
         recado_do_selo = ""
         # Ordens judiciais não são atos cobrados/selados da serventia. Elas
@@ -3392,7 +3459,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     """UPDATE pt_atos
                           SET cancelado=1, motivo_cancelamento=%s
                         WHERE id=%s""",
-                    (f"Selo não emitido: {motivo_selo}", r["ato_id"]))
+                    (f"{PSELO.PREFIXO_DO_DESFEITO}: {motivo_selo}",
+                     r["ato_id"]))
                 # O TÍTULO VOLTA À SITUAÇÃO DE ANTES (LT04, 20/10/2026). Até
                 # aqui só o ato se anulava, e o título ficava PROTESTADO, PAGO
                 # ou CANCELADO por um ato que não existiu: o «tente de novo» do
@@ -3416,9 +3484,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             audit("PROTESTO_ATO_NAO_LAVRADO_SELO_FALHOU", "pt_atos",
                   r["ato_id"], {"ato": ato, "motivo": motivo_selo,
                                 "situacao_restaurada": situacao_restaurada})
+            # A FALHA DO APARELHO VIRA OBRIGAÇÃO (29/10/2026): o ato desfeito
+            # fica como «ato a refazer» na ficha e no painel até ser lançado
+            # de novo (`protesto_selo_previo.pendencias_do_selo`).
             flash("Ato NÃO lançado: o selo não saiu. "
                   f"Motivo: {motivo_selo}. Corrija o problema do "
-                  "selo e tente de novo.",
+                  "selo e tente de novo — fica como pendência «ato a refazer» "
+                  "na ficha e no painel do Protesto até ser lançado.",
                   "danger")
             return voltar
         # `audit` abre transação própria: FORA do `with`, como no resto da casa.
@@ -3427,6 +3499,38 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         onde = (f" Livro {r.get('livro_numero')}, fl. {r.get('rotulo')}, "
                 f"nº {r.get('numero_ordem')}." if r.get("numero_ordem") else "")
         flash(f"{ato.capitalize()} lançado.{onde}{aviso}", "success")
+        return voltar
+
+    @app.route("/protesto/<int:titulo_id>/situacao/corrigir", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER")
+    def protesto_situacao_corrigir(titulo_id: int):
+        """A CORREÇÃO DE OFÍCIO da situação sem o ato que a sustente. ESCREVE.
+
+        Revisão do oficial, 29/10/2026: o título PAGO sem pagamento válido (o
+        9614) não se conserta sozinho, e não se conserta sem rastro. Volta à
+        situação que os atos válidos sustentam, com afirmação expressa — regra
+        `SITUACAO_SEM_ATO`, auditoria `AFIRMACAO_EXPRESSA` fora da transação.
+        Do oficial e do substituto (ADMIN e MANAGER); o robô não alcança.
+        """
+        voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_id))
+        try:
+            with db.transaction() as con:
+                feito = PSELO.corrigir_situacao_de_oficio(
+                    con, titulo_id, afirmo=bool(request.form.get("afirmo")),
+                    afirmacao=_campo("afirmacao"))
+        except PSELO.SituacaoError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        audit(PSELO.ACAO_DA_AFIRMACAO, "pt_titulos", titulo_id,
+              {k: feito[k] for k in ("regra", "afirmacao", "o_que_faltava")})
+        audit("PROTESTO_SITUACAO_CORRIGIDA_DE_OFICIO", "pt_titulos", titulo_id,
+              {"situacao_antes": feito["situacao_antes"],
+               "situacao_nova": feito["situacao_nova"]})
+        flash(f"Situação corrigida de ofício: {feito['situacao_antes']} → "
+              f"{feito['situacao_nova']}, a que os atos válidos sustentam. A "
+              "afirmação ficou na auditoria. Se o ato deve existir, lance-o "
+              "agora; e confira se a CRA já recebeu a ocorrência antiga.",
+              "success")
         return voltar
 
     @app.route("/protesto/<int:titulo_id>")
@@ -3504,8 +3608,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             triduo = (TRIDUO.para_a_lista(_c, [{"id": titulo_id}],
                                           hoje=hoje())[0]
                       if situacao == "INTIMADO" else None)
-            # A SITUAÇÃO SEM O ATO QUE A SUSTENTE (29/10/2026): só mostra.
+            # A SITUAÇÃO SEM O ATO QUE A SUSTENTE e O ATO A REFAZER
+            # (29/10/2026): as obrigações que o selo deixou neste título.
             sem_ato = PSELO.situacao_sem_ato(_c, titulo_id)
+            pendencias_do_selo = PSELO.pendencias_do_selo(_c, titulo_id=titulo_id)
         pago_com_protesto = situacao == "PAGO" and bool(catalogo)
         cabem = []
         # O APONTAMENTO É O PRIMEIRO ATO DA VIDA DO TÍTULO — Lei 9.492/1997,
@@ -3552,6 +3658,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             cabem.append("EFEITO_SUSPENSIVO")
         return render_template("atrib_protesto_ficha.html", titulo=dict(titulo),
                                sem_ato=sem_ato,
+                               pendencias_do_selo=pendencias_do_selo,
+                               modelo_da_afirmacao=PSELO.MODELO_DA_AFIRMACAO,
+                               minimo_da_afirmacao=PSELO.MINIMO_DE_LETRAS_DA_AFIRMACAO,
                                emolumento=emolumento, apresentante=apresentante,
                                imagens=imagens, sustacao=sustacao,
                                suspensao=suspensao,

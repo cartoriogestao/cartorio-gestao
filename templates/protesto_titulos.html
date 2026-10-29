@@ -60,8 +60,29 @@
   <ul style="padding:6px 14px 14px 32px; margin:0">
     {% for x in sem_ato %}
     <li><a href="{{ url_for('protesto_titulo', titulo_id=x.titulo_id) }}">título {{ x.titulo_id }}</a>
-      — {{ x.situacao }} sem ato de {{ x.ato_esperado }} válido.
+      — {{ x.situacao }} sem ato de {{ x.ato_esperado }} válido; os atos sustentam
+      {{ x.situacao_sustentada }}.
       <small>{{ x.explicacao }}</small></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{# O ATO A REFAZER (29/10/2026): o ato desfeito porque o selo não saiu, até ser
+   lançado de novo; e o ato que o robô lavrou sem selo. Calculado, e não
+   anotado: some sozinho quando o ato é lançado. #}
+{% if pendencias_do_selo %}
+<section class="panel" data-pendencias-do-selo>
+  <div class="panel-head">
+    <span>Atos a refazer ou a selar</span>
+    <small>{{ pendencias_do_selo | length }} — saem da lista quando o ato é lançado</small>
+  </div>
+  <ul style="padding:6px 14px 14px 32px; margin:0">
+    {% for p in pendencias_do_selo %}
+    <li><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}">título {{ p.titulo_id }}</a>
+      — {% if p.especie == 'REFAZER' %}refazer {{ p.ato }}, desfeito em {{ p.quando_br }}
+      ({{ p.motivo }}); tentou: {{ p.quem_tentou }}{% if p.tentativas > 1 %}, {{ p.tentativas }} tentativas{% endif %}.
+      {% else %}selar {{ p.ato }} (ato {{ p.ato_id }}, de {{ p.quando_br }}) — {{ p.motivo }}.{% endif %}</li>
     {% endfor %}
   </ul>
 </section>

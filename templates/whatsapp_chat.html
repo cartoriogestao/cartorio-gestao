@@ -101,6 +101,15 @@
   {% else %}
     <header class="wa-cabecalho">
       <a class="wa-voltar" href="{{ url_for('whatsapp_lista', **filtro_url) }}">← conversas</a>
+      {#- QUEM É (29/10/2026): a Meta não manda a foto do cliente. A foto que
+          aparece é a do CARTÃO DE FIRMA com o mesmo telefone, se houver;
+          sem ela, as iniciais, como na lista. -#}
+      {% set q = c.contato %}
+      <span class="wa-avatar wa-avatar-grande" style="--cor-setor:{{ c.cor_setor }}">
+        {%- if q.foto_cartao_id -%}
+        <img src="{{ url_for('notas_cartao_foto', cartao_id=q.foto_cartao_id) }}" alt="foto do cartão de firma">
+        {%- else -%}{{ c.iniciais }}{%- endif -%}
+      </span>
       <div class="wa-quem">
         <strong class="wa-nome">{{ c.nome or c.wa_id }}</strong>{% if c.nome %} <span class="muted">· {{ c.wa_id }}</span>{% endif %}
         <div class="small muted">
@@ -109,6 +118,19 @@
           · <span data-wa-modo data-modo="{{ c.modo }}"
                   data-texto-pessoa="com pessoa"
                   data-texto-ia="{% if ia.ia_ligada %}com IA{% else %}atendente com IA desligado{% endif %}">{% if c.modo == 'pessoa' %}<strong>com pessoa</strong>{% if c.passagem_motivo %} ({{ c.passagem_motivo }}){% endif %}{% elif ia.ia_ligada %}com IA{% else %}atendente com IA desligado{% endif %}</span>
+        </div>
+        <div class="small wa-contato">
+          {% if q.cartoes or q.protocolos %}
+          {% if q.cartoes %}<div>Cartão de firma:
+            {% for k in q.cartoes %}<a href="{{ url_for('notas_cartao', cartao_id=k.id) }}">nº {{ k.numero }} — {{ k.nome }}</a>{% if k.nota %} <span class="muted">({{ k.nota }})</span>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
+          </div>{% endif %}
+          {% if q.protocolos %}<div>Protocolos:
+            {% for p in q.protocolos %}<a href="{{ url_for('caixa_protocolo', protocolo_id=p.id) }}" title="{{ p.assunto or '' }}">{{ p.numero }}</a> <span class="muted">({{ p.interessado or 'sem nome' }}{% if p.atribuicao %}, {{ p.atribuicao }}{% endif %}{% if p.situacao %}, {{ p.situacao|lower }}{% endif %})</span>{% if not loop.last %} · {% endif %}{% endfor %}
+          </div>{% endif %}
+          <div class="muted">Achados pelo telefone: confira com o cliente antes de tratar do ato.</div>
+          {% else %}
+          <span class="muted">Nenhum cartão de firma nem protocolo com este telefone. O WhatsApp só informa o número e o nome do perfil.</span>
+          {% endif %}
         </div>
       </div>
       <div class="wa-acoes">

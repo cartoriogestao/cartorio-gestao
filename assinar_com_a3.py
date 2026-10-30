@@ -18,6 +18,8 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+import a3_windows
+
 HOST = "127.0.0.1"
 PORTA = 8766
 PRAZO_SEGUNDOS = 8.0
@@ -27,6 +29,11 @@ URL_BASE = f"http://{HOST}:{PORTA}"
 
 class AssinarComA3Error(ValueError):
     """Erro de regra / serviço, com mensagem pronta para o balcão."""
+
+
+class ServicoSemLote(AssinarComA3Error):
+    """O serviço aberto na máquina é anterior à rota de lote: quem chama cai no
+    um por um. Nada foi ao token."""
 
 
 def _url(caminho: str) -> str:
@@ -161,6 +168,47 @@ def assinar_pdf_pelo_windows(pdf: bytes, *,
         corpo["thumbprint"] = thumbprint
     dados = _post_json("/assinar/pdf-windows", corpo,
                        prazo=PRAZO_ASSINAR_PELO_WINDOWS_SEGUNDOS)
+    if not dados.get("ok", True):
+        raise AssinarComA3Error(
+            str(dados.get("erro") or "assinatura pelo Windows recusada"))
+    return dados
+
+
+# ACRÉSCIMO DE 30/10/2026: o lote pelo Windows, um PowerShell para N PDFs. A folga
+# cobre a resposta do serviço depois de o PowerShell terminar: este prazo não pode
+# vencer antes do dele, ou os já assinados se perderiam no caminho.
+ROTA_DO_LOTE = "/assinar/pdfs-windows"
+FOLGA_DO_LOTE_SEGUNDOS = 30.0
+
+
+def assinar_pdfs_pelo_windows(pdfs: list[bytes], *,
+                              thumbprint: str | None = None) -> dict[str, Any]:
+    """Assina vários PDFs de uma vez. Devolve `itens` (`indice`, `cms_b64`) e
+    `falha`: a falha do token vem aqui, junto com o que já foi assinado.
+
+    **PERGUNTA ANTES DE MANDAR** (`/saude`): o serviço antigo não lê o corpo de
+    rota que não conhece e fecha a conexão, e mandar os PDFs para descobrir isso
+    daria «serviço fora do ar», em vez de `ServicoSemLote`. O prazo é o longo: a
+    `/saude` olha o disco atrás dos drivers, e o prazo curto já venceu nela.
+    """
+    lista = [bytes(x or b"") for x in (pdfs or ())]
+    if not lista or not all(lista):
+        raise AssinarComA3Error("PDF vazio — nada para assinar")
+    saude = _get("/saude", prazo=PRAZO_ASSINAR_SEGUNDOS)
+    if f"POST {ROTA_DO_LOTE}" not in (saude.get("rotas") or ()):
+        raise ServicoSemLote(
+            "O serviço de assinatura aberto nesta máquina é de uma versão "
+            "anterior e assina um instrumento por vez, então a janela do token "
+            "pode ter aparecido a cada um. Para o lote ir de uma vez só, feche "
+            "o serviço e abra de novo: saia da conta do Windows e entre de "
+            "novo, se ele sobe no logon.")
+    corpo: dict[str, Any] = {
+        "pdfs_b64": [base64.b64encode(x).decode("ascii") for x in lista]}
+    if thumbprint:
+        corpo["thumbprint"] = thumbprint
+    dados = _post_json(
+        ROTA_DO_LOTE, corpo,
+        prazo=a3_windows.prazo_do_lote(len(lista)) + FOLGA_DO_LOTE_SEGUNDOS)
     if not dados.get("ok", True):
         raise AssinarComA3Error(
             str(dados.get("erro") or "assinatura pelo Windows recusada"))

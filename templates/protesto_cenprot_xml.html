@@ -36,7 +36,9 @@
         <td>{{ r.data_ato }}</td>
         <td><a href="{{ url_for('protesto_titulo', titulo_id=r.titulo_id) }}">{{ r.protocolo or r.titulo_id }}</a></td>
         <td>{{ ocorrencias.get(r.tipo, r.tipo) }}</td>
-        <td><span class="badge ok">pronto</span></td>
+        <td><span class="badge ok">pronto</span>
+          {% if r.atos_ids %}<small>{{ r.atos_ids | length }} atos da mesma chave, num título só com {{ r.titulo.devedores | length }} devedores</small>{% endif %}
+        </td>
       </tr>
       {% endfor %}
       {% for r in l.fora %}
@@ -92,6 +94,13 @@
         <td>{{ f.gerado_por or '—' }}</td>
         <td><a class="button" href="{{ url_for('protesto_cenprot_xml_baixar', xml_id=f.id) }}">Baixar</a></td>
         <td>
+          {% for d in f.devolucoes %}
+            <div><small>Subiu sem os atos {{ d.atos | join(', ') }}, que voltaram à fila — {{ d.por or '—' }} em {{ (d.em or '')[:16] }}: «{{ d.motivo }}»</small></div>
+          {% endfor %}
+          {% if f.recusado_em %}
+            <div><span class="badge warning">recusado pela CENPROT</span>
+              <small>{{ f.recusado_por or '—' }} em {{ (f.recusado_em or '')[:16] }}: «{{ f.recusado_motivo }}». Os atos voltaram à fila; o arquivo fica gravado como foi.</small></div>
+          {% else %}
           {% for c in f.comprovantes %}
             <div><small>Comprovante: <a href="{{ url_for('attachment_view', attachment_id=c.id) }}" target="_blank" rel="noopener">{{ c.original_name }}</a> ({{ (c.uploaded_at or '')[:16] }})</small></div>
           {% endfor %}
@@ -113,6 +122,32 @@
               <div><button type="submit">Afirmar a subida</button></div>
             </form>
           </details>
+          {% endif %}
+          {% if user.role in ['ADMIN','MANAGER'] %}
+          {% if not f.comprovantes %}
+          <details style="margin-top:4px"><summary><small>A CENPROT recusou este arquivo: devolver os atos à fila</small></summary>
+            <form method="post" action="{{ url_for('protesto_cenprot_xml_recusado', xml_id=f.id) }}" class="stack">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label>Motivo da recusa <small>(pelo menos {{ minimo_do_motivo }} caracteres; vai para a auditoria)</small>
+                <textarea name="motivo" rows="2" required></textarea></label>
+              <div><button type="submit">Devolver os atos à fila</button></div>
+            </form>
+          </details>
+          {% endif %}
+          {% if f.atos | length > 1 %}
+          <details style="margin-top:4px"><summary><small>Este arquivo subiu sem alguns atos: devolver só esses à fila</small></summary>
+            <form method="post" action="{{ url_for('protesto_cenprot_xml_devolver_atos', xml_id=f.id) }}" class="stack">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              {% for a in f.atos %}
+              <label class="check"><input type="checkbox" name="ato_id" value="{{ a.id }}"> ato {{ a.id }} — {{ a.tipo | lower }}, título {{ a.numero_titulo or a.titulo_id }}, protocolo {{ a.protocolo or '—' }}</label>
+              {% endfor %}
+              <label>Motivo <small>(pelo menos {{ minimo_do_motivo }} caracteres; vai para a auditoria)</small>
+                <textarea name="motivo" rows="2" required></textarea></label>
+              <div><button type="submit">Devolver os atos marcados</button></div>
+            </form>
+          </details>
+          {% endif %}
+          {% endif %}
           {% endif %}
         </td>
       </tr>

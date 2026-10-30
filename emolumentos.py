@@ -100,6 +100,60 @@ SERVICOS_TJ_BASE_METADE_NA_16_9 = frozenset({
     "16.22.4.1",
 })
 
+# Atalhos da caixa «Tabela» em «Acrescentar item pela tabela» (protocolo).
+#
+# O 16.22.4.1 e servico de total zero no cadastro: o preco sai de calcular_item
+# (faixa 16.9, base pela metade). A busca por codigo nao tem campo de valor, e
+# o item entrava a R$ 0,00. A chave «tj:» nao e numero de TABELAS_FAIXA — se
+# fosse, numero_digitado a trataria como faixa e a conta cairia na 16.3.
+PREFIXO_ATALHO_FAIXA = "tj:"
+ATALHOS_NA_FAIXA = {
+    PREFIXO_ATALHO_FAIXA + "16.22.4.1": (
+        "16.22.4.1 — Registro de Imóveis: averbação de retificação "
+        "georreferenciada (SIGEF/INCRA) — tabela 16.9 com ½ da base"
+    ),
+}
+
+# Texto do ato quando o cadastro nao trouxe descricao. A faixa 16.9 descreve
+# o registro torrens, nao esta averbacao: sem isto o protocolo saia so com
+# o parentese da base.
+DESCRICAO_QUANDO_O_SERVICO_NAO_TEM = {
+    "16.22.4.1": (
+        "Averbação de retificação de memorial descritivo decorrente de "
+        "certificação de georreferenciamento no SIGEF/INCRA"
+    ),
+}
+
+
+def codigo_tj_do_atalho(chave: str) -> str | None:
+    """O codigo TJ de um atalho da caixa «Tabela», ou None se e faixa comum."""
+    texto = str(chave or "")
+    if not texto.startswith(PREFIXO_ATALHO_FAIXA) or texto not in ATALHOS_NA_FAIXA:
+        return None
+    codigo = texto[len(PREFIXO_ATALHO_FAIXA):].strip()
+    return codigo or None
+
+
+def servico_pelo_codigo_tj(con, codigo_tj: str) -> int | None:
+    """Codigo interno do servico ativo, com valor na vigencia vigente.
+
+    O atalho manda o codigo do TJ (`16.22.4.1`); `calcular_item` pede o
+    `cx_servicos.codigo`. Sem linha de valor na vigencia nao ha o que cobrar
+    — a mesma regra da busca. Codigo repetido: fica o de menor `codigo`.
+    """
+    codigo = str(codigo_tj or "").strip()
+    if not codigo:
+        return None
+    r = banco(con).um(
+        """SELECT s.codigo FROM cx_servicos s
+           JOIN cx_servico_valores v ON v.servico = s.codigo
+           JOIN cx_vigencias g ON g.codigo = v.vigencia AND g.vigente = 1
+           WHERE s.codigo_tj = %s AND s.ativo = 1 AND v.total IS NOT NULL
+           ORDER BY s.codigo
+           LIMIT 1""",
+        (codigo,))
+    return int(r["codigo"]) if r else None
+
 
 def _norm(texto: Any) -> str:
     s = "" if texto is None else str(texto)
@@ -463,16 +517,23 @@ def calcular_item(con, servico: int | None = None, tabela: int | None = None,
             # a faixa 16.9 recebe a metade, como manda o item.
             base_cheia = _cent(base) / 100.0
             if base_cheia > 0:
+                # A faixa nao tem a descricao desta averbacao (ela descreve
+                # o registro torrens). O texto que vale e o do servico; sem
+                # ele o protocolo saia so com o parentese da base.
+                descricao_do_ato = (achado.get("descricao") or "").strip()
+                if not descricao_do_ato:
+                    descricao_do_ato = DESCRICAO_QUANDO_O_SERVICO_NAO_TEM.get(
+                        codigo_tj_servico, "")
                 achado = faixa_por_valor(
                     con, base_cheia / 2.0, TABELA_RI_16_9, vigencia)
                 origem = "FAIXA_METADE_16.9"
                 if achado is not None:
                     achado = dict(achado)
                     achado["codigo_tj"] = codigo_tj_servico
+                    sufixo = " (base 1/2 do valor do imovel, tabela 16.9)"
                     achado["descricao"] = (
-                        (achado.get("descricao") or "")
-                        + " (base 1/2 do valor do imovel, tabela 16.9)"
-                    )
+                        f"{descricao_do_ato}{sufixo}" if descricao_do_ato
+                        else sufixo)
     elif tabela is not None:
         achado = faixa_por_valor(con, base, tabela, vigencia)
         origem = "FAIXA"

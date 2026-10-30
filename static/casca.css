@@ -249,3 +249,13 @@
 .cg-app.cg-foco{grid-template-columns:96px minmax(0,1fr) 72px}
 .cg-app.cg-foco .cg-secoes{display:none}
 @media print{.cg-regua,.cg-acao{display:none!important}}
+
+/* as listas e os painéis: as vistas no lugar de filtros, e as portas de lavrar */
+.cg-vistas{display:flex;gap:2px;background:#fff;border:1px solid #e3e7ec;border-radius:10px;padding:0 6px;margin:0 0 10px}
+.cg-vista{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 10px;color:#3a4653;font-size:13.2px;text-decoration:none;border-bottom:2px solid transparent}
+.cg-vista:hover{color:#14202c;background:#f5f7f9;text-decoration:none}
+.cg-vista.atual{color:#14202c;font-weight:600;border-bottom-color:var(--cg-cor)}
+.cg-portas{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-top:10px}
+.cg-portas form{margin:0;display:contents}
+.cg-porta{display:flex;align-items:center;min-height:42px;padding:6px 12px;width:100%;background:#f7f8fa;border:1px solid #dde2e8;border-radius:8px;color:#14202c;font:600 13.2px "Segoe UI",system-ui,sans-serif;text-align:left;text-decoration:none;cursor:pointer;box-shadow:none}
+.cg-porta:hover{background:var(--cg-clara);border-color:var(--cg-cor);color:#14202c;text-decoration:none}

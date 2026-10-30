@@ -87,10 +87,12 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Renúncias", "notas_atos", tipo="RENUNCIA", termos="procuracao renunciar"),
              _i("Todos os atos de livro", "notas_atos", antigo="Atos de livro"),)),
          ("Escrituras", (
-             _i("Escrituras públicas", "notas_escrituras", termos="compra venda doacao"),
+             _i("Escrituras públicas", "notas_atos", familia="escrituras", termos="compra venda doacao"),
+             _i("Modelos e conferência", "notas_escrituras", antigo="Escrituras"),
              _i("Pendências das escrituras", "notas_escrituras_pendentes", termos="doi"),)),
          ("Atas notariais", (
-             _i("Atas notariais", "notas_atas"),)),
+             _i("Atas notariais", "notas_atos", familia="atas"),
+             _i("Modelos e conferência", "notas_atas", antigo="Atas notariais"),)),
          ("Testamentos", (
              _i("Testamentos públicos", "notas_atos", tipo="TESTAMENTO"),
              _i("Testamentos cerrados", "notas_atos", tipo="TESTAMENTO_CERRADO"),)),
@@ -426,6 +428,8 @@ ENTRADAS_NOVAS: frozenset[tuple[str, tuple]] = frozenset({
     ("notas_atos", (("tipo", "RENUNCIA"),)),
     ("notas_atos", (("tipo", "TESTAMENTO"),)),
     ("notas_atos", (("tipo", "TESTAMENTO_CERRADO"),)),
+    ("notas_atos", (("familia", "escrituras"),)),
+    ("notas_atos", (("familia", "atas"),)),
 })
 
 # A FICHA DE UM ATO NÃO TEM ENTRADA PRÓPRIA: ela pertence à seção da lista de onde se
@@ -707,6 +711,30 @@ PROCURAR_EM: tuple[dict, ...] = (
     {"rotulo": "Títulos de protesto", "endpoint": "protesto_titulos", "campo": "q"},
     {"rotulo": "Protocolo geral", "endpoint": "caixa_protocolos", "campo": "busca"},
 )
+
+
+# LAVRAR NA LISTA ABRE O ATO DIRETO, como o botão Novo: a espécie já diz qual é o modelo, e a
+# tela de escolher no meio era o clique a mais que o oficial apontou. Escritura e ata têm
+# vários modelos, e por isso continuam passando pela escolha.
+LAVRAR_DIRETO: dict[str, str] = {
+    "PROCURACAO": "NT-PROC-PUBLICA",
+    "PROCURACAO_PREVIDENCIARIA": "NT-PROC-PREVIDENCIARIA",
+    "SUBSTABELECIMENTO": "NT-SUBSTABELECIMENTO",
+    "REVOGACAO": "NT-REVOGACAO-MANDATO",
+    "RENUNCIA": "NT-RENUNCIA-MANDATO",
+    "TESTAMENTO": "NT-TESTAMENTO-PUBLICO",
+    "TESTAMENTO_CERRADO": "NT-TESTAMENTO-CERRADO",
+}
+
+
+def titulo_da_lista(tipo: str) -> str:
+    """O nome que o menu dá à lista daquela espécie: «Procurações», e não «Atos de livro»."""
+    for modulo in MODULOS_DA_BARRA:
+        for _nome, itens in modulo["secoes"]:
+            for item in itens:
+                if item["endpoint"] == "notas_atos" and item["args"].get("tipo") == tipo:
+                    return item["rotulo"]
+    return ""
 
 
 def _modulo(chave: str) -> dict | None:

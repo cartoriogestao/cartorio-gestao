@@ -83,6 +83,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                           escondidos=escondidos, ajuda_liberada=ajuda_liberada,
                           agente_no_menu=agente_no_menu, tipo_do_ato=tipo_do_ato)
 
+    def portas_de_lavrar(grupo: str) -> list[dict]:
+        """As portas de um módulo, do mesmo registro do botão Novo: quem vê uma vê a outra."""
+        nav = nav_da_tela(papel=app.extensions["usuario_papel"]())
+        return next((g["itens"] for g in nav["novo"] if g["grupo"] == grupo), [])
+
     @app.context_processor
     def contexto_da_casca():
         uid = session.get("user_id")
@@ -92,5 +97,5 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             g.cg_layout = layout_de(db, uid)
         return {"layout_novo": g.cg_layout == "novo",
                 "layout_padrao_da_casa": db.get_setting(CHAVE_PADRAO, PADRAO_DE_FABRICA),
-                "nav_da_tela": nav_da_tela,
+                "nav_da_tela": nav_da_tela, "portas_de_lavrar": portas_de_lavrar,
                 "protocolo_em_atendimento": _em_atendimento}

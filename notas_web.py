@@ -29,7 +29,7 @@ from pathlib import Path
 
 from bd_nativo import banco
 
-from flask import Response, abort, flash, redirect, render_template, request, url_for
+from flask import Response, abort, flash, redirect, render_template, request, session, url_for
 import fraude as FR
 
 import emolumentos as EMOL
@@ -42,6 +42,8 @@ import notas_inutilizacao as NI
 import impressao_pdf as IPDF
 import notas_livro as NL
 import notas_familias as NF
+import navegacao as NAV
+import navegacao_web as NAVWEB
 import notas_fases as NFASES
 import notas_modelos as NMOD
 import notas_naturezas as NNAT
@@ -87,6 +89,7 @@ from serventia import dados as dados_serventia
 import modelos_motor_etiqueta as MOTOR_ETQ
 
 POR_PAGINA = 40
+VISTAS_DA_LISTA = {"em_lavratura": "EM_LAVRATURA", "lavrados": "LAVRADO"}
 
 # O SELO DE ARQUIVAMENTO (13.30) E OBRIGATORIO na procuracao, no
 # substabelecimento e na revogacao — pedido do oficial, 15/10/2026. A regra
@@ -3503,6 +3506,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             elif busca.isdigit() and not termo_q:
                 termo_q = busca
                 busca = ""
+        # AS VISTAS DA LISTA (30/10/2026, layout novo): «em lavratura» é o que espera ação, e
+        # abre primeiro numa lista de família ou de espécie quando há o que continuar. Sem
+        # `vista` no endereço e no layout antigo, a lista é a de sempre.
+        vista = (request.args.get("vista") or "").strip()
+        vista = vista if vista in VISTAS_DA_LISTA else ""
         onde, params = ["1=1"], []
         if familia:
             marcas = ",".join("%s" for _ in familia["tipos_ato"])
@@ -3545,13 +3553,30 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             params += [f"%{busca}%", f"%{busca.upper()}%", busca,
                        f"%{NP.normalizar(busca)}%"]
         filtro = " AND ".join(onde)
+        contagens = {"": 0, **{k: 0 for k in VISTAS_DA_LISTA}}
+        uid = session.get("user_id")
+        if uid and NAVWEB.layout_de(db, uid) == "novo":
+            for linha in q(f"""SELECT a.situacao, COUNT(*) n FROM nt_atos a WHERE {filtro}
+                                GROUP BY a.situacao""", params):
+                contagens[""] += linha["n"]
+                for chave, situacao in VISTAS_DA_LISTA.items():
+                    if linha["situacao"] == situacao:
+                        contagens[chave] += linha["n"]
+            pediu_algo = ("vista" in request.args or busca or livro_id or livro_q or termo_q
+                          or "pagina" in request.args)
+            if not pediu_algo and (familia or tipo in TIPOS_ATO) and contagens["em_lavratura"]:
+                vista = "em_lavratura"
+        ordem = """a.livro, COALESCE(a.folha_inicial_num, 0), a.termo, a.data DESC, a.id DESC"""
+        if vista:
+            filtro += " AND a.situacao=%s"
+            params = [*params, VISTAS_DA_LISTA[vista]]
+            ordem = "a.data DESC, a.id DESC"
         total = q1(f"SELECT COUNT(*) n FROM nt_atos a WHERE {filtro}", params)["n"]
         rows = q(f"""SELECT a.*, (SELECT string_agg(p.nome, ' / ' ORDER BY p.id)
                                   FROM nt_ato_partes p
                                   WHERE p.ato_id = a.id AND p.testemunha=0) nomes
                      FROM nt_atos a WHERE {filtro}
-                     ORDER BY a.livro, COALESCE(a.folha_inicial_num, 0),
-                              a.termo, a.data DESC, a.id DESC
+                     ORDER BY {ordem}
                      LIMIT %s OFFSET %s""",
                  params + [POR_PAGINA, (pagina - 1) * POR_PAGINA])
         livro_ctx = None
@@ -3560,6 +3585,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                            (numero_digitado(livro_id),))
         return render_template("notas_atos.html", rows=rows, busca=busca, tipo=tipo,
                                familia=familia, familia_chave=familia_chave,
+                               vista=vista, contagens=contagens,
+                               modelo_direto=NAV.LAVRAR_DIRETO.get(tipo, ""),
+                               titulo_da_lista=NAV.titulo_da_lista(tipo),
                                livro_id=livro_id, livro_q=livro_q, folha_q=folha_q,
                                termo_q=termo_q, livro_ctx=livro_ctx,
                                # o aviso «Atos do livro N — <tipo>» pede o nome

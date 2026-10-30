@@ -140,6 +140,64 @@ def test_quem_continua_no_layout_antigo_nao_recebe_nada():
     assert "{% if abrir_form or mn or f %} open{% endif %}" in FICHA
 
 
+# ----------------------------------------------------------- os passos do novo ato
+
+def _filhos_do_formulario() -> list[tuple[str, dict]]:
+    """As tags logo abaixo do formulário de lavrar, com as duas pontas de cada `if`."""
+    from html.parser import HTMLParser
+    ini = FICHA.rfind("<form", 0, FICHA.index('id="form-lavrar-ato"'))
+    trecho = _sem_comentarios(FICHA[ini:FICHA.index("</form>", ini) + 7])
+    vazias = {"input", "br", "hr", "img", "meta", "link", "option"}
+    achadas = []
+
+    class Leitor(HTMLParser):
+        fundo = 0
+
+        def handle_starttag(self, tag, attrs):
+            if self.fundo == 1:
+                achadas.append((tag, dict(attrs)))
+            if tag not in vazias:
+                self.fundo += 1
+
+        def handle_endtag(self, tag):
+            if tag not in vazias:
+                self.fundo -= 1
+    Leitor().feed(trecho)
+    return achadas
+
+
+def test_todo_bloco_do_formulario_tem_passo():
+    """Bloco sem passo fica à vista em todos; passo errado esconde o campo de quem procura."""
+    filhos = _filhos_do_formulario()
+    assert len(filhos) >= 25, "o varredor deixou de achar os blocos"
+    sem_passo = [(t, a.get("id") or a.get("name") or a.get("class")) for t, a in filhos
+                 if "data-passo" not in a and t not in ("script", "datalist", "nav")
+                 and a.get("type") != "hidden" and "data-cg-passos-fim" not in a]
+    assert sem_passo == [], sem_passo
+
+
+def test_os_campos_obrigatorios_estao_em_passos_que_existem():
+    passos = {a["data-passo"] for _t, a in _filhos_do_formulario() if "data-passo" in a}
+    assert passos == {"protocolo", "ato", "selo", "partes", "lavrar"}, passos
+
+
+def test_o_botao_de_lavrar_e_o_ultimo_passo():
+    """Ordem de 07/10: tudo o que o clique leva se preenche antes dele."""
+    trecho = FICHA[FICHA.index('<button class="primary">Lavrar ato</button>') - 80:]
+    assert 'data-passo="lavrar"' in trecho[:120]
+
+
+def test_o_campo_invalido_abre_o_passo_dele():
+    """Sem isto, o navegador recusa o envio em silêncio: não há onde pôr o foco."""
+    script = (RAIZ / "static" / "fases.js").read_text(encoding="utf-8")
+    assert 'addEventListener("invalid"' in script and "reportValidity" in script
+
+
+def test_os_passos_so_existem_no_layout_novo():
+    linha = FICHA.index("data-cg-passos=")
+    assert FICHA.rfind("{% if f %}", 0, linha) > FICHA.rfind("{% endif %}", 0, linha)
+
+
 def test_a_regra_do_selo_e_a_mesma_da_ficha():
     """A lista «Ato(s) desta ficha sem selo» usa estes três filtros: a conta tem de bater."""
     linha = next(x for x in FICHA.splitlines() if "set _sem_selo" in x)

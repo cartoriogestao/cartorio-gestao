@@ -477,9 +477,20 @@
   {% endif %}
   <form method="post" action="{{ url_for('ri_lavrar_ato', matricula_id=m.id) }}" class="form-grid" id="form-lavrar-ato" data-rascunho-chave="cg-lavrar-ri-{{ m.id }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {# OS PASSOS SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026. É UM FORMULÁRIO SÓ: quem lavra continua
+       sendo `ri_lavrar_ato`, com todos os campos, porque o que está escondido vai junto. Cada
+       bloco diz de que passo é (`data-passo`), e `static/fases.js` mostra os do passo aberto.
+       Sem o script, o formulário sai inteiro. #}
+    {% if f %}
+    <nav class="cg-passos span2" data-cg-passos="form-lavrar-ato" data-inicial="{{ 'ato' if mn or enc_pre else 'protocolo' }}" aria-label="Passos para lavrar">
+      {% for chave, rotulo in [('protocolo', 'Protocolo'), ('ato', 'Ato e teor'), ('selo', 'Selo'), ('partes', 'Partes'), ('lavrar', 'Lavrar')] %}
+      <button type="button" class="cg-passo" data-passo-ir="{{ chave }}"><span class="cg-fase-n" aria-hidden="true">{{ loop.index }}</span>{{ rotulo }}</button>
+      {% endfor %}
+    </nav>
+    {% endif %}
     {% if enc_pre and not mn %}
     {# ENCERRAMENTO PELO FORMULÁRIO DE LAVRAR — HOTFIX-2026-10-08-08. #}
-    <div class="span2 notice warning" id="encerramento-pre">
+    <div class="span2 notice warning" id="encerramento-pre" data-passo="ato">
       <strong>Encerramento da matrícula {{ m.numero }}.</strong> O texto do ato abaixo é um
       <strong>modelo sugerido</strong>: escolha o tipo de encerramento, confira e edite tudo
       (a prévia ao lado mostra como sai). Os trechos «PREENCHER…» precisam ser trocados —
@@ -528,7 +539,7 @@
        `cx_protocolos.ri_protocolo_id`. Enquanto ela não estiver
        preenchida, mostra-se o depósito prévio (ponte da casa). Não se
        inventa join por número. #}
-    <div class="span2" id="protocolo-unificado-ri">
+    <div class="span2" id="protocolo-unificado-ri" data-passo="protocolo">
       <strong>Protocolo desta lavratura</strong>
       <small class="muted">um fluxo só — prenotação (prioridade) e cobrança (itens)</small>
 
@@ -648,7 +659,7 @@
       {% endif %}
     </div>
 
-    <label>Tipo de ato
+    <label data-passo="ato">Tipo de ato
       <select name="tipo" required>
         <option value="R"{% if mn and mn.tipo == 'R' %} selected{% endif %}>Registro (R)</option>
         <option value="AV"{% if (mn and mn.tipo == 'AV') or (enc_pre and not mn) %} selected{% endif %}>Averbação (AV)</option>
@@ -656,7 +667,7 @@
     </label>
 
     {% if m.tipo_ficha == 'ACERVO' %}
-      <label>Número do ato
+      <label data-passo="ato">Número do ato
         <input type="number" name="numero" min="1" required
                  value="{{ (mn.numero_pretendido if mn and mn.numero_pretendido else (enc_pre.numero if enc_pre else (piso.proximo if piso and piso.divergente else ''))) }}"
                  placeholder="conforme o livro">
@@ -667,18 +678,18 @@
           recusa.</small>
         {% endif %}
       </label>
-      <div class="span2 notice warning small">
+      <div class="span2 notice warning small" data-passo="ato">
         Ficha de acervo: os atos anteriores estão dentro do bloco de teor e o sistema
         não consegue deduzir a sequência. <strong>Confira o livro físico</strong> e informe
         o número correto — o sistema só recusa se esse número já tiver sido lavrado aqui.
       </div>
     {% else %}
-      <label>Número do ato
+      <label data-passo="ato">Número do ato
         <input value="automático — próximo da sequência" disabled>
       </label>
     {% endif %}
 
-    <label>Data do ato<input type="date" name="data_ato"
+    <label data-passo="ato">Data do ato<input type="date" name="data_ato"
       value="{{ (mn.data_pretendida[:10] if mn and mn.data_pretendida else hoje) }}"></label>
     {# Lista do SAUIN — mesma tabela do selo eletrônico. É datalist, não select:
        o escrevente pode escrever algo fora da lista, mas o que está na lista sai
@@ -687,7 +698,7 @@
        oficial em 15/09/2026: a AV-05 foi lavrada e cancelada por falta dela,
        e o campo estava aqui, com cara de opcional. Agora a rota recusa ANTES
        de lavrar, e o rótulo avisa por quê. #}
-    <label>Natureza do título <span class="obrigatorio">— o selo exige</span>
+    <label data-passo="ato">Natureza do título <span class="obrigatorio">— o selo exige</span>
       <input name="natureza_titulo" list="naturezas_sauin"
       value="{{ mn.natureza_titulo or '' if mn else (enc_pre.natureza if enc_pre else '') }}"
       placeholder="Compra e venda, hipoteca..." autocomplete="off">
@@ -696,7 +707,7 @@
     <datalist id="naturezas_sauin">
       {% for n in NATUREZAS_SAUIN %}<option value="{{ n }}">{% endfor %}
     </datalist>
-    <label>Consulta CNIB na Central (protocolo){% if cnib_exige_protocolo %} <span class="obrigatorio">— exigido em alienação/oneração</span>{% endif %}
+    <label data-passo="ato">Consulta CNIB na Central (protocolo){% if cnib_exige_protocolo %} <span class="obrigatorio">— exigido em alienação/oneração</span>{% endif %}
       <input name="cnib_protocolo" maxlength="120" autocomplete="off"
              placeholder="protocolo/hash da consulta, se feita na Central">
       <small>A consulta à cópia local da CNIB{% if cnib_base_data %} (até {{ fmt_date(cnib_base_data) }}){% endif %}
@@ -710,7 +721,7 @@
        função mudar depois, este ato continua dizendo o que dizia.
        O cadastro de delegatários continua de pé para o timbre e para os atos
        antigos — o que saiu foi o campo de ESCOLHA. #}
-    <div class="span2" id="quem-pratica-o-ato">
+    <div class="span2" id="quem-pratica-o-ato" data-passo="ato">
       <strong>Quem pratica este ato</strong>
       <div>{{ quem_assina[0] or '—' }}{% if quem_assina[1] %} — {{ quem_assina[1] }}{% endif %}</div>
         <div class="small muted">É quem está logado, e não se escolhe por ato:
@@ -727,7 +738,7 @@
        A prévia acompanha a digitação pelo `teor-marcas.js`, que o `base.html`
        já carrega em toda tela: o que a liga são os dois atributos abaixo
        (`data-teor` na caixa e `data-teor-previa` no quadro). #}
-    <div class="span2">
+    <div class="span2" data-passo="ato">
       <div class="grid2">
         <div>
           <label class="small muted" style="display:block;margin-bottom:4px">O texto do ato</label>
@@ -752,7 +763,7 @@
        em 14/09/2026. Medido antes de tirar o campo antigo: em 1.245 atos,
        **zero** tinham QR colado. O que a tela pergunta agora é o que o
        envelope do selo precisa e que o sistema não tem como adivinhar. #}
-    <div class="span2"><strong>Selo digital do TJMA</strong>
+    <div class="span2" data-passo="selo"><strong>Selo digital do TJMA</strong>
       <small class="muted">sai automático do selador, ao lavrar</small></div>
     {# O ITEM NÃO SAI DO TIPO DO ATO, e por isso se pergunta: nos 120 envelopes
        que esta casa mandou, o mesmo «sem valor» saiu com seis itens
@@ -766,7 +777,7 @@
        A versao final lavrada ganha no fim a relacao de emolumentos + espaco
        do selo; a relacao tambem pode constar no carimbo do selo.
        O seletor de caixa ficou no painel «Protocolo desta lavratura» acima. #}
-    <div class="span2" id="itens-emolumentos-ri">
+    <div class="span2" id="itens-emolumentos-ri" data-passo="selo">
       <strong>Itens da tabela de emolumentos</strong>
       <small class="muted">o que vira selo e a conta do fecho do teor</small>
 
@@ -876,10 +887,10 @@
 {# O VALOR ESCOLHE O CAMINHO DO SELO, e não o tipo do ato: há averbação com
        valor e registro sem. Em branco, o selo sai pelo caminho «sem valor
        declarado». #}
-    <label>Valor declarado (base de cálculo)
+    <label data-passo="selo">Valor declarado (base de cálculo)
       <input name="base_calculo" placeholder="0,00">
       <small>Obrigatório no item <strong>16.3</strong> (registro com valor declarado) — use o valor do título (ex.: «valor do imóvel e benfeitorias»). Em branco só serve a atos sem valor; isento/gratuito <strong>não</strong> dispensa este campo.</small></label>
-    <label class="span2">Emolumentos
+    <label class="span2" data-passo="selo">Emolumentos
       <input name="emolumentos" placeholder="preenchido pelo selo, quando ele sai">
     </label>
     {# A GRATUIDADE É EXCEÇÃO NO RI, E A TELA DIZ ISSO COM O NÚMERO — pedido do
@@ -892,7 +903,7 @@
        marcar o checkbox e o selo saía COBRADO (~R$ 1.173) com isento=0.
        Agora o aviso COBRADO/GRATUITO fica à vista (espelho da certidão RI)
        e digitar o motivo marca o checkbox sozinho. #}
-    <label class="span2">Modalidade REURB (este ato)
+    <label class="span2" data-passo="selo">Modalidade REURB (este ato)
       <select name="reurb_tipo" id="ato_ri_reurb_tipo"
               onchange="(function(s){var cb=document.getElementById('ato_ri_isento');var m=document.getElementById('ato_ri_motivo_isencao');if(s.value==='S'){if(cb&&!cb.checked){cb.checked=true;cb.dispatchEvent(new Event('change'));}if(m&&!(m.value||'').trim())m.value='O REGISTRO DISPENSA O PAGAMENTO DE EMOLUMENTOS PREVISTO NA LEI Nº 13.465, DE 2017.';}})(this)">
         <option value="">Não é REURB / não se aplica</option>
@@ -903,21 +914,21 @@
       <small class="muted">Pedido Beatriz 30/09/2026: identificar S / E / misto em todos os atos RI.
         REURB-S marca isento automaticamente; E e misto seguem cobrados.</small>
     </label>
-    <div class="span2 card" id="ato-ri-selo-aviso" style="margin:0">
+    <div class="span2 card" id="ato-ri-selo-aviso" style="margin:0" data-passo="selo">
       <p style="margin:0"><strong id="ato-ri-selo-titulo">Este selo será COBRADO</strong>
         — registro/averbação desta matrícula.</p>
       <p class="small" style="margin:6px 0 0" id="ato-ri-selo-porque">
         Emolumentos conforme a tabela do TJMA. Marque abaixo só se houver
         norma que dispense o pagamento (art. 290-A, REURB, etc.).</p>
     </div>
-    <label class="span2" style="display:flex;gap:8px;align-items:flex-start">
+    <label class="span2" style="display:flex;gap:8px;align-items:flex-start" data-passo="selo">
       <input type="checkbox" name="isento" value="1" id="ato_ri_isento"
              onchange="(function(cb){var t=document.getElementById('ato-ri-selo-titulo');var p=document.getElementById('ato-ri-selo-porque');var m=document.getElementById('ato_ri_motivo_isencao');var a=document.getElementById('ato-ri-selo-aviso');var b=document.getElementById('ato-ri-bloco-gratuidade');if(b)b.style.display=cb.checked?'block':'none';if(t)t.textContent=cb.checked?'Este selo é gratuito':'Este selo será COBRADO';if(p)p.textContent=cb.checked?'Selo isento: o motivo vai escrito dentro do selo (motivoIsentoGratuito) e é o que a correição lê.':'Emolumentos conforme a tabela do TJMA. Marque abaixo só se houver norma que dispense o pagamento (art. 290-A, REURB, etc.).';if(a){if(cb.checked)a.classList.add('warning');else a.classList.remove('warning');}if(m)m.required=cb.checked;})(this)">
       <span><strong>Selo gratuito / isento</strong><br>
         <small>Exige motivo escrito. Sem o motivo o ato não é lavrado.
           Se você só digitar o motivo, o sistema também trata como isento.</small></span>
     </label>
-    <div id="ato-ri-bloco-gratuidade" class="span2" style="display:none">
+    <div id="ato-ri-bloco-gratuidade" class="span2" style="display:none" data-passo="selo">
       <label>Motivo da gratuidade
         <small><strong>obrigatório</strong> se gratuito — vai escrito dentro do selo</small>
         <input name="motivo_isencao" id="ato_ri_motivo_isencao"
@@ -972,7 +983,7 @@
         {# ARQUIVAMENTO OPCIONAL (16.39) — Beatriz 23/09/2026.
        Nao obrigatorio: sem marcar, a lavratura flui igual. Com marcar,
        pede folhas e gera o selo de arquivamento apos o selo do ato. #}
-    <details class="span2" open>
+    <details class="span2" open data-passo="selo">
       <summary><strong>Arquivamento do documento/processo</strong>
         <small class="muted">(opcional — item 16.39)</small></summary>
       <label class="check">
@@ -991,7 +1002,7 @@
       </label>
     </details>
 
-<div class="notice small span2">
+<div class="notice small span2" data-passo="selo">
       O selo é pedido ao aparelho da rede local. Se ele não responder, o ato
       <strong>não é lavrado</strong>: ele volta para a fila de <strong>minutas
       a revisar e lavrar</strong> com tudo o que você digitou — nada do trabalho
@@ -1029,11 +1040,11 @@
         que faz a minuta suspensa pelo selo voltar inteira, sem redigitar. -#}
     {% set guardadas = minuta_partes or [] %}
     {% if guardadas %}
-    <div class="span2"><small class="muted">As
+    <div class="span2" data-passo="partes"><small class="muted">As
       {{ guardadas|length }} parte(s) abaixo vieram guardadas nesta minuta —
       confira antes de lavrar.</small></div>
     {% endif %}
-    <section class="partes-do-ato span2" data-partes-do-ato>
+    <section class="partes-do-ato span2" data-partes-do-ato data-passo="partes">
       <div class="partes-cabeca">
         <strong>Partes do ato</strong>
         <small class="muted" data-contagem>bloco sem nome não é gravado</small>
@@ -1079,7 +1090,7 @@
        Fica fechada por padrão, e é só do oficial: quem marca está dizendo que
        esta ficha não recebe mais ato nenhum. #}
     {% if user.role in ['ADMIN','MANAGER'] %}
-    <details class="span2" id="encerra-este-ato"{% if enc_pre and not mn %} open{% endif %}>
+    <details class="span2" id="encerra-este-ato" data-passo="lavrar"{% if enc_pre and not mn %} open{% endif %}>
       <summary class="small muted">Este ato <strong>encerra</strong> a
         matrícula? <strong>É exceção</strong> — marque só quando o próprio ato
         for a averbação de encerramento</summary>
@@ -1107,12 +1118,12 @@
     </details>
     {% endif %}
 
-    <div class="span2 notice small">
+    <div class="span2 notice small" data-passo="lavrar">
       Ao salvar, o ato entra na cadeia de integridade e <strong>não pode mais ser
       editado nem apagado</strong>. É assim que deve ser num registro público:
       correção de ato lavrado se faz por averbação, não por alteração do texto.
     </div>
-    <div class="span2">
+    <div class="span2" data-passo="lavrar">
       <button class="primary">Lavrar ato</button>
       {# GUARDAR A REVISÃO SEM LAVRAR — pedido do oficial em 15/09/2026:
          revisar pode levar mais de uma sentada. Sem isto, a correção de uma
@@ -1132,6 +1143,12 @@
         tomado e nenhum selo é pedido.</small>
       {% endif %}
     </div>
+    {% if f %}
+    <div class="cg-passos-fim span2" hidden data-cg-passos-fim>
+      <button type="button" class="button" data-passo-voltar>&larr; Voltar</button>
+      <button type="button" class="button primary" data-passo-avancar>Avançar</button>
+    </div>
+    {% endif %}
   </form>
 <script>
 /* HOTFIX-2026-10-13-01 - pedido de escrevente 13/10: recusa da revisão/selo não

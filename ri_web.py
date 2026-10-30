@@ -44,6 +44,7 @@ from ri_modelos_atos import (pendencias as pendencias_modelo,
 import caixa_depositos as DEP
 from caixa_schema import centavos, reais
 import notas_doi as NDOI
+import navegacao_web as NAVWEB
 import ri_abas as RIABAS
 import ri_doi as RDOI
 import onr_carga as OCG
@@ -5100,7 +5101,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                             or consulta_cnib["resultado"] == CNIB.POSITIVO
                             or quadro["a_conferir"] or quadro_falhou)
               else "success")
-        return redirect(url_for("ri_ficha", matricula_id=matricula_id))
+        # NO LAYOUT NOVO, O ATO LAVRADO ABRE A ABA ATOS, e não o formulário de onde saiu: é lá
+        # que ele aparece, com o selo. Lavrar outro é um clique na aba.
+        destino = url_for("ri_ficha", matricula_id=matricula_id)
+        if NAVWEB.layout_de(db, session.get("user_id")) == "novo":
+            destino += "#atos"
+        return redirect(destino)
 
     @app.route("/registro-imoveis/<int:matricula_id>/minuta", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")

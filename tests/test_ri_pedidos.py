@@ -246,12 +246,16 @@ def test_vencida_aparece_e_nao_se_qualifica(casa):
 def test_decidir_a_vencida_volta_ao_painel(casa):
     _, p = _prenotar(casa)
     html = casa["cliente"].get("/registro-imoveis/pedidos").get_data(as_text=True)
-    resp = casa["cliente"].post("/registro-imoveis/protocolo", data={
-        "acao": "encerrar", "protocolo_id": str(p["id"]), "situacao": "CANCELADO",
-        "motivo": "Decurso do prazo da prenotação sem registro.", "voltar": "pedidos",
-        "csrf_token": _token(html)})
-    assert resp.status_code == 302 and resp.headers["Location"].endswith("/registro-imoveis/pedidos")
-    assert _um(casa, "SELECT situacao FROM ri_protocolos WHERE id=?", p["id"])["situacao"] == "CANCELADO"
+    resp = casa["cliente"].post(
+        f"/registro-imoveis/protocolo/{p['id']}",
+        data={"acao": "encerrar", "motivo": "DECURSO_PRAZO", "confirmar": "1",
+              "voltar": "pedidos", "csrf_token": _token(html)})
+    assert resp.status_code == 302 and resp.headers["Location"].endswith(
+        "/registro-imoveis/pedidos")
+    linha = _um(casa, "SELECT situacao, motivo_encerramento FROM ri_protocolos WHERE id=?",
+                p["id"])
+    assert linha["situacao"] == "CANCELADO"
+    assert "art. 205" in linha["motivo_encerramento"]
 
 
 def test_anotar_quem_cuida_volta_ao_painel(casa):

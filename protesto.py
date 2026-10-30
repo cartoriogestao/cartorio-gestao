@@ -92,13 +92,19 @@ class ProtestoError(ValueError):
 
 # O titulo anda RECEBIDO -> APONTADO -> INTIMADO -> PROTESTADO -> CANCELADO,
 # e pode receber PAGAMENTO em qualquer ponto ANTES do protesto; ou para em
-# DESISTIDO antes do protesto. O resto do ciclo (DEVOLVIDO, RETIRADO) esta
-# documentado em LEVANTAMENTO_PROTESTO.md e ainda por construir.
+# DESISTIDO antes do protesto. RETIRADO continua documentado em
+# LEVANTAMENTO_PROTESTO.md e por construir.
+#
+# DEVOLVIDO (decisao do oficial, 30/10/2026): o titulo devolvido por
+# irregularidade (codigo 5 da CRA), ou a segunda entrada do mesmo titulo. Nao
+# vai a protesto, intimacao, repasse nem XML. Quem o marca e a fila de correcoes
+# de oficio (`correcoes_de_oficio.TituloDevolvido`), com o ato DEVOLUCAO: sem
+# selo, sem livro e sem folha, so para a situacao ter o ato que a sustente.
 SITUACOES_TITULO = ("RECEBIDO", "APONTADO", "INTIMADO", "PROTESTADO",
-                    "DESISTIDO", "PAGO", "CANCELADO")
+                    "DESISTIDO", "PAGO", "CANCELADO", "DEVOLVIDO")
 
 # Situacoes finais: nao ha mais o que fazer com o titulo por este modulo.
-SITUACOES_FINAIS = ("DESISTIDO", "PAGO", "CANCELADO")
+SITUACOES_FINAIS = ("DESISTIDO", "PAGO", "CANCELADO", "DEVOLVIDO")
 
 # O PROTESTO LAVRADO NÃO SE PAGA MAIS NA SERVENTIA — o oficial, 21/10/2026
 # (LH13, pergunta 17, letra c): «protesto nao pode ser pago na serventia
@@ -179,7 +185,10 @@ TIPOS_ATO = ("APONTAMENTO", "INTIMACAO", "PROTESTO", "PAGAMENTO",
              "EFEITO_SUSPENSIVO", "REVOGACAO_EFEITO_SUSPENSIVO",
              # 29/10/2026: a averbação de retificação de erro material, de
              # ofício (Lei 9.492/1997, art. 25) — `protesto_averbacao`.
-             "AVERBACAO_RETIFICACAO")
+             "AVERBACAO_RETIFICACAO",
+             # 30/10/2026: a devolução (código 5 da CRA, ou a entrada em
+             # duplicidade). Não vai a retorno nem a XML: não é ato lavrado.
+             "DEVOLUCAO")
 
 # OS DOIS INSTITUTOS, e o E-Oficio guarda os dois na mesma tabela:
 # `tbProtesto_TipoEfeitoTitulo` tem `1 = Suspensivo` e `2 = Sustado`.
@@ -363,9 +372,11 @@ def apresentante_do_titulo(con, titulo: Any) -> dict:
         return next((str(v).strip() for v in valores
                      if v is not None and str(v).strip()), "")
 
+    # O NÚMERO GRAVADO NO LUGAR DO NOME (30/10/2026) não é nome: vale o cadastro.
+    from protesto_arquivo import nome_de_apresentante
     return {"codigo": codigo,
-            "nome": _primeiro(t.get("apresentante_nome"), cadastro.get("nome"),
-                              codigo),
+            "nome": _primeiro(nome_de_apresentante(t.get("apresentante_nome")),
+                              cadastro.get("nome"), codigo),
             "documento": _primeiro(so_digitos(t.get("apresentante_documento")),
                                    so_digitos(cadastro.get("documento"))),
             "endereco": _primeiro(t.get("apresentante_endereco"),
@@ -428,11 +439,12 @@ def cadastrar_titulo(con, dados: dict, *, origem: str,
                aceite, motivo_protesto, irregularidades_json,
                apresentante_codigo, apresentante_nome,
                apresentante_documento, apresentante_endereco,
+               cra_identificacao,
                cedente_nome, cedente_documento, cedente_endereco,
                cedente_cep, cedente_cidade, cedente_uf,
                situacao, origem, origem_chave, importacao_id,
                criado_em, criado_por)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT (origem, origem_chave) DO NOTHING
            RETURNING id""",
         (dados.get("especie"), dados.get("numero_titulo"), dados.get("nosso_numero"),
@@ -446,6 +458,7 @@ def cadastrar_titulo(con, dados: dict, *, origem: str,
          (dados.get("apresentante_nome") or None),
          doc_apresentante or None,
          (str(dados.get("apresentante_endereco") or "").strip() or None),
+         (str(dados.get("cra_identificacao") or "").strip() or None),
          cedente.get("nome"), cedente.get("documento"), cedente.get("endereco"),
          cedente.get("cep"), cedente.get("cidade"), cedente.get("uf"),
          "RECEBIDO", origem, chave, importacao_id, agora, usuario))
@@ -712,7 +725,7 @@ def sustacao_revogada(con, *, hoje: str,
                        AND a.tipo IN ('SUSTACAO','REVOGACAO_SUSTACAO'))
             WHERE r.tipo = 'REVOGACAO_SUSTACAO'
               AND t.situacao NOT IN ('PROTESTADO','PAGO','CANCELADO',
-                                     'DESISTIDO','RETIRADO')
+                                     'DESISTIDO','RETIRADO','DEVOLVIDO')
             ORDER BY r.data_ato, t.id
             LIMIT %s""", (int(limite),))
 

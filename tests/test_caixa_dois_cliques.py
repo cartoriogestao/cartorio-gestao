@@ -307,7 +307,8 @@ def test_o_mesmo_atendimento_nao_sai_em_dois_recibos(cg_casa_logada,
                RETURNING id""", (pid,))[0]["id"]
     rota = f"/caixa/protocolos/{pid}"
     c.post(f"{rota}/itens", data={"csrf_token": _token(c, rota),
-                                  "acao": "quitar", "item_id": item},
+                                  "acao": "quitar", "item_id": item,
+                                  "forma_pagamento": "DINHEIRO"},
            follow_redirects=True)
     lancamentos = [int(_um(db, """SELECT lancamento_id FROM cx_protocolo_atos
                                    WHERE id=%s""", (item,))["lancamento_id"])]

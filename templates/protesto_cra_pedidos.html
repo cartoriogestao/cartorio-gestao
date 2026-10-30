@@ -32,6 +32,42 @@
 
 {% include '_protesto_cra_pedidos_do_dia.html' %}
 
+<section class="panel" data-cra-aguardando-devedor>
+  <div class="panel-head"><span>Aguardando o devedor</span><small>{{ aguardando | length }}</small></div>
+  {% if not aguardando %}
+    <p style="padding:14px">Nenhuma autorização de cancelamento esperando o devedor.</p>
+  {% else %}
+  <p class="small" style="padding:0 14px">Dependem de o devedor pagar as custas: não são pendência
+    do dia e não prendem o encerramento. Saem quando o cancelamento for lavrado na ficha do título
+    ou quando alguém registrar o motivo.</p>
+  <table class="table">
+    <thead><tr><th>Título</th><th>Chegou</th><th>Registrar por que não se lavra</th></tr></thead>
+    <tbody>
+    {% for p in aguardando %}
+      <tr>
+        <td>
+          {% if p.titulo_id %}
+            <a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}">{{ p.numero_na_casa or p.numero_titulo or 'título' }}</a>
+          {% else %}{{ p.numero_titulo or '—' }}{% endif %}
+          {% if p.protocolo %}<div><small>protocolo {{ p.protocolo }}</small></div>{% endif %}
+          {% if p.consulta_id %}<div><small><a href="{{ url_for('protesto_cra_consulta_arquivo', consulta_id=p.consulta_id) }}">baixar o arquivo da CRA</a></small></div>{% endif %}
+        </td>
+        <td><small>{{ (p.recebido_em or '')[:16] | replace('T', ' ') }}</small></td>
+        <td>
+          <form method="post" action="{{ url_for('protesto_cra_pedido_tratar', pedido_id=p.id) }}" class="stack">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <textarea name="motivo" rows="2" required
+                      placeholder="pelo menos {{ minimo }} letras; fica com o pedido e na auditoria"></textarea>
+            <div><button class="button" type="submit">Registrar o motivo</button></div>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
 <section class="panel" data-cra-pendentes>
   <div class="panel-head"><span>Esperando a casa</span><small>{{ pendentes | length }}</small></div>
   {% if not pendentes %}

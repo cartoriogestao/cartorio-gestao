@@ -19,7 +19,7 @@
   {% if rotina and rotina.horario_descrito %}· <span class="muted">atendimento {{ rotina.horario_descrito }}</span>{% endif %}
 </p>
 
-<div class="wa-chat{% if c %} wa-com-conversa{% endif %}">
+<div class="wa-chat{% if c %} wa-com-conversa{% endif %}" data-wa-usuario="{{ usuario_id or '' }}">
 
   <section class="wa-painel wa-coluna-lista" aria-label="Conversas">
     <div class="wa-lista-topo">
@@ -272,10 +272,26 @@
 
         {#- UM FORMULÁRIO, DOIS BOTÕES: «Enviar» manda o que está na caixa (a rota
             guarda como rascunho e envia); «guardar rascunho» só guarda. O campo
-            é o `rascunho` das duas rotas. `data-wa-envio-unico`: o JS desliga o
-            Enviar no primeiro envio, contra o envio em dobro. -#}
+            é o `rascunho` das duas rotas. O BALÃO SOBE NA HORA (30/10/2026): com
+            JavaScript, o Enviar entra na fila da conversa (`data-wa-fila`), e o balão
+            provisório sai do `<template>`; sem JavaScript, tudo funciona como antes. -#}
+        <template data-wa-molde-balao>
+          <div class="wa-balao wa-provisorio wa-out" data-wa-provisorio>
+            <div class="wa-texto" data-wa-prov-texto></div>
+            <div class="wa-hora">
+              <span data-wa-prov-hora></span> ·
+              <span class="wa-entrega" data-wa-prov-marca data-wa-entrega=""></span>
+            </div>
+            <div class="wa-prov-acoes small" data-wa-prov-acoes hidden>
+              <button type="button" class="button secondary" data-wa-tentar>tentar de novo</button>
+              <a class="button secondary" data-wa-reabrir hidden
+                 href="{{ url_for('whatsapp_conversa', conversa_id=c.id) }}">ir ao modelo de retomar</a>
+              <button type="button" class="button secondary" data-wa-descartar>descartar</button>
+            </div>
+          </div>
+        </template>
         <form method="post" action="{{ url_for('whatsapp_enviar', conversa_id=c.id) }}"
-              class="wa-escrever" data-wa-envio-unico>
+              class="wa-escrever" data-wa-fila data-wa-conversa="{{ c.id }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           {#- AS RESPOSTAS PRONTAS (29/10/2026, `wa_rotina`): escolher uma põe o
               texto na caixa, com {nome} trocado pelo primeiro nome do cliente.
@@ -287,8 +303,18 @@
             {% for r in respostas %}<option value="{{ loop.index0 }}" data-texto="{{ r.texto }}">{{ r.atalho }}</option>{% endfor %}
           </select>
           {% endif %}
-          <textarea name="rascunho" rows="3" data-wa-caixa aria-label="mensagem"
-                    placeholder="escreva a mensagem…">{{ c.rascunho or '' }}</textarea>
+          {#- A SUGESTÃO NÃO É TEXTO ESCRITO (30/10/2026): a caixa nasce com o que
+              uma pessoa guardou, e a sugestão aparece em cinza, como `placeholder`.
+              Só o TAB, ou o clique na etiqueta do canto, a torna texto de verdade
+              (`whatsapp_chat.js`). A etiqueta fica fora da ordem do TAB, porque com a
+              caixa vazia o próprio TAB já faz o que ela faz. -#}
+          <div class="wa-caixa-campo">
+            <textarea name="rascunho" rows="3" data-wa-caixa aria-label="mensagem" autocomplete="off"
+                      data-wa-sugestao="{{ c.sugestao_na_caixa }}"
+                      data-wa-placeholder="escreva a mensagem…"
+                      placeholder="{{ c.sugestao_na_caixa or 'escreva a mensagem…' }}">{{ c.rascunho or '' }}</textarea>
+            <button type="button" class="wa-sugestao-aviso" data-wa-sugestao-aviso tabindex="-1" hidden><kbd>Tab ⇥</kbd> usar sugestão</button>
+          </div>
           <div class="wa-escrever-botoes">
             <button class="button primary" data-wa-enviar {% if not pode_enviar %}disabled{% endif %}>Enviar</button>
             <button class="button secondary"

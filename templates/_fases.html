@@ -28,6 +28,23 @@
 </nav>
 {% endmacro %}
 
+{# O QUE ESPERA AÇÃO VEM PRIMEIRO, e o quadro é um só: as fichas em abas dizem o que pedem, e
+   este desenha. Lista vazia não sai, porque alarme que soa sempre é alarme que ninguém ouve. #}
+{% macro o_que_espera(itens, fase) %}
+{% if itens %}
+<section class="panel cg-falta" data-fase="{{ fase }}">
+  <div class="panel-head"><span>O que espera ação</span></div>
+  <ul class="cg-falta-l">
+    {% for i in itens %}<li class="pendente">
+      <span class="cg-falta-m" aria-hidden="true"></span>
+      <span>{{ i.texto }}</span>
+      <a class="button small" href="#{{ i.ir }}">{{ i.botao }}</a>
+    </li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endmacro %}
+
 {% macro lista_do_que_falta(titulo, itens, fase) %}
 <section class="panel cg-falta" data-fase="{{ fase }}">
   <div class="panel-head"><span>{{ titulo }}</span></div>

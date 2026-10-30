@@ -12,24 +12,13 @@
 {# AS ABAS SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026, `ri_abas`. Quem continua no antigo recebe
    esta mesma página, na mesma ordem. Os quadros não saem do lugar: cada um diz a que aba
    pertence, e `static/fases.js` mostra os da aba aberta. #}
-{% from '_fases.html' import abre_ficha, regua %}
+{% from '_fases.html' import abre_ficha, regua, o_que_espera %}
 {% set f = abas_da_ficha() if layout_novo else none %}
 {% if f %}
 {{ abre_ficha(VERSION) }}
 {{ regua(f, 'mat-' ~ m.id, 'Partes desta matrícula') }}
 <span class="cg-ancora" id="resumo"></span>
-{% if f.espera %}
-<section class="panel cg-falta" data-fase="resumo">
-  <div class="panel-head"><span>O que espera ação</span></div>
-  <ul class="cg-falta-l">
-    {% for i in f.espera %}<li class="pendente">
-      <span class="cg-falta-m" aria-hidden="true"></span>
-      <span>{{ i.texto }}</span>
-      <a class="button small" href="#{{ i.ir }}">{{ i.botao }}</a>
-    </li>{% endfor %}
-  </ul>
-</section>
-{% endif %}
+{{ o_que_espera(f.espera, 'resumo') }}
 <section class="panel cg-lado" data-fase="resumo">
   <div class="panel-head"><span>Situação jurídica</span>
     <a class="small" href="{{ url_for('ri_situacao_juridica', matricula_id=m.id) }}">ver completa</a></div>

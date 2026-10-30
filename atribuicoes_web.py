@@ -70,6 +70,7 @@ import livro_nucleo as LN
 import habilitacao as HAB
 import hc_schema as HC
 import ibge_geracao as IBGEG
+import rc_abas as RCABAS
 import rc_anotacao as ANOT
 import rc_anotacao_crc as ANOTCRC
 import crc_carga as CRC
@@ -5485,7 +5486,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as _con_sel:
             selagem = RCE.como_vai_selar(_con_sel, int(assento["id"]),
                                          especie=assento["especie"])
+        def abas_da_ficha(digi=None) -> dict:
+            """A régua do layout novo. Só ele chama. O `digi` vem do molde, de onde ele já está."""
+            return RCABAS.abas_do_assento(
+                dict(assento), blocos=blocos, pessoas=pessoas, certidoes=certidoes,
+                cpf_pendentes=cpf_pendentes, anexos=anexos_registro,
+                paternidade=termo_paternidade,
+                habilitacao=dict(habilitacao_vinculo) if habilitacao_vinculo else None,
+                digi=digi)
         return render_template("atrib_rcpn_ficha.html", assento=dict(assento),
+                               abas_da_ficha=abas_da_ficha,
                                habilitacao_vinculo=habilitacao_vinculo,
                                termo_paternidade=termo_paternidade,
                                SITUACOES=HC.SITUACOES,

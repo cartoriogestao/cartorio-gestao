@@ -330,3 +330,13 @@ def test_o_processo_entra_no_catalogo_desligado_e_as_8h():
 def test_a_tela_do_codigo_nao_le_o_cofre():
     texto = Path(__file__).resolve().parent.parent.joinpath("malote_robo_web.py").read_text(encoding="utf-8")
     assert "COFRE.ler(" not in texto and ".ler(" not in texto.replace("COFRE.gravar(", "")
+
+
+def test_login_so_de_numeros_na_caixa_do_nome_diz_onde_vai_cada_um():
+    """29/10/2026: o CPF digitado na caixa do NOME do campo era recusado com
+    «nome inválido», sem dizer que ele vai do lado do valor."""
+    with pytest.raises(COFRE.CofreError) as erro:
+        COFRE._campos_limpos({"00011122233": "segredo"})
+    assert "DIREITA" in str(erro.value) and "00011122233" not in str(erro.value)
+    assert COFRE._campos_limpos({"usuario": "00011122233", "senha": "x"}) == {
+        "usuario": "00011122233", "senha": "x"}

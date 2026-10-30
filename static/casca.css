@@ -40,6 +40,8 @@
 .cg-area{display:flex;flex-direction:column;min-width:0;min-height:0;background:#f5f6f8;position:relative}
 .cg-faixa{min-height:30px;background:#7a1020;color:#fff;font-size:12.6px;display:flex;align-items:center;gap:8px;padding:3px 16px;flex:none}
 .cg-faixa-mes{opacity:.85}
+.cg-troca{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;background:#eef4fb;border:1px solid #cfe0f5;border-radius:10px;padding:10px 14px;margin-bottom:12px}
+.cg-troca p{flex:1 1 320px;margin:0}
 .cg-faixa-acao{color:#fff;text-decoration:underline;margin-left:auto;font-weight:600;white-space:nowrap}
 .cg-faixa-acao:hover{color:#fff}
 .cg-topo{min-height:50px;background:#fff;border-bottom:1px solid #e3e7ec;display:flex;align-items:center;gap:10px;padding:6px 14px;flex:none;position:relative;z-index:30}

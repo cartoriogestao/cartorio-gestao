@@ -9,7 +9,7 @@ por etapas, e cada uma pode ser a última: o sistema continua inteiro em todas.
 | 1. Casca | Barra de módulos, seções, Novo, Ctrl+K, sino, coluna de apoio | Este documento |
 | 2. Ato de Notas | Fases e barra de ação na ficha do ato; listas e painel | Pronto |
 | 3. Matrícula | Subabas da ficha, novo ato em passos, prenotação e usucapião | Pronto |
-| 4. Civil e Protesto | Assento, habilitação, roteiro, dia da CRA | Novo registro em passos, correção em partes, habilitação em fases e ficha do assento em abas; o resto a fazer |
+| 4. Civil e Protesto | Assento, habilitação, roteiro, dia da CRA | Novo registro em passos, correção em partes, habilitação em fases, ficha do assento em abas e ficha do título de Protesto em fases; o resto a fazer |
 | 5. Operação | Caixa, protocolo, processos, atendimento | Ficha do protocolo em abas; o resto a fazer |
 | 6. Gestão | Finanças, conformidade, configurações | A fazer |
 | 7. Limpar | Tirar a chave e a moldura antiga | A fazer |
@@ -19,8 +19,11 @@ por etapas, e cada uma pode ser a última: o sistema continua inteiro em todas.
 - **As telas não mudam na etapa 1.** Cada uma continua preenchendo `title`, `heading` e
   `content`. Mudou a moldura.
 - **A troca é por pessoa.** O botão «Novo layout» fica no rodapé da barra antiga, e
-  «Voltar ao layout antigo» no menu do usuário da nova. O padrão de fábrica é o antigo. O
-  oficial muda o padrão da casa pelo menu dele.
+  «Voltar ao layout antigo» no menu do usuário da nova. Desde 30/10/2026, por decisão do
+  oficial, o padrão de fábrica é o novo: quem não escolheu abre nele, com um aviso de «Ficar
+  neste» ou «Voltar ao antigo». O oficial pode devolver a casa ao antigo pelo menu dele.
+- **A suíte de testes fica na moldura antiga** (`tests/conftest.py`), porque os testes de
+  tela leem o HTML dela. Quem testa a moldura nova a pede por pessoa.
 - **`base.html` decide**: com `layout_novo`, estende `base_novo.html`. O resto de
   `base.html` fica dentro de um `if`, porque o `include` não obedece ao `extends`.
 

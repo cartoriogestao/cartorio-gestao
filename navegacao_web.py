@@ -2,8 +2,9 @@
 
 A TROCA É POR PESSOA, E VOLTA COM UM CLIQUE
     Até a etapa de limpeza, cada um escolhe o layout, e o oficial escolhe o padrão da
-    casa. O padrão de fábrica é o antigo: quem não clicar em nada não vê mudança, e as
-    telas continuam as mesmas, nas mesmas rotas. O que muda é a moldura.
+    casa. O padrão de fábrica é o novo, por decisão do oficial de 30/10/2026: quem ainda
+    não escolheu abre nele, com um aviso, e volta ao antigo com um clique. As telas
+    continuam as mesmas, nas mesmas rotas. O que muda é a moldura.
 
 A ESCOLHA MORA EM `settings`, e não numa coluna nova: é preferência passageira, que
 some com a etapa de limpeza, e coluna nova ficaria para sempre.
@@ -17,7 +18,7 @@ import navegacao as NAV
 from seguranca_web import destino_interno
 
 LAYOUTS = ("antigo", "novo")
-PADRAO_DE_FABRICA = "antigo"
+PADRAO_DE_FABRICA = "novo"
 CHAVE_PADRAO = "layout_padrao"
 
 
@@ -98,5 +99,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         return {"layout_novo": g.cg_layout == "novo",
                 "timbre_na_tela": g.cg_layout != "novo" or request.endpoint in NAV.TELAS_COM_TIMBRE,
                 "layout_padrao_da_casa": db.get_setting(CHAVE_PADRAO, PADRAO_DE_FABRICA),
+                "layout_sem_escolha": db.get_setting(chave_do_usuario(uid), "") not in LAYOUTS,
                 "nav_da_tela": nav_da_tela, "portas_de_lavrar": portas_de_lavrar,
                 "protocolo_em_atendimento": _em_atendimento}

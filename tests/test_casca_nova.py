@@ -1,8 +1,10 @@
 """A moldura nova, com o sistema de pé: a chave por pessoa e o que sai na página.
 
 O QUE ELES DEFENDEM
-    Que quem não escolheu nada continua vendo o que sempre viu, e que a troca não
-    desenha as duas molduras na mesma página. Foi o primeiro defeito desta casca: o
+    Que o layout novo é o padrão, que quem não escolheu recebe o aviso e volta com um
+    clique, e que a troca não desenha as duas molduras na mesma página. A suíte fica na
+    moldura antiga (`conftest`), e por isso estes testes pedem o padrão de verdade. Foi o
+    primeiro defeito desta casca: o
     `include` de `base.html` não obedece ao `extends` dentro de `if`, e os avisos e os
     botões do layout antigo saíam antes do <!doctype> da nova.
 """
@@ -92,6 +94,56 @@ def test_a_volta_nao_leva_para_outro_site(app):
     c = _entrar(app, "casca_g", "ADMIN")
     resposta = _trocar(c, "novo", "https://exemplo.invalid/fora")
     assert "exemplo.invalid" not in resposta.headers.get("Location", "")
+
+
+def test_o_padrao_de_fabrica_e_o_layout_novo():
+    """Lido do código: o `conftest` troca o valor em memória para os outros testes."""
+    assert 'PADRAO_DE_FABRICA = "novo"' in (RAIZ / "navegacao_web.py").read_text(encoding="utf-8")
+
+
+def test_quem_nao_escolheu_abre_no_novo_com_o_aviso(app, monkeypatch):
+    import navegacao_web as NW
+    monkeypatch.setattr(NW, "PADRAO_DE_FABRICA", "novo")
+    c = _entrar(app, "casca_padrao_a", "USER")
+    html = c.get("/").get_data(as_text=True)
+    assert 'class="cg-corpo"' in html and "data-cg-troca" in html
+    assert "Ficar neste" in html and "Voltar ao antigo" in html
+
+
+def test_ficar_neste_faz_o_aviso_sumir(app, monkeypatch):
+    import navegacao_web as NW
+    monkeypatch.setattr(NW, "PADRAO_DE_FABRICA", "novo")
+    c = _entrar(app, "casca_padrao_b", "USER")
+    _trocar(c, "novo")
+    html = c.get("/").get_data(as_text=True)
+    assert 'class="cg-corpo"' in html and "data-cg-troca" not in html
+
+
+def test_voltar_ao_antigo_vale_mesmo_com_o_padrao_novo(app, monkeypatch):
+    import navegacao_web as NW
+    monkeypatch.setattr(NW, "PADRAO_DE_FABRICA", "novo")
+    c = _entrar(app, "casca_padrao_c", "USER")
+    _trocar(c, "antigo")
+    html = c.get("/").get_data(as_text=True)
+    assert 'id="app-sidebar"' in html and "data-cg-troca" not in html
+
+
+def test_o_oficial_ainda_pode_devolver_a_casa_ao_antigo(app, monkeypatch):
+    import navegacao_web as NW
+    monkeypatch.setattr(NW, "PADRAO_DE_FABRICA", "novo")
+    d = app.extensions["db"]
+    d.set_settings({"layout_padrao": "antigo"})
+    try:
+        c = _entrar(app, "casca_padrao_d", "USER")
+        assert 'id="app-sidebar"' in c.get("/").get_data(as_text=True)
+    finally:
+        d.set_settings({"layout_padrao": ""})
+
+
+def test_o_aviso_da_troca_so_sai_para_quem_nao_escolheu():
+    molde = (RAIZ / "templates" / "base_novo.html").read_text(encoding="utf-8")
+    assert "{% if layout_sem_escolha %}" in molde
+    assert molde.count("data-cg-troca") == 1
 
 
 def test_so_o_oficial_muda_o_padrao_da_casa(app):

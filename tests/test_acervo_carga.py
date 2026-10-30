@@ -318,6 +318,21 @@ def test_a_carga_e_repetivel():
 # ----------------------------------------------------- o que cada uma faz
 
 
+def test_o_codigo_5_vira_devolvido_com_o_ato_que_o_sustenta():
+    """Até 30/10/2026 o «5» deixava como estava, e isso produziu PAGO sem ato."""
+    import protesto_selo_previo as PSELO
+    con, acervo = banco(), acervo_falso()
+    acervo.execute("""UPDATE tbAvisoProtesto SET snProtestado = 0,
+                          intCodigoOcorrencia = '5',
+                          dtmOcorrencia = '2022-06-21 00:00:00'""")
+    AC.carregar_protesto(con, acervo, agora=AGORA)
+    t = con.execute("SELECT * FROM pt_titulos").fetchone()
+    assert t["situacao"] == "DEVOLVIDO"
+    ato = con.execute("SELECT * FROM pt_atos WHERE tipo = 'DEVOLUCAO'").fetchone()
+    assert ato["titulo_id"] == t["id"] and str(ato["data_ato"])[:10] == "2022-06-21"
+    assert PSELO.titulos_sem_ato_que_sustente(con) == []
+
+
 def test_o_titulo_entra_com_o_apontamento_que_o_acervo_ja_tem():
     # O lugar no livro vem do acervo, e nao do nucleo: o ato antigo ja tem
     # livro, folha e ordem do livro fisico, e mandar `reservar()` achar lugar

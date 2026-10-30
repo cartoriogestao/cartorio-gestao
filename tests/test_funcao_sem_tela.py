@@ -708,6 +708,15 @@ ACHADAS_EM_26_10_2026: dict[str, str] = {
 }
 
 
+# 30/10/2026 — o lote de assinatura pelo Windows. Mora no assinador do serviço
+# local, e quem a chama é o `Manipulador` dele (POST /assinar/pdfs-windows). Mesma
+# razão de `assinar_cades`.
+ACHADAS_EM_30_10_2026: dict[str, str] = {
+    "assinar_pdfs": ("a3_windows — rota POST /assinar/pdfs-windows do serviço "
+                     "local, fora do Flask"),
+}
+
+
 def _conhecidas() -> set[str]:
     """As medições datadas que formam o piso do varredor."""
     return (set(JA_SABIDAS) | set(NASCIDAS_DEPOIS_DA_3_6_51)
@@ -724,7 +733,8 @@ def _conhecidas() -> set[str]:
             | set(ACHADAS_EM_20_10_2026)
             | set(ACHADAS_EM_26_10_2026)
             | set(ACHADAS_EM_27_10_2026)
-            | set(ACHADAS_EM_29_10_2026_REPASSE))
+            | set(ACHADAS_EM_29_10_2026_REPASSE)
+            | set(ACHADAS_EM_30_10_2026))
 
 
 def test_nenhuma_funcao_nova_fica_sem_tela():

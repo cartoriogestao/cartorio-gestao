@@ -435,13 +435,16 @@ def usuarios_ativos(con: Any) -> list[dict]:
 # contam aqui. Antes contavam, e a conversa que a IA passou para uma pessoa
 # sumia do alerta no minuto em que o cliente recebia «sua mensagem foi passada
 # para a equipe» — justamente a que precisava de alguém.
+# A SAÍDA QUE FALHOU TAMBÉM NÃO É RESPOSTA (30/10/2026): ela não chegou ao
+# cliente, e a conversa volta a esperar.
 _ESPERANDO_DESDE = """
     (SELECT min(m.criado_em) FROM wa_mensagem m
       WHERE m.conversa_id = c.id AND m.direcao = 'in'
         AND m.id > COALESCE((SELECT max(o.id) FROM wa_mensagem o
                               WHERE o.conversa_id = c.id
                                 AND o.direcao = 'out'
-                                AND COALESCE(o.tipo, '') <> 'aviso'), 0))"""
+                                AND COALESCE(o.tipo, '') <> 'aviso'
+                                AND COALESCE(o.entrega, '') <> 'failed'), 0))"""
 
 
 def _filtros(con: Any, *, agora: str, setor: str, etiqueta: str,
@@ -637,6 +640,7 @@ def _primeiras_respostas(con: Any, desde: str) -> list[dict]:
              FROM wa_mensagem m JOIN wa_conversa c ON c.id = m.conversa_id
             WHERE m.criado_em >= %s AND m.direcao IN ('in', 'out')
               AND COALESCE(m.tipo, '') <> 'aviso'
+              AND COALESCE(m.entrega, '') <> 'failed'
             ORDER BY m.conversa_id, m.id""", (WA.SETOR_PADRAO, desde))
     saida, aberta = [], {}
     for m in msgs:

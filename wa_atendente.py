@@ -825,7 +825,9 @@ def decidir(db: Any, conversa: dict, texto: str, cfg: dict, *, agora: str,
     if not acao:
         return _passa(setor_atual, RAZAO_FALHA, **numeros, lido=lido,
                       motivo="a IA não respondeu no formato combinado")
-    # A IA pode corrigir o setor da palavra pelo contexto. Reclamação nunca sai de GESTAO.
+    # A IA pode corrigir o setor da palavra pelo contexto. Reclamação não sai de GESTAO
+    # no atendimento dela; na retomada, a conversa já volta sem setor
+    # (`wa_fila.definir_setor_pelo_assunto`).
     setor_ia = FILA.setor_valido(d.get("setor")) or setor_atual
     if setor_atual == "GESTAO":
         setor_ia = setor_atual

@@ -399,6 +399,79 @@ def test_a_reclamacao_vai_direto_e_nunca_sai_de_gestao(casa):
     assert _conversa(db, outra)["setor"] == "GESTAO"
 
 
+def _reclamou_e_resolveu(casa, wa_id="5599900000021"):
+    db = casa["db"]
+    _cfg(db)
+    cid = _entrada(db, "quero fazer uma reclamação", meta_id=f"wamid.g-{wa_id}", wa_id=wa_id)
+    _rodar(casa)
+    assert _conversa(db, cid)["setor"] == "GESTAO"
+    with db.transaction() as con:
+        WA.resolver(con, cid, agora=AGORA)
+    return cid
+
+
+def test_quem_reclamou_nao_fica_preso_em_gestao_no_atendimento_seguinte(casa):
+    db = casa["db"]
+    cid = _reclamou_e_resolveu(casa)
+    _entrada(db, "preciso de uma certidão", meta_id="wamid.g1", wa_id="5599900000021", quando=AGORA)
+    assert not _conversa(db, cid)["setor"], "a mensagem não tem palavra de setor"
+    modelo, _ = _rodar(casa, Modelo({"acao": "encaminhar", "setor": "RI",
+                                     "razao": "fora_do_texto_base", "resumo": "Quer certidão."}))
+    assert len(modelo.chamadas) == 1
+    assert _conversa(db, cid)["setor"] == "RI"
+    ev = _um(db, """SELECT nota, de_setor FROM wa_evento WHERE conversa_id=%s AND tipo=%s
+                     ORDER BY id DESC LIMIT 1""", (cid, FILA.EV_SETOR_PELO_ASSUNTO))
+    assert ev["de_setor"] == "GESTAO" and "atendimento anterior" in ev["nota"]
+
+
+def test_reclamacao_nova_na_volta_vai_direto_a_gestao(casa):
+    db = casa["db"]
+    cid = _reclamou_e_resolveu(casa, "5599900000022")
+    _entrada(db, "de novo isso, um absurdo", meta_id="wamid.g2", wa_id="5599900000022", quando=AGORA)
+    modelo, _ = _rodar(casa)
+    assert modelo.chamadas == []
+    assert _conversa(db, cid)["setor"] == "GESTAO"
+    assert _registros(db, cid)[-1]["razao"] == AT.RAZAO_RECLAMACAO
+
+
+def test_reclamacao_com_outro_setor_na_volta_nao_sai_de_gestao(casa):
+    db = casa["db"]
+    cid = _reclamou_e_resolveu(casa, "5599900000023")
+    _entrada(db, "reclamação sobre a escritura", meta_id="wamid.g3", wa_id="5599900000023",
+             quando=AGORA)
+    modelo, _ = _rodar(casa)
+    assert modelo.chamadas == [] and _conversa(db, cid)["setor"] == "GESTAO"
+
+
+def test_a_palavra_de_setor_na_volta_tira_de_gestao(casa):
+    db = casa["db"]
+    cid = _reclamou_e_resolveu(casa, "5599900000024")
+    _entrada(db, "quanto custa uma escritura?", meta_id="wamid.g4", wa_id="5599900000024",
+             quando=AGORA)
+    assert _conversa(db, cid)["setor"] == "NOTAS"
+
+
+def test_no_atendimento_da_reclamacao_a_ia_nao_tira_de_gestao(casa):
+    db = casa["db"]
+    _cfg(db)
+    cid = _entrada(db, "quero fazer uma reclamação", meta_id="wamid.g5")
+    _rodar(casa)
+    with db.transaction() as con:
+        FILA.devolver_a_ia(con, cid, por="teste", quando=AGORA)
+    _entrada(db, "e que horas abre?", meta_id="wamid.g6", quando=AGORA)
+    _rodar(casa, Modelo({"acao": "encaminhar", "setor": "NOTAS"}))
+    assert _conversa(db, cid)["setor"] == "GESTAO"
+
+
+def test_reativar_a_conversa_mantem_gestao(casa):
+    db = casa["db"]
+    cid = _reclamou_e_resolveu(casa, "5599900000025")
+    ultima = _um(db, "SELECT max(id) AS n FROM wa_mensagem WHERE conversa_id=%s", (cid,))["n"]
+    with db.transaction() as con:
+        FILA.retomar(con, _conversa(db, cid), desde_id=ultima, quando=AGORA, por="uma pessoa")
+    assert _conversa(db, cid)["setor"] == "GESTAO"
+
+
 @pytest.mark.parametrize("texto,setor", [("quero saber sobre adoção", "RCPN"),
                                          ("como faço a alteração de nome?", "RCPN"),
                                          ("sofri violência doméstica", "ATENDIMENTO"),

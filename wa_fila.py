@@ -404,12 +404,24 @@ def definir_setor_pelo_assunto(con: Any, conversa_id: int, texto: Any, *,
     escolheu. NA RETOMADA de uma resolvida, a mensagem nova abre outro
     atendimento, e o setor dela vale mesmo que a conversa tivesse outro. O
     evento diz de qual para qual, e por qual palavra.
+
+    A RECLAMAÇÃO VALE PARA O ATENDIMENTO DELA (30/10/2026): quem reclamou uma vez não fica
+    preso em Gestão. Na retomada sem reclamação na mensagem nova, a conversa sai de GESTAO
+    e volta sem setor, e a IA ou a próxima palavra o escolhem. O «Reativar conversa» não
+    passa por aqui: é uma pessoa decidindo, e o setor fica.
     """
     achado = setor_pela_mensagem(texto)
-    if not achado:
-        return None
     c = _conversa(con, conversa_id) or {}
     antes = setor_valido(c.get("setor"))
+    if not achado:
+        if na_retomada and antes == "GESTAO" and not any(
+                s == "GESTAO" for s, _motivo, _palavra in setores_pelo_texto(texto)):
+            banco(con).escrever("UPDATE wa_conversa SET setor=NULL WHERE id=%s",
+                                (int(conversa_id),))
+            _evento(con, conversa_id, EV_SETOR_PELO_ASSUNTO, quando=quando,
+                    por="palavra da mensagem", de_setor=antes,
+                    nota="a reclamação era do atendimento anterior: sai de Gestão")
+        return None
     setor, palavra = achado
     if antes == setor or (antes and not na_retomada):
         return None

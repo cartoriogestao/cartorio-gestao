@@ -15,9 +15,13 @@ O QUE ESTES TESTES GUARDAM
       - **título que já tem instrumento não ganha segunda via no lote**;
       - **a fila separa o acervo do E-Ofício dos lavrados neste sistema**, e
         os atalhos de data recortam sem esconder o número de cada pedaço;
-      - **a assinatura em lote é uma janela do token por instrumento** (o
-        serviço assina um PDF por chamada) e **para na primeira falha do
-        token** — PIN errado em sequência bloqueia o A3;
+      - **a assinatura em lote manda todos os PDFs de uma vez** (o PowerShell
+        único está em `test_a3_windows_lote.py`), grava item a item e **para na
+        primeira falha do token** — PIN errado em sequência bloqueia o A3 —,
+        guardando o que já foi assinado;
+      - a falha do PAPEL não para os outros, e o papel que não saiu nem vai ao
+        token;
+      - **o serviço local antigo cai no um por um**, com aviso;
       - o já assinado não vai ao token de novo;
       - a tela manda o `csrf_token`, tem «marcar todos» e diz como o PIN
         funciona; e continua sem campo de PIN.
@@ -187,20 +191,135 @@ def test_os_atalhos_de_data_recortam_e_o_mais_novo_vem_primeiro():
 # ------------------------------------------------------ assinar em lote
 
 
-def test_o_lote_de_assinatura_segue_quando_a_falha_e_do_papel():
-    def assinar_um(iid):
+def _lote(ids, *, preparar=None, varios=None, guardar=None, um=None):
+    """`PI.assinar_lote` com as peças simuladas. Sem `um`, cair nele é defeito."""
+    return PI.assinar_lote(
+        ids,
+        preparar=preparar or (lambda iid: b"PDF:%d" % iid),
+        assinar_varios=varios or (lambda pdfs: {
+            "assinados": {i: b"P7S:" + x for i, x in enumerate(pdfs)},
+            "falha": None}),
+        guardar=guardar or (lambda iid, pdf, p7s: {"instrumento_id": iid,
+                                                   "pdf": pdf, "p7s": p7s}),
+        assinar_um=um or (lambda iid: pytest.fail("não devia cair no um por um")))
+
+
+def test_o_lote_manda_todos_de_uma_vez_e_grava_cada_um():
+    chamadas = []
+
+    def varios(pdfs):
+        chamadas.append(list(pdfs))
+        return {"assinados": {i: b"P7S:" + x for i, x in enumerate(pdfs)},
+                "falha": None}
+    r = _lote([1, 2, 3], varios=varios)
+    assert chamadas == [[b"PDF:1", b"PDF:2", b"PDF:3"]]
+    assert [f["instrumento_id"] for f in r["feitos"]] == [1, 2, 3]
+    assert r["feitos"][1]["pdf"] == b"PDF:2"
+    assert r["feitos"][1]["p7s"] == b"P7S:PDF:2"
+    assert r["falharam"] == [] and r["nao_tentados"] == []
+    assert r["parou"] is False and r["aviso"] is None
+
+
+def test_o_papel_que_nao_sai_nao_vai_ao_token_e_nao_para_os_outros():
+    vistos = []
+
+    def preparar(iid):
+        if iid == 2:
+            raise PI.InstrumentoError("o PDF não saiu")
+        return b"PDF:%d" % iid
+
+    def varios(pdfs):
+        vistos.extend(pdfs)
+        return {"assinados": {i: b"P7S" for i in range(len(pdfs))}, "falha": None}
+    r = _lote([1, 2, 3], preparar=preparar, varios=varios)
+    assert vistos == [b"PDF:1", b"PDF:3"]
+    assert [f["instrumento_id"] for f in r["feitos"]] == [1, 3]
+    assert r["falharam"] == [{"instrumento_id": 2, "motivo": "o PDF não saiu"}]
+    assert r["parou"] is False
+
+
+def test_sem_nenhum_papel_pronto_o_token_nem_e_chamado():
+    def preparar(iid):
+        raise PI.JaAssinado("já foi assinado")
+    r = _lote([1], preparar=preparar,
+              varios=lambda pdfs: pytest.fail("não devia ir ao token"))
+    assert r["feitos"] == [] and r["parou"] is False
+    assert "já foi assinado" in r["falharam"][0]["motivo"]
+
+
+def test_a_falha_do_token_para_o_lote_e_guarda_o_que_ja_foi_assinado():
+    """PIN errado em sequência bloqueia o A3: depois da falha, nada mais vai ao
+    token, e o que saiu antes dela fica valendo."""
+    gravados = []
+
+    def guardar(iid, pdf, p7s):
+        gravados.append(iid)
+        return {"instrumento_id": iid}
+
+    def varios(pdfs):
+        return {"assinados": {0: b"P7S"},
+                "falha": "o PIN não foi aceito pelo token."}
+    r = _lote([1, 2, 3, 4], varios=varios, guardar=guardar)
+    assert gravados == [1]
+    assert [f["instrumento_id"] for f in r["feitos"]] == [1]
+    assert r["parou"] is True
+    assert r["nao_tentados"] == [3, 4]
+    assert r["falharam"] == [{"instrumento_id": 2,
+                              "motivo": "o PIN não foi aceito pelo token."}]
+
+
+def test_o_servico_fora_do_ar_para_o_lote_sem_nada_assinado():
+    def varios(pdfs):
+        raise PI.AssinaturaInterrompida("o serviço não está no ar")
+    r = _lote([1, 2, 3], varios=varios)
+    assert r["feitos"] == []
+    assert r["parou"] is True and r["nao_tentados"] == [2, 3]
+    assert r["falharam"][0]["instrumento_id"] == 1
+
+
+def test_a_assinatura_que_nao_confere_e_daquele_instrumento_so():
+    def guardar(iid, pdf, p7s):
         if iid == 2:
             raise PI.InstrumentoError("A assinatura não confere com o instrumento")
         return {"instrumento_id": iid}
-    r = PI.assinar_lote([1, 2, 3], assinar_um)
+    r = _lote([1, 2, 3], guardar=guardar)
     assert [f["instrumento_id"] for f in r["feitos"]] == [1, 3]
     assert r["falharam"][0]["instrumento_id"] == 2
     assert r["parou"] is False and r["nao_tentados"] == []
 
 
-def test_o_lote_de_assinatura_para_na_primeira_falha_do_token():
-    """PIN errado em sequência bloqueia o A3: depois da recusa, nada mais vai
-    ao token."""
+def test_o_erro_inesperado_ao_gravar_nao_perde_os_outros_ja_assinados():
+    def guardar(iid, pdf, p7s):
+        if iid == 1:
+            raise RuntimeError("banco fora")
+        return {"instrumento_id": iid}
+    r = _lote([1, 2], guardar=guardar)
+    assert [f["instrumento_id"] for f in r["feitos"]] == [2]
+    assert "erro inesperado" in r["falharam"][0]["motivo"]
+
+
+def test_o_servico_antigo_cai_no_um_por_um_com_aviso():
+    um = []
+
+    def varios(pdfs):
+        raise PI.LoteIndisponivel("o serviço é de uma versão anterior")
+
+    def preparar(iid):
+        if iid == 2:
+            raise PI.InstrumentoError("o PDF não saiu")
+        return b"PDF"
+
+    def assinar_um(iid):
+        um.append(iid)
+        return {"instrumento_id": iid}
+    r = _lote([1, 2, 3], preparar=preparar, varios=varios, um=assinar_um)
+    assert um == [1, 3]
+    assert [f["instrumento_id"] for f in r["feitos"]] == [1, 3]
+    assert r["falharam"][0]["instrumento_id"] == 2
+    assert "versão anterior" in r["aviso"]
+
+
+def test_na_queda_o_um_por_um_tambem_para_na_falha_do_token():
     chamados = []
 
     def assinar_um(iid):
@@ -208,38 +327,41 @@ def test_o_lote_de_assinatura_para_na_primeira_falha_do_token():
         if iid == 2:
             raise PI.AssinaturaInterrompida("o PIN não foi aceito pelo token.")
         return {"instrumento_id": iid}
-    r = PI.assinar_lote([1, 2, 3, 4], assinar_um)
+
+    def varios(pdfs):
+        raise PI.LoteIndisponivel("versão anterior")
+    r = _lote([1, 2, 3, 4], varios=varios, um=assinar_um)
     assert chamados == [1, 2]
     assert r["parou"] is True
     assert r["nao_tentados"] == [3, 4]
     assert "PIN" in r["falharam"][0]["motivo"]
 
 
+def test_o_um_por_um_segue_quando_a_falha_e_do_papel():
+    def assinar_um(iid):
+        if iid == 2:
+            raise PI.InstrumentoError("A assinatura não confere com o instrumento")
+        return {"instrumento_id": iid}
+    r = PI.assinar_um_por_um([1, 2, 3], assinar_um)
+    assert [f["instrumento_id"] for f in r["feitos"]] == [1, 3]
+    assert r["falharam"][0]["instrumento_id"] == 2
+    assert r["parou"] is False and r["nao_tentados"] == []
+
+
 def test_o_lote_de_assinatura_tem_teto_e_recusa_vazio():
     with pytest.raises(PI.InstrumentoError, match="Marque"):
-        PI.assinar_lote([], lambda iid: {})
+        _lote([])
     demais = list(range(1, PI.LIMITE_DO_LOTE_DE_ASSINATURA + 2))
-    with pytest.raises(PI.InstrumentoError, match="janela do token"):
-        PI.assinar_lote(demais, lambda iid: pytest.fail("não devia assinar"))
+    with pytest.raises(PI.InstrumentoError, match="de cada vez"):
+        _lote(demais, preparar=lambda iid: pytest.fail("não devia preparar"))
 
 
 def test_a_regra_do_pin_esta_escrita_onde_o_lote_mora():
-    """O que se mediu no código do serviço fica dito na função, e não só no
-    PR: uma chamada por PDF, o PIN na janela do token."""
+    """O que não se mediu fica dito na função, e não só no PR: a janela única
+    é hipótese, e o caminho é a rota de lote."""
     doc = PI.assinar_lote.__doc__ or ""
-    assert "PIN É PEDIDO A CADA INSTRUMENTO" in doc
-    assert "/assinar/pdf-windows" in doc
-
-
-def test_o_servico_assina_um_pdf_por_chamada():
-    """A medição que sustenta «uma janela por instrumento»: o assinador do
-    Windows recebe UM pdf e abre UM PowerShell para ele."""
-    import inspect
-
-    import a3_windows as A3W
-    assinatura = inspect.signature(A3W.assinar_pdf)
-    assert list(assinatura.parameters)[:1] == ["pdf"]
-    assert "subprocess.run" in inspect.getsource(A3W.assinar_pdf)
+    assert "HIPÓTESE" in doc
+    assert "/assinar/pdfs-windows" in doc
 
 
 # ------------------------------------------------------ as telas
@@ -341,61 +463,137 @@ def test_a_tela_diz_como_o_pin_funciona_e_nao_pede_pin(s):
     html = s["c"].get("/protesto/instrumentos").get_data(as_text=True)
     assert "Instrumentos a assinar" in html
     assert "Assinar os marcados com o A3" in html
-    assert "uma vez para cada instrumento" in html
+    assert "aparece no começo do lote" in html
+    assert "uma vez para cada instrumento" not in html
     assert 'name="pin"' not in html
 
 
-def test_assinar_os_marcados_chama_o_servico_uma_vez_por_instrumento(
+def _servico_de_lote(chave_e_cert, vistos, *, falha_em=None, outro_em=None):
+    """O `assinar_pdfs_pelo_windows` simulado. `falha_em`: a posição em que o
+    token falha. `outro_em`: a posição cuja assinatura embrulha outro papel."""
+    def servico(pdfs, *, thumbprint=None):
+        vistos.append(list(pdfs))
+        itens = []
+        for i, pdf in enumerate(pdfs):
+            if i == falha_em:
+                return {"ok": True, "itens": itens,
+                        "falha": "o PIN não foi aceito pelo token."}
+            conteudo = b"%PDF-1.4 OUTRO" if i == outro_em else pdf
+            itens.append({"indice": i, "thumbprint": "ABC",
+                          "cms_b64": base64.b64encode(
+                              _assinar(chave_e_cert, conteudo)).decode("ascii")})
+        return {"ok": True, "itens": itens, "falha": None}
+    return servico
+
+
+def _a_assinar(s):
+    con = _con(s)
+    try:
+        return [r["id"] for r in PI.a_assinar(con)]
+    finally:
+        con.close()
+
+
+def _postar_lote(s, ids):
+    html = s["c"].get("/protesto/instrumentos").get_data(as_text=True)
+    return s["c"].post("/protesto/instrumentos/assinar-lote",
+                       data={"csrf_token": _token(html),
+                             "instrumento_id": [str(x) for x in ids]},
+                       follow_redirects=True)
+
+
+def test_assinar_os_marcados_manda_os_pdfs_de_uma_vez(
         s, chave_e_cert, monkeypatch):
     import assinar_com_a3 as A3
     import impressao_pdf as IMPPDF
     monkeypatch.setattr(IMPPDF, "pdf_de_odt", lambda odt, **k: PDF)
     vistos = []
-
-    def servico(pdf, *, thumbprint=None):
-        vistos.append(pdf)
-        return {"ok": True, "cms_b64": base64.b64encode(
-            _assinar(chave_e_cert, pdf)).decode("ascii")}
-
-    monkeypatch.setattr(A3, "assinar_pdf_pelo_windows", servico)
+    monkeypatch.setattr(A3, "assinar_pdfs_pelo_windows",
+                        _servico_de_lote(chave_e_cert, vistos))
+    monkeypatch.setattr(A3, "assinar_pdf_pelo_windows",
+                        lambda *a, **k: pytest.fail("não devia ir um por um"))
     a, b = _instrumento(s, 1), _instrumento(s, 2)
-    html = s["c"].get("/protesto/instrumentos").get_data(as_text=True)
-    r = s["c"].post("/protesto/instrumentos/assinar-lote",
-                    data={"csrf_token": _token(html),
-                          "instrumento_id": [str(a), str(b)]},
-                    follow_redirects=True)
+    r = _postar_lote(s, [a, b])
     assert r.status_code == 200
-    assert len(vistos) == 2
+    assert vistos == [[PDF, PDF]]
     assert "2 instrumento(s) assinado(s)" in r.get_data(as_text=True)
+    assert _a_assinar(s) == []
     # assinados, saem da lista do que falta assinar — e um segundo lote não
     # vai ao token de novo
-    r2 = s["c"].post("/protesto/instrumentos/assinar-lote",
-                     data={"csrf_token": _token(html),
-                           "instrumento_id": [str(a)]},
-                     follow_redirects=True)
-    assert len(vistos) == 2
+    r2 = _postar_lote(s, [a])
+    assert len(vistos) == 1
     assert "já foi assinado" in r2.get_data(as_text=True)
 
 
-def test_o_token_que_recusa_para_o_lote_pela_tela(s, monkeypatch):
+def test_a_falha_do_token_para_o_lote_e_o_assinado_fica_pela_tela(
+        s, chave_e_cert, monkeypatch):
     import assinar_com_a3 as A3
     import impressao_pdf as IMPPDF
     monkeypatch.setattr(IMPPDF, "pdf_de_odt", lambda odt, **k: PDF)
-    chamadas = []
-
-    def recusa(pdf, *, thumbprint=None):
-        chamadas.append(pdf)
-        raise A3.AssinarComA3Error("o PIN não foi aceito pelo token.")
-
-    monkeypatch.setattr(A3, "assinar_pdf_pelo_windows", recusa)
-    a, b = _instrumento(s, 1), _instrumento(s, 2)
-    html = s["c"].get("/protesto/instrumentos").get_data(as_text=True)
-    r = s["c"].post("/protesto/instrumentos/assinar-lote",
-                    data={"csrf_token": _token(html),
-                          "instrumento_id": [str(a), str(b)]},
-                    follow_redirects=True)
-    texto = r.get_data(as_text=True)
-    assert r.status_code == 200
-    assert len(chamadas) == 1
+    monkeypatch.setattr(A3, "assinar_pdfs_pelo_windows",
+                        _servico_de_lote(chave_e_cert, [], falha_em=1))
+    a, b, c = _instrumento(s, 1), _instrumento(s, 2), _instrumento(s, 3)
+    texto = _postar_lote(s, [a, b, c]).get_data(as_text=True)
+    assert "1 instrumento(s) assinado(s)" in texto
     assert "PIN não foi aceito" in texto
     assert "não foram tentados" in texto
+    assert sorted(_a_assinar(s)) == sorted([b, c])
+
+
+def test_o_servico_fora_do_ar_para_o_lote_pela_tela(s, monkeypatch):
+    import assinar_com_a3 as A3
+    import impressao_pdf as IMPPDF
+    monkeypatch.setattr(IMPPDF, "pdf_de_odt", lambda odt, **k: PDF)
+
+    def fora(pdfs, *, thumbprint=None):
+        raise A3.AssinarComA3Error("o serviço local não está no ar")
+
+    monkeypatch.setattr(A3, "assinar_pdfs_pelo_windows", fora)
+    a, b = _instrumento(s, 1), _instrumento(s, 2)
+    r = _postar_lote(s, [a, b])
+    texto = r.get_data(as_text=True)
+    assert r.status_code == 200
+    assert "não está no ar" in texto
+    assert "não foram tentados" in texto
+    assert sorted(_a_assinar(s)) == sorted([a, b])
+
+
+def test_cada_p7s_se_confere_com_o_seu_pdf_e_o_que_nao_confere_nao_entra(
+        s, chave_e_cert, monkeypatch):
+    """A conferência é a de `assinar_um` (`guardar_assinatura`), byte a byte."""
+    import assinar_com_a3 as A3
+    import impressao_pdf as IMPPDF
+    monkeypatch.setattr(IMPPDF, "pdf_de_odt", lambda odt, **k: PDF)
+    monkeypatch.setattr(A3, "assinar_pdfs_pelo_windows",
+                        _servico_de_lote(chave_e_cert, [], outro_em=0))
+    a, b = _instrumento(s, 1), _instrumento(s, 2)
+    texto = _postar_lote(s, [a, b]).get_data(as_text=True)
+    assert "1 instrumento(s) assinado(s)" in texto
+    assert "não confere" in texto
+    assert "não foram tentados" not in texto
+    assert _a_assinar(s) == [a]
+
+
+def test_o_servico_antigo_cai_no_um_por_um_pela_tela(
+        s, chave_e_cert, monkeypatch):
+    import assinar_com_a3 as A3
+    import impressao_pdf as IMPPDF
+    monkeypatch.setattr(IMPPDF, "pdf_de_odt", lambda odt, **k: PDF)
+    um = []
+
+    def antigo(pdfs, *, thumbprint=None):
+        raise A3.ServicoSemLote("O serviço é de uma versão anterior.")
+
+    def servico(pdf, *, thumbprint=None):
+        um.append(pdf)
+        return {"ok": True, "cms_b64": base64.b64encode(
+            _assinar(chave_e_cert, pdf)).decode("ascii")}
+
+    monkeypatch.setattr(A3, "assinar_pdfs_pelo_windows", antigo)
+    monkeypatch.setattr(A3, "assinar_pdf_pelo_windows", servico)
+    a, b = _instrumento(s, 1), _instrumento(s, 2)
+    texto = _postar_lote(s, [a, b]).get_data(as_text=True)
+    assert len(um) == 2
+    assert "2 instrumento(s) assinado(s)" in texto
+    assert "versão anterior" in texto
+    assert _a_assinar(s) == []

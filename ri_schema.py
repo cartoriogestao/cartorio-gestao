@@ -293,6 +293,12 @@ CREATE TABLE IF NOT EXISTS ri_protocolos (
     importacao_id INTEGER,
     criado_em TEXT NOT NULL,
     criado_por INTEGER,
+    -- Encerramento com motivo da lista (pedido da substituta). Banco antigo recebe as
+    -- mesmas colunas por MIGRACOES — so ADD COLUMN, idempotente.
+    encerrado_em TEXT,
+    encerrado_por TEXT,
+    motivo_encerramento TEXT,
+    obs_encerramento TEXT,
     UNIQUE(livro, numero),
     FOREIGN KEY(matricula_id) REFERENCES ri_matriculas(id),
     FOREIGN KEY(ato_id) REFERENCES ri_atos(id),
@@ -1116,6 +1122,15 @@ MIGRACOES = (
     #   do seu ajuste» — a atualizacao NUNCA sobrescreve o ajuste, e sem esta
     #   marca a casa nao saberia que ficou para tras. Nulo nos ajustes antigos.
     ("mo_modelos", "base_impressao", "TEXT"),
+    # ENCERRAMENTO DA PRENOTACAO COM MOTIVO — pedido da Tabelia e Registradora
+    # Substituta. O texto livre em `anotacao` continua (a linha
+    # `[Encerrado]`); estas colunas dizem quem encerrou, quando, qual motivo
+    # da lista e a observacao. So ADD COLUMN: prenotacao ja encerrada fica
+    # com elas vazias, e rodar de novo nao faz nada (`tem_coluna`).
+    ("ri_protocolos", "encerrado_em", "TEXT"),
+    ("ri_protocolos", "encerrado_por", "TEXT"),
+    ("ri_protocolos", "motivo_encerramento", "TEXT"),
+    ("ri_protocolos", "obs_encerramento", "TEXT"),
 
 )
 

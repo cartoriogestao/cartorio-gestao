@@ -1668,6 +1668,22 @@ cadastro — a segunda via diz o mesmo que a primeira; o total de páginas do
 Livro F é a conta das folhas; o número da averbação é o do ato. Cada uma é uma
 linha do padrão que sai do termo quando o ato não tem o dado.
 
+**Lista de presença ou certidão de não apresentação (CN-MA arts. 410, III;
+412, III e 413, III; Inspeção Ordinária — AUDITUS 6304).** Na constituição de
+pessoa jurídica sem fins econômicos, na averbação de eleição ou posse de
+diretoria e outros órgãos e na averbação de alteração estatutária ou de
+regimento, quem lavra declara, no próprio ato, se a lista de presença foi
+apresentada (com folha, número ou anexo) ou se foi apresentada certidão de
+não apresentação (número, data e anexo). Sem uma das duas, o ato não se
+lavra. A natureza do título é texto livre: o enquadramento é escolha de quem
+lavra, com sugestão pela natureza, e não um palpite que o sistema impõe. Ato
+do RCPJ fora desses artigos segue com «não se aplica» e a justificativa, que
+vai para a auditoria. RTD não entra. A declaração fica em
+`rg_atos.declaracoes`, na chave `cnma_lista_presenca`, à parte dos claros do
+termo — o teor impresso não muda. A consulta do ato mostra a frase. Atos
+anteriores permanecem como estão; `/rcpj-rtd/pendencias-lista-presenca` lista
+os que ainda não têm a chave, para o saneamento.
+
 **O livro e a folha no alto do termo — leitura conjunta (LH13, 21/10/2026).**
 A LRP art. 133 manda escrever «na parte superior de cada página do livro» o
 título, a letra com o número e o ano em que começar (e o art. 135, parágrafo

@@ -726,6 +726,12 @@ def gerar_emolumentos(con: Any, *, comarca: str, cartorio: str,
 
     **O QUE NAO TEM FAIXA NAO VIRA LINHA COM ZERO** — sai da lista com o
     motivo. Zero num arquivo de precos e uma afirmacao: «nao custa nada».
+
+    **UMA LINHA POR CHAVE** — 30/10/2026. A CDA com dois devedores sao dois
+    titulos aqui, com a mesma chave, e o arquivo saia com 32 chaves repetidas.
+    Medido no arquivo real do E-Oficio de 31/08/2026: 375 linhas, 375 chaves, e
+    as 25 chaves de dois titulos que estao nele aparecem uma vez cada. Se os
+    precos do par divergirem, nao se escolhe um: a chave fica fora, com o motivo.
     """
     # A EXCECAO DE `custas` NAO ATRAVESSA ESTE MODULO. Quem chama aqui trata
     # `CenprotError`; obrigar a rota a conhecer tambem a de custas e como uma
@@ -745,18 +751,36 @@ def gerar_emolumentos(con: Any, *, comarca: str, cartorio: str,
             f"precos com item faltando publica na Central um valor menor que o "
             f"que a casa cobra.")
 
-    linhas, fora = [], []
+    por_chave: dict[str, list[dict]] = {}
     for t in titulos_do_arquivo(con):
-        precos = precos_do_titulo(con, int(t["valor_centavos"] or 0),
-                                  vigencia=vigencia)
-        if precos["retirada"] is None or precos["cancelamento"] is None:
-            fora.append({**t, "motivo":
-                         f"o valor R$ {(t['valor_centavos'] or 0) / 100:.2f} "
-                         f"nao cai em nenhuma faixa da tabela"})
+        por_chave.setdefault(str(t["chave_cenprot"]).strip(), []).append(t)
+
+    linhas, fora = [], []
+    for chave, grupo in por_chave.items():
+        com_preco = [(t, precos_do_titulo(con, int(t["valor_centavos"] or 0),
+                                          vigencia=vigencia)) for t in grupo]
+        sem_faixa = [t for t, p in com_preco
+                     if p["retirada"] is None or p["cancelamento"] is None]
+        if sem_faixa:
+            for t in grupo:
+                fora.append({**t, "motivo": (
+                    f"o valor R$ {(t['valor_centavos'] or 0) / 100:.2f} "
+                    f"nao cai em nenhuma faixa da tabela" if t in sem_faixa else
+                    f"a chave {chave} e a mesma de um titulo sem faixa na tabela, "
+                    f"e sai uma linha so por chave")})
             continue
+        precos = {(p["retirada"], p["cancelamento"]) for _, p in com_preco}
+        if len(precos) > 1:
+            ids = ", ".join(str(t["id"]) for t in grupo)
+            for t in grupo:
+                fora.append({**t, "motivo": (
+                    f"os titulos {ids} tem a mesma chave {chave} e precos "
+                    f"diferentes, e o arquivo leva uma linha so por chave: confira "
+                    f"o valor de cada um")})
+            continue
+        retirada, cancelamento = precos.pop()
         linhas.append("|".join((
-            t["chave_cenprot"], _reais(precos["retirada"]),
-            _reais(precos["cancelamento"]), so_digitos(comarca),
+            chave, _reais(retirada), _reais(cancelamento), so_digitos(comarca),
             so_digitos(cartorio), so_digitos(data))))
 
     # FIM DE LINHA CRLF, E SEM BOM — medido no arquivo real, byte a byte. O
@@ -768,6 +792,20 @@ def gerar_emolumentos(con: Any, *, comarca: str, cartorio: str,
             "conteudo": "\r\n".join([CABECALHO_EMOLUMENTOS, *linhas]) + "\r\n",
             "linhas": len(linhas), "fora": fora,
             "vigencia": vigencia}
+
+
+def frase_do_que_ficou_fora(arquivo: dict) -> str:
+    """A frase da tela sobre o titulo que nao entrou no arquivo. So calcula.
+
+    O arquivo sai de download ou vai direto a Central: sem esta frase, o que
+    ficou de fora so existiria numa contagem da auditoria.
+    """
+    fora = arquivo.get("fora") or []
+    if not fora:
+        return ""
+    return (f"{len(fora)} titulo(s) ficaram de fora de {arquivo['nome']}: "
+            + "; ".join(f"#{t['id']} — {t['motivo']}" for t in fora[:5])
+            + (f"; e mais {len(fora) - 5}" if len(fora) > 5 else "") + ".")
 
 
 # ------------------------------------------- o EDITAL ELETRONICO do CENPROT

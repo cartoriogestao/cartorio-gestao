@@ -24,7 +24,8 @@ A OCORRENCIA SAI DO ATO, e ela foi medida
 
 O QUE O RETORNO LEVA DE CADA TITULO
     Nosso numero, valor, saldo, protocolo, a ocorrencia, a data de entrada
-    (a do apontamento) e a data da ocorrencia (a do ato). O resto do registro
+    (a do apontamento), a data da ocorrencia (a do ato) e, so na ocorrencia
+    `3`, a custa do cartorio na retirada (`_custa_da_retirada`). O resto do registro
     vem em branco, e isso e medido: nos 383 reais, especie, cedente e devedor
     estao sempre vazios — o apresentante ja sabe o que mandou.
 
@@ -87,6 +88,21 @@ OCORRENCIA_DO_ATO: dict[str, str] = {
     "CANCELAMENTO": "A",
 }
 
+# A ocorrencia que leva a custa do cartorio na posicao 467. Ver
+# `_custa_da_retirada`.
+OCORRENCIA_DA_RETIRADA = OCORRENCIA_DO_ATO["DESISTENCIA"]
+
+# AS FOLHAS DE ARQUIVAMENTO NA CUSTA DO RETORNO: 4, E NAO AS 5 DA CENPROT.
+#
+#   MEDIDO nos dois valores reais da ocorrencia «3» em 2026, na vigencia 10022:
+#   75,89 + 35,85 = 111,74 e 75,89 + 56,32 (17.4.5) = 132,21. Os 75,89 sao os
+#   82,64 da constante da retirada menos uma folha de 6,75.
+#
+#   `protesto_cenprot.FOLHAS_ARQUIVADAS` CONTINUA 5 e nao muda: e o que o arquivo
+#   de emolumentos da CENPROT leva, medido em 166 de 173 titulos. Sao dois
+#   arquivos com duas contagens, e uma constante so erraria um deles.
+FOLHAS_DA_RETIRADA_NO_RETORNO = 4
+
 # O ANDAMENTO LEVA SEMPRE `0` — APONTAMENTO —, e nao a ocorrencia do ato.
 #
 #   MEDIDO em 31/08/2026 nos 25 andamentos que esta casa mandou em 2026:
@@ -131,6 +147,15 @@ ATOS_POR_TIPO_DE_ARQUIVO: dict[str, tuple[str, ...]] = {
 
 class RetornoError(ValueError):
     """Impedimento de regra, com mensagem pronta para o balcao."""
+
+
+class RetornoSemCustasError(RetornoError):
+    """A retirada nao tem de onde tirar a custa da posicao 467.
+
+    E classe propria porque `gerar` engole o `RetornoError` de cada arquivo: la
+    ele quer dizer «hoje nao ha o que informar». Este nao e dia vazio, e ha ato
+    esperando; engolido, a tela diria «gerados» sem o retorno ter saido.
+    """
 
 
 def _letra_da_ocorrencia(tipo_ato: str | None) -> str:
@@ -640,6 +665,23 @@ def _explicacao_do_repetido(linha: dict) -> str:
     return texto
 
 
+def _por_que_retido(linha: dict) -> str:
+    """`ACEITE` se a CRA já tem a ocorrência; `SEM_RESPOSTA` se ela só vai num
+    arquivo ainda não respondido. Só calcula.
+
+    A marca manual conta como aceite: foi o oficial quem disse que a Central a
+    tem. O que o E-Ofício informou antes da virada, também.
+    """
+    if str(linha.get("cra_ja_informado_em") or "").strip():
+        return "ACEITE"
+    for i in linha.get("informantes") or []:
+        if (str(i.get("aceito_em") or "").strip()
+                or str(i.get("marcado_em") or "").strip()
+                or str(i.get("ambiente") or "") == "EOFICIO"):
+            return "ACEITE"
+    return "SEM_RESPOSTA"
+
+
 def protocolos_repetidos_na_fila(con: sqlite3.Connection) -> list[dict]:
     """Os atos do próximo retorno (ou andamento) cujo PROTOCOLO a CRA já tem
     com aquela ocorrência. Só LÊ — o contrato do roteiro do protesto.
@@ -656,9 +698,15 @@ def protocolos_repetidos_na_fila(con: sqlite3.Connection) -> list[dict]:
       - `LIBERADO`: o ato voltou à fila por AFIRMAÇÃO EXPRESSA de alguém da
         serventia, e vai no próximo arquivo mesmo assim — se a CRA o recusar,
         é este o caso.
+
+    O RETIDO COM ACEITE DA CRA ESTÁ CERTO — 30/10/2026. `so_informacao` o marca:
+    o roteiro o mostra como informação, sem cobrar nem exigir afirmação no
+    encerramento, porque não há tela nem motivo para ele sair desta lista. Só é
+    pendência o retido por arquivo ainda sem resposta (`retido_por`).
     """
     saida: list[dict] = []
     for p in ja_aceitas_fora_da_fila(con):
+        retido_por = _por_que_retido(p)
         saida.append({
             "ato_id": int(p["ato_id"]), "tipo": p["tipo"],
             "ocorrencia": p.get("ocorrencia"),
@@ -667,6 +715,8 @@ def protocolos_repetidos_na_fila(con: sqlite3.Connection) -> list[dict]:
             "protocolo": p.get("protocolo"),
             "apresentante_codigo": p.get("apresentante_codigo"),
             "situacao": "RETIDO",
+            "retido_por": retido_por,
+            "so_informacao": retido_por == "ACEITE",
             "por_outro_titulo": bool(p.get("por_outro_titulo")),
             "explicacao": _explicacao_do_repetido(p)})
     liberados: dict[int, dict] = {}
@@ -732,6 +782,68 @@ def apresentantes_pendentes(con: sqlite3.Connection) -> list[dict]:
 
 
 # ------------------------------------------------------------------ montar
+
+
+def _custa_da_retirada(con: sqlite3.Connection, a: dict) -> str:
+    """Os 10 digitos da posicao 467 de um ato de DESISTENCIA. So LE.
+
+    MEDIDO EM 30/10/2026: o retorno com «3» e esse campo zerado voltou da CRA
+    com o codigo 2239 «FALTOU INFORMAR AS CUSTAS DO CARTORIO/DISTRIBUIDOR». O
+    valor e a retirada do arquivo de emolumentos da CENPROT com
+    `FOLHAS_DA_RETIRADA_NO_RETORNO` folhas, pela tabela do DIA DO ATO, e nao a do
+    dia do arquivo: o ato de dezembro informado em janeiro custou o que custava
+    em dezembro.
+
+    ZERO AQUI E O QUE A CRA RECUSA, e por isso o que nao tem valor para: titulo
+    sem valor, sem tabela ou fora de toda faixa recusa o arquivo inteiro, com a
+    frase de onde consertar. Como nada foi gravado, e so gerar de novo.
+    """
+    import custas
+    import protesto_cenprot as CENP
+    import protesto_pix as PIX
+
+    quem = (f"O retorno não foi gerado: o título {a.get('numero_titulo') or '?'} "
+            f"(protocolo {(a.get('protocolo') or '').strip() or '?'}) foi retirado, "
+            f"e a CRA recusa a retirada sem a custa do cartório (código 2239).")
+    valor = int(a.get("valor_centavos") or 0)
+    if valor <= 0:
+        raise RetornoSemCustasError(
+            f"{quem} O título está sem valor, e é dele que sai a faixa da "
+            f"tabela. Confira o valor na ficha do título e gere de novo.")
+    if not a.get("data_ato"):
+        raise RetornoSemCustasError(
+            f"{quem} O ato de desistência está sem data, e é ela que escolhe a "
+            f"tabela de emolumentos. Confira o ato na ficha do título.")
+    faltam = [t for t in PIX.TABELAS_DAS_CUSTAS if not banco(con).tem_tabela(t)]
+    if faltam:
+        raise RetornoSemCustasError(
+            f"{quem} Esta instalação não tem a tabela de emolumentos "
+            f"({', '.join(faltam)}). Importe a tabela e gere de novo.")
+    try:
+        vigencia = int(custas.vigencia_do_dia(con, a["data_ato"])["codigo"])
+        retirada = CENP.precos_do_titulo(con, valor, vigencia=vigencia)["retirada"]
+        incompleta = CENP.constantes(con, vigencia)["retirada"] is None
+        folha = CENP._preco_do_item(con, CENP.ITEM_POR_FOLHA, vigencia)
+    except custas.CustasError as erro:
+        raise RetornoSemCustasError(f"{quem} {erro}") from erro
+    except (ValueError, TypeError, KeyError) as erro:
+        raise RetornoSemCustasError(
+            f"{quem} A tabela de emolumentos tem valor que não se lê. Importe "
+            f"a tabela de novo e gere outra vez.") from erro
+    if incompleta:
+        raise RetornoSemCustasError(
+            f"{quem} A tabela de emolumentos {vigencia} está incompleta: falta "
+            f"item da retirada ({', '.join(CENP.ITENS_FIXOS_DA_RETIRADA)}, "
+            f"{CENP.ITEM_POR_FOLHA}). Importe a tabela de novo e gere outra vez.")
+    if not retirada:
+        raise RetornoSemCustasError(
+            f"{quem} O valor de R$ {valor // 100},{valor % 100:02d} não cai em "
+            f"nenhuma faixa do item "
+            f"{CENP.FAIXA_DA_RETIRADA} da tabela {vigencia}. Confira o valor na "
+            f"ficha do título e a tabela de emolumentos, e gere de novo.")
+    # `precos_do_titulo` conta as 5 folhas da CENPROT; aqui saem as que sobram.
+    a_menos = CENP.FOLHAS_ARQUIVADAS - FOLHAS_DA_RETIRADA_NO_RETORNO
+    return f"{int(retirada) - a_menos * int(folha):010d}"
 
 
 def _titulo_completo(con: sqlite3.Connection, a: dict) -> dict:
@@ -871,6 +983,10 @@ def montar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
         prot = t["protocolo"]
         if prot not in ocorrencia_do_protocolo:
             ocorrencia_do_protocolo[prot] = t["ocorrencia"]
+            # SÓ NA RETIRADA, E SÓ NO QUE VAI NO ARQUIVO: o ato adiado não
+            # recusa o arquivo de hoje, e as outras ocorrências seguem em zero.
+            if t["ocorrencia"] == OCORRENCIA_DA_RETIRADA:
+                t["reservado_467"] = _custa_da_retirada(con, a)
             unicos.append(t)
             atos_no_arquivo.append(a)
         elif ocorrencia_do_protocolo[prot] == t["ocorrencia"]:
@@ -1096,6 +1212,10 @@ def gerar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
                                   dia=dia, marca=marca,
                                   numero_da_remessa=numero_da_remessa,
                                   tipo=qual)
+        except RetornoSemCustasError:
+            # Nao e dia vazio: ha ato esperando e a frase tem de chegar a tela.
+            # Sobe antes de qualquer gravacao, e a transacao nao deixa nada.
+            raise
         except RetornoError as erro:
             # Vazio nao e erro: e o dia em que nao havia aquilo para informar.
             # Guarda-se o motivo para a tela contar, em vez de calar.

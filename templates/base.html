@@ -1,3 +1,11 @@
+{# O LAYOUT NOVO (30/10/2026) é escolha de cada pessoa, e o padrão de fábrica é este
+   aqui. Quem o escolheu recebe `base_novo.html`, com os mesmos blocos: as telas não
+   sabem qual das duas molduras as desenha. Ver `navegacao_web.py`. #}
+{% if layout_novo %}{% extends "base_novo.html" %}{% endif %}
+{# E O RESTO DESTE ARQUIVO SÓ RODA SEM ELE. O `extends` dentro de `if` segura o texto,
+   mas não segura o `include`: os avisos e os botões daqui saíam antes do <!doctype> da
+   moldura nova, em dobro. Quem achou foi a primeira foto no navegador. #}
+{% if not layout_novo %}
 {# O botao de fechar o aviso — relato #62. A macro e a razao dela estao em
    `_aviso.html`; aqui so se chama. #}
 {% import '_aviso.html' as aviso %}
@@ -790,6 +798,9 @@
         <a href="{{ url_for('rcpj_rtd_registros', atribuicao=3) }}">RCPJ — registros lavrados</a>
         <a href="{{ url_for('rcpj_rtd_registros', atribuicao=4) }}">RTD — registros lavrados</a>
         <a href="{{ url_for('rcpj_rtd_ultimos_atos') }}">Últimos atos praticados</a>
+        {% if user.role in ['ADMIN','MANAGER'] %}
+        <a href="{{ url_for('rcpj_rtd_pendencias_lista_presenca') }}">RCPJ — atos sem lista de presença</a>
+        {% endif %}
         <a href="{{ url_for('atribuicoes_certidoes') }}">Certidões de inteiro teor</a>
         {% if user.role in ['ADMIN','MANAGER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Configuração</div>
         <a href="{{ url_for('rcpj_rtd_etiqueta_ajuste') }}">Ajustar a etiqueta de registro</a>{% endif %}
@@ -1031,6 +1042,7 @@
       <span class="user-avatar" aria-hidden="true" title="{{ user.full_name }}">{{ user.full_name[:1] | upper }}</span>
       <div class="user-copy"><strong>{{ user.full_name }}</strong><small>{{ user.role }} · v{{ VERSION }} · <a href="{{ url_for('dois_fatores') }}" title="Verificação em duas etapas da sua conta">duas etapas</a> · <a href="{{ url_for('minha_senha') }}" title="Trocar a senha da sua conta">minha senha</a></small></div>
       <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button" title="Sair do sistema">Sair</button></form>
+      <form method="post" action="{{ url_for('preferencia_layout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="layout" value="novo"><input type="hidden" name="next" value="{{ request.full_path if request.method == 'GET' else url_for('dashboard') }}"><button class="link-button" title="Experimentar o layout novo. Dá para voltar a qualquer momento.">Novo layout</button></form>
     </div>
   </aside>
   <button class="sidebar-scrim" type="button" aria-label="Fechar menu" tabindex="-1"></button>
@@ -1103,3 +1115,4 @@
 {% endif %}
 </body>
 </html>
+{% endif %}

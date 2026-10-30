@@ -179,8 +179,13 @@ def test_o_botao_so_existe_nas_telas_da_casa():
     # a 3.6.259 (avisos v2, 29–30/09/2026) as faixas da casa moram em
     # `_faixas_compactas.html`, que o `base.html` inclui em TODA tela; é o
     # mesmo lugar da tela, num arquivo à parte.
+    #
+    # A MOLDURA NOVA ENTROU NA LISTA EM 30/10/2026, e pela mesma razão: enquanto
+    # as duas existem, o recado da tela sai de `base.html` ou de `base_novo.html`,
+    # conforme a escolha de quem atende (`navegacao_web`). Quando a etapa de
+    # limpeza tirar a antiga, sai `base.html`.
     onde = sorted(tela.name for tela in TELAS.glob("*.html") if BOTAO in _texto(tela))
-    assert onde == ["_faixas_compactas.html", "base.html", "dashboard.html"], (
+    assert onde == ["_faixas_compactas.html", "base.html", "base_novo.html", "dashboard.html"], (
         f"o botão de fechar o aviso está em {onde}. Ele existe na faixa do alto "
         f"(`base.html`) e no painel (`dashboard.html`), que avisam da CASA; o "
         f"aviso que explica a tela não se fecha, porque quem chega depois perde "

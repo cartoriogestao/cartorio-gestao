@@ -923,6 +923,13 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("pt_cenprot_xml", "envio_afirmado_em", "TEXT"),
     ("pt_cenprot_xml", "envio_afirmado_por", "TEXT"),
     ("pt_cenprot_xml", "envio_afirmacao", "TEXT"),
+    # O ARQUIVO QUE A CENPROT RECUSOU, E OS ATOS DEVOLVIDOS DE UM QUE SUBIU SEM
+    # ELES (30/10/2026) — `protesto_cenprot_xml.recusar_arquivo` e
+    # `devolver_atos_escolhidos`. O conteúdo do arquivo não muda.
+    ("pt_cenprot_xml", "recusado_em", "TEXT"),
+    ("pt_cenprot_xml", "recusado_por", "TEXT"),
+    ("pt_cenprot_xml", "recusado_motivo", "TEXT"),
+    ("pt_cenprot_xml", "atos_devolvidos", "TEXT"),
     # A REABERTURA DO DIA NA PRÓPRIA LINHA (PR #114). O `pt_encerramentos_do_dia`
     # nasceu no `main` pelo PR #104 sem estas quatro colunas, e o #114 só as pôs
     # no `CREATE TABLE` — que não muda tabela que já existe. Num banco que abriu

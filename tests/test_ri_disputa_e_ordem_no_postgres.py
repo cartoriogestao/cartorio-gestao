@@ -158,9 +158,12 @@ def test_dois_arquivamentos_da_mesma_prenotacao_o_segundo_le_ja_encerrada():
         """
         CREATE TABLE ri_protocolos (
             id INTEGER PRIMARY KEY, numero INTEGER, situacao TEXT,
-            situacao_anterior TEXT);
+            situacao_anterior TEXT,
+            encerrado_em TEXT, encerrado_por TEXT,
+            motivo_encerramento TEXT, obs_encerramento TEXT);
         CREATE TABLE ri_atos (id INTEGER PRIMARY KEY, protocolo TEXT);
-        INSERT INTO ri_protocolos VALUES (1, 11546, 'ABERTO', NULL);
+        INSERT INTO ri_protocolos (id, numero, situacao, situacao_anterior)
+        VALUES (1, 11546, 'ABERTO', NULL);
         INSERT INTO ri_atos VALUES (10, '11546');
         INSERT INTO ri_atos VALUES (11, '11.546');
         """)

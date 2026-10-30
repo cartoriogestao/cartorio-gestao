@@ -23,16 +23,23 @@
     <thead><tr><th>Código TJ</th><th>Ato</th><th style="text-align:right">Total</th><th>Qtd</th><th></th></tr></thead>
     <tbody>{% for r in achados %}
             <tr>
+        {% set depende_da_base = r.codigo_tj in (SERVICOS_BASE_METADE|default([], true)) %}
         <td>{{ r.codigo_tj or '-' }}</td>
         <td class="small">{{ (r.descricao or '')[:64] }}</td>
-        <td style="text-align:right">{{ r.total or '-' }}</td>
+        <td style="text-align:right">{% if depende_da_base %}—{% else %}{{ r.total or '-' }}{% endif %}</td>
         <td colspan="2">
+          {% if depende_da_base %}
+          <span class="small">O preço depende do valor do imóvel. Escolha
+            <strong>{{ r.codigo_tj }}</strong> na caixa «Tabela» e informe o
+            valor da área.</span>
+          {% else %}
           <form method="post" action="{{ url_for('caixa_protocolo_itens', protocolo_id=protocolo_id) }}" style="display:inline-flex;gap:6px;align-items:center">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="servico" value="{{ r.codigo }}">
             <input name="quantidade" value="1" size="2" title="Quantidade">
             <button class="small" name="acao" value="acrescentar">acrescentar</button>
           </form>
+          {% endif %}
         </td>
       </tr>
     {% endfor %}</tbody>

@@ -971,6 +971,44 @@ def para_o_pagamento(con, titulo_id: int, pix_id: Any) -> dict:
     return dict(pix)
 
 
+def para_o_pagamento_de_correcao(con, pix_id: Any, *, titulo_id: int,
+                                 titulo_de_origem_id: int,
+                                 prender: bool = False) -> dict:
+    """O PIX de crédito conferido que a CÓPIA do pagamento vai levar. Só LÊ (e
+    recusa). É a fila de correções de ofício quem chama (decisão do oficial,
+    30/10/2026): pagamento por PIX copiado pela fila passa pela mesma trava.
+
+    Difere de `para_o_pagamento` num ponto só, e é o caso que a fila existe para
+    tratar: o pagamento lançado no título errado leva o PIX daquele título. Por
+    isso o PIX pode ser do título que recebe a cópia OU do título do pagamento
+    copiado. O crédito tem de estar conferido e sem outro ato válido em pé: com
+    o original válido, o mesmo crédito pagaria dois atos.
+    """
+    pix = _ler(con, pix_id, prender=prender)
+    if not pix or int(pix["titulo_id"]) not in (int(titulo_id),
+                                                int(titulo_de_origem_id)):
+        raise PixError("Este PIX não é do título que recebe a cópia nem do "
+                       "título do pagamento copiado.")
+    if pix["situacao"] != CONFIRMADO:
+        raise PixError(
+            f"O crédito deste PIX ainda não foi conferido "
+            f"({SITUACOES.get(pix['situacao'], pix['situacao'])}): sem o crédito "
+            f"localizado no banco, PIX não é pagamento.")
+    if _ato_valido(con, pix.get("ato_id")):
+        raise PixError(
+            f"Este PIX sustenta o ato {pix['ato_id']}, que continua válido: o "
+            f"mesmo crédito não paga dois atos. Torne-o sem efeito antes.")
+    return dict(pix)
+
+
+def levar_ao_pagamento_de_correcao(con, pix_id: int, *, titulo_id: int,
+                                   ato_id: int) -> None:
+    """O PIX acompanha o pagamento copiado: passa ao título certo e ao ato novo.
+    ESCREVE."""
+    banco(con).escrever("UPDATE pt_pix SET titulo_id=%s, ato_id=%s WHERE id=%s",
+                        (int(titulo_id), int(ato_id), int(pix_id)))
+
+
 def data_do_pagamento(pix: dict) -> str:
     """A DATA DO PAGAMENTO É A DO CRÉDITO — 29/10/2026, ordem do oficial. A do
     extrato (ou a afirmada na confirmação à mão); sem ela, a do comprovante.

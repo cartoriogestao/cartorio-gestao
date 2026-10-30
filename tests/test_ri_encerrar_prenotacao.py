@@ -1,6 +1,6 @@
 """Encerrar a prenotação do RI com motivo da lista.
 
-Pedido da Tabeliã e Registradora Substituta (Leidiane): na ficha, o oficial
+Pedido da Tabeliã e Registradora Substituta: na ficha, o oficial
 escolhe o motivo, e a situação sai do motivo. O painel dos pedidos usa o
 mesmo caminho. A reabertura continua valendo sobre o que este caminho fechar,
 e o rastro (quem, quando, motivo, observação) permanece.

@@ -1,6 +1,6 @@
 """Encerramento da prenotação do Registro de Imóveis, com motivo da lista.
 
-Pedido da Tabeliã e Registradora Substituta (Leidiane): na ficha da prenotação
+Pedido da Tabeliã e Registradora Substituta: na ficha da prenotação
 o oficial escolhe o motivo, e a situação sai do motivo. Texto livre não encerra.
 
 O QUE SE GRAVA

@@ -36,6 +36,7 @@ import banco_pg
 import protesto as PT
 import protesto_arquivo as PA
 import protesto_retorno as PR
+from caixa_schema import init_caixa_schema
 from nucleo_schema import init_nucleo_schema
 from pt_schema import init_pt_schema
 
@@ -56,14 +57,15 @@ def banco() -> sqlite3.Connection:
 
 
 def titulo(con, *, numero="9911/1", apresentante="001",
-           nome_apresentante="BANCO DO BRASIL", origem="CRA") -> int:
+           nome_apresentante="BANCO DO BRASIL", origem="CRA",
+           valor="1.200,00") -> int:
     dados = {
         "apresentante_codigo": apresentante,
         "apresentante_nome": nome_apresentante,
         "especie": "DMI", "numero_titulo": numero,
         "nosso_numero": f"NN{numero}",
         "data_emissao": "2026-01-05", "data_vencimento": "2026-02-05",
-        "valor": "1.200,00", "saldo": "1.310,45",
+        "valor": valor, "saldo": "1.310,45",
         "praca_protesto": "CIDADE EXEMPLO", "motivo_protesto": "1",
         "cedente": {"nome": "LOJA CENTRAL LTDA",
                     "documento": "00000017000149"},
@@ -81,6 +83,46 @@ def ate_o_protesto(con, titulo_id: int) -> None:
     PT.lancar_intimacao(con, titulo_id, modo="PESSOAL", agora=AGORA)
     juntar_prova(con, titulo_id)   # a prova da intimação (29/10/2026)
     PT.lancar_protesto(con, titulo_id, sv=SV, agora=AGORA, data_extenso="x")
+
+
+# Os itens fixos da retirada na vigência 10022, de `tests/custas_reais.json`
+# (a soma com 5 folhas é a constante medida, R$ 82,64), e a faixa 17.4 que
+# fecha o caso medido: R$ 418,17 dá R$ 118,49. O teto da faixa é do ensaio.
+ITENS_10022 = {"17.7": "11,96", "17.2": "10,68", "17.10.1": "26,25", "17.9": "6,75"}
+FAIXA_10022 = ("0,00", "10.000,00", "35,85")
+CODIGO_DO_ITEM = {"17.7": 67, "17.2": 25, "17.10.1": 645, "17.9": 331}
+
+
+def tabela_de_custas(con, *, vigencia=10022, inicio="2026-01-01",
+                     fim="2026-12-31", itens=None, faixa=FAIXA_10022) -> None:
+    # `init_caixa_schema` pede estas três; o banco da casa as cria antes.
+    con.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY)")
+    con.execute("CREATE TABLE IF NOT EXISTS ri_protocolos (id INTEGER PRIMARY KEY)")
+    con.execute("CREATE TABLE IF NOT EXISTS ri_matriculas (id INTEGER PRIMARY KEY)")
+    init_caixa_schema(con)
+    con.execute(
+        """INSERT INTO cx_vigencias(codigo, descricao, vigente, inicio, fim)
+           VALUES (?,?,?,?,?)""",
+        (vigencia, f"TABELA {vigencia}", 1 if vigencia == 10022 else 0, inicio, fim))
+    for tj, total in (ITENS_10022 if itens is None else itens).items():
+        con.execute(
+            "INSERT OR IGNORE INTO cx_servicos(codigo, codigo_tj, descricao) "
+            "VALUES (?,?,?)", (CODIGO_DO_ITEM[tj], tj, f"item {tj}"))
+        con.execute(
+            "INSERT INTO cx_servico_valores(servico, vigencia, total) VALUES (?,?,?)",
+            (CODIGO_DO_ITEM[tj], vigencia, total))
+    de, ate, total = faixa
+    con.execute(
+        """INSERT INTO cx_faixas(tabela, vigencia, de, ate, codigo_tj, total)
+           VALUES (17, ?, ?, ?, '17.4.1', ?)""", (vigencia, de, ate, total))
+    con.commit()
+
+
+def desistido(con, *, numero="9911/1", valor="418,17", agora=AGORA) -> int:
+    tid = titulo(con, numero=numero, valor=valor)
+    PT.lancar_apontamento(con, tid, sv=SV, agora=agora, data_extenso="x")
+    PT.lancar_desistencia(con, tid, motivo="Credor desistiu.", agora=agora)
+    return tid
 
 
 # ------------------------------------------------------------- o protocolo
@@ -145,6 +187,7 @@ def test_os_pendentes_se_agrupam_por_apresentante():
 
 def test_a_ocorrencia_sai_do_ato_e_e_a_medida():
     con = banco()
+    tabela_de_custas(con)       # a retirada leva a custa do cartório
     ate_o_protesto(con, titulo(con, numero="1/1"))
     pago = titulo(con, numero="2/1")
     PT.lancar_apontamento(con, pago, sv=SV, agora=AGORA, data_extenso="x")
@@ -156,6 +199,93 @@ def test_a_ocorrencia_sai_do_ato_e_e_a_medida():
     r = PR.montar(con, apresentante_codigo="001", dia=HOJE, marca="A")
     saiu = {t["ocorrencia"] for t in r["arquivo"].titulos}
     assert saiu == {"C", "1", "3"}          # protesto, pago, retirado
+
+
+def test_a_retirada_leva_a_custa_do_cartorio_na_posicao_467():
+    """A CRA recusou o zero com 2239 (30/10/2026). O caso medido: R$ 418,17 dá
+    R$ 118,49 na vigência 10022."""
+    con = banco()
+    tabela_de_custas(con)
+    desistido(con)
+    r = PR.montar(con, apresentante_codigo="001", dia=HOJE, marca="A")
+    linha = r["conteudo"].splitlines()[1]
+    assert len(linha) == 600
+    assert linha[457] == "3"
+    assert linha[466:476] == "0000011849"
+    assert PA.ler(r["conteudo"]).titulos[0]["reservado_467"] == "0000011849"
+
+
+def test_a_custa_da_retirada_e_a_da_tabela_do_dia_do_ato():
+    con = banco()
+    tabela_de_custas(con)
+    tabela_de_custas(con, vigencia=10021, inicio="2025-01-01", fim="2025-12-31",
+                     itens={"17.7": "10,00", "17.2": "10,00", "17.10.1": "20,00",
+                            "17.9": "5,00"},
+                     faixa=("0,00", "10.000,00", "30,00"))
+    desistido(con, agora="2025-12-20T10:00:00")
+    # O arquivo sai em 2026 e o ato é de 2025: 40,00 + 5 x 5,00 + 30,00.
+    r = PR.montar(con, apresentante_codigo="001", dia=HOJE, marca="A")
+    assert r["conteudo"].splitlines()[1][466:476] == "0000009500"
+
+
+def test_as_outras_ocorrencias_seguem_em_zero_e_nao_pedem_tabela():
+    # Sem tabela nenhuma neste banco: nem o pagamento nem o protesto a leem.
+    con = banco()
+    pago = titulo(con, numero="1/1")
+    PT.lancar_apontamento(con, pago, sv=SV, agora=AGORA, data_extenso="x")
+    PT.lancar_pagamento(con, pago, sv=SV, agora=AGORA, data_extenso="x")
+    ate_o_protesto(con, titulo(con, numero="2/1"))
+    r = PR.montar(con, apresentante_codigo="001", dia=HOJE, marca="A")
+    linhas = r["conteudo"].splitlines()[1:3]
+    assert {x[457] for x in linhas} == {"1", "C"}
+    assert [x[466:476] for x in linhas] == ["0000000000"] * 2
+
+
+def test_retirada_sem_faixa_recusa_com_a_frase_do_balcao_e_nunca_zero():
+    con = banco()
+    tabela_de_custas(con, faixa=("10.000,01", "20.000,00", "35,85"))
+    desistido(con)
+    with pytest.raises(PR.RetornoError) as erro:
+        PR.montar(con, apresentante_codigo="001", dia=HOJE, marca="A")
+    frase = str(erro.value)
+    assert "R$ 418,17" in frase and "17.4" in frase and "10022" in frase
+    assert "2608250001" in frase, "o balcão precisa saber qual título"
+
+
+def test_retirada_com_a_tabela_incompleta_recusa():
+    con = banco()
+    tabela_de_custas(con, itens={"17.7": "11,96", "17.2": "10,68",
+                                 "17.10.1": "26,25"})     # falta o 17.9
+    desistido(con)
+    with pytest.raises(PR.RetornoError, match="incompleta"):
+        PR.montar(con, apresentante_codigo="001", dia=HOJE, marca="A")
+
+
+def test_retirada_sem_tabela_na_instalacao_recusa_e_nao_estoura():
+    con = banco()
+    desistido(con)
+    with pytest.raises(PR.RetornoError, match="tabela de emolumentos"):
+        PR.montar(con, apresentante_codigo="001", dia=HOJE, marca="A")
+
+
+def test_o_gerar_nao_engole_a_recusa_da_custa_nem_grava_metade():
+    """`gerar` trata «sem conteúdo» como dia vazio, e o andamento deste título
+    está pendente: engolida, a tela diria «gerados» sem o retorno ter saído."""
+    con = banco()
+    desistido(con)
+    with pytest.raises(PR.RetornoError, match="tabela de emolumentos"):
+        PR.gerar(con, apresentante_codigo="001", dia=HOJE, agora=AGORA, marca="A")
+    assert con.execute("SELECT COUNT(*) FROM pt_retornos").fetchone()[0] == 0
+    assert con.execute("SELECT COUNT(*) FROM pt_atos WHERE retorno_id IS NOT NULL"
+                       ).fetchone()[0] == 0
+
+
+def test_o_andamento_nao_pede_a_tabela_e_nao_trava_a_remessa():
+    con = banco()
+    desistido(con)
+    r = PR.gerar_andamento(con, apresentante_codigo="001", dia=HOJE, agora=AGORA,
+                           marca="A")
+    assert r["andamento_id"] and r["retorno_id"] is None
 
 
 def test_o_retorno_leva_so_a_chave_e_o_resultado():

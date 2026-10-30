@@ -255,23 +255,23 @@ TITULO_NO_RETORNO: tuple[Campo, ...] = (
           "colada ao protocolo. Os 34,5% que divergem de dtmE_Cartorio são "
           "esperados: o E-Ofício deixava editar aquela data depois"),
     Campo("reservado_467", 467, 10, "texto", None,
-          "zero em 416 dos 443. Nos 27 não-zero, os valores se repetem e se "
-          "agrupam pela ocorrência (R$ 230–250 na ocorrência «A», R$ 68–134 "
-          "na «3»), o que tem cara de tarifa de tabela. NÃO é custa do "
-          "acervo: busca exaustiva de toda soma de 1 a 5 das 60 colunas "
-          "`cur*` de tbAvisoProtesto explicou só 2 dos 27, e com combinações "
-          "sem sentido. A CONFERIR — a hipótese que sobra, do manual da CRA, "
-          "é o valor cobrado pelo banco no repasse, que o cartório informa "
-          "no retorno; não há coluna no acervo contra a qual conferir isso. "
-          "MEDIDO DE NOVO EM 31/08/2026, nos 64 retornos de 2026: 7 "
-          "preenchidos, e eles CONFIRMAM o agrupamento por ocorrência — «A» "
-          "R$ 53,58, «3» R$ 111,74 e R$ 132,21 (dentro da faixa 68–134 do "
-          "lote antigo), e um grupo novo, «C», com R$ 1.170,71 repetido 4 "
-          "vezes. Quatro anos depois, o padrão é o mesmo e a composição "
-          "continua sem explicação: nenhum item de `cx_servicos` tem esses "
-          "totais. **O sistema continua escrevendo zero**, que é o que o "
-          "E-Ofício fazia e o que a Central aceita em 57 dos 64 — valor "
-          "inventado num arquivo que vai para a Central é pior que zero"),
+          "A CUSTA DO CARTÓRIO NA RETIRADA, em centavos, na ocorrência «3». "
+          "FECHADO EM 30/10/2026 pela recusa da CRA: o retorno com «3» e este "
+          "campo zerado voltou com o código 2239 «FALTOU INFORMAR AS CUSTAS "
+          "DO CARTÓRIO/DISTRIBUIDOR». Medido: título de R$ 418,17 dá R$ 118,49 "
+          "na vigência 10022 (`protesto_cenprot.precos_do_titulo`, «retirada», "
+          "com as 5 folhas do preço da CENPROT). Quem preenche é "
+          "`protesto_retorno.montar`, e só na «3»; sem faixa ou com a tabela "
+          "incompleta ele recusa, e nunca manda zero. AS OUTRAS OCORRÊNCIAS "
+          "SEGUEM EM ZERO: é o que o E-Ofício escreveu em 416 dos 443 e o que "
+          "a Central aceita em 57 dos 64 retornos de 2026. O que ficou do "
+          "histórico: os 27 não-zero dos 443 e os 7 dos 64 se agrupam pela "
+          "ocorrência — «A» R$ 230–250 e R$ 53,58, «3» R$ 68–134, «C» "
+          "R$ 1.170,71 (4 vezes). Os dois da «3» de 2026, R$ 111,74 e "
+          "R$ 132,21, são a mesma conta com 4 FOLHAS (118,49 − 6,75 = 111,74; "
+          "ver `protesto_pix._custas_possiveis`). «A» e «C» continuam sem "
+          "explicação: nenhum item de `cx_servicos` tem esses totais, e a "
+          "busca nas colunas `cur*` de tbAvisoProtesto explicou só 2 dos 27"),
     Campo("separador_477", 477, 1, "texto", None, "sempre branco nos 443"),
     Campo("data_ocorrencia", 478, 8, "data", 95.6, "contra dtmOcorrencia"),
     Campo("reservado_486", 486, 2, "texto", None,
@@ -1003,7 +1003,9 @@ def _montar_saida(*, tipo: str, apresentante_codigo: str,
         # dado: 486 traz "00" e 568 traz zeros em 443 registros de quatro anos.
         t.setdefault("reservado_486", "00")
         t.setdefault("reservado_446", "01")
-        # `467` sai zero, que e o que o E-Oficio escreveu em 416 dos 443.
+        # `467` sai zero, que e o que o E-Oficio escreveu em 416 dos 443. A
+        # ocorrencia «3» chega aqui com a custa da retirada ja preenchida
+        # (`protesto_retorno.montar`): a CRA recusa o zero dela com 2239.
         t.setdefault("reservado_467", "0" * 10)
         t.setdefault("reservado_566", marca)
     soma = sum(int(t.get("saldo_a_protestar") or 0) for t in titulos)

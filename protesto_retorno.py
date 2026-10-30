@@ -24,7 +24,8 @@ A OCORRENCIA SAI DO ATO, e ela foi medida
 
 O QUE O RETORNO LEVA DE CADA TITULO
     Nosso numero, valor, saldo, protocolo, a ocorrencia, a data de entrada
-    (a do apontamento) e a data da ocorrencia (a do ato). O resto do registro
+    (a do apontamento), a data da ocorrencia (a do ato) e, so na ocorrencia
+    `3`, a custa do cartorio na retirada (`_custa_da_retirada`). O resto do registro
     vem em branco, e isso e medido: nos 383 reais, especie, cedente e devedor
     estao sempre vazios — o apresentante ja sabe o que mandou.
 
@@ -87,6 +88,10 @@ OCORRENCIA_DO_ATO: dict[str, str] = {
     "CANCELAMENTO": "A",
 }
 
+# A ocorrencia que leva a custa do cartorio na posicao 467. Ver
+# `_custa_da_retirada`.
+OCORRENCIA_DA_RETIRADA = OCORRENCIA_DO_ATO["DESISTENCIA"]
+
 # O ANDAMENTO LEVA SEMPRE `0` — APONTAMENTO —, e nao a ocorrencia do ato.
 #
 #   MEDIDO em 31/08/2026 nos 25 andamentos que esta casa mandou em 2026:
@@ -131,6 +136,15 @@ ATOS_POR_TIPO_DE_ARQUIVO: dict[str, tuple[str, ...]] = {
 
 class RetornoError(ValueError):
     """Impedimento de regra, com mensagem pronta para o balcao."""
+
+
+class RetornoSemCustasError(RetornoError):
+    """A retirada nao tem de onde tirar a custa da posicao 467.
+
+    E classe propria porque `gerar` engole o `RetornoError` de cada arquivo: la
+    ele quer dizer «hoje nao ha o que informar». Este nao e dia vazio, e ha ato
+    esperando; engolido, a tela diria «gerados» sem o retorno ter saido.
+    """
 
 
 def _letra_da_ocorrencia(tipo_ato: str | None) -> str:
@@ -734,6 +748,64 @@ def apresentantes_pendentes(con: sqlite3.Connection) -> list[dict]:
 # ------------------------------------------------------------------ montar
 
 
+def _custa_da_retirada(con: sqlite3.Connection, a: dict) -> str:
+    """Os 10 digitos da posicao 467 de um ato de DESISTENCIA. So LE.
+
+    MEDIDO EM 30/10/2026: o retorno com «3» e esse campo zerado voltou da CRA
+    com o codigo 2239 «FALTOU INFORMAR AS CUSTAS DO CARTORIO/DISTRIBUIDOR». O
+    valor e a retirada do arquivo de emolumentos da CENPROT, pela tabela do DIA
+    DO ATO, e nao a do dia do arquivo: o ato de dezembro informado em janeiro
+    custou o que custava em dezembro.
+
+    ZERO AQUI E O QUE A CRA RECUSA, e por isso o que nao tem valor para: titulo
+    sem valor, sem tabela ou fora de toda faixa recusa o arquivo inteiro, com a
+    frase de onde consertar. Como nada foi gravado, e so gerar de novo.
+    """
+    import custas
+    import protesto_cenprot as CENP
+    import protesto_pix as PIX
+
+    quem = (f"O retorno não foi gerado: o título {a.get('numero_titulo') or '?'} "
+            f"(protocolo {(a.get('protocolo') or '').strip() or '?'}) foi retirado, "
+            f"e a CRA recusa a retirada sem a custa do cartório (código 2239).")
+    valor = int(a.get("valor_centavos") or 0)
+    if valor <= 0:
+        raise RetornoSemCustasError(
+            f"{quem} O título está sem valor, e é dele que sai a faixa da "
+            f"tabela. Confira o valor na ficha do título e gere de novo.")
+    if not a.get("data_ato"):
+        raise RetornoSemCustasError(
+            f"{quem} O ato de desistência está sem data, e é ela que escolhe a "
+            f"tabela de emolumentos. Confira o ato na ficha do título.")
+    faltam = [t for t in PIX.TABELAS_DAS_CUSTAS if not banco(con).tem_tabela(t)]
+    if faltam:
+        raise RetornoSemCustasError(
+            f"{quem} Esta instalação não tem a tabela de emolumentos "
+            f"({', '.join(faltam)}). Importe a tabela e gere de novo.")
+    try:
+        vigencia = int(custas.vigencia_do_dia(con, a["data_ato"])["codigo"])
+        retirada = CENP.precos_do_titulo(con, valor, vigencia=vigencia)["retirada"]
+        incompleta = CENP.constantes(con, vigencia)["retirada"] is None
+    except custas.CustasError as erro:
+        raise RetornoSemCustasError(f"{quem} {erro}") from erro
+    except (ValueError, TypeError, KeyError) as erro:
+        raise RetornoSemCustasError(
+            f"{quem} A tabela de emolumentos tem valor que não se lê. Importe "
+            f"a tabela de novo e gere outra vez.") from erro
+    if incompleta:
+        raise RetornoSemCustasError(
+            f"{quem} A tabela de emolumentos {vigencia} está incompleta: falta "
+            f"item da retirada ({', '.join(CENP.ITENS_FIXOS_DA_RETIRADA)}, "
+            f"{CENP.ITEM_POR_FOLHA}). Importe a tabela de novo e gere outra vez.")
+    if not retirada:
+        raise RetornoSemCustasError(
+            f"{quem} O valor de R$ {valor // 100},{valor % 100:02d} não cai em "
+            f"nenhuma faixa do item "
+            f"{CENP.FAIXA_DA_RETIRADA} da tabela {vigencia}. Confira o valor na "
+            f"ficha do título e a tabela de emolumentos, e gere de novo.")
+    return f"{int(retirada):010d}"
+
+
 def _titulo_completo(con: sqlite3.Connection, a: dict) -> dict:
     """Os campos da REMESSA do titulo, para o andamento e a confirmacao.
 
@@ -871,6 +943,10 @@ def montar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
         prot = t["protocolo"]
         if prot not in ocorrencia_do_protocolo:
             ocorrencia_do_protocolo[prot] = t["ocorrencia"]
+            # SÓ NA RETIRADA, E SÓ NO QUE VAI NO ARQUIVO: o ato adiado não
+            # recusa o arquivo de hoje, e as outras ocorrências seguem em zero.
+            if t["ocorrencia"] == OCORRENCIA_DA_RETIRADA:
+                t["reservado_467"] = _custa_da_retirada(con, a)
             unicos.append(t)
             atos_no_arquivo.append(a)
         elif ocorrencia_do_protocolo[prot] == t["ocorrencia"]:
@@ -1096,6 +1172,10 @@ def gerar(con: sqlite3.Connection, *, apresentante_codigo: str, dia: str,
                                   dia=dia, marca=marca,
                                   numero_da_remessa=numero_da_remessa,
                                   tipo=qual)
+        except RetornoSemCustasError:
+            # Nao e dia vazio: ha ato esperando e a frase tem de chegar a tela.
+            # Sobe antes de qualquer gravacao, e a transacao nao deixa nada.
+            raise
         except RetornoError as erro:
             # Vazio nao e erro: e o dia em que nao havia aquilo para informar.
             # Guarda-se o motivo para a tela contar, em vez de calar.

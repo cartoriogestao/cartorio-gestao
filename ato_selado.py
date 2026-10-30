@@ -2023,7 +2023,29 @@ ITEM_DA_FOLHA_ACRESCIDA_DO_RI = {
 }
 
 
-def itens_da_certidao_do_ri(tipo: Any, folhas: int = 1) -> list[tuple[str, int]]:
+#: **A CERTIDAO DIGITAL DE INTEIRO TEOR NAO COBRA FOLHA EXCEDENTE** —
+#: DECISAO-COGEx 2035/2026 (Processo DIGIDOC 47246/2026, assinada em
+#: 26/10/2026 e recebida pelo malote em 29/10/2026), item «b»: as serventias
+#: de RI cobram a certidao digital de inteiro teor de matricula pelo item
+#: 16.24.4, «vedada a cobranca adicional por folhas excedentes», enquanto valer
+#: a DECISAO-G2VP 25/2023. A ordem do oficial em 29/10/2026 foi «adapte a
+#: cobranca no sistema para respeitar a decisao da cogex».
+#:
+#: O QUE E «DIGITAL» AQUI: a certidao pedida pela Central do ONR (a finalidade
+#: comeca com `PREFIXO_DA_FINALIDADE_ONR`), que e a certidao eletronica de que
+#: as duas decisoes tratam. A do balcao, impressa, continua cobrando a folha
+#: acrescida. E a decisao fala de INTEIRO TEOR (16.24.4): a certidao comum
+#: (16.24.1) digital nao e alcancada, e por isso continua com o 16.24.2.
+ITENS_SEM_FOLHA_EXCEDENTE_QUANDO_DIGITAL = frozenset({"16.24.4"})
+
+
+def e_certidao_digital_do_ri(finalidade: Any) -> bool:
+    """A certidao do RI e a eletronica do ONR? Pela marca da finalidade. Só calcula."""
+    return str(finalidade or "").strip().startswith(PREFIXO_DA_FINALIDADE_ONR.strip())
+
+
+def itens_da_certidao_do_ri(tipo: Any, folhas: int = 1, *,
+                            digital: bool = False) -> list[tuple[str, int]]:
     """Os itens de emolumento daquela certidao, na forma que a casa mandou.
 
     Devolve `[(codigo, quantidade), ...]` — **um selo por item**, que e a regra
@@ -2046,6 +2068,8 @@ def itens_da_certidao_do_ri(tipo: Any, folhas: int = 1) -> list[tuple[str, int]]
     folhas = max(1, int(folhas or 1))
     itens = [(base, 1)]
     acrescida = ITEM_DA_FOLHA_ACRESCIDA_DO_RI.get(base)
+    if digital and base in ITENS_SEM_FOLHA_EXCEDENTE_QUANDO_DIGITAL:
+        return itens                     # DECISAO-COGEx 2035/2026: sem folha excedente
     if folhas > 1 and acrescida:
         itens.append((acrescida, folhas - 1))
     return itens

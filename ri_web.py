@@ -914,8 +914,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 "falta a versão da tabela de custas, em Administrativo → "
                 "Configurações (data da tabela em vigor).")
         saiu, faltou, aguardando = [], [], False
+        # A CERTIDAO DIGITAL (a do ONR) DE INTEIRO TEOR NAO COBRA FOLHA
+        # EXCEDENTE — DECISAO-COGEx 2035/2026. Quem diz se e digital e a
+        # finalidade gravada, que vale para a emissao e para o «selar de novo».
+        with db.connect() as con:
+            _finalidade = banco(con).valor(
+                "SELECT finalidade FROM ri_certidoes WHERE id = %s", (int(certidao_id),))
         for indice, (codigo_do_item, quantidade) in enumerate(
-                AS.itens_da_certidao_do_ri(tipo, folhas)):
+                AS.itens_da_certidao_do_ri(
+                    tipo, folhas, digital=AS.e_certidao_digital_do_ri(_finalidade))):
             envelope = AS.envelope_da_certidao_do_ri(
                 tipo=tipo,
                 escrevente=app.extensions["usuario_nome"](),

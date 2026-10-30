@@ -1651,6 +1651,32 @@ def test_a_certidao_de_mais_de_uma_folha_sao_dois_itens():
         assert sum(q for _, q in itens) == folhas
 
 
+def test_a_certidao_digital_de_inteiro_teor_nao_cobra_folha_excedente():
+    """DECISÃO-COGEx 2035/2026, item «b»: a certidão digital de inteiro teor de
+    matrícula se cobra pelo 16.24.4, «vedada a cobrança adicional por folhas
+    excedentes». A do balcão continua com a folha acrescida, e a comum digital
+    (16.24.1) não é alcançada pela decisão."""
+    import ato_selado as AS
+    assert AS.itens_da_certidao_do_ri("INTEIRO_TEOR", 7, digital=True) == [("16.24.4", 1)]
+    assert AS.itens_da_certidao_do_ri("ONUS", 3, digital=True) == [("16.24.4", 1)]
+    assert AS.itens_da_certidao_do_ri("INTEIRO_TEOR", 7) == [("16.24.4", 1), ("16.24.4.1", 6)]
+    assert AS.itens_da_certidao_do_ri("PROPRIEDADE", 3, digital=True) == [
+        ("16.24.1", 1), ("16.24.2", 2)]
+    assert AS.e_certidao_digital_do_ri(f"{AS.PREFIXO_DA_FINALIDADE_ONR}IS0001234")
+    assert not AS.e_certidao_digital_do_ri("Para fins de financiamento")
+    assert not AS.e_certidao_digital_do_ri(None)
+
+
+def test_a_emissao_do_ri_e_o_orcamento_do_onr_usam_a_regra_digital():
+    """Os dois lugares que contam itens de certidão de matrícula passam a marca
+    digital: o laço dos selos do RI (pela finalidade gravada) e o orçamento do ONR."""
+    raiz = Path(__file__).resolve().parent.parent
+    ri = (raiz / "ri_web.py").read_text(encoding="utf-8")
+    assert "digital=AS.e_certidao_digital_do_ri(" in ri
+    onr = (raiz / "onr_certidoes_auto.py").read_text(encoding="utf-8")
+    assert "digital=True" in onr
+
+
 def test_o_tipo_que_a_casa_nunca_selou_nao_vira_item():
     """Não se sela por caminho — nem por item — que a casa nunca usou."""
     import pytest as _pytest

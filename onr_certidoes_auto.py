@@ -319,13 +319,15 @@ def sugerir(con, pedido: dict) -> dict:
 def custas_pela_tabela(con, tipo_ri: str | None, folhas: int = 1) -> str | None:
     """O valor da certidão pela tabela do dia, em reais («123.06»). Só LÊ.
 
-    É a certidão de UMA folha: a de mais folhas cobra o item da folha
-    acrescida, e o número de folhas só se sabe na emissão. Sem preço, None."""
+    A certidão do ONR é DIGITAL: a de inteiro teor não cobra folha excedente
+    (DECISÃO-COGEx 2035/2026, ver `ato_selado.ITENS_SEM_FOLHA_EXCEDENTE_QUANDO_DIGITAL`);
+    as outras cobram o item da folha acrescida, e o número de folhas só se sabe
+    na emissão. Sem preço, None."""
     import ato_selado as AS
     if not tipo_ri or not banco(con).tem_tabela("cx_servicos"):
         return None
     try:
-        itens = AS.itens_da_certidao_do_ri(tipo_ri, max(1, int(folhas)))
+        itens = AS.itens_da_certidao_do_ri(tipo_ri, max(1, int(folhas)), digital=True)
     except AS.AtoError:
         return None
     total = 0

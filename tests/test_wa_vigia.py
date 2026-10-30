@@ -17,7 +17,10 @@ from __future__ import annotations
 
 import itertools
 import json
+import re
 import sys
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -37,6 +40,7 @@ import wa_rotina as ROTINA  # noqa: E402
 import wa_schema as SCH  # noqa: E402
 import wa_transcricao as TRANSC  # noqa: E402
 import wa_vigia as VIGIA  # noqa: E402
+import wa_web as WEB_TEMPLATE  # noqa: E402
 from bd_nativo import banco  # noqa: E402
 
 CHEGOU = "2026-10-28T19:30:00"          # quarta-feira, depois do expediente
@@ -420,6 +424,189 @@ def test_a_volta_aplica_e_um_passo_que_falha_nao_para_os_outros(casa, tmp_path, 
     assert r["erros"] == ["arquivos: RuntimeError"] and rodou == [1]
 
 
+@pytest.fixture(autouse=True)
+def _sem_tela_aberta(monkeypatch):
+    """Outro teste do mesmo processo pode ter perguntado o `/novas`."""
+    monkeypatch.setattr(VIGIA, "_tela_vista_em", None)
+
+
+def test_a_busca_nao_espera_o_download_nem_a_ia(casa, tmp_path, monkeypatch):
+    db = casa["db"]
+    _gravar(db, **{SCH.CHAVE_CAIXA_URL: "https://caixa.exemplo/pendentes",
+                   SCH.CHAVE_CAIXA_SEGREDO: "segredo-teste"})
+    item = {"id": "b-1", "payload": {"messages": [
+        {"from": "5599900000301", "id": "wamid.b-1", "type": "text",
+         "text": {"body": "bom dia"}}]}}
+    travado, soltar = threading.Event(), threading.Event()
+
+    def trava(*a, **k):
+        travado.set()
+        soltar.wait(30)
+        return {"baixados": 0, "conversas": []}
+    monkeypatch.setattr(MIDIA, "baixar_pendentes", trava)
+    monkeypatch.setattr(AT, "rodada", trava)
+    resto = threading.Thread(target=VIGIA.o_resto, args=(db,), kwargs={
+        "pasta_dados": casa["pasta"], "pasta_arquivos": tmp_path, "agora": AGORA}, daemon=True)
+    resto.start()
+    try:
+        assert travado.wait(10), "o resto não chegou ao download"
+        r = VIGIA.buscar_e_aplicar(db, agora=AGORA,
+                                   http_get=lambda url, segredo, timeout=8: (200, json.dumps([item])),
+                                   http_post=lambda *a: (200, "{}"))
+        assert r["aplicadas"] == 1 and resto.is_alive()
+        assert _um(db, "SELECT count(*) AS n FROM wa_mensagem WHERE meta_id='wamid.b-1'")["n"] == 1
+    finally:
+        soltar.set()
+        resto.join(10)
+
+
+def test_a_volta_e_de_3_s_com_a_tela_aberta_e_o_zero_desliga(casa, monkeypatch):
+    db = casa["db"]
+    assert VIGIA.segundos_da_volta(db) is None
+    VIGIA.marcar_tela_aberta()
+    assert VIGIA.segundos_da_volta(db) is None, "sem caixa-postal, a tela não liga nada"
+    _gravar(db, **{SCH.CHAVE_CAIXA_URL: "https://caixa.exemplo/pendentes"})
+    assert VIGIA.segundos_da_volta(db) == 3
+    monkeypatch.setattr(VIGIA, "_tela_vista_em", time.monotonic() - 61)
+    assert VIGIA.segundos_da_volta(db) == ROTINA.VIGIA_PADRAO_S
+    monkeypatch.setattr(VIGIA, "ATENTO_S", 1)
+    VIGIA.marcar_tela_aberta()
+    assert VIGIA.segundos_da_volta(db) == 2, "o mínimo do modo atento é 2 s"
+    _gravar(db, **{SCH.CHAVE_VIGIA_SEGUNDOS: "0"})
+    assert VIGIA.segundos_da_volta(db) is None
+
+
+def test_abrir_a_tela_acorda_a_busca_que_esperava(monkeypatch):
+    VIGIA._acordar_busca.clear()
+    VIGIA.marcar_tela_aberta()
+    assert VIGIA._acordar_busca.is_set()
+    VIGIA._acordar_busca.clear()
+    VIGIA.marcar_tela_aberta()
+    assert not VIGIA._acordar_busca.is_set(), "só a abertura acorda, não cada pergunta"
+
+
+def test_parar_encerra_as_duas_linhas(casa, tmp_path):
+    db = casa["db"]
+    assert VIGIA.iniciar(db, pasta_dados=casa["pasta"], pasta_arquivos=lambda: tmp_path)
+    linhas = list(VIGIA._linhas)
+    try:
+        assert sorted(l.name for l in linhas) == ["whatsapp-vigia-busca", "whatsapp-vigia-resto"]
+        assert not VIGIA.iniciar(db, pasta_dados=casa["pasta"], pasta_arquivos=lambda: tmp_path)
+    finally:
+        VIGIA.parar()
+    for linha in linhas:
+        linha.join(15)
+        assert not linha.is_alive(), linha.name
+
+
+def test_a_falha_de_uma_linha_nao_derruba_a_linha(casa, tmp_path, monkeypatch):
+    db = casa["db"]
+    voltas = []
+
+    def quebra(*a, **k):
+        voltas.append(1)
+        raise RuntimeError("falso")
+    monkeypatch.setattr(VIGIA, "segundos_da_volta", quebra)
+    monkeypatch.setattr(VIGIA, "_segundos_configurados", quebra)
+    assert VIGIA.iniciar(db, pasta_dados=casa["pasta"], pasta_arquivos=lambda: tmp_path)
+    linhas = list(VIGIA._linhas)
+    try:
+        prazo = time.monotonic() + 10
+        while len(voltas) < 2 and time.monotonic() < prazo:
+            time.sleep(0.05)
+        assert len(voltas) >= 2 and all(l.is_alive() for l in linhas)
+    finally:
+        VIGIA.parar()
+    for linha in linhas:
+        linha.join(15)
+
+
+def _lidas(db, sql):
+    with db.connect() as con:
+        return banco(con).ler(sql)
+
+
+def _status(db, meta_id, situacao, agora=AGORA, **extra):
+    corpo = {"entry": [{"changes": [{"value": {"statuses": [
+        {"id": meta_id, "status": situacao, **extra}]}}]}]}
+    with db.transaction() as con:
+        return WA.aplicar_entrada(con, corpo, agora=agora)["entregas"]
+
+
+def test_a_saida_que_falhou_volta_a_esperar_e_entra_no_alerta(casa):
+    db = casa["db"]
+    cid = _entrada(db, meta_id="wamid.f-in")
+    with db.transaction() as con:
+        WA.gravar_saida(con, cid, "Respondido.", "wamid.f-out", autor="MARIO", agora=AGORA)
+    with db.connect() as con:
+        assert FILA.nao_respondidas(con, usuario_id=None) == 0
+    assert _um(db, "SELECT status FROM wa_conversa WHERE id=%s", (cid,))["status"] == SCH.AGUARDANDO
+    _status(db, "wamid.f-out", "failed", errors=[{"code": 131026, "title": "Undeliverable"}])
+    with db.connect() as con:
+        assert FILA.nao_respondidas(con, usuario_id=None) == 1
+    assert _um(db, "SELECT status FROM wa_conversa WHERE id=%s", (cid,))["status"] == SCH.ABERTA
+    # a resposta que chegou depois vale: a falha atrasada da anterior não reabre
+    with db.transaction() as con:
+        WA.gravar_saida(con, cid, "De novo.", "wamid.f-out-2", autor="MARIO", agora=AGORA)
+        WA.gravar_saida(con, cid, "Mais.", "wamid.f-out-3", autor="MARIO", agora=AGORA)
+    _status(db, "wamid.f-out-2", "failed", errors=[{"code": 131026, "title": "Undeliverable"}])
+    assert _um(db, "SELECT status FROM wa_conversa WHERE id=%s", (cid,))["status"] == SCH.AGUARDANDO
+    with db.connect() as con:
+        assert FILA.nao_respondidas(con, usuario_id=None) == 0
+
+
+def test_a_falha_do_aviso_automatico_nao_muda_a_conversa(casa):
+    db = casa["db"]
+    cid = _entrada(db, meta_id="wamid.fa-in")
+    with db.transaction() as con:
+        WA.gravar_saida(con, cid, "Respondido.", "wamid.fa-1", autor="MARIO", agora=AGORA)
+        WA.gravar_saida(con, cid, "Aviso.", "wamid.fa-2", autor="ia", agora=AGORA,
+                        tipo=ROTINA.TIPO_AVISO)
+    _status(db, "wamid.fa-2", "failed", errors=[{"title": "Undeliverable"}])
+    assert _um(db, "SELECT status FROM wa_conversa WHERE id=%s", (cid,))["status"] == SCH.AGUARDANDO
+
+
+def test_o_status_que_chega_antes_da_mensagem_e_aplicado_ao_gravar(casa):
+    db = casa["db"]
+    cid = _entrada(db, meta_id="wamid.p-in")
+    assert _status(db, "wamid.p-out", "sent") == 0
+    assert _status(db, "wamid.p-out", "sent") == 0, "o aviso repetido não dobra na fila"
+    assert _status(db, "wamid.p-out", "failed",
+                   errors=[{"code": 131026, "title": "Undeliverable"}]) == 0
+    assert _um(db, "SELECT count(*) AS n FROM wa_entrega_pendente")["n"] == 2
+    with db.transaction() as con:
+        WA.gravar_saida(con, cid, "Respondido.", "wamid.p-out", autor="MARIO", agora=AGORA)
+    m = _um(db, "SELECT entrega, entrega_erro FROM wa_mensagem WHERE meta_id='wamid.p-out'")
+    assert m["entrega"] == "failed" and m["entrega_erro"].startswith("131026")
+    assert _um(db, "SELECT count(*) AS n FROM wa_entrega_pendente")["n"] == 0
+    # a falha guardada também faz a conversa voltar a esperar
+    assert _um(db, "SELECT status FROM wa_conversa WHERE id=%s", (cid,))["status"] == SCH.ABERTA
+
+
+def test_o_status_sem_dono_ha_mais_de_um_dia_sai_da_fila_e_e_contado(casa):
+    db = casa["db"]
+    _status(db, "wamid.velho", "sent", agora="2026-10-28T09:00:00")
+    _status(db, "wamid.novo", "sent", agora="2026-10-29T09:00:00")
+    assert WA.arrumar_entregas_pendentes(db, agora="2026-10-29T10:00:00") == 1
+    assert [p["meta_id"] for p in _lidas(db, "SELECT meta_id FROM wa_entrega_pendente")] == [
+        "wamid.novo"]
+    assert WA.arrumar_entregas_pendentes(db, agora="2026-10-29T10:00:00") == 0
+
+
+def test_o_status_preso_pela_corrida_e_aplicado_pelo_resto(casa, tmp_path):
+    db = casa["db"]
+    cid = _entrada(db, meta_id="wamid.c-in")
+    with db.transaction() as con:
+        WA.gravar_saida(con, cid, "Respondido.", "wamid.c-out", autor="MARIO", agora=AGORA)
+        banco(con).escrever(
+            """INSERT INTO wa_entrega_pendente (meta_id, situacao, quando, recebido_em)
+               VALUES ('wamid.c-out', 'read', %s, %s)""", (AGORA, AGORA))
+    assert WA.arrumar_entregas_pendentes(db, agora=AGORA) == 0
+    assert _um(db, "SELECT entrega FROM wa_mensagem WHERE meta_id='wamid.c-out'")[
+        "entrega"] == "read"
+    assert _um(db, "SELECT count(*) AS n FROM wa_entrega_pendente")["n"] == 0
+
+
 def test_o_vigia_sem_caixa_postal_so_espera(casa):
     db = casa["db"]
     assert VIGIA.segundos_da_volta(db) is None
@@ -629,20 +816,181 @@ def test_o_novas_traz_a_entrega_das_enviadas_ao_vivo(s):
     assert f'data-wa-entrega-de="{mid}" data-wa-entrega=""' in tela
     ultimo = _um(db, "SELECT max(id) AS n FROM wa_mensagem WHERE conversa_id=%s", (cid,))["n"]
     antes = s["c"].get(f"/whatsapp/{cid}/novas?depois={ultimo}").get_json()["entregas"]
-    assert antes == [{"id": mid, "entrega": "", "marca": "", "titulo": ""}]
+    assert antes == [{"id": mid, "token": "", "entrega": "", "marca": "", "titulo": ""}]
     corpo = {"entry": [{"changes": [{"value": {"statuses": [
         {"id": "wamid.e-3", "status": "read"}]}}]}]}
     with db.transaction() as con:
         WA.aplicar_entrada(con, corpo, agora=AGORA)
     depois = s["c"].get(f"/whatsapp/{cid}/novas?depois={ultimo}").get_json()
     assert depois["html"] == ""                    # nada novo para desenhar...
-    assert depois["entregas"] == [{"id": mid, "entrega": "read", "marca": "✓✓",
+    assert depois["entregas"] == [{"id": mid, "token": "", "entrega": "read", "marca": "✓✓",
                                    "titulo": "o cliente leu"}]   # ...mas a entrega anda
     js = (Path(__file__).resolve().parent.parent / "static" / "whatsapp_chat.js").read_text(
         encoding="utf-8")
     trecho = js[js.index("function atualizarEntregas"):js.index("function atualizarEstado")]
     assert "data-wa-entrega" in trecho and "textContent" in trecho
     assert "innerHTML" not in trecho
+
+
+def test_o_novas_nao_le_a_conversa_inteira_e_conta_como_tela_aberta(s, monkeypatch):
+    from test_wa_balcao import _payload
+    db = s["bd"]
+
+    def entra(n):
+        s["c"].post("/whatsapp/webhook", data=json.dumps(_payload(f"msg {n}", meta_id=f"wamid.l-{n}")),
+                    content_type="application/json", headers={"X-Wa-Test": "1"})
+    for n in range(5):
+        entra(n)
+    cid = _um(db, "SELECT id FROM wa_conversa")["id"]
+    ultimo = _um(db, "SELECT max(id) AS n FROM wa_mensagem WHERE conversa_id=%s", (cid,))["n"]
+    entra(5)
+    lidas = []
+    original = WA.mensagens_depois
+    monkeypatch.setattr(WA, "mensagens_depois",
+                        lambda *a: lidas.append(original(*a)) or lidas[-1])
+    monkeypatch.setattr(WA, "conversa",
+                        lambda *a: pytest.fail("o /novas leu a conversa inteira"))
+    d = s["c"].get(f"/whatsapp/{cid}/novas?depois={ultimo}").get_json()
+    assert [m["texto"] for m in lidas[0]] == ["msg 5"] and "msg 5" in d["html"]
+    assert d["janela_fora"] is False
+    assert VIGIA._tela_aberta()
+    monkeypatch.setattr(VIGIA, "_tela_vista_em", None)
+    assert s["c"].get("/whatsapp/lista-parcial").status_code == 200
+    assert VIGIA._tela_aberta()
+    # sem novidade, nada de desenhar
+    monkeypatch.setattr(WEB_TEMPLATE, "render_template",
+                        lambda *a, **k: pytest.fail("renderizou sem novidade"))
+    ultimo = d["ultimo"]
+    assert s["c"].get(f"/whatsapp/{cid}/novas?depois={ultimo}").get_json()["html"] == ""
+
+
+# ------------------------------------------------------------- o balão que muda sozinho
+
+
+def _agora_de(db):
+    return str(db.now())[:19]
+
+
+def _midia_chegando(s, meta_id, tipo, wa_id="5599900000401", quando=None):
+    db = s["bd"]
+    msg = {"from": wa_id, "id": meta_id, "type": tipo, tipo: {"id": f"midia-{meta_id}"}}
+    cid = _entrada(db, meta_id=meta_id, msg=msg, quando=quando or _agora_de(db))
+    return cid, _um(db, "SELECT id FROM wa_mensagem WHERE meta_id=%s", (meta_id,))["id"]
+
+
+def _mudar(s, mid, **campos):
+    with s["bd"].transaction() as con:
+        banco(con).escrever(
+            f"UPDATE wa_mensagem SET {', '.join(k + '=%s' for k in campos)} WHERE id=%s",
+            (*campos.values(), mid))
+
+
+def _perguntar(c, cid, ultimo, pendentes=None):
+    url = f"/whatsapp/{cid}/novas?depois={ultimo}"
+    return c.get(url + (f"&pendentes={pendentes}" if pendentes else "")).get_json()
+
+
+def _pendente_na_tela(html, mid):
+    achado = re.search(r'data-id="%d"[^>]*?data-wa-pendente="([a-z]+)"' % mid, html)
+    return achado.group(1) if achado else ""
+
+
+def test_o_balao_muda_quando_o_arquivo_termina_de_baixar(s):
+    cid, mid = _midia_chegando(s, "wamid.bal-foto", "image")
+    tela = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    estado = _pendente_na_tela(tela, mid)
+    assert estado == "bx" and "baixando o arquivo" in tela
+    # ainda baixando: nada a devolver
+    assert "baloes" not in _perguntar(s["c"], cid, mid, f"{mid}:{estado}")
+    _mudar(s, mid, midia_situacao=SCH.MIDIA_OK, arquivo_nome="foto.jpg",
+           arquivo_caminho="wa/foto.jpg", arquivo_mime="image/jpeg")
+    d = _perguntar(s["c"], cid, mid, f"{mid}:{estado}")
+    assert [b["id"] for b in d["baloes"]] == [mid] and d["html"] == ""
+    assert "wa-foto" in d["baloes"][0]["html"] and "baixando" not in d["baloes"][0]["html"]
+    assert "data-wa-pendente" not in d["baloes"][0]["html"]
+    assert "wa-dia" not in d["baloes"][0]["html"], "a troca não repete o separador do dia"
+
+
+def test_o_pdf_e_o_erro_do_arquivo_tambem_trocam_o_balao(s):
+    cid, mid = _midia_chegando(s, "wamid.bal-pdf", "document")
+    _mudar(s, mid, midia_situacao=SCH.MIDIA_OK, arquivo_nome="contrato.pdf",
+           arquivo_caminho="wa/contrato.pdf")
+    assert "abrir o PDF" in _perguntar(s["c"], cid, mid, f"{mid}:bx")["baloes"][0]["html"]
+    cid, mid = _midia_chegando(s, "wamid.bal-erro", "document", wa_id="5599900000402")
+    _mudar(s, mid, midia_situacao=SCH.MIDIA_ERRO, arquivo_erro="a Meta recusou")
+    html = _perguntar(s["c"], cid, mid, f"{mid}:bx")["baloes"][0]["html"]
+    assert "a Meta recusou" in html and "tentar de novo" in html
+    assert "data-wa-pendente" not in html
+
+
+def test_o_balao_de_audio_muda_com_o_arquivo_e_com_a_transcricao(s):
+    cid, mid = _midia_chegando(s, "wamid.bal-audio", "audio")
+    tela = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    assert _pendente_na_tela(tela, mid) == "bn"
+    _mudar(s, mid, midia_situacao=SCH.MIDIA_OK, arquivo_nome="audio.ogg",
+           arquivo_caminho="wa/audio.ogg")
+    balao = _perguntar(s["c"], cid, mid, f"{mid}:bn")["baloes"][0]["html"]
+    assert "<audio" in balao and _pendente_na_tela(balao, mid) == "an"
+    assert "baloes" not in _perguntar(s["c"], cid, mid, f"{mid}:an")
+    _mudar(s, mid, transcricao="")                     # o atendente pegou o áudio
+    balao = _perguntar(s["c"], cid, mid, f"{mid}:an")["baloes"][0]["html"]
+    assert _pendente_na_tela(balao, mid) == "av"
+    _mudar(s, mid, transcricao="Preciso da certidão.")
+    balao = _perguntar(s["c"], cid, mid, f"{mid}:av")["baloes"][0]["html"]
+    assert "Preciso da certidão." in balao and "data-wa-pendente" not in balao
+
+
+def test_cada_aba_recebe_o_que_mudou_desde_o_que_ela_mostra(s):
+    cid, mid = _midia_chegando(s, "wamid.bal-abas", "image")
+    outra = s["app"].test_client()
+    with outra.session_transaction() as nova, s["c"].session_transaction() as antiga:
+        nova.update(antiga)
+    _mudar(s, mid, arquivo_nome="foto.jpg", arquivo_caminho="wa/foto.jpg")
+    assert "baloes" in _perguntar(s["c"], cid, mid, f"{mid}:bx")
+    assert "baloes" in _perguntar(outra, cid, mid, f"{mid}:bx"), "a primeira aba não esgota a troca"
+
+
+def test_sem_pendentes_a_resposta_nao_traz_nada_a_mais(s, monkeypatch):
+    cid, mid = _midia_chegando(s, "wamid.bal-sem", "image")
+    monkeypatch.setattr(WA, "mensagens_por_ids",
+                        lambda *a: pytest.fail("consultou sem balão pendente"))
+    d = _perguntar(s["c"], cid, mid)
+    assert set(d) == {"html", "entregas", "ultimo", "status", "modo", "sugestao", "janela_fora"}
+
+
+def test_o_novas_confere_no_maximo_30_e_so_os_da_conversa(s, monkeypatch):
+    cid, mid = _midia_chegando(s, "wamid.bal-limite", "image")
+    outra, de_outra = _midia_chegando(s, "wamid.bal-alheio", "image", wa_id="5599900000403")
+    _mudar(s, de_outra, arquivo_nome="alheio.jpg", arquivo_caminho="wa/alheio.jpg")
+    assert "baloes" not in _perguntar(s["c"], cid, mid, f"{de_outra}:bx")
+    assert "baloes" not in _perguntar(s["c"], cid, mid, "x:bx,1;drop:bx,<b>:bx")
+    pedidos = []
+    original = WA.mensagens_por_ids
+    monkeypatch.setattr(WA, "mensagens_por_ids",
+                        lambda con, c, ids: pedidos.append(ids) or original(con, c, ids))
+    muitos = ",".join(f"{i}:bx" for i in range(1, 41))
+    assert s["c"].get(f"/whatsapp/{cid}/novas?depois={mid}&pendentes={muitos}").status_code == 200
+    assert len(pedidos[0]) == 30
+
+
+def test_passadas_24_horas_o_balao_nao_fica_mais_pendente(s):
+    cid, mid = _midia_chegando(s, "wamid.bal-velho", "audio", quando="2026-01-01T10:00:00")
+    assert _pendente_na_tela(s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True), mid) == ""
+    # a aba aberta há mais de um dia recebe o balão e para de perguntar por ele
+    balao = _perguntar(s["c"], cid, mid, f"{mid}:bn")["baloes"][0]["html"]
+    assert "data-wa-pendente" not in balao
+
+
+def test_o_js_manda_os_pendentes_e_troca_so_o_balao():
+    js = (RAIZ / "static" / "whatsapp_chat.js").read_text(encoding="utf-8")
+    assert 'url += "&pendentes=" + encodeURIComponent(pendentes)' in js
+    assert "if (pendentes) {" in js, "só quando houver algum"
+    trecho = js[js.index("function trocarBaloes"):js.index("function tocandoAgora")]
+    assert "replaceChild(substituto, atual)" in trecho and "caixa.scrollTop = rolagem" in trecho
+    assert "nosDoServidor(novo.html)" in trecho
+    assert "texto" not in trecho.replace("textContent", ""), "não toca na caixa de escrever"
+    assert "tocandoAgora(atual)" in trecho
+    assert js.count("innerHTML") == 1
 
 
 def test_o_cartao_da_lista_marca_nao_entregue(s):

@@ -205,9 +205,11 @@
         <option value="{{ chave }}">{{ rotulo }}</option>
         {% endfor %}
       </select></label>
-    <label>Exigências <span class="muted">— obrigatórias na negativa</span>
+      <label>Exigências <span class="muted">— obrigatórias na negativa</span>
       <textarea name="exigencias" rows="4"
-        placeholder="O que o apresentante precisa fazer para o título ser registrado."></textarea></label>
+        placeholder="O que o apresentante precisa fazer para o título ser registrado."></textarea>
+      {% if sugestao_lista %}<small class="muted">Se a negativa for deste
+        título, a nota também pede: {{ sugestao_lista }}</small>{% endif %}</label>
     <label>Fundamento
       <textarea name="fundamentacao" rows="2"></textarea></label>
     <label>Prazo para cumprir
@@ -239,7 +241,8 @@
         <td>{{ a.tipo|capitalize }}</td>
         <td>{{ a.livro_id or '—' }}</td>
         <td>{{ a.rotulo or a.folha or '—' }}</td>
-        <td>{{ a.numero_ordem or '—' }}</td>
+        <td>{{ a.numero_ordem or '—' }}
+          {% if a.lista_presenca_texto %}<br><small>{{ a.lista_presenca_texto }}</small>{% endif %}</td>
         <td>{{ fmt_date(a.data_ato[:10]) }}</td>
         <td><small>{{ a.selo or '—' }}</small></td>
         <td>
@@ -273,7 +276,7 @@
 {% elif t.situacao == 'QUALIFICADO' and user.role in ['ADMIN','MANAGER'] %}
 <section class="panel">
   <div class="panel-head"><span>Registrar</span></div>
-  <form method="post" class="form" style="padding:14px"
+  <form method="post" class="form" style="padding:14px" enctype="multipart/form-data"
         action="{{ url_for('rcpj_rtd_titulo_registrar', titulo_id=t.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Livro
@@ -290,6 +293,10 @@
        apresentante saem deste título, sem digitar. #}
     {% from '_declaracoes_do_termo.html' import quadros %}
     {{ quadros(declaracoes_do_termo, series, form) }}
+    {% if t.atribuicao == 3 %}
+    {% from '_lista_presenca_cnma.html' import bloco %}
+    {{ bloco(form, enquadramento_sugerido, rotulos_enquadramento, true) }}
+    {% endif %}
     {# Selo e custas — o mesmo padrão do /rcpj-rtd/novo. Domínio não sela;
        a tela oferece, opcional, e o POST grava na mesma transação. #}
     {% from '_cobrar.html' import quadro %}

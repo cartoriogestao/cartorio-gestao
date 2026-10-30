@@ -689,8 +689,13 @@ def _confirmar(con: sqlite3.Connection, *, remessa_id: int, visto: dict,
             linha = campo(linha, 34, data_prot if prot else "0" * 8)
             linha = campo(linha, 35, "0" * 10)
             linha = campo(linha, 37, "0" * 8)
-            for k in (43, 44, 45):
-                linha = zeros_se_branco(linha, k)
+            # `n`, E NÃO `k` — 30/10/2026. `k` é o contador dos títulos do lote:
+            # o laço o deixava em 45, `ordem[45]` não existe, e do 2º título em
+            # diante a linha saía do arquivo. Remessa de 3 confirmou 1, e a CRA
+            # recusou com 2122 («soma de registros (1) não confere com total no
+            # header (3)»).
+            for n in (43, 44, 45):
+                linha = zeros_se_branco(linha, n)
             linha = campo(linha, 50, "0" * 10)
         sequencial += 1
         saida.append(linha[:596] + f"{sequencial:04d}")

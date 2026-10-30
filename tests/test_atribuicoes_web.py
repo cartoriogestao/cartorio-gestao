@@ -1267,15 +1267,28 @@ def test_a_correcao_de_oficio_pela_ficha(s):
     assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
                        (tid,)).fetchone()[0] == "PAGO"
     proposta = con.execute(
-        "SELECT tipo, situacao FROM correcoes_de_oficio ORDER BY id DESC LIMIT 1"
+        "SELECT id, tipo, situacao FROM correcoes_de_oficio ORDER BY id DESC LIMIT 1"
     ).fetchone()
-    assert (proposta[0], proposta[1]) == ("PT_SITUACAO_SUSTENTADA", "PROPOSTA")
+    assert (proposta[1], proposta[2]) == ("PT_SITUACAO_SUSTENTADA", "PROPOSTA")
+    proposta_id = int(proposta[0])
     assert con.execute("SELECT COUNT(*) FROM audit_logs "
                        "WHERE action='AFIRMACAO_EXPRESSA'").fetchone()[0] == 0
     ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
     assert "data-propostas-de-oficio" in ficha
-    # E O PAGAMENTO SE LANÇA DE NOVO, mesmo com a proposta na fila; a obrigação
-    # some sozinha. (Em espécie: PIX só com o crédito conferido, 29/10/2026.)
+    # O OFICIAL APROVA, com a afirmação expressa, e o servidor executa: só
+    # então o título volta a APONTADO. Com ele PAGO, o pagamento novo seria
+    # recusado (`recusar_pagamento_na_situacao`).
+    postar_e_seguir(
+        s["c"], f"/administrativo/correcoes-de-oficio/{proposta_id}/aprovar",
+        {"csrf_token": _token(ficha), "afirmo": "1",
+         "afirmacao": ("Afirmo, sob minha responsabilidade, que o pagamento do "
+                       "título não aconteceu: o selo falhou e ele ficou PAGO.")})
+    con = _con(s)
+    assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
+                       (tid,)).fetchone()[0] == "APONTADO"
+    con.close()
+    # E O PAGAMENTO SE LANÇA DE NOVO; a obrigação some sozinha. (Em espécie:
+    # PIX só com o crédito conferido, 29/10/2026.)
     lancado = _post(s, f"/protesto/{tid}/lancar", ato="PAGAMENTO",
                     forma_pagamento="ESPECIE", selo=SELO_BOM)
     assert "Pagamento lançado" in lancado

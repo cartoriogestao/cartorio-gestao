@@ -780,6 +780,9 @@
         <a href="{{ url_for('rcpj_rtd_registros', atribuicao=3) }}">RCPJ — registros lavrados</a>
         <a href="{{ url_for('rcpj_rtd_registros', atribuicao=4) }}">RTD — registros lavrados</a>
         <a href="{{ url_for('rcpj_rtd_ultimos_atos') }}">Últimos atos praticados</a>
+        {% if user.role in ['ADMIN','MANAGER'] %}
+        <a href="{{ url_for('rcpj_rtd_pendencias_lista_presenca') }}">RCPJ — atos sem lista de presença</a>
+        {% endif %}
         <a href="{{ url_for('atribuicoes_certidoes') }}">Certidões de inteiro teor</a>
         {% if user.role in ['ADMIN','MANAGER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Configuração</div>
         <a href="{{ url_for('rcpj_rtd_etiqueta_ajuste') }}">Ajustar a etiqueta de registro</a>{% endif %}

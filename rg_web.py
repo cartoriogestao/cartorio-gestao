@@ -739,6 +739,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         # a tela com o quadro vazio, porque o `.docx` é o mais novo.
         para_ver = next((a for a in anexos
                          if ARQVIS.abre_na_tela(a["original_name"])), None)
+        for a in atos or []:
+            a["lista_presenca_texto"] = RG.texto_da_lista_presenca(
+                a.get("declaracoes"))
         return render_template(
             "rcpj_rtd_titulo.html", t=titulo, anexos=anexos, para_ver=para_ver,
             qualificacoes=qualificacoes, encaminhamentos=encaminhamentos,
@@ -762,6 +765,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 str(titulo.get("serie") or "").upper(), ""),
             # os quadros das declarações do termo, por livro (LD09)
             declaracoes_do_termo=RG.DECLARACOES_POR_SERIE,
+            enquadramento_sugerido=RG.sugerir_enquadramento(
+                titulo.get("natureza")),
+            rotulos_enquadramento=RG.ROTULO_DO_ENQUADRAMENTO,
+            sugestao_lista=(RG.FRASE_DA_EXIGENCIA_LISTA
+                            if int(titulo["atribuicao"]) == TIT.RCPJ
+                            and RG.sugerir_enquadramento(titulo.get("natureza"))
+                            else ""),
             fmt_date=fmt_date)
 
     # ------------------------------------------- o arquivo do título
@@ -819,10 +829,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         voltar = redirect(url_for("rcpj_rtd_titulo", titulo_id=titulo_id))
         try:
             with db.transaction() as con:
+                titulo = TIT.um(con, titulo_id)
+                exigencias = _campo("exigencias")
+                if titulo and int(titulo["atribuicao"]) == TIT.RCPJ:
+                    exigencias = RG.completar_exigencia_com_lista(
+                        exigencias, titulo.get("natureza"))
                 feito = TIT.qualificar(
                     con, titulo_id, resultado=_campo("resultado"),
                     agora=agora(), fundamentacao=_campo("fundamentacao"),
-                    exigencias=_campo("exigencias"),
+                    exigencias=exigencias,
                     prazo_ate=_campo("prazo_ate"),
                     data_qualificacao=_campo("data_qualificacao") or hoje(),
                     qualificada_por=usuario_nome(), usuario=usuario_nome())
@@ -1001,19 +1016,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 # continua; o que importa é não hardcodar «RTD».
                 titulo = TIT.um(con, titulo_id)
                 # as declarações do termo do livro (LD09): conferidas contra o
-                # livro escolhido antes do número, e gravadas no ato
+                # livro escolhido antes do número, e gravadas no ato.
+                # No RCPJ, a lista de presença entra na mesma lavratura.
+                serie_pedida = _campo("serie")
+                lista = (RG.lista_presenca_do_formulario(
+                    request.form,
+                    arquivos=request.files.getlist("novo_arquivo"))
+                    if serie_pedida in RG.SERIES_RCPJ else None)
                 feito = TIT.registrar(
-                    con, titulo_id, serie=_campo("serie"), sv=sv(),
+                    con, titulo_id, serie=serie_pedida, sv=sv(),
                     agora=agora(), data_extenso=hoje_extenso(),
                     teor=_campo("teor") or None, usuario=usuario_nome(),
-                    declaracoes=RG.declaracoes_do_formulario(request.form))
+                    declaracoes=RG.declaracoes_do_formulario(request.form),
+                    lista_presenca=lista)
                 # SELO E CUSTAS NA MESMA TRANSAÇÃO do registro — regra da
                 # casa: domínio não sela/cobra; a TELA faz (opcional). Se o
                 # selo for de outra serventia ou não houver caixa com cobrar
                 # marcado, AtoError desfaz o registro inteiro.
                 aviso = ""
                 cob_msg = ""
-                serie_reg = _campo("serie")
+                serie_reg = serie_pedida
                 if feito.get("ato_id") and not feito.get("reaproveitado"):
                     sigla = _sigla_da_atribuicao(int(titulo["atribuicao"]))
                     aviso = _selar_se_pedido(con, feito["ato_id"], sigla)
@@ -1028,10 +1050,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 feito["ato_id"], "REGISTRO", sigla,
                 serie=serie_reg or "", ja_dito=aviso, gratuidade=gratuidade)
             aviso = (aviso or "") + cob_msg
+        if (serie_reg in RG.SERIES_RCPJ and feito.get("ato_id")
+                and not feito.get("reaproveitado")):
+            from atribuicoes_web import (
+                _anexar_novos_arquivos_ao_registro,
+                _vincular_anexos_rg_ato,
+            )
+            novos_ids = _anexar_novos_arquivos_ao_registro(
+                db, registro_id=int(feito["registro_id"]), serie=serie_reg,
+                numero=feito.get("numero_ordem"),
+                arquivos=request.files.getlist("novo_arquivo"),
+                descricao="Lista de presença ou certidão de não apresentação",
+                user_id=usuario_id_do_sistema(),
+                pasta_dos_arquivos=pasta_dos_arquivos)
+            if novos_ids:
+                _vincular_anexos_rg_ato(
+                    db, ato_id=int(feito["ato_id"]),
+                    registro_id=int(feito["registro_id"]),
+                    anexo_ids=[str(i) for i in novos_ids],
+                    user_id=usuario_id_do_sistema())
+                with db.transaction() as con:
+                    RG.acrescentar_anexos_da_lista(
+                        con, int(feito["ato_id"]), novos_ids)
         audit("RG_TITULO_REGISTRADO", "rg_titulos", titulo_id,
               {"registro_id": feito["registro_id"],
                "numero_ordem": feito.get("numero_ordem"),
-               **({"gratuidade": gratuidade} if gratuidade else {})})
+               **({"gratuidade": gratuidade} if gratuidade else {}),
+               **RG.resumo_auditoria_lista(feito.get("cnma_lista_presenca"))})
         flash(f"Registro lavrado no Livro {feito.get('livro_numero')}, "
               f"fl. {feito.get('rotulo')}, sob o n. "
               f"{feito.get('numero_ordem')}. Se o título veio em papel, "

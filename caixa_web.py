@@ -18,6 +18,7 @@ import emolumentos as EMOL
 import fraude as FR
 import caixa_depositos as DEP
 import caixa_exigencia as CXEX
+import caixa_abas as CXABAS
 import caixa_protocolo as CXP
 import impressao_web as IMPW
 # O PORTAL DO CLIENTE (26/10/2026): o código de acompanhamento no recibo e na
@@ -1659,7 +1660,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             setores = _json.loads(db.get_setting("sectors", "[]") or "[]")
         except ValueError:
             setores = []
+        def abas_da_ficha() -> dict:
+            """A régua do layout novo. Só ele chama."""
+            return CXABAS.abas_do_protocolo(
+                dict(p), atos=atos, faltam=faltam,
+                encerrado=CXP.esta_encerrado(p["situacao"]),
+                documentos=docs_qualificacao["ativos"],
+                exigencias=exigencias_abertas, tarefas=tarefas_do_protocolo,
+                lancamentos=lanc, acompanhamento=acompanhamento)
         return render_template("caixa_protocolo.html", p=p, atos=atos,
+                               abas_da_ficha=abas_da_ficha,
                                tarefas_do_protocolo=tarefas_do_protocolo,
                                tarefas_abertas=tarefas_abertas,
                                usuarios_da_tarefa=db.list_users(active_only=True),

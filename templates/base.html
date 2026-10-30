@@ -488,6 +488,16 @@
         <a href="{{ url_for('protesto_cenprot') }}">Chave do CENPROT</a>
         {# 29/10/2026: o que a Central diz de cada pedido × o que o título é aqui. #}
         <a href="{{ url_for('protesto_cenprot_conferencia') }}">Conferência CENPROT × sistema</a>
+        {# OS LIVROS E OS REPASSES (revisão de telas, 30/10/2026). As telas existiam
+           sem porta neste menu: o Livro de Pagamentos, que as inspeções de 2021 e
+           de 2026 marcaram como inexistente, só se achava em «Livros obrigatórios»,
+           que o escrevente não vê; o repasse, só pelo roteiro; e a certidão em
+           relação, de lugar nenhum. `tests/test_toda_pagina_tem_porta.py` cobra. #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Livros e repasses</div>
+        <a href="{{ url_for('protesto_livro', qual='pagamentos') }}">Livro de Pagamentos</a>
+        <a href="{{ url_for('protesto_livro', qual='protocolo') }}">Livro de Protocolo</a>
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('protesto_repasses') }}">Repasses ao apresentante</a>
+        <a href="{{ url_for('protesto_relacao_diaria') }}">Certidão diária em relação</a>{% endif %}
         {# «Trazer protesto do E-Ofício» saiu em 17/10/2026 (importação
            terminada); a rota fica, sem link. #}
         {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>

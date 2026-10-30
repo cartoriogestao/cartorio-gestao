@@ -936,16 +936,26 @@ def editais_do_dia(con: sqlite3.Connection, dia: str) -> list[dict]:
 ENTIDADE_DO_ENVIO_DO_EDITAL = "PT_EDITAL_CENPROT"
 DIAS_DO_QUADRO_DE_ENVIO = 30
 
+# O EDITAL DE ATO TORNADO SEM EFEITO NÃO COBRA COMPROVANTE — medido em
+# 30/10/2026: o dia 07/10 aparecia como «0 de 5» para sempre, e os 5 têm o ato
+# de intimação cancelado; os títulos foram para edital novo. O edital do acervo
+# não tem `ato_id` e continua contando. O roteiro lê este mesmo quadro
+# (`protesto_roteiro._cobrar_editais`), e por isso a tela e ele não discordam.
+_SQL_EDITAL_DE_ATO_VIVO = (
+    "(e.ato_id IS NULL OR NOT EXISTS (SELECT 1 FROM pt_atos x "
+    "WHERE x.id = e.ato_id AND COALESCE(x.cancelado, 0) <> 0))")
+
 
 def envios_do_edital(con: sqlite3.Connection, hoje: str,
                      dias: int = DIAS_DO_QUADRO_DE_ENVIO) -> list[dict]:
     """Os dias com edital publicado, e se o envio à CENPROT tem comprovante.
-    Só LÊ. O mais recente primeiro; os dias sem comprovante, no alto."""
+    Só LÊ. O mais recente primeiro; os dias sem comprovante, no alto. Só conta
+    edital de ato vivo: o dia sem nenhum vivo não aparece."""
     from datetime import date as _date, timedelta as _td
     desde = (_date.fromisoformat(str(hoje)[:10]) - _td(days=int(dias))).isoformat()
     bd = banco(con)
     linhas = bd.ler(
-        """SELECT e.publicado_em AS dia, COUNT(*) AS editais,
+        f"""SELECT e.publicado_em AS dia, COUNT(*) AS editais,
                   SUM(CASE WHEN EXISTS (
                         SELECT 1 FROM attachments a
                          WHERE a.entity_type = %s AND a.entity_id = e.id)
@@ -957,7 +967,7 @@ def envios_do_edital(con: sqlite3.Connection, hoje: str,
                          WHERE a.entity_type = %s AND a.entity_id = e.id)
                       THEN 1 ELSE 0 END) AS a_cobrar
              FROM pt_editais e
-            WHERE e.publicado_em >= %s
+            WHERE e.publicado_em >= %s AND {_SQL_EDITAL_DE_ATO_VIVO}
             GROUP BY e.publicado_em
             ORDER BY e.publicado_em DESC""",
         (ENTIDADE_DO_ENVIO_DO_EDITAL, ENTIDADE_DO_ENVIO_DO_EDITAL, desde))
@@ -971,9 +981,10 @@ def envios_do_edital(con: sqlite3.Connection, hoje: str,
         # mandava era o sistema antigo.
         d["completo"] = d["a_cobrar"] == 0
         d["anexos"] = [dict(a) for a in bd.ler(
-            """SELECT MIN(a.id) AS id, a.original_name, MIN(a.uploaded_at) AS uploaded_at
+            f"""SELECT MIN(a.id) AS id, a.original_name, MIN(a.uploaded_at) AS uploaded_at
                  FROM attachments a JOIN pt_editais e ON e.id = a.entity_id
                 WHERE a.entity_type = %s AND e.publicado_em = %s
+                  AND {_SQL_EDITAL_DE_ATO_VIVO}
                 GROUP BY a.sha256, a.original_name ORDER BY MIN(a.id)""",
             (ENTIDADE_DO_ENVIO_DO_EDITAL, d["dia"]))]
         saida.append(d)

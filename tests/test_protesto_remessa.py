@@ -169,6 +169,75 @@ def test_a_confirmacao_e_arquivo_de_600_posicoes_que_volta_a_ser_lido(con):
     assert str(volta.cabecalho["codigo_do_apresentante"]).strip() == "001"
 
 
+def com_tres_titulos(*, sem_devedor_no: int | None = None) -> bytes:
+    """Um lote só com três títulos, montado do exemplo real, que tem um.
+
+    Os títulos ganham número e nosso número próprios e o sequencial certo; o
+    cabeçalho (h09 a h11) e o rodapé dizem três, como a remessa real que a CRA
+    mandou. `sem_devedor_no` apaga o devedor daquele título: o contrato o recusa.
+    """
+    texto = EXEMPLO.decode("latin-1")
+    cab, tit, rod = [x for x in texto.replace("\r\n", "\n").split("\n")
+                     if x.strip()]
+
+    def trocar(linha: str, campos, nome: str, valor: str) -> str:
+        campo = next(c for c in campos if c.nome == nome)
+        return (linha[:campo.inicio - 1] + valor.ljust(campo.tamanho)[:campo.tamanho]
+                + linha[campo.fim:])
+
+    titulos = []
+    for i in (1, 2, 3):
+        linha = trocar(tit, PA.TITULO_NA_REMESSA, "numero_do_titulo", f"8471{i}/1")
+        linha = trocar(linha, PA.TITULO_NA_REMESSA, "nosso_numero",
+                       f"97559000006018{i}")
+        if i == sem_devedor_no:
+            linha = trocar(linha, PA.TITULO_NA_REMESSA, "devedor_nome", "")
+        titulos.append(linha[:596] + f"{i + 1:04d}")
+    cab = cab[:67] + "0003" * 3 + cab[79:]
+    rod = trocar(rod, PA.RODAPE, "quantidade_de_registros", "00005")
+    rod = trocar(rod, PA.RODAPE, "soma_dos_valores", f"{148278 * 3:015d}")
+    rod = rod[:596] + "0005"
+    return "\r\n".join([cab, *titulos, rod]).encode("latin-1")
+
+
+def _confirmacao_e_protocolos(con, r) -> tuple[list[str], dict]:
+    conteudo = con.execute("SELECT conteudo FROM pt_retornos WHERE id=?",
+                           (r["confirmacoes"][0],)).fetchone()["conteudo"]
+    protocolos = {x["numero_titulo"]: x["protocolo"] for x in con.execute(
+        "SELECT numero_titulo, protocolo FROM pt_titulos").fetchall()}
+    return [x for x in conteudo.split("\r\n") if x], protocolos
+
+
+def test_a_confirmacao_de_tres_titulos_leva_os_tres(con):
+    """A remessa de 3 saía com 1, e a CRA recusava com 2122 (medido, 30/10/2026):
+    o laço dos campos 43 a 45 pisava no contador dos títulos do lote."""
+    r = receber(con, com_tres_titulos())
+    assert r["recebidos"] == 3 and r["apontados"] == 3
+    linhas, protocolos = _confirmacao_e_protocolos(con, r)
+
+    assert [x[:1] for x in linhas] == ["0", "1", "1", "1", "9"]
+    assert all(len(x) == 600 for x in linhas)
+    assert [x[596:] for x in linhas] == ["0001", "0002", "0003", "0004", "0005"]
+    assert len(set(protocolos.values())) == 3
+    for linha, numero in zip(linhas[1:4], ("84711/1", "84712/1", "84713/1")):
+        assert linha[216:227].strip() == numero
+        assert linha[447:457] == protocolos[numero], "cada um com o seu protocolo"
+
+    volta = PA.ler("\r\n".join(linhas) + "\r\n")
+    assert volta.achados == [] and len(volta.titulos) == 3
+
+
+def test_o_titulo_recusado_no_meio_do_lote_nao_leva_o_vizinho_junto(con):
+    r = receber(con, com_tres_titulos(sem_devedor_no=2))
+    assert r["recebidos"] == 2
+    linhas, protocolos = _confirmacao_e_protocolos(con, r)
+
+    assert [x[:1] for x in linhas] == ["0", "1", "1", "9"]
+    assert [x[596:] for x in linhas] == ["0001", "0002", "0003", "0004"]
+    assert [x[216:227].strip() for x in linhas[1:3]] == ["84711/1", "84713/1"]
+    assert linhas[2][447:457] == protocolos["84713/1"]
+
+
 def test_apontar_falso_deixa_o_titulo_esperando(con):
     r = receber(con, apontar=False)
     assert r["recebidos"] == 1 and r["apontados"] == 0

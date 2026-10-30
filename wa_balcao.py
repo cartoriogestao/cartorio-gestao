@@ -559,6 +559,20 @@ def aplicar_entrada(con: Any, payload_meta: Any,
         sugestao = rascunhar(texto, etiqueta, serventia, con=con)
         bruto = json.dumps(msg, ensure_ascii=False)
         existente = _conversa_por_wa(con, wa_id)
+        # O AGRADECIMENTO NÃO REABRE (30/10/2026): com o atendente ligado, o «obrigado» a
+        # uma conversa resolvida fica no histórico, sem resposta e sem alerta.
+        if (existente and existente.get("status") == WA.RESOLVIDA and tipo == "text"
+                and TEXTOS.tipo_de_cortesia(texto) == TEXTOS.AGRADECIMENTO
+                and ler_config(con, WA.CHAVE_IA_LIGADA) == "1"):
+            bd.escrever(
+                """INSERT INTO wa_mensagem
+                       (conversa_id, direcao, texto, bruto_json, criado_em, meta_id,
+                        tipo, ia_situacao)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                (int(existente["id"]), DIR_IN, texto, bruto, quando, meta_id or None, tipo,
+                 WA.IA_CORTESIA))
+            criadas += 1
+            continue
         # A RESOLVIDA QUE VOLTA (27/10/2026): nada se apaga; a tela retoma pela
         # mensagem nova, e o responsável segue a regra dos 7 dias
         # (`FILA.retomar`, a mesma do «Reativar conversa»).

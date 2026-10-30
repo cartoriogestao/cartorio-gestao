@@ -98,14 +98,16 @@
     <p><label class="check"><input type="checkbox" name="conversa" value="1" {% if ensaio_conversa %}checked{% endif %}>
       É uma conversa: as linhas alternam cliente e casa, começando pelo cliente</label></p>
     <p><button class="button secondary">ensaiar</button></p>
-    {% if ensaio %}
+    {% if ensaio and ensaio.sem_texto_base %}
+    <p class="small" data-wa-ensaio-sem-base><strong>Falta aprovar o texto-base.</strong> Sem ele, a IA não é chamada, e o ensaio não roda. Grave o texto-base abaixo como administrador e ensaie de novo.</p>
+    {% elif ensaio %}
     {% if ensaio.parou %}<p class="small"><strong>O ensaio parou aqui:</strong> o provedor falhou ou o teto do dia foi atingido.</p>{% endif %}
     {% if ensaio.sobraram %}<p class="small muted">{{ ensaio.sobraram }} linha(s) além do limite ficaram de fora.</p>{% endif %}
     <table class="tabela small">
       <tr><th>mensagem</th><th>saída</th><th>texto ao cliente</th><th>setor</th><th>resumo</th><th>razão</th></tr>
       {% for r in ensaio.resultados %}
       <tr><td>{{ r.entrada }}</td><td>{{ r.saida }}</td><td>{{ r.texto }}</td><td>{{ r.setor }}</td>
-        <td>{{ r.resumo }}</td><td>{{ r.razao }}{% if r.motivo and r.razao %}<br><span class="muted">{{ r.motivo }}</span>{% endif %}</td></tr>
+        <td>{{ r.resumo }}</td><td>{{ r.razao }}{% if r.motivo %}<br><span class="muted">{{ r.motivo }}</span>{% endif %}</td></tr>
       {% endfor %}
     </table>
     <p class="small muted">Custo medido deste ensaio: US$ {{ '%.4f'|format(ensaio.custo) }}.</p>

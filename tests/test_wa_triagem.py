@@ -716,7 +716,9 @@ def test_o_ensaio_nao_envia_nao_grava_e_passa_pelo_uso(casa, monkeypatch):
     assert len(modelo.chamadas) == 1, "só a procuração sobe"
     assert modelo.chamadas[0]["finalidade"] == "wa_atendente", "conta no uso de IA"
     assert teto == [AT.FINALIDADE], "e no teto"
-    assert "cortesia" in pagina and "encaminhar" in pagina and "fora_do_texto_base" in pagina
+    assert "cortesia" in pagina and "encaminhar" in pagina
+    assert AT.RAZOES[AT.RAZAO_FORA_DO_TEXTO_BASE] in pagina
+    assert "<td>fora_do_texto_base" not in pagina, "o rótulo, e não o código"
     assert "&lt;b&gt;procuração&lt;/b&gt;" in pagina and "<b>procuração</b>" not in pagina
 
 
@@ -746,6 +748,58 @@ def test_o_ensaio_de_conversa_leva_o_contexto_e_para_na_falha(casa):
     r = AT.ensaiar(db, cfg, "uma dúvida\noutra dúvida", agora=AGORA,
                    pasta_de_dados=casa["pasta"], conversar=quebra)
     assert r["parou"] and len(r["resultados"]) == 1
+
+
+def _ensaio(casa, texto, modelo, **k):
+    with casa["db"].connect() as con:
+        cfg = AT.configuracao(con)
+    return AT.ensaiar(casa["db"], cfg, texto, agora=AGORA, pasta_de_dados=casa["pasta"],
+                      conversar=modelo, **k)
+
+
+def test_cada_linha_do_ensaio_parte_do_setor_da_palavra(casa):
+    _cfg(casa["db"])
+    r = _ensaio(casa, "qual o horário do protesto?\nquanto custa uma escritura?\ntenho uma dúvida",
+                Modelo(DUVIDA))["resultados"]
+    assert [l["setor"] for l in r] == ["PROTESTO", "NOTAS", SCH.SETOR_PADRAO]
+    r = _ensaio(casa, "qual o horário do protesto?\ntenho uma dúvida",
+                Modelo({"acao": "encaminhar", "setor": "INEXISTENTE"}))["resultados"]
+    assert [l["setor"] for l in r] == ["PROTESTO", SCH.SETOR_PADRAO], "linhas soltas não herdam"
+
+
+def test_na_conversa_do_ensaio_o_setor_fica_como_na_conversa_real(casa):
+    _cfg(casa["db"])
+    r = _ensaio(casa, "qual o horário do protesto?\nDas 8 às 17.\ne no sábado?\nNão.\ne a escritura?",
+                Modelo(DUVIDA), conversa_alternada=True)["resultados"]
+    assert [l["setor"] for l in r] == ["PROTESTO", "PROTESTO", "PROTESTO"]
+    r = _ensaio(casa, "tenho uma dúvida\nQual?\nda escritura",
+                Modelo({"acao": "encaminhar", "setor": "RI"}), conversa_alternada=True)["resultados"]
+    assert [l["setor"] for l in r] == ["RI", "RI"], "a escolha da IA vale para as seguintes"
+
+
+def test_a_razao_do_ensaio_e_o_rotulo_e_o_motivo_nao_repete(casa):
+    _cfg(casa["db"])
+    r = _ensaio(casa, "quero fazer uma reclamação\ntenho uma dúvida\noutra dúvida",
+                Sequencia({"acao": "encaminhar", "razao": "caso_concreto"},
+                          {"acao": "responder", "tipo": "duvida", "resposta": "Custa R$ 5."})
+                )["resultados"]
+    assert r[0]["razao"] == AT.RAZOES[AT.RAZAO_RECLAMACAO] and r[0]["motivo"] == ""
+    assert r[1]["razao"] == AT.RAZOES[AT.RAZAO_CASO_CONCRETO] and r[1]["motivo"] == ""
+    assert r[2]["razao"] == AT.RAZOES[AT.RAZAO_FALHA] and "dinheiro" in r[2]["motivo"]
+
+
+def test_sem_texto_base_o_ensaio_nao_roda_e_avisa_uma_vez(casa, monkeypatch):
+    db = casa["db"]
+    _cfg(db, **{SCH.CHAVE_TEXTO_BASE: ""})
+    c = _usuario(casa, "semtexto", "ADMIN")
+    html = c.get("/whatsapp/atendente").get_data(as_text=True)
+    assert "Falta aprovar o texto-base" not in html, "o aviso é do resultado do ensaio"
+    monkeypatch.setattr(PROV, "conversar", lambda *a, **k: pytest.fail("chegou ao provedor"))
+    pagina = _ensaiar(c, html, perguntas="bom dia\nquero fazer uma reclamação\numa dúvida"
+                      ).get_data(as_text=True)
+    assert pagina.count("Falta aprovar o texto-base") == 1
+    assert "a IA não é chamada" in pagina
+    assert "<th>saída</th>" not in pagina, "nenhuma linha roda, nem a cortesia"
 
 
 def test_o_ensaio_tem_limite_de_linhas(casa):

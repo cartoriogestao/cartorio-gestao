@@ -992,7 +992,15 @@ def ensaiar(db: Any, cfg: dict, texto: str, *, agora: str, pasta_de_dados: Any,
     provedor ou no teto, para, e quem clicou não espera 20 vezes o prazo.
 
     Com `conversa_alternada`, as linhas alternam cliente e casa, e as anteriores são o
-    contexto; senão, cada linha é uma pergunta solta."""
+    contexto; senão, cada linha é uma pergunta solta.
+
+    O SETOR É O DA CONVERSA REAL: pela palavra da linha, como na chegada
+    (`wa_fila.definir_setor_pelo_assunto`). Na conversa, quem já tem setor fica com ele.
+
+    SEM TEXTO-BASE, NENHUMA LINHA RODA: a IA não seria chamada, e a tela só avisa."""
+    if not str(cfg.get("texto_base") or "").strip():
+        return {"resultados": [], "parou": False, "sobraram": 0, "custo": 0,
+                "sem_texto_base": True}
     linhas = [l.strip() for l in str(texto or "").splitlines() if l.strip()]
     sobraram = max(0, len(linhas) - LINHAS_DO_ENSAIO)
     linhas = linhas[:LINHAS_DO_ENSAIO]
@@ -1009,13 +1017,22 @@ def ensaiar(db: Any, cfg: dict, texto: str, *, agora: str, pasta_de_dados: Any,
                 contexto.append(("Atendimento", mascarado))
             continue
         pendente = conversa_alternada and n > 0 and linhas[n - 1].endswith("?")
+        achado = FILA.setor_pela_mensagem(linha)
+        pela_palavra = achado[0] if achado else None
+        conversa["setor"] = ((conversa["setor"] or pela_palavra) if conversa_alternada
+                             else pela_palavra)
         d = decidir(db, conversa, linha, cfg, agora=agora, pasta_de_dados=pasta_de_dados,
                     conversar=conversar, contexto=contexto[-CONTEXTO_ANTERIOR:],
                     perguntas_feitas=perguntas, pergunta_pendente=pendente, ensaio=True)
+        rotulo = RAZOES.get(d.get("razao") or "", "")
+        motivo = d.get("motivo") or ""
+        setor = d.get("passar") or conversa["setor"] or WA.SETOR_PADRAO
+        if conversa_alternada:
+            conversa["setor"] = setor if d.get("passar") else conversa["setor"]
         resultados.append({
             "entrada": linha, "saida": _SAIDA_DO_ENSAIO.get(d["caso"], d["caso"]),
-            "texto": d["resposta"], "setor": d.get("passar") or "", "resumo": d.get("resumo") or "",
-            "razao": d.get("razao") or "", "motivo": d.get("motivo") or "",
+            "texto": d["resposta"], "setor": setor, "resumo": d.get("resumo") or "",
+            "razao": rotulo, "motivo": "" if not rotulo or rotulo in motivo else motivo,
             "custo": d.get("custo")})
         if conversa_alternada:
             mascarado = _mascarado_para_contexto(linha)

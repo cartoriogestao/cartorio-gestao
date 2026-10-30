@@ -7,6 +7,13 @@
   <a class="button" href="{{ url_for('protesto_a_protestar') }}">A protestar</a>
 </div>
 
+{% if a_assinar %}
+<div class="notice">
+  <strong>{{ a_assinar | length }} a assinar.</strong>
+  <a href="#a-assinar">Ir para «Instrumentos a assinar»</a>
+</div>
+{% endif %}
+
 <div class="notice">
   O <strong>instrumento</strong> é o papel do art. 20 da Lei 9.492/1997 —
   afirma que o protesto foi lavrado e vai ao apresentante. Emitir aqui
@@ -22,6 +29,65 @@
   <div class="stat"><strong>{{ quadro_fila.acervo }}</strong><small>A emitir — do acervo do E-Ofício</small></div>
   <div class="stat"><strong>{{ a_assinar | length }}</strong><small>Emitidos e não assinados</small></div>
 </section>
+
+{% macro secao_a_assinar() %}
+{#
+  ASSINAR EM LOTE (29/10/2026; 30/10/2026, de uma vez só). Os PDFs vão juntos à
+  rota `/assinar/pdfs-windows` do serviço local, num único PowerShell, para o
+  token não pedir o PIN a cada um. O PIN é pedido pela JANELA DO PRÓPRIO TOKEN e
+  não passa pelo sistema. A frase não promete «uma vez só» porque isso não foi
+  medido: quem manda na janela é o driver, e a primeira assinatura real é o
+  teste (`protesto_instrumento.assinar_lote`). E o lote PARA na primeira falha
+  do token: PIN errado em sequência bloqueia o A3.
+#}
+<section class="panel" id="a-assinar">
+  <div class="panel-head">
+    <span>Instrumentos a assinar</span>
+    <small>emitidos e ainda sem a assinatura A3 — {{ a_assinar | length }}</small>
+  </div>
+  {% if not a_assinar %}
+    <p style="padding:14px">Nenhum instrumento esperando assinatura.</p>
+  {% else %}
+  <form method="post" action="{{ url_for('protesto_instrumentos_assinar_lote') }}" id="form-assinar-lote">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="voltar" value="{{ url_for('protesto_instrumentos', quais=quais, desde=atalho or None) }}">
+    <div class="notice" style="margin:8px 14px">
+      <strong>Como o PIN funciona no lote:</strong> o sistema não vê nem guarda o PIN — quem o pede é a
+      janela do próprio token, na sua tela. Os marcados vão juntos ao token, e <strong>a janela do token
+      aparece no começo do lote</strong>, depois que o sistema prepara os papéis. O lote <strong>para na
+      primeira falha do token</strong> — PIN recusado, janela cancelada, serviço fora do ar —, porque PIN
+      errado em sequência bloqueia o A3; os que já foram assinados ficam valendo. Até
+      {{ limite_assinatura }} por vez.
+    </div>
+    <div class="actions" style="padding:8px 14px">
+      <button class="button secondary" type="button" data-marcar="instrumento_id"
+              data-limite="{{ limite_assinatura }}">Marcar {% if a_assinar | length > limite_assinatura %}os {{ limite_assinatura }} mais novos{% else %}todos os {{ a_assinar | length }}{% endif %}</button>
+      <button class="button primary" type="submit">Assinar os marcados com o A3</button>
+    </div>
+    <table class="table">
+      <thead><tr>
+        <th></th><th>Instrumento</th><th>Emitido em</th><th>Título</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for e in a_assinar %}
+        <tr>
+          <td><input type="checkbox" name="instrumento_id" value="{{ e.id }}"
+                     aria-label="Marcar o instrumento {{ e.numero }}/{{ e.ano }}"></td>
+          <td>{{ e.numero }}/{{ e.ano }}</td>
+          <td>{{ (e.emitido_em or '')[:16] }}</td>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=e.titulo_id) }}">{{ e.protocolo or e.titulo_id }}</a></td>
+          <td><a class="button" href="{{ url_for('protesto_instrumento_odt', instrumento_id=e.id) }}">Imprimir</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </form>
+  {% endif %}
+</section>
+{% endmacro %}
+
+{# O que já foi emitido e espera o A3 vem primeiro: é o trabalho de agora. #}
+{% if a_assinar %}{{ secao_a_assinar() }}{% endif %}
 
 {#
   EM LOTE (29/10/2026), pedido do oficial: «não quero ter que clicar um por
@@ -54,24 +120,43 @@
   <p class="small muted" style="padding:6px 14px 0">
     {{ quadro_fila.acervo }} dos {{ quadro_fila.todos }} protestos sem instrumento vieram do
     <strong>acervo do E-Ofício</strong> — a casa antiga não guardava instrumento. Eles ficam
-    contados e a um clique, sem atrapalhar os lavrados neste sistema.
+    contados, e só aparecem na lista se você escolher o filtro.
   </p>
   {% endif %}
 
   {% if not fila %}
-    <p style="padding:14px">Nenhum protesto lavrado aguardando instrumento neste recorte.</p>
+    <p style="padding:14px">{% if quais == 'sistema' and not atalho %}Nenhum protesto deste sistema sem instrumento.{% else %}Nenhum protesto lavrado aguardando instrumento neste recorte.{% endif %}</p>
   {% else %}
   <form method="post" action="{{ url_for('protesto_instrumentos_emitir_lote') }}" id="form-emitir-lote">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="voltar" value="{{ url_for('protesto_instrumentos', quais=quais, desde=atalho or None) }}">
+    {#
+      ACERVO PROTEGIDO (30/10/2026): sem «Marcar todos», e o lote exige a
+      afirmação expressa — a mesma que `PI.emitir_lote` confere no servidor. No
+      filtro «todos» os campos não são obrigatórios na tela porque um lote só
+      de protestos deste sistema não pede afirmação.
+    #}
+    {% if quais != 'sistema' %}
+    <div class="notice danger" style="margin:8px 14px">
+      <strong>Este filtro mostra o acervo do E-Ofício.</strong> Cada instrumento emitido gasta um
+      número do exercício. Para emitir protestos do acervo em lote, marque um a um e afirme abaixo.
+      «Emitir só este» continua valendo para um de cada vez.
+      <label style="display:block;margin-top:8px"><input type="checkbox" name="afirmo" value="1" style="width:auto"{% if quais == 'acervo' %} required{% endif %}> Afirmo</label>
+      <label style="display:block">{{ modelo_da_afirmacao }}
+        <textarea name="afirmacao" rows="2"{% if quais == 'acervo' %} required{% endif %}
+                  placeholder="por que estes instrumentos do acervo saem agora (pelo menos {{ minimo_da_afirmacao }} letras)"></textarea></label>
+    </div>
+    {% endif %}
     <div class="actions" style="padding:8px 14px">
+      {% if quais == 'sistema' %}
       <button class="button secondary" type="button" data-marcar="titulo_id">Marcar todos os {{ fila | length }}</button>
+      {% endif %}
       <button class="button primary" type="submit">Emitir os marcados</button>
       <small class="muted">cada um sai com o seu número e entra na fila de assinatura; um que falhar não impede os outros</small>
     </div>
     <table class="table">
       <thead><tr>
-        <th><input type="checkbox" data-marcar-cabecalho="titulo_id" aria-label="Marcar todos"></th>
+        <th>{% if quais == 'sistema' %}<input type="checkbox" data-marcar-cabecalho="titulo_id" aria-label="Marcar todos">{% endif %}</th>
         <th>Data do ato</th><th>Protocolo</th><th>Título</th>
         <th>Apresentante</th><th>Origem</th><th></th>
       </tr></thead>
@@ -101,59 +186,7 @@
   {% endif %}
 </section>
 
-{#
-  ASSINAR EM LOTE (29/10/2026). MEDIDO NO CÓDIGO: o instrumento se assina pela
-  rota `/assinar/pdf-windows` do serviço local, que assina UM PDF por chamada,
-  num processo novo — o serviço não tem rota de vários nem guarda sessão. O PIN
-  é pedido pela JANELA DO PRÓPRIO TOKEN e não passa pelo sistema. Por isso o
-  lote é um clique só, e a janela do token pode aparecer uma vez por
-  instrumento. E ele PARA na primeira falha do token: PIN errado em sequência
-  bloqueia o A3.
-#}
-<section class="panel" id="a-assinar">
-  <div class="panel-head">
-    <span>Instrumentos a assinar</span>
-    <small>emitidos e ainda sem a assinatura A3 — {{ a_assinar | length }}</small>
-  </div>
-  {% if not a_assinar %}
-    <p style="padding:14px">Nenhum instrumento esperando assinatura.</p>
-  {% else %}
-  <form method="post" action="{{ url_for('protesto_instrumentos_assinar_lote') }}" id="form-assinar-lote">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <input type="hidden" name="voltar" value="{{ url_for('protesto_instrumentos', quais=quais, desde=atalho or None) }}">
-    <div class="notice" style="margin:8px 14px">
-      <strong>Como o PIN funciona no lote:</strong> o sistema não vê nem guarda o PIN — quem o pede é a
-      janela do próprio token, na sua tela. O serviço de assinatura assina <strong>um instrumento por
-      vez</strong>, então <strong>conte com a janela do PIN uma vez para cada instrumento</strong>
-      marcado (se o seu token lembrar o PIN, ela não volta). O lote <strong>para na primeira falha do
-      token</strong> — PIN recusado, janela cancelada, serviço fora do ar —, porque PIN errado em
-      sequência bloqueia o A3. Até {{ limite_assinatura }} por vez.
-    </div>
-    <div class="actions" style="padding:8px 14px">
-      <button class="button secondary" type="button" data-marcar="instrumento_id"
-              data-limite="{{ limite_assinatura }}">Marcar {% if a_assinar | length > limite_assinatura %}os {{ limite_assinatura }} mais novos{% else %}todos os {{ a_assinar | length }}{% endif %}</button>
-      <button class="button primary" type="submit">Assinar os marcados com o A3</button>
-    </div>
-    <table class="table">
-      <thead><tr>
-        <th></th><th>Instrumento</th><th>Emitido em</th><th>Título</th><th></th>
-      </tr></thead>
-      <tbody>
-        {% for e in a_assinar %}
-        <tr>
-          <td><input type="checkbox" name="instrumento_id" value="{{ e.id }}"
-                     aria-label="Marcar o instrumento {{ e.numero }}/{{ e.ano }}"></td>
-          <td>{{ e.numero }}/{{ e.ano }}</td>
-          <td>{{ (e.emitido_em or '')[:16] }}</td>
-          <td><a href="{{ url_for('protesto_titulo', titulo_id=e.titulo_id) }}">{{ e.protocolo or e.titulo_id }}</a></td>
-          <td><a class="button" href="{{ url_for('protesto_instrumento_odt', instrumento_id=e.id) }}">Imprimir</a></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </form>
-  {% endif %}
-</section>
+{% if not a_assinar %}{{ secao_a_assinar() }}{% endif %}
 
 <section class="panel">
   <div class="panel-head"><span>Instrumentos emitidos</span><small>os mais recentes — para imprimir de novo</small></div>
@@ -197,7 +230,7 @@
 
 <script>
 /* MARCAR TODOS (29/10/2026). O botão marca as caixas do formulário dele — no
-   lote da assinatura, só até o limite, porque cada uma abre a janela do token.
+   lote da assinatura, só até o limite do lote.
    Clicar de novo desmarca. A caixa do cabeçalho faz o mesmo. */
 (function () {
   function caixas(nome) {

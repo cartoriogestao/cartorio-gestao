@@ -10,6 +10,9 @@ Rotas:
   POST /assinar/pdf    → JSON {pdf_b64, pin, thumbprint?} → CAdES-BES anexado
   POST /assinar/cades  → JSON {payload_utf8|payload_b64, pin, thumbprint?,
                          anexado?} → {x_signature_b64, ...}  (13/10/2026, CCN)
+  POST /assinar/pdf-windows   → JSON {pdf_b64, thumbprint?} → {cms_b64, ...}
+  POST /assinar/pdfs-windows  → JSON {pdfs_b64: [...], thumbprint?} →
+                         {itens: [{indice, cms_b64, thumbprint}], falha}
 
 Página da internet não fala com este serviço (ver `origem_recusada`).
 
@@ -397,6 +400,11 @@ def assinar_pdf(pdf: bytes, pin: str, *,
 #: O que o CCN assina no `X-Signature` é um JSON curto; 64 KB sobra.
 LIMITE_CADES = 64 * 1024
 
+#: O lote pelo Windows: quem decide o tamanho é quem chama, e este é o teto do
+#: serviço. O corpo leva todos os PDFs, e por isso tem limite próprio.
+LIMITE_DE_PDFS_NO_LOTE = 50
+LIMITE_DO_CORPO_DO_LOTE = 200 * 1024 * 1024
+
 
 def assinar_cades(payload: bytes, pin: str, *, thumbprint: str | None = None,
                   anexado: bool = True) -> dict[str, Any]:
@@ -471,6 +479,7 @@ def status_payload() -> dict[str, Any]:
         "cades": True,
         "rotas": ["GET /saude", "GET /certificados", "POST /assinar/pdf",
                   "POST /assinar/pdf-windows",
+                  "POST /assinar/pdfs-windows",
                   "POST /assinar/cades"],
         "aviso": "este serviço só assina — não fala com e-Notariado/CCN; "
                  "dois tokens: SafeID (aetpkss1) e A3 SafeNet/Gemalto",
@@ -488,12 +497,14 @@ def _json_resposta(handler: BaseHTTPRequestHandler, codigo: int,
     handler.wfile.write(bruto)
 
 
-def _ler_json(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
+def _ler_json(handler: BaseHTTPRequestHandler, *,
+              limite: int = 30 * 1024 * 1024) -> dict[str, Any]:
     tamanho = int(handler.headers.get("Content-Length") or "0")
     if tamanho <= 0:
         return {}
-    if tamanho > 30 * 1024 * 1024:
-        raise ServicoA3Error("corpo grande demais (limite 30 MB)")
+    if tamanho > limite:
+        raise ServicoA3Error(
+            f"corpo grande demais (limite {limite // (1024 * 1024)} MB)")
     bruto = handler.rfile.read(tamanho)
     try:
         return json.loads(bruto.decode("utf-8"))
@@ -604,6 +615,37 @@ class Manipulador(BaseHTTPRequestHandler):
                     "cms_b64": base64.b64encode(feito["p7s"]).decode("ascii"),
                     "thumbprint": feito["thumbprint"],
                     "mecanismo": "windows-cryptoapi"})
+                return
+            if caminho == "/assinar/pdfs-windows":
+                # O LOTE PELO WINDOWS (30/10/2026): todos os PDFs num PowerShell
+                # só, para o token não pedir o PIN a cada um (`a3_windows.
+                # assinar_pdfs`). A guarda de origem, lá em cima, vale igual, e
+                # o PIN continua sem passar por aqui. A falha do token volta em
+                # `falha`, com HTTP 200: os que já foram assinados vêm junto.
+                import a3_windows
+                corpo = _ler_json(self, limite=LIMITE_DO_CORPO_DO_LOTE)
+                lista = corpo.get("pdfs_b64")
+                if not isinstance(lista, list) or not lista:
+                    raise ServicoA3Error("informe pdfs_b64 no corpo JSON")
+                if len(lista) > LIMITE_DE_PDFS_NO_LOTE:
+                    raise ServicoA3Error(
+                        f"são {len(lista)} PDFs, e o serviço assina até "
+                        f"{LIMITE_DE_PDFS_NO_LOTE} de cada vez")
+                try:
+                    feito = a3_windows.assinar_pdfs(
+                        [base64.b64decode(x) for x in lista],
+                        thumbprint=str(corpo.get("thumbprint") or ""))
+                except a3_windows.A3WindowsError as exc:
+                    raise ServicoA3Error(str(exc)) from exc
+                _json_resposta(self, 200, {
+                    "ok": True, "formato": "pkcs7-anexado-windows",
+                    "mecanismo": "windows-cryptoapi",
+                    "falha": feito["falha"],
+                    "itens": [{
+                        "indice": item["indice"],
+                        "cms_b64": base64.b64encode(item["p7s"]).decode("ascii"),
+                        "thumbprint": item["thumbprint"],
+                    } for item in feito["assinados"]]})
                 return
             if caminho != "/assinar/pdf":
                 _json_resposta(self, 404, {

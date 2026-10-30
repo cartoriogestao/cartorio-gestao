@@ -92,13 +92,19 @@ class ProtestoError(ValueError):
 
 # O titulo anda RECEBIDO -> APONTADO -> INTIMADO -> PROTESTADO -> CANCELADO,
 # e pode receber PAGAMENTO em qualquer ponto ANTES do protesto; ou para em
-# DESISTIDO antes do protesto. O resto do ciclo (DEVOLVIDO, RETIRADO) esta
-# documentado em LEVANTAMENTO_PROTESTO.md e ainda por construir.
+# DESISTIDO antes do protesto. RETIRADO continua documentado em
+# LEVANTAMENTO_PROTESTO.md e por construir.
+#
+# DEVOLVIDO (decisao do oficial, 30/10/2026): o titulo devolvido por
+# irregularidade (codigo 5 da CRA), ou a segunda entrada do mesmo titulo. Nao
+# vai a protesto, intimacao, repasse nem XML. Quem o marca e a fila de correcoes
+# de oficio (`correcoes_de_oficio.TituloDevolvido`), com o ato DEVOLUCAO: sem
+# selo, sem livro e sem folha, so para a situacao ter o ato que a sustente.
 SITUACOES_TITULO = ("RECEBIDO", "APONTADO", "INTIMADO", "PROTESTADO",
-                    "DESISTIDO", "PAGO", "CANCELADO")
+                    "DESISTIDO", "PAGO", "CANCELADO", "DEVOLVIDO")
 
 # Situacoes finais: nao ha mais o que fazer com o titulo por este modulo.
-SITUACOES_FINAIS = ("DESISTIDO", "PAGO", "CANCELADO")
+SITUACOES_FINAIS = ("DESISTIDO", "PAGO", "CANCELADO", "DEVOLVIDO")
 
 # O PROTESTO LAVRADO NÃO SE PAGA MAIS NA SERVENTIA — o oficial, 21/10/2026
 # (LH13, pergunta 17, letra c): «protesto nao pode ser pago na serventia
@@ -179,7 +185,10 @@ TIPOS_ATO = ("APONTAMENTO", "INTIMACAO", "PROTESTO", "PAGAMENTO",
              "EFEITO_SUSPENSIVO", "REVOGACAO_EFEITO_SUSPENSIVO",
              # 29/10/2026: a averbação de retificação de erro material, de
              # ofício (Lei 9.492/1997, art. 25) — `protesto_averbacao`.
-             "AVERBACAO_RETIFICACAO")
+             "AVERBACAO_RETIFICACAO",
+             # 30/10/2026: a devolução (código 5 da CRA, ou a entrada em
+             # duplicidade). Não vai a retorno nem a XML: não é ato lavrado.
+             "DEVOLUCAO")
 
 # OS DOIS INSTITUTOS, e o E-Oficio guarda os dois na mesma tabela:
 # `tbProtesto_TipoEfeitoTitulo` tem `1 = Suspensivo` e `2 = Sustado`.
@@ -712,7 +721,7 @@ def sustacao_revogada(con, *, hoje: str,
                        AND a.tipo IN ('SUSTACAO','REVOGACAO_SUSTACAO'))
             WHERE r.tipo = 'REVOGACAO_SUSTACAO'
               AND t.situacao NOT IN ('PROTESTADO','PAGO','CANCELADO',
-                                     'DESISTIDO','RETIRADO')
+                                     'DESISTIDO','RETIRADO','DEVOLVIDO')
             ORDER BY r.data_ato, t.id
             LIMIT %s""", (int(limite),))
 

@@ -57,6 +57,14 @@ O QUE SE FAZ COM O QUE VEIO
         uma pendência, visível na ficha e na lista, com o arquivo guardado, até
         a escrevente lavrar o ato ou registrar por que não lavra.
 
+A AUTORIZAÇÃO DE CANCELAMENTO ESPERA O DEVEDOR (decisão do oficial, 30/10/2026)
+    A AC de título PROTESTADO depende de o devedor pagar as custas, e a casa não
+    tem o que fazer até lá. Ela nasce AGUARDANDO_DEVEDOR: não conta como pendência
+    do dia, não prende o encerramento, e continua em «Pedidos da CRA» e na ficha.
+    As que nasceram PENDENTE antes desta regra valem o mesmo, sem gravar nada: quem
+    decide é `_espera_o_devedor`, na leitura. Se o título deixar de estar
+    PROTESTADO sem ser cancelado, ela volta a cobrar. DP e CP não mudam.
+
 UMA PENDÊNCIA SE FECHA DE DOIS JEITOS
     Pelo ato: o título chega à situação que o pedido pede (DESISTIDO para DP
     e AD, CANCELADO para CP e AC) — isso se mede na leitura, sem gravar nada.
@@ -123,6 +131,8 @@ RESULTADOS_QUE_PEDEM_ACAO = (GUARDADO, NAO_LIDO)
 
 # O estado de cada pedido (um por título).
 PENDENTE = "PENDENTE"
+AGUARDANDO_DEVEDOR = "AGUARDANDO_DEVEDOR"  # a AC, até o devedor pagar as custas
+ESTADOS_ABERTOS = (PENDENTE, AGUARDANDO_DEVEDOR)
 APLICADO = "APLICADO"      # o sistema lavrou (só a desistência)
 RESOLVIDO = "RESOLVIDO"    # o título já estava como o pedido pede
 TRATADO = "TRATADO"        # a escrevente registrou por que não lavra
@@ -489,7 +499,7 @@ def receber_pedidos(con, tipo: str, bruto: str, *, consulta_id: int,
     """
     arquivo = DS.ler(bruto)
     resumo = {"titulos": len(arquivo["titulos"]), "pendentes": 0,
-              "resolvidos": 0, "por_tipo": {}}
+              "resolvidos": 0, "aguardando": 0, "por_tipo": {}}
     for t in arquivo["titulos"]:
         sub = _tipo_da_autorizacao(arquivo, t) if tipo == "AC" else tipo
         resumo["por_tipo"][sub] = resumo["por_tipo"].get(sub, 0) + 1
@@ -507,6 +517,13 @@ def receber_pedidos(con, tipo: str, bruto: str, *, consulta_id: int,
                                agora=agora,
                                explicacao=f"O título já estava {x['situacao']}.")
                 resumo["resolvidos"] += 1
+            elif sub == "AC" and x["situacao"] == GRAVE:
+                _gravar_pedido(con, consulta_id=consulta_id, tipo=sub,
+                               pedido=t, titulo=x, estado=AGUARDANDO_DEVEDOR,
+                               agora=agora,
+                               explicacao=_explicacao_do_pedido(
+                                   sub, x["situacao"]))
+                resumo["aguardando"] += 1
             else:
                 _gravar_pedido(con, consulta_id=consulta_id, tipo=sub,
                                pedido=t, titulo=x, estado=PENDENTE,
@@ -555,6 +572,8 @@ def _frase(c: dict, linha: dict) -> tuple[str, str]:
         return frase, "success"
     frase = (f"{rotulo}: {linha['titulos']} título(s); {linha['pendentes']} "
              f"pendente(s) até o ato ser lavrado")
+    if linha.get("aguardando"):
+        frase += f"; {linha['aguardando']} aguardando o devedor"
     return frase + ". Veja «Pedidos da CRA».", ("warning" if linha["pendentes"]
                                                else "success")
 
@@ -567,6 +586,7 @@ def _uma(transacao, trazer, c: dict, *, dia: Any, agora: str,
                    "resultado": None, "mensagem": "", "consulta_id": None,
                    "codigo": None, "incerta": False, "tamanho": 0,
                    "titulos": 0, "aplicados": 0, "pendentes": 0, "graves": 0,
+                   "aguardando": 0,
                    "desistencia_id": None, "apresentante": None,
                    "recusados": 0, "onde": None, "bruto_sem_lugar": None}
     # 1) A REDE, UMA VEZ SÓ.
@@ -627,10 +647,12 @@ def _uma(transacao, trazer, c: dict, *, dia: Any, agora: str,
                                     agora=agora)
                 linha["titulos"], linha["pendentes"] = (r["titulos"],
                                                         r["pendentes"])
+                linha["aguardando"] = r["aguardando"]
                 _anotar(con, cid, resultado=RECEBIDO, titulos=r["titulos"],
                         lida_em=agora,
                         mensagem=f"{r['titulos']} título(s), "
-                                 f"{r['pendentes']} pendente(s)")
+                                 f"{r['pendentes']} pendente(s), "
+                                 f"{r['aguardando']} aguardando o devedor")
                 linha["resultado"] = RECEBIDO
     except Exception as erro:  # noqa: BLE001 — o bruto já está guardado
         linha["resultado"] = NAO_LIDO
@@ -717,8 +739,17 @@ def contagem_desde_a_virada(con) -> dict:
     return saida
 
 
+def _espera_o_devedor(p: dict) -> bool:
+    """A AC de título ainda PROTESTADO espera o devedor pagar as custas. Só
+    calcula. A situação é a de AGORA: é isso que devolve à cobrança a AC cujo
+    título deixou de estar protestado sem ser cancelado."""
+    return (p.get("tipo") == "AC" and p.get("estado") in ESTADOS_ABERTOS
+            and p.get("situacao_agora") == GRAVE)
+
+
 def _pedidos_abertos(con, titulo_id: int | None = None) -> list[dict]:
-    """Os pedidos PENDENTES, com a situação de AGORA do título."""
+    """Os pedidos em aberto, com a situação de AGORA do título e a marca
+    `aguardando_devedor`."""
     filtro, args = "", []
     if titulo_id is not None:
         filtro, args = "AND p.titulo_id = %s", [int(titulo_id)]
@@ -729,9 +760,9 @@ def _pedidos_abertos(con, titulo_id: int | None = None) -> list[dict]:
               FROM pt_cra_pedidos p
               JOIN pt_cra_consultas c ON c.id = p.consulta_id
               LEFT JOIN pt_titulos t ON t.id = p.titulo_id
-             WHERE p.estado = %s {filtro}
+             WHERE p.estado IN (%s, %s) {filtro}
              ORDER BY CASE WHEN p.destaque = %s THEN 0 ELSE 1 END, p.id""",
-        (PENDENTE, *args, GRAVE))
+        (*ESTADOS_ABERTOS, *args, GRAVE))
     saida = []
     for p in linhas:
         p = dict(p)
@@ -739,8 +770,15 @@ def _pedidos_abertos(con, titulo_id: int | None = None) -> list[dict]:
         if p.get("titulo_id") and p.get("situacao_agora") == \
                 SITUACAO_QUE_FECHA.get(p["tipo"]):
             continue
+        p["aguardando_devedor"] = _espera_o_devedor(p)
         saida.append(p)
     return saida
+
+
+def aguardando_o_devedor(con) -> list[dict]:
+    """A lista própria: as AC que esperam o devedor. Só LÊ. Sai quando o
+    cancelamento se lavra (`_pedidos_abertos`) ou alguém registra o motivo."""
+    return [p for p in _pedidos_abertos(con) if p["aguardando_devedor"]]
 
 
 def _consultas_abertas(con) -> list[dict]:
@@ -762,6 +800,9 @@ def pendencias(con) -> list[dict]:
     """
     saida: list[dict] = []
     for p in _pedidos_abertos(con):
+        # A AC QUE ESPERA O DEVEDOR NÃO É PENDÊNCIA DO DIA (30/10/2026).
+        if p["aguardando_devedor"]:
+            continue
         numero = p.get("numero_na_casa") or p.get("numero_titulo")
         saida.append({
             "titulo_id": p.get("titulo_id"), "numero_titulo": numero,
@@ -808,8 +849,10 @@ def do_titulo(con, titulo_id: int) -> dict:
 
 
 def recentes(con, limite: int = 60) -> list[dict]:
-    """Os pedidos que chegaram, do mais novo para o mais velho. Só LÊ."""
-    return banco(con).ler(
+    """Os pedidos que chegaram, do mais novo para o mais velho. Só LÊ.
+
+    A AC que nasceu PENDENTE e espera o devedor aparece com o estado que vale."""
+    linhas = banco(con).ler(
         """SELECT p.id, p.tipo, p.estado, p.destaque, p.protocolo,
                   p.numero_titulo, p.devedor_nome, p.titulo_id,
                   p.situacao_ao_chegar, p.explicacao, p.recebido_em,
@@ -818,6 +861,8 @@ def recentes(con, limite: int = 60) -> list[dict]:
              FROM pt_cra_pedidos p
              LEFT JOIN pt_titulos t ON t.id = p.titulo_id
             ORDER BY p.id DESC LIMIT %s""", (max(1, min(int(limite), 500)),))
+    return [dict(r, estado=AGUARDANDO_DEVEDOR) if _espera_o_devedor(r) else r
+            for r in linhas]
 
 
 def quadro_do_dia(con, *, dia: Any) -> dict:
@@ -828,6 +873,7 @@ def quadro_do_dia(con, *, dia: Any) -> dict:
             "contagem": contagem_desde_a_virada(con),
             "consultas": consultas_do_dia(con, dia),
             "pendentes": len(abertas),
+            "aguardando_devedor": len(aguardando_o_devedor(con)),
             "graves": sum(1 for p in abertas if p.get("destaque") == GRAVE)}
 
 
@@ -862,7 +908,7 @@ def tratar_pedido(con, pedido_id: int, *, motivo: Any, agora: str,
               (int(pedido_id),))
     if not p:
         raise PedidoCraError(f"Pedido {pedido_id} não encontrado.")
-    if p["estado"] != PENDENTE:
+    if p["estado"] not in ESTADOS_ABERTOS:
         raise PedidoCraError(
             f"Este pedido já está {p['estado']} — não há o que registrar.")
     if p.get("destaque") == GRAVE and str(papel or "") not in \

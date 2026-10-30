@@ -1363,6 +1363,341 @@ def regra_malote_anexo_confere(ctx: Contexto) -> list[dict]:
     return achados
 
 
+# ======================================================= O TRÂMITE DO PROTESTO
+#
+# Decisão do oficial, 30/10/2026: a rodada passa a conferir a regularidade do
+# trâmite do protesto. SÓ LÊ, e o relato é EM NÚMEROS, SEM NOMES: quantos, de
+# quantos, e o número do título no sistema para achar. Nunca devedor, credor ou
+# quem recebeu.
+#
+# SÓ O QUE ESTE SISTEMA LAVROU, desde a virada. O ato do acervo tem o papel no
+# arquivo do E-Ofício, e o acervo não vira achado.
+#
+# O SQL É DAQUI, e não do roteiro do balcão: fiscal que usa a régua do fiscalizado
+# confirma o defeito dele. Duas contas vêm do domínio, porque recontá-las seria uma
+# segunda versão da lei, e não uma segunda medição: o prazo do tríduo
+# (`protesto_triduo.contar`) e a prova da intimação (`protesto_prova.conferir`). E
+# o vencimento do repasse (`protesto_repasse.pendencias_do_repasse`), que depende
+# das quatro etapas da guia.
+
+#: A virada do protesto. Copiada, e não importada; `tests/test_compliance_protesto.py`
+#: exige igual à de `protesto_roteiro`.
+VIRADA_DO_PROTESTO = "2026-10-14"
+#: Os donos dos anexos que provam cada passo. Copiados, com o mesmo teste.
+ENTIDADE_DO_COMPROVANTE_DO_AVISO = "PT_AVISO"
+ENTIDADE_DO_ENVIO_DO_EDITAL = "PT_EDITAL_CENPROT"
+ENTIDADE_DO_ENVIO_DO_XML = "PT_CENPROT_XML_ENVIO"
+ENTIDADE_DO_INSTRUMENTO = "pt_instrumentos"
+ATOS_DO_XML = ("PROTESTO", "PAGAMENTO", "DESISTENCIA", "CANCELAMENTO")
+#: Quantos números de título o relato traz. O total vem sempre na frase.
+NUMEROS_NO_RELATO = 20
+
+
+def _do_sistema(ctx: Contexto, tipos: tuple[str, ...]) -> list[dict]:
+    """Os atos válidos destes tipos lavrados neste sistema desde a virada. Só LÊ."""
+    marcas_tipo = ", ".join(["%s"] * len(tipos))
+    marcas_acervo = ", ".join(["%s"] * len(ORIGENS_DO_ACERVO))
+    return _linhas(
+        ctx.con,
+        f"""SELECT a.id, a.titulo_id, a.tipo, a.data_ato, a.detalhe_json, a.cenprot_xml_id
+              FROM pt_atos a
+             WHERE a.tipo IN ({marcas_tipo}) AND COALESCE(a.cancelado, 0) = 0
+               AND COALESCE(a.origem, '') NOT IN ({marcas_acervo})
+               AND a.data_ato >= %s
+             ORDER BY a.id""",
+        (*tipos, *ORIGENS_DO_ACERVO, VIRADA_DO_PROTESTO))
+
+
+def _detalhe(linha: dict) -> dict:
+    try:
+        lido = json.loads(linha.get("detalhe_json") or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return lido if isinstance(lido, dict) else {}
+
+
+def _com_anexo(ctx: Contexto, entidade: str) -> set[int]:
+    """Os donos que têm anexo desta entidade. Só LÊ."""
+    return {int(r["entity_id"]) for r in _linhas(
+        ctx.con, "SELECT DISTINCT entity_id FROM attachments WHERE entity_type = %s",
+        (entidade,))}
+
+
+def _numeros(ids) -> str:
+    lista = sorted({int(i) for i in ids})
+    corte = ", ".join(str(i) for i in lista[:NUMEROS_NO_RELATO])
+    return corte + (f" e mais {len(lista) - NUMEROS_NO_RELATO}"
+                    if len(lista) > NUMEROS_NO_RELATO else "")
+
+
+def _achado_do_tramite(chave: str, gravidade: str, titulo: str, detalhe: str,
+                       titulos, fundamento: str, o_que_fazer: str) -> dict:
+    return _achado(f"PROTESTO_TRAMITE:{chave}", "ATOS", "PROTESTO_TRAMITE", gravidade,
+                   f"Protesto: {titulo}", detalhe,
+                   evidencia=f"títulos (número do sistema): {_numeros(titulos)}",
+                   fundamento=fundamento, o_que_fazer=o_que_fazer)
+
+
+def _intimacao_pessoal(ctx: Contexto) -> list[dict]:
+    """A intimação pessoal se prova com o aviso entregue, o comprovante e o nome
+    de quem recebeu."""
+    pessoais = [a for a in _do_sistema(ctx, ("INTIMACAO",))
+                if str(_detalhe(a).get("modo") or "PESSOAL").upper() != "EDITAL"
+                and not _detalhe(a).get("digital")]
+    avisos = {}
+    for r in _linhas(ctx.con, """SELECT id, ato_id, recebido_por FROM pt_avisos
+                                  WHERE ato_id IS NOT NULL ORDER BY id"""):
+        avisos[int(r["ato_id"])] = r
+    com_comprovante = _com_anexo(ctx, ENTIDADE_DO_COMPROVANTE_DO_AVISO)
+    sem_aviso, sem_comprovante, sem_nome = [], [], []
+    for a in pessoais:
+        aviso = avisos.get(int(a["id"]))
+        if aviso is None:
+            sem_aviso.append(a["titulo_id"])
+            continue
+        if int(aviso["id"]) not in com_comprovante:
+            sem_comprovante.append(a["titulo_id"])
+        if not str(aviso["recebido_por"] or "").strip():
+            sem_nome.append(a["titulo_id"])
+    if not (sem_aviso or sem_comprovante or sem_nome):
+        return []
+    return [_achado_do_tramite(
+        "intimacao_pessoal", "ATENCAO",
+        f"{len(sem_aviso) + len(set(sem_comprovante) | set(sem_nome))} de {len(pessoais)} "
+        "intimações pessoais sem a prova completa",
+        f"{len(sem_aviso)} sem aviso entregue; {len(sem_comprovante)} sem comprovante; "
+        f"{len(sem_nome)} sem o nome de quem recebeu.",
+        [*sem_aviso, *sem_comprovante, *sem_nome], "CN-MA art. 921",
+        "Completar na tela dos avisos, lista «Entregues».")]
+
+
+def _edital(ctx: Contexto) -> list[dict]:
+    """O edital publicado aqui tem o comprovante do envio à CENPROT."""
+    so_daqui = ("AND COALESCE(e.origem, '') NOT IN ('EOFICIO', 'ARQUIVO', 'IMPORTACAO')"
+                if "origem" in _colunas(ctx.con, "pt_editais") else "")
+    editais = _linhas(ctx.con,
+                      f"""SELECT e.id, e.titulo_id FROM pt_editais e
+                           WHERE e.publicado_em >= %s {so_daqui} ORDER BY e.id""",
+                      (VIRADA_DO_PROTESTO,))
+    com_envio = _com_anexo(ctx, ENTIDADE_DO_ENVIO_DO_EDITAL)
+    sem = [e["titulo_id"] for e in editais if int(e["id"]) not in com_envio]
+    if not sem:
+        return []
+    return [_achado_do_tramite(
+        "edital_sem_comprovante", "ATENCAO",
+        f"{len(sem)} de {len(editais)} editais sem o comprovante do envio à CENPROT", "",
+        sem, "CN-MA art. 922, § 1º",
+        "Anexar o comprovante ao dia, no quadro «Envio do edital à CENPROT».")]
+
+
+def _protesto_termo_e_prova(ctx: Contexto) -> list[dict]:
+    """O protesto lavrado antes do termo, e o protesto sem a prova da intimação."""
+    import protesto_prova as PROVA
+    import protesto_triduo as TRIDUO
+    protestos = _do_sistema(ctx, ("PROTESTO",))
+    feriados = TRIDUO.feriados_da_casa(ctx.con)
+    antes_do_termo, sem_conta, sem_prova, modos = [], [], [], Counter()
+    for a in protestos:
+        dia = str(a["data_ato"] or "")[:10]
+        conta = TRIDUO.contar(ctx.con, int(a["titulo_id"]), feriados=feriados)
+        if conta.get("sem_conta") or not conta.get("termo_inicial"):
+            sem_conta.append(a["titulo_id"])
+        elif dia < conta["termo_inicial"]:
+            antes_do_termo.append(a["titulo_id"])
+        # NA DATA DO ATO: o comprovante juntado depois do protesto não o cura. A
+        # publicação na CENPROT só está provada desde o dia do comprovante.
+        prova = PROVA.conferir(ctx.con, int(a["titulo_id"]), hoje=dia, feriados=feriados)
+        if not prova["completa"]:
+            sem_prova.append(a["titulo_id"])
+            modos[str(prova.get("modo") or "SEM_INTIMACAO")] += 1
+    saida = []
+    if antes_do_termo or sem_conta:
+        saida.append(_achado_do_tramite(
+            "protesto_antes_do_termo", "CRITICO" if antes_do_termo else "ATENCAO",
+            f"{len(antes_do_termo)} de {len(protestos)} protestos lavrados antes do termo",
+            f"{len(sem_conta)} sem como contar o tríduo.",
+            [*antes_do_termo, *sem_conta], "CN-MA art. 913",
+            "O oficial decide sobre cada um: protesto antes do termo não se conserta "
+            "pelo balcão."))
+    if sem_prova:
+        saida.append(_achado_do_tramite(
+            "protesto_sem_prova", "CRITICO",
+            f"{len(sem_prova)} de {len(protestos)} protestos sem a prova da intimação",
+            "Por forma de intimação: " + "; ".join(
+                f"{n} {modo.lower()}" for modo, n in sorted(modos.items())) + ".",
+            sem_prova, "CN-MA arts. 921 e 922",
+            "Completar a prova da intimação; o que não tiver prova, o oficial decide."))
+    return saida
+
+
+def _retorno(ctx: Contexto) -> list[dict]:
+    """O retorno à CRA não enviado ou recusado. O arquivo recusado cujos atos já
+    voltaram à fila não conta: quem cobra é a fila."""
+    colunas = _colunas(ctx.con, "pt_retornos")
+    tem_recusa = "cra_recusado_em" in colunas
+    coluna = "r.cra_recusado_em" if tem_recusa else "NULL"
+    resolvido = (" AND NOT (r.cra_recusado_em IS NOT NULL AND NOT EXISTS ("
+                 "SELECT 1 FROM pt_atos a WHERE a.retorno_id = r.id))" if tem_recusa else "")
+    arquivos = _linhas(
+        ctx.con,
+        f"""SELECT r.id, {coluna} AS recusado_em FROM pt_retornos r
+             WHERE r.tipo IN ('SDTBFORTP', 'SDTBFOAND') AND r.cra_enviado_em IS NULL
+               AND COALESCE(r.cra_enviado_ambiente, '') <> 'EOFICIO'
+               AND r.gerado_em >= %s{resolvido}
+               AND NOT EXISTS (SELECT 1 FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
+                                WHERE a.retorno_id = r.id AND COALESCE(t.origem, '') <> 'CRA')
+             ORDER BY r.id""", (VIRADA_DO_PROTESTO,))
+    if not arquivos:
+        return []
+    recusados = sum(1 for r in arquivos if r["recusado_em"])
+    return [_achado(
+        "PROTESTO_TRAMITE:retorno", "ATOS", "PROTESTO_TRAMITE", "ATENCAO",
+        f"Protesto: {len(arquivos)} retornos à CRA não aceitos",
+        f"{len(arquivos) - recusados} não enviados; {recusados} recusados.",
+        evidencia=f"pt_retornos.id: {_numeros(r['id'] for r in arquivos)}",
+        o_que_fazer="Enviar pela tela dos retornos; o recusado devolve os atos à fila.")]
+
+
+def _xml(ctx: Contexto) -> list[dict]:
+    """O ato sem arquivo XML, e o arquivo sem o comprovante da subida. O ato de hoje
+    ainda tem o dia para sair."""
+    hoje = ctx.hoje.isoformat()
+    sem_arquivo = [a["titulo_id"] for a in _do_sistema(ctx, ATOS_DO_XML)
+                   if a["cenprot_xml_id"] is None and str(a["data_ato"] or "")[:10] < hoje]
+    colunas = _colunas(ctx.con, "pt_cenprot_xml")
+    filtros = "".join(f" AND x.{c} IS NULL" for c in ("envio_afirmado_em", "recusado_em")
+                      if c in colunas)
+    arquivos = _linhas(
+        ctx.con,
+        f"""SELECT x.id FROM pt_cenprot_xml x
+             WHERE x.gerado_em >= %s AND x.gerado_em < %s{filtros}
+               AND NOT EXISTS (SELECT 1 FROM attachments a
+                                WHERE a.entity_type = %s AND a.entity_id = x.id)
+             ORDER BY x.id""", (VIRADA_DO_PROTESTO, hoje, ENTIDADE_DO_ENVIO_DO_XML))
+    saida = []
+    if sem_arquivo:
+        saida.append(_achado_do_tramite(
+            "xml_sem_arquivo", "ATENCAO",
+            f"{len(sem_arquivo)} atos sem arquivo XML P ou D", "", sem_arquivo,
+            "art. 4º da Resolução n. 1 do IEPTB-BR", "Gerar na tela do XML da CENPROT."))
+    if arquivos:
+        saida.append(_achado(
+            "PROTESTO_TRAMITE:xml_sem_comprovante", "ATOS", "PROTESTO_TRAMITE", "ATENCAO",
+            f"Protesto: {len(arquivos)} arquivos XML sem o comprovante da subida",
+            evidencia=f"pt_cenprot_xml.id: {_numeros(r['id'] for r in arquivos)}",
+            fundamento="art. 4º da Resolução n. 1 do IEPTB-BR",
+            o_que_fazer="Anexar o comprovante na tela do XML da CENPROT."))
+    return saida
+
+
+def _instrumento(ctx: Contexto) -> list[dict]:
+    """O protesto sem instrumento, e o instrumento sem assinatura."""
+    protestos = _do_sistema(ctx, ("PROTESTO",))
+    com_instrumento = {int(r["titulo_id"]) for r in _linhas(
+        ctx.con, "SELECT DISTINCT titulo_id FROM pt_instrumentos")}
+    sem = [a["titulo_id"] for a in protestos if int(a["titulo_id"]) not in com_instrumento]
+    marcas = ", ".join(["%s"] * len(ORIGENS_DO_ACERVO))
+    nao_assinados = _linhas(
+        ctx.con,
+        f"""SELECT i.titulo_id FROM pt_instrumentos i
+              JOIN pt_atos a ON a.id = i.ato_id
+              LEFT JOIN as_documentos d ON d.entidade = %s AND d.entidade_id = i.id
+             WHERE d.assinado_em IS NULL AND a.data_ato >= %s
+               AND COALESCE(a.origem, '') NOT IN ({marcas})
+             ORDER BY i.id""",
+        (ENTIDADE_DO_INSTRUMENTO, VIRADA_DO_PROTESTO, *ORIGENS_DO_ACERVO))
+    if not sem and not nao_assinados:
+        return []
+    return [_achado_do_tramite(
+        "instrumento", "ATENCAO",
+        f"{len(sem)} protestos sem instrumento e {len(nao_assinados)} instrumentos "
+        "sem assinatura", f"{len(protestos)} protestos lavrados desde a virada.",
+        [*sem, *(r["titulo_id"] for r in nao_assinados)],
+        "art. 11 da Resolução n. 1 do IEPTB-BR", "Emitir e assinar na tela dos instrumentos.")]
+
+
+def _repasse(ctx: Contexto) -> list[dict]:
+    """O repasse vencido, pela conta das quatro etapas da guia."""
+    import protesto_repasse as REP
+    vencidos = [p["titulo_id"] for p in REP.pendencias_do_repasse(
+        ctx.con, hoje=ctx.hoje.isoformat()) if p.get("vencido")]
+    if not vencidos:
+        return []
+    return [_achado_do_tramite(
+        "repasse_vencido", "ATENCAO", f"{len(vencidos)} repasses vencidos", "", vencidos,
+        "Lei 9.492/1997, art. 19, § 2º", "Tratar na tela dos repasses.")]
+
+
+def _pix(ctx: Contexto) -> list[dict]:
+    """O pagamento por PIX lavrado sem o crédito conferido, e o PIX que espera."""
+    confirmados = {int(r["ato_id"]) for r in _linhas(
+        ctx.con, """SELECT ato_id FROM pt_pix
+                     WHERE situacao = 'CONFIRMADO' AND ato_id IS NOT NULL""")}
+    sem_credito = []
+    for a in _do_sistema(ctx, ("PAGAMENTO",)):
+        detalhe = _detalhe(a)
+        por_pix = (str(detalhe.get("forma_pagamento") or "").upper() == "PIX"
+                   or detalhe.get("pix"))
+        if por_pix and int(a["id"]) not in confirmados:
+            sem_credito.append(a["titulo_id"])
+    esperando = _linhas(ctx.con, """SELECT titulo_id FROM pt_pix
+                                     WHERE situacao = 'AGUARDANDO_CREDITO' ORDER BY id""")
+    saida = []
+    if sem_credito:
+        saida.append(_achado_do_tramite(
+            "pagamento_pix_sem_credito", "CRITICO",
+            f"{len(sem_credito)} pagamentos por PIX lavrados sem crédito conferido", "",
+            sem_credito, "ordem do oficial de 29/10/2026",
+            "Conferir o crédito no extrato; quem decide o ato é o oficial."))
+    if esperando:
+        saida.append(_achado_do_tramite(
+            "pix_esperando_credito", "ATENCAO",
+            f"{len(esperando)} PIX esperando o crédito ser conferido", "",
+            [r["titulo_id"] for r in esperando], "ordem do oficial de 29/10/2026",
+            "Tratar na tela «PIX e créditos sem pagamento»."))
+    return saida
+
+
+#: Cada medição e as tabelas de que depende. Tabela que falta é NAO_MEDIU, nunca zero.
+TRAMITE_DO_PROTESTO: tuple[tuple[str, Callable[[Contexto], list[dict]], tuple[str, ...]], ...] = (
+    ("intimacao_pessoal", _intimacao_pessoal, ("pt_atos", "pt_avisos", "attachments")),
+    ("edital", _edital, ("pt_editais", "attachments")),
+    ("protesto_termo_e_prova", _protesto_termo_e_prova, ("pt_atos", "pt_titulos")),
+    ("retorno", _retorno, ("pt_retornos", "pt_atos", "pt_titulos")),
+    ("xml", _xml, ("pt_atos", "pt_cenprot_xml", "attachments")),
+    ("instrumento", _instrumento, ("pt_atos", "pt_instrumentos", "as_documentos")),
+    ("repasse", _repasse, ("pt_atos", "pt_titulos", "pt_repasses", "pt_repasse_guias")),
+    ("pix", _pix, ("pt_atos", "pt_pix")),
+)
+
+
+def regra_tramite_do_protesto(ctx: Contexto) -> list[dict]:
+    """A regularidade do trâmite do protesto. SÓ LÊ, e relata em números.
+
+    Uma medição que não mede vira NAO_MEDIU, e é só ela: as outras continuam. Sem o
+    módulo em uso (nenhuma tabela `pt_atos`), não há o que medir.
+    """
+    if not _tem_tabela(ctx.con, "pt_atos"):
+        return []
+    achados = []
+    for nome, medir, tabelas in TRAMITE_DO_PROTESTO:
+        faltam = [t for t in tabelas if not _tem_tabela(ctx.con, t)]
+        if faltam:
+            achados.append(_achado(
+                f"NAO_MEDIU:PROTESTO_TRAMITE:{nome}", "ATOS", "PROTESTO_TRAMITE", "NAO_MEDIU",
+                f"O compliance não conseguiu medir o trâmite do protesto: {nome}",
+                f"nesta instalação não existe {', '.join(faltam)}"))
+            continue
+        try:
+            achados.extend(medir(ctx))
+        except Exception as erro:                        # noqa: BLE001 — vai ao relatório
+            achados.append(_achado(
+                f"NAO_MEDIU:PROTESTO_TRAMITE:{nome}", "ATOS", "PROTESTO_TRAMITE", "NAO_MEDIU",
+                f"O compliance não conseguiu medir o trâmite do protesto: {nome}",
+                f"{type(erro).__name__}: {str(erro)[:300]}"))
+    return achados
+
+
 REGRAS: tuple[tuple[str, Callable[[Contexto], list[dict]]], ...] = (
     ("AGENDADOR", regra_agendador),
     ("CAIXA_CADEIA", regra_cadeia_do_caixa),
@@ -1388,6 +1723,7 @@ REGRAS: tuple[tuple[str, Callable[[Contexto], list[dict]]], ...] = (
     ("MALOTE_PARADO", regra_malote_parado),
     ("MALOTE_SEM_TRIAGEM", regra_malote_sem_triagem),
     ("MALOTE_ANEXO_CONFERE", regra_malote_anexo_confere),
+    ("PROTESTO_TRAMITE", regra_tramite_do_protesto),
 )
 
 AREA_DA_REGRA = {
@@ -1399,6 +1735,7 @@ AREA_DA_REGRA = {
     "ENVIO_SEM_PROVA": "INFORMACOES", "QUANTOS_NAO_FECHA": "INFORMACOES",
     "ENVIO_FORA_DO_PRAZO": "INFORMACOES",
     "NUMERO_REPETIDO": "ATOS", "CORRENTE_RI": "ATOS", "SELO_EM_DOIS_ATOS": "ATOS",
+    "PROTESTO_TRAMITE": "ATOS",
     "MALOTE_PARADO": "AGENTES", "MALOTE_SEM_TRIAGEM": "AGENTES", "MALOTE_ANEXO_CONFERE": "AGENTES",
 }
 

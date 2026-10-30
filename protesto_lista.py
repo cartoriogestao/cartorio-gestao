@@ -43,7 +43,8 @@ from pt_schema import normalizar_nome
 # acabou para esta lista — o protestado ainda pode ser cancelado, mas isso é
 # pedido do devedor, e não trabalho que o cartório tenha de lembrar.
 SITUACOES_PENDENTES = ("RECEBIDO", "APONTADO", "INTIMADO")
-SITUACOES_ENCERRADAS = ("PROTESTADO", "PAGO", "DESISTIDO", "CANCELADO")
+SITUACOES_ENCERRADAS = ("PROTESTADO", "PAGO", "DESISTIDO", "CANCELADO",
+                        "DEVOLVIDO")
 
 # O FILTRO QUE NÃO É SITUAÇÃO. Fica no mesmo seletor porque o balcão pensa
 # nele como situação («está sustado»), mas a consulta pergunta pelo ato.

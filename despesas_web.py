@@ -102,12 +102,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             do_mes = [] if minhas is not None else RC.do_mes(con, date.today())
             carregadas = 0 if minhas is not None else len(
                 [d for d in DP.listar(con, situacao=DP.AGUARDANDO) if d["origem"] == RC.ORIGEM])
+            a_autorizar = DP.para_autorizar(con) if usuario_papel() == "ADMIN" else []
         return render_template("despesas_lista.html", linhas=linhas, contagem=contagem,
                                situacoes=DP.SITUACOES, situacao=situacao, cfg=cfg,
                                categorias=DP.CATEGORIAS, reais=DP.reais,
                                papel=usuario_papel(), do_mes=do_mes,
-                               recorrentes_carregadas=carregadas,
-                               so_as_proprias=minhas is not None)
+                               recorrentes_carregadas=carregadas, a_autorizar=a_autorizar,
+                               formas=DP.FORMAS, so_as_proprias=minhas is not None)
 
     @app.route("/administrativo/despesas/nova", methods=["GET", "POST"])
     @login_required
@@ -315,6 +316,43 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if acao not in ("pagar", "atualizar"):
             flash("Feito.", "success")
         return _ficha(despesa_id)
+
+    @app.route("/administrativo/despesas/autorizar-marcadas", methods=["POST"])
+    @login_required
+    @roles_required("ADMIN")
+    def despesas_autorizar_marcadas():
+        """Autoriza as marcadas na lista, sem abrir uma por uma.
+
+        Cada uma na sua transação: a recusa de uma não segura as outras, e a
+        tela diz qual ficou e por quê. O teto e a divergência continuam na ficha.
+        """
+        try:
+            marcadas = dict(tuple(int(p) for p in m.split(":"))
+                            for m in request.form.getlist("marcada"))
+        except ValueError:
+            abort(400)
+        if not marcadas:
+            flash("Marque ao menos uma despesa.", "warning")
+            return redirect(url_for("despesas_lista"))
+        autorizadas, total, recusadas = [], 0, []
+        for despesa_id, valor in marcadas.items():
+            try:
+                with db.transaction() as con:
+                    DP.autorizar(con, despesa_id, agora=_agora(), por=usuario_nome(),
+                                 papel=usuario_papel(), valor_visto=valor)
+            except DP.DespesaError as erro:
+                recusadas.append(f"#{despesa_id}: {erro}")
+                continue
+            autorizadas.append(despesa_id)
+            total += valor
+        for despesa_id in autorizadas:
+            audit("DESPESA_AUTORIZAR", "dp_despesas", despesa_id,
+                  {"papel": usuario_papel(), "em_lote": True})
+        if autorizadas:
+            flash(f"{len(autorizadas)} despesa(s) autorizada(s), R$ {DP.reais(total)}.", "success")
+        for recusa in recusadas:
+            flash(f"Não autorizei {recusa}", "danger")
+        return redirect(url_for("despesas_lista"))
 
     @app.route("/administrativo/despesas/conciliar", methods=["POST"])
     @login_required

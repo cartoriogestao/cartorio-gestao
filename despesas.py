@@ -687,8 +687,13 @@ def _prender(bd, despesa_id: int) -> dict:
 
 
 def autorizar(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
-              acima_do_teto: bool = False, motivo_divergencia: Any = "") -> dict:
-    """Autoriza o pagamento. Só ADMIN (decisão do oficial, 24/10/2026). ESCREVE."""
+              acima_do_teto: bool = False, motivo_divergencia: Any = "",
+              valor_visto: int | None = None) -> dict:
+    """Autoriza o pagamento. Só ADMIN (decisão do oficial, 24/10/2026). ESCREVE.
+
+    `valor_visto` é o valor que estava na tela de quem marcou a despesa na lista:
+    se ele mudou depois, a autorização não vale para o valor novo.
+    """
     if papel != "ADMIN":
         raise DespesaError("Só o oficial (ADMIN) autoriza despesa.")
     bd = banco(con)
@@ -698,6 +703,9 @@ def autorizar(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
                            f"autorização.")
     if d["forma"] == MANUAL:
         raise DespesaError("Despesa paga fora do banco não se autoriza: registre o pagamento.")
+    if valor_visto is not None and int(d["valor"]) != int(valor_visto):
+        raise DespesaError(f"O valor mudou para R$ {reais(int(d['valor']))} depois que a lista "
+                           f"abriu. Confira e autorize de novo.")
     motivo = _texto(motivo_divergencia, 500)
     if d["divergencia"] and len(motivo) < MINIMO_DA_DESCRICAO:
         raise DespesaError(f"Há divergência de valor ({d['divergencia']}). Diga por que o "
@@ -812,6 +820,22 @@ def listar(con, *, situacao: str | None = None, mes: str | None = None,
     onde = (" WHERE " + " AND ".join(filtros)) if filtros else ""
     return banco(con).ler(f"SELECT * FROM dp_despesas{onde} ORDER BY id DESC LIMIT %s",
                           (*parametros, int(limite)))
+
+
+def para_autorizar(con) -> list[dict]:
+    """As que esperam o oficial, a de vencimento mais próximo primeiro. Só LÊ.
+
+    `pendencia` diz por que a despesa só se autoriza na ficha: a divergência pede
+    o motivo por escrito, e o teto pede a marca daquele pagamento.
+    """
+    bd = banco(con)
+    teto = tetos(configuracao(bd))["pagamento"]
+    linhas = bd.ler("SELECT * FROM dp_despesas WHERE situacao = %s AND forma <> %s "
+                    "ORDER BY vencimento, id", (AGUARDANDO, MANUAL))
+    for d in linhas:
+        d["pendencia"] = ("valor divergente" if d["divergencia"]
+                          else "acima do teto" if int(d["valor"]) > teto else "")
+    return linhas
 
 
 def _limites_do_mes(mes: str) -> tuple[str, str]:

@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Modelos dos documentos{% endblock %}
 {% block content %}
+{# NO LAYOUT NOVO, 202 PAPÉIS NÃO FICAM ABERTOS NA MESMA PÁGINA — 30/10/2026. Cada atribuição é um
+   grupo recolhido, com a contagem, e a busca abre o que achar. Editando um papel, só ele aparece:
+   o editor ficava no fim da lista, a dezesseis mil pixels do alto. Sem script, os grupos abrem com
+   um clique, como sempre. No layout antigo, nada muda. #}
+{% set so_o_editor = layout_novo and editando %}
+{% if not so_o_editor %}
 {# O FILTRO POR ATRIBUICAO — relato #32.
 
    **E ele diz quando esta filtrando.** Uma lista filtrada que parece a lista
@@ -27,6 +33,15 @@
 
 <h1>Modelos dos documentos</h1>
 
+{% if layout_novo %}
+<p class="cg-procurar-papel">
+  <label>Procurar papel
+    <input type="search" data-cg-procurar-papel placeholder="certidão, recibo, cabeçalho…" autocomplete="off"></label>
+  <small data-cg-procurar-papel-conta aria-live="polite"></small>
+</p>
+<details class="panel cg-como-funciona">
+  <summary>Como os modelos funcionam</summary>
+{% endif %}
 <p class="muted">
   Aqui está <strong>todo papel que esta casa emite</strong>, das seis
   atribuições. Cada um sai de um modelo escrito no sistema — o
@@ -68,9 +83,16 @@
     {% endif %}
   </p>
 </div>
+{% if layout_novo %}</details>{% endif %}
 
 {% for g in grupos %}
+{% if layout_novo %}
+{% set com_ajuste = g.itens | selectattr('ajustado') | list %}
+<details class="panel cg-grupo-de-papeis" data-cg-grupo-de-papeis{% if atribuicao or grupos | length == 1 %} open{% endif %}>
+  <summary>{{ g.atribuicao }} <small>{{ g.itens | length }} papéis{% if com_ajuste %} · {{ com_ajuste | length }} com ajuste desta casa{% endif %}</small></summary>
+{% else %}
 <h2>{{ g.atribuicao }}</h2>
+{% endif %}
 <table>
   <thead><tr><th>Papel</th><th>O que é</th><th>De onde sai hoje</th><th></th></tr></thead>
   <tbody>
@@ -87,6 +109,7 @@
   {% endfor %}
   </tbody>
 </table>
+{% if layout_novo %}</details>{% endif %}
 {% endfor %}
 
 {# OS PAPÉIS QUE SÃO FORMULÁRIO, e não texto — pedido do oficial em
@@ -97,7 +120,12 @@
    não há caixa de texto para editar um `.odt` com tabelas e larguras em
    centímetros. Baixa, ajusta no LibreOffice, envia de volta. #}
 {% if moldes %}
+{% if layout_novo %}
+<details class="panel cg-grupo-de-papeis" data-cg-grupo-de-papeis>
+  <summary>Papéis das certidões do Registro Civil <small>{{ moldes | length }} formulários, para baixar e enviar</small></summary>
+{% else %}
 <h2>Papéis das certidões do Registro Civil</h2>
+{% endif %}
 <div class="card">
   <p>
     Estes três são <strong>formulários</strong>, e não texto: são os do
@@ -173,9 +201,42 @@
   {% endfor %}
   </tbody>
 </table>
+{% if layout_novo %}</details>{% endif %}
+{% endif %}
+{% endif %}{# so_o_editor #}
+
+{% if layout_novo and not editando %}
+<script>
+(function () {
+  "use strict";
+  var campo = document.querySelector("[data-cg-procurar-papel]");
+  if (!campo) return;
+  var conta = document.querySelector("[data-cg-procurar-papel-conta]");
+  var grupos = Array.prototype.slice.call(document.querySelectorAll("[data-cg-grupo-de-papeis]"));
+  var abertos = grupos.map(function (g) { return g.open; });
+  function limpo(t) { return (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); }
+  campo.addEventListener("input", function () {
+    var q = limpo(campo.value.trim());
+    var total = 0;
+    grupos.forEach(function (g, i) {
+      var achados = 0;
+      g.querySelectorAll("tbody tr").forEach(function (tr) {
+        var bate = !q || limpo(tr.textContent).indexOf(q) >= 0;
+        tr.hidden = !bate;
+        if (bate) achados += 1;
+      });
+      total += achados;
+      g.hidden = !!q && !achados;
+      g.open = q ? achados > 0 : abertos[i];
+    });
+    conta.textContent = q ? total + " papel(éis) com esse texto" : "";
+  });
+})();
+</script>
 {% endif %}
 
 {% if editando %}
+{% if layout_novo %}<p class="actions"><a class="button" href="{{ url_for('modelos', atribuicao=atribuicao) if atribuicao else url_for('modelos') }}">&larr; Todos os papéis</a></p>{% endif %}
 <link rel="stylesheet" href="{{ url_for('static', filename='modelos-editor.css') }}">
 <hr id="modelo-em-edicao">
 <section class="modelos-trabalho" data-modelo-editor

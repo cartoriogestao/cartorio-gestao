@@ -186,14 +186,17 @@ def _endereco_do_edital(fonte: dict, avisos: list[str], de_quem: str) -> dict:
 
 def montar_indicador(con: sqlite3.Connection, matricula_id: int, *, cns: Any,
                      situacao_construcao: Any = None,
-                     tipo_imovel: Any = None) -> dict:
+                     tipo_imovel: Any = None, ficha: dict | None = None,
+                     donos: list[dict] | None = None) -> dict:
     """Monta o corpo do indicador real. **SÓ CALCULA — não grava nem manda.**
 
-    Devolve `{corpo, avisos, impedem, matricula}`.
+    Devolve `{corpo, avisos, impedem, matricula}`. O arquivo inteiro do acervo manda
+    `ficha` e `donos` já completados (`onr_ir_inteiro`): eles valem para o arquivo, e a
+    ficha gravada não muda.
     """
     bd = banco(con)
-    linha = bd.um("SELECT * FROM ri_matriculas WHERE id=%s",
-                  (int(matricula_id),))
+    linha = ficha if ficha is not None else bd.um(
+        "SELECT * FROM ri_matriculas WHERE id=%s", (int(matricula_id),))
     if not linha:
         raise OnrRIError(f"A matrícula {matricula_id} não existe.")
     m = dict(linha)
@@ -254,7 +257,10 @@ def montar_indicador(con: sqlite3.Connection, matricula_id: int, *, cns: Any,
             f"«Matrícula». Transcrição e Torrens têm código próprio no ONR — "
             f"se for o caso, é aqui que se conserta.")
 
-    proprietarios, atos = _proprietarios(bd, matricula_id), []
+    proprietarios = _proprietarios(bd, matricula_id) if donos is None else [
+        _sem_vazios({"nome": _texto(p.get("nome")),
+                     "documento": _digitos(p.get("documento_numero"))})
+        for p in donos if _texto(p.get("nome"))]
     if not proprietarios:
         avisos.append(
             "Nenhum proprietário ativo está gravado nesta matrícula, e o "
@@ -421,8 +427,8 @@ def corpos_para_o_arquivo(con: sqlite3.Connection, matriculas: list[dict], *,
     qual das duas vale é de quem lê o livro.
 
     **A REGRA DA CASA NÃO ENTRA AQUI.** `onr_indicador_xml.completar_ficha` preenche
-    os brancos para o arquivo inteiro do acervo, que é outra decisão; aqui sai o que
-    a ficha diz.
+    os brancos para o arquivo inteiro do acervo, que tem tela própria (`onr_ir_inteiro`);
+    aqui sai o que a ficha diz.
     """
     from gestor_cargas_ri import NUMERO_DE_FICHA_ARQUIVADA
     vezes = Counter(_texto(m.get("numero")) for m in matriculas)

@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+{% block title %}Indicador Real: o arquivo inteiro{% endblock %}
+{% block heading %}<h1>Indicador Real: o arquivo inteiro</h1>{% endblock %}
+{% block content %}
+
+{% macro lista(titulo, linhas, cabecalho) %}
+  {% if linhas %}
+  <details style="padding:0 14px 10px">
+    <summary>{{ titulo }} — {{ linhas|length }}{% if linhas|length > limite %} (a tela mostra {{ limite }}; todas estão no .zip){% endif %}</summary>
+    <div class="table-wrap"><table>
+      <thead><tr>{% for c in cabecalho %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+      <tbody>{{ caller() }}</tbody>
+    </table></div>
+  </details>
+  {% endif %}
+{% endmacro %}
+
+<p class="notice">
+  Todo imóvel ativo em um arquivo só, no modelo do manual do ONR. Onde a ficha está em branco, vale o que o
+  texto dela diz e, depois, a regra desta serventia. <strong>Nenhuma ficha muda e nada é enviado:</strong>
+  o arquivo é para subir ao ONR. O formato fica a conferir até a primeira resposta dele.
+  Para exportar um período, use a <a href="{{ url_for('ri_onr') }}">Exportação ONR</a>.
+</p>
+
+{% if not cns %}<p class="notice warning">O CNS da serventia não está configurado, e sem ele nenhuma ficha entra no arquivo.
+  Informe em Administrativo → Configurações.</p>{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>O arquivo</span><small>o cálculo passa por todas as matrículas ativas e só roda no clique</small></div>
+  <div class="actions" style="padding:14px 14px 0">
+    <form method="post" action="{{ url_for('onr_ir_conferir') }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button" type="submit">Conferir o que sairia</button></form>
+    <form method="post" action="{{ url_for('onr_ir_baixar') }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button primary" type="submit">Baixar o arquivo (.zip)</button></form>
+  </div>
+  <p class="small muted" style="padding:6px 14px 14px">O .zip traz o XML e os relatórios em CSV: o que ficou fora, de onde veio cada dono,
+    quem ficou sem dono, as fichas repetidas e cada campo preenchido.</p>
+
+  {% if r %}
+  <div class="cards" style="padding:0 14px 14px">
+    <div class="stat"><strong>{{ r.corpos|length }}</strong><small>vão no arquivo</small></div>
+    <div class="stat"><strong>{{ r.fora|length }}</strong><small>ficam de fora</small></div>
+    <div class="stat"><strong>{{ r.sem_dono|length }}</strong><small>vão sem proprietário</small></div>
+    <div class="stat"><strong>{{ r.repetidas|length }}</strong><small>repetidas fora</small></div>
+    <div class="stat"><strong>{{ r.arquivadas }}</strong><small>fichas arquivadas, fora</small></div>
+  </div>
+  {% call lista('Ficam de fora, e por quê', r.fora, ['Matrícula', 'Motivo']) %}
+    {% for x in r.fora[:limite] %}<tr><td><a href="{{ url_for('ri_onr_indicador', matricula_id=x.id) }}">{{ x.numero }}</a></td><td class="small">{{ x.motivo }}</td></tr>{% endfor %}
+  {% endcall %}
+  {% call lista('Vão sem proprietário', r.sem_dono, ['Matrícula']) %}
+    {% for x in r.sem_dono[:limite] %}<tr><td>{{ x }}</td></tr>{% endfor %}
+  {% endcall %}
+  {% call lista('Donos que a ficha não marca', r.donos, ['Matrícula', 'Proprietário', 'De onde']) %}
+    {% for x in r.donos[:limite] %}<tr><td>{{ x.numero }}</td><td>{{ x.nome }}</td><td class="small">{{ x.de_onde }}</td></tr>{% endfor %}
+  {% endcall %}
+  {% call lista('O mesmo número em duas fichas ativas', r.repetidas, ['Matrícula', 'Ficha que fica fora', 'Ficha que vai']) %}
+    {% for x in r.repetidas[:limite] %}<tr><td>{{ x.numero }}</td><td>{{ x.id_fora }}</td><td>{{ x.id_que_vai }}</td></tr>{% endfor %}
+  {% endcall %}
+  {% call lista('Campos preenchidos para o arquivo', r.preenchido, ['Matrícula', 'Campo', 'De onde', 'Valor']) %}
+    {% for x in r.preenchido[:limite] %}<tr><td>{{ x.numero }}</td><td>{{ x.campo }}</td><td>{{ x.de_onde }}</td><td class="small">{{ x.valor }}</td></tr>{% endfor %}
+  {% endcall %}
+  {% endif %}
+</section>
+
+<div class="grid2">
+<section class="panel">
+  <div class="panel-head"><span>Fichas que não vão</span><small>decisão desta serventia</small></div>
+  {% if fora %}
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Matrícula</th><th>Motivo</th>{% if user.role == 'ADMIN' %}<th></th>{% endif %}</tr></thead>
+    <tbody>{% for x in fora %}
+      <tr><td>{{ x.numero }}</td><td class="small">{{ x.motivo }}<br><span class="muted">{{ x.por }}, {{ x.em[:10] }}</span></td>
+      {% if user.role == 'ADMIN' %}<td><form method="post" action="{{ url_for('onr_ir_fora_voltar', numero=x.numero) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button" type="submit">Pôr de volta</button></form></td>{% endif %}</tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<p style="padding:14px">Nenhuma. Todo imóvel ativo vai, se tiver o que o ONR exige.</p>{% endif %}
+  {% if user.role == 'ADMIN' %}
+  <form method="post" action="{{ url_for('onr_ir_fora') }}" class="form-grid" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Matrícula <input name="numero" inputmode="numeric" required></label>
+    <label>Motivo <input name="motivo" required minlength="10" placeholder="Ficha cancelada, sem efeito…"></label>
+    <button class="button" type="submit">Tirar do arquivo</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Donos informados</span><small>para o que a ficha não traz; a ficha não muda</small></div>
+  {% if donos %}
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Matrícula</th><th>Proprietário</th><th>De onde veio</th>{% if user.role == 'ADMIN' %}<th></th>{% endif %}</tr></thead>
+    <tbody>{% for x in donos %}
+      <tr><td>{{ x.numero }}</td><td>{{ x.nome }}{% if x.documento %}<br><small>{{ x.documento }}</small>{% endif %}</td>
+      <td class="small">{{ x.de_onde }}<br><span class="muted">{{ x.por }}, {{ x.em[:10] }}</span></td>
+      {% if user.role == 'ADMIN' %}<td><form method="post" action="{{ url_for('onr_ir_dono_tirar', dono_id=x.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button" type="submit">Tirar</button></form></td>{% endif %}</tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<p style="padding:14px">Nenhum. Vale quem a ficha marca e, sem marca, quem adquiriu no último ato.</p>{% endif %}
+  {% if user.role == 'ADMIN' %}
+  <form method="post" action="{{ url_for('onr_ir_dono') }}" class="form-grid" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Matrícula <input name="numero" inputmode="numeric" required></label>
+    <label>Nome <input name="nome" required></label>
+    <label>CPF ou CNPJ <small>(opcional)</small> <input name="documento"></label>
+    <label>De onde veio <input name="de_onde" required minlength="10" placeholder="Teor do R-1, informado pelo oficial…"></label>
+    <button class="button" type="submit">Informar o dono</button>
+  </form>
+  {% endif %}
+</section>
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>A regra desta serventia</span><small>para o que nem a ficha nem o texto dizem</small></div>
+  <p class="small muted" style="padding:14px 14px 0">Cidade: <strong>{{ padrao.cidade or 'não configurada' }}</strong> ·
+    UF: <strong>{{ padrao.uf or 'não configurada' }}</strong> · CEP: <strong>{{ padrao.cep or 'não configurado' }}</strong>.
+    Esses três vêm de Administrativo → Configurações.</p>
+  {% if user.role == 'ADMIN' %}
+  <form method="post" action="{{ url_for('onr_ir_regras') }}" class="form-grid" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for g in regras %}
+      {% if g.chave == 'onr_ir_rural_padrao' %}
+      <label>{{ g.rotulo }}
+        <select name="{{ g.chave }}"><option value="R"{% if g.valor == 'R' %} selected{% endif %}>Vai como rural</option>
+          <option value="U"{% if g.valor == 'U' %} selected{% endif %}>Vai como urbana</option></select></label>
+      {% elif g.chave in ('onr_ir_tipo_rural', 'onr_ir_tipo_urbano') %}
+      <label>{{ g.rotulo }}
+        <select name="{{ g.chave }}">{% for t in tipos %}<option value="{{ t }}"{% if t == g.valor %} selected{% endif %}>{{ t }}</option>{% endfor %}</select></label>
+      {% else %}
+      <label>{{ g.rotulo }} <input name="{{ g.chave }}" value="{{ g.valor }}" maxlength="100" placeholder="{{ g.padrao }}"></label>
+      {% endif %}
+    {% endfor %}
+    <button class="button primary" type="submit">Gravar a regra</button>
+  </form>
+  {% else %}
+  <div class="table-wrap" style="padding:14px"><table class="table">
+    {% for g in regras %}<tr><th>{{ g.rotulo }}</th><td>{{ g.valor }}</td></tr>{% endfor %}
+  </table></div>
+  {% endif %}
+</section>
+{% endblock %}

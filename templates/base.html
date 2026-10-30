@@ -373,6 +373,7 @@
         {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Remessas e obrigações</div>
         <a href="{{ url_for('ri_selos') }}">Selos e emolumentos</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('ri_onr') }}">Exportação ONR</a>
+        <a href="{{ url_for('onr_ir') }}">Indicador Real — o arquivo inteiro</a>
         {#
           A CARGA DO NEXT CLOUD SAS FICA AO LADO DA EXPORTACAO, e nao numa
           secao nova: as duas mandam a mesma coisa ao mesmo destino — o que

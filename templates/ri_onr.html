@@ -74,6 +74,9 @@
       <div class="small muted">{{ real_xml.corpos|length }} de {{ matriculas|length }} matrícula(s) — modelo de arquivo do manual do ONR</div>
     </form>
   </div>
+  <p class="small muted" style="padding:0 14px">Este botão leva as fichas abertas no período, com o que a ficha diz.
+    Todo o acervo, preenchendo os brancos pela regra da serventia, sai em
+    <a href="{{ url_for('onr_ir') }}">Indicador Real: o arquivo inteiro</a>.</p>
   {% if real_xml.de_fora %}
   <details style="padding:0 14px 14px">
     <summary>Fora do Indicador Real (.XML) — {{ real_xml.de_fora|length }}</summary>

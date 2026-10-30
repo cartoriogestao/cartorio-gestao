@@ -71,8 +71,10 @@ CAMPOS_DO_ATO = (
 CAMPOS_DO_ENDERECO = ("logradouro", "numero_predial", "bairro", "cidade", "uf", "cep",
                       "rural_urbano", "area_valor", "area_unidade", "tipo_imovel")
 
-#: As regras da casa que ainda não estavam escritas — as de 15/09/2026 (CEP único,
-#: «Zona Rural», número «0») moram em `onr_endereco_do_teor.padrao_da_casa`.
+#: Os padrões de quem ainda não escreveu a sua regra. Cada serventia edita a dela na tela
+#: do arquivo inteiro (`onr_ir_inteiro`), e o que ela escreve chega aqui por `padrao`. As
+#: de 15/09/2026 (CEP único, «Zona Rural», número «0») moram em
+#: `onr_endereco_do_teor.padrao_da_casa`.
 LOGRADOURO_RURAL_SEM_NOME = "Fazenda Sem Denominação"
 BAIRRO_URBANO_SEM_NOME = "Centro"
 TIPO_RURAL = "Fazenda/Sítio/Chácara"
@@ -102,19 +104,18 @@ def completar_ficha(m: dict, proposta: dict | None, padrao: dict) -> tuple[dict,
             origem[c] = "texto"
     rural = str(saida.get("rural_urbano") or "").strip().upper()[:1]
     if rural not in ("R", "U"):
-        # Sem a palavra do livro, a casa é rural: é o que o acervo desta
-        # serventia é (o tipo «Fazenda/Sítio/Chácara» domina as fichas).
-        rural = "R"
-        saida["rural_urbano"] = "Rural"
+        # Sem a palavra do livro, vale o que a serventia escolheu para o acervo dela.
+        rural = "U" if str(padrao.get("rural_padrao") or "R").upper()[:1] == "U" else "R"
+        saida["rural_urbano"] = "Rural" if rural == "R" else "Urbano"
         origem["rural_urbano"] = "regra"
     regra = {
         "numero_predial": padrao.get("numero") or "0",
         "bairro": (padrao.get("bairro_rural") or "Zona Rural") if rural == "R"
-        else BAIRRO_URBANO_SEM_NOME,
+        else (padrao.get("bairro_urbano") or BAIRRO_URBANO_SEM_NOME),
         "cidade": padrao.get("cidade"),
         "uf": padrao.get("uf"),
-        "logradouro": LOGRADOURO_RURAL_SEM_NOME if rural == "R" else None,
-        "tipo_imovel": TIPO_RURAL if rural == "R" else TIPO_URBANO,
+        "logradouro": (padrao.get("logradouro_rural") or LOGRADOURO_RURAL_SEM_NOME) if rural == "R" else None,
+        "tipo_imovel": _tipo_da_regra(padrao, rural),
     }
     for c, v in regra.items():
         if _em_branco(saida.get(c)) and not _em_branco(v):
@@ -129,8 +130,8 @@ def completar_ficha(m: dict, proposta: dict | None, padrao: dict) -> tuple[dict,
     if num and re.search(r"[A-Za-zÀ-ÿ(]", area[num.end():]):
         saida["area_valor"] = area[:num.end()].strip()
         origem["area_valor"] = "limpo"
-    _endireitar_logradouro(saida, origem, rural)
-    _endireitar_tipo(saida, origem, rural)
+    _endireitar_logradouro(saida, origem, rural, padrao)
+    _endireitar_tipo(saida, origem, rural, padrao)
     if _em_branco(saida.get("cep")):
         ceps = padrao.get("ceps") or {}
         cidade = str(saida.get("cidade") or "").strip().lower()
@@ -151,7 +152,13 @@ _PREFIXOS_DA_FRASE = ("situada na ", "situado na ", "situada no ", "situado no "
                       "sito na ", "sito no ", "na ", "no ", "a ", "à ", "em ")
 
 
-def _endireitar_logradouro(saida: dict, origem: dict, rural: str) -> None:
+def _tipo_da_regra(padrao: dict, rural: str) -> str:
+    if rural == "R":
+        return padrao.get("tipo_rural") or TIPO_RURAL
+    return padrao.get("tipo_urbano") or TIPO_URBANO
+
+
+def _endireitar_logradouro(saida: dict, origem: dict, rural: str, padrao: dict | None = None) -> None:
     """O ONR exige o logradouro começando por um tipo do catálogo dele.
 
     Primeiro tira a preposição da frase do livro («a AVENIDA DEOCLIDES GOMES»);
@@ -171,12 +178,13 @@ def _endireitar_logradouro(saida: dict, origem: dict, rural: str) -> None:
                 saida["logradouro"] = resto
                 origem["logradouro"] = origem.get("logradouro", "texto") + "+limpo"
                 return
-    saida["logradouro"] = (LOGRADOURO_RURAL_SEM_NOME if rural == "R"
-                           else LOGRADOURO_URBANO_SEM_NOME)
+    padrao = padrao or {}
+    saida["logradouro"] = ((padrao.get("logradouro_rural") or LOGRADOURO_RURAL_SEM_NOME) if rural == "R"
+                           else (padrao.get("logradouro_urbano") or LOGRADOURO_URBANO_SEM_NOME))
     origem["logradouro"] = "regra"
 
 
-def _endireitar_tipo(saida: dict, origem: dict, rural: str) -> None:
+def _endireitar_tipo(saida: dict, origem: dict, rural: str, padrao: dict | None = None) -> None:
     """O tipo do imóvel tem de ser um dos dez do ONR; a frase da ficha vira o mais próximo."""
     import onr_api as API
     atual = str(saida.get("tipo_imovel") or "").strip()
@@ -194,7 +202,7 @@ def _endireitar_tipo(saida: dict, origem: dict, rural: str) -> None:
     elif "loja" in chave:
         novo = "Loja"
     else:
-        novo = TIPO_RURAL if rural == "R" else TIPO_URBANO
+        novo = _tipo_da_regra(padrao or {}, rural)
     saida["tipo_imovel"] = novo
     origem["tipo_imovel"] = "regra"
 

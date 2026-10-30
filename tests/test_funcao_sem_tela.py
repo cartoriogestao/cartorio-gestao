@@ -464,16 +464,13 @@ _JS = "porta é JavaScript/blueprint (`modelos_motor_api`), que o varredor não 
 _TOOLS = "a porta é script de `tools/`, e não tela"
 _TESTE = "auxiliar testada; a tela ainda não ligou esta peça"
 _DOMINIAL = "ri_dominial — régua interna da cadeia dominial/vintenária, testada"
-_ONR_XML = ("onr_indicador_xml — a regra da casa do arquivo inteiro do acervo; a porta "
-            "é o script `FERRAMENTAS/gerar_indicador_real_xml.py`, e o botão da "
-            "exportação manda o que a ficha diz")
 _SAEC = "onr_api — operação do contrato SAEC (atendimento/cobrança), testada; sem botão ainda"
 _SEM = "SEM CHAMADOR — nem teste nem script; candidata a apagar (decisão de quem constrói o módulo)"
 ACHADAS_EM_12_10_2026: dict[str, str] = {
     "api_campos": _JS, "api_previa": _JS, "api_trechos_bloqueados": _JS,
-    # `arquivo_xml`, `ato_entra` e `indicador_em_xml` SAÍRAM EM 30/10/2026: o botão
-    # «Indicador Real (.XML)» da exportação para o ONR.
-    "completar_ficha": _ONR_XML, "donos_presumidos": _ONR_XML,
+    # `arquivo_xml`, `ato_entra`, `indicador_em_xml`, `completar_ficha` e
+    # `donos_presumidos` SAÍRAM EM 30/10/2026: o botão «Indicador Real (.XML)» da
+    # exportação e a tela do arquivo inteiro (`onr_ir_inteiro`).
     # `cobranca` e `mensagem_documento_invalido` SAÍRAM em 20/10/2026 (LX22B2),
     # porque o varredor já as alcança. A segunda tem porta de verdade: o erro de
     # documento da apostila e das Notas (`apostila.py`, `nt_publica_forma.py`,

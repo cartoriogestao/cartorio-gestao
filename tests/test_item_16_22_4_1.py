@@ -197,7 +197,7 @@ def _protocolo(banco, *, com_servico: bool = True) -> int:
                                           situacao, criado_em)
                VALUES ('2026.10.162241', '2026-10-30', ?, 'ABERTO',
                        '2026-10-30T10:38:00')""",
-            ("LEIDIANE EXEMPLO DA SILVA",))
+            ("PESSOA DE TESTE",))
         protocolo_id = int(cur.lastrowid)
         con.execute("""INSERT INTO cx_vigencias (codigo, descricao, vigente,
                                                  servicos, faixas, importado_em)

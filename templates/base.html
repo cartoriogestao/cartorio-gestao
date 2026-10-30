@@ -1061,7 +1061,7 @@
     </header>
     <div class="content">
       {% with messages = get_flashed_messages(with_categories=true) %}
-        {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message }}{{ aviso.fechar() }}</div>{% endfor %}
+        {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message|forte }}{{ aviso.fechar() }}</div>{% endfor %}
       {% endwith %}
 
       {% block content %}{% endblock %}
@@ -1095,7 +1095,7 @@
 <div class="auth-wrap">
   <div class="auth-card">
     {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message }}{{ aviso.fechar() }}</div>{% endfor %}
+      {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message|forte }}{{ aviso.fechar() }}</div>{% endfor %}
     {% endwith %}
     {% block auth_content %}{% endblock %}
   </div>

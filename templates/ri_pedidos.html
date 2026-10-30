@@ -110,16 +110,28 @@
           {% elif x.etapa == 'VENCIDA' %}
             {% if user.role in ['ADMIN', 'MANAGER'] %}
             <details><summary>Decidir</summary>
-              <form method="post" action="{{ url_for('ri_protocolo') }}" class="stack">
+              {# O mesmo caminho da ficha: motivo da lista, decurso já escolhido. #}
+              <form method="post" action="{{ url_for('ri_protocolo_ver', protocolo_id=x.id) }}" class="stack">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <input type="hidden" name="acao" value="encerrar">
-                <input type="hidden" name="protocolo_id" value="{{ x.id }}">
-                <input type="hidden" name="situacao" value="CANCELADO">
                 <input type="hidden" name="voltar" value="pedidos">
                 <label>Motivo
-                  <input name="motivo" required minlength="5"
-                         value="Decurso do prazo da prenotação sem registro (Lei 6.015/73, art. 205)."></label>
-                <button class="button">Encerrar por decurso do prazo</button>
+                  <select name="motivo" required>
+                    {% for chave, item in MOTIVOS_ENCERRAMENTO.items() %}
+                    <option value="{{ chave }}"{% if chave == MOTIVO_DECURSO %} selected{% endif %}>{{ item.rotulo }}</option>
+                    {% endfor %}
+                  </select></label>
+                <label>Situação — só vale para «Outro»
+                  <select name="situacao">
+                    {% for s in SITUACOES_DE_ENCERRAMENTO %}
+                    <option value="{{ s }}"{% if s == 'CANCELADO' %} selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                  </select></label>
+                <label>Observação
+                  <input name="observacao" placeholder="obrigatória se o motivo for Outro"></label>
+                <label>
+                  <input type="checkbox" name="confirmar" value="1" required>
+                  Confirmo o encerramento desta prenotação</label>
+                <button class="button" name="acao" value="encerrar">Encerrar esta prenotação</button>
               </form>
               <span class="muted">Se houve suspensão ou reingresso, registre-os na
                 <a href="{{ url_for('ri_protocolo_ver', protocolo_id=x.id) }}">ficha</a> em vez de encerrar.</span>

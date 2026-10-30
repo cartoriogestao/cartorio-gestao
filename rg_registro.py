@@ -260,6 +260,329 @@ def declaracoes_do_formulario(form) -> dict[str, str]:
             if chave.startswith(PREFIXO_DA_DECLARACAO)}
 
 
+# A LISTA DE PRESENÇA, OU A CERTIDÃO DE QUE ELA NÃO VEIO (CN-MA arts. 410,
+# 412 e 413, inciso III; Inspeção Ordinária — AUDITUS 6304).
+#
+# O inciso III dos três artigos pede «a lista de presença, quando houver».
+# A inspeção determinou: quando a entidade não a apresenta, o cartório
+# requer a certidão de não apresentação — e o ato não se lavra no escuro.
+# A natureza do título é texto livre, então quem lavra declara o
+# enquadramento. Ato fora desses três artigos segue, com «não se aplica» e
+# o porquê. RTD não entra: a regra é do RCPJ.
+ENQUADRAMENTOS_CNMA = ("ART410", "ART412", "ART413", "NAO_SE_APLICA")
+LISTA_PRESENCA = ("APRESENTADA", "NAO_APRESENTADA_CERTIDAO")
+ARTIGO_DO_ENQUADRAMENTO = {"ART410": "410", "ART412": "412", "ART413": "413"}
+ROTULO_DO_ENQUADRAMENTO = {
+    "ART410": "Art. 410 — constituição sem fins econômicos",
+    "ART412": "Art. 412 — eleição ou posse de diretoria ou outros órgãos",
+    "ART413": "Art. 413 — alteração estatutária ou de regimento",
+    "NAO_SE_APLICA": "Outro ato — não se aplica",
+}
+#: Chave à parte das declarações do termo. `declaracoes_do_livro` recusa
+#: o que não é claro do livro; esta não passa por aquele filtro.
+CHAVE_LISTA_PRESENCA = "cnma_lista_presenca"
+FRASE_DA_EXIGENCIA_LISTA = (
+    "Apresentar a lista de presença ou a certidão de não apresentação "
+    "(CN-MA art. 410, 412 ou 413, inciso III).")
+
+
+def _sem_acento(texto: str) -> str:
+    return str(texto or "").lower().translate(
+        str.maketrans("áàâãéêíóôõúüç", "aaaaeeiooouuc"))
+
+
+def _limpo(valor) -> str:
+    return " ".join(str(valor or "").split())
+
+
+def sugerir_enquadramento(texto: str | None) -> str:
+    """Palpite de enquadramento a partir da natureza. Só calcula.
+
+    É sugestão para a tela, não regra: quem lavra confirma ou troca. A
+    alteração estatutária vem antes de «estatuto» solto, senão toda reforma
+    cairia na constituição."""
+    t = _sem_acento(texto)
+    if not t.strip():
+        return ""
+    if "regimento" in t or (
+            ("altera" in t or "reforma" in t) and "estatut" in t):
+        return "ART413"
+    if any(p in t for p in ("eleicao", "posse", "diretoria", "mandato")):
+        return "ART412"
+    if any(p in t for p in ("constitui", "fundacao", "estatuto", "sem fins")):
+        return "ART410"
+    return ""
+
+
+def completar_exigencia_com_lista(exigencias: str | None,
+                                  natureza: str | None) -> str:
+    """Na nota devolutiva do RCPJ, lembra a lista quando a natureza cai
+    nos arts. 410, 412 ou 413. Só calcula.
+
+    Não inventa exigência: texto curto demais continua curto, e quem já
+    pediu a lista não recebe a frase duas vezes."""
+    texto = _limpo(exigencias)
+    if not sugerir_enquadramento(natureza):
+        return texto
+    if "lista de presenca" in _sem_acento(texto):
+        return texto
+    if len(texto) < 10:
+        return texto
+    return f"{texto} {FRASE_DA_EXIGENCIA_LISTA}"
+
+
+def lista_presenca_do_formulario(form, *, arquivos=None) -> dict:
+    """Os campos do enquadramento que a tela mandou, sem validar. Só calcula.
+
+    Quem decide se bastam é `validar_lista_presenca`, na lavratura. Arquivo
+    novo ainda não tem id: `tem_anexo` marca que ele veio no pedido."""
+    if hasattr(form, "getlist"):
+        ids = [str(x).strip() for x in form.getlist("anexo_id")
+               if str(x).strip()]
+    else:
+        bruto = form.get("anexo_id") if form is not None else None
+        if isinstance(bruto, (list, tuple)):
+            ids = [str(x).strip() for x in bruto if str(x).strip()]
+        elif bruto:
+            ids = [str(bruto).strip()]
+        else:
+            ids = []
+    tem_arquivo = any(
+        str(getattr(arq, "filename", "") or "").strip()
+        for arq in (arquivos or []))
+    return {
+        "enquadramento": (form.get("enquadramento_cnma") if form else "") or "",
+        "lista_presenca": (form.get("lista_presenca") if form else "") or "",
+        "anexos_ids": ids,
+        "referencia_doc": (form.get("lista_presenca_ref") if form else "") or "",
+        "certidao_ref": (
+            form.get("certidao_nao_apresentacao_ref") if form else "") or "",
+        "justificativa": (form.get("justificativa_cnma") if form else "") or "",
+        "tem_anexo": tem_arquivo,
+    }
+
+
+def validar_lista_presenca(serie: str, enquadramento, lista_presenca, *,
+                           anexos_ids=None, referencia_doc="",
+                           certidao_ref="", justificativa="",
+                           tem_anexo: bool = False) -> dict | None:
+    """Confere a lista de presença do RCPJ e devolve o que se grava no ato.
+
+    Série que não é RCPJ devolve None: o RTD não tem esta exigência, e o
+    chamador segue como sempre. No RCPJ, sem enquadramento, sem uma das
+    duas declarações, ou sem o documento que a declaração promete, levanta
+    `RgError` — nada se lavra.
+    """
+    if str(serie or "").upper() not in SERIES_RCPJ:
+        return None
+    enq = _limpo(enquadramento).upper()
+    if enq not in ENQUADRAMENTOS_CNMA:
+        raise RgError(
+            "Escolha o enquadramento CN-MA do ato: art. 410 (constituição "
+            "sem fins econômicos), art. 412 (eleição ou posse), art. 413 "
+            "(alteração estatutária) ou «Outro ato — não se aplica». Sem o "
+            "enquadramento, nada foi lavrado.")
+    if enq == "NAO_SE_APLICA":
+        just = _limpo(justificativa)
+        if len(just) < 10:
+            raise RgError(
+                "«Outro ato — não se aplica» pede a justificativa, com pelo "
+                "menos dez letras, de por que os arts. 410, 412 e 413 do "
+                "CN-MA não alcançam este ato. Ela fica na auditoria. Nada "
+                "foi lavrado.")
+        return {"enquadramento": enq, "lista_presenca": "NAO_SE_APLICA",
+                "justificativa": just}
+
+    artigo = ARTIGO_DO_ENQUADRAMENTO[enq]
+    escolha = _limpo(lista_presenca).upper()
+    if escolha not in LISTA_PRESENCA:
+        raise RgError(
+            f"CN-MA art. {artigo}, III: informe se a lista de presença foi "
+            f"apresentada. Se a entidade não a apresentou, anexe a certidão "
+            f"de não apresentação (determinação da Inspeção Ordinária — "
+            f"AUDITUS 6304).")
+    ids = []
+    for bruto in anexos_ids or []:
+        texto = str(bruto).strip()
+        if texto and texto not in ids:
+            ids.append(texto)
+    tem = bool(ids) or bool(tem_anexo)
+    ref = _limpo(referencia_doc)
+    cert = _limpo(certidao_ref)
+    if escolha == "APRESENTADA":
+        if not tem and not ref:
+            raise RgError(
+                f"CN-MA art. {artigo}, III: a lista de presença foi marcada "
+                f"como apresentada. Informe a folha ou o número do documento "
+                f"arquivado, ou anexe a lista. Nada foi lavrado.")
+        bloco = {"enquadramento": enq, "artigo": artigo,
+                 "lista_presenca": escolha}
+        if ref:
+            bloco["referencia_doc"] = ref
+        if ids:
+            bloco["anexo_ids"] = ids
+        if tem:
+            bloco["com_anexo"] = True
+        return bloco
+    if len(cert) < 3:
+        raise RgError(
+            f"CN-MA art. {artigo}, III: informe o número e a data da "
+            f"certidão de não apresentação da lista de presença "
+            f"(determinação da Inspeção Ordinária — AUDITUS 6304). Nada "
+            f"foi lavrado.")
+    if not tem:
+        raise RgError(
+            f"CN-MA art. {artigo}, III: anexe a certidão de não apresentação "
+            f"(nº/data já informados: {cert}). Nada foi lavrado.")
+    bloco = {"enquadramento": enq, "artigo": artigo,
+             "lista_presenca": escolha, "certidao_ref": cert,
+             "com_anexo": True}
+    if ids:
+        bloco["anexo_ids"] = ids
+    return bloco
+
+
+def _conferir_lista(serie: str, lista_presenca: dict | None) -> dict | None:
+    """Aplica `validar_lista_presenca` ao que a tela (ou o teste) mandou.
+
+    `None` é o caminho antigo — carga, acervo, chamada interna — e não
+    exige nada. Dicionário, mesmo vazio, é o escrevente na tela do RCPJ.
+    """
+    if lista_presenca is None:
+        return None
+    if not isinstance(lista_presenca, dict):
+        raise RgError(
+            "A declaração da lista de presença veio em formato inválido. "
+            "Nada foi lavrado.")
+    return validar_lista_presenca(
+        serie, lista_presenca.get("enquadramento"),
+        lista_presenca.get("lista_presenca"),
+        anexos_ids=lista_presenca.get("anexos_ids"),
+        referencia_doc=lista_presenca.get("referencia_doc") or "",
+        certidao_ref=lista_presenca.get("certidao_ref") or "",
+        justificativa=lista_presenca.get("justificativa") or "",
+        tem_anexo=bool(lista_presenca.get("tem_anexo")))
+
+
+def _gravar_declaracoes_do_ato(bd, ato_id: int, declaradas: dict,
+                               lista: dict | None) -> None:
+    """Grava no ato as declarações do livro e, à parte, a lista de presença."""
+    corpo = dict(declaradas)
+    if lista:
+        corpo[CHAVE_LISTA_PRESENCA] = lista
+    if not corpo:
+        return
+    bd.escrever("UPDATE rg_atos SET declaracoes=%s WHERE id=%s",
+                (json.dumps(corpo, ensure_ascii=False, sort_keys=True),
+                 int(ato_id)))
+
+
+def resumo_auditoria_lista(lista: dict | None) -> dict:
+    """O que a auditoria guarda da declaração. Só calcula."""
+    if not lista:
+        return {}
+    saida = {
+        "enquadramento": str(lista.get("enquadramento") or ""),
+        "lista_presenca": str(lista.get("lista_presenca") or ""),
+    }
+    for chave in ("certidao_ref", "referencia_doc", "justificativa"):
+        valor = str(lista.get(chave) or "")
+        if valor:
+            saida[chave] = valor
+    return saida
+
+
+def bloco_da_lista_presenca(declaracoes) -> dict | None:
+    """O bloco gravado no ato, ou None. Só lê."""
+    if not declaracoes:
+        return None
+    if isinstance(declaracoes, str):
+        try:
+            declaracoes = json.loads(declaracoes)
+        except ValueError:
+            return None
+    if not isinstance(declaracoes, dict):
+        return None
+    bloco = declaracoes.get(CHAVE_LISTA_PRESENCA)
+    return bloco if isinstance(bloco, dict) else None
+
+
+def texto_da_lista_presenca(declaracoes) -> str:
+    """A frase da consulta do ato. Só calcula. Vazio quando o ato não declarou."""
+    bloco = bloco_da_lista_presenca(declaracoes)
+    if not bloco:
+        return ""
+    if bloco.get("enquadramento") == "NAO_SE_APLICA":
+        just = str(bloco.get("justificativa") or "").strip()
+        base = "Lista de presença: não se aplica"
+        return f"{base} — {just}" if just else base
+    escolha = bloco.get("lista_presenca") or ""
+    if escolha == "APRESENTADA":
+        ref = str(bloco.get("referencia_doc") or "").strip()
+        if ref:
+            return f"Lista de presença: apresentada ({ref})"
+        if bloco.get("com_anexo") or bloco.get("anexo_ids"):
+            return "Lista de presença: apresentada, com anexo"
+        return "Lista de presença: apresentada"
+    if escolha == "NAO_APRESENTADA_CERTIDAO":
+        ref = str(bloco.get("certidao_ref") or "").strip() or "—"
+        return f"Lista de presença: certidão de não apresentação nº {ref}"
+    return ""
+
+
+def acrescentar_anexos_da_lista(con, ato_id: int, anexo_ids) -> None:
+    """Anota no ato os anexos gravados depois da lavratura. ESCREVE.
+
+    O arquivo sobe depois do número do livro — a validação já aceitou que
+    ele vinha no pedido. Aqui só se completa o id, para a consulta apontar
+    o arquivo."""
+    bd = banco(con)
+    bruto = bd.valor("SELECT declaracoes FROM rg_atos WHERE id=%s",
+                     (int(ato_id),))
+    if not bruto:
+        return
+    try:
+        dados = json.loads(bruto)
+    except ValueError:
+        return
+    if not isinstance(dados, dict):
+        return
+    bloco = dados.get(CHAVE_LISTA_PRESENCA)
+    if not isinstance(bloco, dict):
+        return
+    atuais = [str(x) for x in (bloco.get("anexo_ids") or [])]
+    for bruto_id in anexo_ids or []:
+        texto = str(bruto_id).strip()
+        if texto and texto not in atuais:
+            atuais.append(texto)
+    if not atuais:
+        return
+    bloco["anexo_ids"] = atuais
+    bloco["com_anexo"] = True
+    dados[CHAVE_LISTA_PRESENCA] = bloco
+    bd.escrever("UPDATE rg_atos SET declaracoes=%s WHERE id=%s",
+                (json.dumps(dados, ensure_ascii=False, sort_keys=True),
+                 int(ato_id)))
+
+
+def atos_sem_declaracao_de_lista(con) -> list[dict]:
+    """Atos de RCPJ lavrados antes desta regra, ainda sem a declaração. Só LÊ.
+
+    O passado não se reescreve. A lista serve ao saneamento administrativo."""
+    return banco(con).ler(
+        f"""SELECT a.id, a.tipo, a.data_ato, a.registro_id,
+                   r.numero AS registro_numero, r.serie, r.natureza,
+                   r.requerente_nome
+              FROM rg_atos a
+              JOIN rg_registros r ON r.id = a.registro_id
+             WHERE r.serie IN ({", ".join("%s" for _ in SERIES_RCPJ)})
+               AND a.tipo IN ('REGISTRO', 'AVERBACAO')
+               AND (a.declaracoes IS NULL
+                    OR a.declaracoes NOT LIKE %s)
+             ORDER BY a.id DESC""",
+        (*SERIES_RCPJ, f'%"{CHAVE_LISTA_PRESENCA}"%'))
+
+
 def dados_do_termo(con, ato: dict, registro: dict) -> dict:
     """O que o termo do ato declara além do teor — os claros que o LD09 deu a
     `rg_teor_rtdpj.gerar_pdf`. Só LÊ.
@@ -297,7 +620,12 @@ def dados_do_termo(con, ato: dict, registro: dict) -> dict:
         except ValueError:
             gravadas = {}
         if isinstance(gravadas, dict) and gravadas:
-            dados["declaracoes"] = gravadas
+            # a lista de presença fica no ato e na consulta; não entra no
+            # termo impresso (os claros do livro continuam os de sempre)
+            do_livro = {k: v for k, v in gravadas.items()
+                        if k != CHAVE_LISTA_PRESENCA}
+            if do_livro:
+                dados["declaracoes"] = do_livro
     elif tipo.startswith("AVERB") and (ato or {}).get("numero_ordem") is not None:
         dados["numero_averbacao"] = str(ato["numero_ordem"])
     return dados
@@ -394,7 +722,8 @@ def abrir_registro(con: sqlite3.Connection, *, serie: str, sv: dict,
                    usuario: str | None = None, origem: str = "MANUAL",
                    origem_chave: str | None = None,
                    importacao_id: int | None = None,
-                   declaracoes: dict | None = None) -> dict:
+                   declaracoes: dict | None = None,
+                   lista_presenca: dict | None = None) -> dict:
     """Abre o registro e lavra o ato de REGISTRO. ESCREVE.
 
     Cada série é folha nova (`livro_nucleo.SERIES[serie].folha_nova`): o
@@ -407,9 +736,14 @@ def abrir_registro(con: sqlite3.Connection, *, serie: str, sv: dict,
 
     `declaracoes` são as do termo do livro (LD09 — `DECLARACOES_POR_SERIE`),
     conferidas ANTES de gastar número de livro e gravadas no ato.
+
+    `lista_presenca` é a declaração do inciso III (CN-MA arts. 410, 412 e
+    413). None é o caminho antigo (carga e acervo) e não exige nada; o que
+    a tela manda, mesmo vazio, é conferido antes do número.
     """
     s = _serie(serie)
     declaradas = declaracoes_do_livro(serie, declaracoes)
+    lista = _conferir_lista(serie, lista_presenca)
     chave = (origem_chave or "").strip() or None
     if origem == "EOFICIO" and not chave:
         raise RgError(
@@ -443,12 +777,9 @@ def abrir_registro(con: sqlite3.Connection, *, serie: str, sv: dict,
            RETURNING id""",
         (registro_id, "REGISTRO", agora, teor, teor_formato, origem, agora,
          usuario))[0]["id"])
-    if declaradas:
-        # à parte do INSERT de sempre: o ato sem declaração (o Livro B, a carga
-        # do acervo) se grava exatamente como antes do LD09
-        bd.escrever("UPDATE rg_atos SET declaracoes=%s WHERE id=%s",
-                    (json.dumps(declaradas, ensure_ascii=False, sort_keys=True),
-                     ato_id))
+    # à parte do INSERT de sempre: o ato sem declaração (o Livro B do RTD,
+    # a carga do acervo) se grava exatamente como antes
+    _gravar_declaracoes_do_ato(bd, ato_id, declaradas, lista)
 
     lugar = ESC.reservar(con, serie, "rg_atos", ato_id, sv=sv, agora=agora,
                          data_extenso=data_extenso, paginas=1, usuario=usuario)
@@ -459,8 +790,11 @@ def abrir_registro(con: sqlite3.Connection, *, serie: str, sv: dict,
          lugar["numero_ordem"], lugar["rotulo"], ato_id))
     bd.escrever("UPDATE rg_registros SET numero=%s WHERE id=%s",
                 (lugar["numero_ordem"], registro_id))
-    return {"registro_id": registro_id, "ato_id": ato_id,
-           "reaproveitado": False, **lugar}
+    feito = {"registro_id": registro_id, "ato_id": ato_id,
+             "reaproveitado": False, **lugar}
+    if lista:
+        feito["cnma_lista_presenca"] = lista
+    return feito
 
 
 # -------------------------------------------------------------- a averbacao
@@ -470,12 +804,16 @@ def lancar_averbacao(con: sqlite3.Connection, registro_id: int, *, teor: str,
                      sv: dict, agora: str, data_extenso: str,
                      teor_formato: str = "texto",
                      usuario: str | None = None,
-                     origem: str = "MANUAL") -> dict:
+                     origem: str = "MANUAL",
+                     lista_presenca: dict | None = None) -> dict:
     """Lavra a averbação, em folha nova. ESCREVE.
 
     Ocupa lugar PRÓPRIO no livro — a série é folha nova, e o E-Ofício mede
     cada ato como uma escritura à parte, não como anotação na folha do
     registro original. Só cabe em registro ATIVO.
+
+    `lista_presenca` segue a mesma regra do registro: None não exige (ato
+    antigo e chamada interna); o que a tela manda é conferido antes do número.
     """
     reg = _registro_preso(con, registro_id)
     if not reg:
@@ -488,6 +826,7 @@ def lancar_averbacao(con: sqlite3.Connection, registro_id: int, *, teor: str,
     if len(razao) < 10:
         raise RgError(
             "O teor da averbação precisa de pelo menos dez letras.")
+    lista = _conferir_lista(reg["serie"], lista_presenca)
 
     bd = banco(con)
     ato_id = int(bd.escrever(
@@ -497,6 +836,7 @@ def lancar_averbacao(con: sqlite3.Connection, registro_id: int, *, teor: str,
            RETURNING id""",
         (registro_id, "AVERBACAO", agora, razao, teor_formato, origem, agora,
          usuario))[0]["id"])
+    _gravar_declaracoes_do_ato(bd, ato_id, {}, lista)
 
     lugar = ESC.reservar(con, reg["serie"], "rg_atos", ato_id, sv=sv,
                          agora=agora, data_extenso=data_extenso, paginas=1,
@@ -506,7 +846,10 @@ def lancar_averbacao(con: sqlite3.Connection, registro_id: int, *, teor: str,
                               rotulo=%s WHERE id=%s""",
         (lugar["livro_id"], lugar["folha"], int(lugar["verso"]),
          lugar["numero_ordem"], lugar["rotulo"], ato_id))
-    return {"registro_id": registro_id, "ato_id": ato_id, **lugar}
+    feito = {"registro_id": registro_id, "ato_id": ato_id, **lugar}
+    if lista:
+        feito["cnma_lista_presenca"] = lista
+    return feito
 
 
 # ---------------------------------------------------------- o cancelamento

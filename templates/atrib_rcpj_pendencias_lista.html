@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>RCPJ — atos sem lista de presença</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpj_rtd_registros', atribuicao=3) }}">&larr; Registros do RCPJ</a>
+</div>
+<div class="notice">
+  Atos de constituição, averbação e os demais do Livro A e do Livro B lavrados
+  <strong>antes</strong> da declaração da lista de presença (CN-MA arts. 410,
+  412 e 413, inciso III). O sistema não reescreve o passado: esta lista apoia
+  o saneamento. Ato novo do RCPJ já não entra sem a declaração.
+</div>
+<section class="cards">
+  <div class="stat"><strong>{{ total }}</strong><small>sem a declaração</small></div>
+</section>
+<section class="panel">
+  <div class="panel-head"><span>Atos</span></div>
+  {% if not atos %}
+  <p style="padding:14px"><small>Nenhum ato de RCPJ sem a declaração.</small></p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Ato</th><th>Tipo</th><th>Data</th><th>Livro</th><th>Registro</th>
+               <th>Natureza</th><th>Requerente</th></tr></thead>
+    <tbody>
+    {% for a in atos %}
+      <tr>
+        <td>{{ a.id }}</td>
+        <td>{{ a.tipo }}</td>
+        <td>{{ (a.data_ato or '')[:10] }}</td>
+        <td>{{ a.serie }}</td>
+        <td><a href="{{ url_for('rcpj_rtd_registro', registro_id=a.registro_id) }}">nº {{ a.registro_numero or '—' }}</a></td>
+        <td>{{ a.natureza or '—' }}</td>
+        <td>{{ a.requerente_nome or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

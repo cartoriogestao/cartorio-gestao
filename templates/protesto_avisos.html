@@ -524,7 +524,9 @@
         <td><strong>{{ d.dia[8:10] }}/{{ d.dia[5:7] }}/{{ d.dia[:4] }}</strong></td>
         <td>{{ d.editais }}</td>
         <td>
-          {% if d.completo %}<span>comprovado</span>
+          {% if d.do_eoficio == d.editais and not d.com_comprovante %}<span>do E-Ofício</span>
+            <div><small>o sistema antigo é que mandava; não se cobra comprovante</small></div>
+          {% elif d.completo %}<span>comprovado</span>
           {% elif d.com_comprovante %}<strong>{{ d.com_comprovante }} de {{ d.editais }}</strong>
           {% else %}<strong>sem comprovante</strong>{% endif %}
           {% for x in d.anexos %}

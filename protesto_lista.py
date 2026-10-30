@@ -43,7 +43,8 @@ from pt_schema import normalizar_nome
 # acabou para esta lista — o protestado ainda pode ser cancelado, mas isso é
 # pedido do devedor, e não trabalho que o cartório tenha de lembrar.
 SITUACOES_PENDENTES = ("RECEBIDO", "APONTADO", "INTIMADO")
-SITUACOES_ENCERRADAS = ("PROTESTADO", "PAGO", "DESISTIDO", "CANCELADO")
+SITUACOES_ENCERRADAS = ("PROTESTADO", "PAGO", "DESISTIDO", "CANCELADO",
+                        "DEVOLVIDO")
 
 # O FILTRO QUE NÃO É SITUAÇÃO. Fica no mesmo seletor porque o balcão pensa
 # nele como situação («está sustado»), mas a consulta pergunta pelo ato.
@@ -456,6 +457,8 @@ def listar(con: sqlite3.Connection, filtro: Mapping[str, Any], *,
                      for t in PT.sustacao_revogada(con, hoje=hoje,
                                                    limite=100000)}
 
+    from protesto_cenprot_xml import nomes_do_cadastro_no_lugar_de_numero
+    nomes_do_cadastro_no_lugar_de_numero(con, linhas)
     for l in linhas:
         l["tem_chave"] = tem_chave_cenprot(l.get("chave_cenprot"))
         l["dias_desde_a_intimacao"] = (

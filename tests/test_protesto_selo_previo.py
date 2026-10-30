@@ -470,29 +470,10 @@ def test_o_ato_do_robo_sem_selo_e_obrigacao_e_o_de_gente_nao(casa):
     assert "robô" in selar[0]["motivo"]
 
 
-def test_a_correcao_de_oficio_exige_afirmacao_e_volta_ao_que_os_atos_sustentam(casa):
-    con, ids = casa
-    with pytest.raises(PSELO.SituacaoError):
-        PSELO.corrigir_situacao_de_oficio(con, ids["desfeito"], afirmo=False,
-                                          afirmacao="")
-    with pytest.raises(PSELO.SituacaoError) as erro:
-        PSELO.corrigir_situacao_de_oficio(con, ids["desfeito"], afirmo=True,
-                                          afirmacao="Afirmo que sim.")
-    assert "30 letras" in str(erro.value)
-    feito = PSELO.corrigir_situacao_de_oficio(
-        con, ids["desfeito"], afirmo=True,
-        afirmacao=("Afirmo, sob minha responsabilidade, que o pagamento deste "
-                   "título não aconteceu: o selo falhou e ele não voltou."))
-    assert feito["regra"] == PSELO.REGRA_SITUACAO_SEM_ATO
-    assert (feito["situacao_antes"], feito["situacao_nova"]) == ("PAGO", "APONTADO")
-    assert "pagamento" in feito["o_que_faltava"]
-    assert nativo(con).valor("SELECT situacao FROM pt_titulos WHERE id = %s",
-                             (ids["desfeito"],)) == "APONTADO"
-    assert PSELO.situacao_sem_ato(con, ids["desfeito"]) is None
-    # e nada a corrigir onde a situação está em ordem
-    with pytest.raises(PSELO.SituacaoError):
-        PSELO.corrigir_situacao_de_oficio(con, ids["em_ordem"], afirmo=True,
-                                          afirmacao=AFIRMACAO_BOA)
+def test_a_correcao_direta_da_situacao_nao_existe_mais():
+    """Decisão do oficial, 30/10/2026: quem corrige é a fila, e quem aprova é o
+    ADMIN em pessoa. Função pronta sem chamador é a arma que alguém religa."""
+    assert not hasattr(PSELO, "corrigir_situacao_de_oficio")
 
 
 def test_a_afirmacao_vai_para_o_detalhe_do_ato(casa):
@@ -538,7 +519,7 @@ def _literais_por_funcao(caminho: Path) -> dict[str, list[str]]:
 def test_so_duas_funcoes_escrevem():
     """«Não corrija dado da produção; só mostre» — a conferência só lê. Quem
     escreve é a anotação da afirmação (dentro da transação do ato que ela
-    permitiu) e a correção de ofício (com afirmação, pela rota do oficial)."""
+    permitiu). A correção de ofício é da fila (`correcoes_de_oficio`)."""
     quem_escreve = set()
     for nome, textos in _literais_por_funcao(RAIZ / "protesto_selo_previo.py").items():
         for texto in textos:
@@ -546,8 +527,7 @@ def test_so_duas_funcoes_escrevem():
             if any(c in alto for c in ("INSERT ", "UPDATE ", "DELETE ",
                                        "ALTER ", "DROP ")):
                 quem_escreve.add(nome)
-    assert quem_escreve == {"anotar_afirmacao_no_ato",
-                            "corrigir_situacao_de_oficio"}
+    assert quem_escreve == {"anotar_afirmacao_no_ato"}
 
 
 def test_o_sql_novo_nao_aumenta_o_acoplamento():

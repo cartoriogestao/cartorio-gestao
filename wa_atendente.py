@@ -83,6 +83,7 @@ import wa_balcao as BALCAO
 import wa_fila as FILA
 import wa_schema as WA
 import wa_transcricao as TRANSC
+import wa_transcricao_local as LOCAL
 
 LOG = logging.getLogger("cartorio.wa_atendente")
 
@@ -210,6 +211,8 @@ def configuracao(con: Any) -> dict:
         "audio_modelo": _ler(con, WA.CHAVE_AUDIO_MODELO) or TRANSC.MODELO_PADRAO,
         "audio_preco_minuto": (TRANSC.PRECO_PADRAO_POR_MINUTO if preco_min is None
                                else preco_min),
+        "audio_onde": _ler(con, WA.CHAVE_AUDIO_ONDE) or LOCAL.OPENAI,
+        "audio_conferencia": LOCAL.conferencia_guardada(_ler(con, WA.CHAVE_AUDIO_CONFERENCIA)),
         "texto_base": _ler(con, WA.CHAVE_TEXTO_BASE),
         "texto_base_por": _ler(con, WA.CHAVE_TEXTO_BASE_POR),
         "texto_base_em": _ler(con, WA.CHAVE_TEXTO_BASE_EM),
@@ -217,6 +220,26 @@ def configuracao(con: Any) -> dict:
         "valores": ler_valores(_ler(con, WA.CHAVE_VALORES)),
         "prazo_minutos": FILA.prazo_minutos(con),
     }
+
+
+def escolher_onde_transcrever(con: Any, onde: str, *, pasta_de_dados: Any) -> None:
+    """Onde o áudio se transcreve. A OpenAI sempre pode; este servidor, só conferido.
+
+    A recusa é aqui, e não só na tela: quem manda o formulário à mão também não liga um
+    modelo que o servidor pode não aguentar."""
+    if onde not in LOCAL.ESCOLHAS:
+        raise AtendenteErro("Essa escolha não existe.")
+    if onde == LOCAL.AQUI:
+        motivo = LOCAL.pode_ligar(
+            pasta_de_dados, LOCAL.conferencia_guardada(_ler(con, WA.CHAVE_AUDIO_CONFERENCIA)))
+        if motivo:
+            raise AtendenteErro(f"Continua na OpenAI. {motivo}")
+    BALCAO.gravar_config(con, WA.CHAVE_AUDIO_ONDE, onde)
+
+
+def guardar_conferencia(con: Any, conferencia: dict) -> None:
+    """A última conferência, sem o texto: o áudio de teste pode trazer dado de cliente."""
+    BALCAO.gravar_config(con, WA.CHAVE_AUDIO_CONFERENCIA, LOCAL.para_guardar(conferencia))
 
 
 def ler_valores(texto: str) -> list[dict]:
@@ -707,6 +730,11 @@ def transcrever_pendentes(db: Any, cfg: dict, *, agora: str, pasta_de_dados: Any
     motivo vai ao log."""
     if not cfg["audio_ligado"]:
         return 0
+    # NESTE SERVIDOR A RODADA ESPERA O ÁUDIO (30/10/2026, `wa_transcricao_local`): um por
+    # vez. A busca de mensagens corre em outra linha do vigia e não para, mas cada áudio
+    # segura por até 180 s os downloads, a IA das outras conversas e o aviso de fora do horário.
+    neste_servidor = cfg.get("audio_onde") == LOCAL.AQUI
+    limite = 1 if neste_servidor else limite
     inicio = ((FILA._dt(agora) or datetime.now()) - timedelta(hours=JANELA_HORAS)
               ).strftime("%Y-%m-%dT%H:%M:%S")
     with db.connect() as con:
@@ -719,7 +747,7 @@ def transcrever_pendentes(db: Any, cfg: dict, *, agora: str, pasta_de_dados: Any
                 ORDER BY m.id LIMIT %s""", (inicio, int(limite)))
         token = BALCAO.ler_config(con, WA.CHAVE_TOKEN)
     feitos = 0
-    fn = transcrever or TRANSC.transcrever
+    fn = transcrever or (LOCAL.transcrever if neste_servidor else TRANSC.transcrever)
     for m in candidatos:
         with db.connect() as con:
             teto = USO.passou_do_teto(con, FINALIDADE_AUDIO, agora=agora)
@@ -734,7 +762,8 @@ def transcrever_pendentes(db: Any, cfg: dict, *, agora: str, pasta_de_dados: Any
             continue
         conversa = {"id": m["conversa_id"], "wa_id": m["wa_id"]}
         decisao = {"caso": CASO_AUDIO, "lido": f"áudio da mensagem {m['id']}",
-                   "provedor": TRANSC.PROVEDOR, "modelo": cfg["audio_modelo"]}
+                   "provedor": LOCAL.PROVEDOR if neste_servidor else TRANSC.PROVEDOR,
+                   "modelo": LOCAL.MODELO if neste_servidor else cfg["audio_modelo"]}
         texto = ""
         try:
             # O ÁUDIO QUE O VIGIA JÁ GUARDOU (29/10/2026, `wa_midia`) não se

@@ -302,9 +302,9 @@ causa do seu perfil ou porque a administração fechou o módulo.
 | O dia | Protocolo / prenotação · Pedidos em andamento · Matrículas · Certidões · Rascunhos de ato · O que revisar antes de selar · Numeração dentro do teor | do título que entra até o ato lavrado e selado, e a certidão |
 | Processos longos | Usucapião extrajudicial · Retificação de área | processos com prazos, notificações e decisão |
 | Livro 3 | Registros · Minutas a revisar · O que revisar antes de selar · O que falta conferir · Certidões · Modelos | o Registro Auxiliar |
-| Consulta e acervo | Indicador Real · Indicador Pessoal · CNIB (consulta, pendências, cópia local) · ONR (índice real e editais, certidões a emitir, acompanhamento de títulos, endereços) · Revisar transcrições em lote (IA) · Atas de ocorrência · Fichas digitalizadas · Matrículas em Word | consultas, Centrais e o acervo digitalizado |
+| Consulta e acervo | Indicador Real · Indicador Pessoal · CNIB (consulta, pendências, cópia local, consulta de CPF ou CNPJ na Central) · ONR (índice real e editais, certidões a emitir, acompanhamento de títulos, endereços, atendimentos do SAEC, cobranças) · Revisar transcrições em lote (IA) · Atas de ocorrência · Fichas digitalizadas · Matrículas em Word | consultas, Centrais e o acervo digitalizado |
 | Modelos | Modelos de atos · Modelos de documento | os textos dos atos e dos papéis do RI |
-| Remessas e obrigações | Selos e emolumentos · Exportação ONR · Carga do Next Cloud SAS · CTP · DOI | o que se envia às Centrais, à Receita e às prefeituras |
+| Remessas e obrigações | Selos e emolumentos · Exportação ONR · Indicador Real: o arquivo inteiro · Carga do Next Cloud SAS · CTP · DOI | o que se envia às Centrais, à Receita e às prefeituras |
 | Configuração | Delegatários · Numeração das matrículas | quem assina e de onde parte a numeração |
 
 ### Protesto
@@ -652,6 +652,30 @@ No layout novo, os autos do usucapião ficam em abas (seção 23.4).
   de fora, com o motivo. O formato ainda não foi conferido por uma resposta do
   ONR. O quadro **Digitalização nova ainda não enviada ao ONR** mostra o que a
   rotina diária ainda vai levar; nada ali envia.
+- **Indicador Real: o arquivo inteiro** leva todo imóvel ativo em um arquivo só. Onde a
+  ficha está em branco, vale o que o texto dela diz e, depois, a regra da serventia.
+  **Nenhuma ficha muda e nada é enviado.** Use **Conferir o que sairia** e **Baixar o
+  arquivo**: o `.zip` traz o XML e os relatórios do que ficou fora, de onde veio cada
+  dono e cada campo preenchido. Conferir e baixar são do administrador e do gerente.
+  Só o administrador decide as **fichas que não vão**, os **donos informados** e a
+  **regra da serventia**, como o que vale quando a ficha não diz se é rural ou urbana.
+  Instalação nova nasce sem nenhuma dessas decisões.
+- **CNIB: consultar CPF ou CNPJ** pergunta à Central, com o cliente na frente, o que
+  pesa sobre aquele documento agora. É diferente da tela **CNIB**, que olha a cópia
+  local. Ela só diz que não há ordem quando a Central disse: se a resposta não vier
+  clara ou a rede cair, a tela avisa que isso **não** quer dizer que não há ordem. A
+  resposta vale para aquele documento: homônimo com outro documento não entra. Cada
+  consulta fica na auditoria.
+- **ONR: atendimentos do SAEC** é a lista de atendimento do portal do ONR: contato,
+  WhatsApp, e-mail, LGPD, help desk, acompanhamento registral e resposta de exigência.
+  **Pedido de certidão não chega por aqui:** ele está em **ONR — certidões a emitir**. O
+  que espera a serventia vem primeiro. Ler é do balcão; **responder é só do
+  administrador**, e vai ao ONR em nome da serventia.
+- **ONR: cobranças** mostra o que o ONR tem e as tentativas feitas por este sistema. Só
+  o administrador gera cobrança, pela ficha do atendimento ou por esta tela. O
+  atendimento não traz o endereço do pagador, e o ONR o exige. **Abra o link e confira o
+  valor antes de passar ao cliente:** o manual do ONR se contradiz sobre a forma de
+  mandar o valor. O sistema não cancela cobrança: isso é no portal.
 - **Revisar transcrições em lote (IA)**: a IA compara o texto de cada ficha
   transcrita com a página do livro e separa o grave do leve. Ela não corrige nada:
   a lista diz onde conferir.
@@ -919,9 +943,9 @@ com ele configurado.
 | CRA | Protesto | O dia da CRA | recebe remessas e desistências; gera confirmação, retorno e andamento |
 | CENPROT | Protesto | Pendências da CENPROT; Chave do CENPROT | baixa e responde pendências; grava a chave nacional do título; envia o arquivo de emolumentos |
 | Intimação Digital | Protesto | Intimação Digital | acompanha a intimação eletrônica; a intimação no livro continua na ficha do título |
-| ONR | RI | ONR — índice real e editais; endereços a conferir; Exportação ONR | envia indicador real e edital do usucapião; propõe endereços lidos do teor para você conferir |
+| ONR | RI | ONR — índice real e editais; endereços a conferir; Exportação ONR; Indicador Real: o arquivo inteiro; ONR — atendimentos do SAEC; ONR — cobranças | envia indicador real e edital do usucapião; propõe endereços lidos do teor para você conferir; gera o arquivo inteiro do indicador; lê e responde atendimentos; gera cobrança, com clique do administrador |
 | Next Cloud SAS (ONR) | RI | Carga do Next Cloud SAS | prepara e confere a carga do indicador pessoal e das imagens; quem transmite são os programas do ONR |
-| CNIB | RI | CNIB — indisponibilidade; o que espera seu okay | mantém a cópia local, avisa quando nome ou documento bate e **prepara** a averbação, que espera o okay. Veja a data da última atualização antes de concluir que não há restrição |
+| CNIB | RI | CNIB — indisponibilidade; o que espera seu okay; CNIB — consultar CPF ou CNPJ | mantém a cópia local, avisa quando nome ou documento bate e **prepara** a averbação, que espera o okay. Veja a data da última atualização antes de concluir que não há restrição |
 | Receita (DOI) | RI e Notas | DOI — Receita Federal | gera o arquivo mensal da serventia e guarda o recibo |
 | e-Proclamas | Registro Civil | 2b · Enviar ao e-Proclamas | publica o edital de proclamas e guarda o número do lote |
 | Certidão Eletrônica | Registro Civil | Pedidos da Central | traz a fila de pedidos e devolve a certidão |
@@ -1277,14 +1301,19 @@ nada, e dá para voltar a qualquer hora.
 
 ### 23.1 Como ligar e como voltar
 
-- **Cada pessoa escolhe.** No menu de sempre, o botão **Novo layout** fica no
-  rodapé. Para voltar, clique no seu nome, no pé da barra de módulos, e use
-  **Voltar ao layout antigo**.
-- **O padrão de fábrica é o antigo.** Quem nunca escolheu continua vendo o de
-  sempre.
-- **O administrador pode mudar o padrão da casa**, no mesmo lugar: **Usar este
-  layout como padrão da casa**, que se desfaz com **Devolver o layout antigo como
-  padrão da casa**. A escolha que cada pessoa já fez continua valendo para ela.
+- **O layout novo é o padrão.** Quem nunca escolheu abre nele, com um aviso em todas as
+  telas: **Ficar neste** ou **Voltar ao antigo**. Qualquer um dos dois grava a escolha, e o
+  aviso some.
+- **Cada pessoa pode trocar quando quiser.** Para voltar, clique no seu nome, no pé da
+  barra de módulos, e use **Voltar ao layout antigo**. No layout antigo, o botão **Novo
+  layout** fica no rodapé do menu.
+- **O administrador pode devolver a casa ao antigo**, no mesmo lugar: **Devolver o layout
+  antigo como padrão da casa**, que se desfaz com **Usar este layout como padrão da
+  casa**. A escolha que cada pessoa já fez continua valendo para ela.
+- **O timbre na tela** fica só onde se confere antes de imprimir: caixa, protocolo geral,
+  prenotação e certidão de notificação. O layout antigo e o papel impresso não mudam.
+- **Em monitor largo** (a partir de 1600 px), os campos passam a três colunas e alguns
+  quadros ficam lado a lado. Em tela menor, nada muda.
 
 ### 23.2 A moldura
 
@@ -1363,6 +1392,7 @@ Em todas:
 | Ficha do assento | Abas | Assento · Filiação e dados · Averbações · Anotações · Retificações · Certidões · Termo do livro · Documentos | em Assento |
 | Habilitação de casamento | Fases | Habilitação · Edital · Prontas para casar · Registro. De apoio: Andamento | no que espera ação |
 | Protocolo geral | Abas | Itens e quitação · Dados e encerramento · Documentos · Exigências · Tarefas · Vínculos (só no RI) · Acompanhamento · Movimento (com lançamento) | nos itens |
+| Título de Protesto | Fases | Apontamento · Intimação · Desfecho. De apoio: Vida do título, Emolumentos, Imagem e, para o administrador, Averbação | no que espera ação; título encerrado abre na Vida do título |
 
 **Listas e Painel de Notas.** Procurações, fins previdenciários, substabelecimentos,
 revogações, renúncias e testamentos têm **Lavrar** no alto, que abre o ato direto, e
@@ -1376,8 +1406,12 @@ Anotações só existe quando há anotação; lançar não depende dela, porque 
 no assento** está na aba Assento. No protocolo, Documentos, Exigências e Tarefas
 ficam mesmo vazias, porque é nelas que se cria o primeiro.
 
-**As outras telas** abrem na moldura nova, do jeito de sempre. As fichas do Protesto,
-do Livro 3 e do RCPJ e RTD, e as telas de configuração, ainda não foram divididas.
+**No título de Protesto, o Desfecho** traz um quadro por ato que cabe naquela situação.
+Só um vem aberto: o protesto, quando cabe. Os outros abrem com um clique. Os avisos do
+alto, como selo que falta, pedido da CRA e sustação, saem em todas as abas.
+
+**As outras telas** abrem na moldura nova, do jeito de sempre. O painel do Protesto, as
+fichas do Livro 3 e do RCPJ e RTD, e as telas de configuração ainda não foram divididas.
 
 ---
 

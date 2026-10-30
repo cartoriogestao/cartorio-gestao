@@ -9,6 +9,47 @@
 {% from '_selar_certidao_do_ri.html' import botao as selar_certidao %}
 {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
 {% from '_cnib_decidir.html' import resolver as resolver_cnib %}
+{# AS ABAS SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026, `ri_abas`. Quem continua no antigo recebe
+   esta mesma página, na mesma ordem. Os quadros não saem do lugar: cada um diz a que aba
+   pertence, e `static/fases.js` mostra os da aba aberta. #}
+{% from '_fases.html' import abre_ficha, regua %}
+{% set f = abas_da_ficha() if layout_novo else none %}
+{% if f %}
+{{ abre_ficha(VERSION) }}
+{{ regua(f, 'mat-' ~ m.id, 'Partes desta matrícula') }}
+<span class="cg-ancora" id="resumo"></span>
+{% if f.espera %}
+<section class="panel cg-falta" data-fase="resumo">
+  <div class="panel-head"><span>O que espera ação</span></div>
+  <ul class="cg-falta-l">
+    {% for i in f.espera %}<li class="pendente">
+      <span class="cg-falta-m" aria-hidden="true"></span>
+      <span>{{ i.texto }}</span>
+      <a class="button small" href="#{{ i.ir }}">{{ i.botao }}</a>
+    </li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+<section class="panel cg-lado" data-fase="resumo">
+  <div class="panel-head"><span>Situação jurídica</span>
+    <a class="small" href="{{ url_for('ri_situacao_juridica', matricula_id=m.id) }}">ver completa</a></div>
+  <p class="small"><strong>Proprietário hoje:</strong>
+    {% if f.proprietarios %}{{ f.proprietarios|join(', ') }}{% else %}<span class="muted">não informado no cadastro das partes</span>{% endif %}</p>
+  <p class="small"><strong>Ônus:</strong>
+    {% if f.onus %}{{ f.onus|join(', ') }}{% else %}<span class="muted">nenhum nos atos lavrados aqui</span>{% endif %}</p>
+  <p class="small"><strong>CNIB:</strong>
+    {% if cnib_pendencias %}{{ cnib_pendencias|length }} ocorrência(s) aguardando conferência
+    {%- elif cnib_base_data %}<span class="muted">nada nesta cópia, que vai até {{ fmt_date(cnib_base_data) }}</span>
+    {%- else %}<span class="muted">não há cópia neste sistema</span>{% endif %}</p>
+</section>
+<section class="panel cg-lado" data-fase="resumo">
+  <div class="panel-head"><span>Últimos atos</span>{% if atos %}<a class="small" href="#atos">todos os {{ atos|length }}</a>{% endif %}</div>
+  {% if f.ultimos %}<ul class="cg-falta-l">
+    {% for a in f.ultimos %}<li><strong>{{ a.rotulo }}</strong><span>{{ a.natureza }}</span><span class="small muted">{{ fmt_date(a.data) }}</span></li>{% endfor %}
+  </ul>
+  {% else %}<p class="small muted">Nenhum ato separado nesta ficha: o que ela tem está no teor.</p>{% endif %}
+</section>
+{% endif %}
 {% if cnib_pendencias %}
 <section id="cnib-pendente" role="alert" aria-label="Possivel indisponibilidade pendente"
   style="background:#a40016;color:#fff;border:3px solid #69000e;border-radius:8px;padding:18px 22px;margin:0 0 20px;box-shadow:0 3px 10px #69000e40">
@@ -30,12 +71,12 @@
 {# O AGENTE DE MINUTAS É O PRIMEIRO QUADRO DA FICHA — ordem do oficial em
    23/10/2026 («a parte do agente de minutas tem que ser a primeira da tela»).
    Acima dele fica só o alerta da CNIB, que só aparece quando há ocorrência. #}
-{% if agente_minutas is defined %}{% include '_agente_de_minuta.html' %}{% endif %}
+{% if agente_minutas is defined %}<div data-fase="novo-ato">{% include '_agente_de_minuta.html' %}</div>{% endif %}
 
 
 
 {% if cnib_decisoes %}
-<details class="panel" id="cnib-historico" open>
+<details class="panel" id="cnib-historico" open data-fase="resumo">
   <summary><strong>Conferências da CNIB registradas nesta matrícula</strong></summary>
   {% for d in cnib_decisoes %}
   <div style="padding:10px 14px;border-top:1px solid var(--linha,#ddd)">
@@ -116,7 +157,8 @@
 {# O QUE A REVISÃO APONTOU vem no alto, junto do alerta de fraude e antes
    dos atos: quem abre esta ficha para selar precisa ver que há o que olhar
    antes de rolar a página. Não trava nada — o ato já está lavrado. #}
-<section class="panel"{% if revisoes_abertas %} style="border-left:4px solid var(--warning,#b8860b)"{% endif %}>
+{% if f %}<span class="cg-ancora" id="revisar"></span>{% endif %}
+<section class="panel" data-fase="revisar"{% if revisoes_abertas %} style="border-left:4px solid var(--warning,#b8860b)"{% endif %}>
   <div class="panel-head"><span>Revisar antes de selar{% if revisoes_abertas %} &mdash;
     {{ revisoes_abertas|length }}
     nota{{ '' if revisoes_abertas|length == 1 else 's' }}{% endif %}</span></div>
@@ -187,12 +229,14 @@
   {% if m.tipo_ficha == 'ACERVO' %}<span class="badge media">Acervo — bloco único</span>{% else %}<span class="badge ok">Estruturada — {{ atos|length }} ato(s)</span>{% endif %}
   {% if m.conferido %}<span class="badge ok">Conferida contra o livro</span>{% else %}<span class="badge alta">Não conferida</span>{% endif %}
   {% if m.encerrada %}<span class="badge critica">Encerrada</span>{% endif %}
-  {% if not m.encerrada %}
+  {# NO LAYOUT NOVO, LAVRAR É A ABA «NOVO ATO», à vista em qualquer aba: repetir o botão aqui
+     seria mais uma fileira empurrando a ficha para baixo. O modelo vai para dentro dela. #}
+  {% if not m.encerrada and not f %}
   <a class="button primary" href="{{ url_for('ri_ficha', matricula_id=m.id, lavrar=1) }}#novo-ato">
     + Lavrar registro ou averbação
   </a>
   {% endif %}
-  {% if not m.encerrada %}
+  {% if not m.encerrada and not f %}
   <a class="button" href="{{ url_for('ri_modelos_atos', matricula=m.id) }}">Lavrar a partir de modelo</a>
   {% endif %}
   <a class="button" href="{{ url_for('ri_ficha_odt', matricula_id=m.id, formato='pdf') }}">Imprimir ficha (PDF)</a>
@@ -208,7 +252,7 @@
 </div>
 
 {% if not m.conferido %}
-<div class="notice warning">
+<div class="notice warning" data-fase="resumo">
   <strong>Ficha ainda não conferida contra o livro físico.</strong>
   Veio importada do sistema anterior. O livro continua sendo a fonte legal:
   confira antes de emitir certidão sobre esta matrícula.
@@ -222,7 +266,7 @@
 {% endif %}
 
 {% if m.tipo_ficha == 'ACERVO' %}
-<div class="notice">
+<div class="notice" data-fase="resumo">
   <strong>Esta ficha não tem atos destacados.</strong>
   O acervo antigo foi importado como um único bloco de teor, do jeito que estava
   no sistema anterior. Os registros e averbações estão dentro do texto abaixo,
@@ -257,7 +301,7 @@
    achado e ausência de busca parecem iguais na tela, e não são. #}
 {% if not cnib %}
   {% if cnib_idade is not none and cnib_idade > cnib_dias_para_avisar %}
-  <div class="notice">
+  <div class="notice" data-fase="resumo">
     <strong>Nenhuma indisponibilidade nesta cópia da CNIB — mas ela tem
       {{ cnib_idade }} dias.</strong>
     <span class="small">As {{ cnib_base_n }} ordens desta cópia vão até
@@ -267,10 +311,10 @@
       Central antes de registrar.</span>
   </div>
   {% elif cnib_base_data %}
-  <p class="small muted">Nenhuma indisponibilidade nesta cópia da CNIB
+  <p class="small muted" data-fase="resumo">Nenhuma indisponibilidade nesta cópia da CNIB
     ({{ cnib_base_n }} ordens, até {{ fmt_date(cnib_base_data) }}).</p>
   {% else %}
-  <div class="notice">
+  <div class="notice" data-fase="resumo">
     <strong>Não há cópia da CNIB neste sistema.</strong>
     <span class="small">A ficha não tem como avisar sobre indisponibilidade —
       consulte a Central diretamente antes de registrar.</span>
@@ -279,7 +323,8 @@
 {% endif %}
 
 {% if protocolos %}
-<section class="panel">
+{% if f %}<span class="cg-ancora" id="protocolos"></span>{% endif %}
+<section class="panel" data-fase="protocolos">
   <div class="panel-head"><span>Protocolos desta matrícula ({{ protocolos|length }})</span></div>
   <div class="table-wrap"><table>
     <thead><tr><th>Nº</th><th>Data</th><th>Prazo até</th><th>Objeto</th><th>Situação</th></tr></thead>
@@ -302,9 +347,14 @@
    POR QUE ELA APARECE ANTES DO «LAVRAR NOVO ATO»: é o que espera decisão.
    Embaixo do formulário, quem abrisse a ficha não veria que há trabalho
    parado — e minuta que ninguém vê é a averbação que não saiu. #}
-<span id="minutas-para-lavrar"></span>
+{% if f and not m.encerrada %}
+<div class="actions" data-fase="novo-ato">
+  <a class="button" href="{{ url_for('ri_modelos_atos', matricula=m.id) }}">Lavrar a partir de modelo</a>
+</div>
+{% endif %}
+<span id="minutas-para-lavrar" data-fase="novo-ato"></span>
 {% if minutas %}
-<section class="panel">
+<section class="panel" data-fase="novo-ato">
   <h2 class="small">Minutas a revisar e lavrar
     <span class="badge warning">{{ minutas|length }}</span></h2>
   <p class="small muted">Texto pronto, <strong>ainda não lavrado</strong>: sem
@@ -367,7 +417,7 @@
    o formulário mora aqui, e não lá dentro: sem ele, a primeira minuta da
    ficha não teria por onde nascer. Depois de guardada, ela cai naquele
    painel, com os mesmos botões. #}
-<details class="panel" id="nova-minuta">
+<details class="panel" id="nova-minuta" data-fase="novo-ato">
   <summary><strong>Nova minuta</strong></summary>
   <div style="padding:4px 2px 8px">
     <p class="small muted">Texto pronto para revisar depois.
@@ -405,7 +455,7 @@
   </div>
 </details>
 {% set mn = minuta_aberta %}
-<details class="panel" id="novo-ato"{% if abrir_form or mn %} open{% endif %}>
+<details class="panel" id="novo-ato" data-fase="novo-ato"{% if abrir_form or mn or f %} open{% endif %}>
   <summary><strong>Lavrar novo ato nesta matrícula</strong></summary>
   {% if mn %}
   <div class="notice warning">
@@ -1167,7 +1217,7 @@
    que nunca foi encerrada, com um ato de encerramento no meio da lista e
    ninguém sabendo por que ela aceita atos. #}
 {% if not m.encerrada and m.reaberta_em %}
-<div class="notice warning">
+<div class="notice warning" data-fase="resumo">
   <strong>Ficha reaberta em {{ fmt_date(m.reaberta_em[:10]) }}{% if m.reaberta_por %}
     por {{ m.reaberta_por }}{% endif %}.</strong>
   {% if m.motivo_reabertura %}<br>{{ m.motivo_reabertura }}{% endif %}
@@ -1183,7 +1233,7 @@
 {# VOLTAR A FECHAR O QUE JÁ ESTAVA FECHADO NÃO LAVRA ATO NOVO. O encerramento
    anterior continua no livro; lavrar outro poria dois «ENCERRAMENTO DESTA
    MATRÍCULA» na mesma ficha, e quem a lesse depois não saberia qual vale. #}
-<details class="panel">
+<details class="panel" data-fase="novo-ato">
   <summary class="small">Voltar a encerrar esta matrícula</summary>
   <form method="post" class="stack"
         action="{{ url_for('ri_encerrar_matricula', matricula_id=m.id) }}">
@@ -1200,7 +1250,7 @@
    igual»). O formulário próprio, que lavrava sozinho um teor de duas
    linhas sem selo, saiu: o botão abre o de lavrar, com «encerra = Sim» e
    um modelo de texto que se escolhe e se edita. #}
-<details class="panel" id="encerrar-matricula">
+<details class="panel" id="encerrar-matricula" data-fase="novo-ato">
   <summary class="small">Encerrar esta matrícula</summary>
   <div class="stack">
     <p class="small">O encerramento é lavrado como <strong>averbação</strong>, pelo
@@ -1220,8 +1270,9 @@
    impressão». **Reimprimir não é emitir**: a segunda via sai do mesmo `id`,
    com o mesmo teor congelado e o mesmo selo; emitir de novo tomaria outro
    número, pediria outro selo e cobraria outra vez. #}
+{% if f %}<span class="cg-ancora" id="certidoes"></span>{% endif %}
 {% if certidoes %}
-<details class="panel" open id="certidoes-da-ficha">
+<details class="panel" open id="certidoes-da-ficha" data-fase="certidoes">
   <summary><strong>Certidões emitidas desta matrícula</strong>
     <small class="muted">({{ certidoes_emitidas }}{% if certidoes_canceladas %},
       {{ certidoes_canceladas }} cancelada{{ 's' if certidoes_canceladas > 1 }}{% endif %})</small></summary>
@@ -1280,7 +1331,7 @@
    «peça que existe e ninguém acha é, para quem está no balcão, peça que não
    existe». Sem arquivo ele continua fechado — alarme que soa sempre é alarme
    que ninguém ouve. #}
-<details class="panel" {% if m.digi_nome %}open{% endif %}>
+<details class="panel" data-fase="teor" {% if m.digi_nome %}open{% endif %}>
   <summary><strong>Digitalização oficial desta matrícula</strong></summary>
   <form method="post" enctype="multipart/form-data" class="form-grid"
         action="{{ url_for('ri_upload_digitalizacao', matricula_id=m.id) }}">
@@ -1361,7 +1412,7 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}"></form>
 {% endif %}
 {% endif %}
-<details class="panel">
+<details class="panel" data-fase="certidoes" data-cg-primeiro{% if f %} open{% endif %}>
   <summary><strong>Emitir certidão desta matrícula</strong></summary>
   <form method="post" action="{{ url_for('ri_emitir_certidao', matricula_id=m.id) }}" class="form-grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -1582,7 +1633,7 @@
   </form>
 </details>
 
-<section class="panel">
+<section class="panel" data-fase="resumo">
   <div class="panel-head"><span>Identificação</span>
     {% if user.role in ['ADMIN','MANAGER'] and m.origem == 'MANUAL' and not m.encerrada %}
     <details style="margin-left:auto">
@@ -1792,7 +1843,8 @@
 <datalist id="papeis-ri">
   {% for x in PAPEIS_RI %}<option value="{{ x }}">{% endfor %}
 </datalist>
-<section class="panel">
+{% if f %}<span class="cg-ancora" id="partes"></span>{% endif %}
+<section class="panel" data-fase="partes">
   <div class="panel-head"><span>Partes ({{ partes|length }})</span></div>
   {% if user.role in ['ADMIN','MANAGER'] and partes %}
   {# O CAMINHO DITO NO ALTO DO PAINEL — 16/09/2026, e é correção minha.
@@ -1884,7 +1936,7 @@
    A tela não dizia qual era o número certo, e quem digitava tinha de ir ao
    papel para descobrir. Agora ela diz, e mostra a frase de onde tirou. #}
 {% if piso and piso.divergente %}
-<div class="notice critical">
+<div class="notice critical" data-fase="novo-ato">
   <strong>O próximo ato desta matrícula é o número {{ piso.proximo }}.</strong>
   A tabela de atos do sistema vai até
   {{ piso.em_atos if piso.em_atos else 'nenhum' }}, mas
@@ -1913,7 +1965,7 @@
    O rascunho NÃO mora em `ri_atos`: ali todo ato já entra tomando o número e
    entrando na corrente de hash, e um rascunho seria um ato que existe e não
    devia. #}
-<details class="panel"{% if rascunho %} open{% endif %}>
+<details class="panel" data-fase="novo-ato"{% if rascunho %} open{% endif %}>
   <summary>Rascunho do ato
     {% if rascunho %}<span class="badge alta">{{ rascunho.tipo }} guardado</span>{% endif %}
   </summary>
@@ -1975,7 +2027,8 @@
 document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('hashchange',abrir);})();
 </script>
 {% if atos %}
-<section class="panel">
+{% if f %}<span class="cg-ancora" id="atos"></span>{% endif %}
+<section class="panel" data-fase="atos">
   <div class="panel-head"><span>Atos ({{ atos|length }})</span>
     <span class="muted small">índice &mdash; cada ato com o seu selo e os seus
       botões; o texto de cada um está no teor, abaixo, ou logo depois dele</span>
@@ -2281,7 +2334,8 @@ document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('has
 </section>
 {% endif %}
 
-<section class="panel">
+{% if f %}<span class="cg-ancora" id="teor"></span>{% endif %}
+<section class="panel{% if m.digi_nome and f %} cg-lado cg-lado-rola{% endif %}" data-fase="teor">
   <div class="panel-head"><span>Teor da ficha</span>{% if m.teor %}<span class="muted small">{{ m.teor|length }} caracteres</span>{% endif %}</div>
   {% if m.teor %}
   <div class="teor">{{ teor_seguro(m.teor, m.teor_formato)|safe }}</div>
@@ -2368,7 +2422,7 @@ document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('has
    nova. Ordem do oficial no mesmo dia: «nossa referência atual são as
    digitalizações». A oficial aparece sempre que existir, e ANTES das antigas. #}
 {% if m.digi_nome %}
-<section class="panel">
+<section class="panel{% if f %} cg-lado cg-lado-rola{% endif %}" data-fase="teor">
   <div class="panel-head"><span>Digitalização oficial</span></div>
   <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;padding:12px">
     {# A CAPA E A RESPOSTA VISUAL — 17/09/2026. Nome de arquivo confirma que
@@ -2412,7 +2466,7 @@ document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('has
    visível na tela de conferência, que ninguém adivinha que existe. #}
 {% set localizadas = imagens|selectattr('caminho')|list
                    + imagens|rejectattr('caminho')|selectattr('caminho_interno')|list %}
-<section class="panel">
+<section class="panel" data-fase="teor">
   <div class="panel-head">
     <span>{% if m.digi_nome %}Páginas do acervo do sistema antigo — referência antiga{% else %}Fichas digitalizadas{% endif %} ({{ imagens|length }})</span>
     <a class="small" href="{{ url_for('ri_conferir_ficha', matricula_id=m.id) }}">
@@ -2496,4 +2550,5 @@ document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('has
   {% endif %}
 </section>
 {% endif %}
+{% if f %}</div>{% endif %}
 {% endblock %}

@@ -8,7 +8,7 @@ por etapas, e cada uma pode ser a última: o sistema continua inteiro em todas.
 | Revisão | Nenhuma tela perdida, as portas que faltavam | `docs/REVISAO_DE_TELAS_30_10_2026.md` |
 | 1. Casca | Barra de módulos, seções, Novo, Ctrl+K, sino, coluna de apoio | Este documento |
 | 2. Ato de Notas | Fases e barra de ação na ficha do ato | Ficha pronta; listas a fazer |
-| 3. Matrícula | Subabas da ficha, novo ato em fases | A fazer |
+| 3. Matrícula | Subabas da ficha, novo ato em fases | Abas prontas; novo ato em fases a fazer |
 | 4. Civil e Protesto | Assento, habilitação, roteiro, dia da CRA | A fazer |
 | 5. Operação | Caixa, protocolo, processos, atendimento | A fazer |
 | 6. Gestão | Finanças, conformidade, configurações | A fazer |
@@ -54,6 +54,10 @@ Uma ficha longa vira fases sem mudar de rota nem de formulário, e sem tirar qua
 
 `tests/test_notas_fases.py` cobra que todo quadro tem fase, e `tests/test_ficha_em_fases_web.py`
 compara as duas molduras: toda ação e todo endereço de formulário têm de estar nas duas.
+
+**A matrícula usa o mesmo mecanismo, com abas no lugar de fases** (`ri_abas.py`,
+`tests/test_ri_abas.py`, `tests/test_ficha_matricula_web.py`). Ela é um registro vivo, sem ordem
+própria: a régua não numera nem trava, e abre no Resumo, que começa pelo que espera ação.
 
 **Duas diferenças em relação ao desenho do projeto, e o motivo:**
 

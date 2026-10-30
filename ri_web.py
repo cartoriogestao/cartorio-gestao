@@ -44,6 +44,7 @@ from ri_modelos_atos import (pendencias as pendencias_modelo,
 import caixa_depositos as DEP
 from caixa_schema import centavos, reais
 import notas_doi as NDOI
+import ri_abas as RIABAS
 import ri_doi as RDOI
 import onr_carga as OCG
 import ri_fichas_do_disco as RFD
@@ -2091,8 +2092,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 proprietarios_cadastro=[dict(p) for p in partes
                                         if p["proprietario_ativo"]])
 
+        def abas_da_ficha() -> dict:
+            """A régua do layout novo. Só ele chama, e o antigo não paga a conta."""
+            quer_lavrar = (request.args.get("lavrar") == "1" or minuta_aberta
+                           or _pre_encerramento(m, piso, atos) is not None)
+            return RIABAS.abas_da_matricula(
+                m, atos=atos, partes=partes, protocolos=protocolos,
+                certidoes_emitidas=certidoes_emitidas,
+                revisoes_abertas=[r for r in revisoes if r["situacao"] == RV.ABERTA],
+                minutas=minutas, rascunho=rascunho,
+                certidoes_aguardando_selo=_certidoes_aguardando_selo(
+                    [c["id"] for c in certidoes]),
+                onus=[x["rotulo"] for x in RIONUS.onus_vigentes(
+                    atos, rotulo=lambda a: rotulo_ato(a["tipo"], a["numero"], m["numero"]))],
+                foco=RIABAS.NOVO_ATO if quer_lavrar else "")
+
         return render_template(
             "ri_ficha.html", m=m, atos=atos, partes=partes, imagens=imagens,
+            abas_da_ficha=abas_da_ficha,
             onus_painel=onus_painel, RESULTADOS_ONUS=RONIA.RESULTADOS,
 
             certidoes=certidoes, certidoes_canceladas=certidoes_canceladas,

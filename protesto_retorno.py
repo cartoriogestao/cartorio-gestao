@@ -92,6 +92,17 @@ OCORRENCIA_DO_ATO: dict[str, str] = {
 # `_custa_da_retirada`.
 OCORRENCIA_DA_RETIRADA = OCORRENCIA_DO_ATO["DESISTENCIA"]
 
+# AS FOLHAS DE ARQUIVAMENTO NA CUSTA DO RETORNO: 4, E NAO AS 5 DA CENPROT.
+#
+#   MEDIDO nos dois valores reais da ocorrencia «3» em 2026, na vigencia 10022:
+#   75,89 + 35,85 = 111,74 e 75,89 + 56,32 (17.4.5) = 132,21. Os 75,89 sao os
+#   82,64 da constante da retirada menos uma folha de 6,75.
+#
+#   `protesto_cenprot.FOLHAS_ARQUIVADAS` CONTINUA 5 e nao muda: e o que o arquivo
+#   de emolumentos da CENPROT leva, medido em 166 de 173 titulos. Sao dois
+#   arquivos com duas contagens, e uma constante so erraria um deles.
+FOLHAS_DA_RETIRADA_NO_RETORNO = 4
+
 # O ANDAMENTO LEVA SEMPRE `0` — APONTAMENTO —, e nao a ocorrencia do ato.
 #
 #   MEDIDO em 31/08/2026 nos 25 andamentos que esta casa mandou em 2026:
@@ -753,9 +764,10 @@ def _custa_da_retirada(con: sqlite3.Connection, a: dict) -> str:
 
     MEDIDO EM 30/10/2026: o retorno com «3» e esse campo zerado voltou da CRA
     com o codigo 2239 «FALTOU INFORMAR AS CUSTAS DO CARTORIO/DISTRIBUIDOR». O
-    valor e a retirada do arquivo de emolumentos da CENPROT, pela tabela do DIA
-    DO ATO, e nao a do dia do arquivo: o ato de dezembro informado em janeiro
-    custou o que custava em dezembro.
+    valor e a retirada do arquivo de emolumentos da CENPROT com
+    `FOLHAS_DA_RETIRADA_NO_RETORNO` folhas, pela tabela do DIA DO ATO, e nao a do
+    dia do arquivo: o ato de dezembro informado em janeiro custou o que custava
+    em dezembro.
 
     ZERO AQUI E O QUE A CRA RECUSA, e por isso o que nao tem valor para: titulo
     sem valor, sem tabela ou fora de toda faixa recusa o arquivo inteiro, com a
@@ -786,6 +798,7 @@ def _custa_da_retirada(con: sqlite3.Connection, a: dict) -> str:
         vigencia = int(custas.vigencia_do_dia(con, a["data_ato"])["codigo"])
         retirada = CENP.precos_do_titulo(con, valor, vigencia=vigencia)["retirada"]
         incompleta = CENP.constantes(con, vigencia)["retirada"] is None
+        folha = CENP._preco_do_item(con, CENP.ITEM_POR_FOLHA, vigencia)
     except custas.CustasError as erro:
         raise RetornoSemCustasError(f"{quem} {erro}") from erro
     except (ValueError, TypeError, KeyError) as erro:
@@ -803,7 +816,9 @@ def _custa_da_retirada(con: sqlite3.Connection, a: dict) -> str:
             f"nenhuma faixa do item "
             f"{CENP.FAIXA_DA_RETIRADA} da tabela {vigencia}. Confira o valor na "
             f"ficha do título e a tabela de emolumentos, e gere de novo.")
-    return f"{int(retirada):010d}"
+    # `precos_do_titulo` conta as 5 folhas da CENPROT; aqui saem as que sobram.
+    a_menos = CENP.FOLHAS_ARQUIVADAS - FOLHAS_DA_RETIRADA_NO_RETORNO
+    return f"{int(retirada) - a_menos * int(folha):010d}"
 
 
 def _titulo_completo(con: sqlite3.Connection, a: dict) -> dict:

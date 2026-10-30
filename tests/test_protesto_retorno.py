@@ -35,6 +35,7 @@ from prova_de_intimacao import juntar_prova  # noqa: E402
 import banco_pg
 import protesto as PT
 import protesto_arquivo as PA
+import protesto_cenprot as CP
 import protesto_retorno as PR
 from caixa_schema import init_caixa_schema
 from nucleo_schema import init_nucleo_schema
@@ -86,15 +87,18 @@ def ate_o_protesto(con, titulo_id: int) -> None:
 
 
 # Os itens fixos da retirada na vigência 10022, de `tests/custas_reais.json`
-# (a soma com 5 folhas é a constante medida, R$ 82,64), e a faixa 17.4 que
-# fecha o caso medido: R$ 418,17 dá R$ 118,49. O teto da faixa é do ensaio.
+# (a soma com 5 folhas é a constante medida, R$ 82,64), e as duas faixas 17.4
+# que fecham os valores reais de 2026 com 4 folhas: 75,89 + 35,85 = 111,74 e
+# 75,89 + 56,32 = 132,21. Os limites das faixas são do ensaio, menos o 413,48,
+# que vem do fim medido da 17.4.3.
 ITENS_10022 = {"17.7": "11,96", "17.2": "10,68", "17.10.1": "26,25", "17.9": "6,75"}
-FAIXA_10022 = ("0,00", "10.000,00", "35,85")
+FAIXAS_10022 = (("17.4.4", "413,48", "1.000,00", "35,85"),
+                ("17.4.5", "1.000,01", "10.000,00", "56,32"))
 CODIGO_DO_ITEM = {"17.7": 67, "17.2": 25, "17.10.1": 645, "17.9": 331}
 
 
 def tabela_de_custas(con, *, vigencia=10022, inicio="2026-01-01",
-                     fim="2026-12-31", itens=None, faixa=FAIXA_10022) -> None:
+                     fim="2026-12-31", itens=None, faixas=FAIXAS_10022) -> None:
     # `init_caixa_schema` pede estas três; o banco da casa as cria antes.
     con.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY)")
     con.execute("CREATE TABLE IF NOT EXISTS ri_protocolos (id INTEGER PRIMARY KEY)")
@@ -111,10 +115,10 @@ def tabela_de_custas(con, *, vigencia=10022, inicio="2026-01-01",
         con.execute(
             "INSERT INTO cx_servico_valores(servico, vigencia, total) VALUES (?,?,?)",
             (CODIGO_DO_ITEM[tj], vigencia, total))
-    de, ate, total = faixa
-    con.execute(
-        """INSERT INTO cx_faixas(tabela, vigencia, de, ate, codigo_tj, total)
-           VALUES (17, ?, ?, ?, '17.4.1', ?)""", (vigencia, de, ate, total))
+    for codigo, de, ate, total in faixas:
+        con.execute(
+            """INSERT INTO cx_faixas(tabela, vigencia, de, ate, codigo_tj, total)
+               VALUES (17, ?, ?, ?, ?, ?)""", (vigencia, de, ate, codigo, total))
     con.commit()
 
 
@@ -202,8 +206,8 @@ def test_a_ocorrencia_sai_do_ato_e_e_a_medida():
 
 
 def test_a_retirada_leva_a_custa_do_cartorio_na_posicao_467():
-    """A CRA recusou o zero com 2239 (30/10/2026). O caso medido: R$ 418,17 dá
-    R$ 118,49 na vigência 10022."""
+    """A CRA recusou o zero com 2239 (30/10/2026). O caso medido, com 4 folhas:
+    R$ 418,17 dá R$ 111,74 na vigência 10022."""
     con = banco()
     tabela_de_custas(con)
     desistido(con)
@@ -211,8 +215,25 @@ def test_a_retirada_leva_a_custa_do_cartorio_na_posicao_467():
     linha = r["conteudo"].splitlines()[1]
     assert len(linha) == 600
     assert linha[457] == "3"
-    assert linha[466:476] == "0000011849"
-    assert PA.ler(r["conteudo"]).titulos[0]["reservado_467"] == "0000011849"
+    assert linha[466:476] == "0000011174"
+    assert PA.ler(r["conteudo"]).titulos[0]["reservado_467"] == "0000011174"
+
+
+def test_a_retirada_na_faixa_17_4_5_fecha_o_outro_valor_real():
+    # 75,89 + 56,32. O valor é o do caso medido em `protesto_pix._custas_possiveis`.
+    con = banco()
+    tabela_de_custas(con)
+    desistido(con, valor="1.632,93")
+    r = PR.montar(con, apresentante_codigo="001", dia=HOJE, marca="A")
+    assert r["conteudo"].splitlines()[1][466:476] == "0000013221"
+
+
+def test_o_arquivo_de_emolumentos_da_cenprot_continua_com_5_folhas():
+    # Medido em 166 de 173: só o retorno usa 4.
+    con = banco()
+    tabela_de_custas(con)
+    assert CP.FOLHAS_ARQUIVADAS == 5
+    assert CP.precos_do_titulo(con, 41817, vigencia=10022)["retirada"] == 11849
 
 
 def test_a_custa_da_retirada_e_a_da_tabela_do_dia_do_ato():
@@ -221,11 +242,11 @@ def test_a_custa_da_retirada_e_a_da_tabela_do_dia_do_ato():
     tabela_de_custas(con, vigencia=10021, inicio="2025-01-01", fim="2025-12-31",
                      itens={"17.7": "10,00", "17.2": "10,00", "17.10.1": "20,00",
                             "17.9": "5,00"},
-                     faixa=("0,00", "10.000,00", "30,00"))
+                     faixas=(("17.4.1", "0,00", "10.000,00", "30,00"),))
     desistido(con, agora="2025-12-20T10:00:00")
-    # O arquivo sai em 2026 e o ato é de 2025: 40,00 + 5 x 5,00 + 30,00.
+    # O arquivo sai em 2026 e o ato é de 2025: 40,00 + 4 x 5,00 + 30,00.
     r = PR.montar(con, apresentante_codigo="001", dia=HOJE, marca="A")
-    assert r["conteudo"].splitlines()[1][466:476] == "0000009500"
+    assert r["conteudo"].splitlines()[1][466:476] == "0000009000"
 
 
 def test_as_outras_ocorrencias_seguem_em_zero_e_nao_pedem_tabela():
@@ -243,7 +264,7 @@ def test_as_outras_ocorrencias_seguem_em_zero_e_nao_pedem_tabela():
 
 def test_retirada_sem_faixa_recusa_com_a_frase_do_balcao_e_nunca_zero():
     con = banco()
-    tabela_de_custas(con, faixa=("10.000,01", "20.000,00", "35,85"))
+    tabela_de_custas(con, faixas=(("17.4.9", "10.000,01", "20.000,00", "35,85"),))
     desistido(con)
     with pytest.raises(PR.RetornoError) as erro:
         PR.montar(con, apresentante_codigo="001", dia=HOJE, marca="A")

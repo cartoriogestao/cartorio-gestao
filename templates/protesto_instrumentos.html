@@ -102,13 +102,13 @@
 </section>
 
 {#
-  ASSINAR EM LOTE (29/10/2026). MEDIDO NO CÓDIGO: o instrumento se assina pela
-  rota `/assinar/pdf-windows` do serviço local, que assina UM PDF por chamada,
-  num processo novo — o serviço não tem rota de vários nem guarda sessão. O PIN
-  é pedido pela JANELA DO PRÓPRIO TOKEN e não passa pelo sistema. Por isso o
-  lote é um clique só, e a janela do token pode aparecer uma vez por
-  instrumento. E ele PARA na primeira falha do token: PIN errado em sequência
-  bloqueia o A3.
+  ASSINAR EM LOTE (29/10/2026; 30/10/2026, de uma vez só). Os PDFs vão juntos à
+  rota `/assinar/pdfs-windows` do serviço local, num único PowerShell, para o
+  token não pedir o PIN a cada um. O PIN é pedido pela JANELA DO PRÓPRIO TOKEN e
+  não passa pelo sistema. A frase não promete «uma vez só» porque isso não foi
+  medido: quem manda na janela é o driver, e a primeira assinatura real é o
+  teste (`protesto_instrumento.assinar_lote`). E o lote PARA na primeira falha
+  do token: PIN errado em sequência bloqueia o A3.
 #}
 <section class="panel" id="a-assinar">
   <div class="panel-head">
@@ -123,11 +123,11 @@
     <input type="hidden" name="voltar" value="{{ url_for('protesto_instrumentos', quais=quais, desde=atalho or None) }}">
     <div class="notice" style="margin:8px 14px">
       <strong>Como o PIN funciona no lote:</strong> o sistema não vê nem guarda o PIN — quem o pede é a
-      janela do próprio token, na sua tela. O serviço de assinatura assina <strong>um instrumento por
-      vez</strong>, então <strong>conte com a janela do PIN uma vez para cada instrumento</strong>
-      marcado (se o seu token lembrar o PIN, ela não volta). O lote <strong>para na primeira falha do
-      token</strong> — PIN recusado, janela cancelada, serviço fora do ar —, porque PIN errado em
-      sequência bloqueia o A3. Até {{ limite_assinatura }} por vez.
+      janela do próprio token, na sua tela. Os marcados vão juntos ao token, e <strong>a janela do token
+      aparece no começo do lote</strong>, depois que o sistema prepara os papéis. O lote <strong>para na
+      primeira falha do token</strong> — PIN recusado, janela cancelada, serviço fora do ar —, porque PIN
+      errado em sequência bloqueia o A3; os que já foram assinados ficam valendo. Até
+      {{ limite_assinatura }} por vez.
     </div>
     <div class="actions" style="padding:8px 14px">
       <button class="button secondary" type="button" data-marcar="instrumento_id"
@@ -197,7 +197,7 @@
 
 <script>
 /* MARCAR TODOS (29/10/2026). O botão marca as caixas do formulário dele — no
-   lote da assinatura, só até o limite, porque cada uma abre a janela do token.
+   lote da assinatura, só até o limite do lote.
    Clicar de novo desmarca. A caixa do cabeçalho faz o mesmo. */
 (function () {
   function caixas(nome) {

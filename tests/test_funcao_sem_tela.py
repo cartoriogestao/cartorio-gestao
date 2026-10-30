@@ -128,9 +128,7 @@ def _orfas() -> dict[str, list[str]]:
 # recusa nome que ja deixou de ser orfao, para que ela nao vire deposito.
 #
 # `quantos_do_acervo_ficaram_de_fora` entrou em 30/08/2026, com o relato #13.
-# Ela serve `atos_sem_selo` e `atos_sem_cobranca`, que **tambem estao nesta
-# lista** — as tres nascem juntas, para o dia em que a tela existir. Ela e a
-# frase que impede a lista de encolher em silencio quando o filtro do acervo
+# Ela serve `atos_sem_selo`. Ela e a frase que impede a lista de encolher em silencio quando o filtro do acervo
 # tirar 2.783 linhas: sem ela, quem lesse concluiria que o trabalho acabou.
 # **DUAS SAIRAM DESTA LISTA EM 02/09/2026, e a razao e a mesma para as duas:
 # elas deixaram de ser orfas.** `instrumento` estava aqui porque «o modulo
@@ -156,13 +154,10 @@ JA_SABIDAS: frozenset[str] = frozenset({
     # outras da revisão de telas: ganharam quadro nas telas vizinhas, e
     # `tests/test_funcoes_com_tela.py` guarda cada uma.
     #
-    # `atos_sem_cobranca` (e `quantos_do_acervo_ficaram_de_fora`, que a serve)
-    # FICAM, E POR MEDIÇÃO. A tela do par é a de selos do RI, e `ri_atos`,
-    # `ri_certidoes` e `ri_protocolos` não têm `lancamento_id`: a consulta
-    # estouraria e a tela cairia. Nas outras tabelas a coluna só se preenche por
-    # `cobrar`, e o ato pago pelo protocolo sairia como «ninguém cobrou». Qual é a
-    # régua do «cobrado» é decisão do oficial.
-    "atos_da", "atos_sem_cobranca",
+    # `atos_sem_cobranca` SAIU, APAGADA, POR DECISÃO DO OFICIAL EM 30/10/2026: a
+    # régua dela era o `lancamento_id`, e desde a 3.7.0 o dinheiro entra pelo
+    # protocolo. «Selos × caixa — conferência» já responde pela régua nova.
+    "atos_da",
     # `atos_sem_selo` SAIU DAQUI EM 14/09/2026: a tela de selos do RI passou
     # a chama-la. Ela era a mais cara desta lista — oito comentarios em sete
     # modulos prometiam ao operador que «o ato sem selo aparece» nela.

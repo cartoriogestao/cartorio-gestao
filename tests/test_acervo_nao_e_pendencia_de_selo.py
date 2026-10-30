@@ -16,9 +16,8 @@ O QUE SE MEDIU NA PRODUCAO, em 30/08/2026
     das quatro tabelas com movimento.
 
 POR QUE ISTO IMPORTA MESMO SEM TELA
-    `atos_sem_selo` e `atos_sem_cobranca` **ainda nao tem tela** — estao
-    declaradas em `test_funcao_sem_tela.py`. Foi por isso que o defeito nunca
-    chegou ao balcao.
+    `atos_sem_selo` **ainda nao tinha tela** quando isto foi escrito. Foi por isso
+    que o defeito nunca chegou ao balcao.
 
     **Conserta-se agora para que a tela, quando nascer, nao nasca mentindo.** O
     contrario foi o que aconteceu no painel, no mesmo dia: a lista foi para a
@@ -72,13 +71,6 @@ def test_o_ato_do_acervo_nao_aparece_como_sem_selo(con):
     achados = AS.atos_sem_selo(con, "nt_atos")
     assert [a["id"] for a in achados] == [2], \
         "o ato do E-Ofício apareceu como pendência de hoje"
-
-
-def test_o_ato_do_acervo_nao_aparece_como_sem_cobranca(con):
-    """O par, do lado do dinheiro — e pelo mesmo motivo."""
-    _dois_atos(con)
-    achados = AS.atos_sem_cobranca(con, "nt_atos")
-    assert [a["id"] for a in achados] == [2]
 
 
 def test_o_que_ficou_de_fora_e_contado(con):

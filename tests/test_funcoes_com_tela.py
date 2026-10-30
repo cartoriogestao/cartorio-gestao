@@ -13,10 +13,10 @@ AS DUAS METADES
     máquina, sem banco. A segunda usa `cg_app`, com o sistema de pé, e roda na máquina
     da suíte.
 
-AS TRÊS QUE NÃO GANHARAM TELA, E POR QUÊ
+AS DUAS QUE NÃO PRECISARAM DE TELA, E POR QUÊ
     `conferir_remessa`: a tela de conferir a remessa já confere. `blocos_do`: a ficha
-    do assento já separa. `atos_sem_cobranca`: a tela do par é a do RI, e as tabelas
-    do RI não têm a coluna que ela pergunta. Os três têm guarda aqui.
+    do assento já separa. As duas têm guarda aqui. E `atos_sem_cobranca` foi apagada,
+    por decisão do oficial: a conferência de selos × caixa já responde.
 """
 from __future__ import annotations
 
@@ -219,13 +219,12 @@ def test_a_ficha_do_assento_ja_separa_os_blocos():
         assert f"('{bloco}'," in tela, bloco
 
 
-def test_a_tela_de_selos_do_ri_nao_pode_chamar_atos_sem_cobranca():
-    """As tabelas do RI não têm `lancamento_id`: a consulta estouraria e a tela cairia.
-
-    Se o RI ganhar a coluna, este teste avisa que a decisão pode ser revista.
-    """
-    assert "lancamento_id" not in (RAIZ / "ri_schema.py").read_text(encoding="utf-8")
-    assert "atos_sem_cobranca" not in _chamadas(_funcao("ri_web.py", "ri_selos"))
+def test_nenhuma_tela_promete_a_lista_de_atos_sem_cobranca():
+    """A lista nunca existiu para o Protesto, e a função foi apagada em 30/10/2026."""
+    for tela in ("protesto_remessa_conferir.html", "protesto_a_protestar.html"):
+        assert "sem cobrança</em>, para" not in _ler_tela(tela)
+        assert "Atos sem cobrança" not in _ler_tela(tela)
+    assert "«Atos sem" not in (RAIZ / "atribuicoes_web.py").read_text(encoding="utf-8")
 
 
 # ------------------------------------------------- o XML: o que vai e o que fica

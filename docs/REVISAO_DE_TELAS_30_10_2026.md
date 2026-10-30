@@ -64,7 +64,7 @@ guarda as ligações:
 | `cnib_api.consultar_por_documento` | «O que pesa sobre este CPF, agora», direto na Central | Sem tela: fala com a Central, espera o oficial |
 | `onr_api.atendimentos` | Lista de pedidos eletrônicos do SAEC | Sem tela: fala com a Central, espera o oficial |
 | `onr_api.interagir_no_atendimento`, `gerar_cobranca` | Responder no SAEC e gerar cobrança | Sem tela: escrevem na Central, só com ordem do oficial |
-| `ato_selado.atos_sem_cobranca` | Atos com selo que ninguém cobrou | Sem tela: espera o oficial (abaixo) |
+| `ato_selado.atos_sem_cobranca` | Atos com selo que ninguém cobrou | Apagada, por decisão do oficial (abaixo) |
 | `ato_selado.pagamentos_pendentes` | O que cada pessoa selou liberado e não foi pago | Selo e caixa, a cobrança de quem abriu a tela |
 | `papel_seguranca.movimentos_da_folha` | O caminho de uma folha de segurança | Folhas de segurança, busca pelo número |
 | `protesto_cenprot.titulos_sem_chave` | A lista por trás da contagem da CENPROT | Chave do CENPROT, recolhida junto da contagem |
@@ -75,13 +75,18 @@ guarda as ligações:
 | `rc_assento.blocos_do` | Os atos do assento pela divisão tripartite | Não precisa: a ficha já separa (abaixo) |
 | `livro_nucleo.exigencias_da_inspecao` | O que a inspeção cobra, série por série | Livros e termos, recolhida |
 
-**`atos_sem_cobranca` espera uma decisão: o que conta como cobrado.** Ela pergunta por
-`lancamento_id`. As tabelas do Registro de Imóveis não têm essa coluna, e por isso a tela
-de selos do RI, onde está o par `atos_sem_selo`, cairia ao chamá-la. Nas outras tabelas a
-coluna só se preenche por `ato_selado.cobrar`: as Notas nunca o chamam, e desde a 3.7.0 o
-dinheiro entra pelo protocolo, de modo que o ato pago apareceria como «ninguém cobrou».
-O que a casa já mede pela régua nova é `selos_pagos_sem_cobertura`, em «Selos × caixa —
-conferência».
+**`atos_sem_cobranca` foi apagada, por decisão do oficial em 30/10/2026.** Ela perguntava por
+`lancamento_id`. As tabelas do Registro de Imóveis não têm essa coluna, e por isso a tela de
+selos do RI, onde está o par `atos_sem_selo`, cairia ao chamá-la. Nas outras tabelas a coluna
+só se preenche por `ato_selado.cobrar`: as Notas nunca o chamam, e desde a 3.7.0 o dinheiro
+entra pelo protocolo, de modo que o ato pago apareceria como «ninguém cobrou». Quem responde
+pela régua nova é `selos_pagos_sem_cobertura`, em «Selos × caixa — conferência».
+
+**As telas do Protesto prometiam essa lista, e ela nunca mostrou o Protesto.** A conferência da
+remessa, o «A protestar» e o aviso de depois do lote mandavam olhar «atos sem selo» e «atos sem
+cobrança». Agora mandam selar e cobrar pela ficha de cada título. **Continua sem lista o ato de
+Protesto lavrado em lote por uma pessoa e ainda sem selo:** o roteiro do dia só traz o desfeito,
+o do robô e o item pago sem selo.
 
 **`conferir_remessa` e `blocos_do` não precisam de tela.** A conferência da remessa já passa
 cada título por `protesto_cra.conferir_titulo`, a mesma conta, e mostra a falta de cada um.

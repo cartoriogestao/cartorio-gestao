@@ -11911,8 +11911,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
         O LOTE NÃO SELA E NÃO COBRA, e é de propósito: selar cinquenta títulos
         são cinquenta chamadas de rede de 20 s dentro de um `BEGIN IMMEDIATE`,
-        e a casa inteira ficaria esperando o lote. Eles entram e aparecem em
-        *atos sem selo* e *atos sem cobrança*, que são as telas do outro lado.
+        e a casa inteira ficaria esperando o lote. Eles entram sem selo e sem
+        cobrança, e selar e cobrar é na ficha de cada título.
 
         AS IMAGENS t51 (3.6.293.3) entram na MESMA transação dos títulos: a
         remessa XML vem pela cópia local (`origem_xml_token`), e não por um
@@ -12183,7 +12183,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         O LOTE NÃO SELA E NÃO COBRA — a mesma regra da remessa, e pelo mesmo
         motivo: vinte selos são vinte chamadas de rede de 20 s, e segurá-las
         aqui poria toda a casa no `busy_timeout`. Eles aparecem em *atos sem
-        selo* e *atos sem cobrança*, que são as telas do outro lado.
+        selo* e sem selo e sem cobrança, e selar e cobrar é na ficha de cada título.
 
         E UM QUE FALHA NÃO DERRUBA OS OUTROS: cada título é lavrado na sua
         própria transação. Protesto lavrado é protesto lavrado; desfazer
@@ -12256,8 +12256,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                 [r.get("afirmacao_expressa")])
         if feitos:
             flash(f"{len(feitos)} protesto(s) lavrado(s). Eles ainda não têm "
-                  f"selo nem cobrança — veja em «Atos sem selo» e «Atos sem "
-                  f"cobrança». E lembre de gerar o retorno E o andamento.",
+                  f"selo nem cobrança: sele e cobre pela ficha de cada título. "
+                  f"E lembre de gerar o retorno E o andamento.",
                   "success")
         for titulo_id, motivo in falharam:
             flash(f"Título {titulo_id}: {motivo}", "danger")

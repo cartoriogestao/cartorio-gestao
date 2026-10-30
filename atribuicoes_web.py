@@ -109,6 +109,7 @@ import ibge_remessa as IBGE
 import papel_seguranca as PP
 import protesto as PT
 import protesto_arquivo as PA
+import protesto_fases as PFASES
 import protesto_cra_xml as PCRAXML
 import protesto_cra_imagens as PCIMG
 import protesto_aviso as AV
@@ -4138,7 +4139,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             cabem.append("REVOGACAO_EFEITO_SUSPENSIVO")
         elif situacao == "PROTESTADO":
             cabem.append("EFEITO_SUSPENSIVO")
+
+        # AS FASES SÓ SE CALCULAM NO LAYOUT NOVO: quem está no antigo não paga por elas.
+        def abas_da_ficha(admin: bool = False) -> dict:
+            return PFASES.fases_do_titulo(
+                dict(titulo), cabem=cabem, atos=atos, avisos=avisos, imagens=imagens,
+                emolumento=emolumento, triduo=(triduo or {}).get("triduo_situacao") or "",
+                pode_averbar=bool(admin and averbacao and averbacao.get("atos")))
+
         return render_template("atrib_protesto_ficha.html", titulo=dict(titulo),
+                               abas_da_ficha=abas_da_ficha,
+                               fase_do_ato=PFASES.fase_do_ato,
+                               rotulo_do_ato=PFASES.rotulo_do_ato,
                                sem_ato=sem_ato,
                                propostas_de_oficio=propostas_de_oficio,
                                pendencias_do_selo=pendencias_do_selo,

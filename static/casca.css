@@ -201,6 +201,11 @@
 .cg-esperando>[data-fase]{display:none}
 .cg-ancora{display:block;height:0}
 .cg-ficha>.cg-ancora{flex:0 0 0;width:0;margin-right:-12px}
+.cg-ficha>details.cg-ato-do-titulo{padding:0;margin-bottom:8px}
+.cg-ficha>details.cg-ato-do-titulo>summary{padding:10px 14px;font-weight:600;cursor:pointer}
+.cg-ficha>.cg-depois{order:11}
+.cg-ficha #avisos form.form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;align-items:end}
+.cg-ficha #avisos form.form>.actions{grid-column:1/-1}
 .cg-so-leitor{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .cg-ficha .panel{padding:14px;margin-bottom:12px}
 .cg-ato-cabeca.panel{padding:6px 14px;margin-bottom:8px}
@@ -281,6 +286,7 @@
 @media (min-width:1600px){
 .cg-corpo :is(.grid2,.form-grid):has(>:not([type=hidden],[hidden],.span2)~:not([type=hidden],[hidden],.span2)~:not([type=hidden],[hidden],.span2)):not(:has(>.panel,>.cg-passo-bloco)):not(.cg-ato-cabeca *,.cg-lado *,.cg-lado-largo *,.cra-api *,.pagina-configuracoes *){grid-template-columns:repeat(3,minmax(0,1fr))}
 .cg-ficha>.cg-lado-largo{flex:1 1 calc(50% - 6px)}
+.cg-ficha #avisos form.form{grid-template-columns:repeat(4,minmax(0,1fr))}
 .cg-lista-larga{column-count:2;column-gap:32px}
 .cg-lista-larga>li{break-inside:avoid}
 }

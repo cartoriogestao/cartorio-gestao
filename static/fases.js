@@ -40,6 +40,9 @@
       else a.removeAttribute("aria-current");
     });
     if (app) app.classList.toggle("cg-foco", chave === regua.getAttribute("data-foco"));
+    // O ALVO DENTRO DE UM QUADRO RECOLHIDO: «Lançar de novo» leva ao formulário, e ele tem de abrir.
+    var recolhido = alvo && alvo.closest("details");
+    if (recolhido) recolhido.open = true;
     if (alvo) alvo.scrollIntoView({ block: "start" });
     else if (rolagem) rolagem.scrollTop = 0;
   }

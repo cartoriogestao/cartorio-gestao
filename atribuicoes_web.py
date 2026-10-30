@@ -211,7 +211,7 @@ PAINEIS: dict[str, dict] = {
         "busca_diz": "nome ou CPF/CNPJ do devedor, número do título, cedente",
         "ordem": "id DESC",
         "situacoes": ("RECEBIDO", "APONTADO", "INTIMADO", "PROTESTADO",
-                      "PAGO", "CANCELADO", "DESISTIDO"),
+                      "PAGO", "CANCELADO", "DESISTIDO", "DEVOLVIDO"),
     },
     "rcpn": {
         "titulo": "Registro Civil das Pessoas Naturais — assentos",
@@ -3807,36 +3807,38 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @app.route("/protesto/<int:titulo_id>/situacao/corrigir", methods=["POST"])
     @roles_required("ADMIN", "MANAGER")
     def protesto_situacao_corrigir(titulo_id: int):
-        """A CORREÇÃO DE OFÍCIO da situação sem o ato que a sustente. ESCREVE.
+        """PROPÕE a correção da situação sem o ato que a sustente. Só grava a
+        proposta, a tarefa do oficial e a auditoria dela.
 
-        Revisão do oficial, 29/10/2026: o título PAGO sem pagamento válido (o
-        9614) não se conserta sozinho, e não se conserta sem rastro. Volta à
-        situação que os atos válidos sustentam, com afirmação expressa — regra
-        `SITUACAO_SEM_ATO`, auditoria `AFIRMACAO_EXPRESSA` fora da transação.
-        Do oficial e do substituto (ADMIN e MANAGER); o robô não alcança.
+        Decisão do oficial, 30/10/2026: o botão da ficha não corrige mais. Ele
+        põe a proposta na fila (`correcoes_de_oficio`, tipo
+        `PT_SITUACAO_SUSTENTADA`), e quem aprova é só o ADMIN em pessoa. Não
+        sobra caminho direto para o gerente. O robô não alcança esta rota: tem
+        papel USER, e ela não está em `rotas_do_robo`.
         """
+        import correcoes_de_oficio as CDO
         voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_id))
-        try:
-            with db.transaction() as con:
-                # ROBÔ NÃO AFIRMA (integração de 29/10/2026).
-                af = _afirmacao_da_trava("situacao")
-                feito = PSELO.corrigir_situacao_de_oficio(
-                    con, titulo_id, afirmo=af["afirmo"],
-                    afirmacao=af["texto"], robo=af["robo"])
-        except PSELO.SituacaoError as erro:
-            flash(str(erro), "danger")
+        tipo = CDO.SituacaoSustentada.chave
+        quem = db.get_user(usuario_id_do_sistema())
+        with db.transaction() as con:
+            ja = CDO.propostas_do_titulo(con, titulo_id, tipo=tipo)
+            r = (None if ja else CDO.propor(
+                con, tipo=tipo, parametros={"titulo_ids": [titulo_id]},
+                motivo=request.form.get("motivo"), quem=quem, agora=agora(),
+                ip=request.remote_addr))
+        if ja:
+            flash(f"A proposta nº {ja[0]['id']} já espera o oficial para este "
+                  "título: nada foi gravado.", "warning")
+            return redirect(url_for("correcoes_de_oficio_ficha",
+                                    correcao_id=ja[0]["id"]))
+        if not r["ok"]:
+            for frase in r["recusas"]:
+                flash(frase, "danger")
             return voltar
-        audit(PSELO.ACAO_DA_AFIRMACAO, "pt_titulos", titulo_id,
-              {k: feito[k] for k in ("regra", "afirmacao", "o_que_faltava")})
-        audit("PROTESTO_SITUACAO_CORRIGIDA_DE_OFICIO", "pt_titulos", titulo_id,
-              {"situacao_antes": feito["situacao_antes"],
-               "situacao_nova": feito["situacao_nova"]})
-        flash(f"Situação corrigida de ofício: {feito['situacao_antes']} → "
-              f"{feito['situacao_nova']}, a que os atos válidos sustentam. A "
-              "afirmação ficou na auditoria. Se o ato deve existir, lance-o "
-              "agora; e confira se a CRA já recebeu a ocorrência antiga.",
-              "success")
-        return voltar
+        flash(f"Proposta nº {r['id']} gravada: a situação não mudou. Ela espera a "
+              "decisão do oficial, e virou tarefa dele.", "success")
+        return redirect(url_for("correcoes_de_oficio_ficha",
+                                correcao_id=r["id"]))
 
     @app.route("/protesto/<int:titulo_id>/atos/<int:ato_id>/selo-que-faltou",
                methods=["POST"])
@@ -4074,6 +4076,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # A SITUAÇÃO SEM O ATO QUE A SUSTENTE e O ATO A REFAZER
             # (29/10/2026): as obrigações que o selo deixou neste título.
             sem_ato = PSELO.situacao_sem_ato(_c, titulo_id)
+            # A PROPOSTA QUE JÁ ESPERA O OFICIAL (30/10/2026): o botão da ficha
+            # só propõe, e a ficha diz que a proposta existe.
+            import correcoes_de_oficio as CDO
+            propostas_de_oficio = CDO.propostas_do_titulo(_c, titulo_id)
             pendencias_do_selo = PSELO.pendencias_do_selo(_c, titulo_id=titulo_id)
             # OS PEDIDOS DA CRA (29/10/2026): desistência, cancelamento e
             # autorização que vieram da Central e ainda esperam a casa.
@@ -4133,6 +4139,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             cabem.append("EFEITO_SUSPENSIVO")
         return render_template("atrib_protesto_ficha.html", titulo=dict(titulo),
                                sem_ato=sem_ato,
+                               propostas_de_oficio=propostas_de_oficio,
                                pendencias_do_selo=pendencias_do_selo,
                                averbacao=averbacao,
                                modelo_da_afirmacao=PSELO.MODELO_DA_AFIRMACAO,
@@ -12315,7 +12322,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         o dia: a hora do papel é o que separa pendente de atrasado.
         """
         with db.connect() as con:
-            dados = PROT.roteiro(con, agora=agora())
+            dados = PROT.roteiro(con, agora=agora(), papel=_papel_atual())
             afirmacoes = AFX.contar(con, hoje=hoje())
         conferencia_titulos = _conferencia_dos_titulos(resumo=True)
         return render_template("protesto_painel.html", r=dados,
@@ -12410,7 +12417,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         try:
             with db.connect() as con:
                 conferido = PROT.conferir_o_encerramento(
-                    con, agora=quando, afirmacoes=afirmacoes)
+                    con, agora=quando, afirmacoes=afirmacoes,
+                    papel=_papel_atual())
             with db.transaction() as con:
                 r = PROT.gravar_o_encerramento(con, conferido, agora=quando,
                                                usuario=usuario_nome())
@@ -12498,6 +12506,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 # O COMPROVANTE DA SUBIDA, por arquivo (29/10/2026).
                 for f in feitos:
                     f["comprovantes"] = PCXML.comprovantes(con, f["id"])
+                    f["atos"] = PCXML.atos_do_arquivo(con, f["id"])
+                    f["devolucoes"] = PCXML.devolucoes_do_arquivo(f)
                 cadastro = PCXML.apresentantes(con)
         finally:
             if acervo is not None:
@@ -12507,6 +12517,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             cadastro=cadastro, tem_acervo=acervo is not None,
             minimo_de_letras=AFX.MINIMO_DE_LETRAS,
             modelo_da_afirmacao=AFX.MODELO,
+            minimo_do_motivo=PCXML.MINIMO_DO_MOTIVO_DA_DEVOLUCAO,
             ocorrencias={"PROTESTO": "2 — protestado", "PAGAMENTO": "1 — pago",
                          "DESISTENCIA": "3 — retirado",
                          "CANCELAMENTO": "A — cancelado"})
@@ -12616,6 +12627,55 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                 f"{r['nome_arquivo']} no portal da CENPROT"})
         flash(f"Subida de «{r['nome_arquivo']}» afirmada sem comprovante.",
               "warning")
+        return voltar
+
+    @app.route("/protesto/cenprot-xml/<int:xml_id>/recusado", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER")
+    def protesto_cenprot_xml_recusado(xml_id: int):
+        """A CENPROT recusou o arquivo: os atos voltam à fila. ESCREVE.
+
+        O mesmo espírito do `devolver-atos` do retorno. A regra mora em
+        `protesto_cenprot_xml.recusar_arquivo`; o motivo vai para a auditoria.
+        """
+        voltar = redirect(url_for("protesto_cenprot_xml") + "#arquivos-gerados")
+        try:
+            with db.transaction() as con:
+                r = PCXML.recusar_arquivo(
+                    con, xml_id, motivo=request.form.get("motivo"), agora=agora(),
+                    usuario=usuario_nome())
+        except PCXML.CenprotXmlError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        # `audit` abre transação própria: FORA do `with`.
+        audit("PROTESTO_CENPROT_XML_RECUSADO", "pt_cenprot_xml", xml_id,
+              {"arquivo": r["nome_arquivo"], "motivo": r["motivo"],
+               "atos": r["atos"]})
+        flash(f"«{r['nome_arquivo']}» marcado como recusado: {len(r['atos'])} "
+              f"ato(s) voltaram à fila. O arquivo fica gravado como foi.",
+              "warning")
+        return voltar
+
+    @app.route("/protesto/cenprot-xml/<int:xml_id>/devolver-atos",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER")
+    def protesto_cenprot_xml_devolver_atos(xml_id: int):
+        """O arquivo subiu sem estes atos: só eles voltam à fila. ESCREVE. A regra
+        mora em `protesto_cenprot_xml.devolver_atos_escolhidos`."""
+        voltar = redirect(url_for("protesto_cenprot_xml") + "#arquivos-gerados")
+        try:
+            with db.transaction() as con:
+                r = PCXML.devolver_atos_escolhidos(
+                    con, xml_id, request.form.getlist("ato_id"),
+                    motivo=request.form.get("motivo"), agora=agora(),
+                    usuario=usuario_nome())
+        except PCXML.CenprotXmlError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        audit("PROTESTO_CENPROT_XML_ATOS_DEVOLVIDOS", "pt_cenprot_xml", xml_id,
+              {"arquivo": r["nome_arquivo"], "motivo": r["motivo"],
+               "atos": r["atos"], "ficaram": r["ficaram"]})
+        flash(f"{len(r['atos'])} ato(s) voltaram à fila; {r['ficaram']} "
+              f"continuam em «{r['nome_arquivo']}».", "warning")
         return voltar
 
     @app.route("/protesto/cenprot-xml/apresentantes", methods=["POST"])
@@ -12854,6 +12914,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         audit("PROTESTO_CENPROT_EMOLUMENTOS", "pt_titulos", None,
               {"arquivo": arquivo["nome"], "linhas": arquivo["linhas"],
                "fora": len(arquivo["fora"]), "vigencia": arquivo["vigencia"]})
+        if arquivo["fora"]:
+            flash(PCEN.frase_do_que_ficou_fora(arquivo), "warning")
         return Response(
             arquivo["conteudo"].encode("utf-8"),
             mimetype="text/plain; charset=utf-8",
@@ -13015,10 +13077,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as con:
             quadro = PCP.quadro_do_dia(con, dia=hoje())
             pendentes = DS.pendencias_da_cra(con)
+            aguardando = PCP.aguardando_o_devedor(con)
             recentes = PCP.recentes(con, limite=80)
         return render_template(
             "protesto_cra_pedidos.html", quadro=quadro, cra_do_dia=quadro,
-            pendentes=pendentes, recentes=recentes, hoje=hoje(),
+            pendentes=pendentes, aguardando=aguardando, recentes=recentes,
+            hoje=hoje(),
             minimo=PCP.MINIMO_DE_LETRAS, papel=_papel_atual(),
             quem_encerra_o_grave=PCP.QUEM_ENCERRA_O_GRAVE,
             grave=PCP.GRAVE, nome_do_tipo=PCP.NOME_DO_TIPO)
@@ -14751,15 +14815,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """Fila dos protestos lavrados sem instrumento. Só LÊ.
 
         O RECORTE (29/10/2026): `quais` separa os lavrados neste sistema do
-        acervo do E-Ofício, e `desde` é um dos atalhos de data. A tela abre
-        nos lavrados neste sistema quando há algum — medido nesse dia, 21 de
-        1.207; o resto é acervo, e continua a um clique, com o número à vista.
+        acervo do E-Ofício, e `desde` é um dos atalhos de data.
+
+        SEM QUEDA AUTOMÁTICA (30/10/2026): sem filtro válido, a tela fica nos
+        lavrados neste sistema, mesmo com zero. Ela caía em «todos» quando o
+        sistema zerava, e o oficial leu 200 protestos de acervo como trabalho
+        do dia. O acervo só aparece quando a pessoa escolhe o filtro.
         """
         with db.connect() as con:
             quadro_fila = PI.quadro_da_fila(con, hoje=hoje())
             quais = request.args.get("quais") or ""
             if quais not in PI.QUAIS_DA_FILA:
-                quais = "sistema" if quadro_fila["sistema"] else "todos"
+                quais = "sistema"
             atalho = request.args.get("desde") or ""
             if atalho not in PI.ATALHOS_DE_DATA:
                 atalho = ""
@@ -14781,7 +14848,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             emitidos=emitidos, a_assinar=a_assinar, quadro_fila=quadro_fila,
             quais=quais, atalho=atalho, QUAIS=PI.QUAIS_DA_FILA,
             ATALHOS=PI.ATALHOS_DE_DATA,
-            limite_assinatura=PI.LIMITE_DO_LOTE_DE_ASSINATURA)
+            limite_assinatura=PI.LIMITE_DO_LOTE_DE_ASSINATURA,
+            modelo_da_afirmacao=AFX.MODELO,
+            minimo_da_afirmacao=AFX.MINIMO_DE_LETRAS)
 
     @app.route("/protesto/instrumentos/emitir-lote", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -14792,7 +14861,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         regra mora em `PI.emitir_lote`: uma transação por título, um que falha
         não derruba os outros, e título que já tem instrumento não ganha
         segunda via por engano. Aqui só se ligam os fios.
+
+        O PROTESTO DO ACERVO exige afirmação expressa, conferida no domínio
+        pelos títulos marcados, e não pelo filtro da tela (30/10/2026).
         """
+        import selo_robo as SR
         escolhidos = [n for n in (numero_digitado(x)
                                   for x in request.form.getlist("titulo_id"))
                       if n is not None]
@@ -14811,7 +14884,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         try:
             r = PI.emitir_lote(db.transaction, escolhidos, serventia=serventia,
                                agora=agora(), usuario=usuario_nome(),
-                               modelo_de=_modelo)
+                               modelo_de=_modelo,
+                               afirmo=bool(request.form.get("afirmo")),
+                               afirmacao=request.form.get("afirmacao"),
+                               robo=SR.usuario_e_robo())
         except PI.InstrumentoError as erro:
             flash(str(erro), "warning")
             return redirect(volta)
@@ -14821,11 +14897,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   {"titulo_id": feito["titulo_id"],
                    "numero": feito.get("numero"), "ano": feito.get("ano"),
                    "em_lote": True})
+        # Uma linha por protesto de acervo que saiu: o que falhou não gastou
+        # número, e não há o que afirmar sobre ele.
+        af_acervo = r["afirmacao_de_acervo"]
+        for feito in r["feitos"]:
+            if af_acervo and feito["titulo_id"] in af_acervo["titulos"]:
+                audit("AFIRMACAO_EXPRESSA", "pt_titulos", feito["titulo_id"],
+                      {"regra": af_acervo["regra"],
+                       "afirmacao": af_acervo["afirmacao"],
+                       "o_que_faltava": af_acervo["o_que_faltava"],
+                       "instrumento": f"{feito.get('numero')}/{feito.get('ano')}"})
         if r["feitos"]:
             numeros = ", ".join(f"{f['numero']}/{f['ano']}" for f in r["feitos"])
             flash(f"{len(r['feitos'])} instrumento(s) emitido(s): {numeros}. "
-                  f"Eles entraram na fila de assinatura — assine-os logo "
-                  f"abaixo, em «Instrumentos a assinar».", "success")
+                  f"Eles entraram na fila de assinatura — assine-os em "
+                  f"«Instrumentos a assinar».", "success")
         if r["falharam"]:
             flash(f"{len(r['falharam'])} não saíram — o motivo de cada um "
                   f"vem a seguir.", "danger")
@@ -14918,14 +15004,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @app.route("/protesto/instrumentos/assinar-lote", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def protesto_instrumentos_assinar_lote():
-        """Assina com o A3 os instrumentos MARCADOS, um depois do outro.
-        ESCREVE.
+        """Assina com o A3 os instrumentos MARCADOS, todos de uma vez. ESCREVE.
 
-        **UM CLIQUE, E UMA JANELA DO TOKEN POR INSTRUMENTO** — medido no
-        código em 29/10/2026 (ver `PI.assinar_lote`): o serviço local assina
-        um PDF por chamada, num processo novo, e o PIN é pedido pela janela do
-        próprio token; o sistema não o vê e não o guarda. E o lote PARA na
-        primeira falha do token: PIN errado em sequência bloqueia o A3.
+        30/10/2026: os PDFs vão juntos ao serviço local, num único processo,
+        para o token não pedir o PIN a cada um; a regra mora em
+        `PI.assinar_lote`. O PIN é pedido pela janela do próprio token, e o
+        sistema não o vê e não o guarda. O lote PARA na primeira falha do token
+        (PIN errado em sequência bloqueia o A3), e o que já foi assinado fica.
         """
         escolhidos = [n for n in (numero_digitado(x)
                                   for x in request.form.getlist("instrumento_id"))
@@ -14933,7 +15018,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         volta = destino_interno(request.form.get("voltar"),
                                 url_for("protesto_instrumentos"))
         try:
-            r = PI.assinar_lote(escolhidos, _assinar_um_instrumento)
+            r = PI.assinar_lote(escolhidos,
+                                preparar=_pdf_do_instrumento_a_assinar,
+                                assinar_varios=_assinar_varios_no_a3,
+                                guardar=_guardar_instrumento_assinado,
+                                assinar_um=_assinar_um_instrumento)
         except PI.InstrumentoError as erro:
             flash(str(erro), "warning")
             return redirect(volta)
@@ -14945,6 +15034,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             numeros = ", ".join(f"{f['numero']}/{f['ano']}" for f in r["feitos"])
             flash(f"{len(r['feitos'])} instrumento(s) assinado(s): {numeros}.",
                   "success")
+        if r["aviso"]:
+            flash(r["aviso"], "warning")
         for falha in r["falharam"]:
             flash(f"Instrumento (id {falha['instrumento_id']}): "
                   f"{falha['motivo']}", "danger")
@@ -14958,25 +15049,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def _assinar_um_instrumento(instrumento_id: int) -> dict:
         """Assina UM instrumento com o A3: o papel da impressão vira PDF, vai ao
         serviço local e volta assinado, e se guarda na sua própria transação.
-        ESCREVE. Serve o botão de cada linha e o lote — um caminho só.
+        ESCREVE. Serve o botão de cada linha e a queda do lote para o serviço
+        antigo; o papel e a gravação são os mesmos do lote.
 
         A FALHA DO TOKEN VIRA `AssinaturaInterrompida` (o lote para nela); a
         do PAPEL, `InstrumentoError` (o lote segue). Quem decide o que fazer
-        com cada uma é `PI.assinar_lote`.
+        com cada uma é `PI.assinar_um_por_um`.
         """
         import base64 as _b64
 
         import assinar_com_a3 as A3
-        import impressao_pdf as IMPPDF
-        with db.connect() as con:
-            PI.conferir_antes_de_assinar(con, instrumento_id)
-        ins, odt = _odt_do_instrumento(instrumento_id)
-        try:
-            pdf = IMPPDF.pdf_de_odt(
-                odt, nome=f"instrumento-{ins['numero']}-{ins['ano']}",
-                get_setting=db.get_setting)
-        except IMPPDF.PdfError as erro:
-            raise PI.InstrumentoError(str(erro)) from erro
+        pdf = _pdf_do_instrumento_a_assinar(instrumento_id)
         try:
             resposta = A3.assinar_pdf_pelo_windows(pdf)
         except A3.AssinarComA3Error as erro:
@@ -14990,16 +15073,63 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if not cms:
             raise PI.AssinaturaInterrompida(
                 "O serviço de assinatura não devolveu o arquivo assinado.")
+        return _guardar_instrumento_assinado(instrumento_id, pdf,
+                                             _b64.b64decode(cms))
+
+    def _pdf_do_instrumento_a_assinar(instrumento_id: int) -> bytes:
+        """O PDF do papel da impressão, de instrumento ainda sem assinatura.
+        Falha aqui é do PAPEL (`InstrumentoError`), e nada foi ao token."""
+        import impressao_pdf as IMPPDF
+        with db.connect() as con:
+            PI.conferir_antes_de_assinar(con, instrumento_id)
+        ins, odt = _odt_do_instrumento(instrumento_id)
+        try:
+            return IMPPDF.pdf_de_odt(
+                odt, nome=f"instrumento-{ins['numero']}-{ins['ano']}",
+                get_setting=db.get_setting)
+        except IMPPDF.PdfError as erro:
+            raise PI.InstrumentoError(str(erro)) from erro
+
+    def _assinar_varios_no_a3(pdfs: list[bytes]) -> dict:
+        """Manda os PDFs juntos ao serviço local. Devolve `{"assinados":
+        {posição: p7s}, "falha": frase}`, a forma que `PI.assinar_lote` lê.
+
+        O que vem em `falha` é do token, e os já assinados vêm junto. O serviço
+        fora do ar vira `AssinaturaInterrompida` (nada foi assinado), e o
+        serviço antigo, `LoteIndisponivel` (o lote cai no um por um).
+        """
+        import base64 as _b64
+
+        import assinar_com_a3 as A3
+        try:
+            resposta = A3.assinar_pdfs_pelo_windows(pdfs)
+        except A3.ServicoSemLote as erro:
+            raise PI.LoteIndisponivel(str(erro)) from erro
+        except A3.AssinarComA3Error as erro:
+            raise PI.AssinaturaInterrompida(str(erro)) from erro
+        except OSError as erro:
+            raise PI.AssinaturaInterrompida(
+                "O serviço de assinatura A3 não respondeu. Abra o serviço "
+                "(a3_servico_local) nesta máquina, com o token plugado, e "
+                "tente de novo.") from erro
+        return {"assinados": {int(item["indice"]): _b64.b64decode(item["cms_b64"])
+                              for item in resposta.get("itens") or ()},
+                "falha": resposta.get("falha")}
+
+    def _guardar_instrumento_assinado(instrumento_id: int, pdf: bytes,
+                                      p7s: bytes) -> dict:
+        """Confere o `.p7s` e o guarda, na sua própria transação. ESCREVE. Um
+        caminho só para o botão de cada linha e para o lote."""
         try:
             with db.transaction() as con:
                 return PI.guardar_assinatura(
-                    con, instrumento_id, pdf=pdf, p7s=_b64.b64decode(cms),
+                    con, instrumento_id, pdf=pdf, p7s=p7s,
                     pasta_de_arquivos=pasta_dos_arquivos(), agora=agora(),
                     usuario=usuario_nome())
         except OSError as erro:
             # A PASTA DOS ARQUIVOS, e não o token: a transação voltou atrás,
-            # e o instrumento continua na lista do que falta assinar. O LOTE
-            # PARA AQUI TAMBÉM: a pasta falharia no seguinte, e cada tentativa
+            # e o instrumento continua na lista do que falta assinar. NO UM POR
+            # UM O LOTE PARA AQUI: a pasta falharia no seguinte, e cada tentativa
             # custaria ao oficial mais uma digitação do PIN.
             raise PI.AssinaturaInterrompida(
                 "O instrumento foi assinado, mas o arquivo não pôde ser "

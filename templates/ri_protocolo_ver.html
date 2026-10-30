@@ -198,6 +198,20 @@
   </details>
   {% endif %}
 
+  {% if p.encerrado_em %}
+  {# O encerramento fica na ficha mesmo depois de reabrir: as colunas não se
+     apagam, e a correição pergunta quem fechou e por quê. #}
+  <div class="notice">
+    <strong>Esta prenotação foi encerrada</strong>
+    {% if p.encerrado_por %}por {{ p.encerrado_por }}{% endif %}
+    em {{ (p.encerrado_em or '')[:16].replace('T', ' ') }}.
+    <br><span class="small">Motivo: {{ p.motivo_encerramento or '—' }}</span>
+    {% if p.obs_encerramento %}
+    <br><span class="small">Observação: {{ p.obs_encerramento }}</span>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% if p.reaberto_em %}
   {# O encerramento desfeito NÃO some da tela. Correição pergunta o que houve,
      e a resposta tem de estar onde o ato está. #}
@@ -228,6 +242,51 @@
       <div>{{ p.anotacao }}</div></div>{% endif %}
   </div>
 </section>
+
+{% if user.role in ['ADMIN', 'MANAGER'] and pode_encerrar %}
+{#
+  ENCERRAR — pedido da Tabeliã e Registradora Substituta.
+
+  O motivo é da lista, e a situação sai dele. «Outro» pede observação e
+  deixa escolher a situação (o padrão é cancelado). Prenotação DEVOLVIDA
+  também entra: a nota saiu, e o prazo continua correndo até esta decisão.
+#}
+<section class="panel" id="encerrar-prenotacao">
+  <div class="panel-head"><span>Encerrar esta prenotação</span>
+    <span class="small muted">o motivo escolhe a situação; fica na auditoria</span></div>
+  {% if p.situacao == 'DEVOLVIDO' %}
+  <p class="small">Esta prenotação está devolvida: a nota saiu, e o prazo
+    continua correndo. Encerrar aqui é a decisão de não esperar mais.</p>
+  {% endif %}
+  <form method="post" class="stack" style="padding:6px 0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Motivo
+      <select name="motivo" required>
+        <option value="">— escolha —</option>
+        {% for chave, item in MOTIVOS_ENCERRAMENTO.items() %}
+        <option value="{{ chave }}">{{ item.rotulo }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Situação — só vale para o motivo «Outro»; nos demais, a situação já vem do motivo
+      <select name="situacao">
+        {% for s in SITUACOES_DE_ENCERRAMENTO %}
+        <option value="{{ s }}"{% if s == 'CANCELADO' %} selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Observação
+      <textarea name="observacao" rows="2"
+                placeholder="obrigatória quando o motivo é Outro"></textarea>
+      <span class="small muted">No motivo «Outro», é ela que explica o
+        encerramento na correição.</span></label>
+    <label>
+      <input type="checkbox" name="confirmar" value="1" required>
+      Confirmo o encerramento desta prenotação</label>
+    <div>
+      <button class="primary" name="acao" value="encerrar">Encerrar esta prenotação</button>
+    </div>
+  </form>
+</section>
+{% endif %}
 
 {% if p.situacao != 'ABERTO' %}
 {#

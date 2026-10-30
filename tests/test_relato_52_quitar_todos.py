@@ -23,7 +23,8 @@ O QUE ESTES TESTES PROVAM, E A ORDEM IMPORTA:
    a resposta diz qual falhou e por quê;
 6. sem caixa aberto o lote **recusa antes de tentar**, e não N vezes com o mesmo
    aviso — o que resolve é abrir o caixa, e isso se diz uma vez;
-7. rodar de novo não cobra de novo.
+7. rodar de novo não cobra de novo;
+8. sem forma de pagamento, nem o lote nem o botão de um item quitam (30/10/2026).
 """
 from __future__ import annotations
 
@@ -118,7 +119,7 @@ def _situacao(banco, protocolo_id: int) -> str:
 
 def _quitar_tudo(c, protocolo_id: int, **campos):
     corpo = {"csrf_token": _token(c, f"/caixa/protocolos/{protocolo_id}"),
-             "acao": "quitar_todos"}
+             "acao": "quitar_todos", "forma_pagamento": "PIX"}
     corpo.update(campos)
     return c.post(f"/caixa/protocolos/{protocolo_id}/itens", data=corpo,
                   follow_redirects=True)
@@ -162,13 +163,52 @@ def test_a_forma_de_pagamento_do_lote_e_escolhida_uma_vez(cg_casa_logada):
     assert formas == {"PIX"}, f"a forma do lote não chegou aos lançamentos: {formas}"
 
 
-def test_em_branco_grava_em_branco(cg_casa_logada):
-    """Não se adivinha como o cliente pagou — é a mesma regra do item sozinho."""
+def test_sem_forma_o_lote_recusa_e_nada_se_quita(cg_casa_logada):
+    """Não se adivinha como o cliente pagou, e lançamento sem forma não diz."""
     banco = cg_casa_logada["banco"]
     protocolo_id = _protocolo(banco, 2)
     _abrir_caixa(banco)
-    _quitar_tudo(cg_casa_logada["c"], protocolo_id)
-    assert {l["forma_pagamento"] for l in _lancamentos(banco)} == {None}
+    html = _quitar_tudo(cg_casa_logada["c"], protocolo_id,
+                        forma_pagamento="").get_data(as_text=True)
+    assert "Escolha a forma de pagamento" in html
+    assert _lancamentos(banco) == []
+    assert [i["quitado"] for i in _itens(banco, protocolo_id)] == [0, 0]
+
+
+def test_o_select_do_lote_esta_no_form_do_botao(cg_casa_logada):
+    """A forma só chega à rota se o select estiver no mesmo formulário."""
+    banco = cg_casa_logada["banco"]
+    protocolo_id = _protocolo(banco, 2)
+    html = cg_casa_logada["c"].get(
+        f"/caixa/protocolos/{protocolo_id}").get_data(as_text=True)
+    form = next(f for f in re.findall(r"<form\b.*?</form>", html, re.S)
+                if 'value="quitar_todos"' in f)
+    assert 'name="forma_pagamento"' in form
+
+
+def test_o_botao_de_um_item_pergunta_a_forma_e_a_grava(cg_casa_logada):
+    """Foi ele quem gravou os lançamentos sem forma do protocolo medido: a
+    auditoria não tem `em_lote`, e o formulário não mandava forma nenhuma."""
+    banco = cg_casa_logada["banco"]
+    protocolo_id = _protocolo(banco, 2)
+    _abrir_caixa(banco)
+    c = cg_casa_logada["c"]
+    tela = f"/caixa/protocolos/{protocolo_id}"
+    html = c.get(tela).get_data(as_text=True)
+    form = next(f for f in re.findall(r"<form\b.*?</form>", html, re.S)
+                if 'value="quitar"' in f)
+    assert 'name="forma_pagamento"' in form
+    item = _itens(banco, protocolo_id)[0]["id"]
+    sem = c.post(f"{tela}/itens",
+                 data={"csrf_token": _token(c, tela), "acao": "quitar",
+                       "item_id": item}, follow_redirects=True)
+    assert "Escolha a forma de pagamento" in sem.get_data(as_text=True)
+    assert _lancamentos(banco) == []
+    c.post(f"{tela}/itens",
+           data={"csrf_token": _token(c, tela), "acao": "quitar",
+                 "item_id": item, "forma_pagamento": "PIX"},
+           follow_redirects=True)
+    assert [l["forma_pagamento"] for l in _lancamentos(banco)] == ["PIX"]
 
 
 # --------------------------------------------------------------- o dinheiro

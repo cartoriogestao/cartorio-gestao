@@ -741,6 +741,8 @@ def test_o_dia_que_ficou_sem_encerrar_e_cobrado_ate_o_proximo(casa):
     depois = PR.roteiro(casa, agora=HOJE + "T18:05:00")
     assert _obrigacao(depois, "dias_sem_encerramento")["situacao"] == PR.FEITO
     assert _obrigacao(depois, "dia_encerrado")["situacao"] == PR.FEITO
+    # E O QUADRO DO ALTO DIZ O MESMO: não há como encerrar um dia passado.
+    assert depois["de_ontem"]["anterior_encerrado"] is True
 
 
 def test_sem_encerramento_nenhum_nao_ha_dia_atrasado(casa):

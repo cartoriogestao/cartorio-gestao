@@ -16,3 +16,7 @@ Reconhecimento de firma e abertura de ficha se fazem no balcao, com a pessoa pre
 Assunto de protesto se trata no balcao. Nao enviamos pelo WhatsApp valor, titulo, CPF nem informacao de protesto. {contato}
 ===OUTROS===
 Recebemos sua mensagem. Um escrevente vai responder por aqui. Para urgencia, ligue. {contato}
+===SAUDACAO===
+Olá! Como posso ajudar?
+===AGRADECIMENTO===
+Por nada! Se precisar, é só escrever.

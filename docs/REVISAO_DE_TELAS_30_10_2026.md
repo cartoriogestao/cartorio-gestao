@@ -61,9 +61,9 @@ guarda as ligações:
 
 | Função | O que faz | Situação |
 |---|---|---|
-| `cnib_api.consultar_por_documento` | «O que pesa sobre este CPF, agora», direto na Central | Sem tela: fala com a Central, espera o oficial |
-| `onr_api.atendimentos` | Lista de pedidos eletrônicos do SAEC | Sem tela: fala com a Central, espera o oficial |
-| `onr_api.interagir_no_atendimento`, `gerar_cobranca` | Responder no SAEC e gerar cobrança | Sem tela: escrevem na Central, só com ordem do oficial |
+| `cnib_api.consultar_por_documento` | «O que pesa sobre este CPF, agora», direto na Central | Tela «CNIB: consultar CPF ou CNPJ», por ordem do oficial |
+| `onr_api.atendimentos` | Lista do atendimento eletrônico do ONR (SAEC) | Tela «ONR: atendimentos do SAEC», por ordem do oficial |
+| `onr_api.interagir_no_atendimento`, `gerar_cobranca` | Responder no SAEC e gerar cobrança | Na mesma tela e em «ONR: cobranças», só para o ADMIN, por ordem do oficial |
 | `ato_selado.atos_sem_cobranca` | Atos com selo que ninguém cobrou | Apagada, por decisão do oficial (abaixo) |
 | `ato_selado.pagamentos_pendentes` | O que cada pessoa selou liberado e não foi pago | Selo e caixa, a cobrança de quem abriu a tela |
 | `papel_seguranca.movimentos_da_folha` | O caminho de uma folha de segurança | Folhas de segurança, busca pelo número |
@@ -95,9 +95,10 @@ retificações, e cada ato ali leva quem lavrou e a folha, que `blocos_do` não 
 
 **O botão do XML manda o que a ficha diz.** Ele cobre as matrículas do período, com o mesmo
 conteúdo da API, e a tela lista a que fica de fora e o motivo. O arquivo inteiro do acervo,
-com a regra da casa de 10/10/2026 (`completar_ficha`, `donos_presumidos`), é outra coisa: foi
-gerado pelo script `FERRAMENTAS/gerar_indicador_real_xml.py`, que ainda lê o banco antigo.
-Levá-lo para a tela depende do oficial, porque o script traz decisões dele escritas à mão.
+com a regra da casa de 10/10/2026 (`completar_ficha`, `donos_presumidos`), é outra coisa: tem
+tela própria desde 30/10/2026, «Indicador Real: o arquivo inteiro», e as decisões que o script
+`FERRAMENTAS/gerar_indicador_real_xml.py` trazia à mão viraram dado de cada serventia, por ordem
+do oficial: «as outras serventias que baixarem o programa precisam do botao».
 
 ## Como repetir
 

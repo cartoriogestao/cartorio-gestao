@@ -44,8 +44,8 @@ import wa_modelos as MODELOS
 import wa_puxar as PUXAR
 import wa_rotina as ROTINA
 import wa_schema as SCH
-import wa_vigia as VIGIA
 from seguranca_web import PRATICA  # M2 (LX11): o AUDITOR vê e não grava
+import wa_vigia as VIGIA
 
 
 #: Quantas enviadas o `/novas` devolve com o estado da entrega (29/10/2026).

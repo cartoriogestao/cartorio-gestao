@@ -7,7 +7,7 @@ por etapas, e cada uma pode ser a última: o sistema continua inteiro em todas.
 |---|---|---|
 | Revisão | Nenhuma tela perdida, as portas que faltavam | `docs/REVISAO_DE_TELAS_30_10_2026.md` |
 | 1. Casca | Barra de módulos, seções, Novo, Ctrl+K, sino, coluna de apoio | Este documento |
-| 2. Ato de Notas | Fases e barra de ação na ficha do ato | A fazer |
+| 2. Ato de Notas | Fases e barra de ação na ficha do ato | Ficha pronta; listas a fazer |
 | 3. Matrícula | Subabas da ficha, novo ato em fases | A fazer |
 | 4. Civil e Protesto | Assento, habilitação, roteiro, dia da CRA | A fazer |
 | 5. Operação | Caixa, protocolo, processos, atendimento | A fazer |
@@ -36,6 +36,31 @@ Em `navegacao.py`, e em nenhum outro lugar:
 
 `tests/test_navegacao_registro.py` cobra tudo isso só lendo o código, e compara o registro
 com o menu antigo, papel por papel, enquanto os dois existirem.
+
+## A ficha em fases
+
+Uma ficha longa vira fases sem mudar de rota nem de formulário, e sem tirar quadro do lugar:
+
+- **O quadro diz a que fase pertence:** `data-fase="teor"` na tag dele. A ordem do HTML continua
+  a de quem está no layout antigo, e a ordem na tela sai de `static/casca.css`.
+- **A conta mora em Python:** `notas_fases.fases_do_ato` diz as fases, o estado de cada uma, onde
+  abrir e o que falta. A rota entrega a função e o molde a chama só no layout novo.
+- **A régua é `templates/_fases.html`, e a troca é `static/fases.js`.** O endereço diz a fase
+  (`#teor`), e depois de gravar a ficha volta à fase em que estava.
+- **Sem JavaScript, a página sai inteira.**
+- **Trava de tela não é regra.** Ela orienta quem está na tela. Quem recusa é o servidor, como antes.
+- **O que se preenche antes de lançar não mora numa fase que só abre depois.** Se o quadro muda
+  de lugar com a situação do ato, quem diz é `lugar_dos_quadros`.
+
+`tests/test_notas_fases.py` cobra que todo quadro tem fase, e `tests/test_ficha_em_fases_web.py`
+compara as duas molduras: toda ação e todo endereço de formulário têm de estar nas duas.
+
+**Duas diferenças em relação ao desenho do projeto, e o motivo:**
+
+- A ata continua com a fase Partes. O desenho a tirava, mas o quadro existe e a CENSEC lê as partes.
+- Marcar «sem imóvel» não tira a DOI da régua. A coluna `com_imovel` nasce 0, e o 0 de quem marcou é
+  igual ao de quem nunca abriu o quadro. Quem tira é o modelo que não transmite imóvel; e a fase
+  Lançar avisa quando a escritura está sem imóvel.
 
 ## O que continua à vista, por ordem do oficial
 

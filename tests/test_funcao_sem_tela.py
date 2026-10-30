@@ -152,10 +152,22 @@ def _orfas() -> dict[str, list[str]]:
 # elas ja eram chamadas como `operacao_sauin` (`ri_ctp`) e `teor_html_doc`
 # (`ri_web`). O varredor e que aprendeu a atravessar `import ... as ...`.
 JA_SABIDAS: frozenset[str] = frozenset({
-    "atos_da", "atos_do_retorno", "atos_sem_cobranca",
+    # `atos_do_retorno` e `exigencias_da_inspecao` SAÍRAM EM 30/10/2026, com as
+    # outras da revisão de telas: ganharam quadro nas telas vizinhas, e
+    # `tests/test_funcoes_com_tela.py` guarda cada uma.
+    #
+    # `atos_sem_cobranca` (e `quantos_do_acervo_ficaram_de_fora`, que a serve)
+    # FICAM, E POR MEDIÇÃO. A tela do par é a de selos do RI, e `ri_atos`,
+    # `ri_certidoes` e `ri_protocolos` não têm `lancamento_id`: a consulta
+    # estouraria e a tela cairia. Nas outras tabelas a coluna só se preenche por
+    # `cobrar`, e o ato pago pelo protocolo sairia como «ninguém cobrou». Qual é a
+    # régua do «cobrado» é decisão do oficial.
+    "atos_da", "atos_sem_cobranca",
     # `atos_sem_selo` SAIU DAQUI EM 14/09/2026: a tela de selos do RI passou
     # a chama-la. Ela era a mais cara desta lista — oito comentarios em sete
     # modulos prometiam ao operador que «o ato sem selo aparece» nela.
+    # `blocos_do` FICA (30/10/2026): a ficha do assento já separa os blocos, com
+    # cada ato levando quem lavrou e a folha, que esta função não traz.
     "quantos_do_acervo_ficaram_de_fora", "blocos_do", "caminhos_da_atribuicao",
     "campos_do_ato", "cib_valido", "claros_restantes", "codigo_da_tabela",
     # `compor_do_assento` SAIU DAQUI EM 03/09/2026, e o varredor foi quem
@@ -164,13 +176,16 @@ JA_SABIDAS: frozenset[str] = frozenset({
     # e-Proclamas. **Nome que deixou de ser orfao sai da lista**, senao ela so
     # cresce e o varredor vira enfeite.
     "conferir_ato", "conferir_declaracao",
+    # `conferir_remessa` FICA (30/10/2026): `protesto_remessa._conferir_lote`
+    # confere título a título pela mesma `CRA.conferir_titulo`, e a tela de conferir
+    # a remessa mostra a falta de cada um. Uma segunda conta diria a mesma coisa.
     "conferir_idade_da_genitora", "conferir_remessa", "conferir_texto",
     # `copy_existing`, `decisoes_da_matricula`, `dv_mod97`, `gerar_cnm` e
     # `registrar_cancelamento` SAIRAM EM 12/10/2026 — já têm caminho até tela.
     "data_da_publicacao",
     "declaracoes_do_ato", "descrever_layout", "devedores_do",
     "endpoints_de",
-    "exigencias_da_inspecao", "face_da", "folha_da",
+    "face_da", "folha_da",
     "inicio_do_prazo", "inutilizar_sobra",
     "larguras_em_mm", "ler_tabela_de_custas", "liberar",
     "lugar_estrangeiro", "maior_citado", "paginas_de",
@@ -216,9 +231,7 @@ NASCIDAS_DEPOIS_DA_3_6_51: dict[str, str] = {
     # destas tres vem quando ele voltar. Constru-las agora seria construir
     # tela para modulo que o balcao nao ve.
     "por_que_nao_esta_completo": "protesto_instrumento — o modulo esta desligado",
-    # AUXILIARES DO CENPROT que a tela nao chama: ela mostra `quantos_sem_chave`
-    # e nao a lista, e le a data pela decomposicao inteira.
-    "titulos_sem_chave": "protesto_cenprot — a tela mostra a CONTAGEM, nao a lista",
+    # `titulos_sem_chave` SAIU EM 30/10/2026: a lista entrou junto da contagem.
     #
     # ------------------------------------------------------------------
     # AS SEIS ABAIXO NAO SAO DESTA NOITE, e duas delas parecem DEFEITO.
@@ -297,8 +310,7 @@ ACHADAS_EM_14_09_2026: dict[str, str] = {
     "escapar_xml": (
         "rc_certidao_inteiro_teor — auxiliar do XML, de outra passada"),
     "linha_data": "rg_teor_rtdpj — auxiliar do teor, de outra passada",
-    "movimentos_da_folha": (
-        "papel_seguranca — leitura por folha, ainda sem tela"),
+    # `movimentos_da_folha` SAIU EM 30/10/2026: a tela do papel procura a folha.
     # **ESTA E DE 14/09 TAMBEM, E DE OUTRA PASSADA** — a do agente do sistema,
     # no mesmo dia. Ela entra aqui pelo mesmo motivo das duas acima: a porta
     # dela e a ABERTURA DO BANCO (`database.init_schema`), e nao uma tela. Ela
@@ -457,13 +469,16 @@ _JS = "porta é JavaScript/blueprint (`modelos_motor_api`), que o varredor não 
 _TOOLS = "a porta é script de `tools/`, e não tela"
 _TESTE = "auxiliar testada; a tela ainda não ligou esta peça"
 _DOMINIAL = "ri_dominial — régua interna da cadeia dominial/vintenária, testada"
-_ONR_XML = "onr_indicador_xml — montador do XML do indicador, testado; sem botão ainda"
+_ONR_XML = ("onr_indicador_xml — a regra da casa do arquivo inteiro do acervo; a porta "
+            "é o script `FERRAMENTAS/gerar_indicador_real_xml.py`, e o botão da "
+            "exportação manda o que a ficha diz")
 _SAEC = "onr_api — operação do contrato SAEC (atendimento/cobrança), testada; sem botão ainda"
 _SEM = "SEM CHAMADOR — nem teste nem script; candidata a apagar (decisão de quem constrói o módulo)"
 ACHADAS_EM_12_10_2026: dict[str, str] = {
     "api_campos": _JS, "api_previa": _JS, "api_trechos_bloqueados": _JS,
-    "arquivo_xml": _ONR_XML, "ato_entra": _ONR_XML, "completar_ficha": _ONR_XML,
-    "donos_presumidos": _ONR_XML, "indicador_em_xml": _ONR_XML,
+    # `arquivo_xml`, `ato_entra` e `indicador_em_xml` SAÍRAM EM 30/10/2026: o botão
+    # «Indicador Real (.XML)» da exportação para o ONR.
+    "completar_ficha": _ONR_XML, "donos_presumidos": _ONR_XML,
     # `cobranca` e `mensagem_documento_invalido` SAÍRAM em 20/10/2026 (LX22B2),
     # porque o varredor já as alcança. A segunda tem porta de verdade: o erro de
     # documento da apostila e das Notas (`apostila.py`, `nt_publica_forma.py`,
@@ -486,7 +501,7 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     "claros_documento": "notas_atas_ensaio/notas_procuracao_ensaio — " + _SEM,
     "dias_selecionados_do_row": "nu_avisos_gestao — " + _SEM,
     "nome_ou_login_indica_robo": "selo_robo — " + _SEM,
-    "pendentes_onr": "ri_digitalizacao — " + _SEM,
+    # `pendentes_onr` SAIU EM 30/10/2026: a exportação para o ONR mostra a lista.
     "host_da_serventia": "selador_config — " + _SEM + " (só a própria base_sugerida a chama)",
     "base_sugerida": "selador_config — " + _TESTE,
     "buscar_duplicatas_por_documento": "cpf_cnpj — " + _TESTE,
@@ -701,7 +716,8 @@ ACHADAS_EM_26_10_2026: dict[str, str] = {
     # não deve ganhar botão — certidão emitida não se remonta no balcão.
     "remontar_corpo_gravado": ("ri_certidao_emissao — só o roteiro de ensaio do "
                                "SANDBOX a chama; não deve ganhar tela"),
-    "pagamentos_pendentes": "ato_selado — " + _TESTE,
+    # `pagamentos_pendentes` SAIU EM 30/10/2026: «Selo e caixa» mostra a cobrança
+    # de quem abriu a tela, que é para onde a barra vermelha manda.
     "certidao_livro3_teor_precisa_modelo_novo": "atrib_certidao — " + _TESTE,
     "remontar_teor_certidao_livro3": "atrib_certidao — " + _TESTE,
     "novo_caminho": "pastas_da_casa — " + _TESTE,

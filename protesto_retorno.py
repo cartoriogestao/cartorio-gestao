@@ -1527,10 +1527,14 @@ def listar(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
 
 
 def atos_do_retorno(con: sqlite3.Connection, retorno_id: int) -> list[dict]:
-    """Que atos entraram naquele retorno. So LE."""
+    """Que atos entraram naquele retorno. So LE.
+
+    O ato desfeito depois continua na lista, e `cancelado` o marca: ele foi no
+    arquivo, e a Central o ouviu.
+    """
     return banco(con).ler(
-        """SELECT a.id ato_id, a.tipo, a.data_ato, t.numero_titulo,
-                  t.nosso_numero, t.protocolo, t.saldo_centavos
+        """SELECT a.id ato_id, a.titulo_id, a.tipo, a.data_ato, a.cancelado,
+                  t.numero_titulo, t.nosso_numero, t.protocolo, t.saldo_centavos
              FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
             WHERE a.retorno_id = %s ORDER BY a.id""", (int(retorno_id),))
 

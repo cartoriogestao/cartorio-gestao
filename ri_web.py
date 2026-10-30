@@ -46,6 +46,8 @@ from caixa_schema import centavos, reais
 import notas_doi as NDOI
 import ri_doi as RDOI
 import onr_carga as OCG
+import onr_indicador_xml as ONRXML
+import ri_onr_central as ONRC
 import ri_fichas_do_disco as RFD
 import ri_imagens as RIMG
 import ri_digitalizacao as RDIGI
@@ -8503,15 +8505,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if tipo == "PESSOAL":
                 conteudo = gerar_indicador_pessoal([dict(v) for v in vinculos], cns)
                 mime = "application/xml"
+                registros = len(vinculos)
+            elif tipo == "REAL_XML":
+                # O MESMO CORPO DA API, EM XML (`onr_indicador_xml`). Só vai a ficha
+                # completa; a tela diz, antes do clique, qual fica de fora e por quê.
+                with db.connect() as con:
+                    corpos = ONRC.corpos_para_o_arquivo(
+                        con, [dict(m) for m in matriculas], cns=cns)["corpos"]
+                if not corpos:
+                    flash("Nenhuma matrícula deste período está completa para o "
+                          "arquivo. A tela diz o que falta em cada uma.", "warning")
+                    return redirect(url_for("ri_onr", inicio=inicio, fim=fim))
+                try:
+                    conteudo = ONRXML.arquivo_xml(corpos)
+                except ValueError as erro:
+                    flash(f"{erro} Escolha um período menor.", "danger")
+                    return redirect(url_for("ri_onr", inicio=inicio, fim=fim))
+                mime = "application/xml"
+                registros = len(corpos)
             else:
                 conteudo = gerar_indicador_real([dict(m) for m in matriculas], cns)
                 mime = "application/json"
+                registros = len(matriculas)
 
             arquivo = nome_arquivo(tipo, d1, d2)
             audit("RI_ONR_EXPORTADO", "RI_ONR", None,
                   {"tipo": tipo, "inicio": inicio, "fim": fim,
-                   "registros": len(vinculos) if tipo == "PESSOAL" else len(matriculas),
-                   "arquivo": arquivo})
+                   "registros": registros, "arquivo": arquivo})
             return Response(conteudo.encode("utf-8"), mimetype=mime,
                             headers={"Content-Disposition":
                                      f'attachment; filename="{arquivo}"'})
@@ -8519,9 +8539,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # Conferência antes de gerar: o que sairia com documento desconhecido.
         sem_doc = sum(1 for v in vinculos
                       if len(so_digitos(v["documento"])) not in (11, 14))
+        # O QUE O XML LEVARIA, antes do clique, e a digitalização nova que o ONR
+        # ainda não tem (revisão de telas, 30/10/2026). Da lista, um a mais que o
+        # limite: é assim que a tela sabe que ficou matrícula de fora, e diz.
+        limite_pendentes = 200
+        with db.connect() as con:
+            real_xml = ONRC.corpos_para_o_arquivo(
+                con, [dict(m) for m in matriculas], cns=cns)
+            pendentes = RDIGI.pendentes_onr(con, limite=limite_pendentes + 1)
         return render_template("ri_onr.html", inicio=inicio, fim=fim, cns=cns,
                                vinculos=vinculos, matriculas=matriculas,
-                               sem_doc=sem_doc, TIPOS=TIPO_IMOVEL_ONR)
+                               sem_doc=sem_doc, TIPOS=TIPO_IMOVEL_ONR,
+                               real_xml=real_xml,
+                               pendentes_onr=pendentes[:limite_pendentes],
+                               pendentes_cortadas=len(pendentes) > limite_pendentes)
 
     # ------------------------------- a carga do Next Cloud SAS (modalidade b)
     #

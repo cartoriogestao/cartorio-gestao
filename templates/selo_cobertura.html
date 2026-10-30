@@ -27,6 +27,30 @@
   {% if quadro.pode_selar %}<p><strong>Tudo certo:</strong> volte ao ato e peça o selo de novo.</p>{% endif %}
 </section>
 
+{# O QUE VOCÊ SELOU LIBERADO E AINDA NÃO FOI PAGO (revisão de telas, 30/10/2026). A
+   barra vermelha manda para cá, e a tela não dizia quais selos. A lista vem de
+   `ato_selado.pagamentos_pendentes`; a barra usa a conta barata, e um teste segura
+   as duas juntas. #}
+<section class="card" id="a-pagar">
+  {% if a_pagar %}
+  <h2>Selos liberados que você obteve, ainda sem pagamento no caixa — {{ a_pagar|length }}</h2>
+  <p><small>O oficial liberou estes selos sem pagamento, e a cobrança continua com quem obteve o selo. Abra o ato para ver o que falta e registrar o pagamento no caixa.</small></p>
+  <table>
+    <thead><tr><th>Ato</th><th>Selo</th><th>Liberado por</th><th>Justificativa</th></tr></thead>
+    <tbody>
+    {% for l in a_pagar %}
+      <tr><td><a href="{{ url_for('selo_cobertura', tabela=l.tabela, ato_id=l.ato_id) }}">{{ l.rotulo }} {{ l.ato_id }}</a></td>
+          <td>{{ l.selos|join(', ') }}</td>
+          <td>{{ l.liberado_por or '' }} em {{ fmt_date(l.liberado_em) }}</td>
+          <td>{{ l.justificativa }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p><small>Nenhum selo liberado seu está sem pagamento.</small></p>
+  {% endif %}
+</section>
+
 {% if pedidos %}
 <section class="card">
   {# Os protocolos pagos da atribuição do ato — 22/10/2026. O escrevente

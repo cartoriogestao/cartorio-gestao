@@ -93,6 +93,33 @@
   {% endif %}
 {% endfor %}
 
+{# O QUE A INSPEÇÃO COBRA, SÉRIE POR SÉRIE (revisão de telas, 30/10/2026). É lista de
+   conferência, e não pendência: vem recolhida, e não empurra os livros para baixo. #}
+<section class="panel">
+  <div class="panel-head">
+    <span>O que a inspeção cobra de cada livro</span>
+    <small>{{ exigencias | length }} série(s)</small>
+  </div>
+  {% if exigencias %}
+  <details style="padding:0 14px 14px">
+    <summary>Ver a lista, série por série</summary>
+    <table class="table">
+      <thead><tr><th>Série</th><th>O que a inspeção cobra</th></tr></thead>
+      <tbody>
+        {% for codigo, itens in exigencias.items() %}
+        <tr>
+          <td><strong>{{ series[codigo].nome }}</strong></td>
+          <td><ul style="margin:0;padding-left:18px">{% for item in itens %}<li><small>{{ item }}</small></li>{% endfor %}</ul></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% else %}
+  <p style="padding:14px"><small>Nenhuma exigência registrada.</small></p>
+  {% endif %}
+</section>
+
 <section class="panel">
   <div class="panel-head">
     <span>Livros encerrados</span>

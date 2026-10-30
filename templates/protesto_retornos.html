@@ -314,7 +314,22 @@
         </td>
         <td>{{ g.apresentante_codigo }}<div><small>{{ g.apresentante_nome or '—' }}</small></div></td>
         <td>{{ g.dia }}</td>
-        <td>{{ g.titulos }}</td>
+        <td>{{ g.titulos }}
+          {# QUE ATOS ENTRARAM NESTE ARQUIVO (revisão de telas, 30/10/2026): é a
+             primeira pergunta quando a Central reclama de um título. #}
+          {% if g.atos_do_arquivo %}
+          <details>
+            <summary><small>{{ g.atos_do_arquivo | length }} ato(s)</small></summary>
+            {% for a in g.atos_do_arquivo %}
+            <div><small><a href="{{ url_for('protesto_titulo', titulo_id=a.titulo_id) }}">{{ a.numero_titulo }}</a>
+              · {{ a.tipo }} · {{ a.data_ato }}{% if a.protocolo %} · protocolo {{ a.protocolo }}{% endif %}
+              {% if a.cancelado %}· <span class="danger">desfeito depois</span>{% endif %}</small></div>
+            {% endfor %}
+          </details>
+          {% else %}
+          <div><small>{% if g.tipo == 'SDTBFOCRT' %}a confirmação não leva ato{% else %}nenhum ato ligado a este arquivo{% endif %}</small></div>
+          {% endif %}
+        </td>
         <td>R$ {{ g.soma_centavos | centavos_reais }}</td>
         <td><small>{{ g.gerado_em }}<br>{{ g.gerado_por or '—' }}</small></td>
         <td>

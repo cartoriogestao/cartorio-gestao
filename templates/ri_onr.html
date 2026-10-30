@@ -10,6 +10,8 @@
   O formato destes arquivos foi levantado <strong>dos envios que esta serventia já fez</strong>,
   encontrados na pasta do sistema antigo — não de documentação inferida. O ONR trocou a
   especificação antiga em XML por modelos em JSON, e o Indicador Real já sai no formato novo.
+  O <strong>Indicador Real (.XML)</strong> é a exceção: segue o modelo do manual do ONR para
+  o envio por arquivo, e ainda não foi conferido por uma resposta dele.
 </div>
 
 <div class="notice warning">
@@ -60,7 +62,63 @@
         Indicador Real (.json)</button>
       <div class="small muted">{{ matriculas|length }} matrícula(s) — formato novo do ONR</div>
     </form>
+    {# O INDICADOR REAL EM XML (revisão de telas, 30/10/2026): o conteúdo é o que iria
+       pela API, no modelo de arquivo do manual do ONR. Só vai a ficha completa. #}
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="inicio" value="{{ inicio }}">
+      <input type="hidden" name="fim" value="{{ fim }}">
+      <input type="hidden" name="tipo" value="REAL_XML">
+      <button class="primary" {% if not real_xml.corpos %}disabled{% endif %}>
+        Indicador Real (.XML)</button>
+      <div class="small muted">{{ real_xml.corpos|length }} de {{ matriculas|length }} matrícula(s) — modelo de arquivo do manual do ONR</div>
+    </form>
   </div>
+  {% if real_xml.de_fora %}
+  <details style="padding:0 14px 14px">
+    <summary>Fora do Indicador Real (.XML) — {{ real_xml.de_fora|length }}</summary>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Matrícula</th><th>Por que fica de fora</th></tr></thead>
+      <tbody>{% for f in real_xml.de_fora %}
+        <tr><td><a href="{{ url_for('ri_onr_indicador', matricula_id=f.id) }}">{{ f.numero }}</a></td>
+            <td class="small">{% for motivo in f.motivos %}<div>{{ motivo }}</div>{% endfor %}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </details>
+  {% endif %}
+</section>
+
+{# A DIGITALIZAÇÃO NOVA QUE O ONR AINDA NÃO TEM (revisão de telas, 30/10/2026). Sem
+   janela de data: a imagem de março que não foi continua sem ir em setembro. #}
+<section class="panel">
+  <div class="panel-head">
+    <span>Digitalização nova ainda não enviada ao ONR</span>
+    <small>{{ pendentes_onr|length }}{% if pendentes_cortadas %} ou mais{% endif %} matrícula(s)</small>
+  </div>
+  {% if pendentes_onr %}
+  <details style="padding:0 14px 14px">
+    <summary>Ver as matrículas</summary>
+    <p class="small muted">
+      A rotina diária das cargas leva a imagem para a pasta que o programa do ONR lê. A
+      matrícula sai desta lista depois disso, quando esse programa já estiver lendo a
+      pasta. Nada aqui envia.
+    </p>
+    {% if pendentes_cortadas %}
+    <p class="small"><strong>A lista mostra só as {{ pendentes_onr|length }} mais recentes.</strong></p>
+    {% endif %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Matrícula</th><th>Arquivo</th><th>Digitalizada em</th><th>Por</th></tr></thead>
+      <tbody>{% for p in pendentes_onr %}
+        <tr><td><a href="{{ url_for('ri_ficha', matricula_id=p.id) }}">{{ p.numero }}</a></td>
+            <td class="small">{{ p.digi_nome or '—' }}</td>
+            <td>{{ fmt_date(p.digi_em) }}</td>
+            <td class="small">{{ p.digi_por or '—' }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </details>
+  {% else %}
+  <p class="small muted">Nenhuma matrícula com digitalização nova esperando o ONR.</p>
+  {% endif %}
 </section>
 
 {% if vinculos %}

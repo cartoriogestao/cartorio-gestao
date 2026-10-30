@@ -157,6 +157,52 @@
 </section>
 {% endif %}
 
+{# O CAMINHO DE UMA FOLHA (revisão de telas, 30/10/2026): em que atos ela esteve, e
+   quem a devolveu. A situação de hoje vem junto porque a inutilização e o uso
+   trazido do sistema antigo não deixam movimento, e a lista sozinha diria «nada». #}
+<section class="panel" id="caminho">
+  <div class="panel-head">
+    <span>O caminho de uma folha</span>
+    <small>onde ela esteve, e quem a devolveu</small>
+  </div>
+  <form method="get" action="{{ url_for('rcpn_papel') }}#caminho" class="actions" style="padding:8px 14px">
+    <input name="folha" value="{{ procurada }}" maxlength="40" style="min-width:320px"
+           placeholder="o número impresso na folha, com ou sem a série">
+    <button class="button">Procurar a folha</button>
+    {% if procurada %}<a class="button" href="{{ url_for('rcpn_papel') }}#caminho">Limpar</a>{% endif %}
+  </form>
+  {% if procurada and not folha %}
+  <p style="padding:0 14px 14px"><small>A folha «{{ procurada }}» não está no estoque. Confira o número impresso.</small></p>
+  {% elif folha %}
+  <p style="padding:0 14px 8px"><small>
+    Folha <strong>{% if folha.serie %}{{ folha.serie }} {% endif %}{{ folha.codigo }}</strong>:
+    {% if folha.situacao == 'USADA' %}usada{% if folha.usada_em %} em {{ folha.usada_em[:16]|replace('T',' ') }}{% endif %}{% if folha.usada_por %}, por {{ folha.usada_por }}{% endif %}.
+      <a href="{{ url_for('rcpn_papel', q=folha.codigo) }}#usadas">Ver o assento</a>
+    {% elif folha.situacao == 'INUTILIZADA' %}inutilizada{% if folha.inutilizada_em %} em {{ folha.inutilizada_em[:16]|replace('T',' ') }}{% endif %}{% if folha.inutilizada_por %}, por {{ folha.inutilizada_por }}{% endif %}: {{ folha.inutilizada_motivo or 'sem motivo escrito' }}.
+    {% else %}em branco, no estoque.{% endif %}
+  </small></p>
+  {% if caminho %}
+  <table class="table">
+    <thead><tr><th>Quando</th><th>O que houve</th><th>No ato</th><th>Selo</th><th>Por quê</th><th>Quem</th></tr></thead>
+    <tbody>
+    {% for m in caminho %}
+      <tr>
+        <td><small>{{ (m.ocorrido_em or '')[:16]|replace('T',' ') }}</small></td>
+        <td>{% if m.situacao_nova == 'EM BRANCO' %}voltou ao estoque{% elif m.situacao_anterior == 'USADA' %}ligada a outro ato{% else %}usada{% endif %}</td>
+        <td><small>{% if m.tabela == 'rc_atos' %}registro{% elif m.tabela == 'rc_certidoes' %}certidão{% elif m.tabela %}outro ato{% endif %}{% if m.ato_id %} nº {{ m.ato_id }}{% endif %}</small></td>
+        <td><small>{{ m.selo or '-' }}</small></td>
+        <td><small>{{ m.motivo or '-' }}</small></td>
+        <td><small>{{ m.ocorrido_por or '-' }}</small></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="padding:0 14px 14px"><small>{% if folha.situacao == 'USADA' %}Nenhum movimento registrado: o uso desta folha é anterior a este registro.{% else %}Esta folha não passou por nenhum ato.{% endif %}</small></p>
+  {% endif %}
+  {% endif %}
+</section>
+
 {# FICHA_FOLHA_SEGURANCA_20261009: com o registrado e o assento (link para a
    ficha), da mais recente, com busca e paginas. #}
 <section class="panel" id="usadas">

@@ -113,7 +113,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         atrasados = {s: d for s, d in atrasados.items() if d}
         return render_template("nucleo_livros.html", linhas=linhas,
                                atribuicoes=AT.ATRIBUICOES, fechados=fechados,
-                               atrasados=atrasados, series=LN.SERIES)
+                               atrasados=atrasados, series=LN.SERIES,
+                               exigencias=LN.exigencias_da_inspecao())
 
     @app.route("/nucleo/livros/abrir", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")

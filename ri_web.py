@@ -46,6 +46,7 @@ from caixa_schema import centavos, reais
 import notas_doi as NDOI
 import navegacao_web as NAVWEB
 import ri_abas as RIABAS
+import ri_fases_prenotacao as RIFASESP
 import ri_doi as RDOI
 import onr_carga as OCG
 import ri_fichas_do_disco as RFD
@@ -3517,7 +3518,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # O QUE ESTE TÍTULO JÁ DISSE AO ONR (Acompanhamento de Títulos) — só lê.
         with db.connect() as _ac:
             acompanhamento_onr = ACOMP.da_prenotacao(_ac, protocolo_id)
+        def fases_da_ficha() -> dict:
+            """A régua do layout novo. Só ele chama."""
+            return RIFASESP.fases_da_prenotacao(
+                dict(p), documentos=documentos, notas=notas, qualificacoes=qualificacoes,
+                historico=historico, depositos=depositos,
+                tem_onr=bool(acompanhamento_onr and acompanhamento_onr.get("eventos")))
+
         return render_template("ri_protocolo_ver.html", p=dict(p),
+                               fases_da_ficha=fases_da_ficha,
                                acompanhamento_onr=acompanhamento_onr,
                                documentos=documentos, e_imagem=RDOC.e_imagem,
                                docs_protocolo_geral=docs_protocolo_geral,

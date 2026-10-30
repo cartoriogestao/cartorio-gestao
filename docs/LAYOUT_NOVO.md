@@ -59,6 +59,10 @@ compara as duas molduras: toda ação e todo endereço de formulário têm de es
 `tests/test_ri_abas.py`, `tests/test_ficha_matricula_web.py`). Ela é um registro vivo, sem ordem
 própria: a régua não numera nem trava, e abre no Resumo, que começa pelo que espera ação.
 
+**A prenotação também** (`ri_fases_prenotacao.py`): Título, Emolumentos e Qualificação, com o prazo no
+título da página. Registro e Entrega, que estavam no desenho, não viraram fases: esta tela não tem esses
+quadros, porque o registro é lavrado na matrícula, e ela leva até lá.
+
 **Duas diferenças em relação ao desenho do projeto, e o motivo:**
 
 - A ata continua com a fase Partes. O desenho a tirava, mas o quadro existe e a CENSEC lê as partes.

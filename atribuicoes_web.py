@@ -12182,8 +12182,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
         O LOTE NÃO SELA E NÃO COBRA — a mesma regra da remessa, e pelo mesmo
         motivo: vinte selos são vinte chamadas de rede de 20 s, e segurá-las
-        aqui poria toda a casa no `busy_timeout`. Eles aparecem em *atos sem
-        selo* e sem selo e sem cobrança, e selar e cobrar é na ficha de cada título.
+        aqui poria toda a casa no `busy_timeout`. Eles saem sem selo e sem
+        cobrança, e selar e cobrar é na ficha de cada título.
 
         E UM QUE FALHA NÃO DERRUBA OS OUTROS: cada título é lavrado na sua
         própria transação. Protesto lavrado é protesto lavrado; desfazer

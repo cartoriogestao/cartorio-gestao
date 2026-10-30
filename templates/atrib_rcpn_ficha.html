@@ -50,7 +50,7 @@
 </section>
 {% endif %}
 
-<section class="panel" data-fase="assento">
+<section class="panel cg-lado-largo" data-fase="assento">
   <div class="panel-head"><span>O assento</span><small>{{ assento.situacao }}</small></div>
   <table class="table">
     <tr><th>Espécie</th><td>{{ assento.especie }}</td>
@@ -138,7 +138,7 @@
 {% endif %}
 
 {% if assento.situacao == 'ATIVO' %}
-<section class="panel" data-fase="assento">
+<section class="panel cg-lado-largo" data-fase="assento">
   <div class="panel-head"><span>Lançar no assento</span><small>uma tela para cada ato</small></div>
   <p style="padding:14px 14px 0"><small>
     Os três são coisas juridicamente diferentes: a <strong>averbação</strong> altera o
@@ -321,7 +321,7 @@
 
 {# ------------------------------------------- as pessoas do assento #}
 {% if abas %}<span class="cg-ancora" id="filiacao"></span>{% endif %}
-<section class="panel" data-fase="filiacao">
+<section class="panel cg-lado-largo" data-fase="filiacao">
   <div class="panel-head">
     <span>Filiação e avoenga</span>
     <small>{{ pessoas | length }} pessoa(s)</small>
@@ -702,7 +702,7 @@
 {% endif %}
 
 {% if dados %}
-<section class="panel" data-fase="filiacao">
+<section class="panel cg-lado-largo" data-fase="filiacao">
   <div class="panel-head">
     <span>O que é próprio desta espécie</span>
     <small>{{ dados | length }} campo(s) do acervo</small>

@@ -200,6 +200,7 @@
 .cg-ficha>.grid2:has(>[data-fase][hidden]){grid-template-columns:minmax(0,1fr)}
 .cg-esperando>[data-fase]{display:none}
 .cg-ancora{display:block;height:0}
+.cg-ficha>.cg-ancora{flex:0 0 0;width:0;margin-right:-12px}
 .cg-so-leitor{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .cg-ficha .panel{padding:14px;margin-bottom:12px}
 .cg-ato-cabeca.panel{padding:6px 14px;margin-bottom:8px}
@@ -211,6 +212,8 @@
 .cg-ficha .filters button{white-space:nowrap;flex:none}
 .cg-ficha label.check{display:flex;align-items:center;gap:8px}
 .cg-ficha label.check input[type=checkbox]{min-height:0;width:16px;height:16px;margin:0;padding:0;flex:none}
+.cg-corpo label[style*="flex"]>input[type=checkbox]{min-height:0;width:16px;height:16px;margin:2px 0 0;padding:0;flex:none}
+.cg-corpo .form-grid>button{justify-self:start}
 .cg-ficha .inline-form{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0}
 .cg-ficha .inline-form input,.cg-ficha .inline-form select{flex:1 1 130px;width:auto;min-width:0;min-height:30px;padding:4px 8px;font-size:13px}
 .cg-ficha .inline-form input[type=checkbox]{flex:none;width:16px;height:16px;min-height:0}
@@ -270,3 +273,14 @@
 .cg-corpo [data-passo][hidden],.cg-passos-fim[hidden],.cg-passos-fim [hidden]{display:none!important}
 .cg-passo-bloco{grid-column:1/-1;min-width:0}
 .cg-passos-fim{display:flex;justify-content:flex-end;gap:8px;border-top:1px solid #e3e7ec;padding-top:10px}
+
+/* OS MONITORES DO BALCÃO SÃO FULL HD (o oficial, 30/10/2026). Com a largura sobrando, os campos
+   cabem em três colunas e alguns quadros ficam lado a lado. Abaixo disso, nada muda. A grade só
+   passa a três se tiver três campos à vista, porque com dois sobraria uma coluna vazia, e não
+   passa se tiver quadro dentro ou se já estiver em meia largura. */
+@media (min-width:1600px){
+.cg-corpo :is(.grid2,.form-grid):has(>:not([type=hidden],[hidden],.span2)~:not([type=hidden],[hidden],.span2)~:not([type=hidden],[hidden],.span2)):not(:has(>.panel,>.cg-passo-bloco)):not(.cg-ato-cabeca *,.cg-lado *,.cg-lado-largo *,.cra-api *,.pagina-configuracoes *){grid-template-columns:repeat(3,minmax(0,1fr))}
+.cg-ficha>.cg-lado-largo{flex:1 1 calc(50% - 6px)}
+.cg-lista-larga{column-count:2;column-gap:32px}
+.cg-lista-larga>li{break-inside:avoid}
+}

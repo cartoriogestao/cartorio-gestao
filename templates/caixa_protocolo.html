@@ -73,7 +73,7 @@
 {% endif %}
 
 {% if abas %}<span class="cg-ancora" id="dados"></span>{% endif %}
-<section class="panel" data-fase="dados">
+<section class="panel cg-lado-largo" data-fase="dados">
   <div class="panel-head"><span>{{ SITUACOES.get(p.situacao, p.situacao) }}</span>
     <span class="small muted">{{ p.atribuicao }}</span></div>
   <div class="grid2" style="padding:14px">
@@ -349,7 +349,7 @@
   <div class="stat"><strong>{{ atos|selectattr('quitado')|list|length }}/{{ atos|length }}</strong><small>itens quitados</small></div>
 </section>
 
-<section class="panel" data-fase="itens">
+<section class="panel cg-lado-largo" data-fase="itens">
   <div class="panel-head"><span>Itens e quitação</span>
     {# QUITAR TUDO COM UM BOTÃO SÓ — RELATO #52 do oficial.
 
@@ -455,7 +455,7 @@
   {% endif %}
 </section>
 
-<section class="panel" id="acrescentar-item" data-fase="itens">
+<section class="panel cg-lado-largo" id="acrescentar-item" data-fase="itens">
   <div class="panel-head"><span>Acrescentar item pela tabela</span></div>
   <div style="padding:14px">
     {# A BUSCA — RELATO #53.
@@ -527,7 +527,7 @@
   </div>
 </section>
 
-<section class="panel" data-fase="dados">
+<section class="panel cg-lado-largo" data-fase="dados">
   <div class="panel-head"><span>Corrigir contato</span></div>
   <form method="post" class="grid2" style="padding:14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

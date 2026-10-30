@@ -96,6 +96,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         if "cg_layout" not in g:
             g.cg_layout = layout_de(db, uid)
         return {"layout_novo": g.cg_layout == "novo",
+                "timbre_na_tela": g.cg_layout != "novo" or request.endpoint in NAV.TELAS_COM_TIMBRE,
                 "layout_padrao_da_casa": db.get_setting(CHAVE_PADRAO, PADRAO_DE_FABRICA),
                 "nav_da_tela": nav_da_tela, "portas_de_lavrar": portas_de_lavrar,
                 "protocolo_em_atendimento": _em_atendimento}

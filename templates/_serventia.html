@@ -1,6 +1,9 @@
 {# Identificacao da serventia. Aparece no caixa, no protocolo geral e na
    prenotacao — as telas cujo papel sai do cartorio com o cliente, e onde o
    balcao precisa conferir o timbre antes de imprimir. #}
+{# NO LAYOUT NOVO, SÓ NAS TELAS DE ORIGEM — decisão do oficial, 30/10/2026: `navegacao.TELAS_COM_TIMBRE`.
+   O layout antigo e o papel impresso não mudam. #}
+{% if timbre_na_tela is not defined or timbre_na_tela %}
 <section class="panel" style="margin-bottom:12px">
   <div style="padding:10px 14px;text-align:center;line-height:1.45">
     <strong>{{ sv.unit_name }}</strong><br>
@@ -11,3 +14,4 @@
     {% if sv.serventia_email %}<span class="small muted"> &middot; {{ sv.serventia_email }}</span>{% endif %}
   </div>
 </section>
+{% endif %}

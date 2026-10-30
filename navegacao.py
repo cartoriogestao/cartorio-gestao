@@ -26,6 +26,12 @@ TODOS: tuple[str, ...] | None = None
 AMU = ("ADMIN", "MANAGER", "USER")
 AM = ("ADMIN", "MANAGER")
 AMA = ("ADMIN", "MANAGER", "AUDITOR")
+
+# O TIMBRE NA TELA — decisão do oficial, 30/10/2026. O quadro da serventia nasceu para conferir o
+# timbre antes de imprimir, no caixa, no protocolo geral e na prenotação, e chegou a 89 telas. No
+# layout novo ele fica nessas, e na certidão de notificação, que se imprime pelo navegador.
+TELAS_COM_TIMBRE = frozenset({"caixa", "caixa_protocolos", "caixa_protocolo", "ri_protocolo",
+                              "rcpj_rtd_notificacao_certidao_ver"})
 A = ("ADMIN",)
 AA = ("ADMIN", "AUDITOR")
 QUATRO = ("ADMIN", "MANAGER", "USER", "AUDITOR")

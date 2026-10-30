@@ -27,6 +27,9 @@ from test_wa_atendente import (AGORA, CHEGOU, SENHA, TEXTO_BASE, Graph, Modelo, 
                                _entrada, _entrar, _ler, _sem_rede, _token, _um, casa, portal)
 
 CPF = "123.456.789-00"
+SAUDACAO = ("Olá! Sobre qual assunto você precisa de atendimento: certidões, registro de imóveis, "
+            "registro civil (nascimento, casamento, óbito), escrituras e procurações, protesto, "
+            "ou empresas e contratos?")
 DUVIDA = {"acao": "responder", "tipo": "duvida", "setor": "ATENDIMENTO",
           "resposta": "Atendemos de segunda a sexta, das 8 às 17 horas."}
 PERGUNTA = {"acao": "perguntar", "resposta": "Qual serviço você precisa?", "setor": "ATENDIMENTO"}
@@ -93,11 +96,26 @@ def test_bom_dia_nao_chama_a_ia_nem_pessoa_e_recebe_a_frase_pronta(casa):
     cid = _entrada(db, "bom dia", meta_id="wamid.c1")
     modelo, graph = _rodar(casa)
     assert modelo.chamadas == []
-    assert _texto(graph) == "Olá! Como posso ajudar?"
+    assert _texto(graph) == SAUDACAO
     c = _conversa(db, cid)
     assert (c["modo"] or SCH.MODO_IA) == SCH.MODO_IA and not c["sugestao"]
     assert _registros(db, cid)[0]["caso"] == AT.CASO_CORTESIA
     assert _alerta(db) == 0
+
+
+def test_depois_da_saudacao_escrituras_define_o_setor_notas(casa):
+    db = casa["db"]
+    _cfg(db)
+    cid = _entrada(db, "bom dia", meta_id="wamid.c-menu1")
+    _, graph = _rodar(casa)
+    assert "escrituras e procurações" in _texto(graph)
+    assert not _conversa(db, cid)["setor"], "a saudação não escolhe setor"
+    _entrada(db, "escrituras", meta_id="wamid.c-menu2", quando=AGORA)
+    assert _conversa(db, cid)["setor"] == "NOTAS"
+    modelo, _ = _rodar(casa, Modelo({"acao": "encaminhar", "razao": "fora_do_texto_base"}))
+    assert len(modelo.chamadas) == 1, "a resposta do menu não é cortesia"
+    assert SAUDACAO not in _subiu(modelo), "a saudação sai como aviso e não sobe"
+    assert _conversa(db, cid)["setor"] == "NOTAS"
 
 
 def test_o_agradecimento_responde_uma_vez_e_nao_entra_no_alerta(casa):

@@ -17,6 +17,6 @@ Assunto de protesto se trata no balcao. Nao enviamos pelo WhatsApp valor, titulo
 ===OUTROS===
 Recebemos sua mensagem. Um escrevente vai responder por aqui. Para urgencia, ligue. {contato}
 ===SAUDACAO===
-Olá! Como posso ajudar?
+Olá! Sobre qual assunto você precisa de atendimento: certidões, registro de imóveis, registro civil (nascimento, casamento, óbito), escrituras e procurações, protesto, ou empresas e contratos?
 ===AGRADECIMENTO===
 Por nada! Se precisar, é só escrever.

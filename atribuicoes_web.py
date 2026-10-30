@@ -14940,14 +14940,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @app.route("/protesto/instrumentos/assinar-lote", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def protesto_instrumentos_assinar_lote():
-        """Assina com o A3 os instrumentos MARCADOS, um depois do outro.
-        ESCREVE.
+        """Assina com o A3 os instrumentos MARCADOS, todos de uma vez. ESCREVE.
 
-        **UM CLIQUE, E UMA JANELA DO TOKEN POR INSTRUMENTO** — medido no
-        código em 29/10/2026 (ver `PI.assinar_lote`): o serviço local assina
-        um PDF por chamada, num processo novo, e o PIN é pedido pela janela do
-        próprio token; o sistema não o vê e não o guarda. E o lote PARA na
-        primeira falha do token: PIN errado em sequência bloqueia o A3.
+        30/10/2026: os PDFs vão juntos ao serviço local, num único processo,
+        para o token não pedir o PIN a cada um; a regra mora em
+        `PI.assinar_lote`. O PIN é pedido pela janela do próprio token, e o
+        sistema não o vê e não o guarda. O lote PARA na primeira falha do token
+        (PIN errado em sequência bloqueia o A3), e o que já foi assinado fica.
         """
         escolhidos = [n for n in (numero_digitado(x)
                                   for x in request.form.getlist("instrumento_id"))
@@ -14955,7 +14954,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         volta = destino_interno(request.form.get("voltar"),
                                 url_for("protesto_instrumentos"))
         try:
-            r = PI.assinar_lote(escolhidos, _assinar_um_instrumento)
+            r = PI.assinar_lote(escolhidos,
+                                preparar=_pdf_do_instrumento_a_assinar,
+                                assinar_varios=_assinar_varios_no_a3,
+                                guardar=_guardar_instrumento_assinado,
+                                assinar_um=_assinar_um_instrumento)
         except PI.InstrumentoError as erro:
             flash(str(erro), "warning")
             return redirect(volta)
@@ -14967,6 +14970,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             numeros = ", ".join(f"{f['numero']}/{f['ano']}" for f in r["feitos"])
             flash(f"{len(r['feitos'])} instrumento(s) assinado(s): {numeros}.",
                   "success")
+        if r["aviso"]:
+            flash(r["aviso"], "warning")
         for falha in r["falharam"]:
             flash(f"Instrumento (id {falha['instrumento_id']}): "
                   f"{falha['motivo']}", "danger")
@@ -14980,25 +14985,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def _assinar_um_instrumento(instrumento_id: int) -> dict:
         """Assina UM instrumento com o A3: o papel da impressão vira PDF, vai ao
         serviço local e volta assinado, e se guarda na sua própria transação.
-        ESCREVE. Serve o botão de cada linha e o lote — um caminho só.
+        ESCREVE. Serve o botão de cada linha e a queda do lote para o serviço
+        antigo; o papel e a gravação são os mesmos do lote.
 
         A FALHA DO TOKEN VIRA `AssinaturaInterrompida` (o lote para nela); a
         do PAPEL, `InstrumentoError` (o lote segue). Quem decide o que fazer
-        com cada uma é `PI.assinar_lote`.
+        com cada uma é `PI.assinar_um_por_um`.
         """
         import base64 as _b64
 
         import assinar_com_a3 as A3
-        import impressao_pdf as IMPPDF
-        with db.connect() as con:
-            PI.conferir_antes_de_assinar(con, instrumento_id)
-        ins, odt = _odt_do_instrumento(instrumento_id)
-        try:
-            pdf = IMPPDF.pdf_de_odt(
-                odt, nome=f"instrumento-{ins['numero']}-{ins['ano']}",
-                get_setting=db.get_setting)
-        except IMPPDF.PdfError as erro:
-            raise PI.InstrumentoError(str(erro)) from erro
+        pdf = _pdf_do_instrumento_a_assinar(instrumento_id)
         try:
             resposta = A3.assinar_pdf_pelo_windows(pdf)
         except A3.AssinarComA3Error as erro:
@@ -15012,16 +15009,63 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if not cms:
             raise PI.AssinaturaInterrompida(
                 "O serviço de assinatura não devolveu o arquivo assinado.")
+        return _guardar_instrumento_assinado(instrumento_id, pdf,
+                                             _b64.b64decode(cms))
+
+    def _pdf_do_instrumento_a_assinar(instrumento_id: int) -> bytes:
+        """O PDF do papel da impressão, de instrumento ainda sem assinatura.
+        Falha aqui é do PAPEL (`InstrumentoError`), e nada foi ao token."""
+        import impressao_pdf as IMPPDF
+        with db.connect() as con:
+            PI.conferir_antes_de_assinar(con, instrumento_id)
+        ins, odt = _odt_do_instrumento(instrumento_id)
+        try:
+            return IMPPDF.pdf_de_odt(
+                odt, nome=f"instrumento-{ins['numero']}-{ins['ano']}",
+                get_setting=db.get_setting)
+        except IMPPDF.PdfError as erro:
+            raise PI.InstrumentoError(str(erro)) from erro
+
+    def _assinar_varios_no_a3(pdfs: list[bytes]) -> dict:
+        """Manda os PDFs juntos ao serviço local. Devolve `{"assinados":
+        {posição: p7s}, "falha": frase}`, a forma que `PI.assinar_lote` lê.
+
+        O que vem em `falha` é do token, e os já assinados vêm junto. O serviço
+        fora do ar vira `AssinaturaInterrompida` (nada foi assinado), e o
+        serviço antigo, `LoteIndisponivel` (o lote cai no um por um).
+        """
+        import base64 as _b64
+
+        import assinar_com_a3 as A3
+        try:
+            resposta = A3.assinar_pdfs_pelo_windows(pdfs)
+        except A3.ServicoSemLote as erro:
+            raise PI.LoteIndisponivel(str(erro)) from erro
+        except A3.AssinarComA3Error as erro:
+            raise PI.AssinaturaInterrompida(str(erro)) from erro
+        except OSError as erro:
+            raise PI.AssinaturaInterrompida(
+                "O serviço de assinatura A3 não respondeu. Abra o serviço "
+                "(a3_servico_local) nesta máquina, com o token plugado, e "
+                "tente de novo.") from erro
+        return {"assinados": {int(item["indice"]): _b64.b64decode(item["cms_b64"])
+                              for item in resposta.get("itens") or ()},
+                "falha": resposta.get("falha")}
+
+    def _guardar_instrumento_assinado(instrumento_id: int, pdf: bytes,
+                                      p7s: bytes) -> dict:
+        """Confere o `.p7s` e o guarda, na sua própria transação. ESCREVE. Um
+        caminho só para o botão de cada linha e para o lote."""
         try:
             with db.transaction() as con:
                 return PI.guardar_assinatura(
-                    con, instrumento_id, pdf=pdf, p7s=_b64.b64decode(cms),
+                    con, instrumento_id, pdf=pdf, p7s=p7s,
                     pasta_de_arquivos=pasta_dos_arquivos(), agora=agora(),
                     usuario=usuario_nome())
         except OSError as erro:
             # A PASTA DOS ARQUIVOS, e não o token: a transação voltou atrás,
-            # e o instrumento continua na lista do que falta assinar. O LOTE
-            # PARA AQUI TAMBÉM: a pasta falharia no seguinte, e cada tentativa
+            # e o instrumento continua na lista do que falta assinar. NO UM POR
+            # UM O LOTE PARA AQUI: a pasta falharia no seguinte, e cada tentativa
             # custaria ao oficial mais uma digitação do PIN.
             raise PI.AssinaturaInterrompida(
                 "O instrumento foi assinado, mas o arquivo não pôde ser "

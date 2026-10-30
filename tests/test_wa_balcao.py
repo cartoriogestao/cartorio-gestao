@@ -1522,3 +1522,113 @@ def test_o_texto_guardado_tem_o_usuario_na_chave_e_o_de_outro_e_descartado(s):
     limpeza = js.index("guardadas.removeItem(chave)")
     assert 'chave.indexOf(PREFIXO_DA_CAIXA + usuarioDaTela + "-") !== 0' in js
     assert limpeza < js.index("guardadas.getItem(chaveDaCaixa())")
+
+
+# ===================================================================
+# REVISÃO DO #141 (30/10/2026): a fila guardada, o «tentar de novo» e a etiqueta do TAB
+# ===================================================================
+
+
+def _js():
+    return (RAIZ / "static" / "whatsapp_chat.js").read_text(encoding="utf-8")
+
+
+def _corpo_da_funcao(js, nome):
+    inicio = js.index(f"function {nome}(")
+    fim = js.index("\n  }\n", inicio)
+    return js[inicio:fim]
+
+
+def test_a_fila_e_guardada_com_token_texto_e_motivo_e_nao_ha_innerhtml():
+    js = _js()
+    gravar = _corpo_da_funcao(js, "gravarGuardado")
+    for campo in ("token: item.token", "texto: item.texto", "motivo: item.motivo",
+                  "chaveDaCaixa()", "JSON.stringify"):
+        assert campo in gravar, campo
+    assert js.count("innerHTML") == 1 and "molde.innerHTML = html" in js
+    # a cada mudança da fila, e não só ao sair
+    for funcao in ("tirarDaFila", "falhar", "enfileirar"):
+        assert "guardarFila()" in _corpo_da_funcao(js, funcao), funcao
+
+
+def test_a_restauracao_nao_reenvia_e_descarta_o_que_ja_saiu():
+    js = _js()
+    restaurar = _corpo_da_funcao(js, "restaurarDaFila")
+    assert 'estado: "falhou"' in restaurar and "balaoDoServidor(salvo.token)" in restaurar
+    assert "postarOProximo" not in restaurar and "fetch" not in restaurar
+    recuperar = _corpo_da_funcao(js, "recuperarACaixa")
+    assert "dados.fila.forEach(restaurarDaFila)" in recuperar
+    assert "postarOProximo" not in recuperar
+    assert "balaoDoServidor(e.token)" in _corpo_da_funcao(js, "conferirTokens")
+
+
+def test_a_sessao_vencida_guarda_na_caixa_so_o_que_estava_na_caixa():
+    guardar = _corpo_da_funcao(_js(), "guardarACaixa")
+    assert "filaDeEnvio" not in guardar and "texto.value =" not in guardar
+
+
+def test_o_aviso_do_navegador_nao_vale_para_a_saida_interna():
+    js = _js()
+    assert "filaDeEnvio.length && !parado && !saidaInterna" in js
+    assert 'closest("a[href]")' in js and "marcarSaidaInterna" in js
+
+
+@pytest.mark.parametrize("codigo, definitivo, reabrir", [
+    (131047, True, True), (131026, True, False), (131016, False, False)])
+def test_a_recusa_diz_se_repetir_adianta(s, monkeypatch, codigo, definitivo, reabrir):
+    _com_token(s)
+    cid = _entrar(s, meta_id=f"wamid.d-{codigo}")
+
+    def recusa(pedido):
+        raise WA.EnvioErro(f"A Graph recusou (400, código {codigo}): falso")
+    d = _enviar_json(s, cid, monkeypatch, recusa).get_json()
+    assert d["ok"] is False and d["definitivo"] is definitivo and d["reabrir"] is reabrir
+
+
+@pytest.mark.parametrize("erro", ["A Graph recusou (503). Fora do ar",
+                                  "Nao consegui falar com a Graph: tempo. Nada foi enviado."])
+def test_a_falha_passageira_continua_com_tentar_de_novo(s, monkeypatch, erro):
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.d-pass")
+
+    def recusa(pedido):
+        raise WA.EnvioErro(erro)
+    assert _enviar_json(s, cid, monkeypatch, recusa).get_json()["definitivo"] is False
+
+
+def test_o_tentar_de_novo_posta_de_novo_com_a_recusa_rapida(s, monkeypatch):
+    """A causa do «não faz nada»: o clique posta, e a recusa volta em milissegundos."""
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.d-repete")
+    postados = []
+
+    def recusa(pedido):
+        postados.append(1)
+        raise WA.EnvioErro("A Graph recusou (503). Fora do ar")
+    _enviar_json(s, cid, monkeypatch, recusa)
+    _enviar_json(s, cid, monkeypatch, recusa)
+    assert len(postados) == 2 and not _saidas(s, cid)
+    js = _js()
+    assert "RELOGIO_MINIMO_MS = 1000" in js and "tentou às" in js
+    assert 'querySelector("[data-wa-tentar]").hidden = item.definitivo' in js
+
+
+def test_a_etiqueta_do_tab_fica_na_caixa_e_faz_o_mesmo_que_o_tab(s):
+    cid = _entrar(s, texto="qual o horario?", meta_id="wamid.d-etiqueta")
+    html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    campo = re.search(r'<div class="wa-caixa-campo">.*?</div>', html, re.S).group(0)
+    assert "<textarea" in campo and "usar sugestão" in campo
+    assert re.search(r'<button type="button"[^>]*data-wa-sugestao-aviso[^>]*hidden', campo)
+    assert "TAB para usar" not in html
+    js = _js()
+    assert 'avisoDaSugestao.addEventListener("click", aceitarSugestao)' in js
+    assert "aceitarSugestao();" in js and "innerHTML" not in _corpo_da_funcao(js, "aceitarSugestao")
+    css = (RAIZ / "static" / "app.css").read_text(encoding="utf-8")
+    assert "padding-bottom:30px" in css and ".wa-caixa-campo{position:relative}" in css
+
+
+def test_o_caminho_do_modelo_vem_no_molde_do_balao(s):
+    cid = _entrar(s, meta_id="wamid.d-molde")
+    html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    molde = html[html.index("<template data-wa-molde-balao>"):html.index("</template>")]
+    assert "data-wa-reabrir" in molde and "modelo de retomar" in molde

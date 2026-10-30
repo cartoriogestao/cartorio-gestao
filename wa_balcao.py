@@ -358,6 +358,11 @@ MOTIVO_DA_ENTREGA = {
     "131047": "passaram as 24 horas: use «Reabrir com o modelo»",
     "131026": "o número não recebe mensagens do WhatsApp",
 }
+# A RECUSA DEFINITIVA (30/10/2026): repetir dá o mesmo erro, e o balão não oferece
+# «tentar de novo». O que não está aqui (rede, 5xx, outros códigos) pode passar.
+ENVIO_DEFINITIVO = ("131047", "131026")
+# Depois das 24 horas, o caminho é o modelo de retomar.
+ENVIO_PEDE_O_MODELO = "131047"
 _ROTULO_DA_ENTREGA = {
     "read": ("✓✓", "o cliente leu"),
     "delivered": ("✓✓", "chegou ao celular do cliente"),
@@ -676,12 +681,23 @@ def mensagem_por_token(con: Any, conversa_id: int, envio_token: str) -> dict | N
         (int(conversa_id), envio_token))
 
 
+def _codigo_do_envio(erro: Any) -> str:
+    codigo = re.search(r"código (\d+)", str(erro or ""))
+    return codigo.group(1) if codigo else ""
+
+
 def motivo_do_envio(erro: Any) -> str:
     """O motivo em português da recusa do envio: a frase pronta do código da
     Meta (a mesma do balão que não chegou) ou o texto do erro."""
-    texto = str(erro or "")
-    codigo = re.search(r"código (\d+)", texto)
-    return MOTIVO_DA_ENTREGA.get(codigo.group(1) if codigo else "") or texto
+    return MOTIVO_DA_ENTREGA.get(_codigo_do_envio(erro)) or str(erro or "")
+
+
+def recusa_do_envio(erro: Any) -> dict:
+    """O que o balão precisa saber da recusa: o motivo, se repetir adianta e se o
+    caminho é o modelo de retomar. UMA regra para a rota. Só calcula."""
+    codigo = _codigo_do_envio(erro)
+    return {"motivo": motivo_do_envio(erro), "definitivo": codigo in ENVIO_DEFINITIVO,
+            "reabrir": codigo == ENVIO_PEDE_O_MODELO}
 
 
 def sugestao_visivel(con: Any, conversa_id: int, sugestao: Any) -> str:

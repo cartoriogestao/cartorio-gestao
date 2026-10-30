@@ -912,7 +912,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                                       agora=db.now(), envio_token=token)
         except WA.EnvioErro as e:
             return jsonify({"ok": False, "token": token, "erro": str(e),
-                            "motivo": WA.motivo_do_envio(e)}), 422
+                            **WA.recusa_do_envio(e)}), 422
         finally:
             with trava_dos_tokens:
                 tokens_em_curso.discard(chave)

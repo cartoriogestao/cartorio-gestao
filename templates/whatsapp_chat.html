@@ -284,6 +284,8 @@
             </div>
             <div class="wa-prov-acoes small" data-wa-prov-acoes hidden>
               <button type="button" class="button secondary" data-wa-tentar>tentar de novo</button>
+              <a class="button secondary" data-wa-reabrir hidden
+                 href="{{ url_for('whatsapp_conversa', conversa_id=c.id) }}">ir ao modelo de retomar</a>
               <button type="button" class="button secondary" data-wa-descartar>descartar</button>
             </div>
           </div>
@@ -303,12 +305,16 @@
           {% endif %}
           {#- A SUGESTÃO NÃO É TEXTO ESCRITO (30/10/2026): a caixa nasce com o que
               uma pessoa guardou, e a sugestão aparece em cinza, como `placeholder`.
-              Só o TAB a torna texto de verdade (`whatsapp_chat.js`). -#}
-          <textarea name="rascunho" rows="3" data-wa-caixa aria-label="mensagem" autocomplete="off"
-                    data-wa-sugestao="{{ c.sugestao_na_caixa }}"
-                    data-wa-placeholder="escreva a mensagem…"
-                    placeholder="{{ c.sugestao_na_caixa or 'escreva a mensagem…' }}">{{ c.rascunho or '' }}</textarea>
-          <p class="small muted wa-sugestao-aviso" data-wa-sugestao-aviso hidden>TAB para usar</p>
+              Só o TAB, ou o clique na etiqueta do canto, a torna texto de verdade
+              (`whatsapp_chat.js`). A etiqueta fica fora da ordem do TAB, porque com a
+              caixa vazia o próprio TAB já faz o que ela faz. -#}
+          <div class="wa-caixa-campo">
+            <textarea name="rascunho" rows="3" data-wa-caixa aria-label="mensagem" autocomplete="off"
+                      data-wa-sugestao="{{ c.sugestao_na_caixa }}"
+                      data-wa-placeholder="escreva a mensagem…"
+                      placeholder="{{ c.sugestao_na_caixa or 'escreva a mensagem…' }}">{{ c.rascunho or '' }}</textarea>
+            <button type="button" class="wa-sugestao-aviso" data-wa-sugestao-aviso tabindex="-1" hidden><kbd>Tab ⇥</kbd> usar sugestão</button>
+          </div>
           <div class="wa-escrever-botoes">
             <button class="button primary" data-wa-enviar {% if not pode_enviar %}disabled{% endif %}>Enviar</button>
             <button class="button secondary"

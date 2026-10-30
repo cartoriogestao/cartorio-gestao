@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% block title %}Atendimento {{ atendimento_id }} do ONR{% endblock %}
+{% block heading %}<h1>Atendimento {{ atendimento_id }} do ONR</h1>{% endblock %}
+{% block content %}
+<p class="actions">
+  <a class="button" href="{{ url_for('onr_saec') }}">← Atendimentos</a>
+  {% if user.role == 'ADMIN' %}<a class="button" href="{{ url_for('onr_cobranca_nova', atendimento=atendimento_id) }}">Gerar cobrança</a>{% endif %}
+</p>
+
+{% if a.estranha %}
+<p class="notice warning">O ONR respondeu numa forma que este sistema não conhece. Confira este atendimento no portal.</p>
+{% else %}
+
+<section class="panel">
+  <div class="panel-head"><span>{{ a.tipo }}</span><small>{{ a.situacao }}</small></div>
+  <table class="table">
+    <tr><th>Quem pediu</th><td>{{ a.nome or '—' }}</td><th>CPF/CNPJ</th><td>{{ a.documento or '—' }}</td></tr>
+    <tr><th>E-mail</th><td>{{ a.email or '—' }}</td><th>Celular</th><td>{{ a.celular or '—' }}</td></tr>
+    <tr><th>Cidade</th><td>{{ a.cidade or '—' }}{% if a.estado %}/{{ a.estado }}{% endif %}</td><th>Protocolo</th><td>{{ a.protocolo or '—' }}</td></tr>
+    <tr><th>Aberto em</th><td>{{ a.cadastro or '—' }}</td><th>Atualizado em</th><td>{{ a.atualizado or '—' }}</td></tr>
+    {% if a.setor or a.atendente %}<tr><th>Setor</th><td>{{ a.setor or '—' }}</td><th>Atendente</th><td>{{ a.atendente or '—' }}</td></tr>{% endif %}
+    {% if a.observacoes %}<tr><th>Observações</th><td colspan="3">{{ a.observacoes }}</td></tr>{% endif %}
+  </table>
+</section>
+
+<div class="grid2">
+<section class="panel">
+  <div class="panel-head"><span>A conversa</span><small>{{ a.interacoes|length }} mensagem(ns), a mais nova primeiro</small></div>
+  {% for m in a.interacoes %}
+  <div style="padding:10px 14px;border-bottom:1px solid var(--line,#e3e7ec)">
+    <small><strong>{{ m.origem }}</strong> · {{ m.data }}</small>
+    <div style="white-space:pre-wrap;margin-top:4px">{{ m.mensagem }}</div>
+    {% for arq in m.arquivos %}<div><a href="{{ arq.url }}" target="_blank" rel="noopener noreferrer">{{ arq.nome }}</a></div>{% endfor %}
+  </div>
+  {% else %}
+  <p style="padding:14px">O ONR não trouxe nenhuma mensagem.</p>
+  {% endfor %}
+</section>
+
+{% if user.role == 'ADMIN' %}
+<section class="panel">
+  <div class="panel-head"><span>Responder</span><small>vai ao ONR em nome da serventia</small></div>
+  <form method="post" action="{{ url_for('onr_saec_responder', atendimento_id=atendimento_id) }}" class="form-grid" style="padding:14px"
+        onsubmit="return confirm('Enviar esta resposta ao ONR, em nome da serventia? Ela não se apaga depois.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="chave" value="{{ chave }}">
+    <label>O que esta resposta faz
+      <select name="acao">
+        {% for codigo, nome in acoes.items() %}<option value="{{ codigo }}"{% if acao|string == codigo|string %} selected{% endif %}>{{ nome }}</option>{% endfor %}
+      </select></label>
+    <label>Forma do atendimento <small>(opcional)</small>
+      <select name="forma">
+        <option value="">Não informar</option>
+        {% for codigo, nome in formas.items() %}<option value="{{ codigo }}"{% if forma|string == codigo|string %} selected{% endif %}>{{ nome }}</option>{% endfor %}
+      </select></label>
+    <label class="span2">Mensagem
+      <textarea name="mensagem" rows="7" required minlength="10">{{ mensagem }}</textarea></label>
+    <button class="button primary" type="submit">Enviar ao ONR</button>
+  </form>
+</section>
+{% endif %}
+</div>
+
+{% if envios %}
+<section class="panel">
+  <div class="panel-head"><span>O que esta casa mandou por este sistema</span><small>{{ envios|length }}</small></div>
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Quando</th><th>Quem</th><th>O quê</th><th>Situação</th></tr></thead>
+    <tbody>
+    {% for e in envios %}
+      <tr>
+        <td>{{ e.em[:16]|replace('T', ' ') }}</td>
+        <td>{{ e.por }}</td>
+        <td>{{ e.resumo }}{% if e.valor_centavos %} — R$ {{ reais(e.valor_centavos) }}{% endif %}
+          {% if e.hash_cobranca and user.role in ['ADMIN','MANAGER'] %}<br><a href="{{ url_for('onr_cobranca_ficha', hash_cobranca=e.hash_cobranca) }}">Abrir a cobrança</a>{% endif %}
+          {% if e.erro %}<br><small>{{ e.erro }}</small>{% endif %}</td>
+        <td>{{ e.situacao|replace('_', ' ')|lower }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -60,9 +60,9 @@ As que uma pessoa usaria, e que continuam sem tela:
 
 | Função | O que faria | Situação |
 |---|---|---|
-| `cnib_api.consultar_por_documento` | «O que pesa sobre este CPF, agora», direto na Central | Pronta, sem tela |
-| `onr_api.atendimentos` | Lista de pedidos eletrônicos do SAEC | Pronta, sem tela |
-| `onr_api.interagir_no_atendimento`, `gerar_cobranca` | Responder no SAEC e gerar cobrança | Escrevem na Central: só com ordem do oficial |
+| `cnib_api.consultar_por_documento` | «O que pesa sobre este CPF, agora», direto na Central | Tela «CNIB: consultar CPF ou CNPJ», por ordem do oficial |
+| `onr_api.atendimentos` | Lista do atendimento eletrônico do ONR (SAEC) | Tela «ONR: atendimentos do SAEC», por ordem do oficial |
+| `onr_api.interagir_no_atendimento`, `gerar_cobranca` | Responder no SAEC e gerar cobrança | Na mesma tela e em «ONR: cobranças», só para o ADMIN, por ordem do oficial |
 | `ato_selado.atos_sem_cobranca` | Atos com selo que ninguém cobrou | Pronta, sem tela |
 | `ato_selado.pagamentos_pendentes` | O que cada pessoa selou liberado e não foi pago | Pronta, sem tela |
 | `papel_seguranca.movimentos_da_folha` | O caminho de uma folha de segurança | Pronta, sem tela |

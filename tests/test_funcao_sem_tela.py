@@ -381,8 +381,6 @@ ACHADAS_EM_19_09_2026: dict[str, str] = {
     # Central». A declaração acima foi escrita de manhã e envelheceu à tarde —
     # que é exatamente o que a régua do `piso` existe para cobrar: deixá-las
     # aqui faria o varredor pedir conserto de peça já consertada.
-    "consultar_por_documento": (
-        "cnib_api — consulta pronta e testada, ainda sem rota/tela"),
     # ESTES TRÊS CONTINUAM SEM PORTA, e é declaração, não esquecimento. O
     # espelho não guarda `ordemstatus`: o atualizador grava o que a ficha
     # precisa (protocolo, partes, cancelamento) e **não inventa coluna para
@@ -473,9 +471,7 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     # SAEC continua sem botão, como as vizinhas desta linha.
     # «atendimento» saiu em 27/10/2026: o painel do celular (PR #28) lhe deu
     # caminho até tela, e o varredor é pelo nome.
-    "atendimentos": _SAEC,
-    "detalhes_do_protocolo": _SAEC, "gerar_cobranca": _SAEC,
-    "interagir_no_atendimento": _SAEC, "tipos_de_pagamento": _SAEC,
+    "detalhes_do_protocolo": _SAEC,
     "validar_token_do_protocolo": _SAEC,
     # As nove de `ri_dominial` (cadeia_dominial, conteudo_vintenaria e as
     # auxiliares delas) SAÍRAM desta lista em 14/10/2026: a certidão dominial

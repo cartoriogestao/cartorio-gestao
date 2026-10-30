@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block title %}ONR: atendimentos do SAEC{% endblock %}
+{% block heading %}<h1>ONR: atendimentos do SAEC</h1>{% endblock %}
+{% block content %}
+
+{% macro tabela(linhas) %}
+<div class="table-wrap">
+<table class="table">
+  <thead><tr><th>Atendimento</th><th>Tipo</th><th>Situação</th><th>Quem pediu</th><th>Protocolo</th><th>Última atualização</th></tr></thead>
+  <tbody>
+  {% for x in linhas %}
+    <tr>
+      <td><a href="{{ url_for('onr_saec_ficha', atendimento_id=x.id) }}">{{ x.id }}</a></td>
+      <td>{{ x.tipo }}</td>
+      <td>{{ x.situacao }}</td>
+      <td>{{ x.nome or '—' }}</td>
+      <td>{{ x.protocolo or '—' }}</td>
+      <td>{{ x.atualizado or x.cadastro or '—' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endmacro %}
+
+<p class="notice">
+  Esta é a lista de atendimento do portal do ONR: contato, WhatsApp, e-mail, LGPD, help desk,
+  acompanhamento registral e resposta de exigência. <strong>Pedido de certidão não chega por aqui:</strong>
+  ele está em <a href="{{ url_for('onr_certidoes') }}">ONR: certidões a emitir</a>.
+</p>
+
+{% if not tem_credencial %}
+<p class="notice warning">A credencial do ONR não está guardada. Grave-a em Administrativo → Configurações,
+  na seção «Centrais — credenciais das APIs».</p>
+{% elif erro %}
+<p class="notice warning">{{ erro }}</p>
+{% elif lista.estranha %}
+<p class="notice warning">O ONR respondeu numa forma que este sistema não conhece. Isso não quer dizer que
+  a lista está vazia: confira no portal.</p>
+{% else %}
+
+<form method="get" class="filters">
+  <label>Situação
+    <select name="status">
+      <option value="">Todas</option>
+      {% for codigo, nome in situacoes.items() %}<option value="{{ codigo }}"{% if filtros.status == codigo %} selected{% endif %}>{{ nome }}</option>{% endfor %}
+    </select></label>
+  <label>Tipo
+    <select name="tipo">
+      <option value="">Todos</option>
+      {% for codigo, nome in tipos.items() %}<option value="{{ codigo }}"{% if filtros.tipo == codigo %} selected{% endif %}>{{ nome }}</option>{% endfor %}
+    </select></label>
+  <label>Protocolo <input name="protocolo" value="{{ filtros.protocolo }}" maxlength="150"></label>
+  <button class="button" type="submit">Filtrar</button>
+</form>
+
+<section class="panel">
+  <div class="panel-head"><span>Esperando a serventia</span>
+    <small>em aberto, reaberto ou respondido pelo solicitante, nesta página</small></div>
+  {% if lista.esperam %}{{ tabela(lista.esperam) }}{% else %}<p style="padding:14px">Nenhum nesta página.</p>{% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Os outros</span>
+    <small>{% if lista.total is not none %}{{ lista.total }} no total{% endif %}</small></div>
+  {% if lista.outros %}{{ tabela(lista.outros) }}{% else %}<p style="padding:14px">Nenhum nesta página.</p>{% endif %}
+</section>
+
+{% if lista.paginas > 1 %}
+<p class="actions">
+  {% if lista.pagina > 1 %}<a class="button" href="{{ url_for('onr_saec', pagina=lista.pagina - 1, status=filtros.status, tipo=filtros.tipo, protocolo=filtros.protocolo or none) }}">← Página anterior</a>{% endif %}
+  <span class="small muted">Página {{ lista.pagina }} de {{ lista.paginas }}</span>
+  {% if lista.pagina < lista.paginas %}<a class="button" href="{{ url_for('onr_saec', pagina=lista.pagina + 1, status=filtros.status, tipo=filtros.tipo, protocolo=filtros.protocolo or none) }}">Próxima página →</a>{% endif %}
+</p>
+{% endif %}
+{% endif %}
+
+{% if user.role in ['ADMIN','MANAGER'] %}<p><a class="button" href="{{ url_for('onr_cobrancas') }}">Cobranças do ONR</a></p>{% endif %}
+{% endblock %}

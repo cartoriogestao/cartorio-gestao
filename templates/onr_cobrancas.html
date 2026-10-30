@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block title %}ONR: cobranças{% endblock %}
+{% block heading %}<h1>ONR: cobranças</h1>{% endblock %}
+{% block content %}
+<p class="actions">
+  <a class="button" href="{{ url_for('onr_saec') }}">← Atendimentos</a>
+  {% if user.role == 'ADMIN' %}<a class="button primary" href="{{ url_for('onr_cobranca_nova') }}">Gerar cobrança</a>{% endif %}
+</p>
+
+{% if desta_casa %}
+<section class="panel">
+  <div class="panel-head"><span>Tentativas desta casa, por este sistema</span>
+    <small>as sem confirmação só aparecem aqui</small></div>
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Quando</th><th>Quem</th><th>O quê</th><th>Valor</th><th>Situação</th><th>Atendimento</th></tr></thead>
+    <tbody>
+    {% for e in desta_casa %}
+      <tr>
+        <td>{{ e.em[:16]|replace('T', ' ') }}</td>
+        <td>{{ e.por }}</td>
+        <td>{% if e.hash_cobranca %}<a href="{{ url_for('onr_cobranca_ficha', hash_cobranca=e.hash_cobranca) }}">{{ e.resumo }}</a>{% else %}{{ e.resumo }}{% endif %}
+          {% if e.erro %}<br><small>{{ e.erro }}</small>{% endif %}</td>
+        <td>{% if e.valor_centavos is not none %}R$ {{ reais(e.valor_centavos) }}{% else %}—{% endif %}</td>
+        <td>{{ e.situacao|replace('_', ' ')|lower }}</td>
+        <td>{% if e.atendimento_id %}<a href="{{ url_for('onr_saec_ficha', atendimento_id=e.atendimento_id) }}">{{ e.atendimento_id }}</a>{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>O que o ONR tem</span>
+    <small>{% if lista and lista.total is not none %}{{ lista.total }} no total{% endif %}</small></div>
+  {% if not tem_credencial %}
+  <p class="notice warning" style="margin:14px">A credencial do ONR não está guardada. Grave-a em Administrativo → Configurações,
+    na seção «Centrais — credenciais das APIs».</p>
+  {% elif erro %}
+  <p class="notice warning" style="margin:14px">{{ erro }}</p>
+  {% elif lista.estranha %}
+  <p class="notice warning" style="margin:14px">O ONR respondeu numa forma que este sistema não conhece. Isso não quer dizer
+    que não há cobrança: confira no portal.</p>
+  {% elif not lista.linhas %}
+  <p style="padding:14px">O ONR não devolveu nenhuma cobrança nesta página.</p>
+  {% else %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Valor</th><th>Situação</th><th>Quando</th><th>Link</th></tr></thead>
+    <tbody>
+    {% for c in lista.linhas %}
+      <tr>
+        <td>{% if c.hash %}<a href="{{ url_for('onr_cobranca_ficha', hash_cobranca=c.hash) }}">{{ 'R$ ' ~ c.valor if c.valor else 'sem valor' }}</a>{% else %}{{ 'R$ ' ~ c.valor if c.valor else 'sem valor' }}{% endif %}</td>
+        <td>{{ c.status or '—' }}</td>
+        <td>{{ c.situacao_em or '—' }}</td>
+        <td>{% if c.url %}<a href="{{ c.url }}" target="_blank" rel="noopener noreferrer">Abrir</a>{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if lista.paginas > 1 %}
+  <p class="actions" style="padding:0 14px 14px">
+    {% if pagina > 1 %}<a class="button" href="{{ url_for('onr_cobrancas', pagina=pagina - 1) }}">← Página anterior</a>{% endif %}
+    <span class="small muted">Página {{ pagina }} de {{ lista.paginas }}</span>
+    {% if pagina < lista.paginas %}<a class="button" href="{{ url_for('onr_cobrancas', pagina=pagina + 1) }}">Próxima página →</a>{% endif %}
+  </p>
+  {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

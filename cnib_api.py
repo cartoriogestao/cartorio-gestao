@@ -737,7 +737,10 @@ def consultar_por_documento(documento: str, *, cpf_usuario: str,
     dado = resposta.get("data") if isinstance(resposta, dict) else None
     if not isinstance(dado, dict):
         dado = {}
+    # `RESPONDEU` É O QUE IMPEDE O ZERO FALSO: sem o campo, `indisponivel` sai
+    # `False`, e a tela diria que não há ordem de uma resposta que não disse isso.
     return {
+        "respondeu": isinstance(dado.get("indisponivel"), bool),
         "documento": _texto(dado.get("documento")) or documento,
         "nome": _texto(dado.get("nomeRazao")),
         "indisponivel": bool(dado.get("indisponivel")),

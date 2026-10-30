@@ -3412,6 +3412,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     import onr_certidoes_auto_web
     onr_certidoes_auto_web.registrar_rotas(app, db, login_required, roles_required, audit)
 
+    # O ATENDIMENTO ELETRÔNICO DO ONR (SAEC) E AS COBRANÇAS (30/10/2026): ler é do
+    # balcão; responder e gerar cobrança, só do ADMIN.
+    import onr_saec_web
+    onr_saec_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
     # O ANDAMENTO DAS PRENOTAÇÕES NO ACOMPANHAMENTO DE TÍTULOS DO ONR (26/10/2026)
     # — a fila de fatos gravados e o botão que a manda; o envio nasce desligado.
     import onr_acompanhamento_web

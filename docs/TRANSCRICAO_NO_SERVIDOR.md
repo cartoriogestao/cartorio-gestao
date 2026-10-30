@@ -45,7 +45,8 @@ Em 29/10/2026, na máquina de hoje (15,7 GB, 3,1 GB livres), faster-whisper 1.2.
 ## O que ainda precisa ser visto na máquina nova
 
 - **A rodada espera o áudio.** Com a IA ligada, a resposta depende da transcrição na mesma passada; por isso é um
-  áudio por rodada, com prazo de 3 minutos. Enquanto isso, a busca de mensagens espera. Se a máquina nova levar
-  dezenas de segundos por áudio, isso se nota no balcão, e aí vale separar a transcrição do vigia.
+  áudio por rodada, com prazo de 3 minutos. A busca de mensagens corre em outra linha do vigia e não para, mas
+  cada áudio segura, por até esses 3 minutos, os downloads, a IA das outras conversas e o aviso de fora do horário.
+  Se a máquina nova levar dezenas de segundos por áudio, é nessas respostas que isso se nota no balcão.
 - **O programa de verdade não rodou no desenvolvimento.** Os testes usam um `faster_whisper` falso; os parâmetros
   são os da medição de 29/10. A conferência é o primeiro teste real.

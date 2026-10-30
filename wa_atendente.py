@@ -731,7 +731,8 @@ def transcrever_pendentes(db: Any, cfg: dict, *, agora: str, pasta_de_dados: Any
     if not cfg["audio_ligado"]:
         return 0
     # NESTE SERVIDOR A RODADA ESPERA O ÁUDIO (30/10/2026, `wa_transcricao_local`): um por
-    # vez, para a busca de mensagens não ficar parada atrás de uma fila deles.
+    # vez. A busca de mensagens corre em outra linha do vigia e não para, mas cada áudio
+    # segura por até 180 s os downloads, a IA das outras conversas e o aviso de fora do horário.
     neste_servidor = cfg.get("audio_onde") == LOCAL.AQUI
     limite = 1 if neste_servidor else limite
     inicio = ((FILA._dt(agora) or datetime.now()) - timedelta(hours=JANELA_HORAS)

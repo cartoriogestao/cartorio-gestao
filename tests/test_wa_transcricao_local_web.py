@@ -51,11 +51,31 @@ def test_a_casa_nasce_na_openai(app):
     assert _config(app)["audio_onde"] == LOCAL.OPENAI
 
 
-def test_a_tela_mostra_a_escolha_e_o_que_falta(app):
-    html = _entrar(app, "wa_local_a", "ADMIN").get("/whatsapp/atendente").get_data(as_text=True)
+def _tela(app, monkeypatch, usuario: str, *, programa: bool, modelo: bool) -> str:
+    monkeypatch.setattr(LOCAL, "programa_instalado", lambda: programa)
+    monkeypatch.setattr(LOCAL, "modelo_baixado", lambda pasta: modelo)
+    return _entrar(app, usuario, "ADMIN").get("/whatsapp/atendente").get_data(as_text=True)
+
+
+def test_a_tela_mostra_a_escolha_e_o_que_falta(app, monkeypatch):
+    html = _tela(app, monkeypatch, "wa_local_a", programa=False, modelo=False)
     assert 'id="transcricao"' in html
-    assert "/whatsapp/transcricao/conferir" in html
     assert 'value="AQUI"' in html
+    assert "não instalado" in html
+    assert "/whatsapp/transcricao/baixar" not in html
+    assert "/whatsapp/transcricao/conferir" not in html
+
+
+def test_com_o_programa_a_tela_oferece_o_download(app, monkeypatch):
+    html = _tela(app, monkeypatch, "wa_local_g", programa=True, modelo=False)
+    assert "/whatsapp/transcricao/baixar" in html
+    assert "/whatsapp/transcricao/conferir" not in html
+
+
+def test_com_o_programa_e_o_modelo_a_tela_oferece_a_conferencia(app, monkeypatch):
+    html = _tela(app, monkeypatch, "wa_local_h", programa=True, modelo=True)
+    assert "/whatsapp/transcricao/conferir" in html
+    assert "/whatsapp/transcricao/baixar" not in html
 
 
 def test_sem_conferencia_nao_liga_nem_com_o_formulario_na_mao(app):

@@ -287,7 +287,8 @@ def conferir(pasta_de_dados: Any, audio: bytes, mime: str, *, agora: str = "", p
     if r["trabalho_s"] > max(LENTO_BASE_S, r["segundos"] * LENTO_FATOR):
         resultado["motivo"] = (f"Levou {r['trabalho_s']:.0f} s para um áudio de "
                                f"{r['segundos']:.0f} s: lento demais para atender. Com a "
-                               "transcrição neste servidor, a busca de mensagens espera o áudio.")
+                               "transcrição neste servidor, os downloads, a IA das outras "
+                               "conversas e o aviso de fora do horário esperam o áudio.")
         return resultado
     resultado["ok"] = True
     return resultado

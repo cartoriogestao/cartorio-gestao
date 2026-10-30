@@ -679,6 +679,7 @@ def test_a_tela_mostra_por_que_passou(casa):
     AT.rodada(db, agora=agora, pasta_de_dados=casa["pasta"], http_post=Graph())
     html = _usuario(casa, "porque", "USER").get("/whatsapp/atendente").get_data(as_text=True)
     assert "Por que passou" in html and "reclamação: <strong>1</strong>" in html
+    assert "aprovada pelo responsável" in html and "precisa confirmar" not in html
 
 
 # ---------------------------------------------- 12. o ensaio

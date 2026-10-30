@@ -30,7 +30,8 @@ A REGRA ANTIGA FOI REVOGADA, E SÓ PARA QUATRO CASOS (26/10/2026)
 A MUDANÇA DE 30/10/2026: A TRIAGEM ANTES DE PASSAR
     «o atendimento com pessoa só deve começar quando for necessário»: quase tudo
     que não estava no texto-base virava passagem, até uma saudação. Decisão de
-    30/10/2026, QUE O OFICIAL AINDA PRECISA CONFIRMAR, porque altera a decisão acima: em PROTESTO E REGISTRO CIVIL a IA responde as DÚVIDAS GERAIS do
+    30/10/2026, APROVADA PELO RESPONSÁVEL, com a lista de assuntos protegidos
+    (`_PROTEGIDO_DO_REGISTRO` e `_PROTEGIDO`), que altera a decisão acima: em PROTESTO E REGISTRO CIVIL a IA responde as DÚVIDAS GERAIS do
     texto-base (horário, documentos, valor pela lista) e passa quando for um CASO
     CONCRETO. Reclamação e dado protegido continuam indo direto. Os outros limites de
     26/10 continuam: nada fora do texto-base, valor só pelo cálculo, andamento só com

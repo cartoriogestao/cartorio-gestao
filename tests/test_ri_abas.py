@@ -191,6 +191,7 @@ def test_o_campo_invalido_abre_o_passo_dele():
     """Sem isto, o navegador recusa o envio em silêncio: não há onde pôr o foco."""
     script = (RAIZ / "static" / "fases.js").read_text(encoding="utf-8")
     assert 'addEventListener("invalid"' in script and "reportValidity" in script
+    assert "if (avisado) return;" in script, "com vários em branco, vale o primeiro: é onde fica o cursor"
 
 
 def test_os_passos_so_existem_no_layout_novo():

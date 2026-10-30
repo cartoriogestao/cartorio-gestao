@@ -149,7 +149,13 @@
   if (voltar) voltar.addEventListener("click", function () { abrir(chaves[chaves.indexOf(aberto) - 1]); });
   if (avancar) avancar.addEventListener("click", function () { abrir(chaves[chaves.indexOf(aberto) + 1]); });
 
+  // O navegador avisa de todos os campos inválidos de uma vez, e o cursor vai para o primeiro.
+  // Só o primeiro conta: sem isto, abriria o passo do último, longe de onde o cursor ficou.
+  var avisado = false;
   form.addEventListener("invalid", function (ev) {
+    if (avisado) return;
+    avisado = true;
+    setTimeout(function () { avisado = false; }, 0);
     var bloco = ev.target.closest("[data-passo]");
     if (!bloco || !bloco.hidden) return;
     abrir(bloco.getAttribute("data-passo"));

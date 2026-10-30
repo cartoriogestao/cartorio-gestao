@@ -18,6 +18,7 @@ O QUE ESTES TESTES GUARDAM
 """
 from __future__ import annotations
 
+import sqlite3
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -32,7 +33,6 @@ import protesto_cenprot as PC
 import protesto_cenprot_xml as X
 import protesto_retorno as PRE
 import protesto_roteiro as RT
-from banco_de_teste import conexao_de_teste
 
 from test_cenprot_conferencia import banco as banco_da_conferencia
 from test_cenprot_conferencia import titulo as titulo_da_conferencia
@@ -241,7 +241,10 @@ def test_o_devedor_da_ficha_sem_cep_espera_em_vez_de_derrubar_o_arquivo(pronto, 
 def _acervo_com_dois_devedores(protocolo: str):
     nomes = [c.nome for c in PA.TITULO_NA_REMESSA[:30]]
     campos = {n: f"Campo{i:02d}" for i, n in enumerate(nomes, start=1)}
-    ac = conexao_de_teste()
+    # O ACERVO DO E-OFÍCIO É UM ARQUIVO SQLITE À PARTE (`_linhas_do_acervo`):
+    # na conexão de teste, que é o PostgreSQL, `Campo01` virava `campo01` e a
+    # leitura não achava o devedor.
+    ac = sqlite3.connect(":memory:")
     ac.execute(
         "CREATE TABLE tbSDT (intChave REAL, intProtocolo REAL, "
         + ", ".join(f"{c} TEXT" for c in campos.values()) + ", Campo39 TEXT)")
@@ -263,7 +266,10 @@ def test_com_duas_linhas_vale_a_linha_que_casa_com_o_devedor_do_titulo(pronto, s
     titulo = dict(con.execute("SELECT * FROM pt_titulos WHERE id = ?",
                               (pronto,)).fetchone())
     ac = _acervo_com_dois_devedores(titulo["protocolo"])
-    primeira = X.registro_da_cra(con, dict(titulo, origem_chave="tbSDT:1"), ac)
+    # A primeira linha do protocolo, como `registro_da_cra` a devolve para o
+    # título do acervo. Não por ele: a fixture `pronto` o troca por um que
+    # devolve sempre o `REGISTRO` da remessa de ensaio.
+    primeira = X._linhas_do_acervo(ac, titulo["protocolo"])[0]
     assert primeira["devedor_nome"] == "PRIMEIRA PESSOA"
     reg = X._registro_do_devedor(con, titulo, primeira, ac)
     assert reg["devedor_nome"] == "SEGUNDA PESSOA"

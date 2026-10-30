@@ -3381,6 +3381,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     ri_onr_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                fmt_date)
 
+    # O LAYOUT NOVO (30/10/2026): a chave por pessoa e o contexto da casca. O registro
+    # de tudo o que a barra, o Novo e a busca oferecem mora em `navegacao.py`.
+    import navegacao_web
+    navegacao_web.registrar_rotas(app, db, login_required, roles_required, audit)
+
     # A BASE DO MAPA DO ONR — o CSV que o QGIS junta ao polígono (LF02).
     import ri_mapa_onr
     ri_mapa_onr.registrar_rotas(app, db, login_required, roles_required, audit)

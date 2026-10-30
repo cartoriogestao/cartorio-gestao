@@ -42,6 +42,7 @@ import wa_modelos as MODELOS
 import wa_puxar as PUXAR
 import wa_rotina as ROTINA
 import wa_schema as SCH
+import wa_transcricao_local as LOCAL
 from seguranca_web import PRATICA  # M2 (LX11): o AUDITOR vê e não grava
 
 
@@ -323,11 +324,68 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             # desta tela, que todo login vê.
             provedores=[{"id": p["id"], "nome": p["nome"], "tem_chave": p["tem_chave"]}
                         for p in PROV.catalogo_para_tela(_pasta())],
+            transcricao=LOCAL.situacao(_pasta()), escolhas_de_transcricao=LOCAL.ESCOLHAS,
+            motivo_para_nao_ligar=LOCAL.pode_ligar(_pasta(), ia["audio_conferencia"]),
             rotina=rotina, texto_fora_padrao=ROTINA.TEXTO_FORA_PADRAO,
             vigia_padrao=ROTINA.VIGIA_PADRAO_S, encerrar_padrao=ROTINA.ENCERRAR_PADRAO_DIAS,
             rotulos=ATENDENTE.ROTULO_DO_CASO, exemplo=ATENDENTE.TEXTO_BASE_EXEMPLO,
             tentativas=ATENDENTE.TENTATIVAS_POR_DIA,
             e_admin=app.extensions["usuario_papel"]() == "ADMIN")
+
+    def _volta_da_transcricao():
+        return redirect(url_for("whatsapp_atendente") + "#transcricao")
+
+    @app.route("/whatsapp/transcricao/onde", methods=["POST"])
+    @login_required
+    def whatsapp_transcricao_onde():
+        """Onde o áudio se transcreve (30/10/2026, `wa_transcricao_local`). Só do ADMIN."""
+        if app.extensions["usuario_papel"]() != "ADMIN":
+            abort(403)
+        onde = (request.form.get("onde") or "").strip()
+        try:
+            with db.transaction() as con:
+                ATENDENTE.escolher_onde_transcrever(con, onde, pasta_de_dados=_pasta())
+        except ATENDENTE.AtendenteErro as erro:
+            flash(str(erro), "danger")
+            return _volta_da_transcricao()
+        audit("wa_transcricao_onde", "wa_config", None, {"onde": onde})
+        flash(f"Os áudios passam a ser transcritos em: {LOCAL.ESCOLHAS[onde]}.", "success")
+        return _volta_da_transcricao()
+
+    @app.route("/whatsapp/transcricao/baixar", methods=["POST"])
+    @login_required
+    def whatsapp_transcricao_baixar():
+        """Solta o download do modelo, que roda sozinho. Só do ADMIN."""
+        if app.extensions["usuario_papel"]() != "ADMIN":
+            abort(403)
+        try:
+            LOCAL.iniciar_download(_pasta())
+        except LOCAL.TranscricaoLocalErro as erro:
+            flash(str(erro), "danger")
+            return _volta_da_transcricao()
+        audit("wa_transcricao_download", "wa_config", None, {"modelo": LOCAL.MODELO})
+        flash("O download começou e roda sozinho. Volte a esta tela para ver quando terminar.",
+              "success")
+        return _volta_da_transcricao()
+
+    @app.route("/whatsapp/transcricao/conferir", methods=["POST"])
+    @login_required
+    def whatsapp_transcricao_conferir():
+        """A conferência antes de ligar. Espera o áudio, e por isso pode levar minutos."""
+        if app.extensions["usuario_papel"]() != "ADMIN":
+            abort(403)
+        arquivo = request.files.get("audio")
+        audio = arquivo.read(LOCAL.TETO_DE_BYTES + 1) if arquivo else b""
+        conferencia = LOCAL.conferir(_pasta(), audio, arquivo.mimetype if arquivo else "",
+                                     agora=db.now(), por=_quem())
+        with db.transaction() as con:
+            ATENDENTE.guardar_conferencia(con, conferencia)
+        audit("wa_transcricao_conferencia", "wa_config", None,
+              {"ok": conferencia["ok"], "memoria_livre_mb": conferencia["memoria_livre_mb"],
+               "segundos": conferencia["segundos"], "trabalho_s": conferencia["trabalho_s"]})
+        flash(LOCAL.recado_da_conferencia(conferencia),
+              "success" if conferencia["ok"] else "danger")
+        return _volta_da_transcricao()
 
     @app.route("/whatsapp/atendente/rodar", methods=["POST"])
     @login_required

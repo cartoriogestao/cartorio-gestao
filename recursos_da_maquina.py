@@ -238,10 +238,10 @@ def _kernel32():
     return k32
 
 
-def _ram_da_maquina_mb() -> int:
-    """A RAM fisica total, em MB. Zero quando nao se conseguiu ler."""
+def _estado_da_memoria():
+    """O que o Windows diz da memoria, ou None quando nao se conseguiu ler."""
     if not E_WINDOWS:
-        return 0
+        return None
 
     class _MEMORYSTATUSEX(ctypes.Structure):
         _fields_ = [("dwLength", ctypes.c_ulong),
@@ -257,8 +257,20 @@ def _ram_da_maquina_mb() -> int:
     estado = _MEMORYSTATUSEX()
     estado.dwLength = ctypes.sizeof(estado)
     if not _kernel32().GlobalMemoryStatusEx(ctypes.byref(estado)):
-        return 0
-    return int(estado.ullTotalPhys // (1024 * 1024))
+        return None
+    return estado
+
+
+def _ram_da_maquina_mb() -> int:
+    """A RAM fisica total, em MB. Zero quando nao se conseguiu ler."""
+    estado = _estado_da_memoria()
+    return int(estado.ullTotalPhys // (1024 * 1024)) if estado else 0
+
+
+def memoria_livre_mb() -> int:
+    """A RAM fisica livre agora, em MB. Zero quando nao se conseguiu ler."""
+    estado = _estado_da_memoria()
+    return int(estado.ullAvailPhys // (1024 * 1024)) if estado else 0
 
 
 def _ligar_privilegio(nome: str) -> bool:

@@ -445,8 +445,9 @@ def pedacos_da_descricao(d: dict, con: Any = None) -> dict:
     # que quem lê os fatos monta (`dados`, `protesto_termo.fatos_da_qualificacao`
     # — o título ou o cadastro dos apresentantes); sem ele, o pedaço de antes.
     ap = d.get("apresentante") or {}
-    nome_ap = (_texto(t.get("apresentante_nome")) or _texto(ap.get("nome"))
-               or _texto(t.get("apresentante_codigo")))
+    from protesto_arquivo import nome_de_apresentante
+    nome_ap = (nome_de_apresentante(t.get("apresentante_nome"))
+               or _texto(ap.get("nome")) or _texto(t.get("apresentante_codigo")))
     endereco_ap = _texto(ap.get("endereco")) or _texto(t.get("apresentante_endereco"))
     if nome_ap:
         pedacos["apresentante"] = (
@@ -800,17 +801,18 @@ def a_entregar(con, limite: int = 200, *, quais: str = "todos",
     `quais` e `desde` recortam (29/10/2026): o mais novo vem primeiro, e o
     acervo do E-Ofício pode ficar de fora sem sumir da contagem.
     """
+    from protesto_cenprot_xml import nomes_do_cadastro_no_lugar_de_numero
     recorte, params = _recorte_da_fila(quais, desde)
-    return banco(con).ler(
+    return nomes_do_cadastro_no_lugar_de_numero(con, banco(con).ler(
         f"""SELECT a.titulo_id, a.data_ato, a.origem, t.protocolo,
-                  t.numero_titulo, t.apresentante_nome
+                  t.numero_titulo, t.apresentante_nome, t.apresentante_codigo
              FROM pt_atos a
              JOIN pt_titulos t ON t.id = a.titulo_id
             WHERE a.tipo = 'PROTESTO' AND a.cancelado = 0
               AND NOT EXISTS (SELECT 1 FROM pt_instrumentos i
                                WHERE i.titulo_id = a.titulo_id){recorte}
             ORDER BY a.data_ato DESC, a.id DESC LIMIT %s""",
-        (*params, int(limite)))
+        (*params, int(limite))))
 
 
 def quadro_da_fila(con, *, hoje: str) -> dict:

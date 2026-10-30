@@ -12498,6 +12498,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 # O COMPROVANTE DA SUBIDA, por arquivo (29/10/2026).
                 for f in feitos:
                     f["comprovantes"] = PCXML.comprovantes(con, f["id"])
+                    f["atos"] = PCXML.atos_do_arquivo(con, f["id"])
+                    f["devolucoes"] = PCXML.devolucoes_do_arquivo(f)
                 cadastro = PCXML.apresentantes(con)
         finally:
             if acervo is not None:
@@ -12507,6 +12509,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             cadastro=cadastro, tem_acervo=acervo is not None,
             minimo_de_letras=AFX.MINIMO_DE_LETRAS,
             modelo_da_afirmacao=AFX.MODELO,
+            minimo_do_motivo=PCXML.MINIMO_DO_MOTIVO_DA_DEVOLUCAO,
             ocorrencias={"PROTESTO": "2 — protestado", "PAGAMENTO": "1 — pago",
                          "DESISTENCIA": "3 — retirado",
                          "CANCELAMENTO": "A — cancelado"})
@@ -12616,6 +12619,55 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                 f"{r['nome_arquivo']} no portal da CENPROT"})
         flash(f"Subida de «{r['nome_arquivo']}» afirmada sem comprovante.",
               "warning")
+        return voltar
+
+    @app.route("/protesto/cenprot-xml/<int:xml_id>/recusado", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER")
+    def protesto_cenprot_xml_recusado(xml_id: int):
+        """A CENPROT recusou o arquivo: os atos voltam à fila. ESCREVE.
+
+        O mesmo espírito do `devolver-atos` do retorno. A regra mora em
+        `protesto_cenprot_xml.recusar_arquivo`; o motivo vai para a auditoria.
+        """
+        voltar = redirect(url_for("protesto_cenprot_xml") + "#arquivos-gerados")
+        try:
+            with db.transaction() as con:
+                r = PCXML.recusar_arquivo(
+                    con, xml_id, motivo=request.form.get("motivo"), agora=agora(),
+                    usuario=usuario_nome())
+        except PCXML.CenprotXmlError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        # `audit` abre transação própria: FORA do `with`.
+        audit("PROTESTO_CENPROT_XML_RECUSADO", "pt_cenprot_xml", xml_id,
+              {"arquivo": r["nome_arquivo"], "motivo": r["motivo"],
+               "atos": r["atos"]})
+        flash(f"«{r['nome_arquivo']}» marcado como recusado: {len(r['atos'])} "
+              f"ato(s) voltaram à fila. O arquivo fica gravado como foi.",
+              "warning")
+        return voltar
+
+    @app.route("/protesto/cenprot-xml/<int:xml_id>/devolver-atos",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER")
+    def protesto_cenprot_xml_devolver_atos(xml_id: int):
+        """O arquivo subiu sem estes atos: só eles voltam à fila. ESCREVE. A regra
+        mora em `protesto_cenprot_xml.devolver_atos_escolhidos`."""
+        voltar = redirect(url_for("protesto_cenprot_xml") + "#arquivos-gerados")
+        try:
+            with db.transaction() as con:
+                r = PCXML.devolver_atos_escolhidos(
+                    con, xml_id, request.form.getlist("ato_id"),
+                    motivo=request.form.get("motivo"), agora=agora(),
+                    usuario=usuario_nome())
+        except PCXML.CenprotXmlError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        audit("PROTESTO_CENPROT_XML_ATOS_DEVOLVIDOS", "pt_cenprot_xml", xml_id,
+              {"arquivo": r["nome_arquivo"], "motivo": r["motivo"],
+               "atos": r["atos"], "ficaram": r["ficaram"]})
+        flash(f"{len(r['atos'])} ato(s) voltaram à fila; {r['ficaram']} "
+              f"continuam em «{r['nome_arquivo']}».", "warning")
         return voltar
 
     @app.route("/protesto/cenprot-xml/apresentantes", methods=["POST"])
@@ -12854,6 +12906,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         audit("PROTESTO_CENPROT_EMOLUMENTOS", "pt_titulos", None,
               {"arquivo": arquivo["nome"], "linhas": arquivo["linhas"],
                "fora": len(arquivo["fora"]), "vigencia": arquivo["vigencia"]})
+        if arquivo["fora"]:
+            flash(PCEN.frase_do_que_ficou_fora(arquivo), "warning")
         return Response(
             arquivo["conteudo"].encode("utf-8"),
             mimetype="text/plain; charset=utf-8",

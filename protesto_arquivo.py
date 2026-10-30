@@ -618,6 +618,21 @@ def _conferir(a: Arquivo) -> list[str]:
 # ---------------------------------------------------------- para o Protesto
 
 
+def nome_de_apresentante(valor: Any) -> str:
+    """O nome do apresentante gravado no título, ou vazio se aquilo não é nome.
+    Só calcula.
+
+    NÚMERO NÃO É NOME — 30/10/2026. As posições 005/019 do registro são a
+    «Agência / Código do Cedente» do apresentante, e até esta data a leitura da
+    remessa as gravava em `apresentante_nome`. Medido na produção: os 3 títulos
+    que entraram por remessa neste sistema têm ali um número (11 ou 15 dígitos,
+    e não o documento do cedente, que mora na posição 110). O dado antigo fica
+    como está; quem mostra o nome pergunta aqui, e cai no cadastro.
+    """
+    texto = str(valor or "").strip()
+    return texto if any(c.isalpha() for c in texto) else ""
+
+
 def para_apontamento(titulo: dict) -> dict:
     """Traduz o registro do arquivo para o vocabulario do modulo de Protesto.
 
@@ -641,7 +656,11 @@ def para_apontamento(titulo: dict) -> dict:
         # (posicoes 2 a 19) e nao vinha para o modulo de Protesto — e sem ele
         # `montar_retorno` nao sabe nem a letra da posicao 566.
         "apresentante_codigo": titulo.get("codigo_do_apresentante"),
-        "apresentante_nome": titulo.get("identificacao_do_apresentante"),
+        # AS POSIÇÕES 005/019 NÃO SÃO O NOME (30/10/2026): são a identificação
+        # que o retorno devolve à CRA no mesmo lugar, e por isso ficam em
+        # `cra_identificacao`. O nome vem do cabeçalho (`protesto_remessa`).
+        "apresentante_nome": None,
+        "cra_identificacao": titulo.get("identificacao_do_apresentante") or None,
         "especie": titulo.get("especie"),
         "numero_titulo": titulo.get("numero_do_titulo"),
         "nosso_numero": titulo.get("nosso_numero"),

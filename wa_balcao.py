@@ -18,10 +18,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import re
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable
 from unicodedata import normalize
 
@@ -38,6 +39,7 @@ DIR_OUT = "out"
 DIR_RASCUNHO = "rascunho"
 
 _ISO = "%Y-%m-%dT%H:%M:%S"
+LOG = logging.getLogger(__name__)
 GRAPH_VER = "v21.0"
 TIMEOUT_ENVIO = 8
 
@@ -347,6 +349,8 @@ ORDEM_DA_ENTREGA = {"sent": 1, "delivered": 2, "read": 3, "failed": 4}
 # «FAILED» NÃO DESFAZ O QUE CHEGOU (29/10/2026): a mensagem entregue ou lida já
 # está no celular do cliente, e um «failed» atrasado não muda isso.
 JA_CHEGOU = ("delivered", "read")
+# Quanto tempo o aviso de status espera pela mensagem dele (`wa_entrega_pendente`).
+DIAS_DO_AVISO_SEM_DONO = 1
 
 # AS FRASES PRONTAS DA FALHA (29/10/2026), pelo código da Meta. O que não está
 # aqui mostra o texto que a Meta mandou.
@@ -395,9 +399,78 @@ def _entregas_do_payload(payload: Any) -> list[dict]:
     return saida
 
 
+def _aplicar_situacao(bd: Any, meta_id: str, situacao: str, erro: Any, quando: Any) -> bool | None:
+    """Um aviso da Meta sobre uma mensagem que saiu. ESCREVE. None = a mensagem
+    ainda não está gravada; senão, se o estado mudou. A ordem impede o aviso
+    atrasado de desfazer um mais novo.
+
+    A SAÍDA QUE FALHOU NÃO É RESPOSTA (30/10/2026): a conversa volta a esperar, a não
+    ser que outra resposta tenha saído depois. O aviso automático nunca contou como
+    resposta, e a falha dele não muda a conversa."""
+    linha = bd.um(
+        "SELECT id, conversa_id, tipo, entrega FROM wa_mensagem WHERE meta_id=%s AND direcao=%s",
+        (str(meta_id), DIR_OUT))
+    if not linha:
+        return None
+    antes = ORDEM_DA_ENTREGA.get(str(linha.get("entrega") or ""), 0)
+    if ORDEM_DA_ENTREGA[situacao] <= antes:
+        return False
+    if situacao == "failed" and str(linha.get("entrega") or "") in JA_CHEGOU:
+        return False
+    bd.escrever(
+        "UPDATE wa_mensagem SET entrega=%s, entrega_em=%s, entrega_erro=%s WHERE id=%s",
+        (situacao, quando, (erro or "")[:300] or None, int(linha["id"])))
+    if situacao == "failed" and (linha.get("tipo") or "") != "aviso":
+        bd.escrever(
+            """UPDATE wa_conversa c SET status=%s
+                WHERE c.id=%s AND c.status=%s
+                  AND NOT EXISTS (SELECT 1 FROM wa_mensagem o
+                                   WHERE o.conversa_id = c.id AND o.direcao = %s
+                                     AND o.id > %s
+                                     AND COALESCE(o.tipo, '') <> 'aviso'
+                                     AND COALESCE(o.entrega, '') <> 'failed')""",
+            (WA.ABERTA, int(linha["conversa_id"]), WA.AGUARDANDO, DIR_OUT, int(linha["id"])))
+    return True
+
+
+def _aplicar_pendentes(bd: Any, meta_id: str) -> None:
+    """Aplica o que estava guardado para este `meta_id`, na ordem em que chegou."""
+    for p in bd.ler("SELECT * FROM wa_entrega_pendente WHERE meta_id=%s ORDER BY id",
+                    (str(meta_id),)):
+        _aplicar_situacao(bd, p["meta_id"], p["situacao"], p.get("erro"), p.get("quando"))
+    bd.escrever("DELETE FROM wa_entrega_pendente WHERE meta_id=%s", (str(meta_id),))
+
+
+def arrumar_entregas_pendentes(db: Any, *, agora: str) -> int:
+    """O AVISO SEM DONO (30/10/2026). Aplica o que já tem mensagem gravada (o aviso e
+    a mensagem podem ter sido gravados ao mesmo tempo, sem um ver o outro) e descarta
+    o de mais de `DIAS_DO_AVISO_SEM_DONO`. ESCREVE. Devolve quantos descartou."""
+    with db.connect() as con:
+        if not banco(con).um("SELECT 1 AS ha FROM wa_entrega_pendente LIMIT 1"):
+            return 0
+    corte = (datetime.strptime(str(agora)[:19], _ISO)
+             - timedelta(days=DIAS_DO_AVISO_SEM_DONO)).strftime(_ISO)
+    with db.transaction() as con:
+        bd = banco(con)
+        for p in bd.ler(
+                """SELECT DISTINCT p.meta_id FROM wa_entrega_pendente p
+                     JOIN wa_mensagem m ON m.meta_id = p.meta_id AND m.direcao = %s""",
+                (DIR_OUT,)):
+            _aplicar_pendentes(bd, p["meta_id"])
+        descartados = bd.escrever(
+            "DELETE FROM wa_entrega_pendente WHERE recebido_em < %s RETURNING id", (corte,))
+    if descartados:
+        LOG.info("WhatsApp: %s aviso(s) de status sem dono descartado(s)", len(descartados))
+    return len(descartados)
+
+
 def aplicar_entregas(con: Any, payload: Any, *, agora: str) -> int:
     """Grava em `wa_mensagem.entrega` o que a Meta disse das mensagens que
-    saíram. ESCREVE. Devolve quantas mudaram."""
+    saíram. ESCREVE. Devolve quantas mudaram.
+
+    A Graph responde antes do `gravar_saida`, e o aviso pode chegar antes da
+    mensagem. O item é confirmado à caixa-postal do mesmo jeito, por isso o aviso
+    sem dono fica guardado em `wa_entrega_pendente`, até `gravar_saida` o aplicar."""
     bd = banco(con)
     mudaram = 0
     for s in _entregas_do_payload(payload):
@@ -416,20 +489,16 @@ def aplicar_entregas(con: Any, payload: Any, *, agora: str) -> int:
                 if detalhe:
                     erro = f"{erro}: {detalhe}"
                 break
-        linha = bd.um("SELECT id, entrega FROM wa_mensagem WHERE meta_id=%s AND direcao=%s",
-                      (str(s["id"]), DIR_OUT))
-        if not linha:
-            continue
-        antes = ORDEM_DA_ENTREGA.get(str(linha.get("entrega") or ""), 0)
-        if ORDEM_DA_ENTREGA[situacao] <= antes:
-            continue
-        if situacao == "failed" and str(linha.get("entrega") or "") in JA_CHEGOU:
-            continue
-        bd.escrever(
-            "UPDATE wa_mensagem SET entrega=%s, entrega_em=%s, entrega_erro=%s WHERE id=%s",
-            (situacao, quando_da_meta(s, agora), (erro or "")[:300] or None,
-             int(linha["id"])))
-        mudaram += 1
+        quando = quando_da_meta(s, agora)
+        mudou = _aplicar_situacao(bd, str(s["id"]), situacao, erro, quando)
+        if mudou is None:
+            bd.escrever(
+                """INSERT INTO wa_entrega_pendente
+                       (meta_id, situacao, erro, quando, recebido_em)
+                   VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING""",
+                (str(s["id"]), situacao, (erro or "")[:300] or None, quando, agora))
+        elif mudou:
+            mudaram += 1
     return mudaram
 
 
@@ -560,6 +629,43 @@ def cabecalho_da_conversa(con: Any, conversa_id: int) -> dict | None:
     """A conversa SEM as mensagens: o que basta para o envio e para o `/novas`,
     que não precisam ler milhares de linhas. Só lê."""
     return banco(con).um("SELECT * FROM wa_conversa WHERE id=%s", (int(conversa_id),))
+
+
+# O `/NOVAS` LEVE (30/10/2026): roda de 2 em 2 segundos com a tela aberta, e antes
+# lia a conversa inteira a cada pergunta. Cada consulta abaixo lê só o que precisa.
+
+
+def mensagens_depois(con: Any, conversa_id: int, depois: int) -> list[dict]:
+    """As mensagens com `id` maior que `depois`, na ordem. Só lê."""
+    return [dict(m) for m in banco(con).ler(
+        "SELECT * FROM wa_mensagem WHERE conversa_id=%s AND id>%s ORDER BY id",
+        (int(conversa_id), int(depois)))]
+
+
+def ultimas_enviadas(con: Any, conversa_id: int, limite: int) -> list[dict]:
+    """O estado de entrega das últimas `limite` enviadas, na ordem. Só lê."""
+    linhas = banco(con).ler(
+        """SELECT id, entrega, entrega_erro, envio_token FROM wa_mensagem
+            WHERE conversa_id=%s AND direcao=%s ORDER BY id DESC LIMIT %s""",
+        (int(conversa_id), DIR_OUT, int(limite)))
+    return [dict(m) for m in reversed(linhas)]
+
+
+def dia_da_mensagem(con: Any, conversa_id: int, mensagem_id: int) -> str:
+    """O dia (`aaaa-mm-dd`) de uma mensagem da conversa, ou vazio. Só lê."""
+    m = banco(con).um("SELECT criado_em FROM wa_mensagem WHERE conversa_id=%s AND id=%s",
+                      (int(conversa_id), int(mensagem_id)))
+    return str((m or {}).get("criado_em") or "")[:10]
+
+
+def ultima_do_cliente(con: Any, conversa_id: int) -> list[dict]:
+    """A mensagem mais recente do cliente, numa lista: é o que basta para
+    `wa_modelos.fora_da_janela`. Só lê."""
+    return [dict(m) for m in banco(con).ler(
+        """SELECT direcao, criado_em FROM wa_mensagem
+            WHERE conversa_id=%s AND direcao=%s AND criado_em IS NOT NULL
+            ORDER BY criado_em DESC LIMIT 1""",
+        (int(conversa_id), DIR_IN))]
 
 
 def mensagem_por_token(con: Any, conversa_id: int, envio_token: str) -> dict | None:
@@ -741,6 +847,8 @@ def gravar_saida(con: Any, conversa_id: int, texto: str, meta_id: str | None,
         # conversa continua esperando uma pessoa.
         bd.escrever("UPDATE wa_conversa SET atualizado_em=%s WHERE id=%s",
                     (quando, int(conversa_id)))
+        if meta_id:
+            _aplicar_pendentes(bd, meta_id)
         return mid
     bd.escrever(
         """UPDATE wa_conversa
@@ -754,4 +862,6 @@ def gravar_saida(con: Any, conversa_id: int, texto: str, meta_id: str | None,
     if (tipo or "") != "modelo":
         bd.escrever("UPDATE wa_conversa SET sugestao=NULL, rascunho=NULL WHERE id=%s",
                     (int(conversa_id),))
+    if meta_id:
+        _aplicar_pendentes(bd, meta_id)
     return mid

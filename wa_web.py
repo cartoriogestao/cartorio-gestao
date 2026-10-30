@@ -44,6 +44,7 @@ import wa_modelos as MODELOS
 import wa_puxar as PUXAR
 import wa_rotina as ROTINA
 import wa_schema as SCH
+import wa_vigia as VIGIA
 from seguranca_web import PRATICA  # M2 (LX11): o AUDITOR vê e não grava
 
 
@@ -275,6 +276,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         O cabeçalho `X-Wa-Parcial` diz ao JS que veio a lista, e não outra
         página: a do login também é HTML, e não pode ir parar dentro da lista
         (revisão do #72)."""
+        VIGIA.marcar_tela_aberta()
         bruto = (request.args.get("aberta") or "").strip()
         with _con() as con:
             linhas, ha_mais = _lista(con, _filtro())
@@ -642,32 +644,36 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         """SÓ AS MENSAGENS NOVAS, desenhadas pelo mesmo parcial da primeira
         carga, e o estado da conversa. SÓ LÊ O BANCO: nunca fala com a Meta nem
         com a caixa-postal — quem traz a mensagem é o «puxar» ou a automação."""
+        # A TELA ESTÁ ABERTA (30/10/2026): a busca do vigia fica mais atenta.
+        VIGIA.marcar_tela_aberta()
         bruto = (request.args.get("depois") or "").strip()
         depois = int(bruto) if bruto.isdigit() else 0
+        # UMA CONEXÃO SÓ, E SEM LER A CONVERSA INTEIRA (30/10/2026).
         with _con() as con:
-            d = WA.conversa(con, conversa_id)
-            sugestao = WA.sugestao_visivel(con, conversa_id, d.get("sugestao")) if d else ""
-        if not d:
-            abort(404)
-        todas = d["mensagens"]
-        # O ATENDIMENTO ATUAL É O PISO (27/10/2026): fora da vista do histórico,
-        # nada de antes de `atendimento_desde_id` volta à tela — nem com
-        # `depois=0`, nem depois de um «Reativar».
-        desde = int(d.get("atendimento_desde_id") or 0)
-        piso = depois
-        if desde and request.args.get("historico") != "1":
-            piso = max(depois, desde - 1)
-        # o dia da última mensagem que a tela tem; com o piso subido, ela não
-        # tem nenhuma do atendimento atual, e o primeiro balão leva o seu dia
-        dia_anterior = "" if piso != depois else next(
-            (str(m.get("criado_em") or "")[:10] for m in todas if int(m["id"]) == depois), "")
-        novas = _com_dias([m for m in todas if int(m["id"]) > piso], dia_anterior)
+            d = WA.cabecalho_da_conversa(con, conversa_id)
+            if not d:
+                abort(404)
+            # O ATENDIMENTO ATUAL É O PISO (27/10/2026): fora da vista do histórico,
+            # nada de antes de `atendimento_desde_id` volta à tela — nem com
+            # `depois=0`, nem depois de um «Reativar».
+            desde = int(d.get("atendimento_desde_id") or 0)
+            piso = depois
+            if desde and request.args.get("historico") != "1":
+                piso = max(depois, desde - 1)
+            novas = WA.mensagens_depois(con, conversa_id, piso)
+            # o dia da última mensagem que a tela tem; com o piso subido, ela não
+            # tem nenhuma do atendimento atual, e o primeiro balão leva o seu dia
+            dia_anterior = (WA.dia_da_mensagem(con, conversa_id, depois)
+                            if novas and piso == depois else "")
+            enviadas = WA.ultimas_enviadas(con, conversa_id, ENTREGAS_NO_NOVAS)
+            ultima = WA.ultima_do_cliente(con, conversa_id)
+            sugestao = WA.sugestao_visivel(con, conversa_id, d.get("sugestao"))
+        novas = _com_dias(novas, dia_anterior)
         html = (render_template("_whatsapp_baloes.html", mensagens=novas,
                                 como_mostrar=MIDIA.como_mostrar) if novas else "")
         # A ENTREGA AO VIVO (29/10/2026): o estado das últimas enviadas, pronto
         # pelo `rotulo_da_entrega`, para o JS atualizar os balões que já estão
         # na tela.
-        enviadas = [m for m in todas if m.get("direcao") == WA.DIR_OUT][-ENTREGAS_NO_NOVAS:]
         entregas = [{"id": int(m["id"]), "token": m.get("envio_token") or "",
                      **WA.rotulo_da_entrega(m.get("entrega"), m.get("entrega_erro"))}
                     for m in enviadas]
@@ -676,7 +682,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                         "status": d.get("status") or "",
                         "modo": d.get("modo") or SCH.MODO_IA,
                         "sugestao": sugestao,
-                        "janela_fora": MODELOS.fora_da_janela(todas, db.now())})
+                        "janela_fora": MODELOS.fora_da_janela(ultima, db.now())})
 
     @app.route("/whatsapp/<int:conversa_id>/reativar", methods=["POST"])
     @login_required

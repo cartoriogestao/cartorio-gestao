@@ -2,10 +2,10 @@
  *
  * O QUE ELA FAZ AQUI, E SÓ ISTO:
  *   - abre rolada na última mensagem;
- *   - pergunta ao servidor, a cada 5 s, pelas mensagens novas da conversa
+ *   - pergunta ao servidor, a cada 2 s, pelas mensagens novas da conversa
  *     aberta e, a cada 15 s, pela lista — só com a aba visível. O servidor só
- *     lê o banco: a mensagem chega a ele pela caixa-postal (o botão ou a
- *     automação), e não por esta tela;
+ *     lê o banco: a mensagem chega a ele pela caixa-postal (o vigia, o botão ou
+ *     a automação), e não por esta tela;
  *   - a busca da lista, no navegador;
  *   - Ctrl+Enter envia (Enter só pula linha: num cartório, mensagem enviada
  *     sem querer não se desfaz), e o balão sobe na hora, numa fila por conversa;
@@ -20,7 +20,7 @@
 (function () {
   "use strict";
 
-  var CONVERSA_MS = 5000;
+  var CONVERSA_MS = 2000;
   var LISTA_MS = 15000;
   var FOLGA_DO_FIM = 40;
   var CABECALHO_DO_PARCIAL = "X-Wa-Parcial";

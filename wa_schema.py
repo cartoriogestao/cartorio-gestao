@@ -320,6 +320,9 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("wa_mensagem", "entrega_erro", "TEXT"),
     # O AVISO DE FORA DO HORÁRIO sai uma vez por período fechado (`wa_rotina`).
     ("wa_conversa", "fora_horario_avisado_em", "TEXT"),
+    # A SUGESTÃO NÃO É TEXTO ESCRITO (30/10/2026): o texto automático mora aqui,
+    # e o `rascunho` é só o que uma pessoa guardou.
+    ("wa_conversa", "sugestao", "TEXT"),
 )
 INDICES_DEPOIS_DA_MIGRACAO: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_wa_mensagem_ia "
@@ -335,15 +338,36 @@ INDICES_DEPOIS_DA_MIGRACAO: tuple[str, ...] = (
 )
 
 
+def _passar_rascunhos_antigos(bd) -> None:
+    """AS LINHAS DE ANTES DA COLUNA `sugestao` (30/10/2026), uma vez só. O
+    `rascunho` era quase sempre texto automático, ou o que já tinha sido enviado:
+    o já enviado some, e o resto vira sugestão. Assim nada aparece escrito
+    sozinho, e um rascunho humano antigo ainda fica acessível pelo TAB."""
+    bd.escrever(
+        """UPDATE wa_conversa c SET rascunho=NULL
+            WHERE btrim(COALESCE(c.rascunho, '')) = btrim(COALESCE(
+                  (SELECT m.texto FROM wa_mensagem m
+                    WHERE m.conversa_id = c.id AND m.direcao = 'out'
+                    ORDER BY m.id DESC LIMIT 1), ''))""")
+    bd.escrever(
+        """UPDATE wa_conversa SET sugestao=rascunho, rascunho=NULL
+            WHERE btrim(COALESCE(rascunho, '')) <> ''""")
+
+
 def init_wa_schema(con) -> None:
     """Cria as tabelas da fila do WhatsApp. Idempotente."""
     bd = banco(con)
     for comando in re.split(r";[ \t]*\n", SCHEMA):
         if re.sub(r"--[^\n]*", "", comando).strip():
             bd.escrever(comando)
+    # Só a subida que CRIA a coluna passa as linhas antigas: depois dela, o
+    # `rascunho` é de uma pessoa e não se mexe mais.
+    sem_sugestao = not bd.tem_coluna("wa_conversa", "sugestao")
     for tabela, coluna, tipo in MIGRACOES:
         if not bd.tem_coluna(tabela, coluna):
             bd.escrever(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
+    if sem_sugestao:
+        _passar_rascunhos_antigos(bd)
     for comando in INDICES_DEPOIS_DA_MIGRACAO:
         bd.escrever(comando)
     for chave in CHAVES_CONFIG:

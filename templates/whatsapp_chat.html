@@ -287,8 +287,14 @@
             {% for r in respostas %}<option value="{{ loop.index0 }}" data-texto="{{ r.texto }}">{{ r.atalho }}</option>{% endfor %}
           </select>
           {% endif %}
-          <textarea name="rascunho" rows="3" data-wa-caixa aria-label="mensagem"
-                    placeholder="escreva a mensagem…">{{ c.rascunho or '' }}</textarea>
+          {#- A SUGESTÃO NÃO É TEXTO ESCRITO (30/10/2026): a caixa nasce com o que
+              uma pessoa guardou, e a sugestão aparece em cinza, como `placeholder`.
+              Só o TAB a torna texto de verdade (`whatsapp_chat.js`). -#}
+          <textarea name="rascunho" rows="3" data-wa-caixa aria-label="mensagem" autocomplete="off"
+                    data-wa-sugestao="{{ c.sugestao_na_caixa }}"
+                    data-wa-placeholder="escreva a mensagem…"
+                    placeholder="{{ c.sugestao_na_caixa or 'escreva a mensagem…' }}">{{ c.rascunho or '' }}</textarea>
+          <p class="small muted wa-sugestao-aviso" data-wa-sugestao-aviso hidden>TAB para usar</p>
           <div class="wa-escrever-botoes">
             <button class="button primary" data-wa-enviar {% if not pode_enviar %}disabled{% endif %}>Enviar</button>
             <button class="button secondary"

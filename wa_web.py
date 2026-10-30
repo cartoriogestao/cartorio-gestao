@@ -602,6 +602,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 d["contato"] = CONTATO.quem_e(con, d.get("wa_id"))
                 d["iniciais"] = FILA.iniciais(d.get("nome"), d.get("wa_id"))
                 vista = _vista(d, request.args.get("historico") == "1")
+                d["sugestao_na_caixa"] = WA.sugestao_visivel(con, conversa_id, d.get("sugestao"))
                 _com_dias(d["mensagens"])
                 usuarios = FILA.usuarios_ativos(con)
                 # A JANELA DE 24 H (27/10/2026): passada ela, a Meta recusa o
@@ -639,6 +640,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         depois = int(bruto) if bruto.isdigit() else 0
         with _con() as con:
             d = WA.conversa(con, conversa_id)
+            sugestao = WA.sugestao_visivel(con, conversa_id, d.get("sugestao")) if d else ""
         if not d:
             abort(404)
         todas = d["mensagens"]
@@ -667,6 +669,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                         "ultimo": max([depois] + [int(m["id"]) for m in novas]),
                         "status": d.get("status") or "",
                         "modo": d.get("modo") or SCH.MODO_IA,
+                        "sugestao": sugestao,
                         "janela_fora": MODELOS.fora_da_janela(todas, db.now())})
 
     @app.route("/whatsapp/<int:conversa_id>/reativar", methods=["POST"])

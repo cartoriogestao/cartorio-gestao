@@ -479,7 +479,9 @@ def aplicar_entrada(con: Any, payload_meta: Any,
         tipo, midia_id = tipo_e_midia(msg)
         nome = str(nomes.get(wa_id) or msg.get("nome") or "").strip()
         etiqueta = classificar(texto)
-        rascunho = rascunhar(texto, etiqueta, serventia, con=con)
+        # A SUGESTÃO NÃO É TEXTO ESCRITO (30/10/2026): o texto automático vai em
+        # `sugestao`, e o `rascunho` é só o que uma pessoa guardou.
+        sugestao = rascunhar(texto, etiqueta, serventia, con=con)
         bruto = json.dumps(msg, ensure_ascii=False)
         existente = _conversa_por_wa(con, wa_id)
         # A RESOLVIDA QUE VOLTA (27/10/2026): nada se apaga; a tela retoma pela
@@ -494,21 +496,21 @@ def aplicar_entrada(con: Any, payload_meta: Any,
             bd.escrever(
                 """UPDATE wa_conversa
                       SET nome=COALESCE(NULLIF(%s, ''), nome),
-                          etiqueta=%s, rascunho=%s, status=%s,
+                          etiqueta=%s, sugestao=%s, status=%s,
                           modo=CASE WHEN status=%s THEN NULL ELSE modo END,
                           auto_ok=0, atualizado_em=%s
                     WHERE id=%s""",
-                (nome, etiqueta, rascunho, WA.ABERTA, WA.RESOLVIDA, quando,
+                (nome, etiqueta, sugestao, WA.ABERTA, WA.RESOLVIDA, quando,
                  cid),
             )
         else:
             cid = int(bd.escrever(
                 """INSERT INTO wa_conversa
-                       (wa_id, nome, etiqueta, status, rascunho,
+                       (wa_id, nome, etiqueta, status, sugestao,
                         auto_ok, atualizado_em)
                    VALUES (%s, %s, %s, %s, %s, 0, %s)
                    RETURNING id""",
-                (wa_id, nome, etiqueta, WA.ABERTA, rascunho, quando),
+                (wa_id, nome, etiqueta, WA.ABERTA, sugestao, quando),
             )[0]["id"])
         mid = int(bd.escrever(
             """INSERT INTO wa_mensagem
@@ -551,6 +553,21 @@ def conversa(con: Any, conversa_id: int) -> dict | None:
     d = dict(row)
     d["mensagens"] = [dict(m) for m in msgs]
     return d
+
+
+def sugestao_visivel(con: Any, conversa_id: int, sugestao: Any) -> str:
+    """A sugestão que a caixa de escrever pode mostrar: só quando a última
+    mensagem é do cliente. O aviso automático não conta, porque não é resposta
+    (`gravar_saida`). UMA regra para a tela e para o `/novas`. Só lê."""
+    texto = str(sugestao or "").strip()
+    if not texto:
+        return ""
+    ultima = banco(con).um(
+        """SELECT direcao FROM wa_mensagem
+            WHERE conversa_id=%s AND COALESCE(tipo, '') <> 'aviso'
+            ORDER BY id DESC LIMIT 1""",
+        (int(conversa_id),))
+    return texto if ultima and ultima.get("direcao") == DIR_IN else ""
 
 
 def salvar_rascunho(con: Any, conversa_id: int, texto: str,
@@ -707,4 +724,10 @@ def gravar_saida(con: Any, conversa_id: int, texto: str, meta_id: str | None,
             WHERE id=%s""",
         (WA.AGUARDANDO, quando, int(conversa_id)),
     )
+    # A SAÍDA LIMPA (30/10/2026): o que foi respondido não volta à caixa. O modelo
+    # não é a resposta: ele só reabre a janela de 24 h, e o rascunho guardado é o
+    # que vai depois que o cliente responder.
+    if (tipo or "") != "modelo":
+        bd.escrever("UPDATE wa_conversa SET sugestao=NULL, rascunho=NULL WHERE id=%s",
+                    (int(conversa_id),))
     return mid

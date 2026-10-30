@@ -155,6 +155,7 @@
         }
         atualizarEstado(dados);
         atualizarEntregas(dados.entregas);
+        trocarSugestao(dados.sugestao);
       })
       .catch(function () { /* a próxima pergunta tenta de novo */ })
       .then(function () { perguntandoConversa = false; });
@@ -253,6 +254,47 @@
     });
   }
 
+  // ------------------------------------------------------------- a sugestão
+  // A SUGESTÃO NÃO É TEXTO ESCRITO (30/10/2026): fica no `placeholder`, que o
+  // navegador já mostra só com a caixa vazia. O TAB a torna texto; qualquer outro
+  // TAB muda de campo, porque o teclado não pode ficar preso na caixa.
+  var avisoDaSugestao = document.querySelector("[data-wa-sugestao-aviso]");
+
+  function sugestaoDaCaixa() {
+    return texto.getAttribute("data-wa-sugestao") || "";
+  }
+
+  function mostrarSugestao() {
+    texto.placeholder = sugestaoDaCaixa() || texto.getAttribute("data-wa-placeholder") || "";
+    if (avisoDaSugestao) {
+      avisoDaSugestao.hidden = !sugestaoDaCaixa() || texto.value !== "";
+    }
+  }
+
+  /* Ao vivo: só o atributo e a propriedade. O que a pessoa digita fica como está. */
+  function trocarSugestao(sugestao) {
+    if (!texto || typeof sugestao !== "string" || sugestao === sugestaoDaCaixa()) {
+      return;
+    }
+    texto.setAttribute("data-wa-sugestao", sugestao);
+    mostrarSugestao();
+  }
+
+  if (texto) {
+    texto.addEventListener("input", mostrarSugestao);
+    texto.addEventListener("keydown", function (evento) {
+      if (evento.key !== "Tab" || evento.shiftKey || evento.ctrlKey || evento.altKey ||
+          evento.metaKey || texto.value !== "" || !sugestaoDaCaixa()) {
+        return;
+      }
+      evento.preventDefault();
+      texto.value = sugestaoDaCaixa();
+      texto.selectionStart = texto.selectionEnd = texto.value.length;
+      mostrarSugestao();
+    });
+    mostrarSugestao();
+  }
+
   // ---------------------------------------------------- os detalhes
   // A JANELINHA FLUTUANTE (segunda revisão do #73): abre e fecha pela seta, e
   // fecha também pelo Esc e pelo clique fora dela.
@@ -326,6 +368,7 @@
       texto.value = texto.value.trim() ? texto.value.replace(/\s+$/, "") + "\n" + pronto
                                        : pronto;
       respostas.selectedIndex = 0;
+      mostrarSugestao();
       texto.focus();
     });
   }

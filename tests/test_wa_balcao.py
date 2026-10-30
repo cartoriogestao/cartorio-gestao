@@ -170,7 +170,7 @@ def test_webhook_post_cria_conversa_mensagem_rascunho_e_e_idempotente(s):
     assert len(convs) == 1
     assert len(msgs) == 1
     assert convs[0]["etiqueta"] == "horario"
-    assert convs[0]["rascunho"]
+    assert convs[0]["sugestao"] and not convs[0]["rascunho"]
     assert convs[0]["auto_ok"] == 0
     assert msgs[0]["meta_id"] == "wamid.abc"
     assert msgs[0]["direcao"] == "in"
@@ -362,9 +362,10 @@ def test_enviar_mock_graph_cria_mensagem_out(s):
     html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
     csrf = _token(html)
     with patch("urllib.request.urlopen", side_effect=fake_urlopen) as m:
+        # a sugestão nunca sai sozinha (30/10/2026): o texto vem da caixa
         r = s["c"].post(
             f"/whatsapp/{cid}/enviar",
-            data={"csrf_token": csrf},
+            data={"csrf_token": csrf, "rascunho": "Bom dia."},
             follow_redirects=False,
         )
         assert m.called
@@ -666,8 +667,8 @@ def test_enviar_o_texto_da_caixa_guarda_posta_fora_da_transacao_e_grava(s, monke
                     data={"csrf_token": csrf, "rascunho": "  A certidão já saiu.  "})
     assert r.status_code == 302 and f"/whatsapp/{cid}" in r.headers["Location"]
     assert postados == [False], "o postar_envio rodou dentro da transação"
-    assert _um(s, "SELECT rascunho FROM wa_conversa WHERE id=%s",
-               (cid,))["rascunho"] == "A certidão já saiu."
+    # a saída limpa (30/10/2026): o que foi enviado não volta à caixa
+    assert not _um(s, "SELECT rascunho FROM wa_conversa WHERE id=%s", (cid,))["rascunho"]
     assert [(m["texto"], m["meta_id"]) for m in _saidas(s, cid)] == [
         ("A certidão já saiu.", "wamid.caixa-out")]
 
@@ -1259,3 +1260,105 @@ def test_a_caixa_de_marcacao_do_filtro_tem_tamanho_natural_e_alinhada():
     assert "width:16px" in regra and "min-height:0" in regra and "padding:0" in regra
     rotulo = re.search(r"\.wa-chat label\.check\{([^}]*)\}", css).group(1)
     assert "display:flex" in rotulo and "align-items:center" in rotulo and "gap:" in rotulo
+
+
+# ===================================================================
+# A SUGESTÃO NÃO É TEXTO ESCRITO (30/10/2026)
+# ===================================================================
+
+
+def _colunas(s, cid):
+    return _um(s, "SELECT rascunho, sugestao FROM wa_conversa WHERE id=%s", (cid,))
+
+
+def _caixa(html):
+    return re.search(r"<textarea[^>]*data-wa-caixa[^>]*>([^<]*)</textarea>", html)
+
+
+def test_mensagem_nova_grava_a_sugestao_e_nao_toca_no_rascunho(s):
+    cid = _entrar(s, texto="qual o horario?", meta_id="wamid.sug-1")
+    assert _colunas(s, cid)["sugestao"] and not _colunas(s, cid)["rascunho"]
+    with s["bd"].transaction() as con:
+        WA.salvar_rascunho(con, cid, "Escrito por uma pessoa.")
+    _mais_uma(s, "e o endereco?", "wamid.sug-2")
+    assert _colunas(s, cid)["rascunho"] == "Escrito por uma pessoa."
+
+
+def test_a_caixa_nasce_vazia_e_a_sugestao_vai_no_atributo_proprio(s):
+    cid = _entrar(s, texto="qual o horario?", meta_id="wamid.sug-tela")
+    with s["bd"].transaction() as con:
+        _banco(con).escrever("UPDATE wa_conversa SET sugestao='Abrimos cedo.' WHERE id=%s", (cid,))
+    caixa = _caixa(s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True))
+    assert caixa.group(1) == ""
+    assert 'data-wa-sugestao="Abrimos cedo."' in caixa.group(0)
+    assert 'placeholder="Abrimos cedo."' in caixa.group(0)
+    assert 'autocomplete="off"' in caixa.group(0)
+    js = (RAIZ / "static" / "whatsapp_chat.js").read_text(encoding="utf-8")
+    assert 'evento.key !== "Tab"' in js and "evento.shiftKey" in js
+
+
+def test_a_sugestao_so_aparece_com_a_ultima_mensagem_do_cliente(s):
+    cid = _entrar(s, texto="qual o horario?", meta_id="wamid.sug-ultima")
+    with s["bd"].transaction() as con:
+        WA.gravar_saida(con, cid, "Fora do horário.", "wamid.sug-av", autor="aviso", tipo="aviso")
+    novas = s["c"].get(f"/whatsapp/{cid}/novas?depois=0").get_json()
+    assert novas["sugestao"], "o aviso automático não é resposta"
+    with s["bd"].transaction() as con:
+        _banco(con).escrever("UPDATE wa_conversa SET sugestao='Sobrou.' WHERE id=%s", (cid,))
+        WA.gravar_saida(con, cid, "O modelo.", "wamid.sug-mod", autor="MARIO", tipo="modelo")
+    assert s["c"].get(f"/whatsapp/{cid}/novas?depois=0").get_json()["sugestao"] == ""
+
+
+@pytest.mark.parametrize("autor", ["MARIO EXEMPLO DOS SANTOS", "ia"])
+def test_a_resposta_de_pessoa_ou_da_ia_limpa_as_duas_colunas(s, autor):
+    cid = _entrar(s, meta_id="wamid.sug-limpa")
+    with s["bd"].transaction() as con:
+        WA.salvar_rascunho(con, cid, "Guardado.")
+    _saida(s, cid, "Respondido.", autor, "wamid.sug-limpa-out")
+    assert not _colunas(s, cid)["sugestao"] and not _colunas(s, cid)["rascunho"]
+
+
+@pytest.mark.parametrize("tipo", ["aviso", "modelo"])
+def test_o_aviso_e_o_modelo_nao_limpam(s, tipo):
+    cid = _entrar(s, meta_id=f"wamid.sug-{tipo}")
+    with s["bd"].transaction() as con:
+        WA.salvar_rascunho(con, cid, "Guardado.")
+        WA.gravar_saida(con, cid, "Automático.", f"wamid.sug-{tipo}-out", autor="x", tipo=tipo)
+    assert _colunas(s, cid)["sugestao"] and _colunas(s, cid)["rascunho"] == "Guardado."
+
+
+def test_a_passagem_das_linhas_antigas_roda_uma_vez_so(s):
+    def _de(wa_id, meta_id):
+        s["c"].post("/whatsapp/webhook", data=json.dumps(_payload("oi", meta_id, wa_id)),
+                    content_type="application/json", headers={"X-Wa-Test": "1"})
+        return int(_um(s, "SELECT id FROM wa_conversa WHERE wa_id=%s", (wa_id,))["id"])
+    enviado = _de("5599900000001", "wamid.ant-1")
+    antigo = _de("5599900000002", "wamid.ant-2")
+    _saida(s, enviado, "Já foi enviado.", "MARIO", "wamid.ant-1-out")
+    with s["bd"].transaction() as con:
+        bd = _banco(con)
+        bd.escrever("UPDATE wa_conversa SET rascunho=' Já foi enviado. ' WHERE id=%s", (enviado,))
+        bd.escrever("UPDATE wa_conversa SET rascunho='Texto antigo.' WHERE id=%s", (antigo,))
+        bd.escrever("ALTER TABLE wa_conversa DROP COLUMN sugestao")
+        SCH.init_wa_schema(con)
+    assert not _colunas(s, enviado)["rascunho"] and not _colunas(s, enviado)["sugestao"]
+    assert not _colunas(s, antigo)["rascunho"]
+    assert _colunas(s, antigo)["sugestao"] == "Texto antigo."
+    # rodar de novo não muda nada, nem o que uma pessoa guardou depois
+    with s["bd"].transaction() as con:
+        WA.salvar_rascunho(con, antigo, "Agora é de uma pessoa.")
+        SCH.init_wa_schema(con)
+    assert _colunas(s, antigo)["rascunho"] == "Agora é de uma pessoa."
+    assert _colunas(s, antigo)["sugestao"] == "Texto antigo."
+
+
+def test_o_novas_traz_a_sugestao_e_o_script_sai_como_texto(s):
+    cid = _entrar(s, texto="qual o horario?", meta_id="wamid.sug-xss")
+    with s["bd"].transaction() as con:
+        _banco(con).escrever("UPDATE wa_conversa SET sugestao=%s WHERE id=%s", (SCRIPT, cid))
+    assert s["c"].get(f"/whatsapp/{cid}/novas?depois=0").get_json()["sugestao"] == SCRIPT
+    html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    assert SCRIPT not in html and ESCAPADO in html
+    js = (RAIZ / "static" / "whatsapp_chat.js").read_text(encoding="utf-8")
+    assert "texto.placeholder = sugestaoDaCaixa()" in js
+    assert "innerHTML = sugest" not in js

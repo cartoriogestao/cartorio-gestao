@@ -42,6 +42,7 @@ import notas_inutilizacao as NI
 import impressao_pdf as IPDF
 import notas_livro as NL
 import notas_familias as NF
+import notas_fases as NFASES
 import notas_modelos as NMOD
 import notas_naturezas as NNAT
 import arquivo_visivel as ARQVIS
@@ -5290,8 +5291,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         with db.connect() as _c:
             agente_do_ato = IDR.frase_da_entidade(_c, "NT_ATO", ato_id,
                                                   ("NT_ATO_LANCADO",))
+        pendencias = _pendencias_do_teor(a["teor"] or "")
+        falta_qualificar = NT.pendencias_da_qualificacao(partes)
+        comunicacao_da_tela = _comunicacao_desta_tela(a)
+        lugar = NFASES.lugar_dos_quadros(a)
+
+        def fases_da_ficha() -> dict:
+            """A régua do layout novo. Só ele chama, e o antigo não paga a conta das travas."""
+            foco = ("partes" if busca else lugar["antes_de_lancar"] if busca_anterior
+                    else "lancar" if request.args.get("paginas_a_mao") else "")
+            return NFASES.fases_do_ato(
+                a, partes=partes, anexos=anexos, pendencias=pendencias,
+                falta_qualificar=falta_qualificar,
+                travas=_travas_da_lavratura(dict(a)), arquivamento=arquivamento,
+                comunicacao=comunicacao_da_tela["comunicacao"],
+                comunicacao_devida=comunicacao_da_tela["comunicacao_devida"],
+                depositos=depositos, foco=foco,
+                modelo_com_imovel=bool(modelo["com_imovel"]) if modelo else None)
+
         return render_template("notas_ato.html", a=dict(a), partes=partes,
                                agente_do_ato=agente_do_ato,
+                               lugar=lugar, fases_da_ficha=fases_da_ficha,
                                doi_partes=doi_partes,
                                fraudes=fraudes, modelo=modelo, familia=familia,
                                anexos=anexos,
@@ -5299,8 +5319,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                requisitos_modelo=requisitos_modelo,
                                campos=campos, valores_do_modelo=valores_do_modelo,
                                busca_parte=busca, achados=achados,
-                               pendencias=_pendencias_do_teor(a["teor"] or ""),
-                               falta_qualificar=NT.pendencias_da_qualificacao(partes),
+                               pendencias=pendencias,
+                               falta_qualificar=falta_qualificar,
                                depositos=depositos, previsao=previsao,
                                arquivamento=arquivamento,
                                paginas_estimadas=paginas_estimadas,
@@ -5310,7 +5330,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                pede_anotacao=pede_anotacao,
                                busca_anterior=busca_anterior,
                                candidatos=candidatos,
-                               **_comunicacao_desta_tela(a),
+                               **comunicacao_da_tela,
                                saldo=CXC.reais(DEP.saldo_do_titulo(depositos)),
                                FORMAS=CXC.FORMAS_PAGAMENTO,
                                TIPOS_ANOTACAO=TIPOS_ANOTACAO,

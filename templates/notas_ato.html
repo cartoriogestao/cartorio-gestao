@@ -51,7 +51,7 @@
     <div class="notice span2 {% if not arq.confirmado %}warning{% endif %}">
       <strong>Selo de arquivamento (13.30) — obrigatório neste ato.</strong>
       {% if not arq.contagem.anexos %}
-        <strong>Anexe o documento arquivado</strong> (em «Documentos do ato»):
+        <strong>Anexe o documento arquivado</strong> (em <a href="#documentos">«Documentos do ato»</a>):
         o número de folhas sai dele, e sem ele o selo não sai.
       {% else %}
         Contagem dos anexos: <strong>{{ arq.contagem.texto }}</strong>.
@@ -78,6 +78,23 @@
     {% endif %}
   </form>
 {% endmacro %}
+{% macro guardar_pdf_assinado(a, csrf_token) %}
+  {# O PDF ASSINADO É DEPOIS DO ATO LANÇADO: assinatura de coisa que ainda pode
+     mudar não prova nada. #}
+  <details style="padding:0 14px 14px">
+    <summary class="small">Guardar o PDF assinado deste ato</summary>
+    <form method="post" enctype="multipart/form-data" class="inline-form"
+          action="{{ url_for('notas_ato_pdf_assinado', ato_id=a.id) }}"
+          style="margin-top:10px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="file" name="arquivo" accept=".pdf" required>
+      <button>Guardar</button>
+    </form>
+    <p class="small muted" style="margin-top:8px">
+      O arquivo fica guardado com a impressão digital SHA-256, como toda
+      evidência desta casa.</p>
+  </details>
+{% endmacro %}
 {% extends 'base.html' %}
 {% block heading %}<h1>{{ TIPOS_ATO.get(a.tipo, a.tipo) }}
   {%- if a.termo %} — termo nº {{ a.termo }}
@@ -85,6 +102,12 @@
   {%- elif a.situacao == 'EM_LAVRATURA' %} em lavratura (nº interno {{ a.id }})
   {%- else %} nº interno {{ a.id }}{% endif %}</h1>{% endblock %}
 {% block content %}
+{# AS FASES SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026, `notas_fases`. Quem continua no
+   antigo recebe esta mesma página, na mesma ordem. Os quadros não saem do lugar:
+   cada um diz a que fase pertence, e `static/fases.js` mostra os da fase aberta. #}
+{% from '_fases.html' import abre_ficha, regua, lista_do_que_falta, travas_e_barras %}
+{% set f = fases_da_ficha() if layout_novo else none %}
+{% if f %}{{ abre_ficha(VERSION) }}{% endif %}
 {% from '_fraude.html' import alerta as alerta_fraude %}
 {# O ALERTA DE FRAUDE VEM NO ALTO, antes dos atos. #}
 {{ alerta_fraude(fraudes, csrf_token, 'Notas — ficha do ato', a.numero_ordem,
@@ -103,7 +126,8 @@
    23/10/2026 («a parte do agente de minutas tem que ser a primeira da tela»).
    Acima dele ficam só o alerta de fraude (que só aparece quando há) e os
    botões de voltar. Só aparece nas espécies que ele prepara e em lavratura. #}
-{% if agente_minutas is defined %}{% include '_agente_de_minuta.html' %}{% endif %}
+{% if f %}{{ regua(f, 'ato-' ~ a.id) }}<span class="cg-ancora" id="preparar"></span>{% endif %}
+{% if agente_minutas is defined %}<div data-fase="preparar">{% include '_agente_de_minuta.html' %}</div>{% endif %}
 
 {# A ANOTAÇÃO ANTES DA LAVRATURA — 17/09/2026, pedido do oficial:
    «acrescenta o campo de anotações antes da lavratura também para as
@@ -112,7 +136,7 @@
    de trabalho, e por isso fica ANTES do teor: é o que quem vai lançar precisa
    ler antes de clicar. #}
 {% if a.situacao == 'EM_LAVRATURA' or a.observacao %}
-<section class="panel">
+<section class="panel" data-fase="preparar">
   <div class="panel-head"><span>Anotações antes da lavratura</span></div>
   {% if a.situacao == 'EM_LAVRATURA' %}
   <form method="post" style="padding:14px">
@@ -142,9 +166,9 @@
 {% endif %}
 
 {% if a.situacao == 'EM_LAVRATURA' %}
-<div class="notice warning"><strong>EM LAVRATURA.</strong>
+<div class="notice warning" data-fase="preparar"><strong>EM LAVRATURA.</strong>
   Este ato ainda não ocupa folha de livro nenhum e não vai a central nenhuma. Termine o teor e
-  use <em>Lançar no livro</em>, no fim desta página.</div>
+  use <em>Lançar no livro</em>{% if f %}, na fase <a href="#lancar">Lançar</a>{% else %}, no fim desta página{% endif %}.</div>
 {% elif a.situacao != 'LAVRADO' %}
 <div class="notice danger"><strong>{{ SITUACOES.get(a.situacao, a.situacao)|upper }}.</strong>
   {{ a.sem_efeito_motivo or '' }}
@@ -173,11 +197,11 @@
   <a href="#comunicacao-origem">Juntar o comprovante</a>.</div>
 {% endif %}
 {% if pendencias %}
-<div class="notice warning"><strong>O teor tem {{ pendencias|length }} campo(s) em branco:</strong>
+<div class="notice warning" data-fase="teor"><strong>O teor tem {{ pendencias|length }} campo(s) em branco:</strong>
   {{ pendencias[:8]|join(', ') }}. Não dá para trasladar assim.</div>
 {% endif %}
 {% if requisitos_modelo %}
-<section class="panel">
+<section class="panel" data-fase="preparar">
   <details>
     <summary class="panel-head" style="cursor:pointer">
       <span>Conferência jurídica do modelo</span>
@@ -192,7 +216,7 @@
 </section>
 {% endif %}
 
-<section class="panel">
+<section class="panel cg-ato-cabeca">
   <div class="panel-head"><span>{{ fmt_date(a.data) }} {{ a.hora or '' }}</span>
     <span class="small muted">
       {%- if a.livro -%}
@@ -211,7 +235,7 @@
 </section>
 
 <!-- DOCUMENTOS E EVIDÊNCIAS: painel compartilhado por escrituras e atas. -->
-<section class="panel">
+<section class="panel" id="documentos" data-fase="documentos">
   <div class="panel-head"><span>{% if a.tipo in ('ATA', 'ATA_USUCAPIAO') %}Evidências da constatação{% else %}Documentos do ato{% endif %}</span>
     <span class="small muted">{{ anexos|length }} arquivo(s), com SHA-256</span></div>
   {% if anexos %}
@@ -257,7 +281,7 @@
 {# DOCUMENTOS PARA QUALIFICAÇÃO — relato #135, 15/10/2026. Vêm do Protocolo
    Geral ligado a este ato; anexar e retirar é lá, para servir qualquer ato
    que saia do mesmo atendimento. Aqui se vê e se liga. #}
-<section class="panel" id="documentos-qualificacao">
+<section class="panel" id="documentos-qualificacao" data-fase="preparar">
   <div class="panel-head"><span>Documentos para qualificação (Protocolo Geral)</span>
     <span class="small muted">{% if qualificacao.protocolo %}protocolo
       <a href="{{ url_for('caixa_protocolo', protocolo_id=qualificacao.protocolo.id) }}#documentos-qualificacao">{{ qualificacao.protocolo.numero }}</a>
@@ -305,7 +329,8 @@
 </section>
 
 <!-- ============================ PARTES ============================ -->
-<section class="panel">
+{% if f %}<span class="cg-ancora" id="partes"></span>{% endif %}
+<section class="panel" data-fase="partes">
   <div class="panel-head"><span>Partes</span><span class="small muted">{{ partes|length }}</span></div>
 <div class="table-wrap"><table>
     <thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>Qualificação</th><th>Origem</th><th></th></tr></thead>
@@ -325,6 +350,9 @@
                    value="{{ p.qualificacao or '' }}" aria-label="Qualificação de {{ p.nome }}">
             <button name="acao" value="qualificacao_parte" class="small">Salvar qualificação</button>
           </form>
+          {# O PAPEL NA DOI SÓ NA ESCRITURA, no layout novo: é o exemplo do pedido do
+             oficial, campo da DOI à vista onde não há DOI nenhuma. #}
+          {% if a.tipo == 'ESCRITURA' or not f %}
           <form method="post" class="inline-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="parte_id" value="{{ p.id }}">
@@ -336,6 +364,7 @@
             </select>
             <button name="acao" value="papel_doi" class="small">Salvar papel</button>
           </form>
+          {% endif %}
           {# O QUE O CNN ART. 111 PÕE NA QUALIFICAÇÃO — LD07, 21/10/2026: o documento
              de identidade (ou a filiação), a união estável, e o cônjuge e o regime
              de quem é casado. O que faltar sai marcado no teor e trava a lavratura. #}
@@ -482,6 +511,7 @@
 </section>
 
 <!-- ============================ TEOR ============================ -->
+{% if f %}<span class="cg-ancora" id="teor"></span>{% endif %}
 {# PREENCHER CONTINUA À MÃO DEPOIS DE SALVO — relato #78, 17/09/2026:
    «depois que avança e salva o rascunho da escritura, não consegue voltar
    pra página intermediária de preenchimento de dados».
@@ -489,7 +519,7 @@
    e quem tiver editado o texto à mão perde a edição. #}
 {% if campos %}
 {% set ja_tem_teor = (a.teor or '').strip() %}
-<section class="panel">
+<section class="panel" data-fase="teor">
   <details {% if not ja_tem_teor %}open{% endif %}>
     <summary class="panel-head" style="cursor:pointer">
       <span>Preencher a partir do modelo: {{ modelo.nome }}</span>
@@ -529,7 +559,7 @@
 {% endif %}
 
 {% if falta_qualificar %}
-<div class="notice warning">
+<div class="notice warning" data-fase="partes">
   <strong>Qualificação incompleta</strong> — art. 215, § 1º do Código Civil:
   <ul>{% for f in falta_qualificar %}<li>{{ f }}</li>{% endfor %}</ul>
   Complete na ficha de firma da pessoa e monte o teor de novo.
@@ -537,7 +567,7 @@
 {% endif %}
 
 {% if not modelo or modelo.origem != 'SISTEMA' %}
-<section class="panel">
+<section class="panel" data-fase="teor">
   <div class="panel-head"><span>Montar o teor</span></div>
   <form method="post" action="{{ url_for('notas_ato_montar', ato_id=a.id) }}" style="padding:14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -559,7 +589,7 @@
   justificado, entrelinha do documento. Ela não é enfeite — é o que responde
   «como isto vai ficar», que era a pergunta.
 #}
-<section class="panel">
+<section class="panel" data-fase="teor">
   <div class="panel-head"><span>Teor do ato</span>
     {% if modelo %}<span class="small muted">modelo: {{ modelo.nome }}</span>{% endif %}</div>
 
@@ -614,22 +644,8 @@
       parágrafos, na ordem — negrito, tabela e imagem não voltam, e a tela diz
       quantos parágrafos entraram e quantos ficaram iguais.</p>
   </details>
-  {% else %}
-  {# O PDF ASSINADO É DEPOIS DO ATO LANÇADO: assinatura de coisa que ainda pode
-     mudar não prova nada. #}
-  <details style="padding:0 14px 14px">
-    <summary class="small">Guardar o PDF assinado deste ato</summary>
-    <form method="post" enctype="multipart/form-data" class="inline-form"
-          action="{{ url_for('notas_ato_pdf_assinado', ato_id=a.id) }}"
-          style="margin-top:10px">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="file" name="arquivo" accept=".pdf" required>
-      <button>Guardar</button>
-    </form>
-    <p class="small muted" style="margin-top:8px">
-      O arquivo fica guardado com a impressão digital SHA-256, como toda
-      evidência desta casa.</p>
-  </details>
+  {% elif not f %}
+  {{ guardar_pdf_assinado(a, csrf_token) }}
   {% endif %}
 </section>
 
@@ -648,7 +664,8 @@
   venda a gera do mesmo jeito que um registro.
 #}
 {% if a.tipo == 'ESCRITURA' %}
-<section class="panel">
+{% if f %}<span class="cg-ancora" id="doi"></span>{% endif %}
+<section class="panel" data-fase="doi">
   <div class="panel-head"><span>O imóvel — para a DOI</span>
     {% if a.com_imovel %}<span class="badge ok">entra na DOI</span>
     {% elif a.com_imovel is not none and a.com_imovel == 0 %}
@@ -782,7 +799,16 @@
 {% endif %}
 
 <!-- ====================== LANÇAMENTO NO LIVRO ====================== -->
-<section class="panel">
+{% if f %}
+<span class="cg-ancora" id="lancar"></span>
+{% if f.para_lancar %}{{ lista_do_que_falta('O que falta para lançar', f.para_lancar, 'lancar') }}{% endif %}
+{% if a.situacao == 'EM_LAVRATURA' and a.observacao %}
+{# A anotação é para quem vai lançar ler antes de clicar: volta aqui, só para leitura. #}
+<div class="notice warning" data-fase="lancar"><strong>Anotação antes da lavratura.</strong>
+  {{ a.observacao }}{% if a.observacao_por %} <span class="small muted">({{ a.observacao_por }})</span>{% endif %}</div>
+{% endif %}
+{% endif %}
+<section class="panel" data-fase="lancar">
   <div class="panel-head"><span>Livro, folha e termo</span></div>
   {% if a.livro or a.termo %}
   <div class="grid2" style="padding:14px">
@@ -934,7 +960,17 @@
 </section>
 
 <!-- ====================== ANOTAÇÕES À MARGEM ====================== -->
-<section class="panel">
+{% if f %}
+<span class="cg-ancora" id="entrega"></span>
+{% if f.para_entregar %}{{ lista_do_que_falta('O que falta entregar', f.para_entregar, 'entrega') }}{% endif %}
+{% if a.situacao != 'EM_LAVRATURA' %}
+<section class="panel" id="pdf-assinado" data-fase="entrega">
+  <div class="panel-head"><span>PDF assinado</span></div>
+  {{ guardar_pdf_assinado(a, csrf_token) }}
+</section>
+{% endif %}
+{% endif %}
+<section class="panel" data-fase="entrega">
   <div class="panel-head"><span>Anotações à margem</span>
     <span class="small muted">{{ anotacoes|length }}</span></div>
 
@@ -986,7 +1022,7 @@
 
 {% if pede_anotacao %}
 <!-- ====================== O ATO ANTERIOR ====================== -->
-<section class="panel">
+<section class="panel" data-fase="{{ lugar.antes_de_lancar }}">
   <div class="panel-head"><span>Ato anterior — o que este ato desfaz</span></div>
   {% if anterior %}
   <div style="padding:14px">
@@ -1039,7 +1075,7 @@
 
 {% if comunicacao_cabe %}
 <!-- ============ A COMUNICAÇÃO À SERVENTIA DE ORIGEM (relato #129) ============ -->
-<section class="panel" id="comunicacao-origem">
+<section class="panel" id="comunicacao-origem" data-fase="{{ lugar.antes_de_lancar }}">
   <div class="panel-head"><span>Comunicação à serventia de origem da procuração</span>
     <span class="small muted">{{ COMUNICACAO_FUNDAMENTO }}</span></div>
   <div style="padding:14px">
@@ -1148,7 +1184,7 @@
   O que aparece aqui é o MESMO registro que aparece no caixa: um depósito só,
   visto de dois lugares. Não é uma segunda anotação.
 #}
-<section class="panel">
+<section class="panel" id="financeiro" data-fase="financeiro">
   <div class="panel-head"><span>{% if a.situacao == 'EM_LAVRATURA' %}Adiantamento vinculado{% else %}Depósito prévio{% endif %}</span>
     <span class="small muted">
       {% if depositos %}saldo disponível neste ato: <strong>R$ {{ saldo }}</strong>
@@ -1209,7 +1245,7 @@
   {% endif %}
 </section>
 
-<section class="panel">
+<section class="panel" id="selo-do-ato" data-fase="{{ lugar.selo }}">
   <div class="panel-head"><span>Selo</span></div>
   {% if a.selo %}
   <div style="padding:14px">
@@ -1320,7 +1356,7 @@
 {# O TESTAMENTO — LG04, 19/10/2026: o tipo que vai ao RCTO da CENSEC (art. 785,
    I, do Código de Normas) e o sigilo da certidão enquanto vive o testador
    (art. 851, §§ 4º e 5º), que a tela de certidões das Notas aplica. #}
-<details class="panel" open>
+<details class="panel" open data-fase="{{ lugar.antes_de_lancar }}">
   <summary>Testamento — RCTO e sigilo</summary>
   <form method="post" class="grid2" style="padding:14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -1349,4 +1385,5 @@
       <span class="small muted">O ato não some do livro: fica com a anotação e a data.</span></div>
   </form>
 </details>
+{% if f %}{{ travas_e_barras(f) }}</div>{% endif %}
 {% endblock %}

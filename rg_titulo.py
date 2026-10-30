@@ -524,7 +524,8 @@ def registrar(con: sqlite3.Connection, titulo_id: int, *, serie: str,
               sv: dict, agora: str, data_extenso: str,
               teor: str | None = None, teor_formato: str = "texto",
               usuario: str | None = None,
-              declaracoes: dict | None = None) -> dict:
+              declaracoes: dict | None = None,
+              lista_presenca: dict | None = None) -> dict:
     """Lavra o registro do título qualificado. ESCREVE.
 
     **SÓ DEPOIS DA QUALIFICAÇÃO POSITIVA** — é a frase do oficial, e ela é
@@ -539,6 +540,9 @@ def registrar(con: sqlite3.Connection, titulo_id: int, *, serie: str,
     `declaracoes` são as do termo do livro escolhido (LD09: o extrato do Livro
     C, a inscrição da pessoa jurídica, a matrícula do periódico) — quem as
     confere e grava no ato é `rg_registro.abrir_registro`, antes do número.
+
+    `lista_presenca` é a do inciso III (CN-MA arts. 410, 412 e 413), conferida
+    no mesmo lugar, antes do número. None não exige — é a carga e o acervo.
     """
     titulo = um(con, titulo_id)
     if not titulo:
@@ -564,7 +568,7 @@ def registrar(con: sqlite3.Connection, titulo_id: int, *, serie: str,
         natureza=titulo["natureza"], requerente_nome=titulo["apresentante"],
         requerente_documento=titulo["apresentante_documento"],
         teor=teor, teor_formato=teor_formato, usuario=usuario,
-        declaracoes=declaracoes)
+        declaracoes=declaracoes, lista_presenca=lista_presenca)
 
     bd = banco(con)
     bd.escrever("UPDATE rg_registros SET titulo_id=%s WHERE id=%s",

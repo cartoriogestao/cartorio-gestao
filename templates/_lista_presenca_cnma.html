@@ -1,0 +1,67 @@
+{#
+  Lista de presença ou certidão de não apresentação (CN-MA arts. 410, 412 e
+  413, inciso III). Quem lavra declara o enquadramento — a natureza é texto
+  livre. Sem uma das duas, o RCPJ não lavra. Fora desses artigos, «não se
+  aplica», com o porquê.
+
+  `form` é o que voltou com erro; `sugerido` é o palpite da natureza;
+  `rotulos` é `rg_registro.ROTULO_DO_ENQUADRAMENTO`; `pede_arquivo` inclui o
+  campo de anexo quando o formulário ainda não tem um.
+#}
+{% macro bloco(form, sugerido='', rotulos=none, pede_arquivo=true) %}
+{% set digitado = (form.get('enquadramento_cnma') if form else '') or '' %}
+{% set atual = digitado or sugerido or '' %}
+{% set lista_atual = (form.get('lista_presenca') if form else '') or '' %}
+<div style="grid-column:1/-1" id="bloco-lista-presenca">
+  <p style="margin:8px 0 4px"><strong>Lista de presença (CN-MA, inciso III)</strong></p>
+  <p style="margin:0 0 8px"><small class="muted">
+    Na constituição sem fins econômicos (art. 410), na eleição ou posse
+    (art. 412) e na alteração estatutária (art. 413), declare se a lista de
+    presença foi apresentada ou se veio certidão de não apresentação.
+    Sem uma das duas, o ato não é lavrado. Em outro ato, escolha «não se
+    aplica» e escreva o porquê.
+    {% if sugerido and not digitado %}A natureza sugeriu um enquadramento —
+    confira antes de lavrar.{% endif %}
+  </small></p>
+  <div class="grid2">
+    <label style="grid-column:1/-1">Enquadramento CN-MA
+      <select name="enquadramento_cnma" id="enquadramento_cnma">
+        <option value="">— escolha —</option>
+        {% for chave, rotulo in (rotulos or {}).items() %}
+        <option value="{{ chave }}" {% if atual == chave %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select></label>
+    <div style="grid-column:1/-1">
+      <label style="display:inline-block; margin-right:16px">
+        <input type="radio" name="lista_presenca" value="APRESENTADA"
+               {% if lista_atual == 'APRESENTADA' %}checked{% endif %}>
+        Lista de presença apresentada</label>
+      <label style="display:inline-block">
+        <input type="radio" name="lista_presenca" value="NAO_APRESENTADA_CERTIDAO"
+               {% if lista_atual == 'NAO_APRESENTADA_CERTIDAO' %}checked{% endif %}>
+        Certidão ou declaração de não apresentação</label>
+    </div>
+    <label>Folha ou número da lista apresentada
+      <input name="lista_presenca_ref" value="{{ form.get('lista_presenca_ref', '') if form else '' }}"
+             placeholder="Ex.: lista arquivada, folha 2"></label>
+    <label>Número e data da certidão de não apresentação
+      <input name="certidao_nao_apresentacao_ref"
+             value="{{ form.get('certidao_nao_apresentacao_ref', '') if form else '' }}"
+             placeholder="Ex.: certidão nº 12, 01/10/2026"></label>
+    {% if pede_arquivo %}
+    <label style="grid-column:1/-1">Anexo da lista ou da certidão
+      <small>(PDF ou imagem — ou informe a referência acima, no caso da lista apresentada)</small>
+      <input type="file" name="novo_arquivo"
+             accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*"></label>
+    {% else %}
+    <p style="grid-column:1/-1; margin:0"><small class="muted">
+      O arquivo anexado neste formulário conta como anexo da lista ou da
+      certidão. A certidão de não apresentação precisa do número/data e do anexo.
+    </small></p>
+    {% endif %}
+    <label style="grid-column:1/-1">Justificativa, se não se aplica
+      <textarea name="justificativa_cnma" rows="2"
+                placeholder="Por que os arts. 410, 412 e 413 não alcançam este ato.">{{ form.get('justificativa_cnma', '') if form else '' }}</textarea></label>
+  </div>
+</div>
+{% endmacro %}

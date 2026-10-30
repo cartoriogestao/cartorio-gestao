@@ -59,10 +59,14 @@ LEMBRETE_FEDERAL = (
 # O TERCEIRO (26/10/2026): `wa_transcricao.transcrever`, a transcrição do áudio
 # do WhatsApp pela OpenAI — o único provedor da casa que recebe áudio. Ele grava
 # a própria linha de `ia_uso`, como os outros dois.
+# O QUARTO (30/10/2026): `wa_transcricao_local.transcrever`, a mesma transcrição dentro da
+# casa. Não fala com provedor nenhum, e entra aqui porque grava a própria linha de `ia_uso`,
+# e quem o pega tem de dizer a finalidade, como nos outros.
 TRANSPORTES = {
     "agente_provedores": ("conversar",),
     "robo_llm": ("chamar_provedor", "rascunhar"),
     "wa_transcricao": ("transcrever",),
+    "wa_transcricao_local": ("transcrever",),
 }
 
 CHAVE_FORA_DO_BANCO = "agente.cred, na pasta de dados — fora do banco"

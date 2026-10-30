@@ -539,7 +539,8 @@ def test_o_balcao_abre_o_protocolo_paga_e_a_autenticacao_sela_pelas_telas(
     html = _clicar(c, ficha, f"{ficha}/itens", acao="quitar", item_id=str(item_id))
     assert "Abra o caixa" in html
     _clicar(c, "/caixa", "/caixa", acao="abrir", saldo_inicial="0,00")
-    html = _clicar(c, ficha, f"{ficha}/itens", acao="quitar", item_id=str(item_id))
+    html = _clicar(c, ficha, f"{ficha}/itens", acao="quitar", item_id=str(item_id),
+                   forma_pagamento="DINHEIRO")
     assert "Item quitado e lançado no caixa" in html
     assert "Tudo certo" in c.get("/selo/cobertura").get_data(as_text=True)
 

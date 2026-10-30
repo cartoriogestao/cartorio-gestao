@@ -119,6 +119,8 @@ CHAVE_IA_PRECO_ENTRADA = "ia_preco_entrada"    # US$ por milhao de tokens
 CHAVE_IA_PRECO_SAIDA = "ia_preco_saida"
 CHAVE_AUDIO_MODELO = "ia_audio_modelo"
 CHAVE_AUDIO_PRECO_MINUTO = "ia_audio_preco_minuto"   # US$ por minuto
+CHAVE_AUDIO_ONDE = "ia_audio_onde"             # vazio = OpenAI (`wa_transcricao_local`)
+CHAVE_AUDIO_CONFERENCIA = "ia_audio_conferencia"  # a última, sem o texto do áudio
 CHAVE_TEXTO_BASE = "ia_texto_base"
 CHAVE_TEXTO_BASE_POR = "ia_texto_base_aprovado_por"
 CHAVE_TEXTO_BASE_EM = "ia_texto_base_aprovado_em"

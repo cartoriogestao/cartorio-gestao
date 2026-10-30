@@ -640,6 +640,23 @@ def _explicacao_do_repetido(linha: dict) -> str:
     return texto
 
 
+def _por_que_retido(linha: dict) -> str:
+    """`ACEITE` se a CRA já tem a ocorrência; `SEM_RESPOSTA` se ela só vai num
+    arquivo ainda não respondido. Só calcula.
+
+    A marca manual conta como aceite: foi o oficial quem disse que a Central a
+    tem. O que o E-Ofício informou antes da virada, também.
+    """
+    if str(linha.get("cra_ja_informado_em") or "").strip():
+        return "ACEITE"
+    for i in linha.get("informantes") or []:
+        if (str(i.get("aceito_em") or "").strip()
+                or str(i.get("marcado_em") or "").strip()
+                or str(i.get("ambiente") or "") == "EOFICIO"):
+            return "ACEITE"
+    return "SEM_RESPOSTA"
+
+
 def protocolos_repetidos_na_fila(con: sqlite3.Connection) -> list[dict]:
     """Os atos do próximo retorno (ou andamento) cujo PROTOCOLO a CRA já tem
     com aquela ocorrência. Só LÊ — o contrato do roteiro do protesto.
@@ -656,9 +673,15 @@ def protocolos_repetidos_na_fila(con: sqlite3.Connection) -> list[dict]:
       - `LIBERADO`: o ato voltou à fila por AFIRMAÇÃO EXPRESSA de alguém da
         serventia, e vai no próximo arquivo mesmo assim — se a CRA o recusar,
         é este o caso.
+
+    O RETIDO COM ACEITE DA CRA ESTÁ CERTO — 30/10/2026. `so_informacao` o marca:
+    o roteiro o mostra como informação, sem cobrar nem exigir afirmação no
+    encerramento, porque não há tela nem motivo para ele sair desta lista. Só é
+    pendência o retido por arquivo ainda sem resposta (`retido_por`).
     """
     saida: list[dict] = []
     for p in ja_aceitas_fora_da_fila(con):
+        retido_por = _por_que_retido(p)
         saida.append({
             "ato_id": int(p["ato_id"]), "tipo": p["tipo"],
             "ocorrencia": p.get("ocorrencia"),
@@ -667,6 +690,8 @@ def protocolos_repetidos_na_fila(con: sqlite3.Connection) -> list[dict]:
             "protocolo": p.get("protocolo"),
             "apresentante_codigo": p.get("apresentante_codigo"),
             "situacao": "RETIDO",
+            "retido_por": retido_por,
+            "so_informacao": retido_por == "ACEITE",
             "por_outro_titulo": bool(p.get("por_outro_titulo")),
             "explicacao": _explicacao_do_repetido(p)})
     liberados: dict[int, dict] = {}

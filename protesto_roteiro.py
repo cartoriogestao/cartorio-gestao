@@ -433,6 +433,10 @@ CONDUTAS_DO_DIA: tuple[dict, ...] = (
 # existir no main; quando ela entrar com outro nome, corrige-se aqui, numa
 # linha so — e ate la a linha diz «ainda nao instalada», que e a verdade.
 #
+# A LINHA COM `so_informacao` (30/10/2026) nao e pendencia: nao conta, nao
+# atrasa e nao pede afirmacao no encerramento. Ela sai na nota da obrigacao, com
+# a `frase_da_informacao` do gancho.
+#
 # DUAS MARCAS NOVAS, da integracao de 29/10/2026:
 #   `com_o_dia`: a funcao recebe tambem `hoje` e `feriados` do roteiro (a
 #   instancia da cobranca, e nao o relogio da maquina);
@@ -481,7 +485,9 @@ GANCHOS: tuple[dict, ...] = (
     {"chave": "protocolo_repetido", "conduta": "retorno",
      "rotulo": "atos do retorno com protocolo repetido",
      "modulo": "protesto_retorno", "funcao": "protocolos_repetidos_na_fila",
-     "de_onde": "PR #107, o retorno com protocolo repetido"},
+     "de_onde": "PR #107, o retorno com protocolo repetido",
+     "frase_da_informacao": ("retido(s) porque a CRA já aceitou a mesma "
+                             "ocorrência — está certo, e não é pendência")},
     # O DINHEIRO DO TITULO PAGO QUE AINDA NAO VIROU PAGAMENTO (PR #119): o PIX
     # que espera o credito, o de credito conferido e nao lavrado, e o
     # dinheiro recebido sem pagamento lancado. Na conduta 10, porque sem o
@@ -1080,19 +1086,28 @@ def _cobrar_editais(con, ctx: dict) -> list[dict]:
                                 .get("dia") or "")[:10])
             except (TypeError, ValueError, AttributeError):
                 continue
-    itens = []
+    itens, do_eoficio = [], []
     for d in AV.envios_do_edital(con, ctx["dia"]):
+        # O EDITAL DO E-OFÍCIO NÃO SE COBRA (30/10/2026): quem o mandava era o
+        # sistema antigo. A linha continua à vista, na nota, sem atraso.
+        if d["do_eoficio"]:
+            do_eoficio.append(f"{_br(d['dia'])}: {d['do_eoficio']} edital(is) do "
+                              f"E-Ofício")
         if d["completo"]:
             continue
         dia = _dia(d["dia"])
+        cobrados = d["editais"] - d["do_eoficio"]
         itens.append(_item(
-            f"{_br(d['dia'])}: {d['com_comprovante']} de {d['editais']} "
+            f"{_br(d['dia'])}: {cobrados - d['a_cobrar']} de {cobrados} "
             f"edital(is) com comprovante; arquivo do dia "
             f"{'gerado' if d['dia'] in gerados else 'NÃO gerado'}",
             quando=d["dia"], prazo=_as(dia, "23:59") if dia else None,
             ctx=ctx, tela="protesto_avisos"))
-    saida.append(_obrigacao(chave, rotulo, itens, regra=regra, tem_prazo=True,
-                            feito="todo dia com edital tem o comprovante"))
+    saida.append(_obrigacao(
+        chave, rotulo, itens, regra=regra, tem_prazo=True,
+        feito="todo dia com edital tem o comprovante",
+        nota=("; ".join(do_eoficio) + " — do sistema antigo, sem cobrança de "
+              "comprovante." if do_eoficio else "")))
     return saida
 
 
@@ -1214,6 +1229,8 @@ def _cobrar_xml(con, ctx: dict) -> list[dict]:
     letra_do_ato = {tipo: letra for letra, tipos in PCXML.ATOS_DA_LETRA.items()
                     for tipo in tipos}
     marcas = ", ".join(["%s"] * len(letra_do_ato))
+    # A MESMA RÉGUA DA FILA DO XML: o que `pendentes` não leva não se cobra.
+    sem_liquidacao = PCXML.sql_sem_o_pago_da_liquidacao(con)
     itens = []
     for a in banco(con).ler(
             f"""SELECT a.id, a.tipo, a.data_ato, a.titulo_id,
@@ -1222,6 +1239,7 @@ def _cobrar_xml(con, ctx: dict) -> list[dict]:
                  WHERE a.tipo IN ({marcas}) AND a.cancelado = 0
                    AND a.cenprot_xml_id IS NULL
                    AND COALESCE(a.origem, '') <> 'EOFICIO'
+                   {sem_liquidacao}
                  ORDER BY a.data_ato, a.id""", tuple(letra_do_ato)):
         a = dict(a)
         d = _dia(a.get("data_ato"))
@@ -1258,11 +1276,15 @@ def _xml_sem_comprovante(con, ctx: dict) -> dict:
     sem_afirmacao = ("AND x.envio_afirmado_em IS NULL"
                      if banco(con).tem_coluna("pt_cenprot_xml",
                                               "envio_afirmado_em") else "")
+    # O ARQUIVO QUE A CENPROT RECUSOU não subiu, e não há comprovante a cobrar.
+    sem_recusa = ("AND x.recusado_em IS NULL"
+                  if banco(con).tem_coluna("pt_cenprot_xml", "recusado_em")
+                  else "")
     itens = []
     for x in banco(con).ler(
             f"""SELECT x.id, x.letra, x.nome_arquivo, x.gerado_em
                   FROM pt_cenprot_xml x
-                 WHERE x.gerado_em >= %s {sem_afirmacao}
+                 WHERE x.gerado_em >= %s {sem_afirmacao} {sem_recusa}
                    AND NOT EXISTS (SELECT 1 FROM attachments a
                                     WHERE a.entity_type = %s
                                       AND a.entity_id = x.id)
@@ -1605,6 +1627,18 @@ def _rodar_gancho(con, ctx: dict, g: dict) -> dict:
             g["chave"], g["rotulo"], None, regra=regra, tem_prazo=False,
             motivo=(f"{g['modulo']}.{g['funcao']} não respondeu: "
                     f"{type(erro).__name__}: {erro}"[:300]))
+    nota = ""
+    if isinstance(achado, (list, tuple)):
+        informa = [l for l in achado
+                   if isinstance(l, dict) and l.get("so_informacao")]
+        achado = [l for l in achado
+                  if not (isinstance(l, dict) and l.get("so_informacao"))]
+        if informa:
+            nota = (f"{len(informa)} ato(s) {g.get('frase_da_informacao') or ''}: "
+                    + "; ".join(
+                        f"título {l.get('numero_titulo') or l.get('titulo_id')}, "
+                        f"protocolo {l.get('protocolo') or '—'} "
+                        f"({l.get('explicacao') or ''})" for l in informa) + ".")
     itens, quantos = _itens_do_gancho(achado, g, ctx)
     if itens is None:
         return _obrigacao(
@@ -1613,7 +1647,7 @@ def _rodar_gancho(con, ctx: dict, g: dict) -> dict:
                     f"roteiro não lê ({type(achado).__name__})"))
     return _obrigacao(g["chave"], g["rotulo"], itens, regra=regra,
                       tem_prazo=bool(g.get("prazo_da_peca")), quantos=quantos,
-                      feito="nada pendente")
+                      feito="nada pendente", nota=nota)
 
 
 _COBRANCA_DA_CONDUTA = {

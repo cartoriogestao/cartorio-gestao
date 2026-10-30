@@ -457,6 +457,8 @@ def listar(con: sqlite3.Connection, filtro: Mapping[str, Any], *,
                      for t in PT.sustacao_revogada(con, hoje=hoje,
                                                    limite=100000)}
 
+    from protesto_cenprot_xml import nomes_do_cadastro_no_lugar_de_numero
+    nomes_do_cadastro_no_lugar_de_numero(con, linhas)
     for l in linhas:
         l["tem_chave"] = tem_chave_cenprot(l.get("chave_cenprot"))
         l["dias_desde_a_intimacao"] = (

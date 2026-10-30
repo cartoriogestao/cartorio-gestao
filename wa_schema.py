@@ -72,7 +72,7 @@ DESCRICAO_DOS_SETORES = {
     "RI": "matrícula, imóvel, averbação, usucapião, certidão de imóvel",
     "NOTAS": "escritura, procuração, testamento, ata notarial, reconhecimento de firma, "
              "autenticação",
-    "RCPJ_RTD": "contrato social, estatuto, ata de assembleia, títulos e documentos",
+    "RCPJ_RTD": "empresa, contratos, contrato social, estatuto, ata de assembleia, títulos e documentos",
     "PROTESTO": "título, intimação, cancelamento de protesto",
     "GESTAO": "reclamação sobre o atendimento ou o cartório",
 }

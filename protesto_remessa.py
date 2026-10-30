@@ -642,10 +642,9 @@ def _confirmar(con: sqlite3.Connection, *, remessa_id: int, visto: dict,
     # branco, zerava a quantidade do rodapé e a data do protocolo (t34).
     #
     # CONFIRMA O QUE ENTROU: título recusado sai do arquivo, e os sequenciais
-    # (t52 e o t08 do rodapé) se renumeram. As contagens do cabeçalho (h09–h12)
-    # e do rodapé (t05, t06) ficam as da remessa — o que a Central espera quando
-    # ela mesma manda menos do que confirma não está medido: A CONFERIR na
-    # primeira confirmação parcial.
+    # (t52 e o t08 do rodapé) se renumeram, e as contagens do cabeçalho (h09–h12)
+    # e do rodapé (t05, t06) acompanham: `_contagens_do_que_entrou`, que diz o que
+    # está medido e o que não está. LOTE INTEIRO NÃO PASSA POR LÁ: sai como veio.
     larg = PCRAXML.LARGURAS["tr"]
     inicio = [sum(larg[:k]) for k in range(len(larg))]
 
@@ -699,8 +698,13 @@ def _confirmar(con: sqlite3.Connection, *, remessa_id: int, visto: dict,
             linha = campo(linha, 50, "0" * 10)
         sequencial += 1
         saida.append(linha[:596] + f"{sequencial:04d}")
-    texto = "\r\n".join(saida) + "\r\n"
     titulos = [x for x in saida if x[:1] == "1"]
+    soma_centavos = sum(_inteiro(t[inicio[17]:inicio[17] + larg[17]], 0)
+                        for t in titulos)
+    if len(titulos) < k:
+        saida = _contagens_do_que_entrou(saida, recusados=k - len(titulos),
+                                         soma_centavos=soma_centavos)
+    texto = "\r\n".join(saida) + "\r\n"
     nome = PRE.nome_do_arquivo(TIPO_DA_CONFIRMACAO, visto["apresentante_codigo"],
                                visto["dia"] or str(agora)[:10], con=con)
     retorno_id = banco(con).escrever(
@@ -716,7 +720,7 @@ def _confirmar(con: sqlite3.Connection, *, remessa_id: int, visto: dict,
          # a letra da 566 é do RETORNO e não existe na confirmação
          None,
          len(titulos),
-         sum(_inteiro(t[inicio[17]:inicio[17] + larg[17]], 0) for t in titulos),
+         soma_centavos,
          nome, texto, PRE.hash_retorno(texto), agora, usuario))[0]["id"]
     return {"retorno_id": int(retorno_id), "nome_arquivo": nome,
             "titulos": len(titulos), "conteudo": texto,
@@ -728,6 +732,72 @@ def _inteiro(valor: Any, padrao: int = 1) -> int:
         return int(str(valor).strip())
     except (TypeError, ValueError):
         return padrao
+
+
+def _contagens_do_que_entrou(saida: list[str], *, recusados: int,
+                             soma_centavos: int) -> list[str]:
+    """Cabeçalho e rodapé da confirmação PARCIAL, com o que entrou. SÓ CALCULA.
+
+    MEDIDO EM 30/10/2026: o título recusado saía do arquivo, o cabeçalho ficava
+    o da remessa, e a CRA recusou com 2122 («SOMA DE REGISTROS DE TRANSAÇÃO
+    EXISTENTES NO ARQUIVO (1) NÃO CONFERE COM TOTAL INFORMADO NO HEADER (3)»).
+
+    O QUE CADA CAMPO É, pela conferência de `protesto_cra_xml.ler` e pelo mapa de
+    docs/tecnico/CRA_HOMOLOGACAO_REMESSA_2026-09-23.md:
+      - h10 são os títulos do lote, e h11 + h12 (indicações + originais) fecham
+        nele;
+      - h09 o layout chama de registros, e nos exemplos ele vale os títulos:
+        desconta-se o recusado, sem afirmar mais do que isso;
+      - t05 é o somatório de segurança h09 + h10 + h11 + h12;
+      - t06 é a soma dos saldos (t18), em 18 posições.
+    `protesto_arquivo.RODAPE` lê o t05 como registros (cabeçalho + títulos +
+    rodapé), e as duas contas dão 3 num lote de um título. O lote TXT cujo t05 só
+    fecha como registros continua contando registros.
+
+    O QUE NÃO ESTÁ MEDIDO: o registro do título não diz se ele é indicação ou
+    original. Num lote com os dois, as contas fecham, mas a divisão é escolha: o
+    recusado sai primeiro de h12. A CONFERIR no primeiro lote misto com recusa.
+
+    Campo em branco na remessa fica em branco, menos o t06, que se sabe. O t08 já
+    vem renumerado.
+    """
+    def lugar(tag: str, k: int) -> tuple[int, int]:
+        larguras = PCRAXML.LARGURAS[tag]
+        return sum(larguras[:k - 1]), larguras[k - 1]
+
+    def ler(linha: str, tag: str, k: int) -> int | None:
+        a, n = lugar(tag, k)
+        return _inteiro(linha[a:a + n], None)
+
+    def gravar(linha: str, tag: str, k: int, valor: int) -> str:
+        a, n = lugar(tag, k)
+        return linha[:a] + f"{valor:0{n}d}" + linha[a + n:]
+
+    entraram = len(saida) - 2
+    total = entraram + recusados
+    h09, h10, h11, h12 = (ler(saida[0], "hd", k) for k in (9, 10, 11, 12))
+    t05 = ler(saida[-1], "tl", 5)
+
+    novos = {9: h09, 10: h10, 11: h11, 12: h12}
+    if h09 is not None:
+        novos[9] = max(h09 - recusados, 0)
+    if h10 is not None:
+        novos[10] = entraram
+    if h11 is not None and h12 is not None and h11 + h12 == total:
+        novos[11] = min(h11, entraram)
+        novos[12] = entraram - novos[11]
+    cabecalho = saida[0]
+    for k, valor in novos.items():
+        if valor is not None:
+            cabecalho = gravar(cabecalho, "hd", k, valor)
+
+    rodape = gravar(saida[-1], "tl", 6, soma_centavos)
+    antes = None if None in (h09, h10, h11, h12) else h09 + h10 + h11 + h12
+    if t05 == total + 2 and t05 != antes:
+        rodape = gravar(rodape, "tl", 5, entraram + 2)
+    elif t05 is not None and antes is not None:
+        rodape = gravar(rodape, "tl", 5, sum(novos.values()))
+    return [cabecalho, *saida[1:-1], rodape]
 
 
 # `_para_registro` (o título relido do banco no vocabulário de 600 posições) foi

@@ -73,6 +73,18 @@ O comando `assinar` pede o PIN no prompt (`getpass`) — **não** passe PIN na l
 | GET | `/saude` | ok + driver + **candidatos** no disco |
 | GET | `/certificados` | lista (pode estar vazia sem token) |
 | POST | `/assinar/pdf` | JSON `{pdf_b64, pin, thumbprint?}` → CMS/assinatura |
+| POST | `/assinar/pdf-windows` | JSON `{pdf_b64, thumbprint?}` → assina pelo repositório do Windows; o PIN é a janela do token |
+| POST | `/assinar/pdfs-windows` | JSON `{pdfs_b64: [...], thumbprint?}` → o lote, num único PowerShell: `itens` e `falha` |
+
+## Depois de atualizar o sistema
+
+Instalar uma versão troca o arquivo, e **não reinicia este serviço**: quem reinicia
+é só o servidor do sistema. O processo aberto continua com o código antigo na
+memória até ser fechado. Quando ele sobe pela pasta Inicialização
+(`shell:startup`, `CartorioGestao-Servico-A3.cmd`), o jeito de reabrir é sair da
+conta do Windows e entrar de novo. **Não rode o lançador com o antigo aberto:** o
+`SO_REUSEADDR` do Windows deixa dois processos na mesma porta, e não se sabe qual
+responde.
 
 ## Camada no CG
 

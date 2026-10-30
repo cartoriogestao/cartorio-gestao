@@ -267,7 +267,8 @@ def _quitar_na_tela(s, item):
     h = s["c"].get(f"/caixa/protocolos/{s['pid']}").get_data(as_text=True)
     return s["c"].post(f"/caixa/protocolos/{s['pid']}/itens",
                        data={"csrf_token": s["tok"](h), "acao": "quitar",
-                             "item_id": item}, follow_redirects=True)
+                             "item_id": item, "forma_pagamento": "DINHEIRO"},
+                       follow_redirects=True)
 
 
 def test_quitar_na_tela_lanca_no_caixa(cg_casa):

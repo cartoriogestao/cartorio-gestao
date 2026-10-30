@@ -268,6 +268,12 @@
         publicação, outro para começar a contar (art. 755, § 1º). Num edital,
         errar por um dia é recomeçar o edital.
       </p>
+      {# A CENTRAL DO ONR (revisão de telas, 30/10/2026): a tela de publicar o
+         edital por lá existia, e nenhum clique chegava nela. #}
+      {% if user.role in ['ADMIN','MANAGER','USER'] %}
+      <p class="small"><a href="{{ url_for('ri_onr_edital', processo_id=p.id) }}">Publicar o edital pela Central do ONR</a>
+        <span class="muted">— confere e envia por aqui, sem sair para o portal.</span></p>
+      {% endif %}
     </div>
 
     <div class="card">

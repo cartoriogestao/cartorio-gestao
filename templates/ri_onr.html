@@ -1,7 +1,10 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>Exportação para o ONR</h1>{% endblock %}
 {% block content %}
-<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a></div>
+<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a>
+  {# O MAPA DO ONR (revisão de telas, 30/10/2026): o manual mandava baixar por
+     este endereço, e nenhum clique chegava nele. Só o ADMIN: `QUEM_BAIXA`. #}
+  {% if user.role == 'ADMIN' %}<a class="button" href="{{ url_for('ri_mapa_onr_csv') }}">Baixar o mapa do ONR (.csv)</a>{% endif %}</div>
 
 <div class="notice">
   O formato destes arquivos foi levantado <strong>dos envios que esta serventia já fez</strong>,

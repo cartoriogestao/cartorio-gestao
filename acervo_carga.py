@@ -923,8 +923,9 @@ def carregar_protesto(con: sqlite3.Connection, acervo: sqlite3.Connection,
 #
 # A SITUAÇÃO SAI DO CÓDIGO DE OCORRÊNCIA DA CRA (`intCodigoOcorrencia`), medido
 # no acervo: C 1.114 e 2 58 (protestado), 1 138 (pago), 3 47 (retirado), 5 3
-# (devolvido por irregularidade). O «5» não tem situação neste sistema e NÃO se
-# inventa: o título fica como está, e é contado.
+# (devolvido por irregularidade). O «5» deixava o título como estava, e isso
+# produziu PAGO sem ato (títulos 52, 776 e 777). Desde 30/10/2026, por decisão do
+# oficial, ele é DEVOLVIDO, com o ato DEVOLUCAO na data da ocorrência.
 #
 # SÓ ALCANÇA TÍTULO SEM ATO LAVRADO AQUI: o E-Ofício é a verdade do que ele fez;
 # o que o Cartório Gestão lavrou é a verdade do que veio depois.
@@ -1046,9 +1047,10 @@ def _a_vida_dos_titulos(con: sqlite3.Connection, acervo: sqlite3.Connection,
         elif r["snProtestado"]:
             nova = "PROTESTADO"
         elif ocorrencia == "5":
-            carga.contar("títulos devolvidos por irregularidade (código 5): "
-                         "situação não existe no sistema, ficaram como estavam")
-            continue
+            ato(titulo_id, "DEVOLUCAO", quando, chave,
+                observacao="devolvido por irregularidade (código 5 da CRA); "
+                           "trazido do E-Ofício")
+            nova = "DEVOLVIDO"
         elif (situacao_aqui == "PAGO" and "strTipoPG" in r
                 and _txt(r["strTipoPG"])):
             # Pagamento lançado no caixa do E-Ofício (`strTipoPG`, com o número

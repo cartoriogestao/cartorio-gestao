@@ -211,7 +211,7 @@ PAINEIS: dict[str, dict] = {
         "busca_diz": "nome ou CPF/CNPJ do devedor, número do título, cedente",
         "ordem": "id DESC",
         "situacoes": ("RECEBIDO", "APONTADO", "INTIMADO", "PROTESTADO",
-                      "PAGO", "CANCELADO", "DESISTIDO"),
+                      "PAGO", "CANCELADO", "DESISTIDO", "DEVOLVIDO"),
     },
     "rcpn": {
         "titulo": "Registro Civil das Pessoas Naturais — assentos",
@@ -3807,36 +3807,38 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @app.route("/protesto/<int:titulo_id>/situacao/corrigir", methods=["POST"])
     @roles_required("ADMIN", "MANAGER")
     def protesto_situacao_corrigir(titulo_id: int):
-        """A CORREÇÃO DE OFÍCIO da situação sem o ato que a sustente. ESCREVE.
+        """PROPÕE a correção da situação sem o ato que a sustente. Só grava a
+        proposta, a tarefa do oficial e a auditoria dela.
 
-        Revisão do oficial, 29/10/2026: o título PAGO sem pagamento válido (o
-        9614) não se conserta sozinho, e não se conserta sem rastro. Volta à
-        situação que os atos válidos sustentam, com afirmação expressa — regra
-        `SITUACAO_SEM_ATO`, auditoria `AFIRMACAO_EXPRESSA` fora da transação.
-        Do oficial e do substituto (ADMIN e MANAGER); o robô não alcança.
+        Decisão do oficial, 30/10/2026: o botão da ficha não corrige mais. Ele
+        põe a proposta na fila (`correcoes_de_oficio`, tipo
+        `PT_SITUACAO_SUSTENTADA`), e quem aprova é só o ADMIN em pessoa. Não
+        sobra caminho direto para o gerente. O robô não alcança esta rota: tem
+        papel USER, e ela não está em `rotas_do_robo`.
         """
+        import correcoes_de_oficio as CDO
         voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_id))
-        try:
-            with db.transaction() as con:
-                # ROBÔ NÃO AFIRMA (integração de 29/10/2026).
-                af = _afirmacao_da_trava("situacao")
-                feito = PSELO.corrigir_situacao_de_oficio(
-                    con, titulo_id, afirmo=af["afirmo"],
-                    afirmacao=af["texto"], robo=af["robo"])
-        except PSELO.SituacaoError as erro:
-            flash(str(erro), "danger")
+        tipo = CDO.SituacaoSustentada.chave
+        quem = db.get_user(usuario_id_do_sistema())
+        with db.transaction() as con:
+            ja = CDO.propostas_do_titulo(con, titulo_id, tipo=tipo)
+            r = (None if ja else CDO.propor(
+                con, tipo=tipo, parametros={"titulo_ids": [titulo_id]},
+                motivo=request.form.get("motivo"), quem=quem, agora=agora(),
+                ip=request.remote_addr))
+        if ja:
+            flash(f"A proposta nº {ja[0]['id']} já espera o oficial para este "
+                  "título: nada foi gravado.", "warning")
+            return redirect(url_for("correcoes_de_oficio_ficha",
+                                    correcao_id=ja[0]["id"]))
+        if not r["ok"]:
+            for frase in r["recusas"]:
+                flash(frase, "danger")
             return voltar
-        audit(PSELO.ACAO_DA_AFIRMACAO, "pt_titulos", titulo_id,
-              {k: feito[k] for k in ("regra", "afirmacao", "o_que_faltava")})
-        audit("PROTESTO_SITUACAO_CORRIGIDA_DE_OFICIO", "pt_titulos", titulo_id,
-              {"situacao_antes": feito["situacao_antes"],
-               "situacao_nova": feito["situacao_nova"]})
-        flash(f"Situação corrigida de ofício: {feito['situacao_antes']} → "
-              f"{feito['situacao_nova']}, a que os atos válidos sustentam. A "
-              "afirmação ficou na auditoria. Se o ato deve existir, lance-o "
-              "agora; e confira se a CRA já recebeu a ocorrência antiga.",
-              "success")
-        return voltar
+        flash(f"Proposta nº {r['id']} gravada: a situação não mudou. Ela espera a "
+              "decisão do oficial, e virou tarefa dele.", "success")
+        return redirect(url_for("correcoes_de_oficio_ficha",
+                                correcao_id=r["id"]))
 
     @app.route("/protesto/<int:titulo_id>/atos/<int:ato_id>/selo-que-faltou",
                methods=["POST"])
@@ -4074,6 +4076,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # A SITUAÇÃO SEM O ATO QUE A SUSTENTE e O ATO A REFAZER
             # (29/10/2026): as obrigações que o selo deixou neste título.
             sem_ato = PSELO.situacao_sem_ato(_c, titulo_id)
+            # A PROPOSTA QUE JÁ ESPERA O OFICIAL (30/10/2026): o botão da ficha
+            # só propõe, e a ficha diz que a proposta existe.
+            import correcoes_de_oficio as CDO
+            propostas_de_oficio = CDO.propostas_do_titulo(_c, titulo_id)
             pendencias_do_selo = PSELO.pendencias_do_selo(_c, titulo_id=titulo_id)
             # OS PEDIDOS DA CRA (29/10/2026): desistência, cancelamento e
             # autorização que vieram da Central e ainda esperam a casa.
@@ -4133,6 +4139,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             cabem.append("EFEITO_SUSPENSIVO")
         return render_template("atrib_protesto_ficha.html", titulo=dict(titulo),
                                sem_ato=sem_ato,
+                               propostas_de_oficio=propostas_de_oficio,
                                pendencias_do_selo=pendencias_do_selo,
                                averbacao=averbacao,
                                modelo_da_afirmacao=PSELO.MODELO_DA_AFIRMACAO,
@@ -12315,7 +12322,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         o dia: a hora do papel é o que separa pendente de atrasado.
         """
         with db.connect() as con:
-            dados = PROT.roteiro(con, agora=agora())
+            dados = PROT.roteiro(con, agora=agora(), papel=_papel_atual())
             afirmacoes = AFX.contar(con, hoje=hoje())
         conferencia_titulos = _conferencia_dos_titulos(resumo=True)
         return render_template("protesto_painel.html", r=dados,
@@ -12410,7 +12417,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         try:
             with db.connect() as con:
                 conferido = PROT.conferir_o_encerramento(
-                    con, agora=quando, afirmacoes=afirmacoes)
+                    con, agora=quando, afirmacoes=afirmacoes,
+                    papel=_papel_atual())
             with db.transaction() as con:
                 r = PROT.gravar_o_encerramento(con, conferido, agora=quando,
                                                usuario=usuario_nome())
@@ -13069,10 +13077,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as con:
             quadro = PCP.quadro_do_dia(con, dia=hoje())
             pendentes = DS.pendencias_da_cra(con)
+            aguardando = PCP.aguardando_o_devedor(con)
             recentes = PCP.recentes(con, limite=80)
         return render_template(
             "protesto_cra_pedidos.html", quadro=quadro, cra_do_dia=quadro,
-            pendentes=pendentes, recentes=recentes, hoje=hoje(),
+            pendentes=pendentes, aguardando=aguardando, recentes=recentes,
+            hoje=hoje(),
             minimo=PCP.MINIMO_DE_LETRAS, papel=_papel_atual(),
             quem_encerra_o_grave=PCP.QUEM_ENCERRA_O_GRAVE,
             grave=PCP.GRAVE, nome_do_tipo=PCP.NOME_DO_TIPO)

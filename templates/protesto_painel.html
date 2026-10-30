@@ -172,7 +172,11 @@
       <div class="rt-obrig">
         <div>
           <span class="rt-faltam">{% if o.faltam is none %}—{% else %}{{ o.faltam }}{% endif %}</span>
+          {% if o.e_com_o_oficial %}
+          <span class="rt-sit s-SEM_MEDIDA" data-com-o-oficial>É com o oficial</span>
+          {% else %}
           <span class="rt-sit s-{{ o.situacao }}">{{ r.rotulo_da_situacao[o.situacao] }}</span>
+          {% endif %}
           <span>{{ o.rotulo }}</span>
           <small class="muted">— {{ o.regra }}</small>
         </div>
@@ -227,6 +231,16 @@
         {% endif %}
         <form method="post" action="{{ url_for('protesto_encerrar_o_dia') }}" class="stack">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          {% if r.com_o_oficial %}
+            <div class="small" data-encerrar-com-o-oficial>
+              <strong>É com o oficial</strong> (não pede a sua afirmação nem prende o encerramento):
+              <ul style="margin:4px 0 0 18px">
+              {% for p in r.com_o_oficial %}
+                <li>{{ p.conduta_n }}. {{ p.conduta }} — {{ p.rotulo }} ({{ p.faltam }})</li>
+              {% endfor %}
+              </ul>
+            </div>
+          {% endif %}
           {% if r.para_encerrar %}
             <p style="margin:0"><strong>Falta(m) {{ r.para_encerrar | length }} item(ns).</strong>
               Faça o que falta. Se for encerrar assim mesmo, em <strong>cada</strong> item

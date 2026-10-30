@@ -443,6 +443,11 @@ CONDUTAS_DO_DIA: tuple[dict, ...] = (
 #   `prazo_da_peca`: a peca sabe o prazo dela e devolve `atrasado` em cada
 #   linha — o roteiro o respeita, em vez de cobrar tudo como pendente. Sem a
 #   marca, a regra de cima continua: gancho nao tem prazo aqui.
+#
+# `so_o_oficial` (decisao do oficial, 30/10/2026): a pendencia que so ele resolve
+# nao obriga a escrevente a afirmar. Para quem nao e ADMIN ela aparece como
+# informacao («e com o oficial»), fora dos itens a afirmar e da conta da conduta;
+# quando o proprio ADMIN encerra, continua pedindo afirmacao.
 GANCHOS: tuple[dict, ...] = (
     # O QUE A CONSULTA DO DIA TROUXE (DP, CP e AC) E AINDA NAO SE APLICOU —
     # a peca que faz o clique da remessa trazer os tres e guardar cada
@@ -460,7 +465,9 @@ GANCHOS: tuple[dict, ...] = (
      "rotulo": "títulos cuja situação não tem o ato que a sustente",
      "modulo": "protesto_selo_previo",
      "funcao": "titulos_sem_ato_que_sustente",
-     "de_onde": "PR #103, a situação sem ato"},
+     "de_onde": "PR #103, a situação sem ato",
+     # O botão da ficha só propõe, e quem aprova é o oficial (30/10/2026).
+     "so_o_oficial": True},
     {"chave": "intimacao_sem_prova", "conduta": "entregas",
      "rotulo": "intimações sem a prova que o protesto exige",
      "modulo": "protesto_prova", "funcao": "intimacoes_sem_prova",
@@ -469,7 +476,8 @@ GANCHOS: tuple[dict, ...] = (
      "rotulo": "títulos em que a CENPROT e o sistema divergem",
      "modulo": "cenprot_conferencia", "funcao": "quantos_divergem",
      "tela": "protesto_cenprot_conferencia",
-     "de_onde": "PR #105, a conferência CENPROT × sistema"},
+     "de_onde": "PR #105, a conferência CENPROT × sistema",
+     "so_o_oficial": True},
     {"chave": "titulos_irmaos", "conduta": "remessa",
      "rotulo": "títulos irmãos a conferir",
      "modulo": "protesto_titulos_irmaos", "funcao": "pendencias_dos_irmaos",
@@ -501,7 +509,8 @@ GANCHOS: tuple[dict, ...] = (
      "rotulo": "correções de ofício propostas que esperam o oficial",
      "modulo": "correcoes_de_oficio", "funcao": "pendentes",
      "tela": "correcoes_de_oficio_lista",
-     "de_onde": "PR #120, a fila das correções de ofício"},
+     "de_onde": "PR #120, a fila das correções de ofício",
+     "so_o_oficial": True},
 )
 
 
@@ -968,9 +977,20 @@ def _consulta_dos_pedidos_da_cra(con, ctx: dict) -> dict:
 def _cobrar_pedidos_da_cra(con, ctx: dict) -> list[dict]:
     """A consulta do dia (DP, CP e AC juntos) e as desistencias por aplicar.
     O que a consulta trouxe e nao foi aplicado vem pelo gancho
-    `pendencias_da_cra` (`GANCHOS`)."""
-    return [_consulta_dos_pedidos_da_cra(con, ctx),
-            *_desistencias_por_aplicar(con, ctx)]
+    `pendencias_da_cra` (`GANCHOS`).
+
+    A AUTORIZACAO QUE ESPERA O DEVEDOR NAO E PENDENCIA DO DIA (decisao do
+    oficial, 30/10/2026): ela depende de o devedor pagar as custas, e sai na nota
+    da consulta, sem contar nem prender o encerramento."""
+    consulta = _consulta_dos_pedidos_da_cra(con, ctx)
+    if _existe(con, "pt_cra_pedidos", "pt_cra_consultas"):
+        import protesto_cra_pedidos as PCP
+        esperando = len(PCP.aguardando_o_devedor(con))
+        if esperando:
+            consulta["nota"] = (f"{esperando} autorização(ões) de cancelamento "
+                                "aguardando o devedor pagar as custas: não é "
+                                "pendência do dia. Veja em «Pedidos da CRA».")
+    return [consulta, *_desistencias_por_aplicar(con, ctx)]
 
 
 # ---------------------------------------------------------- 4. as entregas
@@ -1656,15 +1676,24 @@ def _situacao_da_conduta(obrigacoes: list[dict]) -> str:
     return FEITO
 
 
-def cobrar_o_dia(con: sqlite3.Connection, *, agora: str) -> list[dict]:
+#: Quem resolve o que tem `so_o_oficial`. O gerente nao aprova correcao de ofício.
+PAPEL_DO_OFICIAL = "ADMIN"
+
+
+def cobrar_o_dia(con: sqlite3.Connection, *, agora: str,
+                 papel: str | None = None) -> list[dict]:
     """As condutas do dia, cada uma com as obrigacoes e a situacao. SO LE.
 
     `agora` e o instante da cobranca (`db.now()`), e nao so a data: a hora do
     papel e o que separa PENDENTE de ATRASADO.
+
+    `papel` e o de quem olha. Sem ele a cobranca e a inteira, a do oficial: nada
+    deixa de pedir afirmacao porque alguem esqueceu de dizer quem e. Com outro
+    papel, o que tem `so_o_oficial` sai marcado `e_com_o_oficial`, e nao conta.
     """
     ctx = _contexto(con, agora)
     horas = {h["o_que"]: h for h in HORARIOS_DA_CRA}
-    papel = [("CRA", p) for p in ROTEIRO_DA_CRA] + [
+    passos = [("CRA", p) for p in ROTEIRO_DA_CRA] + [
         ("CENPROT", p) for p in ROTEIRO_DA_CENPROT]
     saida = []
     for c in CONDUTAS_DO_DIA:
@@ -1673,19 +1702,24 @@ def cobrar_o_dia(con: sqlite3.Connection, *, agora: str) -> list[dict]:
         h = horas.get(c.get("hora") or "")
         linha["hora_limite"] = h["hora"] if h else None
         linha["obrigacoes"] = _COBRANCA_DA_CONDUTA[c["chave"]](con, ctx)
-        linha["papel"] = [f"{central}: {p['passo']}" for central, p in papel
+        linha["papel"] = [f"{central}: {p['passo']}" for central, p in passos
                           if p.get("conduta") == c["chave"]]
         saida.append(linha)
     # OS GANCHOS RODAM POR ULTIMO: a peca de outro pedido que estoura desfaz a
     # leitura, e o que ja foi medido nao se perde. Cada um entra na conduta
     # dele, antes do encerramento — que so se calcula com eles dentro.
     por_chave = {c["chave"]: c for c in saida}
+    nao_e_o_oficial = papel is not None and papel != PAPEL_DO_OFICIAL
     for g in GANCHOS:
-        por_chave[g["conduta"]]["obrigacoes"].append(_rodar_gancho(con, ctx, g))
+        o = _rodar_gancho(con, ctx, g)
+        o["e_com_o_oficial"] = bool(g.get("so_o_oficial") and nao_e_o_oficial
+                                    and o["situacao"] in (PENDENTE, ATRASADO))
+        por_chave[g["conduta"]]["obrigacoes"].append(o)
     for linha in saida:
-        linha["situacao"] = _situacao_da_conduta(linha["obrigacoes"])
-        linha["faltam"] = sum(o["faltam"] or 0 for o in linha["obrigacoes"])
-        linha["atrasados"] = sum(o["atrasados"] for o in linha["obrigacoes"])
+        cobradas = [o for o in linha["obrigacoes"] if not o.get("e_com_o_oficial")]
+        linha["situacao"] = _situacao_da_conduta(cobradas)
+        linha["faltam"] = sum(o["faltam"] or 0 for o in cobradas)
+        linha["atrasados"] = sum(o["atrasados"] for o in cobradas)
     return saida
 
 
@@ -1719,6 +1753,8 @@ def pendencias_para_encerrar(condutas: list[dict]) -> list[dict]:
         for o in c["obrigacoes"]:
             if o["chave"] == OBRIGACAO_DO_PROPRIO_ENCERRAMENTO:
                 continue
+            if o.get("e_com_o_oficial"):
+                continue
             if o["situacao"] in (PENDENTE, ATRASADO):
                 saida.append({
                     "chave": o["chave"], "conduta_n": c["n"],
@@ -1733,9 +1769,20 @@ def pendencias_para_encerrar(condutas: list[dict]) -> list[dict]:
     return saida
 
 
-def conferir_o_encerramento(con, *, agora: str,
-                            afirmacoes: dict) -> dict:
+def com_o_oficial(condutas: list[dict]) -> list[dict]:
+    """O que aparece como informacao «e com o oficial». So calcula."""
+    return [{"chave": o["chave"], "conduta_n": c["n"], "conduta": c["titulo"],
+             "rotulo": o["rotulo"], "faltam": o["faltam"]}
+            for c in condutas for o in c["obrigacoes"]
+            if o.get("e_com_o_oficial")]
+
+
+def conferir_o_encerramento(con, *, agora: str, afirmacoes: dict,
+                            papel: str | None = None) -> dict:
     """Confere se o dia pode ser encerrado. SO LE; recusa com a lista.
+
+    `papel` e o de quem encerra (`cobrar_o_dia`): a pendencia que so o oficial
+    resolve nao entra para a escrevente, e entra para ele.
 
     `afirmacoes` e `{chave da obrigacao: (afirmo, texto)}` — o contrato comum
     da casa, item por item: a caixa «Afirmo» marcada E pelo menos 30 letras.
@@ -1754,7 +1801,8 @@ def conferir_o_encerramento(con, *, agora: str,
             f"O dia {_br(dia)} já foi encerrado por "
             f"{ja.get('encerrado_por') or '—'} às "
             f"{str(ja.get('encerrado_em') or '')[11:16]}.")
-    pendencias = pendencias_para_encerrar(cobrar_o_dia(con, agora=agora))
+    pendencias = pendencias_para_encerrar(
+        cobrar_o_dia(con, agora=agora, papel=papel))
     afirmadas, sem = [], []
     for p in pendencias:
         afirmo, texto = afirmacoes.get(p["chave"]) or (False, "")
@@ -1929,14 +1977,15 @@ def quantos_o_sistema_faz() -> dict:
             "cenprot_total": len(ROTEIRO_DA_CENPROT)}
 
 
-def roteiro(con: sqlite3.Connection, *, agora: str) -> dict:
+def roteiro(con: sqlite3.Connection, *, agora: str,
+            papel: str | None = None) -> dict:
     """Tudo o que a tela do roteiro mostra. SO LE.
 
     As condutas cobradas, o relogio do dia (os horarios da CRA, cada um
     apontando para a conduta dele), o estado do envio automatico, o que saiu do
-    roteiro com a prova, e o papel como fonte.
+    roteiro com a prova, e o papel como fonte. `papel` e o de quem olha.
     """
-    condutas = cobrar_o_dia(con, agora=agora)
+    condutas = cobrar_o_dia(con, agora=agora, papel=papel)
     ancora_da_hora = {"Envio de remessa": ("conduta-remessa", "Remessa do dia"),
                       "Envio de confirmacao": ("conduta-remessa",
                                                "Confirmação"),
@@ -1958,7 +2007,7 @@ def roteiro(con: sqlite3.Connection, *, agora: str) -> dict:
         relogio.append(item)
     total = {s: sum(1 for c in condutas if c["situacao"] == s)
              for s in (FEITO, PENDENTE, ATRASADO, SEM_MEDIDA)}
-    papel = []
+    passos = []
     for central, lista in (("CRA", ROTEIRO_DA_CRA),
                            ("CENPROT", ROTEIRO_DA_CENPROT)):
         for p in lista:
@@ -1970,13 +2019,14 @@ def roteiro(con: sqlite3.Connection, *, agora: str) -> dict:
             linha["fora_o_que"] = next(
                 (f["o_que"] for f in FORA_DO_ROTEIRO
                  if f["chave"] == p.get("fora")), None)
-            papel.append(linha)
+            passos.append(linha)
     return {"condutas": condutas, "relogio": relogio, "total": total,
             "estado": estado_do_envio(con),
             # O FECHAMENTO E O DIA SEGUINTE (29/10/2026): o que ficou de ontem
             # abre a tela; o que falta para encerrar hoje fecha.
             "de_ontem": o_que_ficou(con, agora=agora, condutas=condutas),
             "para_encerrar": pendencias_para_encerrar(condutas),
+            "com_o_oficial": com_o_oficial(condutas),
             # A LINHA DE HOJE (encerrada ou reaberta) e se ela esta fechada.
             "encerramento_de_hoje": encerramento_do_dia(con, str(agora)[:10]),
             "encerrado_hoje": _fechado(encerramento_do_dia(
@@ -1984,7 +2034,7 @@ def roteiro(con: sqlite3.Connection, *, agora: str) -> dict:
             "minimo_de_letras": MINIMO_DE_LETRAS_DA_AFIRMACAO,
             "modelo_da_afirmacao": MODELO_DA_AFIRMACAO,
             "fora_do_roteiro": [dict(f) for f in FORA_DO_ROTEIRO],
-            "papel": papel, "horarios": [dict(h) for h in HORARIOS_DA_CRA],
+            "papel": passos, "horarios": [dict(h) for h in HORARIOS_DA_CRA],
             "so_o_tabeliao": list(SO_O_TABELIAO), "fontes": list(FONTES),
             "rotulo_da_situacao": dict(ROTULO_DA_SITUACAO),
             "hoje": str(agora)[:10], "agora": str(agora)[:16]}

@@ -2415,14 +2415,43 @@ def criar_por_reproducao(db_path: Any) -> bool:
 
 # ------------------------------------------------------------- a cópia
 
+#: Onde o PostgreSQL mora quando ninguém disse: a pasta da casa primeiro, depois
+#: as dos instaladores. O processo da automação nasce sem `CG_PG_BIN` e sem o
+#: PostgreSQL no PATH, e o BACKUP_DIARIO falhava por isso (28/10/2026), com o
+#: binário no disco. Molde que não existe neste sistema só não acha nada.
+_PASTAS_DO_POSTGRES = (
+    r"C:\CartorioGestaoPG\pg*\pgsql\bin",
+    r"C:\Program Files\PostgreSQL\*\bin",
+    "/opt/homebrew/opt/postgresql@*/bin",
+    "/usr/local/opt/postgresql@*/bin",
+    "/usr/lib/postgresql/*/bin",
+)
+
+
+def _na_pasta_conhecida(arquivo: str) -> Path | None:
+    """O binário em `_PASTAS_DO_POSTGRES`, da versão mais nova de cada molde: o
+    pg_dump recusa servidor mais novo que ele, e nunca o contrário."""
+    from glob import glob
+    for molde in _PASTAS_DO_POSTGRES:
+        pastas = sorted(glob(molde), reverse=True,
+                        key=lambda p: [int(n) for n in re.findall(r"\d+", p)])
+        for pasta in pastas:
+            exe = Path(pasta) / arquivo
+            if exe.exists():
+                return exe
+    return None
+
+
 def binario_do_postgres(nome: str) -> Path:
-    """O caminho de `pg_dump`, `pg_restore`… — em `CG_PG_BIN` ou no PATH."""
+    """O caminho de `pg_dump`, `pg_restore`… — em `CG_PG_BIN`, no PATH ou numa
+    das `_PASTAS_DO_POSTGRES`."""
     import shutil
+    arquivo = f"{nome}.exe" if os.name == "nt" else nome
     pasta = (os.environ.get("CG_PG_BIN") or "").strip()
-    exe = (Path(pasta) / (f"{nome}.exe" if os.name == "nt" else nome)) if pasta else None
+    exe = (Path(pasta) / arquivo) if pasta else None
     if not exe or not exe.exists():
         achado = shutil.which(nome)
-        exe = Path(achado) if achado else None
+        exe = Path(achado) if achado else _na_pasta_conhecida(arquivo)
     if not exe:
         raise OperationalError(f"{nome} não encontrado: defina CG_PG_BIN com a pasta bin do PostgreSQL.")
     return exe
@@ -2458,8 +2487,7 @@ def _na_pasta_das_copias(db_path: Any, destino: Any) -> str:
 def copiar_para_arquivo(db_path: Any, destino: Any,
                         contagens: dict | None = None) -> Path:
     """O equivalente do `VACUUM INTO`/`.backup()`: um pg_dump do schema daquele
-    banco, em formato próprio (-Fc). Procura o pg_dump em `CG_PG_BIN` ou no
-    PATH.
+    banco, em formato próprio (-Fc). Quem acha o pg_dump é `binario_do_postgres`.
 
     COM `contagens` (um dicionário), ele é preenchido com as linhas de cada
     tabela **no MESMO instantâneo do pg_dump** (26/10/2026): uma transação

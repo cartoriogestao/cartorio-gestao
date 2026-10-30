@@ -2925,7 +2925,8 @@ def test_o_deposito_previo_do_titulo_paga_a_abertura_e_o_registro_no_selo(casa):
     ficha_cx = f"/caixa/protocolos/{cx['id']}"
     _abrir_o_caixa_do_dia(c)
     html = _clicar(c, ficha_cx, f"{ficha_cx}/itens", acao="quitar",
-                   item_id=str(_item(casa, cx, "16.1")["id"]))
+                   item_id=str(_item(casa, cx, "16.1")["id"]),
+                   forma_pagamento="DINHEIRO")
     assert "Item quitado" in html
     p = _prenotar(casa, cx, apresentante=COMPRADORA, natureza="Compra e venda",
                   objeto="Imóvel urbano na Rua Exemplo, 30, Cidade Exemplo")

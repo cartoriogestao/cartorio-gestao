@@ -354,16 +354,16 @@
        de clicar. A confirmação existe pelo mesmo motivo — quitação não se
        desfaz apagando; desfaz-se por estorno, que deixa rastro.
 
-       A FORMA DE PAGAMENTO é do LOTE, porque o pagamento é um só. Em branco,
-       grava em branco, como o botão de um item: não se adivinha como o cliente
-       pagou. #}
+       A FORMA DE PAGAMENTO é do LOTE, porque o pagamento é um só. Em branco, a
+       rota recusa: não se adivinha como o cliente pagou. O botão de um item
+       pergunta a forma na própria linha, pela mesma razão. #}
     {% if faltam %}
     <form method="post" action="{{ url_for('caixa_protocolo_itens', protocolo_id=p.id) }}"
           style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label class="small">Forma de pagamento do lote
-        <select name="forma_pagamento">
-          <option value="">— não informar —</option>
+        <select name="forma_pagamento" required>
+          <option value="">— escolha —</option>
           {% for cod, rotulo in FORMAS.items() %}<option value="{{ cod }}">{{ rotulo }}</option>{% endfor %}
         </select></label>
       <button class="primary" name="acao" value="quitar_todos"
@@ -423,8 +423,12 @@
               <button class="small" name="acao" value="desquitar">reabrir</button>
             {% else %}
               <span class="badge alta">a quitar</span>
+              <select name="forma_pagamento" class="small" required aria-label="Forma de pagamento deste item">
+                <option value="">forma…</option>
+                {% for cod, rotulo in FORMAS.items() %}<option value="{{ cod }}">{{ rotulo }}</option>{% endfor %}
+              </select>
               <button class="small" name="acao" value="quitar">quitar</button>
-              <button class="small" name="acao" value="remover"
+              <button class="small" name="acao" value="remover" formnovalidate
                 onclick="return confirm('Remover este item do protocolo?')">remover</button>
             {% endif %}
           </form>
@@ -482,6 +486,9 @@
         <select name="tabela">
           {% for cod, nome in TABELAS.items() %}
             <option value="{{ cod }}" {% if cod == 5 %}selected{% endif %}>{{ nome }}</option>
+          {% endfor %}
+          {% for cod, nome in (ATALHOS_FAIXA|default({}, true)).items() %}
+            <option value="{{ cod }}">{{ nome }}</option>
           {% endfor %}
         </select></label>
       <label>Valor do negócio

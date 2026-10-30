@@ -60,6 +60,7 @@ sys.path.insert(0, str(RAIZ / "tests"))
 from bd_nativo import banco  # noqa: E402
 from conftest import cg_login  # noqa: E402
 from navegador_de_teste import postar_e_seguir  # noqa: E402
+import rg_registro as RG  # noqa: E402
 
 SENHA = "Senha#12345"
 OFICIAL = "FULANO DE EXEMPLO"            # o ADMIN que qualifica, lavra e assina
@@ -340,6 +341,21 @@ class Balcao:
         return {"resposta": r, "pedido": chamadas[-1] if chamadas else None}
 
 
+def _campos_da_lista(serie: str, natureza: str) -> dict:
+    """O que a tela do RCPJ passou a exigir (CN-MA 410/412/413, III).
+
+    O RTD não declara. No RCPJ, a natureza que cai nos três artigos leva a
+    lista apresentada, com referência de exemplo; o resto, «não se aplica»."""
+    if serie not in RG.SERIES_RCPJ:
+        return {}
+    sugestao = RG.sugerir_enquadramento(natureza)
+    if sugestao in ("ART410", "ART412", "ART413"):
+        return {"enquadramento_cnma": sugestao, "lista_presenca": "APRESENTADA",
+                "lista_presenca_ref": "Lista de presença de exemplo, folha 1"}
+    return {"enquadramento_cnma": "NAO_SE_APLICA",
+            "justificativa_cnma": "Ato fora dos arts. 410, 412 e 413 do CN-MA."}
+
+
 def _lavrar_pelo_titulo(b: Balcao, *, atribuicao: int, serie: str, item: str,
                         natureza: str, apresentante: str, documento: str,
                         teor: str, declaracoes: dict | None = None) -> dict:
@@ -363,7 +379,8 @@ def _lavrar_pelo_titulo(b: Balcao, *, atribuicao: int, serie: str, item: str,
             assert f'name="{nome}"' in ficha, f"a ficha do título não pergunta {nome}"
     etiqueta = postar_e_seguir(b.c, f"{url}/registrar", {
         "csrf_token": _token(b.c, url), "serie": serie, "teor": teor,
-        "protocolo_id": str(titulo["protocolo_geral_id"]), **campos})
+        "protocolo_id": str(titulo["protocolo_geral_id"]), **campos,
+        **_campos_da_lista(serie, natureza)})
     ato = b.um("SELECT * FROM rg_atos ORDER BY id DESC LIMIT 1")
     registro = b.um("SELECT * FROM rg_registros WHERE id=%s", (ato["registro_id"],))
     # o documento trasladado, como o balcão o anexa na ficha do registro
@@ -592,7 +609,8 @@ def test_a_averbacao_entra_pelo_protocolo_e_sai_no_termo_e_na_certidao(
         "csrf_token": _token(b.c, ficha), "tipo": "AVERBACAO",
         "natureza_ato": natureza_ato, "data_assinatura": "01/10/2026",
         "protocolo_id": str(titulo["protocolo_geral_id"]),
-        "novo_arquivo": (io.BytesIO(_png()), "averbacao.png")})
+        "novo_arquivo": (io.BytesIO(_png()), "averbacao.png"),
+        **_campos_da_lista(serie, natureza_ato)})
     av = b.um("SELECT * FROM rg_atos WHERE registro_id=%s AND tipo='AVERBACAO'",
               (registro["id"],))
     # folha nova, número seguinte, o selo dela, o item do protocolo dela
@@ -1069,7 +1087,8 @@ def test_a_certidao_por_texto_traz_o_selo_de_cada_ato_que_reproduz(casa):
         "csrf_token": _token(b.c, ficha), "tipo": "AVERBACAO",
         "natureza_ato": "Ata de eleição da diretoria", "data_assinatura": "01/10/2026",
         "protocolo_id": str(titulo["protocolo_geral_id"]),
-        "novo_arquivo": (io.BytesIO(_png()), "averbacao.png")})
+        "novo_arquivo": (io.BytesIO(_png()), "averbacao.png"),
+        **_campos_da_lista("PJ_A", "Ata de eleição da diretoria")})
     av = b.um("SELECT * FROM rg_atos WHERE registro_id=%s AND tipo='AVERBACAO'",
               (base["registro"]["id"],))
     assert av["selo"]
@@ -1413,7 +1432,12 @@ def test_o_termo_declara_o_protocolo_e_o_que_o_livro_pede_e_a_segunda_via_tambem
         declaracoes=declaracoes)
     titulo, ato = feito["titulo"], feito["ato"]
     assert ato["selo"], "o registro com as declarações sela como qualquer outro"
-    assert json.loads(ato["declaracoes"]) == declaracoes
+    gravadas = json.loads(ato["declaracoes"])
+    # a lista de presença fica no mesmo JSON, à parte dos claros do termo
+    lista = gravadas.pop("cnma_lista_presenca", None)
+    assert gravadas == declaracoes
+    if serie in RG.SERIES_RCPJ:
+        assert lista and lista.get("enquadramento")
 
     protocolo = (f"Protocolizado em {_br(titulo['data_apresentacao'])}, sob o nº "
                  f"{titulo['numero']}.")

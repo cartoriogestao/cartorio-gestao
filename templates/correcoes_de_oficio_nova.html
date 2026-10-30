@@ -92,7 +92,8 @@
       {% else %}
         <label>{{ f.rotulo }}
           <input name="{{ f.nome }}" value="{{ valores.get(f.nome, '') }}"
-                 {% if f.widget == 'numero' %}inputmode="numeric"{% endif %}>
+                 {% if f.widget == 'numero' %}inputmode="numeric"{% endif %}
+                 {% if f.widget == 'data' %}type="date"{% endif %}>
           {% if f.ajuda %}<small class="muted" style="font-weight:400">{{ f.ajuda }}</small>{% endif %}</label>
       {% endif %}
     {% endfor %}

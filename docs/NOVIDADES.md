@@ -8,6 +8,75 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.8 — o Protesto que não deixa errar, sem janela do Python
+
+São 30 mudanças juntadas desde a 3.7.7 (#97 a #126). A suíte roda na máquina
+da integração, e não na do desenvolvimento.
+
+**Atenção ao instalar**
+- **As configurações que cobram a equipe** (fim do expediente do caixa,
+  avisos do cronômetro e as demais da lista) passam a ser alteradas **só pelo
+  oficial, na tela, com afirmação escrita**. O próprio banco recusa a mudança
+  feita por script, inclusive a que o suporte rode por ordem sua. O fim do
+  expediente do caixa está hoje em **19:00**; voltar a 14:00 é pela tela.
+- **Doze tabelas novas e colunas novas no Protesto** nascem sozinhas na
+  primeira abertura. O ensaio do esquema foi feito em banco vazio, e não numa
+  cópia da produção.
+- **Os robôs novos nascem desligados**: conferência CENPROT das 8h15, relação
+  da guia de repasse, PIX conferido no banco, boleto de repasse no portal da
+  CRA e ciência diária do malote às 8h. Cada um se liga na Automação, e os que
+  entram em site pedem a senha no cofre.
+- **As janelas do Python que abriam a cada 15 minutos param.**
+
+**Protesto — o que passa a travar**
+- O protesto só se lavra com a **prova da intimação** (pessoal, digital ou
+  por edital); a entrega do aviso só se registra com o **comprovante** e o nome
+  de quem recebeu, e o comprovante de outro título é recusado.
+- O **selo se confere antes de lavrar**; falha que se sabe antes recusa
+  antes, e a do aparelho vira pendência com saída.
+- **Títulos irmãos** (mesmo protocolo) aparecem lado a lado; o protesto trava
+  quando o irmão de vencimento posterior está pago com o mesmo valor.
+- **Conferência CENPROT × sistema** antes de protestar título da Central,
+  separando o pago por liquidação no portal do que veio do nosso XML.
+- **PIX só conta como pago** com comprovante e crédito localizado no banco;
+  dinheiro sem pagamento lançado vira pendência.
+- Quem insiste numa trava **afirma por escrito**, e a afirmação fica no log.
+
+**Protesto — o que passa a fazer**
+- O clique da remessa traz também **desistências, cancelamentos e
+  autorizações** da CRA; desistência alcança todos os títulos do protocolo.
+- **Retorno à CRA**: ocorrência já aceita, protocolo já informado ou arquivo
+  ainda sem resposta não voltam à fila.
+- **Roteiro das Centrais** com condutas cobradas e **encerramento do dia**;
+  só o oficial reabre o dia.
+- **Guia de repasse** nasce sozinha no dia do pagamento, e o pagamento só sai
+  da pendência com a guia paga; o robô pode emitir o boleto no portal da CRA,
+  que vai às despesas esperando a sua autorização.
+- **Instrumentos em lote**: emitir e assinar vários de uma vez.
+- **Averbação de retificação de erro material**, de ofício (art. 25).
+- **Selo que faltou** se emite depois, pelo item já pago no protocolo.
+- O nome de **quem recebeu o aviso** no canhoto, completado depois, com
+  tarefa à escrevente.
+- O cedente do acervo vem do cadastro do E-Ofício, com o nome da CRA.
+
+**Correções de ofício**
+- Uma fila: o agente ou a escrevente propõe, o oficial aprova com afirmação
+  expressa, e o servidor executa.
+
+**WhatsApp**
+- O script da conversa voltou a carregar.
+- Erro passageiro volta à fila, e a entrega aparece ao vivo com o motivo.
+- Quem é a pessoa: cartão de firma e protocolos pelo telefone.
+
+**Malote**
+- O robô pode dar a ciência diária às 8h com a senha do cofre, pedindo o
+  código de dois fatores quando o malote exigir.
+
+**Segurança**
+- Os dois alertas novos do CodeQL (código da comunicação da CRC e extensão do
+  documento da despesa) e a leitura do XML de desistência sem expansão de
+  entidade.
+
 ## 3.7.7 — WhatsApp em tempo real, selo gratuito e cancelado, segurança
 
 São 8 mudanças juntadas desde a 3.7.6. A suíte roda na máquina da

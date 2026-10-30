@@ -14751,15 +14751,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """Fila dos protestos lavrados sem instrumento. Só LÊ.
 
         O RECORTE (29/10/2026): `quais` separa os lavrados neste sistema do
-        acervo do E-Ofício, e `desde` é um dos atalhos de data. A tela abre
-        nos lavrados neste sistema quando há algum — medido nesse dia, 21 de
-        1.207; o resto é acervo, e continua a um clique, com o número à vista.
+        acervo do E-Ofício, e `desde` é um dos atalhos de data.
+
+        SEM QUEDA AUTOMÁTICA (30/10/2026): sem filtro válido, a tela fica nos
+        lavrados neste sistema, mesmo com zero. Ela caía em «todos» quando o
+        sistema zerava, e o oficial leu 200 protestos de acervo como trabalho
+        do dia. O acervo só aparece quando a pessoa escolhe o filtro.
         """
         with db.connect() as con:
             quadro_fila = PI.quadro_da_fila(con, hoje=hoje())
             quais = request.args.get("quais") or ""
             if quais not in PI.QUAIS_DA_FILA:
-                quais = "sistema" if quadro_fila["sistema"] else "todos"
+                quais = "sistema"
             atalho = request.args.get("desde") or ""
             if atalho not in PI.ATALHOS_DE_DATA:
                 atalho = ""
@@ -14781,7 +14784,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             emitidos=emitidos, a_assinar=a_assinar, quadro_fila=quadro_fila,
             quais=quais, atalho=atalho, QUAIS=PI.QUAIS_DA_FILA,
             ATALHOS=PI.ATALHOS_DE_DATA,
-            limite_assinatura=PI.LIMITE_DO_LOTE_DE_ASSINATURA)
+            limite_assinatura=PI.LIMITE_DO_LOTE_DE_ASSINATURA,
+            modelo_da_afirmacao=AFX.MODELO,
+            minimo_da_afirmacao=AFX.MINIMO_DE_LETRAS)
 
     @app.route("/protesto/instrumentos/emitir-lote", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -14792,7 +14797,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         regra mora em `PI.emitir_lote`: uma transação por título, um que falha
         não derruba os outros, e título que já tem instrumento não ganha
         segunda via por engano. Aqui só se ligam os fios.
+
+        O PROTESTO DO ACERVO exige afirmação expressa, conferida no domínio
+        pelos títulos marcados, e não pelo filtro da tela (30/10/2026).
         """
+        import selo_robo as SR
         escolhidos = [n for n in (numero_digitado(x)
                                   for x in request.form.getlist("titulo_id"))
                       if n is not None]
@@ -14811,7 +14820,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         try:
             r = PI.emitir_lote(db.transaction, escolhidos, serventia=serventia,
                                agora=agora(), usuario=usuario_nome(),
-                               modelo_de=_modelo)
+                               modelo_de=_modelo,
+                               afirmo=bool(request.form.get("afirmo")),
+                               afirmacao=request.form.get("afirmacao"),
+                               robo=SR.usuario_e_robo())
         except PI.InstrumentoError as erro:
             flash(str(erro), "warning")
             return redirect(volta)
@@ -14821,11 +14833,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   {"titulo_id": feito["titulo_id"],
                    "numero": feito.get("numero"), "ano": feito.get("ano"),
                    "em_lote": True})
+        # Uma linha por protesto de acervo que saiu: o que falhou não gastou
+        # número, e não há o que afirmar sobre ele.
+        af_acervo = r["afirmacao_de_acervo"]
+        for feito in r["feitos"]:
+            if af_acervo and feito["titulo_id"] in af_acervo["titulos"]:
+                audit("AFIRMACAO_EXPRESSA", "pt_titulos", feito["titulo_id"],
+                      {"regra": af_acervo["regra"],
+                       "afirmacao": af_acervo["afirmacao"],
+                       "o_que_faltava": af_acervo["o_que_faltava"],
+                       "instrumento": f"{feito.get('numero')}/{feito.get('ano')}"})
         if r["feitos"]:
             numeros = ", ".join(f"{f['numero']}/{f['ano']}" for f in r["feitos"])
             flash(f"{len(r['feitos'])} instrumento(s) emitido(s): {numeros}. "
-                  f"Eles entraram na fila de assinatura — assine-os logo "
-                  f"abaixo, em «Instrumentos a assinar».", "success")
+                  f"Eles entraram na fila de assinatura — assine-os em "
+                  f"«Instrumentos a assinar».", "success")
         if r["falharam"]:
             flash(f"{len(r['falharam'])} não saíram — o motivo de cada um "
                   f"vem a seguir.", "danger")

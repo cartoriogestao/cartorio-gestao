@@ -7,6 +7,13 @@
   <a class="button" href="{{ url_for('protesto_a_protestar') }}">A protestar</a>
 </div>
 
+{% if a_assinar %}
+<div class="notice">
+  <strong>{{ a_assinar | length }} a assinar.</strong>
+  <a href="#a-assinar">Ir para «Instrumentos a assinar»</a>
+</div>
+{% endif %}
+
 <div class="notice">
   O <strong>instrumento</strong> é o papel do art. 20 da Lei 9.492/1997 —
   afirma que o protesto foi lavrado e vai ao apresentante. Emitir aqui
@@ -23,84 +30,7 @@
   <div class="stat"><strong>{{ a_assinar | length }}</strong><small>Emitidos e não assinados</small></div>
 </section>
 
-{#
-  EM LOTE (29/10/2026), pedido do oficial: «não quero ter que clicar um por
-  um». O que se junta é o clique: cada instrumento continua com o seu número,
-  o seu teor e a sua linha na fila de assinatura, e cada título vai na sua
-  própria transação (`protesto_instrumento.emitir_lote`).
-#}
-<section class="panel" id="a-emitir">
-  <div class="panel-head">
-    <span>Protestos sem instrumento</span>
-    <small>{{ QUAIS[quais] }}{% if atalho %} · {{ ATALHOS[atalho][0] }}{% endif %} — {{ fila | length }} na lista, do mais novo para o mais antigo</small>
-  </div>
-
-  <div class="actions" style="padding:8px 14px 0">
-    {% for chave, nome in QUAIS.items() %}
-      <a class="button{% if chave == quais %} primary{% else %} secondary{% endif %}"
-         href="{{ url_for('protesto_instrumentos', quais=chave, desde=atalho or None) }}#a-emitir">{{ nome }} ({{ quadro_fila[chave] }})</a>
-    {% endfor %}
-  </div>
-  <div class="actions" style="padding:6px 14px 0">
-    <small class="muted">Data do protesto:</small>
-    <a class="button{% if not atalho %} primary{% else %} secondary{% endif %}"
-       href="{{ url_for('protesto_instrumentos', quais=quais) }}#a-emitir">qualquer data</a>
-    {% for chave, par in ATALHOS.items() %}
-      <a class="button{% if chave == atalho %} primary{% else %} secondary{% endif %}"
-         href="{{ url_for('protesto_instrumentos', quais=quais, desde=chave) }}#a-emitir">{{ par[0] }} ({{ quadro_fila.por_atalho[quais][chave] }})</a>
-    {% endfor %}
-  </div>
-  {% if quadro_fila.acervo %}
-  <p class="small muted" style="padding:6px 14px 0">
-    {{ quadro_fila.acervo }} dos {{ quadro_fila.todos }} protestos sem instrumento vieram do
-    <strong>acervo do E-Ofício</strong> — a casa antiga não guardava instrumento. Eles ficam
-    contados e a um clique, sem atrapalhar os lavrados neste sistema.
-  </p>
-  {% endif %}
-
-  {% if not fila %}
-    <p style="padding:14px">Nenhum protesto lavrado aguardando instrumento neste recorte.</p>
-  {% else %}
-  <form method="post" action="{{ url_for('protesto_instrumentos_emitir_lote') }}" id="form-emitir-lote">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <input type="hidden" name="voltar" value="{{ url_for('protesto_instrumentos', quais=quais, desde=atalho or None) }}">
-    <div class="actions" style="padding:8px 14px">
-      <button class="button secondary" type="button" data-marcar="titulo_id">Marcar todos os {{ fila | length }}</button>
-      <button class="button primary" type="submit">Emitir os marcados</button>
-      <small class="muted">cada um sai com o seu número e entra na fila de assinatura; um que falhar não impede os outros</small>
-    </div>
-    <table class="table">
-      <thead><tr>
-        <th><input type="checkbox" data-marcar-cabecalho="titulo_id" aria-label="Marcar todos"></th>
-        <th>Data do ato</th><th>Protocolo</th><th>Título</th>
-        <th>Apresentante</th><th>Origem</th><th></th>
-      </tr></thead>
-      <tbody>
-        {% for r in fila %}
-        <tr>
-          <td><input type="checkbox" name="titulo_id" value="{{ r.titulo_id }}"
-                     aria-label="Marcar o protesto {{ r.protocolo or r.titulo_id }}"></td>
-          <td>{{ (r.data_ato or '—')[:10] }}</td>
-          <td><a href="{{ url_for('protesto_titulo', titulo_id=r.titulo_id) }}">{{ r.protocolo or r.titulo_id }}</a></td>
-          <td>{{ r.numero_titulo or '—' }}</td>
-          <td>{{ r.apresentante_nome or '—' }}</td>
-          <td><small>{% if r.origem == 'EOFICIO' %}acervo E-Ofício{% else %}este sistema{% endif %}</small></td>
-          <td>
-            {# Um só, como antes: abre o papel para imprimir logo. #}
-            <button class="button" type="submit" formnovalidate
-                    formaction="{{ url_for('protesto_instrumento_emitir', titulo_id=r.titulo_id) }}">Emitir só este</button>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% if fila | length < (quadro_fila.por_atalho[quais][atalho] if atalho else quadro_fila[quais]) %}
-    <p class="small muted" style="padding:6px 14px">A lista mostra os {{ fila | length }} mais novos deste recorte; emitidos estes, os seguintes aparecem.</p>
-    {% endif %}
-  </form>
-  {% endif %}
-</section>
-
+{% macro secao_a_assinar() %}
 {#
   ASSINAR EM LOTE (29/10/2026). MEDIDO NO CÓDIGO: o instrumento se assina pela
   rota `/assinar/pdf-windows` do serviço local, que assina UM PDF por chamada,
@@ -154,6 +84,109 @@
   </form>
   {% endif %}
 </section>
+{% endmacro %}
+
+{# O que já foi emitido e espera o A3 vem primeiro: é o trabalho de agora. #}
+{% if a_assinar %}{{ secao_a_assinar() }}{% endif %}
+
+{#
+  EM LOTE (29/10/2026), pedido do oficial: «não quero ter que clicar um por
+  um». O que se junta é o clique: cada instrumento continua com o seu número,
+  o seu teor e a sua linha na fila de assinatura, e cada título vai na sua
+  própria transação (`protesto_instrumento.emitir_lote`).
+#}
+<section class="panel" id="a-emitir">
+  <div class="panel-head">
+    <span>Protestos sem instrumento</span>
+    <small>{{ QUAIS[quais] }}{% if atalho %} · {{ ATALHOS[atalho][0] }}{% endif %} — {{ fila | length }} na lista, do mais novo para o mais antigo</small>
+  </div>
+
+  <div class="actions" style="padding:8px 14px 0">
+    {% for chave, nome in QUAIS.items() %}
+      <a class="button{% if chave == quais %} primary{% else %} secondary{% endif %}"
+         href="{{ url_for('protesto_instrumentos', quais=chave, desde=atalho or None) }}#a-emitir">{{ nome }} ({{ quadro_fila[chave] }})</a>
+    {% endfor %}
+  </div>
+  <div class="actions" style="padding:6px 14px 0">
+    <small class="muted">Data do protesto:</small>
+    <a class="button{% if not atalho %} primary{% else %} secondary{% endif %}"
+       href="{{ url_for('protesto_instrumentos', quais=quais) }}#a-emitir">qualquer data</a>
+    {% for chave, par in ATALHOS.items() %}
+      <a class="button{% if chave == atalho %} primary{% else %} secondary{% endif %}"
+         href="{{ url_for('protesto_instrumentos', quais=quais, desde=chave) }}#a-emitir">{{ par[0] }} ({{ quadro_fila.por_atalho[quais][chave] }})</a>
+    {% endfor %}
+  </div>
+  {% if quadro_fila.acervo %}
+  <p class="small muted" style="padding:6px 14px 0">
+    {{ quadro_fila.acervo }} dos {{ quadro_fila.todos }} protestos sem instrumento vieram do
+    <strong>acervo do E-Ofício</strong> — a casa antiga não guardava instrumento. Eles ficam
+    contados, e só aparecem na lista se você escolher o filtro.
+  </p>
+  {% endif %}
+
+  {% if not fila %}
+    <p style="padding:14px">{% if quais == 'sistema' and not atalho %}Nenhum protesto deste sistema sem instrumento.{% else %}Nenhum protesto lavrado aguardando instrumento neste recorte.{% endif %}</p>
+  {% else %}
+  <form method="post" action="{{ url_for('protesto_instrumentos_emitir_lote') }}" id="form-emitir-lote">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="voltar" value="{{ url_for('protesto_instrumentos', quais=quais, desde=atalho or None) }}">
+    {#
+      ACERVO PROTEGIDO (30/10/2026): sem «Marcar todos», e o lote exige a
+      afirmação expressa — a mesma que `PI.emitir_lote` confere no servidor. No
+      filtro «todos» os campos não são obrigatórios na tela porque um lote só
+      de protestos deste sistema não pede afirmação.
+    #}
+    {% if quais != 'sistema' %}
+    <div class="notice danger" style="margin:8px 14px">
+      <strong>Este filtro mostra o acervo do E-Ofício.</strong> Cada instrumento emitido gasta um
+      número do exercício. Para emitir protestos do acervo em lote, marque um a um e afirme abaixo.
+      «Emitir só este» continua valendo para um de cada vez.
+      <label style="display:block;margin-top:8px"><input type="checkbox" name="afirmo" value="1" style="width:auto"{% if quais == 'acervo' %} required{% endif %}> Afirmo</label>
+      <label style="display:block">{{ modelo_da_afirmacao }}
+        <textarea name="afirmacao" rows="2"{% if quais == 'acervo' %} required{% endif %}
+                  placeholder="por que estes instrumentos do acervo saem agora (pelo menos {{ minimo_da_afirmacao }} letras)"></textarea></label>
+    </div>
+    {% endif %}
+    <div class="actions" style="padding:8px 14px">
+      {% if quais == 'sistema' %}
+      <button class="button secondary" type="button" data-marcar="titulo_id">Marcar todos os {{ fila | length }}</button>
+      {% endif %}
+      <button class="button primary" type="submit">Emitir os marcados</button>
+      <small class="muted">cada um sai com o seu número e entra na fila de assinatura; um que falhar não impede os outros</small>
+    </div>
+    <table class="table">
+      <thead><tr>
+        <th>{% if quais == 'sistema' %}<input type="checkbox" data-marcar-cabecalho="titulo_id" aria-label="Marcar todos">{% endif %}</th>
+        <th>Data do ato</th><th>Protocolo</th><th>Título</th>
+        <th>Apresentante</th><th>Origem</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for r in fila %}
+        <tr>
+          <td><input type="checkbox" name="titulo_id" value="{{ r.titulo_id }}"
+                     aria-label="Marcar o protesto {{ r.protocolo or r.titulo_id }}"></td>
+          <td>{{ (r.data_ato or '—')[:10] }}</td>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=r.titulo_id) }}">{{ r.protocolo or r.titulo_id }}</a></td>
+          <td>{{ r.numero_titulo or '—' }}</td>
+          <td>{{ r.apresentante_nome or '—' }}</td>
+          <td><small>{% if r.origem == 'EOFICIO' %}acervo E-Ofício{% else %}este sistema{% endif %}</small></td>
+          <td>
+            {# Um só, como antes: abre o papel para imprimir logo. #}
+            <button class="button" type="submit" formnovalidate
+                    formaction="{{ url_for('protesto_instrumento_emitir', titulo_id=r.titulo_id) }}">Emitir só este</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if fila | length < (quadro_fila.por_atalho[quais][atalho] if atalho else quadro_fila[quais]) %}
+    <p class="small muted" style="padding:6px 14px">A lista mostra os {{ fila | length }} mais novos deste recorte; emitidos estes, os seguintes aparecem.</p>
+    {% endif %}
+  </form>
+  {% endif %}
+</section>
+
+{% if not a_assinar %}{{ secao_a_assinar() }}{% endif %}
 
 <section class="panel">
   <div class="panel-head"><span>Instrumentos emitidos</span><small>os mais recentes — para imprimir de novo</small></div>

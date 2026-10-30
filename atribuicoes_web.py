@@ -9398,6 +9398,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             "atrib_rcpj_rtd_ultimos_atos.html", atos=atos, total=total,
             pagina=pagina, paginas=paginas, atribuicao=atribuicao, tipo=tipo)
 
+    @app.route("/rcpj-rtd/pendencias-lista-presenca")
+    @roles_required("ADMIN", "MANAGER")
+    def rcpj_rtd_pendencias_lista_presenca():
+        """Atos de RCPJ ainda sem a declaração da lista de presença. Só LÊ.
+
+        O passado não se reescreve. A lista apoia o saneamento do que foi
+        lavrado antes da regra dos arts. 410, 412 e 413, III.
+        """
+        with db.connect() as con:
+            atos = RG.atos_sem_declaracao_de_lista(con)
+        return render_template(
+            "atrib_rcpj_pendencias_lista.html", atos=atos, total=len(atos))
+
     @app.route("/rcpj-rtd/novo", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def rcpj_rtd_registro_novo():
@@ -9421,6 +9434,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return render_template("atrib_registro_novo.html", series=series,
                                    form=request.form,
                                    declaracoes_do_termo=RG.DECLARACOES_POR_SERIE,
+                                   enquadramento_sugerido=RG.sugerir_enquadramento(
+                                       request.form.get("natureza")),
+                                   rotulos_enquadramento=RG.ROTULO_DO_ENQUADRAMENTO,
                                    **contexto)
 
         if request.method != "POST":
@@ -9429,18 +9445,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         try:
             with db.transaction() as con:
                 # as declarações do termo do livro (LD09) — o extrato do
-                # Livro C, a inscrição da PJ, a matrícula do periódico
+                # Livro C, a inscrição da PJ, a matrícula do periódico.
+                # No RCPJ, a lista de presença (CN-MA 410/412/413, III) entra
+                # na mesma lavratura, antes do número.
+                serie = _campo("serie")
+                lista = (RG.lista_presenca_do_formulario(
+                    request.form,
+                    arquivos=request.files.getlist("novo_arquivo"))
+                    if serie in RG.SERIES_RCPJ else None)
                 r = RG.abrir_registro(
-                    con, serie=_campo("serie"), sv=sv(), agora=agora(),
+                    con, serie=serie, sv=sv(), agora=agora(),
                     data_extenso=hoje_extenso(),
                     natureza=_campo("natureza") or None,
                     requerente_nome=_campo("requerente_nome") or None,
                     requerente_documento=_campo("requerente_documento") or None,
                     teor=_campo("teor") or None, usuario=usuario_nome(),
-                    declaracoes=RG.declaracoes_do_formulario(request.form))
+                    declaracoes=RG.declaracoes_do_formulario(request.form),
+                    lista_presenca=lista)
                 # A sigla vem da série escolhida — RCPJ e RTD compartilham a
                 # tela, e hardcodar «RTD» gravaria selo mentiroso no RCPJ.
-                serie = _campo("serie")
                 sigla = "RCPJ" if serie in RG.SERIES_RCPJ else "RTD"
                 aviso = _selar_se_pedido(con, "rg_atos", r["ato_id"], sigla)
                 cob_msg = _cobrar_se_pedido(con, "rg_atos", r["ato_id"],
@@ -9474,8 +9497,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   "selo e tente de novo.",
                   "danger")
             return tela()
+        if serie in RG.SERIES_RCPJ:
+            novos_ids = _anexar_novos_arquivos_ao_registro(
+                db, registro_id=r["registro_id"], serie=serie,
+                numero=r.get("numero_ordem"),
+                arquivos=request.files.getlist("novo_arquivo"),
+                descricao="Lista de presença ou certidão de não apresentação",
+                user_id=usuario_id_do_sistema(),
+                pasta_dos_arquivos=pasta_dos_arquivos)
+            if novos_ids:
+                _vincular_anexos_rg_ato(
+                    db, ato_id=r["ato_id"], registro_id=r["registro_id"],
+                    anexo_ids=[str(i) for i in novos_ids],
+                    user_id=usuario_id_do_sistema())
+                with db.transaction() as con:
+                    RG.acrescentar_anexos_da_lista(con, r["ato_id"], novos_ids)
         audit("RG_REGISTRO_NOVO", "rg_registros", r["registro_id"],
-              {"serie": _campo("serie"), "numero_ordem": r.get("numero_ordem")})
+              {"serie": serie, "numero_ordem": r.get("numero_ordem"),
+               **RG.resumo_auditoria_lista(r.get("cnma_lista_presenca"))})
         flash(f"Registro aberto no Livro {r.get('livro_numero')}, "
               f"fl. {r.get('rotulo')}, nº {r.get('numero_ordem')}.{aviso} "
               f"Se o título veio em papel, imprima a etiqueta e cole nele "
@@ -9502,16 +9541,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 if tipo == "AVERBACAO":
                     natureza_ato = _campo("natureza_ato")
                     data_assinatura = _campo("data_assinatura")
+                    linha_serie = banco(con).um(
+                        "SELECT serie, numero FROM rg_registros WHERE id=%s",
+                        (registro_id,))
+                    serie_do_registro = (linha_serie["serie"]
+                                         if linha_serie else "")
+                    numero_reg_lista = (
+                        linha_serie["numero"] if linha_serie else None) or ""
                     # Teor padronizado: intro CERTIFICO + Tipo/Data (oficial
                     # 11/09/2026). Número do registro entra na intro.
                     #
                     # O texto é a ===INTRO=== do PADRÃO desde o LF06F
                     # (19/10/2026), e não o ajuste da casa: o livro grava o
                     # que gravava antes — ver `rg_teor_rtdpj.intro`.
-                    reg_row = banco(con).um(
-                        "SELECT numero FROM rg_registros WHERE id=%s",
-                        (registro_id,))
-                    numero_reg = (reg_row["numero"] if reg_row else None) or ""
+                    numero_reg = numero_reg_lista
                     if natureza_ato or data_assinatura:
                         teor = RGTEOR.intro(
                             numero_reg, tipo_ato="AVERBACAO",
@@ -9520,11 +9563,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     else:
                         teor = _campo("teor") or RGTEOR.intro(
                             numero_reg, tipo_ato="AVERBACAO")
+                    lista = (RG.lista_presenca_do_formulario(
+                        request.form,
+                        arquivos=request.files.getlist("novo_arquivo"))
+                        if serie_do_registro in RG.SERIES_RCPJ else None)
                     r = RG.lancar_averbacao(con, registro_id,
                                             teor=teor, sv=sv(),
                                             agora=agora(),
                                             data_extenso=hoje_extenso(),
-                                            usuario=usuario_nome())
+                                            usuario=usuario_nome(),
+                                            lista_presenca=lista)
                 elif tipo == "CANCELAMENTO":
                     r = RG.lancar_cancelamento(con, registro_id,
                                                motivo=_campo("motivo"), sv=sv(),
@@ -9566,7 +9614,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   "selo e tente de novo.",
                   "danger")
             return voltar
-        audit("RG_ATO", "rg_atos", r["ato_id"], {"tipo": tipo})
+        audit("RG_ATO", "rg_atos", r["ato_id"],
+              {"tipo": tipo,
+               **RG.resumo_auditoria_lista(r.get("cnma_lista_presenca"))})
         if tipo == "AVERBACAO":
             # **OS ARQUIVOS PODEM CHEGAR AGORA, JUNTO COM O LANÇAMENTO** —
             # pedido do oficial (11/09/2026): antes só dava para marcar
@@ -9588,6 +9638,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 user_id=usuario_id_do_sistema())
             if n_anex:
                 aviso = (aviso or "") + f" {n_anex} anexo(s) ligado(s) ao ato."
+            if ids_anexo and serie in RG.SERIES_RCPJ:
+                with db.transaction() as con:
+                    RG.acrescentar_anexos_da_lista(
+                        con, r["ato_id"], ids_anexo)
         if tipo == "AVERBACAO":
             flash(f"{tipo.capitalize()} lançada. Livro {r.get('livro_numero')}, "
                   f"fl. {r.get('rotulo')}, nº {r.get('numero_ordem')}.{aviso} "
@@ -9664,9 +9718,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             if not registro:
                 flash("Registro não encontrado.", "danger")
                 return redirect(url_for("rcpj_rtd_registros"))
-            atos = banco(con).ler(
+            atos = [dict(a) for a in banco(con).ler(
                 "SELECT * FROM rg_atos WHERE registro_id=%s ORDER BY id",
-                (registro_id,))
+                (registro_id,))]
+            for a in atos:
+                a["lista_presenca_texto"] = RG.texto_da_lista_presenca(
+                    a.get("declaracoes"))
             receitas = _receitas_de(con, "rg_atos",
                                     ("AVERBACAO", "CANCELAMENTO"))
             # A ATRIBUICAO VAI DECLARADA, e nao pelo padrao: `at_certidoes`
@@ -9732,6 +9789,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                selos_por_ato=selos_por_ato,
                                protocolo_escolhido=protocolo_escolhido,
                                itens_do_protocolo=itens_do_protocolo,
+                               enquadramento_sugerido=RG.sugerir_enquadramento(
+                                   registro["natureza"]),
+                               rotulos_enquadramento=RG.ROTULO_DO_ENQUADRAMENTO,
                                titulo="Registro — RCPJ / RTD")
 
 

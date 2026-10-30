@@ -76,6 +76,7 @@ import hashlib
 import json
 from typing import Any
 
+import afirmacoes_expressas as AFX
 from bd_nativo import banco
 
 # A ENTIDADE NA FILA DE ASSINATURA. E o nome da tabela, como manda `as_schema`.
@@ -966,6 +967,15 @@ class AssinaturaInterrompida(InstrumentoError):
 LIMITE_DO_LOTE_DE_EMISSAO = 200
 LIMITE_DO_LOTE_DE_ASSINATURA = 25
 
+# O ACERVO NÃO SAI EM LOTE SEM AFIRMAÇÃO (defeito visto em 30/10/2026). Com a
+# fila do sistema zerada, a tela caía sozinha em «todos» e oferecia 200 protestos
+# do E-Ofício a um «Marcar todos»: cada instrumento gasta um número do exercício,
+# e a casa antiga não guardava instrumento. A régua é a mesma da fila
+# (`_recorte_da_fila`), medida nos títulos marcados, e não no filtro da tela.
+REGRA_DO_ACERVO_EM_LOTE = "INSTRUMENTO_DE_ACERVO_EM_LOTE"
+FALTAVA_NO_ACERVO_EM_LOTE = ("protesto do acervo do E-Ofício, sem instrumento na "
+                             "casa antiga, emitido em lote")
+
 
 def _unicos(ids: Any) -> list[int]:
     """Os números marcados, sem repetição e na ordem em que vieram."""
@@ -980,9 +990,25 @@ def _unicos(ids: Any) -> list[int]:
     return vistos
 
 
+def _do_acervo_entre(con, titulo_ids: Any) -> list[int]:
+    """Quais dos títulos têm o protesto vindo do acervo do E-Ofício. Só LÊ."""
+    ids = _unicos(titulo_ids)
+    if not ids:
+        return []
+    recorte, _ = _recorte_da_fila("acervo", None)
+    marcas = ", ".join(["%s"] * len(ids))
+    linhas = banco(con).ler(
+        f"""SELECT DISTINCT a.titulo_id FROM pt_atos a
+             WHERE a.tipo = 'PROTESTO' AND a.cancelado = 0{recorte}
+               AND a.titulo_id IN ({marcas})""", tuple(ids))
+    achados = {int(linha["titulo_id"]) for linha in linhas}
+    return [n for n in ids if n in achados]
+
+
 def emitir_lote(transacao: Any, titulo_ids: Any, *, serventia: str,
                 agora: str, usuario: str | None = None,
-                modelo_de: Any = None) -> dict:
+                modelo_de: Any = None, afirmo: Any = False,
+                afirmacao: Any = None, robo: bool = False) -> dict:
     """Emite o instrumento de cada título marcado. ESCREVE.
 
     `transacao` é quem abre a transação (`db.transaction`): **uma por título**,
@@ -996,7 +1022,13 @@ def emitir_lote(transacao: Any, titulo_ids: Any, *, serventia: str,
     reenviado —, e por isso se recusa, dizendo que a segunda via sai pela
     ficha do título.
 
-    Devolve `{"feitos": [...], "falharam": [{"titulo_id", "motivo"}]}`.
+    **PROTESTO DO ACERVO SÓ ENTRA COM AFIRMAÇÃO EXPRESSA** (`afirmo` +
+    `afirmacao`, o contrato comum). Sem ela, o lote inteiro é recusado antes de
+    gastar qualquer número, e a recusa vale mesmo para quem monta o POST à mão.
+
+    Devolve `{"feitos": [...], "falharam": [{"titulo_id", "motivo"}],
+    "afirmacao_de_acervo": {regra, afirmacao, o_que_faltava, titulos} | None}`.
+    Quem grava a auditoria é a rota, depois da transação.
     """
     ids = _unicos(titulo_ids)
     if not ids:
@@ -1008,6 +1040,19 @@ def emitir_lote(transacao: Any, titulo_ids: Any, *, serventia: str,
             f"São {len(ids)} marcados, e o lote emite até "
             f"{LIMITE_DO_LOTE_DE_EMISSAO} de cada vez. Desmarque alguns e "
             f"emita em duas vezes.")
+    with transacao() as con:
+        acervo = _do_acervo_entre(con, ids)
+    afirmacao_de_acervo = None
+    if acervo:
+        afirmacao_de_acervo = {
+            "regra": REGRA_DO_ACERVO_EM_LOTE,
+            "afirmacao": AFX.validar(
+                afirmo, afirmacao, robo=robo, erro=InstrumentoError,
+                por_que=(f"Nada foi emitido: há {len(acervo)} protesto(s) do "
+                         f"acervo do E-Ofício entre os marcados, e cada "
+                         f"instrumento gasta um número do exercício.")),
+            "o_que_faltava": FALTAVA_NO_ACERVO_EM_LOTE,
+            "titulos": acervo}
     feitos: list[dict] = []
     falharam: list[dict] = []
     for titulo_id in ids:
@@ -1041,7 +1086,8 @@ def emitir_lote(transacao: Any, titulo_ids: Any, *, serventia: str,
                 "titulo_id": titulo_id,
                 "motivo": (f"erro inesperado do sistema "
                            f"({type(erro).__name__}: {erro}) — avise o suporte")})
-    return {"feitos": feitos, "falharam": falharam}
+    return {"feitos": feitos, "falharam": falharam,
+            "afirmacao_de_acervo": afirmacao_de_acervo}
 
 
 def a_assinar(con, limite: int = 200) -> list[dict]:

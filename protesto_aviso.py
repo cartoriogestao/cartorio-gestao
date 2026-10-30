@@ -914,11 +914,14 @@ def esperando_edital(con: sqlite3.Connection, limite: int = 200) -> list[dict]:
 
 
 def editais_do_dia(con: sqlite3.Connection, dia: str) -> list[dict]:
-    """Os editais publicados naquele dia, para a folha da parede. So LE."""
+    """Os editais publicados naquele dia, para a folha da parede e o arquivo da
+    CENPROT. So LE. Edital de ato tornado sem efeito nao sai em nenhum dos dois;
+    o do acervo, sem `ato_id`, continua (`_SQL_EDITAL_DE_ATO_VIVO`)."""
     return [dict(r) for r in banco(con).ler(
-        """SELECT e.*, t.numero_titulo, t.protocolo
+        f"""SELECT e.*, t.numero_titulo, t.protocolo
              FROM pt_editais e JOIN pt_titulos t ON t.id = e.titulo_id
-            WHERE e.publicado_em = %s ORDER BY e.numero, e.id""", (str(dia)[:10],))]
+            WHERE e.publicado_em = %s AND {_SQL_EDITAL_DE_ATO_VIVO}
+            ORDER BY e.numero, e.id""", (str(dia)[:10],))]
 
 
 # ------------------------------- o comprovante do envio do edital à CENPROT
@@ -993,13 +996,21 @@ def guardar_comprovante_do_envio(con: sqlite3.Connection, dia: str, *,
 
     Recusa o dia sem edital publicado (o comprovante afirmaria o envio de
     nada), o arquivo que não é PDF/PNG/JPG de verdade e o mesmo arquivo
-    duas vezes. Não sobrescreve: um segundo comprovante é outro anexo.
+    duas vezes. Não sobrescreve: um segundo comprovante é outro anexo. O edital
+    de ato tornado sem efeito não recebe o anexo: ele não vai no arquivo do dia.
     """
     dia = str(dia or "")[:10]
     bd = banco(con)
     editais = [int(r["id"]) for r in bd.ler(
-        "SELECT id FROM pt_editais WHERE publicado_em = %s ORDER BY id", (dia,))]
+        f"""SELECT e.id FROM pt_editais e
+             WHERE e.publicado_em = %s AND {_SQL_EDITAL_DE_ATO_VIVO}
+             ORDER BY e.id""", (dia,))]
     if not editais:
+        if bd.um("SELECT id FROM pt_editais WHERE publicado_em = %s LIMIT 1",
+                 (dia,)):
+            raise AvisoError(
+                f"Os editais de {dia} são todos de ato tornado sem efeito, e por "
+                f"isso não há envio a comprovar neste dia.")
         raise AvisoError(
             f"Nenhum edital foi publicado em {dia}. O comprovante é do envio "
             f"do arquivo dos editais do dia — publique o edital primeiro.")

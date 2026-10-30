@@ -17,6 +17,7 @@ import io
 import re
 import sqlite3
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -286,6 +287,52 @@ def test_a_folha_do_dia_junta_os_editais(s):
     r = s["c"].get("/protesto/editais/dia.odt")
     assert r.status_code == 200
     assert r.data[:2] == b"PK"
+
+
+def _edital_na_folha(s, numero: int, teor: str, *, ato_cancelado=None) -> None:
+    """Edital do dia 2026-08-14. Sem `ato_cancelado` ele fica sem ato, como o do
+    acervo; com ele, amarrado a uma intimação cancelada (1) ou viva (0)."""
+    dia = "2026-08-14"
+    con = _con(s)
+    with con:
+        tid = int(con.execute(
+            """INSERT INTO pt_titulos(especie, numero_titulo, situacao, origem,
+                   criado_em) VALUES ('DMI',?,'INTIMADO','CRA',?)""",
+            (f"F{numero}", dia)).lastrowid)
+        aviso = int(con.execute(
+            """INSERT INTO pt_avisos(titulo_id, numero, ano, situacao, emitido_em,
+                   criado_em) VALUES (?,?,2026,'EDITAL',?,?)""",
+            (tid, numero, dia, dia)).lastrowid)
+        ato = None
+        if ato_cancelado is not None:
+            ato = int(con.execute(
+                """INSERT INTO pt_atos(titulo_id, tipo, data_ato, origem, cancelado,
+                       criado_em) VALUES (?,'INTIMACAO',?,'MANUAL',?,?)""",
+                (tid, dia, ato_cancelado, dia)).lastrowid)
+        con.execute(
+            """INSERT INTO pt_editais(numero, ano, aviso_id, titulo_id,
+                   publicado_em, teor, ato_id, criado_em)
+               VALUES (?,2026,?,?,?,?,?,?)""",
+            (numero, aviso, tid, dia, teor, ato, dia))
+    con.close()
+
+
+def test_a_folha_do_dia_nao_leva_edital_de_ato_cancelado(s):
+    _edital_na_folha(s, 1, "TEOR-DO-MORTO", ato_cancelado=1)
+    _edital_na_folha(s, 2, "TEOR-DO-VIVO", ato_cancelado=0)
+    _edital_na_folha(s, 3, "TEOR-DO-ACERVO")
+    r = s["c"].get("/protesto/editais/dia.odt?dia=2026-08-14")
+    assert r.status_code == 200 and r.data[:2] == b"PK"
+    conteudo = zipfile.ZipFile(io.BytesIO(r.data)).read("content.xml").decode("utf-8")
+    assert "TEOR-DO-VIVO" in conteudo and "TEOR-DO-ACERVO" in conteudo
+    assert "TEOR-DO-MORTO" not in conteudo
+
+
+def test_folha_de_dia_so_com_edital_de_ato_cancelado_avisa_e_volta(s):
+    _edital_na_folha(s, 1, "TEOR-DO-MORTO", ato_cancelado=1)
+    html = s["c"].get("/protesto/editais/dia.odt?dia=2026-08-14",
+                      follow_redirects=True).get_data(as_text=True)
+    assert "Nenhum edital publicado" in html
 
 
 def test_folha_de_dia_sem_edital_avisa_e_volta(s):

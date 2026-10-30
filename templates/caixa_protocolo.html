@@ -487,6 +487,9 @@
           {% for cod, nome in TABELAS.items() %}
             <option value="{{ cod }}" {% if cod == 5 %}selected{% endif %}>{{ nome }}</option>
           {% endfor %}
+          {% for cod, nome in (ATALHOS_FAIXA|default({}, true)).items() %}
+            <option value="{{ cod }}">{{ nome }}</option>
+          {% endfor %}
         </select></label>
       <label>Valor do negócio
         <input name="base_calculo" placeholder="100.000,00" required

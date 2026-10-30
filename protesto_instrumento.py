@@ -76,6 +76,7 @@ import hashlib
 import json
 from typing import Any
 
+import afirmacoes_expressas as AFX
 from bd_nativo import banco
 
 # A ENTIDADE NA FILA DE ASSINATURA. E o nome da tabela, como manda `as_schema`.
@@ -960,13 +961,27 @@ class AssinaturaInterrompida(InstrumentoError):
     """
 
 
+class LoteIndisponivel(InstrumentoError):
+    """O serviço local aberto na máquina é de antes do caminho de lote. Nada foi
+    ao token: o lote cai no um por um, e avisa."""
+
+
 # O TETO DE CADA LOTE. A emissão é local e rápida, e o teto é o tamanho da
-# página da fila. A assinatura é UMA JANELA DO TOKEN POR PAPEL (ver
-# `assinar_lote`), e cada uma espera o oficial digitar: 25 cobre o dia mais
-# cheio medido (18 em 28/10/2026) sem deixar um clique virar uma hora de tela
-# presa.
+# página da fila. A assinatura espera o oficial na janela do token, e o teto
+# continua porque a janela única é hipótese (ver `assinar_lote`): se o driver
+# pedir o PIN a cada papel, 25 cobre o dia mais cheio medido (18 em 28/10/2026)
+# sem deixar um clique virar uma hora de tela presa.
 LIMITE_DO_LOTE_DE_EMISSAO = 200
 LIMITE_DO_LOTE_DE_ASSINATURA = 25
+
+# O ACERVO NÃO SAI EM LOTE SEM AFIRMAÇÃO (defeito visto em 30/10/2026). Com a
+# fila do sistema zerada, a tela caía sozinha em «todos» e oferecia 200 protestos
+# do E-Ofício a um «Marcar todos»: cada instrumento gasta um número do exercício,
+# e a casa antiga não guardava instrumento. A régua é a mesma da fila
+# (`_recorte_da_fila`), medida nos títulos marcados, e não no filtro da tela.
+REGRA_DO_ACERVO_EM_LOTE = "INSTRUMENTO_DE_ACERVO_EM_LOTE"
+FALTAVA_NO_ACERVO_EM_LOTE = ("protesto do acervo do E-Ofício, sem instrumento na "
+                             "casa antiga, emitido em lote")
 
 
 def _unicos(ids: Any) -> list[int]:
@@ -982,9 +997,25 @@ def _unicos(ids: Any) -> list[int]:
     return vistos
 
 
+def _do_acervo_entre(con, titulo_ids: Any) -> list[int]:
+    """Quais dos títulos têm o protesto vindo do acervo do E-Ofício. Só LÊ."""
+    ids = _unicos(titulo_ids)
+    if not ids:
+        return []
+    recorte, _ = _recorte_da_fila("acervo", None)
+    marcas = ", ".join(["%s"] * len(ids))
+    linhas = banco(con).ler(
+        f"""SELECT DISTINCT a.titulo_id FROM pt_atos a
+             WHERE a.tipo = 'PROTESTO' AND a.cancelado = 0{recorte}
+               AND a.titulo_id IN ({marcas})""", tuple(ids))
+    achados = {int(linha["titulo_id"]) for linha in linhas}
+    return [n for n in ids if n in achados]
+
+
 def emitir_lote(transacao: Any, titulo_ids: Any, *, serventia: str,
                 agora: str, usuario: str | None = None,
-                modelo_de: Any = None) -> dict:
+                modelo_de: Any = None, afirmo: Any = False,
+                afirmacao: Any = None, robo: bool = False) -> dict:
     """Emite o instrumento de cada título marcado. ESCREVE.
 
     `transacao` é quem abre a transação (`db.transaction`): **uma por título**,
@@ -998,7 +1029,13 @@ def emitir_lote(transacao: Any, titulo_ids: Any, *, serventia: str,
     reenviado —, e por isso se recusa, dizendo que a segunda via sai pela
     ficha do título.
 
-    Devolve `{"feitos": [...], "falharam": [{"titulo_id", "motivo"}]}`.
+    **PROTESTO DO ACERVO SÓ ENTRA COM AFIRMAÇÃO EXPRESSA** (`afirmo` +
+    `afirmacao`, o contrato comum). Sem ela, o lote inteiro é recusado antes de
+    gastar qualquer número, e a recusa vale mesmo para quem monta o POST à mão.
+
+    Devolve `{"feitos": [...], "falharam": [{"titulo_id", "motivo"}],
+    "afirmacao_de_acervo": {regra, afirmacao, o_que_faltava, titulos} | None}`.
+    Quem grava a auditoria é a rota, depois da transação.
     """
     ids = _unicos(titulo_ids)
     if not ids:
@@ -1010,6 +1047,19 @@ def emitir_lote(transacao: Any, titulo_ids: Any, *, serventia: str,
             f"São {len(ids)} marcados, e o lote emite até "
             f"{LIMITE_DO_LOTE_DE_EMISSAO} de cada vez. Desmarque alguns e "
             f"emita em duas vezes.")
+    with transacao() as con:
+        acervo = _do_acervo_entre(con, ids)
+    afirmacao_de_acervo = None
+    if acervo:
+        afirmacao_de_acervo = {
+            "regra": REGRA_DO_ACERVO_EM_LOTE,
+            "afirmacao": AFX.validar(
+                afirmo, afirmacao, robo=robo, erro=InstrumentoError,
+                por_que=(f"Nada foi emitido: há {len(acervo)} protesto(s) do "
+                         f"acervo do E-Ofício entre os marcados, e cada "
+                         f"instrumento gasta um número do exercício.")),
+            "o_que_faltava": FALTAVA_NO_ACERVO_EM_LOTE,
+            "titulos": acervo}
     feitos: list[dict] = []
     falharam: list[dict] = []
     for titulo_id in ids:
@@ -1043,7 +1093,8 @@ def emitir_lote(transacao: Any, titulo_ids: Any, *, serventia: str,
                 "titulo_id": titulo_id,
                 "motivo": (f"erro inesperado do sistema "
                            f"({type(erro).__name__}: {erro}) — avise o suporte")})
-    return {"feitos": feitos, "falharam": falharam}
+    return {"feitos": feitos, "falharam": falharam,
+            "afirmacao_de_acervo": afirmacao_de_acervo}
 
 
 def a_assinar(con, limite: int = 200) -> list[dict]:
@@ -1083,27 +1134,8 @@ def conferir_antes_de_assinar(con, instrumento_id: int) -> dict:
     return ins
 
 
-def assinar_lote(instrumento_ids: Any, assinar_um: Any) -> dict:
-    """Assina os instrumentos marcados, um depois do outro. ESCREVE (por
-    `assinar_um`, que guarda cada um na sua própria transação).
-
-    **O PIN É PEDIDO A CADA INSTRUMENTO — medido no código, 29/10/2026.** O
-    instrumento se assina por `/assinar/pdf-windows` do serviço local
-    (`a3_servico_local` → `a3_windows.assinar_pdf`), e cada chamada abre um
-    PowerShell NOVO, que assina UM PDF e termina. O serviço não tem rota de
-    vários PDFs nem guarda sessão, e o Cartório Gestão não vê o PIN — quem o
-    pede é a janela do próprio token. Se o driver do token lembrar o PIN de
-    uma janela para a outra, ela não reaparece; isso é do driver, e não foi
-    medido aqui. O que o lote junta é o clique: um botão, e as janelas do
-    token vêm uma atrás da outra.
-
-    **E O LOTE PARA NA PRIMEIRA FALHA DO TOKEN** (`AssinaturaInterrompida`):
-    os que faltavam voltam em `nao_tentados`, para a tela dizer quais. Falha
-    do PAPEL (a assinatura não confere, o PDF não saiu) não para: é daquele
-    instrumento só.
-
-    Devolve `{"feitos", "falharam", "nao_tentados", "parou"}`.
-    """
+def _marcados_para_assinar(instrumento_ids: Any) -> list[int]:
+    """Os marcados, dentro do teto do lote. Recusa com frase para o balcão."""
     ids = _unicos(instrumento_ids)
     if not ids:
         raise InstrumentoError(
@@ -1111,8 +1143,107 @@ def assinar_lote(instrumento_ids: Any, assinar_um: Any) -> dict:
     if len(ids) > LIMITE_DO_LOTE_DE_ASSINATURA:
         raise InstrumentoError(
             f"São {len(ids)} marcados, e o lote assina até "
-            f"{LIMITE_DO_LOTE_DE_ASSINATURA} de cada vez — cada um abre a "
-            f"janela do token. Desmarque alguns e assine em duas vezes.")
+            f"{LIMITE_DO_LOTE_DE_ASSINATURA} de cada vez. Desmarque alguns e "
+            f"assine em duas vezes.")
+    return ids
+
+
+def assinar_lote(instrumento_ids: Any, *, preparar: Any, assinar_varios: Any,
+                 guardar: Any, assinar_um: Any) -> dict:
+    """Assina os instrumentos marcados DE UMA VEZ. ESCREVE (por `guardar`, cada
+    um na sua própria transação).
+
+    Queixa do oficial, 30/10/2026: «Mais horrível ainda ter que colocar 20 vezes
+    o PIN do certificado.» Os PDFs vão juntos a `/assinar/pdfs-windows` do serviço
+    local (`a3_servico_local` → `a3_windows.assinar_pdfs`), num único PowerShell,
+    com o mesmo certificado e a chave aberta do começo ao fim. **A JANELA ÚNICA DO
+    PIN É HIPÓTESE, E NÃO MEDIÇÃO**: quem manda nela é o driver do token, e só a
+    primeira assinatura real prova. O Cartório Gestão não vê o PIN.
+
+    `preparar(id) -> pdf` traz o papel; `assinar_varios([pdf]) -> {"assinados":
+    {posição: p7s}, "falha": frase}` vai ao token; `guardar(id, pdf, p7s)` confere
+    o `.p7s` (o PDF dentro, byte a byte) e grava; `assinar_um(id)` é a queda.
+
+      - **O PAPEL QUE NÃO SAI NEM VAI AO TOKEN**, e não para os outros. Por isso
+        os PDFs se preparam ANTES: a janela do token só aparece depois deles.
+      - **A PRIMEIRA FALHA DO TOKEN PARA O LOTE** (`falha`, ou
+        `AssinaturaInterrompida` se nada foi assinado): PIN errado em sequência
+        bloqueia o A3. O que já foi assinado fica valendo e se guarda; o que
+        faltava volta em `nao_tentados`.
+      - **A ASSINATURA QUE NÃO CONFERE É DAQUELE INSTRUMENTO SÓ**, e o mesmo vale
+        para o erro ao gravar: os outros já estão assinados, e guardá-los não
+        custa PIN nenhum.
+      - **SERVIÇO ANTIGO** (`LoteIndisponivel`): cai em `assinar_um_por_um`, e
+        `aviso` diz por quê.
+
+    Devolve `{"feitos", "falharam", "nao_tentados", "parou", "aviso"}`.
+    """
+    ids = _marcados_para_assinar(instrumento_ids)
+    feitos: list[dict] = []
+    falharam: list[dict] = []
+    prontos: list[tuple[int, Any]] = []
+    for instrumento_id in ids:
+        try:
+            prontos.append((instrumento_id, preparar(instrumento_id)))
+        except InstrumentoError as erro:
+            falharam.append({"instrumento_id": instrumento_id,
+                             "motivo": str(erro)})
+    if not prontos:
+        return {"feitos": feitos, "falharam": falharam, "nao_tentados": [],
+                "parou": False, "aviso": None}
+    try:
+        resposta = assinar_varios([pdf for _, pdf in prontos])
+    except LoteIndisponivel as erro:
+        r = assinar_um_por_um([i for i, _ in prontos], assinar_um)
+        return {**r, "falharam": falharam + r["falharam"], "aviso": str(erro)}
+    except AssinaturaInterrompida as erro:
+        falharam.append({"instrumento_id": prontos[0][0], "motivo": str(erro)})
+        return {"feitos": feitos, "falharam": falharam,
+                "nao_tentados": [i for i, _ in prontos[1:]], "parou": True,
+                "aviso": None}
+    assinados = resposta.get("assinados") or {}
+    nao_tentados: list[int] = []
+    parou = False
+    for posicao, (instrumento_id, pdf) in enumerate(prontos):
+        p7s = assinados.get(posicao)
+        if p7s is None:
+            if parou:
+                nao_tentados.append(instrumento_id)
+            else:
+                parou = True
+                falharam.append({
+                    "instrumento_id": instrumento_id,
+                    "motivo": (resposta.get("falha") or "O serviço de assinatura "
+                               "não devolveu o arquivo assinado.")})
+            continue
+        try:
+            feitos.append(guardar(instrumento_id, pdf, p7s))
+        except InstrumentoError as erro:
+            falharam.append({"instrumento_id": instrumento_id,
+                             "motivo": str(erro)})
+        except Exception as erro:  # noqa: BLE001 — um não derruba os outros
+            # A régua de `emitir_lote`, e aqui pesa mais: os outros já foram
+            # assinados, e a tela de erro os perderia, com o PIN já digitado.
+            falharam.append({
+                "instrumento_id": instrumento_id,
+                "motivo": (f"erro inesperado do sistema ({type(erro).__name__}: "
+                           f"{erro}) — avise o suporte")})
+    return {"feitos": feitos, "falharam": falharam,
+            "nao_tentados": nao_tentados, "parou": parou, "aviso": None}
+
+
+def assinar_um_por_um(instrumento_ids: Any, assinar_um: Any) -> dict:
+    """Assina os marcados um depois do outro: a queda de `assinar_lote` quando o
+    serviço local aberto na máquina é anterior à rota de lote. ESCREVE (por
+    `assinar_um`, que guarda cada um na sua própria transação).
+
+    Cada chamada abre um PowerShell novo, e a janela do token pode voltar a cada
+    papel. **E PARA NA PRIMEIRA FALHA DO TOKEN** (`AssinaturaInterrompida`): os
+    que faltavam voltam em `nao_tentados`. Falha do PAPEL não para.
+
+    Devolve `{"feitos", "falharam", "nao_tentados", "parou"}`.
+    """
+    ids = _marcados_para_assinar(instrumento_ids)
     feitos: list[dict] = []
     falharam: list[dict] = []
     nao_tentados: list[int] = []

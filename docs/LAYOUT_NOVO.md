@@ -9,7 +9,7 @@ por etapas, e cada uma pode ser a última: o sistema continua inteiro em todas.
 | 1. Casca | Barra de módulos, seções, Novo, Ctrl+K, sino, coluna de apoio | Este documento |
 | 2. Ato de Notas | Fases e barra de ação na ficha do ato; listas e painel | Pronto |
 | 3. Matrícula | Subabas da ficha, novo ato em passos | Pronto |
-| 4. Civil e Protesto | Assento, habilitação, roteiro, dia da CRA | Novo registro em passos, habilitação em fases e ficha do assento em abas; o resto a fazer |
+| 4. Civil e Protesto | Assento, habilitação, roteiro, dia da CRA | Novo registro em passos, correção em partes, habilitação em fases e ficha do assento em abas; o resto a fazer |
 | 5. Operação | Caixa, protocolo, processos, atendimento | Ficha do protocolo em abas; o resto a fazer |
 | 6. Gestão | Finanças, conformidade, configurações | A fazer |
 | 7. Limpar | Tirar a chave e a moldura antiga | A fazer |

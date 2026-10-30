@@ -54,6 +54,12 @@ ENTREGAS_NO_NOVAS = 30
 #: O cabeçalho que marca a resposta do `/whatsapp/lista-parcial` (o JS confere).
 CABECALHO_DO_PARCIAL = "X-Wa-Parcial"
 
+#: Quantos balões pendentes o `/novas` confere de uma vez (30/10/2026).
+BALOES_PENDENTES_NO_NOVAS = 30
+
+#: «id:estado» de um balão pendente, como o `whatsapp_chat.js` manda ao `/novas`.
+BALAO_PENDENTE_VALIDO = re.compile(r"(\d{1,18}):([a-z]{2})")
+
 #: O token que o navegador gera para cada envio (`whatsapp_chat.js`).
 ENVIO_TOKEN_VALIDO = re.compile(r"[A-Za-z0-9-]{1,64}")
 
@@ -193,7 +199,29 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 m["separador"] = ("hoje" if dia == hoje else "ontem" if dia == ontem
                                   else f"{dia[8:10]}/{dia[5:7]}")
             anterior = dia or anterior
+            m["pendente"] = _pendencia(m)
         return mensagens
+
+    def _pendencia(m: dict) -> str:
+        """O BALÃO QUE AINDA VAI MUDAR (30/10/2026): o arquivo que o cliente mandou
+        ainda baixando, ou o áudio ainda sem transcrição. Duas letras, a do arquivo e
+        a da transcrição, que dizem o que o balão mostra agora; vazio é balão pronto.
+        Passadas as 24 h em que o atendente transcreve, nada mais vai chegar, e o
+        navegador não precisa perguntar para sempre."""
+        if m.get("direcao") != WA.DIR_IN:
+            return ""
+        baixando = bool(m.get("midia_id")) and not MIDIA.como_mostrar(m) and (
+            m.get("midia_situacao") != SCH.MIDIA_ERRO)
+        transcricao = m.get("transcricao")
+        sem_texto = m.get("tipo") == "audio" and not transcricao
+        if not (baixando or sem_texto):
+            return ""
+        agora = FILA._dt(db.now())
+        if agora and str(m.get("criado_em") or "")[:19] < (
+                agora - timedelta(hours=ATENDENTE.JANELA_HORAS)).strftime("%Y-%m-%dT%H:%M:%S"):
+            return ""
+        arquivo = "b" if baixando else "e" if m.get("midia_situacao") == SCH.MIDIA_ERRO else "a"
+        return arquivo + ("x" if not sem_texto else "n" if transcricao is None else "v")
 
     def _da_lista(filtro: dict) -> dict:
         """O que o parcial da lista precisa além das linhas: o filtro só com o
@@ -648,6 +676,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         VIGIA.marcar_tela_aberta()
         bruto = (request.args.get("depois") or "").strip()
         depois = int(bruto) if bruto.isdigit() else 0
+        # O BALÃO QUE MUDOU (30/10/2026): a tela diz quais balões dela estão pendentes
+        # e em que estado, e cada aba recebe de volta o que mudou desde o que ela mostra.
+        pendentes = {}
+        for pedido in (request.args.get("pendentes") or "").split(",")[:BALOES_PENDENTES_NO_NOVAS]:
+            achado = BALAO_PENDENTE_VALIDO.fullmatch(pedido)
+            if achado:
+                pendentes[int(achado.group(1))] = achado.group(2)
         # UMA CONEXÃO SÓ, E SEM LER A CONVERSA INTEIRA (30/10/2026).
         with _con() as con:
             d = WA.cabecalho_da_conversa(con, conversa_id)
@@ -668,6 +703,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             enviadas = WA.ultimas_enviadas(con, conversa_id, ENTREGAS_NO_NOVAS)
             ultima = WA.ultima_do_cliente(con, conversa_id)
             sugestao = WA.sugestao_visivel(con, conversa_id, d.get("sugestao"))
+            conferidas = (WA.mensagens_por_ids(con, conversa_id, list(pendentes))
+                          if pendentes else [])
         novas = _com_dias(novas, dia_anterior)
         html = (render_template("_whatsapp_baloes.html", mensagens=novas,
                                 como_mostrar=MIDIA.como_mostrar) if novas else "")
@@ -677,12 +714,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         entregas = [{"id": int(m["id"]), "token": m.get("envio_token") or "",
                      **WA.rotulo_da_entrega(m.get("entrega"), m.get("entrega_erro"))}
                     for m in enviadas]
-        return jsonify({"html": html, "entregas": entregas,
-                        "ultimo": max([depois] + [int(m["id"]) for m in novas]),
-                        "status": d.get("status") or "",
-                        "modo": d.get("modo") or SCH.MODO_IA,
-                        "sugestao": sugestao,
-                        "janela_fora": MODELOS.fora_da_janela(ultima, db.now())})
+        resposta = {"html": html, "entregas": entregas,
+                    "ultimo": max([depois] + [int(m["id"]) for m in novas]),
+                    "status": d.get("status") or "",
+                    "modo": d.get("modo") or SCH.MODO_IA,
+                    "sugestao": sugestao,
+                    "janela_fora": MODELOS.fora_da_janela(ultima, db.now())}
+        baloes = []
+        for m in conferidas:
+            m["pendente"] = _pendencia(m)
+            if m["pendente"] != pendentes[int(m["id"])]:
+                baloes.append({"id": int(m["id"]), "html": render_template(
+                    "_whatsapp_baloes.html", mensagens=[m], como_mostrar=MIDIA.como_mostrar)})
+        if baloes:
+            resposta["baloes"] = baloes
+        return jsonify(resposta)
 
     @app.route("/whatsapp/<int:conversa_id>/reativar", methods=["POST"])
     @login_required

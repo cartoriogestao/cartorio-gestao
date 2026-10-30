@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import re
 import sys
 import threading
 import time
@@ -861,6 +862,135 @@ def test_o_novas_nao_le_a_conversa_inteira_e_conta_como_tela_aberta(s, monkeypat
                         lambda *a, **k: pytest.fail("renderizou sem novidade"))
     ultimo = d["ultimo"]
     assert s["c"].get(f"/whatsapp/{cid}/novas?depois={ultimo}").get_json()["html"] == ""
+
+
+# ------------------------------------------------------------- o balão que muda sozinho
+
+
+def _agora_de(db):
+    return str(db.now())[:19]
+
+
+def _midia_chegando(s, meta_id, tipo, wa_id="5599900000401", quando=None):
+    db = s["bd"]
+    msg = {"from": wa_id, "id": meta_id, "type": tipo, tipo: {"id": f"midia-{meta_id}"}}
+    cid = _entrada(db, meta_id=meta_id, msg=msg, quando=quando or _agora_de(db))
+    return cid, _um(db, "SELECT id FROM wa_mensagem WHERE meta_id=%s", (meta_id,))["id"]
+
+
+def _mudar(s, mid, **campos):
+    with s["bd"].transaction() as con:
+        banco(con).escrever(
+            f"UPDATE wa_mensagem SET {', '.join(k + '=%s' for k in campos)} WHERE id=%s",
+            (*campos.values(), mid))
+
+
+def _perguntar(c, cid, ultimo, pendentes=None):
+    url = f"/whatsapp/{cid}/novas?depois={ultimo}"
+    return c.get(url + (f"&pendentes={pendentes}" if pendentes else "")).get_json()
+
+
+def _pendente_na_tela(html, mid):
+    achado = re.search(r'data-id="%d"[^>]*?data-wa-pendente="([a-z]+)"' % mid, html)
+    return achado.group(1) if achado else ""
+
+
+def test_o_balao_muda_quando_o_arquivo_termina_de_baixar(s):
+    cid, mid = _midia_chegando(s, "wamid.bal-foto", "image")
+    tela = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    estado = _pendente_na_tela(tela, mid)
+    assert estado == "bx" and "baixando o arquivo" in tela
+    # ainda baixando: nada a devolver
+    assert "baloes" not in _perguntar(s["c"], cid, mid, f"{mid}:{estado}")
+    _mudar(s, mid, midia_situacao=SCH.MIDIA_OK, arquivo_nome="foto.jpg",
+           arquivo_caminho="wa/foto.jpg", arquivo_mime="image/jpeg")
+    d = _perguntar(s["c"], cid, mid, f"{mid}:{estado}")
+    assert [b["id"] for b in d["baloes"]] == [mid] and d["html"] == ""
+    assert "wa-foto" in d["baloes"][0]["html"] and "baixando" not in d["baloes"][0]["html"]
+    assert "data-wa-pendente" not in d["baloes"][0]["html"]
+    assert "wa-dia" not in d["baloes"][0]["html"], "a troca não repete o separador do dia"
+
+
+def test_o_pdf_e_o_erro_do_arquivo_tambem_trocam_o_balao(s):
+    cid, mid = _midia_chegando(s, "wamid.bal-pdf", "document")
+    _mudar(s, mid, midia_situacao=SCH.MIDIA_OK, arquivo_nome="contrato.pdf",
+           arquivo_caminho="wa/contrato.pdf")
+    assert "abrir o PDF" in _perguntar(s["c"], cid, mid, f"{mid}:bx")["baloes"][0]["html"]
+    cid, mid = _midia_chegando(s, "wamid.bal-erro", "document", wa_id="5599900000402")
+    _mudar(s, mid, midia_situacao=SCH.MIDIA_ERRO, arquivo_erro="a Meta recusou")
+    html = _perguntar(s["c"], cid, mid, f"{mid}:bx")["baloes"][0]["html"]
+    assert "a Meta recusou" in html and "tentar de novo" in html
+    assert "data-wa-pendente" not in html
+
+
+def test_o_balao_de_audio_muda_com_o_arquivo_e_com_a_transcricao(s):
+    cid, mid = _midia_chegando(s, "wamid.bal-audio", "audio")
+    tela = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    assert _pendente_na_tela(tela, mid) == "bn"
+    _mudar(s, mid, midia_situacao=SCH.MIDIA_OK, arquivo_nome="audio.ogg",
+           arquivo_caminho="wa/audio.ogg")
+    balao = _perguntar(s["c"], cid, mid, f"{mid}:bn")["baloes"][0]["html"]
+    assert "<audio" in balao and _pendente_na_tela(balao, mid) == "an"
+    assert "baloes" not in _perguntar(s["c"], cid, mid, f"{mid}:an")
+    _mudar(s, mid, transcricao="")                     # o atendente pegou o áudio
+    balao = _perguntar(s["c"], cid, mid, f"{mid}:an")["baloes"][0]["html"]
+    assert _pendente_na_tela(balao, mid) == "av"
+    _mudar(s, mid, transcricao="Preciso da certidão.")
+    balao = _perguntar(s["c"], cid, mid, f"{mid}:av")["baloes"][0]["html"]
+    assert "Preciso da certidão." in balao and "data-wa-pendente" not in balao
+
+
+def test_cada_aba_recebe_o_que_mudou_desde_o_que_ela_mostra(s):
+    cid, mid = _midia_chegando(s, "wamid.bal-abas", "image")
+    outra = s["app"].test_client()
+    with outra.session_transaction() as nova, s["c"].session_transaction() as antiga:
+        nova.update(antiga)
+    _mudar(s, mid, arquivo_nome="foto.jpg", arquivo_caminho="wa/foto.jpg")
+    assert "baloes" in _perguntar(s["c"], cid, mid, f"{mid}:bx")
+    assert "baloes" in _perguntar(outra, cid, mid, f"{mid}:bx"), "a primeira aba não esgota a troca"
+
+
+def test_sem_pendentes_a_resposta_nao_traz_nada_a_mais(s, monkeypatch):
+    cid, mid = _midia_chegando(s, "wamid.bal-sem", "image")
+    monkeypatch.setattr(WA, "mensagens_por_ids",
+                        lambda *a: pytest.fail("consultou sem balão pendente"))
+    d = _perguntar(s["c"], cid, mid)
+    assert set(d) == {"html", "entregas", "ultimo", "status", "modo", "sugestao", "janela_fora"}
+
+
+def test_o_novas_confere_no_maximo_30_e_so_os_da_conversa(s, monkeypatch):
+    cid, mid = _midia_chegando(s, "wamid.bal-limite", "image")
+    outra, de_outra = _midia_chegando(s, "wamid.bal-alheio", "image", wa_id="5599900000403")
+    _mudar(s, de_outra, arquivo_nome="alheio.jpg", arquivo_caminho="wa/alheio.jpg")
+    assert "baloes" not in _perguntar(s["c"], cid, mid, f"{de_outra}:bx")
+    assert "baloes" not in _perguntar(s["c"], cid, mid, "x:bx,1;drop:bx,<b>:bx")
+    pedidos = []
+    original = WA.mensagens_por_ids
+    monkeypatch.setattr(WA, "mensagens_por_ids",
+                        lambda con, c, ids: pedidos.append(ids) or original(con, c, ids))
+    muitos = ",".join(f"{i}:bx" for i in range(1, 41))
+    assert s["c"].get(f"/whatsapp/{cid}/novas?depois={mid}&pendentes={muitos}").status_code == 200
+    assert len(pedidos[0]) == 30
+
+
+def test_passadas_24_horas_o_balao_nao_fica_mais_pendente(s):
+    cid, mid = _midia_chegando(s, "wamid.bal-velho", "audio", quando="2026-01-01T10:00:00")
+    assert _pendente_na_tela(s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True), mid) == ""
+    # a aba aberta há mais de um dia recebe o balão e para de perguntar por ele
+    balao = _perguntar(s["c"], cid, mid, f"{mid}:bn")["baloes"][0]["html"]
+    assert "data-wa-pendente" not in balao
+
+
+def test_o_js_manda_os_pendentes_e_troca_so_o_balao():
+    js = (RAIZ / "static" / "whatsapp_chat.js").read_text(encoding="utf-8")
+    assert 'url += "&pendentes=" + encodeURIComponent(pendentes)' in js
+    assert "if (pendentes) {" in js, "só quando houver algum"
+    trecho = js[js.index("function trocarBaloes"):js.index("function tocandoAgora")]
+    assert "replaceChild(substituto, atual)" in trecho and "caixa.scrollTop = rolagem" in trecho
+    assert "nosDoServidor(novo.html)" in trecho
+    assert "texto" not in trecho.replace("textContent", ""), "não toca na caixa de escrever"
+    assert "tocandoAgora(atual)" in trecho
+    assert js.count("innerHTML") == 1
 
 
 def test_o_cartao_da_lista_marca_nao_entregue(s):

@@ -647,6 +647,13 @@ def mensagens_depois(con: Any, conversa_id: int, depois: int) -> list[dict]:
         (int(conversa_id), int(depois)))]
 
 
+def mensagens_por_ids(con: Any, conversa_id: int, ids: list[int]) -> list[dict]:
+    """Estas mensagens, só as desta conversa, na ordem. Só lê."""
+    return [dict(m) for m in banco(con).ler(
+        "SELECT * FROM wa_mensagem WHERE conversa_id=%s AND id = ANY(%s) ORDER BY id",
+        (int(conversa_id), [int(i) for i in ids]))]
+
+
 def ultimas_enviadas(con: Any, conversa_id: int, limite: int) -> list[dict]:
     """O estado de entrega das últimas `limite` enviadas, na ordem. Só lê."""
     linhas = banco(con).ler(

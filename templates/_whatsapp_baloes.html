@@ -6,7 +6,7 @@
 {% for m in mensagens %}
 {% if m.retomada %}<div class="wa-dia wa-retomada" role="separator"><span>— atendimento retomado{% if m.retomada_em %} em {{ m.retomada_em }}{% endif %} —</span></div>{% endif %}
 {% if m.separador %}<div class="wa-dia" role="separator"><span>{{ m.separador }}</span></div>{% endif %}
-<div class="wa-balao {{ 'wa-out' if m.direcao == 'out' else 'wa-in' }}" data-id="{{ m.id }}"{% if m.envio_token %} data-wa-token="{{ m.envio_token }}"{% endif %}{% if m.meta_id %} title="{{ m.meta_id }}"{% endif %}>
+<div class="wa-balao {{ 'wa-out' if m.direcao == 'out' else 'wa-in' }}" data-id="{{ m.id }}"{% if m.pendente %} data-wa-pendente="{{ m.pendente }}"{% endif %}{% if m.envio_token %} data-wa-token="{{ m.envio_token }}"{% endif %}{% if m.meta_id %} title="{{ m.meta_id }}"{% endif %}>
   {% if m.tipo == 'modelo' %}<span class="wa-marca">modelo</span>
   {% elif m.tipo == 'aviso' %}<span class="wa-marca">aviso automático</span>
   {% elif m.tipo == 'audio' %}<span class="wa-marca">áudio</span>

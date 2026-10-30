@@ -117,6 +117,46 @@
     }
   }
 
+  /* O BALÃO QUE AINDA VAI MUDAR (30/10/2026): o arquivo baixando e o áudio sem
+   * transcrição. A tela diz ao `/novas` os que tem e em que estado (as últimas), e só
+   * quando há algum; ele devolve desenhados só os que mudaram. */
+  var BALOES_PENDENTES_MAX = 30;
+
+  function baloesPendentes() {
+    var todos = caixa.querySelectorAll(".wa-balao[data-wa-pendente]:not([data-wa-provisorio])");
+    return Array.prototype.slice.call(todos, -BALOES_PENDENTES_MAX).map(function (balao) {
+      return balao.getAttribute("data-id") + ":" + balao.getAttribute("data-wa-pendente");
+    }).join(",");
+  }
+
+  /* Troca só o balão: a rolagem fica onde estava, e a caixa de escrever nem é tocada.
+   * Quem está ouvindo o áudio ou vendo o vídeo não é interrompido: o `/novas` devolve o
+   * balão de novo na próxima pergunta, enquanto o estado na tela for o antigo. */
+  function trocarBaloes(baloes) {
+    (baloes || []).forEach(function (novo) {
+      var atual = caixa.querySelector('.wa-balao[data-id="' + Number(novo.id) +
+                                      '"]:not([data-wa-provisorio])');
+      var substituto = nosDoServidor(novo.html).querySelector(".wa-balao");
+      if (!atual || !substituto || tocandoAgora(atual)) {
+        return;
+      }
+      var estavaNoFim = noFim();
+      var rolagem = caixa.scrollTop;
+      atual.parentNode.replaceChild(substituto, atual);
+      if (estavaNoFim) {
+        rolarParaOFim();
+      } else {
+        caixa.scrollTop = rolagem;
+      }
+    });
+  }
+
+  function tocandoAgora(balao) {
+    return Array.prototype.some.call(balao.querySelectorAll("audio, video"), function (midia) {
+      return !midia.paused;
+    });
+  }
+
   var perguntandoConversa = false;
   var perguntarDeNovo = false;
 
@@ -129,6 +169,10 @@
     var base = caixa.getAttribute("data-novas-url");
     var url = base + (base.indexOf("?") === -1 ? "?" : "&") + "depois=" +
       encodeURIComponent(caixa.getAttribute("data-ultimo") || "0");
+    var pendentes = baloesPendentes();
+    if (pendentes) {
+      url += "&pendentes=" + encodeURIComponent(pendentes);
+    }
     fetch(url, {credentials: "same-origin", headers: {"Accept": "application/json"}})
       .then(function (r) {
         if (r.redirected || (r.ok && !respostaEsperada(r, "json"))) {
@@ -157,6 +201,7 @@
           caixa.setAttribute("data-ultimo", String(dados.ultimo));
         }
         atualizarEstado(dados);
+        trocarBaloes(dados.baloes);
         conferirTokens(dados.entregas);
         atualizarEntregas(dados.entregas);
         trocarSugestao(dados.sugestao);

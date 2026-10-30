@@ -479,6 +479,33 @@ def test_o_protesto_sem_prova_sem_instrumento_e_sem_xml(cg_casa):
     assert "antes do termo" in achados["protesto_antes_do_termo"]["titulo"]
 
 
+def test_o_protesto_que_o_oficial_manteve_sai_da_conta(cg_casa):
+    db = cg_casa["db"]
+    t = _titulo(db, "PROTESTADO", "CP/M")
+    _ato(db, t, "APONTAMENTO", data=DIA)
+    _ato(db, t, "INTIMACAO", data=DIA)
+    _ato(db, t, "PROTESTO", data=DIA,
+         detalhe='{"mantido_pelo_oficial": {"em": "2026-10-30", "motivo": "decidido"}}')
+    achados = _tramite(db)
+    assert "protesto_antes_do_termo" not in achados
+    assert "protesto_sem_prova" not in achados
+
+
+def test_o_que_nao_foi_mantido_continua_e_a_conta_diz_quantos_sairam(cg_casa):
+    db = cg_casa["db"]
+    mantido = _titulo(db, "PROTESTADO", "CP/M1")
+    _ato(db, mantido, "INTIMACAO", data=DIA)
+    _ato(db, mantido, "PROTESTO", data=DIA,
+         detalhe='{"mantido_pelo_oficial": {"em": "2026-10-30", "motivo": "decidido"}}')
+    outro = _titulo(db, "PROTESTADO", "CP/M2")
+    _ato(db, outro, "INTIMACAO", data=DIA)
+    _ato(db, outro, "PROTESTO", data=DIA)
+    achados = _tramite(db)
+    assert "1 de 2" in achados["protesto_sem_prova"]["titulo"]
+    assert "1 mantidos" in achados["protesto_sem_prova"]["detalhe"]
+    assert str(outro) in achados["protesto_sem_prova"]["evidencia"]
+
+
 def test_o_ato_de_hoje_ainda_tem_o_dia_para_ir_ao_xml(cg_casa):
     db = cg_casa["db"]
     t = _titulo(db, "PAGO", "CP/2")

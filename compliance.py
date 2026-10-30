@@ -1497,7 +1497,13 @@ def _protesto_termo_e_prova(ctx: Contexto) -> list[dict]:
     protestos = _do_sistema(ctx, ("PROTESTO",))
     feriados = TRIDUO.feriados_da_casa(ctx.con)
     antes_do_termo, sem_conta, sem_prova, modos = [], [], [], Counter()
+    mantidos = 0
     for a in protestos:
+        # O OFICIAL JÁ DECIDIU ESTE (30/10/2026): a decisão está escrita no próprio
+        # ato, com o motivo, e repetir o alarme em toda rodada só ensina a não ler.
+        if _detalhe(a).get("mantido_pelo_oficial"):
+            mantidos += 1
+            continue
         dia = str(a["data_ato"] or "")[:10]
         conta = TRIDUO.contar(ctx.con, int(a["titulo_id"]), feriados=feriados)
         if conta.get("sem_conta") or not conta.get("termo_inicial"):
@@ -1515,7 +1521,8 @@ def _protesto_termo_e_prova(ctx: Contexto) -> list[dict]:
         saida.append(_achado_do_tramite(
             "protesto_antes_do_termo", "CRITICO" if antes_do_termo else "ATENCAO",
             f"{len(antes_do_termo)} de {len(protestos)} protestos lavrados antes do termo",
-            f"{len(sem_conta)} sem como contar o tríduo.",
+            f"{len(sem_conta)} sem como contar o tríduo; {mantidos} mantidos por "
+            "decisão do oficial, fora da conta.",
             [*antes_do_termo, *sem_conta], "CN-MA art. 913",
             "O oficial decide sobre cada um: protesto antes do termo não se conserta "
             "pelo balcão."))
@@ -1524,7 +1531,8 @@ def _protesto_termo_e_prova(ctx: Contexto) -> list[dict]:
             "protesto_sem_prova", "CRITICO",
             f"{len(sem_prova)} de {len(protestos)} protestos sem a prova da intimação",
             "Por forma de intimação: " + "; ".join(
-                f"{n} {modo.lower()}" for modo, n in sorted(modos.items())) + ".",
+                f"{n} {modo.lower()}" for modo, n in sorted(modos.items()))
+            + f"; {mantidos} mantidos por decisão do oficial, fora da conta.",
             sem_prova, "CN-MA arts. 921 e 922",
             "Completar a prova da intimação; o que não tiver prova, o oficial decide."))
     return saida

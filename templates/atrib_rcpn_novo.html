@@ -90,6 +90,25 @@
   {% endif %}
   {% if do_acervo %}<input type="hidden" name="do_acervo" value="1">{% endif %}
 
+  {# OS PASSOS SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026. Eles seguem a arrumação abaixo, que é a
+     ordem do papel na mão do escrevente, e cada espécie diz os seus. É UM FORMULÁRIO SÓ: o que
+     está escondido vai junto, e `static/fases.js` mostra o passo aberto. Sem o script, o
+     formulário sai inteiro. #}
+  {% set cg_passos = none %}
+  {% if layout_novo %}
+    {% if nascimento %}{% set cg_passos = [('fato', 'Nascimento'), ('pessoa', 'Registrado'), ('filiacao', 'Filiação'), ('declarante', 'Declarante'), ('termo', 'Termo e selo')] %}
+    {% elif natimorto %}{% set cg_passos = [('fato', 'Natimorto'), ('pessoa', 'Registrado'), ('filiacao', 'Filiação'), ('declarante', 'Declarante'), ('termo', 'Termo e selo')] %}
+    {% elif obito %}{% set cg_passos = [('fato', 'Óbito'), ('pessoa', 'Falecido'), ('filiacao', 'Filiação'), ('perguntas', 'Perguntas'), ('declarante', 'Declarante'), ('termo', 'Termo e selo')] %}
+    {% elif casamento %}{% set cg_passos = [('fato', 'Celebração'), ('pessoa', 'Primeiro cônjuge'), ('conjuge2', 'Segundo cônjuge'), ('declarante', 'Testemunhas'), ('termo', 'Termo e selo')] %}
+    {% endif %}
+  {% endif %}
+  {% if cg_passos %}
+  <script defer src="{{ url_for('static', filename='fases.js') }}?v={{ VERSION }}"></script>
+  <nav class="cg-passos" style="grid-column:1/-1" data-cg-passos="form-do-ato" data-inicial="fato" aria-label="Passos deste registro">
+    {% for chave, rotulo in cg_passos %}<button type="button" class="cg-passo" data-passo-ir="{{ chave }}"><span class="cg-fase-n" aria-hidden="true">{{ loop.index }}</span>{{ rotulo }}</button>{% endfor %}
+  </nav>
+  {% endif %}
+
   {# A ARRUMAÇÃO DESTA TELA — 13/10/2026, pedido do oficial: «vamos separar os
      campos de preenchimento de forma racional e apenas por critério de
      facilidade para o operador; a lógica deve ser cumprir os requisitos da Lei
@@ -111,6 +130,7 @@
      Nenhum `name=` mudou: a rota, o rascunho e a conferência leem os mesmos
      campos. #}
 
+  {% if cg_passos %}<div class="cg-passo-bloco" data-passo="fato">{% endif %}
   {% if not pessoa_principal and not casamento %}
   <section class="panel" style="grid-column:1/-1">
     <div class="panel-head"><span>Identificação do registro</span><small>{{ nome_especie }}</small></div>
@@ -340,7 +360,10 @@
   </section>
   {% endif %}
 
+  {% if cg_passos %}</div>{% endif %}
+
   {# 2. DE QUEM É O ASSENTO — com o que é dela. #}
+  {% if cg_passos %}<div class="cg-passo-bloco" data-passo="pessoa">{% endif %}
   {% if pessoa_principal %}
     {% call pessoa('pessoa',
               'Dados do registrado' if nascimento or natimorto else 'Dados do falecido',
@@ -392,6 +415,8 @@
     {% endcall %}
     {{ pessoa('filiacao1n1', 'Mãe do primeiro cônjuge', '', false, form, false, 'completo', false, true) }}
     {{ pessoa('filiacao2n1', 'Pai do primeiro cônjuge', '', false, form, false, 'completo', false, true) }}
+    {% if cg_passos %}</div>{% endif %}
+    {% if cg_passos %}<div class="cg-passo-bloco" data-passo="conjuge2">{% endif %}
     {% call pessoa('nubente2', 'Segundo cônjuge',
               'Dados pessoais e o nome adotado depois do casamento (art. 70, 1º e 8º).',
               true, form, not do_acervo) %}
@@ -412,10 +437,13 @@
     {{ pessoa('filiacao2n2', 'Pai do segundo cônjuge', '', false, form, false, 'completo', false, true) }}
   {% endif %}
 
+  {% if cg_passos %}</div>{% endif %}
+
   {# 3. OS GENITORES, CADA UM COM OS SEUS PAIS — relato #37, item 7: os dois
      avós de cada lado numa gaveta só; agora a gaveta é a do próprio genitor.
      A filiação 1 é a mãe (`PREFIXO_DO_PAPEL`), e por isso os progenitores
      dela são os avós maternos. #}
+  {% if cg_passos %}<div class="cg-passo-bloco" data-passo="filiacao">{% endif %}
   {% if nascimento or obito or natimorto %}
     {% call pessoa('filiacao1', 'Mãe — filiação 1' ~ (' e avós maternos' if nascimento else ''),
               ('A data de nascimento dela é o que permite calcular a idade na '
@@ -503,12 +531,15 @@
   </section>
   {% endif %}
 
+  {% if cg_passos %}</div>{% endif %}
+
   {# 4. AS PERGUNTAS DO ÓBITO — art. 80 da Lei 6.015/1973 e art. 255 do Código
      de Normas. «O oficial indagará, obrigatoriamente, a respeito de todos os
      itens» (§ 1º). Até 13/10/2026 as quatro marcas só se respondiam numa tela à
      parte, DEPOIS de lavrar — e o termo, escrito na lavratura, saía sem elas.
      Os nomes são as colunas de `rc_marcas_do_obito.MARCAS`; o branco é «o
      declarante não sabe», que o termo declara na forma do § 1º. #}
+  {% if cg_passos %}<div class="cg-passo-bloco" data-passo="perguntas">{% endif %}
   {% if obito %}
   <section class="panel" style="grid-column:1/-1">
     <div class="panel-head"><span>Perguntas obrigatórias do óbito</span>
@@ -566,10 +597,13 @@
   </section>
   {% endif %}
 
+  {% if cg_passos %}</div>{% endif %}
+
   {# 5. QUEM DECLARA E QUEM TESTEMUNHA.
      No NASCIMENTO o declarante costuma ser a mãe ou o pai — relato #46: os
      botões só copiam a filiação; não decidem quem declarou. No ÓBITO
      (problemas #100/#101) os botões Mãe/Pai não fazem sentido. #}
+  {% if cg_passos %}<div class="cg-passo-bloco" data-passo="declarante">{% endif %}
   {% if nascimento %}
     {{ pessoa('declarante', 'Declarante',
               'Quem prestou as informações para a lavratura.', false, form,
@@ -608,8 +642,11 @@
      no bloco de baixo se perdia. Ficou a gaveta única (LD01), e
      tests/test_registro_tardio.py cobra um campo só. #}
 
+  {% if cg_passos %}</div>{% endif %}
+
   {# 6. O QUE O SISTEMA FAZ SOZINHO — termo, matrícula e selo, por último:
      é o que o escrevente normalmente deixa em branco. #}
+  {% if cg_passos %}<div class="cg-passo-bloco" data-passo="termo">{% endif %}
   <section class="panel" style="grid-column:1/-1">
     <div class="panel-head"><span>Termo, matrícula e selo</span>
       <small>o sistema faz sozinho ao lavrar</small></div>
@@ -666,6 +703,12 @@
       vê os dados do CPF — só lá se lavra.
     </small></p>
   </div>
+  {% if cg_passos %}</div>
+  <div class="cg-passos-fim" style="grid-column:1/-1" hidden data-cg-passos-fim>
+    <button type="button" class="button" data-passo-voltar>&larr; Voltar</button>
+    <button type="button" class="button primary" data-passo-avancar>Avançar</button>
+  </div>
+  {% endif %}
 </form>
 <script src="{{ url_for('static', filename='gavetas.js') }}"></script>
 {{ script_do_rascunho() }}

@@ -266,5 +266,6 @@
 .cg-passo:hover{background:#f5f7f9;color:#14202c}
 .cg-passo[aria-current]{background:var(--cg-clara);color:#14202c;font-weight:600}
 .cg-passo[aria-current] .cg-fase-n{border-color:var(--cg-cor);background:var(--cg-cor);color:#fff}
-.cg-ficha [data-passo][hidden],.cg-passos-fim[hidden],.cg-passos-fim [hidden]{display:none!important}
+.cg-corpo [data-passo][hidden],.cg-passos-fim[hidden],.cg-passos-fim [hidden]{display:none!important}
+.cg-passo-bloco{grid-column:1/-1;min-width:0}
 .cg-passos-fim{display:flex;justify-content:flex-end;gap:8px;border-top:1px solid #e3e7ec;padding-top:10px}

@@ -131,6 +131,10 @@
     <label>Data da assinatura do ato
       <input name="data_assinatura" id="data_assinatura_lancar"
              placeholder="dd/mm/aaaa"></label>
+    {% if registro.serie in ['PJ_A', 'PJ_B'] %}
+    {% from '_lista_presenca_cnma.html' import bloco %}
+    {{ bloco(none, enquadramento_sugerido, rotulos_enquadramento, false) }}
+    {% endif %}
     {% endif %}
     <label style="grid-column:1/-1">{{ 'Teor' if campo == 'teor' else 'Motivo' }}
       <input name="{{ campo }}" {% if tipo != 'AVERBACAO' %}required{% endif %} minlength="10" placeholder="{{ dica }}"
@@ -300,7 +304,8 @@
         <td><strong>{{ a.tipo }}</strong></td>
         <td>{{ a.data_ato }}</td>
         <td>{% if a.numero_ordem %}fl. {{ a.folha }}{% if a.verso %}v{% endif %} · nº {{ a.numero_ordem }}{% else %}—{% endif %}</td>
-        <td>{{ (a.teor or a.motivo_cancelamento or '—') }}</td>
+        <td>{{ (a.teor or a.motivo_cancelamento or '—') }}
+          {% if a.lista_presenca_texto %}<br><small>{{ a.lista_presenca_texto }}</small>{% endif %}</td>
         <td>
           {% if not selos_do_a %}
           <small class="muted">sem selo</small>

@@ -46,7 +46,9 @@ def _db(tmp_path):
         """
         CREATE TABLE ri_protocolos (
             id INTEGER PRIMARY KEY, numero INTEGER, situacao TEXT,
-            situacao_anterior TEXT);
+            situacao_anterior TEXT,
+            encerrado_em TEXT, encerrado_por TEXT,
+            motivo_encerramento TEXT, obs_encerramento TEXT);
         CREATE TABLE ri_atos (
             id INTEGER PRIMARY KEY, protocolo TEXT);
         """
@@ -56,13 +58,20 @@ def _db(tmp_path):
 
 def test_encerra_quando_aberto(fns, tmp_path):
     con = _db(tmp_path)
-    con.execute("INSERT INTO ri_protocolos VALUES (1, 11546, 'ABERTO', NULL)")
+    con.execute(
+        "INSERT INTO ri_protocolos (id, numero, situacao, situacao_anterior) "
+        "VALUES (1, 11546, 'ABERTO', NULL)")
     con.execute("INSERT INTO ri_atos VALUES (10, '11546')")
     r = fns["encerrar_prenotacao_do_ato_apos_arquivamento"](con, 10)
     assert r["encerrou"] is True
     assert r["numero"] == 11546
-    sit = con.execute("SELECT situacao FROM ri_protocolos WHERE id=1").fetchone()[0]
-    assert sit == "ENCERRADO"
+    sit = con.execute(
+        "SELECT situacao, motivo_encerramento, obs_encerramento, encerrado_em "
+        "FROM ri_protocolos WHERE id=1").fetchone()
+    assert sit[0] == "ENCERRADO"
+    assert sit[1] == "Título registrado"
+    assert sit[2] == "arquivamento 16.39"
+    assert sit[3]
     frase = fns["recado_do_encerramento_por_arquivamento"](r)
     assert "ENCERRADA" in frase
     assert "11546" in frase
@@ -76,7 +85,9 @@ def test_nao_falha_sem_protocolo_no_ato(fns, tmp_path):
 
 def test_ja_encerrada_nao_reescreve(fns, tmp_path):
     con = _db(tmp_path)
-    con.execute("INSERT INTO ri_protocolos VALUES (1, 11546, 'ENCERRADO', 'ABERTO')")
+    con.execute(
+        "INSERT INTO ri_protocolos (id, numero, situacao, situacao_anterior) "
+        "VALUES (1, 11546, 'ENCERRADO', 'ABERTO')")
     con.execute("INSERT INTO ri_atos VALUES (10, '11.546')")
     r = fns["encerrar_prenotacao_do_ato_apos_arquivamento"](con, 10)
     assert r["ja_encerrada"] is True

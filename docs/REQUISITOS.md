@@ -82,7 +82,8 @@ lugar, o caminho pode ser gravado na configuração `chrome_caminho` (tabela
   pasta de dados: `CG_PG_DSN` (ex.: `host=127.0.0.1 port=5434 user=cg
   dbname=cartorio`, **sem senha**) e `CG_PG_SCHEMA` (o schema da casa). A
   senha do papel fica num `pgpass.conf` protegido, e o backup usa o `pg_dump`
-  da pasta indicada em `CG_PG_BIN`.
+  da pasta indicada em `CG_PG_BIN`; sem ela, o do PATH ou o da pasta de
+  instalação (`binario_do_postgres`, em `banco_pg.py`).
 - **O instalador ainda não instala nem configura o PostgreSQL**: isso é feito
   à parte, antes do primeiro acesso. Senha SCRAM, `pgpass` e papel sem
   superusuário estão em [`SEGURANCA_REDE.md`](SEGURANCA_REDE.md#o-postgresql-da-casa)

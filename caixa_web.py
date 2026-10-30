@@ -1672,6 +1672,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                lancamentos=lanc, SITUACOES=SITUACOES,
                                soma=soma, pendente=pendente, busca_ato=busca,
                                achados=achados, TABELAS=EMOL.TABELAS_FAIXA,
+                               ATALHOS_FAIXA=EMOL.ATALHOS_NA_FAIXA,
+                               SERVICOS_BASE_METADE=EMOL.SERVICOS_TJ_BASE_METADE_NA_16_9,
                                # RELATO #52: o rótulo do botão diz quantos
                                # faltam, e a forma de pagamento do lote é
                                # escolhida uma vez só — o pagamento é um.
@@ -2002,7 +2004,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return render_template("_atos_da_tabela_fragmento.html",
                                achados=achados,
                                busca=busca, protocolo_id=protocolo_id,
-                               vazio_sem_busca=not bool(busca))
+                               vazio_sem_busca=not bool(busca),
+                               SERVICOS_BASE_METADE=EMOL.SERVICOS_TJ_BASE_METADE_NA_16_9)
 
     def _quem_esta_no_balcao() -> str | None:
         """O nome de quem esta logado, pelo mesmo caminho da auditoria.
@@ -2150,6 +2153,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/caixa/protocolos/<int:protocolo_id>/itens", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def caixa_protocolo_itens(protocolo_id):
+        SEM_FORMA_DE_PAGAMENTO = (
+            "Escolha a forma de pagamento: sem ela o lançamento entra no caixa "
+            "sem dizer como o cliente pagou. Nada foi quitado.")
         """Acrescenta, quita ou remove um item do protocolo.
 
         O valor NÃO é digitado: vem da tabela do tribunal. Ou o ato tem valor
@@ -2165,6 +2171,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             servico = (request.form.get("servico") or "").strip()
             tabela = (request.form.get("tabela") or "").strip()
             base = (request.form.get("base_calculo") or "").strip()
+            # O 16.22.4.1 (e os irmãos de SERVICOS_TJ_BASE_METADE_NA_16_9) não
+            # é faixa numerada: o cadastro tem total zero e o preço sai da
+            # 16.9 com metade da base. Sem o valor do imóvel não há conta.
+            codigo_atalho = EMOL.codigo_tj_do_atalho(tabela)
+            if codigo_atalho and not base:
+                flash(
+                    f"O item {codigo_atalho} depende do valor do imóvel. "
+                    "Informe o valor da área na caixa «Tabela».",
+                    "danger",
+                )
+                return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
             # Sem base, faixa_por_valor(0) cai na PRIMEIRA faixa do RI (16.3.1) —
             # errado para 2ª via / certidão e para qualquer ato que não dependa
             # do valor do negócio. Exige a base quando o caminho é a faixa.
@@ -2193,6 +2210,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 flash("O numero de imoveis precisa ser um numero inteiro.", "danger")
                 return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
             with db.connect() as con:
+                if codigo_atalho:
+                    cod = EMOL.servico_pelo_codigo_tj(con, codigo_atalho)
+                    if cod is None:
+                        flash(
+                            f"Não encontrei o item {codigo_atalho} na tabela "
+                            "vigente.",
+                            "danger",
+                        )
+                        return redirect(url_for(
+                            "caixa_protocolo", protocolo_id=protocolo_id))
+                    servico, tabela = str(cod), ""
                 item = EMOL.calcular_item(
                     con, servico=numero_digitado(servico),
                     tabela=numero_digitado(tabela),
@@ -2200,6 +2228,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if not item:
                 flash("Não encontrei esse ato na tabela vigente. "
                       "Confira o código ou o valor do negócio.", "danger")
+                return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
+            # Pela busca o 16.22.4.1 entra sem base e o cadastro diz R$ 0,00.
+            # O preço certo pede o valor do imóvel, que só a caixa «Tabela» tem.
+            if (item.get("origem_valor") == "TABELA"
+                    and str(item.get("codigo_tj") or "").strip()
+                    in EMOL.SERVICOS_TJ_BASE_METADE_NA_16_9):
+                flash(
+                    f"O item {str(item.get('codigo_tj') or '').strip()} depende "
+                    "do valor do imóvel: escolha-o na caixa «Tabela» e informe "
+                    "o valor.",
+                    "danger",
+                )
                 return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
             # No 16.31 a quantidade é multiplicada pelos imóveis: cada um cabe,
             # e o produto pode não caber na coluna (LD13).
@@ -2250,18 +2290,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # outro caminho — o botão «cobrar» da ficha do ato. Dois trilhos
             # para o mesmo dinheiro é como eles divergem: o protocolo dizia que
             # o cliente pagou e o caixa não tinha o lançamento.
+            #
+            # SEM FORMA NÃO SE QUITA — 30/10/2026. O botão de um item não
+            # mandava forma nenhuma: medido na produção, os 12 lançamentos
+            # quitados por ele estão sem forma, e os 5 do protocolo 21572 são
+            # desses. A tela agora a pergunta, e a rota recusa o vazio.
             item_id = numero_digitado(request.form.get("item_id"))
             aberto = caixa_aberto(usuario_nome())
             agora = db.now()
+            forma = str(request.form.get("forma_pagamento") or "").strip()
             try:
                 if item_id is None:
                     raise CaixaError("Escolha o item do protocolo a quitar.")
+                if aberto and not forma:
+                    raise CaixaError(SEM_FORMA_DE_PAGAMENTO)
                 with db.transaction() as con:
                     r = cobrar_item_do_protocolo(
                         con, item_id,
                         caixa_id=int(aberto["id"]) if aberto else 0,
                         agora=agora, hoje=agora[:10], hora=agora[11:16],
-                        forma_pagamento=request.form.get("forma_pagamento"),
+                        forma_pagamento=forma,
                         usuario=usuario_nome())
                     _atualizar_situacao(con, protocolo_id)
             except CaixaError as erro:
@@ -2298,8 +2346,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # que foi cobrado — e o cliente ja foi embora com o papel na mao.
             #
             # A FORMA DE PAGAMENTO DO LOTE VALE PARA TODOS OS ITENS: o pagamento
-            # e' um so. Em branco, grava em branco como no botao de um item —
-            # nao se adivinha como o cliente pagou.
+            # e' um so. Em branco, o lote recusa (30/10/2026): nao se adivinha
+            # como o cliente pagou, e lancamento sem forma nao fecha a conferencia.
+            forma = str(request.form.get("forma_pagamento") or "").strip()
             pendentes_id = [int(r["id"]) for r in q(
                 """SELECT id FROM cx_protocolo_atos
                    WHERE protocolo_id=%s AND quitado=0 ORDER BY id""",
@@ -2318,9 +2367,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 flash("Você não tem caixa aberto, e sem caixa o lançamento não "
                       "aparece na conferência do dia. Abra o caixa em "
                       "Administrativo → Caixa.", "danger")
+            elif not forma:
+                flash(SEM_FORMA_DE_PAGAMENTO, "danger")
             else:
                 agora = db.now()
-                forma = request.form.get("forma_pagamento")
                 quitados, soma_quitada, recusados = 0, 0, []
                 for item_id in pendentes_id:
                     try:

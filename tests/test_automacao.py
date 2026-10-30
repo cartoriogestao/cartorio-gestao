@@ -1026,9 +1026,11 @@ def _sem_os_passos_do_vigia(monkeypatch, feitos=None):
     falsos: aqui só se mede a busca, a aplicação, a confirmação e a auditoria.
     29/10/2026: a rodada da automação passou a ser a volta do vigia."""
     import wa_atendente as AT
+    import wa_balcao as BALCAO
     import wa_midia as MIDIA
     import wa_rotina as ROTINA
     feitos = feitos if feitos is not None else []
+    monkeypatch.setattr(BALCAO, "arrumar_entregas_pendentes", lambda db, **k: 0)
     monkeypatch.setattr(MIDIA, "baixar_pendentes",
                         lambda db, **k: feitos.append("arquivos") or {"baixados": 0})
     monkeypatch.setattr(AT, "rodada",

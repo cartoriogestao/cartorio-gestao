@@ -488,7 +488,7 @@ def test_o_mesmo_arquivo_de_novo_nao_duplica(con):
 # --------------------------------------------- cancelamento e autorização
 
 
-def test_cp_e_ac_viram_pendencia_e_nao_lavram_nada(con):
+def test_cp_e_ad_viram_pendencia_a_ac_espera_o_devedor_e_nada_se_lavra(con):
     p1 = titulo(con, protocolo="2610200020", numero="C-1", situacao="PROTESTADO")
     p2 = titulo(con, protocolo="2610200021", numero="C-2", situacao="PROTESTADO")
     p3 = titulo(con, protocolo="2610200022", numero="C-3", situacao="INTIMADO")
@@ -501,12 +501,74 @@ def test_cp_e_ac_viram_pendencia_e_nao_lavram_nada(con):
     linhas, _ = trazer(con, {"desistencias": NADA_DP, "cancelamentos": cp,
                              "autorizacoes": ac})
     assert con.execute("SELECT COUNT(*) FROM pt_atos").fetchone()[0] == antes
-    assert linhas["CP"]["pendentes"] == 1 and linhas["AC"]["pendentes"] == 2
+    assert linhas["CP"]["pendentes"] == 1
+    assert (linhas["AC"]["pendentes"], linhas["AC"]["aguardando"]) == (1, 1)
+    assert "1 aguardando o devedor" in linhas["AC"]["frase"]
     tipos = {p["titulo_id"]: p["tipo"] for p in DS.pendencias_da_cra(con)}
-    # A letra t07 da autorização diz o tipo: C cancelamento, S desistência.
-    assert tipos == {p1: "CP", p2: "AC", p3: "AD"}
+    # A letra t07 da autorização diz o tipo: C cancelamento, S desistência. A AC
+    # do protestado espera o devedor (30/10/2026): não é pendência do dia.
+    assert tipos == {p1: "CP", p3: "AD"}
     ac_c = [p for p in pedidos(con) if p["titulo_id"] == p2][0]
     assert ac_c["tem_anexo"] == 1                      # a carta de anuência
+    assert ac_c["estado"] == PCP.AGUARDANDO_DEVEDOR
+    assert [p["titulo_id"] for p in PCP.aguardando_o_devedor(con)] == [p2]
+    assert PCP.quadro_do_dia(con, dia=DIA)["aguardando_devedor"] == 1
+
+
+def _uma_ac(con, *, situacao="PROTESTADO") -> int:
+    tid = titulo(con, protocolo="2610200031", numero="C-9", situacao=situacao)
+    ac = xml_de_atributos("autorizacao", "AC0012910.261", [
+        ("2610200031", "C-9", "EMPRESA DE EXEMPLO LTDA", 5000, "C", "UEsDBA==")])
+    trazer(con, {"desistencias": NADA_DP, "cancelamentos": NADA_CP,
+                 "autorizacoes": ac})
+    return tid
+
+
+def test_a_ac_que_espera_continua_na_ficha_e_sai_pelo_cancelamento(con):
+    tid = _uma_ac(con)
+    assert DS.pendencias_da_cra(con) == []
+    ficha = PCP.do_titulo(con, tid)
+    assert [p["aguardando_devedor"] for p in ficha["abertos"]] == [True]
+    assert PCP.recentes(con)[0]["estado"] == PCP.AGUARDANDO_DEVEDOR
+    con.execute("UPDATE pt_titulos SET situacao='CANCELADO' WHERE id=?", (tid,))
+    con.commit()
+    assert PCP.aguardando_o_devedor(con) == []
+    assert PCP.do_titulo(con, tid)["abertos"] == []
+
+
+def test_a_ac_que_espera_sai_quando_alguem_registra_o_motivo(con):
+    _uma_ac(con)
+    pedido = PCP.aguardando_o_devedor(con)[0]
+    r = PCP.tratar_pedido(con, pedido["id"], motivo="O credor retirou a carta de anuência.",
+                          agora=AGORA, usuario="carla", papel="USER")
+    assert r["estado"] == PCP.TRATADO
+    assert PCP.aguardando_o_devedor(con) == []
+
+
+def test_a_ac_antiga_ainda_pendente_vale_como_aguardando_sem_gravar_nada(con):
+    """As 34 da produção nasceram PENDENTE. A leitura decide, e nada se regrava."""
+    tid = _uma_ac(con)
+    con.execute("UPDATE pt_cra_pedidos SET estado='PENDENTE' WHERE titulo_id=?", (tid,))
+    con.commit()
+    assert [p["titulo_id"] for p in PCP.aguardando_o_devedor(con)] == [tid]
+    assert DS.pendencias_da_cra(con) == []
+    assert pedidos(con)[0]["estado"] == "PENDENTE"
+
+
+def test_a_ac_volta_a_cobrar_se_o_titulo_deixou_de_estar_protestado(con):
+    """Nunca deixar título para trás: fora do PROTESTADO, sem cancelamento, a AC
+    pede que alguém olhe."""
+    tid = _uma_ac(con)
+    con.execute("UPDATE pt_titulos SET situacao='INTIMADO' WHERE id=?", (tid,))
+    con.commit()
+    assert PCP.aguardando_o_devedor(con) == []
+    assert [p["titulo_id"] for p in DS.pendencias_da_cra(con)] == [tid]
+
+
+def test_ac_de_titulo_que_nao_esta_protestado_continua_pendente(con):
+    tid = _uma_ac(con, situacao="INTIMADO")
+    assert pedidos(con)[0]["estado"] == PCP.PENDENTE
+    assert [p["titulo_id"] for p in DS.pendencias_da_cra(con)] == [tid]
 
 
 def test_a_pendencia_fecha_pelo_ato(con):

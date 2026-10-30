@@ -156,12 +156,12 @@
   </form>
 </details>
 
-<p class="small muted" style="margin:12px 0 4px"><strong>Situações:</strong> <em>Aberto</em> = ainda em análise; <em>Encerrado</em> = ato concluído / prenotação consumida; <em>Devolvido</em> = título devolvido com nota; <em>Cancelado</em> = protocolo anulado.</p>
+<p class="small muted" style="margin:12px 0 4px"><strong>Situações:</strong> <em>Aberto</em> = ainda em análise; <em>Encerrado</em> = ato concluído / prenotação consumida; <em>Devolvido</em> = título devolvido com nota; <em>Cancelado</em> = protocolo anulado; <em>Recusado</em> = título recusado.</p>
 <form class="filters" method="get">
   <input name="busca" value="{{ busca }}" placeholder="Número, objeto, apresentante ou matrícula" size="38">
   <select name="situacao">
     <option value="">Todas as situações</option>
-    {% for s in ['ABERTO','ENCERRADO','DEVOLVIDO','CANCELADO'] %}
+    {% for s in ['ABERTO','ENCERRADO','DEVOLVIDO','CANCELADO','RECUSADO'] %}
       <option {% if situacao==s %}selected{% endif %}>{{ s }}</option>{% endfor %}
   </select>
   <button>Filtrar</button>
@@ -202,6 +202,7 @@
             <br><a href="{{ url_for('ri_prenotacao_comprovante', protocolo_id=r.id) }}">comprovante</a></td>
           <td>{% if r.situacao == 'ABERTO' %}<span class="badge ok">Aberto</span>
               {% elif r.situacao == 'CANCELADO' %}<span class="badge critica">Cancelado</span>
+              {% elif r.situacao == 'RECUSADO' %}<span class="badge critica">Recusado</span>
               {% else %}<span class="badge">{{ r.situacao|capitalize }}</span>{% endif %}</td>
         </tr>
       {% else %}<tr><td colspan="8">Nenhum protocolo.</td></tr>{% endfor %}

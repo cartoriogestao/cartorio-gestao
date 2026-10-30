@@ -30,24 +30,31 @@
     {{ sem_ato.ato_esperado }} deve existir, ele se lança de novo logo depois,
     pela ficha, com o item marcado. Se o fato está só no livro de papel ou no
     E-Ofício, decida antes de corrigir. Confira também se a CRA já recebeu a
-    ocorrência.</p>
+    ocorrência. Se o título foi devolvido, a proposta é outra: «Marcar o título
+    como DEVOLVIDO», em Correções de ofício.</p>
   {% if user.role in ['ADMIN', 'MANAGER'] %}
   <form method="post" action="{{ url_for('protesto_situacao_corrigir', titulo_id=titulo.id) }}"
         class="grid2" style="margin-top:8px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label style="grid-column:1/-1"><input type="checkbox" name="afirmo" value="1">
-      Afirmo — correção de ofício, de {{ sem_ato.situacao }} para
-      {{ sem_ato.situacao_sustentada }}</label>
-    <label style="grid-column:1/-1">Por quê <small>(pelo menos {{ minimo_da_afirmacao }}
-      letras; fica na auditoria com o seu nome)</small>
-      <textarea name="afirmacao" rows="2" required
-                placeholder="{{ modelo_da_afirmacao }}"></textarea></label>
-    <div class="actions"><button class="button">Corrigir a situação de ofício</button></div>
+    <label style="grid-column:1/-1">Motivo — o que aconteceu e de onde se sabe
+      <small>(fica na proposta; quem decide é o oficial)</small>
+      <textarea name="motivo" rows="2" required></textarea></label>
+    <div class="actions"><button class="button">Propor a correção de ofício</button></div>
   </form>
   {% else %}
-  <p style="margin:8px 0 0"><small>A correção de ofício é do oficial ou do
+  <p style="margin:8px 0 0"><small>Propor a correção daqui é do oficial ou do
     substituto: avise-os.</small></p>
   {% endif %}
+</div>
+{% endif %}
+{% if propostas_de_oficio %}
+<div class="notice warning" data-propostas-de-oficio>
+  <strong>Correção de ofício esperando o oficial:</strong>
+  <ul style="margin:6px 0 0 18px">
+  {% for p in propostas_de_oficio %}
+    <li><a href="{{ url_for('correcoes_de_oficio_ficha', correcao_id=p.id) }}">nº {{ p.id }}</a>: {{ p.resumo }}</li>
+  {% endfor %}
+  </ul>
 </div>
 {% endif %}
 
@@ -108,12 +115,14 @@
    quando o título chega à situação que o pedido pede, ele sai da lista. #}
 {% if pedidos_cra and pedidos_cra.abertos %}
 {% set grave_aqui = pedidos_cra.abertos | selectattr('destaque', 'equalto', 'PROTESTADO') | list %}
-<div class="notice {{ 'danger' if grave_aqui else 'warning' }}" data-pedidos-cra>
+{% set cobrando_aqui = pedidos_cra.abertos | rejectattr('aguardando_devedor') | list %}
+<div class="notice {{ 'danger' if grave_aqui else ('warning' if cobrando_aqui else 'info') }}" data-pedidos-cra>
   <strong>Pedido(s) da CRA esperando este título:</strong>
   <ul style="margin:6px 0 0 18px">
   {% for p in pedidos_cra.abertos %}
     <li>
-      <strong>{{ p.tipo }}</strong> — {{ p.explicacao }}
+      <strong>{{ p.tipo }}</strong>{% if p.aguardando_devedor %}
+      <strong data-aguardando-devedor>· aguardando o devedor</strong>{% endif %} — {{ p.explicacao }}
       <small>(chegou em {{ (p.recebido_em or '')[:16] | replace('T', ' ') }};
         <a href="{{ url_for('protesto_cra_consulta_arquivo', consulta_id=p.consulta_id) }}">arquivo da CRA</a>)</small>
       {% if p.destaque == 'PROTESTADO' and user.role not in quem_encerra_o_grave %}

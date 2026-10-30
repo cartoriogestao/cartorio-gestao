@@ -62,9 +62,10 @@ conta é de `protesto_selo_que_faltou`, e a saída é a ação «Emitir o selo q
 faltou», na ficha, do oficial em pessoa.
 
 **E O TÍTULO NUNCA FICA NUMA SITUAÇÃO SEM O ATO QUE A SUSTENTE.**
-`titulos_sem_ato_que_sustente` é a conferência; `corrigir_situacao_de_oficio`
-é a saída, por decisão de quem responde: volta o título à situação que os atos
-válidos sustentam, com afirmação expressa (regra `SITUACAO_SEM_ATO`). Nada se
+`titulos_sem_ato_que_sustente` é a conferência. A saída é a fila de correções de
+ofício (`correcoes_de_oficio`, tipo `PT_SITUACAO_SUSTENTADA`), por decisão do
+oficial em 30/10/2026: o botão da ficha só PROPÕE, e quem aprova é o ADMIN em
+pessoa. A correção direta, que também abria para o gerente, foi apagada. Nada se
 corrige sozinho. Medido em 29/10/2026: cinco títulos PAGO sem pagamento válido
 — o 9614 (pagamento desfeito pelo selo) e quatro que vieram assim da carga.
 """
@@ -105,6 +106,7 @@ O_ATO = {
     "DESISTENCIA": "a desistência",
     "RETIRADA": "a retirada",
     "CANCELAMENTO": "o cancelamento",
+    "DEVOLUCAO": "a devolução",
 }
 
 # O MOTIVO QUE A ROTA GRAVA NO ATO DESFEITO PELO SELO. É por ele que a
@@ -121,7 +123,6 @@ REGRA_SEM_ITEM = "SELO_SEM_ITEM"
 REGRA_CAIXA_FECHADO = "SELO_CAIXA_FECHADO"
 REGRA_ITEM_FORA_DO_CAMINHO = "SELO_ITEM_FORA_DO_CAMINHO"
 REGRA_ITEM_NAO_PAGO = "SELO_ITEM_NAO_PAGO"
-REGRA_SITUACAO_SEM_ATO = "SITUACAO_SEM_ATO"
 
 # O CONTRATO COMUM DA AFIRMAÇÃO EXPRESSA (29/10/2026): caixa `afirmo` + texto
 # `afirmacao` com pelo menos 30 letras, auditoria `AFIRMACAO_EXPRESSA` com
@@ -604,6 +605,7 @@ ATO_QUE_SUSTENTA: dict[str, tuple[str, ...]] = {
     "PAGO": ("PAGAMENTO",),
     "DESISTIDO": ("DESISTENCIA", "RETIRADA"),
     "CANCELADO": ("CANCELAMENTO",),
+    "DEVOLVIDO": ("DEVOLUCAO",),
 }
 
 # A situação que cada ato deixa, e a ordem do caminho. As FINAIS valem pelo
@@ -614,10 +616,10 @@ SITUACAO_DO_ATO = {
     "APONTAMENTO": "APONTADO", "INTIMACAO": "INTIMADO",
     "PROTESTO": "PROTESTADO", "PAGAMENTO": "PAGO",
     "DESISTENCIA": "DESISTIDO", "RETIRADA": "DESISTIDO",
-    "CANCELAMENTO": "CANCELADO",
+    "CANCELAMENTO": "CANCELADO", "DEVOLUCAO": "DEVOLVIDO",
 }
 ORDEM_DO_CAMINHO = ("RECEBIDO", "APONTADO", "INTIMADO", "PROTESTADO")
-SITUACOES_FINAIS = ("PAGO", "DESISTIDO", "CANCELADO")
+SITUACOES_FINAIS = ("PAGO", "DESISTIDO", "CANCELADO", "DEVOLVIDO")
 
 # A CARGA DO E-OFÍCIO marca o título com esta chave de origem
 # (`acervo_carga`, `tbAvisoProtesto:<intChave>`). É ela, e não `origem`, que
@@ -752,42 +754,3 @@ def situacao_sem_ato(con, titulo_id: int) -> dict | None:
     achados = _achar(con, titulo_id=int(titulo_id), limite=1)
     return achados[0] if achados else None
 
-
-def corrigir_situacao_de_oficio(con, titulo_id: int, *, afirmo: Any,
-                                afirmacao: Any, robo: bool = False) -> dict:
-    """Volta o título à situação que os atos válidos sustentam. ESCREVE.
-
-    É a CORREÇÃO DE OFÍCIO, e só com afirmação expressa: quem decide é quem
-    responde pela serventia, e o que se afirmou fica. O sistema não a faz
-    sozinho. Devolve o que a rota grava na auditoria (`AFIRMACAO_EXPRESSA`,
-    regra `SITUACAO_SEM_ATO`) — fora da transação, como manda a casa.
-
-    Não lavra ato nenhum e não toca nos atos: muda a situação, e só se ela
-    ainda for a que a conferência achou (outro balcão pode ter mexido).
-    """
-    import protesto as PT
-    achado = situacao_sem_ato(con, titulo_id)
-    if not achado:
-        raise SituacaoError(
-            "Nada a corrigir: a situação do título já tem o ato válido que a "
-            "sustenta.")
-    texto = validar_afirmacao(afirmo, afirmacao, robo=robo)
-    if texto is None:
-        raise SituacaoError(
-            "A correção de ofício exige a afirmação expressa: marque «Afirmo» e "
-            f"escreva por quê, com pelo menos {MINIMO_DE_LETRAS_DA_AFIRMACAO} "
-            f"letras, começando por «{MODELO_DA_AFIRMACAO}».")
-    preso = PT.titulo_para_gravar(con, titulo_id)
-    if not preso or preso["situacao"] != achado["situacao"]:
-        raise SituacaoError(
-            "A situação do título mudou enquanto você corrigia. Abra a ficha de "
-            "novo e confira.")
-    nova = situacao_sustentada(con, titulo_id)
-    banco(con).escrever(
-        "UPDATE pt_titulos SET situacao = %s WHERE id = %s AND situacao = %s",
-        (nova, int(titulo_id), achado["situacao"]))
-    return {"regra": REGRA_SITUACAO_SEM_ATO, "afirmacao": texto,
-            "o_que_faltava": (f"o ato de {achado['ato_esperado']} que sustenta "
-                              f"a situação {achado['situacao']}. "
-                              f"{achado['explicacao']}"),
-            "situacao_antes": achado["situacao"], "situacao_nova": nova}

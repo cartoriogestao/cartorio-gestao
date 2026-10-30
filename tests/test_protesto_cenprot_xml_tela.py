@@ -71,6 +71,10 @@ def pronto(s, chave_e_cert, tmp_path, monkeypatch):
         X.gravar_apresentante(con, codigo="001", nome="BANCO DO BRASIL SA",
                               documento="00000001000055", tipo_apresentante="0",
                               agora="2026-10-14T12:00:00")
+        # O título H leva o CEP e a UF da serventia no cedente (30/10/2026).
+        for chave, valor in (("serventia_cep", "65.000-000"), ("ri_uf", "MA")):
+            con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES (?,?)",
+                        (chave, valor))
     con.close()
     return tid
 
@@ -81,7 +85,10 @@ def test_o_protesto_pronto_entra_com_edital_verdadeiro_e_instrumento(pronto, s):
     assert len(lista["entram"]) == 1 and not lista["fora"]
     t = lista["entram"][0]["titulo"]
     assert t["id"] == CHAVE and t["endosso"] == "H"
-    assert t["cedente"] == {"nome": "LOJA EXEMPLO LTDA", "endereco": {}}
+    assert t["cedente"] == {
+        "nome": "LOJA EXEMPLO LTDA",
+        "endereco": {"endereco": "", "complemento": "", "cep": "65000000",
+                     "bairro": "", "cidade": "", "uf": "MA"}}
     assert t["sacador"]["documento"] == "00000001000055"
     dev = t["devedores"][0]
     assert dev["documento"] == "04785512388"            # CPF: o tipo manda

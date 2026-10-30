@@ -252,7 +252,8 @@ def test_a_lista_fechada_do_cadastro_nao_tem_o_que_identifica_o_titulo():
                      "nome", "documento_numero", "titulo_id", "id"):
         assert proibido not in permitidos, proibido
     assert set(CDO.CATALOGO) == {"PT_ATO_SEM_EFEITO", "PT_SITUACAO_SUSTENTADA",
-                                 "PT_CADASTRO_DO_TITULO", "PT_ATO_DE_CORRECAO"}
+                                 "PT_CADASTRO_DO_TITULO", "PT_ATO_DE_CORRECAO",
+                                 "PT_TITULO_DEVOLVIDO"}
     assert CDO.TIPOS_QUE_SE_COPIAM == ("PAGAMENTO",)
 
 
@@ -420,8 +421,11 @@ def test_as_duas_parcelas_se_refazem_pela_fila(cg_casa):
     protesto = _ato(db, p1, "PROTESTO")
     p2 = _titulo(db, "PAGO", "DP/2")
     _ato(db, p2, "APONTAMENTO")
+    # Em espécie: o pagamento por PIX copiado pela fila exige o crédito conferido
+    # (decisão de 30/10/2026), e os casos dele estão em
+    # `test_protesto_decisoes_30_10.py`.
     pagamento = _ato(db, p2, "PAGAMENTO", data="2026-08-11",
-                     detalhe='{"forma_pagamento": "PIX", "valor_pago_centavos": 10000}')
+                     detalhe='{"forma_pagamento": "ESPECIE", "valor_pago_centavos": 10000}')
 
     copia = _propor(db, p["carla"], "PT_ATO_DE_CORRECAO",
                     {"ato_origem_id": pagamento, "titulo_id": p1})
@@ -436,7 +440,7 @@ def test_as_duas_parcelas_se_refazem_pela_fila(cg_casa):
     detalhe = json.loads(novo["detalhe_json"])
     assert detalhe["correcao_de"] == pagamento
     assert detalhe["correcao_de_oficio"] == copia["id"]
-    assert detalhe["forma_pagamento"] == "PIX"
+    assert detalhe["forma_pagamento"] == "ESPECIE"
     assert _situacao(db, p1) == "PAGO"
 
     sem_efeito = _propor(db, p["carla"], "PT_ATO_SEM_EFEITO",

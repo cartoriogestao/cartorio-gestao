@@ -411,7 +411,8 @@ def test_o_recibo_de_um_lancamento_discrimina_so_o_que_ele_pagou(casa):
     abrir_caixa(b)
     primeiro = _ler(casa, "SELECT id FROM cx_protocolo_atos WHERE protocolo_id = %s "
                           "ORDER BY id", (pid,))[0]["id"]
-    b.post(f"/caixa/protocolos/{pid}/itens", {"acao": "quitar", "item_id": str(primeiro)})
+    b.post(f"/caixa/protocolos/{pid}/itens", {"acao": "quitar", "item_id": str(primeiro),
+                                              "forma_pagamento": "DINHEIRO"})
     lanc = _um(casa, "SELECT * FROM cx_lancamentos WHERE protocolo_id = %s", (pid,))
     t = papel(b, f"/caixa/recibo/{lanc['id']}")
     papel_sem_sobra(t)

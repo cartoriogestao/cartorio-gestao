@@ -1044,9 +1044,11 @@ def _cobrar_editais(con, ctx: dict) -> list[dict]:
                      "CENPROT")
     regra = ("o arquivo do edital sobe à CENPROT e o comprovante se anexa no "
              "dia da publicação (CN-MA art. 922, § 1º)")
-    if not _existe(con, "pt_editais", "attachments"):
+    if not _existe(con, "pt_editais", "attachments", "pt_atos"):
         saida.append(_sem_tabela(chave, rotulo, regra, "pt_editais"))
         return saida
+    # O quadro já conta só edital de ato vivo: o dia em que todos foram
+    # tornados sem efeito não aparece, e não cobra.
     import protesto_aviso as AV
     gerados = set()
     if _existe(con, "audit_logs"):

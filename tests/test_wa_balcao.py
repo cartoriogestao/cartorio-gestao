@@ -170,7 +170,7 @@ def test_webhook_post_cria_conversa_mensagem_rascunho_e_e_idempotente(s):
     assert len(convs) == 1
     assert len(msgs) == 1
     assert convs[0]["etiqueta"] == "horario"
-    assert convs[0]["rascunho"]
+    assert convs[0]["sugestao"] and not convs[0]["rascunho"]
     assert convs[0]["auto_ok"] == 0
     assert msgs[0]["meta_id"] == "wamid.abc"
     assert msgs[0]["direcao"] == "in"
@@ -362,9 +362,10 @@ def test_enviar_mock_graph_cria_mensagem_out(s):
     html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
     csrf = _token(html)
     with patch("urllib.request.urlopen", side_effect=fake_urlopen) as m:
+        # a sugestão nunca sai sozinha (30/10/2026): o texto vem da caixa
         r = s["c"].post(
             f"/whatsapp/{cid}/enviar",
-            data={"csrf_token": csrf},
+            data={"csrf_token": csrf, "rascunho": "Bom dia."},
             follow_redirects=False,
         )
         assert m.called
@@ -666,8 +667,8 @@ def test_enviar_o_texto_da_caixa_guarda_posta_fora_da_transacao_e_grava(s, monke
                     data={"csrf_token": csrf, "rascunho": "  A certidão já saiu.  "})
     assert r.status_code == 302 and f"/whatsapp/{cid}" in r.headers["Location"]
     assert postados == [False], "o postar_envio rodou dentro da transação"
-    assert _um(s, "SELECT rascunho FROM wa_conversa WHERE id=%s",
-               (cid,))["rascunho"] == "A certidão já saiu."
+    # a saída limpa (30/10/2026): o que foi enviado não volta à caixa
+    assert not _um(s, "SELECT rascunho FROM wa_conversa WHERE id=%s", (cid,))["rascunho"]
     assert [(m["texto"], m["meta_id"]) for m in _saidas(s, cid)] == [
         ("A certidão já saiu.", "wamid.caixa-out")]
 
@@ -712,14 +713,17 @@ def test_o_auditor_ve_a_tela_e_o_novas_e_nao_envia(s, monkeypatch):
     assert not _saidas(s, cid)
 
 
-def test_o_formulario_de_envio_tem_a_trava_contra_o_envio_em_dobro(s):
+def test_o_formulario_de_envio_usa_a_fila_e_o_de_arquivo_mantem_a_trava(s):
     cid = _entrar(s, meta_id="wamid.dobro")
     html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
     form = re.search(r'<form[^>]*action="/whatsapp/%d/enviar"[^>]*>' % cid, html)
-    assert form and "data-wa-envio-unico" in form.group(0)
+    assert form and "data-wa-fila" in form.group(0)
+    assert "data-wa-envio-unico" not in form.group(0)
+    arquivo = re.search(r'<form[^>]*action="/whatsapp/%d/arquivo"[^>]*>' % cid, html)
+    assert arquivo and "data-wa-envio-unico" in arquivo.group(0)
     assert "/whatsapp_chat.js" in html
     js = (RAIZ / "static" / "whatsapp_chat.js").read_text(encoding="utf-8")
-    assert "form[data-wa-envio-unico]" in js and "enviando…" in js
+    assert "form[data-wa-fila]" in js and "enviando…" not in js
 
 
 def test_as_acoes_de_antes_continuam_e_voltam_para_a_conversa(s):
@@ -1259,3 +1263,372 @@ def test_a_caixa_de_marcacao_do_filtro_tem_tamanho_natural_e_alinhada():
     assert "width:16px" in regra and "min-height:0" in regra and "padding:0" in regra
     rotulo = re.search(r"\.wa-chat label\.check\{([^}]*)\}", css).group(1)
     assert "display:flex" in rotulo and "align-items:center" in rotulo and "gap:" in rotulo
+
+
+# ===================================================================
+# A SUGESTÃO NÃO É TEXTO ESCRITO (30/10/2026)
+# ===================================================================
+
+
+def _colunas(s, cid):
+    return _um(s, "SELECT rascunho, sugestao FROM wa_conversa WHERE id=%s", (cid,))
+
+
+def _caixa(html):
+    return re.search(r"<textarea[^>]*data-wa-caixa[^>]*>([^<]*)</textarea>", html)
+
+
+def test_mensagem_nova_grava_a_sugestao_e_nao_toca_no_rascunho(s):
+    cid = _entrar(s, texto="qual o horario?", meta_id="wamid.sug-1")
+    assert _colunas(s, cid)["sugestao"] and not _colunas(s, cid)["rascunho"]
+    with s["bd"].transaction() as con:
+        WA.salvar_rascunho(con, cid, "Escrito por uma pessoa.")
+    _mais_uma(s, "e o endereco?", "wamid.sug-2")
+    assert _colunas(s, cid)["rascunho"] == "Escrito por uma pessoa."
+
+
+def test_a_caixa_nasce_vazia_e_a_sugestao_vai_no_atributo_proprio(s):
+    cid = _entrar(s, texto="qual o horario?", meta_id="wamid.sug-tela")
+    with s["bd"].transaction() as con:
+        _banco(con).escrever("UPDATE wa_conversa SET sugestao='Abrimos cedo.' WHERE id=%s", (cid,))
+    caixa = _caixa(s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True))
+    assert caixa.group(1) == ""
+    assert 'data-wa-sugestao="Abrimos cedo."' in caixa.group(0)
+    assert 'placeholder="Abrimos cedo."' in caixa.group(0)
+    assert 'autocomplete="off"' in caixa.group(0)
+    js = (RAIZ / "static" / "whatsapp_chat.js").read_text(encoding="utf-8")
+    assert 'evento.key !== "Tab"' in js and "evento.shiftKey" in js
+
+
+def test_a_sugestao_so_aparece_com_a_ultima_mensagem_do_cliente(s):
+    cid = _entrar(s, texto="qual o horario?", meta_id="wamid.sug-ultima")
+    with s["bd"].transaction() as con:
+        WA.gravar_saida(con, cid, "Fora do horário.", "wamid.sug-av", autor="aviso", tipo="aviso")
+    novas = s["c"].get(f"/whatsapp/{cid}/novas?depois=0").get_json()
+    assert novas["sugestao"], "o aviso automático não é resposta"
+    with s["bd"].transaction() as con:
+        _banco(con).escrever("UPDATE wa_conversa SET sugestao='Sobrou.' WHERE id=%s", (cid,))
+        WA.gravar_saida(con, cid, "O modelo.", "wamid.sug-mod", autor="MARIO", tipo="modelo")
+    assert s["c"].get(f"/whatsapp/{cid}/novas?depois=0").get_json()["sugestao"] == ""
+
+
+@pytest.mark.parametrize("autor", ["MARIO EXEMPLO DOS SANTOS", "ia"])
+def test_a_resposta_de_pessoa_ou_da_ia_limpa_as_duas_colunas(s, autor):
+    cid = _entrar(s, meta_id="wamid.sug-limpa")
+    with s["bd"].transaction() as con:
+        WA.salvar_rascunho(con, cid, "Guardado.")
+    _saida(s, cid, "Respondido.", autor, "wamid.sug-limpa-out")
+    assert not _colunas(s, cid)["sugestao"] and not _colunas(s, cid)["rascunho"]
+
+
+@pytest.mark.parametrize("tipo", ["aviso", "modelo"])
+def test_o_aviso_e_o_modelo_nao_limpam(s, tipo):
+    cid = _entrar(s, meta_id=f"wamid.sug-{tipo}")
+    with s["bd"].transaction() as con:
+        WA.salvar_rascunho(con, cid, "Guardado.")
+        WA.gravar_saida(con, cid, "Automático.", f"wamid.sug-{tipo}-out", autor="x", tipo=tipo)
+    assert _colunas(s, cid)["sugestao"] and _colunas(s, cid)["rascunho"] == "Guardado."
+
+
+def test_a_passagem_das_linhas_antigas_roda_uma_vez_so(s):
+    def _de(wa_id, meta_id):
+        s["c"].post("/whatsapp/webhook", data=json.dumps(_payload("oi", meta_id, wa_id)),
+                    content_type="application/json", headers={"X-Wa-Test": "1"})
+        return int(_um(s, "SELECT id FROM wa_conversa WHERE wa_id=%s", (wa_id,))["id"])
+    enviado = _de("5599900000001", "wamid.ant-1")
+    antigo = _de("5599900000002", "wamid.ant-2")
+    _saida(s, enviado, "Já foi enviado.", "MARIO", "wamid.ant-1-out")
+    with s["bd"].transaction() as con:
+        bd = _banco(con)
+        bd.escrever("UPDATE wa_conversa SET rascunho=' Já foi enviado. ' WHERE id=%s", (enviado,))
+        bd.escrever("UPDATE wa_conversa SET rascunho='Texto antigo.' WHERE id=%s", (antigo,))
+        bd.escrever("ALTER TABLE wa_conversa DROP COLUMN sugestao")
+        SCH.init_wa_schema(con)
+    assert not _colunas(s, enviado)["rascunho"] and not _colunas(s, enviado)["sugestao"]
+    assert not _colunas(s, antigo)["rascunho"]
+    assert _colunas(s, antigo)["sugestao"] == "Texto antigo."
+    # rodar de novo não muda nada, nem o que uma pessoa guardou depois
+    with s["bd"].transaction() as con:
+        WA.salvar_rascunho(con, antigo, "Agora é de uma pessoa.")
+        SCH.init_wa_schema(con)
+    assert _colunas(s, antigo)["rascunho"] == "Agora é de uma pessoa."
+    assert _colunas(s, antigo)["sugestao"] == "Texto antigo."
+
+
+def test_o_novas_traz_a_sugestao_e_o_script_sai_como_texto(s):
+    cid = _entrar(s, texto="qual o horario?", meta_id="wamid.sug-xss")
+    with s["bd"].transaction() as con:
+        _banco(con).escrever("UPDATE wa_conversa SET sugestao=%s WHERE id=%s", (SCRIPT, cid))
+    assert s["c"].get(f"/whatsapp/{cid}/novas?depois=0").get_json()["sugestao"] == SCRIPT
+    html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    assert SCRIPT not in html and ESCAPADO in html
+    js = (RAIZ / "static" / "whatsapp_chat.js").read_text(encoding="utf-8")
+    assert "texto.placeholder = sugestaoDaCaixa()" in js
+    assert "innerHTML = sugest" not in js
+
+
+# ===================================================================
+# O BALÃO SOBE NA HORA (30/10/2026)
+# ===================================================================
+
+JSON_ACCEPT = {"Accept": "application/json"}
+TOKEN = "11111111-2222-4333-8444-555555555555"
+
+
+def _enviar_json(s, cid, monkeypatch, postar, token=TOKEN, texto="A certidão já saiu."):
+    monkeypatch.setattr(WA, "postar_envio", postar)
+    csrf = _csrf(s["c"], f"/whatsapp/{cid}")
+    return s["c"].post(f"/whatsapp/{cid}/enviar", headers=JSON_ACCEPT,
+                       data={"csrf_token": csrf, "rascunho": texto, "envio_token": token})
+
+
+def test_com_accept_json_devolve_o_id_e_o_token_e_posta_fora_da_transacao(s, monkeypatch):
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.j-1")
+    aberta = _transacao_vigiada(s, monkeypatch)
+    postados = []
+
+    def postar(pedido):
+        postados.append(bool(aberta))
+        return "wamid.j-1-out"
+    r = _enviar_json(s, cid, monkeypatch, postar)
+    assert r.status_code == 200 and r.headers["Content-Type"].startswith("application/json")
+    d = r.get_json()
+    saida = _saidas(s, cid)[0]
+    assert d["ok"] and d["id"] == saida["id"] and d["token"] == TOKEN
+    assert saida["envio_token"] == TOKEN and postados == [False]
+    novas = s["c"].get(f"/whatsapp/{cid}/novas?depois=0").get_json()
+    assert f'data-wa-token="{TOKEN}"' in novas["html"]
+    assert [e["token"] for e in novas["entregas"]] == [TOKEN]
+
+
+def test_o_mesmo_token_duas_vezes_posta_uma_vez_e_grava_uma_saida(s, monkeypatch):
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.j-2")
+    postados = []
+
+    def postar(pedido):
+        postados.append(1)
+        return "wamid.j-2-out"
+    um = _enviar_json(s, cid, monkeypatch, postar).get_json()
+    dois = _enviar_json(s, cid, monkeypatch, postar).get_json()
+    assert len(postados) == 1 and len(_saidas(s, cid)) == 1
+    assert um["id"] == dois["id"] and dois["ok"]
+
+
+def test_o_token_em_curso_nao_posta_em_dobro(s, monkeypatch):
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.j-curso")
+    csrf = _csrf(s["c"], f"/whatsapp/{cid}")
+    respostas = []
+
+    def postar(pedido):
+        # o «tentar de novo» chega com o primeiro POST ainda falando com a Graph
+        outro = s["app"].test_client()
+        with outro.session_transaction() as novo, s["c"].session_transaction() as antigo:
+            novo.update(antigo)
+        respostas.append(outro.post(f"/whatsapp/{cid}/enviar", headers=JSON_ACCEPT, data={
+            "csrf_token": csrf, "rascunho": "Texto.", "envio_token": TOKEN}))
+        return "wamid.j-curso-out"
+    assert _enviar_json(s, cid, monkeypatch, postar, texto="Texto.").get_json()["ok"]
+    assert respostas[0].status_code == 409 and respostas[0].get_json()["em_curso"]
+    assert len(_saidas(s, cid)) == 1
+
+
+def test_a_falha_da_meta_vem_em_json_sem_saida_e_com_a_frase_pronta(s, monkeypatch):
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.j-3")
+
+    def recusa(pedido):
+        raise WA.EnvioErro("A Graph recusou (400, código 131047): Re-engagement message")
+    r = _enviar_json(s, cid, monkeypatch, recusa)
+    d = r.get_json()
+    assert r.status_code == 422 and d["ok"] is False
+    assert d["motivo"] == WA.MOTIVO_DA_ENTREGA["131047"] and "131047" in d["erro"]
+    assert not _saidas(s, cid)
+
+
+def test_sem_o_accept_a_rota_continua_redirecionando(s, monkeypatch):
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.j-4")
+    monkeypatch.setattr(WA, "postar_envio", lambda pedido: "wamid.j-4-out")
+    csrf = _csrf(s["c"], f"/whatsapp/{cid}")
+    r = s["c"].post(f"/whatsapp/{cid}/enviar", data={"csrf_token": csrf, "rascunho": "Oi."})
+    assert r.status_code == 302 and f"/whatsapp/{cid}" in r.headers["Location"]
+    assert "Mensagem enviada no WhatsApp" in s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+
+
+def test_o_auditor_recebe_403_tambem_no_caminho_json(s, monkeypatch):
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.j-5")
+    s["bd"].create_user("fiscal", "Auditor Exemplo", SENHA, "AUDITOR")
+    fiscal = _logar(s["app"], "fiscal")
+    tela = fiscal.get(f"/whatsapp/{cid}").get_data(as_text=True)
+    monkeypatch.setattr(WA, "postar_envio", lambda pedido: pytest.fail("o AUDITOR chegou à rede"))
+    r = fiscal.post(f"/whatsapp/{cid}/enviar", headers=JSON_ACCEPT, data={
+        "csrf_token": _token(tela), "rascunho": "não pode", "envio_token": TOKEN})
+    assert r.status_code == 403 and not _saidas(s, cid)
+
+
+def test_a_caixa_vazia_e_recusada_em_json_e_a_sugestao_nao_sai(s, monkeypatch):
+    _com_token(s)
+    cid = _entrar(s, texto="qual o horario?", meta_id="wamid.j-vazia")
+    r = _enviar_json(s, cid, monkeypatch, lambda pedido: pytest.fail("a caixa vazia postou"),
+                     texto="   ")
+    assert r.status_code == 400 and r.get_json()["ok"] is False and not _saidas(s, cid)
+
+
+@pytest.mark.parametrize("token", ["", "x" * 65, "abc def", "abc_def", "<script>", "abc/../d",
+                                   "çãõ"])
+def test_o_envio_token_invalido_e_recusado_em_json_sem_postar(s, monkeypatch, token):
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.j-token")
+    r = _enviar_json(s, cid, monkeypatch, lambda pedido: pytest.fail("o token inválido postou"),
+                     token=token)
+    assert r.status_code == 400 and r.get_json()["ok"] is False
+    assert not _saidas(s, cid)
+
+
+def test_o_envio_token_de_64_caracteres_e_aceito(s, monkeypatch):
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.j-64")
+    r = _enviar_json(s, cid, monkeypatch, lambda pedido: "wamid.j-64-out", token="a-1" * 21 + "b")
+    assert r.get_json()["ok"]
+
+
+def test_o_js_monta_o_balao_com_textcontent_e_tem_a_fila(s):
+    js = (RAIZ / "static" / "whatsapp_chat.js").read_text(encoding="utf-8")
+    assert "filaDeEnvio" in js and "keepalive: true" in js and "beforeunload" in js
+    assert 'querySelector("[data-wa-prov-texto]").textContent = item.texto' in js
+    # o único innerHTML é o do parcial que o servidor já escapou
+    assert js.count("innerHTML") == 1 and "molde.innerHTML = html" in js
+    assert "crypto.randomUUID" in js and "getRandomValues" in js
+    cid = _entrar(s, meta_id="wamid.j-molde")
+    html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    assert "<template data-wa-molde-balao>" in html
+    assert "tentar de novo" in html and "descartar" in html
+
+
+def test_o_texto_guardado_tem_o_usuario_na_chave_e_o_de_outro_e_descartado(s):
+    cid = _entrar(s, meta_id="wamid.j-sessao")
+    usuario = _um(s, "SELECT id FROM users WHERE username='tabeliao'")["id"]
+    html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    assert f'data-wa-usuario="{usuario}"' in html and f'data-wa-conversa="{cid}"' in html
+    assert f'data-wa-usuario="{usuario}"' in s["c"].get("/whatsapp").get_data(as_text=True)
+    js = (RAIZ / "static" / "whatsapp_chat.js").read_text(encoding="utf-8")
+    assert ('PREFIXO_DA_CAIXA + usuarioDaTela + "-" + '
+            'formulario.getAttribute("data-wa-conversa")') in js
+    # a chave de outro usuário é apagada antes de qualquer leitura
+    limpeza = js.index("guardadas.removeItem(chave)")
+    assert 'chave.indexOf(PREFIXO_DA_CAIXA + usuarioDaTela + "-") !== 0' in js
+    assert limpeza < js.index("guardadas.getItem(chaveDaCaixa())")
+
+
+# ===================================================================
+# REVISÃO DO #141 (30/10/2026): a fila guardada, o «tentar de novo» e a etiqueta do TAB
+# ===================================================================
+
+
+def _js():
+    return (RAIZ / "static" / "whatsapp_chat.js").read_text(encoding="utf-8")
+
+
+def _corpo_da_funcao(js, nome):
+    inicio = js.index(f"function {nome}(")
+    fim = js.index("\n  }\n", inicio)
+    return js[inicio:fim]
+
+
+def test_a_fila_e_guardada_com_token_texto_e_motivo_e_nao_ha_innerhtml():
+    js = _js()
+    gravar = _corpo_da_funcao(js, "gravarGuardado")
+    for campo in ("token: item.token", "texto: item.texto", "motivo: item.motivo",
+                  "chaveDaCaixa()", "JSON.stringify"):
+        assert campo in gravar, campo
+    assert js.count("innerHTML") == 1 and "molde.innerHTML = html" in js
+    # a cada mudança da fila, e não só ao sair
+    for funcao in ("tirarDaFila", "falhar", "enfileirar"):
+        assert "guardarFila()" in _corpo_da_funcao(js, funcao), funcao
+
+
+def test_a_restauracao_nao_reenvia_e_descarta_o_que_ja_saiu():
+    js = _js()
+    restaurar = _corpo_da_funcao(js, "restaurarDaFila")
+    assert 'estado: "falhou"' in restaurar and "balaoDoServidor(salvo.token)" in restaurar
+    assert "postarOProximo" not in restaurar and "fetch" not in restaurar
+    recuperar = _corpo_da_funcao(js, "recuperarACaixa")
+    assert "dados.fila.forEach(restaurarDaFila)" in recuperar
+    assert "postarOProximo" not in recuperar
+    assert "balaoDoServidor(e.token)" in _corpo_da_funcao(js, "conferirTokens")
+
+
+def test_a_sessao_vencida_guarda_na_caixa_so_o_que_estava_na_caixa():
+    guardar = _corpo_da_funcao(_js(), "guardarACaixa")
+    assert "filaDeEnvio" not in guardar and "texto.value =" not in guardar
+
+
+def test_o_aviso_do_navegador_nao_vale_para_a_saida_interna():
+    js = _js()
+    assert "filaDeEnvio.length && !parado && !saidaInterna" in js
+    assert 'closest("a[href]")' in js and "marcarSaidaInterna" in js
+
+
+@pytest.mark.parametrize("codigo, definitivo, reabrir", [
+    (131047, True, True), (131026, True, False), (131016, False, False)])
+def test_a_recusa_diz_se_repetir_adianta(s, monkeypatch, codigo, definitivo, reabrir):
+    _com_token(s)
+    cid = _entrar(s, meta_id=f"wamid.d-{codigo}")
+
+    def recusa(pedido):
+        raise WA.EnvioErro(f"A Graph recusou (400, código {codigo}): falso")
+    d = _enviar_json(s, cid, monkeypatch, recusa).get_json()
+    assert d["ok"] is False and d["definitivo"] is definitivo and d["reabrir"] is reabrir
+
+
+@pytest.mark.parametrize("erro", ["A Graph recusou (503). Fora do ar",
+                                  "Nao consegui falar com a Graph: tempo. Nada foi enviado."])
+def test_a_falha_passageira_continua_com_tentar_de_novo(s, monkeypatch, erro):
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.d-pass")
+
+    def recusa(pedido):
+        raise WA.EnvioErro(erro)
+    assert _enviar_json(s, cid, monkeypatch, recusa).get_json()["definitivo"] is False
+
+
+def test_o_tentar_de_novo_posta_de_novo_com_a_recusa_rapida(s, monkeypatch):
+    """A causa do «não faz nada»: o clique posta, e a recusa volta em milissegundos."""
+    _com_token(s)
+    cid = _entrar(s, meta_id="wamid.d-repete")
+    postados = []
+
+    def recusa(pedido):
+        postados.append(1)
+        raise WA.EnvioErro("A Graph recusou (503). Fora do ar")
+    _enviar_json(s, cid, monkeypatch, recusa)
+    _enviar_json(s, cid, monkeypatch, recusa)
+    assert len(postados) == 2 and not _saidas(s, cid)
+    js = _js()
+    assert "RELOGIO_MINIMO_MS = 1000" in js and "tentou às" in js
+    assert 'querySelector("[data-wa-tentar]").hidden = item.definitivo' in js
+
+
+def test_a_etiqueta_do_tab_fica_na_caixa_e_faz_o_mesmo_que_o_tab(s):
+    cid = _entrar(s, texto="qual o horario?", meta_id="wamid.d-etiqueta")
+    html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    campo = re.search(r'<div class="wa-caixa-campo">.*?</div>', html, re.S).group(0)
+    assert "<textarea" in campo and "usar sugestão" in campo
+    assert re.search(r'<button type="button"[^>]*data-wa-sugestao-aviso[^>]*hidden', campo)
+    assert "TAB para usar" not in html
+    js = _js()
+    assert 'avisoDaSugestao.addEventListener("click", aceitarSugestao)' in js
+    assert "aceitarSugestao();" in js and "innerHTML" not in _corpo_da_funcao(js, "aceitarSugestao")
+    css = (RAIZ / "static" / "app.css").read_text(encoding="utf-8")
+    assert "padding-bottom:30px" in css and ".wa-caixa-campo{position:relative}" in css
+
+
+def test_o_caminho_do_modelo_vem_no_molde_do_balao(s):
+    cid = _entrar(s, meta_id="wamid.d-molde")
+    html = s["c"].get(f"/whatsapp/{cid}").get_data(as_text=True)
+    molde = html[html.index("<template data-wa-molde-balao>"):html.index("</template>")]
+    assert "data-wa-reabrir" in molde and "modelo de retomar" in molde

@@ -696,6 +696,46 @@ def test_o_teto_do_audio_vale_no_meio_da_rodada(casa, monkeypatch):
     assert chamadas == ["graph.facebook.com", "lookaside.fbsbx.com"]
 
 
+def test_neste_servidor_e_um_audio_por_rodada_e_nada_vai_a_openai(casa, monkeypatch):
+    """A rodada espera o áudio aqui (`wa_transcricao_local`): dois na fila, um por vez."""
+    import wa_transcricao_local as LOCAL
+    db = casa["db"]
+    _cfg(db, **{SCH.CHAVE_AUDIO_LIGADO: "1", SCH.CHAVE_AUDIO_ONDE: LOCAL.AQUI})
+    _entrada(db, "", meta_id="wamid.au10", msg=_audio("5599900000061", "wamid.au10"))
+    _entrada(db, "", meta_id="wamid.au11", msg=_audio("5599900000062", "wamid.au11"))
+    feitos = []
+
+    def falso(pasta, audio, mime, **k):
+        feitos.append(k["finalidade"])
+        return {"texto": "qual o horário?", "segundos": 10.0, "custo_usd": 0.0,
+                "modelo": LOCAL.MODELO, "provedor": LOCAL.PROVEDOR}
+    monkeypatch.setattr(LOCAL, "transcrever", falso)
+    chamadas = []
+    r = _rodar(db, casa["pasta"], https=_https_do_audio(chamadas))
+    assert r["audios"] == 1 and feitos == ["wa_audio"]
+    assert "api.openai.com" not in chamadas
+    m = _um(db, "SELECT transcricao FROM wa_mensagem WHERE meta_id='wamid.au10'")
+    assert m["transcricao"] == "qual o horário?"
+    outro = _um(db, "SELECT transcricao FROM wa_mensagem WHERE meta_id='wamid.au11'")
+    assert outro["transcricao"] is None, "o segundo fica para a próxima rodada, sem ser pego"
+
+
+def test_neste_servidor_o_audio_que_falha_vai_para_uma_pessoa(casa, monkeypatch):
+    """O mesmo caminho da OpenAI fora do ar: a rodada não cai, e o áudio fica sem texto."""
+    import wa_transcricao_local as LOCAL
+    db = casa["db"]
+    _cfg(db, **{SCH.CHAVE_AUDIO_LIGADO: "1", SCH.CHAVE_AUDIO_ONDE: LOCAL.AQUI})
+    _entrada(db, "", meta_id="wamid.au12", msg=_audio("5599900000063", "wamid.au12"))
+
+    def falso(pasta, audio, mime, **k):
+        raise TRANSC.TranscricaoErro("A transcrição neste servidor falhou.")
+    monkeypatch.setattr(LOCAL, "transcrever", falso)
+    r = _rodar(db, casa["pasta"], https=_https_do_audio([]))
+    assert r["ok"] is True
+    m = _um(db, "SELECT transcricao FROM wa_mensagem WHERE meta_id='wamid.au12'")
+    assert m["transcricao"] == ""
+
+
 def test_mensagem_longa_demais_vai_para_pessoa_sem_subir(casa):
     db = casa["db"]
     _cfg(db)

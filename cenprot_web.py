@@ -426,6 +426,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         flash(f"Arquivo {arquivo['nome']} subiu à CENPROT "
               f"({ambiente.lower()}) com {arquivo['linhas']} título(s).",
               "success")
+        if arquivo["fora"]:
+            flash(PCEN.frase_do_que_ficou_fora(arquivo), "warning")
         return redirect(url_for("protesto_cenprot"))
 
     @app.route("/protesto/cenprot/testar", methods=["POST"])

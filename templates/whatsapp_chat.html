@@ -19,7 +19,7 @@
   {% if rotina and rotina.horario_descrito %}· <span class="muted">atendimento {{ rotina.horario_descrito }}</span>{% endif %}
 </p>
 
-<div class="wa-chat{% if c %} wa-com-conversa{% endif %}">
+<div class="wa-chat{% if c %} wa-com-conversa{% endif %}" data-wa-usuario="{{ usuario_id or '' }}">
 
   <section class="wa-painel wa-coluna-lista" aria-label="Conversas">
     <div class="wa-lista-topo">
@@ -272,10 +272,24 @@
 
         {#- UM FORMULÁRIO, DOIS BOTÕES: «Enviar» manda o que está na caixa (a rota
             guarda como rascunho e envia); «guardar rascunho» só guarda. O campo
-            é o `rascunho` das duas rotas. `data-wa-envio-unico`: o JS desliga o
-            Enviar no primeiro envio, contra o envio em dobro. -#}
+            é o `rascunho` das duas rotas. O BALÃO SOBE NA HORA (30/10/2026): com
+            JavaScript, o Enviar entra na fila da conversa (`data-wa-fila`), e o balão
+            provisório sai do `<template>`; sem JavaScript, tudo funciona como antes. -#}
+        <template data-wa-molde-balao>
+          <div class="wa-balao wa-provisorio wa-out" data-wa-provisorio>
+            <div class="wa-texto" data-wa-prov-texto></div>
+            <div class="wa-hora">
+              <span data-wa-prov-hora></span> ·
+              <span class="wa-entrega" data-wa-prov-marca data-wa-entrega=""></span>
+            </div>
+            <div class="wa-prov-acoes small" data-wa-prov-acoes hidden>
+              <button type="button" class="button secondary" data-wa-tentar>tentar de novo</button>
+              <button type="button" class="button secondary" data-wa-descartar>descartar</button>
+            </div>
+          </div>
+        </template>
         <form method="post" action="{{ url_for('whatsapp_enviar', conversa_id=c.id) }}"
-              class="wa-escrever" data-wa-envio-unico>
+              class="wa-escrever" data-wa-fila data-wa-conversa="{{ c.id }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           {#- AS RESPOSTAS PRONTAS (29/10/2026, `wa_rotina`): escolher uma põe o
               texto na caixa, com {nome} trocado pelo primeiro nome do cliente.

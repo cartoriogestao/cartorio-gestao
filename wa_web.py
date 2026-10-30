@@ -24,6 +24,8 @@ O ATENDENTE COM IA, AS ETIQUETAS, O SETOR E O PAINEL (26/10/2026)
 """
 from __future__ import annotations
 
+import re
+import threading
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -50,6 +52,9 @@ ENTREGAS_NO_NOVAS = 30
 
 #: O cabeçalho que marca a resposta do `/whatsapp/lista-parcial` (o JS confere).
 CABECALHO_DO_PARCIAL = "X-Wa-Parcial"
+
+#: O token que o navegador gera para cada envio (`whatsapp_chat.js`).
+ENVIO_TOKEN_VALIDO = re.compile(r"[A-Za-z0-9-]{1,64}")
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit):
@@ -619,6 +624,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                                **_da_lista(filtro), aberta=conversa_id, c=d,
                                pode_enviar=pode, usuarios=usuarios,
                                janela=janela, rotina=rotina,
+                               usuario_id=app.extensions["usuario_id"](),
                                respostas=rotina["respostas"],
                                aceitos_no_envio=", ".join(sorted(MIDIA.ENVIO_POR_EXTENSAO)),
                                como_mostrar=MIDIA.como_mostrar,
@@ -662,8 +668,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         # pelo `rotulo_da_entrega`, para o JS atualizar os balões que já estão
         # na tela.
         enviadas = [m for m in todas if m.get("direcao") == WA.DIR_OUT][-ENTREGAS_NO_NOVAS:]
-        entregas = [{"id": int(m["id"]), **WA.rotulo_da_entrega(m.get("entrega"),
-                                                              m.get("entrega_erro"))}
+        entregas = [{"id": int(m["id"]), "token": m.get("envio_token") or "",
+                     **WA.rotulo_da_entrega(m.get("entrega"), m.get("entrega_erro"))}
                     for m in enviadas]
         return jsonify({"html": html, "entregas": entregas,
                         "ultimo": max([depois] + [int(m["id"]) for m in novas]),
@@ -860,10 +866,59 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         flash("Rascunho guardado. Nao foi enviado ao WhatsApp.", "success")
         return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
 
+    # O TOKEN EM CURSO (30/10/2026): o «tentar de novo» de uma resposta perdida
+    # pode chegar com o primeiro POST ainda falando com a Graph. Nada está gravado,
+    # e sem esta trava a mensagem sairia duas vezes. O servidor é um processo só.
+    tokens_em_curso: set[tuple[int, str]] = set()
+    trava_dos_tokens = threading.Lock()
+
+    def _enviar_em_json(conversa_id: int):
+        """O ENVIO DA FILA DA TELA (30/10/2026): o mesmo caminho, montar lendo,
+        postar fora da transação e gravar, com JSON no lugar do `flash`. Não
+        guarda rascunho: a fila manda uma mensagem atrás da outra, e o texto vem
+        do pedido."""
+        token = request.form.get("envio_token") or ""
+        if not ENVIO_TOKEN_VALIDO.fullmatch(token):
+            return jsonify({"ok": False, "motivo": "Envio recusado: identificador inválido."}), 400
+        texto = (request.form.get("rascunho") or "").strip()
+        if not texto:
+            return jsonify({"ok": False, "token": token, "motivo": "Escreva a mensagem."}), 400
+        chave = (conversa_id, token)
+        with trava_dos_tokens:
+            if chave in tokens_em_curso:
+                return jsonify({"ok": False, "token": token, "em_curso": True,
+                                "motivo": "A mensagem ainda está indo."}), 409
+            tokens_em_curso.add(chave)
+        try:
+            with _con() as con:
+                d = WA.cabecalho_da_conversa(con, conversa_id)
+                if not d:
+                    abort(404)
+                gravada = WA.mensagem_por_token(con, conversa_id, token)
+                pedido = None if gravada else WA.montar_envio(con, d["wa_id"], texto)
+            if gravada:
+                return jsonify({"ok": True, "id": int(gravada["id"]), "token": token,
+                                **WA.rotulo_da_entrega(gravada.get("entrega"),
+                                                       gravada.get("entrega_erro"))})
+            meta_id = WA.postar_envio(pedido)
+            with db.transaction() as con:
+                mid = WA.gravar_saida(con, conversa_id, texto, meta_id, autor=_quem(),
+                                      agora=db.now(), envio_token=token)
+        except WA.EnvioErro as e:
+            return jsonify({"ok": False, "token": token, "erro": str(e),
+                            "motivo": WA.motivo_do_envio(e)}), 422
+        finally:
+            with trava_dos_tokens:
+                tokens_em_curso.discard(chave)
+        audit("wa_enviar", "wa_conversa", conversa_id, {"ok": True})
+        return jsonify({"ok": True, "id": mid, "token": token, **WA.rotulo_da_entrega("", "")})
+
     @app.route("/whatsapp/<int:conversa_id>/enviar", methods=["POST"])
     @login_required
     @roles_required(*PRATICA)
     def whatsapp_enviar(conversa_id: int):
+        if "application/json" in (request.headers.get("Accept") or ""):
+            return _enviar_em_json(conversa_id)
         # MONTAR, POSTAR E GRAVAR (26/10/2026): o POST na Graph ficava dentro
         # da transação, com a trava de escrita da casa presa até oito segundos.
         #

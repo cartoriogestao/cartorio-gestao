@@ -323,6 +323,9 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # A SUGESTÃO NÃO É TEXTO ESCRITO (30/10/2026): o texto automático mora aqui,
     # e o `rascunho` é só o que uma pessoa guardou.
     ("wa_conversa", "sugestao", "TEXT"),
+    # O ENVIO SEM DUPLICAR (30/10/2026): o token que o navegador gerou para esta
+    # mensagem. O mesmo token de novo devolve a já gravada, sem postar outra vez.
+    ("wa_mensagem", "envio_token", "TEXT"),
 )
 INDICES_DEPOIS_DA_MIGRACAO: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_wa_mensagem_ia "
@@ -335,6 +338,8 @@ INDICES_DEPOIS_DA_MIGRACAO: tuple[str, ...] = (
     # O vigia procura, a cada volta, o arquivo que ainda não foi baixado.
     "CREATE INDEX IF NOT EXISTS idx_wa_mensagem_midia "
     "ON wa_mensagem(midia_situacao, id) WHERE midia_id IS NOT NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_wa_mensagem_envio_token "
+    "ON wa_mensagem(conversa_id, envio_token) WHERE envio_token IS NOT NULL",
 )
 
 

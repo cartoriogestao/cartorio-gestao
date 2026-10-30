@@ -629,14 +629,14 @@ def test_o_novas_traz_a_entrega_das_enviadas_ao_vivo(s):
     assert f'data-wa-entrega-de="{mid}" data-wa-entrega=""' in tela
     ultimo = _um(db, "SELECT max(id) AS n FROM wa_mensagem WHERE conversa_id=%s", (cid,))["n"]
     antes = s["c"].get(f"/whatsapp/{cid}/novas?depois={ultimo}").get_json()["entregas"]
-    assert antes == [{"id": mid, "entrega": "", "marca": "", "titulo": ""}]
+    assert antes == [{"id": mid, "token": "", "entrega": "", "marca": "", "titulo": ""}]
     corpo = {"entry": [{"changes": [{"value": {"statuses": [
         {"id": "wamid.e-3", "status": "read"}]}}]}]}
     with db.transaction() as con:
         WA.aplicar_entrada(con, corpo, agora=AGORA)
     depois = s["c"].get(f"/whatsapp/{cid}/novas?depois={ultimo}").get_json()
     assert depois["html"] == ""                    # nada novo para desenhar...
-    assert depois["entregas"] == [{"id": mid, "entrega": "read", "marca": "✓✓",
+    assert depois["entregas"] == [{"id": mid, "token": "", "entrega": "read", "marca": "✓✓",
                                    "titulo": "o cliente leu"}]   # ...mas a entrega anda
     js = (Path(__file__).resolve().parent.parent / "static" / "whatsapp_chat.js").read_text(
         encoding="utf-8")

@@ -8,7 +8,8 @@
  *     automação), e não por esta tela;
  *   - a busca da lista, no navegador;
  *   - Ctrl+Enter envia (Enter só pula linha: num cartório, mensagem enviada
- *     sem querer não se desfaz), e o envio em dobro é barrado;
+ *     sem querer não se desfaz), e o balão sobe na hora, numa fila por conversa;
+ *   - a sugestão em cinza, que só o TAB torna texto;
  *   - o painel de detalhes.
  *
  * O TEXTO DO CLIENTE NUNCA VIRA HTML AQUI. Um cliente pode mandar `<script>`
@@ -36,6 +37,7 @@
       return;
     }
     parado = true;
+    guardarACaixa();
     relogios.forEach(function (relogio) { window.clearInterval(relogio); });
     window.location.reload();
   }
@@ -116,6 +118,7 @@
   }
 
   var perguntandoConversa = false;
+  var perguntarDeNovo = false;
 
   function perguntarConversa() {
     if (!caixa || parado || perguntandoConversa || !visivel()) {
@@ -144,7 +147,7 @@
           if (vazio) {
             vazio.remove();
           }
-          caixa.appendChild(nosDoServidor(dados.html));
+          pendurarNovas(dados.html);
           // Quem subiu para ler o histórico não é puxado de volta.
           if (estavaNoFim) {
             rolarParaOFim();
@@ -154,11 +157,27 @@
           caixa.setAttribute("data-ultimo", String(dados.ultimo));
         }
         atualizarEstado(dados);
+        conferirTokens(dados.entregas);
         atualizarEntregas(dados.entregas);
         trocarSugestao(dados.sugestao);
       })
       .catch(function () { /* a próxima pergunta tenta de novo */ })
-      .then(function () { perguntandoConversa = false; });
+      .then(function () {
+        perguntandoConversa = false;
+        if (perguntarDeNovo) {
+          perguntarDeNovo = false;
+          perguntarConversa();
+        }
+      });
+  }
+
+  /* Depois do envio, sem esperar o relógio; com uma pergunta no ar, logo depois dela. */
+  function perguntarConversaAgora() {
+    if (perguntandoConversa) {
+      perguntarDeNovo = true;
+    } else {
+      perguntarConversa();
+    }
   }
 
   // -------------------------------------------------------------- a lista
@@ -210,46 +229,308 @@
   }
 
   // ----------------------------------------------- a caixa de escrever
-  var formulario = document.querySelector("form[data-wa-envio-unico]");
+  var formulario = document.querySelector("form[data-wa-fila]");
   var botaoEnviar = formulario && formulario.querySelector("[data-wa-enviar]");
   var texto = formulario && formulario.querySelector("[data-wa-caixa]");
+  var moldeDoBalao = document.querySelector("template[data-wa-molde-balao]");
 
-  function enviando() {
-    return formulario.getAttribute("data-wa-enviando") === "1";
+  /* O TEXTO NÃO SE PERDE COM A SESSÃO VENCIDA (30/10/2026). A chave leva o usuário e
+   * a conversa: na volta do login, o texto volta à caixa de quem o escreveu, e o de
+   * outro usuário é descartado sem aparecer. */
+  var PREFIXO_DA_CAIXA = "wa-caixa-";
+  var areaDoChat = document.querySelector("[data-wa-usuario]");
+  var usuarioDaTela = areaDoChat ? areaDoChat.getAttribute("data-wa-usuario") : "";
+
+  function chaveDaCaixa() {
+    return PREFIXO_DA_CAIXA + usuarioDaTela + "-" + formulario.getAttribute("data-wa-conversa");
   }
 
-  if (formulario && botaoEnviar) {
+  function guardarACaixa() {
+    if (!formulario || !texto) {
+      return;
+    }
+    var partes = filaDeEnvio.map(function (item) { return item.texto; });
+    if (texto.value.trim()) {
+      partes.push(texto.value);
+    }
+    if (!partes.length) {
+      return;
+    }
+    texto.value = partes.join("\n");
+    try {
+      window.sessionStorage.setItem(chaveDaCaixa(), texto.value);
+    } catch (e) { /* sem o armazenamento, o aviso de sair da página não muda */ }
+  }
+
+  function recuperarACaixa() {
+    try {
+      var guardadas = window.sessionStorage;
+      for (var i = guardadas.length - 1; i >= 0; i--) {
+        var chave = guardadas.key(i);
+        if (chave.indexOf(PREFIXO_DA_CAIXA) === 0 &&
+            chave.indexOf(PREFIXO_DA_CAIXA + usuarioDaTela + "-") !== 0) {
+          guardadas.removeItem(chave);
+        }
+      }
+      if (!formulario || !texto) {
+        return;
+      }
+      var guardado = guardadas.getItem(chaveDaCaixa());
+      if (guardado) {
+        texto.value = texto.value ? texto.value + "\n" + guardado : guardado;
+        guardadas.removeItem(chaveDaCaixa());
+      }
+    } catch (e) { /* sem o armazenamento, não há o que recuperar */ }
+  }
+
+  /* A FILA DA CONVERSA (30/10/2026): o balão aparece na hora, e o envio de verdade
+   * vai uma mensagem de cada vez, na ordem em que foram escritas. Se uma falhar, as
+   * seguintes esperam. Cada página tem uma conversa aberta, logo uma fila. O servidor
+   * segue o mesmo caminho: nada é gravado antes de a Graph responder. */
+  var RELOGIO = "🕓";
+  var ESPERA_DO_EM_CURSO_MS = 2000;
+  var filaDeEnvio = [];
+  var postando = false;
+
+  /* `crypto.randomUUID` só existe em https; o servidor da casa é `http://`. */
+  function novoToken() {
+    if (window.crypto && window.crypto.randomUUID) {
+      return window.crypto.randomUUID();
+    }
+    var bytes = new Uint8Array(16);
+    if (window.crypto && window.crypto.getRandomValues) {
+      window.crypto.getRandomValues(bytes);
+    } else {
+      for (var i = 0; i < bytes.length; i++) {
+        bytes[i] = Math.floor(Math.random() * 256);
+      }
+    }
+    return Array.prototype.map.call(bytes, function (b) {
+      return ("0" + b.toString(16)).slice(-2);
+    }).join("");
+  }
+
+  function marcarBalao(item, entrega, marca, titulo) {
+    var span = item.balao.querySelector("[data-wa-prov-marca]");
+    span.setAttribute("data-wa-entrega", entrega);
+    span.textContent = marca;
+    span.setAttribute("title", titulo || "");
+    item.balao.querySelector("[data-wa-prov-acoes]").hidden = item.estado !== "falhou";
+  }
+
+  function mostrarOsQueEsperam() {
+    var travada = filaDeEnvio.length > 0 && filaDeEnvio[0].estado === "falhou";
+    filaDeEnvio.forEach(function (item, posicao) {
+      if (posicao > 0) {
+        marcarBalao(item, "", travada ? RELOGIO + " esperando a anterior" : RELOGIO,
+                    travada ? "sai depois que a anterior for resolvida" : "ainda indo");
+      }
+    });
+  }
+
+  function tirarDaFila(item) {
+    var posicao = filaDeEnvio.indexOf(item);
+    if (posicao !== -1) {
+      filaDeEnvio.splice(posicao, 1);
+    }
+  }
+
+  function falhar(item, motivo) {
+    item.estado = "falhou";
+    marcarBalao(item, "failed", "⚠ não saiu: " + motivo, motivo);
+    mostrarOsQueEsperam();
+  }
+
+  /* O balão fica provisório até o `/novas` trazer o do servidor, mas já tem o id:
+   * a marca de entrega passa a valer. `data-ultimo` NÃO anda aqui: uma mensagem do
+   * cliente com id menor, ainda não mostrada, se perderia. */
+  function confirmar(item, dados) {
+    tirarDaFila(item);
+    item.balao.setAttribute("data-id", String(dados.id));
+    var span = item.balao.querySelector("[data-wa-prov-marca]");
+    span.setAttribute("data-wa-entrega-de", String(dados.id));
+    span.setAttribute("data-wa-entrega", dados.entrega || "");
+    span.setAttribute("title", dados.titulo || "");
+    span.textContent = dados.marca || "";
+    item.balao.querySelector("[data-wa-prov-acoes]").hidden = true;
+    mostrarOsQueEsperam();
+    perguntarConversaAgora();
+  }
+
+  function postarOProximo() {
+    var item = filaDeEnvio[0];
+    if (postando || parado || !item || item.estado === "falhou") {
+      return;
+    }
+    postando = true;
+    item.estado = "indo";
+    marcarBalao(item, "", RELOGIO, "ainda indo");
+    mostrarOsQueEsperam();
+    var campos = new URLSearchParams();
+    campos.set("csrf_token", formulario.querySelector('[name="csrf_token"]').value);
+    campos.set("rascunho", item.texto);
+    campos.set("envio_token", item.token);
+    var esperar = 0;
+    // `keepalive`: o que já saiu da fila termina, mesmo que a pessoa troque de tela.
+    fetch(formulario.getAttribute("action"), {
+      method: "POST",
+      credentials: "same-origin",
+      keepalive: true,
+      headers: {"Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded"},
+      body: campos.toString()
+    }).then(function (r) {
+      if (r.redirected || (r.ok && !respostaEsperada(r, "json"))) {
+        // A SESSÃO VENCIDA: o balão vira ⚠, e o texto volta à caixa e vai guardado.
+        falhar(item, "a sessão venceu");
+        pararERecarregar();
+        return null;
+      }
+      if (!respostaEsperada(r, "json")) {
+        falhar(item, "o servidor recusou o envio (HTTP " + r.status + ")");
+        return null;
+      }
+      return r.json();
+    }).then(function (dados) {
+      if (!dados || parado) {
+        return;
+      }
+      if (dados.ok) {
+        confirmar(item, dados);
+      } else if (dados.em_curso) {
+        esperar = ESPERA_DO_EM_CURSO_MS;
+        item.estado = "espera";
+      } else {
+        falhar(item, dados.motivo || "falhou");
+      }
+    }).catch(function () {
+      // A resposta se perdeu: a mensagem pode ter saído, e o token protege a nova tentativa.
+      falhar(item, "sem resposta do servidor");
+    }).then(function () {
+      postando = false;
+      window.setTimeout(postarOProximo, esperar);
+    });
+  }
+
+  function acrescentarBalao(item) {
+    var no = moldeDoBalao.content.firstElementChild.cloneNode(true);
+    no.setAttribute("data-wa-token", item.token);
+    no.querySelector("[data-wa-prov-texto]").textContent = item.texto;
+    var agora = new Date();
+    no.querySelector("[data-wa-prov-hora]").textContent =
+      ("0" + agora.getHours()).slice(-2) + ":" + ("0" + agora.getMinutes()).slice(-2);
+    no.querySelector("[data-wa-tentar]").addEventListener("click", function () {
+      item.estado = "espera";
+      postarOProximo();
+    });
+    no.querySelector("[data-wa-descartar]").addEventListener("click", function () {
+      tirarDaFila(item);
+      no.remove();
+      if (texto.value === "") {
+        texto.value = item.texto;
+        mostrarSugestao();
+      }
+      mostrarOsQueEsperam();
+      postarOProximo();
+    });
+    item.balao = no;
+    var vazio = caixa.querySelector(".wa-sem-mensagem");
+    if (vazio) {
+      vazio.remove();
+    }
+    caixa.appendChild(no);
+    rolarParaOFim();
+  }
+
+  /* A caixa vazia não envia, e a sugestão nunca sai sem o TAB. */
+  function enfileirar() {
+    var escrito = texto.value.trim();
+    if (!escrito || botaoEnviar.disabled) {
+      texto.focus();
+      return;
+    }
+    var item = {token: novoToken(), texto: escrito, estado: "espera", balao: null};
+    texto.value = "";
+    mostrarSugestao();
+    filaDeEnvio.push(item);
+    acrescentarBalao(item);
+    marcarBalao(item, "", RELOGIO, "ainda indo");
+    texto.focus();
+    postarOProximo();
+  }
+
+  /* O BALÃO DO SERVIDOR TOMA O LUGAR DO PROVISÓRIO, seja qual for a resposta que
+   * chegar primeiro: a mesma mensagem nunca fica em dois balões. O resto entra antes
+   * dos provisórios, que ainda não têm lugar definitivo na conversa. */
+  function provisorioDoToken(token) {
+    var todos = caixa.querySelectorAll("[data-wa-provisorio]");
+    for (var i = 0; i < todos.length; i++) {
+      if (token && todos[i].getAttribute("data-wa-token") === token) {
+        return todos[i];
+      }
+    }
+    return null;
+  }
+
+  function itemDoToken(token) {
+    return filaDeEnvio.filter(function (item) { return item.token === token; })[0];
+  }
+
+  function pendurarNovas(html) {
+    var nos = nosDoServidor(html);
+    Array.prototype.forEach.call(nos.querySelectorAll(".wa-balao"), function (balao) {
+      var token = balao.getAttribute("data-wa-token");
+      var provisorio = provisorioDoToken(token);
+      if (!provisorio) {
+        return;
+      }
+      var item = itemDoToken(token);
+      if (item) {
+        tirarDaFila(item);
+      }
+      var antes = balao.previousElementSibling;
+      if (antes && antes.classList.contains("wa-dia")) {
+        provisorio.parentNode.insertBefore(antes, provisorio);
+      }
+      provisorio.parentNode.replaceChild(balao, provisorio);
+    });
+    caixa.insertBefore(nos, caixa.querySelector("[data-wa-provisorio]"));
+    mostrarOsQueEsperam();
+    postarOProximo();
+  }
+
+  /* Se a resposta do POST se perdeu e a mensagem já está gravada, a entrega traz o
+   * token, e o balão com ⚠ não fica pedindo uma nova tentativa. */
+  function conferirTokens(entregas) {
+    (entregas || []).forEach(function (e) {
+      var item = e.token ? itemDoToken(e.token) : null;
+      if (item && item.estado !== "indo") {
+        confirmar(item, e);
+        postarOProximo();
+      }
+    });
+  }
+
+  if (formulario && botaoEnviar && texto && moldeDoBalao && caixa) {
     formulario.addEventListener("submit", function (evento) {
       // O «guardar rascunho» (formaction) não envia nada à Meta: segue livre.
       var quem = evento.submitter;
       if (quem && quem !== botaoEnviar) {
         return;
       }
-      // CONTRA O ENVIO EM DOBRO: o primeiro envio desliga o botão até a página
-      // recarregar; um segundo clique ou Ctrl+Enter não sai.
-      if (enviando() || botaoEnviar.disabled) {
-        evento.preventDefault();
-        return;
-      }
-      formulario.setAttribute("data-wa-enviando", "1");
-      botaoEnviar.textContent = "enviando…";
-      window.setTimeout(function () { botaoEnviar.disabled = true; }, 0);
-    });
-  }
-
-  if (texto && formulario && botaoEnviar) {
-    texto.addEventListener("keydown", function (evento) {
-      if (evento.key !== "Enter" || !(evento.ctrlKey || evento.metaKey)) {
-        return;
-      }
       evento.preventDefault();
-      if (enviando() || botaoEnviar.disabled) {
-        return;
+      enfileirar();
+    });
+    texto.addEventListener("keydown", function (evento) {
+      if (evento.key === "Enter" && (evento.ctrlKey || evento.metaKey)) {
+        evento.preventDefault();
+        enfileirar();
       }
-      if (formulario.requestSubmit) {
-        formulario.requestSubmit(botaoEnviar);
-      } else {
-        botaoEnviar.click();
+    });
+    window.addEventListener("beforeunload", function (evento) {
+      if (filaDeEnvio.length && !parado) {
+        evento.preventDefault();
+        evento.returnValue = "";
       }
     });
   }
@@ -385,6 +666,10 @@
   }
 
   // ------------------------------------------------------------- começo
+  recuperarACaixa();
+  if (texto) {
+    mostrarSugestao();
+  }
   if (caixa) {
     rolarParaOFim();
     relogios.push(window.setInterval(perguntarConversa, CONVERSA_MS));

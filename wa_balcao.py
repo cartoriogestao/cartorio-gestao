@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -555,6 +556,28 @@ def conversa(con: Any, conversa_id: int) -> dict | None:
     return d
 
 
+def cabecalho_da_conversa(con: Any, conversa_id: int) -> dict | None:
+    """A conversa SEM as mensagens: o que basta para o envio e para o `/novas`,
+    que não precisam ler milhares de linhas. Só lê."""
+    return banco(con).um("SELECT * FROM wa_conversa WHERE id=%s", (int(conversa_id),))
+
+
+def mensagem_por_token(con: Any, conversa_id: int, envio_token: str) -> dict | None:
+    """A mensagem já gravada com este token, nesta conversa. Só lê."""
+    return banco(con).um(
+        """SELECT id, entrega, entrega_erro FROM wa_mensagem
+            WHERE conversa_id=%s AND envio_token=%s""",
+        (int(conversa_id), envio_token))
+
+
+def motivo_do_envio(erro: Any) -> str:
+    """O motivo em português da recusa do envio: a frase pronta do código da
+    Meta (a mesma do balão que não chegou) ou o texto do erro."""
+    texto = str(erro or "")
+    codigo = re.search(r"código (\d+)", texto)
+    return MOTIVO_DA_ENTREGA.get(codigo.group(1) if codigo else "") or texto
+
+
 def sugestao_visivel(con: Any, conversa_id: int, sugestao: Any) -> str:
     """A sugestão que a caixa de escrever pode mostrar: só quando a última
     mensagem é do cliente. O aviso automático não conta, porque não é resposta
@@ -685,7 +708,8 @@ def postar_envio(pedido: dict, http_post: Callable | None = None) -> str | None:
 
 def gravar_saida(con: Any, conversa_id: int, texto: str, meta_id: str | None,
                  *, autor: str = "", agora: str | None = None,
-                 tipo: str = "text", arquivo: dict | None = None) -> int:
+                 tipo: str = "text", arquivo: dict | None = None,
+                 envio_token: str | None = None) -> int:
     """Grava a mensagem que saiu e poe a conversa em AGUARDANDO. ESCREVE.
 
     `autor` e o nome de quem apertou o botao, ou `ia` para a resposta
@@ -697,10 +721,10 @@ def gravar_saida(con: Any, conversa_id: int, texto: str, meta_id: str | None,
     mid = int(bd.escrever(
         """INSERT INTO wa_mensagem
                (conversa_id, direcao, texto, bruto_json, criado_em, meta_id,
-                tipo, autor)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                tipo, autor, envio_token)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
         (int(conversa_id), DIR_OUT, texto, None, quando, meta_id,
-         (tipo or "text")[:20], (autor or "")[:80] or None),
+         (tipo or "text")[:20], (autor or "")[:80] or None, envio_token or None),
     )[0]["id"])
     if arquivo:
         # O ARQUIVO QUE SAIU (29/10/2026, `wa_midia`): as mesmas colunas do que

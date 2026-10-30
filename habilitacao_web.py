@@ -21,6 +21,7 @@ from flask import Response, abort, flash, redirect, render_template, request, ur
 
 import ato_selado as AS
 import habilitacao as HAB
+import habilitacao_fases as HABFASES
 from bd_nativo import banco
 import hc_schema as HC
 import rc_textos as TEXTOS
@@ -500,6 +501,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     h, sv=_sv(), hoje_iso=hoje(), fmt_date=fmt_date,
                     modelo=TEXTOS.texto(CHAVE_DO_EDITAL, con))
         anexos_leitura = [dict(r) for r in db.get_attachments("HC_HABILITACAO", habilitacao_id)]
+        def fases_da_ficha() -> dict:
+            """A régua do layout novo. Só ele chama."""
+            return HABFASES.fases_da_habilitacao(
+                h, falta=falta, andamento=andamento, vencida=vencida,
+                uniao_estavel=_valor(h, "uniao_estavel_processo"))
         return render_template(
             "rcpn_habilitacao.html", h=h, documentos=documentos,
             andamento=andamento, passos=passos, falta=falta,
@@ -511,7 +517,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             uniao_estavel=_valor(h, "uniao_estavel_processo"),
             modelo_edital=modelo_edital,
             casamentos=casamentos,
-            anexos_leitura=anexos_leitura)
+            anexos_leitura=anexos_leitura,
+            fases_da_ficha=fases_da_ficha)
 
     def _fazer(con: sqlite3.Connection, habilitacao_id: int, acao: str) -> str:
         """Cada botão da ficha. ESCREVE, dentro da transação de quem chama."""

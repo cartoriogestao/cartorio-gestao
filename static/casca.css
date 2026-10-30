@@ -197,6 +197,7 @@
 .cg-ficha>.notice:not([data-fase]){order:4}
 .cg-ficha>.cg-acao{order:20}
 .cg-ficha [data-fase][hidden]{display:none!important}
+.cg-ficha>.grid2:has(>[data-fase][hidden]){grid-template-columns:minmax(0,1fr)}
 .cg-esperando>[data-fase]{display:none}
 .cg-ancora{display:block;height:0}
 .cg-so-leitor{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}

@@ -78,6 +78,7 @@ from datetime import date
 from typing import Any
 
 import escrituracao as ESC
+import protesto_cenprot as PCEN
 import protesto_cra as CRA
 import protesto_termo as TERMO
 from bd_nativo import banco
@@ -530,6 +531,11 @@ def lancar_apontamento(con, titulo_id: int, *, sv: dict,
     O ato entra PRIMEIRO na tabela e o lugar depois, como em toda a casa: se
     a reserva falhar por falta de folha, a transacao volta atras inteira e
     nao sobra ato sem lugar.
+
+    A CHAVE DO CENPROT DO TITULO DA CRA NASCE AQUI (30/10/2026): este e o ponto
+    unico, tanto do lote recebido (`protesto_remessa._receber_lote`) quanto do
+    apontamento pela ficha. Titulo que ja tem chave fica com ela; o de origem
+    CENPROT recebe a da Central. Ver `protesto_cenprot.chave_do_apontamento`.
     """
     bd = banco(con)
     tit = titulo_para_gravar(bd, titulo_id)
@@ -555,6 +561,17 @@ def lancar_apontamento(con, titulo_id: int, *, sv: dict,
         bd.escrever("UPDATE pt_titulos SET protocolo=%s WHERE id=%s",
                     (numero_do_protocolo(bd, agora), titulo_id))
 
+    # A TRAVA VEM ANTES DA LEITURA: e ela que faz o sequencial crescer sem
+    # repetir, e o segundo devedor do protocolo ver a chave do primeiro.
+    chave = (tit["chave_cenprot"] or "").strip() or None
+    if tit["origem"] == "CRA" and not chave:
+        bd.travar("pt_titulos.chave_cenprot")
+        chave = PCEN.chave_do_apontamento(
+            bd, titulo_id, protocolo_de_antes=tit["protocolo"], data=agora)
+        if chave:
+            bd.escrever("UPDATE pt_titulos SET chave_cenprot=%s WHERE id=%s",
+                        (chave, titulo_id))
+
     lugar = ESC.reservar(con, SERIE_APONTAMENTO, "pt_atos", ato_id, sv=sv,
                          agora=agora, data_extenso=data_extenso, paginas=1,
                          usuario=usuario)
@@ -565,7 +582,8 @@ def lancar_apontamento(con, titulo_id: int, *, sv: dict,
          lugar["numero_ordem"], lugar["rotulo"], ato_id))
     bd.escrever("UPDATE pt_titulos SET situacao='APONTADO' WHERE id=%s",
                (titulo_id,))
-    return {"ato_id": ato_id, "titulo_id": titulo_id, **lugar}
+    return {"ato_id": ato_id, "titulo_id": titulo_id, "chave_cenprot": chave,
+            **lugar}
 
 
 # ------------------------------------------------------------ a intimacao

@@ -12493,8 +12493,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """O XML diário que a casa sobe à CENPROT — P (protestos) e D (pagos,
         retirados e cancelados). Só LÊ.
 
-        A casa NÃO manda apontamento: o título já tem a chave, que vem do XML
-        que a Central devolve. O que entra é o que ESTE sistema lavrou e a
+        A casa NÃO manda apontamento: o título já tem a chave, calculada ao
+        apontar se veio da CRA, e nos outros casos a do XML que a Central
+        devolve. O que entra é o que ESTE sistema lavrou e a
         Central ainda não recebeu; o que não pode entrar aparece com o motivo.
         """
         acervo = _acervo_se_houver()
@@ -12786,8 +12787,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         A CENTRAL CONHECE CADA TÍTULO POR UMA CHAVE DE 23 DÍGITOS, e esta casa
         não guardava nenhuma — `chave_cenprot` está vazia nos 1.366. Este
         projeto chegou a registrar que a chave tinha um «verificador que não se
-        explica», e que por isso não dava para compô-la. **Não precisa
-        compor**: o arquivo devolve a chave ao lado do NOSSO protocolo, em 175
+        explica», e que por isso não dava para compô-la. Desde 30/10/2026 o
+        título da CRA a recebe calculada ao ser apontado; para os outros, o
+        arquivo devolve a chave ao lado do NOSSO protocolo, em 175
         de 175 títulos do exemplar medido.
 
         UM PASSO SÓ, e a razão é a mesma das imagens: **nada aqui é lavrado**.

@@ -363,9 +363,11 @@ def apresentante_do_titulo(con, titulo: Any) -> dict:
         return next((str(v).strip() for v in valores
                      if v is not None and str(v).strip()), "")
 
+    # O NÚMERO GRAVADO NO LUGAR DO NOME (30/10/2026) não é nome: vale o cadastro.
+    from protesto_arquivo import nome_de_apresentante
     return {"codigo": codigo,
-            "nome": _primeiro(t.get("apresentante_nome"), cadastro.get("nome"),
-                              codigo),
+            "nome": _primeiro(nome_de_apresentante(t.get("apresentante_nome")),
+                              cadastro.get("nome"), codigo),
             "documento": _primeiro(so_digitos(t.get("apresentante_documento")),
                                    so_digitos(cadastro.get("documento"))),
             "endereco": _primeiro(t.get("apresentante_endereco"),
@@ -428,11 +430,12 @@ def cadastrar_titulo(con, dados: dict, *, origem: str,
                aceite, motivo_protesto, irregularidades_json,
                apresentante_codigo, apresentante_nome,
                apresentante_documento, apresentante_endereco,
+               cra_identificacao,
                cedente_nome, cedente_documento, cedente_endereco,
                cedente_cep, cedente_cidade, cedente_uf,
                situacao, origem, origem_chave, importacao_id,
                criado_em, criado_por)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT (origem, origem_chave) DO NOTHING
            RETURNING id""",
         (dados.get("especie"), dados.get("numero_titulo"), dados.get("nosso_numero"),
@@ -446,6 +449,7 @@ def cadastrar_titulo(con, dados: dict, *, origem: str,
          (dados.get("apresentante_nome") or None),
          doc_apresentante or None,
          (str(dados.get("apresentante_endereco") or "").strip() or None),
+         (str(dados.get("cra_identificacao") or "").strip() or None),
          cedente.get("nome"), cedente.get("documento"), cedente.get("endereco"),
          cedente.get("cep"), cedente.get("cidade"), cedente.get("uf"),
          "RECEBIDO", origem, chave, importacao_id, agora, usuario))

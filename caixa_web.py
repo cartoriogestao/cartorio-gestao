@@ -2150,6 +2150,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/caixa/protocolos/<int:protocolo_id>/itens", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def caixa_protocolo_itens(protocolo_id):
+        SEM_FORMA_DE_PAGAMENTO = (
+            "Escolha a forma de pagamento: sem ela o lançamento entra no caixa "
+            "sem dizer como o cliente pagou. Nada foi quitado.")
         """Acrescenta, quita ou remove um item do protocolo.
 
         O valor NÃO é digitado: vem da tabela do tribunal. Ou o ato tem valor
@@ -2250,18 +2253,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # outro caminho — o botão «cobrar» da ficha do ato. Dois trilhos
             # para o mesmo dinheiro é como eles divergem: o protocolo dizia que
             # o cliente pagou e o caixa não tinha o lançamento.
+            #
+            # SEM FORMA NÃO SE QUITA — 30/10/2026. O botão de um item não
+            # mandava forma nenhuma: medido na produção, os 12 lançamentos
+            # quitados por ele estão sem forma, e os 5 do protocolo 21572 são
+            # desses. A tela agora a pergunta, e a rota recusa o vazio.
             item_id = numero_digitado(request.form.get("item_id"))
             aberto = caixa_aberto(usuario_nome())
             agora = db.now()
+            forma = str(request.form.get("forma_pagamento") or "").strip()
             try:
                 if item_id is None:
                     raise CaixaError("Escolha o item do protocolo a quitar.")
+                if aberto and not forma:
+                    raise CaixaError(SEM_FORMA_DE_PAGAMENTO)
                 with db.transaction() as con:
                     r = cobrar_item_do_protocolo(
                         con, item_id,
                         caixa_id=int(aberto["id"]) if aberto else 0,
                         agora=agora, hoje=agora[:10], hora=agora[11:16],
-                        forma_pagamento=request.form.get("forma_pagamento"),
+                        forma_pagamento=forma,
                         usuario=usuario_nome())
                     _atualizar_situacao(con, protocolo_id)
             except CaixaError as erro:
@@ -2298,8 +2309,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # que foi cobrado — e o cliente ja foi embora com o papel na mao.
             #
             # A FORMA DE PAGAMENTO DO LOTE VALE PARA TODOS OS ITENS: o pagamento
-            # e' um so. Em branco, grava em branco como no botao de um item —
-            # nao se adivinha como o cliente pagou.
+            # e' um so. Em branco, o lote recusa (30/10/2026): nao se adivinha
+            # como o cliente pagou, e lancamento sem forma nao fecha a conferencia.
+            forma = str(request.form.get("forma_pagamento") or "").strip()
             pendentes_id = [int(r["id"]) for r in q(
                 """SELECT id FROM cx_protocolo_atos
                    WHERE protocolo_id=%s AND quitado=0 ORDER BY id""",
@@ -2318,9 +2330,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 flash("Você não tem caixa aberto, e sem caixa o lançamento não "
                       "aparece na conferência do dia. Abra o caixa em "
                       "Administrativo → Caixa.", "danger")
+            elif not forma:
+                flash(SEM_FORMA_DE_PAGAMENTO, "danger")
             else:
                 agora = db.now()
-                forma = request.form.get("forma_pagamento")
                 quitados, soma_quitada, recusados = 0, 0, []
                 for item_id in pendentes_id:
                     try:

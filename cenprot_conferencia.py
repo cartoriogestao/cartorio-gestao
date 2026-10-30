@@ -361,6 +361,20 @@ def pedidos_do_titulo(titulo: dict, *, da_pendencia: Any = None) -> list[tuple[s
     return fora
 
 
+def _codigo_e_nome_da_ocorrencia(ocorrencia: Any, codigo: Any) -> tuple[str, str]:
+    """(código, nome) da ocorrência, venham na ordem que vierem. Só calcula.
+
+    O CONTRATO E A API DIZEM O CONTRÁRIO — medido em 30/10/2026, nos 96 pedidos
+    da produção. O exemplo do contrato traz `ocorrencia: Protestado` e
+    `ds_ocorrencia: '2'`; a API devolve `ocorrencia: '2'` e `ds_ocorrencia:
+    'Protestado'`. Lendo o código só em `ds_ocorrencia`, ele nunca se achava.
+    """
+    a, b = _txt(ocorrencia), _txt(codigo)
+    if a.upper() in ESTADO_DO_CODIGO and b.upper() not in ESTADO_DO_CODIGO:
+        return a.upper(), b
+    return b, a
+
+
 def estado_da_central(status: Any, ocorrencia: Any, codigo: Any) -> str:
     """Lê o que a Central disse do pedido. Só calcula.
 
@@ -368,12 +382,16 @@ def estado_da_central(status: Any, ocorrencia: Any, codigo: Any) -> str:
     contam juntos; quando brigam, ganha o que tira o título do protesto
     (`PRIORIDADE_DO_ESTADO`). Nada que se reconheça é `DESCONHECIDO` — e
     desconhecido, para a trava, é «não deu para conferir».
+
+    A OCORRÊNCIA VENCE O STATUS «APONTADO / EM ANDAMENTO» (30/10/2026): a API o
+    repete em título protestado, e o que manda é o código. Um status que tira o
+    título do protesto («Pago») continua ganhando, pela mesma prioridade.
     """
     achados: set[str] = set()
-    cod = _txt(codigo).upper()
-    if cod in ESTADO_DO_CODIGO:
-        achados.add(ESTADO_DO_CODIGO[cod])
-    texto = _sem_acento(f"{_txt(status)} {_txt(ocorrencia)}").lower()
+    cod, _ = _codigo_e_nome_da_ocorrencia(ocorrencia, codigo)
+    if cod.upper() in ESTADO_DO_CODIGO:
+        achados.add(ESTADO_DO_CODIGO[cod.upper()])
+    texto = _sem_acento(f"{_txt(status)} {_txt(ocorrencia)} {_txt(codigo)}").lower()
     for estado, padrao in PALAVRAS_DO_ESTADO:
         if re.search(padrao, texto):
             achados.add(estado)
@@ -575,7 +593,20 @@ def _protocolos_repetidos(con: Any) -> dict[int, list[dict]]:
 def _conferencias(con: Any) -> dict[int, dict]:
     linhas = banco(con).ler(
         "SELECT * FROM cn_conferencias WHERE ambiente = %s", (CRED.PRODUCAO,))
-    return {int(r["titulo_id"]): dict(r) for r in linhas}
+    fora: dict[int, dict] = {}
+    for r in linhas:
+        c = dict(r)
+        # A LEITURA VALE PARA O QUE JÁ ESTÁ GUARDADO (30/10/2026): a resposta da
+        # Central está na linha, e o estado é só a leitura dela. Sem isto, os
+        # títulos consultados antes do conserto continuariam errados até a
+        # próxima consulta à Central.
+        if any(c.get(k) for k in ("central_status", "central_ocorrencia",
+                                  "central_codigo")):
+            c["central_estado"] = estado_da_central(
+                c.get("central_status"), c.get("central_ocorrencia"),
+                c.get("central_codigo"))
+        fora[int(r["titulo_id"])] = c
+    return fora
 
 
 def _informados(con: Any) -> dict[int, list[dict]]:
@@ -654,11 +685,12 @@ def _achado(regra: str, nivel: str, frase: str, caminho: str, *,
 
 
 def _o_que_a_central_disse_em_frase(c: dict) -> str:
-    partes = [f"«{c[k]}»" for k in ("central_status", "central_ocorrencia")
-              if c.get(k)]
+    cod, nome = _codigo_e_nome_da_ocorrencia(c.get("central_ocorrencia"),
+                                             c.get("central_codigo"))
+    partes = [f"«{v}»" for v in (c.get("central_status"), nome) if v]
     texto = " / ".join(partes) or "sem status"
-    if c.get("central_codigo"):
-        texto += f" (ocorrência {c['central_codigo']})"
+    if cod:
+        texto += f" (ocorrência {cod})"
     if c.get("central_data"):
         texto += f" em {_br(c['central_data'])}"
     return texto

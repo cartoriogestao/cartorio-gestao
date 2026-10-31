@@ -726,8 +726,13 @@ def _prender(bd, despesa_id: int) -> dict:
 
 
 def autorizar(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
-              acima_do_teto: bool = False, motivo_divergencia: Any = "") -> dict:
-    """Autoriza o pagamento. Só ADMIN (decisão do oficial, 24/10/2026). ESCREVE."""
+              acima_do_teto: bool = False, motivo_divergencia: Any = "",
+              valor_visto: int | None = None) -> dict:
+    """Autoriza o pagamento. Só ADMIN (decisão do oficial, 24/10/2026). ESCREVE.
+
+    `valor_visto` é o valor que estava na tela de quem marcou a despesa na lista:
+    se ele mudou depois, a autorização não vale para o valor novo.
+    """
     if papel != "ADMIN":
         raise DespesaError("Só o oficial (ADMIN) autoriza despesa.")
     bd = banco(con)
@@ -737,6 +742,9 @@ def autorizar(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
                            f"autorização.")
     if d["forma"] == MANUAL:
         raise DespesaError("Despesa paga fora do banco não se autoriza: registre o pagamento.")
+    if valor_visto is not None and int(d["valor"]) != int(valor_visto):
+        raise DespesaError(f"O valor mudou para R$ {reais(int(d['valor']))} depois que a lista "
+                           f"abriu. Confira e autorize de novo.")
     motivo = _texto(motivo_divergencia, 500)
     if d["divergencia"] and len(motivo) < MINIMO_DA_DESCRICAO:
         raise DespesaError(f"Há divergência de valor ({d['divergencia']}). Diga por que o "
@@ -884,6 +892,51 @@ def listar(con, *, situacao: str | None = None, mes: str | None = None,
     onde = (" WHERE " + " AND ".join(filtros)) if filtros else ""
     return banco(con).ler(f"SELECT * FROM dp_despesas{onde} ORDER BY id DESC LIMIT %s",
                           (*parametros, int(limite)))
+
+
+def para_autorizar(con) -> list[dict]:
+    """As que esperam o oficial, a de vencimento mais próximo primeiro. Só LÊ.
+
+    `pendencia` diz por que a despesa só se autoriza na ficha: a divergência pede
+    o motivo por escrito, e o teto pede a marca daquele pagamento.
+    """
+    bd = banco(con)
+    teto = tetos(configuracao(bd))["pagamento"]
+    linhas = bd.ler("SELECT * FROM dp_despesas WHERE situacao = %s AND forma <> %s "
+                    "ORDER BY vencimento, id", (AGUARDANDO, MANUAL))
+    for d in linhas:
+        d["pendencia"] = ("valor divergente" if d["divergencia"]
+                          else "acima do teto" if int(d["valor"]) > teto else "")
+    return linhas
+
+
+def balanco(con, hoje: str, recorrentes: Any = ()) -> dict:
+    """Quanto ainda falta sair da conta, para saber quanto ela precisa ter. Só LÊ.
+
+    A despesa «pago fora do banco» não entra, porque não sai desta conta, e o que
+    o banco já pagou também não. `recorrentes` são as do mês ainda sem despesa
+    (`despesas_recorrentes.do_mes`): a de valor em branco só se conta.
+    """
+    grupos = ((AUTORIZADA, "Autorizadas, a sair na próxima rodada"),
+              (ENVIADA, "Enviadas ao banco, ainda sem confirmação"),
+              (FALHOU, "Recusadas pelo banco, a devolver à autorização"),
+              (AGUARDANDO, "Esperando a autorização"))
+    despesas = banco(con).ler(
+        "SELECT situacao, vencimento, valor FROM dp_despesas "
+        "WHERE situacao IN (%s, %s, %s, %s) AND forma <> %s",
+        (*[g[0] for g in grupos], MANUAL))
+    pares = [[(int(d["valor"]), str(d["vencimento"])) for d in despesas if d["situacao"] == s]
+             for s, _ in grupos]
+    rotulos = [g[1] for g in grupos]
+    com_valor = [r for r in recorrentes if r.get("valor")]
+    pares.append([(int(r["valor"]), str(r["vencimento"])) for r in com_valor])
+    rotulos.append("Recorrentes do mês ainda não carregadas")
+    linhas = [{"rotulo": rotulo, "quantidade": len(p), "total": sum(v for v, _ in p),
+               "ate_hoje": sum(v for v, venc in p if venc <= hoje)}
+              for rotulo, p in zip(rotulos, pares) if p]
+    return {"linhas": linhas, "total": sum(x["total"] for x in linhas),
+            "ate_hoje": sum(x["ate_hoje"] for x in linhas),
+            "sem_valor": len(recorrentes) - len(com_valor)}
 
 
 def _limites_do_mes(mes: str) -> tuple[str, str]:

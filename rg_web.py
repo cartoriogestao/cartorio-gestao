@@ -55,6 +55,7 @@ import notas_selo as NSELO
 import onrtdpj_api as ONR
 import rg_registro as RG
 import rg_titulo as TIT
+import rg_titulo_fases as RGFASES
 import rg_teor_rtdpj as RGTEOR
 from bd_nativo import banco
 import selo as SELO
@@ -742,8 +743,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         for a in atos or []:
             a["lista_presenca_texto"] = RG.texto_da_lista_presenca(
                 a.get("declaracoes"))
+
+        # AS FASES SÓ SE CALCULAM NO LAYOUT NOVO: quem está no antigo não paga por elas.
+        def abas_da_ficha(pode_decidir: bool = False) -> dict:
+            return RGFASES.fases_do_titulo(
+                titulo, qualificacoes=qualificacoes,
+                encaminhamentos=encaminhamentos, tem_registro=bool(registro),
+                pode_decidir=pode_decidir, central_falhou=bool(falha_da_central))
+
         return render_template(
             "rcpj_rtd_titulo.html", t=titulo, anexos=anexos, para_ver=para_ver,
+            abas_da_ficha=abas_da_ficha,
             qualificacoes=qualificacoes, encaminhamentos=encaminhamentos,
             registro=dict(registro) if registro else None, atos=atos or [],
             para_concluir=para_concluir,

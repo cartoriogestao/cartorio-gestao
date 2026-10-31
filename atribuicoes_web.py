@@ -12794,7 +12794,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """
         acervo = _acervo_se_houver()
         if acervo is None:
-            flash("O acervo do E-Ofício não está nesta máquina — informe o "
+            flash("O acervo do sistema antigo não está nesta máquina — informe o "
                   "apresentante de cada título TAB nesta tela.", "warning")
             return redirect(url_for("protesto_cenprot_xml"))
         try:
@@ -12807,12 +12807,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             acervo.close()
         audit("PROTESTO_APRESENTANTES_TAB_DO_ACERVO", "pt_titulos", None, r)
         flash(f"{r['completos']} título(s) TAB receberam nome, CNPJ/CPF e tipo "
-              f"do E-Ofício ({r['nome_trocado']} com o nome trocado pelo que foi "
+              f"do sistema antigo ({r['nome_trocado']} com o nome trocado pelo que foi "
               f"à CENPROT); {r['so_o_tipo']} receberam só o tipo. "
-              + (f"{len(r['divergentes'])} têm documento diferente do E-Ofício e "
+              + (f"{len(r['divergentes'])} têm documento diferente do sistema antigo e "
                  f"ficaram como estavam (títulos {', '.join(map(str, r['divergentes']))}). "
                  if r["divergentes"] else "")
-              + (f"{len(r['sem_fonte'])} não têm fonte no E-Ofício e esperam "
+              + (f"{len(r['sem_fonte'])} não têm fonte no sistema antigo e esperam "
                  f"quem informe (títulos {', '.join(map(str, r['sem_fonte']))})."
                  if r["sem_fonte"] else ""),
               "warning" if (r["divergentes"] or r["sem_fonte"]) else "success")

@@ -171,8 +171,9 @@ def test_a_resposta_so_sai_com_numero_que_esta_no_texto_base():
 
 
 def test_assunto_sensivel_e_pedido_de_pessoa():
-    assert AT.assunto_sensivel("tenho um título protestado")[0] == "PROTESTO"
-    assert AT.assunto_sensivel("quero a certidão de nascimento")[0] == "RCPN"
+    # desde 30/10/2026 protesto e registro civil sobem à IA; só a reclamação vai direto
+    assert AT.assunto_sensivel("tenho um título protestado") is None
+    assert AT.assunto_sensivel("quero a certidão de nascimento") is None
     assert AT.assunto_sensivel("quero fazer uma reclamação")[0] == "GESTAO"
     assert AT.assunto_sensivel("qual o horário?") is None
     assert AT.pede_pessoa("quero falar com uma pessoa")
@@ -328,7 +329,8 @@ def test_identificacao_errada_nao_diz_qual_errou_e_tem_limite(casa, portal):
         _entrada(db, errado, meta_id=f"wamid.e{n}", wa_id=wa)
         graph = Graph()
         _rodar(db, casa["pasta"], http_post=graph)
-        textos.append(graph.enviados[0]["payload"]["text"]["body"])
+        # o rodapé só vai na primeira resposta do atendimento (30/10/2026)
+        textos.append(graph.enviados[0]["payload"]["text"]["body"].replace(AT.RODAPE, ""))
     assert len(set(textos)) == 1, "número inexistente e código errado respondem igual"
     assert AT.TEXTO_NAO_CONFERE in textos[0]
     cid = _entrada(db, "protocolo 12345 código ABC123", meta_id="wamid.e-ultima", wa_id=wa)
@@ -364,13 +366,14 @@ def test_pedir_andamento_sem_codigo_recebe_o_jeito_de_pedir(casa):
 # ---------------------------------------------- o que passa para pessoa
 
 
-def test_protesto_passa_para_o_setor_sem_subir_a_ia(casa):
+def test_o_caso_concreto_de_protesto_a_ia_encaminha_ao_setor(casa):
+    # até 30/10/2026 o protesto passava sem subir à IA (`wa_atendente`, cabeçalho)
     db = casa["db"]
     _cfg(db)
     cid = _entrada(db, "recebi uma intimação de protesto", meta_id="wamid.s1")
-    modelo, graph = Modelo({"acao": "responder"}), Graph()
+    modelo, graph = Modelo({"acao": "encaminhar", "razao": "caso_concreto"}), Graph()
     _rodar(db, casa["pasta"], conversar=modelo, http_post=graph)
-    assert modelo.chamadas == [] and graph.enviados == []
+    assert len(modelo.chamadas) == 1 and graph.enviados == []
     c = _um(db, "SELECT modo, setor FROM wa_conversa WHERE id=%s", (cid,))
     assert (c["modo"], c["setor"]) == ("pessoa", "PROTESTO")
     ev = _um(db, "SELECT * FROM wa_evento WHERE conversa_id=%s AND tipo=%s",

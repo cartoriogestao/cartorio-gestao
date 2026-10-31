@@ -53,8 +53,10 @@ import livro_nucleo as LN
 import modelos_da_casa as MODELOS
 import notas_selo as NSELO
 import onrtdpj_api as ONR
+import rascunho_de_tela as RASC
 import rg_registro as RG
 import rg_titulo as TIT
+import rg_titulo_fases as RGFASES
 import rg_teor_rtdpj as RGTEOR
 from bd_nativo import banco
 import selo as SELO
@@ -493,14 +495,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         from caixa_schema import reais
         return f" Lançado no caixa: R$ {reais(total)}."
 
-    def _atribuicao_pedida() -> int:
+    def _atribuicao_pedida(do_rascunho=None) -> int:
         """Qual atribuição a tela está olhando.
 
         **`request.values`, e não `request.form`** — o filtro chega por query
         string e o redirecionamento depois de gravar também. Este defeito
         apareceu duas vezes na mesma noite no IBGE e na FUNAI, espelhado.
+
+        **O rascunho reaberto diz a dele**: a lista o abre sem dizer a atribuição,
+        e o título guardado do RCPJ abriria como se fosse do RTD.
         """
-        bruto = str(request.values.get("atribuicao") or "").strip()
+        bruto = str(do_rascunho or request.values.get("atribuicao") or "").strip()
         try:
             codigo = int(bruto)
         except (TypeError, ValueError):
@@ -571,11 +576,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         protocolo se lança do mesmo jeito, porque é ele que marca a ordem de
         chegada, e a ordem de chegada é o que o título perde se esperar.
         """
-        atribuicao = _atribuicao_pedida()
+        form, rascunho_id = RASC.para_a_tela(
+            db, "rcpj_rtd_titulo_novo", "Este rascunho não é de um título do RCPJ ou do RTD.")
+        atribuicao = _atribuicao_pedida(
+            form.get("atribuicao") if rascunho_id and request.method == "GET" else None)
 
         def tela():
             return render_template(
-                "rcpj_rtd_titulo_novo.html", form=request.form,
+                "rcpj_rtd_titulo_novo.html", form=form, rascunho_id=rascunho_id,
                 atribuicao=atribuicao,
                 nome_da_atribuicao=TIT.NOME_DA_ATRIBUICAO[atribuicao],
                 atribuicoes=[{"codigo": c, "nome": TIT.NOME_DA_ATRIBUICAO[c]}
@@ -630,6 +638,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               f"no Livro de Protocolo n. {feito.get('livro_numero')}, "
               f"fl. {feito.get('rotulo')}. Anexe agora o arquivo do título.",
               "success")
+        RASC.saiu_com_o_ato(db, audit, "rcpj_rtd_titulo_novo",
+                            url_for("rcpj_rtd_titulo", titulo_id=feito["titulo_id"]),
+                            usuario_nome())
         return redirect(url_for("rcpj_rtd_titulo",
                                 titulo_id=feito["titulo_id"]))
 
@@ -742,8 +753,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         for a in atos or []:
             a["lista_presenca_texto"] = RG.texto_da_lista_presenca(
                 a.get("declaracoes"))
+
+        # AS FASES SÓ SE CALCULAM NO LAYOUT NOVO: quem está no antigo não paga por elas.
+        def abas_da_ficha(pode_decidir: bool = False) -> dict:
+            return RGFASES.fases_do_titulo(
+                titulo, qualificacoes=qualificacoes,
+                encaminhamentos=encaminhamentos, tem_registro=bool(registro),
+                pode_decidir=pode_decidir, central_falhou=bool(falha_da_central))
+
         return render_template(
             "rcpj_rtd_titulo.html", t=titulo, anexos=anexos, para_ver=para_ver,
+            abas_da_ficha=abas_da_ficha,
             qualificacoes=qualificacoes, encaminhamentos=encaminhamentos,
             registro=dict(registro) if registro else None, atos=atos or [],
             para_concluir=para_concluir,

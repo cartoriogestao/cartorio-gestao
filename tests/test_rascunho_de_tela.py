@@ -120,6 +120,15 @@ def test_salvar_de_novo_atualiza_e_nao_duplica():
     con.close()
 
 
+def test_salvar_por_cima_do_rascunho_de_outra_tela_recusa():
+    con = _banco()
+    r = R.salvar(con, tela="t", titulo="x", dados={"a": "1"}, agora=AGORA)
+    with pytest.raises(R.RascunhoError, match="outra tela"):
+        R.salvar(con, tela="outra", titulo="y", dados={"a": "2"}, agora=AGORA, rascunho_id=r["id"])
+    assert R.ler(con, r["id"])["dados"]["a"] == "1"
+    con.close()
+
+
 def test_atualizar_rascunho_que_nao_existe_recusa():
     con = _banco()
     with pytest.raises(R.RascunhoError):
@@ -180,6 +189,31 @@ def test_dado_ilegivel_nao_derruba_a_tela():
     con.close()
 
 
+def test_os_repetidos_ficam_a_parte_e_dados_continua_plano():
+    """O segundo devedor e as outras partes têm o mesmo nome do primeiro. Quem lê `dados` continua recebendo um
+    texto por nome, e rascunho antigo, sem a lista, abre como sempre abriu."""
+    con = _banco()
+    r = R.salvar(con, tela="protesto_titulo_novo", titulo="t", agora=AGORA,
+                 dados={"devedor_nome": "ANA", "numero": "1",
+                        R.CHAVE_DOS_REPETIDOS: {"devedor_nome": ["ANA", "JOAO"], "senha_nova": ["1", "2"]}})
+    lido = R.ler(con, r["id"])
+    assert lido["dados"] == {"devedor_nome": "ANA", "numero": "1"}
+    assert lido["repetidos"] == {"devedor_nome": ["ANA", "JOAO"]}, "senha não se guarda, nem repetida"
+    assert R.formulario(lido).getlist("devedor_nome") == ["ANA", "JOAO"]
+    velho = R.salvar(con, tela="t", titulo="t", agora=AGORA, dados={"a": "1"})
+    assert R.ler(con, velho["id"])["repetidos"] == {}
+    assert R.formulario(R.ler(con, velho["id"])).getlist("a") == ["1"]
+    con.close()
+
+
+def test_a_lista_repetida_sozinha_nao_salva_um_rascunho_vazio():
+    con = _banco()
+    with pytest.raises(R.RascunhoError):
+        R.salvar(con, tela="t", titulo="t", agora=AGORA,
+                 dados={"a": "", R.CHAVE_DOS_REPETIDOS: {"a": ["", " "]}})
+    con.close()
+
+
 def test_o_modulo_nao_numera_nem_lavra():
     """**Rascunho que consome numero e ato disfarcado**, e ato disfarcado
     aparece na correicao como buraco na sequencia."""
@@ -189,4 +223,4 @@ def test_o_modulo_nao_numera_nem_lavra():
     import re
     for alvo in re.findall(r"(?:INSERT INTO|UPDATE|DELETE FROM)\s+(\w+)",
                            codigo):
-        assert alvo == "rascunhos_de_tela", f"escreve em «{alvo}»"
+        assert alvo in ("rascunhos_de_tela", "rascunhos_que_viraram_ato"), f"escreve em «{alvo}»"

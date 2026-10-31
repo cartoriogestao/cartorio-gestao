@@ -100,6 +100,21 @@ def test_prenotacao_sem_contato_nao_entra(casa):
     assert _n(casa, "ri_protocolos") == antes
 
 
+def test_a_prenotacao_recusada_volta_com_o_que_foi_digitado(casa):
+    """A recusa redirecionava para a tela em branco, com o apresentante na frente do balcão (31/10/2026)."""
+    antes = _n(casa, "ri_protocolos")
+    html = _prenotar(casa, telefone="123", matricula_numero="8001", documento_descricao="escritura de compra",
+                     anotacao="a anotação", reurb_tipo="S", isento="1", motivo_isencao="o motivo").get_data(as_text=True)
+    assert "DDD" in html
+    assert _n(casa, "ri_protocolos") == antes, "a recusa não prenota, e nenhum número se gasta"
+    for trecho in ('<option value="2" selected>', 'value="MARIA DA SILVA"', 'value="COMPRA E VENDA"', ">escritura</textarea>",
+                   'value="123"', 'value="8001"', 'value="escritura de compra"', 'value="a anotação"',
+                   '<option value="S" selected>', 'value="o motivo"'):
+        assert trecho in html, trecho
+    assert 'id="prenot_isento" checked' in html
+    assert "Este selo será ISENTO" in html
+
+
 def test_prenotacao_com_telefone_entra_e_grava(casa):
     antes = _n(casa, "ri_protocolos")
     _prenotar(casa, telefone="(99) 98888-7777")

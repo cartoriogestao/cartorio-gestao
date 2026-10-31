@@ -2,8 +2,36 @@
 {% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
 {% block title %}Novo processo de retificação{% endblock %}
 {% block content %}
+{# NO LAYOUT NOVO, TRÊS PASSOS — 30/10/2026. O processo, as pessoas, a área. É UM FORMULÁRIO SÓ: o que está
+   escondido vai junto, e `static/fases.js` mostra o passo aberto. Sem o script, ele sai inteiro. O aviso dos
+   dois fundamentos fica no passo em que se escolhe o fundamento, e o botão de autuar na barra do último.
+   Os botões de rascunho ficam fora dos passos, sempre à vista. No layout antigo nada muda de lugar. #}
+{% if layout_novo %}
+<style>
+  .cg-corpo .content>h1{font-size:23px;margin:0 0 8px}
+  #form-do-ato .cg-passos{margin-bottom:8px}
+  .cg-ret-grade{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 16px;align-items:start;padding:12px 16px;margin-bottom:8px}
+  .cg-ret-grade>p{margin:0;min-width:0}
+  .cg-ret-grade>:is(h2,.card,p.small,p:has(input[type=radio])){grid-column:1/-1}
+  .cg-ret-grade>h2{font-size:15px;margin:6px 0 0}
+  .cg-ret-grade>.card{padding:10px 14px;margin:0 0 4px;box-shadow:none}
+  .cg-ret-grade>.card p{margin:0 0 4px}
+  .cg-ret-grade label:has(>input[type=radio]){display:inline-block;margin-right:18px}
+  .cg-ret-grade>p:has(select[name=profissional_conselho]){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}
+  .cg-ret-grade input:not([type=radio]),.cg-ret-grade select{width:100%}
+  .cg-passos-fim>.cg-ret-cancelar{margin-right:auto}
+  @media (max-width:900px){
+    .cg-ret-grade{grid-template-columns:minmax(0,1fr)}
+  }
+  @media (min-width:1600px){
+    .cg-ret-grade{grid-template-columns:repeat(4,minmax(0,1fr))}
+    .cg-ret-grade>p:has(select[name=profissional_conselho]){grid-column:span 2}
+  }
+</style>
+{% endif %}
 <h1>Novo processo de retificação de área</h1>
 
+{% set os_dois_fundamentos %}
 <div class="card">
   <p><strong>Os dois fundamentos do art. 213 não são a mesma coisa.</strong>
      O inciso I é <em>de ofício</em>, para erro evidente que não altera direito
@@ -12,70 +40,100 @@
   <p class="small muted">Escolher o I onde cabe o II seria corrigir sem ouvir o
      vizinho — e o vizinho descobre quando for vender.</p>
 </div>
+{% endset %}
+{% if not layout_novo %}{{ os_dois_fundamentos }}{% endif %}
 
 {{ salvar_rascunho('ri_retificacao_nova', url_for('ri_retificacao_nova'),
                    'Retificação de área', csrf_token,
-                   nome_em='requerente_nome,profissional_nome') }}
+                   nome_em='requerente_nome,profissional_nome', rascunho_id=rascunho_id) }}
+
+{# A RECUSA DO SERVIDOR E O RASCUNHO REABERTO voltam com o que estava digitado (31/10/2026). Sem nada
+   digitado, a tela sai como sempre saiu: o `value` só entra quando há valor. #}
+{% set digitado = form or {} %}
+{% macro valor(campo) %}{% if digitado.get(campo) %} value="{{ digitado.get(campo) }}"{% endif %}{% endmacro %}
 
 <form method="post" id="form-do-ato">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
+  {% if layout_novo %}
+  <script defer src="{{ url_for('static', filename='fases.js') }}?v={{ VERSION }}"></script>
+  <nav class="cg-passos" data-cg-passos="form-do-ato" data-inicial="processo" aria-label="Passos deste processo">
+    <button type="button" class="cg-passo" data-passo-ir="processo"><span class="cg-fase-n" aria-hidden="true">1</span>O processo</button>
+    <button type="button" class="cg-passo" data-passo-ir="pessoas"><span class="cg-fase-n" aria-hidden="true">2</span>Requerente e profissional</button>
+    <button type="button" class="cg-passo" data-passo-ir="area"><span class="cg-fase-n" aria-hidden="true">3</span>Área e georreferenciamento</button>
+  </nav>
+  <div class="cg-passo-bloco panel cg-ret-grade" data-passo="processo">
+  {{ os_dois_fundamentos }}
+  {% endif %}
   <p><label>Número do processo<br>
-    <input name="numero" required placeholder="1/2026"></label></p>
+    <input name="numero" required placeholder="1/2026"{{ valor('numero') }}></label></p>
 
   <p><label>Matrícula a retificar<br>
     <select name="matricula_id" required>
       <option value="">— escolha —</option>
       {% for m in matriculas %}
-      <option value="{{ m.id }}">{{ m.numero }} (livro {{ m.livro }})</option>
+      <option value="{{ m.id }}"{% if digitado.get('matricula_id') == m.id|string %} selected{% endif %}>{{ m.numero }} (livro {{ m.livro }})</option>
       {% endfor %}
     </select></label></p>
 
   <p><label>Espécie<br>
     <select name="especie" required>
-      {% for k, v in especies.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+      {% for k, v in especies.items() %}<option value="{{ k }}"{% if digitado.get('especie') == k %} selected{% endif %}>{{ v }}</option>{% endfor %}
     </select></label>
     <span class="small muted">Esta casa já escreveu as duas no rótulo do ato.</span></p>
 
   <p><label>Fundamento<br>
     <select name="fundamento" required>
-      {% for k, v in fundamentos.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+      {% for k, v in fundamentos.items() %}<option value="{{ k }}"{% if digitado.get('fundamento') == k %} selected{% endif %}>{{ v }}</option>{% endfor %}
     </select></label></p>
 
-  <p><label><input type="radio" name="rural" value="1" checked> Imóvel rural</label>
-     <label><input type="radio" name="rural" value="0"> Imóvel urbano</label><br>
+  <p><label><input type="radio" name="rural" value="1"{% if digitado.get('rural') != '0' %} checked{% endif %}> Imóvel rural</label>
+     <label><input type="radio" name="rural" value="0"{% if digitado.get('rural') == '0' %} checked{% endif %}> Imóvel urbano</label><br>
      <span class="small muted">O rural pede CCIR, ITR de 5 exercícios, CAR e
      SIGEF (art. 592, VII); o urbano pede o boletim de cadastro imobiliário
      (inciso IX). O checklist já nasce certo.</span></p>
 
+  {% if layout_novo %}</div>
+  <div class="cg-passo-bloco panel cg-ret-grade" data-passo="pessoas">{% endif %}
   <h2>O requerente</h2>
-  <p><label>Nome<br><input name="requerente_nome"></label></p>
-  <p><label>CPF ou CNPJ<br><input name="requerente_documento"></label></p>
+  <p><label>Nome<br><input name="requerente_nome"{{ valor('requerente_nome') }}></label></p>
+  <p><label>CPF ou CNPJ<br><input name="requerente_documento"{{ valor('requerente_documento') }}></label></p>
 
   <h2>O profissional</h2>
   <p class="small muted">Ele responde pelos trabalhos técnicos, e é intimado
      junto com o requerente se houver impugnação (art. 600).</p>
-  <p><label>Nome<br><input name="profissional_nome"></label></p>
+  <p><label>Nome<br><input name="profissional_nome"{{ valor('profissional_nome') }}></label></p>
   <p><label>Conselho<br>
     <select name="profissional_conselho">
-      <option value="">—</option><option>CREA</option><option>CAU</option><option>CFT</option>
+      <option value="">—</option><option{% if digitado.get('profissional_conselho') == 'CREA' %} selected{% endif %}>CREA</option><option{% if digitado.get('profissional_conselho') == 'CAU' %} selected{% endif %}>CAU</option><option{% if digitado.get('profissional_conselho') == 'CFT' %} selected{% endif %}>CFT</option>
     </select></label>
-    <label>Registro<br><input name="profissional_registro"></label></p>
-  <p><label>ART, RRT ou TRT<br><input name="art_numero"></label></p>
+    <label>Registro<br><input name="profissional_registro"{{ valor('profissional_registro') }}></label></p>
+  <p><label>ART, RRT ou TRT<br><input name="art_numero"{{ valor('art_numero') }}></label></p>
 
+  {% if layout_novo %}</div>
+  <div class="cg-passo-bloco panel cg-ret-grade" data-passo="area">{% endif %}
   <h2>A área</h2>
   <p class="small muted">Escreva com a unidade, como está no memorial — «12,4567 ha», «3.450,00 m²».
      <strong>Não há limite de aumento nem de redução</strong> (art. 589, § 2º),
      desde que reflita as reais divisas.</p>
-  <p><label>Como está na matrícula<br><input name="area_na_matricula"></label></p>
-  <p><label>Como fica<br><input name="area_pretendida"></label></p>
+  <p><label>Como está na matrícula<br><input name="area_na_matricula"{{ valor('area_na_matricula') }}></label></p>
+  <p><label>Como fica<br><input name="area_pretendida"{{ valor('area_pretendida') }}></label></p>
 
   <h2>Georreferenciamento</h2>
-  <p><label>Nº da certificação do INCRA<br><input name="certificacao_incra"></label></p>
-  <p><label>Código no SIGEF<br><input name="sigef_codigo"></label></p>
+  <p><label>Nº da certificação do INCRA<br><input name="certificacao_incra"{{ valor('certificacao_incra') }}></label></p>
+  <p><label>Código no SIGEF<br><input name="sigef_codigo"{{ valor('sigef_codigo') }}></label></p>
 
+  {% if layout_novo %}</div>
+  <div class="cg-passos-fim" data-cg-passos-fim>
+    <a class="button secondary cg-ret-cancelar" href="{{ url_for('ri_retificacoes') }}">Cancelar</a>
+    <button type="button" class="button" data-passo-voltar hidden>&larr; Voltar</button>
+    <button type="button" class="button primary" data-passo-avancar hidden>Avançar</button>
+    <button class="button primary" data-passo="area">Autuar o processo</button>
+  </div>
+  {% else %}
   <p><button class="button">Autuar o processo</button>
      <a class="button secondary" href="{{ url_for('ri_retificacoes') }}">Cancelar</a></p>
+  {% endif %}
 </form>
 {{ script_do_rascunho() }}
 {% endblock %}

@@ -1,11 +1,50 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>DOI da serventia &mdash; Declaração sobre Operações Imobiliárias</h1>{% endblock %}
 {% block content %}
+{# NO LAYOUT NOVO, O MÊS E O BOTÃO DE GERAR VÊM PRIMEIRO — 30/10/2026. A lista dos meses que devem satisfação
+   sai do calendário, e empurrava o resto da tela para baixo de dezenas de linhas. Aqui ela é um quadro: o
+   título diz quantos há, quantos venceram e quais ainda estão no prazo, e ele já vem aberto quando são
+   até três, que não empurram o botão de gerar para fora da vista. A conferência continua antes do botão de gerar. Os atos do mês abrem quando há ato parado, e os
+   parados vêm primeiro. As peças são as mesmas nas duas molduras, e no layout antigo nada muda de lugar. #}
+{% if layout_novo %}
+<style>
+  .cg-doi-topo{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin:0 0 8px}
+  .cg-doi-topo .actions{margin:0}
+  .cg-doi-topo .panel{padding:0;margin:0;border:0;box-shadow:none;background:none}
+  .cg-doi-topo form{padding:0!important;flex-wrap:nowrap!important;align-items:center!important}
+  .cg-doi-topo label{display:flex;align-items:center;gap:8px;margin:0}
+  .cg-doi-topo select{width:auto}
+  .cg-doi-miolo{padding:8px 0 0!important}
+  .cg-doi-miolo p{margin:0 0 6px}
+  .cg-doi-miolo td{padding:5px 10px}
+  .cg-doi-miolo form>input:not([type=hidden]){width:auto;flex:1 1 200px;min-width:0}
+  .cg-doi-miolo form>button{white-space:nowrap}
+  .cg-doi-a-competencia{padding:10px 16px;margin-bottom:8px}
+  .cg-doi-a-competencia .panel-head{display:flex;justify-content:space-between;gap:12px;padding-bottom:6px}
+  details.cg-doi-quadro{padding:10px 16px;margin-bottom:8px}
+  details.cg-doi-quadro>summary{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 16px;cursor:pointer;list-style:none;margin:0;padding-bottom:0;border-bottom:0}
+  details.cg-doi-quadro>summary::-webkit-details-marker{display:none}
+  details.cg-doi-quadro>summary>span:first-child::before{content:"\25B8\00A0"}
+  details.cg-doi-quadro[open]>summary>span:first-child::before{content:"\25BE\00A0"}
+  details.cg-doi-quadro[open]>summary{margin-bottom:8px}
+  details.cg-doi-quadro td{padding:6px 10px}
+  details.cg-doi-quadro td button{min-height:30px;padding:3px 10px}
+  #meses>div[style]{padding:0 0 8px!important}
+  details.cg-doi-quadro .notice{margin:0}
+  #atos td ul{padding:0!important;list-style:none}
+  #atos td li{display:inline}
+  #atos td:nth-child(-n+3){white-space:nowrap}
+  #atos td li+li::before{content:" · "}
+</style>
+{% endif %}
+{% set as_acoes %}
 <div class="actions">
   <a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a>
   <a class="button" href="{{ url_for('ri_ctp') }}">CTP &mdash; prefeituras</a>
 </div>
+{% endset %}
 
+{% set sobre_a_doi %}
 <div class="notice">
   Vai à <strong>Receita Federal</strong> pela DOI-Web, até as 23h59min59s do
   <strong>último dia útil do mês seguinte</strong> ao da lavratura, anotação, matrícula, registro
@@ -15,7 +54,9 @@
   Os dados vêm do que você já digitou na <strong>CTP</strong>: são a mesma informação para dois
   destinatários diferentes, e digitar duas vezes só faria as duas divergirem.
 </div>
+{% endset %}
 
+{% set esquema_sem_conferir %}
 {% if not esquema_conferido %}
 <div class="notice warning">
   <strong>O envelope do arquivo ainda não foi conferido contra fonte primária.</strong>
@@ -24,21 +65,21 @@
   conferir agora; antes da primeira transmissão, baixe o esquema e confira.
 </div>
 {% endif %}
+{% endset %}
 
-{% if em_aberto %}
-<section class="panel">
-  <div class="panel-head">
-    <span>Meses que ainda devem satisfação &mdash; {{ em_aberto|length }}</span>
-  </div>
+{% set o_que_a_inspecao_cobra %}
   <div style="padding:14px" class="small muted">
     A inspeção cobra comprovação de DOI <strong>ou declaração negativa</strong> dos meses sem ato
     imobiliário. Mês vazio também precisa de prova, e é o que mais escapa &mdash; justamente por
     não aparecer em lista nenhuma. Esta lista sai do calendário, não dos atos.
   </div>
+{% endset %}
+
+{% macro tabela_dos_meses(lista) %}
   <div class="table-wrap"><table>
     <thead><tr><th>Competência</th><th>Teve ato?</th><th>Prazo</th><th></th></tr></thead>
     <tbody>
-    {% for c in em_aberto %}
+    {% for c in lista %}
       <tr>
         <td><a href="{{ url_for('ri_doi', competencia=c.competencia) }}">{{ c.competencia }}</a></td>
         <td class="small">{{ 'sim' if c.tem_ato else 'não' }}</td>
@@ -47,7 +88,9 @@
         </td>
         <td class="small">
           {% if not c.tem_ato %}
-          <form method="post" action="{{ url_for('ri_doi', competencia=c.competencia) }}"
+          {# NO LAYOUT NOVO, O `#meses` faz a volta da gravação cair com o quadro aberto: quem registra um
+             mês costuma registrar o seguinte. Ele não vai ao servidor. #}
+          <form method="post" action="{{ url_for('ri_doi', competencia=c.competencia) }}{% if layout_novo %}#meses{% endif %}"
                 style="display:inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="acao" value="negativa">
@@ -60,9 +103,21 @@
     {% endfor %}
     </tbody>
   </table></div>
+{% endmacro %}
+
+{% set os_meses %}
+{% if em_aberto %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Meses que ainda devem satisfação &mdash; {{ em_aberto|length }}</span>
+  </div>
+{{ o_que_a_inspecao_cobra }}
+{{ tabela_dos_meses(em_aberto) }}
 </section>
 {% endif %}
+{% endset %}
 
+{% set o_seletor %}
 <section class="panel">
   <form method="get" style="padding:14px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
     <label>Competência
@@ -72,19 +127,25 @@
           {{ m.c }} &mdash; {{ m.qtd }} ato{{ '' if m.qtd == 1 else 's' }}
         </option>
         {% endfor %}
+        {# O MÊS ABERTO PODE NÃO TER ATO: sem esta linha, o seletor mostrava outro mês, e não o da tela. #}
+        {% if competencia not in meses | map(attribute='c') | list %}
+        <option value="{{ competencia }}" selected>{{ competencia }} &mdash; sem atos</option>
+        {% endif %}
       </select></label>
-    <button class="primary">Ver a competência</button>
+    <button{% if not layout_novo %} class="primary"{% endif %}>Ver a competência</button>
   </form>
 </section>
+{% endset %}
 
-<section class="panel">
+{% set a_competencia %}
+<section class="panel{% if layout_novo %} cg-doi-a-competencia{% endif %}">
   <div class="panel-head">
-    <span>{{ competencia }}</span>
+    <span>{% if layout_novo %}<strong>A DOI de {{ competencia }}</strong>{% else %}{{ competencia }}{% endif %}</span>
     <span class="small {% if prazo < hoje and not (remessa and remessa.situacao == 'ENTREGUE') %}danger{% else %}muted{% endif %}">
       entregar até {{ prazo }}{% if prazo < hoje %} &mdash; <strong>prazo vencido</strong>{% endif %}
     </span>
   </div>
-  <div style="padding:14px">
+  <div style="padding:14px"{% if layout_novo %} class="cg-doi-miolo"{% endif %}>
     {% if remessa and remessa.negativa %}
       <p><strong>Mês registrado como sem ato imobiliário.</strong>
          {% if remessa.observacao %}<br><span class="small muted">{{ remessa.observacao }}</span>{% endif %}</p>
@@ -158,23 +219,14 @@
     {% endif %}
   </div>
 </section>
+{% endset %}
 
-{% if linhas %}
-<section class="panel">
-  {# A DOI É DA SERVENTIA, e não do Registro de Imóveis.
-
-     «Com intercomunicabilidade para que o arquivo da DOI seja possível gerar
-      único, com tudo da serventia» — o oficial, 27/08/2026; decidido em 28/08.
-
-     É uma declaração por serventia por mês, e esta casa tem um CNS só, de
-     ofício único. Duas telas gerariam dois arquivos e alguém mandaria um só. #}
-  <div class="panel-head"><span>Atos da competência — Registro de Imóveis e
-    Tabelionato</span></div>
+{% macro tabela_dos_atos(lista) %}
   <div class="table-wrap"><table>
     <thead><tr><th>Ato</th><th>Onde</th><th>Data</th><th>Operação</th>
       <th>Entra?</th><th>O que falta</th></tr></thead>
     <tbody>
-    {% for l in linhas %}
+    {% for l in lista %}
       <tr>
         <td class="small">{{ l.rotulo }}</td>
         {# DE ONDE O ATO VEIO. As duas atribuições saem no mesmo arquivo, e
@@ -199,12 +251,9 @@
     {% endfor %}
     </tbody>
   </table></div>
-</section>
-{% endif %}
+{% endmacro %}
 
-{% if remessas %}
-<section class="panel">
-  <div class="panel-head"><span>Competências já resolvidas</span></div>
+{% macro tabela_das_resolvidas() %}
   <div class="table-wrap"><table>
     <thead><tr><th>Competência</th><th>Situação</th><th>Declarações</th>
                <th>Recibo</th><th>Arquivo</th></tr></thead>
@@ -226,6 +275,103 @@
     {% endfor %}
     </tbody>
   </table></div>
+{% endmacro %}
+
+{% if not layout_novo %}
+{{ as_acoes }}
+
+{{ sobre_a_doi }}
+
+{{ esquema_sem_conferir }}
+
+{{ os_meses }}
+
+{{ o_seletor }}
+
+{{ a_competencia }}
+
+{% if linhas %}
+<section class="panel">
+  {# A DOI É DA SERVENTIA, e não do Registro de Imóveis.
+
+     «Com intercomunicabilidade para que o arquivo da DOI seja possível gerar
+      único, com tudo da serventia» — o oficial, 27/08/2026; decidido em 28/08.
+
+     É uma declaração por serventia por mês, e esta casa tem um CNS só, de
+     ofício único. Duas telas gerariam dois arquivos e alguém mandaria um só. #}
+  <div class="panel-head"><span>Atos da competência — Registro de Imóveis e
+    Tabelionato</span></div>
+{{ tabela_dos_atos(linhas) }}
 </section>
+{% endif %}
+
+{% if remessas %}
+<section class="panel">
+  <div class="panel-head"><span>Competências já resolvidas</span></div>
+{{ tabela_das_resolvidas() }}
+</section>
+{% endif %}
+{% else %}
+<div class="cg-doi-topo">
+  {{ as_acoes }}
+  {{ o_seletor }}
+</div>
+
+{{ esquema_sem_conferir }}
+
+{% if em_aberto %}
+{% set vencidos = em_aberto|selectattr('vencida')|list|length %}
+{% set no_prazo = em_aberto|rejectattr('vencida')|list %}
+<details class="panel cg-doi-quadro" id="meses"{% if em_aberto|length <= 3 %} open{% endif %}>
+  <summary class="panel-head">
+    <span><strong>Meses que ainda devem satisfação: {{ em_aberto|length }}</strong>{% if vencidos %},
+      <strong class="danger">{{ vencidos }} com prazo vencido</strong>{% endif %}</span>
+    {% if no_prazo %}<span class="small">Ainda no prazo:
+      {% for c in no_prazo %}<a href="{{ url_for('ri_doi', competencia=c.competencia) }}">{{ c.competencia }}</a>, até {{ c.prazo }}{{ ' · ' if not loop.last }}{% endfor %}</span>{% endif %}
+  </summary>
+{{ o_que_a_inspecao_cobra }}
+{{ tabela_dos_meses(em_aberto|reverse|list) }}
+</details>
+{% endif %}
+
+{{ a_competencia }}
+
+{% if linhas %}
+{% set os_parados = linhas|rejectattr('entra')|selectattr('incluir')|list %}
+{% set em_ordem = os_parados + (linhas|selectattr('entra')|list) + (linhas|rejectattr('entra')|rejectattr('incluir')|list) %}
+<details class="panel cg-doi-quadro" id="atos"{% if os_parados and linhas|length <= 12 %} open{% endif %}>
+  <summary class="panel-head">
+    <span><strong>Atos de {{ competencia }}: {{ linhas|length }}</strong>{% if os_parados %},
+      <strong class="danger">{{ os_parados|length }} parado{{ '' if os_parados|length == 1 else 's' }}</strong>{% endif %}</span>
+    <span class="small muted">Registro de Imóveis e Tabelionato, no mesmo arquivo</span>
+  </summary>
+{{ tabela_dos_atos(em_ordem) }}
+</details>
+{% endif %}
+
+{% if remessas %}
+<details class="panel cg-doi-quadro" id="resolvidas">
+  <summary class="panel-head">
+    <span><strong>Competências já resolvidas: {{ remessas|length }}</strong></span>
+    <span class="small muted">Os arquivos gerados e os recibos</span>
+  </summary>
+{{ tabela_das_resolvidas() }}
+</details>
+{% endif %}
+
+<details class="panel cg-doi-quadro" id="sobre">
+  <summary class="panel-head">
+    <span><strong>O que é a DOI, e qual é o prazo</strong></span>
+  </summary>
+{{ sobre_a_doi }}
+</details>
+
+<script>
+  /* A volta de «Registrar como mês sem ato» cai no quadro dos meses, e ele tem de estar aberto. */
+  (function () {
+    var meses = document.getElementById("meses");
+    if (meses && location.hash === "#meses") meses.open = true;
+  })();
+</script>
 {% endif %}
 {% endblock %}

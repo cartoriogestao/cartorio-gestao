@@ -1,0 +1,50 @@
+{#
+  OS PASSOS COM O BOTÃO DE GRAVAR À VISTA — só existem no layout novo, 30/10/2026.
+
+  É O MECANISMO DE `atrib_rcpn_novo.html`: um formulário só, `static/fases.js` mostra o passo
+  aberto, e o que está escondido vai junto quando se grava. O campo recusado num passo escondido
+  abre o passo sozinho. Sem o script, o formulário sai inteiro.
+
+  A DIFERENÇA É A BARRA. Lá, o botão de conferir mora no último passo. Aqui, o botão de gravar
+  fica fora dos passos, numa barra presa ao pé da tela (`.cg-acao`, a mesma da ficha do ato), e
+  por isso está à vista em todo passo. Antes do último passo, quem chama a atenção é «Avançar»;
+  no último, é ele. Assim o botão está sempre ao alcance, sem convidar ninguém a gravar cedo.
+
+  Uso, sempre atrás de `{% if cg_passos %}`, e cada parte do formulário com o seu `data-passo`:
+      {{ preparar(VERSION) }}                               antes do <form>
+      {{ regua('form-do-ato', cg_passos, 'titulo') }}       logo no começo do <form>
+      {{ andar() }}                                         dentro da barra `.cg-acao.cg-gravar`
+  O `preparar` fica fora do formulário porque a grade de campos conta quem é filho direto dela
+  para decidir se passa a três colunas (`static/casca.css`), e `<style>` e `<script>` contariam.
+  Tela sem ordem, como a correção da matrícula, não chama o `andar`, e a régua vai sem número.
+
+  Este arquivo não tem campo nenhum, de propósito: `importar_padrao.campos_da_tela` lê os `name=`
+  do molde de cada tela.
+#}
+{% macro preparar(versao) %}
+<style>
+.cg-gravar{flex-wrap:wrap;justify-content:flex-end}
+.cg-gravar>a.button{order:-1;margin-right:auto}
+.cg-gravar .cg-passos-fim{border-top:0;padding-top:0}
+.cg-gravar .cg-acao-aviso{flex:1 1 220px}
+.cg-gravar:has(.cg-passos-fim:not([hidden]) [data-passo-avancar]:not([hidden])) button:not([type=button]){background:#fff;border-color:rgba(60,60,67,.2);color:inherit}
+.cg-gravar-falta{display:none}
+.actions>form{padding:0!important}
+/* o campo em que o cursor entra não fica escondido atrás da barra presa ao pé */
+#conteudo{scroll-padding-bottom:96px}
+</style>
+<script defer src="{{ url_for('static', filename='fases.js') }}?v={{ versao }}"></script>
+{% endmacro %}
+
+{% macro regua(id_do_form, passos, inicial, numerados=true, rotulo='Passos deste formulário') %}
+<nav class="cg-passos span2" style="grid-column:1/-1" data-cg-passos="{{ id_do_form }}" data-inicial="{{ inicial }}" aria-label="{{ rotulo }}">
+  {% for chave, texto in passos %}<button type="button" class="cg-passo" data-passo-ir="{{ chave }}">{% if numerados %}<span class="cg-fase-n" aria-hidden="true">{{ loop.index }}</span>{% endif %}{{ texto }}</button>{% endfor %}
+</nav>
+{% endmacro %}
+
+{% macro andar() %}
+<span class="cg-passos-fim" hidden data-cg-passos-fim>
+  <button type="button" class="button" data-passo-voltar>&larr; Voltar</button>
+  <button type="button" class="button primary" data-passo-avancar>Avançar</button>
+</span>
+{% endmacro %}

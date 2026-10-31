@@ -14,18 +14,35 @@
 
 {% macro regua(f, chave, rotulo='Fases deste ato') %}
 <nav class="cg-regua" data-cg-regua data-chave="{{ chave }}" data-inicial="{{ f.inicial }}" data-foco="{{ f.foco }}" aria-label="{{ rotulo }}">
-  <div class="cg-regua-fases">
+  {% if f.fases %}<div class="cg-regua-fases">
     {% for x in f.fases %}<a class="cg-fase {{ x.estado }}" href="#{{ x.chave }}" data-cg-fase="{{ x.chave }}"{% if x.estado == 'travada' %} data-travada{% endif %}>
       <span class="cg-fase-n" aria-hidden="true">{% if x.estado == 'feita' %}&#10003;{% else %}{{ x.numero }}{% endif %}</span>
       <span>{{ x.rotulo }}</span>
       {% if x.estado == 'feita' %}<span class="cg-so-leitor">, feita</span>{% elif x.estado == 'travada' %}<span class="cg-so-leitor">, travada</span>{% endif %}
       {% if x.pendencias %}<b class="cg-fase-c" title="{{ x.pendencias }} pendência(s)">{{ x.pendencias }}</b>{% endif %}
     </a>{% endfor %}
-  </div>
+  </div>{% endif %}
   {% if f.apoio %}<div class="cg-regua-apoio">
-    {% for x in f.apoio %}<a class="cg-fase apoio" href="#{{ x.chave }}" data-cg-fase="{{ x.chave }}"><span>{{ x.rotulo }}</span>{% if x.contagem %}<span class="cg-fase-q">{{ x.contagem }}</span>{% endif %}</a>{% endfor %}
+    {% for x in f.apoio %}<a class="cg-fase apoio{% if x.principal %} principal{% endif %}" href="#{{ x.chave }}" data-cg-fase="{{ x.chave }}"><span>{{ x.rotulo }}</span>{% if x.contagem %}<span class="cg-fase-q">{{ x.contagem }}</span>{% endif %}{% if x.alerta %}<b class="cg-fase-c" title="{{ x.alerta }} pendência(s)">{{ x.alerta }}</b>{% endif %}</a>{% endfor %}
   </div>{% endif %}
 </nav>
+{% endmacro %}
+
+{# O QUE ESPERA AÇÃO VEM PRIMEIRO, e o quadro é um só: as fichas em abas dizem o que pedem, e
+   este desenha. Lista vazia não sai, porque alarme que soa sempre é alarme que ninguém ouve. #}
+{% macro o_que_espera(itens, fase) %}
+{% if itens %}
+<section class="panel cg-falta" data-fase="{{ fase }}">
+  <div class="panel-head"><span>O que espera ação</span></div>
+  <ul class="cg-falta-l">
+    {% for i in itens %}<li class="pendente">
+      <span class="cg-falta-m" aria-hidden="true"></span>
+      <span>{{ i.texto }}</span>
+      <a class="button small" href="#{{ i.ir }}">{{ i.botao }}</a>
+    </li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
 {% endmacro %}
 
 {% macro lista_do_que_falta(titulo, itens, fase) %}

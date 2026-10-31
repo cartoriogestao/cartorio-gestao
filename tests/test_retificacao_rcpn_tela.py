@@ -152,6 +152,18 @@ def test_a_retificacao_sem_assento_volta_avisando(casa):
     assert "de que assento" in saida
 
 
+def test_a_recusa_volta_com_o_que_foi_digitado(casa):
+    """A recusa redirecionava para a tela em branco (31/10/2026)."""
+    _, saida = _novo(casa, forma="VERBAL", instituto="SUPRIMENTO", requerente_documento="00000000191",
+                     assinado_por="procurador", assento_descricao="Livro A-24, fl. 1")
+    assert "reduzido a termo" in saida
+    for trecho in ('value="SUPRIMENTO" checked', 'value="VERBAL" checked', 'value="MARIA DAS DORES"', 'value="00000000191"',
+                   ">corrigir o nome da genitora</textarea>", 'value="Livro A-24, fl. 1"'):
+        assert trecho in saida, trecho
+    assert 'value="RETIFICACAO" checked' not in saida
+    assert _con(casa).execute("SELECT COUNT(*) FROM rr_processos").fetchone()[0] == 0
+
+
 # ------------------------------------------------ o rito, na tela
 
 

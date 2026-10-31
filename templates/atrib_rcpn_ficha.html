@@ -1,6 +1,14 @@
 {% extends 'base.html' %}
-{% block heading %}<h1>{{ assento.especie | capitalize }} de {{ assento.nome }}</h1>{% endblock %}
+{% block heading %}<h1>{{ assento.especie | capitalize }} de {{ assento.nome }}
+  {#- NO LAYOUT NOVO O LIVRO E O TERMO ESTÃO NO TÍTULO: não somem ao trocar de aba. #}
+  {%- if layout_novo %} <span class="small muted">{{ assento.livro_volume or assento.serie }}{% if assento.numero %}, termo {{ assento.numero }}{% endif %}{% if assento.situacao != 'ATIVO' %} · {{ assento.situacao }}{% endif %}</span>{% endif %}</h1>{% endblock %}
 {% block content %}
+{# AS ABAS SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026, `rc_abas`. Os quadros não saem do lugar: cada um
+   diz a que aba pertence, e `static/fases.js` mostra os da aba aberta. A variável não se chama
+   `f` porque esta ficha já usa esse nome nas folhas de segurança. #}
+{% from '_fases.html' import abre_ficha, regua, o_que_espera %}
+{% set abas = abas_da_ficha(rc_digi_ficha) if layout_novo else none %}
+{% if abas %}{{ abre_ficha(VERSION) }}{{ regua(abas, 'assento-' ~ assento.id, 'Partes deste assento') }}<span class="cg-ancora" id="assento"></span>{{ o_que_espera(abas.espera, 'assento') }}{% endif %}
 {% from '_fraude.html' import alerta as alerta_fraude %}
 {# O ALERTA DE FRAUDE VEM NO ALTO, antes dos atos. #}
 {{ alerta_fraude(fraudes, csrf_token, 'Registro Civil — ficha do assento', assento.nome,
@@ -16,7 +24,7 @@
 </div>
 
 {% if habilitacao_vinculo and assento.especie in ['CASAMENTO', 'CASAMENTO_RELIGIOSO'] %}
-<section class="panel{% if habilitacao_vinculo.situacao == 'HABILITADO' %} critical{% endif %}">
+<section class="panel{% if habilitacao_vinculo.situacao == 'HABILITADO' %} critical{% endif %}" id="habilitacao-do-assento" data-fase="assento">
   <div class="panel-head"><span>Habilitação de casamento</span></div>
   <div style="padding:14px">
     <p>
@@ -42,7 +50,7 @@
 </section>
 {% endif %}
 
-<section class="panel">
+<section class="panel cg-lado-largo" data-fase="assento">
   <div class="panel-head"><span>O assento</span><small>{{ assento.situacao }}</small></div>
   <table class="table">
     <tr><th>Espécie</th><td>{{ assento.especie }}</td>
@@ -83,13 +91,15 @@
 
 {# O TERMO ASSINADO, DIGITALIZADO — problema #121: logo abaixo do assento,
    porque é a prova do que está escrito acima. #}
+{% if abas %}<span class="cg-ancora" id="termo"></span>{% endif %}
 {% include '_rc_digitalizacao.html' %}
 
 {# O TERMO DE PATERNIDADE — 23/10/2026. Gerado com o assento; imprime-se para
    a mãe e o oficial assinarem, e arquiva-se. O de alegação vai ao juiz. #}
+{% if abas %}<span class="cg-ancora" id="documentos"></span>{% endif %}
 {% if termo_paternidade %}
 {% set tp = termo_paternidade %}
-<section class="panel{% if tp.tipo == 'ALEGACAO' and not tp.remetido_em %} critical{% endif %}" id="paternidade">
+<section class="panel{% if tp.tipo == 'ALEGACAO' and not tp.remetido_em %} critical{% endif %}" id="paternidade" data-fase="documentos">
   <div class="panel-head"><span>{{ tp.nome_do_tipo }}</span>
     <small>Lei nº 8.560/1992, art. 2º</small></div>
   {% if tp.tipo == 'MAE_AUSENTE' %}
@@ -129,7 +139,7 @@
 {% endif %}
 
 {% if assento.situacao == 'ATIVO' %}
-<section class="panel">
+<section class="panel cg-lado-largo" data-fase="assento">
   <div class="panel-head"><span>Lançar no assento</span><small>uma tela para cada ato</small></div>
   <p style="padding:14px 14px 0"><small>
     Os três são coisas juridicamente diferentes: a <strong>averbação</strong> altera o
@@ -155,8 +165,9 @@
 {% endif %}
 
 
+{% if abas %}<span class="cg-ancora" id="averbacoes"></span>{% endif %}
 {% if assento.situacao == 'ATIVO' and cpf_pendentes and user.role in ['ADMIN','MANAGER','USER'] %}
-<section class="panel">
+<section class="panel" data-fase="averbacoes">
   <div class="panel-head"><span>Averbar CPF</span>
     <small>sempre gratuito — art. 347</small></div>
   <p style="padding:14px 14px 0"><small>
@@ -194,17 +205,18 @@
 </section>
 {% endif %}
 
-<div class="actions" style="margin:0 0 10px">
+<div class="actions" style="margin:0 0 10px" data-fase="averbacoes">
   <a class="button" href="{{ url_for('rcpn_etiqueta_averbacao_ajuste') }}">Ajustar etiqueta de averbação (mm)</a>
 </div>
 {# A DIVISAO TRIPARTITE, que a inspecao de 12/08/2026 cobra: cada bloco no seu
    campo proprio, e nao tres paragrafos de um campo de texto. #}
-{% for bloco, rotulo, vazio in [
-     ('REGISTRO',    'Registro',    'Sem ato de registro — assento veio do acervo em bloco.'),
-     ('AVERBACAO',   'Averbações',  'Nenhuma averbação.'),
-     ('ANOTACAO',    'Anotações',   'Nenhuma anotação.'),
-     ('RETIFICACAO', 'Retificações','Nenhuma retificação.')] %}
-<section class="panel">
+{% for bloco, rotulo, vazio, aba in [
+     ('REGISTRO',    'Registro',    'Sem ato de registro — assento veio do acervo em bloco.', 'assento'),
+     ('AVERBACAO',   'Averbações',  'Nenhuma averbação.', 'averbacoes'),
+     ('ANOTACAO',    'Anotações',   'Nenhuma anotação.', 'anotacoes'),
+     ('RETIFICACAO', 'Retificações','Nenhuma retificação.', 'retificacoes')] %}
+{% if abas and aba in ('anotacoes', 'retificacoes') %}<span class="cg-ancora" id="{{ aba }}"></span>{% endif %}
+<section class="panel" data-fase="{{ aba }}">
   <div class="panel-head"><span>{{ rotulo }}</span><small>{{ blocos[bloco] | length }}</small></div>
   {% if not blocos[bloco] %}
     <p style="padding:14px"><small>{{ vazio }}</small></p>
@@ -230,7 +242,7 @@
           {% if bloco == 'AVERBACAO' and not a.selo and (assento.situacao or '')|upper != 'CANCELADO' %}
           {% set _eh_cpf = ((a.teor or '').strip().lower().startswith('averbo neste assento o cpf') or '347' in (a.fundamento or '')) %}
           <form method="post" action="{{ url_for('rcpn_averbacao_selar_novamente', ato_id=a.id) }}"
-                style="margin-top:6px" onsubmit="return confirm('Selar novamente esta averbação? Sai um selo NOVO.');">
+                id="selar-averbacao-{{ a.id }}" style="margin-top:6px" onsubmit="return confirm('Selar novamente esta averbação? Sai um selo NOVO.');">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             {% if _eh_cpf %}
             <small>CPF: selo gratuito (art. 347)</small><br>
@@ -260,7 +272,7 @@
           {# FOLHA_DA_1A_VIA_20261009: registro pendente de selo (lavrado por
              robo) - o escrevente sela escolhendo a folha que tem na mao. #}
           {% if bloco == 'REGISTRO' and not a.selo and (assento.especie or '')|upper in ('NASCIMENTO','OBITO','NATIMORTO') and (assento.situacao or '')|upper != 'CANCELADO' %}
-          <form method="post" action="{{ url_for('rcpn_ato_selar', ato_id=a.id) }}" style="margin-top:6px">
+          <form method="post" action="{{ url_for('rcpn_ato_selar', ato_id=a.id) }}" id="selar-registro-{{ a.id }}" style="margin-top:6px">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <select name="folha_seguranca" required>
               <option value="">- folha que está na sua mão -</option>
@@ -292,7 +304,7 @@
    consulta acontece — e com um botão, porque aviso sem saída fica para
    sempre. #}
 {% if assento.livro_a_confirmar %}
-<div class="notice" style="margin:0 0 14px">
+<div class="notice" style="margin:0 0 14px" data-fase="assento">
   <strong>O livro deste assento está por confirmar.</strong>
   <p>{{ assento.livro_a_confirmar }}</p>
   <form method="post" class="grid2"
@@ -309,7 +321,8 @@
 {% endif %}
 
 {# ------------------------------------------- as pessoas do assento #}
-<section class="panel">
+{% if abas %}<span class="cg-ancora" id="filiacao"></span>{% endif %}
+<section class="panel cg-lado-largo" data-fase="filiacao">
   <div class="panel-head">
     <span>Filiação e avoenga</span>
     <small>{{ pessoas | length }} pessoa(s)</small>
@@ -347,7 +360,8 @@
 </section>
 
 {# ------------------------------------------- a certidão no modelo do CNJ #}
-<section class="panel">
+{% if abas %}<span class="cg-ancora" id="certidoes"></span>{% endif %}
+<section class="panel" data-fase="certidoes">
   <div class="panel-head">
     <span>Certidão</span>
     <small>{{ certidoes | length }} emitida(s) deste assento</small>
@@ -355,6 +369,7 @@
 
   {# OS DOCUMENTOS DO REGISTRO (12/10/2026) — os que a leitura recebeu e os
      guardados à parte. Antes ficavam só na leitura, e nenhuma tela os mostrava. #}
+  {% set bloco_documentos %}
   {% if anexos_registro %}
   <div class="card">
     <h2>Documentos do registro</h2>
@@ -363,8 +378,10 @@
       <small class="muted">{{ a.description or '' }}</small></li>{% endfor %}</ul>
   </div>
   {% endif %}
+  {% endset %}
   {# O TERMO VEM ANTES DA CERTIDAO na ordem do dia: primeiro se escreve no
      livro, depois se certifica o que foi escrito. #}
+  {% set bloco_termo %}
   <div class="card">
     <h2>O termo do livro</h2>
     {% if (assento.teor or '').strip() %}
@@ -391,6 +408,8 @@
     <a class="button" href="{{ url_for('rcpn_modelos_do_assento', assento_id=assento.id) }}"
        >Montar um documento</a>
   </div>
+  {% endset %}
+  {% if not abas %}{{ bloco_documentos }}{{ bloco_termo }}{% endif %}
   {% if user.role in ['ADMIN','MANAGER','USER'] %}
   <p style="padding:14px 14px 0"><small>
     Escolha o <strong>tipo</strong>: <em>resumo</em> (quadro CNJ, montado dos
@@ -670,15 +689,20 @@
   {% endif %}
 </section>
 
+{% if abas %}
+{% if anexos_registro %}<section class="panel" data-fase="documentos">{{ bloco_documentos }}</section>{% endif %}
+<section class="panel" data-fase="termo">{{ bloco_termo }}</section>
+{% endif %}
+
 {% if assento.teor %}
-<section class="panel">
+<section class="panel" data-fase="termo">
   <div class="panel-head"><span>Teor</span></div>
   <div style="padding:14px; white-space:pre-wrap">{{ assento.teor }}</div>
 </section>
 {% endif %}
 
 {% if dados %}
-<section class="panel">
+<section class="panel cg-lado-largo" data-fase="filiacao">
   <div class="panel-head">
     <span>O que é próprio desta espécie</span>
     <small>{{ dados | length }} campo(s) do acervo</small>
@@ -690,4 +714,5 @@
   </table>
 </section>
 {% endif %}
+{% if abas %}</div>{% endif %}
 {% endblock %}

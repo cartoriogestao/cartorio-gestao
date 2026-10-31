@@ -95,6 +95,22 @@ def _post(casa, hid: int, **dados):
                                 follow_redirects=True)
 
 
+def test_a_recusa_ao_abrir_volta_com_o_que_foi_digitado(casa):
+    """A recusa redirecionava para a tela em branco: os dois nubentes inteiros se perdiam (31/10/2026)."""
+    html = casa["cliente"].get("/rcpn/habilitacoes/nova").get_data(as_text=True)
+    antes = _con(casa).execute("SELECT COUNT(*) FROM hc_habilitacoes").fetchone()[0]
+    saida = casa["cliente"].post("/rcpn/habilitacoes/nova", data={
+        "csrf_token": _token(html), "nubente1_nome": "   ", "nubente1_pai": "JOAO MODELO",
+        "nubente2_nome": "BEATRIZ EXEMPLO", "nubente2_estado_civil": "VIUVO", "nubente2_sexo": "F",
+        "regime": "COMUNHAO_PARCIAL", "observacao": "a observação digitada"},
+        follow_redirects=True).get_data(as_text=True)
+    assert "não abre sem o nome do primeiro nubente" in saida
+    for trecho in ('value="JOAO MODELO"', 'value="BEATRIZ EXEMPLO"', '<option value="VIUVO" selected>',
+                   '<option value="F" selected>', '<option value="COMUNHAO_PARCIAL" selected>', "a observação digitada</textarea>"):
+        assert trecho in saida, trecho
+    assert _con(casa).execute("SELECT COUNT(*) FROM hc_habilitacoes").fetchone()[0] == antes
+
+
 def _entregar_tudo(casa, hid: int) -> None:
     con = _con(casa)
     for d in con.execute(

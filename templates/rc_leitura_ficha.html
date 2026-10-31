@@ -60,7 +60,10 @@
 {% endif %}
 
 {% if leitura.registro %}
-{% if leitura.rascunho_id %}
+{% if virou_ato %}
+<p>Esta leitura já virou ato{% if virou_ato.endereco %}:
+  <a class="button" href="{{ virou_ato.endereco }}">abrir o ato</a>{% else %}.{% endif %}</p>
+{% elif leitura.rascunho_id %}
 <p>Esta leitura já virou rascunho:
   <a class="button primary" href="{{ abrir_url }}">
     abrir a tela de lavrar</a></p>

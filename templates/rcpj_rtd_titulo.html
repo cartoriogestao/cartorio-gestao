@@ -14,10 +14,18 @@
   E O «BAIXAR» CONTINUA AO LADO DO «VER»: são duas coisas que ele pediu na
   mesma frase, e há arquivo que o navegador não desenha.
 #}
-{% block heading %}<h1>Título n. {{ t.numero or '—' }} — {{ nome_da_atribuicao }}</h1>{% endblock %}
+{% block heading %}<h1>Título n. {{ t.numero or '—' }} — {{ nome_da_atribuicao }}
+  {#- NO LAYOUT NOVO A SITUAÇÃO FICA NO TÍTULO: não some ao trocar de fase. #}
+  {%- if layout_novo %} <span class="small muted">{% if t.apresentante %}{{ t.apresentante }} · {% endif %}{{ situacoes.get(t.situacao, t.situacao) }}</span>{% endif %}</h1>{% endblock %}
 {% block content %}
+{% from '_fases.html' import abre_ficha, regua, travas_e_barras %}
+{% set abas = abas_da_ficha(user.role in ['ADMIN','MANAGER']) if layout_novo else none %}
+{% if abas %}{{ abre_ficha(VERSION) }}{{ regua(abas, 'titulo-rtd-' ~ t.id, 'Fases deste título') }}
+{# Ao lado da decisão, o documento cabe na tela: a lista de arquivos e o anexar ficam logo abaixo dele. #}
+<style>.cg-ficha [data-fase=qualificacao] iframe{height:calc(100vh - 460px)!important;min-height:420px}</style>{% endif %}
 {% if t.situacao not in ['REGISTRADO','DEVOLVIDO','CANCELADO'] and user.role in ['ADMIN','MANAGER','USER'] %}
-<section class="panel">
+{# Corrigir é a exceção: no layout novo vem depois do que foi apresentado. #}
+<section class="panel{% if abas %} cg-depois{% endif %}" data-fase="apresentacao">
   <details>
     <summary class="panel-head"><span>Completar ou corrigir os dados do título</span></summary>
     <form method="post" class="form" style="padding:14px"
@@ -51,7 +59,7 @@
   {% endif %}
 </div>
 
-<section class="panel">
+<section class="panel" data-fase="apresentacao">
   <div class="panel-head"><span>O que foi apresentado</span>
     <small>{{ situacoes.get(t.situacao, t.situacao) }}</small></div>
   <div class="table-wrap">
@@ -79,7 +87,7 @@
 </section>
 
 {# ==================================================== o documento na tela #}
-<section class="panel">
+<section class="panel{% if abas %} cg-lado{% endif %}" data-fase="qualificacao">
   <div class="panel-head">
     <span>O título</span>
     <small>{{ anexos|length }} arquivo{{ '' if anexos|length == 1 else 's' }}</small>
@@ -166,7 +174,7 @@
 </section>
 
 {# ======================================================= a qualificação #}
-<section class="panel">
+<section class="panel{% if abas %} cg-lado{% endif %}" data-fase="qualificacao">
   <div class="panel-head"><span>A qualificação</span>
     <small>{{ qualificacoes|length }} decisão{{ '' if qualificacoes|length == 1 else 'ões' }}</small></div>
 
@@ -216,8 +224,8 @@
       <input type="date" name="prazo_ate"></label>
     <button class="button primary" type="submit">Registrar a qualificação</button>
     <p><small class="muted">Qualificar <strong>não registra</strong>: ela diz
-      que o título pode ser registrado. Quem toma o número do livro é o botão
-      abaixo.</small></p>
+      que o título pode ser registrado. Quem toma o número do livro é {% if abas %}a fase Registro.{% else %}o botão
+      abaixo.{% endif %}</small></p>
   </form>
   {% elif pode_qualificar %}
   <div class="notice" style="margin:14px">
@@ -229,7 +237,7 @@
 
 {# =========================================================== o registro #}
 {% if registro %}
-<section class="panel">
+<section class="panel" data-fase="registro">
   <div class="panel-head"><span>O registro lavrado</span>
     <small>{{ registro.serie }}</small></div>
   <div class="table-wrap">
@@ -274,8 +282,10 @@
 </section>
 
 {% elif t.situacao == 'QUALIFICADO' and user.role in ['ADMIN','MANAGER'] %}
-<section class="panel">
-  <div class="panel-head"><span>Registrar</span></div>
+<section class="panel{% if abas %} cg-lado-largo{% endif %}" data-fase="registro">
+  {# O documento mora na qualificação, e quem redige o teor precisa dele à mão. #}
+  <div class="panel-head"><span>Registrar</span>{% if abas and para_ver %}
+    <a class="button small" target="_blank" rel="noopener" href="{{ url_for('rcpj_rtd_titulo_ver', titulo_id=t.id, anexo_id=para_ver.id) }}">Ver o título em outra aba</a>{% endif %}</div>
   <form method="post" class="form" style="padding:14px" enctype="multipart/form-data"
         action="{{ url_for('rcpj_rtd_titulo_registrar', titulo_id=t.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -332,7 +342,7 @@
 {# O TÍTULO QUE VIROU AVERBAÇÃO (ou cancelamento) num registro que já existia.
    Sem isto ele ficava «Qualificado» para sempre — medido no título n. 1 do
    RCPJ, em 09/10/2026. Não lavra nada: o ato já está no livro. #}
-<section class="panel">
+<section class="panel{% if abas %} cg-lado-largo{% endif %}" data-fase="registro">
   <div class="panel-head"><span>Já foi averbado? Concluir pelo ato lavrado</span></div>
   {% if para_concluir %}
   <form method="post" class="form" style="padding:14px"
@@ -366,7 +376,7 @@
 {% endif %}
 
 {# ================================================ a passagem pela Central #}
-<section class="panel">
+<section class="panel" data-fase="central">
   <div class="panel-head"><span>ONRTDPJ — a passagem pela Central</span></div>
 
   {% if protocolo_central %}
@@ -516,7 +526,7 @@
 
 {# ============================================================== encerrar #}
 {% if t.situacao not in ['REGISTRADO','DEVOLVIDO','CANCELADO'] and user.role in ['ADMIN','MANAGER'] %}
-<section class="panel">
+<section class="panel" data-fase="encerrar">
   <div class="panel-head"><span>Encerrar sem registro</span></div>
   <form method="post" class="form" style="padding:14px"
         action="{{ url_for('rcpj_rtd_titulo_encerrar', titulo_id=t.id) }}">
@@ -532,4 +542,5 @@
   </form>
 </section>
 {% endif %}
+{% if abas %}{{ travas_e_barras(abas) }}</div>{% endif %}
 {% endblock %}

@@ -168,7 +168,7 @@
     {% if v.tabela == 'rascunhos_de_tela' and row.status != 'CONCLUIDA' %}
     <form method="post" action="{{ url_for('processo_rascunho_ato_lavrado', task_id=row.id, vinculo_id=v.id) }}" style="display:inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label class="small"><input type="checkbox" name="apagar_rascunho" value="1" checked> apagar o rascunho</label>
+      {% if v.rascunho %}<label class="small"><input type="checkbox" name="apagar_rascunho" value="1" checked> apagar o rascunho</label>{% endif %}
       <button class="button small">O ato foi lavrado: concluir o processo</button></form>
     {% endif %}
     {% if v.id %}<form method="post" action="{{ url_for('processo_pasta_tirar', task_id=row.id, vinculo_id=v.id) }}" style="display:inline">

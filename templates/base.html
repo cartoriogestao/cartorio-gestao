@@ -1042,7 +1042,7 @@
       <span class="user-avatar" aria-hidden="true" title="{{ user.full_name }}">{{ user.full_name[:1] | upper }}</span>
       <div class="user-copy"><strong>{{ user.full_name }}</strong><small>{{ user.role }} · v{{ VERSION }} · <a href="{{ url_for('dois_fatores') }}" title="Verificação em duas etapas da sua conta">duas etapas</a> · <a href="{{ url_for('minha_senha') }}" title="Trocar a senha da sua conta">minha senha</a></small></div>
       <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button" title="Sair do sistema">Sair</button></form>
-      <form method="post" action="{{ url_for('preferencia_layout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="layout" value="novo"><input type="hidden" name="next" value="{{ request.full_path if request.method == 'GET' else url_for('dashboard') }}"><button class="link-button" title="Experimentar o layout novo. Dá para voltar a qualquer momento.">Novo layout</button></form>
+      <form method="post" action="{{ url_for('preferencia_layout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="layout" value="novo"><input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}"><button class="link-button" title="Experimentar o layout novo. Dá para voltar a qualquer momento.">Novo layout</button></form>
     </div>
   </aside>
   <button class="sidebar-scrim" type="button" aria-label="Fechar menu" tabindex="-1"></button>

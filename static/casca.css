@@ -40,6 +40,8 @@
 .cg-area{display:flex;flex-direction:column;min-width:0;min-height:0;background:#f5f6f8;position:relative}
 .cg-faixa{min-height:30px;background:#7a1020;color:#fff;font-size:12.6px;display:flex;align-items:center;gap:8px;padding:3px 16px;flex:none}
 .cg-faixa-mes{opacity:.85}
+.cg-troca{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;background:#eef4fb;border:1px solid #cfe0f5;border-radius:10px;padding:10px 14px;margin-bottom:12px}
+.cg-troca p{flex:1 1 320px;margin:0}
 .cg-faixa-acao{color:#fff;text-decoration:underline;margin-left:auto;font-weight:600;white-space:nowrap}
 .cg-faixa-acao:hover{color:#fff}
 .cg-topo{min-height:50px;background:#fff;border-bottom:1px solid #e3e7ec;display:flex;align-items:center;gap:10px;padding:6px 14px;flex:none;position:relative;z-index:30}
@@ -182,9 +184,12 @@
 
 /* a ficha em fases: a régua, os quadros da fase aberta e a barra de ação. A ordem na tela
    sai daqui, para o HTML ficar na mesma ordem de quem continua no layout antigo. */
-.cg-ficha{display:flex;flex-direction:column}
-.cg-ficha>*{order:10;min-width:0}
-.cg-ficha>.flash{order:0}
+.cg-ficha{display:flex;flex-wrap:wrap;column-gap:12px;align-items:flex-start}
+.cg-ficha>*{order:10;min-width:0;flex:1 1 100%}
+.cg-ficha>.cg-lado{flex:1 1 calc(50% - 6px)}
+.cg-ficha>.cg-lado-rola{max-height:calc(100vh - 210px);overflow:auto}
+.cg-ficha>[data-cg-primeiro]{order:9}
+.cg-ficha>.flash,.cg-ficha>[role=alert]{order:0}
 .cg-ficha>.actions{order:1;margin:0 0 6px}
 .cg-ficha>.actions .button{min-height:0;height:28px;padding:0 10px;font-size:12.6px;display:inline-flex;align-items:center}
 .cg-ficha>details.panel:not([data-fase]){order:15;padding:6px 14px;background:none;box-shadow:none}
@@ -194,8 +199,15 @@
 .cg-ficha>.notice:not([data-fase]){order:4}
 .cg-ficha>.cg-acao{order:20}
 .cg-ficha [data-fase][hidden]{display:none!important}
+.cg-ficha>.grid2:has(>[data-fase][hidden]){grid-template-columns:minmax(0,1fr)}
 .cg-esperando>[data-fase]{display:none}
 .cg-ancora{display:block;height:0}
+.cg-ficha>.cg-ancora{flex:0 0 0;width:0;margin-right:-12px}
+.cg-ficha>details.cg-ato-do-titulo{padding:0;margin-bottom:8px}
+.cg-ficha>details.cg-ato-do-titulo>summary{padding:10px 14px;font-weight:600;cursor:pointer}
+.cg-ficha>.cg-depois{order:11}
+.cg-ficha #avisos form.form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;align-items:end}
+.cg-ficha #avisos form.form>.actions{grid-column:1/-1}
 .cg-so-leitor{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .cg-ficha .panel{padding:14px;margin-bottom:12px}
 .cg-ato-cabeca.panel{padding:6px 14px;margin-bottom:8px}
@@ -207,6 +219,8 @@
 .cg-ficha .filters button{white-space:nowrap;flex:none}
 .cg-ficha label.check{display:flex;align-items:center;gap:8px}
 .cg-ficha label.check input[type=checkbox]{min-height:0;width:16px;height:16px;margin:0;padding:0;flex:none}
+.cg-corpo label[style*="flex"]>input[type=checkbox]{min-height:0;width:16px;height:16px;margin:2px 0 0;padding:0;flex:none}
+.cg-corpo .form-grid>button{justify-self:start}
 .cg-ficha .inline-form{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0}
 .cg-ficha .inline-form input,.cg-ficha .inline-form select{flex:1 1 130px;width:auto;min-width:0;min-height:30px;padding:4px 8px;font-size:13px}
 .cg-ficha .inline-form input[type=checkbox]{flex:none;width:16px;height:16px;min-height:0}
@@ -216,6 +230,9 @@
 .cg-regua{display:flex;align-items:stretch;justify-content:space-between;gap:10px;background:#fff;border:1px solid #e3e7ec;border-radius:10px;padding:0 6px;margin-bottom:12px;position:sticky;top:0;z-index:6}
 .cg-regua-fases,.cg-regua-apoio{display:flex;gap:2px;min-width:0;overflow-x:auto;scrollbar-width:none}
 .cg-regua-apoio{border-left:1px solid #e3e7ec;padding-left:8px;flex:none}
+.cg-regua-apoio:first-child{border-left:0;padding-left:0;flex:1 1 auto}
+.cg-fase.principal{margin:5px 0 5px auto;height:32px;border:0;border-radius:7px;background:var(--cg-cor);color:#fff;font-weight:600}
+.cg-fase.principal:hover,.cg-fase.principal[aria-current]{background:var(--cg-cor);color:#fff;filter:brightness(.92)}
 .cg-fase{display:inline-flex;align-items:center;gap:6px;height:42px;padding:0 10px;color:#3a4653;font-size:13.2px;text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap;flex:none}
 .cg-fase:hover{color:#14202c;text-decoration:none;background:#f5f7f9}
 .cg-fase-n{width:20px;height:20px;border-radius:50%;border:1.5px solid #aab4bf;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:600;flex:none}
@@ -243,3 +260,52 @@
 .cg-app.cg-foco{grid-template-columns:96px minmax(0,1fr) 72px}
 .cg-app.cg-foco .cg-secoes{display:none}
 @media print{.cg-regua,.cg-acao{display:none!important}}
+
+/* as listas e os painéis: as vistas no lugar de filtros, e as portas de lavrar */
+.cg-vistas{display:flex;gap:2px;background:#fff;border:1px solid #e3e7ec;border-radius:10px;padding:0 6px;margin:0 0 10px}
+.cg-vista{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 10px;color:#3a4653;font-size:13.2px;text-decoration:none;border-bottom:2px solid transparent}
+.cg-vista:hover{color:#14202c;background:#f5f7f9;text-decoration:none}
+.cg-vista.atual{color:#14202c;font-weight:600;border-bottom-color:var(--cg-cor)}
+.cg-portas{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-top:10px}
+.cg-portas form{margin:0;display:contents}
+.cg-porta{display:flex;align-items:center;min-height:42px;padding:6px 12px;width:100%;background:#f7f8fa;border:1px solid #dde2e8;border-radius:8px;color:#14202c;font:600 13.2px "Segoe UI",system-ui,sans-serif;text-align:left;text-decoration:none;cursor:pointer;box-shadow:none}
+.cg-porta:hover{background:var(--cg-clara);border-color:var(--cg-cor);color:#14202c;text-decoration:none}
+
+/* os passos de um formulário longo */
+.cg-passos{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid #e3e7ec;padding-bottom:8px;margin-bottom:2px}
+.cg-passo{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 10px;background:none;border:0;border-radius:6px;color:#3a4653;font-size:13.2px;font-weight:500;cursor:pointer;box-shadow:none}
+.cg-passo:hover{background:#f5f7f9;color:#14202c}
+.cg-passo[aria-current]{background:var(--cg-clara);color:#14202c;font-weight:600}
+.cg-passo[aria-current] .cg-fase-n{border-color:var(--cg-cor);background:var(--cg-cor);color:#fff}
+.cg-corpo [data-passo][hidden],.cg-passos-fim[hidden],.cg-passos-fim [hidden]{display:none!important}
+.cg-passo-bloco{grid-column:1/-1;min-width:0}
+.cg-passos-fim{display:flex;justify-content:flex-end;gap:8px;border-top:1px solid #e3e7ec;padding-top:10px}
+
+/* O VERMELHO QUE NUNCA SAÍA (30/10/2026). `.danger` está em mais de duzentos lugares das telas, em
+   aviso, atraso e recusa, e o `app.css` só o pinta no botão, no aviso do alto e no cartão de número.
+   No resto, o texto saía da cor de sempre, e o que devia chamar atenção não chamava. O layout antigo
+   fica como está. */
+.cg-corpo :is(span,strong,small,em,b,p,a,dd,td,div).danger:not(.badge,.stat,.flash,.notice,.alerta,.alert,.card){color:var(--danger)}
+.cg-corpo tr.danger>td{color:var(--danger)}
+.cg-corpo :is(.notice.danger,.alerta.danger,.alert.danger,.alert-danger,.card.danger:not(.stat)){background:#fff1f0;border:1px solid #f2c4c0;border-radius:10px;color:#8f1d13}
+.cg-corpo :is(.alerta.danger,.alert.danger,.alert-danger){padding:10px 14px;margin-bottom:12px}
+.cg-corpo :is(.badge.danger,.badge-danger){background:#fee4e2;color:#b42318}
+
+/* A CAIXA DE MARCAR TEM O TAMANHO DE CAIXA DE MARCAR (30/10/2026). O `app.css` dá a todo `input` a largura
+   da linha e 40 px de altura, e o rótulo vira uma grade: em 34 telas, 97 das 181 caixas e bolinhas à vista
+   saíam esticadas, cada uma numa linha, com o texto embaixo. O `:where` deixa a regra só acima da de
+   fábrica, e por isso quem já cuida da própria caixa continua cuidando. O layout antigo fica como está. */
+:where(.cg-corpo) input:where([type=checkbox],[type=radio]){flex:none;width:16px;height:16px;min-height:0;margin:0 6px 0 2px;padding:0;vertical-align:-3px;box-shadow:none}
+:where(.cg-corpo) label:has(>input:where([type=checkbox],[type=radio])){display:block}
+
+/* OS MONITORES DO BALCÃO SÃO FULL HD (o oficial, 30/10/2026). Com a largura sobrando, os campos
+   cabem em três colunas e alguns quadros ficam lado a lado. Abaixo disso, nada muda. A grade só
+   passa a três se tiver três campos à vista, porque com dois sobraria uma coluna vazia, e não
+   passa se tiver quadro dentro ou se já estiver em meia largura. */
+@media (min-width:1600px){
+.cg-corpo :is(.grid2,.form-grid):has(>:not([type=hidden],[hidden],.span2)~:not([type=hidden],[hidden],.span2)~:not([type=hidden],[hidden],.span2)):not(:has(>.panel,>.cg-passo-bloco)):not(.cg-ato-cabeca *,.cg-lado *,.cg-lado-largo *,.cra-api *,.pagina-configuracoes *){grid-template-columns:repeat(3,minmax(0,1fr))}
+.cg-ficha>.cg-lado-largo{flex:1 1 calc(50% - 6px)}
+.cg-ficha #avisos form.form{grid-template-columns:repeat(4,minmax(0,1fr))}
+.cg-lista-larga{column-count:2;column-gap:32px}
+.cg-lista-larga>li{break-inside:avoid}
+}

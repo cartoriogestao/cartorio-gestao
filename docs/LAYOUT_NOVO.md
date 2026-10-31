@@ -12,6 +12,7 @@ por etapas, e cada uma pode ser a última: o sistema continua inteiro em todas.
 | 4. Civil e Protesto | Assento, habilitação, roteiro, dia da CRA | Novo registro em passos, correção em partes, habilitação em fases, ficha do assento em abas e ficha do título de Protesto em fases; o resto a fazer |
 | 5. Operação | Caixa, protocolo, processos, atendimento | Ficha do protocolo em abas; o resto a fazer |
 | 6. Gestão | Finanças, conformidade, configurações | A fazer |
+| Testes | Testes de todas as telas e funções do layout novo: ordem do oficial, 31/10/2026, para vir antes de terminar | A fazer |
 | 7. Limpar | Tirar a chave e a moldura antiga | A fazer |
 
 ## Como funciona
@@ -78,3 +79,19 @@ quadros, porque o registro é lavrado na matrícula, e ela leva até lá.
 Selo sem trava, comprovante da gratuidade, ficha sem digitalização, selo cancelado e o aviso
 do caixa não vão para o sino. O FERJ/FERC vira faixa fina, sem botão de fechar, e o formulário
 («avisei», data e guia) fica no sino. A palavra continua conferida no servidor.
+
+## O formulário em passos e a tela em quadros
+
+**Formulário longo vira passos, e continua um formulário só.** A régua é `<nav data-cg-passos="<id do form>">`,
+com botões `data-passo-ir`, e cada parte é um `data-passo`. `static/fases.js` mostra a parte aberta, abre sozinho
+a parte de um campo recusado e, ao trocar de passo, volta ao começo dele. Sem JavaScript, o formulário sai inteiro.
+`templates/_passos_e_gravar.html` traz a régua e a barra de gravar presa ao pé da tela. Exemplos:
+`atrib_rcpn_novo.html`, `atrib_protesto_novo.html`, `ri_protocolo.html`.
+
+**Tela sem ordem nem fase vira quadros recolhidos.** `templates/_quadros_recolhidos.html` traz `abre` e
+`ferramentas`. O título do quadro diz como ele está, sem abrir, e nunca leva segredo. O que está recolhido vai junto
+ao gravar; um campo inválido em quadro fechado abre o quadro; o endereço abre o quadro (`#cfg-centrais`); e depois de
+gravar a tela volta com os mesmos quadros abertos. Exemplos: `settings.html`, `nfse_gestor.html`, `protesto_avisos.html`.
+
+**Regra das duas.** Só muda o layout novo, por `{% if layout_novo %}`, e o estilo fica em `<style>` no próprio molde.
+O HTML do layout antigo continua igual, e os dois layouts mandam os mesmos campos: compare antes de abrir o PR.

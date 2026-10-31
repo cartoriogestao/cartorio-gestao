@@ -42,6 +42,8 @@ vai programar, veja `ARQUITETURA.md` e `AGENTES.md`. Material de apoio:
 20. [O sistema prepara; quem decide é você](#20-o-sistema-prepara-quem-decide-é-você)
 21. [Perguntas frequentes](#21-perguntas-frequentes)
 22. [O sandbox: conhecer e testar sem risco](#22-o-sandbox-conhecer-e-testar-sem-risco)
+23. [O layout novo](#23-o-layout-novo)
+24. [Atendimento ao cliente, rotinas e controles](#24-atendimento-ao-cliente-rotinas-e-controles)
 
 ---
 
@@ -278,18 +280,23 @@ As tabelas abaixo dão um panorama, tela por tela. O uso detalhado de cada
 módulo vem nas seções seguintes. Uma tela pode não aparecer para você por
 causa do seu perfil ou porque a administração fechou o módulo.
 
+> **Layout novo.** Estas tabelas seguem o menu de sempre, que continua sendo o
+> padrão. Quem escolheu o layout novo acha as mesmas telas pela barra de módulos,
+> pela busca e pelo botão **Novo** (seção 23).
+
 ### Atalhos
 
 | Tela | Para quê |
 |---|---|
 | Visão geral | a primeira tela do dia: avisos, tarefas vencidas, protocolos parados, atos sem conclusão e comunicações pendentes |
+| Projetos | os projetos de desenvolvimento da casa, só para o administrador |
 
 ### Tabelionato de Notas
 
 | Seção | Telas | Para quê |
 |---|---|---|
 | Painel | Painel do tabelionato | o resumo do dia nas Notas |
-| O balcão | Reconhecer firma · Autenticar cópia | os atos de balcão, com selo e etiqueta |
+| O balcão | Reconhecer firma · Autenticar cópia · Pública forma · Comunicação de venda de veículo | os atos de balcão, com selo e etiqueta |
 | Instrumentos | Escrituras públicas · Atas notariais · Atos de livro | lavrar, revisar e lançar no livro os atos de livro |
 | Consulta | Cartões de autógrafo · Sinais públicos · Reconhecer sinal · Pendências das escrituras | fichas de firma, sinais e o que falta nas escrituras |
 | Livros e remessas | Livros do tabelionato · Remessa às centrais · Cadastro no CCN · Consulta ao CCN | livros, termos, CENSEC/DOI e CCN do e-Notariado |
@@ -302,25 +309,27 @@ causa do seu perfil ou porque a administração fechou o módulo.
 | O dia | Protocolo / prenotação · Pedidos em andamento · Matrículas · Certidões · Rascunhos de ato · O que revisar antes de selar · Numeração dentro do teor | do título que entra até o ato lavrado e selado, e a certidão |
 | Processos longos | Usucapião extrajudicial · Retificação de área | processos com prazos, notificações e decisão |
 | Livro 3 | Registros · Minutas a revisar · O que revisar antes de selar · O que falta conferir · Certidões · Modelos | o Registro Auxiliar |
-| Consulta e acervo | Indicador Real · Indicador Pessoal · CNIB (consulta, pendências, cópia local) · ONR (índice real e editais, certidões, endereços) · Atas de ocorrência · Fichas digitalizadas · Matrículas em Word | consultas, Centrais e o acervo digitalizado |
+| Consulta e acervo | Indicador Real · Indicador Pessoal · CNIB (consulta, pendências, cópia local, consulta de CPF ou CNPJ na Central) · ONR (índice real e editais, certidões a emitir, acompanhamento de títulos, endereços, atendimentos do SAEC, cobranças) · Revisar transcrições em lote (IA) · Atas de ocorrência · Fichas digitalizadas · Matrículas em Word | consultas, Centrais e o acervo digitalizado |
 | Modelos | Modelos de atos · Modelos de documento | os textos dos atos e dos papéis do RI |
-| Remessas e obrigações | Selos e emolumentos · Exportação ONR · Carga do Next Cloud SAS · CTP · DOI | o que se envia às Centrais, à Receita e às prefeituras |
+| Remessas e obrigações | Selos e emolumentos · Exportação ONR · Indicador Real: o arquivo inteiro · Carga do Next Cloud SAS · CTP · DOI | o que se envia às Centrais, à Receita e às prefeituras |
 | Configuração | Delegatários · Numeração das matrículas | quem assina e de onde parte a numeração |
 
 ### Protesto
 
 | Seção | Telas | Para quê |
 |---|---|---|
-| O balcão | O roteiro das Centrais · Títulos · Certidões · Instrumentos | o roteiro diário e a ficha de cada título |
-| O dia da CRA | Remessa da CRA · Imagens dos títulos · Avisos e editais · Desistências · A protestar · Retorno à CRA · CRA pela API | os arquivos da CRA, na ordem do dia |
+| O balcão | O roteiro das Centrais · Títulos · Certidões · Instrumentos · Devedores · Boletos | o roteiro diário, a ficha de cada título e a cobrança do devedor |
+| O dia da CRA | Remessa da CRA · Imagens dos títulos · Avisos e editais · Desistências · A protestar · Retorno à CRA · Pedidos da CRA · CRA — falar pela API | os arquivos da CRA, na ordem do dia |
 | O dia da CENPROT | Pendências da CENPROT · Intimação Digital · Chave do CENPROT | anuências, cancelamentos, certidões e intimação eletrônica |
+| Livros e repasses | Livro de Pagamentos · Livro de Protocolo · Repasses ao apresentante · Certidão diária em relação | os livros por período, o que se deve ao apresentante e a relação das entidades |
+| Do oficial | Afirmações expressas · Correções de ofício do Protesto | o que se afirmou contra uma regra, e a fila de correções |
 | Modelos | Modelos dos documentos | os papéis do Protesto |
 
 ### Registro Civil das Pessoas Naturais
 
 | Seção | Telas | Para quê |
 |---|---|---|
-| O balcão | Assentos · Importar pré-cadastros · Averbações · Certidões · Folhas de segurança · Pedidos da Central · Documentos avulsos | o dia a dia do civil |
+| O balcão | Assentos · Importar pré-cadastros · Averbações · Certidões · Materializar certidão de outra serventia · Folhas de segurança · Pedidos da Central · Documentos avulsos | o dia a dia do civil |
 | Nascimento | Novo registro · Digitar já lavrado · Teores · Registro tardio · Gêmeos · CPF do registrado | o registro de nascimento e as formas especiais |
 | Casamento | Registro · Digitar já lavrado · Habilitação → Edital de proclamas → Enviar ao e-Proclamas → Prontas para casar · Teores | a habilitação na ordem da lei, e o assento |
 | Óbito | Novo registro · Digitar já lavrado · Teores · Comunicações mensais · O que falta perguntar | o óbito e as comunicações que ele gera |
@@ -332,8 +341,8 @@ causa do seu perfil ou porque a administração fechou o módulo.
 
 | Seção | Telas | Para quê |
 |---|---|---|
-| O balcão | Títulos apresentados (RTD e RCPJ) · Etiquetas de selos externos · Central ONRTDPJ | protocolo, qualificação e a fila da Central |
-| Registro já lavrado | Registros lavrados (RCPJ e RTD) · Últimos atos · Certidões de inteiro teor | consulta e certidão |
+| O balcão | Títulos apresentados (RTD e RCPJ) · RTD — notificações extrajudiciais · RCPJ — autenticação de livros · Etiquetas de selos externos · Central ONRTDPJ | protocolo, qualificação, notificação, livros contábeis e a fila da Central |
+| Registro já lavrado | Registros lavrados (RCPJ e RTD) · Últimos atos · RCPJ — atos sem lista de presença · Certidões de inteiro teor | consulta, saneamento e certidão |
 | Configuração e modelos | Ajustar a etiqueta de registro · Modelos dos documentos | etiqueta e papéis |
 
 ### Operação
@@ -352,12 +361,12 @@ causa do seu perfil ou porque a administração fechou o módulo.
 
 | Seção | Telas | Para quê |
 |---|---|---|
-| Dinheiro | Caixa · Protocolo geral · Protocolos parados · Depósito prévio · Recibos · Emolumentos · Selos emitidos | o caixa e o protocolo, que são um só trilho; o razão dos selos |
-| Atendimento | Atendimento / senhas · O que ficou pelo caminho · Envios às Centrais · Caixas para o visto · Relatório de erros · Rascunhos · Consultar fraudes · Relatórios | o acompanhamento do dia e o que não terminou |
-| A casa | Atenção para fraudes · Checklists · Obrigações recorrentes · LGPD e governança · TI e infraestrutura · Auditoria · Integridade | governança e controle interno |
-| Ajuda | Ajuda do sistema · Avisos da serventia · Problemas relatados · Base de conhecimento | dúvidas, avisos e relato de problemas |
+| Dinheiro | Caixa · Protocolo geral · Protocolos parados · Depósito prévio · Cobrança por boleto · NFS-e · Despesas · Carnê-leão · Recibos · Emolumentos · Selos emitidos · Selo e caixa · Selos × caixa (conferência) · Selos cancelados · Gratuidades (Portal do Selo) · Livro Diário Auxiliar | o caixa e o protocolo, que são um só trilho; o razão dos selos; boleto, nota, despesas e livro diário (seções 6.3 e 7) |
+| Atendimento | Atendimento / senhas · Senhas: espera e atendimento · WhatsApp · Portal do cliente · Robôs · O que ficou pelo caminho · Envios às Centrais · Leitura dos textos (IA) · Caixas para o visto · Relatório de erros · Relatório anual de IA · Apostila de Haia · Integrações do Protesto · Rascunhos · Produtividade · Consultar fraudes · Relatórios · Painel no celular | o acompanhamento do dia e o que não terminou (seção 24) |
+| A casa | Atenção para fraudes · Checklists · Correções de ofício · Obrigações recorrentes · Livros obrigatórios · Ouvidoria · Convite para avaliar · LGPD e governança · TI e infraestrutura · Auditoria · Integridade | governança e controle interno (seção 24) |
+| Ajuda | Ajuda do sistema · Avisos da serventia · Problemas relatados · Base de conhecimento · Avisos ao cliente (andamento) · Automação (rotinas) | dúvidas, avisos, relato de problemas e as rotinas da casa (seção 24) |
 | Modelos | Modelos dos documentos · Modelos do caixa | o catálogo geral dos papéis |
-| Configuração | Configurações · Usuários · Selador · Rede / acesso · Correções e atualizações · Ajuda (configurar) | a administração da instalação (seções 3 e 19) |
+| Configuração | Configurações · Usuários · Verificação em duas etapas · Selador · Rede / acesso · Correções e atualizações · Corrigir dado do acervo · Ajuda (configurar) · Agente (configurar) · PLD / COAF | a administração da instalação (seções 3, 19 e 24) |
 
 Algumas telas dependem de configuração ou de módulos opcionais, como os
 robôs, o atendimento por WhatsApp e a ajuda com IA, e só aparecem depois de
@@ -382,9 +391,21 @@ indicam pendência e não podem chegar ao papel assinado; a prévia de ato não
 lavrado sai marcada **RASCUNHO — ATO NÃO LAVRADO**. Confira natureza, nomes,
 CPF/CNPJ, livro, folha, termo, matrícula, custas e fundamento antes de lavrar.
 
-**Rascunho guardado.** Várias telas de lavratura guardam o preenchimento para
-continuar depois (**Administrativo → Atendimento → Rascunhos**). Rascunho não
-toma número, não ocupa folha e não pede selo.
+**Rascunho guardado.** Várias telas de lavratura guardam o preenchimento para continuar
+depois: clique em **Salvar rascunho e continuar depois**. Para voltar, abra **Administrativo →
+Atendimento → Rascunhos** e clique em **abrir**. A tela volta como você a deixou, com o segundo
+devedor, as outras partes, o selo digitado e a cobrança marcada. Confira os campos antes de gravar.
+Salvar de novo atualiza o mesmo rascunho, e não cria outro. Só o arquivo anexado não fica guardado:
+escolha de novo. Averbação, anotação e retificação reabrem só no mesmo assento. Rascunho não toma
+número, não ocupa folha, não pede selo e não cobra.
+
+**Quando o ato grava, o rascunho sai da lista sozinho**, e a tela avisa. Se o ato não ficar de pé, porque
+o sistema recusou ou o selo não saiu, ele continua lá, para corrigir e tentar de novo. Quem voltar a um
+rascunho que já virou ato, pelo botão de voltar do navegador ou por outra aba, vai para o ato, e nada se
+grava de novo. O rascunho de um processo sai igual, e o processo continua aberto até você concluí-lo.
+
+**Se o sistema recusar o que você mandou**, a tela volta com o que foi digitado, no passo em que
+você estava. Corrija o que o aviso diz e grave de novo.
 
 **Lavrado é definitivo.** Corrige-se pela ação própria (averbação,
 retificação, cancelamento, estorno), com motivo; as telas registram antes,
@@ -433,8 +454,39 @@ finalidade, atribuição, previsão de entrega e documento apresentado.
 - **Protocolos parados** mostra o que está sem andamento.
 - O protocolo geral **não substitui a prenotação** do RI (seção 9).
 
+A ficha do protocolo reúne também:
+
+- **Documentos para qualificação**: os papéis que o cliente entrega, em PDF, JPG
+  ou PNG. O ato ligado ao protocolo os vê na tela de lavrar. Retirar pede motivo
+  e não apaga.
+- **Exigências em aberto** e **Nota de exigência**: abrir, imprimir e dar por
+  cumprida, em qualquer atribuição.
+- **Tarefas deste protocolo**: criar uma tarefa a partir dele, ou ligá-lo a uma
+  que já existe.
+- **Acompanhamento pelo cliente**: o código que sai no recibo e no protocolo de
+  recepção (seção 24). Trocar o código invalida o de antes.
+- **Conferência de documento eletrônico** (RI): o selo sai daqui, com etiqueta e
+  comprovante em PDF.
+
+No layout novo, a ficha abre nos itens, e o resto fica em abas (seção 23.4).
+
 **Depósito prévio** registra o valor adiantado: o depósito é recebimento;
 usar o saldo não é receita nova; devolver gera saída, com motivo.
+
+### 6.3 Boleto, nota fiscal, despesas e livro diário
+
+- **Cobrança por boleto**: a cobrança nasce do protocolo, com o que falta pagar
+  sugerido, pelo banco configurado. Ver, cadastrar e lançar no caixa é de quem
+  opera o caixa. Cancelar no banco, conceder abatimento e mexer no protesto
+  automático é do administrador e do gerente.
+- **NFS-e**: a fila do balcão, com pendências, prontos, em envio e recusadas.
+- **Despesas**: cadastrar, autorizar, pagar, conferir e o relatório do mês. Todos
+  cadastram, e o escrevente vê só as que cadastrou. Autorizar é só do
+  administrador.
+- **Livro Diário Auxiliar**: a receita e a despesa da serventia **(norma estadual
+  — confira a do seu estado)**.
+- **Carnê-leão**: o imposto de renda pessoal do titular e o livro-caixa dele. Só
+  o administrador vê, e a tela abre no mês anterior, que é o que se apura.
 
 ---
 
@@ -462,6 +514,17 @@ recusa selo já usado, dizendo onde está.
 **Selos emitidos** pesquisa o razão por data, especialidade, usuário, tipo de
 ato, situação e número. Cancelar selo exige motivo escrito.
 
+**Selo e caixa** diz o que falta para selar aquele ato com o pagamento em ordem:
+ligar o ato a um protocolo e registrar o pagamento. A tela também lista os selos
+que o oficial liberou sem pagamento e que **você** obteve, e a barra vermelha do
+alto leva direto a essa lista.
+
+**Selos × caixa (conferência)** mostra a trava do selo pago, os selos liberados
+sem cobertura, as gratuidades sem comprovante e os atos aguardando cobertura.
+**Selos cancelados** traz os cancelados do período e o ofício de pedido ao
+Tribunal. **Gratuidades (Portal do Selo)** é a fila do ressarcimento: por selo
+gratuito, o comprovante e a cópia da certidão do ato.
+
 ---
 
 ## 8. Tabelionato de Notas
@@ -476,6 +539,13 @@ a **espécie** (semelhança e autenticidade não se trocam), descreva o document
 
 **Autenticar cópia**: folhas, tipo, documento, apresentante; confira o original
 e os valores; **Autenticar**. **Um selo por folha.**
+
+**Pública forma**: o tabelião transcreve por inteiro o documento apresentado e
+certifica a transcrição. Não é autenticação de cópia: o papel que sai é dele.
+
+**Comunicação de venda de veículo**: a comunicação ao DETRAN que vem depois do
+reconhecimento de firma no documento de transferência, quando exigida **(norma
+estadual — confira a do seu estado)**.
 
 **Escrituras, procurações e atas** (Instrumentos):
 
@@ -492,6 +562,9 @@ e os valores; **Autenticar**. **Um selo por folha.**
 6. O selo do ato de livro sai **depois** do lançamento; se falhar, o ato fica
    lavrado e a ficha oferece **selar depois**.
 7. Emita o traslado pela ficha e confira que reproduz o teor lavrado.
+
+No layout novo, a ficha do ato é dividida em fases, e as listas têm o botão de
+lavrar direto (seção 23.4).
 
 **Consulta e livros**: **Cartões de autógrafo**; **Sinais públicos** e
 **Reconhecer sinal**; **Pendências das escrituras**; **Livros do tabelionato**
@@ -515,6 +588,10 @@ comprovante. Acompanhe exigências e prazo na ficha; os documentos anexados
 ficam à vista de quem lavra. Ao lavrar, amarre o ato à prenotação — é o que
 prova a prioridade.
 
+**Encerrar a prenotação** é do administrador e do gerente: o motivo vem de uma
+lista e define a situação, e «Outro» pede observação. Prenotação devolvida também
+entra, e tudo fica na auditoria.
+
 ### 9.2 Matrículas e atos
 
 1. Localize a matrícula (número ou CNM) e confira imagem, teor, atos, selos e
@@ -534,6 +611,9 @@ prova a prioridade.
 **Minutas** recebidas de fora ficam como «a revisar»: não tomam número, não
 selam, não cobram; a revisão pode ser guardada aos poucos; descartar exige
 motivo e não apaga nada.
+
+No layout novo, a ficha da matrícula tem abas, e o formulário de lavrar tem passos
+(seção 23.4).
 
 ### 9.3 Certidões e Livro 3
 
@@ -568,6 +648,8 @@ prazos, notificações, ciência dos entes, edital, análise e decisão.
 **Retificação de área** segue a mesma lógica de processo — não é edição do
 texto da matrícula.
 
+No layout novo, os autos do usucapião ficam em abas (seção 23.4).
+
 ### 9.5 Consulta, remessas e obrigações
 
 - **Indicador Real** e **Indicador Pessoal**: índices que devem concordar com
@@ -580,6 +662,42 @@ texto da matrícula.
   participação de cada parte vem sugerida em partes iguais e é editável.
   Registre o recibo depois do envio.
 - **CNIB**, **ONR**, **Exportação ONR**, **Carga do Next Cloud SAS**: seção 16.
+- **ONR — certidões a emitir**: os pedidos que chegam pelo Ofício Eletrônico.
+  Custas, enviar, finalizar e devolver são um clique sobre um pedido; buscar só
+  lê. **ONR — acompanhamento de títulos**: o que espera subir, com o motivo, o que
+  já subiu e o que foi anulado.
+- **Exportação ONR** tem também o botão **Indicador Real (.XML)**. Ele leva as
+  matrículas abertas no período que estão completas, e a tela lista as que ficam
+  de fora, com o motivo. O formato ainda não foi conferido por uma resposta do
+  ONR. O quadro **Digitalização nova ainda não enviada ao ONR** mostra o que a
+  rotina diária ainda vai levar; nada ali envia.
+- **Indicador Real: o arquivo inteiro** leva todo imóvel ativo em um arquivo só. Onde a
+  ficha está em branco, vale o que o texto dela diz e, depois, a regra da serventia.
+  **Nenhuma ficha muda e nada é enviado.** Use **Conferir o que sairia** e **Baixar o
+  arquivo**: o `.zip` traz o XML e os relatórios do que ficou fora, de onde veio cada
+  dono e cada campo preenchido. Conferir e baixar são do administrador e do gerente.
+  Só o administrador decide as **fichas que não vão**, os **donos informados** e a
+  **regra da serventia**, como o que vale quando a ficha não diz se é rural ou urbana.
+  Instalação nova nasce sem nenhuma dessas decisões.
+- **CNIB: consultar CPF ou CNPJ** pergunta à Central, com o cliente na frente, o que
+  pesa sobre aquele documento agora. É diferente da tela **CNIB**, que olha a cópia
+  local. Ela só diz que não há ordem quando a Central disse: se a resposta não vier
+  clara ou a rede cair, a tela avisa que isso **não** quer dizer que não há ordem. A
+  resposta vale para aquele documento: homônimo com outro documento não entra. Cada
+  consulta fica na auditoria.
+- **ONR: atendimentos do SAEC** é a lista de atendimento do portal do ONR: contato,
+  WhatsApp, e-mail, LGPD, help desk, acompanhamento registral e resposta de exigência.
+  **Pedido de certidão não chega por aqui:** ele está em **ONR — certidões a emitir**. O
+  que espera a serventia vem primeiro. Ler é do balcão; **responder é só do
+  administrador**, e vai ao ONR em nome da serventia.
+- **ONR: cobranças** mostra o que o ONR tem e as tentativas feitas por este sistema. Só
+  o administrador gera cobrança, pela ficha do atendimento ou por esta tela. O
+  atendimento não traz o endereço do pagador, e o ONR o exige. **Abra o link e confira o
+  valor antes de passar ao cliente:** o manual do ONR se contradiz sobre a forma de
+  mandar o valor. O sistema não cancela cobrança: isso é no portal.
+- **Revisar transcrições em lote (IA)**: a IA compara o texto de cada ficha
+  transcrita com a página do livro e separa o grave do leve. Ela não corrige nada:
+  a lista diz onde conferir.
   **CTP — prefeituras** e **Selos e emolumentos** também ficam em Remessas e
   obrigações.
 - **Delegatários** e **Numeração das matrículas** são configuração restrita.
@@ -589,7 +707,7 @@ texto da matrícula.
 ## 10. Protesto de títulos
 
 O módulo pode estar fechado para o balcão (seção 3.2). Seções: O balcão; O dia
-da CRA; O dia da CENPROT; Modelos.
+da CRA; O dia da CENPROT; Livros e repasses; Do oficial; Modelos.
 
 **O roteiro das Centrais** é o checklist do dia, com o horário de cada envio e
 atalho para a tela de cada passo. A coluna «hoje» conta, não julga atraso.
@@ -625,7 +743,26 @@ congela; não sai negativa para quem tem protesto.
 **O dia da CENPROT**: **Pendências da CENPROT** reúne anuências, pedidos de
 cancelamento, pedidos de certidão, decisões judiciais e propostas de
 renegociação. **Decidir e enviar são dois botões**, e a tela não lavra ato — o
-cancelamento continua na ficha do título.
+cancelamento continua na ficha do título. **Chave do CENPROT** mostra, recolhida
+junto da contagem, a lista dos títulos que esperam a chave.
+
+**Na CRA:** **Pedidos da CRA** é o que veio de lá e ainda espera a casa. **CRA —
+falar pela API** mostra o estado da ligação e o que dá para trazer. Em **Retorno
+à CRA**, cada arquivo gerado abre os atos que levou, e o que foi desfeito depois
+sai marcado.
+
+**No balcão:** **Devedores** lista quem tem título em andamento, com os alertas
+primeiro. **Boletos** mostra os títulos que podem ter boleto, os emitidos e as
+pendências.
+
+**Livros e repasses:** **Livro de Pagamentos** e **Livro de Protocolo**, por
+período. **Repasses ao apresentante**, com as pendências e as guias. **Certidão
+diária em relação**, com as entidades e o que falta gerar e entregar.
+
+**Do oficial:** em **Afirmações expressas**, cada vez que a escrevente insiste em
+algo que a regra diz ser erro, fica escrito por que ela seguiu, com quem, quando
+e qual regra. **Correções de ofício** é a fila das correções propostas, com as
+abas Propostas, Executadas, Recusadas e Falhas.
 
 ---
 
@@ -680,6 +817,13 @@ de segurança é estoque: só se gasta quando o selo sai; folha estragada se
 **inutiliza** com motivo. Segunda via é nova emissão sobre o mesmo assento —
 **não duplique o assento** se ela falhar.
 
+**O caminho de uma folha**, em **Folhas de segurança**, procura a folha pelo
+número impresso, com ou sem a série, e diz a situação de hoje, em que atos ela
+esteve e quem a devolveu.
+
+**Materializar certidão de outra serventia** sela a materialização da certidão
+eletrônica que veio de outro cartório, com os dados da certidão recebida.
+
 **Pedidos da Central** é a fila do que chega pela Central do Registro Civil;
 pedidos de **registro** se lavram pela tela de assento, não pela fila.
 **Documentos avulsos** são os papéis escritos em volta do ato; o que o modelo
@@ -691,6 +835,9 @@ obrigações, na ordem do prazo: SIRC, FUNAI, CRC, IBGE e comunicações mensais
 confira a do seu estado)**. **Estar no painel não é prova de envio**: confira
 arquivo, destino, competência e recibo, e registre a entrega quando a tela
 pedir. Assentos do acervo não contam como atraso.
+
+No layout novo, o novo registro tem passos, a ficha do assento tem abas, a
+correção tem partes e a habilitação tem fases (seção 23.4).
 
 ---
 
@@ -709,6 +856,17 @@ pedir. Assentos do acervo não contam como atraso.
    registro sem teor no sistema se certifica pelo livro físico.
 7. **Etiquetas de selos externos**: só para selo realmente obtido em canal
    externo, conferindo número e origem.
+8. **RTD — notificações extrajudiciais**: registro, diligências, certidão
+   positiva ou negativa e prazos **(norma estadual — confira a do seu estado)**.
+9. **RCPJ — autenticação de livros**: pedido, termos, selo e controle dos livros
+   contábeis.
+10. **Lista de presença no RCPJ**: na constituição de pessoa jurídica sem fins
+    econômicos, e nas averbações de eleição, posse e alteração estatutária, quem
+    lavra declara a lista de presença ou a certidão de não apresentação **(norma
+    estadual — confira a do seu estado)**. Ato fora dessas hipóteses segue com
+    justificativa escrita. **RCPJ — atos sem lista de presença**, do administrador
+    e do gerente, mostra os lavrados sem essa declaração, para sanear. O que foi
+    lavrado não se reescreve.
 
 ---
 
@@ -718,11 +876,15 @@ Menu **Livros e acervo**:
 
 - **Livros e termos**: séries, livro aberto, folha e próximo número. Abre livro
   (o número é o seguinte da série, não se digita), emite **termos de abertura e
-  encerramento** em `.odt`, registra faces inutilizadas, encerra livro.
+  encerramento** em `.odt`, registra faces inutilizadas, encerra livro. O quadro
+  **O que a inspeção cobra de cada livro** traz a lista de conferência, série por
+  série.
 - **Encerramento diário**: fecha o dia dos livros de protocolo e mostra atrasos.
 - **Numeração dos livros**: configuração restrita — **não altere contador para
   corrigir um ato isolado**.
 - **O que falta informar**: seção 17.
+- **Livros obrigatórios** (em A casa): o que o Código de Normas manda ter e onde
+  cada livro está no sistema **(norma estadual — confira a do seu estado)**.
 - **Importar de outro sistema** (arquivo JSON padronizado):
   1. escolha o que importar e envie o arquivo;
   2. **Conferir**: leia resumo, recusas, duplicidades e campos ausentes;
@@ -755,7 +917,11 @@ histórico ou andamento da ficha.
 - **O padrão vem do sistema; o ajuste é seu.** **Voltar ao padrão do sistema**
   desfaz o ajuste.
 - A tela **confere o modelo antes de gravar** e recusa o que o papel não sabe
-  montar; corpo vazio não se grava.
+  montar: erro de forma, ou um nome que o padrão daquele papel não usa. Corpo vazio
+  não se grava.
+- **A conferência olha a forma.** Um campo com o nome errado dentro de um grupo que
+  existe, como `serventia.cidde`, pode sair em branco no papel. Por isso a prévia vale
+  a pena.
 - Os moldes `.odt` das certidões do Registro Civil se baixam, ajustam no
   LibreOffice e reenviam (**Enviar o papel ajustado**).
 - Antes de alterar, faça a prévia com um exemplo. **Modelos do caixa** cobre
@@ -800,9 +966,9 @@ com ele configurado.
 | CRA | Protesto | O dia da CRA | recebe remessas e desistências; gera confirmação, retorno e andamento |
 | CENPROT | Protesto | Pendências da CENPROT; Chave do CENPROT | baixa e responde pendências; grava a chave nacional do título; envia o arquivo de emolumentos |
 | Intimação Digital | Protesto | Intimação Digital | acompanha a intimação eletrônica; a intimação no livro continua na ficha do título |
-| ONR | RI | ONR — índice real e editais; endereços a conferir; Exportação ONR | envia indicador real e edital do usucapião; propõe endereços lidos do teor para você conferir |
+| ONR | RI | ONR — índice real e editais; endereços a conferir; Exportação ONR; Indicador Real: o arquivo inteiro; ONR — atendimentos do SAEC; ONR — cobranças | envia indicador real e edital do usucapião; propõe endereços lidos do teor para você conferir; gera o arquivo inteiro do indicador; lê e responde atendimentos; gera cobrança, com clique do administrador |
 | Next Cloud SAS (ONR) | RI | Carga do Next Cloud SAS | prepara e confere a carga do indicador pessoal e das imagens; quem transmite são os programas do ONR |
-| CNIB | RI | CNIB — indisponibilidade; o que espera seu okay | mantém a cópia local, avisa quando nome ou documento bate e **prepara** a averbação, que espera o okay. Veja a data da última atualização antes de concluir que não há restrição |
+| CNIB | RI | CNIB — indisponibilidade; o que espera seu okay; CNIB — consultar CPF ou CNPJ | mantém a cópia local, avisa quando nome ou documento bate e **prepara** a averbação, que espera o okay. Veja a data da última atualização antes de concluir que não há restrição |
 | Receita (DOI) | RI e Notas | DOI — Receita Federal | gera o arquivo mensal da serventia e guarda o recibo |
 | e-Proclamas | Registro Civil | 2b · Enviar ao e-Proclamas | publica o edital de proclamas e guarda o número do lote |
 | Certidão Eletrônica | Registro Civil | Pedidos da Central | traz a fila de pedidos e devolve a certidão |
@@ -1148,3 +1314,284 @@ Na próxima vez que você ligar, ele nasce de novo, com a carga de demonstraçã
 Se a pasta do programa não aceitar escrita, o sandbox usa
 `%LOCALAPPDATA%\CartorioGestaoSandbox` — a janela mostra a pasta em uso, na
 linha «dados».
+
+---
+
+## 23. O layout novo
+
+O layout novo é outra moldura para as mesmas telas: menos rolagem, e só o que
+importa naquele momento do ato. **Nenhuma rota, formulário ou regra muda**: o que
+o sistema recusava, continua recusando. Trocar de layout não apaga nem altera
+nada, e dá para voltar a qualquer hora.
+
+### 23.1 Como ligar e como voltar
+
+- **O layout novo é o padrão.** Quem nunca escolheu abre nele, com um aviso em todas as
+  telas: **Ficar neste** ou **Voltar ao antigo**. Qualquer um dos dois grava a escolha, e o
+  aviso some.
+- **Cada pessoa pode trocar quando quiser.** Para voltar, clique no seu nome, no pé da
+  barra de módulos, e use **Voltar ao layout antigo**. No layout antigo, o botão **Novo
+  layout** fica no rodapé do menu.
+- **O administrador pode devolver a casa ao antigo**, no mesmo lugar: **Devolver o layout
+  antigo como padrão da casa**, que se desfaz com **Usar este layout como padrão da
+  casa**. A escolha que cada pessoa já fez continua valendo para ela.
+- **O timbre na tela** fica só onde se confere antes de imprimir: caixa, protocolo geral,
+  prenotação e certidão de notificação. O layout antigo e o papel impresso não mudam.
+- **Em monitor largo** (a partir de 1600 px), os campos passam a três colunas e alguns
+  quadros ficam lado a lado. Em tela menor, nada muda.
+
+### 23.2 A moldura
+
+| Onde | O que é |
+|---|---|
+| Barra de módulos, à esquerda | Início, Notas, Registro de Imóveis, Registro Civil, Protesto, RCPJ e RTD, Caixa e Protocolo, Atendimento, Processos e Malote, Livros e Acervo, Finanças e Selos e Gestão. O que era «Administrativo» se dividiu entre Caixa e Protocolo, Atendimento, Finanças e Selos e Gestão |
+| Coluna ao lado | as seções do módulo aberto |
+| Faixa do alto | onde você está e as subabas da seção |
+| **Buscar ou fazer** | a busca da seção 23.3 |
+| Atendimento | o protocolo que você está atendendo |
+| **Novo** | abrir ou lavrar qualquer coisa, sem navegar (seção 23.3) |
+| Sino | os avisos da casa, e o formulário do recolhimento do mês |
+| Coluna de apoio, à direita | WhatsApp, Produtividade, Ajuda e Agente, em toda tela, abrindo ao lado do conteúdo |
+
+**Continuam à vista, fora do sino:** selo sem trava, comprovante da gratuidade,
+ficha sem digitalização, selo cancelado e o aviso do caixa. O recolhimento do mês
+vira uma faixa fina, sem botão de fechar.
+
+Cada pessoa só vê o que o seu perfil alcança, como no menu de sempre.
+
+### 23.3 Buscar e abrir pelo teclado
+
+**Buscar ou fazer** (Ctrl+K) tem três grupos:
+
+- **Fazer:** as mesmas ações do botão Novo.
+- **Ir para:** as telas. Acha pelo nome novo, pelo nome antigo e sem acento.
+- **Procurar em:** Matrículas, Atos de Notas, Cartões de autógrafo, Assentos do
+  Registro Civil, Títulos de protesto e Protocolo geral.
+
+**Novo** abre com a tecla **N**, fora de um campo de texto. A letra marca, e
+**Enter** confirma: **N, P, Enter** abre a procuração pública.
+
+| Letra | Abre | | Letra | Abre |
+|---|---|---|---|---|
+| F | Reconhecer firma | | T | Prenotar título |
+| A | Autenticar cópia | | C | Certidão de imóvel |
+| P | Procuração pública | | N | Nascimento |
+| E | Escritura pública | | G | Protocolo geral |
+
+Outras teclas: **F1** abre a Ajuda, **Alt+P** a Produtividade, **Alt+W** o WhatsApp
+e **Esc** fecha o que estiver aberto.
+
+### 23.4 As fichas divididas
+
+Uma ficha longa aparece em partes, de uma destas três formas:
+
+- **Fases**, quando o ato tem ordem: a régua numera, marca o que está feito e o que
+  falta. Fase que depende de outra diz o que vem antes e leva até lá.
+- **Abas**, quando é um registro vivo, sem ordem própria.
+- **Passos ou partes**, quando é um formulário longo. **É um formulário só:** o que
+  está escondido vai junto quando se grava.
+
+Em todas:
+
+- **O número na aba** é a contagem, e o número em vermelho é o que está pendente.
+- **O endereço diz a parte aberta**, e por isso voltar, recarregar e colar o link
+  funcionam. **Depois de gravar**, a ficha volta à parte em que você estava.
+- **Campo obrigatório em branco numa parte escondida:** ela abre sozinha, com o
+  cursor no campo.
+- **A trava da tela só orienta.** Quem recusa continua sendo o sistema, com as
+  mesmas verificações de sempre.
+- **«O que espera ação»** vem no alto, com um botão que leva direto ao lugar. Ele
+  só aparece quando há o que fazer, e o acervo não entra.
+
+| Tela | Forma | Partes | Onde abre |
+|---|---|---|---|
+| Ato de Notas | Fases | Preparar · Partes · Evidências (só nas atas) · Teor · DOI (só nas escrituras) · Lançar · Entrega. De apoio: Documentos e Financeiro | na primeira fase pendente; ato lançado abre na Entrega |
+| Matrícula | Abas | Resumo · Atos · Teor e imagem · Partes · Protocolos (quando há) · Certidões · Revisar · Novo ato | no Resumo |
+| Novo ato da matrícula | Passos | Protocolo · Ato e teor · Selo · Partes · Lavrar | no Protocolo; minuta ou encerramento abre em Ato e teor |
+| Prenotação | Fases | Título · Emolumentos · Qualificação. De apoio: Documentos, e Notas, ONR e Histórico quando há | no que espera ação, com o prazo no título da página |
+| Usucapião | Abas | Processo · Conferência · Peças · Andamento · Relatório · Decisão | em Processo, que começa por «O que fazer agora» |
+| Novo registro de nascimento ou natimorto | Passos | Nascimento (ou Natimorto) · Registrado · Filiação · Declarante · Termo e selo | no primeiro passo |
+| Novo registro de óbito | Passos | Óbito · Falecido · Filiação · Perguntas · Declarante · Termo e selo | no primeiro passo |
+| Novo registro de casamento | Passos | Celebração · Primeiro cônjuge · Segundo cônjuge · Testemunhas · Termo e selo | no primeiro passo |
+| Correção do assento | Partes, sem número | O assento · Campos do termo · Teor · as pessoas, conforme a espécie. O motivo e o botão de salvar ficam sempre à vista | em O assento |
+| Ficha do assento | Abas | Assento · Filiação e dados · Averbações · Anotações · Retificações · Certidões · Termo do livro · Documentos | em Assento |
+| Habilitação de casamento | Fases | Habilitação · Edital · Prontas para casar · Registro. De apoio: Andamento | no que espera ação |
+| Protocolo geral | Abas | Itens e quitação · Dados e encerramento · Documentos · Exigências · Tarefas · Vínculos (só no RI) · Acompanhamento · Movimento (com lançamento) | nos itens |
+| Título de Protesto | Fases | Apontamento · Intimação · Desfecho. De apoio: Vida do título, Emolumentos, Imagem e, para o administrador, Averbação | no que espera ação; título encerrado abre na Vida do título |
+| Título do RCPJ e do RTD | Fases | Apresentação · Qualificação · Registro. De apoio: Central e, para o oficial, Encerrar, enquanto o título não saiu | no que espera ação: apresentado ou com exigência, na Qualificação; qualificado ou registrado, no Registro (para o balcão, o qualificado abre na Qualificação); devolvido ou cancelado, na Apresentação |
+| Registro do Livro 3 | Abas | Resumo · Atos (quando há) · Teor e imagem · Partes · Minutas (quando há) · Revisar · Certidões · Corrigir (para o oficial) · Lançar (com o registro ativo) | no Resumo, que começa por «O que espera ação» |
+| Prenotar, no Protocolo | Passos | Apresentante e destino · O título e o selo | no primeiro passo |
+| Título novo de Protesto | Passos | O título · Devedor · Apresentante e cedente. O segundo devedor vem recolhido | no primeiro passo |
+| Abrir matrícula | Passos | O imóvel · Descrição · Proprietário · Abertura e teor. Ficha de acervo não tem Proprietário | no primeiro passo |
+| Novo registro do Livro 3 | Passos | O título · Teor · Partes · Selo e cobrança | no primeiro passo |
+| Corrigir a matrícula | Partes, sem número | Identificação · Imóvel · Rurais e fiscais · Observação. O motivo fica sempre à vista | em Identificação |
+| Abrir habilitação de casamento | Passos | O casamento · Os nubentes | no primeiro passo |
+| Nova retificação de área, no RI | Passos | O processo · Requerente e profissional · Área e georreferenciamento | no primeiro passo |
+| Nova retificação, no Registro Civil | Passos | Qual dos três · Como o pedido chegou · Quem pede, e o quê | no primeiro passo |
+
+**Listas e Painel de Notas.** Procurações, fins previdenciários, substabelecimentos,
+revogações, renúncias e testamentos têm **Lavrar** no alto, que abre o ato direto, e
+as vistas **Em lavratura**, **Lavrados** e **Todos**, com a contagem de cada uma.
+Cada linha em lavratura tem **Continuar**. Escrituras e atas abrem na lista, e os
+modelos e a conferência ficam na subaba **Modelos e conferência**. O Painel tem
+**Lavrar agora** e **O que espera você**.
+
+**Nas abas, o que não tem lista não aparece.** Na ficha do assento, por exemplo,
+Anotações só existe quando há anotação; lançar não depende dela, porque **Lançar
+no assento** está na aba Assento. No protocolo, Documentos, Exigências e Tarefas
+ficam mesmo vazias, porque é nelas que se cria o primeiro.
+
+**No título de Protesto, o Desfecho** traz um quadro por ato que cabe naquela situação.
+Só um vem aberto: o protesto, quando cabe. Os outros abrem com um clique. Os avisos do
+alto, como selo que falta, pedido da CRA e sustação, saem em todas as abas.
+
+**Título novo, Abrir matrícula, Livro 3 e Corrigir a matrícula:** o botão de gravar fica numa barra
+presa ao pé da tela. Antes do último passo, quem fica azul é **Avançar**. Se você gravar antes, um campo
+recusado abre o passo dele, com o cursor nele. Se o proprietário, o apresentante ou o item da tabela
+estiverem vazios, a barra avisa, mas não impede. Os botões de rascunho ficam na linha do Voltar.
+
+**Prenotar, Abrir habilitação e as duas retificações:** o botão de gravar fica no último passo, e
+**Salvar rascunho** e **Não termina hoje** ficam sempre à vista.
+
+**No título do RCPJ e do RTD**, o documento fica na Qualificação, ao lado da decisão. O registro
+é ato do oficial: para o balcão, a fase Registro diz isso, e leva de volta à Qualificação.
+
+**No registro do Livro 3**, o botão de selar cada ato fica na aba Atos, e «O que espera ação»
+leva direto a ele. O cancelamento do registro vem recolhido na aba Lançar, com o mesmo formulário.
+
+### 23.5 As telas em quadros recolhidos
+
+Algumas telas longas não têm ordem nem fase. Nelas, cada grupo é um quadro que abre e fecha, e
+o título do quadro já diz como ele está. **O que está recolhido vai junto quando se grava**, e
+um campo recusado num quadro fechado abre o quadro, com o cursor nele.
+
+**Roteiro do dia do Protesto.** Cada conduta é um quadro. Fechado, ele mostra o número, o
+título, a hora limite e a situação, com o que falta. Vêm abertas as condutas atrasadas e a
+primeira pendente. **Primeiro: o que ficou de antes** continua em cima, a conferência dos
+títulos e o envio às Centrais ficam depois das condutas, e **O que saiu do roteiro** vem
+recolhido. Os links para uma conduta, como os de **Atrasado agora**, abrem o quadro sozinhos, e o
+encerramento do dia continua na última conduta, com o mesmo formulário.
+
+**Catálogo de modelos.** Cada atribuição é um grupo recolhido, com a contagem de papéis e de
+ajustes da casa. **Procurar papel** acha pelo nome e pela descrição, sem ligar para acento, e
+abre os grupos em que achou. Editando um papel, só ele aparece, com **Todos os papéis** para
+voltar.
+
+**O que ficou pelo caminho.** A lista abre a tela, com um grupo por fonte e a contagem. A fonte
+com item parado vem primeiro, e a primeira vem aberta. **Por onde ela olha** e **Moldar o que
+fica e o que sai** ficam recolhidos no fim.
+
+**CTP.** Cada ato é um quadro, com as pendências no título, e só o primeiro que espera alguma
+coisa vem aberto. Com um ato aberto, a tela ainda passa de um monitor, porque cada ato tem mais
+de vinte campos.
+
+**Formulário do termo** (Teores, no Registro Civil). **Ver como fica** responde acima dos campos.
+Os campos ficam em colunas, e a explicação de cada um em **De onde vem**. **Conferir com um
+assento real**, os teores e a origem do texto ficam recolhidos.
+
+**Telas longas do administrador.** Configurações, Importar de outro sistema, Uso de IA e
+Numeração dos livros. O título de cada quadro diz como ele está, por exemplo, «ligado · guarda 5
+dias», e o que espera ação vem primeiro: o aviso das Centrais sem credencial, os fornecedores
+sem dados e as séries sem número. **As Configurações continuam sendo um formulário só:** **Salvar
+configurações** fica à vista e grava todos os quadros acima dele; Centrais, Proteção do backup e
+Revisão das transcrições têm botão próprio. O endereço abre o quadro
+(`/configuracoes#cfg-centrais`), e depois de gravar a tela volta com os mesmos quadros abertos.
+
+**Protocolo e DOI.** No **Protocolo**, os títulos com prazo vencido ou a até 5 dias úteis de vencer
+ficam ao lado de **Prenotar novo título**, o mais atrasado primeiro. Os outros em aberto e o histórico
+ficam recolhidos, e a busca traz o resultado no alto. Na **DOI**, o título do quadro dos meses diz
+quantos devem satisfação, quantos venceram e quais ainda estão no prazo. Logo abaixo vem o mês
+escolhido, com o que falta antes de **Gerar o arquivo**, e os atos parados vêm primeiro. **Como efetuar
+a notificação**, no usucapião, não recolhe nada: os passos ficam em colunas.
+
+**Telas de dinheiro, chaves e automação.** Carnê-leão e a configuração dele, NFS-e, Configurações que
+cobram a equipe, Automação, Selador e Ajuda: configurar. O título de cada quadro diz como ele está, por
+exemplo, «15 despesa(s) · 8 a classificar». **O título nunca mostra senha, chave, usuário, endereço,
+documento ou impressão digital:** diz só se estão lá.
+
+- **Carnê-leão:** despesa a classificar e entrada sem resposta vêm primeiro, e as outras ficam em **As
+  já marcadas**. Sem pendência, abre **O mês em números**.
+- **NFS-e:** **O que falta** fica em cima, o quadro de onde vem a falta abre sozinho, e **Gravar** grava
+  os cinco quadros de dados, abertos ou recolhidos.
+- **Configurações que cobram a equipe:** a caixa **Afirmo** fica no mesmo quadro do botão.
+- **Automação:** **Situação** e **Rodar agora** ficam à vista, e **Rodadas** abre sozinha quando há
+  problema em aberto.
+- **Selador:** o que falta e **Testar a conexão** ficam em cima.
+- **Ajuda: configurar:** o provedor em uso sem chave avisa no alto e abre **As chaves de API**.
+
+**Protesto e consultas.** CRA pela API, Avisos de intimação, Repasses, Certidão, Certidão eletrônica,
+Remessa do SIRC, ficha do processo, CPF do registrado, Modelos de atos, Livros obrigatórios, Selos
+emitidos e Carga do Next Cloud SAS. O título de cada quadro diz como ele está, por exemplo, «3 aviso(s) ·
+2 sem comprovante».
+
+- **Avisos:** abre o primeiro quadro que tem o que fazer, e os botões do roteiro, como **Avisos
+  entregues e comprovantes**, abrem o quadro certo.
+- **Repasses:** a rotina ou o robô com erro abre sozinho.
+- **Certidão:** o teor fica à vista ao lado dos dados, e só o cancelamento se recolhe.
+- **Certidão eletrônica:** o que já saiu do registro vem antes de **Criar na Central**.
+- **SIRC:** os botões de cada lote vêm primeiro, e o que ficou retido vem aberto.
+- **Processo:** **Registrar andamento** fica à vista. A pasta abre quando tem peça, as evidências abrem
+  quando a tarefa as exige, e o status, o vencimento e o responsável ficam em **Dados do processo**.
+- **CPF:** cada nascimento é um quadro, e **Abrir todos** abre a lista inteira.
+- **Modelos de atos:** registros e averbações ficam em duas colunas.
+- **Livros obrigatórios:** o que falta vem primeiro.
+
+**Livros e termos, e Folhas de segurança.** Nos **Livros**, cada atribuição é um quadro, com a contagem no
+título, e a que tem série sem livro aberto abre sozinha. Nas **Folhas**, o estoque e **A folha estragou** ficam
+à vista, **Chegou uma caixa** abre quando não há folha em branco, e procurar uma folha ou buscar nas gastas
+volta com o quadro aberto.
+
+**As outras telas** abrem na moldura nova, do jeito de sempre.
+
+---
+
+## 24. Atendimento ao cliente, rotinas e controles
+
+**Atendimento ao cliente**
+
+- **Portal do cliente**: cada protocolo ganha um código de acompanhamento, impresso
+  no recibo e no protocolo de recepção. Com o número e o código, o cliente vê a
+  situação do pedido e baixa um comprovante que leva só o essencial. Quem não tem o
+  papel não consulta o protocolo de outra pessoa.
+- **Avisos ao cliente (andamento)**: o consentimento do cliente, a marca de «pronto
+  para retirar» e a fila. A tela não manda nada: quem manda é a rotina da automação.
+- **WhatsApp**: a fila das conversas e o atendente com IA, depois de ligados pela
+  administração. **Onde transcrever os áudios** é escolha do administrador, em
+  **Atendente com IA**, e a opção «Neste servidor» só grava depois de uma conferência
+  com um áudio de verdade.
+- **Senhas: espera e atendimento**: espera, atendimento e desistências do período.
+- **Ouvidoria**: o balcão, o gerente e o oficial registram as manifestações. A
+  identificação de quem se manifestou só abre na ficha, e cada abertura fica na
+  auditoria. **Convite para avaliar** leva à **pesquisa de satisfação**: o convite de
+  um protocolo vai ao cliente, e há um link para o tablet do balcão.
+
+**Rotinas e leituras**
+
+- **Automação (rotinas)**: a central única das rotinas da casa. **Rodar agora** só
+  marca o pedido, e a rotina roda no minuto seguinte. O gerente vê; ligar, editar e
+  deixar agir sozinha é do administrador.
+- **Produtividade**: o controle diário. Tempo líquido, desvio, eficiência e semana
+  são calculados. O botão **Produtividade** abre em qualquer tela, para lançar rápido
+  ou iniciar o cronômetro.
+- **Leitura dos textos (IA)**: os apontamentos da leitura que ninguém conferiu ainda.
+  **Relatório anual de IA**: a página pronta para imprimir. **O que a ajuda sabe do
+  projeto** mostra o que a ajuda lê sobre o sistema, sem gastar consulta.
+
+**Controles do oficial**
+
+- **PLD / COAF**: a fila do COAF, só do administrador, porque as comunicações são
+  sigilosas inclusive dentro da casa. O sistema seleciona, prepara e registra; **quem
+  envia é a pessoa**, e o que se decide fica com ela.
+- **Correções de ofício**: a escrevente ou um agente propõe, e a correção só se executa
+  depois de aprovada. As abas são Propostas, Executadas, Recusadas e Falhas.
+- **Painel no celular**: só do titular. Os números do dia, da semana e do mês, sem nome,
+  sem CPF e sem teor.
+- **Verificação em duas etapas**: cada pessoa ativa na própria conta. A tela do gestor
+  mostra quem tem, quem está travado e o que se exige.
+- **Corrigir dado do acervo**: só os campos liberados, para o que veio importado com erro.
+- **Apostila de Haia**: vem desligada, e é o oficial quem liga. Ligada, traz os pedidos,
+  o controle e a certidão. Cancelar apostila emitida é do oficial e do gerente.
+- **Integrações do Protesto**: o modo e o provedor do AR digital e do boleto, sem mostrar
+  segredo.
+- **Agente (configurar)**: o provedor, o modelo, os tetos e as chaves. Ligar a escrita é
+  um clique consciente, com o aviso ao lado.

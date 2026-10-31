@@ -22,6 +22,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import jinja2
+
+
+def test_o_titulo_da_aba_do_cpf_nao_leva_script():
+    fonte = (Path(__file__).resolve().parents[1] / "templates" / "rcpn_cpf.html").read_text(encoding="utf-8")
+    titulo = re.search(r"{% block title %}(.*?){% endblock %}", fonte, re.S).group(1)
+    assert titulo == "CPF no registro de nascimento"
+    assert fonte.count("<script>") == 1
 import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent

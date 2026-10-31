@@ -1,35 +1,5 @@
 {% extends "base.html" %}
-{% block title %}CPF no registro de nascimento{# UM CLIQUE POR CAMPO, em vez de selecionar com o mouse.
-   **E paliativo, e esta dito na tela que e.** O que resolve de verdade e
-   preencher o formulario da CRC de uma vez — e para isso preciso ver os nomes
-   dos campos daquela tela, que so aparece com o certificado do oficial. #}
-<script>
-document.addEventListener("click", function (e) {
-  var b = e.target.closest("[data-copiar]");
-  if (!b) return;
-  var texto = b.getAttribute("data-copiar");
-  var antes = b.textContent;
-  function avisa(ok) {
-    b.textContent = ok ? "copiado" : "não deu";
-    setTimeout(function () { b.textContent = antes; }, 1200);
-  }
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(texto).then(function () { avisa(true); },
-                                             function () { avisa(false); });
-  } else {
-    // O balcão roda em http na rede local, e ali `navigator.clipboard` não
-    // existe. Sem este caminho o botão não faria nada, calado.
-    var a = document.createElement("textarea");
-    a.value = texto; a.style.position = "fixed"; a.style.opacity = "0";
-    document.body.appendChild(a); a.select();
-    var ok = false;
-    try { ok = document.execCommand("copy"); } catch (x) { ok = false; }
-    document.body.removeChild(a);
-    avisa(ok);
-  }
-});
-</script>
-{% endblock %}
+{% block title %}CPF no registro de nascimento{% endblock %}
 {% block content %}
 {% from '_quadros_recolhidos.html' import abre, ferramentas %}
 {# NO LAYOUT NOVO, OS NASCIMENTOS SEM CPF VÊM PRIMEIRO — 30/10/2026. Cada um é um quadro, e o primeiro já
@@ -273,6 +243,10 @@ document.addEventListener("click", function (e) {
 {% else %}
 {{ por_que_janela }}
 {% endif %}
+{# UM CLIQUE POR CAMPO, em vez de selecionar com o mouse.
+   **E paliativo, e esta dito na tela que e.** O que resolve de verdade e
+   preencher o formulario da CRC de uma vez — e para isso preciso ver os nomes
+   dos campos daquela tela, que so aparece com o certificado do oficial. #}
 {# UM CLIQUE POR CAMPO, em vez de selecionar com o mouse.
    **E paliativo, e esta dito na tela que e.** O que resolve de verdade e
    preencher o formulario da CRC de uma vez — e para isso preciso ver os nomes

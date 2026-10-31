@@ -52,27 +52,53 @@ As outras 12 das 71 são chamadas pelos editores de modelos, com o endereço esc
 
 ## Funções prontas sem tela
 
-`tests/test_funcao_sem_tela.py` lista 164 funções sem caminho até uma tela, todas já
+`tests/test_funcao_sem_tela.py` lista 155 funções sem caminho até uma tela, todas já
 declaradas lá. A maior parte não é para ter tela: infraestrutura do banco de teste,
 fila das Centrais, leitores internos, auxiliares de papel e ensaios.
 
-As que uma pessoa usaria, e que continuam sem tela:
+As que uma pessoa usaria, e onde cada uma foi parar. `tests/test_funcoes_com_tela.py`
+guarda as ligações:
 
-| Função | O que faria | Situação |
+| Função | O que faz | Situação |
 |---|---|---|
-| `cnib_api.consultar_por_documento` | «O que pesa sobre este CPF, agora», direto na Central | Pronta, sem tela |
-| `onr_api.atendimentos` | Lista de pedidos eletrônicos do SAEC | Pronta, sem tela |
-| `onr_api.interagir_no_atendimento`, `gerar_cobranca` | Responder no SAEC e gerar cobrança | Escrevem na Central: só com ordem do oficial |
-| `ato_selado.atos_sem_cobranca` | Atos com selo que ninguém cobrou | Pronta, sem tela |
-| `ato_selado.pagamentos_pendentes` | O que cada pessoa selou liberado e não foi pago | Pronta, sem tela |
-| `papel_seguranca.movimentos_da_folha` | O caminho de uma folha de segurança | Pronta, sem tela |
-| `protesto_cenprot.titulos_sem_chave` | A lista por trás da contagem da CENPROT | A tela só mostra o número |
-| `protesto_retorno.atos_do_retorno` | Que atos entraram naquele retorno | Pronta, sem tela |
-| `protesto_arquivo.conferir_remessa` | Conferir o arquivo contra o contrato da CRA | Pronta, sem tela |
-| `ri_digitalizacao.pendentes_onr` | Matrículas com imagem nova não enviada ao ONR | Pronta, sem tela |
-| `onr_indicador_xml.arquivo_xml` | O indicador real em XML | Pronta, sem tela |
-| `rc_assento.blocos_do` | Os atos do assento pela divisão tripartite | Pronta, sem tela |
-| `livro_nucleo.exigencias_da_inspecao` | O que a inspeção cobra, série por série | Pronta, sem tela |
+| `cnib_api.consultar_por_documento` | «O que pesa sobre este CPF, agora», direto na Central | Tela «CNIB: consultar CPF ou CNPJ», por ordem do oficial |
+| `onr_api.atendimentos` | Lista do atendimento eletrônico do ONR (SAEC) | Tela «ONR: atendimentos do SAEC», por ordem do oficial |
+| `onr_api.interagir_no_atendimento`, `gerar_cobranca` | Responder no SAEC e gerar cobrança | Na mesma tela e em «ONR: cobranças», só para o ADMIN, por ordem do oficial |
+| `ato_selado.atos_sem_cobranca` | Atos com selo que ninguém cobrou | Apagada, por decisão do oficial (abaixo) |
+| `ato_selado.pagamentos_pendentes` | O que cada pessoa selou liberado e não foi pago | Selo e caixa, a cobrança de quem abriu a tela |
+| `papel_seguranca.movimentos_da_folha` | O caminho de uma folha de segurança | Folhas de segurança, busca pelo número |
+| `protesto_cenprot.titulos_sem_chave` | A lista por trás da contagem da CENPROT | Chave do CENPROT, recolhida junto da contagem |
+| `protesto_retorno.atos_do_retorno` | Que atos entraram naquele retorno | Retorno à CRA, na linha de cada arquivo |
+| `protesto_arquivo.conferir_remessa` | Conferir o arquivo contra o contrato da CRA | Não precisa: o fluxo já confere (abaixo) |
+| `ri_digitalizacao.pendentes_onr` | Matrículas com imagem nova não enviada ao ONR | Exportação para o ONR, recolhida |
+| `onr_indicador_xml.arquivo_xml` | O indicador real em XML | Exportação para o ONR, botão próprio (abaixo) |
+| `rc_assento.blocos_do` | Os atos do assento pela divisão tripartite | Não precisa: a ficha já separa (abaixo) |
+| `livro_nucleo.exigencias_da_inspecao` | O que a inspeção cobra, série por série | Livros e termos, recolhida |
+
+**`atos_sem_cobranca` foi apagada, por decisão do oficial em 30/10/2026.** Ela perguntava por
+`lancamento_id`. As tabelas do Registro de Imóveis não têm essa coluna, e por isso a tela de
+selos do RI, onde está o par `atos_sem_selo`, cairia ao chamá-la. Nas outras tabelas a coluna
+só se preenche por `ato_selado.cobrar`: as Notas nunca o chamam, e desde a 3.7.0 o dinheiro
+entra pelo protocolo, de modo que o ato pago apareceria como «ninguém cobrou». Quem responde
+pela régua nova é `selos_pagos_sem_cobertura`, em «Selos × caixa — conferência».
+
+**As telas do Protesto prometiam essa lista, e ela nunca mostrou o Protesto.** A conferência da
+remessa, o «A protestar» e o aviso de depois do lote mandavam olhar «atos sem selo» e «atos sem
+cobrança». Agora mandam selar e cobrar pela ficha de cada título. **Continua sem lista o ato de
+Protesto lavrado em lote por uma pessoa e ainda sem selo:** o roteiro do dia só traz o desfeito,
+o do robô e o item pago sem selo.
+
+**`conferir_remessa` e `blocos_do` não precisam de tela.** A conferência da remessa já passa
+cada título por `protesto_cra.conferir_titulo`, a mesma conta, e mostra a falta de cada um.
+A ficha do assento já tem um quadro para averbações, outro para anotações e outro para
+retificações, e cada ato ali leva quem lavrou e a folha, que `blocos_do` não traz.
+
+**O botão do XML manda o que a ficha diz.** Ele cobre as matrículas do período, com o mesmo
+conteúdo da API, e a tela lista a que fica de fora e o motivo. O arquivo inteiro do acervo,
+com a regra da casa de 10/10/2026 (`completar_ficha`, `donos_presumidos`), é outra coisa: tem
+tela própria desde 30/10/2026, «Indicador Real: o arquivo inteiro», e as decisões que o script
+`FERRAMENTAS/gerar_indicador_real_xml.py` trazia à mão viraram dado de cada serventia, por ordem
+do oficial: «as outras serventias que baixarem o programa precisam do botao».
 
 ## Como repetir
 

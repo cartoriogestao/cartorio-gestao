@@ -61,9 +61,8 @@ O QUE ESTE MODULO DECIDIU, E POR QUE
 
     **O lote NAO sela e NAO cobra.** Selar cinquenta titulos e cinquenta
     chamadas de rede de 20 s, e `db.transaction()` e `BEGIN IMMEDIATE`: a casa
-    inteira ficaria no `busy_timeout` esperando o lote. Eles entram e aparecem
-    em `atos_sem_selo` e `atos_sem_cobranca`, que sao as telas do outro lado e
-    existem exatamente para isso.
+    inteira ficaria no `busy_timeout` esperando o lote. Eles entram sem selo e
+    sem cobranca, e selar e cobrar e na ficha de cada titulo.
 """
 from __future__ import annotations
 

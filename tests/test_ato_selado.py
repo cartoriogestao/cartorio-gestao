@@ -655,16 +655,6 @@ def test_o_mesmo_ato_cobra_varios_itens():
     assert sum(int(x["valor"].replace(",", "")) for x in lancados) > 0
 
 
-def test_atos_sem_cobranca_acha_o_que_ficou_para_tras():
-    # O par de `atos_sem_selo`, do lado do dinheiro: ato lavrado e não cobrado
-    # é receita que some sem ninguém ver.
-    con = _com_tabela(banco())
-    assert len(AS.atos_sem_cobranca(con, "pt_atos")) == 1
-    AS.cobrar(con, tabela="pt_atos", ato_id=1, servico=1, agora=AGORA,
-              hoje="2026-08-24", hora="09:00")
-    assert AS.atos_sem_cobranca(con, "pt_atos") == []
-
-
 def test_cobrar_recusa_tabela_que_nao_e_de_ato():
     con = _com_tabela(banco())
     with pytest.raises(AS.AtoError, match="não é tabela de ato"):

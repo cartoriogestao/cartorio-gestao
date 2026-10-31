@@ -31,6 +31,31 @@
       </tr>
     </tbody>
   </table>
+  {# A LISTA POR TRÁS DO NÚMERO (revisão de telas, 30/10/2026). Recolhida porque
+     pode ser longa, e cada linha abre o título. #}
+  {% if sem_chave %}
+  <details style="padding:0 14px 14px">
+    <summary>Ver os títulos esperando a chave — {{ quadro.a_preencher }}</summary>
+    {% if sem_chave | length < quadro.a_preencher %}
+    <p><small>A lista mostra os {{ sem_chave | length }} mais novos.</small></p>
+    {% endif %}
+    <table class="table">
+      <thead><tr><th>Título</th><th>Protocolo</th><th>Nosso número</th><th>Situação</th></tr></thead>
+      <tbody>
+      {% for t in sem_chave %}
+        <tr>
+          <td><a href="{{ url_for('protesto_titulo', titulo_id=t.id) }}">{{ t.numero_titulo or ('#' ~ t.id) }}</a></td>
+          <td><small>{{ t.protocolo }}</small></td>
+          <td><small>{{ t.nosso_numero or '—' }}</small></td>
+          <td><small>{{ t.situacao }}</small></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% else %}
+  <p style="padding:0 14px 14px"><small>Nenhum título esperando a chave.</small></p>
+  {% endif %}
   {% if quadro.sem_protocolo %}
   <p style="padding:0 14px 14px"><small>
     Os <strong>{{ quadro.sem_protocolo }}</strong> sem protocolo não são defeito

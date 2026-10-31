@@ -12002,8 +12002,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
         O LOTE NÃO SELA E NÃO COBRA, e é de propósito: selar cinquenta títulos
         são cinquenta chamadas de rede de 20 s dentro de um `BEGIN IMMEDIATE`,
-        e a casa inteira ficaria esperando o lote. Eles entram e aparecem em
-        *atos sem selo* e *atos sem cobrança*, que são as telas do outro lado.
+        e a casa inteira ficaria esperando o lote. Eles entram sem selo e sem
+        cobrança, e selar e cobrar é na ficha de cada título.
 
         AS IMAGENS t51 (3.6.293.3) entram na MESMA transação dos títulos: a
         remessa XML vem pela cópia local (`origem_xml_token`), e não por um
@@ -12273,8 +12273,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
         O LOTE NÃO SELA E NÃO COBRA — a mesma regra da remessa, e pelo mesmo
         motivo: vinte selos são vinte chamadas de rede de 20 s, e segurá-las
-        aqui poria toda a casa no `busy_timeout`. Eles aparecem em *atos sem
-        selo* e *atos sem cobrança*, que são as telas do outro lado.
+        aqui poria toda a casa no `busy_timeout`. Eles saem sem selo e sem
+        cobrança, e selar e cobrar é na ficha de cada título.
 
         E UM QUE FALHA NÃO DERRUBA OS OUTROS: cada título é lavrado na sua
         própria transação. Protesto lavrado é protesto lavrado; desfazer
@@ -12347,8 +12347,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                 [r.get("afirmacao_expressa")])
         if feitos:
             flash(f"{len(feitos)} protesto(s) lavrado(s). Eles ainda não têm "
-                  f"selo nem cobrança — veja em «Atos sem selo» e «Atos sem "
-                  f"cobrança». E lembre de gerar o retorno E o andamento.",
+                  f"selo nem cobrança: sele e cobre pela ficha de cada título. "
+                  f"E lembre de gerar o retorno E o andamento.",
                   "success")
         for titulo_id, motivo in falharam:
             flash(f"Título {titulo_id}: {motivo}", "danger")
@@ -13025,8 +13025,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as con:
             do_arquivo = len(PCEN.titulos_do_arquivo(con))
             editais_hoje = len(AV.editais_do_dia(con, hoje()))
+            # A LISTA POR TRÁS DO NÚMERO «esperando a chave» (revisão de telas,
+            # 30/10/2026). Lida depois do POST: o que acabou de entrar já sai dela.
+            sem_chave = PCEN.titulos_sem_chave(con)
         return render_template("protesto_cenprot.html", resultado=resultado,
-                               quadro=quadro, do_arquivo=do_arquivo,
+                               quadro=quadro, sem_chave=sem_chave,
+                               do_arquivo=do_arquivo,
                                editais_hoje=editais_hoje, hoje=hoje(),
                                versao_medida=PCEN.VERSAO_MEDIDA)
 
@@ -13344,6 +13348,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             grupos = PRE.apresentantes_pendentes(con)
             atos = PRE.pendentes(con)
             gerados = [dict(r) for r in PRE.listar(con, limite=60)]
+            # QUE ATOS ENTRARAM EM CADA ARQUIVO (revisão de telas, 30/10/2026). Só
+            # pergunta de quem tem ato amarrado: a confirmação não tem nenhum.
+            for arquivo in gerados:
+                arquivo["atos_do_arquivo"] = (
+                    PRE.atos_do_retorno(con, arquivo["id"])
+                    if arquivo["atos_presos"] else [])
             # Só AVISO: o que a CRA ouviu e o livro desfez (28/10/2026).
             desfeitos = [dict(r) for r in PRE.informados_e_desfeitos(con)]
             # Ocorrência que a CRA já aceitou: o substituto não volta à fila

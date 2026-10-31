@@ -2548,26 +2548,6 @@ def quantos_do_acervo_ficaram_de_fora(con: sqlite3.Connection, tabela: str,
         (MARCA_DO_ACERVO,)))
 
 
-def atos_sem_cobranca(con: sqlite3.Connection, tabela: str,
-                      limite: int = 200) -> list[dict]:
-    """Os atos daquela tabela que ninguém cobrou. So LE.
-
-    O par de `atos_sem_selo`, do lado do dinheiro: não basta o ato ter selo,
-    ele tem de ter entrado no caixa. Ato lavrado e não cobrado é receita que
-    some sem ninguém ver.
-
-    **O ACERVO NAO ENTRA**, pelo mesmo motivo: cobrar hoje por ato de 1990 nao
-    e conserto. Ver `atos_sem_selo`.
-    """
-    if tabela not in TABELAS_DE_ATO:
-        raise AtoError(f"{tabela!r} não é tabela de ato.")
-    onde = "COALESCE(lancamento_id, 0) = 0"
-    return banco(con).ler(
-        f"""SELECT * FROM {tabela}
-             WHERE {onde}{_so_o_que_esta_casa_lavrou(con, tabela)}
-             ORDER BY id DESC LIMIT %s""", (int(limite),))
-
-
 def conferir_ato(codigo_do_ato: Any) -> dict:
     """O ato do catalogo, ou erro de balcao. So calcula.
 

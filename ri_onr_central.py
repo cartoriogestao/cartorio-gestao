@@ -59,8 +59,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import sqlite3
+from collections import Counter
 from typing import Any
 
 import onr_api as API
@@ -184,14 +186,17 @@ def _endereco_do_edital(fonte: dict, avisos: list[str], de_quem: str) -> dict:
 
 def montar_indicador(con: sqlite3.Connection, matricula_id: int, *, cns: Any,
                      situacao_construcao: Any = None,
-                     tipo_imovel: Any = None) -> dict:
+                     tipo_imovel: Any = None, ficha: dict | None = None,
+                     donos: list[dict] | None = None) -> dict:
     """Monta o corpo do indicador real. **SÓ CALCULA — não grava nem manda.**
 
-    Devolve `{corpo, avisos, impedem, matricula}`.
+    Devolve `{corpo, avisos, impedem, matricula}`. O arquivo inteiro do acervo manda
+    `ficha` e `donos` já completados (`onr_ir_inteiro`): eles valem para o arquivo, e a
+    ficha gravada não muda.
     """
     bd = banco(con)
-    linha = bd.um("SELECT * FROM ri_matriculas WHERE id=%s",
-                  (int(matricula_id),))
+    linha = ficha if ficha is not None else bd.um(
+        "SELECT * FROM ri_matriculas WHERE id=%s", (int(matricula_id),))
     if not linha:
         raise OnrRIError(f"A matrícula {matricula_id} não existe.")
     m = dict(linha)
@@ -252,7 +257,10 @@ def montar_indicador(con: sqlite3.Connection, matricula_id: int, *, cns: Any,
             f"«Matrícula». Transcrição e Torrens têm código próprio no ONR — "
             f"se for o caso, é aqui que se conserta.")
 
-    proprietarios, atos = _proprietarios(bd, matricula_id), []
+    proprietarios = _proprietarios(bd, matricula_id) if donos is None else [
+        _sem_vazios({"nome": _texto(p.get("nome")),
+                     "documento": _digitos(p.get("documento_numero"))})
+        for p in donos if _texto(p.get("nome"))]
     if not proprietarios:
         avisos.append(
             "Nenhum proprietário ativo está gravado nesta matrícula, e o "
@@ -404,6 +412,53 @@ def _codigo_do_ato(natureza: Any) -> int | None:
     """Da natureza do título para um dos 23 códigos. `None` se não casa."""
     chave = API.sem_acento(natureza)
     return API.CODIGO_DO_ATO.get(chave) if chave else None
+
+
+def corpos_para_o_arquivo(con: sqlite3.Connection, matriculas: list[dict], *,
+                          cns: Any) -> dict:
+    """O que vai no XML do indicador, e o que fica de fora e por quê. SÓ LÊ.
+
+    **O CORPO É O DE `montar_indicador`**, o mesmo da API: duas montagens
+    divergiriam no primeiro conserto. Vai só a ficha pronta: a que não tem o que o
+    ONR exige seria recusada lá, e aqui a tela diz o que falta.
+
+    **TAMBÉM FICAM DE FORA** a ficha encerrada e a arquivada, que não são imóvel
+    ativo, e o número que está em duas fichas: ele sairia repetido no índice, e
+    qual das duas vale é de quem lê o livro.
+
+    **A REGRA DA CASA NÃO ENTRA AQUI.** `onr_indicador_xml.completar_ficha` preenche
+    os brancos para o arquivo inteiro do acervo, que tem tela própria (`onr_ir_inteiro`);
+    aqui sai o que a ficha diz.
+    """
+    from gestor_cargas_ri import NUMERO_DE_FICHA_ARQUIVADA
+    vezes = Counter(_texto(m.get("numero")) for m in matriculas)
+    corpos: list[dict] = []
+    de_fora: list[dict] = []
+    for m in matriculas:
+        numero = _texto(m.get("numero"))
+        if int(m.get("encerrada") or 0):
+            motivos = ["A ficha está encerrada: não é imóvel ativo."]
+        elif (_inteiro(numero) or 0) >= NUMERO_DE_FICHA_ARQUIVADA:
+            motivos = ["É ficha arquivada, fora da sequência do livro."]
+        elif vezes[numero] > 1:
+            motivos = [f"O número {numero} está em {vezes[numero]} fichas, e sairia "
+                       f"repetido no índice. Confira qual delas vale."]
+        else:
+            # A FICHA QUE NÃO SE MONTA NÃO DERRUBA AS OUTRAS, nem a tela.
+            try:
+                montado = montar_indicador(con, int(m["id"]), cns=cns)
+            except Exception:                              # noqa: BLE001
+                logging.getLogger(__name__).exception(
+                    "indicador da matrícula %s", m.get("id"))
+                motivos = ["Não deu para montar o indicador desta ficha. Abra-a e "
+                           "confira o cadastro."]
+            else:
+                motivos = montado["impedem"]
+                if not motivos:
+                    corpos.append(montado["corpo"])
+        if motivos:
+            de_fora.append({"id": int(m["id"]), "numero": numero, "motivos": motivos})
+    return {"corpos": corpos, "de_fora": de_fora}
 
 
 # ---------------------------------------------------------------- o envio

@@ -170,4 +170,6 @@ def nome_arquivo(tipo: str, inicio: date, fim: date) -> str:
     b = fim.strftime("%d%m%Y")
     if tipo == "PESSOAL":
         return f"IndicadorPessoal_{a}_{b}.XML"
+    if tipo == "REAL_XML":
+        return f"IndicadorReal_{a}_{b}.XML"
     return f"IndicadorReal_{a}_{b}.json"

@@ -3437,6 +3437,11 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     # O ONR — o indicador real, o edital do usucapiao e a fila. Depois de
     # `ri_web` e de `usucapiao_web`, que sao as telas para onde estas apontam.
+    # O ARQUIVO INTEIRO DO INDICADOR REAL (30/10/2026): «as outras serventias que
+    # baixarem o programa precisam do botao».
+    import onr_ir_inteiro_web
+    onr_ir_inteiro_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
     import ri_onr_web
     ri_onr_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                fmt_date)

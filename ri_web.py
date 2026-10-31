@@ -3278,11 +3278,34 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if cx_arg is not None:
             de_cx = q1("""SELECT * FROM cx_protocolos WHERE id=%s AND atribuicao='RI'
                           AND ri_protocolo_id IS NULL""", (cx_arg,))
+
+        def espera_acao():
+            """O que espera ação, para o layout novo (30/10/2026). SÓ LÊ.
+
+            A lista obedece ao filtro e corta em 300, e um título vencido não pode sair da vista
+            por isso. Só o molde da moldura nova chama esta função: a antiga não paga a consulta.
+            """
+            perto = []
+            for r in q("""SELECT p.*, m.id mid FROM ri_protocolos p
+                          LEFT JOIN ri_matriculas m ON m.id = p.matricula_id
+                          WHERE p.situacao = 'ABERTO' AND p.data_limite IS NOT NULL
+                          ORDER BY p.data_limite, p.numero"""):
+                if PRAZO.suspensa(r):
+                    continue
+                try:
+                    dias = dias_uteis_entre(hoje, date.fromisoformat(r["data_limite"]), feriados)
+                except ValueError:
+                    continue
+                if dias <= 5:
+                    restam[r["id"]] = dias
+                    perto.append(r)
+            return perto
+
         return render_template("ri_protocolo.html", rows=rows, resumo=resumo,
                                de_cx=dict(de_cx) if de_cx else None,
                                situacao=situacao, busca=busca, hoje=hoje.isoformat(),
                                prazo=PRAZO_PRENOTACAO, prazo_reurb=PRAZO_PRENOTACAO_REURB,
-                               restam=restam,
+                               restam=restam, espera_acao=espera_acao,
                                MOTIVOS_DA_GRATUIDADE_DO_RI=AS.MOTIVOS_DA_GRATUIDADE_DO_RI)
 
     # ===================================== a tela do título, com o que corrigir

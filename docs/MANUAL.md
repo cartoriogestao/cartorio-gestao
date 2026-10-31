@@ -384,9 +384,17 @@ indicam pendência e não podem chegar ao papel assinado; a prévia de ato não
 lavrado sai marcada **RASCUNHO — ATO NÃO LAVRADO**. Confira natureza, nomes,
 CPF/CNPJ, livro, folha, termo, matrícula, custas e fundamento antes de lavrar.
 
-**Rascunho guardado.** Várias telas de lavratura guardam o preenchimento para
-continuar depois (**Administrativo → Atendimento → Rascunhos**). Rascunho não
-toma número, não ocupa folha e não pede selo.
+**Rascunho guardado.** Várias telas de lavratura guardam o preenchimento para continuar
+depois: clique em **Salvar rascunho e continuar depois**. Para voltar, abra **Administrativo →
+Atendimento → Rascunhos** e clique em **abrir**. A tela volta como você a deixou, com o segundo
+devedor, as outras partes, o selo digitado e a cobrança marcada. Confira os campos antes de gravar.
+Salvar de novo atualiza o mesmo rascunho, e não cria outro. Só o arquivo anexado não fica guardado:
+escolha de novo. Averbação, anotação e retificação reabrem só no mesmo assento. Rascunho não toma
+número, não ocupa folha, não pede selo e não cobra. Depois de lavrar, ele continua na lista: apague-o
+lá, para ninguém lavrar de novo a partir dele.
+
+**Se o sistema recusar o que você mandou**, a tela volta com o que foi digitado, no passo em que
+você estava. Corrija o que o aviso diz e grave de novo.
 
 **Lavrado é definitivo.** Corrige-se pela ação própria (averbação,
 retificação, cancelamento, estorno), com motivo; as telas registram antes,
@@ -1514,6 +1522,11 @@ emitidos e Carga do Next Cloud SAS. O título de cada quadro diz como ele está,
 - **CPF:** cada nascimento é um quadro, e **Abrir todos** abre a lista inteira.
 - **Modelos de atos:** registros e averbações ficam em duas colunas.
 - **Livros obrigatórios:** o que falta vem primeiro.
+
+**Livros e termos, e Folhas de segurança.** Nos **Livros**, cada atribuição é um quadro, com a contagem no
+título, e a que tem série sem livro aberto abre sozinha. Nas **Folhas**, o estoque e **A folha estragou** ficam
+à vista, **Chegou uma caixa** abre quando não há folha em branco, e procurar uma folha ou buscar nas gastas
+volta com o quadro aberto.
 
 **As outras telas** abrem na moldura nova, do jeito de sempre.
 

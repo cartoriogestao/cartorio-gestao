@@ -13,8 +13,20 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>Numeração dos livros</h1>{% endblock %}
 {% block content %}
-{% include '_serventia.html' %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
 
+{# NO LAYOUT NOVO, O QUE ESPERA NÚMERO VEM PRIMEIRO — 30/10/2026. A atribuição que tem série pendente
+   abre sozinha; as outras ficam recolhidas, com a contagem. A explicação e o timbre vão para o fim. #}
+{% if not layout_novo %}{% include '_serventia.html' %}{% endif %}
+{% if layout_novo %}
+<style>
+  details.cg-quadro td form.grid2{display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px}
+  details.cg-quadro td form.grid2>label{flex:1 1 7rem;margin:0}
+  details.cg-quadro td form.grid2>.actions{margin:0}
+  @media(min-width:1200px){details.cg-quadro td:last-child{min-width:24rem}}
+</style>
+{% endif %}
+{% set como_funciona %}
 <div class="notice">
   <strong>O número de ordem não repete.</strong> Cada livro tem o seu contador, e ele
   só anda para a frente: informar um número igual ou menor que o maior já usado é
@@ -26,6 +38,8 @@
   abaixo marcadas em vermelho, e são as que <strong>você</strong> tem de informar,
   lendo o livro físico, <em>antes</em> do primeiro ato daquela série.
 </div>
+{% endset %}
+{% if not layout_novo %}{{ como_funciona }}{% endif %}
 
 {% set pendentes = series | selectattr('pendente') | rejectattr('diaria') | list %}
 {% if pendentes %}
@@ -42,8 +56,11 @@
 {% for numero, a in atribuicoes.items() %}
   {% set do_grupo = series | selectattr('atribuicao', 'equalto', numero) | list %}
   {% if do_grupo %}
+  {% set esperam = do_grupo | selectattr('pendente') | rejectattr('diaria') | list %}
+  {% if layout_novo %}{{ abre('num-' ~ numero, a.nome, (do_grupo | length) ~ ' livro(s)' ~ ((' · ' ~ (esperam | length) ~ ' esperam o número') if esperam else ''), aberto=esperam | length > 0) }}{% else %}
   <section class="panel">
     <div class="panel-head"><span>{{ a.nome }}</span><small>{{ do_grupo | length }} livro(s)</small></div>
+  {% endif %}
     <table class="table">
       <thead>
         <tr><th>Livro</th><th>Maior em uso</th><th>Próximo</th><th>De onde veio</th>
@@ -94,13 +111,18 @@
         {% endfor %}
       </tbody>
     </table>
+  {% if layout_novo %}</details>{% else %}
   </section>
   {% endif %}
+  {% endif %}
 {% endfor %}
+
+{% if layout_novo %}{{ abre('num-como-funciona', 'Como funciona a numeração', 'o contador só anda para a frente') }}<div class="cg-quadro-corpo">{{ como_funciona }}</div></details>{% endif %}
 
 <p style="padding:0 14px 14px"><small>
   <strong>Esta tela só lê até você mandar gravar.</strong> Abrir a conferência não
   consome número: tela de leitura que consome contador fica presa esperando quem está
   lavrando, e devolve erro no balcão do lado.
 </small></p>
+{% if layout_novo %}{% include '_serventia.html' %}{{ ferramentas() }}{% endif %}
 {% endblock %}

@@ -2,6 +2,23 @@
 {% block title %}{{ p.nome }} — Automação{% endblock %}
 {% block heading %}<h1>{{ p.nome }}</h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, QUADROS RECOLHIDOS — 30/10/2026. «Situação» continua aberta, com «Rodar agora». O resto
+   se abre de vez em quando, e o título diz como está. As rodadas vêm abertas com problema em aberto, e para
+   quem só consulta. A credencial aparece no título só como «usa credencial», sem o nome. #}
+{% set canais_ligados = [] %}
+{% for c in canais %}{% if p.canais.get(c) %}{% set _ = canais_ligados.append(nome_do_canal[c]) %}{% endif %}{% endfor %}
+{% if layout_novo %}
+<style>
+  #au-editar form{display:grid;grid-template-columns:repeat(auto-fill,minmax(18rem,1fr));gap:8px 16px;align-items:start}
+  #au-editar form>label{margin:0}
+  #au-editar form>fieldset,#au-editar form>p,#au-editar form>label:has(textarea){grid-column:1/-1;margin:0}
+  #au-editar form>button{justify-self:start}
+  #au-editar fieldset input:not([type=checkbox]):not([type=radio]){display:inline-block;width:auto;min-height:32px;padding:4px 8px}
+  #au-editar fieldset input[type=checkbox],#au-editar fieldset input[type=radio]{width:1rem;height:1rem;min-height:0;margin:0 4px 0 0;padding:0}
+  #au-editar fieldset p{margin:6px 0 0}
+</style>
+{% endif %}
 <p><a href="{{ url_for('automacao_lista') }}">← todos os processos</a></p>
 
 <section class="panel">
@@ -34,8 +51,10 @@
 </section>
 
 {% if user.role == 'ADMIN' %}
+{% if layout_novo %}{{ abre('au-pode-agir', 'Pode agir sozinho?', 'sim: grava sem esperar o seu clique' if p.pode_agir else 'não: só lê e propõe') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <div class="panel-head"><h2>Pode agir sozinho?</h2></div>
+{% endif %}
   <p class="small">Desligado (o padrão), a parte que grava não roda: a verificação só lê, e o agente de IA
     roda <strong>sem</strong> as ferramentas de escrita e propõe. Ligado, ele grava sem esperar o seu clique —
     e tudo o que fizer vai para o relatório da rodada. A mudança fica na auditoria.</p>
@@ -44,10 +63,14 @@
     <input type="hidden" name="pode_agir" value="{{ '0' if p.pode_agir else '1' }}">
     <button class="button {{ '' if p.pode_agir else 'danger' }}" type="submit">{{ 'Voltar a só ler e propor' if p.pode_agir else 'Liberar para agir sozinho' }}</button>
   </form>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
+{% if layout_novo %}{{ abre('au-editar', 'Editar', ('avisa por ' ~ (canais_ligados | join(', ')) if canais_ligados else 'sem canal de aviso') ~ (' · usa credencial do cofre' if p.usa_credencial else '')) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <div class="panel-head"><h2>Editar</h2></div>
+{% endif %}
   <form method="post" action="{{ url_for('automacao_salvar', processo_id=p.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Nome <input name="nome" value="{{ p.nome }}" required></label>
@@ -83,11 +106,15 @@
     <label>Robô do quadro antigo (opcional) <input name="robo_oficial" value="{{ p.robo_oficial or '' }}" size="14"></label>
     <button class="button primary" type="submit">Gravar</button>
   </form>
+{% if layout_novo %}</div></details>{% else %}
 </section>
 {% endif %}
+{% endif %}
 
+{% if layout_novo %}{{ abre('au-rodadas', 'Rodadas', ((historico | length) ~ ' mais recente(s) · última: ' ~ historico[0].selo.texto ~ ' em ' ~ ((historico[0].iniciada_em or '')[:16] | replace('T', ' '))) if historico else 'ainda não rodou', aberto=p.alerta_desde or user.role != 'ADMIN') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <div class="panel-head"><h2>Rodadas ({{ historico|length }} mais recentes)</h2></div>
+{% endif %}
   <div class="table-wrap"><table><thead><tr><th>#</th><th>Início</th><th>Disparo</th><th>Situação</th><th>Relato</th></tr></thead><tbody>
   {% for e in historico %}<tr><td><a href="{{ url_for('automacao_execucao', execucao_id=e.id) }}">{{ e.id }}</a></td>
     <td class="small">{{ (e.iniciada_em or '')[:16]|replace('T', ' ') }}</td><td class="small">{{ e.disparo }}</td>
@@ -95,5 +122,7 @@
     <td class="small">{{ (e.relato or '')[:180] }}</td></tr>
   {% else %}<tr><td colspan="5">Ainda não rodou.</td></tr>{% endfor %}
   </tbody></table></div>
+{% if layout_novo %}</div></details>{{ ferramentas() }}{% else %}
 </section>
+{% endif %}
 {% endblock %}

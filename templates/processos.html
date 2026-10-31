@@ -1,8 +1,9 @@
 {% extends 'base.html' %}
-{% from '_ordenar.html' import cabecalho, seletor %}
+{% from '_ordenar.html' import cabecalho, seletor, script_da_rolagem %}
 {% block title %}Processos{% endblock %}
 {% block heading %}<h1>Processos</h1>{% endblock %}
 {% block content %}
+{{ script_da_rolagem(VERSION) }}
 {# A LISTA ÚNICA — 12/10/2026, ordem do oficial: tarefas e expedientes num módulo
    só. Vira processo o que não se resolve na hora; firma, autenticação,
    nascimento e certidão do balcão não entram aqui. #}

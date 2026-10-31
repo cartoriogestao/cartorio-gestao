@@ -1,8 +1,9 @@
 {% extends 'base.html' %}
-{% from '_ordenar.html' import cabecalho, seletor %}
+{% from '_ordenar.html' import cabecalho, seletor, script_da_rolagem %}
 {% block title %}Tarefas e pendências — Malote{% endblock %}
 {% block heading %}<h1>Tarefas e pendências</h1>{% endblock %}
 {% block content %}
+{{ script_da_rolagem(VERSION) }}
 {# 12/10/2026 — Tarefas e Expedientes viraram Processos (ordem do oficial). #}
 <div class="notice">Esta lista agora faz parte de <a href="{{ url_for('processos_lista') }}"><strong>Processos</strong></a> — o que chega pelo malote, as tarefas e os pedidos numa lista só, com a pasta e o roteiro de cada um. Esta tela continua aberta enquanto a equipe se acostuma.</div>
 <details class="panel tasks-nova-tarefa">

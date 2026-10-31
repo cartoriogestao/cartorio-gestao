@@ -2,6 +2,26 @@
 {% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
 {% block title %}Abrir processo{% endblock %}
 {% block content %}
+{# NO LAYOUT NOVO, TRÊS PASSOS — 30/10/2026, um para cada quadro. É UM FORMULÁRIO SÓ: o que está escondido vai
+   junto, e `static/fases.js` mostra o passo aberto. Sem o script, ele sai inteiro. «Salvar rascunho» e «Não
+   termina hoje» ficam fora dos passos, sempre à vista, e o botão de abrir fica na barra do último. No layout
+   antigo nada muda de lugar. #}
+{% if layout_novo %}
+<style>
+  .cg-corpo .content>h1{font-size:23px;margin:0 0 8px}
+  #form-do-ato .cg-passos{margin-bottom:8px}
+  #form-do-ato .card{padding:12px 16px;margin-bottom:8px}
+  #form-do-ato .card h2{font-size:16px}
+  #form-do-ato .card p{margin:0 0 8px}
+  #form-do-ato [data-passo=quem]>p:has(input[name=requerente_nome]){display:grid;grid-template-columns:2fr 1fr;gap:0 12px}
+  #form-do-ato textarea,#form-do-ato input:not([type=radio]),#form-do-ato select{max-width:100%}
+  @media (max-width:900px){
+    #form-do-ato [data-passo=quem]>p:has(input[name=requerente_nome]){grid-template-columns:minmax(0,1fr)}
+  }
+  .cg-corpo .card.cg-rr-rito{padding:10px 16px;margin-top:8px}
+  .cg-rr-rito p{margin:0}
+</style>
+{% endif %}
 <h1>Abrir processo</h1>
 
 {{ salvar_rascunho('rcpn_retificacao_nova', url_for('rcpn_retificacao_nova'),
@@ -11,7 +31,16 @@
 <form method="post" id="form-do-ato">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
-  <div class="card">
+  {% if layout_novo %}
+  <script defer src="{{ url_for('static', filename='fases.js') }}?v={{ VERSION }}"></script>
+  <nav class="cg-passos" data-cg-passos="form-do-ato" data-inicial="qual" aria-label="Passos deste processo">
+    <button type="button" class="cg-passo" data-passo-ir="qual"><span class="cg-fase-n" aria-hidden="true">1</span>Qual dos três</button>
+    <button type="button" class="cg-passo" data-passo-ir="como"><span class="cg-fase-n" aria-hidden="true">2</span>Como o pedido chegou</button>
+    <button type="button" class="cg-passo" data-passo-ir="quem"><span class="cg-fase-n" aria-hidden="true">3</span>Quem pede, e o quê</button>
+  </nav>
+  {% endif %}
+
+  <div class="card" data-passo="qual">
     <h2 style="margin-top:0">Qual dos três</h2>
     {% for x in norma.INSTITUTOS %}
       <p>
@@ -27,7 +56,7 @@
     {% endfor %}
   </div>
 
-  <div class="card">
+  <div class="card" data-passo="como">
     <h2 style="margin-top:0">Como o pedido chegou</h2>
     <p class="small muted">Art. 348, § 1º — e as três valem.</p>
     {% for f in norma.FORMAS_DO_PEDIDO %}
@@ -47,7 +76,7 @@
         placeholder="Compareceu … e declarou que …"></textarea></label></p>
   </div>
 
-  <div class="card">
+  <div class="card" data-passo="quem">
     <h2 style="margin-top:0">Quem pede, e o quê</h2>
     <p>
       <label>Nome do requerente
@@ -74,10 +103,18 @@
         não existe — é o que se supre.</span></p>
   </div>
 
+  {% if layout_novo %}
+  <div class="cg-passos-fim" data-cg-passos-fim>
+    <button type="button" class="button" data-passo-voltar hidden>&larr; Voltar</button>
+    <button type="button" class="button primary" data-passo-avancar hidden>Avançar</button>
+    <button class="button primary" data-passo="quem">Abrir o processo</button>
+  </div>
+  {% else %}
   <p><button class="button">Abrir o processo</button></p>
+  {% endif %}
 </form>
 
-<div class="card">
+<div class="card{% if layout_novo %} cg-rr-rito{% endif %}">
   <p class="small muted">
     Depois de aberto, o rito é: instruir (e <strong>é daí que os
     {{ norma.PRAZO_DECISAO_DIAS_UTEIS }} dias úteis contam</strong>), registrar a

@@ -20,6 +20,8 @@
   <label>Descrição (o que é e a que se refere) <input name="descricao" value="{{ f.descricao or '' }}" size="60" required></label>
   <label>Favorecido <input name="beneficiario_nome" value="{{ f.beneficiario_nome or '' }}" size="40" required></label>
   <label>CPF/CNPJ do favorecido <input name="beneficiario_documento" value="{{ f.beneficiario_documento or '' }}" size="20"></label>
+  <label>E-mail para o comprovante <input type="email" name="contato_email" value="{{ f.contato_email or '' }}" size="40"></label>
+  <label>WhatsApp para o comprovante, com DDD <input name="contato_whatsapp" value="{{ f.contato_whatsapp or '' }}" size="20"></label>
   <label>Valor (R$) <input name="valor" value="{{ f.valor or '' }}" size="12" required></label>
   <label>Vencimento <input type="date" name="vencimento" value="{{ f.vencimento or '' }}" required></label>
   <label>Forma de pagamento

@@ -94,8 +94,8 @@ ROTULO_DO_EVENTO = {
 # #73). As etiquetas por palavra-chave repetiam o setor e nenhum relatório as
 # lia; agora a palavra define o setor na chegada (`definir_setor_pelo_assunto`)
 # e o atendente com IA lê a MESMA tabela para os assuntos sensíveis
-# (`wa_atendente.assunto_sensivel`). Os três sensíveis vêm primeiro, com os
-# padrões que o atendente já usava — a ordem é a de antes. Sem acento e em
+# (`wa_atendente.assunto_sensivel`). Protesto, registro civil e reclamação vêm
+# primeiro, com os padrões de antes — a ordem é a de antes. Sem acento e em
 # minúscula: o texto é comparado por `_sem_acento`. «certidão» sozinha não
 # entra: serve a vários setores.
 SETOR_POR_PALAVRA: tuple[tuple[str, str, re.Pattern], ...] = (
@@ -116,8 +116,9 @@ SETOR_POR_PALAVRA: tuple[tuple[str, str, re.Pattern], ...] = (
     ("RCPJ_RTD", "assunto de títulos e documentos ou pessoa jurídica", re.compile(
         r"\b(contrato social|estatuto\w*|ata de assembleia|titulos e documentos)\b")),
 )
-# Os que vão a uma pessoa sem passar pela IA (a regra do atendente, de antes).
-SETORES_SENSIVEIS = ("PROTESTO", "RCPN", "GESTAO")
+# Os que vão a uma pessoa sem passar pela IA. PROTESTO e RCPN saíram em 30/10/2026:
+# a IA responde a dúvida geral e encaminha o caso concreto (`wa_atendente`).
+SETORES_SENSIVEIS = ("GESTAO",)
 
 _ISO = "%Y-%m-%dT%H:%M:%S"
 
@@ -403,12 +404,24 @@ def definir_setor_pelo_assunto(con: Any, conversa_id: int, texto: Any, *,
     escolheu. NA RETOMADA de uma resolvida, a mensagem nova abre outro
     atendimento, e o setor dela vale mesmo que a conversa tivesse outro. O
     evento diz de qual para qual, e por qual palavra.
+
+    A RECLAMAÇÃO VALE PARA O ATENDIMENTO DELA (30/10/2026): quem reclamou uma vez não fica
+    preso em Gestão. Na retomada sem reclamação na mensagem nova, a conversa sai de GESTAO
+    e volta sem setor, e a IA ou a próxima palavra o escolhem. O «Reativar conversa» não
+    passa por aqui: é uma pessoa decidindo, e o setor fica.
     """
     achado = setor_pela_mensagem(texto)
-    if not achado:
-        return None
     c = _conversa(con, conversa_id) or {}
     antes = setor_valido(c.get("setor"))
+    if not achado:
+        if na_retomada and antes == "GESTAO" and not any(
+                s == "GESTAO" for s, _motivo, _palavra in setores_pelo_texto(texto)):
+            banco(con).escrever("UPDATE wa_conversa SET setor=NULL WHERE id=%s",
+                                (int(conversa_id),))
+            _evento(con, conversa_id, EV_SETOR_PELO_ASSUNTO, quando=quando,
+                    por="palavra da mensagem", de_setor=antes,
+                    nota="a reclamação era do atendimento anterior: sai de Gestão")
+        return None
     setor, palavra = achado
     if antes == setor or (antes and not na_retomada):
         return None
@@ -435,13 +448,17 @@ def usuarios_ativos(con: Any) -> list[dict]:
 # contam aqui. Antes contavam, e a conversa que a IA passou para uma pessoa
 # sumia do alerta no minuto em que o cliente recebia «sua mensagem foi passada
 # para a equipe» — justamente a que precisava de alguém.
+# A SAÍDA QUE FALHOU TAMBÉM NÃO É RESPOSTA (30/10/2026): ela não chegou ao
+# cliente, e a conversa volta a esperar.
 _ESPERANDO_DESDE = """
     (SELECT min(m.criado_em) FROM wa_mensagem m
       WHERE m.conversa_id = c.id AND m.direcao = 'in'
+        AND COALESCE(m.ia_situacao, '') <> 'cortesia'
         AND m.id > COALESCE((SELECT max(o.id) FROM wa_mensagem o
                               WHERE o.conversa_id = c.id
                                 AND o.direcao = 'out'
-                                AND COALESCE(o.tipo, '') <> 'aviso'), 0))"""
+                                AND COALESCE(o.tipo, '') <> 'aviso'
+                                AND COALESCE(o.entrega, '') <> 'failed'), 0))"""
 
 
 def _filtros(con: Any, *, agora: str, setor: str, etiqueta: str,
@@ -509,7 +526,8 @@ def ultima_entrada(con: Any, *, usuario_id: int | None) -> dict | None:
         f"""SELECT m.id, m.conversa_id, m.texto, m.tipo, m.transcricao,
                    c.nome, c.wa_id
               FROM wa_mensagem m JOIN wa_conversa c ON c.id = m.conversa_id
-             WHERE m.direcao = 'in' AND (({sem}) OR ({minhas}))
+             WHERE m.direcao = 'in' AND COALESCE(m.ia_situacao, '') <> 'cortesia'
+               AND (({sem}) OR ({minhas}))
              ORDER BY m.id DESC LIMIT 1""",
         (*args_sem, *args_minhas))
     if not r:
@@ -632,15 +650,18 @@ def _primeiras_respostas(con: Any, desde: str) -> list[dict]:
     primeira resposta depois dela e quem respondeu (`ia` ou a pessoa)."""
     bd = banco(con)
     msgs = bd.ler(
-        """SELECT m.id, m.conversa_id, m.direcao, m.criado_em, m.autor,
+        """SELECT m.id, m.conversa_id, m.direcao, m.criado_em, m.autor, m.ia_situacao,
                   COALESCE(NULLIF(c.setor, ''), %s) AS setor
              FROM wa_mensagem m JOIN wa_conversa c ON c.id = m.conversa_id
             WHERE m.criado_em >= %s AND m.direcao IN ('in', 'out')
               AND COALESCE(m.tipo, '') <> 'aviso'
+              AND COALESCE(m.entrega, '') <> 'failed'
             ORDER BY m.conversa_id, m.id""", (WA.SETOR_PADRAO, desde))
     saida, aberta = [], {}
     for m in msgs:
         cid = int(m["conversa_id"])
+        if m.get("ia_situacao") == WA.IA_CORTESIA:
+            continue                                     # não abriu espera
         if m["direcao"] == "in":
             aberta.setdefault(cid, m)
         elif cid in aberta:

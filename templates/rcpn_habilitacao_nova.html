@@ -3,10 +3,49 @@
 {% block title %}Abrir habilitação{% endblock %}
 {% block heading %}<h1>Abrir habilitação de casamento</h1>{% endblock %}
 {% block content %}
+{# NO LAYOUT NOVO, DOIS PASSOS — 30/10/2026. Primeiro o casamento, depois os nubentes, e os dois continuam
+   lado a lado: é como o balcão os atende. É UM FORMULÁRIO SÓ: o que está escondido vai junto, e
+   `static/fases.js` mostra o passo aberto. Sem o script, o formulário sai inteiro. A observação vai para o
+   primeiro passo, e o botão de abrir fica na barra do último. No layout antigo nada muda de lugar. #}
+{% if layout_novo %}
+<style>
+  .cg-hab-topo{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 0 8px}
+  .cg-hab-topo .actions{margin:0}
+  .cg-hab-topo form[data-rascunho]:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:0!important}
+  #juntar-anexos{padding:8px 16px;margin-bottom:8px}
+  #juntar-anexos .panel-head{padding-bottom:4px}
+  #juntar-anexos .panel-head h2{font-size:14px;margin:0}
+  #juntar-anexos form{grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:4px 12px}
+  #juntar-anexos form>label.span2{grid-column:auto}
+  #form-do-ato .cg-passos{margin-bottom:8px}
+  #form-do-ato .panel{padding:10px 16px;margin-bottom:8px}
+  #form-do-ato .panel-head{padding-bottom:6px}
+  #form-do-ato .notice{margin:0 0 8px}
+  #form-do-ato .grid2{gap:12px;margin:0}
+  #form-do-ato .form-grid{padding:8px 0 0!important;gap:6px 12px}
+  .cg-hab-casamento{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+  .cg-hab-casamento>label.span2:has(select){grid-column:auto}
+  .cg-hab-pessoa{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .cg-hab-pessoa>label{grid-column:span 1}
+  .cg-hab-pessoa>label.span2:not(:has([name$=_naturalidade])){grid-column:1/-1}
+  .cg-hab-pessoa>label.span2:has([name$=_naturalidade]){grid-column:span 1}
+  @media (max-width:900px){
+    #form-do-ato .grid2,.cg-hab-casamento,.cg-hab-pessoa{grid-template-columns:minmax(0,1fr)!important}
+    .cg-hab-casamento>label,.cg-hab-pessoa>label{grid-column:auto!important}
+  }
+  @media (min-width:1600px){
+    .cg-hab-pessoa{grid-template-columns:repeat(6,minmax(0,1fr))!important}
+    .cg-hab-pessoa>label{grid-column:span 2}
+    .cg-hab-pessoa>label.span2,.cg-hab-pessoa>label.span2:not(:has([name$=_naturalidade])),.cg-hab-pessoa>label.span2:has([name$=_naturalidade]){grid-column:span 3}
+  }
+</style>
+<div class="cg-hab-topo">
+{% endif %}
 <div class="actions">
   <a class="button" href="{{ url_for('rcpn_habilitacoes') }}">&larr; Habilitações</a>
 </div>
 
+{% set sobre_o_checklist %}
 <div class="notice">
   O checklist do <strong>artigo 1.525 do Código Civil</strong> é montado
   automaticamente ao abrir, e vale <strong>para cada nubente</strong> — a
@@ -15,10 +54,13 @@
   só entra para quem não é solteiro — por isso vale informar o estado civil
   agora.</span>
 </div>
+{% endset %}
+{% if not layout_novo %}{{ sobre_o_checklist }}{% endif %}
 
 {{ salvar_rascunho('rcpn_habilitacao_nova', url_for('rcpn_habilitacao_nova'),
                    'Habilitação de casamento', csrf_token,
                    nome_em='nubente1_nome,nubente2_nome', rascunho_id=rascunho_id) }}
+{% if layout_novo %}</div>{% endif %}
 
 {% from '_leitura_dos_anexos.html' import juntar, conferencia %}
 {% if leitura_origem %}{{ conferencia(leitura_origem) }}
@@ -32,13 +74,27 @@
 {{ juntar('HABILITACAO', csrf_token) }}
 {% endif %}
 
+{% set campo_observacao %}
+      <label class="span2">Observação
+        <textarea name="observacao" rows="2">{{ v.get('observacao', '') }}</textarea></label>
+{% endset %}
+
 <form method="post" id="form-do-ato">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   {% if leitura_origem %}<input type="hidden" name="leitura_id" value="{{ leitura_origem.id }}">{% endif %}
 
+  {% if layout_novo %}
+  <script defer src="{{ url_for('static', filename='fases.js') }}?v={{ VERSION }}"></script>
+  <nav class="cg-passos" data-cg-passos="form-do-ato" data-inicial="casamento" aria-label="Passos desta habilitação">
+    <button type="button" class="cg-passo" data-passo-ir="casamento"><span class="cg-fase-n" aria-hidden="true">1</span>O casamento</button>
+    <button type="button" class="cg-passo" data-passo-ir="nubentes"><span class="cg-fase-n" aria-hidden="true">2</span>Os nubentes</button>
+  </nav>
+  <div class="cg-passo-bloco" data-passo="casamento">
+  {{ sobre_o_checklist }}
+  {% endif %}
   <section class="panel">
     <div class="panel-head"><span>O casamento pretendido</span></div>
-    <div class="form-grid" style="padding:14px">
+    <div class="form-grid{% if layout_novo %} cg-hab-casamento{% endif %}" style="padding:14px">
       <label>Data de entrada
         <input type="date" name="data_entrada" value="{{ v.get('data_entrada') or hoje }}"></label>
       <label>Tipo
@@ -54,18 +110,20 @@
           <option value="{{ chave }}"{% if v.get('regime') == chave %} selected{% endif %}>{{ rotulo }}</option>
           {% endfor %}
         </select></label>
+      {% if layout_novo %}{{ campo_observacao }}{% endif %}
     </div>
   </section>
+  {% if layout_novo %}</div>{% endif %}
 
   {#
     OS DOIS NUBENTES LADO A LADO, com os mesmos campos. É como o balcão os
     atende — os dois estão ali, e a conferência é de um contra o outro.
   #}
-  <div class="grid2">
+  <div class="grid2" data-passo="nubentes">
   {% for lado, titulo in [('nubente1', 'Primeiro nubente'), ('nubente2', 'Segundo nubente')] %}
     <section class="panel">
       <div class="panel-head"><span>{{ titulo }}</span></div>
-      <div class="form-grid" style="padding:14px">
+      <div class="form-grid{% if layout_novo %} cg-hab-pessoa{% endif %}" style="padding:14px">
         <label class="span2">Nome<input name="{{ lado }}_nome" value="{{ v.get(lado ~ '_nome', '') }}" required></label>
         <label class="span2">Como passa a assinar
           <input name="{{ lado }}_nome_pos" value="{{ v.get(lado ~ '_nome_pos', '') }}"
@@ -96,13 +154,20 @@
   {% endfor %}
   </div>
 
+  {% if layout_novo %}
+  <div class="cg-passos-fim" data-cg-passos-fim>
+    <button type="button" class="button" data-passo-voltar hidden>&larr; Voltar</button>
+    <button type="button" class="button primary" data-passo-avancar hidden>Avançar</button>
+    <button class="primary" data-passo="nubentes">Abrir habilitação</button>
+  </div>
+  {% else %}
   <section class="panel">
     <div class="form-grid" style="padding:14px">
-      <label class="span2">Observação
-        <textarea name="observacao" rows="2">{{ v.get('observacao', '') }}</textarea></label>
+{{ campo_observacao }}
       <div class="span2"><button class="primary">Abrir habilitação</button></div>
     </div>
   </section>
+  {% endif %}
 </form>
 {{ script_do_rascunho() }}
 {% endblock %}

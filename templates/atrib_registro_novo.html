@@ -24,9 +24,10 @@
 
 {{ salvar_rascunho('rcpj_rtd_registro_novo', url_for('rcpj_rtd_registro_novo'),
                    'Registro RCPJ/RTD', csrf_token,
-                   nome_em='requerente_nome') }}
+                   nome_em='requerente_nome', rascunho_id=rascunho_id) }}
 
-<form method="post" class="grid2" style="padding:0 0 14px" id="form-do-ato">
+<form method="post" class="grid2" style="padding:0 0 14px" id="form-do-ato"
+      enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
   <section class="panel" style="grid-column:1/-1">
@@ -44,8 +45,13 @@
         </select></label>
 
       <label style="grid-column:1/-1">Natureza
-        <input name="natureza" value="{{ form.get('natureza','') }}"
+        <input name="natureza" id="natureza_registro_novo"
+               value="{{ form.get('natureza','') }}"
                placeholder="Estatuto de associação · Contrato de locação · Ata"></label>
+
+      {# CN-MA arts. 410, 412 e 413, III — só o RCPJ; o script esconde no RTD. #}
+      {% from '_lista_presenca_cnma.html' import bloco %}
+      {{ bloco(form, enquadramento_sugerido, rotulos_enquadramento, true) }}
 
       <label>Requerente
         <input name="requerente_nome" value="{{ form.get('requerente_nome','') }}"></label>
@@ -68,8 +74,8 @@
     <div class="panel-head"><span>Selo e cobrança</span></div>
     <div class="grid2" style="padding:14px">
       <label>Selo <small>(opcional)</small>
-        <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"></label>
-      {{ quadro(receita, caixa, protocolos) }}
+        <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"{% if form.get('selo') %} value="{{ form.get('selo') }}"{% endif %}></label>
+      {{ quadro(receita, caixa, protocolos, form=form) }}
     </div>
   </section>
 
@@ -79,4 +85,17 @@
   </div>
 </form>
 {{ script_do_rascunho() }}
+<script>
+(function () {
+  var serie = document.querySelector('#form-do-ato select[name="serie"]');
+  var bloco = document.getElementById("bloco-lista-presenca");
+  if (!serie || !bloco) return;
+  function atualizar() {
+    var rcpj = serie.value === "PJ_A" || serie.value === "PJ_B";
+    bloco.hidden = !rcpj;
+  }
+  serie.addEventListener("change", atualizar);
+  atualizar();
+})();
+</script>
 {% endblock %}

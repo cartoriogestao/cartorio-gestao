@@ -134,6 +134,13 @@ import database as _database  # noqa: E402
 
 _database.DEFAULT_SETTINGS.update(SERVENTIA_DE_TESTE)
 
+# A SUÍTE CONTINUA NA MOLDURA ANTIGA. O padrão de fábrica passou a ser o layout novo em
+# 30/10/2026, e os testes de tela leem o HTML do menu antigo. Quem testa a moldura nova a
+# pede por pessoa, e `test_casca_nova` confere o padrão de verdade lendo o código.
+import navegacao_web as _navegacao_web  # noqa: E402
+
+_navegacao_web.PADRAO_DE_FABRICA = "antigo"
+
 _SEED_NAME = "_cg_seed_schema.sqlite3"
 _DB_NAME = "cartorio_gestao.sqlite3"
 _TRAVA_SUITE = None

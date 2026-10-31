@@ -31,6 +31,7 @@ from flask import abort, flash, redirect, render_template, request, url_for
 
 from bd_nativo import banco
 import impressao_web as IMPW
+import rascunho_de_tela as RASC
 import retificacao as RT
 import rt_tjma as NORMA
 from storage import safe_component, save_upload
@@ -162,6 +163,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @login_required
     @roles_required("ADMIN", "MANAGER", "USER", "REGISTRADOR", "ESCREVENTE")
     def ri_retificacao_nova():
+        form, rascunho_id = RASC.para_a_tela(
+            db, "ri_retificacao_nova", "Este rascunho não é de uma retificação de área.")
+
+        def tela():
+            with db.connect() as con:
+                matriculas = banco(con).ler(
+                    """SELECT id, numero, livro FROM ri_matriculas
+                        WHERE COALESCE(situacao,'ATIVA') <> 'ENCERRADA'
+                     ORDER BY coalesce(substring(numero FROM '^[0-9]+')::bigint, 0) DESC, id
+                     LIMIT 500""")
+            return render_template("ri_retificacao_nova.html",
+                                   matriculas=matriculas,
+                                   especies=NORMA.NOME_DA_ESPECIE,
+                                   fundamentos=NORMA.NOME_DO_FUNDAMENTO,
+                                   form=form, rascunho_id=rascunho_id)
+
         if request.method == "POST":
             try:
                 with db.transaction() as con:
@@ -186,23 +203,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         sigef_codigo=_campo("sigef_codigo"))
             except (RT.RetificacaoError, ValueError) as erro:
                 flash(str(erro), "danger")
-                return redirect(url_for("ri_retificacao_nova"))
+                return tela()
             audit("RT_AUTUADO", "rt_processos", novo,
                   {"numero": _campo("numero")})
             flash("Processo autuado. O checklist do art. 592 já está na ficha.",
                   "success")
+            RASC.saiu_com_o_ato(db, audit, "ri_retificacao_nova",
+                                url_for("ri_retificacao", processo_id=novo), usuario_nome())
             return redirect(url_for("ri_retificacao", processo_id=novo))
 
-        with db.connect() as con:
-            matriculas = banco(con).ler(
-                """SELECT id, numero, livro FROM ri_matriculas
-                    WHERE COALESCE(situacao,'ATIVA') <> 'ENCERRADA'
-                 ORDER BY coalesce(substring(numero FROM '^[0-9]+')::bigint, 0) DESC, id
-                 LIMIT 500""")
-        return render_template("ri_retificacao_nova.html",
-                               matriculas=matriculas,
-                               especies=NORMA.NOME_DA_ESPECIE,
-                               fundamentos=NORMA.NOME_DO_FUNDAMENTO)
+        return tela()
 
     # -------------------------------------------------------------- a ficha
 

@@ -38,6 +38,7 @@ from flask import (Response, abort, flash, redirect, render_template,
 import impressao_web as IMPW
 import us_notificacao as UN
 import usucapiao as US
+import usucapiao_abas as USABAS
 from serventia import dados as dados_serventia
 from storage import safe_component, save_upload
 
@@ -207,8 +208,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 # tela de Modelos é o que a ficha oferece.
                 "modelos": US.modelos_de_decisao(p, sv(), con=con),
             }
+        def abas_da_ficha() -> dict:
+            """A régua do layout novo. Só ele chama."""
+            return USABAS.abas_do_processo(
+                dados["p"], conferencia=dados["conferencia"], pecas=pecas,
+                movimentos=dados["movimentos"], analises=dados["analises"],
+                decisoes=dados["decisoes"], hoje=hoje())
         return render_template(
             "usucapiao_ficha.html", **dados, hoje=hoje(),
+            abas_da_ficha=abas_da_ficha,
             ETAPAS=US.ETAPAS, NOME_DA_ETAPA=US.NOME_DA_ETAPA,
             MODALIDADES=US.MODALIDADES, TIPOS_DE_PECA=US.TIPOS_DE_PECA,
             TIPOS_DE_MOVIMENTO=US.TIPOS_DE_MOVIMENTO, RESPOSTAS=US.RESPOSTAS,

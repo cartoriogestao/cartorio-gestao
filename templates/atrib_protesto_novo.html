@@ -11,29 +11,51 @@
 #}
 {% extends 'base.html' %}
 {% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
+{% from '_passos_e_gravar.html' import preparar, regua, andar %}
 {% block heading %}<h1>Título novo — apresentado no balcão</h1>{% endblock %}
 {% block content %}
 {% include '_serventia.html' %}
-<div class="actions"><a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a></div>
+{# NO LAYOUT NOVO, O RASCUNHO SOBE PARA A LINHA DO VOLTAR: é uma linha a menos antes do primeiro campo. #}
+{% set o_rascunho %}{{ salvar_rascunho('protesto_titulo_novo', url_for('protesto_titulo_novo'),
+                   'Título de protesto', csrf_token,
+                   nome_em='devedor_nome,cedente_nome', rascunho_id=rascunho_id) }}{% endset %}
+<div class="actions"><a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a>{% if layout_novo %}{{ o_rascunho }}{% endif %}</div>
 
 <div class="notice">
   <strong>93% dos títulos desta casa entram pelo arquivo da CRA</strong> — 7 em seis
   anos foram digitados. Se este título veio em arquivo, traga-o pelo arquivo: o que
   se digita à mão é o que sai diferente do que a Central tem.
-  <br><br>
+  <br>{% if not layout_novo %}<br>{% endif %}
   O título entra como <strong>RECEBIDO</strong>. O apontamento é o ato seguinte, e
   sai na ficha dele — com lugar no Livro de Apontamento, número de ordem, selo e
   custas próprios.
 </div>
 
-{{ salvar_rascunho('protesto_titulo_novo', url_for('protesto_titulo_novo'),
-                   'Título de protesto', csrf_token,
-                   nome_em='devedor_nome,cedente_nome') }}
+{% if not layout_novo %}{{ o_rascunho }}{% endif %}
 
-<form method="post" class="grid2" style="padding:0 0 14px" id="form-do-ato">
+{# OS PASSOS SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026. Ver `_passos_e_gravar.html`. Eles seguem o papel
+   na mão de quem atende: o título, de quem se cobra, e quem o trouxe. Este formulário não tem selo
+   nem cobrança: o título entra RECEBIDO, e o apontamento é o ato seguinte, na ficha. O endereço vai
+   escrito no formulário só para o passo guardado ser o desta tela, e não o de outra.
+   A BARRA AVISA DO APRESENTANTE VAZIO só quando o resto já está pronto para gravar (`:valid`): ele não é
+   obrigatório, e quem grava do segundo passo nem o veria. Sem ele, o aviso sai «não informado». #}
+{% set cg_passos = [('titulo', 'O título'), ('devedor', 'Devedor'), ('apresentante', 'Apresentante e cedente')] if layout_novo else none %}
+{% if cg_passos %}
+{{ preparar(VERSION) }}
+<style>
+.cg-segundo-devedor{border-top:1px solid #e5e7eb}
+.cg-segundo-devedor>summary{padding:10px 14px;margin:0;font-size:14px}
+.cg-segundo-devedor>.grid2{padding-top:0!important}
+#form-do-ato:valid:has([name=apresentante_nome]:placeholder-shown) .cg-gravar-falta{display:block}
+</style>
+{% endif %}
+{# O ENDEREÇO LEVA O RASCUNHO ABERTO: se o servidor recusar, a tela continua sabendo qual é, e salvar de novo
+   atualiza o mesmo. O corpo que vai ao gravar não ganha campo nenhum. #}
+<form method="post" class="grid2" style="padding:0 0 14px" id="form-do-ato"{% if cg_passos %} action="{{ url_for('protesto_titulo_novo', rascunho_id=rascunho_id) if rascunho_id else url_for('protesto_titulo_novo') }}"{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% if cg_passos %}{{ regua('form-do-ato', cg_passos, 'titulo') }}{% endif %}
 
-  <section class="panel" style="grid-column:1/-1">
+  <section class="panel" style="grid-column:1/-1" data-passo="titulo">
     <div class="panel-head"><span>O título</span></div>
     <div class="grid2" style="padding:14px">
       <label style="grid-column:1/-1">Espécie
@@ -125,42 +147,53 @@
     </div>
   </section>
 
-  <section class="panel" style="grid-column:1/-1">
+  <section class="panel" style="grid-column:1/-1" data-passo="devedor">
     <div class="panel-head"><span>Devedor</span><small>quem vai ser protestado</small></div>
     <p style="padding:14px 14px 0"><small>
       É por aqui que a certidão acha a pessoa depois. Sem nome, sem documento e sem
       endereço não há como intimar — e o protesto sairia por edital. Nos 1.366 do
       acervo, 980 devedores são pessoa física e 386 jurídica.
     </small></p>
+    {# O QUE FOI DIGITADO VOLTA NA POSIÇÃO DELE — 31/10/2026, na recusa do servidor e no rascunho reaberto. Cada
+       campo aparece duas vezes com o mesmo nome, e é a posição que diz de qual devedor ele é. Sem nada digitado,
+       o campo sai como sempre saiu: o `value` só entra quando há valor. #}
+    {% macro do_devedor(campo, i) %}{% set lista = form.getlist(campo) %}{% if lista|length > i %}{{ lista[i] }}{% endif %}{% endmacro %}
+    {% macro valor_do_devedor(campo, i) %}{% set lista = form.getlist(campo) %}{% if lista|length > i and lista[i] %} value="{{ lista[i] }}"{% endif %}{% endmacro %}
     {% for i in [0, 1] %}
+    {# O SEGUNDO DEVEDOR VEM RECOLHIDO no layout novo, porque quase sempre não há. Nenhum campo dele
+       é obrigatório, e por isso não há campo recusado escondido aqui, e ele vai junto ao gravar. Volta
+       aberto se a tela trazia algo dele, mesmo que só o documento ou o endereço: sem o nome, gravar o
+       ignora, e quem digitou tem de ver. #}
+    {% if cg_passos and i == 1 %}<details class="cg-segundo-devedor"{% if (form.getlist('devedor_nome')[1:] + form.getlist('devedor_documento')[1:] + form.getlist('devedor_endereco')[1:] + form.getlist('devedor_bairro')[1:] + form.getlist('devedor_cep')[1:] + form.getlist('devedor_cidade')[1:])|join('')|trim %} open{% endif %}><summary>Segundo devedor (se houver)</summary>{% endif %}
     <div class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
-      <div style="grid-column:1/-1"><strong>
+      {% if not (cg_passos and i == 1) %}<div style="grid-column:1/-1"><strong>
         {% if i == 0 %}Devedor{% else %}Segundo devedor <small>(se houver)</small>{% endif %}
-      </strong></div>
+      </strong></div>{% endif %}
       <label style="grid-column:1/-1">Nome
         <input name="devedor_nome" {% if i == 0 %}required{% endif %}
                value="{{ (form.getlist('devedor_nome')[i] if form.getlist('devedor_nome')|length > i else '') }}"></label>
       <label>Documento
         <select name="devedor_documento_tipo">
           <option value="CPF">CPF</option>
-          <option value="CNPJ">CNPJ</option>
+          <option value="CNPJ"{% if do_devedor('devedor_documento_tipo', i) == 'CNPJ' %} selected{% endif %}>CNPJ</option>
         </select></label>
       <label>Número
         <input name="devedor_documento" {% if i == 0 %}required{% endif %}
-               inputmode="numeric"></label>
+               inputmode="numeric"{{ valor_do_devedor('devedor_documento', i) }}></label>
       <label style="grid-column:1/-1">Endereço
         <input name="devedor_endereco" {% if i == 0 %}required{% endif %}
-               placeholder="Rua, número"></label>
-      <label>Bairro <input name="devedor_bairro"></label>
-      <label>CEP <input name="devedor_cep" inputmode="numeric" placeholder="65936000"></label>
-      <label>Cidade <input name="devedor_cidade" value="{{ cidade_da_casa if i == 0 else '' }}"></label>
+               placeholder="Rua, número"{{ valor_do_devedor('devedor_endereco', i) }}></label>
+      <label>Bairro <input name="devedor_bairro"{{ valor_do_devedor('devedor_bairro', i) }}></label>
+      <label>CEP <input name="devedor_cep" inputmode="numeric" placeholder="65936000"{{ valor_do_devedor('devedor_cep', i) }}></label>
+      <label>Cidade <input name="devedor_cidade" value="{{ form.getlist('devedor_cidade')[i] if form.getlist('devedor_cidade')|length > i else (cidade_da_casa if i == 0 else '') }}"></label>
       <label>UF
         <select name="devedor_uf">
           {% for uf in ufs %}
-            <option value="{{ uf }}" {% if uf == uf_da_casa %}selected{% endif %}>{{ uf }}</option>
+            <option value="{{ uf }}" {% if uf == (form.getlist('devedor_uf')[i] if form.getlist('devedor_uf')|length > i else uf_da_casa) %}selected{% endif %}>{{ uf }}</option>
           {% endfor %}
         </select></label>
     </div>
+    {% if cg_passos and i == 1 %}</details>{% endif %}
     {% endfor %}
   </section>
 
@@ -168,7 +201,7 @@
      ou quem o representa. Vai ao aviso, ao registro e ao instrumento (Lei
      9.492/1997, art. 22, II; CN-MA arts. 884, I, 914, III, e 920). Até aqui
      esta tela não o pedia, e o cedente se chamava «quem apresenta». #}
-  <section class="panel" style="grid-column:1/-1">
+  <section class="panel" style="grid-column:1/-1" data-passo="apresentante">
     <div class="panel-head"><span>Apresentante</span><small>quem traz o título — vai ao aviso, ao registro e ao instrumento</small></div>
     <div class="grid2" style="padding:14px">
       <label style="grid-column:1/-1">Nome
@@ -185,7 +218,7 @@
     </div>
   </section>
 
-  <section class="panel" style="grid-column:1/-1">
+  <section class="panel" style="grid-column:1/-1" data-passo="apresentante">
     <div class="panel-head"><span>Cedente</span><small>o credor (sacador/favorecido) — opcional</small></div>
     <div class="grid2" style="padding:14px">
       <label style="grid-column:1/-1">Nome
@@ -206,8 +239,10 @@
     </div>
   </section>
 
-  <div class="actions" style="grid-column:1/-1">
-    <button class="button">Cadastrar título</button>
+  {% if cg_passos %}<div class="cg-acao cg-gravar" style="grid-column:1/-1">
+    <span class="cg-acao-aviso falta cg-gravar-falta">O apresentante ainda está vazio. Ele vai ao aviso, ao registro e ao instrumento.</span>
+    {{ andar() }}{% else %}<div class="actions" style="grid-column:1/-1">{% endif %}
+    <button class="button{% if cg_passos %} primary{% endif %}">Cadastrar título</button>
     <a class="button" href="{{ url_for('protesto_titulos') }}">Cancelar</a>
   </div>
 </form>

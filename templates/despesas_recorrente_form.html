@@ -19,11 +19,14 @@
     <select name="forma" required>{% for k, v in formas.items() %}<option value="{{ k }}" {% if f.forma == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
   <label>Chave Pix (só para «Pix por chave») <input name="chave_pix" value="{{ f.chave_pix or '' }}" size="40"></label>
   <label>Valor do mês (R$) — obrigatório no Pix por chave; nas outras, deixe em branco se varia <input name="valor" value="{{ f.valor or '' }}" size="12"></label>
-  <label>Dia do vencimento (1 a 31; dia 31 em mês curto vira o último dia) <input name="dia_vencimento" value="{{ f.dia_vencimento or '' }}" size="3" required></label>
+  <label><input type="checkbox" name="ultimo_dia_util" value="1"{% if f.ultimo_dia_util %} checked{% endif %}> Vence no último dia útil do mês (fim de semana e feriados saem da conta)</label>
+  <label>Ou dia fixo do vencimento (1 a 31; dia 31 em mês curto vira o último dia) <input name="dia_vencimento" value="{{ f.dia_vencimento or '' }}" size="3"></label>
   <label>Avisar / carregar quantos dias antes do vencimento <input name="antecedencia_dias" value="{{ f.antecedencia_dias if f.antecedencia_dias is not none else 7 }}" size="3"></label>
   <label>Documento que comprova (espécie) <input name="documento_especie" value="{{ f.documento_especie or '' }}" placeholder="Contrato, recibo, fatura" size="30" required></label>
   <label>Primeiro mês (AAAA-MM) <input name="primeiro_mes" value="{{ f.primeiro_mes or '' }}" size="8" required></label>
   <label>Último mês (AAAA-MM, em branco = sem fim) <input name="ultimo_mes" value="{{ f.ultimo_mes or '' }}" size="8"></label>
+  <label>E-mail para o comprovante <input type="email" name="contato_email" value="{{ f.contato_email or '' }}" size="40"></label>
+  <label>WhatsApp para o comprovante, com DDD <input name="contato_whatsapp" value="{{ f.contato_whatsapp or '' }}" size="20"></label>
   <button type="submit">Gravar</button>
 </form>
 {% endblock %}

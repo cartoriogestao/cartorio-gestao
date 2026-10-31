@@ -171,8 +171,9 @@ def test_a_resposta_so_sai_com_numero_que_esta_no_texto_base():
 
 
 def test_assunto_sensivel_e_pedido_de_pessoa():
-    assert AT.assunto_sensivel("tenho um título protestado")[0] == "PROTESTO"
-    assert AT.assunto_sensivel("quero a certidão de nascimento")[0] == "RCPN"
+    # desde 30/10/2026 protesto e registro civil sobem à IA; só a reclamação vai direto
+    assert AT.assunto_sensivel("tenho um título protestado") is None
+    assert AT.assunto_sensivel("quero a certidão de nascimento") is None
     assert AT.assunto_sensivel("quero fazer uma reclamação")[0] == "GESTAO"
     assert AT.assunto_sensivel("qual o horário?") is None
     assert AT.pede_pessoa("quero falar com uma pessoa")
@@ -328,7 +329,8 @@ def test_identificacao_errada_nao_diz_qual_errou_e_tem_limite(casa, portal):
         _entrada(db, errado, meta_id=f"wamid.e{n}", wa_id=wa)
         graph = Graph()
         _rodar(db, casa["pasta"], http_post=graph)
-        textos.append(graph.enviados[0]["payload"]["text"]["body"])
+        # o rodapé só vai na primeira resposta do atendimento (30/10/2026)
+        textos.append(graph.enviados[0]["payload"]["text"]["body"].replace(AT.RODAPE, ""))
     assert len(set(textos)) == 1, "número inexistente e código errado respondem igual"
     assert AT.TEXTO_NAO_CONFERE in textos[0]
     cid = _entrada(db, "protocolo 12345 código ABC123", meta_id="wamid.e-ultima", wa_id=wa)
@@ -364,13 +366,14 @@ def test_pedir_andamento_sem_codigo_recebe_o_jeito_de_pedir(casa):
 # ---------------------------------------------- o que passa para pessoa
 
 
-def test_protesto_passa_para_o_setor_sem_subir_a_ia(casa):
+def test_o_caso_concreto_de_protesto_a_ia_encaminha_ao_setor(casa):
+    # até 30/10/2026 o protesto passava sem subir à IA (`wa_atendente`, cabeçalho)
     db = casa["db"]
     _cfg(db)
     cid = _entrada(db, "recebi uma intimação de protesto", meta_id="wamid.s1")
-    modelo, graph = Modelo({"acao": "responder"}), Graph()
+    modelo, graph = Modelo({"acao": "encaminhar", "razao": "caso_concreto"}), Graph()
     _rodar(db, casa["pasta"], conversar=modelo, http_post=graph)
-    assert modelo.chamadas == [] and graph.enviados == []
+    assert len(modelo.chamadas) == 1 and graph.enviados == []
     c = _um(db, "SELECT modo, setor FROM wa_conversa WHERE id=%s", (cid,))
     assert (c["modo"], c["setor"]) == ("pessoa", "PROTESTO")
     ev = _um(db, "SELECT * FROM wa_evento WHERE conversa_id=%s AND tipo=%s",
@@ -694,6 +697,46 @@ def test_o_teto_do_audio_vale_no_meio_da_rodada(casa, monkeypatch):
     r = _rodar(db, casa["pasta"], https=_https_do_audio(chamadas), transcrever=transcrever)
     assert r["audios"] == 1
     assert chamadas == ["graph.facebook.com", "lookaside.fbsbx.com"]
+
+
+def test_neste_servidor_e_um_audio_por_rodada_e_nada_vai_a_openai(casa, monkeypatch):
+    """A rodada espera o áudio aqui (`wa_transcricao_local`): dois na fila, um por vez."""
+    import wa_transcricao_local as LOCAL
+    db = casa["db"]
+    _cfg(db, **{SCH.CHAVE_AUDIO_LIGADO: "1", SCH.CHAVE_AUDIO_ONDE: LOCAL.AQUI})
+    _entrada(db, "", meta_id="wamid.au10", msg=_audio("5599900000061", "wamid.au10"))
+    _entrada(db, "", meta_id="wamid.au11", msg=_audio("5599900000062", "wamid.au11"))
+    feitos = []
+
+    def falso(pasta, audio, mime, **k):
+        feitos.append(k["finalidade"])
+        return {"texto": "qual o horário?", "segundos": 10.0, "custo_usd": 0.0,
+                "modelo": LOCAL.MODELO, "provedor": LOCAL.PROVEDOR}
+    monkeypatch.setattr(LOCAL, "transcrever", falso)
+    chamadas = []
+    r = _rodar(db, casa["pasta"], https=_https_do_audio(chamadas))
+    assert r["audios"] == 1 and feitos == ["wa_audio"]
+    assert "api.openai.com" not in chamadas
+    m = _um(db, "SELECT transcricao FROM wa_mensagem WHERE meta_id='wamid.au10'")
+    assert m["transcricao"] == "qual o horário?"
+    outro = _um(db, "SELECT transcricao FROM wa_mensagem WHERE meta_id='wamid.au11'")
+    assert outro["transcricao"] is None, "o segundo fica para a próxima rodada, sem ser pego"
+
+
+def test_neste_servidor_o_audio_que_falha_vai_para_uma_pessoa(casa, monkeypatch):
+    """O mesmo caminho da OpenAI fora do ar: a rodada não cai, e o áudio fica sem texto."""
+    import wa_transcricao_local as LOCAL
+    db = casa["db"]
+    _cfg(db, **{SCH.CHAVE_AUDIO_LIGADO: "1", SCH.CHAVE_AUDIO_ONDE: LOCAL.AQUI})
+    _entrada(db, "", meta_id="wamid.au12", msg=_audio("5599900000063", "wamid.au12"))
+
+    def falso(pasta, audio, mime, **k):
+        raise TRANSC.TranscricaoErro("A transcrição neste servidor falhou.")
+    monkeypatch.setattr(LOCAL, "transcrever", falso)
+    r = _rodar(db, casa["pasta"], https=_https_do_audio([]))
+    assert r["ok"] is True
+    m = _um(db, "SELECT transcricao FROM wa_mensagem WHERE meta_id='wamid.au12'")
+    assert m["transcricao"] == ""
 
 
 def test_mensagem_longa_demais_vai_para_pessoa_sem_subir(casa):

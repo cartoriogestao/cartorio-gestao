@@ -20,7 +20,8 @@
 {% macro quadro_certidao(atribuicao, registro, receita, certidoes, caixa,
                          protocolos, csrf_token, user, anexos=[], atos=[],
                          protocolo_escolhido=None, itens_do_protocolo=None,
-                         reload_url=None, digitalizacao=None) %}
+                         reload_url=None, digitalizacao=None,
+                         onde_a_varredura='acima') %}
 {% from '_cobrar.html' import quadro %}
 <section class="panel">
   <div class="panel-head">
@@ -93,7 +94,7 @@
           ({{ digitalizacao.digi_nome }}) com o selo ao final, e congela uma
           cópia do arquivo: varrer a ficha de novo amanhã não muda esta
           certidão.{% else %}Para certificar por reprodução, anexe a varredura
-          da ficha no quadro «Digitalização oficial deste registro», acima.
+          da ficha no quadro «Digitalização oficial deste registro», {{ onde_a_varredura }}.
           {% endif %}</small></label>
       {% endif %}
       {#  O BREVE RELATO DO RCPJ (LD05; CN-MA art. 420, II): a situação atual

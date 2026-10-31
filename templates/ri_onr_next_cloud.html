@@ -1,6 +1,10 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>Carga do Next Cloud SAS — ONR</h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, A CONFERÊNCIA E O XML FICAM À VISTA — 30/10/2026. O resto se recolhe, na mesma ordem, e o
+   título de cada quadro já diz o principal: o Indicador Real continua pela API, e o formulário é uma
+   declaração assinada. No layout antigo nada muda. #}
 
 <div class="actions">
   <a class="button secondary" href="{{ url_for('ri_onr') }}">&larr; Arquivos do ONR</a>
@@ -10,8 +14,10 @@
 {# A PERGUNTA QUE O OFICIAL FEZ, RESPONDIDA ANTES DE QUALQUER NÚMERO.
    Quem lesse «Next Cloud SAS ligado» concluiria que o Registro de Imóveis
    inteiro está integrado — e o índice real pararia sem ninguém ver. #}
+{% if layout_novo %}{{ abre('nc-tres-coisas', 'São três coisas, e o Next Cloud SAS leva duas', 'aderir não desliga o Indicador Real: ele continua pela API') }}<div class="cg-quadro-corpo">{% else %}
 <section class="cartao">
   <h2>São três coisas, e o Next Cloud SAS leva duas</h2>
+{% endif %}
   <div class="table-wrap">
     <table class="tabela">
       <thead><tr><th>O quê</th><th>Por onde vai</th><th>Onde se faz</th></tr></thead>
@@ -43,7 +49,9 @@
     que o ONR lê. O indicador real é <em>envio</em>, matrícula por matrícula,
     e continua no caminho dele.
   </div>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
 {# =============================================== o formulario de adesao #}
 {#
@@ -52,8 +60,10 @@
   Por isso ele vem ANTES do resto: as caixas que ele manda assinalar são as
   mesmas coisas que a conferência abaixo mede.
 #}
+{% if layout_novo %}{{ abre('nc-formulario', 'O formulário de adesão — o que copiar', 'é uma declaração assinada com o seu e-CPF: confira a base antes') }}<div class="cg-quadro-corpo">{% else %}
 <section class="cartao">
   <h2>O formulário de adesão — o que copiar</h2>
+{% endif %}
 
   <div class="alert alert-warning">
     <strong>Ele não é cadastro: é uma declaração assinada com o seu e-CPF.</strong>
@@ -103,11 +113,24 @@
     <strong>será necessária a liberação de rota do backup no firewall</strong> —
     isso é providência, e não papel.
   </div>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
 {# =============================================== o que o ONR recusa #}
+{% if layout_novo %}
+<style>
+  .cg-nc-duas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;align-items:start}
+  .cg-nc-duas>details{min-width:0;margin:0 0 8px}
+  @media(max-width:1200px){.cg-nc-duas{grid-template-columns:minmax(0,1fr)}}
+</style>
+<div class="cg-nc-duas">
+{% set nota_da_base %}{% if q.sem_imagem is none %}imagens não medidas{% elif q.sem_imagem %}<strong class="danger">{{ q.sem_imagem }} de {{ q.matriculas }} matrículas sem imagem</strong>{% else %}toda matrícula com imagem{% endif %} · {{ q.indicador_pessoal.sem_documento }} vínculo(s) sem documento{% endset %}
+{{ abre('nc-base', 'A base está completa?', nota_da_base, aberto=true) }}<div class="cg-quadro-corpo">
+{% else %}
 <section class="cartao">
   <h2>A base está completa?</h2>
+{% endif %}
   <p class="small muted">
     O manual do ONR diz, em maiúsculas: <strong>«Não serão aceitas base de
     dados ou de imagens parciais ou incompletas»</strong> — e a base deve
@@ -164,11 +187,15 @@
     <br>{{ q.erro_do_disco }}
   </div>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
 {# =============================================== o Indicador Pessoal #}
+{% if layout_novo %}{{ abre('nc-pessoal', '1. Indicador Pessoal — a carga completa', (q.indicador_pessoal.vinculos ~ ' vínculo(s) · ' ~ q.indicador_pessoal.sem_documento ~ ' sem documento'), aberto=true) }}<div class="cg-quadro-corpo">{% else %}
 <section class="cartao">
   <h2>1. Indicador Pessoal — a carga completa</h2>
+{% endif %}
 
   <table class="tabela">
     <tbody>
@@ -229,12 +256,16 @@
     servidor. <strong>Este sistema não transmite nada</strong> — quem sobe ao
     Firestore é o programa deles.
   </p>
+{% if layout_novo %}</div></details></div>{% else %}
 </section>
+{% endif %}
 
 {# =============================================== as imagens #}
 {% if q.imagens %}
+{% if layout_novo %}{{ abre('nc-imagens', '2. Imagens do Livro 2 — a pasta contra o padrão do ONR', (q.imagens.arquivos ~ ' arquivo(s) · ' ~ q.imagens.no_padrao ~ ' no padrão'), aberto=q.imagens.achados | length > 0) }}<div class="cg-quadro-corpo">{% else %}
 <section class="cartao">
   <h2>2. Imagens do Livro 2 — a pasta contra o padrão do ONR</h2>
+{% endif %}
   <p class="small muted">Varrido em <code>{{ raiz }}</code>.</p>
 
   <table class="tabela">
@@ -281,13 +312,17 @@
     instala no servidor. Não há nada para gerar aqui — o que esta tela faz é
     <strong>conferir</strong> que ela está no formato que ele espera.
   </div>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 {% endif %}
 
 {# =============================================== o que falta digitalizar #}
 {% if faltando %}
+{% if layout_novo %}{{ abre('nc-sem-imagem', 'As matrículas sem imagem nenhuma', ((q.sem_imagem or (faltando | length)) ~ ' matrícula(s)')) }}<div class="cg-quadro-corpo">{% else %}
 <section class="cartao">
   <h2>As matrículas sem imagem nenhuma</h2>
+{% endif %}
   <p class="small muted">
     São estas que fazem a base ser «incompleta» para o ONR. Ficha pela metade
     não entra nesta conta — para o Bucket, matrícula com uma página é matrícula
@@ -315,12 +350,16 @@
     Mostrando {{ faltando|length }} das {{ q.sem_imagem }}.
   </p>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 {% endif %}
 
 {# =============================================== o roteiro #}
+{% if layout_novo %}{{ abre('nc-caminho', 'O caminho, na ordem', 'cinco passos, da adesão à produção') }}<div class="cg-quadro-corpo">{% else %}
 <section class="cartao">
   <h2>O caminho, na ordem</h2>
+{% endif %}
   <ol class="small">
     <li><strong>Pedir a adesão.</strong> Formulário assinado para
         <code>integrar-onr@onr.org.br</code>, assunto «Opção 2 – Cartório de
@@ -338,6 +377,8 @@
     <li><strong>Homologação primeiro.</strong> Só peça o GoLive — a produção —
         quando a equipe estiver familiarizada.</li>
   </ol>
+{% if layout_novo %}</div></details>{{ ferramentas() }}{% else %}
 </section>
+{% endif %}
 
 {% endblock %}

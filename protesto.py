@@ -74,6 +74,7 @@ FUNDAMENTO
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 from typing import Any
 
@@ -387,6 +388,18 @@ def apresentante_do_titulo(con, titulo: Any) -> dict:
 # ------------------------------------------------------------- o cadastro
 
 
+_VALOR_LEGIVEL = re.compile(r"\s*(R\$)?\s*[+-]?\s*\d[\d.,]*\s*")
+
+
+def valor_legivel(valor: Any) -> bool:
+    """O texto é um valor em dinheiro? SÓ CALCULA.
+
+    `caixa_schema.centavos` tira as letras e devolve zero, o que serve à conta do caixa. Aqui o valor
+    vai ao aviso, ao instrumento e à guia, e por isso é preciso recusar antes de ler.
+    """
+    return bool(_VALOR_LEGIVEL.fullmatch("" if valor is None else str(valor)))
+
+
 def cadastrar_titulo(con, dados: dict, *, origem: str,
                      origem_chave: str | None = None,
                      importacao_id: int | None = None,
@@ -414,6 +427,11 @@ def cadastrar_titulo(con, dados: dict, *, origem: str,
     if faltas:
         raise ProtestoError(
             "O título não passa no contrato da CRA: " + "; ".join(faltas))
+    # O VALOR QUE NÃO É NÚMERO ERA LIDO COMO ZERO, e o título nascia de R$ 0,00 sem ninguém ver.
+    for campo, rotulo in (("valor", "O valor"), ("saldo", "O saldo")):
+        if not valor_legivel(dados.get(campo)):
+            raise ProtestoError(f"{rotulo} do título não é um número: veio {dados.get(campo)!r}. "
+                                f"Escreva como 1.234,56.")
     # O CPF/CNPJ DO APRESENTANTE VAI AO AVISO (CN-MA art. 923), e número que
     # não fecha o dígito é documento de ninguém num papel que a casa assina.
     # Vazio não é erro: quem exige ou não é o oficial (LD08.perguntas, 1).

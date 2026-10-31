@@ -1026,10 +1026,11 @@ def por_atribuicao() -> list[tuple[str, list[dict]]]:
     A ORDEM E A DO CATALOGO, e nao alfabetica: ela poe o Registro de Imoveis
     primeiro porque e onde estao cinco dos dez papeis, e alfabetica poria
     «Caixa» na frente sem que isso ajudasse ninguem a achar.
+
+    A MESMA ATRIBUICAO EM DOIS PONTOS DO CATALOGO E UM GRUPO SO. Olhar so o grupo
+    anterior fazia o Registro Civil sair duas vezes, com dois botoes iguais no filtro.
     """
-    grupos: list[tuple[str, list[dict]]] = []
+    grupos: dict[str, list[dict]] = {}
     for c in CATALOGO:
-        if not grupos or grupos[-1][0] != c["atribuicao"]:
-            grupos.append((c["atribuicao"], []))
-        grupos[-1][1].append(c)
-    return grupos
+        grupos.setdefault(c["atribuicao"], []).append(c)
+    return list(grupos.items())

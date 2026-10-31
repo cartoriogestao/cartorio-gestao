@@ -11,6 +11,7 @@ from pathlib import Path
 
 from flask import flash, redirect, render_template, request, url_for
 
+import rascunho_de_tela as RASC
 import rc_leitura_documentos as LEIT
 import tetos_de_entrada as TETO
 from storage import save_upload
@@ -243,9 +244,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return redirect(url_for("rcpn_leitura"))
         abrir_url = (_url_do_rascunho(leitura["especie"], leitura["rascunho_id"])
                      if leitura.get("rascunho_id") else None)
+        # O RASCUNHO SAI DA LISTA QUANDO O ATO GRAVA (31/10/2026): a leitura aponta para
+        # o ato, e não para uma tela de lavrar que levaria ao mesmo lugar.
+        virou_ato = None
+        if leitura.get("rascunho_id"):
+            with db.connect() as con:
+                virou_ato = RASC.o_ato_do_rascunho(con, leitura["rascunho_id"])
         return render_template("rc_leitura_ficha.html", leitura=leitura, tipos=LEIT.TIPOS,
                                base_legal=LEIT.BASE_LEGAL, zdr=LEIT.ZERO_DATA_RETENTION,
-                               rotulos=LEIT.ROTULO_DA_ESPECIE, abrir_url=abrir_url)
+                               rotulos=LEIT.ROTULO_DA_ESPECIE, abrir_url=abrir_url,
+                               virou_ato=virou_ato)
 
     @app.route("/rcpn/leitura/<int:leitura_id>/rascunho", methods=["POST"])
     @login_required

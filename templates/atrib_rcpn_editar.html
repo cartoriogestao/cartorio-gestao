@@ -34,7 +34,25 @@
 </div>
 {% endif %}
 
-<form method="post" class="grid2" style="padding:0">
+{# AS PARTES SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026. É UM FORMULÁRIO SÓ: o que está escondido vai
+   junto, e `static/fases.js` mostra a parte aberta. Sem o script, ele sai inteiro. Aqui não há
+   ordem a seguir, porque quem corrige vem atrás de um campo: por isso as partes não têm número,
+   e o motivo e o botão de salvar ficam fora delas, sempre à vista. As pessoas são a maior parte
+   da página, e por isso cada espécie diz as suas. #}
+{% set cg_passos = none %}
+{% if layout_novo %}
+  {% if assento.especie in ('NASCIMENTO', 'NATIMORTO') %}{% set cg_pessoas = [('pessoa', 'Registrado'), ('filiacao', 'Filiação'), ('declarante', 'Declarante e testemunhas')] %}
+  {% elif assento.especie == 'OBITO' %}{% set cg_pessoas = [('pessoa', 'Falecido'), ('filiacao', 'Filiação'), ('declarante', 'Declarante e testemunhas')] %}
+  {% elif assento.especie in ('CASAMENTO', 'CASAMENTO_RELIGIOSO') %}{% set cg_pessoas = [('pessoa', 'Nubentes'), ('filiacao', 'Filiação'), ('declarante', 'Testemunhas')] %}
+  {% else %}{% set cg_pessoas = [('pessoa', 'Pessoas')] %}
+  {% endif %}
+  {% set cg_passos = [('assento', 'O assento'), ('termo', 'Campos do termo'), ('teor', 'Teor')] + cg_pessoas %}
+{% endif %}
+{% macro outra_parte(chave, titulo) %}</div></section>
+  <section class="panel" style="grid-column:1/-1" data-passo="{{ chave }}">
+    <div class="panel-head"><span>{{ titulo }}</span></div>
+    <div class="grid2" style="padding:14px">{% endmacro %}
+<form method="post" class="grid2" style="padding:0" id="form-da-correcao">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
   <section class="panel" style="grid-column:1/-1">
@@ -47,7 +65,14 @@
     </div>
   </section>
 
-  <section class="panel" style="grid-column:1/-1">
+  {% if cg_passos %}
+  <script defer src="{{ url_for('static', filename='fases.js') }}?v={{ VERSION }}"></script>
+  <nav class="cg-passos" style="grid-column:1/-1" data-cg-passos="form-da-correcao" data-inicial="assento" aria-label="Partes desta correção">
+    {% for chave, rotulo in cg_passos %}<button type="button" class="cg-passo" data-passo-ir="{{ chave }}">{{ rotulo }}</button>{% endfor %}
+  </nav>
+  {% endif %}
+
+  <section class="panel" style="grid-column:1/-1" data-passo="assento">
     <div class="panel-head"><span>O assento</span></div>
     <div class="grid2" style="padding:14px">
       <label>Nome
@@ -77,7 +102,7 @@
     </div>
   </section>
 
-  <section class="panel" style="grid-column:1/-1">
+  <section class="panel" style="grid-column:1/-1" data-passo="termo">
     <div class="panel-head"><span>Campos do termo</span>
       <small>o que a certidão imprime</small></div>
     <div class="grid2" style="padding:14px">
@@ -166,7 +191,7 @@
      não tinha volta. Só aparecem os da espécie (`campos_termo`). #}
   {% if 'pais_casamento_lugar' in campos_termo or 'obito_conjuge_nome' in campos_termo
         or 'nubente1_conjuge_anterior' in campos_termo or assento.especie in ('CASAMENTO', 'CASAMENTO_RELIGIOSO') %}
-  <section class="panel" style="grid-column:1/-1">
+  <section class="panel" style="grid-column:1/-1" data-passo="termo">
     <div class="panel-head"><span>O que a lei pede</span>
       <small>todos opcionais; o que estiver vazio não sai no papel</small></div>
     <div class="grid2" style="padding:14px">
@@ -245,10 +270,12 @@
   {# O LIVRO E — o mesmo bloco da tela de lavrar (`_livro_e.html`). #}
   {% from '_livro_e.html' import titulo_do_livro_e, pessoas_do_livro_e %}
   {% if titulos_livro_e %}
+    {% if cg_passos %}<div class="cg-passo-bloco" data-passo="termo">{% endif %}
     {{ titulo_do_livro_e(assento.especie, form, titulos_livro_e, nomes_do_titulo, regimes) }}
+    {% if cg_passos %}</div>{% endif %}
   {% endif %}
 
-  <section class="panel" style="grid-column:1/-1">
+  <section class="panel" style="grid-column:1/-1" data-passo="teor">
     <div class="panel-head"><span>Teor</span>
       <small>texto do assento / termo</small></div>
     <div style="padding:14px">
@@ -259,12 +286,13 @@
     </div>
   </section>
 
-  <section class="panel" style="grid-column:1/-1">
-    <div class="panel-head"><span>Filiação e pessoas</span>
+  <section class="panel" style="grid-column:1/-1" data-passo="pessoa">
+    <div class="panel-head"><span>{% if cg_passos %}{{ cg_pessoas[0][1] }}{% else %}Filiação e pessoas{% endif %}</span>
       <small>corrija nomes e naturalidade</small></div>
     <div class="grid2" style="padding:14px">
       {% if assento.especie in ('NASCIMENTO', 'NATIMORTO') %}
         {{ pessoa('pessoa', 'Registrado', '', false, form, true, 'completo') }}
+        {% if cg_passos %}{{ outra_parte('filiacao', 'Filiação') }}{% endif %}
         {{ pessoa('filiacao1', 'Filiação 1 — mãe', '', false, form, false, 'completo', false, true) }}
         {{ pessoa('filiacao2', 'Filiação 2 — pai', '', false, form, false, 'completo', false, true) }}
         {% if assento.especie == 'NASCIMENTO' %}
@@ -275,6 +303,7 @@
                           'Progenitores da filiação 2 — avós paternos',
                           'Os pais de quem está na filiação 2.', form) }}
         {% endif %}
+        {% if cg_passos %}{{ outra_parte('declarante', 'Declarante e testemunhas') }}{% endif %}
         {{ pessoa('declarante', 'Declarante', '', false, form) }}
         {{ pessoa('testemunha', 'Testemunha', '', false, form) }}
         {% if assento.especie == 'NASCIMENTO' %}
@@ -285,10 +314,12 @@
       {% elif assento.especie in ('CASAMENTO', 'CASAMENTO_RELIGIOSO') %}
         {{ pessoa('nubente1', 'Primeiro nubente', '', true, form, true, 'completo') }}
         {{ pessoa('nubente2', 'Segundo nubente', '', true, form, true, 'completo') }}
+        {% if cg_passos %}{{ outra_parte('filiacao', 'Filiação') }}{% endif %}
         {{ pessoa('filiacao1n1', 'Filiação 1 do primeiro nubente', '', false, form, false, 'completo', false, true) }}
         {{ pessoa('filiacao2n1', 'Filiação 2 do primeiro nubente', '', false, form, false, 'completo', false, true) }}
         {{ pessoa('filiacao1n2', 'Filiação 1 do segundo nubente', '', false, form, false, 'completo', false, true) }}
         {{ pessoa('filiacao2n2', 'Filiação 2 do segundo nubente', '', false, form, false, 'completo', false, true) }}
+        {% if cg_passos %}{{ outra_parte('declarante', 'Testemunhas') }}{% endif %}
         {{ pessoa('testemunha', 'Testemunha', '', false, form) }}
         {# A SEGUNDA TESTEMUNHA também se corrige — termo 1214, 23/10/2026:
            com uma gaveta só, a segunda abria nela e, gravada, caía por cima
@@ -296,8 +327,10 @@
         {{ pessoa('testemunha2', 'Segunda testemunha', '', false, form) }}
       {% elif assento.especie == 'OBITO' %}
         {{ pessoa('pessoa', 'Falecido', '', false, form, true, 'completo') }}
+        {% if cg_passos %}{{ outra_parte('filiacao', 'Filiação') }}{% endif %}
         {{ pessoa('filiacao1', 'Filiação 1 — mãe', '', false, form, false, 'completo', false, true) }}
         {{ pessoa('filiacao2', 'Filiação 2 — pai', '', false, form, false, 'completo', false, true) }}
+        {% if cg_passos %}{{ outra_parte('declarante', 'Declarante e testemunhas') }}{% endif %}
         {{ pessoa('declarante', 'Declarante', '', false, form) }}
         {{ pessoa('testemunha', 'Testemunha', '', false, form) }}
         {{ pessoa('testemunha2', 'Segunda testemunha', '', false, form) }}

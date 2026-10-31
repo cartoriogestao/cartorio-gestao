@@ -1,6 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Remessa do SIRC{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, O QUE ESPERA REMESSA VEM PRIMEIRO — 30/10/2026. Os botões de cada lote abrem a tela, logo
+   abaixo do prazo. O que ficou retido abre sozinho, porque espera conserto; a lista, o mês sem movimento,
+   a carga do acervo e a explicação ficam recolhidos, com a contagem no título. Os formulários são os
+   mesmos, e no layout antigo nada sai do lugar. #}
+{% if layout_novo %}
+<style>
+  input[name=competencia]{max-width:12rem}
+  .alerta.danger+h2{margin-top:10px}
+</style>
+{% endif %}
 <h1>Remessa do SIRC</h1>
 
 <div class="alerta danger">
@@ -9,6 +20,7 @@
   <p class="small">{{ norma.SANCAO }}</p>
 </div>
 
+{% set sete_coisas %}
 <div class="card">
   <p>O SIRC recebe <strong>sete coisas</strong> — mais do que qualquer outra
      central:</p>
@@ -22,6 +34,8 @@
     (§ 3º).
   </p>
 </div>
+{% endset %}
+{% if not layout_novo %}{{ sete_coisas }}{% endif %}
 
 {# **O NÚMERO PEQUENO PRECISA DIZER POR QUE É PEQUENO — relato do oficial em
    13/09/2026: "remessa sirc não aparece todos registros do sistema para
@@ -34,7 +48,7 @@
    **O lote em .docx (IMPORTACAO) não fica de fora — ele vai pela carga do
    acervo, logo abaixo**, decisão do oficial em 14/09/2026: o SIRC nunca o
    recebeu, porque o E-Ofício nunca o enviou. #}
-{% if do_acervo %}
+{% set os_do_acervo %}{% if do_acervo %}
 <div class="card">
   <p class="small muted">
     <strong>{{ do_acervo }} assento(s) do acervo ficam de fora desta
@@ -44,15 +58,15 @@
     que <strong>este sistema</strong> registrou.
   </p>
 </div>
-{% endif %}
+{% endif %}{% endset %}
+{% if not layout_novo %}{{ os_do_acervo }}{% endif %}
 
 {# **A CARGA DO ACERVO EM .DOCX — decisão do oficial em 14/09/2026.** O
    número grande AQUI é o esperado, ao contrário da lista de baixo: é
    justamente a subida do que nunca foi enviado. Mesma lógica da carga da
    CRC, mesmo envelope da remessa — só a fonte dos assentos muda. #}
 {% if carga %}
-<div class="panel" style="border-left:4px solid var(--warning)">
-  <h2 style="margin-top:0">Carga do acervo em .docx ({{ carga|length }})</h2>
+{% set a_carga %}
   <p class="small muted">
     <strong>Um número grande aqui é o esperado, e não atraso</strong> — é a
     subida do lote que o sistema antigo nunca enviou ao SIRC (papel antigo,
@@ -112,7 +126,13 @@
     </table>
   </div>
   {% endif %}
+{% endset %}
+{% if not layout_novo %}
+<div class="panel" style="border-left:4px solid var(--warning)">
+  <h2 style="margin-top:0">Carga do acervo em .docx ({{ carga|length }})</h2>
+  {{ a_carga }}
 </div>
+{% endif %}
 {% endif %}
 
 <h2>Esperando remessa ({{ devendo|length }})</h2>
@@ -201,8 +221,10 @@
 </div>
 {% endif %}
 
+{% if layout_novo %}{{ os_do_acervo }}{% endif %}
 {% if montado.retidos %}
-<div class="card">
+{% if layout_novo %}{{ abre('sirc-retidos', 'Ficaram de fora — abrir e corrigir', (montado.retidos | length) ~ ' retido(s), cada um com o motivo', aberto=true) }}{% endif %}
+<div class="{{ 'cg-quadro-corpo' if layout_novo else 'card' }}">
   <p class="danger"><strong>{{ montado.retidos|length }} ficaram de fora</strong>,
      e nenhum some calado. O § 4º pune <strong>o fornecimento de informação
      inexata</strong> com a penalidade do art. 92 da Lei nº 8.212/1991 e ação
@@ -226,8 +248,10 @@
     </tbody>
   </table>
 </div>
+{% if layout_novo %}</details>{% endif %}
 {% endif %}
 
+{% if layout_novo %}{{ abre('sirc-lista', 'A lista dos que esperam remessa', (devendo | length) ~ ' registro(s), do mais antigo ao mais novo') }}<div class="cg-quadro-corpo">{% endif %}
 <table>
   <thead><tr><th>Data</th><th>Tipo</th><th>Nome</th><th>Nº</th><th>O quê</th></tr></thead>
   <tbody>
@@ -258,12 +282,13 @@
 {% if devendo|length > 250 %}
 <p class="small muted">Mostrando os 250 do primeiro lote, de {{ devendo|length }}.</p>
 {% endif %}
+{% if layout_novo %}</div></details>{% endif %}
 {% else %}
 <p>Nada esperando remessa.</p>
+{% if layout_novo %}{{ os_do_acervo }}{% endif %}
 {% endif %}
 
-<div class="card">
-  <h2 style="margin-top:0">Mês sem movimento</h2>
+{% set mes_sem_movimento %}
   <p><strong>Mês sem registro nenhum também se comunica</strong> — art. 225,
      § 3º, até o {{ norma.PRAZO_DA_INEXISTENCIA_DIAS_UTEIS }}º dia útil do mês
      seguinte.</p>
@@ -278,14 +303,13 @@
     <button class="button" formaction="{{ url_for('rcpn_sirc_inexistencia') }}">Gerar a declaração</button>
     <button class="button secondary" formaction="{{ url_for('rcpn_sirc_inexistencia_enviar') }}">Enviar agora pela API</button>
   </form>
-</div>
+{% endset %}
 
 {# **O CANCELAMENTO DE TERMO NÃO É UM DOS SETE DO ART. 225** — seção 5.7
    do manual: um termo que nunca valeu (lavrado no livro errado, por
    exemplo), e não um registro que existe e mudou. Por isso tem envelope,
    operação e versão de layout PRÓPRIOS, e uma seção à parte na tela. #}
-<div class="card">
-  <h2 style="margin-top:0">Cancelamento de termo ({{ cancelamentos|length }})</h2>
+{% set cancelamento_de_termo %}
   <p class="small muted">Só para termos que <strong>não foram usados</strong> para
      registro civil, ou que a serventia cancelou no livro — o manual (seção 5.7)
      não é para corrigir um registro que existe: isso é a Alteração, acima.</p>
@@ -334,8 +358,9 @@
   {% else %}
     <p class="muted">Nenhum termo cancelado pendente.</p>
   {% endif %}
-</div>
+{% endset %}
 
+{% set a_credencial %}
 <div class="card">
   {# **CORRIGIDO EM 14/09/2026 — o que estava escrito aqui deixou de ser
      verdade.** Havia UM web service que exige A3; o outro, `/SircWs/
@@ -361,4 +386,25 @@
     ICP-Brasil com WS-Security; este sistema não fala com ele.
   </p>
 </div>
+{% endset %}
+
+{% if layout_novo %}
+{{ abre('sirc-cancelamento', 'Cancelamento de termo', (cancelamentos | length) ~ ' pendente(s)', aberto=cancelamentos | length > 0) }}<div class="cg-quadro-corpo">{{ cancelamento_de_termo }}</div></details>
+{{ abre('sirc-mes', 'Mês sem movimento', 'mês sem registro nenhum também se comunica') }}<div class="cg-quadro-corpo">{{ mes_sem_movimento }}</div></details>
+{% if carga %}{{ abre('sirc-carga', 'Carga do acervo em .docx', (carga | length) ~ ' registro(s), uma vez só · ' ~ (montado_carga.lotes | length) ~ ' arquivo(s)' ~ ((' · ' ~ (montado_carga.retidos | length) ~ ' retido(s)') if montado_carga.retidos else '')) }}<div class="cg-quadro-corpo">{{ a_carga }}</div></details>{% endif %}
+{{ abre('sirc-como', 'O que o SIRC recebe, e a credencial', 'as sete coisas e onde informar a senha') }}<div class="cg-quadro-corpo">{{ sete_coisas }}{{ a_credencial }}</div></details>
+{{ ferramentas() }}
+{% else %}
+<div class="card">
+  <h2 style="margin-top:0">Mês sem movimento</h2>
+  {{ mes_sem_movimento }}
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Cancelamento de termo ({{ cancelamentos|length }})</h2>
+  {{ cancelamento_de_termo }}
+</div>
+
+{{ a_credencial }}
+{% endif %}
 {% endblock %}

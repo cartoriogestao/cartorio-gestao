@@ -292,3 +292,13 @@ def test_a_fonte_da_regra_esta_dita_no_modulo():
     """Regra sem endereco vira lenda: daqui a um ano ninguem sabe de onde saiu
     o «vezes 10», e o primeiro que achar estranho vai tirar."""
     assert "Anexo IV" in M.FONTE and "CRC" in M.FONTE
+
+
+def test_a_ficha_do_assento_nao_diz_que_o_sistema_nao_gera_a_matricula():
+    """Ela se compõe ao lavrar desde 03/09/2026, e a tela continuou dizendo o contrário."""
+    ficha = (RAIZ / "templates" / "atrib_rcpn_ficha.html").read_text(
+        encoding="utf-8-sig")
+    corrido = " ".join(ficha.split())
+    assert "não gera nem valida" not in corrido
+    assert "não foi decifrado" not in corrido
+    assert "o sistema a compõe" in corrido

@@ -1,7 +1,14 @@
 {% extends 'base.html' %}
 {% block title %}Protocolo {{ p.numero }} — Administrativo{% endblock %}
-{% block heading %}<h1>Protocolo {{ p.numero }}</h1>{% endblock %}
+{% block heading %}<h1>Protocolo {{ p.numero }}
+  {#- NO LAYOUT NOVO QUEM É E COMO ESTÁ FICAM NO TÍTULO: não somem ao trocar de aba. #}
+  {%- if layout_novo %} <span class="small muted">{% if p.interessado %}{{ p.interessado }} · {% endif %}{{ SITUACOES.get(p.situacao, p.situacao) }}</span>{% endif %}</h1>{% endblock %}
 {% block content %}
+{# AS ABAS SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026, `caixa_abas`. Os quadros não saem do lugar: cada
+   um diz a que aba pertence, e `static/fases.js` mostra os da aba aberta. #}
+{% from '_fases.html' import abre_ficha, regua, o_que_espera %}
+{% set abas = abas_da_ficha() if layout_novo else none %}
+{% if abas %}{{ abre_ficha(VERSION) }}{{ regua(abas, 'protocolo-' ~ p.id, 'Partes deste protocolo') }}<span class="cg-ancora" id="itens"></span>{{ o_que_espera(abas.espera, 'itens') }}{% endif %}
 {% from '_fraude.html' import alerta as alerta_fraude %}
 {# O ALERTA DE FRAUDE VEM NO ALTO — antes de a casa trabalhar. #}
 {{ alerta_fraude(fraudes, csrf_token, 'balcão — protocolo', p.numero,
@@ -65,7 +72,8 @@
 </div>
 {% endif %}
 
-<section class="panel">
+{% if abas %}<span class="cg-ancora" id="dados"></span>{% endif %}
+<section class="panel cg-lado-largo" data-fase="dados">
   <div class="panel-head"><span>{{ SITUACOES.get(p.situacao, p.situacao) }}</span>
     <span class="small muted">{{ p.atribuicao }}</span></div>
   <div class="grid2" style="padding:14px">
@@ -118,7 +126,7 @@
   auditoria. «Trocar» invalida o de antes.
 #}
 {% if acompanhamento and acompanhamento.elegivel %}
-<section class="panel">
+<section class="panel" id="acompanhamento" data-fase="acompanhamento">
   <div class="panel-head"><span>Acompanhamento pelo cliente</span>
     <span class="small muted">o cliente vê: «{{ acompanhamento.situacao }}»</span></div>
   <div style="padding:14px">
@@ -149,7 +157,7 @@
 {% endif %}
 
 {% if p.ri_protocolo_id or (p.atribuicao or '')|upper == 'RI' %}
-<section class="panel">
+<section class="panel" id="vinculos" data-fase="vinculos">
   <div class="panel-head"><span>Vínculo com a prenotação (Livro 1)</span></div>
   <div style="padding:14px">
     <p class="small muted">A coluna <code>ri_protocolo_id</code> liga este
@@ -190,7 +198,7 @@
    cliente e dos avisos de andamento: a nota geral deste protocolo, a nota
    devolutiva da prenotação ligada e a qualificação negativa do título
    ligado. Abrir e cumprir a geral é na tela dela. #}
-<section class="panel" id="exigencias">
+<section class="panel" id="exigencias" data-fase="exigencias">
   <div class="panel-head"><span>Exigências em aberto</span>
     <span class="small muted">{{ exigencias_abertas|length }} nota(s) aguardando o interessado</span></div>
   {% if exigencias_abertas %}
@@ -214,7 +222,7 @@
    tarefa mostra o protocolo na pasta dela, e o protocolo mostra as tarefas
    aqui. Criar usa o MESMO formulário da tela de Tarefas (uma regra só de
    criar), com a ligação e a volta para cá. #}
-<section class="panel" id="tarefas">
+<section class="panel" id="tarefas" data-fase="tarefas">
   <div class="panel-head"><span>Tarefas deste protocolo</span>
     <span class="small muted">{{ tarefas_do_protocolo|length }} tarefa(s) ligada(s)</span></div>
   {% if tarefas_do_protocolo %}
@@ -272,7 +280,8 @@
    cliente entrega no balcão ficam aqui, e o ato ligado a este protocolo os vê
    na tela de lavrar (Notas: «Protocolo geral do ato»; RI: a prenotação
    vinculada acima). Retirar não apaga: pede o motivo e deixa a linha. #}
-<section class="panel" id="documentos-qualificacao">
+{% if abas %}<span class="cg-ancora" id="documentos"></span>{% endif %}
+<section class="panel" id="documentos-qualificacao" data-fase="documentos">
   <div class="panel-head"><span>Documentos para qualificação</span>
     <span class="small muted">{{ docs_qualificacao.ativos|length }} documento(s){% if docs_qualificacao.retirados %} · {{ docs_qualificacao.retirados|length }} retirado(s){% endif %}</span></div>
   {% if docs_qualificacao.ativos %}
@@ -334,13 +343,13 @@
    daqui, com etiqueta e comprovante em PDF — `ri_conferencia_web`. #}
 {% if conferencia_digital %}{% include '_ri_conferencia.html' %}{% endif %}
 
-<section class="cards">
+<section class="cards" data-fase="itens">
   <div class="stat"><strong>{{ soma.total }}</strong><small>total do protocolo</small></div>
   <div class="stat"><strong>{{ pendente.total }}</strong><small>ainda a quitar</small></div>
   <div class="stat"><strong>{{ atos|selectattr('quitado')|list|length }}/{{ atos|length }}</strong><small>itens quitados</small></div>
 </section>
 
-<section class="panel">
+<section class="panel cg-lado-largo" data-fase="itens">
   <div class="panel-head"><span>Itens e quitação</span>
     {# QUITAR TUDO COM UM BOTÃO SÓ — RELATO #52 do oficial.
 
@@ -446,7 +455,7 @@
   {% endif %}
 </section>
 
-<section class="panel" id="acrescentar-item">
+<section class="panel cg-lado-largo" id="acrescentar-item" data-fase="itens">
   <div class="panel-head"><span>Acrescentar item pela tabela</span></div>
   <div style="padding:14px">
     {# A BUSCA — RELATO #53.
@@ -518,7 +527,7 @@
   </div>
 </section>
 
-<section class="panel">
+<section class="panel cg-lado-largo" data-fase="dados">
   <div class="panel-head"><span>Corrigir contato</span></div>
   <form method="post" class="grid2" style="padding:14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -549,7 +558,7 @@
    O painel só aparece quando não há dinheiro dentro: protocolo com item
    quitado tem lançamento no caixa, e encerrá-lo faria o serviço sumir da lista
    e o valor ficar. Quem recusa é o domínio; a tela só não oferece. #}
-<section class="panel">
+<section class="panel" data-fase="dados">
   <div class="panel-head"><span>Encerramento</span>
     {% if encerrado %}<span class="badge">{{ SITUACOES.get(p.situacao, p.situacao) }}</span>{% endif %}
   </div>
@@ -598,7 +607,7 @@
 </section>
 
 {% if lancamentos %}
-<section class="panel">
+<section class="panel" id="movimento" data-fase="movimento">
   <div class="panel-head"><span>Movimento no caixa</span></div>
   <div class="table-wrap"><table>
     <thead><tr><th>Nº</th><th>Data</th><th>Natureza</th><th>Descrição</th>
@@ -615,4 +624,5 @@
   </table></div>
 </section>
 {% endif %}
+{% if abas %}</div>{% endif %}
 {% endblock %}

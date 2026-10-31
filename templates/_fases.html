@@ -1,0 +1,76 @@
+{# A RÉGUA DE FASES E O QUE ANDA COM ELA — 30/10/2026. Só existe no layout novo.
+
+   Os quadros da ficha levam `data-fase`, e `static/fases.js` mostra os da fase aberta. Sem
+   o script a página sai inteira, como sempre saiu: a régua vira uma lista de âncoras, e
+   os blocos de trava e de ação continuam `hidden`, porque só fazem sentido com as fases.
+
+   `f` é o que `notas_fases.fases_do_ato` devolve. A forma é geral de propósito: a ficha da
+   matrícula e as outras vêm depois, com as fases delas. #}
+
+{% macro abre_ficha(VERSION) %}
+<div class="cg-ficha"><script>(function(d){d.classList.add("cg-esperando");setTimeout(function(){d.classList.remove("cg-esperando")},2000)})(document.currentScript.parentNode)</script>
+<script defer src="{{ url_for('static', filename='fases.js') }}?v={{ VERSION }}"></script>
+{% endmacro %}
+
+{% macro regua(f, chave, rotulo='Fases deste ato') %}
+<nav class="cg-regua" data-cg-regua data-chave="{{ chave }}" data-inicial="{{ f.inicial }}" data-foco="{{ f.foco }}" aria-label="{{ rotulo }}">
+  {% if f.fases %}<div class="cg-regua-fases">
+    {% for x in f.fases %}<a class="cg-fase {{ x.estado }}" href="#{{ x.chave }}" data-cg-fase="{{ x.chave }}"{% if x.estado == 'travada' %} data-travada{% endif %}>
+      <span class="cg-fase-n" aria-hidden="true">{% if x.estado == 'feita' %}&#10003;{% else %}{{ x.numero }}{% endif %}</span>
+      <span>{{ x.rotulo }}</span>
+      {% if x.estado == 'feita' %}<span class="cg-so-leitor">, feita</span>{% elif x.estado == 'travada' %}<span class="cg-so-leitor">, travada</span>{% endif %}
+      {% if x.pendencias %}<b class="cg-fase-c" title="{{ x.pendencias }} pendência(s)">{{ x.pendencias }}</b>{% endif %}
+    </a>{% endfor %}
+  </div>{% endif %}
+  {% if f.apoio %}<div class="cg-regua-apoio">
+    {% for x in f.apoio %}<a class="cg-fase apoio{% if x.principal %} principal{% endif %}" href="#{{ x.chave }}" data-cg-fase="{{ x.chave }}"><span>{{ x.rotulo }}</span>{% if x.contagem %}<span class="cg-fase-q">{{ x.contagem }}</span>{% endif %}{% if x.alerta %}<b class="cg-fase-c" title="{{ x.alerta }} pendência(s)">{{ x.alerta }}</b>{% endif %}</a>{% endfor %}
+  </div>{% endif %}
+</nav>
+{% endmacro %}
+
+{# O QUE ESPERA AÇÃO VEM PRIMEIRO, e o quadro é um só: as fichas em abas dizem o que pedem, e
+   este desenha. Lista vazia não sai, porque alarme que soa sempre é alarme que ninguém ouve. #}
+{% macro o_que_espera(itens, fase) %}
+{% if itens %}
+<section class="panel cg-falta" data-fase="{{ fase }}">
+  <div class="panel-head"><span>O que espera ação</span></div>
+  <ul class="cg-falta-l">
+    {% for i in itens %}<li class="pendente">
+      <span class="cg-falta-m" aria-hidden="true"></span>
+      <span>{{ i.texto }}</span>
+      <a class="button small" href="#{{ i.ir }}">{{ i.botao }}</a>
+    </li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endmacro %}
+
+{% macro lista_do_que_falta(titulo, itens, fase) %}
+<section class="panel cg-falta" data-fase="{{ fase }}">
+  <div class="panel-head"><span>{{ titulo }}</span></div>
+  <ul class="cg-falta-l">
+    {% for i in itens %}<li class="{{ 'ok' if i.feito else 'pendente' }}">
+      <span class="cg-falta-m" aria-hidden="true">{% if i.feito %}&#10003;{% endif %}</span>
+      <span>{{ i.texto }}{% if not i.feito %}<span class="cg-so-leitor"> (pendente)</span>{% endif %}</span>
+      {% if i.ir %}<a class="button small" href="#{{ i.ir }}">{{ 'Ver' if i.feito else 'Ir' }}</a>{% endif %}
+    </li>{% endfor %}
+  </ul>
+</section>
+{% endmacro %}
+
+{% macro travas_e_barras(f) %}
+{% for x in f.fases if x.trava %}
+<section class="panel cg-trava" data-fase="{{ x.chave }}" data-cg-so-trava hidden>
+  <p class="cg-trava-t">{{ x.trava.titulo }}</p>
+  <p class="muted">{{ x.trava.texto }}</p>
+  <a class="button primary" href="#{{ x.trava.ir }}">Ir a {{ x.trava.ir_rotulo }}</a>
+</section>
+{% endfor %}
+{% for x in f.fases %}
+<div class="cg-acao" data-fase="{{ x.chave }}" data-cg-barra hidden>
+  <span class="cg-acao-aviso{% if x.pendencias %} falta{% endif %}">{{ x.aviso }}</span>
+  {% if x.voltar %}<a class="button" href="#{{ x.voltar.chave }}">&larr; {{ x.voltar.rotulo }}</a>{% endif %}
+  {% if x.avancar %}<a class="button primary" href="#{{ x.avancar.chave }}">Avançar: {{ x.avancar.rotulo }}</a>{% endif %}
+</div>
+{% endfor %}
+{% endmacro %}

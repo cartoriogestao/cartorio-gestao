@@ -24,6 +24,8 @@ O ATENDENTE COM IA, AS ETIQUETAS, O SETOR E O PAINEL (26/10/2026)
 """
 from __future__ import annotations
 
+import re
+import threading
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -42,7 +44,9 @@ import wa_modelos as MODELOS
 import wa_puxar as PUXAR
 import wa_rotina as ROTINA
 import wa_schema as SCH
+import wa_transcricao_local as LOCAL
 from seguranca_web import PRATICA  # M2 (LX11): o AUDITOR vê e não grava
+import wa_vigia as VIGIA
 
 
 #: Quantas enviadas o `/novas` devolve com o estado da entrega (29/10/2026).
@@ -50,6 +54,15 @@ ENTREGAS_NO_NOVAS = 30
 
 #: O cabeçalho que marca a resposta do `/whatsapp/lista-parcial` (o JS confere).
 CABECALHO_DO_PARCIAL = "X-Wa-Parcial"
+
+#: Quantos balões pendentes o `/novas` confere de uma vez (30/10/2026).
+BALOES_PENDENTES_NO_NOVAS = 30
+
+#: «id:estado» de um balão pendente, como o `whatsapp_chat.js` manda ao `/novas`.
+BALAO_PENDENTE_VALIDO = re.compile(r"(\d{1,18}):([a-z]{2})")
+
+#: O token que o navegador gera para cada envio (`whatsapp_chat.js`).
+ENVIO_TOKEN_VALIDO = re.compile(r"[A-Za-z0-9-]{1,64}")
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit):
@@ -187,7 +200,29 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 m["separador"] = ("hoje" if dia == hoje else "ontem" if dia == ontem
                                   else f"{dia[8:10]}/{dia[5:7]}")
             anterior = dia or anterior
+            m["pendente"] = _pendencia(m)
         return mensagens
+
+    def _pendencia(m: dict) -> str:
+        """O BALÃO QUE AINDA VAI MUDAR (30/10/2026): o arquivo que o cliente mandou
+        ainda baixando, ou o áudio ainda sem transcrição. Duas letras, a do arquivo e
+        a da transcrição, que dizem o que o balão mostra agora; vazio é balão pronto.
+        Passadas as 24 h em que o atendente transcreve, nada mais vai chegar, e o
+        navegador não precisa perguntar para sempre."""
+        if m.get("direcao") != WA.DIR_IN:
+            return ""
+        baixando = bool(m.get("midia_id")) and not MIDIA.como_mostrar(m) and (
+            m.get("midia_situacao") != SCH.MIDIA_ERRO)
+        transcricao = m.get("transcricao")
+        sem_texto = m.get("tipo") == "audio" and not transcricao
+        if not (baixando or sem_texto):
+            return ""
+        agora = FILA._dt(db.now())
+        if agora and str(m.get("criado_em") or "")[:19] < (
+                agora - timedelta(hours=ATENDENTE.JANELA_HORAS)).strftime("%Y-%m-%dT%H:%M:%S"):
+            return ""
+        arquivo = "b" if baixando else "e" if m.get("midia_situacao") == SCH.MIDIA_ERRO else "a"
+        return arquivo + ("x" if not sem_texto else "n" if transcricao is None else "v")
 
     def _da_lista(filtro: dict) -> dict:
         """O que o parcial da lista precisa além das linhas: o filtro só com o
@@ -270,6 +305,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         O cabeçalho `X-Wa-Parcial` diz ao JS que veio a lista, e não outra
         página: a do login também é HTML, e não pode ir parar dentro da lista
         (revisão do #72)."""
+        VIGIA.marcar_tela_aberta()
         bruto = (request.args.get("aberta") or "").strip()
         with _con() as con:
             linhas, ha_mais = _lista(con, _filtro())
@@ -310,10 +346,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 flash(aviso, "warning")
             flash("Configuração do atendente guardada.", "success")
             return redirect(url_for("whatsapp_atendente"))
+        return _tela_do_atendente()
+
+    def _tela_do_atendente(ensaio: dict | None = None, ensaio_texto: str = "",
+                           ensaio_conversa: bool = False):
         with _con() as con:
             ia = ATENDENTE.configuracao(con)
             linhas = ATENDENTE.registros(con, limite=100)
             hoje = ATENDENTE.resumo_do_dia(con, agora=db.now())
+            por_que = ATENDENTE.por_que_passou(con, agora=db.now())
             pode_enviar = WA.pode_enviar_meta(con)
             rotina = ROTINA.config(con)
         return render_template(
@@ -323,11 +364,72 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             # desta tela, que todo login vê.
             provedores=[{"id": p["id"], "nome": p["nome"], "tem_chave": p["tem_chave"]}
                         for p in PROV.catalogo_para_tela(_pasta())],
+            transcricao=LOCAL.situacao(_pasta()), escolhas_de_transcricao=LOCAL.ESCOLHAS,
+            motivo_para_nao_ligar=LOCAL.pode_ligar(_pasta(), ia["audio_conferencia"]),
             rotina=rotina, texto_fora_padrao=ROTINA.TEXTO_FORA_PADRAO,
             vigia_padrao=ROTINA.VIGIA_PADRAO_S, encerrar_padrao=ROTINA.ENCERRAR_PADRAO_DIAS,
             rotulos=ATENDENTE.ROTULO_DO_CASO, exemplo=ATENDENTE.TEXTO_BASE_EXEMPLO,
             tentativas=ATENDENTE.TENTATIVAS_POR_DIA,
+            por_que=por_que, ensaio=ensaio, ensaio_conversa=ensaio_conversa,
+            ensaio_texto=ensaio_texto or ATENDENTE.PERGUNTAS_DE_EXEMPLO,
+            limite_do_ensaio=ATENDENTE.LINHAS_DO_ENSAIO,
+            pode_ensaiar=app.extensions["usuario_papel"]() in ("ADMIN", "MANAGER"),
             e_admin=app.extensions["usuario_papel"]() == "ADMIN")
+
+    def _volta_da_transcricao():
+        return redirect(url_for("whatsapp_atendente") + "#transcricao")
+
+    @app.route("/whatsapp/transcricao/onde", methods=["POST"])
+    @login_required
+    def whatsapp_transcricao_onde():
+        """Onde o áudio se transcreve (30/10/2026, `wa_transcricao_local`). Só do ADMIN."""
+        if app.extensions["usuario_papel"]() != "ADMIN":
+            abort(403)
+        onde = (request.form.get("onde") or "").strip()
+        try:
+            with db.transaction() as con:
+                ATENDENTE.escolher_onde_transcrever(con, onde, pasta_de_dados=_pasta())
+        except ATENDENTE.AtendenteErro as erro:
+            flash(str(erro), "danger")
+            return _volta_da_transcricao()
+        audit("wa_transcricao_onde", "wa_config", None, {"onde": onde})
+        flash(f"Os áudios passam a ser transcritos em: {LOCAL.ESCOLHAS[onde]}.", "success")
+        return _volta_da_transcricao()
+
+    @app.route("/whatsapp/transcricao/baixar", methods=["POST"])
+    @login_required
+    def whatsapp_transcricao_baixar():
+        """Solta o download do modelo, que roda sozinho. Só do ADMIN."""
+        if app.extensions["usuario_papel"]() != "ADMIN":
+            abort(403)
+        try:
+            LOCAL.iniciar_download(_pasta())
+        except LOCAL.TranscricaoLocalErro as erro:
+            flash(str(erro), "danger")
+            return _volta_da_transcricao()
+        audit("wa_transcricao_download", "wa_config", None, {"modelo": LOCAL.MODELO})
+        flash("O download começou e roda sozinho. Volte a esta tela para ver quando terminar.",
+              "success")
+        return _volta_da_transcricao()
+
+    @app.route("/whatsapp/transcricao/conferir", methods=["POST"])
+    @login_required
+    def whatsapp_transcricao_conferir():
+        """A conferência antes de ligar. Espera o áudio, e por isso pode levar minutos."""
+        if app.extensions["usuario_papel"]() != "ADMIN":
+            abort(403)
+        arquivo = request.files.get("audio")
+        audio = arquivo.read(LOCAL.TETO_DE_BYTES + 1) if arquivo else b""
+        conferencia = LOCAL.conferir(_pasta(), audio, arquivo.mimetype if arquivo else "",
+                                     agora=db.now(), por=_quem())
+        with db.transaction() as con:
+            ATENDENTE.guardar_conferencia(con, conferencia)
+        audit("wa_transcricao_conferencia", "wa_config", None,
+              {"ok": conferencia["ok"], "memoria_livre_mb": conferencia["memoria_livre_mb"],
+               "segundos": conferencia["segundos"], "trabalho_s": conferencia["trabalho_s"]})
+        flash(LOCAL.recado_da_conferencia(conferencia),
+              "success" if conferencia["ok"] else "danger")
+        return _volta_da_transcricao()
 
     @app.route("/whatsapp/atendente/rodar", methods=["POST"])
     @login_required
@@ -345,6 +447,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                   f"atendida(s), {r.get('audios') or 0} áudio(s) transcrito(s).",
                   "success")
         return redirect(url_for("whatsapp_lista"))
+
+    @app.route("/whatsapp/atendente/ensaio", methods=["POST"])
+    @login_required
+    @roles_required("ADMIN", "MANAGER")
+    def whatsapp_atendente_ensaio():
+        """O ENSAIO (30/10/2026): mostra o que a IA faria, com o texto-base gravado. NÃO
+        ENVIA E NÃO GRAVA EM CONVERSA NENHUMA. Fala com o provedor, fora de transação, e
+        conta no uso e no teto de IA. A auditoria leva só a contagem, sem o texto."""
+        texto = request.form.get("perguntas") or ""
+        alternada = request.form.get("conversa") == "1"
+        with _con() as con:
+            cfg = ATENDENTE.configuracao(con)
+        r = ATENDENTE.ensaiar(db, cfg, texto, agora=db.now(), pasta_de_dados=_pasta(),
+                              conversa_alternada=alternada)
+        audit("wa_atendente_ensaio", "wa_config", None, {"mensagens": len(r["resultados"])})
+        return _tela_do_atendente(ensaio=r, ensaio_texto=texto, ensaio_conversa=alternada)
 
     @app.route("/whatsapp/balcao", methods=["POST"])
     @login_required
@@ -602,6 +720,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 d["contato"] = CONTATO.quem_e(con, d.get("wa_id"))
                 d["iniciais"] = FILA.iniciais(d.get("nome"), d.get("wa_id"))
                 vista = _vista(d, request.args.get("historico") == "1")
+                d["sugestao_na_caixa"] = WA.sugestao_visivel(con, conversa_id, d.get("sugestao"))
                 _com_dias(d["mensagens"])
                 usuarios = FILA.usuarios_ativos(con)
                 # A JANELA DE 24 H (27/10/2026): passada ela, a Meta recusa o
@@ -618,6 +737,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                                **_da_lista(filtro), aberta=conversa_id, c=d,
                                pode_enviar=pode, usuarios=usuarios,
                                janela=janela, rotina=rotina,
+                               usuario_id=app.extensions["usuario_id"](),
                                respostas=rotina["respostas"],
                                aceitos_no_envio=", ".join(sorted(MIDIA.ENVIO_POR_EXTENSAO)),
                                como_mostrar=MIDIA.como_mostrar,
@@ -635,39 +755,63 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         """SÓ AS MENSAGENS NOVAS, desenhadas pelo mesmo parcial da primeira
         carga, e o estado da conversa. SÓ LÊ O BANCO: nunca fala com a Meta nem
         com a caixa-postal — quem traz a mensagem é o «puxar» ou a automação."""
+        # A TELA ESTÁ ABERTA (30/10/2026): a busca do vigia fica mais atenta.
+        VIGIA.marcar_tela_aberta()
         bruto = (request.args.get("depois") or "").strip()
         depois = int(bruto) if bruto.isdigit() else 0
+        # O BALÃO QUE MUDOU (30/10/2026): a tela diz quais balões dela estão pendentes
+        # e em que estado, e cada aba recebe de volta o que mudou desde o que ela mostra.
+        pendentes = {}
+        for pedido in (request.args.get("pendentes") or "").split(",")[:BALOES_PENDENTES_NO_NOVAS]:
+            achado = BALAO_PENDENTE_VALIDO.fullmatch(pedido)
+            if achado:
+                pendentes[int(achado.group(1))] = achado.group(2)
+        # UMA CONEXÃO SÓ, E SEM LER A CONVERSA INTEIRA (30/10/2026).
         with _con() as con:
-            d = WA.conversa(con, conversa_id)
-        if not d:
-            abort(404)
-        todas = d["mensagens"]
-        # O ATENDIMENTO ATUAL É O PISO (27/10/2026): fora da vista do histórico,
-        # nada de antes de `atendimento_desde_id` volta à tela — nem com
-        # `depois=0`, nem depois de um «Reativar».
-        desde = int(d.get("atendimento_desde_id") or 0)
-        piso = depois
-        if desde and request.args.get("historico") != "1":
-            piso = max(depois, desde - 1)
-        # o dia da última mensagem que a tela tem; com o piso subido, ela não
-        # tem nenhuma do atendimento atual, e o primeiro balão leva o seu dia
-        dia_anterior = "" if piso != depois else next(
-            (str(m.get("criado_em") or "")[:10] for m in todas if int(m["id"]) == depois), "")
-        novas = _com_dias([m for m in todas if int(m["id"]) > piso], dia_anterior)
+            d = WA.cabecalho_da_conversa(con, conversa_id)
+            if not d:
+                abort(404)
+            # O ATENDIMENTO ATUAL É O PISO (27/10/2026): fora da vista do histórico,
+            # nada de antes de `atendimento_desde_id` volta à tela — nem com
+            # `depois=0`, nem depois de um «Reativar».
+            desde = int(d.get("atendimento_desde_id") or 0)
+            piso = depois
+            if desde and request.args.get("historico") != "1":
+                piso = max(depois, desde - 1)
+            novas = WA.mensagens_depois(con, conversa_id, piso)
+            # o dia da última mensagem que a tela tem; com o piso subido, ela não
+            # tem nenhuma do atendimento atual, e o primeiro balão leva o seu dia
+            dia_anterior = (WA.dia_da_mensagem(con, conversa_id, depois)
+                            if novas and piso == depois else "")
+            enviadas = WA.ultimas_enviadas(con, conversa_id, ENTREGAS_NO_NOVAS)
+            ultima = WA.ultima_do_cliente(con, conversa_id)
+            sugestao = WA.sugestao_visivel(con, conversa_id, d.get("sugestao"))
+            conferidas = (WA.mensagens_por_ids(con, conversa_id, list(pendentes))
+                          if pendentes else [])
+        novas = _com_dias(novas, dia_anterior)
         html = (render_template("_whatsapp_baloes.html", mensagens=novas,
                                 como_mostrar=MIDIA.como_mostrar) if novas else "")
         # A ENTREGA AO VIVO (29/10/2026): o estado das últimas enviadas, pronto
         # pelo `rotulo_da_entrega`, para o JS atualizar os balões que já estão
         # na tela.
-        enviadas = [m for m in todas if m.get("direcao") == WA.DIR_OUT][-ENTREGAS_NO_NOVAS:]
-        entregas = [{"id": int(m["id"]), **WA.rotulo_da_entrega(m.get("entrega"),
-                                                              m.get("entrega_erro"))}
+        entregas = [{"id": int(m["id"]), "token": m.get("envio_token") or "",
+                     **WA.rotulo_da_entrega(m.get("entrega"), m.get("entrega_erro"))}
                     for m in enviadas]
-        return jsonify({"html": html, "entregas": entregas,
-                        "ultimo": max([depois] + [int(m["id"]) for m in novas]),
-                        "status": d.get("status") or "",
-                        "modo": d.get("modo") or SCH.MODO_IA,
-                        "janela_fora": MODELOS.fora_da_janela(todas, db.now())})
+        resposta = {"html": html, "entregas": entregas,
+                    "ultimo": max([depois] + [int(m["id"]) for m in novas]),
+                    "status": d.get("status") or "",
+                    "modo": d.get("modo") or SCH.MODO_IA,
+                    "sugestao": sugestao,
+                    "janela_fora": MODELOS.fora_da_janela(ultima, db.now())}
+        baloes = []
+        for m in conferidas:
+            m["pendente"] = _pendencia(m)
+            if m["pendente"] != pendentes[int(m["id"])]:
+                baloes.append({"id": int(m["id"]), "html": render_template(
+                    "_whatsapp_baloes.html", mensagens=[m], como_mostrar=MIDIA.como_mostrar)})
+        if baloes:
+            resposta["baloes"] = baloes
+        return jsonify(resposta)
 
     @app.route("/whatsapp/<int:conversa_id>/reativar", methods=["POST"])
     @login_required
@@ -857,10 +1001,59 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         flash("Rascunho guardado. Nao foi enviado ao WhatsApp.", "success")
         return redirect(url_for("whatsapp_conversa", conversa_id=conversa_id))
 
+    # O TOKEN EM CURSO (30/10/2026): o «tentar de novo» de uma resposta perdida
+    # pode chegar com o primeiro POST ainda falando com a Graph. Nada está gravado,
+    # e sem esta trava a mensagem sairia duas vezes. O servidor é um processo só.
+    tokens_em_curso: set[tuple[int, str]] = set()
+    trava_dos_tokens = threading.Lock()
+
+    def _enviar_em_json(conversa_id: int):
+        """O ENVIO DA FILA DA TELA (30/10/2026): o mesmo caminho, montar lendo,
+        postar fora da transação e gravar, com JSON no lugar do `flash`. Não
+        guarda rascunho: a fila manda uma mensagem atrás da outra, e o texto vem
+        do pedido."""
+        token = request.form.get("envio_token") or ""
+        if not ENVIO_TOKEN_VALIDO.fullmatch(token):
+            return jsonify({"ok": False, "motivo": "Envio recusado: identificador inválido."}), 400
+        texto = (request.form.get("rascunho") or "").strip()
+        if not texto:
+            return jsonify({"ok": False, "token": token, "motivo": "Escreva a mensagem."}), 400
+        chave = (conversa_id, token)
+        with trava_dos_tokens:
+            if chave in tokens_em_curso:
+                return jsonify({"ok": False, "token": token, "em_curso": True,
+                                "motivo": "A mensagem ainda está indo."}), 409
+            tokens_em_curso.add(chave)
+        try:
+            with _con() as con:
+                d = WA.cabecalho_da_conversa(con, conversa_id)
+                if not d:
+                    abort(404)
+                gravada = WA.mensagem_por_token(con, conversa_id, token)
+                pedido = None if gravada else WA.montar_envio(con, d["wa_id"], texto)
+            if gravada:
+                return jsonify({"ok": True, "id": int(gravada["id"]), "token": token,
+                                **WA.rotulo_da_entrega(gravada.get("entrega"),
+                                                       gravada.get("entrega_erro"))})
+            meta_id = WA.postar_envio(pedido)
+            with db.transaction() as con:
+                mid = WA.gravar_saida(con, conversa_id, texto, meta_id, autor=_quem(),
+                                      agora=db.now(), envio_token=token)
+        except WA.EnvioErro as e:
+            return jsonify({"ok": False, "token": token, "erro": str(e),
+                            **WA.recusa_do_envio(e)}), 422
+        finally:
+            with trava_dos_tokens:
+                tokens_em_curso.discard(chave)
+        audit("wa_enviar", "wa_conversa", conversa_id, {"ok": True})
+        return jsonify({"ok": True, "id": mid, "token": token, **WA.rotulo_da_entrega("", "")})
+
     @app.route("/whatsapp/<int:conversa_id>/enviar", methods=["POST"])
     @login_required
     @roles_required(*PRATICA)
     def whatsapp_enviar(conversa_id: int):
+        if "application/json" in (request.headers.get("Accept") or ""):
+            return _enviar_em_json(conversa_id)
         # MONTAR, POSTAR E GRAVAR (26/10/2026): o POST na Graph ficava dentro
         # da transação, com a trava de escrita da casa presa até oito segundos.
         #

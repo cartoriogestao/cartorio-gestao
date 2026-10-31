@@ -822,6 +822,8 @@ o CCN do e-Notariado) só funcionam com a configuração de
 
 ## 17. Tarefas, pendências e o que falta informar
 
+**Robô do malote.** Em **Automação**, o processo «Malote — ciência diária e cadastro» entra no Malote Digital às 8h dos dias úteis com usuário e senha, sem certificado. O login se guarda na tela **Malote: login e código de dois fatores**, com o cofre aberto; é a mesma tela onde se digita o código quando o malote o pede.
+
 **Processos e malote.** **Processos** é a lista de tarefas e expedientes:
 entradas do malote, responsável e substituto, prazo, resposta e arquivamento
 (em instalações anteriores, as telas **Expedientes / Malote** e **Tarefas e

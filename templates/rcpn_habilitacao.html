@@ -12,6 +12,12 @@
 </p>
 {% endblock %}
 {% block content %}
+{# AS FASES SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026, `habilitacao_fases`. Os quadros não saem do
+   lugar: cada um diz a que fase pertence, e `static/fases.js` mostra os da fase aberta. Os dois
+   avisos do alto e o «e agora?» não têm fase, e ficam em todas de propósito. #}
+{% from '_fases.html' import abre_ficha, regua, travas_e_barras %}
+{% set f = fases_da_ficha() if layout_novo else none %}
+{% if f %}{{ abre_ficha(VERSION) }}{{ regua(f, 'hab-' ~ h.id, 'Fases desta habilitação') }}{% endif %}
 <div class="notice" style="margin-bottom:12px;border-left:4px solid #c90">
   <strong>Aviso jurídico-operacional</strong>
   <p class="small" style="margin:6px 0 0">{{ AVISO_REVISAO_JURIDICA }}</p>
@@ -26,8 +32,9 @@
   {% endif %}
 </div>
 {# OS DOCUMENTOS QUE A LEITURA RECEBEU (12/10/2026) acompanham a habilitação. #}
+{% if f %}<span class="cg-ancora" id="habilitacao"></span>{% endif %}
 {% if anexos_leitura %}
-<section class="panel"><div class="panel-head"><h2>Documentos anexados</h2></div>
+<section class="panel" data-fase="habilitacao"><div class="panel-head"><h2>Documentos anexados</h2></div>
   <ul class="file-list">{% for a in anexos_leitura %}<li><a href="{{ url_for('attachment_view', attachment_id=a.id) }}" target="_blank">{{ a.original_name }}</a>
     · <a href="{{ url_for('attachment_download', attachment_id=a.id) }}">baixar</a> <small class="muted">{{ a.description or '' }}</small></li>{% endfor %}</ul>
 </section>
@@ -45,7 +52,7 @@
 </div>
 
 <div class="grid2">
-  <section class="panel">
+  <section class="panel" data-fase="habilitacao">
     <div class="panel-head"><span>Os nubentes</span></div>
     <dl class="detail" style="padding:14px">
       <dt>{{ h.nubente1_nome }}</dt>
@@ -62,7 +69,7 @@
     </dl>
   </section>
 
-  <section class="panel">
+  <section class="panel" data-fase="habilitacao">
     <div class="panel-head"><span>Documentos — art. 1.525 do Código Civil</span></div>
     <div class="table-wrap"><table>
       <tbody>
@@ -114,8 +121,9 @@
   </section>
 </div>
 
+{% if f %}<span class="cg-ancora" id="edital"></span>{% endif %}
 {% if h.situacao == 'EM_ANALISE' %}
-<section class="panel">
+<section class="panel" data-fase="edital">
   <div class="panel-head"><span>Publicar o edital de proclamas</span></div>
   <div style="padding:14px" class="small muted">
     O edital chama qualquer pessoa a opor impedimento, e abre o prazo de
@@ -136,7 +144,7 @@
 {% endif %}
 
 {% if h.edital_em %}
-<section class="panel">
+<section class="panel" data-fase="edital">
   <div class="panel-head"><span>Edital publicado em {{ fmt_date(h.edital_em) }}</span></div>
   <div style="padding:14px">
     <p>{{ h.edital_teor }}</p>
@@ -177,7 +185,7 @@
 {% endif %}
 
 {% if h.tipo == 'CONVERSAO' %}
-<section class="panel">
+<section class="panel" data-fase="habilitacao">
   <div class="panel-head"><span>A união estável que se converte</span></div>
   <div style="padding:14px">
     {% if uniao_estavel %}
@@ -205,7 +213,7 @@
 {% endif %}
 
 {% if h.oposicao_em %}
-<section class="panel">
+<section class="panel" data-fase="edital">
   <div class="panel-head"><span>Impedimento oposto</span></div>
   <div style="padding:14px">
     <p><strong>{{ h.oposicao_quem }}</strong>, em {{ fmt_date(h.oposicao_em) }}:</p>
@@ -233,9 +241,10 @@
 </section>
 {% endif %}
 
+{% if f %}<span class="cg-ancora" id="prontas"></span>{% endif %}
 {% if h.situacao in ('EM_ANALISE', 'EDITAL_PUBLICADO') %}
 <div class="grid2">
-  <section class="panel">
+  <section class="panel" data-fase="edital">
     <div class="panel-head"><span>Registrar impedimento oposto</span></div>
     <form method="post" class="stack" style="padding:14px">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -247,7 +256,7 @@
   </section>
 
   {% if h.situacao == 'EDITAL_PUBLICADO' %}
-  <section class="panel">
+  <section class="panel" data-fase="prontas">
     <div class="panel-head"><span>Expedir a habilitação</span></div>
     <div style="padding:14px" class="small muted">
       Cumpridas as formalidades e verificada a inexistência de fato obstativo
@@ -274,8 +283,21 @@
 </div>
 {% endif %}
 
+{# DEPOIS DE CELEBRADO A FASE CONTINUA RESPONDENDO: o quadro de cima só existe enquanto a
+   certidão está valendo, e sem este a aba ficaria em branco. #}
+{% if f and h.situacao == 'CELEBRADO' %}
+<section class="panel" data-fase="prontas">
+  <div class="panel-head"><span>Habilitados em {{ fmt_date(h.habilitado_em) }}</span></div>
+  <div style="padding:14px">
+    <p>Certidão <strong>{{ h.certidao_numero }}/{{ h.certidao_ano }}</strong>,
+      válida até <strong>{{ fmt_date(h.habilitacao_vale_ate) }}</strong>.
+      {% if h.selo %}<br>Selo <strong>{{ h.selo }}</strong>.{% endif %}</p>
+  </div>
+</section>
+{% endif %}
+{% if f %}<span class="cg-ancora" id="registro"></span>{% endif %}
 {% if h.situacao == 'HABILITADO' %}
-<section class="panel{% if vencida %} critical{% endif %}" id="celebracao">
+<section class="panel{% if vencida %} critical{% endif %}"{% if not f or vencida %} id="celebracao"{% endif %} data-fase="prontas">
   <div class="panel-head"><span>Habilitados desde {{ fmt_date(h.habilitado_em) }}</span></div>
   <div style="padding:14px">
     <p>Certidão <strong>{{ h.certidao_numero }}/{{ h.certidao_ano }}</strong>,
@@ -303,6 +325,13 @@
       {% endif %}
       {% if vencida %}<br><strong>Vencida</strong> — o processo precisa ser
       refeito (Código Civil, art. 1.532).{% endif %}</p>
+    {# NO LAYOUT NOVO O QUADRO SE DIVIDE AQUI: a certidão e o selo são de «Prontas para casar», e
+       lavrar é o «Registro». O endereço #celebracao vem da ficha do assento, e vai para o que ela
+       pede: registrar a celebração. No layout antigo, nada disso sai. #}
+    {% if f and not vencida %}</div></section>
+<section class="panel" id="celebracao" data-fase="registro">
+  <div class="panel-head"><span>Registrar o casamento</span></div>
+  <div style="padding:14px">{% endif %}
     {% if not vencida %}
     <p style="margin:12px 0">
       <a class="button primary"
@@ -335,7 +364,7 @@
 {% endif %}
 
 {% if h.situacao == 'CELEBRADO' and h.casamento_assento_id %}
-<section class="panel">
+<section class="panel" data-fase="registro">
   <div class="panel-head"><span>Casamento registrado</span></div>
   <div style="padding:14px">
     <p>Celebração amarrada ao assento
@@ -345,7 +374,7 @@
 </section>
 {% endif %}
 
-<section class="panel">
+<section class="panel" id="andamento" data-fase="andamento">
   <div class="panel-head"><span>Andamento</span></div>
   <div class="timeline" style="padding:14px">
     {% for a in andamento %}
@@ -357,7 +386,7 @@
 </section>
 
 {% if h.situacao not in ('CELEBRADO', 'ARQUIVADO') %}
-<details class="panel">
+<details class="panel" data-fase="andamento">
   <summary style="padding:14px;cursor:pointer">Arquivar este processo</summary>
   <form method="post" class="stack" style="padding:0 14px 14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -367,4 +396,5 @@
   </form>
 </details>
 {% endif %}
+{% if f %}{{ travas_e_barras(f) }}</div>{% endif %}
 {% endblock %}

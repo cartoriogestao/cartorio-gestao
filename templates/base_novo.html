@@ -1,0 +1,259 @@
+{# A CASCA DO LAYOUT NOVO — etapa 1 do projeto de reorganização, 30/10/2026.
+
+   AS TELAS NÃO MUDAM: cada uma continua preenchendo os mesmos blocos. O que muda é
+   a moldura: barra de módulos, seções do módulo, alto da tela com busca e Novo, e a
+   coluna de apoio à direita. Quem desenha tudo isto é `navegacao.py`.
+
+   SÓ ENTRA QUEM ESCOLHEU: `base.html` estende este arquivo quando `layout_novo` é
+   verdadeiro. O layout antigo continua inteiro, e se volta a ele com um clique.
+
+   OS AVISOS QUE O OFICIAL MANDOU NÃO FECHAR CONTINUAM À VISTA, no alto da área de
+   trabalho: selo sem trava, comprovante da gratuidade, ficha sem digitalização, selo
+   cancelado e o aviso do caixa. Só os avisos passageiros e os formulários do FERJ/FERC
+   vão para o sino. #}
+{% import '_aviso.html' as aviso %}
+{% set nav = nav_da_tela(papel=user.role, escondidos=MODULOS_ESCONDIDOS or [],
+                         ajuda_liberada=ajuda_liberada, agente_no_menu=agente_no_menu,
+                         tipo_do_ato=(a.tipo if a is defined and a and a.tipo is defined else '')) if user else none %}
+{% macro ic(nome, tam=18) %}<svg class="cg-ic" width="{{ tam }}" height="{{ tam }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">{{ nav.icones[nome]|safe }}</svg>{% endmacro %}
+<!doctype html>
+<html lang="pt-BR" data-layout="novo">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ titulo_aba or unit_name }}{% endblock %} - {{ APP_NAME }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ VERSION }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='casca.css') }}?v={{ VERSION }}">
+  <style>{{ cores_dos_modulos }}
+  {% if modulo_cor %}:root{--mod-cor:{{ modulo_cor }};
+    --mod-cor-clara:{{ modulo_cor_clara }};
+    --mod-cor-escura:{{ modulo_cor_escura }}}{% endif %}
+  {% if nav %}:root{--cg-cor:{{ nav.cor }};--cg-clara:{{ nav.clara }}}{% endif %}</style>
+  {# OS MESMOS SCRIPTS DE TODA TELA do `base.html`: há teste que compara as duas listas. #}
+  <script defer src="{{ url_for('static', filename='lupa.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='ficha-envio.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='cadastro_captura.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='ajuda.js') }}"></script>
+  {% if agente_na_tela %}<script defer src="{{ url_for('static', filename='agente.js') }}"></script>{% endif %}
+  <script defer src="{{ url_for('static', filename='teor-marcas.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='copiar_pessoa.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='busca_ato.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='navegacao.js') }}?v={{ VERSION }}"></script>
+  <script defer src="{{ url_for('static', filename='avisos.js') }}?v={{ VERSION }}"></script>
+  <script defer src="{{ url_for('static', filename='nu_avisos_modal.js') }}?v={{ VERSION }}"></script>
+  <script defer src="{{ url_for('static', filename='produtividade_rapida.js') }}?v={{ VERSION }}"></script>
+  <script defer src="{{ url_for('static', filename='ri_partes_do_ato.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='casca.js') }}?v={{ VERSION }}"></script>
+</head>
+<body class="cg-corpo">
+{% if user %}
+<a class="cg-pular" href="#conteudo">Pular para o conteúdo</a>
+<div class="cg-app{% if not nav.secoes %} cg-sem-secoes{% endif %}">
+
+  <nav class="cg-modulos" aria-label="Módulos">
+    <a class="cg-marca" href="{{ url_for('dashboard') }}" aria-label="{{ APP_NAME }}: início"><b aria-hidden="true">CG</b></a>
+    {% for m in nav.barra %}
+    <a class="cg-mod{% if m.lavra %} lavra{% endif %}{% if m.atual %} atual{% endif %}"
+       href="{{ m.url }}" title="{{ m.nome }}" style="--c:{{ m.cor }}"
+       {% if m.atual %}aria-current="page"{% endif %}>
+      <span class="cg-mod-ic">{{ ic(m.icone, 15) }}</span>
+      <span>{{ m.curto }}</span>
+      {%- if m.chave == 'MALOTE' and global_stats.overdue %}<em class="cg-conta" title="processos vencidos">{{ global_stats.overdue }}</em>{% endif %}
+    </a>
+    {% if m.chave in ('INICIO', 'RCPJ', 'LIVROS') %}<span class="cg-mod-sep" aria-hidden="true"></span>{% endif %}
+    {% endfor %}
+    <details class="cg-eu" data-cg-pop>
+      <summary title="{{ user.full_name }}">
+        <span class="cg-avatar" aria-hidden="true">{{ user.full_name[:1]|upper }}</span>
+        <span class="cg-eu-nome">{{ user.full_name.split(' ')[0] }}</span>
+      </summary>
+      <div class="cg-pop cg-pop-eu">
+        <p class="cg-pop-t"><strong>{{ user.full_name }}</strong><br><small>{{ user.role }} · v{{ VERSION }}</small></p>
+        <a class="cg-pi" href="{{ url_for('dois_fatores') }}">Verificação em duas etapas</a>
+        <a class="cg-pi" href="{{ url_for('minha_senha') }}">Minha senha</a>
+        <form method="post" action="{{ url_for('preferencia_layout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="layout" value="antigo">
+          <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
+          <button class="cg-pi" type="submit">Voltar ao layout antigo</button>
+        </form>
+        {% if user.role == 'ADMIN' and layout_padrao_da_casa != 'novo' %}
+        <form method="post" action="{{ url_for('preferencia_layout_padrao') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="layout" value="novo">
+          <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
+          <button class="cg-pi" type="submit">Usar este layout como padrão da casa</button>
+        </form>
+        {% elif user.role == 'ADMIN' %}
+        <form method="post" action="{{ url_for('preferencia_layout_padrao') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="layout" value="antigo">
+          <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
+          <button class="cg-pi" type="submit">Devolver o layout antigo como padrão da casa</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="cg-pi" type="submit">Sair</button>
+        </form>
+      </div>
+    </details>
+  </nav>
+
+  {% if nav.secoes %}
+  <nav class="cg-secoes" aria-label="Seções de {{ nav.modulo_nome }}">
+    <div class="cg-secoes-t">{{ nav.modulo_nome }}</div>
+    {% for s in nav.secoes %}
+    {% if s.grupo %}<div class="cg-secoes-g">{{ s.grupo }}</div>{% endif %}
+    <a class="cg-sec{% if s.atual %} atual{% endif %}" href="{{ s.url }}" {% if s.atual %}aria-current="true"{% endif %}>{{ s.nome }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
+  <div class="cg-area">
+    {# Faixas que não se fecham. Cada uma diz o que falta, e o formulário está no sino. #}
+    {% if nu_barras_fixas %}
+    {% for b in (nu_barras_fixas.visiveis or []) + (nu_barras_fixas.resto or []) %}
+    <div class="cg-faixa" role="alert">{{ ic('alerta', 15) }}<span><strong>{{ b.titulo }}</strong> <span class="cg-faixa-mes">(mês {{ b.mes_rotulo }})</span></span>
+      <a class="cg-faixa-acao" href="#cg-sino" data-cg-abrir="cg-sino">Resolver</a></div>
+    {% endfor %}
+    {% endif %}
+    {% include '_caixa_aviso.html' %}
+    {% include '_digi_aviso.html' %}
+    {% include '_rc_digi_aviso.html' %}
+    {% include '_selo_trava_aviso.html' %}
+    {% include '_gratuidade_aviso.html' %}
+    {% include '_selo_cancelamento_aviso.html' %}
+
+    <header class="cg-topo">
+      {% if nav.migalhas %}
+      <nav class="cg-migalhas" aria-label="Onde você está">
+        {% for g in nav.migalhas %}{% if g.url and not loop.last %}<a href="{{ g.url }}">{{ g.rotulo }}</a><span aria-hidden="true">›</span>{% else %}<b>{{ g.rotulo }}</b>{% endif %}{% endfor %}
+      </nav>
+      {% endif %}
+      <button type="button" class="cg-busca" data-cg-busca aria-haspopup="dialog">{{ ic('busca', 15) }}<span>Buscar ou fazer…</span><kbd>Ctrl K</kbd></button>
+      {% set atendendo = protocolo_em_atendimento() %}
+      <a class="cg-atendendo{% if not atendendo %} vazio{% endif %}"
+         href="{{ url_for('caixa_protocolo', protocolo_id=atendendo.id) if atendendo else url_for('caixa_protocolos') }}"
+         title="O selo sai pelo item pago no protocolo em atendimento">{{ ic('pessoas', 15) }}
+        <span>{% if atendendo %}Atendendo: <b>{{ atendendo.numero }}{% if atendendo.interessado %} · {{ atendendo.interessado }}{% endif %}</b>{% else %}Nenhum atendimento{% endif %}</span></a>
+      {% if nav.novo %}
+      <details class="cg-novo" id="cg-novo" data-cg-pop>
+        <summary class="cg-botao-novo" title="Criar algo novo (tecla N)">{{ ic('mais', 15) }}Novo</summary>
+        <div class="cg-pop cg-pop-novo" role="dialog" aria-label="Novo">
+          <div class="cg-pop-filtro">{{ ic('busca', 15) }}<input type="text" data-cg-novo-filtro placeholder="O que você vai fazer agora?" aria-label="Procurar o que criar" autocomplete="off"></div>
+          <div class="cg-novo-grade">
+            {% for grupo in nav.novo %}
+            <div class="cg-novo-grupo" data-cg-novo-grupo>
+              <div class="cg-pop-g" style="color:{{ grupo.cor }}">{{ grupo.grupo }}</div>
+              {% for i in grupo['itens'] %}
+              {% if i.abre_ato %}
+              <form method="post" action="{{ i.url }}" id="{{ i.form_id }}" data-cg-novo-item data-rotulo="{{ i.rotulo }}" data-letra="{{ i.letra }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                {% for k, v in i.abre_ato.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+                <button class="cg-pi" type="submit">{{ i.rotulo }}{% if i.letra %}<small>{{ i.letra }}</small>{% endif %}</button>
+              </form>
+              {% else %}
+              <a class="cg-pi" href="{{ i.url }}" data-cg-novo-item data-rotulo="{{ i.rotulo }}" data-letra="{{ i.letra }}">{{ i.rotulo }}{% if i.letra %}<small>{{ i.letra }}</small>{% endif %}</a>
+              {% endif %}
+              {% endfor %}
+            </div>
+            {% endfor %}
+          </div>
+          <p class="cg-pop-rodape">Digite para filtrar. A letra ao lado do nome e Enter abrem direto: N, P, Enter é a procuração.</p>
+        </div>
+      </details>
+      {% endif %}
+      <details class="cg-sino" id="cg-sino" data-cg-pop>
+        <summary class="cg-botao-sino" aria-label="Avisos e pendências" title="Avisos e pendências">{{ ic('sino', 18) }}<em class="cg-conta" data-cg-sino-conta hidden></em></summary>
+        <div class="cg-pop cg-pop-sino" role="dialog" aria-label="Avisos e pendências">
+          <div class="cg-pop-t"><strong>Avisos e pendências</strong></div>
+          <div class="cg-sino-corpo" data-cg-sino-corpo>
+            {% include '_barras_fixas.html' %}
+            {% include '_faixas_compactas.html' %}
+            {% if nu_avisos_modal %}
+            {% set mod = nu_avisos_modal %}
+            {% for titulo, lista, cor in [('Crítico', mod.criticos, 'pe'), ('Importante', mod.importantes, 'av'), ('Para saber', mod.normais, '')] if lista %}
+            <div class="cg-pop-g cg-g-{{ cor }}">{{ titulo }}</div>
+            {% for item in lista %}<a class="cg-pi" data-cg-aviso href="{{ url_for('nu_avisos_detalhe', aviso_id=item.id) }}">{{ item.titulo }}</a>{% endfor %}
+            {% endfor %}
+            {% endif %}
+            <p class="cg-sino-vazio" data-cg-sino-vazio hidden>Nada esperando você agora.</p>
+          </div>
+          <div class="cg-pop-rodape"><a href="{{ url_for('nu_avisos_lista') }}">Todos os avisos da serventia</a></div>
+        </div>
+      </details>
+    </header>
+
+    {% if nav.subabas %}
+    <nav class="cg-subabas" aria-label="Telas desta seção">
+      {% for s in nav.subabas %}<a class="cg-subaba{% if s.atual %} atual{% endif %}" href="{{ s.url }}" {% if s.atual %}aria-current="page"{% endif %}>{{ s.rotulo }}</a>{% endfor %}
+    </nav>
+    {% endif %}
+
+    <main class="cg-rolagem" id="conteudo" tabindex="-1">
+      <header class="topbar cg-titulo">
+        <div class="page-heading">{% block heading %}{% endblock %}</div>
+      </header>
+      <div class="content">
+        {# O AVISO DA TROCA — decisão do oficial, 30/10/2026: o layout novo vira o padrão da casa.
+           Só sai para quem ainda não escolheu, e qualquer um dos dois botões o faz sumir. #}
+        {% if layout_sem_escolha %}
+        <div class="cg-troca" data-cg-troca>
+          <p><strong>O sistema está com o layout novo.</strong> As telas, os dados e os endereços são os
+            mesmos: mudou a forma de chegar até eles. Se preferir, volte ao antigo agora ou depois, no menu
+            com o seu nome.</p>
+          <form method="post" action="{{ url_for('preferencia_layout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="layout" value="novo">
+            <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
+            <button class="button primary" type="submit">Ficar neste</button>
+          </form>
+          <form method="post" action="{{ url_for('preferencia_layout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="layout" value="antigo">
+            <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
+            <button class="button" type="submit">Voltar ao antigo</button>
+          </form>
+        </div>
+        {% endif %}
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message|forte }}{{ aviso.fechar() }}</div>{% endfor %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+
+  <aside class="cg-apoio" aria-label="Ferramentas de apoio">
+    {% include '_whatsapp_atalho.html' %}
+    {% include '_produtividade_rapida.html' %}
+    {% if ajuda_tela %}{% include '_ajuda.html' %}{% endif %}
+    {% if agente_na_tela %}{% include '_agente.html' %}{% endif %}
+  </aside>
+
+  {# A BUSCA: índice do que esta pessoa pode ver e fazer, montado no servidor. São links e
+     formulários de verdade, e o script só os aciona: nenhum endereço sai da página para
+     dentro de um script, que é o que o CodeQL recusou no WhatsApp (PR #94). #}
+  <div class="cg-paleta-fundo" data-cg-paleta-fundo hidden></div>
+  <div class="cg-paleta" role="dialog" aria-modal="true" aria-label="Buscar ou fazer" data-cg-paleta hidden>
+    <div class="cg-paleta-t">{{ ic('busca', 17) }}<input type="text" data-cg-paleta-q placeholder="Digite o que quer fazer, um nome ou um número" aria-label="Buscar ou fazer" autocomplete="off"><small>Esc para fechar</small></div>
+    <div class="cg-paleta-l" data-cg-paleta-l></div>
+  </div>
+  <div hidden data-cg-indice>
+    {% for x in nav.indice %}<a href="{{ x.u }}" data-t="{{ x.t }}" data-k="{{ x.k }}" data-s="{{ x.s }}"{% if x.f %} data-form="{{ x.f }}"{% endif %}>{{ x.r }}</a>{% endfor %}
+    {% for p in nav.procurar %}<form method="get" action="{{ p.u }}" data-cg-procurar data-rotulo="{{ p.r }}"><input type="hidden" name="{{ p.c }}"></form>{% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="auth-wrap">
+  <div class="auth-card">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message|forte }}{{ aviso.fechar() }}</div>{% endfor %}
+    {% endwith %}
+    {% block auth_content %}{% endblock %}
+  </div>
+</div>
+{% endif %}
+</body>
+</html>

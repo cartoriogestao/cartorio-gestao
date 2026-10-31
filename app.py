@@ -1868,6 +1868,13 @@ def create_app(test_config: dict | None = None) -> Flask:
                 v["url"] = url_for(v["endpoint"], **{v["arg"]: v["item_id"]}) if v["endpoint"] else None
             except Exception:                                   # noqa: BLE001
                 v["url"] = None
+            # O rascunho se abre como na lista de Rascunhos: o do lançamento do civil
+            # não tem rota com o nome da tela, e o endereço está na chave dele.
+            if v.get("rascunho"):
+                import rascunho_de_tela as RASC
+                v["url"] = RASC.endereco_de_abrir(v["rascunho"], url_for)
+            elif v.get("ato_url"):
+                v["url"] = v["ato_url"]
         return render_template("task_detail.html", row=row, history=history, attachments=attachments, users=users,
                                sectors=sectors, pasta_vinculos=pasta_vinculos, pasta_docs=pasta_docs,
                                pasta_retirados=pasta_retirados,
@@ -3433,6 +3440,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     import ri_onr_web
     ri_onr_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                fmt_date)
+
+    # O LAYOUT NOVO (30/10/2026): a chave por pessoa e o contexto da casca. O registro
+    # de tudo o que a barra, o Novo e a busca oferecem mora em `navegacao.py`.
+    import navegacao_web
+    navegacao_web.registrar_rotas(app, db, login_required, roles_required, audit)
 
     # A BASE DO MAPA DO ONR — o CSV que o QGIS junta ao polígono (LF02).
     import ri_mapa_onr

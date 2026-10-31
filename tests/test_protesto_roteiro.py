@@ -511,6 +511,66 @@ def test_edital_sem_comprovante_do_envio_a_cenprot_e_cobrado(casa):
                       "editais_sem_comprovante")["situacao"] == PR.FEITO
 
 
+def _edital(casa, numero, dia, *, ato_cancelado=None) -> int:
+    """Edital de `dia`. `ato_cancelado` True/False põe o ato de intimação."""
+    tid = _titulo(casa, numero=f"E{numero}", protocolo=f"26100700{numero:02d}")
+    ato = None
+    if ato_cancelado is not None:
+        ato = _ato(casa, tid, "INTIMACAO", dia + "T10:00:00")
+        casa.execute("UPDATE pt_atos SET cancelado=? WHERE id=?",
+                     (1 if ato_cancelado else 0, ato))
+    aviso = casa.execute(
+        """INSERT INTO pt_avisos(titulo_id, numero, ano, situacao, emitido_em,
+               criado_em) VALUES (?, ?, 2026, 'EDITAL', ?, ?)""",
+        (tid, numero, dia, dia)).lastrowid
+    edital = casa.execute(
+        """INSERT INTO pt_editais(numero, ano, aviso_id, titulo_id,
+               publicado_em, teor, ato_id, criado_em)
+           VALUES (?, 2026, ?, ?, ?, 'teor', ?, ?)""",
+        (numero, aviso, tid, dia, ato, dia)).lastrowid
+    casa.commit()
+    return edital
+
+
+def test_edital_de_ato_sem_efeito_nao_cobra_para_sempre(casa):
+    """Medido em 30/10/2026: 07/10 aparecia como «0 de 5», os 5 com o ato de
+    intimação cancelado, e os títulos já em edital novo."""
+    import protesto_aviso as AV
+    for numero in (1, 2, 3):
+        _edital(casa, numero, "2026-10-07", ato_cancelado=True)
+    o = _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T09:00:00"),
+                   "editais_sem_comprovante")
+    assert o["situacao"] == PR.FEITO and o["faltam"] == 0
+    assert AV.envios_do_edital(casa, HOJE) == [], "a tela não pode discordar"
+
+
+def test_dia_com_um_vivo_e_um_cancelado_conta_so_o_vivo(casa):
+    import protesto_aviso as AV
+    morto = _edital(casa, 1, "2026-10-07", ato_cancelado=True)
+    vivo = _edital(casa, 2, "2026-10-07", ato_cancelado=False)
+    o = _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T09:00:00"),
+                   "editais_sem_comprovante")
+    assert o["situacao"] == PR.ATRASADO and o["faltam"] == 1
+    assert "0 de 1 edital(is)" in o["lista"][0]["texto"]
+
+    # O anexo do edital morto não comprova o vivo, nem aparece no quadro dele.
+    _anexo(casa, "PT_EDITAL_CENPROT", morto)
+    [dia] = AV.envios_do_edital(casa, HOJE)
+    assert dia["editais"] == 1 and dia["com_comprovante"] == 0
+    assert not dia["completo"] and dia["anexos"] == []
+
+    _anexo(casa, "PT_EDITAL_CENPROT", vivo)
+    assert _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T09:00:00"),
+                      "editais_sem_comprovante")["situacao"] == PR.FEITO
+
+
+def test_edital_sem_ato_do_acervo_continua_contando(casa):
+    _edital(casa, 1, "2026-10-07")
+    o = _obrigacao(PR.cobrar_o_dia(casa, agora=HOJE + "T09:00:00"),
+                   "editais_sem_comprovante")
+    assert o["situacao"] == PR.ATRASADO and o["faltam"] == 1
+
+
 def test_protesto_sem_instrumento_trava_o_xml_e_os_dois_sao_cobrados(casa):
     tid = _titulo(casa, origem="MANUAL", situacao="PROTESTADO")
     _ato(casa, tid, "PROTESTO", ONTEM + "T14:31:00")
@@ -741,6 +801,8 @@ def test_o_dia_que_ficou_sem_encerrar_e_cobrado_ate_o_proximo(casa):
     depois = PR.roteiro(casa, agora=HOJE + "T18:05:00")
     assert _obrigacao(depois, "dias_sem_encerramento")["situacao"] == PR.FEITO
     assert _obrigacao(depois, "dia_encerrado")["situacao"] == PR.FEITO
+    # E O QUADRO DO ALTO DIZ O MESMO: não há como encerrar um dia passado.
+    assert depois["de_ontem"]["anterior_encerrado"] is True
 
 
 def test_sem_encerramento_nenhum_nao_ha_dia_atrasado(casa):

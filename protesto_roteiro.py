@@ -1070,9 +1070,11 @@ def _cobrar_editais(con, ctx: dict) -> list[dict]:
                      "CENPROT")
     regra = ("o arquivo do edital sobe à CENPROT e o comprovante se anexa no "
              "dia da publicação (CN-MA art. 922, § 1º)")
-    if not _existe(con, "pt_editais", "attachments"):
+    if not _existe(con, "pt_editais", "attachments", "pt_atos"):
         saida.append(_sem_tabela(chave, rotulo, regra, "pt_editais"))
         return saida
+    # O quadro já conta só edital de ato vivo: o dia em que todos foram
+    # tornados sem efeito não aparece, e não cobra.
     import protesto_aviso as AV
     gerados = set()
     if _existe(con, "audit_logs"):
@@ -1929,9 +1931,13 @@ def o_que_ficou(con, *, agora: str, condutas: list[dict]) -> dict:
                  for c in condutas for o in c["obrigacoes"]
                  if o["situacao"] == ATRASADO]
     return {"dia_util_anterior": anterior,
+            # O DIA DE HOJE, JA ENCERRADO, COBRIU OS DE ANTES (a mesma regra de
+            # `_cobrar_encerramento`): nao ha como encerrar um dia passado, e
+            # sem isto o quadro cobraria para sempre o que ninguem pode fazer.
             "anterior_encerrado": (None if not _existe(
                 con, "pt_encerramentos_do_dia")
-                else bool(ultimo and ultimo["dia"] == anterior)),
+                else bool((ultimo and ultimo["dia"] == anterior)
+                          or _fechado(encerramento_do_dia(con, ctx["dia"])))),
             "ultimo": ultimo, "atrasados": atrasados}
 
 

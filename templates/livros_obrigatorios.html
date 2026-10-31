@@ -2,6 +2,21 @@
 {% block title %}Livros obrigatórios{% endblock %}
 {% block heading %}<h1>Livros obrigatórios</h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, O QUE FALTA VEM PRIMEIRO — 30/10/2026. Esta tela é de consulta: nada se grava aqui. O que
+   falta, o que está pela metade e o que pede conferência abrem a lista; cada atribuição fica num quadro,
+   com a contagem no título, e continua inteira. No layout antigo nada muda. #}
+{% macro linha_do_livro(x, grupo='') %}
+    <tr>
+      <td>{{ x.nome }}{% if grupo %}<div class="small muted">{{ grupo }}</div>{% endif %}</td>
+      <td>{{ x.artigo }}</td>
+      <td><span class="badge{% if x.situacao == 'FALTA' %} danger{% elif x.situacao in ('PARCIAL', 'A_CONFERIR') %} warning{% endif %}">{{ situacoes[x.situacao] }}</span></td>
+      <td>{% for r in x.rotas %}{% if r.startswith('protesto_') %}<a href="{{ url_for(r, qual='pagamentos') }}">tela</a>{% else %}<a href="{{ url_for(r) }}">tela</a>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
+          {% if x.series %}<span class="small muted">séries {{ x.series | join(', ') }}</span>{% endif %}
+          {% if not x.rotas and not x.series %}—{% endif %}</td>
+      <td class="small">{{ x.nota }}</td>
+    </tr>
+{% endmacro %}
 {# OS LIVROS QUE O CÓDIGO DE NORMAS DO MA MANDA TER (LG08), e onde cada um está
    no sistema. A régua é `livros_obrigatorios.LIVROS`; o teste confere cada
    série e cada tela citada contra o código. #}
@@ -18,23 +33,46 @@
   <p class="muted">Fonte: {{ fonte }}. Alteração posterior ao malote pode faltar: por isso cada linha cita o artigo.</p>
 </section>
 
+{% if layout_novo %}
+{% set a_olhar = (contagem.get('FALTA', 0)) + (contagem.get('PARCIAL', 0)) + (contagem.get('A_CONFERIR', 0)) %}
+{% if a_olhar %}
+<style>
+  #livros-a-olhar th:first-child{width:32%}
+  #livros-a-olhar th:nth-child(2){width:12%}
+</style>
+{{ abre('livros-a-olhar', 'O que falta, o que está pela metade e o que pede conferência', a_olhar ~ ' livro(s)', aberto=true) }}<div class="cg-quadro-corpo">
+  <div class="table-wrap"><table>
+    <tr><th>Livro</th><th>Artigo</th><th>Situação</th><th>Onde está</th><th>Observação</th></tr>
+    {% for g in grupos %}{% for x in g.livros %}{% if x.situacao in ('FALTA', 'PARCIAL', 'A_CONFERIR') %}
+    {{ linha_do_livro(x, g.titulo) }}
+    {% endif %}{% endfor %}{% endfor %}
+  </table></div>
+</div></details>
+{% endif %}
+{% for g in grupos %}
+{% set faltam = g.livros | selectattr('situacao', 'equalto', 'FALTA') | list | length %}
+{% set pela_metade = g.livros | selectattr('situacao', 'equalto', 'PARCIAL') | list | length %}
+{% set a_conferir = g.livros | selectattr('situacao', 'equalto', 'A_CONFERIR') | list | length %}
+{% set nota_do_grupo %}{{ g.livros | length }} livro(s){% if faltam %} · {{ faltam }} falta(m){% endif %}{% if pela_metade %} · {{ pela_metade }} com falta{% endif %}{% if a_conferir %} · {{ a_conferir }} a conferir{% endif %}{% endset %}
+{{ abre('livros-' ~ g.chave, g.titulo, nota_do_grupo) }}<div class="cg-quadro-corpo">
+  <div class="table-wrap"><table>
+    <tr><th>Livro</th><th>Artigo</th><th>Situação</th><th>Onde está</th><th>Observação</th></tr>
+    {% for x in g.livros %}{{ linha_do_livro(x) }}{% endfor %}
+  </table></div>
+</div></details>
+{% endfor %}
+{{ ferramentas() }}
+{% else %}
 {% for g in grupos %}
 <section class="panel">
   <h2>{{ g.titulo }}</h2>
   <div class="table-wrap"><table>
     <tr><th>Livro</th><th>Artigo</th><th>Situação</th><th>Onde está</th><th>Observação</th></tr>
     {% for x in g.livros %}
-    <tr>
-      <td>{{ x.nome }}</td>
-      <td>{{ x.artigo }}</td>
-      <td><span class="badge{% if x.situacao == 'FALTA' %} danger{% elif x.situacao in ('PARCIAL', 'A_CONFERIR') %} warning{% endif %}">{{ situacoes[x.situacao] }}</span></td>
-      <td>{% for r in x.rotas %}{% if r.startswith('protesto_') %}<a href="{{ url_for(r, qual='pagamentos') }}">tela</a>{% else %}<a href="{{ url_for(r) }}">tela</a>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
-          {% if x.series %}<span class="small muted">séries {{ x.series | join(', ') }}</span>{% endif %}
-          {% if not x.rotas and not x.series %}—{% endif %}</td>
-      <td class="small">{{ x.nota }}</td>
-    </tr>
+    {{ linha_do_livro(x) }}
     {% endfor %}
   </table></div>
 </section>
 {% endfor %}
+{% endif %}
 {% endblock %}

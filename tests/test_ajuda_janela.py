@@ -564,7 +564,10 @@ def test_a_vista_desconhecida_cai_na_padrao_e_a_tela_diz_qual_vale(admin):
     assert "modo-botao ativo" in html, "nenhum botao aceso: a queda ficou muda"
     assert "Em aberto" in html.split("modo-botao ativo")[1][:200], (
         "caiu na padrao, mas a tela nao diz isso")
-    assert "concluidos" not in html, "o valor pedido vazou para a tela"
+    # O campo escondido `next` guarda o endereco de volta da troca de layout:
+    # traz o valor pedido, e ninguem o le. So ele sai da conta.
+    tela = re.sub(r'<input\b[^>]*\bname="next"[^>]*>', " ", html)
+    assert "concluidos" not in tela, "o valor pedido vazou para a tela"
 
 
 def test_agir_sobre_um_problema_volta_para_a_mesma_vista(admin):

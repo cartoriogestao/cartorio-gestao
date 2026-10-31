@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pytest
 
+import ato_selado as AS
 import ri_odt
 import selo_no_papel as SNP
 
@@ -221,21 +222,47 @@ def _texto_do_odt(dados: bytes) -> str:
     return " ".join(re.sub(r"<[^>]+>", " ", xml).split())
 
 
-def test_a_certidao_do_protesto_saia_sem_carimbo_e_agora_sai_com(s):
+def _emitir_certidao_do_protesto(s, monkeypatch) -> int:
+    """A certidão emitida pela tela, com o item 17.5.1 pago no protocolo.
+
+    O aparelho é substituído e não grava nada: a certidão fica SEM selo até o
+    teste chamar `_selar`. A conferência de antes de lavrar continua valendo.
+    """
+    monkeypatch.setattr(AS, "selar_o_ato_lavrado", lambda *a, **k: {
+        "selado": True, "numero": NUMERO, "numeros": [NUMERO], "motivo": None})
+    con = sqlite3.connect(s["banco"])
+    with con:
+        cur = con.execute(
+            "INSERT INTO cx_protocolos (numero, data_abertura, criado_em)"
+            " VALUES ('2026.10.1', '2026-10-15', '2026-10-15T10:00:00')")
+        pid = int(cur.lastrowid)
+        con.execute("INSERT INTO cx_protocolo_atos (protocolo_id, codigo_ato,"
+                    " quitado) VALUES (?, '17.5.1', 1)", (pid,))
+    con.close()
+    c = s["c"]
+    tela = c.get("/protesto/certidoes").get_data(as_text=True)
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', tela).group(1)
+    r = c.post("/protesto/certidoes/emitir",
+               data={"csrf_token": token, "nome": "MARIA", "documento": "000.000.001-91", "anos": "5",  # CPF exigido desde 14/10 (CN art. 906)
+                     "protocolo_id": str(pid)},
+               follow_redirects=True)
+    # a recusa da rota aparece aqui, com a mensagem, e não como tabela vazia
+    recusa = re.findall(r"Certidão NÃO emitida[^<]*", r.get_data(as_text=True))
+    assert not recusa, recusa
+    con = sqlite3.connect(s["banco"])
+    cid = con.execute("SELECT id FROM pt_certidoes").fetchone()[0]
+    con.close()
+    return cid
+
+
+def test_a_certidao_do_protesto_saia_sem_carimbo_e_agora_sai_com(s, monkeypatch):
     """Medido: 57 selos em `/selo/protesto/certidao`, e nenhum no papel.
 
     Selo comprado que não aparece na certidão é o inverso do carimbo sem
     valores: os dois fazem o papel afirmar menos do que o selo diz.
     """
     c = s["c"]
-    tela = c.get("/protesto/certidoes").get_data(as_text=True)
-    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', tela).group(1)
-    c.post("/protesto/certidoes/emitir",
-           data={"csrf_token": token, "nome": "MARIA", "documento": "000.000.001-91", "anos": "5"},  # CPF exigido desde 14/10 (CN art. 906)
-           follow_redirects=True)
-    con = sqlite3.connect(s["banco"])
-    cid = con.execute("SELECT id FROM pt_certidoes").fetchone()[0]
-    con.close()
+    cid = _emitir_certidao_do_protesto(s, monkeypatch)
     _selar(s["banco"], "pt_certidoes", cid)
 
     papel = _texto_do_odt(
@@ -247,16 +274,13 @@ def test_a_certidao_do_protesto_saia_sem_carimbo_e_agora_sai_com(s):
     assert f"#/resumo/{NUMERO}" in papel
 
 
-def test_a_certidao_do_protesto_sem_selo_nao_inventa_carimbo(s):
+def test_a_certidao_do_protesto_sem_selo_nao_inventa_carimbo(s, monkeypatch):
     """Certidão sem selo sai sem quadro — caixa vazia afirma que falta colar."""
     c = s["c"]
-    tela = c.get("/protesto/certidoes").get_data(as_text=True)
-    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', tela).group(1)
-    c.post("/protesto/certidoes/emitir",
-           data={"csrf_token": token, "nome": "MARIA", "documento": "000.000.001-91", "anos": "5"},  # CPF exigido desde 14/10 (CN art. 906)
-           follow_redirects=True)
+    cid = _emitir_certidao_do_protesto(s, monkeypatch)
     con = sqlite3.connect(s["banco"])
-    cid = con.execute("SELECT id FROM pt_certidoes").fetchone()[0]
+    assert not con.execute("SELECT selo FROM pt_certidoes WHERE id=?",
+                           (cid,)).fetchone()[0]
     con.close()
     papel = _texto_do_odt(
         c.get(f"/protesto/certidoes/{cid}/odt?formato=odt").data)
@@ -292,17 +316,10 @@ def test_o_qr_do_carimbo_e_o_deste_selo_e_nao_outro():
         "o carimbo tem de citar a imagem que vai no pacote")
 
 
-def test_a_certidao_do_protesto_leva_o_qr_dentro_do_pacote(s):
+def test_a_certidao_do_protesto_leva_o_qr_dentro_do_pacote(s, monkeypatch):
     """Conferir o XML diria que o papel REFERENCIA a imagem; o zip prova que ela foi."""
     c = s["c"]
-    tela = c.get("/protesto/certidoes").get_data(as_text=True)
-    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', tela).group(1)
-    c.post("/protesto/certidoes/emitir",
-           data={"csrf_token": token, "nome": "MARIA", "documento": "000.000.001-91", "anos": "5"},  # CPF exigido desde 14/10 (CN art. 906)
-           follow_redirects=True)
-    con = sqlite3.connect(s["banco"])
-    cid = con.execute("SELECT id FROM pt_certidoes").fetchone()[0]
-    con.close()
+    cid = _emitir_certidao_do_protesto(s, monkeypatch)
     _selar(s["banco"], "pt_certidoes", cid)
 
     dados = c.get(f"/protesto/certidoes/{cid}/odt?formato=odt").data

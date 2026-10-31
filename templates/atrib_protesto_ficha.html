@@ -1,6 +1,14 @@
 {% extends 'base.html' %}
-{% block heading %}<h1>Título {{ titulo.numero_titulo }}</h1>{% endblock %}
+{% block heading %}<h1>Título {{ titulo.numero_titulo }}
+  {#- NO LAYOUT NOVO A SITUAÇÃO FICA NO TÍTULO: não some ao trocar de fase. #}
+  {%- if layout_novo %} <span class="small muted">{% if devedores %}{{ devedores[0].nome }} · {% endif %}{{ titulo.situacao }}</span>{% endif %}</h1>{% endblock %}
 {% block content %}
+{# AS FASES SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026, `protesto_fases`. Os quadros não saem do lugar:
+   cada um diz a que fase pertence, e `static/fases.js` mostra os da fase aberta. O que não diz, como
+   os avisos do alto, sai em todas. #}
+{% from '_fases.html' import abre_ficha, regua, travas_e_barras %}
+{% set abas = abas_da_ficha(user.role == 'ADMIN') if layout_novo else none %}
+{% if abas %}{{ abre_ficha(VERSION) }}{{ regua(abas, 'protesto-' ~ titulo.id, 'Fases deste título') }}{% endif %}
 {% from '_cobrar.html' import quadro, cobrado %}
 {% from '_protesto_afirmacao.html' import afirmacao, prova_da_intimacao %}
 {% import '_protesto_irmaos.html' as IRM %}
@@ -165,7 +173,7 @@
 </div>
 {% endif %}
 
-<section class="panel">
+<section class="panel" data-fase="apontamento">
   <div class="panel-head"><span>O título</span><small>{{ titulo.situacao }}</small></div>
   <table class="table">
     <tr><th>Espécie</th><td>{{ titulo.especie }}</td>
@@ -182,14 +190,16 @@
 </section>
 
 {# OS TÍTULOS IRMÃOS E O CEDENTE DA ORIGEM (29/10/2026) — `protesto_titulos_irmaos`. #}
+{% if abas %}<div data-fase="apontamento">{% endif %}
 {{ IRM.quadro(irmaos) }}
 {{ IRM.cedente(cedente_origem) }}
+{% if abas %}</div>{% endif %}
 
 {# O APRESENTANTE (LD08, 21/10/2026), como os papéis o escrevem: o do título
    (balcão) ou o do cadastro dos apresentantes, pelo código da CRA. O CPF/CNPJ
    vai ao aviso (CN-MA art. 923) e o endereço ao registro e ao instrumento (Lei
    9.492/1997, art. 22, II); o que falta se vê aqui, antes do papel. #}
-<section class="panel">
+<section class="panel" data-fase="apontamento">
   <div class="panel-head"><span>Apresentante</span>
     <small>{{ apresentante.codigo and ('código ' ~ apresentante.codigo) or 'balcão' }}</small></div>
   <table class="table">
@@ -205,7 +215,7 @@
 </section>
 
 {% if titulo.cedente_nome %}
-<section class="panel">
+<section class="panel" data-fase="apontamento">
   <div class="panel-head"><span>Cedente</span></div>
   <table class="table">
     <tr><th>Nome</th><td>{{ titulo.cedente_nome }}</td>
@@ -216,7 +226,7 @@
 </section>
 {% endif %}
 
-<section class="panel">
+<section class="panel" data-fase="apontamento">
   <div class="panel-head"><span>Devedores</span><small>{{ devedores | length }}</small></div>
   {% if not devedores %}
     {#
@@ -265,7 +275,7 @@
 
   O AVISO É LISTA, e não um só: 255 dos 1.361 títulos do acervo têm mais de um.
 #}
-<section class="panel" id="avisos">
+<section class="panel" id="avisos" data-fase="intimacao">
   <div class="panel-head">
     <span>Avisos de intimação</span><small>{{ avisos | length }}</small>
   </div>
@@ -392,7 +402,7 @@
   lançada antes da regra não tem a marca, fica fora como ficava, e o aviso
   pede que alguém a marque — é aqui, e só aqui, que se marca.
 #}
-<div class="notice warning" data-ordem-judicial>
+<div class="notice warning" data-ordem-judicial{% if suspensao.ordem_carater %} data-fase="desfecho"{% endif %}>
   <p><strong>EFEITOS DO PROTESTO SUSPENSOS POR ORDEM JUDICIAL.</strong>
   O registro continua no livro — o que parou foi a publicidade dele.</p>
   <p>
@@ -456,7 +466,7 @@
   O PAGAMENTO SAIU DA LISTA (LH13, 21/10/2026), e a ficha diz por quê — botão
   que some sem explicação faz o escrevente achar que o sistema quebrou.
 #}
-<div class="notice" data-sem-pagamento>
+<div class="notice" data-sem-pagamento data-fase="desfecho">
   <small><strong>Protesto lavrado não se paga mais nesta serventia</strong> (decisão do
   oficial de 21/10/2026). O devedor paga diretamente ao credor e pede o
   <strong>cancelamento</strong> com a carta de anuência do credor, com firma reconhecida
@@ -470,7 +480,7 @@
   continua em pé, e sem este aviso ninguém sabe por que o título PAGO ainda
   sai na certidão positiva.
 #}
-<div class="notice warning" data-pago-com-protesto>
+<div class="notice warning" data-pago-com-protesto data-fase="desfecho">
   <p><strong>PAGO DEPOIS DE PROTESTADO — o protesto continua em pé.</strong>
   Este título foi pago nesta serventia pela regra que valeu até 21/10/2026, e o
   protesto ainda sai na certidão positiva.</p>
@@ -511,7 +521,7 @@
 {# O EMOLUMENTO A POSTERIORI (LG05) — quem paga cada ato deste título, quando,
    e por qual tabela. CN-MA art. 925, §§ 11 e 12. A regra é do domínio
    (`protesto_posteriori`); aqui só se mostra. #}
-<section class="panel">
+<section class="panel" data-fase="emolumentos">
   <div class="panel-head">
     <span>Emolumentos</span>
     <small>{{ 'a posteriori (diferido)' if emolumento.regime == 'DIFERIDO' else 'antecipado' }}</small>
@@ -567,9 +577,19 @@
    crédito conferido. O bloco registra o PIX e mostra o que espera; o
    formulário do pagamento, abaixo, leva o PIX conferido. #}
 {% set pix_ficha = pix_do_titulo(titulo.id) if pix_do_titulo is defined else none %}
+{# O PIX ESPERANDO O CRÉDITO VEM ANTES DOS ATOS, porque é ele que decide o pagamento. Sem isso, o
+   formulário de registrar um PIX fica depois: quem protesta não precisa passar por ele. #}
+{% if abas %}<div data-fase="desfecho"{% if not (pix_ficha and pix_ficha.ativo) %} class="cg-depois"{% endif %}>{% endif %}
 {% include '_protesto_pix.html' %}
+{% if abas %}</div>{% endif %}
 
 {% if cabem %}
+{% if abas %}
+{# NO LAYOUT NOVO, UM QUADRO POR ATO, na fase dele. Os que não abrem sozinhos ficam recolhidos: no
+   desfecho cabem até seis atos, e quem vai lançar um não precisa ler os outros. #}
+<p class="small muted" data-fase="desfecho" style="margin:0 0 8px">Só aparecem os atos que cabem nesta situação. Se o
+  selo falhar, o ato não é mantido sem decisão expressa de quem está lavrando, e a tela mostra o motivo da falha.</p>
+{% else %}
 <section class="panel">
   <div class="panel-head">
     <span>Lançar o próximo ato</span>
@@ -580,6 +600,7 @@
     não é mantido sem decisão expressa de quem está lavrando, e a tela mostra
     o motivo da falha.
   </small></p>
+{% endif %}
 
   {#- A CONFERÊNCIA DA CENPROT, UMA VEZ SÓ PARA A FICHA: o bloco de cada
       formulário a lê daqui (`cc_da_ficha`), em vez de remontá-la por ato. #}
@@ -610,12 +631,14 @@
   {% set sufixo_prova = '_prova' if separar else '' %}
   {% set sufixo_irmaos = '_irmaos' if separar else '' %}
   {% set sufixo_selo = '_selo' if separar else '' %}
+  {% if abas %}<details class="panel cg-ato-do-titulo" data-fase="{{ fase_do_ato(ato) }}"{% if ato in abas.atos_em_vista or v_ato %} open{% endif %}>
+    <summary>{{ rotulo_do_ato(ato) }}</summary>{% endif %}
   <form method="post" action="{{ url_for('protesto_lancar', titulo_id=titulo.id) }}"
         id="lancar-{{ ato }}"
         class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="ato" value="{{ ato }}">
-    <div style="grid-column:1/-1"><strong>{{ ato | capitalize }}</strong></div>
+    {% if not abas %}<div style="grid-column:1/-1"><strong>{{ ato | capitalize }}</strong></div>{% endif %}
 
     {% if ato == 'INTIMACAO' %}
       <label>Como foi intimado
@@ -817,14 +840,15 @@
       regra pede afirmação neste ato</strong> ({{ pedem | join(', ') }}): cada uma
       tem o seu campo, e o mesmo texto em duas é recusado.</small></p>
     {% endif %}
-    <div class="actions"><button class="button">Lançar {{ ato | lower }}</button></div>
+    <div class="actions"><button class="button">Lançar {{ rotulo_do_ato(ato) | lower if abas else ato | lower }}</button></div>
 
     {{ quadro(receitas.get(ato), caixa, protocolos) }}
   </form>
+  {% if abas %}</details>{% endif %}
   {% endfor %}
-</section>
+{% if not abas %}</section>{% endif %}
 {% else %}
-<div class="notice">
+<div class="notice" data-fase="desfecho">
   Não há ato a lançar: o título está <strong>{{ titulo.situacao }}</strong>, que é
   situação final para este módulo.
 </div>
@@ -863,7 +887,7 @@
 </form>
 {% endmacro %}
 {% if user.role == 'ADMIN' and averbacao.atos %}
-<section class="panel" id="averbacao-retificacao">
+<section class="panel" id="averbacao-retificacao" data-fase="averbacao">
   <div class="panel-head"><span>Averbação de retificação de erro material</span>
     <small>de ofício · Lei 9.492/1997, art. 25 · só o oficial</small></div>
   <p style="padding:0 14px"><small>O texto lavrado fica como está: a averbação é ato
@@ -881,7 +905,7 @@
 </section>
 {% endif %}
 
-<section class="panel">
+<section class="panel" data-fase="vida">
   <div class="panel-head"><span>A vida do título</span><small>{{ atos | length }} ato(s)</small></div>
   <table class="table">
     <thead><tr><th>Ato</th><th>Data</th><th>Livro / folha / ordem</th><th>Selo</th>
@@ -948,6 +972,7 @@
     hash —, e a ficha só aponta para lá: duas versões da peça que o cliente leva para
     casa seria uma a mais. A quitação do VALOR DO TÍTULO é outro papel (Lei 9.492/1997,
     art. 19, § 2º), e sai na linha do pagamento.
+    {% if abas %}O que vai à CRA sai por arquivo, em <a href="{{ url_for('protesto_retornos') }}">Retorno à CRA</a>.{% endif %}
   </small></p>
 </section>
 {# A IMAGEM DO TÍTULO — o documento que se protesta.
@@ -955,7 +980,7 @@
    Ela vem da CRA num `.zip` à parte, e entra por *Protesto → Imagens dos
    títulos*. Aqui ela aparece porque é aqui que o ato acontece: quem lavra
    precisa do papel à vista, e não a duas telas de distância. #}
-<section class="panel">
+<section class="panel" data-fase="imagem">
   <div class="panel-head">
     <span>Imagem do título</span>
     <small>{{ imagens | length }} arquivo(s)</small>
@@ -988,4 +1013,5 @@
   {% endif %}
 </section>
 
+{% if abas %}{{ travas_e_barras(abas) }}</div>{% endif %}
 {% endblock %}

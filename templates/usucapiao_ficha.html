@@ -1,6 +1,13 @@
 {% extends 'base.html' %}
-{% block heading %}<h1>Usucapião {{ p.numero }}</h1>{% endblock %}
+{% block heading %}<h1>Usucapião {{ p.numero }}
+  {#- NO LAYOUT NOVO A ETAPA FICA NO TÍTULO: não some ao trocar de aba. #}
+  {%- if layout_novo %} <span class="small muted">{% if p.requerente_nome %}{{ p.requerente_nome }} · {% endif %}{{ NOME_DA_ETAPA.get(p.etapa, p.etapa) }}</span>{% endif %}</h1>{% endblock %}
 {% block content %}
+{# AS ABAS SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026, `usucapiao_abas`. Os quadros não saem do lugar:
+   cada um diz a que aba pertence, e `static/fases.js` mostra os da aba aberta. #}
+{% from '_fases.html' import abre_ficha, regua %}
+{% set abas = abas_da_ficha() if layout_novo else none %}
+{% if abas %}{{ abre_ficha(VERSION) }}{{ regua(abas, 'usucapiao-' ~ p.id, 'Partes destes autos') }}{% endif %}
 {% include '_serventia.html' %}
 <div class="actions">
   <a class="button" href="{{ url_for('usucapiao_processos') }}">&larr; Processos</a>
@@ -8,7 +15,7 @@
 </div>
 
 {# ---------------------------------------------------- o que fazer agora #}
-<section class="panel">
+<section class="panel" id="processo" data-fase="processo">
   <div class="panel-head">
     <span>O que fazer agora</span>
     <small>{{ NOME_DA_ETAPA.get(p.etapa, p.etapa) }} · {{ p.situacao }}</small>
@@ -16,7 +23,7 @@
   {% if not passos %}
     <p style="padding:14px">Nada pendente.</p>
   {% else %}
-  <ul style="padding:14px 30px">
+  <ul class="cg-lista-larga" style="padding:14px 30px">
     {% for x in passos %}
       <li style="margin-bottom:8px">
         {% if x.urgencia >= 3 %}<strong class="danger">{{ x.passo }}</strong>
@@ -29,7 +36,7 @@
 </section>
 
 {# --------------------------------------------------------------- a capa #}
-<section class="panel">
+<section class="panel cg-lado-largo" data-fase="processo">
   <div class="panel-head"><span>A capa</span></div>
   <table class="table">
     <tr><th>Modalidade</th><td>{{ MODALIDADES.get(p.modalidade, p.modalidade) }}</td>
@@ -45,7 +52,7 @@
 </section>
 
 {# --------------------------------------------------- as etapas do rito #}
-<section class="panel">
+<section class="panel cg-lado-largo" data-fase="processo">
   <div class="panel-head"><span>O rito</span><small>{{ faltantes | length }} etapa(s) pela frente</small></div>
   <table class="table">
     <tbody>
@@ -77,7 +84,7 @@
 </section>
 
 {# ----------------------------------------------------- a conferência #}
-<section class="panel">
+<section class="panel" id="conferencia" data-fase="conferencia">
   <div class="panel-head">
     <span>Conferência do rito</span>
     <small>{{ conferencia.pendentes | length }} pendente(s)</small>
@@ -117,7 +124,7 @@
 </section>
 
 {# --------------------------------------------------------- as peças #}
-<section class="panel">
+<section class="panel" id="pecas" data-fase="pecas">
   <div class="panel-head"><span>Peças</span><small>{{ pecas | length }}</small></div>
   {% if pecas %}
   <table class="table">
@@ -168,7 +175,7 @@
 </section>
 
 {# ------------------------------------------------------ os movimentos #}
-<section class="panel" id="andamento">
+<section class="panel" id="andamento" data-fase="andamento">
   <div class="panel-head"><span>Andamento</span><small>{{ movimentos | length }}</small></div>
   <table class="table">
     <thead><tr><th>Data</th><th>Movimento</th><th>Prazo</th><th>Resposta</th></tr></thead>
@@ -397,7 +404,7 @@
 </section>
 
 {# ------------------------------------ o relatório de qualificação #}
-<section class="panel">
+<section class="panel" id="qualificacao" data-fase="qualificacao">
   <div class="panel-head"><span>Relatório de qualificação</span><small>{{ analises | length }}</small></div>
   <p style="padding:14px 14px 0"><small>
     O parecer <strong>auxilia; não decide</strong>. Ele entra por conferir, e enquanto
@@ -442,7 +449,7 @@
 </section>
 
 {# ------------------------------------------------------------ a decisão #}
-<section class="panel">
+<section class="panel" id="decisao" data-fase="decisao">
   <div class="panel-head"><span>Decisão do oficial</span><small>{{ decisoes | length }}</small></div>
   {% for d in decisoes %}
   <div style="padding:14px; border-top:1px solid #e5e7eb">
@@ -513,4 +520,5 @@
   </form>
   {% endif %}
 </section>
+{% if abas %}</div>{% endif %}
 {% endblock %}

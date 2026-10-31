@@ -9,12 +9,30 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>Repasses ao apresentante</h1>{% endblock %}
 {% block content %}
-{% include '_serventia.html' %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, O QUE FALTA VEM PRIMEIRO — 30/10/2026. O título de cada quadro já diz como ele está:
+   quantos pagamentos, ligada ou desligada, e a última rodada. A rotina ou o robô que deu erro abre
+   sozinho, porque a falha deles tem de aparecer aqui, onde o escrevente trabalha. Nenhum formulário
+   muda, e no layout antigo nada sai do lugar. #}
+{% if not layout_novo %}{% include '_serventia.html' %}{% endif %}
+{% if layout_novo %}
+<style>
+  #o-que-falta td:first-child,#da-central td:nth-child(2),#do-balcao td:first-child{white-space:nowrap}
+  @media(min-width:1600px){
+    #do-balcao td form.grid2{grid-template-columns:repeat(4,minmax(0,1fr))}
+    #do-balcao td form.grid2>.actions{grid-column:1/-1;margin:0}
+  }
+</style>
+{% endif %}
 <div class="actions">
   <a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a>
   <a class="button" href="{{ url_for('protesto_repasses_csv') }}">Baixar o relatório de pendências (CSV)</a>
 </div>
 
+{% set da_central = rel.pendentes | selectattr('canal', 'equalto', 'IEPTB') | list %}
+{% set do_balcao = rel.pendentes | selectattr('canal', 'equalto', 'DIRETO') | list %}
+
+{% set como_funciona %}
 <div class="notice">
   O valor pago fica <strong>à disposição do apresentante no primeiro dia útil
   seguinte</strong> ao recebimento <small>({{ fundamento }})</small>.
@@ -34,14 +52,19 @@
   <small>O atraso é <strong>contagem, e não juízo</strong>. O valor é o pago,
   quando o balcão o informou; senão, o declarado pelo apresentante.</small>
 </div>
+{% endset %}
+{% if not layout_novo %}{{ como_funciona }}{% endif %}
 
 {# O QUE FALTA PARA O REPASSE SAIR (29/10/2026) — a mesma lista que o roteiro
    do dia lê (`protesto_repasse.pendencias_do_repasse`). Entrar na relação não
    tira o pagamento daqui: ele sai quando a guia é paga. #}
+{% set nota_falta %}{{ faltam | length }} pagamento(s){% if faltam | selectattr('vencido') | list %},
+      <strong class="danger">{{ faltam | selectattr('vencido') | list | length }} com o prazo vencido</strong>{% endif %}{% endset %}
+{% if layout_novo %}{{ abre('o-que-falta', 'O que falta para o repasse sair', nota_falta, aberto=faltam | length > 0) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel" id="o-que-falta">
   <div class="panel-head"><span>O que falta para o repasse sair</span>
-    <small>{{ faltam | length }} pagamento(s){% if faltam | selectattr('vencido') | list %},
-      <strong class="danger">{{ faltam | selectattr('vencido') | list | length }} com o prazo vencido</strong>{% endif %}</small></div>
+    <small>{{ nota_falta }}</small></div>
+{% endif %}
   {% if not faltam %}
     <p style="padding:14px">Todo pagamento lançado já foi repassado.</p>
   {% else %}
@@ -63,11 +86,11 @@
     </tbody>
   </table>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
-<section class="panel">
-  <div class="panel-head"><span>Onde a guia se emite</span>
-    <small>o sistema não entra no portal — confira o passo na primeira vez</small></div>
+{% set onde_se_emite %}
   <table class="table">
     <thead><tr><th>Central</th><th>Onde</th><th>O passo</th><th>Precedente</th><th>A conferir</th></tr></thead>
     <tbody>
@@ -77,11 +100,9 @@
       {% endfor %}
     </tbody>
   </table>
-</section>
+{% endset %}
 
-<section class="panel">
-  <div class="panel-head"><span>Rotina automática da relação</span>
-    <small>Automação → «Protesto — relação da guia de repasse (CRA e CENPROT)»</small></div>
+{% set a_rotina %}
   <div style="padding:14px">
   {% if not rotina.existe %}
     <p>A rotina não está disponível: {{ rotina.motivo }}.</p>
@@ -104,14 +125,12 @@
   </form>
   {% endif %}
   </div>
-</section>
+{% endset %}
 
 {# O ROBÔ DO BOLETO DA CRA (29/10/2026): emite no portal, registra a guia e
    lança a despesa para o oficial autorizar. Nunca paga. A falha dele aparece
    aqui, onde o escrevente trabalha. #}
-<section class="panel">
-  <div class="panel-head"><span>Robô do boleto de repasse da CRA</span>
-    <small>Automação → «Protesto — emitir o boleto de repasse no portal da CRA»</small></div>
+{% set o_robo %}
   <div style="padding:14px">
   {% if not robo.existe %}
     <p>O robô não está disponível: {{ robo.motivo }}.</p>
@@ -129,11 +148,9 @@
     {% endif %}
   {% endif %}
   </div>
-</section>
+{% endset %}
 
-<section class="panel">
-  <div class="panel-head"><span>Resumo</span>
-    <small>{{ rel.pendentes | length }} pendente(s), {{ rel.vencidos }} com o prazo vencido</small></div>
+{% set o_resumo %}
   <table class="table">
     <thead><tr><th>Canal</th><th>Títulos</th><th>Total</th><th>Prazo vencido</th></tr></thead>
     <tbody>
@@ -144,14 +161,39 @@
       {% endfor %}
     </tbody>
   </table>
+{% endset %}
+
+{% if not layout_novo %}
+<section class="panel">
+  <div class="panel-head"><span>Onde a guia se emite</span>
+    <small>o sistema não entra no portal — confira o passo na primeira vez</small></div>
+  {{ onde_se_emite }}
 </section>
 
-{% set da_central = rel.pendentes | selectattr('canal', 'equalto', 'IEPTB') | list %}
-{% set do_balcao = rel.pendentes | selectattr('canal', 'equalto', 'DIRETO') | list %}
+<section class="panel">
+  <div class="panel-head"><span>Rotina automática da relação</span>
+    <small>Automação → «Protesto — relação da guia de repasse (CRA e CENPROT)»</small></div>
+  {{ a_rotina }}
+</section>
 
+<section class="panel">
+  <div class="panel-head"><span>Robô do boleto de repasse da CRA</span>
+    <small>Automação → «Protesto — emitir o boleto de repasse no portal da CRA»</small></div>
+  {{ o_robo }}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Resumo</span>
+    <small>{{ rel.pendentes | length }} pendente(s), {{ rel.vencidos }} com o prazo vencido</small></div>
+  {{ o_resumo }}
+</section>
+{% endif %}
+
+{% if layout_novo %}{{ abre('da-central', 'Da Central — vão pela guia do IEPTB', (da_central | length) ~ ' pagamento(s)', aberto=da_central | length > 0) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <div class="panel-head"><span>Da Central — vão pela guia do IEPTB</span>
     <small>{{ da_central | length }} pagamento(s)</small></div>
+{% endif %}
   {% if not da_central %}
     <p style="padding:14px">Nenhum pagamento de título da Central esperando repasse.</p>
   {% else %}
@@ -182,11 +224,15 @@
     {% endif %}
   </form>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
+{% if layout_novo %}{{ abre('do-balcao', 'Do balcão — repasse direto ao apresentante', (do_balcao | length) ~ ' pagamento(s)', aberto=do_balcao | length > 0) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <div class="panel-head"><span>Do balcão — repasse direto ao apresentante</span>
     <small>{{ do_balcao | length }} pagamento(s)</small></div>
+{% endif %}
   {% if not do_balcao %}
     <p style="padding:14px">Nenhum pagamento de título do balcão esperando repasse.</p>
   {% else %}
@@ -228,11 +274,15 @@
     </tbody>
   </table>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
+{% if layout_novo %}{{ abre('guias', 'Guias ao IEPTB', (guias | length) ~ ' guia(s) · ' ~ (rel.a_conciliar | length) ~ ' paga(s) esperando conciliação', aberto=rel.a_conciliar | length > 0) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <div class="panel-head"><span>Guias ao IEPTB</span>
     <small>{{ rel.a_conciliar | length }} paga(s) esperando conciliação</small></div>
+{% endif %}
   {% if not guias %}
     <p style="padding:14px">Nenhuma guia gerada ainda.</p>
   {% else %}
@@ -249,5 +299,17 @@
     </tbody>
   </table>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
+
+{% if layout_novo %}
+{% macro nota_da_rotina(r, ligada, desligada) %}{% if not r.existe %}não disponível{% else %}{% if r.ativo %}{{ ligada }}{% else %}<strong class="danger">{{ desligada }}</strong>{% endif %} ({{ r.agenda }}){% if r.ultima %} · última rodada: {% if r.ultima.situacao == 'ERRO' %}<strong class="danger">{{ r.ultima.situacao }}</strong>{% else %}{{ r.ultima.situacao }}{% endif %}{% else %} · ainda não rodou{% endif %}{% endif %}{% endmacro %}
+{{ abre('rotina', 'Rotina automática da relação', nota_da_rotina(rotina, 'Ligada', 'Desligada'), aberto=rotina.existe and rotina.ultima and rotina.ultima.situacao == 'ERRO') }}{{ a_rotina }}</details>
+{{ abre('robo', 'Robô do boleto de repasse da CRA', nota_da_rotina(robo, 'Ligado', 'Desligado'), aberto=robo.existe and robo.ultima and robo.ultima.situacao == 'ERRO') }}{{ o_robo }}</details>
+{{ abre('onde-se-emite', 'Onde a guia se emite', 'o sistema não entra no portal — confira o passo na primeira vez') }}<div class="cg-quadro-corpo">{{ onde_se_emite }}</div></details>
+{{ abre('resumo', 'Resumo', (rel.pendentes | length) ~ ' pendente(s), ' ~ rel.vencidos ~ ' com o prazo vencido') }}<div class="cg-quadro-corpo">{{ o_resumo }}</div></details>
+{{ abre('como-funciona', 'Como funciona o repasse', 'o prazo, a guia do IEPTB e o repasse direto') }}<div class="cg-quadro-corpo">{{ como_funciona }}</div></details>
+{% include '_serventia.html' %}{{ ferramentas() }}
+{% endif %}
 {% endblock %}

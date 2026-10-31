@@ -545,7 +545,7 @@ def trazer_apresentantes_dos_titulos(con, acervo: sqlite3.Connection) -> dict:
                           intTipoApresentante, strCodigoBanco FROM tbCobrador""")}
     except sqlite3.Error as erro:
         raise CenprotXmlError(
-            f"O acervo do E-Ofício não tem o cadastro dos cobradores "
+            f"O acervo do sistema antigo não tem o cadastro dos cobradores "
             f"(tbCobrador): {erro}") from erro
     marcas = ", ".join(["%s"] * len(APRESENTANTES_DO_TITULO))
     faltam = bd.ler(

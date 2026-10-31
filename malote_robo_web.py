@@ -10,6 +10,12 @@ fora do servidor — a tela não fala com o malote e não lê o cofre de volta
 O código não vai à auditoria nem ao log: a auditoria diz que um código foi
 informado, e por quem. O robô apaga o código do cofre assim que o usa, e não
 usa código com mais de 15 minutos.
+
+O LOGIN E A SENHA TÊM FORMULÁRIO PRÓPRIO — 30/10/2026, relato do oficial: «sistema
+nao aceita meu cpf como login do cadastro do malote». A tela geral do cofre pede
+o NOME de cada campo à esquerda e o valor à direita, e o CPF posto na caixa do
+nome é recusado (nome de campo começa com letra). Aqui há duas caixas com o nome
+do que pedem, e quem monta a credencial é a rota.
 """
 from __future__ import annotations
 
@@ -23,6 +29,14 @@ import malote_robo as MR
 
 PROCESSO = MR.CATALOGO[0]["codigo"]
 _CODIGO_VALIDO = re.compile(r"^[A-Za-z0-9]{4,12}$")
+_SO_NUMERO_E_MASCARA = re.compile(r"^[0-9.\-/ ]+$")
+
+
+def login_limpo(texto) -> str:
+    """O login como o malote o quer: o CPF com máscara vira só os números; outro
+    login fica como foi digitado. Só calcula."""
+    login = str(texto or "").strip()
+    return re.sub(r"[^0-9]", "", login) if _SO_NUMERO_E_MASCARA.match(login) else login
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit):
@@ -31,6 +45,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     def _pasta():
         from centrais_cred import pasta_de_dados
         return pasta_de_dados()
+
+    @app.route("/automacao/malote/credencial", methods=["POST"])
+    @roles_required("ADMIN")
+    def malote_robo_credencial():
+        usuario = login_limpo(request.form.get("login_malote"))
+        senha = request.form.get("senha_malote") or ""
+        if not usuario or not senha:
+            flash("Preencha o usuário (o CPF, só os números) e a senha do malote.", "danger")
+            return redirect(url_for("malote_robo_codigo"))
+        try:
+            COFRE.gravar(MR.CREDENCIAL, {"usuario": usuario, "senha": senha}, tipo=COFRE.SENHA,
+                         por=usuario_nome(), caminho=COFRE.caminho_do_cofre(_pasta()))
+        except COFRE.CofreError as erro:
+            flash(f"O login do malote não foi guardado: {erro}", "danger")
+            return redirect(url_for("malote_robo_codigo"))
+        audit("AUTOMACAO_COFRE_GRAVADO", "automacao_cofre", None,
+              {"nome": MR.CREDENCIAL, "tipo": COFRE.SENHA, "campos": ["senha", "usuario"], "validade": None})
+        flash("Login do malote guardado no cofre.", "success")
+        return redirect(url_for("malote_robo_codigo"))
 
     @app.route("/automacao/malote/codigo", methods=["GET", "POST"])
     @roles_required("ADMIN")

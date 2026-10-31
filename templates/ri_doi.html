@@ -127,6 +127,10 @@
           {{ m.c }} &mdash; {{ m.qtd }} ato{{ '' if m.qtd == 1 else 's' }}
         </option>
         {% endfor %}
+        {# O MÊS ABERTO PODE NÃO TER ATO: sem esta linha, o seletor mostrava outro mês, e não o da tela. #}
+        {% if competencia not in meses | map(attribute='c') | list %}
+        <option value="{{ competencia }}" selected>{{ competencia }} &mdash; sem atos</option>
+        {% endif %}
       </select></label>
     <button{% if not layout_novo %} class="primary"{% endif %}>Ver a competência</button>
   </form>

@@ -606,3 +606,15 @@ def test_na_tela_de_pe_o_vencido_aparece_mesmo_com_o_filtro_so_no_novo(cg_app):
     _layout(c, "antigo")
     html = c.get("/registro-imoveis/protocolo?busca=nada-acha-isto").get_data(as_text=True)
     assert 'id="espera"' not in html and "<strong>88001</strong>" not in html
+
+
+def test_a_data_da_prenotacao_nao_se_digita():
+    """A rota usa a data do momento (F10). Editável, o campo fazia crer que a data digitada valia."""
+    fonte = (RAIZ / "templates" / "ri_protocolo.html").read_text(encoding="utf-8")
+    campo = re.search(r'<input type="date" name="data_prenotacao"[^>]*>', fonte).group(0)
+    assert "readonly" in campo
+
+
+def test_o_seletor_da_doi_mostra_o_mes_aberto_mesmo_sem_ato():
+    fonte = (RAIZ / "templates" / "ri_doi.html").read_text(encoding="utf-8")
+    assert "{% if competencia not in meses | map(attribute='c') | list %}" in fonte

@@ -182,7 +182,9 @@
         <option value="2">Livro 2 — matrículas</option>
         <option value="3">Livro 3 — demais atos do RI</option>
       </select></label>
-    <label>Data<input type="date" name="data_prenotacao" value="{{ hoje }}"></label>
+    {# A DATA É A DO MOMENTO, e a rota não lê este campo (F10: retroativa quebrava a prioridade, Lei 6.015/1973,
+       art. 186). Editável, ele fazia crer que a data digitada valia. #}
+    <label>Data<input type="date" name="data_prenotacao" value="{{ hoje }}" readonly title="A prenotação leva a data de hoje: é ela que marca a prioridade."></label>
     <label>Matrícula<input name="matricula_numero" placeholder="número"></label>
     <label class="span2">Apresentante<input name="apresentante" required value="{{ de_cx.interessado or '' if de_cx else '' }}"></label>
     <label>CPF/CNPJ<input name="apresentante_documento" value="{{ de_cx.interessado_documento or '' if de_cx else '' }}"></label>

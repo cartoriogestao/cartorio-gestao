@@ -2,13 +2,38 @@
 {% block title %}Carnê-leão — configuração{% endblock %}
 {% block heading %}<h1>Carnê-leão — configuração e tabela progressiva</h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
 {# SÓ DO ADMIN. Decisões do oficial em 26/10/2026: o depósito prévio só vira
    receita no ato (sem opção), o prazo é o último dia do mês seguinte, a tabela
    nacional entra com um clique, e a parte dos fundos do lançamento sem
    separação sai desta configuração, que é de cada delegatário. #}
+{# NO LAYOUT NOVO, QUADROS RECOLHIDOS — 30/10/2026. Sem tabela ativa o imposto não sai em mês nenhum: é
+   o que espera ação, e o quadro da tabela nacional vem aberto e em primeiro lugar. Cada tabela cadastrada
+   é um quadro dentro do quadro delas. #}
+{% set tabelas_ativas = tabelas | rejectattr('anulada_em') | list %}
+{% set vigencias_ativas = tabelas_ativas | map(attribute='vigencia_inicio') | list %}
+{% set nacionais_que_faltam = nacionais | rejectattr('vigencia_inicio', 'in', vigencias_ativas) | list %}
+{% set tabelas_anuladas = (tabelas | length) - (tabelas_ativas | length) %}
+{% set a_regra = cfg.get('carne_leao_prazo_regra') %}
+{% set a_nota_do_prazo = ('prazo não cadastrado' if not a_regra else (regras[a_regra] | lower if cfg.get('carne_leao_prazo_fonte') else 'sem a fonte, o prazo não entra na agenda')) ~ ' · fundos de ' ~ (cfg.get('carne_leao_fundos_percentual') or '0') ~ '%' %}
+{% if layout_novo %}
+<style>
+  .cg-clc .cg-quadro-corpo>form:has(label){display:grid;grid-template-columns:repeat(auto-fill,minmax(18rem,1fr));gap:8px 16px;align-items:end}
+  .cg-clc .cg-quadro-corpo>form label{margin:0}
+  .cg-clc .cg-quadro-corpo>form label:has(textarea){grid-column:1/-1}
+  .cg-clc .cg-quadro-corpo>form textarea{width:100%}
+  .cg-clc .cg-quadro-corpo>form>button{justify-self:start}
+  .cg-clc .cg-quadro-corpo>form:not(:has(label)){display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+  .cg-clc .cg-quadro-corpo>form:not(:has(label)) input:not([type=hidden]){flex:1 1 18rem;width:auto}
+</style>
+<div class="cg-clc">
+{% endif %}
 <div class="actions"><a class="button" href="{{ url_for('carne_leao') }}">&larr; Carnê-leão</a></div>
 
+{% set q_prazo %}
+{% if layout_novo %}{{ abre('cl-prazo', 'Prazo e fundos', a_nota_do_prazo) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel"><h2>Prazo e fundos</h2>
+{% endif %}
   <p class="small">O depósito prévio conta como receita {{ modos['NO_USO']|lower }}.</p>
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -26,9 +51,16 @@
   <p class="small muted">Sem a fonte, o prazo não entra na agenda. O percentual dos fundos vale só para o lançamento que não
     traz emolumento e fundos separados (e para o depósito prévio convertido): o padrão é a soma dos fundos cobrados na
     tabela da casa. Ajuste à configuração da sua serventia.</p>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
+{% endset %}
+
+{% set q_lista %}
+{% if layout_novo %}{{ abre('cl-lista', 'Lista de categorias dedutíveis (sugestão)', (categorias | length) ~ ' categorias · ' ~ ('conferida com o contador' if cfg.get('carne_leao_lista_conferida') else 'conferência ainda não registrada')) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel"><h2>Lista de categorias dedutíveis (sugestão)</h2>
+{% endif %}
   <p class="small">{{ aviso_lista }}</p>
   <div class="table-wrap"><table>
     <thead><tr><th>Categoria fiscal</th><th>Sugestão do sistema</th></tr></thead>
@@ -42,13 +74,22 @@
     <button type="submit">Registrar a conferência</button>
   </form>
   <p class="small muted">A marcação de cada despesa continua sendo sua, despesa por despesa, na tela do mês.</p>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
+{% endset %}
+
+{% set q_tabelas %}
+{% if layout_novo %}{{ abre('cl-tabelas', 'Tabelas progressivas mensais cadastradas', ((tabelas_ativas | length) ~ ' ativa(s)' ~ (' · ' ~ tabelas_anuladas ~ ' anulada(s)' if tabelas_anuladas else '')) if tabelas else 'nenhuma') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel"><h2>Tabelas progressivas mensais cadastradas</h2>
+{% endif %}
   {% if tabelas %}
   {% for t in tabelas %}
+  {% if layout_novo %}{{ abre('cl-tabela-' ~ t.id, t.descricao, 'vigência desde ' ~ t.vigencia_inicio ~ (' · anulada' if t.anulada_em else '')) }}<div class="cg-quadro-corpo">{% if t.anulada_em %}<p><span class="badge">anulada em {{ t.anulada_em[:10] }}: {{ t.motivo_anulacao }}</span></p>{% endif %}{% else %}
   <div class="panel">
     <p><strong>{{ t.descricao }}</strong> — vigência desde {{ t.vigencia_inicio }}{% if t.anulada_em %} — <span class="badge">anulada em {{ t.anulada_em[:10] }}: {{ t.motivo_anulacao }}</span>{% endif %}</p>
+  {% endif %}
     <p class="small muted">Fonte: {{ t.fonte }} · cadastrada por {{ t.cadastrada_por }} em {{ t.cadastrada_em[:10] }}</p>
     {% if t.reducao %}<p class="small">Com a redução mensal da Lei 15.270/2025: até R$ {{ reais(t.reducao.reducao_maxima) }}
       para rendimentos até R$ {{ reais(t.reducao.isento_ate) }}; de lá até R$ {{ reais(t.reducao.teto) }}, R$ {{ reais(t.reducao.constante) }}
@@ -63,12 +104,21 @@
       <input type="hidden" name="acao" value="anular_tabela"><input type="hidden" name="tabela_id" value="{{ t.id }}">
       <input name="motivo" placeholder="por que anular esta tabela" size="40" required><button type="submit">Anular</button>
     </form>{% endif %}
+  {% if layout_novo %}</div></details>{% else %}
   </div>
+  {% endif %}
   {% endfor %}
   {% else %}<p class="badge alta">Nenhuma tabela cadastrada: o imposto não é calculado em mês nenhum.</p>{% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
+{% endset %}
+
+{% set q_nacional %}
+{% if layout_novo %}{{ abre('cl-nacional', 'A tabela nacional da Receita Federal', 'já cadastrada' if not nacionais_que_faltam else ((nacionais_que_faltam | length) ~ ' de ' ~ (nacionais | length) ~ ' ainda não cadastrada(s)'), aberto=not tabelas_ativas) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel"><h2>A tabela nacional da Receita Federal</h2>
+{% endif %}
   <p class="small">A tabela progressiva é nacional. O sistema a traz lida na página da Receita Federal em 26/10/2026:</p>
   <ul class="small">{% for t in nacionais %}<li><strong>{{ t.descricao }}</strong>, desde {{ t.vigencia_inicio }} — {{ t.fonte }}</li>{% endfor %}</ul>
   <form method="post">
@@ -78,9 +128,15 @@
   </form>
   <p class="small muted">Vigência que já tem tabela ativa não é tocada. Quando a Receita publicar tabela nova, ela entra
     abaixo, à mão, ou com uma versão nova do sistema.</p>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
+{% endset %}
 
+{% set q_cadastrar %}
+{% if layout_novo %}{{ abre('cl-cadastrar', 'Cadastrar uma tabela', 'à mão, quando a Receita publicar tabela nova') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel"><h2>Cadastrar uma tabela</h2>
+{% endif %}
   <p class="small">Copie as faixas da tabela progressiva MENSAL vigente, da norma da Receita ou da orientação do contador.
     Uma faixa por linha: <code>até; alíquota %; parcela a deduzir</code>.
     A última linha fica com o «até» vazio (acima da anterior). O exemplo abaixo é fictício.</p>
@@ -95,5 +151,28 @@
   </form>
   <p class="small muted">Tabela cadastrada não se edita: errou, anule-a com o motivo e cadastre de novo. Vale, em cada mês,
     a tabela vigente no dia 1º; quando outra começa no meio do mês, a tela do mês avisa.</p>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
+{% endset %}
+
+{% if layout_novo %}
+{% if not tabelas_ativas %}
+<p class="notice danger"><strong>Nenhuma tabela ativa.</strong> Sem ela, o imposto não é calculado em mês nenhum. Cadastre a tabela nacional aqui embaixo.</p>
+{{ q_nacional }}
+{% endif %}
+{{ q_prazo }}
+{{ q_lista }}
+{{ q_tabelas }}
+{% if tabelas_ativas %}{{ q_nacional }}{% endif %}
+{{ q_cadastrar }}
+</div>
+{{ ferramentas() }}
+{% else %}
+{{ q_prazo }}
+{{ q_lista }}
+{{ q_tabelas }}
+{{ q_nacional }}
+{{ q_cadastrar }}
+{% endif %}
 {% endblock %}

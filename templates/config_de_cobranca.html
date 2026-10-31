@@ -2,14 +2,32 @@
 {% block title %}Configurações que cobram a equipe — Administrativo{% endblock %}
 {% block heading %}<h1>Configurações que cobram a equipe</h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
 {# AS CHAVES DE COBRANÇA — ver config_de_cobranca.py. São as configurações
    cujo afrouxamento cala um aviso ou abre uma trava sobre a equipe. Só o
    oficial (ADMIN humano) as altera, com afirmação expressa; robô nunca; quem
    é cobrado nunca. O banco recusa a mudança feita por fora desta tela
    (gatilho settings_cobranca). O histórico é só do ADMIN. #}
+{# NO LAYOUT NOVO — 30/10/2026. O aviso e «Alterar uma configuração» abrem a tela, para quem pode alterar;
+   para quem só lê, abre o quadro do que vale agora. A AFIRMAÇÃO EXPRESSA MORA NO MESMO QUADRO DO BOTÃO: não
+   há como gravar sem ver a caixa «Afirmo». O título dos quadros diz quantas configurações, nunca o valor. #}
+{% set ns = namespace(diferentes=0) %}
+{% for c in q.chaves %}{% if c.valor is not none and c.valor != c.padrao %}{% set ns.diferentes = ns.diferentes + 1 %}{% endif %}{% endfor %}
+{% set com_turno = q.turnos | selectattr('turno') | list | length %}
+{% if layout_novo %}
+<style>
+  .cg-cob-aviso>.notice{margin:0 0 10px}
+  #alterar form.form-grid{grid-template-columns:minmax(0,1fr) minmax(0,2fr);align-items:start}
+  #turnos form.form-grid{grid-template-columns:repeat(auto-fill,minmax(20rem,1fr));align-items:start;margin-top:12px}
+  @media(max-width:900px){ #alterar form.form-grid{grid-template-columns:1fr} }
+  #historico .inline-form{margin:0 0 8px}
+  #historico .inline-form input{min-height:30px;padding:3px 6px}
+  #historico .inline-form button{min-height:30px;padding:3px 10px}
+</style>
+{% endif %}
 <div class="actions"><a class="button" href="{{ url_for('settings') }}">&larr; Configurações</a></div>
 
-<section class="panel">
+{% set o_aviso %}
   <p class="notice warning" style="margin-top:0">
     <strong>Estas configurações cobram a equipe</strong>: cada uma decide quando um
     aviso aparece ou se uma trava vale. Só o oficial as altera, aqui, com
@@ -21,6 +39,9 @@
     <p class="notice danger"><strong>Só o oficial altera estas configurações. Peça ao oficial.</strong>
       Uma tentativa por esta tela é recusada e fica registrada.</p>
   {% endif %}
+{% endset %}
+
+{% set a_tabela %}
   <div class="table-wrap">
     <table class="table">
       <thead><tr><th>Configuração</th><th>Vale agora</th><th>O que ela cobra</th><th>Afrouxar é</th></tr></thead>
@@ -36,7 +57,7 @@
       </tbody>
     </table>
   </div>
-</section>
+{% endset %}
 
 {% macro afirmacao_expressa() %}
   <div class="notice danger" style="margin:6px 0">
@@ -47,9 +68,12 @@
     <textarea name="afirmacao" rows="2" placeholder="por que muda, e por que não é erro (pelo menos 30 letras)"></textarea></label>
 {% endmacro %}
 
+{% set q_alterar %}
 {% if e_admin %}
+{% if layout_novo %}{{ abre('alterar', 'Alterar uma configuração', 'com afirmação expressa', aberto=true) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel" id="alterar">
   <h2>Alterar uma configuração</h2>
+{% endif %}
   <form method="post" action="{{ url_for('configuracoes_cobranca_alterar') }}" class="form-grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Configuração
@@ -61,11 +85,28 @@
     <div style="grid-column:1/-1">{{ afirmacao_expressa() }}</div>
     <button type="submit" class="primary">Alterar</button>
   </form>
+{% if layout_novo %}</div></details>{% else %}
 </section>
 {% endif %}
+{% endif %}
+{% endset %}
 
+{% if layout_novo %}
+<div class="cg-cob-aviso">{{ o_aviso }}</div>
+{{ q_alterar }}
+{{ abre('cob-valem-agora', 'O que vale agora', (q.chaves | length) ~ ' configurações · ' ~ ((ns.diferentes ~ ' diferente(s) do padrão') if ns.diferentes else 'todas no padrão'), aberto=not e_admin) }}<div class="cg-quadro-corpo">{{ a_tabela }}</div></details>
+{% else %}
+<section class="panel">
+  {{ o_aviso }}
+  {{ a_tabela }}
+</section>
+{{ q_alterar }}
+{% endif %}
+
+{% if layout_novo %}{{ abre('turnos', 'Turno por operador (aviso do caixa)', (q.turnos | length) ~ ' pessoa(s) · ' ~ ((com_turno ~ ' com turno próprio') if com_turno else 'ninguém com turno próprio')) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel" id="turnos">
   <h2>Turno por operador (aviso do caixa)</h2>
+{% endif %}
   <p class="small">O fim do expediente vale para a equipe do dia
     (<strong>{{ q.fim_do_expediente }}</strong>). Para quem tem turno próprio, o aviso do caixa começa no
     <strong>fim do turno dele</strong>, e o caixa aberto antes do começo do turno atual tranca as outras telas.
@@ -93,11 +134,16 @@
     <button type="submit" class="primary">Gravar o turno</button>
   </form>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
 {% if e_admin and hist %}
+{% set recusadas = hist.linhas | selectattr('o_que', 'equalto', 'RECUSADA') | list | length %}
+{% if layout_novo %}{{ abre('historico', 'Histórico', 'últimos ' ~ hist.dias ~ ' dias · ' ~ (hist.linhas | length) ~ ' registro(s)' ~ (' · ' ~ recusadas ~ ' recusada(s)' if recusadas else '') ~ (' · lista cortada' if hist.cortado else '')) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel" id="historico">
   <h2>Histórico</h2>
+{% endif %}
   <form method="get" action="{{ url_for('configuracoes_cobranca') }}#historico" class="inline-form">
     <label>Últimos <input type="number" name="dias" min="1" max="3650" value="{{ hist.dias }}" style="width:6em"> dias</label>
     <button type="submit">Filtrar</button>
@@ -132,13 +178,19 @@
   {% elif hist.medido %}
     <p class="muted">Nenhuma mudança nestas configurações no período.</p>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
 {% endif %}
+{% endif %}
 
+{% if layout_novo %}{{ abre('cob-fora', 'O que tem o mesmo papel e ficou fora desta lista', (q.fora | length) ~ ' item(ns)') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <h2>O que tem o mesmo papel e ficou fora desta lista</h2>
+{% endif %}
   <ul class="small">
     {% for nome, razao in q.fora %}<li><strong>{{ nome }}</strong> — {{ razao }}</li>{% endfor %}
   </ul>
+{% if layout_novo %}</div></details>{{ ferramentas() }}{% else %}
 </section>
+{% endif %}
 {% endblock %}

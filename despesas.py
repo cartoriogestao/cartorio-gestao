@@ -256,7 +256,13 @@ def conferir_contato(email: Any, whatsapp: Any) -> tuple[str, str]:
     """O e-mail e o WhatsApp de quem recebe o comprovante, no formato de envio. Só calcula."""
     import wa_modelos
     email = _texto(email, 150).lower()
-    if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+    # `nome@dominio.tld` sem expressão regular, como `contato_do_cliente`
+    # (CodeQL py/polynomial-redos): um só `@`, nenhum branco, e no domínio um
+    # ponto com algo dos dois lados.
+    nome, arroba, dominio = email.partition("@")
+    if email and not (nome and arroba and "@" not in dominio
+                      and not any(c.isspace() for c in email)
+                      and "." in dominio[1:-1]):
         raise DespesaError("O e-mail do contato não confere.")
     whatsapp = _texto(whatsapp, 30)
     try:

@@ -121,25 +121,62 @@ def test_sem_dados_de_quem_chama_le_o_resumo(tmp_path):
     assert "Selo digital: CERELE000000TESTEBBBB000002" in xml
 
 
-def test_ultima_pagina_deixa_lugar_para_o_fecho(tmp_path):
+def _medidas_e_estilos(xml: str) -> list[tuple[str, float, float]]:
+    """(estilo do parágrafo, largura, altura) de cada página reproduzida."""
+    return [(e, float(w), float(h)) for e, w, h in re.findall(
+        r'<text:p text:style-name="(P-repro-img[a-z-]*)"><draw:frame '
+        r'draw:name="digi\d+\.png"[^>]*svg:width="([0-9.]+)cm" '
+        r'svg:height="([0-9.]+)cm"', xml)]
+
+
+def _ficha(tmp_path, tamanho: tuple[int, int], paginas: int) -> Path:
+    from PIL import Image
+    folhas = [Image.new("RGB", tamanho, "white") for _ in range(paginas)]
+    arq = tmp_path / "ficha.tif"
+    folhas[0].save(arq, save_all=True, append_images=folhas[1:])
+    return arq
+
+
+def test_paginas_a4_saem_na_mesma_medida_e_a_primeira_vai_para_a_folha_seguinte(tmp_path):
+    """of-0151: a 1ª e a última não encolhem por causa do texto."""
     import ri_digitalizacao as RDIGI
     odt = RDIGI.odt_da_digitalizacao(
         _pdf_de_duas_paginas(tmp_path), selo_texto="X", nome="t",
         corpo_html=CORPO)
     xml, styles = _xml(odt)
-    alturas = [float(h) for h in re.findall(
-        r'draw:name="digi\d+\.png"[^>]*svg:height="([0-9.]+)cm"', xml)]
-    assert len(alturas) == 2
+    paginas = _medidas_e_estilos(xml)
+    assert len(paginas) == 2
+    assert [e for e, _, _ in paginas] == ["P-repro-img-quebra"] * 2
+    assert len({(w, h) for _, w, h in paginas}) == 1
     # A4 com as margens do modelo (topo 0,51 + brasão 2,06; pé 2,0)
     area = 29.7 - 0.51 - 2.06 - 0.15 - 2.0 - 0.6
-    assert all(h <= area + 0.01 for h in alturas)
-    assert alturas[0] <= area - 9.0 + 0.01       # folha 1 divide com o cabeçalho
-    assert alturas[1] <= area - 12.6 + 0.01      # a última, com o fecho
+    assert all(w == 16.6 and h <= area + 0.01 for _, w, h in paginas)
     assert 'fo:keep-with-next="always"' in xml   # o fecho não se parte
     assert 'fo:margin-top="0.51cm"' in styles   # distância do cabeçalho no modelo
     assert 'fo:margin-bottom="2cm"' in styles
     assert "brasao_repro" in styles             # brasão em todas as páginas
     assert 'font-size="12pt"' in xml or 'font-size="12pt"' in styles
+
+
+def test_ficha_baixa_continua_na_folha_do_certifico_na_largura_cheia(tmp_path):
+    import ri_digitalizacao as RDIGI
+    odt = RDIGI.odt_da_digitalizacao(
+        _ficha(tmp_path, (1754, 900), 2), selo_texto="X", nome="t",
+        corpo_html=CORPO)
+    paginas = _medidas_e_estilos(_xml(odt)[0])
+    assert [e for e, _, _ in paginas] == ["P-repro-img", "P-repro-img-quebra"]
+    assert all(w == 16.6 for _, w, _ in paginas)
+
+
+def test_com_varias_paginas_a_primeira_e_a_ultima_medem_como_as_do_meio(tmp_path):
+    import ri_digitalizacao as RDIGI
+    odt = RDIGI.odt_da_digitalizacao(
+        _ficha(tmp_path, (1240, 1754), 4), selo_texto="X", nome="t",
+        corpo_html=CORPO)
+    paginas = _medidas_e_estilos(_xml(odt)[0])
+    assert len(paginas) == 4
+    medidas = [(w, h) for _, w, h in paginas]
+    assert medidas[0] == medidas[1] == medidas[2] == medidas[3]
 
 
 def test_identificacao_e_qualificacao():

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import sqlite3
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -40,6 +41,7 @@ from banco_de_teste import conexao_de_teste  # noqa: E402
 
 import ato_selado as AS
 import protesto_arquivo as PA
+import protesto_cra_xml as PCX
 import protesto_remessa as PRM
 from nucleo_schema import init_nucleo_schema
 from pt_schema import init_pt_schema
@@ -236,6 +238,127 @@ def test_o_titulo_recusado_no_meio_do_lote_nao_leva_o_vizinho_junto(con):
     assert [x[596:] for x in linhas] == ["0001", "0002", "0003", "0004"]
     assert [x[216:227].strip() for x in linhas[1:3]] == ["84711/1", "84713/1"]
     assert linhas[2][447:457] == protocolos["84713/1"]
+
+
+# O que `protesto_cra_xml.ler` exige de um lote de 3: h10 = 3, h11 + h12 = 3 e o
+# t05 como somatório de segurança (3 + 3 + 3 + 0).
+COMO_A_CRA_MANDA = {"h09_a_h12": "0003000300030000", "t05": "00009"}
+SALDO = 148278
+
+
+def _com_contagens(bruto: bytes, *, h09_a_h12: str, t05: str) -> bytes:
+    linhas = bruto.decode("latin-1").split("\r\n")
+    linhas[0] = linhas[0][:67] + h09_a_h12 + linhas[0][83:]
+    linhas[-1] = linhas[-1][:52] + t05 + linhas[-1][57:]
+    return "\r\n".join(linhas).encode("latin-1")
+
+
+def _contagens(linhas: list[str]) -> dict:
+    cab, rod = linhas[0], linhas[-1]
+    return {"h09": cab[67:71], "h10": cab[71:75], "h11": cab[75:79],
+            "h12": cab[79:83], "t05": rod[52:57], "t06": rod[57:75],
+            "t08": rod[596:]}
+
+
+def test_lote_de_tres_com_um_recusado_sai_com_cabecalho_e_rodape_de_dois(con):
+    """A CRA recusou com 2122 (medido, 30/10/2026): a soma dos registros do
+    arquivo não conferia com o total que o cabeçalho informava."""
+    bruto = _com_contagens(com_tres_titulos(sem_devedor_no=2), **COMO_A_CRA_MANDA)
+    r = receber(con, bruto)
+    assert r["recebidos"] == 2
+    linhas, _ = _confirmacao_e_protocolos(con, r)
+
+    assert all(len(x) == 600 for x in linhas)
+    assert _contagens(linhas) == {
+        "h09": "0002", "h10": "0002", "h11": "0002", "h12": "0000",
+        "t05": "00006", "t06": f"{SALDO * 2:018d}", "t08": "0004"}
+
+    # E SÓ ISSO MUDOU: o resto do cabeçalho e do rodapé é o da remessa.
+    remessa = bruto.decode("latin-1").split("\r\n")
+    assert linhas[0][:52] == remessa[0][:52]
+    assert linhas[0][52:61] == "SDTBFOCRT"
+    assert linhas[0][61:67] == remessa[0][61:67]
+    assert linhas[0][83:] == remessa[0][83:]
+    assert linhas[-1][:52] == remessa[-1][:52]
+    assert linhas[-1][75:596] == remessa[-1][75:596]
+
+    gravado = con.execute("SELECT titulos, soma_centavos FROM pt_retornos WHERE id=?",
+                          (r["confirmacoes"][0],)).fetchone()
+    assert gravado["titulos"] == 2 and gravado["soma_centavos"] == SALDO * 2
+
+
+def test_a_confirmacao_parcial_fecha_as_contas_do_xml_que_vai_a_cra(con):
+    """As mesmas contas que `protesto_cra_xml.ler` cobra do lote da remessa."""
+    r = receber(con, _com_contagens(com_tres_titulos(sem_devedor_no=1),
+                                    **COMO_A_CRA_MANDA))
+    conteudo = con.execute("SELECT conteudo FROM pt_retornos WHERE id=?",
+                           (r["confirmacoes"][0],)).fetchone()["conteudo"]
+    raiz = ET.fromstring(PCX.escrever_xml(conteudo, "SDTBFOCRT").encode("latin-1"))
+    hd, trs, tl = raiz.find("hd"), raiz.findall("tr"), raiz.find("tl")
+
+    assert len(trs) == 2 == int(hd.get("h10"))
+    assert int(hd.get("h11")) + int(hd.get("h12")) == 2
+    assert int(tl.get("t05")) == sum(int(hd.get(f"h{i:02}")) for i in range(9, 13))
+    assert int(tl.get("t06")) == sum(int(t.get("t18")) for t in trs)
+    assert [int(hd.get("h17")), *(int(t.get("t52")) for t in trs),
+            int(tl.get("t08"))] == [1, 2, 3, 4]
+
+
+def test_o_lote_txt_que_conta_registros_no_rodape_continua_contando(con):
+    """`protesto_arquivo.RODAPE`: cabeçalho + títulos + rodapé. Ali 5 viram 4, e
+    a confirmação continua sendo lida sem achado."""
+    r = receber(con, com_tres_titulos(sem_devedor_no=3))
+    linhas, _ = _confirmacao_e_protocolos(con, r)
+    assert _contagens(linhas)["t05"] == "00004"
+    assert _contagens(linhas)["h10"] == "0002"
+    assert PA.ler("\r\n".join(linhas) + "\r\n").achados == []
+
+
+@pytest.mark.parametrize("h11_h12,esperado", [
+    ("00030000", ("0002", "0000")),
+    ("00000003", ("0000", "0002")),
+])
+def test_quem_tem_um_tipo_so_de_titulo_continua_com_ele(con, h11_h12, esperado):
+    bruto = _com_contagens(com_tres_titulos(sem_devedor_no=2),
+                           h09_a_h12="00030003" + h11_h12, t05="00009")
+    linhas, _ = _confirmacao_e_protocolos(con, receber(con, bruto))
+    assert (_contagens(linhas)["h11"], _contagens(linhas)["h12"]) == esperado
+    assert _contagens(linhas)["t05"] == "00006"
+
+
+def test_lote_misto_fecha_as_contas_sem_afirmar_qual_foi_o_recusado(con):
+    """O registro do título não diz se é indicação ou original: a divisão não está
+    medida, e por isso este teste cobra só a conta."""
+    bruto = _com_contagens(com_tres_titulos(sem_devedor_no=2),
+                           h09_a_h12="0003000300020001", t05="00009")
+    c = _contagens(_confirmacao_e_protocolos(con, receber(con, bruto))[0])
+    assert int(c["h11"]) + int(c["h12"]) == 2
+    assert c["t05"] == "00006"
+
+
+def test_campo_em_branco_na_remessa_nao_passa_a_declarar_nada(con):
+    bruto = _com_contagens(com_tres_titulos(sem_devedor_no=2),
+                           h09_a_h12=" " * 16, t05=" " * 5)
+    linhas, _ = _confirmacao_e_protocolos(con, receber(con, bruto))
+    assert all(len(x) == 600 for x in linhas)
+    c = _contagens(linhas)
+    assert (c["h09"], c["h10"], c["h11"], c["h12"]) == ("    ",) * 4
+    assert c["t05"] == "     "
+    assert c["t06"] == f"{SALDO * 2:018d}" and c["t08"] == "0004"
+
+
+@pytest.mark.parametrize("contagens", [
+    COMO_A_CRA_MANDA,
+    {"h09_a_h12": "0003000300030000", "t05": "00005"},
+    # Contas que não fecham: sem recusa, nada se conserta nem se recalcula.
+    {"h09_a_h12": "0007000300010002", "t05": "00013"},
+])
+def test_lote_inteiro_aceito_sai_com_cabecalho_e_rodape_da_remessa(con, contagens):
+    bruto = _com_contagens(com_tres_titulos(), **contagens)
+    linhas, _ = _confirmacao_e_protocolos(con, receber(con, bruto))
+    remessa = bruto.decode("latin-1").split("\r\n")
+    assert linhas[0] == remessa[0][:52] + "SDTBFOCRT" + remessa[0][61:]
+    assert linhas[-1] == remessa[-1]
 
 
 def test_apontar_falso_deixa_o_titulo_esperando(con):

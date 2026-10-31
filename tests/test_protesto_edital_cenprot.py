@@ -20,7 +20,9 @@ O QUE ESTES TESTES GUARDAM
         emolumentos, que a escreve AAAAMMDD. Dois arquivos da mesma Central
         com duas convencoes;
       - a fonte sao os editais JA PUBLICADOS no dia: o ato vem antes do
-        arquivo.
+        arquivo;
+      - **edital de ato tornado sem efeito nao sai no arquivo nem recebe o
+        comprovante do envio**; o vivo e o do acervo, sem `ato_id`, continuam.
 """
 from __future__ import annotations
 
@@ -36,7 +38,9 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from banco_de_teste import conexao_de_teste  # noqa: E402
+from prova_de_intimacao import PDF_DE_TESTE, garantir_anexos  # noqa: E402
 
+import protesto_aviso as AV
 import protesto_cenprot as CP
 from nucleo_schema import init_nucleo_schema
 from pt_schema import init_pt_schema
@@ -245,6 +249,84 @@ def test_dois_editais_no_dia_viram_dois_registros():
     r = gerar(con)
     assert r["editais"] == 2
     assert len(list(ET.fromstring(r["conteudo"]).iter("edital"))) == 2
+
+
+def _com_ato(con, tid: int, *, cancelado: int) -> None:
+    ato = con.execute(
+        """INSERT INTO pt_atos(titulo_id, tipo, data_ato, origem, cancelado,
+               criado_em) VALUES (?,'INTIMACAO',?,'MANUAL',?,?)""",
+        (tid, DIA, cancelado, AGORA)).lastrowid
+    con.execute("UPDATE pt_editais SET ato_id=? WHERE titulo_id=?", (int(ato), tid))
+
+
+def _morto_vivo_e_acervo(con) -> tuple[int, int, int]:
+    """Três editais no mesmo dia: de ato cancelado, de ato vivo e sem ato."""
+    morto = titulo_com_edital(con, numero_edital=1, numero="MORTO", motivo=None)
+    _com_ato(con, morto, cancelado=1)
+    vivo = titulo_com_edital(con, numero_edital=2, numero="VIVO", motivo=None)
+    _com_ato(con, vivo, cancelado=0)
+    acervo = titulo_com_edital(con, numero_edital=3, numero="ACERVO", motivo=None)
+    return morto, vivo, acervo
+
+
+def _edital_do_titulo(con, tid: int) -> int:
+    return int(con.execute("SELECT id FROM pt_editais WHERE titulo_id=?",
+                           (tid,)).fetchone()["id"])
+
+
+def _comprovantes(con, tid: int) -> int:
+    return int(con.execute(
+        "SELECT COUNT(*) AS n FROM attachments WHERE entity_type=? AND entity_id=?",
+        (AV.ENTIDADE_DO_ENVIO_DO_EDITAL, _edital_do_titulo(con, tid))
+    ).fetchone()["n"])
+
+
+def test_edital_de_ato_cancelado_nao_sai_no_arquivo_nem_na_lista_do_dia():
+    """O edital vivo do mesmo dia e o do acervo, sem `ato_id`, continuam."""
+    con = banco()
+    _morto_vivo_e_acervo(con)
+    r = gerar(con)
+    assert r["editais"] == 2 and r["fora"] == []
+    numeros = [e.findtext("numerotitulo")
+               for e in ET.fromstring(r["conteudo"]).iter("edital")]
+    assert numeros == ["VIVO", "ACERVO"]
+    assert [e["numero_titulo"] for e in AV.editais_do_dia(con, DIA)] == [
+        "VIVO", "ACERVO"]
+
+
+def test_dia_so_com_edital_de_ato_cancelado_nao_gera_registro():
+    con = banco()
+    _com_ato(con, titulo_com_edital(con, motivo=None), cancelado=1)
+    assert gerar(con)["editais"] == 0
+    assert AV.editais_do_dia(con, DIA) == []
+
+
+def test_o_comprovante_nao_vai_para_o_edital_de_ato_cancelado(tmp_path):
+    con = banco()
+    garantir_anexos(con)
+    morto, vivo, acervo = _morto_vivo_e_acervo(con)
+    r = AV.guardar_comprovante_do_envio(
+        con, DIA, nome="envio.pdf", conteudo=PDF_DE_TESTE,
+        pasta_de_arquivos=tmp_path, agora=AGORA)
+    assert r["editais"] == 2
+    assert _comprovantes(con, morto) == 0
+    assert _comprovantes(con, vivo) == 1 and _comprovantes(con, acervo) == 1
+    # O quadro da tela conta os mesmos dois, e o dia fica completo.
+    [dia] = AV.envios_do_edital(con, DIA)
+    assert dia["editais"] == 2 and dia["com_comprovante"] == 2 and dia["completo"]
+
+
+def test_dia_so_com_edital_de_ato_cancelado_recusa_o_comprovante(tmp_path):
+    con = banco()
+    garantir_anexos(con)
+    tid = titulo_com_edital(con, motivo=None)
+    _com_ato(con, tid, cancelado=1)
+    with pytest.raises(AV.AvisoError, match="sem efeito"):
+        AV.guardar_comprovante_do_envio(
+            con, DIA, nome="envio.pdf", conteudo=PDF_DE_TESTE,
+            pasta_de_arquivos=tmp_path, agora=AGORA)
+    assert _comprovantes(con, tid) == 0
+    assert not (tmp_path / "Protesto").exists(), "nada foi gravado em disco"
 
 
 def test_titulo_sem_devedor_sai_da_lista_com_o_motivo():

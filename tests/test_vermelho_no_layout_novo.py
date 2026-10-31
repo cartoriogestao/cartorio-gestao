@@ -45,3 +45,15 @@ def test_o_que_ja_tem_cor_propria_nao_entra_na_regra_do_texto():
 def test_o_cartao_de_numero_nao_vira_alarme_com_zero():
     """«Vencidos: 0» continua com a borda de sempre: pintar o cartão inteiro seria alarme sem nada para fazer."""
     assert ".card.danger:not(.stat)" in CASCA
+
+
+def test_a_caixa_de_marcar_nao_estica_e_fica_abaixo_de_quem_cuida_da_propria():
+    """O `app.css` dá a todo `input` a largura da linha. A regra usa `:where`, para ficar só acima da de fábrica."""
+    regra = re.search(r":where\(\.cg-corpo\) input:where\(\[type=checkbox\],\[type=radio\]\)\{([^}]*)\}", CASCA)
+    assert regra, "a regra da caixa de marcar saiu da casca"
+    assert "width:16px" in regra.group(1) and "min-height:0" in regra.group(1)
+    assert ":where(.cg-corpo) label:has(>input:where([type=checkbox],[type=radio])){display:block}" in CASCA
+
+
+def test_o_app_css_continua_esticando_e_o_layout_antigo_nao_muda():
+    assert "input,select,textarea{font:inherit;width:100%" in APP

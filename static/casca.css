@@ -291,6 +291,13 @@
 .cg-corpo :is(.alerta.danger,.alert.danger,.alert-danger){padding:10px 14px;margin-bottom:12px}
 .cg-corpo :is(.badge.danger,.badge-danger){background:#fee4e2;color:#b42318}
 
+/* A CAIXA DE MARCAR TEM O TAMANHO DE CAIXA DE MARCAR (30/10/2026). O `app.css` dá a todo `input` a largura
+   da linha e 40 px de altura, e o rótulo vira uma grade: em 34 telas, 97 das 181 caixas e bolinhas à vista
+   saíam esticadas, cada uma numa linha, com o texto embaixo. O `:where` deixa a regra só acima da de
+   fábrica, e por isso quem já cuida da própria caixa continua cuidando. O layout antigo fica como está. */
+:where(.cg-corpo) input:where([type=checkbox],[type=radio]){flex:none;width:16px;height:16px;min-height:0;margin:0 6px 0 2px;padding:0;vertical-align:-3px;box-shadow:none}
+:where(.cg-corpo) label:has(>input:where([type=checkbox],[type=radio])){display:block}
+
 /* OS MONITORES DO BALCÃO SÃO FULL HD (o oficial, 30/10/2026). Com a largura sobrando, os campos
    cabem em três colunas e alguns quadros ficam lado a lado. Abaixo disso, nada muda. A grade só
    passa a três se tiver três campos à vista, porque com dois sobraria uma coluna vazia, e não

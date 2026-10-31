@@ -100,6 +100,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 flash(str(erro), "danger")
                 return redirect(url_for("selos_emitidos_lista"))
             escolhas = SEM.opcoes(con)
+            destinos = SEM.destinos_dos_selos(con, lista["linhas"])
+        # O LINK SÓ PARA QUEM ENTRA (of-0118): a régua é a da própria tela —
+        # papéis da rota, módulo e função. Link que daria em recusa não se oferece.
+        abre = app.extensions["abre_pela_tela"]
+        papel = app.extensions["usuario_papel"]()
+        funcao = app.extensions["funcao_de_quem_esta_logado"]()
+        for x in lista["linhas"]:
+            destino = destinos.get(x["id"])
+            if destino and abre(destino[0], papel, funcao):
+                x["endereco_do_ato"] = url_for(destino[0], **destino[1])
         return render_template("selos_emitidos.html", f=f, lista=lista,
                                conta=conta, escolhas=escolhas,
                                grupos=grupos, agrupar=agrupar, norma=SEM)

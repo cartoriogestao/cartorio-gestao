@@ -1572,7 +1572,10 @@ volta com o quadro aberto.
   deixar agir sozinha é do administrador.
 - **Produtividade**: o controle diário. Tempo líquido, desvio, eficiência e semana
   são calculados. O botão **Produtividade** abre em qualquer tela, para lançar rápido
-  ou iniciar o cronômetro.
+  ou iniciar o cronômetro. **Relatórios** traz, por período de até 366 dias, o
+  **simplificado** (total e uma linha por funcionário) e o **completo** (também as
+  categorias e cada registro), com impressão e exportação. O registro sem tempo apurado
+  conta nas tarefas e aparece com o motivo. Quem é usuário comum vê só os próprios.
 - **Leitura dos textos (IA)**: os apontamentos da leitura que ninguém conferiu ainda.
   **Relatório anual de IA**: a página pronta para imprimir. **O que a ajuda sabe do
   projeto** mostra o que a ajuda lê sobre o sistema, sem gastar consulta.

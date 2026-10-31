@@ -9,8 +9,10 @@
 <section class="panel">
   <div class="panel-head"><span>Painel — {{ painel.data_filtro }}</span>
     <span class="actions" style="margin:0">
-      <a class="button secondary" href="{{ url_for('produtividade_exportar_csv', data=filtro_data, responsavel=filtro_responsavel) }}">Exportar CSV</a>
-      <a class="button secondary" href="{{ url_for('produtividade_exportar_xlsx', data=filtro_data, responsavel=filtro_responsavel) }}">Exportar Excel</a>
+      {% set filtros_da_tela = {'responsavel': filtro_responsavel, 'data_de': lista.data_de or none, 'data_ate': lista.data_ate or none, 'categoria': lista.categoria or none, 'prioridade': lista.prioridade or none, 'status': lista.status or none, 'q': lista.q or none} %}
+      <a class="button secondary" href="{{ url_for('produtividade_relatorio', **filtros_da_tela) }}">Relatórios</a>
+      <a class="button secondary" href="{{ url_for('produtividade_exportar_csv', data=filtro_data, **filtros_da_tela) }}">Exportar CSV</a>
+      <a class="button secondary" href="{{ url_for('produtividade_exportar_xlsx', data=filtro_data, **filtros_da_tela) }}">Exportar Excel</a>
     </span>
   </div>
   <form method="get" class="grid2" style="padding:14px">
@@ -159,6 +161,9 @@
 
 <section class="panel">
   <div class="panel-head"><span>{% if periodo %}Registros de {{ lista.data_de or 'o início' }} a {{ lista.data_ate or 'hoje' }}{% else %}Registro diário — {{ filtro_data }}{% endif %} ({{ registros|length }})</span></div>
+  {% if lista_cortada %}
+  <p class="notice" data-lista-cortada>A lista parou no limite de {{ limite_da_lista }} linhas e pode estar cortada. Para ver tudo, use os <a href="{{ url_for('produtividade_relatorio', responsavel=filtro_responsavel, data_de=lista.data_de or none, data_ate=lista.data_ate or none, categoria=lista.categoria or none, prioridade=lista.prioridade or none, status=lista.status or none, q=lista.q or none) }}">Relatórios</a>.</p>
+  {% endif %}
   <div class="table-wrap">
     <table class="table">
       <thead>

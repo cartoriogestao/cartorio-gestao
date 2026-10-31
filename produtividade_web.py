@@ -1,6 +1,7 @@
 """Rotas web — Controle de produtividade (ADMIN, MANAGER, USER)."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Callable
 
 from flask import Response, jsonify
@@ -39,6 +40,44 @@ def _parse_filtro_responsavel(
         return None, "Todos"
 
 
+#: Os filtros de texto da lista, do relatório e das exportações.
+_CHAVES_DOS_FILTROS = ("categoria", "prioridade", "status", "q")
+
+
+def _para_consulta(filtros: dict[str, str]) -> dict[str, str | None]:
+    """Os filtros da tela nos nomes de `registros_do_periodo`."""
+    return {"categoria": filtros["categoria"] or None,
+            "prioridade": filtros["prioridade"] or None,
+            "status": filtros["status"] or None,
+            "texto": filtros["q"] or None}
+
+
+def _nome_do_responsavel(con, resp_sql: int | None, user: dict[str, Any],
+                         registros: list[dict[str, Any]] | None = None) -> str:
+    """O nome de quem foi filtrado. Quem saiu da casa não está entre os ativos."""
+    if resp_sql is None:
+        return "Todos"
+    if resp_sql == user.get("id"):
+        return (user.get("full_name") or user.get("username") or "").strip()
+    for u in PR.listar_escreventes_ativos(con):
+        if u["id"] == resp_sql:
+            return u["full_name"] or u["username"]
+    for r in reversed(registros or []):
+        if r.get("responsavel_nome"):
+            return r["responsavel_nome"]
+    return f"Funcionário nº {resp_sql}"
+
+
+def _descricao_dos_filtros(nome_responsavel: str, filtros: dict[str, str]) -> list[tuple[str, str]]:
+    """Os filtros em uso, para o papel e para o Excel."""
+    linhas = [("Funcionário", nome_responsavel)]
+    for rotulo, chave in (("Categoria", "categoria"), ("Prioridade", "prioridade"),
+                          ("Situação", "status"), ("Texto", "q")):
+        if filtros[chave]:
+            linhas.append((rotulo, filtros[chave]))
+    return linhas
+
+
 def _json_erro(msg: str, codigo: int = 400):
     return jsonify({"ok": False, "erro": msg}), codigo
 
@@ -55,7 +94,95 @@ def register_produtividade_routes(
     request,
     flash,
     current_user_fn: Callable[[], dict[str, Any] | None],
+    parse_date: Callable[[str | None], str | None],
 ) -> None:
+    def _pedido() -> tuple[dict[str, Any], str, int | None, str, dict[str, str]]:
+        """Quem pede e o que filtra. O USER nunca sai dos próprios registros:
+        `_parse_filtro_responsavel` ignora o `responsavel` do endereço."""
+        user = _usuario_sessao(current_user_fn())
+        role = (user.get("role") or "USER").upper()
+        user_id = user.get("id")
+        resp_sql, resp_ui = _parse_filtro_responsavel(
+            request.args.get("responsavel"),
+            role=role,
+            user_id=int(user_id) if user_id else None,
+        )
+        filtros = {k: (request.args.get(k) or "").strip() for k in _CHAVES_DOS_FILTROS}
+        return user, role, resp_sql, resp_ui, filtros
+
+    def _volta_ao_relatorio(erro: ValueError, resp_ui: str, filtros: dict[str, str]):
+        """Período errado volta com o aviso, sem o período, e com o resto."""
+        flash(str(erro)[:160], "warning")
+        tipo = request.args.get("tipo")
+        return redirect(url_for(
+            "produtividade_relatorio",
+            tipo=tipo if tipo == "completo" else None,
+            responsavel=resp_ui,
+            **{k: v or None for k, v in filtros.items()},
+        ))
+
+    def _periodo_da_exportacao(filtros: dict[str, str]) -> tuple[str, str] | None:
+        """`None` é a exportação do dia, igual à de sempre. Filtro sem período
+        vira período de um dia: o painel do dia não respeita esses filtros, e a
+        planilha não pode juntar painel sem filtro com registros filtrados."""
+        de = request.args.get("data_de")
+        ate = request.args.get("data_ate")
+        if (de or "").strip() or (ate or "").strip():
+            return PR.validar_periodo(parse_date(de), parse_date(ate))
+        if any(filtros.values()):
+            dia = parse_date(request.args.get("data")) or PR.data_hoje_iso()
+            return PR.validar_periodo(dia, dia)
+        return None
+
+    @app.route("/administrativo/produtividade/relatorio")
+    @login_required
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def produtividade_relatorio():
+        user, role, resp_sql, resp_ui, filtros = _pedido()
+        tipo = "completo" if request.args.get("tipo") == "completo" else "simplificado"
+        try:
+            data_de, data_ate = PR.validar_periodo(
+                parse_date(request.args.get("data_de")),
+                parse_date(request.args.get("data_ate")),
+            )
+        except ValueError as erro:
+            return _volta_ao_relatorio(erro, resp_ui, filtros)
+        with get_db() as con:
+            registros = PR.registros_do_periodo(
+                con, data_de=data_de, data_ate=data_ate,
+                responsavel_user_id=resp_sql, **_para_consulta(filtros),
+            )
+            nome_responsavel = _nome_do_responsavel(con, resp_sql, user, registros)
+            escreventes = PR.listar_escreventes_ativos(con)
+            categorias = PR.listar_categorias(con)
+            status_list = PR.listar_status(con)
+            prioridades = PR.listar_prioridades(con)
+        return render_template(
+            "produtividade_relatorio.html",
+            tipo=tipo,
+            data_de=data_de,
+            data_ate=data_ate,
+            filtros=filtros,
+            filtro_responsavel=resp_ui,
+            nome_responsavel=nome_responsavel,
+            responsavel_fora_da_lista=(
+                resp_sql is not None and all(u["id"] != resp_sql for u in escreventes)
+            ),
+            descricao=_descricao_dos_filtros(nome_responsavel, filtros),
+            resumo=PR.resumir_registros(registros),
+            escreventes=escreventes,
+            categorias=categorias,
+            status_list=status_list,
+            prioridades=prioridades,
+            user_role=role,
+            emitido_em=datetime.now().strftime("%d/%m/%Y %H:%M"),
+            emitido_por=(user.get("full_name") or user.get("username") or "").strip(),
+            parametros={
+                "data_de": data_de, "data_ate": data_ate, "responsavel": resp_ui,
+                **{k: v or None for k, v in filtros.items()},
+            },
+        )
+
     @app.route("/administrativo/produtividade", methods=["GET", "POST"])
     @login_required
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -144,9 +271,10 @@ def register_produtividade_routes(
                 data_filtro=data_filtro,
                 responsavel_user_id=resp_sql,
             )
+            limite_pedido = 2000 if (periodo or lista["ordem"]) else 120
             registros = PR.listar_registros(
                 con,
-                limite=2000 if (periodo or lista["ordem"]) else 120,
+                limite=limite_pedido,
                 responsavel_user_id=resp_sql,
                 data_exata=None if periodo else data_filtro,
                 data_de=lista["data_de"] or None,
@@ -164,9 +292,12 @@ def register_produtividade_routes(
                     con, responsavel_user_id=int(user_id), limite=40
                 )
 
+        limite_da_lista = PR.teto_da_lista(limite_pedido, lista["ordem"] or None)
         return render_template(
             "produtividade_lista.html",
             registros=registros,
+            limite_da_lista=limite_da_lista,
+            lista_cortada=len(registros) >= limite_da_lista,
             categorias=categorias,
             status_list=status_list,
             prioridades=prioridades,
@@ -196,20 +327,19 @@ def register_produtividade_routes(
     @login_required
     @roles_required("ADMIN", "MANAGER", "USER")
     def produtividade_exportar_csv():
-        user = _usuario_sessao(current_user_fn())
-        role = (user.get("role") or "USER").upper()
-        user_id = user.get("id")
+        _user, _role, resp_sql, resp_ui, filtros = _pedido()
         data_filtro = (request.args.get("data") or PR.data_hoje_iso()).strip()[:10]
-        resp_sql, _ = _parse_filtro_responsavel(
-            request.args.get("responsavel"),
-            role=role,
-            user_id=int(user_id) if user_id else None,
-        )
+        try:
+            periodo = _periodo_da_exportacao(filtros)
+        except ValueError as erro:
+            return _volta_ao_relatorio(erro, resp_ui, filtros)
         with get_db() as con:
             conteudo = PR.exportar_csv(
-                con, data_filtro=data_filtro, responsavel_user_id=resp_sql
+                con, data_filtro=data_filtro, responsavel_user_id=resp_sql,
+                periodo=periodo, filtros=_para_consulta(filtros),
             )
-        nome = f"produtividade_{data_filtro}.csv"
+        marca = f"{periodo[0]}_a_{periodo[1]}" if periodo else data_filtro
+        nome = f"produtividade_{marca}.csv"
         return Response(
             "\ufeff" + conteudo,
             mimetype="text/csv; charset=utf-8",
@@ -221,20 +351,24 @@ def register_produtividade_routes(
     @login_required
     @roles_required("ADMIN", "MANAGER", "USER")
     def produtividade_exportar_xlsx():
-        user = _usuario_sessao(current_user_fn())
-        role = (user.get("role") or "USER").upper()
-        user_id = user.get("id")
+        user, _role, resp_sql, resp_ui, filtros = _pedido()
         data_filtro = (request.args.get("data") or PR.data_hoje_iso()).strip()[:10]
-        resp_sql, _ = _parse_filtro_responsavel(
-            request.args.get("responsavel"),
-            role=role,
-            user_id=int(user_id) if user_id else None,
-        )
+        try:
+            periodo = _periodo_da_exportacao(filtros)
+        except ValueError as erro:
+            return _volta_ao_relatorio(erro, resp_ui, filtros)
         with get_db() as con:
+            descricao = None
+            if periodo:
+                descricao = _descricao_dos_filtros(
+                    _nome_do_responsavel(con, resp_sql, user), filtros
+                )
             conteudo = PR.exportar_xlsx(
-                con, data_filtro=data_filtro, responsavel_user_id=resp_sql
+                con, data_filtro=data_filtro, responsavel_user_id=resp_sql,
+                periodo=periodo, filtros=_para_consulta(filtros), descricao=descricao,
             )
-        nome = f"produtividade_{data_filtro}.xlsx"
+        marca = f"{periodo[0]}_a_{periodo[1]}" if periodo else data_filtro
+        nome = f"produtividade_{marca}.xlsx"
         return Response(
             conteudo,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

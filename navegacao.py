@@ -627,6 +627,7 @@ PAI: dict[str, tuple[str, str]] = {
     "selo_portal_remessa": ("FIN", "Gratuidades"),
     "livro_diario_versao": ("FIN", "Livro Diário"),
     "relatos_diarios": ("FIN", "Produtividade"),
+    "produtividade_relatorio": ("FIN", "Produtividade"),
     # Gestão
     "agente_sessao": ("GESTAO", "Agente e leituras"),
     "gestor_relatorio_ia_papel": ("GESTAO", "LGPD e auditoria"),

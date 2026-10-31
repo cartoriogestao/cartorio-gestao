@@ -897,6 +897,17 @@ CREATE TABLE IF NOT EXISTS pt_creditos_banco (
 );
 CREATE INDEX IF NOT EXISTS ix_pt_creditos_banco_titulo
     ON pt_creditos_banco(titulo_id, situacao);
+
+-- OS PROTOCOLOS QUE ESTE SISTEMA JA EMITIU (30/10/2026). A chave primaria e a
+-- protecao no banco: um numero emitido nao se emite de novo, nem depois de o
+-- titulo sair. `pt_titulos.protocolo` nao pode ser UNIQUE, porque os dois
+-- devedores do mesmo titulo dividem o protocolo (34 no acervo). O E-Oficio
+-- guardava o ultimo do dia em `tbProtocoloProtesto`.
+CREATE TABLE IF NOT EXISTS pt_protocolos_emitidos (
+    protocolo TEXT PRIMARY KEY,
+    titulo_id INTEGER NOT NULL,
+    emitido_em TEXT NOT NULL
+);
 """
 
 # Colunas acrescentadas depois. Aditivo, no padrao do sistema.

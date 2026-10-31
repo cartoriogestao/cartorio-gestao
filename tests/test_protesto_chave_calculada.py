@@ -312,19 +312,14 @@ def test_protocolo_sem_digito_nao_casa_com_quem_nao_tem_protocolo(con):
     assert _chave(con, novo) == _chave_montada(10)
 
 
-def test_protocolo_que_acabou_de_nascer_nao_herda_chave_de_outro(con):
-    """`numero_do_protocolo` conta os do dia: com buraco, o número se repete.
-
-    São dois do dia, e o próximo sai `...0003`, que já é de um terceiro título.
-    Herdar por essa repetição poria a chave de uma pessoa no título de outra.
-    """
+def test_protocolo_que_acabou_de_nascer_toma_chave_nova(con):
     _titulo(con, chave_origem="L:1", protocolo="2610300001")
     alheio = _titulo(con, chave_origem="L:2", chave=_chave_montada(50),
                      protocolo="2610300003")
     novo = _titulo(con, chave_origem="L:3")
     _apontar(con, novo)
     assert con.execute("SELECT protocolo FROM pt_titulos WHERE id=?",
-                       (novo,)).fetchone()["protocolo"] == "2610300003"
+                       (novo,)).fetchone()["protocolo"] == "2610300004"
     assert _chave(con, novo) == _chave_montada(51)
     assert _chave(con, alheio) == _chave_montada(50)
 

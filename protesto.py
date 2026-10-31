@@ -497,21 +497,45 @@ def numero_do_protocolo(con, dia: str) -> str:
     928 dos 931. Antes de 2024 havia outro esquema — `7797140001` para
     14/02/2022 —, que nao se reproduz: o que vale e o que a casa faz agora.
 
-    O NUMERO SAI DA CONTA DO DIA, e nao de um contador a parte. O Livro de
-    Protocolo do Protesto tem numeracao diaria — reinicia sozinha —, e por
-    isso nao ha contador em `nu_numeracao` para semear. Contar o que ja saiu
-    hoje e o mesmo que `escrituracao._proximo_do_dia` faz para as series
-    diarias, sem precisar de livro aberto: a geometria do Livro de Protocolo
-    (quantos por face) e pendencia em aberto, e escrever nele antes de
-    conferir seria inventar.
+    O NUMERO E O MAIOR DO DIA MAIS UM, e nao a contagem do dia (30/10/2026).
+    Contar repetia numero: com `0001` e `0003` gravados, a conta dava `0003`
+    outra vez, e o titulo de uma pessoa ficava com o protocolo do de outra. Na
+    producao ha um dia assim na forma de hoje, o 02/06/2025, e nove no esquema
+    antigo. O maior olha os titulos E os protocolos ja emitidos, para o numero
+    nao voltar depois que um titulo sair. O Livro de Protocolo do Protesto tem
+    numeracao diaria, e por isso nao ha contador em `nu_numeracao`: a geometria
+    dele (quantos por face) e pendencia em aberto.
+
+    SO LE. Quem grava trava antes e chama `_emitir_protocolo`.
     """
     d = str(dia)[:10]
     prefixo = d[2:4] + d[5:7] + d[8:10]
-    n = banco(con).valor(
-        """SELECT COUNT(*) AS n FROM pt_titulos
-            WHERE protocolo IS NOT NULL AND protocolo ILIKE %s""",
-        (f"{prefixo}%",))
-    return f"{prefixo}{int(n) + 1:04d}"
+    bd = banco(con)
+    numeros = [
+        linha["protocolo"].strip()[len(prefixo):]
+        for sql in ("SELECT protocolo FROM pt_titulos WHERE protocolo LIKE %s",
+                    "SELECT protocolo FROM pt_protocolos_emitidos "
+                    "WHERE protocolo LIKE %s")
+        for linha in bd.ler(sql, (f"{prefixo}%",))]
+    maior = max((int(n) for n in numeros if n.isdigit()), default=0)
+    return f"{prefixo}{maior + 1:04d}"
+
+
+def _emitir_protocolo(bd, titulo_id: int, agora: str) -> str:
+    """Emite o protocolo do titulo. ESCREVE. Trava na transacao de quem chama.
+
+    A TRAVA VEM ANTES DA LEITURA: e ela que faz dois apontamentos ao mesmo tempo
+    nao lerem o mesmo maior. A chave primaria de `pt_protocolos_emitidos` e a
+    protecao no banco, se um dia alguem emitir sem passar por aqui.
+    """
+    bd.travar("pt_titulos.protocolo")
+    protocolo = numero_do_protocolo(bd, agora)
+    bd.escrever(
+        """INSERT INTO pt_protocolos_emitidos(protocolo, titulo_id, emitido_em)
+           VALUES (%s,%s,%s)""", (protocolo, titulo_id, agora))
+    bd.escrever("UPDATE pt_titulos SET protocolo=%s WHERE id=%s",
+                (protocolo, titulo_id))
+    return protocolo
 
 
 # ----------------------------------------------------------- o apontamento
@@ -557,9 +581,7 @@ def lancar_apontamento(con, titulo_id: int, *, sv: dict,
     # acervo com ele) fica com o que tinha: renumerar apagaria o que a Central
     # ja conhece.
     if not (tit["protocolo"] or "").strip():
-        bd.travar("pt_titulos.protocolo")
-        bd.escrever("UPDATE pt_titulos SET protocolo=%s WHERE id=%s",
-                    (numero_do_protocolo(bd, agora), titulo_id))
+        _emitir_protocolo(bd, titulo_id, agora)
 
     # A TRAVA VEM ANTES DA LEITURA: e ela que faz o sequencial crescer sem
     # repetir, e o segundo devedor do protocolo ver a chave do primeiro.

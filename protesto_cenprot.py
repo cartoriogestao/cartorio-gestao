@@ -361,10 +361,7 @@ def chave_do_apontamento(con: Any, titulo_id: int, *, protocolo_de_antes,
     """A chave que o titulo da CRA leva ao ser apontado. So LE; quem grava trava.
 
     `protocolo_de_antes` e o que o titulo ja tinha ANTES deste apontamento. So
-    ele procura irmao: o protocolo que acabou de nascer e de um titulo so, e
-    `numero_do_protocolo` numera pela contagem do dia, de modo que um buraco na
-    sequencia pode repetir o numero de outro titulo. Herdar por essa repeticao
-    escreveria a chave de uma pessoa no titulo de outra.
+    ele procura irmao: o protocolo que acabou de nascer e de um titulo so.
 
     SEM CONFIGURACAO, DEVOLVE `None` E O APONTAMENTO SEGUE: ele e o ato da lei
     (Lei 9.492/1997, art. 3o), e a chave e dado para a Central. Vale para pesos

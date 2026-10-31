@@ -1,6 +1,30 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>Modelos de atos do Registro de Imóveis</h1>{% endblock %}
 {% block content %}
+{# NO LAYOUT NOVO, REGISTROS E AVERBAÇÕES FICAM LADO A LADO — 30/10/2026. O catálogo é o mesmo, recolhido como
+   sempre; só cabe mais na tela. Cada coluna cresce sozinha quando um modelo se abre. #}
+{% macro modelo_do_ato(m) %}
+<details class="panel">
+  <summary>
+    <span class="badge {{ 'ok' if m.tipo == 'R' else 'media' }}">{{ m.tipo }}</span>
+    <strong>{{ m.nome }}</strong>
+    <small class="muted">— {{ m.fundamentacao }}</small>
+  </summary>
+  <div style="padding:14px 18px">
+    <p><strong>Requisitos a conferir antes de lavrar</strong></p>
+    <ol class="small">{% for r in m.requisitos %}<li>{{ r }}</li>{% endfor %}</ol>
+    <p><strong>Teor do modelo</strong>
+      <small class="muted">o que está entre [colchetes] é preenchimento manual</small></p>
+    <div class="teor">{{ m.corpo|sem_script }}</div>
+    {% if matricula_id %}
+    <div class="actions">
+      <a class="button primary" href="{{ url_for('ri_preencher_modelo', matricula_id=matricula_id, codigo=m.codigo) }}">
+        Usar este modelo na matrícula {{ matricula_numero }}</a>
+    </div>
+    {% endif %}
+  </div>
+</details>
+{% endmacro %}
 <div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a></div>
 
 <div class="notice warning">
@@ -29,28 +53,31 @@
 
 <p class="muted small">{{ modelos|length }} de {{ total }} modelos.</p>
 
+{% if layout_novo %}
+<style>
+  .cg-modelos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px;align-items:start}
+  .cg-modelos-uma{grid-template-columns:minmax(0,1fr)}
+  .cg-modelos>div{min-width:0}
+  .cg-modelos h2{font-size:14px;margin:0 0 6px}
+  .cg-modelos details.panel{padding:8px 12px;margin-bottom:4px}
+  .cg-modelos details.panel>summary{font-size:14px;font-weight:400;margin:0}
+  @media(max-width:1000px){.cg-modelos{grid-template-columns:minmax(0,1fr)}}
+</style>
+{% set os_registros = modelos | selectattr('tipo', 'equalto', 'R') | list %}
+{% set as_averbacoes = modelos | rejectattr('tipo', 'equalto', 'R') | list %}
+{% if modelos %}
+<div class="cg-modelos{% if not os_registros or not as_averbacoes %} cg-modelos-uma{% endif %}">
+  {% if os_registros %}<div><h2>Registros ({{ os_registros | length }})</h2>{% for m in os_registros %}{{ modelo_do_ato(m) }}{% endfor %}</div>{% endif %}
+  {% if as_averbacoes %}<div><h2>Averbações ({{ as_averbacoes | length }})</h2>{% for m in as_averbacoes %}{{ modelo_do_ato(m) }}{% endfor %}</div>{% endif %}
+</div>
+{% else %}
+<div class="notice">Nenhum modelo encontrado.</div>
+{% endif %}
+{% else %}
 {% for m in modelos %}
-<details class="panel">
-  <summary>
-    <span class="badge {{ 'ok' if m.tipo == 'R' else 'media' }}">{{ m.tipo }}</span>
-    <strong>{{ m.nome }}</strong>
-    <small class="muted">— {{ m.fundamentacao }}</small>
-  </summary>
-  <div style="padding:14px 18px">
-    <p><strong>Requisitos a conferir antes de lavrar</strong></p>
-    <ol class="small">{% for r in m.requisitos %}<li>{{ r }}</li>{% endfor %}</ol>
-    <p><strong>Teor do modelo</strong>
-      <small class="muted">o que está entre [colchetes] é preenchimento manual</small></p>
-    <div class="teor">{{ m.corpo|sem_script }}</div>
-    {% if matricula_id %}
-    <div class="actions">
-      <a class="button primary" href="{{ url_for('ri_preencher_modelo', matricula_id=matricula_id, codigo=m.codigo) }}">
-        Usar este modelo na matrícula {{ matricula_numero }}</a>
-    </div>
-    {% endif %}
-  </div>
-</details>
+{{ modelo_do_ato(m) }}
 {% else %}
 <div class="notice">Nenhum modelo encontrado.</div>
 {% endfor %}
+{% endif %}
 {% endblock %}

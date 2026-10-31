@@ -1,11 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Certidão eletrônica na CRC{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
 
 {# A CERTIDAO ELETRONICA DE UM REGISTRO DESTA CASA — pedido do oficial em
    10/09/2026. Ate aqui so havia como criar a partir de um PEDIDO que veio da
    Central; quem chega ao balcao pedindo certidao eletronica nao passa por
    aquela fila. #}
+{# NO LAYOUT NOVO, CONFERIR E CRIAR FICAM LADO A LADO, À VISTA — 30/10/2026. O que já saiu deste registro
+   vem antes, porque quem não vê isso cria outra, que custa. Os dados que vão à Central e o JSON ficam
+   recolhidos. Os dois formulários continuam os mesmos, e no layout antigo nada sai do lugar. #}
 <h1>Certidão eletrônica na CRC</h1>
 
 <p class="muted">
@@ -32,11 +36,7 @@
 
 {# CONFERIR E CRIAR SAO DOIS BOTOES, e por isso dois formularios: este refaz a
    conferencia com os campos mudados e NAO manda nada. #}
-<form method="post"
-      action="{{ url_for('rcpn_certidao_eletronica_nova', assento_id=assento.id) }}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <section class="card">
-    <h2>Como a certidão vai</h2>
+{% set como_vai %}
     <label>Tipo de registro
       <select name="tipo_registro">
         {% for t in tipos %}
@@ -61,23 +61,34 @@
       esta casa nunca selou certidão eletrônica, e escolher um caminho de selo
       por semelhança seria assinar por quem selou.
     </small></p>
+{% endset %}
+{% if not layout_novo %}
+<form method="post"
+      action="{{ url_for('rcpn_certidao_eletronica_nova', assento_id=assento.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <section class="card">
+    <h2>Como a certidão vai</h2>
+    {{ como_vai }}
   </section>
 </form>
+{% endif %}
 
-{% if c.avisos %}
-<section class="card warning">
-  <h2>O que vai em branco, e por quê</h2>
+{% set em_branco %}
   <ul>{% for a in c.avisos %}<li>{{ a }}</li>{% endfor %}</ul>
   <p><small>
     Nada disto impede o envio: <strong>o contrato da Central não declara campo
     obrigatório nenhum</strong> nos cinco esquemas, e inventar obrigação que ele
     não declara seria o erro do outro lado.
   </small></p>
+{% endset %}
+{% if c.avisos and not layout_novo %}
+<section class="card warning">
+  <h2>O que vai em branco, e por quê</h2>
+  {{ em_branco }}
 </section>
 {% endif %}
 
-<section class="card">
-  <h2>O registro, como ele vai</h2>
+{% set o_registro %}
   <div class="table-wrap">
     <table>
       <tbody>
@@ -88,12 +99,17 @@
       </tbody>
     </table>
   </div>
+{% endset %}
+{% if not layout_novo %}
+<section class="card">
+  <h2>O registro, como ele vai</h2>
+  {{ o_registro }}
 </section>
+{% endif %}
 
 
 {# Opção local enquanto a API CRC não está em uso operacional. #}
-<section class="card">
-  <h2>Emitir JSON (CRC)</h2>
+{% set o_json %}
   <p>Baixa o JSON no formato da documentação CRC/ON-RCPN
      (<code>certificate-json</code>), montado a partir deste assento.
      <strong>Não chama a API da CRC</strong> — opção local enquanto a
@@ -107,8 +123,15 @@
     <input type="hidden" name="cota_isento" value="{{ '1' if campos.cota_isento else '' }}">
     <button class="button" type="submit">Emitir JSON (CRC)</button>
   </form>
+{% endset %}
+{% if not layout_novo %}
+<section class="card">
+  <h2>Emitir JSON (CRC)</h2>
+  {{ o_json }}
 </section>
+{% endif %}
 
+{% set criar %}
 <section class="card">
   <h2>Criar a certidão eletrônica</h2>
   {% if not tem_credencial %}
@@ -136,13 +159,14 @@
     </small></p>
   {% endif %}
 </section>
+{% endset %}
+{% if not layout_novo %}{{ criar }}{% endif %}
 
 {# JA SAIU CERTIDAO ELETRONICA DESTE MESMO REGISTRO?
    Um segundo pedido do mesmo assento chega com frequencia, e quem nao ve isso
    CRIA OUTRA, que custa. #}
 {% if ja_saiu %}
-<section>
-  <h2>Já saíram deste registro</h2>
+{% set os_que_sairam %}
   <div class="table-wrap">
     <table>
       <thead><tr>
@@ -188,6 +212,39 @@
       </tbody>
     </table>
   </div>
+{% endset %}
+{% if not layout_novo %}
+<section>
+  <h2>Já saíram deste registro</h2>
+  {{ os_que_sairam }}
 </section>
+{% endif %}
+{% endif %}
+
+{% if layout_novo %}
+<style>
+  .cg-ce-duas{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:12px;align-items:start;margin-bottom:8px}
+  .cg-ce-duas>*{min-width:0;margin:0}
+  .cg-ce-duas>.card>h2{margin-top:0;font-size:16px}
+  .cg-ce-campos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px}
+  .cg-ce-campos>p{grid-column:1/-1;margin:0}
+  .cg-ce-campos>button{justify-self:start;align-self:end}
+  @media(max-width:1200px){.cg-ce-duas{grid-template-columns:minmax(0,1fr)}}
+</style>
+{% if ja_saiu %}{{ abre('ce-ja-saiu', 'Já saíram deste registro', (ja_saiu | length) ~ ' certidão(ões) — confira antes de criar outra, que custa', aberto=true) }}<div class="cg-quadro-corpo">{{ os_que_sairam }}</div></details>{% endif %}
+<div class="cg-ce-duas">
+  {{ abre('ce-como', 'Como a certidão vai', 'refazer a conferência não manda nada', aberto=true) }}
+    <form method="post" class="cg-ce-campos cg-quadro-corpo"
+          action="{{ url_for('rcpn_certidao_eletronica_nova', assento_id=assento.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {{ como_vai }}
+    </form>
+  </details>
+  {{ criar }}
+</div>
+{% if c.avisos %}{{ abre('ce-em-branco', 'O que vai em branco, e por quê', (c.avisos | length) ~ ' campo(s) — nada disto impede o envio', aberto=true) }}<div class="cg-quadro-corpo">{{ em_branco }}</div></details>{% endif %}
+{{ abre('ce-registro', 'O registro, como ele vai', (c.registro | length) ~ ' campo(s)') }}<div class="cg-quadro-corpo">{{ o_registro }}</div></details>
+{{ abre('ce-json', 'Emitir JSON (CRC)', 'opção local: não chama a API da CRC') }}<div class="cg-quadro-corpo">{{ o_json }}</div></details>
+{{ ferramentas() }}
 {% endif %}
 {% endblock %}

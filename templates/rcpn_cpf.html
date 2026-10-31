@@ -31,6 +31,11 @@ document.addEventListener("click", function (e) {
 </script>
 {% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, OS NASCIMENTOS SEM CPF VÊM PRIMEIRO — 30/10/2026. Cada um é um quadro, e o primeiro já
+   vem aberto; a norma, os caminhos e o preenchedor ficam recolhidos, depois da lista. Em monitor Full HD
+   os dados para copiar ficam em duas colunas, na mesma ordem. O formulário de cada assento é o mesmo,
+   e no layout antigo nada sai do lugar. #}
 <h1>CPF no registro de nascimento</h1>
 
 <div class="alerta danger">
@@ -39,6 +44,7 @@ document.addEventListener("click", function (e) {
      as letras, que «não é um ato discricionário dos usuários».</p>
 </div>
 
+{% set quando_se_pode %}
 <div class="alerta danger">
   <p><strong>Quando se pode pedir</strong> — o aviso é da própria tela da CRC,
      assinado pela Arpen-Brasil e pela Receita Federal:</p>
@@ -46,14 +52,15 @@ document.addEventListener("click", function (e) {
   <p class="small">{{ norma.QUANDO_NAO_SE_PODE|forte }}</p>
   <p class="small">{{ norma.PENALIDADE|forte }}</p>
   <p class="small muted">
-    É por isso que <strong>o acervo não aparece na lista abaixo</strong>: para
+    É por isso que <strong>o acervo não aparece na lista{% if not layout_novo %} abaixo{% endif %}</strong>: para
     registro lavrado antes, pedir CPF não é apenas inútil — é proibido, com
     penalidade nomeada. O caminho daqueles é o mutirão do art. 347.
   </p>
 </div>
+{% endset %}
+{% if not layout_novo %}{{ quando_se_pode }}{% endif %}
 
-<div class="card">
-  <h2 style="margin-top:0">O que falta para o sistema pedir sozinho</h2>
+{% set o_que_falta %}
   <table class="tabela">
     <tr><th>o que falta</th><th>de quem</th></tr>
     {% for f in norma.FALTA_PARA_INTEGRAR %}
@@ -65,10 +72,15 @@ document.addEventListener("click", function (e) {
     </tr>
     {% endfor %}
   </table>
-</div>
-
+{% endset %}
+{% if not layout_novo %}
 <div class="card">
-  <h2 style="margin-top:0">Os três caminhos</h2>
+  <h2 style="margin-top:0">O que falta para o sistema pedir sozinho</h2>
+  {{ o_que_falta }}
+</div>
+{% endif %}
+
+{% set os_caminhos %}
   <table class="tabela">
     <tr><th>caminho</th><th>onde</th><th>como</th></tr>
     {% for c in norma.CAMINHOS %}
@@ -84,8 +96,15 @@ document.addEventListener("click", function (e) {
     assinado — não depende de nenhum desenvolvimento nosso. O terceiro é o que
     o oficial pediu, e é o que espera o manual de cargas com a parte do CPF.
   </p>
+{% endset %}
+{% if not layout_novo %}
+<div class="card">
+  <h2 style="margin-top:0">Os três caminhos</h2>
+  {{ os_caminhos }}
 </div>
+{% endif %}
 
+{% set se_recusar %}
 <div class="card">
   <p class="small"><strong>Quando a Receita recusar</strong>, o que fazer:</p>
   <p class="small">{{ norma.O_QUE_FAZER_SE_ERRAR|forte }}</p>
@@ -101,9 +120,10 @@ document.addEventListener("click", function (e) {
     <strong>{{ norma.PRAZO_CORRECAO_DIAS }} dias</strong>.
   </p>
 </div>
+{% endset %}
+{% if not layout_novo %}{{ se_recusar }}{% endif %}
 
-<div class="card">
-  <h2 style="margin-top:0">Preencher a CRC sem digitar de novo</h2>
+{% set o_preenchedor %}
   <p class="small muted">{{ norma.COMO_USAR_O_PREENCHEDOR|forte }}</p>
   <p>
     {# **ARRASTE, NAO CLIQUE.** Navegador moderno bloqueia `javascript:` colado
@@ -122,10 +142,33 @@ document.addEventListener("click", function (e) {
     nome, filiação e data de nascimento numa URL ficariam no histórico do
     navegador e nos registros do servidor do outro lado.
   </p>
+{% endset %}
+{% if not layout_novo %}
+<div class="card">
+  <h2 style="margin-top:0">Preencher a CRC sem digitar de novo</h2>
+  {{ o_preenchedor }}
 </div>
+{% endif %}
 
+{% if layout_novo %}
+<style>
+  .cg-cpf-lista-topo{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px}
+  .cg-cpf-lista-topo>h2{margin:10px 0 4px}
+  details[id^=cpf-assento-] form>p{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 12px}
+  details[id^=cpf-assento-] form>p>label{flex:0 1 22rem}
+  @media(min-width:1600px){
+    .cg-cpf-dados tbody{display:block;column-count:2;column-gap:28px}
+    .cg-cpf-dados tr{display:grid;grid-template-columns:13rem minmax(0,1fr) 6rem;break-inside:avoid}
+  }
+</style>
+<div class="cg-cpf-lista-topo">
+{% endif %}
 <h2>{{ linhas|length }}
     {{ 'nascimento sem CPF' if linhas|length == 1 else 'nascimentos sem CPF' }}</h2>
+{% if layout_novo %}
+{% if linhas | length > 1 %}<button type="button" class="button small secondary" onclick="document.querySelectorAll('details[id^=cpf-assento-]').forEach(function(d){d.open=true})">Abrir todos</button>{% endif %}
+</div>
+{% endif %}
 
 <p class="small muted">
   Só os lavrados por esta casa. <strong>O acervo fica de fora</strong>: o CPF
@@ -139,9 +182,14 @@ document.addEventListener("click", function (e) {
 {% endif %}
 
 {% for a in linhas %}
+{% if layout_novo %}
+{% set nota_do_assento %}{{ (a.data_ato or '')[:10] }} · {% if a.falta %}<span class="danger">falta {{ a.falta | length }} dado(s)</span>{% else %}tem tudo o que a Receita exige{% endif %}{% endset %}
+{{ abre('cpf-assento-' ~ a.id, 'Nascimento nº ' ~ a.numero ~ ' — ' ~ a.nome, nota_do_assento, aberto=loop.first) }}<div class="cg-quadro-corpo">
+{% else %}
 <div class="card">
   <p><strong>Nascimento nº {{ a.numero }}</strong> — {{ a.nome }}
      <span class="small muted">({{ (a.data_ato or '')[:10] }})</span></p>
+{% endif %}
 
   {% if a.falta %}
     <p class="small danger">
@@ -156,7 +204,7 @@ document.addEventListener("click", function (e) {
      **Eles nao vao pela URL**: nome, filiacao e data de nascimento numa
      querystring ficariam no historico do navegador e nos registros do
      servidor do outro lado. Ficam aqui, para copiar. #}
-  <table class="tabela">
+  <table class="tabela{% if layout_novo %} cg-cpf-dados{% endif %}">
     {% for d in a.copiar %}
     <tr>
       <td class="small muted" style="width:13rem">{{ d.rotulo }}</td>
@@ -195,9 +243,12 @@ document.addEventListener("click", function (e) {
       <button class="button">Gravar</button>
     </p>
   </form>
+{% if layout_novo %}</div></details>{% else %}
 </div>
+{% endif %}
 {% endfor %}
 
+{% set por_que_janela %}
 <div class="card">
   <p class="small muted">
     <strong>Por que a CRC abre em janela separada, e não aqui dentro.</strong>
@@ -210,6 +261,18 @@ document.addEventListener("click", function (e) {
     certidão.
   </p>
 </div>
+{% endset %}
+{% if layout_novo %}
+{{ abre('cpf-quando', 'Quando se pode pedir', 'no registro, ou no primeiro dia útil depois; para registro antigo, é proibido') }}<div class="cg-quadro-corpo">{{ quando_se_pode }}</div></details>
+{{ abre('cpf-falta', 'O que falta para o sistema pedir sozinho', (norma.FALTA_PARA_INTEGRAR | length) ~ ' item(ns)') }}<div class="cg-quadro-corpo">{{ o_que_falta }}</div></details>
+{{ abre('cpf-caminhos', 'Os três caminhos', 'formulário na CRC, Unidade Interligada e integração') }}<div class="cg-quadro-corpo">{{ os_caminhos }}</div></details>
+{{ abre('cpf-recusa', 'Quando a Receita recusar', 'o que fazer e os erros mais comuns') }}<div class="cg-quadro-corpo">{{ se_recusar }}</div></details>
+{{ abre('cpf-preencher', 'Preencher a CRC sem digitar de novo', 'o botão para os favoritos') }}<div class="cg-quadro-corpo">{{ o_preenchedor }}</div></details>
+{{ abre('cpf-janela', 'Por que a CRC abre em janela separada', 'e como o número é conferido') }}<div class="cg-quadro-corpo">{{ por_que_janela }}</div></details>
+{{ ferramentas() }}
+{% else %}
+{{ por_que_janela }}
+{% endif %}
 {# UM CLIQUE POR CAMPO, em vez de selecionar com o mouse.
    **E paliativo, e esta dito na tela que e.** O que resolve de verdade e
    preencher o formulario da CRC de uma vez — e para isso preciso ver os nomes

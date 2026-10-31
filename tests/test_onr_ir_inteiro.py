@@ -210,8 +210,9 @@ def _ficha(app, numero: str, **campos):
     d = app.extensions["db"]
     with d.transaction() as con:
         linha = banco(con).um(
-            "INSERT INTO ri_matriculas (numero, livro, livro_norm, origem) VALUES (%s, '2', '2', 'MANUAL') RETURNING id",
-            (numero,))
+            "INSERT INTO ri_matriculas (numero, livro, livro_norm, origem, criado_em) "
+            "VALUES (%s, '2', '2', 'MANUAL', %s) RETURNING id",
+            (numero, "2026-10-30T09:00:00"))
         for coluna, valor in campos.items():
             banco(con).escrever(f"UPDATE ri_matriculas SET {coluna} = %s WHERE id = %s", (valor, linha["id"]))
     return linha["id"]

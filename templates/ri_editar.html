@@ -57,6 +57,12 @@
           {% endfor %}
         </optgroup>
         {% endfor %}
+        {# O VALOR GRAVADO FORA DA LISTA CONTINUA NA CAIXA, nesta e nas duas de baixo. Sem isto, a caixa caía em
+           branco, e gravar a correção de OUTRO campo apagava o que estava lá sem ninguém pedir. Medido na
+           produção em 31/10/2026: 5 fichas com a localização escrita por extenso. #}
+        {% if m.aberta_nome and not aberta_recusada and m.aberta_nome not in delegatarios | map(attribute='nome') | list %}
+        <option value="{{ m.aberta_nome }}" selected>{{ m.aberta_nome }} — não está mais na lista</option>
+        {% endif %}
       </select>
       <small class="muted">sai impresso na ficha, antes da linha de
         assinatura. Em branco, a ficha imprime só a linha — quem assina
@@ -84,6 +90,7 @@
         <option value="">—</option>
         <option value="U" {% if m.rural_urbano=='U' %}selected{% endif %}>Urbano</option>
         <option value="R" {% if m.rural_urbano=='R' %}selected{% endif %}>Rural</option>
+        {% if m.rural_urbano and m.rural_urbano not in ('U', 'R') %}<option value="{{ m.rural_urbano }}" selected>{{ m.rural_urbano }}</option>{% endif %}
       </select>
     </label>
     <label data-passo="imovel">Área<input name="area_valor" value="{{ m.area_valor or '' }}"></label>
@@ -92,6 +99,7 @@
         <option value="">—</option>
         <option {% if m.area_unidade=='m2' %}selected{% endif %}>m2</option>
         <option {% if m.area_unidade=='ha' %}selected{% endif %}>ha</option>
+        {% if m.area_unidade and m.area_unidade not in ('m2', 'ha') %}<option selected>{{ m.area_unidade }}</option>{% endif %}
       </select>
     </label>
     <label class="span2" data-passo="imovel">Descrição do perímetro<textarea name="descricao_perimetro" rows="5">{{ m.descricao_perimetro or '' }}</textarea></label>

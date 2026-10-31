@@ -514,6 +514,21 @@ def test_o_preenchimento_do_modelo_vem_antes_do_rascunho():
     assert ">do modelo</textarea>" in html and "do rascunho" not in html
 
 
+@pytest.mark.parametrize("campo, valor", [("rural_urbano", "URBANO"), ("area_unidade", "alqueire"),
+                                          ("aberta_nome", "Pessoa que saiu da lista")])
+def test_o_valor_gravado_fora_da_lista_continua_na_caixa(campo, valor):
+    """Sem isto, gravar a correção de outro campo apagava o valor sem ninguém pedir."""
+    html = _editar(m={campo: valor})
+    assert re.search(rf'<option(?: value="{valor}")? selected>{valor}', html), campo
+
+
+def test_o_valor_da_lista_nao_ganha_opcao_repetida():
+    html = _editar(m={"rural_urbano": "R", "area_unidade": "ha"})
+    assert html.count(">Rural</option>") == 1
+    assert html.count(">ha</option>") == 1
+    assert '<option value="R" selected>R</option>' not in html
+
+
 def _editar(**extra):
     m = {"id": 3, "numero": "4100", "tipo_ficha": "ESTRUTURADA", "aberta_nome": "Mario Exemplo", "rural_urbano": "U", "area_unidade": "m2"}
     return _montar("ri_editar.html", layout_novo=False, m={**m, **extra.pop("m", {})}, versao_edicao="v",

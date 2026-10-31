@@ -252,6 +252,25 @@ def _texto(valor: Any, limite: int = 500) -> str:
     return " ".join(limpo.split())[:limite]
 
 
+def conferir_contato(email: Any, whatsapp: Any) -> tuple[str, str]:
+    """O e-mail e o WhatsApp de quem recebe o comprovante, no formato de envio. Só calcula."""
+    import wa_modelos
+    email = _texto(email, 150).lower()
+    # `nome@dominio.tld` sem expressão regular, como `contato_do_cliente`
+    # (CodeQL py/polynomial-redos): um só `@`, nenhum branco, e no domínio um
+    # ponto com algo dos dois lados.
+    nome, arroba, dominio = email.partition("@")
+    if email and not (nome and arroba and "@" not in dominio
+                      and not any(c.isspace() for c in email)
+                      and "." in dominio[1:-1]):
+        raise DespesaError("O e-mail do contato não confere.")
+    whatsapp = _texto(whatsapp, 30)
+    try:
+        return email, wa_modelos.telefone_e164(whatsapp) if whatsapp else ""
+    except wa_modelos.TelefoneInvalido as erro:
+        raise DespesaError(str(erro)) from erro
+
+
 def _carimbo(quando: datetime) -> str:
     return quando.replace(tzinfo=None, microsecond=0).isoformat(timespec="seconds")
 
@@ -605,7 +624,8 @@ def cadastrar(con, *, agora: datetime, por: str, origem: str, chave_origem: str 
               documento_especie: Any, documento_numero: Any = "",
               valor_esperado_centavos: int | None = None,
               anexo: tuple[str, bytes] | None = None, pasta_anexos: Path | None = None,
-              usuario_id: int | None = None) -> int:
+              usuario_id: int | None = None, contato_email: Any = "",
+              contato_whatsapp: Any = "") -> int:
     """Cadastra a despesa. ESCREVE. Devolve o id. Nunca paga.
 
     Idempotente por (origem, chave_origem): a mesma guia cadastrada duas
@@ -660,18 +680,19 @@ def cadastrar(con, *, agora: datetime, por: str, origem: str, chave_origem: str 
         regra = (f"Regra das guias: valor conferido com o calculado dos selos e dentro do "
                  f"teto de R$ {reais(tetos(cfg)['guia'])}.")
     situacao = AUTORIZADA if regra else AGUARDANDO
+    contato = conferir_contato(contato_email, contato_whatsapp)
     novo = bd.escrever(
         """INSERT INTO dp_despesas (situacao, natureza, categoria, descricao, beneficiario_nome,
                beneficiario_documento, valor, vencimento, forma, codigo, codigo_barras,
                documento_especie, documento_numero, origem, chave_origem, valor_esperado,
                divergencia, cadastrada_em, cadastrada_por, autorizada_em, autorizada_por,
-               autorizada_pela_regra)
+               autorizada_pela_regra, contato_email, contato_whatsapp)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                   %s, %s, %s, %s) RETURNING id""",
+                   %s, %s, %s, %s, %s, %s) RETURNING id""",
         (situacao, natureza, categoria, descricao, nome, documento, valor, vencimento, forma,
          lido["codigo"], lido["barras"], especie, _texto(documento_numero, 80), origem,
          chave_origem, valor_esperado_centavos, divergencia, quando, _texto(por, 120) or "?",
-         quando if regra else None, "regra das guias" if regra else None, regra))
+         quando if regra else None, "regra das guias" if regra else None, regra, *contato))
     despesa_id = int(novo[0]["id"])
     _evento(bd, despesa_id, "CADASTRAR", "ok",
             f"{CATEGORIAS[categoria][0]} — R$ {reais(valor)}"

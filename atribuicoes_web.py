@@ -12516,6 +12516,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return render_template(
             "protesto_cenprot_xml.html", listas=listas, feitos=feitos,
             cadastro=cadastro, tem_acervo=acervo is not None,
+            faltam_pesos_da_chave=not PCEN.pesos_validos(
+                db.get_setting(PCEN.CHAVE_DOS_PESOS, "")),
             minimo_de_letras=AFX.MINIMO_DE_LETRAS,
             modelo_da_afirmacao=AFX.MODELO,
             minimo_do_motivo=PCXML.MINIMO_DO_MOTIVO_DA_DEVOLUCAO,

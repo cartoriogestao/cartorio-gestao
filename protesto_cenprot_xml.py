@@ -875,9 +875,10 @@ def montar_titulo(con, ato_id: int, *,
     if len(chave) != 23:
         raise CenprotXmlError(
             "o título não tem a chave do CENPROT. O sistema a calcula só ao "
-            "apontar título vindo da CRA, com o IBGE e o número da serventia "
-            "nas configurações; fora disso, ela vem do XML que a Central "
-            "devolve (tela «Chave do CENPROT»)")
+            "apontar título vindo da CRA, e para isso precisa do quadro «Chave "
+            "da CENPROT» preenchido em Administrativo → Configuração → "
+            "Configurações; fora disso, ela vem do XML que a Central devolve "
+            "(tela «Chave do CENPROT»)")
     # O TAB vem do próprio título; os outros, do cadastro pelo código.
     apr = apresentante_do_xml(bd, titulo)
     reg = registro_da_cra(bd, titulo, acervo)

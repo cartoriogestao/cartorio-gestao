@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}CNIB: consultar CPF ou CNPJ{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>CNIB: consultar CPF ou CNPJ</h1>
+  <a class="button" href="{{ url_for('ri_cnib') }}">Consultar a cópia local</a>
+</div>
+
+{% if pronto.falta %}
+<p class="notice warning">{% for frase in pronto.falta %}{{ frase }} {% endfor %}</p>
+{% else %}
+{# POR POST DE PROPÓSITO: o documento de uma pessoa não pode ficar no endereço, no histórico
+   do navegador nem nos registros do servidor. #}
+<form method="post" class="filters">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>CPF ou CNPJ
+    <input name="documento" value="{{ documento }}" required autofocus autocomplete="off"></label>
+  <button class="button primary" type="submit">Consultar na Central</button>
+</form>
+<p class="small muted">Vai direto à Central, e o que volta é o retrato de agora. A Central registra quem consultou,
+  e esta consulta fica na auditoria do sistema.</p>
+{% endif %}
+
+{% if erro %}
+<p class="notice warning">{{ erro }} <strong>Isso não quer dizer que não há ordem.</strong></p>
+{% elif r %}
+  {% if not r.respondeu or r.forma != 'documento' %}
+  <p class="notice warning">A Central respondeu numa forma que este sistema não conhece.
+    <strong>Isso não quer dizer que não há ordem:</strong> consulte no portal da CNIB.</p>
+  {% elif r.indisponivel %}
+  <section class="panel critical">
+    <div class="panel-head"><span>Há ordem de indisponibilidade</span><small>consultado em {{ quando }}</small></div>
+    <div style="padding:14px">
+      <p><strong>{{ r.nome or 'Sem nome na resposta' }}</strong> · {{ r.documento }}</p>
+      <p>A Central informa {{ r.quantas if r.quantas is not none else 'ao menos uma' }} ordem(ns) sobre este documento.</p>
+      {% if protocolos %}
+      <ul>{% for p in protocolos %}<li>{{ p }}</li>{% endfor %}</ul>
+      {% endif %}
+      <p class="small muted">Este sistema não lavra nada a partir desta tela: quem decide o que fazer é a serventia.
+        As ordens que esperam averbação estão em <a href="{{ url_for('ri_cnib_pendentes') }}">CNIB: o que espera seu okay</a>.</p>
+    </div>
+  </section>
+  {% else %}
+  <section class="panel">
+    <div class="panel-head"><span>A Central não aponta indisponibilidade</span><small>consultado em {{ quando }}</small></div>
+    <div style="padding:14px">
+      <p><strong>{{ r.nome or 'Sem nome na resposta' }}</strong> · {{ r.documento }}</p>
+      <p class="small muted">A resposta vale para este documento, neste momento. Homônimo com outro documento não entra nela.</p>
+    </div>
+  </section>
+  {% endif %}
+{% endif %}
+{% endblock %}

@@ -349,6 +349,9 @@
            E. Sem esta porta, o atualizador seria mais uma peca pronta que
            nenhuma tela alcanca — o defeito que mais se repetiu neste projeto. #}
         <a href="{{ url_for('cnib_central') }}">CNIB — a cópia local e a Central</a>
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('cnib_consulta') }}">CNIB — consultar CPF ou CNPJ</a>
+        <a href="{{ url_for('onr_saec') }}">ONR — atendimentos do SAEC</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('onr_cobrancas') }}">ONR — cobranças</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('ri_expurgos') }}">Atas de ocorrência</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('ri_resolver_imagens') }}">Fichas digitalizadas</a>{% endif %}
         {# A IA CONFERE AS TRANSCRIÇÕES DOS LIVROS ANTIGOS (LH11, 21/10/2026) —

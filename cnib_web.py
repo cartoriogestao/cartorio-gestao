@@ -20,6 +20,7 @@ import banco_pg
 import centrais_cred as CRED
 import cnib_api as API
 import cnib_atualizador as ATZ
+import cpf_cnpj as CC
 import identidade_do_robo as IDR
 
 # O MAIOR PEDAÇO QUE UMA IDA PODE PEDIR. Não é zelo: a fila desta serventia
@@ -162,6 +163,44 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             registrar=lambda d: audit("CNIB_LEITURA", "CNIB", None, d))
         flash(frase, tom)
         return redirect(url_for("cnib_central"))
+
+    # --------------------------------------------- a consulta por documento
+
+    @app.route("/registro-imoveis/cnib/consulta", methods=["GET", "POST"])
+    @login_required
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def cnib_consulta():
+        """O que pesa sobre este CPF ou CNPJ, agora, direto na Central. Só lê.
+
+        Pedido do oficial em 30/10/2026. A outra tela do CNIB consulta a cópia
+        local; esta pergunta à Central, com o cliente na frente. O documento vai
+        por POST para não ficar no endereço, e cada consulta fica na auditoria.
+        """
+        with db.connect() as con:
+            pronto = ATZ.esta_pronto(con)
+            cpf = ATZ.cpf_de_quem_consulta(con)
+        documento, resposta, erro, protocolos = "", None, "", []
+        if request.method == "POST":
+            documento = (request.form.get("documento") or "").strip()
+            if CC.documento_valido(documento) is not True:
+                flash(CC.mensagem_documento_invalido(documento), "danger")
+            elif pronto["pronto"]:
+                documento = CC.formatar_documento(documento)
+                try:
+                    resposta = API.consultar_por_documento(documento, cpf_usuario=cpf)
+                except (API.CnibError, CRED.CredencialError) as e:
+                    erro = str(e)
+                else:
+                    protocolos = [
+                        API.protocolo_da_ordem(p) if isinstance(p, dict) else str(p)
+                        for p in resposta["protocolos"]]
+                audit("CNIB_CONSULTA_DOCUMENTO", "CNIB", None, {
+                    "documento": documento, "erro": erro[:400],
+                    "indisponivel": resposta["indisponivel"] if resposta else None,
+                    "respondeu": resposta["respondeu"] if resposta else False})
+        return render_template(
+            "cnib_consulta.html", pronto=pronto, documento=documento, r=resposta,
+            erro=erro, protocolos=protocolos, quando=db.now()[:16].replace("T", " "))
 
     # ------------------------------------------------- o par que está no acervo
 

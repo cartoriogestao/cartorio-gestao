@@ -113,3 +113,10 @@ def test_as_duas_molduras_mandam_os_mesmos_campos(cg_app, especie):
     assert "data-cg-passos" in novo
     assert _campos(antigo) == _campos(novo)
     assert len(_campos(novo)) > 20, "o varredor deixou de achar os campos"
+
+
+def test_ao_trocar_de_passo_a_tela_volta_ao_comeco_dele():
+    """Em monitor menor, quem clica em «Avançar» está rolado para baixo, e cairia no meio do passo seguinte."""
+    js = (RAIZ / "static" / "fases.js").read_text(encoding="utf-8")
+    assert 'nav.scrollIntoView({ block: "nearest" })' in js
+    assert 'trocar(chaves[chaves.indexOf(aberto) + 1], true)' in js

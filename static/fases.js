@@ -145,12 +145,23 @@
     }
   }
 
+  // AO TROCAR DE PASSO, A TELA VOLTA AO COMEÇO DELE. Em monitor menor, quem clica em «Avançar» está
+  // rolado para baixo, e cairia no meio do passo seguinte. E com Voltar e Avançar o cursor vai para o
+  // primeiro campo, porque quem digita não deveria precisar do mouse a cada passo.
+  function trocar(chave, comCursor) {
+    abrir(chave);
+    nav.scrollIntoView({ block: "nearest" });
+    if (!comCursor) return;
+    var campo = form.querySelector("[data-passo]:not([hidden]) :is(input:not([type=hidden]),select,textarea)");
+    if (campo) campo.focus({ preventScroll: true });
+  }
+
   nav.addEventListener("click", function (ev) {
     var b = ev.target.closest("[data-passo-ir]");
-    if (b) abrir(b.getAttribute("data-passo-ir"));
+    if (b) trocar(b.getAttribute("data-passo-ir"), false);
   });
-  if (voltar) voltar.addEventListener("click", function () { abrir(chaves[chaves.indexOf(aberto) - 1]); });
-  if (avancar) avancar.addEventListener("click", function () { abrir(chaves[chaves.indexOf(aberto) + 1]); });
+  if (voltar) voltar.addEventListener("click", function () { trocar(chaves[chaves.indexOf(aberto) - 1], true); });
+  if (avancar) avancar.addEventListener("click", function () { trocar(chaves[chaves.indexOf(aberto) + 1], true); });
 
   // O navegador avisa de todos os campos inválidos de uma vez, e o cursor vai para o primeiro.
   // Só o primeiro conta: sem isto, abriria o passo do último, longe de onde o cursor ficou.

@@ -198,12 +198,40 @@ def parse_int(value: str | None) -> int | None:
         return None
 
 
+class DataInvalida(ValueError):
+    """A data que a pessoa digitou não é data, ou tem ano fora do razoável.
+
+    **NÃO SE DEVOLVE `None` NO LUGAR**: a data sumiria em silêncio, e o prazo
+    seria calculado sem ela. O `errorhandler` de `create_app` volta à tela com
+    o aviso, e nada se grava (of-0144).
+    """
+
+    def __init__(self, digitado: str):
+        super().__init__(f"Data inválida: {digitado!r}")
+        self.digitado = digitado
+
+
+ANO_MINIMO_DIGITADO = 1900
+ANO_MAXIMO_DIGITADO = 2100
+
+
 def parse_date(value: str | None) -> str | None:
+    """A data digitada, sempre em `AAAA-MM-DD`; vazia é `None`.
+
+    O ano tem régua porque `0026-10-26` é ISO válido, mas é erro de digitação.
+    E devolve a forma normalizada porque o Python novo aceita `20261026`, que
+    entraria fora do padrão na coluna.
+    """
     value = (value or "").strip()
     if not value:
         return None
-    date.fromisoformat(value)
-    return value
+    try:
+        data = date.fromisoformat(value)
+    except ValueError:
+        raise DataInvalida(value) from None
+    if not ANO_MINIMO_DIGITADO <= data.year <= ANO_MAXIMO_DIGITADO:
+        raise DataInvalida(value)
+    return data.isoformat()
 
 
 def calc_deadline(start: str | None, days: int | None) -> str | None:
@@ -3741,6 +3769,17 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.errorhandler(404)
     def not_found(_):
         return render_template("error.html", code=404, message="Registro ou página não encontrado."), 404
+
+    # A DATA DIGITADA ERRADA NÃO É DEFEITO DO SISTEMA (of-0144): volta à tela
+    # com o aviso, e não cai no 500 nem na lista de falhas de tela. Toda chamada
+    # de `parse_date` vem antes da primeira escrita da rota, e toda rota que a
+    # chama responde a GET.
+    @app.errorhandler(DataInvalida)
+    def data_invalida(erro):
+        flash(f"A data «{erro.digitado[:40]}» está errada. Nada foi gravado: "
+              "preencha os campos de novo, com a data certa.", "danger")
+        return redirect(SEGWEB.destino_interno(request.form.get("voltar"),
+                                               request.path))
 
     # ============ A TELA QUE ESTOURA VIRA UMA LINHA NA LISTA DE PROBLEMAS
     #

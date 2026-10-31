@@ -1,18 +1,40 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>CTP — Comunicação de Transações às Prefeituras</h1>{% endblock %}
 {% block content %}
+{# NO LAYOUT NOVO, UM QUADRO RECOLHIDO POR ATO — 30/10/2026. Cada ato tem mais de vinte campos, e um
+   mês com poucos atos já passava de quatro mil pixels. O resumo do quadro diz se o ato entra na
+   carga. O primeiro que espera alguma coisa vem aberto, e o seguinte abre depois de gravar. É um
+   formulário só: o que está recolhido vai junto quando se grava, e nada muda na regra. #}
+{% set tag_do_quadro = 'details' if layout_novo else 'section' %}
+{% set tag_da_cabeca = 'summary' if layout_novo else 'div' %}
+{% if layout_novo %}
+<style>
+  details.cg-ctp-quadro{padding:10px 16px;margin-bottom:8px}
+  details.cg-ctp-quadro>summary{list-style:none;margin:0}
+  details.cg-ctp-quadro>summary::-webkit-details-marker{display:none}
+  details.cg-ctp-quadro>summary>span:first-child::before{content:"\25B8\00A0"}
+  details.cg-ctp-quadro[open]>summary>span:first-child::before{content:"\25BE\00A0"}
+  details.cg-ctp-quadro[open]>summary{margin-bottom:8px}
+  details.cg-ctp-quadro:not([open])>summary{padding-bottom:0;border-bottom:0}
+  details.cg-ctp-quadro label.small{display:flex;align-items:center;gap:6px;align-self:end;min-height:40px;font-weight:400}
+  details.cg-ctp-quadro label.small input[type=checkbox]{flex:none;width:16px;height:16px;min-height:0;margin:0}
+</style>
+{% endif %}
 <div class="actions">
   <a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a>
   {% if user.role in ['ADMIN','MANAGER'] %}<a class="button" href="{{ url_for('ri_onr') }}">Exportação ONR</a>{% endif %}
 </div>
 
+{% set sobre_a_carga %}
 <div class="notice">
   Carga mensal para a <strong>CENSEC</strong>, que a repassa aos municípios. É o dever de
   comunicar as transações imobiliárias ao Município (Lei 8.935/1994, art. 30, XI),
   canalizado pelo módulo CTP por força do <strong>Provimento CNJ 174/2024</strong>.
   Layout conforme a especificação do CNB-CF, versão 1.3, de 24/10/2025.
 </div>
+{% endset %}
 
+{% set confira_antes %}
 <div class="notice warning">
   <strong>Confira duas coisas com a CENSEC antes da primeira remessa.</strong>
   (1) O sistema <strong>gera o arquivo, não transmite</strong> — o envio é pela tela da CENSEC.
@@ -20,6 +42,15 @@
   <em>tipo de ato «Escritura / Procuração»</em>; os códigos registrais não estão publicados.
   O arquivo sai com o padrão notarial e isso pode precisar de ajuste.
 </div>
+{% endset %}
+
+{# NO LAYOUT NOVO, O AVISO SÓ FICA À VISTA ATÉ A PRIMEIRA REMESSA, que é o que ele cobra. #}
+{% if not layout_novo %}
+{{ sobre_a_carga }}
+{{ confira_antes }}
+{% elif not remessas %}
+{{ confira_antes }}
+{% endif %}
 
 <form class="filters" method="get">
   <label>Competência
@@ -77,9 +108,13 @@
     </section>
   {% endif %}
 
+  {% set ja_abriu = namespace(sim=false) %}
   {% for l in linhas %}
-  <section class="panel">
-    <div class="panel-head">
+  {% set espera = l.incluir and (l.pendencias or l.doi_pendencias or (not l.dados.operacao and not l.ato.natureza_titulo)) %}
+  {% set abre = layout_novo and (linhas | length == 1 or (espera and not fechada and not ja_abriu.sim)) %}
+  {% if abre %}{% set ja_abriu.sim = true %}{% endif %}
+  <{{ tag_do_quadro }} class="panel{{ ' cg-ctp-quadro' if layout_novo }}"{{ ' open' if abre }}>
+    <{{ tag_da_cabeca }} class="panel-head">
       <span>
         <strong>{{ l.rotulo }}</strong> — matrícula {{ l.m.numero }}
         {% if l.entra %}<span class="badge ok">entra na carga</span>
@@ -88,10 +123,11 @@
         {% elif not l.dados.operacao %}<span class="badge media">operação não definida</span>
         {% elif not l.incluir %}<span class="badge">excluído a pedido</span>
         {% else %}<span class="badge alta">{{ l.pendencias|length }} pendência(s)</span>{% endif %}
+        {% if layout_novo and l.doi_pendencias %}<span class="badge media">{{ l.doi_pendencias|length }} para a DOI</span>{% endif %}
       </span>
       <span class="small muted">{{ fmt_date(l.ato.data_ato) }}
         {% if l.ato.natureza_titulo %}· {{ l.ato.natureza_titulo }}{% endif %}</span>
-    </div>
+    </{{ tag_da_cabeca }}>
 
     <div style="padding:12px">
       {% if l.origem_sugestao == 'natureza' %}
@@ -246,7 +282,7 @@
       </div>
       {% endif %}
     </div>
-  </section>
+  </{{ tag_do_quadro }}>
   {% endfor %}
 
   {% if linhas and not fechada %}
@@ -266,8 +302,8 @@
 </form>
 
 {% if remessas %}
-<section class="panel">
-  <div class="panel-head"><span>Remessas</span></div>
+<{{ tag_do_quadro }} class="panel{{ ' cg-ctp-quadro' if layout_novo }}">
+  <{{ tag_da_cabeca }} class="panel-head"><span>Remessas</span>{% if layout_novo %}<span class="small muted">{{ remessas | length }}</span>{% endif %}</{{ tag_da_cabeca }}>
   <div class="table-wrap"><table>
     <thead><tr><th>Competência</th><th>Situação</th><th>Registros</th><th>Gerado em</th><th>Arquivo</th></tr></thead>
     <tbody>{% for r in remessas %}
@@ -284,6 +320,21 @@
       </tr>
     {% endfor %}</tbody>
   </table></div>
-</section>
+</{{ tag_do_quadro }}>
+{% endif %}
+{% if layout_novo %}
+<details class="panel cg-ctp-quadro">
+  <summary class="panel-head"><span>Sobre esta carga</span></summary>
+  {{ sobre_a_carga }}
+  {% if remessas %}{{ confira_antes }}{% endif %}
+</details>
+{# CAMPO RECUSADO DENTRO DE QUADRO RECOLHIDO: uma data pela metade faz o navegador recusar o envio sem
+   ter onde mostrar. O quadro do campo abre, e o aviso aparece nele. #}
+<script>
+  document.addEventListener("invalid", function (ev) {
+    var quadro = ev.target.closest && ev.target.closest("details");
+    if (quadro) quadro.open = true;
+  }, true);
+</script>
 {% endif %}
 {% endblock %}

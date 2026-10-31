@@ -38,12 +38,21 @@ def _nova(db, valor=193532, nome="BEATRIZ EXEMPLO", vencimento="2026-10-30"):
             documento_especie="Recibo de pagamento")
 
 
+def _tetos_altos(db):
+    """O que estes testes autorizam na lista passa do teto de fábrica por
+    pagamento (R$ 1.000,00) e por dia (R$ 3.000,00) — e o que passa do teto
+    fica na ficha (`test_teto_e_divergencia_ficam_na_ficha`)."""
+    db.set_settings({"despesas_teto_por_pagamento": "10.000,00",
+                     "despesas_teto_por_dia": "50.000,00"})
+
+
 def _situacao(db, i):
     with db.connect() as con:
         return DP.despesa(con, i)["situacao"]
 
 
 def test_a_lista_mostra_o_que_se_confere_e_ja_vem_marcada(cg_casa_logada):
+    _tetos_altos(cg_casa_logada["db"])
     i = _nova(cg_casa_logada["db"])
     html = cg_casa_logada["c"].get(LISTA).get_data(as_text=True)
     assert "Esperando a sua autorização (1)" in html
@@ -52,6 +61,7 @@ def test_a_lista_mostra_o_que_se_confere_e_ja_vem_marcada(cg_casa_logada):
 
 
 def test_autoriza_as_marcadas_e_a_desmarcada_continua_esperando(cg_casa_logada):
+    _tetos_altos(cg_casa_logada["db"])
     db, c = cg_casa_logada["db"], cg_casa_logada["c"]
     a, b, fica = _nova(db), _nova(db, 200000), _nova(db, 300000)
     r = c.post(ROTA, data={"csrf_token": _token(c), "marcada": [f"{a}:193532", f"{b}:200000"]},
@@ -62,6 +72,7 @@ def test_autoriza_as_marcadas_e_a_desmarcada_continua_esperando(cg_casa_logada):
 
 
 def test_valor_que_mudou_depois_da_tela_nao_se_autoriza(cg_casa_logada):
+    _tetos_altos(cg_casa_logada["db"])
     db, c = cg_casa_logada["db"], cg_casa_logada["c"]
     i, outra = _nova(db), _nova(db, 200000)
     r = c.post(ROTA, data={"csrf_token": _token(c), "marcada": [f"{i}:100", f"{outra}:200000"]},

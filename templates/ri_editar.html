@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_passos_e_gravar.html' import preparar, regua %}
 {% block heading %}<h1>Editar cadastro — matrícula {{ m.numero }}</h1>{% endblock %}
 {% block content %}
 <div class="actions"><a class="button" href="{{ url_for('ri_ficha', matricula_id=m.id) }}">&larr; Ficha</a></div>
@@ -9,16 +10,29 @@
   Toda mudança fica na auditoria com o valor anterior e o novo.
 </div>
 
+{# AS PARTES SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026. Ver `_passos_e_gravar.html`. Aqui não há ordem a
+   seguir, porque quem corrige vem atrás de um campo: por isso as partes não têm número, como na
+   correção do assento. O motivo é obrigatório e o botão de salvar grava tudo, e por isso os dois
+   ficam fora das partes, na barra presa ao pé da tela, sempre à vista. #}
+{% set cg_passos = [('identificacao', 'Identificação'), ('imovel', 'Imóvel'), ('fiscais', 'Rurais e fiscais'), ('observacao', 'Observação')] if layout_novo else none %}
+{% if cg_passos %}
+{{ preparar(VERSION) }}
+<style>
+.cg-gravar>label{flex:1 1 320px;margin:0}
+.cg-gravar>div{flex:none;align-self:flex-end}
+</style>
+{% endif %}
 <section class="panel">
-  <form method="post" class="form-grid">
+  <form method="post" class="form-grid"{% if cg_passos %} id="form-da-retificacao" action="{{ url_for('ri_editar_matricula', matricula_id=m.id) }}"{% endif %}>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {# A versão do cadastro que esta tela mostrou: se outra pessoa gravar
        antes, a rota recusa em vez de sobrescrever a correção dela. #}
     <input type="hidden" name="versao_edicao" value="{{ versao_edicao or '' }}">
+    {% if cg_passos %}{{ regua('form-da-retificacao', cg_passos, 'identificacao', numerados=false, rotulo='Partes deste cadastro') }}{% endif %}
 
-    <div class="span2"><strong>Identificação</strong></div>
-    <label>CNM<input name="cnm" value="{{ m.cnm or '' }}"></label>
-    <label>Folha<input name="folha" value="{{ m.folha or '' }}"></label>
+    <div class="span2" data-passo="identificacao"><strong>Identificação</strong></div>
+    <label data-passo="identificacao">CNM<input name="cnm" value="{{ m.cnm or '' }}"></label>
+    <label data-passo="identificacao">Folha<input name="folha" value="{{ m.folha or '' }}"></label>
     {% if m.tipo_ficha != 'ACERVO' %}
     {# QUEM ABRIU A MATRICULA — pedido do oficial em 16/09/2026. E ele que sai
        na ficha, logo depois do registro anterior, com a linha para assinar ao
@@ -29,7 +43,7 @@
        «é preciso que seja possível escolher um escrevente para constar como
        responsável por abrir a matrícula». Quem abre ficha no balcão todo dia
        não é o delegatário. #}
-    <label class="span2">Quem abriu esta matrícula
+    <label class="span2" data-passo="identificacao">Quem abriu esta matrícula
       <select name="aberta_nome">
         <option value="">— não informado —</option>
         {% for grupo, gente in delegatarios|groupby('grupo') %}
@@ -49,58 +63,60 @@
         diferentes — o sistema não adivinha que são a mesma.</small>
     </label>
     {% else %}
-    <div class="span2 notice small">Matrícula de acervo: a abertura segue o
+    <div class="span2 notice small" data-passo="identificacao">Matrícula de acervo: a abertura segue o
       conteúdo importado. Não se informa responsável atual pela abertura e
       não se acrescenta assinatura ao texto histórico.</div>
     {% endif %}
 
-    <div class="span2"><strong>Imóvel</strong></div>
-    <label class="span2">Logradouro / denominação<input name="logradouro" value="{{ m.logradouro or '' }}"></label>
-    <label>Número<input name="numero_predial" value="{{ m.numero_predial or '' }}"></label>
-    <label>Complemento<input name="complemento_endereco" value="{{ m.complemento_endereco or '' }}"></label>
-    <label>Bairro<input name="bairro" value="{{ m.bairro or '' }}"></label>
-    <label>Cidade<input name="cidade" value="{{ m.cidade or '' }}"></label>
-    <label>UF<input name="uf" value="{{ m.uf or '' }}" maxlength="2"></label>
-    <label>CEP<input name="cep" value="{{ m.cep or '' }}"></label>
-    <label>Localização
+    <div class="span2" data-passo="imovel"><strong>Imóvel</strong></div>
+    <label class="span2" data-passo="imovel">Logradouro / denominação<input name="logradouro" value="{{ m.logradouro or '' }}"></label>
+    <label data-passo="imovel">Número<input name="numero_predial" value="{{ m.numero_predial or '' }}"></label>
+    <label data-passo="imovel">Complemento<input name="complemento_endereco" value="{{ m.complemento_endereco or '' }}"></label>
+    <label data-passo="imovel">Bairro<input name="bairro" value="{{ m.bairro or '' }}"></label>
+    <label data-passo="imovel">Cidade<input name="cidade" value="{{ m.cidade or '' }}"></label>
+    <label data-passo="imovel">UF<input name="uf" value="{{ m.uf or '' }}" maxlength="2"></label>
+    <label data-passo="imovel">CEP<input name="cep" value="{{ m.cep or '' }}"></label>
+    <label data-passo="imovel">Localização
       <select name="rural_urbano">
         <option value="">—</option>
         <option value="U" {% if m.rural_urbano=='U' %}selected{% endif %}>Urbano</option>
         <option value="R" {% if m.rural_urbano=='R' %}selected{% endif %}>Rural</option>
       </select>
     </label>
-    <label>Área<input name="area_valor" value="{{ m.area_valor or '' }}"></label>
-    <label>Unidade
+    <label data-passo="imovel">Área<input name="area_valor" value="{{ m.area_valor or '' }}"></label>
+    <label data-passo="imovel">Unidade
       <select name="area_unidade">
         <option value="">—</option>
         <option {% if m.area_unidade=='m2' %}selected{% endif %}>m2</option>
         <option {% if m.area_unidade=='ha' %}selected{% endif %}>ha</option>
       </select>
     </label>
-    <label class="span2">Descrição do perímetro<textarea name="descricao_perimetro" rows="5">{{ m.descricao_perimetro or '' }}</textarea></label>
-    <label class="span2">Confrontações<textarea name="confrontacoes" rows="2">{{ m.confrontacoes or '' }}</textarea></label>
-    <label class="span2">Registro anterior<input name="registro_anterior" value="{{ m.registro_anterior or '' }}"></label>
+    <label class="span2" data-passo="imovel">Descrição do perímetro<textarea name="descricao_perimetro" rows="5">{{ m.descricao_perimetro or '' }}</textarea></label>
+    <label class="span2" data-passo="imovel">Confrontações<textarea name="confrontacoes" rows="2">{{ m.confrontacoes or '' }}</textarea></label>
+    <label class="span2" data-passo="imovel">Registro anterior<input name="registro_anterior" value="{{ m.registro_anterior or '' }}"></label>
 
-    <div class="span2"><strong>Identificadores rurais e fiscais</strong>
+    <div class="span2" data-passo="fiscais"><strong>Identificadores rurais e fiscais</strong>
       <small class="muted">o SIGEF é onde se registra a certificação de georreferenciamento do INCRA</small></div>
-    <label>CAR<input name="car" value="{{ m.car or '' }}"></label>
-    <label>NIRF<input name="nirf" value="{{ m.nirf or '' }}"></label>
-    <label>CIB <small>(obrigatório se rural)</small>
+    <label data-passo="fiscais">CAR<input name="car" value="{{ m.car or '' }}"></label>
+    <label data-passo="fiscais">NIRF<input name="nirf" value="{{ m.nirf or '' }}"></label>
+    <label data-passo="fiscais">CIB <small>(obrigatório se rural)</small>
       <input name="cib" value="{{ m.cib or '' }}" inputmode="numeric"
              pattern="[0-9]{8}" title="Oito dígitos"></label>
-    <label>INCRA<input name="incra" value="{{ m.incra or '' }}"></label>
-    <label>SIGEF<input name="sigef" value="{{ m.sigef or '' }}" placeholder="código da certificação"></label>
-    <label>CCIR<input name="ccir" value="{{ m.ccir or '' }}"></label>
-    <label>CMC<input name="cmc" value="{{ m.cmc or '' }}"></label>
-    <label>Inscrição municipal<input name="inscricao_municipal" value="{{ m.inscricao_municipal or '' }}"></label>
-    <label>IPTU<input name="iptu" value="{{ m.iptu or '' }}"></label>
+    <label data-passo="fiscais">INCRA<input name="incra" value="{{ m.incra or '' }}"></label>
+    <label data-passo="fiscais">SIGEF<input name="sigef" value="{{ m.sigef or '' }}" placeholder="código da certificação"></label>
+    <label data-passo="fiscais">CCIR<input name="ccir" value="{{ m.ccir or '' }}"></label>
+    <label data-passo="fiscais">CMC<input name="cmc" value="{{ m.cmc or '' }}"></label>
+    <label data-passo="fiscais">Inscrição municipal<input name="inscricao_municipal" value="{{ m.inscricao_municipal or '' }}"></label>
+    <label data-passo="fiscais">IPTU<input name="iptu" value="{{ m.iptu or '' }}"></label>
 
-    <label class="span2">Observação<textarea name="observacao" rows="2">{{ m.observacao or '' }}</textarea></label>
+    <label class="span2" data-passo="observacao">Observação<textarea name="observacao" rows="2">{{ m.observacao or '' }}</textarea></label>
 
+    {% if cg_passos %}<div class="span2 cg-acao cg-gravar">{% endif %}
     <label class="span2">Motivo da retificação cadastral
       <input name="motivo" required minlength="10" placeholder="Conferência com o livro, retificação administrativa, certificação SIGEF...">
     </label>
     <div class="span2"><button class="primary">Salvar alterações</button></div>
+    {% if cg_passos %}</div>{% endif %}
   </form>
 </section>
 {% endblock %}

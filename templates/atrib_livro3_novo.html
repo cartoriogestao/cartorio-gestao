@@ -8,10 +8,15 @@
 {% extends 'base.html' %}
 {% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
 {% from '_cobrar.html' import quadro %}
+{% from '_passos_e_gravar.html' import preparar, regua, andar %}
 {% block heading %}<h1>Registro novo — Livro 3</h1>{% endblock %}
 {% block content %}
 {% include '_serventia.html' %}
-<div class="actions"><a class="button" href="{{ url_for('livro3_registros') }}">&larr; Livro 3</a></div>
+{# NO LAYOUT NOVO, O RASCUNHO SOBE PARA A LINHA DO VOLTAR: é uma linha a menos antes do primeiro campo. #}
+{% set o_rascunho %}{{ salvar_rascunho('livro3_registro_novo', url_for('livro3_registro_novo'),
+                   'Registro do Livro 3', csrf_token,
+                   nome_em='parte_nome') }}{% endset %}
+<div class="actions"><a class="button" href="{{ url_for('livro3_registros') }}">&larr; Livro 3</a>{% if layout_novo %}{{ o_rascunho }}{% endif %}</div>
 
 <div class="notice">
   O Livro 3 recebe o que o <strong>art. 178 da Lei 6.015/1973</strong> manda registrar
@@ -20,14 +25,24 @@
   seguintes é contínua com ele: depois do R-1 vem o AV-2.
 </div>
 
-{{ salvar_rascunho('livro3_registro_novo', url_for('livro3_registro_novo'),
-                   'Registro do Livro 3', csrf_token,
-                   nome_em='parte_nome') }}
+{% if not layout_novo %}{{ o_rascunho }}{% endif %}
 
-<form method="post" class="grid2" style="padding:0 0 14px" id="form-do-ato">
+{# OS PASSOS SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026. Ver `_passos_e_gravar.html`. A ordem é a de
+   sempre, e o selo e a cobrança ficam no último passo. O teor sai do quadro do título só no layout
+   novo: ele é o maior campo da tela, e é opcional agora. A BARRA AVISA DO ITEM DA TABELA VAZIO porque
+   o botão de registrar está à vista desde o primeiro passo, e sem o item o ato nasce sem selo. #}
+{% set cg_passos = [('titulo', 'O título'), ('teor', 'Teor'), ('partes', 'Partes'), ('selo', 'Selo e cobrança')] if layout_novo else none %}
+{% if cg_passos %}
+{{ preparar(VERSION) }}
+<style>
+#form-do-ato:valid:has([name=codigo_tj] option[value=""]:checked):has([name=selo]:placeholder-shown) .cg-gravar-falta{display:block}
+</style>
+{% endif %}
+<form method="post" class="grid2" style="padding:0 0 14px" id="form-do-ato"{% if cg_passos %} action="{{ url_for('livro3_registro_novo') }}"{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% if cg_passos %}{{ regua('form-do-ato', cg_passos, 'titulo') }}{% endif %}
 
-  <section class="panel" style="grid-column:1/-1">
+  <section class="panel" style="grid-column:1/-1" data-passo="titulo">
     <div class="panel-head"><span>O título</span></div>
     <div class="grid2" style="padding:14px">
       <label style="grid-column:1/-1">Natureza
@@ -69,12 +84,16 @@
         <input name="garantia" value="{{ form.get('garantia','') }}"></label>
       <label style="grid-column:1/-1">Condições
         <textarea name="condicoes" rows="3">{{ form.get('condicoes','') }}</textarea></label>
+      {% if cg_passos %}</div></section>
+  <section class="panel" style="grid-column:1/-1" data-passo="teor">
+    <div class="panel-head"><span>Teor</span></div>
+    <div class="grid2" style="padding:14px">{% endif %}
       <label style="grid-column:1/-1">Teor <small>(opcional agora)</small>
         <textarea name="teor" rows="6">{{ form.get('teor','') }}</textarea></label>
     </div>
   </section>
 
-  <section class="panel" style="grid-column:1/-1">
+  <section class="panel" style="grid-column:1/-1" data-passo="partes">
     <div class="panel-head"><span>Partes</span><small>quem figura no título — quantas forem precisas</small></div>
     {#  19/10/2026 — pedido do oficial: «adicionar mais partes no ato». Eram
         duas linhas fixas e o papel em texto livre. #}
@@ -112,7 +131,7 @@
     </div>
   </section>
 
-  <section class="panel" style="grid-column:1/-1">
+  <section class="panel" style="grid-column:1/-1" data-passo="selo">
     <div class="panel-head"><span>Selo e cobrança</span></div>
     <div class="grid2" style="padding:14px">
       <label style="grid-column:1/-1">Natureza do título no selo
@@ -136,7 +155,7 @@
     </div>
   </section>
 
-  <section class="panel" style="grid-column:1/-1">
+  <section class="panel" style="grid-column:1/-1" data-passo="selo">
     <div class="panel-head"><span>Arquivamento do documento</span><small>opcional — item 16.39</small></div>
     <div class="grid2" style="padding:14px">
       <label><input type="checkbox" name="gerar_arquivamento" value="1"
@@ -150,8 +169,10 @@
     </div>
   </section>
 
-  <div class="actions" style="grid-column:1/-1">
-    <button class="button">Registrar no Livro 3</button>
+  {% if cg_passos %}<div class="cg-acao cg-gravar" style="grid-column:1/-1">
+    <span class="cg-acao-aviso falta cg-gravar-falta">O item da tabela ainda está vazio. Sem ele, o ato fica sem selo.</span>
+    {{ andar() }}{% else %}<div class="actions" style="grid-column:1/-1">{% endif %}
+    <button class="button{% if cg_passos %} primary{% endif %}">Registrar no Livro 3</button>
     <a class="button" href="{{ url_for('livro3_registros') }}">Cancelar</a>
   </div>
 </form>

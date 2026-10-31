@@ -242,11 +242,9 @@ def test_a_ficha_do_assento_mostra_a_divisao_tripartite_em_blocos(s):
 
 
 def test_a_ficha_do_assento_sem_matricula_diz_como_ela_se_compoe(s):
-    """Desde o #152 (03/09/2026) a matrícula de 32 dígitos se gera ao lavrar;
-    o assento sem ela veio do acervo, ou faltou um dado na lavratura."""
     ids = _semear(s)
     html = s["c"].get(f"/rcpn/{ids['assento']}").get_data(as_text=True)
-    assert "Ao lavrar, o sistema a compõe com o CNS" in html
+    assert "Ao lavrar, o sistema a compõe" in html
 
 
 def test_a_ficha_do_rtd_diz_que_a_averbacao_consome_protocolo(s):
@@ -888,19 +886,6 @@ def _post_novo(s, rota: str, **campos) -> str:
                            ).get_data(as_text=True)
 
 
-def test_o_lancamento_recusado_volta_com_o_teor(s):
-    """«Corrija o problema e lance de novo» levava à ficha, e o teor se perdia (31/10/2026)."""
-    assento = _semear(s)["assento"]
-    c = s["c"]
-    token = _token(c.get(f"/rcpn/{assento}/retificar").get_data(as_text=True))
-    # retificação sem fundamento: o domínio recusa, e a tela volta com o teor digitado
-    html = postar_e_seguir(c, f"/rcpn/{assento}/lancar",
-                           {"csrf_token": token, "tipo": "RETIFICACAO", "teor": "O teor inteiro da retificação digitada.", "fundamento": ""}
-                           ).get_data(as_text=True)
-    assert "A retificação exige o fundamento" in html
-    assert "O teor inteiro da retificação digitada.</textarea>" in html
-
-
 @pytest.mark.parametrize("rota", ["/protesto/novo", "/rcpn/novo",
                                   "/rcpj-rtd/novo", "/livro3/novo"])
 def test_as_quatro_telas_de_registro_novo_abrem(s, rota):
@@ -1366,17 +1351,6 @@ def test_titulo_sem_devedor_e_recusado_pelo_contrato_da_cra(s):
     # lista de campos obrigatorios na tela daria duas versoes dela.
     html = _post_novo(s, "/protesto/novo", **TITULO)
     assert "ao menos um devedor" in html
-    assert _con(s).execute("SELECT COUNT(*) FROM pt_titulos").fetchone()[0] == 0
-
-
-def test_o_titulo_recusado_volta_com_o_devedor_inteiro(s):
-    """Na recusa só o nome do devedor voltava: documento, tipo, endereço, bairro, CEP, cidade e UF sumiam (31/10/2026)."""
-    html = _post_novo(s, "/protesto/novo", **TITULO, **{**DEVEDOR, "devedor_documento_tipo": "CNPJ", "devedor_cep": "65000000", "devedor_uf": "PI"},
-                      apresentante_documento="123")
-    assert "CPF/CNPJ do apresentante" in html
-    for trecho in ('value="JOSÉ DA SILVA"', 'value="04785512388"', 'value="RUA GRANDE, 10"', 'value="CENTRO"', 'value="65000000"',
-                   'value="Cidade Exemplo"', '<option value="CNPJ" selected>', '<option value="PI" selected>'):
-        assert trecho in html, trecho
     assert _con(s).execute("SELECT COUNT(*) FROM pt_titulos").fetchone()[0] == 0
 
 

@@ -9,8 +9,19 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>Livros e termos</h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, QUADROS RECOLHIDOS — 31/10/2026. Dia sem termo vem primeiro. A atribuição com série sem livro
+   aberto abre sozinha, e as outras ficam recolhidas, com a contagem. A explicação vai para o fim. #}
 {% include '_serventia.html' %}
+{% if layout_novo %}
+<style>
+  details.cg-quadro td form.grid2{display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px}
+  details.cg-quadro td form.grid2>label{flex:1 1 7rem;margin:0}
+  details.cg-quadro td form.grid2>.actions{margin:0}
+</style>
+{% endif %}
 
+{% set como_funciona %}
 <div class="notice">
   Cada série tem <strong>um livro aberto por vez</strong>. Dois livros abertos na mesma
   série fazem o mesmo número de ordem sair em dois lugares — é o defeito de 18/08/2026,
@@ -21,6 +32,8 @@
   quais ficaram inutilizadas (Lei 8.935/1994, art. 30, I). Os dois saem em
   <strong>.odt</strong>, para colar no livro de papel.
 </div>
+{% endset %}
+{% if not layout_novo %}{{ como_funciona }}{% endif %}
 
 {% if atrasados %}
 <div class="notice danger">
@@ -38,8 +51,11 @@
 {% for numero, a in atribuicoes.items() %}
   {% set do_grupo = linhas | selectattr('atribuicao', 'equalto', numero) | list %}
   {% if do_grupo %}
+  {% set sem_livro = do_grupo | rejectattr('livro_id') | list | length %}
+  {% if layout_novo %}{{ abre('livros-' ~ numero, a.nome, (do_grupo | length) ~ ' série(s)' ~ (' · ' ~ sem_livro ~ ' sem livro aberto' if sem_livro else ' · todas com livro aberto'), aberto=sem_livro > 0) }}{% else %}
   <section class="panel">
     <div class="panel-head"><span>{{ a.nome }}</span><small>{{ do_grupo | length }} série(s)</small></div>
+  {% endif %}
     <table class="table">
       <thead>
         <tr><th>Série</th><th>Livro aberto</th><th>Folha</th><th>Próximo nº</th>
@@ -89,20 +105,24 @@
         {% endfor %}
       </tbody>
     </table>
+  {% if layout_novo %}</details>{% else %}
   </section>
+  {% endif %}
   {% endif %}
 {% endfor %}
 
 {# O QUE A INSPEÇÃO COBRA, SÉRIE POR SÉRIE (revisão de telas, 30/10/2026). É lista de
    conferência, e não pendência: vem recolhida, e não empurra os livros para baixo. #}
+{% if layout_novo %}{{ abre('livros-inspecao', 'O que a inspeção cobra de cada livro', (exigencias | length) ~ ' série(s)') }}{% else %}
 <section class="panel">
   <div class="panel-head">
     <span>O que a inspeção cobra de cada livro</span>
     <small>{{ exigencias | length }} série(s)</small>
   </div>
+{% endif %}
   {% if exigencias %}
-  <details style="padding:0 14px 14px">
-    <summary>Ver a lista, série por série</summary>
+  {% if not layout_novo %}<details style="padding:0 14px 14px">
+    <summary>Ver a lista, série por série</summary>{% endif %}
     <table class="table">
       <thead><tr><th>Série</th><th>O que a inspeção cobra</th></tr></thead>
       <tbody>
@@ -114,10 +134,12 @@
         {% endfor %}
       </tbody>
     </table>
-  </details>
+  {% if not layout_novo %}</details>{% endif %}
   {% else %}
   <p style="padding:14px"><small>Nenhuma exigência registrada.</small></p>
   {% endif %}
+{% if layout_novo %}</details>
+{{ abre('livros-encerrados', 'Livros encerrados', (fechados | length) ~ ' mais recente(s)') }}{% else %}
 </section>
 
 <section class="panel">
@@ -125,6 +147,7 @@
     <span>Livros encerrados</span>
     <small>{{ fechados | length }} mais recente(s)</small>
   </div>
+{% endif %}
   {% if not fechados %}
     <p style="padding:14px"><small>Nenhum livro encerrado ainda.</small></p>
   {% else %}
@@ -149,10 +172,15 @@
     </tbody>
   </table>
   {% endif %}
+{% if layout_novo %}</details>
+{{ abre('livros-como', 'Como funcionam os livros', 'um livro aberto por série') }}<div class="cg-quadro-corpo">{{ como_funciona }}</div></details>
+{% else %}
 </section>
+{% endif %}
 
 <p style="padding:0 14px 14px"><small>
   O número do livro <strong>não se digita</strong>: é o maior já usado na série mais um.
   Digitar abriria a porta para dois Livros 3 na mesma série.
 </small></p>
+{% if layout_novo %}{{ ferramentas() }}{% endif %}
 {% endblock %}

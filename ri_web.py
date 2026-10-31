@@ -3075,7 +3075,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @login_required
     @roles_required(*PRATICA, metodos=("POST",))
     def ri_protocolo():
-        if request.method == "POST":
+        def _prenotar_do_formulario():
+            """Prenota o que veio da tela. ESCREVE, e devolve para onde ir.
+
+            Devolve `None` na recusa, e a tela volta aqui embaixo com o que foi
+            digitado (31/10/2026). A recusa não prenota, e nenhum número se gasta.
+            """
             if request.form.get("acao") == "encerrar":
                 # O mesmo caminho da ficha (`_encerrar_da_tela`): motivo da
                 # lista, papel pelo `usuario_papel`, confirmação. O número
@@ -3104,14 +3109,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if destino not in ("2", "3"):
                 flash("Diga para que livro vai o título: Livro 2 (matrículas) "
                       "ou Livro 3 (demais atos do RI).", "danger")
-                return redirect(url_for("ri_protocolo"))
+                return None
             # TELEFONE OU E-MAIL, PELO MENOS UM — ordem do oficial, 10/10/2026:
             # sem contato a nota devolutiva e o vencimento não chegam a ninguém.
             try:
                 CONTATO.exigir(request.form.get("telefone"), request.form.get("email"))
             except CONTATO.ContatoError as e:
                 flash(str(e), "danger")
-                return redirect(url_for("ri_protocolo"))
+                return None
             # O PROTOCOLO GERAL DE ONDE O TÍTULO VEIO, conferido ANTES de
             # prenotar: ligar a um geral que já tem prenotação trocaria a
             # ligação do outro título sem ninguém ver.
@@ -3124,7 +3129,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 if not g or (g["atribuicao"] or "").upper() != "RI" or g["ri_protocolo_id"]:
                     flash("O protocolo geral indicado não existe, não é do Registro de "
                           "Imóveis ou já tem prenotação. Nada foi prenotado.", "danger")
-                    return redirect(url_for("ri_protocolo"))
+                    return None
             with db.transaction() as con:
                 bd = banco(con)
                 bd.travar("ri_protocolos.numero")
@@ -3240,6 +3245,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   "success")
             return redirect(url_for("ri_protocolo"))
 
+        if request.method == "POST":
+            resposta = _prenotar_do_formulario()
+            if resposta is not None:
+                return resposta
+
         situacao = (request.args.get("situacao") or "").strip().upper()
         busca = (request.args.get("busca") or "").strip()
         onde, params = ["1=1"], []
@@ -3305,7 +3315,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                de_cx=dict(de_cx) if de_cx else None,
                                situacao=situacao, busca=busca, hoje=hoje.isoformat(),
                                prazo=PRAZO_PRENOTACAO, prazo_reurb=PRAZO_PRENOTACAO_REURB,
-                               restam=restam, espera_acao=espera_acao,
+                               restam=restam, espera_acao=espera_acao, form=request.form,
                                MOTIVOS_DA_GRATUIDADE_DO_RI=AS.MOTIVOS_DA_GRATUIDADE_DO_RI)
 
     # ===================================== a tela do título, com o que corrigir
@@ -6363,11 +6373,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if matricula_de_acervo(m["numero"]):
             m["tipo_ficha"] = "ACERVO"
 
-        if request.method == "GET":
+        def tela(**extra):
             return render_template("ri_editar.html", m=m,
                                    campos=CAMPOS_CADASTRAIS,
                                    versao_edicao=versao_atual,
-                                   delegatarios=quem_pode_abrir_matricula())
+                                   delegatarios=quem_pode_abrir_matricula(), **extra)
+
+        def recusada():
+            """A tela de novo, com o que veio do formulário por cima da ficha.
+
+            A RECUSA NÃO APAGA O QUE FOI DIGITADO (31/10/2026). Nada se gravou, e por
+            isso a versão continua valendo. Quem abriu entra como veio: se o nome não
+            está na lista, a caixa o mostra e gravar recusa de novo, em vez de cair
+            em «não informado» e apagar o nome sem ninguém pedir.
+            """
+            veio = {c: request.form[c] for c in CAMPOS_CADASTRAIS if c in request.form}
+            fora_da_lista = None
+            if m["tipo_ficha"] != "ACERVO" and "aberta_nome" in request.form:
+                veio["aberta_nome"] = request.form["aberta_nome"]
+                if veio["aberta_nome"] and not any(
+                        x["nome"] == veio["aberta_nome"] for x in quem_pode_abrir_matricula()):
+                    fora_da_lista = veio["aberta_nome"]
+            m.update(veio)
+            return tela(motivo_digitado=request.form.get("motivo") or "",
+                        aberta_recusada=fora_da_lista)
+
+        if request.method == "GET":
+            return tela()
 
         if m["encerrada"]:
             flash("Matrícula encerrada não recebe alteração cadastral.", "danger")
@@ -6434,8 +6466,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           f"digita. Pessoa nova entra em Administrativo → "
                           f"Usuários, com a função dela.",
                           "danger")
-                    return redirect(url_for("ri_editar_matricula",
-                                            matricula_id=matricula_id))
+                    return recusada()
             mudancas["aberta_nome"] = {"de": m["aberta_nome"],
                                        "para": quem_abriu}
             valores["aberta_nome"] = quem_abriu
@@ -6450,8 +6481,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 m.get("numero"), db.get_setting("cib_dispensado_matriculas", "")):
             if not _cib_valido(cib_depois):
                 flash(_mensagem_cib_obrigatorio(), "danger")
-                return redirect(url_for("ri_editar_matricula",
-                                        matricula_id=matricula_id))
+                return recusada()
 
         if not mudancas:
             flash("Nada foi alterado.", "warning")
@@ -6464,7 +6494,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             flash("Escreva o motivo da retificação cadastral com pelo menos "
                   "10 caracteres — ele fica na auditoria, ao lado do valor "
                   "anterior e do novo.", "danger")
-            return redirect(url_for("ri_editar_matricula", matricula_id=matricula_id))
+            return recusada()
 
         atribuicoes = ", ".join(f"{c}=%s" for c in valores)
         conflito = False

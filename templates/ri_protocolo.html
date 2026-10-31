@@ -144,9 +144,13 @@
   <p class="small muted" style="padding:8px 14px 0">Preencha quem apresentou, o que veio e para qual livro o ato deve ir se for registrado. Ao clicar em <strong>Prenotar</strong>, o sistema grava no Livro 1-A, gera o número e a data limite do prazo.</p>
 {% endset %}
 
+{# A RECUSA DO SERVIDOR volta com o que foi digitado (31/10/2026). Sem nada digitado, a tela sai como sempre
+   saiu: o `value` só entra quando há valor. #}
+{% set digitado = form or {} %}
+{% macro valor(campo) %}{% if digitado.get(campo) %} value="{{ digitado.get(campo) }}"{% endif %}{% endmacro %}
 {% set campo_natureza %}
     <label class="span2">Natureza do título<input name="natureza_titulo" list="naturezas_sauin"
-      placeholder="Compra e venda, hipoteca, georreferenciamento..." autocomplete="off"></label>
+      placeholder="Compra e venda, hipoteca, georreferenciamento..." autocomplete="off"{{ valor('natureza_titulo') }}></label>
     <datalist id="naturezas_sauin">
       {% for n in NATUREZAS_SAUIN %}<option value="{{ n }}">{% endfor %}
     </datalist>
@@ -179,55 +183,55 @@
     <label>Livro de destino (depois do protocolo)
       <select name="livro_destino" required>
         <option value="">— escolha para onde o ato vai se for registrado —</option>
-        <option value="2">Livro 2 — matrículas</option>
-        <option value="3">Livro 3 — demais atos do RI</option>
+        <option value="2"{% if digitado.get('livro_destino') == '2' %} selected{% endif %}>Livro 2 — matrículas</option>
+        <option value="3"{% if digitado.get('livro_destino') == '3' %} selected{% endif %}>Livro 3 — demais atos do RI</option>
       </select></label>
     {# A DATA É A DO MOMENTO, e a rota não lê este campo (F10: retroativa quebrava a prioridade, Lei 6.015/1973,
        art. 186). Editável, ele fazia crer que a data digitada valia. #}
     <label>Data<input type="date" name="data_prenotacao" value="{{ hoje }}" readonly title="A prenotação leva a data de hoje: é ela que marca a prioridade."></label>
-    <label>Matrícula<input name="matricula_numero" placeholder="número"></label>
-    <label class="span2">Apresentante<input name="apresentante" required value="{{ de_cx.interessado or '' if de_cx else '' }}"></label>
-    <label>CPF/CNPJ<input name="apresentante_documento" value="{{ de_cx.interessado_documento or '' if de_cx else '' }}"></label>
+    <label>Matrícula<input name="matricula_numero" placeholder="número"{{ valor('matricula_numero') }}></label>
+    <label class="span2">Apresentante<input name="apresentante" required value="{{ digitado.get('apresentante', (de_cx.interessado or '' if de_cx else '')) }}"></label>
+    <label>CPF/CNPJ<input name="apresentante_documento" value="{{ digitado.get('apresentante_documento', (de_cx.interessado_documento or '' if de_cx else '')) }}"></label>
     {% if not layout_novo %}{{ campo_natureza }}{% endif %}
-    <label>Telefone *<input name="telefone" placeholder="(99) 99999-9999" value="{{ de_cx.telefone or '' if de_cx else '' }}"></label>
-    <label>E-mail *<input name="email" type="email" placeholder="cliente@exemplo.com" value="{{ de_cx.email or '' if de_cx else '' }}"></label>
+    <label>Telefone *<input name="telefone" placeholder="(99) 99999-9999" value="{{ digitado.get('telefone', (de_cx.telefone or '' if de_cx else '')) }}"></label>
+    <label>E-mail *<input name="email" type="email" placeholder="cliente@exemplo.com" value="{{ digitado.get('email', (de_cx.email or '' if de_cx else '')) }}"></label>
     <p class="span2 small muted" style="margin:0">* Telefone <strong>ou</strong> e-mail do cliente — pelo menos um é obrigatório: é por ele que se avisa da nota devolutiva e do prazo.</p>
     {% if layout_novo %}</div>
     <div class="cg-passo-bloco cg-pren-campos" data-passo="titulo">
     {{ campo_natureza }}{% endif %}
     <label class="span2">Documento apresentado
       <input name="documento_descricao"
-             placeholder="ex.: escritura de compra e venda, 4 laudas, 2ª via"></label>
-    <label class="span2">Objeto<textarea name="objeto" rows="2" required></textarea></label>
-    <label class="span2">Anotação<input name="anotacao"></label>
+             placeholder="ex.: escritura de compra e venda, 4 laudas, 2ª via"{{ valor('documento_descricao') }}></label>
+    <label class="span2">Objeto<textarea name="objeto" rows="2" required>{{ digitado.get('objeto', '') }}</textarea></label>
+    <label class="span2">Anotação<input name="anotacao"{{ valor('anotacao') }}></label>
         <label class="span2">Modalidade REURB
       <select name="reurb_tipo" id="prenot_reurb_tipo"
               onchange="(function(s){var h=document.getElementById('prenot_reurb');if(h)h.value=(s.value==='S'?'1':'');var cb=document.getElementById('prenot_isento');var m=document.getElementById('prenot_motivo_isencao');var b=document.getElementById('prenot_bloco_gratuidade');var aviso=document.getElementById('prenot_selo_titulo');if(s.value==='S'){if(cb){cb.checked=true;cb.dispatchEvent(new Event('change'));}if(m&&!(m.value||'').trim())m.value='O REGISTRO DISPENSA O PAGAMENTO DE EMOLUMENTOS PREVISTO NA LEI Nº 13.465, DE 2017.';if(aviso)aviso.textContent='Este selo será ISENTO (REURB-S / Lei 13.465/2017)';}else{if(aviso)aviso.textContent='Este selo será COBRADO (salvo marcação manual de isento)';}})(this)">
         <option value="">Não é REURB</option>
-        <option value="S">REURB-S (interesse social) — 40 dias úteis + isento (Lei 13.465/2017)</option>
-        <option value="E">REURB-E (interesse específico) — cobrado</option>
-        <option value="MISTO">Misto (S + E) — cobrado; isento só se marcado à mão</option>
+        <option value="S"{% if digitado.get('reurb_tipo') == 'S' %} selected{% endif %}>REURB-S (interesse social) — 40 dias úteis + isento (Lei 13.465/2017)</option>
+        <option value="E"{% if digitado.get('reurb_tipo') == 'E' %} selected{% endif %}>REURB-E (interesse específico) — cobrado</option>
+        <option value="MISTO"{% if digitado.get('reurb_tipo') == 'MISTO' %} selected{% endif %}>Misto (S + E) — cobrado; isento só se marcado à mão</option>
       </select>
       <small class="muted">REURB-S: prazo de {{ prazo_reurb }} dias úteis e isenção automática de emolumentos
         (Lei 13.465/2017, art. 13, § 1º). REURB-E e misto: prazo comum de {{ prazo }} dias úteis;
         isenção não é automática (misto exige discriminação das unidades S).</small>
     </label>
-    <input type="hidden" name="reurb" id="prenot_reurb" value="">
+    <input type="hidden" name="reurb" id="prenot_reurb" value="{{ digitado.get('reurb', '') }}">
     <div class="span2 card" id="prenot_selo_aviso" style="margin:0">
-      <p style="margin:0"><strong id="prenot_selo_titulo">Este selo será COBRADO</strong>
+      <p style="margin:0"><strong id="prenot_selo_titulo">{{ 'Este selo será ISENTO (REURB-S / Lei 13.465/2017)' if digitado.get('reurb_tipo') == 'S' else 'Este selo será COBRADO' }}</strong>
         — prenotação (ato 16.1).</p>
     </div>
     <label class="span2" style="display:flex;gap:8px;align-items:flex-start">
-      <input type="checkbox" name="isento" value="1" id="prenot_isento"
+      <input type="checkbox" name="isento" value="1" id="prenot_isento"{% if digitado.get('isento') %} checked{% endif %}
              onchange="(function(cb){var b=document.getElementById('prenot_bloco_gratuidade');if(b)b.style.display=cb.checked?'block':'none';var m=document.getElementById('prenot_motivo_isencao');if(m)m.required=cb.checked;})(this)">
       <span><strong>Selo gratuito / isento</strong><br>
         <small>Em REURB-S o sistema marca sozinho. Em outros casos, marque e informe o motivo.</small></span>
     </label>
-    <div id="prenot_bloco_gratuidade" class="span2" style="display:none">
+    <div id="prenot_bloco_gratuidade" class="span2" style="display:{{ 'block' if digitado.get('isento') else 'none' }}">
       <label>Motivo da gratuidade
         <input name="motivo_isencao" id="prenot_motivo_isencao"
                list="motivos_da_gratuidade_do_ri_prenot" autocomplete="off"
-               placeholder="O REGISTRO DISPENSA O PAGAMENTO DE EMOLUMENTOS...">
+               placeholder="O REGISTRO DISPENSA O PAGAMENTO DE EMOLUMENTOS..."{{ valor('motivo_isencao') }}{% if digitado.get('isento') %} required{% endif %}>
       </label>
       <datalist id="motivos_da_gratuidade_do_ri_prenot">
         {% for m in MOTIVOS_DA_GRATUIDADE_DO_RI %}

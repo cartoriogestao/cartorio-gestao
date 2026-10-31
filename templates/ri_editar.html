@@ -46,6 +46,9 @@
     <label class="span2" data-passo="identificacao">Quem abriu esta matrícula
       <select name="aberta_nome">
         <option value="">— não informado —</option>
+        {# O NOME RECUSADO CONTINUA À VISTA. Sem esta linha, a caixa cairia em «não informado», e gravar de novo
+           apagaria o nome sem ninguém pedir. Assim, gravar recusa outra vez até a pessoa escolher da lista. #}
+        {% if aberta_recusada %}<option value="{{ aberta_recusada }}" selected>{{ aberta_recusada }} — não está no cadastro</option>{% endif %}
         {% for grupo, gente in delegatarios|groupby('grupo') %}
         <optgroup label="{{ grupo }}">
           {% for d in gente %}
@@ -113,7 +116,7 @@
 
     {% if cg_passos %}<div class="span2 cg-acao cg-gravar">{% endif %}
     <label class="span2">Motivo da retificação cadastral
-      <input name="motivo" required minlength="10" placeholder="Conferência com o livro, retificação administrativa, certificação SIGEF...">
+      <input name="motivo" required minlength="10" placeholder="Conferência com o livro, retificação administrativa, certificação SIGEF..."{% if motivo_digitado %} value="{{ motivo_digitado }}"{% endif %}>
     </label>
     <div class="span2"><button class="primary">Salvar alterações</button></div>
     {% if cg_passos %}</div>{% endif %}

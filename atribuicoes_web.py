@@ -2522,6 +2522,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         saldo, praça e ao menos um devedor com documento e endereço. Repetir
         essa lista aqui daria duas versões dela.
         """
+        form, rascunho_id = RASC.para_a_tela(
+            db, "protesto_titulo_novo", "Este rascunho não é de um título de Protesto.")
+
         def tela(**extra):
             return render_template(
                 "atrib_protesto_novo.html",
@@ -2532,7 +2535,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 moedas=CRA.TIPOS_DE_MOEDA, ufs=CRA.UFS,
                 cidade_da_casa=(sv().get("ri_cidade") or "").upper(),
                 uf_da_casa=(sv().get("ri_uf") or "").upper(),
-                form=request.form, **extra)
+                form=form, rascunho_id=rascunho_id, **extra)
 
         if request.method != "POST":
             return tela()
@@ -4371,6 +4374,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                    do_acervo=_dac,
                                    rascunho=rascunho,
                                    rascunho_id=(rascunho["id"] if rascunho else None),
+                                   # O quadro de cobrança lê os itens marcados, que
+                                   # são vários com o mesmo nome (31/10/2026).
+                                   form_do_quadro=(RASC.formulario(rascunho) if rascunho
+                                                   else request.form),
                                    leitura_origem=leitura_origem,
                                    habilitacao_origem=habilitacao_origem,
                                    especie=especie,
@@ -4996,8 +5003,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 aviso = _selar_se_pedido(con, "rc_atos", r["ato_id"], "RCPN")
                 cob_msg = _cobrar_se_pedido(con, "rc_atos", r["ato_id"], tipo)
         except (RC.RcError, AS.AtoError) as erro:
+            # A RECUSA NÃO APAGA O TEOR (31/10/2026): a tela volta com o que foi
+            # digitado, e não para a ficha, onde o texto se perdia.
             flash(str(erro), "danger")
-            return voltar
+            return _rcpn_tela_lancamento(assento_id, tipo)
         # O SELO SAI AGORA, com o ato já lavrado — e fora da transação dele.
         recado_do_selo = _selar_o_ato(
             "rc_atos", r["ato_id"], tipo, "RCPN", aviso,
@@ -5014,7 +5023,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   f"Motivo: {motivo_selo} "
                   "Corrija o problema do selo e lance de novo.",
                   "danger")
-            return voltar
+            return _rcpn_tela_lancamento(assento_id, tipo)
         with db.transaction() as con:
             RCETQ.sincronizar_teor_do_ato(con, r["ato_id"])
         audit("RCPN_ATO", "rc_atos", r["ato_id"], {"tipo": tipo})
@@ -5022,7 +5031,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return voltar
 
     def _rcpn_tela_lancamento(assento_id: int, tipo: str):
-        """A tela de um único tipo de lançamento. Só LÊ até o envio."""
+        """A tela de um único tipo de lançamento. Só LÊ até o envio.
+
+        O RASCUNHO REABRE AQUI (31/10/2026), mas só no mesmo assento e no mesmo
+        tipo: a averbação guardada de uma pessoa não pode abrir na ficha de
+        outra. É o endereço da tela que os liga (`RASC.chave_da_tela`).
+        """
+        form, rascunho_id = RASC.para_a_tela(
+            db, RASC.TELA_DO_LANCAMENTO,
+            "Este rascunho é de outro assento, ou de outro tipo de lançamento. "
+            "Abra-o pela lista de Rascunhos.",
+            chave=url_for({"AVERBACAO": "rcpn_averbar", "ANOTACAO": "rcpn_anotar",
+                           "RETIFICACAO": "rcpn_retificar"}[tipo], assento_id=assento_id))
         with db.connect() as con:
             assento = banco(con).um(
                 "SELECT * FROM rc_assentos WHERE id=%s", (assento_id,)
@@ -5044,7 +5064,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                      "RETIFICACAO": "Retificação"},
             receita=receita, caixa=caixa, protocolos=protocolos,
             gratuidades=CU.GRATUIDADES_POR_PESSOA,
-            naturezas_averbacao=AS.NATUREZAS_AVERBACAO_CIVIL)
+            naturezas_averbacao=AS.NATUREZAS_AVERBACAO_CIVIL,
+            form=form, rascunho_id=rascunho_id)
 
     @app.route("/rcpn/<int:assento_id>/averbar")
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -6299,12 +6320,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                       for v in RASC.expirados(con, hoje())}
         for r in linhas:
             r["dias_parado"] = velhos.get(r["id"])
-            try:
-                r["abrir_url"] = url_for(r["tela"], rascunho_id=r["id"])
-            except Exception:
-                # Tela que não existe mais, ou que não aceita reabertura por
-                # aqui — a linha continua na lista (e apagável), só sem link.
-                r["abrir_url"] = None
+            r["abrir_url"] = RASC.endereco_de_abrir(r, url_for)
         return render_template("rascunhos.html", linhas=linhas, tela=tela,
                                dias=RASC.DIAS_ATE_ENVELHECER)
 
@@ -6319,15 +6335,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         tela = (request.form.get("_tela") or "").strip()
         volta = destino_interno((request.form.get("_volta") or "").strip(), "")
         rid = request.form.get("_rascunho_id")
-        dados = {k: v for k, v in request.form.items()
-                 if not k.startswith("_")}
+        dados = RASC.dados_do_envio(request.form)
         try:
             with db.transaction() as con:
                 r = RASC.salvar(
                     con, tela=tela, dados=dados,
                     titulo=(request.form.get("_titulo") or "").strip()
                     or (dados.get("nome") or tela),
-                    chave=(request.form.get("_chave") or "").strip(),
+                    chave=RASC.chave_da_tela(tela, volta, request.form.get("_chave")),
                     agora=agora(), por=usuario_nome(),
                     rascunho_id=int(rid) if rid else None)
         except ValueError as erro:
@@ -7877,6 +7892,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         requerimento, e manda-lo voltar com peticao e negar o que a norma
         permite.
         """
+        form, rascunho_id = RASC.para_a_tela(
+            db, "rcpn_retificacao_nova",
+            "Este rascunho não é de uma retificação do Registro Civil.")
+
+        def tela():
+            return render_template("rcpn_retificacao_nova.html", norma=RRNORMA,
+                                   form=form, rascunho_id=rascunho_id)
+
         if request.method == "POST":
             try:
                 with db.transaction() as con:
@@ -7896,10 +7919,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         por=usuario_nome())
             except ValueError as erro:
                 flash(str(erro), "danger")
-                return redirect(url_for("rcpn_retificacao_nova"))
+                return tela()
             audit("RCPN_RETIFICACAO_ABERTA", "rr_processos", pid, {})
             return redirect(url_for("rcpn_retificacao", processo_id=pid))
-        return render_template("rcpn_retificacao_nova.html", norma=RRNORMA)
+        return tela()
 
     @app.route("/rcpn/retificacoes/<int:processo_id>", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -9447,6 +9470,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         Dois lugares não podem discordar de a qual atribuição uma série
         pertence.
         """
+        form, rascunho_id = RASC.para_a_tela(
+            db, "rcpj_rtd_registro_novo", "Este rascunho não é de um registro do RCPJ ou do RTD.")
+        if rascunho_id and request.method == "GET" and form.get("serie") in RG.SERIES_RCPJ:
+            flash("O arquivo da lista de presença ou da certidão não fica no "
+                  "rascunho. Se você já tinha escolhido um, escolha de novo.", "info")
+
         def tela():
             series = [{"codigo": c, "nome": LN.serie(c).nome,
                        "atribuicao": "RCPJ" if c in RG.SERIES_RCPJ else "RTD"}
@@ -9454,10 +9483,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             with db.connect() as con:
                 contexto = _para_cobrar(con, "rg_atos", "REGISTRO")
             return render_template("atrib_registro_novo.html", series=series,
-                                   form=request.form,
+                                   form=form, rascunho_id=rascunho_id,
                                    declaracoes_do_termo=RG.DECLARACOES_POR_SERIE,
                                    enquadramento_sugerido=RG.sugerir_enquadramento(
-                                       request.form.get("natureza")),
+                                       form.get("natureza")),
                                    rotulos_enquadramento=RG.ROTULO_DO_ENQUADRAMENTO,
                                    **contexto)
 
@@ -10455,25 +10484,30 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         nascer com o registro — `ra_registro.registrar` devolve o registro, e
         o ato dele é o de número 1.
         """
+        form, rascunho_id = RASC.para_a_tela(
+            db, "livro3_registro_novo", "Este rascunho não é de um registro do Livro 3.")
+
         def tela():
             with db.connect() as con:
                 contexto = _para_cobrar(con, "ra_atos", "R")
                 itens_tabela = RS.itens_disponiveis(con)
             # AS LINHAS DE PARTE VOLTAM PREENCHIDAS quando o registro é
             # recusado — perder quatro nomes digitados por um campo é o que
-            # faz o balcão desistir da tela.
+            # faz o balcão desistir da tela. A linha com o documento e sem o nome
+            # volta também: gravar a ignora, e quem digitou tem de vê-la.
             def _i(campo: str, i: int) -> str:
-                lista = request.form.getlist(campo)
+                lista = form.getlist(campo)
                 return lista[i] if i < len(lista) else ""
 
             linhas = [
                 {"nome": n, "tipo": _i("parte_documento_tipo", i),
                  "numero": _i("parte_documento", i),
                  "papel": _i("parte_papel", i)}
-                for i, n in enumerate(request.form.getlist("parte_nome"))
-                if (n or "").strip()] if request.method == "POST" else []
+                for i, n in enumerate(form.getlist("parte_nome"))
+                if (n or "").strip() or _i("parte_documento", i).strip()]
             return render_template("atrib_livro3_novo.html",
-                                   naturezas=RA.NATUREZAS, form=request.form,
+                                   naturezas=RA.NATUREZAS, form=form,
+                                   rascunho_id=rascunho_id,
                                    itens_tabela=itens_tabela,
                                    papeis=RAPT.PAPEIS,
                                    partes_digitadas=linhas or [{}, {}],

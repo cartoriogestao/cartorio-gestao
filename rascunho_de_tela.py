@@ -36,6 +36,7 @@ O QUE ELE NÃO FAZ, E POR QUÊ
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from bd_nativo import banco
@@ -88,6 +89,23 @@ NAO_SE_GUARDA = ("csrf_token", "senha", "password", "pin", "certificado")
 #   generoso e o descarte e explicito: `expirados()` mostra, e alguem apaga.
 DIAS_ATE_ENVELHECER = 30
 
+# OS CAMPOS REPETIDOS — 31/10/2026. O segundo devedor do Protesto e as outras
+# partes do Livro 3 têm o mesmo `name` do primeiro, e o rascunho guardava só o
+# primeiro valor: quem salvava dois devedores reabria com um.
+#
+#   QUEM LÊ `dados` CONTINUA LENDO UM DICIONÁRIO PLANO, com um texto por nome.
+#   A lista inteira vai à parte, nesta chave, e só para o nome que veio mais de
+#   uma vez. O sublinhado garante que ela não colide com campo de tela: o que
+#   começa com `_` nunca entra em `dados`. `ler` a tira de lá, e por isso nenhum
+#   leitor a vê; e rascunho antigo, que não a tem, abre como sempre abriu.
+CHAVE_DOS_REPETIDOS = "_repetidos"
+
+# A TELA QUE NÃO É ROTA. Averbar, anotar e retificar desenham o mesmo molde, e
+# ele salva com este nome, que não vira endereço: é preciso saber de que
+# assento é o lançamento. O endereço da tela é quem sabe, e ele fica na `chave`.
+TELA_DO_LANCAMENTO = "rcpn_lancamento_novo"
+_ENDERECO_DO_LANCAMENTO = re.compile(r"/rcpn/\d+/(?:averbar|anotar|retificar)")
+
 
 class RascunhoError(ValueError):
     """Erro de regra, em português de balcão."""
@@ -123,6 +141,33 @@ def limpar_campos(dados: dict) -> dict:
     return fora
 
 
+def dados_do_envio(form) -> dict:
+    """O que a tela mandou, na forma que `salvar` guarda. Só calcula.
+
+    `form` é o formulário do Flask, e não um dicionário: é ele que sabe dos
+    nomes repetidos. O campo que começa com `_` é do próprio rascunho.
+
+    **EM `dados[nome]` FICA O PRIMEIRO VALOR PREENCHIDO**, e não o primeiro
+    valor: é o que os leitores sempre receberam, quando o valor vazio nem
+    chegava aqui. Na lista repetida o vazio fica, porque é a posição dele que
+    diz de quem é cada valor: sem o documento vazio do primeiro devedor, o do
+    segundo voltaria como se fosse do primeiro.
+    """
+    dados: dict = {}
+    repetidos: dict = {}
+    for nome in form.keys():
+        if str(nome).startswith("_"):
+            continue
+        valores = form.getlist(nome)
+        dados[nome] = next((v for v in valores if _texto(v)),
+                           valores[0] if valores else "")
+        if len(valores) > 1:
+            repetidos[nome] = valores
+    if repetidos:
+        dados[CHAVE_DOS_REPETIDOS] = repetidos
+    return dados
+
+
 def salvar(con, *, tela: str, dados: dict, titulo: str,
            agora: str, chave: str = "", por: str = "",
            rascunho_id: int | None = None) -> dict:
@@ -140,12 +185,15 @@ def salvar(con, *, tela: str, dados: dict, titulo: str,
     if not tela:
         raise RascunhoError("O rascunho precisa saber de que tela ele é.")
     limpos = limpar_campos(dados)
+    repetidos = limpar_campos(limpos.pop(CHAVE_DOS_REPETIDOS, None))
     if not any(_texto(v) for v in limpos.values()):
         raise RascunhoError(
             "Não havia nada preenchido para guardar. Escreva alguma coisa "
             "antes de salvar o rascunho.")
     titulo = _texto(titulo) or tela
-    corpo = json.dumps(limpos, ensure_ascii=False)
+    corpo = json.dumps(
+        {**limpos, CHAVE_DOS_REPETIDOS: repetidos} if repetidos else limpos,
+        ensure_ascii=False)
     # O RASCUNHO DO ASSENTO DO RCPN VOLTA COM A CONFERÊNCIA (11/10/2026). Não
     # recusa — rascunho é para guardar pela metade —, mas quem o monta (o
     # balcão, ou o robô que lê as digitalizações) fica sabendo na hora o que
@@ -161,10 +209,13 @@ def salvar(con, *, tela: str, dados: dict, titulo: str,
 
     if rascunho_id:
         bd = banco(con)
-        existe = bd.um("SELECT id FROM rascunhos_de_tela WHERE id=%s",
+        existe = bd.um("SELECT id, tela FROM rascunhos_de_tela WHERE id=%s",
                        (int(rascunho_id),))
         if not existe:
             raise RascunhoError(f"Não achei o rascunho #{rascunho_id}.")
+        if existe["tela"] != tela:
+            raise RascunhoError(f"O rascunho #{rascunho_id} é de outra tela. "
+                                "Nada foi guardado por cima dele.")
         bd.escrever(
             """UPDATE rascunhos_de_tela SET dados_json=%s, titulo=%s,
                    atualizado_em=%s, atualizado_por=%s WHERE id=%s""",
@@ -187,15 +238,112 @@ def ler(con, rascunho_id: int) -> dict:
     if not linha:
         raise RascunhoError(f"Não achei o rascunho #{rascunho_id}.")
     d = dict(linha)
+    d["dados"], d["repetidos"] = {}, {}
     try:
-        d["dados"] = json.loads(d.get("dados_json") or "{}")
+        guardado = json.loads(d.get("dados_json") or "{}")
     except (ValueError, TypeError):
+        guardado = None
+    if isinstance(guardado, dict):
+        repetidos = guardado.pop(CHAVE_DOS_REPETIDOS, None)
+        d["dados"] = guardado
+        d["repetidos"] = repetidos if isinstance(repetidos, dict) else {}
+    else:
         # DADO ILEGIVEL NAO DERRUBA A TELA. O rascunho abre vazio, e a tela
         # diz que ele nao pode ser lido — melhor que um erro de sistema em
         # cima de um papel de anotacao.
-        d["dados"] = {}
         d["ilegivel"] = True
     return d
+
+
+def formulario(rascunho: dict):
+    """O rascunho na forma de um formulário enviado. Só calcula.
+
+    **É O MESMO OBJETO QUE O MOLDE RECEBE NA RECUSA DO SERVIDOR**, com `.get` e
+    `.getlist`, e por isso cada tela só precisa saber voltar preenchida uma vez.
+    """
+    from werkzeug.datastructures import ImmutableMultiDict
+
+    repetidos = rascunho.get("repetidos") or {}
+    itens = []
+    for nome, valor in (rascunho.get("dados") or {}).items():
+        lista = repetidos.get(nome)
+        for v in (lista if isinstance(lista, list) else [valor]):
+            itens.append((nome, "" if v is None else str(v)))
+    return ImmutableMultiDict(itens)
+
+
+def para_a_tela(db, tela: str, de_outra_tela: str, chave: str | None = None):
+    """O que a tela de ato mostra, e o rascunho aberto: `(form, rascunho_id)`. SÓ LÊ.
+
+    A rota chama no começo, e usa os dois no molde. Foi escrita para não haver
+    oito cópias da leitura que `rcpn_assento_novo`, `rcpn_habilitacao_nova` e
+    `ri_nova_matricula` fazem, com as mesmas regras:
+
+      - **quem preenche a tela é só o GET.** No POST, o que vale é o que a pessoa
+        acabou de digitar, e o `form` é o do pedido. Sem rascunho, ele é o do
+        pedido também: no GET vem vazio, e a tela sai como sempre saiu.
+      - **rascunho de outra tela é recusado com aviso**, e `de_outra_tela` é a
+        frase. A `chave`, quando vem, tem de ser a do rascunho também.
+      - **o `rascunho_id` vai para a macro `salvar_rascunho`**, e salvar de novo
+        atualiza o mesmo em vez de criar outro. Na recusa ele continua valendo,
+        porque o endereço do formulário o carrega.
+
+    O corpo que a tela manda não ganha campo nenhum. Reabrir não grava nada.
+    """
+    from flask import flash, request
+
+    rascunho_id = request.args.get("rascunho_id", type=int)
+    if not rascunho_id:
+        return request.form, None
+    abrindo = request.method == "GET"
+    with db.connect() as con:
+        try:
+            r = ler(con, rascunho_id)
+        except RascunhoError as erro:
+            if abrindo:
+                flash(str(erro), "danger")
+            return request.form, None
+    if r["tela"] != tela or (chave is not None and r.get("chave") != chave):
+        if abrindo:
+            flash(de_outra_tela, "danger")
+        return request.form, None
+    if not abrindo:
+        return request.form, rascunho_id
+    if r.get("ilegivel"):
+        flash(f"Não consegui ler o que o rascunho #{rascunho_id} guardou. A tela "
+              "abriu em branco, e ele continua na lista.", "danger")
+        return request.form, None
+    flash(f"Aberto do rascunho #{rascunho_id}. Confira os campos antes de gravar. "
+          "Ele não é ato: não tomou número, não selou e não cobrou.", "info")
+    return formulario(r), rascunho_id
+
+
+def chave_da_tela(tela: str, volta: str, chave: Any = "") -> str:
+    """A `chave` com que o rascunho se guarda. Só calcula.
+
+    Só o lançamento do civil a calcula: o endereço de volta diz de que assento
+    ele é, e se é averbação, anotação ou retificação.
+    """
+    if tela == TELA_DO_LANCAMENTO and _ENDERECO_DO_LANCAMENTO.fullmatch(volta or ""):
+        return volta
+    return _texto(chave)
+
+
+def endereco_de_abrir(rascunho: dict, url_for) -> str | None:
+    """Para onde o «abrir» da lista leva, ou `None`. Só calcula.
+
+    `None` é a tela que não existe mais, ou que não sabe reabrir. A linha continua
+    na lista, e pode ser apagada: ela só não promete o que não cumpre.
+    """
+    try:
+        if rascunho["tela"] != TELA_DO_LANCAMENTO:
+            return url_for(rascunho["tela"], rascunho_id=rascunho["id"])
+    except Exception:                                   # noqa: BLE001
+        return None
+    chave = rascunho.get("chave") or ""
+    if _ENDERECO_DO_LANCAMENTO.fullmatch(chave):
+        return f"{chave}?rascunho_id={rascunho['id']}"
+    return None
 
 
 def listar(con, *, tela: str = "",

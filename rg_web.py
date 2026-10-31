@@ -53,6 +53,7 @@ import livro_nucleo as LN
 import modelos_da_casa as MODELOS
 import notas_selo as NSELO
 import onrtdpj_api as ONR
+import rascunho_de_tela as RASC
 import rg_registro as RG
 import rg_titulo as TIT
 import rg_teor_rtdpj as RGTEOR
@@ -493,14 +494,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         from caixa_schema import reais
         return f" Lançado no caixa: R$ {reais(total)}."
 
-    def _atribuicao_pedida() -> int:
+    def _atribuicao_pedida(do_rascunho=None) -> int:
         """Qual atribuição a tela está olhando.
 
         **`request.values`, e não `request.form`** — o filtro chega por query
         string e o redirecionamento depois de gravar também. Este defeito
         apareceu duas vezes na mesma noite no IBGE e na FUNAI, espelhado.
+
+        **O rascunho reaberto diz a dele**: a lista o abre sem dizer a atribuição,
+        e o título guardado do RCPJ abriria como se fosse do RTD.
         """
-        bruto = str(request.values.get("atribuicao") or "").strip()
+        bruto = str(do_rascunho or request.values.get("atribuicao") or "").strip()
         try:
             codigo = int(bruto)
         except (TypeError, ValueError):
@@ -571,11 +575,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         protocolo se lança do mesmo jeito, porque é ele que marca a ordem de
         chegada, e a ordem de chegada é o que o título perde se esperar.
         """
-        atribuicao = _atribuicao_pedida()
+        form, rascunho_id = RASC.para_a_tela(
+            db, "rcpj_rtd_titulo_novo", "Este rascunho não é de um título do RCPJ ou do RTD.")
+        atribuicao = _atribuicao_pedida(
+            form.get("atribuicao") if rascunho_id and request.method == "GET" else None)
 
         def tela():
             return render_template(
-                "rcpj_rtd_titulo_novo.html", form=request.form,
+                "rcpj_rtd_titulo_novo.html", form=form, rascunho_id=rascunho_id,
                 atribuicao=atribuicao,
                 nome_da_atribuicao=TIT.NOME_DA_ATRIBUICAO[atribuicao],
                 atribuicoes=[{"codigo": c, "nome": TIT.NOME_DA_ATRIBUICAO[c]}

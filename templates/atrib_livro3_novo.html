@@ -15,7 +15,7 @@
 {# NO LAYOUT NOVO, O RASCUNHO SOBE PARA A LINHA DO VOLTAR: é uma linha a menos antes do primeiro campo. #}
 {% set o_rascunho %}{{ salvar_rascunho('livro3_registro_novo', url_for('livro3_registro_novo'),
                    'Registro do Livro 3', csrf_token,
-                   nome_em='parte_nome') }}{% endset %}
+                   nome_em='parte_nome', rascunho_id=rascunho_id) }}{% endset %}
 <div class="actions"><a class="button" href="{{ url_for('livro3_registros') }}">&larr; Livro 3</a>{% if layout_novo %}{{ o_rascunho }}{% endif %}</div>
 
 <div class="notice">
@@ -38,7 +38,8 @@
 #form-do-ato:valid:has([name=codigo_tj] option[value=""]:checked):has([name=selo]:placeholder-shown) .cg-gravar-falta{display:block}
 </style>
 {% endif %}
-<form method="post" class="grid2" style="padding:0 0 14px" id="form-do-ato"{% if cg_passos %} action="{{ url_for('livro3_registro_novo') }}"{% endif %}>
+{# O ENDEREÇO LEVA O RASCUNHO ABERTO: se o servidor recusar, a tela continua sabendo qual é. #}
+<form method="post" class="grid2" style="padding:0 0 14px" id="form-do-ato"{% if cg_passos %} action="{{ url_for('livro3_registro_novo', rascunho_id=rascunho_id) if rascunho_id else url_for('livro3_registro_novo') }}"{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   {% if cg_passos %}{{ regua('form-do-ato', cg_passos, 'titulo') }}{% endif %}
 
@@ -150,8 +151,8 @@
         <input name="base_calculo" value="{{ form.get('base_calculo','') }}"
                placeholder="0,00"></label>
       <label>Selo <small>(opcional)</small>
-        <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"></label>
-      {{ quadro(receita, caixa, protocolos) }}
+        <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"{% if form.get('selo') %} value="{{ form.get('selo') }}"{% endif %}></label>
+      {{ quadro(receita, caixa, protocolos, form=form) }}
     </div>
   </section>
 

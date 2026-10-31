@@ -36,6 +36,9 @@
 {% set pre = session.get('rcpn_averbacao_preenchida') if tipo == 'AVERBACAO' else None %}
 {% if pre and pre.get('assento_id') != assento.id %}{% set pre = None %}{% endif %}
 {% if pre %}{% set _usado = session.pop('rcpn_averbacao_preenchida', None) %}{% endif %}
+{# O RASCUNHO REABERTO volta com o que estava digitado (31/10/2026). O preenchimento que veio de um modelo é
+   mais novo que ele, e por isso vem antes. Sem nenhum dos dois, a tela sai como sempre saiu. #}
+{% set digitado = form or {} %}
 {% if tipo == 'AVERBACAO' and modelos_de_averbacao is defined %}
 {% set _modelos = modelos_de_averbacao(assento.especie) %}
 {% if _modelos %}
@@ -54,58 +57,59 @@
   <div class="panel-head"><span>Dados da {{ rotulos[tipo] | lower }}</span></div>
   {{ salvar_rascunho('rcpn_lancamento_novo', url_for({'AVERBACAO':'rcpn_averbar','ANOTACAO':'rcpn_anotar','RETIFICACAO':'rcpn_retificar'}[tipo], assento_id=assento.id),
                    rotulos[tipo] ~ ' — ' ~ assento.nome, csrf_token,
-                   nome_em='teor') }}
+                   nome_em='teor', rascunho_id=rascunho_id) }}
 
-  <form method="post" action="{{ url_for('rcpn_lancar', assento_id=assento.id) }}"
+  {# O ENDEREÇO LEVA O RASCUNHO ABERTO: se o servidor recusar, a tela continua sabendo qual é. #}
+  <form method="post" action="{{ url_for('rcpn_lancar', assento_id=assento.id, rascunho_id=rascunho_id) if rascunho_id else url_for('rcpn_lancar', assento_id=assento.id) }}"
         class="grid2" style="padding:14px" id="form-do-ato">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="tipo" value="{{ tipo }}">
     <label style="grid-column:1/-1">Teor
       <textarea name="teor" rows="7" required minlength="10"
-                placeholder="texto que será lançado e constará na certidão">{{ pre.teor if pre else '' }}</textarea></label>
+                placeholder="texto que será lançado e constará na certidão">{{ pre.teor if pre else digitado.get('teor', '') }}</textarea></label>
     <label style="grid-column:1/-1">Fundamento
       {% if tipo == 'RETIFICACAO' %}<small>(obrigatório)</small>
       {% else %}<small>(opcional)</small>{% endif %}
       <input name="fundamento" {% if tipo == 'RETIFICACAO' %}required{% endif %}
-             value="{{ pre.fundamento if pre else '' }}"
+             value="{{ pre.fundamento if pre else digitado.get('fundamento', '') }}"
              placeholder="ordem, pedido ou norma que autoriza o lançamento"></label>
     {% if tipo == 'AVERBACAO' %}
     <label>Natureza da averbação
       <select name="natureza_averbacao">
         <option value="">— escolha a natureza —</option>
         {% for n in naturezas_averbacao or [] %}
-        <option value="{{ n.codigo_form }}" {% if pre and pre.natureza == n.codigo_form %}selected{% endif %}>{{ n.rotulo }}</option>
+        <option value="{{ n.codigo_form }}" {% if (pre.natureza if pre else digitado.get('natureza_averbacao')) == n.codigo_form %}selected{% endif %}>{{ n.rotulo }}</option>
         {% endfor %}
       </select>
       <small>Escolha a natureza. O selador desta casa usa o código já medido
         neste caminho; o texto da averbação vai no teor.</small>
     </label>
     {% endif %}
-    <label>Selo <small>(opcional)</small><input name="selo"></label>
+    <label>Selo <small>(opcional)</small><input name="selo"{% if digitado.get('selo') %} value="{{ digitado.get('selo') }}"{% endif %}></label>
     {% if tipo == 'AVERBACAO' %}
     <div style="grid-column:1/-1;padding:8px 0">
       <label style="display:flex;gap:8px;align-items:flex-start">
         <input type="checkbox" name="ato_gratuito" value="1"
-               id="ato_gratuito"
+               id="ato_gratuito"{% if digitado.get('ato_gratuito') %} checked{% endif %}
                onchange="document.getElementById('bloco-gratuidade').style.display=this.checked?'block':'none'">
         <span><strong>Ato / selo gratuito</strong><br>
           <small>Marque quando a averbação for gratuita (hipossuficiência,
           assistência judiciária, art. 347 etc.). Lança com zero e sela com
           <em>isentoGratuito</em>.</small></span>
       </label>
-      <div id="bloco-gratuidade" style="display:none;margin-top:10px"
+      <div id="bloco-gratuidade" style="display:{{ 'block' if digitado.get('ato_gratuito') else 'none' }};margin-top:10px"
            class="grid2">
         <label>Tipo de gratuidade
           <select name="gratuidade_codigo">
             <option value="">— escolha —</option>
             {% for g in gratuidades or [] %}
-            <option value="{{ g.codigo }}">{{ g.rotulo }}</option>
+            <option value="{{ g.codigo }}"{% if digitado.get('gratuidade_codigo') == g.codigo %} selected{% endif %}>{{ g.rotulo }}</option>
             {% endfor %}
           </select></label>
         <label>Motivo <small>(obrigatório se gratuito)</small>
           <input name="motivo_gratuidade" id="motivo_gratuidade"
-                 placeholder="norma, decisão ou declaração que autoriza"></label>
-        <input type="hidden" name="selo_gratuito" id="selo_gratuito" value="">
+                 placeholder="norma, decisão ou declaração que autoriza"{% if digitado.get('motivo_gratuidade') %} value="{{ digitado.get('motivo_gratuidade') }}"{% endif %}></label>
+        <input type="hidden" name="selo_gratuito" id="selo_gratuito" value="{{ digitado.get('selo_gratuito', '') }}">
       </div>
     </div>
     <script>
@@ -118,7 +122,7 @@
       })();
     </script>
     {% endif %}
-    {{ quadro(receita, caixa, protocolos) }}
+    {{ quadro(receita, caixa, protocolos, form=form) }}
     <div class="actions" style="grid-column:1/-1">
       <button class="button">Lançar {{ rotulos[tipo] | lower }}</button>
       <a class="button" href="{{ url_for('rcpn_assento', assento_id=assento.id) }}">Cancelar</a>

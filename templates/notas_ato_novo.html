@@ -14,23 +14,25 @@
 <section class="panel">
   {{ salvar_rascunho('notas_ato_novo', url_for('notas_ato_novo'),
                    'Ato das Notas', csrf_token,
-                   nome_em='interessado') }}
+                   nome_em='interessado', rascunho_id=rascunho_id) }}
 
+{# O RASCUNHO REABERTO volta com o que estava digitado. Sem ele, a tela sai como sempre saiu. #}
+{% set digitado = form or {} %}
 <form method="post" class="grid2" style="padding:14px" id="form-do-ato">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="familia" value="{{ familia_chave }}">
     <label>Tipo do ato <select name="tipo" id="tipo-do-ato" required>
-      {% for k, rot in TIPOS_ATO.items() %}<option value="{{ k }}">{{ rot }}</option>{% endfor %}
+      {% for k, rot in TIPOS_ATO.items() %}<option value="{{ k }}"{% if digitado.get('tipo') == k %} selected{% endif %}>{{ rot }}</option>{% endfor %}
     </select></label>
-    <label>Data <input type="date" name="data" value="{{ hoje }}"></label>
+    <label>Data <input type="date" name="data" value="{{ digitado.get('data') or hoje }}"></label>
     <label class="span2">Modelo de texto
       <select name="modelo_codigo" id="modelo-do-ato">
         <option value="">— sem modelo, teor livre —</option>
         {% for m in modelos %}<option value="{{ m.codigo }}" data-tipo-ato="{{ m.tipo_ato }}"
           {% if modelo_escolhido == m.codigo %}selected{% endif %}>[{{ m.tipo }}] {{ m.nome }}</option>{% endfor %}
       </select></label>
-    <label class="span2">Interessado <input name="interessado"></label>
-    <label class="span2">Natureza (quando não usar modelo) <input name="natureza"></label>
+    <label class="span2">Interessado <input name="interessado"{% if digitado.get('interessado') %} value="{{ digitado.get('interessado') }}"{% endif %}></label>
+    <label class="span2">Natureza (quando não usar modelo) <input name="natureza"{% if digitado.get('natureza') %} value="{{ digitado.get('natureza') }}"{% endif %}></label>
     <div class="span2"><button class="primary">Abrir o ato</button>
       <span class="small muted">Depois vêm as partes, o teor e o lançamento no livro.</span></div>
   </form>

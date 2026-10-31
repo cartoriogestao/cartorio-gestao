@@ -1868,6 +1868,11 @@ def create_app(test_config: dict | None = None) -> Flask:
                 v["url"] = url_for(v["endpoint"], **{v["arg"]: v["item_id"]}) if v["endpoint"] else None
             except Exception:                                   # noqa: BLE001
                 v["url"] = None
+            # O rascunho se abre como na lista de Rascunhos: o do lançamento do civil
+            # não tem rota com o nome da tela, e o endereço está na chave dele.
+            if v.get("rascunho"):
+                import rascunho_de_tela as RASC
+                v["url"] = RASC.endereco_de_abrir(v["rascunho"], url_for)
         return render_template("task_detail.html", row=row, history=history, attachments=attachments, users=users,
                                sectors=sectors, pasta_vinculos=pasta_vinculos, pasta_docs=pasta_docs,
                                pasta_retirados=pasta_retirados,

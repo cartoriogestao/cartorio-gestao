@@ -373,6 +373,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @app.route("/rcpn/habilitacoes/nova", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def rcpn_habilitacao_nova():
+        def tela(v, rascunho_id):
+            leitura_origem = None
+            if rascunho_id:
+                import rc_leitura_documentos as LEIT
+                with db.connect() as con:
+                    leitura_origem = LEIT.leitura_do_rascunho(con, rascunho_id)
+            return render_template("rcpn_habilitacao_nova.html",
+                                   TIPOS=HC.TIPOS, REGIMES=HC.REGIMES,
+                                   hoje=hoje(), v=v, rascunho_id=rascunho_id,
+                                   leitura_origem=leitura_origem)
+
         if request.method == "POST":
             dados = {k: v for k, v in request.form.items()
                      if k != "csrf_token"}
@@ -381,8 +392,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     novo = HAB.abrir(con, dados, agora=agora(),
                                      usuario=usuario_nome())
             except HAB.HabilitacaoError as erro:
+                # A TELA VOLTA COM O QUE FOI DIGITADO (31/10/2026), e o rascunho
+                # aberto continua aberto: o endereço do formulário o carrega.
                 flash(str(erro), "danger")
-                return redirect(url_for("rcpn_habilitacao_nova"))
+                return tela(request.form, request.args.get("rascunho_id", type=int))
             audit("HC_ABERTA", "HC_HABILITACAO", novo,
                   {"nubentes": f"{dados.get('nubente1_nome')} e "
                                f"{dados.get('nubente2_nome')}"})
@@ -421,15 +434,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 v = r.get("dados") or {}
             else:
                 rascunho_id = None
-        leitura_origem = None
-        if rascunho_id:
-            import rc_leitura_documentos as LEIT
-            with db.connect() as con:
-                leitura_origem = LEIT.leitura_do_rascunho(con, rascunho_id)
-        return render_template("rcpn_habilitacao_nova.html",
-                               TIPOS=HC.TIPOS, REGIMES=HC.REGIMES,
-                               hoje=hoje(), v=v, rascunho_id=rascunho_id,
-                               leitura_origem=leitura_origem)
+        return tela(v, rascunho_id)
 
     # -------------------------------------------------------------- ficha
 

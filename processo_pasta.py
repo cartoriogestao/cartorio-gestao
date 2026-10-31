@@ -278,8 +278,9 @@ def vinculos(con: Any, task_id: int) -> list[dict]:
         v["rotulo"] = rotulo(bd, v["tabela"], v["item_id"])
         v["endpoint"], v["arg"] = t["endpoint"], t["arg"]
         if v["tabela"] == "rascunhos_de_tela":
-            r = bd.um("SELECT tela FROM rascunhos_de_tela WHERE id=%s", (v["item_id"],))
+            r = bd.um("SELECT id, tela, chave FROM rascunhos_de_tela WHERE id=%s", (v["item_id"],))
             v["endpoint"] = r["tela"] if r else None
+            v["rascunho"] = dict(r) if r else None
         if v["tabela"] == "ri_protocolos":
             v["etapa"] = etapa_do_ri(bd, v["item_id"])
     return saida

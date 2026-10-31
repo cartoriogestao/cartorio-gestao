@@ -57,6 +57,7 @@ import leitor_digital as LD
 import ato_selado as AS
 import etiqueta as ETQ
 import notas_selo as NSELO
+import rascunho_de_tela as RASC
 # AS TABELAS DA RECEITA MORAM NUM LUGAR SÓ. A DOI e a CTP
 # usam as mesmas, e duplicá-las aqui as faria divergir no
 # primeiro código que a Receita mudasse.
@@ -3679,8 +3680,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             Enquanto está em lavratura o ato não vai a central nenhuma: a
             separação da remessa filtra por `situacao = 'LAVRADO'`.
         """
+        # O RASCUNHO REABRE AQUI (31/10/2026). Ele guarda o módulo de onde saiu:
+        # a lista o abre sem dizer a família, e sem ela a tela ofereceria os tipos
+        # e os modelos de todas.
+        form, rascunho_id = RASC.para_a_tela(
+            db, "notas_ato_novo", "Este rascunho não é de um ato das Notas.")
         familia_chave = ((request.form.get("familia") if request.method == "POST"
-                          else request.args.get("familia")) or "").strip().lower()
+                          else request.args.get("familia") or form.get("familia"))
+                         or "").strip().lower()
         familia = NF.por_chave(familia_chave)
 
         if request.method == "POST":
@@ -3742,7 +3749,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   f"teor; o livro e a folha saem no lançamento.", "success")
             return redirect(url_for("notas_ato", ato_id=aid))
 
-        modelo_escolhido = (request.args.get("modelo") or "").strip()
+        modelo_escolhido = (request.args.get("modelo") or form.get("modelo_codigo") or "").strip()
         sql_modelos = "SELECT codigo, tipo, nome FROM nt_modelos WHERE ativo=1"
         params_modelos = []
         if familia:
@@ -3761,6 +3768,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                previsoes=previsoes, TIPOS_ATO=tipos_visiveis,
                                familia=familia, familia_chave=familia_chave,
                                modelo_escolhido=modelo_escolhido,
+                               form=form, rascunho_id=rascunho_id,
                                hoje=date.today().isoformat())
 
     # ------------------------------------- levar o teor para o LibreOffice

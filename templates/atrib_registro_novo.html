@@ -24,7 +24,7 @@
 
 {{ salvar_rascunho('rcpj_rtd_registro_novo', url_for('rcpj_rtd_registro_novo'),
                    'Registro RCPJ/RTD', csrf_token,
-                   nome_em='requerente_nome') }}
+                   nome_em='requerente_nome', rascunho_id=rascunho_id) }}
 
 <form method="post" class="grid2" style="padding:0 0 14px" id="form-do-ato"
       enctype="multipart/form-data">
@@ -74,8 +74,8 @@
     <div class="panel-head"><span>Selo e cobrança</span></div>
     <div class="grid2" style="padding:14px">
       <label>Selo <small>(opcional)</small>
-        <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"></label>
-      {{ quadro(receita, caixa, protocolos) }}
+        <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"{% if form.get('selo') %} value="{{ form.get('selo') }}"{% endif %}></label>
+      {{ quadro(receita, caixa, protocolos, form=form) }}
     </div>
   </section>
 

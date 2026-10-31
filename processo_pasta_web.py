@@ -159,12 +159,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         tela = (request.form.get("_tela") or "").strip()
         volta = destino_interno((request.form.get("_volta") or "").strip(), "")
         rid = request.form.get("_rascunho_id")
-        dados = {k: v for k, v in request.form.items() if not k.startswith("_")}
+        dados = RASC.dados_do_envio(request.form)
         try:
             with db.transaction() as con:
                 r = RASC.salvar(con, tela=tela, dados=dados,
                                 titulo=(request.form.get("_titulo") or "").strip() or (dados.get("nome") or tela),
-                                chave=(request.form.get("_chave") or "").strip(), agora=db.now(),
+                                chave=RASC.chave_da_tela(tela, volta, request.form.get("_chave")), agora=db.now(),
                                 por=usuario_nome(), rascunho_id=int(rid) if rid else None)
             tid = _abrir_processo_do_rascunho(r["id"], _prazo_do_form())
         except ValueError as erro:

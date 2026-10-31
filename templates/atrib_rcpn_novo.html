@@ -688,7 +688,7 @@
          registro, sem protocolo nem item de cobrança (o termo 19582, lavrado
          hoje, saiu assim). O quadro fica para o casamento e as demais. #}
       {% if not (nascimento or obito or natimorto) %}
-      {{ quadro(receita, caixa, protocolos) }}
+      {{ quadro(receita, caixa, protocolos, form=form_do_quadro) }}
       {% endif %}
     </div>
   </section>

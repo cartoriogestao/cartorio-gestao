@@ -159,11 +159,13 @@ def expedientes_com_tudo_concluido(con: sqlite3.Connection) -> list[dict]:
     E a lista do trabalho que ja acabou e ninguem fechou — o expediente 6 desta
     casa esta nela desde que a tarefa dele foi concluida. Sem esta lista, ele
     so apareceria a quem abrisse aquele expediente por acaso.
+
+    O mais recente em cima (of-0150).
     """
     prontos = []
     for e in banco(con).ler(
             """SELECT id, internal_protocol, subject, stage, deadline_date
-                 FROM expedientes ORDER BY id"""):
+                 FROM expedientes ORDER BY id DESC"""):
         if esta_encerrado(e["stage"]):
             continue
         t = tarefas_do_expediente(con, e["id"])

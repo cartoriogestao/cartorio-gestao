@@ -783,6 +783,10 @@ def resumir_registros(registros: list[dict[str, Any]]) -> dict[str, Any]:
 
     O funcionário é o `responsavel_user_id`, porque o nome pode mudar, e sai com
     o nome mais recente do período. Registro sem usuário agrupa pelo nome gravado.
+
+    Os registros de cada funcionário saem do mais novo ao mais antigo (of-0150):
+    a data maior primeiro e, no mesmo dia, o maior início e o maior id. A linha sem
+    horário tem início vazio, o menor valor, e por isso fica no fim do dia.
     """
     por_funcionario: dict[tuple, list[dict[str, Any]]] = {}
     por_categoria: dict[str, list[dict[str, Any]]] = {}
@@ -796,7 +800,8 @@ def resumir_registros(registros: list[dict[str, Any]]) -> dict[str, Any]:
     funcionarios = []
     for lista in por_funcionario.values():
         lista = sorted(lista, key=lambda r: (r.get("data_registro") or "",
-                                             r.get("hora_inicio") or "", r.get("id") or 0))
+                                             r.get("hora_inicio") or "", r.get("id") or 0),
+                       reverse=True)
         recente = max(lista, key=lambda r: (r.get("data_registro") or "", r.get("id") or 0))
         funcionarios.append({
             "nome": (recente.get("responsavel_nome") or "").strip() or "(sem nome)",

@@ -126,7 +126,17 @@ def test_o_pacote_traz_o_xml_e_os_relatorios():
         xml = z.read(nomes[0]).decode("utf-8")
         assert "<NumeroRegistro>8</NumeroRegistro>" in xml
         fora = z.read("IndicadorReal_COMPLETO_2026-10-30_fora.csv").decode("utf-8-sig")
-        assert "falta o CEP" in fora and "matricula;motivo" in fora
+        assert "falta o CEP" in fora and '"matricula";"motivo"' in fora
+
+
+def test_o_relatorio_nao_deixa_formula_passar():
+    """O nome do dono é digitado na tela, e o relatório vai abrir numa planilha."""
+    r = {**_resultado([{"cns": "000000", "numeroRegistro": 8}]),
+         "donos": [{"numero": "8", "nome": '=HIPERLINK("http://exemplo.invalid")', "de_onde": "-informado"}]}
+    conteudo, _ = IR.pacote(r, data="2026-10-30")
+    with zipfile.ZipFile(io.BytesIO(conteudo)) as z:
+        donos = z.read("IndicadorReal_COMPLETO_2026-10-30_donos.csv").decode("utf-8-sig")
+    assert "'=HIPERLINK" in donos and "'-informado" in donos
 
 
 def test_passando_do_limite_do_onr_o_xml_se_divide(monkeypatch):

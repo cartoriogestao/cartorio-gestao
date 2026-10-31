@@ -23,13 +23,13 @@ aparece na lista das repetidas, como o script fazia em 11/10/2026.
 """
 from __future__ import annotations
 
-import csv
 import io
 import re
 import zipfile
 from typing import Any, Mapping
 
 import cpf_cnpj as CC
+import csv_seguro
 import onr_api as API
 import onr_endereco_do_teor as ENDERECO
 import onr_indicador_xml as XML
@@ -271,7 +271,7 @@ def calcular(con, *, settings: Mapping[str, Any], cns: Any) -> dict:
 
 def _csv(cabecalho: list[str], linhas: list[list[Any]]) -> bytes:
     f = io.StringIO(newline="")
-    w = csv.writer(f, delimiter=";")
+    w = csv_seguro.escritor(f)
     w.writerow(cabecalho)
     w.writerows(linhas)
     return f.getvalue().encode("utf-8-sig")

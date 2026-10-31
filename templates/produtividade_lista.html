@@ -1,8 +1,9 @@
 {% extends 'base.html' %}
-{% from '_ordenar.html' import cabecalho, seletor %}
+{% from '_ordenar.html' import cabecalho, seletor, script_da_rolagem %}
 {% block title %}Produtividade — Administrativo{% endblock %}
 {% block heading %}<h1>Controle diário de produtividade</h1>{% endblock %}
 {% block content %}
+{{ script_da_rolagem(VERSION) }}
 <p class="muted">Preencha só o essencial (categoria, tarefa, horários). Tempo líquido, desvio, eficiência e semana são calculados automaticamente. Use o botão <strong>⏱ Produtividade</strong> em qualquer tela para lançar rápido ou iniciar o cronômetro.</p>
 
 <section class="panel">

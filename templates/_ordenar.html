@@ -9,6 +9,10 @@
 
   É LINK, e não botão de formulário: ordenar é pergunta, e não gravação — fica
   no endereço, entra nos favoritos e o «voltar» do navegador funciona.
+
+  `script_da_rolagem`: a página recarrega ao ordenar, e este script a devolve à
+  posição em que estava (of-0143). Só as telas que ordenam o carregam. Recebe a
+  versão como argumento porque a macro importada não enxerga o `VERSION` da tela.
 #}
 {% macro cabecalho(rotulo, chave, ordem_atual, inverter_atual, endpoint) -%}
 {%- set a = request.args.to_dict() -%}
@@ -22,4 +26,8 @@
 {% macro seletor(ordens, ordem_atual, inverter_atual) -%}
 <label>Ordenar <select name="ordem">{% for k, rot in ordens.items() %}<option value="{{ k }}" {% if (ordem_atual or '') == k %}selected{% endif %}>{{ rot }}</option>{% endfor %}</select></label>
 <label class="checkbox-label"><input type="checkbox" name="inverter" value="1" {% if inverter_atual %}checked{% endif %}> Inverter a ordem</label>
+{%- endmacro %}
+
+{% macro script_da_rolagem(versao) -%}
+<script defer src="{{ url_for('static', filename='ordenar_rolagem.js') }}?v={{ versao }}"></script>
 {%- endmacro %}

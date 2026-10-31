@@ -335,6 +335,8 @@ def test_ri_negativa_sem_escolha_recusa_antes_de_numerar(s, gravador):
 
 
 def _protocolo(s, *codigos: str) -> int:
+    """O protocolo com os itens QUITADOS: o selo pago só sai com o item pago
+    (`protesto_selo_previo.conferir_antes_de_lavrar`), e a trava fica ligada."""
     con = _con(s)
     with con:
         cur = con.execute("INSERT INTO cx_protocolos (numero, data_abertura,"
@@ -343,18 +345,22 @@ def _protocolo(s, *codigos: str) -> int:
         pid = int(cur.lastrowid)
         for codigo in codigos:
             con.execute("INSERT INTO cx_protocolo_atos (protocolo_id,"
-                        " codigo_ato) VALUES (?, ?)", (pid, codigo))
+                        " codigo_ato, quitado) VALUES (?, ?, 1)", (pid, codigo))
     con.close()
     return pid
 
 
 def _emitir_protesto(s, **campos):
     tela = s["c"].get("/protesto/certidoes").get_data(as_text=True)
-    return s["c"].post("/protesto/certidoes/emitir",
-                       data={"csrf_token": _token(tela), "nome": "MARIA",
-                             "documento": "000.000.001-91", "anos": "5",
-                             **campos},
-                       follow_redirects=True)
+    r = s["c"].post("/protesto/certidoes/emitir",
+                    data={"csrf_token": _token(tela), "nome": "MARIA",
+                          "documento": "000.000.001-91", "anos": "5",
+                          **campos},
+                    follow_redirects=True)
+    # a recusa da rota aparece aqui, com a mensagem, e não como lista vazia
+    recusa = re.findall(r"Certidão NÃO emitida[^<]*", r.get_data(as_text=True))
+    assert not recusa, recusa
+    return r
 
 
 def test_protesto_a_busca_sai_por_atos_em_geral(s, gravador):
@@ -383,9 +389,13 @@ def test_protesto_a_busca_do_protocolo_vale_e_nao_se_vende_outra(
 
 
 def test_protesto_eletronica_ja_inclui_a_busca(s, gravador):
+    # O 17.5.5 não saiu em selo pelo caminho da certidão (no acervo, os 10
+    # saíram por `atos-em-geral`): sem a afirmação expressa, a rota recusa.
     pid = _protocolo(s, "17.5.5")
     _emitir_protesto(s, protocolo_id=str(pid), busca_formulario="1",
-                     busca_item="17.6.2")
+                     busca_item="17.6.2", afirmo="1",
+                     afirmacao="Afirmo, sob minha responsabilidade, que o item "
+                               "da certidão eletrônica serve para esta certidão.")
     assert len(gravador) == 1
 
 

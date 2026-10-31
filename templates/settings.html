@@ -33,6 +33,7 @@
   <strong>Nesta página:</strong>
   <a href="#cfg-serventia">Serventia e rede</a> ·
   <a href="#cfg-centrais">Centrais (credenciais)</a> ·
+  <a href="#cfg-cenprot-chave">Chave da CENPROT</a> ·
   <a href="#cfg-admin">Administração</a>
 </nav>
 <p class="notice">
@@ -328,6 +329,50 @@
     público (<code>SircWs/Movimento?wsdl</code>) só declara um endereço.
   </p>
 {% if layout_novo %}</details></div></details>{% else %}
+</section>
+{% endif %}
+{% if layout_novo %}{{ abre('cfg-cenprot-chave', 'Chave da CENPROT', 'pesos informados' if s.cenprot_chave_pesos else 'sem pesos: o título vai sem chave') }}<div class="cg-quadro-corpo">{% else %}
+<section class="panel" id="cfg-cenprot-chave">
+  <h2>Chave da CENPROT</h2>
+{% endif %}
+  {% set c = cenprot_tentativa or {} %}
+  <p class="muted small">
+    Ao apontar um título que veio da CRA, o sistema calcula a chave de 23
+    dígitos com que a CENPROT conhece o título. A conta usa os dados abaixo, e
+    <strong>cada serventia preenche os seus</strong>: o sistema não traz nenhum.
+    Sem os pesos, o título é apontado <strong>sem chave</strong>, e ela pode vir
+    depois pelo XML que a Central devolve.
+  </p>
+  <form method="post" action="{{ url_for('configuracoes_cenprot_chave') }}" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Código da UF no IBGE (2 dígitos)
+      <input name="ibge_uf" inputmode="numeric" maxlength="2"
+             value="{{ c.ibge_uf if c.ibge_uf is defined else (s.ibge_uf or '') }}"></label>
+    <label>Código do município no IBGE (5 dígitos)
+      <input name="ibge_municipio" inputmode="numeric" maxlength="5"
+             value="{{ c.ibge_municipio if c.ibge_municipio is defined else (s.ibge_municipio or '') }}"></label>
+    <label>Número da serventia na CENPROT (2 dígitos)
+      <input name="ibge_cartorio" inputmode="numeric" maxlength="2"
+             value="{{ c.ibge_cartorio if c.ibge_cartorio is defined else (s.ibge_cartorio or '') }}"></label>
+    <label class="span2">Pesos da conta (23 dígitos, um por posição da chave)
+      <input name="cenprot_chave_pesos" inputmode="numeric" maxlength="23"
+             autocomplete="off"
+             value="{{ c.cenprot_chave_pesos if c.cenprot_chave_pesos is defined else (s.cenprot_chave_pesos or '') }}">
+      <small class="muted">Peça o valor a quem presta suporte à sua serventia.
+        Ao salvar, o sistema refaz a conta sobre as chaves já gravadas e diz
+        quantas conferem. Deixe vazio para não calcular.</small></label>
+    {% if c.conferencia %}
+    <div class="span2 notice warning">
+      <strong>Só {{ c.conferencia.conferem }} de {{ c.conferencia.total }} chaves
+      já gravadas conferem com estes pesos.</strong> Nada foi gravado. Com pesos
+      errados, o título novo vai à Central com uma chave que não fecha.
+      <label class="checkbox-label"><input type="checkbox" name="gravar_mesmo_assim">
+        Conferi os pesos e quero gravar assim mesmo</label>
+    </div>
+    {% endif %}
+    <div class="span2"><button class="button primary" type="submit">Salvar a chave da CENPROT</button></div>
+  </form>
+{% if layout_novo %}</div></details>{% else %}
 </section>
 {% endif %}
 {% if layout_novo %}{{ abre('cfg-backup-protecao', 'Proteção do backup', 'cifra ligada' if backup_cifra == 'ligada' else ('a senha guardada não abre' if backup_cifra == 'perdida' else 'cifra desligada'), aberto=backup_cifra == 'perdida') }}<div class="cg-quadro-corpo">{% else %}

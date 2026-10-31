@@ -2,11 +2,13 @@
 
 Pedido do oficial, 15/10/2026: «vamos criar o gerador de arquivo e assinar com
 o certificado». Até aqui `DOCUMENTACAO/CENPROT_XML_MEDIDO.md` dizia que ele
-«não se constrói», porque a chave única de título novo não se compõe. **A
+«não se constrói», porque a chave única de título novo não se compunha. **A
 amostra que o oficial trouxe (28 arquivos desta casa, 66 títulos, pasta
 `9. CENPROT\\ARQUIVO XML`) resolveu isso pelo outro lado:** a casa NÃO manda
 apontamento — manda só dois arquivos, e os dois falam de título que JÁ TEM a
-chave (ela vem da CENPROT, e a tela «Chave do CENPROT» a grava):
+chave. Desde 30/10/2026 a do título que vem da CRA se calcula ao apontar
+(`protesto_cenprot.compor_chave`); a do título de origem CENPROT, e a do que
+ficou sem ela, vêm da Central, e a tela «Chave do CENPROT» as grava:
 
     P — os protestos lavrados (ocorrência 2), com o INSTRUMENTO ELETRÔNICO
         assinado dentro, em base64;
@@ -872,8 +874,11 @@ def montar_titulo(con, ato_id: int, *,
     chave = _so_digitos(titulo.get("chave_cenprot"))
     if len(chave) != 23:
         raise CenprotXmlError(
-            "o título não tem a chave do CENPROT — ela vem do XML que a "
-            "Central devolve (tela «Chave do CENPROT»)")
+            "o título não tem a chave do CENPROT. O sistema a calcula só ao "
+            "apontar título vindo da CRA, e para isso precisa do quadro «Chave "
+            "da CENPROT» preenchido em Administrativo → Configuração → "
+            "Configurações; fora disso, ela vem do XML que a Central devolve "
+            "(tela «Chave do CENPROT»)")
     # O TAB vem do próprio título; os outros, do cadastro pelo código.
     apr = apresentante_do_xml(bd, titulo)
     reg = registro_da_cra(bd, titulo, acervo)

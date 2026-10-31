@@ -7,12 +7,22 @@
   <a class="button" href="{{ url_for('protesto_cenprot') }}">Chave do CENPROT</a>
 </div>
 
+{% if faltam_pesos_da_chave %}
+<div class="notice warning">
+  <strong>O sistema não está calculando a chave da CENPROT.</strong> Título que
+  vem da CRA é apontado sem chave até o quadro
+  <a href="{{ url_for('settings') }}#cfg-cenprot-chave">Chave da CENPROT</a>, em
+  Administrativo → Configuração → Configurações, ter os pesos preenchidos. Quem
+  preenche é o administrador.
+</div>
+{% endif %}
 <div class="notice">
   O arquivo diário que a casa sobe no <strong>portal da CENPROT</strong>
   (a API dela não tem caminho para ele). São dois: o <strong>P</strong>, com
   os protestos lavrados e o <strong>instrumento assinado</strong> dentro, e o
   <strong>D</strong>, com os pagos, retirados e cancelados. Apontamento a casa
-  não manda: o título já tem a chave da Central.
+  não manda: o título já tem a chave, calculada ao apontar se veio da CRA, e a
+  da Central nos outros casos.
   Entra só o que <strong>este sistema lavrou</strong> e ainda não foi a
   arquivo nenhum — o que veio do sistema antigo ele mesmo já mandou.
   O campo <em>edital</em> vai verdadeiro quando o edital foi publicado.

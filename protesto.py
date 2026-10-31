@@ -79,6 +79,7 @@ from datetime import date
 from typing import Any
 
 import escrituracao as ESC
+import protesto_cenprot as PCEN
 import protesto_cra as CRA
 import protesto_termo as TERMO
 from bd_nativo import banco
@@ -514,24 +515,91 @@ def numero_do_protocolo(con, dia: str) -> str:
     928 dos 931. Antes de 2024 havia outro esquema — `7797140001` para
     14/02/2022 —, que nao se reproduz: o que vale e o que a casa faz agora.
 
-    O NUMERO SAI DA CONTA DO DIA, e nao de um contador a parte. O Livro de
-    Protocolo do Protesto tem numeracao diaria — reinicia sozinha —, e por
-    isso nao ha contador em `nu_numeracao` para semear. Contar o que ja saiu
-    hoje e o mesmo que `escrituracao._proximo_do_dia` faz para as series
-    diarias, sem precisar de livro aberto: a geometria do Livro de Protocolo
-    (quantos por face) e pendencia em aberto, e escrever nele antes de
-    conferir seria inventar.
+    O NUMERO E O MAIOR DO DIA MAIS UM, e nao a contagem do dia (30/10/2026).
+    Contar repetia numero: com `0001` e `0003` gravados, a conta dava `0003`
+    outra vez, e o titulo de uma pessoa ficava com o protocolo do de outra. Na
+    producao ha um dia assim na forma de hoje, o 02/06/2025, e nove no esquema
+    antigo. O maior olha os titulos E os protocolos ja emitidos, para o numero
+    nao voltar depois que um titulo sair. O Livro de Protocolo do Protesto tem
+    numeracao diaria, e por isso nao ha contador em `nu_numeracao`: a geometria
+    dele (quantos por face) e pendencia em aberto.
+
+    SO LE. Quem grava trava antes e chama `_emitir_protocolo`.
     """
     d = str(dia)[:10]
     prefixo = d[2:4] + d[5:7] + d[8:10]
-    n = banco(con).valor(
-        """SELECT COUNT(*) AS n FROM pt_titulos
-            WHERE protocolo IS NOT NULL AND protocolo ILIKE %s""",
-        (f"{prefixo}%",))
-    return f"{prefixo}{int(n) + 1:04d}"
+    bd = banco(con)
+    numeros = [
+        linha["protocolo"].strip()[len(prefixo):]
+        for sql in ("SELECT protocolo FROM pt_titulos WHERE protocolo LIKE %s",
+                    "SELECT protocolo FROM pt_protocolos_emitidos "
+                    "WHERE protocolo LIKE %s")
+        for linha in bd.ler(sql, (f"{prefixo}%",))]
+    maior = max((int(n) for n in numeros if n.isdigit()), default=0)
+    return f"{prefixo}{maior + 1:04d}"
+
+
+def _emitir_protocolo(bd, titulo_id: int, agora: str) -> str:
+    """Emite o protocolo do titulo. ESCREVE. Trava na transacao de quem chama.
+
+    A TRAVA VEM ANTES DA LEITURA: e ela que faz dois apontamentos ao mesmo tempo
+    nao lerem o mesmo maior. A chave primaria de `pt_protocolos_emitidos` e a
+    protecao no banco, se um dia alguem emitir sem passar por aqui.
+    """
+    bd.travar("pt_titulos.protocolo")
+    protocolo = numero_do_protocolo(bd, agora)
+    bd.escrever(
+        """INSERT INTO pt_protocolos_emitidos(protocolo, titulo_id, emitido_em)
+           VALUES (%s,%s,%s)""", (protocolo, titulo_id, agora))
+    bd.escrever("UPDATE pt_titulos SET protocolo=%s WHERE id=%s",
+                (protocolo, titulo_id))
+    return protocolo
 
 
 # ----------------------------------------------------------- o apontamento
+
+
+def _primeiro_devedor(bd, tit: dict) -> dict | None:
+    """O titulo do primeiro devedor, ja apontado, se este for o devedor seguinte.
+
+    Recusa apontar o seguinte antes do primeiro: o protocolo e o lugar no livro
+    sao os dele. Se o primeiro saiu sem ser apontado, nao ha o que herdar, e o
+    seguinte se aponta sozinho.
+    """
+    primeiro_id = tit.get("titulo_principal_id")
+    if not primeiro_id:
+        return None
+    primeiro = bd.um(
+        "SELECT id, numero_titulo, situacao, protocolo FROM pt_titulos WHERE id=%s",
+        (int(primeiro_id),))
+    if not primeiro:
+        return None
+    if primeiro["situacao"] == "RECEBIDO":
+        raise ProtestoError(
+            f"Este título é o devedor seguinte do título "
+            f"{primeiro['numero_titulo']}, que ainda não foi apontado. Aponte "
+            f"aquele primeiro: os dois ficam com o mesmo protocolo.")
+    ato = bd.um(
+        """SELECT livro_id, folha, verso, numero_ordem, rotulo FROM pt_atos
+            WHERE titulo_id=%s AND tipo='APONTAMENTO' AND cancelado=0
+            ORDER BY id LIMIT 1""", (int(primeiro_id),))
+    if not ato or not (primeiro["protocolo"] or "").strip():
+        return None
+    return {**primeiro, "lugar": ato}
+
+
+def _lugar_do_primeiro(bd, ato: dict) -> dict:
+    """O lugar do apontamento do primeiro devedor, na forma de `ESC.reservar`.
+
+    O E-OFICIO NAO ABRE LINHA NOVA NO LIVRO para o devedor seguinte: ele fica com
+    o livro, a folha e a ordem do primeiro (nos 34 pares do acervo).
+    """
+    livro = bd.um("SELECT numero FROM nu_livros WHERE id=%s", (ato["livro_id"],))
+    return {"livro_id": ato["livro_id"],
+            "livro_numero": livro["numero"] if livro else None,
+            "folha": ato["folha"], "verso": bool(ato["verso"]),
+            "rotulo": ato["rotulo"], "faces": [], "sobra": [],
+            "numero_ordem": ato["numero_ordem"], "paginas": 0}
 
 
 def lancar_apontamento(con, titulo_id: int, *, sv: dict,
@@ -548,6 +616,14 @@ def lancar_apontamento(con, titulo_id: int, *, sv: dict,
     O ato entra PRIMEIRO na tabela e o lugar depois, como em toda a casa: se
     a reserva falhar por falta de folha, a transacao volta atras inteira e
     nao sobra ato sem lugar.
+
+    A CHAVE DO CENPROT DO TITULO DA CRA NASCE AQUI (30/10/2026): este e o ponto
+    unico, tanto do lote recebido (`protesto_remessa._receber_lote`) quanto do
+    apontamento pela ficha. Titulo que ja tem chave fica com ela; o de origem
+    CENPROT recebe a da Central. Ver `protesto_cenprot.chave_do_apontamento`.
+
+    O DEVEDOR SEGUINTE DO MESMO TITULO fica com o protocolo, a chave e o lugar no
+    livro do primeiro, como no E-Oficio. Ver `_primeiro_devedor`.
     """
     bd = banco(con)
     tit = titulo_para_gravar(bd, titulo_id)
@@ -557,6 +633,8 @@ def lancar_apontamento(con, titulo_id: int, *, sv: dict,
         raise ProtestoError(
             f"O título {tit['numero_titulo']} está com situação "
             f"{tit['situacao']} — não se aponta de novo.")
+    primeiro = _primeiro_devedor(bd, tit)
+    protocolo_de_antes = (tit["protocolo"] or "").strip()
 
     ato_id = int(bd.escrever(
         """INSERT INTO pt_atos(titulo_id, tipo, data_ato, origem, criado_em,
@@ -568,14 +646,28 @@ def lancar_apontamento(con, titulo_id: int, *, sv: dict,
     # CRA na posicao 448 do retorno. Titulo que ja tem protocolo (veio do
     # acervo com ele) fica com o que tinha: renumerar apagaria o que a Central
     # ja conhece.
-    if not (tit["protocolo"] or "").strip():
-        bd.travar("pt_titulos.protocolo")
+    if not protocolo_de_antes and primeiro:
+        protocolo_de_antes = primeiro["protocolo"].strip()
         bd.escrever("UPDATE pt_titulos SET protocolo=%s WHERE id=%s",
-                    (numero_do_protocolo(bd, agora), titulo_id))
+                    (protocolo_de_antes, titulo_id))
+    elif not protocolo_de_antes:
+        _emitir_protocolo(bd, titulo_id, agora)
 
-    lugar = ESC.reservar(con, SERIE_APONTAMENTO, "pt_atos", ato_id, sv=sv,
-                         agora=agora, data_extenso=data_extenso, paginas=1,
-                         usuario=usuario)
+    # A TRAVA VEM ANTES DA LEITURA: e ela que faz o sequencial crescer sem
+    # repetir, e o segundo devedor do protocolo ver a chave do primeiro.
+    chave = (tit["chave_cenprot"] or "").strip() or None
+    if tit["origem"] == "CRA" and not chave:
+        bd.travar("pt_titulos.chave_cenprot")
+        chave = PCEN.chave_do_apontamento(
+            bd, titulo_id, protocolo_de_antes=protocolo_de_antes, data=agora)
+        if chave:
+            bd.escrever("UPDATE pt_titulos SET chave_cenprot=%s WHERE id=%s",
+                        (chave, titulo_id))
+
+    lugar = (_lugar_do_primeiro(bd, primeiro["lugar"]) if primeiro
+             else ESC.reservar(con, SERIE_APONTAMENTO, "pt_atos", ato_id, sv=sv,
+                               agora=agora, data_extenso=data_extenso, paginas=1,
+                               usuario=usuario))
     bd.escrever(
         """UPDATE pt_atos SET livro_id=%s, folha=%s, verso=%s, numero_ordem=%s,
                               rotulo=%s WHERE id=%s""",
@@ -583,7 +675,8 @@ def lancar_apontamento(con, titulo_id: int, *, sv: dict,
          lugar["numero_ordem"], lugar["rotulo"], ato_id))
     bd.escrever("UPDATE pt_titulos SET situacao='APONTADO' WHERE id=%s",
                (titulo_id,))
-    return {"ato_id": ato_id, "titulo_id": titulo_id, **lugar}
+    return {"ato_id": ato_id, "titulo_id": titulo_id, "chave_cenprot": chave,
+            **lugar}
 
 
 # ------------------------------------------------------------ a intimacao

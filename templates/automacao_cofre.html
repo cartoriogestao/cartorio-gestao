@@ -45,10 +45,10 @@
     <p class="small">O login do malote tem tela própria:
       <a href="{{ url_for('malote_robo_codigo') }}">Malote: login e código de dois fatores</a>.</p>
     <fieldset><legend>Campos digitados</legend>
-      <p class="small muted">À ESQUERDA vai o NOME do campo, em minúsculas (ex.: usuario, senha, client_id,
-        client_secret); À DIREITA, o valor — o login, o CPF, a senha. As duas primeiras linhas já vêm com
-        «usuario» e «senha»: para uma credencial de usuário e senha, basta preencher o valor ao lado. Linha sem valor
-        não é gravada.</p>
+      <p class="small muted">Na caixa de CIMA vai o NOME do campo, em minúsculas (ex.: usuario, senha, client_id,
+        client_secret); na de BAIXO, o valor — o login, o CPF, a senha. Os dois primeiros pares já vêm com
+        «usuario» e «senha»: para uma credencial de usuário e senha, basta preencher o valor embaixo de cada um. Par
+        sem valor não é gravado.</p>
       {% for n in range(1, 6) %}<p><input name="campo_nome_{{ n }}" size="16" placeholder="nome do campo" autocomplete="off"
         value="{{ {1: 'usuario', 2: 'senha'}.get(n, '') }}">
         <input type="password" name="campo_valor_{{ n }}" size="40" placeholder="valor" autocomplete="new-password"></p>{% endfor %}

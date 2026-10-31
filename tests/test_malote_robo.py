@@ -337,7 +337,7 @@ def test_login_so_de_numeros_na_caixa_do_nome_diz_onde_vai_cada_um():
     «nome inválido», sem dizer que ele vai do lado do valor."""
     with pytest.raises(COFRE.CofreError) as erro:
         COFRE._campos_limpos({"00011122233": "segredo"})
-    assert "DIREITA" in str(erro.value) and "00011122233" not in str(erro.value)
+    assert "BAIXO" in str(erro.value) and "00011122233" not in str(erro.value)
     assert COFRE._campos_limpos({"usuario": "00011122233", "senha": "x"}) == {
         "usuario": "00011122233", "senha": "x"}
 

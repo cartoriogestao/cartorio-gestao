@@ -3613,6 +3613,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         request=request,
         flash=flash,
         current_user_fn=current_user,
+        parse_date=parse_date,
     )
 
     # OS ENVIOS ÀS CENTRAIS (06/10/2026): a cobrança da conferência diária só

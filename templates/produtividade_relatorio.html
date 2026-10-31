@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% block title %}Produtividade — relatório{% endblock %}
+{% block heading %}<h1>Produtividade — relatório por período</h1>{% endblock %}
+{% block content %}
+{# O cabeçalho do papel fica no conteúdo porque a barra do título não sai na
+   impressão. Menu, botões e `.actions` já somem por `app.css` e `casca.css`. #}
+<style>
+  .rel-tabela{overflow-x:auto}
+  .rel-marca{font-weight:600}
+  @media print{
+    .rel-filtros,.rel-voltar,.flash{display:none!important}
+    .rel-tabela{overflow:visible}
+    .rel-tabela th,.rel-tabela td{padding:3px 4px;font-size:10px}
+    .rel-tabela tr{break-inside:avoid}
+  }
+</style>
+<p class="rel-voltar"><a href="{{ url_for('produtividade_lista') }}">← Produtividade</a></p>
+
+<section class="panel rel-filtros">
+  <form method="get" class="grid2">
+    <label>Relatório
+      <select name="tipo">
+        <option value="simplificado" {% if tipo == 'simplificado' %}selected{% endif %}>Simplificado</option>
+        <option value="completo" {% if tipo == 'completo' %}selected{% endif %}>Completo</option>
+      </select>
+    </label>
+    {% if user_role in ('ADMIN', 'MANAGER') %}
+    <label>Funcionário
+      <select name="responsavel">
+        <option value="Todos" {% if filtro_responsavel == 'Todos' %}selected{% endif %}>Todos</option>
+        {% if responsavel_fora_da_lista %}<option value="{{ filtro_responsavel }}" selected>{{ nome_responsavel }}</option>{% endif %}
+        {% for u in escreventes %}
+        <option value="{{ u['id'] }}" {% if filtro_responsavel|string == u['id']|string %}selected{% endif %}>{{ u['full_name'] or u['username'] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% else %}
+    <label>Funcionário <input readonly value="{{ nome_responsavel }}"></label>
+    {% endif %}
+    <label>De <input type="date" name="data_de" value="{{ data_de }}"></label>
+    <label>Até <input type="date" name="data_ate" value="{{ data_ate }}"></label>
+    <label>Categoria
+      <select name="categoria"><option value="">todas</option>{% for c in categorias %}<option {% if filtros.categoria == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+    </label>
+    <label>Prioridade
+      <select name="prioridade"><option value="">todas</option>{% for p in prioridades %}<option {% if filtros.prioridade == p %}selected{% endif %}>{{ p }}</option>{% endfor %}</select>
+    </label>
+    <label>Situação
+      <select name="status"><option value="">todas</option>{% for s in status_list %}<option {% if filtros.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    </label>
+    <label>Procurar <input name="q" value="{{ filtros.q }}" placeholder="tarefa ou observação"></label>
+    <div class="span2 actions" style="margin:0">
+      <button type="submit" class="button">Ver relatório</button>
+      <button type="button" class="button secondary" onclick="window.print()">Imprimir</button>
+      <a class="button secondary" href="{{ url_for('produtividade_exportar_csv', **parametros) }}">Exportar CSV</a>
+      <a class="button secondary" href="{{ url_for('produtividade_exportar_xlsx', **parametros) }}">Exportar Excel</a>
+    </div>
+    <p class="span2 small muted" style="margin:0">Período de até 366 dias. O registro em andamento, sem hora de início ou fim, ou com horário inconsistente conta nas tarefas e em «registros sem tempo», e o tempo dele fica fora das somas.</p>
+  </form>
+</section>
+
+{% macro cabecalho_resumo(primeira) %}
+<tr>
+  <th>{{ primeira }}</th><th>Tarefas</th><th>Concluídas</th><th>Taxa de conclusão</th><th>Tempo líquido</th>
+  <th>Tempo médio por tarefa</th><th>Eficiência média</th><th>Registros sem tempo</th>
+</tr>
+{% endmacro %}
+{% macro valores_resumo(t) %}
+<td>{{ t.tarefas }}</td>
+<td>{{ t.concluidas }}</td>
+<td>{{ t.taxa_conclusao_pct }}%</td>
+<td>{{ t.tempo_liquido_hhmm }}</td>
+<td>{% if t.tempo_medio_min is not none %}{{ t.tempo_medio_min }} min{% else %}—{% endif %}</td>
+<td>{% if t.eficiencia_media_pct is not none %}{{ t.eficiencia_media_pct }}%{% else %}—{% endif %}</td>
+<td>{{ t.sem_tempo }}</td>
+{% endmacro %}
+
+<section class="panel" data-relatorio="{{ tipo }}">
+  <h2>Relatório {{ tipo }} de produtividade</h2>
+  <p><strong>Período:</strong> {{ fmt_date(data_de) }} a {{ fmt_date(data_ate) }}
+    {% for rotulo, valor in descricao %}· <strong>{{ rotulo }}:</strong> {{ valor }} {% endfor %}</p>
+  <p class="small muted">Emitido em {{ emitido_em }} por {{ emitido_por }}.</p>
+
+  <h3>Total geral e funcionários</h3>
+  <div class="rel-tabela">
+    <table class="table">
+      <thead>{{ cabecalho_resumo('Funcionário') }}</thead>
+      <tbody>
+        {% for f in resumo.funcionarios %}
+        <tr><td>{{ f.nome }}</td>{{ valores_resumo(f) }}</tr>
+        {% else %}
+        <tr><td colspan="8" class="muted">Nenhum registro com esses filtros.</td></tr>
+        {% endfor %}
+        <tr data-total-geral><td><strong>Total geral</strong></td>{{ valores_resumo(resumo.geral) }}</tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% if tipo == 'completo' %}
+  <h3>Total por categoria</h3>
+  <div class="rel-tabela">
+    <table class="table">
+      <thead>{{ cabecalho_resumo('Categoria') }}</thead>
+      <tbody>
+        {% for c in resumo.categorias %}
+        <tr><td>{{ c.categoria }}</td>{{ valores_resumo(c) }}</tr>
+        {% else %}
+        <tr><td colspan="8" class="muted">Nada no período.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% for f in resumo.funcionarios %}
+  <h3>{{ f.nome }} — {{ f.tarefas }} registro(s)</h3>
+  <div class="rel-tabela">
+    <table class="table">
+      <thead>
+        <tr><th>Data</th><th>Categoria</th><th>Tarefa</th><th>Prior.</th><th>Situação</th><th>Início</th><th>Fim</th><th>Pausas</th><th>Líquido</th><th>Plan.</th><th>Efic.%</th><th>Obs.</th></tr>
+      </thead>
+      <tbody>
+        {% for r in f.registros %}
+        <tr data-registro="{{ r.id }}">
+          <td>{{ fmt_date(r.data_registro) }}</td>
+          <td>{{ r.categoria }}</td>
+          <td>{{ r.tarefa }}</td>
+          <td>{{ r.prioridade }}</td>
+          <td>{{ r.status }}</td>
+          <td>{{ r.hora_inicio or '—' }}</td>
+          <td>{{ r.hora_fim or '—' }}</td>
+          <td>{{ r.pausas_min or 0 }}</td>
+          <td>{% if r.motivo_sem_tempo %}<span class="rel-marca">Sem tempo: {{ r.motivo_sem_tempo }}</span>{% else %}{{ r.tempo_liquido_hhmm }}{% endif %}</td>
+          <td>{% if r.tempo_planejado_min is not none %}{{ r.tempo_planejado_min|int }}{% else %}—{% endif %}</td>
+          <td>{% if not r.motivo_sem_tempo and r.eficiencia_pct is not none %}{{ r.eficiencia_pct }}{% else %}—{% endif %}</td>
+          <td class="small">{{ r.observacoes or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+  {% endif %}
+</section>
+{% endblock %}

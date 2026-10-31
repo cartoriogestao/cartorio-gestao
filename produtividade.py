@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import re
 import sqlite3
+from calendar import monthrange
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -616,6 +617,41 @@ def listar_registros(
 ) -> list[dict[str, Any]]:
     bd = banco(con)
     _ensure_colunas(bd)
+    sql, params = _sql_dos_registros(
+        responsavel_user_id=responsavel_user_id, data_de=data_de, data_ate=data_ate,
+        data_exata=data_exata, categoria=categoria, prioridade=prioridade,
+        status=status, texto=texto,
+    )
+    sql += " ORDER BY data_registro DESC, id DESC LIMIT %s"
+    params.append(teto_da_lista(limite, ordem))
+    registros = [_enriquecer_registro(dict(r)) for r in bd.ler(sql, params)]
+    if ordem:
+        registros = ordenar_registros(registros, ordem, inverter, listar_prioridades(bd))
+    return registros
+
+
+def teto_da_lista(limite: int, ordem: str | None = None) -> int:
+    """O limite que `listar_registros` aplica de fato ao `limite` pedido.
+
+    COM ORDEM ESCOLHIDA, lê-se mais antes de ordenar: a ordem é feita depois
+    de ler, e cortar em 500 primeiro ordenaria só os 500 mais novos.
+    """
+    teto = 5000 if ordem else 500
+    return max(1, min(int(limite), teto))
+
+
+def _sql_dos_registros(
+    *,
+    responsavel_user_id: int | None = None,
+    data_de: str | None = None,
+    data_ate: str | None = None,
+    data_exata: str | None = None,
+    categoria: str | None = None,
+    prioridade: str | None = None,
+    status: str | None = None,
+    texto: str | None = None,
+) -> tuple[str, list[Any]]:
+    """A leitura e os filtros dos registros, sem ordem e sem limite."""
     sql = (
         "SELECT id, data_registro, responsavel_user_id, responsavel_nome, "
         "categoria, tarefa, prioridade, status, hora_inicio, hora_fim, "
@@ -645,15 +681,132 @@ def listar_registros(
     if texto:
         sql += " AND (tarefa ILIKE %s OR observacoes ILIKE %s)"
         params += [f"%{texto}%"] * 2
-    sql += " ORDER BY data_registro DESC, id DESC LIMIT %s"
-    # COM ORDEM ESCOLHIDA, lê-se mais antes de ordenar: a ordem é feita depois
-    # de ler, e cortar em 500 primeiro ordenaria só os 500 mais novos.
-    teto = 5000 if ordem else 500
-    params.append(max(1, min(int(limite), teto)))
-    registros = [_enriquecer_registro(dict(r)) for r in bd.ler(sql, params)]
-    if ordem:
-        registros = ordenar_registros(registros, ordem, inverter, listar_prioridades(bd))
-    return registros
+    return sql, params
+
+
+# ---------------------------------------------------------------------------
+# Relatórios por período (of-0119). Só leem.
+# ---------------------------------------------------------------------------
+
+LIMITE_DO_PERIODO_DIAS = 366
+
+
+class PeriodoInvalido(ValueError):
+    """O período pedido não serve. A mensagem é a frase para o balcão."""
+
+
+def validar_periodo(
+    data_de: str | None,
+    data_ate: str | None,
+    *,
+    hoje: date | None = None,
+) -> tuple[str, str]:
+    """O período completo, a partir de datas já normalizadas em `AAAA-MM-DD`.
+
+    Vazio é o mês corrente. Só o início vai até hoje; só o fim começa no dia 1º
+    do mês dele. Os 366 dias contam as duas pontas.
+    """
+    ref = hoje or date.today()
+    if not data_de and not data_ate:
+        ultimo = monthrange(ref.year, ref.month)[1]
+        return ref.replace(day=1).isoformat(), ref.replace(day=ultimo).isoformat()
+    fim = date.fromisoformat(data_ate) if data_ate else ref
+    inicio = date.fromisoformat(data_de) if data_de else fim.replace(day=1)
+    if inicio > fim:
+        raise PeriodoInvalido("O início do período está depois do fim. Confira as datas.")
+    dias = (fim - inicio).days + 1
+    if dias > LIMITE_DO_PERIODO_DIAS:
+        raise PeriodoInvalido(
+            f"O período tem {dias} dias, e o limite é {LIMITE_DO_PERIODO_DIAS}. "
+            "Escolha um período menor."
+        )
+    return inicio.isoformat(), fim.isoformat()
+
+
+def registros_do_periodo(
+    con: sqlite3.Connection,
+    *,
+    data_de: str,
+    data_ate: str,
+    responsavel_user_id: int | None = None,
+    categoria: str | None = None,
+    prioridade: str | None = None,
+    status: str | None = None,
+    texto: str | None = None,
+) -> list[dict[str, Any]]:
+    """Todos os registros do período, do mais antigo ao mais novo, SEM CORTE:
+    um relatório não pode omitir linha. O tamanho é contido pelo limite de dias."""
+    sql, params = _sql_dos_registros(
+        responsavel_user_id=responsavel_user_id, data_de=data_de, data_ate=data_ate,
+        categoria=categoria, prioridade=prioridade, status=status, texto=texto,
+    )
+    sql += " ORDER BY data_registro, id"
+    return [_enriquecer_registro(dict(r)) for r in banco(con).ler(sql, params)]
+
+
+def motivo_sem_tempo(registro: dict[str, Any]) -> str | None:
+    """Por que o registro não entra na conta de tempo; `None` quando entra."""
+    if registro.get("horario_inconsistente"):
+        return "horário inconsistente"
+    if registro.get("status") == STATUS_EM_ANDAMENTO:
+        return "em andamento"
+    if registro.get("tempo_liquido_min") is None:
+        return "sem hora de início ou fim"
+    return None
+
+
+def _totais(registros: list[dict[str, Any]]) -> dict[str, Any]:
+    """As colunas do resumo, com as métricas de `_enriquecer_registro`. Tempo
+    líquido zero fica fora do tempo médio, como no painel do dia."""
+    total = len(registros)
+    concluidas = sum(1 for r in registros if r.get("status") == STATUS_CONCLUIDA)
+    com_tempo = [r for r in registros if motivo_sem_tempo(r) is None]
+    tempos = [r["tempo_liquido_min"] for r in com_tempo if r.get("tempo_liquido_min")]
+    tempo = sum(tempos)
+    eficiencias = [r["eficiencia_pct"] for r in com_tempo if r.get("eficiencia_pct") is not None]
+    return {
+        "tarefas": total,
+        "concluidas": concluidas,
+        "taxa_conclusao_pct": round(concluidas / total * 100.0, 1) if total else 0.0,
+        "tempo_liquido_min": tempo,
+        "tempo_liquido_hhmm": format_hhmm_de_minutos(tempo),
+        "tempo_medio_min": round(tempo / len(tempos), 1) if tempos else None,
+        "eficiencia_media_pct": (
+            round(sum(eficiencias) / len(eficiencias), 1) if eficiencias else None
+        ),
+        "sem_tempo": total - len(com_tempo),
+    }
+
+
+def resumir_registros(registros: list[dict[str, Any]]) -> dict[str, Any]:
+    """Total geral, uma linha por funcionário e total por categoria.
+
+    O funcionário é o `responsavel_user_id`, porque o nome pode mudar, e sai com
+    o nome mais recente do período. Registro sem usuário agrupa pelo nome gravado.
+    """
+    por_funcionario: dict[tuple, list[dict[str, Any]]] = {}
+    por_categoria: dict[str, list[dict[str, Any]]] = {}
+    for r in registros:
+        uid = r.get("responsavel_user_id")
+        nome = (r.get("responsavel_nome") or "").strip()
+        chave = ("id", uid) if uid is not None else ("nome", nome)
+        por_funcionario.setdefault(chave, []).append(r)
+        por_categoria.setdefault(r.get("categoria") or "", []).append(r)
+
+    funcionarios = []
+    for lista in por_funcionario.values():
+        lista = sorted(lista, key=lambda r: (r.get("data_registro") or "",
+                                             r.get("hora_inicio") or "", r.get("id") or 0))
+        recente = max(lista, key=lambda r: (r.get("data_registro") or "", r.get("id") or 0))
+        funcionarios.append({
+            "nome": (recente.get("responsavel_nome") or "").strip() or "(sem nome)",
+            **_totais(lista),
+            "registros": [{**r, "motivo_sem_tempo": motivo_sem_tempo(r)} for r in lista],
+        })
+    funcionarios.sort(key=lambda f: f["nome"].casefold())
+    categorias = [{"categoria": c, **_totais(por_categoria[c])}
+                  for c in sorted(por_categoria, key=str.casefold)]
+    return {"geral": _totais(registros), "funcionarios": funcionarios, "categorias": categorias}
 
 
 def _semana_de(ref: date) -> tuple[str, str]:
@@ -1406,6 +1559,10 @@ def linhas_exportacao(
         responsavel_user_id=responsavel_user_id,
         data_exata=data_filtro,
     )
+    return _linhas_de_exportacao(regs)
+
+
+def _linhas_de_exportacao(regs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     # Ordenar cronológico para export (planilha)
     regs = sorted(regs, key=lambda r: (r.get("data_registro") or "", r.get("id") or 0))
     out = []
@@ -1465,10 +1622,19 @@ def exportar_csv(
     *,
     data_filtro: str | None = None,
     responsavel_user_id: int | None = None,
+    periodo: tuple[str, str] | None = None,
+    filtros: dict[str, str | None] | None = None,
 ) -> str:
-    linhas = linhas_exportacao(
-        con, data_filtro=data_filtro, responsavel_user_id=responsavel_user_id
-    )
+    """Com `periodo`, traz o período inteiro, sem corte; sem ele, só o dia."""
+    if periodo:
+        linhas = _linhas_de_exportacao(registros_do_periodo(
+            con, data_de=periodo[0], data_ate=periodo[1],
+            responsavel_user_id=responsavel_user_id, **(filtros or {}),
+        ))
+    else:
+        linhas = linhas_exportacao(
+            con, data_filtro=data_filtro, responsavel_user_id=responsavel_user_id
+        )
     buf = io.StringIO()
     # Sem fórmula na planilha (achado transversal 2, 26/10/2026): o campo
     # «Observações» é texto livre do balcão. O «Desvio (min)» negativo continua
@@ -1480,22 +1646,66 @@ def exportar_csv(
         writer.writerow(row)
     return buf.getvalue()
 
+def _aba_do_resumo(
+    resumo: dict[str, Any],
+    periodo: tuple[str, str],
+    descricao: list[tuple[str, str]],
+) -> list[list[Any]]:
+    """A aba «Resumo» do período, com as colunas do relatório. Sem «uso da
+    capacidade»: no período, ele exigiria os dias trabalhados, que não existem."""
+    colunas = ["Tarefas", "Concluídas", "Taxa de conclusão (%)", "Tempo líquido (h:mm)",
+               "Tempo médio por tarefa (min)", "Eficiência média (%)", "Registros sem tempo"]
+
+    def valores(t: dict[str, Any]) -> list[Any]:
+        return [t["tarefas"], t["concluidas"], t["taxa_conclusao_pct"],
+                t["tempo_liquido_hhmm"],
+                t["tempo_medio_min"] if t["tempo_medio_min"] is not None else "",
+                t["eficiencia_media_pct"] if t["eficiencia_media_pct"] is not None else "",
+                t["sem_tempo"]]
+
+    linhas: list[list[Any]] = [
+        ["RESUMO DE PRODUTIVIDADE"],
+        ["Período", f"{periodo[0]} a {periodo[1]}"],
+    ]
+    linhas += [[rotulo, valor] for rotulo, valor in descricao]
+    linhas += [[], ["Total geral"] + colunas, ["Total"] + valores(resumo["geral"])]
+    linhas += [[], ["Funcionário"] + colunas]
+    linhas += [[f["nome"]] + valores(f) for f in resumo["funcionarios"]]
+    linhas += [[], ["Categoria"] + colunas]
+    linhas += [[c["categoria"]] + valores(c) for c in resumo["categorias"]]
+    return linhas
+
+
 def exportar_xlsx(
     con: sqlite3.Connection,
     *,
     data_filtro: str | None = None,
     responsavel_user_id: int | None = None,
+    periodo: tuple[str, str] | None = None,
+    filtros: dict[str, str | None] | None = None,
+    descricao: list[tuple[str, str]] | None = None,
 ) -> bytes:
-    """Gera .xlsx (OOXML) sem openpyxl — mesmas colunas da planilha + aba Painel."""
+    """Gera .xlsx (OOXML) sem openpyxl — mesmas colunas da planilha + aba Painel.
+
+    Com `periodo`, a aba Painel, que é do dia, dá lugar à aba Resumo do período.
+    """
     from xlsx_simples import (
         build_xlsx,
         parse_data_iso,
         parse_hora_para_time,
     )
 
-    linhas = linhas_exportacao(
-        con, data_filtro=data_filtro, responsavel_user_id=responsavel_user_id
-    )
+    regs_do_periodo: list[dict[str, Any]] = []
+    if periodo:
+        regs_do_periodo = registros_do_periodo(
+            con, data_de=periodo[0], data_ate=periodo[1],
+            responsavel_user_id=responsavel_user_id, **(filtros or {}),
+        )
+        linhas = _linhas_de_exportacao(regs_do_periodo)
+    else:
+        linhas = linhas_exportacao(
+            con, data_filtro=data_filtro, responsavel_user_id=responsavel_user_id
+        )
     # Colunas: 1=Data(date), 7=início(time), 8=fim(time),
     # 9/11/12/13 numéricos
     col_styles = {1: 2, 7: 3, 8: 3}
@@ -1537,6 +1747,15 @@ def exportar_xlsx(
                 L.get("Eficiência") or "",
                 L.get("Observações") or "",
                 _num(L.get("Semana")),
+            ]
+        )
+
+    if periodo:
+        return build_xlsx(
+            [
+                ("Registro Diário", rows, col_styles),
+                ("Resumo", _aba_do_resumo(resumir_registros(regs_do_periodo), periodo,
+                                          descricao or []), None),
             ]
         )
 

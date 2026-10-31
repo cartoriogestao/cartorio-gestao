@@ -178,7 +178,7 @@
   {% if tem_acervo %}
   <form method="post" action="{{ url_for('protesto_cenprot_xml_titulos_tab_do_acervo') }}" style="padding:0 14px 14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button type="submit">Trazer do E-Ofício o apresentante dos títulos TAB</button>
+    <button type="submit">Trazer do sistema antigo o apresentante dos títulos TAB</button>
     <small>Só preenche o que está vazio; o que alguém informou fica.</small>
   </form>
   {% endif %}

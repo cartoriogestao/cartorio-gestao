@@ -78,7 +78,9 @@ TELAS_QUE_LINKAVAM = (
     "/importar-padrao",
 )
 
-NOME = re.compile(r"e-of[ií]cio", re.I)
+# O nome inteiro: sem a letra antes, «correcoes-de-oficio» (o endereço do menu)
+# casava pelo «e-oficio» do meio e reprovava toda tela.
+NOME = re.compile(r"(?<![a-z])e-of[ií]cio", re.I)
 
 
 @pytest.fixture()

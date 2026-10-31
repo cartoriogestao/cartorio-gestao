@@ -99,6 +99,12 @@
 /* a tela, como ela sempre foi */
 .cg-rolagem{flex:1;min-height:0;overflow:auto;scroll-padding-top:12px}
 .cg-rolagem:focus{outline:0}
+.cg-procurar-papel{margin:0 0 10px}
+.cg-procurar-papel input{max-width:420px}
+.cg-grupo-de-papeis,.cg-como-funciona{margin-bottom:8px}
+.cg-grupo-de-papeis>summary,.cg-como-funciona>summary{font-weight:600;cursor:pointer}
+.cg-grupo-de-papeis>summary small{font-weight:400;margin-left:8px}
+.cg-grupo-de-papeis[open]>summary{margin-bottom:8px}
 .cg-titulo.topbar{height:auto;min-height:0;padding:12px 16px 0;border:0;background:none;position:static;box-shadow:none}
 .cg-titulo .page-heading h1{font-size:20px;font-weight:600;margin:0;line-height:1.2}
 .cg-titulo:has(.page-heading:empty){display:none}

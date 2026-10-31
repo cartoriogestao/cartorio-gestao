@@ -2,7 +2,33 @@
 {% block title %}Configurações — Administrativo{% endblock %}
 {% block heading %}<h1>Configurações</h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, QUADROS RECOLHIDOS — 30/10/2026. Os campos não saem do lugar: o formulário de cima
+   continua um só, e o «Salvar» grava todos os quadros, abertos ou fechados. A nota de cada quadro
+   mostra como ele está, sem precisar abrir. #}
 <div class="pagina-configuracoes stack">
+{% set sem_credencial = (centrais or []) | rejectattr('informada') | list %}
+{% if layout_novo %}
+<style>
+  .pagina-configuracoes.stack{gap:0}
+  .cg-cfg-geral>form.form-grid{display:block}
+  .pagina-configuracoes .cg-quadro>.form-grid{grid-template-columns:repeat(auto-fill,minmax(20rem,1fr))}
+  .pagina-configuracoes .cg-quadro .form-grid fieldset.cfg-bloco{border:0;padding:0}
+  .pagina-configuracoes .cg-quadro .form-grid fieldset.cfg-bloco>legend{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .pagina-configuracoes .cg-quadro>.form-grid label:not(.checkbox-label):not(.cfg-lista):has(>select),
+  .pagina-configuracoes .cg-quadro>.form-grid fieldset.cfg-bloco>label:not(.checkbox-label):not(.cfg-lista):has(>input[type=number]){max-width:46rem}
+  .cg-cfg-salvar{position:sticky;bottom:0;z-index:2;display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 0;margin-bottom:8px;background:var(--bg,#f5f6f8)}
+  .pagina-configuracoes .cg-ajuda{margin:10px 0 0}
+  .pagina-configuracoes .cg-ajuda>summary{cursor:pointer;font-size:13px}
+</style>
+{% if backup_cifra == 'perdida' %}
+<p class="notice danger"><strong>A senha da cifra do backup não abre:</strong> a chave do cofre sumiu, e os
+  pacotes estão saindo sem cifra. Grave a senha de novo em <a href="#cfg-backup-protecao">Proteção do backup</a>.</p>
+{% endif %}
+{% if sem_credencial %}
+<p class="notice"><strong>{{ sem_credencial | length }} de {{ (centrais or []) | length }} Centrais sem credencial.</strong> Informe em <a href="#cfg-centrais">Centrais</a>.</p>
+{% endif %}
+{% else %}
 <nav class="notice cfg-indice" aria-label="Nesta página">
   <strong>Nesta página:</strong>
   <a href="#cfg-serventia">Serventia e rede</a> ·
@@ -15,9 +41,11 @@
   Cada linha da tabela de <a href="#cfg-centrais">Centrais</a> tem o botão
   <strong>Guardar</strong> próprio — ele não usa o botão geral.
 </p>
-<section class="panel" id="cfg-serventia">
+{% endif %}
+<section class="{{ 'cg-cfg-geral' if layout_novo else 'panel' }}" id="cfg-serventia">
   <form method="post" class="form-grid">
     <input type="hidden" name="csrf_token" value="{{csrf_token}}">
+    {% if layout_novo %}{{ abre('cfg-unidade', 'Serventia', s.unit_name) }}<div class="form-grid cg-quadro-corpo">{% endif %}
     <label class="span2">Nome da unidade<input name="unit_name" value="{{s.unit_name}}"></label>
     {# O NOME DO REGISTRADOR NÃO TINHA TELA — achado em 07/09/2026 ao
        conferir a ficha nova do RI: a serventia já tinha corrigido
@@ -31,6 +59,7 @@
     <label>Substituto(a) (RI) <input name="ri_substituta" value="{{s.ri_substituta}}"></label>
     <label>Cidade (RI) <input name="ri_cidade" value="{{s.ri_cidade}}"></label>
     <label>UF (RI) <input name="ri_uf" value="{{s.ri_uf}}" size="3" maxlength="2"></label>
+    {% if layout_novo %}</div></details>{{ abre('cfg-pastas', 'Pastas', 'arquivos, importação, backups, malote e gratuidade') }}<div class="form-grid cg-quadro-corpo">{% endif %}
     <label>Pasta principal de arquivos<input name="archive_root" value="{{s.archive_root}}" placeholder="vazio = pasta padrão do sistema"></label>
     {# LX12 (19/10/2026): caminho digitado nas importações só vale dentro da
        pasta de dados, da pasta principal de arquivos ou de uma destas. #}
@@ -40,6 +69,8 @@
        dela: o código não procura essas pastas, lê daqui (23/10/2026). #}
     <label>Pasta do malote (onde a equipe salva o que baixa do Malote Digital)<input name="malote_pasta" value="{{s.malote_pasta}}" placeholder="vazio = o agente do malote só olha a pasta de entrada do sistema"></label>
     <label>Pasta dos comprovantes de gratuidade<input name="gratuidade_pasta" value="{{s.gratuidade_pasta}}" placeholder="vazio = sem o botão de trazer da pasta"></label>
+    {% if layout_novo %}<p class="muted small span2">Pasta de dados interna: {{data_dir}}</p>
+    </div></details>{{ abre('cfg-sessao', 'Alertas e sessão', 'alerta com ' ~ s.alert_days ~ ' dia(s) · inatividade de ' ~ s.session_timeout_minutes ~ ' min · máximo de ' ~ (s.session_absolute_hours or '12') ~ ' h') }}<div class="form-grid cg-quadro-corpo">{% endif %}
     <label>Dias de antecedência dos alertas<input type="number" name="alert_days" min="1" value="{{s.alert_days}}"></label>
     {# RELATO #34 DO OFICIAL, em 30/08/2026: «colocar o encerrar por
        inatividade para períodos superiores a 12h».
@@ -73,10 +104,13 @@
       <small>Em <strong>horas</strong> desde a entrada, mesmo com uso o tempo todo.
         Passado o prazo, o sistema pede a senha de novo.</small>
     </label>
+    {% if layout_novo %}</div></details>{{ abre('cfg-rede', 'Rede', 'host ' ~ s.network_host ~ ', porta ' ~ s.network_port) }}<div class="form-grid cg-quadro-corpo">{% endif %}
     <label>Host do servidor<input name="network_host" value="{{s.network_host}}"></label>
     <label>Porta HTTP<input type="number" name="network_port" value="{{s.network_port}}"></label>
     <label class="checkbox-label span2"><input type="checkbox" name="discovery_enabled" {% if s.discovery_enabled!='0' %}checked{% endif %}> Descoberta automática na rede</label>
     <label>Porta de descoberta<input type="number" name="discovery_port" value="{{s.discovery_port or '8766'}}"></label>
+    {% if layout_novo %}<p class="muted small span2">Para uso em rede, mantenha o host em <strong>0.0.0.0</strong>. O instalador oficial configura firewall e descoberta automática.</p>
+    </div></details>{{ abre('cfg-backup-rotina', 'Backup automático', ('ligado' if s.auto_backup == '1' else 'DESLIGADO') ~ ' · guarda ' ~ (s.backup_retencao_dias or '5') ~ ' dias') }}<div class="form-grid cg-quadro-corpo">{% endif %}
     <label>Retenção dos backups automáticos (dias)
       <input type="number" name="backup_retencao_dias" min="3" value="{{s.backup_retencao_dias or '5'}}">
       <small>Ficam os pacotes dos últimos dias — e sempre o completo semanal de que o
@@ -84,6 +118,7 @@
         servidor não é tocado.</small>
     </label>
     <label class="checkbox-label span2"><input type="checkbox" name="auto_backup" {% if s.auto_backup=='1' %}checked{% endif %}> Backup automático diário</label>
+    {% if layout_novo %}</div></details>{{ abre('cfg-impressao', 'Tarefas, impressão e módulos', 'imprime em ' ~ ('.odt' if s.impressao_formato_padrao == 'odt' else 'PDF') ~ ' · Protesto: ' ~ ('todos os usuários' if s.modulo_protesto_alcance == 'TODOS' else ('ninguém' if s.modulo_protesto_alcance == 'NINGUEM' else 'somente o oficial'))) }}<div class="form-grid cg-quadro-corpo">{% endif %}
     <label class="checkbox-label span2"><input type="checkbox" name="require_backup_assignee" {% if s.require_backup_assignee=='1' %}checked{% endif %}> Exigir substituto quando houver responsável</label>
 
     {# O QUE O BOTAO DE IMPRIMIR ENTREGA — pedido do oficial em 01/09/2026.
@@ -123,6 +158,8 @@
       <small class="muted small">Os títulos, protestos e selos continuam guardados em qualquer opção; o que muda é quem vê as telas.</small>
     </label>
 
+    {# A NOTA DIZ O QUE A ROTINA FAZ: sem a chave gravada, as duas rodam (`censec_automatico.envio_ligado`). #}
+    {% if layout_novo %}</div></details>{{ abre('cfg-rotinas', 'Rotinas que escrevem sem clique', 'CENSEC ' ~ ('desligada' if s.get('censec_envio_automatico') == 'DESLIGADO' else 'ligada') ~ ' · RTD/PJ ' ~ ('desligada' if s.get('rtdpj_corrigir_automatico') == 'DESLIGADO' else 'ligada')) }}<div class="form-grid cg-quadro-corpo">{% endif %}
     <fieldset class="cfg-bloco span2">
       <legend>Rotinas que escrevem sem clique</legend>
       <p class="muted small cfg-bloco-intro">Duas rotinas gravam na produção sozinhas: o envio das quinzenas à CENSEC (madrugada) e a correção mecânica do RTD/PJ (rodada das 07:30). Desmarcar desliga a rotina no próximo ciclo; nada do que já foi enviado ou corrigido muda.</p>
@@ -130,6 +167,7 @@
       <label class="checkbox-label span2"><input type="checkbox" name="rtdpj_corrigir_automatico" {% if s.rtdpj_corrigir_automatico in ('', None, 'LIGADO') %}checked{% endif %}> Correção automática do RTD/PJ na rodada diária</label>
     </fieldset>
 
+    {% if layout_novo %}</div></details>{{ abre('cfg-senhas', 'Política de senhas', 'mínimo de ' ~ (s.password_min_length or '6') ~ ' caracteres') }}<div class="form-grid cg-quadro-corpo">{% endif %}
     <fieldset class="cfg-bloco span2">
       <legend>Política de senhas</legend>
       <p class="muted small cfg-bloco-intro">O padrão agora é 6 caracteres, sem exigência de maiúscula, minúscula ou número. O administrador pode ajustar a regra abaixo.</p>
@@ -140,18 +178,22 @@
       <label class="checkbox-label span2"><input type="checkbox" name="password_require_digit" {% if s.password_require_digit=='1' %}checked{% endif %}> Exigir número</label>
     </fieldset>
 
+    {% if layout_novo %}</div></details>{{ abre('cfg-listas', 'Listas do balcão', 'classificações, vias de entrada e setores') }}<div class="form-grid cg-quadro-corpo">{% endif %}
     <fieldset class="cfg-bloco cfg-listas span2">
       <legend>Listas do balcão</legend>
       <label class="cfg-lista">Classificações<textarea name="categories" rows="9">{{categories}}</textarea></label>
       <label class="cfg-lista">Vias de entrada<textarea name="sources" rows="9">{{sources}}</textarea></label>
       <label class="cfg-lista">Setores<textarea name="sectors" rows="7">{{sectors}}</textarea></label>
     </fieldset>
-    <div class="span2"><button class="primary">Salvar configurações</button></div>
+    {% if layout_novo %}</div></details>{% endif %}
+    <div class="span2{% if layout_novo %} cg-cfg-salvar{% endif %}"><button class="primary">Salvar configurações</button>{% if layout_novo %} <small class="muted">Grava os quadros acima, abertos ou recolhidos. Os de baixo têm botão próprio.</small>{% endif %}</div>
   </form>
-  <p class="muted small">Pasta de dados interna: {{data_dir}}</p><p class="muted small">Para uso em rede, mantenha o host em <strong>0.0.0.0</strong>. O instalador oficial configura firewall e descoberta automática.</p>
+  {% if not layout_novo %}<p class="muted small">Pasta de dados interna: {{data_dir}}</p><p class="muted small">Para uso em rede, mantenha o host em <strong>0.0.0.0</strong>. O instalador oficial configura firewall e descoberta automática.</p>{% endif %}
 </section>
+{% if layout_novo %}{{ abre('cfg-centrais', 'Centrais — credenciais das APIs', ((sem_credencial | length) ~ ' de ' ~ ((centrais or []) | length) ~ ' sem credencial') if sem_credencial else 'todas informadas') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel" id="cfg-centrais">
   <h2>Centrais — credenciais das APIs</h2>
+{% endif %}
   {# O PAINEL DE STATUS (fila generica, falhas, log) mora em rota propria,
      de leitura, aberta tambem ao MANAGER e ao AUDITOR — esta secao e so do
      ADMIN e grava credencial. Marco (a) da base comum, 05/10/2026. #}
@@ -214,6 +256,24 @@
     </tbody>
   </table>
   </div>
+  {% set envio_a_cra %}
+    <div class="cfg-centrais-opcoes">
+    {# A CAIXA DA HOMOLOGAÇÃO SAIU EM 14/10/2026 («agora é tudo produção»);
+       o valor `cra_auto_enviar_homolog` fica gravado e não se lê mais. #}
+    {# A CAIXA TEM FORMULÁRIO PRÓPRIO desde 15/10/2026: até aí ela ficava fora
+       de qualquer <form> e não salvava (relato do oficial). #}
+    <form method="post" action="{{ url_for('configuracoes_cra_envio') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="checkbox-label"><input type="checkbox" name="cra_auto_enviar_producao"
+        {% if s.cra_auto_enviar_producao == '1' %}checked{% endif %}>
+        Enviar confirmação e andamento à CRA (produção) automaticamente após
+        receber remessa — desligado, eles sobem pelo botão «Enviar à CRA» da
+        tela do retorno</label>
+      <button class="button primary" type="submit">Salvar o envio à CRA</button>
+    </form>
+    </div>
+  {% endset %}
+  {% if layout_novo %}{{ envio_a_cra }}<details class="cg-ajuda"><summary>De onde vem cada credencial</summary>{% endif %}
   <p class="muted small cfg-centrais-ajuda">
     A do <strong>ONR</strong> é um <strong>par</strong> — `client_id` e
     `client secret` —, e não usuário e senha: o contrato declara o caminho
@@ -255,21 +315,7 @@
        «senha» genéricos e nenhuma explicação — a mesma tela silenciosa
        que já fez o oficial procurar em vão a credencial do ONRTDPJ antes
        de este parágrafo existir. #}
-    <div class="cfg-centrais-opcoes">
-    {# A CAIXA DA HOMOLOGAÇÃO SAIU EM 14/10/2026 («agora é tudo produção»);
-       o valor `cra_auto_enviar_homolog` fica gravado e não se lê mais. #}
-    {# A CAIXA TEM FORMULÁRIO PRÓPRIO desde 15/10/2026: até aí ela ficava fora
-       de qualquer <form> e não salvava (relato do oficial). #}
-    <form method="post" action="{{ url_for('configuracoes_cra_envio') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label class="checkbox-label"><input type="checkbox" name="cra_auto_enviar_producao"
-        {% if s.cra_auto_enviar_producao == '1' %}checked{% endif %}>
-        Enviar confirmação e andamento à CRA (produção) automaticamente após
-        receber remessa — desligado, eles sobem pelo botão «Enviar à CRA» da
-        tela do retorno</label>
-      <button class="button primary" type="submit">Salvar o envio à CRA</button>
-    </form>
-    </div>
+    {% if not layout_novo %}{{ envio_a_cra }}{% endif %}
     <br><strong>A do SIRC</strong> é a <strong>mesma senha que você já usa
     para entrar no site <code>sirc.dataprev.gov.br</code></strong> pelo
     navegador (o SIRC-Web) — não é a senha deste sistema, nem a de nenhuma
@@ -277,9 +323,13 @@
     <strong>tem um ambiente só, e é o de produção</strong> — o WSDL
     público (<code>SircWs/Movimento?wsdl</code>) só declara um endereço.
   </p>
+{% if layout_novo %}</details></div></details>{% else %}
 </section>
+{% endif %}
+{% if layout_novo %}{{ abre('cfg-backup-protecao', 'Proteção do backup', 'cifra ligada' if backup_cifra == 'ligada' else ('a senha guardada não abre' if backup_cifra == 'perdida' else 'cifra desligada'), aberto=backup_cifra == 'perdida') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel" id="cfg-backup-protecao">
   <h2>Proteção do backup</h2>
+{% endif %}
   {# LX14 (A7 do LS03). A SENHA DA CIFRA NÃO VAI A `settings`: iria dentro do
      pacote que ela fecha. Rota própria, gravando no cofre (`backup.cred`), e a
      tela só diz se a cifra está ligada — nunca a senha. #}
@@ -318,9 +368,13 @@
       Tirar o acervo do E-Ofício do backup completo (guarde uma cópia dele à parte)</label>
     <button class="button" type="submit">Salvar</button>
   </form>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
+{% if layout_novo %}{{ abre('cfg-revisao-transcricao', 'Revisão das transcrições pela IA (RI)', 'a imagem da página vai ao provedor' if (not revisao_transcricao_cfg or revisao_transcricao_cfg.manda_imagem) else 'a imagem da página não sobe') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel" id="cfg-revisao-transcricao">
   <h2>Revisão das transcrições pela IA (RI)</h2>
+{% endif %}
   {# LH11 — A DECISÃO DO OFICIAL DE 21/10/2026 FICA ESCRITA AQUI E NO CÓDIGO
      (`revisao_transcricao.py`): a imagem da página escaneada vai ao provedor da IA
      SÓ nesta revisão, porque a página tem nomes e documento não se mascara. Rota
@@ -349,7 +403,9 @@
              placeholder="{{ rtc.padrao_custo if rtc else '' }}"></label>
     <button class="button" type="submit">Salvar</button>
   </form>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 <section class="panel" id="cfg-admin">
   <h2>Administração</h2>
   <div class="actions">
@@ -363,4 +419,5 @@
   </div>
 </section>
 </div>
+{% if layout_novo %}{{ ferramentas() }}{% endif %}
 {% endblock %}

@@ -49,7 +49,11 @@ def _matricula(app) -> int:
 
 
 def _formularios(html: str) -> set:
+    # A ficha acaba no `</main>`: depois dele a moldura nova põe os formulários
+    # de busca de cada módulo (`nav.procurar`), que não são da ficha.
     corpo = html[html.index('class="content"'):]
+    fim = corpo.find("</main>")
+    corpo = corpo if fim < 0 else corpo[:fim]
     return {e for e in re.findall(r'<form[^>]*\baction="([^"]+)"', corpo) if "/preferencias/" not in e}
 
 

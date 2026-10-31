@@ -38,6 +38,21 @@ def csrf(html: str) -> str:
     return re.search(r'name="csrf_token" value="([^"]+)"', html).group(1)
 
 
+class TipoDaMinutaTests(unittest.TestCase):
+    """A tela diz AVERBACAO, e a minuta fala `AV`. Sem isto, os dois botões de guardar sempre recusavam."""
+
+    def test_a_tela_e_o_rascunho_viram_a_lingua_do_livro(self):
+        import ra_minuta_web
+        for bruto, esperado in (("AVERBACAO", "AV"), ("averbacao", "AV"), ("AV", "AV"), ("", "AV"), (None, "AV"),
+                                ("R", "R"), (" r ", "R"), ("CANCELAMENTO", "CANCELAMENTO")):
+            self.assertEqual(ra_minuta_web.tipo_da_minuta(bruto), esperado, bruto)
+
+    def test_o_que_a_traducao_devolve_o_dominio_aceita_ou_recusa(self):
+        import ra_minuta_web
+        self.assertIn(ra_minuta_web.tipo_da_minuta("AVERBACAO"), MIN.TIPOS)
+        self.assertNotIn(ra_minuta_web.tipo_da_minuta("CANCELAMENTO"), MIN.TIPOS)
+
+
 class MinutaDoLivro3Tests(unittest.TestCase):
 
     def _casa(self, td):
@@ -241,6 +256,52 @@ class MinutaDoLivro3Tests(unittest.TestCase):
             self.assertIn("Revisado pelo oficial", m["teor"])
             self.assertEqual(m["situacao"], MIN.A_REVISAR)
             self.assertEqual(atos, 0, "guardar a revisão NÃO lavra")
+
+    def test_a_tela_manda_o_tipo_do_lancar_e_a_revisao_grava(self):
+        """O POST é o da tela: o formulário leva `tipo=AVERBACAO`, para a rota de lançar."""
+        with TemporaryDirectory() as td:
+            app, db = self._casa(td)
+            rid = self._registro(db)
+            with db.transaction() as con:
+                mid = MIN.criar(con, registro_id=rid, tipo="AV", teor=TEOR,
+                                agora=db.now())
+                de_registro = MIN.criar(con, registro_id=rid, tipo="R",
+                                        teor=TEOR, agora=db.now())
+            cliente = self._entrar(app, db)
+            tela = cliente.get(f"/livro3/{rid}").get_data(as_text=True)
+            self.assertIn('name="tipo" value="AVERBACAO"', tela)
+
+            r = cliente.post(f"/livro3/minuta/{mid}/guardar",
+                             data={"csrf_token": csrf(tela), "tipo": "AVERBACAO",
+                                   "teor": TEOR + " Revisado."},
+                             follow_redirects=True)
+            self.assertIn("Revisão guardada", r.get_data(as_text=True))
+            cliente.post(f"/livro3/minuta/{de_registro}/guardar",
+                         data={"csrf_token": csrf(tela), "tipo": "AVERBACAO",
+                               "teor": TEOR + " Revisado."})
+            with db.connect() as con:
+                self.assertIn("Revisado", MIN.uma(con, mid)["teor"])
+                self.assertEqual(MIN.uma(con, de_registro)["tipo"], "R",
+                                 "a revisão não troca o tipo da minuta")
+
+    def test_guardar_como_minuta_pelo_formulario_de_lancar(self):
+        with TemporaryDirectory() as td:
+            app, db = self._casa(td)
+            rid = self._registro(db)
+            cliente = self._entrar(app, db)
+            tela = cliente.get(f"/livro3/{rid}").get_data(as_text=True)
+            r = cliente.post(f"/livro3/{rid}/minuta",
+                             data={"csrf_token": csrf(tela), "tipo": "AVERBACAO",
+                                   "teor": TEOR},
+                             follow_redirects=True)
+            self.assertIn("Minuta guardada", r.get_data(as_text=True))
+            with db.connect() as con:
+                fila = MIN.a_revisar(con)
+                atos = con.execute(
+                    "SELECT COUNT(*) FROM ra_atos WHERE registro_id=?",
+                    (rid,)).fetchone()[0]
+            self.assertEqual([m["tipo"] for m in fila], ["AV"])
+            self.assertEqual(atos, 0, "guardar como minuta NÃO lavra")
 
     def test_o_rascunho_de_tela_vira_minuta_por_um_botao(self):
         """A ponte com o que já existia — e ela não é migração calada."""

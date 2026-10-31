@@ -74,8 +74,9 @@
   </table>
   {% if not assento.matricula %}
   <p style="padding:14px"><small>
-    Sem matrícula de 32 dígitos. O sistema guarda a que vier, mas ainda
-    <strong>não gera nem valida</strong> — o algoritmo oficial não foi medido.
+    Sem matrícula de 32 dígitos. Ao lavrar, o sistema a compõe com o CNS, o ano, o
+    livro, a folha e o termo; este assento veio do acervo sem ela, ou faltou um desses
+    dados na lavratura.
   </small></p>
   {% endif %}
 </section>
@@ -398,10 +399,9 @@
     registro: nos assentos do acervo ele veio vazio.
   </small></p>
   <p style="padding:0 14px"><small>
-    A <strong>matrícula de 32 dígitos sai como está</strong> no assento. O sistema
-    não a gera — o dígito verificador dela não foi decifrado, e número chutado no
-    documento mais definitivo desta casa volta como erro em cartório de outro
-    estado, anos depois.
+    A <strong>matrícula de 32 dígitos sai como está</strong> no assento: a certidão não
+    a recalcula, nem preenche a que faltar. Número errado no documento mais definitivo
+    desta casa volta como erro em cartório de outro estado, anos depois.
   </small></p>
   {% if assento.livro_a_confirmar %}
   <p style="padding:0 14px"><small>

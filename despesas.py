@@ -519,6 +519,48 @@ def eventos(con, despesa_id: int) -> list[dict]:
 
 # ---------------------------------------------------------------- cadastrar
 
+def normalizar_chave_pix(chave: Any) -> str:
+    """A chave Pix na forma que o banco aceita. Só calcula. Recusa a que não se decide.
+
+    O Inter pede o celular como +55DD9XXXXXXXX e o CPF/CNPJ só com dígitos
+    (`DestinatarioChave`, API Banking), e a casa escreve «(99)98527-4255» e
+    «000.000.001-91». Sem isto o banco recusaria o Pix no dia de pagar.
+
+    ONZE DÍGITOS SOLTOS PODEM SER AS DUAS COISAS, e chave errada é dinheiro na
+    conta de outra pessoa: CPF válido que também tem cara de celular é RECUSA,
+    com a frase que manda escrever de um jeito só.
+    """
+    texto = _texto(chave, 77)
+    if not texto:
+        raise DespesaError("Informe a chave Pix do favorecido.")
+    if "@" in texto:
+        return texto.lower()
+    if re.fullmatch(r"[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", texto):
+        return texto.lower()
+    so = digitos(texto)
+    if texto.startswith("+"):
+        if re.fullmatch(r"55\d{2}9\d{8}", so):
+            return "+" + so
+        raise DespesaError("A chave de celular é +55, o DDD e os nove dígitos.")
+    if re.fullmatch(r"\d{3}\.\d{3}\.\d{3}-\d{2}|\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", texto):
+        if cpf_cnpj.documento_valido(so) is not True:
+            raise DespesaError("O CPF/CNPJ da chave Pix não confere.")
+        return so
+    if len(so) == 14 and so == texto and cpf_cnpj.documento_valido(so) is True:
+        return so
+    if len(so) == 13 and so.startswith("55") and so[4] == "9":
+        return "+" + so
+    if len(so) == 11 and so[2] == "9":
+        if so == texto and cpf_cnpj.documento_valido(so) is True:
+            raise DespesaError("Estes 11 dígitos podem ser CPF ou celular. Escreva o CPF com "
+                               "pontos e traço, ou o celular com +55.")
+        return "+55" + so
+    if len(so) == 11 and so == texto and cpf_cnpj.documento_valido(so) is True:
+        return so
+    raise DespesaError("Não reconheço esta chave Pix: use e-mail, CPF, CNPJ, celular com DDD "
+                       "ou a chave aleatória completa.")
+
+
 def conferir_pagamento(forma: str, codigo: Any, valor_centavos: int,
                        vencimento: str) -> dict:
     """O código de pagamento lido e conferido contra o valor e o vencimento. Só calcula."""
@@ -546,10 +588,7 @@ def conferir_pagamento(forma: str, codigo: Any, valor_centavos: int,
                 f"R$ {reais(valor_centavos)}.")
         return {"codigo": str(codigo).strip(), "barras": "", "avisos": [], "pix": lido}
     if forma == PIX_CHAVE:
-        chave = _texto(codigo, 77)
-        if not chave:
-            raise DespesaError("Informe a chave Pix do favorecido.")
-        return {"codigo": chave, "barras": "", "avisos": []}
+        return {"codigo": normalizar_chave_pix(codigo), "barras": "", "avisos": []}
     raise DespesaError("Forma de pagamento desconhecida.")
 
 
@@ -723,6 +762,39 @@ def autorizar(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
         (quando, _texto(por, 120), 1 if acima_do_teto else 0, int(despesa_id)))
     _evento(bd, despesa_id, "AUTORIZAR", "ok",
             ("acima do teto; " if acima_do_teto else "") + (motivo or ""), por, quando)
+    return despesa(bd, despesa_id)
+
+
+def ajustar_valor(con, despesa_id: int, *, valor_centavos: int, agora: datetime, por: str,
+                  papel: str) -> dict:
+    """Muda o valor da despesa que ainda espera a autorização. ESCREVE.
+
+    Pedido do oficial (30/10/2026), sobre a folha: «valores podem mudar, mas
+    deixemos sempre pré-carregado». A despesa autorizada não muda: é este o
+    momento de corrigir. O código de pagamento é conferido de novo, e por isso
+    o boleto, que traz o valor dentro dele, não aceita valor diferente. Muda só
+    esta despesa: o valor dos próximos meses é o da recorrente.
+    """
+    if papel not in ("ADMIN", "MANAGER"):
+        raise DespesaError("Só o oficial ou o gerente ajustam o valor da despesa.")
+    valor = int(valor_centavos or 0)
+    if valor <= 0:
+        raise DespesaError("Informe um valor maior que zero.")
+    bd = banco(con)
+    d = _prender(bd, despesa_id)
+    if d["situacao"] != AGUARDANDO:
+        raise DespesaError("Só se ajusta o valor da despesa que espera a autorização. Se já "
+                           "está autorizada, devolva à autorização antes.")
+    conferir_pagamento(d["forma"], d["codigo"], valor, d["vencimento"])
+    esperado = d["valor_esperado"]
+    divergencia = ""
+    if esperado is not None and int(esperado) != valor:
+        divergencia = (f"O sistema calculou R$ {reais(int(esperado))} e a guia traz "
+                       f"R$ {reais(valor)}.")
+    bd.escrever("UPDATE dp_despesas SET valor = %s, divergencia = %s WHERE id = %s",
+                (valor, divergencia, int(despesa_id)))
+    _evento(bd, despesa_id, "AJUSTAR_VALOR", "ok",
+            f"de R$ {reais(int(d['valor']))} para R$ {reais(valor)}", por, _carimbo(agora))
     return despesa(bd, despesa_id)
 
 

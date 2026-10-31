@@ -241,10 +241,10 @@ def test_a_ficha_do_assento_mostra_a_divisao_tripartite_em_blocos(s):
     assert "Corrige grafia do nome." in html
 
 
-def test_a_ficha_do_assento_avisa_que_a_matricula_nao_e_gerada(s):
+def test_a_ficha_do_assento_sem_matricula_diz_como_ela_se_compoe(s):
     ids = _semear(s)
     html = s["c"].get(f"/rcpn/{ids['assento']}").get_data(as_text=True)
-    assert "não gera nem valida" in html
+    assert "Ao lavrar, o sistema a compõe" in html
 
 
 def test_a_ficha_do_rtd_diz_que_a_averbacao_consome_protocolo(s):

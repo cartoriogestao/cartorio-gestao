@@ -262,7 +262,9 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          ("Registros lavrados", (
              _i("RCPJ", "rcpj_rtd_registros", atribuicao=3, antigo="RCPJ — registros lavrados"),
              _i("RTD", "rcpj_rtd_registros", atribuicao=4, antigo="RTD — registros lavrados"),
-             _i("Últimos atos praticados", "rcpj_rtd_ultimos_atos"),)),
+             _i("Últimos atos praticados", "rcpj_rtd_ultimos_atos"),
+             _i("Atos sem lista de presença", "rcpj_rtd_pendencias_lista_presenca", AM,
+                antigo="RCPJ — atos sem lista de presença"),)),
          ("Notificações", (
              _i("Notificações extrajudiciais", "rcpj_rtd_notificacoes", antigo="RTD — notificações extrajudiciais"),)),
          ("Livros contábeis", (
@@ -573,7 +575,7 @@ PAI: dict[str, tuple[str, str]] = {
     "cobranca_ficha": ("CAIXA", "Cobrança por boleto"),
     "cobranca_nova": ("CAIXA", "Cobrança por boleto"),
     "cobranca_configuracao": ("CAIXA", "Cobrança por boleto"),
-    "configuracoes_cobranca": ("CAIXA", "Cobrança por boleto"),
+    "configuracoes_cobranca": ("GESTAO", "Configurações"),
     "nfse_apuracao": ("CAIXA", "Recibos e NFS-e"),
     "nfse_recibo": ("CAIXA", "Recibos e NFS-e"),
     "caixa_importar": ("LIVROS", "Importar"),

@@ -1931,9 +1931,13 @@ def o_que_ficou(con, *, agora: str, condutas: list[dict]) -> dict:
                  for c in condutas for o in c["obrigacoes"]
                  if o["situacao"] == ATRASADO]
     return {"dia_util_anterior": anterior,
+            # O DIA DE HOJE, JA ENCERRADO, COBRIU OS DE ANTES (a mesma regra de
+            # `_cobrar_encerramento`): nao ha como encerrar um dia passado, e
+            # sem isto o quadro cobraria para sempre o que ninguem pode fazer.
             "anterior_encerrado": (None if not _existe(
                 con, "pt_encerramentos_do_dia")
-                else bool(ultimo and ultimo["dia"] == anterior)),
+                else bool((ultimo and ultimo["dia"] == anterior)
+                          or _fechado(encerramento_do_dia(con, ctx["dia"])))),
             "ultimo": ultimo, "atrasados": atrasados}
 
 

@@ -406,7 +406,7 @@ def conferir(atribuicao: str, ato: str, parte: str, texto: str) -> str:
         return (_conferir_chaves(corpo)
                 or (_conferir_claros_do_padrao(_texto(ato).upper(), corpo)
                     if _texto(ato) else ""))
-    erro = CASA.conferir(corpo, _ENSAIO)
+    erro = CASA.conferir(corpo, contexto_de_ensaio(_texto(ato).upper()))
     return erro or ""
 
 
@@ -422,6 +422,77 @@ _ENSAIO = {
            "endereco": "(endereço de ensaio)", "telefone": "(99) 0000-0000",
            "registrador": "(nome de ensaio)", "titulo": "Tabelião e Oficial"},
 }
+
+
+class _SoAForma:
+    """O valor de uma variável que só o módulo do papel conhece: serve para montar o texto.
+
+    `{{ serventia.cidade|upper }}` precisa passar, e `{% for a in m.atos %}` também: a conferência
+    daqui olha a FORMA. Qual campo existe é o conferidor do módulo quem diz, ou a hora de emitir.
+    """
+
+    def __getattr__(self, _nome):
+        return self
+
+    def __getitem__(self, _chave):
+        return self
+
+    def __call__(self, *_a, **_k):
+        return self
+
+    def __iter__(self):
+        return iter(())
+
+    def __len__(self):
+        return 0
+
+    def __bool__(self):
+        return False
+
+    def __str__(self):
+        return ""
+
+    def __int__(self):
+        return 0
+
+    def __float__(self):
+        return 0.0
+
+    def __round__(self, _casas=None):
+        return 0
+
+    def __lt__(self, _outro):
+        return False
+
+    __le__ = __gt__ = __ge__ = __lt__
+
+    def _conta(self, _outro):
+        return self
+
+    __add__ = __radd__ = __sub__ = __rsub__ = __mul__ = __rmul__ = _conta
+    __truediv__ = __rtruediv__ = __floordiv__ = __mod__ = __neg__ = _conta
+
+
+def contexto_de_ensaio(ato: str) -> dict:
+    """O boneco, mais as variáveis que o PADRÃO daquele papel usa. Só calcula.
+
+    21 PAPÉIS NÃO SE GRAVAVAM, E NENHUM ERA QUEBRADO. O boneco só conhece `hoje`, `agora` e `sv`, e
+    o cabeçalho do RI usa `serventia`, a ficha usa `m`, o recibo usa `r`: até o texto de fábrica era
+    recusado, com «'serventia' is undefined» na tela. O nome que o padrão usa é legítimo, e o que
+    ele não usa continua recusado: `{{ serventa.cidade }}` é erro de digitação, e o papel não sairia.
+    """
+    contexto = dict(_ENSAIO)
+    if not ato or ato not in CASA.POR_CHAVE:
+        return contexto
+    from jinja2 import meta
+    from jinja2.sandbox import SandboxedEnvironment
+    try:
+        nomes = meta.find_undeclared_variables(SandboxedEnvironment().parse(CASA.padrao_de(ato) or ""))
+    except Exception:                                  # noqa: BLE001 — padrão ilegível: fica o boneco
+        return contexto
+    for nome in nomes:
+        contexto.setdefault(nome, _SoAForma())
+    return contexto
 
 
 def _conferir_chaves(corpo: str) -> str:

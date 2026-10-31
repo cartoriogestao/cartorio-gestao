@@ -125,9 +125,13 @@
 
     <fieldset class="cfg-bloco span2">
       <legend>Rotinas que escrevem sem clique</legend>
+      {# SEM LINHA GRAVADA A ROTINA RODA, E A CAIXA TEM DE DIZER O MESMO (`censec_automatico.envio_ligado`).
+         Com `s.chave`, faltando a linha, o valor não é `None`: é indefinido, e a caixa saía desmarcada.
+         O próximo «Salvar» desligava as duas sem ninguém pedir. Medido na produção em 30/10/2026: nenhuma
+         das duas tem linha. #}
       <p class="muted small cfg-bloco-intro">Duas rotinas gravam na produção sozinhas: o envio das quinzenas à CENSEC (madrugada) e a correção mecânica do RTD/PJ (rodada das 07:30). Desmarcar desliga a rotina no próximo ciclo; nada do que já foi enviado ou corrigido muda.</p>
-      <label class="checkbox-label span2"><input type="checkbox" name="censec_envio_automatico" {% if s.censec_envio_automatico in ('', None, 'LIGADO') %}checked{% endif %}> Envio automático das quinzenas à CENSEC</label>
-      <label class="checkbox-label span2"><input type="checkbox" name="rtdpj_corrigir_automatico" {% if s.rtdpj_corrigir_automatico in ('', None, 'LIGADO') %}checked{% endif %}> Correção automática do RTD/PJ na rodada diária</label>
+      <label class="checkbox-label span2"><input type="checkbox" name="censec_envio_automatico" {% if s.get('censec_envio_automatico') in ('', None, 'LIGADO') %}checked{% endif %}> Envio automático das quinzenas à CENSEC</label>
+      <label class="checkbox-label span2"><input type="checkbox" name="rtdpj_corrigir_automatico" {% if s.get('rtdpj_corrigir_automatico') in ('', None, 'LIGADO') %}checked{% endif %}> Correção automática do RTD/PJ na rodada diária</label>
     </fieldset>
 
     <fieldset class="cfg-bloco span2">

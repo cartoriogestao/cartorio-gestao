@@ -20,6 +20,17 @@
   {% if d.motivo_cancelamento %}<p class="small">Cancelada por {{ d.cancelada_por }}: {{ d.motivo_cancelamento }}</p>{% endif %}
 </section>
 
+{# O VALOR PODE MUDAR ATÉ A AUTORIZAÇÃO (30/10/2026): a folha vem pré-carregada. #}
+{% if papel in ['ADMIN', 'MANAGER'] and d.situacao == 'AGUARDANDO_AUTORIZACAO' %}
+<section class="panel"><h2>Ajustar o valor deste mês</h2>
+  <form method="post" action="{{ url_for('despesas_acao', despesa_id=d.id, acao='ajustar_valor') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Valor (R$) <input name="valor" value="{{ reais(d.valor) }}" size="12" required></label>
+    <button type="submit">Ajustar</button>
+    <p class="small muted">Muda só esta despesa. O valor dos próximos meses é o da recorrente.</p>
+  </form></section>
+{% endif %}
+
 {% if papel == 'ADMIN' and d.situacao == 'AGUARDANDO_AUTORIZACAO' and d.forma != 'MANUAL' %}
 <section class="panel"><h2>Autorizar o pagamento</h2>
   <form method="post" action="{{ url_for('despesas_acao', despesa_id=d.id, acao='autorizar') }}">
@@ -58,6 +69,42 @@
   <form method="post" action="{{ url_for('despesas_acao', despesa_id=d.id, acao='cancelar') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Cancelar — motivo <input name="motivo" size="50"></label><button type="submit">Cancelar a despesa</button></form>
+</section>
+{% endif %}
+
+{# Relato #152: o contato de quem recebe o comprovante, e o envio pelo clique. #}
+{% if papel in ['ADMIN', 'MANAGER'] %}
+<section class="panel"><h2>{% if foi_paga %}Enviar o comprovante{% else %}Contato para o comprovante{% endif %}</h2>
+  <form method="post" action="{{ url_for('despesas_contato', despesa_id=d.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>E-mail <input type="email" name="contato_email" value="{{ d.contato_email or '' }}" size="40"></label>
+    <label>WhatsApp, com DDD <input name="contato_whatsapp" value="{{ d.contato_whatsapp or '' }}" size="20"></label>
+    <button type="submit">Gravar o contato</button>
+  </form>
+  {% if foi_paga and d.contato_email %}
+  <form method="post" action="{{ url_for('despesas_comprovante', despesa_id=d.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="canal" value="email">
+    {% if arquivos %}<label>Arquivo junto (só vai o que você escolher)
+      <select name="anexo_id"><option value="">Nenhum, só o texto</option>
+        {% for a in arquivos %}<option value="{{ a.id }}">{{ a.original_name }}</option>{% endfor %}
+      </select></label>{% endif %}
+    <button type="submit">Enviar por e-mail</button>
+  </form>
+  {% endif %}
+  {% if whatsapp %}
+    {% if whatsapp.janela_aberta %}
+    <form method="post" action="{{ url_for('despesas_comprovante', despesa_id=d.id) }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="canal" value="whatsapp">
+      <button type="submit">Enviar pelo WhatsApp da casa</button>
+    </form>
+    {% else %}
+    <p class="small">Essa pessoa não escreveu à casa nas últimas 24 horas, e a Meta só aceitaria um modelo aprovado.
+      O link abre o seu WhatsApp com o texto pronto, e você aperta enviar.</p>
+    <a class="button" href="{{ whatsapp.link }}" target="_blank" rel="noopener noreferrer">Abrir no WhatsApp</a>
+    {% endif %}
+  {% endif %}
 </section>
 {% endif %}
 

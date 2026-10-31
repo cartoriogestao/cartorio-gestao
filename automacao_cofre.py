@@ -325,6 +325,12 @@ def _campos_limpos(campos: dict) -> dict[str, str]:
         if not texto:
             continue
         if not _CAMPO_VALIDO.match(chave):
+            # O ENGANO MAIS COMUM (29/10/2026): o login que é só número (o CPF)
+            # digitado na caixa do NOME, e não na do valor. A frase diz onde vai cada um,
+            # sem repetir o que foi digitado — pode ser o próprio login.
+            if chave.replace(".", "").replace("-", "").isdigit():
+                raise CofreError("O nome do campo não pode ser só número: na caixa de CIMA vai o "
+                                 "nome (ex.: usuario) e na de BAIXO o valor (o CPF, a senha).")
             raise CofreError(f"O campo «{chave}» tem nome inválido: letras minúsculas, números e "
                              "sublinhado (ex.: client_secret).")
         if len(texto) > TETO_DO_CAMPO:

@@ -25,6 +25,7 @@ from flask import abort, flash, redirect, render_template, request, url_for
 
 import csv_seguro as CSVS
 import despesas as DP
+import despesas_comprovante as DC
 import despesas_inter as INTER
 import despesas_recorrentes as RC
 
@@ -102,12 +103,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             do_mes = [] if minhas is not None else RC.do_mes(con, date.today())
             carregadas = 0 if minhas is not None else len(
                 [d for d in DP.listar(con, situacao=DP.AGUARDANDO) if d["origem"] == RC.ORIGEM])
+            a_autorizar = DP.para_autorizar(con) if usuario_papel() == "ADMIN" else []
+            balanco = None if minhas is not None else DP.balanco(
+                con, date.today().isoformat(), do_mes)
         return render_template("despesas_lista.html", linhas=linhas, contagem=contagem,
                                situacoes=DP.SITUACOES, situacao=situacao, cfg=cfg,
                                categorias=DP.CATEGORIAS, reais=DP.reais,
                                papel=usuario_papel(), do_mes=do_mes,
-                               recorrentes_carregadas=carregadas,
-                               so_as_proprias=minhas is not None)
+                               recorrentes_carregadas=carregadas, a_autorizar=a_autorizar,
+                               balanco=balanco,
+                               formas=DP.FORMAS, so_as_proprias=minhas is not None)
 
     @app.route("/administrativo/despesas/nova", methods=["GET", "POST"])
     @login_required
@@ -133,7 +138,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         categoria=f.get("categoria") or "",
                         documento_especie=f.get("documento_especie"),
                         documento_numero=f.get("documento_numero"), anexo=anexo,
-                        pasta_anexos=_pasta(), usuario_id=usuario_id())
+                        pasta_anexos=_pasta(), usuario_id=usuario_id(),
+                        contato_email=f.get("contato_email"),
+                        contato_whatsapp=f.get("contato_whatsapp"))
             except DP.DespesaError as erro:
                 flash(str(erro), "danger")
                 return render_template("despesas_nova.html", f=f, formas=DP.FORMAS,
@@ -147,8 +154,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if rid.isdigit() and comp and _so_minhas() is None:
             with db.connect() as con:
                 r = RC.recorrente(con, int(rid))
+                feriados = RC.feriados_da_casa(con)
             if r:
-                preenchido = RC.para_o_formulario(r, comp[:7])
+                preenchido = RC.para_o_formulario(r, comp[:7], feriados)
         return render_template("despesas_nova.html", f=preenchido, formas=DP.FORMAS,
                                categorias=DP.CATEGORIAS, naturezas=DP.NATUREZAS)
 
@@ -258,12 +266,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 abort(403)
             rastro = DP.eventos(con, despesa_id)
             arquivos = DP.anexos(con, despesa_id)
+            whatsapp = DC.whatsapp_na_ficha(con, d, db.now())
             cfg = DP.configuracao(con)
         return render_template("despesas_ficha.html", d=d, rastro=rastro, arquivos=arquivos,
                                situacoes=DP.SITUACOES, formas=DP.FORMAS,
                                categorias=DP.CATEGORIAS, naturezas=DP.NATUREZAS,
                                tetos=DP.tetos(cfg), cfg=cfg, reais=DP.reais,
-                               papel=usuario_papel(), hoje=date.today().isoformat())
+                               papel=usuario_papel(), hoje=date.today().isoformat(),
+                               foi_paga=DC.foi_paga(d), whatsapp=whatsapp)
 
     @app.route("/administrativo/despesas/<int:despesa_id>/<acao>", methods=["POST"])
     @login_required
@@ -271,9 +281,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     def despesas_acao(despesa_id: int, acao: str):
         f, papel = request.form, usuario_papel()
         try:
-            if acao in ("autorizar", "devolver", "cancelar", "pago_fora", "documento"):
+            if acao in ("autorizar", "devolver", "cancelar", "pago_fora", "documento",
+                        "ajustar_valor"):
                 with db.transaction() as con:
-                    if acao == "autorizar":
+                    if acao == "ajustar_valor":
+                        DP.ajustar_valor(con, despesa_id, agora=_agora(), por=usuario_nome(),
+                                         papel=papel,
+                                         valor_centavos=DP.centavos_da_tela(f.get("valor")))
+                    elif acao == "autorizar":
                         DP.autorizar(con, despesa_id, agora=_agora(), por=usuario_nome(),
                                      papel=papel, acima_do_teto=f.get("acima_do_teto") == "1",
                                      motivo_divergencia=f.get("motivo"))
@@ -316,6 +331,43 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             flash("Feito.", "success")
         return _ficha(despesa_id)
 
+    @app.route("/administrativo/despesas/autorizar-marcadas", methods=["POST"])
+    @login_required
+    @roles_required("ADMIN")
+    def despesas_autorizar_marcadas():
+        """Autoriza as marcadas na lista, sem abrir uma por uma.
+
+        Cada uma na sua transação: a recusa de uma não segura as outras, e a
+        tela diz qual ficou e por quê. O teto e a divergência continuam na ficha.
+        """
+        try:
+            marcadas = dict(tuple(int(p) for p in m.split(":"))
+                            for m in request.form.getlist("marcada"))
+        except ValueError:
+            abort(400)
+        if not marcadas:
+            flash("Marque ao menos uma despesa.", "warning")
+            return redirect(url_for("despesas_lista"))
+        autorizadas, total, recusadas = [], 0, []
+        for despesa_id, valor in marcadas.items():
+            try:
+                with db.transaction() as con:
+                    DP.autorizar(con, despesa_id, agora=_agora(), por=usuario_nome(),
+                                 papel=usuario_papel(), valor_visto=valor)
+            except DP.DespesaError as erro:
+                recusadas.append(f"#{despesa_id}: {erro}")
+                continue
+            autorizadas.append(despesa_id)
+            total += valor
+        for despesa_id in autorizadas:
+            audit("DESPESA_AUTORIZAR", "dp_despesas", despesa_id,
+                  {"papel": usuario_papel(), "em_lote": True})
+        if autorizadas:
+            flash(f"{len(autorizadas)} despesa(s) autorizada(s), R$ {DP.reais(total)}.", "success")
+        for recusa in recusadas:
+            flash(f"Não autorizei {recusa}", "danger")
+        return redirect(url_for("despesas_lista"))
+
     @app.route("/administrativo/despesas/conciliar", methods=["POST"])
     @login_required
     @roles_required("ADMIN")
@@ -355,6 +407,44 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         flash(f"{len(r['pagas'])} enviada(s) ao Inter, {len(r['esperam'])} esperando "
               f"(teto ou configuração), {len(r['falharam'])} recusada(s).", "info")
         return redirect(url_for("despesas_lista"))
+
+    @app.route("/administrativo/despesas/<int:despesa_id>/contato", methods=["POST"])
+    @login_required
+    @roles_required(*QUEM_GERENCIA)
+    def despesas_contato(despesa_id: int):
+        try:
+            with db.transaction() as con:
+                DC.gravar_contato(con, despesa_id, email=request.form.get("contato_email"),
+                                  whatsapp=request.form.get("contato_whatsapp"),
+                                  por=usuario_nome(), agora=_agora())
+        except DP.DespesaError as erro:
+            flash(str(erro), "danger")
+            return _ficha(despesa_id)
+        audit("DESPESA_CONTATO", "dp_despesas", despesa_id, {})
+        flash("Contato gravado.", "success")
+        return _ficha(despesa_id)
+
+    @app.route("/administrativo/despesas/<int:despesa_id>/comprovante", methods=["POST"])
+    @login_required
+    @roles_required(*QUEM_GERENCIA)
+    def despesas_comprovante(despesa_id: int):
+        """O clique que manda o comprovante. A rede fica fora da transação."""
+        canal = request.form.get("canal")
+        try:
+            if canal == "email":
+                DC.enviar_email(db, despesa_id, por=usuario_nome(), agora=_agora(),
+                                anexo_id=request.form.get("anexo_id"))
+            elif canal == "whatsapp":
+                DC.enviar_whatsapp(db, despesa_id, por=usuario_nome(), agora=_agora(),
+                                   agora_texto=db.now())
+            else:
+                abort(400)
+        except DP.DespesaError as erro:
+            flash(str(erro), "danger")
+            return _ficha(despesa_id)
+        audit("DESPESA_COMPROVANTE", "dp_despesas", despesa_id, {"canal": canal})
+        flash("Comprovante enviado.", "success")
+        return _ficha(despesa_id)
 
     @app.route("/administrativo/despesas/relatorio")
     @login_required

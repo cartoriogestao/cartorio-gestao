@@ -963,6 +963,11 @@ def _tipos_de_anexo_gravados_no_codigo() -> set[str]:
             if not (isinstance(no, ast.Call) and getattr(no.func, "attr", "")
                     == "add_attachment" and no.args):
                 continue
+            # `msg.add_attachment(...)` é o anexo da MENSAGEM DE E-MAIL
+            # (`email.message.EmailMessage`, o comprovante que a despesa manda,
+            # 31/10/2026), e não um anexo gravado em `attachments`.
+            if getattr(no.func.value, "id", "") == "msg":
+                continue
             arg = no.args[0]
             if isinstance(arg, ast.Constant):
                 achados.add(arg.value)

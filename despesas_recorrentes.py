@@ -20,6 +20,11 @@ AS DUAS ESPÉCIES, E A RAZÃO DA DIFERENÇA
     «<id>:<AAAA-MM>») — o mesmo índice único das guias do robô. A segunda
     rodada do mês acha a primeira, e o mês não entra duas vezes.
 
+O ÚLTIMO DIA ÚTIL (30/10/2026)
+    Ordem do oficial para a folha: «pagar último dia útil do mês». A marca
+    `ultimo_dia_util` manda sobre o dia digitado, e o cálculo é o da casa
+    (`ri_schema.eh_dia_util`: fim de semana, feriados nacionais e os locais).
+
 QUANDO O MÊS «ABRE»
     `antecedencia_dias` antes do vencimento. Só o mês corrente e o seguinte
     são olhados: uma recorrente cadastrada hoje não despeja meses passados, e
@@ -41,6 +46,7 @@ from typing import Any, Mapping
 import despesas as DP
 from bd_nativo import banco
 from caixa_schema import reais
+from ri_schema import eh_dia_util, ler_feriados_locais
 
 ORIGEM = "RECORRENTE"
 #: As formas que o sistema carrega sozinho. Só a chave Pix não muda de mês.
@@ -60,6 +66,7 @@ SCHEMA: tuple[tuple[str, str], ...] = (
             chave_pix TEXT NOT NULL DEFAULT '',
             valor bigint,
             dia_vencimento integer NOT NULL CHECK (dia_vencimento BETWEEN 1 AND 31),
+            ultimo_dia_util integer NOT NULL DEFAULT 0,
             antecedencia_dias integer NOT NULL DEFAULT 7,
             documento_especie TEXT NOT NULL,
             primeiro_mes TEXT NOT NULL,
@@ -80,6 +87,9 @@ def init_recorrentes_schema(con) -> None:
     for nome, comando in SCHEMA:
         if not bd.tem_tabela(nome):
             bd.escrever(comando)
+    if not bd.tem_coluna("dp_recorrentes", "ultimo_dia_util"):
+        bd.escrever("ALTER TABLE dp_recorrentes ADD COLUMN ultimo_dia_util "
+                    "integer NOT NULL DEFAULT 0")
 
 
 # ------------------------------------------------------------- auxiliares
@@ -93,10 +103,23 @@ def _proximo_mes(competencia: str) -> str:
     return f"{ano + (m == 12):04d}-{(m % 12) + 1:02d}"
 
 
-def vencimento_do_mes(r: Mapping[str, Any], competencia: str) -> date:
-    """O dia de vencimento naquele mês. Dia 31 em fevereiro é o último dia dele."""
+def feriados_da_casa(con) -> set[date]:
+    """Os feriados locais que a casa cadastrou. Só LÊ."""
+    return ler_feriados_locais(banco(con).valor(
+        "SELECT value FROM settings WHERE key = 'ri_feriados_locais'") or "")
+
+
+def vencimento_do_mes(r: Mapping[str, Any], competencia: str,
+                      feriados: set[date] | None = None) -> date:
+    """O vencimento naquele mês. Dia 31 em fevereiro é o último dia dele."""
     ano, m = int(competencia[:4]), int(competencia[5:7])
-    return date(ano, m, min(int(r["dia_vencimento"]), calendar.monthrange(ano, m)[1]))
+    ultimo = calendar.monthrange(ano, m)[1]
+    if r.get("ultimo_dia_util"):
+        dia = date(ano, m, ultimo)
+        while not eh_dia_util(dia, feriados):
+            dia -= timedelta(days=1)
+        return dia
+    return date(ano, m, min(int(r["dia_vencimento"]), ultimo))
 
 
 def chave_do_mes(recorrente_id: int, competencia: str) -> str:
@@ -137,20 +160,23 @@ def conferir(dados: Mapping[str, Any]) -> dict:
     forma = str(dados.get("forma") or "")
     if forma not in DP.FORMAS:
         raise DP.DespesaError("Escolha a forma de pagamento.")
-    chave = DP._texto(dados.get("chave_pix"), 77) if forma == DP.PIX_CHAVE else ""
+    chave = ""
     valor = int(dados.get("valor") or 0)
     if forma in CARREGA_SOZINHO:
-        if not chave:
+        if not DP._texto(dados.get("chave_pix"), 77):
             raise DP.DespesaError("Informe a chave Pix do favorecido: é com ela que a despesa "
                                   "do mês se carrega sozinha.")
+        chave = DP.normalizar_chave_pix(dados.get("chave_pix"))
         if valor <= 0:
             raise DP.DespesaError("O Pix recorrente precisa do valor fixo do mês. Se o valor "
                                   "muda todo mês, cadastre como «Pix copia e cola» ou boleto, "
                                   "e o sistema só avisa.")
     elif valor < 0:
         raise DP.DespesaError("O valor não pode ser negativo.")
+    ultimo_util = str(dados.get("ultimo_dia_util") or "") in ("1", "on", "True")
     try:
-        dia = int(dados.get("dia_vencimento") or 0)
+        # A coluna não aceita vazio: com a marca, o dia guardado é só o teto do mês.
+        dia = 31 if ultimo_util else int(dados.get("dia_vencimento") or 0)
         antecedencia = int(dados.get("antecedencia_dias") if dados.get("antecedencia_dias")
                            not in (None, "") else ANTECEDENCIA_PADRAO)
     except (TypeError, ValueError) as erro:
@@ -167,17 +193,25 @@ def conferir(dados: Mapping[str, Any]) -> dict:
     ultimo = _mes_valido(dados.get("ultimo_mes"), "Último mês", vazio_ok=True)
     if ultimo and ultimo < primeiro:
         raise DP.DespesaError("O último mês vem antes do primeiro.")
-    return {"descricao": descricao, "categoria": categoria, "beneficiario_nome": nome,
+    email, whatsapp = DP.conferir_contato(dados.get("contato_email"), dados.get("contato_whatsapp"))
+    return {"contato_email": email, "contato_whatsapp": whatsapp,
+            "descricao": descricao, "categoria": categoria, "beneficiario_nome": nome,
             "beneficiario_documento": documento, "forma": forma, "chave_pix": chave,
-            "valor": valor or None, "dia_vencimento": dia, "antecedencia_dias": antecedencia,
+            "valor": valor or None, "dia_vencimento": dia,
+            "ultimo_dia_util": 1 if ultimo_util else 0, "antecedencia_dias": antecedencia,
             "documento_especie": especie, "primeiro_mes": primeiro, "ultimo_mes": ultimo}
 
 
 # ------------------------------------------------------- cadastrar e mudar
 
 CAMPOS = ("descricao", "categoria", "beneficiario_nome", "beneficiario_documento", "forma",
-          "chave_pix", "valor", "dia_vencimento", "antecedencia_dias", "documento_especie",
+          "chave_pix", "valor", "dia_vencimento", "ultimo_dia_util", "antecedencia_dias",
+          "documento_especie",
           "primeiro_mes", "ultimo_mes")
+
+
+#: O contato do comprovante (relato #152): passa da recorrente à despesa de cada mês.
+CAMPOS = (*CAMPOS, "contato_email", "contato_whatsapp")
 
 
 def cadastrar(con, dados: Mapping[str, Any], *, por: str, agora: datetime) -> int:
@@ -232,7 +266,8 @@ def lista(con) -> list[dict]:
 
 # ------------------------------------------------------- o mês que abriu
 
-def meses_abertos(r: Mapping[str, Any], hoje: date) -> list[tuple[str, date]]:
+def meses_abertos(r: Mapping[str, Any], hoje: date,
+                  feriados: set[date] | None = None) -> list[tuple[str, date]]:
     """Os meses em que esta recorrente já devia ter a despesa. Só calcula.
 
     O mês corrente e o seguinte, os dois dentro da vigência, e só quando
@@ -250,7 +285,7 @@ def meses_abertos(r: Mapping[str, Any], hoje: date) -> list[tuple[str, date]]:
     for competencia in (mes(hoje), _proximo_mes(mes(hoje))):
         if competencia < r["primeiro_mes"] or (r["ultimo_mes"] and competencia > r["ultimo_mes"]):
             continue
-        venc = vencimento_do_mes(r, competencia)
+        venc = vencimento_do_mes(r, competencia, feriados)
         if desde and venc < desde:
             continue
         if hoje >= venc - timedelta(days=int(r["antecedencia_dias"] or 0)):
@@ -264,8 +299,9 @@ def do_mes(con, hoje: date) -> list[dict]:
     feitas = {r["chave_origem"] for r in bd.ler(
         "SELECT chave_origem FROM dp_despesas WHERE origem = %s", (ORIGEM,))}
     saida = []
+    feriados = feriados_da_casa(bd)
     for r in bd.ler("SELECT * FROM dp_recorrentes WHERE ativa = 1 ORDER BY dia_vencimento, id"):
-        for competencia, venc in meses_abertos(r, hoje):
+        for competencia, venc in meses_abertos(r, hoje, feriados):
             if chave_do_mes(r["id"], competencia) in feitas:
                 continue
             saida.append({**r, "competencia": competencia, "vencimento": venc.isoformat(),
@@ -296,20 +332,23 @@ def gerar(con, *, hoje: date, agora: datetime, por: str) -> list[int]:
             valor_centavos=int(linha["valor"]), vencimento=linha["vencimento"],
             forma=linha["forma"], codigo=linha["chave_pix"],
             descricao=descricao_do_mes(linha, linha["competencia"]),
-            categoria=linha["categoria"], documento_especie=linha["documento_especie"]))
+            categoria=linha["categoria"], documento_especie=linha["documento_especie"],
+            contato_email=linha["contato_email"], contato_whatsapp=linha["contato_whatsapp"]))
     return novas
 
 
-def para_o_formulario(r: Mapping[str, Any], competencia: str) -> dict:
+def para_o_formulario(r: Mapping[str, Any], competencia: str,
+                      feriados: set[date] | None = None) -> dict:
     """A despesa do mês, preenchida, para o balcão só colar o código. Só calcula."""
     return {"recorrente_id": r["id"], "competencia": competencia,
             "categoria": r["categoria"], "descricao": descricao_do_mes(r, competencia),
             "beneficiario_nome": r["beneficiario_nome"],
             "beneficiario_documento": r["beneficiario_documento"],
             "valor": reais(int(r["valor"])) if r["valor"] else "",
-            "vencimento": vencimento_do_mes(r, competencia).isoformat(),
+            "vencimento": vencimento_do_mes(r, competencia, feriados).isoformat(),
             "forma": r["forma"], "codigo": r["chave_pix"],
-            "documento_especie": r["documento_especie"]}
+            "documento_especie": r["documento_especie"],
+            "contato_email": r["contato_email"], "contato_whatsapp": r["contato_whatsapp"]}
 
 
 def origem_do_formulario(con, recorrente_id: Any, competencia: Any) -> tuple[str, str | None]:

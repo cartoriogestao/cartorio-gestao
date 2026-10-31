@@ -40,6 +40,9 @@
       else a.removeAttribute("aria-current");
     });
     if (app) app.classList.toggle("cg-foco", chave === regua.getAttribute("data-foco"));
+    // O ALVO DENTRO DE UM QUADRO RECOLHIDO: «Lançar de novo» leva ao formulário, e ele tem de abrir.
+    var recolhido = alvo && alvo.closest("details");
+    if (recolhido) recolhido.open = true;
     if (alvo) alvo.scrollIntoView({ block: "start" });
     else if (rolagem) rolagem.scrollTop = 0;
   }
@@ -76,8 +79,104 @@
     if (pedido) abrir(pedido.fase, pedido.alvo);
   });
 
+  // A fase guardada se consome sempre: sem isto, ela reabriria sozinha numa visita seguinte.
+  var salva = guardada();
   var pedido = doEndereco();
   if (pedido) abrir(pedido.fase, pedido.alvo);
-  else abrir(guardada() || regua.getAttribute("data-inicial"));
+  else abrir(salva || regua.getAttribute("data-inicial"));
   if (ficha) ficha.classList.remove("cg-esperando");
+})();
+
+/* Os passos de um formulário longo. É UM FORMULÁRIO SÓ: o que está escondido vai junto no envio.
+ *
+ * O CAMPO OBRIGATÓRIO NUM PASSO ESCONDIDO É A ARMADILHA. O navegador recusa o envio, não tem
+ * onde pôr o foco, e o botão parece não fazer nada. Por isso o aviso de campo inválido abre o
+ * passo dele. Numa recarga de verdade (escolher a prenotação, ou uma recusa do servidor), a
+ * ficha volta ao passo em que estava; numa abertura nova, começa do começo. */
+(function () {
+  "use strict";
+
+  var nav = document.querySelector("[data-cg-passos]");
+  if (!nav) return;
+  var form = document.getElementById(nav.getAttribute("data-cg-passos"));
+  if (!form) return;
+  var botoes = Array.prototype.slice.call(nav.querySelectorAll("[data-passo-ir]"));
+  var chaves = botoes.map(function (b) { return b.getAttribute("data-passo-ir"); });
+  var blocos = Array.prototype.slice.call(form.querySelectorAll("[data-passo]"));
+  var fim = form.querySelector("[data-cg-passos-fim]");
+  var voltar = form.querySelector("[data-passo-voltar]");
+  var avancar = form.querySelector("[data-passo-avancar]");
+  var guarda = "cg-passo:" + form.id + ":" + form.getAttribute("action");
+  var PRAZO = 2 * 60 * 1000;
+  var aberto = "";
+
+  function rotulo(chave) {
+    var b = botoes[chaves.indexOf(chave)];
+    return b ? b.textContent.replace(/^\s*\d+/, "").trim() : "";
+  }
+
+  function abrir(chave) {
+    if (chaves.indexOf(chave) < 0) return;
+    aberto = chave;
+    blocos.forEach(function (b) { b.hidden = b.getAttribute("data-passo") !== chave; });
+    botoes.forEach(function (b) {
+      if (b.getAttribute("data-passo-ir") === chave) b.setAttribute("aria-current", "step");
+      else b.removeAttribute("aria-current");
+    });
+    var i = chaves.indexOf(chave);
+    if (fim) fim.hidden = false;
+    if (voltar) {
+      voltar.hidden = i === 0;
+      voltar.textContent = i > 0 ? "\u2190 " + rotulo(chaves[i - 1]) : "";
+    }
+    if (avancar) {
+      avancar.hidden = i === chaves.length - 1;
+      avancar.textContent = i < chaves.length - 1 ? "Avançar: " + rotulo(chaves[i + 1]) : "";
+    }
+    try { sessionStorage.setItem(guarda, chave + "|" + Date.now()); } catch (erro) { /* só não volta ao passo */ }
+  }
+
+  function guardado() {
+    try {
+      var partes = (sessionStorage.getItem(guarda) || "").split("|");
+      return Date.now() - Number(partes[1]) < PRAZO ? partes[0] : "";
+    } catch (erro) {
+      return "";
+    }
+  }
+
+  // AO TROCAR DE PASSO, A TELA VOLTA AO COMEÇO DELE. Em monitor menor, quem clica em «Avançar» está
+  // rolado para baixo, e cairia no meio do passo seguinte. E com Voltar e Avançar o cursor vai para o
+  // primeiro campo, porque quem digita não deveria precisar do mouse a cada passo.
+  function trocar(chave, comCursor) {
+    abrir(chave);
+    nav.scrollIntoView({ block: "nearest" });
+    if (!comCursor) return;
+    var campo = form.querySelector("[data-passo]:not([hidden]) :is(input:not([type=hidden]),select,textarea)");
+    if (campo) campo.focus({ preventScroll: true });
+  }
+
+  nav.addEventListener("click", function (ev) {
+    var b = ev.target.closest("[data-passo-ir]");
+    if (b) trocar(b.getAttribute("data-passo-ir"), false);
+  });
+  if (voltar) voltar.addEventListener("click", function () { trocar(chaves[chaves.indexOf(aberto) - 1], true); });
+  if (avancar) avancar.addEventListener("click", function () { trocar(chaves[chaves.indexOf(aberto) + 1], true); });
+
+  // O navegador avisa de todos os campos inválidos de uma vez, e o cursor vai para o primeiro.
+  // Só o primeiro conta: sem isto, abriria o passo do último, longe de onde o cursor ficou.
+  var avisado = false;
+  form.addEventListener("invalid", function (ev) {
+    if (avisado) return;
+    avisado = true;
+    setTimeout(function () { avisado = false; }, 0);
+    var bloco = ev.target.closest("[data-passo]");
+    if (!bloco || !bloco.hidden) return;
+    abrir(bloco.getAttribute("data-passo"));
+    setTimeout(function () { ev.target.reportValidity(); }, 0);
+  }, true);
+
+  var recarga = /[?&](prenotacao_id|protocolo_id)=/.test(location.search)
+    || document.querySelector(".flash.danger, .flash.warning");
+  abrir((recarga && guardado()) || nav.getAttribute("data-inicial"));
 })();

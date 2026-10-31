@@ -346,10 +346,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 flash(aviso, "warning")
             flash("Configuração do atendente guardada.", "success")
             return redirect(url_for("whatsapp_atendente"))
+        return _tela_do_atendente()
+
+    def _tela_do_atendente(ensaio: dict | None = None, ensaio_texto: str = "",
+                           ensaio_conversa: bool = False):
         with _con() as con:
             ia = ATENDENTE.configuracao(con)
             linhas = ATENDENTE.registros(con, limite=100)
             hoje = ATENDENTE.resumo_do_dia(con, agora=db.now())
+            por_que = ATENDENTE.por_que_passou(con, agora=db.now())
             pode_enviar = WA.pode_enviar_meta(con)
             rotina = ROTINA.config(con)
         return render_template(
@@ -365,6 +370,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             vigia_padrao=ROTINA.VIGIA_PADRAO_S, encerrar_padrao=ROTINA.ENCERRAR_PADRAO_DIAS,
             rotulos=ATENDENTE.ROTULO_DO_CASO, exemplo=ATENDENTE.TEXTO_BASE_EXEMPLO,
             tentativas=ATENDENTE.TENTATIVAS_POR_DIA,
+            por_que=por_que, ensaio=ensaio, ensaio_conversa=ensaio_conversa,
+            ensaio_texto=ensaio_texto or ATENDENTE.PERGUNTAS_DE_EXEMPLO,
+            limite_do_ensaio=ATENDENTE.LINHAS_DO_ENSAIO,
+            pode_ensaiar=app.extensions["usuario_papel"]() in ("ADMIN", "MANAGER"),
             e_admin=app.extensions["usuario_papel"]() == "ADMIN")
 
     def _volta_da_transcricao():
@@ -438,6 +447,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                   f"atendida(s), {r.get('audios') or 0} áudio(s) transcrito(s).",
                   "success")
         return redirect(url_for("whatsapp_lista"))
+
+    @app.route("/whatsapp/atendente/ensaio", methods=["POST"])
+    @login_required
+    @roles_required("ADMIN", "MANAGER")
+    def whatsapp_atendente_ensaio():
+        """O ENSAIO (30/10/2026): mostra o que a IA faria, com o texto-base gravado. NÃO
+        ENVIA E NÃO GRAVA EM CONVERSA NENHUMA. Fala com o provedor, fora de transação, e
+        conta no uso e no teto de IA. A auditoria leva só a contagem, sem o texto."""
+        texto = request.form.get("perguntas") or ""
+        alternada = request.form.get("conversa") == "1"
+        with _con() as con:
+            cfg = ATENDENTE.configuracao(con)
+        r = ATENDENTE.ensaiar(db, cfg, texto, agora=db.now(), pasta_de_dados=_pasta(),
+                              conversa_alternada=alternada)
+        audit("wa_atendente_ensaio", "wa_config", None, {"mensagens": len(r["resultados"])})
+        return _tela_do_atendente(ensaio=r, ensaio_texto=texto, ensaio_conversa=alternada)
 
     @app.route("/whatsapp/balcao", methods=["POST"])
     @login_required

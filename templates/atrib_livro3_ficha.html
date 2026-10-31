@@ -1,6 +1,19 @@
 {% extends 'base.html' %}
-{% block heading %}<h1>Livro 3 — registro nº {{ registro.numero }}</h1>{% endblock %}
+{% block heading %}<h1>Livro 3 — registro nº {{ registro.numero }}
+  {#- NO LAYOUT NOVO QUEM É E A SITUAÇÃO FICAM NO TÍTULO: não somem ao trocar de aba. #}
+  {%- if layout_novo %} <span class="small muted">{% if partes %}{{ partes[0].nome }} · {% endif %}{{ registro.situacao }}</span>{% endif %}</h1>{% endblock %}
 {% block content %}
+{% from '_fases.html' import abre_ficha, regua, o_que_espera %}
+{% set abas = abas_da_ficha(user.role in ['ADMIN','MANAGER']) if layout_novo else none %}
+{% if abas %}{{ abre_ficha(VERSION) }}{{ regua(abas, 'livro3-' ~ registro.id, 'Partes deste registro') }}
+{# O formulário de selar mora numa célula da tabela: aberto, ele pede largura e um campo por linha.
+   O teor longo do ato rola na própria célula, para os outros atos continuarem à vista. #}
+<style>
+.cg-ficha [data-fase=atos] .cg-ato-teor{max-height:12em;overflow:auto;white-space:pre-wrap}
+.cg-ficha [data-fase=atos] td .grid2{grid-template-columns:minmax(0,1fr)!important}
+.cg-ficha [data-fase=atos] td:has(>details[open]){min-width:340px}
+.cg-ficha .cg-cancelar>summary{padding:10px 14px;font-weight:600;cursor:pointer;border-top:1px solid #e5e7eb}
+</style>{% endif %}
 {% from '_fraude.html' import alerta as alerta_fraude %}
 {# O ALERTA DE FRAUDE VEM NO ALTO, antes dos atos. #}
 {{ alerta_fraude(fraudes, csrf_token, 'Livro 3 — ficha do registro', registro.numero,
@@ -59,7 +72,8 @@
     Modelo da certidão</a>
 </div>
 
-<section class="panel">
+{% if abas %}{{ o_que_espera(abas.espera, 'resumo') }}{% endif %}
+<section class="panel{% if abas %} cg-lado-largo{% endif %}" data-fase="resumo">
   <div class="panel-head"><span>O título</span><small>{{ registro.situacao }}</small></div>
   <table class="table">
     <tr><th>Natureza</th><td>{{ registro.natureza }}</td>
@@ -102,7 +116,7 @@
     **E A CLASSE É `teor-texto`**, a mesma com que o Livro 2 desenha o teor
     gravado (`teor_seguro` põe o texto num `<pre class="teor-texto">`): as
     duas fichas ficam com a mesma quebra de linha e a mesma fonte. #}
-<section class="panel">
+<section class="panel{% if abas %} cg-lado cg-lado-rola{% endif %}" data-fase="teor">
   <div class="panel-head"><span>Teor do registro</span>
     {% if registro.teor %}<span class="muted small">{{ registro.teor|length }} caracteres</span>{% endif %}</div>
   {% if registro.teor %}
@@ -113,7 +127,7 @@
     {% endif %}
   <div class="teor"><pre class="teor-texto">{{ registro.teor }}</pre></div>
   {% else %}
-  <p class="muted small" style="margin:10px">Este registro não tem texto gravado — o que ele tem são os atos abaixo.</p>
+  <p class="muted small" style="margin:10px">Este registro não tem texto gravado — o que ele tem são os atos {% if abas %}da aba Atos{% else %}abaixo{% endif %}.</p>
   {% endif %}
 </section>
 
@@ -132,7 +146,7 @@
     **E AQUI NÃO HÁ ONR**, ao contrário do Livro 2: o índice que o país
     consulta é de imóvel, e este livro registra título de crédito. Ver
     `ra_schema.MIGRACOES`, onde a ausência está declarada. #}
-<section class="panel">
+<section class="panel{% if abas %} cg-lado cg-lado-rola{% endif %}" data-fase="teor">
   <div class="panel-head"><span>Digitalização oficial deste registro</span>
     <small>{% if registro.digi_nome %}{{ registro.digi_nome }}{% else %}não enviada{% endif %}</small></div>
   <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;padding:12px">
@@ -166,7 +180,7 @@
       <div class="notice small">
         Este registro <strong>ainda não tem a varredura da ficha</strong>. Ela é
         o livro em imagem — não se confunde com o <strong>papel do termo</strong>,
-        que fica na linha de cada ato, mais abaixo.
+        que fica na linha de cada ato, {% if abas %}na aba Atos{% else %}mais abaixo{% endif %}.
       </div>
       {% endif %}
       <form method="post" enctype="multipart/form-data" style="padding-top:10px"
@@ -198,7 +212,7 @@
     vazia nos 14 registros. E sem partes O SELO NÃO SAI — o aparelho recusa
     com «Os nomes das partes devem ser informados», que foi o que ele recebeu
     ao tentar selar a AV-01 do 1.243. #}
-<section class="panel">
+<section class="panel" data-fase="partes">
   <div class="panel-head"><span>Partes</span>
     <small>{{ partes | length }}</small></div>
   <div style="padding:14px">
@@ -291,7 +305,7 @@
 
     A NOTA NAO TRAVA NADA: quem decide se o ato sai e quem assina. E a
     baixada NAO SOME, porque a decisao escrita e o que a correicao le. #}
-<section class="panel">
+<section class="panel" data-fase="revisar">
   <div class="panel-head"><span>Revisar antes de selar</span>
     <small>{{ revisoes | selectattr('situacao', 'equalto', 'ABERTA')
               | list | length }} esperando</small></div>
@@ -362,14 +376,14 @@
     Minuta e o ato JA ESCRITO e AINDA NAO LAVRADO: nao toma numero, nao entra
     no livro, nao pede selo e nao cobra. Ela guarda tambem os tres campos que
     o selo exige, porque aqui ela existe para ser «revisada E selada». #}
-<section class="panel">
+<section class="panel" data-fase="minutas">
   <div class="panel-head"><span>Minutas — a revisar e lavrar</span>
     <small>{{ minutas | selectattr('situacao', 'equalto', 'A_REVISAR')
               | list | length }} esperando</small></div>
   <div style="padding:14px">
     {% if not minutas %}
-      <p class="small muted">Nenhuma minuta neste registro. Escreva uma no
-        quadro «Lançar», abaixo, se o ato ainda vai ser revisado antes de ir
+      <p class="small muted">Nenhuma minuta neste registro. Escreva uma {% if abas %}na aba Lançar{% else %}no
+        quadro «Lançar», abaixo{% endif %}, se o ato ainda vai ser revisado antes de ir
         ao livro.</p>
     {% endif %}
     {% for m in minutas %}
@@ -442,7 +456,7 @@
 </section>
 
 {% if minuta_av and minuta_av.teor %}
-<section class="panel" style="border-left:3px solid #b45309">
+<section class="panel" style="border-left:3px solid #b45309" data-fase="minutas">
   <div class="panel-head"><span>Rascunho de tela — anterior às minutas</span>
     <small>{{ minuta_av.rotulo_origem or 'AV' }}</small></div>
   <div style="padding:14px">
@@ -469,7 +483,7 @@
 {% endif %}
 
 {% if registro.situacao == 'ATIVO' %}
-<section class="panel">
+<section class="panel" data-fase="lancar">
   <div class="panel-head"><span>Lançar</span></div>
   <p style="padding:14px 14px 0"><small>
     A numeração é contínua com o registro: depois do R-1 vem o AV-2. O
@@ -506,6 +520,7 @@
     {{ quadro(receitas.get('AV'), caixa, protocolos) }}
   </form>
 
+  {% if abas %}<details class="cg-cancelar"><summary>Cancelar o registro</summary>{% endif %}
   <form method="post" action="{{ url_for('livro3_lancar', registro_id=registro.id) }}"
         class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -523,10 +538,11 @@
     {# O cancelamento no Livro 3 É uma averbação, e cobra como ela. #}
     {{ quadro(receitas.get('AV'), caixa, protocolos) }}
   </form>
+  {% if abas %}</details>{% endif %}
 </section>
 {% endif %}
 
-<section class="panel">
+<section class="panel" data-fase="atos">
   <div class="panel-head"><span>Atos</span><small>{{ atos | length }}</small></div>
   <table class="table">
     <thead><tr><th>Ato</th><th>Data</th><th>Teor</th><th>Selo</th>
@@ -536,7 +552,7 @@
       <tr>
         <td><strong>{{ a.tipo }}-{{ a.numero }}</strong></td>
         <td>{{ a.data_ato }}</td>
-        <td>{{ (a.teor or a.motivo_cancelamento or '—') }}</td>
+        <td>{% if abas %}<div class="cg-ato-teor">{% endif %}{{ (a.teor or a.motivo_cancelamento or '—') }}{% if abas %}</div>{% endif %}</td>
         <td>
           {% if a.selo %}<small>{{ a.selo }}</small>
           {% else %}
@@ -549,7 +565,7 @@
               SELAR NAO LAVRA ATO e nao toma numero — por isso o botao
               aparece inclusive no registro CANCELADO: la fora, o ato que
               fechou a ficha e justamente o que mais precisa de selo. #}
-          <details>
+          <details{% if abas %} id="selar-ato-{{ a.id }}"{% endif %}>
             <summary class="small">selar este ato</summary>
             <form method="post" class="grid2" style="padding:8px 0"
                   action="{{ url_for('livro3_selar_ato', ato_id=a.id) }}">
@@ -623,14 +639,14 @@
 </section>
 
 {% if registro.garantia %}
-<section class="panel">
+<section class="panel{% if abas %} cg-lado{% endif %}" data-fase="resumo">
   <div class="panel-head"><span>Garantia</span></div>
   <div style="padding:14px; white-space:pre-wrap">{{ registro.garantia }}</div>
 </section>
 {% endif %}
 
 {% if registro.condicoes %}
-<section class="panel">
+<section class="panel{% if abas %} cg-lado{% endif %}" data-fase="resumo">
   <div class="panel-head"><span>Condições</span></div>
   <div style="padding:14px; white-space:pre-wrap">{{ registro.condicoes }}</div>
 </section>
@@ -642,7 +658,7 @@
     averbacao, ou volta para a minuta. O numero do registro, o livro, a
     situacao e a origem NAO se editam — eles dizem onde o ato esta no livro. #}
 {% if user.role in ['ADMIN','MANAGER'] %}
-<section class="panel">
+<section class="panel" data-fase="corrigir">
   <div class="panel-head"><span>Corrigir o registro</span></div>
   <div style="padding:14px">
     <details>
@@ -704,7 +720,7 @@
 {% endif %}
 
 {% if expurgos %}
-<section class="panel">
+<section class="panel" data-fase="atos">
   <div class="panel-head"><span>Atas de ocorrência</span>
     <small>{{ expurgos | length }}</small></div>
   <div style="padding:14px">
@@ -724,7 +740,11 @@
 {% endif %}
 
 {% from '_certidao.html' import quadro_certidao %}
+{% if abas %}<div data-fase="certidoes">{% endif %}
 {{ quadro_certidao(atribuicao, registro, certidao_receita, certidoes, caixa,
                    protocolos, csrf_token, user, atos=atos,
-                   digitalizacao=(registro if registro.digi_path else None)) }}
+                   digitalizacao=(registro if registro.digi_path else None),
+                   onde_a_varredura=('na aba Teor e imagem' if abas else 'acima')) }}
+{% if abas %}</div>{% endif %}
+{% if abas %}</div>{% endif %}
 {% endblock %}

@@ -138,10 +138,15 @@ Decisões do módulo de Protesto que valem para qualquer serventia: modelo do t�
 
 ## CENPROT: chave única e arquivos
 
-### A serventia não gera a chave de 23 dígitos; guarda a que a Central devolve
-**Regra.** A chave é IBGE da comarca (7) + bloco da Central (8) + código do cartório (2) + data do protocolo `AAMMDD` (6). Ela não vem por nenhum arquivo da CRA; vem do XML diário do CENPROT, ao lado do nosso protocolo. O importador grava em `pt_titulos.chave_cenprot` com três guardas: o arquivo é desta serventia (comarca e cartório do cabeçalho), o casamento é por protocolo **e** nosso número (ou valor), e chave já gravada não se sobrescreve.
-**Por quê.** Nem protocolo nem nosso número são nacionais: sem as guardas, o arquivo da serventia vizinha escreveria chaves alheias nos nossos títulos. Regularidade de uma casa (o bloco do meio) não se generaliza sem olhar outra.
+### A serventia calcula a chave de 23 dígitos do título da CRA; guarda a que a Central devolve nos outros
+**Regra.** A chave é IBGE da comarca (7) + sequencial (7) + verificador (1) + código do cartório (2) + data do apontamento `AAMMDD` (6). Ela não vem por nenhum arquivo da CRA. O título de origem CRA a recebe ao ser apontado, com a conta de `Protesto_Funcao.ChaveUnica` do sistema anterior e o sequencial seguinte ao maior já usado; título do mesmo protocolo fica com a chave do outro. Os pesos da conta não moram no código: a serventia os preenche em Configurações, e sem eles o título é apontado sem chave. O título de origem CENPROT fica com a da Central, e o título que ficou sem chave pode recebê-la do XML diário do CENPROT, ao lado do nosso protocolo. O importador grava em `pt_titulos.chave_cenprot` com três guardas: o arquivo é desta serventia (comarca e cartório do cabeçalho), o casamento é por protocolo **e** nosso número (ou valor), e chave já gravada não se sobrescreve.
+**Por quê.** A conta acertou todas as chaves gravadas desta casa em 30/10/2026, e a CENPROT aceitou um arquivo com chave calculada. Nem protocolo nem nosso número são nacionais: sem as guardas, o arquivo da serventia vizinha escreveria chaves alheias nos nossos títulos. Regularidade de uma casa não se generaliza sem olhar outra: a chave de outra serventia registrada na medição não fecha por esta conta.
 **No código.** `protesto_cenprot.py`.
+
+### Dois devedores pela CRA são um título: um protocolo, uma chave e um lugar no livro
+**Regra.** A posição 297 da linha da remessa é o número de controle do devedor. «1» é título novo; outro valor é o devedor seguinte do título da linha anterior, como no sistema anterior. O devedor seguinte continua sendo um título aqui, com o protocolo, a chave e o lugar no Livro de Apontamento do primeiro, e o motivo do protesto vem da linha do primeiro. A liga só se faz se a linha anterior entrou, se o número não se repete no título e se nosso número, número, espécie, emissão, vencimento, valor e saldo batem. Sem isso, a linha fica como título separado e a conferência avisa.
+**Por quê.** Medido no acervo: 34 pares, todos na mesma forma. Pôr duas pessoas sem relação no mesmo protocolo é pior que deixar dois protocolos. O protocolo novo é o maior do dia mais um, sob trava, e `pt_protocolos_emitidos` impede repetir o número.
+**No código.** `protesto_remessa._ligar_devedores`, `protesto.lancar_apontamento`.
 
 ### O arquivo de emolumentos tem formato medido e valores somados da tabela
 **Regra.** Texto separado por `|`, com cabeçalho `nm_chave|vl_retirada|vl_cancelamento|cd_ibge|nr_cartorio|dt_movimento`, data `AAAAMMDD`, CRLF e sem BOM. Retirada = parte fixa + faixa do item de liquidação/desistência pelo valor do título; cancelamento = parte fixa + faixa do item de protesto pelo valor. A parte fixa é somada da tabela vigente (não é número escrito), e um teste amarra a soma ao valor medido em arquivo real (norma estadual — TJMA; os itens e faixas são da tabela do seu estado).
@@ -188,9 +193,9 @@ Decisões do módulo de Protesto que valem para qualquer serventia: modelo do t�
 
 ## O que o sistema deliberadamente não faz
 
-### Não gera o boleto do aviso nem a chave do CENPROT
-**Regra.** O registro do aviso existe; o código de barras não, porque o dígito verificador do campo livre e o fator de vencimento não se reproduziram em busca exaustiva. A chave do CENPROT só se guarda, nunca se compõe.
-**Por quê.** Código de barras errado é boleto que o leitor aceita com o dinheiro indo para o lugar errado; chave inventada fala de outro título na Central.
+### Não gera o boleto do aviso
+**Regra.** O registro do aviso existe; o código de barras não, porque o dígito verificador do campo livre e o fator de vencimento não se reproduziram em busca exaustiva.
+**Por quê.** Código de barras errado é boleto que o leitor aceita com o dinheiro indo para o lugar errado.
 
 ### Não constrói função do sistema anterior sem dado que mostre uso
 **Regra.** Antes de reproduzir um item de menu do sistema legado, procura-se o dado no banco; tabela ausente ou coluna zerada indica que a casa nunca usou (ex.: monitoramento de devedor, exportação a birôs de crédito, arquivo bancário, repasse ao apresentante, autorização de cancelamento quase sem uso). Relatórios de prestação de contas ao tribunal exigem a norma lida antes de construir.

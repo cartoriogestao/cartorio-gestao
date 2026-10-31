@@ -16,6 +16,11 @@
     <em>Administrativo → Atendimento → O que ficou pelo caminho</em>, que mede
     atos que já existem.
   </p>
+  <p class="small muted">
+    <strong>Quando o ato grava, o rascunho sai desta lista sozinho.</strong> Se o ato
+    não ficar de pé, porque o selo não saiu, ele continua aqui, para corrigir e tentar
+    de novo.
+  </p>
 </div>
 
 {% if not linhas %}
@@ -42,6 +47,8 @@
     <td>
       {% if r.abrir_url %}
       <a class="button small" href="{{ r.abrir_url }}">abrir</a>
+      {% else %}
+      <span class="small muted">não reabre por aqui</span>
       {% endif %}
       <form method="post" action="{{ url_for('rascunho_virar_processo', rascunho_id=r.id) }}"
             style="display:inline" title="Abre um processo com você de responsável e prazo no próximo dia útil">

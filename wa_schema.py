@@ -65,6 +65,17 @@ SETORES = {
     "PROTESTO": "Protesto",
     "GESTAO": "Gestão (reclamações)",
 }
+# O QUE CADA SETOR FAZ (30/10/2026): é o que a IA lê para escolher o setor. Um lugar só.
+DESCRICAO_DOS_SETORES = {
+    "ATENDIMENTO": "quando não der para saber o assunto",
+    "RCPN": "nascimento, casamento, óbito, habilitação de casamento, união estável",
+    "RI": "matrícula, imóvel, averbação, usucapião, certidão de imóvel",
+    "NOTAS": "escritura, procuração, testamento, ata notarial, reconhecimento de firma, "
+             "autenticação",
+    "RCPJ_RTD": "empresa, contratos, contrato social, estatuto, ata de assembleia, títulos e documentos",
+    "PROTESTO": "título, intimação, cancelamento de protesto",
+    "GESTAO": "reclamação sobre o atendimento ou o cartório",
+}
 
 # QUEM ATENDE A CONVERSA AGORA. `ia` e o padrao: a IA so responde se o
 # interruptor geral estiver ligado (`CHAVE_IA_LIGADA`). `pessoa` e a conversa
@@ -79,6 +90,10 @@ IA_RESPONDIDA = "respondida"
 IA_PASSADA = "passada"
 IA_FORA = "fora"            # IA desligada, conversa com pessoa, ou anterior ao liga
 IA_ERRO = "erro"
+# A CORTESIA (30/10/2026): «bom dia» e «obrigado» não são pedido. A mensagem não abre
+# espera, e por isso `wa_fila._ESPERANDO_DESDE` não a conta, nem tira do alerta uma
+# pergunta de antes.
+IA_CORTESIA = "cortesia"
 
 ETIQUETAS = (
     "horario", "endereco", "documentos", "certidao",
@@ -300,6 +315,9 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("wa_mensagem", "autor", "TEXT"),
     ("wa_mensagem", "ia_situacao", "TEXT"),
     ("wa_mensagem", "ia_desde", "TEXT"),
+    # POR QUE PASSOU PARA PESSOA (30/10/2026): o vocabulário é `wa_atendente.RAZOES`.
+    # Vazio é registro de antes desta versão.
+    ("wa_ia_registro", "razao", "TEXT"),
     # A RESOLVIDA FICA GUARDADA E VOLTA COM O HISTÓRICO OCULTO (27/10/2026).
     # Nada se apaga: `resolvida_em` diz quando ela saiu das abas de trabalho
     # (e conta os 7 dias do responsável na volta), e `atendimento_desde_id` é

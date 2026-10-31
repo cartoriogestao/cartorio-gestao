@@ -157,8 +157,10 @@ TITULO_NA_REMESSA: tuple[Campo, ...] = (
     Campo("tipo_de_endosso", 295, 1, "texto", None,
           "M mandato (263), T translativo (2), branco (78) — o M/T/S do esquema"),
     Campo("aceite", 296, 1, "texto", None, "N não aceito (259), A aceito (61)"),
+    # O NOME FICOU DA PRIMEIRA LEITURA: a posição é o número de controle do
+    # devedor. Ver `controle_do_devedor`.
     Campo("motivo_do_protesto", 297, 1, "texto", None,
-          "«1» nos 343: falta de pagamento"),
+          "«1» nos 343: primeiro devedor"),
     Campo("devedor_nome", 298, 45, "texto", 92.7),
     Campo("devedor_tipo_de_documento", 343, 3, "numero", 100.0,
           "001 = CNPJ (119), 002 = CPF (224); bate exatamente com quantos "
@@ -684,6 +686,19 @@ def para_apontamento(titulo: dict) -> dict:
         },
         "devedores": [devedor],
     }
+
+
+def controle_do_devedor(titulo: dict) -> str:
+    """O número de controle do devedor na linha da remessa: a posição 297.
+
+    O E-OFÍCIO LÊ ESTA POSIÇÃO ASSIM (`tbSDT.Campo22`, `strNControleDev`): «1» é
+    título novo; outro valor é o devedor seguinte do título da linha anterior.
+    Medido no acervo: 1.403 linhas com «1» e 34 com «2», e as 34 ficam logo
+    depois da linha «1» do mesmo protocolo, com o mesmo nosso número, número,
+    emissão, vencimento, valor, saldo e apresentante, e outro documento. Este
+    sistema a lia como motivo do protesto, e o «2» saía como falta de aceite.
+    """
+    return str(titulo.get("motivo_do_protesto") or "").strip()
 
 
 def documento_do_devedor(titulo: dict) -> dict:

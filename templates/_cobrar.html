@@ -41,7 +41,10 @@
 {% endif %}
 {% endmacro %}
 
-{% macro quadro(r, caixa, protocolos=None, protocolo_escolhido=None, itens_do_protocolo=None, reload_url=None, cobrar_itens=True) %}
+{# `form` É O QUE JÁ FOI ESCOLHIDO NESTA TELA — 31/10/2026: a recusa do servidor ou o rascunho reaberto. O
+   formulário, com `.get` e `.getlist`. Sem ele, o quadro sai como sempre saiu. O protocolo escolhido aqui só
+   volta marcado na caixa: `protocolo_escolhido` é outra coisa, porque traz a lista dos itens dele. #}
+{% macro quadro(r, caixa, protocolos=None, protocolo_escolhido=None, itens_do_protocolo=None, reload_url=None, cobrar_itens=True, form=None) %}
 {# **O PROTOCOLO E OS ITENS A SELAR VÊM PRIMEIRO, E NÃO DEPENDEM DE CAIXA
    NEM DE RECEITA MEDIDA** — correção de 11/09/2026: estava dentro de
    `{% if caixa %}` dentro de `{% if r and r.itens %}`, e por isso, num ato
@@ -66,7 +69,7 @@
       <option value="">— sem protocolo —</option>
       {% for pr in protocolos %}
         <option value="{{ pr.id }}"
-          {%- if protocolo_escolhido and (protocolo_escolhido|string) == (pr.id|string) %} selected{% endif %}>
+          {%- if (protocolo_escolhido and (protocolo_escolhido|string) == (pr.id|string)) or (form and form.get('protocolo_id') == (pr.id|string)) %} selected{% endif %}>
           {{ pr.numero }} — {{ pr.interessado or '—' }}</option>
       {% endfor %}
     </select></label>
@@ -137,7 +140,8 @@
 {% endif %}
 {% if r and r.itens %}
 <div style="grid-column:1/-1">
-  <details>
+  {# Volta aberto se traz algo escolhido: fechado, a pessoa não veria o que vai ser cobrado. #}
+  <details{% if form and (form.getlist('cobrar') or form.get('pagador') or form.get('forma_pagamento')) %} open{% endif %}>
     <summary><small>Cobrar no caixa
       {%- if r.total_centavos %} — a casa costuma cobrar R$ {{ r.total_centavos | centavos_reais }}{% endif %}</small></summary>
 
@@ -158,7 +162,7 @@
           <td>
             {% if i.preco is not none %}
               <input type="checkbox" name="cobrar" value="{{ i.servico }}"
-                     {% if not caixa %}disabled{% endif %}>
+                     {% if not caixa %}disabled{% endif %}{% if form and (i.servico|string) in form.getlist('cobrar') %} checked{% endif %}>
             {% endif %}
           </td>
           <td>{{ i.codigo_tj }}</td>
@@ -183,14 +187,15 @@
     </small></p>
 
     {% if caixa %}
-    <label>Pagador <input name="pagador"></label>
+    {% set forma_escolhida = form.get('forma_pagamento') if form else '' %}
+    <label>Pagador <input name="pagador"{% if form and form.get('pagador') %} value="{{ form.get('pagador') }}"{% endif %}></label>
     <label>Forma de pagamento
       <select name="forma_pagamento">
         <option value="">—</option>
-        <option value="DINHEIRO">Dinheiro</option>
-        <option value="PIX">PIX</option>
-        <option value="CARTAO">Cartão</option>
-        <option value="DEPOSITO_PREVIO">Depósito prévio</option>
+        <option value="DINHEIRO"{% if forma_escolhida == 'DINHEIRO' %} selected{% endif %}>Dinheiro</option>
+        <option value="PIX"{% if forma_escolhida == 'PIX' %} selected{% endif %}>PIX</option>
+        <option value="CARTAO"{% if forma_escolhida == 'CARTAO' %} selected{% endif %}>Cartão</option>
+        <option value="DEPOSITO_PREVIO"{% if forma_escolhida == 'DEPOSITO_PREVIO' %} selected{% endif %}>Depósito prévio</option>
       </select></label>
     <p style="grid-column:1/-1"><small>Vai para o caixa
       <strong>{{ caixa.id }}</strong>, aberto em {{ caixa.data }}. O recibo se emite

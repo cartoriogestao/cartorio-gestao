@@ -8,6 +8,7 @@
 #}
 {% extends 'base.html' %}
 {% from '_protesto_afirmacao.html' import afirmacao, afirmacao_por_regra %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
 {#- A TRAVA DA CENPROT NESTA TELA (integração de 29/10/2026, a brecha do PR
     #105): a entrega, o edital e a intimação digital lavram a intimação, e o
     título que a Central dá por PAGO POR LIQUIDAÇÃO só se intima com a
@@ -24,7 +25,11 @@
 {% endmacro %}
 {% block heading %}<h1>Avisos de intimação</h1>{% endblock %}
 {% block content %}
-{% include '_serventia.html' %}
+{# NO LAYOUT NOVO, O QUE ESPERA VOCÊ VEM PRIMEIRO — 30/10/2026. Cada lista vira um quadro, e o título já
+   diz quantos há. Abre sozinho só o primeiro que tem o que fazer: os títulos dos outros continuam à
+   vista, sem rolar. As âncoras que o roteiro e os botões usam (`#entregues`, `#envio-do-edital`,
+   `#aviso-N`) abrem o quadro certo. Nenhum formulário muda, e no layout antigo nada sai do lugar. #}
+{% if not layout_novo %}{% include '_serventia.html' %}{% endif %}
 <div class="actions">
   <a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a>
   <a class="button" href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>
@@ -32,6 +37,7 @@
     Subir PDF com várias intimações entregues</a>
 </div>
 
+{% set como_e %}
 <div class="notice">
   O aviso é o papel que vai até o devedor; a <strong>intimação é o ato</strong>,
   e ela só se lavra quando o papel chega. Entrega que não achou ninguém
@@ -40,6 +46,24 @@
   <strong>O aviso sai na ficha do título</strong>, que é onde você vê o devedor,
   o endereço e o protocolo. Aqui você registra o que aconteceu com ele.
 </div>
+{% endset %}
+
+{% if layout_novo %}
+<style>
+  .cg-av-contas{margin:0 0 10px}
+  details.cg-quadro>.cg-quadro-corpo>.table:first-child th{white-space:nowrap}
+  details.cg-quadro>.cg-quadro-corpo>p:first-child{margin-top:0}
+  @media(min-width:1600px){
+    #esperando td>form[enctype]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px}
+    #esperando td>form[enctype]>.actions,#esperando td>form[enctype]>.notice{grid-column:1/-1;margin:0}
+  }
+</style>
+<p class="cg-av-contas"><strong>Como está:</strong>
+  {{ contas.EMITIDO }} saíram e esperam desfecho · {{ contas.ENTREGUE }} entregues ·
+  {{ contas.NAO_ENTREGUE }} não entregues · {{ contas.EDITAL }} em edital.</p>
+{% set abrir = 'sem-prova' if sem_prova else ('apontados-sem-aviso' if sem_aviso else ('esperando' if esperando else ('nao-entregues' if para_edital else ''))) %}
+{% else %}
+{{ como_e }}
 
 <section class="panel">
   <div class="panel-head"><span>Como está</span></div>
@@ -56,16 +80,48 @@
     </tbody>
   </table>
 </section>
+{% endif %}
+
+{% if sem_prova %}
+{#
+  OS INTIMADOS SEM A PROVA DA INTIMAÇÃO (29/10/2026, ordem do oficial). É o
+  que a trava do protesto vai recusar, dito antes — e esta é a tela em que a
+  prova se junta: o comprovante do aviso entregue, ou o do envio do edital à
+  CENPROT. A régua é a do protesto (`protesto_prova.intimacoes_sem_prova`).
+#}
+{% set sem_prova_tabela %}
+  <table class="table">
+    <thead><tr><th>Título</th><th>Protocolo</th><th>O que falta</th><th>Onde se resolve</th></tr></thead>
+    <tbody>
+      {% for x in sem_prova %}
+      <tr>
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=x.titulo_id) }}">{{ x.numero_titulo or '—' }}</a>
+            <div><small>{{ (x.modo or '') | lower }}</small></div></td>
+        <td><small>{{ x.protocolo or '—' }}</small></td>
+        <td><small>{{ x.explicacao }}</small></td>
+        <td><small>{{ x.onde }}</small>
+            {%- if x.aviso_id %}
+            <div><a class="button small" href="#aviso-{{ x.aviso_id }}">{% if x.falta_quem_recebeu %}Completar quem recebeu{% else %}Ir ao aviso{% endif %}</a></div>
+            {%- endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endset %}
+{% if layout_novo %}{{ abre('sem-prova', 'Intimados sem a prova da intimação — o protesto não sai', (sem_prova | length) ~ ' título(s)', aberto=abrir == 'sem-prova') }}<div class="cg-quadro-corpo">{{ sem_prova_tabela }}</div></details>{% endif %}
+{% endif %}
 
 {#
   APONTADOS SEM AVISO (21/10/2026). Os títulos que vieram do E-Ofício sem
   aviso neste sistema não apareciam em lugar nenhum para intimação: a tela só
   listava o que já tinha aviso. Agora todo título apontado está à vista.
 #}
+{% if layout_novo %}{{ abre('apontados-sem-aviso', 'Apontados sem aviso — a intimar', (sem_aviso | length) ~ ' título(s)', aberto=abrir == 'apontados-sem-aviso') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel" id="apontados-sem-aviso">
   <div class="panel-head">
     <span>Apontados sem aviso — a intimar</span><small>{{ sem_aviso | length }}</small>
   </div>
+{% endif %}
   {% if not sem_aviso %}
     <p style="padding:14px">Todo título apontado tem aviso.</p>
   {% else %}
@@ -90,12 +146,16 @@
     </tbody>
   </table>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
+{% if layout_novo %}{{ abre('esperando', 'Saíram e esperam desfecho', (esperando | length) ~ ' aviso(s)', aberto=abrir == 'esperando') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <div class="panel-head">
     <span>Saíram e esperam desfecho</span><small>{{ esperando | length }}</small>
   </div>
+{% endif %}
 
   {% if not esperando %}
     <p style="padding:14px">
@@ -191,12 +251,16 @@
     outro aviso na ficha antes de desistir do endereço.
   </div>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
+{% if layout_novo %}{{ abre('nao-entregues', 'Não entregues — Resolve, e depois edital', (para_edital | length) ~ ' aviso(s)', aberto=abrir == 'nao-entregues') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <div class="panel-head">
     <span>Não entregues — Resolve, e depois edital</span><small>{{ para_edital | length }}</small>
   </div>
+{% endif %}
 
   {% if not para_edital %}
     <p style="padding:14px">
@@ -334,44 +398,31 @@
     </tbody>
   </table>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
-{% if sem_prova %}
-{#
-  OS INTIMADOS SEM A PROVA DA INTIMAÇÃO (29/10/2026, ordem do oficial). É o
-  que a trava do protesto vai recusar, dito antes — e esta é a tela em que a
-  prova se junta: o comprovante do aviso entregue, ou o do envio do edital à
-  CENPROT. A régua é a do protesto (`protesto_prova.intimacoes_sem_prova`).
-#}
+{% if sem_prova and not layout_novo %}
 <section class="panel" id="sem-prova">
   <div class="panel-head">
     <span>Intimados sem a prova da intimação — o protesto não sai</span>
     <small>{{ sem_prova | length }}</small>
   </div>
-  <table class="table">
-    <thead><tr><th>Título</th><th>Protocolo</th><th>O que falta</th><th>Onde se resolve</th></tr></thead>
-    <tbody>
-      {% for x in sem_prova %}
-      <tr>
-        <td><a href="{{ url_for('protesto_titulo', titulo_id=x.titulo_id) }}">{{ x.numero_titulo or '—' }}</a>
-            <div><small>{{ (x.modo or '') | lower }}</small></div></td>
-        <td><small>{{ x.protocolo or '—' }}</small></td>
-        <td><small>{{ x.explicacao }}</small></td>
-        <td><small>{{ x.onde }}</small>
-            {%- if x.aviso_id %}
-            <div><a class="button small" href="#aviso-{{ x.aviso_id }}">{% if x.falta_quem_recebeu %}Completar quem recebeu{% else %}Ir ao aviso{% endif %}</a></div>
-            {%- endif %}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  {{ sem_prova_tabela }}
 </section>
 {% endif %}
 
+{% if layout_novo %}
+{% set sem_comprovante = entregues | rejectattr('comprovantes') | list | length %}
+{% set sem_quem_recebeu = entregues | rejectattr('recebido_por') | list | length %}
+{% set nota_entregues %}{{ entregues | length }} aviso(s){% if sem_comprovante %} · <strong class="danger">{{ sem_comprovante }} sem comprovante</strong>{% endif %}{% if sem_quem_recebeu %} · <strong class="danger">{{ sem_quem_recebeu }} sem o nome de quem recebeu</strong>{% endif %}{% endset %}
+{{ abre('entregues', 'Entregues — comprovante da intimação', nota_entregues) }}<div class="cg-quadro-corpo">
+{% else %}
 <section class="panel" id="entregues">
   <div class="panel-head">
     <span>Entregues — comprovante da intimação</span><small>{{ entregues | length }}</small>
   </div>
+{% endif %}
   {% if not entregues %}
     <p style="padding:14px">Nenhum aviso entregue ainda.</p>
   {% else %}
@@ -437,12 +488,16 @@
     </tbody>
   </table>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
+{% if layout_novo %}{{ abre('editais-de-hoje', 'Editais publicados hoje', (do_dia | length) ~ ' edital(is) · gerar o arquivo para a CENPROT', aberto=do_dia | length > 0) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <div class="panel-head">
     <span>Editais publicados hoje</span><small>{{ do_dia | length }}</small>
   </div>
+{% endif %}
   {% if not do_dia %}
     <p style="padding:14px">Nenhum edital publicado hoje.</p>
   {% else %}
@@ -494,7 +549,9 @@
       </div>
     </form>
   </div>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
 {#
   O COMPROVANTE DO ENVIO À CENPROT (pedido do oficial, 26/10/2026, #142): o
@@ -502,11 +559,17 @@
   conferir depois: o site público da CENPROT tem «Edital Eletrônico — consulta
   e emissão de edital eletrônico atualizado».
 #}
+{% if layout_novo %}
+{% set dias_sem_comprovante = envios | rejectattr('completo') | list | length %}
+{% set nota_envio %}últimos 30 dias{% if dias_sem_comprovante %} · <strong class="danger">{{ dias_sem_comprovante }} dia(s) sem comprovante</strong>{% endif %}{% endset %}
+{{ abre('envio-do-edital', 'Envio do edital à CENPROT — comprovantes', nota_envio) }}<div class="cg-quadro-corpo">
+{% else %}
 <section class="panel" id="envio-do-edital">
   <div class="panel-head">
     <span>Envio do edital à CENPROT — comprovantes</span>
     <small>últimos 30 dias</small>
   </div>
+{% endif %}
   <p style="padding:14px 14px 0"><small>
     Depois de subir o arquivo do dia no portal da CENPROT, salve a tela de
     confirmação (PDF ou imagem) e anexe aqui. O comprovante vale para todos os
@@ -548,8 +611,11 @@
     </tbody>
   </table>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
+{% set o_boleto %}
 <div class="notice">
   <strong>O aviso desta casa era também o boleto</strong>, e o boleto não está
   aqui. O código de barras do sistema antigo tem duas coisas que não se explicam — o
@@ -558,11 +624,15 @@
   O que está medido e o que falta estão em
   <code>DOCUMENTACAO/AVISO_DE_INTIMACAO_MEDIDO.md</code>.
 </div>
+{% endset %}
+{% if not layout_novo %}{{ o_boleto }}{% endif %}
 {% if antigos %}
+{% if layout_novo %}{{ abre('apontados-antigos', 'Apontados antigos — decidir', (antigos | length) ~ ' título(s)') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel" id="apontados-antigos">
   <div class="panel-head">
     <span>Apontados antigos — decidir</span><small>{{ antigos | length }}</small>
   </div>
+{% endif %}
   <p style="padding:0 14px">
     Apontados há mais de {{ antigo_dias }} dias e sem desfecho. Não é
     intimação a fazer: confira no papel se o título foi pago, retirado ou
@@ -581,6 +651,12 @@
       {% endfor %}
     </tbody>
   </table>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
+{% endif %}
+{% if layout_novo %}
+{{ abre('como-funciona', 'Como esta tela funciona', 'o aviso, a intimação e o boleto') }}<div class="cg-quadro-corpo">{{ como_e }}{{ o_boleto }}</div></details>
+{% include '_serventia.html' %}{{ ferramentas() }}
 {% endif %}
 {% endblock %}

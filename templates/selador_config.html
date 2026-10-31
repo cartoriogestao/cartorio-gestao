@@ -1,7 +1,25 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>Selador — configuração</h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO — 30/10/2026. O que falta para selar e o botão de testar abrem a tela, e «Como está agora»
+   vem aberto. Sem endereço ou sem credencial, «Preencher à mão» vem aberto e antes do certificado; sem o
+   certificado conferido, «Conferir o certificado» também. O título diz «gravada» e «conferido», e nunca o
+   usuário, a senha ou a impressão digital. #}
+{% if layout_novo %}
+<style>
+  .cg-sel-falta>.notice{margin:0 0 10px}
+  .cg-sel-falta ul{margin:4px 0 0;padding-left:18px}
+  section.cg-sel-testar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:10px 14px;margin:0 0 10px}
+  .cg-sel-testar>p{flex:1 1 20rem;margin:0}
+  .cg-sel-testar>form{order:-1;margin:0}
+  #sel-preencher form,#sel-certificado form:has(label){display:grid;grid-template-columns:repeat(auto-fill,minmax(20rem,1fr));gap:8px 16px;align-items:end}
+  #sel-preencher form label,#sel-certificado form label{margin:0}
+  #sel-preencher form>.actions,#sel-certificado form>.actions,#sel-preencher form>p{margin:0}
+</style>
+{% endif %}
 
+{% set por_que_aqui %}
 <div class="notice">
   <strong>O selador desta serventia não está na internet.</strong> A configuração do
   sistema antigo aponta para um endereço como <code>https://IP-DO-SELADOR:443</code> — uma máquina da
@@ -11,9 +29,31 @@
   nuvem quando a casa sela num aparelho da sala ao lado dá erro no meio do
   atendimento — ou selo comprado duas vezes.
 </div>
+{% endset %}
+{% if not layout_novo %}{{ por_que_aqui }}{% endif %}
 
+{% set o_que_falta %}
+  {% if not estado.pronto %}
+    <div class="notice warn">
+      <strong>Falta para o sistema poder selar:</strong>
+      <ul>{% for f in estado.faltas %}<li>{{ f }}</li>{% endfor %}</ul>
+    </div>
+  {% elif estado.na_rede_local %}
+    <div class="notice">
+      Tudo no lugar. Como o selador é da rede local, o sistema só sela de dentro do
+      escritório — de fora, mesmo com o sistema no ar, o pedido não chega.
+    </div>
+  {% else %}
+    <div class="notice">Tudo no lugar.</div>
+  {% endif %}
+{% endset %}
+
+
+{% set q_agora %}
+{% if layout_novo %}{{ abre('sel-agora', 'Como está agora', ('produção' if estado.ambiente == 'PRODUCAO' else 'homologação') ~ ' · ' ~ ('usuário e senha gravados' if estado.tem_credencial else 'sem usuário e senha') ~ ' · certificado ' ~ ('conferido' if certificado.sha256 else 'não conferido') ~ ' · ' ~ (('último teste: ' ~ ('respondeu' if estado.ultimo_teste_ok else 'falhou')) if estado.ultimo_teste_em else 'nunca testado'), aberto=true) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <h2>Como está agora</h2>
+{% endif %}
   <table>
     <tbody>
       <tr><th>Ambiente</th><td><strong>{{ estado.ambiente }}</strong></td></tr>
@@ -62,28 +102,22 @@
     </tbody>
   </table>
 
-  {% if not estado.pronto %}
-    <div class="notice warn">
-      <strong>Falta para o sistema poder selar:</strong>
-      <ul>{% for f in estado.faltas %}<li>{{ f }}</li>{% endfor %}</ul>
-    </div>
-  {% elif estado.na_rede_local %}
-    <div class="notice">
-      Tudo no lugar. Como o selador é da rede local, o sistema só sela de dentro do
-      escritório — de fora, mesmo com o sistema no ar, o pedido não chega.
-    </div>
-  {% else %}
-    <div class="notice">Tudo no lugar.</div>
-  {% endif %}
+  {% if not layout_novo %}{{ o_que_falta }}{% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
+{% endset %}
 
 {# A seção «Trazer do E-Ofício» (botão «Importar do E-Ofício», que lia a
    tbSeladorConfiguracao do acervo) saiu em 17/10/2026, por decisão do
    oficial: a importação terminou. O POST acao=importar continua na rota
    (selador_web.selador_config → selador_config.importar_do_eoficio). #}
 
+{% set q_certificado %}
+{% if layout_novo %}{{ abre('sel-certificado', 'Conferir o certificado', 'conferido' if certificado.sha256 else 'não conferido: o sistema não manda a senha', aberto=not certificado.sha256) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <h2>Conferir o certificado</h2>
+{% endif %}
   <p>
     O selador desta casa é uma máquina da rede local, e máquina de rede local tem
     <strong>certificado próprio</strong> — não assinado por autoridade. Validar pela
@@ -120,10 +154,15 @@
       serventia</strong> para essa máquina. É de propósito.
     </div>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
-<section class="panel">
-  <h2>Testar</h2>
+{% endset %}
+
+{% set q_testar %}
+<section class="panel{% if layout_novo %} cg-sel-testar{% endif %}">
+  {% if not layout_novo %}<h2>Testar</h2>{% endif %}
   <p class="small muted">
     Confere rede, certificado e credencial — sem selar nada. É o que responde
     «por que não está selando?» antes de o balcão descobrir com a parte na frente.
@@ -134,9 +173,13 @@
     <button class="button" type="submit">Testar a conexão</button>
   </form>
 </section>
+{% endset %}
 
+{% set q_preencher %}
+{% if layout_novo %}{{ abre('sel-preencher', 'Preencher à mão', ('endereço informado' if estado.base_em_uso else 'falta o endereço') ~ ' · ' ~ ('usuário e senha gravados' if estado.tem_credencial else 'faltam o usuário e a senha'), aberto=not estado.pronto) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <h2>Preencher à mão</h2>
+{% endif %}
   <form method="post">
       <input type="hidden" name="csrf_token" value="{{csrf_token}}">
     <input type="hidden" name="acao" value="gravar">
@@ -188,10 +231,16 @@
     da pasta de dados, ao lado do <code>secret.key</code> — que é o que o backup não
     leva. O banco viaja em backup e em cópia; a senha não vai junto.
   </p>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
+{% endset %}
 
+{% set q_orfaos %}
+{% if layout_novo %}{{ abre('sel-orfaos', 'Selos obtidos e não usados', ('os ' ~ (orfaos | length) ~ ' mais novos' if orfaos | length >= 20 else (orfaos | length) ~ ' selo(s)') if orfaos else 'nenhum') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <h2>Selos obtidos e não usados</h2>
+{% endif %}
   <p class="small muted">
     No acervo do sistema antigo há <strong>1.304 selos assim</strong> — 5% de todos —, e
     apenas cinco foram cancelados. É o rastro de quem obteve selo e perdeu o ato no
@@ -217,11 +266,17 @@
   {% else %}
     <p class="muted">Nenhum. Todo selo obtido está vinculado a um ato ou cancelado.</p>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
+{% endset %}
 
+{% set q_apagar %}
 {% if estado.tem_credencial %}
+{% if layout_novo %}{{ abre('sel-apagar', 'Apagar usuário e senha', 'o sistema deixa de selar até informar de novo') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <h2>Apagar usuário e senha</h2>
+{% endif %}
   <p class="small muted">
     O sistema deixa de selar até que sejam informados de novo. O endereço e o ambiente
     continuam gravados.
@@ -231,7 +286,29 @@
     <input type="hidden" name="acao" value="apagar_credencial">
     <button class="button" type="submit">Apagar credencial</button>
   </form>
+{% if layout_novo %}</div></details>{% else %}
 </section>
 {% endif %}
+{% endif %}
+{% endset %}
 
+{% if layout_novo %}
+<div class="cg-sel-falta">{{ o_que_falta }}</div>
+{{ q_testar }}
+{{ q_agora }}
+{% if not estado.pronto %}{{ q_preencher }}{% endif %}
+{{ q_certificado }}
+{% if estado.pronto %}{{ q_preencher }}{% endif %}
+{{ q_orfaos }}
+{{ q_apagar }}
+{{ abre('sel-por-que', 'Por que o endereço se configura aqui', 'o selador é uma máquina da rede local') }}<div class="cg-quadro-corpo">{{ por_que_aqui }}</div></details>
+{{ ferramentas() }}
+{% else %}
+{{ q_agora }}
+{{ q_certificado }}
+{{ q_testar }}
+{{ q_preencher }}
+{{ q_orfaos }}
+{{ q_apagar }}
+{% endif %}
 {% endblock %}

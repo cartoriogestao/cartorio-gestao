@@ -252,6 +252,11 @@ def registrar_rotas_do_selo_e_caixa(app, db, login_required, roles_required, aud
             escolhido = (request.form.get("protocolo_id") or "").strip()
         if not escolhido or request.endpoint in JA_ESCOLHEM_O_PROTOCOLO:
             return None
+        # GUARDAR O RASCUNHO NÃO ESCOLHE PROTOCOLO (31/10/2026): ele leva junto o
+        # protocolo marcado na tela, para a tela reaberta voltar com ele. Mas
+        # rascunho não é ato: quem passa a atender aquele protocolo é o envio do ato.
+        if request.endpoint in ("rascunho_salvar", "rascunho_salvar_e_abrir_processo"):
+            return None
         try:
             with db.transaction() as con:
                 feito = AS.escolher_protocolo_do_selo(

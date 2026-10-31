@@ -22,10 +22,82 @@
 </div>
 {% endif %}
 
+{# NO LAYOUT NOVO, O QUE ESPERA E O «PRENOTAR» VÊM PRIMEIRO — 30/10/2026. A tela é a porta do Registro de
+   Imóveis, e o formulário ficava depois da explicação, e a lista inteira depois dele. Agora os títulos com
+   prazo vencido ou perto de vencer ficam ao lado da prenotação, e o resto da lista em dois quadros
+   recolhidos: os em aberto dentro do prazo e o histórico. A prenotação vira dois passos, num formulário só:
+   o que está escondido vai junto, e `static/fases.js` mostra o passo aberto. Sem o script, ele sai inteiro.
+   As peças são as mesmas nas duas molduras, e no layout antigo nada muda de lugar. O timbre fica, de
+   propósito: `navegacao.TELAS_COM_TIMBRE`. #}
+{% if layout_novo %}
+<style>
+  @media screen{
+    .cg-pren-timbre .panel{padding:0;margin-bottom:8px!important;box-shadow:none}
+    .cg-pren-timbre .panel>div{padding:6px 14px!important}
+    .cg-pren-timbre br{display:none}
+    .cg-pren-timbre .small{margin-left:10px}
+  }
+  .cg-pren-topo{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 8px}
+  .cg-pren-topo .actions{margin:0;flex-wrap:wrap}
+  .cg-pren-topo .filters{margin:0 0 0 auto;flex:1 1 420px;max-width:700px;flex-wrap:nowrap}
+  .cg-pren-topo .filters input{flex:2 1 200px;min-width:0}
+  .cg-pren-topo .filters select{flex:1 1 130px;min-width:0}
+  .cg-pren-topo .filters a.button{display:inline-flex;align-items:center}
+  .cg-pren-cartoes .cards{display:flex;flex-wrap:wrap;gap:2px 28px;margin:0 0 8px}
+  .cg-pren-cartoes .stat{display:flex;align-items:baseline;gap:6px;padding:0}
+  .cg-pren-cartoes .stat strong{font-size:20px;line-height:1.3}
+  .cg-pren-cartoes .stat.danger{border:0;background:none}
+  .cg-pren-cartoes .stat.danger strong{color:var(--danger)}
+  .cg-pren-duas{display:grid;gap:12px;align-items:start;margin-bottom:12px}
+  .cg-pren-duas>.panel{min-width:0;padding:10px 16px;margin:0}
+  .cg-pren-duas>.panel>.panel-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 12px;padding-bottom:6px;margin-bottom:6px}
+  .cg-pren-rolo{max-height:232px;overflow:auto}
+  .cg-pren-rolo thead th{position:sticky;top:0;z-index:1}
+  .cg-pren-rolo td{padding:6px 8px;vertical-align:top}
+  .cg-pren-rolo td .badge{white-space:nowrap}
+  .cg-pren-rolo td.small{white-space:nowrap}
+  .cg-pren-calmo{margin:0;padding:2px 0 4px}
+  .cg-pren-form .cg-passos{margin-bottom:6px}
+  .cg-pren-form form.form-grid{gap:6px 12px}
+  .cg-pren-form form>p.span2{margin:0}
+  .cg-pren-campos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 12px;grid-auto-flow:dense}
+  .cg-pren-campos>.span2{grid-column:span 2}
+  .cg-pren-campos>p.span2{grid-column:span 1;align-self:center;margin:0}
+  .cg-pren-campos>.notice{grid-column:1/-1;margin:0;padding:8px 12px}
+  .cg-pren-campos>label:has([name=natureza_titulo],[name=anotacao]){grid-column:span 1}
+  .cg-pren-campos>label:has(#prenot_isento){grid-column:span 1;align-self:center}
+  .cg-pren-campos>#prenot_selo_aviso{grid-column:span 1;padding:8px 12px;align-self:center}
+  .cg-pren-campos textarea{min-height:40px}
+  details.cg-pren-grupo{padding:10px 16px;margin-bottom:8px}
+  details.cg-pren-grupo>summary{cursor:pointer;list-style:none;margin:0}
+  details.cg-pren-grupo>summary::-webkit-details-marker{display:none}
+  details.cg-pren-grupo>summary::before{content:"\25B8\00A0"}
+  details.cg-pren-grupo[open]>summary::before{content:"\25BE\00A0"}
+  details.cg-pren-grupo[open]>summary{margin-bottom:8px}
+  details.cg-pren-grupo .panel{padding:0;margin:0;border:0;box-shadow:none;background:none}
+  .cg-pren-lista td{padding:6px 8px}
+  .cg-pren-lista td.small br{display:none}
+  .cg-pren-lista td.small a+br+a{margin-left:8px}
+  @media (max-width:900px){
+    .cg-pren-campos{grid-template-columns:minmax(0,1fr)}
+    .cg-pren-campos>*{grid-column:auto!important}
+  }
+  @media (min-width:1600px){
+    .cg-pren-duas.com-espera{grid-template-columns:minmax(0,5fr) minmax(0,7fr)}
+    .cg-pren-rolo{max-height:430px}
+    .cg-pren-ir:not(.com-busca){display:none}
+  }
+</style>
+<div class="cg-pren-timbre">{% include '_serventia.html' %}</div>
+{% else %}
 {% include '_serventia.html' %}
+{% endif %}
+{% set as_acoes %}
 <div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a>
   <a class="button" href="{{ url_for('ri_cnib') }}">Consultar CNIB</a></div>
+{% endset %}
 
+{% set sobre_a_pagina %}
 <section class="panel" style="padding:14px 16px">
   <p><strong>O que é esta página.</strong>
     O Livro de Protocolo (Livro 1-A) é a fila oficial do Registro de Imóveis:
@@ -46,14 +118,18 @@
     <li><strong>Abrir o protocolo</strong> — clique no número (ou em “abrir”) para ver detalhes, comprovante, nota devolutiva, depósito e encerramento.</li>
   </ol>
 </section>
+{% endset %}
 
+{% set os_cartoes %}
 <section class="cards">
   <div class="stat" title="Quantidade total de protocolos nesta lista"><strong>{{ resumo.total }}</strong><small>protocolos</small></div>
   <div class="stat" title="Ainda em análise — prazo de prenotação em curso"><strong>{{ resumo.abertos }}</strong><small>em aberto (ainda em análise)</small></div>
-  <div class="stat" title="Prazo legal já passou e o protocolo continua aberto"><strong>{{ resumo.vencidos }}</strong><small>com prazo vencido</small></div>
+  <div class="stat{% if layout_novo and resumo.vencidos %} danger{% endif %}" title="Prazo legal já passou e o protocolo continua aberto"><strong>{{ resumo.vencidos }}</strong><small>com prazo vencido</small></div>
   <div class="stat" title="Vindos do sistema antigo sem apresentante — só histórico"><strong>{{ resumo.sem_apresentante }}</strong><small>sem apresentante (importados)</small></div>
 </section>
+{% endset %}
 
+{% set aviso_dos_importados %}
 {% if resumo.sem_apresentante %}
 <div class="notice warning">
   <strong>{{ resumo.sem_apresentante }} protocolos importados não têm apresentante nem imóvel vinculado.</strong>
@@ -62,11 +138,26 @@
   não dá para reconstruir de quem era o título. Protocolos abertos aqui pedem esses dados.
 </div>
 {% endif %}
+{% endset %}
 
-<details class="panel" open>
-  <summary><strong>Prenotar novo título</strong> <span class="small muted">— use quando um título acaba de ser apresentado no balcão</span></summary>
+{% set como_preencher %}
   <p class="small muted" style="padding:8px 14px 0">Preencha quem apresentou, o que veio e para qual livro o ato deve ir se for registrado. Ao clicar em <strong>Prenotar</strong>, o sistema grava no Livro 1-A, gera o número e a data limite do prazo.</p>
-  <form method="post" class="form-grid"
+{% endset %}
+
+{# A RECUSA DO SERVIDOR volta com o que foi digitado (31/10/2026). Sem nada digitado, a tela sai como sempre
+   saiu: o `value` só entra quando há valor. #}
+{% set digitado = form or {} %}
+{% macro valor(campo) %}{% if digitado.get(campo) %} value="{{ digitado.get(campo) }}"{% endif %}{% endmacro %}
+{% set campo_natureza %}
+    <label class="span2">Natureza do título<input name="natureza_titulo" list="naturezas_sauin"
+      placeholder="Compra e venda, hipoteca, georreferenciamento..." autocomplete="off"{{ valor('natureza_titulo') }}></label>
+    <datalist id="naturezas_sauin">
+      {% for n in NATUREZAS_SAUIN %}<option value="{{ n }}">{% endfor %}
+    </datalist>
+{% endset %}
+
+{% set o_formulario %}
+  <form method="post" class="form-grid"{% if layout_novo %} id="form-prenotar"{% endif %}
         onsubmit="if(!(this.telefone.value||'').trim()&&!(this.email.value||'').trim()){alert('Informe o telefone ou o e-mail do cliente — pelo menos um.');this.telefone.focus();return false;}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if de_cx %}
@@ -88,57 +179,59 @@
       «Livro 2 (matriculas) ou livro 3 (demais atos do RI)» — o oficial, em
       27/08/2026.
     #}
+    {% if layout_novo %}<div class="cg-passo-bloco cg-pren-campos" data-passo="quem">{% endif %}
     <label>Livro de destino (depois do protocolo)
       <select name="livro_destino" required>
         <option value="">— escolha para onde o ato vai se for registrado —</option>
-        <option value="2">Livro 2 — matrículas</option>
-        <option value="3">Livro 3 — demais atos do RI</option>
+        <option value="2"{% if digitado.get('livro_destino') == '2' %} selected{% endif %}>Livro 2 — matrículas</option>
+        <option value="3"{% if digitado.get('livro_destino') == '3' %} selected{% endif %}>Livro 3 — demais atos do RI</option>
       </select></label>
-    <label>Data<input type="date" name="data_prenotacao" value="{{ hoje }}"></label>
-    <label>Matrícula<input name="matricula_numero" placeholder="número"></label>
-    <label class="span2">Apresentante<input name="apresentante" required value="{{ de_cx.interessado or '' if de_cx else '' }}"></label>
-    <label>CPF/CNPJ<input name="apresentante_documento" value="{{ de_cx.interessado_documento or '' if de_cx else '' }}"></label>
-    <label class="span2">Natureza do título<input name="natureza_titulo" list="naturezas_sauin"
-      placeholder="Compra e venda, hipoteca, georreferenciamento..." autocomplete="off"></label>
-    <datalist id="naturezas_sauin">
-      {% for n in NATUREZAS_SAUIN %}<option value="{{ n }}">{% endfor %}
-    </datalist>
-    <label>Telefone *<input name="telefone" placeholder="(99) 99999-9999" value="{{ de_cx.telefone or '' if de_cx else '' }}"></label>
-    <label>E-mail *<input name="email" type="email" placeholder="cliente@exemplo.com" value="{{ de_cx.email or '' if de_cx else '' }}"></label>
+    {# A DATA É A DO MOMENTO, e a rota não lê este campo (F10: retroativa quebrava a prioridade, Lei 6.015/1973,
+       art. 186). Editável, ele fazia crer que a data digitada valia. #}
+    <label>Data<input type="date" name="data_prenotacao" value="{{ hoje }}" readonly title="A prenotação leva a data de hoje: é ela que marca a prioridade."></label>
+    <label>Matrícula<input name="matricula_numero" placeholder="número"{{ valor('matricula_numero') }}></label>
+    <label class="span2">Apresentante<input name="apresentante" required value="{{ digitado.get('apresentante', (de_cx.interessado or '' if de_cx else '')) }}"></label>
+    <label>CPF/CNPJ<input name="apresentante_documento" value="{{ digitado.get('apresentante_documento', (de_cx.interessado_documento or '' if de_cx else '')) }}"></label>
+    {% if not layout_novo %}{{ campo_natureza }}{% endif %}
+    <label>Telefone *<input name="telefone" placeholder="(99) 99999-9999" value="{{ digitado.get('telefone', (de_cx.telefone or '' if de_cx else '')) }}"></label>
+    <label>E-mail *<input name="email" type="email" placeholder="cliente@exemplo.com" value="{{ digitado.get('email', (de_cx.email or '' if de_cx else '')) }}"></label>
     <p class="span2 small muted" style="margin:0">* Telefone <strong>ou</strong> e-mail do cliente — pelo menos um é obrigatório: é por ele que se avisa da nota devolutiva e do prazo.</p>
+    {% if layout_novo %}</div>
+    <div class="cg-passo-bloco cg-pren-campos" data-passo="titulo">
+    {{ campo_natureza }}{% endif %}
     <label class="span2">Documento apresentado
       <input name="documento_descricao"
-             placeholder="ex.: escritura de compra e venda, 4 laudas, 2ª via"></label>
-    <label class="span2">Objeto<textarea name="objeto" rows="2" required></textarea></label>
-    <label class="span2">Anotação<input name="anotacao"></label>
+             placeholder="ex.: escritura de compra e venda, 4 laudas, 2ª via"{{ valor('documento_descricao') }}></label>
+    <label class="span2">Objeto<textarea name="objeto" rows="2" required>{{ digitado.get('objeto', '') }}</textarea></label>
+    <label class="span2">Anotação<input name="anotacao"{{ valor('anotacao') }}></label>
         <label class="span2">Modalidade REURB
       <select name="reurb_tipo" id="prenot_reurb_tipo"
               onchange="(function(s){var h=document.getElementById('prenot_reurb');if(h)h.value=(s.value==='S'?'1':'');var cb=document.getElementById('prenot_isento');var m=document.getElementById('prenot_motivo_isencao');var b=document.getElementById('prenot_bloco_gratuidade');var aviso=document.getElementById('prenot_selo_titulo');if(s.value==='S'){if(cb){cb.checked=true;cb.dispatchEvent(new Event('change'));}if(m&&!(m.value||'').trim())m.value='O REGISTRO DISPENSA O PAGAMENTO DE EMOLUMENTOS PREVISTO NA LEI Nº 13.465, DE 2017.';if(aviso)aviso.textContent='Este selo será ISENTO (REURB-S / Lei 13.465/2017)';}else{if(aviso)aviso.textContent='Este selo será COBRADO (salvo marcação manual de isento)';}})(this)">
         <option value="">Não é REURB</option>
-        <option value="S">REURB-S (interesse social) — 40 dias úteis + isento (Lei 13.465/2017)</option>
-        <option value="E">REURB-E (interesse específico) — cobrado</option>
-        <option value="MISTO">Misto (S + E) — cobrado; isento só se marcado à mão</option>
+        <option value="S"{% if digitado.get('reurb_tipo') == 'S' %} selected{% endif %}>REURB-S (interesse social) — 40 dias úteis + isento (Lei 13.465/2017)</option>
+        <option value="E"{% if digitado.get('reurb_tipo') == 'E' %} selected{% endif %}>REURB-E (interesse específico) — cobrado</option>
+        <option value="MISTO"{% if digitado.get('reurb_tipo') == 'MISTO' %} selected{% endif %}>Misto (S + E) — cobrado; isento só se marcado à mão</option>
       </select>
       <small class="muted">REURB-S: prazo de {{ prazo_reurb }} dias úteis e isenção automática de emolumentos
         (Lei 13.465/2017, art. 13, § 1º). REURB-E e misto: prazo comum de {{ prazo }} dias úteis;
         isenção não é automática (misto exige discriminação das unidades S).</small>
     </label>
-    <input type="hidden" name="reurb" id="prenot_reurb" value="">
+    <input type="hidden" name="reurb" id="prenot_reurb" value="{{ digitado.get('reurb', '') }}">
     <div class="span2 card" id="prenot_selo_aviso" style="margin:0">
-      <p style="margin:0"><strong id="prenot_selo_titulo">Este selo será COBRADO</strong>
+      <p style="margin:0"><strong id="prenot_selo_titulo">{{ 'Este selo será ISENTO (REURB-S / Lei 13.465/2017)' if digitado.get('reurb_tipo') == 'S' else 'Este selo será COBRADO' }}</strong>
         — prenotação (ato 16.1).</p>
     </div>
     <label class="span2" style="display:flex;gap:8px;align-items:flex-start">
-      <input type="checkbox" name="isento" value="1" id="prenot_isento"
+      <input type="checkbox" name="isento" value="1" id="prenot_isento"{% if digitado.get('isento') %} checked{% endif %}
              onchange="(function(cb){var b=document.getElementById('prenot_bloco_gratuidade');if(b)b.style.display=cb.checked?'block':'none';var m=document.getElementById('prenot_motivo_isencao');if(m)m.required=cb.checked;})(this)">
       <span><strong>Selo gratuito / isento</strong><br>
         <small>Em REURB-S o sistema marca sozinho. Em outros casos, marque e informe o motivo.</small></span>
     </label>
-    <div id="prenot_bloco_gratuidade" class="span2" style="display:none">
+    <div id="prenot_bloco_gratuidade" class="span2" style="display:{{ 'block' if digitado.get('isento') else 'none' }}">
       <label>Motivo da gratuidade
         <input name="motivo_isencao" id="prenot_motivo_isencao"
                list="motivos_da_gratuidade_do_ri_prenot" autocomplete="off"
-               placeholder="O REGISTRO DISPENSA O PAGAMENTO DE EMOLUMENTOS...">
+               placeholder="O REGISTRO DISPENSA O PAGAMENTO DE EMOLUMENTOS..."{{ valor('motivo_isencao') }}{% if digitado.get('isento') %} required{% endif %}>
       </label>
       <datalist id="motivos_da_gratuidade_do_ri_prenot">
         {% for m in MOTIVOS_DA_GRATUIDADE_DO_RI %}
@@ -152,11 +245,23 @@
       Em REURB-S são {{ prazo_reurb }} dias úteis. O sistema calcula a data limite pulando
       sábados, domingos, feriados nacionais, os móveis e os locais cadastrados em Configurações.
     </div>
+    {% if layout_novo %}</div>
+    <div class="cg-passos-fim" style="grid-column:1/-1" data-cg-passos-fim>
+      <button type="button" class="button" data-passo-voltar hidden>&larr; Voltar</button>
+      <button type="button" class="button primary" data-passo-avancar hidden>Avançar</button>
+      <button class="primary" data-passo="titulo">Prenotar</button>
+    </div>
+    {% else %}
     <div class="span2"><button class="primary">Prenotar</button></div>
+    {% endif %}
   </form>
-</details>
+{% endset %}
 
+{% set a_legenda %}
 <p class="small muted" style="margin:12px 0 4px"><strong>Situações:</strong> <em>Aberto</em> = ainda em análise; <em>Encerrado</em> = ato concluído / prenotação consumida; <em>Devolvido</em> = título devolvido com nota; <em>Cancelado</em> = protocolo anulado; <em>Recusado</em> = título recusado.</p>
+{% endset %}
+
+{% set o_filtro %}
 <form class="filters" method="get">
   <input name="busca" value="{{ busca }}" placeholder="Número, objeto, apresentante ou matrícula" size="38">
   <select name="situacao">
@@ -165,24 +270,15 @@
       <option {% if situacao==s %}selected{% endif %}>{{ s }}</option>{% endfor %}
   </select>
   <button>Filtrar</button>
+  {% if layout_novo and (busca or situacao) %}<a class="button" href="{{ url_for('ri_protocolo') }}">Limpar</a>{% endif %}
 </form>
+{% endset %}
 
-<section class="panel">
-  <div class="panel-head"><span>Protocolos do livro</span>
-    <span class="small muted">Clique no número para abrir o protocolo e ver o que fazer com ele</span></div>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Nº do protocolo</th><th>Destino</th><th>Data da entrada</th><th>Prazo até</th><th>Apresentante</th><th>Objeto</th><th>Matrícula</th><th></th><th>Situação</th></tr></thead>
-      <tbody>
-      {% for r in rows %}
-        <tr>
-          {# O número abre o título. É por onde se chega à reabertura, à
-             correção dos dados e ao depósito prévio — e é o primeiro lugar
-             onde alguém clica quando procura um protocolo. #}
-          <td><a href="{{ url_for('ri_protocolo_ver', protocolo_id=r.id) }}"><strong>{{ r.numero }}</strong></a></td>
-          <td>{{ r.livro_destino and ('Livro ' ~ r.livro_destino) or r.livro }}</td>
-          <td>{{ fmt_date(r.data_prenotacao) }}</td>
-          <td>{% if r.data_limite %}{{ fmt_date(r.data_limite) }}
+{% macro links_do_protocolo(r) %}<a href="{{ url_for('ri_protocolo_ver', protocolo_id=r.id) }}">abrir</a>
+            <br><a href="{{ url_for('ri_nota_devolutiva', protocolo_id=r.id) }}">nota devolutiva</a>
+            <br><a href="{{ url_for('ri_prenotacao_comprovante', protocolo_id=r.id) }}">comprovante</a>{% endmacro %}
+
+{% macro prazo_do_protocolo(r) %}{% if r.data_limite %}{{ fmt_date(r.data_limite) }}
                 {% if r.id in restam %}
                   {% set d = restam[r.id] %}
                   {% if d < 0 %}<br><span class="badge critica">vencida há {{ -d }} dia(s) útil(eis)</span>
@@ -192,14 +288,27 @@
                 {% elif r.situacao == 'ABERTO' and r.prazo_suspenso_desde %}
                   <br><span class="badge alta" title="TJMA 452, § 3º">prazo suspenso</span>
                 {% endif %}
-              {% else %}—{% endif %}</td>
+              {% else %}—{% endif %}{% endmacro %}
+
+{% macro tabela_de_protocolos(lista) %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Nº do protocolo</th><th>Destino</th><th>Data da entrada</th><th>Prazo até</th><th>Apresentante</th><th>Objeto</th><th>Matrícula</th><th></th><th>Situação</th></tr></thead>
+      <tbody>
+      {% for r in lista %}
+        <tr>
+          {# O número abre o título. É por onde se chega à reabertura, à
+             correção dos dados e ao depósito prévio — e é o primeiro lugar
+             onde alguém clica quando procura um protocolo. #}
+          <td><a href="{{ url_for('ri_protocolo_ver', protocolo_id=r.id) }}"><strong>{{ r.numero }}</strong></a></td>
+          <td>{{ r.livro_destino and ('Livro ' ~ r.livro_destino) or r.livro }}</td>
+          <td>{{ fmt_date(r.data_prenotacao) }}</td>
+          <td>{{ prazo_do_protocolo(r) }}</td>
           <td>{{ r.apresentante or '—' }}</td>
           <td class="small">{{ (r.objeto or '—')[:70] }}</td>
           <td>{% if r.mid %}<a href="{{ url_for('ri_ficha', matricula_id=r.mid) }}">{{ r.matricula_numero }}</a>
               {% else %}{{ r.matricula_numero or '—' }}{% endif %}</td>
-          <td class="small"><a href="{{ url_for('ri_protocolo_ver', protocolo_id=r.id) }}">abrir</a>
-            <br><a href="{{ url_for('ri_nota_devolutiva', protocolo_id=r.id) }}">nota devolutiva</a>
-            <br><a href="{{ url_for('ri_prenotacao_comprovante', protocolo_id=r.id) }}">comprovante</a></td>
+          <td class="small">{{ links_do_protocolo(r) }}</td>
           <td>{% if r.situacao == 'ABERTO' %}<span class="badge ok">Aberto</span>
               {% elif r.situacao == 'CANCELADO' %}<span class="badge critica">Cancelado</span>
               {% elif r.situacao == 'RECUSADO' %}<span class="badge critica">Recusado</span>
@@ -209,5 +318,135 @@
       </tbody>
     </table>
   </div>
+{% endmacro %}
+
+{% if not layout_novo %}
+{{ as_acoes }}
+
+{{ sobre_a_pagina }}
+
+{{ os_cartoes }}
+
+{{ aviso_dos_importados }}
+
+<details class="panel" open>
+  <summary><strong>Prenotar novo título</strong> <span class="small muted">— use quando um título acaba de ser apresentado no balcão</span></summary>
+{{ como_preencher }}
+{{ o_formulario }}
+</details>
+
+{{ a_legenda }}
+{{ o_filtro }}
+
+<section class="panel">
+  <div class="panel-head"><span>Protocolos do livro</span>
+    <span class="small muted">Clique no número para abrir o protocolo e ver o que fazer com ele</span></div>
+  {{ tabela_de_protocolos(rows) }}
 </section>
+{% else %}
+{% set a_espera = espera_acao() %}
+{% set os_da_espera = a_espera|map(attribute='id')|list %}
+{% set grupos = namespace(no_prazo=[], historico=[]) %}
+{% for r in rows %}
+  {% if r.situacao != 'ABERTO' %}{% set ignora = grupos.historico.append(r) %}
+  {% elif r.id not in os_da_espera %}{% set ignora = grupos.no_prazo.append(r) %}{% endif %}
+{% endfor %}
+{% set so_a_busca = busca or situacao %}
+
+<div class="cg-pren-topo">
+  {{ as_acoes }}
+  <a class="button primary cg-pren-ir{% if so_a_busca %} com-busca{% endif %}" href="#prenotar">Prenotar novo título</a>
+  {{ o_filtro }}
+</div>
+<div class="cg-pren-cartoes">{{ os_cartoes }}</div>
+
+{% if so_a_busca %}
+<section class="panel cg-pren-lista" id="resultado" style="padding:10px 16px;margin-bottom:12px">
+  <div class="panel-head"><span>O que a busca achou: <strong>{{ rows|length }}</strong></span>
+    <span class="small muted">Clique no número para abrir o protocolo e ver o que fazer com ele</span></div>
+  {{ tabela_de_protocolos(rows) }}
+</section>
+{% endif %}
+
+<div class="cg-pren-duas{% if a_espera %} com-espera{% endif %}">
+  {% if a_espera %}
+  <section class="panel cg-pren-espera" id="espera"{% if de_cx %} style="order:2"{% endif %}>
+    <div class="panel-head"><span><strong>Prazo vencido ou perto de vencer: {{ a_espera|length }}</strong></span>
+      <span class="small muted">Até 5 dias úteis. O mais atrasado vem primeiro.</span></div>
+    <div class="table-wrap cg-pren-rolo">
+      <table>
+        <thead><tr><th>Nº</th><th>Prazo até</th><th>Apresentante e objeto</th><th></th></tr></thead>
+        <tbody>
+        {% for r in a_espera %}
+          <tr>
+            <td><a href="{{ url_for('ri_protocolo_ver', protocolo_id=r.id) }}"><strong>{{ r.numero }}</strong></a></td>
+            <td>{{ prazo_do_protocolo(r) }}</td>
+            <td>{{ r.apresentante or '—' }}
+              <br><span class="small muted">{{ (r.objeto or '—')[:70] }}{% if r.matricula_numero %} · matrícula
+                {% if r.mid %}<a href="{{ url_for('ri_ficha', matricula_id=r.mid) }}">{{ r.matricula_numero }}</a>
+                {% else %}{{ r.matricula_numero }}{% endif %}{% endif %}</span></td>
+            <td class="small">{{ links_do_protocolo(r) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% else %}
+  <p class="small muted cg-pren-calmo">Nenhum título com prazo vencido nem perto de vencer.</p>
+  {% endif %}
+
+  <section class="panel cg-pren-form" id="prenotar">
+    <div class="panel-head"><span><strong>Prenotar novo título</strong></span>
+      <span class="small muted">Use quando um título acaba de ser apresentado no balcão.</span></div>
+    <script defer src="{{ url_for('static', filename='fases.js') }}?v={{ VERSION }}"></script>
+    <nav class="cg-passos" data-cg-passos="form-prenotar" data-inicial="quem" aria-label="Passos desta prenotação">
+      <button type="button" class="cg-passo" data-passo-ir="quem"><span class="cg-fase-n" aria-hidden="true">1</span>Apresentante e destino</button>
+      <button type="button" class="cg-passo" data-passo-ir="titulo"><span class="cg-fase-n" aria-hidden="true">2</span>O título e o selo</button>
+    </nav>
+    {{ o_formulario }}
+  </section>
+</div>
+
+{% if not so_a_busca %}
+{% if grupos.no_prazo %}
+<details class="panel cg-pren-grupo cg-pren-lista" id="em-aberto">
+  <summary><strong>Em aberto, dentro do prazo: {{ grupos.no_prazo|length }}</strong>
+    <span class="small muted">— clique no número para abrir o protocolo</span></summary>
+  {{ tabela_de_protocolos(grupos.no_prazo) }}
+</details>
+{% endif %}
+{% if grupos.historico %}
+<details class="panel cg-pren-grupo cg-pren-lista" id="historico">
+  <summary><strong>Histórico: {{ grupos.historico|length }}</strong>
+    <span class="small muted">— encerrados, devolvidos, cancelados e recusados{% if rows|length >= 300 %}. A lista traz os 300 mais recentes: para os outros, use a busca{% endif %}</span></summary>
+  {{ aviso_dos_importados }}
+  {{ a_legenda }}
+  {{ tabela_de_protocolos(grupos.historico) }}
+</details>
+{% endif %}
+{% if not rows %}<p class="small muted">Nenhum protocolo no livro.</p>{% endif %}
+{% endif %}
+
+<details class="panel cg-pren-grupo" id="sobre">
+  <summary><strong>O que é esta página</strong>
+    <span class="small muted">— o Livro 1-A, o livro de destino e as situações</span></summary>
+  {{ sobre_a_pagina }}
+  {{ como_preencher }}
+  {{ a_legenda }}
+</details>
+
+{# TELEFONE OU E-MAIL: quem confere é o `onsubmit` do formulário, e ele põe o cursor no telefone, que mora
+   no primeiro passo. Sem isto, o aviso sai e o cursor não tem para onde ir. #}
+<script>
+  document.addEventListener("submit", function (ev) {
+    var f = ev.target;
+    if (f.id !== "form-prenotar") return;
+    if (!(f.telefone.value || "").trim() && !(f.email.value || "").trim()) {
+      var passo = document.querySelector('[data-passo-ir="quem"]');
+      if (passo) passo.click();
+    }
+  }, true);
+</script>
+{% endif %}
 {% endblock %}

@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any
+from unicodedata import normalize
 
 _LOG = logging.getLogger(__name__)
 
@@ -46,9 +47,9 @@ ASSUNTO_SENSIVEL = frozenset({"certidao", "firma", "protesto"})
 
 MODELO = "CAIXA_WHATSAPP"
 PARTES = ("CONTATO", "ENDERECO_DA_CASA", "HORARIO", "ENDERECO", "DOCUMENTOS",
-          "CERTIDAO", "FIRMA", "PROTESTO", "OUTROS")
+          "CERTIDAO", "FIRMA", "PROTESTO", "OUTROS", "SAUDACAO", "AGRADECIMENTO")
 # Os claros de cada parte: a assinatura e o endereço da casa têm os seus; os
-# sete rascunhos recebem a assinatura e o endereço já montados.
+# sete rascunhos e as duas frases de cortesia recebem os dois já montados.
 CLAROS = {"CONTATO": ("nome", "cidade", "telefone", "email"),
           "ENDERECO_DA_CASA": ("endereco", "cep", "cidade", "uf"),
           **{p: ("contato", "endereco") for p in PARTES[2:]}}
@@ -124,6 +125,39 @@ def _rascunho(parte: str, serventia: Any, con: Any) -> str:
     endereço da casa (`{endereco}`) à disposição de quem ajusta o texto."""
     return _montar(parte, {"contato": bloco_contato(serventia, con),
                            "endereco": endereco_da_casa(serventia, con)}, con)
+
+
+# A CORTESIA (30/10/2026): mensagem que é SÓ saudação ou agradecimento não precisa de IA
+# nem de pessoa. Com qualquer pedido junto («bom dia, quanto custa...»), não é cortesia.
+SAUDACAO = "saudacao"
+AGRADECIMENTO = "agradecimento"
+_SO_SAUDACAO = r"oi+|ola+|opa|bom dia|boa tarde|boa noite|tudo bem|tudo bom|e ai"
+_SO_AGRADECIMENTO = (r"(?:muito )?(?:obrigad[oa]s?|brigad[oa]s?)|obg|valeu|agradeco|ok|okay|"
+                     r"certo|beleza|blz|ta bom|ta certo")
+_CORTESIA = re.compile(rf"(?:(?:{_SO_SAUDACAO}|{_SO_AGRADECIMENTO})\s*)+")
+_E_AGRADECIMENTO = re.compile(rf"\b(?:{_SO_AGRADECIMENTO})\b")
+_ACENO = ("\U0001F44D", "\U0001F64F")               # o polegar e as mãos juntas
+_TETO_DA_CORTESIA = 60
+
+
+def tipo_de_cortesia(texto: Any) -> str:
+    """SAUDACAO, AGRADECIMENTO ou "" (não é só cortesia). Só calcula."""
+    bruto = str(texto or "").strip()
+    if not bruto or len(bruto) > _TETO_DA_CORTESIA:
+        return ""
+    sem_acento = "".join(c for c in normalize("NFD", bruto) if not 0x300 <= ord(c) <= 0x36F)
+    limpo = " ".join(re.sub(r"[^\w\s]", " ", sem_acento.lower(), flags=re.UNICODE).split())
+    if not limpo:
+        return AGRADECIMENTO if any(a in bruto for a in _ACENO) else ""
+    if not _CORTESIA.fullmatch(limpo):
+        return ""
+    return AGRADECIMENTO if (_E_AGRADECIMENTO.search(limpo)
+                             or any(a in bruto for a in _ACENO)) else SAUDACAO
+
+
+def frase_de_cortesia(tipo: str, serventia: Any = None, con: Any = None) -> str:
+    """A frase pronta da cortesia, ajustável na tela de Modelos. Só lê."""
+    return _rascunho("AGRADECIMENTO" if tipo == AGRADECIMENTO else "SAUDACAO", serventia, con)
 
 
 def rascunho_horario(serventia: Any = None, con: Any = None) -> str:

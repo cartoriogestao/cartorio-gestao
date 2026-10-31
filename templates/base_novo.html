@@ -74,21 +74,21 @@
         <form method="post" action="{{ url_for('preferencia_layout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="layout" value="antigo">
-          <input type="hidden" name="next" value="{{ request.full_path if request.method == 'GET' else url_for('dashboard') }}">
+          <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
           <button class="cg-pi" type="submit">Voltar ao layout antigo</button>
         </form>
         {% if user.role == 'ADMIN' and layout_padrao_da_casa != 'novo' %}
         <form method="post" action="{{ url_for('preferencia_layout_padrao') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="layout" value="novo">
-          <input type="hidden" name="next" value="{{ request.full_path if request.method == 'GET' else url_for('dashboard') }}">
+          <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
           <button class="cg-pi" type="submit">Usar este layout como padrão da casa</button>
         </form>
         {% elif user.role == 'ADMIN' %}
         <form method="post" action="{{ url_for('preferencia_layout_padrao') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="layout" value="antigo">
-          <input type="hidden" name="next" value="{{ request.full_path if request.method == 'GET' else url_for('dashboard') }}">
+          <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
           <button class="cg-pi" type="submit">Devolver o layout antigo como padrão da casa</button>
         </form>
         {% endif %}
@@ -196,8 +196,29 @@
         <div class="page-heading">{% block heading %}{% endblock %}</div>
       </header>
       <div class="content">
+        {# O AVISO DA TROCA — decisão do oficial, 30/10/2026: o layout novo vira o padrão da casa.
+           Só sai para quem ainda não escolheu, e qualquer um dos dois botões o faz sumir. #}
+        {% if layout_sem_escolha %}
+        <div class="cg-troca" data-cg-troca>
+          <p><strong>O sistema está com o layout novo.</strong> As telas, os dados e os endereços são os
+            mesmos: mudou a forma de chegar até eles. Se preferir, volte ao antigo agora ou depois, no menu
+            com o seu nome.</p>
+          <form method="post" action="{{ url_for('preferencia_layout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="layout" value="novo">
+            <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
+            <button class="button primary" type="submit">Ficar neste</button>
+          </form>
+          <form method="post" action="{{ url_for('preferencia_layout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="layout" value="antigo">
+            <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
+            <button class="button" type="submit">Voltar ao antigo</button>
+          </form>
+        </div>
+        {% endif %}
         {% with messages = get_flashed_messages(with_categories=true) %}
-          {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message }}{{ aviso.fechar() }}</div>{% endfor %}
+          {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message|forte }}{{ aviso.fechar() }}</div>{% endfor %}
         {% endwith %}
         {% block content %}{% endblock %}
       </div>
@@ -228,7 +249,7 @@
 <div class="auth-wrap">
   <div class="auth-card">
     {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message }}{{ aviso.fechar() }}</div>{% endfor %}
+      {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message|forte }}{{ aviso.fechar() }}</div>{% endfor %}
     {% endwith %}
     {% block auth_content %}{% endblock %}
   </div>

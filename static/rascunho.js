@@ -58,7 +58,15 @@
         /* O TOKEN DO FORMULÁRIO GRANDE NÃO VAI JUNTO: o pequeno tem o dele, e
            dois com o mesmo nome fariam a rota ler o errado. */
         if (chave === "csrf_token") return;
-        if (!String(valor).trim()) return;
+        /* ARQUIVO NÃO CABE NO RASCUNHO. Um campo escondido só guardaria o texto
+           «[object File]», e a tela reaberta pede o arquivo de novo. */
+        if (typeof File !== "undefined" && valor instanceof File) return;
+        /* O VAZIO VAI JUNTO — 31/10/2026. No campo repetido é a posição que diz
+           de quem é cada valor: sem o documento vazio do primeiro devedor, o do
+           segundo reabriria no primeiro. E no campo único é o vazio que impede a
+           tela reaberta de trazer de volta o valor de fábrica que a pessoa tirou:
+           quem deixou o motivo do protesto em branco não pode reabrir com
+           «falta de pagamento» marcado. */
         var i = document.createElement("input");
         i.type = "hidden";
         i.name = chave;

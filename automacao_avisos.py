@@ -161,13 +161,16 @@ def remetente(cfg: dict) -> Any:
 
 
 def mandar_email(cfg: dict, senha: str, *, assunto: str, corpo: str,
-                 smtp_classe: Any = None) -> None:
+                 smtp_classe: Any = None, anexos: Any = ()) -> None:
     """Manda pelo SMTP. Levanta em falha — quem chama registra FALHOU."""
     msg = EmailMessage()
     msg["Subject"] = assunto
     msg["From"] = remetente(cfg)
     msg["To"] = ", ".join(cfg["destinos"])
     msg.set_content(corpo)
+    for nome, dados, mime in anexos:
+        principal, _, secundario = mime.partition("/")
+        msg.add_attachment(dados, maintype=principal, subtype=secundario, filename=nome)
     porta = int(cfg["porta"] or (465 if cfg["seguranca"] == "SSL" else 587))
     if smtp_classe is None:
         smtp_classe = smtplib.SMTP_SSL if cfg["seguranca"] == "SSL" else smtplib.SMTP

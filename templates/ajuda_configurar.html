@@ -1,16 +1,34 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>Ajuda do sistema — configurar</h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, QUADROS RECOLHIDOS — 30/10/2026. O provedor em uso sem chave é o que espera ação: avisa
+   no alto e abre o quadro das chaves. O título diz quantas chaves estão informadas, e nunca a chave, nem
+   mascarada. O timbre vai para o fim. #}
+{% if layout_novo %}
+<style>
+  .cg-aj-aviso{margin:0 0 10px}
+  details.cg-quadro>form.grid2{grid-template-columns:repeat(auto-fill,minmax(20rem,1fr))}
+  #aj-chaves td>form{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+  #aj-chaves td>form input:not([type=hidden]){flex:1 1 18rem;width:auto}
+</style>
+{% else %}
 {% include '_serventia.html' %}
+{% endif %}
 <div class="actions">
   <a class="button" href="{{ url_for('ajuda_consultar') }}">&larr; Ajuda do sistema</a>
 </div>
+{% if layout_novo and not tem_chave %}
+<p class="notice danger cg-aj-aviso"><strong>A chave da API ainda não foi informada</strong>, então nenhuma consulta sai. Quem responde hoje é o {{ escolha.provedor_nome }}: é a chave dele que falta. Informe em <a href="#aj-chaves">As chaves de API</a>.</p>
+{% endif %}
 
+{% if layout_novo %}{{ abre('aj-quem-responde', 'Quem responde', escolha.provedor_nome ~ ' — ' ~ escolha.modelo) }}{% else %}
 <section class="panel">
   <div class="panel-head">
     <span>Quem responde</span>
     <small>{{ escolha.provedor_nome }} — {{ escolha.modelo }}</small>
   </div>
+{% endif %}
   <p style="padding:14px 14px 0"><small>
     A lista de provedores e de modelos é a <strong>mesma do Agente do
     sistema</strong>: um lugar só, para as duas listas não divergirem — foi o
@@ -47,14 +65,18 @@
     {% if escolha.escolha_por %}por {{ escolha.escolha_por }}{% endif %}.
   </small></p>
   {% endif %}
+{% if layout_novo %}</details>{% else %}
 </section>
+{% endif %}
 
+{% if layout_novo %}{{ abre('aj-chaves', 'As chaves de API', (provedores | selectattr('tem_chave') | list | length) ~ ' de ' ~ (provedores | length) ~ ' informadas', aberto=not tem_chave) }}{% else %}
 <section class="panel">
   <div class="panel-head">
     <span>As chaves de API</span>
     <small>{{ provedores | selectattr('tem_chave') | list | length }} de
       {{ provedores | length }} informadas</small>
   </div>
+{% endif %}
   <p style="padding:14px 14px 0"><small>
     A chave <strong>não entra no banco</strong>. Ela é gravada em
     <code>{{ caminho_da_chave }}</code>, ao lado da senha do selador e do
@@ -112,13 +134,17 @@
     </tr>
     {% endfor %}
   </table>
+{% if layout_novo %}</details>{% else %}
 </section>
+{% endif %}
 
+{% if layout_novo %}{{ abre('aj-quem-consulta', 'Quem pode consultar', acesso.perfis_lista | join(', ')) }}{% else %}
 <section class="panel">
   <div class="panel-head">
     <span>Quem pode consultar</span>
     <small>{{ acesso.perfis_lista | join(', ') }}</small>
   </div>
+{% endif %}
 
   {% if acesso.so_o_administrador %}
   <div class="notice" style="margin:14px">
@@ -153,14 +179,18 @@
     {% if acesso.alterada_motivo %}<br>{{ acesso.alterada_motivo }}{% endif %}
   </small></p>
   {% endif %}
+{% if layout_novo %}</details>{% else %}
 </section>
+{% endif %}
 
 {% if mapa %}
+{% if layout_novo %}{{ abre('aj-mapa', 'O que a ajuda sabe desta instalação', 'medido nesta máquina · ' ~ mapa.quantas_telas ~ ' telas') }}{% else %}
 <section class="panel">
   <div class="panel-head">
     <span>O que a ajuda sabe desta instalação</span>
     <small>medido nesta máquina</small>
   </div>
+{% endif %}
   <p style="padding:14px 14px 0"><small>
     A ajuda não responde sobre “cartório” em tese: junto de cada pergunta vai o
     mapa <strong>medido</strong> desta instalação — as telas com o nome que
@@ -179,14 +209,18 @@
     <tr><th>Arquivos de programa</th><td>{{ mapa.quantos_arquivos }}</td></tr>
     <tr><th>Telas com nome no menu</th><td>{{ mapa.menu | length }}</td></tr>
   </table>
+{% if layout_novo %}</details>{% else %}
 </section>
 {% endif %}
+{% endif %}
 
+{% if layout_novo %}{{ abre('aj-uso', 'O uso de hoje', 'restam ' ~ quadro.restam ~ ' de ' ~ quadro.teto ~ ' consultas') }}{% else %}
 <section class="panel">
   <div class="panel-head">
     <span>O uso de hoje</span>
     <small>restam {{ quadro.restam }} de {{ quadro.teto }} consultas</small>
   </div>
+{% endif %}
   <table class="table">
     <tr><th style="width:34%">Consultas</th><td>{{ quadro.consultas or 0 }}</td></tr>
     <tr><th>Que não obtiveram resposta</th><td>{{ quadro.falhas }}</td></tr>
@@ -205,14 +239,18 @@
         <td>{{ quadro.sem_provedor }}</td></tr>
     {% endif %}
   </table>
+{% if layout_novo %}</details>{% else %}
 </section>
+{% endif %}
 
 {% if historicas %}
+{% if layout_novo %}{{ abre('aj-historicas', 'Consultas históricas anteriores à proteção obrigatória', (historicas | length) ~ ' registro(s)') }}{% else %}
 <section class="panel">
   <div class="panel-head">
     <span>Consultas históricas anteriores à proteção obrigatória</span>
     <small>{{ historicas | length }}</small>
   </div>
+{% endif %}
   <p style="padding:14px 14px 0"><small>
     Estes registros foram preservados para auditoria. A versão atual não
     permite envio identificável, mesmo por administrador.
@@ -230,6 +268,9 @@
     {% endfor %}
     </tbody>
   </table>
+{% if layout_novo %}</details>{% else %}
 </section>
 {% endif %}
+{% endif %}
+{% if layout_novo %}{% include '_serventia.html' %}{{ ferramentas() }}{% endif %}
 {% endblock %}

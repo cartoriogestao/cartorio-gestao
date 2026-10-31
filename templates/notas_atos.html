@@ -1,11 +1,35 @@
 {% extends 'base.html' %}
-{% block heading %}<h1>{% if familia %}{{ familia.titulo }}{% else %}Atos de livro{% endif %}</h1>{% endblock %}
+{% block heading %}<h1>{% if familia %}{{ familia.titulo }}{% elif layout_novo and titulo_da_lista %}{{ titulo_da_lista }}{% else %}Atos de livro{% endif %}</h1>{% endblock %}
 {% block content %}
+{% if layout_novo %}
+{# O LAYOUT NOVO: lavrar no alto e direto, e as vistas em vez de filtros (30/10/2026). #}
+{% set rotulo_do_tipo = familia.singular if familia else TIPOS_ATO.get(tipo, 'ato') %}
+<div class="actions">
+  {% if modelo_direto and user.role in ['ADMIN','MANAGER','USER'] %}
+  <form method="post" class="inline-form" style="display:inline" action="{{ url_for('notas_ato_novo') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="tipo" value="{{ tipo }}">
+    <input type="hidden" name="modelo_codigo" value="{{ modelo_direto }}">
+    <button class="button primary">Lavrar {{ rotulo_do_tipo|lower }}</button>
+  </form>
+  {% elif user.role in ['ADMIN','MANAGER','USER'] %}
+  <a class="button primary" href="{{ url_for('notas_ato_novo', familia=familia_chave) }}">Lavrar {{ rotulo_do_tipo|lower }}</a>
+  {% endif %}
+  <a class="button" href="{{ url_for('notas_livros') }}">Livros</a>
+</div>
+<nav class="cg-vistas" aria-label="Vistas desta lista">
+  {% for chave, rotulo in [('em_lavratura', 'Em lavratura'), ('lavrados', 'Lavrados'), ('', 'Todos')] %}
+  <a class="cg-vista{% if vista == chave %} atual{% endif %}"{% if vista == chave %} aria-current="true"{% endif %}
+     href="{{ url_for('notas_atos', tipo=tipo or none, familia=familia_chave or none, vista=chave or 'todos', livro_id=livro_id or none, busca=busca or none) }}">{{ rotulo }} <span class="cg-fase-q">{{ contagens[chave] }}</span></a>
+  {% endfor %}
+</nav>
+{% else %}
 <div class="actions">
   <a class="button" href="{% if familia %}{{ url_for(familia.endpoint) }}{% else %}{{ url_for('notas_painel') }}{% endif %}">&larr; {% if familia %}Painel{% else %}Tabelionato{% endif %}</a>
   <a class="button primary" href="{{ url_for('notas_ato_novo', familia=familia_chave) }}">Lavrar {% if familia %}{{ familia.singular|lower }}{% else %}ato{% endif %}</a>
   <a class="button" href="{{ url_for('notas_livros') }}">Livros</a>
 </div>
+{% endif %}
 
 {% if livro_ctx %}
 <div class="notice">Atos do livro <strong>{{ livro_ctx.numero }}</strong>
@@ -17,13 +41,15 @@
 <form class="filters" method="get">
   {% if familia %}<input type="hidden" name="familia" value="{{ familia_chave }}">{% endif %}
   {% if livro_id %}<input type="hidden" name="livro_id" value="{{ livro_id }}">{% endif %}
+  {% if vista %}<input type="hidden" name="vista" value="{{ vista }}">{% endif %}
   <input name="busca" value="{{ busca }}" size="28"
          placeholder="Parte, selo, termo ou livro/folha (ex.: 3/45)">
   <label class="small">Livro <input name="livro" value="{{ livro_q }}" size="4"
          {% if livro_id %}readonly{% endif %}></label>
   <label class="small">Folha <input name="folha" value="{{ folha_q }}" size="4"></label>
   <label class="small">Termo <input name="termo" value="{{ termo_q }}" size="6"></label>
-  {% if not familia %}<label>Tipo <select name="tipo" onchange="this.form.submit()">
+  {% if layout_novo and titulo_da_lista %}<input type="hidden" name="tipo" value="{{ tipo }}">
+  {% elif not familia %}<label>Tipo <select name="tipo" onchange="this.form.submit()">
     <option value="">todos</option>
     {% for k, rot in TIPOS_ATO.items() %}<option value="{{ k }}" {% if tipo == k %}selected{% endif %}>{{ rot }}</option>{% endfor %}
   </select></label>{% endif %}
@@ -60,6 +86,7 @@
            clique. Ato no livro se cancela, com rastro, e não se apaga. #}
         <td class="small">
           {% if a.situacao == 'EM_LAVRATURA' %}
+          {% if layout_novo %}<a class="button small primary" href="{{ url_for('notas_ato', ato_id=a.id) }}">Continuar</a>{% endif %}
           <form method="post" style="display:inline"
                 action="{{ url_for('notas_ato_apagar_rascunho', ato_id=a.id) }}"
                 onsubmit="return confirm('Apagar o rascunho {{ a.id }} — ' + {{ TIPOS_ATO.get(a.tipo, a.tipo)|tojson|forceescape }}{% if a.interessado %} + ', ' + {{ a.interessado[:40]|tojson|forceescape }}{% endif %} + '?\n\nO texto fica guardado na auditoria.')">
@@ -78,8 +105,8 @@
 
 {% if paginas > 1 %}
 <div class="actions">
-  {% if pagina > 1 %}<a class="button" href="{{ url_for('notas_atos', pagina=pagina-1, busca=busca, tipo=tipo, familia=familia_chave, livro_id=livro_id, livro=livro_q, folha=folha_q, termo=termo_q) }}">&larr; anterior</a>{% endif %}
-  {% if pagina < paginas %}<a class="button" href="{{ url_for('notas_atos', pagina=pagina+1, busca=busca, tipo=tipo, familia=familia_chave, livro_id=livro_id, livro=livro_q, folha=folha_q, termo=termo_q) }}">próxima &rarr;</a>{% endif %}
+  {% if pagina > 1 %}<a class="button" href="{{ url_for('notas_atos', vista=vista or none, pagina=pagina-1, busca=busca, tipo=tipo, familia=familia_chave, livro_id=livro_id, livro=livro_q, folha=folha_q, termo=termo_q) }}">&larr; anterior</a>{% endif %}
+  {% if pagina < paginas %}<a class="button" href="{{ url_for('notas_atos', vista=vista or none, pagina=pagina+1, busca=busca, tipo=tipo, familia=familia_chave, livro_id=livro_id, livro=livro_q, folha=folha_q, termo=termo_q) }}">próxima &rarr;</a>{% endif %}
 </div>
 {% endif %}
 {% endblock %}

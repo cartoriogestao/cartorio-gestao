@@ -39,14 +39,14 @@ def casa(cg_casa):
     return {**cg_casa, "cliente": cliente, "mid": mid}
 
 
-def _editar(casa, motivo, descricao, versao=None):
+def _editar(casa, motivo, descricao, versao=None, **campos):
     c, mid = casa["cliente"], casa["mid"]
     html = c.get(f"/registro-imoveis/{mid}/editar").get_data(as_text=True)
     if versao is None:
         versao = re.search(r'name="versao_edicao" value="([^"]*)"', html).group(1)
     return c.post(f"/registro-imoveis/{mid}/editar",
                   data={"csrf_token": _token(html), "versao_edicao": versao,
-                        "descricao_perimetro": descricao, "motivo": motivo},
+                        "descricao_perimetro": descricao, "motivo": motivo, **campos},
                   follow_redirects=True)
 
 
@@ -89,6 +89,42 @@ def test_motivo_curto_nao_muda_a_matricula(casa):
     assert not logs
 
 
+def test_a_recusa_do_motivo_devolve_o_que_foi_digitado(casa):
+    """A recusa redirecionava, e perdia-se tudo, inclusive o motivo (31/10/2026)."""
+    html = _editar(casa, "erro", "Perímetro digitado antes da recusa", logradouro="Rua digitada").get_data(as_text=True)
+    assert "pelo menos 10 caracteres" in html
+    assert "Perímetro digitado antes da recusa</textarea>" in html
+    assert 'value="Rua digitada"' in html and 'value="erro"' in html
+    m, logs = _dados(casa)
+    assert m["descricao_perimetro"] == "Descrição original." and m["logradouro"] == "Rua preservada"
+    assert not logs
+
+
+def test_o_campo_que_nao_veio_continua_o_da_ficha_na_recusa(casa):
+    """Só o que veio do formulário vai por cima da ficha."""
+    html = _editar(casa, "erro", "Perímetro digitado").get_data(as_text=True)
+    assert 'value="Rua preservada"' in html
+
+
+def test_a_recusa_do_cib_devolve_o_que_foi_digitado(casa):
+    html = _editar(casa, "Conferência com o livro físico", "Perímetro digitado", rural_urbano="R", cib="",
+                   logradouro="Fazenda digitada").get_data(as_text=True)
+    assert "exige o CIB" in html
+    assert 'value="Fazenda digitada"' in html and 'value="Conferência com o livro físico"' in html
+    assert '<option value="R" selected>' in html
+    assert _dados(casa)[0]["logradouro"] == "Rua preservada"
+
+
+def test_quem_abriu_fora_da_lista_continua_a_vista_e_nao_se_apaga(casa):
+    """Sem a opção, a caixa cairia em «não informado», e gravar de novo apagaria o nome sem ninguém pedir."""
+    html = _editar(casa, "Conferência com o livro físico", "Perímetro digitado",
+                   aberta_nome="Pessoa de Fora", logradouro="Rua digitada").get_data(as_text=True)
+    assert "não está no cadastro" in html
+    assert '<option value="Pessoa de Fora" selected>' in html
+    assert 'value="Rua digitada"' in html
+    assert _dados(casa)[0]["aberta_nome"] is None
+
+
 def test_formulario_antigo_nao_sobrescreve_correcao_recente(casa):
     tela_antiga = casa["cliente"].get(
         f"/registro-imoveis/{casa['mid']}/editar").get_data(as_text=True)
@@ -98,6 +134,8 @@ def test_formulario_antigo_nao_sobrescreve_correcao_recente(casa):
     resposta = _editar(casa, "Conferência da segunda correção", "Texto obsoleto",
                       versao=token_antigo)
     assert "foi alterada por outra pessoa" in resposta.get_data(as_text=True)
+    # A TELA VOLTA COM A FICHA, e não com o digitado: ela estava velha, de propósito.
+    assert "Texto obsoleto" not in resposta.get_data(as_text=True)
     m, logs = _dados(casa)
     assert m["descricao_perimetro"] == "Texto novo"
     assert len(logs) == 1

@@ -207,6 +207,39 @@ def test_o_lancamento_do_civil_VOLTA_PARA_O_TIPO_CERTO(casa):
             f"/{esperado}")
 
 
+def test_o_lancamento_do_civil_reabre_no_mesmo_assento_e_no_mesmo_tipo(casa):
+    """`rcpn_lancamento_novo` não é rota: é o endereço da tela que diz de que assento é (31/10/2026). A averbação
+    guardada de uma pessoa não pode abrir na ficha de outra, nem virar anotação."""
+    aid = _assento(casa)
+    url = _url(casa, "rcpn_averbar", aid)
+    c = casa["c"]
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', c.get(url).get_data(as_text=True)).group(1)
+    c.post("/rascunhos/salvar", data={"csrf_token": token, "_tela": "rcpn_lancamento_novo", "_volta": url,
+                                      "_titulo": "Averbação", "tipo": "AVERBACAO", "teor": "o teor da averbação guardada"},
+           follow_redirects=True)
+    con = sqlite3.connect(casa["banco"])
+    linha = con.execute("SELECT id, chave FROM rascunhos_de_tela ORDER BY id DESC LIMIT 1").fetchone()
+    con.close()
+    rid, chave = linha[0], linha[1]
+    assert chave == url
+    assert f"{url}?rascunho_id={rid}" in c.get("/rascunhos").get_data(as_text=True)
+    aberto = c.get(f"{url}?rascunho_id={rid}").get_data(as_text=True)
+    assert "o teor da averbação guardada" in aberto
+    assert f'name="_rascunho_id" value="{rid}"' in aberto
+    outro = c.get(f"{_url(casa, 'rcpn_anotar', aid)}?rascunho_id={rid}").get_data(as_text=True)
+    assert "de outro assento" in outro and "o teor da averbação guardada" not in outro
+
+
+def test_o_lancamento_guardado_sem_a_chave_nao_promete_abrir(casa):
+    con = sqlite3.connect(casa["banco"])
+    with con:
+        con.execute("""INSERT INTO rascunhos_de_tela (tela, chave, titulo, dados_json, criado_em)
+                       VALUES ('rcpn_lancamento_novo', '', 'Averbação antiga', '{"teor": "x"}', '2026-10-01T10:00:00')""")
+    con.close()
+    html = casa["c"].get("/rascunhos").get_data(as_text=True)
+    assert "Averbação antiga" in html and "não reabre por aqui" in html
+
+
 def test_o_rascunho_NAO_LAVRA_e_a_tela_diz_isso(casa):
     """Rascunho não toma número, não ocupa folha, não sela e não cobra — e a
     tela precisa dizer, senão alguém acha que salvou o ato."""

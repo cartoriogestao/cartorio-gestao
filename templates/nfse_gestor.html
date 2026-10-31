@@ -2,41 +2,75 @@
 {% block title %}NFS-e — configuração{% endblock %}
 {% block heading %}<h1>NFS-e — configuração</h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
 {# SÓ DO ADMIN (LG01). A emissão nasce desligada e na homologação: ligar e
    ir para a produção são duas decisões, e as duas ficam no rastro. #}
+{# NO LAYOUT NOVO, QUADROS RECOLHIDOS — 30/10/2026. O que falta e o que há a conferir abrem a tela. Os
+   dados fiscais continuam um formulário só: «Gravar» grava os cinco quadros, abertos ou fechados. O quadro
+   de que vem uma falta abre sozinho. O título diz se o documento e o certificado estão lá, e nunca o
+   número do documento, o titular ou a senha. #}
+{% set texto_das_faltas = (faltas or []) | join(' ') %}
+{% set certificado_pede = (not certificado) or certificado.vencido or certificado.erro %}
+{% set a_nota_do_certificado = 'nenhum gravado' if not certificado else ('não deu para ler' if certificado.erro else (('vencido em ' if certificado.vencido else 'válido até ') ~ (certificado.valido_ate or '—'))) %}
+{% if layout_novo %}
+<style>
+  .cg-nfse-aviso{margin:0 0 10px}
+  .cg-nfse-aviso ul{margin:4px 0 0;padding-left:18px}
+  .cg-nfse-aviso p{margin:2px 0 0}
+  .cg-nfse .cg-quadro>.form-grid{grid-template-columns:repeat(auto-fill,minmax(20rem,1fr));align-items:start}
+  .cg-nfse .cg-quadro>.form-grid label{margin:0}
+  .cg-nfse .cg-quadro>.form-grid>.notice,.cg-nfse .cg-quadro>.form-grid>p{grid-column:1/-1;margin:0}
+  .cg-nfse-gravar{position:sticky;bottom:0;z-index:2;display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 0;margin-bottom:8px;background:var(--bg,#f5f6f8)}
+  .cg-nfse-outro form{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 16px;margin:0 0 8px}
+  .cg-nfse-outro form label{margin:0}
+</style>
+{% endif %}
 <div class="actions"><a class="button" href="{{ url_for('nfse_fila') }}">&larr; Fila da NFS-e</a></div>
 
+{% set como_comecar %}
 <div class="notice">
   A prefeitura usa o <strong>emissor nacional</strong> (gov.br/nfse). Comece pela
   <strong>homologação</strong> (produção restrita, sem valor fiscal) e só passe à produção depois de uma
   nota de teste conferida. Conferir no texto oficial da documentação técnica do emissor a versão
   vigente do leiaute.
 </div>
+{% endset %}
+{% if not layout_novo %}{{ como_comecar }}{% endif %}
 
 {% if faltas %}
+{% if layout_novo %}<div class="notice danger cg-nfse-aviso"><strong>O que falta</strong>{% else %}
 <section class="panel"><h2>O que falta</h2>
-  <ul>{% for f in faltas %}<li>{{ f }}</li>{% endfor %}</ul></section>
+{% endif %}
+  <ul>{% for f in faltas %}<li>{{ f }}</li>{% endfor %}</ul>{% if layout_novo %}</div>{% else %}</section>{% endif %}
 {% endif %}
 {% if avisos %}
+{% if layout_novo %}<div class="notice cg-nfse-aviso"><strong>A conferir</strong>{% else %}
 <section class="panel"><h2>A conferir</h2>
+{% endif %}
   <p class="muted small">Não impedem a nota de sair, mas mudam o que ela declara.</p>
-  <ul>{% for a in avisos %}<li>{{ a }}</li>{% endfor %}</ul></section>
+  <ul>{% for a in avisos %}<li>{{ a }}</li>{% endfor %}</ul>{% if layout_novo %}</div>{% else %}</section>{% endif %}
 {% endif %}
 
+{% set q_dados %}
+{% if layout_novo %}<div class="cg-nfse">{% else %}
 <section class="panel">
   <h2>Dados fiscais</h2>
+{% endif %}
   <form method="post" action="{{ url_for('nfse_gestor') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="acao" value="configuracao">
+    {% if layout_novo %}{{ abre('nfse-emissao', 'Emissão', ('ligada' if cfg.get('nfse_ligada') == '1' else 'DESLIGADA') ~ ' · ' ~ ('produção' if cfg.get('nfse_ambiente') == 'producao' else 'homologação') ~ ' · provedor ' ~ cfg.get('nfse_provedor'), aberto=cfg.get('nfse_ligada') != '1') }}<div class="form-grid cg-quadro-corpo">{{ como_comecar }}{% endif %}
     <label><input type="checkbox" name="nfse_ligada" value="1" {% if cfg.nfse_ligada == '1' %}checked{% endif %}>
       {{ rotulos.nfse_ligada }}</label>
     <label>{{ rotulos.nfse_provedor }}
       <select name="nfse_provedor">{% for p in provedores %}<option value="{{ p }}" {% if p == cfg.nfse_provedor %}selected{% endif %}>{{ p }}</option>{% endfor %}</select></label>
     <label>{{ rotulos.nfse_ambiente }}
       <select name="nfse_ambiente">{% for k, v in ambientes.items() %}<option value="{{ k }}" {% if k == cfg.nfse_ambiente %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+    {% if layout_novo %}</div></details>{{ abre('nfse-prestador', 'Município e prestador', ('falta o município' if 'IBGE' in texto_das_faltas else 'município informado') ~ ' · ' ~ ('falta o CNPJ/CPF' if 'CNPJ/CPF' in texto_das_faltas else 'CNPJ/CPF informado'), aberto='IBGE' in texto_das_faltas or 'CNPJ/CPF' in texto_das_faltas) }}<div class="form-grid cg-quadro-corpo">{% endif %}
     <label>{{ rotulos.nfse_municipio }} <input name="nfse_municipio" value="{{ cfg.nfse_municipio }}" size="9"></label>
     <label>{{ rotulos.nfse_prestador_documento }} <input name="nfse_prestador_documento" value="{{ cfg.nfse_prestador_documento }}" size="20"></label>
     <label>{{ rotulos.nfse_inscricao_municipal }} <input name="nfse_inscricao_municipal" value="{{ cfg.nfse_inscricao_municipal }}" size="16"></label>
+    {% if layout_novo %}</div></details>{{ abre('nfse-tributacao', 'Tributação', ('falta o código nacional' if 'tributação nacional' in texto_das_faltas else 'código ' ~ cfg.get('nfse_codigo_tributacao')) ~ ' · ' ~ (('alíquota de ' ~ cfg.get('nfse_aliquota') ~ '%') if cfg.get('nfse_aliquota') else 'alíquota do município') ~ ' · ' ~ (opcoes_simples.get(cfg.get('nfse_optante_simples')) or 'Simples não informado') | lower, aberto='tributação nacional' in texto_das_faltas) }}<div class="form-grid cg-quadro-corpo">{% endif %}
     <label>{{ rotulos.nfse_codigo_tributacao }} <input name="nfse_codigo_tributacao" value="{{ cfg.nfse_codigo_tributacao }}" size="8">
       <span class="muted small">210101 = item 21.01 da LC 116 (registros públicos, cartorários e notariais)</span></label>
     <label>{{ rotulos.nfse_codigo_municipal }} <input name="nfse_codigo_municipal" value="{{ cfg.nfse_codigo_municipal }}" size="5"></label>
@@ -46,6 +80,7 @@
       <select name="nfse_optante_simples">{% for k, v in opcoes_simples.items() %}<option value="{{ k }}" {% if k == cfg.nfse_optante_simples %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
     <label>{{ rotulos.nfse_regime_especial }}
       <select name="nfse_regime_especial">{% for k, v in regimes.items() %}<option value="{{ k }}" {% if k == cfg.nfse_regime_especial %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+    {% if layout_novo %}</div></details>{{ abre('nfse-nota', 'A nota', 'série ' ~ cfg.get('nfse_serie') ~ ' · FERJ de ' ~ (cfg.get('nfse_percentual_ferj') or '12,00') ~ '% · convênio ' ~ (convenios.get(cfg.get('nfse_convenio_ativo')) or 'não conferido') | lower, aberto='FERJ' in texto_das_faltas) }}<div class="form-grid cg-quadro-corpo">{% endif %}
     <label>{{ rotulos.nfse_serie }} <input name="nfse_serie" value="{{ cfg.nfse_serie }}" size="5"></label>
     <label><input type="checkbox" name="nfse_exige_endereco" value="1" {% if cfg.nfse_exige_endereco == '1' %}checked{% endif %}>
       {{ rotulos.nfse_exige_endereco }}</label>
@@ -57,7 +92,9 @@
     <label>{{ rotulos.nfse_convenio_ativo }}
       <select name="nfse_convenio_ativo">{% for k, v in convenios.items() %}<option value="{{ k }}" {% if k == cfg.nfse_convenio_ativo %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
       <span class="muted small">ativo e fora do Simples: a alíquota não vai na nota — a Sefin usa a do município (regra E0617)</span></label>
+    {% if layout_novo %}</div></details>{{ abre('nfse-ibscbs', 'Reforma tributária — IBS e CBS', ('CST ' ~ cfg.get('nfse_ibscbs_cst') ~ ' · classificação ' ~ cfg.get('nfse_ibscbs_classificacao')) if (cfg.get('nfse_ibscbs_cst') or cfg.get('nfse_ibscbs_classificacao')) else 'vazio: a nota sai sem o grupo') }}<div class="form-grid cg-quadro-corpo">{% else %}
     <h3>Reforma tributária — IBS e CBS</h3>
+    {% endif %}
     <p class="muted small">A nota não leva valor de IBS nem de CBS: leva a classificação, e a Sefin calcula.
       CST e classificação são decisão de quem responde pelo tributo — confira com o contador. Vazios, a nota
       sai sem o grupo (aceito pela NT 004 v2.0 enquanto as validações dele estão suspensas).</p>
@@ -66,12 +103,20 @@
       <span class="muted small">6 dígitos; os 3 primeiros são o CST</span></label>
     <label>{{ rotulos.nfse_ibscbs_indicador_operacao }} <input name="nfse_ibscbs_indicador_operacao" value="{{ cfg.nfse_ibscbs_indicador_operacao }}" size="7">
       <span class="muted small">100301 = demais serviços, onerosos, no domicílio do adquirente (Anexo C)</span></label>
-    <button type="submit">Gravar</button>
+    {% if layout_novo %}</div></details><div class="cg-nfse-gravar">{% endif %}
+    <button type="submit"{% if layout_novo %} class="primary"{% endif %}>Gravar</button>
+    {% if layout_novo %}<small class="muted">Grava estes cinco quadros, abertos ou recolhidos. O certificado e os parâmetros têm botão próprio.</small></div>{% endif %}
   </form>
+{% if layout_novo %}</div>{% else %}
 </section>
+{% endif %}
+{% endset %}
 
+{% set q_parametros %}
+{% if layout_novo %}{{ abre('nfse-parametros', 'Parâmetros do município no emissor', ('última consulta em ' ~ (parametros.consultado_em or '')[:10]) if parametros else 'ainda não consultados') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <h2>Parâmetros do município no emissor</h2>
+{% endif %}
   <p class="muted small">O emissor diz se o convênio do município está ativo, a alíquota e o regime do
     item 21.01 e o que ele sabe da serventia. Precisa do certificado A1 gravado. A resposta aparece como
     veio: leia a do convênio e marque a situação no campo acima.</p>
@@ -85,10 +130,17 @@
     município {{ parametros.municipio }}</p>
   <pre class="small" style="white-space:pre-wrap;max-height:24em;overflow:auto">{{ parametros_texto }}</pre>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
+{% endset %}
+
+{% set q_certificado %}
+{% if layout_novo %}{{ abre('nfse-certificado', 'Certificado A1 da serventia', a_nota_do_certificado, aberto=certificado_pede) }}<div class="cg-quadro-corpo cg-nfse-outro">{% else %}
 <section class="panel">
   <h2>Certificado A1 da serventia</h2>
+{% endif %}
   {% if certificado %}
     <p>{{ certificado.titular or 'certificado ilegível' }} · válido até {{ certificado.valido_ate or '—' }}
       {% if certificado.vencido %}<span class="badge alta">vencido</span>{% endif %}
@@ -111,5 +163,14 @@
     <button type="submit">Apagar o certificado desta máquina</button>
   </form>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
+{% endset %}
+
+{% if layout_novo and certificado_pede %}{{ q_certificado }}{% endif %}
+{{ q_dados }}
+{{ q_parametros }}
+{% if not (layout_novo and certificado_pede) %}{{ q_certificado }}{% endif %}
+{% if layout_novo %}{{ ferramentas() }}{% endif %}
 {% endblock %}

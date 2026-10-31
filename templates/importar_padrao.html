@@ -2,8 +2,13 @@
 {% block title %}Importar de outro sistema{% endblock %}
 {% block content %}
 {% from "_manual_de_importacao.html" import manual_para_baixar %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
 <h1>Importar de outro sistema</h1>
 
+{# NO LAYOUT NOVO, O ARQUIVO VEM PRIMEIRO — 30/10/2026. Escolher a espécie, mandar o arquivo e ver o
+   que entraria é o que se vem fazer aqui. A explicação do formato, a lista de campos e o manual são
+   para quem prepara o arquivo, e ficam recolhidos embaixo. Os blocos são os mesmos nos dois layouts. #}
+{% set sobre_a_tela %}
 <div class="card">
   <p class="small muted">
     Pedido seu em 30/08/2026: <em>«criar manual e padrão de importação de acervo
@@ -21,8 +26,12 @@
     toma número novo, não ocupa folha, não sela e não cobra.
   </p>
 </div>
+{% endset %}
+{% if not layout_novo %}
+{{ sobre_a_tela }}
 
 {{ manual_para_baixar(true) }}
+{% endif %}
 
 <form method="get" class="card">
   <label>O que você vai importar
@@ -35,8 +44,7 @@
   <noscript><button class="button">escolher</button></noscript>
 </form>
 
-<h2>Como é o arquivo</h2>
-
+{% set como_e_o_arquivo %}
 <div class="card">
   <p>
     Um arquivo <strong>JSON</strong>, um só, com esta forma. Os nomes dos campos
@@ -57,8 +65,9 @@
     manual: campo novo aparece aqui no dia em que nasce.
   </p>
 </div>
+{% endset %}
 
-<h2>Os campos desta espécie <span class="small muted">— {{ campos|length }}</span></h2>
+{% set os_campos %}
 <div class="card rolagem">
   <table class="tabela">
     <tr><th>campo</th><th>é obrigatório?</th><th>forma</th></tr>
@@ -72,8 +81,18 @@
     {% endfor %}
   </table>
 </div>
+{% endset %}
+
+{% if not layout_novo %}
+<h2>Como é o arquivo</h2>
+
+{{ como_e_o_arquivo }}
+
+<h2>Os campos desta espécie <span class="small muted">— {{ campos|length }}</span></h2>
+{{ os_campos }}
 
 <h2>O arquivo</h2>
+{% endif %}
 
 {% if erro %}
 <div class="notice critical"><strong>Não deu para ler:</strong> {{ erro }}</div>
@@ -93,11 +112,14 @@
      textarea fica para um exemplo pequeno digitado à mão. #}
   <label>Envie o arquivo <code>.json</code>
     <input type="file" name="arquivo" accept=".json,application/json"></label>
+  {% if layout_novo %}<details id="imp-colar"{% if texto %} open{% endif %}><summary class="small">Ou cole o conteúdo, se for pequeno</summary>{% else %}
   <p class="small muted">Ou cole aqui o conteúdo, se for pequeno:</p>
+  {% endif %}
   <label>
     <textarea name="texto" rows="12" style="font-family:monospace;font-size:.8rem"
               placeholder="{ &quot;formato&quot;: &quot;{{ formato }}&quot;, … }">{{ texto }}</textarea>
   </label>
+  {% if layout_novo %}</details>{% endif %}
   <p>
     <button class="button" name="o_que" value="conferir">Conferir</button>
     {# PREENCHER O FORMULARIO e caminho DIFERENTE de importar, e o botao diz
@@ -202,5 +224,13 @@
   {% endif %}
 </div>
 {% endif %}
+{% endif %}
+
+{% if layout_novo %}
+{{ abre('imp-arquivo', 'Como é o arquivo', 'o exemplo, montado do banco na hora') }}<div class="cg-quadro-corpo">{{ como_e_o_arquivo }}</div></details>
+{{ abre('imp-campos', 'Os campos desta espécie', (campos | length) ~ ' campos') }}<div class="cg-quadro-corpo">{{ os_campos }}</div></details>
+{{ abre('imp-manual', 'O manual deste padrão', 'para entregar a quem vai gerar o arquivo') }}<div class="cg-quadro-corpo">{{ manual_para_baixar(true) }}</div></details>
+{{ abre('imp-sobre', 'Para que serve esta tela', 'traz acervo de fora, e não lavra ato') }}<div class="cg-quadro-corpo">{{ sobre_a_tela }}</div></details>
+{{ ferramentas() }}
 {% endif %}
 {% endblock %}

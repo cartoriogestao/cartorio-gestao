@@ -1,0 +1,81 @@
+{# OS QUADROS RECOLHIDOS DO LAYOUT NOVO — 30/10/2026, nas telas longas do administrador.
+
+   `<details>`, E NÃO ABAS: estas telas não têm ordem nem fase. São grupos de coisas que se abrem de
+   vez em quando, e abrir um não precisa esconder o outro. Sem script, cada um abre com um clique.
+
+   O QUE ESTÁ RECOLHIDO VAI JUNTO AO GRAVAR: um formulário com quadros fechados continua um
+   formulário só, e o navegador manda os campos deles como sempre.
+
+   A ARMADILHA É O CAMPO INVÁLIDO NUM QUADRO FECHADO: o navegador recusa o envio, não tem onde pôr o
+   foco, e o botão parece não fazer nada. Por isso o evento `invalid` abre o quadro do campo. Ele não
+   borbulha, e a escuta é por captura.
+
+   O ENDEREÇO ABRE O QUADRO (`/configuracoes#cfg-centrais`, que outras telas usam), e depois de gravar
+   a tela volta com os mesmos quadros abertos: a lista fica guardada por dois minutos nesta aba. #}
+
+{% macro abre(id, titulo, nota='', aberto=false) %}
+<details class="panel cg-quadro" id="{{ id }}"{% if aberto %} open{% endif %}>
+  <summary>{{ titulo }}{% if nota %} <small>{{ nota }}</small>{% endif %}</summary>
+{% endmacro %}
+
+{% macro ferramentas() %}
+<style>
+  details.panel.cg-quadro{padding:0;margin-bottom:8px}
+  .cg-quadro>summary{margin:0;padding:10px 14px;font-weight:600;cursor:pointer}
+  .cg-quadro>summary small{font-weight:400;margin-left:8px;color:var(--muted,#5b6875)}
+  .cg-quadro[open]>summary{border-bottom:1px solid var(--border,#e3e7ec)}
+  .cg-quadro-corpo{padding:12px 14px}
+  .cg-quadro-corpo>.card{border:0;box-shadow:none;padding:0;margin:0}
+  .cg-quadro-corpo details.panel.cg-quadro{box-shadow:none;margin-bottom:6px}
+  .cg-quadro label:has(>input[type=checkbox]){display:flex;align-items:flex-start;gap:8px;max-width:40rem}
+  .cg-quadro label>input[type=checkbox]{width:1rem;height:1rem;min-height:0;margin:3px 0 0;padding:0;flex:0 0 auto}
+  .cg-quadro form.form-grid>button{justify-self:start}
+</style>
+<script>
+(function () {
+  "use strict";
+  var guarda = "cg-quadros:" + location.pathname;
+  var PRAZO = 2 * 60 * 1000;
+
+  function abrirEmVolta(el) {
+    var d = el && el.closest("details");
+    while (d) {
+      d.open = true;
+      d = d.parentElement ? d.parentElement.closest("details") : null;
+    }
+  }
+
+  function doEndereco() {
+    var id = "";
+    try { id = decodeURIComponent(location.hash.slice(1)); } catch (erro) { return; }
+    var alvo = id ? document.getElementById(id) : null;
+    if (!alvo) return;
+    abrirEmVolta(alvo);
+    alvo.scrollIntoView({ block: "start" });
+  }
+
+  document.addEventListener("invalid", function (ev) { abrirEmVolta(ev.target); }, true);
+
+  document.addEventListener("submit", function () {
+    var abertos = Array.prototype.slice.call(document.querySelectorAll("details.cg-quadro[open][id]"))
+      .map(function (d) { return d.id; });
+    try { sessionStorage.setItem(guarda, JSON.stringify({ em: Date.now(), abertos: abertos })); } catch (erro) { /* sem isto, abre recolhida */ }
+  }, true);
+
+  // A lista guardada se consome sempre: sem isto, ela reabriria sozinha numa visita seguinte.
+  try {
+    var salvo = JSON.parse(sessionStorage.getItem(guarda) || "null");
+    sessionStorage.removeItem(guarda);
+    if (salvo && Date.now() - salvo.em < PRAZO) {
+      salvo.abertos.forEach(function (id) {
+        var d = document.getElementById(id);
+        if (d) d.open = true;
+      });
+    }
+  } catch (erro) { /* sem isto, abre recolhida */ }
+
+  window.addEventListener("hashchange", doEndereco);
+  doEndereco();
+})();
+</script>
+{% endmacro %}

@@ -2,22 +2,55 @@
 {% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
 {% block title %}Abrir processo{% endblock %}
 {% block content %}
+{# NO LAYOUT NOVO, TRÊS PASSOS — 30/10/2026, um para cada quadro. É UM FORMULÁRIO SÓ: o que está escondido vai
+   junto, e `static/fases.js` mostra o passo aberto. Sem o script, ele sai inteiro. «Salvar rascunho» e «Não
+   termina hoje» ficam fora dos passos, sempre à vista, e o botão de abrir fica na barra do último. No layout
+   antigo nada muda de lugar. #}
+{% if layout_novo %}
+<style>
+  .cg-corpo .content>h1{font-size:23px;margin:0 0 8px}
+  #form-do-ato .cg-passos{margin-bottom:8px}
+  #form-do-ato .card{padding:12px 16px;margin-bottom:8px}
+  #form-do-ato .card h2{font-size:16px}
+  #form-do-ato .card p{margin:0 0 8px}
+  #form-do-ato [data-passo=quem]>p:has(input[name=requerente_nome]){display:grid;grid-template-columns:2fr 1fr;gap:0 12px}
+  #form-do-ato textarea,#form-do-ato input:not([type=radio]),#form-do-ato select{max-width:100%}
+  @media (max-width:900px){
+    #form-do-ato [data-passo=quem]>p:has(input[name=requerente_nome]){grid-template-columns:minmax(0,1fr)}
+  }
+  .cg-corpo .card.cg-rr-rito{padding:10px 16px;margin-top:8px}
+  .cg-rr-rito p{margin:0}
+</style>
+{% endif %}
 <h1>Abrir processo</h1>
 
 {{ salvar_rascunho('rcpn_retificacao_nova', url_for('rcpn_retificacao_nova'),
                    'Retificação do Registro Civil', csrf_token,
-                   nome_em='requerente_nome') }}
+                   nome_em='requerente_nome', rascunho_id=rascunho_id) }}
+
+{# A RECUSA DO SERVIDOR E O RASCUNHO REABERTO voltam com o que estava digitado (31/10/2026). Sem nada
+   digitado, a tela sai como sempre saiu: o primeiro instituto e a primeira forma marcados. #}
+{% set digitado = form or {} %}
 
 <form method="post" id="form-do-ato">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
-  <div class="card">
+  {% if layout_novo %}
+  <script defer src="{{ url_for('static', filename='fases.js') }}?v={{ VERSION }}"></script>
+  <nav class="cg-passos" data-cg-passos="form-do-ato" data-inicial="qual" aria-label="Passos deste processo">
+    <button type="button" class="cg-passo" data-passo-ir="qual"><span class="cg-fase-n" aria-hidden="true">1</span>Qual dos três</button>
+    <button type="button" class="cg-passo" data-passo-ir="como"><span class="cg-fase-n" aria-hidden="true">2</span>Como o pedido chegou</button>
+    <button type="button" class="cg-passo" data-passo-ir="quem"><span class="cg-fase-n" aria-hidden="true">3</span>Quem pede, e o quê</button>
+  </nav>
+  {% endif %}
+
+  <div class="card" data-passo="qual">
     <h2 style="margin-top:0">Qual dos três</h2>
     {% for x in norma.INSTITUTOS %}
       <p>
         <label>
           <input type="radio" name="instituto" value="{{ x.chave }}"
-                 {% if loop.first %}checked{% endif %}>
+                 {% if (digitado.get('instituto') or norma.INSTITUTOS[0].chave) == x.chave %}checked{% endif %}>
           <strong>{{ x.nome }}</strong> — {{ x.o_que }}
           <span class="small muted">({{ x.artigo }})</span>
         </label><br>
@@ -27,14 +60,14 @@
     {% endfor %}
   </div>
 
-  <div class="card">
+  <div class="card" data-passo="como">
     <h2 style="margin-top:0">Como o pedido chegou</h2>
     <p class="small muted">Art. 348, § 1º — e as três valem.</p>
     {% for f in norma.FORMAS_DO_PEDIDO %}
       <p>
         <label>
           <input type="radio" name="forma" value="{{ f.chave }}"
-                 {% if loop.first %}checked{% endif %}>
+                 {% if (digitado.get('forma') or norma.FORMAS_DO_PEDIDO[0].chave) == f.chave %}checked{% endif %}>
           {{ f.nome }} <span class="small muted">(inciso {{ f.inciso }})</span>
         </label>
         {% if f.exige %}
@@ -44,40 +77,48 @@
     {% endfor %}
     <p><label>Se foi verbal, o termo — com a assinatura do declarante<br>
       <textarea name="termo_verbal" rows="4" cols="72"
-        placeholder="Compareceu … e declarou que …"></textarea></label></p>
+        placeholder="Compareceu … e declarou que …">{{ digitado.get('termo_verbal', '') }}</textarea></label></p>
   </div>
 
-  <div class="card">
+  <div class="card" data-passo="quem">
     <h2 style="margin-top:0">Quem pede, e o quê</h2>
     <p>
       <label>Nome do requerente
-        <input type="text" name="requerente_nome" size="40" required></label>
+        <input type="text" name="requerente_nome" size="40" required{% if digitado.get('requerente_nome') %} value="{{ digitado.get('requerente_nome') }}"{% endif %}></label>
       <label>Documento
-        <input type="text" name="requerente_documento" size="20"></label>
+        <input type="text" name="requerente_documento" size="20"{% if digitado.get('requerente_documento') %} value="{{ digitado.get('requerente_documento') }}"{% endif %}></label>
     </p>
     <p><label>Quem assinou a petição
       <select name="assinado_por">
         {% for q in norma.QUEM_ASSINA %}
-          <option value="{{ q }}">{{ q }}</option>
+          <option value="{{ q }}"{% if digitado.get('assinado_por') == q %} selected{% endif %}>{{ q }}</option>
         {% endfor %}
       </select></label>
       <span class="small muted">art. 352 — recusar a procuração no balcão seria
         negar o que a norma permite</span></p>
     <p><label>O que se pede<br>
       <textarea name="o_que_se_pede" rows="3" cols="72" required
-        placeholder="corrigir o nome da genitora, que está grafado …"></textarea>
+        placeholder="corrigir o nome da genitora, que está grafado …">{{ digitado.get('o_que_se_pede', '') }}</textarea>
     </label></p>
     <p><label>De que assento se trata
       <input type="text" name="assento_descricao" size="52"
-             placeholder="Livro A-24, fl. 166, termo 19552"></label><br>
+             placeholder="Livro A-24, fl. 166, termo 19552"{% if digitado.get('assento_descricao') %} value="{{ digitado.get('assento_descricao') }}"{% endif %}></label><br>
       <span class="small muted">Só no <strong>suprimento</strong> o assento ainda
         não existe — é o que se supre.</span></p>
   </div>
 
+  {% if layout_novo %}
+  <div class="cg-passos-fim" data-cg-passos-fim>
+    <button type="button" class="button" data-passo-voltar hidden>&larr; Voltar</button>
+    <button type="button" class="button primary" data-passo-avancar hidden>Avançar</button>
+    <button class="button primary" data-passo="quem">Abrir o processo</button>
+  </div>
+  {% else %}
   <p><button class="button">Abrir o processo</button></p>
+  {% endif %}
 </form>
 
-<div class="card">
+<div class="card{% if layout_novo %} cg-rr-rito{% endif %}">
   <p class="small muted">
     Depois de aberto, o rito é: instruir (e <strong>é daí que os
     {{ norma.PRAZO_DECISAO_DIAS_UTEIS }} dias úteis contam</strong>), registrar a

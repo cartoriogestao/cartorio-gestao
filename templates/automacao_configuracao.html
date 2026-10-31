@@ -2,23 +2,45 @@
 {% block title %}Automação — configuração{% endblock %}
 {% block heading %}<h1>Automação — configuração</h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, QUADROS RECOLHIDOS — 30/10/2026. O despachante continua à vista: sem ele nada roda. O
+   formulário continua um só, e «Gravar» grava os três quadros, abertos ou fechados. O título diz se há
+   servidor e senha, e nunca o endereço, o usuário, a senha ou o destino. Os últimos avisos abrem sozinhos
+   quando o mais novo falhou. #}
+{% set destinos = (cfg.get('email_destino') or '').split(',') | map('trim') | select | list | length %}
+{% set hora_do_resumo = cfg.get('email_resumo_hora') or '' %}
+{% set avisos_que_falharam = ultimos | selectattr('situacao', 'equalto', 'FALHOU') | list | length %}
+{% if layout_novo %}
+<style>
+  .cg-au-cfg .cg-quadro-corpo{display:grid;grid-template-columns:repeat(auto-fill,minmax(20rem,1fr));gap:8px 16px;align-items:start}
+  .cg-au-cfg .cg-quadro-corpo>label{margin:0}
+  .cg-au-cfg .cg-quadro-corpo>p{grid-column:1/-1;margin:0}
+  .cg-au-gravar{position:sticky;bottom:0;z-index:2;display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 0;margin-bottom:0;background:var(--bg,#f5f6f8)}
+  .cg-au-teste{margin-bottom:12px}
+  section.cg-au-despachante{padding:10px 14px;margin-bottom:8px}
+  .cg-au-despachante .panel-head{display:none}
+  .cg-au-despachante p{margin:0}
+</style>
+{% endif %}
 <p><a href="{{ url_for('automacao_lista') }}">← todos os processos</a> · <a href="{{ url_for('automacao_cofre') }}">cofre de credenciais</a></p>
 
-<section class="panel">
+<section class="panel{% if layout_novo %} cg-au-despachante{% endif %}">
   <div class="panel-head"><h2>O despachante</h2></div>
   {% if batida.nunca %}
-    <p><span class="badge critica">nunca rodou</span> A tarefa do despachante ainda não foi registrada. Gere o instalador com <code>tools/gerar_instalador_automacao.py</code> e rode o de cada sistema (Agendador do Windows ou launchd do macOS) na máquina do servidor. Sem ela, nenhum processo roda.</p>
+    <p>{% if layout_novo %}<strong>O despachante</strong> {% endif %}<span class="badge critica">nunca rodou</span> A tarefa do despachante ainda não foi registrada. Gere o instalador com <code>tools/gerar_instalador_automacao.py</code> e rode o de cada sistema (Agendador do Windows ou launchd do macOS) na máquina do servidor. Sem ela, nenhum processo roda.</p>
   {% elif batida.parado %}
-    <p><span class="badge critica">parado</span> Último tique às {{ batida.hora }} — há mais de 5 minutos.</p>
+    <p>{% if layout_novo %}<strong>O despachante</strong> {% endif %}<span class="badge critica">parado</span> Último tique às {{ batida.hora }} — há mais de 5 minutos.</p>
   {% else %}
-    <p><span class="badge ok">rodando</span> Último tique às {{ batida.hora }}.</p>
+    <p>{% if layout_novo %}<strong>O despachante</strong> {% endif %}<span class="badge ok">rodando</span> Último tique às {{ batida.hora }}.</p>
   {% endif %}
 </section>
 
-<form method="post" action="{{ url_for('automacao_configuracao_salvar') }}">
+<form method="post" action="{{ url_for('automacao_configuracao_salvar') }}"{% if layout_novo %} class="cg-au-cfg"{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% if layout_novo %}{{ abre('au-smtp', 'E-mail (SMTP)', ('servidor informado' if cfg.get('smtp_host') else 'sem servidor') ~ ' · ' ~ ('senha guardada' if senha_guardada else 'sem senha') ~ ' · ' ~ ((destinos ~ ' destino(s)') if destinos else 'sem destino')) }}<div class="cg-quadro-corpo">{% else %}
   <section class="panel">
     <div class="panel-head"><h2>E-mail (SMTP)</h2></div>
+  {% endif %}
     <label>Servidor SMTP <input name="smtp_host" value="{{ cfg.smtp_host }}" placeholder="smtp.exemplo.com.br"></label>
     <label>Porta <input name="smtp_porta" value="{{ cfg.smtp_porta }}" size="5"></label>
     <label>Segurança <select name="smtp_seguranca">{% for s in seguranca %}<option value="{{ s }}" {% if s == cfg.smtp_seguranca %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
@@ -34,15 +56,21 @@
     <label>Remetente — o nome que aparece (ex.: o nome da serventia) ou um e-mail; em branco, vai o usuário
       <input name="smtp_remetente" value="{{ cfg.smtp_remetente }}"></label>
     <label>Mandar para (separe por vírgula) <input name="email_destino" value="{{ cfg.email_destino }}"></label>
+  {% if layout_novo %}</div></details>
+  {{ abre('au-whatsapp', 'WhatsApp', 'não configurado' ~ (' · destino guardado' if cfg.get('whatsapp_destino') else '')) }}<div class="cg-quadro-corpo">{% else %}
   </section>
   <section class="panel">
     <div class="panel-head"><h2>WhatsApp <span class="badge">não configurado</span></h2></div>
+  {% endif %}
     <p class="small">O envio de WhatsApp ainda não existe nesta instalação. O destino fica guardado, e cada aviso
       que iria por ele fica registrado como «não configurado» — nada se dá por enviado.</p>
     <label>Número de destino <input name="whatsapp_destino" value="{{ cfg.whatsapp_destino }}"></label>
+  {% if layout_novo %}</div></details>
+  {{ abre('au-lembretes', 'Lembretes e rotinas de fora', 'resumo do dia ' ~ ('desligado' if hora_do_resumo == 'desligado' else 'a partir das ' ~ hora_do_resumo ~ ' h') ~ ' · lembra a cada ' ~ cfg.get('lembrar_a_cada_h') ~ ' h') }}<div class="cg-quadro-corpo">{% else %}
   </section>
   <section class="panel">
     <div class="panel-head"><h2>Lembretes e rotinas de fora</h2></div>
+  {% endif %}
     <label>Resumo do dia por e-mail — a partir de que hora (0 a 23; «desligado» para não mandar)
       <input name="email_resumo_hora" value="{{ cfg.email_resumo_hora }}" size="9"></label>
     <p class="small muted">Um e-mail por dia, com todos os processos que seguem com problema; nenhum quando
@@ -54,22 +82,30 @@
     <p class="small muted">Os dois arquivos têm de estar dentro da pasta de dados do servidor ou da pasta das
       cópias; caminho fora delas não é lido. Do log, a central só conta as linhas que bateram — o texto
       não aparece na tela.</p>
+  {% if layout_novo %}</div></details>
+  <div class="cg-au-gravar">{% else %}
   </section>
+  {% endif %}
   <button class="button primary" type="submit">Gravar</button>
+  {% if layout_novo %}<small class="muted">Grava os três quadros acima, abertos ou recolhidos.</small></div>{% endif %}
 </form>
 
-<form method="post" action="{{ url_for('automacao_testar_email') }}" style="margin-top:12px">
+<form method="post" action="{{ url_for('automacao_testar_email') }}" style="margin-top:12px"{% if layout_novo %} class="cg-au-teste"{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <button class="button" type="submit">Mandar um e-mail de teste</button>
   <span class="small muted">sai pelo despachante no próximo minuto</span>
 </form>
 
+{% if layout_novo %}{{ abre('au-avisos', 'Últimos avisos', ((ultimos | length) ~ ' aviso(s)' ~ (' · ' ~ avisos_que_falharam ~ ' com falha' if avisos_que_falharam else '')) if ultimos else 'nenhum ainda', aberto=ultimos and ultimos[0].situacao == 'FALHOU') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <div class="panel-head"><h2>Últimos avisos</h2></div>
+{% endif %}
   <div class="table-wrap"><table><thead><tr><th>Quando</th><th>Canal</th><th>Motivo</th><th>Situação</th><th>Destino / erro</th></tr></thead><tbody>
   {% for a in ultimos %}<tr><td class="small">{{ (a.criado_em or '')[:16]|replace('T', ' ') }}</td><td>{{ nome_do_canal.get(a.canal, a.canal) }}</td>
     <td class="small">{{ a.motivo }}</td><td class="small">{{ a.situacao }}</td><td class="small">{{ a.destino or '' }}{% if a.erro %} — {{ a.erro }}{% endif %}</td></tr>
   {% else %}<tr><td colspan="5">Nenhum aviso ainda.</td></tr>{% endfor %}
   </tbody></table></div>
+{% if layout_novo %}</div></details>{{ ferramentas() }}{% else %}
 </section>
+{% endif %}
 {% endblock %}

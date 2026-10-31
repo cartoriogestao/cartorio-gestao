@@ -1,6 +1,31 @@
 {% extends "base.html" %}
 {% block title %}Como notificar no usucapião{% endblock %}
 {% block content %}
+{# NO LAYOUT NOVO, NADA SE RECOLHE — 30/10/2026. Esta tela só se lê, e a busca do navegador e o papel precisam
+   achar tudo. O que muda é aproveitar a largura: os passos em colunas, e as tabelas lado a lado. Nenhuma
+   palavra sai, e no layout antigo nada muda de lugar. #}
+{% if layout_novo %}
+<style>
+  .cg-corpo .content>h1{font-size:23px;margin:0 0 8px}
+  .cg-corpo .content>h2,.cg-man-baixo h2{font-size:16px;margin:10px 0 6px}
+  .cg-corpo .content>.card:first-of-type{padding:10px 16px;margin-bottom:8px}
+  .cg-corpo .content>.card:first-of-type p{margin:0 0 4px}
+  .cg-man-passos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .cg-man-passos>.card{padding:10px 14px;margin:0}
+  .cg-man-passos>.card p{margin:0 0 4px}
+  .cg-man-baixo .card{padding:10px 14px;margin:0 0 8px}
+  .cg-man-baixo .card p{margin:6px 0 0}
+  .cg-man-baixo td,.cg-man-baixo th{padding:6px 8px}
+  @media (max-width:900px){
+    .cg-man-passos{grid-template-columns:minmax(0,1fr)}
+  }
+  @media (min-width:1600px){
+    .cg-man-passos{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .cg-man-baixo{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 12px;align-items:start}
+    .cg-man-baixo>div{min-width:0}
+  }
+</style>
+{% endif %}
 <h1>Como efetuar a notificação</h1>
 
 <div class="card">
@@ -23,6 +48,7 @@
 </div>
 
 <h2>O passo a passo</h2>
+{% if layout_novo %}<div class="cg-man-passos">{% endif %}
 {% for p in manual %}
 <div class="card">
   <p><strong>{{ p.passo }}. {{ p.o_que }}</strong></p>
@@ -32,6 +58,8 @@
   {% endif %}
 </div>
 {% endfor %}
+{% if layout_novo %}</div>
+<div class="cg-man-baixo"><div>{% endif %}
 
 <h2>As quatro formas — e a ordem é da norma</h2>
 <div class="card">
@@ -59,6 +87,7 @@
   <p>{{ onde.o_que }}</p>
   <p class="small muted">{{ onde.artigo }}</p>
 </div>
+{% if layout_novo %}</div><div>{% endif %}
 
 <h2>Os prazos</h2>
 <div class="card">
@@ -93,4 +122,5 @@
   <p><strong>O silêncio tem efeito.</strong> {{ silencio.o_que|forte }}</p>
   <p class="small muted">{{ silencio.base }}</p>
 </div>
+{% if layout_novo %}</div></div>{% endif %}
 {% endblock %}

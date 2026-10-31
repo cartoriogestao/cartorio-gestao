@@ -30,7 +30,7 @@
 
 {{ salvar_rascunho('rcpj_rtd_titulo_novo', url_for('rcpj_rtd_titulo_novo'),
                    'Título apresentado', csrf_token,
-                   nome_em='apresentante') }}
+                   nome_em='apresentante', rascunho_id=rascunho_id) }}
 
 <form method="post" class="form" id="form-do-ato">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

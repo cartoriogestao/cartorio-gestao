@@ -1320,6 +1320,18 @@ def test_o_protocolo_do_quadro_de_cobranca_tambem_vira_o_atendimento(casa):
     assert _atendido(casa) == pid
 
 
+def test_guardar_o_rascunho_nao_muda_o_protocolo_em_atendimento(casa):
+    """O rascunho leva o protocolo marcado na tela, para ela voltar com ele. Mas rascunho não é ato: quem passa a
+    atender o protocolo é o envio do ato, e não o papel de anotação (31/10/2026)."""
+    b = _balcao_com_casa(casa)
+    pid = abrir_protocolo(b, atribuicao="RTD")
+    b.post("/rascunhos/salvar", {"_tela": "rcpj_rtd_registro_novo", "_titulo": "Registro", "requerente_nome": "ANA EXEMPLO",
+                                 "protocolo_id": str(pid), "protocolo_do_quadro": "1"})
+    assert _atendido(casa) is None, "guardar o rascunho mexeu no atendimento"
+    guardado = _um(casa, "SELECT dados_json FROM rascunhos_de_tela ORDER BY id DESC LIMIT 1")
+    assert str(pid) in guardado["dados_json"], "o protocolo marcado tem de voltar com a tela"
+
+
 def test_o_quadro_de_cobranca_leva_a_marca_do_protocolo():
     fonte = (Path(__file__).resolve().parent.parent / "templates" / "_cobrar.html"
              ).read_text(encoding="utf-8")

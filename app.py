@@ -3137,6 +3137,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         return MODLIG.pode_entrar(db.get_setting, MOD.modulo_da_tela(endpoint),
                                   papel, funcao)
 
+    # A LISTA DE SELOS PERGUNTA AQUI SE OFERECE O LINK DO ATO (of-0118): a mesma
+    # régua, e não uma cópia que divergiria no dia em que a tela mudar.
+    app.extensions["abre_pela_tela"] = _abre_pela_tela
+    app.extensions["funcao_de_quem_esta_logado"] = funcao_de_quem_esta_logado
+
     # O DONO DA LINHA, ALÉM DA TELA (correção de segurança de 26/10/2026,
     # revisão do PR #33). `TELA_DO_ANEXO` pergunta se o PAPEL abre a tela; para
     # a leitura por IA isso não basta: a ficha recusa a leitura de outra pessoa

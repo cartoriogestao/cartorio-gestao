@@ -177,7 +177,8 @@
           <td>{{ x.obtido_por or '—' }}</td>
           <td>{{ x.atribuicao_legivel }}<br>
               <small class="muted">{{ x.caminho or '' }}</small></td>
-          <td>{% if x.ato_id %}{{ x.tabela }} nº {{ x.ato_id }}
+          <td>{% if x.ato_id and x.endereco_do_ato %}<a href="{{ x.endereco_do_ato }}">{{ x.tabela }} nº {{ x.ato_id }}</a>
+              {% elif x.ato_id %}{{ x.tabela }} nº {{ x.ato_id }}
               {% else %}<span class="muted">—</span>{% endif %}</td>
           <td>
             {% if x.situacao == 'CANCELADO' %}

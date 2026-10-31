@@ -454,6 +454,70 @@ def procurar(con, *, pagina: int = 1,
     }
 
 
+# ============================================ de que ato veio o selo
+
+
+# A LISTA FECHADA DO LINK DO ATO (of-0118): tabela → tela, parâmetro da tela e
+# coluna que dá o id. **Em tabela filha, `ato_id` é do ato, e não da ficha**:
+# montar o link com ele abre a ficha de outro registro, e ninguém desconfia de
+# uma ficha que abre. Por isso a coluna vem daqui, e se lê no banco.
+#
+# NA DÚVIDA, SEM LINK: tabela fora daqui continua como texto.
+DESTINO_DO_ATO: dict[str, tuple[str, str, str]] = {
+    # a própria linha é a ficha
+    "nt_atos": ("notas_ato", "ato_id", "id"),
+    "ri_matriculas": ("ri_ficha", "matricula_id", "id"),
+    "ri_protocolos": ("ri_protocolo_ver", "protocolo_id", "id"),
+    "rc_assentos": ("rcpn_assento", "assento_id", "id"),
+    "hc_habilitacoes": ("rcpn_habilitacao", "habilitacao_id", "id"),
+    "rc_certidoes": ("rcpn_certidao", "certidao_id", "id"),
+    "pt_certidoes": ("protesto_certidao", "certidao_id", "id"),
+    "nt_certidoes": ("notas_certidao", "certidao_id", "id"),
+    "at_certidoes": ("atribuicoes_certidao", "certidao_id", "id"),
+    "nt_reconhecimentos": ("notas_reconhecimento_ver",
+                           "reconhecimento_id", "id"),
+    "nt_sinais_reconhecimentos": ("notas_sinal_reconhecimento_ver",
+                                  "reconhecimento_id", "id"),
+    "nt_cartoes": ("notas_cartao", "cartao_id", "id"),
+    # a ficha é a do pai
+    "ri_atos": ("ri_ficha", "matricula_id", "matricula_id"),
+    "ri_certidoes": ("ri_ficha", "matricula_id", "matricula_id"),
+    "rc_atos": ("rcpn_assento", "assento_id", "assento_id"),
+    "pt_atos": ("protesto_titulo", "titulo_id", "titulo_id"),
+    "rg_atos": ("rcpj_rtd_registro", "registro_id", "registro_id"),
+    "ra_atos": ("livro3_registro", "registro_id", "registro_id"),
+}
+
+
+def destinos_dos_selos(con, linhas: list[dict]) -> dict[int, tuple[str, dict]]:
+    """`id do selo → (tela, parâmetros)`, para os selos cujo ato se sabe.
+
+    Uma consulta por tabela, e não uma por linha. **Fica de fora** o selo sem
+    `ato_id`, a tabela fora da lista, a tabela que este banco não tem, a linha
+    que não existe mais e o pai vazio. Só lê.
+    """
+    bd = banco(con)
+    por_tabela: dict[str, list[dict]] = {}
+    for x in linhas:
+        if x.get("ato_id") is not None and x.get("tabela") in DESTINO_DO_ATO:
+            por_tabela.setdefault(x["tabela"], []).append(x)
+    destinos: dict[int, tuple[str, dict]] = {}
+    for tabela, selos in por_tabela.items():
+        if not bd.tem_tabela(tabela):
+            continue
+        tela, parametro, coluna = DESTINO_DO_ATO[tabela]
+        ids = sorted({int(x["ato_id"]) for x in selos})
+        marcas = ",".join(["%s"] * len(ids))
+        fichas = {int(r["id"]): r["ficha"] for r in bd.ler(
+            f"SELECT id, {coluna} AS ficha FROM {tabela} "
+            f"WHERE id IN ({marcas})", ids)}
+        for x in selos:
+            ficha = fichas.get(int(x["ato_id"]))
+            if ficha is not None:
+                destinos[x["id"]] = (tela, {parametro: int(ficha)})
+    return destinos
+
+
 # ============================================ o resumo por grupo, em cinco
 
 

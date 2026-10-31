@@ -34,20 +34,6 @@
 #conteudo{scroll-padding-bottom:96px}
 </style>
 <script defer src="{{ url_for('static', filename='fases.js') }}?v={{ versao }}"></script>
-<script>
-/* AO TROCAR DE PASSO, A TELA VOLTA AO COMEÇO DELE. A barra fica presa ao pé: em monitor menor, quem
-   clica em «Avançar» está rolado para baixo, e cairia no meio do passo seguinte. E o cursor vai para
-   o primeiro campo, porque quem digita não deveria precisar do mouse a cada passo. */
-document.addEventListener("click", function (ev) {
-  var botao = ev.target.closest("[data-passo-avancar],[data-passo-voltar],[data-passo-ir]");
-  if (!botao) return;
-  var nav = document.querySelector("[data-cg-passos]");
-  if (nav) nav.scrollIntoView({ block: "nearest" });
-  if (botao.hasAttribute("data-passo-ir")) return;
-  var campo = botao.form && botao.form.querySelector("[data-passo]:not([hidden]) :is(input:not([type=hidden]),select,textarea)");
-  if (campo) campo.focus({ preventScroll: true });
-});
-</script>
 {% endmacro %}
 
 {% macro regua(id_do_form, passos, inicial, numerados=true, rotulo='Passos deste formulário') %}

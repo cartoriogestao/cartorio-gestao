@@ -4457,12 +4457,12 @@ def _lh02_papel(antes: str, paginas: int, identificacao: str) -> str:
         f'text:style-name="T-italico">{identificacao}</text:span></text:p>',
         f'<text:p text:style-name="P-repro-texto">{_LH02_RESSALVA}</text:p>']
     for i in range(paginas):
-        alt_max = area_h - 9.0 if i == 0 else area_h
-        if i == paginas - 1 and paginas > 1:
-            alt_max = area_h - 12.6
+        # of-0151: a mesma medida em toda página; a 1ª só fica na folha do
+        # CERTIFICO se couber inteira nela.
         w, h = RDIGI._escala_ficha_na_folha(124, 175, area_w_cm=area_w,
-                                            area_h_cm=alt_max)
-        estilo = "P-repro-img" if i == 0 else "P-repro-img-quebra"
+                                            area_h_cm=area_h)
+        estilo = ("P-repro-img" if i == 0 and h <= area_h - 9.0
+                  else "P-repro-img-quebra")
         linhas.append(
             f'<text:p text:style-name="{estilo}"><draw:frame draw:name="digi{i + 1}'
             f'.png" text:anchor-type="as-char" svg:width="{w}cm" svg:height="{h}cm">'

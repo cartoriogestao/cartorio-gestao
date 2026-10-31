@@ -691,8 +691,11 @@ def odt_da_digitalizacao(
     Folha 1: brasão, República/Estado/serventia/oficial/substituta (do
     cadastro, `serventia`), «CERTIDÃO REPROGRÁFICA», o CERTIFICO com a
     identificação do documento e a ressalva de legibilidade (o papel
-    `RI_REPROGRAFICA_CAPA`), e a primeira página reproduzida no espaço que
-    sobra. Demais páginas: uma por folha, centralizadas, sem esticar. Depois
+    `RI_REPROGRAFICA_CAPA`). TODA PÁGINA SAI NA LARGURA CHEIA DA ÁREA, e o
+    texto é que cede lugar (of-0151, 31/10/2026: reduzidas para caber ao lado
+    do texto, a 1ª e a última página de uma ficha A4 ficavam ilegíveis). A 1ª
+    página fica na folha 1 só se couber assim; senão, vai para a folha
+    seguinte. Demais páginas: uma por folha, centralizadas, sem esticar. Depois
     da última: o fecho do modelo (`RI_REPROGRAFICA_FECHO_DO_PAPEL`), o
     CERTIFICO ainda/validade do resumo congelado, lugar e data, nome e
     qualificação de quem expediu, «Selo digital: <número>» e o carimbo com QR
@@ -731,7 +734,6 @@ def odt_da_digitalizacao(
     # O que a folha 1 gasta antes da reprodução (cabeçalho em texto + título
     # + CERTIFICO + ressalva + 25 pt), medido na prévia: ~8,6 cm.
     area_h_folha1 = area_h - 9.0
-    ALTURA_DO_FECHO_CM = 12.6
 
     # --- Cabeçalho do modelo --------------------------------------------
     brasao = _brasao_do_modelo()
@@ -769,19 +771,21 @@ def odt_da_digitalizacao(
     for i, png in enumerate(paginas):
         img_name = f"digi{i + 1}.png"
         imagens[img_name] = (png, "image/png")
-        alt_max = area_h_folha1 if i == 0 else area_h
-        if i == n_pag - 1 and n_pag > 1:
-            # a última página divide a folha com o fecho e o carimbo
-            alt_max = area_h - ALTURA_DO_FECHO_CM
+        # of-0151: a medida é a mesma em toda página, e nenhuma encolhe por
+        # causa do texto. A 1ª só divide a folha com o CERTIFICO se couber
+        # inteira; o fecho, que anda junto (`keep-with-next`), fica depois da
+        # última se couber ou passa inteiro para a folha seguinte.
+        estilo = "P-repro-img-quebra"
         try:
             from PIL import Image
             with Image.open(io.BytesIO(png)) as im:
                 pw, ph = im.size
             w_uso, alt = _escala_ficha_na_folha(
-                pw, ph, area_w_cm=area_w, area_h_cm=alt_max)
+                pw, ph, area_w_cm=area_w, area_h_cm=area_h)
+            if i == 0 and alt <= area_h_folha1:
+                estilo = "P-repro-img"
         except Exception:
-            w_uso, alt = round(area_w, 2), round(alt_max, 2)
-        estilo = "P-repro-img" if i == 0 else "P-repro-img-quebra"
+            w_uso, alt = round(area_w, 2), round(area_h, 2)
         partes.append(
             f'<text:p text:style-name="{estilo}">'
             f'<draw:frame draw:name="{img_name}" text:anchor-type="as-char" '

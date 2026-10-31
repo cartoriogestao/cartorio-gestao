@@ -113,6 +113,13 @@ def test_a_fonte_escolhida_abre_e_tem_o_caminho_de_volta():
     assert "Ver todas as fontes" in html
 
 
+@pytest.mark.parametrize("novo", [True, False])
+def test_a_anotacao_do_item_continua_na_tabela(novo):
+    anotado = dict(_item("a", "Mario"), anotacao={"texto": "esperando o papel", "responsavel": "Beatriz", "ate": "2026-11-05"})
+    html = _inacabados(novo=novo, itens=[anotado])
+    assert "esperando o papel" in html and "com Beatriz" in html and "até 2026-11-05" in html
+
+
 def test_no_novo_a_lista_vem_antes_da_configuracao():
     html = _inacabados(itens=[_item("a", "Mario")])
     assert html.index("Mario") < html.index("Por onde ela olha") < html.index("Moldar o que fica")

@@ -898,7 +898,11 @@ histórico ou andamento da ficha.
 - **O padrão vem do sistema; o ajuste é seu.** **Voltar ao padrão do sistema**
   desfaz o ajuste.
 - A tela **confere o modelo antes de gravar** e recusa o que o papel não sabe
-  montar; corpo vazio não se grava.
+  montar: erro de forma, ou um nome que o padrão daquele papel não usa. Corpo vazio
+  não se grava.
+- **A conferência olha a forma.** Um campo com o nome errado dentro de um grupo que
+  existe, como `serventia.cidde`, pode sair em branco no papel. Por isso a prévia vale
+  a pena.
 - Os moldes `.odt` das certidões do Registro Civil se baixam, ajustam no
   LibreOffice e reenviam (**Enviar o papel ajustado**).
 - Antes de alterar, faça a prévia com um exemplo. **Modelos do caixa** cobre
@@ -1393,6 +1397,8 @@ Em todas:
 | Habilitação de casamento | Fases | Habilitação · Edital · Prontas para casar · Registro. De apoio: Andamento | no que espera ação |
 | Protocolo geral | Abas | Itens e quitação · Dados e encerramento · Documentos · Exigências · Tarefas · Vínculos (só no RI) · Acompanhamento · Movimento (com lançamento) | nos itens |
 | Título de Protesto | Fases | Apontamento · Intimação · Desfecho. De apoio: Vida do título, Emolumentos, Imagem e, para o administrador, Averbação | no que espera ação; título encerrado abre na Vida do título |
+| Título do RCPJ e do RTD | Fases | Apresentação · Qualificação · Registro. De apoio: Central e, para o oficial, Encerrar, enquanto o título não saiu | no que espera ação: apresentado ou com exigência, na Qualificação; qualificado ou registrado, no Registro (para o balcão, o qualificado abre na Qualificação); devolvido ou cancelado, na Apresentação |
+| Registro do Livro 3 | Abas | Resumo · Atos (quando há) · Teor e imagem · Partes · Minutas (quando há) · Revisar · Certidões · Corrigir (para o oficial) · Lançar (com o registro ativo) | no Resumo, que começa por «O que espera ação» |
 
 **Listas e Painel de Notas.** Procurações, fins previdenciários, substabelecimentos,
 revogações, renúncias e testamentos têm **Lavrar** no alto, que abre o ato direto, e
@@ -1410,8 +1416,51 @@ ficam mesmo vazias, porque é nelas que se cria o primeiro.
 Só um vem aberto: o protesto, quando cabe. Os outros abrem com um clique. Os avisos do
 alto, como selo que falta, pedido da CRA e sustação, saem em todas as abas.
 
-**As outras telas** abrem na moldura nova, do jeito de sempre. O painel do Protesto, as
-fichas do Livro 3 e do RCPJ e RTD, e as telas de configuração ainda não foram divididas.
+**No título do RCPJ e do RTD**, o documento fica na Qualificação, ao lado da decisão. O registro
+é ato do oficial: para o balcão, a fase Registro diz isso, e leva de volta à Qualificação.
+
+**No registro do Livro 3**, o botão de selar cada ato fica na aba Atos, e «O que espera ação»
+leva direto a ele. O cancelamento do registro vem recolhido na aba Lançar, com o mesmo formulário.
+
+### 23.5 As telas em quadros recolhidos
+
+Algumas telas longas não têm ordem nem fase. Nelas, cada grupo é um quadro que abre e fecha, e
+o título do quadro já diz como ele está. **O que está recolhido vai junto quando se grava**, e
+um campo recusado num quadro fechado abre o quadro, com o cursor nele.
+
+**Roteiro do dia do Protesto.** Cada conduta é um quadro. Fechado, ele mostra o número, o
+título, a hora limite e a situação, com o que falta. Vêm abertas as condutas atrasadas e a
+primeira pendente. **Primeiro: o que ficou de antes** continua em cima, a conferência dos
+títulos e o envio às Centrais ficam depois das condutas, e **O que saiu do roteiro** vem
+recolhido. Os links para uma conduta, como os de **Atrasado agora**, abrem o quadro sozinhos, e o
+encerramento do dia continua na última conduta, com o mesmo formulário.
+
+**Catálogo de modelos.** Cada atribuição é um grupo recolhido, com a contagem de papéis e de
+ajustes da casa. **Procurar papel** acha pelo nome e pela descrição, sem ligar para acento, e
+abre os grupos em que achou. Editando um papel, só ele aparece, com **Todos os papéis** para
+voltar.
+
+**O que ficou pelo caminho.** A lista abre a tela, com um grupo por fonte e a contagem. A fonte
+com item parado vem primeiro, e a primeira vem aberta. **Por onde ela olha** e **Moldar o que
+fica e o que sai** ficam recolhidos no fim.
+
+**CTP.** Cada ato é um quadro, com as pendências no título, e só o primeiro que espera alguma
+coisa vem aberto. Com um ato aberto, a tela ainda passa de um monitor, porque cada ato tem mais
+de vinte campos.
+
+**Formulário do termo** (Teores, no Registro Civil). **Ver como fica** responde acima dos campos.
+Os campos ficam em colunas, e a explicação de cada um em **De onde vem**. **Conferir com um
+assento real**, os teores e a origem do texto ficam recolhidos.
+
+**Telas longas do administrador.** Configurações, Importar de outro sistema, Uso de IA e
+Numeração dos livros. O título de cada quadro diz como ele está, por exemplo, «ligado · guarda 5
+dias», e o que espera ação vem primeiro: o aviso das Centrais sem credencial, os fornecedores
+sem dados e as séries sem número. **As Configurações continuam sendo um formulário só:** **Salvar
+configurações** fica à vista e grava todos os quadros acima dele; Centrais, Proteção do backup e
+Revisão das transcrições têm botão próprio. O endereço abre o quadro
+(`/configuracoes#cfg-centrais`), e depois de gravar a tela volta com os mesmos quadros abertos.
+
+**As outras telas** abrem na moldura nova, do jeito de sempre.
 
 ---
 

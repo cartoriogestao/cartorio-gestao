@@ -167,7 +167,9 @@ def conferir(dados: Mapping[str, Any]) -> dict:
     ultimo = _mes_valido(dados.get("ultimo_mes"), "Último mês", vazio_ok=True)
     if ultimo and ultimo < primeiro:
         raise DP.DespesaError("O último mês vem antes do primeiro.")
-    return {"descricao": descricao, "categoria": categoria, "beneficiario_nome": nome,
+    email, whatsapp = DP.conferir_contato(dados.get("contato_email"), dados.get("contato_whatsapp"))
+    return {"contato_email": email, "contato_whatsapp": whatsapp,
+            "descricao": descricao, "categoria": categoria, "beneficiario_nome": nome,
             "beneficiario_documento": documento, "forma": forma, "chave_pix": chave,
             "valor": valor or None, "dia_vencimento": dia, "antecedencia_dias": antecedencia,
             "documento_especie": especie, "primeiro_mes": primeiro, "ultimo_mes": ultimo}
@@ -178,6 +180,10 @@ def conferir(dados: Mapping[str, Any]) -> dict:
 CAMPOS = ("descricao", "categoria", "beneficiario_nome", "beneficiario_documento", "forma",
           "chave_pix", "valor", "dia_vencimento", "antecedencia_dias", "documento_especie",
           "primeiro_mes", "ultimo_mes")
+
+
+#: O contato do comprovante (relato #152): passa da recorrente à despesa de cada mês.
+CAMPOS = (*CAMPOS, "contato_email", "contato_whatsapp")
 
 
 def cadastrar(con, dados: Mapping[str, Any], *, por: str, agora: datetime) -> int:
@@ -296,7 +302,8 @@ def gerar(con, *, hoje: date, agora: datetime, por: str) -> list[int]:
             valor_centavos=int(linha["valor"]), vencimento=linha["vencimento"],
             forma=linha["forma"], codigo=linha["chave_pix"],
             descricao=descricao_do_mes(linha, linha["competencia"]),
-            categoria=linha["categoria"], documento_especie=linha["documento_especie"]))
+            categoria=linha["categoria"], documento_especie=linha["documento_especie"],
+            contato_email=linha["contato_email"], contato_whatsapp=linha["contato_whatsapp"]))
     return novas
 
 
@@ -309,7 +316,8 @@ def para_o_formulario(r: Mapping[str, Any], competencia: str) -> dict:
             "valor": reais(int(r["valor"])) if r["valor"] else "",
             "vencimento": vencimento_do_mes(r, competencia).isoformat(),
             "forma": r["forma"], "codigo": r["chave_pix"],
-            "documento_especie": r["documento_especie"]}
+            "documento_especie": r["documento_especie"],
+            "contato_email": r["contato_email"], "contato_whatsapp": r["contato_whatsapp"]}
 
 
 def origem_do_formulario(con, recorrente_id: Any, competencia: Any) -> tuple[str, str | None]:

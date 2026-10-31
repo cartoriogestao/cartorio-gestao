@@ -24,6 +24,8 @@
   <label>Documento que comprova (espécie) <input name="documento_especie" value="{{ f.documento_especie or '' }}" placeholder="Contrato, recibo, fatura" size="30" required></label>
   <label>Primeiro mês (AAAA-MM) <input name="primeiro_mes" value="{{ f.primeiro_mes or '' }}" size="8" required></label>
   <label>Último mês (AAAA-MM, em branco = sem fim) <input name="ultimo_mes" value="{{ f.ultimo_mes or '' }}" size="8"></label>
+  <label>E-mail para o comprovante <input type="email" name="contato_email" value="{{ f.contato_email or '' }}" size="40"></label>
+  <label>WhatsApp para o comprovante, com DDD <input name="contato_whatsapp" value="{{ f.contato_whatsapp or '' }}" size="20"></label>
   <button type="submit">Gravar</button>
 </form>
 {% endblock %}

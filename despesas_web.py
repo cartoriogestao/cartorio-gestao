@@ -25,6 +25,7 @@ from flask import abort, flash, redirect, render_template, request, url_for
 
 import csv_seguro as CSVS
 import despesas as DP
+import despesas_comprovante as DC
 import despesas_inter as INTER
 import despesas_recorrentes as RC
 
@@ -133,7 +134,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         categoria=f.get("categoria") or "",
                         documento_especie=f.get("documento_especie"),
                         documento_numero=f.get("documento_numero"), anexo=anexo,
-                        pasta_anexos=_pasta(), usuario_id=usuario_id())
+                        pasta_anexos=_pasta(), usuario_id=usuario_id(),
+                        contato_email=f.get("contato_email"),
+                        contato_whatsapp=f.get("contato_whatsapp"))
             except DP.DespesaError as erro:
                 flash(str(erro), "danger")
                 return render_template("despesas_nova.html", f=f, formas=DP.FORMAS,
@@ -258,12 +261,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 abort(403)
             rastro = DP.eventos(con, despesa_id)
             arquivos = DP.anexos(con, despesa_id)
+            whatsapp = DC.whatsapp_na_ficha(con, d, db.now())
             cfg = DP.configuracao(con)
         return render_template("despesas_ficha.html", d=d, rastro=rastro, arquivos=arquivos,
                                situacoes=DP.SITUACOES, formas=DP.FORMAS,
                                categorias=DP.CATEGORIAS, naturezas=DP.NATUREZAS,
                                tetos=DP.tetos(cfg), cfg=cfg, reais=DP.reais,
-                               papel=usuario_papel(), hoje=date.today().isoformat())
+                               papel=usuario_papel(), hoje=date.today().isoformat(),
+                               foi_paga=DC.foi_paga(d), whatsapp=whatsapp)
 
     @app.route("/administrativo/despesas/<int:despesa_id>/<acao>", methods=["POST"])
     @login_required
@@ -355,6 +360,44 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         flash(f"{len(r['pagas'])} enviada(s) ao Inter, {len(r['esperam'])} esperando "
               f"(teto ou configuração), {len(r['falharam'])} recusada(s).", "info")
         return redirect(url_for("despesas_lista"))
+
+    @app.route("/administrativo/despesas/<int:despesa_id>/contato", methods=["POST"])
+    @login_required
+    @roles_required(*QUEM_GERENCIA)
+    def despesas_contato(despesa_id: int):
+        try:
+            with db.transaction() as con:
+                DC.gravar_contato(con, despesa_id, email=request.form.get("contato_email"),
+                                  whatsapp=request.form.get("contato_whatsapp"),
+                                  por=usuario_nome(), agora=_agora())
+        except DP.DespesaError as erro:
+            flash(str(erro), "danger")
+            return _ficha(despesa_id)
+        audit("DESPESA_CONTATO", "dp_despesas", despesa_id, {})
+        flash("Contato gravado.", "success")
+        return _ficha(despesa_id)
+
+    @app.route("/administrativo/despesas/<int:despesa_id>/comprovante", methods=["POST"])
+    @login_required
+    @roles_required(*QUEM_GERENCIA)
+    def despesas_comprovante(despesa_id: int):
+        """O clique que manda o comprovante. A rede fica fora da transação."""
+        canal = request.form.get("canal")
+        try:
+            if canal == "email":
+                DC.enviar_email(db, despesa_id, por=usuario_nome(), agora=_agora(),
+                                anexo_id=request.form.get("anexo_id"))
+            elif canal == "whatsapp":
+                DC.enviar_whatsapp(db, despesa_id, por=usuario_nome(), agora=_agora(),
+                                   agora_texto=db.now())
+            else:
+                abort(400)
+        except DP.DespesaError as erro:
+            flash(str(erro), "danger")
+            return _ficha(despesa_id)
+        audit("DESPESA_COMPROVANTE", "dp_despesas", despesa_id, {"canal": canal})
+        flash("Comprovante enviado.", "success")
+        return _ficha(despesa_id)
 
     @app.route("/administrativo/despesas/relatorio")
     @login_required

@@ -68,6 +68,7 @@ from ri_mapa_onr import init_mapa_onr_schema
 from apostila import init_apostila_schema
 from livro_diario import init_livro_diario_schema
 from despesas import init_despesas_schema
+from despesas_comprovante import init_contato_schema
 from despesas_recorrentes import init_recorrentes_schema
 from cobranca import init_cobranca_schema
 from carne_leao import init_carne_leao_schema
@@ -848,6 +849,7 @@ class Database:
         # As despesas recorrentes (28/10/2026): a despesa do mês aponta para
         # elas pela chave de origem, sem chave estrangeira.
         init_recorrentes_schema(con)
+        init_contato_schema(con)
         # A COBRANÇA POR BOLETO (27/10/2026): Inter e Unicred. O depósito
         # prévio que ela cria é o do caixa; `protocolo_id` é vínculo sem FK.
         init_cobranca_schema(con)

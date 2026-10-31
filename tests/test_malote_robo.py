@@ -340,3 +340,35 @@ def test_login_so_de_numeros_na_caixa_do_nome_diz_onde_vai_cada_um():
     assert "DIREITA" in str(erro.value) and "00011122233" not in str(erro.value)
     assert COFRE._campos_limpos({"usuario": "00011122233", "senha": "x"}) == {
         "usuario": "00011122233", "senha": "x"}
+
+
+def test_o_cpf_com_mascara_vira_so_numeros_e_outro_login_fica():
+    import malote_robo_web as W
+    assert W.login_limpo(" 000.111.222-33 ") == "00011122233"
+    assert W.login_limpo("00011122233") == "00011122233"
+    assert W.login_limpo("Fulano.1") == "Fulano.1"
+    assert W.login_limpo("") == ""
+
+
+def test_o_formulario_do_malote_guarda_o_cpf_como_usuario(monkeypatch):
+    """30/10/2026: «sistema nao aceita meu cpf como login do cadastro do malote»."""
+    from flask import Flask
+
+    import malote_robo_web as W
+    app = Flask(__name__)
+    app.secret_key = "teste"
+    app.extensions["usuario_nome"] = lambda: "mario"
+    auditoria = []
+    cofre = CofreNaMemoria()
+    cofre.instalar(monkeypatch)
+    monkeypatch.setattr("centrais_cred.pasta_de_dados", lambda: Path("."))
+
+    def so_passa(*_):
+        return lambda f: f
+    W.registrar_rotas(app, None, None, so_passa, lambda *a: auditoria.append(a))
+    with app.test_client() as c:
+        r = c.post("/automacao/malote/credencial",
+                   data={"login_malote": "000.111.222-33", "senha_malote": "segredo"})
+    assert r.status_code == 302
+    assert cofre.itens[MR.CREDENCIAL]["campos"] == {"usuario": "00011122233", "senha": "segredo"}
+    assert "segredo" not in repr(auditoria) and "00011122233" not in repr(auditoria)

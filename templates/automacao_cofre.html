@@ -42,6 +42,8 @@
     <label>Nome (sem espaço; o mesmo nome substitui) <input name="nome" required placeholder="banco_cobranca"></label>
     <label>Tipo <select name="tipo">{% for t in tipos %}<option value="{{ t }}">{{ nome_do_tipo[t] }}</option>{% endfor %}</select></label>
     <label>Validade (opcional — o processo «Validade do cofre» avisa 90 dias antes) <input type="date" name="validade"></label>
+    <p class="small">O login do malote tem tela própria:
+      <a href="{{ url_for('malote_robo_codigo') }}">Malote: login e código de dois fatores</a>.</p>
     <fieldset><legend>Campos digitados</legend>
       <p class="small muted">À ESQUERDA vai o NOME do campo, em minúsculas (ex.: usuario, senha, client_id,
         client_secret); À DIREITA, o valor — o login, o CPF, a senha. As duas primeiras linhas já vêm com

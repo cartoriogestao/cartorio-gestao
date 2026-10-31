@@ -147,8 +147,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if rid.isdigit() and comp and _so_minhas() is None:
             with db.connect() as con:
                 r = RC.recorrente(con, int(rid))
+                feriados = RC.feriados_da_casa(con)
             if r:
-                preenchido = RC.para_o_formulario(r, comp[:7])
+                preenchido = RC.para_o_formulario(r, comp[:7], feriados)
         return render_template("despesas_nova.html", f=preenchido, formas=DP.FORMAS,
                                categorias=DP.CATEGORIAS, naturezas=DP.NATUREZAS)
 
@@ -271,9 +272,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     def despesas_acao(despesa_id: int, acao: str):
         f, papel = request.form, usuario_papel()
         try:
-            if acao in ("autorizar", "devolver", "cancelar", "pago_fora", "documento"):
+            if acao in ("autorizar", "devolver", "cancelar", "pago_fora", "documento",
+                        "ajustar_valor"):
                 with db.transaction() as con:
-                    if acao == "autorizar":
+                    if acao == "ajustar_valor":
+                        DP.ajustar_valor(con, despesa_id, agora=_agora(), por=usuario_nome(),
+                                         papel=papel,
+                                         valor_centavos=DP.centavos_da_tela(f.get("valor")))
+                    elif acao == "autorizar":
                         DP.autorizar(con, despesa_id, agora=_agora(), por=usuario_nome(),
                                      papel=papel, acima_do_teto=f.get("acima_do_teto") == "1",
                                      motivo_divergencia=f.get("motivo"))

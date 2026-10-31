@@ -34,7 +34,7 @@
 {% if layout_novo %}{{ abre('cl-prazo', 'Prazo e fundos', a_nota_do_prazo) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel"><h2>Prazo e fundos</h2>
 {% endif %}
-  <p class="small">O depósito prévio conta como receita {{ modos['NO_USO']|lower }}.</p>
+  <p class="small">O depósito prévio conta como receita {{ modos['NO_USO'][:1]|lower }}{{ modos['NO_USO'][1:] }}.</p>
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="acao" value="geral">

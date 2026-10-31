@@ -196,6 +196,20 @@ def test_despesa_a_classificar_abre_o_quadro_dela_antes_dos_numeros():
     assert not leitor.quadro("cl-numeros")["aberto"]
 
 
+@pytest.mark.parametrize("novo", [True, False])
+def test_despesa_sem_sugestao_nao_vem_marcada_com_a_primeira_opcao(novo):
+    sem_sugestao = {**_despesa(1), "sugerida": "", "sugere_dedutivel": None}
+    html = _carne(novo=novo, despesas=[sem_sugestao])
+    assert html.count('<option value="">— escolha —</option>') == 2
+
+
+@pytest.mark.parametrize("novo", [True, False])
+def test_despesa_com_sugestao_continua_vindo_com_a_sugestao(novo):
+    html = _carne(novo=novo, despesas=[_despesa(1)])
+    assert '<option value="">— escolha —</option>' not in html
+    assert re.search(r'<option value="1"\s+selected>dedutível</option>', html)
+
+
 def test_a_despesa_a_classificar_vem_primeiro_na_lista():
     html = _carne(**CARNE_CHEIO)
     assert html.index("ENSAIO-despesa 2") < html.index("ENSAIO-despesa 1<")

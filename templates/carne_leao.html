@@ -161,8 +161,10 @@
         {% if layout_novo and d.dedutivel is not none %}<details class="cg-cl-remarcar"><summary>Mudar a marcação</summary>{% endif %}
         <form method="post" action="{{ url_for('carne_leao_marcar', ld_despesa_id=d.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="mes" value="{{ mes }}">
-          <select name="categoria_fiscal">{% for k, v in categorias.items() %}<option value="{{ k }}" {% if k == (d.categoria_fiscal or d.sugerida) %}selected{% endif %}>{{ v[0] }}</option>{% endfor %}</select>
-          <select name="dedutivel"><option value="1" {% if d.dedutivel or (d.dedutivel is none and d.sugere_dedutivel) %}selected{% endif %}>dedutível</option>
+          {# SEM SUGESTÃO, NADA VEM ESCOLHIDO: sem isto, a despesa abria com a primeira categoria e «dedutível», e
+             um clique em «Marcar» declarava ao imposto o que ninguém leu. O domínio já recusa o vazio. #}
+          <select name="categoria_fiscal">{% if not (d.categoria_fiscal or d.sugerida) %}<option value="">— escolha —</option>{% endif %}{% for k, v in categorias.items() %}<option value="{{ k }}" {% if k == (d.categoria_fiscal or d.sugerida) %}selected{% endif %}>{{ v[0] }}</option>{% endfor %}</select>
+          <select name="dedutivel">{% if d.dedutivel is none and d.sugere_dedutivel is none %}<option value="">— escolha —</option>{% endif %}<option value="1" {% if d.dedutivel or (d.dedutivel is none and d.sugere_dedutivel) %}selected{% endif %}>dedutível</option>
             <option value="0" {% if d.dedutivel is sameas false or (d.dedutivel is none and d.sugere_dedutivel is sameas false) %}selected{% endif %}>não dedutível</option></select>
           <button type="submit">Marcar</button></form>{% if layout_novo and d.dedutivel is not none %}</details>{% endif %}{% endif %}</td></tr>{% endmacro %}
 

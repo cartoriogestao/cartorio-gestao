@@ -1399,6 +1399,14 @@ Em todas:
 | Título de Protesto | Fases | Apontamento · Intimação · Desfecho. De apoio: Vida do título, Emolumentos, Imagem e, para o administrador, Averbação | no que espera ação; título encerrado abre na Vida do título |
 | Título do RCPJ e do RTD | Fases | Apresentação · Qualificação · Registro. De apoio: Central e, para o oficial, Encerrar, enquanto o título não saiu | no que espera ação: apresentado ou com exigência, na Qualificação; qualificado ou registrado, no Registro (para o balcão, o qualificado abre na Qualificação); devolvido ou cancelado, na Apresentação |
 | Registro do Livro 3 | Abas | Resumo · Atos (quando há) · Teor e imagem · Partes · Minutas (quando há) · Revisar · Certidões · Corrigir (para o oficial) · Lançar (com o registro ativo) | no Resumo, que começa por «O que espera ação» |
+| Prenotar, no Protocolo | Passos | Apresentante e destino · O título e o selo | no primeiro passo |
+| Título novo de Protesto | Passos | O título · Devedor · Apresentante e cedente. O segundo devedor vem recolhido | no primeiro passo |
+| Abrir matrícula | Passos | O imóvel · Descrição · Proprietário · Abertura e teor. Ficha de acervo não tem Proprietário | no primeiro passo |
+| Novo registro do Livro 3 | Passos | O título · Teor · Partes · Selo e cobrança | no primeiro passo |
+| Corrigir a matrícula | Partes, sem número | Identificação · Imóvel · Rurais e fiscais · Observação. O motivo fica sempre à vista | em Identificação |
+| Abrir habilitação de casamento | Passos | O casamento · Os nubentes | no primeiro passo |
+| Nova retificação de área, no RI | Passos | O processo · Requerente e profissional · Área e georreferenciamento | no primeiro passo |
+| Nova retificação, no Registro Civil | Passos | Qual dos três · Como o pedido chegou · Quem pede, e o quê | no primeiro passo |
 
 **Listas e Painel de Notas.** Procurações, fins previdenciários, substabelecimentos,
 revogações, renúncias e testamentos têm **Lavrar** no alto, que abre o ato direto, e
@@ -1415,6 +1423,14 @@ ficam mesmo vazias, porque é nelas que se cria o primeiro.
 **No título de Protesto, o Desfecho** traz um quadro por ato que cabe naquela situação.
 Só um vem aberto: o protesto, quando cabe. Os outros abrem com um clique. Os avisos do
 alto, como selo que falta, pedido da CRA e sustação, saem em todas as abas.
+
+**Título novo, Abrir matrícula, Livro 3 e Corrigir a matrícula:** o botão de gravar fica numa barra
+presa ao pé da tela. Antes do último passo, quem fica azul é **Avançar**. Se você gravar antes, um campo
+recusado abre o passo dele, com o cursor nele. Se o proprietário, o apresentante ou o item da tabela
+estiverem vazios, a barra avisa, mas não impede. Os botões de rascunho ficam na linha do Voltar.
+
+**Prenotar, Abrir habilitação e as duas retificações:** o botão de gravar fica no último passo, e
+**Salvar rascunho** e **Não termina hoje** ficam sempre à vista.
 
 **No título do RCPJ e do RTD**, o documento fica na Qualificação, ao lado da decisão. O registro
 é ato do oficial: para o balcão, a fase Registro diz isso, e leva de volta à Qualificação.
@@ -1459,6 +1475,45 @@ sem dados e as séries sem número. **As Configurações continuam sendo um form
 configurações** fica à vista e grava todos os quadros acima dele; Centrais, Proteção do backup e
 Revisão das transcrições têm botão próprio. O endereço abre o quadro
 (`/configuracoes#cfg-centrais`), e depois de gravar a tela volta com os mesmos quadros abertos.
+
+**Protocolo e DOI.** No **Protocolo**, os títulos com prazo vencido ou a até 5 dias úteis de vencer
+ficam ao lado de **Prenotar novo título**, o mais atrasado primeiro. Os outros em aberto e o histórico
+ficam recolhidos, e a busca traz o resultado no alto. Na **DOI**, o título do quadro dos meses diz
+quantos devem satisfação, quantos venceram e quais ainda estão no prazo. Logo abaixo vem o mês
+escolhido, com o que falta antes de **Gerar o arquivo**, e os atos parados vêm primeiro. **Como efetuar
+a notificação**, no usucapião, não recolhe nada: os passos ficam em colunas.
+
+**Telas de dinheiro, chaves e automação.** Carnê-leão e a configuração dele, NFS-e, Configurações que
+cobram a equipe, Automação, Selador e Ajuda: configurar. O título de cada quadro diz como ele está, por
+exemplo, «15 despesa(s) · 8 a classificar». **O título nunca mostra senha, chave, usuário, endereço,
+documento ou impressão digital:** diz só se estão lá.
+
+- **Carnê-leão:** despesa a classificar e entrada sem resposta vêm primeiro, e as outras ficam em **As
+  já marcadas**. Sem pendência, abre **O mês em números**.
+- **NFS-e:** **O que falta** fica em cima, o quadro de onde vem a falta abre sozinho, e **Gravar** grava
+  os cinco quadros de dados, abertos ou recolhidos.
+- **Configurações que cobram a equipe:** a caixa **Afirmo** fica no mesmo quadro do botão.
+- **Automação:** **Situação** e **Rodar agora** ficam à vista, e **Rodadas** abre sozinha quando há
+  problema em aberto.
+- **Selador:** o que falta e **Testar a conexão** ficam em cima.
+- **Ajuda: configurar:** o provedor em uso sem chave avisa no alto e abre **As chaves de API**.
+
+**Protesto e consultas.** CRA pela API, Avisos de intimação, Repasses, Certidão, Certidão eletrônica,
+Remessa do SIRC, ficha do processo, CPF do registrado, Modelos de atos, Livros obrigatórios, Selos
+emitidos e Carga do Next Cloud SAS. O título de cada quadro diz como ele está, por exemplo, «3 aviso(s) ·
+2 sem comprovante».
+
+- **Avisos:** abre o primeiro quadro que tem o que fazer, e os botões do roteiro, como **Avisos
+  entregues e comprovantes**, abrem o quadro certo.
+- **Repasses:** a rotina ou o robô com erro abre sozinho.
+- **Certidão:** o teor fica à vista ao lado dos dados, e só o cancelamento se recolhe.
+- **Certidão eletrônica:** o que já saiu do registro vem antes de **Criar na Central**.
+- **SIRC:** os botões de cada lote vêm primeiro, e o que ficou retido vem aberto.
+- **Processo:** **Registrar andamento** fica à vista. A pasta abre quando tem peça, as evidências abrem
+  quando a tarefa as exige, e o status, o vencimento e o responsável ficam em **Dados do processo**.
+- **CPF:** cada nascimento é um quadro, e **Abrir todos** abre a lista inteira.
+- **Modelos de atos:** registros e averbações ficam em duas colunas.
+- **Livros obrigatórios:** o que falta vem primeiro.
 
 **As outras telas** abrem na moldura nova, do jeito de sempre.
 

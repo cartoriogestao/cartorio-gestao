@@ -1,9 +1,42 @@
 {% extends "base.html" %}
 {% block title %}Preencher o {{ modelo.nome|lower }}{% endblock %}
 {% block content %}
-<h1>{{ modelo.nome }}</h1>
+{# NO LAYOUT NOVO, O RESULTADO VEM ANTES DO FORMULÁRIO — 30/10/2026. «Ver como fica» respondia a seis mil
+   pixels do botão, e quem clicava não via nada mudar. Os campos ficam em colunas, a explicação de cada
+   um fica a um clique, e o resto da tela fica recolhido. Nenhum campo fica escondido, e por isso não
+   há campo que o navegador recuse sem ter onde mostrar. As peças são as mesmas nos dois layouts. #}
+{% macro controle(c) %}
+          {% if c.nome in vem_de_fora %}
+            {# Relato #123 (15/10/2026): quem assina chega preenchido, pela
+               mesma regra da lavratura, e não se digita — relato #65. #}
+            <input type="text" name="{{ c.nome }}" size="52" readonly
+                   class="quem-assina" value="{{ valores.get(c.nome, '') }}">
+          {% elif c.tipo == 'sexo' %}
+            <select name="{{ c.nome }}">
+              <option value="">—</option>
+              <option value="masculino">masculino</option>
+              <option value="feminino">feminino</option>
+            </select>
+          {% elif c.nome.startswith('frase_') or 'qualificacao' in c.nome
+                  or 'filiacao' in c.nome %}
+            <textarea name="{{ c.nome }}" rows="2" cols="72"
+              >{{ valores.get(c.nome, '') }}</textarea>
+          {% else %}
+            <input type="text" name="{{ c.nome }}" size="52"
+                   value="{{ valores.get(c.nome, '') }}">
+          {% endif %}
+{% endmacro %}
 
-<div class="card">
+{% macro ajuda_do_campo(c) %}
+          {% if c.nome in vem_de_fora %}Vem de quem está na tela, como na
+            lavratura: o nome e a função do seu cadastro de usuário. Não se
+            escolhe aqui — para corrigir, ajuste o cadastro.<br>{% endif %}
+          {% if c.de_onde %}Vem de: {{ c.de_onde|forte }}.{% endif %}
+          {% if c.artigo %} <em>{{ c.artigo }}</em>.{% endif %}
+          {% if c.ajuda %}<br>{{ c.ajuda|forte }}{% endif %}
+{% endmacro %}
+
+{% set de_onde_vem_o_texto %}
   <p><strong>Livro {{ modelo.livro }}</strong>
      <span class="small muted">— {{ modelo.artigo }}</span></p>
   {% if modelo.conferido_no_papel %}
@@ -24,8 +57,9 @@
       regulamentares.
     </p>
   {% endif %}
-</div>
+{% endset %}
 
+{% set o_modelo_nao_bate %}
 {% if faltas %}
 <div class="alerta danger">
   <p><strong>O modelo e o formulário não batem:</strong></p>
@@ -34,79 +68,9 @@
      assinado; campo sem claro é pergunta que não vai a lugar nenhum.</p>
 </div>
 {% endif %}
+{% endset %}
 
-<form method="post">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-
-  <div class="card">
-    {% for c in campos %}
-      <p>
-        <label><strong>{{ c.rotulo }}</strong>
-          {% if c.exigido %}<span class="danger">*</span>{% endif %}<br>
-          {% if c.nome in vem_de_fora %}
-            {# Relato #123 (15/10/2026): quem assina chega preenchido, pela
-               mesma regra da lavratura, e não se digita — relato #65. #}
-            <input type="text" name="{{ c.nome }}" size="52" readonly
-                   class="quem-assina" value="{{ valores.get(c.nome, '') }}">
-          {% elif c.tipo == 'sexo' %}
-            <select name="{{ c.nome }}">
-              <option value="">—</option>
-              <option value="masculino">masculino</option>
-              <option value="feminino">feminino</option>
-            </select>
-          {% elif c.nome.startswith('frase_') or 'qualificacao' in c.nome
-                  or 'filiacao' in c.nome %}
-            <textarea name="{{ c.nome }}" rows="2" cols="72"
-              >{{ valores.get(c.nome, '') }}</textarea>
-          {% else %}
-            <input type="text" name="{{ c.nome }}" size="52"
-                   value="{{ valores.get(c.nome, '') }}">
-          {% endif %}
-        </label>
-        <span class="small muted">
-          {% if c.nome in vem_de_fora %}Vem de quem está na tela, como na
-            lavratura: o nome e a função do seu cadastro de usuário. Não se
-            escolhe aqui — para corrigir, ajuste o cadastro.<br>{% endif %}
-          {% if c.de_onde %}Vem de: {{ c.de_onde|forte }}.{% endif %}
-          {% if c.artigo %} <em>{{ c.artigo }}</em>.{% endif %}
-          {% if c.ajuda %}<br>{{ c.ajuda|forte }}{% endif %}
-        </span>
-      </p>
-    {% endfor %}
-  </div>
-
-  <p>
-    <button class="button" name="acao" value="ver">Ver como fica</button>
-    <a class="button secondary" href="{{ url_for('rcpn_assentos') }}">Voltar</a>
-  </p>
-</form>
-
-{# A SAÍDA DA TELA — relato #123, 15/10/2026: «não chega a lugar algum».
-   Esta tela é a VITRINE do texto do termo: ela não lavra e não grava, porque o
-   teor do assento se monta dos campos do próprio assento na lavratura. Os dois
-   caminhos que saem daqui são os dois motivos de alguém abri-la: lavrar o ato,
-   ou mudar o texto que ele vai ter. #}
-<div class="card">
-  <h2 style="margin-top:0">E agora?</h2>
-  <p class="small muted">
-    Esta tela mostra <strong>como o termo fica</strong> — ela não grava nada.
-    O texto que vai ao livro é montado com <strong>este mesmo modelo</strong> e
-    com os dados do assento, na hora da lavratura.
-  </p>
-  <p>
-    {% if slug_novo %}
-      <a class="button" href="{{ url_for('rcpn_assento_novo', especie_url=slug_novo) }}">Lavrar um registro com este termo</a>
-    {% else %}
-      <a class="button" href="{{ url_for('rcpn_assento_novo') }}">Lavrar um registro com este termo</a>
-    {% endif %}
-    <a class="button secondary" href="{{ url_for('modelos', editar=chave_do_catalogo) }}">Mudar o texto deste termo</a>
-  </p>
-  <p class="small muted">
-    «Mudar o texto» abre o catálogo de modelos da casa: o que for gravado lá
-    vale para o próximo termo lavrado, e esta tela passa a mostrá-lo.
-  </p>
-</div>
-
+{% set corpo_com_erro %}
 {% if aviso_corpo %}
 <div class="alerta danger">
   <p><strong>O texto editado deste termo tem um erro:</strong> {{ aviso_corpo }}</p>
@@ -115,7 +79,9 @@
      padrão do sistema.</p>
 </div>
 {% endif %}
+{% endset %}
 
+{% set como_o_termo_fica %}
 {% if montado %}
 <div class="card" style="background:#fff">
   <h2 style="margin-top:0">Como o termo fica</h2>
@@ -130,10 +96,18 @@
   {% endif %}
 </div>
 {% endif %}
+{% endset %}
 
-{% if conferivel %}
-<div class="card">
-  <h2 style="margin-top:0">Conferir com um assento real</h2>
+{% set botoes_da_saida %}
+    {% if slug_novo %}
+      <a class="button" href="{{ url_for('rcpn_assento_novo', especie_url=slug_novo) }}">Lavrar um registro com este termo</a>
+    {% else %}
+      <a class="button" href="{{ url_for('rcpn_assento_novo') }}">Lavrar um registro com este termo</a>
+    {% endif %}
+    <a class="button secondary" href="{{ url_for('modelos', editar=chave_do_catalogo) }}">Mudar o texto deste termo</a>
+{% endset %}
+
+{% set conferir_com_assento %}
   <p class="small muted">
     Preencha o modelo com um assento de verdade, para ver se ele descreve o
     ato certo. <strong>Conferir modelo com dado inventado não confere nada</strong>:
@@ -176,12 +150,9 @@
       <p class="small"><strong>O assento preenche o modelo inteiro.</strong></p>
     {% endif %}
   {% endif %}
-</div>
-{% endif %}
+{% endset %}
 
-{% if tipos %}
-<div class="card">
-  <h2 style="margin-top:0">Os teores deste ato</h2>
+{% set os_teores %}
   <p class="small muted">
     Um ato tem <strong>vários teores</strong>, e não um: na tela de lavratura do
     sistema antigo isso é o campo <em>Tipo de Teor</em>. Abaixo estão os deste ato —
@@ -212,15 +183,166 @@
     determinou em 30/08/2026. Cada um tem, ao lado, o que ainda impede: o do
     registro tardio esperava a regra das testemunhas, que ele já decidiu.
   </p>
-</div>
-{% endif %}
+{% endset %}
 
-<div class="card">
+{% set de_onde_vem_os_campos %}
   <p class="small muted">
     <strong>Os campos deste formulário saem do próprio modelo</strong>, e não de
     uma lista escrita ao lado: duas listas divergem no primeiro conserto, e a
     tela passaria a perguntar uma coisa e o texto a esperar outra. É a lição da
     <code>normalizar_nome</code>, aplicada ao formulário.
   </p>
+{% endset %}
+
+<h1>{{ modelo.nome }}</h1>
+
+{% if layout_novo %}
+<style>
+  .cg-termo-campos{display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:12px 18px;align-items:start}
+  .cg-termo-campo label{display:block;margin:0}
+  .cg-termo-campo input,.cg-termo-campo select,.cg-termo-campo textarea{width:100%;margin-top:4px}
+  .cg-termo-campo details{margin-top:2px;font-size:12px;color:var(--muted)}
+  .cg-termo-campo summary{cursor:pointer}
+  .cg-termo-acoes{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
+  details.cg-termo-grupo{padding:10px 16px;margin-bottom:8px}
+  details.cg-termo-grupo>summary{margin:0}
+  details.cg-termo-grupo>summary small{font-weight:400;margin-left:8px}
+  details.cg-termo-grupo[open]>summary{margin-bottom:10px}
+  span.danger,p.danger{color:var(--danger)}
+  .alerta.danger{border:1px solid var(--danger);border-left-width:4px;border-radius:10px;padding:10px 14px;margin-bottom:12px}
+</style>
+<p class="small muted">Livro {{ modelo.livro }} — {{ modelo.artigo }}. Esta tela mostra <strong>como o termo fica</strong>, e não grava nada.</p>
+{{ o_modelo_nao_bate }}
+{{ corpo_com_erro }}
+{{ como_o_termo_fica }}
+{% if conferivel and numero_conf %}
+<details class="panel cg-termo-grupo" open>
+  <summary>Conferir com um assento real</summary>
+  {{ conferir_com_assento }}
+</details>
+{% endif %}
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <div class="card">
+    <div class="cg-termo-campos">
+    {% for c in campos %}
+      <div class="cg-termo-campo">
+        <label><strong>{{ c.rotulo }}</strong>
+          {% if c.exigido %}<span class="danger">*</span>{% endif %}
+          {{ controle(c) }}
+        </label>
+        {% if c.nome in vem_de_fora or c.de_onde or c.artigo or c.ajuda %}
+        <details>
+          <summary>De onde vem</summary>
+          {{ ajuda_do_campo(c) }}
+        </details>
+        {% endif %}
+      </div>
+    {% endfor %}
+    </div>
+  </div>
+
+  <div class="cg-termo-acoes">
+    <button class="button primary" name="acao" value="ver">Ver como fica</button>
+    {{ botoes_da_saida }}
+    <a class="button secondary" href="{{ url_for('rcpn_assentos') }}">Voltar</a>
+  </div>
+</form>
+<p class="small muted">
+  O texto que vai ao livro é montado com <strong>este mesmo modelo</strong> e com os dados do assento, na hora da
+  lavratura. «Mudar o texto» abre o catálogo de modelos da casa: o que for gravado lá vale para o próximo termo lavrado.
+</p>
+
+{% if conferivel and not numero_conf %}
+<details class="panel cg-termo-grupo">
+  <summary>Conferir com um assento real</summary>
+  {{ conferir_com_assento }}
+</details>
+{% endif %}
+{% if tipos %}
+<details class="panel cg-termo-grupo">
+  <summary>Os teores deste ato <small>{{ tipos | length }}</small></summary>
+  {{ os_teores }}
+</details>
+{% endif %}
+<details class="panel cg-termo-grupo">
+  <summary>De onde vêm este texto e estes campos</summary>
+  {{ de_onde_vem_o_texto }}
+  {{ de_onde_vem_os_campos }}
+</details>
+{% else %}
+<div class="card">
+{{ de_onde_vem_o_texto }}
 </div>
+
+{{ o_modelo_nao_bate }}
+
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <div class="card">
+    {% for c in campos %}
+      <p>
+        <label><strong>{{ c.rotulo }}</strong>
+          {% if c.exigido %}<span class="danger">*</span>{% endif %}<br>
+{{ controle(c) }}
+        </label>
+        <span class="small muted">
+{{ ajuda_do_campo(c) }}
+        </span>
+      </p>
+    {% endfor %}
+  </div>
+
+  <p>
+    <button class="button" name="acao" value="ver">Ver como fica</button>
+    <a class="button secondary" href="{{ url_for('rcpn_assentos') }}">Voltar</a>
+  </p>
+</form>
+
+{# A SAÍDA DA TELA — relato #123, 15/10/2026: «não chega a lugar algum».
+   Esta tela é a VITRINE do texto do termo: ela não lavra e não grava, porque o
+   teor do assento se monta dos campos do próprio assento na lavratura. Os dois
+   caminhos que saem daqui são os dois motivos de alguém abri-la: lavrar o ato,
+   ou mudar o texto que ele vai ter. #}
+<div class="card">
+  <h2 style="margin-top:0">E agora?</h2>
+  <p class="small muted">
+    Esta tela mostra <strong>como o termo fica</strong> — ela não grava nada.
+    O texto que vai ao livro é montado com <strong>este mesmo modelo</strong> e
+    com os dados do assento, na hora da lavratura.
+  </p>
+  <p>
+{{ botoes_da_saida }}
+  </p>
+  <p class="small muted">
+    «Mudar o texto» abre o catálogo de modelos da casa: o que for gravado lá
+    vale para o próximo termo lavrado, e esta tela passa a mostrá-lo.
+  </p>
+</div>
+
+{{ corpo_com_erro }}
+
+{{ como_o_termo_fica }}
+
+{% if conferivel %}
+<div class="card">
+  <h2 style="margin-top:0">Conferir com um assento real</h2>
+{{ conferir_com_assento }}
+</div>
+{% endif %}
+
+{% if tipos %}
+<div class="card">
+  <h2 style="margin-top:0">Os teores deste ato</h2>
+{{ os_teores }}
+</div>
+{% endif %}
+
+<div class="card">
+{{ de_onde_vem_os_campos }}
+</div>
+{% endif %}
 {% endblock %}

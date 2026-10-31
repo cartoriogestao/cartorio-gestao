@@ -117,7 +117,7 @@
           · <span data-wa-status>{{ c.status }}</span>
           · <span data-wa-modo data-modo="{{ c.modo }}"
                   data-texto-pessoa="com pessoa"
-                  data-texto-ia="{% if ia.ia_ligada %}com IA{% else %}atendente com IA desligado{% endif %}">{% if c.modo == 'pessoa' %}<strong>com pessoa</strong>{% if c.passagem_motivo %} ({{ c.passagem_motivo }}){% endif %}{% elif ia.ia_ligada %}com IA{% else %}atendente com IA desligado{% endif %}</span>
+                  data-texto-ia="{% if ia.ia_ligada %}com IA{% else %}atendente com IA desligado{% endif %}">{% if c.modo == 'pessoa' %}<strong>com pessoa</strong>{% elif ia.ia_ligada %}com IA{% else %}atendente com IA desligado{% endif %}</span>
         </div>
         <div class="small wa-contato">
           {% if q.cartoes or q.protocolos %}
@@ -152,6 +152,12 @@
         {% endif %}
       </div>
     </header>
+
+    {#- O RESUMO PARA QUEM ATENDE (30/10/2026): por que a conversa veio para uma pessoa.
+        Nunca vai ao cliente. O texto pode ter vindo do modelo: sai pelo escape normal. -#}
+    {% if c.modo == 'pessoa' and c.passagem_motivo %}
+    <p class="wa-resumo-passagem small" data-wa-resumo><strong>Resumo:</strong> {{ c.passagem_motivo }}</p>
+    {% endif %}
 
     {#- OS DETALHES NUMA JANELINHA FLUTUANTE (segunda revisão do #73, 27/10/2026):
         a seta no centro do topo da conversa abre um cartão por cima das

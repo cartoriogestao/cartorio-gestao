@@ -48,8 +48,12 @@ def _abrir_ato(c, tipo: str, modelo: str) -> str:
 
 
 def _conteudo(html: str) -> str:
-    """Só a ficha: a barra, o Novo e o sino têm formulários próprios em cada moldura."""
-    return html[html.index('class="content"'):]
+    """Só a ficha: a barra, o Novo e o sino têm formulários próprios em cada
+    moldura — e a nova ainda põe, depois do `</main>`, os formulários de busca
+    de cada módulo (`nav.procurar`). A ficha acaba no `</main>`."""
+    corpo = html[html.index('class="content"'):]
+    fim = corpo.find("</main>")
+    return corpo if fim < 0 else corpo[:fim]
 
 
 def _o_que_o_servidor_recebe(html: str) -> tuple[set, set]:

@@ -134,8 +134,11 @@ def do_registro(con, registro_id: int, *,
 
 
 def abertas(con) -> list[dict]:
-    """Tudo o que espera conferência no Livro 3, da casa inteira. Só lê."""
+    """Tudo o que espera conferência no Livro 3, da casa inteira. Só lê.
+
+    O mais recente em cima (of-0150).
+    """
     return banco(con).ler(
         """SELECT r.*, g.numero AS registro_numero
              FROM ra_revisoes r JOIN ra_registros g ON g.id = r.registro_id
-            WHERE r.situacao=%s ORDER BY r.id""", (ABERTA,))
+            WHERE r.situacao=%s ORDER BY r.id DESC""", (ABERTA,))

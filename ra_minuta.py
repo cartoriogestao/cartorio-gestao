@@ -373,11 +373,13 @@ def a_revisar(con: sqlite3.Connection) -> list[dict]:
 
     É o que o painel dos inacabados pergunta — e é por ela que uma minuta
     esquecida num registro que ninguém abre volta a aparecer.
+
+    O mais recente em cima (of-0150).
     """
     linhas = banco(con).ler(
         """SELECT m.*, r.numero registro_numero
              FROM ra_minutas m JOIN ra_registros r ON r.id = m.registro_id
-            WHERE m.situacao=%s ORDER BY m.id""", (A_REVISAR,))
+            WHERE m.situacao=%s ORDER BY m.id DESC""", (A_REVISAR,))
     return [dict(x) for x in linhas]
 
 

@@ -192,7 +192,7 @@
 {% endif %}
 
 {# =============================================== o Indicador Pessoal #}
-{% if layout_novo %}{{ abre('nc-indicador', '1. Indicador Pessoal — a carga completa', (q.indicador_pessoal.vinculos ~ ' vínculo(s) · ' ~ q.indicador_pessoal.sem_documento ~ ' sem documento'), aberto=true) }}<div class="cg-quadro-corpo">{% else %}
+{% if layout_novo %}{{ abre('nc-pessoal', '1. Indicador Pessoal — a carga completa', (q.indicador_pessoal.vinculos ~ ' vínculo(s) · ' ~ q.indicador_pessoal.sem_documento ~ ' sem documento'), aberto=true) }}<div class="cg-quadro-corpo">{% else %}
 <section class="cartao">
   <h2>1. Indicador Pessoal — a carga completa</h2>
 {% endif %}

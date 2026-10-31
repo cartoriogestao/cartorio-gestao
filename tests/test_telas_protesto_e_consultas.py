@@ -689,14 +689,14 @@ SEM_IMAGEM = [{"id": 1, "numero": 7, "livro": "2", "folha": "1", "tipo_ficha": "
 def test_next_cloud_a_conferencia_e_o_xml_ficam_a_vista_e_o_resto_recolhe():
     html = _next_cloud(imagens=IMAGENS, faltando=SEM_IMAGEM, sem_imagem=1)
     q = _ler(html).quadros
-    assert q == {"nc-tres-coisas": False, "nc-formulario": False, "nc-base": True, "nc-indicador": True, "nc-imagens": False, "nc-sem-imagem": False, "nc-caminho": False}
+    assert q == {"nc-tres-coisas": False, "nc-formulario": False, "nc-base": True, "nc-pessoal": True, "nc-imagens": False, "nc-sem-imagem": False, "nc-caminho": False}
     _antes(html, "São três coisas", "O formulário de adesão", "A base está completa?", "1. Indicador Pessoal", "Gerar o XML", "2. Imagens do Livro 2",
            "As matrículas sem imagem", "O caminho, na ordem")
 
 
 def test_next_cloud_o_titulo_ja_responde_a_pergunta_do_oficial():
     html = _next_cloud()
-    assert "aderir não desliga o indicador real: ele continua pela API" in html[html.index('id="nc-tres-coisas"'):].split("</summary>")[0]
+    assert "aderir não desliga o Indicador Real: ele continua pela API" in html[html.index('id="nc-tres-coisas"'):].split("</summary>")[0]
     assert "é uma declaração assinada com o seu e-CPF" in html[html.index('id="nc-formulario"'):].split("</summary>")[0]
 
 

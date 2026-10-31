@@ -20,6 +20,17 @@
   {% if d.motivo_cancelamento %}<p class="small">Cancelada por {{ d.cancelada_por }}: {{ d.motivo_cancelamento }}</p>{% endif %}
 </section>
 
+{# O VALOR PODE MUDAR ATÉ A AUTORIZAÇÃO (30/10/2026): a folha vem pré-carregada. #}
+{% if papel in ['ADMIN', 'MANAGER'] and d.situacao == 'AGUARDANDO_AUTORIZACAO' %}
+<section class="panel"><h2>Ajustar o valor deste mês</h2>
+  <form method="post" action="{{ url_for('despesas_acao', despesa_id=d.id, acao='ajustar_valor') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Valor (R$) <input name="valor" value="{{ reais(d.valor) }}" size="12" required></label>
+    <button type="submit">Ajustar</button>
+    <p class="small muted">Muda só esta despesa. O valor dos próximos meses é o da recorrente.</p>
+  </form></section>
+{% endif %}
+
 {% if papel == 'ADMIN' and d.situacao == 'AGUARDANDO_AUTORIZACAO' and d.forma != 'MANUAL' %}
 <section class="panel"><h2>Autorizar o pagamento</h2>
   <form method="post" action="{{ url_for('despesas_acao', despesa_id=d.id, acao='autorizar') }}">

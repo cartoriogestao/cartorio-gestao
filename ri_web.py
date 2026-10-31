@@ -81,6 +81,7 @@ import ri_cnib as CNIB
 # situacoes no dia em que uma das duas mudar.
 import cnib_atualizador as CNIBATZ
 import modelos_da_casa as MODELOS
+import modelos_elementos as ELEM
 import ri_documentos as RDOC
 import notas_selo as NSELO
 import caixa_protocolo as CXPROT
@@ -8049,7 +8050,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         exemplo = q1("SELECT id FROM ri_matriculas ORDER BY id LIMIT 1")
         if not exemplo:
             return None
-        contexto = contexto_ficha(exemplo["id"], para_odt=False)
+        # O QUE A FICHA NAO TRAZ: a nota devolutiva usa `nota`, que so existe na hora
+        # de imprimir, e sem isto ela nao se gravava. O que a ficha traz vale por cima.
+        contexto = {**ELEM.contexto_de_ensaio(chave),
+                    **contexto_ficha(exemplo["id"], para_odt=False)}
         if chave == "RI_CERTIDAO":
             # **CONFERE OS TRES MIOLOS, E NAO SO O CAMINHO QUE A FICHA ABRE.**
             # O molde tem dois desenhos (o do inteiro teor, que ja traz o

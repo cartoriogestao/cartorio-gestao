@@ -21,6 +21,16 @@ import ra_selo as RS
 from seguranca_web import destino_interno  # M1/B3 (LX11): o «volte para» só leva a caminho desta casa
 
 
+def tipo_da_minuta(bruto) -> str:
+    """A minuta fala a língua do livro, que é `AV`. O formulário de lançar e o rascunho dizem `AVERBACAO`.
+
+    Traduzir aqui é o que evita um terceiro vocabulário. O que não for averbação vai como veio, e
+    `ra_minuta` recusa o que não conhece.
+    """
+    tipo = str(bruto or "AV").strip().upper()
+    return "AV" if tipo.startswith("AVERB") else tipo
+
+
 def registrar_rotas(app, db, login_required, roles_required, audit,
                     fmt_date=str):
     """A ASSINATURA É A DA CASA — ver `ajuda_web.registrar_rotas`."""
@@ -58,10 +68,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @roles_required("ADMIN", "MANAGER", "USER")
     def livro3_minuta_criar(registro_id: int):
         """Põe na fila um ato escrito que **ainda não vai ao livro**."""
+        tipo = tipo_da_minuta(_campo("tipo"))
         try:
             with db.transaction() as con:
                 minuta_id = MIN.criar(
-                    con, registro_id=registro_id, tipo=_campo("tipo") or "AV",
+                    con, registro_id=registro_id, tipo=tipo,
                     teor=_campo("teor"), agora=db.now(),
                     numero_pretendido=_numero("numero_pretendido"),
                     natureza_titulo=_campo("natureza_titulo"),
@@ -74,7 +85,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash(str(erro), "danger")
         else:
             audit("RA_MINUTA_CRIADA", "ra_minutas", minuta_id,
-                  {"registro_id": registro_id, "tipo": _campo("tipo")})
+                  {"registro_id": registro_id, "tipo": tipo})
             flash("Minuta guardada. Ela não tomou número, não entrou no livro "
                   "e não pediu selo — está esperando revisão.", "success")
         return redirect(url_for("livro3_registro", registro_id=registro_id))
@@ -90,9 +101,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             abort(404)
         try:
             with db.transaction() as con:
+                # A REVISÃO NÃO MUDA O TIPO. O `tipo` deste formulário é o da rota de lançar, que ele
+                # alcança por `formaction`, e diz AVERBACAO mesmo numa minuta de registro.
                 MIN.atualizar(
                     con, minuta_id, teor=_campo("teor"), agora=db.now(),
-                    tipo=_campo("tipo") or None,
                     numero_pretendido=_numero("numero_pretendido"),
                     natureza_titulo=_campo("natureza_titulo"),
                     codigo_tj=_campo("codigo_tj"),
@@ -249,10 +261,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             dados = json.loads(r["dados_json"] or "{}")
         except json.JSONDecodeError:
             dados = {}
-        # O RASCUNHO DIZ `AVERBACAO`; a minuta fala a língua do livro, que é
-        # `AV`. Traduzir aqui é o que evita um terceiro vocabulário.
-        tipo = "AV" if str(dados.get("tipo") or "").upper().startswith("AVERB") \
-            else str(dados.get("tipo") or "AV").upper()
+        tipo = tipo_da_minuta(dados.get("tipo"))
         try:
             with db.transaction() as con:
                 minuta_id = MIN.criar(

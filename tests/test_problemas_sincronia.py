@@ -125,13 +125,18 @@ def test_o_cabecalho_e_uma_informacao_por_linha(db, com_cpf):
 
 def test_exportar_duas_vezes_nao_regrava_nada(db, com_cpf, tmp_path):
     _anotar(db, titulo="KeyError na tela do protocolo", onde="protocolo")
+    # O RELATO COM FIM DE LINHA DO WINDOWS parecia sempre mudado (31/10/2026).
+    _anotar(db, origem="RELATADO", titulo="A certidão saiu torta", onde="certidao",
+            detalhe="Primeira linha.\r\nSegunda linha.\rTerceira linha.\r\n")
     primeira = PS.exportar(db, tmp_path, agora=AGORA, ambiente="OFICIAL")
-    assert len(primeira["escritos"]) == 3          # dois problemas e o índice
+    assert len(primeira["escritos"]) == 4          # três problemas e o índice
     datas = {p: p.stat().st_mtime_ns for p in tmp_path.rglob("*.md")}
     segunda = PS.exportar(db, tmp_path, agora=AGORA, ambiente="OFICIAL")
     assert segunda["escritos"] == []
-    assert segunda["iguais"] == 2
+    assert segunda["iguais"] == 3
     assert {p: p.stat().st_mtime_ns for p in tmp_path.rglob("*.md")} == datas
+    for p in tmp_path.rglob("*.md"):
+        assert b"\r" not in p.read_bytes(), p.name
 
 
 def test_exportar_nunca_apaga(db, com_cpf, tmp_path):
@@ -174,6 +179,260 @@ def test_o_indice_lista_os_arquivos_com_a_reproducao(db, com_cpf, tmp_path):
     assert AP.REPRODUCOES["A_CLASSIFICAR"] in indice
     assert AP.REPRODUCOES["SO_PRODUCAO_DADOS"] in indice
     assert CPF not in indice
+
+
+# --------------------------- as referências de registro, só na exportação
+#
+# 31/10/2026: a primeira exportação real mostrou o que a máscara comum não
+# conhece. Tudo fictício.
+
+REFERENCIA = "[REFERENCIA_REGISTRAL_"
+
+
+@pytest.mark.parametrize("texto, numero", [
+    ("Veja fls 56 do livro", "56"),
+    ("Veja fl. 12v do livro", "12v"),
+    ("Veja fls. 34 do livro", "34"),
+    ("Veja folhas 78 do livro", "78"),
+    ("Veja folhas 12 a 14 do livro", "12 a 14"),
+    ("Veja o Assento 1234 no sistema", "1234"),
+    ("Veja o assento nº 1234 no sistema", "1234"),
+    ("Veja o ato 321 no sistema", "321"),
+    ("Veja o ato: 321.", "321"),
+    ("Veja a habilitacao #3 aberta", "#3"),
+    ("Veja a habilitação nº 37 aberta", "37"),
+    ("Veja a prenotacao 45 aberta", "45"),
+    ("Veja a prenotação: 45 aberta", "45"),
+    ("Veja a averbacao #67 aberta", "67"),
+    ("Veja a averbação 67 aberta", "67"),
+    ("Veja a certidao nº 89 aberta", "89"),
+    ("Veja a certidão #89 aberta", "89"),
+    ("Abriu digitalizacoes\\9999\\atual.pdf", "9999"),
+    ("Abriu digitalizacoes\\\\9999\\\\atual.pdf", "9999"),
+    ("Abriu digitalizacoes/9999/atual.pdf", "9999"),
+    ("Chave tabela_exemplo:12345 duplicada", "12345"),
+    ("Chave pessoas:12345 duplicada", "12345"),
+    ("Chave tbexemplo:12345 duplicada", "12345"),
+])
+def test_a_referencia_de_registro_sai_mascarada(texto, numero):
+    seguro = PS._mascarar_referencias(texto)
+    assert REFERENCIA in seguro
+    assert numero.lstrip("#") not in seguro.replace(f"{REFERENCIA}01]", "")
+
+
+def test_o_rotulo_e_o_nome_da_tabela_continuam_para_quem_le():
+    assert PS._mascarar_referencias("fls 56") == f"fls {REFERENCIA}01]"
+    assert PS._mascarar_referencias("habilitacao #3") == (
+        f"habilitacao #{REFERENCIA}01]")
+    assert PS._mascarar_referencias("tabela_exemplo:12345") == (
+        f"tabela_exemplo:{REFERENCIA}01]")
+    assert PS._mascarar_referencias("digitalizacoes\\9999\\atual.pdf") == (
+        f"digitalizacoes\\{REFERENCIA}01]\\atual.pdf")
+
+
+@pytest.mark.parametrize("texto", [
+    "Ato: 16.24.4",
+    "Ato 17.5.5",
+    "código 17.5.5",
+    "certidão 17.5.5",
+    "averbação: 16.24.4",
+    "habilitacao 3.7.4",
+    "certidão de nascimento",
+    "certidão",
+    "averbação na matrícula",
+    "prenotação vencida",
+    "habilitação de casamento",
+    "o ato praticado",
+    "app.py:205",
+    'File "C:\\programa\\app.py", line 143, in gravar',
+    "line 143",
+    "problema #139",
+    "o relato #23 e o PR #60",
+    "em 01/01/2026",
+    "ato de 01/01/2026",
+    "ato 01/01/2026",
+    "certidão 01/01/2026",
+    "certidão 2026-10-27",
+    "2026-10-27T10:15:00",
+    "versão 3.7.4",
+    "width:1",
+    "localhost:8780",
+    "às 10:15",
+    "contato 321",
+    "a flag 12",
+    "Pedido do sistema falhou em 01/01/2026 (~10:00 UTC-3)",
+])
+def test_o_que_nao_e_referencia_de_registro_continua_igual(texto):
+    assert PS._mascarar_referencias(texto) == texto
+
+
+def test_a_mesma_referencia_leva_o_mesmo_marcador_e_outra_leva_outro():
+    seguro = PS._mascarar_referencias(
+        "fls 56, FLS 56, fl. 56, fls 57, habilitacao #3 e habilitação nº 3")
+    assert seguro == (
+        f"fls {REFERENCIA}01], FLS {REFERENCIA}01], fl. {REFERENCIA}01], "
+        f"fls {REFERENCIA}02], habilitacao #{REFERENCIA}03] e "
+        f"habilitação nº {REFERENCIA}03]")
+
+
+def test_certidao_e_averbacao_de_mesmo_numero_sao_referencias_diferentes():
+    seguro = PS._mascarar_referencias("certidão 3 e averbação 3")
+    assert seguro == f"certidão {REFERENCIA}01] e averbação {REFERENCIA}02]"
+
+
+def test_a_numeracao_continua_depois_da_mascara_comum():
+    """A comum já numerou a matrícula: recomeçar em 01 faria duas referências
+    diferentes parecerem a mesma."""
+    comum = PRIV.sanitizar_texto("matrícula 123 e fls 56")
+    assert f"{REFERENCIA}01]" in comum and "fls 56" in comum
+    seguro = PS._mascarar_referencias(comum)
+    assert f"{REFERENCIA}01]" in seguro and f"fls {REFERENCIA}02]" in seguro
+
+
+@pytest.mark.parametrize("texto, esperado", [
+    ("Pedido da escrevente em 01/01/2026 (~10:00 UTC-3): corrigir",
+     "Pedido em 01/01/2026: corrigir"),
+    ("Pedido da escrevente [PESSOA_01] em 01/01/2026 (~10:00 UTC-3).",
+     "Pedido em 01/01/2026."),
+    ("Pedido do oficial em 2026-01-01 às 10:00.", "Pedido em 2026-01-01."),
+    ("Pedido da escrevente: corrigir", "Pedido: corrigir"),
+    ("Pedido da [PESSOA_01] em 01/01/2026 (~10:00 UTC-3).",
+     "Pedido em 01/01/2026."),
+])
+def test_o_pedido_perde_a_funcao_e_a_hora_e_fica_a_data(texto, esperado):
+    assert PS._mascarar_referencias(texto) == esperado
+
+
+def test_a_passagem_nao_recusa_nada():
+    for texto in ("", "   ", "\n", "fls", "assento", "[REFERENCIA_REGISTRAL_07] fls 1"):
+        assert isinstance(PS._mascarar_referencias(texto), str)
+
+
+def _problema(**kw) -> dict:
+    p = {"id": 7, "impressao": "fls 56", "origem": "RELATADO", "situacao": "ABERTO",
+         "versao": "3.7.4", "vezes": 1, "ultima_em": AGORA, "primeira_em": AGORA,
+         "titulo": "A tela travou", "onde": "caixa", "detalhe": ""}
+    p.update(kw)
+    return p
+
+
+def test_o_cabecalho_nao_passa_pela_passagem_e_o_corpo_passa():
+    texto = PS.texto_do_arquivo(
+        _problema(titulo="Erro no Assento 1234",
+                  detalhe="ato 321, fls 56 e digitalizacoes/9999/atual.pdf"),
+        "OFICIAL", None)
+    campos, corpo = PS._cabecalho(texto, "of-0007.md")
+    assert campos["impressao"] == "fls 56"
+    assert campos["versao"] == "3.7.4" and campos["id"] == "7"
+    assert campos["ultima_em"] == AGORA
+    for numero in ("1234", "321", "fls 56", "9999"):
+        assert numero not in corpo
+    assert corpo.count(REFERENCIA) == 4
+    assert "### #7 " in corpo
+
+
+def test_stack_trace_mantem_arquivo_e_linha_e_perde_a_referencia(db, tmp_path):
+    numero = _anotar(db, titulo="KeyError na tela", onde="caixa", detalhe=(
+        'File "app.py", line 143, in gravar\n'
+        "app.py:205: tabela_exemplo:12345 ausente"))
+    PS.exportar(db, tmp_path, agora=AGORA, ambiente="OFICIAL")
+    texto = (tmp_path / "problemas" / f"of-{numero:04d}.md").read_text(encoding="utf-8")
+    assert "line 143" in texto and "app.py:205" in texto
+    assert "12345" not in texto and f"tabela_exemplo:{REFERENCIA}" in texto
+
+
+# ------------------------------------------------------- o índice não se quebra
+
+
+def _linha_do_indice(pasta: Path, numero: int) -> str:
+    indice = (pasta / "INDICE.md").read_text(encoding="utf-8")
+    return next(x for x in indice.splitlines() if f"of-{numero:04d}.md" in x)
+
+
+def test_titulo_que_comeca_por_nome_nao_engole_a_linha(db, tmp_path):
+    numero = _anotar(db, origem="RELATADO", onde="caixa",
+                     titulo="Nome Mario Exemplo dos Santos")
+    r = PS.exportar(db, tmp_path, agora=AGORA, ambiente="OFICIAL")
+    assert not r["recusados"]
+    linha = _linha_do_indice(tmp_path, numero)
+    assert "Mario" not in linha and "Santos" not in linha
+    assert len(linha.strip().strip("|").split("|")) == 5
+    assert "ABERTO" in linha or "RELATADO" in linha
+
+
+def test_o_titulo_do_indice_nao_abre_coluna_e_perde_a_referencia(db, tmp_path):
+    numero = _anotar(db, origem="RELATADO", onde="caixa",
+                     titulo="Erro | no Assento 1234 | de novo")
+    PS.exportar(db, tmp_path, agora=AGORA, ambiente="OFICIAL")
+    linha = _linha_do_indice(tmp_path, numero)
+    assert len(linha.strip().strip("|").split("|")) == 5
+    assert "1234" not in linha and REFERENCIA in linha
+
+
+def test_titulo_que_a_mascara_recusa_nao_derruba_a_exportacao(db, tmp_path, monkeypatch):
+    ruim = _anotar(db, origem="RELATADO", titulo="Titulo que recusa", onde="a")
+    bom = _anotar(db, origem="RELATADO", titulo="Titulo que passa", onde="b")
+    verdadeira = PRIV.sanitizar_texto
+
+    def recusa_o_titulo(texto):
+        if str(texto) == "Titulo que recusa":
+            raise PRIV.PrivacidadeError("sobrou dado depois de mascarar")
+        return verdadeira(texto)
+
+    monkeypatch.setattr(PRIV, "sanitizar_texto", recusa_o_titulo)
+    r = PS.exportar(db, tmp_path, agora=AGORA, ambiente="OFICIAL")
+    assert [x["id"] for x in r["recusados"]] == [ruim]
+    assert not (tmp_path / "problemas" / f"of-{ruim:04d}.md").exists()
+    assert (tmp_path / "problemas" / f"of-{bom:04d}.md").is_file()
+    indice = (tmp_path / "INDICE.md").read_text(encoding="utf-8")
+    assert f"of-{ruim:04d}" not in indice and f"of-{bom:04d}" in indice
+
+
+# ------------------------------------------------- o aviso de texto mascarado
+
+
+def test_relato_em_maiusculas_fora_do_vocabulario_recebe_o_aviso():
+    texto = PS.texto_do_arquivo(
+        _problema(titulo="XPTOA BLOQUEIRA",
+                  detalhe="FULANEIRA ZABUMBEIRA QUARTEIRA MARTELEIRA PANDEIRADA"),
+        "OFICIAL", None)
+    assert texto.endswith(f"\n{PS.AVISO_DE_TEXTO_MASCARADO}\n")
+    assert PS.AVISO_DE_TEXTO_MASCARADO == (
+        "**Texto muito mascarado: leia na tela do sistema antes de concluir.**")
+
+
+def test_relato_comum_em_minusculas_nao_recebe_o_aviso():
+    texto = PS.texto_do_arquivo(
+        _problema(titulo="A certidão saiu torta",
+                  detalhe="Ao imprimir a certidão, a margem saiu errada na folha."),
+        "OFICIAL", None)
+    assert PS.AVISO_DE_TEXTO_MASCARADO not in texto
+
+
+def test_titulo_curto_com_um_nome_so_nao_recebe_o_aviso():
+    texto = PS.texto_do_arquivo(_problema(titulo="Nome Mario"), "OFICIAL", None)
+    assert PS.AVISO_DE_TEXTO_MASCARADO not in texto
+
+
+@pytest.mark.parametrize("origem", ["ERRO_DE_TELA", "CONFERENCIA"])
+def test_o_que_a_maquina_escreveu_nao_recebe_o_aviso(origem):
+    texto = PS.texto_do_arquivo(
+        _problema(origem=origem, titulo="XPTOA BLOQUEIRA",
+                  detalhe="Traceback (most recent call last):\n"
+                          "FULANEIRA ZABUMBEIRA QUARTEIRA MARTELEIRA PANDEIRADA"),
+        "OFICIAL", None)
+    assert PS.AVISO_DE_TEXTO_MASCARADO not in texto
+
+
+def test_stack_trace_colado_no_relato_nao_entra_na_conta():
+    texto = PS.texto_do_arquivo(
+        _problema(titulo="A certidão saiu torta",
+                  detalhe="Ao imprimir, a tela parou com este erro.\n"
+                          "Traceback (most recent call last):\n"
+                          "FULANEIRA ZABUMBEIRA QUARTEIRA MARTELEIRA PANDEIRADA "
+                          "XPTOA BLOQUEIRA CANTOEIRA PORTEIRA"),
+        "OFICIAL", None)
+    assert PS.AVISO_DE_TEXTO_MASCARADO not in texto
 
 
 # ---------------------------------------------------------- a reprodução

@@ -31,8 +31,11 @@ desenvolvimento em `retorno/`. Por isso as duas pontas não brigam.
 - **Não fecha problema.** Quem fecha é a serventia, na tela de problemas. A nota
   que volta não mexe na situação.
 - **Não manda dado pessoal.** O texto passa pela mesma máscara do relatório para
-  conserto; problema que a máscara recusa não sai. Login e nome de quem usou o
-  sistema nunca saem.
+  conserto e, depois, por uma passagem só da exportação, que troca referências
+  de registro (folha, assento, ato, número de pasta, número de tabela). Problema
+  que a máscara recusa não sai. Login e nome de quem usou o sistema nunca saem.
+  Relato que ficou quase todo mascarado sai com a linha **«Texto muito mascarado:
+  leia na tela do sistema antes de concluir.»**
 - **Não mexe no código do sistema.** O repositório privado só tem os problemas e
   o retorno; atualização do sistema continua sendo pelo pacote assinado.
 - **Não apaga arquivo** do repositório e não envia nada além de `problemas/` e
@@ -82,15 +85,37 @@ Depois de instalar a versão que traz a sincronia:
    qualquer usuário da máquina, e o OpenSSH a recusa («UNPROTECTED PRIVATE KEY
    FILE»), parando o ciclo.
 
-3. **Grave e confira a impressão do GitHub.** O ciclo só fala com servidor que
-   esteja no `known_hosts` da sincronia (`StrictHostKeyChecking=yes`): nunca
-   aceita um servidor novo sozinho. No Prompt de Comando:
+   **Confira a permissão da chave depois de gerar.** O `ssh-keygen` pode
+   acrescentar a conta que o rodou e deixá-la como dona do arquivo, mesmo com a
+   pasta restrita:
 
    ```
-   ssh-keyscan github.com > C:\ProgramData\CartorioGestao\sincronia\known_hosts
+   icacls C:\ProgramData\CartorioGestao\sincronia\chave_da_sincronia
+   dir /q C:\ProgramData\CartorioGestao\sincronia\chave_da_sincronia
+   ```
+
+   Só podem aparecer SYSTEM e Administradores. Se aparecer outra conta
+   (`<conta>`), remova-a; se ela for a dona, passe a posse aos Administradores:
+
+   ```
+   icacls C:\ProgramData\CartorioGestao\sincronia\chave_da_sincronia /remove:g <conta>
+   icacls C:\ProgramData\CartorioGestao\sincronia\chave_da_sincronia /setowner *S-1-5-32-544
+   ```
+
+   Depois, rode os dois comandos de conferência de novo.
+
+3. **Grave e confira a impressão do GitHub.** O ciclo só fala com servidor que
+   esteja no `known_hosts` da sincronia (`StrictHostKeyChecking=yes`): nunca
+   aceita um servidor novo sozinho. Use o `ssh-keyscan` do Git for Windows, porque
+   o do Windows pode falhar com `choose_kex: unsupported KEX method`. Sempre no
+   **Prompt de Comando**:
+
+   ```
+   "C:\Program Files\Git\usr\bin\ssh-keyscan.exe" github.com > C:\ProgramData\CartorioGestao\sincronia\known_hosts
    ssh-keygen -lf C:\ProgramData\CartorioGestao\sincronia\known_hosts
    ```
 
+   Linhas começadas por `#` podem aparecer no `known_hosts`; elas são ignoradas.
    Compare **cada** impressão (`SHA256:...`) com as publicadas pelo GitHub na
    página «GitHub's SSH key fingerprints» (docs.github.com). Se alguma não bater,
    **pare**: apague o `known_hosts` e chame o suporte. Só siga se todas baterem.
@@ -100,6 +125,9 @@ Depois de instalar a versão que traz a sincronia:
    ```
    gh repo deploy-key add C:\ProgramData\CartorioGestao\sincronia\chave_da_sincronia.pub --repo cartoriogestao/cartorio-problemas --allow-write --title serventia
    ```
+
+   Se a serventia não tiver o `gh`, o cadastro pode ser feito pelo computador de
+   desenvolvimento, levando **só a linha do `.pub`**.
 
    **Nunca use token pessoal.** Um token daria acesso ao código do sistema e a
    todos os repositórios da conta; a chave de implantação só abre este. A chave
@@ -116,10 +144,18 @@ Depois de instalar a versão que traz a sincronia:
    vez e para se a origem for outra (um endereço `https://` pediria senha ou
    usaria a credencial de uma pessoa).
 6. **Gere os arquivos da tarefa**, no console com o ambiente do servidor (o mesmo
-   `CG_PG_DSN`, `CG_PG_SCHEMA` e `PGPASSFILE` que o servidor usa):
+   `CG_PG_DSN` e `CG_PG_SCHEMA` que o servidor usa), com **o mesmo Python do
+   servidor**:
 
    ```
-   "C:\Program Files\CartorioGestao\runtime\Scripts\python.exe" "C:\Program Files\CartorioGestao\tools\problemas_sincronia.py" gerar-agendamento --repositorio C:\ProgramData\CartorioGestao\problemas --destino C:\ProgramData\CartorioGestao\sincronia
+   "C:\ProgramData\CartorioGestao\runtime\Scripts\python.exe" "C:\Program Files\CartorioGestao\tools\problemas_sincronia.py" gerar-agendamento --repositorio C:\ProgramData\CartorioGestao\problemas --destino C:\ProgramData\CartorioGestao\sincronia
+   ```
+
+   O caminho do Python usado aqui **fica gravado no lançador**. Confira o
+   resultado:
+
+   ```
+   findstr /c:"python.exe" C:\ProgramData\CartorioGestao\sincronia\sincronia_problemas.cmd
    ```
 
    O destino é a pasta `sincronia`, a restrita do passo 2, e não outra: o
@@ -131,12 +167,25 @@ Depois de instalar a versão que traz a sincronia:
    `sincronia_problemas.cmd` (o lançador) e `registrar_sincronia.ps1`. Recusa se
    faltar `CG_PG_DSN` ou `CG_PG_SCHEMA`, e recusa se o `CG_PG_DSN` tiver senha: a
    senha vai no `pgpass` ([`SEGURANCA_REDE.md`](SEGURANCA_REDE.md), item 3).
-   O `PGPASSFILE` fica no `iniciar_servidor_servico.cmd`, e não no console: antes
-   de gerar, repita a linha dele
-   (`set "PGPASSFILE=C:\ProgramData\CartorioGestao\pgpass.conf"`). Sem ele, o
-   gerador avisa — e a tarefa, que roda como SYSTEM, não acharia a senha do
-   banco.
-7. **Registre a tarefa**, no PowerShell **como administrador**:
+
+   **`PGPASSFILE`:** ele pode não estar no `iniciar_servidor_servico.cmd`. Se
+   estiver, repita a linha dele no console antes de gerar. Se não estiver, o
+   gerador avisa que falta, mas a tarefa pode funcionar assim: ela roda como
+   SYSTEM e pode usar o `pgpass` do perfil dessa conta. Confira se o arquivo
+   existe, **sem abrir o conteúdo**:
+
+   ```
+   if exist "%SystemRoot%\System32\config\systemprofile\AppData\Roaming\postgresql\pgpass.conf" echo existe
+   ```
+
+   A prova é o log do primeiro ciclo (seção 4): `importar` e `exportar` com
+   `codigo 0`.
+
+   Na saída do gerador, os próximos passos ainda aparecem na ordem antiga. **Vale
+   a ordem deste manual:** B4 primeiro, depois o passo 7.
+7. **Registre a tarefa só depois do primeiro envio conferido (B4)**, no PowerShell
+   **como administrador**. Assim, nenhum ciclo envia nada antes de alguém ler a
+   exportação:
 
    ```
    powershell -ExecutionPolicy Bypass -File C:\ProgramData\CartorioGestao\sincronia\registrar_sincronia.ps1
@@ -151,14 +200,15 @@ Depois de instalar a versão que traz a sincronia:
 
 ### B4. A primeira exportação, conferida a olho
 
-Antes do primeiro envio, no console com o ambiente do servidor:
+Antes do primeiro envio e antes de registrar a tarefa (B3.7), no console com o
+ambiente do servidor:
 
 1. `... problemas_sincronia.py exportar --pasta C:\ProgramData\CartorioGestao\problemas --dry-run`
    — mostra o que escreveria e não escreve nada;
 2. `... problemas_sincronia.py exportar --pasta C:\ProgramData\CartorioGestao\problemas`
-   — e **leia** os arquivos de `problemas\`, procurando nome, CPF, matrícula,
-   endereço ou qualquer coisa que identifique alguém. Achou? Não envie: avise o
-   desenvolvimento;
+   — e **leia** os arquivos de `problemas\` e o `INDICE.md`, procurando nome, CPF,
+   matrícula, número de folha, de assento ou de ato, endereço ou qualquer coisa
+   que identifique alguém. Achou? Não envie: avise o desenvolvimento;
 3. só depois, o primeiro envio à mão (com o `GIT_SSH_COMMAND` do passo B3.5):
 
    ```
@@ -167,7 +217,7 @@ Antes do primeiro envio, no console com o ambiente do servidor:
    git -C C:\ProgramData\CartorioGestao\problemas push
    ```
 
-A tarefa agendada assume dali em diante.
+Agora registre a tarefa (B3.7). Ela assume dali em diante.
 
 ## 4. Ver se está funcionando
 

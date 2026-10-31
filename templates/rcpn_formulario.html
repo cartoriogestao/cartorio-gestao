@@ -12,10 +12,13 @@
             <input type="text" name="{{ c.nome }}" size="52" readonly
                    class="quem-assina" value="{{ valores.get(c.nome, '') }}">
           {% elif c.tipo == 'sexo' %}
+            {# O SEXO VOLTA COM O QUE SE ESCOLHEU: sem isto, ele voltava a «—» depois de «Ver como fica», e o
+               segundo clique montava o termo sem ele. #}
+            {% set escolhido = (valores.get(c.nome) or '') | lower %}
             <select name="{{ c.nome }}">
               <option value="">—</option>
-              <option value="masculino">masculino</option>
-              <option value="feminino">feminino</option>
+              <option value="masculino"{% if escolhido == 'masculino' %} selected{% endif %}>masculino</option>
+              <option value="feminino"{% if escolhido == 'feminino' %} selected{% endif %}>feminino</option>
             </select>
           {% elif c.nome.startswith('frase_') or 'qualificacao' in c.nome
                   or 'filiacao' in c.nome %}

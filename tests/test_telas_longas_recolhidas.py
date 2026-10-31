@@ -262,6 +262,14 @@ def _formulario(novo=True, **mais):
     return _montar("rcpn_formulario.html", layout_novo=novo, **contexto)
 
 
+@pytest.mark.parametrize("novo", [True, False])
+def test_o_sexo_escolhido_continua_escolhido(novo):
+    html = _formulario(novo=novo, valores={"sexo": "feminino"})
+    assert '<option value="feminino" selected>' in html
+    assert '<option value="masculino" selected>' not in html
+    assert " selected" not in _formulario(novo=novo)
+
+
 def test_ver_como_fica_responde_acima_dos_campos_so_no_novo():
     novo = _formulario(montado="O TERMO MONTADO", em_branco=["nome"])
     assert novo.index("Como o termo fica") < novo.index("O TERMO MONTADO") < novo.index('name="nome"')

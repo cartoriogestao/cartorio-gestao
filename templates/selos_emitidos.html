@@ -2,6 +2,19 @@
 {% block title %}Selos emitidos — Administrativo{% endblock %}
 {% block heading %}<h1>Selos emitidos</h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, O FILTRO FICA EM DUAS LINHAS E A LISTA SOBE — 30/10/2026. É tela de consulta: procura-se e
+   lê-se. Os números do filtro ficam no título do quadro, e a contagem por grupo, dentro dele. A busca é
+   a mesma, com os mesmos campos. No layout antigo nada muda. #}
+{% if layout_novo %}
+<style>
+  .cg-selos-procurar .grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px 12px;margin-bottom:8px}
+  .cg-selos-procurar .grid label{display:block;min-width:0}
+  .cg-selos-procurar>h2{margin:0 0 6px;font-size:16px}
+  .cg-selos-lista>h2{margin:8px 0 6px;font-size:16px}
+  @media(max-width:1200px){.cg-selos-procurar .grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+</style>
+{% endif %}
 
 {# CADA TELA DIZ A QUE VEIO — «duas portas para a mesma sala» é o relato #12, e
    a saída dele não foi apagar uma porta: foi cada uma dizer o que faz. #}
@@ -13,7 +26,7 @@
   atribuição.
 </p>
 
-<section class="cartao">
+<section class="cartao{% if layout_novo %} cg-selos-procurar{% endif %}">
   <h2>Procurar</h2>
   <form method="get" action="{{ url_for('selos_emitidos_lista') }}">
     <div class="grid">
@@ -86,8 +99,13 @@
 
 {# OS NÚMEROS ACOMPANHAM O FILTRO. Contar o razão inteiro embaixo de uma busca
    por «setembro, da Beatriz» seria o carimbo que mente. #}
+{% if layout_novo %}
+{% set nota_do_filtro %}{{ conta.total }} selo(s) · {{ conta.usados }} usado(s) · {% if conta.orfaos %}<strong class="danger">{{ conta.orfaos }} não usado(s)</strong>{% else %}0 não usado(s){% endif %} · {{ conta.cancelados }} cancelado(s){% endset %}
+{{ abre('selos-alcance', 'O que este filtro alcança', nota_do_filtro) }}<div class="cg-quadro-corpo">
+{% else %}
 <section class="cartao">
   <h2>O que este filtro alcança</h2>
+{% endif %}
   <div class="table-wrap">
     <table class="tabela">
       <tbody>
@@ -131,9 +149,11 @@
     </table>
   </div>
   {% endif %}
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
-<section class="cartao">
+<section class="cartao{% if layout_novo %} cg-selos-lista{% endif %}">
   <h2>Os selos</h2>
   {% if not lista.linhas %}
     <div class="alert alert-info">
@@ -202,5 +222,6 @@
   <strong>Esta tela só lê.</strong> Emitir, cancelar ou corrigir selo se faz no
   ato da atribuição — aqui se pesquisa o que já aconteceu.
 </p>
+{% if layout_novo %}{{ ferramentas() }}{% endif %}
 
 {% endblock %}

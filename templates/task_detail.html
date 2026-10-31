@@ -1,6 +1,12 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>Processo PROC-{{ (row.created_at or '')[:4] }}-{{ '%06d'|format(row.id) }} <small class="muted">tarefa #{{ row.id }}</small></h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, O QUE SE FAZ NO PROCESSO VEM PRIMEIRO — 30/10/2026. Registrar o andamento fica à vista,
+   com o histórico logo abaixo. A pasta, as evidências, o tipo e os dados ficam ao lado, cada um no seu
+   quadro, e o título diz como ele está. A pasta abre sozinha quando tem peça; as evidências, quando a
+   tarefa as exige e não há nenhuma. `#pasta` e `#tipo` continuam abrindo o quadro certo depois de gravar.
+   Os formulários são os mesmos, e no layout antigo nada sai do lugar. #}
 {#
   DAR BAIXA E A ACAO MAIS COMUM DESTA TELA, e ate 27/08/2026 ela nao tinha
   botao: era preciso achar o campo «Status» no meio de treze campos, trocar
@@ -18,8 +24,11 @@
     <button class="primary">Concluir processo</button>
   </form>
   {% if row.evidence_required and not attachments %}
+  {% if layout_novo %}<span class="muted small">Esta tarefa exige evidência anexada antes de ser
+  concluída. Anexe em <a href="#evidencias">Evidências</a>.</span>{% else %}
   <span class="muted small">Esta tarefa exige evidência anexada antes de ser
   concluída — o quadro «Evidências» está aqui ao lado.</span>
+  {% endif %}
   {% endif %}
   {#
     A EVIDÊNCIA SE LIGA E DESLIGA COM UM CLIQUE — hotfix de 06/10/2026, ordem
@@ -159,7 +168,7 @@
 {# A PASTA DO PROCESSO — 12/10/2026, a partir da tarefa #318: o mandado estava
    no expediente e o assento existia, e esta tela não mostrava nenhum dos dois.
    O processo APONTA para as peças; não as copia. #}
-<section class="panel" id="pasta"><h2>Pasta do processo</h2>
+{% set a_pasta %}
   {% if pasta_vinculos %}
   <ul class="file-list">{% for v in pasta_vinculos %}<li>
     <strong>{{ v.nome }}</strong>{% if v.origem %} <span class="badge">origem</span>{% endif %}:
@@ -196,11 +205,16 @@
       <small class="span2 muted">Assento: a matrícula de 32 dígitos (com ou sem espaços). Matrícula do RI e prenotação: o número. Protocolo geral: 2026.10.31. Expediente: EXP-2026-000012.</small>
     </form>
   </details>
+{% endset %}
+{% if not layout_novo %}
+<section class="panel" id="pasta"><h2>Pasta do processo</h2>
+  {{ a_pasta }}
 </section>
+{% endif %}
 {# O TIPO DO PROCESSO (12/10/2026). Era um roteiro com documentos, passos e
    marcação; o oficial: «não precisa de roteiro». Ficou o tipo, para classificar
    e filtrar — e nada aqui trava a conclusão. #}
-<section class="panel" id="tipo"><h2>Tipo do processo</h2>
+{% set o_tipo %}
   <form method="post" action="{{ url_for('processo_definir_especie', task_id=row.id) }}" class="form-grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label class="span2">Tipo
@@ -210,13 +224,18 @@
     {% set e = tipo.catalogo[tipo.especie or tipo.sugerida] if (tipo.especie or tipo.sugerida) else none %}
     {% if e %}<small class="span2 muted">Exemplos deste tipo: {{ e.exemplos }}.</small>{% endif %}
   </form>
+{% endset %}
+{% if not layout_novo %}
+<section class="panel" id="tipo"><h2>Tipo do processo</h2>
+  {{ o_tipo }}
 </section>
+{% endif %}
 {% if row.source_type == 'GESTOR' and row.description %}
 <section class="panel"><h2>O que fazer</h2>
   <div style="white-space:pre-wrap;line-height:1.5">{{ row.description|com_links }}</div>
 </section>
 {% endif %}
-<div class="grid2"><section class="panel"><form method="post" class="form-grid"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><input type="hidden" name="action" value="update">
+{% set os_dados %}<form method="post" class="form-grid"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><input type="hidden" name="action" value="update">
 <label class="span2">Título<input name="title" value="{{row.title}}" required></label><label>Setor<select name="sector"><option></option>{% for x in sectors %}<option {% if x==row.sector %}selected{% endif %}>{{x}}</option>{% endfor %}</select></label><label>Sistema/tema<input name="system_name" value="{{row.system_name or ''}}"></label><label>Prioridade<select name="priority">{% for p in PRIORITIES %}<option {% if p==row.priority %}selected{% endif %}>{{p}}</option>{% endfor %}</select></label><label>Status<select name="status">{% for st in TASK_STATUSES %}<option {% if st==row.status %}selected{% endif %}>{{st}}</option>{% endfor %}</select></label><label>Data-base<input type="date" name="start_date" value="{{row.start_date or ''}}"></label><label>Prazo em dias<input type="number" name="due_days" min="0" value="{{row.due_days if row.due_days is not none else ''}}"></label><label>Vencimento<input type="date" name="due_date" value="{{row.due_date or ''}}"></label><label>Responsável<select name="assigned_user_id"><option></option>{% for u in users %}<option value="{{u.id}}" {% if u.id==row.assigned_user_id %}selected{% endif %}>{{u.full_name}}</option>{% endfor %}</select></label><label>Substituto<select name="backup_user_id"><option></option>{% for u in users %}<option value="{{u.id}}" {% if u.id==row.backup_user_id %}selected{% endif %}>{{u.full_name}}</option>{% endfor %}</select></label><label class="span2">Referência normativa<input name="legal_ref" value="{{row.legal_ref or ''}}"></label><label class="span2">Descrição<textarea name="description" rows="5">{{row.description or ''}}</textarea></label>
 {% if row.evidence_required %}
 <p class="span2 tarefa-evidencia-indicador"><span class="badge tarefa-exige-evidencia">Exige evidência</span> <span class="muted small">Anexe arquivos no quadro «Evidências» antes de concluir — ou, se este processo não precisa de comprovante, use «Dispensar a evidência» no alto da tela.</span></p>
@@ -224,9 +243,13 @@
 <p class="span2 muted small">Esta tarefa não exige evidência anexada para conclusão.</p>
 {% endif %}
 <div class="span2"><button class="primary">Salvar alterações</button></div></form>
-{% if row.source_type=='INSPECAO' %}<p class="source-note">Origem: relatório de inspeção{% if row.source_page %}, página {{row.source_page}}{% endif %}.</p>{% endif %}</section>
-<section class="panel"><h2>Evidências</h2><form method="post" enctype="multipart/form-data" action="{{ url_for('task_evidence', task_id=row.id) }}" class="stack compact"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><input type="file" name="file" required multiple><input name="description" placeholder="Descrição"><button>Anexar evidência</button></form><ul class="file-list">{% for a in attachments %}<li><a href="{{url_for('attachment_download',attachment_id=a.id)}}">{{a.original_name}}</a><small>{{a.size_bytes|filesize}} · SHA-256 {{a.sha256[:16]}}… · {{fmt_dt(a.uploaded_at)}}</small></li>{% else %}<li>Sem evidências anexadas.</li>{% endfor %}</ul></section></div>
-<section class="panel"><h2>Histórico e andamento</h2>
+{% if row.source_type=='INSPECAO' %}<p class="source-note">Origem: relatório de inspeção{% if row.source_page %}, página {{row.source_page}}{% endif %}.</p>{% endif %}{% endset %}
+{% set as_evidencias %}<form method="post" enctype="multipart/form-data" action="{{ url_for('task_evidence', task_id=row.id) }}" class="stack compact"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><input type="file" name="file" required multiple><input name="description" placeholder="Descrição"><button>Anexar evidência</button></form><ul class="file-list">{% for a in attachments %}<li><a href="{{url_for('attachment_download',attachment_id=a.id)}}">{{a.original_name}}</a><small>{{a.size_bytes|filesize}} · SHA-256 {{a.sha256[:16]}}… · {{fmt_dt(a.uploaded_at)}}</small></li>{% else %}<li>Sem evidências anexadas.</li>{% endfor %}</ul>{% endset %}
+{% if not layout_novo %}
+<div class="grid2"><section class="panel">{{ os_dados }}</section>
+<section class="panel"><h2>Evidências</h2>{{ as_evidencias }}</section></div>
+{% endif %}
+{% set o_andamento %}
   {#
     RELATO #107 — andamento sozinho nao tira a tarefa de «Comigo»: quem
     registra continua como responsavel ate passar. A passagem existia no alto
@@ -281,5 +304,46 @@
     <button class="primary">Registrar</button>
     {% endif %}
   </form>
-  <div class="timeline">{% for h in history %}<div><strong>{{fmt_dt(h.ts)}} · {{h.full_name or 'sistema'}}</strong><span>{{ rotulo_da_acao(h.action) }}{% if h.action == 'NOTA' %} — {{ rotulo_do_tipo_andamento(h.new_value) }}{% elif h.action == 'NOTIFICACAO' and h.old_value %} {{ h.old_value }}{% endif %}</span>{% if h.note %}<p>{{h.note}}</p>{% endif %}{% if h.action not in ('NOTIFICACAO', 'NOTA') and (h.old_value or h.new_value) %}<small>{{h.old_value or '—'}} → {{h.new_value or '—'}}</small>{% endif %}</div>{% endfor %}</div></section>
+{% endset %}
+{% set o_historico %}
+  <div class="timeline">{% for h in history %}<div><strong>{{fmt_dt(h.ts)}} · {{h.full_name or 'sistema'}}</strong><span>{{ rotulo_da_acao(h.action) }}{% if h.action == 'NOTA' %} — {{ rotulo_do_tipo_andamento(h.new_value) }}{% elif h.action == 'NOTIFICACAO' and h.old_value %} {{ h.old_value }}{% endif %}</span>{% if h.note %}<p>{{h.note}}</p>{% endif %}{% if h.action not in ('NOTIFICACAO', 'NOTA') and (h.old_value or h.new_value) %}<small>{{h.old_value or '—'}} → {{h.new_value or '—'}}</small>{% endif %}</div>{% endfor %}</div>{% endset %}
+{% if layout_novo %}
+<style>
+  .cg-tarefa{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:12px;align-items:start}
+  .cg-tarefa>div{min-width:0}
+  .cg-tarefa .panel{margin-bottom:8px}
+  .cg-tarefa-andamento form.stack{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cg-tarefa-andamento form.stack>.span2,.cg-tarefa-andamento form.stack>.actions,
+  .cg-tarefa-andamento form.stack>small{grid-column:1/-1}
+  .cg-tarefa-andamento form.stack>.actions{margin:0}
+  .cg-tarefa-andamento form.stack>button{justify-self:start}
+  .cg-tarefa .timeline{margin-top:0}
+  .cg-tarefa .form-grid>button{justify-self:start}
+  #dados form.form-grid,#tipo form.form-grid,#pasta form.form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  @media(max-width:1200px){.cg-tarefa{grid-template-columns:minmax(0,1fr)}}
+</style>
+{% set tipo_mostrado = tipo.catalogo[tipo.especie or tipo.sugerida] if (tipo.especie or tipo.sugerida) else none %}
+{% set nota_do_historico %}{{ history | length }} registro(s){% if history %}, o último em {{ fmt_dt(history[0].ts) }}{% if history[0].full_name %} por {{ history[0].full_name }}{% endif %}{% endif %}{% endset %}
+{% set nota_da_pasta %}{{ pasta_vinculos | length }} peça(s) · {{ pasta_docs | length }} documento(s){% if pasta_retirados %} · {{ pasta_retirados | length }} retirado(s){% endif %}{% endset %}
+{% set nota_das_evidencias %}{{ attachments | length }} anexada(s){% if row.evidence_required and not attachments %} · <strong class="danger">esta tarefa exige evidência</strong>{% elif row.evidence_required %} · exige evidência{% endif %}{% endset %}
+{% set nota_do_tipo %}{% if tipo.especie and tipo_mostrado %}{{ tipo_mostrado.nome }}{% elif tipo_mostrado %}ainda sem tipo · sugerido: {{ tipo_mostrado.nome }}{% else %}ainda sem tipo{% endif %}{% endset %}
+{% set nota_dos_dados %}{{ row.status }} · prioridade {{ row.priority }}{% if row.due_date %} · vence em {{ fmt_date(row.due_date) }}{% endif %} · {% if row.assigned_name %}com {{ row.assigned_name }}{% else %}sem responsável{% endif %}{% endset %}
+<div class="cg-tarefa">
+  <div>
+    <section class="panel cg-tarefa-andamento" id="andamento"><h2>Registrar andamento</h2>{{ o_andamento }}</section>
+    {{ abre('historico', 'Histórico', nota_do_historico, aberto=history and history | length <= 6) }}<div class="cg-quadro-corpo">{{ o_historico }}</div></details>
+  </div>
+  <div>
+    {{ abre('pasta', 'Pasta do processo', nota_da_pasta, aberto=(pasta_vinculos or pasta_docs) | length > 0) }}<div class="cg-quadro-corpo">{{ a_pasta }}</div></details>
+    {{ abre('evidencias', 'Evidências', nota_das_evidencias, aberto=row.evidence_required and not attachments) }}<div class="cg-quadro-corpo">{{ as_evidencias }}</div></details>
+    {{ abre('tipo', 'Tipo do processo', nota_do_tipo) }}<div class="cg-quadro-corpo">{{ o_tipo }}</div></details>
+    {{ abre('dados', 'Dados do processo', nota_dos_dados) }}<div class="cg-quadro-corpo">{{ os_dados }}</div></details>
+  </div>
+</div>
+{{ ferramentas() }}
+{% else %}
+<section class="panel"><h2>Histórico e andamento</h2>
+  {{ o_andamento }}
+  {{ o_historico }}</section>
+{% endif %}
 {% endblock %}

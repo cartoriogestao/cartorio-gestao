@@ -1063,15 +1063,15 @@ def para_rascunhos(con, texto: str, *, agora: str,
 
     Não lavra, não numera, não sela, não cobra e não grava assento: o rascunho
     não é ato. O mesmo registro não entra duas vezes (a chave do arquivo vira
-    a chave do rascunho). O que o arquivo trazia e a tela não leva é dito.
+    a chave do rascunho), nem depois de lavrado (`RASC.chave_ja_recebida`). O que
+    o arquivo trazia e a tela não leva é dito.
     """
     import rascunho_de_tela as RASC
     quadro, itens = _itens_da_fila(con, texto, dispensar=dispensar)
     RASC.init_rascunho_schema(con)
     criados, ja_na_fila = [], []
     for it in itens:
-        if banco(con).um("SELECT id FROM rascunhos_de_tela WHERE chave = %s",
-                         (it["chave_rascunho"],)):
+        if RASC.chave_ja_recebida(con, it["chave_rascunho"]):
             ja_na_fila.append(it["chave"])
             continue
         r = RASC.salvar(con, tela="rcpn_assento_novo", dados=it["valores"],
@@ -1125,10 +1125,9 @@ def previa_da_fila(con, texto: str, *, agora: str) -> dict:
 
     A conferência é a mesma que o rascunho faz ao ser salvo
     (`rascunho_de_tela.salvar`), com quem assina posto depois."""
+    import rascunho_de_tela as RASC
     import rc_conferencia_dados as CONF
     quadro, itens = _itens_da_fila(con, texto)
-    bd = banco(con)
-    tem_tabela = bd.tem_tabela("rascunhos_de_tela")
     for it in itens:
         try:
             probs = CONF.conferir(CONF.dados_do_formulario(
@@ -1137,9 +1136,7 @@ def previa_da_fila(con, texto: str, *, agora: str) -> dict:
             probs = []
         it["travas"] = CONF.bloqueios(probs)
         it["avisos"] = CONF.avisos(probs)
-        it["ja_na_fila"] = bool(tem_tabela and bd.um(
-            "SELECT 1 FROM rascunhos_de_tela WHERE chave = %s",
-            (it["chave_rascunho"],)))
+        it["ja_na_fila"] = RASC.chave_ja_recebida(con, it["chave_rascunho"])
     return {"itens": itens, "recusados": quadro["recusados"],
             "repetidos": quadro["repetidos"], "lidos": quadro["lidos"],
             "de_onde_veio": quadro["de_onde_veio"]}

@@ -373,6 +373,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @app.route("/rcpn/habilitacoes/nova", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def rcpn_habilitacao_nova():
+        import rascunho_de_tela as RASC
+        RASC.barrar_se_ja_virou_ato(db)
+
         def tela(v, rascunho_id):
             leitura_origem = None
             if rascunho_id:
@@ -399,6 +402,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             audit("HC_ABERTA", "HC_HABILITACAO", novo,
                   {"nubentes": f"{dados.get('nubente1_nome')} e "
                                f"{dados.get('nubente2_nome')}"})
+            RASC.saiu_com_o_ato(db, audit, "rcpn_habilitacao_nova",
+                                url_for("rcpn_habilitacao", habilitacao_id=novo), usuario_nome())
             # OS ANEXOS DA LEITURA ACOMPANHAM A HABILITAÇÃO (12/10/2026).
             # O «²» passava pelo `isdigit()` e o `int()` caía com a habilitação
             # já aberta (LD13); leitura que não é número é como nenhuma.
@@ -417,7 +422,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         # 07/09 e não sabia reabri-lo — a lista de rascunhos levava a uma tela
         # em branco. E é por aqui que chega a leitura dos documentos do
         # casamento. Só no GET, como na tela do assento.
-        import rascunho_de_tela as RASC
         v: dict = {}
         rascunho_id = request.args.get("rascunho_id", type=int)
         if rascunho_id:

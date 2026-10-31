@@ -637,6 +637,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               f"no Livro de Protocolo n. {feito.get('livro_numero')}, "
               f"fl. {feito.get('rotulo')}. Anexe agora o arquivo do título.",
               "success")
+        RASC.saiu_com_o_ato(db, audit, "rcpj_rtd_titulo_novo",
+                            url_for("rcpj_rtd_titulo", titulo_id=feito["titulo_id"]),
+                            usuario_nome())
         return redirect(url_for("rcpj_rtd_titulo",
                                 titulo_id=feito["titulo_id"]))
 

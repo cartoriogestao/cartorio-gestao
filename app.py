@@ -1873,6 +1873,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             if v.get("rascunho"):
                 import rascunho_de_tela as RASC
                 v["url"] = RASC.endereco_de_abrir(v["rascunho"], url_for)
+            elif v.get("ato_url"):
+                v["url"] = v["ato_url"]
         return render_template("task_detail.html", row=row, history=history, attachments=attachments, users=users,
                                sectors=sectors, pasta_vinculos=pasta_vinculos, pasta_docs=pasta_docs,
                                pasta_retirados=pasta_retirados,

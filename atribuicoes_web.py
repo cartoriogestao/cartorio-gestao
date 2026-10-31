@@ -2600,6 +2600,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         flash(f"Título {dados['numero_titulo']} cadastrado. Ele está "
               f"RECEBIDO: o apontamento é o próximo ato, e sai aqui embaixo.",
               "success")
+        RASC.saiu_com_o_ato(db, audit, "protesto_titulo_novo",
+                            url_for("protesto_titulo", titulo_id=titulo_id), usuario_nome())
         return redirect(url_for("protesto_titulo", titulo_id=titulo_id))
 
     # -------------------------------------------- a certidão de protesto
@@ -4255,6 +4257,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         livro, folha e número: antes disso não há o que compor. Matrícula
         digitada pelo escrevente manda, e não é sobrescrita.
         """
+        RASC.barrar_se_ja_virou_ato(db)
         # O QUE VEIO DE ARQUIVO, se veio — relato #31, segunda metade.
         #
         #   **SÓ NO GET, e consumido de uma vez** (`pop`): se ficasse na
@@ -4839,6 +4842,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   "selo e tente de novo.",
                   "danger")
             return tela()
+        # O ASSENTO FICOU DE PÉ, e só agora o rascunho sai da lista. No «NÃO lavrado»
+        # de cima ele fica, para corrigir e tentar de novo (31/10/2026).
+        RASC.saiu_com_o_ato(db, audit, "rcpn_assento_novo",
+                            url_for("rcpn_assento", assento_id=r["assento_id"]), usuario_nome())
         audit("RCPN_ASSENTO_NOVO", "rc_assentos", r["assento_id"],
               {"especie": especie, "serie": r["serie"],
                "numero_ordem": r.get("numero_ordem")})
@@ -4986,6 +4993,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         no espaço do próprio assento, como no livro físico; quem garante isso é
         `rc_assento`, e não esta rota.
         """
+        RASC.barrar_se_ja_virou_ato(db)
         tipo = _campo("tipo")
         voltar = redirect(url_for("rcpn_assento", assento_id=assento_id))
         funcoes = {"AVERBACAO": RC.averbar, "ANOTACAO": RC.anotar,
@@ -5024,11 +5032,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   "Corrija o problema do selo e lance de novo.",
                   "danger")
             return _rcpn_tela_lancamento(assento_id, tipo)
+        RASC.saiu_com_o_ato(db, audit, RASC.TELA_DO_LANCAMENTO,
+                            url_for("rcpn_assento", assento_id=assento_id), usuario_nome(),
+                            chave=_chave_do_lancamento(assento_id, tipo))
         with db.transaction() as con:
             RCETQ.sincronizar_teor_do_ato(con, r["ato_id"])
         audit("RCPN_ATO", "rc_atos", r["ato_id"], {"tipo": tipo})
         flash(f"{tipo.capitalize()} lançada no assento.{aviso}", "success")
         return voltar
+
+    def _chave_do_lancamento(assento_id: int, tipo: str) -> str:
+        """A chave do rascunho do lançamento: o endereço da tela, que diz o assento e o tipo."""
+        return url_for({"AVERBACAO": "rcpn_averbar", "ANOTACAO": "rcpn_anotar",
+                        "RETIFICACAO": "rcpn_retificar"}[tipo], assento_id=assento_id)
 
     def _rcpn_tela_lancamento(assento_id: int, tipo: str):
         """A tela de um único tipo de lançamento. Só LÊ até o envio.
@@ -5041,8 +5057,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             db, RASC.TELA_DO_LANCAMENTO,
             "Este rascunho é de outro assento, ou de outro tipo de lançamento. "
             "Abra-o pela lista de Rascunhos.",
-            chave=url_for({"AVERBACAO": "rcpn_averbar", "ANOTACAO": "rcpn_anotar",
-                           "RETIFICACAO": "rcpn_retificar"}[tipo], assento_id=assento_id))
+            chave=_chave_do_lancamento(assento_id, tipo))
         with db.connect() as con:
             assento = banco(con).um(
                 "SELECT * FROM rc_assentos WHERE id=%s", (assento_id,)
@@ -7921,6 +7936,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 flash(str(erro), "danger")
                 return tela()
             audit("RCPN_RETIFICACAO_ABERTA", "rr_processos", pid, {})
+            RASC.saiu_com_o_ato(db, audit, "rcpn_retificacao_nova",
+                                url_for("rcpn_retificacao", processo_id=pid), usuario_nome())
             return redirect(url_for("rcpn_retificacao", processo_id=pid))
         return tela()
 
@@ -9548,6 +9565,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   "selo e tente de novo.",
                   "danger")
             return tela()
+        RASC.saiu_com_o_ato(db, audit, "rcpj_rtd_registro_novo",
+                            url_for("rcpj_rtd_registro", registro_id=r["registro_id"]),
+                            usuario_nome())
         if serie in RG.SERIES_RCPJ:
             novos_ids = _anexar_novos_arquivos_ao_registro(
                 db, registro_id=r["registro_id"], serie=serie,
@@ -10579,6 +10599,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         except (RA.RaError, AS.AtoError) as erro:
             flash(str(erro), "danger")
             return tela()
+        # AQUI O SELO QUE FALHA NÃO DESFAZ O ATO: fica o botão de selar depois. Por
+        # isso o rascunho sai antes de pedir o selo.
+        RASC.saiu_com_o_ato(db, audit, "livro3_registro_novo",
+                            url_for("livro3_registro", registro_id=r["registro_id"]),
+                            usuario_nome())
         selar = app.extensions.get("selar_o_ato_do_livro3")
         selo_ok = bool(_campo("selo"))
         if selar and not _campo("selo"):
@@ -14637,7 +14662,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                           f"Rascunhos, prontos para conferir e lavrar"
                           + (f"; {com_trava} com dado a arrumar antes"
                              if com_trava else "")
-                          + (f"; {len(fila['ja_na_fila'])} já estavam na fila"
+                          + (f"; {len(fila['ja_na_fila'])} já tinham entrado"
                              if fila["ja_na_fila"] else "")
                           + (f"; {len(fila['recusados'])} recusado(s) — veja "
                              "o motivo abaixo" if fila["recusados"] else "")
@@ -14878,7 +14903,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                               f"rascunhos"
                               + (f"; {com_trava} com dado a arrumar antes de "
                                  f"lavrar" if com_trava else "")
-                              + (f"; {len(fila['ja_na_fila'])} já estavam lá"
+                              + (f"; {len(fila['ja_na_fila'])} já tinham entrado"
                                  if fila["ja_na_fila"] else "")
                               + ". Abra cada um, confira com o declarante e "
                                 "lavre.", "success")

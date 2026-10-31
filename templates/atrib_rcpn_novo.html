@@ -69,6 +69,9 @@
    o unico do sistema: as outras nove telas de ato novo nao tinham rascunho
    nenhum. Ele virou `_rascunho.html`, e esta tela passou a chamar a mesma
    coisa que as outras chamam. #}
+{# O RASCUNHO VIAJA ESCONDIDO ATÉ LAVRAR (31/10/2026): os botões da conferência têm
+   endereço fixo, e sem ele o rascunho não saberia que virou ato. #}
+{% set rascunho_id = rascunho_id or form.get('_rascunho_id_tela') %}
 {{ salvar_rascunho('rcpn_assento_novo',
                    url_for('rcpn_assento_novo', especie_url=especie_url),
                    nome_especie, csrf_token,
@@ -83,6 +86,7 @@
       action="{{ url_for('rcpn_assento_novo', especie_url=especie_url) }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <input type="hidden" name="especie" value="{{ especie }}">
+  {% if rascunho_id %}<input type="hidden" name="_rascunho_id_tela" value="{{ rascunho_id }}">{% endif %}
   {% set _leitura_id = leitura_origem.id if leitura_origem else form.get('leitura_id') %}
   {% if _leitura_id %}<input type="hidden" name="leitura_id" value="{{ _leitura_id }}">{% endif %}
   {% if form.get('habilitacao_id') %}

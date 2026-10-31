@@ -12,6 +12,7 @@ por etapas, e cada uma pode ser a última: o sistema continua inteiro em todas.
 | 4. Civil e Protesto | Assento, habilitação, roteiro, dia da CRA | A fazer |
 | 5. Operação | Caixa, protocolo, processos, atendimento | A fazer |
 | 6. Gestão | Finanças, conformidade, configurações | A fazer |
+| Testes | Testes de todas as telas e funções do layout novo: ordem do oficial, 31/10/2026, para vir antes de terminar | A fazer |
 | 7. Limpar | Tirar a chave e a moldura antiga | A fazer |
 
 ## Como funciona

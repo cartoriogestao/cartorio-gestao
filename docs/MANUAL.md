@@ -390,8 +390,12 @@ Atendimento → Rascunhos** e clique em **abrir**. A tela volta como você a dei
 devedor, as outras partes, o selo digitado e a cobrança marcada. Confira os campos antes de gravar.
 Salvar de novo atualiza o mesmo rascunho, e não cria outro. Só o arquivo anexado não fica guardado:
 escolha de novo. Averbação, anotação e retificação reabrem só no mesmo assento. Rascunho não toma
-número, não ocupa folha, não pede selo e não cobra. Depois de lavrar, ele continua na lista: apague-o
-lá, para ninguém lavrar de novo a partir dele.
+número, não ocupa folha, não pede selo e não cobra.
+
+**Quando o ato grava, o rascunho sai da lista sozinho**, e a tela avisa. Se o ato não ficar de pé, porque
+o sistema recusou ou o selo não saiu, ele continua lá, para corrigir e tentar de novo. Quem voltar a um
+rascunho que já virou ato, pelo botão de voltar do navegador ou por outra aba, vai para o ato, e nada se
+grava de novo. O rascunho de um processo sai igual, e o processo continua aberto até você concluí-lo.
 
 **Se o sistema recusar o que você mandou**, a tela volta com o que foi digitado, no passo em que
 você estava. Corrija o que o aviso diz e grave de novo.

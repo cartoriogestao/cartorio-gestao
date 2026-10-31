@@ -281,6 +281,16 @@
 .cg-passo-bloco{grid-column:1/-1;min-width:0}
 .cg-passos-fim{display:flex;justify-content:flex-end;gap:8px;border-top:1px solid #e3e7ec;padding-top:10px}
 
+/* O VERMELHO QUE NUNCA SAÍA (30/10/2026). `.danger` está em mais de duzentos lugares das telas, em
+   aviso, atraso e recusa, e o `app.css` só o pinta no botão, no aviso do alto e no cartão de número.
+   No resto, o texto saía da cor de sempre, e o que devia chamar atenção não chamava. O layout antigo
+   fica como está. */
+.cg-corpo :is(span,strong,small,em,b,p,a,dd,td,div).danger:not(.badge,.stat,.flash,.notice,.alerta,.alert,.card){color:var(--danger)}
+.cg-corpo tr.danger>td{color:var(--danger)}
+.cg-corpo :is(.notice.danger,.alerta.danger,.alert.danger,.alert-danger,.card.danger:not(.stat)){background:#fff1f0;border:1px solid #f2c4c0;border-radius:10px;color:#8f1d13}
+.cg-corpo :is(.alerta.danger,.alert.danger,.alert-danger){padding:10px 14px;margin-bottom:12px}
+.cg-corpo :is(.badge.danger,.badge-danger){background:#fee4e2;color:#b42318}
+
 /* OS MONITORES DO BALCÃO SÃO FULL HD (o oficial, 30/10/2026). Com a largura sobrando, os campos
    cabem em três colunas e alguns quadros ficam lado a lado. Abaixo disso, nada muda. A grade só
    passa a três se tiver três campos à vista, porque com dois sobraria uma coluna vazia, e não

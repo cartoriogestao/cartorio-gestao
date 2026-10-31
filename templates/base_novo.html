@@ -74,21 +74,21 @@
         <form method="post" action="{{ url_for('preferencia_layout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="layout" value="antigo">
-          <input type="hidden" name="next" value="{{ request.full_path if request.method == 'GET' else url_for('dashboard') }}">
+          <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
           <button class="cg-pi" type="submit">Voltar ao layout antigo</button>
         </form>
         {% if user.role == 'ADMIN' and layout_padrao_da_casa != 'novo' %}
         <form method="post" action="{{ url_for('preferencia_layout_padrao') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="layout" value="novo">
-          <input type="hidden" name="next" value="{{ request.full_path if request.method == 'GET' else url_for('dashboard') }}">
+          <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
           <button class="cg-pi" type="submit">Usar este layout como padrão da casa</button>
         </form>
         {% elif user.role == 'ADMIN' %}
         <form method="post" action="{{ url_for('preferencia_layout_padrao') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="layout" value="antigo">
-          <input type="hidden" name="next" value="{{ request.full_path if request.method == 'GET' else url_for('dashboard') }}">
+          <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
           <button class="cg-pi" type="submit">Devolver o layout antigo como padrão da casa</button>
         </form>
         {% endif %}
@@ -206,13 +206,13 @@
           <form method="post" action="{{ url_for('preferencia_layout') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="layout" value="novo">
-            <input type="hidden" name="next" value="{{ request.full_path if request.method == 'GET' else url_for('dashboard') }}">
+            <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
             <button class="button primary" type="submit">Ficar neste</button>
           </form>
           <form method="post" action="{{ url_for('preferencia_layout') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="layout" value="antigo">
-            <input type="hidden" name="next" value="{{ request.full_path if request.method == 'GET' else url_for('dashboard') }}">
+            <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
             <button class="button" type="submit">Voltar ao antigo</button>
           </form>
         </div>

@@ -241,10 +241,12 @@ def test_a_ficha_do_assento_mostra_a_divisao_tripartite_em_blocos(s):
     assert "Corrige grafia do nome." in html
 
 
-def test_a_ficha_do_assento_avisa_que_a_matricula_nao_e_gerada(s):
+def test_a_ficha_do_assento_sem_matricula_diz_como_ela_se_compoe(s):
+    """Desde o #152 (03/09/2026) a matrícula de 32 dígitos se gera ao lavrar;
+    o assento sem ela veio do acervo, ou faltou um dado na lavratura."""
     ids = _semear(s)
     html = s["c"].get(f"/rcpn/{ids['assento']}").get_data(as_text=True)
-    assert "não gera nem valida" in html
+    assert "Ao lavrar, o sistema a compõe com o CNS" in html
 
 
 def test_a_ficha_do_rtd_diz_que_a_averbacao_consome_protocolo(s):

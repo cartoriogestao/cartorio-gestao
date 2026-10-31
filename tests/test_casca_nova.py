@@ -149,10 +149,13 @@ def test_o_aviso_da_troca_so_sai_para_quem_nao_escolheu():
 def test_so_o_oficial_muda_o_padrao_da_casa(app):
     c = _entrar(app, "casca_h", "USER")
     pagina = c.get("/").get_data(as_text=True)
+    # O padrão de fábrica é o novo desde o #167; o que se confere é que ele
+    # não muda pela mão de quem não é o oficial.
+    antes = app.extensions["db"].get_setting("layout_padrao", "")
     resposta = c.post("/preferencias/layout/padrao",
-                      data={"layout": "novo", "csrf_token": _token(pagina)})
+                      data={"layout": "antigo", "csrf_token": _token(pagina)})
     assert resposta.status_code == 403
-    assert app.extensions["db"].get_setting("layout_padrao", "antigo") == "antigo"
+    assert app.extensions["db"].get_setting("layout_padrao", "") == antes
 
 
 def test_a_lista_das_procuracoes_marca_a_secao_e_a_subaba(app):

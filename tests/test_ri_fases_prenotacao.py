@@ -114,7 +114,9 @@ def _prenotacao(app) -> int:
 def test_as_duas_molduras_oferecem_o_mesmo(cg_app):
     c = _entrar(cg_app, "pren_a")
     endereco = f"/registro-imoveis/protocolo/{_prenotacao(cg_app)}"
-    corpo = lambda html: html[html.index('class="content"'):]        # noqa: E731
+    # A ficha acaba no `</main>`: depois dele a moldura nova põe os formulários
+    # de busca de cada módulo (`nav.procurar`), que não são da ficha.
+    corpo = lambda html: html[html.index('class="content"'):].split("</main>")[0]  # noqa: E731
     formularios = lambda html: {e for e in re.findall(r'<form[^>]*\baction="([^"]+)"', corpo(html))  # noqa: E731
                                 if "/preferencias/" not in e}
     _layout(c, "antigo")

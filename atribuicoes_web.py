@@ -149,6 +149,7 @@ import protesto_posteriori as POST
 # OS TÍTULOS IRMÃOS — os do mesmo protocolo (29/10/2026): lado a lado na
 # ficha e no lote, a trava de «qual título está no papel?» e a conferência.
 import protesto_titulos_irmaos as IRM
+import ra_abas as RAABAS
 import ra_correcoes as CORR
 # A VARREDURA DA FICHA DO LIVRO 3 — e dela que sai a certidao por reproducao.
 import ra_digitalizacao as RADIGI
@@ -10754,7 +10755,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 {"nome": x.get("nome"), "documento": x.get("documento_numero"),
                  "papel_no_ato": (x.get("papel") or "parte")}
                 for x in partes])
+
+        # AS ABAS SÓ SE CALCULAM NO LAYOUT NOVO: quem está no antigo não paga por elas.
+        def abas_da_ficha(pode_corrigir: bool = False) -> dict:
+            return RAABAS.abas_do_registro(
+                dict(registro), atos=atos, partes=partes, minutas=minutas,
+                revisoes=revisoes, numeracao=numeracao, certidoes=certidoes,
+                expurgos=expurgos, rascunho=minuta_av, pode_corrigir=pode_corrigir)
+
         return render_template("atrib_livro3_ficha.html",
+                               abas_da_ficha=abas_da_ficha,
                                registro=dict(registro), atos=atos,
                                partes=partes, naturezas=RA.NATUREZAS,
                                receitas=receitas, caixa=caixa,

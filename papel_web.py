@@ -69,7 +69,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     @app.route("/rcpn/papel")
     @login_required
     def rcpn_papel():
-        """O estoque das folhas de segurança."""
+        """O estoque das folhas de segurança, e o caminho de uma folha."""
+        # O CAMINHO DE UMA FOLHA (revisão de telas, 30/10/2026). O número vem como
+        # está impresso, com ou sem a série; o NUL no endereço o banco recusaria.
+        procurada = (request.args.get("folha") or "").replace("\x00", "").strip()
         with db.connect() as con:
             quadro = PP.estoque(con)
             caixas = PP.remessas(con)
@@ -81,9 +84,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 pagina=request.args.get("pagina", 1, type=int) or 1)
             usadas = pagina_usadas["linhas"]
             inutilizadas = PP.listar(con, situacao="INUTILIZADA", limite=60)
+            # `ler` acha a folha com ou sem a série, e os movimentos se perguntam
+            # pelo código como ele está gravado.
+            folha = PP.ler(con, procurada) if procurada else None
+            caminho = PP.movimentos_da_folha(con, folha["codigo"]) if folha else []
         return render_template("rcpn_papel.html", quadro=quadro, caixas=caixas,
                                usadas=usadas, inutilizadas=inutilizadas,
-                               pagina_usadas=pagina_usadas)
+                               pagina_usadas=pagina_usadas, procurada=procurada,
+                               folha=folha, caminho=caminho)
 
     @app.route("/rcpn/papel/receber", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")

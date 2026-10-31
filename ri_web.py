@@ -44,8 +44,13 @@ from ri_modelos_atos import (pendencias as pendencias_modelo,
 import caixa_depositos as DEP
 from caixa_schema import centavos, reais
 import notas_doi as NDOI
+import navegacao_web as NAVWEB
+import ri_abas as RIABAS
+import ri_fases_prenotacao as RIFASESP
 import ri_doi as RDOI
 import onr_carga as OCG
+import onr_indicador_xml as ONRXML
+import ri_onr_central as ONRC
 import ri_fichas_do_disco as RFD
 import ri_imagens as RIMG
 import ri_digitalizacao as RDIGI
@@ -81,6 +86,7 @@ import ri_cnib as CNIB
 # situacoes no dia em que uma das duas mudar.
 import cnib_atualizador as CNIBATZ
 import modelos_da_casa as MODELOS
+import modelos_elementos as ELEM
 import ri_documentos as RDOC
 import notas_selo as NSELO
 import caixa_protocolo as CXPROT
@@ -100,6 +106,7 @@ import revisao_transcricao as RTRANS
 import ri_dominial as RIDOM
 import ri_certidao_negativa as RINEG
 import ri_prenotacao_prazo as PRAZO
+import ri_prenotacao_encerrar as ENCERRAR
 import onr_acompanhamento as ACOMP  # o andamento no ONR (26/10/2026)
 import ri_pedidos as PED
 import ri_busca_acervo as BUSCA  # busca em texto livre no teor (26/10/2026)
@@ -2091,8 +2098,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 proprietarios_cadastro=[dict(p) for p in partes
                                         if p["proprietario_ativo"]])
 
+        def abas_da_ficha() -> dict:
+            """A régua do layout novo. Só ele chama, e o antigo não paga a conta."""
+            quer_lavrar = (request.args.get("lavrar") == "1" or minuta_aberta
+                           or _pre_encerramento(m, piso, atos) is not None)
+            return RIABAS.abas_da_matricula(
+                m, atos=atos, partes=partes, protocolos=protocolos,
+                certidoes_emitidas=certidoes_emitidas,
+                revisoes_abertas=[r for r in revisoes if r["situacao"] == RV.ABERTA],
+                minutas=minutas, rascunho=rascunho,
+                certidoes_aguardando_selo=_certidoes_aguardando_selo(
+                    [c["id"] for c in certidoes]),
+                onus=[x["rotulo"] for x in RIONUS.onus_vigentes(
+                    atos, rotulo=lambda a: rotulo_ato(a["tipo"], a["numero"], m["numero"]))],
+                foco=RIABAS.NOVO_ATO if quer_lavrar else "")
+
         return render_template(
             "ri_ficha.html", m=m, atos=atos, partes=partes, imagens=imagens,
+            abas_da_ficha=abas_da_ficha,
             onus_painel=onus_painel, RESULTADOS_ONUS=RONIA.RESULTADOS,
 
             certidoes=certidoes, certidoes_canceladas=certidoes_canceladas,
@@ -2955,7 +2978,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 (selo_do_ato or None, r["numero"], q, int(ato_id)))
             # Arquivamento 16.39 ok -> encerra a prenotação do ato (Beatriz
             # 23/09/2026). Falha aqui NÃO desfaz o selo: só registra o recado.
-            enc = encerrar_prenotacao_do_ato_apos_arquivamento(bd, int(ato_id))
+            enc = encerrar_prenotacao_do_ato_apos_arquivamento(
+                bd, int(ato_id),
+                quem=(app.extensions["usuario_nome"]() or "").strip() or None,
+                agora=db.now())
         if enc and enc.get("encerrou"):
             try:
                 audit(
@@ -2963,7 +2989,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     enc["protocolo_id"],
                     {"situacao": "ENCERRADO", "numero": enc["numero"],
                      "via": "arquivamento_16.39", "ato_id": int(ato_id),
-                     "selo_arquivamento": r["numero"]})
+                     "selo_arquivamento": r["numero"],
+                     "motivo": ENCERRAR.MOTIVOS[
+                         ENCERRAR.MOTIVO_TITULO_REGISTRADO]["rotulo"],
+                     "observacao": ENCERRAR.OBS_DO_ARQUIVAMENTO})
             except Exception:
                 pass
         frase_enc = recado_do_encerramento_por_arquivamento(enc)
@@ -2973,65 +3002,99 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 "prenotacao_encerrada": enc}
 
 
+    def _encerrar_da_tela(protocolo_id: int):
+        """Encerra a prenotação com um motivo da lista. Quem chama é a ficha
+        e o painel dos pedidos — o mesmo caminho e a mesma validação.
+
+        O PAPEL SAI DE `usuario_papel`: a linha do banco de quem está logado.
+        A versão anterior lia `request.user`, a sessão e `current_user` em
+        sequência; qualquer uma vazia deixava o papel em branco, e o balcão
+        passava ou o oficial era recusado conforme o pedido viesse.
+
+        `audit` grava em `db.log`, como o restante do módulo.
+        """
+        voltar_pedidos = request.form.get("voltar") == "pedidos"
+
+        def _volta():
+            if voltar_pedidos:
+                return redirect(url_for("ri_pedidos"))
+            return redirect(url_for("ri_protocolo_ver",
+                                    protocolo_id=protocolo_id))
+
+        p = q1("SELECT * FROM ri_protocolos WHERE id=%s", (int(protocolo_id),))
+        if not p:
+            flash("Não achei a prenotação a encerrar: o número que veio da "
+                  "tela não é de prenotação nenhuma. Nada foi encerrado.",
+                  "danger")
+            return redirect(url_for("ri_protocolo"))
+        papel = str(app.extensions["usuario_papel"]() or "").upper()
+        if papel not in ("ADMIN", "MANAGER"):
+            flash("Encerrar prenotação é do oficial ou do gerente — "
+                  "não do balcão.", "danger")
+            return _volta()
+        if request.form.get("confirmar") != "1":
+            flash("Confirme o encerramento desta prenotação. Nada foi encerrado.",
+                  "danger")
+            return _volta()
+        try:
+            resolvido = ENCERRAR.resolver(
+                request.form.get("motivo"),
+                observacao=request.form.get("observacao"),
+                situacao_escolhida=request.form.get("situacao"),
+            )
+        except ENCERRAR.EncerrarError as erro:
+            flash(str(erro), "danger")
+            return _volta()
+        if str(p["situacao"] or "") not in ENCERRAR.SITUACOES_QUE_SE_ENCERRAM:
+            flash(
+                f"Esta prenotação está {p['situacao']}. Só se encerra a que "
+                f"está aberta ou devolvida — a devolvida ainda corre, porque "
+                f"a nota saiu e o prazo não. Para desfazer um encerramento, "
+                f"reabra.",
+                "danger")
+            return _volta()
+        quem = (app.extensions["usuario_nome"]() or "").strip() or None
+        with db.transaction() as con:
+            linhas = ENCERRAR.gravar(
+                banco(con), int(protocolo_id), resolvido,
+                quem=quem, agora=db.now())
+        if not linhas:
+            flash("A prenotação mudou de situação enquanto a tela estava "
+                  "aberta. Nada foi encerrado.", "warning")
+            return _volta()
+        audit("RI_PROTOCOLO_ENCERRADO", "RI_PROTOCOLO", int(protocolo_id),
+              {"situacao": resolvido["situacao"],
+               "motivo": resolvido["rotulo"],
+               "motivo_chave": resolvido["chave"],
+               "observacao": resolvido["observacao"],
+               "numero": p["numero"], "de": p["situacao"]})
+        flash(f"Protocolo {p['numero']} marcado como "
+              f"{resolvido['situacao'].lower()}. Motivo: {resolvido['rotulo']}.",
+              "success")
+        return _volta()
+
+
     @app.route("/registro-imoveis/protocolo", methods=["GET", "POST"])
     @login_required
     @roles_required(*PRATICA, metodos=("POST",))
     def ri_protocolo():
-        if request.method == "POST":
+        def _prenotar_do_formulario():
+            """Prenota o que veio da tela. ESCREVE, e devolve para onde ir.
+
+            Devolve `None` na recusa, e a tela volta aqui embaixo com o que foi
+            digitado (31/10/2026). A recusa não prenota, e nenhum número se gasta.
+            """
             if request.form.get("acao") == "encerrar":
-                # F11: encerrar exige motivo e papel; situações controladas.
-                from flask import session as _sess
-                papel = (getattr(getattr(request, "user", None), "role", None)
-                         or _sess.get("role") or "")
-                # fallback: current_user via extensions
-                try:
-                    cu = app.extensions.get("current_user")
-                    u = cu() if cu else None
-                    if u:
-                        papel = u["role"] if "role" in u.keys() else papel
-                except Exception:
-                    pass
-                if str(papel).upper() not in ("ADMIN", "MANAGER"):
-                    flash("Encerrar prenotação é do oficial ou do gerente — "
-                          "não do balcão.", "danger")
-                    return redirect(url_for("ri_protocolo"))
-                # LD13: «abc» era 500; 30 dígitos davam «marcado como
-                # encerrado» sem nada encerrado. O vazio segue o 0 de antes.
+                # O mesmo caminho da ficha (`_encerrar_da_tela`): motivo da
+                # lista, papel pelo `usuario_papel`, confirmação. O número
+                # que não é número não derruba a rota — LD13.
                 pid = numero_digitado(request.form.get("protocolo_id") or 0)
                 if pid is None:
                     flash("Não achei a prenotação a encerrar: o número que veio da "
                           "tela não é de prenotação nenhuma. Nada foi encerrado.",
                           "danger")
                     return redirect(url_for("ri_protocolo"))
-                motivo = (request.form.get("motivo") or "").strip()
-                if len(motivo) < 5:
-                    flash("Informe o motivo do encerramento (mínimo 5 caracteres). "
-                          "A reabertura também exige motivo — o rastro precisa "
-                          "explicar a correição.", "danger")
-                    return redirect(url_for("ri_protocolo"))
-                situacao = (request.form.get("situacao") or "ENCERRADO").upper()
-                permitidas = {"ENCERRADO", "CANCELADO", "RECUSADO", "DEVOLVIDO"}
-                if situacao not in permitidas:
-                    flash(f"Situação «{situacao}» não é válida para encerrar. "
-                          f"Use: {', '.join(sorted(permitidas))}.", "danger")
-                    return redirect(url_for("ri_protocolo"))
-                with db.transaction() as con:
-                    banco(con).escrever(
-                        """UPDATE ri_protocolos SET situacao=%s,
-                               anotacao=COALESCE(anotacao,'') || %s
-                         WHERE id=%s""",
-                        (situacao,
-                         f"\n[Encerrado] {motivo}",
-                         pid))
-                audit("RI_PROTOCOLO_ENCERRADO", "RI_PROTOCOLO", pid,
-                      {"situacao": situacao, "motivo": motivo})
-                flash(f"Protocolo marcado como {situacao.lower()}. Motivo registrado.",
-                      "success")
-                # A VENCIDA SE DECIDE NO PAINEL DOS PEDIDOS, e a decisão volta
-                # para lá — quem está percorrendo a lista não perde o lugar.
-                if request.form.get("voltar") == "pedidos":
-                    return redirect(url_for("ri_pedidos"))
-                return redirect(url_for("ri_protocolo"))
+                return _encerrar_da_tela(pid)
 
             # O LIVRO DO PROTOCOLO NAO SE ESCOLHE — e sempre o 1-A.
             #
@@ -3049,14 +3112,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if destino not in ("2", "3"):
                 flash("Diga para que livro vai o título: Livro 2 (matrículas) "
                       "ou Livro 3 (demais atos do RI).", "danger")
-                return redirect(url_for("ri_protocolo"))
+                return None
             # TELEFONE OU E-MAIL, PELO MENOS UM — ordem do oficial, 10/10/2026:
             # sem contato a nota devolutiva e o vencimento não chegam a ninguém.
             try:
                 CONTATO.exigir(request.form.get("telefone"), request.form.get("email"))
             except CONTATO.ContatoError as e:
                 flash(str(e), "danger")
-                return redirect(url_for("ri_protocolo"))
+                return None
             # O PROTOCOLO GERAL DE ONDE O TÍTULO VEIO, conferido ANTES de
             # prenotar: ligar a um geral que já tem prenotação trocaria a
             # ligação do outro título sem ninguém ver.
@@ -3069,7 +3132,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 if not g or (g["atribuicao"] or "").upper() != "RI" or g["ri_protocolo_id"]:
                     flash("O protocolo geral indicado não existe, não é do Registro de "
                           "Imóveis ou já tem prenotação. Nada foi prenotado.", "danger")
-                    return redirect(url_for("ri_protocolo"))
+                    return None
             with db.transaction() as con:
                 bd = banco(con)
                 bd.travar("ri_protocolos.numero")
@@ -3185,6 +3248,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   "success")
             return redirect(url_for("ri_protocolo"))
 
+        if request.method == "POST":
+            resposta = _prenotar_do_formulario()
+            if resposta is not None:
+                return resposta
+
         situacao = (request.args.get("situacao") or "").strip().upper()
         busca = (request.args.get("busca") or "").strip()
         onde, params = ["1=1"], []
@@ -3223,11 +3291,34 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if cx_arg is not None:
             de_cx = q1("""SELECT * FROM cx_protocolos WHERE id=%s AND atribuicao='RI'
                           AND ri_protocolo_id IS NULL""", (cx_arg,))
+
+        def espera_acao():
+            """O que espera ação, para o layout novo (30/10/2026). SÓ LÊ.
+
+            A lista obedece ao filtro e corta em 300, e um título vencido não pode sair da vista
+            por isso. Só o molde da moldura nova chama esta função: a antiga não paga a consulta.
+            """
+            perto = []
+            for r in q("""SELECT p.*, m.id mid FROM ri_protocolos p
+                          LEFT JOIN ri_matriculas m ON m.id = p.matricula_id
+                          WHERE p.situacao = 'ABERTO' AND p.data_limite IS NOT NULL
+                          ORDER BY p.data_limite, p.numero"""):
+                if PRAZO.suspensa(r):
+                    continue
+                try:
+                    dias = dias_uteis_entre(hoje, date.fromisoformat(r["data_limite"]), feriados)
+                except ValueError:
+                    continue
+                if dias <= 5:
+                    restam[r["id"]] = dias
+                    perto.append(r)
+            return perto
+
         return render_template("ri_protocolo.html", rows=rows, resumo=resumo,
                                de_cx=dict(de_cx) if de_cx else None,
                                situacao=situacao, busca=busca, hoje=hoje.isoformat(),
                                prazo=PRAZO_PRENOTACAO, prazo_reurb=PRAZO_PRENOTACAO_REURB,
-                               restam=restam,
+                               restam=restam, espera_acao=espera_acao, form=request.form,
                                MOTIVOS_DA_GRATUIDADE_DO_RI=AS.MOTIVOS_DA_GRATUIDADE_DO_RI)
 
     # ===================================== a tela do título, com o que corrigir
@@ -3275,6 +3366,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         if request.method == "POST":
             acao = request.form.get("acao")
+
+            # ----------------------------------------------------- encerrar
+            # Motivo da lista (`ri_prenotacao_encerrar`). Só oficial ou
+            # gerente, e só prenotação ABERTA ou DEVOLVIDA — a devolvida
+            # ainda corre. A reabertura, logo abaixo, continua valendo sobre
+            # o que este caminho fechar.
+            if acao == "encerrar":
+                return _encerrar_da_tela(protocolo_id)
 
             # ------------------------------------------------------ reabrir
             if acao == "reabrir":
@@ -3499,7 +3598,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # O QUE ESTE TÍTULO JÁ DISSE AO ONR (Acompanhamento de Títulos) — só lê.
         with db.connect() as _ac:
             acompanhamento_onr = ACOMP.da_prenotacao(_ac, protocolo_id)
+        def fases_da_ficha() -> dict:
+            """A régua do layout novo. Só ele chama."""
+            return RIFASESP.fases_da_prenotacao(
+                dict(p), documentos=documentos, notas=notas, qualificacoes=qualificacoes,
+                historico=historico, depositos=depositos,
+                tem_onr=bool(acompanhamento_onr and acompanhamento_onr.get("eventos")))
+
         return render_template("ri_protocolo_ver.html", p=dict(p),
+                               fases_da_ficha=fases_da_ficha,
                                acompanhamento_onr=acompanhamento_onr,
                                documentos=documentos, e_imagem=RDOC.e_imagem,
                                docs_protocolo_geral=docs_protocolo_geral,
@@ -3515,7 +3622,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                ROTULO_DA_ETAPA=PED.ROTULO_DA_ETAPA,
                                campos=CAMPOS_EDITAVEIS,
                                SITUACOES_PROTOCOLO=("ABERTO", "ENCERRADO",
-                                                    "CANCELADO", "DEVOLVIDO"),
+                                                    "CANCELADO", "DEVOLVIDO",
+                                                    "RECUSADO"),
+                               MOTIVOS_ENCERRAMENTO=ENCERRAR.MOTIVOS,
+                               SITUACOES_DE_ENCERRAMENTO=ENCERRAR.SITUACOES_RESULTANTES,
+                               pode_encerrar=str(p["situacao"] or "") in
+                               ENCERRAR.SITUACOES_QUE_SE_ENCERRAM,
                                prazo_suspenso=PRAZO.suspensa(p),
                                MOTIVOS_SUSPENSAO=PRAZO.MOTIVOS,
                                caixa_ligado=caixa_ligado,
@@ -3544,7 +3656,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return render_template("ri_pedidos.html", pedidos=pedidos,
                                contagem=dados["contagem"], ETAPAS=PED.ETAPAS,
                                ROTULO_DA_ETAPA=PED.ROTULO_DA_ETAPA,
-                               filtro=filtro, reais=reais)
+                               filtro=filtro, reais=reais,
+                               MOTIVOS_ENCERRAMENTO=ENCERRAR.MOTIVOS,
+                               MOTIVO_DECURSO=ENCERRAR.MOTIVO_DECURSO,
+                               SITUACOES_DE_ENCERRAMENTO=ENCERRAR.SITUACOES_RESULTANTES)
 
     @app.route("/registro-imoveis/protocolo/<int:protocolo_id>/qualificar",
                methods=["POST"])
@@ -5083,7 +5198,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                             or consulta_cnib["resultado"] == CNIB.POSITIVO
                             or quadro["a_conferir"] or quadro_falhou)
               else "success")
-        return redirect(url_for("ri_ficha", matricula_id=matricula_id))
+        # NO LAYOUT NOVO, O ATO LAVRADO ABRE A ABA ATOS, e não o formulário de onde saiu: é lá
+        # que ele aparece, com o selo. Lavrar outro é um clique na aba.
+        destino = url_for("ri_ficha", matricula_id=matricula_id)
+        if NAVWEB.layout_de(db, session.get("user_id")) == "novo":
+            destino += "#atos"
+        return redirect(destino)
 
     @app.route("/registro-imoveis/<int:matricula_id>/minuta", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -6256,11 +6376,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if matricula_de_acervo(m["numero"]):
             m["tipo_ficha"] = "ACERVO"
 
-        if request.method == "GET":
+        def tela(**extra):
             return render_template("ri_editar.html", m=m,
                                    campos=CAMPOS_CADASTRAIS,
                                    versao_edicao=versao_atual,
-                                   delegatarios=quem_pode_abrir_matricula())
+                                   delegatarios=quem_pode_abrir_matricula(), **extra)
+
+        def recusada():
+            """A tela de novo, com o que veio do formulário por cima da ficha.
+
+            A RECUSA NÃO APAGA O QUE FOI DIGITADO (31/10/2026). Nada se gravou, e por
+            isso a versão continua valendo. Quem abriu entra como veio: se o nome não
+            está na lista, a caixa o mostra e gravar recusa de novo, em vez de cair
+            em «não informado» e apagar o nome sem ninguém pedir.
+            """
+            veio = {c: request.form[c] for c in CAMPOS_CADASTRAIS if c in request.form}
+            fora_da_lista = None
+            if m["tipo_ficha"] != "ACERVO" and "aberta_nome" in request.form:
+                veio["aberta_nome"] = request.form["aberta_nome"]
+                if veio["aberta_nome"] and not any(
+                        x["nome"] == veio["aberta_nome"] for x in quem_pode_abrir_matricula()):
+                    fora_da_lista = veio["aberta_nome"]
+            m.update(veio)
+            return tela(motivo_digitado=request.form.get("motivo") or "",
+                        aberta_recusada=fora_da_lista)
+
+        if request.method == "GET":
+            return tela()
 
         if m["encerrada"]:
             flash("Matrícula encerrada não recebe alteração cadastral.", "danger")
@@ -6327,8 +6469,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           f"digita. Pessoa nova entra em Administrativo → "
                           f"Usuários, com a função dela.",
                           "danger")
-                    return redirect(url_for("ri_editar_matricula",
-                                            matricula_id=matricula_id))
+                    return recusada()
             mudancas["aberta_nome"] = {"de": m["aberta_nome"],
                                        "para": quem_abriu}
             valores["aberta_nome"] = quem_abriu
@@ -6343,8 +6484,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 m.get("numero"), db.get_setting("cib_dispensado_matriculas", "")):
             if not _cib_valido(cib_depois):
                 flash(_mensagem_cib_obrigatorio(), "danger")
-                return redirect(url_for("ri_editar_matricula",
-                                        matricula_id=matricula_id))
+                return recusada()
 
         if not mudancas:
             flash("Nada foi alterado.", "warning")
@@ -6357,7 +6497,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             flash("Escreva o motivo da retificação cadastral com pelo menos "
                   "10 caracteres — ele fica na auditoria, ao lado do valor "
                   "anterior e do novo.", "danger")
-            return redirect(url_for("ri_editar_matricula", matricula_id=matricula_id))
+            return recusada()
 
         atribuicoes = ", ".join(f"{c}=%s" for c in valores)
         conflito = False
@@ -7164,6 +7304,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # O VOLUME HISTORICO FICA. As 1.701 matriculas do acervo continuam
         # dizendo em que volume a ficha esta guardada — isso e informacao real,
         # e quem for a estante precisa dela.
+        # (`RASC`, neste arquivo, é o rascunho do ato do RI, e não este.)
+        import rascunho_de_tela as _RASCT
+        _RASCT.barrar_se_ja_virou_ato(db)
         # O QUE VEIO DE ARQUIVO — relato #31, segunda metade. So no GET, e
         # consumido de uma vez: se ficasse na sessao, a matricula do proximo
         # cliente abriria com o imovel do anterior.
@@ -7191,7 +7334,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             form_ini = do_arquivo["valores"] if do_arquivo else request.form
             rascunho_id = request.args.get("rascunho_id", type=int)
             if rascunho_id and not do_arquivo:
-                import rascunho_de_tela as _RASCT
                 try:
                     with db.connect() as _c:
                         _r = _RASCT.ler(_c, rascunho_id)
@@ -7378,6 +7520,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                "tipo_ficha": "ACERVO" if e_acervo else "ESTRUTURADA"})
         flash(f"Matrícula {numero} aberta no livro {livro}. "
               f"O próximo número do livro passou a ser {numero + 1}.", "success")
+        _RASCT.saiu_com_o_ato(db, audit, "ri_nova_matricula",
+                              url_for("ri_ficha", matricula_id=novo_id),
+                              app.extensions["usuario_nome"]())
         return redirect(url_for("ri_ficha", matricula_id=novo_id))
 
     # ------------------------------------------------------ importacao
@@ -7997,7 +8142,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         exemplo = q1("SELECT id FROM ri_matriculas ORDER BY id LIMIT 1")
         if not exemplo:
             return None
-        contexto = contexto_ficha(exemplo["id"], para_odt=False)
+        # O QUE A FICHA NAO TRAZ: a nota devolutiva usa `nota`, que so existe na hora
+        # de imprimir, e sem isto ela nao se gravava. O que a ficha traz vale por cima.
+        contexto = {**ELEM.contexto_de_ensaio(chave),
+                    **contexto_ficha(exemplo["id"], para_odt=False)}
         if chave == "RI_CERTIDAO":
             # **CONFERE OS TRES MIOLOS, E NAO SO O CAMINHO QUE A FICHA ABRE.**
             # O molde tem dois desenhos (o do inteiro teor, que ja traz o
@@ -8503,15 +8651,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if tipo == "PESSOAL":
                 conteudo = gerar_indicador_pessoal([dict(v) for v in vinculos], cns)
                 mime = "application/xml"
+                registros = len(vinculos)
+            elif tipo == "REAL_XML":
+                # O MESMO CORPO DA API, EM XML (`onr_indicador_xml`). Só vai a ficha
+                # completa; a tela diz, antes do clique, qual fica de fora e por quê.
+                with db.connect() as con:
+                    corpos = ONRC.corpos_para_o_arquivo(
+                        con, [dict(m) for m in matriculas], cns=cns)["corpos"]
+                if not corpos:
+                    flash("Nenhuma matrícula deste período está completa para o "
+                          "arquivo. A tela diz o que falta em cada uma.", "warning")
+                    return redirect(url_for("ri_onr", inicio=inicio, fim=fim))
+                try:
+                    conteudo = ONRXML.arquivo_xml(corpos)
+                except ValueError as erro:
+                    flash(f"{erro} Escolha um período menor.", "danger")
+                    return redirect(url_for("ri_onr", inicio=inicio, fim=fim))
+                mime = "application/xml"
+                registros = len(corpos)
             else:
                 conteudo = gerar_indicador_real([dict(m) for m in matriculas], cns)
                 mime = "application/json"
+                registros = len(matriculas)
 
             arquivo = nome_arquivo(tipo, d1, d2)
             audit("RI_ONR_EXPORTADO", "RI_ONR", None,
                   {"tipo": tipo, "inicio": inicio, "fim": fim,
-                   "registros": len(vinculos) if tipo == "PESSOAL" else len(matriculas),
-                   "arquivo": arquivo})
+                   "registros": registros, "arquivo": arquivo})
             return Response(conteudo.encode("utf-8"), mimetype=mime,
                             headers={"Content-Disposition":
                                      f'attachment; filename="{arquivo}"'})
@@ -8519,9 +8685,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # Conferência antes de gerar: o que sairia com documento desconhecido.
         sem_doc = sum(1 for v in vinculos
                       if len(so_digitos(v["documento"])) not in (11, 14))
+        # O QUE O XML LEVARIA, antes do clique, e a digitalização nova que o ONR
+        # ainda não tem (revisão de telas, 30/10/2026). Da lista, um a mais que o
+        # limite: é assim que a tela sabe que ficou matrícula de fora, e diz.
+        limite_pendentes = 200
+        with db.connect() as con:
+            real_xml = ONRC.corpos_para_o_arquivo(
+                con, [dict(m) for m in matriculas], cns=cns)
+            pendentes = RDIGI.pendentes_onr(con, limite=limite_pendentes + 1)
         return render_template("ri_onr.html", inicio=inicio, fim=fim, cns=cns,
                                vinculos=vinculos, matriculas=matriculas,
-                               sem_doc=sem_doc, TIPOS=TIPO_IMOVEL_ONR)
+                               sem_doc=sem_doc, TIPOS=TIPO_IMOVEL_ONR,
+                               real_xml=real_xml,
+                               pendentes_onr=pendentes[:limite_pendentes],
+                               pendentes_cortadas=len(pendentes) > limite_pendentes)
 
     # ------------------------------- a carga do Next Cloud SAS (modalidade b)
     #
@@ -10822,13 +10999,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             get_setting=db.get_setting, voltar_para=url_for("ri_certidoes"))
 
 
-    def encerrar_prenotacao_do_ato_apos_arquivamento(con, ato_id: int) -> dict | None:
+    def encerrar_prenotacao_do_ato_apos_arquivamento(
+            con, ato_id: int, *, quem: str | None = None,
+            agora: str | None = None) -> dict | None:
         """Depois do selo 16.39 ok: encerra a prenotação amarrada ao ato. ESCREVE.
 
         Pedido da substituta em 23/09/2026: arquivamento = título esgotado para
         aquela prenotação. Diferente de `amarrar_prenotacao`, que NÃO encerra no
         primeiro ato (fica aberta para atos sucessivos do mesmo título). Aqui o
         gatilho é só o arquivamento.
+
+        O motivo gravado é o da lista, «Título registrado», com observação
+        «arquivamento 16.39» — o mesmo rastro do encerramento manual.
 
         NÃO FALHA O FLUXO: sem protocolo no ato, protocolo inexistente, ou já
         encerrado — devolve None / recado e segue. Não mexe em selos.
@@ -10863,12 +11045,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 "ja_encerrada": True,
                 "situacao": linha["situacao"],
             }
+        # Importado aqui: os testes que executam esta função solta não
+        # carregam o `registrar_rotas`, e o motivo tem de ser o da lista.
+        import ri_prenotacao_encerrar as _encerrar
+        if not agora:
+            from datetime import datetime
+            agora = datetime.now().replace(microsecond=0).strftime(
+                "%Y-%m-%dT%H:%M:%S")
+        _motivo = _encerrar.MOTIVOS[_encerrar.MOTIVO_TITULO_REGISTRADO]
         bd.escrever(
             """UPDATE ri_protocolos
                   SET situacao='ENCERRADO',
-                      situacao_anterior=COALESCE(situacao_anterior, situacao)
+                      situacao_anterior=COALESCE(situacao_anterior, situacao),
+                      encerrado_em=%s,
+                      encerrado_por=%s,
+                      motivo_encerramento=%s,
+                      obs_encerramento=%s
                 WHERE id=%s AND situacao='ABERTO'""",
-            (int(linha["id"]),),
+            (agora, quem, _motivo["rotulo"], _encerrar.OBS_DO_ARQUIVAMENTO,
+             int(linha["id"])),
         )
         return {
             "achou": True,

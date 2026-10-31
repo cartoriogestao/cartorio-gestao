@@ -13,6 +13,6 @@
 <div role="alert" style="background:#b00020;color:#fff;padding:10px 18px;font-size:15px;
      font-weight:700;border-bottom:4px solid #6d0014">
   Você tem {{ selo_pagar_aviso }} selo(s) liberado(s) pelo oficial ainda sem pagamento no caixa.
-  <a style="color:#fff;text-decoration:underline" href="{{ url_for('selo_cobertura') }}">Ver o que falta</a>.
+  <a style="color:#fff;text-decoration:underline" href="{{ url_for('selo_cobertura', _anchor='a-pagar') }}">Ver o que falta</a>.
 </div>
 {% endif %}

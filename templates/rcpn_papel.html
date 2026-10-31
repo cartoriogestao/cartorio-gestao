@@ -1,6 +1,10 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>Folhas de segurança</h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, QUADROS RECOLHIDOS — 31/10/2026. O estoque e «A folha estragou» ficam à vista. O resto se
+   abre de vez em quando, e o título diz como está. Sem folha em branco, «Chegou uma caixa» vem aberto. Procurar
+   uma folha ou buscar nas gastas volta com o quadro aberto, e os endereços #caminho e #usadas abrem o quadro. #}
 {% include '_serventia.html' %}
 
 {% if quadro.acabou %}
@@ -27,8 +31,7 @@
     <strong style="font-size:20px">{{ quadro.proxima or '—' }}</strong></div>
 </div>
 
-<section class="panel">
-  <div class="panel-head"><span>Como isto funciona</span></div>
+{% set como_funciona %}
   <p style="padding:0 0 8px"><small>
     A folha <strong>não se marca como usada aqui</strong>: quem gasta é o ato.
     Ao emitir a certidão, o escrevente <strong>escolhe na ficha qual folha está
@@ -40,10 +43,18 @@
     <strong>inutiliza a da frente</strong>, com o motivo — que é a verdade,
     porque ela foi para o lixo.
   </small></p>
+{% endset %}
+{% if not layout_novo %}
+<section class="panel">
+  <div class="panel-head"><span>Como isto funciona</span></div>
+{{ como_funciona }}
 </section>
+{% endif %}
 
+{% if layout_novo %}{{ abre('papel-estragou', 'A folha estragou', 'a próxima da gaveta é a ' ~ quadro.proxima if quadro.proxima else 'não há folha na gaveta', aberto=true) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <div class="panel-head"><span>A folha estragou</span></div>
+{% endif %}
   <p style="padding:0 0 8px"><small>
     Saiu borrada, rasgou, a impressora comeu. Escreva o que houve: é isso que
     responde pela numeração quando alguém perguntar, daqui a cinco anos.
@@ -58,14 +69,18 @@
       <button class="button">Inutilizar a folha</button>
     </div>
   </form>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 
 {% if user.role in ['ADMIN','MANAGER'] %}
+{% if layout_novo %}{{ abre('papel-caixa', 'Chegou uma caixa', 'de quem responde pela serventia', aberto=quadro.acabou) }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <div class="panel-head">
     <span>Chegou uma caixa</span>
     <small>de quem responde pela serventia</small>
   </div>
+{% endif %}
   <p style="padding:0 0 8px"><small>
     A faixa é a que está impressa na caixa, do primeiro ao último número. Cada
     folha vira uma linha no estoque — é o que permite responder «onde está a
@@ -89,12 +104,16 @@
       <input name="observacao"></label>
     <div class="actions span2"><button class="button primary">Dar entrada na caixa</button></div>
   </form>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 {% endif %}
 
 {% if caixas %}
+{% if layout_novo %}{{ abre('papel-caixas', 'As caixas que chegaram', (caixas | length) ~ ' caixa(s) · restam ' ~ (caixas | sum(attribute='restam')) ~ ' folha(s)') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <div class="panel-head"><span>As caixas que chegaram</span></div>
+{% endif %}
   <table class="table">
     <thead><tr><th>Quando</th><th>Fornecedor</th><th>Série</th><th>Faixa</th>
                <th>Quantas</th><th>Restam</th><th>Nota</th>
@@ -132,15 +151,19 @@
     {% endfor %}
     </tbody>
   </table>
+{% if layout_novo %}</div></details>{% else %}
 </section>
+{% endif %}
 {% endif %}
 
 {% if inutilizadas %}
+{% if layout_novo %}{{ abre('papel-inutilizadas', 'As folhas inutilizadas', (inutilizadas | length) ~ ' folha(s)') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel">
   <div class="panel-head">
     <span>As folhas inutilizadas</span>
     <small>{{ inutilizadas|length }}</small>
   </div>
+{% endif %}
   <table class="table">
     <thead><tr><th>Folha</th><th>Quando</th><th>Quem</th><th>Por quê</th></tr></thead>
     <tbody>
@@ -154,16 +177,71 @@
     {% endfor %}
     </tbody>
   </table>
+{% if layout_novo %}</div></details>{% else %}
+</section>
+{% endif %}
+{% endif %}
+
+{# O CAMINHO DE UMA FOLHA (revisão de telas, 30/10/2026): em que atos ela esteve, e
+   quem a devolveu. A situação de hoje vem junto porque a inutilização e o uso
+   trazido do sistema antigo não deixam movimento, e a lista sozinha diria «nada». #}
+{% if layout_novo %}{{ abre('caminho', 'O caminho de uma folha', 'onde ela esteve, e quem a devolveu', aberto=procurada) }}{% else %}
+<section class="panel" id="caminho">
+  <div class="panel-head">
+    <span>O caminho de uma folha</span>
+    <small>onde ela esteve, e quem a devolveu</small>
+  </div>
+{% endif %}
+  <form method="get" action="{{ url_for('rcpn_papel') }}#caminho" class="actions" style="padding:8px 14px">
+    <input name="folha" value="{{ procurada }}" maxlength="40" style="min-width:320px"
+           placeholder="o número impresso na folha, com ou sem a série">
+    <button class="button">Procurar a folha</button>
+    {% if procurada %}<a class="button" href="{{ url_for('rcpn_papel') }}#caminho">Limpar</a>{% endif %}
+  </form>
+  {% if procurada and not folha %}
+  <p style="padding:0 14px 14px"><small>A folha «{{ procurada }}» não está no estoque. Confira o número impresso.</small></p>
+  {% elif folha %}
+  <p style="padding:0 14px 8px"><small>
+    Folha <strong>{% if folha.serie %}{{ folha.serie }} {% endif %}{{ folha.codigo }}</strong>:
+    {% if folha.situacao == 'USADA' %}usada{% if folha.usada_em %} em {{ folha.usada_em[:16]|replace('T',' ') }}{% endif %}{% if folha.usada_por %}, por {{ folha.usada_por }}{% endif %}.
+      <a href="{{ url_for('rcpn_papel', q=folha.codigo) }}#usadas">Ver o assento</a>
+    {% elif folha.situacao == 'INUTILIZADA' %}inutilizada{% if folha.inutilizada_em %} em {{ folha.inutilizada_em[:16]|replace('T',' ') }}{% endif %}{% if folha.inutilizada_por %}, por {{ folha.inutilizada_por }}{% endif %}: {{ folha.inutilizada_motivo or 'sem motivo escrito' }}.
+    {% else %}em branco, no estoque.{% endif %}
+  </small></p>
+  {% if caminho %}
+  <table class="table">
+    <thead><tr><th>Quando</th><th>O que houve</th><th>No ato</th><th>Selo</th><th>Por quê</th><th>Quem</th></tr></thead>
+    <tbody>
+    {% for m in caminho %}
+      <tr>
+        <td><small>{{ (m.ocorrido_em or '')[:16]|replace('T',' ') }}</small></td>
+        <td>{% if m.situacao_nova == 'EM BRANCO' %}voltou ao estoque{% elif m.situacao_anterior == 'USADA' %}ligada a outro ato{% else %}usada{% endif %}</td>
+        <td><small>{% if m.tabela == 'rc_atos' %}registro{% elif m.tabela == 'rc_certidoes' %}certidão{% elif m.tabela %}outro ato{% endif %}{% if m.ato_id %} nº {{ m.ato_id }}{% endif %}</small></td>
+        <td><small>{{ m.selo or '-' }}</small></td>
+        <td><small>{{ m.motivo or '-' }}</small></td>
+        <td><small>{{ m.ocorrido_por or '-' }}</small></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="padding:0 14px 14px"><small>{% if folha.situacao == 'USADA' %}Nenhum movimento registrado: o uso desta folha é anterior a este registro.{% else %}Esta folha não passou por nenhum ato.{% endif %}</small></p>
+  {% endif %}
+  {% endif %}
+{% if layout_novo %}</details>{% else %}
 </section>
 {% endif %}
 
 {# FICHA_FOLHA_SEGURANCA_20261009: com o registrado e o assento (link para a
    ficha), da mais recente, com busca e paginas. #}
+{% set total_das_gastas %}{{ pagina_usadas.total }} {% if pagina_usadas.busca %}achada(s){% else %}no total{% endif %}, da mais recente{% endset %}
+{% if layout_novo %}{{ abre('usadas', 'As folhas gastas', total_das_gastas, aberto=pagina_usadas.busca or pagina_usadas.pagina > 1) }}{% else %}
 <section class="panel" id="usadas">
   <div class="panel-head">
     <span>As folhas gastas</span>
-    <small>{{ pagina_usadas.total }} {% if pagina_usadas.busca %}achada(s){% else %}no total{% endif %}, da mais recente</small>
+    <small>{{ total_das_gastas }}</small>
   </div>
+{% endif %}
   <form method="get" action="{{ url_for('rcpn_papel') }}#usadas" class="actions" style="padding:8px 14px">
     <input name="q" value="{{ pagina_usadas.busca }}" style="min-width:320px"
            placeholder="folha, nome do registrado, nº do assento, termo ou selo">
@@ -198,5 +276,10 @@
   {% else %}
   <p style="padding:14px"><small>{% if pagina_usadas.busca %}Nenhuma folha gasta com «{{ pagina_usadas.busca }}».{% else %}Nenhuma folha gasta ainda.{% endif %}</small></p>
   {% endif %}
+{% if layout_novo %}</details>
+{{ abre('papel-como', 'Como isto funciona', 'quem gasta a folha é o ato') }}<div class="cg-quadro-corpo">{{ como_funciona }}</div></details>
+{{ ferramentas() }}
+{% else %}
 </section>
+{% endif %}
 {% endblock %}

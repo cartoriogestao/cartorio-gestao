@@ -1,0 +1,17 @@
+{# AS PORTAS DE LAVRAR DE UM MÓDULO — 30/10/2026. Saem do mesmo registro do botão Novo
+   (`navegacao.NOVO`): quem vê uma vê a outra, e o ato abre do mesmo jeito. #}
+{% macro portas(itens, csrf_token) %}
+<div class="cg-portas">
+  {% for i in itens %}
+  {% if i.abre_ato %}
+  <form method="post" action="{{ i.url }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for k, v in i.abre_ato.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    <button class="cg-porta" type="submit">{{ i.rotulo }}</button>
+  </form>
+  {% else %}
+  <a class="cg-porta" href="{{ i.url }}">{{ i.rotulo }}</a>
+  {% endif %}
+  {% endfor %}
+</div>
+{% endmacro %}

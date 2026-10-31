@@ -1,7 +1,10 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>Certidão n. {{ certidao.numero }}/{{ certidao.ano }}</h1>{% endblock %}
 {% block content %}
-{% include '_serventia.html' %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, OS DADOS E O TEOR FICAM LADO A LADO — 30/10/2026. O teor continua à vista, porque quem
+   confere precisa ler o que aquele papel diz; só o cancelamento se recolhe. #}
+{% if not layout_novo %}{% include '_serventia.html' %}{% endif %}
 <div class="actions">
   <a class="button" href="{{ url_for('rcpn_certidoes') }}">&larr; Certidões</a>
   <a class="button" href="{{ url_for('rcpn_assento', assento_id=certidao.assento_id) }}">O assento</a>
@@ -24,6 +27,14 @@
 </div>
 {% endif %}
 
+{% if layout_novo %}
+<style>
+  .cg-certidao{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:12px;align-items:start}
+  .cg-certidao>div>.panel,.cg-certidao>.panel{margin-bottom:8px;min-width:0}
+  @media(max-width:1200px){.cg-certidao{grid-template-columns:minmax(0,1fr)}}
+</style>
+<div class="cg-certidao"><div>
+{% endif %}
 <section class="panel">
   <div class="panel-head">
     <span>{{ certidao.especie | capitalize }} de {{ certidao.nome }}</span>
@@ -48,6 +59,7 @@
   </table>
 </section>
 
+{% set o_teor %}
 <section class="panel">
   <div class="panel-head">
     <span>O teor</span>
@@ -56,10 +68,14 @@
   <div style="padding:14px; white-space:pre-wrap; font-family:monospace"
        >{{ certidao.teor }}</div>
 </section>
+{% endset %}
+{% if not layout_novo %}{{ o_teor }}{% endif %}
 
 {% if user.role in ['ADMIN','MANAGER','USER'] and not certidao.cancelada_em %}
+{% if layout_novo %}{{ abre('cancelar', 'Cancelar esta certidão', 'o teor não se apaga') }}{% else %}
 <section class="panel">
   <div class="panel-head"><span>Cancelar esta certidão</span></div>
+{% endif %}
   <form method="post" action="{{ url_for('rcpn_certidao_cancelar', certidao_id=certidao.id) }}"
         style="padding:14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -77,6 +93,12 @@
     </label>
     <button class="button danger" type="submit">Cancelar a certidão</button>
   </form>
+{% if layout_novo %}</details>{% else %}
 </section>
+{% endif %}
+{% endif %}
+{% if layout_novo %}
+</div>{{ o_teor }}</div>
+{% include '_serventia.html' %}{{ ferramentas() }}
 {% endif %}
 {% endblock %}

@@ -1,10 +1,10 @@
 """
-A CHAVE DO CENPROT — que a Central devolve, e que a casa nunca guardou.
+A CHAVE DO CENPROT — a que a Central devolve no XML.
 
 Este projeto tentou explicar a chave de 23 digitos duas vezes e a chamou de
-«verificador que nao se explica». **Ela nao tem verificador: tem data** — e o
-que resolveu nao foi engenhosidade, foi o oficial gerar um arquivo pelo
-E-Oficio. Terceira vez que a lacuna de layout se fecha com mais amostra.
+«verificador que nao se explica». **O fim dela e a data**, e o que resolveu
+isso foi o oficial gerar um arquivo pelo E-Oficio. O verificador se explicou em
+30/10/2026, com a conta do E-Oficio: `tests/test_protesto_chave_calculada.py`.
 
 O QUE ESTES TESTES GUARDAM
       - a chave se DECOMPOE em quatro partes, e a data dela bate com o
@@ -126,7 +126,7 @@ def test_a_chave_se_decompoe_em_quatro_partes():
     assert d["data_protocolo"] == "260417"
 
 
-def test_o_bloco_do_meio_nao_se_abre_mais_que_isso():
+def test_as_posicoes_8_e_9_nao_sao_o_cartorio():
     """EU O ABRI ERRADO NA PRIMEIRA VEZ, e a outra casa ja estava medida.
 
     Escrevi que as posicoes 8 e 9 sao o cartorio, porque nesta casa sao `01`
@@ -134,7 +134,7 @@ def test_o_bloco_do_meio_nao_se_abre_mais_que_isso():
     `2801405|0005640|2|01|200330`, de outra serventia, com **`00`** ali.
 
     Regularidade forte dentro de uma casa parece lei ate alguem olhar outra
-    casa — a licao da posicao 566, pela segunda vez. O bloco fica inteiro.
+    casa — a licao da posicao 566, pela segunda vez.
     """
     de_sergipe = CP.decompor_chave("2801405" + "00056402" + "01" + "200330")
     assert de_sergipe["ibge"] == "2801405"

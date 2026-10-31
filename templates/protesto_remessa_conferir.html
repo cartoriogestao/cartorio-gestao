@@ -118,6 +118,15 @@
           {% if not t.aceito %}
             <strong class="danger">não entra</strong>
             <ul>{% for f in t.faltas %}<li><small>{{ f }}</small></li>{% endfor %}</ul>
+          {% elif t.principal %}
+            <strong>entra com a linha {{ t.principal }}</strong>
+            <div><small>
+              É outro devedor do mesmo título: fica com o protocolo, a chave e o
+              lugar no livro da linha {{ t.principal }}.
+            </small></div>
+          {% elif t.aviso_devedor %}
+            <strong>entra separado, confira</strong>
+            <div><small>{{ t.aviso_devedor }}</small></div>
           {% elif t.iguais %}
             <strong>entra, confira</strong>
             <div><small>
@@ -185,8 +194,8 @@
     <div class="notice">
       <strong>O lote não sela e não cobra.</strong> Selar cinquenta títulos são
       cinquenta chamadas ao selador, e a casa inteira ficaria esperando o lote
-      terminar. Eles entram e aparecem em <em>atos sem selo</em> e <em>atos sem
-      cobrança</em>, para selar e cobrar no seu tempo.
+      terminar. Eles entram sem selo e sem cobrança: selar e cobrar é na ficha de
+      cada título, no seu tempo.
     </div>
 
     <div class="actions">

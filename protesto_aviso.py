@@ -962,17 +962,27 @@ def envios_do_edital(con: sqlite3.Connection, hoje: str,
                   SUM(CASE WHEN EXISTS (
                         SELECT 1 FROM attachments a
                          WHERE a.entity_type = %s AND a.entity_id = e.id)
-                      THEN 1 ELSE 0 END) AS com_comprovante
+                      THEN 1 ELSE 0 END) AS com_comprovante,
+                  SUM(CASE WHEN COALESCE(e.origem, '') = 'EOFICIO'
+                      THEN 1 ELSE 0 END) AS do_eoficio,
+                  SUM(CASE WHEN COALESCE(e.origem, '') <> 'EOFICIO' AND NOT EXISTS (
+                        SELECT 1 FROM attachments a
+                         WHERE a.entity_type = %s AND a.entity_id = e.id)
+                      THEN 1 ELSE 0 END) AS a_cobrar
              FROM pt_editais e
             WHERE e.publicado_em >= %s AND {_SQL_EDITAL_DE_ATO_VIVO}
             GROUP BY e.publicado_em
             ORDER BY e.publicado_em DESC""",
-        (ENTIDADE_DO_ENVIO_DO_EDITAL, desde))
+        (ENTIDADE_DO_ENVIO_DO_EDITAL, ENTIDADE_DO_ENVIO_DO_EDITAL, desde))
     saida = []
     for r in linhas:
         d = {"dia": str(r["dia"])[:10], "editais": int(r["editais"]),
-             "com_comprovante": int(r["com_comprovante"] or 0)}
-        d["completo"] = d["com_comprovante"] == d["editais"]
+             "com_comprovante": int(r["com_comprovante"] or 0),
+             "do_eoficio": int(r["do_eoficio"] or 0),
+             "a_cobrar": int(r["a_cobrar"] or 0)}
+        # O EDITAL DO E-OFÍCIO NÃO COBRA COMPROVANTE (30/10/2026): quem o
+        # mandava era o sistema antigo.
+        d["completo"] = d["a_cobrar"] == 0
         d["anexos"] = [dict(a) for a in bd.ler(
             f"""SELECT MIN(a.id) AS id, a.original_name, MIN(a.uploaded_at) AS uploaded_at
                  FROM attachments a JOIN pt_editais e ON e.id = a.entity_id

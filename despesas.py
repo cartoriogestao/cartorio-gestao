@@ -252,6 +252,25 @@ def _texto(valor: Any, limite: int = 500) -> str:
     return " ".join(limpo.split())[:limite]
 
 
+def conferir_contato(email: Any, whatsapp: Any) -> tuple[str, str]:
+    """O e-mail e o WhatsApp de quem recebe o comprovante, no formato de envio. Só calcula."""
+    import wa_modelos
+    email = _texto(email, 150).lower()
+    # `nome@dominio.tld` sem expressão regular, como `contato_do_cliente`
+    # (CodeQL py/polynomial-redos): um só `@`, nenhum branco, e no domínio um
+    # ponto com algo dos dois lados.
+    nome, arroba, dominio = email.partition("@")
+    if email and not (nome and arroba and "@" not in dominio
+                      and not any(c.isspace() for c in email)
+                      and "." in dominio[1:-1]):
+        raise DespesaError("O e-mail do contato não confere.")
+    whatsapp = _texto(whatsapp, 30)
+    try:
+        return email, wa_modelos.telefone_e164(whatsapp) if whatsapp else ""
+    except wa_modelos.TelefoneInvalido as erro:
+        raise DespesaError(str(erro)) from erro
+
+
 def _carimbo(quando: datetime) -> str:
     return quando.replace(tzinfo=None, microsecond=0).isoformat(timespec="seconds")
 
@@ -519,6 +538,48 @@ def eventos(con, despesa_id: int) -> list[dict]:
 
 # ---------------------------------------------------------------- cadastrar
 
+def normalizar_chave_pix(chave: Any) -> str:
+    """A chave Pix na forma que o banco aceita. Só calcula. Recusa a que não se decide.
+
+    O Inter pede o celular como +55DD9XXXXXXXX e o CPF/CNPJ só com dígitos
+    (`DestinatarioChave`, API Banking), e a casa escreve «(99)98527-4255» e
+    «000.000.001-91». Sem isto o banco recusaria o Pix no dia de pagar.
+
+    ONZE DÍGITOS SOLTOS PODEM SER AS DUAS COISAS, e chave errada é dinheiro na
+    conta de outra pessoa: CPF válido que também tem cara de celular é RECUSA,
+    com a frase que manda escrever de um jeito só.
+    """
+    texto = _texto(chave, 77)
+    if not texto:
+        raise DespesaError("Informe a chave Pix do favorecido.")
+    if "@" in texto:
+        return texto.lower()
+    if re.fullmatch(r"[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", texto):
+        return texto.lower()
+    so = digitos(texto)
+    if texto.startswith("+"):
+        if re.fullmatch(r"55\d{2}9\d{8}", so):
+            return "+" + so
+        raise DespesaError("A chave de celular é +55, o DDD e os nove dígitos.")
+    if re.fullmatch(r"\d{3}\.\d{3}\.\d{3}-\d{2}|\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", texto):
+        if cpf_cnpj.documento_valido(so) is not True:
+            raise DespesaError("O CPF/CNPJ da chave Pix não confere.")
+        return so
+    if len(so) == 14 and so == texto and cpf_cnpj.documento_valido(so) is True:
+        return so
+    if len(so) == 13 and so.startswith("55") and so[4] == "9":
+        return "+" + so
+    if len(so) == 11 and so[2] == "9":
+        if so == texto and cpf_cnpj.documento_valido(so) is True:
+            raise DespesaError("Estes 11 dígitos podem ser CPF ou celular. Escreva o CPF com "
+                               "pontos e traço, ou o celular com +55.")
+        return "+55" + so
+    if len(so) == 11 and so == texto and cpf_cnpj.documento_valido(so) is True:
+        return so
+    raise DespesaError("Não reconheço esta chave Pix: use e-mail, CPF, CNPJ, celular com DDD "
+                       "ou a chave aleatória completa.")
+
+
 def conferir_pagamento(forma: str, codigo: Any, valor_centavos: int,
                        vencimento: str) -> dict:
     """O código de pagamento lido e conferido contra o valor e o vencimento. Só calcula."""
@@ -546,10 +607,7 @@ def conferir_pagamento(forma: str, codigo: Any, valor_centavos: int,
                 f"R$ {reais(valor_centavos)}.")
         return {"codigo": str(codigo).strip(), "barras": "", "avisos": [], "pix": lido}
     if forma == PIX_CHAVE:
-        chave = _texto(codigo, 77)
-        if not chave:
-            raise DespesaError("Informe a chave Pix do favorecido.")
-        return {"codigo": chave, "barras": "", "avisos": []}
+        return {"codigo": normalizar_chave_pix(codigo), "barras": "", "avisos": []}
     raise DespesaError("Forma de pagamento desconhecida.")
 
 
@@ -566,7 +624,8 @@ def cadastrar(con, *, agora: datetime, por: str, origem: str, chave_origem: str 
               documento_especie: Any, documento_numero: Any = "",
               valor_esperado_centavos: int | None = None,
               anexo: tuple[str, bytes] | None = None, pasta_anexos: Path | None = None,
-              usuario_id: int | None = None) -> int:
+              usuario_id: int | None = None, contato_email: Any = "",
+              contato_whatsapp: Any = "") -> int:
     """Cadastra a despesa. ESCREVE. Devolve o id. Nunca paga.
 
     Idempotente por (origem, chave_origem): a mesma guia cadastrada duas
@@ -621,18 +680,19 @@ def cadastrar(con, *, agora: datetime, por: str, origem: str, chave_origem: str 
         regra = (f"Regra das guias: valor conferido com o calculado dos selos e dentro do "
                  f"teto de R$ {reais(tetos(cfg)['guia'])}.")
     situacao = AUTORIZADA if regra else AGUARDANDO
+    contato = conferir_contato(contato_email, contato_whatsapp)
     novo = bd.escrever(
         """INSERT INTO dp_despesas (situacao, natureza, categoria, descricao, beneficiario_nome,
                beneficiario_documento, valor, vencimento, forma, codigo, codigo_barras,
                documento_especie, documento_numero, origem, chave_origem, valor_esperado,
                divergencia, cadastrada_em, cadastrada_por, autorizada_em, autorizada_por,
-               autorizada_pela_regra)
+               autorizada_pela_regra, contato_email, contato_whatsapp)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                   %s, %s, %s, %s) RETURNING id""",
+                   %s, %s, %s, %s, %s, %s) RETURNING id""",
         (situacao, natureza, categoria, descricao, nome, documento, valor, vencimento, forma,
          lido["codigo"], lido["barras"], especie, _texto(documento_numero, 80), origem,
          chave_origem, valor_esperado_centavos, divergencia, quando, _texto(por, 120) or "?",
-         quando if regra else None, "regra das guias" if regra else None, regra))
+         quando if regra else None, "regra das guias" if regra else None, regra, *contato))
     despesa_id = int(novo[0]["id"])
     _evento(bd, despesa_id, "CADASTRAR", "ok",
             f"{CATEGORIAS[categoria][0]} — R$ {reais(valor)}"
@@ -687,8 +747,13 @@ def _prender(bd, despesa_id: int) -> dict:
 
 
 def autorizar(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
-              acima_do_teto: bool = False, motivo_divergencia: Any = "") -> dict:
-    """Autoriza o pagamento. Só ADMIN (decisão do oficial, 24/10/2026). ESCREVE."""
+              acima_do_teto: bool = False, motivo_divergencia: Any = "",
+              valor_visto: int | None = None) -> dict:
+    """Autoriza o pagamento. Só ADMIN (decisão do oficial, 24/10/2026). ESCREVE.
+
+    `valor_visto` é o valor que estava na tela de quem marcou a despesa na lista:
+    se ele mudou depois, a autorização não vale para o valor novo.
+    """
     if papel != "ADMIN":
         raise DespesaError("Só o oficial (ADMIN) autoriza despesa.")
     bd = banco(con)
@@ -698,6 +763,9 @@ def autorizar(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
                            f"autorização.")
     if d["forma"] == MANUAL:
         raise DespesaError("Despesa paga fora do banco não se autoriza: registre o pagamento.")
+    if valor_visto is not None and int(d["valor"]) != int(valor_visto):
+        raise DespesaError(f"O valor mudou para R$ {reais(int(d['valor']))} depois que a lista "
+                           f"abriu. Confira e autorize de novo.")
     motivo = _texto(motivo_divergencia, 500)
     if d["divergencia"] and len(motivo) < MINIMO_DA_DESCRICAO:
         raise DespesaError(f"Há divergência de valor ({d['divergencia']}). Diga por que o "
@@ -715,6 +783,39 @@ def autorizar(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
         (quando, _texto(por, 120), 1 if acima_do_teto else 0, int(despesa_id)))
     _evento(bd, despesa_id, "AUTORIZAR", "ok",
             ("acima do teto; " if acima_do_teto else "") + (motivo or ""), por, quando)
+    return despesa(bd, despesa_id)
+
+
+def ajustar_valor(con, despesa_id: int, *, valor_centavos: int, agora: datetime, por: str,
+                  papel: str) -> dict:
+    """Muda o valor da despesa que ainda espera a autorização. ESCREVE.
+
+    Pedido do oficial (30/10/2026), sobre a folha: «valores podem mudar, mas
+    deixemos sempre pré-carregado». A despesa autorizada não muda: é este o
+    momento de corrigir. O código de pagamento é conferido de novo, e por isso
+    o boleto, que traz o valor dentro dele, não aceita valor diferente. Muda só
+    esta despesa: o valor dos próximos meses é o da recorrente.
+    """
+    if papel not in ("ADMIN", "MANAGER"):
+        raise DespesaError("Só o oficial ou o gerente ajustam o valor da despesa.")
+    valor = int(valor_centavos or 0)
+    if valor <= 0:
+        raise DespesaError("Informe um valor maior que zero.")
+    bd = banco(con)
+    d = _prender(bd, despesa_id)
+    if d["situacao"] != AGUARDANDO:
+        raise DespesaError("Só se ajusta o valor da despesa que espera a autorização. Se já "
+                           "está autorizada, devolva à autorização antes.")
+    conferir_pagamento(d["forma"], d["codigo"], valor, d["vencimento"])
+    esperado = d["valor_esperado"]
+    divergencia = ""
+    if esperado is not None and int(esperado) != valor:
+        divergencia = (f"O sistema calculou R$ {reais(int(esperado))} e a guia traz "
+                       f"R$ {reais(valor)}.")
+    bd.escrever("UPDATE dp_despesas SET valor = %s, divergencia = %s WHERE id = %s",
+                (valor, divergencia, int(despesa_id)))
+    _evento(bd, despesa_id, "AJUSTAR_VALOR", "ok",
+            f"de R$ {reais(int(d['valor']))} para R$ {reais(valor)}", por, _carimbo(agora))
     return despesa(bd, despesa_id)
 
 
@@ -812,6 +913,51 @@ def listar(con, *, situacao: str | None = None, mes: str | None = None,
     onde = (" WHERE " + " AND ".join(filtros)) if filtros else ""
     return banco(con).ler(f"SELECT * FROM dp_despesas{onde} ORDER BY id DESC LIMIT %s",
                           (*parametros, int(limite)))
+
+
+def para_autorizar(con) -> list[dict]:
+    """As que esperam o oficial, a de vencimento mais próximo primeiro. Só LÊ.
+
+    `pendencia` diz por que a despesa só se autoriza na ficha: a divergência pede
+    o motivo por escrito, e o teto pede a marca daquele pagamento.
+    """
+    bd = banco(con)
+    teto = tetos(configuracao(bd))["pagamento"]
+    linhas = bd.ler("SELECT * FROM dp_despesas WHERE situacao = %s AND forma <> %s "
+                    "ORDER BY vencimento, id", (AGUARDANDO, MANUAL))
+    for d in linhas:
+        d["pendencia"] = ("valor divergente" if d["divergencia"]
+                          else "acima do teto" if int(d["valor"]) > teto else "")
+    return linhas
+
+
+def balanco(con, hoje: str, recorrentes: Any = ()) -> dict:
+    """Quanto ainda falta sair da conta, para saber quanto ela precisa ter. Só LÊ.
+
+    A despesa «pago fora do banco» não entra, porque não sai desta conta, e o que
+    o banco já pagou também não. `recorrentes` são as do mês ainda sem despesa
+    (`despesas_recorrentes.do_mes`): a de valor em branco só se conta.
+    """
+    grupos = ((AUTORIZADA, "Autorizadas, a sair na próxima rodada"),
+              (ENVIADA, "Enviadas ao banco, ainda sem confirmação"),
+              (FALHOU, "Recusadas pelo banco, a devolver à autorização"),
+              (AGUARDANDO, "Esperando a autorização"))
+    despesas = banco(con).ler(
+        "SELECT situacao, vencimento, valor FROM dp_despesas "
+        "WHERE situacao IN (%s, %s, %s, %s) AND forma <> %s",
+        (*[g[0] for g in grupos], MANUAL))
+    pares = [[(int(d["valor"]), str(d["vencimento"])) for d in despesas if d["situacao"] == s]
+             for s, _ in grupos]
+    rotulos = [g[1] for g in grupos]
+    com_valor = [r for r in recorrentes if r.get("valor")]
+    pares.append([(int(r["valor"]), str(r["vencimento"])) for r in com_valor])
+    rotulos.append("Recorrentes do mês ainda não carregadas")
+    linhas = [{"rotulo": rotulo, "quantidade": len(p), "total": sum(v for v, _ in p),
+               "ate_hoje": sum(v for v, venc in p if venc <= hoje)}
+              for rotulo, p in zip(rotulos, pares) if p]
+    return {"linhas": linhas, "total": sum(x["total"] for x in linhas),
+            "ate_hoje": sum(x["ate_hoje"] for x in linhas),
+            "sem_valor": len(recorrentes) - len(com_valor)}
 
 
 def _limites_do_mes(mes: str) -> tuple[str, str]:

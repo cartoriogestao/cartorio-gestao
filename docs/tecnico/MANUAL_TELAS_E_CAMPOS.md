@@ -1088,6 +1088,10 @@ Comandos: atualizar (⟳, só com a busca automática da caixa-postal desligada)
 Resolvida: sai das abas de trabalho e fica em «Resolvidas»; nada é apagado. Quando volta (o cliente escreve ou «Reativar conversa»), a tela mostra só o atendimento novo, com «Ver histórico» para o anterior; o responsável fica se ela estava resolvida havia até 7 dias.
 Entrega das enviadas: ✓ saiu, ✓✓ chegou, ✓✓ azul leu, «⚠ não chegou: <motivo>», atualizada sozinha na conversa aberta; um «não chegou» que chega depois de entregue ou lida é ignorado. Para os códigos 131047 e 131026 da Meta o motivo é uma frase pronta. O cartão da lista mostra «não entregue» quando a última enviada não chegou.
 Arquivo do cliente que não baixa por falha passageira (rede, tempo esgotado, a Meta com 5xx ou 429) volta à fila sozinho, até 3 tentativas; só então mostra o erro e o «tentar de novo».
+Sugestão: com a última mensagem do cliente, o texto automático aparece em cinza na caixa vazia, com a etiqueta «Tab ⇥ usar sugestão» no canto da caixa. TAB com a caixa vazia, ou o clique na etiqueta, o torna texto; qualquer outro TAB muda de campo. A sugestão nunca é enviada sem o TAB. A resposta de pessoa ou da IA limpa a sugestão e o rascunho; o aviso automático e o modelo da Meta, não.
+Envio: o balão sobe na hora e a caixa fica livre. Marca do balão: relógio (ainda indo), depois as marcas de entrega; «⚠ ainda não saiu (tentou às HH:MM): <motivo>» traz «tentar de novo» e «descartar» (o texto volta à caixa, se ela estiver vazia). Nas recusas definitivas da Meta (131047 e 131026), não há «tentar de novo»; no 131047, há o caminho para «Reabrir com o modelo». As mensagens vão uma de cada vez, na ordem: se uma falhar, as seguintes esperam. O que não foi confirmado fica guardado na aba, por conversa: ao voltar, reaparece como balão com ⚠ e nunca é reenviado sozinho. Só fechar a aba ou recarregar pede confirmação. Sem JavaScript, o envio recarrega a página, como antes. Com a sessão vencida, a fila e o texto da caixa voltam depois do login, só para o mesmo usuário.
+Balão pendente: o arquivo do cliente ainda baixando e o áudio ainda sem transcrição se completam sozinhos na conversa aberta, em cada aba, sem recarregar; a rolagem e a caixa de escrever não mudam, e o áudio ou o vídeo que estiver tocando só é trocado quando parar. A espera vale por 24 h depois da mensagem.
+Tempos: a conversa aberta pergunta de 2 em 2 s, só com a aba visível, e a lista de 15 em 15 s. A busca na caixa-postal é de 3 em 3 s com a tela aberta no último minuto e de `vigia_segundos` (padrão 20) no resto do tempo; «0» desliga. A saída com «⚠ não chegou» não conta como resposta: a conversa volta a esperar e entra no alerta.
 Acessos relacionados: Painel do prazo; Atendente com IA; Configuração Meta.
 
 ### Robôs
@@ -2007,5 +2011,16 @@ Acessos relacionados: ← fila do WhatsApp.
 
 Tela-fonte: `templates/whatsapp_chat.html` (a mesma tela do WhatsApp, com a conversa aberta).
 Campos da tela: Mensagem [rascunho].
-Comandos: Enviar (Ctrl+Enter); guardar rascunho; assumir; resolver; Reativar conversa (na resolvida); Ver histórico [historico=1] / Ocultar histórico; o nome da pessoa abre os detalhes.
+Comandos: Enviar (Ctrl+Enter); TAB para usar a sugestão; tentar de novo e descartar (no balão que não saiu); guardar rascunho; assumir; resolver; Reativar conversa (na resolvida); Ver histórico [historico=1] / Ocultar histórico; o nome da pessoa abre os detalhes.
+Conversa com pessoa: o resumo de por que ela passou aparece em destaque no topo; ele nunca vai ao cliente.
 Acessos relacionados: ← conversas; configuração.
+
+### Whatsapp atendente
+
+Tela-fonte: `templates/whatsapp_atendente.html`.
+Saídas da IA: responder (pelo texto-base ou pela lista de valores); perguntar (até 2 por atendimento, sem pedir dado pessoal; a resposta à 2ª ainda é lida, e uma 3ª pergunta não sai); encaminhar (com setor e resumo). Saudação e agradecimento têm frase pronta, sem IA, ajustável no modelo `CAIXA_WHATSAPP`, e não contam como resposta. A saudação pergunta o assunto, com as áreas por extenso e sem numeração: ela sai como aviso e não entra no contexto da IA; com pergunta da IA ainda sem resposta, «ok» e parecidos são a resposta dela. O agradecimento a uma conversa resolvida não a reabre.
+Em protesto e registro civil, a IA responde a dúvida geral e encaminha o caso concreto (decisão de 30/10/2026, aprovada pelo responsável). Reclamação, assunto ou dado protegido, arquivo e pedido de pessoa passam direto. A reclamação vale para o atendimento dela: quando o cliente volta a uma conversa resolvida sem reclamar de novo, ela sai de Gestão.
+Por que passou: nos últimos 30 dias, conversas resolvidas pela IA, perguntas feitas e passagens por razão. Registro sem razão aparece como «antes desta versão».
+Ensaio (ADMIN e MANAGER): até 20 mensagens, uma por linha, ou uma conversa com linhas alternadas. Mostra saída, texto, setor, resumo e razão. Cada linha parte do setor da palavra, como na chegada; na conversa, o setor fica de uma linha para a outra. Não envia e não grava em conversa nenhuma; conta no uso e no teto de IA, tem custo, e para na primeira falha do provedor. Sem texto-base aprovado, não roda: só avisa.
+Comandos: guardar; rodar o atendente agora; ensaiar; Guardar a rotina; os da transcrição de áudio.
+Acessos relacionados: ← fila do WhatsApp; painel do prazo.

@@ -1,10 +1,23 @@
 {% extends 'base.html' %}
 {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
 {% block heading %}
-<h1>Título {{ p.numero }} <span class="small muted">Livro {{ p.livro }} — Protocolo</span></h1>
+<h1>Título {{ p.numero }} <span class="small muted">Livro {{ p.livro }} — Protocolo</span>
+  {# NO LAYOUT NOVO O PRAZO ESTÁ NO TÍTULO: é a primeira pergunta, e não some ao rolar. #}
+  {% if layout_novo and p.situacao == 'ABERTO' and restam is not none %}
+    {% if restam < 0 %}<span class="badge critica">prazo vencido</span>
+    {% elif restam <= 3 %}<span class="badge alta">faltam {{ restam }} dia(s) úteis</span>
+    {% else %}<span class="badge baixa">faltam {{ restam }} dias úteis</span>{% endif %}
+  {% endif %}
+  {% if layout_novo and prazo_suspenso %}<span class="badge alta">prazo suspenso</span>{% endif %}
+</h1>
 {% endblock %}
 
 {% block content %}
+{# AS FASES SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026, `ri_fases_prenotacao`. Os quadros não saem
+   do lugar: cada um diz a que fase pertence, e `static/fases.js` mostra os da fase aberta. #}
+{% from '_fases.html' import abre_ficha, regua, travas_e_barras %}
+{% set f = fases_da_ficha() if layout_novo else none %}
+{% if f %}{{ abre_ficha(VERSION) }}{{ regua(f, 'pren-' ~ p.id, 'Fases desta prenotação') }}<span class="cg-ancora" id="titulo"></span>{% endif %}
 
 {% if p is defined and not (p.selo_prenotacao or "")|trim %}
 <div class="notice warning">
@@ -29,6 +42,10 @@
   <a class="button" href="{{ url_for('ri_prenotacao_comprovante', protocolo_id=p.id) }}">Comprovante de prenotação</a>
   {% if p.matricula_id %}
     <a class="button" href="{{ url_for('ri_ficha', matricula_id=p.matricula_id) }}">Abrir a matrícula</a>
+    {# O REGISTRO É LAVRADO NA MATRÍCULA, e a prenotação vai junto: é o passo seguinte. #}
+    {% if f and p.situacao == 'ABERTO' and user.role in ['ADMIN','MANAGER','USER'] %}
+    <a class="button primary" href="{{ url_for('ri_ficha', matricula_id=p.matricula_id, lavrar=1, prenotacao_id=p.id) }}#novo-ato">Lavrar na matrícula</a>
+    {% endif %}
   {% endif %}
 </div>
 
@@ -47,7 +64,7 @@
    sido cadastrada pela tela; as feitas em Word eram só anexadas, e o protocolo ficava
    ABERTO, sem prazo de exigência. O lugar ficou no alto, ao lado da situação, e o
    anexo abaixo aceita o próprio arquivo da nota. #}
-<section class="panel" id="nota-devolutiva">
+<section class="panel" id="nota-devolutiva" data-fase="qualificacao">
   <div class="panel-head"><span>Nota devolutiva</span>
     <span class="small muted"><a href="{{ url_for('ri_nota_devolutiva', protocolo_id=p.id) }}">abrir as notas e o reingresso</a></span></div>
   <div style="padding:10px 14px">
@@ -69,7 +86,8 @@
   </div>
 </section>
 
-<section class="panel">
+{% if f %}<span class="cg-ancora" id="documentos"></span>{% endif %}
+<section class="panel" data-fase="documentos">
   <div class="panel-head"><span>Documentos do título</span>
     <span class="small muted">{{ documentos|length }}
       anexo{{ '' if documentos|length == 1 else 's' }}</span></div>
@@ -147,7 +165,7 @@
   Prenotação é prioridade de direito (Lei 6.015/73, art. 186): o que importa
   saber ao abrir a tela é se o título ainda está correndo e quanto falta.
 #}
-<section class="panel">
+<section class="panel" data-fase="titulo">
   <div class="panel-head">
     <span>{{ p.situacao }}
       {% if p.situacao == 'ABERTO' and restam is not none %}
@@ -198,6 +216,20 @@
   </details>
   {% endif %}
 
+  {% if p.encerrado_em %}
+  {# O encerramento fica na ficha mesmo depois de reabrir: as colunas não se
+     apagam, e a correição pergunta quem fechou e por quê. #}
+  <div class="notice">
+    <strong>Esta prenotação foi encerrada</strong>
+    {% if p.encerrado_por %}por {{ p.encerrado_por }}{% endif %}
+    em {{ (p.encerrado_em or '')[:16].replace('T', ' ') }}.
+    <br><span class="small">Motivo: {{ p.motivo_encerramento or '—' }}</span>
+    {% if p.obs_encerramento %}
+    <br><span class="small">Observação: {{ p.obs_encerramento }}</span>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% if p.reaberto_em %}
   {# O encerramento desfeito NÃO some da tela. Correição pergunta o que houve,
      e a resposta tem de estar onde o ato está. #}
@@ -229,6 +261,51 @@
   </div>
 </section>
 
+{% if user.role in ['ADMIN', 'MANAGER'] and pode_encerrar %}
+{#
+  ENCERRAR — pedido da Tabeliã e Registradora Substituta.
+
+  O motivo é da lista, e a situação sai dele. «Outro» pede observação e
+  deixa escolher a situação (o padrão é cancelado). Prenotação DEVOLVIDA
+  também entra: a nota saiu, e o prazo continua correndo até esta decisão.
+#}
+<section class="panel" id="encerrar-prenotacao" data-fase="titulo">
+  <div class="panel-head"><span>Encerrar esta prenotação</span>
+    <span class="small muted">o motivo escolhe a situação; fica na auditoria</span></div>
+  {% if p.situacao == 'DEVOLVIDO' %}
+  <p class="small">Esta prenotação está devolvida: a nota saiu, e o prazo
+    continua correndo. Encerrar aqui é a decisão de não esperar mais.</p>
+  {% endif %}
+  <form method="post" class="stack" style="padding:6px 0">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Motivo
+      <select name="motivo" required>
+        <option value="">— escolha —</option>
+        {% for chave, item in MOTIVOS_ENCERRAMENTO.items() %}
+        <option value="{{ chave }}">{{ item.rotulo }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Situação — só vale para o motivo «Outro»; nos demais, a situação já vem do motivo
+      <select name="situacao">
+        {% for s in SITUACOES_DE_ENCERRAMENTO %}
+        <option value="{{ s }}"{% if s == 'CANCELADO' %} selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Observação
+      <textarea name="observacao" rows="2"
+                placeholder="obrigatória quando o motivo é Outro"></textarea>
+      <span class="small muted">No motivo «Outro», é ela que explica o
+        encerramento na correição.</span></label>
+    <label>
+      <input type="checkbox" name="confirmar" value="1" required>
+      Confirmo o encerramento desta prenotação</label>
+    <div>
+      <button class="primary" name="acao" value="encerrar">Encerrar esta prenotação</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+
 {% if p.situacao != 'ABERTO' %}
 {#
   REABRIR — a razão desta tela existir.
@@ -237,7 +314,7 @@
   perdido o prazo. Não adianta "abrir outro": o número de ordem é o que garante
   a prioridade do direito, e um protocolo novo joga o título para o fim da fila.
 #}
-<section class="panel">
+<section class="panel" data-fase="titulo">
   <div class="panel-head"><span>Desfazer o encerramento</span>
     <span class="small muted">para engano de digitação, não para reabrir prazo</span></div>
   <form method="post" style="padding:6px 0">
@@ -264,7 +341,8 @@
   abrir o caixa e procurar o protocolo é um passo que se esquece — e depois
   ninguém sabe a que título o dinheiro pertencia.
 #}
-<section class="panel">
+{% if f %}<span class="cg-ancora" id="emolumentos"></span>{% endif %}
+<section class="panel" data-fase="emolumentos">
   <div class="panel-head"><span>Depósito prévio</span>
     <span class="small muted">
       {% if depositos %}saldo disponível neste título: <strong>R$ {{ saldo }}</strong>
@@ -326,7 +404,7 @@
   prenotação, com resumo, atalho e emissão do orçamento — sem duplicar a tela
   inteira do balcão nesta passada.
 #}
-<section class="panel" id="emolumentos-orcamento">
+<section class="panel" id="emolumentos-orcamento" data-fase="emolumentos">
   <div class="panel-head"><span>Emolumentos e orçamento</span>
     <span class="small muted">
       {% if caixa_ligado %}protocolo de caixa {{ caixa_ligado.numero }}
@@ -391,7 +469,7 @@
   a negativa É a nota devolutiva, que tem tela própria e grava a qualificação
   junto. A etapa sai do que está gravado — ver o painel dos pedidos.
 #}
-<section class="panel" id="qualificacao">
+<section class="panel" id="qualificacao" data-fase="qualificacao">
   <div class="panel-head"><span>Qualificação</span>
     <span class="small muted">etapa: <strong>{{ ROTULO_DA_ETAPA.get(etapa_do_pedido, etapa_do_pedido) }}</strong>
       · <a href="{{ url_for('ri_pedidos') }}">painel dos pedidos</a></span></div>
@@ -440,10 +518,11 @@
 {# A QUALIFICAÇÃO ASSISTIDA (26/10/2026; no protocolo desde 27/10/2026, a
    pedido do oficial): o rascunho da IA aponta a positiva ou a negativa, e quem
    qualifica continua sendo um dos dois botões acima. #}
-{% if qualificacao_ia %}{% include '_qualificacao_ia.html' %}{% endif %}
+{% if qualificacao_ia %}<div data-fase="qualificacao">{% include '_qualificacao_ia.html' %}</div>{% endif %}
 
 {% if notas %}
-<section class="panel">
+{% if f %}<span class="cg-ancora" id="notas"></span>{% endif %}
+<section class="panel" data-fase="notas">
   <div class="panel-head"><span>Notas devolutivas</span>
     <span class="small muted"><a href="{{ url_for('ri_nota_devolutiva', protocolo_id=p.id) }}">abrir as notas e o reingresso</a></span></div>
   <div class="table-wrap"><table>
@@ -460,7 +539,8 @@
 {% endif %}
 
 {% if acompanhamento_onr and acompanhamento_onr.eventos %}
-<section class="panel" id="acompanhamento-onr">
+{% if f %}<span class="cg-ancora" id="onr"></span>{% endif %}
+<section class="panel" id="acompanhamento-onr" data-fase="onr">
   {# O QUE ESTE TITULO JA DISSE A CENTRAL (26/10/2026). O andamento so entra
      na fila quando o fato foi gravado; aqui se ve o que subiu, o que espera e
      por que — e o que subiu e depois deixou de ser verdade aqui. #}
@@ -485,7 +565,7 @@
 </section>
 {% endif %}
 
-<details class="panel">
+<details class="panel" data-fase="titulo">
   <summary>Corrigir os dados do título</summary>
   <div class="notice small">
     Correção de dado do protocolo. O que estava escrito antes fica na auditoria —
@@ -506,7 +586,8 @@
 </details>
 
 {% if historico %}
-<details class="panel">
+{% if f %}<span class="cg-ancora" id="historico"></span>{% endif %}
+<details class="panel" data-fase="historico"{% if f %} open{% endif %}>
   <summary>Histórico deste protocolo ({{ historico|length }})</summary>
   <div class="table-wrap"><table>
     <thead><tr><th>Quando</th><th>Quem</th><th>O quê</th><th>Detalhe</th></tr></thead>
@@ -521,4 +602,5 @@
   </table></div>
 </details>
 {% endif %}
+{% if f %}{{ travas_e_barras(f) }}</div>{% endif %}
 {% endblock %}

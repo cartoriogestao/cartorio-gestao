@@ -25,6 +25,7 @@ import re
 import sqlite3
 from typing import Any
 
+import rascunho_de_tela as RASC
 from bd_nativo import banco
 
 SCHEMA = """
@@ -174,9 +175,10 @@ def ato_lavrado_do_rascunho(con: Any, task_id: int, vinculo_id: int, *,
                             apagar_rascunho: bool, agora: str, por: int | None) -> None:
     """O ato do rascunho foi lavrado: o processo conclui, com a nota. ESCREVE.
 
-    O sistema não tem como saber sozinho que o ato saiu do rascunho — as treze
-    telas de ato não carregam o número do rascunho até a lavratura. Por isso é
-    quem lavrou que diz, aqui, numa ação só."""
+    O rascunho aberto pela tela sai sozinho quando o ato grava
+    (`rascunho_de_tela.saiu_com_o_ato`), e aqui ele já pode não existir. O processo
+    não fecha sozinho: é quem lavrou que diz, aqui, numa ação só. E o ato que saiu
+    de uma tela em branco só se sabe por esta palavra, que tira o rascunho também."""
     bd = banco(con)
     init_schema(bd)
     v = bd.um("SELECT tabela, item_id FROM pr_vinculos WHERE id=%s AND task_id=%s",
@@ -184,7 +186,8 @@ def ato_lavrado_do_rascunho(con: Any, task_id: int, vinculo_id: int, *,
     if not v or v["tabela"] != "rascunhos_de_tela":
         raise PastaError("Este vínculo não é um rascunho deste processo.")
     if apagar_rascunho:
-        bd.escrever("DELETE FROM rascunhos_de_tela WHERE id=%s", (int(v["item_id"]),))
+        RASC.virou_ato(bd, int(v["item_id"]), endereco=None, agora=agora,
+                       por=str(por or ""))
     bd.escrever("UPDATE tasks SET status='CONCLUIDA', completed_at=%s, completed_by=%s, updated_at=%s WHERE id=%s",
                 (agora, por, agora, int(task_id)))
     bd.escrever("INSERT INTO task_history(task_id, ts, user_id, action, old_value, new_value, note) "
@@ -278,8 +281,13 @@ def vinculos(con: Any, task_id: int) -> list[dict]:
         v["rotulo"] = rotulo(bd, v["tabela"], v["item_id"])
         v["endpoint"], v["arg"] = t["endpoint"], t["arg"]
         if v["tabela"] == "rascunhos_de_tela":
-            r = bd.um("SELECT tela FROM rascunhos_de_tela WHERE id=%s", (v["item_id"],))
+            r = bd.um("SELECT id, tela, chave FROM rascunhos_de_tela WHERE id=%s", (v["item_id"],))
             v["endpoint"] = r["tela"] if r else None
+            v["rascunho"] = dict(r) if r else None
+            virou = None if r else RASC.o_ato_do_rascunho(bd, v["item_id"])
+            if virou:
+                v["rotulo"] = f"#{v['item_id']} — já virou ato"
+                v["ato_url"] = virou["endereco"]
         if v["tabela"] == "ri_protocolos":
             v["etapa"] = etapa_do_ri(bd, v["item_id"])
     return saida

@@ -174,6 +174,7 @@ def montar(titulo: dict, devedor: dict, *, identificador: str,
 # cobrança de quem o juiz mandou parar.
 SITUACOES_QUE_NAO_VAO: frozenset[str] = frozenset({
     "PAGO", "RETIRADO", "PROTESTADO", "CANCELADO", "DESISTIDO", "SUSTADO",
+    "DEVOLVIDO",
 })
 
 

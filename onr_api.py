@@ -945,10 +945,15 @@ def _bater_cru(metodo: str, caminho: str, *, base: str,
             user_agent=HTTP.USER_AGENT_PADRAO,
         ).como_dict()
     except HTTP.CentralHttpError as erro:
+        # QUEM ESCREVE NÃO PODE OUVIR «NADA FOI ENVIADO»: o prazo pode estourar
+        # depois de o ONR receber, e repetir daria duas cobranças. A frase é a de
+        # `centrais_http`.
+        nada = ("nada foi enviado" if e_leitura
+                else "confira na Central se o pedido chegou antes de repetir")
         raise OnrError(
             f"Não consegui falar com o ONR em {hospedeiro}: "
             f"{erro.causa or erro}. Confira a internet da serventia e tente "
-            f"de novo; nada foi enviado."
+            f"de novo; {nada}."
         ) from None
 
 

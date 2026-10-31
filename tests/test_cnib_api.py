@@ -361,6 +361,7 @@ def test_a_consulta_por_documento_devolve_o_retrato_de_agora(monkeypatch):
     central = ligar(monkeypatch, [ENVELOPE_CONSULTA])
     r = cnib_api.consultar_por_documento("00.000.000/0000-00",
                                          cpf_usuario=CPF_DE_EXEMPLO)
+    assert r["respondeu"] is True
     assert r["indisponivel"] is False
     assert r["quantas"] == 0
     assert r["protocolos"] == []
@@ -372,6 +373,14 @@ def test_a_consulta_por_documento_devolve_o_retrato_de_agora(monkeypatch):
     # que a casa manda, e é assim que a Central o ecoa de volta.
     assert central.corpos[0] == {"cpf_usuario": CPF_DE_EXEMPLO,
                                 "documento": "00.000.000/0000-00"}
+
+
+def test_resposta_sem_o_campo_nao_vira_zero(monkeypatch):
+    """Sem `indisponivel`, a Central não disse que não há ordem. A tela lê `respondeu`."""
+    ligar(monkeypatch, [{"success": True, "data": {"protocolos": []}}])
+    r = cnib_api.consultar_por_documento("00.000.000/0000-00",
+                                         cpf_usuario=CPF_DE_EXEMPLO)
+    assert r["respondeu"] is False
 
 
 def test_a_consulta_sem_documento_recusa_antes_da_rede(monkeypatch):

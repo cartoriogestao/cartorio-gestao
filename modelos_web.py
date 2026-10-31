@@ -99,6 +99,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             resposta = proprio(corpo)
             if resposta is not None:
                 return resposta or None
+        # A MESMA RÉGUA DE QUEM GRAVA (`ELEM.salvar`): duas diriam coisas diferentes do mesmo texto.
+        if chave in MODELOS.POR_CHAVE:
+            return ELEM.conferir(ELEM.atribuicao_do_ato(chave), chave, ELEM.CORPO, corpo) or None
         return MODELOS.conferir(corpo, ENSAIO)
 
     @app.route("/modelos/previa", methods=["POST"])

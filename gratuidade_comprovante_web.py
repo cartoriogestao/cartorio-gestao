@@ -252,6 +252,11 @@ def registrar_rotas_do_selo_e_caixa(app, db, login_required, roles_required, aud
             escolhido = (request.form.get("protocolo_id") or "").strip()
         if not escolhido or request.endpoint in JA_ESCOLHEM_O_PROTOCOLO:
             return None
+        # GUARDAR O RASCUNHO NÃO ESCOLHE PROTOCOLO (31/10/2026): ele leva junto o
+        # protocolo marcado na tela, para a tela reaberta voltar com ele. Mas
+        # rascunho não é ato: quem passa a atender aquele protocolo é o envio do ato.
+        if request.endpoint in ("rascunho_salvar", "rascunho_salvar_e_abrir_processo"):
+            return None
         try:
             with db.transaction() as con:
                 feito = AS.escolher_protocolo_do_selo(
@@ -393,6 +398,7 @@ def registrar_rotas_do_selo_e_caixa(app, db, login_required, roles_required, aud
     @login_required
     def selo_cobertura():
         tabela, ato_id = _ato_do_pedido()
+        eu = current_user()
         with db.connect() as con:
             quadro = AS.quadro_para_selar(con, tabela=tabela, ato_id=ato_id,
                                           usuario=usuario_nome())
@@ -404,6 +410,12 @@ def registrar_rotas_do_selo_e_caixa(app, db, login_required, roles_required, aud
             saldo = (DEP.saldo_do_protocolo(con, atendendo["id"], tabela=tabela,
                                             ato_id=ato_id) if atendendo else 0)
             aguardando = AS.aguardando_cobertura(con, limite=50)
+            # A COBRANÇA DE QUEM ABRIU A TELA (revisão de telas, 30/10/2026): a
+            # barra vermelha manda para cá, e a tela não dizia quais selos. O nome
+            # e o login são os da barra, para a lista e o número dela baterem.
+            a_pagar = AS.pagamentos_pendentes(
+                con, nome=(eu["full_name"] if eu else ""),
+                username=(eu["username"] if eu else ""))
             # OS CANDIDATOS DA TELA QUE MANDOU PARA CÁ (22/10/2026): a tela do
             # ato monta o link com `pedido=código:quantidade` (um por selo) e
             # `selar=<rota que sela de novo>`. Com eles o quadro mostra os
@@ -432,7 +444,8 @@ def registrar_rotas_do_selo_e_caixa(app, db, login_required, roles_required, aud
             "selo_cobertura.html", quadro=quadro, tabela=tabela, ato_id=ato_id,
             rotulo=AS.TABELAS_DE_ATO.get(tabela or "", ""), atendendo=atendendo,
             ligados=ligados, disponiveis=disponiveis, saldo=saldo,
-            aguardando=aguardando, pode_diferir=tabela in CXP.TABELAS_QUE_DIFEREM,
+            aguardando=aguardando, a_pagar=a_pagar,
+            pode_diferir=tabela in CXP.TABELAS_QUE_DIFEREM,
             pedidos=pedidos, candidatos=candidatos, url_de_selar=url_de_selar,
             eh_admin=usuario_papel() == AS.PAPEL_QUE_LIBERA,
             o_que_vai=AS.O_QUE_VAI_NO_PDF, reais=DEP.reais)

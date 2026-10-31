@@ -241,10 +241,10 @@ def test_a_ficha_do_assento_mostra_a_divisao_tripartite_em_blocos(s):
     assert "Corrige grafia do nome." in html
 
 
-def test_a_ficha_do_assento_avisa_que_a_matricula_nao_e_gerada(s):
+def test_a_ficha_do_assento_sem_matricula_diz_como_ela_se_compoe(s):
     ids = _semear(s)
     html = s["c"].get(f"/rcpn/{ids['assento']}").get_data(as_text=True)
-    assert "não gera nem valida" in html
+    assert "Ao lavrar, o sistema a compõe" in html
 
 
 def test_a_ficha_do_rtd_diz_que_a_averbacao_consome_protocolo(s):
@@ -1248,7 +1248,7 @@ def test_a_correcao_de_oficio_pela_ficha(s):
     con.close()
     bruto = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
     ficha = " ".join(bruto.split())
-    assert "Corrigir a situação de ofício" in ficha
+    assert "Propor a correção de ofício" in ficha
     assert "os atos válidos sustentam a situação <strong>APONTADO</strong>" in ficha
     assert "Refazer o pagamento" in ficha                 # e o ato a refazer
     rota = f"/protesto/{tid}/situacao/corrigir"
@@ -1257,28 +1257,38 @@ def test_a_correcao_de_oficio_pela_ficha(s):
         return postar_e_seguir(s["c"], rota, {"csrf_token": _token(bruto), **campos}
                                ).get_data(as_text=True)
 
-    sem = corrigir(afirmacao="")
-    assert "exige a afirmação expressa" in sem
-    assert _con(s).execute("SELECT situacao FROM pt_titulos WHERE id=?",
-                           (tid,)).fetchone()[0] == "PAGO"
-    feito = corrigir(afirmo="1", afirmacao=(
-        "Afirmo, sob minha responsabilidade, que o pagamento não aconteceu: "
-        "o selo falhou e o título não voltou."))
-    assert "Situação corrigida de ofício: PAGO → APONTADO" in feito
+    sem = corrigir(motivo="")
+    assert "Escreva o motivo" in sem
+    # O BOTÃO SÓ PROPÕE (decisão do oficial, 30/10/2026): a situação não muda.
+    feito = corrigir(motivo=("O pagamento não aconteceu: o selo falhou e o título "
+                             "não voltou à situação de antes."))
+    assert "a situação não mudou" in feito
+    con = _con(s)
+    assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
+                       (tid,)).fetchone()[0] == "PAGO"
+    proposta = con.execute(
+        "SELECT id, tipo, situacao FROM correcoes_de_oficio ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    assert (proposta[1], proposta[2]) == ("PT_SITUACAO_SUSTENTADA", "PROPOSTA")
+    proposta_id = int(proposta[0])
+    assert con.execute("SELECT COUNT(*) FROM audit_logs "
+                       "WHERE action='AFIRMACAO_EXPRESSA'").fetchone()[0] == 0
+    ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
+    assert "data-propostas-de-oficio" in ficha
+    # O OFICIAL APROVA, com a afirmação expressa, e o servidor executa: só
+    # então o título volta a APONTADO. Com ele PAGO, o pagamento novo seria
+    # recusado (`recusar_pagamento_na_situacao`).
+    postar_e_seguir(
+        s["c"], f"/administrativo/correcoes-de-oficio/{proposta_id}/aprovar",
+        {"csrf_token": _token(ficha), "afirmo": "1",
+         "afirmacao": ("Afirmo, sob minha responsabilidade, que o pagamento do "
+                       "título não aconteceu: o selo falhou e ele ficou PAGO.")})
     con = _con(s)
     assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
                        (tid,)).fetchone()[0] == "APONTADO"
-    import json
-    linha = con.execute(
-        "SELECT entity_type, details FROM audit_logs "
-        "WHERE action='AFIRMACAO_EXPRESSA' ORDER BY id DESC LIMIT 1").fetchone()
-    assert linha["entity_type"] == "pt_titulos"
-    assert json.loads(linha["details"])["regra"] == "SITUACAO_SEM_ATO"
-    assert con.execute(
-        "SELECT COUNT(*) FROM audit_logs "
-        "WHERE action='PROTESTO_SITUACAO_CORRIGIDA_DE_OFICIO'").fetchone()[0] == 1
-    # E AGORA O PAGAMENTO SE LANÇA DE NOVO, e a obrigação some sozinha.
-    # (Em espécie: PIX só com o crédito conferido, 29/10/2026.)
+    con.close()
+    # E O PAGAMENTO SE LANÇA DE NOVO; a obrigação some sozinha. (Em espécie:
+    # PIX só com o crédito conferido, 29/10/2026.)
     lancado = _post(s, f"/protesto/{tid}/lancar", ato="PAGAMENTO",
                     forma_pagamento="ESPECIE", selo=SELO_BOM)
     assert "Pagamento lançado" in lancado
@@ -1303,14 +1313,13 @@ def test_a_correcao_de_oficio_nao_e_do_balcao(tmp_path):
     con.close()
     ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
     assert "data-situacao-sem-ato" in ficha
-    assert "Corrigir a situação de ofício" not in ficha
+    assert "Propor a correção de ofício" not in ficha
     assert "é do oficial ou do" in " ".join(ficha.split())
     # O token vem de uma tela do balcão: a ficha do título PAGO não tem
     # formulário para quem não pode corrigir.
     token = _token(s["c"].get("/protesto/novo").get_data(as_text=True))
     r = s["c"].post(f"/protesto/{tid}/situacao/corrigir",
-                    data={"csrf_token": token, "afirmo": "1",
-                          "afirmacao": AFIRMACAO_BOA})
+                    data={"csrf_token": token, "motivo": AFIRMACAO_BOA})
     assert r.status_code in (302, 403)
     assert _con(s).execute("SELECT situacao FROM pt_titulos WHERE id=?",
                            (tid,)).fetchone()[0] == "PAGO"

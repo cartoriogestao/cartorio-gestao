@@ -1868,6 +1868,13 @@ def create_app(test_config: dict | None = None) -> Flask:
                 v["url"] = url_for(v["endpoint"], **{v["arg"]: v["item_id"]}) if v["endpoint"] else None
             except Exception:                                   # noqa: BLE001
                 v["url"] = None
+            # O rascunho se abre como na lista de Rascunhos: o do lançamento do civil
+            # não tem rota com o nome da tela, e o endereço está na chave dele.
+            if v.get("rascunho"):
+                import rascunho_de_tela as RASC
+                v["url"] = RASC.endereco_de_abrir(v["rascunho"], url_for)
+            elif v.get("ato_url"):
+                v["url"] = v["ato_url"]
         return render_template("task_detail.html", row=row, history=history, attachments=attachments, users=users,
                                sectors=sectors, pasta_vinculos=pasta_vinculos, pasta_docs=pasta_docs,
                                pasta_retirados=pasta_retirados,
@@ -2705,6 +2712,14 @@ def create_app(test_config: dict | None = None) -> Flask:
         return render_template("audit.html", rows=db.list_logs(2000),
                                agente_servidor=IDR.AGENTE_SERVIDOR)
 
+    def _tela_de_configuracoes(cenprot_tentativa=None):
+        s = settings_dict()
+        # O QUE ESTA INFORMADO, SEM O SEGREDO — `situacao` nunca devolve senha.
+        return render_template("settings.html", s=s,
+                               cenprot_tentativa=cenprot_tentativa,
+                               backup_cifra=BKP.situacao_da_cifra(data_dir),
+                               centrais=CENTCRED.situacao(), categories="\n".join(json_list(s.get("categories","[]"), [])), sources="\n".join(json_list(s.get("sources","[]"), [])), sectors="\n".join(json_list(s.get("sectors","[]"), [])), data_dir=data_dir)
+
     @app.route("/configuracoes", methods=["GET", "POST"])
     @login_required
     @roles_required("ADMIN")
@@ -2811,11 +2826,56 @@ def create_app(test_config: dict | None = None) -> Flask:
             audit("SETTINGS_CHANGED", "SETTINGS", None, values)
             flash("Configurações salvas. Alterações de host/porta entram em vigor após reiniciar o servidor.", "success")
             return redirect(url_for("settings"))
-        s = settings_dict()
-        # O QUE ESTA INFORMADO, SEM O SEGREDO — `situacao` nunca devolve senha.
-        return render_template("settings.html", s=s,
-                               backup_cifra=BKP.situacao_da_cifra(data_dir),
-                               centrais=CENTCRED.situacao(), categories="\n".join(json_list(s.get("categories","[]"), [])), sources="\n".join(json_list(s.get("sources","[]"), [])), sectors="\n".join(json_list(s.get("sectors","[]"), [])), data_dir=data_dir)
+        return _tela_de_configuracoes()
+
+    @app.route("/configuracoes/cenprot-chave", methods=["POST"])
+    @login_required
+    @roles_required("ADMIN")
+    def configuracoes_cenprot_chave():
+        """Os dados da conta da chave da CENPROT. ESCREVE só estas chaves.
+
+        Ordem do oficial, 30/10/2026: «coloca esse cálculo do xml como uma
+        variável a ser preenchida pela serventia». A conta foi medida só nesta
+        casa, e a chave de outra serventia não fecha por ela.
+
+        FORMATO ERRADO NÃO SE GRAVA. Conferência baixa não se recusa: avisa e
+        pergunta, porque quem responde pela chave é a serventia.
+        """
+        import protesto_cenprot as PCEN
+        try:
+            valores = PCEN.configuracao_da_chave(request.form)
+        except PCEN.CenprotError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("settings") + "#cfg-cenprot-chave")
+        pesos = valores[PCEN.CHAVE_DOS_PESOS]
+        conferencia = None
+        if pesos:
+            with db.connect() as con:
+                conferencia = PCEN.conferir_pesos(con, pesos)
+            if (conferencia["conferem"] < conferencia["total"]
+                    and not request.form.get("gravar_mesmo_assim")):
+                flash(f"Só {conferencia['conferem']} de {conferencia['total']} "
+                      f"chaves já gravadas conferem com estes pesos. Nada foi "
+                      f"gravado: confira os pesos ou marque que quer gravar "
+                      f"assim mesmo.", "warning")
+                return _tela_de_configuracoes(
+                    cenprot_tentativa={**valores, "conferencia": conferencia})
+        db.set_settings(valores)
+        audit("SETTINGS_CHANGED", "SETTINGS", None,
+              {**{k: v for k, v in valores.items() if k != PCEN.CHAVE_DOS_PESOS},
+               "cenprot_chave_pesos": "preenchidos" if pesos else "vazios",
+               "conferencia": conferencia})
+        if not pesos:
+            flash("Chave da CENPROT salva, sem pesos: o sistema não calcula a "
+                  "chave, e o título é apontado sem ela.", "warning")
+        elif conferencia["total"]:
+            flash(f"Chave da CENPROT salva. {conferencia['conferem']} de "
+                  f"{conferencia['total']} chaves já gravadas conferem com "
+                  f"estes pesos.", "success")
+        else:
+            flash("Chave da CENPROT salva. Ainda não há chave gravada para "
+                  "conferir os pesos.", "success")
+        return redirect(url_for("settings") + "#cfg-cenprot-chave")
 
     @app.route("/configuracoes/cra-envio", methods=["POST"])
     @login_required
@@ -3377,9 +3437,19 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     # O ONR — o indicador real, o edital do usucapiao e a fila. Depois de
     # `ri_web` e de `usucapiao_web`, que sao as telas para onde estas apontam.
+    # O ARQUIVO INTEIRO DO INDICADOR REAL (30/10/2026): «as outras serventias que
+    # baixarem o programa precisam do botao».
+    import onr_ir_inteiro_web
+    onr_ir_inteiro_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
     import ri_onr_web
     ri_onr_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                fmt_date)
+
+    # O LAYOUT NOVO (30/10/2026): a chave por pessoa e o contexto da casca. O registro
+    # de tudo o que a barra, o Novo e a busca oferecem mora em `navegacao.py`.
+    import navegacao_web
+    navegacao_web.registrar_rotas(app, db, login_required, roles_required, audit)
 
     # A BASE DO MAPA DO ONR — o CSV que o QGIS junta ao polígono (LF02).
     import ri_mapa_onr
@@ -3406,6 +3476,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     # emissão, pela rota da casa (`onr_certidoes_auto_web`).
     import onr_certidoes_auto_web
     onr_certidoes_auto_web.registrar_rotas(app, db, login_required, roles_required, audit)
+
+    # O ATENDIMENTO ELETRÔNICO DO ONR (SAEC) E AS COBRANÇAS (30/10/2026): ler é do
+    # balcão; responder e gerar cobrança, só do ADMIN.
+    import onr_saec_web
+    onr_saec_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
     # O ANDAMENTO DAS PRENOTAÇÕES NO ACOMPANHAMENTO DE TÍTULOS DO ONR (26/10/2026)
     # — a fila de fatos gravados e o botão que a manda; o envio nasce desligado.

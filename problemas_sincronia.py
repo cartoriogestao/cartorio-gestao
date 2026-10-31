@@ -14,7 +14,8 @@ repositório nenhum, nem privado.
 
 O QUE ESTE MÓDULO NUNCA FAZ:
   - exporta texto sem passar por `ajuda_privacidade.sanitizar_texto` — a mesma
-    máscara do relatório para conserto (`ajuda_problemas.montar_relatorio`);
+    máscara do relatório para conserto (`ajuda_problemas.montar_relatorio`) —,
+    seguida de `_mascarar_referencias`, que vale só aqui;
   - exporta login ou nome de quem usou (`criado_por`, `ultimo_usuario`,
     `fechado_por`, `reaberto_por`, `nota_dev_por`);
   - escreve fora da pasta informada, ou apaga arquivo dela;
@@ -39,6 +40,7 @@ import argparse
 import os
 import re
 import sys
+import unicodedata
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -78,6 +80,145 @@ def _vazio(valor: Any) -> str:
     return texto or "(vazio)"
 
 
+# ------------------------------------------- as referências, só na exportação
+#
+# 31/10/2026: a primeira exportação real mostrou referências que a máscara comum
+# não conhece. **ELA NÃO MUDA**: também protege o que vai à IA, e o vocabulário
+# dela foi medido contra os nomes da serventia. O que é mais rígido fica aqui e
+# vale só para o que sai neste repositório; o relatório para conserto da tela
+# (`ajuda_problemas.montar_relatorio`) não ganha esta passagem.
+
+_TIPO_DA_REFERENCIA = "REFERENCIA_REGISTRAL"
+_REFERENCIA_JA_MARCADA = re.compile(rf"\[{_TIPO_DA_REFERENCIA}_(\d+)\]")
+_ANTES_DO_NUMERO = r"\s*(?:n[ºo°]\.?\s*)?(?:[:=#-]\s*)?"
+# O INTEIRO NÃO É CÓDIGO COM PONTOS NEM DATA NEM HORA: «Ato: 16.24.4» e «ato de
+# 01/01/2026» ficam. O ano de um número («321/2026») sai junto com ele.
+_INTEIRO = r"\d+(?:/\d{4})?(?!\d|\.\d|:\d|/\d|-\d)"
+_REFERENCIAS_ROTULADAS = (
+    ("folha", re.compile(
+        rf"(?P<inicio>\b(?:fls?\b\.?|folhas?\b){_ANTES_DO_NUMERO})"
+        r"(?P<valor>\d+[vf]?(?:\s*(?:/|-|a|e)\s*\d+[vf]?)*)\b", re.I)),
+    # O ASSENTO PODE TER PONTO DE MILHAR, e por isso não é o `_INTEIRO`.
+    ("assento", re.compile(
+        rf"(?P<inicio>\bassentos?\b{_ANTES_DO_NUMERO})"
+        r"(?P<valor>\d+(?:\.\d+)*(?:/\d{4})?)(?!\d|:\d|/\d|-\d)", re.I)),
+    ("ato", re.compile(
+        rf"(?P<inicio>\batos?\b{_ANTES_DO_NUMERO})(?P<valor>{_INTEIRO})", re.I)),
+    ("interno", re.compile(
+        r"(?P<inicio>\b(?P<ato>habilita[cç][aã]o|prenota[cç][aã]o|averba[cç][aã]o|"
+        rf"certid[aã]o)\b{_ANTES_DO_NUMERO})(?P<valor>{_INTEIRO})", re.I)),
+)
+# A LETRA ANTES DA PASTA É O QUE PROTEGE A DATA: em «01/01/2026», o que vem antes
+# da barra é dígito. A barra dobrada é a do `repr` num erro do Python.
+_PASTA_NUMERICA = re.compile(
+    r"(?P<inicio>(?:[^\W\d]|\])[\\/]+)(?P<valor>\d+(?:[\\/]+\d+)*)(?=[\\/])")
+# SÓ O QUE TEM CARA DE TABELA. Qualquer `nome:número` levaria `width:1` e
+# `localhost:8780`; o ponto antes de `py` deixa `app.py:205` em paz.
+_TABELA_COM_NUMERO = re.compile(
+    r"(?<![\w./\\-])(?P<inicio>(?:[a-z][a-z0-9]*(?:_[a-z0-9]+)+|tb[a-z0-9]+|"
+    r"pessoas|users|recibos|livroauxiliar[a-z]*):)(?P<valor>\d+)\b(?![:.]\d)")
+# NUMA CASA PEQUENA, FUNÇÃO E HORA DIZEM QUEM PEDIU. A data fica. Entre a função
+# e o «em» só passa marcador: «Pedido do sistema falhou em…» não é tocado.
+_PEDIDO_DE_QUEM = re.compile(
+    r"\b(?P<pedido>pedido)\s+(?:feito\s+)?(?:d[ao]s?|pel[ao]s?)\s+"
+    r"(?:(?:escrevente|oficial|substitut[oa]|auxiliar|atendente|tabeli[ãa]o?|"
+    r"registrador[a]?|prepost[oa]|escritur[aá]ri[oa]|interin[oa]|operador[a]?|"
+    r"funcion[aá]ri[oa]|colaborador[a]?)\b|\[PESSOA_\d+\])"
+    r"(?:\s*,?\s*\[PESSOA_\d+\])*"
+    r"(?:\s+em\s+(?P<data>\d{1,2}/\d{1,2}/\d{2,4}|\d{4}-\d{2}-\d{2}))?"
+    r"(?:\s*\(?\s*~?\s*(?:[àa]s\s+)?\d{1,2}[:h]\d{2}(?:\s*UTC\s*[-+]\d{1,2})?\s*\)?)?",
+    re.I)
+
+
+def _sem_acento(texto: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", texto)
+                   if not unicodedata.combining(c))
+
+
+def _mascarar_referencias(texto: str) -> str:
+    """Troca as referências que a máscara comum não conhece. Só calcula, e NUNCA
+    RECUSA: quem recusa é `PRIV.sanitizar_texto`, que roda antes.
+
+    **A NUMERAÇÃO CONTINUA A DA MÁSCARA COMUM**: ela já numerou a matrícula, e
+    recomeçar em 01 faria duas referências diferentes parecerem a mesma.
+    """
+    usados = [int(n) for n in _REFERENCIA_JA_MARCADA.findall(texto)]
+    proximo = [max(usados, default=0)]
+    marcadores: dict[tuple[str, str], str] = {}
+
+    def marcador(familia: str, valor: str) -> str:
+        chave = (familia, re.sub(r"\s+", " ", valor).casefold())
+        if chave not in marcadores:
+            proximo[0] += 1
+            marcadores[chave] = f"[{_TIPO_DA_REFERENCIA}_{proximo[0]:02d}]"
+        return marcadores[chave]
+
+    def trocar_rotulada(familia: str):
+        def trocar(m: re.Match) -> str:
+            ato = m.groupdict().get("ato")
+            qual = f"{familia}:{_sem_acento(ato).casefold()}" if ato else familia
+            return f"{m.group('inicio')}{marcador(qual, m.group('valor'))}"
+        return trocar
+
+    def trocar_pedido(m: re.Match) -> str:
+        data = f" em {m.group('data')}" if m.group("data") else ""
+        return f"{m.group('pedido')}{data}"
+
+    def trocar_pasta(m: re.Match) -> str:
+        pastas = re.sub(r"\d+", lambda n: marcador("pasta", n.group(0)),
+                        m.group("valor"))
+        return f"{m.group('inicio')}{pastas}"
+
+    def trocar_tabela(m: re.Match) -> str:
+        return f"{m.group('inicio')}{marcador(m.group('inicio'), m.group('valor'))}"
+
+    saida = _PEDIDO_DE_QUEM.sub(trocar_pedido, str(texto or ""))
+    for familia, padrao in _REFERENCIAS_ROTULADAS:
+        saida = padrao.sub(trocar_rotulada(familia), saida)
+    saida = _PASTA_NUMERICA.sub(trocar_pasta, saida)
+    return _TABELA_COM_NUMERO.sub(trocar_tabela, saida)
+
+
+def _com_fim_de_linha_unico(texto: Any) -> str:
+    """`read_text` troca `\\r\\n` e `\\r` por `\\n`: sem isto, um relato do Windows
+    pareceria mudado a cada ciclo."""
+    return str(texto or "").replace("\r\n", "\n").replace("\r", "\n")
+
+
+# ------------------------------------------------- o aviso de texto mascarado
+#
+# O BALCÃO ESCREVE EM MAIÚSCULAS, e palavra fora do vocabulário vira
+# `[PESSOA_nn]`. Ampliar o vocabulário depende de medir contra os nomes da
+# serventia; o que dá para fazer aqui é dizer a quem lê que o texto não presta.
+#
+# A REGRA COMPARA O ANTES E O DEPOIS, e não a proporção de marcadores no fim: um
+# marcador só engole várias palavras. Palavra de uma ou duas letras não conta,
+# para «DE» e «A» não fazerem um texto vazio parecer legível. O corte é
+# julgamento: o repositório só tem o texto já mascarado, sem o original para medir.
+
+AVISO_DE_TEXTO_MASCARADO = (
+    "**Texto muito mascarado: leia na tela do sistema antes de concluir.**")
+_PALAVRA_QUE_CONTA = re.compile(r"[^\W\d_]{3,}")
+_PERDA_MINIMA_DO_AVISO = 3
+
+
+def _escrito_por_gente(p: dict) -> str:
+    """Título e detalhe de um RELATADO, sem o stack trace colado. As outras
+    origens são da máquina, e o `diagnostico` é da IA."""
+    if p.get("origem") != "RELATADO":
+        return ""
+    texto = _com_fim_de_linha_unico(f"{p.get('titulo') or ''}\n{p.get('detalhe') or ''}")
+    return texto.split("Traceback (most recent call last)")[0]
+
+
+def _muito_mascarado(p: dict) -> bool:
+    original = _escrito_por_gente(p)
+    seguro = _mascarar_referencias(PRIV.sanitizar_texto(original))
+    antes = len(_PALAVRA_QUE_CONTA.findall(original))
+    depois = len(_PALAVRA_QUE_CONTA.findall(_MARCADOR.sub(" ", seguro)))
+    return antes - depois >= _PERDA_MINIMA_DO_AVISO and depois * 2 < antes
+
+
 def texto_do_arquivo(problema: dict, ambiente: str, mapa: dict | None) -> str:
     """O arquivo de um problema, já mascarado. Só calcula.
 
@@ -89,6 +230,9 @@ def texto_do_arquivo(problema: dict, ambiente: str, mapa: dict | None) -> str:
     um RELATADO é escrito por gente, e gente escreve nome. Se sobrar dado
     depois de mascarar, `PRIV.PrivacidadeError` sobe — e quem chama recusa
     este problema, em vez de deixá-lo sair.
+
+    **AS REFERÊNCIAS SÓ VALEM NO CORPO**: os campos do cabeçalho são lidos por
+    programa, e a `impressao` tem de voltar igual no retorno.
     """
     p = dict(problema)
     cabecalho = [
@@ -106,8 +250,22 @@ def texto_do_arquivo(problema: dict, ambiente: str, mapa: dict | None) -> str:
         "---",
         "",
     ]
-    return PRIV.sanitizar_texto(
-        "\n".join(cabecalho + AP._bloco_do_problema(p, mapa)))
+    seguro = PRIV.sanitizar_texto(_com_fim_de_linha_unico(
+        "\n".join(cabecalho + AP._bloco_do_problema(p, mapa))))
+    topo, fecho, corpo = seguro.partition("\n---\n")
+    texto = f"{topo}{fecho}{_mascarar_referencias(corpo)}"
+    if _muito_mascarado(p):
+        texto += f"\n{AVISO_DE_TEXTO_MASCARADO}\n"
+    return texto
+
+
+def _titulo_do_indice(p: dict) -> str:
+    """O título, mascarado sozinho e antes de entrar na tabela: `_NOME_ROTULADO`
+    aceita o `|` e iria até o fim da linha montada. Sobe `PrivacidadeError`
+    como `texto_do_arquivo`."""
+    titulo = (_com_fim_de_linha_unico(p.get("titulo"))
+              .replace("\n", " ").replace("|", "/"))
+    return _mascarar_referencias(PRIV.sanitizar_texto(titulo))
 
 
 def _dia(texto: Any) -> str:
@@ -133,7 +291,10 @@ def _voltou(p: dict) -> bool:
 
 def _texto_do_indice(linhas: list[dict], *, ambiente: str) -> str:
     """A tabela do repositório. Primeiro o que voltou depois de relatado — a
-    linha mais importante da lista —, depois o que mais se repete."""
+    linha mais importante da lista —, depois o que mais se repete.
+
+    O título chega mascarado (`_titulo_do_indice`), e as outras colunas vêm de
+    valores controlados: mascarar a tabela montada a quebraria."""
     ordem = sorted(linhas, key=lambda x: (not _voltou(x["p"]),
                                           -int(x["p"].get("vezes") or 0),
                                           int(x["p"]["id"])))
@@ -147,18 +308,17 @@ def _texto_do_indice(linhas: list[dict], *, ambiente: str) -> str:
     ]
     for x in ordem:
         p = x["p"]
-        titulo = str(p.get("titulo") or "").replace("|", "/").replace("\n", " ")
         situacao = str(p.get("situacao") or "")
         if _voltou(p):
             situacao += " (voltou depois de relatado)"
         retorno = AP.ROTULO_CURTO_DEV.get(p.get("nota_dev_estado") or "", "—")
         partes.append(
             f"| [{x['arquivo']}]({PASTA_DOS_PROBLEMAS}/{x['arquivo']}) "
-            f"| {titulo} | {situacao} "
+            f"| {x['titulo']} | {situacao} "
             f"| {AP.REPRODUCOES[AP.reproducao_de(p)]} | {retorno} |")
     if not ordem:
         partes.append("| — | Nenhum problema nesta exportação | — | — | — |")
-    return PRIV.sanitizar_texto("\n".join(partes) + "\n")
+    return "\n".join(partes) + "\n"
 
 
 def _dentro(pasta: Path, alvo: Path) -> Path:
@@ -205,6 +365,7 @@ def exportar(db, pasta: Any, *, agora: str, ambiente: str | None = None,
         arquivo = nome_do_arquivo(p, amb)
         try:
             texto = texto_do_arquivo(p, amb, mapa)
+            titulo = _titulo_do_indice(p)
         except PRIV.PrivacidadeError as erro:
             recusados.append({"id": int(p["id"]), "porque": str(erro)})
             continue
@@ -213,7 +374,7 @@ def exportar(db, pasta: Any, *, agora: str, ambiente: str | None = None,
             escritos.append(f"{PASTA_DOS_PROBLEMAS}/{arquivo}")
         else:
             iguais += 1
-        no_indice.append({"arquivo": arquivo, "p": p})
+        no_indice.append({"arquivo": arquivo, "p": p, "titulo": titulo})
 
     indice = _dentro(raiz, raiz / ARQUIVO_DO_INDICE)
     if _gravar_se_mudou(indice, _texto_do_indice(no_indice, ambiente=amb),

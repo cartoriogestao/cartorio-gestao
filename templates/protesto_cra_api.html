@@ -1,7 +1,24 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>CRA — falar com a Central pela API</h1>{% endblock %}
 {% block content %}
-{% include '_serventia.html' %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, O QUE SE FAZ TODO DIA VEM PRIMEIRO — 30/10/2026. Os dois downloads ficam lado a lado,
+   sem rolar: é por eles que o roteiro manda consultar a CRA. A consulta, a ligação e a referência
+   ficam em quadros recolhidos. Os formulários são os mesmos; no layout antigo nada muda de lugar. #}
+{% if not layout_novo %}{% include '_serventia.html' %}{% endif %}
+{% if layout_novo %}
+<style>
+  .cra-api.stack{gap:8px}
+  .cra-api details.cg-quadro{margin:0}
+  .cg-cra-duas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}
+  .cg-cra-duas>.panel{margin:0;min-width:0}
+  .cg-cra-duas details.cg-quadro{margin:0 16px 14px;box-shadow:none}
+  .cg-cra-duas details.cg-quadro>summary{font-size:13px;padding:8px 12px}
+  .cg-cra-duas .table-wrap.cra-opcoes{margin:10px 12px}
+  .cra-api .form-grid fieldset.cra-consulta-grupo>label.checkbox-label{display:flex;align-items:center;gap:8px}
+  @media(max-width:1200px){.cg-cra-duas{grid-template-columns:minmax(0,1fr)}}
+</style>
+{% endif %}
 
 <div class="cra-api stack">
 <div class="actions">
@@ -34,16 +51,13 @@
 </div>
 {% endif %}
 
-<section class="panel">
-  <div class="panel-head">
-    <span>Ligação e teste</span>
-    <small>{{ endereco }}</small>
-  </div>
+{% set ligacao %}
   <div class="cra-panel-body">
     <table class="table">
       <tbody>
         <tr><td><strong>Ambiente</strong></td>
             <td>Produção</td></tr>
+        {% if layout_novo %}<tr><td><strong>Endereço</strong></td><td><small>{{ endereco }}</small></td></tr>{% endif %}
         <tr><td><strong>Credencial</strong></td>
             <td>{% if tem_credencial %}informada — usuário <code>{{ usuario }}</code>
                 {% else %}<span class="muted">não informada</span>{% endif %}</td></tr>
@@ -76,10 +90,9 @@
       </small></p>
     </form>
   </div>
-</section>
+{% endset %}
 
-<section class="panel">
-  <div class="panel-head"><span>Todas as remessas disponíveis</span></div>
+{% set todas %}
   <div class="cra-panel-body">
     <p>Baixa todas as remessas pendentes na CRA, de qualquer data e apresentante,
       sem informar número nem nome de arquivo.</p>
@@ -96,13 +109,9 @@
     <p>O arquivo será salvo no computador. Para conferir e receber os títulos,
       use <a href="{{ url_for('protesto_remessas') }}">Remessa da CRA</a>.</p>
   </div>
-</section>
+{% endset %}
 
-<section class="panel">
-  <div class="panel-head">
-    <span>Outros downloads da CRA</span>
-    <small>vem cru, como a Central mandou</small>
-  </div>
+{% set outros %}
   <div class="cra-panel-body">
     <div class="alert alert-info">
       <strong>O arquivo baixa; ele não aponta nada.</strong> Quem o recebe é a
@@ -131,6 +140,9 @@
       </div>
     </form>
   </div>
+{% endset %}
+
+{% set outros_opcoes %}
   <div class="table-wrap cra-opcoes">
     <table class="table">
       <thead><tr><th>Opção</th><th>O que é o nome</th></tr></thead>
@@ -146,14 +158,9 @@
     — no formato FEBRABAN. O sistema recusa um «nome» que pareça arquivo
     inteiro, porque a viagem até a Central custa mais que a recusa aqui.
   </p>
-</section>
+{% endset %}
 
-<section class="panel">
-  <div class="panel-head">
-    <span>Consultar na CRA</span>
-    <small>as quatro consultas do contrato</small>
-  </div>
-
+{% set consultar %}
   {# A QUE MUDA COISA DO LADO DE LA TEM AVISO PROPRIO. #}
   <div class="cra-panel-body">
     <div class="alert alert-warning">
@@ -216,13 +223,9 @@
       não fazer.
     </p>
   </div>
-</section>
+{% endset %}
 
-<section class="panel">
-  <div class="panel-head">
-    <span>Referência — WSDL e operações sem botão</span>
-    <small>{{ operacoes|length }} operações no WSDL</small>
-  </div>
+{% set referencia %}
   <div class="cra-panel-body">
     <p style="margin:0 0 8px">
       <strong>{{ sem_sentido_medido|length }} das {{ operacoes|length }} operações
@@ -238,8 +241,69 @@
       {{ sem_sentido_medido|join(' · ') }}
     </p>
   </div>
+{% endset %}
+
+{% if layout_novo %}
+{% set nota_da_ligacao %}{% if tem_credencial %}credencial informada — usuário <code>{{ usuario }}</code>{% else %}<strong class="danger">credencial não informada</strong>{% endif %}{% endset %}
+<div class="cg-cra-duas">
+  <section class="panel">
+    <div class="panel-head"><span>Todas as remessas disponíveis</span></div>
+    {{ todas }}
+  </section>
+  <section class="panel">
+    <div class="panel-head">
+      <span>Outros downloads da CRA</span>
+      <small>vem cru, como a Central mandou</small>
+    </div>
+    {{ outros }}
+    {{ abre('cra-opcoes', 'O que cada opção pede', 'o que vai no nome do arquivo') }}{{ outros_opcoes }}</details>
+  </section>
+</div>
+{{ abre('cra-consultar', 'Consultar na CRA', 'as quatro consultas do contrato') }}{{ consultar }}</details>
+{{ abre('cra-ligacao', 'Ligação e teste', nota_da_ligacao) }}{{ ligacao }}</details>
+{{ abre('cra-referencia', 'Referência — WSDL e operações sem botão', (operacoes|length) ~ ' operações no WSDL') }}{{ referencia }}</details>
+{% else %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Ligação e teste</span>
+    <small>{{ endereco }}</small>
+  </div>
+  {{ ligacao }}
 </section>
+
+<section class="panel">
+  <div class="panel-head"><span>Todas as remessas disponíveis</span></div>
+  {{ todas }}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Outros downloads da CRA</span>
+    <small>vem cru, como a Central mandou</small>
+  </div>
+  {{ outros }}
+  {{ outros_opcoes }}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Consultar na CRA</span>
+    <small>as quatro consultas do contrato</small>
+  </div>
+
+  {{ consultar }}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Referência — WSDL e operações sem botão</span>
+    <small>{{ operacoes|length }} operações no WSDL</small>
+  </div>
+  {{ referencia }}
+</section>
+{% endif %}
 </div>
 
 <script defer src="{{ url_for('static', filename='cra_api.js') }}?v={{ VERSION }}"></script>
+{% if layout_novo %}{% include '_serventia.html' %}{{ ferramentas() }}{% endif %}
 {% endblock %}

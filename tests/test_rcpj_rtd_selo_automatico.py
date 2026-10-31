@@ -75,17 +75,20 @@ def _abrir_registro(s, *, serie="TD_B") -> int:
     html = s["c"].get("/rcpj-rtd/novo").get_data(as_text=True)
     quantos = _con(s).execute("SELECT COUNT(*) FROM rg_registros").fetchone()[0]
     selo_abertura = f"AVESVD000000NARRKWVNJCRSVO{22 + int(quantos):02d}"
-    s["c"].post(
-        "/rcpj-rtd/novo",
-        data={"csrf_token": _token(html), "serie": serie,
-              "natureza": "CONTRATO SOCIAL",
-              "requerente_nome": "EMPRESA X LTDA",
-              "requerente_documento": "12345678000199",
-              "teor": "Registro de contrato social da empresa X.",
-              # A abertura não é o objeto destes testes. Ela chega já com um
-              # selo válido para a averbação ser o único ato sob medição.
-              "selo": selo_abertura},
-        follow_redirects=True)
+    dados = {"csrf_token": _token(html), "serie": serie,
+             "natureza": "CONTRATO SOCIAL",
+             "requerente_nome": "EMPRESA X LTDA",
+             "requerente_documento": "12345678000199",
+             "teor": "Registro de contrato social da empresa X.",
+             # A abertura não é o objeto destes testes. Ela chega já com um
+             # selo válido para a averbação ser o único ato sob medição.
+             "selo": selo_abertura}
+    if serie in ("PJ_A", "PJ_B"):
+        # contrato social com fins econômicos: fora dos arts. 410, 412 e 413
+        dados["enquadramento_cnma"] = "NAO_SE_APLICA"
+        dados["justificativa_cnma"] = (
+            "Contrato social com fins econômicos, fora dos arts. 410, 412 e 413.")
+    s["c"].post("/rcpj-rtd/novo", data=dados, follow_redirects=True)
     return int(_con(s).execute(
         "SELECT id FROM rg_registros ORDER BY id DESC LIMIT 1").fetchone()[0])
 
@@ -125,6 +128,12 @@ def _lancar_averbacao(s, registro_id: int, **extra) -> str:
     dados = {"csrf_token": _token(html), "tipo": "AVERBACAO",
              "teor": "Averbação de alteração do endereço da sede da empresa."}
     dados.update(extra)
+    serie = _con(s).execute(
+        "SELECT serie FROM rg_registros WHERE id=?", (registro_id,)).fetchone()
+    if serie and serie["serie"] in ("PJ_A", "PJ_B") and "enquadramento_cnma" not in dados:
+        dados["enquadramento_cnma"] = "NAO_SE_APLICA"
+        dados["justificativa_cnma"] = (
+            "Averbação fora dos arts. 410, 412 e 413 do CN-MA.")
     # Com selo, a averbação leva à etiqueta por 307 (`navegador_de_teste`).
     return postar_e_seguir(
         s["c"], f"/rcpj-rtd/{registro_id}/lancar", dados).get_data(as_text=True)

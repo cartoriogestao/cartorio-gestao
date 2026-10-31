@@ -44,7 +44,7 @@
 <div class="table-wrap"><table>
   <thead><tr><th>Dia</th><th>Despesa</th><th>Favorecido</th><th>Forma</th><th>Valor</th><th>Vigência</th><th>Situação</th><th></th></tr></thead>
   <tbody>{% for r in linhas %}<tr>
-    <td>{{ r.dia_vencimento }}</td><td>{{ r.descricao }}</td><td>{{ r.beneficiario_nome }}</td>
+    <td>{% if r.ultimo_dia_util %}último dia útil{% else %}{{ r.dia_vencimento }}{% endif %}</td><td>{{ r.descricao }}</td><td>{{ r.beneficiario_nome }}</td>
     <td>{{ formas[r.forma] if r.forma in formas else r.forma }}{% if r.forma in carrega_sozinho %} <span class="badge">carrega sozinha</span>{% endif %}</td>
     <td>{% if r.valor %}R$ {{ reais(r.valor) }}{% else %}varia{% endif %}</td>
     <td>{{ r.primeiro_mes }}{% if r.ultimo_mes %} a {{ r.ultimo_mes }}{% else %} em diante{% endif %}</td>

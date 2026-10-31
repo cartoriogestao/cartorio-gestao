@@ -15,7 +15,10 @@
 {% macro quadros(declaracoes, series, form) %}
 {% for s in series if declaracoes.get(s.codigo) %}
 {% set livro = declaracoes[s.codigo] %}
-<details style="grid-column:1/-1">
+{# O QUADRO VOLTA ABERTO SE TRAZ ALGO DIGITADO: fechado, a pessoa não veria o que vai ao termo. #}
+{% set escrito = namespace(algum=false) %}
+{% for claro, rotulo in livro.campos %}{% if (form or {}).get('declaracao_' ~ claro) %}{% set escrito.algum = true %}{% endif %}{% endfor %}
+<details style="grid-column:1/-1"{% if escrito.algum %} open{% endif %}>
   <summary>Declarações do termo — {{ livro.quadro }}</summary>
   <p style="margin:6px 0"><small>Só para o registro no livro {{ s.codigo }}.
     O que ficar em branco não sai no termo.</small></p>

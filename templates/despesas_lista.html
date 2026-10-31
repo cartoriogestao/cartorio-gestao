@@ -35,6 +35,44 @@
   <a href="{{ url_for('despesas_recorrentes') }}">Abrir as recorrentes</a></div>
 {% endif %}
 
+{# 30/10/2026, pedido do oficial: autorizar sem abrir uma por uma. Vem antes de
+   tudo porque é o que espera ação; favorecido, chave e valor ficam à vista porque
+   é aqui que se confere. O que pede motivo ou marca de teto continua na ficha. #}
+{% if a_autorizar %}
+<section class="panel"><h2>Esperando a sua autorização ({{ a_autorizar|length }})</h2>
+  <p class="small">Confira favorecido, chave e valor, e desmarque o que não for autorizar.
+    {% if cfg.despesas_pagamento_ligado == '1' %}Autorizada, a despesa é paga na próxima rodada da automação.{% endif %}</p>
+  <form method="post" action="{{ url_for('despesas_autorizar_marcadas') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Vencimento</th><th>Favorecido</th><th>Despesa</th><th>Pagar por</th><th>Valor</th><th></th></tr></thead>
+      <tbody>{% for d in a_autorizar %}<tr>
+        <td>{% if not d.pendencia %}<input type="checkbox" name="marcada" value="{{ d.id }}:{{ d.valor }}" checked aria-label="Autorizar a despesa {{ d.id }}">{% endif %}</td>
+        <td>{{ d.vencimento }}</td><td>{{ d.beneficiario_nome }}</td><td>{{ d.descricao }}</td>
+        <td>{{ formas[d.forma] if d.forma in formas else d.forma }}<br><code style="word-break:break-all">{{ d.codigo }}</code></td>
+        <td>R$ {{ reais(d.valor) }}</td>
+        <td>{% if d.pendencia %}<span class="badge alta">{{ d.pendencia }}</span> {% endif %}<a class="small" href="{{ url_for('despesas_ficha', despesa_id=d.id) }}">abrir</a></td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    {% if a_autorizar|rejectattr('pendencia')|list %}<button type="submit">Autorizar as marcadas</button>{% endif %}
+  </form>
+</section>
+{% endif %}
+
+{# 30/10/2026, pedido do oficial: acompanhar quanto a conta precisa ter. #}
+{% if balanco and balanco.linhas %}
+<section class="panel"><h2>Falta sair da conta: R$ {{ reais(balanco.total) }}</h2>
+  <p>Vence até hoje: <strong>R$ {{ reais(balanco.ate_hoje) }}</strong></p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Situação</th><th>Quantas</th><th>Vence até hoje</th><th>Total</th></tr></thead>
+    <tbody>{% for x in balanco.linhas %}<tr>
+      <td>{{ x.rotulo }}</td><td>{{ x.quantidade }}</td><td>R$ {{ reais(x.ate_hoje) }}</td><td>R$ {{ reais(x.total) }}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% if balanco.sem_valor %}<p class="small">Fora da conta: {{ balanco.sem_valor }} recorrente(s) do mês de valor variável, ainda sem valor.</p>{% endif %}
+</section>
+{% endif %}
+
 <p class="filters">
   <a href="{{ url_for('despesas_lista') }}">Todas</a>
   {% for k, v in situacoes.items() %} · <a href="{{ url_for('despesas_lista', situacao=k) }}"{% if k == situacao %} class="ativo"{% endif %}>{{ v.split(' —')[0] }} ({{ contagem.get(k, 0) }})</a>{% endfor %}

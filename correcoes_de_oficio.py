@@ -68,6 +68,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 from typing import Any
 
 import identidade_do_robo as IDR
@@ -403,6 +404,18 @@ def _mudancas_de_situacao(antes: dict, depois: dict) -> list[dict]:
             for tid, d in sorted((depois.get("titulos") or {}).items(), key=lambda x: int(x[0]))]
 
 
+def _inserir_ato(bd, novo: dict, contexto: dict) -> int:
+    """Grava o ato do «depois» e devolve o número dele. ESCREVE."""
+    feito = bd.escrever(
+        """INSERT INTO pt_atos (titulo_id, tipo, data_ato, detalhe_json,
+               observacao, origem, origem_chave, criado_em, criado_por)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+        (novo["titulo_id"], novo["tipo"], novo["data_ato"], novo["detalhe_json"],
+         novo["observacao"], novo["origem"], novo["origem_chave"],
+         contexto["agora"], contexto["quem"]))
+    return int(feito[0]["id"])
+
+
 # ================================================================ os tipos
 
 class Tipo:
@@ -415,7 +428,7 @@ class Tipo:
     descricao = ""
     alvo_tabela = ""
     #: Os campos do formulário: (nome, rótulo, widget, ajuda). O widget é
-    #: `ids`, `numero`, `caixa` (marcada de saída) ou `cadastro`.
+    #: `ids`, `numero`, `data`, `caixa` (marcada de saída) ou `cadastro`.
     campos: tuple[tuple[str, str, str, str], ...] = ()
 
     # -- o pedido
@@ -1158,6 +1171,9 @@ class AtoDeCorrecao(Tipo):
     campos = (
         ("ato_origem_id", "O ato que se copia (número do sistema)", "numero", ""),
         ("titulo_id", "O título que recebe a cópia (número do sistema)", "numero", ""),
+        ("pix_id", "O PIX de crédito conferido, se o pagamento foi por PIX", "numero",
+         "sem número, vale o PIX ligado ao ato copiado; sem crédito conferido, a "
+         "proposta se recusa"),
         ("ajustar_situacao", ("E voltar a situação do título à que os atos "
                               "válidos sustentam"), "caixa", ""),
     )
@@ -1170,8 +1186,12 @@ class AtoDeCorrecao(Tipo):
             recusas.append("Informe UM ato de origem, pelo número do sistema.")
         if ruins_d or len(destino) != 1:
             recusas.append("Informe UM título que recebe a cópia.")
+        pix, ruins_p = _ids(pedido.get("pix_id"))
+        if ruins_p or len(pix) > 1:
+            recusas.append("Informe no máximo UM PIX, pelo número do sistema.")
         return ({"ato_origem_id": origem[0] if len(origem) == 1 else None,
                  "titulo_id": destino[0] if len(destino) == 1 else None,
+                 "pix_id": pix[0] if len(pix) == 1 else None,
                  "ajustar_situacao": _sim(pedido.get("ajustar_situacao"), True)},
                 recusas)
 
@@ -1181,6 +1201,7 @@ class AtoDeCorrecao(Tipo):
             """SELECT id, titulo_id, tipo, data_ato, cancelado, detalhe_json,
                       origem, selo
                  FROM pt_atos WHERE id = %s""", (int(parametros["ato_origem_id"]),))
+        por_pix, pix = self._o_pix(bd, parametros, origem, travar=travar)
         repasses = []
         if origem and bd.tem_tabela("pt_repasses"):
             repasses = [[int(r["id"]), str(r["situacao"])] for r in bd.ler(
@@ -1194,7 +1215,65 @@ class AtoDeCorrecao(Tipo):
                                 "detalhe_json": origem["detalhe_json"],
                                 "origem": origem["origem"], "selo": origem["selo"]}
                                if origem else None),
-                "repasses_da_origem": repasses, "titulos": titulos}
+                "repasses_da_origem": repasses, "titulos": titulos,
+                "por_pix": por_pix, "pix": pix}
+
+    def _o_pix(self, bd, parametros, origem, *, travar):
+        """O pagamento copiado é por PIX? E qual PIX o sustenta? Só LÊ.
+
+        O número vem do formulário ou, sem ele, do próprio ato copiado. As
+        colunas são fixas de propósito: `ultima_consulta` muda a cada leitura do
+        extrato, e entrar no «antes» derrubaria a aprovação por nada.
+        """
+        import protesto_pix as PIX
+        detalhe = _ler_json((origem or {}).get("detalhe_json"), {})
+        forma = str(detalhe.get("forma_pagamento") or "").strip().upper()
+        ligado = (detalhe.get("pix") or {}) if isinstance(detalhe.get("pix"), dict) else {}
+        por_pix = forma in PIX.FORMAS_QUE_ESPERAM_O_CREDITO or bool(ligado)
+        numero = parametros.get("pix_id") or ligado.get("pix_id")
+        if not por_pix or not str(numero or "").isdigit() or not bd.tem_tabela("pt_pix"):
+            return por_pix, None
+        trava = " FOR UPDATE" if travar else ""
+        linha = bd.um(
+            f"""SELECT id, titulo_id, situacao, ato_id, valor_centavos, data_pix,
+                       credito_id, credito_data, credito_e2eid, e2eid,
+                       confirmacao_modo, confirmado_por
+                  FROM pt_pix WHERE id = %s{trava}""", (int(numero),))
+        return por_pix, (dict(linha) if linha else None)
+
+    def _recusas_do_pix(self, bd, parametros, antes) -> list[str]:
+        """PIX SÓ COM O CRÉDITO CONFERIDO, também na cópia (decisão do oficial,
+        30/10/2026). E, como em `protesto.lancar_pagamento`, com PIX do título
+        ainda esperando o crédito, nenhum outro pagamento entra."""
+        import protesto_pix as PIX
+        o, pix = antes["ato_origem"], antes.get("pix")
+        recusas = []
+        if antes.get("por_pix"):
+            if not pix:
+                recusas.append(
+                    f"O pagamento {o['id']} foi por PIX e não tem crédito conferido "
+                    "ligado a ele. PIX NÃO É PAGAMENTO ATÉ O CRÉDITO SER CONFERIDO: "
+                    "registre o PIX no título, confira o crédito e proponha de novo, "
+                    "informando o número do PIX.")
+            else:
+                try:
+                    PIX.para_o_pagamento_de_correcao(
+                        bd, pix["id"], titulo_id=parametros["titulo_id"],
+                        titulo_de_origem_id=o["titulo_id"])
+                except PIX.PixError as erro:
+                    recusas.append(str(erro))
+                pago = _ler_json(o.get("detalhe_json"), {}).get("valor_pago_centavos")
+                if pago not in (None, "") and int(pago) != int(pix["valor_centavos"]):
+                    recusas.append(
+                        f"O valor pago tem de ser o do crédito conferido: R$ "
+                        f"{PIX.reais(int(pix['valor_centavos']))}.")
+        try:
+            PIX.recusar_se_esperando(bd, parametros["titulo_id"],
+                                     "o pagamento de correção",
+                                     exceto_pix_id=pix["id"] if pix else None)
+        except PIX.PixError as erro:
+            recusas.append(str(erro))
+        return recusas
 
     def conferir_pedido(self, bd, parametros, antes):
         from gestor_conferencia import IMPLANTACAO
@@ -1225,6 +1304,8 @@ class AtoDeCorrecao(Tipo):
             recusas.append(
                 f"O pagamento {o['id']} já tem repasse ({repassados[0][1]}): a "
                 "cópia pediria outro. O repasse se decide antes.")
+        if o["tipo"] == "PAGAMENTO":
+            recusas += self._recusas_do_pix(bd, parametros, antes)
         if not o["cancelado"]:
             avisos.append(
                 f"O ato {o['id']} continua válido no título {o['titulo_id']}: "
@@ -1239,7 +1320,7 @@ class AtoDeCorrecao(Tipo):
                       "não lavratura.")
         return parametros, recusas, avisos
 
-    def _detalhe(self, o, motivo, numero):
+    def _detalhe(self, o, motivo, numero, pix=None):
         try:
             detalhe = json.loads(o["detalhe_json"] or "{}")
         except (TypeError, ValueError):
@@ -1248,6 +1329,12 @@ class AtoDeCorrecao(Tipo):
             detalhe = {"detalhe_original": detalhe}
         detalhe.update({"correcao_de": o["id"], "correcao_de_oficio": numero,
                         "origem_da_correcao": motivo})
+        if pix:
+            import protesto_pix as PIX
+            detalhe.update({"forma_pagamento": "PIX",
+                            "valor_pago_centavos": int(pix["valor_centavos"]),
+                            "pix": PIX.para_o_detalhe(pix),
+                            "data_do_pagamento": PIX.data_do_pagamento(pix)})
         return json.dumps(detalhe, ensure_ascii=False)
 
     def calcular_depois(self, parametros, antes, *, motivo, numero):
@@ -1259,7 +1346,7 @@ class AtoDeCorrecao(Tipo):
                 "observacao": (f"Correção de ofício {_numero(numero)}: cópia do ato "
                                f"{o['id']} ({o['tipo']} do título {o['titulo_id']}). "
                                f"{motivo}"),
-                "detalhe_json": self._detalhe(o, motivo, numero)}
+                "detalhe_json": self._detalhe(o, motivo, numero, antes.get("pix"))}
         titulos = {}
         if parametros["ajustar_situacao"]:
             titulos = _situacao_depois({destino: antes["titulos"][destino]},
@@ -1288,18 +1375,38 @@ class AtoDeCorrecao(Tipo):
                  "antes": {},
                  "depois": {k: novo[k] for k in ("tipo", "data_ato", "origem",
                                                  "origem_chave", "observacao")}}
-                ] + _mudancas_de_situacao(antes, depois)
+                ] + self._mudanca_do_pix(antes, novo, aid) + _mudancas_de_situacao(antes, depois)
+
+    def _mudanca_do_pix(self, antes, novo, aid) -> list[dict]:
+        pix = antes.get("pix")
+        if not pix:
+            return []
+        return [{"tabela": "pt_pix", "id": int(pix["id"]), "titulo_id": novo["titulo_id"],
+                 "rotulo": f"PIX {pix['id']}",
+                 "antes": {"titulo_id": pix["titulo_id"], "ato_id": pix["ato_id"]},
+                 "depois": {"titulo_id": novo["titulo_id"], "ato_id": aid}}]
 
     def executar(self, bd, parametros, antes, depois, contexto):
+        import protesto_pix as PIX
         novo = depois["ato_novo"]
-        feito = bd.escrever(
-            """INSERT INTO pt_atos (titulo_id, tipo, data_ato, detalhe_json,
-                   observacao, origem, origem_chave, criado_em, criado_por)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-            (novo["titulo_id"], novo["tipo"], novo["data_ato"], novo["detalhe_json"],
-             novo["observacao"], novo["origem"], novo["origem_chave"],
-             contexto["agora"], contexto["quem"]))
-        return {"ato_novo_id": int(feito[0]["id"]),
+        pix = antes.get("pix")
+        if antes.get("por_pix"):
+            # A TRAVA DE NOVO, COM A LINHA PRESA: o crédito pode ter sido usado
+            # entre a proposta e a aprovação.
+            try:
+                if not pix:
+                    raise PIX.PixError("o pagamento é por PIX e não há crédito "
+                                       "conferido ligado a ele")
+                PIX.para_o_pagamento_de_correcao(
+                    bd, pix["id"], titulo_id=novo["titulo_id"],
+                    titulo_de_origem_id=antes["ato_origem"]["titulo_id"], prender=True)
+            except PIX.PixError as erro:
+                raise _Falha(f"a trava do PIX recusou, e nada foi gravado: {erro}") from erro
+        ato_id = _inserir_ato(bd, novo, contexto)
+        if pix:
+            PIX.levar_ao_pagamento_de_correcao(bd, int(pix["id"]),
+                                               titulo_id=novo["titulo_id"], ato_id=ato_id)
+        return {"ato_novo_id": ato_id,
                 "titulos_com_situacao_nova": _trocar_situacoes(bd, antes, depois)}
 
     def conferir_execucao(self, bd, parametros, antes, depois, resultado):
@@ -1314,12 +1421,194 @@ class AtoDeCorrecao(Tipo):
         elif _ler_json(r["detalhe_json"], {}).get("correcao_de") \
                 != antes["ato_origem"]["id"]:
             problemas.append("o ato novo ficou sem o vínculo correcao_de")
+        pix = antes.get("pix")
+        if pix:
+            lido = bd.um("SELECT titulo_id, ato_id FROM pt_pix WHERE id = %s", (int(pix["id"]),))
+            if not lido or int(lido["titulo_id"]) != novo["titulo_id"] \
+                    or int(lido["ato_id"] or 0) != resultado["ato_novo_id"]:
+                problemas.append(f"o PIX {pix['id']} não ficou ligado ao ato novo")
+        return problemas + _conferir_situacoes(bd, depois)
+
+
+# ---------------------------------------------- 5. o título devolvido
+
+#: O ATO QUE SUSTENTA A SITUAÇÃO DEVOLVIDO. Não é lavratura: sem selo, livro nem
+#: folha, e fora do retorno e do XML (que têm a lista fechada dos atos deles).
+ATO_DA_DEVOLUCAO = "DEVOLUCAO"
+#: As situações em que o título pode estar. O PAGO entra pelo caso medido: a carga
+#: deixou os títulos 52, 776 e 777 PAGO sem pagamento nenhum. O ato válido é que
+#: decide (`ATOS_QUE_IMPEDEM_A_DEVOLUCAO`).
+SITUACOES_QUE_SE_DEVOLVEM = ("RECEBIDO", "APONTADO", "INTIMADO", "PAGO")
+#: Com um destes válido, o título teve vida: desfaz-se primeiro, em outra proposta.
+ATOS_QUE_IMPEDEM_A_DEVOLUCAO = ("PROTESTO", "PAGAMENTO", "DESISTENCIA", "RETIRADA",
+                                "CANCELAMENTO")
+
+
+def _data_iso(valor: Any) -> str | None:
+    """`AAAA-MM-DD` ou `DD/MM/AAAA`, como `AAAA-MM-DD`. O resto é None. Só calcula."""
+    texto = str(valor or "").strip()
+    if re.fullmatch(r"\d{2}/\d{2}/\d{4}", texto):
+        texto = f"{texto[6:10]}-{texto[3:5]}-{texto[0:2]}"
+    try:
+        return date.fromisoformat(texto).isoformat()
+    except ValueError:
+        return None
+
+
+class TituloDevolvido(Tipo):
+    """Marca o título como DEVOLVIDO — decisão do oficial, 30/10/2026.
+
+    Dois casos, e o motivo diz qual: o título devolvido por irregularidade
+    (código 5 da CRA) e a entrada em DUPLICIDADE (o mesmo título apontado duas
+    vezes), em que o motivo diz qual é a primeira entrada.
+
+    Lança o ato DEVOLUCAO na data da ocorrência do E-Ofício e troca a situação.
+    É ele que sustenta a situação, e tornar esse ato sem efeito é o caminho de
+    volta. Um título por proposta: cada um tem a sua data.
+    """
+
+    chave = "PT_TITULO_DEVOLVIDO"
+    atribuicao = ATRIBUICAO_PROTESTO
+    rotulo = "Marcar o título como DEVOLVIDO"
+    descricao = ("Título devolvido por irregularidade (código 5 da CRA) ou entrada "
+                 "em duplicidade: o motivo diz qual é o caso e, na duplicidade, qual "
+                 "é a primeira entrada. Ele sai do fluxo: não vai a protesto, "
+                 "intimação, repasse nem XML.")
+    alvo_tabela = "pt_titulos"
+    campos = (
+        ("titulo_id", "O título (número do sistema)", "numero",
+         "o número do título no sistema (o da ficha), e não o do papel"),
+        ("data_ocorrencia", "A data da ocorrência no E-Ofício", "data", ""),
+    )
+
+    def normalizar(self, pedido):
+        recusas = []
+        ids, ruins = _ids(pedido.get("titulo_id"))
+        if ruins or len(ids) != 1:
+            recusas.append("Informe UM título, pelo número do sistema.")
+        data = _data_iso(pedido.get("data_ocorrencia"))
+        if data is None:
+            recusas.append("Informe a data da ocorrência no E-Ofício.")
+        elif data > date.today().isoformat():
+            recusas.append(f"A data da ocorrência ({_data_br(data)}) é futura.")
+        return {"titulo_id": ids[0] if len(ids) == 1 else None,
+                "data_ocorrencia": data}, recusas
+
+    def ler_antes(self, bd, parametros, *, travar):
+        import protesto_pix as PIX
+        tid = int(parametros["titulo_id"])
+        instrumentos = 0
+        if bd.tem_tabela("pt_instrumentos"):
+            instrumentos = int(bd.valor(
+                "SELECT count(*) FROM pt_instrumentos WHERE titulo_id = %s", (tid,)) or 0)
+        ativo = PIX.ativo_do_titulo(bd, tid)
+        return {"titulos": _titulos(bd, [tid], travar=travar), "instrumentos": instrumentos,
+                "pix_esperando": int(ativo["id"]) if ativo else None}
+
+    def conferir_pedido(self, bd, parametros, antes):
+        tid = str(parametros["titulo_id"])
+        t = antes["titulos"].get(tid)
+        if t is None:
+            return parametros, [f"O título {tid} não existe."], []
+        recusas, avisos = [], []
+        if t["situacao"] == "DEVOLVIDO":
+            recusas.append(f"O título {tid} já está DEVOLVIDO.")
+        elif t["situacao"] not in SITUACOES_QUE_SE_DEVOLVEM:
+            recusas.append(
+                f"O título {tid} está {t['situacao']}: só se devolve título em "
+                f"{', '.join(SITUACOES_QUE_SE_DEVOLVEM)}. O {t['situacao']} tem caminho "
+                "próprio, e não é a devolução.")
+        for aid, tipo in t["atos_validos"]:
+            if tipo in ATOS_QUE_IMPEDEM_A_DEVOLUCAO:
+                recusas.append(
+                    f"O título {tid} tem {tipo} válido (ato {aid}): torne-o sem "
+                    "efeito antes, em outra proposta, com o motivo dele.")
+        if antes["instrumentos"]:
+            recusas.append(f"O título {tid} tem instrumento de protesto emitido: "
+                           "devolvê-lo não tem precedente nesta casa, e o oficial "
+                           "decide fora da fila.")
+        if antes["pix_esperando"]:
+            recusas.append(f"O título {tid} tem o PIX nº {antes['pix_esperando']} sem "
+                           "virar pagamento: resolva o PIX antes de devolver.")
+        tipos = [tipo for _aid, tipo in t["atos_validos"]]
+        if "INTIMACAO" in tipos:
+            avisos.append(f"O título {tid} tem intimação válida: a devolução não a "
+                          "desfaz, e ela continua na ficha.")
+        sustacoes = [tipo for tipo in tipos if tipo in ("SUSTACAO", "REVOGACAO_SUSTACAO")]
+        if sustacoes and sustacoes[-1] == "SUSTACAO":
+            avisos.append(f"O título {tid} está sustado: confira a ordem antes de "
+                          "aprovar.")
+        for r in self._outras_entradas(bd, int(tid)):
+            avisos.append(f"Mesmo número e mesmo valor: título {r['id']} ({r['situacao']}, "
+                          f"protocolo {r['protocolo'] or '—'}). Na duplicidade, o motivo "
+                          "diz qual é a primeira entrada.")
+        avisos.append("Esta correção não avisa a Central: o título devolvido não entra "
+                      "no retorno à CRA nem no XML da CENPROT.")
+        return parametros, recusas, avisos
+
+    def _outras_entradas(self, bd, titulo_id: int) -> list[dict]:
+        """As outras linhas com o mesmo número e valor: a ajuda de quem decide
+        na duplicidade. Só LÊ, e fica fora do «antes»: a situação da outra
+        entrada mudar não invalida esta proposta."""
+        return bd.ler(
+            """SELECT o.id, o.situacao, o.protocolo
+                 FROM pt_titulos t JOIN pt_titulos o
+                   ON o.numero_titulo = t.numero_titulo
+                  AND o.valor_centavos = t.valor_centavos AND o.id <> t.id
+                WHERE t.id = %s ORDER BY o.id LIMIT 5""", (titulo_id,))
+
+    def calcular_depois(self, parametros, antes, *, motivo, numero):
+        tid = str(parametros["titulo_id"])
+        data = parametros["data_ocorrencia"]
+        detalhe = {"data_da_ocorrencia": data, "correcao_de_oficio": numero,
+                   "motivo": motivo}
+        novo = {"titulo_id": int(tid), "tipo": ATO_DA_DEVOLUCAO, "data_ato": data,
+                "origem": ORIGEM_DO_ATO, "origem_chave": f"correcao_de_oficio:{numero or 0}",
+                "observacao": (f"Correção de ofício {_numero(numero)}: título devolvido, "
+                               f"ocorrência de {_data_br(data)} no E-Ofício. {motivo}"),
+                "detalhe_json": json.dumps(detalhe, ensure_ascii=False)}
+        return {"ato_novo": novo,
+                "titulos": _situacao_depois({tid: antes["titulos"][tid]},
+                                            mais={tid: [ATO_DA_DEVOLUCAO]})}
+
+    def alvos(self, parametros, antes):
+        return [int(parametros["titulo_id"])], [int(parametros["titulo_id"])]
+
+    def resumo(self, parametros, antes, depois):
+        tid = str(parametros["titulo_id"])
+        return (f"Marcar o título {tid} como DEVOLVIDO ({antes['titulos'][tid]['situacao']} → "
+                f"DEVOLVIDO), ocorrência de {_data_br(parametros['data_ocorrencia'])}.")
+
+    def mudancas(self, antes, depois, resultado):
+        novo = depois["ato_novo"]
+        aid = (resultado or {}).get("ato_novo_id")
+        return [{"tabela": "pt_atos", "id": aid, "titulo_id": novo["titulo_id"],
+                 "rotulo": "ato novo (DEVOLUCAO)" + (f" {aid}" if aid else ""),
+                 "antes": {},
+                 "depois": {k: novo[k] for k in ("tipo", "data_ato", "origem",
+                                                 "origem_chave", "observacao")}}
+                ] + _mudancas_de_situacao(antes, depois)
+
+    def executar(self, bd, parametros, antes, depois, contexto):
+        return {"ato_novo_id": _inserir_ato(bd, depois["ato_novo"], contexto),
+                "titulos_com_situacao_nova": _trocar_situacoes(bd, antes, depois)}
+
+    def conferir_execucao(self, bd, parametros, antes, depois, resultado):
+        novo = depois["ato_novo"]
+        r = bd.um("""SELECT titulo_id, tipo, data_ato, origem, cancelado FROM pt_atos
+                      WHERE id = %s""", (resultado["ato_novo_id"],))
+        problemas = []
+        if not r or int(r["titulo_id"]) != novo["titulo_id"] \
+                or r["tipo"] != ATO_DA_DEVOLUCAO or str(r["data_ato"]) != novo["data_ato"] \
+                or int(r["cancelado"] or 0) != 0:
+            problemas.append("o ato da devolução não ficou como o depois dizia")
         return problemas + _conferir_situacoes(bd, depois)
 
 
 #: O CATÁLOGO FECHADO. Tipo novo entra aqui, com a atribuição dele.
 CATALOGO: dict[str, Tipo] = {t.chave: t for t in (
-    AtoSemEfeito(), SituacaoSustentada(), CadastroDoTitulo(), AtoDeCorrecao())}
+    AtoSemEfeito(), SituacaoSustentada(), CadastroDoTitulo(), AtoDeCorrecao(),
+    TituloDevolvido())}
 
 
 def tipos_disponiveis() -> list[dict]:
@@ -1760,6 +2049,23 @@ def uma(con, correcao_id: Any) -> dict | None:
     d["linhas"] = linhas[:LIMITE_DAS_LINHAS]
     d["rotulos"] = _rotulos_dos_titulos(bd, d["titulo_ids"][:LIMITE_DAS_LINHAS])
     return d
+
+
+def propostas_do_titulo(con, titulo_id: int, *, tipo: str | None = None) -> list[dict]:
+    """As propostas do Protesto que esperam o oficial e tocam este título, para
+    a ficha e para o botão não propor duas vezes o mesmo. Só LÊ."""
+    bd = banco(con)
+    if not bd.tem_tabela(ENTIDADE):
+        return []
+    saida = []
+    for p in bd.ler("""SELECT id, tipo, resumo, proposta_em, proposta_por, titulo_ids
+                         FROM correcoes_de_oficio
+                        WHERE situacao = %s AND atribuicao = %s ORDER BY id""",
+                    (PROPOSTA, ATRIBUICAO_PROTESTO)):
+        if int(titulo_id) in _ler_json(p["titulo_ids"], []) \
+                and (tipo is None or p["tipo"] == tipo):
+            saida.append(dict(p))
+    return saida
 
 
 def pendentes(con, *, limite: int = LIMITE_DAS_PENDENCIAS) -> list[dict]:

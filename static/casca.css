@@ -1,0 +1,317 @@
+/* A casca do layout novo. Só vale em `base_novo.html`: toda regra começa em `.cg-`, ou é
+   escopada por `.cg-corpo`, para não tocar em quem continua no layout antigo. As cores de
+   módulo vêm de `modulos.py`, pelas variáveis do <style> da página. */
+.cg-corpo{margin:0;height:100vh;overflow:hidden;background:#f5f6f8;color:#16202b;font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;font-size:14px;line-height:1.38}
+.cg-pular{position:absolute;left:8px;top:-60px;z-index:80;background:#fff;padding:8px 12px;border:2px solid #0b5cad;border-radius:6px}
+.cg-pular:focus{top:8px}
+.cg-app{display:grid;grid-template-columns:96px 204px minmax(0,1fr) 72px;grid-template-rows:minmax(0,1fr);height:100vh}
+.cg-app.cg-sem-secoes{grid-template-columns:96px minmax(0,1fr) 72px}
+.cg-ic{flex:none}
+.cg-corpo :focus-visible{outline:2px solid #0b5cad;outline-offset:2px}
+
+/* a barra de módulos */
+.cg-modulos{background:#edf0f3;border-right:1px solid #dde2e8;display:flex;flex-direction:column;align-items:stretch;padding:6px 0;min-height:0;overflow-y:auto;scrollbar-width:thin}
+.cg-marca{display:flex;align-items:center;justify-content:center;height:36px;margin-bottom:2px;text-decoration:none}
+.cg-marca b{width:28px;height:28px;border-radius:7px;background:#14202c;color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:600}
+.cg-mod{display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 2px;margin:0 5px;border-radius:8px;font-size:10.4px;line-height:1.13;text-align:center;color:#2c3845;position:relative;font-weight:500;text-decoration:none}
+.cg-mod:hover{background:#f6f7f9;color:#14202c;text-decoration:none}
+.cg-mod-ic{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#3a4653}
+.cg-mod.lavra .cg-mod-ic{background:var(--c);color:#fff}
+.cg-mod.atual{background:#fff;font-weight:600;box-shadow:0 0 0 1px #dde2e8}
+.cg-mod.atual:before{content:"";position:absolute;left:-5px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--c)}
+.cg-mod-sep{height:1px;background:#dde2e8;margin:3px 12px;flex:none}
+.cg-conta{position:absolute;top:0;right:6px;background:#b00020;color:#fff;font:600 9.5px "Segoe UI",sans-serif;font-style:normal;line-height:1;padding:2px 4px;border-radius:8px}
+.cg-eu{margin-top:auto;padding-top:4px;position:relative}
+.cg-eu summary{list-style:none;display:flex;flex-direction:column;align-items:center;gap:1px;font-size:10px;color:#3a4653;cursor:pointer;padding:2px}
+.cg-eu summary::-webkit-details-marker{display:none}
+.cg-avatar{width:24px;height:24px;border-radius:50%;background:#fff;border:1px solid #cfd6de;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:11px}
+.cg-eu-nome{max-width:86px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* as seções do módulo */
+.cg-secoes{background:#fff;border-right:1px solid #e3e7ec;padding:12px 0 8px;min-height:0;overflow-y:auto;display:flex;flex-direction:column;scrollbar-width:thin}
+.cg-secoes-t{padding:0 14px 9px;margin-bottom:6px;border-bottom:1px solid #eceff3;font-weight:600;font-size:13.6px;line-height:1.22;color:var(--cg-cor)}
+.cg-secoes-g{font-size:11.5px;color:#5b6875;padding:9px 14px 3px;font-weight:600}
+.cg-sec{display:block;padding:6px 12px 6px 14px;font-size:13.4px;color:#26313d;position:relative;line-height:1.22;text-decoration:none}
+.cg-sec:hover{background:#f3f5f7;color:#14202c;text-decoration:none}
+.cg-sec.atual{background:var(--cg-clara);font-weight:600;color:#14202c}
+.cg-sec.atual:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--cg-cor)}
+
+/* a área de trabalho */
+.cg-area{display:flex;flex-direction:column;min-width:0;min-height:0;background:#f5f6f8;position:relative}
+.cg-faixa{min-height:30px;background:#7a1020;color:#fff;font-size:12.6px;display:flex;align-items:center;gap:8px;padding:3px 16px;flex:none}
+.cg-faixa-mes{opacity:.85}
+.cg-troca{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;background:#eef4fb;border:1px solid #cfe0f5;border-radius:10px;padding:10px 14px;margin-bottom:12px}
+.cg-troca p{flex:1 1 320px;margin:0}
+.cg-faixa-acao{color:#fff;text-decoration:underline;margin-left:auto;font-weight:600;white-space:nowrap}
+.cg-faixa-acao:hover{color:#fff}
+.cg-topo{min-height:50px;background:#fff;border-bottom:1px solid #e3e7ec;display:flex;align-items:center;gap:10px;padding:6px 14px;flex:none;position:relative;z-index:30}
+.cg-migalhas{font-size:12.6px;color:#5b6875;display:flex;gap:5px;align-items:center;white-space:nowrap;min-width:0;flex:0 1 auto;overflow:hidden}
+.cg-migalhas a{color:#5b6875;text-decoration:none}
+.cg-migalhas a:hover{text-decoration:underline}
+.cg-migalhas b{color:#16202b;font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.cg-busca{flex:1 1 190px;max-width:330px;min-width:130px;margin-left:auto;height:32px;border:1px solid #cfd6de;border-radius:7px;background:#f7f8fa;display:flex;align-items:center;gap:7px;padding:0 9px;font:inherit;font-size:12.8px;color:#5b6875;cursor:text;text-align:left}
+.cg-busca span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cg-busca kbd{margin-left:auto;font:600 10.5px "Segoe UI",sans-serif;border:1px solid #cfd6de;background:#fff;border-radius:4px;padding:1px 5px;color:#4f5d6b}
+.cg-atendendo{height:32px;border:1px solid #bcd3ea;background:#e7f0fa;border-radius:7px;font-size:12.4px;display:flex;align-items:center;gap:6px;padding:0 9px;color:#0b3f78;min-width:0;flex:0 1 auto;overflow:hidden;text-decoration:none}
+.cg-atendendo span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cg-atendendo.vazio{background:#fff;border-color:#cfd6de;color:#4f5d6b}
+.cg-atendendo:hover{text-decoration:none;color:#0b3f78;background:#dbe8f7}
+.cg-botao-novo{list-style:none;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:7px;background:#0b5cad;color:#fff;font-size:13.2px;font-weight:600;cursor:pointer;white-space:nowrap}
+.cg-botao-novo::-webkit-details-marker,.cg-botao-sino::-webkit-details-marker{display:none}
+.cg-botao-novo:hover{background:#094f95}
+.cg-botao-sino{list-style:none;width:34px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#3a4653;position:relative;cursor:pointer}
+.cg-botao-sino:hover{background:#f1f3f5}
+.cg-botao-sino .cg-conta{top:-1px;right:0}
+.cg-novo,.cg-sino{position:static;flex:none}
+
+/* o que abre por cima */
+.cg-pop{position:absolute;background:#fff;border:1px solid #cfd6de;border-radius:10px;box-shadow:0 18px 44px -14px rgba(20,32,44,.5);z-index:60;color:#16202b;font-size:13.2px}
+.cg-pop-t{padding:10px 14px;border-bottom:1px solid #e3e7ec;margin:0}
+.cg-pop-g{font-size:11.4px;font-weight:600;color:#5b6875;padding:8px 12px 3px}
+.cg-g-pe{color:#b00020}.cg-g-av{color:#92510b}
+.cg-pi{display:flex;width:100%;align-items:center;gap:9px;padding:6px 12px;font:inherit;font-size:13.2px;line-height:1.25;color:#16202b;background:none;border:0;text-align:left;cursor:pointer;text-decoration:none}
+.cg-pi:hover,.cg-pi.at{background:#e7f0fa;color:#16202b;text-decoration:none}
+.cg-pi small{color:#5b6875;font-size:11.4px;margin-left:auto;white-space:nowrap}
+.cg-pop-rodape{padding:7px 14px;border-top:1px solid #eceff3;font-size:12px;color:#4f5d6b;margin:0}
+.cg-pop-eu{left:90px;bottom:6px;width:280px;z-index:70;position:fixed}
+.cg-pop-novo{right:14px;top:46px;width:min(880px,calc(100% - 28px));padding:6px 4px 8px}
+.cg-pop-filtro{padding:6px 12px 8px;border-bottom:1px solid #eceff3;display:flex;gap:8px;align-items:center}
+.cg-pop form{margin:0;padding:0;background:none;border:0;box-shadow:none;display:block}
+.cg-pop-filtro input,.cg-paleta-t input{border:0!important;outline:0!important;box-shadow:none!important;background:none!important;font:inherit;width:100%;height:28px;padding:0;min-height:0;border-radius:0}
+.cg-pop-filtro:focus-within{box-shadow:inset 0 -2px 0 #0b5cad}
+.cg-novo-grade{column-count:3;column-gap:4px;max-height:min(66vh,500px);overflow-y:auto}
+.cg-novo-grupo{break-inside:avoid}
+.cg-pop-sino{right:14px;top:46px;width:430px;max-width:calc(100% - 28px);max-height:calc(100vh - 90px);overflow-y:auto}
+.cg-sino-corpo{padding:0 0 6px}
+.cg-sino-corpo .barras-fixas{position:static;margin:0;padding:8px 12px 0;background:none;border:0;display:block}
+.cg-sino-corpo .barra-fixa{position:static;display:block;background:#fbe9ec;color:#7a1020;border:0;border-radius:7px;padding:8px 10px;margin-bottom:6px;font-size:12.8px}
+.cg-sino-corpo .barra-fixa a{color:#7a1020}.cg-sino-corpo .barra-fixa label,.cg-sino-corpo .barra-fixa summary,.cg-sino-corpo .barra-fixa-texto,.cg-sino-corpo .barra-fixa-mes{color:#7a1020}.cg-sino-corpo .barra-fixa-acoes{display:block;margin-top:6px}.cg-sino-corpo .barra-fixa form{margin:6px 0 0}
+.cg-sino-corpo .flash{margin:8px 12px}
+.cg-sino-vazio{padding:12px 14px;margin:0;color:#5b6875}
+
+/* as telas da seção */
+.cg-subabas{display:flex;gap:2px;background:#fff;border-bottom:1px solid #e3e7ec;padding:0 12px;overflow-x:auto;flex:none;scrollbar-width:thin}
+.cg-subaba{padding:8px 11px;font-size:13px;color:#3a4653;position:relative;white-space:nowrap;text-decoration:none;flex:none}
+.cg-subaba:hover{color:#14202c;text-decoration:none;background:#f7f8fa}
+.cg-subaba.atual{font-weight:600;color:#14202c}
+.cg-subaba.atual:after{content:"";position:absolute;left:6px;right:6px;bottom:0;height:3px;background:var(--cg-cor);border-radius:3px 3px 0 0}
+
+/* a tela, como ela sempre foi */
+.cg-rolagem{flex:1;min-height:0;overflow:auto;scroll-padding-top:12px}
+.cg-rolagem:focus{outline:0}
+.cg-procurar-papel{margin:0 0 10px}
+.cg-procurar-papel input{max-width:420px}
+.cg-grupo-de-papeis,.cg-como-funciona{margin-bottom:8px}
+.cg-grupo-de-papeis>summary,.cg-como-funciona>summary{font-weight:600;cursor:pointer}
+.cg-grupo-de-papeis>summary small{font-weight:400;margin-left:8px}
+.cg-grupo-de-papeis[open]>summary{margin-bottom:8px}
+.cg-titulo.topbar{height:auto;min-height:0;padding:12px 16px 0;border:0;background:none;position:static;box-shadow:none}
+.cg-titulo .page-heading h1{font-size:20px;font-weight:600;margin:0;line-height:1.2}
+.cg-titulo:has(.page-heading:empty){display:none}
+.cg-rolagem .content{max-width:none;padding:10px 16px 48px}
+
+/* a coluna de apoio: as mesmas ferramentas de sempre, no mesmo lugar em toda tela */
+.cg-apoio{background:#edf0f3;border-left:1px solid #dde2e8;display:flex;flex-direction:column;justify-content:flex-end;padding:8px 0;gap:3px;min-height:0;position:relative;z-index:40}
+.cg-apoio .wa-atalho,.cg-apoio .prod-rapida,.cg-apoio .ajuda-caixa,.cg-apoio .agente-caixa{position:static;inset:auto;width:auto;height:auto;margin:0;padding:0;background:none;border:0;border-radius:0;box-shadow:none;z-index:auto;display:block;color:#2c3845}
+.cg-apoio .wa-atalho,.cg-apoio .prod-rapida-btn,.cg-apoio .ajuda-chamar,.cg-apoio .agente-chamar{display:flex;flex-direction:column;align-items:center;gap:2px;width:calc(100% - 10px);margin:0 5px;padding:7px 2px 6px;border-radius:8px;font-size:9.8px;line-height:1.12;text-align:center;color:#2c3845;font-weight:500;background:none;border:0;box-shadow:none;position:relative;text-decoration:none;cursor:pointer;white-space:normal;min-height:0}
+.cg-apoio .wa-atalho:hover,.cg-apoio .prod-rapida-btn:hover,.cg-apoio .ajuda-chamar:hover,.cg-apoio .agente-chamar:hover{background:#f6f7f9;color:#14202c;text-decoration:none}
+.cg-apoio .wa-atalho::after{content:"WhatsApp"}
+.cg-apoio .wa-atalho-icone{width:18px;height:18px}
+.cg-apoio .wa-atalho-alerta{position:static;background:#e7f0fa;color:#0b4f96;font-size:9.4px;font-weight:600;border-radius:8px;padding:0 4px;order:3;box-shadow:none;min-width:0;height:auto;line-height:1.4;border:0}
+.cg-apoio .prod-rapida-ico{font-size:16px;line-height:1}
+.cg-apoio .prod-rapida.correndo .prod-rapida-btn{background:#e6f3ec;color:#17693f}
+.cg-apoio .prod-rapida-tempo{font-size:9.4px;font-weight:600;background:#e6f3ec;color:#17693f;border-radius:8px;padding:0 4px}
+.cg-apoio .ajuda-chamar::before{content:"?";display:flex;width:18px;height:18px;border:1.6px solid currentColor;border-radius:50%;align-items:center;justify-content:center;font-weight:700;font-size:11px;line-height:1}
+.cg-apoio .ajuda-marca{background:#fbe9ec;color:#b00020;font-size:9.4px;font-weight:600;border-radius:8px;padding:0 4px;margin:0}
+.cg-apoio .ajuda-caixa.aberta .ajuda-chamar,.cg-apoio .agente-caixa.aberta .agente-chamar,.cg-apoio .prod-rapida[data-aberta] .prod-rapida-btn{background:#fff;box-shadow:0 0 0 1px #dde2e8;font-weight:600}
+
+/* a gaveta abre ao lado do ato, e o ato continua à vista e digitável */
+.cg-apoio .ajuda-gaveta,.cg-apoio .agente-gaveta,.cg-apoio .prod-rapida-painel{position:fixed;top:0;right:72px;bottom:0;left:auto;width:360px;max-height:none;margin:0;border:0;border-left:1px solid #cfd6de;border-radius:0;box-shadow:-10px 0 24px -16px rgba(20,32,44,.45);background:#fff;overflow:auto;z-index:45;color:#16202b;font-size:13.2px;text-align:left}
+.cg-apoio .prod-rapida-alerta{position:fixed;right:84px;bottom:14px;left:auto;top:auto;z-index:50;width:360px}
+.cg-app:has(.ajuda-gaveta:not([hidden]),.agente-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])) .cg-area{margin-right:360px}
+@media (max-width:1499px){
+  .cg-app:has(.ajuda-gaveta:not([hidden]),.agente-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])){grid-template-columns:96px minmax(0,1fr) 72px}
+  .cg-app:has(.ajuda-gaveta:not([hidden]),.agente-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])) .cg-secoes{display:none}
+}
+
+/* a busca */
+.cg-paleta-fundo{position:fixed;inset:0;background:rgba(20,32,44,.32);z-index:90}
+.cg-paleta{position:fixed;left:50%;top:70px;transform:translateX(-50%);width:min(620px,calc(100vw - 32px));background:#fff;border:1px solid #cfd6de;border-radius:10px;box-shadow:0 18px 44px -14px rgba(20,32,44,.5);z-index:91;font-size:13.2px;color:#16202b}
+.cg-paleta[hidden],.cg-paleta-fundo[hidden]{display:none}
+.cg-paleta-t{padding:9px 14px;border-bottom:1px solid #e3e7ec;display:flex;gap:9px;align-items:center}
+.cg-paleta-t input{font-size:15px;height:30px}
+.cg-paleta-t small{color:#5b6875;white-space:nowrap;font-size:12px}
+.cg-paleta-t:focus-within{box-shadow:inset 0 -2px 0 #0b5cad}
+.cg-paleta-l{max-height:min(62vh,500px);overflow-y:auto;padding-bottom:6px}
+.cg-paleta-vazio{padding:14px;color:#5b6875;margin:0}
+
+/* janela de trabalho estreita */
+@media (max-width:1100px){
+  .cg-migalhas{display:none}
+  .cg-atendendo{max-width:220px}
+  .cg-novo-grade{column-count:2}
+}
+@media (max-width:900px){
+  .cg-corpo{height:auto;overflow:auto}
+  .cg-app,.cg-app.cg-sem-secoes{display:flex;flex-direction:column;height:auto;min-height:100vh}
+  .cg-modulos{flex-direction:row;overflow-x:auto;padding:4px 8px;border-right:0;border-bottom:1px solid #dde2e8;flex:none}
+  .cg-marca,.cg-mod-sep{display:none}
+  .cg-mod{min-width:76px;flex:none}
+  .cg-eu{margin:0 0 0 auto;padding:0;flex:none}
+  .cg-pop-eu{left:8px;right:8px;top:60px;bottom:auto;width:auto}
+  .cg-secoes{flex-direction:row;overflow-x:auto;padding:4px 8px;border-right:0;border-bottom:1px solid #e3e7ec;flex:none}
+  .cg-secoes-t,.cg-secoes-g{display:none}
+  .cg-sec{white-space:nowrap;flex:none;padding:5px 9px}
+  .cg-sec.atual:before{top:auto;right:6px;left:6px;width:auto;height:3px}
+  .cg-area{flex:1}
+  .cg-topo{flex-wrap:wrap;padding:8px 12px}
+  .cg-busca{flex:1 1 100%;max-width:none;order:4;margin:0}
+  .cg-atendendo{order:5;max-width:100%;flex:1 1 100%}
+  .cg-botao-novo{margin-left:auto}
+  .cg-novo{margin-left:auto}
+  .cg-pop-novo,.cg-pop-sino{left:8px;right:8px;top:52px;width:auto;max-width:none}
+  .cg-novo-grade{column-count:1}
+  .cg-rolagem{overflow:visible}
+  .cg-apoio{flex-direction:row;justify-content:space-around;border-left:0;border-top:1px solid #dde2e8;flex:none;position:sticky;bottom:0}
+  .cg-apoio>*{flex:1}
+  .cg-apoio .ajuda-gaveta,.cg-apoio .agente-gaveta,.cg-apoio .prod-rapida-painel{top:auto;right:0;left:0;bottom:56px;width:auto;height:70vh}
+  .cg-app:has(.ajuda-gaveta:not([hidden]),.agente-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])) .cg-area{margin-right:0}
+}
+@media (prefers-reduced-motion:reduce){.cg-corpo *{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+/* no papel, só a tela */
+@media print{
+  .cg-corpo{height:auto;overflow:visible;background:#fff}
+  .cg-app,.cg-app.cg-sem-secoes{display:block;height:auto}
+  .cg-modulos,.cg-secoes,.cg-topo,.cg-subabas,.cg-apoio,.cg-faixa,.cg-paleta,.cg-paleta-fundo,.cg-pular{display:none!important}
+  .cg-rolagem{overflow:visible}
+  .cg-rolagem .content{padding:0}
+}
+
+/* a ficha em fases: a régua, os quadros da fase aberta e a barra de ação. A ordem na tela
+   sai daqui, para o HTML ficar na mesma ordem de quem continua no layout antigo. */
+.cg-ficha{display:flex;flex-wrap:wrap;column-gap:12px;align-items:flex-start}
+.cg-ficha>*{order:10;min-width:0;flex:1 1 100%}
+.cg-ficha>.cg-lado{flex:1 1 calc(50% - 6px)}
+.cg-ficha>.cg-lado-rola{max-height:calc(100vh - 210px);overflow:auto}
+.cg-ficha>[data-cg-primeiro]{order:9}
+.cg-ficha>.flash,.cg-ficha>[role=alert]{order:0}
+.cg-ficha>.actions{order:1;margin:0 0 6px}
+.cg-ficha>.actions .button{min-height:0;height:28px;padding:0 10px;font-size:12.6px;display:inline-flex;align-items:center}
+.cg-ficha>details.panel:not([data-fase]){order:15;padding:6px 14px;background:none;box-shadow:none}
+.cg-ficha>details.panel:not([data-fase])>summary{font-size:12.6px;color:#5b6875;cursor:pointer}
+.cg-ficha>.cg-ato-cabeca{order:2}
+.cg-ficha>.cg-regua{order:3}
+.cg-ficha>.notice:not([data-fase]){order:4}
+.cg-ficha>.cg-acao{order:20}
+.cg-ficha [data-fase][hidden]{display:none!important}
+.cg-ficha>.grid2:has(>[data-fase][hidden]){grid-template-columns:minmax(0,1fr)}
+.cg-esperando>[data-fase]{display:none}
+.cg-ancora{display:block;height:0}
+.cg-ficha>.cg-ancora{flex:0 0 0;width:0;margin-right:-12px}
+.cg-ficha>details.cg-ato-do-titulo{padding:0;margin-bottom:8px}
+.cg-ficha>details.cg-ato-do-titulo>summary{padding:10px 14px;font-weight:600;cursor:pointer}
+.cg-ficha>.cg-depois{order:11}
+.cg-ficha #avisos form.form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;align-items:end}
+.cg-ficha #avisos form.form>.actions{grid-column:1/-1}
+.cg-so-leitor{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.cg-ficha .panel{padding:14px;margin-bottom:12px}
+.cg-ato-cabeca.panel{padding:6px 14px;margin-bottom:8px}
+.cg-ato-cabeca .panel-head{padding-bottom:3px;font-size:12.4px;display:flex;justify-content:space-between;gap:12px}
+.cg-ato-cabeca .grid2{grid-template-columns:repeat(4,minmax(0,1fr));padding:4px 0 0!important;gap:2px 14px}
+.cg-ato-cabeca .grid2>div{display:flex;gap:5px;align-items:baseline;min-width:0;font-size:12.6px}
+.cg-ato-cabeca .grid2>div>div{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cg-ato-cabeca .grid2>div>small{white-space:nowrap;flex:none}
+.cg-ficha .filters button{white-space:nowrap;flex:none}
+.cg-ficha label.check{display:flex;align-items:center;gap:8px}
+.cg-ficha label.check input[type=checkbox]{min-height:0;width:16px;height:16px;margin:0;padding:0;flex:none}
+.cg-corpo label[style*="flex"]>input[type=checkbox]{min-height:0;width:16px;height:16px;margin:2px 0 0;padding:0;flex:none}
+.cg-corpo .form-grid>button{justify-self:start}
+.cg-ficha .inline-form{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0}
+.cg-ficha .inline-form input,.cg-ficha .inline-form select{flex:1 1 130px;width:auto;min-width:0;min-height:30px;padding:4px 8px;font-size:13px}
+.cg-ficha .inline-form input[type=checkbox]{flex:none;width:16px;height:16px;min-height:0}
+.cg-ficha .inline-form button{min-height:30px;padding:3px 10px;font-size:12.6px;flex:none}
+.cg-ficha td details>summary{font-size:12.6px;font-weight:500;cursor:pointer;margin:4px 0}
+.cg-ficha [data-fase=partes] td:first-child{min-width:130px}
+.cg-regua{display:flex;align-items:stretch;justify-content:space-between;gap:10px;background:#fff;border:1px solid #e3e7ec;border-radius:10px;padding:0 6px;margin-bottom:12px;position:sticky;top:0;z-index:6}
+.cg-regua-fases,.cg-regua-apoio{display:flex;gap:2px;min-width:0;overflow-x:auto;scrollbar-width:none}
+.cg-regua-apoio{border-left:1px solid #e3e7ec;padding-left:8px;flex:none}
+.cg-regua-apoio:first-child{border-left:0;padding-left:0;flex:1 1 auto}
+.cg-fase.principal{margin:5px 0 5px auto;height:32px;border:0;border-radius:7px;background:var(--cg-cor);color:#fff;font-weight:600}
+.cg-fase.principal:hover,.cg-fase.principal[aria-current]{background:var(--cg-cor);color:#fff;filter:brightness(.92)}
+.cg-fase{display:inline-flex;align-items:center;gap:6px;height:42px;padding:0 10px;color:#3a4653;font-size:13.2px;text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap;flex:none}
+.cg-fase:hover{color:#14202c;text-decoration:none;background:#f5f7f9}
+.cg-fase-n{width:20px;height:20px;border-radius:50%;border:1.5px solid #aab4bf;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:600;flex:none}
+.cg-fase.feita .cg-fase-n{background:#1a7f37;border-color:#1a7f37;color:#fff}
+.cg-fase.travada{color:#6b7682}
+.cg-fase.travada .cg-fase-n{border-style:dashed}
+.cg-fase[aria-current]{color:#14202c;font-weight:600;border-bottom-color:var(--cg-cor);text-decoration:none}
+.cg-fase[aria-current] .cg-fase-n{border-color:var(--cg-cor);background:var(--cg-cor);color:#fff}
+.cg-fase-c{background:#b00020;color:#fff;border-radius:9px;min-width:17px;height:17px;padding:0 4px;font-size:10.5px;font-weight:600;display:inline-flex;align-items:center;justify-content:center}
+.cg-fase-q{color:#5b6875;font-size:12px}
+.cg-trava{text-align:center;padding:36px 20px!important}
+.cg-trava-t{font-size:15px;font-weight:600;margin:0 0 6px}
+.cg-trava .muted{max-width:520px;margin:0 auto 14px}
+.cg-acao{position:sticky;bottom:0;z-index:6;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #dde2e8;border-radius:10px;padding:8px 12px;box-shadow:0 -2px 8px rgba(20,32,44,.06);margin-top:2px}
+.cg-acao-aviso{flex:1;min-width:0;color:#5b6875;font-size:12.8px}
+.cg-acao-aviso.falta{color:#92510b}
+.cg-falta-l{list-style:none;margin:8px 0 0;padding:0}
+.cg-falta-l li{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13.2px;border-bottom:1px solid #f0f2f5}
+.cg-falta-l li:last-child{border-bottom:0}
+.cg-falta-l li>span:nth-child(2){flex:1;min-width:0}
+.cg-falta-l a.button{min-height:0;height:24px;padding:0 10px;font-size:12px;display:inline-flex;align-items:center;flex:none}
+.cg-falta-m{width:18px;height:18px;border-radius:50%;border:1.5px solid #c98a1b;display:inline-flex;align-items:center;justify-content:center;font-size:11px;flex:none}
+.cg-falta-l li.ok .cg-falta-m{background:#1a7f37;border-color:#1a7f37;color:#fff}
+.cg-falta-l li.ok{color:#5b6875}
+.cg-app.cg-foco{grid-template-columns:96px minmax(0,1fr) 72px}
+.cg-app.cg-foco .cg-secoes{display:none}
+@media print{.cg-regua,.cg-acao{display:none!important}}
+
+/* as listas e os painéis: as vistas no lugar de filtros, e as portas de lavrar */
+.cg-vistas{display:flex;gap:2px;background:#fff;border:1px solid #e3e7ec;border-radius:10px;padding:0 6px;margin:0 0 10px}
+.cg-vista{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 10px;color:#3a4653;font-size:13.2px;text-decoration:none;border-bottom:2px solid transparent}
+.cg-vista:hover{color:#14202c;background:#f5f7f9;text-decoration:none}
+.cg-vista.atual{color:#14202c;font-weight:600;border-bottom-color:var(--cg-cor)}
+.cg-portas{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-top:10px}
+.cg-portas form{margin:0;display:contents}
+.cg-porta{display:flex;align-items:center;min-height:42px;padding:6px 12px;width:100%;background:#f7f8fa;border:1px solid #dde2e8;border-radius:8px;color:#14202c;font:600 13.2px "Segoe UI",system-ui,sans-serif;text-align:left;text-decoration:none;cursor:pointer;box-shadow:none}
+.cg-porta:hover{background:var(--cg-clara);border-color:var(--cg-cor);color:#14202c;text-decoration:none}
+
+/* os passos de um formulário longo */
+.cg-passos{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid #e3e7ec;padding-bottom:8px;margin-bottom:2px}
+.cg-passo{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 10px;background:none;border:0;border-radius:6px;color:#3a4653;font-size:13.2px;font-weight:500;cursor:pointer;box-shadow:none}
+.cg-passo:hover{background:#f5f7f9;color:#14202c}
+.cg-passo[aria-current]{background:var(--cg-clara);color:#14202c;font-weight:600}
+.cg-passo[aria-current] .cg-fase-n{border-color:var(--cg-cor);background:var(--cg-cor);color:#fff}
+.cg-corpo [data-passo][hidden],.cg-passos-fim[hidden],.cg-passos-fim [hidden]{display:none!important}
+.cg-passo-bloco{grid-column:1/-1;min-width:0}
+.cg-passos-fim{display:flex;justify-content:flex-end;gap:8px;border-top:1px solid #e3e7ec;padding-top:10px}
+
+/* O VERMELHO QUE NUNCA SAÍA (30/10/2026). `.danger` está em mais de duzentos lugares das telas, em
+   aviso, atraso e recusa, e o `app.css` só o pinta no botão, no aviso do alto e no cartão de número.
+   No resto, o texto saía da cor de sempre, e o que devia chamar atenção não chamava. O layout antigo
+   fica como está. */
+.cg-corpo :is(span,strong,small,em,b,p,a,dd,td,div).danger:not(.badge,.stat,.flash,.notice,.alerta,.alert,.card){color:var(--danger)}
+.cg-corpo tr.danger>td{color:var(--danger)}
+.cg-corpo :is(.notice.danger,.alerta.danger,.alert.danger,.alert-danger,.card.danger:not(.stat)){background:#fff1f0;border:1px solid #f2c4c0;border-radius:10px;color:#8f1d13}
+.cg-corpo :is(.alerta.danger,.alert.danger,.alert-danger){padding:10px 14px;margin-bottom:12px}
+.cg-corpo :is(.badge.danger,.badge-danger){background:#fee4e2;color:#b42318}
+
+/* A CAIXA DE MARCAR TEM O TAMANHO DE CAIXA DE MARCAR (30/10/2026). O `app.css` dá a todo `input` a largura
+   da linha e 40 px de altura, e o rótulo vira uma grade: em 34 telas, 97 das 181 caixas e bolinhas à vista
+   saíam esticadas, cada uma numa linha, com o texto embaixo. O `:where` deixa a regra só acima da de
+   fábrica, e por isso quem já cuida da própria caixa continua cuidando. O layout antigo fica como está. */
+:where(.cg-corpo) input:where([type=checkbox],[type=radio]){flex:none;width:16px;height:16px;min-height:0;margin:0 6px 0 2px;padding:0;vertical-align:-3px;box-shadow:none}
+:where(.cg-corpo) label:has(>input:where([type=checkbox],[type=radio])){display:block}
+
+/* OS MONITORES DO BALCÃO SÃO FULL HD (o oficial, 30/10/2026). Com a largura sobrando, os campos
+   cabem em três colunas e alguns quadros ficam lado a lado. Abaixo disso, nada muda. A grade só
+   passa a três se tiver três campos à vista, porque com dois sobraria uma coluna vazia, e não
+   passa se tiver quadro dentro ou se já estiver em meia largura. */
+@media (min-width:1600px){
+.cg-corpo :is(.grid2,.form-grid):has(>:not([type=hidden],[hidden],.span2)~:not([type=hidden],[hidden],.span2)~:not([type=hidden],[hidden],.span2)):not(:has(>.panel,>.cg-passo-bloco)):not(.cg-ato-cabeca *,.cg-lado *,.cg-lado-largo *,.cra-api *,.pagina-configuracoes *){grid-template-columns:repeat(3,minmax(0,1fr))}
+.cg-ficha>.cg-lado-largo{flex:1 1 calc(50% - 6px)}
+.cg-ficha #avisos form.form{grid-template-columns:repeat(4,minmax(0,1fr))}
+.cg-lista-larga{column-count:2;column-gap:32px}
+.cg-lista-larga>li{break-inside:avoid}
+}

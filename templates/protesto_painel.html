@@ -52,13 +52,40 @@
   details.rt-fonte{margin-top:22px}
   details.rt-fonte > summary{cursor:pointer;font-weight:700;padding:8px 0}
 </style>
-
+{# NO LAYOUT NOVO AS CONDUTAS RECOLHEM — projeto do novo layout, 30/10/2026. A tela media 7.311 px, e
+   quem a abre quer saber o que falta agora. Vêm abertas as atrasadas e a primeira pendente; a lista
+   recolhida já é o índice, com a hora e a situação de cada uma. Sem script, cada conduta abre com um
+   clique. No layout antigo, nada muda. #}
+{% if layout_novo %}
+<style>
+  .rt-topo{display:flex;flex-wrap:wrap;gap:8px 18px;margin:0 0 10px}
+  .rt-topo .rt-resumo,.rt-topo .rt-relogio{margin:0;gap:8px}
+  .rt-topo .rt-resumo .card{display:flex;align-items:center;gap:6px;padding:4px 10px;min-width:0;margin:0}
+  .rt-topo .rt-resumo strong{display:inline;font-size:1.2em}
+  .rt-topo .rt-resumo small{max-width:300px;line-height:1.25}
+  .rt-topo .rt-relogio a{padding:4px 10px;min-width:0;gap:0}
+  .rt-topo .rt-relogio strong{font-size:1.1em}
+  .rt-conduta label.check{display:flex;align-items:center;gap:8px}
+  .rt-conduta label.check input[type=checkbox]{flex:none;width:16px;height:16px;min-height:0;margin:0;padding:0}
+  .rt-condutas{gap:6px}
+  details.rt-conduta{padding:8px 14px;margin:0}
+  details.rt-conduta[open]{padding-bottom:12px}
+  summary.rt-cab{cursor:pointer;list-style:none}
+  summary.rt-cab::-webkit-details-marker{display:none}
+  summary.rt-cab::before{content:"\25B8";color:var(--muted);flex:0 0 auto}
+  details[open]>summary.rt-cab::before{content:"\25BE"}
+  summary.rt-cab .rt-num{width:26px;height:26px;font-size:.92em}
+  summary.rt-cab h2{font-size:1.02em}
+  details.rt-conduta[open]>summary.rt-cab{margin-bottom:8px}
+</style>
+{% else %}
 <nav class="notice" aria-label="Nesta página" style="margin-bottom:12px">
   <strong>As condutas:</strong>
   {% for c in r.condutas %}<a href="#{{ c.ancora }}">{{ c.n }}. {{ c.titulo }}</a>{% if not loop.last %} · {% endif %}{% endfor %}
   · <a href="#o-que-saiu">O que saiu do roteiro</a>
   · <a href="#roteiro-das-centrais">O papel das Centrais</a>
 </nav>
+{% endif %}
 
 {# PRIMEIRO, O QUE FICOU DE ANTES — acréscimo do oficial em 29/10/2026: «não
    deixar margem para a escrevente esquecer». O último encerramento (com o
@@ -98,6 +125,7 @@
   {% endif %}
 </section>
 
+{% if layout_novo %}<div class="rt-topo">{% endif %}
 {# O RESUMO: quantas condutas em cada situação, e quantas vezes alguém
    insistiu no que a regra diz que é erro. #}
 <section class="rt-resumo" aria-label="Resumo do dia">
@@ -123,7 +151,11 @@
     </a>
   {% endfor %}
 </section>
+{% if layout_novo %}</div>{% endif %}
 
+{# ISTO É QUADRO DE CONSULTA, E NO LAYOUT NOVO VEM DEPOIS DAS CONDUTAS: quem abre a tela vai direto ao
+   que falta. No layout antigo fica onde sempre esteve. #}
+{% set conferencia_e_envio %}
 {# A CONFERÊNCIA DOS TÍTULOS (29/10/2026): os irmãos do mesmo protocolo em
    situações que não se explicam juntas, e o cedente diferente do registro de
    origem. Só mostra — `protesto_titulos_irmaos`. #}
@@ -150,17 +182,24 @@
     {% if tem is none %}não deu para conferir{% elif tem %}<span class="rt-sim">informada</span>{% else %}<span class="rt-nao">não informada</span>{% endif %}
   {% endfor %}
 </section>
+{% endset %}
+{% if not layout_novo %}{{ conferencia_e_envio }}{% endif %}
 
+{% set caixa = 'details' if layout_novo else 'section' %}
+{% set cabeca = 'summary' if layout_novo else 'div' %}
+{% set vez = namespace(da_pendente=true) %}
 <ol class="rt-condutas">
 {% for c in r.condutas %}
+  {% set abre = c.situacao == 'ATRASADO' or (c.situacao == 'PENDENTE' and vez.da_pendente) %}
+  {% if c.situacao == 'PENDENTE' %}{% set vez.da_pendente = false %}{% endif %}
   <li>
-  <section class="panel rt-conduta s-{{ c.situacao }}" id="{{ c.ancora }}">
-    <div class="rt-cab">
+  <{{ caixa }} class="panel rt-conduta s-{{ c.situacao }}" id="{{ c.ancora }}"{% if layout_novo and abre %} open{% endif %}>
+    <{{ cabeca }} class="rt-cab">
       <span class="rt-num" aria-hidden="true">{{ c.n }}</span>
       <h2>{{ c.titulo }}</h2>
       {% if c.hora_limite %}<span class="rt-hora">até <strong>{{ c.hora_limite }}</strong></span>{% endif %}
       <span class="rt-sit s-{{ c.situacao }}">{{ r.rotulo_da_situacao[c.situacao] }}{% if c.faltam %} · falta(m) {{ c.faltam }}{% endif %}{% if c.atrasados %} · {{ c.atrasados }} atrasado(s){% endif %}</span>
-    </div>
+    </{{ cabeca }}>
     <p style="margin:8px 0 0"><strong>A conduta:</strong> {{ c.conduta }}</p>
     <div class="rt-acoes">
       {% for b in c.botoes %}
@@ -172,7 +211,11 @@
       <div class="rt-obrig">
         <div>
           <span class="rt-faltam">{% if o.faltam is none %}—{% else %}{{ o.faltam }}{% endif %}</span>
+          {% if o.e_com_o_oficial %}
+          <span class="rt-sit s-SEM_MEDIDA" data-com-o-oficial>É com o oficial</span>
+          {% else %}
           <span class="rt-sit s-{{ o.situacao }}">{{ r.rotulo_da_situacao[o.situacao] }}</span>
+          {% endif %}
           <span>{{ o.rotulo }}</span>
           <small class="muted">— {{ o.regra }}</small>
         </div>
@@ -227,6 +270,16 @@
         {% endif %}
         <form method="post" action="{{ url_for('protesto_encerrar_o_dia') }}" class="stack">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          {% if r.com_o_oficial %}
+            <div class="small" data-encerrar-com-o-oficial>
+              <strong>É com o oficial</strong> (não pede a sua afirmação nem prende o encerramento):
+              <ul style="margin:4px 0 0 18px">
+              {% for p in r.com_o_oficial %}
+                <li>{{ p.conduta_n }}. {{ p.conduta }} — {{ p.rotulo }} ({{ p.faltam }})</li>
+              {% endfor %}
+              </ul>
+            </div>
+          {% endif %}
           {% if r.para_encerrar %}
             <p style="margin:0"><strong>Falta(m) {{ r.para_encerrar | length }} item(ns).</strong>
               Faça o que falta. Se for encerrar assim mesmo, em <strong>cada</strong> item
@@ -253,10 +306,11 @@
       {% endif %}
       </div>
     {% endif %}
-  </section>
+  </{{ caixa }}>
   </li>
 {% endfor %}
 </ol>
+{% if layout_novo %}{{ conferencia_e_envio }}{% endif %}
 
 <p><small>
   <strong>Atrasado</strong> só aparece quando o banco prova que passou da hora
@@ -265,8 +319,14 @@
   deu para medir nesta instalação.
 </small></p>
 
+{% if layout_novo %}
+<details class="rt-fonte" id="o-que-saiu">
+<summary>O que saiu do roteiro, e a prova</summary>
+<section class="panel">
+{% else %}
 <section class="panel" id="o-que-saiu">
   <div class="panel-head"><span>O que saiu do roteiro, e a prova</span></div>
+{% endif %}
   <p class="small">O sistema faz sozinho — e por isso não é conduta de ninguém.
     O que não tinha prova ficou no roteiro.</p>
   <table class="table">
@@ -282,6 +342,7 @@
     </tbody>
   </table>
 </section>
+{% if layout_novo %}</details>{% endif %}
 
 <details class="rt-fonte" id="roteiro-das-centrais">
 <summary>O roteiro das Centrais — o papel do TJMA e do IEPTB-MA, passo a passo</summary>
@@ -352,4 +413,29 @@
   </small></p>
 </section>
 </details>
+{% if layout_novo %}
+{# O LINK PARA DENTRO DE ALGO RECOLHIDO TEM DE ABRIR: «Atrasado agora» leva à conduta, e a volta do
+   encerramento leva ao formulário dele. Vale ao abrir a tela, ao mudar o endereço e no clique, porque
+   clicar de novo no mesmo link não muda o endereço. #}
+<script>
+(function () {
+  "use strict";
+  function abrir(id, rolar) {
+    var alvo = id && document.getElementById(id);
+    if (!alvo) return;
+    for (var d = alvo.closest("details"); d; d = d.parentElement && d.parentElement.closest("details")) d.open = true;
+    if (rolar) alvo.scrollIntoView({ block: "start" });
+  }
+  function doEndereco() {
+    try { abrir(decodeURIComponent(location.hash.slice(1)), true); } catch (erro) { /* endereço torto: a tela segue */ }
+  }
+  document.addEventListener("click", function (ev) {
+    var a = ev.target.closest && ev.target.closest('a[href^="#"]');
+    if (a) abrir(a.getAttribute("href").slice(1), false);
+  });
+  window.addEventListener("hashchange", doEndereco);
+  doEndereco();
+})();
+</script>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% block title %}Gerar cobrança no ONR{% endblock %}
+{% block heading %}<h1>Gerar cobrança no ONR</h1>{% endblock %}
+{% block content %}
+<p class="actions">
+  {% if atendimento_id %}<a class="button" href="{{ url_for('onr_saec_ficha', atendimento_id=atendimento_id) }}">← Atendimento {{ atendimento_id }}</a>
+  {% else %}<a class="button" href="{{ url_for('onr_cobrancas') }}">← Cobranças</a>{% endif %}
+</p>
+
+<p class="notice warning">
+  <strong>Esta tela gera uma cobrança de verdade, em nome da serventia.</strong>
+  O contrato do ONR se contradiz sobre o valor: diz que R$ 100,00 vai como 100000 e dá o exemplo 10000.
+  O sistema manda 10000. Depois de gerar, abra o link e confira o valor antes de passar ao cliente.
+</p>
+
+{% if not tem_credencial %}
+<p class="notice warning">A credencial do ONR não está guardada. Grave-a em Administrativo → Configurações,
+  na seção «Centrais — credenciais das APIs».</p>
+{% else %}
+<form method="post" action="{{ url_for('onr_cobranca_gerar') }}"
+      onsubmit="return confirm('Gerar esta cobrança no ONR, em nome da serventia? Este sistema não a cancela depois.')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="chave" value="{{ chave }}">
+  {% if atendimento_id %}<input type="hidden" name="atendimento_id" value="{{ atendimento_id }}">{% endif %}
+
+  <section class="panel">
+    <div class="panel-head"><span>A cobrança</span></div>
+    <div class="form-grid" style="padding:14px">
+      <label>Forma
+        <select name="tipo_cobranca" required>
+          <option value="PIX"{% if campos.tipo_cobranca != 'BOLETO' %} selected{% endif %}>PIX</option>
+          <option value="BOLETO"{% if campos.tipo_cobranca == 'BOLETO' %} selected{% endif %}>Boleto</option>
+        </select></label>
+      <label>Vencimento
+        <input type="date" name="vencimento" value="{{ campos.vencimento or '' }}" min="{{ hoje }}" required></label>
+      <label>Observação <small>(opcional, até 30 letras)</small>
+        <input name="observacao" value="{{ campos.observacao or '' }}" maxlength="30"></label>
+      {% if tipos %}
+      <label>Tipo de pagamento <small>(opcional)</small>
+        <select name="tipo_pagamento">
+          <option value="">Não informar</option>
+          {% for t in tipos %}<option value="{{ t.id }}"{% if campos.tipo_pagamento == t.id|string %} selected{% endif %}>{{ t.descricao }}</option>{% endfor %}
+        </select></label>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><span>Os serviços</span><small>o código é o número do protocolo, e não o recibo de pré-pagamento</small></div>
+    <div class="form-grid" style="padding:14px">
+      {% for i in quantos %}
+      <label>Protocolo do serviço {{ i }}
+        <input name="servico_codigo_{{ i }}" value="{{ campos['servico_codigo_' ~ i] or '' }}" inputmode="numeric"{% if i == 1 %} required{% endif %}></label>
+      <label>Valor do serviço {{ i }} (R$)
+        <input name="servico_valor_{{ i }}" value="{{ campos['servico_valor_' ~ i] or '' }}" placeholder="1.234,56"{% if i == 1 %} required{% endif %}></label>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><span>Quem paga</span></div>
+    <div class="form-grid" style="padding:14px">
+      <label>Nome <input name="pagador_nome" value="{{ campos.pagador_nome or '' }}" maxlength="60" required></label>
+      <label>CPF ou CNPJ <input name="pagador_documento" value="{{ campos.pagador_documento or '' }}" required></label>
+      <label>E-mail <input type="email" name="pagador_email" value="{{ campos.pagador_email or '' }}" maxlength="150" required></label>
+      <label>DDD <small>(opcional)</small> <input name="ddd" value="{{ campos.ddd or '' }}" maxlength="2" inputmode="numeric"></label>
+      <label>Telefone <small>(opcional)</small> <input name="telefone" value="{{ campos.telefone or '' }}" maxlength="9" inputmode="numeric"></label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><span>Endereço de quem paga</span><small>o ONR exige, e o atendimento não traz</small></div>
+    <div class="form-grid" style="padding:14px">
+      <label>CEP <input name="cep" value="{{ campos.cep or '' }}" required></label>
+      <label>Tipo do logradouro <input name="tipo_logradouro" value="{{ campos.tipo_logradouro or '' }}" maxlength="16" placeholder="Rua" required></label>
+      <label>Logradouro <input name="logradouro" value="{{ campos.logradouro or '' }}" maxlength="150" required></label>
+      <label>Número <small>(opcional)</small> <input name="numero" value="{{ campos.numero or '' }}" maxlength="10"></label>
+      <label>Bairro <input name="bairro" value="{{ campos.bairro or '' }}" maxlength="100" required></label>
+      <label>Cidade <input name="cidade" value="{{ campos.cidade or '' }}" maxlength="100" required></label>
+      <label>Estado <input name="estado" value="{{ campos.estado or '' }}" maxlength="2" required></label>
+    </div>
+  </section>
+
+  <p class="actions"><button class="button primary" type="submit">Gerar a cobrança no ONR</button></p>
+</form>
+{% endif %}
+{% endblock %}

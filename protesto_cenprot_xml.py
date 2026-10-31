@@ -2,11 +2,13 @@
 
 Pedido do oficial, 15/10/2026: «vamos criar o gerador de arquivo e assinar com
 o certificado». Até aqui `DOCUMENTACAO/CENPROT_XML_MEDIDO.md` dizia que ele
-«não se constrói», porque a chave única de título novo não se compõe. **A
+«não se constrói», porque a chave única de título novo não se compunha. **A
 amostra que o oficial trouxe (28 arquivos desta casa, 66 títulos, pasta
 `9. CENPROT\\ARQUIVO XML`) resolveu isso pelo outro lado:** a casa NÃO manda
 apontamento — manda só dois arquivos, e os dois falam de título que JÁ TEM a
-chave (ela vem da CENPROT, e a tela «Chave do CENPROT» a grava):
+chave. Desde 30/10/2026 a do título que vem da CRA se calcula ao apontar
+(`protesto_cenprot.compor_chave`); a do título de origem CENPROT, e a do que
+ficou sem ela, vêm da Central, e a tela «Chave do CENPROT» as grava:
 
     P — os protestos lavrados (ocorrência 2), com o INSTRUMENTO ELETRÔNICO
         assinado dentro, em base64;
@@ -210,7 +212,9 @@ def escrever(*, letra: str, uf: str, comarca: str, cartorio: str,
 #                  «TAB», em que vêm do PRÓPRIO TÍTULO (28/10/2026, ver
 #                  `APRESENTANTES_DO_TITULO`);
 #   cedente        o nome é o da posição 20 do registro da CRA; CNPJ e
-#                  endereço só quando o cedente É o sacador;
+#                  endereço só quando o cedente É o sacador — quando é outra
+#                  pessoa (endosso H), vai sem documento e só com o CEP e a UF
+#                  da serventia (`_endereco_da_serventia`);
 #   sacador        nome na posição 65, documento na 110, endereço da 124 à 198
 #                  — os campos que este sistema chama `cedente_*` são DELE;
 #   endosso        H quando cedente e sacador são pessoas diferentes, G quando
@@ -234,6 +238,11 @@ def escrever(*, letra: str, uf: str, comarca: str, cartorio: str,
 # endereço do cedente e do sacador, não: o E-Ofício mandava o do cadastro
 # dele, corrigido à mão (metade diverge do arquivo). Este sistema não tem esse
 # cadastro, e manda o do arquivo — a diferença está medida e declarada.
+#
+# MENOS NO PROTOCOLO COM MAIS DE UM TÍTULO (30/10/2026), que é a CDA com dois
+# devedores: o acervo tem uma linha por devedor, e a primeira é a do outro. Ali
+# vale a linha que casa com o devedor do título, ou o de `pt_devedores`
+# (`_registro_do_devedor`).
 # ============================================================================
 
 import json
@@ -294,23 +303,35 @@ def registro_da_cra(con, titulo: dict,
             bd, chave[len(PEND.PREFIXO_DA_ORIGEM_DO_PEDIDO):])
         if teor is not None:
             return PEND.registro_do_pedido(teor)
-    protocolo = _txt(titulo.get("protocolo"))
-    if acervo is not None and protocolo.isdigit():
-        # O acervo do E-Ofício é um arquivo SQLite à parte, em só leitura: o
-        # SQL dele continua o do SQLite.
-        linha = acervo.execute(
-            "SELECT * FROM tbSDT WHERE intProtocolo = :protocolo"
-            " ORDER BY intChave LIMIT 1",
-            {"protocolo": int(protocolo)}).fetchone()
-        if linha is not None:
-            nomes = [c[0] for c in acervo.execute(
-                "SELECT * FROM tbSDT LIMIT 0").description]
-            dados = dict(zip(nomes, linha))
-            reg = {c.nome: _txt(dados.get(f"Campo{i:02d}"))
-                   for i, c in enumerate(PA.TITULO_NA_REMESSA[:30], start=1)}
-            reg["devedor_bairro"] = _txt(dados.get("Campo39"))
-            return reg
-    return None
+    linhas = _linhas_do_acervo(acervo, titulo.get("protocolo"))
+    return linhas[0] if linhas else None
+
+
+def _linhas_do_acervo(acervo: sqlite3.Connection | None, protocolo: Any) -> list[dict]:
+    """As linhas de `tbSDT` daquele protocolo, lidas como o registro. Só LÊ.
+
+    O acervo do E-Ofício é um arquivo SQLite à parte, em só leitura: o SQL dele
+    continua o do SQLite.
+    """
+    import protesto_arquivo as PA
+    protocolo = _txt(protocolo)
+    if acervo is None or not protocolo.isdigit():
+        return []
+    linhas = acervo.execute(
+        "SELECT * FROM tbSDT WHERE intProtocolo = :protocolo ORDER BY intChave",
+        {"protocolo": int(protocolo)}).fetchall()
+    if not linhas:
+        return []
+    nomes = [c[0] for c in acervo.execute(
+        "SELECT * FROM tbSDT LIMIT 0").description]
+    saida = []
+    for linha in linhas:
+        dados = dict(zip(nomes, linha))
+        reg = {c.nome: _txt(dados.get(f"Campo{i:02d}"))
+               for i, c in enumerate(PA.TITULO_NA_REMESSA[:30], start=1)}
+        reg["devedor_bairro"] = _txt(dados.get("Campo39"))
+        saida.append(reg)
+    return saida
 
 
 def _cedente_e_sacador(reg: dict) -> tuple[dict, dict, str]:
@@ -327,6 +348,33 @@ def _cedente_e_sacador(reg: dict) -> tuple[dict, dict, str]:
         sacador["nome"] = sacador["nome"] or nome_cedente
         return dict(sacador, nome=nome_cedente), sacador, "G"
     return {"nome": nome_cedente, "endereco": {}}, sacador, "H"
+
+
+def _endereco_da_serventia(con) -> dict:
+    """O endereço do cedente no título H: o CEP e a UF da serventia. Só LÊ.
+
+    SEM ELES A CENPROT RECUSA O ARQUIVO INTEIRO — 30/10/2026. O esquema não
+    aceita `<cep />` nem `<uf />` vazios, e o P daquele dia voltou da validação
+    por causa de 3 títulos H. O precedente é medido: nos XML reais do E-Ofício,
+    em 43 de 43 títulos com cedente diferente do sacador, o cedente vai sem
+    documento, com endereço, complemento, bairro e cidade vazios, e com o CEP e
+    a UF da serventia. Os dois vêm da configuração, e nunca do código. Sem eles
+    o título fica fora, com o motivo, e os outros seguem.
+    """
+    import serventia as SER
+    bd = banco(con)
+    config = ({r["key"]: r["value"] for r in bd.ler(
+        "SELECT key, value FROM settings WHERE key IN ('serventia_cep', 'ri_uf')")}
+        if bd.tem_tabela("settings") else {})
+    dados = SER.dados(config)
+    cep = _so_digitos(dados.get("serventia_cep"))
+    uf = _txt(dados.get("ri_uf")).upper()
+    if len(cep) != 8 or len(uf) != 2:
+        raise CenprotXmlError(
+            "o cedente é diferente do sacador, e o XML leva nele o CEP e a UF da "
+            "serventia — informe os dois em Configurações → Serventia")
+    return {"endereco": "", "complemento": "", "cep": cep, "bairro": "",
+            "cidade": "", "uf": uf}
 
 
 # ------------------------------------------------------- os apresentantes
@@ -368,8 +416,10 @@ class ApresentanteDoTituloError(CenprotXmlError):
 
 
 def _apresentante_do_proprio_titulo(titulo: dict) -> dict:
+    import protesto_arquivo as PA
     codigo = _txt(titulo.get("apresentante_codigo"))
-    nome = _txt(titulo.get("apresentante_nome"))
+    # Número gravado no lugar do nome não é nome (30/10/2026).
+    nome = PA.nome_de_apresentante(titulo.get("apresentante_nome"))
     documento = _so_digitos(titulo.get("apresentante_documento"))
     tipo = _txt(titulo.get("apresentante_tipo"))
     faltam = [rotulo for rotulo, ok in (
@@ -408,6 +458,26 @@ def apresentante_do_xml(con, titulo: dict) -> dict:
     return {"codigo": _txt(apr["codigo"]), "nome": _txt(apr["nome"]),
             "documento": _so_digitos(apr["documento"]),
             "tipo_apresentante": _txt(apr["tipo_apresentante"])}
+
+
+def nomes_do_cadastro_no_lugar_de_numero(con, linhas: list[dict]) -> list[dict]:
+    """Nas linhas da tela, troca pelo nome do cadastro o número gravado no lugar
+    do nome. Só LÊ, e mexe nas linhas que recebeu.
+
+    O apresentante de `APRESENTANTES_DO_TITULO` não cai no cadastro, que é de
+    outra pessoa: fica sem nome, e a tela mostra o código.
+    """
+    import protesto_arquivo as PA
+    trocar = [l for l in linhas if l.get("apresentante_nome")
+              and not PA.nome_de_apresentante(l["apresentante_nome"])]
+    codigos = sorted({_txt(l.get("apresentante_codigo")) for l in trocar}
+                     - set(APRESENTANTES_DO_TITULO) - {""})
+    cadastro = ({r["codigo"]: r["nome"] for r in banco(con).ler(
+        "SELECT codigo, nome FROM pt_apresentantes WHERE codigo = ANY(%s)",
+        (codigos,))} if codigos else {})
+    for l in trocar:
+        l["apresentante_nome"] = cadastro.get(_txt(l.get("apresentante_codigo")), "")
+    return linhas
 
 
 def gravar_apresentante_do_titulo(con, titulo_id: int, *, nome: Any,
@@ -475,7 +545,7 @@ def trazer_apresentantes_dos_titulos(con, acervo: sqlite3.Connection) -> dict:
                           intTipoApresentante, strCodigoBanco FROM tbCobrador""")}
     except sqlite3.Error as erro:
         raise CenprotXmlError(
-            f"O acervo do E-Ofício não tem o cadastro dos cobradores "
+            f"O acervo do sistema antigo não tem o cadastro dos cobradores "
             f"(tbCobrador): {erro}") from erro
     marcas = ", ".join(["%s"] * len(APRESENTANTES_DO_TITULO))
     faltam = bd.ler(
@@ -680,6 +750,50 @@ def _anuencia(con, titulo_id: int) -> dict:
     return {"flag": False}
 
 
+def _documento_do_registro(reg: dict) -> str:
+    """O CPF ou CNPJ do devedor no registro da CRA, só com os dígitos. Só calcula.
+    O tipo vem «001»/«002» no acervo e 1/2 no arquivo lido."""
+    import protesto_arquivo as PA
+    doc = PA.documento_do_devedor({
+        "devedor_documento": reg.get("devedor_documento"),
+        "devedor_tipo_de_documento":
+            _so_digitos(reg.get("devedor_tipo_de_documento")).lstrip("0")})
+    return _so_digitos(next(iter(doc.values())))
+
+
+def _registro_do_devedor(con, titulo: dict, reg: dict,
+                         acervo: sqlite3.Connection | None) -> dict:
+    """O registro de onde o devedor do título pode sair. Só LÊ.
+
+    A PRIMEIRA LINHA DO PROTOCOLO É A DE OUTRA PESSOA — 30/10/2026. Na CDA com
+    dois devedores, o protocolo tem dois títulos aqui e duas linhas em `tbSDT`,
+    e `registro_da_cra` traz a primeira: medido no P daquele dia, os blocos dos
+    dois títulos saíram com o devedor do primeiro, que não é devedor do segundo.
+
+    Protocolo com um título e uma linha: o registro mesmo. Com mais: a linha
+    que casa com o documento do devedor do título; sem ela, `{}`, e `_devedores`
+    usa o de `pt_devedores`. Nunca a primeira linha às cegas.
+    """
+    bd = banco(con)
+    protocolo = _txt(titulo.get("protocolo"))
+    if not protocolo:
+        return reg
+    irmaos = int(bd.valor(
+        "SELECT COUNT(*) AS n FROM pt_titulos WHERE protocolo = %s", (protocolo,)))
+    linhas = _linhas_do_acervo(acervo, protocolo)
+    if irmaos <= 1 and len(linhas) <= 1:
+        return reg
+    gravados = bd.ler(
+        "SELECT documento_numero FROM pt_devedores WHERE titulo_id = %s",
+        (titulo["id"],))
+    if len(gravados) == 1:
+        doc = _so_digitos(gravados[0]["documento_numero"])
+        for linha in linhas:
+            if doc and _documento_do_registro(linha) == doc:
+                return linha
+    return {}
+
+
 def _devedores(con, titulo_id: int, reg: dict,
                intimado: bool, edital: bool) -> list[dict]:
     gravados = banco(con).ler(
@@ -760,8 +874,11 @@ def montar_titulo(con, ato_id: int, *,
     chave = _so_digitos(titulo.get("chave_cenprot"))
     if len(chave) != 23:
         raise CenprotXmlError(
-            "o título não tem a chave do CENPROT — ela vem do XML que a "
-            "Central devolve (tela «Chave do CENPROT»)")
+            "o título não tem a chave do CENPROT. O sistema a calcula só ao "
+            "apontar título vindo da CRA, e para isso precisa do quadro «Chave "
+            "da CENPROT» preenchido em Administrativo → Configuração → "
+            "Configurações; fora disso, ela vem do XML que a Central devolve "
+            "(tela «Chave do CENPROT»)")
     # O TAB vem do próprio título; os outros, do cadastro pelo código.
     apr = apresentante_do_xml(bd, titulo)
     reg = registro_da_cra(bd, titulo, acervo)
@@ -770,6 +887,9 @@ def montar_titulo(con, ato_id: int, *,
             "o registro da CRA deste título não está no sistema nem no acervo "
             "— sem ele não se sabe quem é o cedente e quem é o sacador")
     cedente, sacador, endosso = _cedente_e_sacador(reg)
+    if endosso == "H":
+        cedente["endereco"] = _endereco_da_serventia(bd)
+    reg_do_devedor = _registro_do_devedor(bd, titulo, reg, acervo)
     intimado, edital = _intimacao(bd, titulo["id"])
     entrada = _data_de_entrada(bd, titulo)
     t = {"id": chave, "cedente": cedente, "sacador": sacador,
@@ -788,7 +908,8 @@ def montar_titulo(con, ato_id: int, *,
                           else "S"),
          "aceite": ("A" if (_txt(titulo.get("aceite"))
                             or _txt(reg.get("aceite"))).upper() == "A" else "N"),
-         "devedores": _devedores(bd, titulo["id"], reg, intimado, edital),
+         "devedores": _devedores(bd, titulo["id"], reg_do_devedor, intimado,
+                                 edital),
          "data_apresentacao": entrada,
          "protocolo": _txt(titulo.get("protocolo")),
          "data_protocolo": entrada,
@@ -799,6 +920,12 @@ def montar_titulo(con, ato_id: int, *,
          "anuencia": _anuencia(bd, titulo["id"])}
     if not t["devedores"]:
         raise CenprotXmlError("o título não tem devedor gravado")
+    # O devedor de `pt_devedores` pode estar sem CEP ou UF, e a CENPROT recusa o
+    # arquivo inteiro por um `<cep />` vazio: este espera, e os outros seguem.
+    if not reg_do_devedor and not all(
+            d["endereco"]["cep"] and d["endereco"]["uf"] for d in t["devedores"]):
+        raise CenprotXmlError(
+            "o devedor deste título está sem CEP ou UF na ficha — corrija a ficha")
     if letra == "P":
         livro, folha = _livro_e_folha(bd, ato)
         if not livro or not folha:
@@ -825,6 +952,100 @@ def montar_titulo(con, ato_id: int, *,
 # ------------------------------------------------- o que falta mandar
 
 
+def sql_sem_o_pago_da_liquidacao(con) -> str:
+    """O pedaço do SQL que tira da fila do D o pagamento de CORREÇÃO do título
+    liquidado no portal. Só monta o SQL; o ato é `a`. Lê se a tabela existe.
+
+    A CENPROT JÁ O TEM COMO PAGO — 30/10/2026, caso 350574/1. O título foi
+    liquidado no portal e, depois, corrigido aqui com um pagamento de
+    `origem='CORRECAO'`. Na Central ele já está pago, e o oficial mandou não
+    reenviar. Liquidação anulada não conta: o ato volta à fila.
+    """
+    if not banco(con).tem_tabela("cn_liquidacoes_portal"):
+        return ""
+    return """AND NOT (a.tipo = 'PAGAMENTO' AND COALESCE(a.origem, '') = 'CORRECAO'
+                       AND EXISTS (SELECT 1 FROM cn_liquidacoes_portal l
+                                    WHERE l.titulo_id = a.titulo_id
+                                      AND l.anulada_em IS NULL))"""
+
+
+def _no_que_o_par_diverge(grupo: list[dict]) -> list[str]:
+    """No que os atos com a mesma chave divergem. Vazio: fundem. Só calcula."""
+    um = grupo[0]
+    saida = []
+    for rotulo, valor in (
+            ("a data", lambda i: i["titulo"].get("data_ocorrencia")),
+            ("a ocorrência", lambda i: i["titulo"].get("ocorrencia")),
+            ("o livro", lambda i: i["titulo"].get("num_livro")),
+            ("a folha", lambda i: i["titulo"].get("num_folha")),
+            ("o instrumento",
+             lambda i: bytes(i["titulo"].get("instrumento") or b"")),
+            ("o apresentante", lambda i: _chave_do_bloco(i["apresentante"]))):
+        if any(valor(i) != valor(um) for i in grupo[1:]):
+            saida.append(rotulo)
+    if len({i["titulo_id"] for i in grupo}) < len(grupo):
+        saida.append("o título (dois atos do mesmo título)")
+    return saida
+
+
+def _uma_chave_um_titulo(entram: list[dict], fora: list[dict]) -> dict:
+    """Um arquivo não leva dois títulos com a mesma chave. Só calcula.
+
+    A CENPROT RECUSA O ARQUIVO INTEIRO — 30/10/2026: «Existem 2 títulos com a
+    mesma chave única». É a CDA com dois devedores, que aqui são dois títulos
+    com o mesmo protocolo. O E-Ofício mandava esse caso como UM `<titulo>` com
+    `<devedores total="2">` (4 casos no P de 31/08/2026), cada devedor com o
+    seu `intimado` e o seu `edital`.
+
+      - mesma data, ocorrência, livro, folha e instrumento: funde num título só;
+      - divergem em algum: o par fica esperando, com o motivo, e os outros
+        seguem. Como mandar esse par é decisão do oficial, e aqui não se inventa;
+      - um deles já esperando por outro motivo: o outro espera com ele, porque
+        sair sozinho seria mandar o título com um devedor a menos.
+
+    O título fundido leva `atos_ids`: `gerar` marca todos.
+    """
+    por_chave: dict[str, list[dict]] = {}
+    for item in entram:
+        por_chave.setdefault(item["titulo"]["id"], []).append(item)
+    esperando: dict[str, list[dict]] = {}
+    for item in fora:
+        if len(item.get("chave") or "") == 23:
+            esperando.setdefault(item["chave"], []).append(item)
+
+    def _fora(item: dict, motivo: str) -> dict:
+        return {"ato_id": item["ato_id"], "tipo": item["tipo"],
+                "data_ato": item["data_ato"], "titulo_id": item["titulo_id"],
+                "protocolo": item["protocolo"], "chave": item["titulo"]["id"],
+                "motivo": motivo}
+
+    saem, novos_fora = [], []
+    for chave, grupo in por_chave.items():
+        atos = ", ".join(str(i["ato_id"]) for i in grupo)
+        if chave in esperando:
+            outros = ", ".join(str(i["ato_id"]) for i in esperando[chave])
+            novos_fora.extend(_fora(i, (
+                f"a chave {chave} é de um título só, com o ato {outros} — que "
+                f"ainda espera o que falta; os dois vão juntos")) for i in grupo)
+        elif len(grupo) == 1:
+            saem.append(grupo[0])
+        else:
+            diverge = _no_que_o_par_diverge(grupo)
+            if diverge:
+                novos_fora.extend(_fora(i, (
+                    f"os atos {atos} têm a mesma chave {chave}, e o arquivo não "
+                    f"leva dois títulos com a mesma chave; eles divergem em "
+                    f"{', '.join(diverge)}, e como mandar este par é decisão do "
+                    f"oficial")) for i in grupo)
+            else:
+                titulo = dict(grupo[0]["titulo"])
+                titulo["devedores"] = [d for i in grupo
+                                       for d in i["titulo"]["devedores"]]
+                saem.append(dict(grupo[0], titulo=titulo,
+                                 atos_ids=[i["ato_id"] for i in grupo]))
+    return {"entram": saem, "fora": fora + novos_fora}
+
+
 def pendentes(con, letra: str, *,
               acervo: sqlite3.Connection | None = None) -> dict:
     """Os atos lavrados POR ESTE SISTEMA que a Central ainda não recebeu. Só LÊ.
@@ -836,13 +1057,15 @@ def pendentes(con, letra: str, *,
         raise CenprotXmlError(f"Letra de arquivo desconhecida: {letra!r}.")
     bd = banco(con)
     marcas = ", ".join(["%s"] * len(ATOS_DA_LETRA[letra]))
+    sem_liquidacao = sql_sem_o_pago_da_liquidacao(bd)
     atos = bd.ler(
         f"""SELECT a.id, a.tipo, a.data_ato, t.id AS titulo_id, t.protocolo,
-                   t.apresentante_codigo
+                   t.apresentante_codigo, t.chave_cenprot
               FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
              WHERE a.tipo IN ({marcas}) AND a.cancelado = 0
                AND a.cenprot_xml_id IS NULL
                AND COALESCE(a.origem, '') <> 'EOFICIO'
+               {sem_liquidacao}
              ORDER BY a.data_ato, a.id""", ATOS_DA_LETRA[letra])
     entram, fora = [], []
     # O BLOCO DO ARQUIVO É POR APRESENTANTE REAL — código + documento (ver
@@ -852,7 +1075,8 @@ def pendentes(con, letra: str, *,
     blocos: dict[tuple[str, str], dict] = {}
     for a in atos:
         base = {"ato_id": a["id"], "tipo": a["tipo"], "data_ato": a["data_ato"],
-                "titulo_id": a["titulo_id"], "protocolo": a["protocolo"]}
+                "titulo_id": a["titulo_id"], "protocolo": a["protocolo"],
+                "chave": _so_digitos(a["chave_cenprot"])}
         try:
             item = dict(base, **montar_titulo(bd, a["id"], acervo=acervo))
         except ApresentanteDoTituloError as erro:
@@ -875,7 +1099,7 @@ def pendentes(con, letra: str, *,
                         f"apresentante só")))
             continue
         entram.append(item)
-    return {"entram": entram, "fora": fora}
+    return _uma_chave_um_titulo(entram, fora)
 
 
 def _chave_do_bloco(apr: dict) -> tuple[str, str]:
@@ -923,8 +1147,10 @@ def gerar(con, letra: str, *, uf: str, comarca: str,
         (letra, dia, sequencial, nome, conteudo,
          hashlib.sha256(conteudo).hexdigest(), len(lista["entram"]), agora,
          usuario))[0]["id"])
+    # O título fundido (`_uma_chave_um_titulo`) leva mais de um ato.
     bd.escrever("UPDATE pt_atos SET cenprot_xml_id = %s WHERE id = ANY(%s)",
-                (xml_id, [i["ato_id"] for i in lista["entram"]]))
+                (xml_id, [ato for i in lista["entram"]
+                          for ato in (i.get("atos_ids") or [i["ato_id"]])]))
     return {"id": xml_id, "nome": nome, "titulos": len(lista["entram"]),
             "fora": lista["fora"]}
 
@@ -933,7 +1159,9 @@ def arquivos(con, limite: int = 60) -> list[dict]:
     return banco(con).ler(
         """SELECT id, letra, dia, sequencial, nome_arquivo, sha256, titulos,
                   gerado_em, gerado_por, envio_afirmado_em,
-                  envio_afirmado_por, envio_afirmacao FROM pt_cenprot_xml
+                  envio_afirmado_por, envio_afirmacao, recusado_em,
+                  recusado_por, recusado_motivo, atos_devolvidos
+             FROM pt_cenprot_xml
             ORDER BY id DESC LIMIT %s""", (int(limite),))
 
 
@@ -980,10 +1208,14 @@ def guardar_comprovante_do_envio(con, xml_id: int, *, nome: Any,
     from protesto_aviso import (ASSINATURA_DO_COMPROVANTE,
                                 LIMITE_DO_COMPROVANTE)
     bd = banco(con)
-    xml = bd.um("SELECT id, nome_arquivo FROM pt_cenprot_xml WHERE id = %s",
-                (int(xml_id),))
+    xml = bd.um("""SELECT id, nome_arquivo, recusado_em FROM pt_cenprot_xml
+                    WHERE id = %s""", (int(xml_id),))
     if not xml:
         raise CenprotXmlError(f"O arquivo #{xml_id} não existe.")
+    if xml.get("recusado_em"):
+        raise CenprotXmlError(
+            f"«{xml['nome_arquivo']}» está marcado como recusado pela CENPROT, "
+            f"e arquivo recusado não tem comprovante de subida.")
     nome_limpo = Path(str(nome or "")).name.strip()
     ext = Path(nome_limpo).suffix.lower()
     if ext not in ASSINATURA_DO_COMPROVANTE:
@@ -1046,10 +1278,14 @@ def afirmar_envio_sem_comprovante(con, xml_id: int, *, afirmacao: str,
     (`afirmacoes_expressas.validar`); a rota grava a auditoria depois.
     """
     bd = banco(con)
-    xml = bd.um("""SELECT id, nome_arquivo, envio_afirmado_em
+    xml = bd.um("""SELECT id, nome_arquivo, envio_afirmado_em, recusado_em
                      FROM pt_cenprot_xml WHERE id = %s""", (int(xml_id),))
     if not xml:
         raise CenprotXmlError(f"O arquivo #{xml_id} não existe.")
+    if xml.get("recusado_em"):
+        raise CenprotXmlError(
+            f"«{xml['nome_arquivo']}» está marcado como recusado pela CENPROT: "
+            f"não há subida a afirmar.")
     if xml.get("envio_afirmado_em"):
         raise CenprotXmlError(
             f"A subida de «{xml['nome_arquivo']}» já foi afirmada em "
@@ -1059,3 +1295,122 @@ def afirmar_envio_sem_comprovante(con, xml_id: int, *, afirmacao: str,
                   envio_afirmado_por = %s, envio_afirmacao = %s
             WHERE id = %s""", (agora, usuario, afirmacao, int(xml_id)))
     return {"xml_id": int(xml_id), "nome_arquivo": xml["nome_arquivo"]}
+
+
+# ---------------------------------- os atos que voltam à fila
+#
+# `gerar` amarra os atos ao arquivo. Até 30/10/2026 não havia saída: arquivo que
+# a CENPROT recusou deixava os atos presos, e eles nunca mais entravam noutro.
+# São duas ações, no espírito do `devolver-atos` do retorno: o arquivo INTEIRO
+# recusado, e os atos ESCOLHIDOS de um arquivo que subiu sem eles. Nas duas o
+# conteúdo guardado não muda: ele é a prova do que foi gerado.
+MINIMO_DO_MOTIVO_DA_DEVOLUCAO = 10
+
+
+def _motivo_da_devolucao(motivo: Any) -> str:
+    texto = _txt(motivo)
+    if len(texto) < MINIMO_DO_MOTIVO_DA_DEVOLUCAO:
+        raise CenprotXmlError(
+            f"Escreva o motivo, com pelo menos {MINIMO_DO_MOTIVO_DA_DEVOLUCAO} "
+            f"caracteres: ele vai para a auditoria.")
+    return texto
+
+
+def atos_do_arquivo(con, xml_id: int) -> list[dict]:
+    """Os atos ainda ligados ao arquivo, para a tela escolher. Só LÊ."""
+    return [dict(r) for r in banco(con).ler(
+        """SELECT a.id, a.tipo, a.titulo_id, t.protocolo, t.numero_titulo
+             FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
+            WHERE a.cenprot_xml_id = %s ORDER BY a.id""", (int(xml_id),))]
+
+
+def devolucoes_do_arquivo(arquivo_lido: dict) -> list[dict]:
+    """As devoluções parciais guardadas na linha do arquivo. Só calcula."""
+    try:
+        return json.loads(arquivo_lido.get("atos_devolvidos") or "[]") or []
+    except (TypeError, ValueError):
+        return []
+
+
+def recusar_arquivo(con, xml_id: int, *, motivo: Any, agora: str,
+                    usuario: str | None) -> dict:
+    """A CENPROT recusou o arquivo: os atos dele voltam à fila. ESCREVE.
+
+    O arquivo fica gravado como foi, marcado como recusado, e não cobra mais
+    comprovante. Só vale para arquivo SEM comprovante: com ele, a prova diz que
+    a Central recebeu. O sequencial conta o recusado, e o arquivo novo do dia
+    não repete o nome do que voltou.
+    """
+    bd = banco(con)
+    # A MESMA TRAVA DE `gerar`: soltar atos muda o que um `gerar` estaria lendo.
+    bd.travar("pt_cenprot_xml.sequencial")
+    texto = _motivo_da_devolucao(motivo)
+    xml = bd.um("""SELECT id, nome_arquivo, recusado_em FROM pt_cenprot_xml
+                    WHERE id = %s""", (int(xml_id),))
+    if not xml:
+        raise CenprotXmlError(f"O arquivo #{xml_id} não existe.")
+    if xml.get("recusado_em"):
+        raise CenprotXmlError(
+            f"«{xml['nome_arquivo']}» já está marcado como recusado, desde "
+            f"{str(xml['recusado_em'])[:16]}.")
+    if comprovantes(bd, xml_id):
+        raise CenprotXmlError(
+            f"«{xml['nome_arquivo']}» tem comprovante da subida anexado, e por "
+            f"isso não se marca como recusado. Se ele subiu sem alguns atos, "
+            f"devolva só esses.")
+    ids = [a["id"] for a in atos_do_arquivo(bd, xml_id)]
+    bd.escrever(
+        """UPDATE pt_cenprot_xml SET recusado_em = %s, recusado_por = %s,
+                  recusado_motivo = %s WHERE id = %s""",
+        (agora, usuario, texto, int(xml_id)))
+    bd.escrever("UPDATE pt_atos SET cenprot_xml_id = NULL WHERE cenprot_xml_id = %s",
+                (int(xml_id),))
+    return {"xml_id": int(xml_id), "nome_arquivo": xml["nome_arquivo"],
+            "atos": ids, "motivo": texto}
+
+
+def devolver_atos_escolhidos(con, xml_id: int, ato_ids: Any, *, motivo: Any,
+                             agora: str, usuario: str | None) -> dict:
+    """O arquivo subiu sem estes atos: só eles voltam à fila. ESCREVE.
+
+    Pedido de 30/10/2026: o arquivo subiu corrigido à mão, sem dois dos 19 atos.
+    Os outros continuam ligados a ele. Vale com ou sem comprovante, que o
+    comprovante é o da versão que subiu. Devolver TODOS não cabe aqui: arquivo
+    sem ato nenhum não subiu, e o caminho é a recusa. A devolução fica na linha
+    do arquivo, além da auditoria.
+    """
+    bd = banco(con)
+    bd.travar("pt_cenprot_xml.sequencial")
+    texto = _motivo_da_devolucao(motivo)
+    xml = bd.um("""SELECT id, nome_arquivo, recusado_em, atos_devolvidos
+                     FROM pt_cenprot_xml WHERE id = %s""", (int(xml_id),))
+    if not xml:
+        raise CenprotXmlError(f"O arquivo #{xml_id} não existe.")
+    if xml.get("recusado_em"):
+        raise CenprotXmlError(
+            f"«{xml['nome_arquivo']}» foi recusado, e os atos dele já voltaram.")
+    escolhidos = sorted({int(x) for x in (ato_ids or ())
+                         if str(x).strip().isdigit()})
+    if not escolhidos:
+        raise CenprotXmlError("Marque os atos que não subiram.")
+    ligados = {a["id"] for a in atos_do_arquivo(bd, xml_id)}
+    estranhos = [i for i in escolhidos if i not in ligados]
+    if estranhos:
+        raise CenprotXmlError(
+            f"O ato {', '.join(map(str, estranhos))} não está em "
+            f"«{xml['nome_arquivo']}». Nada foi devolvido.")
+    if set(escolhidos) == ligados:
+        raise CenprotXmlError(
+            f"Estes são todos os atos de «{xml['nome_arquivo']}». Se nenhum "
+            f"subiu, marque o arquivo como recusado pela CENPROT.")
+    devolucoes = devolucoes_do_arquivo(xml)
+    devolucoes.append({"atos": escolhidos, "motivo": texto, "por": usuario,
+                       "em": agora})
+    bd.escrever("UPDATE pt_cenprot_xml SET atos_devolvidos = %s WHERE id = %s",
+                (json.dumps(devolucoes, ensure_ascii=False), int(xml_id)))
+    bd.escrever("""UPDATE pt_atos SET cenprot_xml_id = NULL
+                    WHERE cenprot_xml_id = %s AND id = ANY(%s)""",
+                (int(xml_id), escolhidos))
+    return {"xml_id": int(xml_id), "nome_arquivo": xml["nome_arquivo"],
+            "atos": escolhidos, "motivo": texto,
+            "ficaram": len(ligados) - len(escolhidos)}

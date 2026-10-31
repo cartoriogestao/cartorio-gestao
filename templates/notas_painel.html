@@ -4,6 +4,32 @@
 {% block content %}
 {% include '_serventia.html' %}
 
+{% if layout_novo %}
+{# O LAYOUT NOVO: as portas de lavrar no alto, e os avisos soltos numa lista só, com o caminho
+   de cada um. Os onze botões da fileira de baixo saem: repetiam o menu, que agora está à vista. #}
+{% from '_portas_de_lavrar.html' import portas %}
+<section class="panel">
+  <div class="panel-head"><span>Lavrar agora</span></div>
+  {{ portas(portas_de_lavrar('Tabelionato de Notas'), csrf_token) }}
+</section>
+{% set esperando = [] %}
+{% if resumo.em_lavratura %}{% set _ = esperando.append({'texto': resumo.em_lavratura ~ ' ato(s) em lavratura, abertos e não lançados no livro', 'url': url_for('notas_atos', vista='em_lavratura'), 'botao': 'Ver'}) %}{% endif %}
+{% if resumo.anotacao_pendente %}{% set _ = esperando.append({'texto': resumo.anotacao_pendente ~ ' ato(s) sem anotação à margem: a certidão do ato desfeito sai sem dizer o que aconteceu com ele', 'url': url_for('notas_anotacoes_pendentes'), 'botao': 'Resolver'}) %}{% endif %}
+{% if resumo.sem_selo %}{% set _ = esperando.append({'texto': resumo.sem_selo ~ ' reconhecimento(s) sem selo registrado: a prestação de contas não fecha', 'url': url_for('notas_reconhecimentos'), 'botao': 'Ver'}) %}{% endif %}
+{% if resumo.livro_acabando %}{% set _ = esperando.append({'texto': resumo.livro_acabando ~ ' livro(s) com dez folhas ou menos: prepare o próximo', 'url': url_for('notas_livros'), 'botao': 'Livros'}) %}{% endif %}
+<section class="panel cg-falta">
+  <div class="panel-head"><span>O que espera você</span></div>
+  {% if esperando %}<ul class="cg-falta-l">
+    {% for i in esperando %}<li class="pendente"><span class="cg-falta-m" aria-hidden="true"></span><span>{{ i.texto }}</span><a class="button small" href="{{ i.url }}">{{ i.botao }}</a></li>{% endfor %}
+  </ul>{% else %}<p class="small muted">Nada pendente no tabelionato.</p>{% endif %}
+</section>
+<section class="cards">
+  <div class="stat"><strong>{{ resumo.rec_hoje }}</strong><small>reconhecimentos hoje</small></div>
+  <div class="stat"><strong>{{ resumo.aut_hoje }}</strong><small>autenticações hoje</small></div>
+  <div class="stat"><strong>{{ resumo.cartoes }}</strong><small>cartões de autógrafo</small></div>
+  <div class="stat"><strong>{{ resumo.atos }}</strong><small>atos de livro</small></div>
+</section>
+{% else %}
 <div class="actions">
   <a class="button primary" href="{{ url_for('notas_reconhecimento') }}">Reconhecer firma</a>
   <a class="button primary" href="{{ url_for('notas_autenticacao') }}">Autenticar cópia</a>
@@ -61,6 +87,7 @@
   O sistema vira o livro sozinho quando encher, mas o papel do próximo precisa estar pronto e
   rubricado antes disso. <a href="{{ url_for('notas_livros') }}">Ver os livros</a>.
 </div>
+{% endif %}
 {% endif %}
 
 <section class="panel">

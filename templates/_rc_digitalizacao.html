@@ -4,7 +4,7 @@
    rc_digitalizacao_web (context processor), e não da rota da ficha. #}
 {% set f = rc_digi_ficha %}
 {% if f %}
-<section class="panel{% if f.pendente and f.vencida %} critical{% endif %}" id="termo-digitalizado">
+<section class="panel{% if f.pendente and f.vencida %} critical{% endif %}" id="termo-digitalizado" data-fase="termo">
   <div class="panel-head"><span>Termo assinado — digitalização</span>
     <small>{% if f.digi and f.digi.tem_arquivo %}no sistema{% elif f.pendente %}PENDENTE{% else %}sem arquivo{% endif %}</small></div>
   <div style="padding:14px">

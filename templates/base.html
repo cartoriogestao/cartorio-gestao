@@ -1,3 +1,11 @@
+{# O LAYOUT NOVO (30/10/2026) é escolha de cada pessoa, e o padrão de fábrica é este
+   aqui. Quem o escolheu recebe `base_novo.html`, com os mesmos blocos: as telas não
+   sabem qual das duas molduras as desenha. Ver `navegacao_web.py`. #}
+{% if layout_novo %}{% extends "base_novo.html" %}{% endif %}
+{# E O RESTO DESTE ARQUIVO SÓ RODA SEM ELE. O `extends` dentro de `if` segura o texto,
+   mas não segura o `include`: os avisos e os botões daqui saíam antes do <!doctype> da
+   moldura nova, em dobro. Quem achou foi a primeira foto no navegador. #}
+{% if not layout_novo %}
 {# O botao de fechar o aviso — relato #62. A macro e a razao dela estao em
    `_aviso.html`; aqui so se chama. #}
 {% import '_aviso.html' as aviso %}
@@ -341,6 +349,9 @@
            E. Sem esta porta, o atualizador seria mais uma peca pronta que
            nenhuma tela alcanca — o defeito que mais se repetiu neste projeto. #}
         <a href="{{ url_for('cnib_central') }}">CNIB — a cópia local e a Central</a>
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('cnib_consulta') }}">CNIB — consultar CPF ou CNPJ</a>
+        <a href="{{ url_for('onr_saec') }}">ONR — atendimentos do SAEC</a>{% endif %}
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('onr_cobrancas') }}">ONR — cobranças</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('ri_expurgos') }}">Atas de ocorrência</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('ri_resolver_imagens') }}">Fichas digitalizadas</a>{% endif %}
         {# A IA CONFERE AS TRANSCRIÇÕES DOS LIVROS ANTIGOS (LH11, 21/10/2026) —
@@ -365,6 +376,7 @@
         {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Remessas e obrigações</div>
         <a href="{{ url_for('ri_selos') }}">Selos e emolumentos</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('ri_onr') }}">Exportação ONR</a>
+        <a href="{{ url_for('onr_ir') }}">Indicador Real — o arquivo inteiro</a>
         {#
           A CARGA DO NEXT CLOUD SAS FICA AO LADO DA EXPORTACAO, e nao numa
           secao nova: as duas mandam a mesma coisa ao mesmo destino — o que
@@ -488,6 +500,16 @@
         <a href="{{ url_for('protesto_cenprot') }}">Chave do CENPROT</a>
         {# 29/10/2026: o que a Central diz de cada pedido × o que o título é aqui. #}
         <a href="{{ url_for('protesto_cenprot_conferencia') }}">Conferência CENPROT × sistema</a>
+        {# OS LIVROS E OS REPASSES (revisão de telas, 30/10/2026). As telas existiam
+           sem porta neste menu: o Livro de Pagamentos, que as inspeções de 2021 e
+           de 2026 marcaram como inexistente, só se achava em «Livros obrigatórios»,
+           que o escrevente não vê; o repasse, só pelo roteiro; e a certidão em
+           relação, de lugar nenhum. `tests/test_toda_pagina_tem_porta.py` cobra. #}
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Livros e repasses</div>
+        <a href="{{ url_for('protesto_livro', qual='pagamentos') }}">Livro de Pagamentos</a>
+        <a href="{{ url_for('protesto_livro', qual='protocolo') }}">Livro de Protocolo</a>
+        {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('protesto_repasses') }}">Repasses ao apresentante</a>
+        <a href="{{ url_for('protesto_relacao_diaria') }}">Certidão diária em relação</a>{% endif %}
         {# «Trazer protesto do E-Ofício» saiu em 17/10/2026 (importação
            terminada); a rota fica, sem link. #}
         {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>
@@ -780,6 +802,9 @@
         <a href="{{ url_for('rcpj_rtd_registros', atribuicao=3) }}">RCPJ — registros lavrados</a>
         <a href="{{ url_for('rcpj_rtd_registros', atribuicao=4) }}">RTD — registros lavrados</a>
         <a href="{{ url_for('rcpj_rtd_ultimos_atos') }}">Últimos atos praticados</a>
+        {% if user.role in ['ADMIN','MANAGER'] %}
+        <a href="{{ url_for('rcpj_rtd_pendencias_lista_presenca') }}">RCPJ — atos sem lista de presença</a>
+        {% endif %}
         <a href="{{ url_for('atribuicoes_certidoes') }}">Certidões de inteiro teor</a>
         {% if user.role in ['ADMIN','MANAGER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Configuração</div>
         <a href="{{ url_for('rcpj_rtd_etiqueta_ajuste') }}">Ajustar a etiqueta de registro</a>{% endif %}
@@ -1021,6 +1046,7 @@
       <span class="user-avatar" aria-hidden="true" title="{{ user.full_name }}">{{ user.full_name[:1] | upper }}</span>
       <div class="user-copy"><strong>{{ user.full_name }}</strong><small>{{ user.role }} · v{{ VERSION }} · <a href="{{ url_for('dois_fatores') }}" title="Verificação em duas etapas da sua conta">duas etapas</a> · <a href="{{ url_for('minha_senha') }}" title="Trocar a senha da sua conta">minha senha</a></small></div>
       <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button" title="Sair do sistema">Sair</button></form>
+      <form method="post" action="{{ url_for('preferencia_layout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="layout" value="novo"><input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}"><button class="link-button" title="Experimentar o layout novo. Dá para voltar a qualquer momento.">Novo layout</button></form>
     </div>
   </aside>
   <button class="sidebar-scrim" type="button" aria-label="Fechar menu" tabindex="-1"></button>
@@ -1051,7 +1077,7 @@
     </header>
     <div class="content">
       {% with messages = get_flashed_messages(with_categories=true) %}
-        {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message }}{{ aviso.fechar() }}</div>{% endfor %}
+        {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message|forte }}{{ aviso.fechar() }}</div>{% endfor %}
       {% endwith %}
 
       {% block content %}{% endblock %}
@@ -1085,7 +1111,7 @@
 <div class="auth-wrap">
   <div class="auth-card">
     {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message }}{{ aviso.fechar() }}</div>{% endfor %}
+      {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message|forte }}{{ aviso.fechar() }}</div>{% endfor %}
     {% endwith %}
     {% block auth_content %}{% endblock %}
   </div>
@@ -1093,3 +1119,4 @@
 {% endif %}
 </body>
 </html>
+{% endif %}

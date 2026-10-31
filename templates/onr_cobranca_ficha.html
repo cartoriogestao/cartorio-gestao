@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block title %}Cobrança do ONR{% endblock %}
+{% block heading %}<h1>Cobrança do ONR</h1>{% endblock %}
+{% block content %}
+<p class="actions">
+  <a class="button" href="{{ url_for('onr_cobrancas') }}">← Cobranças</a>
+  {% if envio and envio.atendimento_id %}<a class="button" href="{{ url_for('onr_saec_ficha', atendimento_id=envio.atendimento_id) }}">Atendimento {{ envio.atendimento_id }}</a>{% endif %}
+</p>
+
+{% if c.estranha %}
+<p class="notice warning">O ONR respondeu numa forma que este sistema não conhece. Confira esta cobrança no portal.</p>
+{% else %}
+<p class="notice warning">Abra o link e confira o valor antes de passar ao cliente.
+  O ONR devolveu {{ c.valor_bruto or 'nada' }} neste campo{% if c.valor %}, que o sistema lê como R$ {{ c.valor }}{% endif %}.</p>
+
+<div class="grid2">
+<section class="panel">
+  <div class="panel-head"><span>{{ c.tipo or 'Cobrança' }}{% if c.valor %} de R$ {{ c.valor }}{% endif %}</span><small>situação {{ c.status or '—' }}</small></div>
+  <table class="table">
+    <tr><th>Link</th><td>{% if c.url %}<a href="{{ c.url }}" target="_blank" rel="noopener noreferrer">Abrir a cobrança</a>{% else %}—{% endif %}</td></tr>
+    <tr><th>Quem paga</th><td>{{ c.pagador or '—' }}{% if c.documento %} · {{ c.documento }}{% endif %}</td></tr>
+    <tr><th>Vencimento</th><td>{{ c.vencimento or '—' }}</td></tr>
+    <tr><th>Gerada em</th><td>{{ c.gerada_em or '—' }}</td></tr>
+    <tr><th>Situação desde</th><td>{{ c.situacao_em or '—' }}</td></tr>
+    {% if c.devolvido and c.devolvido != '0,00' %}<tr><th>Devolvido</th><td>R$ {{ c.devolvido }}</td></tr>{% endif %}
+    {% if c.observacao %}<tr><th>Observação</th><td>{{ c.observacao }}</td></tr>{% endif %}
+    {% if envio %}<tr><th>Gerada por</th><td>{{ envio.por }}{% if envio.valor_centavos is not none %}, com R$ {{ reais(envio.valor_centavos) }} digitados{% endif %}</td></tr>{% endif %}
+    {% for s in c.servicos %}<tr><th>Protocolo {{ s.codigo }}</th><td>{% if s.valor %}R$ {{ s.valor }}{% else %}—{% endif %}</td></tr>{% endfor %}
+  </table>
+</section>
+
+{% if envio and envio.qrcode %}
+<section class="panel">
+  <div class="panel-head"><span>QR do PIX</span></div>
+  <p style="padding:14px;text-align:center"><img src="data:image/png;base64,{{ envio.qrcode }}" alt="QR para pagar por PIX" style="max-width:260px"></p>
+</section>
+{% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -92,6 +92,25 @@ def _autuar_pela_tela(casa, *, especie=NORMA.GEORREFERENCIADA, rural="1",
     return int(linha["id"]), m
 
 
+def test_a_recusa_volta_com_o_que_foi_digitado(casa):
+    """A recusa redirecionava para a tela em branco, e a matrícula, o profissional e a área se perdiam (31/10/2026)."""
+    m = _matricula(casa)
+    html = casa["cliente"].get("/registro-imoveis/retificacoes/nova").get_data(as_text=True)
+    saida = casa["cliente"].post(
+        "/registro-imoveis/retificacoes/nova",
+        data={"csrf_token": _token(html), "numero": "   ", "matricula_id": str(m), "especie": NORMA.GEORREFERENCIADA,
+              "fundamento": NORMA.A_REQUERIMENTO, "rural": "0", "requerente_nome": "ANA EXEMPLO",
+              "profissional_conselho": "CAU", "area_pretendida": "12,45 ha", "sigef_codigo": "ABC"},
+        follow_redirects=True).get_data(as_text=True)
+    assert "precisa de um número" in saida
+    for trecho in (f'<option value="{m}" selected>', f'<option value="{NORMA.GEORREFERENCIADA}" selected>',
+                   f'<option value="{NORMA.A_REQUERIMENTO}" selected>', 'name="rural" value="0" checked',
+                   'value="ANA EXEMPLO"', "<option selected>CAU</option>", 'value="12,45 ha"', 'value="ABC"'):
+        assert trecho in saida, trecho
+    assert 'name="rural" value="1" checked' not in saida
+    assert _con(casa).execute("SELECT COUNT(*) FROM rt_processos").fetchone()[0] == 0
+
+
 # ------------------------------------------------ as telas abrem
 
 

@@ -21,17 +21,27 @@
     exista quer não); (2) <strong>dúvidas gerais</strong> pelo texto-base abaixo;
     (3) <strong>valores</strong> dos itens da lista abaixo, calculados pela tabela de
     emolumentos da casa e sempre como <strong>ESTIMATIVA</strong>; (4) <strong>transcrição
-    do áudio</strong>. Protesto, registro civil, dado pessoal, reclamação, pedido de falar
-    com alguém e tudo o que a IA não souber <strong>passam para uma pessoa</strong>, com a
-    conversa marcada para o setor.
+    do áudio</strong>.
+  </p>
+  <p class="small">
+    <strong>A triagem (30/10/2026).</strong> A IA também pode <strong>perguntar</strong>, até
+    duas vezes por atendimento, para descobrir o serviço, sem pedir dado pessoal. Saudação
+    e agradecimento têm frase pronta, sem IA. Em <strong>protesto e registro civil</strong>
+    ela responde a dúvida geral do texto-base e passa o caso concreto (decisão de 30/10/2026,
+    aprovada pelo responsável). Reclamação, dado protegido, arquivo, pedido de
+    falar com alguém e tudo o que a IA não souber <strong>passam para uma pessoa</strong>, com
+    a conversa marcada para o setor e um resumo para quem atende.
   </p>
   <p class="small">
     <strong>O que sai da serventia.</strong> Para o provedor que responde: a mensagem do
-    cliente <strong>mascarada</strong> (CPF, telefone, e-mail, documento e nomes viram
-    marcas; mensagem com dado pessoal nem sobe — vai para uma pessoa), mais o texto-base e
+    cliente e as anteriores do atendimento, <strong>mascaradas</strong> (CPF, telefone, e-mail,
+    documento e nomes viram marcas; mensagem com dado pessoal nem sobe — a nova vai para uma
+    pessoa, e a antiga sai do histórico), mais o texto-base e
     a lista de valores. O número do protocolo e o código <strong>nunca</strong> sobem: a
-    consulta é feita aqui, no portal do cliente. Para a OpenAI, na transcrição: o
-    <strong>áudio inteiro</strong> — áudio não se mascara. As chaves ficam em
+    consulta é feita aqui, no portal do cliente.
+    {% if ia.audio_onde == 'AQUI' %}Na transcrição, nada: ela é feita neste servidor, e o áudio não sai.
+    {% else %}Para a OpenAI, na transcrição: o
+    <strong>áudio inteiro</strong> — áudio não se mascara.{% endif %} As chaves ficam em
     <code>agente.cred</code>, fora do banco.
   </p>
   {% if not pode_enviar %}
@@ -58,15 +68,63 @@
   </p>
 </div>
 
+<div class="card" id="por-que-passou">
+  <h2>Por que passou (últimos 30 dias)</h2>
+  <p class="small">
+    {{ por_que.resolvidas }} conversa(s) resolvida(s) pela IA ·
+    {{ por_que.perguntas }} pergunta(s) feita(s) ·
+    {{ por_que.passaram }} passagem(ns) para pessoa
+  </p>
+  {% if por_que.por_razao or por_que.antes_desta_versao %}
+  <ul class="small">
+    {% for r in por_que.por_razao %}<li>{{ r.rotulo }}: <strong>{{ r.n }}</strong></li>{% endfor %}
+    {% if por_que.antes_desta_versao %}<li>antes desta versão: <strong>{{ por_que.antes_desta_versao }}</strong></li>{% endif %}
+  </ul>
+  {% endif %}
+</div>
+
+{% if pode_ensaiar %}
+<form method="post" action="{{ url_for('whatsapp_atendente_ensaio') }}" id="ensaio">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="card">
+    <h2>Ensaio</h2>
+    <p class="small muted">
+      Mostra o que a IA faria com o texto-base <strong>gravado</strong>. <strong>Não envia e não
+      grava em conversa nenhuma.</strong> Cada linha é uma chamada à IA: <strong>conta no uso e
+      no teto do dia, e tem custo</strong>. Até {{ limite_do_ensaio }} mensagens, uma por linha;
+      pode levar alguns segundos por linha, e para na primeira falha do provedor.
+    </p>
+    <textarea name="perguntas" rows="10" style="width:100%" aria-label="perguntas do ensaio">{{ ensaio_texto }}</textarea>
+    <p><label class="check"><input type="checkbox" name="conversa" value="1" {% if ensaio_conversa %}checked{% endif %}>
+      É uma conversa: as linhas alternam cliente e casa, começando pelo cliente</label></p>
+    <p><button class="button secondary">ensaiar</button></p>
+    {% if ensaio and ensaio.sem_texto_base %}
+    <p class="small" data-wa-ensaio-sem-base><strong>Falta aprovar o texto-base.</strong> Sem ele, a IA não é chamada, e o ensaio não roda. Grave o texto-base abaixo como administrador e ensaie de novo.</p>
+    {% elif ensaio %}
+    {% if ensaio.parou %}<p class="small"><strong>O ensaio parou aqui:</strong> o provedor falhou ou o teto do dia foi atingido.</p>{% endif %}
+    {% if ensaio.sobraram %}<p class="small muted">{{ ensaio.sobraram }} linha(s) além do limite ficaram de fora.</p>{% endif %}
+    <table class="tabela small">
+      <tr><th>mensagem</th><th>saída</th><th>texto ao cliente</th><th>setor</th><th>resumo</th><th>razão</th></tr>
+      {% for r in ensaio.resultados %}
+      <tr><td>{{ r.entrada }}</td><td>{{ r.saida }}</td><td>{{ r.texto }}</td><td>{{ r.setor }}</td>
+        <td>{{ r.resumo }}</td><td>{{ r.razao }}{% if r.motivo %}<br><span class="muted">{{ r.motivo }}</span>{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+    <p class="small muted">Custo medido deste ensaio: US$ {{ '%.4f'|format(ensaio.custo) }}.</p>
+    {% endif %}
+  </div>
+</form>
+{% endif %}
+
 <form method="post" action="{{ url_for('whatsapp_atendente') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="card">
     <h2>Interruptores</h2>
     {% if not e_admin %}<p class="small muted">Só o administrador grava esta tela.</p>{% endif %}
     <p><label class="check"><input type="checkbox" name="ia_ligada" value="1" {% if ia.ia_ligada %}checked{% endif %}>
-      Atendente com IA ligado (responde sozinho nos quatro casos)</label></p>
+      Atendente com IA ligado (responde, pergunta e encaminha sozinho)</label></p>
     <p><label class="check"><input type="checkbox" name="audio_ligado" value="1" {% if ia.audio_ligado %}checked{% endif %}>
-      Transcrever o áudio do cliente (OpenAI)</label></p>
+      Transcrever o áudio do cliente ({{ escolhas_de_transcricao[ia.audio_onde] }})</label></p>
     <p><label class="check"><input type="checkbox" name="aviso_passagem" value="1" {% if ia.aviso_passagem %}checked{% endif %}>
       Avisar o cliente quando a conversa passa para uma pessoa</label>
       <br><span class="small muted">Desligado, quem passou para pessoa não recebe nada automático.</span></p>
@@ -170,6 +228,60 @@
     {% else %}<p class="small muted">Só o administrador grava a rotina.</p>{% endif %}
   </div>
 </form>
+
+{#- ONDE O ÁUDIO SE TRANSCREVE (30/10/2026, `wa_transcricao_local`). Nasce na OpenAI. Este
+    servidor só liga com o programa, o modelo e a conferência aprovada: o servidor recusa,
+    e a tela diz o que falta. Formulários próprios, porque a conferência leva um arquivo. -#}
+<div class="card" id="transcricao">
+  <h2>Onde transcrever os áudios</h2>
+  <p>Agora: <strong>{{ escolhas_de_transcricao[ia.audio_onde] }}</strong>.</p>
+  <p class="small">Na <strong>OpenAI</strong> o áudio inteiro sai da casa. <strong>Neste servidor</strong>
+    ele não sai, mas o modelo grande precisa de um servidor que aguente, e por isso a tela confere antes
+    de ligar. Se falhar, o áudio vai para uma pessoa, como já acontece.</p>
+  <ul class="small">
+    <li>Programa de transcrição: <strong>{% if transcricao.programa %}instalado{% else %}não instalado{% endif %}</strong>
+      {%- if not transcricao.programa %}. Ele entra na instalação do servidor novo; veja <code>docs/TRANSCRICAO_NO_SERVIDOR.md</code>{% endif %}.</li>
+    <li>Modelo {{ transcricao.modelo }}, uns {{ transcricao.tamanho_gb }} GB:
+      <strong>{% if transcricao.baixado %}neste servidor
+      {%- elif transcricao.baixando %}baixando desde {{ transcricao.download.inicio }}
+      {%- else %}não baixado{% endif %}</strong>
+      {%- if transcricao.download.situacao == 'ERRO' %}. O último download falhou: {{ transcricao.download.erro }}{% endif %}.</li>
+    <li>Memória livre agora: <strong>{{ transcricao.memoria_livre_mb }} MB</strong>; o modelo pede uns {{ transcricao.memoria_minima_mb }} MB.</li>
+    <li>Última conferência:
+      {% if ia.audio_conferencia.quando %}<strong>{{ 'aprovada' if ia.audio_conferencia.ok else 'recusada' }}</strong>
+        em {{ (ia.audio_conferencia.quando or '')[:16]|replace('T', ' ') }}, por {{ ia.audio_conferencia.por or '?' }}
+        {%- if ia.audio_conferencia.ok %}: {{ ia.audio_conferencia.trabalho_s }} s para um áudio de {{ ia.audio_conferencia.segundos }} s{% endif %}.
+      {%- else %}<strong>nenhuma</strong>.{% endif %}</li>
+  </ul>
+  {% if e_admin %}
+  <form method="post" action="{{ url_for('whatsapp_transcricao_onde') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for chave, rotulo in escolhas_de_transcricao.items() %}
+    <p><label class="check"><input type="radio" name="onde" value="{{ chave }}"
+      {% if ia.audio_onde == chave %}checked{% endif %}
+      {% if chave == 'AQUI' and motivo_para_nao_ligar and ia.audio_onde != 'AQUI' %}disabled{% endif %}> {{ rotulo }}</label>
+      {% if chave == 'AQUI' and motivo_para_nao_ligar %}<span class="small muted">{{ motivo_para_nao_ligar }}</span>{% endif %}</p>
+    {% endfor %}
+    <button class="button primary">Guardar a escolha</button>
+  </form>
+  {% if transcricao.programa and not transcricao.baixado and not transcricao.baixando %}
+  <form method="post" action="{{ url_for('whatsapp_transcricao_baixar') }}" style="margin-top:12px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button">Baixar o modelo (uns {{ transcricao.tamanho_gb }} GB)</button>
+    <span class="small muted">Uma vez só, para a pasta de dados. Ele roda sozinho, e não viaja nas atualizações.</span>
+  </form>
+  {% endif %}
+  {% if transcricao.programa and transcricao.baixado %}
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('whatsapp_transcricao_conferir') }}" style="margin-top:12px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Conferir com um áudio de verdade
+      <input type="file" name="audio" accept="audio/*,.ogg,.opus,.mp3,.m4a,.wav" required></label>
+    <button class="button">Conferir</button>
+    <span class="small muted">Pode levar alguns minutos. A tela mostra o texto e o tempo uma vez, e o texto não fica guardado.</span>
+  </form>
+  {% endif %}
+  {% else %}<p class="small muted">Só o administrador muda esta escolha.</p>{% endif %}
+</div>
 
 <div class="card">
   <h2>Registro das respostas automáticas</h2>

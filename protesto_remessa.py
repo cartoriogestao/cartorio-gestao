@@ -348,6 +348,72 @@ def _conferir_lote_xml(con: sqlite3.Connection, conteudo: str | bytes,
     return lote
 
 
+# O QUE TEM DE BATER ENTRE AS LINHAS DOS DEVEDORES DO MESMO TÍTULO. Bate nos 34
+# pares do acervo. A conferência só separa, e nunca junta: quem junta é o número
+# de controle do devedor.
+_O_QUE_FAZ_O_MESMO_TITULO = (
+    ("nosso_numero", "o nosso número"), ("numero_titulo", "o número do título"),
+    ("especie", "a espécie"), ("data_emissao", "a emissão"),
+    ("data_vencimento", "o vencimento"), ("valor", "o valor"),
+    ("saldo", "o saldo"))
+
+
+def _primeira_linha_do_titulo(linhas: list[dict], i: int) -> tuple[dict | None, str]:
+    """A linha do primeiro devedor da linha `i`, ou o motivo de não haver."""
+    controle = linhas[i]["controle_devedor"]
+    if i == 0:
+        return None, "ela é a primeira do lote, e não há linha anterior"
+    anterior = linhas[i - 1]
+    if not anterior["aceito"]:
+        return None, f"a linha {anterior['sequencial']} não entra"
+    principal = anterior
+    if anterior["principal"]:
+        principal = next(x for x in linhas
+                         if x["sequencial"] == anterior["principal"])
+    if principal["controle_devedor"] != "1":
+        return None, (f"a linha {anterior['sequencial']} não é a do primeiro "
+                      f"devedor")
+    do_grupo = [x["controle_devedor"] for x in linhas[:i]
+                if x["principal"] == principal["sequencial"]]
+    if controle in do_grupo:
+        return None, f"o número {controle} já apareceu neste título"
+    diferem = [rotulo for campo, rotulo in _O_QUE_FAZ_O_MESMO_TITULO
+               if linhas[i]["dados"].get(campo) != principal["dados"].get(campo)]
+    if diferem:
+        return None, (f"{', '.join(diferem)} não bate com a linha "
+                      f"{principal['sequencial']}")
+    return principal, ""
+
+
+def _ligar_devedores(linhas: list[dict]) -> int:
+    """Liga cada devedor seguinte à linha do primeiro. Devolve quantos não ligou.
+
+    DOIS DEVEDORES SÃO UM TÍTULO, UM PROTOCOLO E UMA CHAVE, como no E-Ofício:
+    linha com número de controle diferente de «1» fica com o protocolo da linha
+    anterior (`protesto_arquivo.controle_do_devedor`).
+
+    SEM CRITÉRIO SEGURO, FICAM SEPARADOS E A TELA AVISA. Pôr duas pessoas sem
+    relação no mesmo protocolo é pior que deixar dois protocolos.
+    """
+    separadas = 0
+    for i, linha in enumerate(linhas):
+        controle = linha["controle_devedor"]
+        if not linha["aceito"] or not controle.isdigit() or controle == "1":
+            continue
+        principal, motivo = _primeira_linha_do_titulo(linhas, i)
+        if principal is None:
+            linha["aviso_devedor"] = (
+                f"Esta linha diz que é o devedor {controle} do título da linha "
+                f"anterior, mas {motivo}. Ela entra como título separado, com "
+                f"protocolo próprio e sem motivo do protesto: confira o arquivo "
+                f"antes de receber.")
+            separadas += 1
+            continue
+        linha["principal"] = principal["sequencial"]
+        linha["dados"]["motivo_protesto"] = principal["dados"].get("motivo_protesto")
+    return separadas
+
+
 def _conferir_lote(con: sqlite3.Connection, conteudo: str | bytes) -> dict:
     """Um lote conferido, do cabecalho ao rodape. NAO GRAVA NADA."""
     arquivo = PA.ler(conteudo)
@@ -372,6 +438,11 @@ def _conferir_lote(con: sqlite3.Connection, conteudo: str | bytes) -> dict:
                                         or cab["apresentante_codigo"])
         dados["apresentante_nome"] = (dados.get("apresentante_nome")
                                       or cab["apresentante_nome"])
+        # O CONTROLE DO DEVEDOR NÃO É MOTIVO DE PROTESTO: o «2» diria falta de
+        # aceite. O motivo do devedor seguinte vem da linha do primeiro.
+        controle = PA.controle_do_devedor(bruto)
+        if controle.isdigit() and controle != "1":
+            dados["motivo_protesto"] = None
         faltas = CRA.conferir_titulo(dados)
         iguais = _titulos_vivos_iguais(con, dados)
         devedor = (dados.get("devedores") or [{}])[0]
@@ -390,6 +461,9 @@ def _conferir_lote(con: sqlite3.Connection, conteudo: str | bytes) -> dict:
             "aceito": not faltas,
             "iguais": iguais,
             "dados": dados,
+            "controle_devedor": controle,
+            "principal": None,
+            "aviso_devedor": "",
         }
         linhas.append(linha)
         if faltas:
@@ -398,6 +472,7 @@ def _conferir_lote(con: sqlite3.Connection, conteudo: str | bytes) -> dict:
             aceitos += 1
         if iguais:
             avisados += 1
+    avisados += _ligar_devedores(linhas)
 
     return {
         **cab,
@@ -569,6 +644,7 @@ def _receber_lote(con: sqlite3.Connection, visto: dict, *, agora: str,
 
     entraram: list[dict] = []
     apontados = 0
+    titulo_da_linha: dict[int, int] = {}
     for linha in visto["titulos"]:
         if not linha["aceito"]:
             continue
@@ -576,8 +652,12 @@ def _receber_lote(con: sqlite3.Connection, visto: dict, *, agora: str,
             con, linha["dados"], origem="CRA",
             origem_chave=f"CRA:{remessa_id}:{linha['sequencial']}",
             usuario=usuario, agora=agora)
-        bd.escrever("UPDATE pt_titulos SET remessa_id=%s WHERE id=%s",
-                    (remessa_id, titulo_id))
+        titulo_da_linha[linha["sequencial"]] = titulo_id
+        bd.escrever(
+            """UPDATE pt_titulos SET remessa_id=%s, controle_devedor=%s,
+                                     titulo_principal_id=%s WHERE id=%s""",
+            (remessa_id, linha.get("controle_devedor") or None,
+             titulo_da_linha.get(linha.get("principal")), titulo_id))
         lugar = None
         if apontar:
             lugar = PT.lancar_apontamento(

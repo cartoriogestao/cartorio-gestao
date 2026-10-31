@@ -541,6 +541,49 @@ def _emitir_protocolo(bd, titulo_id: int, agora: str) -> str:
 # ----------------------------------------------------------- o apontamento
 
 
+def _primeiro_devedor(bd, tit: dict) -> dict | None:
+    """O titulo do primeiro devedor, ja apontado, se este for o devedor seguinte.
+
+    Recusa apontar o seguinte antes do primeiro: o protocolo e o lugar no livro
+    sao os dele. Se o primeiro saiu sem ser apontado, nao ha o que herdar, e o
+    seguinte se aponta sozinho.
+    """
+    primeiro_id = tit.get("titulo_principal_id")
+    if not primeiro_id:
+        return None
+    primeiro = bd.um(
+        "SELECT id, numero_titulo, situacao, protocolo FROM pt_titulos WHERE id=%s",
+        (int(primeiro_id),))
+    if not primeiro:
+        return None
+    if primeiro["situacao"] == "RECEBIDO":
+        raise ProtestoError(
+            f"Este título é o devedor seguinte do título "
+            f"{primeiro['numero_titulo']}, que ainda não foi apontado. Aponte "
+            f"aquele primeiro: os dois ficam com o mesmo protocolo.")
+    ato = bd.um(
+        """SELECT livro_id, folha, verso, numero_ordem, rotulo FROM pt_atos
+            WHERE titulo_id=%s AND tipo='APONTAMENTO' AND cancelado=0
+            ORDER BY id LIMIT 1""", (int(primeiro_id),))
+    if not ato or not (primeiro["protocolo"] or "").strip():
+        return None
+    return {**primeiro, "lugar": ato}
+
+
+def _lugar_do_primeiro(bd, ato: dict) -> dict:
+    """O lugar do apontamento do primeiro devedor, na forma de `ESC.reservar`.
+
+    O E-OFICIO NAO ABRE LINHA NOVA NO LIVRO para o devedor seguinte: ele fica com
+    o livro, a folha e a ordem do primeiro (nos 34 pares do acervo).
+    """
+    livro = bd.um("SELECT numero FROM nu_livros WHERE id=%s", (ato["livro_id"],))
+    return {"livro_id": ato["livro_id"],
+            "livro_numero": livro["numero"] if livro else None,
+            "folha": ato["folha"], "verso": bool(ato["verso"]),
+            "rotulo": ato["rotulo"], "faces": [], "sobra": [],
+            "numero_ordem": ato["numero_ordem"], "paginas": 0}
+
+
 def lancar_apontamento(con, titulo_id: int, *, sv: dict,
                        agora: str, data_extenso: str,
                        usuario: str | None = None,
@@ -560,6 +603,9 @@ def lancar_apontamento(con, titulo_id: int, *, sv: dict,
     unico, tanto do lote recebido (`protesto_remessa._receber_lote`) quanto do
     apontamento pela ficha. Titulo que ja tem chave fica com ela; o de origem
     CENPROT recebe a da Central. Ver `protesto_cenprot.chave_do_apontamento`.
+
+    O DEVEDOR SEGUINTE DO MESMO TITULO fica com o protocolo, a chave e o lugar no
+    livro do primeiro, como no E-Oficio. Ver `_primeiro_devedor`.
     """
     bd = banco(con)
     tit = titulo_para_gravar(bd, titulo_id)
@@ -569,6 +615,8 @@ def lancar_apontamento(con, titulo_id: int, *, sv: dict,
         raise ProtestoError(
             f"O título {tit['numero_titulo']} está com situação "
             f"{tit['situacao']} — não se aponta de novo.")
+    primeiro = _primeiro_devedor(bd, tit)
+    protocolo_de_antes = (tit["protocolo"] or "").strip()
 
     ato_id = int(bd.escrever(
         """INSERT INTO pt_atos(titulo_id, tipo, data_ato, origem, criado_em,
@@ -580,7 +628,11 @@ def lancar_apontamento(con, titulo_id: int, *, sv: dict,
     # CRA na posicao 448 do retorno. Titulo que ja tem protocolo (veio do
     # acervo com ele) fica com o que tinha: renumerar apagaria o que a Central
     # ja conhece.
-    if not (tit["protocolo"] or "").strip():
+    if not protocolo_de_antes and primeiro:
+        protocolo_de_antes = primeiro["protocolo"].strip()
+        bd.escrever("UPDATE pt_titulos SET protocolo=%s WHERE id=%s",
+                    (protocolo_de_antes, titulo_id))
+    elif not protocolo_de_antes:
         _emitir_protocolo(bd, titulo_id, agora)
 
     # A TRAVA VEM ANTES DA LEITURA: e ela que faz o sequencial crescer sem
@@ -589,14 +641,15 @@ def lancar_apontamento(con, titulo_id: int, *, sv: dict,
     if tit["origem"] == "CRA" and not chave:
         bd.travar("pt_titulos.chave_cenprot")
         chave = PCEN.chave_do_apontamento(
-            bd, titulo_id, protocolo_de_antes=tit["protocolo"], data=agora)
+            bd, titulo_id, protocolo_de_antes=protocolo_de_antes, data=agora)
         if chave:
             bd.escrever("UPDATE pt_titulos SET chave_cenprot=%s WHERE id=%s",
                         (chave, titulo_id))
 
-    lugar = ESC.reservar(con, SERIE_APONTAMENTO, "pt_atos", ato_id, sv=sv,
-                         agora=agora, data_extenso=data_extenso, paginas=1,
-                         usuario=usuario)
+    lugar = (_lugar_do_primeiro(bd, primeiro["lugar"]) if primeiro
+             else ESC.reservar(con, SERIE_APONTAMENTO, "pt_atos", ato_id, sv=sv,
+                               agora=agora, data_extenso=data_extenso, paginas=1,
+                               usuario=usuario))
     bd.escrever(
         """UPDATE pt_atos SET livro_id=%s, folha=%s, verso=%s, numero_ordem=%s,
                               rotulo=%s WHERE id=%s""",

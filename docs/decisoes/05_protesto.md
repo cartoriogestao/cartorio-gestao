@@ -143,6 +143,11 @@ Decisões do módulo de Protesto que valem para qualquer serventia: modelo do t�
 **Por quê.** A conta acertou todas as chaves gravadas desta casa em 30/10/2026, e a CENPROT aceitou um arquivo com chave calculada. Nem protocolo nem nosso número são nacionais: sem as guardas, o arquivo da serventia vizinha escreveria chaves alheias nos nossos títulos. Regularidade de uma casa não se generaliza sem olhar outra: a chave de outra serventia registrada na medição não fecha por esta conta.
 **No código.** `protesto_cenprot.py`.
 
+### Dois devedores pela CRA são um título: um protocolo, uma chave e um lugar no livro
+**Regra.** A posição 297 da linha da remessa é o número de controle do devedor. «1» é título novo; outro valor é o devedor seguinte do título da linha anterior, como no sistema anterior. O devedor seguinte continua sendo um título aqui, com o protocolo, a chave e o lugar no Livro de Apontamento do primeiro, e o motivo do protesto vem da linha do primeiro. A liga só se faz se a linha anterior entrou, se o número não se repete no título e se nosso número, número, espécie, emissão, vencimento, valor e saldo batem. Sem isso, a linha fica como título separado e a conferência avisa.
+**Por quê.** Medido no acervo: 34 pares, todos na mesma forma. Pôr duas pessoas sem relação no mesmo protocolo é pior que deixar dois protocolos. O protocolo novo é o maior do dia mais um, sob trava, e `pt_protocolos_emitidos` impede repetir o número.
+**No código.** `protesto_remessa._ligar_devedores`, `protesto.lancar_apontamento`.
+
 ### O arquivo de emolumentos tem formato medido e valores somados da tabela
 **Regra.** Texto separado por `|`, com cabeçalho `nm_chave|vl_retirada|vl_cancelamento|cd_ibge|nr_cartorio|dt_movimento`, data `AAAAMMDD`, CRLF e sem BOM. Retirada = parte fixa + faixa do item de liquidação/desistência pelo valor do título; cancelamento = parte fixa + faixa do item de protesto pelo valor. A parte fixa é somada da tabela vigente (não é número escrito), e um teste amarra a soma ao valor medido em arquivo real (norma estadual — TJMA; os itens e faixas são da tabela do seu estado).
 **Por quê.** Número inventado em arquivo que vai à Central é pior que arquivo nenhum. Somar itens até «fechar» um número sempre fecha: a composição só valeu quando um arquivo real nomeou os itens.

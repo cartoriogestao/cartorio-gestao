@@ -59,6 +59,20 @@
 </section>
 {% endif %}
 
+{# 30/10/2026, pedido do oficial: acompanhar quanto a conta precisa ter. #}
+{% if balanco and balanco.linhas %}
+<section class="panel"><h2>Falta sair da conta: R$ {{ reais(balanco.total) }}</h2>
+  <p>Vence até hoje: <strong>R$ {{ reais(balanco.ate_hoje) }}</strong></p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Situação</th><th>Quantas</th><th>Vence até hoje</th><th>Total</th></tr></thead>
+    <tbody>{% for x in balanco.linhas %}<tr>
+      <td>{{ x.rotulo }}</td><td>{{ x.quantidade }}</td><td>R$ {{ reais(x.ate_hoje) }}</td><td>R$ {{ reais(x.total) }}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% if balanco.sem_valor %}<p class="small">Fora da conta: {{ balanco.sem_valor }} recorrente(s) do mês de valor variável, ainda sem valor.</p>{% endif %}
+</section>
+{% endif %}
+
 <p class="filters">
   <a href="{{ url_for('despesas_lista') }}">Todas</a>
   {% for k, v in situacoes.items() %} · <a href="{{ url_for('despesas_lista', situacao=k) }}"{% if k == situacao %} class="ativo"{% endif %}>{{ v.split(' —')[0] }} ({{ contagem.get(k, 0) }})</a>{% endfor %}

@@ -838,6 +838,35 @@ def para_autorizar(con) -> list[dict]:
     return linhas
 
 
+def balanco(con, hoje: str, recorrentes: Any = ()) -> dict:
+    """Quanto ainda falta sair da conta, para saber quanto ela precisa ter. Só LÊ.
+
+    A despesa «pago fora do banco» não entra, porque não sai desta conta, e o que
+    o banco já pagou também não. `recorrentes` são as do mês ainda sem despesa
+    (`despesas_recorrentes.do_mes`): a de valor em branco só se conta.
+    """
+    grupos = ((AUTORIZADA, "Autorizadas, a sair na próxima rodada"),
+              (ENVIADA, "Enviadas ao banco, ainda sem confirmação"),
+              (FALHOU, "Recusadas pelo banco, a devolver à autorização"),
+              (AGUARDANDO, "Esperando a autorização"))
+    despesas = banco(con).ler(
+        "SELECT situacao, vencimento, valor FROM dp_despesas "
+        "WHERE situacao IN (%s, %s, %s, %s) AND forma <> %s",
+        (*[g[0] for g in grupos], MANUAL))
+    pares = [[(int(d["valor"]), str(d["vencimento"])) for d in despesas if d["situacao"] == s]
+             for s, _ in grupos]
+    rotulos = [g[1] for g in grupos]
+    com_valor = [r for r in recorrentes if r.get("valor")]
+    pares.append([(int(r["valor"]), str(r["vencimento"])) for r in com_valor])
+    rotulos.append("Recorrentes do mês ainda não carregadas")
+    linhas = [{"rotulo": rotulo, "quantidade": len(p), "total": sum(v for v, _ in p),
+               "ate_hoje": sum(v for v, venc in p if venc <= hoje)}
+              for rotulo, p in zip(rotulos, pares) if p]
+    return {"linhas": linhas, "total": sum(x["total"] for x in linhas),
+            "ate_hoje": sum(x["ate_hoje"] for x in linhas),
+            "sem_valor": len(recorrentes) - len(com_valor)}
+
+
 def _limites_do_mes(mes: str) -> tuple[str, str]:
     try:
         inicio = datetime.strptime(mes, "%Y-%m").date()

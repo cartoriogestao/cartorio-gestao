@@ -103,11 +103,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             carregadas = 0 if minhas is not None else len(
                 [d for d in DP.listar(con, situacao=DP.AGUARDANDO) if d["origem"] == RC.ORIGEM])
             a_autorizar = DP.para_autorizar(con) if usuario_papel() == "ADMIN" else []
+            balanco = None if minhas is not None else DP.balanco(
+                con, date.today().isoformat(), do_mes)
         return render_template("despesas_lista.html", linhas=linhas, contagem=contagem,
                                situacoes=DP.SITUACOES, situacao=situacao, cfg=cfg,
                                categorias=DP.CATEGORIAS, reais=DP.reais,
                                papel=usuario_papel(), do_mes=do_mes,
                                recorrentes_carregadas=carregadas, a_autorizar=a_autorizar,
+                               balanco=balanco,
                                formas=DP.FORMAS, so_as_proprias=minhas is not None)
 
     @app.route("/administrativo/despesas/nova", methods=["GET", "POST"])

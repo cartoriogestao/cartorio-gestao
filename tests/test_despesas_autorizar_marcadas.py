@@ -105,3 +105,30 @@ def test_marca_torta_e_recusada_antes_de_autorizar_qualquer_uma(cg_casa_logada):
     r = c.post(ROTA, data={"csrf_token": _token(c), "marcada": [f"{i}:193532", "torta"]})
     assert r.status_code == 400
     assert _situacao(db, i) == DP.AGUARDANDO
+
+
+def test_o_balanco_soma_o_que_falta_sair_da_conta(cg_casa_logada):
+    db = cg_casa_logada["db"]
+    autorizada, _espera = _nova(db, 100000), _nova(db, 50000, vencimento="2026-11-20")
+    with db.transaction() as con:
+        DP.autorizar(con, autorizada, agora=AGORA, por="mario", papel="ADMIN")
+        DP.cadastrar(con, agora=AGORA, por="mario", origem="MANUAL", chave_origem=None,
+                     beneficiario_nome="BEATRIZ EXEMPLO", beneficiario_documento="",
+                     valor_centavos=999900, vencimento="2026-10-30", forma=DP.MANUAL, codigo="",
+                     descricao="Paga em dinheiro, fora do banco", categoria="MATERIAIS",
+                     documento_especie="Recibo")
+    recorrentes = [{"valor": 20000, "vencimento": "2026-10-30"}, {"valor": None, "vencimento": "2026-10-30"}]
+    with db.connect() as con:
+        b = DP.balanco(con, "2026-10-30", recorrentes)
+    assert (b["total"], b["ate_hoje"], b["sem_valor"]) == (170000, 120000, 1), "o pago fora não conta"
+    assert [x["quantidade"] for x in b["linhas"]] == [1, 1, 1]
+    assert "Falta sair da conta" in cg_casa_logada["c"].get(LISTA).get_data(as_text=True)
+
+
+def test_quem_so_cadastra_nao_ve_o_balanco(cg_casa_logada):
+    casa = cg_casa_logada
+    _nova(casa["db"])
+    casa["db"].create_user("carla", "CARLA EXEMPLO", SENHA, "USER")
+    c = casa["app"].test_client()
+    cg_login(c, "carla", SENHA)
+    assert "Falta sair da conta" not in c.get(LISTA).get_data(as_text=True)

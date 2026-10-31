@@ -7302,6 +7302,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # O VOLUME HISTORICO FICA. As 1.701 matriculas do acervo continuam
         # dizendo em que volume a ficha esta guardada — isso e informacao real,
         # e quem for a estante precisa dela.
+        # (`RASC`, neste arquivo, é o rascunho do ato do RI, e não este.)
+        import rascunho_de_tela as _RASCT
+        _RASCT.barrar_se_ja_virou_ato(db)
         # O QUE VEIO DE ARQUIVO — relato #31, segunda metade. So no GET, e
         # consumido de uma vez: se ficasse na sessao, a matricula do proximo
         # cliente abriria com o imovel do anterior.
@@ -7329,7 +7332,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             form_ini = do_arquivo["valores"] if do_arquivo else request.form
             rascunho_id = request.args.get("rascunho_id", type=int)
             if rascunho_id and not do_arquivo:
-                import rascunho_de_tela as _RASCT
                 try:
                     with db.connect() as _c:
                         _r = _RASCT.ler(_c, rascunho_id)
@@ -7516,6 +7518,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                "tipo_ficha": "ACERVO" if e_acervo else "ESTRUTURADA"})
         flash(f"Matrícula {numero} aberta no livro {livro}. "
               f"O próximo número do livro passou a ser {numero + 1}.", "success")
+        _RASCT.saiu_com_o_ato(db, audit, "ri_nova_matricula",
+                              url_for("ri_ficha", matricula_id=novo_id),
+                              app.extensions["usuario_nome"]())
         return redirect(url_for("ri_ficha", matricula_id=novo_id))
 
     # ------------------------------------------------------ importacao

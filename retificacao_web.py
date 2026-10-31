@@ -208,6 +208,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   {"numero": _campo("numero")})
             flash("Processo autuado. O checklist do art. 592 já está na ficha.",
                   "success")
+            RASC.saiu_com_o_ato(db, audit, "ri_retificacao_nova",
+                                url_for("ri_retificacao", processo_id=novo), usuario_nome())
             return redirect(url_for("ri_retificacao", processo_id=novo))
 
         return tela()

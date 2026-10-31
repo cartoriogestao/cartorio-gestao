@@ -223,4 +223,4 @@ def test_o_modulo_nao_numera_nem_lavra():
     import re
     for alvo in re.findall(r"(?:INSERT INTO|UPDATE|DELETE FROM)\s+(\w+)",
                            codigo):
-        assert alvo == "rascunhos_de_tela", f"escreve em «{alvo}»"
+        assert alvo in ("rascunhos_de_tela", "rascunhos_que_viraram_ato"), f"escreve em «{alvo}»"

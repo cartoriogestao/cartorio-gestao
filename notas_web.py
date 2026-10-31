@@ -3747,6 +3747,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             audit("NT_ATO_ABERTO", "NT_ATO", aid, {"tipo": tipo, "modelo": modelo_codigo})
             flash(f"{TIPOS_ATO[tipo]} aberto, em lavratura. Agora as partes e o "
                   f"teor; o livro e a folha saem no lançamento.", "success")
+            RASC.saiu_com_o_ato(db, audit, "notas_ato_novo",
+                                url_for("notas_ato", ato_id=aid), usuario_nome())
             return redirect(url_for("notas_ato", ato_id=aid))
 
         modelo_escolhido = (request.args.get("modelo") or form.get("modelo_codigo") or "").strip()

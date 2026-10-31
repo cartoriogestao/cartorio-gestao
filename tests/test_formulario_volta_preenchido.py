@@ -123,6 +123,12 @@ class _Db:
         return False
 
 
+@pytest.fixture(autouse=True)
+def _nenhum_virou_ato(monkeypatch):
+    """O rascunho que virou ato tem o seu arquivo: `test_rascunho_sai_ao_lavrar.py`."""
+    monkeypatch.setattr(R, "o_ato_do_rascunho", lambda con, i: None)
+
+
 def _app():
     app = flask.Flask(__name__)
     app.secret_key = "para o aviso"

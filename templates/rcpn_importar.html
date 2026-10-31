@@ -72,7 +72,7 @@
       <td>{{ it.linha }}</td>
       <td>{{ it.nome_especie }}</td>
       <td><strong>{{ it.nome }}</strong><br><code class="small">{{ it.chave }}</code>
-        {% if it.ja_na_fila %}<br><span class="small muted">já está na fila</span>{% endif %}</td>
+        {% if it.ja_na_fila %}<br><span class="small muted">já entrou: está na fila, ou já virou ato</span>{% endif %}</td>
       <td class="small">{% for p in it.pessoas %}{{ p.papel }}: {{ p.nome }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
       <td class="small">
         {% for p in it.travas %}<div class="danger">✖ {{ p.mensagem }}</div>{% endfor %}

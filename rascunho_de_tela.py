@@ -32,6 +32,12 @@ O QUE ELE NÃO FAZ, E POR QUÊ
     **Não é fila de trabalho.** Quem lista o que ficou pela metade e cobra é
     `inacabados`, que mede atos que já existem. Rascunho é papel de anotação:
     pode ser abandonado sem que nada fique devendo.
+
+QUANDO O ATO GRAVA, O RASCUNHO SAI DA LISTA — decisão do oficial, 31/10/2026
+    Ele ficava na lista depois de lavrado, e alguém podia lavrar de novo a partir
+    dele. Agora `saiu_com_o_ato` o apaga, com o dado do cliente dentro, e fica só a
+    marca em `rascunhos_que_viraram_ato`. É ela que segura o mesmo registro de um
+    arquivo fora da fila, e que leva ao ato quem volta pelo navegador.
 """
 from __future__ import annotations
 
@@ -71,6 +77,22 @@ CREATE INDEX IF NOT EXISTS ix_rascunhos_tela
     ON rascunhos_de_tela(tela, chave);
 CREATE INDEX IF NOT EXISTS ix_rascunhos_quando
     ON rascunhos_de_tela(atualizado_em DESC);
+
+-- O RASCUNHO QUE VIROU ATO. A linha de cima se apaga, com o dado do cliente
+-- dentro. Aqui fica so o que impede lavrar de novo: a chave, que segura o mesmo
+-- registro de um arquivo fora da fila, e o endereco do ato, para onde vai quem
+-- volta pelo navegador. Nao guarda titulo nem dados, de proposito.
+CREATE TABLE IF NOT EXISTS rascunhos_que_viraram_ato (
+    rascunho_id bigint PRIMARY KEY,
+    tela TEXT NOT NULL,
+    chave TEXT NOT NULL DEFAULT '',
+    endereco TEXT,
+    em TEXT NOT NULL,
+    por TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_rascunhos_ato_chave
+    ON rascunhos_que_viraram_ato(chave);
 """
 
 # OS CAMPOS QUE NUNCA ENTRAM NO RASCUNHO.
@@ -105,6 +127,12 @@ CHAVE_DOS_REPETIDOS = "_repetidos"
 # assento é o lançamento. O endereço da tela é quem sabe, e ele fica na `chave`.
 TELA_DO_LANCAMENTO = "rcpn_lancamento_novo"
 _ENDERECO_DO_LANCAMENTO = re.compile(r"/rcpn/\d+/(?:averbar|anotar|retificar)")
+
+# O CAMPO QUE LEVA O RASCUNHO ATÉ A GRAVAÇÃO. Onde o formulário grava no próprio
+# endereço, o `?rascunho_id=` basta. O assento do civil passa pela conferência, cujos
+# botões têm endereço fixo, e a matrícula nova do layout novo grava sem ele. Começa
+# com sublinhado: nunca entra no que o rascunho guarda.
+CAMPO_DO_RASCUNHO = "_rascunho_id_tela"
 
 
 class RascunhoError(ValueError):
@@ -287,11 +315,14 @@ def para_a_tela(db, tela: str, de_outra_tela: str, chave: str | None = None):
       - **o `rascunho_id` vai para a macro `salvar_rascunho`**, e salvar de novo
         atualiza o mesmo em vez de criar outro. Na recusa ele continua valendo,
         porque o endereço do formulário o carrega.
+      - **o rascunho que já virou ato não reabre nem grava de novo**: quem volta a
+        ele vai para o ato (`barrar_se_ja_virou_ato`).
 
     O corpo que a tela manda não ganha campo nenhum. Reabrir não grava nada.
     """
     from flask import flash, request
 
+    barrar_se_ja_virou_ato(db)
     rascunho_id = request.args.get("rascunho_id", type=int)
     if not rascunho_id:
         return request.form, None
@@ -375,6 +406,112 @@ def apagar(con, rascunho_id: int) -> None:
     """
     banco(con).escrever("DELETE FROM rascunhos_de_tela WHERE id=%s",
                         (int(rascunho_id),))
+
+
+def do_envio() -> int | None:
+    """O rascunho de onde este envio saiu, ou `None`. Só calcula."""
+    from flask import request
+
+    return (request.form.get(CAMPO_DO_RASCUNHO, type=int)
+            or request.args.get("rascunho_id", type=int))
+
+
+def o_ato_do_rascunho(con, rascunho_id: int) -> dict | None:
+    """A marca do rascunho que virou ato, ou `None`. Só lê."""
+    linha = banco(con).um(
+        "SELECT * FROM rascunhos_que_viraram_ato WHERE rascunho_id=%s",
+        (int(rascunho_id),))
+    return dict(linha) if linha else None
+
+
+def chave_ja_recebida(con, chave: str) -> bool:
+    """O registro desta chave já entrou: está na lista, ou já virou ato. Só lê.
+
+    A fila de pré-cadastros pergunta aqui. Perguntar só à lista traria de volta, na
+    importação seguinte, o registro que já foi lavrado.
+    """
+    bd = banco(con)
+    return bool(
+        (bd.tem_tabela("rascunhos_de_tela")
+         and bd.um("SELECT 1 FROM rascunhos_de_tela WHERE chave = %s", (chave,)))
+        or (bd.tem_tabela("rascunhos_que_viraram_ato")
+            and bd.um("SELECT 1 FROM rascunhos_que_viraram_ato WHERE chave = %s",
+                      (chave,))))
+
+
+def virou_ato(con, rascunho_id: int, *, endereco: str | None, agora: str,
+              por: str = "") -> None:
+    """O rascunho virou ato: ele sai da lista, e fica só a marca. ESCREVE.
+
+    **A marca não leva o título nem os dados.** O rascunho tem dado de cliente
+    dentro, e esse dado agora mora no ato.
+    """
+    bd = banco(con)
+    r = bd.um("SELECT tela, chave FROM rascunhos_de_tela WHERE id=%s",
+              (int(rascunho_id),))
+    if not r:
+        return
+    bd.escrever(
+        """INSERT INTO rascunhos_que_viraram_ato
+               (rascunho_id, tela, chave, endereco, em, por)
+           VALUES (%s,%s,%s,%s,%s,%s)
+           ON CONFLICT (rascunho_id) DO NOTHING""",
+        (int(rascunho_id), r["tela"], r["chave"], endereco, agora, por))
+    bd.escrever("DELETE FROM rascunhos_de_tela WHERE id=%s", (int(rascunho_id),))
+
+
+def saiu_com_o_ato(db, audit, tela: str, endereco: str, por: str,
+                   chave: str | None = None) -> None:
+    """O ato deste envio ficou de pé: o rascunho sai da lista. ESCREVE.
+
+    **A ROTA CHAMA DEPOIS DO SELO.** Onde o selo que falha desfaz o ato, o rascunho
+    fica na lista, para corrigir e tentar de novo: é a única cópia do que foi digitado.
+
+    Só sai o rascunho desta tela, e da mesma `chave` quando ela vem: o número no
+    endereço pode ser o de outro. Fora da transação do ato, e **a falha aqui não
+    derruba o ato**, que já está gravado: ela vira aviso.
+    """
+    from flask import flash
+
+    rascunho_id = do_envio()
+    if not rascunho_id:
+        return
+    try:
+        with db.transaction() as con:
+            r = banco(con).um("SELECT tela, chave FROM rascunhos_de_tela WHERE id=%s",
+                              (rascunho_id,))
+            if not r or r["tela"] != tela or (chave is not None and r["chave"] != chave):
+                return
+            virou_ato(con, rascunho_id, endereco=endereco, agora=db.now(), por=por)
+    except Exception:                                   # noqa: BLE001
+        flash(f"O ato foi gravado, mas o rascunho #{rascunho_id} continua na lista de "
+              "Rascunhos. Apague-o lá, para ninguém lavrar de novo a partir dele.",
+              "warning")
+        return
+    audit("RASCUNHO_VIROU_ATO", "rascunhos_de_tela", rascunho_id,
+          {"tela": tela, "ato": endereco})
+    flash(f"O rascunho #{rascunho_id} saiu da lista: o que ele guardava já está gravado.",
+          "info")
+
+
+def barrar_se_ja_virou_ato(db) -> None:
+    """Quem volta a um rascunho que já virou ato vai para o ato. SÓ LÊ.
+
+    **É O QUE IMPEDE LAVRAR DUAS VEZES PELO BOTÃO DE VOLTAR**, ou por uma segunda aba
+    aberta no mesmo rascunho. O rascunho apagado à mão não tem marca, e não barra:
+    jogar fora um papel não diz que o ato existe.
+    """
+    from flask import abort, flash, redirect, url_for
+
+    rascunho_id = do_envio()
+    if not rascunho_id:
+        return
+    with db.connect() as con:
+        feito = o_ato_do_rascunho(con, rascunho_id)
+    if feito:
+        flash(f"O rascunho #{rascunho_id} já virou ato, e nada foi gravado de novo.",
+              "warning")
+        abort(redirect(feito.get("endereco") or url_for("rascunhos")))
 
 
 def expirados(con, hoje: str,

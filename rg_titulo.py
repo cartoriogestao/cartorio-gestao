@@ -506,6 +506,7 @@ def qualificar(con: sqlite3.Connection, titulo_id: int, *, resultado: str,
     velha fica: é ela que explica por que o título voltou, e é ela que a
     correição lê.
     """
+    _recusa_se_sobrestado(con, titulo_id)
     titulo = um(con, titulo_id)
     if not titulo:
         raise TituloError(f"Título {titulo_id} não encontrado.")
@@ -558,6 +559,97 @@ def qualificar(con: sqlite3.Connection, titulo_id: int, *, resultado: str,
 # ------------------------------------------------- registrar, e o que sai
 
 
+# ---------------------------------------------------------- o sobrestamento
+#
+# CN-MA art. 975, § 1º: com suspeita de falsificação, sobresta-se o registro depois de
+# protocolar, até o apresentante ser notificado. Art. 971: o lançamento também se suspende
+# por ordem judicial ou por dúvida, e os títulos seguintes andam, preservados a data e o
+# número de quem ficou. A SITUAÇÃO NÃO MUDA: o título sobrestado continua onde estava.
+
+SOBRESTAR_POR = {
+    "SUSPEITA_FALSIFICACAO": "Suspeita de falsificação (art. 975, § 1º)",
+    "DUVIDA": "Dúvida instaurada (art. 971)",
+    "ORDEM_JUDICIAL": "Determinação judicial (art. 971)",
+}
+RETOMAR_POR = {
+    "REQUERIMENTO": "Requerimento expresso do apresentante, com anotação (art. 975, § 2º)",
+    "SIGNATARIO": "Signatário notificado para assistir ao registro (art. 975, § 2º)",
+    "DUVIDA_JULGADA": "Dúvida julgada",
+    "ORDEM_JUDICIAL": "Determinação judicial",
+    "REMETIDO_AO_JUIZO": "Falsificação evidente: documento remetido ao juízo (art. 975, § 3º)",
+}
+
+
+def sobrestamentos_de(con: sqlite3.Connection, titulo_id: int) -> list[dict]:
+    return [dict(x) for x in banco(con).ler(
+        "SELECT * FROM rg_sobrestamentos WHERE titulo_id=%s ORDER BY id", (int(titulo_id),))]
+
+
+def sobrestamento_aberto(con: sqlite3.Connection, titulo_id: int) -> dict | None:
+    linha = banco(con).um(
+        "SELECT * FROM rg_sobrestamentos WHERE titulo_id=%s AND fim_em IS NULL ORDER BY id DESC LIMIT 1",
+        (int(titulo_id),))
+    return dict(linha) if linha else None
+
+
+def _recusa_se_sobrestado(con: sqlite3.Connection, titulo_id: int) -> None:
+    aberto = sobrestamento_aberto(con, titulo_id)
+    if aberto:
+        raise TituloError(
+            f"Este título está sobrestado: {SOBRESTAR_POR.get(aberto['tipo'], aberto['tipo'])}. "
+            "Encerre o sobrestamento antes de continuar.")
+
+
+def sobrestar(con: sqlite3.Connection, titulo_id: int, *, tipo: str, motivo: str, agora: str,
+              notificado_em: str | None = None, usuario: str | None = None) -> dict:
+    """Suspende o lançamento. ESCREVE. Não mexe em número, data nem situação."""
+    titulo = um(con, titulo_id)
+    if not titulo:
+        raise TituloError(f"Título {titulo_id} não encontrado.")
+    if titulo["situacao"] in SITUACOES_TERMINAIS:
+        raise TituloError("Este título já saiu do protocolo.")
+    if tipo not in SOBRESTAR_POR:
+        raise TituloError("Escolha o motivo do sobrestamento.")
+    razao = _texto(motivo)
+    if len(razao) < MINIMO_DO_TEXTO:
+        raise TituloError("Escreva o motivo com pelo menos dez letras.")
+    if sobrestamento_aberto(con, titulo_id):
+        raise TituloError("Este título já está sobrestado.")
+    linha = banco(con).escrever(
+        """INSERT INTO rg_sobrestamentos(titulo_id, tipo, motivo, notificado_em, criado_em, criado_por)
+           VALUES (%s,%s,%s,%s,%s,%s) RETURNING id""",
+        (int(titulo_id), tipo, razao, _texto(notificado_em)[:10] or None, agora, usuario))
+    return {"id": int(linha[0]["id"]), "titulo_id": int(titulo_id)}
+
+
+def retomar(con: sqlite3.Connection, titulo_id: int, *, forma: str, motivo: str, agora: str,
+            usuario: str | None = None) -> dict:
+    """Encerra o sobrestamento, com a ocorrência anotada. ESCREVE.
+
+    Remetido ao juízo, o título sai do protocolo como CANCELADO: não vira serviço.
+    """
+    aberto = sobrestamento_aberto(con, titulo_id)
+    if not aberto:
+        raise TituloError("Este título não está sobrestado.")
+    if forma not in RETOMAR_POR:
+        raise TituloError("Escolha como o sobrestamento termina.")
+    razao = _texto(motivo)
+    if len(razao) < MINIMO_DO_TEXTO:
+        raise TituloError("Escreva o motivo com pelo menos dez letras.")
+    bd = banco(con)
+    bd.escrever(
+        "UPDATE rg_sobrestamentos SET fim_em=%s, fim_por=%s, fim_forma=%s, fim_motivo=%s WHERE id=%s",
+        (agora, usuario, forma, razao, int(aberto["id"])))
+    titulo = um(con, titulo_id)
+    anotacao = _texto(titulo["observacao"])
+    linha = f"Sobrestamento encerrado: {RETOMAR_POR[forma]}. {razao}"
+    bd.escrever("UPDATE rg_titulos SET observacao=%s WHERE id=%s",
+                ((anotacao + "\n" if anotacao else "") + linha, int(titulo_id)))
+    if forma == "REMETIDO_AO_JUIZO":
+        encerrar(con, titulo_id, situacao=CANCELADO, motivo=f"Remetido ao juízo: {razao}", agora=agora, usuario=usuario)
+    return {"titulo_id": int(titulo_id), "forma": forma}
+
+
 def registrar(con: sqlite3.Connection, titulo_id: int, *, serie: str,
               sv: dict, agora: str, data_extenso: str,
               teor: str | None = None, teor_formato: str = "texto",
@@ -582,6 +674,7 @@ def registrar(con: sqlite3.Connection, titulo_id: int, *, serie: str,
     `lista_presenca` é a do inciso III (CN-MA arts. 410, 412 e 413), conferida
     no mesmo lugar, antes do número. None não exige — é a carga e o acervo.
     """
+    _recusa_se_sobrestado(con, titulo_id)
     titulo = um(con, titulo_id)
     if not titulo:
         raise TituloError(f"Título {titulo_id} não encontrado.")
@@ -753,6 +846,7 @@ def concluir_pelo_ato(con: sqlite3.Connection, titulo_id: int, *, ato_id: int,
     não numera, não sela e não cobra: o ato já está no livro, e é ele que
     conclui o título.
     """
+    _recusa_se_sobrestado(con, titulo_id)
     titulo = um(con, titulo_id)
     if not titulo:
         raise TituloError(f"Título {titulo_id} não encontrado.")

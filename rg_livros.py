@@ -46,6 +46,7 @@ ATOS = "atos"
 INDICE = "indice"
 INDICADOR_REAL = "indicador_real"
 INDICADOR_F = "indicador_f"
+AUXILIAR = "auxiliar"
 
 # OS PAPÉIS SUGERIDOS NA TELA. É sugestão (`datalist`), e não vocabulário fechado: a
 # parte de um contrato de RTD pode ter qualquer nome que o contrato der a ela.
@@ -101,6 +102,10 @@ LIVROS: dict[int, tuple[dict, ...]] = {
         _livro("b", "Livro B", "Livro B — Registro integral",
                "Lei 6.015/1973, art. 132, II; CN-MA art. 963, II", ATOS,
                "Trasladação integral de títulos e documentos.", serie="TD_B"),
+        _livro("auxiliar", "Auxiliar do B", "Livro Auxiliar do Livro B",
+               "CN-MA art. 964", AUXILIAR,
+               "Facultativo, para quem não adota escrituração eletrônica: as cópias dos títulos "
+               "registrados no Livro B, na numeração dele. Cada linha diz quantas cópias há."),
         _livro("c", "Livro C", "Livro C — Inscrição por extrato",
                "Lei 6.015/1973, art. 132, III; CN-MA arts. 963, III e § 4º, e 981", ATOS,
                "Inscrição por extração. O CN-MA dispensa este livro de quem adota sistema "
@@ -198,6 +203,9 @@ def _lancamento_do_titulo(con, titulo: dict) -> str:
 def motivo_da_pendencia(con, titulo: dict) -> str:
     """Por que o título ainda não saiu. CN-MA art. 970. Só LÊ."""
     situacao = titulo.get("situacao")
+    aberto = TIT.sobrestamento_aberto(con, int(titulo["id"]))
+    if aberto:
+        return f"sobrestado: {TIT.SOBRESTAR_POR.get(aberto['tipo'], aberto['tipo'])}"
     if situacao == TIT.APRESENTADO:
         return "aguarda qualificação"
     if situacao == TIT.QUALIFICADO:
@@ -425,6 +433,20 @@ def indicador_real(con, *, busca: str = "") -> list[dict]:
     return saida
 
 
+def copias_do_livro_b(con, *, busca: str = "", pagina: int = 1) -> dict:
+    """O Livro B, com as cópias anexadas a cada ato. CN-MA art. 964. Só LÊ."""
+    pedido = atos_do_livro(con, "TD_B", busca=busca, pagina=pagina)
+    ids = [int(x["id"]) for x in pedido["linhas"]]
+    contas = {}
+    if ids:
+        contas = {int(r["entity_id"]): int(r["n"]) for r in banco(con).ler(
+            """SELECT entity_id, COUNT(*) n FROM attachments
+                WHERE entity_type = 'RG_ATO' AND entity_id = ANY(%s) GROUP BY entity_id""", (ids,))}
+    for x in pedido["linhas"]:
+        x["copias"] = contas.get(int(x["id"]), 0)
+    return pedido
+
+
 def quantos_no_livro(con, livro: dict, atribuicao: int) -> int | None:
     """O número ao lado da aba: quantos lançamentos há. Só LÊ."""
     bd = banco(con)
@@ -475,7 +497,8 @@ def _registro_ou_recusa(con, registro_id: int) -> dict:
 
 
 def incluir_parte(con, registro_id: int, *, nome: str, documento: str | None = None,
-                  papel: str | None = None, agora: str, usuario: str | None = None,
+                  papel: str | None = None, participacao: str | None = None,
+                  doi_lado: str | None = None, agora: str, usuario: str | None = None,
                   origem: str = "MANUAL", origem_chave: str | None = None) -> dict:
     """Põe uma pessoa no indicador daquele registro. ESCREVE.
 
@@ -501,10 +524,11 @@ def incluir_parte(con, registro_id: int, *, nome: str, documento: str | None = N
         raise LivroDoRegistroError(
             f"{limpo} já está neste registro com o papel «{_texto(papel) or 'sem papel'}».")
     linha = bd.escrever(
-        """INSERT INTO rg_partes(registro_id, nome, nome_norm, documento, papel, origem,
-               origem_chave, criado_em, criado_por)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-        (int(registro_id), limpo, norma, digitos or None, _texto(papel) or None, origem,
+        """INSERT INTO rg_partes(registro_id, nome, nome_norm, documento, papel, participacao,
+               doi_lado, origem, origem_chave, criado_em, criado_por)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+        (int(registro_id), limpo, norma, digitos or None, _texto(papel) or None,
+         _texto(participacao).replace(",", ".") or None, _texto(doi_lado).upper() or None, origem,
          origem_chave, agora, usuario))
     return {"parte_id": int(linha[0]["id"]), "registro_id": int(registro_id), "nome": limpo}
 

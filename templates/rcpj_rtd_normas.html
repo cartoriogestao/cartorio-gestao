@@ -32,12 +32,12 @@
   <div style="padding:0 14px 14px">
     {% if reservadas %}<p><strong>Palavra reservada:</strong> {{ reservadas|join(', ') }}.</p>{% endif %}
     {% if parecidos %}
-    <p><strong>Mesmo nome nesta serventia:</strong></p>
-    <ul>{% for r in parecidos %}<li><a href="{{ url_for('rcpj_rtd_registro', registro_id=r.id) }}">Registro n. {{ r.numero }}</a>: {{ r.requerente_nome }}</li>{% endfor %}</ul>
+    <p><strong>Nome igual ou parecido nesta serventia:</strong></p>
+    <ul>{% for r in parecidos %}<li><a href="{{ url_for('rcpj_rtd_registro', registro_id=r.id) }}">Registro n. {{ r.numero }}</a>: {{ r.requerente_nome }} <small>({{ 'igual' if r.igual else 'parecido' }})</small></li>{% endfor %}</ul>
     {% endif %}
-    {% if not reservadas and not parecidos %}<p>Nenhuma palavra reservada e nenhum nome igual nesta serventia.</p>{% endif %}
-    <p><small class="muted">Compara o nome igual, sem acento nem caixa. O «semelhante» do artigo e as outras
-      serventias da comarca (§ 2º) ficam com quem qualifica.</small></p>
+    {% if not reservadas and not parecidos %}<p>Nenhuma palavra reservada e nenhum nome igual ou parecido nesta serventia.</p>{% endif %}
+    <p><small class="muted">Compara sem acento nem caixa, tirando palavras comuns como «associação». Se o nome
+      causa dúvida é juízo de quem qualifica. Outras serventias da comarca o sistema não enxerga (§ 2º).</small></p>
   </div>
   {% endif %}
 </section>

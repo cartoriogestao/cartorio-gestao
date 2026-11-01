@@ -47,6 +47,10 @@ _TRAVA_DO_OFICIAL = {
     "titulo": "O registro é ato do oficial",
     "texto": "Este título tem qualificação positiva. Quem lavra o registro é quem responde pela serventia.",
     "ir": QUALIFICACAO, "ir_rotulo": "Qualificação"}
+_TRAVA_SOBRESTADO = {
+    "titulo": "Lançamento sobrestado",
+    "texto": "O título mantém o número e a data. O registro volta quando o sobrestamento terminar.",
+    "ir": QUALIFICACAO, "ir_rotulo": "Qualificação"}
 _TRAVA_SAIU_SEM_REGISTRO = {
     "titulo": "Este título saiu sem registro",
     "texto": "Ele foi devolvido ou cancelado, e título encerrado não recebe mais decisão. O motivo está "
@@ -74,9 +78,11 @@ def _qualificacao(situacao: str, qualificacoes: Sequence, pode_decidir: bool) ->
     return _fase(QUALIFICACAO, "Qualificação", 2, LIBERADA)
 
 
-def _registro(situacao: str, tem_registro: bool, pode_decidir: bool) -> dict:
+def _registro(situacao: str, tem_registro: bool, pode_decidir: bool, sobrestado: bool = False) -> dict:
     if tem_registro or situacao == REGISTRADO:
         return _fase(REGISTRO, "Registro", 3, FEITA)
+    if sobrestado:
+        return _fase(REGISTRO, "Registro", 3, TRAVADA, trava=_TRAVA_SOBRESTADO)
     if situacao == QUALIFICADO and pode_decidir:
         return _fase(REGISTRO, "Registro", 3, LIBERADA, 1,
                      "Lavre o registro, ou conclua pelo ato que já atendeu o título.")
@@ -95,10 +101,11 @@ def _fase_inicial(situacao: str, registro: Mapping[str, Any]) -> str:
 
 
 def fases_do_titulo(titulo: Mapping[str, Any], *, qualificacoes: Sequence = (), encaminhamentos: Sequence = (),
-                    tem_registro: bool = False, pode_decidir: bool = False, central_falhou: bool = False) -> dict:
+                    tem_registro: bool = False, pode_decidir: bool = False, central_falhou: bool = False,
+                    sobrestado: bool = False) -> dict:
     """A régua da ficha. A forma é a de `notas_fases`: `_fases.html` desenha as duas."""
     situacao = str(titulo.get("situacao") or "")
-    registro = _registro(situacao, tem_registro, pode_decidir)
+    registro = _registro(situacao, tem_registro, pode_decidir, sobrestado)
     fases = [_fase(APRESENTACAO, "Apresentação", 1, FEITA), _qualificacao(situacao, qualificacoes, pode_decidir),
              registro]
     for i, fase in enumerate(fases):

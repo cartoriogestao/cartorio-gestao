@@ -175,6 +175,8 @@ LIVROS: tuple[dict, ...] = (
            series=("TD_PROTOCOLO",), rotas=("rcpj_rtd_livros", "nucleo_encerramento_diario",)),
     _livro("RTD", "TD_REGISTRO", "Livro B — Registro", "art. 963, II", TEM,
            series=("TD_B",), rotas=("rcpj_rtd_livros", "nucleo_livros",)),
+    _livro("RTD", "TD_AUXILIAR", "Livro Auxiliar do Livro B", "art. 964", TEM, rotas=("rcpj_rtd_livros",),
+           nota="Facultativo, sem escrituração eletrônica: a aba conta as cópias de cada ato do Livro B."),
     _livro("RTD", "TD_INSCRICAO", "Livro C — Inscrição", "art. 963, III e § 4º", TEM,
            series=("TD_C",), rotas=("rcpj_rtd_livros",),
            nota="Dispensado para quem adota sistema informatizado (§ 4º)."),

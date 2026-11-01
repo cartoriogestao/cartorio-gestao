@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+{#
+  A FICHA DO PROCESSO FIDUCIÁRIO. No layout novo, em fases; no antigo, a página inteira.
+  A tela só oferece o que `rg_fiduciaria.acoes_possiveis` diz que cabe, e o domínio cobra de novo.
+#}
+{% block heading %}<h1>Processo fiduciário n. {{ p.rotulo }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+{% from '_fases.html' import abre_ficha, regua, travas_e_barras %}
+{% set abas = abas_da_ficha(user.role in ['ADMIN','MANAGER']) if layout_novo else none %}
+{% set do_oficial = user.role in ['ADMIN','MANAGER'] %}
+{% set opera = user.role in ['ADMIN','MANAGER','USER'] %}
+{% macro quando() %}<label>Data <input type="date" name="dia" value="{{ hoje }}" required></label>{% endmacro %}
+{% set rota = url_for('rcpj_rtd_fiduciaria_acao', proc_id=p.id) %}
+{% if abas %}{{ abre_ficha(VERSION) }}{{ regua(abas, 'fiduciaria-' ~ p.id, 'Fases deste processo') }}{% endif %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpj_rtd_fiduciarias') }}">&larr; Processos</a>
+  <a class="button" href="{{ url_for('rcpj_rtd_titulo', titulo_id=p.titulo_id) }}">Título e documentos</a>
+  {% if registro_id %}<a class="button" href="{{ url_for('rcpj_rtd_registro', registro_id=registro_id) }}">Registro</a>{% endif %}
+</div>
+
+<div class="notice">
+  <strong>{{ situacao }}.</strong>
+  {% if p.prazo_ate %}{{ p.prazo_rotulo }}: {% if p.prazo_ate < hoje %}<strong>venceu em {{ fmt_date(p.prazo_ate) }}</strong>{% else %}até {{ fmt_date(p.prazo_ate) }}{% endif %}.{% endif %}
+</div>
+
+{% if pendentes %}
+<section class="panel">
+  <div class="panel-head"><span>Para averbar</span><small>Código Nacional, art. 397-M</small></div>
+  {% if not registro_id %}<p style="padding:10px 14px 0">O contrato não está registrado aqui: <strong>registre a carta de notificação</strong> pelo título, e as averbações seguintes vão nesse registro.</p>{% endif %}
+  <div class="table-wrap"><table class="table"><tbody>
+    {% for e in pendentes %}<tr>
+      <td>{{ fmt_date(e.dia) }}</td><td>{{ e.texto }}</td>
+      <td>{% if atos and opera %}<form method="post" action="{{ url_for('rcpj_rtd_fiduciaria_averbacao', proc_id=p.id, evento_id=e.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <select name="ato_id" required><option value=""></option>{% for a in atos %}<option value="{{ a.id }}">{{ a.tipo }} n. {{ a.numero_ordem or '—' }}, {{ fmt_date(a.data_ato) }}</option>{% endfor %}</select>
+          <button class="button small">Amarrar o ato</button></form>{% endif %}</td>
+    </tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endif %}
+
+<section class="panel" data-fase="autuacao">
+  <div class="panel-head"><span>Autuação</span><small>CN-MA art. 956, I</small></div>
+  <table class="table">
+    <tr><th>Protocolo</th><td>{{ p.protocolo or '—' }}, em {{ fmt_date(p.data_apresentacao) }}</td><th>Na Central</th><td>{{ p.protocolo_central or 'não informado' }}</td></tr>
+    <tr><th>Credor</th><td>{{ p.credor_nome }} {{ p.credor_documento or '' }}<br><small>{{ p.credor_contato or '' }}</small></td>
+        <th>Devedor</th><td>{{ p.devedor_nome }} {{ p.devedor_documento or '' }}<br><small>{{ p.devedor_email or '' }} {{ p.devedor_endereco or '' }}</small></td></tr>
+    <tr><th>Bem</th><td>{{ p.bem_descricao }} {{ p.bem_identificacao or '' }}</td><th>Dívida</th><td>{{ reais(p.valor_centavos) or '—' }}</td></tr>
+    <tr><th>Contrato</th><td>{{ p.contrato or '—' }}</td><th>Registro</th><td>{{ p.registro_numero or 'não registrado aqui' }}</td></tr>
+  </table>
+  {% if 'qualificar' in acoes and do_oficial %}
+  <form method="post" action="{{ rota }}" class="form" style="padding:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="qualificar">
+    <fieldset><legend>O que o requerimento traz</legend>
+      {% for r in requisitos %}<label style="display:block"><input type="checkbox" name="itens" value="{{ r.chave }}"{% if r.chave in p.requisitos_ok %} checked{% endif %}> <strong>{{ r.artigo }}.</strong> {{ r.texto }}</label>{% endfor %}
+    </fieldset>
+    <label>Resultado <select name="resultado" required><option value="POSITIVA">Positiva</option><option value="EMENDA">Emenda em 10 dias (art. 397-U)</option><option value="NEGATIVA">Negativa</option></select></label>
+    <label>Emenda ou fundamento <textarea name="motivo" rows="2"></textarea></label>
+    {{ quando() }}
+    <button class="button primary">Registrar a qualificação</button>
+  </form>
+  {% elif 'qualificar' in acoes %}<p style="padding:14px">A qualificação é ato do oficial.</p>{% endif %}
+</section>
+
+<section class="panel" data-fase="notificacao">
+  <div class="panel-head"><span>Notificação do devedor</span><small>Código Nacional, art. 397-V</small></div>
+  <p style="padding:10px 14px 0">Preferencialmente eletrônica. Sem leitura em 3 dias úteis, vai por via postal com AR; se a postal falhar, é pessoal (§§ 2º e 4º).</p>
+  {% if 'notificar' in acoes and opera %}
+  <form method="post" action="{{ rota }}" class="form" style="padding:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="notificar">
+    <label>Forma <select name="forma" required>{% for c, r in formas.items() %}<option value="{{ c }}">{{ r }}</option>{% endfor %}</select></label>
+    {{ quando() }}<button class="button primary">Registrar o envio</button></form>
+  {% endif %}
+  {% if 'ciencia' in acoes and opera %}
+  <form method="post" action="{{ rota }}" class="form" style="padding:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="ciencia">
+    <label>Data da leitura comprovada, ou do AR recebido nesta serventia <input type="date" name="dia" value="{{ hoje }}" required></label>
+    <button class="button primary">Começar o prazo de 20 dias</button></form>
+  {% endif %}
+</section>
+
+<section class="panel" data-fase="defesa">
+  <div class="panel-head"><span>Pagamento, impugnação e entrega</span><small>Código Nacional, arts. 397-W a 397-AF</small></div>
+  {% if 'pagamento' in acoes and opera %}
+  <form method="post" action="{{ rota }}" class="form" style="padding:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="pagamento"><strong>Pagamento</strong>
+    <label>Valor <input name="valor"></label>
+    <label><input type="checkbox" name="integral" value="1"> Integral</label>
+    <label><input type="checkbox" name="credor_aceitou" value="1"> Parcial, com concordância expressa do credor (art. 397-W, § 2º)</label>
+    <label><input type="checkbox" name="ao_oficial" value="1"> Recebido pela serventia: repasse em 2 dias úteis</label>
+    {{ quando() }}<button class="button">Lançar o pagamento</button></form>
+  {% endif %}
+  {% if 'impugnar' in acoes and opera %}
+  <form method="post" action="{{ rota }}" class="form" style="padding:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="impugnar"><strong>Impugnação</strong>
+    <label>O que o devedor alega <small class="muted">— só falha de cálculo ou pagamento omitido (art. 397-X)</small><textarea name="texto" rows="2" required></textarea></label>
+    <label>Valor que entende devido e pagou <input name="valor"></label>
+    {{ quando() }}<button class="button">Receber a impugnação</button></form>
+  {% endif %}
+  {% if 'conhecer' in acoes and do_oficial %}
+  <form method="post" action="{{ rota }}" class="form" style="padding:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="conhecer"><strong>Conhecer a impugnação</strong>
+    <label>Decisão <select name="conhece"><option value="1">Conhecida: notificar o credor (10 dias)</option><option value="0">Não conhecida (art. 397-Z)</option></select></label>
+    <label>Fundamento <textarea name="fundamento" rows="2" required></textarea></label>
+    {{ quando() }}<button class="button primary">Registrar</button></form>
+  {% endif %}
+  {% if 'decidir' in acoes and do_oficial %}
+  <form method="post" action="{{ rota }}" class="form" style="padding:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="decidir"><strong>Decidir a impugnação</strong>
+    <label>Decisão <select name="procedente"><option value="0">Indeferida (art. 397-AC)</option><option value="1">Acolhida: encerra e convalesce (art. 397-AB)</option></select></label>
+    <label>Fundamento <textarea name="fundamento" rows="2" required></textarea></label>
+    {{ quando() }}<button class="button primary">Decidir</button>
+    <p><small class="muted">A decisão esgota a instância administrativa (art. 397-AE).</small></p></form>
+  {% endif %}
+  {% if 'entrega' in acoes and opera %}
+  <form method="post" action="{{ rota }}" class="form" style="padding:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="entrega"><strong>Entrega voluntária</strong>
+    <label>Detalhes do termo firmado pelo credor <input name="detalhe"></label>
+    {{ quando() }}<button class="button">Registrar a entrega</button></form>
+  {% endif %}
+</section>
+
+<section class="panel" data-fase="busca">
+  <div class="panel-head"><span>Busca e apreensão</span><small>Código Nacional, arts. 397-AG a 397-AJ</small></div>
+  {% if 'requerer_busca' in acoes and opera %}
+  <form method="post" action="{{ rota }}" class="form" style="padding:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="requerer_busca">
+    <label>Valor total da dívida <input name="valor" required></label>
+    <label><input type="checkbox" name="planilha" value="1" required> A planilha com a evolução da dívida veio junto</label>
+    {{ quando() }}<button class="button primary">Receber o requerimento</button></form>
+  {% elif p.situacao in ['PRAZO_DEVEDOR','AGUARDA_ENTREGA'] %}
+  <p style="padding:14px">A busca e apreensão só cabe depois de vencido o prazo do devedor.</p>
+  {% endif %}
+  {% if 'providencia' in acoes and opera %}
+  <div class="table-wrap"><table class="table"><tbody>
+    {% for c, r in providencias.items() %}<tr><td>{{ r }}</td><td>{% if c in providencias_feitas %}Feita{% else %}
+      <form method="post" action="{{ rota }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="providencia"><input type="hidden" name="qual" value="{{ c }}"><input type="hidden" name="dia" value="{{ hoje }}"><button class="button small">Marcar como feita</button></form>{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+  <p style="padding:0 14px"><small class="muted">O sistema não lança no Renavam nem na Central: marca o que foi feito lá.</small></p>
+  {% endif %}
+  {% if 'diligencia' in acoes and opera %}
+  <form method="post" action="{{ rota }}" class="form" style="padding:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="diligencia"><strong>Diligência</strong>
+    <label>Local <input name="local" required></label>
+    <label>Hora <input type="time" name="hora"></label>
+    <label>Resultado <select name="resultado" required>{% for c, r in resultados.items() %}<option value="{{ c }}">{{ r }}</option>{% endfor %}</select></label>
+    <label>Detalhes e razões <small class="muted">— obrigatórios se não apreendeu</small><textarea name="detalhe" rows="2"></textarea></label>
+    {{ quando() }}<button class="button primary">Registrar a diligência</button>
+    <p><small class="muted">A foto do bem vai nos documentos do título. Não é ato coercitivo: local público, ou particular com acesso permitido (art. 397-AI, § 5º).</small></p></form>
+  {% endif %}
+</section>
+
+<section class="panel" data-fase="consolidacao">
+  <div class="panel-head"><span>Consolidação, reversão e venda</span><small>Código Nacional, arts. 397-AJ a 397-AM</small></div>
+  {% if 'cancelar_providencias' in acoes and opera %}
+  <form method="post" action="{{ rota }}" style="padding:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="cancelar_providencias"><input type="hidden" name="dia" value="{{ hoje }}"><button class="button">Marcar o cancelamento dos lançamentos do art. 397-AH</button></form>
+  {% endif %}
+  {% if 'reverter' in acoes and opera %}
+  <form method="post" action="{{ rota }}" class="form" style="padding:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="reverter"><strong>Reversão pelo pagamento integral</strong>
+    <label>Detalhes <input name="detalhe"></label>{{ quando() }}<button class="button">Registrar a reversão</button></form>
+  {% endif %}
+  {% if 'concluir' in acoes and do_oficial %}
+  <form method="post" action="{{ rota }}" class="form" style="padding:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="concluir"><strong>Concluir</strong>
+    <label>Valor da venda, se informado <input name="valor"></label>
+    <label>Detalhes <input name="detalhe"></label>{{ quando() }}<button class="button primary">Concluir o processo</button></form>
+  {% endif %}
+</section>
+
+<section class="panel{% if abas %} cg-depois{% endif %}" data-fase="pecas">
+  <div class="panel-head"><span>Linha do tempo</span><small>{{ eventos|length }} lançamento(s)</small></div>
+  <div class="table-wrap"><table class="table"><tbody>
+    {% for e in eventos|reverse %}<tr><td>{{ fmt_date(e.dia) }}</td><td>{{ e.texto }}{% if e.criado_por %}<br><small>{{ e.criado_por }}</small>{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% if pecas %}<div class="actions" style="padding:12px 14px">{% for c, r in pecas.items() %}<a class="button" href="{{ url_for('rcpj_rtd_fiduciaria_peca', proc_id=p.id, qual=c) }}">{{ r }}</a>{% endfor %}</div>{% endif %}
+</section>
+
+{% if do_oficial and ('desistir' in acoes or 'extinguir' in acoes) %}
+<details class="panel" data-fase="pecas"><summary>Desistência do credor ou extinção por inércia</summary>
+  <form method="post" action="{{ rota }}" class="form" style="padding:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="desistir"><strong>Desistência (art. 397-O)</strong>
+    <label>Pedido do credor <textarea name="motivo" rows="2" required></textarea></label>{{ quando() }}<button class="button">Registrar a desistência</button></form>
+  <form method="post" action="{{ rota }}" class="form" style="padding:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="extinguir"><strong>Inércia do credor (art. 397-Q)</strong>
+    <label>Qual ato faltou, e o prazo que ele tinha <textarea name="motivo" rows="2" required></textarea></label>{{ quando() }}<button class="button">Extinguir</button></form>
+</details>
+{% endif %}
+{% if abas %}{{ travas_e_barras(abas) }}</div>{% endif %}
+{% endblock %}

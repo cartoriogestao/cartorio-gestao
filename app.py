@@ -3374,6 +3374,9 @@ def create_app(test_config: dict | None = None) -> Flask:
     # OS LIVROS DO RCPJ E DO RTD, uma aba por livro, como a lei os nomeia (01/11/2026).
     import rg_livros_web
     rg_livros_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+    # A CONSOLIDAÇÃO FIDUCIÁRIA, O SOBRESTAMENTO E A DOI DO RTD (01/11/2026).
+    import rg_fiduciaria_web
+    rg_fiduciaria_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
     # OS ATOS DO LG04 (19/10/2026): a notificação extrajudicial e a autenticação
     # de livros do RCPJ/RTD voltam para `rcpj_rtd_registro`, que nasce acima;
     # a pública forma e a comunicação ao DETRAN são do balcão das Notas.

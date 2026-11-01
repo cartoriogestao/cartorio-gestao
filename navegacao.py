@@ -277,6 +277,8 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("O que conferir", "rcpj_rtd_normas", antigo="O que conferir na qualificação"),)),
          ("Notificações", (
              _i("Notificações extrajudiciais", "rcpj_rtd_notificacoes", antigo="RTD — notificações extrajudiciais"),)),
+         ("Alienação fiduciária", (
+             _i("Consolidação e busca e apreensão", "rcpj_rtd_fiduciarias", antigo="RTD — alienação fiduciária"),)),
          ("Livros contábeis", (
              _i("Autenticação de livros", "rcpj_rtd_livro_contabil_lista", antigo="RCPJ — autenticação de livros"),)),
          ("Central ONRTDPJ", (
@@ -575,6 +577,8 @@ PAI: dict[str, tuple[str, str]] = {
     "rcpj_rtd_titulo_nota": ("RCPJ", "Títulos apresentados"),
     "rcpj_rtd_registro": ("RCPJ", "Registros lavrados"),
     "rcpj_rtd_registro_novo": ("RCPJ", "Registros lavrados"),
+    "rcpj_rtd_fiduciaria": ("RCPJ", "Alienação fiduciária"),
+    "rcpj_rtd_fiduciaria_nova": ("RCPJ", "Alienação fiduciária"),
     "rcpj_rtd_notificacao": ("RCPJ", "Notificações"),
     "rcpj_rtd_notificacao_nova": ("RCPJ", "Notificações"),
     "rcpj_rtd_notificacao_certidao_ver": ("RCPJ", "Notificações"),

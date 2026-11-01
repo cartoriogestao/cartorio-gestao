@@ -55,6 +55,8 @@
   <a class="button" href="{{ url_for('rcpj_rtd_titulos', atribuicao=t.atribuicao) }}">&larr; Voltar à fila</a>
   <a class="button" href="{{ url_for('rcpj_rtd_titulo_recibo', titulo_id=t.id) }}">Recibo do protocolo</a>
   <a class="button" href="{{ url_for('rcpj_rtd_livros', atribuicao=t.atribuicao) }}">Livro de Protocolo</a>
+  {% if processo_fiduciario %}<a class="button" href="{{ url_for('rcpj_rtd_fiduciaria', proc_id=processo_fiduciario.id) }}">Processo fiduciário n. {{ processo_fiduciario.rotulo }}</a>
+  {% elif t.atribuicao == 4 and t.situacao not in ['REGISTRADO','DEVOLVIDO','CANCELADO'] and user.role in ['ADMIN','MANAGER','USER'] %}<a class="button" href="{{ url_for('rcpj_rtd_fiduciaria_nova', titulo_id=t.id) }}">+ Autuar consolidação fiduciária</a>{% endif %}
   {% if registro %}
   <a class="button" href="{{ url_for('rcpj_rtd_registro', registro_id=registro.id) }}">Ver o registro lavrado</a>
   {% endif %}
@@ -208,6 +210,32 @@
   {% endif %}
   {% endif %}
 
+  {# O SOBRESTAMENTO (CN-MA arts. 971 e 975): número e data ficam; o registro espera. #}
+  {% if sobrestamento %}
+  <div class="notice" style="margin:14px">
+    <strong>Lançamento sobrestado:</strong> {{ sobrestar_por.get(sobrestamento.tipo, sobrestamento.tipo) }}. {{ sobrestamento.motivo }}
+    {% if sobrestamento.notificado_em %}Apresentante notificado em {{ fmt_date(sobrestamento.notificado_em) }}.{% endif %}
+    {% if user.role in ['ADMIN','MANAGER'] %}
+    <form method="post" class="form" style="margin-top:10px" action="{{ url_for('rcpj_rtd_titulo_retomar', titulo_id=t.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Como termina <select name="forma" required>{% for c, r in retomar_por.items() %}<option value="{{ c }}">{{ r }}</option>{% endfor %}</select></label>
+      <label>Motivo <textarea name="motivo" rows="2" required></textarea></label>
+      <button class="button" type="submit">Encerrar o sobrestamento</button>
+    </form>{% endif %}
+  </div>
+  {% elif pode_qualificar and user.role in ['ADMIN','MANAGER'] %}
+  <details style="margin:14px"><summary>Sobrestar o lançamento <small class="muted">— suspeita de falsificação, dúvida ou ordem judicial</small></summary>
+    <form method="post" class="form" action="{{ url_for('rcpj_rtd_titulo_sobrestar', titulo_id=t.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Por quê <select name="tipo" required>{% for c, r in sobrestar_por.items() %}<option value="{{ c }}">{{ r }}</option>{% endfor %}</select></label>
+      <label>Motivo <textarea name="motivo" rows="2" required></textarea></label>
+      <label>Apresentante notificado em <input type="date" name="notificado_em"></label>
+      <button class="button" type="submit">Sobrestar</button>
+    </form>
+  </details>
+  {% endif %}
+  {% if sobrestamentos %}{% for s in sobrestamentos if s.fim_em %}<p style="margin:0 14px"><small class="muted">Sobrestado em {{ fmt_date(s.criado_em) }}, encerrado em {{ fmt_date(s.fim_em) }}: {{ s.motivo }}. {{ s.fim_motivo }}</small></p>{% endfor %}{% endif %}
+
   {# O QUE CONFERIR: lembra, e não recusa. Quem decide é quem qualifica. #}
   {% if pode_qualificar and normas %}
   <details style="margin:14px">
@@ -220,7 +248,7 @@
   </details>
   {% endif %}
 
-  {% if pode_qualificar and user.role in ['ADMIN','MANAGER'] %}
+  {% if pode_qualificar and not sobrestamento and user.role in ['ADMIN','MANAGER'] %}
   <form method="post" class="form" style="padding:14px"
         action="{{ url_for('rcpj_rtd_titulo_qualificar', titulo_id=t.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

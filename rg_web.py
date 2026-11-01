@@ -70,6 +70,7 @@ from storage import safe_component, save_upload
 
 # QUEM ENTRA. O mesmo trio das telas das atribuições — quem lavra ato no
 # balcão. `AUDITOR` fica de fora de propósito: ele consulta pela lista.
+import rg_fiduciaria as FID
 import rg_normas as NORMAS
 
 QUEM_OPERA = ("ADMIN", "MANAGER", "USER")
@@ -703,6 +704,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             qualificacoes = TIT.qualificacoes_de(con, titulo_id)
             encaminhamentos = TIT.encaminhamentos_de(con, titulo_id)
             protocolo_central = TIT.protocolo_na_central(con, titulo_id)
+            sobrestamento = TIT.sobrestamento_aberto(con, titulo_id)
+            sobrestamentos = TIT.sobrestamentos_de(con, titulo_id)
+            processo_fiduciario = FID.do_titulo(con, titulo_id)
             registro = atos = None
             if titulo["registro_id"]:
                 registro = RG.registro(con, int(titulo["registro_id"]))
@@ -768,7 +772,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return RGFASES.fases_do_titulo(
                 titulo, qualificacoes=qualificacoes,
                 encaminhamentos=encaminhamentos, tem_registro=bool(registro),
-                pode_decidir=pode_decidir, central_falhou=bool(falha_da_central))
+                pode_decidir=pode_decidir, central_falhou=bool(falha_da_central),
+                sobrestado=bool(sobrestamento))
 
         return render_template(
             "rcpj_rtd_titulo.html", t=titulo, anexos=anexos, para_ver=para_ver,
@@ -780,6 +785,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             nome_da_atribuicao=TIT.NOME_DA_ATRIBUICAO[int(titulo["atribuicao"])],
             situacoes=TIT.SITUACOES, formas=TIT.FORMAS,
             especies=TIT.ESPECIES_DE_LANCAMENTO,
+            sobrestamento=sobrestamento, sobrestamentos=sobrestamentos,
+            sobrestar_por=TIT.SOBRESTAR_POR, retomar_por=TIT.RETOMAR_POR,
+            processo_fiduciario=processo_fiduciario,
             normas={"gerais": NORMAS.regras_gerais(int(titulo["atribuicao"])),
                     "da_natureza": NORMAS.para_a_natureza(int(titulo["atribuicao"]),
                                                           titulo["natureza"])},

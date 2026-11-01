@@ -31,9 +31,15 @@ def _rotulo(ato: Mapping[str, Any]) -> str:
 
 
 def sem_selo(atos: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
-    """Os atos lavrados por este sistema que ficaram sem selo. O acervo não entra."""
+    """Os atos lavrados por este sistema que ficaram sem selo. O acervo não entra.
+
+    Nem o que `ri_web.motivo_ja_selado` já dá por selado (`ja_selado`): selo no razão,
+    selo citado no teor ou marca de acervo. A ficha antiga já não oferecia selar esses
+    (HOTFIX-2026-10-09-08), e o «o que falta» do layout novo os cobrava com um «Selar»
+    que levava a um quadro que não existe (01/11/2026)."""
     return [a for a in atos
-            if a.get("origem") == "MANUAL" and not a.get("selo_texto") and not a.get("cancelado")]
+            if a.get("origem") == "MANUAL" and not a.get("selo_texto") and not a.get("cancelado")
+            and not a.get("ja_selado")]
 
 
 def o_que_espera(atos: Sequence[Mapping[str, Any]], *, revisoes_abertas: Sequence = (),

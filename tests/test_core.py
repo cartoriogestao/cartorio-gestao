@@ -983,12 +983,14 @@ def test_o_post_anonimo_em_pedacos_nao_e_lido_alem_do_teto(_lx20t_casa, monkeypa
     """O corpo em pedaços não diz o tamanho: quem o segura é o teto gravado
     no pedido (`request.max_content_length`), na leitura. Medido no Werkzeug
     3.1: o formulário para no teto e o resto nem se lê — o token, que não
-    chegou, recusa com 400. Sem a linha, o corpo inteiro era lido; no Flask
-    3.0, a linha dava 500."""
+    chegou, recusa — desde 01/11/2026 o login devolve o formulário (302) em vez
+    do 400. Sem a linha, o corpo inteiro era lido; no Flask 3.0, a linha dava 500."""
     monkeypatch.setenv("CG_TETO_CORPO_ANONIMO_BYTES", "1000")
     c = _lx20t_casa["app"].test_client()
     r, lidos = _lx20t_em_pedacos(c, b"username=mario&password=" + b"x" * 50_000)
-    assert r.status_code in (400, 413)
+    assert r.status_code in (302, 400, 413)
+    if r.status_code == 302:
+        assert r.headers["Location"].endswith("/login")
     assert lidos <= 1000
 
 

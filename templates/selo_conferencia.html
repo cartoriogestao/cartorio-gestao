@@ -4,8 +4,16 @@
 {% block title %}Selos × caixa — conferência{% endblock %}
 {% block heading %}<h1>Selos × caixa — conferência</h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, CADA LISTA DIZ NO TÍTULO QUANTOS HÁ — 01/11/2026. A lista que tem gente abre, porque espera conferência;
+   a dos selos pagos fica fechada, porque só serve para conferir e pode chegar ao limite. A trava abre quando está
+   desligada, e `#trava`, que Configurações usa, continua abrindo o quadro dela. No layout antigo nada sai do lugar. #}
+{% if layout_novo %}
+{{ abre('trava', 'Trava do selo pago', 'LIGADA' if trava_ligada else 'DESLIGADA', aberto=not trava_ligada) }}<div class="cg-quadro-corpo">
+{% else %}
 <section class="card">
   <h2 id="trava">Trava do selo pago</h2>
+{% endif %}
   <p>A trava está <strong>{{ 'LIGADA' if trava_ligada else 'DESLIGADA' }}</strong>.</p>
   {% if eh_admin %}
   <form method="post">
@@ -19,10 +27,14 @@
     {% endif %}
   </form>
   {% endif %}
+{% if layout_novo %}</div></details>
+{{ abre('conferencia-liberados', 'Selos liberados sem cobertura', (liberados | length) ~ ' selo(s)', aberto=liberados | length > 0) }}<div class="cg-quadro-corpo">
+{% else %}
 </section>
 
 <section class="card">
   <h2>Selos liberados sem cobertura</h2>
+{% endif %}
   {% if liberados %}
   <table><thead><tr><th>Ato</th><th>Selo</th><th>Quem obteve</th><th>Liberado por</th><th>Justificativa</th></tr></thead><tbody>
   {% for l in liberados %}
@@ -32,10 +44,14 @@
   {% endfor %}
   </tbody></table>
   {% else %}<p>Nenhum.</p>{% endif %}
+{% if layout_novo %}</div></details>
+{{ abre('conferencia-gratuidades', 'Gratuidades sem comprovante há ' ~ prazo ~ ' dias ou mais', (gratuitos | length) ~ ' escrevente(s)', aberto=gratuitos | length > 0) }}<div class="cg-quadro-corpo">
+{% else %}
 </section>
 
 <section class="card">
   <h2>Gratuidades sem comprovante há {{ prazo }} dias ou mais, por escrevente</h2>
+{% endif %}
   {% if gratuitos %}
   <table><thead><tr><th>Escrevente</th><th>Quantos</th><th>Mais antigo</th></tr></thead><tbody>
   {% for g in gratuitos %}
@@ -44,17 +60,25 @@
   {% endfor %}
   </tbody></table>
   {% else %}<p>Nenhuma.</p>{% endif %}
+{% if layout_novo %}</div></details>
+{{ abre('conferencia-aguardando', 'Atos aguardando cobertura', (aguardando | length) ~ ' ato(s)', aberto=aguardando | length > 0) }}<div class="cg-quadro-corpo">
+{% else %}
 </section>
 
 <section class="card">
   <h2>Atos aguardando cobertura</h2>
+{% endif %}
   {% if aguardando %}<ul>{% for a in aguardando %}
     <li><a href="{{ url_for('selo_cobertura', tabela=a.tabela, ato_id=a.ato_id) }}">{{ a.tabela|replace('_', ' ') }} {{ a.ato_id }}</a> — {{ a.usuario or '' }}, desde {{ (a.desde or '')[:10] }}</li>
   {% endfor %}</ul>{% else %}<p>Nenhum.</p>{% endif %}
+{% if layout_novo %}</div></details>
+{{ abre('conferencia-pagos', 'Selos pagos sem protocolo ou sem pagamento', 'desde ' ~ desde[8:10] ~ '/' ~ desde[5:7] ~ '/' ~ desde[:4] ~ ' · ' ~ (pagos_sem_cobertura | length) ~ (' ou mais' if pagos_cortados else '') ~ ' selo(s)') }}<div class="cg-quadro-corpo">
+{% else %}
 </section>
 
 <section class="card">
   <h2>Selos pagos sem protocolo ou sem pagamento, desde {{ desde[8:10] }}/{{ desde[5:7] }}/{{ desde[:4] }}</h2>
+{% endif %}
   <p><small>Os de antes desta versão não travaram nada: a lista é para conferir.</small></p>
   {% if eh_admin %}
   <form method="post">
@@ -75,5 +99,9 @@
      Há mais selos sem cobertura depois deles: resolva estes, ou mude a data «Desde».</p>
   {% endif %}
   {% else %}<p>Nenhum.</p>{% endif %}
+{% if layout_novo %}</div></details>
+{{ ferramentas() }}
+{% else %}
 </section>
+{% endif %}
 {% endblock %}

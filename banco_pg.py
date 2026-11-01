@@ -2484,8 +2484,8 @@ def _na_pasta_das_copias(db_path: Any, destino: Any) -> str:
     return alvo
 
 
-def copiar_para_arquivo(db_path: Any, destino: Any,
-                        contagens: dict | None = None) -> Path:
+def copiar_para_arquivo(db_path: Any, destino: Any, contagens: dict | None = None,
+                        tabelas_privadas: tuple[str, ...] = (), privado_em: Any = None) -> Path:
     """O equivalente do `VACUUM INTO`/`.backup()`: um pg_dump do schema daquele
     banco, em formato próprio (-Fc). Quem acha o pg_dump é `binario_do_postgres`.
 
@@ -2495,6 +2495,10 @@ def copiar_para_arquivo(db_path: Any, destino: Any,
     `--snapshot`. Contar antes ou depois numa transação à parte daria números
     que o balcão já mudou — e o teste de restauração, que compara a contagem
     restaurada com a do manifesto, acusaria divergência que não existe.
+
+    COM `tabelas_privadas` e `privado_em` (31/10/2026, `cofre_do_titular`), o dump
+    principal leva a ESTRUTURA delas sem os dados, e os dados vão só no outro arquivo,
+    no mesmo instantâneo: as duas partes voltam coerentes entre si.
     """
     exe = binario_do_postgres("pg_dump")
     destino = Path(destino)
@@ -2503,16 +2507,27 @@ def copiar_para_arquivo(db_path: Any, destino: Any,
     destino.parent.mkdir(parents=True, exist_ok=True)
     schema = schema_do_caminho(db_path)
     comando = [str(exe), "-d", dsn(), "-n", schema, "-Fc"]
+    privado = None
+    if tabelas_privadas:
+        qualificadas = [f"{_nome_sql(schema)}.{_nome_sql(t)}" for t in tabelas_privadas]
+        comando += [f"--exclude-table-data={q}" for q in qualificadas]
+        privado = (Path(privado_em), [str(exe), "-d", dsn(), "-Fc", "--data-only"]
+                   + [f"--table={q}" for q in qualificadas])
+        if contagens is None:
+            contagens = {}
     with open(destino, "wb") as arquivo:
-        proc = _pg_dump_em(arquivo, comando, schema, contagens)
+        proc = _pg_dump_em(arquivo, comando, schema, contagens, privado)
     if proc.returncode != 0:
         # Cópia pela metade não é cópia: o arquivo sai, e o erro sobe.
         destino.unlink(missing_ok=True)
+        if privado:
+            privado[0].unlink(missing_ok=True)
         raise OperationalError("pg_dump falhou: " + (proc.stderr or "")[-500:])
     return destino
 
 
-def _pg_dump_em(arquivo, comando: list[str], schema: str, contagens: dict | None):
+def _pg_dump_em(arquivo, comando: list[str], schema: str, contagens: dict | None,
+                privado: tuple[Path, list[str]] | None = None):
     """Roda o pg_dump com a saída no arquivo já aberto. Ver `copiar_para_arquivo`."""
     import subprocess
     if contagens is None:
@@ -2524,6 +2539,12 @@ def _pg_dump_em(arquivo, comando: list[str], schema: str, contagens: dict | None
             instantaneo = c.fetchone()[0]
             contagens.clear()
             contagens.update(contar_linhas(c, schema))
+            if privado:
+                with open(privado[0], "wb") as saida:
+                    proc = subprocess.run(privado[1][:1] + ["--snapshot", instantaneo] + privado[1][1:],
+                                          stdout=saida, stderr=subprocess.PIPE, text=True)
+                if proc.returncode != 0:
+                    return proc
             return subprocess.run(comando[:1] + ["--snapshot", instantaneo] + comando[1:],
                                   stdout=arquivo, stderr=subprocess.PIPE, text=True)
         finally:

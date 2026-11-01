@@ -70,6 +70,8 @@ from storage import safe_component, save_upload
 
 # QUEM ENTRA. O mesmo trio das telas das atribuições — quem lavra ato no
 # balcão. `AUDITOR` fica de fora de propósito: ele consulta pela lista.
+import rg_normas as NORMAS
+
 QUEM_OPERA = ("ADMIN", "MANAGER", "USER")
 
 # QUEM QUALIFICA E QUEM ENCERRA. **Qualificar é ato registral**, e o registro é
@@ -588,7 +590,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 nome_da_atribuicao=TIT.NOME_DA_ATRIBUICAO[atribuicao],
                 atribuicoes=[{"codigo": c, "nome": TIT.NOME_DA_ATRIBUICAO[c]}
                              for c in TIT.ATRIBUICOES],
-                series=_series_da(atribuicao), formas=TIT.FORMAS, hoje=hoje())
+                series=_series_da(atribuicao), formas=TIT.FORMAS, hoje=hoje(),
+                especies=TIT.ESPECIES_DE_LANCAMENTO)
 
         if request.method != "POST":
             return tela()
@@ -620,6 +623,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     valor_declarado=_campo("valor_declarado"),
                     vias=_campo("vias") or 1, forma=_campo("forma") or TIT.PAPEL,
                     observacao=_campo("observacao"),
+                    especie_lancamento=_campo("especie_lancamento"),
+                    previsao_entrega=_campo("previsao_entrega"),
+                    data_assinatura=_campo("data_assinatura"),
                     protocolo_geral_id=protocolo_geral["protocolo_id"],
                     usuario=usuario_nome())
         except RECUSAS_DO_BALCAO as erro:
@@ -660,7 +666,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     valor_declarado=_campo("valor_declarado"),
                     vias=_campo("vias") or 1,
                     forma=_campo("forma") or TIT.PAPEL,
-                    observacao=_campo("observacao"))
+                    observacao=_campo("observacao"),
+                    especie_lancamento=_campo("especie_lancamento"),
+                    previsao_entrega=_campo("previsao_entrega"),
+                    data_assinatura=_campo("data_assinatura"))
         except RECUSAS_DO_BALCAO as erro:
             flash(str(erro), "danger")
             return voltar
@@ -774,6 +783,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             series=_series_da(int(titulo["atribuicao"])),
             nome_da_atribuicao=TIT.NOME_DA_ATRIBUICAO[int(titulo["atribuicao"])],
             situacoes=TIT.SITUACOES, formas=TIT.FORMAS,
+            especies=TIT.ESPECIES_DE_LANCAMENTO,
+            normas={"gerais": NORMAS.regras_gerais(int(titulo["atribuicao"])),
+                    "da_natureza": NORMAS.para_a_natureza(int(titulo["atribuicao"]),
+                                                          titulo["natureza"])},
             resultados=TIT.RESULTADOS, sentidos=TIT.SENTIDOS,
             protocolo_central=protocolo_central,
             tem_token_da_central=tem_token,

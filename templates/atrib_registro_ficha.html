@@ -31,8 +31,9 @@
   </table>
   {% if registro.atribuicao == 4 %}
   <p style="padding:14px"><small>
-    No RTD a averbação <strong>consome protocolo</strong>; no RCPJ não. O sistema ainda não tira
-    esse número sozinho: confira no protocolo geral.
+    No RTD a averbação <strong>consome protocolo</strong>; no RCPJ não. Está medido em
+    <code>tbTD_Propriedade</code> e registrado em <code>rg_registro.AVERBACAO_CONSOME_PROTOCOLO</code>:
+    no RTD, apresente o título em <em>Títulos apresentados</em> antes de lançar a averbação.
   </small></p>
   {% endif %}
   {% if user.role in ['ADMIN','MANAGER'] %}
@@ -97,6 +98,98 @@
   </details>
   {% endif %}
 </section>
+
+{# AS PARTES E OS BENS (01/11/2026): é daqui que saem os índices e o indicador pessoal
+   (CN-MA arts. 404 e 963, IV) e o Livro E (Lei 6.015/1973, art. 132, V). Cadastro em volta
+   do registro, como o requerente: não muda teor nenhum. #}
+{% if reservadas or parecidos %}
+<div class="notice">
+  {% if reservadas %}<strong>CN-MA art. 407, VII:</strong> o nome tem a palavra reservada {{ reservadas|join(', ') }}.{% endif %}
+  {% if parecidos %}<strong>CN-MA art. 402, § 1º:</strong> mesmo nome no{% for r in parecidos %} <a href="{{ url_for('rcpj_rtd_registro', registro_id=r.id) }}">registro n. {{ r.numero }}</a>{% if not loop.last %},{% endif %}{% endfor %}.{% endif %}
+  Lembrete: quem decide é quem qualifica.
+</div>
+{% endif %}
+<section class="panel">
+  <div class="panel-head"><span>Partes, intervenientes e cônjuges</span>
+    <small><a href="{{ url_for('rcpj_rtd_livros', atribuicao=registro.atribuicao, livro='indice' if registro.atribuicao == 3 else 'd') }}">Ver o índice</a></small></div>
+  {% if partes %}
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Nome</th><th>CPF ou CNPJ</th><th>Papel</th><th>Origem</th><th></th></tr></thead>
+    <tbody>
+    {% for p in partes %}
+    <tr>
+      <td>{% if p.retirada_em %}<s>{{ p.nome }}</s>{% else %}{{ p.nome }}{% endif %}</td>
+      <td>{{ p.documento or '—' }}</td><td>{{ p.papel or '—' }}</td><td>{{ p.origem }}</td>
+      <td>
+        {% if p.retirada_em %}<small>Retirada em {{ p.retirada_em[:10] }} por {{ p.retirada_por or '—' }}: {{ p.retirada_motivo }}</small>
+        {% elif user.role in ['ADMIN','MANAGER'] %}
+        <details><summary>Retirar</summary>
+          <form method="post" action="{{ url_for('rcpj_rtd_parte_retirar', registro_id=registro.id, parte_id=p.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>Motivo <input name="motivo" required minlength="10"></label>
+            <button class="button">Retirar do indicador</button>
+          </form></details>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% else %}
+  <p style="padding:14px">Só o requerente está no indicador deste registro. Inclua as outras partes do título.</p>
+  {% endif %}
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}
+  <form method="post" class="form-grid" style="padding:14px"
+        action="{{ url_for('rcpj_rtd_parte_incluir', registro_id=registro.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Nome <input name="nome" required></label>
+    <label>CPF ou CNPJ <input name="documento"></label>
+    <label>Papel <input name="papel" list="papeis-do-registro"></label>
+    <datalist id="papeis-do-registro">{% for x in papeis_sugeridos %}<option value="{{ x }}"></option>{% endfor %}</datalist>
+    <div class="span2"><button class="button">Incluir no indicador</button></div>
+  </form>
+  {% endif %}
+</section>
+
+{% if registro.atribuicao == 4 %}
+<section class="panel">
+  <div class="panel-head"><span>Bens móveis do título</span>
+    <small><a href="{{ url_for('rcpj_rtd_livros', atribuicao=4, livro='e') }}">Ver o Livro E</a></small></div>
+  {% if bens %}
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Bem</th><th>Espécie</th><th>Identificação</th><th>Direitos e ônus</th><th></th></tr></thead>
+    <tbody>
+    {% for b in bens %}
+    <tr>
+      <td>{% if b.baixado_em %}<s>{{ b.descricao }}</s>{% else %}{{ b.descricao }}{% endif %}</td>
+      <td>{{ b.especie or '—' }}</td><td>{{ b.identificacao or '—' }}</td><td>{{ b.onus or '—' }}</td>
+      <td>
+        {% if b.baixado_em %}<small>Baixa em {{ b.baixado_em[:10] }} por {{ b.baixado_por or '—' }}: {{ b.baixa_motivo }}</small>
+        {% elif user.role in ['ADMIN','MANAGER'] %}
+        <details><summary>Dar baixa</summary>
+          <form method="post" action="{{ url_for('rcpj_rtd_bem_baixar', registro_id=registro.id, bem_id=b.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>Motivo <input name="motivo" required minlength="10"></label>
+            <button class="button">Gravar a baixa</button>
+          </form></details>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% endif %}
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}
+  <form method="post" class="form-grid" style="padding:14px"
+        action="{{ url_for('rcpj_rtd_bem_incluir', registro_id=registro.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="span2">Descrição <input name="descricao" required placeholder="O que é, marca, modelo"></label>
+    <label>Espécie <select name="especie"><option value=""></option>{% for x in especies_de_bem %}<option>{{ x }}</option>{% endfor %}</select></label>
+    <label>Identificação <input name="identificacao" placeholder="Chassi, placa, número de série"></label>
+    <label class="span2">Direitos e ônus <input name="onus"></label>
+    <div class="span2"><button class="button">Lançar no Livro E</button></div>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
 
 {# O auditor confere o livro, e não lança nele: as rotas o recusam. #}
 {% if registro.situacao == 'ATIVO' and user.role != 'AUDITOR' %}

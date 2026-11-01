@@ -342,7 +342,7 @@ causa do seu perfil ou porque a administração fechou o módulo.
 | Seção | Telas | Para quê |
 |---|---|---|
 | O balcão | Títulos apresentados (RTD e RCPJ) · RTD — notificações extrajudiciais · RCPJ — autenticação de livros · Etiquetas de selos externos · Central ONRTDPJ | protocolo, qualificação, notificação, livros contábeis e a fila da Central |
-| Registro já lavrado | Registros lavrados (RCPJ e RTD) · Últimos atos · RCPJ — atos sem lista de presença · Certidões de inteiro teor | consulta, saneamento e certidão |
+| Registro já lavrado | Registros lavrados (RCPJ e RTD) · Últimos atos · RCPJ — atos sem lista de presença · Certidões de inteiro teor · RTD e RCPJ — livros obrigatórios · O que conferir na qualificação | consulta, saneamento, certidão, livros e norma |
 | Configuração e modelos | Ajustar a etiqueta de registro · Modelos dos documentos | etiqueta e papéis |
 
 ### Operação
@@ -886,6 +886,23 @@ correção tem partes e a habilitação tem fases (seção 23.4).
     justificativa escrita. **RCPJ — atos sem lista de presença**, do administrador
     e do gerente, mostra os lavrados sem essa declaração, para sanear. O que foi
     lavrado não se reescreve.
+11. **Livros obrigatórios**: uma aba por livro. No RTD: **Livro A** (Protocolo),
+    **B**, **C**, **D** (Indicador Pessoal), **E** (Indicador Real), **F**
+    (facultativo) e **G** (apresentantes do F). No RCPJ: **Protocolo**, **Livro A**,
+    **Livro B** e **Índices**. Cada aba cita a norma, procura e imprime em `.odt`. Os
+    títulos pendentes aparecem no alto do Protocolo e entram no termo do dia
+    **(norma estadual — confira a do seu estado)**. Livro se lê aqui: lavrar continua
+    em **Títulos apresentados** e na ficha do registro.
+12. **Partes e bens**: na ficha do registro, inclua as partes, os intervenientes e
+    os cônjuges (exemplo fictício: Maria Exemplo, cônjuge) e, no RTD, os bens móveis
+    com chassi ou placa. É o que alimenta os indicadores. Quem sai do indicador sai
+    com motivo escrito, e a linha fica.
+13. **Recibo do protocolo**: na ficha do título, com a data, o número de ordem, a
+    previsão de entrega e a anotação para o título **(norma estadual — confira a do
+    seu estado)**.
+14. **O que conferir na qualificação**: a lista com o artigo de cada item, que também
+    abre na fase Qualificação do título. Ela lembra e não recusa: quem decide é quem
+    qualifica.
 
 ---
 

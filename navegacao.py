@@ -271,6 +271,10 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Últimos atos praticados", "rcpj_rtd_ultimos_atos"),
              _i("Atos sem lista de presença", "rcpj_rtd_pendencias_lista_presenca", AM,
                 antigo="RCPJ — atos sem lista de presença"),)),
+         ("Livros obrigatórios", (
+             _i("RTD", "rcpj_rtd_livros", atribuicao=4, antigo="RTD — livros obrigatórios"),
+             _i("RCPJ", "rcpj_rtd_livros", atribuicao=3, antigo="RCPJ — livros obrigatórios"),
+             _i("O que conferir", "rcpj_rtd_normas", antigo="O que conferir na qualificação"),)),
          ("Notificações", (
              _i("Notificações extrajudiciais", "rcpj_rtd_notificacoes", antigo="RTD — notificações extrajudiciais"),)),
          ("Livros contábeis", (
@@ -567,6 +571,7 @@ PAI: dict[str, tuple[str, str]] = {
     "protesto_importar_eoficio": ("LIVROS", "Importar"),
     # RCPJ e RTD
     "rcpj_rtd_titulo": ("RCPJ", "Títulos apresentados"),
+    "rcpj_rtd_titulo_recibo": ("RCPJ", "Títulos apresentados"),
     "rcpj_rtd_titulo_novo": ("RCPJ", "Títulos apresentados"),
     "rcpj_rtd_titulo_nota": ("RCPJ", "Títulos apresentados"),
     "rcpj_rtd_registro": ("RCPJ", "Registros lavrados"),

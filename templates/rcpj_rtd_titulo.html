@@ -39,6 +39,9 @@
       <label>Livro pretendido<select name="serie"><option value="">— decidir na qualificação —</option>{% for s in series %}<option value="{{ s.codigo }}"{% if t.serie == s.codigo %} selected{% endif %}>{{ s.nome }}</option>{% endfor %}</select></label>
       <label>Forma<select name="forma">{% for chave, rotulo in formas.items() %}<option value="{{ chave }}"{% if t.forma == chave %} selected{% endif %}>{{ rotulo }}</option>{% endfor %}</select></label>
       <label>Vias<input type="number" min="1" name="vias" value="{{ t.vias or 1 }}"></label>
+      <label>Espécie de lançamento<select name="especie_lancamento"><option value="">— decidir na qualificação —</option>{% for chave, rotulo in especies.items() %}<option value="{{ chave }}"{% if t.especie_lancamento == chave %} selected{% endif %}>{{ rotulo }}</option>{% endfor %}</select></label>
+      <label>Data da assinatura pelas partes<input type="date" name="data_assinatura" value="{{ t.data_assinatura or '' }}"></label>
+      <label>Previsão de entrega<input type="date" name="previsao_entrega" value="{{ t.previsao_entrega or '' }}"></label>
       <label>Valor declarado<input name="valor_declarado" value="{{ t.valor_declarado or '' }}"></label>
       <label>Observação<textarea name="observacao" rows="3">{{ t.observacao or '' }}</textarea></label>
       <button class="button" type="submit">Salvar os dados</button>
@@ -50,6 +53,8 @@
 
 <div class="actions">
   <a class="button" href="{{ url_for('rcpj_rtd_titulos', atribuicao=t.atribuicao) }}">&larr; Voltar à fila</a>
+  <a class="button" href="{{ url_for('rcpj_rtd_titulo_recibo', titulo_id=t.id) }}">Recibo do protocolo</a>
+  <a class="button" href="{{ url_for('rcpj_rtd_livros', atribuicao=t.atribuicao) }}">Livro de Protocolo</a>
   {% if registro %}
   <a class="button" href="{{ url_for('rcpj_rtd_registro', registro_id=registro.id) }}">Ver o registro lavrado</a>
   {% endif %}
@@ -201,6 +206,18 @@
     <a class="button" href="{{ url_for('rcpj_rtd_titulo_nota', titulo_id=t.id) }}">Imprimir a nota devolutiva</a>
   </p>
   {% endif %}
+  {% endif %}
+
+  {# O QUE CONFERIR: lembra, e não recusa. Quem decide é quem qualifica. #}
+  {% if pode_qualificar and normas %}
+  <details style="margin:14px">
+    <summary>O que conferir neste título <small class="muted">— {{ normas.gerais|length + normas.da_natureza|length }} itens, com o artigo</small></summary>
+    <ul>
+      {% for r in normas.da_natureza %}<li><strong>{{ r.artigo }}.</strong> {{ r.texto }}</li>{% endfor %}
+      {% for r in normas.gerais %}<li><strong>{{ r.artigo }}.</strong> {{ r.texto }}</li>{% endfor %}
+    </ul>
+    <p><a href="{{ url_for('rcpj_rtd_normas', atribuicao=t.atribuicao) }}">Ver a lista inteira</a></p>
+  </details>
   {% endif %}
 
   {% if pode_qualificar and user.role in ['ADMIN','MANAGER'] %}

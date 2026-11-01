@@ -807,6 +807,10 @@
         <a href="{{ url_for('rcpj_rtd_pendencias_lista_presenca') }}">RCPJ — atos sem lista de presença</a>
         {% endif %}
         <a href="{{ url_for('atribuicoes_certidoes') }}">Certidões de inteiro teor</a>
+        {# OS LIVROS (01/11/2026): uma aba por livro, como a lei os nomeia. #}
+        <a href="{{ url_for('rcpj_rtd_livros', atribuicao=4) }}">RTD — livros obrigatórios</a>
+        <a href="{{ url_for('rcpj_rtd_livros', atribuicao=3) }}">RCPJ — livros obrigatórios</a>
+        <a href="{{ url_for('rcpj_rtd_normas') }}">O que conferir na qualificação</a>
         {% if user.role in ['ADMIN','MANAGER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Configuração</div>
         <a href="{{ url_for('rcpj_rtd_etiqueta_ajuste') }}">Ajustar a etiqueta de registro</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER','USER'] %}{% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Modelos</div>

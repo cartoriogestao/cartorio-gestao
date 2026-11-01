@@ -3533,10 +3533,125 @@ def instalar_acervo_de_zip(arquivo_zip: str | Path, destino: str | Path,
     return instalar_acervo_de_pasta(pasta_jsonl, destino)
 
 
+def carregar_rcpj_rtd_livros(con: sqlite3.Connection, acervo: sqlite3.Connection,
+                             *, agora: str) -> Carga:
+    """O que falta aos livros do RCPJ e do RTD: as partes e o protocolo antigos.
+
+    AS PARTES: as 77 linhas de `tbTD_Partes`, pela pessoa de `tbOrtoga` (a leitura do
+    Livro 3). Elas alimentam os índices e o Livro D. A linha do acervo não traz o volume:
+    casa por atribuição e número, e o registro 1256 do RTD, duplicado no acervo, recebe
+    no primeiro dos dois, com a contagem dizendo.
+
+    O PROTOCOLO: uma linha em `rg_titulos` por registro, com o `intProtocolo` e a data
+    que o acervo tem, já REGISTRADO. É memória do que aconteceu: não chama o núcleo, não
+    toma lugar em livro nenhum e não mexe em contador.
+
+    O PRÓXIMO NÚMERO NÃO SE ESCOLHE AQUI. O contador do E-Ofício voltou para trás (PJ de
+    1501 para 1273, RTD de 1512 para 1270), de modo que continuar dele repete número e
+    continuar do maior deixa um salto. Isso se declara em «O que falta informar».
+    """
+    carga = Carga("rcpj_rtd_livros")
+    if not _tem_tabela(acervo, "tbRegistroTD"):
+        raise CargaError("O acervo não tem `tbRegistroTD`.")
+    bd = banco(con)
+    por_chave = {r["origem_chave"]: int(r["id"]) for r in bd.ler(
+        "SELECT id, origem_chave FROM rg_registros WHERE origem='EOFICIO'")}
+    titulos_ja = {r["origem_chave"] for r in bd.ler(
+        "SELECT origem_chave FROM rg_titulos WHERE origem='EOFICIO'")}
+    partes_ja = {r["origem_chave"] for r in bd.ler(
+        "SELECT origem_chave FROM rg_partes WHERE origem='EOFICIO'")}
+
+    do_numero: dict[tuple, list[int]] = {}
+    maiores: dict[str, int] = {}
+    for r in _ler_acervo(acervo, "SELECT * FROM tbRegistroTD ORDER BY intChave"):
+        carga.lidos += 1
+        r = dict(r)
+        tipo = (_txt(r["strTipoRegistro"]) or "").upper()
+        chave = f"tbRegistroTD:{r['intChave']}"
+        registro_id = por_chave.get(chave)
+        if registro_id is None:
+            carga.rejeitar(r["intChave"], "registro que não está no sistema: rode antes a carga "
+                                          "«RCPJ e RTD — registros e atos»", dict(r))
+            continue
+        do_numero.setdefault((tipo, _inteiro(r["intNumeroRegistro"])), []).append(registro_id)
+        protocolo = _inteiro(r.get("intProtocolo"))
+        if protocolo:
+            maiores[tipo] = max(maiores.get(tipo, 0), protocolo)
+        if chave in titulos_ja:
+            carga.repetidos += 1
+            continue
+        apresentante = _txt(r["strApresentante"])
+        if (normalizar_nome(apresentante) or "") == "apresentante":
+            apresentante = None
+        geral = _txt(r.get("strProtocoloGeral"))
+        bd.escrever(
+            """INSERT INTO rg_titulos(atribuicao, numero, data_apresentacao, apresentante,
+                   natureza, serie, situacao, registro_id, observacao, origem, origem_chave,
+                   criado_em)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (4 if tipo == "TD" else 3, protocolo, _data(r["dtmData"]) or agora[:10], apresentante,
+             _txt(r["strTipoInscricaoMatricula"]), "TD_B" if tipo == "TD" else "PJ_A",
+             "REGISTRADO", registro_id,
+             f"Trazido do E-Ofício. Protocolo geral {geral}." if geral else "Trazido do E-Ofício.",
+             "EOFICIO", chave, agora))
+        carga.inseridos += 1
+        carga.contar("títulos antigos no Livro de Protocolo")
+
+    if not (_tem_tabela(acervo, "tbTD_Partes") and _tem_tabela(acervo, "tbOrtoga")):
+        carga.contar("acervo sem `tbTD_Partes` ou `tbOrtoga`: as partes não entraram")
+    else:
+        cache_pessoa: dict = {}
+        cache_papel: dict = {}
+        for r in _ler_acervo(acervo, "SELECT * FROM tbTD_Partes ORDER BY intChave"):
+            chave = f"tbTD_Partes:{r['intChave']}"
+            if chave in partes_ja:
+                carga.contar("partes que já estavam")
+                continue
+            candidatos = do_numero.get(((_txt(r["strTD_PJ"]) or "").upper(),
+                                        _inteiro(r["intNumeroRegistro"])))
+            if not candidatos:
+                carga.contar("partes de registro que não está no sistema (não entraram)")
+                continue
+            if len(candidatos) > 1:
+                carga.contar("partes de registro duplicado no acervo (foram para o primeiro)")
+            pessoa = _ortoga_da_parte(acervo, r["intCodigoParte"], cache_pessoa)
+            if not pessoa or not pessoa.get("nome"):
+                carga.contar("partes que o `tbOrtoga` não resolveu (não entraram)")
+                continue
+            bd.escrever(
+                """INSERT INTO rg_partes(registro_id, nome, nome_norm, documento, papel, origem,
+                       origem_chave, criado_em)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (candidatos[0], pessoa["nome"], normalizar_nome(pessoa["nome"]) or "",
+                 so_digitos(pessoa.get("documento_numero")) or None,
+                 _papel_da_qualificacao(acervo, r["intQualificacao"], cache_papel),
+                 "EOFICIO", chave, agora))
+            carga.contar("partes no indicador")
+
+    if _tem_tabela(acervo, "tbTD_Propriedade"):
+        import implantacao as IMPL
+        linha = _um_do_acervo(acervo, "SELECT * FROM tbTD_Propriedade LIMIT 1", {})
+        propriedade = dict(linha) if linha is not None else {}
+        for serie, tipo, coluna in (("TD_PROTOCOLO", "TD", "intProtocolo_RTD"),
+                                    ("PJ_PROTOCOLO", "PJ", "intProtocolo_RPJ")):
+            ultimo = _inteiro(propriedade.get(coluna))
+            maior = maiores.get(tipo)
+            if ultimo and maior and IMPL.declarar_numeracao(
+                    con, serie,
+                    f"O contador do E-Ofício parou em {ultimo}, e o maior protocolo usado foi "
+                    f"{maior}. Se o contador voltou para trás, continuar de {ultimo + 1} repete "
+                    f"números e continuar de {maior + 1} deixa um salto.",
+                    agora=agora):
+                carga.contar("pendências de numeração declaradas")
+    return carga
+
+
 CARGAS: dict[str, Callable] = {
     "protesto": carregar_protesto,
     "rcpn": carregar_rcpn,
     "rcpj_rtd": carregar_rcpj_rtd,
+    # DEPOIS DOS REGISTROS: as partes e os títulos antigos se amarram a eles.
+    "rcpj_rtd_livros": carregar_rcpj_rtd_livros,
     "registro_auxiliar": carregar_registro_auxiliar,
     # O PAPEL VEM DEPOIS DO RCPN: e a folha em que a certidao dele e impressa.
     "papel": carregar_papel,
@@ -3573,6 +3688,7 @@ TITULO_DA_CARGA: dict[str, str] = {
     "protesto": "Protesto — títulos, devedores e atos",
     "rcpn": "Registro Civil — assentos, pessoas e atos",
     "rcpj_rtd": "RCPJ e RTD — registros e atos",
+    "rcpj_rtd_livros": "RCPJ e RTD — partes e protocolo antigos, para os livros",
     "registro_auxiliar": "Livro 3 — Registro Auxiliar do RI",
     "papel": "Folhas de segurança do RCPN — o estoque",
     "ibge": "IBGE — os 5.570 municípios e o cabeçalho desta serventia",

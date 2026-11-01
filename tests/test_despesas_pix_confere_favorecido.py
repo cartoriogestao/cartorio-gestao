@@ -134,6 +134,10 @@ def test_autorizar_e_pagar_conferem_de_novo(cg_casa_logada):
     """Duas despesas que nasceram antes da trava: nenhuma das duas passa."""
     db = cg_casa_logada["db"]
     with db.transaction() as con:
+        # R$ 1.935,32 passa do teto de fábrica (R$ 1.000,00): o que se confere
+        # aqui é o favorecido, e não o teto.
+        DP.gravar_configuracao(con, {**DP.PADRAO, "despesas_teto_por_pagamento": "10.000,00",
+                                     "despesas_teto_por_dia": "50.000,00"})
         i = _despesa(con)
         DP.autorizar(con, i, agora=AGORA, por="mario", papel="ADMIN")
         outra = _despesa(con, nome="BEATRIZ EXEMPLO", chave="beatriz@example.com")
@@ -144,7 +148,9 @@ def test_autorizar_e_pagar_conferem_de_novo(cg_casa_logada):
         assert [d["pendencia"] for d in DP.para_autorizar(con)] == ["favorecido não confere"]
     with db.transaction() as con:
         DP.gravar_configuracao(con, {**DP.PADRAO, "despesas_pagamento_ligado": "1",
-                                     "despesas_ambiente": "sandbox"})
+                                     "despesas_ambiente": "sandbox",
+                                     "despesas_teto_por_pagamento": "10.000,00",
+                                     "despesas_teto_por_dia": "50.000,00"})
 
     class Banco:
         ambiente = "sandbox"

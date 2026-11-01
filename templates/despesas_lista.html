@@ -81,6 +81,24 @@
 </section>
 {% endif %}
 
+{# 31/10/2026, pedido do oficial: o livro-caixa do mês até agora e a previsão. Só o ADMIN. #}
+{% if quadro %}
+<section class="panel"><h2>O mês até agora: saldo de R$ {{ reais(quadro.saldo) }}</h2>
+  <p>Recebido no caixa: R$ {{ reais(quadro.receita) }} · despesas lançadas: R$ {{ reais(quadro.despesas) }}
+    <span class="small">(simulação; receita pelo selo, a do Livro Diário: R$ {{ reais(quadro.receita_pelo_selo) }})</span></p>
+  <h3>Previsão de gastos do mês: R$ {{ reais(quadro.previsao) }}. Ainda a sair: R$ {{ reais(quadro.falta_sair) }}</h3>
+  <div class="table-wrap"><table>
+    <tbody>{% for x in quadro.linhas %}<tr>
+      <td>{{ x.rotulo }}{% if x.nota %}<br><span class="small muted">{{ x.nota }}</span>{% endif %}</td><td>R$ {{ reais(x.valor) }}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  <p>{% if quadro.sobra >= 0 %}Se não entrar mais nada, sobram R$ {{ reais(quadro.sobra) }}.{% else %}Se não entrar mais nada, faltam R$ {{ reais(-quadro.sobra) }}.{% endif %}
+    {% if quadro.imposto_do_mes is not none %}<span class="small">Carnê-leão deste mês até agora, que vence no mês seguinte: R$ {{ reais(quadro.imposto_do_mes) }}.</span>{% endif %}</p>
+</section>
+{% elif quadro_falhou %}
+<div class="notice">O quadro do mês não pôde ser calculado agora. A autorização e o pagamento não dependem dele.</div>
+{% endif %}
+
 <p class="filters">
   <a href="{{ url_for('despesas_lista') }}">Todas</a>
   {% for k, v in situacoes.items() %} · <a href="{{ url_for('despesas_lista', situacao=k) }}"{% if k == situacao %} class="ativo"{% endif %}>{{ v.split(' —')[0] }} ({{ contagem.get(k, 0) }})</a>{% endfor %}

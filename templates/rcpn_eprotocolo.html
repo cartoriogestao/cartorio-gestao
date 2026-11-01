@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block title %}e-Protocolo — pendências{% endblock %}
+{% block heading %}<h1>e-Protocolo — pendências</h1>{% endblock %}
+{% block content %}
+
+{# O QUE ESPERA AÇÃO VEM PRIMEIRO, SEM ROLAR. A lista já sai nessa ordem; a faixa
+   diz o número e por que a fila pode estar vazia. #}
+<section class="card {% if not tem_credencial or conta.esperam %}warning{% endif %}">
+  <h2>{{ conta.esperam }} esperando a casa</h2>
+  <p>Nascimentos da Unidade Interligada e óbitos do e-Óbito, mais o que chega pelo e-Protocolo.
+     Ambiente: <strong>{{ ambiente|lower }}</strong> · {{ conta.total }} protocolo(s) neste ambiente.</p>
+  {% if not tem_credencial %}
+    <p><strong>A credencial de {{ ambiente|lower }} não foi informada</strong>, e sem ela nada chega.
+       O oficial gera usuário e senha no botão «Serviço de pendências» do e-Protocolo, e informa em
+       Administrativo → Configurações, em «Centrais — credenciais das APIs».</p>
+  {% endif %}
+  <div class="actions">
+    <form method="post" action="{{ url_for('rcpn_eprotocolo_trazer') }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button" type="submit" {% if not tem_credencial %}disabled{% endif %}>Trazer a fila agora</button>
+    </form>
+    <form method="post" action="{{ url_for('rcpn_eprotocolo_testar') }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button" type="submit" {% if not tem_credencial %}disabled{% endif %}>Testar a credencial</button>
+    </form>
+    <form method="post" action="{{ url_for('rcpn_eprotocolo_ambiente') }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <select name="ambiente" aria-label="Ambiente do e-Protocolo">
+        {% for a in ambientes %}<option value="{{ a }}" {% if a == ambiente %}selected{% endif %}>{{ a|lower }}</option>{% endfor %}
+      </select>
+      <button class="button" type="submit">Mudar o ambiente</button>
+    </form>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Protocolos</h2>
+  {% if protocolos %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Protocolo</th><th>Situação</th><th>O que fazer</th><th>Serviço</th><th>Titular</th><th>Último evento</th></tr></thead>
+      <tbody>
+        {% for p in protocolos %}
+        <tr>
+          <td><a href="{{ url_for('rcpn_eprotocolo_ficha', protocolo_id=p.id) }}">{{ p.numero or ('nº interno ' ~ p.id) }}</a></td>
+          <td>{% if p.espera_a_casa %}<strong>{{ p.rotulo }}</strong>{% else %}{{ p.rotulo }}{% endif %}
+              {% if p.consulta_erro %}<br><small>Detalhe não veio: {{ p.consulta_erro }}</small>{% endif %}</td>
+          <td>{% if p.cumprido_em %}Cumprido{% elif p.dispensado_em %}Dispensado{% else %}{{ p.acao }}{% endif %}</td>
+          <td>{{ p.servico or '—' }}</td>
+          <td>{{ p.titular or '—' }}</td>
+          <td>{{ p.ultimo_evento_em }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p>Nenhum protocolo neste ambiente. O robô «e-Protocolo» da automação traz a fila a cada 5 minutos,
+       quando está ligado; aqui em cima dá para trazer na hora.</p>
+  {% endif %}
+</section>
+{% endblock %}

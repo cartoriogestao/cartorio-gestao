@@ -329,7 +329,7 @@ causa do seu perfil ou porque a administração fechou o módulo.
 
 | Seção | Telas | Para quê |
 |---|---|---|
-| O balcão | Assentos · Importar pré-cadastros · Averbações · Certidões · Materializar certidão de outra serventia · Folhas de segurança · Pedidos da Central · Documentos avulsos | o dia a dia do civil |
+| O balcão | Assentos · Importar pré-cadastros · Averbações · Certidões · Materializar certidão de outra serventia · Folhas de segurança · Pedidos da Central · e-Protocolo — pendências · Documentos avulsos | o dia a dia do civil |
 | Nascimento | Novo registro · Digitar já lavrado · Teores · Registro tardio · Gêmeos · CPF do registrado | o registro de nascimento e as formas especiais |
 | Casamento | Registro · Digitar já lavrado · Habilitação → Edital de proclamas → Enviar ao e-Proclamas → Prontas para casar · Teores | a habilitação na ordem da lei, e o assento |
 | Óbito | Novo registro · Digitar já lavrado · Teores · Comunicações mensais · O que falta perguntar | o óbito e as comunicações que ele gera |
@@ -826,6 +826,12 @@ eletrônica que veio de outro cartório, com os dados da certidão recebida.
 
 **Pedidos da Central** é a fila do que chega pela Central do Registro Civil;
 pedidos de **registro** se lavram pela tela de assento, não pela fila.
+**e-Protocolo — pendências** mostra os protocolos do e-Protocolo 2.0, com os
+nascimentos da Unidade Interligada e os óbitos do e-Óbito; o que espera a casa vem
+primeiro. O arquivo que acompanha o pedido preenche a tela do assento, para conferir
+com os anexos antes de lavrar. Depois de lavrar, ligue o assento ao protocolo e
+cumpra: o cumprimento pede o token do IdRC do cartorário, que vale 5 minutos e não
+fica guardado. O robô da automação traz a fila; ele nunca lavra nem cumpre.
 **Documentos avulsos** são os papéis escritos em volta do ato; o que o modelo
 não sabe preencher aparece antes de imprimir.
 
@@ -972,6 +978,7 @@ com ele configurado.
 | Receita (DOI) | RI e Notas | DOI — Receita Federal | gera o arquivo mensal da serventia e guarda o recibo |
 | e-Proclamas | Registro Civil | 2b · Enviar ao e-Proclamas | publica o edital de proclamas e guarda o número do lote |
 | Certidão Eletrônica | Registro Civil | Pedidos da Central | traz a fila de pedidos e devolve a certidão |
+| e-Protocolo (Unidade Interligada e e-Óbito) | Registro Civil | e-Protocolo — pendências | traz os protocolos e o arquivo do registro, leva ao assento e registra o cumprimento |
 | CRC Nacional | Registro Civil | Carga da CRC; Anotação da CRC; Anotações devidas | prepara a carga e as comunicações para anotação (assinatura A3) |
 | SIRC | Registro Civil | Remessa do SIRC | monta a remessa, inclusive a declaração de mês sem movimento |
 | IBGE | Registro Civil | Remessa do IBGE | gera o mapa trimestral e registra a entrega |

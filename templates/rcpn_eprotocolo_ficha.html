@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% block title %}Protocolo {{ p.numero or p.id }} — e-Protocolo{% endblock %}
+{% block heading %}<h1>Protocolo {{ p.numero or p.id }}</h1>{% endblock %}
+{% block content %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_eprotocolo') }}">Voltar à lista</a>
+  <form method="post" action="{{ url_for('rcpn_eprotocolo_consultar', protocolo_id=p.id) }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button" type="submit">Atualizar da Central</button>
+  </form>
+  <a class="button" href="{{ url_for('rcpn_eprotocolo_ficha', protocolo_id=p.id, historico=1) }}">Ver o histórico da Central</a>
+  {% if p.assento_id %}<a class="button" href="{{ url_for('rcpn_assento', assento_id=p.assento_id) }}">Abrir o assento</a>{% endif %}
+</div>
+
+<section class="card {% if p.espera_a_casa %}warning{% endif %}">
+  <h2>{{ p.rotulo }}</h2>
+  <p><strong>O que fazer:</strong>
+    {% if p.cumprido_em %}Cumprido por {{ p.cumprido_por }} em {{ p.cumprido_em }}.
+    {% elif p.dispensado_em %}Dispensado por {{ p.dispensado_por }} em {{ p.dispensado_em }}: {{ p.dispensado_motivo }}.
+    {% else %}{{ p.acao }}.{% endif %}</p>
+  {% if p.novo_destino_cns %}<p>Transferido para a serventia de CNS {{ p.novo_destino_cns }}.</p>{% endif %}
+  {% if p.consulta_erro %}<p><strong>O detalhe não veio:</strong> {{ p.consulta_erro }}</p>{% endif %}
+  {% if not p.consultado_em and not p.detalhe %}<p>O detalhe ainda não foi consultado: use «Atualizar da Central».</p>{% endif %}
+  <dl>
+    <dt>Serviço</dt><dd>{{ d.serviceType or p.servico or '—' }}</dd>
+    <dt>Departamento</dt><dd>{{ d.department or '—' }}</dd>
+    <dt>Solicitante</dt><dd>{{ d.requestingUserName or '—' }}{% if d.requestingOrganization %} · {{ d.requestingOrganization }}{% endif %}</dd>
+    <dt>Pagamento</dt><dd>{{ d.paymentStatus or '—' }}{% if d.paymentMethod %} · {{ d.paymentMethod }}{% endif %}</dd>
+    <dt>Certidão pedida</dt><dd>{{ {'electronic': 'eletrônica', 'physical': 'física'}.get(d.certificateType, d.certificateType or '—') }}</dd>
+    <dt>Observações</dt><dd>{{ d.observations or '—' }}</dd>
+    {% if d.cancellationReason %}<dt>Motivo do cancelamento</dt><dd>{{ d.cancellationReason }}</dd>{% endif %}
+  </dl>
+</section>
+
+{% if d.attachments %}
+<section class="card">
+  <h2>Anexos</h2>
+  <p>Vêm direto da Central a cada abertura; não ficam guardados aqui.</p>
+  <ul>
+    {% for a in d.attachments %}
+      <li><a href="{{ url_for('rcpn_eprotocolo_anexo', protocolo_id=p.id, anexo_id=a.id) }}">{{ a.name }}.{{ a.extension }}</a></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if p.estruturado %}
+<section class="card">
+  <h2>Arquivo estruturado</h2>
+  {% if erro_previa %}
+    <p><strong>Não dá para levar ao assento:</strong> {{ erro_previa }}</p>
+  {% elif previa %}
+    <p>{{ previa.valores.especie|capitalize }} de <strong>{{ previa.valores.nome }}</strong>.
+       Preenche a tela de assento novo; quem lavra, numera e sela continua sendo ela.</p>
+    <ul>{% for g, texto in avisos %}<li>{{ texto }}</li>{% endfor %}</ul>
+    {% if p.rascunho_id %}
+      <p><a class="button" href="{{ url_for('rcpn_assento_novo', especie_url=TELA_DA_ESPECIE[previa.valores.especie], rascunho_id=p.rascunho_id) }}">Abrir o rascunho nº {{ p.rascunho_id }}</a></p>
+    {% elif not p.encerrado %}
+      <form method="post" action="{{ url_for('rcpn_eprotocolo_rascunho', protocolo_id=p.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button primary" type="submit">Levar à tela do assento</button>
+      </form>
+    {% endif %}
+  {% endif %}
+</section>
+{% endif %}
+
+{% if not p.cumprido_em and not p.encerrado %}
+<section class="card">
+  <h2>Assento lavrado</h2>
+  {% if titulares %}<p>Ligado: {{ titulares[0].name }} · {{ titulares[0].registerType }} · {{ titulares[0].registration or 'sem matrícula' }}.</p>{% endif %}
+  <form method="post" action="{{ url_for('rcpn_eprotocolo_assento', protocolo_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Número interno do assento <input name="assento_id" inputmode="numeric" value="{{ p.assento_id or '' }}" required></label>
+    <button class="button" type="submit">Ligar</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Cumprir na Central</h2>
+  <p>Altera o protocolo no e-Protocolo, em nome de quem preenche. O cartorário entra no IdRC e cola
+     o token aqui: ele vale 5 minutos e não fica guardado. A Central só aceita se a situação e o
+     pagamento permitirem.</p>
+  {% if p.cumprimento_tentado_em %}
+    <p><strong>Já houve tentativa</strong> em {{ p.cumprimento_tentado_em }}, por {{ p.cumprimento_tentado_por }}.
+       O sistema consulta a Central antes de mandar de novo.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('rcpn_eprotocolo_cumprir', protocolo_id=p.id) }}" enctype="multipart/form-data" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Certidão
+      <select name="tipo_certidao" required>
+        <option value="physical">Física</option>
+        <option value="electronic">Eletrônica</option>
+      </select>
+    </label>
+    <label>Link da certidão (só na eletrônica) <input name="link_certidao" type="url" maxlength="1000"></label>
+    <label>Nome do cartorário <input name="nome" value="{{ nome_de_quem }}" required></label>
+    <label>CPF do cartorário <input name="cpf" inputmode="numeric" required></label>
+    <label>E-mail do cartorário <input name="email" type="email" required></label>
+    <label>Token do IdRC <input name="token_idrc" type="password" autocomplete="off" required></label>
+    <label>Recibo (opcional: .pdf, .png, .jpg) <input name="recibo" type="file" accept=".pdf,.png,.jpg,.jpeg"></label>
+    <p><small>CNS enviado: {{ cns or 'não configurado' }}.</small></p>
+    <button class="button primary" type="submit">Cumprir no e-Protocolo</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Não é desta casa?</h2>
+  <form method="post" action="{{ url_for('rcpn_eprotocolo_dispensar', protocolo_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Motivo <input name="motivo" minlength="10" required></label>
+    <button class="button" type="submit">Tirar da lista da casa</button>
+  </form>
+  <p><small>Na Central o protocolo continua como está.</small></p>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Eventos recebidos</h2>
+  {% if eventos %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Quando</th><th>Evento</th><th>Detalhe</th></tr></thead>
+      <tbody>
+        {% for e in eventos %}
+        <tr><td>{{ e.ocorrida_em }}</td><td>{{ e.rotulo }}</td>
+            <td>{{ e.conteudo.cancellation_reason or e.conteudo.rejection_reason or e.conteudo.certificate_link or e.conteudo.new_notary_cns or '' }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}<p>Nenhum.</p>{% endif %}
+</section>
+
+{% if historico is not none %}
+<section class="card">
+  <h2>Histórico da Central</h2>
+  {% if historico is iterable and historico is not string and historico is not mapping %}
+    <ul>{% for h in historico %}<li>{{ h }}</li>{% endfor %}</ul>
+  {% else %}<p>{{ historico }}</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

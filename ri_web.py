@@ -44,6 +44,7 @@ from ri_modelos_atos import (pendencias as pendencias_modelo,
 import caixa_depositos as DEP
 from caixa_schema import centavos, reais
 import notas_doi as NDOI
+import rg_doi as RG_DOI
 import navegacao_web as NAVWEB
 import ri_abas as RIABAS
 import ri_fases_prenotacao as RIFASESP
@@ -12052,6 +12053,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                            "incluir": True, "problemas": problemas,
                            "entra": not problemas, "rotulo": rotulo_e,
                            "do_tabelionato": True})
+
+        # O RTD NO MESMO ARQUIVO: imóvel por instrumento particular (CN-MA art. 962).
+        with db.connect() as con_rtd:
+            do_rtd = RG_DOI.declaracoes_da_competencia(con_rtd, primeiro, seguinte, cns, ibge)
+        for d in do_rtd:
+            if d["problemas"]:
+                impedidas.append({"ato": d["ato"] | {"rotulo": d["rotulo"]}, "problemas": d["problemas"]})
+            else:
+                registros.append(d["registro"])
+            linhas.append({"ato": d["ato"], "m": {"numero": d["ato"].get("doi_matricula")},
+                           "dados": {"operacao": str(d["ato"].get("doi_transacao") or "")},
+                           "incluir": True, "problemas": d["problemas"], "entra": not d["problemas"],
+                           "rotulo": d["rotulo"], "do_rtd": True})
 
         for a in atos:
             ato = dict(a)

@@ -792,6 +792,7 @@
         {# LG04 (19/10/2026): as diligências e a certidão da notificação do RTD,
            e a autenticação de livros do RCPJ — trabalho de balcão. #}
         <a href="{{ url_for('rcpj_rtd_notificacoes') }}">RTD — notificações extrajudiciais</a>
+        <a href="{{ url_for('rcpj_rtd_fiduciarias') }}">RTD — alienação fiduciária</a>
         <a href="{{ url_for('rcpj_rtd_livro_contabil_lista') }}">RCPJ — autenticação de livros</a>
         {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('rcpj_rtd_etiquetas_selos_externos') }}">Etiquetas de selos externos</a>{% endif %}
         {# O MENU NAO OFERECE O QUE AQUELE OPERADOR NAO PODE FAZER. A fila da

@@ -87,7 +87,7 @@ def _registro(con, serie="TD_B", atribuicao=TIT.RTD, numero=1, requerente="José
 
 def test_o_rtd_tem_os_sete_livros_da_lei():
     assert [x["curto"] for x in RGL.livros_de(TIT.RTD)] == [
-        "Livro A", "Livro B", "Livro C", "Livro D", "Livro E", "Livro F", "Livro G"]
+        "Livro A", "Livro B", "Auxiliar do B", "Livro C", "Livro D", "Livro E", "Livro F", "Livro G"]
 
 
 def test_o_rcpj_tem_protocolo_livros_e_indices():

@@ -232,7 +232,8 @@
         {# DE ONDE O ATO VEIO. As duas atribuições saem no mesmo arquivo, e
            quem confere precisa saber qual linha é de qual — senão a conferência
            vira procurar o ato em duas telas. #}
-        <td class="small">{% if l.do_tabelionato %}<span class="badge">Tabelionato</span>
+        <td class="small">{% if l.do_rtd %}<span class="badge">RTD</span>
+            {% elif l.do_tabelionato %}<span class="badge">Tabelionato</span>
             {% else %}<span class="badge">Reg. Imóveis</span>{% endif %}</td>
         <td class="small">{{ l.ato.data_ato or l.ato.data }}</td>
         <td class="small">

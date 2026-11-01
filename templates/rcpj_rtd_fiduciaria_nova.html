@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{# AUTUAR: o protocolo é o do título, e tem os efeitos da prenotação (Código Nacional, art. 397-R). #}
+{% block heading %}<h1>Autuar requerimento — alienação fiduciária</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpj_rtd_fiduciarias') }}">&larr; Processos</a>
+  <a class="button" href="{{ url_for('rcpj_rtd_titulo_novo', atribuicao=4) }}">+ Receber o título antes</a>
+</div>
+{% if not titulos %}
+<div class="notice">Não há título do RTD em aberto sem processo. Receba o requerimento em <strong>Títulos apresentados</strong> primeiro.</div>
+{% else %}
+<form method="post" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <fieldset><legend>O protocolo</legend>
+    <label>Título protocolado
+      <select name="titulo_id" required><option value=""></option>
+        {% for t in titulos %}<option value="{{ t.id }}"{% if escolhido == t.id|string %} selected{% endif %}>N. {{ t.numero or '—' }}: {{ t.apresentante or 'sem apresentante' }} — {{ t.natureza or 'sem natureza' }}</option>{% endfor %}
+      </select></label>
+    <label>Número na Central <span class="muted">— se já houver</span><input name="protocolo_central"></label>
+    <label>Registro do contrato no RTD <span class="muted">— em branco se não estiver registrado aqui (art. 397-L)</span><input name="registro_numero" inputmode="numeric"></label>
+  </fieldset>
+  <fieldset><legend>Credor fiduciário</legend>
+    <label>Nome<input name="credor_nome" required></label>
+    <label>CPF ou CNPJ<input name="credor_documento"></label>
+    <label>Meio eletrônico para as notificações<input name="credor_contato"></label>
+  </fieldset>
+  <fieldset><legend>Devedor fiduciante</legend>
+    <label>Nome<input name="devedor_nome" required></label>
+    <label>CPF ou CNPJ<input name="devedor_documento"></label>
+    <label>Endereço eletrônico do contrato<input name="devedor_email"></label>
+    <label>Endereço físico do contrato<input name="devedor_endereco"></label>
+  </fieldset>
+  <fieldset><legend>O contrato e o bem</legend>
+    <label>Contrato<input name="contrato"></label>
+    <label>Bem<input name="bem_descricao" required placeholder="O que é, marca, modelo"></label>
+    <label>Identificação<input name="bem_identificacao" placeholder="Chassi, placa, número de série"></label>
+    <label>Montante da dívida<input name="valor_divida" placeholder="0,00"></label>
+  </fieldset>
+  <div class="actions"><button class="button primary" type="submit">Autuar</button></div>
+</form>
+{% endif %}
+{% endblock %}

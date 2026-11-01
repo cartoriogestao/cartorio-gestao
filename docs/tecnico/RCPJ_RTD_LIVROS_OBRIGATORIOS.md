@@ -23,20 +23,39 @@ Também: a espécie de lançamento (art. 966, III), a referência ao lançamento
 de entrega (art. 974, § 1º), a anotação para o título (art. 966, § 2º), a data da
 assinatura (art. 958, § 4º) e a lista do que conferir, com o artigo (`rg_normas`).
 
-O Código Nacional de Normas trata aqui do PLD (arts. 163-164, já em `pld`) e dos livros
-administrativos (arts. 185-191, já em `livros_administrativos`). Nada novo saiu dele.
+O Código Nacional de Normas trata aqui do PLD (arts. 163-164, já em `pld`), dos livros
+administrativos (arts. 185-191, já em `livros_administrativos`) e da alienação fiduciária
+(arts. 397-A a 397-AM, Provimento CN 196/2025, em `rg_fiduciaria`).
 
-## O que ficou de fora, de propósito
+## Construído depois dos livros
 
-- **Busca e apreensão e consolidação fiduciária (CN-MA arts. 955 e 956):** é procedimento
-  próprio, e o sistema não o conduz. A ficha avisa quando a natureza cita o caso.
-- **DOI do instrumento particular no RTD (CN-MA art. 962):** a ficha lembra; a declaração
-  não sai deste caminho.
-- **Sobrestamento por suspeita de falsificação (CN-MA art. 975, §§ 1º a 3º):** não há
-  situação própria no título. Hoje fica na observação e na qualificação.
-- **«Semelhante» do art. 402, § 1º, e outra serventia da comarca (§ 2º):** a conferência
-  acha só o nome igual, nesta serventia.
-- **Livro Auxiliar do B (CN-MA art. 964):** facultativo, e só sem escrituração eletrônica.
+- **Alienação fiduciária (CN arts. 397-A a 397-AM; CN-MA arts. 955 e 956):** autuação com
+  numeração própria, conferência do requerimento, prazos, linha do tempo, peças. É o controle
+  da serventia: o art. 397-G dá a gestão nacional ao módulo da Central, e não há contrato
+  medido dele. O sistema não lança no Renavam nem na Central: marca o que foi feito lá.
+- **Sobrestamento (CN-MA arts. 971 e 975):** `rg_sobrestamentos`. O título mantém número, data
+  e situação, e qualificar, registrar e concluir recusam enquanto durar.
+- **DOI do RTD (CN-MA art. 962):** `rg_doi`, na mesma tela e no mesmo arquivo da serventia,
+  com tipo de serviço 3 e natureza 1 do layout do DOI-Web.
+- **Nome parecido (CN-MA art. 402, § 1º):** compara o núcleo do nome e só levanta a mão.
+- **Livro Auxiliar do B (CN-MA art. 964):** aba com as cópias anexadas a cada ato do Livro B.
+
+## O que continua fora, e por quê
+
+- **Envio à Central e ao Renavam:** sem contrato medido da API desse módulo.
+- **Emolumentos do processo (CN art. 397-N):** a cobrança e o selo seguem pelo registro ou pela
+  averbação da carta. Item próprio na tabela do estado não foi achado.
+- **Outra serventia da comarca (CN-MA art. 402, § 2º):** fica na lista do que conferir, porque o
+  sistema não enxerga as outras. Em ofício único não se aplica.
+
+## Leituras de prazo a confirmar
+
+- **Início dos 20 dias corridos:** o primeiro dia útil depois da ciência conta como dia 1.
+- **Sem impugnação, entrega do bem:** o art. 397-V, III, b, diz «no mesmo prazo», e o art. 397-AF
+  fala em 20 dias depois do não pagamento. O sistema usa o mesmo prazo quando não há impugnação
+  e 20 novos depois de indeferida ou não conhecida.
+- **Reversão depois de entrega voluntária:** o art. 397-AK fala de bem apreendido, e o 397-AL
+  cobre os dois casos. O sistema dá 5 dias úteis nos dois.
 
 ## Regras de leitura
 

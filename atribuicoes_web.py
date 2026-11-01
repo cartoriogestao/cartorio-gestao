@@ -183,7 +183,9 @@ import rg_registro as RG
 import rg_teor_rtdpj as RGTEOR
 import rg_certidao_pdf as RGCERT
 import ri_odt as RODT
+import rg_doi as RDOI_RTD
 import rg_livros as RGL
+from ri_ctp import TIPO_OPERACAO as TIPO_OPERACAO_DOI
 import rg_normas as NORMAS
 from ri_odt import gerar_odt, html_para_odf
 from ri_web import data_por_extenso
@@ -9864,11 +9866,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as con:
             partes = RGL.partes_do_registro(con, registro_id)
             bens = RGL.bens_do_registro(con, registro_id)
+            doi_do_registro = RDOI_RTD.do_registro(con, registro_id)
             parecidos = (NORMAS.nomes_parecidos(con, registro["requerente_nome"],
                                                 registro_id=registro_id)
                          if registro["serie"] == "PJ_A" else [])
         return render_template("atrib_registro_ficha.html",
                                partes=partes, bens=bens, parecidos=parecidos,
+                               doi=doi_do_registro, operacoes_doi=TIPO_OPERACAO_DOI,
+                               reais_doi=lambda c: (f"{int(c) / 100:.2f}".replace(".", ",") if c else ""),
                                reservadas=(NORMAS.avisos_do_nome(registro["requerente_nome"])
                                            if registro["serie"] == "PJ_A" else []),
                                papeis_sugeridos=RGL.PAPEIS_SUGERIDOS,

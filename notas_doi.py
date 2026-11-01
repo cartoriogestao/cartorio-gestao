@@ -595,7 +595,9 @@ def declarar(dec: dict, cns: str, codigo_ibge: str,
 
 
 def declaracao_da_escritura(ato: dict, partes: list[dict], cns: str,
-                            codigo_ibge: str) -> tuple[dict | None, list[dict]]:
+                            codigo_ibge: str, *, natureza_titulo: Any = 2,
+                            tipo_servico: str = "1",
+                            tipo_ato: str = "1") -> tuple[dict | None, list[dict]]:
     """A declaração DOI-Web da escritura com imóvel, ou o que impede.
 
     MORAVA DENTRO DA ROTA DA DOI (`ri_web.ri_doi`) até 22/10/2026, e saiu
@@ -680,7 +682,7 @@ def declaracao_da_escritura(ato: dict, partes: list[dict], cns: str,
         return None, problemas
     reg_e = declarar(
         {"operacao": ato["doi_transacao"],
-         "natureza_titulo": 2,          # escritura pública
+         "natureza_titulo": natureza_titulo,   # 2, escritura; o RTD manda 1 (`rg_doi`)
          "data_ato": (ato.get("data") or "")[:10],
          "livro": ato.get("livro"), "folha": ato.get("folha"),
          "valor_operacao": ato.get("valor_transacao"),
@@ -693,7 +695,7 @@ def declaracao_da_escritura(ato: dict, partes: list[dict], cns: str,
                     "area": ato.get("doi_area")},
          "alienantes": alienantes, "adquirentes": adquirentes,
          "ato_id": ato["id"]},
-        cns, codigo_ibge)
+        cns, codigo_ibge, tipo_servico=tipo_servico, tipo_ato=tipo_ato)
     erros = conferir_layout(reg_e)
     if erros:
         return None, problemas + [{"campo": "layout", "motivo": x} for x in erros]

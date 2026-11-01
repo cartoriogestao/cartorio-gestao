@@ -41,6 +41,8 @@ COLUNAS = {
     RGL.INDICADOR_REAL: (("descricao", "Bem"), ("especie", "Espécie"), ("identificacao", "Identificação"),
                          ("onus", "Direitos e ônus"), ("serie_nome", "Livro"), ("numero", "N. de ordem"),
                          ("baixa", "Baixa")),
+    RGL.AUXILIAR: (("registro_numero", "Registro"), ("volume", "Volume"), ("data_br", "Data"),
+                   ("requerente_nome", "Requerente"), ("copias", "Cópias")),
     RGL.INDICADOR_F: (("numero", "Registro"), ("nome", "Apresentante"),
                       ("documento_formatado", "CPF ou CNPJ"), ("data_br", "Data")),
 }
@@ -84,6 +86,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             for x in linhas:
                 x["data_br"] = _data_br(x["data_ato"])
                 x["folha_rotulo"] = x["rotulo"] or x["folha"]
+        elif livro["tipo"] == RGL.AUXILIAR:
+            pedido = RGL.copias_do_livro_b(con, busca=busca, pagina=pagina)
+            linhas, total, paginas = pedido["linhas"], pedido["total"], pedido["paginas"]
+            for x in linhas:
+                x["data_br"] = _data_br(x["data_ato"])
         elif livro["tipo"] == RGL.INDICE:
             # O Livro F não dá publicidade (CN-MA art. 957, § 5º): quem o procura é o Livro G.
             series = ("TD_B", "TD_C") if atribuicao == TIT.RTD else ()
@@ -215,7 +222,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             with db.transaction() as con:
                 feito = RGL.incluir_parte(
                     con, registro_id, nome=_campo("nome"), documento=_campo("documento"),
-                    papel=_campo("papel"), agora=db.now(), usuario=usuario_nome())
+                    papel=_campo("papel"), participacao=_campo("participacao"),
+                    doi_lado=_campo("doi_lado"), agora=db.now(), usuario=usuario_nome())
         except (RGL.LivroDoRegistroError, RG.RgError) as erro:
             flash(str(erro), "danger")
             return _de_volta(registro_id)

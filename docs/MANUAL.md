@@ -341,7 +341,7 @@ causa do seu perfil ou porque a administração fechou o módulo.
 
 | Seção | Telas | Para quê |
 |---|---|---|
-| O balcão | Títulos apresentados (RTD e RCPJ) · RTD — notificações extrajudiciais · RCPJ — autenticação de livros · Etiquetas de selos externos · Central ONRTDPJ | protocolo, qualificação, notificação, livros contábeis e a fila da Central |
+| O balcão | Títulos apresentados (RTD e RCPJ) · RTD — notificações extrajudiciais · RTD — alienação fiduciária · RCPJ — autenticação de livros · Etiquetas de selos externos · Central ONRTDPJ | protocolo, qualificação, notificação, livros contábeis e a fila da Central |
 | Registro já lavrado | Registros lavrados (RCPJ e RTD) · Últimos atos · RCPJ — atos sem lista de presença · Certidões de inteiro teor · RTD e RCPJ — livros obrigatórios · O que conferir na qualificação | consulta, saneamento, certidão, livros e norma |
 | Configuração e modelos | Ajustar a etiqueta de registro · Modelos dos documentos | etiqueta e papéis |
 
@@ -903,6 +903,20 @@ correção tem partes e a habilitação tem fases (seção 23.4).
 14. **O que conferir na qualificação**: a lista com o artigo de cada item, que também
     abre na fase Qualificação do título. Ela lembra e não recusa: quem decide é quem
     qualifica.
+15. **RTD — alienação fiduciária**: consolidação da propriedade e busca e apreensão
+    extrajudiciais. Receba o requerimento como título, autue, e siga as fases: autuação,
+    notificação, pagamento e impugnação, busca e apreensão, consolidação. A tela conta os
+    prazos e monta as peças. O processo oficial corre no módulo da Central RTDPJ Brasil, e
+    **nada é enviado por esta tela**. As averbações se lavram na ficha do registro e se
+    amarram ao passo do processo.
+16. **Sobrestar o lançamento**: na fase Qualificação do título, por suspeita de
+    falsificação, dúvida ou ordem judicial **(norma estadual — confira a do seu estado)**.
+    O título mantém número e data, e não se registra até o sobrestamento terminar. Os
+    títulos seguintes andam.
+17. **DOI do RTD**: registro de imóvel por instrumento particular **(norma estadual —
+    confira a do seu estado)**. Marque na ficha do registro, com a operação, a matrícula e o
+    valor, e informe lado e participação em cada parte. A linha entra na tela da DOI, no
+    mesmo arquivo da serventia.
 
 ---
 

@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{# A FILA DO PROCESSO FIDUCIÁRIO: o que venceu vem primeiro, sem rolar. #}
+{% block heading %}<h1>Alienação fiduciária — consolidação e busca e apreensão</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}<a class="button primary" href="{{ url_for('rcpj_rtd_fiduciaria_nova') }}">+ Autuar requerimento</a>{% endif %}
+  <a class="button" href="{{ url_for('rcpj_rtd_titulos', atribuicao=4) }}">Títulos apresentados</a>
+</div>
+<div class="notice">
+  O processo oficial corre no módulo da <strong>Central RTDPJ Brasil</strong> (Código Nacional, arts. 397-G e
+  397-S). Aqui fica o controle da serventia: autuação, prazos, linha do tempo e peças. <strong>Nada é enviado à
+  Central por esta tela.</strong>
+</div>
+<section class="panel">
+  <div class="panel-head"><span>Em andamento</span><small>{{ abertos|length }} processo(s)</small></div>
+  {% if abertos %}
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Processo</th><th>Situação</th><th>Prazo</th><th>Credor</th><th>Devedor</th><th>Bem</th></tr></thead>
+    <tbody>{% for p in abertos %}
+      <tr>
+        <td><a href="{{ url_for('rcpj_rtd_fiduciaria', proc_id=p.id) }}">{{ p.rotulo }}</a></td>
+        <td>{{ p.situacao_rotulo }}</td>
+        <td>{% if p.prazo_ate %}{% if p.vencido %}<strong>Venceu em {{ fmt_date(p.prazo_ate) }}</strong>{% else %}{{ fmt_date(p.prazo_ate) }}{% endif %}<br><small>{{ p.prazo_rotulo or '' }}</small>{% else %}—{% endif %}</td>
+        <td>{{ p.credor_nome }}</td><td>{{ p.devedor_nome }}</td><td>{{ p.bem_descricao }}</td>
+      </tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<p style="padding:14px">Nenhum processo em andamento.</p>{% endif %}
+</section>
+{% if encerrados %}
+<details class="panel"><summary>Encerrados ({{ encerrados|length }})</summary>
+  <div class="table-wrap"><table class="table">
+    <tbody>{% for p in encerrados %}
+      <tr><td><a href="{{ url_for('rcpj_rtd_fiduciaria', proc_id=p.id) }}">{{ p.rotulo }}</a></td><td>{{ p.situacao_rotulo }}</td><td>{{ p.credor_nome }}</td><td>{{ p.devedor_nome }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</details>
+{% endif %}
+{% endblock %}

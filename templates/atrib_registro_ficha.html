@@ -104,7 +104,7 @@
 {% if reservadas or parecidos %}
 <div class="notice">
   {% if reservadas %}<strong>CN-MA art. 407, VII:</strong> o nome tem a palavra reservada {{ reservadas|join(', ') }}.{% endif %}
-  {% if parecidos %}<strong>CN-MA art. 402, § 1º:</strong> mesmo nome no{% for r in parecidos %} <a href="{{ url_for('rcpj_rtd_registro', registro_id=r.id) }}">registro n. {{ r.numero }}</a>{% if not loop.last %},{% endif %}{% endfor %}.{% endif %}
+  {% if parecidos %}<strong>CN-MA art. 402, § 1º:</strong> nome igual ou parecido no{% for r in parecidos %} <a href="{{ url_for('rcpj_rtd_registro', registro_id=r.id) }}">registro n. {{ r.numero }}</a>{% if not loop.last %},{% endif %}{% endfor %}.{% endif %}
   Lembrete: quem decide é quem qualifica.
 </div>
 {% endif %}
@@ -143,12 +143,35 @@
     <label>Nome <input name="nome" required></label>
     <label>CPF ou CNPJ <input name="documento"></label>
     <label>Papel <input name="papel" list="papeis-do-registro"></label>
+    {% if registro.atribuicao == 4 %}
+    <label>Participação na operação, em % <small class="muted">— só para a DOI</small> <input name="participacao"></label>
+    <label>Lado na DOI <select name="doi_lado"><option value="">Pelo papel</option><option value="ALIENANTE">Alienante</option><option value="ADQUIRENTE">Adquirente</option><option value="FORA">Fora da declaração</option></select></label>
+    {% endif %}
     <datalist id="papeis-do-registro">{% for x in papeis_sugeridos %}<option value="{{ x }}"></option>{% endfor %}</datalist>
     <div class="span2"><button class="button">Incluir no indicador</button></div>
   </form>
   {% endif %}
 </section>
 
+{% if registro.atribuicao == 4 and user.role in ['ADMIN','MANAGER'] %}
+<details class="panel"{% if doi %} open{% endif %}>
+  <summary>Imóvel por instrumento particular: DOI <small class="muted">— CN-MA art. 962{% if doi %}; marcada{% endif %}</small></summary>
+  <form method="post" class="form-grid" style="padding:14px" action="{{ url_for('rcpj_rtd_doi_gravar', registro_id=registro.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Operação <select name="operacao" required><option value=""></option>{% for c, r in operacoes_doi.items() %}<option value="{{ c }}"{% if doi and doi.operacao == c %} selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
+    <label>Matrícula do imóvel <input name="matricula" value="{{ doi.matricula if doi else '' }}"></label>
+    <label>Valor da operação <input name="valor" value="{{ reais_doi(doi.valor_centavos) if doi else '' }}"></label>
+    <label>Data <small class="muted">— em branco, a do registro</small> <input type="date" name="data" value="{{ doi.data_ato if doi and doi.data_ato else '' }}"></label>
+    <label>Folha <input name="folha" value="{{ doi.folha if doi and doi.folha else '' }}"></label>
+    <label>Área <input name="area" value="{{ doi.area if doi and doi.area else '' }}"></label>
+    <label class="span2">Endereço <input name="endereco" value="{{ doi.endereco if doi and doi.endereco else '' }}"></label>
+    <div class="span2"><button class="button primary">Gravar a DOI</button>
+      {% if doi %}<button class="button" name="acao" value="retirar" formnovalidate>O título não envolve imóvel</button>{% endif %}
+      <a class="button" href="{{ url_for('ri_doi') }}">Tela da DOI</a>
+      <small class="muted">O lado e a participação de cada parte vêm do quadro de partes.</small></div>
+  </form>
+</details>
+{% endif %}
 {% if registro.atribuicao == 4 %}
 <section class="panel">
   <div class="panel-head"><span>Bens móveis do título</span>

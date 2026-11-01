@@ -81,7 +81,7 @@ from typing import Any
 # BOM; `json.loads` em texto lido só com `utf-8` falha e `tem()` devolve falso.
 CODIFICACAO_DO_ARQUIVO = "utf-8-sig"
 
-# AS NOVE CENTRAIS, MAIS OS CORREIOS E O BANCO DO BOLETO — onze arquivos.
+# AS DEZ CENTRAIS, MAIS OS CORREIOS E O BANCO DO BOLETO — doze arquivos.
 #
 #   **Esta linha dizia «AS OITO» com nove na tabela** (a CENSEC entrou em
 #   09/10/2026 sem a conta ser refeita) — conferido ao acrescentar as duas do
@@ -111,6 +111,12 @@ CENSEC = "CENSEC"
 # com outro corpo seria a versão divergente que o cabeçalho proíbe. As duas
 # integrações nascem DESLIGADAS — ver `protesto_integracoes`.
 CORREIOS, BANCO_BOLETO = "CORREIOS", "BANCO_BOLETO"
+# O SERVIÇO DE PENDÊNCIAS DO e-PROTOCOLO, 31/10/2026 — Unidade Interligada e
+# e-Óbito. Central própria porque o par é próprio: gerado pelo oficial no botão
+# «Serviço de pendências» do e-Protocolo, um por cartório, mostrado uma vez só. Não
+# confundir com o token do IdRC da ON-RCPN: aquele o cumprimento pede à parte, e não
+# se guarda. Ver `eprotocolo_api`.
+EPROTOCOLO = "EPROTOCOLO"
 
 ARQUIVO_DA_CENTRAL: dict[str, str] = {
     CRA: "cra.cred",
@@ -123,6 +129,7 @@ ARQUIVO_DA_CENTRAL: dict[str, str] = {
     CNIB: "cnib.cred",
     CENSEC: "censec.cred",
     CORREIOS: "correios.cred",
+    EPROTOCOLO: "eprotocolo.cred",
     BANCO_BOLETO: "boleto.cred",
 }
 
@@ -202,6 +209,7 @@ FORMA_DA_CENTRAL: dict[str, str] = {
     # e os bancos de cobrança registrada entregam um `client_id` com o
     # `client secret`. Se o contrato que chegar disser outra forma, muda-se
     # AQUI — o transporte de cada um ainda não foi escrito (LG06).
+    EPROTOCOLO: PAR,
     CORREIOS: PAR,
     BANCO_BOLETO: PAR,
 }
@@ -343,6 +351,7 @@ NOME_DA_CENTRAL: dict[str, str] = {
     SIRC: "SIRC — Sistema Nacional de Informação de Registro Civil (INSS)",
     CNIB: "CNIB — Central Nacional de Indisponibilidade de Bens (ONR)",
     CENSEC: "CENSEC — carga da CEP, CESDI e RCTO por API (CNB-CF)",
+    EPROTOCOLO: "e-Protocolo — Serviço de pendências (Unidade Interligada e e-Óbito)",
     CORREIOS: "Correios — AR digital da intimação do Protesto",
     BANCO_BOLETO: "Banco do boleto — cobrança do devedor do Protesto",
 }

@@ -198,6 +198,8 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          ("Certidões", (
              _i("Certidões", "rcpn_certidoes", termos="segunda via certidao civil"),
              _i("Pedidos da Central", "rcpn_pedidos"),
+             _i("e-Protocolo — pendências", "rcpn_eprotocolo",
+                termos="unidade interligada e-obito eobito maternidade funeraria"),
              _i("Materializar de outra serventia", "rcpn_materializacoes", antigo="Materializar certidão de outra serventia"),
              _i("Folhas de segurança", "rcpn_papel"),)),
          ("Assento lavrado", (

@@ -57,6 +57,7 @@ from rc_certidao import init_rc_certidao_schema
 from rc_materializacao import init_rc_materializacao_schema
 from ri_conferencia import init_ri_conferencia_schema
 from rc_pedidos_schema import init_rc_pedidos_schema
+from eprotocolo_schema import init_eprotocolo_schema
 from rc_modelos_livres_schema import init_rc_modelos_livres_schema
 from modelos_elementos_schema import init_modelos_elementos_schema
 from modelos_moldes import init_modelos_moldes_schema
@@ -737,6 +738,8 @@ class Database:
         # `rc_pedidos.assento_id` e `rc_certidoes_eletronicas.assento_id`
         # apontam para ela.
         init_rc_pedidos_schema(con)
+        # O e-PROTOCOLO, pela mesma razao: `ep_protocolos.assento_id`.
+        init_eprotocolo_schema(con)
         # OS MODELOS DO ESCREVENTE vem depois de `rc_assentos` pela mesma
         # razao da fila: eles se montam de um assento, e a tela que os
         # emite parte dele.

@@ -3536,6 +3536,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     rc_pedidos_web.registrar_rotas(app, db, login_required,
                                    roles_required, audit, fmt_date)
 
+    # O SERVICO DE PENDENCIAS DO e-PROTOCOLO — Unidade Interligada e e-Obito.
+    import eprotocolo_web
+    eprotocolo_web.registrar_rotas(app, db, login_required,
+                                   roles_required, audit, fmt_date)
+
     # AS TELAS DOS MODELOS DO ESCREVENTE — o modulo Modelos do
     # E-Oficio. As rotas se chamam `rcpn_*` porque e o nome da rota que
     # poe a tela no grupo do menu, e este assunto e do Registro Civil.

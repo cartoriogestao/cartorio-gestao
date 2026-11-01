@@ -37,8 +37,9 @@
       <strong>O token do IdRC ainda não foi informado</strong>, e sem ele nada
       sobe. Ele se obtém no cadastro em
       <code>integracao.idrc.registrocivil.org.br</code>, no botão <em>Novo
-      Client</em>, e se informa em <a href="{{ url_for('settings') }}">Administrativo →
-      Configurações</a>, na seção «Centrais — credenciais das APIs».
+      Client</em>, e se informa em {% if user.role == 'ADMIN' %}<a href="{{ url_for('settings') }}">Administrativo →
+      Configurações</a>{% else %}Administrativo →
+      Configurações{% endif %}, na seção «Centrais — credenciais das APIs».
       {# O ENDEREÇO ANTIGO FICOU AQUI ATÉ 18/09/2026 E ESTAVA MORTO — e ele veio
          do FAQ do próprio manual do IdRC, que cita
          `home.registrocivil.org.br/solicitacao`. Medido em 18/09/2026: aquele

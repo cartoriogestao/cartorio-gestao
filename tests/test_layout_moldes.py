@@ -178,6 +178,20 @@ def test_o_css_da_casca_nao_tem_classe_que_ninguem_usa():
     assert not orfas, orfas
 
 
+def test_o_link_para_as_configuracoes_olha_o_papel():
+    """Configurações é só do oficial. O aviso que manda ir lá costuma sair num estado que a casa de ensaio
+    não semeia, como a credencial que falta: por isso se lê o molde, além de abrir a tela."""
+    ruins = []
+    for nome in _moldes():
+        if nome == "base.html":        # o menu antigo, que já pergunta antes
+            continue
+        linhas = _ler(nome).splitlines()
+        for n, linha in enumerate(linhas, 1):
+            if "url_for('settings')" in linha and "user.role" not in " ".join(linhas[max(0, n - 3):n]):
+                ruins.append(f"{nome}:{n}")
+    assert not ruins, ruins
+
+
 def test_os_scripts_do_layout_novo_nao_montam_endereco():
     """O CodeQL recusou isso no WhatsApp (PR #94): o script só aciona o que o servidor pôs na página."""
     for arquivo in ("casca.js", "fases.js"):

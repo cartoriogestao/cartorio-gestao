@@ -223,7 +223,9 @@ def test_todo_filtro_de_lista_nao_da_erro(casa):  # noqa: F811
                 vistos.add(chave)
                 for pares in (MultiDict(E.como_o_navegador_manda(f)), _preenchido(f, None, casa.hoje)[0]):
                     excecoes.clear()
-                    r = c.get(alvo, query_string={k: v for k, v in pares.items(multi=True) if not isinstance(v, tuple)})
+                    # Formulário de consulta troca a consulta do endereço pela dele, como no navegador.
+                    r = c.get(alvo.split("?")[0], query_string=[(k, v) for k, v in pares.items(multi=True)
+                                                                if not isinstance(v, tuple)])
                     if r.mimetype != "text/event-stream":
                         r.get_data()
                     defeitos = [e for e in excecoes if not _de_trava(e)]

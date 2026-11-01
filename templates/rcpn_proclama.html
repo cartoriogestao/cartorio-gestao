@@ -152,8 +152,9 @@
   {% if not tem_credencial %}
     <p>
       <strong>O token do IdRC não foi informado</strong>, e sem ele nada sobe.
-      Informe em <a href="{{ url_for('settings') }}">Administrativo →
-      Configurações</a>; o arquivo é <code>{{ arquivo_da_credencial }}</code>,
+      Informe em {% if user.role == 'ADMIN' %}<a href="{{ url_for('settings') }}">Administrativo →
+      Configurações</a>{% else %}Administrativo →
+      Configurações{% endif %}; o arquivo é <code>{{ arquivo_da_credencial }}</code>,
       fora do banco.
     </p>
     {# O DETALHE DO CADASTRO MORA NUMA TELA SÓ. Repeti-lo aqui daria duas

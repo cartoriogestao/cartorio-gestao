@@ -89,6 +89,16 @@ def test_a_trava_esconde_a_pasta_de_uma_instalacao_real(trava, monkeypatch):
         (pasta / "credencial.txt").read_text(encoding="utf-8")
 
 
+def test_a_trava_nao_deixa_procurar_nas_pastas_das_pessoas(trava):
+    """As telas de importar procuram a exportação real em Downloads: dado de verdade não entra no ensaio."""
+    with pytest.raises(FileNotFoundError):
+        os.listdir(Path.home().parent)
+    with pytest.raises(FileNotFoundError):
+        list(Path.home().iterdir())
+    assert isinstance(os.listdir(trava), list)
+    assert "tests" in os.listdir(E.RAIZ)
+
+
 def test_a_trava_anota_o_que_barrou(trava):
     antes = len(E.tentativas())
     with pytest.raises(E.AcaoBloqueada):

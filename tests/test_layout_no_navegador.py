@@ -37,7 +37,7 @@ sync_api = pytest.importorskip("playwright.sync_api")
 
 pytestmark = pytest.mark.lento
 
-PISOS = {"telas": 400, "fases": 20, "passos": 8, "quadros": 18}
+PISOS = {"todas": 400, "fases": 20, "passos": 8, "quadros": 18}
 _FOLGA_DE_LARGURA = 2
 
 
@@ -263,6 +263,14 @@ def test_sem_script_a_ficha_sai_inteira(casa, navegador, servidor, telas):  # no
 
 # ------------------------------------------------------------------- os passos
 
+ABRIR_A_FASE_DOS_PASSOS = """() => {
+  const nav = document.querySelector('[data-cg-passos]');
+  const quadro = nav && nav.closest('[data-fase]');
+  if (quadro) location.hash = quadro.getAttribute('data-fase');
+  const recolhido = nav && nav.closest('details');
+  if (recolhido) recolhido.open = true;
+}"""
+
 ESTADO_DOS_PASSOS = """() => {
   const nav = document.querySelector('[data-cg-passos]');
   const form = document.getElementById(nav.getAttribute('data-cg-passos'));
@@ -289,6 +297,7 @@ def test_cada_porta_mostra_o_bloco_dela(casa, navegador, servidor, telas):  # no
         _abrir(pg, servidor, endereco)
         pg.evaluate("sessionStorage.clear()")
         pg.reload(wait_until="load")
+        pg.evaluate(ABRIR_A_FASE_DOS_PASSOS)
         inicio = pg.evaluate(ESTADO_DOS_PASSOS)
         portas = [p["chave"] for p in inicio["portas"]]
         for i, chave in enumerate(portas):
@@ -319,23 +328,29 @@ def test_o_campo_obrigatorio_vazio_abre_o_passo_dele(casa, navegador, servidor, 
         _abrir(pg, servidor, endereco)
         pg.evaluate("sessionStorage.clear()")
         pg.reload(wait_until="load")
+        pg.evaluate(ABRIR_A_FASE_DOS_PASSOS)
+        # O botão de gravar mora na barra ou no último passo: é de onde a pessoa clica nele.
         alvo = pg.evaluate("""() => {
           const nav = document.querySelector('[data-cg-passos]');
           const form = document.getElementById(nav.getAttribute('data-cg-passos'));
           const portas = [...nav.querySelectorAll('[data-passo-ir]')].map(b => b.getAttribute('data-passo-ir'));
-          const campo = [...form.querySelectorAll('[data-passo] [required]')].find(c => !c.disabled && !c.value);
-          if (!campo || !form.querySelector('.cg-gravar button:not([type=button])')) return null;
+          const botao = [...form.querySelectorAll('button:not([type=button]):not([formtarget]):not([formnovalidate])')].pop();
+          if (!botao) return null;
+          botao.dataset.cgTeste = '1';
+          const moradia = botao.closest('[data-passo]');
+          const fica = moradia ? moradia.getAttribute('data-passo') : null;
+          const campo = [...form.querySelectorAll('[data-passo] [required]')].find(c => !c.disabled && !c.value
+            && c.closest('[data-passo]').getAttribute('data-passo') !== fica);
+          if (!campo) return null;
           const dele = campo.closest('[data-passo]').getAttribute('data-passo');
-          const outro = portas.find(p => p !== dele);
+          const outro = fica || portas.find(p => p !== dele);
           return outro ? {dele, outro, nome: campo.name} : null; }""")
         if not alvo:
             continue
         testadas += 1
         pg.locator(f'[data-cg-passos] [data-passo-ir="{alvo["outro"]}"]').click()
         url = pg.url
-        pg.evaluate("""() => { const nav = document.querySelector('[data-cg-passos]');
-          const form = document.getElementById(nav.getAttribute('data-cg-passos'));
-          form.querySelector('.cg-gravar button:not([type=button])').click(); }""")
+        pg.evaluate("() => document.querySelector('button[data-cg-teste]').click()")
         pg.wait_for_timeout(120)
         e = pg.evaluate(ESTADO_DOS_PASSOS)
         if pg.url != url:
@@ -523,8 +538,9 @@ def test_trocar_de_layout_e_voltar_mantem_a_tela(tela, servidor):
         tela.locator(".cg-eu button", has_text="Voltar ao layout antigo").click()
     assert "/registro-imoveis" in tela.url
     assert tela.locator("#app-sidebar").count() == 1 and tela.locator(".cg-app").count() == 0
+    # Na moldura antiga, o quadro de avisos pode estar por cima do rodapé da barra.
     with tela.expect_navigation(wait_until="load"):
-        tela.locator("form[action$='/preferencias/layout'] button").first.click()
+        tela.locator("form[action$='/preferencias/layout'] button").first.evaluate("b => b.click()")
     assert "/registro-imoveis" in tela.url
     assert tela.locator(".cg-app").count() == 1 and tela.locator("#app-sidebar").count() == 0
 

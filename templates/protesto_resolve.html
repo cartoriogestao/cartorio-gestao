@@ -29,7 +29,7 @@
   <strong>A chave da Resolve ainda não foi informada para a PRODUÇÃO.</strong>
   Sem ela nada se manda nem se consulta. Ela é a <code>x-api-key</code> que a
   plataforma entrega depois da adesão à Intimação Digital, e se cadastra em
-  <a href="{{ url_for('settings') }}">Administrativo → Configurações</a>, na
+  {% if user.role == 'ADMIN' %}<a href="{{ url_for('settings') }}">Administrativo → Configurações</a>{% else %}Administrativo → Configurações{% endif %}, na
   tabela das Centrais.
   {% if fora_de_uso %}
   A de homologação continua guardada, mas não é usada e não serve no lugar

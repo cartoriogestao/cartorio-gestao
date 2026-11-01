@@ -34,8 +34,9 @@
       <strong>A credencial do ONR ainda não foi informada</strong>, e sem ela
       nada sobe nem desce. Ela é um <strong>par</strong> —
       <code>client_id</code> e <code>client secret</code> —, e não usuário e
-      senha; informe em <a href="{{ url_for('settings') }}">Administrativo →
-      Configurações</a>, na seção «Centrais — credenciais das APIs».
+      senha; informe em {% if user.role == 'ADMIN' %}<a href="{{ url_for('settings') }}">Administrativo →
+      Configurações</a>{% else %}Administrativo →
+      Configurações{% endif %}, na seção «Centrais — credenciais das APIs».
     </p>
     <p><small>
       Ela fica em <code>{{ arquivo_da_credencial }}</code>, <strong>fora do

@@ -11,7 +11,9 @@ A TRAVA EXISTE PORQUE ESTES TESTES CLICAM EM TUDO
     - nada sai da máquina, nem pergunta ao DNS;
     - nenhum programa é chamado, nem o Windows abre arquivo;
     - nada se grava fora das pastas temporárias;
-    - nada se lê da pasta de uma instalação real, e assim a credencial de lá não existe aqui.
+    - nada se lê da pasta de uma instalação real, e assim a credencial de lá não existe aqui;
+    - nada se lista nas pastas das pessoas: as telas de importar procuram a exportação real em
+      Downloads e Documentos, e levariam dado de verdade para o banco de ensaio.
 
     O banco fica de fora porque o driver fala em C, e o gancho não o enxerga. É o DSN de
     teste que o protege, e `conferir_que_e_banco_de_teste` recusa o resto.
@@ -48,7 +50,8 @@ class AcaoBloqueada(PermissionError):
     """O teste tentou fazer o que não pode. Nada aconteceu."""
 
 
-_trava = {"ligada": False, "poupada": None, "permitidas": [], "reais": [], "tentativas": []}
+_trava = {"ligada": False, "poupada": None, "permitidas": [], "reais": [], "pessoais": [], "liberadas": [],
+          "tentativas": []}
 _instalada = [False]
 
 _EVENTOS_DE_PROGRAMA = {"subprocess.Popen", "os.system", "os.startfile", "os.startfile/2", "os.exec",
@@ -102,6 +105,11 @@ def _gancho(evento, args) -> None:
         _barrar(f"rede: {evento} {str(args[-1] if evento == 'socket.connect' else args[:2])[:120]}")
     elif evento in _EVENTOS_DE_REGISTRO:
         _barrar(f"registro do Windows: {evento}")
+    elif evento in ("os.listdir", "os.scandir"):
+        if args and isinstance(args[0], (str, bytes, os.PathLike)):
+            alvo = _normal(args[0])
+            if _dentro(alvo, _trava["pessoais"]) and not _dentro(alvo, _trava["liberadas"]):
+                _barrar(f"listar {args[0]}", FileNotFoundError)
     elif evento == "ctypes.dlopen" and "pkcs" in str(args[0]).lower():
         _barrar(f"token A3: {args[0]}")
     elif evento in _EVENTOS_DE_ARQUIVO:
@@ -126,6 +134,8 @@ def ligar_trava(*pastas_de_gravar) -> None:
         _instalada[0] = True
     python = (_normal(sys.prefix), _normal(sys.base_prefix))
     _trava["permitidas"] = sorted({_normal(p) for p in (tempfile.gettempdir(), *pastas_de_gravar)})
+    _trava["pessoais"] = [_normal(Path.home().parent)]
+    _trava["liberadas"] = sorted({_normal(p) for p in (RAIZ, *python, *_trava["permitidas"], *(x for x in sys.path if x))})
     _trava["reais"] = [r for r in pastas_de_instalacao_real()
                        if not any(_dentro(p, [r]) for p in python)]
     _trava["ligada"] = True

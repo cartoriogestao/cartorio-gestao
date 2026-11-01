@@ -34,7 +34,7 @@ def _do_oficial(db):
         return DP.cadastrar(
             con, agora=AGORA, por="MARIO EXEMPLO DOS SANTOS", origem="MANUAL",
             chave_origem=None, beneficiario_nome="PRESTADOR FICTICIO",
-            beneficiario_documento=FAVORECIDO, valor_centavos=500000,
+            beneficiario_documento="00000000191", valor_centavos=500000,
             vencimento="2026-11-05", forma=DP.PIX_CHAVE, codigo="prestador@example.com",
             descricao="Honorários do mês do prestador", categoria="PESSOAL",
             documento_especie="Recibo")

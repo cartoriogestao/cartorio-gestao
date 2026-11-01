@@ -590,6 +590,19 @@ def pagar(db, despesa_id: int, *, cliente: ClienteInter, por: str,
             DP._evento(bd, despesa_id, "PAGAR", "vencida", "vencida antes de sair", por,
                        DP._carimbo(quando))
             return {"situacao": DP.FALHOU, "mensagem": "Vencida antes de sair."}
+        # A ÚLTIMA CONFERÊNCIA ANTES DO BANCO (31/10/2026): o Pix do mês saiu para a
+        # chave de outra pessoa, e o dinheiro não volta sozinho.
+        if d["forma"] == DP.PIX_CHAVE:
+            try:
+                DP.conferir_favorecido_pix(bd, chave=d["codigo"],
+                                           documento=d["beneficiario_documento"],
+                                           nome=d["beneficiario_nome"], sem_despesa=int(despesa_id))
+            except DP.DespesaError as erro:
+                bd.escrever("UPDATE dp_despesas SET situacao = 'FALHOU', mensagem = %s WHERE id = %s",
+                            (str(erro)[:500], int(despesa_id)))
+                DP._evento(bd, despesa_id, "PAGAR", "favorecido não confere", str(erro), por,
+                           DP._carimbo(quando))
+                return {"situacao": DP.FALHOU, "mensagem": str(erro)}
         # `tentativas` conta os envios DESTA autorização (26/10/2026): começa em 1
         # aqui, e o único reenvio do Pix (`_reenviar_pix`) a leva a 2. Devolvida e
         # autorizada de novo, a despesa recomeça a conta.
@@ -740,6 +753,19 @@ def _boleto_sem_rastro(db, despesa_id: int, *, por: str, quando: datetime) -> di
             "pago fora do banco."))
 
 
+def _anotar_recebedor(bd, d: dict, nome: Any, documento: Any, *, por: str,
+                      quando: datetime) -> bool:
+    """Grava a dúvida quando o banco diz outro recebedor. Devolve se a despesa está em dúvida."""
+    if d["recebedor_aceito_em"]:
+        return False
+    frase = DP.recebedor_diverge(d, nome, documento)
+    if frase and not d["recebedor_divergente"]:
+        bd.escrever("UPDATE dp_despesas SET recebedor_divergente = %s WHERE id = %s",
+                    (frase[:500], int(d["id"])))
+        DP._evento(bd, d["id"], "RECEBEDOR", "não confere", frase, por, DP._carimbo(quando))
+    return bool(frase or d["recebedor_divergente"])
+
+
 def atualizar(db, despesa_id: int, *, cliente: ClienteInter, por: str,
               agora: datetime | None = None) -> dict:
     """Pergunta ao Inter como está a despesa ENVIADA. Reenvia só o Pix que nunca chegou.
@@ -763,6 +789,11 @@ def atualizar(db, despesa_id: int, *, cliente: ClienteInter, por: str,
             nova = _gravar(db, despesa_id, situacao=_situacao_do_pix(status), status=status,
                            codigo=None, e2e=str(t.get("endToEnd") or "") or None,
                            mensagem=f"Inter: {status}", usuario=por, operacao="ATUALIZAR")
+            recebedor = t.get("recebedor") or {}
+            with db.transaction() as con:
+                _anotar_recebedor(banco(con), DP._prender(banco(con), despesa_id),
+                                  recebedor.get("nome"), recebedor.get("cpfCnpj"), por=por,
+                                  quando=quando)
             return {"situacao": nova["situacao"], "mensagem": nova["mensagem"]}
         if eh_pix:
             # A resposta do primeiro envio se perdeu: o mesmo x-id-idempotente
@@ -855,6 +886,16 @@ def conciliar(db, *, cliente: ClienteInter, por: str, agora: datetime | None = N
             bd = banco(con)
             atual = DP._prender(bd, d["id"])
             if atual["situacao"] not in (DP.ENVIADA, DP.PAGA):
+                continue
+            # O QUE FOI PARA OUTRA PESSOA NÃO VAI AO LIVRO COM O NOME DO FAVORECIDO: fica
+            # paga e em dúvida, até o oficial dizer o que houve (`aceitar_recebedor`).
+            det = t.get("detalhes") or {}
+            eh_pix = atual["forma"] in (DP.PIX_COPIA_E_COLA, DP.PIX_CHAVE)
+            if eh_pix and _anotar_recebedor(
+                    bd, atual, det.get("nomeRecebedor") or det.get("nomeEmpresaRecebedor"),
+                    det.get("cpfCnpjRecebedor"), por=por, quando=quando):
+                bd.escrever("UPDATE dp_despesas SET situacao = 'PAGA', paga_em = %s WHERE id = %s",
+                            (dia, int(d["id"])))
                 continue
             ld_id = None
             if atual["natureza"] == DP.DESPESA:

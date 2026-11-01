@@ -38,6 +38,14 @@
 {# 30/10/2026, pedido do oficial: autorizar sem abrir uma por uma. Vem antes de
    tudo porque é o que espera ação; favorecido, chave e valor ficam à vista porque
    é aqui que se confere. O que pede motivo ou marca de teto continua na ficha. #}
+{# 31/10/2026: o banco diz que o dinheiro foi para outra pessoa. Vem antes de tudo. #}
+{% if em_duvida %}
+<section class="panel"><h2>O recebedor não confere ({{ em_duvida|length }})</h2>
+  <ul>{% for d in em_duvida %}<li><span class="badge alta">{{ d.recebedor_divergente }}</span>
+    R$ {{ reais(d.valor) }} · <a href="{{ url_for('despesas_ficha', despesa_id=d.id) }}">abrir a despesa {{ d.id }}</a></li>{% endfor %}</ul>
+</section>
+{% endif %}
+
 {% if a_autorizar %}
 <section class="panel"><h2>Esperando a sua autorização ({{ a_autorizar|length }})</h2>
   <p class="small">Confira favorecido, chave e valor, e desmarque o que não for autorizar.

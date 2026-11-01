@@ -60,6 +60,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Mapping
@@ -239,6 +240,10 @@ def init_despesas_schema(con) -> None:
     for nome, comando in SCHEMA:
         if not bd.tem_tabela(nome):
             bd.escrever(comando)
+    for coluna, tipo in (("recebedor_divergente", "TEXT NOT NULL DEFAULT ''"),
+                         ("recebedor_aceito_em", "TEXT")):
+        if not bd.tem_coluna("dp_despesas", coluna):
+            bd.escrever(f"ALTER TABLE dp_despesas ADD COLUMN {coluna} {tipo}")
 
 
 # ------------------------------------------------------------- auxiliares
@@ -580,6 +585,90 @@ def normalizar_chave_pix(chave: Any) -> str:
                        "ou a chave aleatória completa.")
 
 
+def _palavras_do_nome(nome: Any) -> list[str]:
+    sem_acento = unicodedata.normalize("NFKD", str(nome or ""))
+    limpo = "".join(c for c in sem_acento if not unicodedata.combining(c)).upper()
+    return re.sub(r"[^A-Z0-9 ]", " ", limpo).split()
+
+
+def mesmo_nome(um: Any, outro: Any) -> bool:
+    """Parecem a mesma pessoa? Só calcula. Compara o primeiro nome.
+
+    O banco e o cadastro abreviam o resto de jeitos diferentes, e há nome gravado
+    sem espaço: por isso o começo de um basta contra o primeiro nome do outro.
+    """
+    a, b = _palavras_do_nome(um), _palavras_do_nome(outro)
+    if not a or not b:
+        return False
+    return "".join(a).startswith(b[0]) or "".join(b).startswith(a[0])
+
+
+def documento_confere(esperado: Any, recebido: Any) -> bool | None:
+    """O documento do banco é o esperado? None quando não há como dizer. Só calcula.
+
+    O Inter mascara o CPF («***.777.888-**», `DadosConta`): só os dígitos à vista contam.
+    """
+    esperado = digitos(esperado)
+    recebido = re.sub(r"[^\d*]", "", str(recebido or ""))
+    if not esperado or not recebido:
+        return None
+    if len(esperado) != len(recebido):
+        return False
+    return all(r in ("*", e) for r, e in zip(recebido, esperado))
+
+
+def recebedor_diverge(d: Mapping[str, Any], nome: Any, documento: Any) -> str:
+    """A frase de quando o dinheiro foi para outra pessoa. Vazia se confere. Só calcula.
+
+    Vai ao rastro e à tela, e por isso traz o nome e não o documento.
+    """
+    bate = documento_confere(d.get("beneficiario_documento"), documento)
+    nome = _texto(nome, 150)
+    if bate is False or (nome and len(digitos(documento)) != 14 and not mesmo_nome(nome, d.get("beneficiario_nome"))):
+        return (f"O banco informa que este pagamento foi para {nome or 'outro CPF/CNPJ'}, e o "
+                f"favorecido cadastrado é {d.get('beneficiario_nome')}.")
+    return ""
+
+
+def conferir_favorecido_pix(con, *, chave: Any, documento: Any, nome: Any,
+                            sem_despesa: int | None = None,
+                            sem_recorrente: int | None = None) -> None:
+    """Recusa o Pix por chave cujo favorecido não confere com o que a casa sabe. Só LÊ.
+
+    A API do Inter não diz de quem é a chave antes de pagar: o que se confere aqui é
+    a casa contra ela mesma. O que já foi conciliado fica de fora: uma linha antiga
+    errada não pode impedir para sempre o dono verdadeiro da chave.
+    """
+    bd = banco(con)
+    documento = digitos(documento)
+    if not documento:
+        raise DespesaError("O Pix por chave exige o CPF/CNPJ do favorecido: é com ele que a "
+                           "casa confere para quem vai o dinheiro.")
+    if re.fullmatch(r"\d{11}|\d{14}", str(chave or "")) and chave != documento:
+        raise DespesaError("A chave Pix é um CPF/CNPJ diferente do documento do favorecido. "
+                           "Confira os dois antes de pagar.")
+    despesas = bd.ler(
+        "SELECT id, beneficiario_nome, beneficiario_documento, codigo AS chave FROM dp_despesas "
+        "WHERE forma = %s AND situacao IN (%s, %s, %s, %s, %s) "
+        "AND (codigo = %s OR beneficiario_documento = %s)",
+        (PIX_CHAVE, AGUARDANDO, AUTORIZADA, ENVIADA, PAGA, FALHOU, chave, documento))
+    recorrentes = bd.ler(
+        "SELECT id, beneficiario_nome, beneficiario_documento, chave_pix AS chave "
+        "FROM dp_recorrentes WHERE forma = %s AND ativa = 1 "
+        "AND (chave_pix = %s OR beneficiario_documento = %s)", (PIX_CHAVE, chave, documento))
+    outras = [o for o in despesas if o["id"] != sem_despesa]
+    outras += [o for o in recorrentes if o["id"] != sem_recorrente]
+    for outra in outras:
+        dele = digitos(outra["beneficiario_documento"])
+        if dele == documento and not mesmo_nome(outra["beneficiario_nome"], nome):
+            raise DespesaError(f"Este CPF/CNPJ já está cadastrado para "
+                               f"{outra['beneficiario_nome']}, e aqui o favorecido é {nome}.")
+        outra_pessoa = dele != documento if dele else not mesmo_nome(outra["beneficiario_nome"], nome)
+        if outra["chave"] == chave and outra_pessoa:
+            raise DespesaError(f"Esta chave Pix já está cadastrada para "
+                               f"{outra['beneficiario_nome']}, e aqui o favorecido é {nome}.")
+
+
 def conferir_pagamento(forma: str, codigo: Any, valor_centavos: int,
                        vencimento: str) -> dict:
     """O código de pagamento lido e conferido contra o valor e o vencimento. Só calcula."""
@@ -666,6 +755,8 @@ def cadastrar(con, *, agora: datetime, por: str, origem: str, chave_origem: str 
     if forma not in FORMAS:
         raise DespesaError("Escolha a forma de pagamento.")
     lido = conferir_pagamento(forma, codigo, valor, vencimento)
+    if forma == PIX_CHAVE:
+        conferir_favorecido_pix(bd, chave=lido["codigo"], documento=documento, nome=nome)
     divergencia = ""
     if valor_esperado_centavos is not None and int(valor_esperado_centavos) != valor:
         divergencia = (f"O sistema calculou R$ {reais(int(valor_esperado_centavos))} e a "
@@ -763,6 +854,9 @@ def autorizar(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
                            f"autorização.")
     if d["forma"] == MANUAL:
         raise DespesaError("Despesa paga fora do banco não se autoriza: registre o pagamento.")
+    if d["forma"] == PIX_CHAVE:
+        conferir_favorecido_pix(bd, chave=d["codigo"], documento=d["beneficiario_documento"],
+                                nome=d["beneficiario_nome"], sem_despesa=int(despesa_id))
     if valor_visto is not None and int(d["valor"]) != int(valor_visto):
         raise DespesaError(f"O valor mudou para R$ {reais(int(d['valor']))} depois que a lista "
                            f"abriu. Confira e autorize de novo.")
@@ -817,6 +911,34 @@ def ajustar_valor(con, despesa_id: int, *, valor_centavos: int, agora: datetime,
     _evento(bd, despesa_id, "AJUSTAR_VALOR", "ok",
             f"de R$ {reais(int(d['valor']))} para R$ {reais(valor)}", por, _carimbo(agora))
     return despesa(bd, despesa_id)
+
+
+def aceitar_recebedor(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
+                      motivo: Any) -> dict:
+    """O oficial conferiu o recebedor que não batia e diz o que houve. ESCREVE.
+
+    Só depois disto a despesa vai ao Livro Diário. A frase do banco fica gravada.
+    """
+    if papel != "ADMIN":
+        raise DespesaError("Só o oficial (ADMIN) resolve o recebedor que não confere.")
+    motivo = _texto(motivo, 500)
+    if len(motivo) < MINIMO_DA_DESCRICAO:
+        raise DespesaError("Diga o que você conferiu e o que aconteceu com este pagamento.")
+    bd = banco(con)
+    d = _prender(bd, despesa_id)
+    if not d["recebedor_divergente"]:
+        raise DespesaError("O recebedor desta despesa não está em dúvida.")
+    quando = _carimbo(agora)
+    bd.escrever("UPDATE dp_despesas SET recebedor_aceito_em = %s WHERE id = %s",
+                (quando, int(despesa_id)))
+    _evento(bd, despesa_id, "RECEBEDOR", "aceito", motivo, por, quando)
+    return despesa(bd, despesa_id)
+
+
+def recebedor_em_duvida(con) -> list[dict]:
+    """O que o banco diz ter pago a outra pessoa, e ninguém resolveu ainda. Só LÊ."""
+    return banco(con).ler("SELECT * FROM dp_despesas WHERE recebedor_divergente <> '' "
+                          "AND recebedor_aceito_em IS NULL ORDER BY id")
 
 
 def devolver(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
@@ -928,6 +1050,12 @@ def para_autorizar(con) -> list[dict]:
     for d in linhas:
         d["pendencia"] = ("valor divergente" if d["divergencia"]
                           else "acima do teto" if int(d["valor"]) > teto else "")
+        if d["forma"] == PIX_CHAVE:
+            try:
+                conferir_favorecido_pix(bd, chave=d["codigo"], documento=d["beneficiario_documento"],
+                                        nome=d["beneficiario_nome"], sem_despesa=int(d["id"]))
+            except DespesaError:
+                d["pendencia"] = "favorecido não confere"
     return linhas
 
 

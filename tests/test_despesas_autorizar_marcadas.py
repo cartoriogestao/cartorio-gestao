@@ -32,7 +32,7 @@ def _nova(db, valor=193532, nome="BEATRIZ EXEMPLO", vencimento="2026-10-30"):
     with db.transaction() as con:
         return DP.cadastrar(
             con, agora=AGORA, por="mario", origem="MANUAL", chave_origem=None,
-            beneficiario_nome=nome, beneficiario_documento="", valor_centavos=valor,
+            beneficiario_nome=nome, beneficiario_documento="00000000191", valor_centavos=valor,
             vencimento=vencimento, forma=DP.PIX_CHAVE, codigo="beatriz@example.com",
             descricao="Folha de pagamento, salário líquido", categoria="PESSOAL",
             documento_especie="Recibo de pagamento")

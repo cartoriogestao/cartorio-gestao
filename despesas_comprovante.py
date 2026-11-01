@@ -88,6 +88,9 @@ def _pronta(con, despesa_id: int) -> dict:
         raise DP.DespesaError("Despesa não encontrada.")
     if not foi_paga(d):
         raise DP.DespesaError("O comprovante só sai depois de a despesa estar paga.")
+    if d["recebedor_divergente"] and not d["recebedor_aceito_em"]:
+        raise DP.DespesaError("O banco informa outro recebedor para este pagamento: resolva "
+                              "isso na ficha antes de mandar o comprovante.")
     return d
 
 

@@ -214,9 +214,16 @@ CAMPOS = ("descricao", "categoria", "beneficiario_nome", "beneficiario_documento
 CAMPOS = (*CAMPOS, "contato_email", "contato_whatsapp")
 
 
+def _conferir_favorecido(con, r: Mapping[str, Any], sem: int | None = None) -> None:
+    if r["forma"] == DP.PIX_CHAVE:
+        DP.conferir_favorecido_pix(con, chave=r["chave_pix"], documento=r["beneficiario_documento"],
+                                   nome=r["beneficiario_nome"], sem_recorrente=sem)
+
+
 def cadastrar(con, dados: Mapping[str, Any], *, por: str, agora: datetime) -> int:
     """Grava a recorrente. ESCREVE. Não gera despesa nenhuma — quem gera é `gerar`."""
     r = conferir(dados)
+    _conferir_favorecido(con, r)
     novo = banco(con).escrever(
         f"""INSERT INTO dp_recorrentes ({", ".join(CAMPOS)}, criada_em, criada_por)
             VALUES ({", ".join(["%s"] * (len(CAMPOS) + 2))}) RETURNING id""",
@@ -233,6 +240,7 @@ def alterar(con, recorrente_id: int, dados: Mapping[str, Any], *, por: str,
     trás seria pagar o que o oficial não autorizou.
     """
     r = conferir(dados)
+    _conferir_favorecido(con, r, int(recorrente_id))
     bd = banco(con)
     if not bd.um("SELECT id FROM dp_recorrentes WHERE id = %s", (int(recorrente_id),)):
         raise DP.DespesaError("Recorrente não encontrada.")
@@ -304,9 +312,17 @@ def do_mes(con, hoje: date) -> list[dict]:
         for competencia, venc in meses_abertos(r, hoje, feriados):
             if chave_do_mes(r["id"], competencia) in feitas:
                 continue
+            # A que não confere não se carrega, e a tela diz por quê: uma só não
+            # pode segurar a carga das outras na rodada da manhã.
+            impedimento = ""
+            try:
+                _conferir_favorecido(bd, r, int(r["id"]))
+            except DP.DespesaError as erro:
+                impedimento = str(erro)
             saida.append({**r, "competencia": competencia, "vencimento": venc.isoformat(),
-                          "carrega_sozinho": r["forma"] in CARREGA_SOZINHO and bool(r["valor"]),
-                          "atrasada": venc < hoje})
+                          "carrega_sozinho": (r["forma"] in CARREGA_SOZINHO and bool(r["valor"])
+                                              and not impedimento),
+                          "impedimento": impedimento, "atrasada": venc < hoje})
     return saida
 
 

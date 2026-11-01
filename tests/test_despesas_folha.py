@@ -20,7 +20,7 @@ import despesas_recorrentes as RC
 
 AGORA = datetime(2026, 10, 30, 9, 0, tzinfo=timezone(timedelta(hours=-3)))
 FOLHA = {"descricao": "Folha de pagamento, salário líquido", "categoria": "PESSOAL",
-         "beneficiario_nome": "BEATRIZ EXEMPLO", "beneficiario_documento": "",
+         "beneficiario_nome": "BEATRIZ EXEMPLO", "beneficiario_documento": "00000000191",
          "forma": DP.PIX_CHAVE, "chave_pix": "(99)90000-0000", "valor": 193532,
          "ultimo_dia_util": "1", "dia_vencimento": "", "antecedencia_dias": 10,
          "documento_especie": "Recibo de pagamento", "primeiro_mes": "2026-10", "ultimo_mes": ""}

@@ -315,7 +315,12 @@ def campos_do_cumprimento(certidao: dict, responsavel: dict,
         raise EProtocoloError("Falta o CNS do cartório em Administrativo → Configurações.")
     if not nome:
         raise EProtocoloError("Falta o nome do cartorário responsável.")
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+    # `nome@dominio.tld` sem expressão regular, como `contato_do_cliente`
+    # (CodeQL py/polynomial-redos): um só `@`, nenhum branco, e no domínio um
+    # ponto com algo dos dois lados.
+    usuario, arroba, dominio = email.partition("@")
+    if not (usuario and arroba and "@" not in dominio
+            and not any(c.isspace() for c in email) and "." in dominio[1:-1]):
         raise EProtocoloError("O e-mail do cartorário responsável é inválido.")
     campos = [("certificate[type]", tipo)]
     if url:

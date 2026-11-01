@@ -265,7 +265,7 @@ backup nenhum na pasta, sai um achado só («Nenhum backup encontrado»).
 
 ## A parte do titular: despesas e livro-caixa
 
-Desde 31/10/2026, com a chave criada em **Despesas → Configuração**, as tabelas de `cofre_do_titular.TABELAS` e os anexos das despesas saem do banco do pacote e vão em `privado_do_titular/`, fechados com a chave do titular. O servidor só guarda a chave pública. O Livro Diário Auxiliar não fecha.
+Desde 31/10/2026, com a chave criada em **Despesas → Configuração**, as tabelas de `cofre_do_titular.TABELAS` e os anexos das despesas saem do banco do pacote e vão em `privado_do_titular/`, fechados com a chave do titular. O servidor só guarda a chave pública. O Livro Diário Auxiliar fecha junto, por decisão do oficial.
 
 **A senha não se recupera.** Sem ela, essa parte se perde, e o resto do pacote continua abrindo. Depois de criar a chave, abra um pacote uma vez para provar que a senha funciona: a automação não tem como fazer isso.
 
@@ -278,6 +278,6 @@ pg_restore -d <banco> --data-only --disable-triggers --no-owner <pasta>/tabelas_
 
 Os anexos voltam de `anexos_do_titular.zip` para `arquivos/despesas`, só no pacote completo. Apague a pasta depois: ali os dados estão abertos.
 
-**Na troca de delegatário,** o titular que sai roda `tools/selar_titularidade.py` e digita a senha. O script fecha, prova que abre e só então apaga as linhas, os anexos e a chave do banco.
+**Na troca de delegatário,** o titular que sai roda `tools/selar_titularidade.py` e digita a senha. O script fecha, prova que abre e só então apaga as linhas, os anexos e a chave do banco. O Livro Diário sai junto: gere e entregue antes o que a Corregedoria cobra.
 
-**O que continua aberto:** os backups feitos antes da chave, as linhas de auditoria, os nomes dos anexos na tabela `attachments` e o que estiver no Livro Diário. Quem usa o sistema como titular, ou tem acesso ao banco vivo, continua lendo o banco: a cifra protege o backup.
+**O que continua aberto:** os backups feitos antes da chave, as linhas de auditoria, e os nomes dos anexos na tabela `attachments`. Quem usa o sistema como titular, ou tem acesso ao banco vivo, continua lendo o banco: a cifra protege o backup.

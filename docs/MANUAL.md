@@ -205,12 +205,11 @@ tela:
 - **Módulo de Protesto — quem pode abrir**: só o administrador (padrão), todos
   ou ninguém. Fechar não apaga título nem ato; muda só quem vê as telas;
 - **Chave da CENPROT**, em quadro próprio, com o botão **Salvar a chave da
-  CENPROT**: códigos do IBGE, número da serventia na CENPROT e os **pesos da
-  conta** (23 dígitos). Ao apontar um título vindo da CRA, o sistema calcula a
-  chave com eles. Ao salvar, ele refaz a conta sobre as chaves já gravadas e
-  diz «N de M conferem»; se alguma não conferir, nada se grava até você
-  confirmar. Formato errado não se grava. Sem os pesos, o título é apontado sem
-  chave, e a tela do XML da CENPROT diz onde preencher;
+  CENPROT**: códigos do IBGE e código CRA do tabelionato. Ao apontar um título
+  vindo da CRA, o sistema calcula a chave pela regra do layout da CENPROT, que
+  é igual para toda serventia. Chave já gravada nunca muda. Formato errado não
+  se grava. Sem esses códigos, o título é apontado sem chave, e a tela do XML da
+  CENPROT diz onde preencher;
 - listas do balcão (classificações, vias de entrada, setores) e backup (seção 19).
 
 **Salvar configurações** grava a primeira seção; cada linha de Centrais tem o

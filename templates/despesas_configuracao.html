@@ -9,13 +9,13 @@
 {# 31/10/2026: a parte privada do backup, que só a senha do titular abre (`cofre_do_titular`). #}
 <section class="panel"><h2>Chave do titular no backup</h2>
   {% if chave_do_titular.tem %}
-  <p>As despesas e o livro-caixa saem fechados no backup, com a chave de {{ chave_do_titular.de }},
+  <p>As despesas, o livro-caixa e o Livro Diário saem fechados no backup, com a chave de {{ chave_do_titular.de }},
     criada em {{ chave_do_titular.em }}. <span class="small">Impressão {{ chave_do_titular.impressao }}.</span></p>
   {% else %}
-  <div class="notice"><strong>Sem chave:</strong> as despesas e o livro-caixa saem abertos no backup da serventia.</div>
+  <div class="notice"><strong>Sem chave:</strong> as despesas, o livro-caixa e o Livro Diário saem abertos no backup da serventia.</div>
   {% endif %}
   <p class="small"><strong>A senha não fica em lugar nenhum, e ninguém a recupera.</strong> Sem ela, a parte fechada dos
-    backups se perde, e o resto continua abrindo. O Livro Diário Auxiliar não fecha, porque é da serventia.</p>
+    backups se perde, e o resto continua abrindo. O Livro Diário fecha junto: guarde o que entregou à Corregedoria.</p>
   <form method="post" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="acao" value="chave_do_titular">
@@ -36,6 +36,7 @@
     <label>{{ rotulos.despesas_teto_por_dia }} <input name="despesas_teto_por_dia" value="{{ cfg.despesas_teto_por_dia }}" size="12"></label>
     <label><input type="checkbox" name="despesas_regra_guias_ligada" value="1" {% if cfg.despesas_regra_guias_ligada == '1' %}checked{% endif %}> {{ rotulos.despesas_regra_guias_ligada }}</label>
     <label>{{ rotulos.despesas_teto_guia }} <input name="despesas_teto_guia" value="{{ cfg.despesas_teto_guia }}" size="12"></label>
+    <label>{{ rotulos.despesas_aliquota_iss }} <input name="despesas_aliquota_iss" value="{{ cfg.despesas_aliquota_iss }}" size="6"></label>
     <button type="submit">Gravar</button>
   </form>
   <p class="small muted">No Inter, a «Gestão de Aprovações» do Internet Banking decide se o pagamento feito pela API

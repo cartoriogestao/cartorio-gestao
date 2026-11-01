@@ -28,7 +28,7 @@
   </p>
   <p>Os três livros administrativos de toda serventia (art. 188):
     <a href="{{ url_for('livro_visitas') }}">Visitas e Correições</a> ·
-    <a href="{{ url_for('livro_diario') }}">Diário Auxiliar da Receita e da Despesa</a> ·
+    {% if e_o_titular %}<a href="{{ url_for('livro_diario') }}">Diário Auxiliar da Receita e da Despesa</a> ·{% endif %}
     <a href="{{ url_for('livro_deposito_previo') }}">Controle de Depósito Prévio</a></p>
   <p class="muted">Fonte: {{ fonte }}. Alteração posterior ao malote pode faltar: por isso cada linha cita o artigo.</p>
 </section>

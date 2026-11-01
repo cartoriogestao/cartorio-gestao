@@ -35,6 +35,7 @@ import tarefa_processo as TP
 import tarefa_suspensao as TS
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, send_file, session, url_for
 import backup as BKP
+import titular_privado as TITULAR_PRIVADO
 from waitress import serve
 
 from bd_nativo import banco
@@ -2752,13 +2753,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         return render_template("audit.html", rows=db.list_logs(2000),
                                agente_servidor=IDR.AGENTE_SERVIDOR)
 
-    def _tela_de_configuracoes(cenprot_tentativa=None):
-        s = settings_dict()
-        # O QUE ESTA INFORMADO, SEM O SEGREDO — `situacao` nunca devolve senha.
-        return render_template("settings.html", s=s,
-                               cenprot_tentativa=cenprot_tentativa,
-                               backup_cifra=BKP.situacao_da_cifra(data_dir),
-                               centrais=CENTCRED.situacao(), categories="\n".join(json_list(s.get("categories","[]"), [])), sources="\n".join(json_list(s.get("sources","[]"), [])), sectors="\n".join(json_list(s.get("sectors","[]"), [])), data_dir=data_dir)
+    # O BACKUP É SÓ DO TITULAR (oficial, 01/11/2026): o pacote leva o banco inteiro.
+    _, e_o_titular_agora = TITULAR_PRIVADO.guarda(app, db)
+    so_o_titular = TITULAR_PRIVADO.com_senha(app, db)
+    TITULAR_PRIVADO.registrar_rotas(app, db, login_required, roles_required, audit)
 
     @app.route("/configuracoes", methods=["GET", "POST"])
     @login_required
@@ -2848,6 +2846,14 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "sources": json.dumps([x.strip() for x in request.form.get("sources", "").splitlines() if x.strip()], ensure_ascii=False),
                 "sectors": json.dumps([x.strip() for x in request.form.get("sectors", "").splitlines() if x.strip()], ensure_ascii=False),
             }
+            # QUEM NÃO É O TITULAR NÃO MEXE NO BACKUP NEM NO NOME DO TITULAR: a pasta
+            # desviaria os pacotes, e o nome é o que decide quem abre o privado. O
+            # formulário dele não traz esses campos, e sem isto gravaria o vazio.
+            if not e_o_titular_agora():
+                for chave, padrao in (("auto_backup", "1"), ("backup_dir", ""), ("backup_retencao_dias", "5"),
+                                      ("serventia_titular", ""), ("ri_registrador", "")):
+                    if chave in values:
+                        values[chave] = db.get_setting(chave, padrao)
             # CAMINHO DE REDE NÃO ENTRA NAS CONFIGURAÇÕES (revisão de segurança
             # de 22/10/2026, M3): `archive_root`, `backup_dir` e as pastas de
             # importação em `\\maquina\...` fariam o serviço, que roda como
@@ -2866,20 +2872,20 @@ def create_app(test_config: dict | None = None) -> Flask:
             audit("SETTINGS_CHANGED", "SETTINGS", None, values)
             flash("Configurações salvas. Alterações de host/porta entram em vigor após reiniciar o servidor.", "success")
             return redirect(url_for("settings"))
-        return _tela_de_configuracoes()
+        s = settings_dict()
+        # O QUE ESTA INFORMADO, SEM O SEGREDO — `situacao` nunca devolve senha.
+        return render_template("settings.html", s=s,
+                               backup_cifra=BKP.situacao_da_cifra(data_dir),
+                               centrais=CENTCRED.situacao(), categories="\n".join(json_list(s.get("categories","[]"), [])), sources="\n".join(json_list(s.get("sources","[]"), [])), sectors="\n".join(json_list(s.get("sectors","[]"), [])), data_dir=data_dir)
 
     @app.route("/configuracoes/cenprot-chave", methods=["POST"])
     @login_required
     @roles_required("ADMIN")
     def configuracoes_cenprot_chave():
-        """Os dados da conta da chave da CENPROT. ESCREVE só estas chaves.
+        """Os códigos da serventia na chave da CENPROT. ESCREVE só estas chaves.
 
-        Ordem do oficial, 30/10/2026: «coloca esse cálculo do xml como uma
-        variável a ser preenchida pela serventia». A conta foi medida só nesta
-        casa, e a chave de outra serventia não fecha por ela.
-
-        FORMATO ERRADO NÃO SE GRAVA. Conferência baixa não se recusa: avisa e
-        pergunta, porque quem responde pela chave é a serventia.
+        A conta é a do layout oficial, igual para toda serventia; o que é da
+        casa é o IBGE e o código CRA. FORMATO ERRADO NÃO SE GRAVA.
         """
         import protesto_cenprot as PCEN
         try:
@@ -2887,34 +2893,14 @@ def create_app(test_config: dict | None = None) -> Flask:
         except PCEN.CenprotError as erro:
             flash(str(erro), "danger")
             return redirect(url_for("settings") + "#cfg-cenprot-chave")
-        pesos = valores[PCEN.CHAVE_DOS_PESOS]
-        conferencia = None
-        if pesos:
-            with db.connect() as con:
-                conferencia = PCEN.conferir_pesos(con, pesos)
-            if (conferencia["conferem"] < conferencia["total"]
-                    and not request.form.get("gravar_mesmo_assim")):
-                flash(f"Só {conferencia['conferem']} de {conferencia['total']} "
-                      f"chaves já gravadas conferem com estes pesos. Nada foi "
-                      f"gravado: confira os pesos ou marque que quer gravar "
-                      f"assim mesmo.", "warning")
-                return _tela_de_configuracoes(
-                    cenprot_tentativa={**valores, "conferencia": conferencia})
         db.set_settings(valores)
-        audit("SETTINGS_CHANGED", "SETTINGS", None,
-              {**{k: v for k, v in valores.items() if k != PCEN.CHAVE_DOS_PESOS},
-               "cenprot_chave_pesos": "preenchidos" if pesos else "vazios",
-               "conferencia": conferencia})
-        if not pesos:
-            flash("Chave da CENPROT salva, sem pesos: o sistema não calcula a "
-                  "chave, e o título é apontado sem ela.", "warning")
-        elif conferencia["total"]:
-            flash(f"Chave da CENPROT salva. {conferencia['conferem']} de "
-                  f"{conferencia['total']} chaves já gravadas conferem com "
-                  f"estes pesos.", "success")
+        audit("SETTINGS_CHANGED", "SETTINGS", None, valores)
+        if PCEN.pode_calcular_a_chave(db.get_settings()):
+            flash("Códigos da chave da CENPROT salvos.", "success")
         else:
-            flash("Chave da CENPROT salva. Ainda não há chave gravada para "
-                  "conferir os pesos.", "success")
+            flash("Códigos salvos, mas ainda falta algum: sem o IBGE e o código "
+                  "CRA, o sistema não calcula a chave, e o título é apontado sem "
+                  "ela.", "warning")
         return redirect(url_for("settings") + "#cfg-cenprot-chave")
 
     @app.route("/configuracoes/cra-envio", methods=["POST"])
@@ -3012,6 +2998,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/configuracoes/backup-protecao", methods=["POST"])
     @login_required
     @roles_required("ADMIN")
+    @so_o_titular
     def configuracoes_backup_protecao():
         """A cifra do pacote e o acervo no completo (LX14; A7 do LS03). ESCREVE.
 
@@ -3060,6 +3047,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/backup", methods=["POST"])
     @login_required
     @roles_required("ADMIN")
+    @so_o_titular
     def backup():
         target = backup_dir() / f"backup_manual_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
         full_backup(target)
@@ -3807,8 +3795,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     def data_invalida(erro):
         flash(f"A data «{erro.digitado[:40]}» está errada. Nada foi gravado: "
               "preencha os campos de novo, com a data certa.", "danger")
-        return redirect(SEGWEB.destino_interno(request.form.get("voltar"),
-                                               request.path))
+        # A volta padrão é montada aqui, pela rota, e não lida do pedido
+        # (`request.path`): o CodeQL (alerta #290) não a dava por conferida.
+        padrao = (url_for(request.endpoint, **(request.view_args or {}))
+                  if request.endpoint else url_for("dashboard"))
+        return redirect(SEGWEB.destino_interno(request.form.get("voltar"), padrao))
 
     # ============ A TELA QUE ESTOURA VIRA UMA LINHA NA LISTA DE PROBLEMAS
     #

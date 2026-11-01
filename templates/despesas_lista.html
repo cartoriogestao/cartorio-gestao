@@ -93,9 +93,16 @@
   {% elif quadro.darf.imposto is none %}
   <div class="notice">O carnê-leão não foi calculado, porque falta a tabela progressiva. <a href="{{ url_for('carne_leao_configuracao') }}">Cadastrar a tabela</a></div>
   {% endif %}
+  {% if quadro.iss.falta_cadastrar %}
+  <div class="notice">ISS de {{ quadro.iss.competencia[5:] }}/{{ quadro.iss.competencia[:4] }}, preliminar: <strong>R$ {{ reais(quadro.iss.valor) }}</strong>. O valor que vale é o da guia.
+    <a class="button" href="{{ url_for('despesas_nova', iss=quadro.iss.competencia) }}">Cadastrar a guia</a></div>
+  {% endif %}
   <p>{% if quadro.sobra >= 0 %}Se não entrar mais nada, sobram R$ {{ reais(quadro.sobra) }}.{% else %}Se não entrar mais nada, faltam R$ {{ reais(-quadro.sobra) }}.{% endif %}
-    {% if quadro.imposto_do_mes is not none %}<span class="small">Carnê-leão deste mês até agora, que vence no mês seguinte: R$ {{ reais(quadro.imposto_do_mes) }}.</span>{% endif %}</p>
+    {% if quadro.imposto_do_mes is not none %}<span class="small">Carnê-leão deste mês até agora, que vence no mês seguinte: R$ {{ reais(quadro.imposto_do_mes) }}.</span>{% endif %}
+    <span class="small">ISS deste mês até agora, preliminar, que vence no mês seguinte: R$ {{ reais(quadro.iss.do_mes) }}.</span></p>
 </section>
+{% elif quadro_trancado %}
+<div class="notice">O balanço do mês está fechado pela senha do oficial. <a href="{{ url_for('titular_senha', volta=url_for('despesas_lista')) }}">Abrir</a></div>
 {% elif quadro_falhou %}
 <div class="notice">O quadro do mês não pôde ser calculado agora. A autorização e o pagamento não dependem dele.</div>
 {% endif %}

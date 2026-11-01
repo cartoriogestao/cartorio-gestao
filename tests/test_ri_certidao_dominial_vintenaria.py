@@ -189,7 +189,10 @@ def test_dominial_monta_a_cadeia_com_a_origem_digitada(cg_casa_logada):
     assert "HIPOTECA" not in corpo.split("CADEIA DOMINIAL", 1)[1], (
         "hipoteca não transmite domínio e entrou na cadeia")
     assert "Compra e Venda" in corpo
-    assert "9898" in tela, "a tela não avisou da origem que não entrou"
+    # No aviso, e não em qualquer canto da tela: a ficha antiga mostrava o
+    # número em outro lugar, e o aviso faltava quando a certidão aguarda o selo.
+    avisos = " ".join(re.findall(r'class="flash[^"]*"[^>]*>(.*?)</div>', tela, re.DOTALL))
+    assert "9898" in avisos, "a tela não avisou da origem que não entrou"
 
 
 def test_dominial_em_branco_segue_o_registro_anterior(cg_casa_logada):

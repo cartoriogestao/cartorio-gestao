@@ -283,7 +283,8 @@ def test_o_lote_NAO_sela_e_NAO_cobra(s):
     con.close()
     assert linha["selo"] is None
     assert linha["lancamento_id"] is None
-    assert "sem selo" in resposta.get_data(as_text=True).lower()
+    # A mensagem desde 30/10/2026 (`atos_sem_cobranca` apagada): sele e cobre pela ficha.
+    assert "ainda não têm selo nem cobrança" in resposta.get_data(as_text=True)
 
 
 def test_o_protesto_toma_numero_e_lugar_no_livro(s):

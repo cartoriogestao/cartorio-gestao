@@ -45,7 +45,14 @@ TIMEOUT_ENVIO = 8
 
 
 class EnvioErro(Exception):
-    """A Graph recusou ou nao respondeu. Nao inventa envio."""
+    """A Graph recusou ou nao respondeu. Nao inventa envio.
+
+    `texto` e a frase que a tela mostra: a resposta leva o campo, e nao a
+    excecao (alerta #287 do CodeQL)."""
+
+    def __init__(self, texto: str = ""):
+        super().__init__(texto)
+        self.texto = str(texto)
 
 
 def agora_iso() -> str:

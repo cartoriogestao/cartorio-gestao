@@ -111,10 +111,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             a_autorizar = DP.para_autorizar(con)
             em_duvida = DP.recebedor_em_duvida(con)
             quadro, quadro_falhou = None, False
+            quadro_trancado = not TP.esta_aberto(db)
             # O quadro é conta de outros módulos: se ele quebrar, a tela de autorizar
             # e pagar continua de pé, e diz que a conta não saiu em vez de mostrar zero.
             try:
-                quadro = DV.quadro_do_mes(con, date.today())
+                quadro = None if quadro_trancado else DV.quadro_do_mes(con, date.today())
             except Exception:  # noqa: BLE001
                 _LOG.exception("o quadro do mês não saiu")
                 quadro_falhou = True
@@ -125,7 +126,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                papel=usuario_papel(), do_mes=do_mes,
                                recorrentes_carregadas=carregadas, a_autorizar=a_autorizar,
                                balanco=balanco, em_duvida=em_duvida, quadro=quadro,
-                               quadro_falhou=quadro_falhou,
+                               quadro_falhou=quadro_falhou, quadro_trancado=quadro_trancado,
                                formas=DP.FORMAS)
 
     @app.route("/administrativo/despesas/nova", methods=["GET", "POST"])
@@ -171,6 +172,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             try:
                 with db.connect() as con:
                     preenchido = DV.formulario_do_darf(con, darf)
+            except DP.DespesaError as erro:
+                flash(str(erro), "warning")
+        elif request.args.get("iss") and e_o_titular():
+            try:
+                with db.connect() as con:
+                    preenchido = DV.formulario_do_iss(
+                        con, request.args["iss"],
+                        municipio=SERV.dados(db.get_settings).get("ri_cidade") or "")
             except DP.DespesaError as erro:
                 flash(str(erro), "warning")
         elif rid.isdigit() and comp and e_o_titular():

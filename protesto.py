@@ -388,7 +388,9 @@ def apresentante_do_titulo(con, titulo: Any) -> dict:
 # ------------------------------------------------------------- o cadastro
 
 
-_VALOR_LEGIVEL = re.compile(r"\s*(R\$)?\s*[+-]?\s*\d[\d.,]*\s*")
+# Sem dois `\s*` vizinhos (alerta #289 do CodeQL: muitos espaços seguidos
+# deixavam a conferência lenta). O espaço das pontas sai antes, no `strip`.
+_VALOR_LEGIVEL = re.compile(r"(?:R\$)?\s*(?:[+-]\s*)?\d[\d.,]*")
 
 
 def valor_legivel(valor: Any) -> bool:
@@ -397,7 +399,7 @@ def valor_legivel(valor: Any) -> bool:
     `caixa_schema.centavos` tira as letras e devolve zero, o que serve à conta do caixa. Aqui o valor
     vai ao aviso, ao instrumento e à guia, e por isso é preciso recusar antes de ler.
     """
-    return bool(_VALOR_LEGIVEL.fullmatch("" if valor is None else str(valor)))
+    return bool(_VALOR_LEGIVEL.fullmatch("" if valor is None else str(valor).strip()))
 
 
 def cadastrar_titulo(con, dados: dict, *, origem: str,

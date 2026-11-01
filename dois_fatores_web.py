@@ -212,8 +212,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 return redirect(url_for("login"))
             flash(_aviso_da_falha(resultado), "danger")
             return redirect(url_for("login_dois_fatores"))
-        return render_template("login_dois_fatores.html", conta=user["username"],
-                               tentativas=DF.MAX_FALHAS, bloqueio=DF.BLOQUEIO_MINUTOS)
+        # Sem cache: voltar no navegador não pode reapresentar o token já trocado.
+        return _sem_cache(render_template("login_dois_fatores.html", conta=user["username"],
+                                          tentativas=DF.MAX_FALHAS,
+                                          bloqueio=DF.BLOQUEIO_MINUTOS))
 
     @app.route("/login/dois-fatores/cadastrar", methods=["GET", "POST"])
     def login_dois_fatores_cadastrar():

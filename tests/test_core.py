@@ -348,6 +348,50 @@ def test_a_meia_sessao_morre_em_cinco_minutos(cg_casa, relogio):
     assert "/login" in c.get("/").headers.get("Location", "")
 
 
+def test_o_segundo_clique_em_entrar_nao_da_bad_request(cg_casa, relogio):
+    """O primeiro envio entra e troca o token; o segundo chega com o token velho."""
+    db, c, dados = cg_casa["db"], cg_casa["c"], cg_casa["dados"]
+    uid = db.create_user("escrevente.um", "ESCREVENTE UM DE TESTE", SENHA, "USER")
+    segredo, _ = _ativar(db, uid, dados)
+    _senha(c, "escrevente.um")
+    tela = "/login/dois-fatores"
+    envio = {"codigo": DF.totp(segredo, T0 + 30),
+             "csrf_token": _token(c.get(tela).get_data(as_text=True))}
+    assert c.post(tela, data=envio).status_code == 302
+    r = c.post(tela, data=envio)
+    assert r.status_code == 302 and r.headers["Location"].endswith("/")
+    assert c.get("/").status_code == 200
+    assert [x["action"] for x in _rastro(db)].count("LOGIN_SUCCESS") == 1
+
+
+def test_o_formulario_de_outra_aba_volta_para_o_codigo_sem_conferir_nada(cg_casa, relogio):
+    db, c, dados = cg_casa["db"], cg_casa["c"], cg_casa["dados"]
+    uid = db.create_user("escrevente.um", "ESCREVENTE UM DE TESTE", SENHA, "USER")
+    segredo, _ = _ativar(db, uid, dados)
+    _senha(c, "escrevente.um")
+    tela = "/login/dois-fatores"
+    velho = _token(c.get(tela).get_data(as_text=True))
+    _senha(c, "escrevente.um")   # a outra aba repete a senha e troca o token
+    r = c.post(tela, data={"codigo": DF.totp(segredo, T0 + 30), "csrf_token": velho})
+    assert r.status_code == 302 and r.headers["Location"].endswith(tela)
+    acoes = [x["action"] for x in _rastro(db)]
+    assert "LOGIN_DOIS_FATORES_FALHA" not in acoes and "LOGIN_SUCCESS" not in acoes
+    pagina = c.get(tela)
+    assert "desatualizada" in pagina.get_data(as_text=True)
+    assert pagina.headers["Cache-Control"] == "no-store"
+    novo = _token(pagina.get_data(as_text=True))
+    r = c.post(tela, data={"codigo": DF.totp(segredo, T0 + 30), "csrf_token": novo})
+    assert r.status_code == 302 and r.headers["Location"].endswith("/")
+
+
+def test_fora_da_entrada_o_token_errado_continua_recusado(cg_casa):
+    db, c = cg_casa["db"], cg_casa["c"]
+    db.create_user("escrevente.um", "ESCREVENTE UM DE TESTE", SENHA, "USER")
+    _senha(c, "escrevente.um")
+    assert c.post("/logout", data={"csrf_token": "errado"}).status_code == 400
+    assert c.get("/").status_code == 200
+
+
 def test_o_papel_exigido_pelo_gestor_cadastra_o_celular_na_entrada(cg_casa, relogio):
     db, c, dados = cg_casa["db"], cg_casa["c"], cg_casa["dados"]
     uid = db.create_user("oficial.teste", "OFICIAL DE TESTE", SENHA, "ADMIN")
@@ -939,12 +983,14 @@ def test_o_post_anonimo_em_pedacos_nao_e_lido_alem_do_teto(_lx20t_casa, monkeypa
     """O corpo em pedaços não diz o tamanho: quem o segura é o teto gravado
     no pedido (`request.max_content_length`), na leitura. Medido no Werkzeug
     3.1: o formulário para no teto e o resto nem se lê — o token, que não
-    chegou, recusa com 400. Sem a linha, o corpo inteiro era lido; no Flask
-    3.0, a linha dava 500."""
+    chegou, recusa — desde 01/11/2026 o login devolve o formulário (302) em vez
+    do 400. Sem a linha, o corpo inteiro era lido; no Flask 3.0, a linha dava 500."""
     monkeypatch.setenv("CG_TETO_CORPO_ANONIMO_BYTES", "1000")
     c = _lx20t_casa["app"].test_client()
     r, lidos = _lx20t_em_pedacos(c, b"username=mario&password=" + b"x" * 50_000)
-    assert r.status_code in (400, 413)
+    assert r.status_code in (302, 400, 413)
+    if r.status_code == 302:
+        assert r.headers["Location"].endswith("/login")
     assert lidos <= 1000
 
 

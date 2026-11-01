@@ -370,7 +370,7 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Despesas", "despesas_lista", A),
              _i("Cadastrar despesa", "despesas_nova", ("MANAGER", "USER")),)),
          ("Livro Diário", (
-             _i("Livro Diário Auxiliar", "livro_diario", AMA),)),
+             _i("Livro Diário Auxiliar", "livro_diario", A, quando="e_o_titular"),)),
          ("Caixas para o visto", (
              _i("Caixas para o visto", "gestor_caixas", AM),)),
          ("Produtividade", (
@@ -630,6 +630,7 @@ PAI: dict[str, tuple[str, str]] = {
     "livro_visitas_imprimir": ("LIVROS", "Livros obrigatórios"),
     # Finanças
     "carne_leao_configuracao": ("FIN", "Carnê-leão"),
+    "titular_senha": ("FIN", "Carnê-leão"),
     "despesas_configuracao": ("FIN", "Despesas"),
     "despesas_ficha": ("FIN", "Despesas"),
     "despesas_recorrente": ("FIN", "Despesas"),

@@ -29,6 +29,7 @@ import livro_deposito_previo as LDP
 import livro_diario as LD
 import livro_visitas as LV
 import livros_obrigatorios as LO
+import titular_privado as TP
 from ri_schema import ler_feriados_locais
 from serventia import dados as dados_serventia
 
@@ -45,6 +46,8 @@ def _mes_anterior(hoje: date) -> str:
 def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str):
     usuario_nome = app.extensions["usuario_nome"]
     usuario_papel = app.extensions["usuario_papel"]
+    # O LIVRO DIÁRIO MOSTRA AS DESPESAS DA CASA: só o titular abre (oficial, 01/11/2026).
+    so_o_titular = TP.com_senha(app, db)
 
     def _feriados() -> set[date]:
         return ler_feriados_locais(db.get_setting("ri_feriados_locais", ""))
@@ -106,7 +109,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     # ------------------------------------------------ diário auxiliar
 
     @app.route("/livros-obrigatorios/diario")
-    @roles_required(*VEEM)
+    @roles_required("ADMIN")
+    @so_o_titular
     def livro_diario():
         hoje = date.today()
         try:
@@ -139,7 +143,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                pode_gerar=usuario_papel() in GERA)
 
     @app.route("/livros-obrigatorios/diario/despesas", methods=["POST"])
-    @roles_required(*LANCAM)
+    @roles_required("ADMIN")
+    @so_o_titular
     def livro_diario_despesa():
         f = request.form
         try:
@@ -158,7 +163,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return redirect(url_for("livro_diario", mes=(f.get("data") or "")[:7]))
 
     @app.route("/livros-obrigatorios/diario/despesas/<int:despesa_id>/anular", methods=["POST"])
-    @roles_required(*LANCAM)
+    @roles_required("ADMIN")
+    @so_o_titular
     def livro_diario_anular(despesa_id: int):
         try:
             with db.transaction() as con:
@@ -173,7 +179,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return redirect(url_for("livro_diario", mes=str(feito["data"])[:7]))
 
     @app.route("/livros-obrigatorios/diario/gerar", methods=["POST"])
-    @roles_required(*GERA)
+    @roles_required("ADMIN")
+    @so_o_titular
     def livro_diario_gerar():
         comp = request.form.get("mes")
         try:
@@ -192,7 +199,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return redirect(url_for("livro_diario_versao", geracao_id=feito["id"]))
 
     @app.route("/livros-obrigatorios/diario/versao/<int:geracao_id>")
-    @roles_required(*VEEM)
+    @roles_required("ADMIN")
+    @so_o_titular
     def livro_diario_versao(geracao_id: int):
         with db.connect() as con:
             g = LD.geracao(con, geracao_id)

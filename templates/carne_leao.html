@@ -39,6 +39,7 @@
 <div class="actions">
   <a class="button" href="{{ url_for('carne_leao_exportar', mes=mes) }}">Baixar o livro-caixa do mês (CSV)</a>
   <a class="button" href="{{ url_for('carne_leao_configuracao') }}">Configuração e tabela progressiva</a>
+  <a class="button" href="{{ url_for('titular_senha') }}">Senha do oficial</a>
   <a class="button" href="{{ url_for('livro_diario', mes=mes) }}">Livro Diário do mês</a>
 </div>
 <form method="get" class="filters"><label>Mês <input type="month" name="mes" value="{{ mes }}"></label><button type="submit">Ver</button></form>

@@ -913,7 +913,7 @@
            serventia, gerado todo mês (Código de Normas do MA, art. 205). Mora
            no dinheiro, e não só em «Livros obrigatórios», porque é aqui que
            o oficial procura a despesa que acabou de pagar. #}
-        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('livro_diario') }}">Livro Diário Auxiliar</a>{% endif %}
+        {% if user.role == 'ADMIN' and e_o_titular %}<a href="{{ url_for('livro_diario') }}">Livro Diário Auxiliar</a>{% endif %}
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Atendimento</div>
         <a href="{{ url_for('service_queue') }}">Atendimento / senhas</a>
         {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('senhas_relatorio') }}">Senhas: espera e atendimento</a>{% endif %}

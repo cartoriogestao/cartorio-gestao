@@ -21,7 +21,7 @@
   .pagina-configuracoes .cg-ajuda{margin:10px 0 0}
   .pagina-configuracoes .cg-ajuda>summary{cursor:pointer;font-size:13px}
 </style>
-{% if backup_cifra == 'perdida' %}
+{% if backup_cifra == 'perdida' and e_o_titular %}
 <p class="notice danger"><strong>A senha da cifra do backup não abre:</strong> a chave do cofre sumiu, e os
   pacotes estão saindo sem cifra. Grave a senha de novo em <a href="#cfg-backup-protecao">Proteção do backup</a>.</p>
 {% endif %}
@@ -65,7 +65,7 @@
     {# LX12 (19/10/2026): caminho digitado nas importações só vale dentro da
        pasta de dados, da pasta principal de arquivos ou de uma destas. #}
     <label>Pastas de importação (uma por linha)<textarea name="pastas_de_importacao" rows="3" spellcheck="false" placeholder="vazio = só a pasta de dados e a pasta principal de arquivos">{{s.pastas_de_importacao}}</textarea></label>
-    <label>Pasta de backups<input name="backup_dir" value="{{s.backup_dir}}" placeholder="vazio = pasta padrão"></label>
+    {% if e_o_titular %}<label>Pasta de backups<input name="backup_dir" value="{{s.backup_dir}}" placeholder="vazio = pasta padrão"></label>{% endif %}
     {# Onde a serventia guarda o malote baixado e os comprovantes de gratuidade é
        dela: o código não procura essas pastas, lê daqui (23/10/2026). #}
     <label>Pasta do malote (onde a equipe salva o que baixa do Malote Digital)<input name="malote_pasta" value="{{s.malote_pasta}}" placeholder="vazio = o agente do malote só olha a pasta de entrada do sistema"></label>
@@ -111,7 +111,8 @@
     <label class="checkbox-label span2"><input type="checkbox" name="discovery_enabled" {% if s.discovery_enabled!='0' %}checked{% endif %}> Descoberta automática na rede</label>
     <label>Porta de descoberta<input type="number" name="discovery_port" value="{{s.discovery_port or '8766'}}"></label>
     {% if layout_novo %}<p class="muted small span2">Para uso em rede, mantenha o host em <strong>0.0.0.0</strong>. O instalador oficial configura firewall e descoberta automática.</p>
-    </div></details>{{ abre('cfg-backup-rotina', 'Backup automático', ('ligado' if s.auto_backup == '1' else 'DESLIGADO') ~ ' · guarda ' ~ (s.backup_retencao_dias or '5') ~ ' dias') }}<div class="form-grid cg-quadro-corpo">{% endif %}
+    </div></details>{{ abre('cfg-backup-rotina', 'Backup automático', (('ligado' if s.auto_backup == '1' else 'DESLIGADO') ~ ' · guarda ' ~ (s.backup_retencao_dias or '5') ~ ' dias') if e_o_titular else 'só o titular') }}<div class="form-grid cg-quadro-corpo">{% endif %}
+    {% if e_o_titular %}
     <label>Retenção dos backups automáticos (dias)
       <input type="number" name="backup_retencao_dias" min="3" value="{{s.backup_retencao_dias or '5'}}">
       <small>Ficam os pacotes dos últimos dias — e sempre o completo semanal de que o
@@ -119,6 +120,7 @@
         servidor não é tocado.</small>
     </label>
     <label class="checkbox-label span2"><input type="checkbox" name="auto_backup" {% if s.auto_backup=='1' %}checked{% endif %}> Backup automático diário</label>
+    {% endif %}
     {% if layout_novo %}</div></details>{{ abre('cfg-impressao', 'Tarefas, impressão e módulos', 'imprime em ' ~ ('.odt' if s.impressao_formato_padrao == 'odt' else 'PDF') ~ ' · Protesto: ' ~ ('todos os usuários' if s.modulo_protesto_alcance == 'TODOS' else ('ninguém' if s.modulo_protesto_alcance == 'NINGUEM' else 'somente o oficial'))) }}<div class="form-grid cg-quadro-corpo">{% endif %}
     <label class="checkbox-label span2"><input type="checkbox" name="require_backup_assignee" {% if s.require_backup_assignee=='1' %}checked{% endif %}> Exigir substituto quando houver responsável</label>
 
@@ -359,6 +361,7 @@
 {% if layout_novo %}</div></details>{% else %}
 </section>
 {% endif %}
+{% if e_o_titular %}
 {% if layout_novo %}{{ abre('cfg-backup-protecao', 'Proteção do backup', 'cifra ligada' if backup_cifra == 'ligada' else ('a senha guardada não abre' if backup_cifra == 'perdida' else 'cifra desligada'), aberto=backup_cifra == 'perdida') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel" id="cfg-backup-protecao">
   <h2>Proteção do backup</h2>
@@ -404,6 +407,7 @@
 {% if layout_novo %}</div></details>{% else %}
 </section>
 {% endif %}
+{% endif %}
 {% if layout_novo %}{{ abre('cfg-revisao-transcricao', 'Revisão das transcrições pela IA (RI)', 'a imagem da página vai ao provedor' if (not revisao_transcricao_cfg or revisao_transcricao_cfg.manda_imagem) else 'a imagem da página não sobe') }}<div class="cg-quadro-corpo">{% else %}
 <section class="panel" id="cfg-revisao-transcricao">
   <h2>Revisão das transcrições pela IA (RI)</h2>
@@ -442,7 +446,7 @@
 <section class="panel" id="cfg-admin">
   <h2>Administração</h2>
   <div class="actions">
-    <form method="post" action="{{url_for('backup')}}"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><button class="primary">Criar e baixar backup completo</button></form>
+    {% if e_o_titular %}<form method="post" action="{{url_for('backup')}}"><input type="hidden" name="csrf_token" value="{{csrf_token}}"><button class="primary">Criar e baixar backup completo</button></form>{% endif %}
     <a class="button" href="{{url_for('integrity')}}">Verificar integridade dos anexos</a>
     {# LX16: ligar/desligar a trava do selo pago — só o ADMIN, com justificativa. #}
     <a class="button" href="{{url_for('selo_conferencia')}}#trava">Trava do selo pago (selo × caixa)</a>

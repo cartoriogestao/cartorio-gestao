@@ -19,6 +19,7 @@ QUEM FAZ O QUÊ (decisões do oficial, 24/10/2026 e 28/10/2026)
 """
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime
 from io import BytesIO
 
@@ -28,8 +29,11 @@ import csv_seguro as CSVS
 import despesas as DP
 import despesas_comprovante as DC
 import despesas_inter as INTER
+import despesas_previsao as DV
 import despesas_recorrentes as RC
 import serventia as SERV
+
+_LOG = logging.getLogger("cartorio.despesas_web")
 
 QUEM_VE = ("ADMIN", "MANAGER", "AUDITOR")
 QUEM_CADASTRA = ("ADMIN", "MANAGER", "USER")
@@ -107,6 +111,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 [d for d in DP.listar(con, situacao=DP.AGUARDANDO) if d["origem"] == RC.ORIGEM])
             a_autorizar = DP.para_autorizar(con) if usuario_papel() == "ADMIN" else []
             em_duvida = [] if minhas is not None else DP.recebedor_em_duvida(con)
+            quadro, quadro_falhou = None, False
+            if usuario_papel() == "ADMIN":
+                # O quadro é conta de outros módulos: se ele quebrar, a tela de autorizar
+                # e pagar continua de pé, e diz que a conta não saiu em vez de mostrar zero.
+                try:
+                    quadro = DV.quadro_do_mes(con, date.today())
+                except Exception:  # noqa: BLE001
+                    _LOG.exception("o quadro do mês não saiu")
+                    quadro_falhou = True
             balanco = None if minhas is not None else DP.balanco(
                 con, date.today().isoformat(), do_mes)
         return render_template("despesas_lista.html", linhas=linhas, contagem=contagem,
@@ -114,7 +127,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                categorias=DP.CATEGORIAS, reais=DP.reais,
                                papel=usuario_papel(), do_mes=do_mes,
                                recorrentes_carregadas=carregadas, a_autorizar=a_autorizar,
-                               balanco=balanco, em_duvida=em_duvida,
+                               balanco=balanco, em_duvida=em_duvida, quadro=quadro,
+                               quadro_falhou=quadro_falhou,
                                formas=DP.FORMAS, so_as_proprias=minhas is not None)
 
     @app.route("/administrativo/despesas/nova", methods=["GET", "POST"])

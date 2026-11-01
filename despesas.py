@@ -118,6 +118,9 @@ CATEGORIAS: dict[str, tuple[str, str]] = {
     "FUNDO_FADEP": ("Guia do FADEP", REPASSE),
     "FUNDO_FEMP": ("Guia do FEMP", REPASSE),
     "FUNDO_FERRFIS": ("Guia do FERRFIS", REPASSE),
+    # O DARF DO TITULAR (31/10/2026): imposto pessoal dele, e por isso fora do Livro
+    # Diário da serventia. É por esta categoria que `despesas_previsao` sabe que saiu.
+    "CARNE_LEAO": ("DARF do carnê-leão do titular", REPASSE),
     # O REPASSE AO APRESENTANTE DO TÍTULO PAGO (29/10/2026): o boleto que o robô
     # emite no portal da CRA (`protesto_repasse_portal`). É dinheiro de
     # terceiro que passou pela casa — não é despesa da serventia —, e por isso

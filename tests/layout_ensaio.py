@@ -209,7 +209,6 @@ _SEM_FECHAMENTO = {"area", "base", "br", "col", "embed", "hr", "img", "input", "
 _CAIXAS = {"main", "nav", "aside", "section", "article", "header", "footer", "div", "form", "details",
            "summary", "table", "fieldset", "select", "ul", "ol", "dialog", "template", "textarea", "button",
            "label"}
-_NAO_SUBMETE = {"submit", "button", "reset", "image"}
 
 
 def _classes(a: dict) -> list[str]:

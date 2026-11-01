@@ -4422,11 +4422,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     linha = banco(con).um(
                         "SELECT * FROM hc_habilitacoes WHERE id=%s",
                         (int(hc_id),))
+                motivo = HAB.por_que_nao_lavra_o_casamento(linha, hoje()) if linha else ""
                 if not linha:
                     flash(f"Habilitação #{hc_id} não encontrada.", "danger")
-                elif HAB.por_que_nao_lavra_o_casamento(linha, hoje()):
-                    flash(HAB.por_que_nao_lavra_o_casamento(linha, hoje()),
-                          "warning" if linha["situacao"] != "HABILITADO" else "danger")
+                elif motivo:
+                    flash(motivo, "warning" if linha["situacao"] != "HABILITADO" else "danger")
                 else:
                     habilitacao_origem = dict(linha)
 

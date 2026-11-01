@@ -162,7 +162,7 @@ def test_toda_classe_da_casca_tem_estilo_ou_script():
     definidas += "".join(p.read_text(encoding="utf-8") for p in (ESTATICOS / "casca.js", ESTATICOS / "fases.js"))
     for nome in _moldes():
         definidas += "".join(re.findall(r"<style.*?</style>", _ler(nome), flags=re.S))
-        definidas += "".join(re.findall(r"<script.*?</script>", _ler(nome), flags=re.S))
+        definidas += "".join(re.findall(r"<script.*?</script[^>]*>", _ler(nome), flags=re.S | re.I))
     sem = sorted(c for c in _classes_da_casca_nos_moldes() - SO_DE_MARCA if not re.search(rf"{re.escape(c)}\b", definidas))
     assert not sem, f"classes sem regra nem script: {sem}"
 

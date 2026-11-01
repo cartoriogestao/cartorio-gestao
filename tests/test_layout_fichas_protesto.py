@@ -215,7 +215,7 @@ def test_a_vida_do_titulo_nao_imprime_o_dicionario_do_python(casa, estado):  # n
     """Achado por esta semente: a linha do protesto saía com `prova: {'modo': ...}`."""
     html = casa.cliente("ADMIN", "novo").get(f"/protesto/{casa.ids[f'protesto_{estado}']}").get_data(as_text=True)
     assert not re.search(r"<small>[a-z_ ]+: [{\[]", html)
-    assert "None" not in re.sub(r"<script.*?</script>", "", html, flags=re.S)
+    assert "None" not in re.sub(r"<script.*?</script[^>]*>", "", html, flags=re.S | re.I)
     assert "prova: modo:" in html
 
 

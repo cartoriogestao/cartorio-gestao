@@ -23,6 +23,18 @@ O QUE ENTRA NA PREVISÃO DO MÊS
     - O carnê-leão do mês ANTERIOR, que é o que vence neste (decisão do oficial de
       26/10/2026), menos a despesa da categoria do DARF. O deste mês só se mostra, porque
       vence no mês seguinte. Sem tabela progressiva não há imposto, e a tela diz isso.
+    - O ISS do mês anterior, PRELIMINAR (pedido do oficial, 01/11/2026), menos as guias da
+      categoria ISS pagas ou cadastradas no mês. O deste mês só se mostra.
+
+POR QUE O ISS É PRELIMINAR
+    O selo não declara o ISS, e o caixa não o guarda: a conta é a alíquota do município, na
+    configuração, sobre o emolumento dos atos pelo selo. O ISS é da serventia e não vai ao
+    cliente. Contra as guias pagas em outubro/2026 ela ficou 2,7% abaixo em setembro, 30% em
+    julho e 56% em agosto, e nenhuma outra base medida explicou os três. O valor que vale é o
+    da guia.
+
+    A transição do ISS para IBS e CBS não tem estrutura definida (oficial, 01/11/2026): nada
+    aqui a antecipa.
 """
 from __future__ import annotations
 
@@ -98,6 +110,34 @@ def _somar(bd, sql: str, parametros: tuple) -> int:
                      parametros)["total"])
 
 
+def aliquota_do_iss(con) -> int:
+    """A alíquota da configuração, em centésimos de ponto: «5,00» é 500. Só LÊ."""
+    return DP.centavos_da_tela(DP.configuracao(con)["despesas_aliquota_iss"])
+
+
+def iss_preliminar(emolumentos: int, aliquota: int) -> int:
+    """O ISS estimado sobre os emolumentos, em centavos. Só calcula. Ver o alto do módulo."""
+    return (int(emolumentos) * int(aliquota) + 5000) // 10000
+
+
+def formulario_do_iss(con, competencia: Any, *, municipio: str) -> dict:
+    """A despesa da guia do ISS, com o valor estimado para conferir. Só LÊ.
+
+    O vencimento fica em branco: a data da guia não está medida nesta casa.
+    """
+    try:
+        comp = CL.competencia(competencia)
+    except CL.CarneLeaoError as erro:
+        raise DP.DespesaError(str(erro)) from erro
+    valor = iss_preliminar(LD.apurar(con, comp)["receita_bruta"], aliquota_do_iss(con))
+    if valor <= 0:
+        raise DP.DespesaError(f"Os selos de {comp[5:]}/{comp[:4]} não dão ISS a estimar.")
+    return {"iss_preliminar": comp, "categoria": "ISS",
+            "descricao": f"ISS, referência {comp[5:]}/{comp[:4]}",
+            "beneficiario_nome": f"Município de {municipio}" if municipio else "Município",
+            "valor": DP.reais(valor), "forma": DP.PIX_COPIA_E_COLA, "documento_especie": "Guia"}
+
+
 def vencimento_do_darf(con, competencia: str) -> date:
     """O vencimento do imposto da competência: no mês seguinte, pela regra da configuração."""
     ano, mes = int(competencia[:4]), int(competencia[5:7])
@@ -166,6 +206,10 @@ def quadro_do_mes(con, hoje: date) -> dict:
     imposto = anterior["imposto"]
     darf_cadastrado = _ja_previstas(("CARNE_LEAO",))
     imposto_a_sair = None if imposto is None else max(0, int(imposto) - darf_cadastrado)
+    emolumentos_anteriores = int(LD.apurar(bd, _mes_anterior(hoje))["receita_bruta"])
+    aliquota = aliquota_do_iss(bd)
+    iss_anterior = iss_preliminar(emolumentos_anteriores, aliquota)
+    iss_cadastrado = _ja_previstas(("ISS",))
 
     linhas = [
         {"rotulo": "Já pago: despesas no Livro Diário e repasses", "valor": pago_no_livro + repasses_pagos,
@@ -182,6 +226,10 @@ def quadro_do_mes(con, hoje: date) -> dict:
          "valor": imposto_a_sair or 0, "ja_saiu": False,
          "nota": "Sem tabela progressiva cadastrada: o imposto não foi calculado." if imposto is None
                  else "Sai da conta quando o DARF é cadastrado na categoria do carnê-leão."},
+        {"rotulo": f"ISS de {_mes_anterior(hoje)[5:]}/{_mes_anterior(hoje)[:4]}, preliminar",
+         "valor": max(0, iss_anterior - iss_cadastrado), "ja_saiu": False,
+         "nota": f"Estimativa: {DP.reais(aliquota)}% sobre R$ {DP.reais(emolumentos_anteriores)} de emolumentos "
+                 "pelo selo. O valor que vale é o da guia; sai da conta quando ela é cadastrada na categoria ISS."},
     ]
     falta_sair = sum(x["valor"] for x in linhas if not x["ja_saiu"])
     ja_saiu = sum(x["valor"] for x in linhas if x["ja_saiu"])
@@ -194,4 +242,7 @@ def quadro_do_mes(con, hoje: date) -> dict:
             "imposto_do_mes": caixa["imposto"], "dias_passados": passados, "dias_uteis": uteis,
             "darf": {"competencia": _mes_anterior(hoje), "imposto": imposto,
                      "vencimento": vencimento_do_darf(bd, _mes_anterior(hoje)).isoformat(),
-                     "falta_cadastrar": bool(imposto) and not darf_cadastrado}}
+                     "falta_cadastrar": bool(imposto) and not darf_cadastrado},
+            "iss": {"competencia": _mes_anterior(hoje), "valor": iss_anterior,
+                    "falta_cadastrar": bool(iss_anterior) and not iss_cadastrado,
+                    "do_mes": iss_preliminar(int(livro["receita_bruta"]), aliquota)}}

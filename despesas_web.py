@@ -173,6 +173,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     preenchido = DV.formulario_do_darf(con, darf)
             except DP.DespesaError as erro:
                 flash(str(erro), "warning")
+        elif request.args.get("iss") and e_o_titular():
+            try:
+                with db.connect() as con:
+                    preenchido = DV.formulario_do_iss(
+                        con, request.args["iss"],
+                        municipio=SERV.dados(db.get_settings).get("ri_cidade") or "")
+            except DP.DespesaError as erro:
+                flash(str(erro), "warning")
         elif rid.isdigit() and comp and e_o_titular():
             with db.connect() as con:
                 r = RC.recorrente(con, int(rid))

@@ -58,8 +58,6 @@ CPF = "00000000191"
 # Dois CNPJ fictícios, e nenhum é o da serventia (a base usa o 00.000.001/0000-55).
 CNPJ = "00000010000127"
 CNPJ_DA_ENTIDADE = "00000011000171"
-# A chave da CENPROT só confere a forma dos pesos: 23 dígitos.
-PESOS_DA_CHAVE = "13131313131313131313131"
 PDF = b"%PDF-1.4\n% Ensaio do layout\n"
 NOSSO_NUMERO = "10000000000{:04d}"
 
@@ -177,8 +175,7 @@ class _Semeador:
         """O que as telas exigem e a base não traz. Só preenche o que está em branco: outra área
         pode ter posto o seu."""
         padrao = {"serventia_horario": "de segunda a sexta, das 8h às 17h",
-                  "ibge_uf": "21", "ibge_municipio": "00001", "ibge_cartorio": "01",
-                  "cenprot_chave_pesos": PESOS_DA_CHAVE}
+                  "ibge_uf": "21", "ibge_municipio": "00001", "ibge_cartorio": "01"}
         faltando = {k: v for k, v in padrao.items() if not str(self.casa.db.get_setting(k, "") or "").strip()}
         if faltando:
             self.casa.db.set_settings(faltando)

@@ -166,7 +166,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return _ficha(novo) if e_o_titular() else redirect(url_for("despesas_nova"))
         preenchido: dict = {}
         rid, comp = request.args.get("recorrente_id") or "", request.args.get("competencia") or ""
-        if rid.isdigit() and comp and e_o_titular():
+        darf = request.args.get("carne_leao") or ""
+        if darf and e_o_titular():
+            try:
+                with db.connect() as con:
+                    preenchido = DV.formulario_do_darf(con, darf)
+            except DP.DespesaError as erro:
+                flash(str(erro), "warning")
+        elif rid.isdigit() and comp and e_o_titular():
             with db.connect() as con:
                 r = RC.recorrente(con, int(rid))
                 feriados = RC.feriados_da_casa(con)

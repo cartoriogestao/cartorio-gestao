@@ -87,6 +87,12 @@
       <td>{{ x.rotulo }}{% if x.nota %}<br><span class="small muted">{{ x.nota }}</span>{% endif %}</td><td>R$ {{ reais(x.valor) }}</td>
     </tr>{% endfor %}</tbody>
   </table></div>
+  {% if quadro.darf.falta_cadastrar %}
+  <div class="notice">DARF do carnê-leão de {{ quadro.darf.competencia[5:] }}/{{ quadro.darf.competencia[:4] }}: <strong>R$ {{ reais(quadro.darf.imposto) }}</strong>, vence em {{ quadro.darf.vencimento }}.
+    <a class="button" href="{{ url_for('despesas_nova', carne_leao=quadro.darf.competencia) }}">Cadastrar o DARF</a></div>
+  {% elif quadro.darf.imposto is none %}
+  <div class="notice">O carnê-leão não foi calculado, porque falta a tabela progressiva. <a href="{{ url_for('carne_leao_configuracao') }}">Cadastrar a tabela</a></div>
+  {% endif %}
   <p>{% if quadro.sobra >= 0 %}Se não entrar mais nada, sobram R$ {{ reais(quadro.sobra) }}.{% else %}Se não entrar mais nada, faltam R$ {{ reais(-quadro.sobra) }}.{% endif %}
     {% if quadro.imposto_do_mes is not none %}<span class="small">Carnê-leão deste mês até agora, que vence no mês seguinte: R$ {{ reais(quadro.imposto_do_mes) }}.</span>{% endif %}</p>
 </section>

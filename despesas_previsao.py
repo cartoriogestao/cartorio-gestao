@@ -26,12 +26,15 @@ O QUE ENTRA NA PREVISÃO DO MÊS
 """
 from __future__ import annotations
 
+import calendar
 from datetime import date, timedelta
+from typing import Any
 
 import carne_leao as CL
 import despesas as DP
 import despesas_recorrentes as RC
 import livro_diario as LD
+import oficial_obrigacoes as OO
 from bd_nativo import banco
 
 CATEGORIAS_DE_FUNDO = tuple(c for c in DP.CATEGORIAS if c.startswith("FUNDO_"))
@@ -95,6 +98,40 @@ def _somar(bd, sql: str, parametros: tuple) -> int:
                      parametros)["total"])
 
 
+def vencimento_do_darf(con, competencia: str) -> date:
+    """O vencimento do imposto da competência: no mês seguinte, pela regra da configuração."""
+    ano, mes = int(competencia[:4]), int(competencia[5:7])
+    ano, mes = (ano + 1, 1) if mes == 12 else (ano, mes + 1)
+    cfg = CL.configuracao(con)
+    if cfg["carne_leao_prazo_regra"] == CL.DIA_DO_MES and str(cfg["carne_leao_prazo_dia"]).isdigit():
+        ultimo = calendar.monthrange(ano, mes)[1]
+        return date(ano, mes, min(int(cfg["carne_leao_prazo_dia"]), ultimo))
+    return OO._ultimo_dia_util(ano, mes)
+
+
+def formulario_do_darf(con, competencia: Any) -> dict:
+    """A despesa do DARF, preenchida para colar o código. Só LÊ. Quem grava é o titular.
+
+    O sistema não gera o DARF (`carne_leao`): o código sai do Carnê-Leão Web ou do Sicalc.
+    Por isso a despesa não nasce sozinha: despesa sem código não se paga.
+    """
+    try:
+        comp = CL.competencia(competencia)
+    except CL.CarneLeaoError as erro:
+        raise DP.DespesaError(str(erro)) from erro
+    imposto = CL.apurar(con, comp)["imposto"]
+    if imposto is None:
+        raise DP.DespesaError("Sem tabela progressiva cadastrada, o imposto não foi calculado: "
+                              "cadastre a tabela em Carnê-leão → Configuração.")
+    if int(imposto) <= 0:
+        raise DP.DespesaError(f"O livro-caixa de {comp[5:]}/{comp[:4]} não dá imposto a pagar.")
+    return {"carne_leao": comp, "categoria": "CARNE_LEAO",
+            "descricao": f"Carnê-leão do titular, competência {comp[5:]}/{comp[:4]}",
+            "beneficiario_nome": "Receita Federal", "valor": DP.reais(int(imposto)),
+            "vencimento": vencimento_do_darf(con, comp).isoformat(), "forma": DP.ARRECADACAO,
+            "documento_especie": "DARF"}
+
+
 def quadro_do_mes(con, hoje: date) -> dict:
     """O livro-caixa do mês até agora e a previsão de gastos até o fim dele. Só LÊ."""
     bd = banco(con)
@@ -127,8 +164,8 @@ def quadro_do_mes(con, hoje: date) -> dict:
     fundos_do_mes = projetar(fundos_ate_agora, passados, uteis)
     fundos_a_sair = max(0, fundos_do_mes - _ja_previstas(CATEGORIAS_DE_FUNDO))
     imposto = anterior["imposto"]
-    imposto_a_sair = (None if imposto is None
-                      else max(0, int(imposto) - _ja_previstas(("CARNE_LEAO",))))
+    darf_cadastrado = _ja_previstas(("CARNE_LEAO",))
+    imposto_a_sair = None if imposto is None else max(0, int(imposto) - darf_cadastrado)
 
     linhas = [
         {"rotulo": "Já pago: despesas no Livro Diário e repasses", "valor": pago_no_livro + repasses_pagos,
@@ -154,4 +191,7 @@ def quadro_do_mes(con, hoje: date) -> dict:
             "receita": receita, "receita_pelo_selo": int(livro["receita_bruta"]),
             "despesas": pago_no_livro, "saldo": receita - pago_no_livro,
             "sobra": receita - pago_no_livro - falta_sair,
-            "imposto_do_mes": caixa["imposto"], "dias_passados": passados, "dias_uteis": uteis}
+            "imposto_do_mes": caixa["imposto"], "dias_passados": passados, "dias_uteis": uteis,
+            "darf": {"competencia": _mes_anterior(hoje), "imposto": imposto,
+                     "vencimento": vencimento_do_darf(bd, _mes_anterior(hoje)).isoformat(),
+                     "falta_cadastrar": bool(imposto) and not darf_cadastrado}}

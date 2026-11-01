@@ -11,6 +11,8 @@
   {# Vinda do botão de uma recorrente: a chave do mês tira o mês do aviso. #}
   <input type="hidden" name="recorrente_id" value="{{ f.recorrente_id or '' }}">
   <input type="hidden" name="competencia" value="{{ f.competencia or '' }}">
+  {% if f.carne_leao %}<p class="notice">DARF do carnê-leão de {{ f.competencia_do_darf or f.carne_leao }}: o valor vem do livro-caixa. Gere o DARF no
+    Carnê-Leão Web ou no Sicalc, confira o valor e cole o código. Se pagou por fora, escolha «Pago fora do banco».</p>{% endif %}
   {% if f.recorrente_id %}<p class="notice">Despesa do mês {{ f.competencia }} da recorrente — confira o valor e
     cole o código de pagamento da fatura deste mês.</p>{% endif %}
   <label>Categoria

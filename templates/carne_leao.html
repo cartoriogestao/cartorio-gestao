@@ -84,7 +84,7 @@
       {% if a.excesso %}<tr><td>Excesso de despesas sobre a receita</td><td>R$ {{ reais(a.excesso) }} <span class="small muted">— vai para o mês seguinte, até dezembro (Lei 8.134/1990, art. 6º, § 3º)</span></td></tr>{% endif %}
       <tr><td><strong>Imposto pela tabela cadastrada</strong></td><td>
         {% if a.imposto is none %}<span class="badge alta">não calculado — sem tabela cadastrada para o mês</span>
-        {% else %}<strong>R$ {{ reais(a.imposto) }}</strong>
+        {% else %}<strong>R$ {{ reais(a.imposto) }}</strong>{% if a.imposto > 0 %} <a class="small" href="{{ url_for('despesas_nova', carne_leao=mes) }}">Cadastrar o DARF em Despesas</a>{% endif %}
           <span class="small muted">— «{{ a.tabela.descricao }}» (vigência desde {{ a.tabela.vigencia_inicio }}), faixa {{ a.calculo.faixa }},
             alíquota {{ percentual(a.calculo.aliquota_bp) }}%, parcela a deduzir R$ {{ reais(a.calculo.deduzir) }}{% if a.calculo.reducao %},
             imposto da tabela R$ {{ reais(a.calculo.imposto_da_tabela) }} menos a redução da Lei 15.270/2025 de R$ {{ reais(a.calculo.reducao) }}{% endif %}. Fonte: {{ a.tabela.fonte }}</span>{% endif %}</td></tr>

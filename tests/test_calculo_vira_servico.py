@@ -166,6 +166,8 @@ def test_o_botao_leva_ao_servico_e_a_ficha_conta_o_que_houve(casa):
     html = casa["cliente"].get(f"/caixa/protocolos/{pid}").get_data(as_text=True)
     assert "Transformar em serviço" not in html and "só cálculo</span>" not in html
     assert "Protocolo de recepção" in html and "Aberto como só cálculo, e transformado em" in html
+    # Quem lê o rastro é uma pessoa: o nome, e não o login.
+    assert _protocolo(casa, pid)["virou_servico_por"] == "MARIO EXEMPLO DOS SANTOS"
 
 
 def test_a_recusa_nao_vira_erro_de_tela(casa):

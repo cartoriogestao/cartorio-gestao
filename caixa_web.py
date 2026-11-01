@@ -1712,7 +1712,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             with db.transaction() as con:
                 feito = CXP.virar_servico(
                     con, protocolo_id, servico_desde=request.form.get("servico_desde"),
-                    motivo=request.form.get("motivo"), quem=_quem_esta_no_balcao(), agora=db.now())
+                    motivo=request.form.get("motivo"), quem=usuario_nome(), agora=db.now())
         except CXP.ProtocoloError as e:
             flash(str(e), "danger")
             return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
@@ -1738,7 +1738,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 try:
                     with db.transaction() as con:
                         feito = CXP.virar_servico(con, protocolo_id, motivo=request.form.get("motivo"),
-                                                  quem=_quem_esta_no_balcao(), agora=db.now())
+                                                  quem=usuario_nome(), agora=db.now())
                 except CXP.ProtocoloError as e:
                     recusas.append(str(e))
                     continue

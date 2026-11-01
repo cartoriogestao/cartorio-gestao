@@ -1148,6 +1148,9 @@ def pagas_hoje(con, hoje: str) -> int:
 def relatorio_do_mes(con, mes: str) -> dict:
     """O que se pagou no mês (pela data do pagamento), por natureza e categoria. Só LÊ.
 
+    O DARF do carnê-leão fica de fora: é imposto pessoal do titular, e este relatório vai
+    à contabilidade da serventia e ao SIAFERJ.
+
     Entram as pagas e conferidas no extrato e as pagas fora do banco. A paga
     pelo banco e ainda não conferida aparece à parte: o débito pode não ter
     acontecido.
@@ -1156,6 +1159,7 @@ def relatorio_do_mes(con, mes: str) -> dict:
     linhas = banco(con).ler(
         """SELECT * FROM dp_despesas
             WHERE situacao IN ('CONCILIADA', 'PAGA_FORA') AND paga_em >= %s AND paga_em < %s
+              AND categoria <> 'CARNE_LEAO'
             ORDER BY paga_em, id""", (inicio, fim))
     a_conferir = banco(con).ler(
         """SELECT * FROM dp_despesas WHERE situacao IN ('ENVIADA', 'PAGA')

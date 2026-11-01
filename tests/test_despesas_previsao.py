@@ -9,6 +9,8 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
@@ -136,3 +138,56 @@ def test_o_quadro_que_quebra_nao_derruba_a_tela(cg_casa_logada, monkeypatch):
     monkeypatch.setattr(DV, "quadro_do_mes", _quebra)
     r = cg_casa_logada["c"].get(LISTA)
     assert r.status_code == 200 and "não pôde ser calculado" in r.get_data(as_text=True)
+
+
+def test_o_darf_vem_preenchido_com_o_valor_e_o_vencimento_do_mes_seguinte(cg_casa_logada, monkeypatch):
+    monkeypatch.setattr(DV.CL, "apurar", lambda con, comp: {"receita": 0, "imposto": 123456})
+    with cg_casa_logada["db"].connect() as con:
+        f = DV.formulario_do_darf(con, "2026-10")
+    assert (f["categoria"], f["valor"], f["forma"]) == ("CARNE_LEAO", "1.234,56", DP.ARRECADACAO)
+    assert f["vencimento"] == "2026-11-30", "o último dia útil de novembro"
+    assert "10/2026" in f["descricao"]
+    tela = cg_casa_logada["c"].get("/administrativo/despesas/nova?carne_leao=2026-10").get_data(as_text=True)
+    assert "1.234,56" in tela and "Carnê-Leão Web" in tela
+
+
+def test_dezembro_vence_em_janeiro():
+    assert DV.OO._ultimo_dia_util(2027, 1) == date(2027, 1, 29)
+
+
+def test_sem_tabela_ou_sem_imposto_nao_ha_darf(cg_casa_logada, monkeypatch):
+    with cg_casa_logada["db"].connect() as con:
+        monkeypatch.setattr(DV.CL, "apurar", lambda c, comp: {"imposto": None})
+        with pytest.raises(DP.DespesaError, match="tabela progressiva"):
+            DV.formulario_do_darf(con, "2026-10")
+        monkeypatch.setattr(DV.CL, "apurar", lambda c, comp: {"imposto": 0})
+        with pytest.raises(DP.DespesaError, match="não dá imposto"):
+            DV.formulario_do_darf(con, "2026-10")
+        with pytest.raises(DP.DespesaError):
+            DV.formulario_do_darf(con, "mês torto")
+
+
+def test_o_aviso_some_quando_o_darf_esta_cadastrado(cg_casa_logada, monkeypatch):
+    monkeypatch.setattr(DV.CL, "apurar", lambda c, comp: {"receita": 0, "imposto": 50000})
+    with cg_casa_logada["db"].transaction() as con:
+        assert DV.quadro_do_mes(con, HOJE)["darf"]["falta_cadastrar"] is True
+        _manual(con, 50000, categoria="CARNE_LEAO")
+        assert DV.quadro_do_mes(con, HOJE)["darf"]["falta_cadastrar"] is False
+
+
+def test_o_darf_pago_fica_fora_do_relatorio_da_serventia(cg_casa_logada):
+    with cg_casa_logada["db"].transaction() as con:
+        i = _manual(con, 50000, categoria="CARNE_LEAO", vencimento="2026-11-20")
+        DP.registrar_pago_fora(con, i, agora=AGORA, hoje="2026-11-03", por="mario", papel="ADMIN",
+                               data_pagamento="2026-11-03")
+        assert DP.despesa(con, i)["ld_despesa_id"] is None, "não vai ao Livro Diário"
+        assert DP.relatorio_do_mes(con, "2026-11")["linhas"] == []
+
+
+def test_quem_nao_e_o_titular_nao_ve_o_imposto_no_formulario(cg_casa_logada, monkeypatch):
+    monkeypatch.setattr(DV.CL, "apurar", lambda c, comp: {"imposto": 123456})
+    casa = cg_casa_logada
+    casa["db"].create_user("gerente", "GERENTE EXEMPLO", "Senha#12345", "MANAGER")
+    c = casa["app"].test_client()
+    cg_login(c, "gerente", "Senha#12345")
+    assert "1.234,56" not in c.get("/administrativo/despesas/nova?carne_leao=2026-10").get_data(as_text=True)

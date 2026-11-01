@@ -208,9 +208,9 @@ def test_o_tipo_escolhido_e_o_que_fica_gravado(casa, tipo):  # noqa: F811
 
 
 def test_a_ficha_de_cada_tipo_diz_o_que_ele_e(casa):  # noqa: F811
-    _pid, so_calculo = _ficha(casa, "orcamento")
+    pid, so_calculo = _ficha(casa, "orcamento")
     assert "Só exame e cálculo" in so_calculo and "só cálculo" in so_calculo
-    assert "/caixa/protocolos/novo" in {l["href"] for l in E.ler_pagina(so_calculo).links}
+    assert "Transformar em serviço" in so_calculo and f"/caixa/protocolos/{pid}/virar-servico" in so_calculo
     assert "Protocolo de recepção" not in so_calculo
     _pid, servico = _ficha(casa, "a_pagar")
     assert "Só exame e cálculo" not in servico and "só cálculo" not in servico

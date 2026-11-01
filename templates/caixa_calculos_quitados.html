@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}Cálculos com dinheiro no caixa — Administrativo{% endblock %}
+{% block heading %}<h1>Cálculos com dinheiro no caixa</h1>{% endblock %}
+{% block content %}
+{# OS PROTOCOLOS DE SÓ CÁLCULO QUE FORAM QUITADOS — pedido do oficial, 01/11/2026. As duas opções pareciam a mesma, e
+   serviços de verdade entraram como cálculo. Corrigir não mexe em número, item nem dinheiro; a regra é a do botão da
+   ficha, `caixa_protocolo.virar_servico`, e cada um fica com a própria linha na auditoria. #}
+<div class="actions"><a class="button" href="{{ url_for('caixa_protocolos') }}">&larr; Protocolo geral</a></div>
+{% if linhas %}
+<div class="notice">
+  Estes protocolos foram abertos como <strong>só exame e cálculo</strong> e têm item quitado: o dinheiro entrou no
+  caixa, e eles não contam como serviço nem têm recepção ou recibo. Transformar não mexe no número, nos itens nem no
+  dinheiro, e a data do serviço fica a da abertura. Desmarque o que foi mesmo só cálculo.
+</div>
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <section class="panel">
+    <div class="panel-head"><span>{{ linhas|length }} protocolo(s)</span><small>do mais antigo para o mais novo</small></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Número</th><th>Aberto em</th><th>Atribuição</th><th>Interessado</th><th>Assunto</th>
+        <th style="text-align:right">Itens quitados</th><th style="text-align:right">Valor</th></tr></thead>
+      <tbody>{% for r in linhas %}
+        <tr>
+          <td><input type="checkbox" name="protocolo_id" value="{{ r.id }}" checked aria-label="Transformar o protocolo {{ r.numero }}"></td>
+          <td><a href="{{ url_for('caixa_protocolo', protocolo_id=r.id) }}">{{ r.numero }}</a></td>
+          <td class="small">{{ fmt_date(r.data_abertura) }}</td>
+          <td class="small">{{ r.atribuicao or '—' }}</td>
+          <td class="small">{{ (r.interessado or '—')[:34] }}</td>
+          <td class="small">{{ (r.assunto or '—')[:40] }}</td>
+          <td style="text-align:right">{{ r.itens }}</td>
+          <td style="text-align:right">{{ r.valor_total or '—' }}</td>
+        </tr>{% endfor %}
+      </tbody></table></div>
+    <div class="grid2" style="padding:14px">
+      <label class="span2">Por quê
+        <input name="motivo" required minlength="10" value="Aberto como só cálculo por engano: o serviço foi pedido e pago."></label>
+      <div class="span2"><button class="button primary">Transformar os marcados em serviço</button></div>
+    </div>
+  </section>
+</form>
+{% else %}
+<section class="panel"><p style="padding:14px">Nenhum protocolo de só cálculo com item quitado.</p></section>
+{% endif %}
+{% endblock %}

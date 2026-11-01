@@ -210,6 +210,17 @@ def _balcao(casa) -> None:
     pid = abrir("orcamento", ANA, atribuicao="NOTAS", assunto="Cálculo de emolumentos", tipo="ORCAMENTO")
     _acrescentar(casa, pid, 990103)
 
+    # O cálculo já quitado e o que virou serviço: as duas formas da ficha, e a tela de corrigir com gente.
+    pid = abrir("calculo_quitado", ANA, atribuicao="NOTAS", assunto="Serviço aberto como cálculo", tipo="ORCAMENTO")
+    _acrescentar(casa, pid, 990103)
+    _postar(casa, f"/caixa/protocolos/{pid}/itens", rf"^/caixa/protocolos/{pid}$", acao="quitar_todos",
+            forma_pagamento="PIX")
+    casa.pagina("caixa_protocolo", protocolo_id=pid)
+    pid = abrir("calculo_virou_servico", ANA, atribuicao="NOTAS", assunto="Cálculo que virou serviço", tipo="ORCAMENTO")
+    _postar(casa, f"/caixa/protocolos/{pid}/virar-servico", rf"^/caixa/protocolos/{pid}$", servico_desde=casa.hoje, motivo="")
+    casa.pagina("caixa_protocolo", protocolo_id=pid)
+    casa.pagina("caixa_calculos_quitados")
+
     pid = abrir("ri", JOAO, atribuicao="RI", assunto="Certidão de inteiro teor")
     _acrescentar(casa, pid, 990105)
 

@@ -1388,7 +1388,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          GROUP BY atribuicao ORDER BY n DESC, atribuicao""")
         with db.connect() as con_ri:
             prenotacoes_ri = CXP.prenotacoes_abertas(con_ri)
+            calculos_quitados = len(CXP.calculos_quitados(con_ri))
         return render_template("caixa_protocolos.html", rows=rows, resumo=resumo,
+                               calculos_quitados=calculos_quitados,
                                por_atrib=por_atrib, situacao=situacao,
                                atribuicao=atribuicao, busca=busca, total=total,
                                pagina=pagina,
@@ -1668,8 +1670,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 documentos=docs_qualificacao["ativos"],
                 exigencias=exigencias_abertas, tarefas=tarefas_do_protocolo,
                 lancamentos=lanc, acompanhamento=acompanhamento)
+        quitados = sum(1 for a in atos if a["quitado"])
         return render_template("caixa_protocolo.html", p=p, atos=atos,
                                abas_da_ficha=abas_da_ficha,
+                               quitados=quitados,
+                               servico_desde_sugerido=CXP.data_do_servico_sugerida(p, quitados, db.now()),
                                tarefas_do_protocolo=tarefas_do_protocolo,
                                tarefas_abertas=tarefas_abertas,
                                usuarios_da_tarefa=db.list_users(active_only=True),
@@ -1696,6 +1701,60 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                prenotacoes_ri=prenotacoes_ri,
                                acima_do_teto=acima_do_teto,
                                acompanhamento=acompanhamento)
+
+    # ---------------------------------------- o cálculo que vira serviço
+
+    @app.route("/caixa/protocolos/<int:protocolo_id>/virar-servico", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def caixa_protocolo_virar_servico(protocolo_id):
+        """O cliente que só perguntou o valor volta para fazer o serviço. A regra mora em `CXP.virar_servico`."""
+        try:
+            with db.transaction() as con:
+                feito = CXP.virar_servico(
+                    con, protocolo_id, servico_desde=request.form.get("servico_desde"),
+                    motivo=request.form.get("motivo"), quem=usuario_nome(), agora=db.now())
+        except CXP.ProtocoloError as e:
+            flash(str(e), "danger")
+            return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
+        audit("PROTOCOLO_VIROU_SERVICO", "PROTOCOLO", protocolo_id, feito)
+        flash(f"Protocolo {feito['numero']} agora é de serviço. O número, os itens e os pagamentos "
+              f"continuam os mesmos.", "success")
+        return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
+
+    @app.route("/caixa/protocolos/calculos-quitados", methods=["GET", "POST"])
+    @roles_required("ADMIN", "MANAGER")
+    def caixa_calculos_quitados():
+        """Os protocolos de só cálculo com dinheiro no caixa, para corrigir de uma vez.
+
+        Cada um passa pela mesma regra do botão da ficha, com a data da abertura, e fica com
+        a própria linha na auditoria. Quem desmarca é quem conhece o caso.
+        """
+        if request.method == "POST":
+            feitos, recusas = 0, []
+            for digitado in request.form.getlist("protocolo_id"):
+                protocolo_id = numero_digitado(digitado)
+                if protocolo_id is None:
+                    continue
+                try:
+                    with db.transaction() as con:
+                        feito = CXP.virar_servico(con, protocolo_id, motivo=request.form.get("motivo"),
+                                                  quem=usuario_nome(), agora=db.now())
+                except CXP.ProtocoloError as e:
+                    recusas.append(str(e))
+                    continue
+                audit("PROTOCOLO_VIROU_SERVICO", "PROTOCOLO", protocolo_id, feito)
+                feitos += 1
+            if feitos:
+                flash(f"{feitos} protocolo(s) agora são de serviço. O número, os itens e os pagamentos "
+                      f"continuam os mesmos.", "success")
+            elif not recusas:
+                flash("Marque ao menos um protocolo. Nada foi alterado.", "warning")
+            for recusa in recusas[:5]:
+                flash(recusa, "danger")
+            return redirect(url_for("caixa_calculos_quitados"))
+        with db.connect() as con:
+            linhas = CXP.calculos_quitados(con)
+        return render_template("caixa_calculos_quitados.html", linhas=linhas)
 
     # ---------------------------------------- documentos para qualificação
     #
@@ -2079,15 +2138,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 _t, protocolo_id, endereco_do_portal=endereco_do_portal)
         with db.connect() as _c:
             _modelo = MODELOS.corpo_de(_c, "CAIXA_RECEPCAO")
+        # O PAPEL DIZ QUANDO O SERVIÇO ENTROU, E NÃO QUANDO O CÁLCULO ABRIU. A hora é a da
+        # abertura: em outro dia, ela afirmaria um momento que ninguém anotou.
+        servico_desde = p["servico_desde"] or str(p["data_abertura"])[:10]
+        hora_vale = servico_desde == str(p["data_abertura"])[:10]
         html = env.from_string(_modelo).render(
-            p=dict(p), itens=itens, soma=soma, pendente=pendente,
+            p={**dict(p), "hora": p["hora"] if hora_vale else None}, itens=itens, soma=soma, pendente=pendente,
             acompanhamento=acompanhamento,
             sv=bloco_serventia(),
             documento=mascarar_documento(p["interessado_documento"]),
             telefone=mascarar_telefone(p["telefone"]),
             email=mascarar_email(p["email"]),
             observacao=mascarar_texto(p["observacao"]),
-            data=fmt_date(p["data_abertura"]),
+            data=fmt_date(servico_desde),
             previsao=fmt_date(p["previsao_entrega"]) if p["previsao_entrega"] else "",
             emitido_por=usuario_nome(), funcao=usuario_funcao())
         arquivo = gerar_odt(html_para_odf(html),

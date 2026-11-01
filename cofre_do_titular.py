@@ -11,8 +11,10 @@ POR QUE NÃO É A CIFRA QUE O BACKUP JÁ TEM
     pela senha do titular, e a senha não fica em lugar nenhum.
 
 O QUE VAI FECHADO
-    As tabelas de `TABELAS` e os anexos das despesas (`arquivos/despesas`). O Livro Diário
-    Auxiliar, as receitas e os selos NÃO: são da serventia e seguem para o sucessor.
+    As tabelas de `TABELAS` e os anexos das despesas (`arquivos/despesas`), com o Livro Diário
+    Auxiliar: «sim, fecha» (oficial, 01/11/2026). As receitas e os selos não: são dos atos, e
+    seguem para o sucessor. O livro é cobrado pela Corregedoria (CN-MA, art. 207): o titular que
+    sai gera e entrega o que for devido antes de selar.
 
 SEM A CHAVE, NADA MUDA
     O backup sai como sempre, com tudo dentro e aberto, e a tela diz isso. Fechar sem chave
@@ -44,9 +46,11 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 import backup as BKP
 
-TABELAS = ("dp_despesas", "dp_eventos", "dp_recorrentes", "cl_marcacoes", "cl_lancamentos")
-#: `dp_eventos` aponta para `dp_despesas`: os eventos saem antes.
-NA_ORDEM_DE_APAGAR = ("dp_eventos", "dp_despesas", "dp_recorrentes", "cl_marcacoes", "cl_lancamentos")
+TABELAS = ("dp_despesas", "dp_eventos", "dp_recorrentes", "cl_marcacoes", "cl_lancamentos",
+           "ld_despesas", "ld_geracoes")
+#: `dp_eventos` aponta para `dp_despesas`, e `cl_marcacoes` para `ld_despesas`: saem antes.
+NA_ORDEM_DE_APAGAR = ("dp_eventos", "dp_despesas", "dp_recorrentes", "cl_marcacoes", "cl_lancamentos",
+                      "ld_geracoes", "ld_despesas")
 #: A pasta dos anexos das despesas dentro de `arquivos` (`despesas_web._pasta`).
 PASTA_DOS_ANEXOS = "despesas"
 NOME_DAS_TABELAS = "privado_do_titular/tabelas.cgt"

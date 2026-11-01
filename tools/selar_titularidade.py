@@ -1,6 +1,7 @@
 """NA TROCA DE DELEGATÁRIO: fecha o livro-caixa e as despesas do titular que sai.
 
     «em caso de transferência de delegatário, o livro-caixa não ficaria aberto para o novo»
+    e, sobre o Livro Diário, «sim, fecha»
     — o oficial, 31/10/2026
 
 SÓ MEDE POR PADRÃO. Com `--confirmar`, e nesta ordem, sem pular:
@@ -10,7 +11,10 @@ SÓ MEDE POR PADRÃO. Com `--confirmar`, e nesta ordem, sem pular:
      nada se apaga;
   4. pede que digite SELAR, e só então apaga as linhas, os anexos e a chave do banco.
 
-O QUE FICA: o Livro Diário Auxiliar, as receitas e os selos, que são da serventia.
+O QUE FICA: as receitas e os selos, que são dos atos.
+
+O LIVRO DIÁRIO SAI DO BANCO JUNTO: gere e entregue antes o que a Corregedoria cobra (CN-MA, art.
+207). Depois de selar, ele só volta com o arquivo fechado e a senha.
 
 O QUE NÃO ALCANÇA: os backups antigos feitos sem chave continuam abertos onde estiverem, e
 as linhas de auditoria continuam no banco. Quem sai precisa estar presente para digitar a
@@ -94,6 +98,7 @@ def main() -> int:
             return 1
     print(f"Fechado e conferido em {saida}.")
     print("A partir daqui é irreversível: só esses arquivos, com a sua senha, trazem de volta.")
+    print("O Livro Diário Auxiliar também sai do banco: gere e entregue antes o que a Corregedoria cobra.")
     if input("Digite SELAR para apagar do banco: ").strip() != "SELAR":
         print("Nada foi apagado. Os arquivos fechados ficaram na pasta.")
         return 0
@@ -109,7 +114,7 @@ def main() -> int:
                       agente="tools/selar_titularidade.py", a_mando_de="titular que digitou a senha")
     for a in anexos:
         COT.apagar_arquivo(Path(a["stored_path"]))
-    print("Selado. O Livro Diário Auxiliar continua no sistema.")
+    print("Selado, com o Livro Diário Auxiliar.")
     return 0
 
 

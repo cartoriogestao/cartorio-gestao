@@ -667,12 +667,12 @@ def conferir_favorecido_pix(con, *, chave: Any, documento: Any, nome: Any,
     for outra in outras:
         dele = digitos(outra["beneficiario_documento"])
         if dele == documento and not mesmo_nome(outra["beneficiario_nome"], nome):
-            raise DespesaError(f"Este CPF/CNPJ já está cadastrado para "
-                               f"{outra['beneficiario_nome']}, e aqui o favorecido é {nome}.")
+            raise DespesaError("Este CPF/CNPJ já está cadastrado para outro favorecido. Confira "
+                               "o documento e o nome antes de gravar.")
         outra_pessoa = dele != documento if dele else not mesmo_nome(outra["beneficiario_nome"], nome)
         if outra["chave"] == chave and outra_pessoa:
-            raise DespesaError(f"Esta chave Pix já está cadastrada para "
-                               f"{outra['beneficiario_nome']}, e aqui o favorecido é {nome}.")
+            raise DespesaError("Esta chave Pix já está cadastrada para outro favorecido. Confira "
+                               "a chave e o nome antes de gravar.")
 
 
 def conferir_pagamento(forma: str, codigo: Any, valor_centavos: int,

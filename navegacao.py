@@ -361,7 +361,8 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          ("Gratuidades", (
              _i("Gratuidades (Portal do Selo)", "selo_gratuidades_portal", AMA),)),
          ("Despesas", (
-             _i("Despesas", "despesas_lista", QUATRO),)),
+             _i("Despesas", "despesas_lista", A),
+             _i("Cadastrar despesa", "despesas_nova", ("MANAGER", "USER")),)),
          ("Livro Diário", (
              _i("Livro Diário Auxiliar", "livro_diario", AMA),)),
          ("Caixas para o visto", (
@@ -621,7 +622,6 @@ PAI: dict[str, tuple[str, str]] = {
     "carne_leao_configuracao": ("FIN", "Carnê-leão"),
     "despesas_configuracao": ("FIN", "Despesas"),
     "despesas_ficha": ("FIN", "Despesas"),
-    "despesas_nova": ("FIN", "Despesas"),
     "despesas_recorrente": ("FIN", "Despesas"),
     "despesas_recorrentes": ("FIN", "Despesas"),
     "despesas_relatorio": ("FIN", "Despesas"),
@@ -719,7 +719,7 @@ NOVO: tuple[dict, ...] = (
         {"rotulo": "Protocolo geral", "letra": "G", "papeis": AMU, "endpoint": "caixa_protocolos_novo"},
         {"rotulo": "Lançamento no caixa", "endpoint": "caixa"},
         {"rotulo": "Processo interno", "endpoint": "processos_lista", "termos": "tarefa expediente"},
-        {"rotulo": "Despesa", "papeis": QUATRO, "endpoint": "despesas_lista"},)},
+        {"rotulo": "Despesa", "papeis": AMU, "endpoint": "despesas_nova"},)},
 )
 
 # ONDE A BUSCA PROCURA um nome ou um número digitado. Cada uma é a lista que já

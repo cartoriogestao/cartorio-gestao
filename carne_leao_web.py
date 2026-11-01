@@ -14,6 +14,7 @@ from datetime import date, datetime, timedelta
 from flask import flash, redirect, render_template, request, url_for
 
 import carne_leao as CL
+import titular_privado as TP
 import csv_seguro as CSVS
 import oficial_obrigacoes as OO
 from caixa_schema import reais
@@ -25,6 +26,7 @@ def _mes_anterior(hoje: date) -> str:
 
 def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str):
     usuario_nome = app.extensions["usuario_nome"]
+    so_o_titular, _ = TP.guarda(app, db)
 
     def _agora() -> str:
         return datetime.now().replace(microsecond=0).isoformat(timespec="seconds")
@@ -42,6 +44,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/administrativo/carne-leao")
     @login_required
     @roles_required("ADMIN")
+    @so_o_titular
     def carne_leao():
         mes = _mes()
         hoje = date.today()
@@ -61,6 +64,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                methods=["POST"])
     @login_required
     @roles_required("ADMIN")
+    @so_o_titular
     def carne_leao_outra_entrada(lancamento_id: int):
         mes, resposta = _mes(), request.form.get("receita")
         try:
@@ -78,6 +82,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                methods=["POST"])
     @login_required
     @roles_required("ADMIN")
+    @so_o_titular
     def carne_leao_marcar(ld_despesa_id: int):
         f, mes = request.form, _mes()
         try:
@@ -96,6 +101,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/administrativo/carne-leao/lancamentos", methods=["POST"])
     @login_required
     @roles_required("ADMIN")
+    @so_o_titular
     def carne_leao_lancar():
         f, mes = request.form, _mes()
         try:
@@ -118,6 +124,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                methods=["POST"])
     @login_required
     @roles_required("ADMIN")
+    @so_o_titular
     def carne_leao_anular(lancamento_id: int):
         mes = _mes()
         try:
@@ -135,6 +142,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/administrativo/carne-leao/exportar")
     @login_required
     @roles_required("ADMIN")
+    @so_o_titular
     def carne_leao_exportar():
         mes = _mes()
         with db.connect() as con:
@@ -146,6 +154,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/administrativo/carne-leao/configuracao", methods=["GET", "POST"])
     @login_required
     @roles_required("ADMIN")
+    @so_o_titular
     def carne_leao_configuracao():
         if request.method == "POST":
             f, acao = request.form, request.form.get("acao")

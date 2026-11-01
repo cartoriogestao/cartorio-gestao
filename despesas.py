@@ -151,6 +151,9 @@ PADRAO: dict[str, str] = {
     "despesas_teto_por_dia": "3000,00",
     "despesas_teto_guia": "1000,00",
     "despesas_regra_guias_ligada": "1",
+    # O ISS É DO MUNICÍPIO E CADA UM TEM A SUA ALÍQUOTA (oficial, 01/11/2026): 5% é o de
+    # fábrica, e outra serventia troca na tela. Não é cobrado do cliente.
+    "despesas_aliquota_iss": "5,00",
 }
 ROTULOS: dict[str, str] = {
     "despesas_pagamento_ligado": "Pagamento automático ligado",
@@ -159,6 +162,7 @@ ROTULOS: dict[str, str] = {
     "despesas_teto_por_dia": "Teto por dia (R$)",
     "despesas_teto_guia": "Teto das guias autorizadas pela regra (R$)",
     "despesas_regra_guias_ligada": "Guias do Portal do Selo com valor conferido nascem autorizadas",
+    "despesas_aliquota_iss": "Alíquota do ISS do município (%), para a estimativa do balanço",
 }
 AMBIENTES = {"sandbox": "Teste (sandbox do Inter, sem dinheiro de verdade)",
              "producao": "Produção (dinheiro de verdade)"}
@@ -520,6 +524,9 @@ def gravar_configuracao(con, valores: Mapping[str, Any]) -> dict[str, tuple[str,
         if centavos_da_tela(novo[chave]) <= 0:
             raise DespesaError(f"{ROTULOS[chave]}: informe um valor maior que zero.")
         novo[chave] = reais(centavos_da_tela(novo[chave]))
+    if not 0 < centavos_da_tela(novo["despesas_aliquota_iss"]) <= 10000:
+        raise DespesaError(f"{ROTULOS['despesas_aliquota_iss']}: informe um percentual entre 0 e 100.")
+    novo["despesas_aliquota_iss"] = reais(centavos_da_tela(novo["despesas_aliquota_iss"]))
     bd = banco(con)
     antes = configuracao(bd)
     for chave, valor in novo.items():

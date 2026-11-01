@@ -191,3 +191,68 @@ def test_quem_nao_e_o_titular_nao_ve_o_imposto_no_formulario(cg_casa_logada, mon
     c = casa["app"].test_client()
     cg_login(c, "gerente", "Senha#12345")
     assert "1.234,56" not in c.get("/administrativo/despesas/nova?carne_leao=2026-10").get_data(as_text=True)
+
+
+def _livro_de(valores):
+    return lambda con, comp: {"despesas": 0, "fundos": {}, "receita_bruta": valores.get(comp, 0)}
+
+
+def test_o_iss_preliminar_e_a_aliquota_sobre_o_selo():
+    assert DV.iss_preliminar(8260443, 500) == 413022
+    assert DV.iss_preliminar(8260443, 200) == 165209, "cada município tem a sua"
+    assert DV.iss_preliminar(0, 500) == 0
+
+
+def test_a_aliquota_nasce_em_5_e_se_troca_na_configuracao(cg_casa_logada, monkeypatch):
+    monkeypatch.setattr(DV.CL, "apurar", lambda c, comp: {"receita": 0, "imposto": None})
+    monkeypatch.setattr(DV.LD, "apurar", _livro_de({"2026-10": 1000000}))
+    with cg_casa_logada["db"].transaction() as con:
+        assert DV.aliquota_do_iss(con) == 500
+        DP.gravar_configuracao(con, {**DP.configuracao(con), "despesas_aliquota_iss": "2,5"})
+        q = DV.quadro_do_mes(con, HOJE)
+        assert DV.aliquota_do_iss(con) == 250
+    assert _linha(q, "ISS de 10/2026")["valor"] == 25000 and "2,50%" in _linha(q, "ISS de 10/2026")["nota"]
+
+
+def test_a_aliquota_fora_da_faixa_e_recusada(cg_casa_logada):
+    with cg_casa_logada["db"].transaction() as con:
+        for torta in ("0", "101"):
+            with pytest.raises(DP.DespesaError, match="percentual entre"):
+                DP.gravar_configuracao(con, {**DP.configuracao(con), "despesas_aliquota_iss": torta})
+
+
+def test_o_iss_do_mes_anterior_entra_na_previsao_e_o_deste_mes_so_se_mostra(cg_casa_logada, monkeypatch):
+    monkeypatch.setattr(DV.CL, "apurar", lambda c, comp: {"receita": 0, "imposto": None})
+    monkeypatch.setattr(DV.LD, "apurar", _livro_de({"2026-10": 1000000, "2026-11": 200000}))
+    with cg_casa_logada["db"].connect() as con:
+        q = DV.quadro_do_mes(con, HOJE)
+    assert _linha(q, "ISS de 10/2026")["valor"] == 50000
+    assert "preliminar" in _linha(q, "ISS de 10/2026")["rotulo"] and "o da guia" in _linha(q, "ISS de 10/2026")["nota"]
+    assert (q["iss"]["do_mes"], q["iss"]["falta_cadastrar"]) == (10000, True)
+    assert q["falta_sair"] == 50000
+
+
+def test_a_guia_cadastrada_tira_o_iss_da_conta_sem_contar_duas_vezes(cg_casa_logada, monkeypatch):
+    monkeypatch.setattr(DV.CL, "apurar", lambda c, comp: {"receita": 0, "imposto": None})
+    monkeypatch.setattr(DV.LD, "apurar", _livro_de({"2026-10": 1000000}))
+    with cg_casa_logada["db"].transaction() as con:
+        _manual(con, 62000, categoria="ISS")
+        q = DV.quadro_do_mes(con, HOJE)
+    assert _linha(q, "ISS de 10/2026")["valor"] == 0 and q["iss"]["falta_cadastrar"] is False
+    assert q["falta_sair"] == 62000, "vale o valor da guia, e não a estimativa"
+
+
+def test_a_guia_vem_preenchida_sem_vencimento_e_so_para_o_titular(cg_casa_logada, monkeypatch):
+    monkeypatch.setattr(DV.LD, "apurar", _livro_de({"2026-10": 1000000}))
+    casa = cg_casa_logada
+    with casa["db"].connect() as con:
+        f = DV.formulario_do_iss(con, "2026-10", municipio="Exemplo")
+        with pytest.raises(DP.DespesaError, match="não dão ISS"):
+            DV.formulario_do_iss(con, "2026-09", municipio="Exemplo")
+    assert (f["categoria"], f["valor"], f["beneficiario_nome"]) == ("ISS", "500,00", "Município de Exemplo")
+    assert "vencimento" not in f
+    assert "500,00" in casa["c"].get("/administrativo/despesas/nova?iss=2026-10").get_data(as_text=True)
+    casa["db"].create_user("gerente", "GERENTE EXEMPLO", "Senha#12345", "MANAGER")
+    c = casa["app"].test_client()
+    cg_login(c, "gerente", "Senha#12345")
+    assert "500,00" not in c.get("/administrativo/despesas/nova?iss=2026-10").get_data(as_text=True)

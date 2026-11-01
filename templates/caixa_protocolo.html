@@ -67,9 +67,26 @@
 {% if p.tipo == 'ORCAMENTO' %}
 <div class="notice warning">
   <strong>Só exame e cálculo.</strong> Serve para dizer o valor ao cliente, e não é entrada do título:
-  não gera prenotação, não reserva valor, e os emolumentos são os vigentes na data. Se o cliente vai
-  fazer o serviço, <a href="{{ url_for('caixa_protocolos_novo') }}">abra um protocolo de serviço</a>:
-  quitar aqui lança o dinheiro no caixa sem serviço nenhum.
+  não gera prenotação, não reserva valor, e os emolumentos são os vigentes na data. Quitar aqui lança o
+  dinheiro no caixa sem serviço nenhum.
+  {% if encerrado %}
+  Para transformá-lo em serviço, reabra-o primeiro.
+  {% elif user.role in ['ADMIN','MANAGER','USER'] %}
+  Se o cliente vai fazer o serviço, transforme este protocolo: o número, os itens e os pagamentos
+  continuam os mesmos.
+  <details id="virar-servico" style="margin-top:8px"{% if quitados %} open{% endif %}>
+    <summary>Transformar em serviço</summary>
+    <form method="post" class="grid2" style="margin-top:8px"
+          action="{{ url_for('caixa_protocolo_virar_servico', protocolo_id=p.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>O serviço entrou em
+        <input type="date" name="servico_desde" value="{{ servico_desde_sugerido }}" required></label>
+      <label>Por quê{% if quitados %} <span class="muted">— já há dinheiro no caixa</span>{% endif %}
+        <input name="motivo"{% if quitados %} required minlength="10"{% endif %}></label>
+      <div class="span2"><button class="button primary">Transformar em serviço</button></div>
+    </form>
+  </details>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -93,6 +110,9 @@
     <div><small class="muted">Gratuito</small><div>{{ 'sim' if p.gratuito else 'não' }}</div></div>
     <div><small class="muted">Documento apresentado</small><div>{{ p.documento_tipo or '—' }}{% if p.documento_numero %} nº {{ p.documento_numero }}{% endif %}</div></div>
     <div><small class="muted">Recepção impressa em</small><div>{{ p.recepcao_em or '—' }}</div></div>
+    {% if p.virou_servico_em %}<div class="span2"><small class="muted">Entrada como serviço</small>
+      <div>{{ fmt_date(p.servico_desde) }}. Aberto como só cálculo, e transformado em {{ fmt_date(p.virou_servico_em) }}
+        por {{ p.virou_servico_por or '—' }}{% if p.virou_servico_motivo %}: {{ p.virou_servico_motivo }}{% endif %}</div></div>{% endif %}
     {% if p.documento_descricao %}<div class="span2"><small class="muted">Descrição do documento</small><div>{{ p.documento_descricao }}</div></div>{% endif %}
     {% if p.observacao %}<div class="span2"><small class="muted">Anotação</small><div>{{ p.observacao }}</div></div>{% endif %}
     {% if p.ri_protocolo_id or (p.atribuicao or '')|upper == 'RI' %}

@@ -590,6 +590,7 @@ PAI: dict[str, tuple[str, str]] = {
     "atribuicoes_certidao": ("RCPJ", "Certidões"),
     # Caixa
     "caixa_protocolo": ("CAIXA", "Protocolo geral"),
+    "caixa_calculos_quitados": ("CAIXA", "Protocolo geral"),
     "caixa_protocolos_novo": ("CAIXA", "Protocolo geral"),
     "caixa_exigencias": ("CAIXA", "Protocolo geral"),
     "andamento_protocolo_geral": ("CAIXA", "Protocolo geral"),

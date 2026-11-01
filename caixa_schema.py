@@ -616,6 +616,15 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     #   lê é a tela do protocolo e o aviso de andamento (`andamento_avisos`).
     ("cx_protocolos", "pronto_retirar_em", "TEXT"),
     ("cx_protocolos", "pronto_retirar_por", "TEXT"),
+    # O CÁLCULO QUE VIROU SERVIÇO — pedido do oficial, 01/11/2026. Medido na
+    #   produção: 56 protocolos abertos como «só cálculo» foram quitados, com 109
+    #   itens no caixa, porque as duas opções pareciam a mesma. `data_abertura`
+    #   não se regrava: é quando o cálculo foi aberto. `servico_desde` é quando o
+    #   serviço entrou, e é essa a data que a recepção afirma.
+    ("cx_protocolos", "servico_desde", "TEXT"),
+    ("cx_protocolos", "virou_servico_em", "TEXT"),
+    ("cx_protocolos", "virou_servico_por", "TEXT"),
+    ("cx_protocolos", "virou_servico_motivo", "TEXT"),
 )
 
 # Funcoes possiveis de quem atende ao balcao, na nomenclatura da Lei 8.935/94

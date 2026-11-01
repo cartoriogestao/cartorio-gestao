@@ -455,6 +455,13 @@ que o cliente veio fazer, e a resposta muda o que o número vale:
 | Acompanhamento pelo cliente | Sim | Não |
 | Conta no painel como serviço em andamento | Sim | Não |
 
+**O cliente que só perguntou e volta para fazer o serviço:** na ficha do protocolo de
+cálculo, **Transformar em serviço**. O número, os itens e os pagamentos continuam os
+mesmos. Diga em que dia o serviço entrou: é essa a data que a recepção imprime. Com
+item já quitado, o sistema pede também o motivo, porque é a correção de um registro.
+Para o oficial e o gerente, o Protocolo geral avisa quando há cálculo com item quitado,
+e **Ver e corrigir** transforma vários de uma vez. Nada disso avisa o cliente.
+
 Orçamento de um serviço se emite na ficha do próprio protocolo de serviço: não é
 preciso abrir outro. O protocolo só de cálculo traz a marca **só cálculo** na lista
 e na ficha, e quitá-lo lança o dinheiro no caixa sem serviço nenhum: se o cliente

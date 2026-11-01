@@ -5,6 +5,15 @@
 {% include '_serventia.html' %}
 <div class="actions"><a class="button" href="{{ url_for('caixa') }}">&larr; Caixa</a></div>
 
+{# O QUE ESPERA AÇÃO VEM PRIMEIRO: dinheiro no caixa de um protocolo que diz que não há serviço. #}
+{% if calculos_quitados and user.role in ['ADMIN','MANAGER'] %}
+<div class="notice warning">
+  <strong>{{ calculos_quitados }} protocolo(s) aberto(s) como só cálculo têm item quitado.</strong>
+  O dinheiro entrou no caixa, e eles não contam como serviço.
+  <a href="{{ url_for('caixa_calculos_quitados') }}">Ver e corrigir</a>
+</div>
+{% endif %}
+
 <div class="notice">
   O número que acompanha o serviço do balcão até a entrega, em todas as atribuições.
   Não confundir com a <strong>prenotação</strong> do Registro de Imóveis, que é o Livro 1 e

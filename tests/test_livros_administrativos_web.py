@@ -74,9 +74,10 @@ def test_o_auditor_ve_os_livros_e_nao_lanca(cg_casa):
     c = _entrar(cg_casa, "auditor", "AUDITOR")
     for url in ("/livros-obrigatorios", "/livros-obrigatorios/visitas",
                 "/livros-obrigatorios/visitas/imprimir",
-                "/livros-obrigatorios/diario?mes=2026-09",
                 "/livros-obrigatorios/deposito-previo"):
         assert c.get(url).status_code == 200, url
+    # O Livro Diário é só do oficial (01/11/2026): o auditor não o abre.
+    assert c.get("/livros-obrigatorios/diario?mes=2026-09").status_code == 403
     assert _post(c, "/livros-obrigatorios/visitas", **VISITA).status_code == 403
     assert _post(c, "/livros-obrigatorios/diario/despesas", **DESPESA).status_code == 403
     assert _post(c, "/livros-obrigatorios/diario/gerar", mes="2026-09").status_code == 403
@@ -225,7 +226,7 @@ def test_a_versao_gerada_antes_do_ferj_abre_e_diz_que_e_de_antes(cg_casa):
 
 
 def test_a_despesa_anulada_fica_na_tela_com_o_motivo(cg_casa):
-    c = _entrar(cg_casa, "gerente", "MANAGER")
+    c = _entrar(cg_casa, "oficial", "ADMIN")
     _post(c, "/livros-obrigatorios/diario/despesas", **DESPESA)
     did = _rastro(cg_casa, "LIVRO_DIARIO_DESPESA_LANCADA")[0]["entity_id"]
     r = _post(c, f"/livros-obrigatorios/diario/despesas/{did}/anular",

@@ -44,12 +44,12 @@
 {% for x in devendo %}
 {% if layout_novo %}
 {% set nota %}Termo {{ x.numero }}, {{ x.nome }}, lavrado em {{ fmt_date(x.data_ato) if x.data_ato else '(sem data)' }}{% if x.id in ids_vencidas %} <span class="badge critica">fora do prazo</span>{% endif %}{% endset %}
-{{ abre('anotacao-' ~ x.id, 'Anotar o ' ~ x.especie|lower ~ ' no assento de ' ~ x.especie_alvo|lower, nota, aberto=loop.first) }}
+{{ abre('anotacao-' ~ x.id, 'Anotar ' ~ norma.o_ato_na_frase(x.especie) ~ ' no assento de ' ~ x.especie_alvo|lower, nota, aberto=loop.first) }}
 <div class="cg-quadro-corpo">
 {% else %}
 <div class="card{% if x.id in ids_vencidas %} danger{% endif %}">
   <h2 style="margin-top:0">
-    Anotar o {{ x.especie|lower }} no assento de {{ x.especie_alvo|lower }}
+    Anotar {{ norma.o_ato_na_frase(x.especie) }} no assento de {{ x.especie_alvo|lower }}
     {% if x.id in ids_vencidas %}<span class="badge">fora do prazo</span>{% endif %}
   </h2>
   <p>Termo {{ x.numero }} — <strong>{{ x.nome }}</strong>, lavrado em

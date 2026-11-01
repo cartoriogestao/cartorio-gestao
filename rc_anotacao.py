@@ -36,6 +36,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import rc_assento as RC
 from bd_nativo import banco
 
 
@@ -219,6 +220,15 @@ def _texto(v: Any) -> str:
 
 
 # ------------------------------------------------------------- o que se deve
+
+
+def o_ato_na_frase(especie: str) -> str:
+    """`OBITO` -> `o óbito`, para o meio de uma frase da tela. Só calcula.
+
+    A palavra gravada não serve: «Anotar o obito» e «Anotar o interdicao» saíam assim.
+    """
+    nome = RC.nome_e_livro(especie)[0].lower()
+    return f"{'a' if _texto(especie).upper() in ('INTERDICAO', 'EMANCIPACAO', 'AUSENCIA') else 'o'} {nome}"
 
 
 def o_que_o_ato_gera(especie: str) -> tuple[str, ...]:

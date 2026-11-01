@@ -1452,6 +1452,12 @@ ficam mesmo vazias, porque é nelas que se cria o primeiro.
 Só um vem aberto: o protesto, quando cabe. Os outros abrem com um clique. Os avisos do
 alto, como selo que falta, pedido da CRA e sustação, saem em todas as abas.
 
+**Ficha do devedor, Anotações devidas e Selos × caixa (conferência):** cada título, pendência ou lista é uma
+linha que já diz o que há. No devedor, a situação, o valor, o prazo e os alertas; nas anotações, o termo, o nome
+e se passou do prazo; na conferência, a quantidade. Só abre sozinho o que espera primeiro: o título de prazo mais
+próximo, a anotação mais antiga e as listas da conferência que têm o que conferir. A lista dos selos pagos fica
+fechada, porque serve só para conferir, e a trava do selo abre quando está desligada.
+
 **Título novo, Abrir matrícula, Livro 3 e Corrigir a matrícula:** o botão de gravar fica numa barra
 presa ao pé da tela. Antes do último passo, quem fica azul é **Avançar**. Se você gravar antes, um campo
 recusado abre o passo dele, com o cursor nele. Se o proprietário, o apresentante ou o item da tabela

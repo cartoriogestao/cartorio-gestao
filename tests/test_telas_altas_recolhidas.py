@@ -19,6 +19,7 @@ from pathlib import Path
 import jinja2
 
 import rc_anotacao as ANOT
+import rc_assento as RC
 
 RAIZ = Path(__file__).resolve().parent.parent
 
@@ -161,7 +162,7 @@ def _anotacoes(novo=True, devendo=None, vencidas=()):
 
 def test_anotacoes_o_que_esta_devendo_vem_antes_da_explicacao():
     html = _anotacoes()
-    _antes(html, "O prazo é de", "Anotar o obito", "Por que existe este prazo", "O que a norma exige")
+    _antes(html, "O prazo é de", "Anotar o óbito", "Por que existe este prazo", "O que a norma exige")
     assert _ler(html).quadros == {"anotacao-1": True, "anotacao-2": False,
                                   "anotacoes-por-que": False, "anotacoes-norma": False}
 
@@ -187,13 +188,23 @@ def test_anotacoes_as_duas_molduras_mandam_os_mesmos_campos():
 def test_anotacoes_no_antigo_nada_sai_do_lugar():
     html = _anotacoes(novo=False)
     assert "cg-quadro" not in html and "cg-quadros:" not in html
-    _antes(html, "Quando esta casa lavra", "Anotar o obito", "O que a norma exige")
+    _antes(html, "Quando esta casa lavra", "Anotar o óbito", "O que a norma exige")
 
 
 def test_anotacoes_sem_pendencia_diz_e_a_norma_continua_ao_alcance():
     html = _anotacoes(devendo=[])
     assert "Nenhuma anotação pendente." in html
     assert _ler(html).quadros == {"anotacoes-por-que": False, "anotacoes-norma": False}
+
+
+def test_anotacoes_o_ato_sai_escrito_como_se_le():
+    esperado = {"OBITO": "o óbito", "CASAMENTO": "o casamento", "INTERDICAO": "a interdição",
+                "EMANCIPACAO": "a emancipação", "AUSENCIA": "a ausência"}
+    for especie, frase in esperado.items():
+        assert ANOT.o_ato_na_frase(especie) == frase
+    # Toda espécie que gera anotação tem nome, e nenhuma cai na palavra gravada.
+    for especie in ANOT.O_QUE_SE_ANOTA:
+        assert especie in RC.NOME_DA_ESPECIE, especie
 
 
 # ---------------------------------------------------------------- /selo/conferencia

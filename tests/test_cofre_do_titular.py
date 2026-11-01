@@ -61,6 +61,14 @@ def test_o_arquivo_estranho_e_recusado(tmp_path):
         COT.abrir(estranho, tmp_path / "volta", SENHA)
 
 
+def test_o_livro_diario_fecha_junto_e_a_ordem_de_apagar_tem_todas():
+    assert {"ld_despesas", "ld_geracoes"} <= set(COT.TABELAS)
+    assert set(COT.NA_ORDEM_DE_APAGAR) == set(COT.TABELAS)
+    ordem = COT.NA_ORDEM_DE_APAGAR
+    assert ordem.index("dp_eventos") < ordem.index("dp_despesas")
+    assert ordem.index("cl_marcacoes") < ordem.index("ld_despesas")
+
+
 def test_o_anexo_privado_e_o_da_pasta_das_despesas():
     assert COT.e_anexo_privado(Path("despesas/recibo.pdf"))
     assert not COT.e_anexo_privado(Path("ri/despesas.pdf"))

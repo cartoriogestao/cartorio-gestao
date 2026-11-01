@@ -41,7 +41,7 @@
 <div class="alert alert-danger">
   A credencial <strong>de PRODUÇÃO</strong> da CRA <strong>ainda não foi
   informada</strong> — sem ela nada sai daqui. Ela se informa em
-  {% if user.role == 'ADMIN' %}<a href="{{ url_for('settings') }}">Administrativo → Configurações →
+  {% if user and user.role == 'ADMIN' %}<a href="{{ url_for('settings') }}">Administrativo → Configurações →
   Centrais</a>{% else %}Administrativo → Configurações →
   Centrais{% endif %}, e é a que o <strong>IEPTB-MA</strong> fornece — quem a
   cadastra é o Tabelião ou o Substituto.

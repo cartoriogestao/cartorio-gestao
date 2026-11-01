@@ -128,7 +128,8 @@ python -m pytest tests/test_layout_todas_as_telas.py tests/test_layout_todos_os_
 ```
 
 Sem o Playwright ou sem navegador, `test_layout_no_navegador` pula e diz por quê. `CG_LAYOUT_AREAS=ri` e `CG_LAYOUT_PAPEIS=ADMIN`
-encurtam a rodada de quem está mexendo numa área.
+encurtam a rodada de quem está mexendo numa área. `CG_LAYOUT_ALTURAS=<prefixo>` grava a altura de cada tela, da maior para a menor, em
+`<prefixo>_1920.txt` e `<prefixo>_1366.txt`. Só informa: a altura depende do dado, e o que é alto demais quem decide é quem usa a tela.
 
 **A suíte inteira na moldura nova.** `tests/conftest.py` fixa a moldura antiga, porque muitos testes leem o menu dela. Com
 `CG_TESTE_MOLDURA=novo`, ela roda toda na casca. O que fica vermelho aí e verde na antiga é teste lendo o menu antigo, ou defeito:

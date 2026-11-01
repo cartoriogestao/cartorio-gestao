@@ -81,7 +81,7 @@ def test_toda_chave_tem_endereco_e_quadro():
 
 def test_quem_continua_no_layout_antigo_nao_recebe_nada():
     assert "{% set f = fases_da_ficha() if layout_novo else none %}" in FICHA
-    assert "{% if layout_novo and p.situacao == 'ABERTO' and restam is not none %}" in FICHA
+    assert "{% if layout_novo and restam is not none %}" in FICHA
 
 
 # ------------------------------------------------------------- com o sistema de pé

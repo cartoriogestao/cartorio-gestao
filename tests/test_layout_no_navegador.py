@@ -25,6 +25,7 @@ abre o navegador.
 """
 from __future__ import annotations
 
+import os
 import re
 import threading
 
@@ -118,7 +119,9 @@ MEDIR = """() => {
     .filter(e => visivel(e) && (e.offsetWidth > 24 || e.offsetHeight > 24));
   const apoio = document.querySelector('.cg-apoio');
   const caixaApoio = apoio ? apoio.getBoundingClientRect() : null;
+  const rolagem = document.querySelector('.cg-rolagem') || document.scrollingElement;
   return {estouro: area ? area.scrollWidth - area.clientWidth : 0,
+          altura: rolagem.scrollHeight,
           corpo: document.documentElement.scrollWidth - document.documentElement.clientWidth,
           cortados: cortados.slice(0, 3), marcas: marcas.length,
           apoio: caixaApoio ? caixaApoio.right <= innerWidth + 1 && caixaApoio.width > 0 : false,
@@ -137,6 +140,7 @@ def _varrer_a_largura(casa, navegador, servidor, telas, largura, altura):  # noq
     pg.on("response", lambda r: erros.append(f"{atual[0]}: {r.status} em {r.url[-60:]}")
           if "/static/" in r.url and r.status >= 400 else None)
     ruins = []
+    alturas = []
     for endereco in telas["todas"]:
         atual[0] = endereco
         try:
@@ -145,6 +149,7 @@ def _varrer_a_largura(casa, navegador, servidor, telas, largura, altura):  # noq
         except Exception as erro:                                  # noqa: BLE001
             ruins.append(f"{endereco}: não abriu: {str(erro)[:160]}")
             continue
+        alturas.append((m["altura"], endereco))
         if m["estouro"] > _FOLGA_DE_LARGURA or m["corpo"] > _FOLGA_DE_LARGURA:
             ruins.append(f"{endereco}: estoura {m['estouro']} px para o lado (página {m['corpo']})")
         if m["cortados"]:
@@ -156,6 +161,10 @@ def _varrer_a_largura(casa, navegador, servidor, telas, largura, altura):  # noq
         if m["esperando"]:
             ruins.append(f"{endereco}: a ficha ficou esperando o script")
     ctx.close()
+    # Só informa: a altura depende do dado, e o que é alto demais quem decide é quem usa a tela.
+    if os.environ.get("CG_LAYOUT_ALTURAS"):
+        with open(f"{os.environ['CG_LAYOUT_ALTURAS']}_{largura}.txt", "w", encoding="utf-8") as saida:
+            saida.write("\n".join(f"{a}\t{e}" for a, e in sorted(alturas, reverse=True)))
     return ruins + erros
 
 

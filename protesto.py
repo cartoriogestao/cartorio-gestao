@@ -388,18 +388,22 @@ def apresentante_do_titulo(con, titulo: Any) -> dict:
 # ------------------------------------------------------------- o cadastro
 
 
-# Sem dois `\s*` vizinhos (alerta #289 do CodeQL: muitos espaços seguidos
-# deixavam a conferência lenta). O espaço das pontas sai antes, no `strip`.
-_VALOR_LEGIVEL = re.compile(r"(?:R\$)?\s*(?:[+-]\s*)?\d[\d.,]*")
-
-
 def valor_legivel(valor: Any) -> bool:
     """O texto é um valor em dinheiro? SÓ CALCULA.
 
     `caixa_schema.centavos` tira as letras e devolve zero, o que serve à conta do caixa. Aqui o valor
     vai ao aviso, ao instrumento e à guia, e por isso é preciso recusar antes de ler.
+
+    SEM EXPRESSÃO REGULAR (alertas #289 e #295 do CodeQL): «R$» seguido de muitos espaços
+    deixava a conferência lenta, e a regra cabe em quatro passos — «R$», o sinal, e depois
+    só algarismo, ponto e vírgula, começando por algarismo.
     """
-    return bool(_VALOR_LEGIVEL.fullmatch("" if valor is None else str(valor).strip()))
+    texto = ("" if valor is None else str(valor)).strip()
+    if texto.startswith("R$"):
+        texto = texto[2:].lstrip()
+    if texto[:1] in ("+", "-"):
+        texto = texto[1:].lstrip()
+    return texto[:1].isdecimal() and all(c.isdecimal() or c in ".," for c in texto)
 
 
 def cadastrar_titulo(con, dados: dict, *, origem: str,

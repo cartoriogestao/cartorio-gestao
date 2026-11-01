@@ -25,7 +25,7 @@
   #historico .inline-form button{min-height:30px;padding:3px 10px}
 </style>
 {% endif %}
-<div class="actions"><a class="button" href="{{ url_for('settings') }}">&larr; Configurações</a></div>
+{% if user and user.role == 'ADMIN' %}<div class="actions"><a class="button" href="{{ url_for('settings') }}">&larr; Configurações</a></div>{% endif %}
 
 {% set o_aviso %}
   <p class="notice warning" style="margin-top:0">

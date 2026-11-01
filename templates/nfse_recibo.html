@@ -7,7 +7,7 @@
 {% set viva = item.nota %}
 <div class="actions">
   <a class="button" href="{{ url_for('nfse_fila') }}">&larr; Fila da NFS-e</a>
-  <a class="button" href="{{ url_for('caixa_recibos') }}">Recibos</a>
+  {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a class="button" href="{{ url_for('caixa_recibos') }}">Recibos</a>{% endif %}
 </div>
 
 <section class="panel">

@@ -175,7 +175,7 @@
     <span class="rt-nao">desligado</span> — a confirmação e o andamento são
     gerados, mas <strong>não sobem sozinhos</strong>, e a conduta 2 os cobra
     até as 14:10. Quem liga é o administrador, em
-    <a href="{{ url_for('settings') }}">Configurações</a>.
+    {% if user.role == 'ADMIN' %}<a href="{{ url_for('settings') }}">Configurações</a>{% else %}Configurações{% endif %}.
   {% endif %}
   {% for nome, tem in est.credenciais_de_producao.items() %}
     · Credencial da {{ nome }}:

@@ -376,7 +376,7 @@
   <p class="small muted">
     <strong>Este sistema envia</strong>, pelo caminho de usuário e senha
     (sem certificado A3) — informe a credencial em
-    <a href="{{ url_for('settings') }}">Administrativo → Configurações</a>,
+    {% if user and user.role == 'ADMIN' %}<a href="{{ url_for('settings') }}">Administrativo → Configurações</a>{% else %}Administrativo → Configurações{% endif %},
     na seção «Centrais — credenciais das APIs», linha SIRC.
     <strong>É a mesma senha que você já usa para entrar no site do SIRC</strong>
     (<code>sirc.dataprev.gov.br</code>) pelo navegador — não é a senha

@@ -283,15 +283,39 @@
 </div>
 {% endif %}
 
+{# PEDIR O SELO DEPOIS — 18/09/2026. A habilitação não se desfaz por
+   causa do aparelho (o edital já correu), e por isso precisa de uma
+   porta para selar quando ele voltar. Sem ela, a habilitação expedida
+   num dia de aparelho fora do ar ficaria sem selo para sempre — e o
+   selo dela é o do casamento inteiro, reaproveitado no assento. A porta
+   continua aberta depois de celebrado: o casamento pode sair antes do selo. #}
+{% if not h.selo and h.situacao in ('HABILITADO', 'CELEBRADO') and user.role != 'AUDITOR' %}
+{% set pedir_o_selo %}
+      <form method="post" class="stack"
+            action="{{ url_for('rcpn_habilitacao_selar', habilitacao_id=h.id) }}"
+            style="margin-top:8px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
+        {% set s_selo = seletor_do_selo('hc_habilitacoes') %}
+        {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo) }}
+        <button class="primary">Pedir o selo ao aparelho</button>
+        <span class="small muted">É um selo só: ele vale pela habilitação e
+          pelo assento de casamento (item 14.1.1).</span>
+      </form>
+{% endset %}
+{% endif %}
+
 {# DEPOIS DE CELEBRADO A FASE CONTINUA RESPONDENDO: o quadro de cima só existe enquanto a
    certidão está valendo, e sem este a aba ficaria em branco. #}
-{% if f and h.situacao == 'CELEBRADO' %}
+{% if h.situacao == 'CELEBRADO' and (f or not h.selo) %}
 <section class="panel" data-fase="prontas">
   <div class="panel-head"><span>Habilitados em {{ fmt_date(h.habilitado_em) }}</span></div>
   <div style="padding:14px">
     <p>Certidão <strong>{{ h.certidao_numero }}/{{ h.certidao_ano }}</strong>,
       válida até <strong>{{ fmt_date(h.habilitacao_vale_ate) }}</strong>.
-      {% if h.selo %}<br>Selo <strong>{{ h.selo }}</strong>.{% endif %}</p>
+      {% if h.selo %}<br>Selo <strong>{{ h.selo }}</strong>.
+      {% else %}<br><span class="muted small">Sem selo — ele aparece na lista de
+        atos sem selo.</span>{{ pedir_o_selo }}{% endif %}</p>
   </div>
 </section>
 {% endif %}
@@ -305,24 +329,7 @@
       {% if h.selo %}<br>Selo <strong>{{ h.selo }}</strong>.
       {% else %}<br><span class="muted small">Sem selo — ele aparece na lista de
         atos sem selo.</span>{% endif %}
-      {# PEDIR O SELO DEPOIS — 18/09/2026. A habilitação não se desfaz por
-         causa do aparelho (o edital já correu), e por isso precisa de uma
-         porta para selar quando ele voltar. Sem ela, a habilitação expedida
-         num dia de aparelho fora do ar ficaria sem selo para sempre — e o
-         selo dela é o do casamento inteiro, reaproveitado no assento. #}
-      {% if not h.selo %}
-      <form method="post" class="stack"
-            action="{{ url_for('rcpn_habilitacao_selar', habilitacao_id=h.id) }}"
-            style="margin-top:8px">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
-        {% set s_selo = seletor_do_selo('hc_habilitacoes') %}
-        {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo) }}
-        <button class="primary">Pedir o selo ao aparelho</button>
-        <span class="small muted">É um selo só: ele vale pela habilitação e
-          pelo assento de casamento (item 14.1.1).</span>
-      </form>
-      {% endif %}
+      {% if not h.selo %}{{ pedir_o_selo }}{% endif %}
       {% if vencida %}<br><strong>Vencida</strong> — o processo precisa ser
       refeito (Código Civil, art. 1.532).{% endif %}</p>
     {# NO LAYOUT NOVO O QUADRO SE DIVIDE AQUI: a certidão e o selo são de «Prontas para casar», e

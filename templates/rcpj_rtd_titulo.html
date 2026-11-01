@@ -181,7 +181,7 @@
 {# ======================================================= a qualificação #}
 <section class="panel{% if abas %} cg-lado{% endif %}" data-fase="qualificacao">
   <div class="panel-head"><span>A qualificação</span>
-    <small>{{ qualificacoes|length }} decisão{{ '' if qualificacoes|length == 1 else 'ões' }}</small></div>
+    <small>{{ qualificacoes|length }} {{ 'decisão' if qualificacoes|length == 1 else 'decisões' }}</small></div>
 
   {% if qualificacoes %}
   <div class="table-wrap">
@@ -263,8 +263,8 @@
     <tbody>
     {% for a in atos %}
       <tr>
-        <td>{{ a.tipo|capitalize }}</td>
-        <td>{{ a.livro_id or '—' }}</td>
+        <td>{{ {'AVERBACAO': 'Averbação'}.get(a.tipo, a.tipo|capitalize) }}</td>
+        <td>{{ a.livro_numero or '—' }}</td>
         <td>{{ a.rotulo or a.folha or '—' }}</td>
         <td>{{ a.numero_ordem or '—' }}
           {% if a.lista_presenca_texto %}<br><small>{{ a.lista_presenca_texto }}</small>{% endif %}</td>
@@ -285,6 +285,8 @@
   <p style="padding:0 14px 14px"><small>O título veio <strong>em papel</strong>:
     imprima a etiqueta de registro e cole nele.</small></p>
   {% endif %}
+  {# O auditor confere: a rota da prévia não é para ele. #}
+  {% if user.role != 'AUDITOR' %}
   <form method="post" action="{{ url_for('rcpj_rtd_titulo_teor_previa', titulo_id=t.id) }}"
         target="_blank" rel="noopener" style="padding:0 14px 14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -296,6 +298,7 @@
     </small></p>
     <button class="button" type="submit">Prévia do teor (PDF)</button>
   </form>
+  {% endif %}
 </section>
 
 {% elif t.situacao == 'QUALIFICADO' and user.role in ['ADMIN','MANAGER'] %}

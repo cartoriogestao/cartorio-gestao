@@ -624,6 +624,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             abort(404)
         voltar = redirect(url_for("rcpn_habilitacao",
                                   habilitacao_id=habilitacao_id))
+        if h["situacao"] not in ("HABILITADO", "CELEBRADO"):
+            flash("Só se pede o selo de habilitação já expedida: nada foi pedido.", "warning")
+            return voltar
         if str(h["selo"] or "").strip():
             flash(f"Esta habilitação já tem o selo {h['selo']} — dois selos "
                   f"para o mesmo ato é o dinheiro da serventia saindo duas "

@@ -44,6 +44,13 @@ def test_abre_no_que_espera_acao():
     assert RF.fases_da_prenotacao(_pren(situacao="ENCERRADO"), documentos=[1])["inicial"] == RF.TITULO
 
 
+def test_a_prenotacao_em_exigencia_abre_na_qualificacao():
+    """A nota devolutiva passa a situação a DEVOLVIDO, e o prazo continua correndo."""
+    em_exigencia = _pren(situacao="DEVOLVIDO")
+    assert RF.fases_da_prenotacao(em_exigencia, notas=[{"situacao": "ABERTA"}])["inicial"] == RF.QUALIFICACAO
+    assert RF.fases_da_prenotacao(_pren(situacao="CANCELADO"), notas=[{"situacao": "ABERTA"}])["inicial"] == RF.TITULO
+
+
 def test_nada_trava():
     """O título se confere em qualquer ordem: quem recusa é o servidor."""
     assert all(f["trava"] is None for f in RF.fases_da_prenotacao(_pren())["fases"])
@@ -74,7 +81,7 @@ def test_toda_chave_tem_endereco_e_quadro():
 
 def test_quem_continua_no_layout_antigo_nao_recebe_nada():
     assert "{% set f = fases_da_ficha() if layout_novo else none %}" in FICHA
-    assert "{% if layout_novo and p.situacao == 'ABERTO' and restam is not none %}" in FICHA
+    assert "{% if layout_novo and restam is not none %}" in FICHA
 
 
 # ------------------------------------------------------------- com o sistema de pé

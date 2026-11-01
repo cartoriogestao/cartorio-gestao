@@ -2,6 +2,7 @@
 {% block heading %}<h1>Título {{ titulo.numero_titulo }}
   {#- NO LAYOUT NOVO A SITUAÇÃO FICA NO TÍTULO: não some ao trocar de fase. #}
   {%- if layout_novo %} <span class="small muted">{% if devedores %}{{ devedores[0].nome }} · {% endif %}{{ titulo.situacao }}</span>{% endif %}</h1>{% endblock %}
+{% macro valor_do_detalhe(k, v) %}{% if v is mapping %}{% for k2, v2 in v.items() if v2 is not none and v2 != '' %}{{ k2|replace('_centavos', '')|replace('_', ' ') }}: {{ valor_do_detalhe(k2, v2) }}{% if not loop.last %} · {% endif %}{% endfor %}{% elif v is sameas true %}sim{% elif v is sameas false %}não{% elif k.endswith('_centavos') and v is number %}R$ {{ v | centavos_reais }}{% elif v is iterable and v is not string %}{{ v | join(', ') }}{% else %}{{ v }}{% endif %}{% endmacro %}
 {% block content %}
 {# AS FASES SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026, `protesto_fases`. Os quadros não saem do lugar:
    cada um diz a que fase pertence, e `static/fases.js` mostra os da fase aberta. O que não diz, como
@@ -914,7 +915,7 @@
       {% for a in atos %}
       <tr>
         <td><strong>{{ a.tipo }}</strong></td>
-        <td>{{ a.data_ato }}</td>
+        <td>{{ fmt_date(a.data_ato[:10]) if a.data_ato else '—' }}</td>
         <td>
           {% if a.numero_ordem %}
             fl. {{ a.folha or '?' }}{% if a.verso %}v{% endif %} · nº {{ a.numero_ordem }}
@@ -924,7 +925,8 @@
         <td>{{ cobrado(a.id, cobrancas, csrf_token) }}</td>
         <td>
           {% if a.detalhe %}
-            {% for k, v in a.detalhe.items() %}<div><small>{{ k }}: {{ v }}</small></div>{% endfor %}
+            {# O detalhe tem valor aninhado e centavos: impresso cru, a tela mostrava o dicionário do Python. #}
+            {% for k, v in a.detalhe.items() %}<div><small>{{ k|replace('_centavos', '')|replace('_', ' ') }}: {{ valor_do_detalhe(k, v) }}</small></div>{% endfor %}
           {% endif %}
           {% if a.observacao %}<div><small>{{ a.observacao }}</small></div>{% endif %}
           {% if a.motivo_cancelamento %}<div><small>{{ a.motivo_cancelamento }}</small></div>{% endif %}

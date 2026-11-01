@@ -92,7 +92,8 @@ def _fase_prontas(situacao: str, falta_papel: bool, sem_selo: bool, vencida: boo
     if situacao == "HABILITADO" and vencida:
         return _fase(PRONTAS, rotulo, 3, LIBERADA, 1,
                      "A habilitação venceu: o processo precisa ser refeito (CC art. 1.532).")
-    if situacao == "HABILITADO" and sem_selo:
+    # DEPOIS DE CELEBRADO O SELO CONTINUA FALTANDO: `espelhar_o_selo_no_assento` roda nas duas ordens.
+    if situacao in ("HABILITADO", "CELEBRADO") and sem_selo:
         return _fase(PRONTAS, rotulo, 3, LIBERADA, 1,
                      "Falta o selo: ele vale pela habilitação e pelo assento.")
     return _fase(PRONTAS, rotulo, 3, FEITA)
@@ -134,7 +135,7 @@ def _fase_inicial(situacao: str, falta_papel: bool, na_central: bool, sem_selo: 
     if situacao == "HABILITADO":
         return PRONTAS if vencida or sem_selo else REGISTRO
     if situacao == "CELEBRADO":
-        return REGISTRO
+        return PRONTAS if sem_selo else REGISTRO
     return HABILITACAO
 
 

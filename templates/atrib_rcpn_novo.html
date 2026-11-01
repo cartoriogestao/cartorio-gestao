@@ -447,7 +447,7 @@
      avós de cada lado numa gaveta só; agora a gaveta é a do próprio genitor.
      A filiação 1 é a mãe (`PREFIXO_DO_PAPEL`), e por isso os progenitores
      dela são os avós maternos. #}
-  {% if cg_passos %}<div class="cg-passo-bloco" data-passo="filiacao">{% endif %}
+  {% if cg_passos and (nascimento or obito or natimorto) %}<div class="cg-passo-bloco" data-passo="filiacao">{% endif %}
   {% if nascimento or obito or natimorto %}
     {% call pessoa('filiacao1', 'Mãe — filiação 1' ~ (' e avós maternos' if nascimento else ''),
               ('A data de nascimento dela é o que permite calcular a idade na '
@@ -535,7 +535,7 @@
   </section>
   {% endif %}
 
-  {% if cg_passos %}</div>{% endif %}
+  {% if cg_passos and (nascimento or obito or natimorto) %}</div>{% endif %}
 
   {# 4. AS PERGUNTAS DO ÓBITO — art. 80 da Lei 6.015/1973 e art. 255 do Código
      de Normas. «O oficial indagará, obrigatoriamente, a respeito de todos os
@@ -543,7 +543,7 @@
      parte, DEPOIS de lavrar — e o termo, escrito na lavratura, saía sem elas.
      Os nomes são as colunas de `rc_marcas_do_obito.MARCAS`; o branco é «o
      declarante não sabe», que o termo declara na forma do § 1º. #}
-  {% if cg_passos %}<div class="cg-passo-bloco" data-passo="perguntas">{% endif %}
+  {% if cg_passos and obito %}<div class="cg-passo-bloco" data-passo="perguntas">{% endif %}
   {% if obito %}
   <section class="panel" style="grid-column:1/-1">
     <div class="panel-head"><span>Perguntas obrigatórias do óbito</span>
@@ -601,7 +601,7 @@
   </section>
   {% endif %}
 
-  {% if cg_passos %}</div>{% endif %}
+  {% if cg_passos and obito %}</div>{% endif %}
 
   {# 5. QUEM DECLARA E QUEM TESTEMUNHA.
      No NASCIMENTO o declarante costuma ser a mãe ou o pai — relato #46: os

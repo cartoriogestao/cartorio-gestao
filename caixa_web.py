@@ -2175,6 +2175,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         p = q1("SELECT * FROM cx_protocolos WHERE id=%s", (protocolo_id,))
         if not p:
             abort(404)
+        # ENCERRADO NÃO MEXE EM ITEM NEM EM DINHEIRO: a regra é a de `CXP.encerrar`, da nota de exigência
+        # e do documento. Quem precisa mudar reabre primeiro, e ficam o rastro das duas coisas. Sem isto,
+        # o dinheiro entrava no caixa com a situação ainda em ENTREGUE ou CANCELADO.
+        if CXP.esta_encerrado(p["situacao"]):
+            flash(f"O protocolo {p['numero']} está encerrado: reabra-o para mexer nos itens. "
+                  "Nada foi alterado.", "warning")
+            return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
         acao = request.form.get("acao")
 
         if acao == "acrescentar":

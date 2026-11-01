@@ -376,6 +376,8 @@
     Minuta e o ato JA ESCRITO e AINDA NAO LAVRADO: nao toma numero, nao entra
     no livro, nao pede selo e nao cobra. Ela guarda tambem os tres campos que
     o selo exige, porque aqui ela existe para ser «revisada E selada». #}
+{# Sem minuta, o layout novo não tem a aba: o quadro ficaria escondido para sempre. #}
+{% if minutas or minuta_av or not abas %}
 <section class="panel" data-fase="minutas">
   <div class="panel-head"><span>Minutas — a revisar e lavrar</span>
     <small>{{ minutas | selectattr('situacao', 'equalto', 'A_REVISAR')
@@ -454,6 +456,7 @@
     {% endfor %}
   </div>
 </section>
+{% endif %}
 
 {% if minuta_av and minuta_av.teor %}
 <section class="panel" style="border-left:3px solid #b45309" data-fase="minutas">
@@ -732,7 +735,7 @@
     <p style="margin:4px 0"><strong>{{ e.ato_rotulo }}</strong>
       <small class="muted">{{ fmt_date(e.expurgado_em) }}
         {% if e.expurgado_por %}· {{ e.expurgado_por }}{% endif %}</small>
-      — <a href="{{ url_for('livro3_expurgo_ata', expurgo_id=e.id) }}">ata em .odt</a>
+      {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}— <a href="{{ url_for('livro3_expurgo_ata', expurgo_id=e.id) }}">ata em .odt</a>{% endif %}
       {% if e.motivo %}<br><small>{{ e.motivo }}</small>{% endif %}</p>
     {% endfor %}
   </div>

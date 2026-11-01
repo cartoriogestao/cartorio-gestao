@@ -113,7 +113,7 @@
     <strong>{{ vocabulario|length }}</strong> claros no
     {{ nome_da_especie|lower }}. Os que este modelo já usa estão marcados.
   </p>
-  <table class="small" data-modelo-vocabulario>
+  <div class="table-wrap"><table class="small" data-modelo-vocabulario>
     <thead><tr><th>Claro</th><th>O que é</th><th>De onde sai</th></tr></thead>
     <tbody>
     {% for c in vocabulario %}
@@ -127,7 +127,7 @@
       </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
 </div>
 </div>
 

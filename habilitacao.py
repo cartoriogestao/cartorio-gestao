@@ -746,6 +746,24 @@ def casamentos_da_habilitacao(con,
     return achados
 
 
+def por_que_nao_lavra_o_casamento(h, hoje: Any = None) -> str:
+    """A frase de recusa, ou vazio. Só calcula. `h` é a linha da habilitação, ou None.
+
+    É A RÉGUA DA CELEBRAÇÃO, ANTES DO LIVRO. `registrar_celebracao` recusa depois, e aí o casamento já
+    está lavrado, com folha e selo, sem ter como se amarrar: «falta amarrar» para sempre. A tela já avisa
+    ao abrir, mas o formulário aberto em outra aba continua levando o número de quem mudou de situação.
+    """
+    if not h:
+        return "Essa habilitação não existe."
+    if h["situacao"] != "HABILITADO":
+        return ("Esta habilitação não está expedida — só se lavra casamento a partir de habilitação "
+                "válida e em vigor.")
+    if habilitacao_vencida(h, hoje):
+        return (f"A habilitação venceu em {h['habilitacao_vale_ate']} (CC art. 1.532). Refaça o processo "
+                f"antes de registrar o casamento.")
+    return ""
+
+
 def registrar_celebracao(con, habilitacao_id: int, *,
                          assento_id: int, agora: str, hoje: str | None = None,
                          usuario: str | None = None) -> None:

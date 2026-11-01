@@ -376,7 +376,7 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          ("Relatórios", (
              _i("Relatórios", "reports"),)),
          ("Carnê-leão", (
-             _i("Carnê-leão", "carne_leao", A),)),
+             _i("Carnê-leão", "carne_leao", A, quando="e_o_titular"),)),
      )},
     {"chave": "GESTAO", "curto": "Gestão", "nome": "Gestão", "cor": "ADM",
      "icone": "escudo", "lavra": False, "secoes": (
@@ -519,6 +519,7 @@ PAI: dict[str, tuple[str, str]] = {
     "ri_importacoes": ("LIVROS", "Importar"),
     "ri_importacao_manual": ("LIVROS", "Importar"),
     # Registro Civil
+    "rcpn_eprotocolo_ficha": ("RCPN", "Certidões"),
     "rcpn_assento": ("RCPN", "Assento lavrado"),
     "rcpn_assento_editar": ("RCPN", "Assento lavrado"),
     "rcpn_anotar": ("RCPN", "Assento lavrado"),
@@ -780,12 +781,16 @@ def _ve(entrada: dict, papel: str, flags: dict) -> bool:
     if papeis is not None and papel not in papeis:
         return False
     quando = entrada.get("quando")
-    return not quando or bool(flags.get(quando))
+    if quando and not flags.get(quando):
+        return False
+    abre = flags.get("_abre")
+    return abre is None or not entrada.get("endpoint") or abre(entrada["endpoint"], papel)
 
 
-def _flags(ajuda_liberada: Any, agente_no_menu: Any, escondidos: Any) -> dict:
+def _flags(ajuda_liberada: Any, agente_no_menu: Any, escondidos: Any, e_o_titular: Any = True) -> dict:
     fora = set(escondidos or ())
     return {"ajuda_liberada": bool(ajuda_liberada), "agente_no_menu": bool(agente_no_menu),
+            "e_o_titular": bool(e_o_titular),
             "apostila_visivel": "APOSTILA" not in fora, "apostila_escondida": "APOSTILA" in fora,
             "_escondidos": fora}
 
@@ -834,13 +839,13 @@ def sem_acento(texto: Any) -> str:
 
 def montar(endpoint: str, args: dict, papel: str, gerar_url: Callable[..., str], *,
            escondidos: Any = (), ajuda_liberada: Any = False, agente_no_menu: Any = False,
-           tipo_do_ato: str = "") -> dict:
+           tipo_do_ato: str = "", e_o_titular: Any = True, abre: Callable[[str, str], bool] | None = None) -> dict:
     """Tudo o que a casca desenha naquela tela. Só calcula.
 
     `gerar_url` é o `url_for`. Entrada cujo endereço não se monta some em vez de
     derrubar a página: um módulo desligado não pode tirar o menu do ar.
     """
-    flags = _flags(ajuda_liberada, agente_no_menu, escondidos)
+    flags = {**_flags(ajuda_liberada, agente_no_menu, escondidos, e_o_titular), "_abre": abre}
 
     def _url(entrada: dict) -> str | None:
         try:

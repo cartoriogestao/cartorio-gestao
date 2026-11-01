@@ -4991,6 +4991,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 if not selo:
                     flash("Informe o número do selo.", "danger")
                     return redirect(url_for("notas_ato", ato_id=ato_id))
+                # A MESMA TRAVA DO CAMINHO AUTOMÁTICO: a tela não oferece, mas o formulário aberto em outra
+                # aba trocava o selo do ato, e o razão ficava com os dois.
+                if str(a["selo"] or "").strip():
+                    flash(f"O ato já tem o selo {a['selo']}: nada foi alterado.", "warning")
+                    return redirect(url_for("notas_ato", ato_id=ato_id))
                 try:
                     with db.transaction() as con:
                         AS.registrar_selo_obtido_a_mao(

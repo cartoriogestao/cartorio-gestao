@@ -137,9 +137,12 @@ _database.DEFAULT_SETTINGS.update(SERVENTIA_DE_TESTE)
 # A SUÍTE CONTINUA NA MOLDURA ANTIGA. O padrão de fábrica passou a ser o layout novo em
 # 30/10/2026, e os testes de tela leem o HTML do menu antigo. Quem testa a moldura nova a
 # pede por pessoa, e `test_casca_nova` confere o padrão de verdade lendo o código.
+#
+# `CG_TESTE_MOLDURA=novo` passa a suíte inteira pela moldura nova, de uma vez. Quem ler o menu
+# antigo fica vermelho, e o que sobrar é defeito: ver `docs/LAYOUT_NOVO.md`, «Os testes».
 import navegacao_web as _navegacao_web  # noqa: E402
 
-_navegacao_web.PADRAO_DE_FABRICA = "antigo"
+_navegacao_web.PADRAO_DE_FABRICA = os.environ.get("CG_TESTE_MOLDURA", "").strip() or "antigo"
 
 _SEED_NAME = "_cg_seed_schema.sqlite3"
 _DB_NAME = "cartorio_gestao.sqlite3"

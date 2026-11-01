@@ -11,7 +11,7 @@
   <strong>Central:</strong>
   <a href="{{ url_for('centrais_status') }}">{% if not central %}<strong>todas</strong>{% else %}todas{% endif %}</a>
   {% for c in centrais %} · <a href="{{ url_for('centrais_status', central=c) }}">{% if c == central %}<strong>{{ c }}</strong>{% else %}{{ c }}{% endif %}</a>{% endfor %}
-  · <a href="{{ url_for('settings') }}#cfg-centrais">credenciais (Configurações)</a>
+  {% if user.role == 'ADMIN' %}· <a href="{{ url_for('settings') }}#cfg-centrais">credenciais (Configurações)</a>{% endif %}
 </nav>
 
 <section class="panel" id="centrais-resumo">

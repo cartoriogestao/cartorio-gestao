@@ -236,13 +236,13 @@ def fases_do_ato(ato: Mapping[str, Any], *, partes: Sequence = (), anexos: Seque
 def _onde_abrir(fases: list[dict], em_lavratura: bool, tem_partes: bool, tem_teor: bool,
                 partes_prontas: bool, teor_pronto: bool, doi_pendente: bool) -> str:
     """A ficha abre na primeira fase pendente: o que espera ação vem primeiro."""
+    tem_doi = any(f["chave"] == "doi" for f in fases)
     if not em_lavratura:
-        return "entrega"
+        return "doi" if tem_doi and doi_pendente else "entrega"
     if not tem_partes and not tem_teor:
         return "preparar"
     if not partes_prontas:
         return "partes"
     if not teor_pronto:
         return "teor"
-    tem_doi = any(f["chave"] == "doi" for f in fases)
     return "doi" if tem_doi and doi_pendente else "lancar"

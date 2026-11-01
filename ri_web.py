@@ -2102,7 +2102,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             """A régua do layout novo. Só ele chama, e o antigo não paga a conta."""
             quer_lavrar = (request.args.get("lavrar") == "1" or minuta_aberta
                            or _pre_encerramento(m, piso, atos) is not None)
-            return RIABAS.abas_da_matricula(
+            abas = RIABAS.abas_da_matricula(
                 m, atos=atos, partes=partes, protocolos=protocolos,
                 certidoes_emitidas=certidoes_emitidas,
                 revisoes_abertas=[r for r in revisoes if r["situacao"] == RV.ABERTA],
@@ -2112,6 +2112,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 onus=[x["rotulo"] for x in RIONUS.onus_vigentes(
                     atos, rotulo=lambda a: rotulo_ato(a["tipo"], a["numero"], m["numero"]))],
                 foco=RIABAS.NOVO_ATO if quer_lavrar else "")
+            # O AUDITOR LÊ O QUE FALTA, MAS NÃO SELA: o quadro de selar não sai para ele, e o botão não
+            # teria para onde ir.
+            if app.extensions["usuario_papel"]() == "AUDITOR":
+                for item in abas["espera"]:
+                    if item["ir"].startswith("selar-ato-"):
+                        item["ir"] = ""
+            return abas
 
         return render_template(
             "ri_ficha.html", m=m, atos=atos, partes=partes, imagens=imagens,
@@ -3270,14 +3277,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      WHERE {filtro} ORDER BY p.livro, p.numero DESC LIMIT 300""", params)
         resumo = q1("""SELECT COUNT(*) total,
                     COALESCE(SUM(CASE WHEN situacao='ABERTO' THEN 1 ELSE 0 END),0)::bigint abertos,
-                    COALESCE(SUM(CASE WHEN situacao='ABERTO' AND data_limite < %s AND prazo_suspenso_desde IS NULL THEN 1 ELSE 0 END),0)::bigint vencidos,
+                    COALESCE(SUM(CASE WHEN situacao IN ('ABERTO','DEVOLVIDO') AND data_limite < %s AND prazo_suspenso_desde IS NULL THEN 1 ELSE 0 END),0)::bigint vencidos,
                     COALESCE(SUM(CASE WHEN apresentante IS NULL THEN 1 ELSE 0 END),0)::bigint sem_apresentante
                     FROM ri_protocolos""", (date.today().isoformat(),))
         feriados = ler_feriados_locais(db.get_setting("ri_feriados_locais", ""))
         hoje = date.today()
         restam = {}
         for r in rows:
-            if (r["situacao"] == "ABERTO" and r["data_limite"]
+            if (r["situacao"] in PRAZO.CORRENDO and r["data_limite"]
                     and not PRAZO.suspensa(r)):
                 try:
                     restam[r["id"]] = dias_uteis_entre(hoje, date.fromisoformat(r["data_limite"]), feriados)
@@ -3301,7 +3308,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             perto = []
             for r in q("""SELECT p.*, m.id mid FROM ri_protocolos p
                           LEFT JOIN ri_matriculas m ON m.id = p.matricula_id
-                          WHERE p.situacao = 'ABERTO' AND p.data_limite IS NOT NULL
+                          WHERE p.situacao IN ('ABERTO', 'DEVOLVIDO') AND p.data_limite IS NOT NULL
                           ORDER BY p.data_limite, p.numero"""):
                 if PRAZO.suspensa(r):
                     continue
@@ -3545,7 +3552,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         saldo = DEP.saldo_do_titulo(depositos)
         feriados = ler_feriados_locais(db.get_setting("ri_feriados_locais", ""))
         restam = None
-        if (p["situacao"] == "ABERTO" and p["data_limite"]
+        if (p["situacao"] in PRAZO.CORRENDO and p["data_limite"]
                 and not PRAZO.suspensa(p)):
             try:
                 restam = dias_uteis_entre(date.today(),

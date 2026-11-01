@@ -49,8 +49,9 @@ def test_nenhum_bloco_fica_sem_porta_na_especie_que_o_usa():
 
 def test_os_blocos_abrem_e_fecham_em_ordem():
     corpo = _sem_comentarios(FICHA)
-    aberturas = corpo.count('{% if cg_passos %}<div class="cg-passo-bloco"')
-    fechos = corpo.count("{% if cg_passos %}</div>")
+    # A filiação e as perguntas só existem nas espécies que têm a porta delas.
+    aberturas = len(re.findall(r'\{% if cg_passos[^%]*%\}<div class="cg-passo-bloco"', corpo))
+    fechos = len(re.findall(r"\{% if cg_passos[^%]*%\}</div>", corpo))
     assert aberturas == fechos == 7
     ordem = re.findall(r'cg-passo-bloco" data-passo="([a-z0-9]+)"', corpo)
     assert ordem == ["fato", "pessoa", "conjuge2", "filiacao", "perguntas", "declarante", "termo"]
@@ -69,7 +70,7 @@ def test_vale_o_primeiro_campo_invalido():
 def test_quem_continua_no_layout_antigo_nao_recebe_nada():
     assert "{% if layout_novo %}" in FICHA and "{% set cg_passos = none %}" in FICHA
     corpo = _sem_comentarios(FICHA)
-    assert corpo.count('<div class="cg-passo-bloco"') == corpo.count('{% if cg_passos %}<div class="cg-passo-bloco"')
+    assert corpo.count('<div class="cg-passo-bloco"') == len(re.findall(r'\{% if cg_passos[^%]*%\}<div class="cg-passo-bloco"', corpo))
 
 
 # ------------------------------------------------------------- com o sistema de pé

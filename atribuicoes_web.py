@@ -4424,23 +4424,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     linha = banco(con).um(
                         "SELECT * FROM hc_habilitacoes WHERE id=%s",
                         (int(hc_id),))
+                motivo = HAB.por_que_nao_lavra_o_casamento(linha, hoje()) if linha else ""
                 if not linha:
                     flash(f"Habilitação #{hc_id} não encontrada.", "danger")
-                elif linha["situacao"] != "HABILITADO":
-                    flash(
-                        "Esta habilitação não está expedida — só se lavra "
-                        "casamento a partir de habilitação válida e em vigor.",
-                        "warning")
-                elif HAB.habilitacao_vencida(linha, hoje()):
-                    flash(
-                        f"A habilitação venceu em {linha['habilitacao_vale_ate']} "
-                        f"(CC art. 1.532). Refaça o processo antes de registrar "
-                        f"o casamento.", "danger")
+                elif motivo:
+                    flash(motivo, "warning" if linha["situacao"] != "HABILITADO" else "danger")
                 else:
                     habilitacao_origem = dict(linha)
 
         if request.method != "POST":
             return tela(habilitacao_origem)
+
+        # O NÚMERO QUE VEM NO FORMULÁRIO: a habilitação pode ter mudado desde que a tela abriu.
+        hc_no_form = (numero_digitado(_campo("habilitacao_id"))
+                      if especie in RC.ESPECIES_DE_CASAMENTO else None)
+        if hc_no_form is not None:
+            with db.connect() as con:
+                linha = banco(con).um("SELECT * FROM hc_habilitacoes WHERE id=%s", (int(hc_no_form),))
+            motivo = HAB.por_que_nao_lavra_o_casamento(linha, hoje())
+            if motivo:
+                flash(f"{motivo} Nada foi lavrado.", "danger")
+                return tela(None)
 
         # ------------------------------------------------ conferencia
         # Pedido do oficial 09/09/2026: tela que SEPAR A livro e folha de
@@ -9847,9 +9851,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         anexos = [dict(x) for x in db.get_attachments(
             "RG_REGISTRO", registro_id)]
         atos_com_imagem = set()
+        # O TERMO DO REGISTRO sai do documento do registro, ou do título que o protocolo recebeu: é o
+        # que `rcpj_rtd_ato_teor` imprime (LT05). Sem isto a rota imprimia, e a ficha não oferecia o link.
+        registro_tem_documento = any(_caminhos_imagens_anexos(anexos)) or bool(
+            registro["titulo_id"] and any(_caminhos_imagens_anexos(
+                [dict(x) for x in db.get_attachments("RG_TITULO", int(registro["titulo_id"]))])))
         for a in atos:
             if any(_caminhos_imagens_anexos(
-                    [dict(x) for x in db.get_attachments("RG_ATO", a["id"])])):
+                    [dict(x) for x in db.get_attachments("RG_ATO", a["id"])])) or (
+                        str(a["tipo"] or "").upper() == "REGISTRO" and registro_tem_documento):
                 atos_com_imagem.add(int(a["id"]))
         with db.connect() as con:
             partes = RGL.partes_do_registro(con, registro_id)
@@ -10252,7 +10262,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         caminhos = _caminhos_imagens_anexos(anexos)
         if not caminhos and tipo != "CANCELAMENTO":
             flash(
-                "Este ato ainda não tem imagem/PDF vinculado (RG_ATO). "
+                "Este ato ainda não tem imagem ou PDF ligado a ele. "
                 "Na averbação nova marque os anexos; nos atos já lavrados "
                 "é preciso ligar o arquivo ao ato.",
                 "danger")
@@ -11646,7 +11656,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 f'<p align="center">_________________________________</p>'
                 f'<p align="center">{s["serventia_titular"]}</p>'
                 f'<p align="center">{s["serventia_titulo"]}</p>')
-        frag_do_selo, imagens_do_selo = RODT.carimbo_da_certidao_odf(etiqueta)
+        # Quitação não é certidão: o carimbo diz o papel em que está.
+        frag_do_selo, imagens_do_selo = RODT.carimbo_da_certidao_odf(etiqueta, rotulo="SELO DA QUITAÇÃO")
         cab_odf, cab_imgs = RODT.cabecalho_certidao_completo_odf(s)
         todas = dict(cab_imgs or {})
         todas.update(imagens_do_selo or {})
@@ -15348,7 +15359,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 f'<p><font size="8">'
                 f'{m("instrumento_autenticidade", numero=ins["numero"], ano=ins["ano"], emitido_em=ins.get("emitido_em") or "", hash=ins.get("hash_instrumento") or "")}'
                 f'</font></p>')
-        frag_do_selo, imagens_do_selo = RODT.carimbo_da_certidao_odf(etiqueta)
+        # O instrumento não é certidão: o carimbo diz o papel em que está.
+        frag_do_selo, imagens_do_selo = RODT.carimbo_da_certidao_odf(etiqueta, rotulo="SELO DO INSTRUMENTO")
         cab_odf, cab_imgs = RODT.cabecalho_certidao_completo_odf(s)
         todas = dict(cab_imgs or {})
         todas.update(imagens_do_selo or {})

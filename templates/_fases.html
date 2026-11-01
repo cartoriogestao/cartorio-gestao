@@ -38,7 +38,7 @@
     {% for i in itens %}<li class="pendente">
       <span class="cg-falta-m" aria-hidden="true"></span>
       <span>{{ i.texto }}</span>
-      <a class="button small" href="#{{ i.ir }}">{{ i.botao }}</a>
+      {% if i.ir %}<a class="button small" href="#{{ i.ir }}">{{ i.botao }}</a>{% endif %}
     </li>{% endfor %}
   </ul>
 </section>

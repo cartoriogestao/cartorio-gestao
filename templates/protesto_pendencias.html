@@ -24,8 +24,9 @@
 <div class="alert alert-danger">
   A credencial <strong>de PRODUÇÃO</strong> da CENPROT <strong>ainda não foi
   informada</strong> — sem ela nada se baixa nem se envia. Ela se informa em
-  <a href="{{ url_for('settings') }}">Administrativo → Configurações →
-  Centrais</a>, e fica guardada <strong>fora do banco</strong> — o backup não
+  {% if user.role == 'ADMIN' %}<a href="{{ url_for('settings') }}">Administrativo → Configurações →
+  Centrais</a>{% else %}Administrativo → Configurações →
+  Centrais{% endif %}, e fica guardada <strong>fora do banco</strong> — o backup não
   a alcança.
   {% if fora_de_uso %}
   A de homologação continua guardada, mas não é usada e não serve no lugar

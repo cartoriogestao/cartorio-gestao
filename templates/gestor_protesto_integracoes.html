@@ -11,8 +11,9 @@
 </p>
 <p class="small muted">
   A credencial (o par do contrato) <strong>não se digita aqui</strong>: ela vai
-  em <a href="{{ url_for('settings') }}#cfg-centrais">Administrativo →
-  Configurações → Centrais</a>, e fica gravada fora do banco de dados, como a
+  em {% if user.role == 'ADMIN' %}<a href="{{ url_for('settings') }}#cfg-centrais">Administrativo →
+  Configurações → Centrais</a>{% else %}Administrativo →
+  Configurações → Centrais{% endif %}, e fica gravada fora do banco de dados, como a
   das Centrais. Esta tela só diz se ela foi informada.
 </p>
 

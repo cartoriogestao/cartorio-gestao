@@ -7,7 +7,7 @@
 {% import '_leitura_notas.html' as LNT with context %}
 <div class="actions">
   <a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a>
-  <a class="button" href="{{ url_for('notas_veiculo_configuracao') }}">Configuração</a>
+  {% if user.role == 'ADMIN' %}<a class="button" href="{{ url_for('notas_veiculo_configuracao') }}">Configuração</a>{% endif %}
 </div>
 
 <p class="small" style="padding:0 4px">

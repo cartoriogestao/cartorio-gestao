@@ -31,8 +31,7 @@
   </table>
   {% if registro.atribuicao == 4 %}
   <p style="padding:14px"><small>
-    No RTD a averbação <strong>consome protocolo</strong>; no RCPJ não. Está medido em
-    <code>tbTD_Propriedade</code> e registrado em <code>rg_registro.AVERBACAO_CONSOME_PROTOCOLO</code>:
+    No RTD a averbação <strong>consome protocolo</strong>; no RCPJ não:
     no RTD, apresente o título em <em>Títulos apresentados</em> antes de lançar a averbação.
   </small></p>
   {% endif %}
@@ -191,7 +190,8 @@
 </section>
 {% endif %}
 
-{% if registro.situacao == 'ATIVO' %}
+{# O auditor confere o livro, e não lança nele: as rotas o recusam. #}
+{% if registro.situacao == 'ATIVO' and user.role != 'AUDITOR' %}
 <section class="panel">
   <div class="panel-head"><span>Lançar</span></div>
   <p style="padding:14px 14px 0"><small>
@@ -413,8 +413,9 @@
         <td>
           {% set tipo_u = (a.tipo or '')|upper %}
           {# o cancelamento tem termo próprio, datado e assinado (LD05; LRP
-             art. 165), mesmo sem documento digitalizado #}
-          {% if tipo_u.startswith('AVERB') or tipo_u == 'CANCELAMENTO' or (tipo_u == 'REGISTRO' and a.id in (atos_com_imagem or [])) %}
+             art. 165), mesmo sem documento digitalizado; os outros só têm o que
+             traslada: sem documento, a rota responde com aviso, e o link não levaria a nada #}
+          {% if tipo_u == 'CANCELAMENTO' or a.id in (atos_com_imagem or []) %}
           <a class="button" style="padding:4px 8px; font-size:12px"
              href="{{ url_for('rcpj_rtd_ato_teor', ato_id=a.id) }}"
              target="_blank" rel="noopener">Ver teor (PDF)</a>

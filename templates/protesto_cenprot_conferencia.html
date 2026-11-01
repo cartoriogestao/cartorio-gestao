@@ -28,8 +28,9 @@
   A credencial <strong>de PRODUÇÃO</strong> da CENPROT <strong>ainda não foi
   informada</strong> — sem ela a Central não se consulta, e a trava do protesto
   recusa os títulos de origem CENPROT dizendo que não deu para conferir. Ela se
-  informa em <a href="{{ url_for('settings') }}">Administrativo → Configurações
-  → Centrais</a>.
+  informa em {% if user.role == 'ADMIN' %}<a href="{{ url_for('settings') }}">Administrativo → Configurações
+  → Centrais</a>{% else %}Administrativo → Configurações
+  → Centrais{% endif %}.
 </div>
 {% endif %}
 

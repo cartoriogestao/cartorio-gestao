@@ -138,7 +138,8 @@
 </section>
 {% endif %}
 
-{% if assento.situacao == 'ATIVO' %}
+{# O AUDITOR CONFERE, E NÃO LANÇA: as três rotas o recusam. #}
+{% if assento.situacao == 'ATIVO' and user.role != 'AUDITOR' %}
 <section class="panel cg-lado-largo" data-fase="assento">
   <div class="panel-head"><span>Lançar no assento</span><small>uma tela para cada ato</small></div>
   <p style="padding:14px 14px 0"><small>
@@ -205,9 +206,13 @@
 </section>
 {% endif %}
 
+{# SEM A ABA, NÃO HÁ QUADRO: no layout novo, ele ficaria escondido para sempre, com a frase de que está vazio. #}
+{% set portas_da_ficha = ((abas.fases or []) + (abas.apoio or [])) | map(attribute='chave') | list if abas else [] %}
+{% if not abas or 'averbacoes' in portas_da_ficha %}
 <div class="actions" style="margin:0 0 10px" data-fase="averbacoes">
   <a class="button" href="{{ url_for('rcpn_etiqueta_averbacao_ajuste') }}">Ajustar etiqueta de averbação (mm)</a>
 </div>
+{% endif %}
 {# A DIVISAO TRIPARTITE, que a inspecao de 12/08/2026 cobra: cada bloco no seu
    campo proprio, e nao tres paragrafos de um campo de texto. #}
 {% for bloco, rotulo, vazio, aba in [
@@ -215,6 +220,7 @@
      ('AVERBACAO',   'Averbações',  'Nenhuma averbação.', 'averbacoes'),
      ('ANOTACAO',    'Anotações',   'Nenhuma anotação.', 'anotacoes'),
      ('RETIFICACAO', 'Retificações','Nenhuma retificação.', 'retificacoes')] %}
+{% if not abas or aba in portas_da_ficha %}
 {% if abas and aba in ('anotacoes', 'retificacoes') %}<span class="cg-ancora" id="{{ aba }}"></span>{% endif %}
 <section class="panel" data-fase="{{ aba }}">
   <div class="panel-head"><span>{{ rotulo }}</span><small>{{ blocos[bloco] | length }}</small></div>
@@ -283,7 +289,7 @@
             <button class="button" style="padding:4px 8px;font-size:12px">Selar registro</button>
           </form>
           {% endif %}</td>
-        <td>{% if bloco in ('AVERBACAO','ANOTACAO','RETIFICACAO') %}
+        <td>{% if bloco in ('AVERBACAO','ANOTACAO','RETIFICACAO') and user.role != 'AUDITOR' %}
           {# POST com o token (M8 do LS01, lote LX11): gerar a etiqueta
              reescreve o teor da averbação, e GET que grava abre a porta a um
              link de fora. #}
@@ -296,6 +302,7 @@
   </table>
   {% endif %}
 </section>
+{% endif %}
 {% endfor %}
 
 {# O LIVRO POR CONFIRMAR — decisão do oficial em 26/08/2026: «deixe como o

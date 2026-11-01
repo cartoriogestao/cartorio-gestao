@@ -420,6 +420,19 @@ def test_as_quatro_rotas_existem(s):
         assert rota in regras
 
 
+def test_a_central_fora_do_ar_nao_derruba_o_botao_de_testar(s, monkeypatch):
+    """Achado pela varredura de todos os formulários (31/10/2026): dava a página de erro do sistema."""
+    def fora_do_ar(*_a, **_k):
+        raise API.ResolveError("Não consegui falar com a Resolve.")
+
+    monkeypatch.setattr(API, "status", fora_do_ar)
+    html = s["c"].get("/protesto/resolve").get_data(as_text=True)
+    r = s["c"].post("/protesto/resolve/testar", data={"ambiente": "PRODUCAO", "csrf_token": _token(html)},
+                    follow_redirects=True)
+    assert r.status_code == 200
+    assert "Não consegui falar com a Resolve" in r.get_data(as_text=True)
+
+
 # ------------------------------------------------ a Central é a sexta
 
 

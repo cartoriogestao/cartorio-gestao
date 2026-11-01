@@ -79,6 +79,18 @@
         <option value="{{ s.codigo }}"{% if form.serie == s.codigo %} selected{% endif %}>{{ s.nome }}</option>
         {% endfor %}
       </select></label>
+    {# CN-MA art. 966, III. Em branco é resposta: quem atende nem sempre sabe. #}
+    <label>Espécie de lançamento
+      <select name="especie_lancamento">
+        <option value="">— decidir na qualificação —</option>
+        {% for chave, rotulo in especies.items() %}
+        <option value="{{ chave }}"{% if form.especie_lancamento == chave %} selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Data da assinatura pelas partes <span class="muted">— CN-MA art. 958, § 4º</span>
+      <input type="date" name="data_assinatura" value="{{ form.data_assinatura or '' }}"></label>
+    <label>Previsão de entrega <span class="muted">— sai no recibo, CN-MA art. 974, § 1º</span>
+      <input type="date" name="previsao_entrega" value="{{ form.previsao_entrega or '' }}"></label>
     <label>Valor declarado
       <input name="valor_declarado" value="{{ form.valor_declarado or '' }}"></label>
     <label>Observação

@@ -295,7 +295,7 @@ def texto_termo_inutilizacao(serie: str, numero_livro: Any, rotulo: str,
 
 def texto_encerramento_diario(serie: str, dia_extenso: str, quantidade: int,
                               primeiro: int | None, ultimo: int | None,
-                              sv: dict) -> str:
+                              sv: dict, pendentes: str = "") -> str:
     """O termo de encerramento do dia, no livro de protocolo.
 
     A inspecao de 12/08/2026 cobrou isto de Protesto e de RCPJ. Dia sem
@@ -314,6 +314,10 @@ def texto_encerramento_diario(serie: str, dia_extenso: str, quantidade: int,
             f"n. {com_algarismos(ultimo)}.")
     else:
         corpo = "Não houve movimento neste dia."
+    # CN-MA art. 970: o termo do Protocolo relaciona os títulos pendentes, pelo número
+    # de ordem, com o motivo do adiamento.
+    if pendentes:
+        corpo = f"{corpo} {pendentes}"
     return (
         f"ENCERRAMENTO DO DIA. Encerra-se a escrituração do {s.nome} em "
         f"{dia_extenso}. {corpo} "
@@ -827,8 +831,10 @@ def encerrar_o_dia(con, serie: str, dia: str, *, sv: dict,
     else:
         primeiro = ultimo = None
         quantos = 0
+    import rg_livros as RGL
     teor = texto_encerramento_diario(serie, dia_extenso, quantos, primeiro,
-                                     ultimo, sv)
+                                     ultimo, sv,
+                                     pendentes=RGL.frase_dos_pendentes(con, serie, dia))
     bd.escrever(
         """INSERT INTO nu_encerramentos_diarios(serie, dia, livro_id, primeiro,
                ultimo, quantidade, teor, encerrado_em, encerrado_por)

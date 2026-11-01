@@ -20,14 +20,16 @@ QUEM FAZ O QUÊ (decisões do oficial, 24/10/2026 e 28/10/2026)
 from __future__ import annotations
 
 from datetime import date, datetime
+from io import BytesIO
 
-from flask import abort, flash, redirect, render_template, request, url_for
+from flask import abort, flash, redirect, render_template, request, send_file, url_for
 
 import csv_seguro as CSVS
 import despesas as DP
 import despesas_comprovante as DC
 import despesas_inter as INTER
 import despesas_recorrentes as RC
+import serventia as SERV
 
 QUEM_VE = ("ADMIN", "MANAGER", "AUDITOR")
 QUEM_CADASTRA = ("ADMIN", "MANAGER", "USER")
@@ -274,7 +276,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                categorias=DP.CATEGORIAS, naturezas=DP.NATUREZAS,
                                tetos=DP.tetos(cfg), cfg=cfg, reais=DP.reais,
                                papel=usuario_papel(), hoje=date.today().isoformat(),
-                               foi_paga=DC.foi_paga(d), whatsapp=whatsapp)
+                               foi_paga=DC.foi_paga(d), demonstrativo=DC.pode_gerar(d),
+                               whatsapp=whatsapp)
 
     @app.route("/administrativo/despesas/<int:despesa_id>/<acao>", methods=["POST"])
     @login_required
@@ -440,6 +443,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         flash("Contato gravado.", "success")
         return _ficha(despesa_id)
 
+    @app.route("/administrativo/despesas/<int:despesa_id>/demonstrativo.pdf")
+    @login_required
+    @roles_required(*QUEM_GERENCIA)
+    def despesas_demonstrativo(despesa_id: int):
+        with db.connect() as con:
+            d = DP.despesa(con, despesa_id)
+        if not d:
+            abort(404)
+        try:
+            pdf = DC.pdf_do_demonstrativo(d, SERV.dados(db.get_settings), _agora())
+        except DP.DespesaError as erro:
+            flash(str(erro), "danger")
+            return _ficha(despesa_id)
+        return send_file(BytesIO(pdf), mimetype="application/pdf", as_attachment=True,
+                         download_name=DC.nome_do_demonstrativo(d))
+
     @app.route("/administrativo/despesas/<int:despesa_id>/comprovante", methods=["POST"])
     @login_required
     @roles_required(*QUEM_GERENCIA)
@@ -452,14 +471,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                 anexo_id=request.form.get("anexo_id"))
             elif canal == "whatsapp":
                 DC.enviar_whatsapp(db, despesa_id, por=usuario_nome(), agora=_agora(),
-                                   agora_texto=db.now())
+                                   agora_texto=db.now(), pasta_arquivos=archive_root())
             else:
                 abort(400)
         except DP.DespesaError as erro:
             flash(str(erro), "danger")
             return _ficha(despesa_id)
         audit("DESPESA_COMPROVANTE", "dp_despesas", despesa_id, {"canal": canal})
-        flash("Comprovante enviado.", "success")
+        flash("Demonstrativo enviado.", "success")
         return _ficha(despesa_id)
 
     @app.route("/administrativo/despesas/relatorio")

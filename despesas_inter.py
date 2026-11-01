@@ -794,6 +794,8 @@ def atualizar(db, despesa_id: int, *, cliente: ClienteInter, por: str,
                 _anotar_recebedor(banco(con), DP._prender(banco(con), despesa_id),
                                   recebedor.get("nome"), recebedor.get("cpfCnpj"), por=por,
                                   quando=quando)
+                DP.gravar_dados_do_banco(con, despesa_id, nome=recebedor.get("nome"),
+                                         documento=recebedor.get("cpfCnpj"))
             return {"situacao": nova["situacao"], "mensagem": nova["mensagem"]}
         if eh_pix:
             # A resposta do primeiro envio se perdeu: o mesmo x-id-idempotente
@@ -844,6 +846,37 @@ def _centavos(valor: Any) -> int:
         return -1
 
 
+def _guardar_detalhes_do_pix(con, despesa_id: int, t: dict) -> None:
+    det = t.get("detalhes") or {}
+    DP.gravar_dados_do_banco(con, despesa_id, e2e=det.get("endToEndId"),
+                             nome=det.get("nomeRecebedor") or det.get("nomeEmpresaRecebedor"),
+                             documento=det.get("cpfCnpjRecebedor"),
+                             instituicao=det.get("bancoRecebedor"))
+
+
+def _completar_as_conciliadas(db, transacoes: list[dict], *, por: str, quando: datetime) -> None:
+    """O Pix conciliado antes de a casa guardar o E2E recebe o dado, enquanto o extrato o traz.
+
+    E passa pela conferência do recebedor, que não existia quando ele foi conciliado: a
+    linha do livro não muda, mas a dúvida aparece, e o demonstrativo não sai.
+    """
+    por_id = {str(t.get("idTransacao")): t for t in transacoes}
+    with db.connect() as con:
+        faltam = banco(con).ler(
+            "SELECT id, extrato_id FROM dp_despesas WHERE situacao = 'CONCILIADA' "
+            "AND forma IN (%s, %s) AND COALESCE(banco_e2e, '') = '' AND extrato_id IS NOT NULL",
+            (DP.PIX_CHAVE, DP.PIX_COPIA_E_COLA))
+    for linha in faltam:
+        t = por_id.get(str(linha["extrato_id"]))
+        if t:
+            det = t.get("detalhes") or {}
+            with db.transaction() as con:
+                _anotar_recebedor(banco(con), DP._prender(banco(con), linha["id"]),
+                                  det.get("nomeRecebedor") or det.get("nomeEmpresaRecebedor"),
+                                  det.get("cpfCnpjRecebedor"), por=por, quando=quando)
+                _guardar_detalhes_do_pix(con, linha["id"], t)
+
+
 def _casa(d: dict, t: dict) -> bool:
     """O débito do extrato é o pagamento desta despesa? Valor e identidade, juntos."""
     if _centavos(t.get("valor")) != int(d["valor"]):
@@ -891,6 +924,8 @@ def conciliar(db, *, cliente: ClienteInter, por: str, agora: datetime | None = N
             # paga e em dúvida, até o oficial dizer o que houve (`aceitar_recebedor`).
             det = t.get("detalhes") or {}
             eh_pix = atual["forma"] in (DP.PIX_COPIA_E_COLA, DP.PIX_CHAVE)
+            if eh_pix:
+                _guardar_detalhes_do_pix(con, d["id"], t)
             if eh_pix and _anotar_recebedor(
                     bd, atual, det.get("nomeRecebedor") or det.get("nomeEmpresaRecebedor"),
                     det.get("cpfCnpjRecebedor"), por=por, quando=quando):
@@ -914,6 +949,7 @@ def conciliar(db, *, cliente: ClienteInter, por: str, agora: datetime | None = N
                        + (" — lançada no Livro Diário" if ld_id else " — repasse, fora do livro"),
                        por, DP._carimbo(quando))
         conciliadas.append(int(d["id"]))
+    _completar_as_conciliadas(db, transacoes, por=por, quando=quando)
     sem_despesa = [{"data": str(t.get("dataTransacao") or "")[:10],
                     "valor": _centavos(t.get("valor")),
                     "descricao": str(t.get("descricao") or t.get("titulo") or "")[:120],

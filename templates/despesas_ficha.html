@@ -13,6 +13,14 @@
     · cadastrada por {{ d.cadastrada_por }} em {{ d.cadastrada_em }} · origem {{ d.origem }}</p>
   {% if d.codigo %}<p class="small">Código de pagamento: <code style="word-break:break-all">{{ d.codigo }}</code></p>{% endif %}
   {% if d.divergencia %}<p class="badge alta">{{ d.divergencia }}</p>{% endif %}
+  {% if d.recebedor_divergente %}<p class="badge alta">{{ d.recebedor_divergente }}</p>{% endif %}
+  {% if d.recebedor_divergente and not d.recebedor_aceito_em and papel == 'ADMIN' %}
+  <p class="small">Esta despesa não vai ao Livro Diário enquanto isto não for resolvido.</p>
+  <form method="post" action="{{ url_for('despesas_recebedor', despesa_id=d.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>O que você conferiu e o que aconteceu <input name="motivo" size="60" required></label>
+    <button type="submit">Registrar e liberar a conferência</button></form>
+  {% endif %}
   {% if d.autorizada_em %}<p class="small">Autorizada por {{ d.autorizada_por }} em {{ d.autorizada_em }}{% if d.autorizada_pela_regra %} — {{ d.autorizada_pela_regra }}{% endif %}{% if d.acima_do_teto %} · <strong>acima do teto</strong>{% endif %}</p>{% endif %}
   {% if d.banco_status %}<p class="small">Banco: {{ d.banco_status }}{% if d.banco_codigo %} · código {{ d.banco_codigo }}{% endif %}{% if d.data_pagamento %} · data do pagamento {{ d.data_pagamento }}{% endif %}{% if d.ambiente %} · ambiente {{ d.ambiente }}{% endif %}</p>{% endif %}
   {% if d.mensagem %}<p class="small">{{ d.mensagem }}</p>{% endif %}

@@ -28,7 +28,7 @@ def _nova(db, **contato):
     with db.transaction() as con:
         return DP.cadastrar(
             con, agora=AGORA, por="mario", origem="MANUAL", chave_origem=None,
-            beneficiario_nome="BEATRIZ EXEMPLO", beneficiario_documento="", valor_centavos=193532,
+            beneficiario_nome="BEATRIZ EXEMPLO", beneficiario_documento="00000000191", valor_centavos=193532,
             vencimento="2026-10-30", forma=DP.PIX_CHAVE, codigo="beatriz@example.com",
             descricao="Folha de pagamento, salário líquido", categoria="PESSOAL",
             documento_especie="Recibo de pagamento", **contato)
@@ -69,7 +69,7 @@ def test_a_recorrente_passa_o_contato_a_despesa_do_mes(cg_casa_logada):
     db = cg_casa_logada["db"]
     with db.transaction() as con:
         RC.cadastrar(con, {"descricao": "Folha de pagamento, salário líquido", "categoria": "PESSOAL",
-                           "beneficiario_nome": "BEATRIZ EXEMPLO", "forma": DP.PIX_CHAVE,
+                           "beneficiario_nome": "BEATRIZ EXEMPLO", "beneficiario_documento": "00000000191", "forma": DP.PIX_CHAVE,
                            "chave_pix": "beatriz@example.com", "valor": 193532, "dia_vencimento": 31,
                            "antecedencia_dias": 25, "documento_especie": "Recibo de pagamento",
                            "primeiro_mes": "2026-10", "contato_email": "beatriz@example.com",

@@ -104,6 +104,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             carregadas = 0 if minhas is not None else len(
                 [d for d in DP.listar(con, situacao=DP.AGUARDANDO) if d["origem"] == RC.ORIGEM])
             a_autorizar = DP.para_autorizar(con) if usuario_papel() == "ADMIN" else []
+            em_duvida = [] if minhas is not None else DP.recebedor_em_duvida(con)
             balanco = None if minhas is not None else DP.balanco(
                 con, date.today().isoformat(), do_mes)
         return render_template("despesas_lista.html", linhas=linhas, contagem=contagem,
@@ -111,7 +112,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                categorias=DP.CATEGORIAS, reais=DP.reais,
                                papel=usuario_papel(), do_mes=do_mes,
                                recorrentes_carregadas=carregadas, a_autorizar=a_autorizar,
-                               balanco=balanco,
+                               balanco=balanco, em_duvida=em_duvida,
                                formas=DP.FORMAS, so_as_proprias=minhas is not None)
 
     @app.route("/administrativo/despesas/nova", methods=["GET", "POST"])
@@ -407,6 +408,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         flash(f"{len(r['pagas'])} enviada(s) ao Inter, {len(r['esperam'])} esperando "
               f"(teto ou configuração), {len(r['falharam'])} recusada(s).", "info")
         return redirect(url_for("despesas_lista"))
+
+    @app.route("/administrativo/despesas/<int:despesa_id>/recebedor", methods=["POST"])
+    @login_required
+    @roles_required("ADMIN")
+    def despesas_recebedor(despesa_id: int):
+        try:
+            with db.transaction() as con:
+                DP.aceitar_recebedor(con, despesa_id, agora=_agora(), por=usuario_nome(),
+                                     papel=usuario_papel(), motivo=request.form.get("motivo"))
+        except DP.DespesaError as erro:
+            flash(str(erro), "danger")
+            return _ficha(despesa_id)
+        audit("DESPESA_RECEBEDOR_ACEITO", "dp_despesas", despesa_id, {})
+        flash("Registrado. A despesa volta à conferência do extrato.", "success")
+        return _ficha(despesa_id)
 
     @app.route("/administrativo/despesas/<int:despesa_id>/contato", methods=["POST"])
     @login_required

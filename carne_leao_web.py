@@ -26,7 +26,7 @@ def _mes_anterior(hoje: date) -> str:
 
 def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str):
     usuario_nome = app.extensions["usuario_nome"]
-    so_o_titular, _ = TP.guarda(app, db)
+    so_o_titular = TP.com_senha(app, db)
 
     def _agora() -> str:
         return datetime.now().replace(microsecond=0).isoformat(timespec="seconds")

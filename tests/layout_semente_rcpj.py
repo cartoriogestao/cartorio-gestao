@@ -343,6 +343,20 @@ def _situacao_da_apostila(casa, apostila_id: int, situacao: str):
 # ------------------------------------------------------------------- a semente
 
 
+def _processo_fiduciario(casa, c) -> int:
+    """Um processo qualificado: a autuação pela tela, e o resto pela tela do passo."""
+    import rg_fiduciaria as FID
+    titulo = _receber(casa, c, 4, "título do processo fiduciário", natureza="Requerimento de consolidação fiduciária")
+    pid = _enviar(casa, c, "/rcpj-rtd/fiduciaria/nova", "processo fiduciário", _nasceu_em(casa, "rg_fiduciarias"),
+                  titulo_id=titulo, credor_nome="Banco Exemplo", devedor_nome="Ana Exemplo",
+                  bem_descricao="Motocicleta exemplo", valor_divida="1.000,00")
+    nome, _sv = _quem(casa)
+    with casa.transacao() as con:
+        FID.qualificar(con, pid, resultado="POSITIVA", itens=[r["chave"] for r in FID.REQUISITOS if r["obrigatorio"]],
+                       dia=casa.hoje, agora=casa.db.now(), usuario=nome)
+    return pid
+
+
 def semear(casa) -> None:
     c = casa.cliente("ADMIN", "novo")
     _tabela_de_emolumentos(casa)
@@ -483,7 +497,10 @@ def semear(casa) -> None:
     _enviar(casa, c, f"/apostila/{recusada}/recusar", "apostila recusada",
             _situacao_da_apostila(casa, recusada, "RECUSADA"), motivo="Documento sem assinatura que se possa conferir.")
 
+    fiduciario = _processo_fiduciario(casa, c)
+
     casa.ids.update({
+        "rcpj_fiduciaria": fiduciario,
         "rcpj_titulo_recebido": recebido, "rcpj_titulo_exigencia": exigencia,
         "rcpj_titulo_qualificado": qualificado, "rcpj_titulo_registrado": registrado,
         "rcpj_titulo_devolvido": devolvido, "rcpj_titulo_cancelado": cancelado, "rcpj_titulo_rcpj": rcpj,
@@ -500,6 +517,8 @@ def semear(casa) -> None:
         "rcpj_apostila_pedido": pedido, "rcpj_apostila_emitida": emitida, "rcpj_apostila_sem_selo": sem_selo,
         "rcpj_apostila_cancelada": cancelada, "rcpj_apostila_recusada": recusada, "rcpj_apostila_pendente": pendente})
 
+    casa.pagina("rcpj_rtd_fiduciaria", proc_id=fiduciario)
+    casa.pagina("rcpj_rtd_fiduciaria_peca", proc_id=fiduciario, qual="NOTIFICACAO")
     casa.pagina("rcpj_rtd_titulo", titulo_id=recebido)
     casa.pagina("rcpj_rtd_titulo_recibo", titulo_id=recebido)
     casa.pagina("rcpj_rtd_titulo_ver", titulo_id=recebido, anexo_id=recebido_pdf)
@@ -549,3 +568,104 @@ def semear(casa) -> None:
     casa.pagina("apostila_pedido", pedido_id=pedido)
     for cada in (emitida, sem_selo, cancelada):
         casa.pagina("apostila_certidao", apostila_id=cada)
+
+
+def _livros_novos(casa) -> None:
+    """As abas dos livros, a ficha com partes e bens e o recibo: a tela nova, com dado."""
+    import rg_livros as RGL
+
+    registro = casa.ids["rcpj_registro_do_titulo"]
+    c = casa.cliente()
+
+    def mandar(destino, **campos):
+        # O formulário tem um campo `papel`, que em `casa.postar` é o papel de quem manda.
+        r = c.post(destino, data={"csrf_token": casa.token(c), **campos})
+        assert r.status_code == 302, (destino, r.status_code)
+
+    mandar(f"/rcpj-rtd/{registro}/partes", nome="Ana Exemplo", documento="00000000191", papel="Interveniente")
+    mandar(f"/rcpj-rtd/{registro}/partes", nome="João Modelo", papel="Devedor")
+    mandar(f"/rcpj-rtd/{registro}/bens", descricao="Veículo de ensaio", identificacao="AAA0A00", especie="Veículo")
+    mandar(f"/rcpj-rtd/{registro}/bens", descricao="Trator de ensaio", especie="Máquina")
+    parte = casa.um("SELECT id FROM rg_partes WHERE registro_id=%s AND nome=%s", (registro, "João Modelo"))
+    bem = casa.um("SELECT id FROM rg_bens WHERE registro_id=%s AND descricao=%s", (registro, "Trator de ensaio"))
+    assert parte and bem, "a tela disse que gravou, e o banco não tem"
+    mandar(f"/rcpj-rtd/{registro}/partes/{parte['id']}/retirar", motivo="Lançada por engano no ensaio")
+    mandar(f"/rcpj-rtd/{registro}/bens/{bem['id']}/baixar", motivo="Quitada a dívida do ensaio")
+
+    casa.pagina("rcpj_rtd_registro", registro_id=registro)
+    for atribuicao in (3, 4):
+        for livro in RGL.livros_de(atribuicao):
+            casa.pagina("rcpj_rtd_livros", {"atribuicao": atribuicao, "livro": livro["chave"]})
+            casa.pagina("rcpj_rtd_livros", {"atribuicao": atribuicao, "livro": livro["chave"], "formato": "odt"})
+
+
+def _fiduciaria_e_doi(casa) -> None:
+    """O processo fiduciário em cada estado que muda a ficha, o título sobrestado e a DOI do registro."""
+    import rg_fiduciaria as FID
+    import rg_titulo as TIT
+    from ri_ctp import TIPO_OPERACAO
+
+    c = casa.cliente()
+    registro = casa.ids["rcpj_registro_do_titulo"]
+
+    def processo(o_que: str) -> int:
+        titulo = _receber(casa, c, 4, o_que, natureza="Alienação fiduciária de veículo", serie="TD_B",
+                          data_apresentacao=casa.hoje)
+        antes = _ultimo(casa, "rg_fiduciarias")
+        r = casa.postar("/rcpj-rtd/fiduciaria/nova", _cliente=c, titulo_id=titulo, credor_nome="Banco Exemplo",
+                        credor_documento=CNPJ, credor_contato="banco@exemplo.invalid", devedor_nome="João Modelo",
+                        devedor_documento=CPF, devedor_email="joao@exemplo.invalid", devedor_endereco=ENDERECO,
+                        contrato="Contrato de ensaio", bem_descricao="Veículo de ensaio", bem_identificacao="AAA0A00",
+                        valor_divida="1.000,00")
+        novo = _ultimo(casa, "rg_fiduciarias")
+        assert novo > antes, f"{o_que}: não autuou ({_avisos(c, r)})"
+        return novo
+
+    def passo(proc: int, acao: str, **campos) -> None:
+        r = casa.postar(f"/rcpj-rtd/fiduciaria/{proc}/acao", _cliente=c, acao=acao, dia=casa.hoje, **campos)
+        texto = _avisos(c, r)
+        assert "Lançado" in texto, f"{acao}: {texto}"
+
+    itens = [x["chave"] for x in FID.REQUISITOS]
+    autuado = processo("processo autuado")
+    emenda = processo("processo em emenda")
+    passo(emenda, "qualificar", resultado="EMENDA", motivo="Falta a planilha do débito, no ensaio.")
+    qualificado = processo("processo qualificado")
+    passo(qualificado, "qualificar", resultado="POSITIVA", itens=itens)
+    notificando = processo("processo notificando")
+    passo(notificando, "qualificar", resultado="POSITIVA", itens=itens)
+    passo(notificando, "notificar", forma="POSTAL")
+    no_prazo = processo("processo no prazo do devedor")
+    passo(no_prazo, "qualificar", resultado="POSITIVA", itens=itens)
+    passo(no_prazo, "notificar", forma="POSTAL")
+    passo(no_prazo, "ciencia")
+    impugnado = processo("processo impugnado")
+    passo(impugnado, "qualificar", resultado="POSITIVA", itens=itens)
+    passo(impugnado, "notificar", forma="POSTAL")
+    passo(impugnado, "ciencia")
+    passo(impugnado, "impugnar", texto="O devedor contesta o valor da dívida, no ensaio.", valor="100,00")
+    desistido = processo("processo com desistência")
+    passo(desistido, "desistir", motivo="O credor desistiu do pedido, no ensaio.")
+
+    for cada in (autuado, emenda, qualificado, notificando, no_prazo, impugnado, desistido):
+        casa.pagina("rcpj_rtd_fiduciaria", proc_id=cada)
+    casa.pagina("rcpj_rtd_fiduciaria_peca", proc_id=qualificado, qual="NOTIFICACAO")
+    casa.pagina("rcpj_rtd_fiduciaria_peca", proc_id=no_prazo, qual="NOTIFICACAO")
+
+    sobrestado = _receber(casa, c, 4, "título sobrestado", data_apresentacao=casa.hoje, serie="TD_B")
+    r = casa.postar(f"/rcpj-rtd/titulo/{sobrestado}/sobrestar", _cliente=c, tipo=next(iter(TIT.SOBRESTAR_POR)),
+                    motivo="Sobrestado por ordem de ensaio, para a ficha.", notificado_em=casa.hoje)
+    assert "sobrestado" in _avisos(c, r).lower()
+    casa.pagina("rcpj_rtd_titulo", titulo_id=sobrestado)
+    r = casa.postar(f"/rcpj-rtd/{registro}/doi", _cliente=c, operacao=next(iter(TIPO_OPERACAO)), matricula="1",
+                    valor="1.000,00", data=casa.hoje, tipo_imovel="Casa", endereco=ENDERECO, area="100")
+    assert "DOI" in _avisos(c, r)
+
+
+_semear_antes = semear
+
+
+def semear(casa) -> None:  # noqa: F811
+    _semear_antes(casa)
+    _livros_novos(casa)
+    _fiduciaria_e_doi(casa)

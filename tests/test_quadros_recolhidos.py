@@ -48,7 +48,9 @@ def test_o_formulario_geral_e_um_so_e_leva_todos_os_campos():
 def test_todo_campo_que_a_rota_le_esta_no_formulario():
     """Campo que a rota lê e o formulário não manda é configuração que se apaga ao salvar."""
     fonte = (RAIZ / "app.py").read_text(encoding="utf-8")
-    rota = fonte[fonte.index("def settings():"):fonte.index("def configuracoes_cra_envio")]
+    # Até a rota seguinte, seja qual for: a da chave da CENPROT entrou no meio, com formulário próprio.
+    inicio = fonte.index("def settings():")
+    rota = fonte[inicio:fonte.index("\n    def ", inicio)]
     lidos = set(re.findall(r'request\.form\.get\(\s*"(\w+)"', rota)) | set(re.findall(r'"(\w+)" in request\.form', rota))
     assert lidos and lidos <= CAMPOS_DO_FORMULARIO_GERAL, lidos - CAMPOS_DO_FORMULARIO_GERAL
 

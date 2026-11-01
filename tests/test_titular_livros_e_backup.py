@@ -100,3 +100,5 @@ def test_tirar_a_senha_pede_a_atual_e_a_volta_nao_sai_da_casa(cg_casa_logada):
     c.post(url, data={"csrf_token": _token(c, url), "acao": "remover", "atual": "senha-do-teste"})
     assert not casa["db"].get_setting("titular_senha_hash", "")
     assert [TP.volta_segura(v) for v in ("//fora.example", "https://fora.example", "/livros")] == ["/", "/", "/livros"]
+    # O navegador apaga o TAB do endereço: «/<TAB>/fora» vira «//fora».
+    assert TP.volta_segura("/\t/fora.example") == "/" and TP.volta_segura("/\\fora.example") == "/"

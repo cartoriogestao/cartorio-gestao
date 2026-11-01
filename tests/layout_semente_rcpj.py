@@ -501,6 +501,7 @@ def semear(casa) -> None:
         "rcpj_apostila_cancelada": cancelada, "rcpj_apostila_recusada": recusada, "rcpj_apostila_pendente": pendente})
 
     casa.pagina("rcpj_rtd_titulo", titulo_id=recebido)
+    casa.pagina("rcpj_rtd_titulo_recibo", titulo_id=recebido)
     casa.pagina("rcpj_rtd_titulo_ver", titulo_id=recebido, anexo_id=recebido_pdf)
     casa.pagina("rcpj_rtd_titulo", titulo_id=exigencia)
     casa.pagina("rcpj_rtd_titulo_nota", titulo_id=exigencia)

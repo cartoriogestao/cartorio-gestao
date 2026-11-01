@@ -77,7 +77,8 @@ def test_a_trava_barra_apagar_fora_da_pasta_do_teste(trava):
 
 
 def test_a_trava_conhece_a_pasta_de_uma_instalacao_real():
-    assert E._normal(r"C:\ProgramData\CartorioGestao") in E.pastas_de_instalacao_real()
+    # Montado como a trava monta: no Linux e no Mac a contrabarra não separa pasta.
+    assert E._normal(Path(r"C:\ProgramData") / "CartorioGestao") in E.pastas_de_instalacao_real()
 
 
 def test_a_trava_esconde_a_pasta_de_uma_instalacao_real(trava, monkeypatch):

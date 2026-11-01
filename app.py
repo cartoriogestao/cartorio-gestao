@@ -780,6 +780,17 @@ def create_app(test_config: dict | None = None) -> Flask:
             expected = session.get("csrf_token")
             received = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token")
             if not expected or not received or not secrets.compare_digest(str(expected), str(received)):
+                # A PORTA DE ENTRADA NÃO RESPONDE «BAD REQUEST» (01/11/2026). O
+                # login troca o token: um segundo clique em «Entrar» enquanto a
+                # tela seguinte carrega, ou o formulário de outra aba, chega com
+                # o token velho. Nada é processado aqui: quem já entrou segue
+                # para o painel, e quem não entrou recebe o formulário de novo.
+                if request.endpoint in ("login", "login_dois_fatores",
+                                        "login_dois_fatores_cadastrar"):
+                    if session.get("user_id"):
+                        return redirect(url_for("dashboard"))
+                    flash("A página estava desatualizada. Confira e envie de novo.", "warning")
+                    return redirect(url_for(request.endpoint, **request.args.to_dict()))
                 abort(400, "Token CSRF inválido.")
         # MODULO DESLIGADO NAO ABRE, E A GUARDA E AQUI — nao no menu.
         #

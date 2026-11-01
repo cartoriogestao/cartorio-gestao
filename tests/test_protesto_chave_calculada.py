@@ -2,17 +2,17 @@
 A CHAVE DO CENPROT QUE SE CALCULA AO APONTAR o título que vem da CRA.
 
 O QUE ELES CONFEREM
-      - a CONTA, com vetores feitos à mão aqui, e não com a própria função: é a
-        de `Protesto_Funcao.ChaveUnica`, do E-Ofício, com PESOS FICTÍCIOS, porque
-        os de verdade quem preenche é a serventia;
+      - a CONTA, com o exemplo do layout oficial da CENPROT e vetores feitos à
+        mão aqui, e não com a própria função;
       - o SEQUENCIAL cresce sem repetir, a partir do maior já usado;
       - os DOIS TÍTULOS DO MESMO PROTOCOLO ficam com a mesma chave, e o arquivo
         só os funde por ela;
       - título que JÁ TEM CHAVE não muda, e não gasta sequencial;
       - título de ORIGEM CENPROT não recebe chave calculada: a dele vem da
         Central. O MANUAL também não;
-      - FALTAR CONFIGURAÇÃO, ou os pesos virem tortos, não impede o apontamento:
-        o título fica sem chave, e nunca se chuta.
+      - CHAVE JÁ GRAVADA NUNCA MUDA, mesmo fora da regra, e não se recusa;
+      - FALTAR CONFIGURAÇÃO não impede o apontamento: o título fica sem chave, e
+        nunca se chuta.
 
 O IBGE E O NÚMERO DA SERVENTIA DAQUI SÃO FICTÍCIOS, e a conta é feita sobre eles:
 o verificador depende do IBGE, e por isso a chave real da prova de 30/10/2026
@@ -49,10 +49,11 @@ SV = {"unit_name": "SERVENTIA EXTRAJUDICIAL DE CIDADE EXEMPLO",
 # `12` + `34567` = a comarca fictícia destes testes.
 COMARCA = "1234567"
 CARTORIO = "03"
-# Fictícios: uma sequência qualquer, com 23 dígitos.
-PESOS = "73197319731973197319731"
+# Layout_Cenprot_XML v1.23 ed2, Anexo I, p. 11 e 12.
+FATORES = "5 6 7 3 8 4 5 7 6 6 7 6 7 7 4 1 9 5 1 1 0 2 0".replace(" ", "")
+EXEMPLO_DO_LAYOUT = "35503080000127401141229"
 CONFIGURACAO = (("ibge_uf", "12"), ("ibge_municipio", "34567"),
-                ("ibge_cartorio", "3"), (CP.CHAVE_DOS_PESOS, PESOS))
+                ("ibge_cartorio", "3"))
 
 EXEMPLO = (Path(__file__).parent / "cra_remessa_exemplo.txt").read_bytes()
 
@@ -112,45 +113,48 @@ def _chave_montada(sequencial: int, *, ibge=COMARCA, cartorio=CARTORIO,
     """A conta escrita de novo aqui, para não provar a função por ela mesma."""
     base = f"{ibge}{sequencial:07d}0{cartorio}{aammdd}"
     soma = 0
-    for digito, peso in zip(base, PESOS):
-        soma += int(str(int(digito) * int(peso))[-1])
+    for digito, fator in zip(base, FATORES):
+        soma += int(str(int(digito) * int(fator))[-1])
     fim = soma % 10
-    return base[:14] + str(0 if fim == 0 else 10 - fim) + base[15:]
+    return base[:14] + str(1 if fim == 0 else 10 - fim) + base[15:]
 
 
 # ------------------------------------------------------------------- a conta
 
 
+def test_o_exemplo_do_layout_oficial():
+    """IBGE 3550308, sequencial 127, cartório 01, 29/12/2014. A soma é 56, a
+    unidade é 6, e o verificador é 10 - 6 = 4."""
+    assert CP.compor_chave(ibge="3550308", sequencial=127, cartorio="01",
+                           data="2014-12-29") == EXEMPLO_DO_LAYOUT
+
+
 def test_a_conta_feita_a_mao():
-    """Base 1234567 0000042 0 03 261030, com os pesos 7319 repetidos. O último
-    dígito de cada produto:
+    """Base 1234567 0000042 0 03 261030. A unidade de cada produto:
 
-        7 6 3 6 5 8 7 | 0 0 0 0 0 8 6 | 0 | 0 1 | 6 6 9 0 9 0
+        5 2 1 2 0 4 5 | 0 0 0 0 0 8 4 | 0 | 0 7 | 0 6 1 0 6 0
 
-    A soma é 87. Ela termina em 7, e o verificador é 10 - 7 = 3.
+    A soma é 51. A unidade é 1, e o verificador é 10 - 1 = 9.
     """
     assert CP.compor_chave(ibge="1234567", sequencial=42, cartorio="03",
-                           data="2026-10-30",
-                           pesos=PESOS) == "12345670000042303261030"
+                           data="2026-10-30") == "12345670000042903261030"
 
 
-def test_soma_que_termina_em_zero_da_verificador_zero():
-    """Base 1234567 0000009 0 03 261030, com os mesmos pesos. O último dígito de
-    cada produto:
+def test_unidade_zero_da_verificador_um():
+    """Base 1234567 0000003 0 03 261030. A unidade de cada produto:
 
-        7 6 3 6 5 8 7 | 0 0 0 0 0 0 7 | 0 | 0 1 | 6 6 9 0 9 0
+        5 2 1 2 0 4 5 | 0 0 0 0 0 0 1 | 0 | 0 7 | 0 6 1 0 6 0
 
-    A soma é 80, e o verificador é 0 (e não 10).
+    A soma é 40. Dez menos zero dá 10, e o layout manda 1 (o E-Ofício gravava 0).
     """
-    assert CP.compor_chave(ibge="1234567", sequencial=9, cartorio="03",
-                           data="2026-10-30",
-                           pesos=PESOS) == "12345670000009003261030"
+    assert CP.compor_chave(ibge="1234567", sequencial=3, cartorio="03",
+                           data="2026-10-30") == "12345670000003103261030"
 
 
 def test_chave_montada_com_o_sequencial_da_prova():
     """O sequencial que a CENPROT aceitou em 30/10/2026, em chave fictícia."""
     chave = CP.compor_chave(ibge=COMARCA, sequencial="0141397", cartorio="01",
-                            data=AGORA, pesos=PESOS)
+                            data=AGORA)
     assert chave == _chave_montada(141397, cartorio="01")
     partes = CP.decompor_chave(chave)
     assert partes["ibge"] == COMARCA
@@ -161,28 +165,12 @@ def test_chave_montada_com_o_sequencial_da_prova():
     assert CP.data_do_protocolo(chave) == "2026-10-30"
 
 
-def test_os_pesos_nao_moram_no_codigo():
-    """Ordem do oficial: é variável preenchida pela serventia."""
+def test_os_fatores_sao_os_do_layout_numa_constante_so():
     arvore = ast.parse(Path(CP.__file__).read_text(encoding="utf-8"))
-    assert not [no.value for no in ast.walk(arvore)
-                if isinstance(no, ast.Constant) and isinstance(no.value, str)
-                and re.fullmatch(r"\d{23}", no.value)]
-
-
-@pytest.mark.parametrize("pesos", ["", None, "123", "1" * 22, "1" * 24,
-                                   "1" * 22 + "x", " " * 23, "١" * 23])
-def test_pesos_sem_a_forma_nao_calculam(pesos):
-    assert CP.pesos_validos(pesos) == ""
-    with pytest.raises(CP.CenprotError):
-        CP.compor_chave(ibge=COMARCA, sequencial=1, cartorio=CARTORIO,
-                        data=AGORA, pesos=pesos)
-
-
-def test_pesos_diferentes_dao_chaves_diferentes():
-    outros = "9" + PESOS[1:]
-    kw = {"ibge": COMARCA, "sequencial": 1, "cartorio": CARTORIO, "data": AGORA}
-    assert (CP.compor_chave(**kw, pesos=PESOS)
-            != CP.compor_chave(**kw, pesos=outros))
+    assert [no.value for no in ast.walk(arvore)
+            if isinstance(no, ast.Constant) and isinstance(no.value, str)
+            and re.fullmatch(r"\d{23}", no.value)] == [FATORES]
+    assert CP.FATORES_DA_CHAVE == FATORES
 
 
 @pytest.mark.parametrize("campos", [
@@ -198,7 +186,7 @@ def test_pesos_diferentes_dao_chaves_diferentes():
 ])
 def test_o_que_nao_tem_a_forma_nao_vira_chave(campos):
     certos = {"ibge": COMARCA, "sequencial": 1, "cartorio": CARTORIO,
-              "data": "2026-10-30", "pesos": PESOS}
+              "data": "2026-10-30"}
     with pytest.raises(CP.CenprotError):
         CP.compor_chave(**{**certos, **campos})
 
@@ -210,20 +198,20 @@ def test_proxima_chave_e_o_maior_usado_mais_um(con):
     _titulo(con, chave_origem="L:1", chave=_chave_montada(141397))
     _titulo(con, chave_origem="L:2", chave=_chave_montada(9))
     assert CP.proxima_chave(con, data=AGORA, comarca=COMARCA,
-                            cartorio=CARTORIO, pesos=PESOS) == _chave_montada(141398)
+                            cartorio=CARTORIO) == _chave_montada(141398)
 
 
 def test_proxima_chave_nao_gasta_o_sequencial(con):
     _titulo(con, chave_origem="L:1", chave=_chave_montada(10))
     for _ in range(2):
         assert CP.proxima_chave(con, data=AGORA, comarca=COMARCA,
-                                cartorio=CARTORIO, pesos=PESOS) == _chave_montada(11)
+                                cartorio=CARTORIO) == _chave_montada(11)
 
 
 def test_chave_torta_nao_entra_na_conta_do_sequencial(con):
     _titulo(con, chave_origem="L:1", chave="999999999")
     assert CP.proxima_chave(con, data=AGORA, comarca=COMARCA,
-                            cartorio=CARTORIO, pesos=PESOS) == _chave_montada(1)
+                            cartorio=CARTORIO) == _chave_montada(1)
 
 
 def test_o_sequencial_cresce_sem_repetir_a_cada_apontamento(con):
@@ -334,7 +322,7 @@ def test_titulo_que_ja_tem_chave_nao_muda_e_nao_gasta_sequencial(con):
     assert _chave(con, tid) == ja_tinha
     assert r["chave_cenprot"] == ja_tinha
     assert CP.proxima_chave(con, data=AGORA, comarca=COMARCA,
-                            cartorio=CARTORIO, pesos=PESOS) == _chave_montada(501)
+                            cartorio=CARTORIO) == _chave_montada(501)
 
 
 def test_titulo_de_origem_cenprot_nao_recebe_chave_calculada(con):
@@ -384,21 +372,21 @@ def test_sem_a_tabela_de_configuracao_aponta_e_fica_sem_chave():
         c.close()
 
 
-@pytest.mark.parametrize("pesos", ["", "123", "x" * 23])
-def test_pesos_vazios_ou_tortos_apontam_e_ficam_sem_chave(con, pesos):
-    con.execute("UPDATE settings SET value=? WHERE key=?",
-                (pesos, CP.CHAVE_DOS_PESOS))
+@pytest.mark.parametrize("campo", ["ibge_uf", "ibge_municipio", "ibge_cartorio"])
+def test_sem_um_dos_codigos_aponta_e_fica_sem_chave(con, campo):
+    con.execute("DELETE FROM settings WHERE key=?", (campo,))
     tid = _titulo(con)
-    r = _apontar(con, tid)
-    assert r["chave_cenprot"] is None
-    assert not _chave(con, tid)
+    assert _apontar(con, tid)["chave_cenprot"] is None
     assert PT.titulo(con, tid)["situacao"] == "APONTADO"
 
 
-def test_sem_os_pesos_na_tabela_aponta_e_fica_sem_chave(con):
-    con.execute("DELETE FROM settings WHERE key=?", (CP.CHAVE_DOS_PESOS,))
+def test_a_linha_antiga_dos_pesos_nao_atrapalha(con):
+    """Quem instalou a versão do campo pode ter a linha: nada mais a lê."""
+    con.execute("INSERT OR REPLACE INTO settings VALUES (?, ?)",
+                ("cenprot_chave_pesos", "torto"))
     tid = _titulo(con)
-    assert _apontar(con, tid)["chave_cenprot"] is None
+    _apontar(con, tid)
+    assert _chave(con, tid) == _chave_montada(1)
 
 
 def test_configuracao_torta_aponta_e_fica_sem_chave(con):
@@ -418,38 +406,85 @@ def test_sem_configuracao_o_irmao_ainda_da_a_chave(con):
     assert _chave(con, novo) == _chave_montada(9)
 
 
-# -------------------------------------------------------- a conferência da tela
+# ------------------------------------------------------- chave que já existe
 
 
-def test_a_conferencia_conta_as_chaves_distintas(con):
-    _titulo(con, chave_origem="L:1", chave=_chave_montada(1), protocolo="2610300001")
-    _titulo(con, chave_origem="L:2", chave=_chave_montada(1), protocolo="2610300001")
-    _titulo(con, chave_origem="L:3", chave=_chave_montada(2))
-    assert CP.conferir_pesos(con, PESOS) == {"conferem": 2, "total": 2}
+def _chave_com_verificador_zero(sequencial: int = 3) -> str:
+    """A forma do E-Ofício quando a unidade é zero: 0, onde o layout manda 1."""
+    pela_regra = _chave_montada(sequencial)
+    assert pela_regra[14] == "1"
+    return pela_regra[:14] + "0" + pela_regra[15:]
 
 
-def test_a_conferencia_acusa_a_chave_que_nao_fecha(con):
-    certa = _chave_montada(1)
-    errada = certa[:14] + str((int(certa[14]) + 1) % 10) + certa[15:]
-    _titulo(con, chave_origem="L:1", chave=certa)
-    _titulo(con, chave_origem="L:2", chave=errada)
-    assert CP.conferir_pesos(con, PESOS) == {"conferem": 1, "total": 2}
+def test_chave_antiga_com_verificador_zero_nao_muda_ao_apontar(con):
+    antiga = _chave_com_verificador_zero()
+    tid = _titulo(con, chave_origem="L:1", chave=antiga)
+    r = _apontar(con, tid)
+    assert r["chave_cenprot"] == antiga
+    assert _chave(con, tid) == antiga
 
 
-def test_a_conferencia_sem_chave_gravada_vem_zerada(con):
-    assert CP.conferir_pesos(con, PESOS) == {"conferem": 0, "total": 0}
+def test_o_irmao_herda_a_chave_antiga_como_ela_esta(con):
+    antiga = _chave_com_verificador_zero()
+    _titulo(con, chave_origem="L:1", chave=antiga, protocolo="2610300001")
+    novo = _titulo(con, chave_origem="L:2", protocolo="2610300001")
+    _apontar(con, novo)
+    assert _chave(con, novo) == antiga
+
+
+def test_chave_antiga_conta_para_o_sequencial(con):
+    _titulo(con, chave_origem="L:1", chave=_chave_com_verificador_zero())
+    novo = _titulo(con, chave_origem="L:2")
+    _apontar(con, novo)
+    assert _chave(con, novo) == _chave_montada(4)
+
+
+def test_chave_da_central_fora_da_regra_entra_pelo_xml(con):
+    """O XML que volta não confere o verificador: a chave é a que a Central diz."""
+    fora = _chave_com_verificador_zero()
+    con.execute(
+        """INSERT INTO pt_titulos(especie, numero_titulo, nosso_numero,
+               valor_centavos, saldo_centavos, situacao, protocolo, origem,
+               origem_chave, criado_em)
+           VALUES ('DMI','N1','NOSSO1',100,100,'APONTADO','2610300001','CRA',
+                   'L:1',?)""", (AGORA,))
+    arquivo = (
+        '<estados versao="1.23-geral"><estado uf="MA"><cartorios>'
+        f'<cartorio codigo="{CARTORIO}" comarca="{COMARCA}"><apresentantes>'
+        '<apresentante codigo="001"><nome>BANCO</nome><titulos>'
+        f'<titulo id="{fora}"><nosso_numero>NOSSO1</nosso_numero>'
+        '<numero_titulo>N1</numero_titulo><valor>1.0000</valor>'
+        '<protocolo>2610300001</protocolo></titulo>'
+        '</titulos></apresentante></apresentantes></cartorio></cartorios>'
+        '</estado></estados>')
+    r = CP.guardar(con, arquivo, comarca=COMARCA, cartorio=CARTORIO)
+    assert r["gravadas"] == 1
+    assert con.execute("SELECT chave_cenprot FROM pt_titulos").fetchone()[
+        "chave_cenprot"] == fora
+
+
+# ----------------------------------------------------------- o que a casa informa
+
+
+def test_pode_calcular_a_chave_pede_os_tres_codigos():
+    certo = dict(CONFIGURACAO)
+    assert CP.pode_calcular_a_chave(certo)
+    for campo in certo:
+        assert not CP.pode_calcular_a_chave({**certo, campo: ""})
+    assert not CP.pode_calcular_a_chave({**certo, "ibge_uf": "12345"})
 
 
 def test_o_formulario_recusa_o_formato_errado():
-    for campos in ({CP.CHAVE_DOS_PESOS: "123"}, {"ibge_uf": "123"},
-                   {"ibge_municipio": "12a45"}, {"ibge_cartorio": "x"}):
+    for campos in ({"ibge_uf": "123"}, {"ibge_municipio": "12a45"},
+                   {"ibge_cartorio": "x"}):
         with pytest.raises(CP.CenprotError):
             CP.configuracao_da_chave(campos)
 
 
-def test_o_formulario_nao_apaga_o_ibge_mas_aceita_pesos_vazios():
-    assert CP.configuracao_da_chave({"ibge_uf": "", CP.CHAVE_DOS_PESOS: ""}) == {
-        CP.CHAVE_DOS_PESOS: ""}
+def test_o_formulario_nao_apaga_o_ibge_e_ignora_os_pesos():
+    assert CP.configuracao_da_chave({"ibge_uf": "", "ibge_cartorio": "3",
+                                     "cenprot_chave_pesos": "123"}) == {
+        "ibge_cartorio": "3"}
 
 
 # ------------------------------------------------------------ pelo lote da CRA

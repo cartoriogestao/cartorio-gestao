@@ -38,9 +38,8 @@ SV = {"unit_name": "SERVENTIA EXTRAJUDICIAL DE CIDADE EXEMPLO",
       "serventia_titular": "MARIO EXEMPLO DOS SANTOS",
       "serventia_titulo": "Tabelião e Oficial de Registro",
       "ri_cns": "000000", "ri_cidade": "Cidade Exemplo", "ri_uf": "MA"}
-PESOS = "73197319731973197319731"
 CONFIGURACAO = (("ibge_uf", "12"), ("ibge_municipio", "34567"),
-                ("ibge_cartorio", "3"), (CP.CHAVE_DOS_PESOS, PESOS))
+                ("ibge_cartorio", "3"))
 
 EXEMPLO = (Path(__file__).parent / "cra_remessa_exemplo.txt").read_bytes().decode("latin-1")
 _LINHAS = [x for x in EXEMPLO.replace("\r\n", "\n").split("\n") if x.strip()]

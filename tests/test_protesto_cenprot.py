@@ -4,7 +4,7 @@ A CHAVE DO CENPROT — a que a Central devolve no XML.
 Este projeto tentou explicar a chave de 23 digitos duas vezes e a chamou de
 «verificador que nao se explica». **O fim dela e a data**, e o que resolveu
 isso foi o oficial gerar um arquivo pelo E-Oficio. O verificador se explicou em
-30/10/2026, com a conta do E-Oficio: `tests/test_protesto_chave_calculada.py`.
+layout oficial da CENPROT: `tests/test_protesto_chave_calculada.py`.
 
 O QUE ESTES TESTES GUARDAM
       - a chave se DECOMPOE em quatro partes, e a data dela bate com o

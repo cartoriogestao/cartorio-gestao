@@ -241,7 +241,10 @@ def init_despesas_schema(con) -> None:
         if not bd.tem_tabela(nome):
             bd.escrever(comando)
     for coluna, tipo in (("recebedor_divergente", "TEXT NOT NULL DEFAULT ''"),
-                         ("recebedor_aceito_em", "TEXT")):
+                         ("recebedor_aceito_em", "TEXT"),
+                         ("banco_recebedor_nome", "TEXT NOT NULL DEFAULT ''"),
+                         ("banco_recebedor_documento", "TEXT NOT NULL DEFAULT ''"),
+                         ("banco_recebedor_instituicao", "TEXT NOT NULL DEFAULT ''")):
         if not bd.tem_coluna("dp_despesas", coluna):
             bd.escrever(f"ALTER TABLE dp_despesas ADD COLUMN {coluna} {tipo}")
 
@@ -911,6 +914,26 @@ def ajustar_valor(con, despesa_id: int, *, valor_centavos: int, agora: datetime,
     _evento(bd, despesa_id, "AJUSTAR_VALOR", "ok",
             f"de R$ {reais(int(d['valor']))} para R$ {reais(valor)}", por, _carimbo(agora))
     return despesa(bd, despesa_id)
+
+
+def gravar_dados_do_banco(con, despesa_id: int, *, e2e: Any = "", nome: Any = "",
+                          documento: Any = "", instituicao: Any = "") -> None:
+    """O que o banco informou do Pix, para o demonstrativo. ESCREVE. Vazio não apaga.
+
+    O extrato traz o CPF do recebedor inteiro, e aqui ele só se guarda mascarado.
+    """
+    import serventia
+    documento = str(documento or "").strip()
+    if "*" not in documento:
+        documento = serventia.mascarar_documento(documento)
+    valores = {"banco_e2e": _texto(e2e, 80), "banco_recebedor_nome": _texto(nome, 150),
+               "banco_recebedor_documento": _texto(documento, 30),
+               "banco_recebedor_instituicao": _texto(instituicao, 150)}
+    valores = {coluna: valor for coluna, valor in valores.items() if valor}
+    if valores:
+        sets = ", ".join(f"{coluna} = %s" for coluna in valores)
+        banco(con).escrever(f"UPDATE dp_despesas SET {sets} WHERE id = %s",
+                            (*valores.values(), int(despesa_id)))
 
 
 def aceitar_recebedor(con, despesa_id: int, *, agora: datetime, por: str, papel: str,

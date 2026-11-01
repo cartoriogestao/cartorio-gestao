@@ -82,7 +82,13 @@
 
 {# Relato #152: o contato de quem recebe o comprovante, e o envio pelo clique. #}
 {% if papel in ['ADMIN', 'MANAGER'] %}
-<section class="panel"><h2>{% if foi_paga %}Enviar o comprovante{% else %}Contato para o comprovante{% endif %}</h2>
+<section class="panel"><h2>{% if foi_paga %}Demonstrativo de pagamento{% else %}Contato para o demonstrativo{% endif %}</h2>
+  {% if demonstrativo %}
+  <p class="small">PDF gerado pelo sistema com os dados informados pelo banco. Não substitui o comprovante do banco.</p>
+  <a class="button" href="{{ url_for('despesas_demonstrativo', despesa_id=d.id) }}">Baixar o demonstrativo</a>
+  {% elif foi_paga %}
+  <p class="small">O demonstrativo sai depois que a conferência do extrato trouxer o identificador do Pix.</p>
+  {% endif %}
   <form method="post" action="{{ url_for('despesas_contato', despesa_id=d.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>E-mail <input type="email" name="contato_email" value="{{ d.contato_email or '' }}" size="40"></label>
@@ -93,15 +99,15 @@
   <form method="post" action="{{ url_for('despesas_comprovante', despesa_id=d.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="canal" value="email">
-    {% if arquivos %}<label>Arquivo junto (só vai o que você escolher)
-      <select name="anexo_id"><option value="">Nenhum, só o texto</option>
+    {% if arquivos %}<label>Outro arquivo junto (só vai o que você escolher)
+      <select name="anexo_id"><option value="">Nenhum</option>
         {% for a in arquivos %}<option value="{{ a.id }}">{{ a.original_name }}</option>{% endfor %}
       </select></label>{% endif %}
     <button type="submit">Enviar por e-mail</button>
   </form>
   {% endif %}
   {% if whatsapp %}
-    {% if whatsapp.janela_aberta %}
+    {% if whatsapp.janela_aberta and demonstrativo %}
     <form method="post" action="{{ url_for('despesas_comprovante', despesa_id=d.id) }}" class="inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="canal" value="whatsapp">
@@ -109,7 +115,7 @@
     </form>
     {% else %}
     <p class="small">Essa pessoa não escreveu à casa nas últimas 24 horas, e a Meta só aceitaria um modelo aprovado.
-      O link abre o seu WhatsApp com o texto pronto, e você aperta enviar.</p>
+      O link abre o seu WhatsApp com o texto pronto: junte o PDF baixado e aperte enviar.</p>
     <a class="button" href="{{ whatsapp.link }}" target="_blank" rel="noopener noreferrer">Abrir no WhatsApp</a>
     {% endif %}
   {% endif %}

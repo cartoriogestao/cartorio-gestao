@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{#
+  O QUE CONFERIR NA QUALIFICAÇÃO — a lista lembra, e quem decide é quem qualifica.
+  Nada aqui recusa título.
+#}
+{% block heading %}<h1>O que conferir — {{ nome_da_atribuicao }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+<div class="actions">
+  {% for a in atribuicoes %}
+  <a class="button{% if a.codigo == atribuicao %} primary{% endif %}"
+     href="{{ url_for('rcpj_rtd_normas', atribuicao=a.codigo) }}">{{ a.nome }}</a>
+  {% endfor %}
+  <a class="button" href="{{ url_for('rcpj_rtd_livros', atribuicao=atribuicao) }}">Livros</a>
+</div>
+
+<div class="notice">
+  Artigos do Código de Normas da CGJ/TJMA. É norma estadual: quem usa o sistema noutro
+  estado confere a do seu.
+</div>
+
+{% if atribuicao == 3 %}
+<section class="panel">
+  <div class="panel-head"><span>Conferir um nome de pessoa jurídica</span><small>CN-MA arts. 402, § 1º, e 407, VII</small></div>
+  <form method="get" class="grid2" style="padding:14px">
+    <input type="hidden" name="atribuicao" value="3">
+    <label>Denominação <input name="nome" value="{{ nome }}"></label>
+    <div class="actions" style="grid-column:1/-1"><button class="button">Conferir</button></div>
+  </form>
+  {% if nome %}
+  <div style="padding:0 14px 14px">
+    {% if reservadas %}<p><strong>Palavra reservada:</strong> {{ reservadas|join(', ') }}.</p>{% endif %}
+    {% if parecidos %}
+    <p><strong>Mesmo nome nesta serventia:</strong></p>
+    <ul>{% for r in parecidos %}<li><a href="{{ url_for('rcpj_rtd_registro', registro_id=r.id) }}">Registro n. {{ r.numero }}</a>: {{ r.requerente_nome }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if not reservadas and not parecidos %}<p>Nenhuma palavra reservada e nenhum nome igual nesta serventia.</p>{% endif %}
+    <p><small class="muted">Compara o nome igual, sem acento nem caixa. O «semelhante» do artigo e as outras
+      serventias da comarca (§ 2º) ficam com quem qualifica.</small></p>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Em todo título</span><small>{{ gerais|length }} itens</small></div>
+  <table class="table">
+    {% for r in gerais %}<tr><th style="width:190px">{{ r.artigo }}</th><td>{{ r.texto }}</td></tr>{% endfor %}
+  </table>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Conforme a natureza do título</span><small>sobem na ficha do título quando a natureza cita o caso</small></div>
+  <table class="table">
+    {% for r in por_natureza %}<tr><th style="width:190px">{{ r.artigo }}</th><td>{{ r.texto }}</td></tr>{% endfor %}
+  </table>
+</section>
+{% endblock %}

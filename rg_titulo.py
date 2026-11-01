@@ -165,6 +165,15 @@ SENTIDOS: dict[str, str] = {
 
 # A entidade dos anexos. A tabela é a `attachments`, a mesma do expediente, da
 # tarefa, da prenotação do RI e do termo do RCPN — **não se cria a quinta**.
+# AS ESPÉCIES DE LANÇAMENTO DO PROTOCOLO. CN-MA art. 966, III. Em branco é resposta
+# enquanto ninguém qualificou: o art. 12 da Lei 6.015/1973 não deixa exigência nenhuma
+# segurar o protocolo.
+ESPECIES_DE_LANCAMENTO: dict[str, str] = {
+    "INTEGRAL": "Registro integral",
+    "EXTRATO": "Registro por extrato",
+    "AVERBACAO": "Averbação",
+}
+
 ANEXO_DO_TITULO = "RG_TITULO"
 
 # Dez letras não é formalidade: é o mínimo para uma frase dizer alguma coisa.
@@ -175,6 +184,15 @@ MINIMO_DO_TEXTO = 10
 
 def _texto(v) -> str:
     return "" if v is None else str(v).strip()
+
+
+def _especie(valor) -> str | None:
+    limpo = _texto(valor).upper()
+    if limpo and limpo not in ESPECIES_DE_LANCAMENTO:
+        raise TituloError(
+            f"«{valor}» não é espécie de lançamento. São três: "
+            f"{', '.join(ESPECIES_DE_LANCAMENTO.values())}.")
+    return limpo or None
 
 
 def _atribuicao(valor) -> int:
@@ -292,6 +310,9 @@ def receber(con: sqlite3.Connection, *, atribuicao: int, sv: dict, agora: str,
             natureza: str | None = None, serie: str | None = None,
             valor_declarado: str | None = None, vias: int = 1,
             forma: str = PAPEL, observacao: str | None = None,
+            especie_lancamento: str | None = None,
+            previsao_entrega: str | None = None,
+            data_assinatura: str | None = None,
             protocolo_geral_id: int | None = None,
             usuario: str | None = None, origem: str = "MANUAL",
             origem_chave: str | None = None,
@@ -349,8 +370,9 @@ def receber(con: sqlite3.Connection, *, atribuicao: int, sv: dict, agora: str,
                apresentante, apresentante_documento, telefone, email,
                natureza, serie, valor_declarado, vias, forma, situacao,
                protocolo_geral_id, observacao, origem, origem_chave,
-               importacao_id, criado_em, criado_por)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               importacao_id, criado_em, criado_por, especie_lancamento,
+               previsao_entrega, data_assinatura)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            RETURNING id""",
         (codigo, dia, _texto(hora) or None, _texto(apresentante) or None,
          _texto(apresentante_documento) or None, _texto(telefone) or None,
@@ -359,7 +381,9 @@ def receber(con: sqlite3.Connection, *, atribuicao: int, sv: dict, agora: str,
          APRESENTADO,
          int(protocolo_geral_id) if protocolo_geral_id else None,
          _texto(observacao) or None, origem, chave, importacao_id, agora,
-         usuario))
+         usuario, _especie(especie_lancamento),
+         _texto(previsao_entrega)[:10] or None,
+         _texto(data_assinatura)[:10] or None))
     titulo_id = int(novo[0]["id"])
 
     # O LUGAR NO LIVRO DE PROTOCOLO. `dia` é o do livro diário: o protocolo é
@@ -382,7 +406,10 @@ def atualizar(con: sqlite3.Connection, titulo_id: int, *,
               telefone: str | None = None, email: str | None = None,
               natureza: str | None = None, serie: str | None = None,
               valor_declarado: str | None = None, vias: int = 1,
-              forma: str = PAPEL, observacao: str | None = None) -> dict:
+              forma: str = PAPEL, observacao: str | None = None,
+              especie_lancamento: str | None = None,
+              previsao_entrega: str | None = None,
+              data_assinatura: str | None = None) -> dict:
     """Completa ou corrige os dados do título antes de ele sair. ESCREVE.
 
     O título pode entrar só com a data, mas isso não pode significar que os
@@ -432,6 +459,17 @@ def atualizar(con: sqlite3.Connection, titulo_id: int, *,
                telefone=%s, email=%s, natureza=%s, serie=%s, valor_declarado=%s,
                vias=%s, forma=%s, observacao=%s WHERE id=%s""",
         (*valores.values(), int(titulo_id)))
+    # `None` QUER DIZER «NÃO MEXI», e não «esvazie»: a Central e os outros chamadores
+    # não mandam estes três. O formulário manda texto vazio para apagar.
+    if especie_lancamento is not None:
+        bd.escrever("UPDATE rg_titulos SET especie_lancamento=%s WHERE id=%s",
+                    (_especie(especie_lancamento), int(titulo_id)))
+    if previsao_entrega is not None:
+        bd.escrever("UPDATE rg_titulos SET previsao_entrega=%s WHERE id=%s",
+                    (_texto(previsao_entrega)[:10] or None, int(titulo_id)))
+    if data_assinatura is not None:
+        bd.escrever("UPDATE rg_titulos SET data_assinatura=%s WHERE id=%s",
+                    (_texto(data_assinatura)[:10] or None, int(titulo_id)))
 
     # A ponte com o protocolo geral não pode deixar o mesmo atendimento com
     # dois nomes e dois assuntos. Não se mexe em situação, número nem datas.

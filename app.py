@@ -3371,6 +3371,9 @@ def create_app(test_config: dict | None = None) -> Flask:
     # ficha do titulo aponta para `rcpj_rtd_registro`, que nasce ali.
     import rg_web
     rg_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+    # OS LIVROS DO RCPJ E DO RTD, uma aba por livro, como a lei os nomeia (01/11/2026).
+    import rg_livros_web
+    rg_livros_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
     # OS ATOS DO LG04 (19/10/2026): a notificação extrajudicial e a autenticação
     # de livros do RCPJ/RTD voltam para `rcpj_rtd_registro`, que nasce acima;
     # a pública forma e a comunicação ao DETRAN são do balcão das Notas.

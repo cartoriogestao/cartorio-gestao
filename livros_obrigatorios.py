@@ -163,24 +163,31 @@ LIVROS: tuple[dict, ...] = (
                 "C Auxiliar pelo nome do pai ou da mãe (§ 2º)."),
     # ------------------------------------------------ pessoas jurídicas
     _livro("RCPJ", "PJ_LIVROS", "Livros A e B", "art. 403 (Lei 6.015/1973)", TEM,
-           series=("PJ_A", "PJ_B"), rotas=("nucleo_livros",)),
+           series=("PJ_A", "PJ_B"), rotas=("rcpj_rtd_livros", "nucleo_livros",)),
     _livro("RCPJ", "PJ_PROTOCOLO", "Livro de Protocolo, com 300 folhas", "art. 403", TEM,
-           series=("PJ_PROTOCOLO",), rotas=("nucleo_encerramento_diario",)),
+           series=("PJ_PROTOCOLO",), rotas=("rcpj_rtd_livros", "nucleo_encerramento_diario",)),
     _livro("RCPJ", "PJ_INDICES", "Índices cronológico e alfabético, com partes, "
-           "intervenientes e cônjuges", "art. 404", FALTA, rotas=("rcpj_rtd_registros",),
-           nota="O registro guarda só o requerente (`rg_registros`); não há "
-                "tabela de partes, intervenientes nem cônjuges para o índice."),
+           "intervenientes e cônjuges", "art. 404", TEM, rotas=("rcpj_rtd_livros",),
+           nota="As partes moram em `rg_partes`; registro sem parte detalhada aparece "
+                "pelo requerente."),
     # ------------------------------------------------ títulos e documentos
     _livro("RTD", "TD_PROTOCOLO", "Livro A — Protocolo", "art. 963, I", TEM,
-           series=("TD_PROTOCOLO",), rotas=("nucleo_encerramento_diario",)),
+           series=("TD_PROTOCOLO",), rotas=("rcpj_rtd_livros", "nucleo_encerramento_diario",)),
     _livro("RTD", "TD_REGISTRO", "Livro B — Registro", "art. 963, II", TEM,
-           series=("TD_B",), rotas=("nucleo_livros",)),
+           series=("TD_B",), rotas=("rcpj_rtd_livros", "nucleo_livros",)),
     _livro("RTD", "TD_INSCRICAO", "Livro C — Inscrição", "art. 963, III e § 4º", TEM,
-           series=("TD_C",),
+           series=("TD_C",), rotas=("rcpj_rtd_livros",),
            nota="Dispensado para quem adota sistema informatizado (§ 4º)."),
-    _livro("RTD", "TD_INDICADOR", "Livro D — Indicador Pessoal", "art. 963, IV e § 5º", FALTA,
-           nota="Recomenda-se sistema informatizado (§ 5º), mas o sistema não "
-                "tem o indicador: só a busca pelo requerente."),
+    _livro("RTD", "TD_INDICADOR", "Livro D — Indicador Pessoal", "art. 963, IV e § 5º", TEM,
+           rotas=("rcpj_rtd_livros",),
+           nota="Sistema informatizado (§ 5º): `rg_partes` mais o requerente."),
+    _livro("RTD", "TD_REAL", "Livro E — Indicador Real", "Lei 6.015/1973, art. 132, V", TEM,
+           rotas=("rcpj_rtd_livros",), nota="Bens móveis lançados na ficha do registro (`rg_bens`)."),
+    _livro("RTD", "TD_FACULTATIVO", "Livro F — Registro facultativo", "art. 957, §§ 4º e 5º", TEM,
+           series=("TD_F",), rotas=("rcpj_rtd_livros",),
+           nota="Só conserva: não dá publicidade nem eficácia contra terceiros."),
+    _livro("RTD", "TD_APRESENTANTES", "Livro G — Indicador dos apresentantes do Livro F",
+           "Lei 6.015/1973, art. 132, VII", TEM, rotas=("rcpj_rtd_livros",)),
     # ------------------------------------------------ imóveis
     _livro("RI", "RI_PROTOCOLO", "Livro nº 1 — Protocolo", "art. 424, I", TEM,
            rotas=("ri_protocolo",)),

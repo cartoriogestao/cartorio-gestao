@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{#
+  OS LIVROS DO RCPJ E DO RTD — uma aba por livro, como a lei os nomeia.
+
+  LIVRO SE LÊ AQUI E SE LAVRA NAS TELAS DE SEMPRE. O que o ato não guardou aparece em
+  branco, e não inventado. O que espera ação (os pendentes e os dias sem termo) vem antes
+  da lista: é a regra do oficial, sem rolar.
+#}
+{% block heading %}<h1>Livros — {{ nome_da_atribuicao }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<style>
+  .rl-abas{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+  .rl-abas .button small{opacity:.75;margin-left:4px}
+  .rl-filtro{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;align-items:end;padding:14px}
+  .rl-filtro .actions{margin:0}
+</style>
+
+<div class="actions">
+  {# No layout novo, RTD e RCPJ já estão nas sub-abas do alto. #}
+  {% if not layout_novo %}{% for a in atribuicoes %}
+  <a class="button{% if a.codigo == atribuicao %} primary{% endif %}"
+     href="{{ url_for('rcpj_rtd_livros', atribuicao=a.codigo) }}">{{ a.nome }}</a>
+  {% endfor %}{% endif %}
+  <a class="button" href="{{ url_for('rcpj_rtd_titulos', atribuicao=atribuicao) }}">Títulos apresentados</a>
+  <a class="button" href="{{ url_for('rcpj_rtd_normas', atribuicao=atribuicao) }}">O que conferir</a>
+</div>
+
+<nav class="rl-abas" aria-label="Livros da atribuição">
+  {% for a in abas %}
+  <a class="button{% if a.chave == livro.chave %} primary{% endif %}"
+     {% if a.chave == livro.chave %}aria-current="page"{% endif %}
+     href="{{ url_for('rcpj_rtd_livros', atribuicao=atribuicao, livro=a.chave) }}">{{ a.curto }}{% if a.quantos is not none %}<small>{{ a.quantos }}</small>{% endif %}</a>
+  {% endfor %}
+</nav>
+
+{% if pendentes %}
+<section class="panel">
+  <div class="panel-head"><span>Esperando lançamento</span><small>{{ pendentes|length }} título(s), entram no termo do dia (CN-MA art. 970)</small></div>
+  <ul style="padding:6px 14px 12px 30px;margin:0">
+    {% for p in pendentes %}
+    <li><a href="{{ url_for('rcpj_rtd_titulo', titulo_id=p.id) }}">N. {{ p.numero or '—' }}</a>: {{ p.motivo }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% if dias_abertos %}
+<div class="notice">
+  <strong>{{ dias_abertos|length }} dia(s) com movimento e sem termo de encerramento:</strong>
+  {{ dias_abertos|join(', ') }}.
+  <a href="{{ url_for('nucleo_encerramento_diario') }}">Encerrar</a>
+</div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>{{ livro.nome }}</span><small>{{ livro.fonte }}</small></div>
+  <p style="padding:10px 14px 0;margin:0">{{ livro.explica }}
+    {% if lugar %}<small class="muted">Livro aberto: n. {{ lugar.numero }}, folha {{ lugar.folha_atual }} de {{ lugar.folhas }}.</small>{% endif %}</p>
+  <form method="get" class="rl-filtro">
+    <input type="hidden" name="atribuicao" value="{{ atribuicao }}">
+    <input type="hidden" name="livro" value="{{ livro.chave }}">
+    <label>Procurar
+      <input name="busca" value="{{ busca }}"
+             placeholder="{% if livro.tipo in ['indice','indicador_f'] %}Nome, CPF ou CNPJ{% elif livro.tipo == 'indicador_real' %}Descrição, chassi ou placa{% else %}Nome, natureza ou número{% endif %}"></label>
+    {% if livro.tipo in ['protocolo','atos'] %}
+    <label>De <input type="date" name="de" value="{{ de }}"></label>
+    <label>Até <input type="date" name="ate" value="{{ ate }}"></label>
+    {% endif %}
+    {% if livro.tipo in ['indice','indicador_f'] %}
+    <label>Ordem
+      <select name="ordem">
+        <option value="alfabetica"{% if ordem == 'alfabetica' %} selected{% endif %}>Alfabética</option>
+        <option value="cronologica"{% if ordem == 'cronologica' %} selected{% endif %}>Cronológica</option>
+      </select></label>
+    {% endif %}
+    <div class="actions">
+      <button class="button">Mostrar</button>
+      <a class="button" href="{{ url_for('rcpj_rtd_livros', atribuicao=atribuicao, livro=livro.chave, de=de, ate=ate, busca=busca, ordem=ordem, formato='odt') }}">Imprimir (.odt)</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>{{ total }} lançamento(s)</span>
+    {% if paginas > 1 %}<small>página {{ pagina }} de {{ paginas }}</small>{% endif %}</div>
+  {% if not linhas %}
+  <p style="padding:14px">Nada lançado neste livro{% if busca or de or ate %} com este filtro{% endif %}.</p>
+  {% else %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr>{% for c, rotulo in colunas %}<th>{{ rotulo }}</th>{% endfor %}<th></th></tr></thead>
+    <tbody>
+      {% for l in linhas %}
+      <tr>
+        {% for c, rotulo in colunas %}<td>{{ l[c] if l[c] not in (none, '') else '—' }}</td>{% endfor %}
+        <td>{% if livro.tipo == 'protocolo' %}<a href="{{ url_for('rcpj_rtd_titulo', titulo_id=l.id) }}">Abrir</a>
+            {% else %}<a href="{{ url_for('rcpj_rtd_registro', registro_id=l.registro_id) }}">Abrir</a>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if paginas > 1 %}
+  <div class="actions" style="padding:12px 14px">
+    {% if pagina > 1 %}<a class="button" href="{{ url_for('rcpj_rtd_livros', atribuicao=atribuicao, livro=livro.chave, de=de, ate=ate, busca=busca, pagina=pagina-1) }}">&larr; Anterior</a>{% endif %}
+    {% if pagina < paginas %}<a class="button" href="{{ url_for('rcpj_rtd_livros', atribuicao=atribuicao, livro=livro.chave, de=de, ate=ate, busca=busca, pagina=pagina+1) }}">Próxima &rarr;</a>{% endif %}
+  </div>
+  {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,17 +1,15 @@
 """O XML do CENPROT que VOLTA, a chave unica que ele devolve — e a conta dela.
 
-**A CHAVE DO TITULO QUE VEM DA CRA SE CALCULA — 30/10/2026.** Ficou escrito
-aqui, desde 26/08/2026, que a serventia nao gera a chave, e
-`CENPROT_XML_MEDIDO.md` falava de um «verificador que nao se explica». Ele se
-explica: e a funcao `Protesto_Funcao.ChaveUnica` do E-Oficio (ver
-`compor_chave`). A conta acerta **todas as chaves gravadas nesta casa** (1.271
-de 1.271, medido em 30/10/2026), e no mesmo dia a CENPROT aceitou um XML P com
-chave calculada e sequencial novo, e o titulo apareceu na Consulta de Titulos.
+**A CHAVE DO TITULO QUE VEM DA CRA SE CALCULA PELA REGRA DO LAYOUT OFICIAL**
+(`Layout_Cenprot_XML` v1.23 ed2, Anexo I, p. 11 e 12), igual para toda
+serventia: ver `compor_chave`. Ficou escrito aqui, desde 26/08/2026, que a
+serventia nao gera a chave, e `CENPROT_XML_MEDIDO.md` falava de um «verificador
+que nao se explica». O layout explica. A serventia so informa o que e dela: o
+IBGE e o codigo CRA, em Configuracoes.
 
-**OS PESOS DA CONTA SAO DA SERVENTIA, E NAO DO CODIGO.** Ordem do oficial,
-30/10/2026: a conta foi medida so nesta casa, e a chave de outra serventia nao
-fecha. Eles moram em `settings` (`CHAVE_DOS_PESOS`), e quem os preenche e a
-serventia, em Configuracoes. Vazios ou tortos, o sistema nao calcula.
+**CHAVE JA GRAVADA NUNCA MUDA, E NAO SE RECUSA CHAVE GRAVADA OU RECEBIDA.** O
+layout proibe mudar a chave. O calculo vale so para a chave nova; nada aqui
+recalcula nem confere o verificador de chave que ja existe.
 
 **O QUE NAO MUDOU:** titulo de origem CENPROT fica com a chave da Central, e o
 XML que volta continua preenchendo o titulo que esta sem chave.
@@ -82,9 +80,9 @@ from bd_nativo import banco
 TAMANHO_DA_CHAVE = 23
 _SO_DIGITOS = re.compile(r"\D+")
 
-# ONDE MORAM OS PESOS DA CONTA, um digito por posicao da base. O valor nao se
-# escreve no codigo: quem o preenche e a serventia, na tela de Configuracoes.
-CHAVE_DOS_PESOS = "cenprot_chave_pesos"
+# OS FATORES DO VERIFICADOR, um por posicao da base. `Layout_Cenprot_XML` v1.23
+# ed2, Anexo I, p. 11 e 12: 5 6 7 3 8 4 5 7 6 6 7 6 7 7 4 1 9 5 1 1 0 2 0.
+FATORES_DA_CHAVE = "56738457667677419511020"
 # O maior sequencial que cabe nos sete digitos dele.
 MAIOR_SEQUENCIAL = 9_999_999
 
@@ -196,43 +194,30 @@ def data_do_protocolo(chave) -> str | None:
 # ------------------------------------------------------- a chave que se calcula
 
 
-def pesos_validos(valor) -> str:
-    """Os pesos na forma que a conta usa: 23 digitos. Vazio se nao forem isso."""
-    texto = str(valor or "").strip()
-    return (texto if len(texto) == TAMANHO_DA_CHAVE
-            and texto.isascii() and texto.isdigit() else "")
+def _verificador(base: str) -> str:
+    """O digito da 15a posicao, pela regra do layout oficial."""
+    soma = sum(int(d) * int(f) % 10 for d, f in zip(base, FATORES_DA_CHAVE))
+    unidade = soma % 10
+    return "1" if unidade == 0 else str(10 - unidade)
 
 
-def _verificador(base: str, pesos: str) -> str:
-    soma = sum(int(d) * int(p) % 10 for d, p in zip(base, pesos))
-    return str((10 - soma % 10) % 10)
-
-
-def compor_chave(*, ibge, sequencial, cartorio, data, pesos) -> str:
+def compor_chave(*, ibge, sequencial, cartorio, data) -> str:
     """Compoe a chave de 23 digitos. So calcula. Estoura `CenprotError`.
 
-    E A CONTA DE `Protesto_Funcao.ChaveUnica`, do E-Oficio. A base e IBGE(7) +
-    sequencial(7) + `0` + cartorio(2) + AAMMDD(6). Cada digito se multiplica
-    pelo peso da mesma posicao, e soma-se so o ULTIMO digito de cada produto. O
-    verificador e 0 se a soma termina em 0; senao, 10 menos o ultimo digito da
-    soma. Ele entra no lugar daquele `0`, na 15a posicao.
+    E A REGRA DO LAYOUT OFICIAL (`Layout_Cenprot_XML` v1.23 ed2, Anexo I, p. 11 e
+    12). A base e IBGE(7) + sequencial(7) + `0` + codigo CRA do tabelionato(2) +
+    AAMMDD(6). Cada digito se multiplica pelo fator da mesma posicao, e soma-se a
+    unidade de cada produto. O verificador e 10 menos a unidade da soma, e, se
+    der 10, e 1. Ele entra no lugar daquele `0`, na 15a posicao.
 
-    OS PESOS VEM DE QUEM CHAMA, e sem eles nao ha chave: nunca se chuta.
+    `sequencial` e o numero consecutivo e unico do titulo. `data` e a do
+    protocolo, que aqui nasce com o apontamento.
 
-    MEDIDO EM 30/10/2026: acerta 1.271 de 1.271 chaves gravadas nesta casa, e a
-    CENPROT aceitou um XML P com chave calculada e sequencial novo. `data` e a
-    do APONTAMENTO, que bate em 1.235 de 1.237 chaves com apontamento.
-
-    E ISSO E MEDIDA DESTA CASA, e nao lei: a unica chave de outra serventia
-    registrada em `CENPROT_XML_MEDIDO.md` (`2801405|0005640|2|01|200330`) nao
-    fecha por esta conta, que da 8 onde ela tem 2.
+    QUEM NAO SEGUE ESTA REGRA NAS CHAVES QUE JA GRAVOU: o E-Oficio gravava 0
+    quando a unidade era zero (113 das 1.237 chaves distintas desta casa,
+    medido em 01/11/2026), e em XML reais de outra serventia o verificador e a
+    propria unidade, em 29 de 29. Essas chaves ficam como estao.
     """
-    pesos_ = pesos_validos(pesos)
-    if not pesos_:
-        raise CenprotError(
-            f"Os pesos da chave da CENPROT tem {TAMANHO_DA_CHAVE} digitos, e o "
-            f"que esta informado nao tem essa forma. Confira em Administrativo "
-            f"— Configuracoes, quadro «Chave da CENPROT».")
     ibge_, sequencial_ = so_digitos(ibge), so_digitos(sequencial)
     cartorio_ = so_digitos(cartorio)
     cartorio_ = cartorio_.zfill(2) if cartorio_ else ""
@@ -254,7 +239,7 @@ def compor_chave(*, ibge, sequencial, cartorio, data, pesos) -> str:
         raise CenprotError(
             f"A data da chave tem de vir como AAAA-MM-DD, e veio «{data}».") from erro
     base = ibge_ + sequencial_.zfill(7) + "0" + cartorio_ + aammdd
-    return base[:14] + _verificador(base, pesos_) + base[15:]
+    return base[:14] + _verificador(base) + base[15:]
 
 
 def _chaves_gravadas(bd: Any) -> list[dict]:
@@ -266,35 +251,17 @@ def _chaves_gravadas(bd: Any) -> list[dict]:
             if (partes := decompor_chave(linha["chave_cenprot"]))]
 
 
-def conferir_pesos(con: Any, pesos) -> dict:
-    """Quantas chaves ja gravadas estes pesos reproduzem. So LE.
-
-    E a conferencia da tela, antes de gravar: `total` conta as chaves
-    distintas, porque os dois titulos do mesmo protocolo dividem uma so. Sem
-    chave gravada nao ha com que conferir, e `total` vem zero.
-    """
-    pesos_ = pesos_validos(pesos)
-    if not pesos_:
-        raise CenprotError(
-            f"Os pesos da chave da CENPROT tem {TAMANHO_DA_CHAVE} digitos.")
-    chaves = {partes["chave"] for partes in _chaves_gravadas(banco(con))}
-    conferem = sum(1 for c in chaves
-                   if c[14] == _verificador(c[:14] + "0" + c[15:], pesos_))
-    return {"conferem": conferem, "total": len(chaves)}
-
-
 def configuracao_da_chave(formulario) -> dict:
     """O que o quadro «Chave da CENPROT» grava em `settings`. So calcula.
 
-    Formato errado estoura `CenprotError`, e nada se grava. Pesos vazios sao
-    uma resposta (desligam o calculo). IBGE vazio nao apaga o que esta gravado:
-    a remessa do IBGE usa os mesmos campos.
+    Formato errado estoura `CenprotError`, e nada se grava. Campo vazio nao
+    apaga o que esta gravado: a remessa do IBGE usa os mesmos campos.
     """
     valores = {}
     for chave, rotulo, maximo in (
             ("ibge_uf", "O codigo da UF", 2),
             ("ibge_municipio", "O codigo do municipio", 5),
-            ("ibge_cartorio", "O numero da serventia", 2)):
+            ("ibge_cartorio", "O codigo CRA do tabelionato", 2)):
         texto = str(formulario.get(chave) or "").strip()
         if not texto:
             continue
@@ -303,16 +270,21 @@ def configuracao_da_chave(formulario) -> dict:
                 f"{rotulo} tem ate {maximo} digitos, e veio «{texto}». Nada foi "
                 f"gravado.")
         valores[chave] = texto
-    pesos = str(formulario.get(CHAVE_DOS_PESOS) or "").strip()
-    if pesos and not pesos_validos(pesos):
-        raise CenprotError(
-            f"Os pesos tem {TAMANHO_DA_CHAVE} digitos, sem espaco nem ponto, e "
-            f"vieram {len(pesos)} caracteres. Nada foi gravado.")
-    valores[CHAVE_DOS_PESOS] = pesos
     return valores
 
 
-def proxima_chave(con: Any, *, data, comarca, cartorio, pesos) -> str:
+def pode_calcular_a_chave(configuracao: dict) -> bool:
+    """A serventia ja informou o que a conta precisa? So calcula."""
+    try:
+        casa = identidade_da_casa(configuracao)
+        compor_chave(ibge=casa["comarca"], sequencial=1, cartorio=casa["cartorio"],
+                     data="2000-01-01")
+    except CenprotError:
+        return False
+    return True
+
+
+def proxima_chave(con: Any, *, data, comarca, cartorio) -> str:
     """A chave com o proximo sequencial da casa. So LE, e nao consome nada.
 
     O sequencial e o maior dos sete digitos ja usados em
@@ -323,7 +295,7 @@ def proxima_chave(con: Any, *, data, comarca, cartorio, pesos) -> str:
     """
     usados = [int(partes["sequencial"]) for partes in _chaves_gravadas(banco(con))]
     return compor_chave(ibge=comarca, sequencial=max(usados, default=0) + 1,
-                        cartorio=cartorio, data=data, pesos=pesos)
+                        cartorio=cartorio, data=data)
 
 
 def _chave_dos_irmaos(bd: Any, titulo_id: int, protocolo: str) -> tuple[str | None, bool]:
@@ -347,13 +319,12 @@ def _chave_dos_irmaos(bd: Any, titulo_id: int, protocolo: str) -> tuple[str | No
 
 
 def _configuracao_da_casa(bd: Any) -> dict:
-    """As configuracoes de `identidade_da_casa` e os pesos, gravados. So LE."""
+    """As configuracoes de `identidade_da_casa`, gravadas. So LE."""
     if not bd.tem_tabela("settings"):
         return {}
     return {linha["key"]: linha["value"] for linha in bd.ler(
         """SELECT key, value FROM settings
-            WHERE key IN ('ibge_uf', 'ibge_municipio', 'ibge_cartorio', %s)""",
-        (CHAVE_DOS_PESOS,))}
+            WHERE key IN ('ibge_uf', 'ibge_municipio', 'ibge_cartorio')""")}
 
 
 def chave_do_apontamento(con: Any, titulo_id: int, *, protocolo_de_antes,
@@ -364,9 +335,9 @@ def chave_do_apontamento(con: Any, titulo_id: int, *, protocolo_de_antes,
     ele procura irmao: o protocolo que acabou de nascer e de um titulo so.
 
     SEM CONFIGURACAO, DEVOLVE `None` E O APONTAMENTO SEGUE: ele e o ato da lei
-    (Lei 9.492/1997, art. 3o), e a chave e dado para a Central. Vale para pesos
-    vazios ou tortos: nunca se chuta. O titulo fica sem chave, a tela do XML diz
-    onde preencher, e o XML que volta ainda a preenche.
+    (Lei 9.492/1997, art. 3o), e a chave e dado para a Central. Sem o IBGE ou o
+    codigo CRA nao se chuta: o titulo fica sem chave, a tela do XML diz onde
+    preencher, e o XML que volta ainda a preenche.
     """
     bd = banco(con)
     # SO OS DIGITOS: protocolo sem nenhum casaria com todo titulo sem protocolo.
@@ -376,11 +347,9 @@ def chave_do_apontamento(con: Any, titulo_id: int, *, protocolo_de_antes,
         if chave or em_duvida:
             return chave
     try:
-        configuracao = _configuracao_da_casa(bd)
-        casa = identidade_da_casa(configuracao)
+        casa = identidade_da_casa(_configuracao_da_casa(bd))
         return proxima_chave(bd, data=data, comarca=casa["comarca"],
-                             cartorio=casa["cartorio"],
-                             pesos=configuracao.get(CHAVE_DOS_PESOS))
+                             cartorio=casa["cartorio"])
     except CenprotError:
         return None
 

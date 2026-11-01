@@ -25,7 +25,7 @@ ROTA = "/administrativo/despesas/autorizar-marcadas"
 
 def _token(c):
     return re.search(r'name="csrf_token"[^>]*value="([^"]+)"',
-                     c.get(LISTA).get_data(as_text=True)).group(1)
+                     c.get(LISTA, follow_redirects=True).get_data(as_text=True)).group(1)
 
 
 def _nova(db, valor=193532, nome="BEATRIZ EXEMPLO", vencimento="2026-10-30"):

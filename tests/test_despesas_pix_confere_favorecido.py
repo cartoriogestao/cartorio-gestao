@@ -84,7 +84,7 @@ def test_o_caso_de_30_10_mesmo_cpf_e_mesma_chave_com_outro_nome(cg_casa_logada):
     """Chave e documento batiam entre si: quem acusa é o outro nome com o mesmo CPF."""
     with cg_casa_logada["db"].transaction() as con:
         _despesa(con)
-        with pytest.raises(DP.DespesaError, match="já está cadastrado para BEATRIZ"):
+        with pytest.raises(DP.DespesaError, match="já está cadastrado para outro"):
             _despesa(con, nome="CARLA EXEMPLO")
 
 

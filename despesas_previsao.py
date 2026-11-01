@@ -30,7 +30,7 @@ POR QUE O ISS É PRELIMINAR
     O selo não declara o ISS, e o caixa não o guarda: a conta é a alíquota do município, na
     configuração, sobre o emolumento dos atos pelo selo. O ISS é da serventia e não vai ao
     cliente. Contra as guias pagas em outubro/2026 ela ficou 2,7% abaixo em setembro, 30% em
-    julho e 56% em agosto, e nenhuma outra base medida explicou os três. O valor que vale é o
+    julho e 72% em agosto, e nenhuma outra base medida explicou os três. O valor que vale é o
     da guia.
 
     A transição do ISS para IBS e CBS não tem estrutura definida (oficial, 01/11/2026): nada

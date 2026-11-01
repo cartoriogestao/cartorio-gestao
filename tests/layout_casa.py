@@ -42,6 +42,7 @@ for _pasta in (RAIZ, RAIZ / "tests"):
         sys.path.insert(0, str(_pasta))
 
 import banco_pg  # noqa: E402
+import caixa_aviso as CA  # noqa: E402
 import layout_ensaio as E  # noqa: E402
 from bd_nativo import banco  # noqa: E402
 
@@ -300,6 +301,11 @@ def montar_casa(app, boot, pasta_temporaria: Path, areas=None) -> Casa:
 @pytest.fixture(scope="module")
 def casa(cg_app, _cg_boot, tmp_path_factory):
     """A casa de ensaio do módulo de teste, com a trava ligada do começo ao fim."""
+    # A CASA NÃO PODE DEPENDER DA HORA EM QUE RODA. O caixa dela fica aberto, e depois do fim do expediente o aviso de
+    # fechar o caixa cobre toda tela: os testes de navegador só passavam de manhã. A chave é de cobrança, e o banco recusa
+    # quem a grava por fora. Aqui nada se grava: muda só o padrão, neste processo, e ele volta no fim.
+    fim_de_fabrica = CA.FIM_PADRAO
+    CA.FIM_PADRAO = "23:59"
     c = montar_casa(cg_app, _cg_boot, tmp_path_factory.getbasetemp())
     for papel in E.PAPEIS:
         for layout in E.LAYOUTS:
@@ -307,3 +313,4 @@ def casa(cg_app, _cg_boot, tmp_path_factory):
     c.congelar()
     yield c
     E.desligar_trava()
+    CA.FIM_PADRAO = fim_de_fabrica

@@ -137,6 +137,17 @@ def formato_do_banco(arquivo: Path) -> str:
     return "desconhecido"
 
 
+def _chave_do_titular(db) -> dict | None:
+    """A chave de `cofre_do_titular`, se a casa tem e o banco sabe separar a parte dele."""
+    import inspect
+    import cofre_do_titular as COT
+    try:
+        sabe = "privado_em" in inspect.signature(db.backup_database).parameters
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return COT.dados_da_chave(db) if sabe else None
+
+
 def _aceita_contagens(db) -> bool:
     """O `backup_database` deste banco sabe devolver as contagens?"""
     import inspect
@@ -347,8 +358,34 @@ def gerar_pacote(db, destino: Path, archive_root: Path,
         # o que voltou. Quem não sabe contar (o banco de mentira dos testes
         # antigos) gera o pacote como antes, sem elas.
         contagens: dict | None = {} if _aceita_contagens(db) else None
+        # A PARTE DO TITULAR (31/10/2026, `cofre_do_titular`): com a chave dele, os dados
+        # privados saem do banco deste pacote e vão fechados. O manifesto os conta como
+        # zero, que é o que o teste de restauração acha ao restaurar o banco sem eles.
+        chave_titular = _chave_do_titular(db)
+        privado_do_titular: dict | None = None
+        fechado_tabelas = Path(tmp) / "tabelas.cgt"
+        fechado_anexos = Path(tmp) / "anexos.cgt"
         if contagens is None:
             db.backup_database(instantaneo)
+        elif chave_titular:
+            import cofre_do_titular as COT
+            aberto = Path(tmp) / "tabelas.dump"
+            db.backup_database(instantaneo, contagens=contagens, tabelas_privadas=COT.TABELAS,
+                               privado_em=aberto)
+            COT.fechar(aberto, fechado_tabelas, chave_titular)
+            aberto.unlink()
+            privado_do_titular = {
+                "impressao": COT.impressao(chave_titular[COT.CHAVE_PUBLICA]),
+                "de": chave_titular[COT.CHAVE_DE_QUEM],
+                "contagens": {t: contagens.get(t, 0) for t in COT.TABELAS},
+                "anexos": 0,
+            }
+            contagens.update({t: 0 for t in COT.TABELAS if t in contagens})
+            if com_arquivos:
+                zip_anexos = Path(tmp) / "anexos.zip"
+                privado_do_titular["anexos"] = COT.juntar_os_anexos(Path(archive_root), zip_anexos)
+                COT.fechar(zip_anexos, fechado_anexos, chave_titular)
+                zip_anexos.unlink()
         else:
             db.backup_database(instantaneo, contagens=contagens)
         sha_banco = _sha256(instantaneo)
@@ -360,6 +397,10 @@ def gerar_pacote(db, destino: Path, archive_root: Path,
         with zipfile.ZipFile(parcial, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.write(instantaneo, NOME_BANCO)
             zf.writestr(NOME_BANCO + ".sha256", sha_banco)
+            if privado_do_titular:
+                zf.write(fechado_tabelas, COT.NOME_DAS_TABELAS)
+                if fechado_anexos.is_file():
+                    zf.write(fechado_anexos, COT.NOME_DOS_ANEXOS)
 
             # O ACERVO MORTO DO E-OFICIO ENTRA AQUI, E QUASE NAO ENTRAVA.
             #     Ele mora na pasta de dados, ao lado do banco — e nao dentro
@@ -384,6 +425,8 @@ def gerar_pacote(db, destino: Path, archive_root: Path,
                         rel = p.relative_to(raiz)
                     except ValueError:
                         continue
+                    if privado_do_titular and COT.e_anexo_privado(rel):
+                        continue
                     zf.write(p, str(Path("arquivos") / rel))
                     arquivos.append({
                         "caminho": str(rel).replace("\\", "/"),
@@ -400,6 +443,7 @@ def gerar_pacote(db, destino: Path, archive_root: Path,
                 "banco_sha256": sha_banco,
                 "banco_formato": formato_banco,
                 "banco_contagens": contagens,
+                "privado_do_titular": privado_do_titular,
                 "acervo_eoficio": bool(sha_acervo),
                 "acervo_sha256": sha_acervo,
                 "arquivos_incluidos": len(arquivos),
@@ -472,6 +516,8 @@ def conferir(pacote: Path, senha: str | None = None) -> str | None:
             if NOME_MANIFESTO not in nomes:
                 return "falta o manifesto"
             manifesto = json.loads(zf.read(NOME_MANIFESTO).decode("utf-8"))
+            if manifesto.get("privado_do_titular") and "privado_do_titular/tabelas.cgt" not in nomes:
+                return "falta a parte do titular que o manifesto declara"
             declarado = manifesto.get("banco_sha256")
             if declarado:
                 real = hashlib.sha256(zf.read(NOME_BANCO)).hexdigest()
@@ -570,6 +616,10 @@ def main(argv: list[str] | None = None) -> int:
     c = acoes.add_parser("conferir", help="confere o pacote sem abrir no disco")
     c.add_argument("pacote")
     c.add_argument("--pasta-de-dados", default="")
+    t = acoes.add_parser("abrir-titular", help="abre a parte do titular, com a senha dele")
+    t.add_argument("pacote")
+    t.add_argument("pasta")
+    t.add_argument("--pasta-de-dados", default="")
     args = leitor.parse_args(argv)
     senha = None
     if e_cifrado(Path(args.pacote)):
@@ -578,12 +628,23 @@ def main(argv: list[str] | None = None) -> int:
         if not senha:
             senha = getpass.getpass("Senha da cifra do backup: ")
     try:
+        if args.acao == "abrir-titular":
+            import cofre_do_titular as COT
+            with TemporaryDirectory() as tmp:
+                claro = abrir(Path(args.pacote), Path(tmp) / "pacote.zip", senha)
+                saidas = COT.abrir_do_pacote(claro, Path(args.pasta),
+                                             getpass.getpass("Senha do titular: "))
+            print("Pronto. Restaure com pg_restore --data-only --disable-triggers --no-owner, "
+                  "depois de restaurar o banco, e apague estes arquivos:")
+            for s in saidas:
+                print(f"  {s}")
+            return 0
         if args.acao == "abrir":
             saida = abrir(Path(args.pacote), Path(args.saida), senha)
             print(f"Pronto: {saida} é o zip do backup, conferido.")
             return 0
         problema = conferir(Path(args.pacote), senha)
-    except BackupInvalido as erro:
+    except (BackupInvalido, ValueError) as erro:
         print(f"Não deu: {erro}", file=sys.stderr)
         return 1
     if problema:

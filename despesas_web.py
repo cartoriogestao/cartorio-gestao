@@ -26,6 +26,7 @@ from io import BytesIO
 from flask import abort, flash, redirect, render_template, request, send_file, url_for
 
 import csv_seguro as CSVS
+import cofre_do_titular as COT
 import despesas as DP
 import despesas_comprovante as DC
 import despesas_inter as INTER
@@ -524,7 +525,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if request.method == "POST":
             f = request.form
             try:
-                if f.get("acao") == "credencial":
+                if f.get("acao") == "chave_do_titular":
+                    # As senhas não ficam: não vão à auditoria, ao log nem à tela de volta.
+                    marca = COT.criar_chave(db, f.get("senha") or "", f.get("confirmacao") or "",
+                                            de_quem=usuario_nome(), agora=_agora(),
+                                            senha_atual=f.get("senha_atual") or "")
+                    audit("DESPESAS_CHAVE_DO_TITULAR", "settings", None, {"impressao": marca})
+                    flash("Chave do titular criada. Guarde a senha: ninguém a recupera. "
+                          "O próximo backup já sai com a sua parte fechada.", "success")
+                elif f.get("acao") == "credencial":
                     def _ler(nome: str) -> str:
                         arq = request.files.get(nome)
                         return arq.read().decode("utf-8", "replace") if arq and arq.filename else ""
@@ -542,7 +551,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     audit("DESPESAS_CONFIGURACAO_ALTERADA", "settings", None,
                           {k: {"de": de, "para": para} for k, (de, para) in mudou.items()})
                     flash("Configuração gravada." if mudou else "Nada mudou.", "success")
-            except DP.DespesaError as erro:
+            except (DP.DespesaError, COT.CofreDoTitularError) as erro:
                 flash(str(erro), "danger")
             except RuntimeError as erro:
                 # O cofre da automação trancado ou ainda não criado — 27/10/2026:
@@ -559,4 +568,5 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         with db.connect() as con:
             cfg = DP.configuracao(con)
         return render_template("despesas_configuracao.html", cfg=cfg, rotulos=DP.ROTULOS,
-                               ambientes=DP.AMBIENTES, credencial=INTER.resumo_da_credencial())
+                               ambientes=DP.AMBIENTES, credencial=INTER.resumo_da_credencial(),
+                               chave_do_titular=COT.situacao_para_a_tela(db))

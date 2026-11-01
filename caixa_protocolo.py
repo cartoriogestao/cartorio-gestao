@@ -283,6 +283,85 @@ def reabrir(con, protocolo_id: int, *, motivo: str,
     return {"numero": p["numero"], "motivo": limpo}
 
 
+def _quitados(bd, protocolo_id: int) -> int:
+    return int(bd.valor(
+        """SELECT count(*) FROM cx_protocolo_atos
+            WHERE protocolo_id = %s AND coalesce(quitado, 0) = 1""",
+        (int(protocolo_id),)))
+
+
+def data_do_servico_sugerida(p, quitados: int, hoje: str) -> str:
+    """Em que dia o serviço entrou, se ninguém disser outra coisa. Só calcula.
+
+    Com dinheiro no caixa, ele já estava lá quando o protocolo abriu: é a correção
+    de um engano. Sem dinheiro, o cliente voltou hoje para fazer o que só tinha
+    perguntado, e a recepção não pode dizer que recebeu o título no dia do cálculo.
+    """
+    return str(p["data_abertura"])[:10] if quitados else str(hoje)[:10]
+
+
+def virar_servico(con, protocolo_id: int, *, quem: str | None, agora: str,
+                  servico_desde: str | None = None, motivo: str | None = None) -> dict:
+    """O cálculo vira serviço: o mesmo número, os mesmos itens, o mesmo dinheiro. ESCREVE.
+
+    NÃO HÁ O QUE RECALCULAR, E É POR ISSO QUE PODE SER UM BOTÃO. O que muda com o
+    tipo é a leitura: a ficha passa a oferecer recepção e recibo, o painel conta o
+    serviço, e o cliente pode acompanhar. Nada sai para o cliente por causa disto:
+    o portal só publica o protocolo que já tem código, e o código nasce na recepção.
+
+    AS RECUSAS: já é serviço (o segundo clique trocaria o rastro do primeiro);
+    encerrado se reabre antes; o serviço não entra antes do cálculo nem depois de
+    hoje. E, com dinheiro no caixa, o motivo é obrigatório: é a correção de um
+    registro, e daqui a dois anos essa frase é o que explica a mudança.
+    """
+    bd = banco(con)
+    p = _protocolo(bd, protocolo_id)
+    if str(p["tipo"] or "SERVICO").upper() != "ORCAMENTO":
+        raise ProtocoloError(f"O protocolo {p['numero']} já é de serviço. Nada foi alterado.")
+    if esta_encerrado(p["situacao"]):
+        raise ProtocoloError(
+            f"O protocolo {p['numero']} está encerrado. Reabra-o primeiro: assim fica "
+            f"o rastro das duas coisas.")
+    quitados = _quitados(bd, protocolo_id)
+    limpo = (motivo or "").strip()
+    if quitados and len(limpo) < MINIMO_DO_MOTIVO:
+        raise ProtocoloError(
+            f"O protocolo {p['numero']} já tem dinheiro no caixa. Escreva por que ele era "
+            f"serviço: é a correção de um registro. Nada foi alterado.")
+    hoje = str(agora)[:10]
+    dia = str(servico_desde or "").strip()[:10] or data_do_servico_sugerida(p, quitados, hoje)
+    try:
+        date.fromisoformat(dia)
+    except ValueError as erro:
+        raise ProtocoloError("Informe uma data válida para a entrada do serviço. Nada foi alterado.") from erro
+    if dia > hoje or dia < str(p["data_abertura"])[:10]:
+        raise ProtocoloError(
+            f"O serviço entra entre a abertura do protocolo, em "
+            f"{str(p['data_abertura'])[:10]}, e hoje. Nada foi alterado.")
+    bd.escrever(
+        """UPDATE cx_protocolos
+              SET tipo = 'SERVICO', servico_desde = %s, virou_servico_em = %s,
+                  virou_servico_por = %s, virou_servico_motivo = %s
+            WHERE id = %s""",
+        (dia, agora, quem, limpo or None, int(protocolo_id)))
+    return {"numero": p["numero"], "servico_desde": dia, "motivo": limpo, "itens_quitados": quitados}
+
+
+def calculos_quitados(con) -> list[dict]:
+    """Os protocolos de só cálculo com dinheiro no caixa, do mais antigo para o mais novo. Só LÊ.
+
+    Encerrado fica de fora: ele se reabre antes, e `virar_servico` recusaria.
+    """
+    encerra = tuple(ENCERRAMENTOS)
+    return [dict(x) for x in banco(con).ler(
+        f"""SELECT p.id, p.numero, p.data_abertura, p.atribuicao, p.interessado, p.assunto,
+                   p.valor_total, count(a.id) AS itens
+              FROM cx_protocolos p
+              JOIN cx_protocolo_atos a ON a.protocolo_id = p.id AND coalesce(a.quitado, 0) = 1
+             WHERE p.tipo = 'ORCAMENTO' AND p.situacao NOT IN ({', '.join(['%s'] * len(encerra))})
+             GROUP BY p.id ORDER BY p.data_abertura, p.id""", encerra)]
+
+
 def situacao_pelos_itens(con, protocolo_id: int) -> str:
     """A situacao que os itens do protocolo produzem. So calcula.
 

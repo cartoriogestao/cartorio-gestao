@@ -118,9 +118,9 @@
     {% for p in partes %}
     <tr>
       <td>{% if p.retirada_em %}<s>{{ p.nome }}</s>{% else %}{{ p.nome }}{% endif %}</td>
-      <td>{{ p.documento or '—' }}</td><td>{{ p.papel or '—' }}</td><td>{{ p.origem }}</td>
+      <td>{{ p.documento_formatado or '—' }}</td><td>{{ p.papel or '—' }}</td><td>{{ p.origem }}</td>
       <td>
-        {% if p.retirada_em %}<small>Retirada em {{ p.retirada_em[:10] }} por {{ p.retirada_por or '—' }}: {{ p.retirada_motivo }}</small>
+        {% if p.retirada_em %}<small>Retirada em {{ fmt_date(p.retirada_em[:10]) }} por {{ p.retirada_por or '—' }}: {{ p.retirada_motivo }}</small>
         {% elif user.role in ['ADMIN','MANAGER'] %}
         <details><summary>Retirar</summary>
           <form method="post" action="{{ url_for('rcpj_rtd_parte_retirar', registro_id=registro.id, parte_id=p.id) }}">
@@ -185,7 +185,7 @@
       <td>{% if b.baixado_em %}<s>{{ b.descricao }}</s>{% else %}{{ b.descricao }}{% endif %}</td>
       <td>{{ b.especie or '—' }}</td><td>{{ b.identificacao or '—' }}</td><td>{{ b.onus or '—' }}</td>
       <td>
-        {% if b.baixado_em %}<small>Baixa em {{ b.baixado_em[:10] }} por {{ b.baixado_por or '—' }}: {{ b.baixa_motivo }}</small>
+        {% if b.baixado_em %}<small>Baixa em {{ fmt_date(b.baixado_em[:10]) }} por {{ b.baixado_por or '—' }}: {{ b.baixa_motivo }}</small>
         {% elif user.role in ['ADMIN','MANAGER'] %}
         <details><summary>Dar baixa</summary>
           <form method="post" action="{{ url_for('rcpj_rtd_bem_baixar', registro_id=registro.id, bem_id=b.id) }}">

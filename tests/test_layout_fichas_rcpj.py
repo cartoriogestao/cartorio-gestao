@@ -36,7 +36,7 @@ SO_DO_OFICIAL = {"qualificar", "registrar", "concluir", "encerrar"}
 # O que se grava na ficha do título, e em que fase mora cada formulário. `concluir` depende dos atos que o RTD
 # tem, e por isso não entra na conta.
 _BASE = {"editar": "apresentacao", "arquivo": "qualificacao", "qualificar": "qualificacao",
-         "encaminhar": "central", "encerrar": "encerrar"}
+         "encaminhar": "central", "encerrar": "encerrar", "sobrestar": "qualificacao"}
 _SAIU_DO_RITO = {"arquivo": "qualificacao", "encaminhar": "central"}
 _REGISTRAR = {**_BASE, "registrar": "registro"}
 

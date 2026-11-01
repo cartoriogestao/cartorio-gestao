@@ -477,9 +477,10 @@ def lugar_do_livro(con, serie: str | None) -> dict | None:
 
 def partes_do_registro(con, registro_id: int) -> list[dict]:
     """As partes do registro, com as retiradas no fim. Só LÊ."""
-    return [dict(x) for x in banco(con).ler(
-        """SELECT * FROM rg_partes WHERE registro_id=%s
-            ORDER BY (retirada_em IS NOT NULL), id""", (int(registro_id),))]
+    return [{**x, "documento_formatado": DOC.formatar_documento(x["documento"]) if x["documento"] else ""}
+            for x in map(dict, banco(con).ler(
+                """SELECT * FROM rg_partes WHERE registro_id=%s
+                    ORDER BY (retirada_em IS NOT NULL), id""", (int(registro_id),)))]
 
 
 def bens_do_registro(con, registro_id: int) -> list[dict]:

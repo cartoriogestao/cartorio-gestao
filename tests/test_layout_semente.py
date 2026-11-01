@@ -16,6 +16,12 @@ import layout_ensaio as E
 pytestmark = pytest.mark.lento
 
 
+def test_a_casa_nao_depende_da_hora_em_que_roda(casa):  # noqa: F811
+    """O aviso de fechar o caixa cobre a tela, e a casa fica com o caixa aberto: de tarde, nada se clicava."""
+    import caixa_aviso as CA
+    assert CA.fim_do_expediente(casa.db.get_setting(CA.CHAVE_FIM, CA.FIM_PADRAO)) == (23, 59)
+
+
 def test_toda_rota_com_numero_tem_semente(casa):  # noqa: F811
     semeadas = {endpoint for endpoint, _ in casa.paginas}
     fora = sem_semente()

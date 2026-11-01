@@ -36,6 +36,7 @@
     <label>{{ rotulos.despesas_teto_por_dia }} <input name="despesas_teto_por_dia" value="{{ cfg.despesas_teto_por_dia }}" size="12"></label>
     <label><input type="checkbox" name="despesas_regra_guias_ligada" value="1" {% if cfg.despesas_regra_guias_ligada == '1' %}checked{% endif %}> {{ rotulos.despesas_regra_guias_ligada }}</label>
     <label>{{ rotulos.despesas_teto_guia }} <input name="despesas_teto_guia" value="{{ cfg.despesas_teto_guia }}" size="12"></label>
+    <label>{{ rotulos.despesas_aliquota_iss }} <input name="despesas_aliquota_iss" value="{{ cfg.despesas_aliquota_iss }}" size="6"></label>
     <button type="submit">Gravar</button>
   </form>
   <p class="small muted">No Inter, a «Gestão de Aprovações» do Internet Banking decide se o pagamento feito pela API

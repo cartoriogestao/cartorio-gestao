@@ -343,6 +343,20 @@ def _situacao_da_apostila(casa, apostila_id: int, situacao: str):
 # ------------------------------------------------------------------- a semente
 
 
+def _processo_fiduciario(casa, c) -> int:
+    """Um processo qualificado: a autuação pela tela, e o resto pela tela do passo."""
+    import rg_fiduciaria as FID
+    titulo = _receber(casa, c, 4, "título do processo fiduciário", natureza="Requerimento de consolidação fiduciária")
+    pid = _enviar(casa, c, "/rcpj-rtd/fiduciaria/nova", "processo fiduciário", _nasceu_em(casa, "rg_fiduciarias"),
+                  titulo_id=titulo, credor_nome="Banco Exemplo", devedor_nome="Ana Exemplo",
+                  bem_descricao="Motocicleta exemplo", valor_divida="1.000,00")
+    nome, _sv = _quem(casa)
+    with casa.transacao() as con:
+        FID.qualificar(con, pid, resultado="POSITIVA", itens=[r["chave"] for r in FID.REQUISITOS if r["obrigatorio"]],
+                       dia=casa.hoje, agora=casa.db.now(), usuario=nome)
+    return pid
+
+
 def semear(casa) -> None:
     c = casa.cliente("ADMIN", "novo")
     _tabela_de_emolumentos(casa)
@@ -483,7 +497,10 @@ def semear(casa) -> None:
     _enviar(casa, c, f"/apostila/{recusada}/recusar", "apostila recusada",
             _situacao_da_apostila(casa, recusada, "RECUSADA"), motivo="Documento sem assinatura que se possa conferir.")
 
+    fiduciario = _processo_fiduciario(casa, c)
+
     casa.ids.update({
+        "rcpj_fiduciaria": fiduciario,
         "rcpj_titulo_recebido": recebido, "rcpj_titulo_exigencia": exigencia,
         "rcpj_titulo_qualificado": qualificado, "rcpj_titulo_registrado": registrado,
         "rcpj_titulo_devolvido": devolvido, "rcpj_titulo_cancelado": cancelado, "rcpj_titulo_rcpj": rcpj,
@@ -500,6 +517,8 @@ def semear(casa) -> None:
         "rcpj_apostila_pedido": pedido, "rcpj_apostila_emitida": emitida, "rcpj_apostila_sem_selo": sem_selo,
         "rcpj_apostila_cancelada": cancelada, "rcpj_apostila_recusada": recusada, "rcpj_apostila_pendente": pendente})
 
+    casa.pagina("rcpj_rtd_fiduciaria", proc_id=fiduciario)
+    casa.pagina("rcpj_rtd_fiduciaria_peca", proc_id=fiduciario, qual="NOTIFICACAO")
     casa.pagina("rcpj_rtd_titulo", titulo_id=recebido)
     casa.pagina("rcpj_rtd_titulo_recibo", titulo_id=recebido)
     casa.pagina("rcpj_rtd_titulo_ver", titulo_id=recebido, anexo_id=recebido_pdf)

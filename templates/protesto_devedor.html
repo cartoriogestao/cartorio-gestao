@@ -1,6 +1,10 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>Devedor — {{ p.nomes|join(' / ') }}</h1>{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, CADA TÍTULO É UMA LINHA — 01/11/2026. Medido na produção: há devedor com 33 títulos, e a ficha
+   passaria de 20 mil px. A lista já vem por prazo: o mais urgente abre, e os outros dizem na linha a situação, o
+   valor, o prazo e os alertas. A tela só lê, e no layout antigo nada sai do lugar. #}
 
 <p>
   {% if p.sem_documento %}
@@ -12,15 +16,23 @@
   · {{ p.resumo.titulos }} título(s), {{ p.resumo.em_andamento }} em andamento,
   R$ {{ p.resumo.valor_em_aberto_centavos|centavos_reais }} em aberto
   {% if p.resumo.protestados %}· {{ p.resumo.protestados }} protestado(s){% endif %}
+  {% if layout_novo and p.resumo.alertas %}· {{ p.resumo.alertas }} alerta(s){% endif %}
 </p>
 <p><a href="{{ url_for('protesto_devedores') }}">← todos os devedores</a></p>
 
 {% for t in p.titulos %}
+{% if layout_novo %}
+{% set nota %}{{ t.situacao }}{% if t.sustado %} · SUSTADO{% endif %} · R$ {{ (t.saldo_centavos or t.valor_centavos or 0)|centavos_reais }}{% if t.em_andamento and t.prazo_limite %} · prazo {{ fmt_date(t.prazo_limite) }}{% endif %}{% for a in t.alertas %} <span class="badge {{ 'critica' if a.codigo in ('VENCE_HOJE', 'AR_NAO_VOLTOU', 'EDITAL_NECESSARIO') else 'alta' }}">{{ a.rotulo }}</span>{% endfor %}{% endset %}
+{{ abre('titulo-' ~ t.id, 'Título ' ~ (t.numero_titulo or ('#' ~ t.id)), nota, aberto=loop.first) }}
+<div class="cg-quadro-corpo">
+  <p><a href="{{ url_for('protesto_titulo', titulo_id=t.id) }}">Abrir a ficha do título</a></p>
+{% else %}
 <section class="cartao">
   <h2>
     <a href="{{ url_for('protesto_titulo', titulo_id=t.id) }}">Título {{ t.numero_titulo or ('#' ~ t.id) }}</a>
     — {{ t.situacao }}{% if t.sustado %} · <span class="alert-danger">SUSTADO</span>{% endif %}
   </h2>
+{% endif %}
 
   {% for a in t.alertas %}
   <div class="alert {% if a.codigo in ('VENCE_HOJE', 'AR_NAO_VOLTOU', 'EDITAL_NECESSARIO') %}alert-danger{% else %}alert-warning{% endif %}">
@@ -82,8 +94,9 @@
     {% endfor %}
   </ul>
   {% else %}<p class="small muted">Nenhum pagamento nem boleto.</p>{% endif %}
-</section>
+{% if layout_novo %}</div></details>{% else %}</section>{% endif %}
 {% else %}
 <p class="muted">Nenhum título deste devedor.</p>
 {% endfor %}
+{% if layout_novo %}{{ ferramentas() }}{% endif %}
 {% endblock %}

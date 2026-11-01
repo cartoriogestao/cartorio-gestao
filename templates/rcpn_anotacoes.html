@@ -1,8 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Anotações devidas{% endblock %}
 {% block content %}
+{% from '_quadros_recolhidos.html' import abre, ferramentas %}
+{# NO LAYOUT NOVO, O QUE ESTÁ DEVENDO VEM PRIMEIRO — 01/11/2026. Medido na produção: 10 pendentes, uma tela inteira de
+   cada. Cada uma vira uma linha com o termo, o nome e o prazo, e a mais antiga abre, porque é a que estoura primeiro. A
+   explicação e a norma ficam recolhidas no fim. Os formulários são os mesmos, e no layout antigo nada sai do lugar. #}
 <h1>Anotações devidas</h1>
 
+{% set por_que_existe %}
 <div class="card">
   <p><strong>Quando esta casa lavra um casamento ou um óbito, os assentos
      anteriores daquela pessoa têm de ser anotados</strong> — o casamento no
@@ -19,6 +24,11 @@
     curto e o mais frequente: nasce em todo casamento e em todo óbito.
   </p>
 </div>
+{% endset %}
+{% if layout_novo %}
+<p class="muted">O prazo é de {{ norma.PRAZO_DIAS }} dias corridos, contados do ato
+   <span class="small">({{ norma.ARTIGO_DO_PRAZO }})</span>.</p>
+{% else %}{{ por_que_existe }}{% endif %}
 
 {% if vencidas %}
 <div class="alerta danger">
@@ -32,6 +42,11 @@
    da mais antiga para a mais nova.</p>
 
 {% for x in devendo %}
+{% if layout_novo %}
+{% set nota %}Termo {{ x.numero }}, {{ x.nome }}, lavrado em {{ fmt_date(x.data_ato) if x.data_ato else '(sem data)' }}{% if x.id in ids_vencidas %} <span class="badge critica">fora do prazo</span>{% endif %}{% endset %}
+{{ abre('anotacao-' ~ x.id, 'Anotar o ' ~ x.especie|lower ~ ' no assento de ' ~ x.especie_alvo|lower, nota, aberto=loop.first) }}
+<div class="cg-quadro-corpo">
+{% else %}
 <div class="card{% if x.id in ids_vencidas %} danger{% endif %}">
   <h2 style="margin-top:0">
     Anotar o {{ x.especie|lower }} no assento de {{ x.especie_alvo|lower }}
@@ -39,6 +54,7 @@
   </h2>
   <p>Termo {{ x.numero }} — <strong>{{ x.nome }}</strong>, lavrado em
      {{ x.data_ato or '(sem data)' }}.</p>
+{% endif %}
 
   <p><a href="{{ url_for('rcpn_anotacao_oficio', pendencia_id=x.id) }}">Ver o texto da comunicação</a></p>
 
@@ -86,7 +102,7 @@
       <button class="button secondary">Dispensar com motivo</button>
     </form>
   </details>
-</div>
+{% if layout_novo %}</div></details>{% else %}</div>{% endif %}
 {% endfor %}
 
 {% else %}
@@ -98,8 +114,7 @@
 </div>
 {% endif %}
 
-<hr>
-<h2>O que a norma exige</h2>
+{% set a_norma %}
 <div class="card">
   <p><strong>A anotação contém</strong> <span class="small muted">(art. 369)</span>:</p>
   <ul>{% for c in norma.CONTEUDO_DA_ANOTACAO %}<li>{{ c.o_que }}
@@ -117,4 +132,14 @@
      {{ norma.AVISAR_O_JUIZ.o_que }}
      <span class="small muted">({{ norma.AVISAR_O_JUIZ.artigo }})</span></p>
 </div>
+{% endset %}
+{% if layout_novo %}
+{{ abre('anotacoes-por-que', 'Por que existe este prazo', 'o que se anota, e onde') }}<div class="cg-quadro-corpo">{{ por_que_existe }}</div></details>
+{{ abre('anotacoes-norma', 'O que a norma exige', 'o conteúdo da anotação e quem subscreve') }}<div class="cg-quadro-corpo">{{ a_norma }}</div></details>
+{{ ferramentas() }}
+{% else %}
+<hr>
+<h2>O que a norma exige</h2>
+{{ a_norma }}
+{% endif %}
 {% endblock %}

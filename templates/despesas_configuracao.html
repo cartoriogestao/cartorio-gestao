@@ -6,6 +6,26 @@
    baixos: ligar, ir para a produção e subir teto são decisões do oficial. #}
 <div class="actions"><a class="button" href="{{ url_for('despesas_lista') }}">&larr; Despesas</a></div>
 
+{# 31/10/2026: a parte privada do backup, que só a senha do titular abre (`cofre_do_titular`). #}
+<section class="panel"><h2>Chave do titular no backup</h2>
+  {% if chave_do_titular.tem %}
+  <p>As despesas e o livro-caixa saem fechados no backup, com a chave de {{ chave_do_titular.de }},
+    criada em {{ chave_do_titular.em }}. <span class="small">Impressão {{ chave_do_titular.impressao }}.</span></p>
+  {% else %}
+  <div class="notice"><strong>Sem chave:</strong> as despesas e o livro-caixa saem abertos no backup da serventia.</div>
+  {% endif %}
+  <p class="small"><strong>A senha não fica em lugar nenhum, e ninguém a recupera.</strong> Sem ela, a parte fechada dos
+    backups se perde, e o resto continua abrindo. O Livro Diário Auxiliar não fecha, porque é da serventia.</p>
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="chave_do_titular">
+    {% if chave_do_titular.tem %}<label>Senha atual <input type="password" name="senha_atual" autocomplete="off" required></label>{% endif %}
+    <label>{% if chave_do_titular.tem %}Nova senha{% else %}Senha{% endif %} (ao menos 12 caracteres) <input type="password" name="senha" autocomplete="new-password" minlength="12" required></label>
+    <label>Repita a senha <input type="password" name="confirmacao" autocomplete="new-password" minlength="12" required></label>
+    <button type="submit">{% if chave_do_titular.tem %}Trocar a chave{% else %}Criar a chave{% endif %}</button>
+  </form>
+</section>
+
 <section class="panel"><h2>Pagamento e tetos</h2>
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

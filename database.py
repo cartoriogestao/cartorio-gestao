@@ -2020,14 +2020,16 @@ class Database:
                 "disputas_desde": disputas["primeira"],
                 "implantacao_abertas": int(falta or 0)}
 
-    def backup_database(self, dest_path: Path, contagens: dict | None = None) -> Path:
+    def backup_database(self, dest_path: Path, contagens: dict | None = None,
+                        tabelas_privadas: tuple[str, ...] = (), privado_em: Path | None = None) -> Path:
         dest_path.parent.mkdir(parents=True, exist_ok=True)
         # No PostgreSQL a cópia é um pg_dump do schema deste banco (o módulo é
         # nativo desde o lote L072: não há mais o caminho do SQLite).
         # `contagens` (26/10/2026): as linhas de cada tabela no MESMO instantâneo
         # do pg_dump, para o manifesto — é contra elas que o teste de
         # restauração confere o que voltou.
-        return banco_pg.copiar_para_arquivo(self.db_path, dest_path, contagens=contagens)
+        return banco_pg.copiar_para_arquivo(self.db_path, dest_path, contagens=contagens,
+                                            tabelas_privadas=tabelas_privadas, privado_em=privado_em)
 
 
 def _last_day(year: int, month: int) -> int:

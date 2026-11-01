@@ -77,6 +77,12 @@ def test_o_acervo_nao_vira_alarme():
     assert RA.o_que_espera([_ato(origem="EOFICIO", selo_texto="")]) == []
 
 
+def test_ato_ja_selado_no_razao_ou_no_teor_nao_pede_selo():
+    """A mesma régua do «Selar este ato» da ficha: `ja_selado` vem de `motivo_ja_selado`."""
+    assert RA.o_que_espera([_ato(selo_texto="", ja_selado=("TEOR", "Selo citado no teor"))]) == []
+    assert RA.o_que_espera([_ato(selo_texto="", ja_selado=("ACERVO", "Já selado (acervo)"))]) == []
+
+
 def test_ato_cancelado_nao_pede_selo():
     assert RA.o_que_espera([_ato(selo_texto="", cancelado=1)]) == []
 

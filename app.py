@@ -3795,8 +3795,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     def data_invalida(erro):
         flash(f"A data «{erro.digitado[:40]}» está errada. Nada foi gravado: "
               "preencha os campos de novo, com a data certa.", "danger")
-        return redirect(SEGWEB.destino_interno(request.form.get("voltar"),
-                                               request.path))
+        # A volta padrão é montada aqui, pela rota, e não lida do pedido
+        # (`request.path`): o CodeQL (alerta #290) não a dava por conferida.
+        padrao = (url_for(request.endpoint, **(request.view_args or {}))
+                  if request.endpoint else url_for("dashboard"))
+        return redirect(SEGWEB.destino_interno(request.form.get("voltar"), padrao))
 
     # ============ A TELA QUE ESTOURA VIRA UMA LINHA NA LISTA DE PROBLEMAS
     #

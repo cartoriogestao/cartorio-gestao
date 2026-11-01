@@ -10033,6 +10033,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     # Nunca se inventa origem.
     TIPOS_DA_CADEIA = ("DOMINIAL", "VINTENARIA")
 
+    def _avisar_das_origens(contexto: dict) -> None:
+        """A origem citada que não entrou no papel vira aviso na tela. Nos dois
+        desfechos da emissão: a certidão que fica aguardando o selo também
+        precisa dizer que o número digitado não existe (01/11/2026)."""
+        if contexto.get("origens_nao_encontradas"):
+            flash("Matrícula de origem que NÃO entrou na cadeia: "
+                  f"{'; '.join(contexto['origens_nao_encontradas'])}. "
+                  "Só entra no papel a matrícula que existe no banco — "
+                  "confira o número e, se for o caso, emita de novo.",
+                  "warning")
+
     def _contexto_da_cadeia(contexto: dict, tipo: str, *, anos=None,
                             origens_digitadas=None) -> dict:
         m = contexto["m"]
@@ -10604,6 +10615,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   f"{motivo_selo} Ela não pode ser impressa até o selo sair. "
                   "Ligue o protocolo pago e clique em «Selar» na lista de "
                   "certidões desta ficha.", "warning")
+            if tipo in TIPOS_DA_CADEIA:
+                _avisar_das_origens(contexto)
             return redirect(url_for("ri_ficha", matricula_id=matricula_id)
                             + "#certidoes-da-ficha")
         if motivo_selo:
@@ -10669,12 +10682,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                       "reconhecida. Se não for transmissão de domínio, "
                       "cancele, corrija a natureza do ato e emita de novo.",
                       "warning")
-            if contexto.get("origens_nao_encontradas"):
-                flash("Matrícula de origem que NÃO entrou na cadeia: "
-                      f"{'; '.join(contexto['origens_nao_encontradas'])}. "
-                      "Só entra no papel a matrícula que existe no banco — "
-                      "confira o número e, se for o caso, emita de novo.",
-                      "warning")
+            _avisar_das_origens(contexto)
         return redirect(url_for("ri_certidao_odt", certidao_id=certidao_id))
 
     def _etiqueta_da_certidao(c) -> str:

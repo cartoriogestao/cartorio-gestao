@@ -28,6 +28,7 @@ from functools import wraps
 
 from flask import abort, flash, redirect, render_template, request, session, url_for
 
+import seguranca_web as SEGWEB
 import serventia as SERV
 from bd_nativo import banco
 
@@ -91,9 +92,12 @@ def conferir_tentativa(db, quem: str, senha: str) -> None:
 
 
 def volta_segura(valor) -> str:
-    """Só caminho desta casa: «//fora» e endereço completo levariam para outro site."""
-    texto = str(valor or "")
-    return texto if texto.startswith("/") and not texto.startswith(("//", "/\\")) else "/"
+    """Só caminho desta casa: «//fora» e endereço completo levariam para outro site.
+
+    A régua é a de `seguranca_web.destino_interno`, a do login: a conta daqui deixava
+    passar caractere de controle («/<TAB>/fora» o navegador lê como «//fora»), e o
+    CodeQL (alerta #294) não a dava por conferida."""
+    return SEGWEB.destino_interno(valor, "/")
 
 
 def _nome(valor) -> str:

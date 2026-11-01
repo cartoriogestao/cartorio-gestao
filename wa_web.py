@@ -1040,8 +1040,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 mid = WA.gravar_saida(con, conversa_id, texto, meta_id, autor=_quem(),
                                       agora=db.now(), envio_token=token)
         except WA.EnvioErro as e:
-            return jsonify({"ok": False, "token": token, "erro": str(e),
-                            **WA.recusa_do_envio(e)}), 422
+            texto = e.texto
+            return jsonify({"ok": False, "token": token, "erro": texto,
+                            **WA.recusa_do_envio(texto)}), 422
         finally:
             with trava_dos_tokens:
                 tokens_em_curso.discard(chave)

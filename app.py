@@ -35,6 +35,7 @@ import tarefa_processo as TP
 import tarefa_suspensao as TS
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, send_file, session, url_for
 import backup as BKP
+import titular_privado as TITULAR_PRIVADO
 from waitress import serve
 
 from bd_nativo import banco
@@ -2760,6 +2761,11 @@ def create_app(test_config: dict | None = None) -> Flask:
                                backup_cifra=BKP.situacao_da_cifra(data_dir),
                                centrais=CENTCRED.situacao(), categories="\n".join(json_list(s.get("categories","[]"), [])), sources="\n".join(json_list(s.get("sources","[]"), [])), sectors="\n".join(json_list(s.get("sectors","[]"), [])), data_dir=data_dir)
 
+    # O BACKUP É SÓ DO TITULAR (oficial, 01/11/2026): o pacote leva o banco inteiro.
+    _, e_o_titular_agora = TITULAR_PRIVADO.guarda(app, db)
+    so_o_titular = TITULAR_PRIVADO.com_senha(app, db)
+    TITULAR_PRIVADO.registrar_rotas(app, db, login_required, roles_required, audit)
+
     @app.route("/configuracoes", methods=["GET", "POST"])
     @login_required
     @roles_required("ADMIN")
@@ -2848,6 +2854,14 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "sources": json.dumps([x.strip() for x in request.form.get("sources", "").splitlines() if x.strip()], ensure_ascii=False),
                 "sectors": json.dumps([x.strip() for x in request.form.get("sectors", "").splitlines() if x.strip()], ensure_ascii=False),
             }
+            # QUEM NÃO É O TITULAR NÃO MEXE NO BACKUP NEM NO NOME DO TITULAR: a pasta
+            # desviaria os pacotes, e o nome é o que decide quem abre o privado. O
+            # formulário dele não traz esses campos, e sem isto gravaria o vazio.
+            if not e_o_titular_agora():
+                for chave, padrao in (("auto_backup", "1"), ("backup_dir", ""), ("backup_retencao_dias", "5"),
+                                      ("serventia_titular", ""), ("ri_registrador", "")):
+                    if chave in values:
+                        values[chave] = db.get_setting(chave, padrao)
             # CAMINHO DE REDE NÃO ENTRA NAS CONFIGURAÇÕES (revisão de segurança
             # de 22/10/2026, M3): `archive_root`, `backup_dir` e as pastas de
             # importação em `\\maquina\...` fariam o serviço, que roda como
@@ -3012,6 +3026,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/configuracoes/backup-protecao", methods=["POST"])
     @login_required
     @roles_required("ADMIN")
+    @so_o_titular
     def configuracoes_backup_protecao():
         """A cifra do pacote e o acervo no completo (LX14; A7 do LS03). ESCREVE.
 
@@ -3060,6 +3075,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/backup", methods=["POST"])
     @login_required
     @roles_required("ADMIN")
+    @so_o_titular
     def backup():
         target = backup_dir() / f"backup_manual_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
         full_backup(target)

@@ -101,6 +101,8 @@
     {% if quadro.imposto_do_mes is not none %}<span class="small">Carnê-leão deste mês até agora, que vence no mês seguinte: R$ {{ reais(quadro.imposto_do_mes) }}.</span>{% endif %}
     <span class="small">ISS deste mês até agora, preliminar, que vence no mês seguinte: R$ {{ reais(quadro.iss.do_mes) }}.</span></p>
 </section>
+{% elif quadro_trancado %}
+<div class="notice">O balanço do mês está fechado pela senha do oficial. <a href="{{ url_for('titular_senha', volta=url_for('despesas_lista')) }}">Abrir</a></div>
 {% elif quadro_falhou %}
 <div class="notice">O quadro do mês não pôde ser calculado agora. A autorização e o pagamento não dependem dele.</div>
 {% endif %}

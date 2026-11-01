@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}Senha do oficial{% endblock %}
+{% block heading %}<h1>Senha do oficial</h1>{% endblock %}
+{% block content %}
+{# Abre o livro-caixa, o Livro Diário, o backup e o quadro do mês. `titular_privado`. #}
+{% if tem and not aberto %}
+<section class="panel"><h2>Digite a senha para abrir</h2>
+  <p class="small">Vale para o livro-caixa, o Livro Diário, o backup e o balanço do mês. Fica aberto por {{ minutos }} minutos.</p>
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="abrir"><input type="hidden" name="volta" value="{{ volta }}">
+    <label>Senha <input type="password" name="senha" autocomplete="off" autofocus required></label>
+    <button type="submit">Abrir</button>
+  </form>
+</section>
+{% endif %}
+<section class="panel"><h2>{% if tem %}Trocar a senha{% else %}Cadastrar a senha{% endif %}</h2>
+  <p class="small">{% if tem %}Com a senha cadastrada, essas telas pedem a senha além do login.{% else %}Sem senha, essas telas abrem só com o seu login.{% endif %}
+    <strong>Esquecida, ninguém a recupera pela tela.</strong></p>
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="gravar"><input type="hidden" name="volta" value="{{ volta }}">
+    {% if tem %}<label>Senha atual <input type="password" name="atual" autocomplete="off" required></label>{% endif %}
+    <label>Nova senha (ao menos {{ minimo }} caracteres) <input type="password" name="nova" autocomplete="new-password" minlength="{{ minimo }}" required></label>
+    <label>Repita a nova senha <input type="password" name="confirmacao" autocomplete="new-password" minlength="{{ minimo }}" required></label>
+    <button type="submit">Gravar</button>
+  </form>
+</section>
+{% if tem %}
+<section class="panel"><h2>Tirar a senha</h2>
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="remover"><input type="hidden" name="volta" value="{{ volta }}">
+    <label>Senha atual <input type="password" name="atual" autocomplete="off" required></label>
+    <button type="submit">Tirar a senha</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

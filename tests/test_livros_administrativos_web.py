@@ -109,16 +109,19 @@ def test_a_visita_recusada_volta_com_a_frase_e_nao_grava(cg_casa):
     assert not _rastro(cg_casa, "LIVRO_VISITAS_LANCADO")
 
 
-def test_o_gerente_lanca_a_despesa_mas_so_o_oficial_gera_o_diario(cg_casa):
+def test_o_diario_e_so_do_oficial(cg_casa):
     gerente = _entrar(cg_casa, "gerente", "MANAGER")
-    assert _post(gerente, "/livros-obrigatorios/diario/despesas", **DESPESA).status_code == 302
-    tela = gerente.get("/livros-obrigatorios/diario?mes=2026-09").get_data(as_text=True)
-    assert "Energia elétrica da sede" in tela and "45,00" in tela
+    assert _post(gerente, "/livros-obrigatorios/diario/despesas", **DESPESA).status_code == 403
+    assert gerente.get("/livros-obrigatorios/diario?mes=2026-09").status_code == 403
     assert _post(gerente, "/livros-obrigatorios/diario/gerar", mes="2026-09").status_code == 403
+
+    oficial = _entrar(cg_casa, "oficial", "ADMIN")
+    assert _post(oficial, "/livros-obrigatorios/diario/despesas", **DESPESA).status_code == 302
+    tela = oficial.get("/livros-obrigatorios/diario?mes=2026-09").get_data(as_text=True)
+    assert "Energia elétrica da sede" in tela and "45,00" in tela
     rastro = _rastro(cg_casa, "LIVRO_DIARIO_DESPESA_LANCADA")
     assert len(rastro) == 1 and "Energia" not in rastro[0]["details"]
 
-    oficial = _entrar(cg_casa, "oficial", "ADMIN")
     r = _post(oficial, "/livros-obrigatorios/diario/gerar", mes="2026-09")
     assert r.status_code == 302 and "/diario/versao/" in r.headers["Location"]
     papel = oficial.get(r.headers["Location"]).get_data(as_text=True)

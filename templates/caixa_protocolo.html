@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block title %}Protocolo {{ p.numero }} — Administrativo{% endblock %}
-{% block heading %}<h1>Protocolo {{ p.numero }}
+{% block heading %}<h1>Protocolo {{ p.numero }}{% if p.tipo == 'ORCAMENTO' %} <span class="badge media">só cálculo</span>{% endif %}
   {#- NO LAYOUT NOVO QUEM É E COMO ESTÁ FICAM NO TÍTULO: não somem ao trocar de aba. #}
   {%- if layout_novo %} <span class="small muted">{% if p.interessado %}{{ p.interessado }} · {% endif %}{{ SITUACOES.get(p.situacao, p.situacao) }}</span>{% endif %}</h1>{% endblock %}
 {% block content %}
@@ -66,9 +66,10 @@
 
 {% if p.tipo == 'ORCAMENTO' %}
 <div class="notice warning">
-  <strong>Protocolo de mero cálculo de emolumentos.</strong> Serve para orçar, não para praticar
-  ato. O documento emitido diz isso com todas as letras — não gera prenotação, não reserva
-  valores, e os emolumentos são os vigentes na data.
+  <strong>Só exame e cálculo.</strong> Serve para dizer o valor ao cliente, e não é entrada do título:
+  não gera prenotação, não reserva valor, e os emolumentos são os vigentes na data. Se o cliente vai
+  fazer o serviço, <a href="{{ url_for('caixa_protocolos_novo') }}">abra um protocolo de serviço</a>:
+  quitar aqui lança o dinheiro no caixa sem serviço nenhum.
 </div>
 {% endif %}
 
@@ -366,7 +367,7 @@
        A FORMA DE PAGAMENTO é do LOTE, porque o pagamento é um só. Em branco, a
        rota recusa: não se adivinha como o cliente pagou. O botão de um item
        pergunta a forma na própria linha, pela mesma razão. #}
-    {% if faltam %}
+    {% if faltam and not encerrado %}
     <form method="post" action="{{ url_for('caixa_protocolo_itens', protocolo_id=p.id) }}"
           style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -422,6 +423,9 @@
         <td style="text-align:right">{{ a.emolumentos }}</td>
         <td style="text-align:right"><strong>{{ a.valor_total }}</strong></td>
         <td>
+          {% if encerrado %}
+            {% if a.quitado %}<span class="badge ok">quitado</span>{% else %}<span class="badge">sem quitar</span>{% endif %}
+          {% else %}
           <form method="post" action="{{ url_for('caixa_protocolo_itens', protocolo_id=p.id) }}" style="display:inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="item_id" value="{{ a.id }}">
@@ -441,6 +445,7 @@
                 onclick="return confirm('Remover este item do protocolo?')">remover</button>
             {% endif %}
           </form>
+          {% endif %}
         </td>
       </tr>
     {% endfor %}
@@ -450,11 +455,12 @@
     </tbody>
   </table></div>
   {% else %}
-  <p class="small muted" style="padding:14px">Nenhum item ainda. Acrescente abaixo, pela tabela
-    do tribunal — o valor não se digita.</p>
+  <p class="small muted" style="padding:14px">{% if encerrado %}Este protocolo foi encerrado sem nenhum item.{% else %}Nenhum item ainda. Acrescente abaixo, pela tabela
+    do tribunal — o valor não se digita.{% endif %}</p>
   {% endif %}
 </section>
 
+{% if not encerrado %}
 <section class="panel cg-lado-largo" id="acrescentar-item" data-fase="itens">
   <div class="panel-head"><span>Acrescentar item pela tabela</span></div>
   <div style="padding:14px">
@@ -526,6 +532,7 @@
     </form>
   </div>
 </section>
+{% endif %}
 
 <section class="panel cg-lado-largo" data-fase="dados">
   <div class="panel-head"><span>Corrigir contato</span></div>

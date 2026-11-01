@@ -163,6 +163,13 @@ def test_o_ato_lancado_abre_na_entrega():
     assert NF.fases_do_ato(_ato(situacao="LAVRADO", teor="x"))["inicial"] == "entrega"
 
 
+def test_o_ato_lavrado_com_a_doi_em_aberto_abre_na_doi():
+    fases = [{"chave": "doi"}, {"chave": "entrega"}]
+    assert NF._onde_abrir(fases, False, True, True, True, True, True) == "doi"
+    assert NF._onde_abrir(fases, False, True, True, True, True, False) == "entrega"
+    assert NF._onde_abrir([{"chave": "entrega"}], False, True, True, True, True, True) == "entrega"
+
+
 def test_o_foco_pedido_pela_tela_vale_se_a_fase_existe():
     assert NF.fases_do_ato(_ato(), foco="partes")["inicial"] == "partes"
     assert NF.fases_do_ato(_ato(), foco="doi")["inicial"] == "preparar"

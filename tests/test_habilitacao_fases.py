@@ -132,6 +132,14 @@ def test_celebrado_fecha_tudo():
     assert sum(x["pendencias"] for x in r["fases"]) == 0
 
 
+def test_celebrado_sem_selo_continua_cobrando_o_selo():
+    """O casamento pode sair antes do selo: a ficha não pode dar tudo por feito."""
+    r = HF.fases_da_habilitacao(_hab("CELEBRADO", edital_em="2026-10-01", eproclamas_protocolo="9"))
+    assert r["inicial"] == HF.PRONTAS
+    assert _fase(r, HF.PRONTAS)["pendencias"] == 1
+    assert "selo" in _fase(r, HF.PRONTAS)["aviso"]
+
+
 def test_o_arquivado_nao_cobra_nada_e_aponta_o_andamento():
     r = HF.fases_da_habilitacao(_hab("ARQUIVADO"), falta=[1, 2])
     assert sum(x["pendencias"] for x in r["fases"]) == 0

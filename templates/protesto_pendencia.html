@@ -148,7 +148,7 @@
     {% else %}
     <p class="muted">
       <strong>O sistema não sugeriu valor</strong>{% if retirada.motivo %} —
-      {{ retirada.motivo }}{% endif %}. Digite a custa conferindo a tabela.
+      {{ retirada.motivo.rstrip('.') }}{% endif %}. Digite a custa conferindo a tabela.
     </p>
     {% endif %}
     <label>Motivo da recusa <small>(se recusada — quem lê é quem pediu)</small>

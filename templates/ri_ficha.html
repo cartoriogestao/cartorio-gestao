@@ -1989,7 +1989,7 @@
         </select></label>
       <label>Data do ato
         <input type="date" name="data_ato"
-               value="{{ rascunho.data_ato if rascunho else hoje }}"></label>
+               value="{{ (rascunho.data_ato or '') if rascunho else hoje }}"></label>
       <label class="span2">Texto do ato
         <textarea name="teor" rows="6">{{ rascunho.teor if rascunho else '' }}</textarea></label>
       <div class="actions span2">

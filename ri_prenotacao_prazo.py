@@ -35,6 +35,10 @@ MOTIVOS: dict[str, str] = {
 }
 
 
+#: As situações em que o prazo corre. A nota devolutiva não o suspende: «a prenotação continua correndo».
+CORRENDO = ("ABERTO", "DEVOLVIDO")
+
+
 class PrazoError(ValueError):
     """Erro de regra, com mensagem pronta para o balcao."""
 

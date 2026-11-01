@@ -881,7 +881,7 @@
         {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}{% if user.role == 'ADMIN' %}<a href="{{ url_for('despesas_lista') }}">Despesas</a>{% endif %}
         {# O CARNÊ-LEÃO (26/10/2026) é o imposto de renda PESSOAL do titular:
            só o ADMIN o vê, e a rota recusa os outros perfis. #}
-        {% if user.role == 'ADMIN' %}<a href="{{ url_for('carne_leao') }}">Carnê-leão</a>{% endif %}
+        {% if user.role == 'ADMIN' and e_o_titular %}<a href="{{ url_for('carne_leao') }}">Carnê-leão</a>{% endif %}
         <a href="{{ url_for('caixa_recibos') }}">Recibos</a>
         <a href="{{ url_for('caixa_emolumentos') }}">Emolumentos</a>
         {# O RAZAO DOS SELOS — relato #33. Fica no dinheiro porque selo se

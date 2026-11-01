@@ -3,7 +3,7 @@
 {% block heading %}
 <h1>Título {{ p.numero }} <span class="small muted">Livro {{ p.livro }} — Protocolo</span>
   {# NO LAYOUT NOVO O PRAZO ESTÁ NO TÍTULO: é a primeira pergunta, e não some ao rolar. #}
-  {% if layout_novo and p.situacao == 'ABERTO' and restam is not none %}
+  {% if layout_novo and restam is not none %}
     {% if restam < 0 %}<span class="badge critica">prazo vencido</span>
     {% elif restam <= 3 %}<span class="badge alta">faltam {{ restam }} dia(s) úteis</span>
     {% else %}<span class="badge baixa">faltam {{ restam }} dias úteis</span>{% endif %}
@@ -168,7 +168,7 @@
 <section class="panel" data-fase="titulo">
   <div class="panel-head">
     <span>{{ p.situacao }}
-      {% if p.situacao == 'ABERTO' and restam is not none %}
+      {% if restam is not none %}
         {% if restam < 0 %}<span class="badge critica">prazo vencido</span>
         {% elif restam <= 3 %}<span class="badge alta">faltam {{ restam }} dia(s) úteis</span>
         {% else %}<span class="badge baixa">faltam {{ restam }} dias úteis</span>{% endif %}

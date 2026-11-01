@@ -5,7 +5,7 @@
 {% include '_serventia.html' %}
 <div class="actions">
   <a class="button" href="{{ url_for('caixa_protocolos') }}">Protocolo geral</a>
-  <a class="button" href="{{ url_for('caixa_recibos') }}">Recibos</a>
+  {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a class="button" href="{{ url_for('caixa_recibos') }}">Recibos</a>{% endif %}
   <a class="button" href="{{ url_for('caixa_emolumentos') }}">Tabela de emolumentos</a>
 </div>
 

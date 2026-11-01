@@ -12,7 +12,7 @@
 {% include '_serventia.html' %}
 <div class="actions">
   <a class="button" href="{{ url_for('nucleo_livros') }}">Livros e termos</a>
-  <a class="button" href="{{ url_for('nucleo_numeracao') }}">Numeração dos livros</a>
+  {% if user.role in ['ADMIN','MANAGER'] %}<a class="button" href="{{ url_for('nucleo_numeracao') }}">Numeração dos livros</a>{% endif %}
 </div>
 
 <div class="notice">

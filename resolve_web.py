@@ -270,7 +270,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     def protesto_resolve_testar():
         """Testa a ligação. **Não manda nem baixa intimação nenhuma.**"""
         ambiente = ambiente_pedido()
-        de_pe = API.status(ambiente)
+        # A CENTRAL FORA DO AR É O CASO PARA QUE ESTE BOTÃO EXISTE: sem isto, `status` levanta, e quem
+        # queria saber se a ligação está boa recebia a página de erro do sistema.
+        try:
+            de_pe = API.status(ambiente)
+        except API.ResolveError as erro:
+            flash(f"Não deu: {erro}", "danger")
+            return redirect(url_for("protesto_resolve", ambiente=ambiente))
         if not de_pe["ok"]:
             flash(f"A Resolve não respondeu em {de_pe['base']}: "
                   f"{de_pe['motivo']}.", "danger")

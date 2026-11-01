@@ -699,6 +699,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 registro = RG.registro(con, int(titulo["registro_id"]))
                 atos = [dict(a) for a in RG.atos_do(con,
                                                     int(titulo["registro_id"]))]
+                # O id da linha não diz nada a quem atende: o livro se conhece pelo número.
+                livros = {int(x["id"]): x["numero"] for x in banco(con).ler("SELECT id, numero FROM nu_livros")}
+                for a in atos:
+                    a["livro_numero"] = livros.get(a["livro_id"]) if a.get("livro_id") else None
             # SELO E CUSTAS SÓ QUANDO DÁ PARA REGISTRAR — a ficha QUALIFICADA
             # é a que oferece o formulário. Pedir receita nas outras situações
             # seria cálculo à toa.

@@ -34,7 +34,8 @@ def fases_da_prenotacao(p: Mapping[str, Any], *, documentos: Sequence = (), nota
                         qualificacoes: Sequence = (), historico: Sequence = (),
                         depositos: Sequence = (), tem_onr: bool = False) -> dict:
     """A régua da prenotação. A forma é a de `notas_fases`: `_fases.html` desenha as duas."""
-    aberta = (p.get("situacao") or "") == "ABERTO"
+    # DEVOLVIDO é a prenotação em exigência, e o prazo dela corre: é aí que a nota espera resposta.
+    aberta = (p.get("situacao") or "") in ("ABERTO", "DEVOLVIDO")
     nota_aberta = any(n.get("situacao") == "ABERTA" for n in notas)
     qualificada = bool(qualificacoes)
     com_selo = bool((p.get("selo_prenotacao") or "").strip())

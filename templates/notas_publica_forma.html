@@ -4,7 +4,7 @@
 {% block content %}
 <div class="actions">
   <a class="button" href="{{ url_for('notas_painel') }}">&larr; Tabelionato</a>
-  <a class="button" href="{{ url_for('notas_publica_forma_configuracao') }}">Configuração</a>
+  {% if user.role in ['ADMIN','MANAGER'] %}<a class="button" href="{{ url_for('notas_publica_forma_configuracao') }}">Configuração</a>{% endif %}
 </div>
 
 <section class="panel">
@@ -13,7 +13,7 @@
     <p class="small" style="padding:0 14px"><strong>Falta o item da tabela.</strong>
       A tabela de emolumentos importada não tem item próprio de pública forma, e a casa
       ainda não disse qual cobra. Sem ele o selo não sai — informe em
-      <a href="{{ url_for('notas_publica_forma_configuracao') }}">Configuração</a>.</p>
+      {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('notas_publica_forma_configuracao') }}">Configuração</a>{% else %}Configuração, que é do oficial{% endif %}.</p>
   {% elif preco %}
     <p class="small muted" style="padding:0 14px">Item {{ preco.codigo_tj }} — {{ preco.descricao or '' }}: {{ preco.total }}.</p>
   {% else %}

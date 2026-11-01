@@ -159,7 +159,7 @@
       {% if atos %}
       <div style="margin-bottom:8px">
         <small><strong>Atos a incluir na certidão</strong>
-          — as folhas vêm dos anexos ligados a cada ato (RG_ATO); se não houver
+          — as folhas vêm dos anexos ligados a cada ato; se não houver
           vínculo, usa o mapeamento conhecido ou os anexos marcados abaixo:</small><br>
         {% for a in atos %}
         {% set tipo_u = (a.tipo or '')|upper %}
@@ -178,8 +178,8 @@
       {% endif %}
       {% if anexos %}
       <div style="margin-bottom:8px">
-        <small>Anexos (só entram se os atos acima não tiverem vínculo RG_ATO /
-          fallback — pacotes mistos grandes vêm desmarcados):</small><br>
+        <small>Anexos (só entram se os atos acima não tiverem documento ligado,
+          nem o mapeamento conhecido — pacotes mistos grandes vêm desmarcados):</small><br>
         {% for a in anexos %}
         {% set nome_u = (a.original_name or '')|upper %}
         {% set desc_u = (a.description or '')|upper %}

@@ -36,7 +36,7 @@
           <td><strong>{{ desistencia.aplicados }}</strong> aplicado(s) de
               {{ desistencia.titulos }} que vieram</td></tr>
       <tr><th>Soma do arquivo</th>
-          <td>R$ {{ '%.2f' % ((desistencia.soma_centavos or 0) / 100) }}</td></tr>
+          <td>R$ {{ (desistencia.soma_centavos or 0) | centavos_reais }}</td></tr>
     </tbody>
   </table>
 </section>

@@ -445,7 +445,20 @@ no protocolo e, pagos, caem no caixa com os fundos separados.
 ### 6.2 Protocolo geral
 
 Em **Protocolo geral**, abra o atendimento com interessado, contato,
-finalidade, atribuição, previsão de entrega e documento apresentado.
+atribuição, previsão de entrega e documento apresentado. A primeira pergunta é o
+que o cliente veio fazer, e a resposta muda o que o número vale:
+
+| | **Serviço**: quer o ato | **Só exame e cálculo**: só quer saber o valor |
+|---|---|---|
+| É entrada do título | Sim | Não: não gera prenotação nem reserva valor |
+| O que emite | Recepção, orçamento e recibo | Só o cálculo de emolumentos |
+| Acompanhamento pelo cliente | Sim | Não |
+| Conta no painel como serviço em andamento | Sim | Não |
+
+Orçamento de um serviço se emite na ficha do próprio protocolo de serviço: não é
+preciso abrir outro. O protocolo só de cálculo traz a marca **só cálculo** na lista
+e na ficha, e quitá-lo lança o dinheiro no caixa sem serviço nenhum: se o cliente
+decidiu fazer o ato, abra um protocolo de serviço.
 
 - **Quitar um item lança no caixa**, pelo valor calculado quando o item entrou.
 - **Um recibo para o atendimento inteiro.**

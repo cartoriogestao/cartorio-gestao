@@ -15,6 +15,7 @@ from flask import flash, g, redirect, request, session, url_for
 
 import caixa_protocolo as CXP
 import navegacao as NAV
+import titular_privado as TITULAR
 from seguranca_web import destino_interno
 
 LAYOUTS = ("antigo", "novo")
@@ -76,13 +77,31 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         with db.connect() as con:
             return CXP.em_atendimento(con, usuario_nome())
 
+    def _e_o_titular() -> bool:
+        """A rota do titular recusa os outros ADMIN: o menu não oferece o que vai ser recusado."""
+        if "cg_titular" not in g:
+            g.cg_titular = TITULAR.e_o_titular(db, usuario_nome(), app.extensions["usuario_papel"]())
+        return g.cg_titular
+
+    def _abre(endpoint: str, papel: str) -> bool:
+        """A rota deixa esta pessoa abrir? O menu pergunta a ela, e não mantém uma segunda lista.
+
+        Havia 46 opções no menu do auditor que levavam à recusa: cada lista de papéis tinha envelhecido
+        por conta própria. Quem manda é `roles_required`, e ela deixa a resposta à vista na função.
+        """
+        funcao = app.view_functions.get(endpoint)
+        exigidos = getattr(funcao, "papeis_exigidos", None)
+        metodos = getattr(funcao, "metodos_exigidos", None)
+        return exigidos is None or (metodos is not None and "GET" not in metodos) or papel in exigidos
+
     def nav_da_tela(*, papel="", escondidos=(), ajuda_liberada=False,
                     agente_no_menu=False, tipo_do_ato=""):
         args = dict(request.args.to_dict())
         args.update(request.view_args or {})
         return NAV.montar(request.endpoint or "", args, papel, url_for,
                           escondidos=escondidos, ajuda_liberada=ajuda_liberada,
-                          agente_no_menu=agente_no_menu, tipo_do_ato=tipo_do_ato)
+                          agente_no_menu=agente_no_menu, tipo_do_ato=tipo_do_ato,
+                          e_o_titular=_e_o_titular(), abre=_abre)
 
     def portas_de_lavrar(grupo: str) -> list[dict]:
         """As portas de um módulo, do mesmo registro do botão Novo: quem vê uma vê a outra."""
@@ -100,5 +119,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 "timbre_na_tela": g.cg_layout != "novo" or request.endpoint in NAV.TELAS_COM_TIMBRE,
                 "layout_padrao_da_casa": db.get_setting(CHAVE_PADRAO, PADRAO_DE_FABRICA),
                 "layout_sem_escolha": db.get_setting(chave_do_usuario(uid), "") not in LAYOUTS,
+                "e_o_titular": _e_o_titular(),
                 "nav_da_tela": nav_da_tela, "portas_de_lavrar": portas_de_lavrar,
                 "protocolo_em_atendimento": _em_atendimento}

@@ -52,7 +52,8 @@ def _vale(condicao: str, papel: str, flags: dict) -> bool:
     """Avalia a condição do Jinja como Python, com o que o menu usa."""
     ambiente = _Ambiente({"user": _Usuario(papel), "MODULOS_ESCONDIDOS": flags.get("escondidos", []),
                           "ajuda_liberada": flags.get("ajuda_liberada", True),
-                          "agente_no_menu": flags.get("agente_no_menu", True)})
+                          "agente_no_menu": flags.get("agente_no_menu", True),
+                          "e_o_titular": flags.get("e_o_titular", True)})
     return bool(eval(condicao, {"__builtins__": {}}, ambiente))  # noqa: S307
 
 
@@ -84,8 +85,8 @@ def menu_antigo(papel: str, **flags) -> set[tuple[str, tuple]]:
     return fora
 
 
-def menu_novo(papel: str, escondidos=(), ajuda_liberada=True, agente_no_menu=True) -> set[tuple[str, tuple]]:
-    flags = NAV._flags(ajuda_liberada, agente_no_menu, escondidos)
+def menu_novo(papel: str, escondidos=(), ajuda_liberada=True, agente_no_menu=True, e_o_titular=True) -> set[tuple[str, tuple]]:
+    flags = NAV._flags(ajuda_liberada, agente_no_menu, escondidos, e_o_titular)
     return {(e["endpoint"], tuple(sorted((k, str(v)) for k, v in e["args"].items())))
             for e in NAV.entradas(papel, flags)} | {("dashboard", ())}
 
@@ -106,6 +107,7 @@ def test_o_registro_oferece_o_mesmo_que_o_menu_antigo(papel):
     {"agente_no_menu": False},
     {"escondidos": ["PROTESTO"]},
     {"escondidos": ["APOSTILA"]},
+    {"e_o_titular": False},
 ])
 def test_as_condicoes_do_menu_valem_nos_dois(papel, flags):
     """A ajuda fechada, o agente desligado, o Protesto e a Apostila escondidos."""
@@ -114,6 +116,28 @@ def test_as_condicoes_do_menu_valem_nos_dois(papel, flags):
     perdidos = sorted(antigo - novo)
     sobrando = sorted(novo - antigo - NAV.ENTRADAS_NOVAS)
     assert not perdidos and not sobrando, (papel, flags, perdidos, sobrando)
+
+
+def test_o_carne_leao_so_aparece_para_o_titular_nos_dois_menus():
+    """A rota recusa o ADMIN que não é o titular: opção que leva à recusa é clique perdido."""
+    alvo = ("carne_leao", ())
+    assert alvo in menu_antigo("ADMIN") and alvo in menu_novo("ADMIN")
+    assert alvo not in menu_antigo("ADMIN", e_o_titular=False)
+    assert alvo not in menu_novo("ADMIN", e_o_titular=False)
+
+
+def test_o_menu_novo_pergunta_a_rota_se_a_pessoa_entra():
+    """A lista de papéis do registro envelhece: quem decide é a rota, e o menu pergunta a ela."""
+    def endereco(rota, **args):
+        return f"/{rota}"
+
+    def so_o_caixa_recusa(rota, _papel):
+        return rota != "caixa"
+
+    livre = NAV.montar("dashboard", {}, "AUDITOR", endereco)
+    barrado = NAV.montar("dashboard", {}, "AUDITOR", endereco, abre=so_o_caixa_recusa)
+    assert "/caixa" in {x["u"] for x in livre["indice"]}
+    assert "/caixa" not in {x["u"] for x in barrado["indice"]}
 
 
 def _rotas() -> dict[str, list[str]]:

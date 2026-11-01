@@ -508,6 +508,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             # duas divergirem no dia em que a tela mudar. O `@wraps` de quem
             # embrulhar depois leva o atributo junto.
             wrapped.papeis_exigidos = tuple(roles)
+            wrapped.metodos_exigidos = tuple(metodos) if metodos else None
             return wrapped
         return deco
 

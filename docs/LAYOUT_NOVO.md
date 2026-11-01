@@ -12,7 +12,7 @@ por etapas, e cada uma pode ser a última: o sistema continua inteiro em todas.
 | 4. Civil e Protesto | Assento, habilitação, roteiro, dia da CRA | Novo registro em passos, correção em partes, habilitação em fases, ficha do assento em abas e ficha do título de Protesto em fases; o resto a fazer |
 | 5. Operação | Caixa, protocolo, processos, atendimento | Ficha do protocolo em abas; o resto a fazer |
 | 6. Gestão | Finanças, conformidade, configurações | A fazer |
-| Testes | Testes de todas as telas e funções do layout novo: ordem do oficial, 31/10/2026, para vir antes de terminar | A fazer |
+| Testes | Testes de todas as telas e funções do layout novo: ordem do oficial, 31/10/2026, para vir antes de terminar | Seção «Os testes», abaixo |
 | 7. Limpar | Tirar a chave e a moldura antiga | A fazer |
 
 ## Como funciona
@@ -24,7 +24,7 @@ por etapas, e cada uma pode ser a última: o sistema continua inteiro em todas.
   oficial, o padrão de fábrica é o novo: quem não escolheu abre nele, com um aviso de «Ficar
   neste» ou «Voltar ao antigo». O oficial pode devolver a casa ao antigo pelo menu dele.
 - **A suíte de testes fica na moldura antiga** (`tests/conftest.py`), porque os testes de
-  tela leem o HTML dela. Quem testa a moldura nova a pede por pessoa.
+  tela leem o HTML dela. Quem testa a moldura nova a pede por pessoa. Ver «Os testes».
 - **`base.html` decide**: com `layout_novo`, estende `base_novo.html`. O resto de
   `base.html` fica dentro de um `if`, porque o `include` não obedece ao `extends`.
 
@@ -95,3 +95,44 @@ gravar a tela volta com os mesmos quadros abertos. Exemplos: `settings.html`, `n
 
 **Regra das duas.** Só muda o layout novo, por `{% if layout_novo %}`, e o estilo fica em `<style>` no próprio molde.
 O HTML do layout antigo continua igual, e os dois layouts mandam os mesmos campos: compare antes de abrir o PR.
+
+## Os testes
+
+Ordem do oficial, 31/10/2026: «antes de terminar tudo, precisamos elaborar testes para todas as telas e funcoes do novo
+layout». A lista de telas não se escreve: sai da tabela de rotas do sistema, e tela nova entra sozinha.
+
+| Arquivo | O que cobra |
+|---|---|
+| `tests/test_layout_todas_as_telas.py` | Toda rota de leitura, nas duas molduras e com os quatro papéis: nada dá erro, a moldura é a escolhida, as duas oferecem os mesmos formulários, fases e passos têm porta e quadro, todo link e todo formulário levam a uma rota, o menu de cada papel não leva a recusa |
+| `tests/test_layout_todos_os_formularios.py` | Todo formulário de toda tela, mandado como a tela vem e preenchido, e todo filtro de lista: erro de regra é aviso, e não erro 500 |
+| `tests/test_layout_no_navegador.py` | Chrome de verdade: toda tela em 1920x1080 e 1366x768 sem erro de script nem estouro, cada aba mostra só os quadros dela, cada porta mostra o bloco dela, o campo obrigatório vazio abre o passo dele, busca, Novo, sino, gavetas, teclado e troca de layout |
+| `tests/test_layout_fichas_*.py` | Cada ficha em fases ou abas, em cada estado do rito: a fase em que abre, o que está travado, o que espera ação |
+| `tests/test_layout_semente.py` | Toda rota com número no endereço tem semente, ou tem o motivo escrito |
+| `tests/test_layout_moldes.py` | Sem banco: toda fase citada num molde existe no módulo da ficha, todo quadro fecha, toda classe da casca tem regra |
+| `tests/test_layout_ensaio.py` | Sem banco: a trava barra de verdade, e cada guarda acusa o defeito para o qual existe |
+
+**A casa de ensaio** (`tests/layout_casa.py`) é uma serventia fictícia com uma linha de cada coisa que tem tela. A base é a
+carga do sandbox, e cada atribuição tem a sua `tests/layout_semente_*.py`. Rota nova com número no endereço fica vermelha em
+`test_layout_semente` até ganhar semente, ou um motivo em `SEM_SEMENTE`.
+
+**A trava** (`tests/layout_ensaio.py`) é o que permite mandar todo formulário numa máquina que pode ser a da produção. Um gancho
+de auditoria do Python barra, no processo inteiro: rede, programa de fora, gravar fora da pasta temporária e ler a pasta de uma
+instalação real. O banco fica de fora, e por isso `conferir_que_e_banco_de_teste` recusa o DSN que não for de teste. O que a
+trava barra não é defeito, mas o erro que a rota levanta por causa da falta de rede é: a Central fora do ar é coisa de todo dia.
+
+**Como rodar.** São testes `lento`: `--completa` os leva, e `--rapida` não. Para só estes, com o DSN de teste no ambiente
+(`CG_TEST_BACKEND=pg`, `CG_PG_DSN`):
+
+```
+python -m pytest tests/test_layout_todas_as_telas.py tests/test_layout_todos_os_formularios.py tests/test_layout_no_navegador.py tests/test_layout_semente.py tests/test_layout_moldes.py tests/test_layout_ensaio.py tests/test_layout_fichas_ri.py tests/test_layout_fichas_civil.py tests/test_layout_fichas_notas.py tests/test_layout_fichas_protesto.py tests/test_layout_fichas_rcpj.py tests/test_layout_fichas_gestao.py -n 4 --dist loadfile
+```
+
+Sem o Playwright ou sem navegador, `test_layout_no_navegador` pula e diz por quê. `CG_LAYOUT_AREAS=ri` e `CG_LAYOUT_PAPEIS=ADMIN`
+encurtam a rodada de quem está mexendo numa área.
+
+**A suíte inteira na moldura nova.** `tests/conftest.py` fixa a moldura antiga, porque muitos testes leem o menu dela. Com
+`CG_TESTE_MOLDURA=novo`, ela roda toda na casca. O que fica vermelho aí e verde na antiga é teste lendo o menu antigo, ou defeito:
+compare as duas listas antes da etapa 7.
+
+**Antes da etapa 7, rode também esta conferência à mão:** a varredura de formulários manda o que a tela entrega, mas não diz se o
+ato ficou certo. Quem diz são os testes de cada módulo, e a suíte com banco precisa estar verde.

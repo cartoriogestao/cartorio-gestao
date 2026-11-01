@@ -497,6 +497,9 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     # 27/10/2026 (PR #48): cadastrar a chave pública na instalação é do oficial,
     # na linha de comando, com a senha digitada por ele — de propósito sem tela.
     "gravar_chave_na_instalacao": "assinatura_da_atualizacao — a porta é `tools/chave_de_atualizacao.py` (gerar/cadastrar --instalacao)",
+    # 31/10/2026 (PR #205): apagar o pacote aberto depois de selar é do oficial,
+    # na linha de comando — de propósito sem tela.
+    "apagar_arquivo": "cofre_do_titular — a porta é `tools/selar_titularidade.py`",
     # 14/10/2026: a porta é `tools/conferir_instalacao.py emergencia`, que o
     # SERVIDOR\ATUALIZAR_SISTEMA.cmd chama depois de copiar — de propósito sem
     # tela: a emergência é o caminho que não passa pela tela de Atualizações.

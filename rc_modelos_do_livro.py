@@ -1354,9 +1354,13 @@ def valores_do_assento(assento: dict, pessoas: list[dict], *,
         # mesmo sexo, e ha dado trocado no acervo: a posicao nao diz o
         # genero de ninguem.
         "filiacao1_qualificacao": qualificacao_inteira(mae),
+        # O CASAMENTO DOS PAIS NÃO VAI AO TERMO — decisão do oficial, 02/11/2026 (ensaio de atos, item 2).
+        # «No registro de nascimento não se fará qualquer referência […] ao lugar e cartório do casamento
+        # dos pais e ao estado civil destes» (Lei 8.560/1992, art. 5º), e os termos da casa dos anos 2020 já
+        # não a escreviam. Os campos continuam guardados para a CRC; `frase_do_casamento_dos_pais` fica para
+        # quem reproduz termo antigo.
         "frase_filiacao2": (_frase("RC_TERMO_NASCIMENTO__filiacao2",
                                    filiacao2=qualificacao_do_pai)
-                            + frase_do_casamento_dos_pais(assento)
                             if qualificacao_do_pai else ""),
         "frase_idade_da_genitora": (
             _frase("RC_TERMO_NASCIMENTO__idade_da_mae", idade=idade)

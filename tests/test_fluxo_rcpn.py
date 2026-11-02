@@ -491,7 +491,6 @@ def test_nascimento_do_balcao_a_certidao_com_termo_e_certidao_que_batem(balcao):
             "sendo filho de BEATRIZ EXEMPLO DE SOUZA",    # item 7º
             "e de MARIO EXEMPLO DOS SANTOS",
             "lavradora", "natural de Cidade Exemplo/MA",  # item 7º: profissão
-            "casados entre si em Cidade Exemplo/MA",      # item 7º: casamento
             "30 anos de idade",                           # item 7º: idade
             "JOSE EXEMPLO DE SOUZA e ANA EXEMPLO DE SOUZA",   # item 8º
             "JOAO EXEMPLO DOS SANTOS e MARIA EXEMPLO DOS SANTOS",
@@ -499,6 +498,11 @@ def test_nascimento_do_balcao_a_certidao_com_termo_e_certidao_que_batem(balcao):
             "Lido e achado conforme, o(a) declarante assina.",
             f"Eu, {OFICIAL}, {FUNCAO}, dou fé e assino.",
             f"Matrícula {assento['matricula']}.")
+    # O CASAMENTO DOS PAIS NÃO VAI AO TERMO (Lei 8.560/1992, art. 5º) — decisão do oficial, 02/11/2026:
+    # o art. 54, 7º, da LRP, que o pedia, cede à lei posterior. O campo continua guardado.
+    assert "casados entre si" not in termo
+    assert _um(balcao, "SELECT pais_casamento_lugar AS l FROM rc_assentos WHERE id = %s",
+               (assento["id"],))["l"] == "Cidade Exemplo/MA"
 
     # A FOLHA DO LIVRO leva o termo, o cabeçalho com livro/folha/termo e o
     # carimbo do selo — é o «selo no ato» do papel que o declarante assina.

@@ -1731,6 +1731,19 @@ _LH05_TARDIO = {
 MUDOU_DEPOIS_DO_OURO["RC_TERMO_NASCIMENTO"] = {
     k: MUDOU_DEPOIS_DO_OURO["RC_TERMO_NASCIMENTO"][k] + _LH05_TARDIO[k]
     for k in ("texto", "papel")}
+# QUEM PRESIDIU O ATO (ensaio de atos, item 5 — decisão do oficial, 02/11/2026): o termo de casamento
+# ganhou `{frase_do_presidente}` («por FULANO, Juiz de Paz,», depois da celebração) e
+# `{frase_presidente_assina}` («o presidente do ato, », no fecho) — CC art. 1.536, caput; LRP art. 70,
+# caput. Vazios (sem juiz, e na conversão de união estável), o texto montado é o de antes.
+_PRESIDENTE_DO_ATO = {
+    "texto": (("{frase_da_celebracao} sob", "{frase_da_celebracao}{frase_do_presidente} sob"),
+              ("que escrevi, os nubentes", "que escrevi, {frase_presidente_assina}os nubentes")),
+    "papel": (("[frase da celebracao] sob", "[frase da celebracao][frase do presidente] sob"),
+              ("que escrevi, os nubentes", "que escrevi, [frase presidente assina]os nubentes")),
+}
+MUDOU_DEPOIS_DO_OURO["RC_TERMO_CASAMENTO"] = {
+    k: MUDOU_DEPOIS_DO_OURO["RC_TERMO_CASAMENTO"][k] + _PRESIDENTE_DO_ATO[k]
+    for k in ("texto", "papel")}
 # A FICHA DO CARTÃO DE FIRMA traz a data de emissão da identidade (LD02,
 # 21/10/2026): o art. 864, § 1º, IV, do Código de Normas pede o RG «junto com a
 # data de emissão», e a ficha não tinha a linha. Uma linha nova, logo abaixo da
@@ -1881,6 +1894,10 @@ MONTADORES_MUDADOS_DEPOIS_DO_OURO = {
 MONTADORES_MUDADOS_DEPOIS_DO_OURO["rc_modelos_do_livro.montar_do_formulario(NASCIMENTO)"] += (
     ("[frase_cpf][testemunhas] Lido e achado",
      "[frase_cpf][frase_tardio][testemunhas] Lido e achado"),)
+# O presidente do ato no formulário montado (o texto de fábrica já leva as trocas de cima).
+MONTADORES_MUDADOS_DEPOIS_DO_OURO["rc_modelos_do_livro.montar_do_formulario(CASAMENTO)"] += (
+    ("[frase_da_celebracao] sob", "[frase_da_celebracao][frase_do_presidente] sob"),
+    ("que escrevi, os nubentes", "que escrevi, [frase_presidente_assina]os nubentes"))
 
 
 def _com_as_trocas(antes, trocas):
@@ -4689,8 +4706,45 @@ def _ouro_com_as_mudancas_explicadas(grupo: str, funcoes: dict) -> dict:
             assert _LT01_ANTES in antes, nome
             novo = json.loads(antes.replace(_LT01_ANTES, _LT01_DEPOIS))
         saida[nome] = novo
-    return _testamento_no_ouro(grupo, _filha_no_ouro(grupo, _sem_casamento_dos_pais_no_ouro(
-        grupo, _hab22_no_ouro(grupo, _ld22_no_ouro(grupo, _lh05_no_ouro(grupo, _ld01_no_ouro(grupo, saida)))))))
+    return _presidente_no_ouro(grupo, _testamento_no_ouro(grupo, _filha_no_ouro(grupo, _sem_casamento_dos_pais_no_ouro(
+        grupo, _hab22_no_ouro(grupo, _ld22_no_ouro(grupo, _lh05_no_ouro(grupo, _ld01_no_ouro(grupo, saida))))))))
+
+
+# ------------------------------- 02/11/2026 — o termo de casamento diz quem presidiu o ato
+#
+#   Decisão do oficial (ensaio de atos, item 5): `{frase_do_presidente}` e `{frase_presidente_assina}`
+#   (ver `_PRESIDENTE_DO_ATO`). As saídas do ouro não têm juiz de paz, e por isso o TEXTO do termo é o de
+#   antes; muda só o que descreve os claros: as duas chaves novas, vazias, nos `cas.valores.*`; os dois
+#   rótulos no «não é o caso» de quem os deixou vazios; e os dois claros no formulário com tudo
+#   preenchido. A varredura do casamento traz essas mesmas saídas, e o hash dela muda junto.
+_CLAROS_DO_PRESIDENTE = ["Quem presidiu o ato", "O presidente do ato assina"]
+_VARRE_CASAMENTO_COM_O_PRESIDENTE = {"ok": {"erros": 0, "n": 984, "sha256": (
+    "c9f138443769255b9aa9b26579cd16ddcf65a59207c1810a1a493ee38ebbcfa6")}}
+
+
+def _presidente_no_ouro(grupo: str, saida: dict) -> dict:
+    import json as _json
+    if grupo != "termos":
+        return saida
+    saida = dict(saida)
+    for nome, valor in list(saida.items()):
+        if callable(valor) or not nome.startswith(("cas.", "form.CASAMENTO.")):
+            continue
+        novo = _json.loads(_json.dumps(valor, ensure_ascii=False))
+        ok = novo.get("ok")
+        if not isinstance(ok, dict):
+            continue
+        if nome.startswith("cas.valores."):
+            ok["frase_do_presidente"] = ok["frase_presidente_assina"] = ""
+        if nome.endswith("claros_preenchidos"):
+            ok["texto"] = ok["texto"].replace(
+                "[frase_da_celebracao] x sob", "[frase_da_celebracao] x [frase_do_presidente] x sob").replace(
+                "que escrevi, os nubentes", "que escrevi, [frase_presidente_assina] x os nubentes")
+        elif isinstance(ok.get("nao_e_o_caso"), list):
+            ok["nao_e_o_caso"] = ok["nao_e_o_caso"] + _CLAROS_DO_PRESIDENTE
+        saida[nome] = novo
+    saida["varre.casamento"] = _VARRE_CASAMENTO_COM_O_PRESIDENTE
+    return saida
 
 
 # ------------------------------- 02/11/2026 — o testamento é pergunta, como as outras marcas do óbito

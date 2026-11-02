@@ -97,7 +97,7 @@ o LD01 (21/10/2026, «corrija tudo») consertou: o `xfail` saiu e o teste passa.
 | maior de 70: separação obrigatória, salvo pacto em escritura | CC art. 1.641, II; STF Tema 1.236 | ✓ ensaio de atos — AVISA (`REGIME_DO_MAIOR_DE_70`) |
 | nomes que os cônjuges passam a ter | LRP art. 70, 8º; CN-MA art. 284, VIII | ✓ [cas.nome_adotado] |
 | filhos havidos de matrimônio anterior; impressão digital de quem não assina | LRP art. 70, 9º e 10º | conferir — o CN-MA art. 284 os omite; o modelo não os tem |
-| leitura e assinaturas do presidente, cônjuges, testemunhas e oficial | LRP art. 70, caput; CN-MA art. 282 | ✓ [cas.encerramento] |
+| leitura e assinaturas do presidente, cônjuges, testemunhas e oficial | LRP art. 70, caput; CN-MA art. 282 | ✓ [cas.encerramento] · ✓ ensaio de atos (decisão do oficial, 02/11/2026): o texto nomeia quem presidiu («foram declarados casados … por FULANO, Juiz de Paz,») e que ele assina («assinam comigo … o presidente do ato, os nubentes e as testemunhas») — CC art. 1.536, caput |
 | religioso com efeito civil: data, lugar, culto, celebrante e qualidade, cartório da habilitação | LRP art. 73, § 1º; CN-MA arts. 293 e 297 | conferir — sem teste; o B-Auxiliar usa o mesmo modelo do civil |
 | conversão de união estável: menção de que é conversão, registro anterior da união | LRP art. 70-A, § 4º; CNN art. 549 | conferir — a variante `CONVERSAO` do modelo não tem texto |
 

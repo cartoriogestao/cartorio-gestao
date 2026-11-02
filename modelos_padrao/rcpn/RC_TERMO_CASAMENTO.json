@@ -12,11 +12,13 @@
     "documentos_apresentados",
     "frase_habilitacao",
     "frase_da_celebracao",
+    "frase_do_presidente",
     "regime_bens",
     "frase_dos_nomes",
     "filiacao1",
     "filiacao2",
     "frase_conversao",
+    "frase_presidente_assina",
     "testemunhas",
     "escrevente",
     "funcao_do_escrevente"

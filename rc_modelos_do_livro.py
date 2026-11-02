@@ -329,6 +329,15 @@ CAMPOS_CASAMENTO: tuple[dict, ...] = (
     campo("frase_conversao", "Conversão de união estável",
           ajuda="tem caminho e schema próprios no selador, e o número do "
                 "processo da união estável é obrigatório"),
+    campo("frase_do_presidente", "Quem presidiu o ato",
+          de_onde="`juiz_de_paz` do assento",
+          artigo="CC art. 1.536, caput; LRP art. 70, caput",
+          ajuda="«por FULANO, Juiz de Paz,» depois da data da celebração — decisão do oficial, "
+                "02/11/2026; **sai vazia** na conversão de união estável e sem juiz"),
+    campo("frase_presidente_assina", "O presidente do ato assina",
+          de_onde="`juiz_de_paz` do assento",
+          artigo="CC art. 1.536, caput; LRP art. 70, caput",
+          ajuda="«o presidente do ato, » antes dos nubentes, no fecho"),
     campo("testemunhas", "Testemunhas", exigido=True,
           artigo="art. 70 da Lei nº 6.015/1973, item 6; CC art. 1.534; "
                  "CN-MA art. 284, VI",
@@ -1688,6 +1697,7 @@ def valores_do_casamento(assento: dict, pessoas: list[dict], *,
     # o termo a diz junto de «foram declarados casados» (LD01).
     celebracao = data_do_termo(assento.get("data_fato"))
 
+    juiz = "" if frase_conversao else _texto(assento.get("juiz_de_paz"))
     return {
         "data_ato_extenso": data_do_termo(assento.get("data_ato")),
         "cidade_do_ato": _texto(sv.get("ri_cidade")),
@@ -1710,6 +1720,13 @@ def valores_do_casamento(assento: dict, pessoas: list[dict], *,
                                            por_papel.get("PAI_NUBENTE2"),
                                            CAMPOS_DOS_PAIS_NO_CASAMENTO),
         "frase_conversao": frase_conversao,
+        # QUEM PRESIDIU O ATO, NO TEXTO — decisão do oficial, 02/11/2026 (ensaio de atos, item 5). O
+        # assento é «assinado pelo presidente do ato» (CC art. 1.536, caput; LRP art. 70, caput), e o
+        # termo dizia só «foram declarados casados» e «assinam … os nubentes e as testemunhas»: o juiz de
+        # paz digitado aparecia apenas na linha de assinatura da folha. Sem juiz (a conversão de união
+        # estável, que não tem celebração; o acervo), as duas frases saem vazias e o texto é o de antes.
+        "frase_do_presidente": (" " + _frase("RC_TERMO_CASAMENTO__presidente", nome=juiz) if juiz else ""),
+        "frase_presidente_assina": (_frase("RC_TERMO_CASAMENTO__presidente_assina") + " " if juiz else ""),
         # AS TESTEMUNHAS QUALIFICADAS (LRP art. 70, 6º; CN-MA art. 284, VI —
         # LD01): o termo dava só os nomes.
         "testemunhas": _testemunhas_qualificadas(pessoas),

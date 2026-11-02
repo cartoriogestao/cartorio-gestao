@@ -24,6 +24,7 @@ import io
 import re
 import zipfile
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 
 import layout_ensaio as E
 import layout_semente_civil as S
@@ -67,11 +68,61 @@ class Saida:
 
 # ------------------------------------------------------------------ o que serve a tudo
 
+_DE_LINHA = frozenset({"strong", "b", "em", "i", "u", "span", "small", "sup", "sub"})
+
+
+class _SoTexto(HTMLParser):
+    """O texto da página, como o balcão lê: sem script e sem estilo, e com as entidades como estão.
+
+    LEITOR DE HTML, E NÃO EXPRESSÃO REGULAR (alerta #296 do CodeQL): `<script.*?</script>` não pega
+    `</script >` nem `</SCRIPT>`. A marca de dentro da linha (o nome em negrito) some sem deixar
+    espaço; a de bloco vira espaço."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.pedacos: list[str] = []
+        self.escondido = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("script", "style"):
+            self.escondido += 1
+        elif tag not in _DE_LINHA:
+            self.pedacos.append(" ")
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style"):
+            self.escondido = max(0, self.escondido - 1)
+        elif tag not in _DE_LINHA:
+            self.pedacos.append(" ")
+
+    def handle_startendtag(self, tag, attrs):
+        if tag not in _DE_LINHA:
+            self.pedacos.append(" ")
+
+    def handle_data(self, data):
+        if not self.escondido:
+            self.pedacos.append(data)
+
+    def handle_entityref(self, name):
+        if not self.escondido:
+            self.pedacos.append(f"&{name};")
+
+    def handle_charref(self, name):
+        if not self.escondido:
+            self.pedacos.append(f"&#{name};")
+
+    def handle_comment(self, data):
+        self.pedacos.append(" ")
+
+    def handle_decl(self, decl):
+        self.pedacos.append(" ")
+
+
 def _texto(html: str) -> str:
-    html = re.sub(r"<style.*?</style>|<script.*?</script>", " ", html or "", flags=re.S)
-    # A marca de dentro da linha (o nome em negrito) some sem deixar espaço; a de bloco vira espaço.
-    html = re.sub(r"</?(strong|b|em|i|u|span|small|sup|sub)\b[^>]*>", "", html)
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
+    leitor = _SoTexto()
+    leitor.feed(html or "")
+    leitor.close()
+    return re.sub(r"\s+", " ", "".join(leitor.pedacos)).strip()
 
 
 def _folha_em_branco(casa) -> str:

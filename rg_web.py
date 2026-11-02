@@ -54,6 +54,8 @@ import modelos_da_casa as MODELOS
 import notas_selo as NSELO
 import onrtdpj_api as ONR
 import rascunho_de_tela as RASC
+import rg_fiduciaria as FID
+import rg_normas as NORMAS
 import rg_registro as RG
 import rg_titulo as TIT
 import rg_titulo_fases as RGFASES
@@ -70,9 +72,6 @@ from storage import safe_component, save_upload
 
 # QUEM ENTRA. O mesmo trio das telas das atribuições — quem lavra ato no
 # balcão. `AUDITOR` fica de fora de propósito: ele consulta pela lista.
-import rg_fiduciaria as FID
-import rg_normas as NORMAS
-
 QUEM_OPERA = ("ADMIN", "MANAGER", "USER")
 
 # QUEM QUALIFICA E QUEM ENCERRA. **Qualificar é ato registral**, e o registro é

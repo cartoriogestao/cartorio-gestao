@@ -45,8 +45,8 @@
   <div class="panel-head"><span>Autuação</span><small>CN-MA art. 956, I</small></div>
   <table class="table">
     <tr><th>Protocolo</th><td>{{ p.protocolo or '—' }}, em {{ fmt_date(p.data_apresentacao) }}</td><th>Na Central</th><td>{{ p.protocolo_central or 'não informado' }}</td></tr>
-    <tr><th>Credor</th><td>{{ p.credor_nome }} {{ p.credor_documento or '' }}<br><small>{{ p.credor_contato or '' }}</small></td>
-        <th>Devedor</th><td>{{ p.devedor_nome }} {{ p.devedor_documento or '' }}<br><small>{{ p.devedor_email or '' }} {{ p.devedor_endereco or '' }}</small></td></tr>
+    <tr><th>Credor</th><td>{{ p.credor_nome }} {{ documento_na_tela(p.credor_documento) }}<br><small>{{ p.credor_contato or '' }}</small></td>
+        <th>Devedor</th><td>{{ p.devedor_nome }} {{ documento_na_tela(p.devedor_documento) }}<br><small>{{ p.devedor_email or '' }} {{ p.devedor_endereco or '' }}</small></td></tr>
     <tr><th>Bem</th><td>{{ p.bem_descricao }} {{ p.bem_identificacao or '' }}</td><th>Dívida</th><td>{{ reais(p.valor_centavos) or '—' }}</td></tr>
     <tr><th>Contrato</th><td>{{ p.contrato or '—' }}</td><th>Registro</th><td>{{ p.registro_numero or 'não registrado aqui' }}</td></tr>
   </table>

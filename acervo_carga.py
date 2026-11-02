@@ -3580,6 +3580,12 @@ def carregar_rcpj_rtd_livros(con: sqlite3.Connection, acervo: sqlite3.Connection
         if chave in titulos_ja:
             carga.repetidos += 1
             continue
+        # O PROTOCOLO NÃO INVENTA A APRESENTAÇÃO. Com a data da carga, o título entraria no
+        # livro como se tivesse chegado hoje. Medido no acervo desta casa: nenhum dos 72 é assim.
+        apresentado_em = _data(r["dtmData"])
+        if not apresentado_em:
+            carga.rejeitar(r["intChave"], "registro sem data: não entrou no Livro de Protocolo", dict(r))
+            continue
         apresentante = _txt(r["strApresentante"])
         if (normalizar_nome(apresentante) or "") == "apresentante":
             apresentante = None
@@ -3589,7 +3595,7 @@ def carregar_rcpj_rtd_livros(con: sqlite3.Connection, acervo: sqlite3.Connection
                    natureza, serie, situacao, registro_id, observacao, origem, origem_chave,
                    criado_em)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (4 if tipo == "TD" else 3, protocolo, _data(r["dtmData"]) or agora[:10], apresentante,
+            (4 if tipo == "TD" else 3, protocolo, apresentado_em, apresentante,
              _txt(r["strTipoInscricaoMatricula"]), "TD_B" if tipo == "TD" else "PJ_A",
              "REGISTRADO", registro_id,
              f"Trazido do E-Ofício. Protocolo geral {geral}." if geral else "Trazido do E-Ofício.",

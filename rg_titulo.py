@@ -163,8 +163,6 @@ SENTIDOS: dict[str, str] = {
     ENVIADO: "Enviado à Central",
 }
 
-# A entidade dos anexos. A tabela é a `attachments`, a mesma do expediente, da
-# tarefa, da prenotação do RI e do termo do RCPN — **não se cria a quinta**.
 # AS ESPÉCIES DE LANÇAMENTO DO PROTOCOLO. CN-MA art. 966, III. Em branco é resposta
 # enquanto ninguém qualificou: o art. 12 da Lei 6.015/1973 não deixa exigência nenhuma
 # segurar o protocolo.
@@ -174,6 +172,8 @@ ESPECIES_DE_LANCAMENTO: dict[str, str] = {
     "AVERBACAO": "Averbação",
 }
 
+# A entidade dos anexos. A tabela é a `attachments`, a mesma do expediente, da
+# tarefa, da prenotação do RI e do termo do RCPN — **não se cria a quinta**.
 ANEXO_DO_TITULO = "RG_TITULO"
 
 # Dez letras não é formalidade: é o mínimo para uma frase dizer alguma coisa.
@@ -740,8 +740,8 @@ def encerrar(con: sqlite3.Connection, titulo_id: int, *, situacao: str,
 
     anotacao = _texto(titulo["observacao"])
     anotacao = (anotacao + "\n" if anotacao else "") + f"{fim}: {razao}"
-    banco(con).escrever("UPDATE rg_titulos SET situacao=%s, observacao=%s WHERE id=%s",
-                        (fim, anotacao, int(titulo_id)))
+    banco(con).escrever("UPDATE rg_titulos SET situacao=%s, observacao=%s, encerrado_em=%s WHERE id=%s",
+                        (fim, anotacao, agora, int(titulo_id)))
     return {"titulo_id": int(titulo_id), "situacao": fim, "motivo": razao}
 
 

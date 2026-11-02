@@ -22,11 +22,9 @@ import rg_normas as NORMAS
 import rg_registro as RG
 import rg_titulo as TIT
 from ri_odt import gerar_odt, html_para_odf
+from rg_web import QUEM_OPERA, QUEM_QUALIFICA
 from ri_web import data_por_extenso
 from serventia import dados as dados_serventia
-
-QUEM_OPERA = ("ADMIN", "MANAGER", "USER")
-QUEM_QUALIFICA = ("ADMIN", "MANAGER")
 
 # As colunas de cada tipo de livro: a mesma lista desenha a tela e o papel.
 COLUNAS = {

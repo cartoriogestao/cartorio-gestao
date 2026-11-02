@@ -26,7 +26,7 @@
         <th>Série</th><td>{{ registro.serie }}</td></tr>
     <tr><th>Natureza</th><td>{{ registro.natureza or '—' }}</td>
         <th>Requerente</th><td>{{ registro.requerente_nome or '—' }}</td></tr>
-    <tr><th>Documento</th><td>{{ registro.requerente_documento or '—' }}</td>
+    <tr><th>Documento</th><td>{{ documento_na_tela(registro.requerente_documento) or '—' }}</td>
         <th>Origem</th><td>{{ registro.origem }}</td></tr>
   </table>
   {% if registro.atribuicao == 4 %}

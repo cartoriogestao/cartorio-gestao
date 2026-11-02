@@ -57,10 +57,12 @@ def test_valor_estranho_cai_em_nao_perguntado_e_nao_em_nao():
 # ------------------------------------------------ o que cada uma obriga
 
 
-def test_sao_as_quatro_do_e_oficio():
-    assert len(M.MARCAS) == 4
+def test_sao_as_quatro_do_e_oficio_e_o_testamento():
+    """As quatro caixas do E-Ofício e, desde o ensaio de atos (decisão do oficial, 02/11/2026), o
+    testamento: «se faleceu com testamento conhecido» (LRP art. 80, 6º) é pergunta para toda morte."""
+    assert len(M.MARCAS) == 5
     assert set(M.CHAVES) == {"obito_eleitor", "obito_possui_bens",
-                             "obito_possui_filho", "obito_desconhecido"}
+                             "obito_possui_filho", "obito_desconhecido", "obito_testamento"}
 
 
 def test_toda_marca_diz_o_que_obriga_e_por_que_importa():
@@ -89,9 +91,9 @@ def test_marca_que_nao_existe_recusa_dizendo_as_que_existem():
 # ------------------------------------------------ a leitura do assento
 
 
-def test_assento_vazio_tem_as_quatro_por_perguntar():
+def test_assento_vazio_tem_as_cinco_por_perguntar():
     faltam = M.o_que_falta_perguntar({})
-    assert len(faltam) == 4
+    assert len(faltam) == 5
 
 
 def test_responder_nao_tira_da_lista_de_por_perguntar():
@@ -100,7 +102,7 @@ def test_responder_nao_tira_da_lista_de_por_perguntar():
     a = {"obito_eleitor": "NAO"}
     faltam = [m["chave"] for m in M.o_que_falta_perguntar(a)]
     assert "obito_eleitor" not in faltam
-    assert len(faltam) == 3
+    assert len(faltam) == 4
 
 
 def test_obrigacoes_abertas_so_conta_as_que_obrigam_de_verdade():
@@ -138,7 +140,7 @@ def _banco() -> sqlite3.Connection:
              *[campos[c] for c in M.CHAVES]))
     por(1, "SEM NADA PERGUNTADO")
     por(2, "ELEITOR", obito_eleitor="SIM", obito_possui_bens="NAO",
-        obito_possui_filho="NAO", obito_desconhecido="NAO")
+        obito_possui_filho="NAO", obito_desconhecido="NAO", obito_testamento="NAO")
     por(3, "DO ACERVO", origem="EOFICIO")
     con.execute("INSERT INTO rc_assentos (id, especie, numero, nome, "
                 "data_ato, situacao, origem) VALUES "

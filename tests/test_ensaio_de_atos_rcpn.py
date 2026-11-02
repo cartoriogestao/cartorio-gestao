@@ -306,14 +306,23 @@ def test_o_termo_de_obito_diz_eleitor_bens_e_filhos(saidas, chave):
     assert re.search(r"Deixou os filhos|Não deixou filhos", t)
 
 
-@pytest.mark.parametrize("chave", [pytest.param(c, marks=_defeito(
-    "o testamento é texto livre: em branco, o termo cala («se faleceu com testamento conhecido», LRP art. 80, "
-    "6º, tem de ser dito); com «não», sai «Deixou testamento conhecido: NAO»")) for c in
-    ("obito_sem_bens", "obito_crianca", "obito_bebe")])
-def test_o_termo_de_obito_diz_se_havia_testamento(saidas, chave):
+@pytest.mark.parametrize("chave, frase", [
+    ("obito_padrao", "Deixou testamento conhecido: lavrado no Tabelionato de Cidade Exemplo."),
+    ("obito_sem_bens", "Não deixou testamento conhecido."),
+    ("obito_bebe", "Não deixou testamento conhecido."),
+    ("obito_crianca", "o declarante ignorava: deixou testamento conhecido"),
+])
+def test_o_termo_de_obito_diz_se_havia_testamento(saidas, chave, frase):
+    """LRP art. 80, 6º; CN-MA art. 255, VII e § 1º. O testamento é pergunta (decisão do oficial,
+    02/11/2026; item 4): sim, não, ou o declarante ignorava."""
     t = _s(saidas, chave).termo
-    assert re.search(r"Não deixou testamento|Não se conhece testamento|testamento conhecido", t)
+    assert frase in t, t
     assert not re.search(r"testamento conhecido: (NAO|N[ÃA]O)\b", t, re.I)
+
+
+@pytest.mark.parametrize("chave, valor", [("obito_padrao", "lavrado no Tabelionato"), ("obito_sem_bens", "NÃO")])
+def test_a_certidao_de_obito_diz_o_testamento_que_o_termo_declara(saidas, chave, valor):
+    assert re.search(rf"TESTAMENTO CONHECIDO {valor}", _s(saidas, chave).certidao)
 
 
 def test_a_idade_do_bebe_nao_sai_em_zero_anos(saidas):

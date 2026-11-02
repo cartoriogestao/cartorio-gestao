@@ -4689,8 +4689,41 @@ def _ouro_com_as_mudancas_explicadas(grupo: str, funcoes: dict) -> dict:
             assert _LT01_ANTES in antes, nome
             novo = json.loads(antes.replace(_LT01_ANTES, _LT01_DEPOIS))
         saida[nome] = novo
-    return _filha_no_ouro(grupo, _sem_casamento_dos_pais_no_ouro(grupo, _hab22_no_ouro(
-        grupo, _ld22_no_ouro(grupo, _lh05_no_ouro(grupo, _ld01_no_ouro(grupo, saida))))))
+    return _testamento_no_ouro(grupo, _filha_no_ouro(grupo, _sem_casamento_dos_pais_no_ouro(
+        grupo, _hab22_no_ouro(grupo, _ld22_no_ouro(grupo, _lh05_no_ouro(grupo, _ld01_no_ouro(grupo, saida)))))))
+
+
+# ------------------------------- 02/11/2026 — o testamento é pergunta, como as outras marcas do óbito
+#
+#   Decisão do oficial (ensaio de atos, item 4): `obito_testamento` é a quinta marca de
+#   `rc_marcas_do_obito`. Mudam, e só por isso:
+#     - as saídas em que nada se perguntou: o testamento entra na lista do que o declarante ignorava;
+#     - as montadas com `NAO4` (todas as marcas «NÃO», que agora inclui o testamento): o «NÃO» vence o
+#       texto, e o termo diz «Não deixou testamento conhecido.»;
+#     - a varredura do óbito: sem a quinta marca, ela volta ao ouro (conferido ao gravar esta troca).
+_NADA_PERGUNTADO = ("ign.none", "ign.tres", "ob.montado.nada_perguntado", "ob.valores.nada_perguntado")
+_COM_NAO4 = ("ob.valores.cheio_nao", "ob.montado.cheio_nao", "ob.valores.com_documento",
+             "ob.valores.desconhecido_com_documento")
+_VARRE_OBITO_COM_O_TESTAMENTO = {"ok": {"erros": 0, "n": 2244, "sha256": (
+    "e225398b5f651e1c427832de15cf31a643383a54a1b0ecb1e100e8c5ee6a25e4")}}
+
+
+def _testamento_no_ouro(grupo: str, saida: dict) -> dict:
+    import json as _json
+    if grupo != "termos":
+        return saida
+    saida = dict(saida)
+    for nome in _NADA_PERGUNTADO + _COM_NAO4:
+        texto = _json.dumps(saida[nome], ensure_ascii=False)
+        if nome in _NADA_PERGUNTADO:
+            texto = texto.replace("deixou bens e deixou filhos",
+                                  "deixou bens, deixou filhos e deixou testamento conhecido")
+        else:
+            texto = texto.replace("Deixou testamento conhecido: lavrado no Tabelionato de Exemplo.",
+                                  "Não deixou testamento conhecido.")
+        saida[nome] = _json.loads(texto)
+    saida["varre.obito"] = _VARRE_OBITO_COM_O_TESTAMENTO
+    return saida
 
 
 # ------------------------------- 02/11/2026 — o casamento dos pais saiu do termo de nascimento

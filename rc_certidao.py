@@ -742,8 +742,13 @@ def montar_teor(*, assento: dict, pessoas_do_assento: list[dict],
         linhas += _linha("SEPULTAMENTO OU CREMAÇÃO",
                          a.get("local_sepultamento")
                          or dados.get("strLocalSepultamento"))
-        linhas += _linha("TESTAMENTO CONHECIDO",
-                         a.get("testamento") or dados.get("strTestamento"))
+        # A RESPOSTA À PERGUNTA DO TESTAMENTO MANDA no «NÃO» (ensaio de atos, item 4, 02/11/2026); no
+        # «SIM», vale o que o identifica, quando houver.
+        testamento = (marca_no_papel(a.get("obito_testamento"))
+                      if str(a.get("obito_testamento") or "").strip().upper() == "NAO" else
+                      a.get("testamento") or dados.get("strTestamento")
+                      or marca_no_papel(a.get("obito_testamento")))
+        linhas += _linha("TESTAMENTO CONHECIDO", testamento)
         if especie == "OBITO":
             # O QUE O TERMO DECLARA, A CERTIDÃO DIZ — LD01, 21/10/2026. Se
             # era eleitor, se deixou bens e os filhos (LRP art. 80, 7º, 10º e

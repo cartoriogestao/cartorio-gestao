@@ -198,6 +198,22 @@ def test_a_certidao_de_nascimento_traz_a_naturalidade_que_o_balcao_declarou(said
     assert "NATURALIDADE Cidade Exemplo/MA" in s.certidao, s.certidao[:600]
 
 
+@pytest.mark.parametrize("chave, trecho", [
+    ("nasc_padrao", "Lido e achado conforme, a declarante assina."),
+    ("nasc_tardio", "a identidade da registrada"),
+    ("cas_divorciado", "tendo sido casada com JOSE EXEMPLO ANTERIOR"),
+])
+def test_o_termo_nao_escreve_o_a_de_quem_tem_sexo_conhecido(saidas, chave, trecho):
+    """Ensaio de atos, item 11 (02/11/2026): o «(a)» da peça concorda com a pessoa de quem ela fala."""
+    t = _s(saidas, chave).termo
+    assert trecho in t and "(a)" not in t, t
+
+
+def test_o_breve_relato_escreve_o_cpf_com_os_pontos(saidas):
+    """Ensaio de atos, item 11: «CPF 00000000191» no teor, «000.000.001-91» no papel."""
+    assert "CPF 000.000.001-91" in _s(saidas, "nasc_padrao").certidao
+
+
 CASADOS = ["nasc_padrao", "nasc_gemeo", "nasc_domicilio", "nasc_tardio", "nasc_pais_estrangeiros",
            "nasc_declarante_avo"]
 

@@ -115,13 +115,14 @@ não. O acervo da casa escreve «filho de» para menina na maioria dos termos (c
 o modelo segue a casa, e a prévia diverge do papel. Decisão: o termo concorda, ou a prévia volta a dizer
 «filho».
 
-### 11. Pequenos de forma — FORMA
-- «o(a) declarante assina», «tendo sido casado(a) com», «MM. Juiz(a)», «a identidade do(a)
-  registrado(a)»: o sexo de cada um é conhecido.
-- O fecho do breve relato repete a cidade: «Ofício Único de Cidade Exemplo/MA, Cidade Exemplo/MA, 2 de
-  novembro de 2026.»
-- O breve relato de nascimento põe o pai antes da mãe (`FILIAÇÃO: Mario Exemplo e Beatriz Exemplo`) e o
-  papel, a mãe antes; o CPF sai sem pontos no teor e com eles no papel.
+### 11. Pequenos de forma — FORMA · CONSERTADO (02/11/2026)
+- «o(a) declarante assina», «tendo sido casado(a) com», «, casado(a) com» (Livro E) e «a identidade do(a)
+  registrado(a)» concordam com o sexo da pessoa (`rc_modelos_do_livro.concordar_a_peca`; o declarante,
+  pela regra da prévia). O CPF que o breve relato escrevia sem pontos sai «000.000.001-91», como no papel.
+- **Não era defeito, revisto**: a cidade «repetida» no fecho do breve relato é a forma «{serventia},
+  {cidade/UF}, {data}» — só parece repetida porque o nome da serventia de ensaio termina na cidade; e o pai
+  antes da mãe na FILIAÇÃO do breve relato é o leiaute medido nas 145 certidões da casa (o papel, molde
+  do CNJ, põe a mãe antes). «MM. Juiz(a)» fica: o sexo do juiz não é dado do assento.
 
 ### 12. Atos sem tela — SEM TELA
 Casamento por procuração (CC art. 1.542), nuncupativo (CC arts. 1.540 e 1.541), alteração de prenome e

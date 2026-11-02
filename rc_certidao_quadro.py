@@ -316,9 +316,12 @@ def _quadro_casamento(a, quem, dados, do_fato, dma_fato) -> dict:
 
 
 def _quadro_obito(a, quem, dados, do_fato, dma_fato) -> dict:
-    nasc = RCE._de(quem, "FALECIDO", "data_nascimento", dados)
+    # O TITULAR DO NATIMORTO é o REGISTRADO, e não o FALECIDO: lido do papel errado, o sexo que o termo
+    # declara saía em branco no papel (ensaio de atos, 01/11/2026).
+    titular = "REGISTRADO" if str(a.get("especie") or "").upper() == "NATIMORTO" else "FALECIDO"
+    nasc = RCE._de(quem, titular, "data_nascimento", dados)
     nat, nat_uf = _cidade_uf(RCE._lugar_da_pessoa(
-        quem, "FALECIDO", "naturalidade_cidade", "naturalidade_uf", dados,
+        quem, titular, "naturalidade_cidade", "naturalidade_uf", dados,
         "strMunicipioNaturalidade", "strUFNaturalidade"))
     local = str(a.get("local_fato_nome") or dados.get("strNomeLocalObito")
                 or "").strip()
@@ -338,14 +341,14 @@ def _quadro_obito(a, quem, dados, do_fato, dma_fato) -> dict:
         "municipio_falecimento": mun,
         "municipio_falecimento_uf": mun_uf,
         "sexo": RCE._sexo_por_extenso(
-            RCE._de(quem, "FALECIDO", "sexo", dados, "strSexo")),
-        "estado_civil": RCE._de(quem, "FALECIDO", "estado_civil", dados,
+            RCE._de(quem, titular, "sexo", dados, "strSexo")),
+        "estado_civil": RCE._de(quem, titular, "estado_civil", dados,
                                 "strEstadoCivil"),
         # O QUE A LAVRATURA DESTA CASA GRAVA EM COLUNA — LT01, 20/10/2026. O
         # quadro só lia o blob do acervo (`dados_json`), e o papel do óbito
         # lavrado aqui saía com cônjuge, bens e filhos em branco, que o termo
         # declara (LRP art. 80, 4º, 7º e 10º). O acervo continua mandando.
-        "conjuge": RCE._de(quem, "FALECIDO", "nome_pos", dados,
+        "conjuge": RCE._de(quem, titular, "nome_pos", dados,
                            "strNomeConjuge") or dados.get("strNomeConjuge")
                    or str(a.get("obito_conjuge_nome") or "").strip(),
         "idade": RCE._idade_no_obito(nasc, a.get("data_fato"))

@@ -815,6 +815,17 @@ def test_a_certidao_de_natimorto_sai_em_papel(balcao):
     assert "NASCIDO VIVO" not in papel
 
 
+def test_a_certidao_de_natimorto_traz_o_sexo_que_o_termo_declara(balcao):
+    """LRP art. 53, § 1º («com os elementos que couberem») e art. 54, 2º. O ensaio de atos
+    (01/11/2026) lavrou o natimorto «do sexo Masculino» e a certidão disse «SEXO ND», e o papel deixou a
+    caixa em branco: as duas liam o FALECIDO, e o titular do natimorto é o REGISTRADO."""
+    assento, ato, _ = _lavrar(balcao, "NATIMORTO", _form_natimorto(), folha=FOLHAS[2])
+    assert "do sexo Masculino" in _termo(balcao, assento["id"])
+    cert, _ = _emitir(balcao, assento["id"], folha_seguranca=FOLHAS[2])
+    assert re.search(r"SEXO\s+MASCULINO", cert["teor"]), cert["teor"]
+    assert "MASCULINO" in _confere_o_papel_da_certidao(balcao, cert["id"], selo=ato["selo"])
+
+
 # ================================================== casamento e habilitação
 
 

@@ -11,13 +11,15 @@ from flask import flash, redirect, render_template, request, url_for
 
 import rg_doi as RDOI
 import rg_fiduciaria as FID
+import rg_livros as RGL
 import rg_titulo as TIT
+from rg_web import QUEM_OPERA, QUEM_QUALIFICA
 from ri_schema import eh_dia_util, ler_feriados_locais
 from ri_web import data_por_extenso
 from serventia import dados as dados_serventia
 
-QUEM_OPERA = ("ADMIN", "MANAGER", "USER")
-QUEM_DECIDE = ("ADMIN", "MANAGER")
+# Quem decide no processo é quem qualifica o título: a mesma regra, num lugar só.
+QUEM_DECIDE = QUEM_QUALIFICA
 
 # As ações que decidem o processo são do oficial; o balcão lança o que aconteceu.
 ACOES_DO_OFICIAL = {"qualificar", "conhecer", "decidir", "concluir", "extinguir", "desistir"}
@@ -104,7 +106,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             situacao=FID.SITUACOES.get(p["situacao"], p["situacao"]), requisitos=FID.REQUISITOS,
             providencias=FID.PROVIDENCIAS, providencias_feitas=feitas, formas=FID.FORMAS_DE_NOTIFICAR,
             resultados=FID.RESULTADOS_DA_DILIGENCIA, pecas=FID.pecas_disponiveis(p, eventos),
-            pendentes=FID.averbacoes_pendentes(p, eventos), reais=FID.reais, fmt_date=fmt_date)
+            pendentes=FID.averbacoes_pendentes(p, eventos), reais=FID.reais, fmt_date=fmt_date,
+            documento_na_tela=RGL.documento_na_tela)
 
     @app.route("/rcpj-rtd/fiduciaria/<int:proc_id>/acao", methods=["POST"])
     @roles_required(*QUEM_OPERA)

@@ -168,6 +168,112 @@ def test_titulo_encerrado_nao_fica_pendente(con):
     assert RGL.pendentes_ao_fim_do_dia(con, TIT.RTD, HOJE) == []
 
 
+# ------------------------------------------------- o termo de um dia passado
+
+D1, D2, D3, D4 = "2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23"
+
+
+def _pendentes(con, dia):
+    return {p["numero"]: p["motivo"] for p in RGL.pendentes_ao_fim_do_dia(con, TIT.RTD, dia)}
+
+
+def _registrado_em(con, feito, dia, serie="TD_B"):
+    """O título que virou registro naquele dia: o ato é o que diz quando ele saiu."""
+    bd = banco(con)
+    r = _registro(con, serie=serie, numero=feito["titulo_id"] + 100)
+    bd.escrever("UPDATE rg_registros SET titulo_id=%s WHERE id=%s", (feito["titulo_id"], r))
+    bd.escrever("INSERT INTO rg_atos(registro_id, tipo, data_ato, origem, origem_chave, criado_em) "
+                "VALUES (%s,'REGISTRO',%s,'TESTE',%s,%s)", (r, dia, f"a:{r}", AGORA))
+    bd.escrever("UPDATE rg_titulos SET situacao=%s, registro_id=%s WHERE id=%s",
+                (TIT.REGISTRADO, r, feito["titulo_id"]))
+
+
+def test_o_termo_de_um_dia_passado_ve_o_titulo_que_foi_registrado_depois(con):
+    """Era o defeito: registrado hoje, sumia do termo de ontem, e o livro dizia que não havia pendência."""
+    feito = _titulo(con, data_apresentacao=D1)
+    _registrado_em(con, feito, D3)
+    assert _pendentes(con, D1) == {feito["numero_ordem"]: "aguarda qualificação"}
+    assert _pendentes(con, D2) == {feito["numero_ordem"]: "aguarda qualificação"}
+    assert _pendentes(con, D3) == {}, "no dia do registro ele já saiu"
+    assert "n. " in RGL.frase_dos_pendentes(con, "TD_PROTOCOLO", D2)
+    assert "Não há título" in RGL.frase_dos_pendentes(con, "TD_PROTOCOLO", D3)
+
+
+def test_o_motivo_e_o_daquele_dia_e_nao_o_de_hoje(con):
+    feito = _titulo(con, data_apresentacao=D1)
+    tid, numero = feito["titulo_id"], feito["numero_ordem"]
+    TIT.qualificar(con, tid, resultado=TIT.NEGATIVA, exigencias="Trazer o original assinado.", prazo_ate=D4,
+                   data_qualificacao=D2, agora=AGORA, usuario="mario")
+    TIT.qualificar(con, tid, resultado=TIT.POSITIVA, data_qualificacao=D3, agora=AGORA, usuario="mario")
+    assert _pendentes(con, D1)[numero] == "aguarda qualificação"
+    assert _pendentes(con, D2)[numero] == "com exigência: Trazer o original assinado."
+    assert _pendentes(con, D3)[numero] == "qualificado, aguarda a lavratura"
+    assert RGL.motivo_da_pendencia(con, TIT.um(con, tid)) == "qualificado, aguarda a lavratura"
+
+
+def test_o_titulo_devolvido_saiu_no_dia_em_que_foi_devolvido(con):
+    feito = _titulo(con, data_apresentacao=D1)
+    TIT.encerrar(con, feito["titulo_id"], situacao=TIT.DEVOLVIDO, motivo="Devolvido a pedido do apresentante.",
+                 agora=f"{D3}T10:00:00", usuario="mario")
+    assert feito["numero_ordem"] in _pendentes(con, D2)
+    assert _pendentes(con, D3) == {}
+
+
+def test_o_sobrestamento_so_explica_os_dias_em_que_valeu(con):
+    feito = _titulo(con, data_apresentacao=D1)
+    tid, numero = feito["titulo_id"], feito["numero_ordem"]
+    tipo = next(iter(TIT.SOBRESTAR_POR))
+    TIT.sobrestar(con, tid, tipo=tipo, motivo="Sobrestado por ordem de ensaio.", agora=f"{D2}T10:00:00", usuario="mario")
+    assert _pendentes(con, D1)[numero] == "aguarda qualificação"
+    assert _pendentes(con, D2)[numero].startswith("sobrestado")
+    TIT.retomar(con, tid, forma=next(iter(TIT.RETOMAR_POR)), motivo="Retomado por requerimento no ensaio.",
+                agora=f"{D3}T10:00:00", usuario="mario")
+    assert _pendentes(con, D2)[numero].startswith("sobrestado"), "o fim não apaga o que valeu"
+    assert _pendentes(con, D3)[numero] == "aguarda qualificação"
+
+
+def test_titulo_antigo_sem_dia_de_saida_nao_entra_como_pendente(con):
+    """O título do acervo é memória: sem ato nem dia gravado, o termo não afirma que ele estava pendente."""
+    feito = _titulo(con, data_apresentacao=D1)
+    banco(con).escrever("UPDATE rg_titulos SET situacao=%s WHERE id=%s", (TIT.REGISTRADO, feito["titulo_id"]))
+    assert _pendentes(con, D2) == {}
+    banco(con).escrever("UPDATE rg_titulos SET situacao=%s WHERE id=%s", (TIT.CANCELADO, feito["titulo_id"]))
+    assert _pendentes(con, D2) == {}
+
+
+def test_o_ato_antigo_do_registro_nao_diz_quando_o_titulo_de_averbacao_saiu(con):
+    feito = _titulo(con, data_apresentacao=D2)
+    bd = banco(con)
+    r = _registro(con, numero=148)
+    bd.escrever("INSERT INTO rg_atos(registro_id, tipo, data_ato, origem, origem_chave, criado_em) "
+                "VALUES (%s,'REGISTRO','2020-01-01','TESTE','a:antigo',%s)", (r, AGORA))
+    bd.escrever("INSERT INTO rg_atos(registro_id, tipo, data_ato, origem, origem_chave, criado_em) "
+                "VALUES (%s,'AVERBACAO',%s,'TESTE','a:novo',%s)", (r, D4, AGORA))
+    bd.escrever("UPDATE rg_titulos SET situacao=%s, registro_id=%s WHERE id=%s", (TIT.REGISTRADO, r, feito["titulo_id"]))
+    assert feito["numero_ordem"] in _pendentes(con, D3)
+    assert _pendentes(con, D4) == {}
+
+
+# ------------------------------------------------------- a busca dos livros de atos
+
+
+def test_a_busca_nas_abas_de_atos_ignora_acento_e_caixa(con):
+    r = _registro(con, requerente="João da Conceição")
+    banco(con).escrever("INSERT INTO rg_atos(registro_id, tipo, data_ato, origem, origem_chave, criado_em) "
+                        "VALUES (%s,'REGISTRO',%s,'TESTE','a:busca',%s)", (r, D1, AGORA))
+    for procura in ("Joao", "JOÃO", "conceicao"):
+        assert RGL.atos_do_livro(con, "TD_B", busca=procura)["total"] == 1, procura
+    assert RGL.atos_do_livro(con, "TD_B", busca="Maria")["total"] == 0
+
+
+# ------------------------------------------------------- o documento na tela
+
+
+def test_o_documento_sai_como_se_le():
+    assert RGL.documento_na_tela("00000000191") == "000.000.001-91"
+    assert RGL.documento_na_tela(None) == "" and RGL.documento_na_tela("") == ""
+
+
 # -------------------------------------------------------------- os indicadores
 
 
@@ -318,6 +424,17 @@ def test_a_carga_e_repetivel_e_nao_toma_numero(con):
     assert bd.valor("SELECT COUNT(*) n FROM nu_lugares") == 0
     linha = RGL.linhas_do_protocolo(con, TIT.RTD)[0]
     assert (linha["numero"], linha["situacao"], linha["apresentante"]) == (1475, "REGISTRADO", None)
+
+
+def test_a_carga_nao_inventa_a_data_da_apresentacao(con):
+    _registros_do_acervo(con)
+    acervo = _acervo()
+    acervo.execute("UPDATE tbRegistroTD SET dtmData=NULL WHERE intChave=1")
+    carga = AC.carregar_rcpj_rtd_livros(con, acervo, agora=AGORA)
+    assert carga.inseridos == 1 and len(carga.rejeitados) == 1
+    assert banco(con).valor("SELECT COUNT(*) n FROM rg_titulos WHERE data_apresentacao=%s", (AGORA[:10],)) == 0
+    # O registro sem data continua com as partes: elas não dependem do Protocolo.
+    assert carga.contagens["partes no indicador"] == 1
 
 
 def test_a_carga_esta_nas_duas_listas():

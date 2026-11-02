@@ -483,7 +483,10 @@ def test_n_nao_abre_o_novo_de_quem_esta_digitando(tela, servidor):
 
 def test_o_filtro_do_novo_esconde_o_que_nao_casa(tela):
     tela.keyboard.press("n")
+    # O Novo põe o cursor no filtro ao abrir. Numa máquina ocupada isso leva um instante, e a letra de antes se perde.
+    tela.wait_for_selector("[data-cg-novo-filtro]:focus")
     tela.keyboard.type("procur")
+    tela.wait_for_function("[...document.querySelectorAll('[data-cg-novo-item]')].some(e => e.offsetParent === null)")
     visiveis = tela.locator("[data-cg-novo-item]:visible")
     assert 1 <= visiveis.count() < tela.locator("[data-cg-novo-item]").count()
     for i in range(visiveis.count()):

@@ -9871,6 +9871,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                                 registro_id=registro_id)
                          if registro["serie"] == "PJ_A" else [])
         return render_template("atrib_registro_ficha.html",
+                               documento_na_tela=RGL.documento_na_tela,
                                partes=partes, bens=bens, parecidos=parecidos,
                                doi=doi_do_registro, operacoes_doi=TIPO_OPERACAO_DOI,
                                reais_doi=lambda c: (f"{int(c) / 100:.2f}".replace(".", ",") if c else ""),

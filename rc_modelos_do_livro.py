@@ -1423,7 +1423,17 @@ def montar_do_assento(assento: dict, pessoas: list[dict],
     tela mostrar os dois caminhos com o mesmo código.
     """
     valores = valores_do_assento(assento, pessoas, **kw)
-    return montar_do_formulario("NASCIMENTO", valores, texto)
+    r = montar_do_formulario("NASCIMENTO", valores, texto)
+    # «SENDO FILHA DE» PARA A REGISTRADA — decisão do oficial, 02/11/2026 (ensaio de atos, item 10): o
+    # termo concorda com o sexo, como a prévia já fazia. Antes, só a prévia (`modelos_motor_termo`)
+    # trocava, e o livro e o inteiro teor saíam «nasceu uma criança do sexo Feminino … sendo filho de».
+    # A troca é a mesma regra da prévia, sobre o texto montado: vale também para o corpo que a casa
+    # editou. O natimorto se lavra por este modelo, e concorda igual.
+    from modelos_motor_termo import corrigir_genero_do_principal
+    registrado = next((p for p in pessoas or [] if str(p.get("papel") or "").upper() == "REGISTRADO"), {})
+    genero = _texto(registrado.get("sexo")).upper()[:1]
+    r["texto"], _ = corrigir_genero_do_principal(r["texto"], "NASCIMENTO", genero)
+    return r
 
 
 # ============================================================ CPF e 1o registro

@@ -92,6 +92,9 @@ o LD01 (21/10/2026, «corrija tudo») consertou: o `xfail` saiu e o teste passa.
 | nomes das testemunhas (pelo menos duas; quatro ou sete nos casos do CN-MA art. 277) | LRP art. 70, 6º e parágrafo único; CC art. 1.534 | ✓ no modelo [cas.testemunhas_nomes] · ✓ LD01 na tela: a 2ª gaveta (`test_o_casamento_registra_as_duas_testemunhas`) |
 | nacionalidade, profissão, domicílio e residência das testemunhas | LRP art. 70, 6º; CN-MA art. 284, VI | ✓ LD01 [cas.testemunhas_qualificacao] |
 | regime de bens, com data e cartório do pacto antenupcial | LRP art. 70, 7º; CN-MA art. 284, VII | ✓ [cas.regime_e_pacto] |
+| regime convencional (comunhão universal, separação convencional, participação final) só com pacto em escritura | CC art. 1.640, parágrafo único, e art. 1.653; CC art. 1.536, VII | ✓ ensaio de atos (01/11/2026) — a conferência TRAVA sem a data ou a serventia do pacto (`rc_conferencia_dados`, `REGIME_SEM_PACTO`; casamento de antes da Lei 6.515/1977 não) |
+| idade núbil: ninguém casa antes dos 16; de 16 a 18, com autorização | CC arts. 1.517, 1.519 e 1.520 (Lei 13.811/2019) | ✓ ensaio de atos — TRAVA abaixo de 16 (`SEM_IDADE_NUBIL`, da Lei 13.811/2019 em diante); AVISA de 16 a 18 (`NUBENTE_MENOR`): a tela não tem onde dizer a autorização |
+| maior de 70: separação obrigatória, salvo pacto em escritura | CC art. 1.641, II; STF Tema 1.236 | ✓ ensaio de atos — AVISA (`REGIME_DO_MAIOR_DE_70`) |
 | nomes que os cônjuges passam a ter | LRP art. 70, 8º; CN-MA art. 284, VIII | ✓ [cas.nome_adotado] |
 | filhos havidos de matrimônio anterior; impressão digital de quem não assina | LRP art. 70, 9º e 10º | conferir — o CN-MA art. 284 os omite; o modelo não os tem |
 | leitura e assinaturas do presidente, cônjuges, testemunhas e oficial | LRP art. 70, caput; CN-MA art. 282 | ✓ [cas.encerramento] |

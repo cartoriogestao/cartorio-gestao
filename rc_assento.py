@@ -956,6 +956,29 @@ CAMPOS_DA_PESSOA: tuple[str, ...] = (
 # recusado - antes virava uma testemunha com o nome do registrado.
 PAPEIS_TITULARES: frozenset = frozenset({"REGISTRADO", "FALECIDO"})
 
+# QUEM AGE NO REGISTRO, E NÃO NO FATO, NASCE ANTES DO REGISTRO — e pode ter nascido depois do fato.
+#
+#   O ensaio de atos (01/11/2026, pedido do oficial) recusou pela tela dois atos que o balcão faz: o
+#   nascimento tardio de 1990 com uma testemunha de 30 anos, que conhece a registrada adulta (CN-MA
+#   art. 249: as testemunhas atestam a IDENTIDADE dela), e o óbito de 1985 declarado pelo neto. A régua
+#   era a data do fato para todo mundo. Os pais, os avós, os nubentes e as testemunhas do casamento e
+#   do óbito (que presenciaram o fato — CC art. 1.534; LRP art. 77) continuam nela; o declarante, e no
+#   nascimento as testemunhas DO ASSENTO (LRP art. 54, 9º), passam a ter a do registro.
+PAPEIS_DO_REGISTRO: frozenset = frozenset({"DECLARANTE"})
+PAPEIS_DO_REGISTRO_NO_NASCIMENTO: frozenset = frozenset({"TESTEMUNHA", "TESTEMUNHA2"})
+
+
+def limite_do_nascimento(papel: Any, especie: Any, data_fato: Any, data_ato: Any) -> str | None:
+    """A data depois da qual a pessoa daquele papel não pode ter nascido (AAAA-MM-DD). Só calcula."""
+    papel = str(papel or "").strip().upper()
+    especie = str(especie or "").strip().upper()
+    fato, ato = (str(d)[:10] if d else None for d in (data_fato, data_ato))
+    do_registro = papel in PAPEIS_DO_REGISTRO or (
+        especie in ("NASCIMENTO", "NATIMORTO") and papel in PAPEIS_DO_REGISTRO_NO_NASCIMENTO)
+    if do_registro:
+        return ato or fato
+    return min([d for d in (fato, ato) if d], default=None)
+
 
 def registrar_pessoa(con: Any, assento_id: int, *,
                      papel: str, especie: Any = None, agora: str,
@@ -1000,8 +1023,7 @@ def registrar_pessoa(con: Any, assento_id: int, *,
     valores["nome"] = nome
 
     nascimento = valores.get("data_nascimento")
-    limite = min([d for d in (linha["data_fato"], linha["data_ato"]) if d],
-                 default=None)
+    limite = limite_do_nascimento(papel, especie, linha["data_fato"], linha["data_ato"])
     if nascimento and limite and str(nascimento)[:10] > str(limite)[:10]:
         raise RcError(
             f"A data de nascimento ({nascimento}) é posterior ao próprio ato "

@@ -169,7 +169,6 @@
         <div class="cg-pop cg-pop-sino" role="dialog" aria-label="Avisos e pendências">
           <div class="cg-pop-t"><strong>Avisos e pendências</strong></div>
           <div class="cg-sino-corpo" data-cg-sino-corpo>
-            {% include '_barras_fixas.html' %}
             {% include '_faixas_compactas.html' %}
             {% if nu_avisos_modal %}
             {% set mod = nu_avisos_modal %}
@@ -192,6 +191,11 @@
     {% endif %}
 
     <main class="cg-rolagem" id="conteudo" tabindex="-1">
+      {# AS BARRAS VERMELHAS FICAM À VISTA, e não no sino (01/11/2026). São a decisão do oficial de
+         19/10/2026 — «a janela de avisos tem sido ignorada pelos escreventes» —: sem botão de fechar,
+         no fluxo da página, antes do título, como na moldura antiga. Dentro do sino, só via quem
+         clicava, e era o que ela existe para impedir. As faixas que se fecham continuam no sino. #}
+      {% include '_barras_fixas.html' %}
       <header class="topbar cg-titulo">
         <div class="page-heading">{% block heading %}{% endblock %}</div>
       </header>
@@ -231,6 +235,11 @@
     {% if ajuda_tela %}{% include '_ajuda.html' %}{% endif %}
     {% if agente_na_tela %}{% include '_agente.html' %}{% endif %}
   </aside>
+
+  {# A JANELA DE PENDÊNCIAS ABRE SOZINHA também aqui (decisão do oficial, 01/11/2026): o aviso
+     crítico, o importante e a tarefa vencida aparecem por cima da tela ao entrar, como na moldura
+     antiga, e não só no sino. O script (`nu_avisos_modal.js`) já vinha nesta página. #}
+  {% include '_nu_avisos_modal.html' %}
 
   {# A BUSCA: índice do que esta pessoa pode ver e fazer, montado no servidor. São links e
      formulários de verdade, e o script só os aciona: nenhum endereço sai da página para

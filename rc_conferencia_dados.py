@@ -29,7 +29,8 @@ DUAS GRAVIDADES, E A FRONTEIRA É A OBJETIVIDADE
     BLOQUEIA — o dado contradiz a si mesmo e não há leitura em que esteja
       certo: marca de rascunho no termo, mãe com sexo masculino, testemunha que
       é o registrado, DNV do campo diferente da DNV do termo, CPF que não fecha
-      o dígito, data de nascimento depois do fato. (A matrícula com dígito
+      o dígito, data de nascimento depois do fato, casamento em regime
+      convencional sem pacto ou de nubente sem idade núbil. (A matrícula com dígito
       errado só avisa: a digitada manda, e a composta nunca erra.)
       `lavrar_assento` recusa, com a lista em português de balcão.
     AVISA — pode estar certo e merece olho humano: avós cujo sobrenome não
@@ -384,6 +385,88 @@ def conferir(dados: dict) -> list[dict]:
                     f"{ROTULO['PAI' if lado == 'MAE' else 'MAE']} ({outro['nome']}), e "
                     f"não o do(a) {ROTULO[lado]} ({genitor['nome']}). Confira o lado.",
                     papel))
+
+    # 6. O CASAMENTO QUE O CÓDIGO CIVIL NÃO ADMITE — o ensaio de atos (01/11/2026, pedido do oficial:
+    # «antecipar os problemas antes de encontrar na prática») lavrou os três pela tela, sem aviso.
+    if especie in ("CASAMENTO", "CASAMENTO_RELIGIOSO"):
+        probs += _o_casamento_que_o_codigo_civil_nao_admite(dados, por_papel, fato)
+    return probs
+
+
+# A FORMA DO REGIME É DA LEI DE CADA ÉPOCA, E POR ISSO AS DATAS. Antes da Lei 6.515/1977 a comunhão
+# universal era o regime legal e dispensava pacto; antes da Lei 13.811/2019 o menor de 16 casava com
+# suprimento judicial. O balcão ainda transporta casamento antigo, e a régua de hoje não vale para ele.
+DESDE_O_REGIME_LEGAL_DA_COMUNHAO_PARCIAL = date(1977, 12, 27)
+DESDE_A_IDADE_NUBIL_SEM_EXCECAO = date(2019, 3, 13)
+IDADE_NUBIL = 16
+IDADE_DA_SEPARACAO_OBRIGATORIA = 70
+
+
+def _regime_convencional(regime: Any) -> bool:
+    """Comunhão universal, separação convencional ou participação final: as que só o pacto escolhe.
+
+    Lê o código da tela (`hc_schema.REGIMES`) e o rótulo por extenso, que a carga do acervo grava."""
+    r = _sem_acento(regime).replace("_", " ")
+    if "OBRIGATORIA" in r or "LEGAL" in r:
+        return False
+    return any(x in r for x in ("UNIVERSAL", "SEPARACAO TOTAL", "SEPARACAO CONVENCIONAL",
+                                "SEPARACAO DE BENS", "PARTICIPACAO"))
+
+
+def _o_casamento_que_o_codigo_civil_nao_admite(dados: dict, por_papel: dict, fato: date | None) -> list[dict]:
+    """O regime sem o pacto, o nubente sem idade núbil e o maior de 70 sem separação. SÓ LÊ.
+
+    TRAVA o que não tem leitura em que esteja certo, e é a régua da conferência:
+      - REGIME CONVENCIONAL SEM PACTO. «Quanto à forma, reduzir-se-á a termo a opção pela comunhão
+        parcial, fazendo-se o pacto antenupcial por escritura pública, nas demais escolhas» (CC art.
+        1.640, parágrafo único; art. 1.653), e o assento traz a data e a serventia do pacto (CC art.
+        1.536, VII; LRP art. 70, 7º). Comunhão universal sem pacto não existe desde 1977.
+      - NUBENTE COM MENOS DE 16 ANOS: «Não será permitido, em qualquer caso, o casamento de quem não
+        atingiu a idade núbil» (CC art. 1.520, na redação da Lei 13.811/2019).
+    AVISA o que pode estar certo e pede olho humano:
+      - NUBENTE COM 16 OU 17 ANOS: casa com a autorização dos pais ou do representante (CC arts. 1.517
+        e 1.519), e a tela não tem onde dizê-la.
+      - NUBENTE COM 70 ANOS OU MAIS, fora da separação obrigatória e sem pacto (CC art. 1.641, II). A
+        separação pode ser afastada por escritura pública (STF, Tema 1.236), e então há pacto.
+    """
+    from rc_assento import idade_na_data
+
+    probs: list[dict] = []
+    regime = dados.get("regime_bens")
+    tem_pacto = not (_vazio(dados.get("pacto_data")) and _vazio(dados.get("pacto_serventia")))
+    if fato and fato >= DESDE_O_REGIME_LEGAL_DA_COMUNHAO_PARCIAL and _regime_convencional(regime) \
+            and not tem_pacto:
+        probs.append(_problema(
+            BLOQUEIA, "REGIME_SEM_PACTO",
+            f"O regime «{regime}» só se escolhe por pacto antenupcial em escritura pública (Código Civil, "
+            "art. 1.640, parágrafo único, e art. 1.653), e o termo traz a data e a serventia dele (art. "
+            "1.536, VII). Informe o pacto, ou o regime é o da comunhão parcial.", "regime_bens"))
+    if not fato:
+        return probs
+    obrigatoria = "OBRIGATORIA" in _sem_acento(regime)
+    for papel in ("NUBENTE1", "NUBENTE2"):
+        for p in por_papel.get(papel, []):
+            nasc = _dia(p.get("data_nascimento"))
+            idade = idade_na_data(nasc.isoformat(), fato.isoformat()) if nasc else None
+            if idade is None:
+                continue
+            if idade < IDADE_NUBIL and fato >= DESDE_A_IDADE_NUBIL_SEM_EXCECAO:
+                probs.append(_problema(
+                    BLOQUEIA, "SEM_IDADE_NUBIL",
+                    f"{p['nome']} ({ROTULO.get(papel, papel)}) tinha {idade} anos na celebração. Quem não "
+                    "atingiu 16 anos não casa, em caso nenhum (Código Civil, art. 1.520).", papel))
+            elif idade < 18:
+                probs.append(_problema(
+                    AVISA, "NUBENTE_MENOR",
+                    f"{p['nome']} ({ROTULO.get(papel, papel)}) tinha {idade} anos na celebração: casa com "
+                    "a autorização dos pais ou do representante (Código Civil, arts. 1.517 e 1.519). "
+                    "Confira que ela está na habilitação e conste dos documentos apresentados.", papel))
+            elif idade >= IDADE_DA_SEPARACAO_OBRIGATORIA and not obrigatoria and not tem_pacto:
+                probs.append(_problema(
+                    AVISA, "REGIME_DO_MAIOR_DE_70",
+                    f"{p['nome']} ({ROTULO.get(papel, papel)}) tinha {idade} anos na celebração: o regime "
+                    "é o da separação obrigatória (Código Civil, art. 1.641, II), salvo se afastado por "
+                    "escritura pública (STF, Tema 1.236) — e então o pacto entra no termo.", papel))
     return probs
 
 
@@ -486,6 +569,8 @@ def dados_do_formulario(valores: dict, *, especie: str = "", data_ato: Any = Non
             "data_ato": data_ato, "teor": teor, "matricula": v.get("matricula"),
             "dnv": v.get("dnv"), "hora_fato": v.get("hora_fato"),
             "cpf_registrado": v.get("cpf_registrado") or v.get("pessoa_documento_numero"),
+            "regime_bens": v.get("regime_bens"), "pacto_data": v.get("pacto_data"),
+            "pacto_serventia": v.get("pacto_serventia"),
             "pessoas": pessoas}
 
 
@@ -501,6 +586,7 @@ _SUFIXO_DO_CODIGO = {
     "TESTEMUNHA_FANTASMA": ("nome", "documento_numero"),
     "NASCEU_DEPOIS_DO_FATO": ("data_nascimento",),
     "IDADE_NAO_BATE": ("idade_no_fato", "data_nascimento"),
+    "SEM_IDADE_NUBIL": ("data_nascimento",),
 }
 _CAMPOS_DO_CODIGO = {
     "MARCA_DE_RASCUNHO": ("teor",),
@@ -512,6 +598,7 @@ _CAMPOS_DO_CODIGO = {
     "CPF_FORA_DO_TERMO": ("cpf_registrado", "teor"),
     "MATRICULA_DV": ("matricula",),
     "MATRICULA_DE_OUTRO_TERMO": ("matricula",),
+    "REGIME_SEM_PACTO": ("regime_bens", "pacto_data", "pacto_serventia"),
 }
 _PAR_DO_PAPEL = {"MAE": "PAI", "PAI": "MAE", "AVO_MATERNA": "AVO_MATERNO",
                  "AVO_MATERNO": "AVO_MATERNA", "AVO_PATERNA": "AVO_PATERNO",
@@ -523,7 +610,9 @@ _ROTULO_DO_CAMPO = {"teor": "Teor do registro", "pessoa_nome": "Nome do registra
                     "cpf_registrado": "CPF do registrado", "matricula": "Matrícula",
                     "sexo": "sexo", "documento_numero": "documento",
                     "nome": "nome", "data_nascimento": "data de nascimento",
-                    "idade_no_fato": "idade na ocasião"}
+                    "idade_no_fato": "idade na ocasião", "regime_bens": "Regime de bens",
+                    "pacto_data": "Data do pacto antenupcial",
+                    "pacto_serventia": "Serventia do pacto antenupcial"}
 
 
 def campos_para_corrigir(problemas: list[dict], *, so_os_que_travam: bool = True) -> list[dict]:

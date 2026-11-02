@@ -546,6 +546,12 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # faleceu com testamento conhecido» (LRP art. 80, 6º) é pergunta para toda morte, e o campo de texto
     # livre deixava o termo calar ou dizer «Deixou testamento conhecido: NAO».
     ("rc_assentos", "obito_testamento", "TEXT"),
+    # OS SINAIS DO DESCONHECIDO (LRP art. 81) — decisão do oficial, 02/11/2026 (ensaio de atos, item 8):
+    # estatura, idade presumida, sinais aparentes e vestuário; a cor é a `cor_raca` de todo óbito.
+    ("rc_assentos", "obito_desconhecido_estatura", "TEXT"),
+    ("rc_assentos", "obito_desconhecido_idade_presumida", "TEXT"),
+    ("rc_assentos", "obito_desconhecido_sinais", "TEXT"),
+    ("rc_assentos", "obito_desconhecido_vestuario", "TEXT"),
 
     # O TITULO DE ELEITOR E O BENEFICIO SOCIAL, que ficam ao lado das caixas na
     # mesma tela. O titulo e o que a Justica Eleitoral usa para achar a pessoa;

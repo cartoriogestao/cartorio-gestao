@@ -324,7 +324,10 @@ def municipio_do_local_padrao(sv: dict | None) -> str:
 CAMPOS_DA_LEI_POR_ESPECIE: dict[str, tuple[str, ...]] = {
     "OBITO": ("obito_conjuge_nome", "obito_conjuge_situacao",
               "obito_conjuge_cartorio", "obito_filhos",
-              "obito_herdeiros_menores"),
+              "obito_herdeiros_menores",
+              # Os sinais do desconhecido (LRP art. 81; ensaio de atos, item 8, 02/11/2026).
+              "obito_desconhecido_estatura", "obito_desconhecido_idade_presumida",
+              "obito_desconhecido_sinais", "obito_desconhecido_vestuario"),
     "CASAMENTO": ("nubente1_conjuge_anterior", "nubente1_dissolucao_data",
                   "nubente2_conjuge_anterior", "nubente2_dissolucao_data",
                   "proclamas_data", "documentos_apresentados",

@@ -74,7 +74,7 @@ o LD01 (21/10/2026, «corrija tudo») consertou: o `xfail` saiu e o teste passa.
 | se deixou bens e herdeiros menores ou interditos | LRP art. 80, 10º; CN-MA art. 255, XI | ✓ [ob.bens_herdeiros] |
 | ao menos um documento (CPF, RG, título, PIS, registro de nascimento…) | LRP art. 80, 12º; CN-MA art. 255, XII | ✓ [ob.documento] |
 | o que não se pôde constar: «fez a pergunta e o declarante ignorava» | CN-MA art. 255, § 1º | ✓ — consertado no LT01: «pessoa não identificada» não é item do artigo e saiu da declaração |
-| desconhecido: estatura, cor, sinais, idade presumida, vestuário | LRP art. 81; CN-MA art. 257 | conferir — peça `__desconhecido` só diz que não se identificou |
+| desconhecido: estatura, cor, sinais, idade presumida, vestuário | LRP art. 81; CN-MA art. 257 | ✓ ensaio de atos (decisão do oficial, 02/11/2026): a tela tem os sinais e o termo os declara; eleitor, bens, filhos e testamento vão para a declaração do CN-MA art. 255, § 1º (o balcão marca «não» para a CRC) |
 | leitura e assinatura do declarante e do oficial | LRP arts. 37, 38 e 82 | ✓ [ob.encerramento] |
 
 ### Assento de casamento — Livro B (`RC_TERMO_CASAMENTO`)

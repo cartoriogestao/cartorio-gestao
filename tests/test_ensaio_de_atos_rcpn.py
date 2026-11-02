@@ -322,7 +322,8 @@ def test_o_natimorto_sem_nome_se_lavra_sem_dizer_que_recebeu_nome(saidas):
 
 # ------------------------------------------------------------------ óbito
 
-OBITOS = [c for c in EA.CHAVES if c.startswith("obito_") and c not in RECUSA_INDEVIDA] + ["cert_gratuita"]
+OBITOS = [c for c in EA.CHAVES if c.startswith("obito_") and c not in RECUSA_INDEVIDA
+          and not c.startswith("obito_desconhecido")] + ["cert_gratuita"]
 
 
 @pytest.mark.parametrize("chave", OBITOS)
@@ -363,13 +364,16 @@ def test_a_morte_violenta_se_declara_violenta(saidas):
     assert "A morte foi violenta" in _s(saidas, "obito_violento").termo
 
 
-@_decisao("o óbito de pessoa não identificada afirma «Não deixou filhos. Não deixou bens. Não era eleitor» "
-          "de quem ninguém conhece: o CN-MA art. 255, § 1º, manda declarar que o declarante ignorava, mas a "
-          "CRC exige S ou N nesses campos (a trava da CRC recusa o branco). E a tela não tem os sinais do LRP "
-          "art. 81 (estatura, sinais, idade presumida, vestuário)")
 def test_o_obito_do_desconhecido_nao_afirma_o_que_ninguem_sabe(saidas):
+    """LRP art. 81; CN-MA art. 255, § 1º — decisão do oficial de 02/11/2026 (item 8): o termo diz que o
+    declarante ignorava, e traz os sinais para o reconhecimento; a CRC recebe o «não» que o balcão marcou."""
     t = _s(saidas, "obito_desconhecido").termo
-    assert "Não deixou bens" not in t and re.search(r"estatura|idade presumida|vestuário", t)
+    for afirmacao in ("Não deixou bens", "Não deixou filhos", "Não era eleitor", "Não deixou testamento"):
+        assert afirmacao not in t, t
+    assert "o declarante ignorava: era eleitor, deixou bens, deixou filhos e deixou testamento conhecido" in t, t
+    assert ("Sinais para o reconhecimento (Lei n.º 6.015/1973, art. 81): estatura cerca de 1,70 m; idade "
+            "presumida entre 40 e 50 anos; cor parda; sinais aparentes cicatriz no antebraço esquerdo; "
+            "vestuário bermuda cinza e camiseta branca.") in t, t
 
 
 # ------------------------------------------------------------------ casamento

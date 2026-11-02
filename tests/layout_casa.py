@@ -184,11 +184,16 @@ class Casa:
         # varredura passaria sem ver essas telas. Quem cobra a recusa é `test_layout_todas_as_telas`.
         nome = self.db.get_setting("serventia_titular", "") if papel == "ADMIN" else ""
         c = E.entrar(self.app, f"ensaio_{papel.lower()}_{layout}", papel, layout, nome)
-        # A JANELA DE PENDÊNCIAS ABRE AO ENTRAR (#223) e fica por cima da tela até alguém fechar: a
-        # pessoa de ensaio a fecha uma vez, como o balcão faria, e no dia ela não volta. Sem isto, o
-        # navegador não clica em nada embaixo dela. Quem confere a janela é `test_nu_avisos_gestao`.
-        r = c.post("/avisos/fechar-modal", data={"csrf_token": self.token(c), "next": "/"})
-        assert r.status_code in (200, 302), r.status_code
+        # A JANELA DE PENDÊNCIAS ABRE AO ENTRAR (#223) e fica por cima da tela: sem fechar, o navegador
+        # não clica em nada embaixo dela. A pessoa de ensaio a dá por FECHADA NA SESSÃO — as duas
+        # marcas que `nu_avisos_web` lê —, e não pela rota de fechar: a rota também dispensa os avisos
+        # normais da pessoa, e as pessoas de cada moldura, fechando em momentos diferentes, ficavam com
+        # avisos diferentes (o «Dispensar» a mais em /avisos/<n>, 02/11/2026). Quem confere a janela
+        # é `test_nu_avisos_gestao`.
+        import nu_avisos_gestao as NAV
+        with c.session_transaction() as sessao:
+            sessao["nu_avisos_overlay_fechado"] = True
+            sessao["nu_avisos_overlay_data"] = NAV.data_local(self.db.now())
         self._sessoes[(papel, layout)] = c.get_cookie("session").value
 
     def cliente(self, papel: str = "ADMIN", layout: str = "novo"):

@@ -704,13 +704,17 @@ def test_deep_link_editar_sem_atribuicao_filtra_e_mostra_editor(casa):
     deixa a lista curta, como `?atribuicao=Registro de Imoveis&editar=…`.
     """
     html = _tela(casa, editar="RI_CABECALHO")
-    assert "filtrada" in html
     assert "Cabeçalho dos documentos" in html
     assert "textarea" in html
-    assert html.count("<h2>") == 2
     html_ficha = _tela(casa, editar="RI_FICHA")
     assert "Ficha da matrícula" in html_ficha
-    assert html_ficha.count("<h2>") == 2
+    if 'data-layout="novo"' in html:
+        # No layout novo, editando, só o editor aparece (30/10/2026): sem a lista, sem o filtro.
+        assert "filtrada" not in html and "Ficha da matrícula" not in html
+    else:
+        assert "filtrada" in html
+        assert html.count("<h2>") == 2
+        assert html_ficha.count("<h2>") == 2
 
 
 # ------------------------------------------------ os papéis consultam mesmo

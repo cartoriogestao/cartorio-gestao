@@ -382,7 +382,9 @@ def test_todo_formulario_da_ficha_manda_o_token(casa):
         RT.anotar_confrontante(con, pid, nome="X", agora=AGORA)
     bruto = casa["cliente"].get(
         f"/registro-imoveis/retificacoes/{pid}").get_data(as_text=True)
-    formularios = re.findall(r"<form\b.*?</form>", bruto, re.S)
+    # O formulário de busca (GET) não leva token: o layout novo tem os dele em toda tela.
+    formularios = [f for f in re.findall(r"<form\b.*?</form>", bruto, re.S)
+                   if not re.match(r'<form\b[^>]*\bmethod="get"', f, re.I)]
     assert len(formularios) >= 4
     sem = [f[:80] for f in formularios if "csrf_token" not in f]
     assert not sem, f"formulário sem token: {sem}"

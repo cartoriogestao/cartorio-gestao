@@ -86,6 +86,7 @@ def test_cada_tela_recebe_a_cor_do_seu_modulo(cliente, endereco, chave):
 
 
 @pytest.mark.parametrize("endereco,chave", TELAS)
+@pytest.mark.moldura_antiga
 def test_cada_tela_diz_o_NOME_do_modulo(cliente, endereco, chave):
     """**Cor sem nome é adivinhação.** Ela diz «mudou»; não diz para qual."""
     html = cliente.get(endereco, follow_redirects=True).get_data(as_text=True)

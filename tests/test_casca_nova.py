@@ -51,6 +51,7 @@ def _trocar(c, layout: str, proximo: str = "/"):
                   data={"layout": layout, "next": proximo, "csrf_token": _token(pagina)})
 
 
+@pytest.mark.moldura_antiga
 def test_quem_nao_escolheu_ve_a_moldura_antiga_e_o_convite(app):
     c = _entrar(app, "casca_a", "ADMIN")
     html = c.get("/").get_data(as_text=True)
@@ -77,6 +78,7 @@ def test_da_para_voltar_ao_layout_antigo(app):
     assert 'id="app-sidebar"' in c.get("/").get_data(as_text=True)
 
 
+@pytest.mark.moldura_antiga
 def test_a_escolha_e_de_cada_pessoa(app):
     um = _entrar(app, "casca_d", "ADMIN")
     outro = _entrar(app, "casca_e", "USER")
@@ -84,6 +86,7 @@ def test_a_escolha_e_de_cada_pessoa(app):
     assert 'id="app-sidebar"' in outro.get("/").get_data(as_text=True)
 
 
+@pytest.mark.moldura_antiga
 def test_layout_que_nao_existe_nao_grava(app):
     c = _entrar(app, "casca_f", "ADMIN")
     _trocar(c, "qualquer")

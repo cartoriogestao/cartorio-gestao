@@ -158,7 +158,8 @@ def test_fonte_que_nao_existe_volta_avisando(casa):
 def test_a_tela_vazia_avisa_da_fonte_desligada(casa):
     """Lista vazia por fonte desligada parece lista vazia por casa em dia."""
     html = _abrir(casa)
-    assert "confira acima se a fonte está ligada" in html
+    # «confira acima» na moldura antiga; «confira abaixo, em Por onde ela olha» na nova.
+    assert "se a fonte está ligada" in html
 
 
 # ------------------------------------------------ os links abrem

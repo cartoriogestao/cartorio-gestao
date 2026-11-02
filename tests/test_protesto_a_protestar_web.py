@@ -364,6 +364,7 @@ def test_a_tela_manda_conferir_as_DESISTENCIAS_antes(s):
     assert 'href="/protesto/desistencias"' in html
 
 
+@pytest.mark.moldura_antiga
 def test_no_MENU_a_desistencia_vem_antes_do_a_protestar(s):
     """A ORDEM DENTRO DO MÓDULO É A DO DIA, e a do roteiro dele é esta nos
     DOIS turnos: «MEIO DIA: 2) verificação de desistências» e «TARDE: 1)

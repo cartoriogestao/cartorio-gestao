@@ -711,7 +711,8 @@ def test_a_ficha_leva_a_tres_lancamentos_sem_misturar_formularios(s):
     assert f'/rcpn/{ids["assento"]}/averbar' in html
     assert f'/rcpn/{ids["assento"]}/anotar' in html
     assert f'/rcpn/{ids["assento"]}/retificar' in html
-    assert 'name="tipo"' not in html
+    # Na ficha: o «Novo» do layout novo (fora do <main>) tem os seus `name="tipo"`.
+    assert 'name="tipo"' not in html[html.find("<main"):html.find("</main>")]
 
 
 def test_a_retificacao_do_rcpn_exige_fundamento_na_tela(s):
@@ -2058,6 +2059,7 @@ def test_arquivo_que_nao_existe_da_404(s):
     assert s["c"].get("/protesto/retornos/9999/arquivo").status_code == 404
 
 
+@pytest.mark.moldura_antiga
 def test_o_menu_leva_ao_retorno(s):
     """Dentro do grupo «Protesto», o link e «Retorno a CRA»."""
     html = s["c"].get("/protesto").get_data(as_text=True)

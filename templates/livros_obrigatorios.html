@@ -11,7 +11,7 @@
       <td>{{ x.nome }}{% if grupo %}<div class="small muted">{{ grupo }}</div>{% endif %}</td>
       <td>{{ x.artigo }}</td>
       <td><span class="badge{% if x.situacao == 'FALTA' %} danger{% elif x.situacao in ('PARCIAL', 'A_CONFERIR') %} warning{% endif %}">{{ situacoes[x.situacao] }}</span></td>
-      <td>{% for r in x.rotas %}{% if r.startswith('protesto_') %}<a href="{{ url_for(r, qual='pagamentos') }}">tela</a>{% else %}<a href="{{ url_for(r) }}">tela</a>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
+      <td>{% for r in x.rotas if r != 'livro_diario' or e_o_titular %}{% if r.startswith('protesto_') %}<a href="{{ url_for(r, qual='pagamentos') }}">tela</a>{% else %}<a href="{{ url_for(r) }}">tela</a>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}
           {% if x.series %}<span class="small muted">séries {{ x.series | join(', ') }}</span>{% endif %}
           {% if not x.rotas and not x.series %}—{% endif %}</td>
       <td class="small">{{ x.nota }}</td>

@@ -189,7 +189,9 @@ def test_a_tela_mostra_o_tipo_sugerido_e_depois_o_gravado(cg_casa_logada):
                           "description": "averbar o divórcio no assento de casamento", "assigned_user_id": uid},
                          user_id=uid)
     html = c.get(f"/tarefas/{tid}").get_data(as_text=True)
-    assert "Tipo do processo" in html and "Ainda sem tipo" in html and "Roteiro" not in html
+    # O conteúdo da tela: no layout novo a busca e o «Novo» (com o «Roteiro do dia») moram fora do <main>.
+    tela = html[html.find("<main"):html.find("</main>")]
+    assert "Tipo do processo" in tela and "Ainda sem tipo" in tela and "Roteiro" not in tela
     c.post(f"/tarefas/{tid}/especie", data={"csrf_token": _token(c, f"/tarefas/{tid}"),
                                             "especie": "ORDEM_JUDICIAL"})
     html = c.get(f"/tarefas/{tid}").get_data(as_text=True)

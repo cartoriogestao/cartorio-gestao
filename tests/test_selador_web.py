@@ -112,6 +112,7 @@ def test_a_tela_avisa_que_nao_cai_no_endereco_de_fabrica(cliente):
     assert "selo comprado duas vezes" in html
 
 
+@pytest.mark.moldura_antiga
 def test_a_tela_esta_no_menu(cliente):
     html = cliente.get("/selador").get_data(as_text=True)
     assert "Selador — configuração</a>" in html

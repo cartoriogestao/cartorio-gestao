@@ -38,7 +38,10 @@ ANTES = (Path(__file__).resolve().parent.parent / "templates"
 
 
 def _ordem(html: str, *marcos: str) -> list[int]:
-    return [html.index(m) for m in marcos]
+    # No layout novo a régua dos passos repete os rótulos no alto: a ordem é a do formulário, depois dela.
+    passos = html.find('class="cg-passos"')
+    inicio = html.find("</nav>", passos) if passos >= 0 else 0
+    return [html.index(m, inicio) for m in marcos]
 
 
 def test_nascimento_na_ordem_do_papel(casa):

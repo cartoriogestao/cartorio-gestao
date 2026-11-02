@@ -144,6 +144,17 @@ import navegacao_web as _navegacao_web  # noqa: E402
 
 _navegacao_web.PADRAO_DE_FABRICA = os.environ.get("CG_TESTE_MOLDURA", "").strip() or "antigo"
 
+
+# O TESTE DO MENU ANTIGO FICA NO MENU ANTIGO (01/11/2026). O layout antigo continua de pé para
+# quem o escolhe, e `test_menu`, «a tela está no menu», a janela de avisos e os outros que leem
+# o menu lateral conferem ELE. Com `CG_TESTE_MOLDURA=novo` eles ficavam vermelhos sem defeito
+# nenhum, e o vermelho de verdade se perdia no meio. A marca `moldura_antiga` os prende nele;
+# o menu novo tem os testes dele (`test_layout_*`).
+@pytest.fixture(autouse=True)
+def _moldura_do_teste(request, monkeypatch):
+    if request.node.get_closest_marker("moldura_antiga"):
+        monkeypatch.setattr(_navegacao_web, "PADRAO_DE_FABRICA", "antigo")
+
 _SEED_NAME = "_cg_seed_schema.sqlite3"
 _DB_NAME = "cartorio_gestao.sqlite3"
 _TRAVA_SUITE = None
@@ -571,3 +582,4 @@ def _cg_pg_apaga_schemas_do_teste():
 def pytest_configure(config):
     # A marca existia só no pytest.ini da instalação (fora do GitHub).
     config.addinivalue_line("markers", "lento: teste demorado; o gate rápido usa -m 'not lento'")
+    config.addinivalue_line("markers", "moldura_antiga: confere o menu ou a janela da moldura antiga, e roda nela")

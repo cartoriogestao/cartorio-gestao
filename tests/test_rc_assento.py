@@ -927,3 +927,14 @@ def test_correcao_que_chega_no_meio_do_cancelamento_e_recusada():
     assert isinstance(erro, RC.RcError), erro
     assert "assento ativo" in str(erro)
     assert RC.assento(con, r["assento_id"])["nome"] == "JOÃO DA SILVA"
+
+
+def test_a_naturalidade_nao_confirmada_vira_aviso_com_o_motivo():
+    """O ensaio de atos (02/11/2026, item 9): o motivo de `_naturalidade_do_titular` chega ao balcão."""
+    nada = RC.aviso_da_naturalidade({"gravou": True, "cidade": "Cidade Exemplo", "uf": "MA"})
+    assert nada == [] and RC.aviso_da_naturalidade({}) == []
+    assert RC.aviso_da_naturalidade({"gravou": False, "motivo": "a pessoa já tem naturalidade"}) == []
+    aviso = RC.aviso_da_naturalidade({"gravou": False, "cidade": "Cidade Exempo", "uf": "MA",
+                                      "motivo": "o município não está no cadastro do IBGE"})
+    assert [a["codigo"] for a in aviso] == ["NATURALIDADE_NAO_CONFIRMADA"]
+    assert "«Cidade Exempo/MA»" in aviso[0]["mensagem"] and "cadastro do IBGE" in aviso[0]["mensagem"]

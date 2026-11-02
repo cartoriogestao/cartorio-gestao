@@ -112,7 +112,6 @@ def test_user_nao_acessa_admin(cg_casa):
     assert c.get("/admin/avisos").status_code == 403
 
 
-@pytest.mark.moldura_antiga
 def test_dispensa_dia_e_contagem_n(cg_casa, monkeypatch):
     monkeypatch.delenv("NU_AVISOS_MODAL_SEMPRE", raising=False)
     _limpar_avisos(cg_casa["banco"])
@@ -212,7 +211,6 @@ def test_modal_nao_repete_mesmo_dia_apos_dispensar(cg_casa, monkeypatch):
     assert "topbar-avisos-badge" not in h2
 
 
-@pytest.mark.moldura_antiga
 def test_modal_modo_teste_reaparece_apos_novo_login(cg_casa, monkeypatch):
     monkeypatch.setenv("NU_AVISOS_MODAL_SEMPRE", "1")
     _limpar_avisos(cg_casa["banco"])
@@ -264,7 +262,6 @@ def test_modal_js_fecha_overlay_em_link_lista():
     assert "data-nu-avisos-fechar" in js
     assert "data-main-compact-banners" in js
 
-@pytest.mark.moldura_antiga
 def test_modal_nao_na_pagina_lista(cg_casa, monkeypatch):
     monkeypatch.delenv('NU_AVISOS_MODAL_SEMPRE', raising=False)
     _limpar_avisos(cg_casa['banco'])
@@ -292,7 +289,6 @@ def test_modal_nao_na_pagina_lista(cg_casa, monkeypatch):
     assert 'data-nu-avisos-overlay' not in lista
     assert 'nu-avisos-link-lista' not in lista
 
-@pytest.mark.moldura_antiga
 def test_modal_x_fecha_dispensa_overlay_e_banner(cg_casa, monkeypatch):
     monkeypatch.setenv("NU_AVISOS_MODAL_SEMPRE", "1")
     monkeypatch.setattr(NAV, "banco_e_sandbox", lambda _con: True)
@@ -349,7 +345,6 @@ def test_modal_x_fecha_dispensa_overlay_e_banner(cg_casa, monkeypatch):
     assert "data-nu-avisos-overlay" not in h3
 
 
-@pytest.mark.moldura_antiga
 def test_modal_x_modo_teste_nao_reabre_ate_novo_login(cg_casa, monkeypatch):
     monkeypatch.setenv("NU_AVISOS_MODAL_SEMPRE", "1")
     monkeypatch.setattr(NAV, "banco_e_sandbox", lambda _con: True)
@@ -652,7 +647,6 @@ def test_vigencia_fim_inativa(cg_casa):
         assert not any(r["titulo"] == "Expirado" for r in ativos)
 
 
-@pytest.mark.moldura_antiga
 def test_admin_encerra_importante_lista_faixa_modal(cg_casa, monkeypatch):
     monkeypatch.setenv("NU_AVISOS_MODAL_SEMPRE", "1")
     monkeypatch.setattr(NAV, "banco_e_sandbox", lambda _con: True)
@@ -698,7 +692,6 @@ def test_admin_encerra_importante_lista_faixa_modal(cg_casa, monkeypatch):
         assert int(con.execute("SELECT ativo FROM nu_avisos WHERE id=?", (aid,)).fetchone()[0]) == 0
 
 
-@pytest.mark.moldura_antiga
 def test_modal_coluna_avisos_sem_normais_copy(cg_casa, monkeypatch):
     monkeypatch.setenv("NU_AVISOS_MODAL_SEMPRE", "1")
     monkeypatch.setattr(NAV, "banco_e_sandbox", lambda _con: True)
@@ -1117,7 +1110,6 @@ def test_varias_barras_empilham_duas_e_o_resto_vira_mais_n(cg_casa):
     assert barra.find(NAV.FERJ_TITULO) < mais, "a do FERJ foi para trás do «+N»"
 
 
-@pytest.mark.moldura_antiga
 def test_a_barra_fica_no_fluxo_antes_do_titulo_e_fora_do_menu(cg_casa):
     """O teste de layout simples do pedido: a barra não cobre menu nem botões.
 
@@ -1130,11 +1122,17 @@ def test_a_barra_fica_no_fluxo_antes_do_titulo_e_fora_do_menu(cg_casa):
 
     c = _entrar(cg_casa, "bl1", "USER", "Escrevente Oito")
     html = c.get("/").get_data(as_text=True)
-    fim_menu = html.find("</aside>")
-    main = html.find('<main class="main">')
+    main = html.find("<main")
     barra = html.find("data-barras-fixas")
-    topo = html.find('<header class="topbar">')
-    assert -1 < fim_menu < main < barra < topo
+    topo = html.find('<header class="topbar')
+    assert -1 < main < barra < topo
+    if 'data-layout="novo"' not in html:
+        # Na moldura antiga o menu é o `<aside>`, antes do `<main>`. Na nova, a barra
+        # também fica à vista no alto, e não dentro do sino (01/11/2026).
+        assert -1 < html.find("</aside>") < main
+    else:
+        sino = html.find("data-cg-sino-corpo")
+        assert "data-barras-fixas" not in html[sino:html.find("</details>", sino)]
     css = Path(__file__).resolve().parents[1].joinpath("static", "app.css").read_text(
         encoding="utf-8")
     regras = re.findall(r"([^{}]*\bbarras?-fixas?[^{}]*)\{([^}]*)\}", css)

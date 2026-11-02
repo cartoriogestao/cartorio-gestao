@@ -83,9 +83,6 @@
 .cg-novo-grupo{break-inside:avoid}
 .cg-pop-sino{right:14px;top:46px;width:430px;max-width:calc(100% - 28px);max-height:calc(100vh - 90px);overflow-y:auto}
 .cg-sino-corpo{padding:0 0 6px}
-.cg-sino-corpo .barras-fixas{position:static;margin:0;padding:8px 12px 0;background:none;border:0;display:block}
-.cg-sino-corpo .barra-fixa{position:static;display:block;background:#fbe9ec;color:#7a1020;border:0;border-radius:7px;padding:8px 10px;margin-bottom:6px;font-size:12.8px}
-.cg-sino-corpo .barra-fixa a{color:#7a1020}.cg-sino-corpo .barra-fixa label,.cg-sino-corpo .barra-fixa summary,.cg-sino-corpo .barra-fixa-texto,.cg-sino-corpo .barra-fixa-mes{color:#7a1020}.cg-sino-corpo .barra-fixa-acoes{display:block;margin-top:6px}.cg-sino-corpo .barra-fixa form{margin:6px 0 0}
 .cg-sino-corpo .flash{margin:8px 12px}
 .cg-sino-vazio{padding:12px 14px;margin:0;color:#5b6875}
 

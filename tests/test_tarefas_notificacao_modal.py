@@ -54,7 +54,6 @@ def _overlay_html(html: str) -> str:
 
 
 
-@pytest.mark.moldura_antiga
 def test_modal_só_tarefas_contagem_sem_titulos(sandbox_avisos):
     casa, uid = sandbox_avisos
     tid = casa["db"].create_task(
@@ -109,7 +108,6 @@ def test_sem_faixa_quando_zero(sandbox_avisos):
     assert "flash-compact-tarefas" not in h
 
 
-@pytest.mark.moldura_antiga
 def test_admin_sem_responsavel_bloco_separado(cg_casa):
     import sqlite3
 
@@ -132,7 +130,6 @@ def test_admin_sem_responsavel_bloco_separado(cg_casa):
     assert "Sem dono" not in ov
     monkey.undo()
 
-@pytest.mark.moldura_antiga
 def test_tarefa_vencida_tier_critico(sandbox_avisos):
     casa, uid = sandbox_avisos
     from datetime import date, timedelta
@@ -152,7 +149,6 @@ def test_tarefa_vencida_tier_critico(sandbox_avisos):
     assert 'class="badge media">MEDIA</span>' not in _overlay_html(html)
 
 
-@pytest.mark.moldura_antiga
 def test_tarefa_alta_tier_importante(sandbox_avisos):
     casa, uid = sandbox_avisos
     casa["db"].create_task(

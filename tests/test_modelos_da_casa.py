@@ -4689,8 +4689,8 @@ def _ouro_com_as_mudancas_explicadas(grupo: str, funcoes: dict) -> dict:
             assert _LT01_ANTES in antes, nome
             novo = json.loads(antes.replace(_LT01_ANTES, _LT01_DEPOIS))
         saida[nome] = novo
-    return _sem_casamento_dos_pais_no_ouro(grupo, _hab22_no_ouro(grupo, _ld22_no_ouro(grupo, _lh05_no_ouro(
-        grupo, _ld01_no_ouro(grupo, saida)))))
+    return _filha_no_ouro(grupo, _sem_casamento_dos_pais_no_ouro(grupo, _hab22_no_ouro(
+        grupo, _ld22_no_ouro(grupo, _lh05_no_ouro(grupo, _ld01_no_ouro(grupo, saida))))))
 
 
 # ------------------------------- 02/11/2026 — o casamento dos pais saiu do termo de nascimento
@@ -4719,6 +4719,32 @@ def _sem_casamento_dos_pais_no_ouro(grupo: str, saida: dict) -> dict:
         if "casados entre si" in texto:
             saida[nome] = _json.loads(_PAIS_CASADOS.sub("", texto))
     saida["varre.nascimento"] = _VARRE_NASCIMENTO_SEM_OS_PAIS
+    return saida
+
+
+# ------------------------------- 02/11/2026 — «sendo filha de» para a registrada
+#
+#   Decisão do oficial (ensaio de atos, item 10): o termo de nascimento concorda com o sexo, como a
+#   prévia. Nas saídas do termo de uma registrada («do sexo Feminino») o «sendo filho de» vira «sendo
+#   filha de», e só isso. A varredura do nascimento muda só por isso: com a concordância desligada
+#   (`modelos_motor_termo.corrigir_genero_do_principal` devolvendo o texto), ela volta à do item 2 —
+#   conferido ao gravar esta troca, como a regra que escolhe as saídas.
+_VARRE_NASCIMENTO_COM_FILHA = {"ok": {"erros": 0, "n": 3968, "sha256": (
+    "7c46f2d207f078c055a070443b2534424dc1078bb339c6cf880b987620671733")}}
+
+
+def _filha_no_ouro(grupo: str, saida: dict) -> dict:
+    import json as _json
+    if grupo != "termos":
+        return saida
+    saida = dict(saida)
+    for nome, valor in list(saida.items()):
+        if nome.startswith("varre.") or callable(valor):
+            continue
+        texto = _json.dumps(valor, ensure_ascii=False)
+        if "do sexo Feminino" in texto and "sendo filho de" in texto:
+            saida[nome] = _json.loads(texto.replace("sendo filho de", "sendo filha de"))
+    saida["varre.nascimento"] = _VARRE_NASCIMENTO_COM_FILHA
     return saida
 
 

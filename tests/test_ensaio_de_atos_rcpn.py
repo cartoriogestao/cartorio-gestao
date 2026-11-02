@@ -206,6 +206,19 @@ def test_o_registro_de_nascimento_nao_fala_do_casamento_dos_pais(saidas, chave):
         assert "casados entre si" not in _documentos(s)[nome], nome
 
 
+@pytest.mark.parametrize("chave", ["nasc_padrao", "nasc_gemeo", "nasc_tardio", "nasc_declarante_avo"])
+def test_o_termo_da_registrada_diz_sendo_filha_de(saidas, chave):
+    """Decisão do oficial, 02/11/2026 (ensaio de atos, item 10): o termo concorda com o sexo, como a prévia,
+    no livro e no inteiro teor que o reproduz."""
+    s = _s(saidas, chave)
+    for nome in ("termo", "inteiro teor"):
+        assert "sendo filha de" in _documentos(s)[nome] and "sendo filho de" not in _documentos(s)[nome], nome
+
+
+def test_o_termo_do_registrado_continua_sendo_filho_de(saidas):
+    assert "sendo filho de" in _s(saidas, "natimorto_com_nome").termo
+
+
 @_defeito("a tela não tem onde dizer a ordem de nascimento do gêmeo, e o termo diz só «gêmea» (LRP art. 63: "
           "«será declarada no assento especial de cada um a ordem de nascimento»)")
 def test_o_termo_do_gemeo_declara_a_ordem_de_nascimento(saidas):

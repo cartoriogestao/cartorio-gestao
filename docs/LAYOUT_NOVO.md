@@ -131,9 +131,10 @@ Sem o Playwright ou sem navegador, `test_layout_no_navegador` pula e diz por qu�
 encurtam a rodada de quem está mexendo numa área. `CG_LAYOUT_ALTURAS=<prefixo>` grava a altura de cada tela, da maior para a menor, em
 `<prefixo>_1920.txt` e `<prefixo>_1366.txt`. Só informa: a altura depende do dado, e o que é alto demais quem decide é quem usa a tela.
 
-**A suíte inteira na moldura nova.** `tests/conftest.py` fixa a moldura antiga, porque muitos testes leem o menu dela. Com
-`CG_TESTE_MOLDURA=novo`, ela roda toda na casca. O que fica vermelho aí e verde na antiga é teste lendo o menu antigo, ou defeito:
-compare as duas listas antes da etapa 7.
+**A suíte inteira roda na moldura nova** (02/11/2026: ninguém usa mais o layout antigo). Os testes da moldura antiga (o menu
+lateral, «a tela está no menu», as faixas dela) ficam no código com a marca `moldura_antiga`, e não rodam mais: a saída diz que
+foram pulados e por quê. `CG_TESTE_MOLDURA_ANTIGA=1` os roda na moldura antiga; `CG_TESTE_MOLDURA=antigo` passa a suíte inteira
+por ela.
 
 **Antes da etapa 7, rode também esta conferência à mão:** a varredura de formulários manda o que a tela entrega, mas não diz se o
 ato ficou certo. Quem diz são os testes de cada módulo, e a suíte com banco precisa estar verde.

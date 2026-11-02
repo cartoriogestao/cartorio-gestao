@@ -10,12 +10,13 @@ não é preciso aplicar uma por uma.
 
 ## 3.7.9 — o layout novo como padrão, despesas do titular e o ensaio de atos
 
-São 103 mudanças juntadas desde a 3.7.8 (#128 a #230). A suíte inteira rodou no layout novo, na máquina
+São 104 mudanças juntadas desde a 3.7.8 (#128 a #231). A suíte inteira rodou no layout novo, na máquina
 da integração.
 
 **Atenção ao instalar**
 - **O layout novo é o padrão da casa** (decisão do oficial de 30/10/2026). Quem ainda não escolheu
-  abre nele, com o aviso para ficar ou voltar. O layout antigo continua lá, mas não é mais testado.
+  abre nele, com o aviso para ficar ou voltar. O layout antigo continua lá, mas os testes dele não
+  rodam mais (ficam no código, marcados como antigos).
 - **Livro-caixa, Livro Diário, balanço do mês e backup são só do oficial titular.** Quem não é o
   titular não vê esses livros nem muda as configurações de backup. A **senha do oficial** é opcional
   (Administrativo → Senha do oficial): fecha essas telas por cima do login. Senha esquecida só se limpa

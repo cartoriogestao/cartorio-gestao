@@ -8,6 +8,70 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.9 — o layout novo como padrão, despesas do titular e o ensaio de atos
+
+São 104 mudanças juntadas desde a 3.7.8 (#128 a #231). A suíte inteira rodou no layout novo, na máquina
+da integração.
+
+**Atenção ao instalar**
+- **O layout novo é o padrão da casa** (decisão do oficial de 30/10/2026). Quem ainda não escolheu
+  abre nele, com o aviso para ficar ou voltar. O layout antigo continua lá, mas os testes dele não
+  rodam mais (ficam no código, marcados como antigos).
+- **Livro-caixa, Livro Diário, balanço do mês e backup são só do oficial titular.** Quem não é o
+  titular não vê esses livros nem muda as configurações de backup. A **senha do oficial** é opcional
+  (Administrativo → Senha do oficial): fecha essas telas por cima do login. Senha esquecida só se limpa
+  direto no banco.
+- **Chave do titular para o backup** (Despesas → Configuração): com ela, as despesas e o livro-caixa
+  saem do pacote de backup fechados, e só abrem com a senha do titular. Sem a chave, o backup segue
+  como antes.
+- **As barras vermelhas** (FERJ/FERC e as outras que não se fecham) ficam inteiras no alto da tela,
+  acima da busca, e a **janela de pendências** abre sozinha ao entrar também no layout novo.
+- **Colunas e tabelas novas** (protocolo que virou serviço, despesas, RTD fiduciário, pendências do
+  e-Protocolo) nascem sozinhas na primeira abertura.
+- **A transcrição dos áudios do WhatsApp** ganhou a escolha de onde transcrever, desligada: até alguém
+  mudar, o áudio segue para a OpenAI, como hoje.
+
+**Layout novo**
+- As fichas do RI, de Notas, do Protesto, do RCPN, do Livro 3, do RCPJ e do RTD em abas ou fases;
+  formulários em passos; quadros recolhidos nas telas longas (configurações, protesto, modelos, CTP).
+- Testes de todas as telas e de todos os formulários nas duas molduras, e no Chrome de verdade.
+
+**Registro Civil — o ensaio de atos**
+- Cada ato praticado pela tela e o documento conferido com a lei e com o padrão da casa
+  (`docs/ensaio_de_atos/`). Já corrigidos: o casamento que o Código Civil não admite não se lavra sem
+  aviso; o declarante e a testemunha podem ter nascido depois do fato; o estrangeiro sai com
+  passaporte e país; a certidão de natimorto traz o sexo do termo. Os demais estão no relatório.
+- A matrícula de 32 dígitos se gera desde 03/09/2026 na ficha do assento.
+
+**Despesas e livros do titular**
+- Pix por chave só sai se o favorecido confere; demonstrativo de pagamento em PDF, por e-mail e
+  WhatsApp; folha como recorrente; contato e comprovante na despesa; autorizar na lista.
+- Livro-caixa do mês até agora, previsão de gastos, ISS preliminar no balanço e DARF do carnê-leão
+  preenchido.
+
+**Protesto**
+- Confirmação com todos os títulos e confirmação parcial com as contagens; custa na retirada; edital
+  sem efeito; a chave da CENPROT pela regra do layout oficial; valor que não é número é recusado; o
+  lote de instrumentos vai ao token de uma vez.
+
+**RTD e RCPJ**
+- Abas dos livros obrigatórios, partes, bens e o que conferir; processo fiduciário, sobrestamento, DOI,
+  nome parecido e Livro Auxiliar; o termo de um dia passado fala daquele dia; lista de presença ou
+  certidão de não apresentação exigida.
+
+**Centrais e protocolo**
+- CNIB por CPF, atendimentos do SAEC e cobranças do ONR; Serviço de Pendências do e-Protocolo
+  (Unidade Interligada e e-Óbito); o cálculo que vira serviço, com a correção dos já quitados.
+
+**Outros**
+- Data digitada errada volta com aviso; listas com o mais recente em cima; ordenar pela coluna não
+  volta ao topo; relatórios de produtividade por período; certidão reprográfica na largura cheia; o
+  login com página desatualizada não responde mais «Bad Request».
+
+**Segurança**
+- Seis alertas do CodeQL fechados (redirecionamento, expressões regulares lentas, exceção na resposta
+  do WhatsApp, a volta da senha do oficial e a leitura do HTML no ensaio).
+
 ## 3.7.8 — o Protesto que não deixa errar, sem janela do Python
 
 São 30 mudanças juntadas desde a 3.7.7 (#97 a #126). A suíte roda na máquina

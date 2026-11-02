@@ -93,7 +93,7 @@ Proposta: o campo da ordem na tela de lavrar, exigido quando o parto é múltipl
 - A tela não tem o lugar do sepultamento nem a causa, e o papel imprime a caixa do sepultamento vazia.
 Proposta: breve relato próprio do natimorto, com os campos do papel; sepultamento e causa na tela.
 
-### 8. Óbito de pessoa não identificada — LEGAL · DECISÃO
+### 8. Óbito de pessoa não identificada — LEGAL · CONSERTADO (decisão do oficial, 02/11/2026)
 O termo afirma «Não deixou filhos. Não deixou bens. Não era eleitor» de quem ninguém conhece, e não tem
 onde dizer os sinais. Deixar as perguntas em branco não se pode: a trava da CRC exige S ou N («sem opção
 de ignorado»).

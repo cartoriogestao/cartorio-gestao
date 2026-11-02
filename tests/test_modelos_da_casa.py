@@ -4842,8 +4842,9 @@ def _presidente_no_ouro(grupo: str, saida: dict) -> dict:
 _NADA_PERGUNTADO = ("ign.none", "ign.tres", "ob.montado.nada_perguntado", "ob.valores.nada_perguntado")
 _COM_NAO4 = ("ob.valores.cheio_nao", "ob.montado.cheio_nao", "ob.valores.com_documento",
              "ob.valores.desconhecido_com_documento")
+# (O hash é o de depois do testamento E do desconhecido, item 8 — ver `_desconhecido_no_ouro`.)
 _VARRE_OBITO_COM_O_TESTAMENTO = {"ok": {"erros": 0, "n": 2244, "sha256": (
-    "e225398b5f651e1c427832de15cf31a643383a54a1b0ecb1e100e8c5ee6a25e4")}}
+    "692ad7d127cc24a7b51c0ee467c3aba1831c82d4453e50b63012fb86f4e05d19")}}
 
 
 def _testamento_no_ouro(grupo: str, saida: dict) -> dict:
@@ -4861,6 +4862,58 @@ def _testamento_no_ouro(grupo: str, saida: dict) -> dict:
                                   "Não deixou testamento conhecido.")
         saida[nome] = _json.loads(texto)
     saida["varre.obito"] = _VARRE_OBITO_COM_O_TESTAMENTO
+    return _desconhecido_no_ouro(saida)
+
+
+# ------------------------------- 02/11/2026 — o óbito do desconhecido não afirma o que ninguém sabe
+#
+#   Decisão do oficial (ensaio de atos, item 8): com «pessoa não identificada» = SIM, eleitor, bens, filhos e
+#   testamento vão para a declaração do CN-MA art. 255, § 1º, e os herdeiros não se afirmam. As saídas
+#   montadas com `SIM4` (todas as marcas «sim» — inclusive a do desconhecido) caem nisso. Cada uma se
+#   confere: as quatro frases saem, a declaração entra, e o resto é o que era. A varredura do óbito, que
+#   tem as mesmas combinações, mudou junto (`_VARRE_OBITO_COM_O_TESTAMENTO` leva o hash de depois dos dois).
+_IGNORAVA_TUDO = ("O oficial indagou a respeito de todos os itens do art. 255, e o declarante ignorava: era "
+                  "eleitor, deixou bens, deixou filhos e deixou testamento conhecido, na forma do § 1º do "
+                  "referido artigo.")
+_FRASES_DO_DESCONHECIDO = ("frase_eleitor", "frase_filhos", "frase_testamento", "frase_deixou_bens")
+
+
+def _desconhecido_no_ouro(saida: dict) -> dict:
+    import re as _re
+    valores_cheio = saida["ob.valores.cheio_sim"]["ok"]
+    ditas = [valores_cheio[k] for k in _FRASES_DO_DESCONHECIDO if valores_cheio.get(k)]
+
+    def _valores(antes):
+        def confere(depois):
+            d = depois["ok"]
+            esperado = dict(antes["ok"], **{k: "" for k in _FRASES_DO_DESCONHECIDO},
+                            frase_ignorados=_IGNORAVA_TUDO,
+                            frase_identificacao=d.get("frase_identificacao"))
+            return d == esperado and d["frase_identificacao"].startswith(antes["ok"]["frase_identificacao"])
+        return confere
+
+    def _montado(antes):
+        def sem(texto, frases):
+            for f in frases:
+                texto = texto.replace(f, "")
+            return _re.sub(r"\s+", " ", texto).strip()
+
+        def confere(depois):
+            a, d = antes["ok"], depois["ok"]
+            return (_IGNORAVA_TUDO in d["texto"] and sem(d["texto"], [_IGNORAVA_TUDO]) == sem(a["texto"], ditas)
+                    and set(d["nao_e_o_caso"]) == (set(a["nao_e_o_caso"]) - {"O que o declarante ignorava"})
+                    | {"Se era eleitor", "Se faleceu com testamento conhecido",
+                       "Se deixou filhos, o nome e a idade de cada um",
+                       "Se deixou bens e herdeiros menores ou interditados"}
+                    and (a["completo"], a["em_branco"]) == (d["completo"], d["em_branco"]))
+        return confere
+
+    saida = dict(saida)
+    for nome in ("ob.valores.cheio_sim", "ob.valores.desconhecido_com_documento"):
+        saida[nome] = _valores(saida[nome])
+    saida["ob.montado.cheio_sim"] = _montado(saida["ob.montado.cheio_sim"])
+    for nome in ("ob.valores.bens_sim_herd_nao", "ob.valores.filhos_sim_sem_lista"):
+        saida[nome] = {"ok": ""}
     return saida
 
 

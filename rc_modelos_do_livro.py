@@ -1773,6 +1773,26 @@ def montar_casamento_do_assento(assento: dict, pessoas: list[dict],
 _MARCAS_FORA_DO_ART_255 = frozenset({"obito_desconhecido"})
 
 
+#: Os sinais do LRP art. 81, na ordem em que o termo os escreve: (coluna, como se diz).
+SINAIS_DO_DESCONHECIDO = (("obito_desconhecido_estatura", "estatura"),
+                          ("obito_desconhecido_idade_presumida", "idade presumida"),
+                          ("cor_raca", "cor"),
+                          ("obito_desconhecido_sinais", "sinais aparentes"),
+                          ("obito_desconhecido_vestuario", "vestuário"))
+
+
+def frase_dos_sinais_do_desconhecido(assento: dict) -> str:
+    """« Sinais para o reconhecimento (art. 81 …): estatura …; cor …» — o que houver. Só calcula.
+
+    LRP art. 81: «Sendo o finado desconhecido, o assento deverá conter declaração de estatura ou medida,
+    se for possível, cor, sinais aparentes, idade presumida, vestuário e qualquer outra indicação que
+    possa auxiliar de futuro o seu reconhecimento». A tela não tinha onde dizê-los (ensaio de atos, item
+    8, decisão do oficial de 02/11/2026)."""
+    partes = [f"{como} {_texto(assento.get(coluna)).lower()}" for coluna, como in SINAIS_DO_DESCONHECIDO
+              if _texto(assento.get(coluna))]
+    return (" " + _frase("RC_TERMO_OBITO__sinais_do_desconhecido", sinais="; ".join(partes))) if partes else ""
+
+
 def frase_dos_ignorados(marcas: dict) -> str:
     """A declaracao do art. 255, § 1o. So calcula.
 
@@ -2072,6 +2092,16 @@ def valores_do_obito(assento: dict, pessoas: list[dict], *,
             return _frase(peca_nao)
         return ""
 
+    # O DESCONHECIDO NÃO TEM O QUE DECLARAR DE SI — decisão do oficial, 02/11/2026 (ensaio de atos, item
+    # 8). O termo afirmava «Não deixou filhos. Não deixou bens. Não era eleitor» de quem ninguém conhece:
+    # o balcão marca «não», porque a CRC exige S ou N, e é a CRC que recebe o N. No termo, as quatro vão
+    # para a declaração do CN-MA art. 255, § 1º («o declarante ignorava»), e os herdeiros não se afirmam.
+    desconhecido = _sim("obito_desconhecido")
+    if desconhecido:
+        marcas = {**marcas, **{c: MO.NAO_PERGUNTADO for c in (
+            "obito_eleitor", "obito_possui_bens", "obito_possui_filho", "obito_testamento")}}
+        testamento = ""
+
     marca_dos_filhos = _marca("obito_possui_filho", "RC_TERMO_OBITO__filhos_sim",
                               "RC_TERMO_OBITO__filhos_nao")
 
@@ -2113,8 +2143,9 @@ def valores_do_obito(assento: dict, pessoas: list[dict], *,
         #   caso em que a declaracao e obrigatoria. (Ate o LF06C havia aqui um
         #   segundo ramo pelo `documento_numero` do falecido que devolvia vazio
         #   dos dois lados; saiu, e o termo nao mudou.)
-        "frase_identificacao": (_frase("RC_TERMO_OBITO__desconhecido")
-                                if _sim("obito_desconhecido") else ""),
+        "frase_identificacao": ((_frase("RC_TERMO_OBITO__desconhecido")
+                                 + frase_dos_sinais_do_desconhecido(assento)).strip()
+                                if desconhecido else ""),
         "frase_declaracao_de_obito": (
             _frase("RC_TERMO_OBITO__declaracao_de_obito", numero=numero_do)
             if numero_do else ""),
@@ -2132,7 +2163,7 @@ def valores_do_obito(assento: dict, pessoas: list[dict], *,
         "frase_deixou_bens": (_marca("obito_possui_bens",
                                      "RC_TERMO_OBITO__bens_sim",
                                      "RC_TERMO_OBITO__bens_nao")
-                              + frase_dos_herdeiros(assento)).strip(),
+                              + ("" if desconhecido else frase_dos_herdeiros(assento))).strip(),
         "frase_filhos": (frase_dos_filhos_do_falecido(assento, marca_dos_filhos)
                          if _sim("obito_possui_filho") else marca_dos_filhos),
         # O TESTAMENTO É PERGUNTA (decisão do oficial, 02/11/2026; ensaio de atos, item 4): SIM, com o que

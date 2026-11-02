@@ -306,6 +306,24 @@
                value="{{ form.get('local_sepultamento','') }}"
                placeholder="cemitério ou crematório, município/UF"></label>
       {% endif %}
+      {% if obito %}
+      {# OS SINAIS DO DESCONHECIDO (LRP art. 81) — ensaio de atos, item 8, decisão do oficial de
+         02/11/2026: só para a pessoa não identificada; vão ao termo, para o reconhecimento futuro. #}
+      <fieldset style="grid-column:1/-1">
+        <legend>Pessoa não identificada <small>(art. 81 da Lei 6.015/1973 — o que se puder dizer)</small></legend>
+        <label>Estatura ou medida
+          <input name="obito_desconhecido_estatura" value="{{ form.get('obito_desconhecido_estatura','') }}"
+                 placeholder="ex.: cerca de 1,70 m"></label>
+        <label>Idade presumida
+          <input name="obito_desconhecido_idade_presumida"
+                 value="{{ form.get('obito_desconhecido_idade_presumida','') }}" placeholder="ex.: entre 40 e 50 anos"></label>
+        <label style="grid-column:1/-1">Sinais aparentes
+          <input name="obito_desconhecido_sinais" value="{{ form.get('obito_desconhecido_sinais','') }}"
+                 placeholder="cicatrizes, tatuagens, marcas"></label>
+        <label style="grid-column:1/-1">Vestuário
+          <input name="obito_desconhecido_vestuario" value="{{ form.get('obito_desconhecido_vestuario','') }}"></label>
+      </fieldset>
+      {% endif %}
 
       {% if casamento %}
       <label>Regime de bens

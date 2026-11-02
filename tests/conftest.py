@@ -134,22 +134,24 @@ import database as _database  # noqa: E402
 
 _database.DEFAULT_SETTINGS.update(SERVENTIA_DE_TESTE)
 
-# A SUÍTE CONTINUA NA MOLDURA ANTIGA. O padrão de fábrica passou a ser o layout novo em
-# 30/10/2026, e os testes de tela leem o HTML do menu antigo. Quem testa a moldura nova a
-# pede por pessoa, e `test_casca_nova` confere o padrão de verdade lendo o código.
-#
-# `CG_TESTE_MOLDURA=novo` passa a suíte inteira pela moldura nova, de uma vez. Quem ler o menu
-# antigo fica vermelho, e o que sobrar é defeito: ver `docs/LAYOUT_NOVO.md`, «Os testes».
+# A SUÍTE RODA NA MOLDURA NOVA (02/11/2026). O padrão de fábrica é o layout novo desde
+# 30/10/2026, e o oficial decidiu que ninguém volta ao antigo: «ninguém vai usar esse botão».
+# `CG_TESTE_MOLDURA=antigo` ainda passa a suíte pela moldura antiga, se um dia for preciso.
 import navegacao_web as _navegacao_web  # noqa: E402
 
-_navegacao_web.PADRAO_DE_FABRICA = os.environ.get("CG_TESTE_MOLDURA", "").strip() or "antigo"
+_navegacao_web.PADRAO_DE_FABRICA = os.environ.get("CG_TESTE_MOLDURA", "").strip() or "novo"
+
+# OS TESTES DA MOLDURA ANTIGA FICAM NO CÓDIGO, E NÃO RODAM MAIS (oficial, 02/11/2026: «deixe os
+# testes antigos no código, mas indique que são antigos e não rodam mais»). São os que conferem o
+# menu lateral, «a tela está no menu», a etiqueta do módulo e as faixas da moldura antiga: a marca
+# `moldura_antiga` os pula, com o motivo na saída. `CG_TESTE_MOLDURA_ANTIGA=1` os traz de volta, e
+# aí rodam na moldura antiga. O menu novo tem os testes dele (`test_layout_*`).
+_RODAR_OS_ANTIGOS = (os.environ.get("CG_TESTE_MOLDURA_ANTIGA") or "").strip() == "1"
+_PULAR_O_ANTIGO = pytest.mark.skip(
+    reason="moldura antiga: não roda mais (ninguém usa o layout antigo, decisão do oficial de "
+           "02/11/2026); CG_TESTE_MOLDURA_ANTIGA=1 roda")
 
 
-# O TESTE DO MENU ANTIGO FICA NO MENU ANTIGO (01/11/2026). O layout antigo continua de pé para
-# quem o escolhe, e `test_menu`, «a tela está no menu», a janela de avisos e os outros que leem
-# o menu lateral conferem ELE. Com `CG_TESTE_MOLDURA=novo` eles ficavam vermelhos sem defeito
-# nenhum, e o vermelho de verdade se perdia no meio. A marca `moldura_antiga` os prende nele;
-# o menu novo tem os testes dele (`test_layout_*`).
 @pytest.fixture(autouse=True)
 def _moldura_do_teste(request, monkeypatch):
     if request.node.get_closest_marker("moldura_antiga"):
@@ -582,4 +584,12 @@ def _cg_pg_apaga_schemas_do_teste():
 def pytest_configure(config):
     # A marca existia só no pytest.ini da instalação (fora do GitHub).
     config.addinivalue_line("markers", "lento: teste demorado; o gate rápido usa -m 'not lento'")
-    config.addinivalue_line("markers", "moldura_antiga: confere o menu ou a janela da moldura antiga, e roda nela")
+    config.addinivalue_line("markers", "moldura_antiga: teste da moldura antiga; não roda mais (CG_TESTE_MOLDURA_ANTIGA=1 roda)")
+
+
+def pytest_collection_modifyitems(config, items):
+    if _RODAR_OS_ANTIGOS:
+        return
+    for item in items:
+        if item.get_closest_marker("moldura_antiga"):
+            item.add_marker(_PULAR_O_ANTIGO)

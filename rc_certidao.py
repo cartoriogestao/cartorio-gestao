@@ -134,7 +134,17 @@ def alteracoes_fora_da_certidao(atos) -> list:
     fora dela fica a que não tem texto no sistema."""
     return [x for x in atos or []
             if str(x.get("tipo") or "").upper() in ATOS_QUE_ALTERAM
-            and not str(x.get("teor") or "").strip()]
+            and (not str(x.get("teor") or "").strip() or not se_transcreve(x))]
+
+
+def se_transcreve(ato: dict) -> bool:
+    """Se a certidão em breve relato transcreve este ato. Só calcula.
+
+    O RECONHECIMENTO DE FILIAÇÃO NÃO SE TRANSCREVE (Lei 8.560/1992, art. 6º; LRP art. 19, § 3º) — decisão
+    do oficial, 02/11/2026 (ensaio de atos, item 1). Ele muda as pessoas da certidão, e a menção que o
+    art. 21 da LRP pede é a inscrição do parágrafo único («envolve elementos de averbação»)."""
+    import rc_assento as RC
+    return str(ato.get("natureza") or "").strip() not in RC.NATUREZAS_SIGILOSAS
 
 
 class CertidaoRCPNError(ValueError):
@@ -816,6 +826,8 @@ def montar_teor(*, assento: dict, pessoas_do_assento: list[dict],
                                                 "RETIFICACAO")]
     averbacoes: list[str] = []
     for x in acrescer:
+        if not se_transcreve(x):
+            continue
         rotulo = rotulo_do_ato(x.get("tipo"))
         texto = str(x.get("teor") or "").strip()
         # Fallback: atos antigos sem lavrou/selo no teor ainda mostram nas

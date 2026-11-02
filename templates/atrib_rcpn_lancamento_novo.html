@@ -84,6 +84,21 @@
       <small>Escolha a natureza. O selador desta casa usa o código já medido
         neste caminho; o texto da averbação vai no teor.</small>
     </label>
+    {# O QUE A AVERBAÇÃO MUDA NA CERTIDÃO — ensaio de atos, item 1 (decisão do oficial, 02/11/2026). O termo
+       não muda; a certidão é feita das pessoas do assento, e estes campos as atualizam. O reconhecimento
+       de filiação não se transcreve no breve relato (Lei 8.560/1992, art. 6º). #}
+    <fieldset style="grid-column:1/-1">
+      <legend>O que muda na certidão <small>(só o que esta averbação muda)</small></legend>
+      <label>Nome novo do registrado
+        <input name="novo_nome" value="{{ digitado.get('novo_nome','') }}"
+               placeholder="alteração de nome ou reconhecimento"></label>
+      <label>Pai reconhecido
+        <input name="pai_nome" value="{{ digitado.get('pai_nome','') }}"></label>
+      <label>Avô paterno
+        <input name="avo_paterno_nome" value="{{ digitado.get('avo_paterno_nome','') }}"></label>
+      <label>Avó paterna
+        <input name="avo_paterna_nome" value="{{ digitado.get('avo_paterna_nome','') }}"></label>
+    </fieldset>
     {% endif %}
     <label>Selo <small>(opcional)</small><input name="selo"{% if digitado.get('selo') %} value="{{ digitado.get('selo') }}"{% endif %}></label>
     {% if tipo == 'AVERBACAO' %}

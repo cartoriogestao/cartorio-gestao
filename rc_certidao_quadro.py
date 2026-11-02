@@ -90,11 +90,15 @@ def quadro_da_certidao(con, certidao: dict, sv: dict) -> dict:
     dados = _dados(a)
     quem = RCE._por_papel(RCE.pessoas(con, aid))
     atos = [dict(x) for x in bd.ler(
-        """SELECT tipo, teor FROM rc_atos WHERE assento_id=%s
+        """SELECT tipo, teor, natureza FROM rc_atos WHERE assento_id=%s
            AND tipo IN ('AVERBACAO','ANOTACAO','RETIFICACAO')
            ORDER BY id""", (aid,))]
     acrescer = []
     for x in atos:
+        # O papel não transcreve o que o teor não transcreve (o reconhecimento de filiação — Lei
+        # 8.560/1992, art. 6º; ensaio de atos, item 1, 02/11/2026).
+        if not RCE.se_transcreve(x):
+            continue
         rotulo = RCE.rotulo_do_ato(x.get("tipo"))
         acrescer.append(f"{rotulo}: {str(x.get('teor') or '').strip()}".strip())
     # A INSCRIÇÃO DO ART. 21, PARÁGRAFO ÚNICO, DA LRP — a mesma peça do teor

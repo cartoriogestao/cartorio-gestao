@@ -542,6 +542,10 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("rc_assentos", "obito_possui_bens", "TEXT"),
     ("rc_assentos", "obito_possui_filho", "TEXT"),
     ("rc_assentos", "obito_desconhecido", "TEXT"),
+    # A NATUREZA DA AVERBAÇÃO, GUARDADA — ensaio de atos, item 1 (decisão do oficial, 02/11/2026): ela só
+    # escolhia o tipo do selo e se perdia. É ela que diz que o reconhecimento de filiação não se transcreve
+    # na certidão em breve relato (Lei 8.560/1992, art. 6º).
+    ("rc_atos", "natureza", "TEXT"),
     # O TESTAMENTO, A QUINTA PERGUNTA — decisão do oficial, 02/11/2026 (ensaio de atos, item 4): «se
     # faleceu com testamento conhecido» (LRP art. 80, 6º) é pergunta para toda morte, e o campo de texto
     # livre deixava o termo calar ou dizer «Deixou testamento conhecido: NAO».

@@ -1119,6 +1119,22 @@ def test_o_termo_de_casamento_traz_a_data_da_celebracao(balcao):
     assert "dezenove (19) de outubro" in _termo(balcao, assento["id"])
 
 
+@pytest.mark.parametrize("trocar, recado", [
+    ({"regime_bens": "COMUNHAO_UNIVERSAL", "pacto_data": "", "pacto_serventia": ""}, "pacto antenupcial"),
+    ({"nubente2_data_nascimento": "2011-06-01"}, "art. 1.520"),
+])
+def test_o_casamento_que_o_codigo_civil_nao_admite_nao_se_lavra(balcao, trocar, recado):
+    """CC art. 1.640, parágrafo único, e art. 1.653 (regime convencional só por pacto em escritura);
+    CC art. 1.520 (ninguém casa antes dos 16). O ensaio de atos (01/11/2026) lavrou os dois pela tela,
+    sem aviso: agora a conferência trava, e nada se grava."""
+    rota = "/rcpn/novo/casamento"
+    antes = _um(balcao, "SELECT count(*) AS n FROM rc_assentos")["n"]
+    r = _post(balcao, rota, rota, acao="lavrar", especie="CASAMENTO", folha_seguranca=FOLHAS[6],
+              **(_form_casamento() | trocar))
+    assert _um(balcao, "SELECT count(*) AS n FROM rc_assentos")["n"] == antes
+    assert recado in r.get_data(as_text=True)
+
+
 # ========================================== 2ª via, inteiro teor e as notas
 
 

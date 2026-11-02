@@ -396,6 +396,21 @@ def _cpf_da_pessoa(quem: dict, papel: str) -> str:
     return ""
 
 
+def _cpf_dos_conjuges(quem: dict, especie: str) -> str:
+    """«CPF1 e CPF2» dos nubentes, na ordem do «NOME: A e B». Só calcula.
+
+    O CASAMENTO NÃO TEM PESSOA PRINCIPAL, e por isso o CPF caía no blob do acervo: o casamento lavrado
+    aqui saía «CPF SEM INFORMAÇÃO» com os dois CPF no termo e no papel (ensaio de atos, 01/11/2026;
+    CNN art. 477). O que falta de um lado fica «SEM INFORMAÇÃO», e não some: senão o CPF que sobra
+    pareceria ser do primeiro nome."""
+    if especie not in ("CASAMENTO", "CASAMENTO_RELIGIOSO"):
+        return ""
+    cpfs = [_cpf_da_pessoa(quem, papel) for papel in ("NUBENTE1", "NUBENTE2")]
+    if not any(cpfs):
+        return ""
+    return " e ".join(c or SEM_INFORMACAO for c in cpfs)
+
+
 def _local_do_assento(a: dict, dados: dict, *, nascimento: bool) -> str:
     """O local digitado no ato novo; o blob fica como legado."""
     partes = [str(a.get(k) or "").strip()
@@ -581,6 +596,7 @@ def montar_teor(*, assento: dict, pessoas_do_assento: list[dict],
                         **{e: "REGISTRADO" for e in ESPECIES_DO_LIVRO_E}}
                        .get(especie, ""))
     linhas += _linha("CPF", _cpf_da_pessoa(quem, papel_principal)
+                     or _cpf_dos_conjuges(quem, especie)
                      or _documento(dados))
     # A MATRÍCULA SAI COMO ESTÁ. Os 32 dígitos vêm do assento; o sistema não
     # os gera, porque o verificador deles não se explica.

@@ -4667,6 +4667,12 @@ MUDARAM_DE_PROPOSITO = {"termos": {
     "ob.montado.nada_perguntado": None, "ob.valores.nada_perguntado": None,
     "varre.obito": {"ok": {"erros": 0, "n": 1272, "sha256": (
         "f7c1c5d26e37a5f4658525baf0351c7098433ffce48f38b10fe5fde2c2c887fb")}},
+    # O ESTRANGEIRO SAI IDENTIFICADO — o ensaio de atos, 01/11/2026: a qualificação só tinha frase para o
+    # RG e o CPF, e a CNH, o passaporte e o «outro» sumiam do termo. A varredura muda só por isso: com
+    # `DOCUMENTO_POR_EXTENSO` vazio, ela volta ao sha256 do ouro (conferido ao gravar esta troca).
+    "qualificacao_inteira.cnh": {"ok": "JOÃO DE EXEMPLO, portador da CNH n.º 999"},
+    "varre.qualificacao_inteira": {"ok": {"erros": 0, "n": 38880, "sha256": (
+        "801a5b24396ee7c77eecbdced0b5b18bc3b29873754e929cdb25ea6e8975311c")}},
 }}
 
 

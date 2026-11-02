@@ -334,7 +334,7 @@ def casos(casa) -> list[Caso]:
              obi(5, obito_desconhecido="SIM", pessoa_nome="PESSOA NÃO IDENTIFICADA", pessoa_sexo="M",
                  obito_desconhecido_estatura="cerca de 1,70 m", obito_desconhecido_idade_presumida="entre 40 e 50 anos",
                  obito_desconhecido_sinais="cicatriz no antebraço esquerdo",
-                 obito_desconhecido_vestuario="camisa azul e calça jeans",
+                 obito_desconhecido_vestuario="bermuda cinza e camiseta branca",
                  pessoa_estado_civil="", pessoa_profissao="", pessoa_naturalidade_cidade="",
                  pessoa_naturalidade_uf="", pessoa_endereco="", pessoa_nacionalidade="",
                  pessoa_documento_numero="", pessoa_data_nascimento="", cpf_registrado="",

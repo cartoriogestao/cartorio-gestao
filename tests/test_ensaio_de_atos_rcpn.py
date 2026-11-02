@@ -373,7 +373,7 @@ def test_o_obito_do_desconhecido_nao_afirma_o_que_ninguem_sabe(saidas):
     assert "o declarante ignorava: era eleitor, deixou bens, deixou filhos e deixou testamento conhecido" in t, t
     assert ("Sinais para o reconhecimento (Lei n.º 6.015/1973, art. 81): estatura cerca de 1,70 m; idade "
             "presumida entre 40 e 50 anos; cor parda; sinais aparentes cicatriz no antebraço esquerdo; "
-            "vestuário camisa azul e calça jeans.") in t, t
+            "vestuário bermuda cinza e camiseta branca.") in t, t
 
 
 # ------------------------------------------------------------------ casamento

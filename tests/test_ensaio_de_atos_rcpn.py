@@ -372,11 +372,12 @@ def test_o_nubente_de_passaporte_fica_sem_informacao_do_lado_dele(saidas):
 
 
 @pytest.mark.parametrize("chave", CASAMENTOS)
-@_decisao("o termo não nomeia quem presidiu o ato: «foram declarados casados» e «assinam comigo … os "
-          "nubentes e as testemunhas», e o juiz de paz digitado só aparece na linha de assinatura da folha. "
-          "O CC art. 1.536 e o LRP art. 70 pedem o assento «assinado pelo presidente do ato»")
 def test_o_termo_de_casamento_nomeia_o_presidente_do_ato(saidas, chave):
-    assert "PAULO EXEMPLO JUIZ DE PAZ" in _s(saidas, chave).termo
+    """CC art. 1.536, caput; LRP art. 70, caput — decisão do oficial de 02/11/2026 (item 5): o termo diz
+    quem presidiu o ato, e que ele assina."""
+    t = _s(saidas, chave).termo
+    assert "foram declarados casados" in t and "por PAULO EXEMPLO JUIZ DE PAZ, Juiz de Paz," in t, t
+    assert "assinam comigo, que escrevi, o presidente do ato, os nubentes e as testemunhas" in t, t
 
 
 def test_o_nubente_estrangeiro_sai_com_o_pais_e_o_passaporte(saidas):

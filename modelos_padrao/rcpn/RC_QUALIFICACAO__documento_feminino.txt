@@ -1,0 +1,1 @@
+portadora {documento} n.º {numero}

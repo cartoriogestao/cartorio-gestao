@@ -965,6 +965,16 @@ CHAVE_DA_QUALIFICACAO = "RC_QUALIFICACAO"
 _PARTE_VAZIA = "\x00"
 
 
+#: O documento que não é RG nem CPF, com o artigo, como o termo o escreve (`documento_tipo` da tela).
+DOCUMENTO_POR_EXTENSO = {"PASSAPORTE": "do passaporte", "CNH": "da CNH", "OUTRO": "do documento"}
+
+
+def _sem_acento_maiusculo(texto: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", texto or "")
+                   if unicodedata.category(c) != "Mn").strip().upper()
+
+
 def qualificacao_inteira(p: dict, *, feminino: bool | None = None, nome_negrito: bool = False) -> str:
     """A pessoa como o termo desta casa a escreve.
 
@@ -1004,6 +1014,15 @@ def qualificacao_inteira(p: dict, *, feminino: bool | None = None, nome_negrito:
     if rg:
         partes["rg"] = _frase("RC_QUALIFICACAO__rg_feminino" if f
                               else "RC_QUALIFICACAO__rg_masculino", numero=rg)
+    # O PASSAPORTE, A CNH E O «OUTRO» TAMBÉM IDENTIFICAM — o ensaio de atos, 01/11/2026 (pedido do
+    # oficial). Só o RG e o CPF tinham frase: o nubente estrangeiro saía «italiano, lavrador, natural
+    # de Roma», sem documento nenhum no termo. Ocupam o lugar do RG, que quem os apresenta não tem.
+    outro = _texto(p.get("documento_tipo")).upper()
+    numero_outro = _texto(p.get("documento_numero"))
+    if outro in DOCUMENTO_POR_EXTENSO and numero_outro:
+        partes["rg"] = _frase("RC_QUALIFICACAO__documento_feminino" if f
+                              else "RC_QUALIFICACAO__documento_masculino",
+                              documento=DOCUMENTO_POR_EXTENSO[outro], numero=numero_outro)
     cpf = _texto(p.get("cpf")) or (
         _texto(p.get("documento_numero"))
         if _texto(p.get("documento_tipo")).upper() == "CPF" else "")
@@ -1011,10 +1030,17 @@ def qualificacao_inteira(p: dict, *, feminino: bool | None = None, nome_negrito:
         partes["cpf"] = _frase("RC_QUALIFICACAO__cpf_feminino" if f
                                else "RC_QUALIFICACAO__cpf_masculino", numero=cpf)
     nat = _texto(p.get("naturalidade_cidade"))
-    if nat:
-        uf = _texto(p.get("naturalidade_uf"))
-        partes["naturalidade"] = _frase("RC_QUALIFICACAO__naturalidade",
-                                        lugar=nat + (f"/{uf}" if uf else ""))
+    # QUEM NASCEU FORA DO BRASIL É NATURAL DA CIDADE E DO PAÍS: o campo do país existia na tela e não
+    # chegava ao termo, e a opção de nacionalidade de quem nasceu em Portugal dizia «natural de Cidade
+    # Exemplo/MA» (ensaio de atos, 01/11/2026).
+    pais = _texto(p.get("naturalidade_pais"))
+    if _sem_acento_maiusculo(pais) in ("", "BRASIL", "BRASILEIRA", "BR"):
+        pais = ""
+    if nat or pais:
+        uf = "" if pais else _texto(p.get("naturalidade_uf"))
+        lugar = nat + (f"/{uf}" if nat and uf else "")
+        lugar = ", ".join(x for x in (lugar, pais) if x)
+        partes["naturalidade"] = _frase("RC_QUALIFICACAO__naturalidade", lugar=lugar)
     nasc = _texto(p.get("data_nascimento"))[:10]
     if nasc and len(nasc) == 10:
         d, m, a = nasc[8:10], nasc[5:7], nasc[:4]

@@ -1,0 +1,1 @@
+portador {documento} n.º {numero}

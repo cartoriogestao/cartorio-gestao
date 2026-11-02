@@ -42,9 +42,7 @@ pytestmark = pytest.mark.lento
 #: Conserto em PR aberto: o xfail sai quando ele entrar. Os do ensaio que já entraram — #225 (o
 #: casamento que o Código Civil não admite), #226 (quem nasceu depois do fato) e #227 (o estrangeiro) —
 #: são conferência comum abaixo.
-PR_ABERTO = {
-    "natimorto_sexo": "PR #228 — a certidão de natimorto lê o REGISTRADO",
-}
+PR_ABERTO: dict[str, str] = {}
 
 
 def _pr(chave: str):
@@ -105,8 +103,6 @@ RECUSA_INDEVIDA = {
     "obito_desconhecido_ignora": _decisao(
         "o balcão não consegue declarar que ignora se o falecido deixou bens: a trava da CRC exige S ou N "
         "(«sem opção de ignorado»), e o CN-MA art. 255, § 1º, manda escrever que o declarante ignorava"),
-    "natimorto": _decisao("o nome do natimorto é facultativo, a critério dos pais (LRP art. 53, § 3º; CNN "
-                          "art. 479-A, conforme `docs/REQUISITOS_LEGAIS.md`), e a tela o exige"),
 }
 
 
@@ -278,7 +274,6 @@ def test_a_certidao_menciona_o_que_foi_lancado_a_margem(saidas, chave):
 
 # ------------------------------------------------------------------ natimorto
 
-@_pr("natimorto_sexo")
 def test_a_certidao_de_natimorto_traz_o_sexo_do_termo(saidas):
     """LRP art. 53, § 1º, e art. 54, 2º."""
     s = _s(saidas, "natimorto_com_nome")
@@ -286,11 +281,22 @@ def test_a_certidao_de_natimorto_traz_o_sexo_do_termo(saidas):
     assert "SEXO MASCULINO" in s.certidao and "MASCULINO" in s.papel
 
 
-@_defeito("o breve relato do natimorto usa o quadro do óbito, e escreve «ESTADO CIVIL ND», «PROFISSÃO ND», "
-          "«TESTAMENTO CONHECIDO ND» de quem nasceu morto; o papel (molde próprio) não tem esses campos")
-def test_o_breve_relato_do_natimorto_nao_pergunta_o_que_nao_cabe(saidas):
-    c = _s(saidas, "natimorto_com_nome").certidao
-    assert "TESTAMENTO" not in c and "ESTADO CIVIL" not in c and "PROFISSÃO" not in c
+@pytest.mark.parametrize("chave", ["natimorto", "natimorto_com_nome"])
+def test_o_breve_relato_do_natimorto_e_dele(saidas, chave):
+    """Decisão do oficial, 02/11/2026 (ensaio de atos, item 7): o breve relato do natimorto não pergunta
+    estado civil, profissão nem testamento de quem nasceu morto, e diz o parto, a causa e o sepultamento."""
+    c = _s(saidas, chave).certidao
+    assert "TESTAMENTO" not in c and "ESTADO CIVIL" not in c and "PROFISSÃO" not in c, c
+    assert "DATA DO PARTO POR EXTENSO" in c and "anóxia intrauterina" in c
+    assert "SEPULTAMENTO OU CREMAÇÃO Cemitério Municipal de Cidade Exemplo" in c
+
+
+def test_o_natimorto_sem_nome_se_lavra_sem_dizer_que_recebeu_nome(saidas):
+    """LRP art. 53, § 3º (o nome é facultativo) — decisão do oficial, 02/11/2026. O assento se acha como a
+    casa o indexa, «NATIMORTO DE <a mãe>», e o termo não diz que ele «recebeu o nome de» nada."""
+    s = _s(saidas, "natimorto")
+    assert "recebeu o nome" not in s.termo and "nasceu morta uma criança do sexo Masculino" in s.termo
+    assert "NOME: NATIMORTO DE BEATRIZ EXEMPLO DE SOUZA" in s.certidao
 
 
 # ------------------------------------------------------------------ óbito

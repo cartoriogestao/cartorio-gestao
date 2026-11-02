@@ -50,7 +50,7 @@ o LD01 (21/10/2026, «corrija tudo») consertou: o `xfail` saiu e o teste passa.
 |---|---|---|
 | registro no C-Auxiliar «com os elementos que couberem» | LRP art. 53, § 1º; CNN art. 479-A; CN-MA art. 210, V | ✓ (série RC_C_AUXILIAR) |
 | a declaração de que nasceu morta | LRP art. 53, § 1º, e art. 54, 5º | ✓ LD01 [nati.nasceu_morta] — claro `{frase_natimorto}`: «nasceu morta uma criança», com a Declaração de Óbito no lugar da DNV |
-| nome facultativo, a critério dos pais | LRP art. 53, § 3º; CNN art. 479-A | conferir — a tela exige o nome |
+| nome facultativo, a critério dos pais | LRP art. 53, § 3º; CNN art. 479-A | ✓ ensaio de atos (decisão do oficial, 02/11/2026): sem nome, o assento se indexa «NATIMORTO DE <a mãe>» e o termo não diz «que recebeu o nome de»; o breve relato é o do natimorto (parto, causa, sepultamento), e a tela tem a causa e o sepultamento |
 | sem CPF | CNN art. 479-A, § 1º | ✓ (o natimorto não tem o bloco do CPF) |
 | registro e 1ª certidão gratuitos | LRP art. 30; CN-MA art. 217 | ✓ (14.d isento) |
 

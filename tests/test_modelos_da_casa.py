@@ -4711,6 +4711,27 @@ def _so_o_cpf_dos_conjuges(nome: str, depois) -> bool:
     return linha in novo and hexa.sub("#", novo.replace(linha, "CPF\\nSEM INFORMAÇÃO\\n")) == hexa.sub("#", antes)
 
 
+# O BREVE RELATO DO NATIMORTO É DELE — decisão do oficial, 02/11/2026 (ensaio de atos, item 7): saem as
+# linhas de quem viveu (idade, nascimento, estado civil, profissão, cor, naturalidade, domicílio,
+# testamento) e o «ÓBITO» do parto vira «PARTO». O que fica é o do ouro, linha por linha.
+_SO_DO_OBITO = ("IDADE", "DATA DE NASCIMENTO", "ESTADO CIVIL", "PROFISSÃO", "COR OU RAÇA", "NATURALIDADE",
+                "ÚLTIMO DOMICÍLIO", "TESTAMENTO CONHECIDO")
+
+
+def _so_o_breve_relato_do_natimorto(depois) -> bool:
+    import re as _re
+    antes = OURO_C.ouro("certidoes")["funcoes"]["montar_teor(NATIMORTO)"]["ok"]
+    for rotulo in _SO_DO_OBITO:
+        antes = _re.sub(rf"(?m)^{_re.escape(rotulo)}\n[^\n]*\n", "", antes)
+    for velho, novo in (("DATA DO ÓBITO POR EXTENSO", "DATA DO PARTO POR EXTENSO"),
+                        ("HORA DO ÓBITO", "HORA DO PARTO"), ("LOCAL DO ÓBITO", "LOCAL DO PARTO")):
+        antes = antes.replace(velho, novo)
+    return depois == {"ok": antes}
+
+
+MUDARAM_DE_PROPOSITO["certidoes"]["montar_teor(NATIMORTO)"] = _so_o_breve_relato_do_natimorto
+
+
 def _ouro_com_as_mudancas_explicadas(grupo: str, funcoes: dict) -> dict:
     """O ouro gravado, com a troca de cada saída de `MUDARAM_DE_PROPOSITO`.
 

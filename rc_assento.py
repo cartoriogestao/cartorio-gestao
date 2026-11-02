@@ -275,10 +275,13 @@ CAMPOS_DO_TERMO_POR_ESPECIE: dict[str, tuple[str, ...]] = {
     "NASCIMENTO": ("cor_raca", "hora_fato", "local_fato_nome",
                    "local_fato_endereco", "local_fato_municipio",
                    "naturalidade_declarada"),
-    # Natimorto (art. 53) tem lugar do fato no papel, como o nascimento e o obito.
+    # Natimorto (art. 53) tem lugar do fato no papel, como o nascimento e o obito — e, desde o ensaio de
+    # atos (02/11/2026, item 7), a causa, quem atestou e o sepultamento, «os elementos que couberem».
     "NATIMORTO": ("cor_raca", "hora_fato", "local_fato_nome",
                    "local_fato_endereco", "local_fato_municipio",
-                   "naturalidade_declarada"),
+                   "naturalidade_declarada",
+                   "causa_morte", "atestante", "atestante_documento",
+                   "local_sepultamento"),
     "OBITO": ("cor_raca", "hora_fato", "local_fato_nome",
               "local_fato_endereco", "local_fato_municipio",
               "naturalidade_declarada",
@@ -585,6 +588,17 @@ def anotar_do_termo(con: Any, assento_id: int, *,
             con, assento_id, especie, valores["naturalidade_declarada"])
     return {"gravados": sorted(valores), "quantos": len(valores),
             "naturalidade": naturalidade}
+
+
+#: A marca, em `dados_json`, do natimorto a quem os pais não deram nome (ensaio de atos, item 7).
+NATIMORTO_SEM_NOME = "natimorto_sem_nome"
+
+
+def nome_do_natimorto_sem_nome(pessoas: list[dict] | None) -> str:
+    """«NATIMORTO DE BEATRIZ EXEMPLO DE SOUZA» — como a casa indexa o natimorto sem nome. Só calcula."""
+    mae = next((p for p in pessoas or [] if str(p.get("papel") or "").upper() == "MAE"
+                and str(p.get("nome") or "").strip()), None)
+    return f"NATIMORTO DE {str(mae['nome']).strip().upper()}" if mae else "NATIMORTO"
 
 
 def anotar_para_o_ibge(con: Any, assento_id: int, *,
@@ -1425,6 +1439,13 @@ def lavrar_assento(con: Any, *, especie: str, nome: str,
         raise RcError(
             f"Espécie de assento desconhecida: {especie!r}. As que existem "
             f"são: {', '.join(ESPECIES)}.")
+    # O NATIMORTO SEM NOME — decisão do oficial, 02/11/2026 (ensaio de atos, item 7): o nome é facultativo,
+    # a critério dos pais (LRP art. 53, § 3º). O assento ainda precisa de como ser achado, e é como a casa
+    # já o indexa: «NATIMORTO DE <a mãe>». A marca em `dados` diz ao termo que não houve nome dado, para
+    # ele não escrever «que recebeu o nome de».
+    if especie == "NATIMORTO" and not (nome or "").strip():
+        nome = nome_do_natimorto_sem_nome(pessoas)
+        dados = {**(dados or {}), NATIMORTO_SEM_NOME: True}
     # A LAVRATURA DO BALCAO (origem MANUAL) recusa o que a lei exige e veio
     # em branco. Carga / E-Oficio / SISTEMA trazem o papel que ja existe.
     if (origem or "MANUAL").strip().upper() == "MANUAL":

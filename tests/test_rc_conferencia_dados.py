@@ -290,3 +290,24 @@ def test_campos_para_corrigir_abrem_so_o_que_resolve():
     # o que só avisa não abre campo
     assert CD.campos_para_corrigir([{"gravidade": "AVISA", "codigo": "IDADE_NAO_BATE",
                                      "mensagem": "x", "campo": "MAE"}]) == []
+
+
+# ------------------------------------------- o gêmeo sem a ordem (ensaio de atos, 02/11/2026)
+
+def test_o_gemeo_sem_a_ordem_de_nascimento_trava():
+    """LRP art. 63; CN-MA art. 234: a ordem vai no termo de cada gêmeo. Sem ela, o parto múltiplo trava,
+    e «arrumar» abre só o campo da ordem."""
+    probs = CD.conferir(dados(ibge_gemeo="2"))
+    assert codigos(probs, "BLOQUEIA") == ["GEMEO_SEM_ORDEM"]
+    assert [c["campo"] for c in CD.campos_para_corrigir(probs)] == ["gemeo_ordem"]
+    assert codigos(CD.conferir(dados(ibge_gemeo="2", gemeo_ordem=1)), "BLOQUEIA") == []
+    assert codigos(CD.conferir(dados(ibge_gemeo="1")), "BLOQUEIA") == []
+
+
+def test_a_ordem_do_gemeo_entra_como_numero_e_recusa_o_que_nao_e():
+    con = banco()
+    r = lavrar(con)
+    RC.anotar_do_termo(con, r["assento_id"], especie="NASCIMENTO", gemeo_ordem="2")
+    assert con.execute("SELECT gemeo_ordem FROM rc_assentos WHERE id=?", (r["assento_id"],)).fetchone()[0] == 2
+    with pytest.raises(RC.RcError, match="ordem de nascimento"):
+        RC.anotar_do_termo(con, r["assento_id"], especie="NASCIMENTO", gemeo_ordem="segundo")

@@ -227,6 +227,13 @@
                   {% if form.get('ibge_gemeo') == codigo|string %}selected{% endif %}>{{ texto }}</option>
           {% endfor %}
         </select></label>
+      <label>Ordem de nascimento <small>(gêmeos: LRP art. 63 — vai no termo de cada um)</small>
+        <select name="gemeo_ordem">
+          <option value="">— não é gêmeo —</option>
+          {% for n in range(1, 6) %}
+          <option value="{{ n }}" {% if form.get('gemeo_ordem') == n|string %}selected{% endif %}>{{ n }}º a nascer</option>
+          {% endfor %}
+        </select></label>
       {% elif obito or natimorto %}
       <label>DO <small>número da Declaração de Óbito</small>
         <input name="numero_do" value="{{ form.get('numero_do','') }}"></label>

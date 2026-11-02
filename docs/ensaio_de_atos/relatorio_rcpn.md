@@ -85,7 +85,7 @@ Norma: LRP art. 54, 3º, e art. 63 («será declarada no assento especial de cad
 nascimento»); CN-MA art. 234, como `rc_gemeos` o cita.
 Proposta: o campo da ordem na tela de lavrar, exigido quando o parto é múltiplo.
 
-### 7. Natimorto — LEGAL · FORMA · DECISÃO
+### 7. Natimorto — LEGAL · FORMA · CONSERTADO (decisão do oficial, 02/11/2026)
 - Sem nome, a tela recusa («falta: nome de quem é o registro»); o nome é facultativo, a critério dos pais
   (LRP art. 53, § 3º; CNN art. 479-A, como em REQUISITOS_LEGAIS — já lá como «conferir»). DECISÃO.
 - O breve relato usa o quadro do óbito: `ESTADO CIVIL ND`, `PROFISSÃO ND`, `TESTAMENTO CONHECIDO ND`,

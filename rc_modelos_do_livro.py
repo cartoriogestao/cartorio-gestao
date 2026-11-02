@@ -1450,6 +1450,16 @@ def montar_do_assento(assento: dict, pessoas: list[dict],
     r["texto"] = concordar_a_peca(
         corrigir_declarante(r["texto"], _texto(declarante.get("sexo")).upper()[:1]),
         _sexo_conhecido(registrado))
+    # O NATIMORTO A QUEM OS PAIS NÃO DERAM NOME (LRP art. 53, § 3º; decisão do oficial, 02/11/2026, item
+    # 7 do ensaio de atos) não «recebeu o nome de» nada: o nome do assento é só como a casa o acha.
+    import json as _json
+    import re as _re
+    try:
+        sem_nome = bool(_json.loads(assento.get("dados_json") or "{}").get("natimorto_sem_nome"))
+    except (TypeError, ValueError):
+        sem_nome = False
+    if sem_nome:
+        r["texto"] = _re.sub(r', que recebeu o nome de: "[^"]*"', "", r["texto"])
     return r
 
 

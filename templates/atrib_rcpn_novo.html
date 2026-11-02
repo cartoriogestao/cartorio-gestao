@@ -289,7 +289,9 @@
         </select></label>
       {% endif %}
 
-      {% if obito %}
+      {# O NATIMORTO TEM CAUSA E SEPULTAMENTO TAMBÉM — ensaio de atos, 02/11/2026 (item 7, decisão do
+         oficial): o papel da certidão tem a caixa do sepultamento, e a tela não tinha onde dizê-lo. #}
+      {% if obito or natimorto %}
       <label style="grid-column:1/-1">Natureza e causa da morte <small>como vai no termo</small>
         <input name="causa_morte" value="{{ form.get('causa_morte','') }}"
                placeholder="natural ou violenta; causa conhecida conforme a DO"></label>

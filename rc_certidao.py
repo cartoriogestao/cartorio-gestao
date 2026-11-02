@@ -720,11 +720,17 @@ def montar_teor(*, assento: dict, pessoas_do_assento: list[dict],
         # O TITULAR DO NATIMORTO é o REGISTRADO (`papel_principal`), e não o FALECIDO: lido do papel
         # errado, o sexo que o termo declara saía «ND» na certidão (ensaio de atos, 01/11/2026).
         titular = papel_principal
-        linhas += _linha("DATA DO ÓBITO POR EXTENSO", do_fato)
-        linhas += _linha("HORA DO ÓBITO",
+        # O BREVE RELATO DO NATIMORTO É DELE — decisão do oficial, 02/11/2026 (ensaio de atos, item 7). Ele
+        # usava o do óbito inteiro, e a certidão de quem nasceu morto dizia «ESTADO CIVIL ND», «PROFISSÃO
+        # ND», «TESTAMENTO CONHECIDO ND». Fica o que o papel do natimorto tem (o parto, o sexo, o lugar, a
+        # DO, a causa, o sepultamento, os pais), com os rótulos dele; o que é de quem viveu, só no óbito.
+        obito = especie == "OBITO"
+        linhas += _linha("DATA DO ÓBITO POR EXTENSO" if obito else "DATA DO PARTO POR EXTENSO", do_fato)
+        linhas += _linha("HORA DO ÓBITO" if obito else "HORA DO PARTO",
                          a.get("hora_fato") or dados.get("strHoraObito"))
         linhas += _linha("SEXO", _sexo_por_extenso(
             _de(quem, titular, "sexo", dados, "strSexo")))
+    if especie == "OBITO":
         # A IDADE SE CALCULA, e nao se guarda: guardada, ela envelheceria
         # junto com o banco. O que se guarda e a data, que nao muda.
         linhas += _linha("IDADE", _idade_no_obito(
@@ -746,7 +752,8 @@ def montar_teor(*, assento: dict, pessoas_do_assento: list[dict],
         linhas += _linha("ÚLTIMO DOMICÍLIO", _lugar_da_pessoa(
             quem, titular, "cidade", "uf", dados,
             "strMunicipioFalecido", "strUFFalecido"))
-        linhas += _linha("LOCAL DO ÓBITO",
+    if especie in ("OBITO", "NATIMORTO"):
+        linhas += _linha("LOCAL DO ÓBITO" if obito else "LOCAL DO PARTO",
                          _local_do_assento(a, dados, nascimento=False))
         linhas += _linha("NÚMERO DA DECLARAÇÃO DE ÓBITO",
                          a.get("numero_do")
@@ -763,6 +770,7 @@ def montar_teor(*, assento: dict, pessoas_do_assento: list[dict],
         linhas += _linha("SEPULTAMENTO OU CREMAÇÃO",
                          a.get("local_sepultamento")
                          or dados.get("strLocalSepultamento"))
+    if especie == "OBITO":
         # A RESPOSTA À PERGUNTA DO TESTAMENTO MANDA no «NÃO» (ensaio de atos, item 4, 02/11/2026); no
         # «SIM», vale o que o identifica, quando houver.
         testamento = (marca_no_papel(a.get("obito_testamento"))
@@ -770,20 +778,20 @@ def montar_teor(*, assento: dict, pessoas_do_assento: list[dict],
                       a.get("testamento") or dados.get("strTestamento")
                       or marca_no_papel(a.get("obito_testamento")))
         linhas += _linha("TESTAMENTO CONHECIDO", testamento)
-        if especie == "OBITO":
-            # O QUE O TERMO DECLARA, A CERTIDÃO DIZ — LD01, 21/10/2026. Se
-            # era eleitor, se deixou bens e os filhos (LRP art. 80, 7º, 10º e
-            # 11º; art. 21) estão no termo, e o breve relato não os trazia.
-            # A marca se lê pela régua do termo (`marca_no_papel`).
-            linhas += _linha("ERA ELEITOR", marca_no_papel(a.get("obito_eleitor")))
-            linhas += _linha("DEIXOU BENS",
-                             marca_no_papel(a.get("obito_possui_bens")))
-            linhas += _linha("DEIXOU FILHOS", filhos_do_falecido(a))
+        # O QUE O TERMO DECLARA, A CERTIDÃO DIZ — LD01, 21/10/2026. Se
+        # era eleitor, se deixou bens e os filhos (LRP art. 80, 7º, 10º e
+        # 11º; art. 21) estão no termo, e o breve relato não os trazia.
+        # A marca se lê pela régua do termo (`marca_no_papel`).
+        linhas += _linha("ERA ELEITOR", marca_no_papel(a.get("obito_eleitor")))
+        linhas += _linha("DEIXOU BENS",
+                         marca_no_papel(a.get("obito_possui_bens")))
+        linhas += _linha("DEIXOU FILHOS", filhos_do_falecido(a))
+    if especie in ("OBITO", "NATIMORTO"):
         linhas.append("")
         linhas += _linha("FILIAÇÃO:", _e_junta(
             [_nome(quem.get("PAI")), _nome(quem.get("MAE"))]))
 
-    elif especie in ESPECIES_DO_LIVRO_E:
+    if especie in ESPECIES_DO_LIVRO_E:
         # O BREVE RELATO DO LIVRO E — LD01, 21/10/2026. Só havia corpo para
         # nascimento, casamento e óbito, e a certidão de uma interdição saía
         # com o título e o nome: sem a espécie, a sentença, o curador nem os

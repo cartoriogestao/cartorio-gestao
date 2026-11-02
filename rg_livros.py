@@ -63,6 +63,8 @@ NOMES_QUE_NAO_SAO_NOME = {"apresentante", "requerente", "nao informado"}
 
 POR_PAGINA = 50
 MINIMO_DO_MOTIVO = 10
+AGUARDA_QUALIFICACAO = "aguarda qualificação"
+AGUARDA_LAVRATURA = "qualificado, aguarda a lavratura"
 
 
 class LivroDoRegistroError(ValueError):
@@ -200,21 +202,80 @@ def _lancamento_do_titulo(con, titulo: dict) -> str:
     return "; ".join(partes)
 
 
+def _frase_do_sobrestado(sobrestamento: dict) -> str:
+    return f"sobrestado: {TIT.SOBRESTAR_POR.get(sobrestamento['tipo'], sobrestamento['tipo'])}"
+
+
+def _frase_da_exigencia(qualificacao: dict | None) -> str:
+    exigencia = _texto((qualificacao or {}).get("exigencias")).split("\n")[0][:120]
+    return f"com exigência: {exigencia}" if exigencia else "com exigência"
+
+
 def motivo_da_pendencia(con, titulo: dict) -> str:
     """Por que o título ainda não saiu. CN-MA art. 970. Só LÊ."""
     situacao = titulo.get("situacao")
     aberto = TIT.sobrestamento_aberto(con, int(titulo["id"]))
     if aberto:
-        return f"sobrestado: {TIT.SOBRESTAR_POR.get(aberto['tipo'], aberto['tipo'])}"
+        return _frase_do_sobrestado(aberto)
     if situacao == TIT.APRESENTADO:
-        return "aguarda qualificação"
+        return AGUARDA_QUALIFICACAO
     if situacao == TIT.QUALIFICADO:
-        return "qualificado, aguarda a lavratura"
+        return AGUARDA_LAVRATURA
     if situacao == TIT.EXIGENCIA:
-        ultima = TIT.ultima_qualificacao(con, int(titulo["id"]))
-        exigencia = _texto((ultima or {}).get("exigencias")).split("\n")[0][:120]
-        return f"com exigência: {exigencia}" if exigencia else "com exigência"
+        return _frase_da_exigencia(TIT.ultima_qualificacao(con, int(titulo["id"])))
     return ""
+
+
+def motivo_no_dia(con, titulo: dict, dia: str) -> str:
+    """Por que o título estava parado ao fim daquele dia. CN-MA art. 970. Só LÊ.
+
+    Olha só o que já tinha acontecido até ali: a qualificação de depois não explica o
+    adiamento de antes.
+    """
+    bd = banco(con)
+    tid = int(titulo["id"])
+    for s in bd.ler("SELECT * FROM rg_sobrestamentos WHERE titulo_id=%s ORDER BY id DESC", (tid,)):
+        if _so_dia(s["criado_em"]) <= dia and not (s["fim_em"] and _so_dia(s["fim_em"]) <= dia):
+            return _frase_do_sobrestado(dict(s))
+    ultima = None
+    for q in bd.ler("SELECT * FROM rg_qualificacoes WHERE titulo_id=%s ORDER BY ordem", (tid,)):
+        if _so_dia(q["data_qualificacao"]) <= dia:
+            ultima = dict(q)
+    if ultima is None:
+        return AGUARDA_QUALIFICACAO
+    return AGUARDA_LAVRATURA if ultima["resultado"] == TIT.POSITIVA else _frase_da_exigencia(ultima)
+
+
+def dia_em_que_saiu(con, titulo: dict) -> str:
+    """O dia em que o título saiu do Protocolo; vazio enquanto não saiu. Só LÊ.
+
+    Registrado: o dia do primeiro ato que saiu dele. O ato que gastou item do protocolo é a
+    ponte gravada; depois, o registro aberto pelo título; por último, o registro a que ele
+    se amarrou, sem contar ato anterior à apresentação, porque o título de averbação aponta
+    para registro antigo. Devolvido ou cancelado: o dia gravado ao encerrar.
+
+    SEM DIA GRAVADO, VALE O DA APRESENTAÇÃO. O título antigo é memória do que aconteceu, e o
+    termo não lista como pendente o que ninguém sabe se estava.
+    """
+    situacao = titulo.get("situacao")
+    apresentado = _so_dia(titulo.get("data_apresentacao"))
+    if situacao in (TIT.DEVOLVIDO, TIT.CANCELADO):
+        return _so_dia(titulo.get("encerrado_em")) or apresentado
+    if situacao != TIT.REGISTRADO:
+        return ""
+    bd = banco(con)
+    tid = int(titulo["id"])
+    fontes = (
+        lambda: TIT.atos_do_protocolo(con, tid),
+        lambda: bd.ler("""SELECT a.data_ato FROM rg_atos a JOIN rg_registros r ON r.id = a.registro_id
+                           WHERE r.titulo_id = %s""", (tid,)),
+        lambda: bd.ler("SELECT data_ato FROM rg_atos WHERE registro_id = %s", (int(titulo.get("registro_id") or 0),)),
+    )
+    for atos in fontes:
+        dias = sorted(d for d in (_so_dia(a["data_ato"]) for a in atos()) if d and d >= apresentado)
+        if dias:
+            return dias[0]
+    return apresentado
 
 
 def linhas_do_protocolo(con, atribuicao: int, *, de: str = "", ate: str = "",
@@ -250,20 +311,26 @@ def linhas_do_protocolo(con, atribuicao: int, *, de: str = "", ate: str = "",
 
 
 def pendentes_ao_fim_do_dia(con, atribuicao: int, dia: str) -> list[dict]:
-    """Os títulos apresentados até o dia que continuam sem lançamento. Só LÊ.
+    """Os títulos apresentados até o dia que continuavam sem lançamento ao fim dele. Só LÊ.
 
     CN-MA art. 970: o termo de encerramento diário relaciona, «pelos respectivos
     números de ordem, todos os títulos apresentados que permanecerem com o registro ou
     a averbação pendentes, acompanhados da indicação dos motivos do adiamento».
+
+    O TERMO DE UM DIA PASSADO FALA DAQUELE DIA, E NÃO DE HOJE. A tela oferece encerrar dia
+    antigo, e o termo vai ao livro: olhando a situação de agora, o título registrado depois
+    sumia da lista, e o livro afirmaria que não havia pendência.
     """
     saida = []
     for t in banco(con).ler(
             """SELECT * FROM rg_titulos
                 WHERE atribuicao = %s AND data_apresentacao <= %s
-                  AND situacao NOT IN ('REGISTRADO','DEVOLVIDO','CANCELADO')
                 ORDER BY numero, id""", (int(atribuicao), dia)):
-        saida.append({"id": int(t["id"]), "numero": t["numero"],
-                      "motivo": motivo_da_pendencia(con, dict(t))})
+        t = dict(t)
+        saiu = dia_em_que_saiu(con, t)
+        if saiu and saiu <= dia:
+            continue
+        saida.append({"id": int(t["id"]), "numero": t["numero"], "motivo": motivo_no_dia(con, t, dia)})
     return saida
 
 
@@ -318,8 +385,11 @@ def atos_do_livro(con, serie: str, *, de: str = "", ate: str = "", busca: str = 
             onde.append("(a.numero_ordem = %s OR r.numero = %s)")
             param += [int(texto), int(texto)]
         else:
-            onde.append("(r.requerente_nome ILIKE %s OR r.natureza ILIKE %s)")
-            param += [f"%{texto}%", f"%{texto}%"]
+            # Sem acento nem caixa, como o Protocolo e os indicadores: `nome_da_casa` é a
+            # `normalizar_nome` dentro do banco, e aqui a página sai do SQL.
+            procura = f"%{normalizar_nome(texto) or ''}%"
+            onde.append("(nome_da_casa(r.requerente_nome) LIKE %s OR nome_da_casa(r.natureza) LIKE %s)")
+            param += [procura, procura]
     filtro = " AND ".join(onde)
     bd = banco(con)
     total = int(bd.valor(
@@ -375,9 +445,9 @@ def entradas_do_indicador(con, *, atribuicao: int | None = None,
                  "serie": r["serie"], "numero": r["numero"], "volume": r["volume"],
                  "natureza": r["natureza"], "situacao": r["situacao"],
                  "data_ato": _so_dia(r["data_ato"])}
-        doRegistro = partes.get(int(r["id"]), [])
-        nomes = {p["nome_norm"] for p in doRegistro}
-        for p in doRegistro:
+        do_registro = partes.get(int(r["id"]), [])
+        nomes = {p["nome_norm"] for p in do_registro}
+        for p in do_registro:
             saida.append({**comum, "nome": p["nome"], "nome_norm": p["nome_norm"],
                           "documento": p["documento"] or "", "papel": p["papel"] or ""})
         if _e_nome(r["requerente_nome"]):
@@ -475,9 +545,14 @@ def lugar_do_livro(con, serie: str | None) -> dict | None:
 # ----------------------------------------------------- as partes e os bens
 
 
+def documento_na_tela(valor: Any) -> str:
+    """O CPF ou o CNPJ como se lê; vazio quando não há. Só monta."""
+    return DOC.formatar_documento(valor) if valor else ""
+
+
 def partes_do_registro(con, registro_id: int) -> list[dict]:
     """As partes do registro, com as retiradas no fim. Só LÊ."""
-    return [{**x, "documento_formatado": DOC.formatar_documento(x["documento"]) if x["documento"] else ""}
+    return [{**x, "documento_formatado": documento_na_tela(x["documento"])}
             for x in map(dict, banco(con).ler(
                 """SELECT * FROM rg_partes WHERE registro_id=%s
                     ORDER BY (retirada_em IS NOT NULL), id""", (int(registro_id),)))]

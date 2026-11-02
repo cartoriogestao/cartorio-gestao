@@ -60,6 +60,9 @@ administrativos (arts. 185-191, já em `livros_administrativos`) e da alienaçã
 ## Regras de leitura
 
 - Os livros são montados do que foi lançado; o que o ato não guardou fica em branco.
+- O termo de um dia passado diz como cada título estava naquele dia, e não como está hoje: entra o
+  que ainda não tinha saído, com o motivo daquele dia. Sem dia de saída gravado, o título antigo não
+  entra como pendente.
 - O acervo não diz a letra do livro do RTD: tudo veio em `TD_B`, com o volume ao lado. Por
   isso os Livros C, F e G só têm o que for lançado daqui em diante.
 - `rg_partes` e `rg_bens` são cadastro em volta do registro: não mudam teor nem tomam

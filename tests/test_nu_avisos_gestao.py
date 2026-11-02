@@ -1122,17 +1122,19 @@ def test_a_barra_fica_no_fluxo_antes_do_titulo_e_fora_do_menu(cg_casa):
 
     c = _entrar(cg_casa, "bl1", "USER", "Escrevente Oito")
     html = c.get("/").get_data(as_text=True)
-    main = html.find("<main")
     barra = html.find("data-barras-fixas")
-    topo = html.find('<header class="topbar')
-    assert -1 < main < barra < topo
+    assert html.count("data-barras-fixas") == 1, "a barra saiu mais de uma vez"
     if 'data-layout="novo"' not in html:
-        # Na moldura antiga o menu é o `<aside>`, antes do `<main>`. Na nova, a barra
-        # também fica à vista no alto, e não dentro do sino (01/11/2026).
-        assert -1 < html.find("</aside>") < main
+        # Na moldura antiga o menu é o `<aside>`, antes do `<main>`.
+        main = html.find('<main class="main">')
+        topo = html.find('<header class="topbar">')
+        assert -1 < html.find("</aside>") < main < barra < topo
     else:
-        sino = html.find("data-cg-sino-corpo")
-        assert "data-barras-fixas" not in html[sino:html.find("</details>", sino)]
+        # Na nova, a barra inteira fica no alto da área, ACIMA DA BUSCA, junto dos outros
+        # avisos da casa, e uma vez só: nem embaixo da busca, nem a faixa curta que mandava
+        # ao sino (oficial, 02/11/2026).
+        assert -1 < barra < html.find('<header class="cg-topo">')
+        assert 'class="cg-faixa"' not in html
     css = Path(__file__).resolve().parents[1].joinpath("static", "app.css").read_text(
         encoding="utf-8")
     regras = re.findall(r"([^{}]*\bbarras?-fixas?[^{}]*)\{([^}]*)\}", css)

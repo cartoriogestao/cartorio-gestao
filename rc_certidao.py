@@ -696,31 +696,34 @@ def montar_teor(*, assento: dict, pessoas_do_assento: list[dict],
         # O FALECIDO E PESSOA DO ASSENTO desde 28/08/2026, pelo mesmo motivo
         # dos nubentes: sem ele, a certidao de obito de um ato lavrado aqui
         # saia com sexo, idade, estado civil e naturalidade em branco.
+        # O TITULAR DO NATIMORTO é o REGISTRADO (`papel_principal`), e não o FALECIDO: lido do papel
+        # errado, o sexo que o termo declara saía «ND» na certidão (ensaio de atos, 01/11/2026).
+        titular = papel_principal
         linhas += _linha("DATA DO ÓBITO POR EXTENSO", do_fato)
         linhas += _linha("HORA DO ÓBITO",
                          a.get("hora_fato") or dados.get("strHoraObito"))
         linhas += _linha("SEXO", _sexo_por_extenso(
-            _de(quem, "FALECIDO", "sexo", dados, "strSexo")))
+            _de(quem, titular, "sexo", dados, "strSexo")))
         # A IDADE SE CALCULA, e nao se guarda: guardada, ela envelheceria
         # junto com o banco. O que se guarda e a data, que nao muda.
         linhas += _linha("IDADE", _idade_no_obito(
-            _de(quem, "FALECIDO", "data_nascimento", dados),
+            _de(quem, titular, "data_nascimento", dados),
             a.get("data_fato")) or dados.get("intIdade"))
         linhas += _linha("DATA DE NASCIMENTO", data_por_extenso(
-            _de(quem, "FALECIDO", "data_nascimento", dados)))
+            _de(quem, titular, "data_nascimento", dados)))
         linhas += _linha("ESTADO CIVIL",
-                         _de(quem, "FALECIDO", "estado_civil", dados,
+                         _de(quem, titular, "estado_civil", dados,
                              "strEstadoCivil"))
         linhas += _linha("PROFISSÃO",
-                         _de(quem, "FALECIDO", "profissao", dados,
+                         _de(quem, titular, "profissao", dados,
                              "strProfissao"))
         linhas += _linha("COR OU RAÇA",
                          a.get("cor_raca") or dados.get("strRacaCor"))
         linhas += _linha("NATURALIDADE", _lugar_da_pessoa(
-            quem, "FALECIDO", "naturalidade_cidade", "naturalidade_uf", dados,
+            quem, titular, "naturalidade_cidade", "naturalidade_uf", dados,
             "strMunicipioNaturalidade", "strUFNaturalidade"))
         linhas += _linha("ÚLTIMO DOMICÍLIO", _lugar_da_pessoa(
-            quem, "FALECIDO", "cidade", "uf", dados,
+            quem, titular, "cidade", "uf", dados,
             "strMunicipioFalecido", "strUFFalecido"))
         linhas += _linha("LOCAL DO ÓBITO",
                          _local_do_assento(a, dados, nascimento=False))

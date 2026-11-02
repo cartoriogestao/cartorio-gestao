@@ -110,7 +110,14 @@ def menu(tmp_path_factory) -> list[tuple[str, str]]:
            data={"username": "mario", "password": SENHA,
                  "csrf_token": _token(c.get("/login").get_data(as_text=True))},
            follow_redirects=True)
-    html = c.get("/").get_data(as_text=True)
+    # O MENU DESTE ARQUIVO É O DA MOLDURA ANTIGA: é nele que mora o `<nav>` que se varre. A
+    # fixture é do módulo, e por isso a moldura vai aqui, e não na marca `moldura_antiga`.
+    import navegacao_web as NW
+    antes, NW.PADRAO_DE_FABRICA = NW.PADRAO_DE_FABRICA, "antigo"
+    try:
+        html = c.get("/").get_data(as_text=True)
+    finally:
+        NW.PADRAO_DE_FABRICA = antes
     nav = html[html.find("<nav>"):html.find("</nav>")]
     return [(href, re.sub(r"\s+", " ", rotulo).strip())
             for href, rotulo in

@@ -208,6 +208,7 @@ def test_a_tabela_de_emolumentos_carregada_nao_mostra_o_nome(casa):
     assert not NOME.search(_visivel(_abrir(casa, "/caixa/emolumentos")))
 
 
+@pytest.mark.moldura_antiga
 def test_o_que_ficou_no_menu_diz_sistema_antigo(casa):
     html = _abrir(casa, "/")
     assert "Documentos avulsos (modelos do sistema antigo)" in html

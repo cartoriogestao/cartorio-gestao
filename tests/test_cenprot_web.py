@@ -143,6 +143,7 @@ def test_a_tela_da_fila_abre(s):
         assert nome in html, f"«{nome}» não aparece no quadro"
 
 
+@pytest.mark.moldura_antiga
 def test_a_fila_esta_no_menu(s):
     """**O defeito das seis vezes.** Sem link no menu, a tela existe e ninguém
     a acha — e o buraco só aparece meses depois no balcão."""

@@ -70,6 +70,7 @@ def _menu(html: str) -> str:
 # ------------------------------------------------- o menu tem uma porta só
 
 
+@pytest.mark.moldura_antiga
 def test_o_menu_nao_tem_duas_entradas_de_reconhecimento(cliente):
     """Duas entradas com quase o mesmo nome é escolher no escuro."""
     nav = _menu(cliente.get("/").get_data(as_text=True))

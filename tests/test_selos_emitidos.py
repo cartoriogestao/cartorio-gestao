@@ -353,6 +353,7 @@ def test_o_que_o_relatorio_antigo_tinha_esta_na_tela_que_ficou(s):
         "emitir selo")
 
 
+@pytest.mark.moldura_antiga
 def test_um_rotulo_so_no_menu_para_o_razao_dos_selos(s):
     """Havia **duas** entradas «Selos emitidos» no menu, apontando para telas
     com réguas diferentes — e nenhum teste dizia nada, porque o validador do

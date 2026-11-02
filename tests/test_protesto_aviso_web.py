@@ -407,9 +407,14 @@ def test_a_tentativa_anterior_nao_some_quando_a_segunda_da_certo(s):
 
 
 def _painel(html: str, titulo: str) -> str:
-    """O pedaço da tela de um painel só, do título até o fim da seção."""
-    comeco = html.index(titulo)
-    return html[comeco:html.index("</section>", comeco)]
+    """O pedaço da tela de um painel só, do título até o fim da seção — ou do quadro
+    recolhido, no layout novo, onde o título mora no <summary>."""
+    cabecas = [titulo, titulo.replace("<span>", "<summary>").replace("</span>", " <small>")]
+    comeco = next((html.index(c) for c in cabecas if c in html), None)
+    if comeco is None:
+        raise ValueError(f"painel não achado: {titulo}")
+    fins = [i for i in (html.find("</section>", comeco), html.find("</details>", comeco)) if i >= 0]
+    return html[comeco:min(fins)]
 
 
 def test_o_apontado_sem_aviso_aparece_na_tela_e_o_aviso_sai_dali(s):

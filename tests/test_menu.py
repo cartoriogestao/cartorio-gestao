@@ -188,6 +188,7 @@ def test_toda_rota_cai_em_exatamente_um_modulo(app):
     ("/configuracoes", "Administrativo"),
     ("/relatorios", "Administrativo"),
 ])
+@pytest.mark.moldura_antiga
 def test_o_modulo_da_pagina_vem_aberto(cliente, url, modulo):
     r = cliente.get(url)
     if r.status_code == 404:
@@ -201,6 +202,7 @@ def test_o_painel_nao_abre_modulo_nenhum(cliente):
     assert modulos_abertos(cliente.get("/").get_data(as_text=True)) == []
 
 
+@pytest.mark.moldura_antiga
 def test_nenhuma_tela_abre_dois_modulos(cliente, app):
     # Dois módulos abertos ao mesmo tempo é o menu deixando de dizer onde a
     # pessoa está.
@@ -359,6 +361,7 @@ def test_modulo_pequeno_nao_ganha_secao(cliente):
             f"só afasta um item do outro.")
 
 
+@pytest.mark.moldura_antiga
 def test_a_secao_nao_e_link(cliente):
     """Quem clica num título de seção não deve esperar que algo aconteça."""
     html = cliente.get("/").get_data(as_text=True)

@@ -423,6 +423,7 @@ def test_habilitacao_que_nao_existe_da_404(casa):
     assert casa["cliente"].get("/rcpn/habilitacoes/99999").status_code == 404
 
 
+@pytest.mark.moldura_antiga
 def test_a_tela_cai_no_modulo_do_registro_civil(casa):
     """O módulo do menu sai do PREFIXO da rota, e não de uma lista."""
     html = casa["cliente"].get("/rcpn/habilitacoes").get_data(as_text=True)

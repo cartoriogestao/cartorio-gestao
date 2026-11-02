@@ -82,11 +82,13 @@ class Graph:
 
     def __init__(self, status=200):
         self.enviados = []
+        self.ids = []
         self.status = status
 
     def __call__(self, url, payload, headers):
         self.enviados.append({"url": url, "payload": payload})
-        return self.status, json.dumps({"messages": [{"id": f"wamid.out-{next(Graph._ids)}"}]})
+        self.ids.append(f"wamid.out-{next(Graph._ids)}")
+        return self.status, json.dumps({"messages": [{"id": self.ids[-1]}]})
 
 
 class Modelo:
@@ -232,7 +234,9 @@ def test_duvida_pelo_texto_base_sai_com_rodape_e_fica_registrada(casa):
     assert TEXTO_BASE.strip().splitlines()[0] in chamada["sistema"]
     saida = _um(db, "SELECT * FROM wa_mensagem WHERE conversa_id=%s AND direcao='out'",
                 (cid,))
-    assert saida["autor"] == AT.AUTOR_IA and saida["meta_id"] == "wamid.out-1"
+    # O id que ESTE falso devolveu: o contador é de todos, e «wamid.out-1» só valia
+    # quando este teste rodava primeiro no processo.
+    assert saida["autor"] == AT.AUTOR_IA and saida["meta_id"] == graph.ids[0]
     reg = _um(db, "SELECT * FROM wa_ia_registro WHERE conversa_id=%s", (cid,))
     assert reg["enviado"] == 1 and reg["caso"] == AT.CASO_DUVIDA
     assert reg["tokens_entrada"] == 1000 and reg["custo_usd"] == pytest.approx(0.00125)

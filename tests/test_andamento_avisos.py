@@ -382,6 +382,7 @@ def _entrar(casa, usuario, papel):
     return c
 
 
+@pytest.mark.moldura_antiga
 def test_as_telas_marcam_o_consentimento_e_o_pronto_com_auditoria(casa):
     db = casa["db"]
     cx = _protocolo(db)

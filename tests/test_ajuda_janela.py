@@ -106,7 +106,8 @@ def test_a_janela_aparece_em_TODA_tela(admin):
         if r.status_code != 200 or not r.mimetype.startswith("text/html"):
             continue
         html = r.get_data(as_text=True)
-        if "<nav>" not in html:
+        # Tela com a moldura: o menu da antiga, ou a casca da nova.
+        if "<nav>" not in html and 'data-layout="novo"' not in html:
             continue
         assert "ajuda-caixa" in html, f"{regra} ficou sem a janela da ajuda"
         vistas += 1

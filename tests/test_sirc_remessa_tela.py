@@ -462,7 +462,9 @@ def test_a_tela_lista_o_cancelamento_pendente(casa):
                    criado_em) VALUES (?,'AVERBACAO',?,?,?)""",
             (aid, "2026-08-21", "art. 347 do Código de Normas", AGORA))
     html = _abrir(casa)
-    assert "Cancelamento de termo (1)" in html
+    # O título com a contagem; no layout novo, o quadro recolhido diz «1 pendente(s)».
+    assert ("Cancelamento de termo (1)" in html
+            or "<summary>Cancelamento de termo <small>1 pendente(s)</small>" in html)
 
 
 def test_a_tela_baixa_o_lote_de_cancelamento(casa):

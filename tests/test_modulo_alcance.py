@@ -191,6 +191,7 @@ def test_a_frase_muda_com_o_alcance():
 # ------------------------------------------------- e na tela
 
 
+@pytest.mark.moldura_antiga
 def test_o_oficial_entra_e_ve_o_grupo(oficial, de_fabrica):
     assert oficial.get("/protesto").status_code == 200
     html = oficial.get("/").get_data(as_text=True)
@@ -211,6 +212,7 @@ def test_o_escrevente_nao_entra_e_nao_ve(escrevente, de_fabrica):
     assert "Títulos protestados" not in corpo
 
 
+@pytest.mark.moldura_antiga
 def test_liberar_para_todos_abre_para_o_escrevente(escrevente, banco):
     """O botão que ele pediu, provado do lado de quem ele libera."""
     banco.set_settings({"modulo_protesto_alcance": "TODOS"})

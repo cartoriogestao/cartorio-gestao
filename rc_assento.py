@@ -329,7 +329,11 @@ CAMPOS_DA_LEI_POR_ESPECIE: dict[str, tuple[str, ...]] = {
     "NASCIMENTO": ("pais_casamento_lugar", "pais_casamento_cartorio",
                    # O REGISTRO TARDIO (art. 249) — a marca e o número do
                    # requerimento autuado. 21/10/2026.
-                   "registro_tardio", "tardio_requerimento"),
+                   "registro_tardio", "tardio_requerimento",
+                   # A ORDEM DO GÊMEO NA LAVRATURA — ensaio de atos, 02/11/2026 (item 6). A lei a quer
+                   # «no assento especial de cada um» (LRP art. 63; CN-MA art. 234), e ela só se gravava
+                   # depois, em `/rcpn/gemeos`, com o termo já congelado: o livro dizia só «gêmea».
+                   "gemeo_ordem"),
 }
 CAMPOS_DA_LEI_POR_ESPECIE["CASAMENTO_RELIGIOSO"] = CAMPOS_DA_LEI_POR_ESPECIE["CASAMENTO"]
 # O JUIZ DE PAZ QUE PRESIDIU — 15/10/2026, decisão do oficial (relato #124):
@@ -554,6 +558,13 @@ def anotar_do_termo(con: Any, assento_id: int, *,
         texto = ("" if valor is None else str(valor)).strip()
         if texto:
             valores[nome] = texto
+    # A ORDEM DO GÊMEO É NÚMERO (a coluna é `integer`): «1º», «2º»… O que não é número não entra no
+    # livro calado — volta ao balcão.
+    if "gemeo_ordem" in valores:
+        ordem = "".join(c for c in str(valores["gemeo_ordem"]) if c.isdigit())
+        if not ordem or not 1 <= int(ordem) <= 9:
+            raise RcError(f"A ordem de nascimento do gêmeo tem de ser 1, 2, 3…: «{valores['gemeo_ordem']}».")
+        valores["gemeo_ordem"] = int(ordem)
 
     fora = [c for c in valores if c not in permitidos]
     if fora:

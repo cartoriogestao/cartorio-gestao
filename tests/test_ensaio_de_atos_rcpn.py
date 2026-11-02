@@ -219,10 +219,10 @@ def test_o_termo_do_registrado_continua_sendo_filho_de(saidas):
     assert "sendo filho de" in _s(saidas, "natimorto_com_nome").termo
 
 
-@_defeito("a tela não tem onde dizer a ordem de nascimento do gêmeo, e o termo diz só «gêmea» (LRP art. 63: "
-          "«será declarada no assento especial de cada um a ordem de nascimento»)")
 def test_o_termo_do_gemeo_declara_a_ordem_de_nascimento(saidas):
-    assert re.search(r"gême[ao],? (?:nascid[ao] )?em (?:primeiro|segundo|1º|2º)|ordem", _s(saidas, "nasc_gemeo").termo)
+    """LRP art. 54, 3º, e art. 63; CN-MA art. 234. Consertado no ensaio de atos (02/11/2026, item 6): a
+    tela de lavrar pergunta a ordem, e o termo de cada gêmeo a declara."""
+    assert "gêmea, a 1ª na ordem de nascimento" in _s(saidas, "nasc_gemeo").termo
 
 
 def test_o_termo_do_parto_em_domicilio_qualifica_as_duas_testemunhas(saidas):

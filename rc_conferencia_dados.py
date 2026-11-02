@@ -372,6 +372,17 @@ def conferir(dados: dict) -> list[dict]:
                         f"{p['nome']} ({ROTULO.get(papel, papel)}) está nas pessoas e "
                         "não aparece no termo.", papel))
 
+    # 4-A. O GÊMEO SEM A ORDEM — ensaio de atos, 02/11/2026 (item 6). «No caso de gêmeos, será declarada
+    # no assento especial de cada um a ordem de nascimento» (LRP art. 63; CN-MA art. 234): o parto
+    # múltiplo sem ela não tem leitura em que o termo esteja completo.
+    if especie == "NASCIMENTO" and _vazio(dados.get("gemeo_ordem")):
+        import rc_gemeos as GEMEOS
+        if GEMEOS.e_parto_multiplo(dados.get("ibge_gemeo")):
+            probs.append(_problema(
+                BLOQUEIA, "GEMEO_SEM_ORDEM",
+                "O parto foi múltiplo e falta a ordem de nascimento deste gêmeo: a lei a quer no "
+                "termo de cada um (Lei 6.015/1973, art. 63).", "gemeo_ordem"))
+
     # 5. OS AVÓS DO LADO CERTO — heurística, por isso só avisa.
     for papel, lado in LADO_DO_AVO.items():
         for avo in por_papel.get(papel, []):
@@ -572,6 +583,7 @@ def dados_do_formulario(valores: dict, *, especie: str = "", data_ato: Any = Non
             "data_ato": data_ato, "teor": teor, "matricula": v.get("matricula"),
             "dnv": v.get("dnv"), "hora_fato": v.get("hora_fato"),
             "cpf_registrado": v.get("cpf_registrado") or v.get("pessoa_documento_numero"),
+            "ibge_gemeo": v.get("ibge_gemeo"), "gemeo_ordem": v.get("gemeo_ordem"),
             "regime_bens": v.get("regime_bens"), "pacto_data": v.get("pacto_data"),
             "pacto_serventia": v.get("pacto_serventia"),
             "pessoas": pessoas}
@@ -601,6 +613,7 @@ _CAMPOS_DO_CODIGO = {
     "CPF_FORA_DO_TERMO": ("cpf_registrado", "teor"),
     "MATRICULA_DV": ("matricula",),
     "MATRICULA_DE_OUTRO_TERMO": ("matricula",),
+    "GEMEO_SEM_ORDEM": ("gemeo_ordem",),
     "REGIME_SEM_PACTO": ("regime_bens", "pacto_data", "pacto_serventia"),
 }
 _PAR_DO_PAPEL = {"MAE": "PAI", "PAI": "MAE", "AVO_MATERNA": "AVO_MATERNO",
@@ -614,6 +627,7 @@ _ROTULO_DO_CAMPO = {"teor": "Teor do registro", "pessoa_nome": "Nome do registra
                     "sexo": "sexo", "documento_numero": "documento",
                     "nome": "nome", "data_nascimento": "data de nascimento",
                     "idade_no_fato": "idade na ocasião", "regime_bens": "Regime de bens",
+                    "gemeo_ordem": "Ordem de nascimento do gêmeo",
                     "pacto_data": "Data do pacto antenupcial",
                     "pacto_serventia": "Serventia do pacto antenupcial"}
 

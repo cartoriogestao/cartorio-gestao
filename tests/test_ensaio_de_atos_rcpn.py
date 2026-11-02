@@ -337,11 +337,18 @@ def test_o_termo_do_regime_convencional_traz_o_pacto(saidas, chave):
     assert "pacto antenupcial lavrada em 01/08/2026" in t and "Tabelionato de Notas de Cidade Exemplo" in t
 
 
-@pytest.mark.parametrize("chave", CASAMENTOS)
-@_defeito("o breve relato do casamento escreve «CPF SEM INFORMAÇÃO» com os dois CPF no termo: lê só o blob "
-          "do acervo (`rc_certidao._documento`); o papel os imprime (CNN art. 477)")
+@pytest.mark.parametrize("chave", [c for c in CASAMENTOS if c != "cas_estrangeiro"])
 def test_o_breve_relato_do_casamento_traz_o_cpf_dos_conjuges(saidas, chave):
-    assert "SEM INFORMAÇÃO" not in _s(saidas, chave).certidao.split("MATRÍCULA")[0]
+    """CNN art. 477 (o CPF na certidão). Consertado no ensaio de atos (02/11/2026): o casamento lavrado aqui
+    saía «CPF SEM INFORMAÇÃO» — a certidão lia só o blob do acervo."""
+    cabeca = _s(saidas, chave).certidao.split("MATRÍCULA")[0]
+    assert re.search(r"CPF \d{3}\.\d{3}\.\d{3}-\d{2} e \d{3}\.\d{3}\.\d{3}-\d{2}", cabeca), cabeca
+
+
+def test_o_nubente_de_passaporte_fica_sem_informacao_do_lado_dele(saidas):
+    """Sem o CPF de um, o lado dele diz «SEM INFORMAÇÃO»: o CPF que sobra não pode parecer o do primeiro nome."""
+    cabeca = _s(saidas, "cas_estrangeiro").certidao.split("MATRÍCULA")[0]
+    assert "CPF SEM INFORMAÇÃO e 000.000.050-70" in cabeca, cabeca
 
 
 @pytest.mark.parametrize("chave", CASAMENTOS)

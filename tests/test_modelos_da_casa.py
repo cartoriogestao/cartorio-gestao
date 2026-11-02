@@ -4673,7 +4673,25 @@ MUDARAM_DE_PROPOSITO = {"termos": {
     "qualificacao_inteira.cnh": {"ok": "JOÃO DE EXEMPLO, portador da CNH n.º 999"},
     "varre.qualificacao_inteira": {"ok": {"erros": 0, "n": 38880, "sha256": (
         "801a5b24396ee7c77eecbdced0b5b18bc3b29873754e929cdb25ea6e8975311c")}},
+}, "certidoes": {
+    # O CPF DOS CÔNJUGES NO BREVE RELATO — o ensaio de atos, 02/11/2026: o casamento não tem pessoa
+    # principal, e a linha do CPF caía no blob do acervo («SEM INFORMAÇÃO») com os CPF no termo. Muda
+    # só essa linha (e, no `emitir`, o hash do teor, que a acompanha): ver `_so_o_cpf_dos_conjuges`.
+    nome: (lambda depois, nome=nome: _so_o_cpf_dos_conjuges(nome, depois))
+    for nome in ("emitir(CASAMENTO, resumo)", "montar_teor(CASAMENTO, filiacao por conjuge)",
+                 "montar_teor(CASAMENTO_RELIGIOSO, filiacao solta)")
 }}
+
+
+def _so_o_cpf_dos_conjuges(nome: str, depois) -> bool:
+    """A saída nova é a do ouro com a linha do CPF dos cônjuges, e nada mais (os hashes, mascarados)."""
+    import json as _json
+    import re as _re
+    hexa = _re.compile(r"\b[0-9a-f]{64}\b")
+    antes = _json.dumps(OURO_C.ouro("certidoes")["funcoes"][nome], ensure_ascii=False)
+    novo = _json.dumps(depois, ensure_ascii=False)
+    linha = "CPF\\n000.000.001-91 e SEM INFORMAÇÃO\\n"
+    return linha in novo and hexa.sub("#", novo.replace(linha, "CPF\\nSEM INFORMAÇÃO\\n")) == hexa.sub("#", antes)
 
 
 def _ouro_com_as_mudancas_explicadas(grupo: str, funcoes: dict) -> dict:

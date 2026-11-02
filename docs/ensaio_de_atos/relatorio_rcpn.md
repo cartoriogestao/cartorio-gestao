@@ -101,11 +101,12 @@ Norma: LRP art. 81 (estatura, cor, sinais aparentes, idade presumida, vestuário
 («que fez a pergunta e o declarante ignorava») × a exigência da CRC.
 Proposta: para o desconhecido, o termo diz que se ignora e a CRC recebe N; campos dos sinais na tela.
 
-### 9. A naturalidade sem o IBGE sai «ND» sem aviso — FORMA (risco)
+### 9. A naturalidade sem o IBGE sai «ND» sem aviso — FORMA (risco) · CONSERTADO
 Na casa de ensaio, antes de semear o município no cadastro do IBGE, a certidão de nascimento saiu
-`NATURALIDADE ND` e o papel com a caixa em branco, com a naturalidade declarada no termo. Na serventia o
-cadastro está cheio, mas um nome que ele não confirma (grafia) leva ao mesmo resultado em silêncio.
-Proposta: a emissão avisa quando a naturalidade do termo não chegou à pessoa.
+`NATURALIDADE ND` e o papel com a caixa em branco, com a naturalidade declarada no termo.
+**Revisto em 02/11/2026**: com o cadastro carregado (como na serventia), a grafia que ele não confirma já
+TRAVA a lavratura na conferência das centrais («a CRC exige o código do município»). O silêncio era só
+sem o cadastro; ali a lavratura passa a avisar, com o motivo (`rc_assento.aviso_da_naturalidade`).
 
 ### 10. «sendo filho de» para a registrada — FORMA · DECISÃO
 Toda registrada: «nasceu uma criança do sexo Feminino … sendo **filho** de …». O motor da prévia

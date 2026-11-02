@@ -99,6 +99,10 @@ def _s(saidas, chave: str) -> EA.Saida:
 RECUSADOS = {
     "cas_universal_sem_pacto": ("pacto antenupcial", "CC art. 1.640, parágrafo único, e art. 1.653"),
     "cas_menor_15": ("1.520", "CC art. 1.520"),
+    # A GRAFIA QUE O IBGE NÃO CONFIRMA já trava na conferência das centrais (a CRC exige o código do
+    # município). O «ND» calado do relatório (item 9) era só sem o cadastro carregado: ali, desde
+    # 02/11/2026, a lavratura avisa (`rc_assento.aviso_da_naturalidade`).
+    "nasc_naturalidade_fora_do_ibge": ("a CRC exige o código do município", "LRP art. 54, § 4º; CNN art. 474"),
 }
 #: Os que a lei permite e a tela ainda recusa.
 RECUSA_INDEVIDA = {
@@ -182,7 +186,8 @@ def test_o_inteiro_teor_reproduz_o_termo_entre_aspas(saidas, chave):
 
 # ------------------------------------------------------------------ nascimento
 
-NASCIMENTOS = [c for c in EA.CHAVES if c.startswith("nasc_") and c not in RECUSA_INDEVIDA] + [
+NASCIMENTOS = [c for c in EA.CHAVES if c.startswith("nasc_") and c not in RECUSA_INDEVIDA
+               and c != "nasc_naturalidade_fora_do_ibge"] + [
     "av_nome", "an_obito_no_nascimento", "ret_erro_grafia"]
 
 

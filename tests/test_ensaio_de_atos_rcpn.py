@@ -197,12 +197,10 @@ CASADOS = ["nasc_padrao", "nasc_gemeo", "nasc_domicilio", "nasc_tardio", "nasc_p
            "nasc_declarante_avo"]
 
 
-@pytest.mark.parametrize("chave", [pytest.param(c, marks=_decisao(
-    "o termo escreve «casados entre si em …, com registro em …». A Lei 8.560/1992, art. 5º, veda no registro "
-    "de nascimento «o lugar e cartório do casamento dos pais e o estado civil destes» (e o art. 6º, § 1º, "
-    "na certidão — o inteiro teor o reproduz); os termos da casa dos anos 2020 já não o escrevem. Hoje a "
-    "frase é proposital (`RC_TERMO_NASCIMENTO__pais_casados_*`, LRP art. 54, 7º)")) for c in CASADOS])
+@pytest.mark.parametrize("chave", CASADOS)
 def test_o_registro_de_nascimento_nao_fala_do_casamento_dos_pais(saidas, chave):
+    """Lei 8.560/1992, art. 5º (no registro) e art. 6º, § 1º (na certidão, que o inteiro teor reproduz) —
+    decisão do oficial de 02/11/2026."""
     s = _s(saidas, chave)
     for nome in ("termo", "inteiro teor"):
         assert "casados entre si" not in _documentos(s)[nome], nome

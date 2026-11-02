@@ -4689,8 +4689,37 @@ def _ouro_com_as_mudancas_explicadas(grupo: str, funcoes: dict) -> dict:
             assert _LT01_ANTES in antes, nome
             novo = json.loads(antes.replace(_LT01_ANTES, _LT01_DEPOIS))
         saida[nome] = novo
-    return _hab22_no_ouro(grupo, _ld22_no_ouro(grupo, _lh05_no_ouro(
-        grupo, _ld01_no_ouro(grupo, saida))))
+    return _sem_casamento_dos_pais_no_ouro(grupo, _hab22_no_ouro(grupo, _ld22_no_ouro(grupo, _lh05_no_ouro(
+        grupo, _ld01_no_ouro(grupo, saida)))))
+
+
+# ------------------------------- 02/11/2026 — o casamento dos pais saiu do termo de nascimento
+#
+#   Decisão do oficial (ensaio de atos, item 2): «casados entre si em …, com registro em …» não vai mais
+#   ao termo (Lei 8.560/1992, art. 5º). Nas saídas do termo de nascimento a frase some, e só ela; as
+#   quatro de `_FUNCAO_PURA` são a função `frase_do_casamento_dos_pais`, que continua igual. A varredura do nascimento muda só por isso: com a
+#   frase devolvida a `valores_do_assento`, ela volta ao ouro (conferido ao gravar esta troca).
+import re as _re_pais  # noqa: E402
+
+_PAIS_CASADOS = _re_pais.compile(r", casados entre si(?: em [^,\"]*)?(?:, com registro em [^,\".]*)?")
+_FUNCAO_PURA = ("pais.vazio", "pais.so_lugar", "pais.so_cartorio", "pais.os_dois")
+_VARRE_NASCIMENTO_SEM_OS_PAIS = {"ok": {"erros": 0, "n": 3968, "sha256": (
+    "870bc5aaeffdaae316edf64fdaa7fc0ae8ec90a96261ff9236d075e17f077959")}}
+
+
+def _sem_casamento_dos_pais_no_ouro(grupo: str, saida: dict) -> dict:
+    import json as _json
+    if grupo != "termos":
+        return saida
+    saida = dict(saida)
+    for nome, valor in list(saida.items()):
+        if nome in _FUNCAO_PURA or nome.startswith("varre.") or callable(valor):
+            continue
+        texto = _json.dumps(valor, ensure_ascii=False)
+        if "casados entre si" in texto:
+            saida[nome] = _json.loads(_PAIS_CASADOS.sub("", texto))
+    saida["varre.nascimento"] = _VARRE_NASCIMENTO_SEM_OS_PAIS
+    return saida
 
 
 # ------------------------------- 22/10/2026 — a «Conferência» saiu da habilitação

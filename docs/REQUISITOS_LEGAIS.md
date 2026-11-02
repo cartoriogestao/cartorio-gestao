@@ -31,7 +31,7 @@ o LD01 (21/10/2026, «corrija tudo») consertou: o `xfail` saiu e o teste passa.
 | declaração de que nasceu morta, ou morreu no ato ou logo depois do parto | LRP art. 54, 5º; CN-MA art. 233, V | ver natimorto |
 | ordem de filiação de irmãos do mesmo prenome | LRP art. 54, 6º | conferir — o CN-MA art. 233, § 1º, veda «a ordem de filiação» no termo e na certidão |
 | nomes, naturalidade e profissão dos pais; domicílio ou residência | LRP art. 54, 7º; CN-MA art. 233, VI e VII; CN-MA art. 229, § 3º (endereço completo) | ✓ [nasc.pais] |
-| lugar e cartório onde os pais se casaram | LRP art. 54, 7º | conferir — o modelo escreve («casados entre si em…»), e o CN-MA art. 233, § 1º, veda o estado civil dos pais no termo; a certidão o omite (CN-MA art. 379) |
+| lugar e cartório onde os pais se casaram | LRP art. 54, 7º × Lei 8.560/1992, art. 5º | ✓ NÃO CONSTA — decisão do oficial, 02/11/2026 (ensaio de atos): a Lei 8.560/1992, art. 5º, veda no registro «o lugar e cartório do casamento dos pais e o estado civil destes»; o termo não escreve mais «casados entre si em…», e os campos ficam guardados para a CRC |
 | idade da genitora na ocasião do parto | LRP art. 54, 7º | ✓ [nasc.idade_da_mae] |
 | nomes e prenomes dos avós paternos e maternos | LRP art. 54, 8º; CN-MA art. 233, VIII | ✓ [nasc.avos] |
 | duas testemunhas (nome, profissão, residência, documento), no parto sem assistência médica fora de hospital | LRP art. 54, 9º; CN-MA art. 233, IX | ✓ LD01 [nasc.testemunhas] — claro `{testemunhas}`, cada uma qualificada; a tela ganhou a 2ª testemunha (no nascimento, o papel `TESTEMUNHA2` — LH05) |
@@ -154,7 +154,8 @@ o LD01 (21/10/2026, «corrija tudo») consertou: o `xfail` saiu e o teste passa.
 
 ### Conflitos entre as fontes, para o oficial decidir
 
-1. Ordem de filiação e lugar/cartório do casamento dos pais: a LRP art. 54, 6º e
+1. (DECIDIDO em 02/11/2026: o casamento dos pais saiu do termo, pela Lei 8.560/1992, art. 5º.)
+   Ordem de filiação e lugar/cartório do casamento dos pais: a LRP art. 54, 6º e
    7º, manda constar; o CN-MA art. 233, § 1º, veda o estado civil dos pais e a
    ordem de filiação no termo e na certidão. O termo da casa escreve o
    casamento dos pais; a certidão o omite (CN-MA art. 379).

@@ -111,13 +111,11 @@
   {% endif %}
 
   <div class="cg-area">
-    {# Faixas que não se fecham. Cada uma diz o que falta, e o formulário está no sino. #}
-    {% if nu_barras_fixas %}
-    {% for b in (nu_barras_fixas.visiveis or []) + (nu_barras_fixas.resto or []) %}
-    <div class="cg-faixa" role="alert">{{ ic('alerta', 15) }}<span><strong>{{ b.titulo }}</strong> <span class="cg-faixa-mes">(mês {{ b.mes_rotulo }})</span></span>
-      <a class="cg-faixa-acao" href="#cg-sino" data-cg-abrir="cg-sino">Resolver</a></div>
-    {% endfor %}
-    {% endif %}
+    {# AS BARRAS VERMELHAS, INTEIRAS E NUM LUGAR SÓ (oficial, 02/11/2026). Acima da busca, junto dos
+       outros avisos da casa, com o «Pago — informar data/guia» e o «avisei» na própria barra: sem
+       botão de fechar (LX17, 19/10/2026). Antes havia aqui uma faixa curta que mandava ao sino, e o
+       #223 pôs a barra inteira também embaixo da busca — o mesmo aviso duas vezes. #}
+    {% include '_barras_fixas.html' %}
     {% include '_caixa_aviso.html' %}
     {% include '_digi_aviso.html' %}
     {% include '_rc_digi_aviso.html' %}
@@ -191,11 +189,6 @@
     {% endif %}
 
     <main class="cg-rolagem" id="conteudo" tabindex="-1">
-      {# AS BARRAS VERMELHAS FICAM À VISTA, e não no sino (01/11/2026). São a decisão do oficial de
-         19/10/2026 — «a janela de avisos tem sido ignorada pelos escreventes» —: sem botão de fechar,
-         no fluxo da página, antes do título, como na moldura antiga. Dentro do sino, só via quem
-         clicava, e era o que ela existe para impedir. As faixas que se fecham continuam no sino. #}
-      {% include '_barras_fixas.html' %}
       <header class="topbar cg-titulo">
         <div class="page-heading">{% block heading %}{% endblock %}</div>
       </header>

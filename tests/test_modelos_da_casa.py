@@ -4745,8 +4745,53 @@ def _ouro_com_as_mudancas_explicadas(grupo: str, funcoes: dict) -> dict:
             assert _LT01_ANTES in antes, nome
             novo = json.loads(antes.replace(_LT01_ANTES, _LT01_DEPOIS))
         saida[nome] = novo
-    return _presidente_no_ouro(grupo, _testamento_no_ouro(grupo, _filha_no_ouro(grupo, _sem_casamento_dos_pais_no_ouro(
-        grupo, _hab22_no_ouro(grupo, _ld22_no_ouro(grupo, _lh05_no_ouro(grupo, _ld01_no_ouro(grupo, saida))))))))
+    return _o_a_no_ouro(grupo, _presidente_no_ouro(grupo, _testamento_no_ouro(grupo, _filha_no_ouro(
+        grupo, _sem_casamento_dos_pais_no_ouro(grupo, _hab22_no_ouro(grupo, _ld22_no_ouro(
+            grupo, _lh05_no_ouro(grupo, _ld01_no_ouro(grupo, saida)))))))))
+
+
+# ------------------------------- 02/11/2026 — o «(a)» concorda, e o CPF do breve relato tem pontos
+#
+#   Ensaio de atos, item 11: «o(a) declarante assina», «tendo sido casado(a) com», «, casado(a) com» (Livro
+#   E) e «a identidade do(a) registrado(a)» concordam com o sexo de quem a frase fala; e o CPF que o breve
+#   relato escreve sem pontos sai «000.000.001-91». A concordância depende da pessoa de cada saída, e por
+#   isso a troca não se escreve: cada saída que mudou se confere desfazendo a concordância e os pontos (e
+#   mascarando os hashes) — tem de dar o ouro. As varreduras mudam só por isso: com `concordar_a_peca` e
+#   `corrigir_declarante` devolvendo o texto, elas voltam ao ouro (conferido ao gravar esta troca).
+_HEXA = re.compile(r"\b[0-9a-f]{64}\b")
+_VARREDURAS_COM_O_A = {
+    "varre.casamento": {"ok": {"erros": 0, "n": 984, "sha256": (
+        "e0938db25bd63edd9238a142a33a7dfde2a3219ad3fc1a239737dd2dca75820f")}},
+    "varre.frase_do_livro_e": {"ok": {"erros": 0, "n": 21800, "sha256": (
+        "4addc84463bc022418fc6fd633e11f9c30004b345205e0c755160ac8099cfd9e")}},
+    "varre.nascimento": {"ok": {"erros": 0, "n": 3968, "sha256": (
+        "24e9dccab7997043201af51130660a159875bfa21d4642111db8f6d3ac6736b0")}},
+}
+
+
+def _de_volta_ao_generico(texto: str) -> str:
+    texto = re.sub(r"\b[ao] declarante assina", "o(a) declarante assina", texto)
+    texto = re.sub(r"tendo sido casad[ao] com", "tendo sido casado(a) com", texto)
+    texto = re.sub(r", casad[ao] com ", ", casado(a) com ", texto)
+    texto = re.sub(r"identidade d[ao] registrad[ao]\b", "identidade do(a) registrado(a)", texto)
+    texto = re.sub(r"CPF\\n(\d{3})\.(\d{3})\.(\d{3})-(\d{2})", r"CPF\\n\1\2\3\4", texto)
+    return _HEXA.sub("#", texto)
+
+
+def _o_a_no_ouro(grupo: str, saida: dict) -> dict:
+    import json as _json
+    if grupo not in ("termos", "certidoes"):
+        return saida
+    saida = dict(saida)
+    for nome, valor in list(saida.items()):
+        if callable(valor) or nome.startswith("varre."):
+            continue
+        antes = _json.loads(_HEXA.sub("#", _json.dumps(valor, ensure_ascii=False)))
+        saida[nome] = (lambda depois, antes=antes, valor=valor: depois == valor or _json.loads(
+            _de_volta_ao_generico(_json.dumps(depois, ensure_ascii=False))) == antes)
+    if grupo == "termos":
+        saida.update(_VARREDURAS_COM_O_A)
+    return saida
 
 
 # ------------------------------- 02/11/2026 — o termo de casamento diz quem presidiu o ato

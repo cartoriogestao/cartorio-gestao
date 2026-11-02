@@ -495,7 +495,7 @@ def test_nascimento_do_balcao_a_certidao_com_termo_e_certidao_que_batem(balcao):
             "JOSE EXEMPLO DE SOUZA e ANA EXEMPLO DE SOUZA",   # item 8º
             "JOAO EXEMPLO DOS SANTOS e MARIA EXEMPLO DOS SANTOS",
             "A naturalidade declarada é de Cidade Exemplo/MA",  # item 11
-            "Lido e achado conforme, o(a) declarante assina.",
+            "Lido e achado conforme, a declarante assina.",
             f"Eu, {OFICIAL}, {FUNCAO}, dou fé e assino.",
             f"Matrícula {assento['matricula']}.")
     # O CASAMENTO DOS PAIS NÃO VAI AO TERMO (Lei 8.560/1992, art. 5º) — decisão do oficial, 02/11/2026:

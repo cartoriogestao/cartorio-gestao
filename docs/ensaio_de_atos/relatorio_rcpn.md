@@ -101,11 +101,12 @@ Norma: LRP art. 81 (estatura, cor, sinais aparentes, idade presumida, vestuário
 («que fez a pergunta e o declarante ignorava») × a exigência da CRC.
 Proposta: para o desconhecido, o termo diz que se ignora e a CRC recebe N; campos dos sinais na tela.
 
-### 9. A naturalidade sem o IBGE sai «ND» sem aviso — FORMA (risco)
+### 9. A naturalidade sem o IBGE sai «ND» sem aviso — FORMA (risco) · CONSERTADO
 Na casa de ensaio, antes de semear o município no cadastro do IBGE, a certidão de nascimento saiu
-`NATURALIDADE ND` e o papel com a caixa em branco, com a naturalidade declarada no termo. Na serventia o
-cadastro está cheio, mas um nome que ele não confirma (grafia) leva ao mesmo resultado em silêncio.
-Proposta: a emissão avisa quando a naturalidade do termo não chegou à pessoa.
+`NATURALIDADE ND` e o papel com a caixa em branco, com a naturalidade declarada no termo.
+**Revisto em 02/11/2026**: com o cadastro carregado (como na serventia), a grafia que ele não confirma já
+TRAVA a lavratura na conferência das centrais («a CRC exige o código do município»). O silêncio era só
+sem o cadastro; ali a lavratura passa a avisar, com o motivo (`rc_assento.aviso_da_naturalidade`).
 
 ### 10. «sendo filho de» para a registrada — FORMA · DECISÃO
 Toda registrada: «nasceu uma criança do sexo Feminino … sendo **filho** de …». O motor da prévia
@@ -114,13 +115,14 @@ não. O acervo da casa escreve «filho de» para menina na maioria dos termos (c
 o modelo segue a casa, e a prévia diverge do papel. Decisão: o termo concorda, ou a prévia volta a dizer
 «filho».
 
-### 11. Pequenos de forma — FORMA
-- «o(a) declarante assina», «tendo sido casado(a) com», «MM. Juiz(a)», «a identidade do(a)
-  registrado(a)»: o sexo de cada um é conhecido.
-- O fecho do breve relato repete a cidade: «Ofício Único de Cidade Exemplo/MA, Cidade Exemplo/MA, 2 de
-  novembro de 2026.»
-- O breve relato de nascimento põe o pai antes da mãe (`FILIAÇÃO: Mario Exemplo e Beatriz Exemplo`) e o
-  papel, a mãe antes; o CPF sai sem pontos no teor e com eles no papel.
+### 11. Pequenos de forma — FORMA · CONSERTADO (02/11/2026)
+- «o(a) declarante assina», «tendo sido casado(a) com», «, casado(a) com» (Livro E) e «a identidade do(a)
+  registrado(a)» concordam com o sexo da pessoa (`rc_modelos_do_livro.concordar_a_peca`; o declarante,
+  pela regra da prévia). O CPF que o breve relato escrevia sem pontos sai «000.000.001-91», como no papel.
+- **Não era defeito, revisto**: a cidade «repetida» no fecho do breve relato é a forma «{serventia},
+  {cidade/UF}, {data}» — só parece repetida porque o nome da serventia de ensaio termina na cidade; e o pai
+  antes da mãe na FILIAÇÃO do breve relato é o leiaute medido nas 145 certidões da casa (o papel, molde
+  do CNJ, põe a mãe antes). «MM. Juiz(a)» fica: o sexo do juiz não é dado do assento.
 
 ### 12. Atos sem tela — SEM TELA
 Casamento por procuração (CC art. 1.542), nuncupativo (CC arts. 1.540 e 1.541), alteração de prenome e

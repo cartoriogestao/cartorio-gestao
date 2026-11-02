@@ -417,7 +417,7 @@ MATRIZ: dict[str, Req] = {
         "termo_nascimento", "leitura, assinatura do declarante e do oficial",
         "LRP arts. 37 e 38; CN-MA art. 212", T_NASC,
         ("{escrevente}", "{funcao_do_escrevente}"),
-        ("Lido e achado conforme, o(a) declarante assina.",
+        ("Lido e achado conforme, a declarante assina.",   # concorda (ensaio de atos, 02/11/2026)
          "Eu, MARIO EXEMPLO DOS SANTOS, Oficial Registrador, dou fé e assino.")),
     "nasc.matricula": Req("termo_nascimento", "matrícula", "CNN art. 473",
                           T_NASC, ("{frase_matricula}",), (MATRICULA,)),
@@ -432,7 +432,7 @@ MATRIZ: dict[str, Req] = {
          "6.015/1973 e do art. 249 do Código de Normas do TJMA",
          "à vista do requerimento nº 3/2026 autuado nesta serventia",
          "assinado pelas testemunhas CARLA EXEMPLO, brasileira",
-         "e PEDRO EXEMPLO, brasileiro", "a identidade do(a) registrado(a).")),
+         "e PEDRO EXEMPLO, brasileiro", "a identidade do registrado.")),
     "nasc.tardio_dispensa": Req(
         "termo_nascimento_tardio_menor",
         "a dispensa das testemunhas só com o registrando menor de 12 anos e DNV",

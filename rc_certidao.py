@@ -392,6 +392,11 @@ def _cpf_da_pessoa(quem: dict, papel: str) -> str:
     numero = str(p.get("documento_numero") or "").strip()
     digitos = "".join(c for c in numero if c.isdigit())
     if numero and (tipo == "CPF" or (not tipo and len(digitos) == 11)):
+        # O CPF SAI COM OS PONTOS, como no papel — ensaio de atos, item 11 (02/11/2026): o breve relato
+        # escrevia «CPF 00000000191» do que se digitou sem pontos, e o papel «000.000.001-91».
+        if len(digitos) == 11:
+            import rc_cpf as CPFRC
+            return CPFRC.formatar(digitos)
         return numero
     return ""
 

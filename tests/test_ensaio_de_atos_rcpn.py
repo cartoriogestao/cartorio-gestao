@@ -97,6 +97,10 @@ def _s(saidas, chave: str) -> EA.Saida:
 RECUSADOS = {
     "cas_universal_sem_pacto": ("pacto antenupcial", "CC art. 1.640, parágrafo único, e art. 1.653"),
     "cas_menor_15": ("1.520", "CC art. 1.520"),
+    # A GRAFIA QUE O IBGE NÃO CONFIRMA já trava na conferência das centrais (a CRC exige o código do
+    # município). O «ND» calado do relatório (item 9) era só sem o cadastro carregado: ali, desde
+    # 02/11/2026, a lavratura avisa (`rc_assento.aviso_da_naturalidade`).
+    "nasc_naturalidade_fora_do_ibge": ("a CRC exige o código do município", "LRP art. 54, § 4º; CNN art. 474"),
 }
 #: Os que a lei permite e a tela ainda recusa.
 RECUSA_INDEVIDA = {
@@ -178,7 +182,8 @@ def test_o_inteiro_teor_reproduz_o_termo_entre_aspas(saidas, chave):
 
 # ------------------------------------------------------------------ nascimento
 
-NASCIMENTOS = [c for c in EA.CHAVES if c.startswith("nasc_") and c not in RECUSA_INDEVIDA] + [
+NASCIMENTOS = [c for c in EA.CHAVES if c.startswith("nasc_") and c not in RECUSA_INDEVIDA
+               and c != "nasc_naturalidade_fora_do_ibge"] + [
     "av_nome", "an_obito_no_nascimento", "ret_erro_grafia"]
 
 
@@ -187,6 +192,22 @@ def test_a_certidao_de_nascimento_traz_a_naturalidade_que_o_balcao_declarou(said
     """LRP art. 54, 11, e § 4º; CNN art. 474: a naturalidade é campo da certidão."""
     s = _s(saidas, chave)
     assert "NATURALIDADE Cidade Exemplo/MA" in s.certidao, s.certidao[:600]
+
+
+@pytest.mark.parametrize("chave, trecho", [
+    ("nasc_padrao", "Lido e achado conforme, a declarante assina."),
+    ("nasc_tardio", "a identidade da registrada"),
+    ("cas_divorciado", "tendo sido casada com JOSE EXEMPLO ANTERIOR"),
+])
+def test_o_termo_nao_escreve_o_a_de_quem_tem_sexo_conhecido(saidas, chave, trecho):
+    """Ensaio de atos, item 11 (02/11/2026): o «(a)» da peça concorda com a pessoa de quem ela fala."""
+    t = _s(saidas, chave).termo
+    assert trecho in t and "(a)" not in t, t
+
+
+def test_o_breve_relato_escreve_o_cpf_com_os_pontos(saidas):
+    """Ensaio de atos, item 11: «CPF 00000000191» no teor, «000.000.001-91» no papel."""
+    assert "CPF 000.000.001-91" in _s(saidas, "nasc_padrao").certidao
 
 
 CASADOS = ["nasc_padrao", "nasc_gemeo", "nasc_domicilio", "nasc_tardio", "nasc_pais_estrangeiros",

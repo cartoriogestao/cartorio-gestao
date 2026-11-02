@@ -1442,6 +1442,14 @@ def montar_do_assento(assento: dict, pessoas: list[dict],
     registrado = next((p for p in pessoas or [] if str(p.get("papel") or "").upper() == "REGISTRADO"), {})
     genero = _texto(registrado.get("sexo")).upper()[:1]
     r["texto"], _ = corrigir_genero_do_principal(r["texto"], "NASCIMENTO", genero)
+    # E O «(a)» DO DECLARANTE E DO REGISTRADO — ensaio de atos, item 11 (02/11/2026): «o(a) declarante
+    # assina» e «a identidade do(a) registrado(a)» concordam com quem é. A regra do declarante é a da
+    # prévia (`corrigir_declarante`).
+    from modelos_motor_termo import corrigir_declarante
+    declarante = next((p for p in pessoas or [] if str(p.get("papel") or "").upper() == "DECLARANTE"), {})
+    r["texto"] = concordar_a_peca(
+        corrigir_declarante(r["texto"], _texto(declarante.get("sexo")).upper()[:1]),
+        _sexo_conhecido(registrado))
     # O NATIMORTO A QUEM OS PAIS NÃO DERAM NOME (LRP art. 53, § 3º; decisão do oficial, 02/11/2026, item
     # 7 do ensaio de atos) não «recebeu o nome de» nada: o nome do assento é só como a casa o acha.
     import json as _json
@@ -1712,9 +1720,11 @@ def valores_do_casamento(assento: dict, pessoas: list[dict], *,
         "data_ato_extenso": data_do_termo(assento.get("data_ato")),
         "cidade_do_ato": _texto(sv.get("ri_cidade")),
         "nubente1_qualificacao": qualificacao_inteira(n1, nome_negrito=True)
-                                 + frase_do_casamento_anterior(assento, "nubente1"),
+                                 + concordar_a_peca(frase_do_casamento_anterior(assento, "nubente1"),
+                                                    _sexo_conhecido(n1)),
         "nubente2_qualificacao": qualificacao_inteira(n2, nome_negrito=True)
-                                 + frase_do_casamento_anterior(assento, "nubente2"),
+                                 + concordar_a_peca(frase_do_casamento_anterior(assento, "nubente2"),
+                                                    _sexo_conhecido(n2)),
         "documentos_apresentados": relacao,
         "frase_habilitacao": frase_habilitacao,
         "frase_da_celebracao": (" " + _frase("RC_TERMO_CASAMENTO__celebracao",
@@ -1856,6 +1866,27 @@ def frase_dos_herdeiros(assento: dict) -> str:
     if v == "NAO":
         return " " + _frase("RC_TERMO_OBITO__herdeiros_nao")
     return ""
+
+
+#: O «(a)» que a peça traz quando ela não sabe de quem fala, e o que ele vira para cada sexo.
+_O_A_DA_PECA = {"casado(a)": ("casada", "casado"), "do(a) registrado(a)": ("da registrada", "do registrado")}
+
+
+def concordar_a_peca(texto: str, feminino: bool | None) -> str:
+    """Tira o «(a)» da peça quando se sabe o sexo de quem ela fala. Só calcula.
+
+    O ENSAIO DE ATOS ACHOU O «(a)» NO LIVRO (02/11/2026, item 11): «tendo sido casado(a) com», «a identidade
+    do(a) registrado(a)» — de pessoas cujo sexo o termo já escreve. Sem o sexo, a peça fica como está."""
+    if feminino is None:
+        return texto
+    for generico, (fem, masc) in _O_A_DA_PECA.items():
+        texto = texto.replace(generico, fem if feminino else masc)
+    return texto
+
+
+def _sexo_conhecido(p: dict | None) -> bool | None:
+    letra = _texto((p or {}).get("sexo")).upper()[:1]
+    return {"F": True, "M": False}.get(letra)
 
 
 def frase_do_casamento_anterior(assento: dict, qual: str) -> str:
@@ -2229,7 +2260,7 @@ def frase_do_livro_e(especie: str, assento: dict,
                 if nasc else "")
 
     def reg_cas() -> str:
-        return ((_frase("RC_TERMO_LIVRO_E__casado_com", conjuge=conj)
+        return ((concordar_a_peca(_frase("RC_TERMO_LIVRO_E__casado_com", conjuge=conj), _sexo_conhecido(t))
                  if conj else "")
                 + (_frase("RC_TERMO_LIVRO_E__casamento_registrado", registro=cas)
                    if cas else ""))

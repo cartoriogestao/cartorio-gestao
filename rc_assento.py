@@ -590,6 +590,23 @@ def anotar_do_termo(con: Any, assento_id: int, *,
             "naturalidade": naturalidade}
 
 
+def aviso_da_naturalidade(resultado: dict) -> list[dict]:
+    """O aviso de quando a naturalidade declarada não chegou à pessoa. Só calcula.
+
+    O ENSAIO DE ATOS ACHOU O SILÊNCIO (02/11/2026, item 9): com o município fora do cadastro do IBGE, o
+    termo dizia «A naturalidade declarada é de X» e a certidão saía «NATURALIDADE ND», com a caixa do
+    papel em branco — e a CRC retendo o registro dias depois. `_naturalidade_do_titular` já sabia o
+    motivo e não o dizia a ninguém. Agora o balcão lê, com o declarante na frente: é grafia a conferir.
+    """
+    if not resultado or resultado.get("gravou") or not resultado.get("cidade"):
+        return []
+    lugar = resultado["cidade"] + (f"/{resultado['uf']}" if resultado.get("uf") else "")
+    return [{"gravidade": "AVISA", "codigo": "NATURALIDADE_NAO_CONFIRMADA", "campo": "naturalidade_declarada",
+             "mensagem": (f"a naturalidade declarada («{lugar}») não foi confirmada — {resultado['motivo']}. "
+                          "A certidão sai com «ND» nesse campo e a CRC retém o registro: confira a grafia "
+                          "do município e corrija a naturalidade da pessoa na ficha.")}]
+
+
 #: A marca, em `dados_json`, do natimorto a quem os pais não deram nome (ensaio de atos, item 7).
 NATIMORTO_SEM_NOME = "natimorto_sem_nome"
 
@@ -1530,10 +1547,12 @@ def lavrar_assento(con: Any, *, especie: str, nome: str,
     #   29/08/2026 e ficaram um dia inteiro sem nada que as preenchesse, o que
     #   as fazia mentir: a remessa acusava «falta o dado» e não havia onde
     #   informá-lo.
+    naturalidade_do_termo: dict = {}
     if termo_dados:
-        anotar_do_termo(con, assento_id, especie=especie,
-                        **{k: v for k, v in termo_dados.items()
-                           if v not in (None, "")})
+        naturalidade_do_termo = anotar_do_termo(
+            con, assento_id, especie=especie,
+            **{k: v for k, v in termo_dados.items()
+               if v not in (None, "")}).get("naturalidade") or {}
 
     # A HABILITAÇÃO DE OUTRA SERVENTIA — item 14.1.6 da tabela.
     #
@@ -1731,6 +1750,7 @@ def lavrar_assento(con: Any, *, especie: str, nome: str,
                  json.dumps(travas, ensure_ascii=False)))
             lavratura_forcada = True
         avisos_da_conferencia = travas + CONF.avisos(problemas)
+        avisos_da_conferencia += aviso_da_naturalidade(naturalidade_do_termo)
 
     return {"assento_id": assento_id, "ato_id": ato_id, "serie": serie,
            "reaproveitado": False, "matricula": matricula_composta,

@@ -42,6 +42,9 @@ from pathlib import Path
 
 import pytest
 
+# TESTE DA MOLDURA ANTIGA: varre o menu lateral dela, e não roda mais (oficial, 02/11/2026).
+pytestmark = pytest.mark.moldura_antiga
+
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 

@@ -27,7 +27,7 @@ ser praticado · **DECISÃO** é do oficial. Ordem: o que mais cai no balcão pr
 
 ## Problemas abertos
 
-### 1. Reconhecimento de paternidade: a certidão sai desatualizada e revela o reconhecimento — LEGAL
+### 1. Reconhecimento de paternidade: a certidão sai desatualizada e revela o reconhecimento — LEGAL · CONSERTADO (decisão do oficial, 02/11/2026)
 Caso `av_paternidade`: nascimento só com a mãe, depois a averbação do reconhecimento pelo pai.
 - O breve relato continua com `NOME: ANA EXEMPLO DE SOUZA` (o nome antigo), `FILIAÇÃO: IGNORADO e
   Beatriz Exemplo` e `AVÓS PATERNOS: ND`; o papel imprime `GENITOR(A): IGNORADO`.

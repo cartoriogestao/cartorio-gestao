@@ -5015,6 +5015,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 extra = ({"fundamento": _campo("fundamento")}
                          if tipo == "RETIFICACAO"
                          else {"fundamento": _campo("fundamento") or None})
+                if tipo == "AVERBACAO":
+                    extra["natureza"] = _campo("natureza_averbacao") or None
                 r = funcoes[tipo](con, assento_id, teor=_campo("teor"),
                                   agora=agora(), usuario=usuario_nome(), **extra)
                 aviso = _selar_se_pedido(con, "rc_atos", r["ato_id"], "RCPN")
@@ -5041,6 +5043,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   "Corrija o problema do selo e lance de novo.",
                   "danger")
             return _rcpn_tela_lancamento(assento_id, tipo)
+        # O QUE A AVERBAÇÃO MUDOU VAI ÀS PESSOAS DO ASSENTO — ensaio de atos, item 1 (decisão do oficial,
+        # 02/11/2026): o nome novo, o pai e os avós reconhecidos. Só depois do selo: o ato que o selo
+        # desfaz acima não pode deixar a certidão mudada.
+        if tipo == "AVERBACAO":
+            with db.transaction() as con:
+                mudou = RC.atualizar_pela_averbacao(
+                    con, assento_id, agora=agora(), usuario=usuario_nome(),
+                    novo_nome=_campo("novo_nome"), pai=_campo("pai_nome"),
+                    avo_paterno=_campo("avo_paterno_nome"), avo_paterna=_campo("avo_paterna_nome"))
+            if mudou:
+                audit("RCPN_AVERBACAO_ATUALIZOU", "rc_assentos", assento_id, {"mudou": mudou})
         RASC.saiu_com_o_ato(db, audit, RASC.TELA_DO_LANCAMENTO,
                             url_for("rcpn_assento", assento_id=assento_id), usuario_nome(),
                             chave=_chave_do_lancamento(assento_id, tipo))
@@ -8741,6 +8754,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 _campo("modo_inteiro") or _campo("modalidade") or "texto")
         else:
             modo = RCIT.RESUMO
+        # O INTEIRO TEOR DE ASSENTO COM RECONHECIMENTO DE FILIAÇÃO SÓ POR AUTORIZAÇÃO JUDICIAL — «São
+        # ressalvadas autorizações ou requisições judiciais de certidões de inteiro teor, mediante decisão
+        # fundamentada» (Lei 8.560/1992, art. 6º, § 2º). Ensaio de atos, item 1 (decisão do oficial,
+        # 02/11/2026): ele saía para qualquer pedido. A autorização vai à finalidade da certidão.
+        autorizacao = (_campo("autorizacao_judicial") or "").strip()
+        if modo != RCIT.RESUMO:
+            with db.connect() as con:
+                sigilosa = RC.tem_averbacao_sigilosa(con, assento_id)
+            if sigilosa and not autorizacao:
+                flash("Este assento tem reconhecimento de filiação averbado: a certidão de inteiro teor só "
+                      "sai por autorização ou requisição judicial (Lei 8.560/1992, art. 6º, § 2º). Informe "
+                      "a decisão (juízo, processo e data) no campo da autorização judicial, ou emita em "
+                      "breve relato.", "danger")
+                return redirect(volta)
         img_path = None
         # O BOTÃO «EMITIR REPROGRÁFICA DA DIGITALIZAÇÃO» (problema #121): o
         # inteiro teor por cópia reprográfica sai do termo digitalizado
@@ -8853,7 +8880,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     con, assento_id, sv=sv(), hoje=hoje(),
                     agora=agora(), data_extenso=hoje_extenso(),
                     requerente=_campo("requerente") or None,
-                    finalidade=_campo("finalidade") or None,
+                    finalidade=("; ".join(x for x in (
+                        _campo("finalidade"),
+                        f"por autorização judicial: {autorizacao}" if autorizacao else "") if x)
+                        or None),
                     usuario=usuario_nome(),
                     modalidade=modo,
                     teor_colado=_campo("teor_colado") or None,

@@ -1833,12 +1833,65 @@ def _lancar_no_assento(con: Any, assento_id: int, tipo: str, *,
 def averbar(con: Any, assento_id: int, *, teor: str,
             agora: str, fundamento: str | None = None,
             teor_formato: str = "texto", usuario: str | None = None,
-            origem: str = "MANUAL") -> dict:
-    """Averba — altera o conteúdo do assento. Lei 6.015/1973, art. 97."""
-    return _lancar_no_assento(con, assento_id, "AVERBACAO", teor=teor,
-                              agora=agora, fundamento=fundamento,
-                              teor_formato=teor_formato, usuario=usuario,
-                              origem=origem)
+            origem: str = "MANUAL", natureza: str | None = None) -> dict:
+    """Averba — altera o conteúdo do assento. Lei 6.015/1973, art. 97.
+
+    `natureza` é a da tela (`ato_selado.NATUREZAS_AVERBACAO_CIVIL`), e fica no ato: é ela que diz à
+    certidão o que não se transcreve (`NATUREZAS_SIGILOSAS`)."""
+    r = _lancar_no_assento(con, assento_id, "AVERBACAO", teor=teor,
+                           agora=agora, fundamento=fundamento,
+                           teor_formato=teor_formato, usuario=usuario,
+                           origem=origem)
+    if (natureza or "").strip():
+        banco(con).escrever("UPDATE rc_atos SET natureza = %s WHERE id = %s",
+                            (natureza.strip(), int(r["ato_id"])))
+    return r
+
+
+#: As averbações que a certidão em breve relato menciona sem transcrever. «Das certidões de nascimento
+#: não constarão indícios de a concepção haver sido decorrente de relação extraconjugal», e «não deverá
+#: constar, em qualquer caso, […] a natureza da filiação» (Lei 8.560/1992, art. 6º e § 1º; LRP art. 19,
+#: § 3º). O ensaio de atos (item 1) achou o breve relato transcrevendo «… reconhece como sua filha …».
+NATUREZAS_SIGILOSAS: frozenset = frozenset({"reconhecimento_filiacao"})
+
+
+def tem_averbacao_sigilosa(con: Any, assento_id: int) -> bool:
+    """Se o assento tem averbação de natureza sigilosa (`NATUREZAS_SIGILOSAS`). Só lê."""
+    return bool(banco(con).valor(
+        "SELECT 1 FROM rc_atos WHERE assento_id = %s AND tipo = 'AVERBACAO' AND natureza = ANY(%s) LIMIT 1",
+        (int(assento_id), sorted(NATUREZAS_SIGILOSAS))))
+
+
+def atualizar_pela_averbacao(con: Any, assento_id: int, *, agora: str,
+                             novo_nome: str | None = None, pai: str | None = None,
+                             avo_paterno: str | None = None, avo_paterna: str | None = None,
+                             usuario: str | None = None) -> list[str]:
+    """Leva às pessoas do assento o que a averbação mudou. ESCREVE. Devolve o que mudou.
+
+    O TERMO NÃO MUDA — o livro é o que foi lavrado, e a averbação fica à margem —, MAS A CERTIDÃO SIM: ela
+    é feita das pessoas do assento, e saía, depois do reconhecimento, com «FILIAÇÃO: IGNORADO», os avós
+    paternos «ND» e o nome antigo (ensaio de atos, item 1; decisão do oficial de 02/11/2026). O pai e os avós
+    reconhecidos substituem quem estava no papel; o nome novo vale para o assento e para o registrado.
+    """
+    bd = banco(con)
+    mudou: list[str] = []
+    especie = (bd.valor("SELECT especie FROM rc_assentos WHERE id = %s", (int(assento_id),)) or "").upper()
+    nome = (novo_nome or "").strip()
+    if nome:
+        bd.escrever("UPDATE rc_assentos SET nome = %s WHERE id = %s", (nome, int(assento_id)))
+        bd.escrever("UPDATE rc_pessoas SET nome = %s WHERE assento_id = %s AND papel IN ('REGISTRADO', 'FALECIDO')",
+                    (nome, int(assento_id)))
+        mudou.append("nome")
+    for papel, quem, sexo in (("PAI", pai, "M"), ("AVO_PATERNO", avo_paterno, "M"),
+                              ("AVO_PATERNA", avo_paterna, "F")):
+        quem = (quem or "").strip()
+        if not quem:
+            continue
+        bd.escrever("DELETE FROM rc_pessoas WHERE assento_id = %s AND papel = %s", (int(assento_id), papel))
+        registrar_pessoa(con, assento_id, papel=papel, especie=especie, agora=agora, usuario=usuario,
+                         nome=quem, sexo=sexo)
+        mudou.append(papel)
+    return mudou
 
 
 def anotar(con: Any, assento_id: int, *, teor: str,

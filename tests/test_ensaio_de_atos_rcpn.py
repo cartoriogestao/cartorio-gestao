@@ -267,20 +267,40 @@ def test_o_pai_estrangeiro_sai_com_o_pais_e_o_passaporte(saidas):
 
 # ------------------------------------------------------------------ à margem do nascimento
 
-@_defeito("a averbação de reconhecimento de paternidade não atualiza a certidão: o breve relato sai com "
-          "«FILIAÇÃO: IGNORADO», os avós paternos «ND» e o nome antigo")
 def test_depois_do_reconhecimento_a_certidao_traz_o_pai_e_o_nome_novo(saidas):
+    """Decisão do oficial, 02/11/2026 (ensaio de atos, item 1): a averbação leva às pessoas do assento o pai,
+    os avós e o nome novo, e a certidão sai com eles."""
     c = _s(saidas, "av_paternidade").certidao
-    assert "MARIO EXEMPLO DOS SANTOS" in c.split("OBSERVAÇÕES")[0] and "IGNORADO" not in c
-    assert "NOME: ANA EXEMPLO DOS SANTOS" in c
+    assert "FILIAÇÃO: MARIO EXEMPLO DOS SANTOS e Beatriz Exemplo" in c and "IGNORADO" not in c, c
+    assert "PATERNOS: JOAO EXEMPLO DOS SANTOS e MARIA EXEMPLO DOS SANTOS" in c
+    assert "NOME: ANA EXEMPLO DOS SANTOS" in c and "MARIO EXEMPLO DOS SANTOS" in _s(saidas, "av_paternidade").papel
 
 
-@_defeito("o breve relato transcreve a averbação de reconhecimento («reconhece como sua filha»): a Lei "
-          "8.560/1992, art. 6º, veda na certidão de nascimento indício da natureza da filiação, e o § 2º "
-          "reserva o inteiro teor à autorização judicial — que a tela não pede")
 def test_a_certidao_breve_nao_revela_o_reconhecimento(saidas):
+    """Lei 8.560/1992, art. 6º e § 1º; LRP art. 19, § 3º: o breve relato não transcreve o reconhecimento,
+    e a menção do LRP art. 21 é a inscrição do parágrafo único."""
     s = _s(saidas, "av_paternidade")
-    assert "reconhece" not in s.certidao.lower() and "reconhece" not in s.papel.lower()
+    for doc in (s.certidao, s.papel):
+        assert "reconhece" not in doc.lower(), doc
+    assert "envolve elementos de averbação à margem do termo" in s.certidao
+
+
+def test_o_inteiro_teor_do_reconhecimento_pede_a_autorizacao_judicial(casa_rcpn, saidas):
+    """Lei 8.560/1992, art. 6º, § 2º: sem a autorização, a tela recusa; com ela, sai, e a finalidade a diz."""
+    s = _s(saidas, "av_paternidade")
+    assert s.inteiro_teor, s.avisos
+    sem = EA.Saida(s.caso)
+    assert EA._emitir(casa_rcpn, s.assento_id, "inteiro_teor", sem) is None
+    assert any("autorização ou requisição judicial" in a for a in sem.avisos), sem.avisos
+    fim = casa_rcpn.um("SELECT finalidade FROM rc_certidoes WHERE assento_id=%s ORDER BY id DESC LIMIT 1",
+                       (s.assento_id,))["finalidade"]
+    assert "por autorização judicial: Vara Única" in fim
+
+
+def test_a_alteracao_de_prenome_atualiza_o_nome_da_certidao(saidas):
+    """LRP arts. 56 e 21: a certidão sai com o nome novo, e a averbação continua transcrita."""
+    c = _s(saidas, "av_nome").certidao
+    assert "NOME: ANNA EXEMPLO DE SOUZA" in c and "o seu prenome passa a ser ANNA" in c
 
 
 @pytest.mark.parametrize("chave", ["av_nome", "av_paternidade", "ret_erro_grafia", "an_obito_no_nascimento",
@@ -288,7 +308,8 @@ def test_a_certidao_breve_nao_revela_o_reconhecimento(saidas):
 def test_a_certidao_menciona_o_que_foi_lancado_a_margem(saidas, chave):
     """LRP art. 21 (a alteração posterior se menciona obrigatoriamente); CN-MA art. 386."""
     s = _s(saidas, chave)
-    marca = {"av_nome": "ANNA", "av_paternidade": "MARIO EXEMPLO DOS SANTOS", "ret_erro_grafia": "BEATRIS",
+    # O RECONHECIMENTO SE MENCIONA PELA INSCRIÇÃO DO ART. 21, PARÁGRAFO ÚNICO, e não transcrito (item 1).
+    marca = {"av_nome": "ANNA", "av_paternidade": "envolve elementos de averbação", "ret_erro_grafia": "BEATRIS",
              "an_obito_no_nascimento": "faleceu", "av_divorcio": "divórcio"}[chave]
     assert marca in s.certidao.split("OBSERVAÇÕES")[-1] and marca in s.papel
 

@@ -52,6 +52,7 @@ class Caso:
     campos: dict
     margem: list = field(default_factory=list)      # [(tipo, teor, extra)] lançados depois
     gratuita: bool = False                          # a certidão sai gratuita
+    autorizacao: str = ""                           # a autorização judicial do inteiro teor, se houver
 
 
 @dataclass
@@ -424,12 +425,19 @@ def casos(casa) -> list[Caso]:
                                          "DOS SANTOS reconhece como sua filha a registrada, que passa a chamar-se ANA "
                                          "EXEMPLO DOS SANTOS; avós paternos JOAO EXEMPLO DOS SANTOS e MARIA EXEMPLO DOS SANTOS.",
                                          {"natureza_averbacao": "reconhecimento_filiacao",
-                                          "fundamento": "LRP art. 29, § 1º, d; Lei 8.560/1992, art. 1º"})]),
+                                          "fundamento": "LRP art. 29, § 1º, d; Lei 8.560/1992, art. 1º",
+                                          "novo_nome": "ANA EXEMPLO DOS SANTOS",
+                                          "pai_nome": "MARIO EXEMPLO DOS SANTOS",
+                                          "avo_paterno_nome": "JOAO EXEMPLO DOS SANTOS",
+                                          "avo_paterna_nome": "MARIA EXEMPLO DOS SANTOS"})],
+             autorizacao="Vara Única da Comarca de Cidade Exemplo, processo 0000003-00.2026.8.10.0000, "
+                         "decisão de 25/10/2026"),
         Caso("av_nome", "NASCIMENTO", "Averbação — alteração de prenome, extrajudicial (LRP art. 56)",
              nas(10), margem=[("AVERBACAO", "Averbo, a requerimento da registrada, maior, que o seu prenome passa "
                                 "a ser ANNA, permanecendo inalterados os sobrenomes, conforme procedimento "
                                 "extrajudicial autuado sob nº 2/2026.",
-                                {"natureza_averbacao": "alteracao_nome", "fundamento": "LRP art. 56"})]),
+                                {"natureza_averbacao": "alteracao_nome", "fundamento": "LRP art. 56",
+                                 "novo_nome": "ANNA EXEMPLO DE SOUZA"})]),
         Caso("an_obito_no_nascimento", "NASCIMENTO", "Anotação — óbito anotado no nascimento (LRP art. 106)",
              nas(11), margem=[("ANOTACAO", "Anoto que a registrada faleceu em 01/10/2026, conforme assento lavrado "
                                "no Livro C-1, folha 2, termo 3, do Ofício Único de Cidade Exemplo.", {})]),
@@ -490,13 +498,16 @@ def _como_a_tela_manda(casa, tela: str, acao: str) -> dict:
     return campos
 
 
-def _emitir(casa, assento_id: int, tipo: str, saida: Saida, *, gratuita: bool = False) -> int | None:
+def _emitir(casa, assento_id: int, tipo: str, saida: Saida, *, gratuita: bool = False,
+            autorizacao: str = "") -> int | None:
     campos = _como_a_tela_manda(casa, f"/rcpn/{assento_id}", f"/rcpn/{assento_id}/certidao")
     campos |= {"tipo_certidao": tipo, "requerente": "BEATRIZ EXEMPLO DE SOUZA", "finalidade": "documentação",
               "folha_seguranca": _folha_em_branco(casa),
               "selo": S._selo("CERINT" if tipo == "inteiro_teor" else "CERTID")}
     if tipo == "inteiro_teor":
         campos["modo_inteiro"] = "texto"
+        if autorizacao:
+            campos["autorizacao_judicial"] = autorizacao
     if gratuita:
         campos |= {"ato_gratuito": "1", "gratuidade_codigo": "HIPOSSUFICIENCIA",
                    "motivo_gratuidade": "declaração de pobreza"}
@@ -536,7 +547,7 @@ def praticar(casa, caso: Caso) -> Saida:
     if cid:
         saida.certidao = _texto(casa.um("SELECT teor FROM rc_certidoes WHERE id=%s", (cid,))["teor"] or "")
         saida.papel = _papel(casa, cid)
-    cid = _emitir(casa, assento_id, "inteiro_teor", saida)
+    cid = _emitir(casa, assento_id, "inteiro_teor", saida, autorizacao=caso.autorizacao)
     if cid:
         saida.inteiro_teor = _texto(casa.um("SELECT teor FROM rc_certidoes WHERE id=%s", (cid,))["teor"] or "")
     return saida

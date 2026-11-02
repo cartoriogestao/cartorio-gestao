@@ -1211,7 +1211,9 @@ def test_segunda_via_e_inteiro_teor_saem_pagos_pelo_protocolo(balcao):
 
 @pytest.mark.parametrize("tipo, codigo, rota, caminho, extra", [
     ("AVERBACAO", "14.4.1", "averbar", "averbacao",
-     {"natureza_averbacao": "reconhecimento_filiacao",
+     # «outra», e não «reconhecimento_filiacao»: este teste é o da averbação que a certidão TRANSCREVE; o
+     # reconhecimento de filiação não se transcreve (Lei 8.560/1992, art. 6º — ensaio de atos, item 1).
+     {"natureza_averbacao": "outra",
       "fundamento": "LRP art. 29, § 1º, alínea d"}),
     ("ANOTACAO", "14.7", "anotar", "anotacao", {}),
     ("RETIFICACAO", "14.10", "retificar", "retificacao",

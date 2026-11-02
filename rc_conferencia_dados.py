@@ -287,14 +287,17 @@ def conferir(dados: dict) -> list[dict]:
         probs.append(_problema(BLOQUEIA, "FATO_DEPOIS_DO_ATO",
                                f"A data do fato ({fato:%d/%m/%Y}) é posterior à do "
                                f"registro ({ato:%d/%m/%Y}).", "data_fato"))
+    from rc_assento import limite_do_nascimento
     for p in pessoas:
         nasc = _dia(p.get("data_nascimento"))
         papel = str(p.get("papel") or "").upper()
-        if nasc and fato and papel not in ("REGISTRADO",) and nasc > fato:
+        # O DECLARANTE, E AS TESTEMUNHAS DO ASSENTO DE NASCIMENTO, AGEM NO REGISTRO (`limite_do_nascimento`).
+        limite = _dia(limite_do_nascimento(papel, especie, dados.get("data_fato"), dados.get("data_ato")))
+        if nasc and limite and papel not in ("REGISTRADO",) and nasc > limite:
             probs.append(_problema(
                 BLOQUEIA, "NASCEU_DEPOIS_DO_FATO",
                 f"{p['nome']} ({ROTULO.get(papel, papel)}) nasceu em {nasc:%d/%m/%Y}, "
-                f"depois do fato ({fato:%d/%m/%Y}).", papel))
+                f"depois do {'registro' if limite != fato else 'fato'} ({limite:%d/%m/%Y}).", papel))
         idade = p.get("idade_no_fato")
         if nasc and fato and not _vazio(idade) and str(idade).strip().isdigit():
             from rc_assento import idade_na_data

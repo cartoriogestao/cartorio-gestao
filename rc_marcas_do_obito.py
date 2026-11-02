@@ -89,6 +89,21 @@ MARCAS: tuple[dict, ...] = (
         "prazo": "",
         "pendencia_da_casa": "",
     },
+    # A QUINTA, O TESTAMENTO — decisão do oficial, 02/11/2026 (ensaio de atos, item 4). O texto livre
+    # «Testamento conhecido (se houver)» deixava o termo calar quando não havia, e «Deixou testamento
+    # conhecido: NAO» quando alguém escrevia que não. Agora é pergunta, como as outras; o texto fica para
+    # identificar o testamento que houver.
+    {
+        "chave": "obito_testamento",
+        "rotulo": "Deixou testamento conhecido",
+        "pergunta": "O falecido deixou testamento conhecido?",
+        "obriga": "nada de imediato — o testamento se apresenta ao juízo para registro e cumprimento",
+        "artigo": "art. 80, 6º, da Lei nº 6.015/1973; CN-MA art. 255, VII; CPC arts. 735 a 737",
+        "prazo": "",
+        "porque_importa": "com testamento, o inventário não se faz por escritura sem a abertura e o "
+                          "registro dele em juízo",
+        "pendencia_da_casa": "",
+    },
     {
         "chave": "obito_desconhecido",
         "rotulo": "Pessoa não identificada",

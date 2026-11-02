@@ -162,6 +162,8 @@ def form_nascimento(casa, n: int, **trocar) -> dict:
 def form_obito(casa, n: int, **trocar) -> dict:
     f = S._form_obito(casa, n, nome="CARLA EXEMPLO DE SOUZA")
     f["numero_do"] = f"4{n:07d}"
+    # O TESTAMENTO É PERGUNTA desde o item 4 do ensaio (02/11/2026); o texto o identifica.
+    f |= {"obito_testamento": "SIM", "testamento": "lavrado no Tabelionato de Cidade Exemplo"}
     f.update(trocar)
     return f
 
@@ -309,7 +311,7 @@ def casos(casa) -> list[Caso]:
         Caso("obito_sem_bens", "OBITO", "Óbito — solteiro, sem bens, sem filhos, sem testamento",
              obi(2, pessoa_nome="JOAO EXEMPLO SOLTEIRO", pessoa_sexo="M", pessoa_nacionalidade="brasileiro", pessoa_estado_civil="solteiro",
                  pessoa_profissao="lavrador", obito_possui_bens="NAO", obito_possui_filho="NAO",
-                 obito_filhos="", testamento="NAO", obito_conjuge_nome="", obito_conjuge_situacao="",
+                 obito_filhos="", obito_testamento="NAO", testamento="", obito_conjuge_nome="", obito_conjuge_situacao="",
                  obito_conjuge_cartorio="", obito_eleitor="NAO")),
         Caso("obito_conjuge_vivo", "OBITO", "Óbito — casado, cônjuge sobrevivente, herdeiro menor",
              obi(3, pessoa_nome="JOSE EXEMPLO CASADO", pessoa_sexo="M", pessoa_nacionalidade="brasileiro", pessoa_estado_civil="casado",
@@ -326,7 +328,7 @@ def casos(casa) -> list[Caso]:
                  pessoa_documento_numero="", pessoa_data_nascimento="", cpf_registrado="",
                  nao_tem_filiacao1="1", nao_tem_filiacao2="1", filiacao1_nome="", filiacao2_nome="",
                  obito_conjuge_nome="", obito_conjuge_situacao="", obito_filhos="", obito_possui_filho="NAO",
-                 obito_possui_bens="NAO", testamento="NAO", obito_eleitor="NAO")),
+                 obito_possui_bens="NAO", obito_testamento="NAO", testamento="", obito_eleitor="NAO")),
         Caso("obito_desconhecido_ignora", "OBITO",
              "Óbito — não identificado, com as marcas em branco (o declarante ignora)",
              obi(9, obito_desconhecido="SIM", pessoa_nome="PESSOA NÃO IDENTIFICADA", pessoa_sexo="M",
@@ -335,18 +337,18 @@ def casos(casa) -> list[Caso]:
                  pessoa_documento_numero="", pessoa_data_nascimento="", cpf_registrado="",
                  nao_tem_filiacao1="1", nao_tem_filiacao2="1", filiacao1_nome="", filiacao2_nome="",
                  obito_conjuge_nome="", obito_conjuge_situacao="", obito_filhos="", obito_possui_filho="",
-                 obito_possui_bens="", testamento="", obito_eleitor="", obito_herdeiros_menores="")),
+                 obito_possui_bens="", obito_testamento="", testamento="", obito_eleitor="", obito_herdeiros_menores="")),
         Caso("obito_bebe", "OBITO", "Óbito — bebê de três meses",
              obi(10, pessoa_nome="PEDRO EXEMPLO BEBE", pessoa_sexo="M", pessoa_estado_civil="",
                  pessoa_nacionalidade="brasileiro", pessoa_profissao="", pessoa_data_nascimento=S._dia(casa, 95),
                  obito_conjuge_nome="", obito_conjuge_situacao="", obito_filhos="", obito_possui_filho="NAO",
-                 obito_possui_bens="NAO", testamento="NAO", obito_eleitor="NAO",
+                 obito_possui_bens="NAO", obito_testamento="NAO", testamento="", obito_eleitor="NAO",
                  pessoa_documento_numero=CPF["registrado"], cpf_registrado=re.sub(r"\D", "", CPF["registrado"]))),
         Caso("obito_crianca", "OBITO", "Óbito — criança de 2 anos",
              obi(6, pessoa_nome="PEDRO EXEMPLO CRIANCA", pessoa_sexo="M", pessoa_nacionalidade="brasileiro", pessoa_estado_civil="",
                  pessoa_profissao="", pessoa_data_nascimento="2024-05-01", obito_conjuge_nome="",
                  obito_conjuge_situacao="", obito_filhos="", obito_possui_filho="NAO", obito_possui_bens="NAO",
-                 testamento="", obito_eleitor="NAO", pessoa_documento_numero=CPF["registrado"],
+                 obito_testamento="", testamento="", obito_eleitor="NAO", pessoa_documento_numero=CPF["registrado"],
                  cpf_registrado=re.sub(r"\D", "", CPF["registrado"]))),
         Caso("cas_parcial", "CASAMENTO", "Casamento — comunhão parcial, sem pacto", cas()),
         Caso("cas_universal_pacto", "CASAMENTO",

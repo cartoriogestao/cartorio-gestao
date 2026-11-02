@@ -2077,10 +2077,17 @@ def valores_do_obito(assento: dict, pessoas: list[dict], *,
                               + frase_dos_herdeiros(assento)).strip(),
         "frase_filhos": (frase_dos_filhos_do_falecido(assento, marca_dos_filhos)
                          if _sim("obito_possui_filho") else marca_dos_filhos),
+        # O TESTAMENTO É PERGUNTA (decisão do oficial, 02/11/2026; ensaio de atos, item 4): SIM, com o que
+        # o identifica quando houver; NÃO; e o não perguntado entra nos ignorados do art. 255, § 1º. O
+        # termo antigo, com o texto e sem a resposta, continua como era — e fora dos ignorados.
         "frase_testamento": (
             _frase("RC_TERMO_OBITO__testamento", testamento=testamento)
-            if testamento else ""),
-        "frase_ignorados": frase_dos_ignorados(marcas),
+            if testamento and not _nao("obito_testamento")
+            else _marca("obito_testamento", "RC_TERMO_OBITO__testamento_sim",
+                        "RC_TERMO_OBITO__testamento_nao")),
+        "frase_ignorados": frase_dos_ignorados(
+            {**marcas, "obito_testamento": "DECLARADO"}
+            if testamento and _texto(marcas.get("obito_testamento")) == MO.NAO_PERGUNTADO else marcas),
         "escrevente": escrevente,
         "funcao_do_escrevente": funcao_do_escrevente,
     }

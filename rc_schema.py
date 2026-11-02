@@ -542,6 +542,10 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("rc_assentos", "obito_possui_bens", "TEXT"),
     ("rc_assentos", "obito_possui_filho", "TEXT"),
     ("rc_assentos", "obito_desconhecido", "TEXT"),
+    # O TESTAMENTO, A QUINTA PERGUNTA — decisão do oficial, 02/11/2026 (ensaio de atos, item 4): «se
+    # faleceu com testamento conhecido» (LRP art. 80, 6º) é pergunta para toda morte, e o campo de texto
+    # livre deixava o termo calar ou dizer «Deixou testamento conhecido: NAO».
+    ("rc_assentos", "obito_testamento", "TEXT"),
 
     # O TITULO DE ELEITOR E O BENEFICIO SOCIAL, que ficam ao lado das caixas na
     # mesma tela. O titulo e o que a Justica Eleitoral usa para achar a pessoa;

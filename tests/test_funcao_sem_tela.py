@@ -854,5 +854,6 @@ def test_as_quatro_marcas_do_obito_tem_onde_ser_respondidas():
     telas = "\n".join(p.read_text(encoding="utf-8", errors="replace")
                       for p in RAIZ.glob("templates/*.html"))
     assert "marcas" in telas and "assento_id" in telas
-    # e a lista de chaves nao pode ter encolhido sem a tela saber
-    assert len(MARCA.CHAVES) == 4
+    # e a lista de chaves nao pode ter encolhido sem a tela saber: as quatro do E-Oficio e, desde o
+    # ensaio de atos (decisao do oficial, 02/11/2026), o testamento (LRP art. 80, 6o)
+    assert len(MARCA.CHAVES) == 5

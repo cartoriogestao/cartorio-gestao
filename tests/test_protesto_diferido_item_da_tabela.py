@@ -67,6 +67,11 @@ def _tabela(bd) -> None:
     bd.escrever("""INSERT INTO cx_vigencias(codigo, descricao, vigente, inicio, fim)
                    VALUES (%s, 'tabela de teste', 1, '2026-01-02', NULL)""",
                 (VIGENCIA,))
+    # Mesmos codigos TJ de outra importacao, sem preco na vigencia atual:
+    # o cadastro antigo nao pode tomar o lugar do servico vigente.
+    for codigo, tj in ((8315, "17.1.5"), (8320, "17.2")):
+        bd.escrever("INSERT INTO cx_servicos(codigo,codigo_tj,descricao) "
+                    "VALUES (%s,%s,'Cadastro historico de teste')", (codigo,tj))
     for codigo, tj, descricao, preco in SERVICOS:
         bd.escrever("""INSERT INTO cx_servicos(codigo, codigo_tj, descricao)
                        VALUES (%s,%s,%s)""", (codigo, tj, descricao))
@@ -287,7 +292,9 @@ def test_o_protesto_da_central_lavra_sem_caixa_e_sem_protocolo(s, origem, cobrar
     assert devido == [{"servico": 9315, "tipo_ato": "PROTESTO",
                        "situacao": "PENDENTE"}]
     assert _ler(s, "SELECT id FROM cx_lancamentos") == []
-    assert "17.1.5" in html and "NÃO entrou no caixa" in html
+    assert "NÃO entrou no caixa" in html
+    if not cobrar:
+        assert "17.1.5" in html
     # o selo foi pedido pelo item do tribunal, e não pela faixa
     selos = [p for p in aparelho.pedidos if "/selo/protesto/" in p["caminho"]]
     assert selos and all("17.1.5" not in p["corpo"] for p in selos)

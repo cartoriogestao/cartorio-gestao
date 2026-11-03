@@ -319,21 +319,27 @@ def itens_do_ato_pela_tabela(con, titulo_id: int, tipo: str, *,
     cobranca = cobranca_do_ato(con, titulo_id, tipo, hoje=data)
     if not cobranca.get("diferir"):
         return []
+    import custas as CU
+    try:
+        vigencia = CU.vigencia_do_dia(con, str(data)[:10])
+    except CU.CustasError:
+        return []
     if codigo in ITENS_POR_FAIXA_DO_VALOR:
-        import custas as CU
         tit = banco(con).um(
             "SELECT valor_centavos FROM pt_titulos WHERE id=%s", (int(titulo_id),))
         valor = int((tit or {}).get("valor_centavos") or 0)
         if valor <= 0:
             return []
-        try:
-            vigencia = CU.vigencia_do_dia(con, str(data)[:10])
-        except CU.CustasError:
-            return []
         codigo = _faixa_do_valor(con, codigo, valor, int(vigencia["codigo"]))
         if not codigo:
             return []
-    servico = AS.servico_do_codigo_tj(con, codigo)
+    # O mesmo codigo TJ tem cadastros historicos: usar o menor codigo do
+    # cadastro podia devolver servico sem preco na vigencia do ato.
+    servico = banco(con).um(
+        """SELECT s.codigo, s.codigo_tj, s.descricao FROM cx_servicos s
+            JOIN cx_servico_valores v ON v.servico=s.codigo
+            WHERE s.codigo_tj=%s AND v.vigencia=%s AND COALESCE(s.ativo,1)=1
+            ORDER BY s.codigo LIMIT 1""", (codigo, int(vigencia["codigo"])))
     if not servico:
         return []
     return [{"servico": int(servico["codigo"]), "codigo_tj": codigo,

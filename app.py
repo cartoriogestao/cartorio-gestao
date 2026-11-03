@@ -2749,9 +2749,9 @@ def create_app(test_config: dict | None = None) -> Flask:
                 if not filename.lower().endswith(".cgu"):
                     flash("Formato invalido. Use somente o pacote .cgu fornecido para esta versao.", "danger")
                     return redirect(url_for("updates"))
-                package = incoming / (
-                    f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{filename}"
-                )
+                # O NOME NO DISCO É DO SERVIDOR (alerta #297 do CodeQL): o nome que veio do navegador fica só
+                # nas mensagens e na auditoria, e não entra no caminho do arquivo.
+                package = incoming / f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_enviado.cgu"
                 upload.save(package)
                 expected = request.form.get("expected_sha256", "").strip()
                 info = preparar(package, filename, expected)

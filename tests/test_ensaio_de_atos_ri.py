@@ -8,7 +8,8 @@ O QUE ESTE TESTE FAZ
     `test_fluxo_ri` já leva cada um dos 25 modelos de ato da casa da prenotação paga à certidão, cada
     um numa matrícula limpa. Este pratica, pelas mesmas telas e com os mesmos passos (os auxiliares de
     lá), as SEQUÊNCIAS em que a certidão de propriedade e a de ônus podem errar: a venda com a hipoteca
-    de pé, o cancelamento, a penhora, a indisponibilidade, o casal que adquire, o usufruto e a extinção.
+    de pé, o cancelamento, a penhora, a indisponibilidade, o casal que adquire, o usufruto e a extinção;
+    e, na segunda leva, a prioridade entre prenotações, a partilha e o desmembramento.
     O inventário está em `docs/ensaio_de_atos/inventario_ri.md`, e o relatório em `relatorio_ri.md`.
 
 OS DEFEITOS FICAM À VISTA: a asserção é a da lei; o defeito aberto fica em `xfail(strict=True)`.
@@ -33,6 +34,13 @@ TERCEIRO = {"nome": "PAULO EXEMPLO TESTEMUNHA", "cpf": "00000000353", "cpf_fmt":
 CONJUGE = {"nome": "LUCIA EXEMPLO TESTEMUNHA", "cpf": "00000001082", "cpf_fmt": "000.000.010-82",
            "qualificacao": ("brasileira, casada, maior, costureira, residente e domiciliada na Rua "
                             "Exemplo, 20, Centro, Cidade Exemplo/MA")}
+
+HERDEIRO = {"nome": "MARCOS EXEMPLO FILHO", "cpf": "00000001163", "cpf_fmt": "000.000.011-63",
+            "qualificacao": ("brasileiro, solteiro, maior, estudante, residente e domiciliado na Rua "
+                             "Exemplo, 40, Centro, Cidade Exemplo/MA")}
+HERDEIRA = {"nome": "JULIA EXEMPLO FILHA", "cpf": "00000001244", "cpf_fmt": "000.000.012-44",
+            "qualificacao": ("brasileira, solteira, maior, enfermeira, residente e domiciliada na Rua "
+                             "Exemplo, 50, Centro, Cidade Exemplo/MA")}
 
 
 def _defeito(motivo: str):
@@ -96,9 +104,9 @@ def test_a_venda_com_a_hipoteca_de_pe_muda_o_dono_e_a_hipoteca_continua_onus(cas
     assert r2["id"] in _onus_oferecidos(casa, m)
 
 
-@_defeito("o AV de cancelamento não se liga ao R que cancela (`ri_onus.classificar` só olha `ri_atos.cancelado`, "
-          "que é o ato tornado sem efeito): depois do cancelamento, o pedido de certidão de ônus ainda vem com "
-          "«Positiva» marcada e a hipoteca cancelada marcada para transcrição")
+@_defeito("o modelo AV-CANCELAMENTO-HIPOTECA, lavrado pelo «Novo ato», não passa pela rota «Cancelar este ato» "
+          "(a única que grava `cancelado_por_ato_id`): o R cancelado fica de pé, e o pedido de certidão de ônus vem "
+          "com «Positiva» marcada e a hipoteca cancelada marcada para transcrição")
 def test_a_hipoteca_cancelada_deixa_de_ser_onus(casa):  # noqa: F811
     """LRP arts. 248 e 250: a hipoteca cancelada por averbação não pesa mais na certidão de ônus."""
     f = F._com_hipoteca(casa)
@@ -153,8 +161,9 @@ def test_o_casal_que_compra_sai_inteiro_na_certidao_de_propriedade(casa):  # noq
 
 # ------------------------------------------------------------------ o usufruto
 
-@_defeito("como no cancelamento da hipoteca, a AV de extinção não se liga ao R do usufruto — e ela mesma é "
-          "oferecida como ônus (a palavra «usufruto» do teor; a natureza «Extinção de usufruto» não está na tabela)")
+@_defeito("como no cancelamento da hipoteca, o modelo AV-EXTINCAO-USUFRUTO não passa pela rota «Cancelar este "
+          "ato» e não liga a AV ao R do usufruto — e ela mesma é oferecida como ônus (a palavra «usufruto» do teor; "
+          "a natureza «Extinção de usufruto» não está na tabela)")
 def test_o_usufruto_e_onus_e_extinto_deixa_de_ser(casa):  # noqa: F811
     """LRP art. 167, I, 7, e II, 2; CC art. 1.410: o usufruto registrado é ônus (direito real sobre coisa
     alheia); averbada a extinção, não é mais."""
@@ -169,3 +178,103 @@ def test_o_usufruto_e_onus_e_extinto_deixa_de_ser(casa):  # noqa: F811
     assert extinto["ato"] and extinto["ato"]["selo_texto"], extinto["recado"][:1200]
     oferecidos = _onus_oferecidos(casa, m)
     assert usufruto["ato"]["id"] not in oferecidos and extinto["ato"]["id"] not in oferecidos, oferecidos
+
+
+def test_pelo_botao_cancelar_este_ato_a_hipoteca_e_o_usufruto_deixam_de_ser_onus(casa):  # noqa: F811
+    """A OUTRA PORTA, a que funciona: «Cancelar este ato» na ficha (só OFICIAL e substituto) lavra a AV, marca
+    o R com `cancelado_por_ato_id`, e o R sai do pedido de certidão de ônus — a hipoteca e o usufruto."""
+    f = F._com_hipoteca(casa)
+    m, r2 = f["matricula"], f["r2"]
+    usufruto = _ato(casa, m, "R-USUFRUTO", interessado=F.COMPRADORA,
+                    partes=[(F.COMPRADORA, "nu-proprietario"), (TERCEIRO, "usufrutuario")])["ato"]
+    ficha = f"/registro-imoveis/{m['id']}"
+    for alvo, motivo in ((r2, "Termo de quitação do credor de 18 de outubro de 2026"),
+                         (usufruto, "Certidão de óbito do usufrutuário, expedida em 20 de outubro de 2026")):
+        cx = F._protocolo_geral(casa, interessado=F.COMPRADORA, itens=[("16.1", 1), ("16.22.2", 1)])
+        p = F._prenotar(casa, cx, apresentante=F.COMPRADORA, natureza="Cancelamento",
+                        objeto=f"Matrícula {F.PRIMEIRA_MATRICULA}", matricula=str(F.PRIMEIRA_MATRICULA))
+        html = F._clicar(casa["oficial"], ficha, f"/registro-imoveis/atos/{alvo['id']}/cancelar",
+                         motivo=motivo, data_ato=F.date.today().isoformat(), protocolo=str(p["numero"]))
+        marcado = F._um(casa, "SELECT cancelado, cancelado_por_ato_id FROM ri_atos WHERE id=%s", (alvo["id"],))
+        assert marcado["cancelado"] == 1 and marcado["cancelado_por_ato_id"], html[:1200]
+    oferecidos = _onus_oferecidos(casa, m)
+    assert r2["id"] not in oferecidos and usufruto["id"] not in oferecidos, oferecidos
+
+
+# ------------------------------------------------------------------ a prioridade
+
+def _avisos(html: str) -> str:
+    """Os recados da tela (`flash`), sem o resto da página — a ficha escreve «prioridade» em rótulo fixo."""
+    pedacos = re.findall(r'<div class="flash [^"]*" data-aviso>(.*?)</div>', html, re.S)
+    return " ".join(" ".join(re.sub(r"<[^>]+>", " ", p).split()) for p in pedacos)
+
+
+@_defeito("a lavratura não olha as outras prenotações abertas da matrícula: o título prenotado depois vai ao "
+          "livro, com selo e sem aviso, enquanto o anterior, contraditório, espera")
+def test_o_titulo_prenotado_depois_nao_passa_na_frente_do_anterior(casa):  # noqa: F811
+    """LRP arts. 182, 186 e 191: o número de ordem da prenotação determina a prioridade do título, e esta a
+    preferência dos direitos. Duas vendas da mesma dona a compradores diferentes, prenotadas nesta ordem: a
+    segunda não vai ao livro antes de se resolver a primeira — ou, no mínimo, a tela diz que há prenotação
+    anterior aberta sobre a matrícula (a escolha entre barrar e avisar é do oficial)."""
+    f = F._compra_e_venda(casa)
+    m = f["matricula"]
+    prenotadas = []
+    for quem in (TERCEIRO, CONJUGE):
+        cx = F._protocolo_geral(casa, interessado=quem, itens=[("16.1", 1), ("16.3.14", 1)])
+        p = F._prenotar(casa, cx, apresentante=quem, natureza="Compra e venda",
+                        objeto=f"Matrícula {F.PRIMEIRA_MATRICULA}", matricula=str(F.PRIMEIRA_MATRICULA))
+        prenotadas.append((cx, p))
+    (_, primeira), (cx, segunda) = prenotadas
+    assert primeira["numero"] < segunda["numero"]
+    r = casa["balcao"].get(f"/registro-imoveis/{m['id']}/modelo/R-COMPRA-VENDA")
+    teor, _ = F._como_o_balcao_preenche(json.loads(r.get_data(as_text=True))["teor"])
+    html = F._lavrar(casa, m, tipo="R", teor=teor, natureza="Compra e venda", prenotacao=segunda, cx=cx,
+                     itens=["16.3.14"], partes=[(F.COMPRADORA, "transmitente"), (CONJUGE, "adquirente")],
+                     base_calculo="100.000,00", modelo="R-COMPRA-VENDA")
+    lavrado = F._um(casa, "SELECT id FROM ri_atos WHERE matricula_id=%s AND numero=2", (m["id"],))
+    avisos = _avisos(html)
+    # O NÚMERO DA PRIMEIRA PERTO DE «PRENOTAÇÃO»/«PROTOCOLO»: um «2» solto casava com o «R-2 lavrado».
+    avisou = re.search(rf"(?i)(prenota\w*|protocolo)\s+(n\.?\s*º?\s*)?{primeira['numero']}\b", avisos)
+    assert not lavrado or avisou, f"a venda da prenotação {segunda['numero']} foi ao livro sem aviso: {avisos!r}"
+
+
+# ------------------------------------------------------------------ a partilha
+
+def test_a_partilha_poe_a_meeira_e_os_herdeiros_e_tira_a_falecida(casa):  # noqa: F811
+    """CPC arts. 610 e 659; LRP art. 167, I, 25, e art. 19, § 9º: registrado o formal de partilha, os donos são
+    a meeira e os herdeiros a quem o imóvel coube, e a falecida sai do quadro. (A fração de cada um fica no
+    texto do ato: o quadro de titulares não guarda fração — observação O4 do relatório.)"""
+    f = F._compra_e_venda(casa)
+    m = f["matricula"]
+    partilha = _ato(casa, m, "R-PARTILHA", interessado=CONJUGE,
+                    partes=[(F.COMPRADORA, "transmitente"), (CONJUGE, "adquirente"),
+                            (HERDEIRO, "adquirente"), (HERDEIRA, "adquirente")])
+    assert partilha["ato"] and partilha["ato"]["selo_texto"], partilha["recado"][:1200]
+    dono = _dono_na_certidao(casa, m)
+    for quem in (CONJUGE, HERDEIRO, HERDEIRA):
+        assert quem["nome"] in dono, dono
+    assert F.COMPRADORA["nome"] not in dono, dono
+
+
+# ------------------------------------------------------------------ o desmembramento
+
+@_defeito("a matrícula aberta de outra não olha os ônus da de origem: aberta a filha da 4.100, que tem a "
+          "hipoteca R-02 de pé, nem a abertura nem a ficha da filha dizem nada da hipoteca")
+def test_a_matricula_filha_aberta_de_imovel_hipotecado_traz_o_onus(casa):  # noqa: F811
+    """LRP art. 230: se na certidão da origem constar ônus, o oficial abre a matrícula e, logo em seguida,
+    averba a existência do ônus. Desmembrado o imóvel hipotecado, a filha nasce gravada — e a tela que a abre
+    (ou a ficha dela) tem de dizer que a origem tem a hipoteca de pé, para a averbação não ser esquecida."""
+    f = F._com_hipoteca(casa)
+    mae, r2 = f["matricula"], f["r2"]
+    campos = dict(F.IMOVEL, data_abertura=F.date.today().isoformat(), area_valor="180,00",
+                  registro_anterior=f"Matrícula {F.PRIMEIRA_MATRICULA} deste Ofício (desmembramento)",
+                  proprietario_nome=F.COMPRADORA["nome"], proprietario_documento=F.COMPRADORA["cpf_fmt"],
+                  proprietario_qualificacao=F.COMPRADORA["qualificacao"], confrontacoes=F.CONFRONTACOES)
+    abertura = F._clicar(casa["balcao"], "/registro-imoveis/nova", "/registro-imoveis/nova", **campos)
+    filha = F._um(casa, "SELECT * FROM ri_matriculas WHERE id <> %s ORDER BY id DESC LIMIT 1", (mae["id"],))
+    assert filha, abertura[:800]
+    ficha = casa["balcao"].get(f"/registro-imoveis/{filha['id']}").get_data(as_text=True)
+    rotulo = f"R-02/{F.PRIMEIRA_MATRICULA}"
+    assert rotulo in _avisos(abertura) or rotulo in _avisos(ficha) or re.search(
+        rf"(?is)origem.{{0,300}}{re.escape(rotulo)}", re.sub(r"<[^>]+>", " ", ficha)), \
+        f"nada sobre a hipoteca da origem: {_avisos(abertura)!r}"

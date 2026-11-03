@@ -17,8 +17,9 @@
   «A protestar» manda `afirmo_<id>` e `afirmacao_<id>`, um por título.
 #}
 
-{% macro afirmacao(sufixo='', o_que_falta='', rotulo='Insistir mesmo assim — afirmação expressa') %}
-<details class="afirmacao-expressa" style="grid-column:1/-1; margin-top:6px">
+{% macro afirmacao(sufixo='', o_que_falta='', rotulo='Insistir mesmo assim — afirmação expressa', valores=none) %}
+{% set valores = valores or {} %}
+<details class="afirmacao-expressa" style="grid-column:1/-1; margin-top:6px"{% if valores.get('afirmacao' ~ sufixo) or valores.get('afirmo' ~ sufixo) %} open{% endif %}>
   <summary><small><strong>{{ rotulo }}</strong></small></summary>
   <div class="notice danger" style="margin:6px 0">
     <strong>Atenção: o sistema recusa porque isto parece erro.</strong>
@@ -27,10 +28,10 @@
     ato e na auditoria, <strong>com o seu nome</strong>.
   </div>
   <label style="display:block"><input type="checkbox" name="afirmo{{ sufixo }}"
-         value="1" style="width:auto"> Afirmo</label>
+         value="1" style="width:auto"{% if valores.get('afirmo' ~ sufixo) %} checked{% endif %}> Afirmo</label>
   <label style="display:block">Afirmo, sob minha responsabilidade, que
     <textarea name="afirmacao{{ sufixo }}" rows="2"
-              placeholder="o que aconteceu e por que não é erro (pelo menos 30 letras)"></textarea></label>
+              placeholder="o que aconteceu e por que não é erro (pelo menos 30 letras)">{{ valores.get('afirmacao' ~ sufixo, '') }}</textarea></label>
 </details>
 {% endmacro %}
 

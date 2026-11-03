@@ -1,0 +1,14 @@
+{# O PAGAMENTO FEITO EM DATA ANTERIOR — pedido do oficial, 03/11/2026: o cliente pagou dias antes (o PIX
+   de anteontem), e o item precisa estar quitado para o selo sair. O lançamento entra com a data de hoje;
+   a do pagamento vai ao lado, com o comprovante e a justificativa. Só PIX, TED, depósito e cartão; de ano
+   anterior, com a aprovação de outra pessoa; data futura, nunca. #}
+<details class="small cg-pago-antes">
+  <summary>pagamento feito em data anterior</summary>
+  <label class="check"><input type="checkbox" name="pago_antes" value="1"> o cliente pagou noutro dia</label>
+  <label>Data do pagamento <input type="date" name="data_pagamento"></label>
+  <label>Comprovante <input name="comprovante" size="24" placeholder="E2E do PIX, nº da TED ou do depósito, autorização"></label>
+  <label>Justificativa <input name="justificativa" size="30"></label>
+  <span class="muted">De ano anterior, com a aprovação de outra pessoa (oficial ou gerente):</span>
+  <label>Aprovador <input name="aprovador" size="12" autocomplete="off"></label>
+  <label>Senha <input type="password" name="senha_aprovador" size="10" autocomplete="off"></label>
+</details>

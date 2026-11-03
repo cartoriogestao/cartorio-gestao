@@ -661,8 +661,15 @@ def lancar_apontamento(con, titulo_id: int, *, sv: dict,
 
     # A TRAVA VEM ANTES DA LEITURA: e ela que faz o sequencial crescer sem
     # repetir, e o segundo devedor do protocolo ver a chave do primeiro.
+    # TODA ORIGEM, E NAO SO A CRA - correcao de 03/11/2026. O titulo de origem
+    # CENPROT (pedido da Central) e o MANUAL ficavam sem chave, a espera de uma
+    # "chave da Central" que nunca chega: a consulta de pedidos nao traz
+    # `cd_chave_unica`, e o protocolar a exige. Medido no acervo do E-Oficio:
+    # as 91 chaves de titulos de origem CENPROT sao da MESMA sequencia da casa
+    # (89 encaixam na ordem cronologica das da CRA, nenhuma repete), com a data
+    # do apontamento no fim - a casa e quem as compunha.
     chave = (tit["chave_cenprot"] or "").strip() or None
-    if tit["origem"] == "CRA" and not chave:
+    if not chave:
         bd.travar("pt_titulos.chave_cenprot")
         chave = PCEN.chave_do_apontamento(
             bd, titulo_id, protocolo_de_antes=protocolo_de_antes, data=agora)

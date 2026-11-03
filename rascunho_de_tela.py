@@ -367,6 +367,10 @@ def endereco_de_abrir(rascunho: dict, url_for) -> str | None:
     na lista, e pode ser apagada: ela só não promete o que não cumpre.
     """
     try:
+        if rascunho["tela"] == "protesto_titulo":
+            achado = re.fullmatch(r"protesto:(\d+):usuario:\d+", rascunho.get("chave") or "")
+            return (url_for("protesto_titulo", titulo_id=int(achado.group(1)),
+                            rascunho_id=rascunho["id"]) if achado else None)
         if rascunho["tela"] != TELA_DO_LANCAMENTO:
             return url_for(rascunho["tela"], rascunho_id=rascunho["id"])
     except Exception:                                   # noqa: BLE001

@@ -396,6 +396,7 @@
           <option value="">— escolha —</option>
           {% for cod, rotulo in FORMAS.items() %}<option value="{{ cod }}">{{ rotulo }}</option>{% endfor %}
         </select></label>
+      {% include "_caixa_pagamento_anterior.html" %}
       <button class="primary" name="acao" value="quitar_todos"
         onclick="return confirm('Quitar os {{ faltam }} itens que faltam, quitando-os e lançando cada um no caixa? O total a receber é {{ pendente.total }}.')">
         Quitar os {{ faltam }} que faltam — {{ pendente.total }}</button>
@@ -451,6 +452,8 @@
             <input type="hidden" name="item_id" value="{{ a.id }}">
             {% if a.quitado %}
               <span class="badge ok">quitado</span>
+              {% if a.data_pagamento %}<br><span class="small">Pago em {{ fmt_date(a.data_pagamento) }},
+                registrado em {{ fmt_date(a.data_lancamento) }}</span>{% endif %}
               {% if a.quitado_em %}<br><span class="small muted">{{ fmt_date(a.quitado_em) }}
                 {% if a.quitado_por %}· {{ a.quitado_por }}{% endif %}</span>{% endif %}
               <button class="small" name="acao" value="desquitar">reabrir</button>
@@ -461,6 +464,7 @@
                 {% for cod, rotulo in FORMAS.items() %}<option value="{{ cod }}">{{ rotulo }}</option>{% endfor %}
               </select>
               <button class="small" name="acao" value="quitar">quitar</button>
+              {% include "_caixa_pagamento_anterior.html" %}
               <button class="small" name="acao" value="remover" formnovalidate
                 onclick="return confirm('Remover este item do protocolo?')">remover</button>
             {% endif %}

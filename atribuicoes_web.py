@@ -105,6 +105,7 @@ import rc_etiqueta_averbacao as RCETQ
 import rc_textos as TEXTOS
 import etiqueta as ETQ
 import rascunho_de_tela as RASC
+import protesto_preparo as PPRE
 import ibge_remessa as IBGE
 import papel_seguranca as PP
 import protesto as PT
@@ -3453,6 +3454,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               {**CCONF.detalhe_da_auditoria(aceita), "ato": "INTIMACAO",
                "ato_id": ato_id, "aviso_id": aviso_id})
 
+    @app.route("/protesto/<int:titulo_id>/preenchimento", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_preparo_salvar(titulo_id: int):
+        import selo_robo as SR
+        if SR.usuario_e_robo():
+            abort(403)
+        try:
+            with db.transaction() as con:
+                salvo = PPRE.salvar(con, titulo_id, usuario_id_do_sistema(),
+                                    request.form, agora=agora(), por=usuario_nome())
+        except RASC.RascunhoError as erro:
+            flash(str(erro), "danger")
+            return app.view_functions["protesto_titulo"](titulo_id=titulo_id)
+        audit("PROTESTO_PREENCHIMENTO_SALVO", "pt_titulos", titulo_id,
+              {"rascunho_id": salvo["id"], "ato": "PROTESTO"})
+        flash("Preenchimento salvo. Antes de lançar, confira os textos e marque "
+              "«Afirmo» em cada regra. Nenhum ato foi lançado.", "success")
+        return redirect(url_for("protesto_titulo", titulo_id=titulo_id) + "#lancar-PROTESTO")
+
     @app.route("/protesto/<int:titulo_id>/lancar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def protesto_lancar(titulo_id: int):
@@ -3714,6 +3734,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         except (PT.ProtestoError, AS.AtoError, LN.LivroError,
                 PTERMO.TermoError, POST.PosterioriError) as erro:
             flash(str(erro), "danger")
+            if ato == "PROTESTO":
+                return app.view_functions["protesto_titulo"](titulo_id=titulo_id)
             return voltar
         if afirmacao_cenprot:
             # A AFIRMAÇÃO QUE VENCEU A TRAVA DA CENPROT (29/10/2026) — o
@@ -3813,6 +3835,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             k: v for k, v in r.items() if k != "ato_id"}})
         onde = (f" Livro {r.get('livro_numero')}, fl. {r.get('rotulo')}, "
                 f"nº {r.get('numero_ordem')}." if r.get("numero_ordem") else "")
+        if ato == "PROTESTO" and request.form.get("_preparo_id"):
+            try:
+                with db.transaction() as con:
+                    PPRE.concluir(con, titulo_id, usuario_id_do_sistema(),
+                                  request.form.get("_preparo_id"), agora=agora(),
+                                  por=usuario_nome(),
+                                  endereco=url_for("protesto_titulo", titulo_id=titulo_id))
+            except Exception:
+                # O ato ja foi gravado; falha de limpeza nao pode parecer
+                # falha da lavratura e induzir a repetir o ato.
+                flash("O protesto foi lançado, mas o preenchimento salvo "
+                      "continua na lista de Rascunhos.", "warning")
         flash(f"{ato.capitalize()} lançado.{onde}{aviso}", "success")
         return voltar
 
@@ -4035,6 +4069,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             avisos = AV.do_titulo(con, titulo_id)
             for a in avisos:
                 a["tentativas"] = AV.tentativas(con, a["id"])
+                a["comprovantes"] = AV.comprovantes(con, a["id"])
             # A LISTA DE ATENCAO, sobre TODAS as partes do titulo — devedor
             # e credor. Conferir uma so deixaria a outra passar.
             fraudes = _fraudes_de(con, [
@@ -4085,6 +4120,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             import protesto_prova as PROVA
             prova = (PROVA.conferir(_c, titulo_id, hoje=hoje())
                      if situacao == "INTIMADO" else None)
+            edital_comprovante = PPRE.edital_da_ficha(_c, titulo_id, prova)
+            preparo_protesto = (PPRE.ler(_c, titulo_id, usuario_id_do_sistema())
+                                if situacao == "INTIMADO" else None)
             # A SITUAÇÃO SEM O ATO QUE A SUSTENTE e O ATO A REFAZER
             # (29/10/2026): as obrigações que o selo deixou neste título.
             sem_ato = PSELO.situacao_sem_ato(_c, titulo_id)
@@ -4187,6 +4225,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                    "triduo_situacao"),
                                irmaos=irmaos, cedente_origem=cedente_origem,
                                prova=prova, pedidos_cra=pedidos_cra,
+                               edital_comprovante=edital_comprovante,
+                               preparo_protesto=preparo_protesto,
+                               dados_protesto=(request.form if request.method == "POST"
+                                   and request.form.get("ato") == "PROTESTO" else
+                                   (preparo_protesto or {}).get("dados", {})),
                                minimo_do_motivo_cra=PCP.MINIMO_DE_LETRAS,
                                quem_encerra_o_grave=PCP.QUEM_ENCERRA_O_GRAVE)
 
@@ -11199,10 +11242,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         (CN-MA art. 921, § 6º, I); a entrega pode ter sido registrada antes de
         ele voltar escaneado, e por isso o upload também é separado.
         """
+        with db.connect() as con:
+            titulo_do_aviso = (AV.ler(con, aviso_id) or {}).get("titulo_id")
+        voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_do_aviso)
+                          + "#comprovantes-intimacao") if _campo("de") == "ficha" and titulo_do_aviso else redirect(url_for("protesto_avisos") + "#entregues")
         enviado = request.files.get("comprovante")
         if not enviado or not enviado.filename:
             flash("Escolha o arquivo do comprovante.", "danger")
-            return redirect(url_for("protesto_avisos"))
+            return voltar
         try:
             with db.transaction() as con:
                 r = AV.guardar_comprovante(
@@ -11216,12 +11263,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     afirmacao=_afirmacoes_por_regra())
         except AV.AvisoError as erro:
             flash(str(erro), "danger")
-            return redirect(url_for("protesto_avisos"))
+            return voltar
         audit("PROTESTO_AVISO_COMPROVANTE", "pt_avisos", aviso_id,
               {"anexo_id": r["anexo_id"], "nome": r["nome"]})
         _auditar_afirmacoes("pt_avisos", aviso_id, r.get("afirmacoes"))
         flash(f"Comprovante anexado ({r['nome']}).", "success")
-        return redirect(url_for("protesto_avisos") + "#entregues")
+        return voltar
 
     @app.route("/protesto/editais/comprovante-cenprot", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -11237,6 +11284,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash("Escolha o arquivo do comprovante do envio.", "danger")
             return voltar
         dia = (_campo("dia") or hoje())[:10]
+        titulo_volta = numero_digitado(_campo("titulo_id"), maximo=MAIOR_INTEGER)
+        if titulo_volta:
+            with db.connect() as con:
+                pertence = banco(con).um("SELECT id FROM pt_editais WHERE titulo_id=%s AND publicado_em=%s LIMIT 1", (titulo_volta, dia))
+            if not pertence:
+                abort(400)
+            voltar = redirect(url_for("protesto_titulo", titulo_id=titulo_volta) + "#comprovantes-intimacao")
         try:
             with db.transaction() as con:
                 r = AV.guardar_comprovante_do_envio(
@@ -11957,6 +12011,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             PCIMG.preparar_pasta(pasta_dos_arquivos())
             texto = CRAW._trazer(qual, nome, CENTCRED.PRODUCAO,
                                  com_imagem=_campo("com_imagem") != "0")
+        except CRAW.CRA.CraSemRemessa as aviso:
+            audit("cra_baixar_e_conferir", None, None,
+                  {"o_que": qual, "nome": nome, "resultado": "SEM_REMESSA",
+                   "codigo": aviso.codigo, "mensagem": aviso.motivo,
+                   "tamanho": len(aviso.bruto)})
+            flash(str(aviso), "info")
         except (*CRAW.RECUSAS_DO_BALCAO, PCIMG.ImagemCraError) as erro:
             flash(str(erro), "danger")
         if texto is not None:

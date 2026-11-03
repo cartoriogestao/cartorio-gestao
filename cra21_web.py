@@ -132,6 +132,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         com_imagem = str(request.values.get("com_imagem") or "") == "1"
         try:
             texto = _trazer(qual, nome, ambiente, com_imagem=com_imagem)
+        except CRA.CraSemRemessa as aviso:
+            audit("cra_baixar", None, None,
+                  {"ambiente": ambiente, "o_que": qual, "nome": nome,
+                   "resultado": "SEM_REMESSA", "codigo": aviso.codigo,
+                   "mensagem": aviso.motivo, "tamanho": len(aviso.bruto)})
+            flash(str(aviso), "info")
+            return redirect(url_for("protesto_cra_api", ambiente=ambiente))
         except RECUSAS_DO_BALCAO as erro:
             flash(str(erro), "danger")
             return redirect(url_for("protesto_cra_api", ambiente=ambiente))

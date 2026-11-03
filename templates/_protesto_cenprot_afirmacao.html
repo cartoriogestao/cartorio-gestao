@@ -45,5 +45,6 @@
     o selo, o irmão), a ficha manda `sufixo_cenprot` = «_cenprot», e cada uma
     tem o seu campo; sozinha, ela usa a caixa comum. #}
 {{ afirmacao(sufixo_cenprot | default(''), (travas[0].frase if travas else 'A conferência com a CENPROT pode recusar este ato.'),
-             rotulo='Insistir mesmo assim — afirmação expressa (CENPROT)') }}
+             rotulo='Insistir mesmo assim — afirmação expressa (CENPROT)',
+             valores=v_ato if v_ato is defined else none) }}
 {% endif %}

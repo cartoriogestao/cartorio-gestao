@@ -791,9 +791,12 @@ _FUNDOS_DO_LANCAMENTO = ("ferc", "fadep", "femp", "ferrfis", "fermoju")
 # no item: `cx_protocolo_atos.usado_em`, que o selo grava quando consome a última unidade do item
 # (`caixa_protocolo.consumir_item`) e apaga quando o ato se desfaz. A receita conta no MAIS TARDE entre
 # o pagamento e o selo: o pago antes conta no selo; o selado antes e pago depois (o diferido) conta no
-# pagamento. O item pago e ainda sem selo, e o lançamento sem item de protocolo (o manual), contam no
-# pagamento por ora, e o primeiro vai à lista dos «pagos ainda sem selo» — a regra dele está com o
-# oficial (casos B a F do PR).
+# pagamento (decisão do oficial de 03/11/2026, caso A). O lançamento sem item de protocolo (o manual)
+# conta no pagamento enquanto o oficial não responde se ele também espera o selo.
+#
+# O PAGO E NUNCA SELADO (caso B, decisão do oficial de 03/11/2026): sem estorno nem devolução, fica na
+# lista dos «pagos sem selo» e entra como receita em 31/12 do ano do pagamento, se até lá não for selado.
+# Pago num ano e selado no seguinte, conta no selo (caso E): a regra vale também na virada do ano.
 SELO, PAGAMENTO = "SELO", "PAGAMENTO"
 CRITERIO = "receita reconhecida na emissão do selo do ato (o mais tarde entre o pagamento e o selo)"
 
@@ -816,8 +819,10 @@ def _recebido_no_caixa(bd, comp: str, forma: str, bp: int, criterio: str = SELO
                          LEFT JOIN cx_protocolo_atos a ON a.lancamento_id = l.id
                         WHERE (l.data >= %s AND l.data < %s)
                            OR (a.usado_em >= %s AND a.usado_em < %s AND l.data < %s)
+                           OR (a.id IS NOT NULL AND a.usado_em IS NULL AND l.data >= %s AND l.data < %s)
                         ORDER BY l.data, l.id"""
-        parametros = (inicio, fim, inicio, fim, fim)
+        # a terceira linha: o pago sem selo do ano, que vai a 31/12 (caso B)
+        parametros = (inicio, fim, inicio, fim, fim, f"{comp[:4]}-01-01", fim)
     else:
         consulta = f"""SELECT id, data, natureza, sentido, forma_pagamento, descricao, valor,
                               emolumentos, ferc, fadep, femp, ferrfis, fermoju, estornado,
@@ -829,7 +834,12 @@ def _recebido_no_caixa(bd, comp: str, forma: str, bp: int, criterio: str = SELO
     for lan in bd.ler(consulta, parametros):
         pago_em = str(lan["data"])[:10]
         selado_em = str(lan["selado_em"] or "")[:10] or None
-        dia = max(pago_em, selado_em) if (criterio == SELO and selado_em) else pago_em
+        if criterio == SELO and selado_em:
+            dia = max(pago_em, selado_em)
+        elif criterio == SELO and lan["item_id"]:
+            dia = f"{pago_em[:4]}-12-31"  # o pago e ainda sem selo: 31/12 do ano do pagamento (caso B)
+        else:
+            dia = pago_em
         if not _no_mes(dia, comp):
             continue                      # reconhecida noutro mês
         if int(lan["excluido"] or 0) or int(lan["estornado"] or 0) \
@@ -863,7 +873,7 @@ def _recebido_no_caixa(bd, comp: str, forma: str, bp: int, criterio: str = SELO
         recebidos.append({"id": int(lan["id"]), "dia": dia, "pago_em": pago_em,
                           "selado_em": selado_em, "bruto": valor,
                           "receita": receita, "discriminado": discriminado,
-                          # o item do protocolo pago e ainda sem selo: no pagamento, por ora
+                          # o item do protocolo pago e sem selo, reconhecido em 31/12 (caso B)
                           "sem_selo": bool(lan["item_id"]) and not selado_em})
     return recebidos, outras, outras_receitas
 
@@ -1000,11 +1010,28 @@ def _apurar(bd, comp: str, cfg: Mapping[str, str], livro_dep: dict,
         avisos.append(f"Pelo critério de 03/11/2026 ({CRITERIO}), a receita do caixa deste mês é "
                       f"R$ {reais(caixa)}; pelo de antes (o dia do pagamento) era R$ {reais(caixa_antigo)} — "
                       f"diferença de R$ {reais(caixa - caixa_antigo)}. Confira com o que já foi recolhido.")
-    sem_selo = [r for r in recebidos if r["sem_selo"]]
-    if sem_selo:
-        avisos.append(f"{len(sem_selo)} item(ns) do protocolo pago(s) e ainda sem selo (R$ "
-                      f"{reais(sum(r['receita'] for r in sem_selo))}) foram contados no pagamento: a regra "
-                      f"do pago que não chega a ser selado está com o oficial.")
+    # OS PAGOS SEM SELO (caso B): até dezembro, fora da receita e à vista; em dezembro, os que o ano
+    # não selou entram em 31/12.
+    if comp[5:7] == "12":
+        sem_selo = [r for r in recebidos if r["sem_selo"]]
+        if sem_selo:
+            avisos.append(f"{len(sem_selo)} item(ns) do protocolo pago(s) em {comp[:4]} e não selado(s) "
+                          f"até 31/12 (R$ {reais(sum(r['receita'] for r in sem_selo))}) entraram como "
+                          f"receita em 31/12, pela decisão do oficial de 03/11/2026.")
+        seguinte = f"{int(comp[:4]) + 1:04d}-01"
+        do_ano_seguinte = [r for r in _recebido_no_caixa(bd, seguinte, forma, bp)[0]
+                           if r["pago_em"][:7] == comp and r["selado_em"]]
+        if do_ano_seguinte:
+            avisos.append(f"R$ {reais(sum(r['receita'] for r in do_ano_seguinte))} pagos em dezembro e "
+                          f"selados em {seguinte[:4]} contam em janeiro, na declaração de {seguinte[:4]} "
+                          f"— a regra do selo vale também na virada do ano.")
+    else:
+        dezembro = _recebido_no_caixa(bd, f"{comp[:4]}-12", forma, bp)[0]
+        sem_selo = [r for r in dezembro if r["sem_selo"] and r["pago_em"] < _limites(comp)[1]]
+        if sem_selo:
+            avisos.append(f"{len(sem_selo)} item(ns) do protocolo pago(s) neste ano e ainda sem selo (R$ "
+                          f"{reais(sum(r['receita'] for r in sem_selo))}) ficam fora da receita: entram no "
+                          f"mês do selo ou, se o ano acabar sem ele, em 31/12.")
     de_outro_ano = [r for r in recebidos if r["pago_em"][:4] != comp[:4]]
     if de_outro_ano:
         avisos.append(f"R$ {reais(sum(r['receita'] for r in de_outro_ano))} desta receita foram pagos em "

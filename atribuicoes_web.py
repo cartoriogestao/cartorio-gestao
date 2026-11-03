@@ -9860,12 +9860,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     con, registro_id, sede=_campo("pj_sede"),
                     objeto=_campo("pj_objeto"), capital=_campo("pj_capital"),
                     socios=_campo("pj_socios"), diretoria=_campo("pj_diretoria"),
+                    # SEM O CAMPO (quem posta sem a tela) fica a do cadastro; VAZIO, a leitura recusa.
+                    denominacao=(_campo("pj_denominacao")
+                                 if "pj_denominacao" in request.form else None),
                     agora=agora(), usuario=usuario_nome())
         except RG.RgError as erro:
             flash(str(erro), "danger")
             return voltar
         audit("RG_DADOS_DA_PJ", "rg_registros", registro_id, r)
         flash("Dados da pessoa jurídica gravados.", "success")
+        # A LEITURA DIZ OUTRO NOME (o oficial, 03/11/2026, observação O5): o breve relato certifica o da
+        # leitura, mas a busca acha o registro pelo cadastro, que só muda com o motivo.
+        if r.get("cadastro_difere"):
+            flash(f"A denominação lida («{r['depois']['pj_denominacao']}») não é a do cadastro "
+                  f"(«{r['cadastro']}»). O breve relato sai com a lida; se a pessoa jurídica mudou "
+                  f"de nome, corrija também o cadastro em «Corrigir requerente», com o motivo — "
+                  f"é por ele que a busca acha o registro.", "warning")
         return voltar
 
     @app.route("/rcpj-rtd/<int:registro_id>/corrigir-requerente",

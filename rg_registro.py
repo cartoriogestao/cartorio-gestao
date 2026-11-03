@@ -903,13 +903,13 @@ def lancar_cancelamento(con: sqlite3.Connection, registro_id: int, *,
 # O que o breve relato do RCPJ certifica e a casa não guardava (LD05). A
 # denominação e o CNPJ são o cadastro do requerente (`corrigir_requerente`).
 CAMPOS_DA_PJ = ("pj_sede", "pj_objeto", "pj_capital", "pj_socios",
-                "pj_diretoria")
+                "pj_diretoria", "pj_denominacao")
 
 
 def gravar_dados_da_pj(con, registro_id: int, *, sede: str | None,
                        objeto: str | None, capital: str | None,
                        socios: str | None, diretoria: str | None, agora: str,
-                       usuario: str | None) -> dict:
+                       usuario: str | None, denominacao: str | None = None) -> dict:
     """Grava os dados da pessoa jurídica que o breve relato certifica. ESCREVE.
 
     **ISTO NÃO É EDIÇÃO DE TEOR**, como `corrigir_requerente`: o estatuto e as
@@ -927,10 +927,15 @@ def gravar_dados_da_pj(con, registro_id: int, *, sede: str | None,
         raise RgError(
             "Os dados da pessoa jurídica são do registro do Livro A do RCPJ "
             "(CN-MA art. 420, II).")
+    # A DENOMINAÇÃO ENTRA NA LEITURA (o oficial, 03/11/2026, observação O5): quem relê confirma o nome
+    # que o breve relato certifica. Quem chama sem ela (a carga, os testes antigos) fica com o do cadastro.
+    if denominacao is None:
+        denominacao = reg.get("requerente_nome")
     novos = {"pj_sede": sede, "pj_objeto": objeto, "pj_capital": capital,
-             "pj_socios": socios, "pj_diretoria": diretoria}
+             "pj_socios": socios, "pj_diretoria": diretoria, "pj_denominacao": denominacao}
     novos = {k: (" ".join(str(v or "").split()) or None) for k, v in novos.items()}
-    faltam = [rotulo for campo, rotulo in (("pj_sede", "o endereço da sede"),
+    faltam = [rotulo for campo, rotulo in (("pj_denominacao", "a denominação"),
+                                           ("pj_sede", "o endereço da sede"),
                                            ("pj_objeto", "o objeto social"))
               if not novos[campo]]
     if not (novos["pj_socios"] or novos["pj_diretoria"]):
@@ -946,12 +951,18 @@ def gravar_dados_da_pj(con, registro_id: int, *, sede: str | None,
         """UPDATE rg_registros
               SET pj_sede=%(pj_sede)s, pj_objeto=%(pj_objeto)s,
                   pj_capital=%(pj_capital)s, pj_socios=%(pj_socios)s,
-                  pj_diretoria=%(pj_diretoria)s, pj_dados_em=%(agora)s,
+                  pj_diretoria=%(pj_diretoria)s, pj_denominacao=%(pj_denominacao)s,
+                  pj_dados_em=%(agora)s,
                   pj_dados_por=%(usuario)s, pj_dados_ultimo_ato_id=%(ultimo)s
             WHERE id=%(id)s""",
         {**novos, "agora": agora, "usuario": usuario, "id": int(registro_id),
          "ultimo": (ultimo or {}).get("id")})
-    return {"registro_id": int(registro_id), "antes": antes, "depois": novos}
+    # O CADASTRO NÃO MUDA AQUI: se a leitura diz outro nome, quem chama avisa e aponta a «Corrigir
+    # requerente», que pede o motivo e é por onde a busca acha o registro.
+    cadastro = " ".join(str(reg.get("requerente_nome") or "").split())
+    return {"registro_id": int(registro_id), "antes": antes, "depois": novos,
+            "cadastro_difere": bool(cadastro) and cadastro != novos["pj_denominacao"],
+            "cadastro": cadastro}
 
 
 # ------------------------------------------------- corrigir dados cadastrais

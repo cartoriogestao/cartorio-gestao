@@ -48,6 +48,11 @@
     <form method="post" class="form-grid" style="padding:14px"
           action="{{ url_for('rcpj_rtd_dados_pj', registro_id=registro.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {# A DENOMINAÇÃO NA RELEITURA (o oficial, 03/11/2026, observação O5 do ensaio de atos): já vem com a
+         do cadastro, e quem relê a confirma ou escreve a do estatuto. #}
+      <label class="span2">Denominação
+        <input name="pj_denominacao" value="{{ registro.pj_denominacao or registro.requerente_nome or '' }}"
+               required></label>
       <label class="span2">Endereço da sede
         <input name="pj_sede" value="{{ registro.pj_sede or '' }}" required></label>
       <label class="span2">Objeto social
@@ -60,9 +65,10 @@
         <textarea name="pj_diretoria" rows="2">{{ registro.pj_diretoria or '' }}</textarea></label>
       <div class="span2">
         <button class="button primary">Gravar os dados</button>
-        <small class="muted">A denominação e o CNPJ são os do requerente, logo
-          abaixo. Depois de cada averbação, confira e grave de novo: o breve
-          relato é da situação atual.</small>
+        <small class="muted">O CNPJ é o do requerente, logo abaixo; a denominação
+          vem do cadastro, e o breve relato certifica a que você gravar aqui.
+          Depois de cada averbação, confira e grave de novo: o breve relato é
+          da situação atual.</small>
       </div>
     </form>
   </details>

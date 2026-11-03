@@ -431,6 +431,11 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # régua comparava `criado_em > pj_dados_em`, com as horas ao segundo: o ato do mesmo segundo da
     # leitura contava como lido, e o breve relato saía sem a releitura. A ORDEM DOS ATOS NÃO EMPATA.
     ("rg_registros", "pj_dados_ultimo_ato_id", "INTEGER"),
+    # A DENOMINAÇÃO QUE A LEITURA CONFIRMOU (o oficial, 03/11/2026, respondendo à observação O5 do
+    # ensaio de atos do RCPJ: «a releitura passa a perguntar a denominação, já preenchida com a do
+    # cadastro»). O breve relato a certifica; o cadastro (`requerente_nome`) continua sendo o da
+    # busca, e só muda pela «Corrigir requerente», com o motivo.
+    ("rg_registros", "pj_denominacao", "TEXT"),
     # AS DECLARAÇÕES QUE O TERMO DO LIVRO FAZ (LD09, 21/10/2026): o extrato do
     # Livro C (LRP art. 143), a inscrição da pessoa jurídica (art. 120) e a
     # matrícula do periódico (art. 123). JSON {claro: texto}, escrito por quem

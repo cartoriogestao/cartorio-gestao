@@ -4637,6 +4637,39 @@ def _cobre_o_item(bd, it: dict, *, tabela: str, ato_id: int, usuario: Any,
     return None
 
 
+def _devido_do_proprio_ato(bd, tabela: Any, ato_id: int,
+                           codigo: str | None) -> dict | None:
+    """O emolumento deste ato ficou DEVIDO por lei (Protesto a posteriori)?
+    A linha de `pt_emolumentos_diferidos` do item do código do envelope, ou
+    None. Só LÊ.
+
+    Só o Protesto difere (`caixa_protocolo.TABELAS_QUE_DIFEREM`). O item tem
+    de ser o do envelope — igual, ou a faixa dele (17.1.5 → 17.1) —: o devido
+    da intimação não paga o selo do protesto. Sem código no envelope, não
+    adivinha: só serve se o ato deve um item só.
+    """
+    import caixa_protocolo as CXP
+    if tabela not in CXP.TABELAS_QUE_DIFEREM:
+        return None
+    if not (bd.tem_tabela("pt_emolumentos_diferidos")
+            and bd.tem_tabela("cx_servicos")):
+        return None
+    linhas = bd.ler(
+        """SELECT d.id, d.servico, d.situacao, s.codigo_tj
+             FROM pt_emolumentos_diferidos d
+             JOIN pt_atos a ON a.id = d.ato_id
+             LEFT JOIN cx_servicos s ON s.codigo = d.servico
+            WHERE d.ato_id = %s AND COALESCE(a.cancelado, 0) = 0
+            ORDER BY d.id""", (int(ato_id),))
+    if not codigo:
+        return linhas[0] if len(linhas) == 1 else None
+    for linha in linhas:
+        cod = str(linha.get("codigo_tj") or "").strip()
+        if cod == codigo or CXP.subitem_da_faixa(cod) == codigo:
+            return linha
+    return None
+
+
 def cobrir_o_selo(con, *, tabela: Any, ato_id: Any, referencia: Any,
                   dados: Any, usuario: Any, agora: str, cns: Any = None,
                   atribuicao: Any = None) -> dict:
@@ -4729,6 +4762,17 @@ def cobrir_o_selo(con, *, tabela: Any, ato_id: Any, referencia: Any,
         if achou:
             return _gravar_cobertura(bd, forma=achou[0], item=it,
                                      deposito=achou[1], **gravar)
+    # 1b. O DEVIDO DO PRÓPRIO ATO, NO TÍTULO A POSTERIORI (03/11/2026). O
+    # título da CRA e da CENPROT não passa pelo balcão: não tem protocolo, e o
+    # emolumento fica devido por lei (CN-MA art. 925, § 11) em
+    # `pt_emolumentos_diferidos`, gravado pela rota NA MESMA TRANSAÇÃO do ato
+    # (`protesto_posteriori.diferir`). Sem este passo o ato lavrado não achava
+    # cobertura nenhuma e o selo era desfeito («Selo não emitido»). Vale só
+    # para a tabela do Protesto, só para o ato não cancelado, e só pelo item
+    # do mesmo código do envelope (a faixa conta: 17.1.5 paga o 17.1).
+    devido = _devido_do_proprio_ato(bd, tabela, ato_id, codigo)
+    if devido:
+        return _gravar_cobertura(bd, forma=FORMA_DIFERIDO, **gravar)
     # 2. o lançamento do próprio ato
     lanc = _lancamento_do_ato(bd, tabela, ato_id)
     if lanc:

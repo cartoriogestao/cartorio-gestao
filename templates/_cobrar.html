@@ -44,7 +44,7 @@
 {# `form` É O QUE JÁ FOI ESCOLHIDO NESTA TELA — 31/10/2026: a recusa do servidor ou o rascunho reaberto. O
    formulário, com `.get` e `.getlist`. Sem ele, o quadro sai como sempre saiu. O protocolo escolhido aqui só
    volta marcado na caixa: `protocolo_escolhido` é outra coisa, porque traz a lista dos itens dele. #}
-{% macro quadro(r, caixa, protocolos=None, protocolo_escolhido=None, itens_do_protocolo=None, reload_url=None, cobrar_itens=True, form=None) %}
+{% macro quadro(r, caixa, protocolos=None, protocolo_escolhido=None, itens_do_protocolo=None, reload_url=None, cobrar_itens=True, form=None, diferido=False) %}
 {# **O PROTOCOLO E OS ITENS A SELAR VÊM PRIMEIRO, E NÃO DEPENDEM DE CAIXA
    NEM DE RECEITA MEDIDA** — correção de 11/09/2026: estava dentro de
    `{% if caixa %}` dentro de `{% if r and r.itens %}`, e por isso, num ato
@@ -145,7 +145,18 @@
     <summary><small>Cobrar no caixa
       {%- if r.total_centavos %} — a casa costuma cobrar R$ {{ r.total_centavos | centavos_reais }}{% endif %}</small></summary>
 
-    {% if not caixa %}
+    {# O TÍTULO A POSTERIORI (03/11/2026): o item marcado sela o ato e fica
+       DEVIDO — não entra no caixa, e por isso a caixa de marcar não depende
+       de caixa aberto. Nada marcado, a rota usa o item da tabela do ato. #}
+    {% if diferido %}
+    <div class="notice" style="margin:8px 0" data-diferido>
+      <strong>Título a posteriori (diferido):</strong> o item marcado sela o ato e
+      fica <strong>devido</strong> até o pagamento, a desistência ou o cancelamento —
+      não entra no caixa, e não precisa de caixa aberto. Nada marcado, o sistema usa
+      o item da tabela do ato: no protesto, o 17.1 pela faixa do valor do título; na
+      intimação, o 17.2.
+    </div>
+    {% elif not caixa %}
     <div class="notice danger" style="margin:8px 0">
       <strong>Você não tem caixa aberto.</strong> Sem caixa o lançamento não aparece na
       conferência do dia — e a diferença apareceria no fechamento sem ter de onde vir.
@@ -162,7 +173,7 @@
           <td>
             {% if i.preco is not none %}
               <input type="checkbox" name="cobrar" value="{{ i.servico }}"
-                     {% if not caixa %}disabled{% endif %}{% if form and (i.servico|string) in form.getlist('cobrar') %} checked{% endif %}>
+                     {% if not caixa and not diferido %}disabled{% endif %}{% if form and (i.servico|string) in form.getlist('cobrar') %} checked{% endif %}>
             {% endif %}
           </td>
           <td>{{ i.codigo_tj }}</td>
@@ -186,7 +197,7 @@
       {% endif %}
     </small></p>
 
-    {% if caixa %}
+    {% if caixa and not diferido %}
     {% set forma_escolhida = form.get('forma_pagamento') if form else '' %}
     <label>Pagador <input name="pagador"{% if form and form.get('pagador') %} value="{{ form.get('pagador') }}"{% endif %}></label>
     <label>Forma de pagamento

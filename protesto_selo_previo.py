@@ -297,7 +297,8 @@ def conferir_antes_de_lavrar(tipo: Any,
                              lancamento_com_protocolo: bool = False,
                              afirmo: Any = False,
                              afirmacao: Any = "",
-                             robo: bool = False) -> dict | None:
+                             robo: bool = False,
+                             diferido: bool = False) -> dict | None:
     """Recusa, ANTES de o ato existir, o lançamento cujo selo não vai sair.
     Só LÊ.
 
@@ -311,6 +312,13 @@ def conferir_antes_de_lavrar(tipo: Any,
     aceita (`{regra, afirmacao, o_que_faltava}`) quando a escrevente venceu a
     trava do item fora do caminho, para a rota gravar no ato e na auditoria;
     None nos outros casos.
+
+    `diferido` (03/11/2026): o ato é do procedimento de um título a posteriori
+    (CRA, CENPROT — `protesto_posteriori`). Ali o item não passa pelo caixa
+    nem por protocolo do balcão: a rota o tira da tabela
+    (`protesto_posteriori.itens_do_ato_pela_tabela`). Se mesmo assim não há
+    item, a recusa diz isso — e não manda abrir caixa nem escolher protocolo,
+    que o título da Central não tem.
     """
     if not pede_selo_agora(tipo, tabela=tabela, selo_digitado=selo_digitado,
                            selo_automatico=selo_automatico):
@@ -341,13 +349,20 @@ def conferir_antes_de_lavrar(tipo: Any,
             falta = ("não tem item marcado para cobrança, e o protocolo "
                      "escolhido não tem item livre — os itens dele já foram "
                      "usados por outro ato, ou ele não tem item da tabela")
+        elif diferido and not certidao:
+            falta = ("não achou o item deste ato na tabela de emolumentos — o "
+                     "título é a posteriori (diferido), não tem protocolo do "
+                     "balcão, e a faixa pelo valor do título ou a vigência da "
+                     "tabela não responderam")
         else:
             falta = ("não tem item marcado para cobrança nem protocolo do "
                      "balcão com item")
         raise SeloSemItemError(_frase(
             tipo, tabela, f"{_o_ato(tipo, tabela)} sela pelos itens da tabela de "
             f"emolumentos, e {'este pedido' if certidao else 'este lançamento'} "
-            f"{falta}", _o_que_fazer(tabela)), regra=REGRA_SEM_ITEM)
+            f"{falta}",
+            _o_que_fazer_no_diferido() if diferido and not certidao
+            else _o_que_fazer(tabela)), regra=REGRA_SEM_ITEM)
     if vai_cobrar_no_caixa and caixa_aberto is False:
         raise SeloNaoVaiSairError(
             ("Você não tem caixa aberto, e o item marcado vai ser cobrado nele — "
@@ -413,6 +428,16 @@ def _o_que_fazer(tabela: str) -> str:
     return ("Marque o item em «Cobrar no caixa» (com o seu caixa aberto) ou "
             "escolha o protocolo do atendimento, e lance de novo — o que você "
             "digitou continua no formulário.")
+
+
+def _o_que_fazer_no_diferido() -> str:
+    """O título a posteriori não tem caixa nem protocolo a escolher: o item
+    marcado sela o ato e fica DEVIDO, e para isso não se abre caixa."""
+    return ("Marque o item do ato em «Cobrar no caixa» — no título a posteriori "
+            "ele sela o ato e fica DEVIDO até o pagamento, a desistência ou o "
+            "cancelamento, sem entrar no caixa e sem precisar de caixa aberto — "
+            "ou peça ao oficial para conferir a tabela de emolumentos, e lance "
+            "de novo; o que você digitou continua no formulário.")
 
 
 def _frase(tipo: Any, tabela: str, por_que: str, o_que_fazer: str) -> str:

@@ -250,6 +250,96 @@ def cobranca_do_ato(con, titulo_id: int | None, tipo: str, *,
                       f"tabela de {_br(hoje)} (dia do pedido de cancelamento).")}
 
 
+# ------------------------------------------- o item do ato pela tabela (#272)
+
+#: O ITEM DA TABELA DE CADA ATO DO PROCEDIMENTO que sela pelo item — 03/11/2026.
+#: O título da CRA e da CENPROT não passa pelo balcão: não tem protocolo, e o
+#: item do ato não se cobra (fica devido). A trava do selo prévio (#103) pedia
+#: item marcado no caixa ou protocolo do balcão, e a tela não deixava marcar:
+#: a caixa de «Cobrar no caixa» fica apagada sem caixa aberto, e o 17.1 é
+#: cabeçalho de faixa, sem caixa de marcar. Aqui o item sai da TABELA:
+#:   PROTESTO  — 17.1.N, a faixa do valor do título (cx_faixas), e o selo pede
+#:               o 17.1 (`protesto_selo_previo.codigo_para_o_selo`);
+#:   INTIMACAO — 17.2, «Intimação ou edital por título».
+#: O apontamento não sela (`ATOS_SEM_SELO_PROPRIO`), e os desfechos cobram no
+#: caixa — nenhum deles entra aqui.
+ITEM_DA_TABELA_DO_ATO: dict[str, str] = {
+    "INTIMACAO": "17.2",
+    "PROTESTO": "17.1",
+}
+#: Os itens da tabela que são FAIXA pelo valor do título.
+ITENS_POR_FAIXA_DO_VALOR = frozenset({"17.1"})
+
+
+def _centavos_br(texto: Any) -> int | None:
+    try:
+        return round(float(str(texto).strip().replace(".", "")
+                           .replace(",", ".")) * 100)
+    except (TypeError, ValueError):
+        return None
+
+
+def _faixa_do_valor(con, grupo: str, valor_centavos: int,
+                    vigencia: int) -> str | None:
+    """O subitem (17.1.N) em que o valor cai, na vigência. Só LÊ.
+
+    Comparação em CENTAVOS INTEIROS (como `emolumentos.faixa_por_valor`).
+    Acima do teto não há subitem: o que passa do teto tem regra própria, e
+    adivinhar seria cobrar errado — devolve None, e a trava continua.
+    """
+    for r in banco(con).ler(
+            """SELECT de, ate, codigo_tj FROM cx_faixas
+                WHERE vigencia = %s AND codigo_tj LIKE %s ORDER BY id""",
+            (int(vigencia), grupo + ".%")):
+        de, ate = _centavos_br(r["de"]), _centavos_br(r["ate"])
+        if de is None or ate is None:
+            continue
+        if de <= int(valor_centavos) <= ate:
+            return str(r["codigo_tj"]).strip()
+    return None
+
+
+def itens_do_ato_pela_tabela(con, titulo_id: int, tipo: str, *,
+                             data: str) -> list[dict]:
+    """Os itens da tabela que selam o ato do título DIFERIDO. Só LÊ.
+
+    Devolve `[{"servico", "codigo_tj", "descricao", "quantidade"}]`, na forma
+    que `diferir` e o selo leem — ou `[]` quando o ato não tem item próprio
+    aqui, o título não é diferido, ou a tabela não responde (sem vigência,
+    sem faixa, valor acima do teto). LISTA VAZIA NÃO É ZERO: é «não sei», e a
+    trava do selo prévio continua pedindo o item.
+
+    Só serve ao título DIFERIDO: no antecipado (balcão, pago na hora) quem diz
+    o item é o caixa ou o protocolo, e a trava fica como está.
+    """
+    tipo = str(tipo or "").strip().upper()
+    codigo = ITEM_DA_TABELA_DO_ATO.get(tipo)
+    if not codigo or titulo_id is None:
+        return []
+    cobranca = cobranca_do_ato(con, titulo_id, tipo, hoje=data)
+    if not cobranca.get("diferir"):
+        return []
+    if codigo in ITENS_POR_FAIXA_DO_VALOR:
+        import custas as CU
+        tit = banco(con).um(
+            "SELECT valor_centavos FROM pt_titulos WHERE id=%s", (int(titulo_id),))
+        valor = int((tit or {}).get("valor_centavos") or 0)
+        if valor <= 0:
+            return []
+        try:
+            vigencia = CU.vigencia_do_dia(con, str(data)[:10])
+        except CU.CustasError:
+            return []
+        codigo = _faixa_do_valor(con, codigo, valor, int(vigencia["codigo"]))
+        if not codigo:
+            return []
+    servico = AS.servico_do_codigo_tj(con, codigo)
+    if not servico:
+        return []
+    return [{"servico": int(servico["codigo"]), "codigo_tj": codigo,
+             "descricao": servico.get("descricao"), "quantidade": 1}]
+
+
 def _br(dia: str) -> str:
     d = _dia(dia)
     return d.strftime("%d/%m/%Y") if d else str(dia or "—")

@@ -693,6 +693,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 itens.append({"servico": int(linha["servico_codigo"]),
                               "quantidade": int(linha["quantidade"] or 1),
                               "descricao": linha["descricao"]})
+        da_tabela = ""
+        if not itens and not ids_protocolo_item:
+            # O ITEM DA TABELA (03/11/2026): o título da Central sem nada
+            # marcado sela e deve pelo item que a rota tirou da tabela.
+            itens = [dict(i) for i in _itens_do_ato_pela_tabela()]
+            if itens:
+                da_tabela = (" Item da tabela: "
+                             + ", ".join(str(i["codigo_tj"]) for i in itens)
+                             + (" (faixa do valor do título)."
+                                if any(str(i["codigo_tj"]).startswith("17.1.")
+                                       for i in itens) else "."))
         if not itens:
             return ""
         r = POST.diferir(con, titulo_id=titulo_id, ato_id=ato_id, tipo_ato=tipo,
@@ -700,7 +711,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                          usuario=usuario_nome())
         from caixa_schema import reais
         return (f" Emolumento a posteriori: R$ {reais(r['estimado_centavos'])} "
-                f"fica devido e NÃO entrou no caixa (CN-MA art. 925, § 11).")
+                f"fica devido e NÃO entrou no caixa (CN-MA art. 925, § 11)."
+                + da_tabela)
+
+    def _itens_do_ato_pela_tabela() -> list[dict]:
+        """Os itens que a rota do Protesto tirou da tabela para o ato do
+        título diferido sem item marcado (`protesto_posteriori.
+        itens_do_ato_pela_tabela`). Só LÊ — vive em `g`, só nesta requisição:
+        a conferência de antes, o devido e o selo leem a MESMA lista."""
+        return list(g.get("protesto_itens_da_tabela") or [])
+
+    def _servicos_marcados_ou_da_tabela() -> list[int]:
+        """Os serviços marcados em «Cobrar no caixa»; sem nenhum, os que a
+        tabela deu ao ato do título diferido. Só LÊ."""
+        marcados = [n for n in (numero_digitado(x)
+                                for x in request.form.getlist("cobrar"))
+                    if n is not None]
+        return marcados or [int(i["servico"]) for i in _itens_do_ato_pela_tabela()]
 
     def _cobrar_os_diferidos(con, titulo_id: int, ato_id: int,
                              cobranca: dict) -> str:
@@ -907,9 +934,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     ids_usados.append(int(r["id"]))
             if itens:
                 return itens
-        servicos = [n for n in (numero_digitado(x)
-                                for x in request.form.getlist("cobrar"))
-                    if n is not None]
+        # Sem nada marcado, o título diferido sela pelo item da tabela do ato
+        # (03/11/2026) — o mesmo que fica devido em `_diferir_se_pedido`.
+        servicos = _servicos_marcados_ou_da_tabela()
         if not servicos:
             return []
         lugares = ",".join(["%s"] * len(servicos))
@@ -1031,6 +1058,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 # (`ato_selado.cobrir_o_selo`, passo 2)
                 "lancamento_com_protocolo": cobra_item and protocolo is not None,
                 "selo_digitado": bool(_campo("selo")),
+                # O título a posteriori: sem item, a recusa não manda abrir
+                # caixa nem escolher protocolo (03/11/2026).
+                "diferido": diferir,
                 # A AFIRMAÇÃO DO SELO É A DELE (integração de 29/10/2026): o
                 # campo `afirmo_selo`, ou a caixa comum quando só ele pede. E
                 # robô não afirma.
@@ -3659,6 +3689,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 cobranca = (POST.cobranca_do_ato(con, titulo_id, ato,
                                                  hoje=hoje())
                             if ato in POST.MOMENTO_DO_ATO else None)
+                # O ITEM DA TABELA NO TÍTULO DA CENTRAL — relato de 03/11/2026:
+                # «entrada de protocolo que vem pela CRA e CENPROT não tem
+                # protocolo, e os emolumentos são diferidos». A trava do selo
+                # prévio (#103) pedia item marcado no caixa ou protocolo do
+                # balcão, e a tela não deixava marcar (caixa fechado apaga a
+                # caixa de marcar; o 17.1 é faixa, sem caixa nenhuma). No ato
+                # do procedimento do título DIFERIDO, sem nada marcado e sem
+                # protocolo, o item sai da tabela: o 17.1 pela faixa do valor,
+                # o 17.2 na intimação. Ele sela o ato (por pessoa — o robô
+                # continua sem selar, `SR.pode_selar_automatico`) e fica
+                # DEVIDO para o desfecho. O balcão (antecipado) não muda.
+                g.protesto_itens_da_tabela = []
+                if (cobranca and cobranca.get("diferir")
+                        and SR.pode_selar_automatico()
+                        and not _campo("selo")
+                        and not request.form.getlist("cobrar")
+                        and not request.form.getlist("cobrar_protocolo_item")
+                        and numero_digitado(_campo("protocolo_id")) is None):
+                    g.protesto_itens_da_tabela = POST.itens_do_ato_pela_tabela(
+                        con, titulo_id, ato, data=hoje())
                 # O SELO CONFERIDO ANTES DE O ATO EXISTIR — ordem do oficial,
                 # 29/10/2026. Tudo o que se sabe antes (o caminho e a data da
                 # tabela, o protocolo do título, o item, o caixa, o item que

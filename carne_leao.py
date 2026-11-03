@@ -828,7 +828,8 @@ def _recebido_no_caixa(bd, comp: str, forma: str, bp: int
             receita, discriminado = max(0, valor - fundos), True
         else:
             receita, discriminado = tirar_os_fundos(valor, forma, bp), False
-        recebidos.append({"dia": str(lan["data"])[:10], "bruto": valor,
+        # o `id` do lançamento: a conferência Sistema × SIAFERJ liga cada receita ao selo do ato
+        recebidos.append({"id": int(lan["id"]), "dia": str(lan["data"])[:10], "bruto": valor,
                           "receita": receita, "discriminado": discriminado})
     return recebidos, outras, outras_receitas
 

@@ -1,0 +1,38 @@
+{% set anexaveis = avisos | selectattr('situacao', 'in', ['ENTREGUE', 'NAO_ENTREGUE', 'EDITAL']) | list %}
+{% if anexaveis or edital_comprovante %}
+<section class="panel" id="comprovantes-intimacao" data-comprovantes-da-ficha>
+  <div class="panel-head"><span>Comprovantes da intimação</span></div>
+  <div style="padding:14px">
+  {% for a in anexaveis %}
+    <div style="margin-bottom:14px">
+      <strong>Aviso {{ a.numero }}/{{ a.ano }} — {{ 'entrega' if a.situacao == 'ENTREGUE' else 'tentativa de entrega' }}</strong>
+      {% for anexo in a.comprovantes %}<div><a href="{{ url_for('attachment_view', attachment_id=anexo.id) }}" target="_blank" rel="noopener">{{ anexo.original_name }}</a></div>{% endfor %}
+      <form method="post" enctype="multipart/form-data" action="{{ url_for('protesto_aviso_comprovante', aviso_id=a.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="de" value="ficha">
+        <label>Canhoto ou comprovante da {{ 'entrega' if a.situacao == 'ENTREGUE' else 'tentativa' }}
+          <input type="file" name="comprovante" accept=".pdf,.png,.jpg,.jpeg" required></label>
+        {% from '_protesto_afirmacao.html' import afirmacao, afirmacao_por_regra %}
+        {{ afirmacao('', 'Um arquivo de outro título ou aviso só entra com afirmação expressa.') }}
+        {{ afirmacao_por_regra() }}
+        <button class="button small">Anexar comprovante do aviso</button>
+      </form>
+    </div>
+  {% endfor %}
+  {% if edital_comprovante %}
+    <div data-comprovante-edital>
+      <strong>Edital ED-{{ edital_comprovante.ano }}-{{ '%04d' % edital_comprovante.numero }} — envio à CENPROT</strong>
+      <p><small>Comprovante do envio dos editais de {{ edital_comprovante.publicado_em[:10] }}. O arquivo será vinculado a todos os editais desse dia. A data da juntada fica registrada.</small></p>
+      {% for anexo in edital_comprovante.anexos %}<div><a href="{{ url_for('attachment_view', attachment_id=anexo.id) }}" target="_blank" rel="noopener">{{ anexo.original_name }}</a> <small>juntado em {{ anexo.uploaded_at[:16]|replace('T', ' ') }}</small></div>{% endfor %}
+      <form method="post" enctype="multipart/form-data" action="{{ url_for('protesto_edital_comprovante_cenprot') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="titulo_id" value="{{ titulo.id }}">
+        <input type="hidden" name="dia" value="{{ edital_comprovante.publicado_em[:10] }}">
+        <label>Confirmação do envio à CENPROT <input type="file" name="comprovante" accept=".pdf,.png,.jpg,.jpeg" required></label>
+        <button class="button small">Anexar comprovante da CENPROT</button>
+      </form>
+    </div>
+  {% endif %}
+  </div>
+</section>
+{% endif %}

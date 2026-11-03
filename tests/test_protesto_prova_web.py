@@ -125,4 +125,7 @@ def test_a_ficha_do_titulo_provado_nao_oferece_afirmacao(s):
     tid = intimado(s)
     html = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
     assert "Prova da intimação completa" in html
-    assert 'name="afirmo"' not in html
+    # O upload do canhoto pode pedir afirmacao por arquivo suspeito; a
+    # afirmacao da PROVA nao aparece no formulario de lancar titulo provado.
+    formulario = html.split('id="lancar-PROTESTO"', 1)[1].split('</form>', 1)[0]
+    assert 'name="afirmo"' not in formulario

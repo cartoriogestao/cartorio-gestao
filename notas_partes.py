@@ -142,6 +142,10 @@ def dados_para_parte(cartao: dict) -> dict:
     dados["filiacao"] = " e ".join(
         str(x).strip() for x in (c.get("pai"), c.get("mae"))
         if x and str(x).strip()) or None
+    # e cada um no seu campo, com o nascimento (item 15 do ensaio de atos das Notas, 03/11/2026)
+    dados["filiacao_mae"] = " ".join(str(c.get("mae") or "").split()) or None
+    dados["filiacao_pai"] = " ".join(str(c.get("pai") or "").split()) or None
+    dados["nascimento_data"] = str(c.get("nascimento") or "").strip()[:10] or None
     return dados
 
 
@@ -169,6 +173,26 @@ def qualificacao_civil(dados: dict, herdado: dict | None = None) -> dict:
     return {"identidade": _um("identidade"), "filiacao": _um("filiacao"),
             "uniao_estavel": uniao if uniao in ("SIM", "NAO") else None,
             "conjuge": _um("conjuge"), "regime_bens": _um("regime_bens")}
+
+
+#: A filiação em dois campos e o nascimento — decisão do oficial, 03/11/2026 (ensaio de atos das Notas,
+#: item 15). Gravados à parte dos de cima, por `filiacao_e_nascimento`.
+CAMPOS_DA_FILIACAO = ("filiacao_mae", "filiacao_pai", "nascimento_data")
+
+
+def filiacao_e_nascimento(dados: dict, herdado: dict | None = None) -> dict:
+    """A mãe, o pai e a data de nascimento (ISO) da parte. O que se digitou vence o do cartão; a data
+    digitada que não é AAAA-MM-DD não vale, e a do cartão fica no lugar dela. Só calcula."""
+    import re
+    herdado = herdado or {}
+    saida = {}
+    for campo in CAMPOS_DA_FILIACAO:
+        candidatos = [" ".join(str(fonte.get(campo) or "").split()) for fonte in (dados, herdado)]
+        if campo == "nascimento_data":
+            candidatos = [c for c in candidatos if re.fullmatch(r"\d{4}-\d{2}-\d{2}", c)]
+        valor = next((c for c in candidatos if c), "")
+        saida[campo] = valor.upper() if valor and campo != "nascimento_data" else (valor or None)
+    return saida
 
 
 def avisos_do_cartao(cartao: dict) -> list[str]:

@@ -64,6 +64,7 @@ class Caso:
     valores: dict = field(default_factory=dict)      # campo -> o que o escrevente digita
     certidao_por: str = ""                           # quem pede a certidão (vazio: a primeira parte)
     doi_operacao: str = ""                           # a operação da DOI (11 compra e venda, 67 doação)
+    cesdi: dict = field(default_factory=dict)        # o quadro «Para a CESDI» (item 14)
 
 
 @dataclass
@@ -91,7 +92,10 @@ def _pessoa(nome: str, qualificacao: str, n: int, representa: str = "", instrume
     mulher = nome.split()[0] in _MULHERES
     base = {"nacionalidade": "brasileira" if mulher else "brasileiro",
             "estado_civil": "solteira" if mulher else "solteiro",
-            "profissao": "comerciante"}
+            "profissao": "comerciante",
+            # o que a CESDI pede de cada parte (item 14): o nascimento, o sexo e o município
+            "nascimento_data": "1980-01-01", "sexo_parte": "F" if mulher else "M",
+            "cidade": "Cidade Exemplo", "uf": "MA"}
     return Parte(nome, qualificacao, cpf(n), civil=base | civil, representa=representa,
                  instrumento=instrumento)
 
@@ -115,6 +119,9 @@ TESTEMUNHAS = [Parte("PAULO EXEMPLO TESTEMUNHA", "TESTEMUNHA", cpf(4), testemunh
                      civil={"nacionalidade": "brasileiro", "estado_civil": "solteiro"}),
                Parte("LUCIA EXEMPLO TESTEMUNHA", "TESTEMUNHA", cpf(5), testemunha=True)]
 CEM_MIL = 10_000_000
+# O que o RCTO pede do testador (item 15, decisão do oficial de 03/11/2026: a mãe e o pai em toda parte)
+FILIACAO_DO_TESTADOR = {"filiacao_mae": "MARIA EXEMPLO DOS SANTOS", "filiacao_pai": "JOSE EXEMPLO DOS SANTOS",
+                        "nascimento_data": "1960-05-10"}
 
 
 def _nascido_ha(anos: int) -> str:
@@ -193,26 +200,28 @@ def casos() -> list[Caso]:
         # ---- testamentos
         Caso("testamento_nao_assina", "NT-TESTAMENTO-PUBLICO", "TESTAMENTO",
              "Testamento público — testador que não sabe assinar (CC art. 1.865)",
-             [_pessoa("MARIO EXEMPLO DOS SANTOS", "TESTADOR", 1, estado_civil="solteiro"), *TESTEMUNHAS],
+             [_pessoa("MARIO EXEMPLO DOS SANTOS", "TESTADOR", 1, **FILIACAO_DO_TESTADOR, estado_civil="solteiro"), *TESTEMUNHAS],
              item="13.10.1", clausulas=("se_se_testador_nao_assina",),
              escolhas={"op_estado_civil_do_testador": "solteiro", "op_motivo": "sabe"},
              valores={"nome_da_testemunha_que_assina_a_rogo": "PAULO EXEMPLO TESTEMUNHA"}),
         Caso("testamento_cego", "NT-TESTAMENTO-PUBLICO", "TESTAMENTO",
              "Testamento público — testador cego, lido duas vezes (CC art. 1.867)",
-             [_pessoa("MARIO EXEMPLO DOS SANTOS", "TESTADOR", 1, estado_civil="solteiro"), *TESTEMUNHAS],
+             [_pessoa("MARIO EXEMPLO DOS SANTOS", "TESTADOR", 1, **FILIACAO_DO_TESTADOR, estado_civil="solteiro"), *TESTEMUNHAS],
              item="13.10.1", clausulas=("se_se_testador_cego",),
              escolhas={"op_estado_civil_do_testador": "solteiro"},
              valores={"nome_da_testemunha_designada_pelo_testador": "LUCIA EXEMPLO TESTEMUNHA"}),
         Caso("testamento_casado_marcado_solteiro", "NT-TESTAMENTO-PUBLICO", "TESTAMENTO",
              "Testamento público — a parte é casada e a escolha da minuta diz «solteiro»",
-             [_pessoa("MARIO EXEMPLO DOS SANTOS", "TESTADOR", 1, **CASADO), *TESTEMUNHAS],
+             [_pessoa("MARIO EXEMPLO DOS SANTOS", "TESTADOR", 1, **FILIACAO_DO_TESTADOR, **CASADO), *TESTEMUNHAS],
              item="13.10.1", escolhas={"op_estado_civil_do_testador": "solteiro"},
              # o cônjuge e o regime em branco na tela: vêm da parte
              valores={"nome_e_qualificacao_do_conjuge_ou_convivente": "", "regime_de_bens": ""}),
         # ---- família
         Caso("inventario_viuva_e_dois_herdeiros", "NT-ESC-INVENTARIO-PARTILHA", "ESCRITURA",
              "Inventário — viúva meeira e dois filhos, com advogado (CNN art. 441; CN-MA art. 812)",
-             [_pessoa("JOANA EXEMPLO DOS SANTOS", "INVENTARIANTE", 2, estado_civil="viúva"),
+             [_pessoa("JOSE EXEMPLO DOS SANTOS", "AUTOR DA HERANÇA", 12, estado_civil="casado",
+                      conjuge="JOANA EXEMPLO DOS SANTOS", regime_bens="comunhão parcial de bens"),
+              _pessoa("JOANA EXEMPLO DOS SANTOS", "INVENTARIANTE", 2, estado_civil="viúva"),
               _pessoa("ANA EXEMPLO HERDEIRA", "HERDEIRA", 10),
               _pessoa("PEDRO EXEMPLO HERDEIRO", "HERDEIRO", 11, estado_civil="casado",
                       conjuge="BEATRIZ EXEMPLO DE SOUZA", regime_bens="comunhão parcial de bens"),
@@ -224,7 +233,9 @@ def casos() -> list[Caso]:
               _pessoa("JOANA EXEMPLO DOS SANTOS", "DIVORCIANDA", 2, **CASADA),
               _pessoa("CARLOS EXEMPLO ADVOGADO", "ADVOGADO", 6, oab_numero="00000", oab_uf="MA")], valor=0,
              escolhas={"op_nome": "voltará"},
-             valores={"nome_de_quem_altera": "JOANA EXEMPLO DOS SANTOS"}),
+             valores={"nome_de_quem_altera": "JOANA EXEMPLO DOS SANTOS", "data_do_casamento": "10/05/2000",
+                     "regime_de_bens": "comunhão parcial de bens"},
+             cesdi={"filhos_menores": "0", "filhos_maiores": "0", "responsavel_menores": "SemDeclaracao"}),
         Caso("uniao_estavel_separacao", "NT-ESC-UNIAO-ESTAVEL", "ESCRITURA",
              "União estável — com o regime da separação de bens (CC art. 1.725)",
              [_pessoa("MARIO EXEMPLO DOS SANTOS", "DECLARANTE", 1, uniao_estavel="SIM"),
@@ -321,6 +332,10 @@ def praticar(b, caso: Caso, *, anterior_id: int | None = None) -> Saida:
         return saida
     saida.termo = F._texto_do_odt(F.o_termo_do_livro(b, ato_id))
     saida.traslado = F._texto_do_odt(F.o_traslado(b, ato_id))
+    if caso.cesdi:
+        atual = F.ato(b, ato_id)
+        F._postar(b, f"/notas/atos/{ato_id}", {"acao": "cesdi", "casamento_data": atual["casamento_data"] or "",
+                                               "regime_bens": atual["regime_bens"] or "", **caso.cesdi})
     saida.censec = _censec(b, ato_id)
     if caso.doi_operacao:
         saida.doi = _doi(b, ato_id, caso.doi_operacao)

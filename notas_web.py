@@ -4282,6 +4282,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                              1 if request.form.get("testemunha") else 0,
                              *(civil[k] for k in NP.CAMPOS_DA_QUALIFICACAO_CIVIL),
                              ato_id, db.now()))
+                        nova = banco(con).um("SELECT max(id) AS id FROM nt_ato_partes WHERE ato_id=%s",
+                                             (ato_id,))
+                        _gravar_filiacao(con, ato_id, int(nova["id"]), NP.filiacao_e_nascimento(request.form, d))
+                        _gravar_sexo_e_municipio(con, ato_id, int(nova["id"]), request.form,
+                                                 sexo=c["sexo"], cidade=c["cidade"], uf=c["uf"])
                     audit("NT_ATO_PARTE", "NT_ATO", ato_id,
                           {"cartao": cartao_id, "origem": "CARTAO"})
                     faltando = NP.campos_faltantes(d, "ATO")
@@ -4328,6 +4333,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                          (ato_id,))
                     _gravar_representacao(con, ato_id, int(nova["id"]), request.form)
                     _gravar_oab(con, ato_id, int(nova["id"]), request.form)
+                    _gravar_filiacao(con, ato_id, int(nova["id"]), NP.filiacao_e_nascimento(dados))
+                    _gravar_sexo_e_municipio(con, ato_id, int(nova["id"]), request.form)
                 audit("NT_ATO_PARTE", "NT_ATO", ato_id,
                       {"origem": "NOVO", "cartao_aberto": cartao_id})
                 flash("Parte incluída." + (f" Cartão de autógrafo nº {cartao_id} aberto — "
@@ -4354,6 +4361,28 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     _gravar_oab(con, ato_id, pid, request.form)
                 audit("NT_ATO_PARTE_OAB", "NT_ATO", ato_id, {"parte": pid})
                 flash("OAB gravada. Monte o teor de novo para ela entrar no texto.", "success")
+                return redirect(url_for("notas_ato", ato_id=ato_id))
+            elif acao == "cesdi":
+                # O QUE A CESDI PEDE DO ATO — ensaio de atos das Notas, item 14 (03/11/2026): a data do
+                # casamento, o regime, os filhos e o responsável pelos menores não tinham onde ser ditos,
+                # e todo divórcio e toda separação paravam na remessa.
+                import censec_api as CAPI
+                data = (request.form.get("casamento_data") or "").strip()[:10] or None
+                responsavel = (request.form.get("responsavel_menores") or "").strip() or None
+                if responsavel and responsavel not in CAPI.RESPONSAVEL_CESDI:
+                    responsavel = None
+
+                def _quantos(campo):
+                    n = numero_digitado(request.form.get(campo))
+                    return None if n is None else max(0, int(n))
+                with db.transaction() as con:
+                    banco(con).escrever(
+                        "UPDATE nt_atos SET casamento_data=%s, regime_bens=%s, filhos_menores=%s, "
+                        "filhos_maiores=%s, responsavel_menores=%s WHERE id=%s",
+                        (data, (request.form.get("regime_bens") or "").strip() or None,
+                         _quantos("filhos_menores"), _quantos("filhos_maiores"), responsavel, ato_id))
+                audit("NT_ATO_CESDI", "NT_ATO", ato_id, {"casamento_data": data, "responsavel": responsavel})
+                flash("Dados da CESDI gravados.", "success")
                 return redirect(url_for("notas_ato", ato_id=ato_id))
             elif acao == "remover_parte":
                 pid = numero_digitado(request.form.get("parte_id")) or 0
@@ -4448,6 +4477,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         "WHERE id=%s AND ato_id=%s",
                         (*(civil[k] for k in NP.CAMPOS_DA_QUALIFICACAO_CIVIL),
                          pid, ato_id))
+                    _gravar_filiacao(con, ato_id, pid, NP.filiacao_e_nascimento(request.form))
+                    _gravar_sexo_e_municipio(con, ato_id, pid, request.form)
                 audit("NT_ATO_PARTE_QUALIFICACAO_CIVIL", "NT_ATO", ato_id,
                       {"parte": pid,
                        "antes": {k: parte[k] for k in NP.CAMPOS_DA_QUALIFICACAO_CIVIL},
@@ -5605,6 +5636,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "UPDATE nt_ato_partes SET representa_parte_id=%s, representa_instrumento=%s "
             "WHERE id=%s AND ato_id=%s", (alvo, instrumento, parte_id, ato_id))
 
+    def _gravar_sexo_e_municipio(con, ato_id: int, parte_id: int, form, *, sexo=None, cidade=None,
+                                 uf=None) -> None:
+        """O sexo e o município de residência (código do IBGE, pela cidade e a UF) da parte — o que a
+        CESDI pede de cada parte do divórcio e da separação (item 14 do ensaio de atos das Notas,
+        03/11/2026). O digitado vence o do cartão; cidade fora do cadastro do IBGE não grava código."""
+        import ibge_schema as IB
+        sexo = (form.get("sexo_parte") or sexo or "").strip().upper()[:1]
+        cidade = (form.get("cidade") or cidade or "").strip()
+        uf = (form.get("uf") or uf or "").strip().upper()[:2]
+        codigo = None
+        if cidade and uf:
+            achado = banco(con).um("SELECT codigo_ibge FROM ib_municipios WHERE uf=%s AND nome_norm=%s",
+                                   (uf, IB.normalizar_nome(cidade)))
+            codigo = str(achado["codigo_ibge"]) if achado else None
+        banco(con).escrever(
+            "UPDATE nt_ato_partes SET sexo_parte=COALESCE(%s, sexo_parte), "
+            "municipio_ibge=COALESCE(%s, municipio_ibge), uf_residencia=COALESCE(%s, uf_residencia) "
+            "WHERE id=%s AND ato_id=%s",
+            (sexo if sexo in ("M", "F") else None, codigo, uf or None, parte_id, ato_id))
+
+    def _gravar_filiacao(con, ato_id: int, parte_id: int, filiacao: dict) -> None:
+        """A mãe, o pai e o nascimento da parte (item 15 do ensaio de atos das Notas, 03/11/2026)."""
+        banco(con).escrever(
+            "UPDATE nt_ato_partes SET filiacao_mae=%s, filiacao_pai=%s, nascimento_data=%s "
+            "WHERE id=%s AND ato_id=%s",
+            (*(filiacao[k] for k in NP.CAMPOS_DA_FILIACAO), parte_id, ato_id))
+
     def _gravar_oab(con, ato_id: int, parte_id: int, form) -> None:
         """O número e a UF da OAB do advogado (item 5 do ensaio de atos das Notas). Vazio desfaz."""
         numero = " ".join(str(form.get("oab_numero") or "").split()) or None
@@ -5842,6 +5900,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return redirect(url_for("notas_ato", ato_id=ato_id))
         for aviso in NT.estado_civil_do_testador(valores, partes):
             flash(aviso, "warning")
+        # A DATA DO CASAMENTO E O REGIME QUE A MINUTA PERGUNTA vão também à CESDI (item 14 do ensaio de
+        # atos das Notas, 03/11/2026) — só onde o quadro «Para a CESDI» ainda está em branco.
+        cesdi = NT.dados_da_cesdi_da_minuta(valores)
+        if cesdi:
+            with db.transaction() as con:
+                banco(con).escrever(
+                    "UPDATE nt_atos SET casamento_data=COALESCE(casamento_data, %s), "
+                    "regime_bens=COALESCE(regime_bens, %s) WHERE id=%s",
+                    (cesdi.get("casamento_data"), cesdi.get("regime_bens"), ato_id))
         # Campo do fecho aproveita as partes do formulário se veio em branco.
         if not (valores.get(NT.CHAVE_ASSINANTES) or "").strip():
             sugerido = NT.texto_dos_assinantes(partes, con=db.connect)

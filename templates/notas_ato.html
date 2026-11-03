@@ -401,7 +401,7 @@
              de identidade (ou a filiação), a união estável, e o cônjuge e o regime
              de quem é casado. O que faltar sai marcado no teor e trava a lavratura. #}
           {% if (p.tipo_pessoa or 'F') != 'J' %}
-          <details class="small"{% if not p.testemunha and (not (p.identidade or p.filiacao) or p.uniao_estavel not in ('SIM', 'NAO')) %} open{% endif %}>
+          <details class="small"{% if not p.testemunha and (not (p.identidade or p.filiacao or p.filiacao_mae or p.filiacao_pai) or p.uniao_estavel not in ('SIM', 'NAO')) %} open{% endif %}>
             <summary>Identidade, união estável e cônjuge
               {%- if p.identidade %} · {{ p.identidade }}{% elif p.filiacao %} · filiação{% endif %}
               {%- if p.uniao_estavel == 'SIM' %} · convive em união estável{% elif p.uniao_estavel == 'NAO' %} · não convive em união estável{% endif %}</summary>
@@ -410,8 +410,21 @@
               <input type="hidden" name="parte_id" value="{{ p.id }}">
               <input name="identidade" size="18" value="{{ p.identidade or '' }}" placeholder="RG n. e órgão"
                      aria-label="Documento de identidade de {{ p.nome }}">
-              <input name="filiacao" size="22" value="{{ p.filiacao or '' }}" placeholder="filiação, se não há documento"
-                     aria-label="Filiação de {{ p.nome }}">
+              {# a filiação antiga, de texto livre, fica só para o que foi gravado antes (item 15) #}
+              {% if p.filiacao and not (p.filiacao_mae or p.filiacao_pai) %}
+              <input name="filiacao" size="22" value="{{ p.filiacao }}" aria-label="Filiação de {{ p.nome }}">
+              {% endif %}
+              <input name="filiacao_mae" size="20" value="{{ p.filiacao_mae or '' }}" placeholder="mãe"
+                     aria-label="Mãe de {{ p.nome }}">
+              <input name="filiacao_pai" size="20" value="{{ p.filiacao_pai or '' }}" placeholder="pai"
+                     aria-label="Pai de {{ p.nome }}">
+              <input type="date" name="nascimento_data" value="{{ p.nascimento_data or '' }}"
+                     aria-label="Data de nascimento de {{ p.nome }}">
+              <select name="sexo_parte" aria-label="Sexo de {{ p.nome }}">
+                <option value="">sexo</option>
+                <option value="F" {% if p.sexo_parte == 'F' %}selected{% endif %}>feminino</option>
+                <option value="M" {% if p.sexo_parte == 'M' %}selected{% endif %}>masculino</option>
+              </select>
               <select name="uniao_estavel" aria-label="União estável de {{ p.nome }}">
                 <option value="" {% if p.uniao_estavel not in ('SIM', 'NAO') %}selected{% endif %}>União estável?</option>
                 <option value="NAO" {% if p.uniao_estavel == 'NAO' %}selected{% endif %}>não convive</option>
@@ -520,7 +533,13 @@
         <label>Qualificação no ato <input name="qualificacao" placeholder="outorgante, herdeiro..."></label>
         {# O QUE O CNN ART. 111 PÕE NA QUALIFICAÇÃO — LD07, 21/10/2026 #}
         <label>Documento de identidade <input name="identidade" placeholder="RG n. e órgão"></label>
-        <label>Filiação <small>(se não há documento)</small> <input name="filiacao"></label>
+        {# A FILIAÇÃO EM DOIS CAMPOS, E O NASCIMENTO — decisão do oficial, 03/11/2026 (ensaio de atos das
+           Notas, item 15): em toda parte. O RCTO e a CESDI os exigem. #}
+        <label>Mãe <input name="filiacao_mae"></label>
+        <label>Pai <input name="filiacao_pai"></label>
+        <label>Data de nascimento <input type="date" name="nascimento_data"></label>
+        <label>Sexo <select name="sexo_parte"><option value="">—</option><option value="F">feminino</option>
+          <option value="M">masculino</option></select></label>
         <label>União estável
           <select name="uniao_estavel">
             <option value="">—</option>
@@ -710,6 +729,31 @@
   A DOI é obrigação com multa da Receita Federal, e uma escritura de compra e
   venda a gera do mesmo jeito que um registro.
 #}
+{# O QUE A CESDI PEDE DO ATO — ensaio de atos das Notas, item 14 (03/11/2026): sem isto todo divórcio e
+   toda separação paravam na remessa. A data do casamento e o regime vêm da minuta quando ela os pergunta. #}
+{% if a.tipo_cesdi is not none %}
+<section class="panel" data-fase="doi">
+  <div class="panel-head"><span>Para a CESDI</span>
+    <small>a data do casamento, o regime, os filhos e quem fica com os menores</small></div>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Data do casamento <input type="date" name="casamento_data" value="{{ (a.casamento_data or '')[:10] }}"></label>
+    <label>Regime de bens <input name="regime_bens" list="regimes-de-bens" value="{{ a.regime_bens or '' }}"></label>
+    <label>Filhos menores <input name="filhos_menores" size="4" value="{{ a.filhos_menores if a.filhos_menores is not none else '' }}"></label>
+    <label>Filhos maiores <input name="filhos_maiores" size="4" value="{{ a.filhos_maiores if a.filhos_maiores is not none else '' }}"></label>
+    <label class="span2">Responsável pelos filhos menores
+      <select name="responsavel_menores">
+        <option value="">— não informado —</option>
+        {% for codigo, rotulo in [('Conjuge1', 'o primeiro cônjuge'), ('Conjuge2', 'o segundo cônjuge'),
+                                  ('AmbosConjuges', 'os dois cônjuges'), ('Outros', 'outra pessoa'),
+                                  ('SemDeclaracao', 'sem declaração')] %}
+        <option value="{{ codigo }}" {% if a.responsavel_menores == codigo %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select></label>
+    <div class="span2"><button class="primary" name="acao" value="cesdi">Salvar para a CESDI</button></div>
+  </form>
+</section>
+{% endif %}
 {% if a.tipo == 'ESCRITURA' %}
 {% if f %}<span class="cg-ancora" id="doi"></span>{% endif %}
 <section class="panel" data-fase="doi">

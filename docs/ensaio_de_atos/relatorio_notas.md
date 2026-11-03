@@ -234,6 +234,10 @@ dela (`notas_doi.QUEM_ADQUIRE`) procuram «OUTORGADO» e «DONATARIO» dentro da
 
 ### 14. Todo divórcio e todo inventário ficam parados na remessa da CESDI
 
+**CONSERTADO em 03/11/2026, por decisão do oficial:** o falecido entra no quadro «Partes» como «AUTOR DA
+HERANÇA»; a qualidade da CESDI sai da qualificação; o ato tem o quadro «Para a CESDI»; e a parte, o sexo e
+o município.
+
 **O que saiu.** O divórcio e o inventário do ensaio foram ao livro e pararam na fila da CESDI: «sem data
 do casamento», «regime não está na tabela da CENSEC», «sem o responsável pelos filhos menores», «exige uma
 parte Advogado» — com o advogado no quadro —, «exige uma parte Falecido», «qualidade não vale para
@@ -253,6 +257,9 @@ quadro «Partes» do inventário (como a CESDI quer), ou a casa prefere um campo
 **No teste:** `test_o_divorcio_e_o_inventario_ficam_prontos_para_a_cesdi`.
 
 ### 15. Todo testamento fica parado na remessa do RCTO
+
+**CONSERTADO em 03/11/2026, por decisão do oficial:** a mãe e o pai em dois campos, e a data de nascimento,
+em toda parte de todos os atos de Notas.
 
 **O que saiu.** «testador sem data de nascimento» e «o RCTO exige o nome da mãe do testador». O quadro
 «Partes» não tem a data de nascimento, e a filiação é texto livre.

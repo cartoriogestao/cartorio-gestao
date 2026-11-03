@@ -64,6 +64,14 @@ def bancada(cg_casa, monkeypatch):
     db.create_user("escrevente", F.ESCREVENTE, F.SENHA, "USER")
     db.set_settings(F.SERVENTIA)
     F._semear_a_tabela(db)
+    # o município das partes no cadastro do IBGE, como a serventia de verdade tem (a CESDI o pede)
+    import ibge_schema as IB
+    with db.transaction() as con:
+        from bd_nativo import banco
+        banco(con).escrever(
+            "INSERT INTO ib_municipios (codigo_ibge, codigo_uf, codigo_mun, uf, nome, nome_norm, origem) "
+            "VALUES (2199999, 21, '99999', 'MA', 'Cidade Exemplo', %s, 'TESTE') ON CONFLICT DO NOTHING",
+            (IB.normalizar_nome("Cidade Exemplo"),))
     monkeypatch.setitem(cg_casa["app"].extensions, "notas_medir_paginas", lambda odt: 2)
     c = cg_casa["app"].test_client()
     cg_login(c, "escrevente", F.SENHA)
@@ -161,6 +169,7 @@ def test_o_testador_cego_ouve_o_testamento_duas_vezes(praticado):
     por testemunha que ele designar, com menção circunstanciada."""
     t = _lavrado(praticado, "testamento_cego").termo
     assert EN.tem(t, "cego", "duas vezes", "LUCIA EXEMPLO TESTEMUNHA", "designada")
+    # a qualificação dele não diz «filho(a) de» porque tem documento de identidade (CNN art. 111)
 
 
 def test_quem_nao_sabe_assinar_o_testamento_assina_a_rogo_uma_testemunha(praticado):
@@ -400,17 +409,16 @@ def test_a_doadora_e_a_donataria_vao_ao_livro_e_a_doi(praticado):
                                                                    ["BEATRIZ EXEMPLO DE SOUZA"]), s.doi
 
 
-@_defeito("a CESDI pede a qualidade de cada parte (Advogado, Divorciando, Herdeiro, Falecido…), a data do "
-          "casamento, o regime e o responsável pelos menores, e a tela do ato não tem onde dizê-los: todo "
-          "divórcio e todo inventário ficam parados na remessa (item 14)")
 @pytest.mark.parametrize("chave", ["divorcio_com_nome", "inventario_viuva_e_dois_herdeiros"])
 def test_o_divorcio_e_o_inventario_ficam_prontos_para_a_cesdi(praticado, chave):
-    """CN-MA art. 785 (a remessa à CESDI) e o layout dela (`notas_censec.MINIMO_PARTES_CESDI`)."""
+    """CN-MA art. 785 (a remessa à CESDI) e o layout dela (`notas_censec.MINIMO_PARTES_CESDI`).
+    Consertado em 03/11/2026 (item 14, decisão do oficial): a qualidade de cada parte sai da
+    qualificação; o falecido entra no quadro «Partes» como «AUTOR DA HERANÇA»; o ato tem o quadro
+    «Para a CESDI»; e a parte, o sexo e o município."""
     assert _lavrado(praticado, chave).censec[1] == "PRONTO", _lavrado(praticado, chave).censec
 
 
-@_defeito("o RCTO pede a data de nascimento e o nome da mãe do testador, e o quadro «Partes» não tem a "
-          "data, e tem a filiação só como texto livre: todo testamento fica parado na remessa (item 15)")
 def test_o_testamento_fica_pronto_para_o_rcto(praticado):
-    """CN-MA art. 785, I (a remessa ao RCTO)."""
+    """CN-MA art. 785, I (a remessa ao RCTO). Decisão do oficial, 03/11/2026 (item 15): a mãe e o pai em
+    dois campos em toda parte, e a data de nascimento — o que o RCTO pede do testador."""
     assert _lavrado(praticado, "testamento_cego").censec[1] == "PRONTO", _lavrado(praticado, "testamento_cego").censec

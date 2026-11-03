@@ -45,6 +45,8 @@ class Parte:
     documento: str
     testemunha: bool = False
     civil: dict = field(default_factory=dict)       # troca o que `F.QUALIFICACAO_DA_PESSOA` diz
+    representa: str = ""                             # o nome da parte que esta representa ou assiste
+    instrumento: str = ""                            # o instrumento da representação (item 2)
 
 
 @dataclass
@@ -80,13 +82,21 @@ class Saida:
 _MULHERES = ("JOANA", "BEATRIZ", "ANA", "LUCIA")
 
 
-def _pessoa(nome: str, qualificacao: str, n: int, **civil) -> Parte:
+def _pessoa(nome: str, qualificacao: str, n: int, representa: str = "", instrumento: str = "",
+            **civil) -> Parte:
     """A pessoa como o escrevente a digita: nacionalidade e estado civil concordam com ela."""
     mulher = nome.split()[0] in _MULHERES
     base = {"nacionalidade": "brasileira" if mulher else "brasileiro",
             "estado_civil": "solteira" if mulher else "solteiro",
             "profissao": "comerciante"}
-    return Parte(nome, qualificacao, cpf(n), civil=base | civil)
+    return Parte(nome, qualificacao, cpf(n), civil=base | civil, representa=representa,
+                 instrumento=instrumento)
+
+
+PROCURACAO_DO_VENDEDOR = ("procuração lavrada no livro 10, folha 20, do Tabelionato de Notas de "
+                          "Cidade Exemplo")
+ASSENTO_DO_MENOR = ("certidão de nascimento lavrada no livro A-1, folha 1, termo 1, do Registro Civil "
+                    "de Cidade Exemplo")
 
 
 CASADO = {"estado_civil": "casado", "conjuge": "JOANA EXEMPLO DOS SANTOS",
@@ -126,7 +136,8 @@ def casos() -> list[Caso]:
         Caso("cv_por_procurador", "NT-ESC-COMPRA-VENDA", "ESCRITURA",
              "Compra e venda — vendedor representado por procurador (CN-MA art. 798, VI)",
              [_pessoa("MARIO EXEMPLO DOS SANTOS", "VENDEDOR", 1),
-              _pessoa("CARLOS EXEMPLO PROCURADOR", "PROCURADOR", 6),
+              _pessoa("CARLOS EXEMPLO PROCURADOR", "PROCURADOR", 6, representa="MARIO EXEMPLO DOS SANTOS",
+                      instrumento=PROCURACAO_DO_VENDEDOR),
               COMPRADORA], item="FAIXA", valor=CEM_MIL,
              valores={"assinantes_do_ato_e_a_condicao_em_que_assinam":
                       "CARLOS EXEMPLO PROCURADOR, procurador do outorgante vendedor, nos termos da procuração "
@@ -138,7 +149,8 @@ def casos() -> list[Caso]:
               Parte("EXEMPLO COMERCIO DE MATERIAIS LTDA", "COMPRADORA", cnpj(7),
                     civil={"tipo_pessoa": "J", "nacionalidade": "", "estado_civil": "", "profissao": "",
                            "identidade": "", "uniao_estavel": ""}),
-              _pessoa("ANA EXEMPLO SOCIA", "REPRESENTANTE", 8)],
+              _pessoa("ANA EXEMPLO SOCIA", "REPRESENTANTE", 8, representa="EXEMPLO COMERCIO DE MATERIAIS LTDA",
+                      instrumento="contrato social arquivado na Junta Comercial do Maranhão")],
              item="FAIXA", valor=CEM_MIL),
         # ---- doação a menor
         Caso("doacao_a_menor", "NT-ESC-DOACAO", "ESCRITURA",
@@ -146,14 +158,15 @@ def casos() -> list[Caso]:
              [_pessoa("MARIO EXEMPLO DOS SANTOS", "DOADOR", 1),
               _pessoa("PEDRO EXEMPLO MENOR", "DONATARIO", 9,
                       profissao="estudante"),
-              _pessoa("JOANA EXEMPLO DOS SANTOS", "REPRESENTANTE", 2)],
+              _pessoa("JOANA EXEMPLO DOS SANTOS", "REPRESENTANTE", 2, representa="PEDRO EXEMPLO MENOR",
+                      instrumento=ASSENTO_DO_MENOR)],
              item="FAIXA", valor=CEM_MIL),
         # ---- procurações
         Caso("proc_a_rogo", "NT-PROC-PUBLICA", "PROCURACAO",
              "Procuração — outorgante que não sabe assinar, com assinatura a rogo (CC art. 215, § 2º)",
              [_pessoa("MARIO EXEMPLO DOS SANTOS", "OUTORGANTE", 1),
               _pessoa("BEATRIZ EXEMPLO DE SOUZA", "OUTORGADA", 3),
-              _pessoa("PAULO EXEMPLO TESTEMUNHA", "ASSINA A ROGO", 4)],
+              _pessoa("PAULO EXEMPLO TESTEMUNHA", "ASSINA A ROGO", 4, representa="MARIO EXEMPLO DOS SANTOS")],
              item="13.9.3", especie="PODERES_ESPECIFICOS",
              valores={"assinantes_do_ato_e_a_condicao_em_que_assinam":
                       "PAULO EXEMPLO TESTEMUNHA, a rogo do outorgante, que não sabe assinar, e apôs a sua "
@@ -219,7 +232,8 @@ def casos() -> list[Caso]:
              "Pacto antenupcial — nubente de 17 anos, com o assistente (CC art. 1.654)",
              [_pessoa("MARIO EXEMPLO DOS SANTOS", "OUTORGANTE", 1),
               _pessoa("ANA EXEMPLO NUBENTE", "OUTORGANTE", 10),
-              _pessoa("JOANA EXEMPLO DOS SANTOS", "ASSISTENTE", 2)], valor=0),
+              _pessoa("JOANA EXEMPLO DOS SANTOS", "ASSISTENTE", 2, representa="ANA EXEMPLO NUBENTE",
+                      instrumento=ASSENTO_DO_MENOR)], valor=0),
     ]
 
 
@@ -230,6 +244,9 @@ def _incluir(b, ato_id: int, p: Parte) -> str:
              **F.QUALIFICACAO_DA_PESSOA, **p.civil}
     if p.testemunha:
         dados["testemunha"] = "1"
+    if p.representa:
+        alvo = F._um(b, "SELECT id FROM nt_ato_partes WHERE ato_id=%s AND nome=%s", (ato_id, p.representa))
+        dados |= {"representa_parte_id": str(alvo["id"]), "representa_instrumento": p.instrumento}
     html = F._postar(b, f"/notas/atos/{ato_id}", dados).get_data(as_text=True)
     recado = " · ".join(F._flashes(html))
     return "" if "Parte incluída" in recado else f"parte {p.nome} recusada: {recado}"

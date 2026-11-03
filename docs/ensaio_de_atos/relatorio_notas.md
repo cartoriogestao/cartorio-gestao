@@ -63,6 +63,10 @@ dois lados e deixar a menção marcada para o escrevente completar.
 
 ## 2. A procuração do representado e o assento do menor não têm onde ser ditos
 
+**CONSERTADO em 03/11/2026, por decisão do oficial:** o quadro «Partes» diz quem cada um representa ou
+assiste e o instrumento, e a menção vai na qualificação do representado («…, neste ato representado(a)
+por FULANO, conforme procuração lavrada no livro X, folha Y, do …»), como no CN-MA art. 798, VI.
+
 **O que saiu.** O quadro «Partes» pede nome, documento, nacionalidade, estado civil, profissão,
 identidade, filiação, união estável, cônjuge, regime e endereço. Não tem: de quem a pessoa é
 procuradora, representante ou assistente; o livro, a folha e a serventia da procuração; a data de

@@ -49,12 +49,6 @@ def _decisao(motivo: str):
     return pytest.mark.xfail(strict=True, reason=f"DECISÃO DO OFICIAL: {motivo}")
 
 
-#: Quem comparece por outra parte sai com a marca «DIGA JUNTO DE QUEM REPRESENTA», que trava a
-#: lavratura: o quadro «Partes» ainda não diz quem ele representa (relatorio_notas.md, item 2, à espera
-#: do oficial). O resto destes casos se confere no teor montado.
-ESPERAM_O_ITEM_2 = ("cv_por_procurador", "cv_pj_compradora", "doacao_a_menor", "pacto_nubente_menor",
-                    "proc_a_rogo")
-_ITEM_2 = _decisao("quem representa ainda não tem campo; a marca trava a lavratura (item 2)")
 
 
 # ------------------------------------------------------------------ a bancada e a prática
@@ -117,10 +111,6 @@ def _teor(praticado, chave: str) -> str:
     return s.teor
 
 
-def _marcado_fora_dos_lados(teor: str, nome: str) -> bool:
-    """`nome` sai qualificado e com a marca de quem comparece por outro, e não como parte."""
-    return bool(re.search(re.escape(nome) + r"[^\[;]*\[[^\]]*DIGA JUNTO DE QUEM REPRESENTA", teor))
-
 
 def _abertura(termo: str) -> str:
     """O comparecimento: de «compareceu/compareceram» até o reconhecimento da identidade."""
@@ -136,8 +126,7 @@ def _abertura(termo: str) -> str:
 RECUSADOS = {"emancipacao_menor_de_16": "test_a_emancipacao_confere_os_dezesseis_anos"}
 
 
-@pytest.mark.parametrize("chave", [pytest.param(c, marks=_ITEM_2) if c in ESPERAM_O_ITEM_2 else c
-                                   for c in CASOS if c not in RECUSADOS])
+@pytest.mark.parametrize("chave", [c for c in CASOS if c not in RECUSADOS])
 def test_o_caso_vai_ao_livro_com_selo_e_o_traslado_reproduz_o_termo(praticado, chave):
     """Do protocolo pago ao termo, pelo balcão; o selo no termo (CN-MA arts. 130 e 131) e o traslado
     com o teor do livro (CN-MA art. 850, § 2º)."""
@@ -186,28 +175,48 @@ def test_a_divorcianda_que_volta_ao_nome_de_solteira_fica_no_termo(praticado):
 
 # ------------------------------------------------------------------ quem comparece, e em que qualidade
 
-def test_o_procurador_do_vendedor_nao_vira_comprador(praticado):
-    """CN-MA art. 798, VI: a parte representada, com a menção da procuração. O procurador comparece
-    pelo outorgante; não é parte do outro lado do negócio. Consertado em 03/11/2026 (item 1): até o
-    item 2, ele sai marcado para o escrevente o pôr junto do vendedor."""
-    assert _marcado_fora_dos_lados(_teor(praticado, "cv_por_procurador"), "CARLOS EXEMPLO PROCURADOR")
+def _qualificacao_de(abertura: str, nome: str) -> str:
+    """A qualificação de `nome` na abertura: do nome ao próximo «;» que não está dentro dela."""
+    m = re.search(re.escape(nome) + r", [^;]*", abertura)
+    assert m, f"{nome} não está qualificado na abertura: {abertura[:300]}"
+    return m.group(0)
 
 
-def test_o_representante_da_compradora_nao_vira_vendedor(praticado):
-    """CN-MA art. 798, V (qualificação da pessoa jurídica, com quem a representa)."""
-    assert _marcado_fora_dos_lados(_teor(praticado, "cv_pj_compradora"), "ANA EXEMPLO SOCIA")
+def test_o_procurador_comparece_na_qualificacao_do_vendedor_com_a_procuracao(praticado):
+    """CN-MA art. 798, VI: a parte representada, com o livro, a folha e a serventia da procuração.
+    Decisão do oficial, 03/11/2026 (item 2): «…, neste ato representado por FULANO, conforme procuração
+    lavrada no livro X, folha Y, do …», na qualificação do representado. E o procurador não é comprador
+    (item 1)."""
+    abertura = _abertura(_lavrado(praticado, "cv_por_procurador").termo)
+    vendedor = _qualificacao_de(abertura, "MARIO EXEMPLO DOS SANTOS")
+    assert EN.tem(vendedor, "neste ato representado(a) por CARLOS EXEMPLO PROCURADOR",
+                  "conforme " + EN.PROCURACAO_DO_VENDEDOR)
+    assert "CARLOS" not in abertura.split("como OUTORGADO")[1]
 
 
-def test_a_mae_que_representa_o_donatario_menor_nao_vira_doadora(praticado):
-    """CN-MA art. 798, VII: havendo interesse de menor, a data de nascimento, o assento e por quem está
-    representado. O que falta — dizer que o donatário é menor e o assento — é o item 2."""
-    assert _marcado_fora_dos_lados(_teor(praticado, "doacao_a_menor"), "JOANA EXEMPLO DOS SANTOS")
+def test_quem_representa_a_compradora_vem_na_qualificacao_dela(praticado):
+    """CN-MA art. 798, V e VI (a pessoa jurídica, com quem a representa e o ato que lhe dá poderes)."""
+    abertura = _abertura(_lavrado(praticado, "cv_pj_compradora").termo)
+    assert EN.tem(abertura.split("como OUTORGADO")[1], "neste ato representado(a) por ANA EXEMPLO SOCIA",
+                  "conforme contrato social")
+    assert "ANA EXEMPLO SOCIA" not in abertura.split("como OUTORGADO")[0]
 
 
-def test_a_assistente_da_nubente_menor_nao_vira_nubente(praticado):
+def test_o_donatario_menor_vem_representado_pela_mae_com_o_assento(praticado):
+    """CN-MA art. 798, VII: havendo interesse de menor, o assento e por quem está representado."""
+    abertura = _abertura(_lavrado(praticado, "doacao_a_menor").termo)
+    donatario = _qualificacao_de(abertura, "PEDRO EXEMPLO MENOR")
+    assert EN.tem(donatario, "neste ato representado(a) por JOANA EXEMPLO DOS SANTOS",
+                  "conforme " + EN.ASSENTO_DO_MENOR)
+    assert "JOANA" not in abertura.split("como OUTORGADO")[0]
+
+
+def test_a_nubente_menor_vem_assistida_pela_mae(praticado):
     """CC art. 1.654: o pacto do menor depende da aprovação do representante legal — que assiste, e
-    não pactua."""
-    assert _marcado_fora_dos_lados(_teor(praticado, "pacto_nubente_menor"), "JOANA EXEMPLO DOS SANTOS")
+    não pactua (CN-MA art. 798, VII)."""
+    abertura = _abertura(_lavrado(praticado, "pacto_nubente_menor").termo)
+    assert EN.tem(_qualificacao_de(abertura, "ANA EXEMPLO NUBENTE"),
+                  "neste ato assistido(a) por JOANA EXEMPLO DOS SANTOS")
 
 
 def test_o_casal_em_comunhao_vende_junto(praticado):
@@ -235,10 +244,11 @@ def test_o_conjuge_anuente_consente_e_nao_vende(praticado):
 def test_a_outorgada_mulher_e_outorgada(praticado):
     """CC art. 215, § 1º, III: o nome e a qualificação de cada parte. «OUTORGADA» é qualidade da CEP
     (`notas_censec.QUALIFICACAO_PARA_CEP`) — e quem assina a rogo não é outorgante."""
-    teor = _teor(praticado, "proc_a_rogo")
-    assert "QUALIFIQUE A PARTE" not in teor
-    assert EN.tem(teor, "procuradora BEATRIZ EXEMPLO DE SOUZA") or EN.tem(teor, "procurador BEATRIZ")
-    assert _marcado_fora_dos_lados(teor, "PAULO EXEMPLO TESTEMUNHA")
+    abertura = _abertura(_lavrado(praticado, "proc_a_rogo").termo)
+    assert "QUALIFIQUE A PARTE" not in abertura
+    # quem assina a rogo vem na qualificação do outorgante (CC art. 215, § 2º; item 2, 03/11/2026)
+    assert EN.tem(_qualificacao_de(abertura, "MARIO EXEMPLO DOS SANTOS"),
+                  "assinando a seu rogo PAULO EXEMPLO TESTEMUNHA", "215, § 2º")
 
 
 def test_o_estado_civil_do_testamento_e_o_da_parte(praticado):

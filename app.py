@@ -36,6 +36,7 @@ import tarefa_suspensao as TS
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, send_file, session, url_for
 import backup as BKP
 import titular_privado as TITULAR_PRIVADO
+import atualizacao_github as ATUGH
 from waitress import serve
 
 from bd_nativo import banco
@@ -50,6 +51,7 @@ import seguranca_web as SEGWEB
 from storage import hash_file, safe_component, save_upload
 from network_discovery import DiscoveryResponder, best_local_ip_for, lan_ipv4_addresses
 from update_manager import (
+    MAX_PACKAGE_BYTES,
     UpdateError,
     inspect_staged,
     installed_app_dir,
@@ -2551,8 +2553,170 @@ def create_app(test_config: dict | None = None) -> Flask:
                 reverse=True,
             )
 
+        def preparar(package: Path, filename: str, expected: str):
+            """Valida, monta a cópia candidata e inspeciona. Devolve a preparação, ou None com o motivo na tela.
+
+            NENHUMA FALHA DAQUI VIRA ERRO 500 (oficial, 02/11/2026: «dá erro 500 ao tentar atualizar pelo
+            atualizador interno»). O que se conhece vira a frase de sempre; o que não se conhece vira a frase
+            com o tipo do erro, fica no log e na auditoria — e nada foi aplicado."""
+            try:
+                info = validate_and_stage(
+                    package, staged, VERSION, expected,
+                    require_expected_hash=True,
+                )
+                inspection = inspect_staged(
+                    Path(info["stage_dir"]), installed_app_dir()
+                )
+            except (UpdateError, zipfile.BadZipFile, OSError, ValueError) as exc:
+                audit("UPDATE_REJECTED", "SYSTEM", None, {
+                    "error": str(exc), "file": filename,
+                })
+                flash(str(exc), "danger")
+                return None
+            except Exception as exc:  # noqa: BLE001 — a tela de atualizar não pode cair
+                app.logger.exception("Falha inesperada ao preparar a atualizacao %s", filename)
+                audit("UPDATE_REJECTED", "SYSTEM", None, {
+                    "error": f"{type(exc).__name__}: {exc}", "file": filename,
+                })
+                flash(f"A preparacao falhou por um erro inesperado ({type(exc).__name__}: {exc}). "
+                      "Nada foi aplicado.", "danger")
+                return None
+            detalhes = {
+                "from": VERSION,
+                "to": info["version"],
+                "package_sha256": info["package_sha256"],
+                "static_inspection_ok": inspection["ok"],
+                "executed_received_code": inspection["executed_code"],
+                "changed_files": sum(
+                    1 for item in inspection["impact"]
+                    if item.get("status") in {"NOVO", "ALTERADO", "EXCLUIDO"}
+                ),
+                "warnings": inspection["warnings"],
+                "problems": inspection["problems"],
+            }
+            if not inspection["ok"]:
+                audit("UPDATE_PREPARATION_REJECTED", "SYSTEM", None, detalhes)
+                flash(
+                    f"A atualizacao {info['version']} foi rejeitada pela inspecao. "
+                    "Consulte os problemas abaixo.",
+                    "danger",
+                )
+                return None
+            audit("UPDATE_PREPARED", "SYSTEM", None, detalhes)
+            return info
+
+        def aplicar(meta: dict, versao_solicitada: str, usuario) -> None:
+            """Backup, aprovação gravada e o atualizador do Windows. A mesma para a aprovação à mão e o GitHub."""
+            # E A PERGUNTA QUE DECIDE SE O BALCAO CAI: «esta instalacao consegue
+            # aplicar sozinha, e por que nao?». Era um teste de duas linhas — estar
+            # no Windows e existir o install.json —, e ele respondia «sim» para uma
+            # instancia que rodava de outra pasta e sob uma conta sem permissao
+            # nessa pasta. Ver `update_manager.pode_aplicar_sozinho`.
+            pode_aplicar, por_que_nao = pode_aplicar_sozinho(data_dir)
+            if not pode_aplicar:
+                audit("UPDATE_APPROVAL_DENIED", "SYSTEM", None, {
+                    "to": versao_solicitada, "reason": "automatic_apply_unavailable",
+                    "detail": por_que_nao,
+                })
+                flash(
+                    por_que_nao + " A preparacao permaneceu intacta e nao foi aprovada.",
+                    "warning",
+                )
+                return
+            try:
+                backup_target = backup_dir() / (
+                    f"backup_pre_atualizacao_{VERSION}_para_{versao_solicitada}_"
+                    f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+                )
+                full_backup(backup_target)
+                aprovado = mark_approved(
+                    Path(meta["stage_dir"]),
+                    approved_by=str(usuario["username"]),
+                    approved_at=datetime.now().isoformat(timespec="seconds"),
+                    backup=str(backup_target),
+                )
+                audit("UPDATE_APPROVED", "SYSTEM", None, {
+                    "from": VERSION, "to": versao_solicitada,
+                    "package_sha256": aprovado["package_sha256"],
+                    # reconferida contra o pacote na aprovacao (22/10/2026)
+                    "assinatura": aprovado.get("assinatura"),
+                    "backup": str(backup_target),
+                })
+                stage_path = Path(meta["stage_dir"])
+                porta = parse_int(db.get_setting("network_port", "8765")) or 8765
+                threading.Timer(
+                    1.5,
+                    lambda: launch_windows_updater(
+                        stage_path, data_dir, os.getpid(), porta
+                    ),
+                ).start()
+                flash(
+                    f"Atualizacao {versao_solicitada} aprovada. O servidor sera "
+                    "reiniciado; se a nova versao falhar, o rollback sera automatico.",
+                    "success",
+                )
+            except (UpdateError, OSError, ValueError) as exc:
+                audit("UPDATE_APPROVAL_FAILED", "SYSTEM", None, {
+                    "to": versao_solicitada, "error": str(exc),
+                })
+                flash(str(exc), "danger")
+
+        def atualizar_pelo_github():
+            """O botão: baixar a versão publicada, preparar e aplicar, com a senha do oficial e nada mais.
+
+            Oficial, 02/11/2026: «sem ter que selecionar cgu no computador, nem colocar sha e hash», «apenas
+            com a senha do oficial». O SHA-256 vem publicado ao lado do pacote, e a AUTORIA quem prova é a
+            assinatura, conferida em `validate_and_stage` contra a chave desta instalação. A senha é a do
+            oficial (a do #214) quando ele a cadastrou; sem ela, a do login dele."""
+            if not e_o_titular_agora():
+                abort(403)
+            usuario = current_user()
+            senha = request.form.get("senha_do_oficial", "")
+            if TITULAR_PRIVADO.tem_senha(db):
+                try:
+                    TITULAR_PRIVADO.conferir_tentativa(db, str(usuario["username"]), senha)
+                except TITULAR_PRIVADO.SenhaDoTitularError as exc:
+                    audit("UPDATE_APPROVAL_DENIED", "SYSTEM", None, {"reason": "titular_password", "origem": "github"})
+                    flash(f"{exc} A atualizacao nao foi feita.", "danger")
+                    return redirect(url_for("updates"))
+            else:
+                autenticado = db.authenticate(str(usuario["username"]), senha)
+                if not autenticado or int(autenticado["id"]) != int(usuario["id"]):
+                    audit("UPDATE_APPROVAL_DENIED", "SYSTEM", None, {"reason": "reauthentication_failed", "origem": "github"})
+                    flash("Senha incorreta. A atualizacao nao foi feita.", "danger")
+                    return redirect(url_for("updates"))
+            release = ATUGH.versao_nova(updates_root, VERSION)
+            if not release:
+                flash("Nao ha versao nova publicada no GitHub para esta instalacao.", "warning")
+                return redirect(url_for("updates"))
+            try:
+                pacote, sha = ATUGH.baixar(release, incoming, limite_bytes=MAX_PACKAGE_BYTES)
+            except ATUGH.GitHubIndisponivel as exc:
+                audit("UPDATE_REJECTED", "SYSTEM", None, {"error": str(exc), "origem": "github"})
+                flash(str(exc), "danger")
+                return redirect(url_for("updates"))
+            info = preparar(pacote, pacote.name, sha)
+            if not info:
+                return redirect(url_for("updates"))
+            meta = next((item for item in preparacoes()
+                         if item.get("version") == info["version"]
+                         and item.get("state") == "READY_FOR_APPROVAL"), None)
+            if not meta:
+                flash("A preparacao da versao baixada nao ficou pronta para aplicar.", "danger")
+                return redirect(url_for("updates"))
+            aplicar(meta, info["version"], usuario)
+            return redirect(url_for("updates"))
+
         if request.method == "POST":
             action = request.form.get("action", "prepare")
+            # A VERSÃO DO GITHUB (02/11/2026): procurar agora, e atualizar com a senha do oficial.
+            if action == "github_procurar":
+                resultado = ATUGH.atualizar_guardado(updates_root)
+                flash(resultado.get("erro") or "Consulta ao GitHub feita.",
+                      "warning" if resultado.get("erro") else "success")
+                return redirect(url_for("updates"))
+            if action == "github_atualizar":
+                return atualizar_pelo_github()
             # O RETRATO DA INSTALACAO (14/10/2026): conferir o que mudou fora de
             # uma atualizacao, e o oficial assumir o estado instalado como base.
             if action in ("conferir_instalacao", "aceitar_retrato"):
@@ -2590,46 +2754,13 @@ def create_app(test_config: dict | None = None) -> Flask:
                 )
                 upload.save(package)
                 expected = request.form.get("expected_sha256", "").strip()
-                try:
-                    info = validate_and_stage(
-                        package, staged, VERSION, expected,
-                        require_expected_hash=True,
+                info = preparar(package, filename, expected)
+                if info:
+                    flash(
+                        f"Atualizacao {info['version']} preparada e inspecionada. "
+                        "Ela ainda nao foi aplicada: revise o impacto e faca a aprovacao final.",
+                        "success",
                     )
-                    inspection = inspect_staged(
-                        Path(info["stage_dir"]), installed_app_dir()
-                    )
-                    detalhes = {
-                        "from": VERSION,
-                        "to": info["version"],
-                        "package_sha256": info["package_sha256"],
-                        "static_inspection_ok": inspection["ok"],
-                        "executed_received_code": inspection["executed_code"],
-                        "changed_files": sum(
-                            1 for item in inspection["impact"]
-                            if item.get("status") in {"NOVO", "ALTERADO", "EXCLUIDO"}
-                        ),
-                        "warnings": inspection["warnings"],
-                        "problems": inspection["problems"],
-                    }
-                    if inspection["ok"]:
-                        audit("UPDATE_PREPARED", "SYSTEM", None, detalhes)
-                        flash(
-                            f"Atualizacao {info['version']} preparada e inspecionada. "
-                            "Ela ainda nao foi aplicada: revise o impacto e faca a aprovacao final.",
-                            "success",
-                        )
-                    else:
-                        audit("UPDATE_PREPARATION_REJECTED", "SYSTEM", None, detalhes)
-                        flash(
-                            f"A atualizacao {info['version']} foi rejeitada pela inspecao. "
-                            "Consulte os problemas abaixo.",
-                            "danger",
-                        )
-                except (UpdateError, zipfile.BadZipFile, OSError, ValueError) as exc:
-                    audit("UPDATE_REJECTED", "SYSTEM", None, {
-                        "error": str(exc), "file": filename,
-                    })
-                    flash(str(exc), "danger")
                 return redirect(url_for("updates"))
 
             if action == "approve":
@@ -2672,59 +2803,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     })
                     flash("Confirme que revisou o impacto e o plano de rollback.", "danger")
                     return redirect(url_for("updates"))
-                # E A PERGUNTA QUE DECIDE SE O BALCAO CAI: «esta instalacao consegue
-                # aplicar sozinha, e por que nao?». Era um teste de duas linhas — estar
-                # no Windows e existir o install.json —, e ele respondia «sim» para uma
-                # instancia que rodava de outra pasta e sob uma conta sem permissao
-                # nessa pasta. Ver `update_manager.pode_aplicar_sozinho`.
-                pode_aplicar, por_que_nao = pode_aplicar_sozinho(data_dir)
-                if not pode_aplicar:
-                    audit("UPDATE_APPROVAL_DENIED", "SYSTEM", None, {
-                        "to": versao_solicitada, "reason": "automatic_apply_unavailable",
-                        "detail": por_que_nao,
-                    })
-                    flash(
-                        por_que_nao + " A preparacao permaneceu intacta e nao foi aprovada.",
-                        "warning",
-                    )
-                    return redirect(url_for("updates"))
-                try:
-                    backup_target = backup_dir() / (
-                        f"backup_pre_atualizacao_{VERSION}_para_{versao_solicitada}_"
-                        f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
-                    )
-                    full_backup(backup_target)
-                    aprovado = mark_approved(
-                        Path(meta["stage_dir"]),
-                        approved_by=str(usuario["username"]),
-                        approved_at=datetime.now().isoformat(timespec="seconds"),
-                        backup=str(backup_target),
-                    )
-                    audit("UPDATE_APPROVED", "SYSTEM", None, {
-                        "from": VERSION, "to": versao_solicitada,
-                        "package_sha256": aprovado["package_sha256"],
-                        # reconferida contra o pacote na aprovacao (22/10/2026)
-                        "assinatura": aprovado.get("assinatura"),
-                        "backup": str(backup_target),
-                    })
-                    stage_path = Path(meta["stage_dir"])
-                    porta = parse_int(db.get_setting("network_port", "8765")) or 8765
-                    threading.Timer(
-                        1.5,
-                        lambda: launch_windows_updater(
-                            stage_path, data_dir, os.getpid(), porta
-                        ),
-                    ).start()
-                    flash(
-                        f"Atualizacao {versao_solicitada} aprovada. O servidor sera "
-                        "reiniciado; se a nova versao falhar, o rollback sera automatico.",
-                        "success",
-                    )
-                except (UpdateError, OSError, ValueError) as exc:
-                    audit("UPDATE_APPROVAL_FAILED", "SYSTEM", None, {
-                        "to": versao_solicitada, "error": str(exc),
-                    })
-                    flash(str(exc), "danger")
+                aplicar(meta, versao_solicitada, usuario)
                 return redirect(url_for("updates"))
 
             abort(400)
@@ -2740,11 +2819,25 @@ def create_app(test_config: dict | None = None) -> Flask:
             automatic_apply_available=pode_aplicar,
             automatic_apply_reason=por_que_nao,
             conferencia_instalacao=_ultima_conferencia_da_instalacao(updates_root),
+            github=ATUGH.guardado(updates_root),
+            versao_nova_github=ATUGH.versao_nova(updates_root, VERSION),
+            e_o_titular=e_o_titular_agora(),
+            senha_do_titular=TITULAR_PRIVADO.tem_senha(db),
         )
 
     def _ultima_conferencia_da_instalacao(updates_root):
         import retrato_da_instalacao as RET
         return RET.ultima_conferencia(updates_root)
+
+    @app.context_processor
+    def _versao_nova_do_sistema():
+        """O aviso do sino: só para o ADMIN, e só lendo o guardado — nenhuma tela espera a rede."""
+        try:
+            if app.extensions["usuario_papel"]() != "ADMIN":
+                return {}
+            return {"versao_nova_do_sistema": ATUGH.versao_nova(data_dir / "updates", VERSION)}
+        except Exception:  # noqa: BLE001 — o aviso é cortesia
+            return {}
 
     @app.route("/auditoria")
     @login_required
@@ -3891,6 +3984,11 @@ def main():
                          pasta_arquivos=app.extensions["archive_root"])
     except Exception as exc:  # noqa: BLE001
         print(f"Vigia do WhatsApp nao ligou: {exc}")
+    # A VERSÃO NOVA NO GITHUB (02/11/2026): pergunta ao subir e uma vez por dia; sem rede, só não avisa.
+    try:
+        ATUGH.iniciar_vigia(Path(app.config["DATA_DIR"]) / "updates")
+    except Exception as exc:  # noqa: BLE001
+        print(f"Consulta de versao nova nao ligou: {exc}")
     host = db.get_setting("network_host", "0.0.0.0") or "0.0.0.0"
     # Para a instalacao oficial em rede, 127.0.0.1 impediria os clientes.
     if "--service" in sys.argv and host in {"127.0.0.1", "localhost"}:

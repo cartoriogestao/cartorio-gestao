@@ -29,6 +29,43 @@
   {% endif %}
 </section>
 
+{# A VERSÃO DO GITHUB (oficial, 02/11/2026): avisar a versão nova e atualizar com a senha do oficial, sem
+   escolher arquivo nem colar SHA. O pacote vem da página da versão no GitHub; a assinatura é conferida
+   contra a chave desta instalação, como no envio à mão. #}
+<section class="panel" id="versao-do-github">
+  <h2>Versão nova no GitHub</h2>
+  {% if versao_nova_github %}
+    <div class="notice warning">
+      <strong>Saiu a versão {{ versao_nova_github.versao }}</strong>{% if versao_nova_github.publicada_em %}, publicada em {{ versao_nova_github.publicada_em[:10] }}{% endif %}.
+      Esta instalação está na {{ current_version }}.
+      {% if versao_nova_github.pagina %}<a href="{{ versao_nova_github.pagina }}" target="_blank" rel="noopener">Ver a versão no GitHub</a>{% endif %}
+    </div>
+    {% if versao_nova_github.notas %}<details><summary>O que ela traz</summary><pre style="white-space:pre-wrap">{{ versao_nova_github.notas }}</pre></details>{% endif %}
+    {% if e_o_titular %}
+      <form method="post" class="stack" onsubmit="return confirm('Baixar a versão {{ versao_nova_github.versao }} e atualizar? O sistema faz o backup, aplica e reinicia; se a versão nova falhar, volta sozinho.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="github_atualizar">
+        <label>{{ 'Senha do oficial' if senha_do_titular else 'Sua senha de login' }}
+          <input type="password" name="senha_do_oficial" required autocomplete="current-password"></label>
+        <button class="button" type="submit">Baixar e atualizar para a {{ versao_nova_github.versao }}</button>
+        <small class="muted">O sistema baixa o pacote, confere o SHA-256 e a assinatura, faz o backup do banco e dos documentos, aplica, reinicia e testa. Se a versão nova não responder, volta sozinho à {{ current_version }}.</small>
+      </form>
+    {% else %}
+      <p class="muted">Só o oficial titular atualiza o sistema.</p>
+    {% endif %}
+  {% elif github.erro and not github.release %}
+    <p class="muted">Ainda não foi possível consultar o GitHub: {{ github.erro }}</p>
+  {% else %}
+    <p>Esta instalação está na versão mais nova publicada{% if github.consultado_em %} (consulta de {{ github.consultado_em.replace('T', ' ') }}){% endif %}.</p>
+    {% if github.erro %}<p class="muted"><small>A última tentativa de consulta falhou: {{ github.erro }}</small></p>{% endif %}
+  {% endif %}
+  <form method="post" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="github_procurar">
+    <button class="button secondary" type="submit">Procurar versão nova agora</button>
+  </form>
+</section>
+
 <section class="panel">
   <h2>Conferência da instalação</h2>
   <p>Compara cada arquivo do programa instalado com o que a última atualização instalou. Arquivo mudado fora de uma atualização — cópia direta na pasta do programa — aparece aqui, e um pacote novo que o sobrescreveria fica bloqueado até alguém decidir.</p>

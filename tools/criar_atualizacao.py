@@ -290,6 +290,44 @@ def todos_os_arquivos(root: Path):
 #   Versao que ja tem etiqueta e RECUSADA: dois pacotes diferentes com o mesmo
 #   numero foi exatamente o que gerou o `_broken.cgu` de 29/09.
 #   Sem o versionamento (outra instalacao, outro cartorio), segue como antes.
+def so_o_que_mudou(root: Path, desde: str, arquivos):
+    """O pacote PARCIAL: só o que mudou desde a etiqueta `desde`, e a lista do que sumiu.
+
+    O ATUALIZADOR DA 3.7.8 RECUSA O PACOTE COMPLETO (02/11/2026): o teto era de 2.000 arquivos, e o pacote
+    da 3.7.8 ja tinha 2.287. Ele monta a copia da instalacao inteira e poe por cima so o que o pacote traz —
+    entao o pacote com o que mudou desde a versao instalada e aceito por ele, e e o caminho para sair dela.
+
+    Compara pelo conteudo (o hash de objeto do git), e nao pela lista de commits: o que entra no pacote e o
+    que esta na pasta, e um arquivo pode ter mudado e voltado. O que vem de fora da pasta (`DE_FORA`) vai
+    sempre, porque o git desta arvore nao o conhece. Some do pacote o que existia na etiqueta e saiu.
+    """
+    import subprocess
+    prefixo = subprocess.run(['git', '-C', str(root), 'rev-parse', '--show-prefix'], capture_output=True,
+                             text=True, check=True).stdout.strip()
+    saida = subprocess.run(['git', '-C', str(root), 'ls-tree', '-r', '-z', desde, '--', '.'],
+                           capture_output=True, check=True).stdout.decode('utf-8')
+    na_etiqueta: dict[str, str] = {}
+    for linha in saida.split('\0'):
+        if not linha:
+            continue
+        meta, caminho = linha.split('\t', 1)
+        if caminho.startswith(prefixo):
+            na_etiqueta[caminho[len(prefixo):]] = meta.split()[2]
+    de_fora = set(DE_FORA.values())
+    escolhidos, presentes = [], set()
+    for p, rel in arquivos:
+        presentes.add(rel)
+        dados = p.read_bytes()
+        blob = hashlib.sha1(b'blob %d\0' % len(dados) + dados).hexdigest()
+        if rel in de_fora or na_etiqueta.get(rel) != blob:
+            escolhidos.append((p, rel))
+    apagados = sorted(
+        rel for rel in na_etiqueta
+        if rel not in presentes and not (root / rel).exists()
+        and not any(part in EXCLUDE_DIRS for part in Path(rel).parts))
+    return escolhidos, apagados
+
+
 NOME_DA_ORIGEM_VERSIONADA = 'INSTALAR_CARTORIO_GESTAO'
 
 
@@ -372,6 +410,8 @@ def main() -> int:
     ap.add_argument('--run-pip', action='store_true', help='Executa pip install -r requirements.txt durante a atualizacao')
     ap.add_argument('--sem-versionar', action='store_true',
                     help='Nao grava no git privado (so quando ele nao estiver disponivel)')
+    ap.add_argument('--desde', default='', metavar='ETIQUETA',
+                    help='Pacote parcial: so o que mudou desde esta etiqueta (ex.: v3.7.8), mais o que sumiu')
     ap.add_argument('--assinar', type=Path, default=None, metavar='CHAVE',
                     help='Assina o pacote com a chave do oficial (a senha e pedida na hora)')
     args = ap.parse_args()
@@ -426,8 +466,12 @@ def main() -> int:
             ap.error(str(exc))
     versionamento = None if args.sem_versionar else versionamento_da_arvore(root)
     commit = versionar_antes(versionamento, root, args.version, args.notes) if versionamento else ''
+    arquivos = todos_os_arquivos(root)
+    apagados: list[str] = []
+    if args.desde:
+        arquivos, apagados = so_o_que_mudou(root, args.desde, arquivos)
     files = []
-    for p, rel in todos_os_arquivos(root):
+    for p, rel in arquivos:
         files.append({'path': rel, 'sha256': digest(p)})
     manifest = {
         'product': 'CartorioGestao',
@@ -437,7 +481,7 @@ def main() -> int:
         'notes': args.notes,
         'run_pip': bool(args.run_pip),
         'files': files,
-        'delete': [],
+        'delete': apagados,
     }
     if commit:
         manifest['source_commit'] = commit
@@ -460,7 +504,7 @@ def main() -> int:
         if privada is not None:
             zf.writestr(ASS.NOME_NO_PACOTE, json.dumps(
                 ASS.assinar(manifesto_bytes, privada), ensure_ascii=False, indent=2))
-        for p, rel in todos_os_arquivos(root):
+        for p, rel in arquivos:
             zf.write(p, f'payload/{rel}')
     sha_do_pacote = digest(args.output)
     if versionamento:
@@ -469,6 +513,8 @@ def main() -> int:
     print(sha_do_pacote)
     if commit:
         print(f'git: commit {commit[:12]} no main, etiqueta v{args.version}')
+    if args.desde:
+        print(f'parcial desde {args.desde}: {len(files)} arquivo(s), {len(apagados)} apagado(s)')
     print('assinado' if privada is not None else 'NAO ASSINADO')
     return 0
 

@@ -99,7 +99,28 @@ def dados(get_settings) -> dict:
         d[chave] = valor or padrao
     d["cidade_uf"] = cidade_uf(d)
     d["endereco_completo"] = endereco_completo(d)
+    d["estado_extenso"] = estado_extenso(d)
     return d
+
+
+# O ESTADO POR EXTENSO, COM O ARTIGO — decisão do oficial, 03/11/2026 (ensaio de atos das Notas,
+# observação 10): as minutas das Notas diziam «Estado do MA», e o CC art. 215, § 1º, I, pede o local
+# do ato. «Estado do Maranhão», do cadastro da serventia (`ri_uf`).
+ESTADO_COM_ARTIGO = {
+    "AC": "do Acre", "AL": "de Alagoas", "AP": "do Amapá", "AM": "do Amazonas", "BA": "da Bahia",
+    "CE": "do Ceará", "DF": "do Distrito Federal", "ES": "do Espírito Santo", "GO": "de Goiás",
+    "MA": "do Maranhão", "MT": "de Mato Grosso", "MS": "de Mato Grosso do Sul", "MG": "de Minas Gerais",
+    "PA": "do Pará", "PB": "da Paraíba", "PR": "do Paraná", "PE": "de Pernambuco", "PI": "do Piauí",
+    "RJ": "do Rio de Janeiro", "RN": "do Rio Grande do Norte", "RS": "do Rio Grande do Sul",
+    "RO": "de Rondônia", "RR": "de Roraima", "SC": "de Santa Catarina", "SP": "de São Paulo",
+    "SE": "de Sergipe", "TO": "do Tocantins",
+}
+
+
+def estado_extenso(d: Mapping[str, Any]) -> str:
+    """`do Maranhão`, para «Estado do Maranhão»; UF fora da tabela fica como veio, com «do»."""
+    uf = _texto(d.get("ri_uf")).upper()
+    return ESTADO_COM_ARTIGO.get(uf, f"do {uf}" if uf else "")
 
 
 def cidade_uf(d: Mapping[str, Any]) -> str:

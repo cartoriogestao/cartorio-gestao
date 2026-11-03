@@ -168,6 +168,8 @@
         <div class="cg-pop cg-pop-sino" role="dialog" aria-label="Avisos e pendências">
           <div class="cg-pop-t"><strong>Avisos e pendências</strong></div>
           <div class="cg-sino-corpo" data-cg-sino-corpo>
+            {% if versao_nova_do_sistema %}<div class="cg-pop-g cg-g-av">Sistema</div>
+            <a class="cg-pi" data-cg-aviso href="{{ url_for('updates') }}">Versão {{ versao_nova_do_sistema.versao }} disponível — atualizar</a>{% endif %}
             {% include '_faixas_compactas.html' %}
             {% if nu_avisos_modal %}
             {% set mod = nu_avisos_modal %}

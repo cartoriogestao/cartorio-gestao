@@ -16,7 +16,9 @@ from typing import Any
 PRODUCT = "CartorioGestao"
 FORMAT_VERSION = 1
 MAX_PACKAGE_BYTES = 100 * 1024 * 1024
-MAX_FILES = 2_000
+# O SISTEMA PASSOU DE 2.000 ARQUIVOS (02/11/2026): o pacote completo da 3.7.8 ja tinha 2.287, e o
+# atualizador recusava todo pacote completo. O teto continua, para pacote absurdo; o real e um quarto dele.
+MAX_FILES = 10_000
 MAX_FILE_BYTES = 25 * 1024 * 1024
 MAX_TOTAL_UNCOMPRESSED = 250 * 1024 * 1024
 VERSION_RE = re.compile(r"^\d+(?:\.\d+){1,3}$")

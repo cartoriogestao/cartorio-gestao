@@ -101,7 +101,29 @@ administrados por um profissional de TI.
 
 ## 5. Atualizações
 
-As versões novas chegam como pacotes **`.cgu`**, acompanhados do SHA-256.
+### Pelo GitHub (o caminho de sempre, desde a 3.7.10)
+
+O servidor consulta o GitHub ao subir e uma vez por dia. Saindo versão nova, o **sino** avisa o
+administrador e a tela **Atualizações** mostra a versão, o que ela traz e o botão **Baixar e atualizar**:
+basta a **senha do oficial** (a de Administrativo → Senha do oficial; sem ela, a senha de login do
+oficial). O sistema baixa o pacote, confere o SHA-256 publicado ao lado e a **assinatura** contra a chave
+desta instalação, faz o backup, aplica, reinicia e testa — e volta sozinho se a versão nova não responder.
+Sem internet nada quebra: o aviso só não aparece, e o botão «Procurar versão nova agora» diz o motivo.
+
+Publicar uma versão é na máquina do oficial, onde está a chave:
+
+```
+python tools/publicar_versao.py --versao 3.7.10 --desde v3.7.9 --chave E:\chave_cartorio.pem
+```
+
+Ela monta o pacote **só com o que mudou** desde a versão anterior, pede a senha da chave, assina e publica
+a versão no GitHub com o pacote e o SHA-256.
+
+### À mão
+
+As versões novas também chegam como pacotes **`.cgu`**, acompanhados do SHA-256. O pacote completo passou
+de 2.000 arquivos, e a 3.7.8 e as anteriores recusam pacote com mais que isso: para elas, gere o pacote
+parcial (`tools/criar_atualizacao.py … --desde v<versão instalada>`).
 
 1. Entre como **ADMIN** e abra **Atualizações**.
 2. Selecione o `.cgu` e cole o SHA-256 informado.

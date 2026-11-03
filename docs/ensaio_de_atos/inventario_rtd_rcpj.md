@@ -31,6 +31,8 @@ Cada caso é feito num registro limpo.
 | Breve relato da pessoa jurídica dissolvida | CN-MA art. 420, II; LRP art. 165 | ✓ | **ensaio** |
 | Breve relato com a leitura da ficha anterior ao último ato | CN-MA art. 420, II | ✓ | fluxo |
 | Notificação sobre o registro, positiva e negativa | CN-MA arts. 986 a 989 (como o fluxo cita) | ✓ | fluxo |
+| Notificação sobre o registro cancelado: recusada | LRP arts. 160 e 164 a 166 | ✗ abre | **ensaio** |
+| Mudança de denominação: averbação, cadastro, releitura, breve relato | LRP art. 128; CN-MA art. 420, II | ✓ | **ensaio** |
 
 ## As situações do título e da pessoa jurídica
 

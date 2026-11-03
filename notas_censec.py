@@ -318,6 +318,18 @@ QUALIFICACAO_PARA_CEP = {
     "REQUERIDO": "Requerido",
     "CONCILIADOR": "Conciliador",
     "MEDIADOR": "Mediador",
+    # O FEMININO DE CADA PAPEL — ensaio de atos das Notas, 03/11/2026 (relatorio_notas.md, item 13). A
+    # tabela tinha «VENDEDORA», «COMPRADORA» e «OUTORGADA», e não estas: a doação de JOANA, «DOADORA», a
+    # BEATRIZ, «DONATARIA», era recusada pela trava («não corresponde a nenhuma qualidade da CEP»), e o
+    # teor ficava sem outorgada, porque o lado da parte também sai daqui (`notas_teor.lado_da_parte`).
+    "DOADORA": "Outorgante",
+    "DONATARIA": "Outorgado",
+    "CESSIONARIA": "Outorgado",
+    "USUFRUTUARIA": "Usufrutuário",
+    "CREDORA": "Interveniente",
+    "REQUERIDA": "Requerido",
+    "CONCILIADORA": "Conciliador",
+    "MEDIADORA": "Mediador",
 }
 
 # O procurador e o representante entram como Interveniente, e nao por analogia:

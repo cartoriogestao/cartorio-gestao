@@ -216,6 +216,8 @@ terceiro.
 
 ### 13. «DOADORA», «DONATÁRIA» e «CESSIONÁRIA» não estão na tabela da CEP
 
+**CONSERTADO em 03/11/2026** (liberado pela sessão de PRs): o feminino na tabela da CEP e na lista da DOI.
+
 **O que saiu.** A doação de JOANA, «DOADORA», a BEATRIZ, «DONATARIA», não foi ao livro: a trava da CEP
 recusou as duas qualificações («não corresponde a nenhuma qualidade da CEP»), e o teor ficou sem
 outorgado, porque o lado da parte também vem dessa tabela (item 1). A tabela

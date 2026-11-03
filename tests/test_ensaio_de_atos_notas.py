@@ -133,7 +133,7 @@ RECUSADOS = {"emancipacao_menor_de_16": "test_a_emancipacao_confere_os_dezesseis
 
 
 #: Os casos que um defeito aberto impede de ir ao livro.
-NAO_VAO_AO_LIVRO = {"doacao_doadora_a_donataria": "«DOADORA» e «DONATARIA» fora da tabela da CEP (item 13)"}
+NAO_VAO_AO_LIVRO: dict[str, str] = {}
 
 
 @pytest.mark.parametrize("chave", [pytest.param(c, marks=_defeito(NAO_VAO_AO_LIVRO[c])) if c in NAO_VAO_AO_LIVRO
@@ -392,10 +392,9 @@ def test_a_doi_tem_quem_aliena_e_quem_adquire_e_mais_ninguem(praticado, chave, a
     assert (doi.get("alienantes"), doi.get("adquirentes"), doi.get("duvidas")) == (alienantes, adquirentes, []), doi
 
 
-@_defeito("«DOADORA» e «DONATARIA» não estão na tabela da CEP (`notas_censec.QUALIFICACAO_PARA_CEP`): a trava "
-          "recusa o ato, e o teor fica sem outorgado (relatorio_notas.md, segunda leva, item 13)")
 def test_a_doadora_e_a_donataria_vao_ao_livro_e_a_doi(praticado):
-    """CC art. 215, § 1º, III: a qualificação de cada parte, no feminino como no masculino."""
+    """CC art. 215, § 1º, III: a qualificação de cada parte, no feminino como no masculino. Consertado em
+    03/11/2026 (item 13)."""
     s = _lavrado(praticado, "doacao_doadora_a_donataria")
     assert (s.doi.get("alienantes"), s.doi.get("adquirentes")) == (["JOANA EXEMPLO DOS SANTOS"],
                                                                    ["BEATRIZ EXEMPLO DE SOUZA"]), s.doi

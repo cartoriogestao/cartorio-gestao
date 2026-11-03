@@ -271,7 +271,11 @@ NAO_E_PARTE_DO_NEGOCIO = (
 QUEM_ALIENA = ("VENDEDOR", "CEDENTE", "OUTORGANTE",                   # medidas
                "DOADOR", "TRANSMITENTE", "ALIENANTE")                 # contraparte
 QUEM_ADQUIRE = ("COMPRADOR", "OUTORGADO", "DONATARIO",                # medidas
-                "CESSIONARIO", "ADQUIRENTE")                          # contraparte
+                "CESSIONARIO", "ADQUIRENTE",                          # contraparte
+                # o feminino que não contém o masculino — «COMPRADORA» já contém «COMPRADOR», e
+                # «OUTORGADA», «DONATARIA» e «CESSIONARIA» não: caíam em dúvida e paravam a
+                # declaração (ensaio de atos das Notas, 03/11/2026, item 13)
+                "OUTORGADA", "DONATARIA", "CESSIONARIA")
 
 # QUATRO PALAVRAS FICARAM DE FORA DE PROPOSITO, e cada uma por um motivo:
 #

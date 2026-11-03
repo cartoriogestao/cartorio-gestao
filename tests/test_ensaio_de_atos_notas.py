@@ -211,6 +211,14 @@ def test_o_donatario_menor_vem_representado_pela_mae_com_o_assento(praticado):
     assert "JOANA" not in abertura.split("como OUTORGADO")[0]
 
 
+def test_o_donatario_menor_nao_assina_e_a_mae_assina_por_ele(praticado):
+    """Observação 9, consertada em 03/11/2026: a linha das assinaturas diz quem assina por quem."""
+    t = _lavrado(praticado, "doacao_a_menor").termo
+    assinam = t.split("Assinam o ato")[1].split("Dou fé")[0]
+    assert EN.tem(assinam, "JOANA EXEMPLO DOS SANTOS, REPRESENTANTE, por PEDRO EXEMPLO MENOR")
+    assert "PEDRO EXEMPLO MENOR, DONATARIO" not in assinam
+
+
 def test_a_nubente_menor_vem_assistida_pela_mae(praticado):
     """CC art. 1.654: o pacto do menor depende da aprovação do representante legal — que assiste, e
     não pactua (CN-MA art. 798, VII)."""

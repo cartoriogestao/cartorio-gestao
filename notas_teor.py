@@ -777,7 +777,7 @@ def advogados_qualificados(partes: list, *, con: Any = None) -> str:
     return "; ".join(saida)
 
 
-def contexto_jinja_partes(partes: list, *, con: Any = None, tipo_ato: Any = None) -> dict[str, str]:
+def contexto_jinja_partes(partes: list, *, con: Any = None, tipo_ato: Any = None) -> dict[str, Any]:
     """Variáveis Jinja comuns aos modelos de `notas_modelos.py`."""
     textos = MODELOS.textos(con)
     outorgantes, outorgados = partes_por_lado(partes, con=textos, tipo_ato=tipo_ato)
@@ -786,6 +786,11 @@ def contexto_jinja_partes(partes: list, *, con: Any = None, tipo_ato: Any = None
         "outorgados": outorgados,
         "testemunhas": testemunhas_qualificadas(partes, con=textos),
         "advogados": advogados_qualificados(partes, con=textos),
+        # UM SÓ OUTORGANTE fala no singular — decisão de 03/11/2026 (ensaio de atos das Notas, item 6):
+        # a emancipação concedida só pela mãe dizia «compareceram como OUTORGANTES» e «Declaram os
+        # OUTORGANTES que são a mãe». A minuta escolhe a frase por esta marca.
+        "um_outorgante": sum(1 for p in partes if not dict(p).get("testemunha")
+                             and lado_da_parte(p, tipo_ato) == OUTORGANTE) == 1,
     }
 
 

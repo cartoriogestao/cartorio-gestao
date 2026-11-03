@@ -142,6 +142,9 @@ ADVOGADOS» é montado dele — nome, qualificação e inscrição na OAB —, s
 
 ## 6. A emancipação por um só genitor fala no plural
 
+**CONSERTADO em 03/11/2026** (conserto liberado pela sessão de PRs): a minuta escolhe o singular ou o
+plural pela quantidade de outorgantes (`um_outorgante`, do quadro «Partes»).
+
 **O que saiu.** Com a cláusula «Se um dos pais» e a escolha «a mãe»: «compareceram como OUTORGANTES JOANA
 …» e «Declaram os OUTORGANTES que são a mãe do EMANCIPANDO».
 

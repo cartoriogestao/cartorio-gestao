@@ -3121,6 +3121,21 @@ _CAMPO_DO_ADVOGADO = {
 }
 MINUTAS_DO_ADVOGADO = {cod: ((f"[{campo}]", "{{ advogados }}"),) for cod, campo in _CAMPO_DO_ADVOGADO.items()}
 
+# A EMANCIPAÇÃO POR UM SÓ GENITOR FALA NO SINGULAR — 03/11/2026 (ensaio de atos das Notas, item 6): os
+# quatro lugares da minuta que concordam com os outorgantes escolhem a forma por `um_outorgante`.
+_SE_UM = "{% if um_outorgante %}"
+MINUTAS_DO_ADVOGADO["NT-ESC-EMANCIPACAO"] = (
+    ("compareceram como OUTORGANTES {{ outorgantes }},",
+     _SE_UM + "compareceu como OUTORGANTE{% else %}compareceram como OUTORGANTES{% endif %} {{ outorgantes }},"),
+    ("Declaram os OUTORGANTES que são",
+     _SE_UM + "Declara o(a) OUTORGANTE que é{% else %}Declaram os OUTORGANTES que são{% endif %}"),
+    ("Declaram ainda os OUTORGANTES",
+     _SE_UM + "Declara ainda o(a) OUTORGANTE{% else %}Declaram ainda os OUTORGANTES{% endif %}"),
+    ("E, pelos OUTORGANTES, me foi dito que, por este instrumento e na melhor forma de direito, CONCEDEM",
+     "E, " + _SE_UM + "pelo(a) OUTORGANTE{% else %}pelos OUTORGANTES{% endif %}, me foi dito que, por este "
+     "instrumento e na melhor forma de direito, " + _SE_UM + "CONCEDE{% else %}CONCEDEM{% endif %}"),
+)
+
 
 def _minuta_de_hoje(antes: dict) -> dict:
     """A minuta do ouro com as trocas declaradas do LD02, do LD07, do LH13 e do
@@ -3227,7 +3242,13 @@ def _o_contexto_tem_os_advogados(nome: str, saida):
     if not nome.startswith("notas_teor.contexto_jinja_partes(") or "ok" not in saida:
         return saida
     assert "advogados" not in saida["ok"], nome
-    return {"ok": {**saida["ok"], "advogados": "[ADVOGADO — INCLUA-O NO QUADRO PARTES, COM A OAB]"}}
+    # e `um_outorgante` (item 6): quantas partes do ouro saem do lado dos outorgantes
+    import notas_teor as NT
+    fixa = nome[len("notas_teor.contexto_jinja_partes("):-1]
+    um = sum(1 for p in OURO_D.PARTES[fixa]
+             if not p.get("testemunha") and NT.lado_da_parte(p) == NT.OUTORGANTE) == 1
+    return {"ok": {**saida["ok"], "advogados": "[ADVOGADO — INCLUA-O NO QUADRO PARTES, COM A OAB]",
+                   "um_outorgante": um}}
 
 
 def _a_outorgada_no_lado_dela(nome: str, saida):

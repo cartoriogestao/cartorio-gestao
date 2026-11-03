@@ -279,11 +279,14 @@ def test_o_advogado_assiste_e_nao_e_parte(praticado, chave):
                   "inscrito(a) na OAB/MA sob o nº 00000")
 
 
-@_defeito("com um só genitor, a emancipação diz «compareceram como OUTORGANTES» e «Declaram os "
-          "OUTORGANTES que são a mãe» (item 6)")
 def test_a_emancipacao_concedida_so_pela_mae_fala_no_singular(praticado):
+    """Consertado em 03/11/2026 (item 6): com um só genitor, o singular em cada lugar da minuta."""
     t = _lavrado(praticado, "emancipacao_so_mae").termo
-    assert not EN.tem(t, "OUTORGANTES que são a mãe")
+    assert EN.tem(t, "compareceu como OUTORGANTE JOANA", "Declara o(a) OUTORGANTE que é a mãe",
+                  "pelo(a) OUTORGANTE", "CONCEDE AO EMANCIPANDO")
+    for plural in ("compareceram como OUTORGANTES", "Declaram os OUTORGANTES", "pelos OUTORGANTES",
+                   "CONCEDEM"):
+        assert not EN.tem(t, plural), plural
 
 
 def test_a_emancipacao_confere_os_dezesseis_anos(praticado):

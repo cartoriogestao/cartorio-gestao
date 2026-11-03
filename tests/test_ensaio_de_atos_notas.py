@@ -160,6 +160,8 @@ def test_quem_nao_sabe_assinar_o_testamento_assina_a_rogo_uma_testemunha(pratica
     """CC art. 1.865: o tabelião declara e assina a rogo uma das testemunhas instrumentárias."""
     t = _lavrado(praticado, "testamento_nao_assina").termo
     assert EN.tem(t, "a seu rogo", "PAULO EXEMPLO TESTEMUNHA", "1.865", "impressão digital")
+    # «sabe | pode» é escolha desde 03/11/2026 (observação 11): o «não» é da minuta.
+    assert EN.tem(t, "o TESTADOR não sabe assinar") and not EN.tem(t, "não não")
 
 
 def test_a_procuracao_para_alienar_imovel_arquiva_a_certidao_do_registro(praticado):
@@ -172,7 +174,7 @@ def test_a_procuracao_para_alienar_imovel_arquiva_a_certidao_do_registro(pratica
 def test_a_divorcianda_que_volta_ao_nome_de_solteira_fica_no_termo(praticado):
     """CN-MA art. 822 (como o LT02 cita): a declaração do nome que cada um passa a usar."""
     t = _lavrado(praticado, "divorcio_com_nome").termo
-    assert EN.tem(t, "JOANA EXEMPLO DOS SANTOS voltará a usar o nome")
+    assert EN.tem(t, "JOANA EXEMPLO DOS SANTOS voltará a usar o nome de solteiro(a)")
 
 
 # ------------------------------------------------------------------ quem comparece, e em que qualidade

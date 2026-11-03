@@ -3079,11 +3079,23 @@ MINUTAS_MUDADAS_NO_LH13 = {
 # A VÍRGULA DO TESTAMENTO SOLTEIRO — ensaio de atos das Notas, 03/11/2026 (relatorio_notas.md, item 4;
 # conserto liberado pela sessão de PRs no mesmo dia). «ser {ESTADO CIVIL}, «SE CASADO: sendo seu
 # cônjuge…»» deixava «ser solteiro, .» quando a cláusula saía: a vírgula vai para dentro dela.
+#
+# E DUAS REDAÇÕES (observações 11 e 12 do relatório, liberadas no mesmo dia): «não [MOTIVO: sabe |
+# pode] assinar» era campo de texto depois do «não» — quem digitasse «não sabe» lavrava «não não
+# sabe» — e vira escolha; e a volta ao nome, no divórcio, na separação, na conversão e na dissolução
+# da união estável, dizia «nome de solteiro» de quem quer que voltasse a ele.
+_NOME_DE_SOLTEIRO = (("voltará a usar o nome de solteiro, qual seja",
+                      "voltará a usar o nome de solteiro(a), qual seja"),)
 MINUTAS_MUDADAS_NO_ENSAIO_NOTAS = {
     "NT-TESTAMENTO-PUBLICO": (
         ("união estável}, «SE CASADO OU CONVIVENTE: sendo seu",
          "união estável}«SE CASADO OU CONVIVENTE:, sendo seu"),
+        ("o TESTADOR não [MOTIVO: sabe | pode] assinar", "o TESTADOR não {MOTIVO: sabe | pode} assinar"),
     ),
+    "NT-ESC-DIVORCIO": _NOME_DE_SOLTEIRO,
+    "NT-ESC-SEPARACAO": _NOME_DE_SOLTEIRO,
+    "NT-ESC-CONVERSAO-DIVORCIO": _NOME_DE_SOLTEIRO,
+    "NT-ESC-DISSOLUCAO-UNIAO-ESTAVEL": _NOME_DE_SOLTEIRO,
 }
 
 

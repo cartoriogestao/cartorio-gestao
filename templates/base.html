@@ -10,7 +10,7 @@
    `_aviso.html`; aqui so se chama. #}
 {% import '_aviso.html' as aviso %}
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR"{% if cg_zoom and cg_zoom != "1" %} data-escala="{{ cg_escala }}" style="--cg-escala:{{ cg_zoom }}"{% endif %}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1053,6 +1053,8 @@
       <span class="user-avatar" aria-hidden="true" title="{{ user.full_name }}">{{ user.full_name[:1] | upper }}</span>
       <div class="user-copy"><strong>{{ user.full_name }}</strong><small>{{ user.role }} · v{{ VERSION }} · <a href="{{ url_for('dois_fatores') }}" title="Verificação em duas etapas da sua conta">duas etapas</a> · <a href="{{ url_for('minha_senha') }}" title="Trocar a senha da sua conta">minha senha</a></small></div>
       <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button" title="Sair do sistema">Sair</button></form>
+      {# O TAMANHO DA LETRA vale também nesta moldura (pedido do oficial, 02/11/2026). #}
+      {% if cg_escalas %}<form method="post" action="{{ url_for('preferencia_aparencia') }}" class="sidebar-escalas" aria-label="Tamanho da letra"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}"><small>Letra:</small>{% for e in cg_escalas %}<button class="link-button{% if e == cg_escala %} atual{% endif %}" type="submit" name="escala" value="{{ e }}" aria-pressed="{{ 'true' if e == cg_escala else 'false' }}">{{ e }}%</button>{% endfor %}</form>{% endif %}
       <form method="post" action="{{ url_for('preferencia_layout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="layout" value="novo"><input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}"><button class="link-button" title="Experimentar o layout novo. Dá para voltar a qualquer momento.">Novo layout</button></form>
     </div>
   </aside>

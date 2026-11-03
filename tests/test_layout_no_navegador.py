@@ -579,3 +579,92 @@ def test_o_menu_marca_onde_a_pessoa_esta_e_leva_as_subabas(tela, servidor):
     with tela.expect_navigation(wait_until="load"):
         secoes.nth(1).click()
     assert tela.locator(".cg-sec.atual").count() >= 1
+
+
+# ------------------------------------------------------- a aparência da pessoa (oficial, 02/11/2026)
+#
+# «Alguém que não enxerga tão bem poder aumentar as fontes e logos do sistema»; «recolher as colunas da
+# esquerda para deixar mais campo pra tela»; «o cronômetro precisa de mais destaque para mostrar que está
+# correndo, e o WhatsApp precisa de mais destaque para saber que tem gente chamando».
+
+CABE = """() => {const a=document.querySelector('.cg-app').getBoundingClientRect();
+  return {fundo:a.bottom <= innerHeight + 1, direita:a.right <= innerWidth + 1,
+          pagina:document.documentElement.scrollHeight - document.documentElement.clientHeight};}"""
+
+
+def _escolher_a_escala(pg, escala: str) -> None:
+    pg.locator(".cg-eu summary").click()
+    pg.locator(f".cg-escalas button[value='{escala}']").click()
+    pg.wait_for_load_state("domcontentloaded")
+
+
+@pytest.mark.parametrize("largura, altura", [(1366, 768), (1920, 1080)])
+def test_a_letra_em_150_por_cento_cabe_na_janela_sem_estourar(casa, navegador, servidor, telas, largura, altura):  # noqa: F811
+    casa.restaurar()
+    ctx = _contexto(casa, navegador, servidor, largura=largura, altura=altura)
+    pg = ctx.new_page()
+    _abrir(pg, servidor, "/")
+    _escolher_a_escala(pg, "150")
+    assert pg.evaluate("document.documentElement.dataset.escala") == "150"
+    ruins = []
+    amostra = telas["todas"][::max(1, len(telas["todas"]) // 40)]
+    for endereco in amostra:
+        _abrir(pg, servidor, endereco)
+        m, cabe = pg.evaluate(MEDIR), pg.evaluate(CABE)
+        if m["estouro"] > _FOLGA_DE_LARGURA or m["corpo"] > _FOLGA_DE_LARGURA:
+            ruins.append(f"{endereco}: estoura {m['estouro']} px (página {m['corpo']})")
+        if not (cabe["fundo"] and cabe["direita"]) or cabe["pagina"] > 1:
+            ruins.append(f"{endereco}: a moldura passa da janela: {cabe}")
+        if not m["apoio"]:
+            ruins.append(f"{endereco}: a coluna de apoio não aparece")
+    ctx.close()
+    casa.restaurar()
+    assert len(amostra) >= 20 and not ruins, ruins
+
+
+def test_a_letra_grande_na_janela_pequena_recolhe_as_colunas_sozinha(casa, navegador, servidor):  # noqa: F811
+    casa.restaurar()
+    ctx = _contexto(casa, navegador, servidor, largura=1366, altura=768)
+    pg = ctx.new_page()
+    _abrir(pg, servidor, "/rcpn/averbacoes")
+    _escolher_a_escala(pg, "150")
+    assert pg.locator(".cg-secoes").is_hidden() and pg.locator("[data-cg-recolher]").is_hidden()
+    ctx.close()
+    casa.restaurar()
+
+
+def test_recolher_as_colunas_da_mais_campo_e_fica_de_uma_tela_para_outra(tela, servidor):
+    _abrir(tela, servidor, "/rcpn/averbacoes")                    # uma tela com a coluna das seções
+    assert tela.locator(".cg-secoes").is_visible()
+    largura = tela.evaluate("document.querySelector('#conteudo').clientWidth")
+    tela.locator("[data-cg-recolher]").click()
+    assert tela.locator(".cg-app.cg-recolhido").count() == 1
+    assert tela.evaluate("document.querySelector('#conteudo').clientWidth") > largura + 150
+    tela.wait_for_timeout(300)                       # o `fetch` que guarda a escolha
+    _abrir(tela, servidor, "/rcpn")
+    assert tela.locator(".cg-app.cg-recolhido").count() == 1
+    assert tela.locator(".cg-secoes").is_hidden() and tela.locator(".cg-mod").first.is_visible()
+    tela.keyboard.press("[")
+    assert tela.locator(".cg-app.cg-recolhido").count() == 0 and tela.locator(".cg-secoes").is_visible()
+    tela.wait_for_timeout(300)
+
+
+def test_o_colchete_nao_recolhe_quem_esta_digitando(tela):
+    tela.keyboard.press("Control+k")
+    tela.keyboard.type("[")
+    assert tela.locator(".cg-app.cg-recolhido").count() == 0
+
+
+def test_o_cronometro_correndo_e_o_whatsapp_chamando_se_destacam(tela):
+    tela.wait_for_load_state("networkidle")       # o script do cronômetro pergunta o estado ao servidor
+    fundo = "(s) => getComputedStyle(document.querySelector(s)).backgroundColor"
+    parado = tela.evaluate(fundo, ".cg-apoio .prod-rapida-btn")
+    tela.evaluate("document.querySelector('.cg-apoio .prod-rapida').classList.add('correndo')")
+    tela.wait_for_timeout(600)                     # o botão anima a cor (`transition` do app.css)
+    assert tela.evaluate(fundo, ".cg-apoio .prod-rapida-btn") == "rgb(23, 105, 63)" != parado
+    if tela.locator(".cg-apoio .wa-atalho").count():
+        tela.evaluate("""() => {const s=document.createElement('span'); s.className='wa-atalho-alerta';
+                         s.textContent='3'; document.querySelector('.cg-apoio .wa-atalho').appendChild(s);}""")
+        tela.wait_for_timeout(600)
+        assert tela.evaluate(fundo, ".cg-apoio .wa-atalho") == "rgb(227, 246, 234)"
+        assert tela.evaluate(fundo, ".cg-apoio .wa-atalho-alerta") == "rgb(176, 0, 32)"

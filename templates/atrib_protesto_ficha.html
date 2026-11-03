@@ -391,6 +391,8 @@
   {% endif %}
 </section>
 
+{% include '_protesto_comprovantes_ficha.html' %}
+
 {% if suspensao %}
 {#
   ELE NAO ESCONDE BOTAO NENHUM — nao bloqueia ato. O que ele para e a
@@ -612,7 +614,7 @@
   {# O FORMULÁRIO VOLTA PREENCHIDO (29/10/2026): quando a rota recusa antes de
      lavrar (o selo não ia sair), ela desenha esta ficha com o que foi postado,
      e o formulário do ato recusado lê daqui. Nos outros, `v_ato` é vazio. #}
-  {% set v_ato = request.form if (request.method == 'POST' and request.form.get('ato') == ato) else {} %}
+  {% set v_ato = dados_protesto if ato == 'PROTESTO' else (request.form if (request.method == 'POST' and request.form.get('ato') == ato) else {}) %}
   {#- UMA AFIRMAÇÃO POR TRAVA (decisão do oficial, integração de 29/10/2026).
       As travas que podem pedir afirmação NESTE formulário: a CENPROT, a prova
       da intimação, o irmão e o selo (este, só depois de a rota o recusar).
@@ -681,7 +683,7 @@
       <div style="grid-column:1/-1">{{ prova_da_intimacao(prova) }}</div>
       {% if prova and not prova.completa %}
         {{ afirmacao(sufixo_prova, prova.frase,
-                     rotulo='Insistir mesmo assim — afirmação expressa (prova da intimação)') }}
+                     rotulo='Insistir mesmo assim — afirmação expressa (prova da intimação)', valores=v_ato) }}
       {% endif %}
     {% elif ato == 'DESISTENCIA' %}
       <label style="grid-column:1/-1">Motivo da desistência
@@ -840,6 +842,15 @@
     <p style="grid-column:1/-1" data-afirmacao-por-trava><small><strong>Mais de uma
       regra pede afirmação neste ato</strong> ({{ pedem | join(', ') }}): cada uma
       tem o seu campo, e o mesmo texto em duas é recusado.</small></p>
+    {% endif %}
+    {% if ato == 'PROTESTO' %}
+    {% if preparo_protesto %}<input type="hidden" name="_preparo_id" value="{{ preparo_protesto.id }}">{% endif %}
+    <div style="grid-column:1/-1" data-preparo-protesto>
+      {% if preparo_protesto %}<p><small>Preenchimento salvo em {{ preparo_protesto.atualizado_em[:16]|replace('T', ' ') }}. Confira os textos e marque «Afirmo» em cada regra antes de lançar.</small></p>{% endif %}
+      <button class="button secondary" type="submit" formnovalidate
+              formaction="{{ url_for('protesto_preparo_salvar', titulo_id=titulo.id) }}">Salvar preenchimento</button>
+      <small>Guarda os textos para continuar depois. A confirmação de responsabilidade é feita ao lançar o ato.</small>
+    </div>
     {% endif %}
     <div class="actions"><button class="button">Lançar {{ rotulo_do_ato(ato) | lower if abas else ato | lower }}</button></div>
 

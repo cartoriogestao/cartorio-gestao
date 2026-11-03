@@ -552,20 +552,24 @@ def _comparecimento_da_procuracao(principais: list, poderes: str,
     """
     textos = MODELOS.textos(textos)
     lado_a, lado_b, por_outro = [], [], []
+    reps = representantes_por_parte(principais)
+    ligados = {r.get("id") for lista in reps.values() for r in lista}
     for p in principais:
         # na procuração o anuente continua entre os outorgantes, «na qualidade de ANUENTE»
         lado = lado_da_parte(p, "PROCURACAO")
+        if lado == REPRESENTA and dict(p).get("id") in ligados:
+            continue                      # sai na qualificação de quem ele representa (item 2)
         (lado_b if lado == OUTORGADO else por_outro if lado == REPRESENTA else lado_a).append(p)
     varios = len(lado_a) > 1
     if lado_a:
-        outorgantes = "; e ".join(_qualificacao_no_lado(p, esperado=("OUTORGANT",),
-                                                        textos=textos) for p in lado_a)
+        outorgantes = "; e ".join(_qualificacao_no_lado(p, esperado=("OUTORGANT",), textos=textos)
+                                  + _representacao(p, reps, textos) for p in lado_a)
     else:
         outorgantes = _falta("outorgante — inclua quem outorga no quadro Partes")
     if lado_b:
         procuradores = "; e ".join(
             _qualificacao_no_lado(p, esperado=("OUTORGAD", "PROCURADOR"), textos=textos)
-            for p in lado_b)
+            + _representacao(p, reps, textos) for p in lado_b)
     else:
         procuradores = _falta("procurador — inclua o outorgado no quadro Partes")
     if por_outro:
@@ -658,6 +662,44 @@ def _quem_representa(parte, textos: Any = None) -> str:
                      "(CN-MA art. 798, VI e VII)"))
 
 
+# A REPRESENTAÇÃO NA QUALIFICAÇÃO DO REPRESENTADO — decisão do oficial, 03/11/2026 (ensaio de atos das
+# Notas, item 2): «…, neste ato representado por FULANO, conforme procuração lavrada no livro X, folha
+# Y, do …», como no CN-MA art. 798, VI (e, para o menor e o incapaz, o VII: por quem está assistido ou
+# representado). Quem representa diz no quadro «Partes» a parte que representa e o instrumento; sem a
+# parte, ele continua marcado fora dos lados (`_quem_representa`); sem o instrumento, o instrumento é
+# que fica marcado.
+def representantes_por_parte(partes: list) -> dict[int, list[dict]]:
+    """{id da parte representada: [quem a representa ou assiste]}, das partes deste ato. So calcula."""
+    ids = {dict(p).get("id") for p in partes}
+    reps: dict[int, list[dict]] = {}
+    for p in partes:
+        d = dict(p)
+        alvo = d.get("representa_parte_id")
+        if alvo and alvo in ids and alvo != d.get("id") and not d.get("testemunha"):
+            reps.setdefault(alvo, []).append(d)
+    return reps
+
+
+def _representacao(parte, reps: dict, textos: Any = None) -> str:
+    """«, neste ato representado(a) por <qualificação>, conforme <instrumento>» — ou nada."""
+    frases = []
+    for r in reps.get(dict(parte).get("id"), []):
+        papel = _sem_acento_maiusculo(r.get("qualificacao"))
+        if papel.startswith("ASSINA A ROGO"):
+            # quem assina a rogo não representa: assina pela parte que não sabe ou não pode (CC art.
+            # 215, § 2º), e o instrumento não cabe
+            frases.append(", que não sabe ou não pode assinar, assinando a seu rogo "
+                          + qualificar(r, con=textos) + " (Código Civil, art. 215, § 2º)")
+            continue
+        verbo = "assistido(a)" if papel.startswith("ASSISTENTE") else "representado(a)"
+        instrumento = " ".join(str(r.get("representa_instrumento") or "").split())
+        frases.append(f", neste ato {verbo} por " + qualificar(r, con=textos) + ", "
+                      + (f"conforme {instrumento}" if instrumento else
+                         _falta("instrumento da representação — livro, folha e serventia da "
+                                "procuração, o contrato social ou o assento (CN-MA art. 798, VI e VII)")))
+    return "".join(frases)
+
+
 def _quem_consente(parte, textos: Any = None) -> str:
     """O cônjuge anuente, com a frase do consentimento (CC art. 1.647, I)."""
     return ("e, como ANUENTE, " + qualificar(parte, con=textos)
@@ -677,13 +719,17 @@ def partes_por_lado(partes: list, *, con: Any = None, tipo_ato: Any = None) -> t
     textos = MODELOS.textos(con)
     lados = {OUTORGANTE: [], OUTORGADO: [], REPRESENTA: [], ANUENTE: []}
     montar = {REPRESENTA: _quem_representa, ANUENTE: _quem_consente}
+    reps = representantes_por_parte(partes)
+    ligados = {r.get("id") for lista in reps.values() for r in lista}
     for p in partes:
         d = dict(p)
         if d.get("testemunha"):
             continue
         lado = lado_da_parte(d, tipo_ato)
-        lados[lado].append(montar[lado](d, textos) if lado in montar
-                           else qualificar(d, con=textos))
+        if lado == REPRESENTA and d.get("id") in ligados:
+            continue                      # sai na qualificação de quem ele representa
+        texto = montar[lado](d, textos) if lado in montar else qualificar(d, con=textos)
+        lados[lado].append(texto + _representacao(d, reps, textos))
     outorgantes = ("; ".join(lados[OUTORGANTE]) or
                    _falta("outorgante(s) — qualifique a parte no ato"))
     if lados[ANUENTE]:

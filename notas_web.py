@@ -4324,11 +4324,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          1 if request.form.get("testemunha") else 0,
                          *(civil[k] for k in NP.CAMPOS_DA_QUALIFICACAO_CIVIL),
                          ato_id, db.now()))
+                    nova = banco(con).um("SELECT max(id) AS id FROM nt_ato_partes WHERE ato_id=%s",
+                                         (ato_id,))
+                    _gravar_representacao(con, ato_id, int(nova["id"]), request.form)
                 audit("NT_ATO_PARTE", "NT_ATO", ato_id,
                       {"origem": "NOVO", "cartao_aberto": cartao_id})
                 flash("Parte incluída." + (f" Cartão de autógrafo nº {cartao_id} aberto — "
                                            f"da próxima vez é só procurar."
                                            if cartao_id else ""), "success")
+            elif acao == "representacao":
+                # QUEM ESTA PARTE REPRESENTA OU ASSISTE, E O INSTRUMENTO — decisão do oficial,
+                # 03/11/2026 (ensaio de atos das Notas, item 2). Para a parte já incluída.
+                pid = numero_digitado(request.form.get("parte_id")) or 0
+                if not q1("SELECT id FROM nt_ato_partes WHERE id=%s AND ato_id=%s", (pid, ato_id)):
+                    abort(404)
+                with db.transaction() as con:
+                    _gravar_representacao(con, ato_id, pid, request.form)
+                audit("NT_ATO_PARTE_REPRESENTACAO", "NT_ATO", ato_id,
+                      {"parte": pid, "representa": request.form.get("representa_parte_id") or None})
+                flash("Representação gravada. Monte o teor de novo para ela entrar no texto.", "success")
+                return redirect(url_for("notas_ato", ato_id=ato_id))
             elif acao == "remover_parte":
                 pid = numero_digitado(request.form.get("parte_id")) or 0
                 with db.transaction() as con:
@@ -5566,6 +5581,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 "WHERE id=%s AND situacao='EM_LAVRATURA' RETURNING id",
                 (corpo, modelo_valores, ato_id))
         return bool(feito)
+
+    def _gravar_representacao(con, ato_id: int, parte_id: int, form) -> None:
+        """A parte que `parte_id` representa ou assiste, e o instrumento (item 2 do ensaio de atos das
+        Notas). Só vale parte do mesmo ato, e não ela mesma; vazio desfaz."""
+        alvo = numero_digitado(form.get("representa_parte_id")) or None
+        if alvo and (alvo == parte_id or not banco(con).um(
+                "SELECT id FROM nt_ato_partes WHERE id=%s AND ato_id=%s", (alvo, ato_id))):
+            alvo = None
+        instrumento = " ".join(str(form.get("representa_instrumento") or "").split()) or None
+        banco(con).escrever(
+            "UPDATE nt_ato_partes SET representa_parte_id=%s, representa_instrumento=%s "
+            "WHERE id=%s AND ato_id=%s", (alvo, instrumento, parte_id, ato_id))
 
     def _travas_da_lavratura(a: dict) -> list[str]:
         """O que impede este ato de ser lavrado — vazio, pode lavrar.

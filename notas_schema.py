@@ -944,6 +944,11 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("nt_ato_partes", "conjuge_tipo", "INTEGER"),
     ("nt_ato_partes", "estrangeiro", "INTEGER NOT NULL DEFAULT 0"),
     ("nt_ato_partes", "oab_uf", "TEXT"),
+    # QUEM COMPARECE POR OUTRA PARTE — decisão do oficial, 03/11/2026 (ensaio de atos das Notas,
+    # item 2; CN-MA art. 798, VI e VII): a parte que esta representa ou assiste, e o instrumento
+    # (livro, folha e serventia da procuração; o contrato social; o assento do menor).
+    ("nt_ato_partes", "representa_parte_id", "INTEGER"),
+    ("nt_ato_partes", "representa_instrumento", "TEXT"),
     # O modelo diz a que central o ato pertence, e o codigo que ele carrega
     # muda de significado conforme ela: na CEP e natureza de escritura, na
     # CESDI e tipo de ato, no RCTO e tipo de testamento. Guardar os tres no

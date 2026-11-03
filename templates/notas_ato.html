@@ -365,6 +365,29 @@
             <button name="acao" value="papel_doi" class="small">Salvar papel</button>
           </form>
           {% endif %}
+          {# QUEM ESTA PARTE REPRESENTA OU ASSISTE — item 2 do ensaio de atos das Notas (03/11/2026).
+             Aberto quando a qualificação é de quem comparece por outro e ainda não diz quem. #}
+          {% if not p.testemunha and partes|length > 1 %}
+          {% set por_outro = ((p.qualificacao or '')|upper).startswith(('PROCURADOR', 'REPRESENTANTE', 'ASSISTENTE', 'ASSINA A ROGO')) %}
+          <details class="small"{% if por_outro and not p.representa_parte_id %} open{% endif %}>
+            <summary>Representa ou assiste
+              {%- for o in partes if o.id == p.representa_parte_id %} · {{ o.nome }}{% endfor %}</summary>
+            <form method="post" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="parte_id" value="{{ p.id }}">
+              <select name="representa_parte_id" aria-label="Quem {{ p.nome }} representa">
+                <option value="">— ninguém —</option>
+                {% for o in partes if o.id != p.id and not o.testemunha %}
+                <option value="{{ o.id }}" {% if o.id == p.representa_parte_id %}selected{% endif %}>{{ o.nome }}</option>
+                {% endfor %}
+              </select>
+              <input name="representa_instrumento" size="30" value="{{ p.representa_instrumento or '' }}"
+                     placeholder="procuração lavrada no livro …, folha …, do …"
+                     aria-label="Instrumento da representação de {{ p.nome }}">
+              <button name="acao" value="representacao" class="small">Salvar</button>
+            </form>
+          </details>
+          {% endif %}
           {# O QUE O CNN ART. 111 PÕE NA QUALIFICAÇÃO — LD07, 21/10/2026: o documento
              de identidade (ou a filiação), a união estável, e o cônjuge e o regime
              de quem é casado. O que faltar sai marcado no teor e trava a lavratura. #}
@@ -500,6 +523,18 @@
         <label class="span2">Endereço <input name="endereco"></label>
         <label>Cidade <input name="cidade" value="{{ (sv.ri_cidade or '')|upper }}"></label>
         <label>UF <input name="uf" value="{{ sv.ri_uf or '' }}" size="3"></label>
+        {# QUEM COMPARECE POR OUTRA PARTE — decisão do oficial, 03/11/2026 (ensaio de atos das Notas,
+           item 2; CN-MA art. 798, VI e VII): a parte representada e o instrumento vão à qualificação
+           dela («neste ato representado por …, conforme procuração lavrada no livro …»). #}
+        {% if partes %}
+        <label>Representa ou assiste <small>(procurador, representante, assistente)</small>
+          <select name="representa_parte_id">
+            <option value="">— ninguém —</option>
+            {% for o in partes if not o.testemunha %}<option value="{{ o.id }}">{{ o.nome }}</option>{% endfor %}
+          </select></label>
+        <label>Instrumento <small>(livro, folha e serventia da procuração; contrato social; assento)</small>
+          <input name="representa_instrumento" placeholder="procuração lavrada no livro 10, folha 20, do …"></label>
+        {% endif %}
         <label class="check"><input type="checkbox" name="testemunha" value="1"> É testemunha</label>
         <label class="check"><input type="checkbox" name="abrir_cartao" value="1">
           Abrir também a ficha de firma</label>

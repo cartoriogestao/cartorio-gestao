@@ -346,7 +346,7 @@ def autuar(con, *, numero: str, modalidade: str,
 
     aceitos = ("ano", "advogado_nome", "advogado_oab", "matricula_id",
                "imovel_area", "imovel_endereco", "imovel_uf", "valor_centavos",
-               "prenotacao", "protocolo_id", "ata_notarial_livro",
+               "prenotacao", "prenotacao_id", "protocolo_id", "ata_notarial_livro",
                "ata_notarial_folha", "ata_notarial_data",
                "ata_notarial_cartorio", "posse_inicio", "posse_tempo_alegado",
                "observacao")
@@ -396,7 +396,9 @@ def _mover(con, processo_id: int, *, tipo: str,
                "resposta", "resposta_teor",
                # Os da notificacao como ATO PRATICADO — relato #30.
                "endereco", "forma", "tentativa", "resultado_da_entrega",
-               "entregue_em", "teor_expedido")
+               "entregue_em", "teor_expedido",
+               "selo", "selo_texto", "selo_qr", "selo_em", "selo_por",
+               "selo_item", "impresso_em")
     extra = {k: campos[k] for k in aceitos if campos.get(k) is not None}
     colunas = ["processo_id", "tipo", "etapa", "descricao", "data_movimento",
                "criado_em", "criado_por", *extra]
@@ -460,6 +462,11 @@ def notificar(con, processo_id: int, *, destinatario: str,
         raise UsucapiaoError(
             f"O processo está {p['situacao']} — não há mais o que notificar.")
 
+    quando = str(data_movimento or agora)
+    if quando[:10] > str(agora or "")[:10]:
+        raise UsucapiaoError(
+            "A data da notificação não pode ser futura. O prazo conta do "
+            "recebimento, e uma data que ainda não chegou recomeçaria a conta.")
     regra = UN.prazo(prazo_chave)
     dados = {"destinatario": destinatario,
              "destinatario_papel": destinatario_papel,
@@ -476,13 +483,55 @@ def notificar(con, processo_id: int, *, destinatario: str,
         bd, processo_id, tipo="NOTIFICACAO",
         descricao=f"Notificação de {destinatario} ({destinatario_papel}), "
                   f"por: {forma_rotulo}.",
-        data_movimento=data_movimento or agora, agora=agora, etapa=p["etapa"],
+        data_movimento=quando, agora=agora, etapa=p["etapa"],
         usuario=usuario, destinatario=destinatario,
         destinatario_papel=destinatario_papel, endereco=endereco,
         forma=str(forma).upper(), tentativa=tentativa,
         prazo_dias=regra["dias"], prazo_uteis=1 if regra["uteis"] else 0,
         teor_expedido=teor)
     return {"movimento_id": mov, "teor": teor, "prazo": regra}
+
+
+def aviso_de_notificado_repetido(con, processo_id: int, *,
+                                 destinatario: str) -> str | None:
+    """O mesmo nome já foi notificado neste processo. Só lê. Avisa, não impede."""
+    from pt_schema import normalizar_nome
+    alvo = normalizar_nome(_texto(destinatario))
+    if not alvo:
+        return None
+    iguais = [mov for mov in movimentos(con, processo_id)
+              if str(mov.get("tipo") or "") == "NOTIFICACAO"
+              and normalizar_nome(mov.get("destinatario")) == alvo]
+    if len(iguais) > 1:
+        return (f"Já há notificação neste processo para {iguais[0].get('destinatario')}. "
+                "Confira se não é a mesma pessoa.")
+    return None
+
+
+def atualizar_atendimento(con, processo_id: int, *, prenotacao_id,
+                          prenotacao: str | None, protocolo_id,
+                          protocolo_numero: str | None, agora: str,
+                          usuario: str | None = None) -> bool:
+    """Grava prenotação e protocolo de recepção. ESCREVE. Devolve se mudou."""
+    bd = banco(con)
+    p = _exigir(bd, processo_id)
+    if (p.get("prenotacao_id") or None) == prenotacao_id and (
+            p.get("protocolo_id") or None) == protocolo_id:
+        return False
+    bd.escrever(
+        """UPDATE us_processos
+              SET prenotacao_id = %s, prenotacao = %s, protocolo_id = %s,
+                  atualizado_em = %s
+            WHERE id = %s""",
+        (prenotacao_id, prenotacao, protocolo_id, agora, int(processo_id)))
+    partes = []
+    partes.append(f"prenotação {prenotacao}" if prenotacao else "sem prenotação")
+    partes.append(f"protocolo {protocolo_numero}" if protocolo_numero
+                  else "sem protocolo de recepção")
+    _mover(bd, processo_id, tipo="OUTRO", etapa=p["etapa"],
+           descricao="Atendimento do processo: " + "; ".join(partes) + ".",
+           data_movimento=agora, agora=agora, usuario=usuario)
+    return True
 
 
 def publicar_edital(con, processo_id: int, *, agora: str,

@@ -276,6 +276,18 @@ CREATE TABLE IF NOT EXISTS rt_conferencia (
 #   Protesto e da notificacao da usucapiao.
 MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("rt_confrontantes", "teor_expedido", "TEXT"),
+    # O atendimento que a tela não preenchia: a prenotação é a do Livro 1
+    # (o id), e o número continua em `prenotacao` para o papel.
+    ("rt_processos", "prenotacao_id", "INTEGER"),
+    # O selo da notificação (item 16.23). O número entra em `selo` quando o
+    # aparelho responde; o resto é o carimbo — texto, QR, quem, quando, item.
+    ("rt_confrontantes", "selo", "TEXT"),
+    ("rt_confrontantes", "selo_texto", "TEXT"),
+    ("rt_confrontantes", "selo_qr", "TEXT"),
+    ("rt_confrontantes", "selo_em", "TEXT"),
+    ("rt_confrontantes", "selo_por", "TEXT"),
+    ("rt_confrontantes", "selo_item", "TEXT"),
+    ("rt_confrontantes", "impresso_em", "TEXT"),
 )
 
 # Indice sobre coluna de migracao NAO vai no SCHEMA: num banco que ja existe a

@@ -80,7 +80,9 @@ WITH tabelas_de_ato(nome) AS (
            ('rg_livros_contabeis'),
            ('nt_publicas_formas'),
            ('nt_comunicacoes_veiculo'),
-           ('ri_conferencias')
+           ('ri_conferencias'),
+           ('rt_confrontantes'),
+           ('us_movimentos')
 ), alvo(tabela) AS (
     VALUES ('cx_selo_coberturas'), ('sd_selos')
 ), lido AS (

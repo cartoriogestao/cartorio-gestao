@@ -189,6 +189,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 flash("Processo não encontrado.", "danger")
                 return redirect(url_for("usucapiao_processos"))
             pecas = [dict(x) for x in US.pecas(con, processo_id)]
+            import atendimento_processo as AP
+            import notificacao_selo as NS
             dados = {
                 "p": dict(p),
                 "pecas": pecas,
@@ -204,6 +206,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 "prazos": US.prazos_abertos(con, processo_id, hoje()),
                 "decisoes": [dict(x) for x in US.decisoes(con, processo_id)],
                 "analises": [dict(x) for x in US.analises(con, processo_id)],
+                "prenotacoes": AP.prenotacoes_da_matricula(
+                    con, p.get("matricula_id"), hoje=hoje()) if p.get("matricula_id") else [],
+                "protocolo": (banco(con).um(
+                    """SELECT id, numero, interessado, situacao
+                         FROM cx_protocolos WHERE id = %s""",
+                    (int(p["protocolo_id"]),)) if p.get("protocolo_id") else None),
+                "item_da_notificacao": NS.item_do_protocolo(con, p.get("protocolo_id")),
+                "codigo_do_selo": NS.CODIGO,
                 # COM `con`, O AJUSTE DA CASA (LF06G): o modelo editado na
                 # tela de Modelos é o que a ficha oferece.
                 "modelos": US.modelos_de_decisao(p, sv(), con=con),
@@ -430,6 +440,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     forma=_campo("forma"),
                     prazo_chave=_campo("prazo_chave"),
                     tentativa=int(_campo("tentativa") or 0) or None,
+                    data_movimento=_campo("quando") or None,
                     agora=agora(), serventia=_serventia_do_papel(),
                     hoje_extenso=_hoje_extenso(), usuario=usuario_nome())
         except (US.UsucapiaoError, UN.NotificacaoError, ValueError) as erro:
@@ -437,12 +448,127 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return voltar
         audit("USUCAPIAO_NOTIFICACAO", "us_movimentos", r["movimento_id"],
               {"processo": processo_id, "forma": _campo("forma")})
-        flash("Notificação expedida. **Imprima o papel e entregue** — o que "
-              "prova a notificação é o comprovante que volta assinado, e ele se "
-              "junta ao processo como peça.", "success")
+        with db.connect() as con:
+            aviso = US.aviso_de_notificado_repetido(
+                con, processo_id, destinatario=_campo("destinatario"))
+        if aviso:
+            flash(aviso, "warning")
+        flash("Notificação expedida. O papel final só sai depois do selo "
+              "(item 16.23). Antes disso, a impressão é prévia e não se entrega.",
+              "success")
         return redirect(url_for("usucapiao_notificacao_papel",
                                 processo_id=processo_id,
                                 movimento_id=r["movimento_id"]))
+
+    @app.route("/usucapiao/<int:processo_id>/atendimento", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def usucapiao_atendimento(processo_id: int):
+        import atendimento_processo as AP
+        voltar = redirect(url_for("usucapiao_processo", processo_id=processo_id))
+        try:
+            with db.connect() as con:
+                p = US.processo(con, processo_id)
+                if not p:
+                    flash("Processo não encontrado.", "danger")
+                    return voltar
+                vinculo = AP.resolver(
+                    con, matricula_id=p.get("matricula_id"),
+                    prenotacao_id=_campo("prenotacao_id"),
+                    protocolo_id=_campo("protocolo_id"),
+                    protocolo_busca=_campo("protocolo_busca"), hoje=hoje())
+            with db.transaction() as con:
+                mudou = US.atualizar_atendimento(
+                    con, processo_id, prenotacao_id=vinculo["prenotacao_id"],
+                    prenotacao=vinculo["prenotacao"],
+                    protocolo_id=vinculo["protocolo_id"],
+                    protocolo_numero=vinculo["protocolo_numero"],
+                    agora=agora(), usuario=usuario_nome())
+        except (AP.AtendimentoError, US.UsucapiaoError, ValueError) as erro:
+            flash(str(erro), "danger")
+            return voltar
+        audit("USUCAPIAO_ATENDIMENTO", "us_processos", processo_id, {
+            "prenotacao": vinculo["prenotacao"],
+            "protocolo": vinculo["protocolo_numero"]})
+        flash("Prenotação e protocolo atualizados." if mudou
+              else "Nada mudou no atendimento.",
+              "success" if mudou else "warning")
+        return voltar
+
+    def _recusa_de_robo():
+        import selo_robo as SR
+        if SR.exige_humano_para_selar():
+            abort(403)
+
+    @app.route("/usucapiao/<int:processo_id>/notificacao/<int:movimento_id>/selar",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def usucapiao_selar_notificacao(processo_id: int, movimento_id: int):
+        """O mesmo 16.23 da retificação, no movimento de notificação."""
+        _recusa_de_robo()
+        import ato_selado as AS
+        import notificacao_selo as NS
+        from pathlib import Path
+        voltar = redirect(url_for("usucapiao_processo", processo_id=processo_id))
+        with db.connect() as con:
+            mov = banco(con).um(
+                """SELECT m.*, p.protocolo_id
+                     FROM us_movimentos m
+                     JOIN us_processos p ON p.id = m.processo_id
+                    WHERE m.id = %s AND m.processo_id = %s""",
+                (movimento_id, processo_id))
+        if not mov or str(mov.get("tipo") or "") != "NOTIFICACAO":
+            flash("Não achei essa notificação.", "danger")
+            return voltar
+        feito = NS.selar(
+            db, Path(app.config["DATA_DIR"]), tabela="us_movimentos",
+            ato_id=movimento_id, protocolo_id=mov.get("protocolo_id"),
+            nome=mov.get("destinatario") or "", documento="",
+            escrevente=usuario_nome(),
+            versao_tabela=AS.versao_da_tabela_de_custas(
+                NS.CAMINHO, db.get_setting("selo_tabela_custas_em", "")),
+            cns=db.get_setting("ri_cns", ""), agora=agora(), quem=usuario_nome(),
+            isento=_campo("isento") == "1", motivo_isencao=_campo("motivo_isencao"),
+            selo_atual=mov.get("selo"))
+        if not feito["ok"]:
+            audit("USUCAPIAO_NOTIFICACAO_SELO_FALHOU", "us_movimentos",
+                  movimento_id, {"processo": processo_id, "motivo": feito["motivo"]})
+            flash(f"O selo da notificação NÃO saiu: {feito['motivo']} "
+                  "A notificação continua no processo, sem selo.", "danger")
+            return voltar
+        with db.transaction() as con:
+            US.movimentar(
+                con, processo_id, tipo="OUTRO",
+                descricao=(f"Notificação de {mov.get('destinatario')} selada "
+                           f"({NS.CODIGO}, selo {feito['numero']})."),
+                agora=agora(), usuario=usuario_nome())
+        audit("USUCAPIAO_NOTIFICACAO_SELADA", "us_movimentos", movimento_id,
+              {"processo": processo_id, "selo": feito["numero"], "item": NS.CODIGO})
+        flash(f"Notificação selada: {feito['numero']} (item {NS.CODIGO}).", "success")
+        return voltar
+
+    @app.route("/usucapiao/<int:processo_id>/item-16-23", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def usucapiao_lancar_16_23(processo_id: int):
+        _recusa_de_robo()
+        import notificacao_selo as NS
+        voltar = redirect(url_for("usucapiao_processo", processo_id=processo_id))
+        with db.connect() as con:
+            p = US.processo(con, processo_id)
+        if not p or not p.get("protocolo_id"):
+            flash("Ligue o protocolo de recepção antes de lançar o item 16.23.",
+                  "danger")
+            return voltar
+        try:
+            with db.transaction() as con:
+                feito = NS.lancar_item(con, int(p["protocolo_id"]))
+        except NS.NotificacaoSeloError as erro:
+            flash(str(erro), "danger")
+            return voltar
+        audit("USUCAPIAO_ITEM_16_23", "cx_protocolo_atos", feito["id"],
+              {"processo": processo_id, "protocolo": feito["protocolo_numero"]})
+        flash(f"Item 16.23 lançado no protocolo {feito['protocolo_numero']} "
+              f"— R$ {feito['total']}.", "success")
+        return voltar
 
     @app.route("/usucapiao/<int:processo_id>/notificacao/<int:movimento_id>")
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -507,13 +633,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   "remonta: o que sairia agora não é o que foi entregue.",
                   "danger")
             return redirect(voltar)
-        from ri_odt import gerar_odt, texto_para_odf
+        import notificacao_selo as NS
+        from ri_odt import gerar_odt
         quem = (mov["destinatario"] or "").strip()
+        selado = bool(str(mov.get("selo") or "").strip())
         arquivo = gerar_odt(
-            texto_para_odf(teor),
+            NS.corpo_do_papel(teor, selado=selado,
+                              selo_texto=mov.get("selo_texto") or "",
+                              selo_numero=mov.get("selo") or ""),
             titulo=f"Notificação — usucapião {p['numero']}")
+        if selado:
+            with db.transaction() as con:
+                NS.marcar_impressao(con, "us_movimentos", movimento_id, quando=agora())
         audit("USUCAPIAO_NOTIFICACAO_IMPRESSA", "us_movimentos", movimento_id,
-              {"processo": processo_id, "destinatario": quem})
+              {"processo": processo_id, "destinatario": quem,
+               "selo": mov.get("selo") or "", "previa": not selado})
         nome = safe_component(
             f"notificacao-{p['numero']}-{quem or movimento_id}")
         return IMPW.resposta_do_papel(arquivo, nome=nome,

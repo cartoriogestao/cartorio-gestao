@@ -11957,6 +11957,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             PCIMG.preparar_pasta(pasta_dos_arquivos())
             texto = CRAW._trazer(qual, nome, CENTCRED.PRODUCAO,
                                  com_imagem=_campo("com_imagem") != "0")
+        except CRAW.CRA.CraSemRemessa as aviso:
+            audit("cra_baixar_e_conferir", None, None,
+                  {"o_que": qual, "nome": nome, "resultado": "SEM_REMESSA",
+                   "codigo": aviso.codigo, "mensagem": aviso.motivo,
+                   "tamanho": len(aviso.bruto)})
+            flash(str(aviso), "info")
         except (*CRAW.RECUSAS_DO_BALCAO, PCIMG.ImagemCraError) as erro:
             flash(str(erro), "danger")
         if texto is not None:

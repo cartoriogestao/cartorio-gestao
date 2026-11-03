@@ -167,3 +167,6 @@ def test_o_titulo_sustado_nao_se_paga_nem_se_retira_sem_ordem_do_juiz(s, ato, ca
     feitos = F._ler(s, "SELECT id FROM pt_atos WHERE titulo_id=%s AND tipo=%s AND cancelado=0", (tid, ato))
     assert not feitos and F._situacao(s, tid) == "INTIMADO", F._avisos(r)
     assert any("art. 17" in a or "SUSTADO" in a for a in F._avisos(r)), F._avisos(r)
+    # E O RECADO CONCORDA COM O ATO (observação O6): «a desistência não pode ser lançada».
+    esperado = {"PAGAMENTO": "o pagamento não pode ser lançado", "DESISTENCIA": "a desistência não pode ser lançada"}
+    assert any(esperado[ato] in a for a in F._avisos(r)), F._avisos(r)

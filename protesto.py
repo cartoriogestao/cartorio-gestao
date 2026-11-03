@@ -988,6 +988,9 @@ def _recusar_se_sustado(con, titulo_id: int,
     ordem = sustacao_em_vigor(con, titulo_id)
     if not ordem:
         return
+    # O PARTICÍPIO CONCORDA COM O ATO (ensaio de atos do Protesto, 03/11/2026, observação O6): saía
+    # «a desistência não pode ser lançado». O ato chega com o artigo, e é ele que diz o gênero.
+    lancado = "lançada" if que_ato.strip().lower().startswith("a ") else "lançado"
     onde = " ".join(x for x in (str(ordem.get("juizo") or "").strip(),
                                 str(ordem.get("processo") or "").strip()) if x)
     raise ProtestoError(
@@ -996,7 +999,7 @@ def _recusar_se_sustado(con, titulo_id: int,
         f"{ordem.get('data_ato') or 'data não informada'}. "
         f"Pela Lei 9.492/1997, art. 17, § 1º, ele só pode ser pago, "
         f"protestado ou retirado COM AUTORIZAÇÃO JUDICIAL — e por isso "
-        f"{que_ato} não pode ser lançado aqui. Se a ordem foi revogada, "
+        f"{que_ato} não pode ser {lancado} aqui. Se a ordem foi revogada, "
         f"registre a revogação antes.")
 
 

@@ -365,6 +365,15 @@
             <button name="acao" value="papel_doi" class="small">Salvar papel</button>
           </form>
           {% endif %}
+          {% if ((p.qualificacao or '')|upper).startswith('ADVOGAD') %}
+          <form method="post" class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="parte_id" value="{{ p.id }}">
+            OAB nº <input name="oab_numero" size="10" value="{{ p.oab_numero or '' }}" aria-label="OAB de {{ p.nome }}">
+            UF <input name="oab_uf" size="3" maxlength="2" value="{{ p.oab_uf or '' }}" aria-label="UF da OAB de {{ p.nome }}">
+            <button name="acao" value="oab" class="small">Salvar OAB</button>
+          </form>
+          {% endif %}
           {# QUEM ESTA PARTE REPRESENTA OU ASSISTE — item 2 do ensaio de atos das Notas (03/11/2026).
              Aberto quando a qualificação é de quem comparece por outro e ainda não diz quem. #}
           {% if not p.testemunha and partes|length > 1 %}
@@ -535,6 +544,9 @@
         <label>Instrumento <small>(livro, folha e serventia da procuração; contrato social; assento)</small>
           <input name="representa_instrumento" placeholder="procuração lavrada no livro 10, folha 20, do …"></label>
         {% endif %}
+        {# A OAB DO ADVOGADO — item 5 do ensaio de atos das Notas (03/11/2026): vai ao «DOS ADVOGADOS». #}
+        <label>OAB nº <small>(advogado)</small> <input name="oab_numero" size="10"></label>
+        <label>OAB UF <input name="oab_uf" size="3" maxlength="2"></label>
         <label class="check"><input type="checkbox" name="testemunha" value="1"> É testemunha</label>
         <label class="check"><input type="checkbox" name="abrir_cartao" value="1">
           Abrir também a ficha de firma</label>

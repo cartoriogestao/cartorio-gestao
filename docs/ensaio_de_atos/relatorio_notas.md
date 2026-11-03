@@ -125,6 +125,9 @@ padrão vale para as outras minutas que repetem o estado civil numa escolha (a c
 
 ## 5. O advogado do inventário e do divórcio entra como parte
 
+**CONSERTADO em 03/11/2026, por decisão do oficial:** «OAB nº / UF» no quadro «Partes»; o advogado fica
+fora das partes, e o «DOS ADVOGADOS» das nove minutas é montado dele (`{{ advogados }}`).
+
 **O que saiu.** Com o advogado incluído no quadro «Partes» (é o que a CESDI pede: `notas_censec`
 exige a qualidade «Advogado» no inventário e no divórcio), a abertura o põe entre «as partes a seguir
 qualificadas, todas maiores, capazes e concordes», e o parágrafo «DOS ADVOGADOS» pede o advogado de novo
@@ -138,6 +141,9 @@ ADVOGADOS» é montado dele — nome, qualificação e inscrição na OAB —, s
 **No teste:** `test_o_advogado_do_inventario_assiste_e_nao_e_parte`.
 
 ## 6. A emancipação por um só genitor fala no plural
+
+**CONSERTADO em 03/11/2026** (conserto liberado pela sessão de PRs): a minuta escolhe o singular ou o
+plural pela quantidade de outorgantes (`um_outorgante`, do quadro «Partes»).
 
 **O que saiu.** Com a cláusula «Se um dos pais» e a escolha «a mãe»: «compareceram como OUTORGANTES JOANA
 …» e «Declaram os OUTORGANTES que são a mãe do EMANCIPANDO».

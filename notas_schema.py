@@ -949,6 +949,9 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # (livro, folha e serventia da procuração; o contrato social; o assento do menor).
     ("nt_ato_partes", "representa_parte_id", "INTEGER"),
     ("nt_ato_partes", "representa_instrumento", "TEXT"),
+    # A OAB DO ADVOGADO — decisão do oficial, 03/11/2026 (ensaio de atos das Notas, item 5): o número;
+    # a UF já estava (`oab_uf`, da CESDI).
+    ("nt_ato_partes", "oab_numero", "TEXT"),
     # O modelo diz a que central o ato pertence, e o codigo que ele carrega
     # muda de significado conforme ela: na CEP e natureza de escritura, na
     # CESDI e tipo de ato, no RCTO e tipo de testamento. Guardar os tres no

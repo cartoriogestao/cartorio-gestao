@@ -305,6 +305,11 @@ QUALIFICACAO_PARA_CEP = {
     "TESTEMUNHA": "Interveniente",
     "INTERVENIENTE": "Interveniente",
     "ANUENTE": "Interveniente",
+    # O ADVOGADO QUE ASSISTE AS PARTES (03/11/2026, ensaio de atos das Notas, item 5): na CEP é
+    # interveniente — a qualidade que o layout dá a quem assiste. A dissolução de união estável vai à
+    # CEP, e com o advogado no quadro «Partes» a trava da lavratura o recusava.
+    "ADVOGADO": "Interveniente",
+    "ADVOGADA": "Interveniente",
     "CREDOR": "Interveniente",
     "USUFRUTUARIO": "Usufrutuário",
     "REQUERENTE": "Requerente",
@@ -772,8 +777,9 @@ def montar_cesdi(ato: dict, partes: list[dict]) -> dict:
                 "documento": doc,
             })
         if qualidade == "Advogado" and parte.get("oab_uf"):
+            # o número vem de `oab_numero` desde 03/11/2026 (item 5 do ensaio de atos das Notas)
             documentos.append({"documentoTipo": "OAB", "prioridade": "Secundario",
-                               "documento": _texto(parte.get("rg"), 20),
+                               "documento": _texto(parte.get("oab_numero") or parte.get("rg"), 20),
                                "uf": _texto(parte.get("oab_uf"), 2)})
         elif parte.get("rg"):
             documentos.append({"documentoTipo": "RG", "prioridade": "Secundario",

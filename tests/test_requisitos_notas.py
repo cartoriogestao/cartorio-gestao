@@ -105,6 +105,12 @@ OUTORGADO = {"nome": "JOANA EXEMPLO DA SILVA", "documento": "00000000272",
 # aparecem em quem é casado (CC art. 215, § 1º, III; CN-MA art. 798, V).
 CASADO = dict(OUTORGANTE, estado_civil="casado", conjuge="ANA EXEMPLO DOS SANTOS",
               regime_bens="comunhão parcial")
+ADVOGADO_DAS_PARTES = {"nome": "CARLOS EXEMPLO ADVOGADO", "documento": "00000000604",
+                       "tipo_pessoa": "F", "qualificacao": "ADVOGADO", "testemunha": 0,
+                       "nacionalidade": "brasileiro", "estado_civil": "solteiro",
+                       "profissao": "advogado", "identidade": "2345678 SSP/MA", "uniao_estavel": "NAO",
+                       "endereco": "Rua Exemplo, 50, Centro, Cidade Exemplo-MA",
+                       "oab_numero": "00000", "oab_uf": "MA"}
 TESTEMUNHAS = [
     {"nome": "PAULO EXEMPLO TESTEMUNHA", "documento": "00000000353",
      "tipo_pessoa": "F", "qualificacao": "TESTEMUNHA", "testemunha": 1,
@@ -123,6 +129,7 @@ CONTEXTO_DA_MINUTA = {
     "outorgante_endereco": OUTORGANTE["endereco"],
     "outorgado": OUTORGADO["nome"], "outorgado_cpf": OUTORGADO["documento"],
     "testemunha1": TESTEMUNHAS[0]["nome"], "testemunha2": TESTEMUNHAS[1]["nome"],
+    "advogado": ADVOGADO_DAS_PARTES["nome"], "advogado_oab": "OAB/MA sob o nº 00000",
     "cidade": SERVENTIA["ri_cidade"], "uf": SERVENTIA["ri_uf"],
     "lavrado_nome": LAVRADO_NOME, "lavrado_titulo": LAVRADO_TITULO,
 }
@@ -278,9 +285,11 @@ AUTOR_E_OBITO = E("autor da herança e o registro do óbito (dia, lugar, livro, 
                   r"obito", "nome_completo_do_autor_da_heranca", "data_do_obito",
                   "lugar_do_obito", "termo_do_obito", "livro_do_obito",
                   "folhas_do_obito", "serventia_do_registro_do_obito")
+# Desde 03/11/2026 (ensaio de atos das Notas, item 5, decisão do oficial) o advogado vem da parte do
+# quadro «Partes», com a OAB — `{{ advogados }}` —, e não de um campo livre da minuta.
 ADVOGADO = E("advogado das partes, qualificado e com a inscrição na OAB",
              "CN-MA arts. 808, § 1º, 819 e 822, § 5º", r"advogad|\boab\b",
-             "nome_qualificacao_e_inscricao_na_oab")
+             "@advogado", "@advogado_oab")
 CASAMENTO = E("o casamento: data, regime de bens e o registro (livro, folha, termo, "
               "serventia)", "CN-MA arts. 812, § 1º, 824, III, e 826, I",
               r"casamento", "data_do_casamento", "regime_de_bens", "termo_do_casamento",
@@ -916,6 +925,8 @@ def _partes_da_minuta(corpo: str) -> list[dict]:
         partes.append(dict(OUTORGADO, ordem=2))
     if "testemunhas" in corpo:
         partes += [dict(t, ordem=3 + i) for i, t in enumerate(TESTEMUNHAS)]
+    if "advogados" in corpo:
+        partes.append(dict(ADVOGADO_DAS_PARTES, ordem=9))
     return partes
 
 

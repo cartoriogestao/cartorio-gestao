@@ -460,13 +460,17 @@ def test_a_retificacao_do_ri_sem_nada_digitado():
     html = _ret_ri()
     assert 'name="rural" value="1" checked' in html and 'name="rural" value="0" checked' not in html
     assert '<input name="numero" required placeholder="1/2026">' in html and "<option>CREA</option>" in html
-    assert '<option value="1">10 (livro 2)</option>' in html
+    assert 'name="matricula_busca"' in html and 'placeholder="3315 ou 3315 2S"' in html
+    assert 'name="matricula_id" value=""' in html
+    assert '<select name="matricula_id"' not in html
 
 
 def test_a_retificacao_do_ri_volta_preenchida():
-    html = _ret_ri(_form(("numero", "1/2026"), ("matricula_id", "2"), ("especie", "G"), ("fundamento", "II"), ("rural", "0"),
+    html = _ret_ri(_form(("numero", "1/2026"), ("matricula_id", "2"), ("matricula_busca", "11 (livro 2)"),
+                         ("especie", "G"), ("fundamento", "II"), ("rural", "0"),
                          ("requerente_nome", "Ana Exemplo"), ("profissional_conselho", "CAU"), ("sigef_codigo", "ABC")), rascunho_id=2)
-    for trecho in ('value="1/2026"', '<option value="2" selected>', '<option value="G" selected>', '<option value="II" selected>',
+    for trecho in ('value="1/2026"', 'value="11 (livro 2)"', 'name="matricula_id" value="2"',
+                   '<option value="G" selected>', '<option value="II" selected>',
                    'name="rural" value="0" checked', 'value="Ana Exemplo"', "<option selected>CAU</option>", 'value="ABC"',
                    'name="_rascunho_id" value="2"'):
         assert trecho in html, trecho

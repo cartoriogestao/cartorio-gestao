@@ -420,6 +420,11 @@
                      aria-label="Pai de {{ p.nome }}">
               <input type="date" name="nascimento_data" value="{{ p.nascimento_data or '' }}"
                      aria-label="Data de nascimento de {{ p.nome }}">
+              <select name="sexo_parte" aria-label="Sexo de {{ p.nome }}">
+                <option value="">sexo</option>
+                <option value="F" {% if p.sexo_parte == 'F' %}selected{% endif %}>feminino</option>
+                <option value="M" {% if p.sexo_parte == 'M' %}selected{% endif %}>masculino</option>
+              </select>
               <select name="uniao_estavel" aria-label="União estável de {{ p.nome }}">
                 <option value="" {% if p.uniao_estavel not in ('SIM', 'NAO') %}selected{% endif %}>União estável?</option>
                 <option value="NAO" {% if p.uniao_estavel == 'NAO' %}selected{% endif %}>não convive</option>
@@ -533,6 +538,8 @@
         <label>Mãe <input name="filiacao_mae"></label>
         <label>Pai <input name="filiacao_pai"></label>
         <label>Data de nascimento <input type="date" name="nascimento_data"></label>
+        <label>Sexo <select name="sexo_parte"><option value="">—</option><option value="F">feminino</option>
+          <option value="M">masculino</option></select></label>
         <label>União estável
           <select name="uniao_estavel">
             <option value="">—</option>
@@ -722,6 +729,31 @@
   A DOI é obrigação com multa da Receita Federal, e uma escritura de compra e
   venda a gera do mesmo jeito que um registro.
 #}
+{# O QUE A CESDI PEDE DO ATO — ensaio de atos das Notas, item 14 (03/11/2026): sem isto todo divórcio e
+   toda separação paravam na remessa. A data do casamento e o regime vêm da minuta quando ela os pergunta. #}
+{% if a.tipo_cesdi is not none %}
+<section class="panel" data-fase="doi">
+  <div class="panel-head"><span>Para a CESDI</span>
+    <small>a data do casamento, o regime, os filhos e quem fica com os menores</small></div>
+  <form method="post" class="grid2" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Data do casamento <input type="date" name="casamento_data" value="{{ (a.casamento_data or '')[:10] }}"></label>
+    <label>Regime de bens <input name="regime_bens" list="regimes-de-bens" value="{{ a.regime_bens or '' }}"></label>
+    <label>Filhos menores <input name="filhos_menores" size="4" value="{{ a.filhos_menores if a.filhos_menores is not none else '' }}"></label>
+    <label>Filhos maiores <input name="filhos_maiores" size="4" value="{{ a.filhos_maiores if a.filhos_maiores is not none else '' }}"></label>
+    <label class="span2">Responsável pelos filhos menores
+      <select name="responsavel_menores">
+        <option value="">— não informado —</option>
+        {% for codigo, rotulo in [('Conjuge1', 'o primeiro cônjuge'), ('Conjuge2', 'o segundo cônjuge'),
+                                  ('AmbosConjuges', 'os dois cônjuges'), ('Outros', 'outra pessoa'),
+                                  ('SemDeclaracao', 'sem declaração')] %}
+        <option value="{{ codigo }}" {% if a.responsavel_menores == codigo %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select></label>
+    <div class="span2"><button class="primary" name="acao" value="cesdi">Salvar para a CESDI</button></div>
+  </form>
+</section>
+{% endif %}
 {% if a.tipo == 'ESCRITURA' %}
 {% if f %}<span class="cg-ancora" id="doi"></span>{% endif %}
 <section class="panel" data-fase="doi">

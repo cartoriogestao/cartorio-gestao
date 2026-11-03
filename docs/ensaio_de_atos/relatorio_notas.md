@@ -234,6 +234,10 @@ dela (`notas_doi.QUEM_ADQUIRE`) procuram «OUTORGADO» e «DONATARIO» dentro da
 
 ### 14. Todo divórcio e todo inventário ficam parados na remessa da CESDI
 
+**CONSERTADO em 03/11/2026, por decisão do oficial:** o falecido entra no quadro «Partes» como «AUTOR DA
+HERANÇA»; a qualidade da CESDI sai da qualificação; o ato tem o quadro «Para a CESDI»; e a parte, o sexo e
+o município.
+
 **O que saiu.** O divórcio e o inventário do ensaio foram ao livro e pararam na fila da CESDI: «sem data
 do casamento», «regime não está na tabela da CENSEC», «sem o responsável pelos filhos menores», «exige uma
 parte Advogado» — com o advogado no quadro —, «exige uma parte Falecido», «qualidade não vale para

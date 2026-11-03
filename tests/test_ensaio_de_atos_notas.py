@@ -64,6 +64,14 @@ def bancada(cg_casa, monkeypatch):
     db.create_user("escrevente", F.ESCREVENTE, F.SENHA, "USER")
     db.set_settings(F.SERVENTIA)
     F._semear_a_tabela(db)
+    # o município das partes no cadastro do IBGE, como a serventia de verdade tem (a CESDI o pede)
+    import ibge_schema as IB
+    with db.transaction() as con:
+        from bd_nativo import banco
+        banco(con).escrever(
+            "INSERT INTO ib_municipios (codigo_ibge, codigo_uf, codigo_mun, uf, nome, nome_norm, origem) "
+            "VALUES (2199999, 21, '99999', 'MA', 'Cidade Exemplo', %s, 'TESTE') ON CONFLICT DO NOTHING",
+            (IB.normalizar_nome("Cidade Exemplo"),))
     monkeypatch.setitem(cg_casa["app"].extensions, "notas_medir_paginas", lambda odt: 2)
     c = cg_casa["app"].test_client()
     cg_login(c, "escrevente", F.SENHA)
@@ -401,12 +409,12 @@ def test_a_doadora_e_a_donataria_vao_ao_livro_e_a_doi(praticado):
                                                                    ["BEATRIZ EXEMPLO DE SOUZA"]), s.doi
 
 
-@_defeito("a CESDI pede a qualidade de cada parte (Advogado, Divorciando, Herdeiro, Falecido…), a data do "
-          "casamento, o regime e o responsável pelos menores, e a tela do ato não tem onde dizê-los: todo "
-          "divórcio e todo inventário ficam parados na remessa (item 14)")
 @pytest.mark.parametrize("chave", ["divorcio_com_nome", "inventario_viuva_e_dois_herdeiros"])
 def test_o_divorcio_e_o_inventario_ficam_prontos_para_a_cesdi(praticado, chave):
-    """CN-MA art. 785 (a remessa à CESDI) e o layout dela (`notas_censec.MINIMO_PARTES_CESDI`)."""
+    """CN-MA art. 785 (a remessa à CESDI) e o layout dela (`notas_censec.MINIMO_PARTES_CESDI`).
+    Consertado em 03/11/2026 (item 14, decisão do oficial): a qualidade de cada parte sai da
+    qualificação; o falecido entra no quadro «Partes» como «AUTOR DA HERANÇA»; o ato tem o quadro
+    «Para a CESDI»; e a parte, o sexo e o município."""
     assert _lavrado(praticado, chave).censec[1] == "PRONTO", _lavrado(praticado, chave).censec
 
 

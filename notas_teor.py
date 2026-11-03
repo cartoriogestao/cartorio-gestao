@@ -298,7 +298,7 @@ def _quem_assina(principais: list) -> list[tuple[dict, str]]:
     saida = []
     for p in principais:
         d = dict(p)
-        if d.get("id") in nao_assinam:
+        if d.get("id") in nao_assinam or lado_da_parte(d) == FALECIDO:
             continue
         condicao = (d.get("qualificacao") or "").strip()
         alvo = por_quem.get(d.get("id"))
@@ -662,6 +662,12 @@ ANUENTE = "ANUENTE"
 # parágrafo é montado dele (`advogados_qualificados`), com a OAB do quadro «Partes».
 ADVOGADO = "ADVOGADO"
 
+# O FALECIDO ENTRA NO QUADRO «PARTES» — decisão do oficial, 03/11/2026 (ensaio de atos das Notas, item
+# 14): no inventário, o autor da herança é parte, com a qualidade «AUTOR DA HERANÇA» e os mesmos campos
+# das demais, porque a CESDI o quer entre as partes («Falecido»). Mas não comparece nem assina: fica fora
+# dos lados e da linha das assinaturas; a minuta o qualifica no parágrafo próprio dela.
+FALECIDO = "FALECIDO"
+
 
 def _sem_acento_maiusculo(texto) -> str:
     import unicodedata
@@ -686,6 +692,8 @@ def lado_da_parte(parte, tipo_ato: Any = None) -> str:
         return ANUENTE
     if rotulo.startswith("ADVOGAD"):
         return ADVOGADO
+    if rotulo.startswith(("AUTOR DA HERANCA", "FALECID", "DE CUJUS")):
+        return FALECIDO
     primeira = re.split(r"[\s,;/(]", rotulo, maxsplit=1)[0]
     if OUTORGADO in {NC.QUALIFICACAO_PARA_CEP.get(rotulo, "").upper(),
                      NC.QUALIFICACAO_PARA_CEP.get(primeira, "").upper()}:
@@ -755,7 +763,7 @@ def partes_por_lado(partes: list, *, con: Any = None, tipo_ato: Any = None) -> t
     só têm `{{ outorgantes }}`, e no fim dos outorgados ele sumiria do teor.
     """
     textos = MODELOS.textos(con)
-    lados = {OUTORGANTE: [], OUTORGADO: [], REPRESENTA: [], ANUENTE: [], ADVOGADO: []}
+    lados = {OUTORGANTE: [], OUTORGADO: [], REPRESENTA: [], ANUENTE: [], ADVOGADO: [], FALECIDO: []}
     montar = {REPRESENTA: _quem_representa, ANUENTE: _quem_consente}
     reps = representantes_por_parte(partes)
     ligados = {r.get("id") for lista in reps.values() for r in lista}
@@ -766,8 +774,8 @@ def partes_por_lado(partes: list, *, con: Any = None, tipo_ato: Any = None) -> t
         lado = lado_da_parte(d, tipo_ato)
         if lado == REPRESENTA and d.get("id") in ligados:
             continue                      # sai na qualificação de quem ele representa
-        if lado == ADVOGADO:
-            continue                      # sai no parágrafo «DOS ADVOGADOS» (`advogados_qualificados`)
+        if lado in (ADVOGADO, FALECIDO):
+            continue                      # o advogado sai no «DOS ADVOGADOS»; o falecido não comparece
         texto = montar[lado](d, textos) if lado in montar else qualificar(d, con=textos)
         lados[lado].append(texto + _representacao(d, reps, textos))
     outorgantes = ("; ".join(lados[OUTORGANTE]) or
@@ -935,6 +943,24 @@ def estado_civil_do_testador(valores: dict, partes: list) -> list[str]:
             if not str(valores.get(campo) or "").strip() and str(testador.get(da_parte) or "").strip():
                 valores[campo] = str(testador[da_parte]).strip()
     return avisos
+
+
+def dados_da_cesdi_da_minuta(valores: dict) -> dict:
+    """A data do casamento (ISO) e o regime que a minuta do divórcio, da separação e afins pergunta —
+    o que a CESDI pede do ato (item 14 do ensaio de atos das Notas, 03/11/2026). So calcula."""
+    saida = {}
+    texto = str(valores.get("data_do_casamento") or "")
+    m = _DATA_EM_ALGARISMOS.search(texto)
+    if m:
+        try:
+            saida["casamento_data"] = (date(int(m[3]), int(m[2]), int(m[1])) if m[1]
+                                       else date(int(m[4]), int(m[5]), int(m[6]))).isoformat()
+        except ValueError:
+            pass
+    regime = " ".join(str(valores.get("regime_de_bens") or "").split())
+    if regime:
+        saida["regime_bens"] = regime.upper()
+    return saida
 
 
 def valores_campos_data_lavratura(quando: datetime) -> dict[str, str]:

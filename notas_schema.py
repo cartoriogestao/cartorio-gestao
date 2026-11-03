@@ -960,6 +960,9 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("nt_ato_partes", "filiacao_mae", "TEXT"),
     ("nt_ato_partes", "filiacao_pai", "TEXT"),
     ("nt_ato_partes", "nascimento_data", "TEXT"),
+    # O SEXO DA PARTE, que a CESDI pede de cada parte do divórcio e da separação (ensaio de atos das
+    # Notas, item 14, 03/11/2026). `sexo_parte`, e não `sexo`, pelo mesmo motivo do nascimento.
+    ("nt_ato_partes", "sexo_parte", "TEXT"),
     # O modelo diz a que central o ato pertence, e o codigo que ele carrega
     # muda de significado conforme ela: na CEP e natureza de escritura, na
     # CESDI e tipo de ato, no RCTO e tipo de testamento. Guardar os tres no

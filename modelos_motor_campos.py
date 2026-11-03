@@ -290,10 +290,14 @@ _TRECHOS_TERMO = (
      "da serventia, não se digita."),
     # A data da celebração entrou na declaração no LD01 (21/10/2026, LRP art.
     # 70, 4º): o claro é opcional no trecho, para o ajuste de antes da casa
-    # continuar sendo reconhecido.
+    # continuar sendo reconhecido. O MESMO PARA QUEM PRESIDIU O ATO — decisão
+    # do oficial, 02/11/2026 (ensaio de atos, item 5; CC art. 1.536): o claro
+    # `{frase_do_presidente}` entrou depois da celebração, e sem ele aqui a
+    # declaração deixava de ser trecho travado.
     ("declaracao_casados_regime",
      r"E, não havendo impedimento, foram declarados casados"
-     r"(?:\{frase_da_celebracao\})? sob o regime de \{regime_bens\}\.",
+     r"(?:\{frase_da_celebracao\})?(?:\{frase_do_presidente\})?"
+     r" sob o regime de \{regime_bens\}\.",
      "Código Civil, art. 1.535; Lei 6.015/1973, art. 70",
      "Declaração de casamento, a data da celebração e o regime de bens."),
     ("naturalidade_art54",

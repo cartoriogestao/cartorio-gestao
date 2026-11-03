@@ -270,12 +270,15 @@ def civil():
     return con
 
 
-def _lavrar(con, especie="NASCIMENTO", **ibge):
+def _lavrar(con, especie="NASCIMENTO", gemeo_ordem=None, **ibge):
     extra = {}
     if especie in ("NASCIMENTO", "NATIMORTO"):
         extra = {
             "dados": {"sexo": "M"},
-            "termo_dados": {"local_fato_nome": "Hospital Municipal"},
+            # A ORDEM DO GÊMEO vai no termo (LRP art. 63): sem ela a conferência
+            # recusa o parto múltiplo — ensaio de atos, 02/11/2026 (item 6).
+            "termo_dados": {"local_fato_nome": "Hospital Municipal",
+                            **({"gemeo_ordem": gemeo_ordem} if gemeo_ordem else {})},
             "pessoas": [
                 {"papel": "REGISTRADO", "nome": "FULANO DE TAL", "sexo": "M"},
                 {"papel": "MAE", "nome": "MARIA DA SILVA"},
@@ -321,7 +324,7 @@ def _lavrar(con, especie="NASCIMENTO", **ibge):
 
 
 def test_o_nascimento_guarda_o_que_o_ibge_pede(civil):
-    r = _lavrar(civil, local_nascimento=1, gemeo=2, dnv="1234567890")
+    r = _lavrar(civil, local_nascimento=1, gemeo=2, gemeo_ordem="1", dnv="1234567890")
     linha = civil.execute("SELECT * FROM rc_assentos WHERE id=?",
                           (r["assento_id"],)).fetchone()
     assert linha["ibge_local_nascimento"] == 1

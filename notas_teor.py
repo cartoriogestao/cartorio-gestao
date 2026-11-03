@@ -140,7 +140,10 @@ def _identidade(p: dict, textos) -> str:
     identidade = " ".join(str(p.get("identidade") or "").split())
     if identidade:
         return textos.preencher("NOTAS_QUALIFICACAO_PF__identidade", identidade=identidade)
-    filiacao = " ".join(str(p.get("filiacao") or "").split())
+    # a mãe e o pai, cada um no seu campo, desde 03/11/2026 (item 15 do ensaio de atos das Notas);
+    # o texto livre de antes vale para o que foi gravado antes
+    pais = [" ".join(str(p.get(c) or "").split()) for c in ("filiacao_pai", "filiacao_mae")]
+    filiacao = " e ".join(x for x in pais if x) or " ".join(str(p.get("filiacao") or "").split())
     if filiacao:
         return textos.preencher("NOTAS_QUALIFICACAO_PF__filiacao", filiacao=filiacao)
     return ", " + _falta("documento de identidade ou filiação") if _parte_do_ato(p) else ""
@@ -840,7 +843,9 @@ def pendencias_da_qualificacao(partes: list) -> list[str]:
         vazios = [c.replace("_", " ") for c in exigidos if not str(d.get(c) or "").strip()]
         if fisica:
             if not (str(d.get("identidade") or "").strip()
-                    or str(d.get("filiacao") or "").strip()):
+                    or str(d.get("filiacao") or "").strip()
+                    or str(d.get("filiacao_mae") or "").strip()
+                    or str(d.get("filiacao_pai") or "").strip()):
                 vazios.append("documento de identidade ou filiação")
             uniao = str(d.get("uniao_estavel") or "").strip().upper()
             if uniao not in UNIAO_ESTAVEL:

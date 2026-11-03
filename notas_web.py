@@ -4282,6 +4282,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                              1 if request.form.get("testemunha") else 0,
                              *(civil[k] for k in NP.CAMPOS_DA_QUALIFICACAO_CIVIL),
                              ato_id, db.now()))
+                        nova = banco(con).um("SELECT max(id) AS id FROM nt_ato_partes WHERE ato_id=%s",
+                                             (ato_id,))
+                        _gravar_filiacao(con, ato_id, int(nova["id"]), NP.filiacao_e_nascimento(request.form, d))
                     audit("NT_ATO_PARTE", "NT_ATO", ato_id,
                           {"cartao": cartao_id, "origem": "CARTAO"})
                     faltando = NP.campos_faltantes(d, "ATO")
@@ -4328,6 +4331,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                          (ato_id,))
                     _gravar_representacao(con, ato_id, int(nova["id"]), request.form)
                     _gravar_oab(con, ato_id, int(nova["id"]), request.form)
+                    _gravar_filiacao(con, ato_id, int(nova["id"]), NP.filiacao_e_nascimento(dados))
                 audit("NT_ATO_PARTE", "NT_ATO", ato_id,
                       {"origem": "NOVO", "cartao_aberto": cartao_id})
                 flash("Parte incluída." + (f" Cartão de autógrafo nº {cartao_id} aberto — "
@@ -4448,6 +4452,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         "WHERE id=%s AND ato_id=%s",
                         (*(civil[k] for k in NP.CAMPOS_DA_QUALIFICACAO_CIVIL),
                          pid, ato_id))
+                    _gravar_filiacao(con, ato_id, pid, NP.filiacao_e_nascimento(request.form))
                 audit("NT_ATO_PARTE_QUALIFICACAO_CIVIL", "NT_ATO", ato_id,
                       {"parte": pid,
                        "antes": {k: parte[k] for k in NP.CAMPOS_DA_QUALIFICACAO_CIVIL},
@@ -5604,6 +5609,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         banco(con).escrever(
             "UPDATE nt_ato_partes SET representa_parte_id=%s, representa_instrumento=%s "
             "WHERE id=%s AND ato_id=%s", (alvo, instrumento, parte_id, ato_id))
+
+    def _gravar_filiacao(con, ato_id: int, parte_id: int, filiacao: dict) -> None:
+        """A mãe, o pai e o nascimento da parte (item 15 do ensaio de atos das Notas, 03/11/2026)."""
+        banco(con).escrever(
+            "UPDATE nt_ato_partes SET filiacao_mae=%s, filiacao_pai=%s, nascimento_data=%s "
+            "WHERE id=%s AND ato_id=%s",
+            (*(filiacao[k] for k in NP.CAMPOS_DA_FILIACAO), parte_id, ato_id))
 
     def _gravar_oab(con, ato_id: int, parte_id: int, form) -> None:
         """O número e a UF da OAB do advogado (item 5 do ensaio de atos das Notas). Vazio desfaz."""

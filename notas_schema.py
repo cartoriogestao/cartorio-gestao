@@ -952,6 +952,14 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # A OAB DO ADVOGADO — decisão do oficial, 03/11/2026 (ensaio de atos das Notas, item 5): o número;
     # a UF já estava (`oab_uf`, da CESDI).
     ("nt_ato_partes", "oab_numero", "TEXT"),
+    # A FILIAÇÃO EM DOIS CAMPOS, E O NASCIMENTO — decisão do oficial, 03/11/2026 (ensaio de atos das
+    # Notas, item 15): a mãe e o pai em toda parte, em todos os atos de Notas. O RCTO e a CESDI os
+    # exigem, e até aqui só a ficha de firma os tinha. A coluna antiga `filiacao` (texto livre) fica
+    # para o que já foi gravado. Os nomes não são `mae`, `pai` e `nascimento` porque o
+    # `notas_censec._partes_do_ato` junta a parte com o cartão, que já tem colunas com esses nomes.
+    ("nt_ato_partes", "filiacao_mae", "TEXT"),
+    ("nt_ato_partes", "filiacao_pai", "TEXT"),
+    ("nt_ato_partes", "nascimento_data", "TEXT"),
     # O modelo diz a que central o ato pertence, e o codigo que ele carrega
     # muda de significado conforme ela: na CEP e natureza de escritura, na
     # CESDI e tipo de ato, no RCTO e tipo de testamento. Guardar os tres no

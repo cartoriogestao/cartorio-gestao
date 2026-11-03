@@ -914,8 +914,9 @@ def impedimentos_para_lavrar(con: Any, ato: dict) -> list[Impedimento]:
 def _partes_do_ato(con: Any, ato_id: int) -> list[dict]:
     """As partes com o que a CENSEC pede — inclusive o que so o cartao tem.
 
-    A data de nascimento, o sexo e o nome da mae nao ficam na parte do ato:
-    ficam no cartao de autografo. A CESDI e o RCTO exigem esses tres, entao a
+    A data de nascimento, o sexo e o nome da mae ficavam so no cartao de
+    autografo; desde 03/11/2026 (item 15 do ensaio de atos das Notas) a parte
+    tem a mae, o pai e o nascimento, que valem antes dos do cartao. A CESDI e o RCTO exigem esses tres, entao a
     parte sem cartao nao tem como ir — e a conferencia diz isso com todas as
     letras, em vez de mandar campo vazio e esperar a central recusar.
 
@@ -925,7 +926,9 @@ def _partes_do_ato(con: Any, ato_id: int) -> list[dict]:
     parte pela do cartao (vazia, se a parte nao tem cartao).
     """
     linhas = banco(con).ler("""
-        SELECT p.*, c.nascimento, c.sexo, c.mae, c.pai, c.rg, c.rg_orgao,
+        SELECT p.*, COALESCE(NULLIF(p.nascimento_data, ''), c.nascimento) AS nascimento,
+               c.sexo, COALESCE(NULLIF(p.filiacao_mae, ''), c.mae) AS mae,
+               COALESCE(NULLIF(p.filiacao_pai, ''), c.pai) AS pai, c.rg, c.rg_orgao,
                c.cidade, c.uf
           FROM nt_ato_partes p
           LEFT JOIN nt_cartoes c ON c.id = p.cartao_id

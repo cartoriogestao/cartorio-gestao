@@ -161,6 +161,7 @@ def test_o_testador_cego_ouve_o_testamento_duas_vezes(praticado):
     por testemunha que ele designar, com menção circunstanciada."""
     t = _lavrado(praticado, "testamento_cego").termo
     assert EN.tem(t, "cego", "duas vezes", "LUCIA EXEMPLO TESTEMUNHA", "designada")
+    # a qualificação dele não diz «filho(a) de» porque tem documento de identidade (CNN art. 111)
 
 
 def test_quem_nao_sabe_assinar_o_testamento_assina_a_rogo_uma_testemunha(praticado):
@@ -409,8 +410,7 @@ def test_o_divorcio_e_o_inventario_ficam_prontos_para_a_cesdi(praticado, chave):
     assert _lavrado(praticado, chave).censec[1] == "PRONTO", _lavrado(praticado, chave).censec
 
 
-@_defeito("o RCTO pede a data de nascimento e o nome da mãe do testador, e o quadro «Partes» não tem a "
-          "data, e tem a filiação só como texto livre: todo testamento fica parado na remessa (item 15)")
 def test_o_testamento_fica_pronto_para_o_rcto(praticado):
-    """CN-MA art. 785, I (a remessa ao RCTO)."""
+    """CN-MA art. 785, I (a remessa ao RCTO). Decisão do oficial, 03/11/2026 (item 15): a mãe e o pai em
+    dois campos em toda parte, e a data de nascimento — o que o RCTO pede do testador."""
     assert _lavrado(praticado, "testamento_cego").censec[1] == "PRONTO", _lavrado(praticado, "testamento_cego").censec

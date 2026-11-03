@@ -254,6 +254,9 @@ quadro «Partes» do inventário (como a CESDI quer), ou a casa prefere um campo
 
 ### 15. Todo testamento fica parado na remessa do RCTO
 
+**CONSERTADO em 03/11/2026, por decisão do oficial:** a mãe e o pai em dois campos, e a data de nascimento,
+em toda parte de todos os atos de Notas.
+
 **O que saiu.** «testador sem data de nascimento» e «o RCTO exige o nome da mãe do testador». O quadro
 «Partes» não tem a data de nascimento, e a filiação é texto livre.
 

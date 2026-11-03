@@ -115,6 +115,9 @@ TESTEMUNHAS = [Parte("PAULO EXEMPLO TESTEMUNHA", "TESTEMUNHA", cpf(4), testemunh
                      civil={"nacionalidade": "brasileiro", "estado_civil": "solteiro"}),
                Parte("LUCIA EXEMPLO TESTEMUNHA", "TESTEMUNHA", cpf(5), testemunha=True)]
 CEM_MIL = 10_000_000
+# O que o RCTO pede do testador (item 15, decisão do oficial de 03/11/2026: a mãe e o pai em toda parte)
+FILIACAO_DO_TESTADOR = {"filiacao_mae": "MARIA EXEMPLO DOS SANTOS", "filiacao_pai": "JOSE EXEMPLO DOS SANTOS",
+                        "nascimento_data": "1960-05-10"}
 
 
 def _nascido_ha(anos: int) -> str:
@@ -193,19 +196,19 @@ def casos() -> list[Caso]:
         # ---- testamentos
         Caso("testamento_nao_assina", "NT-TESTAMENTO-PUBLICO", "TESTAMENTO",
              "Testamento público — testador que não sabe assinar (CC art. 1.865)",
-             [_pessoa("MARIO EXEMPLO DOS SANTOS", "TESTADOR", 1, estado_civil="solteiro"), *TESTEMUNHAS],
+             [_pessoa("MARIO EXEMPLO DOS SANTOS", "TESTADOR", 1, **FILIACAO_DO_TESTADOR, estado_civil="solteiro"), *TESTEMUNHAS],
              item="13.10.1", clausulas=("se_se_testador_nao_assina",),
              escolhas={"op_estado_civil_do_testador": "solteiro", "op_motivo": "sabe"},
              valores={"nome_da_testemunha_que_assina_a_rogo": "PAULO EXEMPLO TESTEMUNHA"}),
         Caso("testamento_cego", "NT-TESTAMENTO-PUBLICO", "TESTAMENTO",
              "Testamento público — testador cego, lido duas vezes (CC art. 1.867)",
-             [_pessoa("MARIO EXEMPLO DOS SANTOS", "TESTADOR", 1, estado_civil="solteiro"), *TESTEMUNHAS],
+             [_pessoa("MARIO EXEMPLO DOS SANTOS", "TESTADOR", 1, **FILIACAO_DO_TESTADOR, estado_civil="solteiro"), *TESTEMUNHAS],
              item="13.10.1", clausulas=("se_se_testador_cego",),
              escolhas={"op_estado_civil_do_testador": "solteiro"},
              valores={"nome_da_testemunha_designada_pelo_testador": "LUCIA EXEMPLO TESTEMUNHA"}),
         Caso("testamento_casado_marcado_solteiro", "NT-TESTAMENTO-PUBLICO", "TESTAMENTO",
              "Testamento público — a parte é casada e a escolha da minuta diz «solteiro»",
-             [_pessoa("MARIO EXEMPLO DOS SANTOS", "TESTADOR", 1, **CASADO), *TESTEMUNHAS],
+             [_pessoa("MARIO EXEMPLO DOS SANTOS", "TESTADOR", 1, **FILIACAO_DO_TESTADOR, **CASADO), *TESTEMUNHAS],
              item="13.10.1", escolhas={"op_estado_civil_do_testador": "solteiro"},
              # o cônjuge e o regime em branco na tela: vêm da parte
              valores={"nome_e_qualificacao_do_conjuge_ou_convivente": "", "regime_de_bens": ""}),

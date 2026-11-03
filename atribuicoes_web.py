@@ -7752,35 +7752,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         nome = f"folha-livro-termo-{numero}"
         pedido = request.args.get("formato")
         if (pedido or "").lower() == "odt":
-            # ODT EDITAVEL: texto do termo + carimbo do selo (QR) + notas,
-            # pelo mesmo gerar_odt do RI/Notas. O ODT antigo era as paginas
-            # do PDF do Chrome viradas PNG (`odt_de_pdf_visual`) — nada se
-            # editava. A fidelidade visual das 3 colunas continua no PDF.
-            from html import escape
-            imagens: dict = {}
-            cab = ctx.get("cabecalho") or {}
-            corpo = html_para_odf(
-                f'<p align="center"><b>{escape(str(cab.get("titulo_do_ato") or ""))}</b></p>'
-                f'<p><b>Termo:</b> {escape(str(cab.get("termo") or ""))} &nbsp; '
-                f'<b>Livro:</b> {escape(str(cab.get("livro") or ""))} &nbsp; '
-                f'<b>Folha:</b> {escape(str(cab.get("folha") or ""))}</p>')
-            corpo += html_para_odf(ctx["faces"][0]["termo"])
-            if ctx.get("etiqueta"):
-                corpo += RODT.carimbo_compacto_odf(
-                    ctx["etiqueta"], rotulo="SELO DIGITAL DO TJMA",
-                    imagens=imagens, prefixo_qr=f"qr-rcpn-{assento_id}")
-            for ass in ctx["faces"][0].get("assinaturas") or []:
-                corpo += html_para_odf(
-                    '<p>&#160;</p><p>&#160;</p>'
-                    '<p align="center">' + '_' * 45 + '</p>'
-                    f'<p align="center">{escape(ass["nome"])}'
-                    f'{", " if ass["nome"] and ass["qualidade"] else ""}'
-                    f'{escape(ass["qualidade"])}</p>')
-            for nota in ctx["faces"][0]["notas_coluna"]:
-                corpo += html_para_odf(f"<p>{escape(nota)}</p>")
-            conteudo = gerar_odt(corpo, titulo=nome, imagens=imagens or None)
+            # ODT EDITAVEL E COM A CARA DA FOLHA - 03/11/2026. O ODT saia
+            # como texto corrido (titulo, termo, carimbo, assinaturas e notas
+            # um embaixo do outro), SEM as tres colunas e SEM a pauta da
+            # coluna de notas. Agora `rc_folha_odt` monta a mesma folha do
+            # HTML: cabecalho, faixa do topo, tres colunas, pauta, Frente e
+            # Verso — e o texto continua editavel.
+            import rc_folha_odt as FOLHA_ODT
+            conteudo = FOLHA_ODT.gerar(
+                ctx, titulo=nome, etiqueta=ctx.get("etiqueta") or "",
+                prefixo_qr=f"qr-rcpn-{assento_id}")
             audit("RCPN_FOLHA_PAPEL", "rc_assentos", assento_id,
-                  {"formato": "odt", "via": "gerar_odt editavel"})
+                  {"formato": "odt", "via": "rc_folha_odt tres colunas"})
             return Response(
                 conteudo, mimetype="application/vnd.oasis.opendocument.text",
                 headers={"Content-Disposition":

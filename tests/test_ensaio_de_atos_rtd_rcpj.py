@@ -190,8 +190,6 @@ def test_a_associacao_que_muda_de_nome_sai_com_o_nome_novo_no_breve_relato(casa)
 
 # ------------------------------------------------------------------ a notificação do registro cancelado
 
-@_defeito("a notificação se abre sobre o registro cancelado («Notificação aberta»), e a diligência se paga; a "
-          "averbação da mesma ficha já recusa o cancelado («só se averba registro ativo»)")
 def test_o_registro_cancelado_nao_abre_notificacao(casa):  # noqa: F811
     """LRP arts. 160 e 164 a 166: a notificação extrajudicial é a do documento registrado; cancelado o
     registro (lavrado por engano, por exemplo), ele não produz efeito, e não se abre notificação dele."""
@@ -218,3 +216,5 @@ def test_o_registro_cancelado_nao_abre_notificacao(casa):  # noqa: F811
                endereco="Rua de Exemplo, 100, Centro, Cidade Exemplo/MA", zona="URBANA")
     assert "Notificação aberta" not in F._avisos(r), F._avisos(r)
     assert not b.ler("SELECT id FROM rg_notificacoes"), F._avisos(r)
+    # O RECADO DIZ POR QUÊ, e qual ato cancelou (CONSERTADO em 03/11/2026, defeito 2 do relatório).
+    assert "situação CANCELADO, pelo ato n. 2" in F._avisos(r) and "art. 160" in F._avisos(r), F._avisos(r)

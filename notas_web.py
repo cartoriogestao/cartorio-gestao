@@ -5777,7 +5777,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "SELECT * FROM nt_ato_partes WHERE ato_id=%s "
             "ORDER BY testemunha, ordem, id",
             (ato_id,))]
-        ctx = NT.contexto_jinja_partes(partes, con=db.connect)
+        ctx = NT.contexto_jinja_partes(partes, con=db.connect, tipo_ato=a["tipo"])
         from jinja2.sandbox import SandboxedEnvironment
         env = SandboxedEnvironment(autoescape=False)
         try:

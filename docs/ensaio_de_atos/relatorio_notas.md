@@ -183,7 +183,7 @@ protocolo) e declarar a troca no ouro onde ela mudar texto.
 
 9. **A linha das assinaturas repete a qualificação crua** — «PEDRO EXEMPLO MENOR, DONATARIO», sem acento e
    com o menor impúbere entre os que assinam. Com o item 2, quem assina pelo menor é o representante.
-10. **«Estado do MA».** A abertura escreve a sigla onde o CC art. 215, § 1º, I, pede o local do ato. Se for
+10. **CONSERTADO em 03/11/2026, por decisão do oficial: «Estado do Maranhão», do cadastro.** **«Estado do MA».** A abertura escreve a sigla onde o CC art. 215, § 1º, I, pede o local do ato. Se for
     padrão da casa, fica; se não, o nome do estado vem do cadastro da serventia. **Pergunta ao oficial.**
 11. **CONSERTADO em 03/11/2026: «sabe | pode» é escolha.** **«Motivo: sabe | pode»** no testamento de quem não assina é campo de texto livre depois de «não»: quem
     digitar «não sabe» lavra «não não sabe». Deveria ser escolha (sabe / pode).

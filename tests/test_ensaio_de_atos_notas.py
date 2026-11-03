@@ -138,6 +138,13 @@ def test_o_caso_vai_ao_livro_com_selo_e_o_traslado_reproduz_o_termo(praticado, c
 
 # ------------------------------------------------------------------ o que já está certo
 
+def test_o_local_do_ato_e_o_estado_por_extenso(praticado):
+    """CC art. 215, § 1º, I (o local do ato). Decisão do oficial, 03/11/2026 (observação 10): «Estado do
+    Maranhão» por extenso, do cadastro da serventia, e não «Estado do MA»."""
+    t = _lavrado(praticado, "cv_casado_com_outorga").termo
+    assert EN.tem(t, "Estado do Maranhão") and not EN.tem(t, "Estado do MA,")
+
+
 def test_o_testador_cego_ouve_o_testamento_duas_vezes(praticado):
     """CC art. 1.867: ao cego, o testamento é lido em voz alta duas vezes, uma pelo tabelião e outra
     por testemunha que ele designar, com menção circunstanciada."""

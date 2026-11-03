@@ -3099,14 +3099,22 @@ MINUTAS_MUDADAS_NO_ENSAIO_NOTAS = {
 }
 
 
+# O ESTADO POR EXTENSO — decisão do oficial, 03/11/2026 (ensaio de atos das Notas, observação 10):
+# toda minuta que dizia «Estado do {{ sv.ri_uf }}» («Estado do MA») diz «Estado do Maranhão», pelo
+# `serventia.estado_extenso`. A mesma troca em cada minuta que a tinha, e uma vez em cada.
+_ESTADO_DO_UF = ("Estado do {{ sv.ri_uf }}", "Estado {{ sv.estado_extenso }}")
+
+
 def _minuta_de_hoje(antes: dict) -> dict:
     """A minuta do ouro com as trocas declaradas do LD02, do LD07, do LH13 e do
     ensaio de atos das Notas — e nada mais."""
     corpo = _com_as_trocas(antes["corpo"], MINUTAS_MUDADAS_NO_LD02.get(antes["codigo"], ()))
     corpo = _com_as_trocas(corpo, MINUTAS_MUDADAS_NO_LD07.get(antes["codigo"], ()))
     corpo = _com_as_trocas(corpo, MINUTAS_MUDADAS_NO_LH13.get(antes["codigo"], ()))
-    return dict(antes, corpo=_com_as_trocas(
-        corpo, MINUTAS_MUDADAS_NO_ENSAIO_NOTAS.get(antes["codigo"], ())))
+    corpo = _com_as_trocas(corpo, MINUTAS_MUDADAS_NO_ENSAIO_NOTAS.get(antes["codigo"], ()))
+    if _ESTADO_DO_UF[0] in corpo:
+        corpo = _com_as_trocas(corpo, (_ESTADO_DO_UF,))
+    return dict(antes, corpo=corpo)
 
 
 # **EM 21/10/2026 O CATÁLOGO GANHOU 1 PAPEL (LD02)**: a certidão das Notas em

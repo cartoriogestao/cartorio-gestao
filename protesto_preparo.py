@@ -70,3 +70,30 @@ def edital_da_ficha(con, titulo_id, prova):
         'SELECT id,original_name,uploaded_at FROM attachments WHERE entity_type=%s AND entity_id=%s ORDER BY id',
         (AV.ENTIDADE_DO_ENVIO_DO_EDITAL, edital['id']))
     return edital
+
+
+
+def oferecer_faixas(con, receitas):
+    """Expande cabecalhos sem preco em opcoes da tabela, sem escolher pela pessoa."""
+    import ato_selado as AS
+    bd = banco(con)
+    for receita in receitas.values():
+        for item in receita.get('itens') or []:
+            if not item.get('por_faixa'):
+                continue
+            opcoes = []
+            for servico in bd.ler(
+                    "SELECT codigo,codigo_tj,descricao FROM cx_servicos "
+                    "WHERE codigo_tj ILIKE %s AND COALESCE(ativo,1)=1 ORDER BY codigo",
+                    (str(item['codigo_tj']) + '.%',)):
+                opcao = {'servico': servico['codigo'],
+                         'codigo_tj': servico['codigo_tj'],
+                         'descricao': servico['descricao'], 'preco': None}
+                try:
+                    conta = AS.calcular_custas(con, servico=servico['codigo'])
+                    opcao['preco'] = conta['total_devido_centavos']
+                except AS.AtoError as erro:
+                    opcao['motivo'] = str(erro)
+                opcoes.append(opcao)
+            item['faixas'] = opcoes
+    return receitas

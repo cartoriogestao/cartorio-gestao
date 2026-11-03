@@ -67,6 +67,11 @@ def _tabela(bd) -> None:
     bd.escrever("""INSERT INTO cx_vigencias(codigo, descricao, vigente, inicio, fim)
                    VALUES (%s, 'tabela de teste', 1, '2026-01-02', NULL)""",
                 (VIGENCIA,))
+    # Mesmos codigos TJ de outra importacao, sem preco na vigencia atual:
+    # o cadastro antigo nao pode tomar o lugar do servico vigente.
+    for codigo, tj in ((8315, "17.1.5"), (8320, "17.2")):
+        bd.escrever("INSERT INTO cx_servicos(codigo,codigo_tj,descricao) "
+                    "VALUES (%s,%s,'Cadastro historico de teste')", (codigo,tj))
     for codigo, tj, descricao, preco in SERVICOS:
         bd.escrever("""INSERT INTO cx_servicos(codigo, codigo_tj, descricao)
                        VALUES (%s,%s,%s)""", (codigo, tj, descricao))
@@ -267,7 +272,8 @@ def _protestos(s, tid) -> list[dict]:
 
 
 @pytest.mark.parametrize("origem", ["CRA", "CENPROT"])
-def test_o_protesto_da_central_lavra_sem_caixa_e_sem_protocolo(s, origem):
+@pytest.mark.parametrize("cobrar", [None, "", "9315"])
+def test_o_protesto_da_central_lavra_sem_caixa_e_sem_protocolo(s, origem, cobrar):
     from selador_de_bancada import ligar_o_selador
     tid = _intimado(s, origem=origem)
     assert _ler(s, "SELECT id FROM cx_caixas WHERE situacao='ABERTO'") == []
@@ -276,7 +282,8 @@ def test_o_protesto_da_central_lavra_sem_caixa_e_sem_protocolo(s, origem):
     # SEM PROTOCOLO DE BANCADA: a cobertura do selo tem de vir do devido.
     with ligar_o_selador(s, protocolo_pago=False) as aparelho:
         html = " ".join(_lancar(s, tid, ato="PROTESTO", motivo_atraso=MOTIVO,
-                                **_afirmacao(origem)).split())
+                                **_afirmacao(origem),
+                                **({"cobrar": cobrar} if cobrar is not None else {})).split())
     assert "Ato NÃO lançado" not in html
     [ato] = _protestos(s, tid)
     assert ato["cancelado"] == 0 and str(ato["selo"] or "").strip()
@@ -285,7 +292,9 @@ def test_o_protesto_da_central_lavra_sem_caixa_e_sem_protocolo(s, origem):
     assert devido == [{"servico": 9315, "tipo_ato": "PROTESTO",
                        "situacao": "PENDENTE"}]
     assert _ler(s, "SELECT id FROM cx_lancamentos") == []
-    assert "17.1.5" in html and "NÃO entrou no caixa" in html
+    assert "NÃO entrou no caixa" in html
+    if not cobrar:
+        assert "17.1.5" in html
     # o selo foi pedido pelo item do tribunal, e não pela faixa
     selos = [p for p in aparelho.pedidos if "/selo/protesto/" in p["caminho"]]
     assert selos and all("17.1.5" not in p["corpo"] for p in selos)

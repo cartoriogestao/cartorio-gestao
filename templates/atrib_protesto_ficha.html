@@ -854,7 +854,8 @@
     {% endif %}
     <div class="actions"><button class="button">Lançar {{ rotulo_do_ato(ato) | lower if abas else ato | lower }}</button></div>
 
-    {{ quadro(receitas.get(ato), caixa, protocolos, diferido=(cob and cob.diferir)) }}
+    {{ quadro(receitas.get(ato), caixa, protocolos, form=v_ato,
+              diferido=(cob and cob.diferir)) }}
   </form>
   {% if abas %}</details>{% endif %}
   {% endfor %}

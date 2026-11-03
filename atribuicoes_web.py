@@ -3704,7 +3704,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 if (cobranca and cobranca.get("diferir")
                         and SR.pode_selar_automatico()
                         and not _campo("selo")
-                        and not request.form.getlist("cobrar")
+                        and not any(numero_digitado(x) is not None
+                                    for x in request.form.getlist("cobrar"))
                         and not request.form.getlist("cobrar_protocolo_item")
                         and numero_digitado(_campo("protocolo_id")) is None):
                     g.protesto_itens_da_tabela = POST.itens_do_ato_pela_tabela(
@@ -4106,10 +4107,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         # O que a casa cobrou em cada um destes atos, medido em 24.849 selos.
         # NAO e orcamento fechado, e a tela diz isso.
         with db.connect() as con:
-            receitas = _receitas_de(con, "pt_atos",
+            receitas = PPRE.oferecer_faixas(con, _receitas_de(con, "pt_atos",
                                     ("APONTAMENTO", "INTIMACAO", "PROTESTO",
                                      "PAGAMENTO", "CANCELAMENTO",
-                                     "DESISTENCIA"))
+                                     "DESISTENCIA")))
             caixa = _caixa_aberto(con)
             cobrancas = _cobrancas_de(con, "pt_atos", atos)
             protocolos = _protocolos_abertos(con)
@@ -4279,7 +4280,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                preparo_protesto=preparo_protesto,
                                dados_protesto=(request.form if request.method == "POST"
                                    and request.form.get("ato") == "PROTESTO" else
-                                   (preparo_protesto or {}).get("dados", {})),
+                                   (RASC.formulario(preparo_protesto)
+                                    if preparo_protesto else request.form)),
                                minimo_do_motivo_cra=PCP.MINIMO_DE_LETRAS,
                                quem_encerra_o_grave=PCP.QUEM_ENCERRA_O_GRAVE)
 

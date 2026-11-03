@@ -248,7 +248,8 @@ def autuar(con: sqlite3.Connection, *, numero: str, especie: str,
     for chave in ("profissional_nome", "profissional_conselho",
                   "profissional_registro", "art_numero", "area_na_matricula",
                   "area_pretendida", "perimetro", "certificacao_incra",
-                  "sigef_codigo", "prenotacao", "protocolo_id", "observacao"):
+                  "sigef_codigo", "prenotacao", "prenotacao_id",
+                  "protocolo_id", "observacao"):
         if chave in extras:
             campos[chave] = extras[chave] or None
 
@@ -387,6 +388,109 @@ def anotar_confrontante(con: sqlite3.Connection, processo_id: int, *,
     return novo
 
 
+def aviso_de_confrontante_repetido(con, processo_id: int, *, nome: str,
+                                   documento: str = "",
+                                   exceto: int | None = None) -> str | None:
+    """O mesmo nome ou o mesmo CPF já está neste processo. Só lê.
+
+    Avisa e não impede: o vizinho pode ter homônimo, e quem confirma é quem
+    está com o documento na mão. Sem o aviso, o duplicado só se via no banco.
+    """
+    from pt_schema import normalizar_nome
+    from ri_schema import so_digitos
+    nome_norm = normalizar_nome(_texto(nome))
+    doc = so_digitos(documento)
+    for outro in confrontantes(con, processo_id):
+        if exceto is not None and int(outro["id"]) == int(exceto):
+            continue
+        mesmo_doc = bool(doc) and so_digitos(outro.get("documento")) == doc
+        mesmo_nome = bool(nome_norm) and (outro.get("nome_norm") or "") == nome_norm
+        if mesmo_doc or mesmo_nome:
+            por = "o mesmo CPF/CNPJ" if mesmo_doc else "o mesmo nome"
+            return (f"Já há confrontante neste processo com {por}: "
+                    f"{outro['nome']}. Confira antes de notificar os dois.")
+    return None
+
+
+def _trava_de_exclusao(linha: dict) -> str | None:
+    if str(linha.get("selo") or "").strip():
+        return "já tem selo"
+    if linha.get("impresso_em"):
+        return "o papel já foi impresso"
+    if linha.get("recebido_em"):
+        return "já há ciência do recebimento"
+    if linha.get("notificado_em"):
+        return "a notificação já foi expedida"
+    return None
+
+
+def excluir_confrontante(con, processo_id: int, confrontante_id: int, *,
+                         agora: str, usuario: str | None = None) -> str:
+    """Tira o confrontante que ainda não foi notificado. ESCREVE.
+
+    Notificação expedida, ciência, impressão final ou selo travam a exclusão:
+    apagar isso apagaria o prazo de alguém. O andamento antigo solta o id
+    (a chave não deixa apagar a linha enquanto ele aponta para cá) e a
+    exclusão fica escrita no andamento, sem o id que já não existe.
+    """
+    bd = banco(con)
+    linha = bd.um(
+        """SELECT * FROM rt_confrontantes
+            WHERE id = %s AND processo_id = %s""",
+        (int(confrontante_id), int(processo_id)))
+    if not linha:
+        raise RetificacaoError("Não achei esse confrontante neste processo.")
+    trava = _trava_de_exclusao(linha)
+    if trava:
+        raise RetificacaoError(
+            f"{linha['nome']} não se exclui: {trava}. O prazo e o papel "
+            "ficam no processo.")
+    nome = linha["nome"]
+    bd.escrever(
+        "UPDATE rt_andamento SET confrontante_id = NULL WHERE confrontante_id = %s",
+        (int(confrontante_id),))
+    bd.escrever(
+        "DELETE FROM rt_confrontantes WHERE id = %s AND processo_id = %s",
+        (int(confrontante_id), int(processo_id)))
+    _anotar(con, int(processo_id), tipo="CONFRONTANTE_EXCLUIDO", quando=agora,
+            quem=usuario,
+            o_que=(f"Confrontante excluído: {nome}. Não havia notificação, "
+                   "ciência, impressão nem selo."))
+    return nome
+
+
+def atualizar_atendimento(con, processo_id: int, *, prenotacao_id,
+                          prenotacao: str | None, protocolo_id,
+                          protocolo_numero: str | None, agora: str,
+                          usuario: str | None = None) -> bool:
+    """Grava prenotação e protocolo de recepção. ESCREVE. Devolve se mudou."""
+    p = processo(con, processo_id)
+    if not p:
+        raise RetificacaoError("Não achei esse processo de retificação.")
+    antes_pre = p.get("prenotacao_id")
+    antes_cx = p.get("protocolo_id")
+    if (antes_pre or None) == prenotacao_id and (antes_cx or None) == protocolo_id:
+        return False
+    banco(con).escrever(
+        """UPDATE rt_processos
+              SET prenotacao_id = %s, prenotacao = %s, protocolo_id = %s,
+                  atualizado_em = %s
+            WHERE id = %s""",
+        (prenotacao_id, prenotacao, protocolo_id, agora, int(processo_id)))
+    partes = []
+    if prenotacao:
+        partes.append(f"prenotação {prenotacao}")
+    else:
+        partes.append("sem prenotação")
+    if protocolo_numero:
+        partes.append(f"protocolo {protocolo_numero}")
+    else:
+        partes.append("sem protocolo de recepção")
+    _anotar(con, int(processo_id), tipo="ATENDIMENTO", quando=agora,
+            quem=usuario, o_que="Atendimento do processo: " + "; ".join(partes) + ".")
+    return True
+
+
 def quem_precisa_ser_notificado(con: sqlite3.Connection,
                                 processo_id: int) -> list[dict]:
     """Quem falta notificar, pela norma. Só calcula.
@@ -463,6 +567,10 @@ def notificar(con: sqlite3.Connection, confrontante_id: int, *, forma: str,
             "existem, nesta ordem: " + ", ".join(x["forma"]
                                                  for x in NORMA.COMO_NOTIFICAR)
             + ".")
+    if str(quando or "")[:10] > str(agora or "")[:10]:
+        raise RetificacaoError(
+            "A data da notificação não pode ser futura. O prazo conta do "
+            "recebimento, e uma data que ainda não chegou recomeçaria a conta.")
     bd = banco(con)
     # FOR UPDATE: o «já foi notificado» sai desta leitura, e duas notificações
     # ao mesmo tempo passariam as duas — a segunda recomeçando o prazo.

@@ -41,6 +41,8 @@
   <table class="table">
     <tr><th>Modalidade</th><td>{{ MODALIDADES.get(p.modalidade, p.modalidade) }}</td>
         <th>Prenotação</th><td>{{ p.prenotacao or '—' }}</td></tr>
+    <tr><th>Protocolo de recepção</th><td colspan="3">{{ protocolo.numero if protocolo else '—' }}
+        {% if protocolo and protocolo.interessado %} — {{ protocolo.interessado }}{% endif %}</td></tr>
     <tr><th>Requerente</th><td>{{ p.requerente_nome or '—' }}</td>
         <th>CPF/CNPJ</th><td>{{ p.requerente_documento or '—' }}</td></tr>
     <tr><th>Imóvel</th><td colspan="3">{{ p.imovel_descricao or '—' }}</td></tr>
@@ -49,6 +51,30 @@
     <tr><th>Posse desde</th><td>{{ p.posse_inicio or '—' }}</td>
         <th>Matrícula</th><td>{{ p.matricula_id or 'sem matrícula' }}</td></tr>
   </table>
+  <form method="post" action="{{ url_for('usucapiao_atendimento', processo_id=p.id) }}" class="grid2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Prenotação da matrícula
+      <select name="prenotacao_id">
+        <option value="">— sem prenotação —</option>
+        {% for pr in prenotacoes or [] %}
+        <option value="{{ pr.id }}"{% if p.prenotacao_id == pr.id %} selected{% endif %}>{{ pr.rotulo }}</option>
+        {% endfor %}
+      </select>
+      <small class="muted">Vencida segue valendo.</small></label>
+    <label>Protocolo de recepção
+      <input name="protocolo_busca" placeholder="2026.10.158" autocomplete="off"
+             {% if protocolo %}value="{{ protocolo.numero }}"{% endif %}
+             data-busca-protocolo data-url="{{ url_for('ri_retificacao_protocolos') }}">
+      <input type="hidden" name="protocolo_id" value="{{ p.protocolo_id or '' }}">
+    </label>
+    <div class="actions"><button class="button">Guardar atendimento</button></div>
+  </form>
+  {% if p.protocolo_id and not item_da_notificacao %}
+  <form method="post" action="{{ url_for('usucapiao_lancar_16_23', processo_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button secondary">Lançar o item {{ codigo_do_selo }}</button>
+  </form>
+  {% endif %}
 </section>
 
 {# --------------------------------------------------- as etapas do rito #}
@@ -189,13 +215,19 @@
             {%- if m.destinatario_papel %} ({{ m.destinatario_papel }}){% endif %}{% endif %}
           <br><small>{{ m.descricao }}</small>
           {% if m.teor_expedido %}
-            {#  O PDF PRIMEIRO — relato #88, 21/09/2026: os três ofícios de
-                ciência estavam gravados, com teor, e ela não conseguia
-                «acessar». A tela dependia da caixa de impressão do
-                navegador; o arquivo se leva. #}
+            {% if m.tipo == 'NOTIFICACAO' and not m.selo %}
+            <br><strong>SEM SELO — NÃO ENTREGAR</strong>
+            <form method="post" style="margin-top:6px"
+                  action="{{ url_for('usucapiao_selar_notificacao', processo_id=p.id, movimento_id=m.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label class="small"><input type="checkbox" name="isento" value="1"> gratuita</label>
+              <input name="motivo_isencao" placeholder="REURB-S, REURB-E, misto ou o motivo">
+              <button class="button">Selar notificação</button>
+            </form>
+            {% elif m.selo %}<br><small>Selo {{ m.selo }}</small>{% endif %}
             <br><a class="button" style="margin-top:6px"
                    href="{{ url_for('usucapiao_notificacao_arquivo', processo_id=p.id, movimento_id=m.id) }}">
-              Imprimir em PDF
+              {% if m.tipo == 'NOTIFICACAO' and not m.selo %}Prévia (sem selo){% else %}Imprimir em PDF{% endif %}
             </a>
             <a class="button secondary" style="margin-top:6px"
                target="_blank" rel="noopener"
@@ -364,6 +396,9 @@
           {% endfor %}
         </select>
         <small class="muted">O prazo sai da norma, e não de campo livre.</small></label>
+      <label>Data da notificação
+        <input name="quando" type="date">
+        <small class="muted">Não pode ser futura. Em branco, vale hoje.</small></label>
       <label>Que tentativa é esta
         <input name="tentativa" type="number" min="1" placeholder="1">
         <small class="muted">Sem registrar a tentativa, ninguém prova que as

@@ -2,6 +2,15 @@
 {% block title %}Notificação — usucapião {{ p.numero }}{% endblock %}
 {% block content %}
 <h1>Notificação expedida</h1>
+{% if not mov.selo %}
+<div class="alerta danger"><strong>SEM SELO — NÃO ENTREGAR</strong>
+  Prévia. O papel final só sai depois do selo (item 16.23).</div>
+{% else %}
+<div class="card"><p><strong>Selo {{ mov.selo }}</strong> ({{ mov.selo_item or '16.23' }})</p>
+  {% if mov.selo_texto %}<p class="small">{{ mov.selo_texto }}</p>{% endif %}
+  {% if mov.selo_qr %}{{ mov.selo_qr|safe }}{% endif %}
+</div>
+{% endif %}
 
 <div class="actions no-print">
   <a class="button secondary"

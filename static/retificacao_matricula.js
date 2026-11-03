@@ -35,6 +35,7 @@
       if (oculto) { oculto.value = String(item.id); }
       esconder();
       campo.focus();
+      carregarPrenotacoes(String(item.id));
     }
 
     function desenhar(itens, haMais) {
@@ -96,5 +97,94 @@
     document.addEventListener("DOMContentLoaded", ligar);
   } else {
     ligar();
+  }
+
+  function carregarPrenotacoes(matriculaId) {
+    var caixa = document.querySelector("[data-prenotacoes]");
+    if (!caixa || !matriculaId) { return; }
+    var url = caixa.getAttribute("data-url");
+    if (!url) { return; }
+    var marcado = caixa.value;
+    fetch(url + "?matricula_id=" + encodeURIComponent(matriculaId), {
+      headers: { "Accept": "application/json" }
+    }).then(function (resposta) { return resposta.json(); })
+      .then(function (corpo) {
+        var vazio = caixa.querySelector("option[value='']");
+        caixa.replaceChildren();
+        if (vazio) { caixa.appendChild(vazio); }
+        else {
+          var opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "— sem prenotação —";
+          caixa.appendChild(opt);
+        }
+        (corpo.itens || []).forEach(function (item) {
+          var opt = document.createElement("option");
+          opt.value = String(item.id);
+          opt.textContent = item.rotulo;
+          if (String(item.id) === marcado) { opt.selected = true; }
+          caixa.appendChild(opt);
+        });
+      }).catch(function () { /* a lista do servidor continua */ });
+  }
+})();
+
+(function () {
+  "use strict";
+  var ESPERA_MS = 250;
+
+  function ligarProtocolo() {
+    document.querySelectorAll("[data-busca-protocolo]").forEach(function (campo) {
+      var url = campo.getAttribute("data-url");
+      var lista = document.getElementById(campo.getAttribute("aria-controls") || "");
+      var oculto = campo.form && campo.form.querySelector('input[name="protocolo_id"]');
+      if (!url || !lista) { return; }
+      var relogio = null;
+      var pedido = 0;
+
+      function esconder() {
+        lista.hidden = true;
+        lista.replaceChildren();
+      }
+
+      function buscar() {
+        var termo = campo.value.trim();
+        var meu = ++pedido;
+        if (termo.length < 4) { esconder(); return; }
+        fetch(url + "?q=" + encodeURIComponent(termo), {
+          headers: { "Accept": "application/json" }
+        }).then(function (resposta) { return resposta.json(); })
+          .then(function (corpo) {
+            if (meu !== pedido) { return; }
+            lista.replaceChildren();
+            (corpo.itens || []).forEach(function (item) {
+              var li = document.createElement("li");
+              var botao = document.createElement("button");
+              botao.type = "button";
+              botao.textContent = item.rotulo;
+              botao.addEventListener("click", function () {
+                campo.value = item.numero;
+                if (oculto) { oculto.value = String(item.id); }
+                esconder();
+              });
+              li.appendChild(botao);
+              lista.appendChild(li);
+            });
+            lista.hidden = !(corpo.itens || []).length;
+          }).catch(function () { if (meu === pedido) { esconder(); } });
+      }
+
+      campo.addEventListener("input", function () {
+        if (oculto) { oculto.value = ""; }
+        if (relogio) { clearTimeout(relogio); }
+        relogio = setTimeout(buscar, ESPERA_MS);
+      });
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", ligarProtocolo);
+  } else {
+    ligarProtocolo();
   }
 })();

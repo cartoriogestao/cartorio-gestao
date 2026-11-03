@@ -92,6 +92,27 @@
   <ul id="matriculas-sugeridas" hidden
       style="list-style:none;margin:4px 0 8px;padding:0;max-width:28rem"></ul>
 
+  <p><label>Prenotação desta matrícula<br>
+    <select name="prenotacao_id" data-prenotacoes
+            data-url="{{ url_for('ri_retificacao_prenotacoes') }}">
+      <option value="">— sem prenotação —</option>
+      {% for pr in prenotacoes or [] %}
+      <option value="{{ pr.id }}"{% if digitado.get('prenotacao_id') == pr.id|string %} selected{% endif %}>{{ pr.rotulo }}</option>
+      {% endfor %}
+    </select></label>
+    <span class="small muted">Só as desta matrícula, inclusive as vencidas: prenotação vencida segue valendo.</span></p>
+
+  <p><label>Protocolo de recepção (Caixa)<br>
+    <input name="protocolo_busca" autocomplete="off" placeholder="2026.10.158"
+           {% if digitado.get('protocolo_busca') %}value="{{ digitado.get('protocolo_busca') }}"{% endif %}
+           data-busca-protocolo data-url="{{ url_for('ri_retificacao_protocolos') }}"
+           aria-autocomplete="list" aria-controls="protocolos-sugeridos">
+    <input type="hidden" name="protocolo_id" value="{{ digitado.get('protocolo_id') or '' }}">
+    </label>
+    <span class="small muted">O número do atendimento no Caixa, como 2026.10.158.</span></p>
+  <ul id="protocolos-sugeridos" hidden
+      style="list-style:none;margin:4px 0 8px;padding:0;max-width:28rem"></ul>
+
   <p><label>Espécie<br>
     <select name="especie" required>
       {% for k, v in especies.items() %}<option value="{{ k }}"{% if digitado.get('especie') == k %} selected{% endif %}>{{ v }}</option>{% endfor %}

@@ -193,6 +193,11 @@ TABELAS_DE_ATO: dict[str, str] = {
     # selada a partir do protocolo (`ri_conferencia`): não é ato de matrícula
     # nem prenotação, e a razão da tabela própria é a da materialização.
     "ri_conferencias": "Registro de Imóveis — conferência de documento eletrônico",
+    # A NOTIFICAÇÃO PESSOAL da retificação (art. 213) e do usucapião
+    # extrajudicial. Não é ato de matrícula: o selo 16.23 sai na pessoa
+    # notificada, e a linha que o guarda é o confrontante ou o movimento.
+    "rt_confrontantes": "Registro de Imóveis — notificação da retificação",
+    "us_movimentos": "Usucapião — notificação",
 }
 
 
@@ -3016,6 +3021,8 @@ COLUNA_DO_SELO: dict[str, str] = {
     # A certidao das Notas (15/10/2026) guarda em `selo`, e fica escrito
     # para ninguem precisar abrir o esquema para saber.
     "nt_certidoes": "selo",
+    "rt_confrontantes": "selo",
+    "us_movimentos": "selo",
 }
 
 

@@ -9,6 +9,42 @@
   {{ 'imóvel rural' if p.rural else 'imóvel urbano' }}
 </p>
 
+<div class="card">
+  <h2 style="margin-top:0">Prenotação e protocolo de recepção</h2>
+  <p>Prenotação: <strong>{{ p.prenotacao or '—' }}</strong>
+     {% if p.prenotacao_id %}<span class="small muted">(id {{ p.prenotacao_id }})</span>{% endif %}
+     · Protocolo: <strong>{{ protocolo.numero if protocolo else '—' }}</strong>
+     {% if protocolo and protocolo.interessado %} — {{ protocolo.interessado }}{% endif %}</p>
+  <form method="post" action="{{ url_for('ri_retificacao_atendimento', processo_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p><label>Prenotação desta matrícula<br>
+      <select name="prenotacao_id">
+        <option value="">— sem prenotação —</option>
+        {% for pr in prenotacoes or [] %}
+        <option value="{{ pr.id }}"{% if p.prenotacao_id == pr.id %} selected{% endif %}>{{ pr.rotulo }}</option>
+        {% endfor %}
+      </select></label>
+      <span class="small muted">Vencida segue valendo. Cancelada não entra.</span></p>
+    <p><label>Protocolo de recepção<br>
+      <input name="protocolo_busca" autocomplete="off" placeholder="2026.10.158"
+             {% if protocolo %}value="{{ protocolo.numero }}"{% endif %}
+             data-busca-protocolo data-url="{{ url_for('ri_retificacao_protocolos') }}"
+             aria-controls="protocolos-da-ficha">
+      <input type="hidden" name="protocolo_id" value="{{ p.protocolo_id or '' }}">
+      </label></p>
+    <ul id="protocolos-da-ficha" hidden style="list-style:none;margin:4px 0;padding:0"></ul>
+    <p><button class="button">Guardar</button></p>
+  </form>
+  {% if p.protocolo_id and not item_da_notificacao %}
+  <form method="post" action="{{ url_for('ri_retificacao_lancar_16_23', processo_id=p.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p class="small">O protocolo não tem o item {{ codigo_do_selo }} com unidade sobrando.
+       <button class="button">Lançar o item {{ codigo_do_selo }}</button></p>
+  </form>
+  {% endif %}
+</div>
+<script defer src="{{ url_for('static', filename='retificacao_matricula.js') }}?v={{ VERSION }}"></script>
+
 {# O QUE FAZER AGORA. Num rito de meses, «e agora?» e a pergunta que mais se
    repete, e ela merece resposta na tela e nao na cabeca de quem lembra. #}
 <div class="card">
@@ -154,12 +190,13 @@
             onde há teor congelado: oferecer o que a rota recusa é o mesmo
             defeito do problema #90, pelo outro lado. #}
         {% if c.teor_expedido %}
-        <br><a href="{{ url_for('ri_retificacao_notificacao_papel',
-                                processo_id=p.id, confrontante_id=c.id) }}">
-          imprimir em PDF</a>
-        <span class="muted">·</span>
+        <br>{% if c.selo %}Selo {{ c.selo }}
         <a href="{{ url_for('ri_retificacao_notificacao_papel',
-                            processo_id=p.id, confrontante_id=c.id) }}?formato=odt">.odt</a>
+                            processo_id=p.id, confrontante_id=c.id) }}">imprimir o papel selado</a>
+        {% else %}<strong>SEM SELO — NÃO ENTREGAR</strong>
+        <a href="{{ url_for('ri_retificacao_notificacao_papel',
+                            processo_id=p.id, confrontante_id=c.id) }}">prévia</a>
+        {% endif %}
         {% endif %}</td>
       <td class="small">{{ c.prazo_ate or '—' }}</td>
       <td class="small">
@@ -179,7 +216,16 @@
           <input type="date" name="prazo_ate" value="{{ prazo_sugerido }}" required>
           <button class="link-button">notificar</button>
         </form>
-        {% elif not c.resposta %}
+        {% else %}
+        {% if c.notificado_em and not c.selo %}
+        <form method="post" action="{{ url_for('ri_retificacao_selar_notificacao', processo_id=p.id, confrontante_id=c.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label class="small"><input type="checkbox" name="isento" value="1"> gratuita</label>
+          <input name="motivo_isencao" placeholder="REURB-S, REURB-E, misto ou o motivo">
+          <button class="button">Selar notificação</button>
+        </form>
+        {% elif c.selo %}<span class="small">selo {{ c.selo_item or codigo_do_selo }}</span>{% endif %}
+        {% if not c.resposta %}
         <form method="post" action="{{ url_for('ri_retificacao_resposta', processo_id=p.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="confrontante_id" value="{{ c.id }}">
@@ -189,6 +235,7 @@
           <input name="impugnacao" placeholder="o que ele alegou">
           <button class="link-button">responder</button>
         </form>
+        {% endif %}
         {% endif %}
       </td>
     </tr>
@@ -217,6 +264,15 @@
     <p><button class="button">Anotar</button></p>
   </form>
 </details>
+
+{% for c in confrontantes %}
+  {% if not c.notificado_em and not c.recebido_em and not c.impresso_em and not c.selo %}
+  <form method="post" action="{{ url_for('ri_retificacao_excluir_confrontante', processo_id=p.id, confrontante_id=c.id) }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="link-button">excluir {{ c.nome }}</button>
+  </form>
+  {% endif %}
+{% endfor %}
 
 <h2>A decisão</h2>
 {% if p.decidido_em %}

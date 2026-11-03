@@ -272,6 +272,14 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("us_movimentos", "resultado_da_entrega", "TEXT"),
     ("us_movimentos", "entregue_em", "TEXT"),
     ("us_movimentos", "teor_expedido", "TEXT"),
+    ("us_processos", "prenotacao_id", "INTEGER"),
+    ("us_movimentos", "selo", "TEXT"),
+    ("us_movimentos", "selo_texto", "TEXT"),
+    ("us_movimentos", "selo_qr", "TEXT"),
+    ("us_movimentos", "selo_em", "TEXT"),
+    ("us_movimentos", "selo_por", "TEXT"),
+    ("us_movimentos", "selo_item", "TEXT"),
+    ("us_movimentos", "impresso_em", "TEXT"),
 )
 
 

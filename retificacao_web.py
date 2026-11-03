@@ -372,6 +372,36 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return {"ok": True, "ha_mais": ha_mais,
                 "itens": [_item_de_matricula(linha) for linha in linhas]}
 
+    @app.route("/registro-imoveis/retificacoes/prenotacoes")
+    @login_required
+    @roles_required("ADMIN", "MANAGER", "USER", "REGISTRADOR", "ESCREVENTE")
+    def ri_retificacao_prenotacoes():
+        """As prenotações da matrícula, vencidas inclusive. SÓ LÊ."""
+        import atendimento_processo as AP
+        bruto = (request.args.get("matricula_id") or "").strip()
+        if not bruto.isdigit():
+            return {"ok": True, "itens": []}
+        with db.connect() as con:
+            linhas = AP.prenotacoes_da_matricula(con, int(bruto), hoje=hoje())
+        return {"ok": True, "itens": [
+            {"id": int(x["id"]), "rotulo": x["rotulo"], "vencida": bool(x["vencida"])}
+            for x in linhas]}
+
+    @app.route("/registro-imoveis/retificacoes/protocolos")
+    @login_required
+    @roles_required("ADMIN", "MANAGER", "USER", "REGISTRADOR", "ESCREVENTE")
+    def ri_retificacao_protocolos():
+        """Protocolos do Caixa pelo número. SÓ LÊ."""
+        import atendimento_processo as AP
+        termo = (request.args.get("q") or "").strip()
+        with db.connect() as con:
+            linhas, ha_mais = AP.buscar_protocolos(con, termo)
+        # O termo não volta na resposta: o mesmo XSS refletido que o CodeQL
+        # apontou na busca de matrícula (#270, 03/11/2026).
+        return {"ok": True, "ha_mais": ha_mais, "itens": [
+            {"id": int(x["id"]), "numero": x["numero"], "rotulo": x["rotulo"]}
+            for x in linhas]}
+
     @app.route("/registro-imoveis/retificacoes/nova", methods=["GET", "POST"])
     @login_required
     @roles_required("ADMIN", "MANAGER", "USER", "REGISTRADOR", "ESCREVENTE")
@@ -380,18 +410,34 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             db, "ri_retificacao_nova", "Este rascunho não é de uma retificação de área.")
 
         def tela():
+            import atendimento_processo as AP
+            escolhida = _matricula_escolhida(form)
+            prenotacoes = []
+            mid = escolhida["id"] if escolhida else None
+            if mid is None and str(form.get("matricula_id") or "").isdigit():
+                mid = int(form.get("matricula_id"))
+            if mid:
+                with db.connect() as con:
+                    prenotacoes = AP.prenotacoes_da_matricula(con, mid, hoje=hoje())
             return render_template("ri_retificacao_nova.html",
-                                   escolhida=_matricula_escolhida(form),
+                                   escolhida=escolhida, prenotacoes=prenotacoes,
                                    especies=NORMA.NOME_DA_ESPECIE,
                                    fundamentos=NORMA.NOME_DO_FUNDAMENTO,
                                    form=form, rascunho_id=rascunho_id)
 
         if request.method == "POST":
             try:
+                import atendimento_processo as AP
                 with db.connect() as con:
                     mid = matricula_pedida(
                         con, matricula_id=_campo("matricula_id"),
                         busca=_campo("matricula_busca"))
+                    vinculo = AP.resolver(
+                        con, matricula_id=mid,
+                        prenotacao_id=_campo("prenotacao_id"),
+                        protocolo_id=_campo("protocolo_id"),
+                        protocolo_busca=_campo("protocolo_busca"),
+                        hoje=hoje())
                 with db.transaction() as con:
                     novo = RT.autuar(
                         con,
@@ -399,6 +445,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         especie=_campo("especie"),
                         fundamento=_campo("fundamento"),
                         matricula_id=mid,
+                        prenotacao=vinculo["prenotacao"],
+                        prenotacao_id=vinculo["prenotacao_id"],
+                        protocolo_id=vinculo["protocolo_id"],
                         rural=_campo("rural") == "1",
                         agora=agora(), usuario=usuario_nome(),
                         ano=int(hoje()[:4]),
@@ -455,6 +504,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 "falta_decidir": RT.o_que_falta_para_decidir(
                     con, processo_id, hoje=hoje()),
             }
+            import atendimento_processo as AP
+            import notificacao_selo as NS
+            dados["prenotacoes"] = AP.prenotacoes_da_matricula(
+                con, p["matricula_id"], hoje=hoje())
+            dados["protocolo"] = None
+            if p.get("protocolo_id"):
+                dados["protocolo"] = banco(con).um(
+                    """SELECT id, numero, interessado, situacao
+                         FROM cx_protocolos WHERE id = %s""",
+                    (int(p["protocolo_id"]),))
+            dados["item_da_notificacao"] = NS.item_do_protocolo(
+                con, p.get("protocolo_id"))
+            dados["codigo_do_selo"] = NS.CODIGO
         return render_template(
             "ri_retificacao.html", **dados, norma=NORMA, RT=RT,
             prazo_sugerido=_dias_uteis_ate(15),
@@ -558,7 +620,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def ri_retificacao_confrontante(processo_id: int):
         try:
             with db.transaction() as con:
-                RT.anotar_confrontante(
+                novo_confrontante = RT.anotar_confrontante(
                     con, processo_id, nome=_campo("nome"), agora=agora(),
                     papel=_campo("papel", RT.CONFRONTANTE),
                     documento=_campo("documento"),
@@ -574,7 +636,65 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return _voltar(processo_id)
         audit("RT_CONFRONTANTE", "rt_confrontantes", processo_id,
               {"nome": _campo("nome")})
+        with db.connect() as con:
+            aviso = RT.aviso_de_confrontante_repetido(
+                con, processo_id, nome=_campo("nome"),
+                documento=_campo("documento"), exceto=novo_confrontante)
+        if aviso:
+            flash(aviso, "warning")
         flash("Confrontante anotado.", "success")
+        return _voltar(processo_id)
+
+    @app.route("/registro-imoveis/retificacoes/<int:processo_id>"
+               "/confrontante/<int:confrontante_id>/excluir", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def ri_retificacao_excluir_confrontante(processo_id: int, confrontante_id: int):
+        try:
+            with db.transaction() as con:
+                nome = RT.excluir_confrontante(
+                    con, processo_id, confrontante_id, agora=agora(),
+                    usuario=usuario_nome())
+        except RT.RetificacaoError as erro:
+            flash(str(erro), "danger")
+            return _voltar(processo_id)
+        audit("RT_CONFRONTANTE_EXCLUIDO", "rt_confrontantes", confrontante_id,
+              {"processo": processo_id, "nome": nome})
+        flash(f"{nome} excluído do processo.", "success")
+        return _voltar(processo_id)
+
+    @app.route("/registro-imoveis/retificacoes/<int:processo_id>/atendimento",
+               methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def ri_retificacao_atendimento(processo_id: int):
+        import atendimento_processo as AP
+        try:
+            with db.connect() as con:
+                p = RT.processo(con, processo_id)
+                if not p:
+                    flash("Não achei esse processo de retificação.", "warning")
+                    return _voltar(processo_id)
+                vinculo = AP.resolver(
+                    con, matricula_id=p["matricula_id"],
+                    prenotacao_id=_campo("prenotacao_id"),
+                    protocolo_id=_campo("protocolo_id"),
+                    protocolo_busca=_campo("protocolo_busca"), hoje=hoje())
+            with db.transaction() as con:
+                mudou = RT.atualizar_atendimento(
+                    con, processo_id, prenotacao_id=vinculo["prenotacao_id"],
+                    prenotacao=vinculo["prenotacao"],
+                    protocolo_id=vinculo["protocolo_id"],
+                    protocolo_numero=vinculo["protocolo_numero"],
+                    agora=agora(), usuario=usuario_nome())
+        except (AP.AtendimentoError, RT.RetificacaoError, ValueError) as erro:
+            flash(str(erro), "danger")
+            return _voltar(processo_id)
+        audit("RT_ATENDIMENTO", "rt_processos", processo_id, {
+            "prenotacao": vinculo["prenotacao"],
+            "protocolo": vinculo["protocolo_numero"]})
+        flash("Prenotação e protocolo atualizados." if mudou
+              else "Nada mudou no atendimento.", "success" if mudou else "warning")
         return _voltar(processo_id)
 
     @app.route("/registro-imoveis/retificacoes/<int:processo_id>/notificar",
@@ -600,7 +720,92 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         audit("RT_NOTIFICADO", "rt_confrontantes",
               int(_campo("confrontante_id") or 0), {"forma": _campo("forma")})
         flash("Notificação registrada — e o papel dela está pronto: use "
-              "«Imprimir a notificação» na linha do confrontante.", "success")
+              "«Imprimir a notificação» na linha do confrontante. O papel "
+              "final só sai depois do selo.", "success")
+        return _voltar(processo_id)
+
+    def _recusa_de_robo():
+        import selo_robo as SR
+        if SR.exige_humano_para_selar():
+            abort(403)
+
+    @app.route("/registro-imoveis/retificacoes/<int:processo_id>"
+               "/confrontante/<int:confrontante_id>/selar", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def ri_retificacao_selar_notificacao(processo_id: int, confrontante_id: int):
+        """Sela a notificação já expedida, no item 16.23 do protocolo. FALA COM A REDE."""
+        _recusa_de_robo()
+        import notificacao_selo as NS
+        with db.connect() as con:
+            linha = banco(con).um(
+                """SELECT c.*, p.protocolo_id, p.numero AS processo_numero
+                     FROM rt_confrontantes c
+                     JOIN rt_processos p ON p.id = c.processo_id
+                    WHERE c.id = %s AND c.processo_id = %s""",
+                (confrontante_id, processo_id))
+        if not linha:
+            flash("Não achei esse confrontante.", "danger")
+            return _voltar(processo_id)
+        if not linha.get("notificado_em"):
+            flash("Expeça a notificação antes de selá-la.", "danger")
+            return _voltar(processo_id)
+        import ato_selado as AS
+        from pathlib import Path
+        feito = NS.selar(
+            db, Path(app.config["DATA_DIR"]), tabela="rt_confrontantes",
+            ato_id=confrontante_id, protocolo_id=linha.get("protocolo_id"),
+            nome=linha.get("nome") or "", documento=linha.get("documento") or "",
+            escrevente=usuario_nome(),
+            versao_tabela=AS.versao_da_tabela_de_custas(
+                NS.CAMINHO, db.get_setting("selo_tabela_custas_em", "")),
+            cns=db.get_setting("ri_cns", ""), agora=agora(), quem=usuario_nome(),
+            isento=_campo("isento") == "1", motivo_isencao=_campo("motivo_isencao"),
+            selo_atual=linha.get("selo"))
+        if not feito["ok"]:
+            audit("RT_NOTIFICACAO_SELO_FALHOU", "rt_confrontantes", confrontante_id,
+                  {"processo": processo_id, "motivo": feito["motivo"]})
+            flash(f"O selo da notificação NÃO saiu: {feito['motivo']} "
+                  "A notificação continua no processo, sem selo.", "danger")
+            return _voltar(processo_id)
+        with db.transaction() as con:
+            from retificacao import _anotar
+            _anotar(con, processo_id, tipo="SELO", quando=agora(),
+                    quem=usuario_nome(), confrontante_id=confrontante_id,
+                    artigo="item 16.23",
+                    o_que=(f"Notificação de {linha['nome']} selada "
+                           f"({NS.CODIGO}, selo {feito['numero']})."))
+        audit("RT_NOTIFICACAO_SELADA", "rt_confrontantes", confrontante_id,
+              {"processo": processo_id, "selo": feito["numero"], "item": NS.CODIGO})
+        flash(f"Notificação selada: {feito['numero']} (item {NS.CODIGO}). "
+              "O papel final já pode ser impresso.", "success")
+        return _voltar(processo_id)
+
+    @app.route("/registro-imoveis/retificacoes/<int:processo_id>/item-16-23",
+               methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def ri_retificacao_lancar_16_23(processo_id: int):
+        """Lança o 16.23 no protocolo ligado, quando ele ainda não está lá."""
+        _recusa_de_robo()
+        import notificacao_selo as NS
+        with db.connect() as con:
+            p = RT.processo(con, processo_id)
+        if not p or not p.get("protocolo_id"):
+            flash("Ligue o protocolo de recepção antes de lançar o item 16.23.",
+                  "danger")
+            return _voltar(processo_id)
+        try:
+            with db.transaction() as con:
+                feito = NS.lancar_item(con, int(p["protocolo_id"]))
+        except NS.NotificacaoSeloError as erro:
+            flash(str(erro), "danger")
+            return _voltar(processo_id)
+        audit("RT_ITEM_16_23", "cx_protocolo_atos", feito["id"],
+              {"processo": processo_id, "protocolo": feito["protocolo_numero"]})
+        flash(f"Item 16.23 lançado no protocolo {feito['protocolo_numero']} "
+              f"— R$ {feito['total']}. Receba o pagamento ou marque a "
+              "gratuidade, e sele a notificação.", "success")
         return _voltar(processo_id)
 
     @app.route("/registro-imoveis/retificacoes/<int:processo_id>"
@@ -638,12 +843,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   "caminho que não o monta. O papel não se remonta: o que "
                   "sairia agora não é o que foi entregue.", "danger")
             return redirect(voltar)
-        from ri_odt import gerar_odt, texto_para_odf
+        import notificacao_selo as NS
+        from ri_odt import gerar_odt
+        selado = bool(str(linha.get("selo") or "").strip())
         arquivo = gerar_odt(
-            texto_para_odf(teor),
+            NS.corpo_do_papel(teor, selado=selado,
+                              selo_texto=linha.get("selo_texto") or "",
+                              selo_numero=linha.get("selo") or ""),
             titulo=f"Notificação — retificação {linha['processo_numero']}")
+        if selado:
+            with db.transaction() as con:
+                NS.marcar_impressao(con, "rt_confrontantes", confrontante_id,
+                                    quando=agora())
         audit("RT_NOTIFICACAO_IMPRESSA", "rt_confrontantes", confrontante_id,
-              {"processo": processo_id, "nome": linha["nome"]})
+              {"processo": processo_id, "nome": linha["nome"],
+               "selo": linha.get("selo") or "", "previa": not selado})
         nome = safe_component(
             f"notificacao-{linha['processo_numero']}-{linha['nome']}")
         return IMPW.resposta_do_papel(arquivo, nome=nome,

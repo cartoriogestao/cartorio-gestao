@@ -17,38 +17,51 @@ porta aberta foi a do selador de mentira, em 127.0.0.1.
 - o casal que compra sai inteiro como proprietário, e o vendedor sai.
 
 Ficaram **três defeitos** no teste, em `xfail(strict=True)`, e três observações sem teste. Os dois
-primeiros defeitos têm a mesma raiz.
+primeiros defeitos têm a mesma raiz: o cancelamento pelo modelo do «Novo ato» não liga a AV ao ato, e o
+pelo botão «Cancelar este ato» liga (item 1, corrigido na segunda leva).
 
 Os nomes e os CPF são fictícios (os da lista dos fictícios). Os artigos do CNN e do CN-MA não estão nesta
 máquina; onde eles pesariam, está escrito «conferir».
 
 ---
 
-## 1. O cancelamento não tira o ônus: o pedido de certidão vem «Positiva», com o ato cancelado marcado
+## 1. O cancelamento pelo modelo não tira o ônus; pelo botão «Cancelar este ato», tira
 
-**O que se fez.** R-1 compra e venda; R-2 hipoteca; AV-3 cancelamento da hipoteca (modelo
-AV-CANCELAMENTO-HIPOTECA), selada. Depois, o pedido de certidão de ônus na ficha.
+**CORRIGIDO em 03/11/2026, na segunda leva.** A primeira versão deste item dizia que o sistema não guarda a
+ligação entre o cancelamento e o ato cancelado. **Guarda**: o botão «Cancelar este ato», na ficha, lavra a
+AV e marca o R com `cancelado = 1` e `cancelado_por_ato_id` (`ri_web.ri_cancelar_ato`). Por ali, a
+hipoteca e o usufruto saem do pedido de certidão de ônus, e a certidão sai «NADA CONSTA». Agora há teste
+para isso (`test_pelo_botao_cancelar_este_ato_a_hipoteca_e_o_usufruto_deixam_de_ser_onus`), e
+`test_fluxo_ri` já o tinha para a hipoteca. O defeito é menor do que o primeiro texto disse: **há duas
+portas, e a do modelo não liga.**
+
+**O que se fez.** R-1 compra e venda; R-2 hipoteca; AV-3 cancelamento da hipoteca pelo **«Novo ato», com
+o modelo AV-CANCELAMENTO-HIPOTECA**, selada. Depois, o pedido de certidão de ônus na ficha.
 
 **O que saiu.** O formulário vem com **«Positiva» marcada** e o **R-02 (Hipoteca) marcado** para
-transcrição, como se a hipoteca estivesse de pé.
+transcrição, como se a hipoteca estivesse de pé. O R-02 não ficou marcado como cancelado.
 
 **Por que está errado.** LRP arts. 248 e 250: cancelado o registro, ele deixa de produzir efeito, e a
-certidão de ônus (art. 19, § 9º) não o dá como vigente. O sistema deixa o escrevente desmarcar, mas o
-padrão é o errado, e o erro custa: o papel faz o banco recusar o crédito, ou o comprador desistir.
+certidão de ônus (art. 19, § 9º) não o dá como vigente. O modelo está na lista do «Novo ato», e quem o usa
+tem toda a razão para achar que cancelou. O sistema deixa o escrevente desmarcar no pedido de certidão,
+mas o padrão é o errado, e o erro custa: o papel faz o banco recusar o crédito, ou o comprador desistir.
 
-**A causa.** `ri_onus.classificar` só exclui o ato com `ri_atos.cancelado`, que é o ato **tornado sem
-efeito** (lavrado errado), e não o ato **baixado por averbação**. A AV de cancelamento cita o ato no texto
-(«fica cancelado o registro [ATO CANCELADO]»), mas o sistema não guarda essa ligação. A situação jurídica
-já tenta a mesma coisa para as fichas do acervo, procurando no teor o parágrafo de cancelamento que cita o
-rótulo (`ri_situacao_juridica`, «cancelado_por»), e só avisa.
+**A causa.** A lavratura comum (`/registro-imoveis/<id>/atos`) não sabe que o modelo cancela um ato: o
+texto diz «fica cancelado o registro [ATO CANCELADO]», mas nada grava `cancelado_por_ato_id`. O botão
+«Cancelar este ato» só aparece na ficha para ADMIN e MANAGER (`ri_ficha.html`), embora a rota aceite
+também o escrevente (`roles_required("ADMIN", "MANAGER", "USER")`). O escrevente que lavra não vê o botão,
+e vê o modelo.
 
-**Proposta, para o oficial decidir.** Na lavratura das averbações que extinguem um ato (cancelamento de
-hipoteca ou de fiduciária, extinção de usufruto, cancelamento de penhora e de indisponibilidade, e o
-AV-CANCELAMENTO), um campo «ato que se cancela», que a tela preenche a partir dos ônus vigentes da
-matrícula e que se grava como ligação (`ri_atos.extinto_por_ato_id`, por exemplo). `classificar` passa a
-excluir o ato extinto. O texto do modelo continua dizendo o rótulo. Pergunta: preencher a ligação também
-nas matrículas já lavradas, a partir do texto das averbações, com uma lista para conferir? Ou só daqui
-para a frente?
+**Proposta, para o oficial decidir.** Uma das duas:
+- **(a1)** os modelos que cancelam ou extinguem (AV-CANCELAMENTO-HIPOTECA, AV-EXTINCAO-USUFRUTO e o
+  AV-CANCELAMENTO) pedem na lavratura «qual ato se cancela», escolhido entre os vigentes da matrícula,
+  e gravam a mesma marca que o botão grava;
+- **(a2)** esses modelos saem do «Novo ato» e passam a ser o texto do botão.
+
+A (a1) mantém o caminho de quem lavra. A (a2) pede também decidir quem vê o botão, porque a tela e a rota
+hoje discordam. Nas matrículas
+já lavradas, o que foi cancelado pelo modelo não tem a marca. Pergunta: procurar no banco as AV lavradas
+por esses modelos e listar para conferir?
 
 ## 2. A extinção do usufruto: o usufruto continua ônus, e a própria extinção vira ônus
 
@@ -60,7 +73,7 @@ citando o R-02.
 **Por que está errado.** CC art. 1.410 e LRP art. 167, II, 2: extinto e averbado, o usufruto não pesa
 mais. A averbação da extinção nunca foi ônus.
 
-**A causa.** A mesma do item 1, para o R-02. A AV-03 entra pela palavra «usufruto» do teor, porque a
+**A causa.** A mesma do item 1, para o R-02 (pelo botão, o usufruto sai). A AV-03 entra pela palavra «usufruto» do teor, porque a
 natureza «Extinção de usufruto» não está na tabela de naturezas (`CODIGOS_DE_ONUS` / `NATUREZAS`). O
 cancelamento da hipoteca não entrou porque a natureza dele é reconhecida.
 
@@ -106,13 +119,68 @@ casa (`ri_web.amarrar_prenotacao`: a lavratura não encerra a prenotação; ence
 arquivamento 16.39). Fica registrado só para o oficial confirmar que a certidão sai assim enquanto o
 balcão não encerra.
 
+## Segunda leva (03/11/2026)
+
+Mais quatro sequências: a prioridade entre duas prenotações, a partilha, o desmembramento de imóvel
+hipotecado e, conferindo o item 1, o cancelamento pelo botão «Cancelar este ato» (funciona: ver o item 1,
+corrigido). **A partilha está certa:** a meeira e os dois herdeiros entram no quadro de titulares e na
+certidão de propriedade, e a falecida sai. Ficaram **mais dois defeitos**, também em `xfail(strict=True)`.
+
+## 4. O título prenotado depois passa na frente do anterior, sem aviso
+
+**O que se fez.** R-1 compra e venda para a proprietária. Depois, duas prenotações sobre a matrícula, na
+ordem: a nº 2, venda da proprietária a um comprador; a nº 3, venda da mesma proprietária a outro comprador.
+A lavratura pelo protocolo 3, com a 2 ainda aberta.
+
+**O que saiu.** O R-2 foi ao livro com selo. Os recados da tela falam da prenotação 3 («ficou amarrada a
+este ato») e da CNIB. Da prenotação 2, anterior e contraditória, nem uma palavra. A ficha lista as duas
+como «Aberto», mas na lista de protocolos, longe do botão de lavrar.
+
+**Por que está errado.** LRP art. 186: o número de ordem da prenotação determina a prioridade do título, e
+esta a preferência dos direitos reais. Art. 191: prevalece o título prenotado sob o número mais baixo. O
+registro do título posterior, com o anterior contraditório pendente, inverte a preferência que a lei dá a
+quem chegou primeiro, e quem perde é o comprador da prenotação 2.
+
+**A causa.** A lavratura (`/registro-imoveis/<id>/atos`) amarra o ato à prenotação escolhida
+(`amarrar_prenotacao`), mas não olha as outras prenotações abertas da mesma matrícula.
+
+**Proposta, para o oficial decidir.** Na lavratura, procurar outra prenotação ABERTA da mesma matrícula com
+número menor que a deste ato. Se houver: **(d1)** avisar, nomeando o protocolo, e pedir a confirmação com o
+motivo (o título anterior pode ser compatível: uma hipoteca não exclui uma venda); ou **(d2)** barrar até a
+anterior ser registrada, devolvida ou cancelada. A sugestão é a (d1), porque o sistema não sabe quando dois
+títulos se contradizem, e o registrador sabe.
+
+## 5. A matrícula filha aberta de imóvel hipotecado não diz nada da hipoteca da mãe
+
+**O que se fez.** Matrícula 4.100 com R-1 compra e venda e R-2 hipoteca. «Nova matrícula» para uma área
+desmembrada dela, com o registro anterior «Matrícula 4100 deste Ofício (desmembramento)».
+
+**O que saiu.** «Matrícula 4101 aberta no livro 2.» A ficha da 4.101 não fala da hipoteca R-02/4100.
+
+**Por que está errado.** LRP art. 230: se na certidão da origem constar ônus, o oficial abre a matrícula
+e, logo em seguida ao registro, averba a existência do ônus. Sem lembrete, a filha nasce limpa na certidão
+de ônus, e a garantia do credor some da publicidade da área desmembrada.
+
+**A causa.** A abertura (`/registro-imoveis/nova`) grava o registro anterior como texto e não consulta a
+matrícula de origem. A ficha já sabe achar o número dela no texto: é o que a certidão dominial usa
+(`ri_dominial.sugerir_numeros_origem`).
+
+**Proposta.** Ao abrir, e na ficha da filha enquanto não houver averbação do ônus transportado: achar a
+origem pelo registro anterior (a mesma função) e listar os ônus vigentes dela, pela mesma
+`ri_onus.onus_vigentes`, com o recado «averbe o transporte (LRP art. 230)». Pergunta ao oficial: só avisar,
+ou também oferecer um modelo de averbação de transporte de ônus? A casa não tem esse modelo.
+
+**O4. O quadro de titulares não guarda a fração de cada um.** Na partilha (50% para a meeira, 25% para
+cada herdeiro), a certidão de propriedade traz os três nomes sem a fração. A fração está no texto do ato,
+e a lei a exige lá (LRP art. 176, § 1º, III, e o quinhão do formal), mas não na certidão de propriedade.
+O próprio sistema já avisa na transmissão de parte ideal («ponha de volta em Partes → Corrigir»). Para o
+oficial: guardar a fração no quadro, e a certidão de propriedade dizê-la?
+
 ## O que fica para as próximas levas
 
 Do plano do inventário:
-- a prioridade entre duas prenotações (LRP arts. 186 e 191);
-- a partilha com viúva meeira e herdeiros, com as frações;
 - a doação com reserva de usufruto no mesmo título;
-- o desmembramento com as matrículas filhas;
 - a arrematação sobre imóvel penhorado;
 - o indicador pessoal e o real depois de cada sequência;
-- a DOI da compra e venda.
+- a DOI da compra e venda;
+- a caducidade da prenotação (LRP art. 205).

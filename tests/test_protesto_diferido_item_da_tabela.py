@@ -267,7 +267,8 @@ def _protestos(s, tid) -> list[dict]:
 
 
 @pytest.mark.parametrize("origem", ["CRA", "CENPROT"])
-def test_o_protesto_da_central_lavra_sem_caixa_e_sem_protocolo(s, origem):
+@pytest.mark.parametrize("cobrar", [None, "", "9315"])
+def test_o_protesto_da_central_lavra_sem_caixa_e_sem_protocolo(s, origem, cobrar):
     from selador_de_bancada import ligar_o_selador
     tid = _intimado(s, origem=origem)
     assert _ler(s, "SELECT id FROM cx_caixas WHERE situacao='ABERTO'") == []
@@ -276,7 +277,8 @@ def test_o_protesto_da_central_lavra_sem_caixa_e_sem_protocolo(s, origem):
     # SEM PROTOCOLO DE BANCADA: a cobertura do selo tem de vir do devido.
     with ligar_o_selador(s, protocolo_pago=False) as aparelho:
         html = " ".join(_lancar(s, tid, ato="PROTESTO", motivo_atraso=MOTIVO,
-                                **_afirmacao(origem)).split())
+                                **_afirmacao(origem),
+                                **({"cobrar": cobrar} if cobrar is not None else {})).split())
     assert "Ato NÃO lançado" not in html
     [ato] = _protestos(s, tid)
     assert ato["cancelado"] == 0 and str(ato["selo"] or "").strip()

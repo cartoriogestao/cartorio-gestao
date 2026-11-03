@@ -141,8 +141,8 @@
 {% if r and r.itens %}
 <div style="grid-column:1/-1">
   {# Volta aberto se traz algo escolhido: fechado, a pessoa não veria o que vai ser cobrado. #}
-  <details{% if form and (form.getlist('cobrar') or form.get('pagador') or form.get('forma_pagamento')) %} open{% endif %}>
-    <summary><small>Cobrar no caixa
+  <details{% if diferido or (form and (form.getlist('cobrar') or form.get('pagador') or form.get('forma_pagamento'))) %} open{% endif %}>
+    <summary><small>{{ 'Itens para selar — emolumentos a posteriori' if diferido else 'Cobrar no caixa' }}
       {%- if r.total_centavos %} — a casa costuma cobrar R$ {{ r.total_centavos | centavos_reais }}{% endif %}</small></summary>
 
     {# O TÍTULO A POSTERIORI (03/11/2026): o item marcado sela o ato e fica
@@ -171,7 +171,14 @@
         {% for i in r.itens %}
         <tr>
           <td>
-            {% if i.preco is not none %}
+            {% if i.faixas %}
+              <select name="cobrar" aria-label="Faixa do item {{ i.codigo_tj }}" style="max-width:100%"{% if not caixa and not diferido %} disabled{% endif %}>
+                <option value="">— escolha a faixa do valor do título —</option>
+                {% for faixa in i.faixas %}
+                <option value="{{ faixa.servico }}"{% if faixa.preco is none %} disabled{% endif %}{% if form and (faixa.servico|string) in form.getlist('cobrar') %} selected{% endif %}>{{ faixa.codigo_tj }} — {{ faixa.descricao }}{% if faixa.preco is not none %} — R$ {{ faixa.preco|centavos_reais }}{% else %} — {{ faixa.motivo }}{% endif %}</option>
+                {% endfor %}
+              </select>
+            {% elif i.preco is not none %}
               <input type="checkbox" name="cobrar" value="{{ i.servico }}"
                      {% if not caixa and not diferido %}disabled{% endif %}{% if form and (i.servico|string) in form.getlist('cobrar') %} checked{% endif %}>
             {% endif %}
@@ -181,6 +188,7 @@
           <td>{{ i.vezes }}</td>
           <td>
             {% if i.preco is not none %}R$ {{ i.preco | centavos_reais }}
+            {% elif i.faixas %}<small>Escolha o subitem pela faixa do valor do título.</small>
             {% else %}<small>{{ i.motivo }}</small>{% endif %}
           </td>
         </tr>
@@ -188,10 +196,10 @@
       </tbody>
     </table>
     <p><small>
-      <strong>Marque o que cobrar.</strong> A lista é o que a casa cobrou antes, em
+      <strong>{{ 'Selecione os itens do ato.' if diferido else 'Marque o que cobrar.' }}</strong> A lista é o que a casa cobrou antes, em
       {{ r.medido_em }}, em ordem de frequência — item de um uso em oitocentos é
-      exceção, e cobrar sozinho pela média em vez de pelo caso seria errado. Nada marcado, nada lançado.
-      {% if r.por_faixa %}
+      exceção, e cobrar sozinho pela média em vez de pelo caso seria errado.{% if not diferido %} Nada marcado, nada lançado.{% endif %}
+      {% if r.por_faixa and not (r.itens | selectattr('faixas', 'defined') | list) %}
         Os itens {{ r.por_faixa | join(', ') }} são <strong>de faixa</strong>: o preço
         depende do valor e está nos subitens, e por isso não dá para marcar aqui.
       {% endif %}

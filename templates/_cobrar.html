@@ -44,7 +44,7 @@
 {# `form` É O QUE JÁ FOI ESCOLHIDO NESTA TELA — 31/10/2026: a recusa do servidor ou o rascunho reaberto. O
    formulário, com `.get` e `.getlist`. Sem ele, o quadro sai como sempre saiu. O protocolo escolhido aqui só
    volta marcado na caixa: `protocolo_escolhido` é outra coisa, porque traz a lista dos itens dele. #}
-{% macro quadro(r, caixa, protocolos=None, protocolo_escolhido=None, itens_do_protocolo=None, reload_url=None, cobrar_itens=True, form=None) %}
+{% macro quadro(r, caixa, protocolos=None, protocolo_escolhido=None, itens_do_protocolo=None, reload_url=None, cobrar_itens=True, form=None, diferir=False) %}
 {# **O PROTOCOLO E OS ITENS A SELAR VÊM PRIMEIRO, E NÃO DEPENDEM DE CAIXA
    NEM DE RECEITA MEDIDA** — correção de 11/09/2026: estava dentro de
    `{% if caixa %}` dentro de `{% if r and r.itens %}`, e por isso, num ato
@@ -141,11 +141,13 @@
 {% if r and r.itens %}
 <div style="grid-column:1/-1">
   {# Volta aberto se traz algo escolhido: fechado, a pessoa não veria o que vai ser cobrado. #}
-  <details{% if form and (form.getlist('cobrar') or form.get('pagador') or form.get('forma_pagamento')) %} open{% endif %}>
-    <summary><small>Cobrar no caixa
+  <details{% if diferir or (form and (form.getlist('cobrar') or form.get('pagador') or form.get('forma_pagamento'))) %} open{% endif %}>
+    <summary><small>{{ 'Itens para selar — emolumentos a posteriori' if diferir else 'Cobrar no caixa' }}
       {%- if r.total_centavos %} — a casa costuma cobrar R$ {{ r.total_centavos | centavos_reais }}{% endif %}</small></summary>
 
-    {% if not caixa %}
+    {% if diferir %}
+    <p><small>Marque o item deste ato ou escolha sua faixa. Ele será usado no selo e ficará devido para o desfecho, sem recebimento no caixa agora.</small></p>
+    {% elif not caixa %}
     <div class="notice danger" style="margin:8px 0">
       <strong>Você não tem caixa aberto.</strong> Sem caixa o lançamento não aparece na
       conferência do dia — e a diferença apareceria no fechamento sem ter de onde vir.
@@ -160,9 +162,16 @@
         {% for i in r.itens %}
         <tr>
           <td>
-            {% if i.preco is not none %}
+            {% if i.faixas %}
+              <select name="cobrar" aria-label="Faixa do item {{ i.codigo_tj }}" style="max-width:100%"{% if not caixa and not diferir %} disabled{% endif %}>
+                <option value="">— escolha a faixa do valor do título —</option>
+                {% for faixa in i.faixas %}
+                <option value="{{ faixa.servico }}"{% if faixa.preco is none %} disabled{% endif %}{% if form and (faixa.servico|string) in form.getlist('cobrar') %} selected{% endif %}>{{ faixa.codigo_tj }} — {{ faixa.descricao }}{% if faixa.preco is not none %} — R$ {{ faixa.preco|centavos_reais }}{% else %} — {{ faixa.motivo }}{% endif %}</option>
+                {% endfor %}
+              </select>
+            {% elif i.preco is not none %}
               <input type="checkbox" name="cobrar" value="{{ i.servico }}"
-                     {% if not caixa %}disabled{% endif %}{% if form and (i.servico|string) in form.getlist('cobrar') %} checked{% endif %}>
+                     {% if not caixa and not diferir %}disabled{% endif %}{% if form and (i.servico|string) in form.getlist('cobrar') %} checked{% endif %}>
             {% endif %}
           </td>
           <td>{{ i.codigo_tj }}</td>
@@ -170,6 +179,7 @@
           <td>{{ i.vezes }}</td>
           <td>
             {% if i.preco is not none %}R$ {{ i.preco | centavos_reais }}
+            {% elif i.faixas %}<small>Escolha o subitem pela faixa do valor do título.</small>
             {% else %}<small>{{ i.motivo }}</small>{% endif %}
           </td>
         </tr>
@@ -177,16 +187,16 @@
       </tbody>
     </table>
     <p><small>
-      <strong>Marque o que cobrar.</strong> A lista é o que a casa cobrou antes, em
+      <strong>{{ 'Selecione os itens do ato.' if diferir else 'Marque o que cobrar.' }}</strong> A lista é o que a casa cobrou antes, em
       {{ r.medido_em }}, em ordem de frequência — item de um uso em oitocentos é
       exceção, e cobrar sozinho pela média em vez de pelo caso seria errado. Nada marcado, nada lançado.
-      {% if r.por_faixa %}
+      {% if r.por_faixa and not (r.itens | selectattr('faixas', 'defined') | list) %}
         Os itens {{ r.por_faixa | join(', ') }} são <strong>de faixa</strong>: o preço
         depende do valor e está nos subitens, e por isso não dá para marcar aqui.
       {% endif %}
     </small></p>
 
-    {% if caixa %}
+    {% if caixa and not diferir %}
     {% set forma_escolhida = form.get('forma_pagamento') if form else '' %}
     <label>Pagador <input name="pagador"{% if form and form.get('pagador') %} value="{{ form.get('pagador') }}"{% endif %}></label>
     <label>Forma de pagamento

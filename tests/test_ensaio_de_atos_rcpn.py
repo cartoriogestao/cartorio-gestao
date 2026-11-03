@@ -100,13 +100,13 @@ RECUSADOS = {
     # A GRAFIA QUE O IBGE NÃO CONFIRMA já trava na conferência das centrais (a CRC exige o código do
     # município). O «ND» calado do relatório (item 9) era só sem o cadastro carregado: ali, desde
     # 02/11/2026, a lavratura avisa (`rc_assento.aviso_da_naturalidade`).
+    # O DESCONHECIDO COM AS PERGUNTAS EM BRANCO: a trava da CRC exige S ou N, e por decisão do oficial
+    # (02/11/2026, item 8) o balcão marca «não» — o termo é que declara que se ignora (ver #242).
+    "obito_desconhecido_ignora": ("se o falecido possuía bens", "CN-MA art. 255, § 1º; decisão de 02/11/2026"),
     "nasc_naturalidade_fora_do_ibge": ("a CRC exige o código do município", "LRP art. 54, § 4º; CNN art. 474"),
 }
 #: Os que a lei permite e a tela ainda recusa.
 RECUSA_INDEVIDA = {
-    "obito_desconhecido_ignora": _decisao(
-        "o balcão não consegue declarar que ignora se o falecido deixou bens: a trava da CRC exige S ou N "
-        "(«sem opção de ignorado»), e o CN-MA art. 255, § 1º, manda escrever que o declarante ignorava"),
 }
 
 

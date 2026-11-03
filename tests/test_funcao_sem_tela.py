@@ -511,6 +511,10 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     "contagem_pendentes_nao_criticas": "tarefa_processo — " + _TOOLS + " (release 262)",
     "contagem_pendentes_notificacao": "tarefa_processo — " + _TOOLS + " (release 262)",
     "texto_tarefas_pendentes": "tarefa_processo — " + _TOOLS + " (release 262/263)",
+    # 03/11/2026 (PR #271): a lista das chaves da CENPROT que faltam sai pela
+    # linha de comando, para o oficial conferir antes de gravar.
+    "chaves_que_faltam": "protesto_cenprot — " + _TOOLS + " (chaves_cenprot_que_faltam.py)",
+    "gravar_chaves_que_faltam": "protesto_cenprot — " + _TOOLS + " (chaves_cenprot_que_faltam.py --gravar)",
     "definir_chave": "modelos_editor — " + _TESTE,
     "fonte_mapa": "modelos_editor_serventia — " + _TESTE,
     "folha_da_certidao": "papel_seguranca — " + _TESTE + " (1ª via, 09/10)",

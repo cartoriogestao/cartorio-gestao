@@ -20,12 +20,12 @@ from __future__ import annotations
 
 import argparse
 import collections
-import csv
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import banco_pg  # noqa: E402
+import csv_seguro  # noqa: E402
 import protesto_cenprot as PC  # noqa: E402
 
 BANCO_PRODUCAO = r"C:\ProgramData\CartorioGestao\cartorio_gestao.sqlite3"
@@ -60,9 +60,11 @@ def main(argv: list[str] | None = None) -> int:
                       "{categoria} -> {chave_proposta} ({motivo})".format(**linha))
         if a.csv:
             with open(a.csv, "w", newline="", encoding="utf-8-sig") as f:
-                w = csv.DictWriter(f, COLUNAS, extrasaction="ignore", delimiter=";")
+                # csv_seguro neutraliza =, +, - e @ no comeco do campo (injecao de
+                # formula); ele recusa coluna a mais, entao so vai o que e de COLUNAS.
+                w = csv_seguro.escritor_de_dicionario(f, COLUNAS, delimiter=";")
                 w.writeheader()
-                w.writerows(lista)
+                w.writerows({c: linha.get(c, "") for c in COLUNAS} for linha in lista)
             print(f"Lista salva em {a.csv}.")
         if a.xml:
             casa = PC.identidade_da_casa(PC._configuracao_da_casa(PC.banco(con)))

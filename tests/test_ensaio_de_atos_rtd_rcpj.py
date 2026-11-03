@@ -9,7 +9,8 @@ O QUE ESTE TESTE FAZ
     notificação, autenticação de livro, certidões) do protocolo pago ao termo e à certidão, cada um num
     registro limpo. Este pratica, pelas mesmas telas e com os mesmos auxiliares de lá, o que vem depois:
     a averbação sobre o registro cancelado, o breve relato da associação dissolvida, e a segunda
-    associação com a mesma denominação. O inventário está em `docs/ensaio_de_atos/inventario_rtd_rcpj.md`,
+    associação com a mesma denominação; na segunda leva, a mudança de denominação e a notificação do
+    registro cancelado. O inventário está em `docs/ensaio_de_atos/inventario_rtd_rcpj.md`,
     e o relatório em `relatorio_rtd_rcpj.md`.
 
 OS DEFEITOS FICAM À VISTA: a asserção é a da lei; o defeito aberto fica em `xfail(strict=True)`.
@@ -151,3 +152,69 @@ def test_o_ato_do_mesmo_segundo_da_leitura_pede_a_releitura():
     # a leitura de antes da coluna: pela hora, o empate passa, como passava
     antiga = {k: v for k, v in registro.items() if k != "pj_dados_ultimo_ato_id"}
     assert "breve relato" in CE.teor_do_breve_relato({"registro": antiga, "atos": atos[:1]})
+
+
+# ------------------------------------------------------------------ a mudança de denominação
+
+NOVA_DENOMINACAO = "ASSOCIAÇÃO CULTURAL DE EXEMPLO"
+ALTERACAO = "Ata de alteração estatutária: nova denominação"
+
+
+def test_a_associacao_que_muda_de_nome_sai_com_o_nome_novo_no_breve_relato(casa):  # noqa: F811
+    """CN-MA art. 420, II (a denominação na situação ATUAL) e LRP art. 128 (a alteração se averba): averbada
+    a ata que muda a denominação, corrigido o cadastro pela tela própria («uma pj mudou de nome», o oficial,
+    12/09/2026) e relida a ficha, o breve relato sai com o nome novo — e não com o antigo."""
+    b = F.Balcao(casa)
+    b.abrir_caixa()
+    registro = _associacao(b)["registro"]
+    ficha = f"/rcpj-rtd/{registro['id']}"
+    _dados_da_pj(b, ficha)
+    titulo = b.receber_titulo(3, serie="PJ_A", natureza=ALTERACAO, apresentante=ASSOCIACAO, documento=F.CNPJ)
+    b.pagar(titulo["protocolo_geral_id"], "15.9.1")
+    b.qualificar(titulo["id"], resultado="POSITIVA")
+    postar_e_seguir(b.c, f"{ficha}/lancar", {
+        "csrf_token": F._token(b.c, ficha), "tipo": "AVERBACAO", "natureza_ato": ALTERACAO,
+        "data_assinatura": "01/10/2026", "protocolo_id": str(titulo["protocolo_geral_id"]),
+        "novo_arquivo": (io.BytesIO(F._png()), "averbacao.png"), **F._campos_da_lista("PJ_A", ALTERACAO)})
+    assert b.ler("SELECT id FROM rg_atos WHERE registro_id=%s AND tipo='AVERBACAO'", (registro["id"],))
+    r = b.post(f"{ficha}/corrigir-requerente", ficha, requerente_nome=NOVA_DENOMINACAO,
+               requerente_documento=F.CNPJ, motivo="Nova denominação averbada (AV-2), ata de 01/10/2026.")
+    assert "Dados do requerente corrigidos" in F._avisos(r), F._avisos(r)
+    _dados_da_pj(b, ficha)
+    r = _breve_relato(b, registro["id"], ficha)
+    assert "emitida" in F._avisos(r), F._avisos(r)
+    cert = b.um("SELECT * FROM at_certidoes ORDER BY id DESC LIMIT 1")
+    assert f"Denominação: {NOVA_DENOMINACAO}" in cert["teor"], cert["teor"]
+    assert f"Denominação: {ASSOCIACAO}\n" not in cert["teor"], cert["teor"]
+
+
+# ------------------------------------------------------------------ a notificação do registro cancelado
+
+@_defeito("a notificação se abre sobre o registro cancelado («Notificação aberta»), e a diligência se paga; a "
+          "averbação da mesma ficha já recusa o cancelado («só se averba registro ativo»)")
+def test_o_registro_cancelado_nao_abre_notificacao(casa):  # noqa: F811
+    """LRP arts. 160 e 164 a 166: a notificação extrajudicial é a do documento registrado; cancelado o
+    registro (lavrado por engano, por exemplo), ele não produz efeito, e não se abre notificação dele."""
+    b = F.Balcao(casa)
+    b.abrir_caixa()
+    titulo = b.receber_titulo(4, serie="TD_B", natureza="Notificação extrajudicial",
+                              apresentante="EMPRESA DE EXEMPLO LTDA", documento=F.CNPJ)
+    b.pagar(titulo["protocolo_geral_id"], "15.8")
+    b.qualificar(titulo["id"], resultado="POSITIVA")
+    url = f"/rcpj-rtd/titulo/{titulo['id']}"
+    postar_e_seguir(b.c, f"{url}/registrar", {
+        "csrf_token": F._token(b.c, url), "serie": "TD_B",
+        "teor": "NOTIFICAÇÃO EXTRAJUDICIAL DE EXEMPLO, para pagamento de aluguel.",
+        "protocolo_id": str(titulo["protocolo_geral_id"])})
+    registro = b.um("SELECT * FROM rg_registros ORDER BY id DESC LIMIT 1")
+    ficha = f"/rcpj-rtd/{registro['id']}"
+    pid = b.protocolo("RTD", "EMPRESA DE EXEMPLO LTDA", "15.9.1")
+    r = b.post(f"{ficha}/lancar", ficha, tipo="CANCELAMENTO",
+               motivo="Registro lavrado por engano, a requerimento do apresentante.", protocolo_id=str(pid))
+    assert "Cancelamento lançada" in F._avisos(r), F._avisos(r)
+    b.protocolo("RTD", "EMPRESA DE EXEMPLO LTDA", "15.8.1", "15.8.2")
+    nova = f"/rcpj-rtd/notificacoes/nova?titulo_id={titulo['id']}"
+    r = b.post(nova, nova, destinatario_nome="CICLANO DE EXEMPLO", destinatario_documento=F.CPF,
+               endereco="Rua de Exemplo, 100, Centro, Cidade Exemplo/MA", zona="URBANA")
+    assert "Notificação aberta" not in F._avisos(r), F._avisos(r)
+    assert not b.ler("SELECT id FROM rg_notificacoes"), F._avisos(r)

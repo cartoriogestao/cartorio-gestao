@@ -1,4 +1,4 @@
-# Relatório do ensaio de atos — RTD e RCPJ (primeira leva)
+# Relatório do ensaio de atos — RTD e RCPJ (primeira e segunda levas)
 
 Ensaio de 03/11/2026, pedido do oficial de 01/11/2026. O inventário está em `inventario_rtd_rcpj.md`; o
 teste em `tests/test_ensaio_de_atos_rtd_rcpj.py`.
@@ -18,7 +18,8 @@ A trava ficou ligada; a única porta aberta foi a do selador de mentira, em 127.
 - **o breve relato da associação dissolvida** é recusado enquanto a leitura da ficha é anterior à
   dissolução; relida a ficha, ele sai e diz «encontra-se CANCELADO», com o cancelamento como último ato.
 
-Ficou **um defeito**, em `xfail(strict=True)`, e quatro observações.
+Ficou **um defeito**, em `xfail(strict=True)`, e quatro observações. A segunda leva acrescentou mais um
+defeito (item 2) e uma observação (O5).
 
 Os nomes e os documentos são fictícios. Os textos do CN-MA não estão nesta máquina: onde ele pesaria,
 está escrito «conferir».
@@ -80,8 +81,40 @@ a leitura guarda o último ato que viu (`rg_registros.pj_dados_ultimo_ato_id`, g
 gravada antes da coluna não a tem, e segue pela hora, como era. O teste do ensaio já não espera um
 segundo, e há um teste da régua só com o empate.
 
+## Segunda leva (03/11/2026)
+
+**Certo, e agora com teste: a associação que muda de nome sai com o nome novo no breve relato.** A
+sequência é a do balcão:
+- a averbação da ata da nova denominação;
+- a correção do cadastro pela tela própria («Corrigir requerente», feita a pedido do oficial em 12/09/2026:
+  «uma pj mudou de nome»);
+- a releitura da ficha;
+- o breve relato, que diz «Denominação: ASSOCIAÇÃO CULTURAL DE EXEMPLO».
+
+## 2. A notificação se abre sobre o registro cancelado
+
+**O que se fez.** Uma notificação extrajudicial registrada no Livro B; o registro cancelado («lavrado por
+engano, a requerimento do apresentante»); depois, o pedido de notificação do mesmo título, com a
+diligência paga.
+
+**O que saiu.** «Notificação aberta. A primeira diligência vai até o prazo que a ficha mostra.»
+
+**Por que está errado.** LRP art. 160: a notificação é a «do registro». O registro cancelado não produz
+efeito (arts. 164 a 166), e a própria ficha já recusa a averbação nele («só se averba registro ativo»,
+`rg_registro.lancar_averbacao`). **E o fim do caminho quebra:** a notificação, feita, se averba à margem do
+registro por essa mesma função (`rg_notificacao.averbar`), que vai recusar. A casa diligencia, cobra, e só
+no fim descobre que o resultado não se averba.
+
+**Proposta.** Na abertura da notificação, a mesma régua da averbação: registro que não está ATIVO não
+abre notificação, e o recado diz a situação e o ato que o cancelou.
+
+**O5. A releitura da ficha não pergunta a denominação.** O formulário «Dados da pessoa jurídica»
+(`dados-pj`) pede a sede, o objeto, o capital, os sócios e a diretoria, mas não a denominação, que o breve
+relato tira do cadastro (`requerente_nome`). Quem averba a mudança de nome e relê a ficha, sem passar pela
+«Corrigir requerente», certifica o nome velho, e a régua da leitura deixa (ela só confere a data). Para o
+oficial: pôr a denominação no formulário da releitura, já preenchida com a do cadastro, para quem relê a
+confirmar?
+
 ## O que fica para as próximas levas
 
-- a notificação sobre o registro cancelado;
-- a averbação de alteração estatutária que muda a denominação, e o breve relato depois dela;
 - o RTD: o mesmo título registrado duas vezes (o registro facultativo, Livro F, admite; o B e o C?).

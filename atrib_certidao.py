@@ -625,7 +625,14 @@ def teor_do_breve_relato(dados: dict, *, con=None,
     ultimo = max(atos, key=lambda a: (str(a.get("data_ato") or "")[:10],
                                       int(a.get("id") or 0)), default=None)
     lido_em = str(reg.get("pj_dados_em") or "")
-    depois = [a for a in atos if str(a.get("criado_em") or "") > lido_em]
+    # PELA ORDEM DOS ATOS, quando a leitura a guardou (ensaio de atos do RCPJ, 03/11/2026, observação O4):
+    # pela hora, o ato lavrado no mesmo segundo da leitura contava como lido. A leitura gravada antes da
+    # coluna não a tem, e segue pela hora, como era.
+    visto = reg.get("pj_dados_ultimo_ato_id")
+    if visto is not None:
+        depois = [a for a in atos if int(a.get("id") or 0) > int(visto)]
+    else:
+        depois = [a for a in atos if str(a.get("criado_em") or "") > lido_em]
     if depois:
         a = depois[-1]
         raise CertidaoError(

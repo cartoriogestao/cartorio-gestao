@@ -1783,7 +1783,8 @@ def gerar_odt(corpo_odf: str, titulo: str = "", cabecalho_odf: str = "",
               folha_livro_inicio: int | None = None,
               pagina_largura_cm: float | None = None,
               pagina_altura_cm: float | None = None,
-              margem_cm: float | None = None) -> bytes:
+              margem_cm: float | None = None,
+              estilos_do_conteudo: str = "") -> bytes:
     """Monta o .odt. O mimetype tem de ser a primeira entrada e sem compressao,
     senao o LibreOffice nao reconhece o pacote.
 
@@ -1817,6 +1818,10 @@ def gerar_odt(corpo_odf: str, titulo: str = "", cabecalho_odf: str = "",
     do livro (frente/verso): a página 1 mostra o número inicial, a 2 mostra
     `Nv`, a 3 a folha seguinte, e assim por diante. Preferível a
     `folha_pagina_ajuste` nos atos de notas — pedido 18/09/2026.
+
+    `estilos_do_conteudo` são estilos automáticos de UM documento só (a folha
+    do livro do RCPN, `rc_folha_odt`): entram no content.xml deste pacote e
+    não em `ESTILOS_EXTRA`, que é do módulo e iria para todo `.odt` seguinte.
     """
     extras = "".join(ESTILOS_EXTRA.values())
     estilo_pagina_1 = (
@@ -1825,7 +1830,7 @@ def gerar_odt(corpo_odf: str, titulo: str = "", cabecalho_odf: str = "",
         if cabecalho_a_partir_da_pagina_2 else "")
     content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <office:document-content {NS} office:version="1.2">
- <office:automatic-styles>{ESTILOS_AUTO}{extras}{estilo_pagina_1}</office:automatic-styles>
+ <office:automatic-styles>{ESTILOS_AUTO}{extras}{estilo_pagina_1}{estilos_do_conteudo}</office:automatic-styles>
  <office:body><office:text>
 {corpo_odf}
  </office:text></office:body>

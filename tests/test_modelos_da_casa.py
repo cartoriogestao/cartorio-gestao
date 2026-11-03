@@ -3076,13 +3076,25 @@ MINUTAS_MUDADAS_NO_LH13 = {
 }
 
 
+# A VÍRGULA DO TESTAMENTO SOLTEIRO — ensaio de atos das Notas, 03/11/2026 (relatorio_notas.md, item 4;
+# conserto liberado pela sessão de PRs no mesmo dia). «ser {ESTADO CIVIL}, «SE CASADO: sendo seu
+# cônjuge…»» deixava «ser solteiro, .» quando a cláusula saía: a vírgula vai para dentro dela.
+MINUTAS_MUDADAS_NO_ENSAIO_NOTAS = {
+    "NT-TESTAMENTO-PUBLICO": (
+        ("união estável}, «SE CASADO OU CONVIVENTE: sendo seu",
+         "união estável}«SE CASADO OU CONVIVENTE:, sendo seu"),
+    ),
+}
+
+
 def _minuta_de_hoje(antes: dict) -> dict:
-    """A minuta do ouro com as trocas declaradas do LD02, do LD07 e do LH13 — e
-    nada mais."""
+    """A minuta do ouro com as trocas declaradas do LD02, do LD07, do LH13 e do
+    ensaio de atos das Notas — e nada mais."""
     corpo = _com_as_trocas(antes["corpo"], MINUTAS_MUDADAS_NO_LD02.get(antes["codigo"], ()))
     corpo = _com_as_trocas(corpo, MINUTAS_MUDADAS_NO_LD07.get(antes["codigo"], ()))
+    corpo = _com_as_trocas(corpo, MINUTAS_MUDADAS_NO_LH13.get(antes["codigo"], ()))
     return dict(antes, corpo=_com_as_trocas(
-        corpo, MINUTAS_MUDADAS_NO_LH13.get(antes["codigo"], ())))
+        corpo, MINUTAS_MUDADAS_NO_ENSAIO_NOTAS.get(antes["codigo"], ())))
 
 
 # **EM 21/10/2026 O CATÁLOGO GANHOU 1 PAPEL (LD02)**: a certidão das Notas em
@@ -3416,7 +3428,8 @@ def test_as_minutas_saem_iguais_as_de_antes(ouro_d):
     import notas_modelos as NM
     # as minutas que o LG04 acrescentou não existiam antes: ficam de fora
     assert set(MINUTAS_MUDADAS_NO_LD02) | set(MINUTAS_MUDADAS_NO_LD07) | set(
-        MINUTAS_MUDADAS_NO_LH13) <= {m["codigo"] for m in ouro_d["minutas"]}
+        MINUTAS_MUDADAS_NO_LH13) | set(MINUTAS_MUDADAS_NO_ENSAIO_NOTAS) <= {
+        m["codigo"] for m in ouro_d["minutas"]}
     assert OURO_D.normal([m for m in NM.MODELOS
                           if m["codigo"] not in MINUTAS_DO_LG04]) == [
         _minuta_de_hoje(m) for m in ouro_d["minutas"]]

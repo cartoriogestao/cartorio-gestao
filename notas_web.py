@@ -5785,6 +5785,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   f"{SEGWEB.erro_do_modelo(erro, 'notas_ato', com_tipo=True)}", "danger")
             return redirect(url_for("notas_ato", ato_id=ato_id))
         valores = {k: v for k, v in request.form.items() if k != "csrf_token"}
+        for aviso in NT.estado_civil_do_testador(valores, partes):
+            flash(aviso, "warning")
         # Campo do fecho aproveita as partes do formulário se veio em branco.
         if not (valores.get(NT.CHAVE_ASSINANTES) or "").strip():
             sugerido = NT.texto_dos_assinantes(partes, con=db.connect)

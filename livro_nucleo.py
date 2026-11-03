@@ -73,7 +73,7 @@ PAGINAS_POR_FOLHA = 2
 
 # ------------------------------------------------------------- por extenso
 
-_UNIDADES = ("", "um", "dois", "tres", "quatro", "cinco", "seis", "sete",
+_UNIDADES = ("", "um", "dois", "três", "quatro", "cinco", "seis", "sete",
              "oito", "nove", "dez", "onze", "doze", "treze", "catorze",
              "quinze", "dezesseis", "dezessete", "dezoito", "dezenove")
 _DEZENAS = ("", "", "vinte", "trinta", "quarenta", "cinquenta", "sessenta",

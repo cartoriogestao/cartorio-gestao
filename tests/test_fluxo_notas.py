@@ -446,6 +446,12 @@ def _valor_de_exemplo(campo: dict, hoje: dict) -> str:
     e um valor fictício que se reconhece no papel nos outros."""
     if campo["chave"] in hoje:
         return hoje[campo["chave"]]
+    # O emancipando tem de ter entre dezesseis e dezoito anos: a tela confere (ensaio de atos das
+    # Notas, item 7, 03/11/2026).
+    import notas_teor as NT
+    if campo["chave"] == NT.CHAVE_NASCIMENTO_DO_EMANCIPANDO:
+        from datetime import date
+        return f"01/01/{date.today().year - 17}"
     if campo["tipo"] == "data":
         return "dez de outubro de dois mil e vinte e seis (10/10/2026)"
     if campo["tipo"] == "moeda":

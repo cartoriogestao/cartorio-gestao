@@ -26,6 +26,10 @@ Os nomes, os CPF e o CNPJ do ensaio são fictícios. Os artigos do CNN e do CN-M
 
 ## 1. Quem comparece em nome de outro vai para o lado errado do negócio
 
+**CONSERTADO em 03/11/2026** (conserto liberado pela sessão de PRs): o lado vem da qualidade da CEP
+(`notas_teor.lado_da_parte`); quem comparece por outro sai qualificado e marcado, fora dos dois lados,
+até o item 2 lhe dar o campo de quem ele representa.
+
 **O que saiu.** A abertura do ato separa as partes em dois lados — outorgantes e outorgados — por
 **palavra** na qualificação (`notas_teor.partes_por_lado`, `_SEGUNDA_PARTE`): quem tem «OUTORGADO»,
 «COMPRADOR», «DONATARIO» ou «PROCURADOR» vai para o segundo lado; todo o resto, para o primeiro.
@@ -137,6 +141,10 @@ ADVOGADOS» é montado dele — nome, qualificação e inscrição na OAB —, s
 
 ## 7. A emancipação não confere os dezesseis anos
 
+**CONSERTADO em 03/11/2026** (conserto liberado pela sessão de PRs): o teor não se monta com menos de
+dezesseis anos ou com dezoito. E o lançamento passou a recusar o ato sem teor: o ensaio mostrou que
+a emancipação recusada ia ao livro assim mesmo, com folha, termo e selo e sem texto nenhum.
+
 **O que saiu.** O emancipando «nascido em dez de outubro de dois mil e vinte e seis (10/10/2026),
 portanto com dezesseis anos completos» — e lavrou.
 
@@ -149,6 +157,8 @@ dezesseis anos no dia do ato (e quem já tem dezoito, que não se emancipa).
 **No teste:** `test_a_emancipacao_confere_os_dezesseis_anos`.
 
 ## 8. A data por extenso diz «tres»
+
+**CONSERTADO em 03/11/2026** (conserto liberado pela sessão de PRs): «três» em `livro_nucleo._UNIDADES`.
 
 **O que saiu.** «aos tres (3) dias do mês de novembro» — em todo ato das Notas lavrado num dia 3 (e no 23).
 A palavra vem de `livro_nucleo._UNIDADES`; o motor de modelos tem um conserto próprio

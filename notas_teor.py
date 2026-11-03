@@ -551,11 +551,10 @@ def _comparecimento_da_procuracao(principais: list, poderes: str,
     de cada lado é regra, e fica aqui.
     """
     textos = MODELOS.textos(textos)
-    lado_a, lado_b = [], []
+    lado_a, lado_b, por_outro = [], [], []
     for p in principais:
-        alvo = (lado_b if any(x in _sem_acento_maiusculo(dict(p).get("qualificacao"))
-                              for x in _SEGUNDA_PARTE) else lado_a)
-        alvo.append(p)
+        lado = lado_da_parte(p, "PROCURACAO")
+        (lado_b if lado == OUTORGADO else por_outro if lado == REPRESENTA else lado_a).append(p)
     varios = len(lado_a) > 1
     if lado_a:
         outorgantes = "; e ".join(_qualificacao_no_lado(p, esperado=("OUTORGANT",),
@@ -568,6 +567,8 @@ def _comparecimento_da_procuracao(principais: list, poderes: str,
             for p in lado_b)
     else:
         procuradores = _falta("procurador — inclua o outorgado no quadro Partes")
+    if por_outro:
+        procuradores += "; " + "; ".join(_quem_representa(p, textos) for p in por_outro)
     frase = (textos.preencher("NOTAS_ABERTURA_PROCURACAO__varios_outorgantes"
                               if varios else "NOTAS_ABERTURA_PROCURACAO__um_outorgante",
                               outorgantes=outorgantes)
@@ -596,7 +597,23 @@ def _comparecimento_da_procuracao(principais: list, poderes: str,
 # o resto — vendedor, doador, outorgante, substabelecente, renunciante, ou
 # parte sem qualificação — fica na primeira. Testemunha não entra em nenhuma
 # das duas: nenhum destes modelos as cita dentro do corpo.
-_SEGUNDA_PARTE = ("OUTORGADO", "COMPRADOR", "DONATARIO", "PROCURADOR")
+#
+# O LADO PELA QUALIDADE DA CEP, E NÃO POR PEDAÇO DE PALAVRA — ensaio de atos das Notas, 03/11/2026
+# (relatorio_notas.md, item 1; o conserto liberado pela sessão de PRs no mesmo dia). A regra de antes
+# procurava «OUTORGADO», «COMPRADOR», «DONATARIO» e «PROCURADOR» DENTRO da qualificação, e o ensaio
+# lavrou: o procurador do vendedor como OUTORGADO COMPRADOR; quem representa a compradora, a mãe do
+# donatário menor e a assistente da nubente como outorgantes; e «OUTORGADA» — que não contém
+# «OUTORGADO» — do lado dos outorgantes, deixando a procuração sem procurador. Agora a qualificação
+# inteira, ou a primeira palavra dela («OUTORGADO COMPRADOR»), é lida na tabela da CEP
+# (`notas_censec.QUALIFICACAO_PARA_CEP`), que já conhece o feminino e o cessionário.
+#
+# QUEM COMPARECE POR OUTRO NÃO É LADO — procurador (fora da procuração, onde ele é o outorgado),
+# representante, assistente, quem assina a rogo: os prefixos que a CEP chama de interveniente
+# (`notas_censec.PREFIXOS_INTERVENIENTE`). Sai qualificado, com a marca de onde deve ficar: o quadro
+# «Partes» ainda não diz QUEM ele representa nem o instrumento (CN-MA art. 798, VI e VII; item 2 do
+# relatório, à espera do oficial). A marca trava a lavratura até o escrevente pô-lo junto de quem
+# representa — o que antes ninguém notava, porque ele saía do lado errado sem aviso.
+OUTORGANTE, OUTORGADO, REPRESENTA = "OUTORGANTE", "OUTORGADO", "REPRESENTA"
 
 
 def _sem_acento_maiusculo(texto) -> str:
@@ -605,25 +622,57 @@ def _sem_acento_maiusculo(texto) -> str:
     return "".join(c for c in s if not unicodedata.combining(c))
 
 
-def partes_por_lado(partes: list, *, con: Any = None) -> tuple[str, str]:
+def lado_da_parte(parte, tipo_ato: Any = None) -> str:
+    """OUTORGANTE, OUTORGADO ou REPRESENTA (quem comparece por outra parte). So calcula.
+
+    Sem o tipo do ato, o procurador continua outorgado, como antes: quem chama sem o tipo monta
+    procuração (`notas_procuracao_ensaio`).
+    """
+    import notas_censec as NC
+    rotulo = " ".join(_sem_acento_maiusculo(dict(parte).get("qualificacao")).split())
+    if rotulo.startswith(NC.PREFIXOS_INTERVENIENTE):
+        if rotulo.startswith("PROCURADOR") and (
+                tipo_ato is None or str(tipo_ato).upper() in NC.ATOS_EM_QUE_O_PROCURADOR_E_OUTORGADO):
+            return OUTORGADO
+        return REPRESENTA
+    primeira = re.split(r"[\s,;/(]", rotulo, maxsplit=1)[0]
+    if OUTORGADO in {NC.QUALIFICACAO_PARA_CEP.get(rotulo, "").upper(),
+                     NC.QUALIFICACAO_PARA_CEP.get(primeira, "").upper()}:
+        return OUTORGADO
+    return OUTORGANTE
+
+
+def _quem_representa(parte, textos: Any = None) -> str:
+    """A qualificação de quem comparece por outro, com a marca de onde ele deve ficar."""
+    return (qualificar(parte, con=textos) + " "
+            + _falta(f"{_rotulo(parte)} — diga junto de quem representa, com o instrumento "
+                     "(CN-MA art. 798, VI e VII)"))
+
+
+def partes_por_lado(partes: list, *, con: Any = None, tipo_ato: Any = None) -> tuple[str, str]:
     """Monta `outorgantes` e `outorgados` para os modelos de `notas_modelos.py`.
 
     O QUE FALTAR FICA MARCADO, E NÃO EM BRANCO — a mesma regra de `_falta()`:
     lado sem parte nenhuma sairia sem ninguém notar, e quem confere o teor
-    precisa ver que falta qualificar alguém, não uma lacuna muda.
+    precisa ver que falta qualificar alguém, não uma lacuna muda. Quem
+    comparece por outro vai ao fim dos OUTORGANTES, com a marca (ver acima):
+    é o lado que toda minuta tem — a do divórcio, do inventário e do pacto
+    só têm `{{ outorgantes }}`, e no fim dos outorgados ele sumiria do teor.
     """
     textos = MODELOS.textos(con)
-    primeira, segunda = [], []
+    lados = {OUTORGANTE: [], OUTORGADO: [], REPRESENTA: []}
     for p in partes:
         d = dict(p)
         if d.get("testemunha"):
             continue
-        alvo = (segunda if any(x in _sem_acento_maiusculo(d.get("qualificacao"))
-                               for x in _SEGUNDA_PARTE) else primeira)
-        alvo.append(qualificar(d, con=textos))
-    outorgantes = ("; ".join(primeira) or
+        lado = lado_da_parte(d, tipo_ato)
+        lados[lado].append(_quem_representa(d, textos) if lado == REPRESENTA
+                           else qualificar(d, con=textos))
+    outorgantes = ("; ".join(lados[OUTORGANTE]) or
                    _falta("outorgante(s) — qualifique a parte no ato"))
-    outorgados = ("; ".join(segunda) or
+    if lados[REPRESENTA]:
+        outorgantes += "; " + "; ".join(lados[REPRESENTA])
+    outorgados = ("; ".join(lados[OUTORGADO]) or
                   _falta("outorgado(s) — qualifique a parte no ato"))
     return outorgantes, outorgados
 
@@ -637,10 +686,10 @@ def testemunhas_qualificadas(partes: list, *, con: Any = None) -> str:
     return "; ".join(qualificar(t, con=textos) for t in ts)
 
 
-def contexto_jinja_partes(partes: list, *, con: Any = None) -> dict[str, str]:
+def contexto_jinja_partes(partes: list, *, con: Any = None, tipo_ato: Any = None) -> dict[str, str]:
     """Variáveis Jinja comuns aos modelos de `notas_modelos.py`."""
     textos = MODELOS.textos(con)
-    outorgantes, outorgados = partes_por_lado(partes, con=textos)
+    outorgantes, outorgados = partes_por_lado(partes, con=textos, tipo_ato=tipo_ato)
     return {
         "outorgantes": outorgantes,
         "outorgados": outorgados,
@@ -681,6 +730,40 @@ def pendencias_da_qualificacao(partes: list) -> list[str]:
         if vazios:
             faltas.append(f"{d.get('nome') or 'parte sem nome'}: {', '.join(vazios)}")
     return faltas
+
+
+# A EMANCIPAÇÃO CONFERE A IDADE — ensaio de atos das Notas, 03/11/2026 (relatorio_notas.md, item 7;
+# conserto liberado pela sessão de PRs no mesmo dia). A minuta afirma «portanto com dezesseis anos
+# completos» de qualquer data digitada, e o ensaio lavrou a emancipação de quem nasceu no mês do ato.
+# CC art. 5º, par. ún., I: a concessão dos pais é para o menor com dezesseis anos completos; quem já
+# tem dezoito é capaz e não se emancipa (art. 5º, caput). O campo é texto livre na tela: a data tem
+# de vir com os algarismos (dd/mm/aaaa, como a casa já escreve entre parênteses), para ser conferida.
+CHAVE_NASCIMENTO_DO_EMANCIPANDO = "data_de_nascimento_do_emancipando"
+_DATA_EM_ALGARISMOS = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b|\b(\d{4})-(\d{2})-(\d{2})\b")
+
+
+def recusa_da_emancipacao(valores: dict, hoje: date) -> str:
+    """O motivo de não montar o teor da emancipação, ou "" quando a idade confere. So calcula."""
+    if CHAVE_NASCIMENTO_DO_EMANCIPANDO not in valores:
+        return ""
+    texto = str(valores.get(CHAVE_NASCIMENTO_DO_EMANCIPANDO) or "")
+    m = _DATA_EM_ALGARISMOS.search(texto)
+    if not m:
+        return ("Escreva a data de nascimento do emancipando com os algarismos (dd/mm/aaaa), "
+                "para a idade ser conferida (Código Civil, art. 5º, parágrafo único, I).")
+    try:
+        nasceu = (date(int(m[3]), int(m[2]), int(m[1])) if m[1]
+                  else date(int(m[4]), int(m[5]), int(m[6])))
+    except ValueError:
+        return f"A data de nascimento do emancipando não existe: «{texto.strip()}»."
+    anos = hoje.year - nasceu.year - ((hoje.month, hoje.day) < (nasceu.month, nasceu.day))
+    if anos < 16:
+        return (f"O emancipando tem {anos} ano(s): a emancipação pelos pais exige dezesseis anos "
+                "completos (Código Civil, art. 5º, parágrafo único, I).")
+    if anos >= 18:
+        return (f"O emancipando já tem {anos} anos: é maior e capaz, e não se emancipa "
+                "(Código Civil, art. 5º).")
+    return ""
 
 
 # O ESTADO CIVIL DO TESTAMENTO É O DA PARTE — ensaio de atos das Notas, 03/11/2026 (relatorio_notas.md,

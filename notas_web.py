@@ -5581,6 +5581,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return []
         travas = [f"o texto tem campo em branco {m} — edite o teor"
                   for m in _pendencias_do_teor(a.get("teor") or "")]
+        # SEM TEOR NÃO HÁ O QUE LAVRAR — ensaio de atos das Notas, 03/11/2026. A emancipação cuja
+        # idade não confere (item 7 do relatório) não monta o teor, e o lançamento passava assim
+        # mesmo: o ato ia ao livro com folha, termo e selo, e o termo do livro respondia «O ato
+        # ainda não tem teor».
+        if not re.sub(r"<[^>]+>", "", a.get("teor") or "").strip():
+            travas.append("o ato não tem teor — monte-o pelo modelo ou escreva-o antes de lavrar")
         with db.connect() as con:
             for imp in NC.impedimentos_para_lavrar(con, a):
                 onde = _ONDE_CORRIGIR.get(imp.campo)
@@ -5771,7 +5777,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "SELECT * FROM nt_ato_partes WHERE ato_id=%s "
             "ORDER BY testemunha, ordem, id",
             (ato_id,))]
-        ctx = NT.contexto_jinja_partes(partes, con=db.connect)
+        ctx = NT.contexto_jinja_partes(partes, con=db.connect, tipo_ato=a["tipo"])
         from jinja2.sandbox import SandboxedEnvironment
         env = SandboxedEnvironment(autoescape=False)
         try:
@@ -5785,6 +5791,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   f"{SEGWEB.erro_do_modelo(erro, 'notas_ato', com_tipo=True)}", "danger")
             return redirect(url_for("notas_ato", ato_id=ato_id))
         valores = {k: v for k, v in request.form.items() if k != "csrf_token"}
+        recusa = NT.recusa_da_emancipacao(valores, date.today())
+        if recusa:
+            flash(f"Teor não montado: {recusa}", "danger")
+            return redirect(url_for("notas_ato", ato_id=ato_id))
         for aviso in NT.estado_civil_do_testador(valores, partes):
             flash(aviso, "warning")
         # Campo do fecho aproveita as partes do formulário se veio em branco.

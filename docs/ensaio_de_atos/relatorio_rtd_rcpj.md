@@ -93,6 +93,10 @@ sequência é a do balcão:
 
 ## 2. A notificação se abre sobre o registro cancelado
 
+**CONSERTADO em 03/11/2026** (sem depender do oficial, liberado pela sessão de PRs): `rg_notificacao.abrir`
+recusa o registro que não está ATIVO, com a situação, o ato que o cancelou e o art. 160, antes de gravar.
+O teste deixou de ser `xfail` e confere o recado.
+
 **O que se fez.** Uma notificação extrajudicial registrada no Livro B; o registro cancelado («lavrado por
 engano, a requerimento do apresentante»); depois, o pedido de notificação do mesmo título, com a
 diligência paga.

@@ -595,6 +595,20 @@ def abrir(con: Any, *, destinatario_nome: Any, endereco: Any, agora: str,
                 "15.8.1.2): informe quantos quilômetros.")
     origem = _destino(con, titulo_id=titulo_id, registro_id=registro_id)
     titulo, registro = origem["titulo"], origem["registro"]
+    # O REGISTRO CANCELADO NÃO SE NOTIFICA (ensaio de atos do RTD/RCPJ, 03/11/2026, defeito 2): a
+    # notificação é a do registro (LRP art. 160), e o resultado dela se averba por `lancar_averbacao`,
+    # que recusa o que não está ATIVO. Abrir aqui era diligenciar e cobrar para o fim recusar.
+    if registro and _texto(registro.get("situacao")).upper() not in ("", "ATIVO"):
+        cancelou = banco(con).um(
+            """SELECT numero_ordem, data_ato FROM rg_atos
+                WHERE registro_id = %s AND tipo = 'CANCELAMENTO'
+                ORDER BY id DESC LIMIT 1""", (int(registro["id"]),))
+        por = (f", pelo ato n. {cancelou['numero_ordem']} de {br(cancelou['data_ato'])}"
+               if cancelou else "")
+        raise NotificacaoError(
+            f"O registro está com situação {registro['situacao']}{por}: a notificação "
+            f"é a do registro (Lei 6.015/1973, art. 160), e registro cancelado não "
+            f"produz efeito. Nada foi aberto.")
     apresentado = (_texto(titulo["data_apresentacao"])[:10] if titulo
                    else _texto(registro["criado_em"])[:10])
     novo = banco(con).escrever(

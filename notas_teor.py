@@ -683,6 +683,40 @@ def pendencias_da_qualificacao(partes: list) -> list[str]:
     return faltas
 
 
+# A EMANCIPAÇÃO CONFERE A IDADE — ensaio de atos das Notas, 03/11/2026 (relatorio_notas.md, item 7;
+# conserto liberado pela sessão de PRs no mesmo dia). A minuta afirma «portanto com dezesseis anos
+# completos» de qualquer data digitada, e o ensaio lavrou a emancipação de quem nasceu no mês do ato.
+# CC art. 5º, par. ún., I: a concessão dos pais é para o menor com dezesseis anos completos; quem já
+# tem dezoito é capaz e não se emancipa (art. 5º, caput). O campo é texto livre na tela: a data tem
+# de vir com os algarismos (dd/mm/aaaa, como a casa já escreve entre parênteses), para ser conferida.
+CHAVE_NASCIMENTO_DO_EMANCIPANDO = "data_de_nascimento_do_emancipando"
+_DATA_EM_ALGARISMOS = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b|\b(\d{4})-(\d{2})-(\d{2})\b")
+
+
+def recusa_da_emancipacao(valores: dict, hoje: date) -> str:
+    """O motivo de não montar o teor da emancipação, ou "" quando a idade confere. So calcula."""
+    if CHAVE_NASCIMENTO_DO_EMANCIPANDO not in valores:
+        return ""
+    texto = str(valores.get(CHAVE_NASCIMENTO_DO_EMANCIPANDO) or "")
+    m = _DATA_EM_ALGARISMOS.search(texto)
+    if not m:
+        return ("Escreva a data de nascimento do emancipando com os algarismos (dd/mm/aaaa), "
+                "para a idade ser conferida (Código Civil, art. 5º, parágrafo único, I).")
+    try:
+        nasceu = (date(int(m[3]), int(m[2]), int(m[1])) if m[1]
+                  else date(int(m[4]), int(m[5]), int(m[6])))
+    except ValueError:
+        return f"A data de nascimento do emancipando não existe: «{texto.strip()}»."
+    anos = hoje.year - nasceu.year - ((hoje.month, hoje.day) < (nasceu.month, nasceu.day))
+    if anos < 16:
+        return (f"O emancipando tem {anos} ano(s): a emancipação pelos pais exige dezesseis anos "
+                "completos (Código Civil, art. 5º, parágrafo único, I).")
+    if anos >= 18:
+        return (f"O emancipando já tem {anos} anos: é maior e capaz, e não se emancipa "
+                "(Código Civil, art. 5º).")
+    return ""
+
+
 def valores_campos_data_lavratura(quando: datetime) -> dict[str, str]:
     """Campos `[DIA POR EXTENSO]` etc. dos modelos SISTEMA, para a data do selo."""
     from notas_livro import por_extenso

@@ -291,7 +291,7 @@ def test_notificar_congela_o_teor_e_a_linha_oferece_o_pdf(casa):
     pid, cid = _processo_com_confrontante(casa)
     tela = casa["cliente"].get(
         f"/registro-imoveis/retificacoes/{pid}").get_data(as_text=True)
-    assert "imprimir em PDF" not in tela, (
+    assert "prévia" not in tela and "papel selado" not in tela, (
         "antes de notificar não há papel — oferecer o que a rota recusa é o "
         "defeito do problema #90 pelo outro lado")
 
@@ -319,7 +319,11 @@ def test_notificar_congela_o_teor_e_a_linha_oferece_o_pdf(casa):
 
     tela = casa["cliente"].get(
         f"/registro-imoveis/retificacoes/{pid}").get_data(as_text=True)
-    assert "imprimir em PDF" in tela
+    # SEM SELO, O PAPEL É SÓ PRÉVIA (#275, 03/11/2026): a ficha oferece a prévia com
+    # «SEM SELO — NÃO ENTREGAR» e o botão de selar; «imprimir o papel selado» só
+    # depois do selo.
+    assert "SEM SELO — NÃO ENTREGAR" in tela and "prévia" in tela
+    assert "papel selado" not in tela
 
     papel = casa["cliente"].get(
         f"/registro-imoveis/retificacoes/{pid}/notificacao/{cid}?formato=odt")

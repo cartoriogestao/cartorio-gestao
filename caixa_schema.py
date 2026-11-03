@@ -465,6 +465,15 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # «pergunta pra quem cadastra dizer se é ou não»). 1 entra no carnê-leão, 0
     # fica fora, NULL é a antiga, sem resposta.
     ("cx_lancamentos", "receita_do_titular", "INTEGER"),
+    # O PAGAMENTO FEITO EM DATA ANTERIOR — pedido do oficial, 03/11/2026: quitar o item do cliente que
+    # pagou dias antes (o PIX de anteontem) para poder lavrar o selo. `data` continua sendo o dia em que
+    # se registra — o caixa fechado não reabre, e a numeração, o hash e a conferência ficam como estão;
+    # `data_pagamento` é só informação (NULL = no mesmo dia), com o comprovante e a justificativa. O
+    # carnê-leão não a lê: «o recebimento efetivo ocorre apenas com a emissão do selo do ato».
+    ("cx_lancamentos", "data_pagamento", "TEXT"),
+    ("cx_lancamentos", "comprovante_pagamento", "TEXT"),
+    ("cx_lancamentos", "justificativa_pagamento", "TEXT"),
+    ("cx_lancamentos", "pagamento_aprovado_por", "TEXT"),
     # Quitacao item a item. Um protocolo pode ter tres atos e so um pago; sem
     # isto, "a pagar" e "pago" so existem no protocolo inteiro, e o balcao
     # perde a conta do que falta.
@@ -857,12 +866,56 @@ class CaixaError(ValueError):
 #     outra e exatamente o caso em que isso aconteceria.
 
 
+#: As formas em que o pagamento de dia anterior se prova por comprovante — decisão do oficial,
+#: 03/11/2026: PIX, TED, depósito e cartão. ESPÉCIE NÃO: o dinheiro que entrou na gaveta noutro dia se
+#: acerta na conferência daquele dia.
+FORMAS_DE_PAGAMENTO_ANTERIOR = ("PIX", "TRANSFERENCIA", "DEPOSITO", "DEBITO", "CREDITO")
+
+
+def conferir_pagamento_anterior(*, data_pagamento: Any, hoje: str, forma: Any, comprovante: Any,
+                                justificativa: Any, aprovado_por: Any = None) -> dict:
+    """O pagamento de dia anterior que se pode registrar, ou a recusa (CaixaError). So calcula.
+
+    Dentro do ano corrente, qualquer pessoa do caixa, com o comprovante e a justificativa; de ano
+    anterior, só com a aprovação de outra pessoa (`aprovado_por`, conferido pela rota); data futura,
+    nunca — decisões do oficial de 03/11/2026.
+    """
+    from datetime import date as _date
+    texto = str(data_pagamento or "").strip()[:10]
+    try:
+        pago = _date.fromisoformat(texto)
+    except ValueError:
+        raise CaixaError("Informe a data em que o cliente pagou (dd/mm/aaaa).") from None
+    dia = _date.fromisoformat(str(hoje)[:10])
+    if pago > dia:
+        raise CaixaError("A data do pagamento não pode ser futura.")
+    if pago == dia:
+        raise CaixaError("O pagamento foi hoje: quite sem marcar «pagamento feito em data anterior».")
+    if str(forma or "").strip().upper() not in FORMAS_DE_PAGAMENTO_ANTERIOR:
+        raise CaixaError("Pagamento de dia anterior só por PIX, TED, depósito ou cartão. Dinheiro que "
+                         "entrou na gaveta noutro dia se acerta na conferência daquele dia.")
+    comprovante = " ".join(str(comprovante or "").split())
+    justificativa = " ".join(str(justificativa or "").split())
+    if not comprovante:
+        raise CaixaError("Informe a identificação do comprovante (o E2E do PIX, o número da TED ou "
+                         "do depósito, a autorização do cartão).")
+    if len(justificativa) < 10:
+        raise CaixaError("Escreva a justificativa do pagamento em data anterior.")
+    aprovado = " ".join(str(aprovado_por or "").split()) or None
+    if pago.year < dia.year and not aprovado:
+        raise CaixaError("Pagamento de ano anterior só com a aprovação de outra pessoa (oficial ou "
+                         "gerente), com a senha dela.")
+    return {"data_pagamento": pago.isoformat(), "comprovante_pagamento": comprovante,
+            "justificativa_pagamento": justificativa, "pagamento_aprovado_por": aprovado}
+
+
 def cobrar_item_do_protocolo(con, item_id: int, *,
                              caixa_id: int, agora: str, hoje: str, hora: str,
                              pagador: Any = None, pagador_documento: Any = None,
                              forma_pagamento: Any = None,
                              usuario_id: Any = None,
-                             usuario: str | None = None) -> dict:
+                             usuario: str | None = None,
+                             pagamento_anterior: dict | None = None) -> dict:
     """Quita o item do protocolo E lanca no caixa. ESCREVE.
 
     UM LANCAMENTO POR ITEM, e nao um pelo protocolo inteiro: e o item que tem
@@ -872,7 +925,11 @@ def cobrar_item_do_protocolo(con, item_id: int, *,
     RECUSA COBRAR DUAS VEZES, e a trava mora no banco: `UNIQUE(origem,
     origem_chave)` em `cx_lancamentos`. Aqui a mensagem so diz o que houve, em
     vez de deixar estourar.
+
+    `pagamento_anterior`: o que `conferir_pagamento_anterior` devolveu, quando o cliente pagou em dia
+    anterior. O lançamento continua com a data de hoje; a do pagamento vai ao lado (03/11/2026).
     """
+    anterior = pagamento_anterior or {}
     bd = banco(con)
     # Le e grava a mesma linha (a marca `lancamento_id`): FOR UPDATE, para
     # duas cobrancas do mesmo item nao passarem juntas pela conferencia.
@@ -945,10 +1002,11 @@ def cobrar_item_do_protocolo(con, item_id: int, *,
                natureza, sentido, forma_pagamento, descricao, pagador,
                pagador_documento, valor, emolumentos, ferc, fadep, femp,
                ferrfis, selo, origem, origem_chave, criado_em, criado_por,
-               numero, ano, hash_lancamento)
+               numero, ano, hash_lancamento, data_pagamento, comprovante_pagamento,
+               justificativa_pagamento, pagamento_aprovado_por)
            VALUES (%s,%s,%s,%s, 'RECEBIMENTO','ENTRADA',
                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                   'PROTOCOLO', %s, %s, %s, %s, %s, %s)
+                   'PROTOCOLO', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
            RETURNING id""",
         (int(caixa_id), item["protocolo_id"], hoje, hora,
          (str(forma_pagamento or "").strip() or None),
@@ -960,20 +1018,23 @@ def cobrar_item_do_protocolo(con, item_id: int, *,
          item["valor_total"], item["emolumentos"], item["ferc"],
          item["fadep"], item["femp"], item["ferrfis"],
          (str(item["selo"] or "").strip() or None), chave, agora, usuario_id,
-         numero_ordem, ano, h))
+         numero_ordem, ano, h, anterior.get("data_pagamento"), anterior.get("comprovante_pagamento"),
+         anterior.get("justificativa_pagamento"), anterior.get("pagamento_aprovado_por")))
     lancamento_id = int(novo[0]["id"])
     bd.escrever(
         """UPDATE cx_protocolo_atos SET quitado=1, quitado_em=%s, quitado_por=%s,
                lancamento_id=%s WHERE id=%s""",
         (agora, usuario, lancamento_id, int(item_id)))
     return {"lancamento_id": lancamento_id, "item_id": int(item_id),
-            "valor": item["valor_total"]}
+            "valor": item["valor_total"], "data_pagamento": anterior.get("data_pagamento") or hoje,
+            "registrado_em": hoje}
 
 
 def itens_do_protocolo(con, protocolo_id: int) -> list[dict]:
     """Os servicos daquele protocolo, com o que ja entrou no caixa. So LE."""
     return banco(con).ler(
-        """SELECT a.*, l.id AS lancamento, l.data AS data_lancamento
+        """SELECT a.*, l.id AS lancamento, l.data AS data_lancamento,
+                  l.data_pagamento AS data_pagamento
              FROM cx_protocolo_atos a
              LEFT JOIN cx_lancamentos l ON l.id = a.lancamento_id
             WHERE a.protocolo_id=%s ORDER BY a.id""", (int(protocolo_id),))

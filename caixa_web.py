@@ -33,7 +33,8 @@ from caixa_import import importar as importar_caixa
 from caixa_schema import (FORMAS_PAGAMENTO, FUNCOES, NATUREZAS,
                           PECA_DO_AVISO_ORCAMENTO,
                           TIPOS_DOCUMENTO, TIPOS_PROTOCOLO, CaixaError,
-                          centavos, cobrar_item_do_protocolo, hash_lancamento,
+                          centavos, cobrar_item_do_protocolo, conferir_pagamento_anterior,
+                          hash_lancamento,
                           hash_recibo, por_extenso, reais, resumo_caixa)
 from ri_odt import gerar_odt, html_para_odf
 import seguranca_web as SEGWEB  # B2 (LX11): exceção inesperada não vai para a tela
@@ -155,16 +156,28 @@ def segunda_assinatura_do_estorno(db, *, papel: str, usuario_id: int,
     if str(papel or "").upper() not in ("ADMIN", "MANAGER"):
         return ("Estorno de lançamento de caixa já fechado é do oficial ou do "
                 "gerente, com a aprovação de outra pessoa.")
-    nome = str(aprovador or "").strip()
-    if not nome or not senha:
+    if not str(aprovador or "").strip() or not senha:
         return ("Estorno de caixa fechado precisa da aprovação de OUTRA pessoa: "
                 "informe o usuário e a senha do aprovador (oficial ou gerente).")
+    return aprovacao_de_outra_pessoa(db, usuario_id=usuario_id, aprovador=aprovador, senha=senha,
+                                     quem_pede="quem está estornando")[1]
+
+
+def aprovacao_de_outra_pessoa(db, *, usuario_id: int, aprovador: str | None, senha: str | None,
+                              quem_pede: str) -> tuple[str, str]:
+    """(nome do aprovador, "") quando outra pessoa, oficial ou gerente, aprova com a senha dela — ou
+    ("", a frase da recusa). Só lê. A regra do estorno de caixa fechado (M2, 22/10/2026), que vale
+    também para o pagamento de ano anterior (03/11/2026)."""
+    nome = str(aprovador or "").strip()
+    if not nome or not senha:
+        return "", ("Falta a aprovação de OUTRA pessoa: informe o usuário e a senha do aprovador "
+                    "(oficial ou gerente).")
     quem = db.authenticate(nome, str(senha))
     if not quem or str(quem["role"] or "").upper() not in ("ADMIN", "MANAGER"):
-        return "Aprovador não reconhecido, ou sem perfil de oficial ou gerente."
+        return "", "Aprovador não reconhecido, ou sem perfil de oficial ou gerente."
     if int(quem["id"]) == int(usuario_id or 0):
-        return "O aprovador tem de ser outra pessoa — não quem está estornando."
-    return ""
+        return "", f"O aprovador tem de ser outra pessoa — não {quem_pede}."
+    return str(quem["full_name"] or quem["username"] or nome), ""
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str):
@@ -1112,6 +1125,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
               {"numero": numero, "ano": ano, "valor": l["valor"]})
         return redirect(url_for("caixa_recibo_odt", recibo_id=recibo_id))
 
+    def _pago_e_registrado(itens) -> str | None:
+        """«Pago em dd/mm/aaaa, registrado em dd/mm/aaaa.» dos itens pagos em dia anterior."""
+        datas = sorted({(str(i["data_pagamento"])[:10], str(i["registrado_em"])[:10])
+                        for i in itens if i.get("data_pagamento")})
+        return " ".join(f"Pago em {fmt_date(pago)}, registrado em {fmt_date(registro)}."
+                        for pago, registro in datas) or None
+
     @app.route("/caixa/protocolos/<int:protocolo_id>/recibo", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def caixa_recibo_do_protocolo(protocolo_id):
@@ -1134,7 +1154,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             abort(404)
         itens = [i for i in q(
             """SELECT a.*, l.forma_pagamento, l.pagador, l.pagador_documento,
-                      l.recibo_id
+                      l.recibo_id, l.data AS registrado_em, l.data_pagamento
                  FROM cx_protocolo_atos a
                  JOIN cx_lancamentos l ON l.id = a.lancamento_id
                 WHERE a.protocolo_id=%s AND COALESCE(l.excluido, 0) = 0
@@ -1196,7 +1216,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 (numero, ano, date.today().isoformat(), protocolo_id,
                  p["numero"], pagador, documento, reais(total), extenso, forma,
                  corpo, corpo,
-                 None,  # recibo quitado: sem aviso de mero cálculo
+                 # recibo quitado: sem aviso de mero cálculo — e, do que o cliente pagou noutro dia,
+                 # as duas datas (pedido do oficial, 03/11/2026)
+                 _pago_e_registrado(itens),
                  h, db.now()))[0]["id"])
             # TODOS OS LANÇAMENTOS DO RECIBO FICAM MARCADOS. Sem isso, o mesmo
             # dinheiro sairia num segundo recibo — e dois recibos do mesmo
@@ -1566,8 +1588,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         p = q1("SELECT * FROM cx_protocolos WHERE id=%s", (protocolo_id,))
         if not p:
             abort(404)
+        # com as duas datas do pagamento (pedido do oficial, 03/11/2026)
         atos = [dict(r) for r in
-                q("SELECT * FROM cx_protocolo_atos WHERE protocolo_id=%s ORDER BY id",
+                q("""SELECT a.*, l.data AS data_lancamento, l.data_pagamento
+                       FROM cx_protocolo_atos a
+                       LEFT JOIN cx_lancamentos l ON l.id = a.lancamento_id
+                      WHERE a.protocolo_id=%s ORDER BY a.id""",
                   (protocolo_id,))]
         lanc = q("""SELECT * FROM cx_lancamentos WHERE protocolo_id=%s
                     ORDER BY data, id""", (protocolo_id,))
@@ -1674,7 +1700,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return render_template("caixa_protocolo.html", p=p, atos=atos,
                                abas_da_ficha=abas_da_ficha,
                                quitados=quitados,
-                               servico_desde_sugerido=CXP.data_do_servico_sugerida(p, quitados, db.now()),
+                               servico_desde_sugerido=CXP.data_do_servico_sugerida(
+                                   p, quitados, db.now(),
+                                   pago_em=min((str(a["data_pagamento"])[:10] for a in atos
+                                                if a.get("data_pagamento")), default=None)),
                                tarefas_do_protocolo=tarefas_do_protocolo,
                                tarefas_abertas=tarefas_abertas,
                                usuarios_da_tarefa=db.list_users(active_only=True),
@@ -2362,6 +2391,34 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   "warning" if item.get("acima_do_teto") else "success")
             return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
 
+        def pagamento_anterior(forma: str, hoje: str) -> dict | None:
+            """O «pagamento feito em data anterior» do formulário, conferido — ou None, quando a
+            opção não foi marcada (pedido do oficial, 03/11/2026). A data de ano anterior pede a
+            aprovação de outra pessoa, como o estorno de caixa fechado."""
+            if not request.form.get("pago_antes"):
+                return None
+            data = str(request.form.get("data_pagamento") or "").strip()[:10]
+            aprovado = None
+            if data[:4].isdigit() and int(data[:4]) < int(hoje[:4]):
+                aprovado, recusa = aprovacao_de_outra_pessoa(
+                    db, usuario_id=usuario_id(), aprovador=request.form.get("aprovador"),
+                    senha=request.form.get("senha_aprovador"), quem_pede="quem está quitando")
+                if recusa:
+                    raise CaixaError(f"Pagamento de ano anterior: {recusa}")
+            return conferir_pagamento_anterior(
+                data_pagamento=data, hoje=hoje, forma=forma,
+                comprovante=request.form.get("comprovante"),
+                justificativa=request.form.get("justificativa"), aprovado_por=aprovado)
+
+        def auditoria_do_pagamento(anterior: dict | None, hoje: str) -> dict:
+            """As duas datas, e o comprovante, para o rastro do item quitado."""
+            if not anterior:
+                return {}
+            return {"data_pagamento": anterior["data_pagamento"], "registrado_em": hoje,
+                    "comprovante": anterior["comprovante_pagamento"],
+                    "justificativa": anterior["justificativa_pagamento"],
+                    "aprovado_por": anterior["pagamento_aprovado_por"]}
+
         if acao == "quitar":
             # QUITAR PASSOU A LANÇAR NO CAIXA — decisão do oficial em
             # 27/08/2026: «juntemos protocolo geral com o caixa».
@@ -2384,22 +2441,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     raise CaixaError("Escolha o item do protocolo a quitar.")
                 if aberto and not forma:
                     raise CaixaError(SEM_FORMA_DE_PAGAMENTO)
+                anterior = pagamento_anterior(forma, agora[:10])
                 with db.transaction() as con:
                     r = cobrar_item_do_protocolo(
                         con, item_id,
                         caixa_id=int(aberto["id"]) if aberto else 0,
                         agora=agora, hoje=agora[:10], hora=agora[11:16],
                         forma_pagamento=forma,
-                        usuario=usuario_nome())
+                        usuario=usuario_nome(), pagamento_anterior=anterior)
                     _atualizar_situacao(con, protocolo_id)
             except CaixaError as erro:
                 flash(str(erro), "danger")
                 return redirect(url_for("caixa_protocolo",
                                         protocolo_id=protocolo_id))
             audit("PROTOCOLO_ITEM_QUITADO", "PROTOCOLO", protocolo_id,
-                  {"item": item_id, "lancamento": r["lancamento_id"]})
-            flash(f"Item quitado e lançado no caixa: R$ {r['valor']}.",
-                  "success")
+                  {"item": item_id, "lancamento": r["lancamento_id"],
+                   **auditoria_do_pagamento(anterior, agora[:10])})
+            flash(f"Item quitado e lançado no caixa: R$ {r['valor']}."
+                  + (f" Pago em {fmt_date(anterior['data_pagamento'])}, registrado hoje."
+                     if anterior else ""), "success")
             return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
 
         if acao == "quitar_todos":
@@ -2451,6 +2511,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 flash(SEM_FORMA_DE_PAGAMENTO, "danger")
             else:
                 agora = db.now()
+                try:
+                    anterior = pagamento_anterior(forma, agora[:10])
+                except CaixaError as erro:
+                    flash(str(erro), "danger")
+                    return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
                 quitados, soma_quitada, recusados = 0, 0, []
                 for item_id in pendentes_id:
                     try:
@@ -2459,7 +2524,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                 con, item_id,
                                 caixa_id=int(aberto["id"]),
                                 agora=agora, hoje=agora[:10], hora=agora[11:16],
-                                forma_pagamento=forma, usuario=usuario_nome())
+                                forma_pagamento=forma, usuario=usuario_nome(),
+                                pagamento_anterior=anterior)
                             _atualizar_situacao(con, protocolo_id)
                     except CaixaError as erro:
                         recusados.append((item_id, str(erro)))
@@ -2483,7 +2549,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     # ele entrou sem um clique proprio.
                     audit("PROTOCOLO_ITEM_QUITADO", "PROTOCOLO", protocolo_id,
                           {"item": item_id, "lancamento": r["lancamento_id"],
-                           "em_lote": True})
+                           "em_lote": True, **auditoria_do_pagamento(anterior, agora[:10])})
                     quitados += 1
                     soma_quitada += centavos(r["valor"])
                 if quitados:

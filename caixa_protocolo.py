@@ -290,13 +290,18 @@ def _quitados(bd, protocolo_id: int) -> int:
         (int(protocolo_id),)))
 
 
-def data_do_servico_sugerida(p, quitados: int, hoje: str) -> str:
+def data_do_servico_sugerida(p, quitados: int, hoje: str, *, pago_em: str | None = None) -> str:
     """Em que dia o serviço entrou, se ninguém disser outra coisa. Só calcula.
 
     Com dinheiro no caixa, ele já estava lá quando o protocolo abriu: é a correção
     de um engano. Sem dinheiro, o cliente voltou hoje para fazer o que só tinha
     perguntado, e a recepção não pode dizer que recebeu o título no dia do cálculo.
+
+    PAGO EM DIA ANTERIOR (decisão do oficial, 03/11/2026): a data do pagamento é só a SUGESTÃO —
+    quem vira o cálculo em serviço confirma ou corrige; o pagamento sozinho não muda prazo.
     """
+    if pago_em:
+        return str(pago_em)[:10]
     return str(p["data_abertura"])[:10] if quitados else str(hoje)[:10]
 
 

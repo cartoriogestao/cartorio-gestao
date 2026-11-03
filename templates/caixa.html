@@ -83,6 +83,36 @@
   </form>
 </section>
 
+{# RECEBIMENTOS DE DIAS ANTERIORES LANÇADOS HOJE — pedido do oficial, 03/11/2026. O lançamento é de
+   hoje (é o caixa de hoje que o conta); a data do pagamento, o comprovante e a justificativa ficam à vista
+   para quem confere. #}
+{% set de_antes = lancamentos|selectattr("data_pagamento")|list %}
+{% if de_antes %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Recebimentos de dias anteriores lançados hoje</span>
+    <span class="small muted">{{ de_antes|length }} lançamento(s)</span>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nº</th><th>Protocolo</th><th>Pago em</th><th>Forma</th><th>Comprovante</th>
+      <th>Justificativa</th><th style="text-align:right">Valor</th></tr></thead>
+    <tbody>
+    {% for l in de_antes %}
+      <tr>
+        <td>{{ l.numero or l.id }}</td>
+        <td>{{ l.protocolo_numero or '—' }}</td>
+        <td>{{ fmt_date(l.data_pagamento) }}{% if l.pagamento_aprovado_por %}<br><span class="small muted">aprovado por
+          {{ l.pagamento_aprovado_por }}</span>{% endif %}</td>
+        <td>{{ FORMAS.get(l.forma_pagamento, l.forma_pagamento) if FORMAS is defined else l.forma_pagamento }}</td>
+        <td class="small">{{ l.comprovante_pagamento }}</td>
+        <td class="small">{{ l.justificativa_pagamento }}</td>
+        <td style="text-align:right">{{ l.valor }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
 <section class="panel">
   <div class="panel-head">
     <span>Movimento de hoje</span>

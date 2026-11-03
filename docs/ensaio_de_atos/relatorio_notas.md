@@ -98,6 +98,9 @@ anuente? O ensaio aceita os dois; o que não pode é «ANUENTE» virar vendedor 
 
 ## 4. O testamento declara um estado civil, e a parte tem outro
 
+**CONSERTADO em 03/11/2026** (conserto liberado pela sessão de PRs): a escolha, a cláusula do casado e o
+cônjuge vêm da parte TESTADOR (`notas_teor.estado_civil_do_testador`), e a vírgula foi para dentro da cláusula.
+
 **O que saiu.** O testador cadastrado como casado (com o cônjuge e o regime) e a escolha da minuta «Estado
 civil do testador» deixada em «solteiro»: a qualificação diz «casado com JOANA …» e a primeira disposição
 diz «declara chamar-se como acima qualificado e ser solteiro, .». Lavrou sem aviso. O «, .» é a vírgula da

@@ -176,7 +176,9 @@ def casos() -> list[Caso]:
         Caso("testamento_casado_marcado_solteiro", "NT-TESTAMENTO-PUBLICO", "TESTAMENTO",
              "Testamento público — a parte é casada e a escolha da minuta diz «solteiro»",
              [_pessoa("MARIO EXEMPLO DOS SANTOS", "TESTADOR", 1, **CASADO), *TESTEMUNHAS],
-             item="13.10.1", escolhas={"op_estado_civil_do_testador": "solteiro"}),
+             item="13.10.1", escolhas={"op_estado_civil_do_testador": "solteiro"},
+             # o cônjuge e o regime em branco na tela: vêm da parte
+             valores={"nome_e_qualificacao_do_conjuge_ou_convivente": "", "regime_de_bens": ""}),
         # ---- família
         Caso("inventario_viuva_e_dois_herdeiros", "NT-ESC-INVENTARIO-PARTILHA", "ESCRITURA",
              "Inventário — viúva meeira e dois filhos, com advogado (CNN art. 441; CN-MA art. 812)",

@@ -222,18 +222,20 @@ def test_a_outorgada_mulher_e_outorgada(praticado):
     assert _marcado_fora_dos_lados(teor, "PAULO EXEMPLO TESTEMUNHA")
 
 
-@_defeito("o testador cadastrado como casado declara no testamento «ser solteiro», e a lavratura não "
-          "acusa (item 4)")
 def test_o_estado_civil_do_testamento_e_o_da_parte(praticado):
     """CC art. 215, § 1º, III, e art. 1.864, I: o testamento é escrito pelo tabelião conforme as
-    declarações do testador — e o estado civil declarado é o da qualificação."""
-    s = praticado("testamento_casado_marcado_solteiro")
-    assert s.situacao != "LAVRADO" or not EN.tem(s.termo, "ser solteiro")
+    declarações do testador — e o estado civil declarado é o da qualificação. Consertado em 03/11/2026
+    (item 4): a escolha vem da parte, com o cônjuge e o regime, e o balcão é avisado da diferença."""
+    s = _lavrado(praticado, "testamento_casado_marcado_solteiro")
+    assert not EN.tem(s.termo, "ser solteiro")
+    assert EN.tem(s.termo, "ser casado, sendo seu cônjuge JOANA EXEMPLO DOS SANTOS")
+    assert any("vale o da parte" in a for a in s.avisos), s.avisos
 
 
-@_defeito("a escolha da minuta sem o complemento deixa «solteiro, .» no testamento (item 4)")
 def test_o_testamento_nao_deixa_virgula_antes_do_ponto(praticado):
-    t = _lavrado(praticado, "testamento_casado_marcado_solteiro").termo
+    """O testador solteiro: a cláusula do cônjuge sai, e a vírgula dela junto (item 4)."""
+    t = _lavrado(praticado, "testamento_cego").termo
+    assert EN.tem(t, "ser solteiro.")
     assert not re.search(r",\s*\.", t)
 
 

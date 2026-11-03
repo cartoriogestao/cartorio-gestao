@@ -766,6 +766,48 @@ def recusa_da_emancipacao(valores: dict, hoje: date) -> str:
     return ""
 
 
+# O ESTADO CIVIL DO TESTAMENTO É O DA PARTE — ensaio de atos das Notas, 03/11/2026 (relatorio_notas.md,
+# item 4; conserto liberado pela sessão de PRs no mesmo dia). A escolha da minuta começava em
+# «solteiro» e o ensaio lavrou o testador «casado com …» na qualificação declarando «ser solteiro» na
+# primeira disposição (CC art. 215, § 1º, III, e art. 1.864, I). A escolha, a cláusula do casado e o
+# cônjuge passam a vir da parte TESTADOR; o escrevente que escolheu outra coisa é avisado.
+_ESTADO_CIVIL_DA_MINUTA = (("SOLTEIR", "solteiro"), ("CASAD", "casado"), ("DIVORCIAD", "divorciado"),
+                           ("VIUV", "viúvo"), ("SEPARAD", "separado judicialmente"))
+
+
+def estado_civil_do_testador(valores: dict, partes: list) -> list[str]:
+    """Põe em `valores` o estado civil, a cláusula do casado e o cônjuge da parte TESTADOR, e devolve
+    os avisos do que a tela dizia diferente. Só mexe na minuta que tem a escolha."""
+    if "op_estado_civil_do_testador" not in valores:
+        return []
+    testador = next((dict(p) for p in partes if not dict(p).get("testemunha")
+                     and _sem_acento_maiusculo(dict(p).get("qualificacao")).startswith("TESTADOR")), None)
+    if not testador:
+        return []
+    estado = _sem_acento_maiusculo(testador.get("estado_civil"))
+    escolha = next((opcao for raiz, opcao in _ESTADO_CIVIL_DA_MINUTA if raiz in estado), "")
+    convive = str(testador.get("uniao_estavel") or "").upper() == "SIM"
+    if convive and escolha != "casado":
+        escolha = "convivente em união estável"
+    if not escolha:
+        return []
+    avisos = []
+    digitada = (valores.get("op_estado_civil_do_testador") or "").strip()
+    if digitada and digitada != escolha:
+        avisos.append(f"Estado civil do testador: a tela dizia «{digitada}», e a parte é «{escolha}» — "
+                      "vale o da parte (corrija a parte, se for ela a errada).")
+    valores["op_estado_civil_do_testador"] = escolha
+    com_alguem = escolha in ("casado", "convivente em união estável")
+    valores["se_se_casado_ou_convivente"] = "1" if com_alguem else ""
+    if com_alguem:
+        valores["op_conjuge_ou_convivente"] = "cônjuge" if escolha == "casado" else "convivente"
+        for campo, da_parte in (("nome_e_qualificacao_do_conjuge_ou_convivente", "conjuge"),
+                                ("regime_de_bens", "regime_bens")):
+            if not str(valores.get(campo) or "").strip() and str(testador.get(da_parte) or "").strip():
+                valores[campo] = str(testador[da_parte]).strip()
+    return avisos
+
+
 def valores_campos_data_lavratura(quando: datetime) -> dict[str, str]:
     """Campos `[DIA POR EXTENSO]` etc. dos modelos SISTEMA, para a data do selo."""
     from notas_livro import por_extenso

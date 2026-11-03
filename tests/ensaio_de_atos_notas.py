@@ -63,6 +63,7 @@ class Caso:
     escolhas: dict = field(default_factory=dict)     # escolha -> trecho da opção
     valores: dict = field(default_factory=dict)      # campo -> o que o escrevente digita
     certidao_por: str = ""                           # quem pede a certidão (vazio: a primeira parte)
+    doi_operacao: str = ""                           # a operação da DOI (11 compra e venda, 67 doação)
 
 
 @dataclass
@@ -75,6 +76,8 @@ class Saida:
     certidao: str = ""
     teor: str = ""
     avisos: list[str] = field(default_factory=list)
+    censec: tuple = ()                               # (central, PRONTO/PARADO/FORA, o que falta)
+    doi: dict = field(default_factory=dict)          # alienantes, adquirentes e o que impede
 
 
 # ------------------------------------------------------------------ as pessoas do ensaio
@@ -129,10 +132,10 @@ def casos() -> list[Caso]:
              "Compra e venda — o imóvel do casal em comunhão: os dois cônjuges vendem "
              "(CC art. 215, § 1º, III; o padrão da casa)",
              [VENDEDOR, CONJUGE_QUE_VENDE, COMPRADORA], item="FAIXA", valor=CEM_MIL,
-             escolhas={"op_forma_de_pagamento": "PIX"}),
+             escolhas={"op_forma_de_pagamento": "PIX"}, doi_operacao="11"),
         Caso("cv_bem_particular_com_anuente", "NT-ESC-COMPRA-VENDA", "ESCRITURA",
              "Compra e venda — bem particular do vendedor casado, com o cônjuge anuente (CC art. 1.647, I)",
-             [VENDEDOR, CONJUGE_QUE_CONSENTE, COMPRADORA], item="FAIXA", valor=CEM_MIL),
+             [VENDEDOR, CONJUGE_QUE_CONSENTE, COMPRADORA], item="FAIXA", valor=CEM_MIL, doi_operacao="11"),
         Caso("cv_por_procurador", "NT-ESC-COMPRA-VENDA", "ESCRITURA",
              "Compra e venda — vendedor representado por procurador (CN-MA art. 798, VI)",
              [_pessoa("MARIO EXEMPLO DOS SANTOS", "VENDEDOR", 1),
@@ -142,7 +145,7 @@ def casos() -> list[Caso]:
              valores={"assinantes_do_ato_e_a_condicao_em_que_assinam":
                       "CARLOS EXEMPLO PROCURADOR, procurador do outorgante vendedor, nos termos da procuração "
                       "lavrada no Livro 10, folha 20, do Tabelionato de Notas de Cidade Exemplo; e a "
-                      "outorgada compradora"}),
+                      "outorgada compradora"}, doi_operacao="11"),
         Caso("cv_pj_compradora", "NT-ESC-COMPRA-VENDA", "ESCRITURA",
              "Compra e venda — a compradora é pessoa jurídica (qualificação da PJ)",
              [_pessoa("MARIO EXEMPLO DOS SANTOS", "VENDEDOR", 1),
@@ -151,7 +154,7 @@ def casos() -> list[Caso]:
                            "identidade": "", "uniao_estavel": ""}),
               _pessoa("ANA EXEMPLO SOCIA", "REPRESENTANTE", 8, representa="EXEMPLO COMERCIO DE MATERIAIS LTDA",
                       instrumento="contrato social arquivado na Junta Comercial do Maranhão")],
-             item="FAIXA", valor=CEM_MIL),
+             item="FAIXA", valor=CEM_MIL, doi_operacao="11"),
         # ---- doação a menor
         Caso("doacao_a_menor", "NT-ESC-DOACAO", "ESCRITURA",
              "Doação a menor, que aceita representado pela mãe (CN-MA art. 798, VII; CC art. 543)",
@@ -160,7 +163,12 @@ def casos() -> list[Caso]:
                       profissao="estudante"),
               _pessoa("JOANA EXEMPLO DOS SANTOS", "REPRESENTANTE", 2, representa="PEDRO EXEMPLO MENOR",
                       instrumento=ASSENTO_DO_MENOR)],
-             item="FAIXA", valor=CEM_MIL),
+             item="FAIXA", valor=CEM_MIL, doi_operacao="67"),
+        Caso("doacao_doadora_a_donataria", "NT-ESC-DOACAO", "ESCRITURA",
+             "Doação — a doadora e a donatária (o feminino da qualificação)",
+             [_pessoa("JOANA EXEMPLO DOS SANTOS", "DOADORA", 2),
+              _pessoa("BEATRIZ EXEMPLO DE SOUZA", "DONATARIA", 3)],
+             item="FAIXA", valor=CEM_MIL, doi_operacao="67"),
         # ---- procurações
         Caso("proc_a_rogo", "NT-PROC-PUBLICA", "PROCURACAO",
              "Procuração — outorgante que não sabe assinar, com assinatura a rogo (CC art. 215, § 2º)",
@@ -177,6 +185,11 @@ def casos() -> list[Caso]:
               _pessoa("CARLOS EXEMPLO PROCURADOR", "OUTORGADO", 6)],
              item="13.9.3", especie="VENDA",
              clausulas=("se_se_poderes_especiais", "se_se_poderes_sobre_imovel")),
+        Caso("revogacao_da_procuracao", "NT-REVOGACAO-MANDATO", "REVOGACAO",
+             "Revogação da procuração lavrada nesta serventia (CN-MA art. 831)",
+             [_pessoa("MARIO EXEMPLO DOS SANTOS", "OUTORGANTE", 1, **CASADO),
+              _pessoa("CARLOS EXEMPLO PROCURADOR", "OUTORGADO", 6)],
+             item="13.9.3", especie="PODERES_ESPECIFICOS"),
         # ---- testamentos
         Caso("testamento_nao_assina", "NT-TESTAMENTO-PUBLICO", "TESTAMENTO",
              "Testamento público — testador que não sabe assinar (CC art. 1.865)",
@@ -277,7 +290,9 @@ def _preencher(b, ato_id: int, caso: Caso) -> str:
     return " · ".join(F._flashes(html))
 
 
-def praticar(b, caso: Caso) -> Saida:
+def praticar(b, caso: Caso, *, anterior_id: int | None = None) -> Saida:
+    """O caso do protocolo à certidão. `anterior_id`: o ato desta serventia que este revoga ou
+    substabelece, vinculado pela tela («Vincular») antes do lançamento."""
     saida = Saida(caso)
     protocolo = F.abrir_protocolo_pago(b, [(caso.item, 1), ("13.12.1", 1)], interessado=caso.partes[0].nome,
                                        base_da_faixa=caso.valor)
@@ -293,6 +308,10 @@ def praticar(b, caso: Caso) -> Saida:
     if NARQ.arquivamento_obrigatorio(caso.tipo):
         F.arquivar_o_documento(b, ato_id, protocolo)
     saida.avisos.append(f"preencher: {_preencher(b, ato_id, caso)}")
+    if anterior_id:
+        html = F._postar(b, f"/notas/atos/{ato_id}", {"acao": "vincular_anterior",
+                                                     "anterior_id": str(anterior_id)}).get_data(as_text=True)
+        saida.avisos.append(f"vincular: {' · '.join(F._flashes(html))}")
     item = protocolo["itens"][0]["codigo_ato"] if caso.item == "FAIXA" else caso.item
     saida.avisos.append(f"lançar: {F.lancar_no_livro(b, ato_id, item=item, especie=caso.especie)}")
     a = F.ato(b, ato_id)
@@ -302,6 +321,9 @@ def praticar(b, caso: Caso) -> Saida:
         return saida
     saida.termo = F._texto_do_odt(F.o_termo_do_livro(b, ato_id))
     saida.traslado = F._texto_do_odt(F.o_traslado(b, ato_id))
+    saida.censec = _censec(b, ato_id)
+    if caso.doi_operacao:
+        saida.doi = _doi(b, ato_id, caso.doi_operacao)
     quem = caso.certidao_por or caso.partes[0].nome
     pedido = {"ato_id": ato_id, "requerente": quem}
     if caso.tipo in ("TESTAMENTO", "TESTAMENTO_CERRADO"):
@@ -314,11 +336,69 @@ def praticar(b, caso: Caso) -> Saida:
     return saida
 
 
+# ------------------------------------------------------------------ a segunda leva: CENSEC e DOI
+#
+# O ato lavrado vai à central da CENSEC pela fila de remessas, e a escritura com imóvel à DOI, pela
+# tela única da serventia. O ensaio olha as duas telas como o balcão olha: a da quinzena do ato, e a da
+# competência dele.
+
+def _censec(b, ato_id: int) -> tuple:
+    """(central, PRONTO ou PARADO, o que falta) — ou (None, FORA, "") se nenhuma o tem."""
+    from datetime import date
+    hoje = date.today()
+    quinzena = 1 if hoje.day <= 15 else 2
+    for central in ("CEP", "CESDI", "RCTO"):
+        html = F._tela(b, f"/notas/remessas/{central}/pendencias?ano={hoje.year}&mes={hoje.month}"
+                          f"&quinzena={quinzena}")
+        parados, _, prontos = html.partition("Prontos para ir")
+        ligacao = f'/notas/atos/{ato_id}"'
+        if ligacao in parados:
+            linha = parados.split(ligacao, 1)[1].split("</tr>", 1)[0]
+            return central, "PARADO", F._so_texto(linha)
+        if ligacao in prontos:
+            return central, "PRONTO", ""
+    return None, "FORA", ""
+
+
+def _doi(b, ato_id: int, operacao: str) -> dict:
+    """Os dados do imóvel pela ficha do ato e a declaração que a tela da DOI monta dele."""
+    from datetime import date
+
+    import notas_doi as NDOI
+    html = F._tela(b, f"/notas/atos/{ato_id}")
+    dados = {"acao": "imovel", "com_imovel": "1", "doi_transacao": operacao, "doi_tipo_imovel": "67",
+             "doi_matricula": "4010", "doi_endereco": "RUA EXEMPLO, 10", "doi_area": "360"}
+    for parte_id, valor in re.findall(r'name="participacao_(\d+)"[^>]*value="([^"]*)"', html):
+        dados[f"participacao_{parte_id}"] = valor
+    F._postar(b, f"/notas/atos/{ato_id}", dados)
+    vistos = []
+    montar = NDOI.declaracao_da_escritura
+
+    def guardar(ato, partes, *args, **kw):
+        reg, problemas = montar(ato, partes, *args, **kw)
+        if dict(ato).get("id") == ato_id:
+            vistos.append({"partes": [dict(p) for p in partes], "reg": reg, "problemas": problemas})
+        return reg, problemas
+    NDOI.declaracao_da_escritura = guardar
+    try:
+        r = b["oficial"].get(f"/registro-imoveis/doi?competencia={date.today():%Y-%m}")
+    finally:
+        NDOI.declaracao_da_escritura = montar
+    if not vistos:
+        return {"erro": f"a tela da DOI (HTTP {r.status_code}) não montou a declaração do ato"}
+    visto = vistos[-1]
+    alienantes, adquirentes, duvidas = NDOI.lados_das_partes(
+        [p for p in visto["partes"] if not p.get("testemunha")])
+    return {"alienantes": [p["nome"] for p in alienantes], "adquirentes": [p["nome"] for p in adquirentes],
+            "duvidas": [p["nome"] for p in duvidas],
+            "problemas": [str(getattr(x, "motivo", x)) for x in (visto["problemas"] or [])]}
+
+
 def em_texto(s: Saida) -> str:
     """O caso inteiro para ler (`CG_ENSAIO_SAIDA=1`)."""
     return "\n\n".join([f"# {s.caso.chave} — {s.caso.titulo}", f"situação: {s.situacao}",
                         "avisos:\n" + "\n".join(s.avisos), "TERMO:\n" + s.termo, "TRASLADO:\n" + s.traslado,
-                        "CERTIDÃO:\n" + s.certidao])
+                        "CERTIDÃO:\n" + s.certidao, f"CENSEC: {s.censec}", f"DOI: {s.doi}"])
 
 
 def tem(texto: str, *trechos: str) -> bool:

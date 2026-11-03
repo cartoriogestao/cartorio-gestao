@@ -366,7 +366,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as con:
             linhas, ha_mais = buscar_matriculas_para_retificar(
                 con, termo, exato=False)
-        return {"ok": True, "q": termo, "ha_mais": ha_mais,
+        # O TERMO NÃO VOLTA NA RESPOSTA (CodeQL, XSS refletido, 03/11/2026): a
+        # tela já sabe o que digitou, e devolver a entrada do usuário é o que o
+        # alerta aponta.
+        return {"ok": True, "ha_mais": ha_mais,
                 "itens": [_item_de_matricula(linha) for linha in linhas]}
 
     @app.route("/registro-imoveis/retificacoes/nova", methods=["GET", "POST"])

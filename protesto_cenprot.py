@@ -11,8 +11,12 @@ IBGE e o codigo CRA, em Configuracoes.
 layout proibe mudar a chave. O calculo vale so para a chave nova; nada aqui
 recalcula nem confere o verificador de chave que ja existe.
 
-**O QUE NAO MUDOU:** titulo de origem CENPROT fica com a chave da Central, e o
-XML que volta continua preenchendo o titulo que esta sem chave.
+**TODA ORIGEM RECEBE A CHAVE AO SER APONTADA - correcao de 03/11/2026.** Ficou
+escrito aqui que o titulo de origem CENPROT "fica com a chave da Central". A
+Central nao a devolve: a consulta de pedidos nao traz `cd_chave_unica`, e o
+protocolar a exige. E o acervo do E-Oficio mostra quem a compunha: as chaves
+dos titulos de origem CENPROT e MANUAL sao da mesma sequencia da casa que as
+da CRA. O XML que volta continua preenchendo o titulo que esta sem chave.
 
 **O FIM DELA: os seis ultimos digitos sao a DATA.** Medido em 01/09/2026 no
 arquivo que o oficial gerou, e conferido contra o `<data_protocolo>` que o
@@ -329,7 +333,8 @@ def _configuracao_da_casa(bd: Any) -> dict:
 
 def chave_do_apontamento(con: Any, titulo_id: int, *, protocolo_de_antes,
                          data) -> str | None:
-    """A chave que o titulo da CRA leva ao ser apontado. So LE; quem grava trava.
+    """A chave que o titulo leva ao ser apontado, de qualquer origem. So LE;
+    quem grava trava.
 
     `protocolo_de_antes` e o que o titulo ja tinha ANTES deste apontamento. So
     ele procura irmao: o protocolo que acabou de nascer e de um titulo so.
@@ -686,6 +691,137 @@ def quantos_sem_chave(con: Any) -> dict:
     return {"total": total, "com_chave": com_chave,
             "sem_protocolo": sem_protocolo,
             "a_preencher": total - com_chave - sem_protocolo}
+
+
+# ------------------------------------------------- as chaves que faltam
+#
+# A LISTA DO QUE FALTA, POR QUE FALTA E O QUE SE FARIA - 03/11/2026. Antes da
+# correcao acima, o titulo de origem CENPROT ou MANUAL apontado aqui ficava sem
+# chave; e o acervo do E-Oficio trouxe titulos que ja la nao tinham nenhuma.
+# Sao problemas diferentes, e cada um tem um caminho:
+#
+#   - `calcular`: titulo NASCIDO AQUI (nao veio do acervo), ja apontado, sem
+#     irmao com chave. Leva a chave que o apontamento lhe teria dado, com a
+#     data do apontamento no fim.
+#   - `copiar_do_irmao`: o outro titulo do mesmo protocolo tem chave - a mesma
+#     regra de `_chave_dos_irmaos`.
+#   - `decisao_do_oficial`: irmaos com chaves diferentes, ou pedido da CENPROT
+#     cujo irmao e OUTRO pedido da Central. Nao se escolhe.
+#   - `acervo_sem_chave`: veio do E-Oficio, e la tambem nao tinha. NAO SE
+#     COMPOE: a chave, se a Central conhece o titulo, so vem do XML dela
+#     (`conferir` / `guardar`).
+#   - `sem_protocolo` e `nao_apontado`: nada a fazer agora; o apontamento da a
+#     chave.
+#
+# SO LE. Quem grava e `gravar_chaves_que_faltam`, titulo a titulo, pelos ids
+# que o oficial aprovou, sob a trava do apontamento.
+
+_DO_ACERVO = "tbAvisoProtesto"
+
+
+def _pedido_cenprot(linha) -> str:
+    texto = str(linha.get("origem_chave") or "")
+    return texto if texto.startswith("CENPROT-PEDIDO:") else ""
+
+
+def chaves_que_faltam(con: Any) -> list[dict]:
+    """Cada titulo sem chave, com a categoria e a chave que levaria. NAO GRAVA."""
+    bd = banco(con)
+    titulos = bd.ler(
+        """SELECT t.id, t.origem, t.origem_chave, t.protocolo, t.situacao,
+                  (SELECT min(a.data_ato) FROM pt_atos a
+                    WHERE a.titulo_id = t.id AND a.tipo = 'APONTAMENTO')
+                      AS apontado_em
+             FROM pt_titulos t
+            WHERE trim(coalesce(t.chave_cenprot,'')) = ''
+            ORDER BY t.id""")
+    try:
+        casa = identidade_da_casa(_configuracao_da_casa(bd))
+    except CenprotError:
+        casa = None
+    proximo = max((int(p["sequencial"]) for p in _chaves_gravadas(bd)),
+                  default=0) + 1
+    saida = []
+    for t in titulos:
+        linha = dict(t)
+        protocolo = so_digitos(linha.get("protocolo"))
+        linha.update(categoria="", chave_proposta=None, motivo="")
+        if not protocolo:
+            linha.update(categoria="sem_protocolo",
+                         motivo="sem protocolo nao ha chave nem casamento")
+        elif not linha.get("apontado_em"):
+            linha.update(categoria="nao_apontado",
+                         motivo="a chave nasce no apontamento")
+        else:
+            chave, em_duvida = _chave_dos_irmaos(bd, linha["id"], protocolo)
+            irmaos = bd.ler(
+                """SELECT origem_chave FROM pt_titulos
+                    WHERE id <> %s AND digitos(coalesce(protocolo,'')) = %s""",
+                (int(linha["id"]), protocolo))
+            outro_pedido = _pedido_cenprot(linha) and any(
+                _pedido_cenprot(i) and _pedido_cenprot(i) != _pedido_cenprot(linha)
+                for i in irmaos)
+            if em_duvida:
+                linha.update(categoria="decisao_do_oficial",
+                             motivo="irmaos do protocolo com chaves diferentes")
+            elif chave and outro_pedido:
+                linha.update(categoria="decisao_do_oficial", chave_proposta=chave,
+                             motivo="o irmao com chave e outro pedido da Central")
+            elif chave:
+                linha.update(categoria="copiar_do_irmao", chave_proposta=chave,
+                             motivo="mesmo protocolo, uma chave so")
+            elif str(linha.get("origem_chave") or "").startswith(_DO_ACERVO):
+                linha.update(categoria="acervo_sem_chave",
+                             motivo="o E-Oficio nao tinha chave; so o XML da Central")
+            elif casa is None:
+                linha.update(categoria="decisao_do_oficial",
+                             motivo="falta o IBGE ou o codigo CRA em Configuracoes")
+            else:
+                linha.update(categoria="calcular", chave_proposta=compor_chave(
+                    ibge=casa["comarca"], sequencial=proximo,
+                    cartorio=casa["cartorio"], data=linha["apontado_em"]),
+                    motivo="nasceu aqui e o apontamento nao lhe deu chave")
+                proximo += 1
+        saida.append(linha)
+    return saida
+
+
+def gravar_chaves_que_faltam(con: Any, ids) -> list[dict]:
+    """Grava a chave proposta NOS IDS DADOS, e so neles. ESCREVE.
+
+    So `calcular` e `copiar_do_irmao`; a lista e refeita sob a trava, e a chave
+    calculada e a do momento. Nunca sobrescreve: o `WHERE` repete a guarda.
+    Quem chama confirma ou desfaz a transacao.
+    """
+    pedidos = {int(i) for i in ids}
+    if not pedidos:
+        raise CenprotError("Diga quais titulos: nenhum id foi dado.")
+    bd = banco(con)
+    bd.travar("pt_titulos.chave_cenprot")
+    gravados = []
+    for linha in chaves_que_faltam(con):
+        if linha["id"] not in pedidos:
+            continue
+        if linha["categoria"] not in ("calcular", "copiar_do_irmao"):
+            raise CenprotError(
+                "O titulo {} e `{}` ({}): nao se grava por aqui.".format(
+                    linha["id"], linha["categoria"], linha["motivo"]))
+        chave = linha["chave_proposta"]
+        if linha["categoria"] == "calcular":
+            # O PROXIMO DO MOMENTO, um por vez: a proposta da lista conta com
+            # todos os `calcular`, e o oficial pode aprovar so alguns.
+            casa = identidade_da_casa(_configuracao_da_casa(bd))
+            chave = proxima_chave(bd, data=linha["apontado_em"],
+                                  comarca=casa["comarca"], cartorio=casa["cartorio"])
+        bd.escrever(
+            """UPDATE pt_titulos SET chave_cenprot = %s
+                WHERE id = %s AND trim(coalesce(chave_cenprot,'')) = ''""",
+            (chave, linha["id"]))
+        gravados.append({**linha, "chave_gravada": chave})
+    faltou = pedidos - {g["id"] for g in gravados}
+    if faltou:
+        raise CenprotError("Sem chave a gravar: {}.".format(sorted(faltou)))
+    return gravados
 
 
 # ------------------------------------------------- o arquivo de emolumentos

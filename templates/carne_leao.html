@@ -72,7 +72,8 @@
 {% endif %}
   <div class="table-wrap"><table>
     <tbody>
-      <tr><td>Receita no regime de caixa</td><td><strong>R$ {{ reais(a.receita) }}</strong></td></tr>
+      <tr><td>Receita no regime de caixa<br><span class="small muted">{{ a.criterio }}</span></td><td><strong>R$ {{ reais(a.receita) }}</strong>
+        {% if a.mudanca_do_criterio.diferenca %}<br><span class="small">pelo dia do pagamento seria R$ {{ reais(a.mudanca_do_criterio.antes) }}</span>{% endif %}</td></tr>
       <tr><td>— recebida no caixa (só o emolumento)</td><td>R$ {{ reais(a.caixa) }}</td></tr>
       <tr><td>— depósito prévio convertido no mês (só o emolumento)</td><td>R$ {{ reais(a.deposito_na_conta) }}</td></tr>
       {% if a.fundos_estimados %}<tr><td class="small">— fundos tirados pela configuração ({{ a.fundos.percentual }}%) do que veio sem separação</td><td class="small">R$ {{ reais(a.fundos_estimados) }}</td></tr>{% endif %}
@@ -217,9 +218,9 @@
 <section class="panel"><h2>O ano de {{ mes[:4] }}</h2>
 {% endif %}
   <div class="table-wrap"><table>
-    <thead><tr><th>Mês</th><th>Receita (caixa)</th><th>Receita (selo)</th><th>Dedutíveis</th><th>Excesso trazido</th><th>Sem marcação</th><th>Base</th><th>Imposto</th></tr></thead>
+    <thead><tr><th>Mês</th><th>Receita (caixa)</th><th title="Quanto a receita do caixa mudou com o critério de 03/11/2026 (reconhecida na emissão do selo), em relação ao de antes (o dia do pagamento)">Mudança do critério</th><th>Receita (selo)</th><th>Dedutíveis</th><th>Excesso trazido</th><th>Sem marcação</th><th>Base</th><th>Imposto</th></tr></thead>
     <tbody>{% for m in ano %}<tr><td><a href="{{ url_for('carne_leao', mes=m.competencia) }}">{{ m.competencia[5:7] }}/{{ m.competencia[:4] }}</a></td>
-      <td>R$ {{ reais(m.receita) }}</td><td>R$ {{ reais(m.selo) }}</td><td>R$ {{ reais(m.dedutiveis) }}</td><td>R$ {{ reais(m.excesso_anterior) }}</td><td>R$ {{ reais(m.a_classificar) }}</td>
+      <td>R$ {{ reais(m.receita) }}</td><td>{% if m.mudanca_do_criterio %}<strong>R$ {{ reais(m.mudanca_do_criterio) }}</strong>{% else %}—{% endif %}</td><td>R$ {{ reais(m.selo) }}</td><td>R$ {{ reais(m.dedutiveis) }}</td><td>R$ {{ reais(m.excesso_anterior) }}</td><td>R$ {{ reais(m.a_classificar) }}</td>
       <td>R$ {{ reais(m.base) }}</td><td>{% if m.imposto is none %}sem tabela{% else %}R$ {{ reais(m.imposto) }}{% endif %}</td></tr>{% endfor %}</tbody>
   </table></div>
 {% if layout_novo %}</div></details>{% else %}

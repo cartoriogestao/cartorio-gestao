@@ -167,9 +167,9 @@ protocolo) e declarar a troca no ouro onde ela mudar texto.
    com o menor impúbere entre os que assinam. Com o item 2, quem assina pelo menor é o representante.
 10. **«Estado do MA».** A abertura escreve a sigla onde o CC art. 215, § 1º, I, pede o local do ato. Se for
     padrão da casa, fica; se não, o nome do estado vem do cadastro da serventia. **Pergunta ao oficial.**
-11. **«Motivo: sabe | pode»** no testamento de quem não assina é campo de texto livre depois de «não»: quem
+11. **CONSERTADO em 03/11/2026: «sabe | pode» é escolha.** **«Motivo: sabe | pode»** no testamento de quem não assina é campo de texto livre depois de «não»: quem
     digitar «não sabe» lavra «não não sabe». Deveria ser escolha (sabe / pode).
-12. **«voltará a usar o nome de solteiro»** no divórcio é texto fixo da minuta, no masculino, para quem quer
+12. **CONSERTADO em 03/11/2026: «nome de solteiro(a)».** **«voltará a usar o nome de solteiro»** no divórcio é texto fixo da minuta, no masculino, para quem quer
     que volte ao nome.
 
 ## O que não se ensaiou

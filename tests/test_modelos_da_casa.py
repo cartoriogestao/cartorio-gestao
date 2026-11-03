@@ -3148,12 +3148,40 @@ def _qualificacao_de_hoje(nome: str, antes):
     return {**antes, "ok": no_texto(saida)} if "ok" in antes else antes
 
 
+# O LADO PELA QUALIDADE DA CEP — ensaio de atos das Notas, 03/11/2026 (relatorio_notas.md, item 1;
+# conserto liberado pela sessão de PRs no mesmo dia). Das partes de `varios_e_testemunha`, só a
+# «OUTORGADA» muda: antes ela não continha «OUTORGADO» e ia para o lado dos outorgantes, «na
+# qualidade de OUTORGADA»; agora é outorgada — na procuração, a segunda procuradora («seus bastantes
+# PROCURADORES»). Mudam exatamente estas duas saídas, e a transformação é a mudança inteira.
+_PJ_OUTORGADA = ("<b>EMPRESA DE EXEMPLO LTDA</b>, pessoa jurídica de direito privado, inscrita no "
+                 "CNPJ sob o nº 00.000.000/0001-00, com sede em Avenida de Exemplo, 2")
+
+
+def _a_outorgada_no_lado_dela(nome: str, saida):
+    if nome == "notas_teor.contexto_jinja_partes(varios_e_testemunha)":
+        ok = dict(saida["ok"])
+        assert "; " + _PJ_OUTORGADA in ok["outorgantes"]
+        ok["outorgantes"] = ok["outorgantes"].replace("; " + _PJ_OUTORGADA, "", 1)
+        ok["outorgados"] += "; " + _PJ_OUTORGADA
+        return {"ok": ok}
+    if nome == "notas_teor.montar(PROCURACAO,varios_e_testemunha)":
+        texto = saida["ok"]
+        antes_pj = "; e " + _PJ_OUTORGADA + ", na qualidade de OUTORGADA"
+        assert texto.count(antes_pj) == 1
+        texto = texto.replace(antes_pj, "", 1)
+        texto = texto.replace("nomeiam e constituem seu(sua) bastante PROCURADOR(A):",
+                              "nomeiam e constituem seus bastantes PROCURADORES:", 1)
+        fim = texto.index(". 1 - PODERES")
+        return {"ok": texto[:fim] + "; e " + _PJ_OUTORGADA + texto[fim:]}
+    return saida
+
+
 def _montador_das_notas_de_hoje(nome: str, antes):
-    """A saída do ouro com o acréscimo declarado do LD02 e a qualificação do
-    LD07 — e nada mais."""
+    """A saída do ouro com o acréscimo declarado do LD02, a qualificação do
+    LD07 e o lado da outorgada (ensaio de atos, 03/11/2026) — e nada mais."""
     novos = MONTADORES_DAS_NOTAS_MUDADOS_NO_LD02.get(nome)
     if not novos:
-        return _qualificacao_de_hoje(nome, antes)
+        return _a_outorgada_no_lado_dela(nome, _qualificacao_de_hoje(nome, antes))
     assert not set(novos) & set(antes["ok"]), f"o acréscimo já estava no ouro: {nome}"
     return {"ok": {**antes["ok"], **novos}}
 

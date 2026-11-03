@@ -26,6 +26,10 @@ Os nomes, os CPF e o CNPJ do ensaio são fictícios. Os artigos do CNN e do CN-M
 
 ## 1. Quem comparece em nome de outro vai para o lado errado do negócio
 
+**CONSERTADO em 03/11/2026** (conserto liberado pela sessão de PRs): o lado vem da qualidade da CEP
+(`notas_teor.lado_da_parte`); quem comparece por outro sai qualificado e marcado, fora dos dois lados,
+até o item 2 lhe dar o campo de quem ele representa.
+
 **O que saiu.** A abertura do ato separa as partes em dois lados — outorgantes e outorgados — por
 **palavra** na qualificação (`notas_teor.partes_por_lado`, `_SEGUNDA_PARTE`): quem tem «OUTORGADO»,
 «COMPRADOR», «DONATARIO» ou «PROCURADOR» vai para o segundo lado; todo o resto, para o primeiro.

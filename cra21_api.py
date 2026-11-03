@@ -188,6 +188,10 @@ class CraRecusou(CraError):
         self.motivo = str(motivo or "").strip() or None
 
 
+class CraSemRemessa(CraRecusou):
+    """Consulta concluída: a CRA informou que não há remessa (0003)."""
+
+
 # O PADRÃO É PRODUÇÃO DESDE 14/10/2026 — ordem do oficial no primeiro dia do
 # protesto no sistema: «tire a opção de funcionar na homologação, agora é tudo
 # produção». Até 13/10 o ambiente vazio ou desconhecido caía na homologação.
@@ -443,7 +447,16 @@ def _remessa_ou_aviso(texto: str) -> str:
     """
     aviso = recusa_no_return(texto)
     if aviso:
-        raise CraRecusou(f"A CRA informou: {aviso}")
+        relatorio = _RELATORIO_NO_RETURN.search(texto)
+        codigo = relatorio.group(1).strip() if relatorio else None
+        motivo = (saxutils.unescape(relatorio.group(2).strip())
+                  if relatorio else aviso)
+        # Sem movimento é uma consulta concluída, não falha de rede ou de
+        # credencial. O código só vale dentro de um relatório da Central.
+        sem_remessa = codigo == "0003" and "<erro" not in texto.lower()
+        erro = CraSemRemessa if sem_remessa else CraRecusou
+        raise erro(f"A CRA informou: {aviso}", bruto=texto,
+                   codigo=codigo, motivo=motivo)
     return texto
 
 

@@ -176,11 +176,30 @@ e a lei a exige lá (LRP art. 176, § 1º, III, e o quinhão do formal), mas nã
 O próprio sistema já avisa na transmissão de parte ideal («ponha de volta em Partes → Corrigir»). Para o
 oficial: guardar a fração no quadro, e a certidão de propriedade dizê-la?
 
+## Terceira leva (03/11/2026): sem defeito novo
+
+Cinco conferências. **Todas estão certas**, e agora têm teste:
+
+- **A doação com reserva de usufruto** (R-DOACAO e R-USUFRUTO, como o modelo manda: «objeto de registro
+  próprio»): a donatária é a dona, o doador sai do quadro de titulares, e o usufruto entra como ônus. A
+  doação não entra.
+- **O indicador pessoal (LRP art. 180)**, depois de duas vendas: o primeiro vendedor e a compradora que
+  revendeu continuam achados na matrícula, com o papel; só o casal que comprou por último aparece como
+  «Proprietário atual».
+- **A DOI do mês** (Lei 10.426/2002, art. 8º), na tela do oficial: as duas vendas, cada uma com quem aliena
+  e quem adquire. Nenhuma entra enquanto falta o que a Receita pede: o tipo da operação, o valor, a base do
+  ITBI e a participação de cada adquirente, que no casal é obrigatória. A tela diz que o que falta se
+  digita na CTP. (A tela da DOI dá 403 ao escrevente, o USER; é do oficial, como a remessa.)
+- **O prazo da prenotação (LRP art. 205):** a prenotação de 03/11/2026 vence em 02/12/2026, 20 dias úteis
+  contados sem o 20/11 (feriado nacional), como manda a contagem em dias úteis da LRP depois da Lei
+  14.382/2022. Conferido na ficha, sem teste novo: `ri_prenotacao_prazo` já tem os dele.
+
+- **A arrematação sobre imóvel penhorado** (CPC arts. 901 e 903): o arrematante é o dono e a executada
+  sai; a penhora continua oferecida como ônus. É o certo: o registro não se cancela sozinho (LRP arts. 250
+  e 251), e o mandado de cancelamento se averba pelo botão «Cancelar este ato», que funciona.
+
 ## O que fica para as próximas levas
 
-Do plano do inventário:
-- a doação com reserva de usufruto no mesmo título;
-- a arrematação sobre imóvel penhorado;
-- o indicador pessoal e o real depois de cada sequência;
-- a DOI da compra e venda;
-- a caducidade da prenotação (LRP art. 205).
+Do plano do inventário, o RI está praticado. Ficam fora do ensaio, porque precisam de rede ou de dados de
+fora: o pedido pela ONR, a CNIB central e a consulta à CNM. Os consertos esperam as respostas do oficial
+às perguntas (a) a (f).

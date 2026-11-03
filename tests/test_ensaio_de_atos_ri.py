@@ -9,7 +9,8 @@ O QUE ESTE TESTE FAZ
     um numa matrícula limpa. Este pratica, pelas mesmas telas e com os mesmos passos (os auxiliares de
     lá), as SEQUÊNCIAS em que a certidão de propriedade e a de ônus podem errar: a venda com a hipoteca
     de pé, o cancelamento, a penhora, a indisponibilidade, o casal que adquire, o usufruto e a extinção;
-    e, na segunda leva, a prioridade entre prenotações, a partilha e o desmembramento.
+    na segunda leva, a prioridade entre prenotações, a partilha e o desmembramento; na terceira, a doação
+    com reserva de usufruto, o indicador pessoal, a DOI e a arrematação.
     O inventário está em `docs/ensaio_de_atos/inventario_ri.md`, e o relatório em `relatorio_ri.md`.
 
 OS DEFEITOS FICAM À VISTA: a asserção é a da lei; o defeito aberto fica em `xfail(strict=True)`.
@@ -278,3 +279,80 @@ def test_a_matricula_filha_aberta_de_imovel_hipotecado_traz_o_onus(casa):  # noq
     assert rotulo in _avisos(abertura) or rotulo in _avisos(ficha) or re.search(
         rf"(?is)origem.{{0,300}}{re.escape(rotulo)}", re.sub(r"<[^>]+>", " ", ficha)), \
         f"nada sobre a hipoteca da origem: {_avisos(abertura)!r}"
+
+
+# ------------------------------------------------------------------ a doação com reserva de usufruto
+
+def test_a_doacao_com_reserva_de_usufruto_faz_dona_a_donataria_e_o_usufruto_e_onus(casa):  # noqa: F811
+    """LRP art. 167, I, 33 e 7; CC arts. 538 e 1.390: a doação com reserva de usufruto rende dois registros
+    (o modelo R-DOACAO o diz: «objeto de registro proprio»). A donatária é a dona (a nua-propriedade), o
+    doador sai do quadro de titulares e fica usufrutuário, e o usufruto é ônus."""
+    f = F._compra_e_venda(casa)
+    m = f["matricula"]
+    doacao = _ato(casa, m, "R-DOACAO", interessado=CONJUGE,
+                  partes=[(F.COMPRADORA, "transmitente"), (CONJUGE, "adquirente")])
+    assert doacao["ato"] and doacao["ato"]["selo_texto"], doacao["recado"][:1200]
+    usufruto = _ato(casa, m, "R-USUFRUTO", interessado=CONJUGE,
+                    partes=[(CONJUGE, "nu-proprietário"), (F.COMPRADORA, "usufrutuário")])
+    assert usufruto["ato"] and usufruto["ato"]["selo_texto"], usufruto["recado"][:1200]
+    dono = _dono_na_certidao(casa, m)
+    assert CONJUGE["nome"] in dono and F.COMPRADORA["nome"] not in dono, dono
+    oferecidos = _onus_oferecidos(casa, m)
+    assert usufruto["ato"]["id"] in oferecidos and doacao["ato"]["id"] not in oferecidos, oferecidos
+
+
+# ------------------------------------------------------------------ os indicadores e a DOI
+
+def _texto(html: str) -> str:
+    return " ".join(re.sub(r"<[^>]+>", " ", re.sub(r"(?s)<(script|style).*?</\1>", " ", html)).split())
+
+
+def test_o_indicador_pessoal_guarda_quem_figurou_e_marca_so_o_dono_de_hoje(casa):  # noqa: F811
+    """LRP art. 180 (o Livro 5, indicador pessoal, de todos os que figuram nos atos): depois de duas vendas, o
+    primeiro vendedor e a compradora que revendeu continuam achados na matrícula, com o papel; só o casal que
+    comprou por último aparece como proprietário atual."""
+    f = F._compra_e_venda(casa)
+    m = f["matricula"]
+    _ato(casa, m, "R-COMPRA-VENDA", interessado=TERCEIRO,
+         partes=[(F.COMPRADORA, "transmitente"), (TERCEIRO, "adquirente"), (CONJUGE, "adquirente")])
+    for quem, dono in ((F.VENDEDOR, False), (F.COMPRADORA, False), (TERCEIRO, True), (CONJUGE, True)):
+        t = _texto(casa["balcao"].get(f"/registro-imoveis/indicador-pessoal?busca={quem['cpf']}").get_data(as_text=True))
+        # O RESULTADO, NÃO O CABEÇALHO: «Atendendo: <nome>» também traz o nome do interessado do protocolo.
+        resultado = t.split("encontrada(s).", 1)[-1]
+        achado = resultado.split(quem["nome"], 1)[-1][:600]
+        assert quem["nome"] in resultado and str(F.PRIMEIRA_MATRICULA) in achado, (quem["nome"], achado)
+        assert ("Proprietário atual" in achado) is dono, (quem["nome"], achado)
+
+
+def test_a_doi_do_mes_traz_cada_venda_com_quem_aliena_e_quem_adquire(casa):  # noqa: F811
+    """Lei 10.426/2002, art. 8º, e IN RFB da DOI: uma declaração por operação, com alienantes e adquirentes.
+    A tela da DOI (do oficial) lista as duas vendas da matrícula com as partes certas, e não as deixa entrar
+    enquanto falta o que a Receita pede (o tipo da operação, o valor, a participação de cada um)."""
+    f = F._compra_e_venda(casa)
+    m = f["matricula"]
+    _ato(casa, m, "R-COMPRA-VENDA", interessado=TERCEIRO,
+         partes=[(F.COMPRADORA, "transmitente"), (TERCEIRO, "adquirente"), (CONJUGE, "adquirente")])
+    t = _texto(casa["oficial"].get("/registro-imoveis/doi").get_data(as_text=True))
+    r1 = f"R-01/{F.PRIMEIRA_MATRICULA}"
+    r2 = f"R-02/{F.PRIMEIRA_MATRICULA}"
+    assert r1 in t and r2 in t, t[:2000]
+    linha_r2 = t[t.index(r2):].split("O que é a DOI", 1)[0]
+    for quem in (F.COMPRADORA, TERCEIRO, CONJUGE):
+        assert quem["nome"] in linha_r2, linha_r2
+    assert F.VENDEDOR["nome"] not in linha_r2, linha_r2
+    assert "sem percentual de participação" in linha_r2, linha_r2
+
+
+def test_a_arrematacao_muda_o_dono_e_a_penhora_fica_ate_o_mandado_de_cancelamento(casa):  # noqa: F811
+    """CPC arts. 901 e 903; LRP art. 167, I, 26, e art. 251: arrematado o imóvel penhorado, o arrematante é o
+    dono e a executada sai; a penhora continua na certidão de ônus até a averbação do cancelamento por
+    mandado — o registro não se cancela sozinho (LRP art. 250)."""
+    f = F._compra_e_venda(casa)
+    m = f["matricula"]
+    penhora = _ato(casa, m, "AV-PENHORA", interessado=F.COMPRADORA)["ato"]
+    arrematacao = _ato(casa, m, "R-ARREMATACAO", interessado=TERCEIRO,
+                       partes=[(F.COMPRADORA, "transmitente"), (TERCEIRO, "adquirente")])
+    assert arrematacao["ato"] and arrematacao["ato"]["selo_texto"], arrematacao["recado"][:1200]
+    dono = _dono_na_certidao(casa, m)
+    assert TERCEIRO["nome"] in dono and F.COMPRADORA["nome"] not in dono, dono
+    assert penhora["id"] in _onus_oferecidos(casa, m)

@@ -396,7 +396,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         termo = (request.args.get("q") or "").strip()
         with db.connect() as con:
             linhas, ha_mais = AP.buscar_protocolos(con, termo)
-        return {"ok": True, "q": termo, "ha_mais": ha_mais, "itens": [
+        # O termo não volta na resposta: o mesmo XSS refletido que o CodeQL
+        # apontou na busca de matrícula (#270, 03/11/2026).
+        return {"ok": True, "ha_mais": ha_mais, "itens": [
             {"id": int(x["id"]), "numero": x["numero"], "rotulo": x["rotulo"]}
             for x in linhas]}
 

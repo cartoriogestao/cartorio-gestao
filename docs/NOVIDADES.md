@@ -8,6 +8,48 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.10 — o Registro Civil conferido com a lei, atualizar pelo GitHub e a tela ajustável
+
+São 17 mudanças juntadas desde a 3.7.9 (#233 a #249). A suíte inteira rodou no layout novo, na máquina
+da integração: 17.651 verdes, nenhuma falha.
+
+**Atenção ao instalar**
+- **Esta é a última atualização pelo caminho de sempre.** A 3.7.9 e as anteriores recusam o pacote
+  completo (o sistema passou de 2.000 arquivos): esta versão vai como **pacote parcial**, só com o que
+  mudou desde a versão instalada. Da 3.7.10 em diante, a tela **Atualizações** avisa a versão nova do
+  GitHub e atualiza com a **senha do oficial**, sem escolher arquivo nem colar SHA-256.
+- **Colunas novas** no Registro Civil (testamento do óbito, os sinais do óbito de pessoa não identificada,
+  a natureza do ato) nascem sozinhas na primeira abertura.
+- **O termo de nascimento não fala mais do casamento dos pais** (Lei 8.560/1992, art. 5º), e o de
+  casamento passa a dizer **quem presidiu o ato** (decisões do oficial de 02/11/2026).
+
+**Registro Civil — o que o ensaio de atos achou e já está certo**
+- Nascimento: «sendo filha de» para a registrada; a ordem do gêmeo se pergunta na lavratura e vai ao
+  termo; a lavratura avisa quando a naturalidade declarada não chega à pessoa.
+- Casamento: o CPF dos cônjuges no breve relato; o termo diz quem presidiu o ato.
+- Óbito: o testamento é pergunta SIM/NÃO; o óbito de pessoa não identificada não afirma o que ninguém
+  sabe e traz os sinais do art. 81, também na tela de corrigir; o natimorto se lavra sem nome, com breve
+  relato próprio, causa e sepultamento.
+- Reconhecimento de paternidade e mudança de prenome: a certidão sai atualizada e não transcreve a
+  averbação (Lei 8.560/1992, art. 6º).
+- O «(a)» do termo concorda com a pessoa, e o CPF do breve relato sai com pontos.
+
+**Atualizar pelo GitHub**
+- O sino avisa a versão nova, e a tela Atualizações mostra o que ela traz e o botão **Baixar e
+  atualizar**: o sistema baixa o pacote, confere o SHA-256 e a assinatura da chave da casa, faz o backup,
+  aplica, reinicia e volta sozinho se falhar.
+- Falha ao preparar uma atualização vira aviso na tela, e não mais erro 500.
+
+**A tela**
+- **Letra maior por pessoa** (100% a 150%), no menu de cada um.
+- **As colunas da esquerda recolhem**, e a escolha fica guardada por pessoa.
+- **A coluna da direita em destaque**: o cronômetro mostra que está correndo, e o WhatsApp avisa quando
+  há gente chamando.
+- **Gravar não volta ao topo**: depois de um botão, a tela abre com ele embaixo do mouse.
+
+**Segurança**
+- Alerta do CodeQL fechado: o pacote enviado vai ao disco com nome dado pelo servidor.
+
 ## 3.7.9 — o layout novo como padrão, despesas do titular e o ensaio de atos
 
 São 104 mudanças juntadas desde a 3.7.8 (#128 a #231). A suíte inteira rodou no layout novo, na máquina

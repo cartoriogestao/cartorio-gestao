@@ -51,7 +51,7 @@ class AcaoBloqueada(PermissionError):
 
 
 _trava = {"ligada": False, "poupada": None, "permitidas": [], "reais": [], "pessoais": [], "liberadas": [],
-          "tentativas": []}
+          "tentativas": [], "portas_locais": frozenset()}
 _instalada = [False]
 
 _EVENTOS_DE_PROGRAMA = {"subprocess.Popen", "os.system", "os.startfile", "os.startfile/2", "os.exec",
@@ -94,6 +94,34 @@ def _ao_abrir(args) -> None:
         _barrar(f"ler {caminho}", FileNotFoundError)
 
 
+_LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def _so_o_aparelho_da_mesa(evento, args) -> bool:
+    """A conexão com uma porta desta máquina que o ensaio abriu — o selador de mentira, que é servidor
+    TLS numa porta local (`selador_falso`). Ensaio de atos das Notas, 03/11/2026: a lavratura das Notas
+    sela pelo aparelho, e não pelo selo digitado como a do Registro Civil. Nada sai da máquina."""
+    portas = _trava["portas_locais"]
+    if not portas:
+        return False
+    try:
+        if evento == "socket.connect":
+            endereco = args[1]
+            return (isinstance(endereco, tuple) and str(endereco[0]) in _LOOPBACK
+                    and int(endereco[1]) in portas)
+        if evento == "socket.getaddrinfo":
+            return str(args[0]) in _LOOPBACK and args[1] is not None and int(args[1]) in portas
+        if evento == "http.client.connect":
+            return str(args[1]) in _LOOPBACK and int(args[2]) in portas
+        if evento == "urllib.Request":
+            from urllib.parse import urlsplit
+            u = urlsplit(str(args[0]))
+            return u.hostname in _LOOPBACK and u.port in portas
+    except (IndexError, TypeError, ValueError):
+        return False
+    return False
+
+
 def _gancho(evento, args) -> None:
     if not _trava["ligada"] or _trava["poupada"] is threading.current_thread():
         return
@@ -102,6 +130,8 @@ def _gancho(evento, args) -> None:
     elif evento in _EVENTOS_DE_PROGRAMA:
         _barrar(f"programa: {evento} {str(args[:2])[:160]}")
     elif evento in _EVENTOS_DE_REDE:
+        if _so_o_aparelho_da_mesa(evento, args):
+            return
         _barrar(f"rede: {evento} {str(args[-1] if evento == 'socket.connect' else args[:2])[:120]}")
     elif evento in _EVENTOS_DE_REGISTRO:
         _barrar(f"registro do Windows: {evento}")
@@ -128,7 +158,10 @@ def pastas_de_instalacao_real() -> list[str]:
     return [_normal(c) for c in candidatas]
 
 
-def ligar_trava(*pastas_de_gravar) -> None:
+def ligar_trava(*pastas_de_gravar, portas_locais=()) -> None:
+    """`portas_locais`: as portas de 127.0.0.1 que o ensaio pode chamar (o selador de mentira).
+    Qualquer outra conexão continua barrada."""
+    _trava["portas_locais"] = frozenset(int(p) for p in portas_locais)
     if not _instalada[0]:
         sys.addaudithook(_gancho)
         _instalada[0] = True
@@ -143,6 +176,7 @@ def ligar_trava(*pastas_de_gravar) -> None:
 
 def desligar_trava() -> None:
     _trava["ligada"] = False
+    _trava["portas_locais"] = frozenset()
 
 
 def poupar_esta_linha(poupar: bool = True) -> None:

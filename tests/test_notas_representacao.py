@@ -64,3 +64,35 @@ def test_quem_assina_a_rogo_nao_representa_e_nao_pede_instrumento():
 def test_parte_de_outro_ato_ou_ela_mesma_nao_conta():
     assert NT.representantes_por_parte([VENDEDOR, _procurador(representa_parte_id=99)]) == {}
     assert NT.representantes_por_parte([_procurador(id=1, representa_parte_id=1)]) == {}
+
+
+# ------------------------------------------- quem assina por quem (observação 9, 03/11/2026)
+
+def test_o_representado_nao_assina_e_o_procurador_assina_por_ele():
+    linha = NT.texto_dos_assinantes([VENDEDOR, COMPRADORA, _procurador()])
+    assert "MARIO EXEMPLO DOS SANTOS, VENDEDOR" not in linha
+    assert "CARLOS EXEMPLO PROCURADOR, PROCURADOR, por MARIO EXEMPLO DOS SANTOS" in linha
+    assert "BEATRIZ EXEMPLO DE SOUZA, COMPRADORA" in linha
+
+
+def test_quem_assina_a_rogo_assina_a_rogo_de():
+    rogo = {**BASE, "id": 3, "nome": "PAULO EXEMPLO TESTEMUNHA", "qualificacao": "ASSINA A ROGO",
+            "representa_parte_id": 1}
+    linha = NT.texto_dos_assinantes([VENDEDOR, COMPRADORA, rogo])
+    assert "PAULO EXEMPLO TESTEMUNHA, a rogo de MARIO EXEMPLO DOS SANTOS" in linha
+    assert "MARIO EXEMPLO DOS SANTOS, VENDEDOR" not in linha
+
+
+def test_o_assistido_assina_com_o_assistente():
+    mae = {**BASE, "id": 3, "nome": "JOANA EXEMPLO DOS SANTOS", "qualificacao": "ASSISTENTE",
+           "representa_parte_id": 2}
+    linha = NT.texto_dos_assinantes([VENDEDOR, COMPRADORA, mae])
+    assert "BEATRIZ EXEMPLO DE SOUZA, COMPRADORA" in linha
+    assert "JOANA EXEMPLO DOS SANTOS, ASSISTENTE, assistindo BEATRIZ EXEMPLO DE SOUZA" in linha
+
+
+def test_as_linhas_de_assinatura_seguem_a_mesma_regra():
+    bloco = NT.bloco_de_assinaturas([VENDEDOR, COMPRADORA, _procurador()], "PEDRO EXEMPLO", "Escrevente")
+    # nenhuma linha em nome do vendedor; o nome dele só na condição de quem assina por ele
+    assert ">MARIO EXEMPLO DOS SANTOS<" not in bloco
+    assert "PROCURADOR, por MARIO EXEMPLO DOS SANTOS" in bloco

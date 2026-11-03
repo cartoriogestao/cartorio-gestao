@@ -278,6 +278,37 @@ def teor_sem_titulos_duplicados(teor: str | None, titulos: list[str]) -> str:
 CHAVE_ASSINANTES = "assinantes_do_ato_e_a_condicao_em_que_assinam"
 
 
+# QUEM ASSINA POR QUEM — ensaio de atos das Notas, observação 9 (03/11/2026). A linha das assinaturas
+# repetia a qualificação crua de todas as partes, e o donatário impúbere aparecia entre os que assinam.
+# Com o quadro «Partes» dizendo quem representa quem (item 2): o representado por procurador ou
+# representante legal não assina — assina quem o representa, «por» ele; quem não sabe ou não pode
+# assinar também não, e quem assina a rogo assina «a rogo de» ele (CC art. 215, § 2º). O assistido
+# assina, e o assistente assina com ele: assistir não é representar (CC art. 1.654; CN-MA art. 798, VII).
+def _quem_assina(principais: list) -> list[tuple[dict, str]]:
+    """[(parte, condição)] na ordem do quadro, sem quem outro assina por ele. So calcula."""
+    reps = representantes_por_parte(principais)
+    nomes = {dict(p).get("id"): (dict(p).get("nome") or "").strip().upper() for p in principais}
+    por_quem = {r.get("id"): alvo for alvo, lista in reps.items() for r in lista}
+    nao_assinam = {alvo for alvo, lista in reps.items()
+                   if any(not _sem_acento_maiusculo(r.get("qualificacao")).startswith("ASSISTENTE")
+                          for r in lista)}
+    saida = []
+    for p in principais:
+        d = dict(p)
+        if d.get("id") in nao_assinam:
+            continue
+        condicao = (d.get("qualificacao") or "").strip()
+        alvo = por_quem.get(d.get("id"))
+        if alvo:
+            papel = _sem_acento_maiusculo(d.get("qualificacao"))
+            ligacao = ("a rogo de" if papel.startswith("ASSINA A ROGO")
+                       else "assistindo" if papel.startswith("ASSISTENTE") else "por")
+            condicao = (f"{condicao}, " if condicao and not papel.startswith("ASSINA A ROGO") else "") \
+                + f"{ligacao} {nomes[alvo]}"
+        saida.append((d, condicao))
+    return saida
+
+
 def texto_dos_assinantes(partes: list, *, con: Any = None) -> str:
     """Nome e condição de quem assina o ato, tirados da qualificação do formulário.
 
@@ -289,12 +320,10 @@ def texto_dos_assinantes(partes: list, *, con: Any = None) -> str:
     principais = [p for p in partes if not dict(p).get("testemunha")]
     testemunhas = [p for p in partes if dict(p).get("testemunha")]
     pedacos: list[str] = []
-    for p in principais:
-        d = dict(p)
+    for d, qual in _quem_assina(principais):
         nome = (d.get("nome") or "").strip().upper()
         if not nome:
             continue
-        qual = (d.get("qualificacao") or "").strip()
         pedacos.append(f"{nome}, {qual}" if qual else nome)
     for t in testemunhas:
         d = dict(t)
@@ -329,10 +358,8 @@ def bloco_de_assinaturas(partes: list, lavrado_nome: str | None = None,
             blocos.append(textos.preencher("NOTAS_TRASLADO__assinatura_condicao",
                                            condicao=_escapar(condicao)))
 
-    for p in principais:
-        d = dict(p)
+    for d, qual in _quem_assina(principais):
         nome = (d.get("nome") or "").strip().upper() or _falta("nome")
-        qual = (d.get("qualificacao") or "").strip()
         _linha(nome, qual or None)
 
     for t in testemunhas:

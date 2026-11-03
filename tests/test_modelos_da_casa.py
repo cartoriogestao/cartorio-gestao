@@ -3181,6 +3181,20 @@ _PJ_OUTORGADA = ("<b>EMPRESA DE EXEMPLO LTDA</b>, pessoa jurídica de direito pr
                  "CNPJ sob o nº 00.000.000/0001-00, com sede em Avenida de Exemplo, 2")
 
 
+# O ANUENTE CONSENTE — decisão do oficial, 03/11/2026 (ensaio de atos das Notas, item 3). O PEDRO de
+# `varios_e_testemunha` é «ANUENTE»: sai do meio dos outorgantes e vai depois deles, com a frase do CC
+# art. 1.647, I. Só no `contexto_jinja_partes`; a procuração montada continua «na qualidade de ANUENTE».
+def _o_anuente_consente(nome: str, saida):
+    if nome != "notas_teor.contexto_jinja_partes(varios_e_testemunha)":
+        return saida
+    ok = dict(saida["ok"])
+    antes, sep, pedro = ok["outorgantes"].rpartition("; <b>PEDRO DE EXEMPLO</b>")
+    assert sep and ";" not in pedro
+    ok["outorgantes"] = (antes + "; e, como ANUENTE, <b>PEDRO DE EXEMPLO</b>" + pedro
+                         + ", que consente no presente ato, na forma do artigo 1.647, I, do Código Civil")
+    return {"ok": ok}
+
+
 def _a_outorgada_no_lado_dela(nome: str, saida):
     if nome == "notas_teor.contexto_jinja_partes(varios_e_testemunha)":
         ok = dict(saida["ok"])
@@ -3205,7 +3219,7 @@ def _montador_das_notas_de_hoje(nome: str, antes):
     LD07 e o lado da outorgada (ensaio de atos, 03/11/2026) — e nada mais."""
     novos = MONTADORES_DAS_NOTAS_MUDADOS_NO_LD02.get(nome)
     if not novos:
-        return _a_outorgada_no_lado_dela(nome, _qualificacao_de_hoje(nome, antes))
+        return _o_anuente_consente(nome, _a_outorgada_no_lado_dela(nome, _qualificacao_de_hoje(nome, antes)))
     assert not set(novos) & set(antes["ok"]), f"o acréscimo já estava no ouro: {nome}"
     return {"ok": {**antes["ok"], **novos}}
 

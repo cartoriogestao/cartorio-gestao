@@ -203,16 +203,26 @@ def test_a_assistente_da_nubente_menor_nao_vira_nubente(praticado):
     assert _marcado_fora_dos_lados(_teor(praticado, "pacto_nubente_menor"), "JOANA EXEMPLO DOS SANTOS")
 
 
-@_defeito("o cônjuge que dá a outorga sai como mais um OUTORGANTE VENDEDOR, sem dizer que consente "
-          "(item 3)")
-def test_o_conjuge_do_vendedor_consente_e_o_termo_o_diz(praticado):
-    """CC art. 1.647, I: nenhum dos cônjuges pode, sem autorização do outro (exceto na separação
-    absoluta), alienar ou gravar de ônus real os bens imóveis."""
-    # Na abertura, e não na linha das assinaturas — lá a qualificação digitada aparece crua («JOANA …,
-    # ANUENTE»), o que não é a declaração do consentimento.
+def test_o_casal_em_comunhao_vende_junto(praticado):
+    """Decisão do oficial, 03/11/2026 (item 3): no imóvel do casal em comunhão, os dois cônjuges são
+    outorgantes vendedores, cada um qualificado com o outro e o regime (CC art. 215, § 1º, III)."""
     abertura = _abertura(_lavrado(praticado, "cv_casado_com_outorga").termo)
-    assert re.search(r"JOANA EXEMPLO DOS SANTOS[^;]{0,400}(anuente|consent|outorga conjugal|outorga uxória)",
-                     abertura, re.I)
+    vendedores = abertura.split("como OUTORGADO")[0]
+    # a qualificação de cada um, e não só o nome: o do marido traz «casado com JOANA …»
+    assert "MARIO EXEMPLO DOS SANTOS, brasileiro" in vendedores
+    assert "JOANA EXEMPLO DOS SANTOS, brasileira" in vendedores
+    assert "ANUENTE" not in abertura
+
+
+def test_o_conjuge_anuente_consente_e_nao_vende(praticado):
+    """CC art. 1.647, I: nenhum dos cônjuges pode, sem autorização do outro (exceto na separação
+    absoluta), alienar ou gravar de ônus real os bens imóveis. Decisão do oficial, 03/11/2026 (item 3):
+    o anuente sai com a frase do consentimento, e nunca como vendedor."""
+    abertura = _abertura(_lavrado(praticado, "cv_bem_particular_com_anuente").termo)
+    assert EN.tem(abertura, "e, como ANUENTE, JOANA EXEMPLO DOS SANTOS", "que consente no presente ato",
+                  "1.647, I")
+    antes_do_anuente = abertura.split("como ANUENTE")[0]
+    assert "JOANA EXEMPLO DOS SANTOS, brasileira" not in antes_do_anuente
 
 
 def test_a_outorgada_mulher_e_outorgada(praticado):

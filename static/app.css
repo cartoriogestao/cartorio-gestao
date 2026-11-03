@@ -1400,3 +1400,9 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
   .wa-balao{max-width:88%}
 }
 .detail>.span2{grid-column:1/-1}
+
+/* O TAMANHO DA LETRA DA PESSOA, na moldura antiga (pedido do oficial, 02/11/2026): zoom da página inteira,
+   porque o CSS da casa é em pixels. A moldura nova tem a regra dela em casca.css. */
+html[data-escala]:not([data-layout=novo]) body{zoom:var(--cg-escala,1)}
+.sidebar-escalas{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;font-size:11px}
+.sidebar-escalas .link-button{padding:2px 0;font-size:11px}.sidebar-escalas .atual{font-weight:700;text-decoration:underline}

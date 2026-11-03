@@ -17,7 +17,7 @@
                          tipo_do_ato=(a.tipo if a is defined and a and a.tipo is defined else '')) if user else none %}
 {% macro ic(nome, tam=18) %}<svg class="cg-ic" width="{{ tam }}" height="{{ tam }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">{{ nav.icones[nome]|safe }}</svg>{% endmacro %}
 <!doctype html>
-<html lang="pt-BR" data-layout="novo">
+<html lang="pt-BR" data-layout="novo"{% if cg_zoom and cg_zoom != "1" %} data-escala="{{ cg_escala }}" style="--cg-escala:{{ cg_zoom }}"{% endif %}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -49,10 +49,22 @@
 <body class="cg-corpo">
 {% if user %}
 <a class="cg-pular" href="#conteudo">Pular para o conteúdo</a>
-<div class="cg-app{% if not nav.secoes %} cg-sem-secoes{% endif %}">
+<div class="cg-app{% if not nav.secoes %} cg-sem-secoes{% endif %}{% if cg_colunas_recolhidas %} cg-recolhido{% endif %}" data-cg-app>
 
   <nav class="cg-modulos" aria-label="Módulos">
     <a class="cg-marca" href="{{ url_for('dashboard') }}" aria-label="{{ APP_NAME }}: início"><b aria-hidden="true">CG</b></a>
+    {# RECOLHER AS COLUNAS DA ESQUERDA — pedido do oficial, 02/11/2026: «deixar mais campo pra tela». A barra
+       dos módulos vira uma faixa só de ícones e as seções saem; nada some de vez — os módulos continuam
+       nos ícones, na busca (Ctrl+K) e no Novo. A escolha é da pessoa e fica de uma tela para outra. #}
+    <form method="post" action="{{ url_for('preferencia_aparencia') }}" class="cg-recolher-f">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="colunas" value="{{ 'abertas' if cg_colunas_recolhidas else 'recolhidas' }}" data-cg-colunas>
+      <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
+      <button type="submit" class="cg-recolher" data-cg-recolher aria-pressed="{{ 'true' if cg_colunas_recolhidas else 'false' }}"
+              title="{{ 'Abrir' if cg_colunas_recolhidas else 'Recolher' }} as colunas da esquerda (tecla [)">
+        <span aria-hidden="true">{{ '»' if cg_colunas_recolhidas else '«' }}</span>
+        <span class="cg-recolher-t">{{ 'Abrir' if cg_colunas_recolhidas else 'Recolher' }}</span></button>
+    </form>
     {% for m in nav.barra %}
     <a class="cg-mod{% if m.lavra %} lavra{% endif %}{% if m.atual %} atual{% endif %}"
        href="{{ m.url }}" title="{{ m.nome }}" style="--c:{{ m.cor }}"
@@ -72,6 +84,15 @@
         <p class="cg-pop-t"><strong>{{ user.full_name }}</strong><br><small>{{ user.role }} · v{{ VERSION }}</small></p>
         <a class="cg-pi" href="{{ url_for('dois_fatores') }}">Verificação em duas etapas</a>
         <a class="cg-pi" href="{{ url_for('minha_senha') }}">Minha senha</a>
+        {# O TAMANHO DA LETRA — pedido do oficial, 02/11/2026: «alguém que não enxerga tão bem poder aumentar
+           as fontes e logos do sistema». Da pessoa, nas duas molduras. #}
+        <form method="post" action="{{ url_for('preferencia_aparencia') }}" class="cg-escalas" aria-label="Tamanho da letra">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="next" value="{{ request.path if request.method == 'GET' else url_for('dashboard') }}">
+          <span class="cg-escalas-t">Tamanho da letra</span>
+          {% for e in cg_escalas %}<button type="submit" name="escala" value="{{ e }}" class="cg-escala{% if e == cg_escala %} atual{% endif %}"
+            {% if e == cg_escala %}aria-pressed="true"{% else %}aria-pressed="false"{% endif %}>{{ e }}%</button>{% endfor %}
+        </form>
         <form method="post" action="{{ url_for('preferencia_layout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <input type="hidden" name="layout" value="antigo">

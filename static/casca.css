@@ -310,3 +310,63 @@
 .cg-lista-larga{column-count:2;column-gap:32px}
 .cg-lista-larga>li{break-inside:avoid}
 }
+
+/* O TAMANHO DA LETRA DA PESSOA — pedido do oficial, 02/11/2026: «alguém que não enxerga tão bem poder
+   aumentar as fontes e logos do sistema». O CSS da casa é em pixels, e só o zoom aumenta letra, ícone e logo
+   juntos. A altura da moldura se divide pelo zoom: senão ela passaria da janela (medido no Chrome, 02/11). */
+html[data-escala] .cg-corpo{zoom:var(--cg-escala);height:calc(100vh / var(--cg-escala))}
+html[data-escala] .cg-app{height:calc(100vh / var(--cg-escala))}
+.cg-escalas{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:6px 10px;margin:4px 0;border-top:1px solid #eceff3;border-bottom:1px solid #eceff3}
+.cg-escalas-t{width:100%;font-size:11.5px;color:#5b6875;font-weight:600}
+.cg-escala{flex:1;padding:4px 0;border:1px solid #cfd6de;border-radius:6px;background:#fff;font-size:12px;cursor:pointer;color:#16202b}
+.cg-escala.atual{background:#0b5cad;border-color:#0b5cad;color:#fff;font-weight:600}
+
+/* RECOLHER AS COLUNAS DA ESQUERDA — pedido do oficial, 02/11/2026. A barra dos módulos vira faixa de ícones
+   (o nome continua no `title`), e as seções saem; o resto da tela fica com o espaço. */
+.cg-recolher-f{margin:0 5px 4px}
+.cg-recolher{display:flex;flex-direction:column;align-items:center;gap:0;width:100%;padding:3px 0;border:0;background:none;border-radius:8px;font-size:10px;line-height:1.1;color:#3a4653;cursor:pointer}
+.cg-recolher span[aria-hidden]{font-size:15px;line-height:1}
+.cg-recolher:hover{background:#f6f7f9;color:#14202c}
+.cg-app.cg-recolhido{grid-template-columns:56px minmax(0,1fr) 72px}
+.cg-app.cg-recolhido .cg-secoes{display:none}
+.cg-app.cg-recolhido .cg-mod>span:not(.cg-mod-ic),.cg-app.cg-recolhido .cg-eu-nome,.cg-app.cg-recolhido .cg-recolher-t{display:none}
+.cg-app.cg-recolhido .cg-mod{margin:0 4px;padding:5px 2px}
+.cg-app.cg-recolhido .cg-mod-ic{width:26px;height:26px}
+.cg-app.cg-recolhido:has(.ajuda-gaveta:not([hidden]),.agente-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])){grid-template-columns:56px minmax(0,1fr) 72px}
+
+/* A COLUNA DA DIREITA EM DESTAQUE — pedido do oficial, 02/11/2026: «o cronômetro precisa de mais destaque
+   para mostrar que está correndo, e o WhatsApp precisa de mais destaque para saber que tem gente chamando».
+   Ícones maiores e com mais contraste; o estado se vê pela cor e pelo selo, e o pulso só para quem não pediu
+   menos movimento ao sistema. */
+.cg-apoio .wa-atalho,.cg-apoio .prod-rapida-btn,.cg-apoio .ajuda-chamar,.cg-apoio .agente-chamar{font-size:10.4px;color:#14202c;font-weight:600}
+.cg-apoio .wa-atalho-icone{width:24px;height:24px}
+.cg-apoio .prod-rapida-ico{font-size:21px}
+.cg-apoio .ajuda-chamar::before{width:22px;height:22px;font-size:13px}
+.cg-apoio .prod-rapida.correndo .prod-rapida-btn{background:#17693f;color:#fff;box-shadow:inset 0 0 0 2px #0f4f2e}
+.cg-apoio .prod-rapida.correndo .prod-rapida-tempo{background:#fff;color:#0f4f2e;font-size:10.4px}
+.cg-apoio .wa-atalho:has(.wa-atalho-alerta){background:#e3f6ea;color:#0f6b3a;box-shadow:inset 0 0 0 2px #25a35a}
+.cg-apoio .wa-atalho .wa-atalho-alerta{position:absolute;top:2px;right:6px;background:#b00020;color:#fff;font-size:10px;line-height:1.3;padding:1px 5px;border-radius:9px}
+@keyframes cg-pulso{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
+@media (prefers-reduced-motion:no-preference){
+  .cg-apoio .prod-rapida.correndo .prod-rapida-ico,
+  .cg-apoio .wa-atalho:has(.wa-atalho-alerta) .wa-atalho-icone{animation:cg-pulso 1.6s ease-in-out infinite}
+}
+
+/* COM A LETRA GRANDE NA JANELA PEQUENA, AS COLUNAS SE RECOLHEM SOZINHAS. A 150% numa tela de 1366, a janela
+   vale 910 px, e as colunas da esquerda deixavam 538 para a tela: dezenas delas estouravam para o lado
+   (medido em 02/11/2026, `test_a_letra_em_150_por_cento…`). Recolhidas, sobram cerca de 780. O botão some
+   nesse caso — abrir as colunas não caberia; as seções seguem na busca (Ctrl+K) e na página do módulo. */
+@media (max-width:1727px){
+  html[data-escala="150"] .cg-app{grid-template-columns:56px minmax(0,1fr) 72px}
+  html[data-escala="150"] .cg-secoes,html[data-escala="150"] .cg-recolher-f{display:none}
+  html[data-escala="150"] .cg-mod>span:not(.cg-mod-ic),html[data-escala="150"] .cg-eu-nome{display:none}
+  html[data-escala="150"] .cg-mod{margin:0 4px;padding:5px 2px}
+  html[data-escala="150"] .cg-app:has(.ajuda-gaveta:not([hidden]),.agente-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])){grid-template-columns:56px minmax(0,1fr) 72px}
+}
+@media (max-width:1497px){
+  html[data-escala="130"] .cg-app{grid-template-columns:56px minmax(0,1fr) 72px}
+  html[data-escala="130"] .cg-secoes,html[data-escala="130"] .cg-recolher-f{display:none}
+  html[data-escala="130"] .cg-mod>span:not(.cg-mod-ic),html[data-escala="130"] .cg-eu-nome{display:none}
+  html[data-escala="130"] .cg-mod{margin:0 4px;padding:5px 2px}
+  html[data-escala="130"] .cg-app:has(.ajuda-gaveta:not([hidden]),.agente-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])){grid-template-columns:56px minmax(0,1fr) 72px}
+}

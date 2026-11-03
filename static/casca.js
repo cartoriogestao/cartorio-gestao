@@ -50,6 +50,11 @@
       if (alvo) { ev.preventDefault(); ev.stopPropagation(); alvo.open = true; return; }
     }
     if (!ev.target.closest("[data-cg-pop]")) fecharPopovers();
+    // ABRIR UM FECHA O OUTRO NO MESMO CLIQUE, e não só no `toggle`, que chega depois: com as regras
+    // `:has()` da coluna de apoio (02/11/2026) o sino ainda estava aberto quando o Novo já abria.
+    var resumo = ev.target.closest("summary");
+    var dono = resumo && resumo.parentElement;
+    if (dono && dono.hasAttribute("data-cg-pop") && !dono.open) fecharPopovers(dono);
   });
 
   /* ---------------------------------------------------- o sino conta o que tem */
@@ -273,9 +278,38 @@
     }, true);
   });
 
+  /* ---------------------------------------------------- recolher as colunas da esquerda
+     Pedido do oficial, 02/11/2026: «deixar mais campo pra tela». A classe troca na hora e a escolha vai ao
+     servidor, que a guarda para a pessoa: a próxima tela já abre do mesmo jeito. Sem script, o botão é um
+     formulário como os outros. */
+  var app = document.querySelector("[data-cg-app]");
+  var recolher = document.querySelector("[data-cg-recolher]");
+  function alternarColunas() {
+    if (!app || !recolher) return;
+    var form = recolher.form;
+    var recolhido = app.classList.toggle("cg-recolhido");
+    var dados = new FormData(form);
+    dados.set("colunas", recolhido ? "recolhidas" : "abertas");
+    form.querySelector("[data-cg-colunas]").value = recolhido ? "abertas" : "recolhidas";
+    recolher.setAttribute("aria-pressed", recolhido ? "true" : "false");
+    recolher.title = (recolhido ? "Abrir" : "Recolher") + " as colunas da esquerda (tecla [)";
+    recolher.querySelector("[aria-hidden]").textContent = recolhido ? "»" : "«";
+    recolher.querySelector(".cg-recolher-t").textContent = recolhido ? "Abrir" : "Recolher";
+    fetch(form.action, {method: "POST", body: dados, credentials: "same-origin",
+                        headers: {"X-Requested-With": "fetch"}});
+  }
+  if (recolher) {
+    recolher.form.addEventListener("submit", function (ev) { ev.preventDefault(); alternarColunas(); });
+  }
+
   /* ---------------------------------------------------- o teclado */
   document.addEventListener("keydown", function (ev) {
     var tecla = (ev.key || "").toLowerCase();
+    if (ev.key === "[" && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !digitando(ev.target)) {
+      ev.preventDefault();
+      alternarColunas();
+      return;
+    }
     if ((ev.ctrlKey || ev.metaKey) && tecla === "k") {
       ev.preventDefault();
       abrirBusca();

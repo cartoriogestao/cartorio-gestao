@@ -27,6 +27,16 @@ por etapas, e cada uma pode ser a última: o sistema continua inteiro em todas.
   tela leem o HTML dela. Quem testa a moldura nova a pede por pessoa. Ver «Os testes».
 - **`base.html` decide**: com `layout_novo`, estende `base_novo.html`. O resto de
   `base.html` fica dentro de um `if`, porque o `include` não obedece ao `extends`.
+- **O tamanho da letra e as colunas são da pessoa** (pedidos do oficial, 02/11/2026). No menu
+  com o nome, «Tamanho da letra» 100%, 115%, 130% ou 150% — um `zoom` da página inteira, nas
+  duas molduras (o CSS é em pixels, e só o zoom aumenta letra, ícone e logo juntos). O botão «
+  no alto da barra dos módulos, ou a tecla `[`, recolhe as colunas da esquerda: os módulos viram
+  faixa de ícones e as seções saem. A 130% e 150% em janela estreita elas se recolhem sozinhas,
+  porque abertas não caberiam. As duas escolhas moram em `settings`, como o layout
+  (`navegacao_web.ESCALAS`, `preferencia_aparencia`).
+- **A coluna da direita mostra o estado**: o cronômetro correndo fica verde, com o tempo; o
+  WhatsApp com gente esperando fica verde com o número em selo vermelho. O pulso dos dois só
+  sai para quem não pediu ao sistema menos movimento (`prefers-reduced-motion`).
 
 ## Tela nova, onde entra
 

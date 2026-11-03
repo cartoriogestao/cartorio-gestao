@@ -27,12 +27,12 @@ arquivos de teste próprios: CRA, CENPROT, tríduo, dois devedores, homônimo, a
 |---|---|---|---|
 | Protesto comum por falta de pagamento | Lei 9.492, arts. 20 a 23 | ✓ | fluxo |
 | Protesto por falta de aceite, só antes do vencimento | Lei 9.492, art. 21, §§ 1º e 2º | ✓ (motivo 2) | **ensaio**: depois do vencimento |
-| Protesto por falta de devolução | Lei 9.492, art. 21, § 3º | ✓ (motivo 3) | — |
-| Protesto para fins falimentares | Lei 9.492, art. 23; Lei 11.101/2005, art. 94; STJ, Súmula 361 | ✓ (tipo F) | próprio (termo) · **ensaio**: observação O1 |
+| Protesto por falta de devolução | Lei 9.492, art. 21, §§ 2º e 3º | ✓ (motivo 3) | **ensaio**: depois do vencimento |
+| Protesto para fins falimentares | Lei 9.492, art. 23; Lei 11.101/2005, art. 94; STJ, Súmula 361 | ✓ (tipo F) | próprio (termo) · **ensaio**: observações O1 e O4 (por edital) |
 | Cheque: a prova da apresentação ao banco sacado | Lei 9.492, art. 6º | ✗ sem campo | **ensaio** |
 | Título apresentado em duplicidade, ou já protestado | Lei 9.492, art. 9º; CRA, irregularidades 52 e 53 | ✗ sem conferência | **ensaio** |
 | Duplicata sem aceite (por indicação) | Lei 9.492, art. 8º, p. ú.; Lei 5.474/1968, art. 13 | ✓ (DMI) | fluxo da CRA |
-| Título em moeda estrangeira | Lei 9.492, art. 10 | ✓ (tipo de moeda) | — |
+| Título em moeda estrangeira | Lei 9.492, art. 10 | ✗ só o real (`TIPOS_DE_MOEDA`) | observação O3 |
 | Dois devedores (e o avalista) | Lei 9.492, art. 22 | ✓ | próprio (`test_protesto_dois_devedores`) |
 | Devedor pessoa jurídica: a certidão pelo CNPJ | Lei 9.492, art. 27; CNN art. 259 | ✓ | **ensaio** |
 | Homônimo: a certidão pelo documento | CNN art. 259 | ✓ | fluxo |
@@ -44,6 +44,7 @@ arquivos de teste próprios: CRA, CENPROT, tríduo, dois devedores, homônimo, a
 |---|---|---|
 | Dois protestos, um cancelado: a certidão traz só o outro | Lei 9.492, arts. 26 e 27; CN-MA arts. 944 e 948 | **ensaio** |
 | Sustação, revogação e protesto sem nova intimação | Lei 9.492, art. 17 | fluxo |
+| Título sustado: nem pagamento nem desistência | Lei 9.492, art. 17, § 1º | **ensaio** |
 | Pagamento depois do protesto: recusado; cancelamento pela anuência | Lei 9.492, art. 26; CN-MA art. 942, § 2º | fluxo |
 | Efeito suspensivo provisório e definitivo na certidão | CNN art. 263-K | fluxo |
 

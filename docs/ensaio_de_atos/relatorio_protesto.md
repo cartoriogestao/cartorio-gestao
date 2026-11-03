@@ -1,4 +1,4 @@
-# Relatório do ensaio de atos — Tabelionato de Protesto (primeira leva)
+# Relatório do ensaio de atos — Tabelionato de Protesto (primeira e segunda levas)
 
 Ensaio de 03/11/2026, pedido do oficial de 01/11/2026. O inventário está em `inventario_protesto.md`; o
 teste em `tests/test_ensaio_de_atos_protesto.py`.
@@ -50,7 +50,7 @@ protestado. Se houver: **(g1)** barrar, com o protocolo e a situação do outro;
 a confirmação com o motivo. A sugestão é a (g1) para o protestado e a (g2) para o apontado, porque o
 segundo pode ser a reapresentação de um título retirado.
 
-## 2. O protesto por falta de aceite se lavra depois do vencimento
+## 2. O protesto por falta de aceite (e de devolução) se lavra depois do vencimento
 
 **O que se fez.** Uma duplicata por indicação (DMI), vencida em 10/02/2025, com o motivo «2» (falta de
 aceite), pelo mesmo caminho.
@@ -64,10 +64,14 @@ efetuado por falta de pagamento». O registro afirma um motivo que a lei não ad
 **A causa.** O motivo vem do cadastro e vai ao termo como está (`protesto_termo.motivo_no_livro`). Nada
 compara o motivo com o vencimento.
 
-**Proposta.** Na lavratura: motivo de falta de aceite com vencimento anterior à data do protesto, ou
-barra com o artigo, ou troca para falta de pagamento, como manda o § 2º, avisando a troca. Pergunta ao
-oficial: qual das duas? A lei diz «sempre será efetuado por falta de pagamento», o que sugere a troca. A
-mesma regra vale para a falta de devolução (§ 3º): conferir.
+**Na segunda leva, o mesmo com a falta de devolução** (motivo «3»): o registro diz «LAVRADO POR FALTA
+DE DEVOLUÇÃO» num título vencido. O § 3º só muda a base do protesto (a segunda via, as indicações), e
+não a regra do § 2º. O teste agora tem os dois motivos.
+
+**Proposta.** Na lavratura: motivo de falta de aceite ou de devolução com vencimento anterior à data do
+protesto, ou barra com o artigo, ou troca para falta de pagamento, como manda o § 2º, avisando a troca.
+Pergunta ao oficial: qual das duas? A lei diz «sempre será efetuado por falta de pagamento», o que
+sugere a troca.
 
 ## 3. O cheque se protesta sem a prova da apresentação ao banco
 
@@ -103,10 +107,43 @@ certa). Fica para a próxima leva, com o edital publicado pela tela.
 dizer isso. Fica para a próxima leva, com a pergunta ao oficial sobre como a casa procede (intimação do
 espólio, conferir o CN-MA).
 
+## Segunda leva (03/11/2026)
+
+**Certo, e agora com teste: o título sustado não se paga nem se retira** (Lei 9.492, art. 17, § 1º: «só
+poderá ser pago, protestado ou retirado com autorização judicial»). O protesto já era barrado
+(`test_fluxo_protesto`). O pagamento e a desistência também são barrados, com o recado da ordem e do
+processo, e o título fica INTIMADO.
+
+**A falta de devolução** entrou no defeito 2 (acima).
+
+**O3. O título em moeda estrangeira não tem caminho.** A Lei 9.492, art. 10, admite o protesto de título
+em moeda estrangeira emitido fora do Brasil, com a tradução por tradutor público, e o registro traz a
+descrição e a tradução (§ 1º). O sistema só conhece o real: `protesto_cra.TIPOS_DE_MOEDA` tem uma
+entrada, «1». A CRA tem a recusa «falta tradução por tradutor público» (55). Pergunta ao oficial: a
+casa recebe esse título? Se recebe, faltam o campo da tradução e a frase no registro.
+
+**O4. O protesto para fins falimentares por edital se lavra sem aviso.** Empresa devedora, aviso não
+entregue («mudou-se»), edital publicado pela tela, comprovante da CENPROT, protesto: lavrado, com «PROTESTO
+PARA FINS FALIMENTARES» e «intimado por Edital». A CRA recusa esse caso («Vedada a intimação por edital
+para protesto falimentar», 69), e a Súmula 361 do STJ exige a identificação de quem recebeu a intimação do
+protesto falimentar. A jurisprudência admite o edital quando a empresa não é achada, por isso não vai
+como defeito. Pergunta ao oficial: avisar, no protesto falimentar por edital, que a casa e a CRA o tratam
+como exceção, e pedir a afirmação de que se esgotou a procura?
+
+**O5. A frase do «pagamento a posteriori» sai no protesto que foi pago no balcão.** O termo do título
+cadastrado pelo balcão, com o protocolo quitado antes, diz: «Este protesto foi registrado com o
+procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento».
+É a decisão documentada em `protesto_termo.py`: a frase é do texto do oficial, porque no acervo antigo
+nada distinguia os 27 protestos sem ela («A CONFERIR»). **O que o ensaio acrescenta é que hoje o dado
+existe**: o sistema sabe se o protesto foi pago no protocolo ou se é diferido (o modo diferido do #281).
+Pergunta ao oficial: a frase vira marcador, e sai só no protesto diferido?
+
+**O6. Um recado com o gênero errado:** «a desistência não pode ser lançado aqui» (`protesto.py`, a recusa
+pela sustação). Conserto de uma palavra, quando houver o PR do Protesto.
+
 ## O que fica para as próximas levas
 
-- a falta de devolução (motivo 3);
-- o título em moeda estrangeira (art. 10);
-- o protesto falimentar com edital publicado;
-- o devedor falecido;
-- a gratuidade, que a cobertura marca como sem teste.
+- o devedor falecido (O2), depois da resposta do oficial sobre como a casa procede;
+- a gratuidade: o Protesto lê `gratuidade_codigo` no formulário (`atribuicoes_web._gratuidade_do_form`),
+  mas a cobertura marca «gratuidade ✗» no apontamento e na certidão. Fica para a terceira leva, com a
+  pergunta de quais hipóteses a casa pratica.

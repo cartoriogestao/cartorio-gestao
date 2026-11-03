@@ -612,8 +612,14 @@ def teor_do_breve_relato(dados: dict, *, con=None,
             "O breve relato é da pessoa jurídica — do registro do Livro A do "
             "RCPJ (CN-MA art. 420, II).")
     faltam = [rotulo for campo, rotulo in (
-        ("requerente_nome", "a denominação"), ("pj_sede", "o endereço da sede"),
+        ("pj_sede", "o endereço da sede"),
         ("pj_objeto", "o objeto social")) if not str(reg.get(campo) or "").strip()]
+    # A DENOMINAÇÃO: a que a leitura confirmou e, na leitura de antes da coluna, a do cadastro (o oficial,
+    # 03/11/2026, observação O5 do ensaio de atos do RCPJ).
+    denominacao = (str(reg.get("pj_denominacao") or "").strip()
+                   or str(reg.get("requerente_nome") or "").strip())
+    if not denominacao:
+        faltam.insert(0, "a denominação")
     if not (str(reg.get("pj_socios") or "").strip()
             or str(reg.get("pj_diretoria") or "").strip()):
         faltam.append("os sócios ou a diretoria")
@@ -655,7 +661,7 @@ def teor_do_breve_relato(dados: dict, *, con=None,
 
     claros = {
         "onde": _onde(reg, registro_ato, con),
-        "denominacao": str(reg.get("requerente_nome")).strip(),
+        "denominacao": denominacao,
         "sede": str(reg.get("pj_sede")).strip(),
         "cnpj": (formatar_documento(reg.get("requerente_documento"))
                  if str(reg.get("requerente_documento") or "").strip()

@@ -112,7 +112,11 @@ no fim descobre que o resultado não se averba.
 **Proposta.** Na abertura da notificação, a mesma régua da averbação: registro que não está ATIVO não
 abre notificação, e o recado diz a situação e o ato que o cancelou.
 
-**O5. A releitura da ficha não pergunta a denominação.** O formulário «Dados da pessoa jurídica»
+**O5. A releitura da ficha não pergunta a denominação.** **DECIDIDO E CONSERTADO em 03/11/2026**: o
+oficial respondeu «SIM», e a releitura pergunta a denominação, já preenchida com a do cadastro. O breve
+relato certifica a lida (`rg_registros.pj_denominacao`). Se ela não é a do cadastro, a tela avisa e aponta
+a «Corrigir requerente», porque o cadastro é o da busca e só muda com o motivo. O texto original da
+observação segue abaixo. O formulário «Dados da pessoa jurídica»
 (`dados-pj`) pede a sede, o objeto, o capital, os sócios e a diretoria, mas não a denominação, que o breve
 relato tira do cadastro (`requerente_nome`). Quem averba a mudança de nome e relê a ficha, sem passar pela
 «Corrigir requerente», certifica o nome velho, e a régua da leitura deixa (ela só confere a data). Para o

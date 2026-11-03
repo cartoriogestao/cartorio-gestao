@@ -218,3 +218,28 @@ def test_o_registro_cancelado_nao_abre_notificacao(casa):  # noqa: F811
     assert not b.ler("SELECT id FROM rg_notificacoes"), F._avisos(r)
     # O RECADO DIZ POR QUÊ, e qual ato cancelou (CONSERTADO em 03/11/2026, defeito 2 do relatório).
     assert "situação CANCELADO, pelo ato n. 2" in F._avisos(r) and "art. 160" in F._avisos(r), F._avisos(r)
+
+
+def test_a_releitura_pergunta_a_denominacao_e_o_breve_relato_certifica_a_lida(casa):  # noqa: F811
+    """A resposta do oficial à observação O5 (03/11/2026): «a releitura da ficha passa a perguntar a
+    denominação, já preenchida com a do cadastro». A tela a traz preenchida; quem relê escreve a nova
+    denominação, averbada; o breve relato certifica a lida, e a tela avisa que o cadastro (o da busca)
+    continua com a antiga até a «Corrigir requerente»."""
+    b = F.Balcao(casa)
+    b.abrir_caixa()
+    registro = _associacao(b)["registro"]
+    ficha = f"/rcpj-rtd/{registro['id']}"
+    tela = b.c.get(ficha).get_data(as_text=True)
+    assert 'name="pj_denominacao"' in tela and f'value="{ASSOCIACAO}"' in tela
+    r = b.post(f"{ficha}/dados-pj", ficha, pj_denominacao=NOVA_DENOMINACAO, pj_sede=F.SEDE_DE_EXEMPLO,
+               pj_objeto=F.OBJETO_DE_EXEMPLO, pj_diretoria=F.DIRETORIA_DE_EXEMPLO)
+    assert "Dados da pessoa jurídica gravados" in F._avisos(r), F._avisos(r)
+    assert "não é a do cadastro" in F._avisos(r) and "Corrigir requerente" in F._avisos(r), F._avisos(r)
+    r = _breve_relato(b, registro["id"], ficha)
+    assert "emitida" in F._avisos(r), F._avisos(r)
+    cert = b.um("SELECT * FROM at_certidoes ORDER BY id DESC LIMIT 1")
+    assert f"Denominação: {NOVA_DENOMINACAO}" in cert["teor"], cert["teor"]
+    # a leitura com a denominação apagada não se grava
+    r = b.post(f"{ficha}/dados-pj", ficha, pj_denominacao="", pj_sede=F.SEDE_DE_EXEMPLO,
+               pj_objeto=F.OBJETO_DE_EXEMPLO, pj_diretoria=F.DIRETORIA_DE_EXEMPLO)
+    assert "a denominação" in F._avisos(r) and "gravados" not in F._avisos(r), F._avisos(r)

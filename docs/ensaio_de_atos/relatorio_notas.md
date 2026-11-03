@@ -147,6 +147,8 @@ dezesseis anos no dia do ato (e quem já tem dezoito, que não se emancipa).
 
 ## 8. A data por extenso diz «tres»
 
+**CONSERTADO em 03/11/2026** (conserto liberado pela sessão de PRs): «três» em `livro_nucleo._UNIDADES`.
+
 **O que saiu.** «aos tres (3) dias do mês de novembro» — em todo ato das Notas lavrado num dia 3 (e no 23).
 A palavra vem de `livro_nucleo._UNIDADES`; o motor de modelos tem um conserto próprio
 (`modelos_motor_contexto`), que a data da lavratura das Notas não usa.

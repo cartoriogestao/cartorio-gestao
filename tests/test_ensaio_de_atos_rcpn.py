@@ -150,7 +150,9 @@ def test_nenhum_documento_sai_com_claro_marcador_ou_none(saidas, chave):
 def test_o_termo_traz_a_data_do_ato_por_extenso_com_o_algarismo(saidas, chave):
     """LRP art. 35 e CN-MA art. 212, II (por extenso, com o algarismo entre parênteses — a forma da
     casa, `ESTILO_DATA_TERMO`)."""
-    assert re.search(r"\b(?:Aos|Em) [a-zç ]+ \(\d{2}\) de [a-zç]+ de [a-z ]+ \(\d{4}\)", _s(saidas, chave).termo)
+    # As letras com acento contam («três», desde 03/11/2026 — ensaio de atos das Notas, item 8).
+    assert re.search(r"\b(?:Aos|Em) [a-zà-ÿ ]+ \(\d{2}\) de [a-zà-ÿ]+ de [a-zà-ÿ ]+ \(\d{4}\)",
+                     _s(saidas, chave).termo)
 
 
 @pytest.mark.parametrize("chave", [c for c in EA.CHAVES if c not in RECUSADOS and c not in RECUSA_INDEVIDA])

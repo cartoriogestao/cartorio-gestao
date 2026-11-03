@@ -3387,8 +3387,8 @@ def test_os_montadores_das_notas_saem_iguais_aos_de_antes(ouro_d):
     igual)."""
     assert set(MONTADORES_DAS_NOTAS_MUDADOS_NO_LD02) <= set(ouro_d["funcoes"])
     for nome, f in OURO_D.chamadas().items():
-        assert OURO_D.normal(OURO_D.tenta(f)) == _montador_das_notas_de_hoje(
-            nome, ouro_d["funcoes"][nome]), nome
+        assert OURO_D.normal(OURO_D.tenta(f)) == _trocar_tres(_montador_das_notas_de_hoje(
+            nome, ouro_d["funcoes"][nome]), _TRES, {"tres": "três", "Tres": "Três", "TRES": "TRÊS"}), nome
 
 
 def test_a_regra_da_qualificacao_do_ld07_muda_so_as_saidas_contadas(ouro_d):
@@ -4745,9 +4745,63 @@ def _ouro_com_as_mudancas_explicadas(grupo: str, funcoes: dict) -> dict:
             assert _LT01_ANTES in antes, nome
             novo = json.loads(antes.replace(_LT01_ANTES, _LT01_DEPOIS))
         saida[nome] = novo
-    return _o_a_no_ouro(grupo, _presidente_no_ouro(grupo, _testamento_no_ouro(grupo, _filha_no_ouro(
+    explicadas = _presidente_no_ouro(grupo, _testamento_no_ouro(grupo, _filha_no_ouro(
         grupo, _sem_casamento_dos_pais_no_ouro(grupo, _hab22_no_ouro(grupo, _ld22_no_ouro(
-            grupo, _lh05_no_ouro(grupo, _ld01_no_ouro(grupo, saida)))))))))
+            grupo, _lh05_no_ouro(grupo, _ld01_no_ouro(grupo, saida))))))))
+    return _tres_no_ouro(_o_a_no_ouro(grupo, explicadas), explicadas)
+
+
+# ------------------------------- 03/11/2026 — «três» com acento
+#
+#   Ensaio de atos das Notas, item 8 (relatorio_notas.md; conserto liberado pela sessão de PRs no mesmo
+#   dia): `livro_nucleo._UNIDADES` dizia «tres», e toda data e número por extenso que passa por ele —
+#   o dia 3 e o 23 nas certidões e nos termos do Registro Civil, as folhas e os termos dos livros das
+#   Notas — saía sem o acento. A troca é a palavra inteira, em toda saída do ouro: se alguma «tres» não
+#   viesse da tabela, a saída de hoje não bateria, e o teste diria.
+_TRES = re.compile(r"\b(tres|Tres|TRES)\b")
+
+
+_TRES_COM_ACENTO = re.compile(r"\b(três|Três|TRÊS)\b")
+
+
+def _trocar_tres(valor, padrao, trocar: dict):
+    """A troca em cada texto de dentro da saída — e não no JSON dela, onde a quebra de linha é «\\n»
+    e o «n» encostado na palavra apagaria o limite dela."""
+    if isinstance(valor, str):
+        return padrao.sub(lambda m: trocar[m.group(1)], valor)
+    if isinstance(valor, dict):
+        return {k: _trocar_tres(v, padrao, trocar) for k, v in valor.items()}
+    if isinstance(valor, (list, tuple)):
+        return [_trocar_tres(v, padrao, trocar) for v in valor]
+    return valor
+
+
+def _com_os_hashes_do_ouro(depois, ouro):
+    """`depois` com cada hash (64 hexadecimais) trocado, na ordem, pelo do ouro: o hash do teor muda
+    com o acento, e só ele. É o mesmo que mascará-los, como fazem as outras trocas daqui."""
+    import json
+    hashes = iter(_HEXA.findall(json.dumps(ouro, ensure_ascii=False)))
+    texto = _HEXA.sub(lambda m: next(hashes, m.group(0)), json.dumps(depois, ensure_ascii=False))
+    return json.loads(texto)
+
+
+def _tres_no_ouro(saida, ouro=None):
+    """O dicionário de saídas do ouro com «três» onde dizia «tres». A chave é o nome da chamada do
+    gerador, e não texto do papel: fica. O validador (o de `MUDARAM_DE_PROPOSITO`, e o que o
+    `_o_a_no_ouro` faz de cada certidão) recebe a saída de hoje como está ou, se não bater, com o
+    acento desfeito — como o `_o_a_no_ouro` desfaz a concordância."""
+    com = {"tres": "três", "Tres": "Três", "TRES": "TRÊS"}
+    sem = {v: k for k, v in com.items()}
+    ouro = ouro or {}
+
+    def valida(v, nome):
+        def _v(depois):
+            sem_acento = _trocar_tres(depois, _TRES_COM_ACENTO, sem)
+            return (v(depois) or v(sem_acento)
+                    or (nome in ouro and not callable(ouro[nome])
+                        and v(_com_os_hashes_do_ouro(sem_acento, ouro[nome]))))
+        return _v
+    return {k: valida(v, k) if callable(v) else _trocar_tres(v, _TRES, com) for k, v in saida.items()}
 
 
 # ------------------------------- 02/11/2026 — o «(a)» concorda, e o CPF do breve relato tem pontos

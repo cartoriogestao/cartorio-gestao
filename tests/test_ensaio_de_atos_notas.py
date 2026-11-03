@@ -247,9 +247,9 @@ def test_a_emancipacao_confere_os_dezesseis_anos(praticado):
     assert s.situacao != "LAVRADO"
 
 
-@_defeito("a data por extenso diz «tres», sem acento (`livro_nucleo._UNIDADES`) (item 8)")
 def test_a_data_por_extenso_tem_acento():
-    """O dia 3 e o 23: a data por extenso é a do ato (CC art. 215, § 1º, I) e vai ao livro."""
+    """O dia 3 e o 23: a data por extenso é a do ato (CC art. 215, § 1º, I) e vai ao livro. Consertado
+    em 03/11/2026 (item 8), em `livro_nucleo._UNIDADES`."""
     from datetime import datetime
 
     import notas_teor as NT

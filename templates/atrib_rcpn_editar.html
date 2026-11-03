@@ -230,6 +230,19 @@
       <label style="grid-column:1/-1">Filhos — nome e idade, um por linha <small>(art. 80, 7º)</small>
         <textarea name="obito_filhos" rows="3">{{ form.get('obito_filhos','') }}</textarea></label>
       {% endif %}
+      {# OS SINAIS DO DESCONHECIDO (LRP art. 81) NA CORREÇÃO TAMBÉM — ensaio de atos, item 8, decisão do
+         oficial de 02/11/2026. A lavratura já os pedia e a correção não tinha onde completá-los: o que se
+         apurar depois (a idade presumida do laudo, por exemplo) vai ao assento por aqui. #}
+      {% if 'obito_desconhecido_estatura' in campos_termo %}
+      <label>Estatura ou medida <small>(pessoa não identificada, art. 81)</small>
+        <input name="obito_desconhecido_estatura" value="{{ form.get('obito_desconhecido_estatura','') }}"></label>
+      <label>Idade presumida
+        <input name="obito_desconhecido_idade_presumida" value="{{ form.get('obito_desconhecido_idade_presumida','') }}"></label>
+      <label style="grid-column:1/-1">Sinais aparentes
+        <input name="obito_desconhecido_sinais" value="{{ form.get('obito_desconhecido_sinais','') }}"></label>
+      <label style="grid-column:1/-1">Vestuário
+        <input name="obito_desconhecido_vestuario" value="{{ form.get('obito_desconhecido_vestuario','') }}"></label>
+      {% endif %}
       {% if assento.especie in ('CASAMENTO', 'CASAMENTO_RELIGIOSO') %}
       <label>Regime de bens <small>(art. 70, 7º)</small>
         <select name="regime_bens">

@@ -308,8 +308,12 @@
       {% endif %}
       {% if obito %}
       {# OS SINAIS DO DESCONHECIDO (LRP art. 81) — ensaio de atos, item 8, decisão do oficial de
-         02/11/2026: só para a pessoa não identificada; vão ao termo, para o reconhecimento futuro. #}
-      <fieldset style="grid-column:1/-1">
+         02/11/2026: só para a pessoa não identificada; vão ao termo, para o reconhecimento futuro.
+         CONDICIONAIS COMO OS OUTROS CAMPOS DA LEI (o oficial, 13/10/2026: «cuidar para não exigir o
+         preenchimento deles para todos os casos»): aparecem quando a pergunta «pessoa não
+         identificada?» é respondida «sim». #}
+      <fieldset style="grid-column:1/-1"
+                data-se-campo="obito_desconhecido" data-se-valor="^SIM$">
         <legend>Pessoa não identificada <small>(art. 81 da Lei 6.015/1973 — o que se puder dizer)</small></legend>
         <label>Estatura ou medida
           <input name="obito_desconhecido_estatura" value="{{ form.get('obito_desconhecido_estatura','') }}"

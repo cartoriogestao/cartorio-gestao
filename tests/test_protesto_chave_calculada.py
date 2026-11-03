@@ -8,8 +8,8 @@ O QUE ELES CONFEREM
       - os DOIS TÍTULOS DO MESMO PROTOCOLO ficam com a mesma chave, e o arquivo
         só os funde por ela;
       - título que JÁ TEM CHAVE não muda, e não gasta sequencial;
-      - título de ORIGEM CENPROT não recebe chave calculada: a dele vem da
-        Central. O MANUAL também não;
+      - título de ORIGEM CENPROT e o MANUAL também recebem a chave ao ser
+        apontados (correção de 03/11/2026: a Central não a devolve);
       - CHAVE JÁ GRAVADA NUNCA MUDA, mesmo fora da regra, e não se recusa;
       - FALTAR CONFIGURAÇÃO não impede o apontamento: o título fica sem chave, e
         nunca se chuta.
@@ -325,25 +325,45 @@ def test_titulo_que_ja_tem_chave_nao_muda_e_nao_gasta_sequencial(con):
                             cartorio=CARTORIO) == _chave_montada(501)
 
 
-def test_titulo_de_origem_cenprot_nao_recebe_chave_calculada(con):
+def test_titulo_de_origem_cenprot_recebe_chave_calculada(con):
+    """A Central nao devolve a chave do pedido: sem isto ele nunca a teria, e
+    nao entraria no XML P nem no D (`protesto_cenprot_xml.montar_titulo`)."""
     tid = _titulo(con, origem="CENPROT", chave_origem="CENPROT-PEDIDO:1")
     r = _apontar(con, tid)
-    assert r["chave_cenprot"] is None
-    assert not _chave(con, tid)
+    assert r["chave_cenprot"] == _chave_montada(1)
+    assert _chave(con, tid) == _chave_montada(1)
 
 
-def test_titulo_de_origem_cenprot_nao_herda_do_irmao(con):
+def test_titulo_de_origem_cenprot_herda_do_irmao(con):
     _titulo(con, chave_origem="L:1", chave=_chave_montada(9), protocolo="2610300001")
     tid = _titulo(con, origem="CENPROT", chave_origem="CENPROT-PEDIDO:1",
                   protocolo="2610300001")
     _apontar(con, tid)
-    assert not _chave(con, tid)
+    assert _chave(con, tid) == _chave_montada(9)
 
 
-def test_titulo_manual_nao_recebe_chave_calculada(con):
+def test_titulo_manual_recebe_chave_calculada(con):
     tid = _titulo(con, origem="MANUAL", chave_origem=None)
     _apontar(con, tid)
-    assert not _chave(con, tid)
+    assert _chave(con, tid) == _chave_montada(1)
+
+
+def test_cra_cenprot_e_manual_dividem_o_mesmo_sequencial(con):
+    """Uma casa, uma sequencia - como no acervo do E-Oficio."""
+    a = _titulo(con, chave_origem="L:1")
+    b = _titulo(con, origem="CENPROT", chave_origem="CENPROT-PEDIDO:2")
+    c = _titulo(con, origem="MANUAL", chave_origem=None)
+    for tid in (a, b, c):
+        _apontar(con, tid)
+    assert [_chave(con, t) for t in (a, b, c)] == [
+        _chave_montada(1), _chave_montada(2), _chave_montada(3)]
+
+
+def test_titulo_de_origem_cenprot_com_chave_fica_com_ela(con):
+    ja_tinha = _chave_montada(77)
+    tid = _titulo(con, origem="CENPROT", chave_origem="CENPROT-PEDIDO:1",
+                  chave=ja_tinha)
+    assert _apontar(con, tid)["chave_cenprot"] == ja_tinha
 
 
 def test_o_titulo_ja_apontado_nao_e_preenchido_por_apontar_outro(con):

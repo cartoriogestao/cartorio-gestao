@@ -302,7 +302,9 @@ def test_os_atos_da_cesdi_pedem_advogado_no_proprio_texto():
             continue
         _, exigidas = NC.MINIMO_PARTES_CESDI[m["tipo_cesdi"]]
         if "Advogado" in exigidas:
-            assert "OAB" in limpo(m["corpo"]), m["codigo"]
+            # desde 03/11/2026 o advogado vem da parte, com a OAB (`{{ advogados }}`, item 5 do
+            # ensaio de atos das Notas)
+            assert "{{ advogados }}" in m["corpo"], m["codigo"]
             assert any("advogado" in r.lower() for r in m["requisitos"]), m["codigo"]
 
 

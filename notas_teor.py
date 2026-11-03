@@ -626,6 +626,12 @@ OUTORGANTE, OUTORGADO, REPRESENTA = "OUTORGANTE", "OUTORGADO", "REPRESENTA"
 # frase do consentimento (CC art. 1.647, I) — e nunca como mais um deles, que é o que o ensaio lavrou.
 ANUENTE = "ANUENTE"
 
+# O ADVOGADO ASSISTE, E NÃO É PARTE — decisão do oficial, 03/11/2026 (ensaio de atos das Notas, item 5).
+# Ele entrava entre «as partes … todas maiores, capazes e concordes» do inventário e do divórcio, e o
+# parágrafo «DOS ADVOGADOS» o pedia de novo num campo livre da minuta. Fica fora dos lados, e o
+# parágrafo é montado dele (`advogados_qualificados`), com a OAB do quadro «Partes».
+ADVOGADO = "ADVOGADO"
+
 
 def _sem_acento_maiusculo(texto) -> str:
     import unicodedata
@@ -648,6 +654,8 @@ def lado_da_parte(parte, tipo_ato: Any = None) -> str:
         return REPRESENTA
     if rotulo.startswith(ANUENTE):
         return ANUENTE
+    if rotulo.startswith("ADVOGAD"):
+        return ADVOGADO
     primeira = re.split(r"[\s,;/(]", rotulo, maxsplit=1)[0]
     if OUTORGADO in {NC.QUALIFICACAO_PARA_CEP.get(rotulo, "").upper(),
                      NC.QUALIFICACAO_PARA_CEP.get(primeira, "").upper()}:
@@ -717,7 +725,7 @@ def partes_por_lado(partes: list, *, con: Any = None, tipo_ato: Any = None) -> t
     só têm `{{ outorgantes }}`, e no fim dos outorgados ele sumiria do teor.
     """
     textos = MODELOS.textos(con)
-    lados = {OUTORGANTE: [], OUTORGADO: [], REPRESENTA: [], ANUENTE: []}
+    lados = {OUTORGANTE: [], OUTORGADO: [], REPRESENTA: [], ANUENTE: [], ADVOGADO: []}
     montar = {REPRESENTA: _quem_representa, ANUENTE: _quem_consente}
     reps = representantes_por_parte(partes)
     ligados = {r.get("id") for lista in reps.values() for r in lista}
@@ -728,6 +736,8 @@ def partes_por_lado(partes: list, *, con: Any = None, tipo_ato: Any = None) -> t
         lado = lado_da_parte(d, tipo_ato)
         if lado == REPRESENTA and d.get("id") in ligados:
             continue                      # sai na qualificação de quem ele representa
+        if lado == ADVOGADO:
+            continue                      # sai no parágrafo «DOS ADVOGADOS» (`advogados_qualificados`)
         texto = montar[lado](d, textos) if lado in montar else qualificar(d, con=textos)
         lados[lado].append(texto + _representacao(d, reps, textos))
     outorgantes = ("; ".join(lados[OUTORGANTE]) or
@@ -750,6 +760,23 @@ def testemunhas_qualificadas(partes: list, *, con: Any = None) -> str:
     return "; ".join(qualificar(t, con=textos) for t in ts)
 
 
+def advogados_qualificados(partes: list, *, con: Any = None) -> str:
+    """Texto Jinja `{{ advogados }}`: cada advogado do ato, qualificado, com a inscrição na OAB."""
+    textos = MODELOS.textos(con)
+    advogados = [dict(p) for p in partes
+                 if not dict(p).get("testemunha") and lado_da_parte(p) == ADVOGADO]
+    if not advogados:
+        return _falta("advogado — inclua-o no quadro Partes, com a OAB")
+    saida = []
+    for a in advogados:
+        numero = " ".join(str(a.get("oab_numero") or "").split())
+        uf = str(a.get("oab_uf") or "").strip().upper()
+        oab = (f"inscrito(a) na OAB/{uf} sob o nº {numero}" if numero and uf else
+               _falta("inscrição na OAB — número e UF no quadro Partes"))
+        saida.append(qualificar(a, con=textos) + ", " + oab)
+    return "; ".join(saida)
+
+
 def contexto_jinja_partes(partes: list, *, con: Any = None, tipo_ato: Any = None) -> dict[str, str]:
     """Variáveis Jinja comuns aos modelos de `notas_modelos.py`."""
     textos = MODELOS.textos(con)
@@ -758,6 +785,7 @@ def contexto_jinja_partes(partes: list, *, con: Any = None, tipo_ato: Any = None
         "outorgantes": outorgantes,
         "outorgados": outorgados,
         "testemunhas": testemunhas_qualificadas(partes, con=textos),
+        "advogados": advogados_qualificados(partes, con=textos),
     }
 
 

@@ -268,12 +268,15 @@ def test_o_testamento_nao_deixa_virgula_antes_do_ponto(praticado):
     assert not re.search(r",\s*\.", t)
 
 
-@_defeito("o advogado entra na lista das partes «todas maiores, capazes e concordes», e de novo no "
-          "parágrafo DOS ADVOGADOS (item 5)")
-def test_o_advogado_do_inventario_assiste_e_nao_e_parte(praticado):
-    """CN-MA arts. 808, § 1º, 819 e 822, § 5º (como o LT02 cita): o advogado assiste as partes."""
-    abertura = _abertura(_lavrado(praticado, "inventario_viuva_e_dois_herdeiros").termo)
-    assert "CARLOS EXEMPLO ADVOGADO" not in abertura
+@pytest.mark.parametrize("chave", ["inventario_viuva_e_dois_herdeiros", "divorcio_com_nome"])
+def test_o_advogado_assiste_e_nao_e_parte(praticado, chave):
+    """CN-MA arts. 808, § 1º, 819 e 822, § 5º (como o LT02 cita): o advogado assiste as partes.
+    Decisão do oficial, 03/11/2026 (item 5): fora da lista das partes, e o «DOS ADVOGADOS» montado dele,
+    com a OAB do quadro «Partes»."""
+    termo = _lavrado(praticado, chave).termo
+    assert "CARLOS EXEMPLO ADVOGADO" not in _abertura(termo)
+    assert EN.tem(termo.split("DOS ADVOGADOS")[1], "CARLOS EXEMPLO ADVOGADO, brasileiro",
+                  "inscrito(a) na OAB/MA sob o nº 00000")
 
 
 @_defeito("com um só genitor, a emancipação diz «compareceram como OUTORGANTES» e «Declaram os "

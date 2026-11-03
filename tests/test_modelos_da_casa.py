@@ -3105,6 +3105,23 @@ MINUTAS_MUDADAS_NO_ENSAIO_NOTAS = {
 _ESTADO_DO_UF = ("Estado do {{ sv.ri_uf }}", "Estado {{ sv.estado_extenso }}")
 
 
+# O PARÁGRAFO «DOS ADVOGADOS» VEM DA PARTE — decisão do oficial, 03/11/2026 (ensaio de atos das Notas,
+# item 5): o campo livre de cada minuta dá lugar a `{{ advogados }}` (`notas_teor.advogados_qualificados`:
+# a qualificação do advogado do quadro «Partes», com a OAB). Uma troca em cada uma das nove minutas.
+_CAMPO_DO_ADVOGADO = {
+    "NT-ESC-CONVERSAO-DIVORCIO": "NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB, COM SEÇÃO E UNIDADE DA FEDERAÇÃO, DO ADVOGADO",
+    "NT-ESC-DISSOLUCAO-UNIAO-ESTAVEL": "NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB, COM SEÇÃO E UNIDADE DA FEDERAÇÃO, DO ADVOGADO",
+    "NT-ESC-DIVORCIO": "NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB, COM SEÇÃO E UNIDADE DA FEDERAÇÃO, DO ADVOGADO OU ADVOGADOS",
+    "NT-ESC-INVENTARIO-PARTILHA": "NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB DO ADVOGADO OU ADVOGADOS",
+    "NT-ESC-NOMEACAO-INVENTARIANTE": "NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB DO ADVOGADO",
+    "NT-ESC-PARTILHA-ADJUDICACAO": "NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB DO ADVOGADO",
+    "NT-ESC-RESTABELECIMENTO": "NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB, COM SEÇÃO E UNIDADE DA FEDERAÇÃO, DO ADVOGADO",
+    "NT-ESC-SEPARACAO": "NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB, COM SEÇÃO E UNIDADE DA FEDERAÇÃO, DO ADVOGADO",
+    "NT-ESC-SOBREPARTILHA": "NOME, QUALIFICAÇÃO E INSCRIÇÃO NA OAB DO ADVOGADO",
+}
+MINUTAS_DO_ADVOGADO = {cod: ((f"[{campo}]", "{{ advogados }}"),) for cod, campo in _CAMPO_DO_ADVOGADO.items()}
+
+
 def _minuta_de_hoje(antes: dict) -> dict:
     """A minuta do ouro com as trocas declaradas do LD02, do LD07, do LH13 e do
     ensaio de atos das Notas — e nada mais."""
@@ -3114,7 +3131,7 @@ def _minuta_de_hoje(antes: dict) -> dict:
     corpo = _com_as_trocas(corpo, MINUTAS_MUDADAS_NO_ENSAIO_NOTAS.get(antes["codigo"], ()))
     if _ESTADO_DO_UF[0] in corpo:
         corpo = _com_as_trocas(corpo, (_ESTADO_DO_UF,))
-    return dict(antes, corpo=corpo)
+    return dict(antes, corpo=_com_as_trocas(corpo, MINUTAS_DO_ADVOGADO.get(antes["codigo"], ())))
 
 
 # **EM 21/10/2026 O CATÁLOGO GANHOU 1 PAPEL (LD02)**: a certidão das Notas em
@@ -3203,6 +3220,16 @@ def _o_anuente_consente(nome: str, saida):
     return {"ok": ok}
 
 
+# O PARÁGRAFO DOS ADVOGADOS — decisão do oficial, 03/11/2026 (ensaio de atos das Notas, item 5): o
+# `contexto_jinja_partes` ganha `advogados`. Nenhuma parte do ouro é advogado, e a chave nova é a marca
+# que pede um — a única diferença aceita em cada contexto.
+def _o_contexto_tem_os_advogados(nome: str, saida):
+    if not nome.startswith("notas_teor.contexto_jinja_partes(") or "ok" not in saida:
+        return saida
+    assert "advogados" not in saida["ok"], nome
+    return {"ok": {**saida["ok"], "advogados": "[ADVOGADO — INCLUA-O NO QUADRO PARTES, COM A OAB]"}}
+
+
 def _a_outorgada_no_lado_dela(nome: str, saida):
     if nome == "notas_teor.contexto_jinja_partes(varios_e_testemunha)":
         ok = dict(saida["ok"])
@@ -3227,7 +3254,8 @@ def _montador_das_notas_de_hoje(nome: str, antes):
     LD07 e o lado da outorgada (ensaio de atos, 03/11/2026) — e nada mais."""
     novos = MONTADORES_DAS_NOTAS_MUDADOS_NO_LD02.get(nome)
     if not novos:
-        return _o_anuente_consente(nome, _a_outorgada_no_lado_dela(nome, _qualificacao_de_hoje(nome, antes)))
+        return _o_contexto_tem_os_advogados(nome, _o_anuente_consente(
+            nome, _a_outorgada_no_lado_dela(nome, _qualificacao_de_hoje(nome, antes))))
     assert not set(novos) & set(antes["ok"]), f"o acréscimo já estava no ouro: {nome}"
     return {"ok": {**antes["ok"], **novos}}
 

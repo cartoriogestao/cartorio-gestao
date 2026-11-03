@@ -125,6 +125,9 @@ padrão vale para as outras minutas que repetem o estado civil numa escolha (a c
 
 ## 5. O advogado do inventário e do divórcio entra como parte
 
+**CONSERTADO em 03/11/2026, por decisão do oficial:** «OAB nº / UF» no quadro «Partes»; o advogado fica
+fora das partes, e o «DOS ADVOGADOS» das nove minutas é montado dele (`{{ advogados }}`).
+
 **O que saiu.** Com o advogado incluído no quadro «Partes» (é o que a CESDI pede: `notas_censec`
 exige a qualidade «Advogado» no inventário e no divórcio), a abertura o põe entre «as partes a seguir
 qualificadas, todas maiores, capazes e concordes», e o parágrafo «DOS ADVOGADOS» pede o advogado de novo

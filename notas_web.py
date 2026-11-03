@@ -4327,6 +4327,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     nova = banco(con).um("SELECT max(id) AS id FROM nt_ato_partes WHERE ato_id=%s",
                                          (ato_id,))
                     _gravar_representacao(con, ato_id, int(nova["id"]), request.form)
+                    _gravar_oab(con, ato_id, int(nova["id"]), request.form)
                 audit("NT_ATO_PARTE", "NT_ATO", ato_id,
                       {"origem": "NOVO", "cartao_aberto": cartao_id})
                 flash("Parte incluída." + (f" Cartão de autógrafo nº {cartao_id} aberto — "
@@ -4343,6 +4344,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 audit("NT_ATO_PARTE_REPRESENTACAO", "NT_ATO", ato_id,
                       {"parte": pid, "representa": request.form.get("representa_parte_id") or None})
                 flash("Representação gravada. Monte o teor de novo para ela entrar no texto.", "success")
+                return redirect(url_for("notas_ato", ato_id=ato_id))
+            elif acao == "oab":
+                # A OAB DO ADVOGADO — decisão do oficial, 03/11/2026 (ensaio de atos das Notas, item 5).
+                pid = numero_digitado(request.form.get("parte_id")) or 0
+                if not q1("SELECT id FROM nt_ato_partes WHERE id=%s AND ato_id=%s", (pid, ato_id)):
+                    abort(404)
+                with db.transaction() as con:
+                    _gravar_oab(con, ato_id, pid, request.form)
+                audit("NT_ATO_PARTE_OAB", "NT_ATO", ato_id, {"parte": pid})
+                flash("OAB gravada. Monte o teor de novo para ela entrar no texto.", "success")
                 return redirect(url_for("notas_ato", ato_id=ato_id))
             elif acao == "remover_parte":
                 pid = numero_digitado(request.form.get("parte_id")) or 0
@@ -5593,6 +5604,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         banco(con).escrever(
             "UPDATE nt_ato_partes SET representa_parte_id=%s, representa_instrumento=%s "
             "WHERE id=%s AND ato_id=%s", (alvo, instrumento, parte_id, ato_id))
+
+    def _gravar_oab(con, ato_id: int, parte_id: int, form) -> None:
+        """O número e a UF da OAB do advogado (item 5 do ensaio de atos das Notas). Vazio desfaz."""
+        numero = " ".join(str(form.get("oab_numero") or "").split()) or None
+        uf = str(form.get("oab_uf") or "").strip().upper()[:2] or None
+        banco(con).escrever("UPDATE nt_ato_partes SET oab_numero=%s, oab_uf=%s WHERE id=%s AND ato_id=%s",
+                            (numero, uf, parte_id, ato_id))
 
     def _travas_da_lavratura(a: dict) -> list[str]:
         """O que impede este ato de ser lavrado — vazio, pode lavrar.

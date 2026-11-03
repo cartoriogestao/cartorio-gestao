@@ -97,6 +97,7 @@ PESSOAS = {
     "PAULO EXEMPLO TESTEMUNHA": "000.000.003-53",
     "LUCIA EXEMPLO TESTEMUNHA": "000.000.010-82",
     "ANA EXEMPLO HERDEIRA": "000.000.011-63",
+    "CARLOS EXEMPLO ADVOGADO": "000.000.006-04",
 }
 
 
@@ -435,6 +436,8 @@ def incluir_parte(b, ato_id: int, nome: str, qualificacao: str, *,
                   testemunha: bool = False) -> None:
     dados = {"acao": "parte_nova", "nome": nome, "documento": PESSOAS[nome],
              "qualificacao": qualificacao, **QUALIFICACAO_DA_PESSOA}
+    if qualificacao.upper().startswith("ADVOGAD"):
+        dados |= {"oab_numero": "00000", "oab_uf": "MA"}
     if testemunha:
         dados["testemunha"] = "1"
     html = _postar(b, f"/notas/atos/{ato_id}", dados).get_data(as_text=True)
@@ -719,6 +722,11 @@ def preparar_o_ato(b, caso, protocolo: dict, *,
     ligar_ao_protocolo(b, ato_id, protocolo)
     for nome, qualificacao, testemunha in caso.partes:
         incluir_parte(b, ato_id, nome, qualificacao, testemunha=testemunha)
+    # O ADVOGADO É PARTE DO QUADRO, COM A OAB, desde 03/11/2026 (ensaio de atos das Notas, item 5): a
+    # minuta que o assiste o lê de lá (`{{ advogados }}`), e sem ele o teor fica marcado.
+    corpo = _um(b, "SELECT corpo FROM nt_modelos WHERE codigo = %s", (caso.minuta,))["corpo"]
+    if "{{ advogados }}" in corpo and not any(q.upper().startswith("ADVOGAD") for _, q, _ in caso.partes):
+        incluir_parte(b, ato_id, "CARLOS EXEMPLO ADVOGADO", "ADVOGADO")
     if caso.valor is not None:
         _postar(b, f"/notas/escrituras/{ato_id}/valor",
                 {"valor": str(caso.valor)}, de=f"/notas/atos/{ato_id}")

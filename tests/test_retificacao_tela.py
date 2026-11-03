@@ -27,6 +27,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 import retificacao as RT                                         # noqa: E402
+import retificacao_web as RTW                                    # noqa: E402
 import rt_tjma as NORMA                                          # noqa: E402
 
 SENHA = "Senha#12345"
@@ -103,12 +104,147 @@ def test_a_recusa_volta_com_o_que_foi_digitado(casa):
               "profissional_conselho": "CAU", "area_pretendida": "12,45 ha", "sigef_codigo": "ABC"},
         follow_redirects=True).get_data(as_text=True)
     assert "precisa de um número" in saida
-    for trecho in (f'<option value="{m}" selected>', f'<option value="{NORMA.GEORREFERENCIADA}" selected>',
+    for trecho in (f'name="matricula_id" value="{m}"', 'value="1083 (livro 2)"',
+                   f'<option value="{NORMA.GEORREFERENCIADA}" selected>',
                    f'<option value="{NORMA.A_REQUERIMENTO}" selected>', 'name="rural" value="0" checked',
                    'value="ANA EXEMPLO"', "<option selected>CAU</option>", 'value="12,45 ha"', 'value="ABC"'):
         assert trecho in saida, trecho
     assert 'name="rural" value="1" checked' not in saida
     assert _con(casa).execute("SELECT COUNT(*) FROM rt_processos").fetchone()[0] == 0
+
+
+# ------------------------------------ a matrícula que a lista de 500 escondia
+
+
+def _gravar(casa, linhas):
+    con = _con(casa)
+    with con:
+        con.executemany(
+            """INSERT INTO ri_matriculas (numero, livro, situacao, criado_em)
+               VALUES (?, ?, ?, ?)""",
+            [(numero, livro, situacao, AGORA) for numero, livro, situacao in linhas])
+
+
+def _id_da(casa, numero, livro):
+    con = _con(casa)
+    linha = con.execute(
+        "SELECT id FROM ri_matriculas WHERE numero = ? AND livro = ?",
+        (numero, livro)).fetchone()
+    assert linha, f"não gravei a {numero} livro {livro}"
+    return int(linha["id"])
+
+
+def test_o_que_se_digita_vira_numero_e_livro():
+    """As formas com que o número chega: papel, máscara e o rótulo da lista."""
+    assert RTW.interpretar_busca_de_matricula("3315") == ("3315", "")
+    assert RTW.interpretar_busca_de_matricula("3.315") == ("3315", "")
+    assert RTW.interpretar_busca_de_matricula("3315 2S") == ("3315", "2S")
+    assert RTW.interpretar_busca_de_matricula("3315/2S") == ("3315", "2S")
+    assert RTW.interpretar_busca_de_matricula("3315 livro 2S") == ("3315", "2S")
+    assert RTW.interpretar_busca_de_matricula("3315 (livro 2S)") == ("3315", "2S")
+    assert RTW.interpretar_busca_de_matricula("2S 3315") == ("3315", "2S")
+    assert RTW.interpretar_busca_de_matricula("2 3315") == ("3315", "2")
+    assert RTW.interpretar_busca_de_matricula("2S") is None
+    assert RTW.interpretar_busca_de_matricula("") is None
+
+
+def test_a_matricula_baixa_e_encontravel_e_autua(casa):
+    """Relato de 03/11/2026: a 3315 não aparecia para a nova retificação.
+
+    A tela levava as não encerradas da maior para a menor e cortava em 500.
+    Com 501 números acima dela, a 3315 e a que ficou logo fora da janela (a
+    3500) têm de ser achadas pelo número, e a 3315 tem de autuar — sem mandar
+    o id, que é o que o campo digitável faz quando não se escolhe na lista.
+    """
+    altas = [(str(n), "2", "ATIVA") for n in range(4000, 3499, -1)]
+    _gravar(casa, altas + [("3315", "2S", "ATIVA"), ("1999", "2", "ENCERRADA")])
+    baixa = _id_da(casa, "3315", "2S")
+    quase = _id_da(casa, "3500", "2")
+    assert len(altas) == 501
+
+    html = casa["cliente"].get(
+        "/registro-imoveis/retificacoes/nova").get_data(as_text=True)
+    assert 'name="matricula_busca"' in html
+    assert "<select name=\"matricula_id\"" not in html
+    assert "4000 (livro 2)" not in html, "a tela não pode mais despejar a lista"
+
+    def achar(termo):
+        resposta = casa["cliente"].get(
+            "/registro-imoveis/retificacoes/matriculas",
+            query_string={"q": termo})
+        assert resposta.status_code == 200, resposta.status_code
+        return resposta.get_json()
+
+    da_baixa = achar("3315")
+    assert [item["id"] for item in da_baixa["itens"]] == [baixa]
+    assert da_baixa["itens"][0]["livro"] == "2S"
+    assert da_baixa["itens"][0]["rotulo"] == "3315 (livro 2S)"
+    assert achar("3315 2S")["itens"][0]["id"] == baixa
+    assert achar("3.315")["itens"][0]["id"] == baixa
+    assert [item["id"] for item in achar("3500")["itens"]] == [quase]
+    assert achar("1999")["itens"] == [], "encerrada não entra na retificação"
+    comeco = achar("3")
+    assert comeco["ha_mais"] is True
+    assert baixa in [item["id"] for item in comeco["itens"]]
+
+    r = casa["cliente"].post(
+        "/registro-imoveis/retificacoes/nova",
+        data={"csrf_token": _token(html), "numero": "3315/2026",
+              "matricula_busca": "3315",
+              "especie": NORMA.GEORREFERENCIADA,
+              "fundamento": NORMA.A_REQUERIMENTO, "rural": "1",
+              "requerente_nome": "ANTONIO JARDINEIRO PEREIRA"},
+        follow_redirects=True)
+    assert r.status_code == 200
+    assert "checklist do art. 592" in r.get_data(as_text=True)
+    linha = _con(casa).execute(
+        "SELECT matricula_id FROM rt_processos WHERE numero = ?",
+        ("3315/2026",)).fetchone()
+    assert linha and int(linha["matricula_id"]) == baixa
+
+
+def test_numero_repetido_pede_o_livro_e_com_ele_autua(casa):
+    """O mesmo número em dois livros não pode autuar no escuro."""
+    _gravar(casa, [("100", "2", "ATIVA"), ("100", "2S", "ATIVA")])
+    livro2 = _id_da(casa, "100", "2")
+    livro2s = _id_da(casa, "100", "2S")
+
+    achei = casa["cliente"].get(
+        "/registro-imoveis/retificacoes/matriculas",
+        query_string={"q": "100"}).get_json()
+    assert {item["id"] for item in achei["itens"]} == {livro2, livro2s}
+    so_2s = casa["cliente"].get(
+        "/registro-imoveis/retificacoes/matriculas",
+        query_string={"q": "100 2S"}).get_json()
+    assert [item["id"] for item in so_2s["itens"]] == [livro2s]
+
+    html = casa["cliente"].get(
+        "/registro-imoveis/retificacoes/nova").get_data(as_text=True)
+    recusa = casa["cliente"].post(
+        "/registro-imoveis/retificacoes/nova",
+        data={"csrf_token": _token(html), "numero": "100/2026",
+              "matricula_busca": "100",
+              "especie": NORMA.GEORREFERENCIADA,
+              "fundamento": NORMA.A_REQUERIMENTO, "rural": "1"},
+        follow_redirects=True).get_data(as_text=True)
+    assert "mais de um livro" in recusa
+    assert "2S" in recusa
+    assert _con(casa).execute("SELECT COUNT(*) FROM rt_processos").fetchone()[0] == 0
+
+    html = casa["cliente"].get(
+        "/registro-imoveis/retificacoes/nova").get_data(as_text=True)
+    feito = casa["cliente"].post(
+        "/registro-imoveis/retificacoes/nova",
+        data={"csrf_token": _token(html), "numero": "100/2026",
+              "matricula_busca": "100 (livro 2S)",
+              "especie": NORMA.GEORREFERENCIADA,
+              "fundamento": NORMA.A_REQUERIMENTO, "rural": "1"},
+        follow_redirects=True)
+    assert "checklist do art. 592" in feito.get_data(as_text=True)
+    linha = _con(casa).execute(
+        "SELECT matricula_id FROM rt_processos WHERE numero = ?",
+        ("100/2026",)).fetchone()
+    assert linha and int(linha["matricula_id"]) == livro2s
 
 
 # ------------------------------------------------ as telas abrem

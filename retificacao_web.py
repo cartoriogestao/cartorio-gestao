@@ -25,11 +25,13 @@ O PRAZO NÃO SE CALCULA AQUI
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 
 from flask import abort, flash, redirect, render_template, request, url_for
 
 from bd_nativo import banco
+from ri_schema import norm_livro
 import impressao_web as IMPW
 import rascunho_de_tela as RASC
 import retificacao as RT
@@ -59,6 +61,178 @@ ITEM_DA_CONFERENCIA_MARCADO = (
 ITENS_DA_CONFERENCIA_MARCADOS = (
     "Os itens da conferência correspondentes já foram marcados como "
     "atendidos.")
+
+
+# A LISTA DE MATRÍCULAS DA TELA NOVA — 03/11/2026, relato da substituta.
+#
+# A tela oferecia um <select> com as não encerradas em ordem decrescente e
+# `LIMIT 500`. Nesta casa há milhares de matrículas não encerradas, e tudo o
+# que ficava abaixo da 500ª maior (a 3315, livro 2S, entre elas) não tinha
+# como ser escolhido: não havia campo para digitar o número.
+#
+# A consulta de baixo devolve no máximo um punhado, pelo número que se
+# digitou. Ela lê só `id`, `numero` e `livro` — a ficha inteira traz o teor,
+# e a lista do RI já pagou por carregar isso à toa. O predicado de «não
+# encerrada» é o mesmo de antes (`situacao` diferente de ENCERRADA): quem
+# pode ser retificada não mudou, só deixou de ser cortada.
+LIMITE_DA_BUSCA = 20
+
+# A MESMA CONTA DE `_livro_chave`: maiúsculas, e só letra e número. Hífen,
+# espaço e ponto não distinguem livro — '2-S' e '2S' são o mesmo. `livro_norm`
+# já nasce assim; ficha antiga pode ter a coluna vazia e o nome só em `livro`.
+_EXPR_LIVRO = (
+    "upper(regexp_replace("
+    "COALESCE(NULLIF(btrim(livro_norm), ''), btrim(COALESCE(livro, '')), ''),"
+    " '[^0-9A-Za-z]', '', 'g'))"
+)
+
+
+def _livro_chave(livro: str) -> str:
+    """O livro como se compara: '2-S', '2s' e '2 S' viram '2S'."""
+    return "".join(c for c in norm_livro(livro) if c.isalnum())
+
+
+def interpretar_busca_de_matricula(termo: str) -> tuple[str, str] | None:
+    """O número e o livro que se digitou, ou None quando não há número.
+
+    «3315», «3.315», «3315 2S», «3315/2S», «3315 livro 2S» e o rótulo que a
+    lista devolve («3315 (livro 2S)») são o mesmo pedido. O livro fica vazio
+    quando não foi dito. «2S» sozinho não é número — senão procurar o livro
+    acharia a matrícula 2.
+    """
+    bruto = (termo or "").strip()
+    if not bruto:
+        return None
+    texto = re.sub(r"[()]", " ", bruto)
+    texto = re.sub(r"\blivro\b", " ", texto, flags=re.IGNORECASE)
+    texto = texto.replace("/", " ")
+    texto = re.sub(r"\s+", " ", texto).strip()
+    partes = texto.split(" ")
+    if not partes or len(partes) > 3:
+        return None
+
+    def so_numero(trecho: str) -> str | None:
+        if not re.fullmatch(r"[0-9.]+", trecho):
+            return None
+        digitos = "".join(c for c in trecho if c.isdigit())
+        return digitos or None
+
+    numericos = [(i, n) for i, n in
+                 ((i, so_numero(p)) for i, p in enumerate(partes)) if n]
+    if not numericos:
+        return None
+    # Dois números («2 3315», «3315 2»): a matrícula é o de mais dígitos.
+    indice, numero = max(numericos, key=lambda par: (len(par[1]), par[0]))
+    if len(numero) > 12:
+        return None
+    livro = "".join(partes[j] for j in range(len(partes)) if j != indice)
+    return numero, livro
+
+
+def rotulo_da_matricula(numero: str, livro: str | None) -> str:
+    return f"{numero} (livro {livro or '—'})"
+
+
+def buscar_matriculas_para_retificar(con, termo: str, *, exato: bool,
+                                     limite: int = LIMITE_DA_BUSCA
+                                     ) -> tuple[list[dict], bool]:
+    """As não encerradas que o termo acha. Só lê.
+
+    `exato` é o que vale ao autuar: o número inteiro, e o livro inteiro quando
+    ele veio. Sem `exato` é a lista enquanto se digita — o começo do número,
+    no máximo `limite` linhas, da menor para a maior, para a de número baixo
+    não ficar atrás das mil que começam igual.
+
+    O segundo valor diz se ficou matrícula de fora do limite.
+    """
+    lido = interpretar_busca_de_matricula(termo)
+    if lido is None:
+        return [], False
+    numero, livro_bruto = lido
+    livro = _livro_chave(livro_bruto)
+    onde = ["COALESCE(situacao, 'ATIVA') <> 'ENCERRADA'"]
+    params: list = []
+    if exato:
+        # «3.315» e «3315» são o mesmo número; «33150» não é.
+        onde.append(
+            """(replace(numero, '.', '') = %s
+                OR (numero ~ '^[0-9]+$'
+                    AND char_length(numero) <= 18
+                    AND numero::bigint = %s::bigint))""")
+        params.extend((numero, int(numero)))
+    else:
+        prefixo = numero + "%"
+        onde.append(
+            """(numero LIKE %s
+                OR (position('.' in numero) > 0
+                    AND replace(numero, '.', '') LIKE %s))""")
+        params.extend((prefixo, prefixo))
+    if livro:
+        onde.append(f"{_EXPR_LIVRO} {'=' if exato else 'LIKE'} %s")
+        params.append(livro if exato else livro + "%")
+    teto = 30 if exato else max(1, min(int(limite), LIMITE_DA_BUSCA))
+    params.append(teto + 1)
+    linhas = banco(con).ler(
+        f"""SELECT id, numero, livro, livro_norm
+              FROM ri_matriculas
+             WHERE {' AND '.join(onde)}
+             ORDER BY coalesce(substring(numero FROM '^[0-9]+')::bigint, 0), id
+             LIMIT %s""",
+        tuple(params))
+    ha_mais = len(linhas) > teto
+    return linhas[:teto], ha_mais
+
+
+def matricula_pedida(con, *, matricula_id: str, busca: str) -> int:
+    """O id da matrícula que a tela pediu. Só lê.
+
+    O que está escrito no campo ganha do id escondido: é o que a pessoa vê.
+    Sem texto, vale o id — é o que a tela mandava antes deste campo, e o que
+    o rascunho antigo guardou. Número repetido em dois livros não se escolhe
+    no escuro: a frase diz quais são.
+    """
+    texto = (busca or "").strip()
+    if texto:
+        itens, ha_mais = buscar_matriculas_para_retificar(
+            con, texto, exato=True)
+        if len(itens) == 1 and not ha_mais:
+            return int(itens[0]["id"])
+        if not itens:
+            raise ValueError(
+                f"Não achei matrícula não encerrada para «{texto}». "
+                "Escreva o número inteiro, e o livro se o mesmo número "
+                "existir em outro (3315 2S).")
+        vistos: list[str] = []
+        for item in itens:
+            nome = item.get("livro") or item.get("livro_norm") or "sem livro"
+            if nome not in vistos:
+                vistos.append(nome)
+        exemplo = itens[0]["numero"]
+        resto = " Há outras além destas." if ha_mais else ""
+        raise ValueError(
+            f"O número {exemplo} existe em mais de um livro "
+            f"({', '.join(vistos)}). Escreva o livro também, por exemplo "
+            f"{exemplo} 2S.{resto}")
+    bruto = (matricula_id or "").strip()
+    if not bruto:
+        raise ValueError(
+            "Diga o número da matrícula a retificar. Se o mesmo número "
+            "existir em mais de um livro, escreva o livro também (3315 2S).")
+    try:
+        mid = int(bruto)
+    except ValueError:
+        raise ValueError(
+            "A matrícula indicada não é um número.") from None
+    if mid < 1:
+        raise ValueError(
+            "Diga o número da matrícula a retificar.")
+    return mid
+
+
+def _item_de_matricula(linha: dict) -> dict:
+    livro = linha.get("livro") or ""
+    return {"id": int(linha["id"]), "numero": linha["numero"], "livro": livro,
+            "rotulo": rotulo_da_matricula(linha["numero"], livro)}
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit,
@@ -159,6 +333,45 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                sigef=sigef, fases=RT.NOME_DA_FASE,
                                especies=NORMA.NOME_DA_ESPECIE)
 
+    def _matricula_escolhida(form):
+        """A ficha do id que voltou sem texto — o rascunho antigo, a recusa.
+
+        Com texto digitado, a tela mostra o texto. Sem ele, o id sozinho não
+        diz o número, e a pessoa não conferiria o que vai autuar.
+        """
+        if (form.get("matricula_busca") or "").strip():
+            return None
+        bruto = (form.get("matricula_id") or "").strip()
+        # Só dígitos ASCII. `str.isdigit` aceita «²», e o int() disso estoura
+        # a tela em vez de simplesmente não achar a ficha.
+        if not re.fullmatch(r"[0-9]+", bruto):
+            return None
+        with db.connect() as con:
+            return banco(con).um(
+                "SELECT id, numero, livro FROM ri_matriculas WHERE id = %s",
+                (int(bruto),))
+
+    @app.route("/registro-imoveis/retificacoes/matriculas")
+    @login_required
+    @roles_required("ADMIN", "MANAGER", "USER", "REGISTRADOR", "ESCREVENTE")
+    def ri_retificacao_matriculas():
+        """A lista curta enquanto se digita o número. SÓ LÊ.
+
+        Não devolve o acervo: quem ainda está no «3» vê as primeiras, da menor
+        para a maior, e o campo diz quando há mais. Quem autua manda o número
+        inteiro para a tela nova, que resolve de novo — esta lista não escolhe
+        sozinha.
+        """
+        termo = (request.args.get("q") or request.args.get("busca") or "").strip()
+        with db.connect() as con:
+            linhas, ha_mais = buscar_matriculas_para_retificar(
+                con, termo, exato=False)
+        # O TERMO NÃO VOLTA NA RESPOSTA (CodeQL, XSS refletido, 03/11/2026): a
+        # tela já sabe o que digitou, e devolver a entrada do usuário é o que o
+        # alerta aponta.
+        return {"ok": True, "ha_mais": ha_mais,
+                "itens": [_item_de_matricula(linha) for linha in linhas]}
+
     @app.route("/registro-imoveis/retificacoes/nova", methods=["GET", "POST"])
     @login_required
     @roles_required("ADMIN", "MANAGER", "USER", "REGISTRADOR", "ESCREVENTE")
@@ -167,27 +380,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             db, "ri_retificacao_nova", "Este rascunho não é de uma retificação de área.")
 
         def tela():
-            with db.connect() as con:
-                matriculas = banco(con).ler(
-                    """SELECT id, numero, livro FROM ri_matriculas
-                        WHERE COALESCE(situacao,'ATIVA') <> 'ENCERRADA'
-                     ORDER BY coalesce(substring(numero FROM '^[0-9]+')::bigint, 0) DESC, id
-                     LIMIT 500""")
             return render_template("ri_retificacao_nova.html",
-                                   matriculas=matriculas,
+                                   escolhida=_matricula_escolhida(form),
                                    especies=NORMA.NOME_DA_ESPECIE,
                                    fundamentos=NORMA.NOME_DO_FUNDAMENTO,
                                    form=form, rascunho_id=rascunho_id)
 
         if request.method == "POST":
             try:
+                with db.connect() as con:
+                    mid = matricula_pedida(
+                        con, matricula_id=_campo("matricula_id"),
+                        busca=_campo("matricula_busca"))
                 with db.transaction() as con:
                     novo = RT.autuar(
                         con,
                         numero=_campo("numero"),
                         especie=_campo("especie"),
                         fundamento=_campo("fundamento"),
-                        matricula_id=int(_campo("matricula_id") or 0),
+                        matricula_id=mid,
                         rural=_campo("rural") == "1",
                         agora=agora(), usuario=usuario_nome(),
                         ano=int(hoje()[:4]),

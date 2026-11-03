@@ -19,6 +19,8 @@
   .cg-ret-grade label:has(>input[type=radio]){display:inline-block;margin-right:18px}
   .cg-ret-grade>p:has(select[name=profissional_conselho]){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}
   .cg-ret-grade input:not([type=radio]),.cg-ret-grade select{width:100%}
+  .cg-ret-grade>ul{grid-column:1/-1;list-style:none;margin:0 0 8px;padding:0}
+  .cg-ret-grade>ul button{display:block;width:100%;text-align:left;margin:0}
   .cg-passos-fim>.cg-ret-cancelar{margin-right:auto}
   @media (max-width:900px){
     .cg-ret-grade{grid-template-columns:minmax(0,1fr)}
@@ -68,13 +70,27 @@
   <p><label>Número do processo<br>
     <input name="numero" required placeholder="1/2026"{{ valor('numero') }}></label></p>
 
+  {# O NÚMERO SE DIGITA — 03/11/2026. A caixa fechada com as 500 maiores deixava
+     a matrícula antiga de fora, e não havia onde escrever o número. O id vai
+     escondido quando a lista (ou o rascunho) já o sabe; sem script, o texto
+     sozinho resolve na hora de autuar. #}
+  {% set ficha = escolhida|default(none) %}
+  {% set busca_mostrada = digitado.get('matricula_busca')
+     or (ficha and (ficha.numero ~ ' (livro ' ~ (ficha.livro or '—') ~ ')'))
+     or '' %}
   <p><label>Matrícula a retificar<br>
-    <select name="matricula_id" required>
-      <option value="">— escolha —</option>
-      {% for m in matriculas %}
-      <option value="{{ m.id }}"{% if digitado.get('matricula_id') == m.id|string %} selected{% endif %}>{{ m.numero }} (livro {{ m.livro }})</option>
-      {% endfor %}
-    </select></label></p>
+    <input name="matricula_busca" required autocomplete="off"
+           placeholder="3315 ou 3315 2S"
+           {% if busca_mostrada %}value="{{ busca_mostrada }}"{% endif %}
+           data-busca-matricula
+           data-url="{{ url_for('ri_retificacao_matriculas') }}"
+           aria-autocomplete="list" aria-controls="matriculas-sugeridas">
+    <input type="hidden" name="matricula_id" value="{{ digitado.get('matricula_id') or '' }}">
+    </label>
+    <span class="small muted">Digite o número. Se ele existir em mais de um livro, escreva o livro também (3315 2S).</span>
+    <span class="small muted" data-busca-matricula-recado hidden>A lista sai enquanto se digita.</span></p>
+  <ul id="matriculas-sugeridas" hidden
+      style="list-style:none;margin:4px 0 8px;padding:0;max-width:28rem"></ul>
 
   <p><label>Espécie<br>
     <select name="especie" required>
@@ -136,4 +152,5 @@
   {% endif %}
 </form>
 {{ script_do_rascunho() }}
+<script defer src="{{ url_for('static', filename='retificacao_matricula.js') }}?v={{ VERSION }}"></script>
 {% endblock %}

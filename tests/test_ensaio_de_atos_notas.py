@@ -67,7 +67,11 @@ def bancada(cg_casa, monkeypatch):
     monkeypatch.setitem(cg_casa["app"].extensions, "notas_medir_paginas", lambda odt: 2)
     c = cg_casa["app"].test_client()
     cg_login(c, "escrevente", F.SENHA)
-    b = {"app": cg_casa["app"], "cliente": c, "banco": cg_casa["banco"], "db": db, "dados": cg_casa["dados"]}
+    # a DOI é tela do oficial (a do escrevente responde 403): o ensaio a abre como ele abriria
+    oficial = cg_casa["app"].test_client()
+    cg_login(oficial, "oficial", F.SENHA)
+    b = {"app": cg_casa["app"], "cliente": c, "banco": cg_casa["banco"], "db": db, "dados": cg_casa["dados"],
+         "oficial": oficial}
     with ligar_o_selador(b, protocolo_pago=False) as aparelho:
         F._aparelho_com_valores(aparelho)
         b["aparelho"] = aparelho
@@ -123,10 +127,17 @@ def _abertura(termo: str) -> str:
 # ------------------------------------------------------------------ todo caso vai ao livro
 
 #: Os casos que o balcão tem de recusar — e o teste que confere a recusa.
-RECUSADOS = {"emancipacao_menor_de_16": "test_a_emancipacao_confere_os_dezesseis_anos"}
+RECUSADOS = {"emancipacao_menor_de_16": "test_a_emancipacao_confere_os_dezesseis_anos",
+             # a revogação precisa da procuração que revoga: praticada no seu teste
+             "revogacao_da_procuracao": "test_a_revogacao_desta_serventia_anota_a_procuracao"}
 
 
-@pytest.mark.parametrize("chave", [c for c in CASOS if c not in RECUSADOS])
+#: Os casos que um defeito aberto impede de ir ao livro.
+NAO_VAO_AO_LIVRO = {"doacao_doadora_a_donataria": "«DOADORA» e «DONATARIA» fora da tabela da CEP (item 13)"}
+
+
+@pytest.mark.parametrize("chave", [pytest.param(c, marks=_defeito(NAO_VAO_AO_LIVRO[c])) if c in NAO_VAO_AO_LIVRO
+                                   else c for c in CASOS if c not in RECUSADOS])
 def test_o_caso_vai_ao_livro_com_selo_e_o_traslado_reproduz_o_termo(praticado, chave):
     """Do protocolo pago ao termo, pelo balcão; o selo no termo (CN-MA arts. 130 e 131) e o traslado
     com o teor do livro (CN-MA art. 850, § 2º)."""
@@ -312,3 +323,95 @@ def test_a_data_por_extenso_tem_acento():
 
     import notas_teor as NT
     assert NT.valores_campos_data_lavratura(datetime(2026, 11, 3))["dia_por_extenso"] == "três"
+
+
+# ------------------------------------------------------------------ a segunda leva (03/11/2026)
+
+def test_a_revogacao_desta_serventia_anota_a_procuracao(bancada):
+    """CN-MA art. 831 (como o LT02 cita): a revogação lavrada aqui se anota à margem da procuração, e a
+    procuração passa a sair revogada no traslado e na certidão — cópia fiel do livro (Lei 8.935/1994,
+    art. 6º, II)."""
+    procuracao = EN.praticar(bancada, CASOS["proc_alienar_imovel"])
+    assert procuracao.situacao == "LAVRADO", procuracao.avisos
+    revogacao = EN.praticar(bancada, CASOS["revogacao_da_procuracao"], anterior_id=procuracao.ato_id)
+    assert revogacao.situacao == "LAVRADO", revogacao.avisos
+    assert F.ato(bancada, procuracao.ato_id)["situacao"] == "REVOGADO"
+    traslado = F._texto_do_odt(F.o_traslado(bancada, procuracao.ato_id))
+    assert re.search(r"revoga", traslado, re.I), "o traslado da procuração não diz que ela foi revogada"
+    pedido = F.abrir_protocolo_pago(bancada, [("13.12.1", 1)], interessado="MARIO EXEMPLO DOS SANTOS")
+    cid = F.emitir_certidao(bancada, protocolo=pedido, ato_id=procuracao.ato_id,
+                            requerente="MARIO EXEMPLO DOS SANTOS")
+    assert re.search(r"revoga", F._texto_do_odt(F.o_papel_da_certidao(bancada, cid)), re.I)
+
+
+def test_a_certidao_do_testamento_a_terceiro_com_o_testador_vivo_e_recusada(bancada):
+    """CN-MA art. 851, § 4º: enquanto vivo o testador, só a ele, por requerimento escrito, se dá
+    certidão do testamento; § 5º: a terceiro, só com a certidão de óbito."""
+    s = EN.praticar(bancada, CASOS["testamento_cego"])
+    assert s.situacao == "LAVRADO", s.avisos
+    antes = F._um(bancada, "SELECT count(*) AS n FROM nt_certidoes")["n"]
+    html = F._postar(bancada, "/notas/certidoes/emitir",
+                     {"ato_id": str(s.ato_id), "requerente": "BEATRIZ EXEMPLO DE SOUZA"},
+                     de=f"/notas/certidoes?ato_id={s.ato_id}").get_data(as_text=True)
+    assert F._um(bancada, "SELECT count(*) AS n FROM nt_certidoes")["n"] == antes, \
+        "a certidão do testamento saiu para terceiro com o testador vivo"
+    assert "851" in " ".join(F._flashes(html))
+
+
+@pytest.mark.parametrize("chave,central", [
+    ("cv_casado_com_outorga", "CEP"), ("cv_por_procurador", "CEP"), ("cv_pj_compradora", "CEP"),
+    ("doacao_a_menor", "CEP"), ("proc_alienar_imovel", "CEP"), ("emancipacao_so_mae", "CEP"),
+    ("divorcio_com_nome", "CESDI"), ("inventario_viuva_e_dois_herdeiros", "CESDI"),
+    ("testamento_cego", "RCTO"),
+])
+def test_cada_ato_vai_a_central_certa_da_censec(praticado, chave, central):
+    """CN-MA art. 785 (como o LT02 cita): a escritura e a procuração à CEP, a separação, o divórcio e
+    o inventário à CESDI, o testamento ao RCTO — e nunca o testamento à CEP."""
+    assert _lavrado(praticado, chave).censec[:1] == (central,)
+
+
+@pytest.mark.parametrize("chave", ["cv_casado_com_outorga", "cv_por_procurador", "cv_pj_compradora",
+                                   "doacao_a_menor", "proc_alienar_imovel", "emancipacao_so_mae"])
+def test_a_escritura_e_a_procuracao_ficam_prontas_para_a_cep(praticado, chave):
+    """A CEP trava a lavratura (09/10/2026): o que foi ao livro está pronto para a remessa."""
+    assert _lavrado(praticado, chave).censec[1] == "PRONTO", _lavrado(praticado, chave).censec
+
+
+@pytest.mark.parametrize("chave,alienantes,adquirentes", [
+    ("cv_casado_com_outorga", ["MARIO EXEMPLO DOS SANTOS", "JOANA EXEMPLO DOS SANTOS"],
+     ["BEATRIZ EXEMPLO DE SOUZA"]),
+    ("cv_bem_particular_com_anuente", ["MARIO EXEMPLO DOS SANTOS"], ["BEATRIZ EXEMPLO DE SOUZA"]),
+    ("cv_por_procurador", ["MARIO EXEMPLO DOS SANTOS"], ["BEATRIZ EXEMPLO DE SOUZA"]),
+    ("cv_pj_compradora", ["MARIO EXEMPLO DOS SANTOS"], ["EXEMPLO COMERCIO DE MATERIAIS LTDA"]),
+    ("doacao_a_menor", ["MARIO EXEMPLO DOS SANTOS"], ["PEDRO EXEMPLO MENOR"]),
+])
+def test_a_doi_tem_quem_aliena_e_quem_adquire_e_mais_ninguem(praticado, chave, alienantes, adquirentes):
+    """CN-MA arts. 797 e 800, VII (Lei 10.426/2002, art. 8º): na DOI, os titulares da operação — e não
+    o procurador, o representante, o cônjuge anuente nem o advogado."""
+    doi = _lavrado(praticado, chave).doi
+    assert (doi.get("alienantes"), doi.get("adquirentes"), doi.get("duvidas")) == (alienantes, adquirentes, []), doi
+
+
+@_defeito("«DOADORA» e «DONATARIA» não estão na tabela da CEP (`notas_censec.QUALIFICACAO_PARA_CEP`): a trava "
+          "recusa o ato, e o teor fica sem outorgado (relatorio_notas.md, segunda leva, item 13)")
+def test_a_doadora_e_a_donataria_vao_ao_livro_e_a_doi(praticado):
+    """CC art. 215, § 1º, III: a qualificação de cada parte, no feminino como no masculino."""
+    s = _lavrado(praticado, "doacao_doadora_a_donataria")
+    assert (s.doi.get("alienantes"), s.doi.get("adquirentes")) == (["JOANA EXEMPLO DOS SANTOS"],
+                                                                   ["BEATRIZ EXEMPLO DE SOUZA"]), s.doi
+
+
+@_defeito("a CESDI pede a qualidade de cada parte (Advogado, Divorciando, Herdeiro, Falecido…), a data do "
+          "casamento, o regime e o responsável pelos menores, e a tela do ato não tem onde dizê-los: todo "
+          "divórcio e todo inventário ficam parados na remessa (item 14)")
+@pytest.mark.parametrize("chave", ["divorcio_com_nome", "inventario_viuva_e_dois_herdeiros"])
+def test_o_divorcio_e_o_inventario_ficam_prontos_para_a_cesdi(praticado, chave):
+    """CN-MA art. 785 (a remessa à CESDI) e o layout dela (`notas_censec.MINIMO_PARTES_CESDI`)."""
+    assert _lavrado(praticado, chave).censec[1] == "PRONTO", _lavrado(praticado, chave).censec
+
+
+@_defeito("o RCTO pede a data de nascimento e o nome da mãe do testador, e o quadro «Partes» não tem a "
+          "data, e tem a filiação só como texto livre: todo testamento fica parado na remessa (item 15)")
+def test_o_testamento_fica_pronto_para_o_rcto(praticado):
+    """CN-MA art. 785, I (a remessa ao RCTO)."""
+    assert _lavrado(praticado, "testamento_cego").censec[1] == "PRONTO", _lavrado(praticado, "testamento_cego").censec

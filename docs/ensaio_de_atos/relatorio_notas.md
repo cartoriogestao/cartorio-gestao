@@ -196,10 +196,75 @@ protocolo) e declarar a troca no ouro onde ela mudar texto.
 12. **CONSERTADO em 03/11/2026: «nome de solteiro(a)».** **«voltará a usar o nome de solteiro»** no divórcio é texto fixo da minuta, no masculino, para quem quer
     que volte ao nome.
 
+## A segunda leva (03/11/2026): CENSEC, DOI, revogação e certidão do testamento
+
+Depois dos consertos dos itens 1 a 12, os mesmos casos foram até as telas que vêm depois do livro: a
+fila de remessas da CENSEC (`/notas/remessas/<central>/pendencias`, a quinzena do ato) e a tela única da
+DOI da serventia (`/registro-imoveis/doi`, aberta pelo oficial — a do escrevente responde 403). E dois
+caminhos novos: a revogação de uma procuração lavrada aqui, e a certidão do testamento pedida por
+terceiro.
+
+**Certo e conferido:**
+- cada ato vai à central certa (escritura e procuração à CEP, divórcio e inventário à CESDI, testamento
+  ao RCTO, e nunca o testamento à CEP), e o que foi à CEP está pronto, porque a CEP trava a lavratura;
+- na DOI, os titulares da operação e mais ninguém: o casal em comunhão como dois alienantes; o vendedor
+  e não o procurador; a pessoa jurídica e não quem a representa; o menor donatário e não a mãe; o
+  cônjuge anuente fora;
+- a revogação vinculada pela tela («Vincular») anota a procuração, que passa a REVOGADO e sai revogada
+  no traslado e na certidão (CN-MA art. 831; Lei 8.935/1994, art. 6º, II);
+- a certidão do testamento pedida por terceiro com o testador vivo é recusada (CN-MA art. 851, § 4º).
+
+### 13. «DOADORA», «DONATÁRIA» e «CESSIONÁRIA» não estão na tabela da CEP
+
+**O que saiu.** A doação de JOANA, «DOADORA», a BEATRIZ, «DONATARIA», não foi ao livro: a trava da CEP
+recusou as duas qualificações («não corresponde a nenhuma qualidade da CEP»), e o teor ficou sem
+outorgado, porque o lado da parte também vem dessa tabela (item 1). A tabela
+(`notas_censec.QUALIFICACAO_PARA_CEP`) conhece «OUTORGADA», «VENDEDORA» e «COMPRADORA», mas não o feminino
+de doador, donatário, cessionário e usufrutuário. A DOI tem a mesma lacuna por outro caminho: as listas
+dela (`notas_doi.QUEM_ADQUIRE`) procuram «OUTORGADO» e «DONATARIO» dentro da qualificação, e «OUTORGADA» e
+«DONATARIA» caem em dúvida.
+
+**A norma.** CC art. 215, § 1º, III.
+
+**Proposta.** O feminino de cada palavra das duas tabelas. Não depende de decisão.
+
+**No teste:** `test_a_doadora_e_a_donataria_vao_ao_livro_e_a_doi`.
+
+### 14. Todo divórcio e todo inventário ficam parados na remessa da CESDI
+
+**O que saiu.** O divórcio e o inventário do ensaio foram ao livro e pararam na fila da CESDI: «sem data
+do casamento», «regime não está na tabela da CENSEC», «sem o responsável pelos filhos menores», «exige uma
+parte Advogado» — com o advogado no quadro —, «exige uma parte Falecido», «qualidade não vale para
+Inventário» — e, de cada parte, «falta dataNascimento», «falta sexo», «falta localResidenciaMunicipio». A CESDI lê a qualidade de cada parte de uma coluna própria (`qualidade_cesdi`) que a tela
+do ato não preenche, e a data do casamento, o regime e o responsável pelos menores de colunas que também
+não têm campo. O próprio código registra a lacuna desde 09/10/2026 (`notas_censec.CENTRAIS_QUE_TRAVAM`,
+«não têm onde ser preenchidos na tela do ato»), e por isso a CESDI não trava a lavratura.
+
+**A norma.** CN-MA art. 785 (a remessa) e o layout da CESDI.
+
+**Proposta.** A qualidade da CESDI sair da qualificação, como a da CEP (ADVOGADO → Advogado, HERDEIRO →
+Herdeiro, INVENTARIANTE → Inventariante, DIVORCIANDO → Divorciando, VIÚVO → Viúvo); o falecido como parte
+do inventário; e a data do casamento, o regime e o responsável pelos menores tirados do que a minuta já
+pergunta («[DATA DO CASAMENTO]», «[REGIME DE BENS]»). **Pergunta ao oficial:** o falecido entra no
+quadro «Partes» do inventário (como a CESDI quer), ou a casa prefere um campo próprio?
+
+**No teste:** `test_o_divorcio_e_o_inventario_ficam_prontos_para_a_cesdi`.
+
+### 15. Todo testamento fica parado na remessa do RCTO
+
+**O que saiu.** «testador sem data de nascimento» e «o RCTO exige o nome da mãe do testador». O quadro
+«Partes» não tem a data de nascimento, e a filiação é texto livre.
+
+**Proposta.** A data de nascimento na parte (serve também ao menor do item 2 e ao emancipando do item 7)
+e a filiação em dois campos, mãe e pai. **Pergunta ao oficial:** os dois campos da filiação valem para
+toda parte, ou só para o testador?
+
+**No teste:** `test_o_testamento_fica_pronto_para_o_rcto`.
+
 ## O que não se ensaiou
 
 - Os atos sem minuta (renúncia de herança, reconhecimento de filho, bem de família, divisão de condomínio,
   servidão, ata de mediação, apostila, carta de sentença, atos eletrônicos): ver o inventário.
-- A DOI e a CENSEC de cada caso, a anotação da revogação na procuração e a certidão de testamento a
-  terceiro: ficam para a segunda leva deste ensaio, que é por onde ele continua.
+- O envio às centrais e a geração do arquivo da DOI: a fila e a declaração foram conferidas; o envio
+  precisa da rede, que a trava barra.
 - A comunicação de veículo e a consulta à CCN: precisam da rede, que a trava barra.

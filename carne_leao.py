@@ -786,20 +786,52 @@ _TROCO = ("SALDO INICIAL",)
 _FUNDOS_DO_LANCAMENTO = ("ferc", "fadep", "femp", "ferrfis", "fermoju")
 
 
-def _recebido_no_caixa(bd, comp: str, forma: str, bp: int
+# A RECEITA DO ITEM DE PROTOCOLO É RECONHECIDA NA EMISSÃO DO SELO — decisão do oficial, 03/11/2026
+# («Sim, no selo»), como o depósito prévio já era (`NO_USO`, 26/10/2026). O dia do selo é o que já mora
+# no item: `cx_protocolo_atos.usado_em`, que o selo grava quando consome a última unidade do item
+# (`caixa_protocolo.consumir_item`) e apaga quando o ato se desfaz. A receita conta no MAIS TARDE entre
+# o pagamento e o selo: o pago antes conta no selo; o selado antes e pago depois (o diferido) conta no
+# pagamento. O item pago e ainda sem selo, e o lançamento sem item de protocolo (o manual), contam no
+# pagamento por ora, e o primeiro vai à lista dos «pagos ainda sem selo» — a regra dele está com o
+# oficial (casos B a F do PR).
+SELO, PAGAMENTO = "SELO", "PAGAMENTO"
+CRITERIO = "receita reconhecida na emissão do selo do ato (o mais tarde entre o pagamento e o selo)"
+
+
+def _recebido_no_caixa(bd, comp: str, forma: str, bp: int, criterio: str = SELO
                        ) -> tuple[list[dict], list[dict], list[dict]]:
-    """Os recebimentos do caixa no mês (só o emolumento), as «outras entradas»
-    que quem lançou disse serem receita do titular, e as sem resposta."""
+    """Os recebimentos do caixa reconhecidos no mês (só o emolumento), as «outras entradas»
+    que quem lançou disse serem receita do titular, e as sem resposta. `criterio`: SELO (a
+    regra de 03/11/2026) ou PAGAMENTO (o critério de antes, que a tela mostra ao lado)."""
     inicio, fim = _limites(comp)
     recebidos, outras, outras_receitas = [], [], []
     resposta = ("receita_do_titular" if bd.tem_coluna("cx_lancamentos", "receita_do_titular")
                 else "NULL AS receita_do_titular")
-    for lan in bd.ler(
-            f"""SELECT id, data, natureza, sentido, forma_pagamento, descricao, valor,
-                      emolumentos, ferc, fadep, femp, ferrfis, fermoju, estornado,
-                      COALESCE(excluido, 0) AS excluido, {resposta}
-                 FROM cx_lancamentos WHERE data >= %s AND data < %s
-                ORDER BY data, id""", (inicio, fim)):
+    if criterio == SELO and bd.tem_tabela("cx_protocolo_atos"):
+        consulta = f"""SELECT l.id, l.data, l.natureza, l.sentido, l.forma_pagamento, l.descricao,
+                              l.valor, l.emolumentos, l.ferc, l.fadep, l.femp, l.ferrfis, l.fermoju,
+                              l.estornado, COALESCE(l.excluido, 0) AS excluido, {resposta},
+                              a.id AS item_id, a.usado_em AS selado_em
+                         FROM cx_lancamentos l
+                         LEFT JOIN cx_protocolo_atos a ON a.lancamento_id = l.id
+                        WHERE (l.data >= %s AND l.data < %s)
+                           OR (a.usado_em >= %s AND a.usado_em < %s AND l.data < %s)
+                        ORDER BY l.data, l.id"""
+        parametros = (inicio, fim, inicio, fim, fim)
+    else:
+        consulta = f"""SELECT id, data, natureza, sentido, forma_pagamento, descricao, valor,
+                              emolumentos, ferc, fadep, femp, ferrfis, fermoju, estornado,
+                              COALESCE(excluido, 0) AS excluido, {resposta},
+                              NULL AS item_id, NULL AS selado_em
+                         FROM cx_lancamentos WHERE data >= %s AND data < %s
+                        ORDER BY data, id"""
+        parametros = (inicio, fim)
+    for lan in bd.ler(consulta, parametros):
+        pago_em = str(lan["data"])[:10]
+        selado_em = str(lan["selado_em"] or "")[:10] or None
+        dia = max(pago_em, selado_em) if (criterio == SELO and selado_em) else pago_em
+        if not _no_mes(dia, comp):
+            continue                      # reconhecida noutro mês
         if int(lan["excluido"] or 0) or int(lan["estornado"] or 0) \
                 or lan["sentido"] != "ENTRADA":
             continue
@@ -808,7 +840,7 @@ def _recebido_no_caixa(bd, comp: str, forma: str, bp: int
             continue                      # gratuidade: valor zero
         descricao = str(lan["descricao"] or "")
         if lan["natureza"] == "OUTRA_ENTRADA":
-            item = {"id": int(lan["id"]), "dia": str(lan["data"])[:10],
+            item = {"id": int(lan["id"]), "dia": pago_em,
                     "descricao": descricao, "valor": valor}
             if lan["receita_do_titular"] is None:
                 outras.append(item)
@@ -828,8 +860,11 @@ def _recebido_no_caixa(bd, comp: str, forma: str, bp: int
             receita, discriminado = max(0, valor - fundos), True
         else:
             receita, discriminado = tirar_os_fundos(valor, forma, bp), False
-        recebidos.append({"dia": str(lan["data"])[:10], "bruto": valor,
-                          "receita": receita, "discriminado": discriminado})
+        recebidos.append({"id": int(lan["id"]), "dia": dia, "pago_em": pago_em,
+                          "selado_em": selado_em, "bruto": valor,
+                          "receita": receita, "discriminado": discriminado,
+                          # o item do protocolo pago e ainda sem selo: no pagamento, por ora
+                          "sem_selo": bool(lan["item_id"]) and not selado_em})
     return recebidos, outras, outras_receitas
 
 
@@ -957,9 +992,30 @@ def _apurar(bd, comp: str, cfg: Mapping[str, str], livro_dep: dict,
         avisos.append("Não há tabela progressiva cadastrada para este mês: o imposto não "
                       "foi calculado.")
     caixa = sum(r["receita"] for r in recebidos)
+    # O QUE O CRITÉRIO NOVO MUDA NESTE MÊS — pedido do oficial, 03/11/2026: os meses de 2026 já apurados
+    # mudam de valor quando houve item pago num mês e selado no outro, e ele confere com o que recolheu.
+    antigos, _, _ = _recebido_no_caixa(bd, comp, forma, bp, PAGAMENTO)
+    caixa_antigo = sum(r["receita"] for r in antigos)
+    if caixa != caixa_antigo:
+        avisos.append(f"Pelo critério de 03/11/2026 ({CRITERIO}), a receita do caixa deste mês é "
+                      f"R$ {reais(caixa)}; pelo de antes (o dia do pagamento) era R$ {reais(caixa_antigo)} — "
+                      f"diferença de R$ {reais(caixa - caixa_antigo)}. Confira com o que já foi recolhido.")
+    sem_selo = [r for r in recebidos if r["sem_selo"]]
+    if sem_selo:
+        avisos.append(f"{len(sem_selo)} item(ns) do protocolo pago(s) e ainda sem selo (R$ "
+                      f"{reais(sum(r['receita'] for r in sem_selo))}) foram contados no pagamento: a regra "
+                      f"do pago que não chega a ser selado está com o oficial.")
+    de_outro_ano = [r for r in recebidos if r["pago_em"][:4] != comp[:4]]
+    if de_outro_ano:
+        avisos.append(f"R$ {reais(sum(r['receita'] for r in de_outro_ano))} desta receita foram pagos em "
+                      f"{', '.join(sorted({r['pago_em'][:4] for r in de_outro_ano}))} e selados neste mês: "
+                      f"pelo critério do selo, saem da declaração do ano do pagamento.")
     deposito = sum(x["valor"] for x in receitas if x["origem"] == "Depósito prévio")
     return {
-        "competencia": comp, "modo_deposito": modo,
+        "competencia": comp, "modo_deposito": modo, "criterio": CRITERIO,
+        "mudanca_do_criterio": {"antes": caixa_antigo, "agora": caixa,
+                                "diferenca": caixa - caixa_antigo},
+        "pagos_sem_selo": {"n": len(sem_selo), "valor": sum(r["receita"] for r in sem_selo)},
         "receitas": receitas, "outras_entradas": outras,
         "caixa": caixa, "deposito_na_conta": deposito,
         "avulsas": sum(x["valor"] for x in receitas if x["origem"] == "Avulso"),
@@ -1000,6 +1056,7 @@ def _meses_do_ano(bd, ano: int, ate: str) -> list[dict]:
 
 def _resumo(a: Mapping[str, Any]) -> dict:
     return {"competencia": a["competencia"], "receita": a["receita"],
+            "mudanca_do_criterio": a["mudanca_do_criterio"]["diferenca"],
             "selo": a["selo"]["receita"], "dedutiveis": a["dedutiveis"],
             "excesso_anterior": a["excesso_anterior"], "a_classificar": a["a_classificar"],
             "base": a["base"], "excesso": a["excesso"], "imposto": a["imposto"]}
@@ -1035,6 +1092,7 @@ def livro_caixa_linhas(a: Mapping[str, Any]) -> list[list[str]]:
         return " ".join(str(x if x is not None else "").split())
 
     linhas = [[f"# Livro-caixa do titular — {a['competencia']} — regime de caixa"],
+              [f"# Critério: {a.get('criterio') or CRITERIO}"],
               [f"# {AVISO_DO_LEIAUTE}"],
               [f"# {AVISO_DA_LISTA}"],
               ["data", "tipo", "origem", "descricao", "documento", "valor", "dedutivel",

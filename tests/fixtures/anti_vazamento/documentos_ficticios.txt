@@ -5,8 +5,6 @@
 000.000.001-91
 000.000.002-72
 000.000.003-53
-# o advogado ficticio dos testes de Notas (OAB, 03/11/2026)
-000.000.006-04
 00.000.001/0000-55
 # CNS ficticio (o placeholder da semente generica)
 000000

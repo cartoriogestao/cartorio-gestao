@@ -178,7 +178,11 @@
 
 {% for face in faces %}
 {% set letras = (face.termo or '')|striptags|length %}
-<div class="folha{% if letras > 1650 %} termo-longo{% endif %}{% if letras > 2300 %} termo-muito-longo{% endif %}{% if letras > 1650 and face.carimbo %} com-carimbo{% endif %}">
+{# 03/11/2026: o obito assina declarante + escrevente e leva o carimbo do selo; com ~1600 letras a letra cheia empurrava uma assinatura para o verso. Para OBITO o aperto do termo-longo comeca antes (1200 / 1900). Nascimento e casamento seguem 1650 / 2300. #}
+{% set eh_obito = (especie or '')|upper == 'OBITO' %}
+{% set limite_longo = 1200 if eh_obito else 1650 %}
+{% set limite_muito_longo = 1900 if eh_obito else 2300 %}
+<div class="folha{% if letras > limite_longo %} termo-longo{% endif %}{% if letras > limite_muito_longo %} termo-muito-longo{% endif %}{% if letras > limite_longo and face.carimbo %} com-carimbo{% endif %}">
   {% if cabecalho %}
   <div class="cabecalho">
     <div><img src="{{ url_for('static', filename='brasao.jpg') }}"

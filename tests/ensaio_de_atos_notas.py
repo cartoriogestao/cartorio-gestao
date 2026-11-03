@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import date
 
 import test_fluxo_notas as F
 
@@ -99,6 +100,14 @@ TESTEMUNHAS = [Parte("PAULO EXEMPLO TESTEMUNHA", "TESTEMUNHA", cpf(4), testemunh
                      civil={"nacionalidade": "brasileiro", "estado_civil": "solteiro"}),
                Parte("LUCIA EXEMPLO TESTEMUNHA", "TESTEMUNHA", cpf(5), testemunha=True)]
 CEM_MIL = 10_000_000
+
+
+def _nascido_ha(anos: int) -> str:
+    """A data de nascimento de quem completou `anos` há um mês, como o escrevente a escreve."""
+    hoje = date.today()
+    mes = hoje.month - 1 or 12
+    ano = hoje.year - anos - (1 if hoje.month == 1 else 0)
+    return f"{1:02d}/{mes:02d}/{ano} (primeiro de um mês de {ano})"
 
 
 def casos() -> list[Caso]:
@@ -192,7 +201,14 @@ def casos() -> list[Caso]:
              "Emancipação — só a mãe concede, pai falecido (CC art. 5º, par. ún., I)",
              [_pessoa("JOANA EXEMPLO DOS SANTOS", "OUTORGANTE", 2, estado_civil="viúva"),
               _pessoa("PEDRO EXEMPLO MENOR", "OUTORGADO", 9, profissao="estudante")],
-             valor=0, clausulas=("se_se_um_dos_pais",), escolhas={"op_filiacao": "a mãe"}),
+             valor=0, clausulas=("se_se_um_dos_pais",), escolhas={"op_filiacao": "a mãe"},
+             valores={"data_de_nascimento_do_emancipando": _nascido_ha(17)}),
+        Caso("emancipacao_menor_de_16", "NT-ESC-EMANCIPACAO", "ESCRITURA",
+             "Emancipação — o emancipando tem quinze anos (CC art. 5º, par. ún., I)",
+             [_pessoa("JOANA EXEMPLO DOS SANTOS", "OUTORGANTE", 2, estado_civil="viúva"),
+              _pessoa("PEDRO EXEMPLO MENOR", "OUTORGADO", 9, profissao="estudante")],
+             valor=0, clausulas=("se_se_um_dos_pais",), escolhas={"op_filiacao": "a mãe"},
+             valores={"data_de_nascimento_do_emancipando": _nascido_ha(15)}),
         Caso("pacto_nubente_menor", "NT-ESC-PACTO-ANTENUPCIAL", "ESCRITURA",
              "Pacto antenupcial — nubente de 17 anos, com o assistente (CC art. 1.654)",
              [_pessoa("MARIO EXEMPLO DOS SANTOS", "OUTORGANTE", 1),

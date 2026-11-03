@@ -138,6 +138,10 @@ ADVOGADOS» é montado dele — nome, qualificação e inscrição na OAB —, s
 
 ## 7. A emancipação não confere os dezesseis anos
 
+**CONSERTADO em 03/11/2026** (conserto liberado pela sessão de PRs): o teor não se monta com menos de
+dezesseis anos ou com dezoito. E o lançamento passou a recusar o ato sem teor: o ensaio mostrou que
+a emancipação recusada ia ao livro assim mesmo, com folha, termo e selo e sem texto nenhum.
+
 **O que saiu.** O emancipando «nascido em dez de outubro de dois mil e vinte e seis (10/10/2026),
 portanto com dezesseis anos completos» — e lavrou.
 

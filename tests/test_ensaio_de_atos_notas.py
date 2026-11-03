@@ -132,8 +132,12 @@ def _abertura(termo: str) -> str:
 
 # ------------------------------------------------------------------ todo caso vai ao livro
 
+#: Os casos que o balcão tem de recusar — e o teste que confere a recusa.
+RECUSADOS = {"emancipacao_menor_de_16": "test_a_emancipacao_confere_os_dezesseis_anos"}
+
+
 @pytest.mark.parametrize("chave", [pytest.param(c, marks=_ITEM_2) if c in ESPERAM_O_ITEM_2 else c
-                                   for c in CASOS])
+                                   for c in CASOS if c not in RECUSADOS])
 def test_o_caso_vai_ao_livro_com_selo_e_o_traslado_reproduz_o_termo(praticado, chave):
     """Do protocolo pago ao termo, pelo balcão; o selo no termo (CN-MA arts. 130 e 131) e o traslado
     com o teor do livro (CN-MA art. 850, § 2º)."""
@@ -248,12 +252,12 @@ def test_a_emancipacao_concedida_so_pela_mae_fala_no_singular(praticado):
     assert not EN.tem(t, "OUTORGANTES que são a mãe")
 
 
-@_defeito("o emancipando nascido há menos de dezesseis anos é declarado «com dezesseis anos "
-          "completos», e a lavratura não confere a data (item 7)")
 def test_a_emancipacao_confere_os_dezesseis_anos(praticado):
-    """CC art. 5º, par. ún., I: a emancipação por concessão dos pais exige dezesseis anos completos."""
-    s = praticado("emancipacao_so_mae")
+    """CC art. 5º, par. ún., I: a emancipação por concessão dos pais exige dezesseis anos completos.
+    Consertado em 03/11/2026 (item 7): o teor não se monta, e o balcão diz por quê."""
+    s = praticado("emancipacao_menor_de_16")
     assert s.situacao != "LAVRADO"
+    assert any("dezesseis anos completos" in a for a in s.avisos), s.avisos
 
 
 def test_a_data_por_extenso_tem_acento():

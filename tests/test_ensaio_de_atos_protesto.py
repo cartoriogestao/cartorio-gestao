@@ -9,7 +9,8 @@ O QUE ESTE TESTE FAZ
     nota promissória, protesto comum por falta de pagamento, devedor pessoa física. Este pratica, pelas
     mesmas telas e com os mesmos auxiliares de lá, o que muda o ato: o motivo (falta de aceite), a
     espécie (cheque), o título apresentado duas vezes, o devedor pessoa jurídica, dois protestos do
-    mesmo devedor e o cancelamento de um deles. O inventário está em
+    mesmo devedor e o cancelamento de um deles; na segunda leva, a falta de devolução e o título sustado.
+    O inventário está em
     `docs/ensaio_de_atos/inventario_protesto.md`, e o relatório em `relatorio_protesto.md`.
 
 OS DEFEITOS FICAM À VISTA: a asserção é a da lei; o defeito aberto fica em `xfail(strict=True)`.
@@ -84,16 +85,20 @@ def test_o_mesmo_titulo_nao_se_protesta_duas_vezes(s):  # noqa: F811
 
 # ------------------------------------------------------------------ o motivo e a espécie
 
-@_defeito("o protesto por falta de aceite se lavra depois do vencimento, e com esse motivo no registro")
-def test_o_protesto_por_falta_de_aceite_so_antes_do_vencimento(s):  # noqa: F811
+@_defeito("o protesto por falta de aceite (ou de devolução) se lavra depois do vencimento, e com esse motivo "
+          "no registro")
+@pytest.mark.parametrize("motivo,por_extenso", [("2", "FALTA DE ACEITE"), ("3", "FALTA DE DEVOLU")])
+def test_depois_do_vencimento_o_protesto_e_sempre_por_falta_de_pagamento(s, motivo, por_extenso):  # noqa: F811
     """Lei 9.492/1997, art. 21, § 1º: o protesto por falta de aceite «somente poderá ser efetuado antes do
     vencimento da obrigação»; § 2º: depois do vencimento, «o protesto sempre será efetuado por falta de
-    pagamento». O título do balcão vence em 10/02/2025: por falta de aceite, não se lavra."""
-    feito = _ate_o_protesto(s, especie="DMI", numero_titulo="DMI-0004", motivo_protesto="2")
+    pagamento». O § 3º (a falta de devolução) só muda a base do protesto — a segunda via, as indicações —,
+    e não a regra do § 2º. O título do balcão vence em 10/02/2025: nem por falta de aceite, nem de
+    devolução."""
+    feito = _ate_o_protesto(s, especie="DMI", numero_titulo=f"DMI-000{motivo}", motivo_protesto=motivo)
     if feito["situacao"] != "PROTESTADO":
         return
     termo = F._ato(s, feito["id"], "PROTESTO")["teor"] or ""
-    assert "FALTA DE ACEITE" not in termo.upper(), termo
+    assert por_extenso not in termo.upper(), termo
 
 
 @_defeito("o cheque se cadastra e se protesta pelo balcão sem nada da apresentação ao banco sacado: a ficha "
@@ -133,3 +138,32 @@ def test_a_empresa_devedora_sai_na_certidao_pelo_cnpj(s):  # noqa: F811
     assert cert["tipo"] == "POSITIVA" and EMPRESA["devedor_nome"] in cert["teor"], cert
     outro = _emitir(s, nome=F.DEVEDOR, documento=F.CPF_DEVEDOR)
     assert outro["tipo"] == "NEGATIVA", outro
+
+
+# ------------------------------------------------------------------ o título sustado
+
+def _sustado(s) -> tuple[int, dict]:  # noqa: F811
+    p = F._protocolo(s, F.PROTESTO, F.RETIRADA)
+    tid = F._apontado(s, p, p["itens"][0])
+    F._intimado_em_maos(s, tid)
+    r = F._lancar(s, tid, "SUSTACAO", juizo="1ª Vara Cível de Cidade Exemplo",
+                  processo="0800001-00.2026.8.10.0001", recebido_em=F._hoje(s))
+    assert F._lancado(r), F._avisos(r)
+    return tid, p
+
+
+@pytest.mark.parametrize("ato,campos", [
+    ("PAGAMENTO", {"valor_pago": "1.234,56", "emolumentos": "30,00", "forma_pagamento": "TRANSFERENCIA",
+                   "forma_identificacao": "TED 0002"}),
+    ("DESISTENCIA", {"motivo": "O credor desistiu, por escrito."}),
+])
+def test_o_titulo_sustado_nao_se_paga_nem_se_retira_sem_ordem_do_juiz(s, ato, campos):  # noqa: F811
+    """Lei 9.492/1997, art. 17, § 1º: o título cujo protesto foi sustado judicialmente «só poderá ser pago,
+    protestado ou retirado com autorização judicial». O protesto já é barrado (`test_fluxo_protesto`); o
+    pagamento e a retirada também têm de ser."""
+    tid, p = _sustado(s)
+    r = F._lancar(s, tid, ato, p, p["itens"][1], **campos)
+    # O EFEITO, E NÃO A PALAVRA: a recusa também diz «lançado» («não pode ser lançado aqui»).
+    feitos = F._ler(s, "SELECT id FROM pt_atos WHERE titulo_id=%s AND tipo=%s AND cancelado=0", (tid, ato))
+    assert not feitos and F._situacao(s, tid) == "INTIMADO", F._avisos(r)
+    assert any("art. 17" in a or "SUSTADO" in a for a in F._avisos(r)), F._avisos(r)

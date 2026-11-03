@@ -77,7 +77,7 @@ def test_pago_e_selado_no_mesmo_dia_nada_muda(casa):
 
 
 def test_o_selado_antes_e_pago_depois_conta_no_pagamento(casa):
-    """O diferido: não há receita antes do dinheiro (caso A, a confirmar com o oficial)."""
+    """O diferido: não há receita antes do dinheiro (caso A, decisão do oficial de 03/11/2026)."""
     db = casa["db"]
     _item_pago(db, "2026-11-05", "60,00", selado_em="2026-10-20")
     assert _apurar(db, "2026-10")["caixa"] == 0 and _apurar(db, "2026-11")["caixa"] == 6000
@@ -89,13 +89,26 @@ def test_o_estornado_antes_do_selo_nao_conta(casa):
     assert _apurar(db, "2026-10")["caixa"] == 0 and _apurar(db, "2026-11")["caixa"] == 0
 
 
-def test_o_pago_ainda_sem_selo_conta_no_pagamento_e_e_avisado(casa):
-    """Caso B, com o oficial: por ora no pagamento, e na lista dos pagos sem selo."""
+def test_o_pago_e_nunca_selado_fica_fora_e_entra_em_31_de_dezembro(casa):
+    """Caso B, decisão do oficial de 03/11/2026: na lista dos pagos sem selo até o selo; se o ano
+    acabar sem ele, receita em 31/12 do ano do pagamento."""
     db = casa["db"]
     _item_pago(db, "2026-10-15", "40,00", selado_em=None)
-    outubro = _apurar(db, "2026-10")
-    assert outubro["caixa"] == 4000 and outubro["pagos_sem_selo"] == {"n": 1, "valor": 4000}
-    assert any("ainda sem selo" in x for x in outubro["avisos"])
+    outubro, dezembro = _apurar(db, "2026-10"), _apurar(db, "2026-12")
+    assert outubro["caixa"] == 0
+    assert any("ainda sem selo" in x and "31/12" in x for x in outubro["avisos"])
+    assert dezembro["caixa"] == 4000
+    assert any("não selado(s) até 31/12" in x for x in dezembro["avisos"])
+
+
+def test_pago_em_dezembro_e_selado_em_janeiro_conta_em_janeiro_e_dezembro_avisa(casa):
+    """Caso E, decisão do oficial de 03/11/2026: a regra do selo vale na virada do ano."""
+    db = casa["db"]
+    _item_pago(db, "2026-12-20", "90,00", selado_em="2027-01-08")
+    dezembro, janeiro = _apurar(db, "2026-12"), _apurar(db, "2027-01")
+    assert dezembro["caixa"] == 0 and janeiro["caixa"] == 9000
+    assert any("selados em 2027 contam em janeiro" in x for x in dezembro["avisos"])
+    assert any("pagos em 2026 e selados neste mês" in x for x in janeiro["avisos"])
 
 
 def test_o_deposito_previo_continua_como_esta(casa):

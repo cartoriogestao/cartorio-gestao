@@ -67,13 +67,18 @@ teste». O ensaio não pratica isto sem saber como a tabela do TJMA cobra o RTD 
 percentual), e o que o selo do TJMA espera. Pergunta ao oficial: a casa registra títulos com valor? Por
 qual item?
 
-**O4. A leitura da ficha e o ato do mesmo segundo.** O breve relato só sai se a leitura da ficha é
-posterior ao último ato, e a régua compara as horas ao segundo, com «maior que»
-(`atrib_certidao`, `criado_em > pj_dados_em`). No mesmo segundo, a leitura conta como atual. O ensaio
-caiu nisso: gravou os dados e dissolveu a associação no mesmo segundo, e o breve relato saiu sem a
-releitura. No balcão é quase impossível, mas a régua fica mais segura se o empate contar como leitura
-velha (`>=`), ou se comparar pela ordem dos atos, e não pela hora. Conserto de um caractere, para o PR de
-consertos do RCPJ.
+**O4. A leitura da ficha e o ato do mesmo segundo.** **CONSERTADO em 03/11/2026**, sem depender do
+oficial. O breve relato só sai se a leitura da ficha é posterior ao último ato, e a régua comparava as
+horas ao segundo, com «maior que» (`atrib_certidao`, `criado_em > pj_dados_em`). No mesmo segundo, a
+leitura contava como atual: o ensaio gravou os dados e dissolveu a associação no mesmo segundo, e o breve
+relato saiu sem a releitura.
+
+**O conserto não foi o `>=` que este relatório propunha**, porque ele erraria do outro lado: o registro e
+a leitura logo depois dele também caem no mesmo segundo, e o breve relato seria recusado sem motivo. Agora
+a leitura guarda o último ato que viu (`rg_registros.pj_dados_ultimo_ato_id`, gravado por
+`rg_registro.gravar_dados_da_pj`), e a régua compara pela ordem dos atos, que não empata. A leitura
+gravada antes da coluna não a tem, e segue pela hora, como era. O teste do ensaio já não espera um
+segundo, e há um teste da régua só com o empate.
 
 ## O que fica para as próximas levas
 

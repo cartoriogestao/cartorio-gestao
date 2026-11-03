@@ -19,7 +19,6 @@ Pessoas e documentos fictícios (os de `test_fluxo_rtd_rcpj`).
 from __future__ import annotations
 
 import io
-import time
 
 import pytest
 
@@ -96,9 +95,8 @@ def test_o_breve_relato_da_associacao_dissolvida_diz_o_cancelamento(casa):  # no
     registro = _associacao(b)["registro"]
     ficha = f"/rcpj-rtd/{registro['id']}"
     _dados_da_pj(b, ficha)
-    # UM SEGUNDO ENTRE A LEITURA E A DISSOLUÇÃO, como no balcão: a régua compara as horas ao segundo, e no
-    # mesmo segundo a leitura conta como atual (observação O4 do relatório) — o teste caía uma vez em duas.
-    time.sleep(1.1)
+    # NO MESMO SEGUNDO, DE PROPÓSITO: a leitura e a dissolução quase sempre caem juntas aqui. Até a
+    # observação O4 a régua comparava as horas, e o empate contava como leitura atual; agora é a ordem.
     _dissolvida(b, ficha)
     r = _breve_relato(b, registro["id"], ficha)
     assert "O breve relato é da situação ATUAL" in F._avisos(r), F._avisos(r)
@@ -134,3 +132,22 @@ def test_a_segunda_associacao_com_a_mesma_denominacao_nao_se_inscreve_sem_aviso(
     inscritas = b.ler("SELECT id FROM rg_registros WHERE serie='PJ_A' AND requerente_nome=%s", (ASSOCIACAO,))
     avisou = any("denomina" in a.lower() or "mesmo nome" in a.lower() for a in avisos)
     assert len(inscritas) == 1 or avisou, avisos
+
+
+def test_o_ato_do_mesmo_segundo_da_leitura_pede_a_releitura():
+    """CN-MA art. 420, II (a situação ATUAL), pela régua só: a leitura gravada às 10:00:00 viu o ato 1, e o
+    cancelamento (ato 2) se lavrou no mesmo segundo. É depois da leitura, e o breve relato não sai sem a
+    releitura (observação O4). A leitura antiga, sem o último ato visto, segue pela hora, como era."""
+    import atrib_certidao as CE
+    mesmo_segundo = "2026-11-03T10:00:00"
+    registro = {"serie": "PJ_A", "numero": 1, "requerente_nome": ASSOCIACAO, "pj_sede": "Sede",
+                "pj_objeto": "Objeto", "pj_diretoria": "Diretoria", "pj_dados_em": mesmo_segundo,
+                "pj_dados_ultimo_ato_id": 1}
+    atos = [{"id": 1, "tipo": "REGISTRO", "data_ato": "2026-11-03", "criado_em": mesmo_segundo},
+            {"id": 2, "tipo": "CANCELAMENTO", "numero_ordem": 2, "data_ato": "2026-11-03",
+             "criado_em": mesmo_segundo}]
+    with pytest.raises(CE.CertidaoError, match="situação ATUAL"):
+        CE.teor_do_breve_relato({"registro": registro, "atos": atos})
+    # a leitura de antes da coluna: pela hora, o empate passa, como passava
+    antiga = {k: v for k, v in registro.items() if k != "pj_dados_ultimo_ato_id"}
+    assert "breve relato" in CE.teor_do_breve_relato({"registro": antiga, "atos": atos[:1]})

@@ -427,6 +427,10 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("rg_registros", "pj_diretoria", "TEXT"),
     ("rg_registros", "pj_dados_em", "TEXT"),
     ("rg_registros", "pj_dados_por", "TEXT"),
+    # O ÚLTIMO ATO QUE A LEITURA JÁ VIU (ensaio de atos do RCPJ, 03/11/2026, observação O4). A
+    # régua comparava `criado_em > pj_dados_em`, com as horas ao segundo: o ato do mesmo segundo da
+    # leitura contava como lido, e o breve relato saía sem a releitura. A ORDEM DOS ATOS NÃO EMPATA.
+    ("rg_registros", "pj_dados_ultimo_ato_id", "INTEGER"),
     # AS DECLARAÇÕES QUE O TERMO DO LIVRO FAZ (LD09, 21/10/2026): o extrato do
     # Livro C (LRP art. 143), a inscrição da pessoa jurídica (art. 120) e a
     # matrícula do periódico (art. 123). JSON {claro: texto}, escrito por quem

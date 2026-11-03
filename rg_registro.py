@@ -939,14 +939,18 @@ def gravar_dados_da_pj(con, registro_id: int, *, sede: str | None,
         raise RgError(f"Falta {', '.join(faltam)} — o breve relato os certifica "
                       f"(CN-MA art. 420, II).")
     antes = {k: reg.get(k) for k in CAMPOS_DA_PJ}
+    # O ÚLTIMO ATO QUE ESTA LEITURA VIU, e não só a hora dela: o breve relato confere a leitura pela ordem
+    # dos atos, que não empata no mesmo segundo (ensaio de atos do RCPJ, 03/11/2026, observação O4).
+    ultimo = banco(con).um("SELECT max(id) AS id FROM rg_atos WHERE registro_id=%s", (int(registro_id),))
     banco(con).escrever(
         """UPDATE rg_registros
               SET pj_sede=%(pj_sede)s, pj_objeto=%(pj_objeto)s,
                   pj_capital=%(pj_capital)s, pj_socios=%(pj_socios)s,
                   pj_diretoria=%(pj_diretoria)s, pj_dados_em=%(agora)s,
-                  pj_dados_por=%(usuario)s
+                  pj_dados_por=%(usuario)s, pj_dados_ultimo_ato_id=%(ultimo)s
             WHERE id=%(id)s""",
-        {**novos, "agora": agora, "usuario": usuario, "id": int(registro_id)})
+        {**novos, "agora": agora, "usuario": usuario, "id": int(registro_id),
+         "ultimo": (ultimo or {}).get("id")})
     return {"registro_id": int(registro_id), "antes": antes, "depois": novos}
 
 

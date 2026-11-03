@@ -553,6 +553,7 @@ def _comparecimento_da_procuracao(principais: list, poderes: str,
     textos = MODELOS.textos(textos)
     lado_a, lado_b, por_outro = [], [], []
     for p in principais:
+        # na procuração o anuente continua entre os outorgantes, «na qualidade de ANUENTE»
         lado = lado_da_parte(p, "PROCURACAO")
         (lado_b if lado == OUTORGADO else por_outro if lado == REPRESENTA else lado_a).append(p)
     varios = len(lado_a) > 1
@@ -615,6 +616,12 @@ def _comparecimento_da_procuracao(principais: list, poderes: str,
 # representa — o que antes ninguém notava, porque ele saía do lado errado sem aviso.
 OUTORGANTE, OUTORGADO, REPRESENTA = "OUTORGANTE", "OUTORGADO", "REPRESENTA"
 
+# O ANUENTE CONSENTE, E NÃO VENDE — decisão do oficial, 03/11/2026 (ensaio de atos das Notas, item 3).
+# No imóvel do casal em comunhão a casa põe os dois cônjuges como outorgantes, e ninguém é anuente; o
+# «ANUENTE», onde cabe (o bem particular de um deles, por exemplo), sai depois dos outorgantes com a
+# frase do consentimento (CC art. 1.647, I) — e nunca como mais um deles, que é o que o ensaio lavrou.
+ANUENTE = "ANUENTE"
+
 
 def _sem_acento_maiusculo(texto) -> str:
     import unicodedata
@@ -635,6 +642,8 @@ def lado_da_parte(parte, tipo_ato: Any = None) -> str:
                 tipo_ato is None or str(tipo_ato).upper() in NC.ATOS_EM_QUE_O_PROCURADOR_E_OUTORGADO):
             return OUTORGADO
         return REPRESENTA
+    if rotulo.startswith(ANUENTE):
+        return ANUENTE
     primeira = re.split(r"[\s,;/(]", rotulo, maxsplit=1)[0]
     if OUTORGADO in {NC.QUALIFICACAO_PARA_CEP.get(rotulo, "").upper(),
                      NC.QUALIFICACAO_PARA_CEP.get(primeira, "").upper()}:
@@ -649,6 +658,12 @@ def _quem_representa(parte, textos: Any = None) -> str:
                      "(CN-MA art. 798, VI e VII)"))
 
 
+def _quem_consente(parte, textos: Any = None) -> str:
+    """O cônjuge anuente, com a frase do consentimento (CC art. 1.647, I)."""
+    return ("e, como ANUENTE, " + qualificar(parte, con=textos)
+            + ", que consente no presente ato, na forma do artigo 1.647, I, do Código Civil")
+
+
 def partes_por_lado(partes: list, *, con: Any = None, tipo_ato: Any = None) -> tuple[str, str]:
     """Monta `outorgantes` e `outorgados` para os modelos de `notas_modelos.py`.
 
@@ -660,16 +675,19 @@ def partes_por_lado(partes: list, *, con: Any = None, tipo_ato: Any = None) -> t
     só têm `{{ outorgantes }}`, e no fim dos outorgados ele sumiria do teor.
     """
     textos = MODELOS.textos(con)
-    lados = {OUTORGANTE: [], OUTORGADO: [], REPRESENTA: []}
+    lados = {OUTORGANTE: [], OUTORGADO: [], REPRESENTA: [], ANUENTE: []}
+    montar = {REPRESENTA: _quem_representa, ANUENTE: _quem_consente}
     for p in partes:
         d = dict(p)
         if d.get("testemunha"):
             continue
         lado = lado_da_parte(d, tipo_ato)
-        lados[lado].append(_quem_representa(d, textos) if lado == REPRESENTA
+        lados[lado].append(montar[lado](d, textos) if lado in montar
                            else qualificar(d, con=textos))
     outorgantes = ("; ".join(lados[OUTORGANTE]) or
                    _falta("outorgante(s) — qualifique a parte no ato"))
+    if lados[ANUENTE]:
+        outorgantes += "; " + "; ".join(lados[ANUENTE])
     if lados[REPRESENTA]:
         outorgantes += "; " + "; ".join(lados[REPRESENTA])
     outorgados = ("; ".join(lados[OUTORGADO]) or

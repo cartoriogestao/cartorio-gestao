@@ -95,6 +95,8 @@ CASADA = {"estado_civil": "casada", "conjuge": "MARIO EXEMPLO DOS SANTOS",
           "regime_bens": "comunhão parcial de bens"}
 VENDEDOR = _pessoa("MARIO EXEMPLO DOS SANTOS", "VENDEDOR", 1, **CASADO)
 CONJUGE_QUE_CONSENTE = _pessoa("JOANA EXEMPLO DOS SANTOS", "ANUENTE", 2, **CASADA)
+# O padrão da casa no imóvel do casal em comunhão: os dois vendem (decisão do oficial, 03/11/2026).
+CONJUGE_QUE_VENDE = _pessoa("JOANA EXEMPLO DOS SANTOS", "VENDEDORA", 2, **CASADA)
 COMPRADORA = _pessoa("BEATRIZ EXEMPLO DE SOUZA", "COMPRADORA", 3)
 TESTEMUNHAS = [Parte("PAULO EXEMPLO TESTEMUNHA", "TESTEMUNHA", cpf(4), testemunha=True,
                      civil={"nacionalidade": "brasileiro", "estado_civil": "solteiro"}),
@@ -114,10 +116,13 @@ def casos() -> list[Caso]:
     return [
         # ---- compra e venda: o que mais cai no balcão
         Caso("cv_casado_com_outorga", "NT-ESC-COMPRA-VENDA", "ESCRITURA",
-             "Compra e venda — vendedor casado em comunhão parcial, com o cônjuge "
-             "(CC arts. 1.647, I, e 215, § 1º, III)",
-             [VENDEDOR, CONJUGE_QUE_CONSENTE, COMPRADORA], item="FAIXA", valor=CEM_MIL,
+             "Compra e venda — o imóvel do casal em comunhão: os dois cônjuges vendem "
+             "(CC art. 215, § 1º, III; o padrão da casa)",
+             [VENDEDOR, CONJUGE_QUE_VENDE, COMPRADORA], item="FAIXA", valor=CEM_MIL,
              escolhas={"op_forma_de_pagamento": "PIX"}),
+        Caso("cv_bem_particular_com_anuente", "NT-ESC-COMPRA-VENDA", "ESCRITURA",
+             "Compra e venda — bem particular do vendedor casado, com o cônjuge anuente (CC art. 1.647, I)",
+             [VENDEDOR, CONJUGE_QUE_CONSENTE, COMPRADORA], item="FAIXA", valor=CEM_MIL),
         Caso("cv_por_procurador", "NT-ESC-COMPRA-VENDA", "ESCRITURA",
              "Compra e venda — vendedor representado por procurador (CN-MA art. 798, VI)",
              [_pessoa("MARIO EXEMPLO DOS SANTOS", "VENDEDOR", 1),

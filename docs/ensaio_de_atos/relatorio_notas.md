@@ -82,6 +82,10 @@ próprio, como faz o acervo da casa? (A ver no acervo: só a estrutura, nunca no
 
 ## 3. O cônjuge que consente sai como mais um vendedor, sem dizer que consente
 
+**CONSERTADO em 03/11/2026, por decisão do oficial:** no imóvel do casal em comunhão, os dois são
+outorgantes vendedores e ninguém é anuente (o padrão da casa); o «ANUENTE», onde cabe, sai depois dos
+outorgantes com a frase do CC art. 1.647, I, e nunca como vendedor.
+
 **O que saiu.** Na venda do casado em comunhão parcial, o cônjuge com a qualidade «ANUENTE» sai na abertura
 como mais um «OUTORGANTE VENDEDOR». O termo não diz que ele consente; «ANUENTE» só aparece cru na linha das
 assinaturas («JOANA EXEMPLO DOS SANTOS, ANUENTE»).

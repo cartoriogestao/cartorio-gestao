@@ -2025,6 +2025,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     "SELECT id, numero, data_prenotacao, natureza_titulo, "
                     "apresentante FROM ri_protocolos WHERE id=%s",
                     (int(prenotacao_escolhida_id),))
+        # A PRIORIDADE (decisão do oficial, 03/11/2026, «d1»): as prenotações anteriores que ainda esperam,
+        # pela MESMA régua da lavratura — e não pela lista de cima, que é a da casa inteira.
+        prioridade_anteriores = []
+        if prenotacao_escolhida:
+            with db.connect() as _c_pri:
+                prioridade_anteriores = prenotacoes_anteriores_abertas(
+                    _c_pri, m, prenotacao_escolhida["numero"])
 
         # AS CERTIDÕES DESTA FICHA — 16/09/2026, para reimprimir sem
         # reemitir. As vinte últimas bastam: quem procura uma de 2019 usa a
@@ -2164,6 +2171,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             protocolo_caixa_escolhido=protocolo_caixa_escolhido,
             itens_do_protocolo_caixa=itens_do_protocolo_caixa,
             prenotacao_escolhida=prenotacao_escolhida,
+            prioridade_anteriores=prioridade_anteriores,
             prenotacao_escolhida_id=prenotacao_escolhida_id,
             depositos_da_prenotacao=depositos_da_prenotacao,
             caixa_origem=caixa_origem,
@@ -4686,6 +4694,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if indisponivel:
             flash(indisponivel["mensagem"], "warning")
 
+        # A PRIORIDADE (decisão do oficial, 03/11/2026, «d1»): com prenotação ANTERIOR aberta sobre a
+        # matrícula, o ato só se lavra confirmando, com o motivo — antes de gastar número.
+        with db.connect() as con_pri:
+            anteriores = prenotacoes_anteriores_abertas(
+                con_pri, m, request.form.get("protocolo"))
+        motivo_prioridade = (request.form.get("motivo_prioridade") or "").strip()
+        if anteriores and (not request.form.get("confirmo_prioridade")
+                           or len(motivo_prioridade) < 10):
+            quais = "; ".join(
+                f"protocolo {p['numero']}, de {fmt_date(p['data_prenotacao'])}"
+                f"{(' — ' + p['natureza_titulo']) if p.get('natureza_titulo') else ''}"
+                for p in anteriores)
+            flash(f"Há prenotação ANTERIOR aberta sobre esta matrícula: {quais}. O número de "
+                  f"ordem determina a prioridade do título (Lei 6.015/1973, arts. 186 e 191). "
+                  f"Para lavrar este antes dela, marque «Confirmo» e escreva o motivo (o título "
+                  f"anterior não contradiz este, por exemplo). O ato NÃO foi lavrado — nada se "
+                  f"perdeu.", "danger")
+            return redirect(url_for("ri_ficha", matricula_id=matricula_id,
+                                    **({"minuta": minuta_pedida}
+                                       if minuta_pedida else {})))
+
         # CNIB NA LAVRATURA (TJMA 506): a consulta sempre fica gravada no ato;
         # o protocolo da Central so e exigido quando a casa liga a regra.
         cnib_protocolo = (request.form.get("cnib_protocolo") or "").strip()
@@ -5205,6 +5234,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                        "folhas": folhas_arquivamento,
                        "motivo": arq.get("motivo")})
 
+        if anteriores:
+            # A PRIORIDADE CONFIRMADA (03/11/2026, «d1»): quem, por quê, e quais prenotações passaram.
+            audit("RI_PRIORIDADE_CONFIRMADA", "RI_ATO", ato_id,
+                  {"matricula": m["numero"], "ato": f"{tipo}-{numero}",
+                   "protocolo": request.form.get("protocolo"),
+                   "anteriores": [p["numero"] for p in anteriores],
+                   "motivo": motivo_prioridade})
         flash(f"{tipo}-{numero} lavrado. O ato entrou na cadeia de integridade e "
               f"não pode mais ser editado — correções se fazem por averbação."
               f"{' A minuta que estava para revisão saiu da fila.' if minuta else ''}"
@@ -11113,6 +11149,29 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if r.get("achou") is False:
             return ""
         return ""
+
+    def prenotacoes_anteriores_abertas(con, matricula: dict, protocolo_escrito) -> list[dict]:
+        """As prenotações ABERTAS da mesma matrícula com número MENOR que a deste ato. Só LÊ.
+
+        LRP arts. 182, 186 e 191: o número de ordem determina a prioridade do título. Decisão do oficial,
+        03/11/2026 (ensaio de atos do RI, defeito 4, «d1»): avisar, citando o protocolo anterior, e
+        pedir a confirmação com o motivo — o sistema não sabe se os dois títulos se contradizem.
+
+        SÓ A QUE AINDA ESPERA: a prenotação que já deu o seu primeiro ato (`ato_id`) continua aberta para
+        os atos seguintes do mesmo título (`amarrar_prenotacao`), mas já não disputa a prioridade.
+        """
+        numero = numero_digitado(protocolo_escrito)
+        if numero is None:
+            return []
+        mnum = "".join(c for c in str(matricula.get("numero") or "") if c.isdigit())
+        return [dict(p) for p in banco(con).ler(
+            """SELECT id, numero, data_prenotacao, natureza_titulo, objeto
+                 FROM ri_protocolos
+                WHERE situacao = 'ABERTO' AND numero < %s AND ato_id IS NULL
+                  AND (matricula_id = %s
+                       OR REPLACE(COALESCE(matricula_numero, ''), '.', '') = %s)
+                ORDER BY numero""",
+            (int(numero), int(matricula["id"]), mnum))]
 
     def amarrar_prenotacao(con, protocolo_escrito, *, matricula_id, ato_id):
         """Liga a prenotacao ao primeiro ato que saiu dela. ESCREVE.

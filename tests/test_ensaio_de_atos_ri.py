@@ -49,16 +49,22 @@ def _defeito(motivo: str):
 
 
 def _ato(casa, m: dict, codigo: str, *, interessado: dict, partes=(), valores: dict | None = None,  # noqa: F811
-         base: str = "100.000,00", **extra) -> dict:
+         base: str = "100.000,00", de_novo: dict | None = None, **extra) -> dict:
     """Um ato do modelo `codigo` na matrícula `m`, pelo caminho inteiro do balcão: protocolo pago,
     prenotação para a matrícula, o texto do modelo preenchido como o balcão preenche, a lavratura."""
     import ri_modelos_atos as MOD
     modelo = MOD.por_codigo(codigo)
     tipo = modelo["tipo"]
     item = "16.3.14" if tipo == "R" else "16.22.2"
-    cx = F._protocolo_geral(casa, interessado=interessado, itens=[("16.1", 1), (item, 1)])
-    p = F._prenotar(casa, cx, apresentante=interessado, natureza=modelo["natureza"],
-                    objeto=f"Matrícula {F.PRIMEIRA_MATRICULA}", matricula=str(F.PRIMEIRA_MATRICULA))
+    if de_novo:
+        # O MESMO TÍTULO, DE NOVO: a lavratura recusada antes do número deixa a prenotação e o item do
+        # protocolo como estavam, e o balcão lavra outra vez por eles — e não por uma prenotação nova, que
+        # viria depois da dele (a prioridade, «d1»).
+        cx, p = de_novo["cx"], de_novo["prenotacao"]
+    else:
+        cx = F._protocolo_geral(casa, interessado=interessado, itens=[("16.1", 1), (item, 1)])
+        p = F._prenotar(casa, cx, apresentante=interessado, natureza=modelo["natureza"],
+                        objeto=f"Matrícula {F.PRIMEIRA_MATRICULA}", matricula=str(F.PRIMEIRA_MATRICULA))
     r = casa["balcao"].get(f"/registro-imoveis/{m['id']}/modelo/{codigo}")
     teor = json.loads(r.get_data(as_text=True))["teor"]
     for marcador, valor in (valores or {}).items():
@@ -70,7 +76,7 @@ def _ato(casa, m: dict, codigo: str, *, interessado: dict, partes=(), valores: d
                      modelo=codigo, **extra)
     ato = F._um(casa, "SELECT * FROM ri_atos WHERE matricula_id=%s AND id > %s ORDER BY id DESC LIMIT 1",
                 (m["id"], antes))
-    return {"ato": ato, "recado": html, "cx": cx}
+    return {"ato": ato, "recado": html, "cx": cx, "prenotacao": p}
 
 
 def _onus_oferecidos(casa, m: dict) -> set[int]:  # noqa: F811
@@ -113,8 +119,9 @@ def test_a_hipoteca_cancelada_deixa_de_ser_onus(casa):  # noqa: F811
     sem_alvo = _ato(casa, m, "AV-CANCELAMENTO-HIPOTECA", interessado=F.BANCO)
     assert not sem_alvo["ato"], "o cancelamento sem «qual ato se cancela» foi ao livro"
     assert "Qual ato se cancela" in _avisos(sem_alvo["recado"]), _avisos(sem_alvo["recado"])
-    cancela = _ato(casa, m, "AV-CANCELAMENTO-HIPOTECA", interessado=F.BANCO, cancela_ato_id=str(r2["id"]))
-    assert cancela["ato"] and cancela["ato"]["selo_texto"], cancela["recado"][:1200]
+    cancela = _ato(casa, m, "AV-CANCELAMENTO-HIPOTECA", interessado=F.BANCO, cancela_ato_id=str(r2["id"]),
+                   de_novo=sem_alvo)
+    assert cancela["ato"] and cancela["ato"]["selo_texto"], _avisos(cancela["recado"])
     marcado = F._um(casa, "SELECT cancelado, cancelado_por_ato_id FROM ri_atos WHERE id=%s", (r2["id"],))
     assert marcado["cancelado"] == 1 and marcado["cancelado_por_ato_id"] == cancela["ato"]["id"], marcado
     assert r2["id"] not in _onus_oferecidos(casa, m)

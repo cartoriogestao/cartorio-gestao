@@ -142,6 +142,10 @@ def classificar(ato) -> dict | None:
     tipo = (_campo(ato, "tipo") or "").upper()
     natureza = _campo(ato, "natureza_titulo") or ""
     teor = _campo(ato, "teor") or ""
+    # A AVERBAÇÃO QUE CANCELA OU EXTINGUE NÃO É ÔNUS (ensaio de atos do RI, 03/11/2026, defeito 2): a
+    # «Extinção de usufruto» entrava pela palavra «usufruto» do teor. Ela tira um ônus; não é um.
+    if tipo == "AV" and any(p in _sem_acento(natureza) for p in ("CANCELAMENTO", "EXTINCAO")):
+        return None
     # O ÔNUS TRANSPORTADO DA MATRÍCULA DE ORIGEM É ÔNUS DESTA (LRP art. 230; modelo AV-TRANSPORTE-ONUS,
     # decisão do oficial, 03/11/2026, «e2»): a certidão de ônus da matrícula nova o traz.
     if tipo == "AV" and "TRANSPORTE DE ONUS" in _sem_acento(natureza):

@@ -899,12 +899,25 @@ def test_cada_modelo_de_ato_da_casa_lavra_sela_e_sai_igual_no_termo_e_na_certida
     modelo = MODELOS_DE_ATO.por_codigo(codigo)
     tipo = modelo["tipo"]
     item = "16.3.14" if tipo == "R" else "16.22.2"
+    # O MODELO QUE CANCELA OU EXTINGUE PEDE QUAL ATO (decisão do oficial, 03/11/2026, «a1»): antes dele,
+    # um R-1 de hipoteca na mesma matrícula, para ter o que cancelar — e o ato do modelo é o 2º.
+    cancela = codigo in ("AV-CANCELAMENTO-HIPOTECA", "AV-EXTINCAO-USUFRUTO", "AV-CANCELAMENTO")
     cx = _protocolo_geral(casa, interessado=COMPRADORA,
                           itens=[("16.1", 1), ("16.2", 1), (item, 1),
-                                 ("16.24.4", 1), ("16.24.4.1", 9)])
+                                 ("16.24.4", 1), ("16.24.4.1", 9)]
+                          + ([("16.3.14", 1)] if cancela else []))
     p = _prenotar(casa, cx, apresentante=COMPRADORA, natureza=modelo["natureza"],
                   objeto="Imóvel urbano na Rua Exemplo, 30, Cidade Exemplo")
     m = _abrir_matricula(casa, p)
+    extra = {}
+    if cancela:
+        _lavrar(casa, m, tipo="R", teor="HIPOTECA de exemplo, a ser cancelada pelo modelo.",
+                natureza="Hipoteca", prenotacao=p, cx=cx, itens=["16.3.14"],
+                partes=[(COMPRADORA, "devedor"), (VENDEDOR, "credor")], base_calculo="80.000,00")
+        alvo = _um(casa, "SELECT id FROM ri_atos WHERE matricula_id=%s ORDER BY id DESC LIMIT 1",
+                   (m["id"],))
+        assert alvo, "o R-1 a cancelar não lavrou"
+        extra["cancela_ato_id"] = str(alvo["id"])
     r = casa["balcao"].get(f"/registro-imoveis/{m['id']}/modelo/{codigo}")
     teor, digitados = _como_o_balcao_preenche(json.loads(r.get_data(as_text=True))["teor"])
     partes = ([(VENDEDOR, "transmitente"), (COMPRADORA, "adquirente")]
@@ -912,11 +925,11 @@ def test_cada_modelo_de_ato_da_casa_lavra_sela_e_sai_igual_no_termo_e_na_certida
     html = _lavrar(casa, m, tipo=tipo, teor=teor, natureza=modelo["natureza"],
                    prenotacao=p, cx=cx, itens=[item], partes=partes,
                    base_calculo="100.000,00" if tipo == "R" else "",
-                   modelo=codigo)
+                   modelo=codigo, **extra)
     ato = _um(casa, "SELECT * FROM ri_atos WHERE matricula_id=%s ORDER BY id DESC LIMIT 1",
               (m["id"],))
     assert ato and ato["selo_texto"], f"{codigo} não lavrou com selo: {html[:1500]}"
-    rotulo = f"{tipo}-01/{PRIMEIRA_MATRICULA}"
+    rotulo = f"{tipo}-{int(ato['numero']):02d}/{PRIMEIRA_MATRICULA}"
     selo_do_tipo = "SELO DE REGISTRO" if tipo == "R" else "SELO DE AVERBAÇÃO"
     emol = (re.compile(r"Emol R\$ 1\.?636,01") if tipo == "R"
             else "Emol R$ 120,03")
@@ -927,7 +940,8 @@ def test_cada_modelo_de_ato_da_casa_lavra_sela_e_sai_igual_no_termo_e_na_certida
     # protocolo e data — `ri_odt.teor_sem_cabecalho_do_ato`); o que se digitou
     # ali sai no cabeçalho, e o resto do teor sai inteiro.
     import ri_odt
-    corpo_no_termo = ri_odt.teor_sem_cabecalho_do_ato(teor, tipo, 1, str(PRIMEIRA_MATRICULA))
+    corpo_no_termo = ri_odt.teor_sem_cabecalho_do_ato(teor, tipo, int(ato["numero"]),
+                                                      str(PRIMEIRA_MATRICULA))
     digitados_no_corpo = [d for d in digitados if d in corpo_no_termo]
     fecho = f"Cidade Exemplo/MA, {_data_por_extenso(date.today())}. Dou fé."
     _confere(termo, [

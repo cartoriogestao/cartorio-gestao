@@ -716,6 +716,16 @@
     <datalist id="naturezas_sauin">
       {% for n in NATUREZAS_SAUIN %}<option value="{{ n }}">{% endfor %}
     </datalist>
+    {#- O MODELO QUE CANCELA OU EXTINGUE (decisão do oficial, 03/11/2026, «a1»): o cancelamento de hipoteca
+        ou de garantia, a extinção do usufruto e o cancelamento de ato dizem QUAL ato, e ele recebe a mesma
+        marca do botão «Cancelar este ato». Os outros modelos não usam o campo. #}
+    <label data-passo="ato">Qual ato se cancela <small>— só nos modelos de cancelamento e de extinção</small>
+      <select name="cancela_ato_id">
+        <option value="">— nenhum —</option>
+        {% for a in atos if not a.cancelado %}
+        <option value="{{ a.id }}">{{ a.tipo }}-{{ a.numero }} — {{ a.natureza_titulo or 'sem natureza' }}</option>
+        {% endfor %}
+      </select></label>
     <label data-passo="ato">Consulta CNIB na Central (protocolo){% if cnib_exige_protocolo %} <span class="obrigatorio">— exigido em alienação/oneração</span>{% endif %}
       <input name="cnib_protocolo" maxlength="120" autocomplete="off"
              placeholder="protocolo/hash da consulta, se feita na Central">

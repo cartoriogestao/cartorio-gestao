@@ -49,16 +49,22 @@ def _defeito(motivo: str):
 
 
 def _ato(casa, m: dict, codigo: str, *, interessado: dict, partes=(), valores: dict | None = None,  # noqa: F811
-         base: str = "100.000,00") -> dict:
+         base: str = "100.000,00", de_novo: dict | None = None, **extra) -> dict:
     """Um ato do modelo `codigo` na matrícula `m`, pelo caminho inteiro do balcão: protocolo pago,
     prenotação para a matrícula, o texto do modelo preenchido como o balcão preenche, a lavratura."""
     import ri_modelos_atos as MOD
     modelo = MOD.por_codigo(codigo)
     tipo = modelo["tipo"]
     item = "16.3.14" if tipo == "R" else "16.22.2"
-    cx = F._protocolo_geral(casa, interessado=interessado, itens=[("16.1", 1), (item, 1)])
-    p = F._prenotar(casa, cx, apresentante=interessado, natureza=modelo["natureza"],
-                    objeto=f"Matrícula {F.PRIMEIRA_MATRICULA}", matricula=str(F.PRIMEIRA_MATRICULA))
+    if de_novo:
+        # O MESMO TÍTULO, DE NOVO: a lavratura recusada antes do número deixa a prenotação e o item do
+        # protocolo como estavam, e o balcão lavra outra vez por eles — e não por uma prenotação nova, que
+        # viria depois da dele (a prioridade, «d1»).
+        cx, p = de_novo["cx"], de_novo["prenotacao"]
+    else:
+        cx = F._protocolo_geral(casa, interessado=interessado, itens=[("16.1", 1), (item, 1)])
+        p = F._prenotar(casa, cx, apresentante=interessado, natureza=modelo["natureza"],
+                        objeto=f"Matrícula {F.PRIMEIRA_MATRICULA}", matricula=str(F.PRIMEIRA_MATRICULA))
     r = casa["balcao"].get(f"/registro-imoveis/{m['id']}/modelo/{codigo}")
     teor = json.loads(r.get_data(as_text=True))["teor"]
     for marcador, valor in (valores or {}).items():
@@ -67,10 +73,10 @@ def _ato(casa, m: dict, codigo: str, *, interessado: dict, partes=(), valores: d
     antes = F._um(casa, "SELECT coalesce(max(id), 0) AS n FROM ri_atos WHERE matricula_id=%s", (m["id"],))["n"]
     html = F._lavrar(casa, m, tipo=tipo, teor=teor, natureza=modelo["natureza"], prenotacao=p, cx=cx,
                      itens=[item], partes=list(partes), base_calculo=base if tipo == "R" else "",
-                     modelo=codigo)
+                     modelo=codigo, **extra)
     ato = F._um(casa, "SELECT * FROM ri_atos WHERE matricula_id=%s AND id > %s ORDER BY id DESC LIMIT 1",
                 (m["id"], antes))
-    return {"ato": ato, "recado": html, "cx": cx}
+    return {"ato": ato, "recado": html, "cx": cx, "prenotacao": p}
 
 
 def _onus_oferecidos(casa, m: dict) -> set[int]:  # noqa: F811
@@ -105,15 +111,19 @@ def test_a_venda_com_a_hipoteca_de_pe_muda_o_dono_e_a_hipoteca_continua_onus(cas
     assert r2["id"] in _onus_oferecidos(casa, m)
 
 
-@_defeito("o modelo AV-CANCELAMENTO-HIPOTECA, lavrado pelo «Novo ato», não passa pela rota «Cancelar este ato» "
-          "(a única que grava `cancelado_por_ato_id`): o R cancelado fica de pé, e o pedido de certidão de ônus vem "
-          "com «Positiva» marcada e a hipoteca cancelada marcada para transcrição")
 def test_a_hipoteca_cancelada_deixa_de_ser_onus(casa):  # noqa: F811
     """LRP arts. 248 e 250: a hipoteca cancelada por averbação não pesa mais na certidão de ônus."""
     f = F._com_hipoteca(casa)
     m, r2 = f["matricula"], f["r2"]
-    cancela = _ato(casa, m, "AV-CANCELAMENTO-HIPOTECA", interessado=F.BANCO)
-    assert cancela["ato"] and cancela["ato"]["selo_texto"], cancela["recado"][:1200]
+    # SEM DIZER QUAL ATO, o modelo não lavra (decisão do oficial, 03/11/2026, «a1»; CONSERTADO).
+    sem_alvo = _ato(casa, m, "AV-CANCELAMENTO-HIPOTECA", interessado=F.BANCO)
+    assert not sem_alvo["ato"], "o cancelamento sem «qual ato se cancela» foi ao livro"
+    assert "Qual ato se cancela" in _avisos(sem_alvo["recado"]), _avisos(sem_alvo["recado"])
+    cancela = _ato(casa, m, "AV-CANCELAMENTO-HIPOTECA", interessado=F.BANCO, cancela_ato_id=str(r2["id"]),
+                   de_novo=sem_alvo)
+    assert cancela["ato"] and cancela["ato"]["selo_texto"], _avisos(cancela["recado"])
+    marcado = F._um(casa, "SELECT cancelado, cancelado_por_ato_id FROM ri_atos WHERE id=%s", (r2["id"],))
+    assert marcado["cancelado"] == 1 and marcado["cancelado_por_ato_id"] == cancela["ato"]["id"], marcado
     assert r2["id"] not in _onus_oferecidos(casa, m)
 
 
@@ -174,9 +184,6 @@ def test_o_casal_que_compra_sai_inteiro_na_certidao_de_propriedade(casa):  # noq
 
 # ------------------------------------------------------------------ o usufruto
 
-@_defeito("como no cancelamento da hipoteca, o modelo AV-EXTINCAO-USUFRUTO não passa pela rota «Cancelar este "
-          "ato» e não liga a AV ao R do usufruto — e ela mesma é oferecida como ônus (a palavra «usufruto» do teor; "
-          "a natureza «Extinção de usufruto» não está na tabela)")
 def test_o_usufruto_e_onus_e_extinto_deixa_de_ser(casa):  # noqa: F811
     """LRP art. 167, I, 7, e II, 2; CC art. 1.410: o usufruto registrado é ônus (direito real sobre coisa
     alheia); averbada a extinção, não é mais."""
@@ -187,7 +194,8 @@ def test_o_usufruto_e_onus_e_extinto_deixa_de_ser(casa):  # noqa: F811
     assert usufruto["ato"] and usufruto["ato"]["selo_texto"], usufruto["recado"][:1200]
     assert usufruto["ato"]["id"] in _onus_oferecidos(casa, m)
     extinto = _ato(casa, m, "AV-EXTINCAO-USUFRUTO", interessado=F.COMPRADORA,
-                   valores={"ATO DO USUFRUTO": f"R-{usufruto['ato']['numero']:02d}"})
+                   valores={"ATO DO USUFRUTO": f"R-{usufruto['ato']['numero']:02d}"},
+                   cancela_ato_id=str(usufruto["ato"]["id"]))
     assert extinto["ato"] and extinto["ato"]["selo_texto"], extinto["recado"][:1200]
     oferecidos = _onus_oferecidos(casa, m)
     assert usufruto["ato"]["id"] not in oferecidos and extinto["ato"]["id"] not in oferecidos, oferecidos
@@ -385,3 +393,27 @@ def test_a_arrematacao_muda_o_dono_e_a_penhora_fica_ate_o_mandado_de_cancelament
     dono = _dono_na_certidao(casa, m)
     assert TERCEIRO["nome"] in dono and F.COMPRADORA["nome"] not in dono, dono
     assert penhora["id"] in _onus_oferecidos(casa, m)
+
+
+
+def test_a_lista_das_averbacoes_antigas_acha_o_cancelamento_sem_marca(casa):  # noqa: F811
+    """«Para as matrículas antigas, faça a lista das averbações lavradas por esses modelos, para conferir»
+    (o oficial, 03/11/2026, «a1»). A averbação de cancelamento gravada SEM a marca — como as lavradas
+    antes deste conserto — sai na lista, com o R-02 que o texto cita, de pé; a lavrada pelo modelo, com
+    a marca, não sai."""
+    import ri_cancelamentos_sem_marca as LISTA
+    f = F._com_hipoteca(casa)
+    m, r2 = f["matricula"], f["r2"]
+    with casa["db"].connect() as con:
+        assert LISTA.listar(con) == []
+    cancela = _ato(casa, m, "AV-CANCELAMENTO-HIPOTECA", interessado=F.BANCO, cancela_ato_id=str(r2["id"]),
+                   valores={"ATO CANCELADO": "R-02"})
+    with casa["db"].transaction() as con:
+        # COMO ERA ANTES DO CONSERTO: a averbação no livro, e o R-02 sem a marca.
+        from bd_nativo import banco
+        banco(con).escrever("UPDATE ri_atos SET cancelado=0, cancelado_por_ato_id=NULL WHERE id=%s", (r2["id"],))
+    with casa["db"].connect() as con:
+        achadas = LISTA.listar(con)
+    assert [a["averbacao_id"] for a in achadas] == [cancela["ato"]["id"]], achadas
+    assert [(c["tipo"], c["numero"]) for c in achadas[0]["citados"]] == [("R", 2)], achadas
+    assert "de pé — candidato" in LISTA.em_texto(achadas)

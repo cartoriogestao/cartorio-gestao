@@ -142,6 +142,10 @@ def classificar(ato) -> dict | None:
     tipo = (_campo(ato, "tipo") or "").upper()
     natureza = _campo(ato, "natureza_titulo") or ""
     teor = _campo(ato, "teor") or ""
+    # A AVERBAÇÃO QUE CANCELA OU EXTINGUE NÃO É ÔNUS (ensaio de atos do RI, 03/11/2026, defeito 2): a
+    # «Extinção de usufruto» entrava pela palavra «usufruto» do teor. Ela tira um ônus; não é um.
+    if tipo == "AV" and any(p in _sem_acento(natureza) for p in ("CANCELAMENTO", "EXTINCAO")):
+        return None
     if tipo == "R":
         alvo = _sem_acento(natureza + " " + _titulo_do_registro(teor))
         termos = _TERMOS_COMUNS

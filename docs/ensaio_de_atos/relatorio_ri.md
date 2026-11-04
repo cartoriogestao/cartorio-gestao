@@ -27,6 +27,18 @@ máquina; onde eles pesariam, está escrito «conferir».
 
 ## 1. O cancelamento pelo modelo não tira o ônus; pelo botão «Cancelar este ato», tira
 
+**CONSERTADO em 03/11/2026** (decisão do oficial, «a1»):
+- os modelos AV-CANCELAMENTO-HIPOTECA, AV-EXTINCAO-USUFRUTO e AV-CANCELAMENTO, lavrados pelo «Novo ato»,
+  pedem «Qual ato se cancela» (um ato desta matrícula, de pé) antes do número;
+- gravam a MESMA marca do botão, pela mesma função (`_marcar_cancelado_pela_averbacao`: `cancelado`,
+  `cancelado_por_ato_id` e o lançamento de cancelamento nos indicadores). Se o selo não sai e o ato volta
+  a ser minuta, a marca se desfaz pela mesma função do botão (`_desmarcar_cancelado_pela_averbacao`);
+- a averbação que cancela ou extingue deixou de ser oferecida como ônus (`ri_onus.classificar`), o que
+  fecha também a segunda metade do item 2;
+- **as matrículas antigas:** `python ri_cancelamentos_sem_marca.py`, no servidor, lista as averbações de
+  cancelamento ou extinção que não marcaram ato nenhum, com os rótulos que o texto cita e se ainda estão de
+  pé. Só lê: quem marca é o oficial, pelo botão.
+
 **CORRIGIDO em 03/11/2026, na segunda leva.** A primeira versão deste item dizia que o sistema não guarda a
 ligação entre o cancelamento e o ato cancelado. **Guarda**: o botão «Cancelar este ato», na ficha, lavra a
 AV e marca o R com `cancelado = 1` e `cancelado_por_ato_id` (`ri_web.ri_cancelar_ato`). Por ali, a

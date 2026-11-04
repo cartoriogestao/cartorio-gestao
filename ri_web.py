@@ -4673,6 +4673,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                     **({"minuta": minuta_pedida}
                                        if minuta_pedida else {})))
 
+        # O MODELO QUE CANCELA OU EXTINGUE (decisão do oficial, 03/11/2026, «a1»): diz qual ato, e o ato
+        # tem de ser desta matrícula e estar de pé — antes de gastar número.
+        alvo_do_cancelamento = None
+        modelo_pedido = (request.form.get("modelo_codigo") or "").strip().upper()
+        if modelo_pedido in MODELOS_QUE_CANCELAM:
+            alvo_id = numero_digitado(request.form.get("cancela_ato_id"))
+            alvo_do_cancelamento = (q1("SELECT * FROM ri_atos WHERE id=%s AND matricula_id=%s",
+                                       (alvo_id, matricula_id)) if alvo_id is not None else None)
+            if not alvo_do_cancelamento or alvo_do_cancelamento["cancelado"]:
+                flash("Este modelo cancela ou extingue outro ato da matrícula: escolha em «Qual ato "
+                      "se cancela» um ato desta matrícula que esteja de pé (Lei 6.015/1973, arts. 248 "
+                      "e 250). O ato NÃO foi lavrado — nada se perdeu.", "danger")
+                return redirect(url_for("ri_ficha", matricula_id=matricula_id,
+                                        **({"minuta": minuta_pedida}
+                                           if minuta_pedida else {})))
+
         # CNIB NA LAVRATURA (TJMA 506): a consulta sempre fica gravada no ato;
         # o protocolo da Central so e exigido quando a casa liga a regra.
         cnib_protocolo = (request.form.get("cnib_protocolo") or "").strip()
@@ -4811,6 +4827,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                  h, hash_anterior, db.now(), None),
             )[0]["id"]
             ato_id = int(ato_id)
+            # O ATO QUE ESTE MODELO CANCELA recebe a marca do botão, na mesma transação («a1»).
+            if alvo_do_cancelamento:
+                _marcar_cancelado_pela_averbacao(
+                    con, matricula=m, alvo=alvo_do_cancelamento, averbacao_id=ato_id,
+                    averbacao_numero=numero,
+                    motivo=f"{request.form.get('natureza_titulo') or modelo_pedido} ({modelo_pedido})",
+                    data_lancamento=data_ato)
 
             # Consome UMA UNIDADE de cada item apontado para este ato.
             #
@@ -5004,6 +5027,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             try:
                 with db.transaction() as con:
                     CNIB.soltar_do_ato(con, ato_id)
+                    # O ATO QUE ESTE CANCELAVA volta a valer antes de o cancelamento virar minuta («a1»).
+                    _desmarcar_cancelado_pela_averbacao(banco(con), ato_id)
                     voltou = RIMIN.voltar_do_ato(
                         con, ato_id, agora=db.now(),
                         por=_quem_mexeu_na_minuta(), motivo=motivo_selo)
@@ -6634,6 +6659,36 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 f"escolher por você seria adivinhar qual serviço o cliente pagou.")}
         return {"codigos": [], "itens": [], "recado": ""}
 
+    #: Os modelos da casa cuja averbação CANCELA ou EXTINGUE outro ato da matrícula (decisão do oficial,
+    #: 03/11/2026, ensaio de atos do RI, defeito 1, «a1»): lavrados pelo «Novo ato», eles pedem qual ato se
+    #: cancela e gravam a mesma marca do botão «Cancelar este ato».
+    MODELOS_QUE_CANCELAM = frozenset({"AV-CANCELAMENTO-HIPOTECA", "AV-EXTINCAO-USUFRUTO",
+                                      "AV-CANCELAMENTO"})
+
+    def _marcar_cancelado_pela_averbacao(con, *, matricula: dict, alvo: dict, averbacao_id: int,
+                                         averbacao_numero: int, motivo: str,
+                                         data_lancamento) -> None:
+        """O ato cancelado recebe a marca e o ponteiro, e os indicadores o lançamento de cancelamento.
+        ESCREVE. UMA regra para o botão e para os modelos de cancelamento («a1», 03/11/2026)."""
+        banco(con).escrever("UPDATE ri_atos SET cancelado=1, cancelado_por_ato_id=%s WHERE id=%s",
+                            (int(averbacao_id), int(alvo["id"])))
+        # Indicadores (Livros 4 e 5): lancamento proprio de cancelamento,
+        # alem da averbacao no Livro 2 (pedido 18/09/2026).
+        RILANC.registrar_cancelamento_livro2(
+            con, matricula=matricula, ato_alvo=alvo, averbacao_id=averbacao_id,
+            averbacao_numero=averbacao_numero, motivo=motivo,
+            usuario=_usuario_atual(), agora=db.now(),
+            data_lancamento=data_lancamento)
+
+    def _desmarcar_cancelado_pela_averbacao(bd, averbacao_id: int) -> None:
+        """O avesso: o ato volta a valer e o lançamento de cancelamento sai dos indicadores. ESCREVE."""
+        bd.escrever("""UPDATE ri_atos SET cancelado=0, cancelado_por_ato_id=NULL
+                        WHERE cancelado_por_ato_id=%s""", (int(averbacao_id),))
+        if bd.tem_tabela("ri_indicador_lancamentos"):
+            bd.escrever("""DELETE FROM ri_indicador_lancamentos
+                            WHERE averbacao_id=%s AND origem='CANCELAMENTO'""",
+                        (int(averbacao_id),))
+
     def _desfazer_o_cancelamento(con, *, novo_id: int, alvo_id: int,
                                  itens: list[int]) -> None:
         """Desfaz a averbação de cancelamento cujo selo não saiu. ESCREVE.
@@ -6686,13 +6741,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 f"sai por estorno.")
         bd.escrever("UPDATE ri_protocolos SET ato_id=NULL WHERE ato_id=%s",
                     (int(novo_id),))
-        bd.escrever("""UPDATE ri_atos SET cancelado=0, cancelado_por_ato_id=NULL
-                        WHERE id=%s AND cancelado_por_ato_id=%s""",
-                    (int(alvo_id), int(novo_id)))
-        if bd.tem_tabela("ri_indicador_lancamentos"):
-            bd.escrever("""DELETE FROM ri_indicador_lancamentos
-                            WHERE averbacao_id=%s AND origem='CANCELAMENTO'""",
-                        (int(novo_id),))
+        _desmarcar_cancelado_pela_averbacao(bd, novo_id)
         for item_id in itens:
             CXPROT.devolver_item(con, int(item_id), quantas=1)
         if bd.tem_tabela("cx_item_do_ato"):
@@ -6835,15 +6884,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 matricula_id=m["id"], ato_id=novo_id)
             # O ato original nao e apagado nem reescrito: so recebe a marca e o
             # ponteiro para a averbacao que o cancelou.
-            bd.escrever("UPDATE ri_atos SET cancelado=1, cancelado_por_ato_id=%s WHERE id=%s",
-                        (novo_id, ato_id))
-            # Indicadores (Livros 4 e 5): lancamento proprio de cancelamento,
-            # alem da averbacao no Livro 2 (pedido 18/09/2026).
-            RILANC.registrar_cancelamento_livro2(
-                con, matricula=m, ato_alvo=alvo, averbacao_id=novo_id,
-                averbacao_numero=numero, motivo=motivo,
-                usuario=_usuario_atual(), agora=db.now(),
-                data_lancamento=data_ato)
+            _marcar_cancelado_pela_averbacao(
+                con, matricula=m, alvo=alvo, averbacao_id=novo_id,
+                averbacao_numero=numero, motivo=motivo, data_lancamento=data_ato)
 
         # O SELO SAI AGORA, FORA DA TRANSAÇÃO — o mesmo desenho da lavratura
         # comum: a chamada ao selador leva até 20 s, e dentro da transação ela

@@ -106,8 +106,11 @@ ESFORCO = MI.ESFORCO
 MAXIMO_DE_SAIDA = MI.MAXIMO_DE_SAIDA
 PRAZO = MI.PRAZO
 BETA_DO_DESVIO = MI.BETA_DO_DESVIO
-LIMITE_DE_ENVIO = MI.LIMITE_DE_ENVIO
-LIMITE_DOS_DOCUMENTOS = MI.LIMITE_DOS_DOCUMENTOS
+# A qualificacao aceita ate 50 MB de documentos por pedido. O transporte
+# precisa acomodar o acrescimo de um terco do base64, mais ficha e instrucoes.
+# API Claude direta: teto atual de 128 MB (docs de PDF / API overview).
+LIMITE_DOS_DOCUMENTOS = 50 * 1024 * 1024
+LIMITE_DE_ENVIO = 75 * 1024 * 1024
 MAXIMO_DE_DOCUMENTOS = MI.MAXIMO_DE_DOCUMENTOS
 MINUTOS_PARA_DESISTIR = MI.MINUTOS_PARA_DESISTIR
 

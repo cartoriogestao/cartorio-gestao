@@ -166,6 +166,17 @@ def test_selar_devolve_o_selo_e_grava_no_razao(casa):
         assert linha["obtido_por"] == "TESTE"
         assert linha["usado_em"] is None          # ainda não usado
         assert linha["saldo_remanescente"] == 1234.0
+        assert linha['quantidade'] == 1
+
+
+def test_quantidade_do_pedido_fica_guardada_para_ferj(casa, monkeypatch):
+    con, pasta = casa
+    monkeypatch.setitem(DADOS, 'quantidade', 17)
+    with SeladorFalso() as s:
+        apontar(con, s.base)
+        fixar(con, s.base)
+        selar(con, pasta, referencia='quantidade-ficticia')
+        assert con.execute('SELECT quantidade FROM sd_selos').fetchone()['quantidade'] == 17
 
 
 def test_o_mesmo_ato_pedido_duas_vezes_devolve_o_mesmo_selo(casa):

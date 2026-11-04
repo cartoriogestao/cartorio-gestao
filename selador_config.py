@@ -168,6 +168,7 @@ class ConfigError(ValueError):
 # `ALTER TABLE ADD COLUMN`, como manda a casa.
 MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("sd_selos", "qr_token", "TEXT"),
+    ("sd_selos", "quantidade", "INTEGER"),
 )
 
 

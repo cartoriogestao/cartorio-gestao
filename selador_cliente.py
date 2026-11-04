@@ -550,15 +550,19 @@ def selar(con, pasta_de_dados: Any, caminho: str,
     # Agora o conflito e conferido: o mesmo selo do mesmo pedido fica
     # registrado, e o de outro dono e recusado. Ver `conferir_o_repetido`.
     for selo in resposta.selos:
+        # Uma resposta com varios selos nao permite repartir a quantidade do
+        # pedido sem inventar. Nesse caso ela fica pendente de conferencia.
+        from ato_selado import quantidade_do_envelope
+        quantidade = quantidade_do_envelope(dados) if len(resposta.selos) == 1 else None
         novo = bd.escrever(
             """INSERT INTO sd_selos(numero, texto, sid, caminho,
                    atribuicao, referencia, data_geracao, saldo_remanescente,
-                   ambiente, obtido_em, obtido_por)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ambiente, obtido_em, obtido_por, quantidade)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT (numero) DO NOTHING RETURNING id""",
             (selo.numero, selo.texto, chave, caminho, atribuicao,
              str(referencia), selo.data_geracao, selo.saldo_remanescente,
-             estado["ambiente"], agora, usuario))
+             estado["ambiente"], agora, usuario, quantidade))
         if not novo:
             # A resposta INTEIRA vai junto: a recusa desfaz a transacao, e os
             # outros selos do mesmo pedido sairiam do razao sem rastro.

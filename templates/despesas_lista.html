@@ -15,6 +15,7 @@
 {% if conferencia_portal %}
 <section class="panel" id="faturamento-portal">
   <h2>Emolumentos de {{ conferencia_portal.competencia[5:] }}/{{ conferencia_portal.competencia[:4] }} — bruto, FERJ e líquido</h2>
+  <p><a class="button" href="{{ url_for('despesas_conferencia', mes=conferencia_portal.competencia) }}">Conferir o fechamento por selo</a></p>
   {% set cf = conferencia_portal %}
   <div class="table-wrap"><table>
     <thead><tr><th>Fonte</th><th>Emolumentos brutos</th><th>FERJ</th><th>Emolumentos menos FERJ</th></tr></thead>
@@ -117,10 +118,15 @@
   <h3>Previsão de gastos do mês: R$ {{ reais(quadro.previsao) }}. Ainda a sair: R$ {{ reais(quadro.falta_sair) }}</h3>
   <div class="table-wrap"><table>
     <tbody>{% for x in quadro.linhas %}<tr>
-      <td>{{ x.rotulo }}{% if x.nota %}<br><span class="small muted">{{ x.nota }}</span>{% endif %}</td><td>R$ {{ reais(x.valor) }}</td>
+      <td>{{ x.rotulo }}{% if x.nota %}<br><span class="small muted">{{ x.nota }}</span>{% endif %}</td><td>{% if x.pendente %}A apurar{% else %}R$ {{ reais(x.valor) }}{% endif %}</td>
     </tr>{% endfor %}</tbody>
   </table></div>
-  {% if quadro.darf.falta_cadastrar %}
+  {% if quadro.darf.pendente %}
+  <div class="notice warning"><strong>Carnê-leão: apuração de {{ quadro.darf.competencia[5:] }}/{{ quadro.darf.competencia[:4] }} incompleta.</strong>
+    R$ {{ reais(quadro.darf.despesas_a_classificar) }} de despesas sem classificação fiscal; confira também as outras entradas.
+    {% if quadro.darf.imposto is not none %}A estimativa de R$ {{ reais(quadro.darf.imposto) }} ainda não considera essas deduções e não está incluída no total previsto.{% endif %}
+    <a class="button" href="{{ url_for('carne_leao', mes=quadro.darf.competencia) }}">Conferir despesas e apuração</a></div>
+  {% elif quadro.darf.falta_cadastrar %}
   <div class="notice">DARF do carnê-leão de {{ quadro.darf.competencia[5:] }}/{{ quadro.darf.competencia[:4] }}: <strong>R$ {{ reais(quadro.darf.imposto) }}</strong>, vence em {{ quadro.darf.vencimento }}.
     <a class="button" href="{{ url_for('despesas_nova', carne_leao=quadro.darf.competencia) }}">Cadastrar o DARF</a></div>
   {% elif quadro.darf.imposto is none %}
@@ -130,8 +136,9 @@
   <div class="notice">ISS de {{ quadro.iss.competencia[5:] }}/{{ quadro.iss.competencia[:4] }}, preliminar: <strong>R$ {{ reais(quadro.iss.valor) }}</strong>. O valor que vale é o da guia.
     <a class="button" href="{{ url_for('despesas_nova', iss=quadro.iss.competencia) }}">Cadastrar a guia</a></div>
   {% endif %}
-  <p>{% if quadro.sobra >= 0 %}Se não entrar mais nada, sobram R$ {{ reais(quadro.sobra) }}.{% else %}Se não entrar mais nada, faltam R$ {{ reais(-quadro.sobra) }}.{% endif %}
-    {% if quadro.imposto_do_mes is not none %}<span class="small">Carnê-leão deste mês até agora, que vence no mês seguinte: R$ {{ reais(quadro.imposto_do_mes) }}.</span>{% endif %}
+  <p>{% if quadro.darf.pendente %}Saldo projetado antes do carnê-leão ainda a apurar: R$ {{ reais(quadro.sobra) }}.
+    {% elif quadro.sobra >= 0 %}Se não entrar mais nada, sobram R$ {{ reais(quadro.sobra) }}.{% else %}Se não entrar mais nada, faltam R$ {{ reais(-quadro.sobra) }}.{% endif %}
+    {% if quadro.imposto_do_mes is not none %}<span class="small">Carnê-leão deste mês até agora{% if quadro.imposto_do_mes_pendente %}, apuração incompleta, antes das deduções pendentes{% endif %}: R$ {{ reais(quadro.imposto_do_mes) }}. Vence no mês seguinte.</span>{% endif %}
     <span class="small">ISS deste mês até agora, preliminar, que vence no mês seguinte: R$ {{ reais(quadro.iss.do_mes) }}.</span></p>
 </section>
 {% elif quadro_trancado %}

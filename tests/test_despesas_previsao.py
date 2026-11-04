@@ -46,6 +46,27 @@ def test_os_dias_uteis_de_novembro_tiram_o_feriado():
     assert DV.ritmo_dos_dias_uteis(date(2026, 11, 1))[0] == 1, "nunca divide por zero"
 
 
+def test_classificacao_pendente_nao_vira_sugestao_de_darf(cg_casa_logada, monkeypatch):
+    monkeypatch.setattr(DV.CL, 'apurar', lambda c, comp: {
+        'receita': 1000000, 'imposto': 184127, 'a_classificar': 1100000, 'outras_entradas': []})
+    with cg_casa_logada['db'].connect() as con:
+        q = DV.quadro_do_mes(con, HOJE)
+        assert q['darf']['pendente'] and not q['darf']['falta_cadastrar']
+        assert _linha(q, 'Carnê-leão')['valor'] == 0
+        assert 'incompleta' in _linha(q, 'Carnê-leão')['nota']
+        with pytest.raises(DP.DespesaError, match='incompleta'):
+            DV.formulario_do_darf(con, '2026-10')
+    html = cg_casa_logada['c'].get('/administrativo/despesas').get_data(as_text=True)
+    assert 'apuração de 10/2026 incompleta' in html and 'Cadastrar o DARF' not in html
+
+
+def test_outra_entrada_pendente_tambem_exige_conferencia(cg_casa_logada, monkeypatch):
+    monkeypatch.setattr(DV.CL, 'apurar', lambda c, comp: {'imposto': 10000, 'outras_entradas': [{'valor': 100}]})
+    with cg_casa_logada['db'].connect() as con:
+        with pytest.raises(DP.DespesaError, match='incompleta'):
+            DV.formulario_do_darf(con, '2026-10')
+
+
 def test_a_projecao_segue_o_ritmo_e_no_ultimo_dia_e_o_proprio_valor():
     assert DV.projetar(10000, 5, 20) == 40000
     assert DV.projetar(10000, 20, 20) == 10000

@@ -174,10 +174,17 @@ def percentual_ferj(cfg: Any) -> int:
     return round(numero * 100)
 
 
-def ferj_do_emolumento(emolumento: int, pct_centesimos: int) -> int:
+def ferj_do_emolumento(emolumento: int, pct_centesimos: int, *, quantidade: int | None = None) -> int:
     """O FERJ que sai de dentro do emolumento, em centavos, arredondado ao
-    centavo (meio centavo sobe). So calcula."""
-    return (int(emolumento) * int(pct_centesimos) + 5000) // 10000
+    centavo (meio centavo sobe). Com quantidade e unidade exata em centavos,
+    arredonda a unidade antes de multiplicar. So calcula."""
+    emol = int(emolumento)
+    # O aparelho arredonda a unidade antes de multiplicar. So reconstruir a
+    # unidade quando a quantidade e conhecida e a divisao e exata em centavos.
+    q = int(quantidade or 1)
+    if q > 1 and emol % q == 0:
+        return ((emol // q * int(pct_centesimos) + 5000) // 10000) * q
+    return (emol * int(pct_centesimos) + 5000) // 10000
 
 
 def percentual_ferj_da_casa(con) -> int:

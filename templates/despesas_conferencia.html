@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block title %}Conferência mensal dos selos{% endblock %}
+{% block heading %}<h1>Conferência mensal dos selos</h1>{% endblock %}
+{% block content %}
+<section class="panel">
+  <form method="get">
+    <label>Mês <input type="month" name="mes" value="{{ q.competencia }}" required></label>
+    <button type="submit">Conferir mês</button>
+    <a href="{{ url_for('despesas_lista') }}">Despesas</a> · <a href="{{ url_for('livro_diario', mes=q.competencia) }}">Livro Diário</a>
+  </form>
+  {% if q.conferido %}<p class="notice"><strong>Arquivos conferidos:</strong> selos, cancelamentos, quantidades e os três totais coincidem entre sistema, analítico e consolidado. Em mês em curso, esta conferência é parcial; repita com a exportação do mês completo antes do fechamento.</p>
+  {% else %}<p class="notice warning"><strong>Fechamento com pendências.</strong>
+    {% if not q.referencia %}Falta importar o relatório analítico.{% endif %}
+    {% if not q.resumo.referencia %}Falta importar o relatório consolidado.{% endif %}
+    {% if q.referencia and q.resumo.referencia and not q.contagem_confere %}As contagens dos relatórios não coincidem.{% endif %}
+    Os valores e as diferenças continuam visíveis até a conferência. Não há ajuste automático para igualar totais.</p>{% endif %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Fonte — {{ q.competencia }}</th><th>Emolumentos brutos</th><th>FERJ</th><th>Emolumentos menos FERJ</th></tr></thead>
+    <tbody>
+      <tr><td>Sistema</td><td>R$ {{ reais(q.resumo.local_bruto) }}</td><td>R$ {{ reais(q.resumo.local_ferj) }}</td><td>R$ {{ reais(q.resumo.local_liquido) }}</td></tr>
+      {% if q.totais %}<tr><td>Analítico — atos sem cancelamento, isenção, gratuidade ou diferimento</td><td>R$ {{ reais(q.totais.bruto) }}</td><td>R$ {{ reais(q.totais.ferj) }}</td><td>R$ {{ reais(q.totais.liquido) }}</td></tr>{% endif %}
+      {% if q.resumo.referencia %}<tr><td>Consolidado do portal</td><td>R$ {{ reais(q.resumo.referencia.bruto) }}</td><td>R$ {{ reais(q.resumo.referencia.ferj) }}</td><td>R$ {{ reais(q.resumo.referencia.liquido) }}</td></tr>{% endif %}
+      {% if q.diferenca_relatorios %}<tr><th>Diferença entre consolidado e analítico</th><td>R$ {{ reais(q.diferenca_relatorios.bruto) }}</td><td>R$ {{ reais(q.diferenca_relatorios.ferj) }}</td><td>R$ {{ reais(q.diferenca_relatorios.liquido) }}</td></tr>{% endif %}
+    </tbody>
+  </table></div>
+  <p class="small">O FERJ local considera a quantidade conhecida: arredonda a unidade antes de multiplicar, quando o valor unitário é exato em centavos.
+    Quantidade desconhecida conserva a estimativa sobre o agregado. O analítico informa o FERJ do portal; diferenças não alteram a alíquota da serventia.</p>
+  {% if q.totais %}<p>{{ q.totais.selos }} selos no analítico; {{ q.totais.cancelados }} selos cancelados representam {{ q.totais.unidades_canceladas }} unidades.</p>{% endif %}
+  {% if q.referencia %}<p class="small">Analítico importado por {{ q.referencia.registrado_por }} em {{ q.referencia.registrado_em }}. Original preservado com SHA-256 <code>{{ q.referencia.sha256 }}</code>.</p>{% endif %}
+  <details><summary>Importar os relatórios do mês</summary>
+    <form method="post" action="{{ url_for('despesas_conferencia_importar') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Relatório de fiscalização de selos — analítico (XLSX, até 2 MB)<input type="file" name="analitico" accept=".xlsx" required></label>
+      <button type="submit">Importar analítico e conferir</button>
+    </form>
+    <form method="post" action="{{ url_for('despesas_importar_faturamento') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="volta" value="conferencia">
+      <label>Relatório de faturamento — consolidado (XLSX, até 2 MB)<input type="file" name="relatorio" accept=".xlsx" required></label>
+      <button type="submit">Importar consolidado e conferir</button>
+    </form>
+    <p class="small">A importação preserva origem e autoria. A nova importação substitui a referência mensal e conserva os originais anteriores e a auditoria. Não cria selos, receitas ou cancelamentos.</p>
+  </details>
+</section>
+{% if q.candidatos %}
+<section class="panel"><h2>Quantidades verificadas no analítico ({{ q.candidatos|length }})</h2>
+  <p>Estes selos já existem no sistema, têm os mesmos emolumentos e não têm conflito de cancelamento, gratuidade ou mês.
+    A quantidade ainda não foi guardada. Completar esse dado permite calcular o FERJ por unidade.</p>
+  <div class="table-wrap"><table><thead><tr><th>Selo</th><th>Quantidade</th><th>FERJ atual</th><th>FERJ por unidade</th></tr></thead><tbody>
+    {% for c in q.candidatos %}<tr><td><code>{{ c.numero }}</code></td><td>{{ c.quantidade }}</td><td>R$ {{ reais(c.ferj_antes) }}</td><td>R$ {{ reais(c.ferj_depois) }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  <form method="post" action="{{ url_for('despesas_conferencia_quantidades') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="mes" value="{{ q.competencia }}"><input type="hidden" name="revisao" value="{{ q.revisao }}">
+    <label>Motivo da conferência <input type="text" name="motivo" minlength="10" maxlength="1000" required></label>
+    <label><input type="checkbox" name="confirmo" value="1" required> Conferi as quantidades e o efeito no FERJ acima.</label>
+    <button type="submit">Completar as quantidades verificadas</button>
+  </form>
+  <p class="small">A alteração tem auditoria. As versões já geradas do Livro Diário permanecem preservadas; a tela do livro indicará quando o movimento mudou.</p>
+</section>
+{% endif %}
+<section class="panel"><h2>Diferenças por selo ({{ q.diferencas|length }})</h2>
+  <form method="get"><input type="hidden" name="mes" value="{{ q.competencia }}">
+    <label>Mostrar <select name="tipo"><option value="">Todas</option>{% for k, nome in tipos.items() %}<option value="{{ k }}"{% if tipo == k %} selected{% endif %}>{{ nome }} ({{ q.contagens[k] }})</option>{% endfor %}</select></label>
+    <button type="submit">Filtrar</button>
+  </form>
+  {% if q.referencia %}
+  <p>Cancelado no portal e ativo aqui: abra o ato, confira e registre pelo fluxo de cancelamento da atribuição.
+    Cancelado aqui e ativo no portal: confira o pedido no Portal do Selo; o relatório não reativa atos nem envia cancelamentos.</p>
+  <div class="table-wrap"><table><thead><tr><th>Selo</th><th>Pendências</th><th>Sistema</th><th>Portal</th><th>Conferir</th></tr></thead><tbody>
+    {% for d in diferencas %}<tr>
+      <td><code>{{ d.numero }}</code></td><td>{% for t in d.tipos %}{{ tipos[t] }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+      <td>{% if d.local %}{{ 'Cancelado' if d.local.cancelado_em else 'Ativo' }}<br>Uso: {{ d.local.usado_em or 'não registrado' }}<br>Quantidade: {{ d.local.quantidade if d.local.quantidade is not none else 'não guardada' }}<br>Emol.: {{ reais(d.emol_local) if d.emol_local is not none else 'sem valor' }}<br>FERJ: {{ reais(d.ferj_local) if d.ferj_local is not none else 'sem valor' }}{% else %}Ausente{% endif %}</td>
+      <td>{% if d.portal %}{{ 'Cancelado' if d.portal.cancelado else 'Ativo' }}<br>{{ d.portal.dia }} · {{ d.portal.ato }}<br>Quantidade: {{ d.portal.quantidade }}<br>Emol.: {{ reais(d.portal.emolumentos) }}<br>FERJ: {{ reais(d.portal.ferj) }}{% if d.portal.isento or d.portal.gratuito %}<br>Isento/gratuito{% endif %}{% if d.portal.diferido %}<br>Diferido{% endif %}{% else %}Ausente{% endif %}</td>
+      <td><a href="{{ url_for('selos_emitidos_lista', numero=d.numero) }}">Razão do selo</a>{% if d.local and d.local.id in destinos %}{% set dest = destinos[d.local.id] %}<br><a href="{{ url_for(dest[0], **dest[1]) }}">Abrir ato</a>{% endif %}</td>
+    </tr>{% else %}<tr><td colspan="5">Nenhuma diferença neste filtro.</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<p>Importe o analítico para comparar os estados e valores de cada selo.</p>{% endif %}
+</section>
+{% endblock %}

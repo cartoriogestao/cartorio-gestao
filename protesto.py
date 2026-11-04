@@ -608,10 +608,85 @@ def _lugar_do_primeiro(bd, ato: dict) -> dict:
             "numero_ordem": ato["numero_ordem"], "paginas": 0}
 
 
+#: O que faz de dois títulos o MESMO título apresentado duas vezes. O credor não entra: o cedente gravado
+#: não é confiável no acervo da CRA (ver `protesto_titulos_irmaos`), e espécie, número, vencimento, valor
+#: e o documento do devedor já separam um título de outro.
+SITUACOES_DO_DUPLICADO = ("APONTADO", "INTIMADO", "PROTESTADO")
+
+
+def _so_digitos(texto) -> str:
+    return "".join(c for c in str(texto or "") if c.isdigit())
+
+
+def duplicados(con, titulo_id: int) -> list[dict]:
+    """Os outros títulos iguais a este que estão em pé: apontados, intimados ou protestados. Só LÊ.
+
+    Mesma espécie, número, vencimento e valor, e um devedor com o mesmo documento. O devedor seguinte do
+    mesmo título (o corresponsável) tem outro documento, e não é duplicado.
+    """
+    bd = banco(con)
+    tit = bd.um("SELECT * FROM pt_titulos WHERE id=%s", (int(titulo_id),))
+    if not tit:
+        return []
+    meus = {_so_digitos(d["documento_numero"]) for d in bd.ler(
+        "SELECT documento_numero FROM pt_devedores WHERE titulo_id=%s", (int(titulo_id),))} - {""}
+    if not meus:
+        return []
+    candidatos = bd.ler(
+        """SELECT id, protocolo, situacao, numero_titulo FROM pt_titulos
+            WHERE id <> %s AND especie = %s AND numero_titulo = %s
+              AND COALESCE(data_vencimento, '') = %s AND valor_centavos = %s
+              AND situacao IN ('APONTADO', 'INTIMADO', 'PROTESTADO')
+            ORDER BY id""",
+        (int(titulo_id), tit["especie"], tit["numero_titulo"],
+         str(tit["data_vencimento"] or ""), int(tit["valor_centavos"] or 0)))
+    saida = []
+    for c in candidatos:
+        deles = {_so_digitos(d["documento_numero"]) for d in bd.ler(
+            "SELECT documento_numero FROM pt_devedores WHERE titulo_id=%s", (int(c["id"]),))}
+        if meus & deles:
+            saida.append(dict(c))
+    return saida
+
+
+def conferir_duplicidade(con, titulo_id: int, *, afirmo: bool = False, afirmacao=None,
+                         robo: bool = False) -> dict | None:
+    """O TÍTULO APRESENTADO DUAS VEZES (Lei 9.492/1997, art. 9º; a CRA tem as recusas 52 e 53). Só LÊ.
+
+    Decisão do oficial, 03/11/2026 (ensaio de atos do Protesto, defeito 1, «g1»): se o outro está
+    PROTESTADO, barra; se está só apontado ou intimado, avisa e pede a afirmação expressa, que pode ser
+    a reapresentação de um título retirado. Devolve `{"outros", "afirmacao_expressa"}` quando passou
+    afirmando, None quando não há duplicado; recusa com `ProtestoError`.
+    """
+    outros = duplicados(con, titulo_id)
+    if not outros:
+        return None
+    lista = "; ".join(f"protocolo {o['protocolo'] or '—'} ({o['situacao'].lower()})" for o in outros)
+    protestados = [o for o in outros if o["situacao"] == "PROTESTADO"]
+    if protestados:
+        raise ProtestoError(
+            f"Este título já foi apresentado e está PROTESTADO: {lista}. O mesmo título não se protesta "
+            f"duas vezes (Lei 9.492/1997, art. 9º; recusa 53 da CRA, «Título já protestado»). Devolva-o "
+            f"ao apresentante.")
+    import afirmacoes_expressas as AFX
+    texto = AFX.validar(
+        afirmo, afirmacao, robo=robo, erro=ProtestoError,
+        por_que=(f"Este título já está apontado nesta casa: {lista}. Apontá-lo de novo é apresentá-lo em "
+                 f"duplicidade (recusa 52 da CRA). Se é a reapresentação de um título retirado, ou outro "
+                 f"título com os mesmos dados, diga por quê."))
+    return {"outros": outros,
+            "afirmacao_expressa": {"regra": "PROTESTO_TITULO_EM_DUPLICIDADE", "afirmacao": texto,
+                                   "o_que_faltava": f"título igual já apontado: {lista}"}}
+
+
 def lancar_apontamento(con, titulo_id: int, *, sv: dict,
                        agora: str, data_extenso: str,
                        usuario: str | None = None,
-                       origem: str = "MANUAL") -> dict:
+                       origem: str = "MANUAL",
+                       conferir_dobrado: bool = False,
+                       afirmo_dobrado: bool = False,
+                       afirmacao_dobrado=None,
+                       robo: bool = False) -> dict:
     """Lanca o apontamento no Livro de Apontamento. ESCREVE.
 
     E o primeiro ato da vida do titulo — Lei 9.492/1997, art. 3o. Recusa
@@ -639,6 +714,12 @@ def lancar_apontamento(con, titulo_id: int, *, sv: dict,
         raise ProtestoError(
             f"O título {tit['numero_titulo']} está com situação "
             f"{tit['situacao']} — não se aponta de novo.")
+    # O MESMO TÍTULO DUAS VEZES (decisão do oficial, 03/11/2026, «g1»). Só pela ficha
+    # (`conferir_dobrado`): o lote da CRA não pode parar a remessa inteira por um título, e lá o
+    # caminho é devolver com a irregularidade — pergunta em aberto ao oficial.
+    dobrado = (conferir_duplicidade(con, titulo_id, afirmo=afirmo_dobrado,
+                                    afirmacao=afirmacao_dobrado, robo=robo)
+               if conferir_dobrado else None)
     primeiro = _primeiro_devedor(bd, tit)
     protocolo_de_antes = (tit["protocolo"] or "").strip()
 
@@ -689,7 +770,7 @@ def lancar_apontamento(con, titulo_id: int, *, sv: dict,
     bd.escrever("UPDATE pt_titulos SET situacao='APONTADO' WHERE id=%s",
                (titulo_id,))
     return {"ato_id": ato_id, "titulo_id": titulo_id, "chave_cenprot": chave,
-            **lugar}
+            **lugar, "dobrado": dobrado}
 
 
 # ------------------------------------------------------------ a intimacao

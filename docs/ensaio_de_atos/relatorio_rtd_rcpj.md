@@ -28,6 +28,13 @@ está escrito «conferir».
 
 ## 1. A segunda associação com a mesma denominação se inscreve sem aviso
 
+**CONSERTADO em 03/11/2026** (decisão do oficial, «m»). No registro do Livro A pela tela,
+`rg_titulo.denominacoes_em_conflito` compara com as pessoas jurídicas ATIVAS do Livro A. O nome
+**idêntico** (as mesmas palavras, sem acento, caixa nem pontuação) é recusado. O **parecido** (as mesmas
+palavras depois de tirar o tipo e as de ligação) pede a fundamentação, que vai à auditoria
+(`RG_DENOMINACAO_PARECIDA`). A ficha do título avisa antes do clique. A régua fica no registro, e não na
+qualificação, porque o título de averbação também chega pelo Livro A, com o mesmo nome.
+
 **O que se fez.** A ASSOCIAÇÃO DE EXEMPLO inscrita no Livro A, pelo caminho inteiro. Depois, outro
 estatuto, de outra associação com a mesma denominação: recebimento, pagamento, qualificação positiva e
 registro.

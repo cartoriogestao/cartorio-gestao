@@ -109,3 +109,8 @@ _tmp_*.py
 /ERRO_POWERSHELL.txt
 # O carimbo da instalação: o instalador e o atualizador o escrevem na máquina.
 /install.json
+
+# --- Documentos internos de operacao: nao pertencem ao repositorio ---
+REGISTRO_HOTFIXES_OFICIAL*.md
+POLITICA_AGENTES_HOTFIX*
+nota_dev_HOTFIX_OFICIAL_*

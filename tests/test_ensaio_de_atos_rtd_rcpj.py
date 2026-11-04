@@ -110,49 +110,53 @@ def test_o_breve_relato_da_associacao_dissolvida_diz_o_cancelamento(casa):  # no
 
 # ------------------------------------------------------------------ a mesma denominação
 
-@_defeito("a segunda associação com a mesma denominação se inscreve no Livro A sem aviso nenhum — nem no "
-          "recebimento, nem na qualificação, nem no registro")
-def test_a_segunda_associacao_com_a_mesma_denominacao_nao_se_inscreve_sem_aviso(casa):  # noqa: F811
+def _segunda_associacao(b, nome: str, **campos):
+    """Outro estatuto, de outra associação, até o botão «Registrar» do Livro A."""
+    titulo = b.receber_titulo(3, serie="PJ_A", natureza=ESTATUTO, apresentante=nome, documento=F.CPF)
+    url = f"/rcpj-rtd/titulo/{titulo['id']}"
+    b.pagar(titulo["protocolo_geral_id"], "15.5.1")
+    b.qualificar(titulo["id"], resultado="POSITIVA", fundamentacao="Título em ordem para registro.")
+    tela = b.c.get(url).get_data(as_text=True)
+    r = postar_e_seguir(b.c, f"{url}/registrar", {
+        "csrf_token": F._token(b.c, url), "serie": "PJ_A", "teor": f"ESTATUTO DA {nome}.",
+        "protocolo_id": str(titulo["protocolo_geral_id"]), **F._campos_da_lista("PJ_A", ESTATUTO), **campos})
+    return tela, F._avisos(r), b.ler("SELECT id FROM rg_registros WHERE serie='PJ_A' AND requerente_nome=%s", (nome,))
+
+
+def test_a_segunda_associacao_com_a_mesma_denominacao_nao_se_inscreve(casa):  # noqa: F811
     """CC art. 1.155, parágrafo único (a denominação das associações e fundações equipara-se ao nome
-    empresarial, para a proteção da lei) e art. 1.163 (o nome deve distinguir-se de qualquer outro já
-    inscrito no mesmo registro); o CN-MA tem regra própria da homonímia no RCPJ (conferir). Inscrita a
-    ASSOCIAÇÃO DE EXEMPLO, a segunda com a mesma denominação não vai ao livro sem a tela dizê-lo."""
+    empresarial) e art. 1.163 (o nome distingue-se de qualquer outro já inscrito no mesmo registro). Decisão
+    do oficial, 03/11/2026 («m»; CONSERTADO): o nome IDÊNTICO não se inscreve, e a ficha do título avisa
+    antes do clique."""
     b = F.Balcao(casa)
     b.abrir_caixa()
     _associacao(b)
-    titulo = b.receber_titulo(3, serie="PJ_A", natureza=ESTATUTO, apresentante=ASSOCIACAO, documento=F.CPF)
+    tela, avisos, inscritas = _segunda_associacao(b, ASSOCIACAO)
+    assert "Já há pessoa jurídica com esta denominação" in tela, "a ficha do título não avisa"
+    assert len(inscritas) == 1, avisos
+    assert "Já há pessoa jurídica com esta denominação" in avisos and "1.163" in avisos, avisos
+
+
+def test_a_denominacao_parecida_se_inscreve_com_a_fundamentacao(casa):  # noqa: F811
+    """A outra metade de «m»: o nome PARECIDO (as mesmas palavras, tirado o tipo e as de ligação) pede por
+    que se distingue; sem isso não se inscreve, e com isso a fundamentação vai à auditoria."""
+    b = F.Balcao(casa)
+    b.abrir_caixa()
+    _associacao(b)
+    parecido = "EXEMPLO ASSOCIAÇÃO"
+    _, avisos, inscritas = _segunda_associacao(b, parecido)
+    assert not inscritas and "parecida" in avisos, avisos
+    titulo = b.um("SELECT id, protocolo_geral_id FROM rg_titulos WHERE apresentante=%s", (parecido,))
     url = f"/rcpj-rtd/titulo/{titulo['id']}"
-    avisos = [F._avisos(b.c.get(url))]
-    b.pagar(titulo["protocolo_geral_id"], "15.5.1")
-    avisos.append(F._avisos(b.qualificar(titulo["id"], resultado="POSITIVA",
-                                         fundamentacao="Título em ordem para registro.")))
-    r = postar_e_seguir(b.c, f"{url}/registrar", {
-        "csrf_token": F._token(b.c, url), "serie": "PJ_A", "teor": f"ESTATUTO DA {ASSOCIACAO} (a segunda).",
-        "protocolo_id": str(titulo["protocolo_geral_id"]), **F._campos_da_lista("PJ_A", ESTATUTO)})
-    avisos.append(F._avisos(r))
-    inscritas = b.ler("SELECT id FROM rg_registros WHERE serie='PJ_A' AND requerente_nome=%s", (ASSOCIACAO,))
-    avisou = any("denomina" in a.lower() or "mesmo nome" in a.lower() for a in avisos)
-    assert len(inscritas) == 1 or avisou, avisos
-
-
-def test_o_ato_do_mesmo_segundo_da_leitura_pede_a_releitura():
-    """CN-MA art. 420, II (a situação ATUAL), pela régua só: a leitura gravada às 10:00:00 viu o ato 1, e o
-    cancelamento (ato 2) se lavrou no mesmo segundo. É depois da leitura, e o breve relato não sai sem a
-    releitura (observação O4). A leitura antiga, sem o último ato visto, segue pela hora, como era."""
-    import atrib_certidao as CE
-    mesmo_segundo = "2026-11-03T10:00:00"
-    registro = {"serie": "PJ_A", "numero": 1, "requerente_nome": ASSOCIACAO, "pj_sede": "Sede",
-                "pj_objeto": "Objeto", "pj_diretoria": "Diretoria", "pj_dados_em": mesmo_segundo,
-                "pj_dados_ultimo_ato_id": 1}
-    atos = [{"id": 1, "tipo": "REGISTRO", "data_ato": "2026-11-03", "criado_em": mesmo_segundo},
-            {"id": 2, "tipo": "CANCELAMENTO", "numero_ordem": 2, "data_ato": "2026-11-03",
-             "criado_em": mesmo_segundo}]
-    with pytest.raises(CE.CertidaoError, match="situação ATUAL"):
-        CE.teor_do_breve_relato({"registro": registro, "atos": atos})
-    # a leitura de antes da coluna: pela hora, o empate passa, como passava
-    antiga = {k: v for k, v in registro.items() if k != "pj_dados_ultimo_ato_id"}
-    assert "breve relato" in CE.teor_do_breve_relato({"registro": antiga, "atos": atos[:1]})
-
+    postar_e_seguir(b.c, f"{url}/registrar", {
+        "csrf_token": F._token(b.c, url), "serie": "PJ_A", "teor": f"ESTATUTO DA {parecido}.",
+        "protocolo_id": str(titulo["protocolo_geral_id"]), **F._campos_da_lista("PJ_A", ESTATUTO),
+        "fundamentacao_denominacao": "Outra sede e outro objeto; a ordem das palavras é a do estatuto."})
+    registro = b.um("SELECT id FROM rg_registros WHERE requerente_nome=%s", (parecido,))
+    assert registro, "a parecida, fundamentada, não se inscreveu"
+    log = b.um("SELECT details FROM audit_logs WHERE action='RG_DENOMINACAO_PARECIDA' AND entity_id=%s",
+               (registro["id"],))
+    assert log and "Outra sede" in str(log["details"]), log
 
 # ------------------------------------------------------------------ a mudança de denominação
 

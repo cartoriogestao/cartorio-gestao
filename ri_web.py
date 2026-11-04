@@ -4673,6 +4673,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                     **({"minuta": minuta_pedida}
                                        if minuta_pedida else {})))
 
+        # A INDISPONIBILIDADE AVERBADA NA MATRÍCULA (decisão do oficial, 03/11/2026, «b1»): o ato voluntário
+        # se barra antes de gastar número; o judicial e os outros só levam o aviso.
+        with db.connect() as con_ind:
+            indisponivel = CNIB.conferir_indisponibilidade_averbada(
+                con_ind, matricula_id, request.form.get("natureza_titulo"))
+        if indisponivel and indisponivel["barra"]:
+            flash(indisponivel["mensagem"] + " O ato NÃO foi lavrado — nada se perdeu.", "danger")
+            return redirect(url_for("ri_ficha", matricula_id=matricula_id,
+                                    **({"minuta": minuta_pedida}
+                                       if minuta_pedida else {})))
+        if indisponivel:
+            flash(indisponivel["mensagem"], "warning")
+
         # O MODELO QUE CANCELA OU EXTINGUE (decisão do oficial, 03/11/2026, «a1»): diz qual ato, e o ato
         # tem de ser desta matrícula e estar de pé — antes de gastar número.
         alvo_do_cancelamento = None

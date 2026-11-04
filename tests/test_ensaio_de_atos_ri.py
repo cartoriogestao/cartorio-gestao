@@ -132,9 +132,6 @@ def test_a_penhora_averbada_e_onus(casa):  # noqa: F811
     assert penhora["ato"]["id"] in _onus_oferecidos(casa, m)
 
 
-@_defeito("a lavratura confere a indisponibilidade só na cópia local da CNIB, e não na própria matrícula: com "
-          "a AV de indisponibilidade de pé (e a ficha mostrando-a como ônus), a venda vai ao livro com o recado "
-          "«CNIB consultada e gravada no ato: nada consta»")
 def test_a_indisponibilidade_averbada_e_onus_e_barra_a_venda(casa):  # noqa: F811
     """Prov. CNJ 149/2023 (a CNIB, como o modelo da casa a cita): a indisponibilidade averbada é ônus, e
     o imóvel indisponível não se aliena — a venda não vai ao livro sem o cancelamento dela."""
@@ -147,6 +144,21 @@ def test_a_indisponibilidade_averbada_e_onus_e_barra_a_venda(casa):  # noqa: F81
                  partes=[(F.COMPRADORA, "transmitente"), (TERCEIRO, "adquirente")])
     assert not (venda["ato"] and venda["ato"]["natureza_titulo"] == "Compra e venda"), \
         "a venda de imóvel indisponível foi ao livro"
+    # O RECADO DIZ POR QUÊ (decisão do oficial, 03/11/2026, «b1»; CONSERTADO).
+    assert "INDISPONIBILIDADE averbada" in _avisos(venda["recado"]), _avisos(venda["recado"])
+
+
+def test_a_arrematacao_do_imovel_indisponivel_se_lavra_com_aviso(casa):  # noqa: F811
+    """A outra metade de «b1» (decisão do oficial, 03/11/2026): a indisponibilidade não impede o ato judicial
+    — a arrematação vai ao livro, e a tela avisa que a matrícula tem a indisponibilidade averbada."""
+    f = F._compra_e_venda(casa)
+    m = f["matricula"]
+    _ato(casa, m, "AV-INDISPONIBILIDADE", interessado=F.COMPRADORA)
+    arrematacao = _ato(casa, m, "R-ARREMATACAO", interessado=TERCEIRO,
+                       partes=[(F.COMPRADORA, "transmitente"), (TERCEIRO, "adquirente")])
+    assert arrematacao["ato"] and arrematacao["ato"]["natureza_titulo"] == "Arrematação", \
+        _avisos(arrematacao["recado"])
+    assert "INDISPONIBILIDADE averbada" in _avisos(arrematacao["recado"]), _avisos(arrematacao["recado"])
 
 
 # ------------------------------------------------------------------ quem é o dono

@@ -94,6 +94,21 @@ cancelamento da hipoteca não entrou porque a natureza dele é reconhecida.
 
 ## 3. A indisponibilidade averbada na matrícula não barra a venda (nem avisa)
 
+**CONSERTADO em 03/11/2026** (decisão do oficial, «b1»). A lavratura procura a indisponibilidade averbada
+em vigor na própria matrícula (`ri_cnib.indisponibilidades_averbadas`, pela régua do ônus, que o
+cancelamento pelo botão respeita). O ato **voluntário** de disposição ou oneração
+(`ri_cnib.NATUREZAS_VOLUNTARIAS`: compra e venda, doação, permuta, dação, hipoteca, fiduciária, usufruto e
+os demais direitos reais constituídos pelo dono) é barrado antes do número. O resto que pede a consulta
+(arrematação, adjudicação, partilha, usucapião, desapropriação, constrições) se lavra com o aviso.
+
+**Achado no conserto:** os modelos da casa escrevem a natureza «Arrematação», «Adjudicação», «Partilha»,
+«Usucapião» e «Título de domínio», e a tabela de naturezas (`ri_naturezas`) diz «Carta de Arrematação»,
+«Carta de Adjudicação», «Formal de Partilha». O código não casa (`ri_onus.codigo_da_natureza` devolve
+None). O conserto reconhece esses atos pela palavra (`PALAVRAS_DO_ATO_NAO_VOLUNTARIO`). Mas a consulta
+obrigatória à CNIB na lavratura (`exige_consulta`, quando a casa liga o protocolo da Central) também não os
+reconhece. É a mesma família da observação O2 (o nome da natureza do modelo diferente do da tabela).
+Pergunta ao oficial: alinhar os nomes dos modelos aos da tabela?
+
 **O que se fez.** R-1 compra e venda; AV-2 indisponibilidade (AV-INDISPONIBILIDADE, ordem da CNIB
 contra a proprietária); R-3 compra e venda da proprietária para um terceiro.
 

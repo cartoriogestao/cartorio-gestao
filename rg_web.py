@@ -766,6 +766,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         # a tela com o quadro vazio, porque o `.docx` é o mais novo.
         para_ver = next((a for a in anexos
                          if ARQVIS.abre_na_tela(a["original_name"])), None)
+        # A DENOMINAÇÃO QUE JÁ ESTÁ NO LIVRO A (decisão do oficial, 03/11/2026, «m»): a ficha a mostra antes
+        # do registro, pela mesma régua que o registro confere.
+        denominacoes = None
+        if int(titulo["atribuicao"]) == TIT.RCPJ and titulo["situacao"] == TIT.QUALIFICADO:
+            with db.connect() as con:
+                denominacoes = TIT.denominacoes_em_conflito(con, titulo["apresentante"])
         for a in atos or []:
             a["lista_presenca_texto"] = RG.texto_da_lista_presenca(
                 a.get("declaracoes"))
@@ -780,6 +786,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
         return render_template(
             "rcpj_rtd_titulo.html", t=titulo, anexos=anexos, para_ver=para_ver,
+            denominacoes=denominacoes,
             abas_da_ficha=abas_da_ficha,
             qualificacoes=qualificacoes, encaminhamentos=encaminhamentos,
             registro=dict(registro) if registro else None, atos=atos or [],
@@ -1072,7 +1079,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     agora=agora(), data_extenso=hoje_extenso(),
                     teor=_campo("teor") or None, usuario=usuario_nome(),
                     declaracoes=RG.declaracoes_do_formulario(request.form),
-                    lista_presenca=lista)
+                    lista_presenca=lista,
+                    conferir_denominacao=True,
+                    fundamentacao_denominacao=_campo("fundamentacao_denominacao"))
                 # SELO E CUSTAS NA MESMA TRANSAÇÃO do registro — regra da
                 # casa: domínio não sela/cobra; a TELA faz (opcional). Se o
                 # selo for de outra serventia ou não houver caixa com cobrar
@@ -1087,6 +1096,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         except RECUSAS_DO_BALCAO as erro:
             flash(str(erro), "danger")
             return voltar
+        # A DENOMINAÇÃO PARECIDA REGISTRADA COM FUNDAMENTO (03/11/2026, «m»): vai à auditoria.
+        if feito.get("denominacao_parecida"):
+            audit("RG_DENOMINACAO_PARECIDA", "rg_registros", feito["registro_id"],
+                  {**feito["denominacao_parecida"], "titulo_id": titulo_id})
         # Selo automático depois da lavratura (fora da transação do ato).
         if feito.get("ato_id") and not feito.get("reaproveitado"):
             sigla = _sigla_da_atribuicao(int(titulo["atribuicao"]))

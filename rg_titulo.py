@@ -650,12 +650,78 @@ def retomar(con: sqlite3.Connection, titulo_id: int, *, forma: str, motivo: str,
     return {"titulo_id": int(titulo_id), "forma": forma}
 
 
+# A DENOMINAÇÃO QUE JÁ ESTÁ NO LIVRO A (decisão do oficial, 03/11/2026, ensaio de atos do RCPJ, «m»): o
+# nome IDÊNTICO barra; o PARECIDO pede a fundamentação. CC art. 1.155, parágrafo único (a denominação das
+# associações e fundações equipara-se ao nome empresarial) e art. 1.163 (o nome distingue-se de qualquer
+# outro já inscrito no mesmo registro).
+#: O que não distingue um nome de outro: o tipo da pessoa jurídica e as palavras de ligação.
+PALAVRAS_QUE_NAO_DISTINGUEM = frozenset(
+    "associacao associacoes fundacao instituto sociedade simples ltda limitada sa s a me epp eireli "
+    "cooperativa de da do das dos e em".split())
+
+
+def _sem_acento(texto) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", str(texto or ""))
+                   if unicodedata.category(c) != "Mn")
+
+
+def _palavras_do_nome(nome) -> list[str]:
+    limpo = "".join(c if c.isalnum() else " " for c in _sem_acento(nome).lower())
+    return limpo.split()
+
+
+def denominacoes_em_conflito(con, nome, *, fora_registro_id=None) -> dict:
+    """As pessoas jurídicas ATIVAS do Livro A com o nome idêntico ou parecido. Só LÊ.
+
+    Idêntico: as mesmas palavras, sem acento, caixa nem pontuação. Parecido: as mesmas palavras depois de
+    tirar o tipo e as de ligação («ASSOCIAÇÃO DE EXEMPLO» e «EXEMPLO ASSOCIAÇÃO»).
+    """
+    meu = _palavras_do_nome(nome)
+    if not meu:
+        return {"identicos": [], "parecidos": []}
+    nucleo = sorted(p for p in meu if p not in PALAVRAS_QUE_NAO_DISTINGUEM)
+    identicos, parecidos = [], []
+    for r in banco(con).ler(
+            """SELECT id, numero, requerente_nome FROM rg_registros
+                WHERE serie = 'PJ_A' AND situacao = 'ATIVO' ORDER BY numero""", ()):
+        if fora_registro_id is not None and int(r["id"]) == int(fora_registro_id):
+            continue
+        dele = _palavras_do_nome(r["requerente_nome"])
+        if dele == meu:
+            identicos.append(dict(r))
+        elif nucleo and sorted(p for p in dele if p not in PALAVRAS_QUE_NAO_DISTINGUEM) == nucleo:
+            parecidos.append(dict(r))
+    return {"identicos": identicos, "parecidos": parecidos}
+
+
+def _conferir_denominacao(con, nome, fundamentacao) -> dict | None:
+    """Barra o idêntico; o parecido passa com a fundamentação escrita. Devolve o que se fundamentou."""
+    achados = denominacoes_em_conflito(con, nome)
+    if achados["identicos"]:
+        quais = "; ".join(f"registro n. {r['numero']} ({r['requerente_nome']})" for r in achados["identicos"])
+        raise TituloError(
+            f"Já há pessoa jurídica com esta denominação no Livro A: {quais}. O nome tem de distinguir-se de "
+            f"qualquer outro já inscrito (CC arts. 1.155, parágrafo único, e 1.163). Nada foi lavrado.")
+    if not achados["parecidos"]:
+        return None
+    quais = "; ".join(f"registro n. {r['numero']} ({r['requerente_nome']})" for r in achados["parecidos"])
+    razao = _texto(fundamentacao)
+    if len(razao) < MINIMO_DO_TEXTO:
+        raise TituloError(
+            f"A denominação é parecida com a de pessoa jurídica já inscrita no Livro A: {quais}. Escreva por "
+            f"que ela se distingue (CC art. 1.163) — com pelo menos dez letras. Nada foi lavrado.")
+    return {"parecidos": [r["id"] for r in achados["parecidos"]], "fundamentacao": razao}
+
+
 def registrar(con: sqlite3.Connection, titulo_id: int, *, serie: str,
               sv: dict, agora: str, data_extenso: str,
               teor: str | None = None, teor_formato: str = "texto",
               usuario: str | None = None,
               declaracoes: dict | None = None,
-              lista_presenca: dict | None = None) -> dict:
+              lista_presenca: dict | None = None,
+              conferir_denominacao: bool = False,
+              fundamentacao_denominacao: str | None = None) -> dict:
     """Lavra o registro do título qualificado. ESCREVE.
 
     **SÓ DEPOIS DA QUALIFICAÇÃO POSITIVA** — é a frase do oficial, e ela é
@@ -694,6 +760,10 @@ def registrar(con: sqlite3.Connection, titulo_id: int, *, serie: str,
             f"O livro {escolhida or '(em branco)'} não é do "
             f"{NOME_DA_ATRIBUICAO[int(titulo['atribuicao'])]}.")
 
+    # Só a tela confere (`conferir_denominacao`): a carga do acervo grava o que o livro já tem.
+    denominacao = (_conferir_denominacao(con, titulo["apresentante"], fundamentacao_denominacao)
+                   if conferir_denominacao and escolhida == "PJ_A" else None)
+
     feito = RG.abrir_registro(
         con, serie=escolhida, sv=sv, agora=agora, data_extenso=data_extenso,
         natureza=titulo["natureza"], requerente_nome=titulo["apresentante"],
@@ -708,7 +778,7 @@ def registrar(con: sqlite3.Connection, titulo_id: int, *, serie: str,
                 "WHERE id=%s",
                 (REGISTRADO, int(feito["registro_id"]), escolhida,
                  int(titulo_id)))
-    return {"titulo_id": int(titulo_id), **feito}
+    return {"titulo_id": int(titulo_id), **feito, "denominacao_parecida": denominacao}
 
 
 def encerrar(con: sqlite3.Connection, titulo_id: int, *, situacao: str,

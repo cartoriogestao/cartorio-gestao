@@ -161,6 +161,38 @@ def _norm(texto: Any) -> str:
     return "".join(c for c in s if unicodedata.category(c) != "Mn").upper()
 
 
+# ITENS REVOGADOS DA TABELA DO TRIBUNAL - pedido da substituta em 03/11/2026.
+#
+# A tabela do TJMA guarda os itens revogados com a descricao oficial
+# «Revogado pela Lei ...» (ou so «REVOGADO») e todos os valores em 0,00. Na tela
+# do calculo o balcao via so «0,00» e achava que a tabela estava errada - o caso
+# real foi o 16.30, procurado como se fosse o arquivamento, que e' o 16.39.
+#
+# O QUE E' REVOGADO VEM DA DESCRICAO QUE JA ESTA NA TABELA, e nao de uma lista
+# feita a mao: a importacao seguinte do E-Oficio continua valendo sozinha.
+# «Revogacao de testamento/procuracao» (13.10.4, 13.9.6) NAO e' revogado: o
+# teste e' a palavra REVOGADO no comeco da descricao.
+#
+# A dica so existe onde se sabe qual e' o item certo. Nos outros, o aviso diz
+# apenas que o item foi revogado - nao se adivinha substituto.
+DICA_DO_REVOGADO = {
+    "16.30": "use 16.39 para arquivamento",
+}
+
+
+def revogado(descricao: Any) -> bool:
+    """O item da tabela foi revogado? Pela descricao oficial. So le."""
+    return _norm(descricao).strip().startswith("REVOGADO")
+
+
+def aviso_do_revogado(codigo_tj: Any, descricao: Any) -> str | None:
+    """«REVOGADO – sem valor» (e a dica, se houver), ou None se nao e' revogado."""
+    if not revogado(descricao):
+        return None
+    dica = DICA_DO_REVOGADO.get(str(codigo_tj or "").strip())
+    return f"REVOGADO \u2013 sem valor ({dica})" if dica else "REVOGADO \u2013 sem valor"
+
+
 def _cent(v: Any) -> int:
     """Numero da origem vem como float; aqui vira centavo inteiro."""
     if v is None:
@@ -769,6 +801,11 @@ def buscar(con, termo: str, vigencia: int | None = None, limite: int = 60) -> li
     por_codigo: dict[str, int] = {}
     for r in linhas:
         item = dict(r)
+        # Revogado: a linha continua na lista (quem procura o codigo precisa
+        # saber que ele existe e foi revogado), mas com o aviso no lugar do 0,00.
+        item["aviso_revogado"] = aviso_do_revogado(item.get("codigo_tj"),
+                                                   item.get("descricao"))
+        item["revogado"] = item["aviso_revogado"] is not None
         # Sem ativo e sem preco: listar e convidar o clique que falha.
         if not item.get("ativo"):
             continue

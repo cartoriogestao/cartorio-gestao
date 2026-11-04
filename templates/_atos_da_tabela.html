@@ -26,9 +26,11 @@
         {% set depende_da_base = r.codigo_tj in (SERVICOS_BASE_METADE|default([], true)) %}
         <td>{{ r.codigo_tj or '-' }}</td>
         <td class="small">{{ (r.descricao or '')[:64] }}</td>
-        <td style="text-align:right">{% if depende_da_base %}—{% else %}{{ r.total or '-' }}{% endif %}</td>
+        <td style="text-align:right">{% if r.revogado or depende_da_base %}—{% else %}{{ r.total or '-' }}{% endif %}</td>
         <td colspan="2">
-          {% if depende_da_base %}
+          {% if r.revogado %}
+          <span class="badge" data-revogado>{{ r.aviso_revogado }}</span>
+          {% elif depende_da_base %}
           <span class="small">O preço depende do valor do imóvel. Escolha
             <strong>{{ r.codigo_tj }}</strong> na caixa «Tabela» e informe o
             valor da área.</span>

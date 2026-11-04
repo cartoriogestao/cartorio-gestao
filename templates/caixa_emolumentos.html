@@ -54,8 +54,12 @@
       <tr {% if not r.ativo %}class="pendente"{% endif %}>
         <td>{{ r.codigo_tj or '—' }}{% if not r.ativo %}<br><span class="badge">inativo</span>{% endif %}</td>
         <td class="small">{{ r.descricao }}</td>
+        {% if r.revogado %}
+        <td colspan="2" style="text-align:right" data-revogado><span class="badge">{{ r.aviso_revogado }}</span></td>
+        {% else %}
         <td style="text-align:right">{{ r.emolumentos or '—' }}</td>
         <td style="text-align:right"><strong>{{ r.total or '—' }}</strong></td>
+        {% endif %}
       </tr>
     {% endfor %}</tbody>
   </table></div>

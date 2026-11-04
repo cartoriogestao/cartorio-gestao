@@ -24,6 +24,8 @@ def test_recusa_um_byte_acima_antes_de_gravar(monkeypatch, tamanhos):
     bd.travar.assert_not_called()
 
 def preparar(monkeypatch, tamanhos):
+    # Exercicio do limite quando o recurso estiver novamente habilitado.
+    monkeypatch.setattr(QIA, "SUSPENSA_POR_BASE_NORMATIVA", False, raising=False)
     bd = Mock()
     bd.um.return_value = None
     bd.escrever.return_value = [{'id': 123}]

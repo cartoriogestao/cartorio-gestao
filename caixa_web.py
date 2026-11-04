@@ -2338,6 +2338,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 flash("Não encontrei esse ato na tabela vigente. "
                       "Confira o código ou o valor do negócio.", "danger")
                 return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
+            # Item revogado nao entra no protocolo: entraria com 0,00 e sem
+            # cobrar o ato que o cliente pediu (caso do 16.30 x 16.39).
+            if item.get("origem_valor") == "TABELA":
+                aviso = EMOL.aviso_do_revogado(item.get("codigo_tj"),
+                                               item.get("descricao"))
+                if aviso:
+                    flash(f"O item {str(item.get('codigo_tj') or '').strip()} "
+                          f"está {aviso} e não foi acrescentado.", "danger")
+                    return redirect(url_for("caixa_protocolo",
+                                            protocolo_id=protocolo_id))
             # Pela busca o 16.22.4.1 entra sem base e o cadastro diz R$ 0,00.
             # O preço certo pede o valor do imóvel, que só a caixa «Tabela» tem.
             if (item.get("origem_valor") == "TABELA"

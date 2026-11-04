@@ -215,7 +215,7 @@ def test_falha_ao_salvar_recibo_informa_que_lote_foi_gravado(cg_casa_logada,monk
 def test_matricula_valida_identifica_volume_ausente_e_separa_outra_serventia(cg_casa_logada):
     import rc_matricula as M
     casa=cg_casa_logada;aid=antigo(casa,nome='NOME COM ERRO',livro=None)
-    casa['db'].set_setting('ri_cns','000001')
+    casa['db'].set_settings({'ri_cns':'000001'})
     m=M.compor(cns='000001',ano=1995,livro_tipo='1',livro=9,folha=1,termo=101)
     with casa['db'].transaction() as c:banco(c).escrever('UPDATE rc_assentos SET matricula=%s WHERE id=%s',(m,aid))
     carregado,_,_=lote(casa);r=aplicar(casa,carregado)
@@ -231,7 +231,7 @@ def test_matricula_valida_identifica_volume_ausente_e_separa_outra_serventia(cg_
 def test_matricula_contraditoria_nao_cria_nem_complementa(cg_casa_logada):
     import rc_matricula as M
     casa=cg_casa_logada;aid=antigo(casa,livro='A-8')
-    casa['db'].set_setting('ri_cns','000001')
+    casa['db'].set_settings({'ri_cns':'000001'})
     m=M.compor(cns='000001',ano=1995,livro_tipo='1',livro=9,folha=1,termo=101)
     with casa['db'].transaction() as c:banco(c).escrever('UPDATE rc_assentos SET matricula=%s WHERE id=%s',(m,aid))
     carregado,_,_=lote(casa)

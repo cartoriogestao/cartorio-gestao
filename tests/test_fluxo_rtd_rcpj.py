@@ -348,12 +348,14 @@ def _campos_da_lista(serie: str, natureza: str) -> dict:
     lista apresentada, com referência de exemplo; o resto, «não se aplica»."""
     if serie not in RG.SERIES_RCPJ:
         return {}
+    # A FORMA DA PESSOA JURÍDICA, que a tela pergunta no Livro A desde 03/11/2026 (decisão do oficial, «n»).
+    forma = {"forma_pj": "ASSOCIACAO"} if serie == "PJ_A" else {}
     sugestao = RG.sugerir_enquadramento(natureza)
     if sugestao in ("ART410", "ART412", "ART413"):
         return {"enquadramento_cnma": sugestao, "lista_presenca": "APRESENTADA",
-                "lista_presenca_ref": "Lista de presença de exemplo, folha 1"}
+                "lista_presenca_ref": "Lista de presença de exemplo, folha 1", **forma}
     return {"enquadramento_cnma": "NAO_SE_APLICA",
-            "justificativa_cnma": "Ato fora dos arts. 410, 412 e 413 do CN-MA."}
+            "justificativa_cnma": "Ato fora dos arts. 410, 412 e 413 do CN-MA.", **forma}
 
 
 def _lavrar_pelo_titulo(b: Balcao, *, atribuicao: int, serie: str, item: str,

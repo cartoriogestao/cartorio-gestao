@@ -57,7 +57,10 @@ para nome idêntico.
 
 ## Observações (sem teste)
 
-**O1. A sociedade empresária entra no RCPJ sem aviso.** O «Contrato social de sociedade empresária
+**O1. A sociedade empresária entra no RCPJ sem aviso.** **DECIDIDO E CONSERTADO em 03/11/2026** (o oficial, «n»): o
+registro no Livro A pergunta a forma da pessoa jurídica (`rg_titulo.FORMAS_DA_PJ`, gravada em
+`rg_registros.pj_forma`), e a tela avisa quando a natureza diz «empresária», na ficha do título e depois
+do registro. Avisa, e não barra. O texto original da observação segue abaixo. O «Contrato social de sociedade empresária
 limitada» foi inscrito no Livro A, como uma associação. A sociedade empresária se registra na Junta
 Comercial (CC arts. 967 e 1.150), e o RCPJ é das sociedades simples, associações e fundações (CC art.
 1.150; LRP art. 114). O sistema não tem como saber, porque a natureza é texto livre. A tela já pergunta o

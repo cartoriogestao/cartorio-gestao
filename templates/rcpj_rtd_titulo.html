@@ -343,6 +343,23 @@
         <option value="{{ s.codigo }}"{% if t.serie == s.codigo %} selected{% endif %}>{{ s.nome }}</option>
         {% endfor %}
       </select></label>
+    {#- A DENOMINAÇÃO QUE JÁ ESTÁ NO LIVRO A (decisão do oficial, 03/11/2026, «m»): a idêntica barra no
+        Livro A; a parecida pede por que se distingue. #}
+    {% if denominacoes and (denominacoes.identicos or denominacoes.parecidos) %}
+      <div class="notice danger">
+        {% if denominacoes.identicos %}<strong>Já há pessoa jurídica com esta denominação no Livro A:</strong>
+          {% for r in denominacoes.identicos %}registro n. {{ r.numero }} ({{ r.requerente_nome }}){{ '; ' if not loop.last }}{% endfor %}.
+          No Livro A, o registro será recusado (CC arts. 1.155, parágrafo único, e 1.163).
+        {% else %}<strong>A denominação é parecida com a de pessoa jurídica já inscrita:</strong>
+          {% for r in denominacoes.parecidos %}registro n. {{ r.numero }} ({{ r.requerente_nome }}){{ '; ' if not loop.last }}{% endfor %}.
+        {% endif %}
+      </div>
+      {% if not denominacoes.identicos %}
+      <label>Por que a denominação se distingue (CC art. 1.163)
+        <textarea name="fundamentacao_denominacao" rows="2" minlength="10"
+          placeholder="Ex.: o objeto e a sede são outros, e a palavra «cultural» distingue os nomes."></textarea></label>
+      {% endif %}
+    {% endif %}
     <label>Teor do registro
       <textarea name="teor" rows="8"
         placeholder="O texto que vai escrito no livro."></textarea></label>

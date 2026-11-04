@@ -296,15 +296,58 @@ def lugar_do_assento(con, assento_id: int) -> dict:
             WHERE a.assento_id=%s AND a.tipo='REGISTRO'
             ORDER BY a.id LIMIT 1""", (int(assento_id),))
     if linha:
+        return lugar_das_colunas(
+            {"livro_volume": linha["livro_volume"]},
+            {"folha": linha["folha"], "rotulo": linha["rotulo"],
+             "numero_ordem": linha["numero_ordem"],
+             "livro_numero": linha["numero"],
+             "livro_complemento": linha["complemento"]})
+    return _lugar_pelo_assento(bd, assento_id)
+
+
+def lugar_das_colunas(assento: dict, registro: dict | None = None) -> dict:
+    """A MESMA conta de `lugar_do_assento`, sobre colunas já lidas. Só calcula.
+
+    Existe para a PESQUISA AMPLA (`rc_busca`): ela precisa do livro, da folha e
+    do termo de milhares de assentos de uma vez, e perguntar um por um ao banco
+    seria uma consulta por linha. Copiar a regra para lá seria pior — a certidão
+    diria «Livro A-3» e a busca procuraria outro livro. A regra mora aqui, e a
+    busca importa.
+
+    `assento`: `numero`, `livro_volume`, `matricula` de `rc_assentos`.
+    `registro`: o primeiro ato REGISTRO — `folha`, `rotulo`, `numero_ordem`,
+    `livro_numero` e `livro_complemento` (de `nu_livros`) — ou None.
+    """
+    if registro:
         # O LIVRO ABERTO NO SISTEMA VEM PRIMEIRO; o volume do assento é o do livro
         # de PAPEL, e serve os 244 que vieram do acervo — eles não têm livro aberto
         # aqui, e não deveriam ter: o livro deles já foi escriturado e encerrado.
-        livro = (f"{linha['numero'] or ''}{linha['complemento'] or ''}".strip()
-                 or (linha["livro_volume"] or ""))
+        livro = (f"{registro.get('livro_numero') or ''}"
+                 f"{registro.get('livro_complemento') or ''}".strip()
+                 or (assento.get("livro_volume") or ""))
         return {"livro": livro,
-                "folha": linha["rotulo"] or linha["folha"],
-                "termo": linha["numero_ordem"]}
-    return _lugar_pelo_assento(bd, assento_id)
+                "folha": registro.get("rotulo") or registro.get("folha"),
+                "termo": registro.get("numero_ordem")}
+    livro = str(assento.get("livro_volume") or "").strip()
+    termo = assento.get("numero")
+    folha = ""
+    matricula = assento.get("matricula")
+    if matricula:
+        try:
+            p = MAT.partes(matricula)
+        except MAT.MatriculaError:
+            p = None
+        if p:
+            folha = _numero_sem_zero(p.get("folha"))
+            if not termo:
+                termo = _numero_sem_zero(p.get("termo")) or termo
+            if not livro:
+                num = _numero_sem_zero(p.get("livro"))
+                letra = str(p.get("livro_nome") or "").strip()
+                livro = f"{letra}-{num}" if letra and num else (num or "")
+    if not (livro or folha or termo):
+        return {}
+    return {"livro": livro, "folha": folha or None, "termo": termo}
 
 
 def _numero_sem_zero(valor) -> str:
@@ -325,26 +368,7 @@ def _lugar_pelo_assento(con, assento_id: int) -> dict:
              FROM rc_assentos WHERE id=%s""", (int(assento_id),))
     if not assento:
         return {}
-    livro = str(assento["livro_volume"] or "").strip()
-    termo = assento["numero"]
-    folha = ""
-    matricula = assento["matricula"]
-    if matricula:
-        try:
-            p = MAT.partes(matricula)
-        except MAT.MatriculaError:
-            p = None
-        if p:
-            folha = _numero_sem_zero(p.get("folha"))
-            if not termo:
-                termo = _numero_sem_zero(p.get("termo")) or termo
-            if not livro:
-                num = _numero_sem_zero(p.get("livro"))
-                letra = str(p.get("livro_nome") or "").strip()
-                livro = f"{letra}-{num}" if letra and num else (num or "")
-    if not (livro or folha or termo):
-        return {}
-    return {"livro": livro, "folha": folha or None, "termo": termo}
+    return lugar_das_colunas(dict(assento))
 
 def _por_papel(lista: list[dict]) -> dict[str, dict]:
     return {p["papel"]: p for p in lista if p.get("papel")}

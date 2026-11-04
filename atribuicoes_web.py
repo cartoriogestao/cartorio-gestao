@@ -170,6 +170,7 @@ import ra_revisao as RREV
 # os itens que a tela oferece.
 import ra_selo as RS
 import rc_assento as RC
+import rc_busca as RCB
 import rc_certidao as RCE
 import rc_certidao_quadro as RCQ
 import rc_certidao_odt as RCODT
@@ -4376,6 +4377,32 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """Localiza o assento antes de abrir a tela própria de averbação."""
         return render_template("atrib_rcpn_averbacoes.html",
                                **_listar("rcpn"))
+
+    @app.route("/rcpn/pesquisa")
+    @login_required
+    def rcpn_pesquisa():
+        """A PESQUISA AMPLA dos assentos (pedido de 04/11/2026). Só LÊ.
+
+        Livro e folha, a relação de um livro inteiro, o nome dos pais, do
+        declarante ou de qualquer pessoa do assento — num campo só ou em
+        campos separados. A regra mora em `rc_busca`; a rota só liga os fios.
+        """
+        filtros = RCB.ler_filtros(request.args)
+        pagina = _inteiro(request.args.get("pagina"), maximo=PAGINA_MAIS_ALTA)
+        erro = None
+        try:
+            with db.connect() as con:
+                r = RCB.pesquisar(con, filtros, pagina=pagina)
+        except RCB.BuscaError as e:
+            erro = str(e)
+            r = {"linhas": [], "total": 0, "pagina": 1, "paginas": 1,
+                 "entendido": [], "filtros": filtros, "ordem": "",
+                 "vazio": False}
+        # O endereço das outras páginas leva os mesmos filtros.
+        mesmos = {k: v for k, v in filtros.items() if v}
+        return render_template("rcpn_pesquisa.html", r=r, f=filtros,
+                               erro=erro, mesmos=mesmos,
+                               especies=RCB.ESPECIES, ordens=RCB.ORDENS)
 
     @app.route("/rcpn/novo", methods=["GET", "POST"],
                defaults={"especie_url": None})

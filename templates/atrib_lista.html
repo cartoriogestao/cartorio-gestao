@@ -165,6 +165,10 @@
     <div class="actions">
       <button class="button">Procurar</button>
       <a class="button" href="{{ url_for(request.endpoint, atribuicao=atribuicao or None) }}">Limpar</a>
+      {% if chave == 'rcpn' %}
+        {# A PESQUISA AMPLA (04/11/2026) leva o que já foi digitado aqui. #}
+        <a class="button" href="{{ url_for('rcpn_pesquisa', q=termo or None) }}">Pesquisa ampla (livro, folha, pais, declarante)</a>
+      {% endif %}
     </div>
   </form>
 </section>

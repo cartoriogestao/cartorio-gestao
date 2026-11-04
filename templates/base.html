@@ -577,6 +577,9 @@
            por definicao (art. 226). #}
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">O balcão</div>
         <a href="{{ url_for('rcpn_assentos') }}">Assentos</a>
+        {# A PESQUISA AMPLA (04/11/2026): livro e folha, a relação do livro, o
+           nome dos pais, do declarante ou de qualquer pessoa do assento. #}
+        <a href="{{ url_for('rcpn_pesquisa') }}">Pesquisa ampla</a>
         {# A FILA DE PRÉ-CADASTROS (11/10/2026): o arquivo de assentos novos
            vira rascunhos conferidos — com o manual das partes para baixar. #}
         <a href="{{ url_for('rcpn_importar') }}">Importar pré-cadastros</a>

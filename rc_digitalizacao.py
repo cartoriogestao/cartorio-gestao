@@ -370,7 +370,8 @@ def anexar_digitalizacao(db_ou_con, assento_id: int, caminho_arquivo,
                          quem: str, origem: str = ORIGEM_ACERVO_TRANSCRITO, *,
                          raiz_arquivos: Path | str | None = None,
                          agora: str | None = None, agente: str | None = None,
-                         a_mando_de: str | None = None) -> dict:
+                         a_mando_de: str | None = None,
+                         preservar_arquivo_atual: bool = False) -> dict:
     """Anexa POR PROGRAMA o termo digitalizado de um assento. ESCREVE.
 
     Para a carga do acervo transcrito. Recebe o `Database` (abre a própria
@@ -429,7 +430,11 @@ def anexar_digitalizacao(db_ou_con, assento_id: int, caminho_arquivo,
 
     pasta.mkdir(parents=True, exist_ok=True)
     _guardar_no_historico(pasta, atual)
-    destino = _copiar_conferindo(fonte, pasta / f"atual{ext}", sha)
+    # Em lote transacional, o rollback do banco precisa reencontrar o PDF
+    # anterior no mesmo caminho. O arquivo novo fica ao lado, sem sobrescrever.
+    alvo = (unique_path(pasta, f"carga-{sha}{ext}") if preservar_arquivo_atual
+            else pasta / f"atual{ext}")
+    destino = _copiar_conferindo(fonte, alvo, sha)
     parametros = (str(destino.resolve()), fonte.name, sha, agora, quem, origem,
                   int(assento_id))
     sql = """UPDATE rc_assentos

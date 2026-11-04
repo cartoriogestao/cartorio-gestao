@@ -3,6 +3,14 @@
   {#- NO LAYOUT NOVO O LIVRO E O TERMO ESTÃO NO TÍTULO: não somem ao trocar de aba. #}
   {%- if layout_novo %} <span class="small muted">{{ assento.livro_volume or assento.serie }}{% if assento.numero %}, termo {{ assento.numero }}{% endif %}{% if assento.situacao != 'ATIVO' %} · {{ assento.situacao }}{% endif %}</span>{% endif %}</h1>{% endblock %}
 {% block content %}
+{% if dados and dados.get('acervo_transcrito') %}
+<section class="panel" data-fase="assento"><div class="panel-head"><span>Transcrição do acervo</span></div>
+<div style="padding:14px"><p>Dados do lote de transcrição. As observações e dúvidas da leitura foram preservadas.</p>
+<details><summary>Ver os dados e as dúvidas da transcrição</summary><dl>
+{% for campo, valor in dados.acervo_transcrito.items() %}{% if valor not in (none, '') %}
+<dt>{{ campo|replace('_', ' ') }}</dt><dd style="white-space:pre-wrap">{{ valor }}</dd>
+{% endif %}{% endfor %}</dl></details></div></section>
+{% endif %}
 {# AS ABAS SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026, `rc_abas`. Os quadros não saem do lugar: cada um
    diz a que aba pertence, e `static/fases.js` mostra os da aba aberta. A variável não se chama
    `f` porque esta ficha já usa esse nome nas folhas de segurança. #}

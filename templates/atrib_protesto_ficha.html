@@ -697,6 +697,12 @@
           faz ao lavrar. Sem ela o protesto não sai — a não ser com a
           afirmação expressa, que fica recolhida, com a frase de alerta. #}
       <div style="grid-column:1/-1">{{ prova_da_intimacao(prova) }}</div>
+      {#- O FALIMENTAR POR EDITAL (decisão do oficial, 03/11/2026, «k»): só com a afirmação de que a
+          procura se esgotou — campo próprio, `afirmo_falimentar`. #}
+      {% if falimentar_por_edital %}
+        {{ afirmacao('_falimentar', 'Protesto PARA FINS FALIMENTARES com intimação por EDITAL: a CRA o recusa (69) e a Súmula 361 do STJ exige saber quem recebeu. Diga onde o devedor foi procurado.',
+                     rotulo='Protesto falimentar por edital — afirmação expressa (procura esgotada)', valores=v_ato) }}
+      {% endif %}
       {% if prova and not prova.completa %}
         {{ afirmacao(sufixo_prova, prova.frase,
                      rotulo='Insistir mesmo assim — afirmação expressa (prova da intimação)', valores=v_ato) }}

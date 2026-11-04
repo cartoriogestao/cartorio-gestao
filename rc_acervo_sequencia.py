@@ -60,7 +60,11 @@ def _salvar(p,dados):
 
 
 def estado(db,identificador):
-    return json.loads((_pasta(db,identificador)/'andamento.json').read_text(encoding='utf-8'))
+    base=D.raiz_arquivos(db)/'rc'/'acervo_lotes'/'execucoes'
+    pastas={p.name:p for p in base.iterdir() if p.is_dir()} if base.is_dir() else {}
+    if identificador not in pastas:
+        raise L.LoteError('Execução não encontrada.')
+    return json.loads((pastas[identificador]/'andamento.json').read_text(encoding='utf-8'))
 
 
 def executar(db,identificador):

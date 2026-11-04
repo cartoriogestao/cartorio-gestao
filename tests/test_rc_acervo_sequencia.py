@@ -64,3 +64,12 @@ def test_tela_sequencia_confirma_csrf_e_restringe_andamento_ao_solicitante(cg_ca
     estado=S._pasta(casa['db'],ident)/'andamento.json';d=json.loads(estado.read_text(encoding='utf-8'))
     d['usuario_id']+=10000;estado.write_text(json.dumps(d),encoding='utf-8')
     assert c.get(r.location).status_code==403
+
+
+def test_consulta_escolhe_pasta_existente_sem_usar_caminho_da_url(tmp_path,monkeypatch):
+    monkeypatch.setattr(S.D,'raiz_arquivos',lambda db:tmp_path)
+    ident='a'*32
+    pasta=tmp_path/'rc'/'acervo_lotes'/'execucoes'/ident;pasta.mkdir(parents=True)
+    (pasta/'andamento.json').write_text('{"situacao":"CONCLUIDA"}',encoding='utf-8')
+    assert S.estado(None,ident)['situacao']=='CONCLUIDA'
+    with pytest.raises(ValueError,match='não encontrada'):S.estado(None,'../fora')

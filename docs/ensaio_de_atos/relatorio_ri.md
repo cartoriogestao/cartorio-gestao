@@ -128,6 +128,12 @@ certidão de propriedade, e a falecida sai. Ficaram **mais dois defeitos**, tamb
 
 ## 4. O título prenotado depois passa na frente do anterior, sem aviso
 
+**CONSERTADO em 03/11/2026** (decisão do oficial, «d1»). Na lavratura, a prenotação ABERTA da mesma
+matrícula com número menor (`ri_web.prenotacoes_anteriores_abertas`, pelo `matricula_id` ou pelo número
+da matrícula) se cita na ficha, ao lado da prenotação escolhida, e na rota. O ato só se lavra com
+«Confirmo» e o motivo (10 letras ou mais), e a auditoria guarda quem, por quê e quais passaram
+(`RI_PRIORIDADE_CONFIRMADA`).
+
 **O que se fez.** R-1 compra e venda para a proprietária. Depois, duas prenotações sobre a matrícula, na
 ordem: a nº 2, venda da proprietária a um comprador; a nº 3, venda da mesma proprietária a outro comprador.
 A lavratura pelo protocolo 3, com a 2 ainda aberta.

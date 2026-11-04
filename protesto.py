@@ -1371,6 +1371,12 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
         detalhe["triduo"] = triduo
     if prova["afirmacao_expressa"]:
         detalhe["afirmacao_expressa"] = prova["afirmacao_expressa"]
+    # DEPOIS DO VENCIMENTO, SEMPRE POR FALTA DE PAGAMENTO (Lei 9.492/1997, art. 21, §§ 1º e 2º). Decisão
+    # do oficial, 03/11/2026 (ensaio de atos do Protesto, defeito 2, «h2»): a falta de aceite ou de
+    # devolução vencida se troca para falta de pagamento, e a tela avisa. O motivo de antes fica no ato.
+    motivo_trocado = _motivo_depois_do_vencimento(con, tit, hoje=str(agora)[:10])
+    if motivo_trocado:
+        detalhe["motivo_trocado"] = motivo_trocado
 
     # O TEXTO QUE VAI NO LIVRO, montado dos fatos deste titulo — e ele
     # CONGELA aqui: e o que foi escrito naquele dia. Medido: o E-Oficio o
@@ -1430,7 +1436,30 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
     bd.escrever("UPDATE pt_titulos SET situacao='PROTESTADO' WHERE id=%s",
                (titulo_id,))
     return {"ato_id": ato_id, "titulo_id": titulo_id, **lugar,
-            "afirmacao_expressa": prova["afirmacao_expressa"]}
+            "afirmacao_expressa": prova["afirmacao_expressa"],
+            "motivo_trocado": motivo_trocado}
+
+
+#: Os motivos que só cabem ANTES do vencimento (Lei 9.492/1997, art. 21, § 1º; o § 3º, da devolução,
+#: só muda a base do protesto, e não a regra do § 2º).
+MOTIVOS_SO_ANTES_DO_VENCIMENTO = {"2": "falta de aceite", "3": "falta de devolução"}
+
+
+def _motivo_depois_do_vencimento(con, tit: dict, *, hoje: str) -> dict | None:
+    """Troca a falta de aceite ou de devolução para falta de pagamento, se o título já venceu. ESCREVE.
+
+    Devolve o que trocou (para o ato e para o aviso da tela), ou None. No dia do vencimento já não é
+    «antes do vencimento». Título sem vencimento (à vista) não se troca: não há data para comparar.
+    """
+    motivo = str(tit.get("motivo_protesto") or "").strip()
+    vencimento = str(tit.get("data_vencimento") or "").strip()[:10]
+    if motivo not in MOTIVOS_SO_ANTES_DO_VENCIMENTO or not vencimento or hoje < vencimento:
+        return None
+    banco(con).escrever("UPDATE pt_titulos SET motivo_protesto='1' WHERE id=%s", (int(tit["id"]),))
+    return {"de": motivo, "de_extenso": MOTIVOS_SO_ANTES_DO_VENCIMENTO[motivo], "para": "1",
+            "vencimento": vencimento,
+            "fundamento": "Lei 9.492/1997, art. 21, § 2º: depois do vencimento, o protesto "
+                          "sempre será efetuado por falta de pagamento"}
 
 
 def lancar_desistencia(con, titulo_id: int, *,

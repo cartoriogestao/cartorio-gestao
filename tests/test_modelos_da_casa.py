@@ -4900,6 +4900,23 @@ def _so_o_breve_relato_do_natimorto(depois) -> bool:
 MUDARAM_DE_PROPOSITO["certidoes"]["montar_teor(NATIMORTO)"] = _so_o_breve_relato_do_natimorto
 
 
+# O Nº DA D.O. NA CERTIDÃO DE ÓBITO — 04/11/2026 (PR #308): o molde ganhou o parágrafo de estilo
+# `PObNumeroDO`, que SOME quando o assento não tem o número (o caso do ouro). Sobra só a definição do
+# estilo no content.xml; tirada ela, a saída é a do ouro, byte a byte.
+_ESTILO_DA_DO = re.compile(r'<style:style style:name=\\"PObNumeroDO\\".*?</style:style>')
+
+
+def _so_o_estilo_da_do(depois) -> bool:
+    import json as _json
+    antes = _json.dumps(OURO_C.ouro("certidoes")["funcoes"]["odt.arquivo_da_certidao(OBITO).content.xml"],
+                        ensure_ascii=False)
+    novo = _json.dumps(depois, ensure_ascii=False)
+    return bool(_ESTILO_DA_DO.search(novo)) and _ESTILO_DA_DO.sub("", novo) == antes
+
+
+MUDARAM_DE_PROPOSITO["certidoes"]["odt.arquivo_da_certidao(OBITO).content.xml"] = _so_o_estilo_da_do
+
+
 def _ouro_com_as_mudancas_explicadas(grupo: str, funcoes: dict) -> dict:
     """O ouro gravado, com a troca de cada saída de `MUDARAM_DE_PROPOSITO`.
 

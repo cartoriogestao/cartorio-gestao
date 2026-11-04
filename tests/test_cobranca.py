@@ -29,7 +29,10 @@ import despesas_inter as INTER
 from bd_nativo import banco
 
 AGORA = datetime(2026, 10, 27, 10, 0, tzinfo=timezone(timedelta(hours=-3)))
-VENCIMENTO = "2026-11-03"
+# O VENCIMENTO ANDA COM O RELÓGIO (04/11/2026): fixo em 03/11, a tela (que usa a hora de verdade)
+# passou a recusar «vencimento anterior a hoje» a partir de 04/11. Os testes com AGORA fixo
+# continuam valendo: hoje + 10 dias é sempre depois dele.
+VENCIMENTO = (datetime.now(timezone(timedelta(hours=-3))).date() + timedelta(days=10)).isoformat()
 CPF = "00000000191"          # 000.000.001-91, o fictício da casa (documentos_ficticios.txt)
 PAGADOR = {"nome": "FULANA DE TAL", "documento": "000.000.001-91", "email": "",
            "logradouro": "Rua Um", "numero": "10", "complemento": "", "bairro": "Centro",

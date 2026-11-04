@@ -576,7 +576,11 @@ def _despesas(casa) -> None:
 
     aguardando = cadastrar("Salário líquido da escrevente, competência do mês", "1.500,00")
     autorizada = cadastrar("Salário líquido da escrevente, adiantamento do mês", "800,00")
-    _postar(casa, f"{base}/{autorizada}/autorizar", rf"^{base}/{autorizada}$")
+    # A AUTORIZAÇÃO CONFERE A REVISÃO (#317, 04/11/2026): a ficha manda o hash dos dados que o
+    # oficial viu; sem ele, a tela recusa «os dados mudaram» e a despesa fica aguardando.
+    import despesas_fluxo as DF
+    revisao = DF.revisao(dict(_um(casa, "SELECT * FROM dp_despesas WHERE id = %s", (autorizada,))))
+    _postar(casa, f"{base}/{autorizada}/autorizar", rf"^{base}/{autorizada}$", revisao=revisao)
     paga = cadastrar("Salário líquido da escrevente, competência anterior", "1.935,32")
     casa.sql("UPDATE dp_despesas SET situacao = %s, data_pagamento = %s, banco_e2e = %s WHERE id = %s",
              (DP.PAGA, casa.hoje, "E00000000202610301200abcdefghijk", paga))

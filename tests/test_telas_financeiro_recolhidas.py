@@ -169,6 +169,8 @@ def _apuracao(despesas=(), receitas=(), outras=(), avisos=(), imposto=23238):
             "tabela": tabela if imposto is not None else None,
             "calculo": ({"faixa": 4, "aliquota_bp": 2250, "deduzir": 67549, "reducao": 0, "imposto_da_tabela": imposto}
                         if imposto is not None else None),
+            # a mudança do critério (#274, 03/11/2026: a receita no selo); zero = os dois critérios batem
+            "mudanca_do_criterio": {"antes": 100, "agora": 100, "diferenca": 0},
             "imposto": imposto, "avisos": list(avisos)}
 
 
@@ -186,7 +188,7 @@ CARNE_CHEIO = dict(despesas=[_despesa(1, True), _despesa(2), _despesa(3, True), 
                    receitas=[_receita(1), _receita(2, "Avulso")],
                    outras=[{"id": 7, "dia": "2026-09-11", "descricao": "ENSAIO-outra entrada", "valor": 15000}],
                    avisos=["2 despesa(s) do mês ainda sem marcação", "1 «outra entrada» no caixa"],
-                   ano=[{"competencia": "2026-09", "receita": 1, "selo": 1, "dedutiveis": 1, "excesso_anterior": 0, "a_classificar": 300, "base": 1, "imposto": 1}])
+                   ano=[{"competencia": "2026-09", "receita": 1, "selo": 1, "dedutiveis": 1, "excesso_anterior": 0, "a_classificar": 300, "base": 1, "imposto": 1, "mudanca_do_criterio": 0}])
 
 
 def test_despesa_a_classificar_abre_o_quadro_dela_antes_dos_numeros():

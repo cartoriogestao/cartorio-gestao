@@ -135,8 +135,12 @@ def test_o_carne_leao_e_o_caixa_fechado_nao_mudam(balcao):  # noqa: F811
     try:
         bd = banco(con)
         forma = next(iter(CL.FORMAS_DOS_FUNDOS))
-        do_mes_passado = CL._recebido_no_caixa(bd, f"{pago:%Y-%m}", forma, 0)[0]
-        deste_mes = CL._recebido_no_caixa(bd, f"{HOJE:%Y-%m}", forma, 0)[0]
+        # O CRITÉRIO DE ANTES (pelo registro no caixa) e o do selo (#274/#278, 03/11/2026): pelos
+        # dois, a data do pagamento não leva a receita para o mês passado. Sem selo, pelo critério
+        # do selo o item fica nos «pagos sem selo» (31/12); pelo de antes, conta hoje.
+        do_mes_passado = CL._recebido_no_caixa(bd, f"{pago:%Y-%m}", forma, 0, CL.PAGAMENTO)[0]
+        do_mes_passado += CL._recebido_no_caixa(bd, f"{pago:%Y-%m}", forma, 0, CL.SELO)[0]
+        deste_mes = CL._recebido_no_caixa(bd, f"{HOJE:%Y-%m}", forma, 0, CL.PAGAMENTO)[0]
         caixas_depois = bd.ler("SELECT * FROM cx_caixas WHERE id <> (SELECT max(id) FROM cx_caixas) "
                                "ORDER BY id")
     finally:

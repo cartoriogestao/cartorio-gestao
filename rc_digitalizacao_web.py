@@ -26,6 +26,7 @@ from flask import (
 import rc_digitalizacao as RCDIGI
 import ri_digitalizacao as RDIGI
 import rc_acervo_lote as ACLOTE
+import rc_acervo_sequencia as ACSEQ
 from bd_nativo import ERROS_DO_BANCO
 
 
@@ -35,6 +36,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def _usuario() -> str:
         quem = app.extensions.get("usuario_nome")
         return quem() if quem else (session.get("username") or "")
+
+    @app.route('/rcpn/acervo-transcrito/sequencia', methods=['GET', 'POST'])
+    @roles_required('ADMIN', 'MANAGER', 'USER')
+    def rcpn_acervo_transcrito_sequencia():
+        erro='';previa=andamento=None;caminho=request.form.get('indice','').strip()
+        try:
+            if request.method=='POST':
+                p=app.extensions['pasta_da_casa'](caminho)
+                previa=ACSEQ.carregar(p)
+                if request.form.get('acao')=='iniciar':
+                    if request.form.get('confirmar')!='1':
+                        raise ACLOTE.LoteError('Confirme a execução da sequência.')
+                    with db.connect() as con:
+                        from bd_nativo import banco
+                        u=banco(con).um('SELECT * FROM users WHERE id=%s',(session['user_id'],))
+                    if not u or not u['active']:
+                        abort(403)
+                    execucao=ACSEQ.iniciar(db,previa,usuario_id=session['user_id'],usuario=_usuario())
+                    return redirect(url_for('rcpn_acervo_transcrito_sequencia',execucao=execucao))
+            elif request.args.get('execucao'):
+                andamento=ACSEQ.estado(db,request.args['execucao'])
+                if int(andamento['usuario_id'])!=int(session['user_id']):
+                    abort(403)
+        except (ValueError,OSError) as exc:
+            erro=str(exc)
+        return render_template('rc_acervo_sequencia.html',erro=erro,previa=previa,
+                               andamento=andamento,caminho=caminho)
 
     @app.route('/rcpn/acervo-transcrito/lote', methods=['GET', 'POST'])
     @roles_required('ADMIN', 'MANAGER', 'USER')

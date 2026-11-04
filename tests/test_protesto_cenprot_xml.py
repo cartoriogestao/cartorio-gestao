@@ -55,7 +55,8 @@ def test_a_forma_do_arquivo_e_a_medida():
     assert b.startswith("﻿".encode("utf-8") +
                         b'<?xml version="1.0" encoding="utf-8"?>\r\n')
     assert b"\n" not in b.replace(b"\r\n", b"")      # só CRLF
-    assert not b.endswith(b"\r\n")                   # termina sem quebra
+    assert b.endswith(b"</estados>\r\n")             # fecha com CRLF (portal CENPROT, 04/11/2026)
+    assert not b.endswith(b"\r\n\r\n")               # uma quebra so
     assert b"  <estado uf=\"MA\">" in b              # dois espaços
     assert b'<estados total="1" versao="1.23-geral">' in b
     assert b"<complemento />" in b                   # vazio auto-fechado

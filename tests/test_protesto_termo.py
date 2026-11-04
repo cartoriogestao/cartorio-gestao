@@ -86,13 +86,23 @@ def test_o_texto_sai_na_forma_que_a_casa_escreveu():
     """A forma mais comum das 23: base + a posteriori + edital com motivo —
     912 das 1.132 linhas medidas — menos o art. 9º-A, que a inspeção
     reprovou (tarefa #49), e com o tipo e o motivo DESTE título."""
+    # O TÍTULO DIFERIDO (`posteriori=True`): a frase do pagamento a posteriori só sai nele desde a
+    # decisão do oficial de 03/11/2026 («l») — no pago no balcão ela não sai (o teste de baixo).
     texto = TERMO.montar(edital_data="2023-05-26", edital_motivo="Ausente",
-                         motivo_protesto="1")
+                         motivo_protesto="1", posteriori=True)
     assert "CERTIFICO que não houve manifestação" in texto
     assert "PROTESTO COMUM LAVRADO POR FALTA DE PAGAMENTO." in texto
     assert "9.430" not in texto
     assert "pagamento a posteriori" in texto
     assert "O devedor foi intimado por Edital em 26/05/2023 pelo motivo Ausente." in texto
+
+
+def test_sem_o_diferido_a_frase_do_a_posteriori_nao_entra():
+    """Decisão do oficial, 03/11/2026 («l»): no protesto pago no balcão (antecipado) a frase «Os
+    emolumentos serão pagos pelo devedor no ato do cancelamento» não sai — e não sobra o claro dela."""
+    texto = TERMO.montar(edital_data="2023-05-26", edital_motivo="Ausente", motivo_protesto="1")
+    assert "pagamento a posteriori" not in texto and "  " not in texto
+    assert "FALTA DE PAGAMENTO. O devedor foi intimado" in texto
 
 
 def test_sem_edital_a_frase_NAO_entra_e_nao_sobra_linha_vazia():
@@ -265,7 +275,8 @@ def test_os_marcadores_sao_o_tipo_o_motivo_e_o_edital():
     edital. É a razão de o formato ser `CHAVES` e não Jinja."""
     padrao = MOD.padrao_de("PT_TERMO_PROTESTO")
     import re
-    assert set(re.findall(r"\{(\w+)\}", padrao)) == {"edital", "tipo", "motivo"}
+    # + {posteriori}, a frase do pagamento a posteriori, que só o título diferido leva (03/11/2026, «l»)
+    assert set(re.findall(r"\{(\w+)\}", padrao)) == {"edital", "tipo", "motivo", "posteriori"}
 
 
 def test_sem_motivo_o_termo_RECUSA_e_nao_inventa():

@@ -232,3 +232,23 @@ def test_o_protesto_falimentar_por_edital_pede_a_afirmacao_de_que_a_procura_se_e
     log = F._um(s, """SELECT details FROM audit_logs WHERE action='AFIRMACAO_EXPRESSA'
                        AND entity_type='pt_titulos' AND entity_id=%s ORDER BY id DESC LIMIT 1""", (tid,))
     assert log and "PROTESTO_FALIMENTAR_POR_EDITAL" in str(log["details"]), log
+
+
+# ------------------------------------------------------------------ a frase do pagamento a posteriori
+
+FRASE_POSTERIORI = "registrado com o procedimento de pagamento a posteriori"
+
+
+@pytest.mark.parametrize("vencimento,diferido", [("2025-02-10", False), ("2026-10-01", True)])
+def test_a_frase_do_pagamento_a_posteriori_so_sai_no_diferido(s, vencimento, diferido):  # noqa: F811
+    """CN-MA art. 925, §§ 11 e 12: o emolumento a posteriori é do título DIFERIDO — o de qualquer pessoa,
+    se o vencimento não passa de um ano na apresentação (§ 12, II). Decisão do oficial, 03/11/2026 («l»):
+    a frase «Os emolumentos serão pagos pelo devedor no ato do cancelamento» vira marcador e sai só no
+    diferido. O título do balcão vencido em 2025 é antecipado (pago no protocolo): sem a frase."""
+    import protesto_posteriori as POSTERIORI
+    feito = _ate_o_protesto(s, numero_titulo=f"NP-07{int(diferido)}", data_vencimento=vencimento)
+    assert feito["situacao"] == "PROTESTADO", feito["avisos"]
+    with s["db"].connect() as con:
+        assert (POSTERIORI.regime(con, feito["id"])["regime"] == "DIFERIDO") is diferido
+    termo = F._ato(s, feito["id"], "PROTESTO")["teor"] or ""
+    assert (FRASE_POSTERIORI in termo) is diferido, termo

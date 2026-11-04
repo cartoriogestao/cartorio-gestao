@@ -1,0 +1,8 @@
+{
+  "chave": "PT_TERMO_POSTERIORI",
+  "atribuicao": "Protesto",
+  "nome": "Termo do protesto — pagamento a posteriori",
+  "formato": "CHAVES",
+  "explica": "Frase que a REGRA escolhe e o oficial escreve: é o {posteriori} do termo, e só sai quando os emolumentos do título são DIFERIDOS (pagos pelo devedor no cancelamento — CN-MA art. 925, §§ 11 e 12; `protesto_posteriori.regime`). Decisão do oficial, 03/11/2026: no protesto pago no balcão ela não sai. O LIVRO LAVRA O PADRÃO DESTA FRASE, como as da intimação (LF06E).",
+  "campos": []
+}

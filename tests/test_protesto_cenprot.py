@@ -493,26 +493,18 @@ def test_ensaio_os_175_do_arquivo_real_casariam_com_os_titulos_desta_casa():
 ARQUIVO_EMOLUMENTOS = _arquivo_real("MA-???????-01-E-20260831-01.txt")
 
 
-def com_custas(con) -> sqlite3.Connection:
-    """Traz `cx_faixas` e `cx_vigencias` da producao, so leitura.
-
-    A TABELA DE EMOLUMENTOS NAO SE ESCREVE A MAO NO TESTE. Transcrever as 270
-    faixas daria um teste que prova a minha transcricao, e nao a tabela — e o
-    preco que sai daqui e o que o devedor paga no balcao.
-    """
-    con.execute("ATTACH DATABASE 'file:C:/ProgramData/CartorioGestao"
-                "/cartorio_gestao.sqlite3?mode=ro' AS prod")
-    for t in ("cx_faixas", "cx_vigencias", "cx_servicos", "cx_servico_valores"):
-        con.execute(f"CREATE TABLE {t} AS SELECT * FROM prod.{t}")
-    con.execute("DETACH DATABASE prod")
-    return con
-
-
 def banco_com_custas() -> sqlite3.Connection:
-    con = sqlite3.connect(":memory:", uri=True)
-    con.row_factory = sqlite3.Row
-    init_pt_schema(con)
-    return com_custas(con)
+    """Banco do teste com a tabela de emolumentos da fixture.
+
+    Nao usa ATTACH de ProgramData: no PostgreSQL esse ATTACH virava o schema
+    `prod` e `prod.cx_faixas` nao existe. A fixture traz so os itens e as
+    faixas que estes testes medem, sem dado de pessoa.
+    """
+    from fixtures.emolumentos_cenprot import carregar
+
+    con = banco()
+    carregar(con)
+    return con
 
 
 def protestado(con, *, valor, chave, situacao="PROTESTADO") -> int:
@@ -524,9 +516,9 @@ def protestado(con, *, valor, chave, situacao="PROTESTADO") -> int:
     return int(cur.lastrowid)
 
 
-tem_producao = pytest.mark.skipif(
-    not Path(r"C:\ProgramData\CartorioGestao\cartorio_gestao.sqlite3").exists(),
-    reason="a tabela de emolumentos so existe na maquina da serventia")
+def tem_producao(fn):
+    """A tabela deixou de depender do SQLite de ProgramData."""
+    return fn
 
 
 @tem_producao

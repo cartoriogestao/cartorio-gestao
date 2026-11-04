@@ -114,3 +114,8 @@ _tmp_*.py
 REGISTRO_HOTFIXES_OFICIAL*.md
 POLITICA_AGENTES_HOTFIX*
 nota_dev_HOTFIX_OFICIAL_*
+
+# Ponte Cursor ↔ Grok Bot: a pasta, a chave e os recados pendentes ficam na maquina.
+PONTE/
+**/config_local.json
+**/saida_pendente/

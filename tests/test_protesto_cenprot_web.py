@@ -41,6 +41,7 @@ import pytest
 pytestmark = pytest.mark.lento  # gate rapido: pytest -m "not lento" — acervo_eoficio / integração pesada
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
+sys.path.insert(0, str(RAIZ / "tests"))
 
 SENHA = "Senha#12345"
 AGORA = "2026-09-01T10:00:00"
@@ -295,28 +296,22 @@ def protestado(s, *, valor=10160, chave=CHAVE):
 
 
 def com_tabela(s):
-    """Traz a tabela de emolumentos da producao para o banco do teste.
+    """Grava a fixture de emolumentos no banco do teste.
 
-    Conexao PROPRIA com `uri=True`: o `_con` daqui abre pelo caminho simples,
-    e o `ATTACH` de um banco em modo `ro` precisa da forma URI.
+    Nao ha ATTACH de ProgramData: no PostgreSQL isso nao cria `prod.cx_faixas`.
     """
-    con = sqlite3.connect(str(s["banco"]), uri=True)
+    from fixtures.emolumentos_cenprot import carregar
+
+    con = sqlite3.connect(str(s["banco"]))
     con.row_factory = sqlite3.Row
-    # `ATTACH` e `DETACH` NAO RODAM DENTRO DE TRANSACAO — ficam de fora do
-    # `with`, que e quem abre uma.
-    con.execute("ATTACH DATABASE 'file:C:/ProgramData/CartorioGestao"
-                "/cartorio_gestao.sqlite3?mode=ro' AS prod")
     with con:
-        for t in ("cx_faixas", "cx_vigencias", "cx_servicos", "cx_servico_valores"):
-            con.execute(f"DELETE FROM {t}")
-            con.execute(f"INSERT INTO {t} SELECT * FROM prod.{t}")
-    con.execute("DETACH DATABASE prod")
+        carregar(con)
     con.close()
 
 
-tem_producao = pytest.mark.skipif(
-    not Path(r"C:\ProgramData\CartorioGestao\cartorio_gestao.sqlite3").exists(),
-    reason="a tabela de emolumentos so existe na maquina da serventia")
+def tem_producao(fn):
+    """A tabela deixou de depender do SQLite de ProgramData."""
+    return fn
 
 
 @tem_producao

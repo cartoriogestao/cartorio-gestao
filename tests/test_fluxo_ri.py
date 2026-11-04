@@ -837,7 +837,7 @@ def test_a_certidao_de_inteiro_teor_reproduz_o_termo_da_matricula(casa):
     _uma_vez(papel, f["teor"][-120:], "certidão de inteiro teor")
 
 
-# =============================================== os 25 modelos de ato da casa
+# =============================================== os modelos de ato da casa
 
 import ri_modelos_atos as MODELOS_DE_ATO  # noqa: E402
 
@@ -888,7 +888,7 @@ def _como_o_balcao_preenche(teor: str) -> tuple[str, list[str]]:
 @pytest.mark.parametrize("codigo", [m["codigo"] for m in MODELOS_DE_ATO.MODELOS])
 def test_cada_modelo_de_ato_da_casa_lavra_sela_e_sai_igual_no_termo_e_na_certidao(
         casa, codigo):
-    """Os 25 modelos de `ri_modelos_atos`, pelo mesmo caminho do balcão:
+    """Os modelos de `ri_modelos_atos`, pelo mesmo caminho do balcão:
     protocolo pago, prenotação, matrícula aberta, o texto do modelo na caixa
     de teor, lavratura com o item, selo, TERMO (ficha .odt) e CERTIDÃO de
     inteiro teor. No termo: o R-/AV- com o número e a matrícula (LRP art. 232),

@@ -310,6 +310,11 @@
   </div>
   {% endif %}
 {% endif %}
+{#- O ÔNUS DA ORIGEM AINDA NÃO TRANSPORTADO (decisão do oficial, 03/11/2026, «e2»; LRP art. 230): a
+    ficha avisa até a AV de transporte citar o rótulo e o número da origem. #}
+{% if onus_da_origem %}
+  <div class="notice danger" data-fase="resumo">{{ aviso_do_onus_da_origem }}</div>
+{% endif %}
 
 {% if protocolos %}
 {% if f %}<span class="cg-ancora" id="protocolos"></span>{% endif %}

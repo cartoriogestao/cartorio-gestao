@@ -787,6 +787,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return render_template(
             "rcpj_rtd_titulo.html", t=titulo, anexos=anexos, para_ver=para_ver,
             denominacoes=denominacoes,
+            formas_da_pj=TIT.FORMAS_DA_PJ,
+            natureza_empresaria=(int(titulo["atribuicao"]) == TIT.RCPJ
+                                 and TIT.natureza_diz_empresaria(titulo["natureza"])),
             abas_da_ficha=abas_da_ficha,
             qualificacoes=qualificacoes, encaminhamentos=encaminhamentos,
             registro=dict(registro) if registro else None, atos=atos or [],
@@ -1081,7 +1084,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     declaracoes=RG.declaracoes_do_formulario(request.form),
                     lista_presenca=lista,
                     conferir_denominacao=True,
-                    fundamentacao_denominacao=_campo("fundamentacao_denominacao"))
+                    fundamentacao_denominacao=_campo("fundamentacao_denominacao"),
+                    forma_pj=_campo("forma_pj"))
                 # SELO E CUSTAS NA MESMA TRANSAÇÃO do registro — regra da
                 # casa: domínio não sela/cobra; a TELA faz (opcional). Se o
                 # selo for de outra serventia ou não houver caixa com cobrar
@@ -1096,6 +1100,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         except RECUSAS_DO_BALCAO as erro:
             flash(str(erro), "danger")
             return voltar
+        # A SOCIEDADE EMPRESÁRIA NO LIVRO A (decisão do oficial, 03/11/2026, «n»): avisa, e não barra.
+        if feito.get("empresaria"):
+            flash("A natureza deste título fala em sociedade EMPRESÁRIA, que se registra na Junta "
+                  "Comercial (CC arts. 967 e 1.150), e não no RCPJ. O registro foi lavrado: confira se "
+                  "é mesmo sociedade simples, associação ou fundação.", "warning")
         # A DENOMINAÇÃO PARECIDA REGISTRADA COM FUNDAMENTO (03/11/2026, «m»): vai à auditoria.
         if feito.get("denominacao_parecida"):
             audit("RG_DENOMINACAO_PARECIDA", "rg_registros", feito["registro_id"],

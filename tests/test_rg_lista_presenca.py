@@ -383,6 +383,7 @@ def test_registrar_titulo_pj_sem_e_com_a_declaracao(cg_casa_logada):
         "serie": "PJ_A", "teor": TEOR,
         "enquadramento_cnma": "ART410", "lista_presenca": "APRESENTADA",
         "lista_presenca_ref": "Lista da fundação, folha 1",
+        "forma_pj": "FUNDACAO",   # a forma, que a tela pergunta no Livro A (03/11/2026, «n»)
     }, follow_redirects=True)
     with casa["db"].connect() as con:
         ato = bd(con).um("SELECT declaracoes FROM rg_atos ORDER BY id DESC LIMIT 1")

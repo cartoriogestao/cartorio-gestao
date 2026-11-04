@@ -343,6 +343,19 @@
         <option value="{{ s.codigo }}"{% if t.serie == s.codigo %} selected{% endif %}>{{ s.nome }}</option>
         {% endfor %}
       </select></label>
+    {#- A FORMA DA PESSOA JURÍDICA (decisão do oficial, 03/11/2026, «n»): perguntada no Livro A; a
+        sociedade empresária é da Junta Comercial, e a tela avisa antes do clique. #}
+    {% if t.atribuicao == 3 %}
+      {% if natureza_empresaria %}
+      <div class="notice danger">A natureza deste título fala em sociedade <strong>EMPRESÁRIA</strong>, que se
+        registra na Junta Comercial (CC arts. 967 e 1.150), e não no RCPJ. Confira antes de registrar.</div>
+      {% endif %}
+      <label>Forma da pessoa jurídica <small>— obrigatória no Livro A</small>
+        <select name="forma_pj">
+          <option value="">— escolha —</option>
+          {% for codigo, nome in formas_da_pj.items() %}<option value="{{ codigo }}">{{ nome }}</option>{% endfor %}
+        </select></label>
+    {% endif %}
     {#- A DENOMINAÇÃO QUE JÁ ESTÁ NO LIVRO A (decisão do oficial, 03/11/2026, «m»): a idêntica barra no
         Livro A; a parecida pede por que se distingue. #}
     {% if denominacoes and (denominacoes.identicos or denominacoes.parecidos) %}

@@ -436,6 +436,10 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # cadastro»). O breve relato a certifica; o cadastro (`requerente_nome`) continua sendo o da
     # busca, e só muda pela «Corrigir requerente», com o motivo.
     ("rg_registros", "pj_denominacao", "TEXT"),
+    # A FORMA DA PESSOA JURÍDICA DO LIVRO A (decisão do oficial, 03/11/2026, ensaio de atos do RCPJ, «n»):
+    # associação, fundação, sociedade simples, organização religiosa, partido político ou outra. A sociedade
+    # EMPRESÁRIA se registra na Junta Comercial (CC arts. 967 e 1.150): a tela avisa.
+    ("rg_registros", "pj_forma", "TEXT"),
     # AS DECLARAÇÕES QUE O TERMO DO LIVRO FAZ (LD09, 21/10/2026): o extrato do
     # Livro C (LRP art. 143), a inscrição da pessoa jurídica (art. 120) e a
     # matrícula do periódico (art. 123). JSON {claro: texto}, escrito por quem

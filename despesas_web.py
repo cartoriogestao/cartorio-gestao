@@ -52,6 +52,10 @@ _LOG = logging.getLogger("cartorio.despesas_web")
 # A frase da leitura recusada (ver `despesas_ler_codigo`).
 CODIGO_NAO_LIDO = ("Não foi possível ler este código. Cole o código completo: a linha "
                    "digitável do boleto (44, 47 ou 48 dígitos), o Pix copia e cola ou a chave Pix.")
+# A frase da leitura de documento ou anexo recusada (ver `despesas_ler_documento`).
+DOCUMENTO_NAO_LIDO = ("Não foi possível ler o QR ou o código de barras deste documento. Use "
+                      "PDF (até 12 páginas, sem senha), PNG ou JPG de até 15 MB, ou cole o código "
+                      "à mão. O detalhe ficou no registro do servidor.")
 
 QUEM_CADASTRA = ("ADMIN", "MANAGER", "USER")
 
@@ -191,7 +195,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         try:
             return jsonify(DD.ler(arquivo.read(DD.MAX_BYTES+1),hoje=_agora().date()))
         except DP.DespesaError as erro:
-            return jsonify(erro=str(erro)), 400
+            # Frase fixa na tela, detalhe no registro (CodeQL #302, como o #301).
+            _LOG.info("documento de despesa não lido: %s", erro)
+            return jsonify(erro=DOCUMENTO_NAO_LIDO), 400
 
     @app.route('/administrativo/despesas/<int:despesa_id>/ler-anexo/<int:anexo_id>',methods=['POST'])
     @login_required
@@ -212,7 +218,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 raise DP.DespesaError('O arquivo difere do anexo registrado. Confira o documento antes de ler.')
             resposta=DD.ler(conteudo,hoje=_agora().date())
         except (OSError,DP.DespesaError) as erro:
-            return jsonify(erro=str(erro)),400
+            # Frase fixa na tela, detalhe no registro (CodeQL #303, como o #301).
+            _LOG.info("anexo %s da despesa %s não lido: %s", anexo_id, despesa_id, erro)
+            return jsonify(erro=DOCUMENTO_NAO_LIDO),400
         audit('DESPESA_ANEXO_LIDO','dp_despesas',despesa_id,
               {'anexo_id':anexo_id,'sha256':resposta['sha256'],'codigos':len(resposta['opcoes'])})
         return jsonify(resposta)

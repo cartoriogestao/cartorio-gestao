@@ -12,6 +12,39 @@
   {% if papel == 'ADMIN' %}<a class="button" href="{{ url_for('despesas_configuracao') }}">Configuração e Banco Inter</a>{% endif %}
 </div>
 
+{% if conferencia_portal %}
+<section class="panel" id="faturamento-portal">
+  <h2>Emolumentos de {{ conferencia_portal.competencia[5:] }}/{{ conferencia_portal.competencia[:4] }} — bruto, FERJ e líquido</h2>
+  {% set cf = conferencia_portal %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Fonte</th><th>Emolumentos brutos</th><th>FERJ</th><th>Emolumentos menos FERJ</th></tr></thead>
+    <tbody>
+      {% if cf.referencia %}<tr><td>Portal do Selo / SIAFERJ</td><td>R$ {{ reais(cf.referencia.bruto) }}</td><td>R$ {{ reais(cf.referencia.ferj) }}</td><td><strong>R$ {{ reais(cf.referencia.liquido) }}</strong></td></tr>{% endif %}
+      <tr><td>Selos registrados no sistema</td><td>R$ {{ reais(cf.local_bruto) }}</td><td>R$ {{ reais(cf.local_ferj) }}</td><td>R$ {{ reais(cf.local_liquido) }}</td></tr>
+      {% if cf.referencia %}<tr><td>Diferença a conferir</td><td>R$ {{ reais(cf.diferenca_bruto) }}</td><td>R$ {{ reais(cf.diferenca_ferj) }}</td><td>R$ {{ reais(cf.diferenca_liquido) }}</td></tr>{% endif %}
+    </tbody>
+  </table></div>
+  {% if cf.referencia %}
+    <p class="small">Relatório oficial de {{ cf.referencia.atos }} atos e {{ cf.referencia.cancelados }} cancelados,
+      importado por {{ cf.referencia.registrado_por }} em {{ cf.referencia.registrado_em }}.</p>
+    <p class="small">O relatório de faturamento é resumido. As diferenças continuam a conferir com a relação analítica dos selos,
+      inclusive os emitidos fora do sistema. O Livro Diário conserva os lançamentos por ato.</p>
+    <p class="small">O FERJ do portal é o informado no relatório. O FERJ local é calculado pela configuração da serventia.</p>
+    {% if cf.referencia.protesto_diferido %}<p class="small">O relatório informa ainda R$ {{ reais(cf.referencia.protesto_diferido) }} de protesto diferido (B).
+      A coluna líquida acima compara somente emolumentos (A) menos FERJ.</p>{% endif %}
+  {% else %}<p>Importe o relatório mensal para comparar a mesma base com o Portal do Selo.</p>{% endif %}
+  {% if cf.sem_valor %}<p class="small">{{ cf.sem_valor }} selo(s) local(is) sem valor discriminado precisam de conferência.</p>{% endif %}
+  <details><summary>Importar relatório de faturamento do Portal do Selo</summary>
+    <form method="post" action="{{ url_for('despesas_importar_faturamento') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Relatório mensal completo (XLSX, até 2 MB) <input type="file" name="relatorio" accept=".xlsx" required></label>
+      <p class="small">O arquivo original e a autoria ficam preservados. A importação cadastra a referência mensal; não cria selos nem receitas avulsas.</p>
+      <button type="submit">Importar e conferir o mês</button>
+    </form>
+  </details>
+</section>
+{% endif %}
+
 {% if cfg.despesas_pagamento_ligado != '1' %}
 <div class="notice">O pagamento automático está <strong>desligado</strong>: as despesas autorizadas
   esperam. Quem liga é o oficial, na configuração.</div>

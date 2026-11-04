@@ -1310,7 +1310,10 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
                     modelo_do_termo: str | None = None,
                     conferir_triduo: bool = False,
                     motivo_atraso: str | None = None,
-                    afirmacao: str | None = None) -> dict:
+                    afirmacao: str | None = None,
+                    afirmo_falimentar: bool = False,
+                    afirmacao_falimentar: str | None = None,
+                    robo: bool = False) -> dict:
     """Lavra o protesto no Livro de Registro de Protestos. ESCREVE.
 
     Exige que o título já tenha sido intimado (Lei 9.492/1997, art. 14).
@@ -1371,6 +1374,21 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
         detalhe["triduo"] = triduo
     if prova["afirmacao_expressa"]:
         detalhe["afirmacao_expressa"] = prova["afirmacao_expressa"]
+    # O FALIMENTAR POR EDITAL (decisão do oficial, 03/11/2026, ensaio de atos do Protesto, «k»): a CRA o
+    # recusa (69) e o STJ quer saber quem recebeu (Súmula 361); a jurisprudência o admite quando a empresa
+    # não é achada. Aqui se lavra só com a afirmação de que a procura se esgotou.
+    falimentar = None
+    if falimentar_por_edital(con, titulo_id):
+        import afirmacoes_expressas as AFX
+        texto = AFX.validar(
+            afirmo_falimentar, afirmacao_falimentar, robo=robo, erro=ProtestoError,
+            por_que=("Este protesto é PARA FINS FALIMENTARES e a intimação foi por EDITAL. A CRA recusa "
+                     "este caso (irregularidade 69), e a Súmula 361 do STJ exige a identificação de quem "
+                     "recebeu a intimação. Só se lavra se a procura pelo devedor se esgotou: diga onde se "
+                     "procurou."))
+        falimentar = {"regra": "PROTESTO_FALIMENTAR_POR_EDITAL", "afirmacao": texto,
+                      "o_que_faltava": "intimação pessoal no protesto para fins falimentares"}
+        detalhe["afirmacao_falimentar"] = falimentar
 
     # O TEXTO QUE VAI NO LIVRO, montado dos fatos deste titulo — e ele
     # CONGELA aqui: e o que foi escrito naquele dia. Medido: o E-Oficio o
@@ -1430,7 +1448,29 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
     bd.escrever("UPDATE pt_titulos SET situacao='PROTESTADO' WHERE id=%s",
                (titulo_id,))
     return {"ato_id": ato_id, "titulo_id": titulo_id, **lugar,
-            "afirmacao_expressa": prova["afirmacao_expressa"]}
+            "afirmacao_expressa": prova["afirmacao_expressa"],
+            "falimentar_por_edital": falimentar}
+
+
+def falimentar_por_edital(con, titulo_id: int) -> bool:
+    """O protesto PARA FINS FALIMENTARES cuja intimação válida foi por EDITAL. Só LÊ.
+
+    Uma régua só, para a lavratura e para a ficha (decisão do oficial, 03/11/2026, «k»).
+    """
+    bd = banco(con)
+    tit = bd.um("SELECT tipo_protesto FROM pt_titulos WHERE id=%s", (int(titulo_id),))
+    if not tit or str(tit["tipo_protesto"] or "").strip().upper()[:1] != "F":
+        return False
+    intimacao = bd.um(
+        """SELECT detalhe_json FROM pt_atos WHERE titulo_id=%s AND tipo='INTIMACAO' AND cancelado=0
+            ORDER BY id DESC LIMIT 1""", (int(titulo_id),))
+    if not intimacao:
+        return False
+    try:
+        modo = json.loads(intimacao["detalhe_json"] or "{}").get("modo")
+    except (TypeError, ValueError):
+        modo = None
+    return str(modo or "").upper() == "EDITAL"
 
 
 def lancar_desistencia(con, titulo_id: int, *,

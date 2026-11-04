@@ -3537,6 +3537,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         af_prova = _afirmacao_da_trava("prova")
         af_irmaos = _afirmacao_da_trava("irmaos")
         af_selo = _afirmacao_da_trava("selo")
+        # O FALIMENTAR POR EDITAL (decisão do oficial, 03/11/2026, «k»): campo próprio, `afirmo_falimentar`.
+        af_falimentar = _afirmacao_da_trava("falimentar")
         if ato in CCONF.ATOS_QUE_A_CENPROT_TRAVA:
             try:
                 afirmacao_cenprot = CCONF.trava_do_ato(
@@ -3587,7 +3589,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                            # A PROVA DA INTIMAÇÃO (29/10/2026):
                                            # sem ela, só com afirmação expressa
                                            # — a DELA (`afirmo_prova`).
-                                           afirmacao=_texto_para_o_dominio(af_prova))
+                                           afirmacao=_texto_para_o_dominio(af_prova),
+                                           afirmo_falimentar=af_falimentar["afirmo"],
+                                           afirmacao_falimentar=af_falimentar["texto"],
+                                           robo=af_falimentar["robo"])
                 elif ato == "DESISTENCIA":
                     r = PT.lancar_desistencia(con, titulo_id,
                                               motivo=_campo("motivo"),
@@ -3734,7 +3739,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     _vencida("prova", r.get("afirmacao_expressa"), af_prova),
                     _vencida("irmaos", (irmao or {}).get("afirmacao_expressa"),
                              af_irmaos),
-                    _vencida("selo", afirmacao_aceita, af_selo)])
+                    _vencida("selo", afirmacao_aceita, af_selo),
+                    _vencida("falimentar", r.get("falimentar_por_edital"), af_falimentar)])
                 if afirmacao_aceita:
                     PSELO.anotar_afirmacao_no_ato(
                         con, r["ato_id"], afirmacao_aceita,
@@ -3805,6 +3811,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         # venceu a trava dos irmãos afirmando, fica no registro de auditoria —
         # FORA da transação, como todo `audit`. O texto já está no
         # `detalhe_json` do ato.
+        # O FALIMENTAR POR EDITAL lavrado afirmando (03/11/2026, «k»): a afirmação vai à auditoria.
+        if r.get("falimentar_por_edital"):
+            audit("AFIRMACAO_EXPRESSA", "pt_titulos", titulo_id,
+                  {**r["falimentar_por_edital"], "ato": ato, "ato_id": r["ato_id"]})
         if irmao and irmao.get("afirmacao_expressa"):
             af = irmao["afirmacao_expressa"]
             audit("AFIRMACAO_EXPRESSA", "pt_titulos", titulo_id,
@@ -4097,6 +4107,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # lado — número, vencimento, valor, situação e último ato. É deles
             # que a trava do pagamento, da desistência e do cancelamento fala.
             irmaos = IRM.quadro_da_ficha(con, titulo_id)
+            # O FALIMENTAR POR EDITAL (03/11/2026, «k»): a ficha pede a afirmação antes do clique.
+            falimentar_por_edital = PT.falimentar_por_edital(con, titulo_id)
             atos = bd.ler(
                 "SELECT * FROM pt_atos WHERE titulo_id=%s ORDER BY id",
                 (titulo_id,))
@@ -4275,6 +4287,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                triduo_situacao=(triduo or {}).get(
                                    "triduo_situacao"),
                                irmaos=irmaos, cedente_origem=cedente_origem,
+                               falimentar_por_edital=falimentar_por_edital,
                                prova=prova, pedidos_cra=pedidos_cra,
                                edital_comprovante=edital_comprovante,
                                preparo_protesto=preparo_protesto,

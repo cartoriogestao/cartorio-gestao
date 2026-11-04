@@ -544,7 +544,8 @@ def pedir(con, protocolo_id: int, *, anexos_ids, especie: str = "",
             f"São {len(escolhidos)} documentos marcados; a IA lê até "
             f"{MAXIMO_DE_DOCUMENTOS} por pedido. Marque os que o título precisa.")
     docs = [disponiveis[x] for x in escolhidos]
-    total = sum(int(d["tamanho"] or 0) for d in docs)
+    # Conta o que sobe: o PDF grande comprimido e o texto do Word.
+    total = sum(MI.tamanho_para_envio(bd, d) for d in docs)
     if total > LIMITE_DOS_DOCUMENTOS:
         raise QualificacaoIAError(
             f"Os documentos marcados somam {total / 1048576:.1f} MB, e a IA lê até "

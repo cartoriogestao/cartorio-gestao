@@ -66,6 +66,7 @@ import base64
 import hashlib
 import html
 import json
+import logging
 import re
 import threading
 from datetime import datetime
@@ -403,19 +404,191 @@ def documentos_disponiveis(con, atribuicao: str, alvo_id: int, *,
     return unicos
 
 
+# ------------------------------------------------- o PDF grande sobe comprimido
+
+#: PDF ANEXADO COM MAIS DE 22 MB SOBE COMPRIMIDO (pedido da serventia,
+#: 04/11/2026). A compressão é feita numa cópia em memória: o arquivo anexado e
+#: o banco não mudam, e nada se grava em disco. A página digitalizada (sem texto
+#: digital) é redesenhada em JPEG a 150 dpi, e a 130 dpi se a cópia ainda passar
+#: de 22 MB. A página com texto digital NÃO é rasterizada: o texto (e a camada
+#: de OCR) fica como está, e só as imagens dela acima da resolução são
+#: reduzidas; a cópia só vale se o texto de cada uma dessas páginas sair igual
+#: ao do original. Se a cópia não fica menor, ou a compressão falha, sobe o
+#: original - como antes.
+LIMITE_PARA_COMPRIMIR = 22 * 1024 * 1024
+#: (dpi, qualidade do JPEG), na ordem em que se tenta.
+RESOLUCOES_DA_COMPRESSAO = ((150, 70), (130, 65))
+#: Página com menos texto digital do que isto conta como digitalizada.
+MINIMO_DE_TEXTO_DA_PAGINA = 25
+#: O pedido confere o tamanho comprimido e a execução manda a mesma cópia: as
+#: últimas cópias ficam em memória (pelo sha256 do original) para não comprimir
+#: duas vezes.
+GUARDADOS_DA_COMPRESSAO = 2
+_COMPRIMIDOS: dict[str, tuple[bytes, dict]] = {}
+_TRAVA_DA_COMPRESSAO = threading.Lock()
+_log = logging.getLogger(__name__)
+
+
+def _pymupdf():
+    try:
+        import pymupdf
+    except ImportError:                               # versões antigas
+        import fitz as pymupdf
+    return pymupdf
+
+
+def _reduzir_imagens(doc, pagina, dpi: int, qualidade: int) -> None:
+    """Reduz, numa página com texto, as imagens acima de `dpi`. O texto não muda.
+
+    Imagem com transparência, máscara ou espaço de cor estranho fica como está.
+    """
+    fz = _pymupdf()
+    for info in pagina.get_images(full=True):
+        xref, smask = info[0], info[1]
+        if smask:
+            continue
+        try:
+            retangulos = [r for r in pagina.get_image_rects(xref)
+                          if r.width > 0 and r.height > 0]
+            if not retangulos:
+                continue
+            largura = max(1, round(max(r.width for r in retangulos) / 72 * dpi))
+            altura = max(1, round(max(r.height for r in retangulos) / 72 * dpi))
+            pix = fz.Pixmap(doc, xref)
+            if pix.width <= largura * 1.1 or pix.height <= altura * 1.1:
+                continue                              # já está na resolução
+            if pix.colorspace is None:
+                continue                              # máscara de bits
+            if pix.alpha:
+                pix = fz.Pixmap(pix, 0)
+            if pix.colorspace.n not in (1, 3):
+                pix = fz.Pixmap(fz.csRGB, pix)
+            menor = fz.Pixmap(pix, largura, altura, None)
+            jpeg = menor.tobytes("jpeg", jpg_quality=qualidade)
+            if len(jpeg) >= len(doc.xref_stream_raw(xref) or b""):
+                continue
+            pagina.replace_image(xref, stream=jpeg)
+        except Exception:                             # noqa: BLE001 - a imagem fica
+            _log.debug("imagem %s mantida na compressão", xref, exc_info=True)
+
+
+def _comprimir_pdf(dados: bytes, dpi: int, qualidade: int) -> bytes:
+    """Os bytes da cópia comprimida. Erra (ValueError etc.) se não der."""
+    fz = _pymupdf()
+    origem = fz.open(stream=dados, filetype="pdf")
+    saida = fz.open()
+    try:
+        if origem.needs_pass:
+            raise ValueError("PDF com senha")
+        com_texto: list[int] = []
+        for i, pagina in enumerate(origem):
+            if len(pagina.get_text("text").strip()) >= MINIMO_DE_TEXTO_DA_PAGINA:
+                saida.insert_pdf(origem, from_page=i, to_page=i)
+                com_texto.append(i)
+                continue
+            imagens = pagina.get_images(full=True)
+            cinza = bool(imagens) and all(x[5] == "DeviceGray" for x in imagens)
+            pix = pagina.get_pixmap(dpi=dpi, alpha=False,
+                                    colorspace=fz.csGRAY if cinza else fz.csRGB)
+            nova = saida.new_page(width=pagina.rect.width, height=pagina.rect.height)
+            nova.insert_image(nova.rect, stream=pix.tobytes("jpeg", jpg_quality=qualidade))
+        for i in com_texto:
+            _reduzir_imagens(saida, saida[i], dpi, qualidade)
+        if len(saida) != len(origem):
+            raise ValueError("a cópia perdeu páginas")
+        for i in com_texto:
+            if saida[i].get_text("text") != origem[i].get_text("text"):
+                raise ValueError(f"o texto da página {i + 1} mudou na compressão")
+        return saida.tobytes(garbage=3, deflate=True)
+    finally:
+        saida.close()
+        origem.close()
+
+
+def pdf_para_envio(caminho: Path, dados: bytes | None = None) -> tuple[bytes, dict | None]:
+    """(os bytes do PDF que sobem à IA, como foi comprimido - ou None). SÓ LÊ.
+
+    Até 22 MB sobe o original. Acima, a cópia comprimida a 150 dpi (130 dpi se
+    ainda passar de 22 MB), se ela ficar menor. Qualquer falha: o original.
+    """
+    if dados is None:
+        dados = Path(caminho).read_bytes()
+    if len(dados) <= LIMITE_PARA_COMPRIMIR:
+        return dados, None
+    chave = hashlib.sha256(dados).hexdigest()
+    with _TRAVA_DA_COMPRESSAO:
+        guardado = _COMPRIMIDOS.get(chave)
+    if guardado:
+        return guardado
+    melhor, como = dados, None
+    for dpi, qualidade in RESOLUCOES_DA_COMPRESSAO:
+        try:
+            copia = _comprimir_pdf(dados, dpi, qualidade)
+        except Exception:                             # noqa: BLE001 - sobe o original
+            _log.warning("compressão do PDF %s a %s dpi falhou; sobe o original",
+                         Path(caminho).name, dpi, exc_info=True)
+            break
+        if len(copia) < len(melhor):
+            melhor, como = copia, {"dpi": dpi, "antes": len(dados), "depois": len(copia)}
+        if len(melhor) <= LIMITE_PARA_COMPRIMIR:
+            break
+    if como:
+        _log.info("PDF %s comprimido para a IA: %d -> %d bytes (%d dpi)",
+                  Path(caminho).name, como["antes"], como["depois"], como["dpi"])
+        with _TRAVA_DA_COMPRESSAO:
+            _COMPRIMIDOS[chave] = (melhor, como)
+            while len(_COMPRIMIDOS) > GUARDADOS_DA_COMPRESSAO:
+                _COMPRIMIDOS.pop(next(iter(_COMPRIMIDOS)))
+    return melhor, como
+
+
+def tamanho_para_envio(bd, d: dict) -> int:
+    """O tamanho que conta no limite de um pedido: o do que sobe, não o do arquivo.
+
+    PDF acima de 22 MB conta comprimido; Word e ODT contam o texto que sobe; o
+    resto, o arquivo. Na dúvida (arquivo fora do disco, falha), o tamanho gravado
+    no anexo - a conta de antes. SÓ LÊ.
+    """
+    tamanho = int(d.get("tamanho") or 0)
+    ext = Path(d.get("nome") or "").suffix.lower()
+    if ext not in (".pdf", ".docx", ".odt"):
+        return tamanho
+    if ext == ".pdf" and tamanho <= LIMITE_PARA_COMPRIMIR:
+        return tamanho
+    try:
+        linha = bd.um("SELECT original_name, stored_path FROM attachments WHERE id = %s",
+                      (int(d["anexo_id"]),))
+        caminho = Path((linha or {}).get("stored_path") or "")
+        if not linha or not caminho.is_file():
+            return tamanho
+        ext = Path(linha.get("original_name") or caminho.name).suffix.lower() or ext
+        if ext == ".pdf":
+            return len(pdf_para_envio(caminho)[0])
+        if ext in (".docx", ".odt"):
+            import revisao_anexos as RA
+            return len(RA.texto_de_editor(caminho, ext).encode("utf-8"))
+    except Exception:                                 # noqa: BLE001 - conta de antes
+        _log.warning("tamanho para envio do anexo %s: falhou, vale o do arquivo",
+                     d.get("anexo_id"), exc_info=True)
+    return tamanho
+
+
 def _ler_arquivo(caminho: Path, nome: str) -> dict:
     """{documentos, imagens, texto} prontos para o transporte, de um arquivo.
 
     PDF sobe inteiro, como documento: o provedor lê o texto e a imagem de cada
-    página. Foto vai como imagem, reduzida (`revisao_anexos._jpeg`). Word e ODT
+    página - acima de 22 MB, na cópia comprimida (`pdf_para_envio`). Foto vai como imagem, reduzida (`revisao_anexos._jpeg`). Word e ODT
     viram texto aqui mesmo. O resto não se lê, e a tela diz que ficou de fora.
     """
     import revisao_anexos as RA
     ext = Path(nome or str(caminho)).suffix.lower()
     if ext == ".pdf":
-        return {"documentos": [{"mime": "application/pdf", "titulo": nome,
-                                "base64": base64.b64encode(caminho.read_bytes())
-                                .decode("ascii")}]}
+        dados, comprimido = pdf_para_envio(caminho)
+        lido = {"documentos": [{"mime": "application/pdf", "titulo": nome,
+                                "base64": base64.b64encode(dados).decode("ascii")}]}
+        if comprimido:
+            lido["comprimido"] = comprimido
+        return lido
     if ext in RA.EXTENSOES_DE_IMAGEM:
         paginas = RA.paginas_do_arquivo(caminho, nome)
         return {"imagens": [{"mime": "image/jpeg", "base64": paginas[0]["imagem"]()}],
@@ -735,7 +908,8 @@ def pedir(con, atribuicao: str, alvo_id: int, *, anexos_ids, tipo_ato: str = "",
             f"São {len(escolhidos)} documentos marcados; o agente lê até "
             f"{MAXIMO_DE_DOCUMENTOS} por pedido. Marque os que fundamentam o ato.")
     docs = [disponiveis[x] for x in escolhidos]
-    total = sum(int(d["tamanho"] or 0) for d in docs)
+    # Conta o que sobe: o PDF grande comprimido e o texto do Word.
+    total = sum(tamanho_para_envio(bd, d) for d in docs)
     if total > LIMITE_DOS_DOCUMENTOS:
         raise MinutaIAError(
             f"Os documentos marcados somam {total / 1048576:.1f} MB, e o agente lê até "

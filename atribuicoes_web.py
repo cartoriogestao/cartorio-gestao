@@ -3370,6 +3370,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return None
         return _campo(f"afirmacao{sufixo}") or None
 
+    def _avisar_motivo_trocado(r: dict) -> None:
+        """O protesto que se lavrou por falta de pagamento, e não pelo motivo do cadastro (Lei 9.492/1997,
+        art. 21, § 2º; decisão do oficial, 03/11/2026). Quem lavra precisa saber, e o apresentante também."""
+        troca = (r or {}).get("motivo_trocado")
+        if troca:
+            flash(f"O título venceu em {troca['vencimento'][8:10]}/{troca['vencimento'][5:7]}/"
+                  f"{troca['vencimento'][:4]}, e o protesto foi lavrado POR FALTA DE PAGAMENTO, e não "
+                  f"por {troca['de_extenso']}: {troca['fundamento']}.", "warning")
+
     def _auditar_afirmacoes(entity_type: str, entity_id: object,
                             registros: object) -> None:
         """Uma linha de `AFIRMACAO_EXPRESSA` por trava vencida. `audit` abre
@@ -3913,6 +3922,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 flash("O protesto foi lançado, mas o preenchimento salvo "
                       "continua na lista de Rascunhos.", "warning")
         flash(f"{ato.capitalize()} lançado.{onde}{aviso}", "success")
+        _avisar_motivo_trocado(r)
         return voltar
 
     @app.route("/protesto/<int:titulo_id>/situacao/corrigir", methods=["POST"])
@@ -12528,6 +12538,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                    "em_lote": True})
             _auditar_afirmacoes("pt_atos", r.get("ato_id"),
                                 [r.get("afirmacao_expressa")])
+        for _titulo_id, r in feitos:
+            _avisar_motivo_trocado(r)
         if feitos:
             flash(f"{len(feitos)} protesto(s) lavrado(s). Eles ainda não têm "
                   f"selo nem cobrança: sele e cobre pela ficha de cada título. "

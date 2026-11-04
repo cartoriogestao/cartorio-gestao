@@ -104,20 +104,32 @@ def test_o_mesmo_titulo_so_apontado_se_aponta_de_novo_afirmando(s):  # noqa: F81
 
 # ------------------------------------------------------------------ o motivo e a espécie
 
-@_defeito("o protesto por falta de aceite (ou de devolução) se lavra depois do vencimento, e com esse motivo "
-          "no registro")
 @pytest.mark.parametrize("motivo,por_extenso", [("2", "FALTA DE ACEITE"), ("3", "FALTA DE DEVOLU")])
 def test_depois_do_vencimento_o_protesto_e_sempre_por_falta_de_pagamento(s, motivo, por_extenso):  # noqa: F811
     """Lei 9.492/1997, art. 21, § 1º: o protesto por falta de aceite «somente poderá ser efetuado antes do
     vencimento da obrigação»; § 2º: depois do vencimento, «o protesto sempre será efetuado por falta de
     pagamento». O § 3º (a falta de devolução) só muda a base do protesto — a segunda via, as indicações —,
-    e não a regra do § 2º. O título do balcão vence em 10/02/2025: nem por falta de aceite, nem de
-    devolução."""
+    e não a regra do § 2º. O título do balcão vence em 10/02/2025: o protesto se lavra por falta de
+    pagamento, e a tela avisa a troca (decisão do oficial, 03/11/2026, «h2»; CONSERTADO)."""
     feito = _ate_o_protesto(s, especie="DMI", numero_titulo=f"DMI-000{motivo}", motivo_protesto=motivo)
-    if feito["situacao"] != "PROTESTADO":
-        return
-    termo = F._ato(s, feito["id"], "PROTESTO")["teor"] or ""
-    assert por_extenso not in termo.upper(), termo
+    assert feito["situacao"] == "PROTESTADO", feito["avisos"]
+    ato = F._ato(s, feito["id"], "PROTESTO")
+    termo = (ato["teor"] or "").upper()
+    assert por_extenso not in termo and "FALTA DE PAGAMENTO" in termo, termo
+    assert any("POR FALTA DE PAGAMENTO" in a and "art. 21, § 2º" in a for a in feito["avisos"]), feito["avisos"]
+    import json
+    assert json.loads(ato["detalhe_json"])["motivo_trocado"]["de"] == motivo
+
+
+def test_antes_do_vencimento_a_falta_de_aceite_fica(s):  # noqa: F811
+    """O outro lado da régua: a duplicata que ainda não venceu se protesta por falta de aceite, como o
+    cadastro diz, e sem aviso de troca (Lei 9.492/1997, art. 21, § 1º)."""
+    feito = _ate_o_protesto(s, especie="DMI", numero_titulo="DMI-0099", motivo_protesto="2",
+                            data_vencimento="2099-12-31")
+    assert feito["situacao"] == "PROTESTADO", feito["avisos"]
+    termo = (F._ato(s, feito["id"], "PROTESTO")["teor"] or "").upper()
+    assert "FALTA DE ACEITE" in termo, termo
+    assert not any("POR FALTA DE PAGAMENTO" in a for a in feito["avisos"]), feito["avisos"]
 
 
 @_defeito("o cheque se cadastra e se protesta pelo balcão sem nada da apresentação ao banco sacado: a ficha "

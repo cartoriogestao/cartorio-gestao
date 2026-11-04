@@ -60,6 +60,11 @@ segundo pode ser a reapresentação de um título retirado.
 
 ## 2. O protesto por falta de aceite (e de devolução) se lavra depois do vencimento
 
+**CONSERTADO em 03/11/2026** (decisão do oficial, «h2»: trocar e avisar). Na lavratura, a falta de aceite
+ou de devolução com o vencimento no dia do protesto ou antes dele se troca para falta de pagamento
+(`protesto._motivo_depois_do_vencimento`). O motivo de antes fica no detalhe do ato, e a ficha e o lote
+«A protestar» avisam a troca, com o § 2º. O título que ainda não venceu continua por falta de aceite.
+
 **O que se fez.** Uma duplicata por indicação (DMI), vencida em 10/02/2025, com o motivo «2» (falta de
 aceite), pelo mesmo caminho.
 

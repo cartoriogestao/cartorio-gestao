@@ -146,6 +146,10 @@ def classificar(ato) -> dict | None:
     # «Extinção de usufruto» entrava pela palavra «usufruto» do teor. Ela tira um ônus; não é um.
     if tipo == "AV" and any(p in _sem_acento(natureza) for p in ("CANCELAMENTO", "EXTINCAO")):
         return None
+    # O ÔNUS TRANSPORTADO DA MATRÍCULA DE ORIGEM É ÔNUS DESTA (LRP art. 230; modelo AV-TRANSPORTE-ONUS,
+    # decisão do oficial, 03/11/2026, «e2»): a certidão de ônus da matrícula nova o traz.
+    if tipo == "AV" and "TRANSPORTE DE ONUS" in _sem_acento(natureza):
+        return {"criterio": "natureza", "conferir": False}
     if tipo == "R":
         alvo = _sem_acento(natureza + " " + _titulo_do_registro(teor))
         termos = _TERMOS_COMUNS

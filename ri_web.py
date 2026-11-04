@@ -770,6 +770,20 @@ def prenotacoes_abertas_da_matricula(
     return lista
 
 
+def _sem_acento_minusculo(texto) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", str(texto or ""))
+                   if unicodedata.category(c) != "Mn").lower()
+
+
+def _so_digitos_e_rotulos(teor) -> str:
+    """O teor para procurar rótulo e número de matrícula: sem os pontos dos números («4.100» -> «4100»), em
+    caixa alta, e cada rótulo na forma da casa («R-2», «R 02» -> «R-02»). Só calcula."""
+    texto = str(teor or "").upper().replace(".", "")
+    return re.sub(r"\b(R|AV)\s*-?\s*0*(\d{1,4})\b",
+                  lambda m: f"{m.group(1)}-{int(m.group(2)):02d}", texto)
+
+
 def clausula_html_prenotacoes_abertas(
         prenotacoes: list[dict], *, fmt_date=str, con=None) -> str:
     """HTML do fecho sobre protocolo/prenotação em aberto. Só calcula.
@@ -2025,6 +2039,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     "SELECT id, numero, data_prenotacao, natureza_titulo, "
                     "apresentante FROM ri_protocolos WHERE id=%s",
                     (int(prenotacao_escolhida_id),))
+        # A PRIORIDADE (decisão do oficial, 03/11/2026, «d1»): as prenotações anteriores que ainda esperam,
+        # pela MESMA régua da lavratura — e não pela lista de cima, que é a da casa inteira.
+        prioridade_anteriores = []
+        if prenotacao_escolhida:
+            with db.connect() as _c_pri:
+                prioridade_anteriores = prenotacoes_anteriores_abertas(
+                    _c_pri, m, prenotacao_escolhida["numero"])
 
         # AS CERTIDÕES DESTA FICHA — 16/09/2026, para reimprimir sem
         # reemitir. As vinte últimas bastam: quem procura uma de 2019 usa a
@@ -2121,8 +2142,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         item["ir"] = ""
             return abas
 
+        # O ÔNUS DA ORIGEM AINDA NÃO TRANSPORTADO (03/11/2026, «e2»): a ficha avisa até a averbação.
+        with db.connect() as _c_onus:
+            onus_da_origem = onus_da_origem_por_transportar(_c_onus, dict(m))
         return render_template(
             "ri_ficha.html", m=m, atos=atos, partes=partes, imagens=imagens,
+            onus_da_origem=onus_da_origem,
+            aviso_do_onus_da_origem=(_aviso_do_onus_da_origem(onus_da_origem)
+                                     if onus_da_origem else ""),
             abas_da_ficha=abas_da_ficha,
             onus_painel=onus_painel, RESULTADOS_ONUS=RONIA.RESULTADOS,
 
@@ -2164,6 +2191,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             protocolo_caixa_escolhido=protocolo_caixa_escolhido,
             itens_do_protocolo_caixa=itens_do_protocolo_caixa,
             prenotacao_escolhida=prenotacao_escolhida,
+            prioridade_anteriores=prioridade_anteriores,
             prenotacao_escolhida_id=prenotacao_escolhida_id,
             depositos_da_prenotacao=depositos_da_prenotacao,
             caixa_origem=caixa_origem,
@@ -4686,6 +4714,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if indisponivel:
             flash(indisponivel["mensagem"], "warning")
 
+        # A PRIORIDADE (decisão do oficial, 03/11/2026, «d1»): com prenotação ANTERIOR aberta sobre a
+        # matrícula, o ato só se lavra confirmando, com o motivo — antes de gastar número.
+        with db.connect() as con_pri:
+            anteriores = prenotacoes_anteriores_abertas(
+                con_pri, m, request.form.get("protocolo"))
+        motivo_prioridade = (request.form.get("motivo_prioridade") or "").strip()
+        if anteriores and (not request.form.get("confirmo_prioridade")
+                           or len(motivo_prioridade) < 10):
+            quais = "; ".join(
+                f"protocolo {p['numero']}, de {fmt_date(p['data_prenotacao'])}"
+                f"{(' — ' + p['natureza_titulo']) if p.get('natureza_titulo') else ''}"
+                for p in anteriores)
+            flash(f"Há prenotação ANTERIOR aberta sobre esta matrícula: {quais}. O número de "
+                  f"ordem determina a prioridade do título (Lei 6.015/1973, arts. 186 e 191). "
+                  f"Para lavrar este antes dela, marque «Confirmo» e escreva o motivo (o título "
+                  f"anterior não contradiz este, por exemplo). O ato NÃO foi lavrado — nada se "
+                  f"perdeu.", "danger")
+            return redirect(url_for("ri_ficha", matricula_id=matricula_id,
+                                    **({"minuta": minuta_pedida}
+                                       if minuta_pedida else {})))
+
         # O MODELO QUE CANCELA OU EXTINGUE (decisão do oficial, 03/11/2026, «a1»): diz qual ato, e o ato
         # tem de ser desta matrícula e estar de pé — antes de gastar número.
         alvo_do_cancelamento = None
@@ -5230,6 +5279,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                        "folhas": folhas_arquivamento,
                        "motivo": arq.get("motivo")})
 
+        if anteriores:
+            # A PRIORIDADE CONFIRMADA (03/11/2026, «d1»): quem, por quê, e quais prenotações passaram.
+            audit("RI_PRIORIDADE_CONFIRMADA", "RI_ATO", ato_id,
+                  {"matricula": m["numero"], "ato": f"{tipo}-{numero}",
+                   "protocolo": request.form.get("protocolo"),
+                   "anteriores": [p["numero"] for p in anteriores],
+                   "motivo": motivo_prioridade})
         flash(f"{tipo}-{numero} lavrado. O ato entrou na cadeia de integridade e "
               f"não pode mais ser editado — correções se fazem por averbação."
               f"{' A minuta que estava para revisão saiu da fila.' if minuta else ''}"
@@ -7584,6 +7640,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                "tipo_ficha": "ACERVO" if e_acervo else "ESTRUTURADA"})
         flash(f"Matrícula {numero} aberta no livro {livro}. "
               f"O próximo número do livro passou a ser {numero + 1}.", "success")
+        # O ÔNUS DA ORIGEM (decisão do oficial, 03/11/2026, «e2»): o aviso sai já na abertura.
+        with db.connect() as _c_onus:
+            _nova = banco(_c_onus).um("SELECT * FROM ri_matriculas WHERE id=%s", (novo_id,))
+            _por_transportar = onus_da_origem_por_transportar(_c_onus, dict(_nova)) if _nova else []
+        if _por_transportar:
+            flash(_aviso_do_onus_da_origem(_por_transportar), "warning")
         _RASCT.saiu_com_o_ato(db, audit, "ri_nova_matricula",
                               url_for("ri_ficha", matricula_id=novo_id),
                               app.extensions["usuario_nome"]())
@@ -11156,6 +11218,74 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if r.get("achou") is False:
             return ""
         return ""
+
+    def onus_da_origem_por_transportar(con, matricula: dict) -> list[dict]:
+        """Os ônus em vigor na matrícula de ORIGEM que esta ainda não averbou. Só LÊ.
+
+        LRP art. 230: se na certidão da origem constar ônus, o oficial abre a matrícula e, logo em
+        seguida, averba a existência do ônus. Decisão do oficial, 03/11/2026 (ensaio de atos do RI,
+        defeito 5, «e2»): avisar, e a casa ganhou o modelo AV-TRANSPORTE-ONUS. A origem se acha pelo
+        registro anterior, com a régua da certidão dominial; os ônus, com a régua da certidão de ônus.
+        O ônus já transportado é o que uma AV de transporte desta matrícula cita (rótulo e número da
+        origem no texto).
+        """
+        bd = banco(con)
+        numeros = RIDOM.sugerir_numeros_origem(matricula.get("registro_anterior"),
+                                               numero_atual=matricula.get("numero"))
+        if not numeros:
+            return []
+        transportes = [_so_digitos_e_rotulos(a["teor"]) for a in bd.ler(
+            """SELECT teor FROM ri_atos WHERE matricula_id=%s AND tipo='AV'
+                 AND COALESCE(cancelado, 0)=0""", (int(matricula["id"]),))
+            if "transporte de onus" in _sem_acento_minusculo(a["teor"])]
+        pendentes = []
+        for numero in numeros:
+            origem = bd.um("SELECT id, numero FROM ri_matriculas WHERE numero=%s ORDER BY id LIMIT 1",
+                           (str(numero),))
+            if not origem or int(origem["id"]) == int(matricula["id"]):
+                continue
+            atos = [dict(a) for a in bd.ler(
+                "SELECT * FROM ri_atos WHERE matricula_id=%s ORDER BY numero, id", (int(origem["id"]),))]
+            digitos_origem = "".join(c for c in str(origem["numero"]) if c.isdigit())
+            for o in RIONUS.onus_vigentes(atos, rotulo=lambda a: rotulo_ato(a["tipo"], a["numero"],
+                                                                            origem["numero"])):
+                curto = f"{o['tipo']}-{int(o['numero']):02d}"
+                if any(curto in t and digitos_origem in t for t in transportes):
+                    continue
+                pendentes.append({"rotulo": o["rotulo"], "natureza": o.get("natureza_titulo"),
+                                  "origem_id": origem["id"], "origem_numero": origem["numero"]})
+        return pendentes
+
+    def _aviso_do_onus_da_origem(pendentes: list[dict]) -> str:
+        """O recado do ônus da origem por transportar, o mesmo na abertura e na ficha."""
+        quais = "; ".join(f"{p['rotulo']}{(' (' + p['natureza'] + ')') if p.get('natureza') else ''}"
+                          for p in pendentes)
+        return (f"A matrícula de origem tem ônus em vigor que esta ainda não averbou: {quais}. "
+                f"Averbe o transporte logo em seguida à abertura (Lei 6.015/1973, art. 230) — modelo "
+                f"«Transporte de ônus da matrícula de origem» (AV-TRANSPORTE-ONUS).")
+
+    def prenotacoes_anteriores_abertas(con, matricula: dict, protocolo_escrito) -> list[dict]:
+        """As prenotações ABERTAS da mesma matrícula com número MENOR que a deste ato. Só LÊ.
+
+        LRP arts. 182, 186 e 191: o número de ordem determina a prioridade do título. Decisão do oficial,
+        03/11/2026 (ensaio de atos do RI, defeito 4, «d1»): avisar, citando o protocolo anterior, e
+        pedir a confirmação com o motivo — o sistema não sabe se os dois títulos se contradizem.
+
+        SÓ A QUE AINDA ESPERA: a prenotação que já deu o seu primeiro ato (`ato_id`) continua aberta para
+        os atos seguintes do mesmo título (`amarrar_prenotacao`), mas já não disputa a prioridade.
+        """
+        numero = numero_digitado(protocolo_escrito)
+        if numero is None:
+            return []
+        mnum = "".join(c for c in str(matricula.get("numero") or "") if c.isdigit())
+        return [dict(p) for p in banco(con).ler(
+            """SELECT id, numero, data_prenotacao, natureza_titulo, objeto
+                 FROM ri_protocolos
+                WHERE situacao = 'ABERTO' AND numero < %s AND ato_id IS NULL
+                  AND (matricula_id = %s
+                       OR REPLACE(COALESCE(matricula_numero, ''), '.', '') = %s)
+                ORDER BY numero""",
+            (int(numero), int(matricula["id"]), mnum))]
 
     def amarrar_prenotacao(con, protocolo_escrito, *, matricula_id, ato_id):
         """Liga a prenotacao ao primeiro ato que saiu dela. ESCREVE.

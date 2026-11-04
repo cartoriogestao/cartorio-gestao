@@ -37,6 +37,9 @@ PAPEIS: tuple[dict, ...] = (
           'FRASE_INTIMACAO_EDITAL_SEM_MOTIVO'),
     _peca('PT_TERMO_INTIMACAO_PESSOAL', 'protesto_termo', 'FRASE_INTIMACAO_PESSOAL'),
     _peca('PT_TERMO_INTIMACAO_DIGITAL', 'protesto_termo', 'FRASE_INTIMACAO_DIGITAL'),
+    # 03/11/2026 (decisão do oficial, «l»): a frase do pagamento a posteriori, que era texto fixo do
+    # termo e passa a ser peça, só no título de emolumentos diferidos.
+    _peca('PT_TERMO_POSTERIORI', 'protesto_termo', 'FRASE_PAGAMENTO_POSTERIORI'),
     _peca('PT_TERMO_MOTIVOS', 'protesto_termo', 'MOTIVO_NO_LIVRO'),
     _peca('PT_TERMO_TIPOS', 'protesto_termo', 'TIPO_NO_LIVRO'),
     # LD04 (21/10/2026): o termo do cancelamento, que não existia — o ato

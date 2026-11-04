@@ -5,7 +5,7 @@ simular todos atos possíveis previstos em lei ou nos códigos de normas […] e
 crítica apurada sobre o resultado de saída.» O RI veio depois das Notas (03/11/2026).
 
 O QUE ESTE TESTE FAZ
-    `test_fluxo_ri` já leva cada um dos 25 modelos de ato da casa da prenotação paga à certidão, cada
+    `test_fluxo_ri` já leva cada um dos modelos de ato da casa da prenotação paga à certidão, cada
     um numa matrícula limpa. Este pratica, pelas mesmas telas e com os mesmos passos (os auxiliares de
     lá), as SEQUÊNCIAS em que a certidão de propriedade e a de ônus podem errar: a venda com a hipoteca
     de pé, o cancelamento, a penhora, a indisponibilidade, o casal que adquire, o usufruto e a extinção;
@@ -223,8 +223,6 @@ def _avisos(html: str) -> str:
     return " ".join(" ".join(re.sub(r"<[^>]+>", " ", p).split()) for p in pedacos)
 
 
-@_defeito("a lavratura não olha as outras prenotações abertas da matrícula: o título prenotado depois vai ao "
-          "livro, com selo e sem aviso, enquanto o anterior, contraditório, espera")
 def test_o_titulo_prenotado_depois_nao_passa_na_frente_do_anterior(casa):  # noqa: F811
     """LRP arts. 182, 186 e 191: o número de ordem da prenotação determina a prioridade do título, e esta a
     preferência dos direitos. Duas vendas da mesma dona a compradores diferentes, prenotadas nesta ordem: a
@@ -250,6 +248,18 @@ def test_o_titulo_prenotado_depois_nao_passa_na_frente_do_anterior(casa):  # noq
     # O NÚMERO DA PRIMEIRA PERTO DE «PRENOTAÇÃO»/«PROTOCOLO»: um «2» solto casava com o «R-2 lavrado».
     avisou = re.search(rf"(?i)(prenota\w*|protocolo)\s+(n\.?\s*º?\s*)?{primeira['numero']}\b", avisos)
     assert not lavrado or avisou, f"a venda da prenotação {segunda['numero']} foi ao livro sem aviso: {avisos!r}"
+    # CONSERTADO (decisão do oficial, 03/11/2026, «d1»): sem a confirmação, nada se lavra; com ela e o
+    # motivo, lavra-se, e a auditoria guarda quem passou na frente de qual prenotação.
+    assert not lavrado, avisos
+    html = F._lavrar(casa, m, tipo="R", teor=teor, natureza="Compra e venda", prenotacao=segunda, cx=cx,
+                     itens=["16.3.14"], partes=[(F.COMPRADORA, "transmitente"), (CONJUGE, "adquirente")],
+                     base_calculo="100.000,00", modelo="R-COMPRA-VENDA", confirmo_prioridade="1",
+                     motivo_prioridade="A primeira prenotação foi retirada pelo apresentante, que desistiu.")
+    ato = F._um(casa, "SELECT id FROM ri_atos WHERE matricula_id=%s AND numero=2", (m["id"],))
+    assert ato, _avisos(html)
+    log = F._um(casa, "SELECT details FROM audit_logs WHERE action='RI_PRIORIDADE_CONFIRMADA' AND entity_id=%s",
+                (ato["id"],))
+    assert log and "desistiu" in str(log["details"]), log
 
 
 # ------------------------------------------------------------------ a partilha
@@ -272,8 +282,6 @@ def test_a_partilha_poe_a_meeira_e_os_herdeiros_e_tira_a_falecida(casa):  # noqa
 
 # ------------------------------------------------------------------ o desmembramento
 
-@_defeito("a matrícula aberta de outra não olha os ônus da de origem: aberta a filha da 4.100, que tem a "
-          "hipoteca R-02 de pé, nem a abertura nem a ficha da filha dizem nada da hipoteca")
 def test_a_matricula_filha_aberta_de_imovel_hipotecado_traz_o_onus(casa):  # noqa: F811
     """LRP art. 230: se na certidão da origem constar ônus, o oficial abre a matrícula e, logo em seguida,
     averba a existência do ônus. Desmembrado o imóvel hipotecado, a filha nasce gravada — e a tela que a abre
@@ -292,6 +300,15 @@ def test_a_matricula_filha_aberta_de_imovel_hipotecado_traz_o_onus(casa):  # noq
     assert rotulo in _avisos(abertura) or rotulo in _avisos(ficha) or re.search(
         rf"(?is)origem.{{0,300}}{re.escape(rotulo)}", re.sub(r"<[^>]+>", " ", ficha)), \
         f"nada sobre a hipoteca da origem: {_avisos(abertura)!r}"
+    # CONSERTADO (decisão do oficial, 03/11/2026, «e2»): averbado o transporte pelo modelo novo, o aviso
+    # sai da ficha, e a certidão de ônus da filha oferece o ônus transportado.
+    transporte = _ato(casa, filha, "AV-TRANSPORTE-ONUS", interessado=F.COMPRADORA,
+                      valores={"ATO DE ORIGEM": "R-02", "MATRICULA DE ORIGEM": f"{F.PRIMEIRA_MATRICULA}",
+                               "NATUREZA DO ONUS": "hipoteca", "CREDOR OU BENEFICIARIO": F.BANCO["nome"]})
+    assert transporte["ato"] and transporte["ato"]["selo_texto"], transporte["recado"][:1200]
+    ficha = casa["balcao"].get(f"/registro-imoveis/{filha['id']}").get_data(as_text=True)
+    assert "ainda não averbou" not in ficha, "o aviso continua depois do transporte"
+    assert transporte["ato"]["id"] in _onus_oferecidos(casa, filha)
 
 
 # ------------------------------------------------------------------ a doação com reserva de usufruto

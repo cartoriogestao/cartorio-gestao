@@ -155,6 +155,12 @@ certidão de propriedade, e a falecida sai. Ficaram **mais dois defeitos**, tamb
 
 ## 4. O título prenotado depois passa na frente do anterior, sem aviso
 
+**CONSERTADO em 03/11/2026** (decisão do oficial, «d1»). Na lavratura, a prenotação ABERTA da mesma
+matrícula com número menor (`ri_web.prenotacoes_anteriores_abertas`, pelo `matricula_id` ou pelo número
+da matrícula) se cita na ficha, ao lado da prenotação escolhida, e na rota. O ato só se lavra com
+«Confirmo» e o motivo (10 letras ou mais), e a auditoria guarda quem, por quê e quais passaram
+(`RI_PRIORIDADE_CONFIRMADA`).
+
 **O que se fez.** R-1 compra e venda para a proprietária. Depois, duas prenotações sobre a matrícula, na
 ordem: a nº 2, venda da proprietária a um comprador; a nº 3, venda da mesma proprietária a outro comprador.
 A lavratura pelo protocolo 3, com a 2 ainda aberta.
@@ -178,6 +184,14 @@ anterior ser registrada, devolvida ou cancelada. A sugestão é a (d1), porque o
 títulos se contradizem, e o registrador sabe.
 
 ## 5. A matrícula filha aberta de imóvel hipotecado não diz nada da hipoteca da mãe
+
+**CONSERTADO em 03/11/2026** (decisão do oficial, «e2»):
+- `ri_web.onus_da_origem_por_transportar` acha a matrícula de origem pelo registro anterior (a régua da
+  certidão dominial) e os ônus em vigor dela (a régua da certidão de ônus);
+- o aviso sai na abertura da matrícula nova e fica na ficha dela até uma AV de transporte citar o rótulo e
+  o número da origem;
+- a casa ganhou o modelo **AV-TRANSPORTE-ONUS** («Transporte de ônus da matrícula de origem», LRP art. 230),
+  e a averbação feita por ele é ônus da matrícula nova (`ri_onus.classificar`).
 
 **O que se fez.** Matrícula 4.100 com R-1 compra e venda e R-2 hipoteca. «Nova matrícula» para uma área
 desmembrada dela, com o registro anterior «Matrícula 4100 deste Ofício (desmembramento)».

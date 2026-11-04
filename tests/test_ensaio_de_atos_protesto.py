@@ -201,3 +201,34 @@ def test_o_titulo_sustado_nao_se_paga_nem_se_retira_sem_ordem_do_juiz(s, ato, ca
     # E O RECADO CONCORDA COM O ATO (observação O6): «a desistência não pode ser lançada».
     esperado = {"PAGAMENTO": "o pagamento não pode ser lançado", "DESISTENCIA": "a desistência não pode ser lançada"}
     assert any(esperado[ato] in a for a in F._avisos(r)), F._avisos(r)
+
+
+# ------------------------------------------------------------------ o falimentar por edital
+
+def test_o_protesto_falimentar_por_edital_pede_a_afirmacao_de_que_a_procura_se_esgotou(s):  # noqa: F811
+    """A CRA recusa o protesto falimentar intimado por edital (irregularidade 69), e a Súmula 361 do STJ
+    exige a identificação de quem recebeu a intimação; a jurisprudência o admite quando a empresa não é
+    achada. Decisão do oficial, 03/11/2026 («k»): avisar e pedir a afirmação de que a procura se esgotou —
+    e ela vai à auditoria. O protesto comum por edital não pede nada disso."""
+    import io
+    p = F._protocolo(s, F.PROTESTO, F.PROTESTO)
+    tid = F._apontado(s, p, p["itens"][0], numero_titulo="NP-0041", tipo_protesto="F", **EMPRESA)
+    aviso = F._aviso(s, tid)
+    F._post(s, f"/protesto/avisos/{aviso['id']}/entrega", "/protesto/avisos", entregue="0", motivo="1",
+            quando=F._hoje(s))
+    r = F._post(s, f"/protesto/avisos/{aviso['id']}/edital", "/protesto/avisos",
+                justificativa="Devedora mudou-se e não há outro endereço conhecido.")
+    assert any("intimação por edital foi lavrada" in a for a in F._avisos(r)), F._avisos(r)
+    F._post(s, "/protesto/editais/comprovante-cenprot", "/protesto/avisos", dia=F._hoje(s),
+            comprovante=(io.BytesIO(F.PDF_DO_CANHOTO + b" envio a CENPROT"), "envio-cenprot.pdf"))
+    ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
+    assert 'name="afirmo_falimentar"' in ficha, "a ficha não pede a afirmação"
+    r = F._lancar(s, tid, "PROTESTO", p, p["itens"][1])
+    assert F._situacao(s, tid) == "INTIMADO", F._avisos(r)
+    assert any("FALIMENTARES" in a and "Súmula 361" in a for a in F._avisos(r)), F._avisos(r)
+    r = F._lancar(s, tid, "PROTESTO", p, p["itens"][1], afirmo_falimentar="1",
+                  afirmacao_falimentar="a devedora foi procurada na sede, na filial e no endereço da Receita, sem achá-la.")
+    assert F._lancado(r, "Protesto"), F._avisos(r)
+    log = F._um(s, """SELECT details FROM audit_logs WHERE action='AFIRMACAO_EXPRESSA'
+                       AND entity_type='pt_titulos' AND entity_id=%s ORDER BY id DESC LIMIT 1""", (tid,))
+    assert log and "PROTESTO_FALIMENTAR_POR_EDITAL" in str(log["details"]), log

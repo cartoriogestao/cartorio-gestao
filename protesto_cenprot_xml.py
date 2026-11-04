@@ -199,7 +199,9 @@ def escrever(*, letra: str, uf: str, comarca: str, cartorio: str,
     e.fecha(2, "cartorios")
     e.fecha(1, "estado")
     e.fecha(0, "estados")
-    return (BOM + FIM_DE_LINHA.join(e.linhas)).encode("utf-8")
+    # O PORTAL DA CENPROT RECUSA ARQUIVO SEM QUEBRA DE LINHA NO FIM (04/11/2026):
+    # "Este arquivo nao apresenta end point (quebra de linha)". Fecha com CRLF.
+    return (BOM + FIM_DE_LINHA.join(e.linhas) + FIM_DE_LINHA).encode("utf-8")
 
 
 # ============================================================================

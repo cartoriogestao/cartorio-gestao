@@ -24,6 +24,9 @@ def test_recusa_um_byte_acima_antes_de_gravar(monkeypatch, tamanhos):
     bd.travar.assert_not_called()
 
 def preparar(monkeypatch, tamanhos):
+    # A qualificação está suspensa (#310, 04/11/2026) até validar a base normativa; o limite de
+    # 50 MB se testa por dentro dela, como em test_ri_qualificacao_ia.
+    monkeypatch.setattr(QIA, 'SUSPENSA_POR_BASE_NORMATIVA', False)
     bd = Mock()
     bd.um.return_value = None
     bd.escrever.return_value = [{'id': 123}]

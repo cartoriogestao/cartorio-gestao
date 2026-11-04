@@ -41,7 +41,7 @@ def test_emolumentos_menos_ferj_nao_incluem_protesto_diferido():
 
 
 @pytest.mark.parametrize('kw',[
-    {'cns':'000001'},{'periodo':'02/10/2026 até 31/10/2026'},
+    {'cns':'999998'},{'periodo':'02/10/2026 até 31/10/2026'},
     {'periodo':'01/10/2026 até 30/10/2026'}, {'ferj':''},
     {'ferj':'99999.00'},{'bruto':'NaN'},{'faturamento':'100.00'},
 ])

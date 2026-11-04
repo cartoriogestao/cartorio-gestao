@@ -724,6 +724,25 @@ def caixas_do_selo(xml: str, quantos: int) -> str:
     return xml[:ini] + novo + xml[fim:]
 
 
+# A linha do número da Declaração de Óbito (D.O.) no molde de óbito: parágrafo
+# próprio, logo abaixo do médico/documento - a D.O. é o atestado que o médico
+# assina. O Anexo VI (Prov. CNJ 63/2017, hoje 182/2024) não tem caixa para ela;
+# por isso é uma linha, e não uma caixa, e por isso SOME quando o assento não
+# tem o número: uma linha «Nº DA D.O.:» vazia afirmaria que o campo existe.
+_ESTILO_NUMERO_DO = "PObNumeroDO"
+_LINHA_NUMERO_DO = re.compile(
+    r'<text:p text:style-name="' + _ESTILO_NUMERO_DO + r'"[^>]*>.*?</text:p>', re.S)
+
+
+def linha_do_numero_do(xml: str, quadro: dict) -> str:
+    """Tira a linha da D.O. quando o quadro não tem o número. Só mexe no
+    parágrafo de estilo `PObNumeroDO`; molde sem ele (natimorto, ajuste da
+    casa antigo) passa igual."""
+    if str((quadro or {}).get("numero_do") or "").strip():
+        return xml
+    return _LINHA_NUMERO_DO.sub("", xml)
+
+
 def arquivo_da_certidao(quadro: dict, certidao: dict, sv: dict,
                         molde_bytes: bytes | None = None) -> bytes:
     """Cópia do molde ODT, com os @ trocados.
@@ -767,6 +786,7 @@ def arquivo_da_certidao(quadro: dict, certidao: dict, sv: dict,
                 texto = data.decode("utf-8")
                 if item.filename == "content.xml":
                     texto = caixas_do_selo(texto, len(_selos_da_certidao(certidao)))
+                    texto = linha_do_numero_do(texto, quadro)
                 for chave in chaves:
                     texto = texto.replace(chave, vals[chave])
                 data = texto.encode("utf-8")

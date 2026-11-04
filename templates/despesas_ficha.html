@@ -47,6 +47,7 @@
     </select></label>
     <label>Código de pagamento <textarea name="codigo" rows="3" cols="60" maxlength="4096" required>{{ d.codigo or '' }}</textarea></label>
     {% include '_despesas_ler_codigo.html' %}
+    {% if arquivos %}{% include '_despesas_ler_documento.html' %}{% endif %}
     <label>O que foi corrigido e por quê <textarea name="motivo" rows="2" minlength="10" maxlength="500" required></textarea></label>
     <button type="submit">Salvar correção e pedir nova autorização</button>
   </form>

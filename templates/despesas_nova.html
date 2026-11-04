@@ -36,6 +36,7 @@
   <label>Documento que comprova (espécie) <input name="documento_especie" value="{{ f.documento_especie or '' }}" placeholder="Nota fiscal, recibo, guia, boleto" size="30" required></label>
   <label>Número do documento <input name="documento_numero" value="{{ f.documento_numero or '' }}" size="20"></label>
   <label>Arquivo do documento (PDF, imagem ou XML) <input type="file" name="documento" accept=".pdf,.png,.jpg,.jpeg,.xml"></label>
+  {% include '_despesas_ler_documento.html' %}
   <button type="submit">Cadastrar</button>
 </form>
 {% endblock %}

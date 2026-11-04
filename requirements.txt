@@ -65,3 +65,5 @@ opencv-python-headless>=4.8,<6
 # erro e o resto do sistema segue. Nenhum requirements a declarava, e a
 # instalacao nova a partir deste arquivo deixava o robo sem cliente HTTP.
 requests>=2.31,<3
+# Le QR Pix e codigo de barras ITF de boletos anexados, localmente.
+zxing-cpp>=3.1,<4

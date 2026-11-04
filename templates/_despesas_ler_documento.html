@@ -1,0 +1,14 @@
+<section data-leitor-documento data-url="{{ url_for('despesas_ler_documento') }}">
+  <p><strong>Buscar Pix ou boleto no documento pela API do sistema</strong></p>
+  {% if d is defined and arquivos %}
+  <label>Documento anexado <select data-anexo-pagamento>
+    {% for a in arquivos %}<option value="{{ url_for('despesas_ler_anexo',despesa_id=d.id,anexo_id=a.id) }}">{{ a.original_name }}</option>{% endfor %}
+  </select></label>
+  {% endif %}
+  <button type="button" data-ler-documento>Ler documento e buscar códigos</button>
+  <p class="small muted">PDF, PNG ou JPG, até 15 MB e 12 páginas. Leitura local: o documento permanece na serventia.</p>
+  <p data-resultado-documento role="status" aria-live="polite"></p>
+  <label data-opcoes-documento hidden>Código encontrado <select data-codigo-documento></select></label>
+  <button type="button" data-usar-documento hidden>Usar o código escolhido no pagamento</button>
+</section>
+<script defer src="{{ url_for('static',filename='despesas_documento.js') }}"></script>

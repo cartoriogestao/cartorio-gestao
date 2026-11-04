@@ -38,10 +38,12 @@ import cofre_do_titular as COT
 import csv_seguro as CSVS
 import despesas as DP
 import despesas_comprovante as DC
+import despesas_documento as DD
 import despesas_fluxo as DF
 import despesas_inter as INTER
 import despesas_previsao as DV
 import despesas_recorrentes as RC
+import faturamento_portal as FP
 import serventia as SERV
 import titular_privado as TP
 
@@ -134,6 +136,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 _LOG.exception("o quadro do mês não saiu")
                 quadro_falhou = True
             balanco = DP.balanco(con, date.today().isoformat(), do_mes)
+            cns=FP.cns_da_casa(con)
+            conferencia_portal=FP.conferencia(con,DV._mes_anterior(_agora().date()),cns=cns) if len(cns)==6 else None
         return render_template("despesas_lista.html", linhas=linhas, contagem=contagem,
                                situacoes=DP.SITUACOES, situacao=situacao, cfg=cfg,
                                categorias=DP.CATEGORIAS, reais=DP.reais,
@@ -141,7 +145,28 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                recorrentes_carregadas=carregadas, a_autorizar=a_autorizar,
                                balanco=balanco, em_duvida=em_duvida, quadro=quadro,
                                quadro_falhou=quadro_falhou, quadro_trancado=quadro_trancado,
-                               formas=DP.FORMAS, revisao_pagamento=DF.revisao)
+                               formas=DP.FORMAS, revisao_pagamento=DF.revisao,
+                               conferencia_portal=conferencia_portal)
+
+    @app.route('/administrativo/despesas/faturamento-portal',methods=['POST'])
+    @login_required
+    @roles_required('ADMIN')
+    @so_o_titular
+    def despesas_importar_faturamento():
+        arquivo=request.files.get('relatorio')
+        try:
+            if not arquivo: raise DP.DespesaError('Escolha o XLSX de faturamento exportado do Portal do Selo.')
+            if not archive_root: raise DP.DespesaError('A pasta de documentos nao esta configurada.')
+            with db.transaction() as con:
+                feito=FP.registrar(con,arquivo.read(FP.MAX_BYTES+1),cns=FP.cns_da_casa(con),
+                    pasta=archive_root()/'faturamento_portal',por=usuario_nome(),usuario_id=usuario_id(),agora=db.now())
+        except (DP.DespesaError,ValueError) as erro:
+            flash(str(erro),'danger')
+        else:
+            flash(f"Referencia de {feito['competencia']} importada: bruto R$ {DP.reais(feito['bruto'])}, "
+                  f"FERJ R$ {DP.reais(feito['ferj'])}, liquido R$ {DP.reais(feito['liquido'])}. "
+                  'Original e autoria preservados; nenhum selo ou lancamento de receita foi criado.','success')
+        return redirect(url_for('despesas_lista')+'#faturamento-portal')
 
     @app.route("/administrativo/despesas/ler-codigo", methods=["POST"])
     @login_required
@@ -155,6 +180,42 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # 04/11/2026): a frase da tela é fixa, e o detalhe fica no registro do servidor.
             _LOG.info("código de pagamento recusado: %s", erro)
             return jsonify(erro=CODIGO_NAO_LIDO), 400
+
+    @app.route('/administrativo/despesas/ler-documento', methods=['POST'])
+    @login_required
+    @roles_required(*QUEM_CADASTRA)
+    def despesas_ler_documento():
+        arquivo = request.files.get('documento')
+        if not arquivo:
+            return jsonify(erro='Escolha o documento da despesa.'), 400
+        try:
+            return jsonify(DD.ler(arquivo.read(DD.MAX_BYTES+1),hoje=_agora().date()))
+        except DP.DespesaError as erro:
+            return jsonify(erro=str(erro)), 400
+
+    @app.route('/administrativo/despesas/<int:despesa_id>/ler-anexo/<int:anexo_id>',methods=['POST'])
+    @login_required
+    @roles_required('ADMIN')
+    @so_o_titular
+    def despesas_ler_anexo(despesa_id: int, anexo_id: int):
+        import hashlib
+        from pathlib import Path
+        with db.connect() as con:
+            anexo = next((a for a in DP.anexos(con,despesa_id) if int(a['id'])==anexo_id),None)
+        if not anexo: abort(404)
+        try:
+            raiz = _pasta()
+            caminho = Path(anexo['stored_path']).resolve()
+            if not raiz or not caminho.is_relative_to(raiz.resolve()): abort(404)
+            with caminho.open('rb') as arquivo: conteudo=arquivo.read(DD.MAX_BYTES+1)
+            if anexo.get('sha256') and hashlib.sha256(conteudo).hexdigest()!=anexo['sha256']:
+                raise DP.DespesaError('O arquivo difere do anexo registrado. Confira o documento antes de ler.')
+            resposta=DD.ler(conteudo,hoje=_agora().date())
+        except (OSError,DP.DespesaError) as erro:
+            return jsonify(erro=str(erro)),400
+        audit('DESPESA_ANEXO_LIDO','dp_despesas',despesa_id,
+              {'anexo_id':anexo_id,'sha256':resposta['sha256'],'codigos':len(resposta['opcoes'])})
+        return jsonify(resposta)
 
     @app.route("/administrativo/despesas/nova", methods=["GET", "POST"])
     @login_required

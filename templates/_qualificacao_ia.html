@@ -16,6 +16,7 @@
   <div class="panel-head"><span>Qualificação assistida (IA) — rascunho da qualificação, positiva ou negativa</span>
     <span class="small muted">{{ qa.modelo }} · esforço {{ qa.esforco }}</span></div>
   <div style="padding:0 14px 14px">
+    {% if qa.suspensao %}<div class="notice warning" id="qualificacao-ia-suspensao">{{ qa.suspensao }}</div>{% endif %}
     <p class="small muted">A IA lê o título, a guia ou certidão do ITBI e a ficha da matrícula, cruza os três e
       <strong>rascunha</strong> a qualificação: as exigências, cada uma com o fundamento e com o trecho do documento
       de onde saiu, e o que ela cruzou e bateu. Com exigência, o rascunho aponta a <strong>negativa</strong>: você
@@ -29,7 +30,7 @@
 
     {% if not qa.cabe %}
       <p class="muted">{{ qa.motivo }}</p>
-    {% elif qa.bloqueio %}
+    {% elif qa.bloqueio and not qa.suspensao %}
       <div class="notice warning" id="qualificacao-ia-bloqueio">{{ qa.bloqueio }}</div>
     {% endif %}
     {% if qa.teto %}<p class="small muted">Teto: {{ qa.teto }} leitura(s) por dia na casa inteira.
@@ -75,7 +76,7 @@
           {% endif %}
           <a class="small" href="{{ url_for('ri_qualificacao_ia_ver', pedido_id=h.id) }}">ver o rascunho{% if h.sugestao and h.sugestao.resultado == 'NEGATIVA' %} e escolher as exigências{% endif %}</a>
           {% if h.sugestao and h.sugestao.resultado != 'NEGATIVA' and not h.nota_id and not h.qualificacao_id
-                and not h.levado_em and user.role in qa.papeis %}
+                and not h.levado_em and not qa.suspensao and user.role in qa.papeis %}
             · <a class="small" href="{{ url_for('ri_protocolo_ver', protocolo_id=qa.protocolo_id, qualificacao=h.id) }}#qualificar-positiva">levar para a qualificação positiva</a>
           {% endif %}
         {% endif %}

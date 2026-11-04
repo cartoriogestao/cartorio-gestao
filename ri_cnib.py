@@ -410,6 +410,71 @@ def exige_consulta(natureza_titulo, tipo: str) -> bool:
     return bool(NAT.POR_CODIGO[codigo][2])
 
 
+# A INDISPONIBILIDADE AVERBADA NA PRÓPRIA MATRÍCULA (decisão do oficial, 03/11/2026, ensaio de atos do
+# RI, defeito 3, «b1»). A lavratura só consultava a cópia local da CNIB, e a venda sobre imóvel com a AV de
+# indisponibilidade de pé ia ao livro com «nada consta». O ATO VOLUNTÁRIO de disposição ou oneração se
+# BARRA; o resto que pede a consulta (a arrematação e a adjudicação, a partilha, a usucapião, a
+# desapropriação, as constrições) só AVISA — a indisponibilidade não impede o ato judicial.
+#: Os códigos de `ri_naturezas` do ato voluntário: alienação, oneração e os direitos reais que o dono
+#: constitui por vontade própria.
+NATUREZAS_VOLUNTARIAS: frozenset[int] = frozenset({
+    1, 2, 7, 8, 11, 12, 13, 14, 16, 17, 18, 19, 20, 26, 27, 36, 37, 38, 39, 40, 44, 53,
+})
+#: O ato judicial ou de aquisição que não é disposição voluntária, PELA PALAVRA: os modelos da casa
+#: escrevem «Arrematação», «Adjudicação», «Partilha», «Usucapião», e a tabela de naturezas diz «Carta de
+#: Arrematação», «Formal de Partilha» — o código não casa (ver o relatório do ensaio de atos do RI).
+PALAVRAS_DO_ATO_NAO_VOLUNTARIO = ("arremat", "adjudic", "partilha", "usucap", "desapropr", "penhora",
+                                  "arresto", "sequestro")
+
+
+def _sem_acento(texto) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", str(texto or ""))
+                   if unicodedata.category(c) != "Mn").lower()
+
+
+def indisponibilidades_averbadas(con, matricula_id: int) -> list[dict]:
+    """As averbações de indisponibilidade em vigor na matrícula: as que a régua do ônus ainda oferece (o
+    cancelamento pelo botão as tira) e cuja natureza diz «indisponibilidade». Só LÊ."""
+    import ri_onus as ONUS
+    bd = banco(con)
+    m = bd.um("SELECT numero FROM ri_matriculas WHERE id = %s", (int(matricula_id),))
+    atos = [dict(a) for a in bd.ler(
+        "SELECT * FROM ri_atos WHERE matricula_id = %s ORDER BY numero, id", (int(matricula_id),))]
+    saida = []
+    for a in atos:
+        natureza = _sem_acento(a.get("natureza_titulo"))
+        if "indisponib" not in natureza or "cancel" in natureza:
+            continue
+        if ONUS.classificar(a) is None:
+            continue
+        saida.append({**a, "rotulo": rotulo_ato(a["tipo"], a["numero"], (m or {}).get("numero"))})
+    return saida
+
+
+def conferir_indisponibilidade_averbada(con, matricula_id: int, natureza_titulo) -> dict | None:
+    """O que a lavratura faz diante da indisponibilidade averbada: `{"barra": True|False, "mensagem"}`,
+    ou None quando não há indisponibilidade ou o ato não é de disposição. Só LÊ."""
+    import ri_onus as ONUS
+    codigo = ONUS.codigo_da_natureza(natureza_titulo)
+    voluntario = codigo in NATUREZAS_VOLUNTARIAS
+    pela_palavra = any(p in _sem_acento(natureza_titulo) for p in PALAVRAS_DO_ATO_NAO_VOLUNTARIO)
+    if not voluntario and not pela_palavra and not exige_consulta(natureza_titulo, ""):
+        return None
+    averbadas = indisponibilidades_averbadas(con, matricula_id)
+    if not averbadas:
+        return None
+    quais = ", ".join(a["rotulo"] for a in averbadas)
+    if voluntario:
+        return {"barra": True, "mensagem": (
+            f"A matrícula tem INDISPONIBILIDADE averbada ({quais}), e o imóvel indisponível não se aliena "
+            f"nem se onera por vontade do dono (Prov. CNJ 149/2023, CNIB). O ato só se lavra depois da "
+            f"averbação do cancelamento da indisponibilidade, pela ordem que a levantou.")}
+    return {"barra": False, "mensagem": (
+        f"Atenção: a matrícula tem INDISPONIBILIDADE averbada ({quais}). Este ato não é de disposição "
+        f"voluntária e se lavra, mas confira a ordem do juízo e comunique-o, se a CNIB pedir.")}
+
+
 def gravar_consulta_do_ato(con, *, ato_id: int, matricula_id: int,
                               ato_rotulo: str, base_ate,
                               protocolo_consulta: str | None,

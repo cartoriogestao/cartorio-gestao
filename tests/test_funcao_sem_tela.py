@@ -438,9 +438,7 @@ ACHADAS_EM_05_10_2026: dict[str, str] = {}
 # sistema»: sem auditoria e passando por cima do que o balcão enviou. Quando o
 # script da carga entrar na raiz e chamá-las, elas saem daqui — o `piso` cobra.
 ACHADAS_EM_08_10_2026: dict[str, str] = {
-    "anexar_digitalizacao": (
-        "rc_digitalizacao — anexa por programa o termo digitalizado; a porta "
-        "é o script da carga do acervo transcrito, não uma tela"),
+    # `anexar_digitalizacao` SAIU em 04/11/2026: a tela do acervo em lote (#314) a chama.
     "gravar_teor_transcrito": (
         "rc_digitalizacao — grava o teor transcrito só onde está vazio; a "
         "porta é o script da carga do acervo transcrito, não uma tela"),

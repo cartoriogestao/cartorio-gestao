@@ -103,8 +103,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         elif request.args.get('recibo'):
             import re, json
             chave = request.args['recibo']
-            if re.fullmatch('[0-9a-f]{64}', chave):
-                p = RCDIGI.raiz_arquivos(db) / 'rc' / 'acervo_lotes' / chave / 'resultado.json'
+            # O CAMINHO VEM DO DISCO, e não da URL (CodeQL, path injection, 04/11/2026): a
+            # chave só escolhe entre as pastas de lote que já existem.
+            base = RCDIGI.raiz_arquivos(db) / 'rc' / 'acervo_lotes'
+            pastas = {d.name: d for d in base.iterdir() if d.is_dir()} if base.is_dir() else {}
+            if re.fullmatch('[0-9a-f]{64}', chave) and chave in pastas:
+                p = pastas[chave] / 'resultado.json'
                 if p.is_file():
                     resultado = json.loads(p.read_text(encoding='utf-8'))
         return render_template('rc_acervo_lote.html', manifesto=manifesto,

@@ -808,6 +808,9 @@ _CANHOTO_29_10 = (
      "Data: ___/___/______ às ___:___   Assinatura: ______________________________"),
 )
 MUDOU_DEPOIS_DO_OURO_LF06E = {
+    # 03/11/2026 (decisão do oficial, «l»): o termo montado sem título diferido não leva a frase do
+    # pagamento a posteriori — todos os `termo(...)` do ouro do LF06E, que a montam pelo padrão.
+    "funcoes": {},
     "banco": {
         "livro_de_protocolo": (
             ('"devedor": "MARIA DE EXEMPLO", ',
@@ -947,6 +950,26 @@ PAPEIS_DA_AVERBACAO = {"PT_TERMO_AVERBACAO_RETIFICACAO",
 NOVOS_NO_CATALOGO_AVERBACAO = 3
 PECAS_DA_AVERBACAO = 2
 
+# **03/11/2026 — A FRASE DO PAGAMENTO A POSTERIORI VIROU PEÇA** (decisão do oficial, «l», no ensaio de atos
+# do Protesto): ela era a terceira linha fixa do `PT_TERMO_PROTESTO` e saía também no protesto pago no
+# balcão. Agora é a peça `PT_TERMO_POSTERIORI`, no marcador `{posteriori}`, e só sai no título de
+# emolumentos DIFERIDOS (`protesto_posteriori.regime`). Uma peça a mais no catálogo.
+FRASE_DO_A_POSTERIORI = (
+    "Este protesto foi registrado com o procedimento de pagamento a posteriori. Os emolumentos "
+    "serão pagos pelo devedor no ato do cancelamento, conforme tabela vigente.")
+NOVOS_NO_CATALOGO_POSTERIORI = 1
+# Os termos do ouro do LF06E que traziam a frase — e só eles: as recusas não a têm, e a troca declarada
+# tem de se achar uma vez.
+import json                                                      # noqa: E402
+MUDOU_DEPOIS_DO_OURO_LF06E["funcoes"].update({
+    nome: ((" " + FRASE_DO_A_POSTERIORI, ""),)
+    for nome, saida in OURO_E.ouro()["funcoes"].items()
+    if nome.startswith("termo(") and FRASE_DO_A_POSTERIORI in json.dumps(saida, ensure_ascii=False)})
+# E a recusa do marcador inventado, que lista os que valem — agora com o {posteriori}.
+MUDOU_DEPOIS_DO_OURO_LF06E["funcoes"]["termo(ajuste com marcador inventado)"] = (
+    ("Os que valem são {tipo}, {motivo} e {edital}",
+     "Os que valem são {tipo}, {motivo}, {posteriori} e {edital}"),)
+
 
 def test_a_averbacao_de_retificacao_esta_no_catalogo_e_a_tela_a_confere(casa):
     assert len(PAPEIS_DA_AVERBACAO) == NOVOS_NO_CATALOGO_AVERBACAO
@@ -968,6 +991,7 @@ def test_o_que_mudou_depois_do_ouro_do_protesto_e_chamada_do_ouro(ouro_e):
     ela seria uma porta aberta, e não um registro."""
     assert set(MUDOU_DEPOIS_DO_OURO_LF06E["banco"]) <= set(ouro_e["banco"])
     assert set(MUDOU_DEPOIS_DO_OURO_LF06E["molduras"]) <= set(OURO_E.ouro_das_molduras())
+    assert set(MUDOU_DEPOIS_DO_OURO_LF06E["funcoes"]) <= set(ouro_e["funcoes"])
 
 
 @pytest.fixture(scope="module")
@@ -990,7 +1014,10 @@ def test_os_papeis_do_protesto_saem_iguais_aos_de_antes(ouro_e):
     chamadas = OURO_E.chamadas()
     assert set(chamadas) | {"vocabulario"} == set(ouro_e["funcoes"])
     for nome, f in chamadas.items():
-        assert OURO_E.normal(OURO_E.tenta(f)) == ouro_e["funcoes"][nome], nome
+        esperado = ouro_e["funcoes"][nome]
+        if nome in MUDOU_DEPOIS_DO_OURO_LF06E["funcoes"]:
+            esperado = _com_as_trocas(esperado, MUDOU_DEPOIS_DO_OURO_LF06E["funcoes"][nome])
+        assert OURO_E.normal(OURO_E.tenta(f)) == esperado, nome
 
 
 def test_os_rotulos_que_viraram_peca_nasceram_iguais_aos_dicionarios(ouro_e):
@@ -1047,7 +1074,7 @@ def test_a_peca_tem_ficha_propria_e_nao_herda_o_fecho_da_atribuicao():
     # instrumento (LD04); a menção do atraso do tríduo (tarefa 56); as duas
     # menções da averbação de retificação (29/10/2026).
     assert len(PECAS_DO_PROTESTO) == (35 + 2 + NOVOS_NO_CATALOGO_TRIDUO
-                                      + PECAS_DA_AVERBACAO)
+                                      + PECAS_DA_AVERBACAO + NOVOS_NO_CATALOGO_POSTERIORI)
     for chave in PECAS_DO_PROTESTO:
         c = MOD.POR_CHAVE[chave]
         assert c["atribuicao"] == "Protesto" and c["formato"] == MOD.CHAVES
@@ -1898,6 +1925,19 @@ MONTADORES_MUDADOS_DEPOIS_DO_OURO["rc_modelos_do_livro.montar_do_formulario(NASC
 MONTADORES_MUDADOS_DEPOIS_DO_OURO["rc_modelos_do_livro.montar_do_formulario(CASAMENTO)"] += (
     ("[frase_da_celebracao] sob", "[frase_da_celebracao][frase_do_presidente] sob"),
     ("que escrevi, os nubentes", "que escrevi, [frase_presidente_assina]os nubentes"))
+
+
+# 03/11/2026 (decisão do oficial, «l»): a frase do pagamento a posteriori saiu do texto fixo do termo e virou
+# o marcador {posteriori} (a peça `PT_TERMO_POSTERIORI`); a prévia, sem título, a mostra como o claro vazio
+# dela, e os montadores chamados sem o diferido a deixam de fora.
+MUDOU_DEPOIS_DO_OURO["PT_TERMO_PROTESTO"] = {
+    "texto": ((FRASE_DO_A_POSTERIORI, "{posteriori}"),),
+    "papel": ((FRASE_DO_A_POSTERIORI, "Nada mais."),),
+}
+for _nome in ("protesto_termo.montar(edital)", "protesto_termo.montar(pessoal)",
+              "protesto_termo.montar(nada)"):
+    MONTADORES_MUDADOS_DEPOIS_DO_OURO[_nome] = (
+        MONTADORES_MUDADOS_DEPOIS_DO_OURO.get(_nome, ()) + ((" " + FRASE_DO_A_POSTERIORI, ""),))
 
 
 def _com_as_trocas(antes, trocas):

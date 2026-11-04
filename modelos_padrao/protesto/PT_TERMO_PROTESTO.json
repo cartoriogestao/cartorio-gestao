@@ -3,10 +3,11 @@
   "atribuicao": "Protesto",
   "nome": "Termo do registro de protesto",
   "formato": "CHAVES",
-  "explica": "O texto que se escreve no Livro de Registro de Protestos. Monta-se de frases inteiras: {base} e {posteriori} são suas; {edital} o sistema monta dos fatos do título — se a intimação foi por edital, em que data e por qual motivo.",
+  "explica": "O texto que se escreve no Livro de Registro de Protestos. Monta-se de frases inteiras: o texto-base é seu; {posteriori} e {edital} o sistema monta dos fatos do título — a frase do pagamento a posteriori só no título de emolumentos DIFERIDOS (decisão do oficial, 03/11/2026), e a da intimação: se foi por edital, em que data e por qual motivo.",
   "campos": [
     "tipo",
     "motivo",
+    "posteriori",
     "edital"
   ]
 }

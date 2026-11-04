@@ -1484,9 +1484,11 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
     # recusarem aqui (e não com o ato e o lugar já tomados); a segunda, com o
     # lugar, é a que se grava. Os fatos são os mesmos — `dados_do_titulo` os
     # relê do banco, e é com eles que o teor se confere depois.
+    # O DIFERIDO DECIDE A FRASE DO PAGAMENTO A POSTERIORI (decisão do oficial, 03/11/2026, «l»): é um dos
+    # fatos do título (`dados_do_titulo`).
     def _termo() -> str:
         fatos = TERMO.dados_do_titulo(con, titulo_id)
-        return TERMO.montar(modelo=modelo_do_termo,
+        return TERMO.montar(modelo=modelo_do_termo, posteriori=fatos["posteriori"],
                             edital_data=fatos["edital_data"],
                             edital_motivo=fatos["edital_motivo"],
                             motivo_protesto=fatos["motivo_protesto"],

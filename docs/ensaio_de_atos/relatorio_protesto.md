@@ -143,7 +143,10 @@ protesto falimentar. A jurisprudência admite o edital quando a empresa não é 
 como defeito. Pergunta ao oficial: avisar, no protesto falimentar por edital, que a casa e a CRA o tratam
 como exceção, e pedir a afirmação de que se esgotou a procura?
 
-**O5. A frase do «pagamento a posteriori» sai no protesto que foi pago no balcão.** O termo do título
+**O5. A frase do «pagamento a posteriori» sai no protesto que foi pago no balcão.** **DECIDIDO E CONSERTADO em 03/11/2026** (o
+oficial, «l»): a frase virou a peça `PT_TERMO_POSTERIORI`, no marcador `{posteriori}` do termo, e só sai
+quando `protesto_posteriori.regime` diz DIFERIDO. O modelo de antes do marcador, com a frase escrita,
+segue a mesma regra. O texto original da observação segue abaixo. O termo do título
 cadastrado pelo balcão, com o protocolo quitado antes, diz: «Este protesto foi registrado com o
 procedimento de pagamento a posteriori. Os emolumentos serão pagos pelo devedor no ato do cancelamento».
 É a decisão documentada em `protesto_termo.py`: a frase é do texto do oficial, porque no acervo antigo

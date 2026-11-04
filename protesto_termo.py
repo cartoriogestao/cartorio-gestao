@@ -278,7 +278,7 @@ def montar(*, modelo: str | None = None, edital_data: Any = None,
            edital_motivo: Any = None, motivo_protesto: Any = None,
            tipo_protesto: Any = None, pessoal_data: Any = None,
            pessoal_digital: bool = False, qualificacao_do_registro: dict | None = None,
-           con: Any = None) -> str:
+           con: Any = None, posteriori: bool = False) -> str:
     """O texto do registro do protesto. Só calcula.
 
     `modelo` é o que o oficial editou no catálogo; sem ele vale
@@ -338,13 +338,23 @@ def montar(*, modelo: str | None = None, edital_data: Any = None,
         raise TermoError(
             f"O tipo de protesto «{_texto(tipo_protesto)}» não é comum (C) "
             f"nem para fins falimentares (F). Corrija-o na ficha do título.")
+    # A FRASE DO PAGAMENTO A POSTERIORI SÓ NO DIFERIDO (decisão do oficial, 03/11/2026, ensaio de atos do
+    # Protesto, «l»): ela era texto fixo do modelo e saía também no protesto pago no balcão, dizendo que os
+    # emolumentos seriam pagos pelo devedor no cancelamento. Agora é a peça PT_TERMO_POSTERIORI, no
+    # marcador {posteriori}, e quem decide é `protesto_posteriori.regime`. O MODELO DE ANTES DO MARCADOR,
+    # com a frase escrita, segue a mesma regra: a frase vale como o marcador.
+    frase_posteriori = _frase(None, CHAVE_DA_FRASE_POSTERIORI)
+    if "{posteriori}" not in molde and frase_posteriori in molde:
+        molde = molde.replace(frase_posteriori, "{posteriori}")
+    partes["posteriori"] = frase_posteriori if posteriori else ""
     try:
         texto = molde.format(**partes)
     except (KeyError, IndexError, ValueError) as erro:
         raise TermoError(
             f"O modelo do termo do protesto tem um marcador que não existe: "
-            f"{erro}. Os que valem são {{tipo}}, {{motivo}} e {{edital}} — as "
-            f"demais frases são texto, e se escrevem inteiras no modelo."
+            f"{erro}. Os que valem são {{tipo}}, {{motivo}}, {{posteriori}} e "
+            f"{{edital}} — as demais frases são texto, e se escrevem inteiras no "
+            f"modelo."
         ) from erro
     # O `\n` EM `TEXTO_BASE`/`TERMO_DO_PROTESTO` É SÓ FRONTEIRA DE FRASE — o
     # que decide onde uma parte acaba e a linha vazia do edital ausente some.
@@ -357,6 +367,10 @@ def montar(*, modelo: str | None = None, edital_data: Any = None,
     corpo = " ".join(x for x in linhas if x)
     return " ".join(x for x in (_qualificacao_no_alto(qualificacao_do_registro,
                                                        con), corpo) if x)
+
+
+# A frase do pagamento a posteriori, peça própria desde 03/11/2026 («l»).
+CHAVE_DA_FRASE_POSTERIORI = "PT_TERMO_POSTERIORI"
 
 
 # A peça da qualificação, em `modelos_padrao/protesto/`; o nome
@@ -573,6 +587,10 @@ def dados_do_titulo(con: sqlite3.Connection, titulo_id: int) -> dict:
     # lugar no livro, que só existe depois de `escrituracao.reservar`), a data
     # do apontamento e os devedores, na ordem em que entraram.
     proprio["qualificacao_do_registro"] = fatos_da_qualificacao(bd, int(titulo_id))
+    # O DIFERIDO, QUE DECIDE A FRASE DO PAGAMENTO A POSTERIORI (decisão do oficial, 03/11/2026, «l»): é fato
+    # do título, como o motivo e o tipo — e quem remonta o termo pelos fatos remonta a mesma frase.
+    import protesto_posteriori as POSTERIORI
+    proprio["posteriori"] = bool(tit) and POSTERIORI.regime(con, int(titulo_id))["regime"] == "DIFERIDO"
     linha = bd.um(
         """SELECT data_ato, detalhe_json FROM pt_atos
             WHERE titulo_id = %s AND tipo = 'INTIMACAO' AND cancelado = 0

@@ -125,7 +125,9 @@ class IA:
 
 
 @pytest.fixture()
-def casa(cg_casa_logada):
+def casa(cg_casa_logada, monkeypatch):
+    # Cenarios do recurso habilitado, para quando a base for validada.
+    monkeypatch.setattr(QIA, "SUSPENSA_POR_BASE_NORMATIVA", False)
     return cg_casa_logada
 
 

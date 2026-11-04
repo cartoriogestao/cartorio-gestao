@@ -115,6 +115,10 @@ FINALIDADE = "ri_qualificacao_ia"
 #: `settings.qualificacao_ia = '0'` desliga sem versão nova.
 CHAVE_LIGADA = "qualificacao_ia"
 
+# Suspensao geral no codigo ate completar e validar a base normativa.
+SUSPENSA_POR_BASE_NORMATIVA = True
+AVISO_DA_SUSPENSAO = 'Qualificação assistida temporariamente suspensa. O recurso precisa ser abastecido e validado com as normativas estaduais, a Lei de Registros Públicos e as demais leis aplicáveis à atividade registral, inclusive a legislação das cédulas de crédito. Até a liberação, realize a qualificação manualmente.'
+
 PENDENTE, LENDO, PRONTA, ERRO = MI.PENDENTE, MI.LENDO, MI.PRONTA, MI.ERRO
 
 #: As marcas da régua literal (ver o docstring).
@@ -201,12 +205,19 @@ def _sem_acento(texto: str) -> str:
 # ------------------------------------------------------------------ o portão
 
 
+def motivo_da_suspensao() -> str | None:
+    """Aviso da suspensao geral, sem consultar banco ou provedor."""
+    return AVISO_DA_SUSPENSAO if SUSPENSA_POR_BASE_NORMATIVA else None
+
+
 def por_que_nao(con, pasta_dados) -> str | None:
     """A frase que diz por que o botão não funciona aqui, ou None. Só LÊ.
 
     Na ordem em que a pessoa pode fazer algo: o SANDBOX (ordem do oficial,
     nada a fazer), o interruptor da casa e a chave do provedor.
     """
+    if motivo := motivo_da_suspensao():
+        return motivo
     import agente_provedores as AP
     import ri_onus_ia as RONIA
     if RONIA.no_sandbox(con):
@@ -511,6 +522,8 @@ def pedir(con, protocolo_id: int, *, anexos_ids, especie: str = "",
     Aqui só se confere o que o balcão pode corrigir na hora: a prenotação, a
     ficha, a espécie e os documentos. A rede é depois (`executar`).
     """
+    if motivo := motivo_da_suspensao():
+        raise QualificacaoIAError(motivo)
     bd = banco(con)
     init_schema(bd)
     p = prenotacao(bd, protocolo_id)
@@ -777,6 +790,8 @@ def executar(banco_caminho, pasta_dados: Path, pedido_id: int, conversar=None) -
             # O TETO DE NOVO, ANTES DA REDE, contando os outros pedidos em voo
             # (revisão de segurança de 26/10/2026) — e não só `ia_uso`, que
             # grava depois da resposta.
+            if motivo := motivo_da_suspensao():
+                raise RuntimeError(motivo)
             passou = passou_do_teto_do_dia(bd, sem_o_pedido=pedido_id)
             if passou:
                 raise RuntimeError(passou)
@@ -799,6 +814,8 @@ def executar(banco_caminho, pasta_dados: Path, pedido_id: int, conversar=None) -
                 modulo="ri_qualificacao_ia", finalidade="ri_qualificacao_ia",
                 atribuicao="RI", usuario=pedido.get("pedido_por") or "",
                 referencia=f"ri_qualificacao_ia:{pedido_id}", mascarado=False)
+            if motivo := motivo_da_suspensao():
+                raise RuntimeError(motivo)
             parou = resposta.get("parou") or ""
             if "[SIMULADOR DO SANDBOX]" in str(resposta.get("texto") or ""):
                 raise RuntimeError("no sistema de teste a IA é simulada e não lê "
@@ -899,6 +916,8 @@ def levar(con, pedido_id: int, escolhidas: list[tuple[int, str]], *, usuario: st
     Não emite nada: quem emite é a rota da nota devolutiva, quando a pessoa
     conferir o formulário e clicar em «Emitir».
     """
+    if motivo := motivo_da_suspensao():
+        raise QualificacaoIAError(motivo)
     bd = banco(con)
     p = mostrar(bd, pedido_id)
     if not p:
@@ -937,6 +956,8 @@ def levar(con, pedido_id: int, escolhidas: list[tuple[int, str]], *, usuario: st
 def preenchimento(con, pedido_id, protocolo_id: int) -> dict | None:
     """O que vai no formulário da nota: as exigências levadas, uma por linha.
     Só para a MESMA prenotação, e só o que ainda não virou nota. Só LÊ."""
+    if motivo_da_suspensao():
+        return None
     bruto = _texto(pedido_id)
     if not bruto.isdigit():
         return None
@@ -1027,6 +1048,8 @@ def preenchimento_positiva(con, pedido_id, protocolo_id: int) -> dict | None:
     """O que vai no formulário da POSITIVA: a fundamentação do rascunho. Só para a
     MESMA prenotação, só rascunho sem exigência e que não serviu a nota nem a
     outra positiva. Só LÊ."""
+    if motivo_da_suspensao():
+        return None
     bruto = _texto(pedido_id)
     if not bruto.isdigit():
         return None

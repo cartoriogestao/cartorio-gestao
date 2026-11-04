@@ -47,6 +47,10 @@ import titular_privado as TP
 
 _LOG = logging.getLogger("cartorio.despesas_web")
 
+# A frase da leitura recusada (ver `despesas_ler_codigo`).
+CODIGO_NAO_LIDO = ("Não foi possível ler este código. Cole o código completo: a linha "
+                   "digitável do boleto (44, 47 ou 48 dígitos), o Pix copia e cola ou a chave Pix.")
+
 QUEM_CADASTRA = ("ADMIN", "MANAGER", "USER")
 
 
@@ -147,7 +151,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         try:
             return jsonify(DF.ler_codigo(request.form.get('codigo'), hoje=_agora().date()))
         except DP.DespesaError as erro:
-            return jsonify(erro=str(erro)), 400
+            # O TEXTO DA EXCEÇÃO NÃO VAI NO JSON (CodeQL py/stack-trace-exposure, alerta #301,
+            # 04/11/2026): a frase da tela é fixa, e o detalhe fica no registro do servidor.
+            _LOG.info("código de pagamento recusado: %s", erro)
+            return jsonify(erro=CODIGO_NAO_LIDO), 400
 
     @app.route("/administrativo/despesas/nova", methods=["GET", "POST"])
     @login_required

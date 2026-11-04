@@ -70,6 +70,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         "preenche": QIA.preenchimento(
                             con, request.args.get("qualificacao"), protocolo_id)}}
                 saida = {"protocolo_id": protocolo_id,
+                         "suspensao": QIA.motivo_da_suspensao(),
                          "historico": QIA.historico(con, protocolo_id),
                          "preenche_positiva": QIA.preenchimento_positiva(
                              con, request.args.get("qualificacao"), protocolo_id),
@@ -144,6 +145,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   for x in (p["resultado"] or {}).get("exigencias") or []]
         return render_template("ri_qualificacao_ia.html", p=p, linhas=linhas,
                                prenotacao_numero=prenot or "",
+                               suspensao=QIA.motivo_da_suspensao(),
                                papeis_que_pedem=PAPEIS_QUE_PEDEM,
                                SUGERE_POSITIVA=QIA.SUGERE_POSITIVA,
                                SUGERE_NEGATIVA=QIA.SUGERE_NEGATIVA)

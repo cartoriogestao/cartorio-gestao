@@ -379,7 +379,9 @@ def _conferencia(casa) -> None:
 def _qualificacao_ia(casa) -> None:
     import ri_qualificacao_ia as QIA
     quem = _quem(casa)
-    with casa.transacao() as con:
+    from unittest.mock import patch
+    # Gera apenas o historico ficticio; a pagina continua com a suspensao atual.
+    with patch.object(QIA, "SUSPENSA_POR_BASE_NORMATIVA", False), casa.transacao() as con:
         pedido = QIA.pedir(con, _id(casa, "ri_pren_com_documento"), anexos_ids=[_id(casa, "_ri_anexo_do_titulo")],
                            usuario=quem)
     casa.pagina("ri_qualificacao_ia_ver", pedido_id=int(pedido))

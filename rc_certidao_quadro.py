@@ -229,6 +229,17 @@ def quadro_da_certidao(con, certidao: dict, sv: dict) -> dict:
                 RCE._nome(quem.get("AVO_PATERNO")),
                 RCE._nome(quem.get("AVO_PATERNA"))]),
         })
+        # A carga transcrita traz o par de avós, sem identificar separadamente
+        # avô e avó. Preserva a leitura literal sem deduzir sexo pelo nome.
+        transcrito = dados.get('acervo_transcrito') or {}
+        if isinstance(transcrito, dict):
+            for campo in ('avos_maternos', 'avos_paternos'):
+                if str(transcrito.get(campo) or '').strip():
+                    q[campo] = str(transcrito[campo]).strip()
+            for genitor in q['genitores']:
+                chave = 'avos_maternos' if genitor['nome'] == RCE._nome(mae) else 'avos_paternos'
+                if str(transcrito.get(chave) or '').strip():
+                    genitor['avos'] = str(transcrito[chave]).strip()
     elif especie in ("CASAMENTO", "CASAMENTO_RELIGIOSO"):
         q.update(_quadro_casamento(a, quem, dados, do_fato, dma_fato))
     elif especie in RCE.ESPECIES_DO_LIVRO_E:

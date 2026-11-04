@@ -15,6 +15,8 @@
 # chave do .mrc do SIRC e o MD5 do CNS sem os zeros a esquerda (B3, 10/10/2026).
 # O CNJ numera as serventias muito abaixo disto.
 999999
+# o CNS da «outra serventia» dos testes do acervo em lote (04/11/2026)
+999998
 # B3 (10/10/2026): fictícios que substituíram documentos reais nos testes
 000.000.010-82
 000.000.011-63

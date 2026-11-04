@@ -25,6 +25,8 @@ from flask import (
 
 import rc_digitalizacao as RCDIGI
 import ri_digitalizacao as RDIGI
+import rc_acervo_lote as ACLOTE
+from bd_nativo import ERROS_DO_BANCO
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit,
@@ -33,6 +35,56 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def _usuario() -> str:
         quem = app.extensions.get("usuario_nome")
         return quem() if quem else (session.get("username") or "")
+
+    @app.route('/rcpn/acervo-transcrito/lote', methods=['GET', 'POST'])
+    @roles_required('ADMIN', 'MANAGER', 'USER')
+    def rcpn_acervo_transcrito_lote():
+        manifesto = request.form.get('manifesto', '').strip()
+        previa = resultado = None
+        confirmado = False
+        erro = ''
+        if request.method == 'POST':
+            try:
+                caminho = app.extensions['pasta_da_casa'](manifesto)
+                lote = ACLOTE.carregar(caminho)
+                if request.form.get('acao') == 'importar':
+                    if request.form.get('confirmar') != '1':
+                        raise ACLOTE.LoteError('Confirme a prevalência da transcrição antes de importar.')
+                    with db.transaction() as con:
+                        resultado = ACLOTE.aplicar(con, lote,
+                            assinatura=request.form.get('assinatura', ''),
+                            raiz=RCDIGI.raiz_arquivos(db), usuario_id=session['user_id'],
+                            usuario=_usuario(), agora=db.now())
+                    confirmado = True
+                    # Recibo só depois do commit. Recarregar não repete o POST.
+                    pasta = RCDIGI.raiz_arquivos(db) / 'rc' / 'acervo_lotes' / lote['sha256']
+                    import json
+                    recibo = pasta / 'resultado.json'
+                    recibo.write_text(json.dumps(resultado, ensure_ascii=False, indent=2), encoding='utf-8')
+                    return redirect(url_for('rcpn_acervo_transcrito_lote', recibo=lote['sha256']))
+                else:
+                    with db.connect() as con:
+                        previa = ACLOTE.conferir(con, lote)
+            except (ValueError, OSError) + ERROS_DO_BANCO as exc:
+                if confirmado:
+                    erro = 'O lote foi gravado, mas o recibo não pôde ser salvo. Os dados anteriores e a auditoria foram preservados; não é necessário repetir a importação.'
+                else:
+                    resultado = None
+                    erro = str(exc) if isinstance(exc, (ValueError, OSError)) else 'O banco recusou o lote. Nenhum registro deste lote foi confirmado; confira antes de repetir.'
+                app.logger.warning('Lote de acervo RCPN recusado: %s', type(exc).__name__)
+        elif request.args.get('recibo'):
+            import re, json
+            chave = request.args['recibo']
+            # O CAMINHO VEM DO DISCO, e não da URL (CodeQL, path injection, 04/11/2026): a
+            # chave só escolhe entre as pastas de lote que já existem.
+            base = RCDIGI.raiz_arquivos(db) / 'rc' / 'acervo_lotes'
+            pastas = {d.name: d for d in base.iterdir() if d.is_dir()} if base.is_dir() else {}
+            if re.fullmatch('[0-9a-f]{64}', chave) and chave in pastas:
+                p = pastas[chave] / 'resultado.json'
+                if p.is_file():
+                    resultado = json.loads(p.read_text(encoding='utf-8'))
+        return render_template('rc_acervo_lote.html', manifesto=manifesto,
+                               previa=previa, resultado=resultado, erro=erro)
 
     @app.context_processor
     def _rc_digi() -> dict:

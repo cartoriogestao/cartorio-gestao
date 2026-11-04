@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Importar de outro sistema{% endblock %}
 {% block content %}
+{% if especie == 'RCPN_ASSENTO' %}
+<p><a class="button" href="{{ url_for('rcpn_acervo_transcrito_lote') }}">Acervo transcrito: incluir e complementar em lote com PDF</a></p>
+{% endif %}
 {% from "_manual_de_importacao.html" import manual_para_baixar %}
 {% from '_quadros_recolhidos.html' import abre, ferramentas %}
 <h1>Importar de outro sistema</h1>

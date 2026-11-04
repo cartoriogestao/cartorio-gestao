@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block title %}Acervo transcrito em lote{% endblock %}
+{% block heading %}<h1>Acervo transcrito do Registro Civil</h1>{% endblock %}
+{% block content %}
+<p>Inclui nascimentos antigos e complementa os já cadastrados. Nos campos preenchidos,
+  <strong>prevalece a transcrição</strong>. Campos vazios não apagam o cadastro.
+  O sistema guarda os dados anteriores e a autoria da alteração. Termos com identificação
+  ambígua ficam separados para conferência.</p>
+{% if erro %}<div class="notice danger">{{ erro }}</div>{% endif %}
+<section class="panel"><div style="padding:14px">
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Caminho do manifesto do livro (JSON, dentro das pastas de importação)
+    <input name="manifesto" value="{{ manifesto }}" style="width:100%" required>
+  </label>
+  <button class="button" name="acao" value="conferir">Conferir lote</button>
+</form>
+</div></section>
+{% if resultado %}
+<div class="notice ok"><strong>Lote concluído:</strong> {{ resultado.incluir }} incluído(s),
+  {{ resultado.complementar }} complementado(s), {{ resultado.recusados|length }} separado(s) para revisão.</div>
+<p>Dados anteriores preservados em <code>{{ resultado.backup }}</code>.</p>
+<table class="table"><tr><th>Ação</th><th>Livro</th><th>Termo</th><th>Ficha</th></tr>
+{% for r in resultado.resultados %}<tr><td>{{ r.acao }}</td><td>{{ r.livro }}</td><td>{{ r.numero }}</td>
+<td><a href="{{ url_for('rcpn_assento', assento_id=r.id) }}">Abrir assento {{ r.id }}</a></td></tr>{% endfor %}</table>
+{% endif %}
+{% if previa %}
+<section class="panel"><div class="panel-head"><span>Prévia do lote</span></div><div style="padding:14px">
+<p><strong>{{ previa.lidos }}</strong> registro(s): <strong>{{ previa.incluir }}</strong> novo(s),
+<strong>{{ previa.complementar }}</strong> para complementar,
+<strong>{{ previa.recusados|length }}</strong> separado(s) para revisão.</p>
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="manifesto" value="{{ manifesto }}">
+  <input type="hidden" name="assinatura" value="{{ previa.assinatura }}">
+  <label><input type="checkbox" name="confirmar" value="1" required>
+    Confirmo a inclusão e a complementação deste lote, com prevalência dos dados preenchidos da transcrição.</label>
+  {% if previa.aceitos %}<button class="button primary" name="acao" value="importar">Importar e complementar lote</button>{% endif %}
+</form>
+<table class="table"><tr><th>Ação</th><th>Livro</th><th>Termo</th><th>Nome da transcrição</th><th>Nome anterior</th></tr>
+{% for r in previa.aceitos %}<tr><td>{{ r.acao }}</td><td>{{ r.valores.livro_volume }}</td><td>{{ r.valores.numero }}</td>
+<td>{{ r.valores.nome }}</td><td>{{ r.atual.nome if r.atual else '—' }}</td></tr>{% endfor %}</table>
+</div></section>
+{% endif %}
+{% set recusados = resultado.recusados if resultado else (previa.recusados if previa else []) %}
+{% if recusados %}<section class="panel"><div class="panel-head"><span>Para conferir</span></div>
+<table class="table"><tr><th>Linha</th><th>Livro / termo</th><th>Motivo</th></tr>
+{% for r in recusados %}<tr><td>{{ r.linha }}</td><td>{{ r.livro or '' }} / {{ r.numero or '' }}</td><td>{{ r.porque }}</td></tr>{% endfor %}</table></section>{% endif %}
+{% endblock %}

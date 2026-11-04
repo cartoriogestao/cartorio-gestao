@@ -161,9 +161,13 @@ DA_FILA_DE_CORRECOES: tuple[str, ...] = (
     "correcoes_de_oficio_ficha",    # a proposta, depois de feita (GET, só lê)
 )
 
+# Carga e complementação solicitadas pelo oficial: pelo sistema, com conta
+# identificada e responsável humano ativo, cópia anterior e auditoria.
+DO_ACERVO_TRANSCRITO: tuple[str, ...] = ("rcpn_acervo_transcrito_lote",)
+
 #: A LISTA FECHADA. `selo_robo.rota_permitida_ao_robo` a consulta; vedada
 #: (`selo_robo.ROTAS_VEDADAS_AO_ROBO`) vence permitida.
 ROTAS_PERMITIDAS_AO_ROBO: frozenset[str] = frozenset(
     DA_SESSAO + DOS_AVISOS + DO_SELO_AUTOMATICO_ATRIBUICOES
     + DO_SELO_AUTOMATICO_NOTAS + DO_SELO_AUTOMATICO_NOTIFICACAO
-    + DO_SELO_AUTOMATICO_RI + DAS_FICHAS + DA_FILA_DE_CORRECOES)
+    + DO_SELO_AUTOMATICO_RI + DAS_FICHAS + DA_FILA_DE_CORRECOES + DO_ACERVO_TRANSCRITO)

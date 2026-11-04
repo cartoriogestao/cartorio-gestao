@@ -135,7 +135,10 @@ descrição e a tradução (§ 1º). O sistema só conhece o real: `protesto_cra
 entrada, «1». A CRA tem a recusa «falta tradução por tradutor público» (55). Pergunta ao oficial: a
 casa recebe esse título? Se recebe, faltam o campo da tradução e a frase no registro.
 
-**O4. O protesto para fins falimentares por edital se lavra sem aviso.** Empresa devedora, aviso não
+**O4. O protesto para fins falimentares por edital se lavra sem aviso.** **DECIDIDO E CONSERTADO em 03/11/2026** (o oficial,
+«k»): a lavratura pede a afirmação de que a procura se esgotou (`protesto.falimentar_por_edital`, campo
+`afirmo_falimentar`), e ela vai ao ato e à auditoria. No lote «A protestar» o título é recusado e vai pela
+ficha. O texto original da observação segue abaixo. Empresa devedora, aviso não
 entregue («mudou-se»), edital publicado pela tela, comprovante da CENPROT, protesto: lavrado, com «PROTESTO
 PARA FINS FALIMENTARES» e «intimado por Edital». A CRA recusa esse caso («Vedada a intimação por edital
 para protesto falimentar», 69), e a Súmula 361 do STJ exige a identificação de quem recebeu a intimação do

@@ -1184,8 +1184,12 @@ def _protesto_lancado(con, i: int, *, modo: str, digital: bool = False,
                                  "motivo_nao_entrega": motivo_nao_entrega}),
                      intimacao["ato_id"]))
     juntar_prova(con, tid)   # a prova da intimação (29/10/2026)
+    # O TÍTULO É FALIMENTAR («F»), e o intimado por edital só se protesta com a afirmação de que a
+    # procura se esgotou (decisão do oficial, 03/11/2026, «k»). Este teste é do texto do termo, e não
+    # da trava — ela tem o seu no ensaio de atos do Protesto.
     r = PT.lancar_protesto(con, tid, sv=sv, agora="2026-09-20T10:00:00",
-                           data_extenso="x")
+                           data_extenso="x", afirmo_falimentar=True,
+                           afirmacao_falimentar="a devedora foi procurada em todos os endereços conhecidos.")
     teor = bd.valor("SELECT teor FROM pt_atos WHERE id = %s", (r["ato_id"],))
     return teor, PTT.dados_do_titulo(con, tid)
 

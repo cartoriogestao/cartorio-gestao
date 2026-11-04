@@ -247,3 +247,32 @@ def test_a_releitura_pergunta_a_denominacao_e_o_breve_relato_certifica_a_lida(ca
     r = b.post(f"{ficha}/dados-pj", ficha, pj_denominacao="", pj_sede=F.SEDE_DE_EXEMPLO,
                pj_objeto=F.OBJETO_DE_EXEMPLO, pj_diretoria=F.DIRETORIA_DE_EXEMPLO)
     assert "a denominação" in F._avisos(r) and "gravados" not in F._avisos(r), F._avisos(r)
+
+
+
+# ------------------------------------------------------------------ a forma da pessoa jurídica
+
+def test_o_livro_a_pergunta_a_forma_e_avisa_a_sociedade_empresaria(casa):  # noqa: F811
+    """CC arts. 44, 967 e 1.150; LRP art. 114: o RCPJ é das sociedades simples, associações e fundações; a
+    sociedade empresária é da Junta Comercial. Decisão do oficial, 03/11/2026 («n»): o Livro A pergunta a
+    forma, e a tela avisa quando a natureza diz «empresária» — antes do clique e depois do registro."""
+    b = F.Balcao(casa)
+    b.abrir_caixa()
+    natureza = "Contrato social de sociedade empresária limitada"
+    titulo = b.receber_titulo(3, serie="PJ_A", natureza=natureza, apresentante="COMÉRCIO DE EXEMPLO LTDA",
+                              documento=F.CNPJ)
+    url = f"/rcpj-rtd/titulo/{titulo['id']}"
+    b.pagar(titulo["protocolo_geral_id"], "15.5.1")
+    b.qualificar(titulo["id"], resultado="POSITIVA", fundamentacao="Título em ordem para registro.")
+    tela = b.c.get(url).get_data(as_text=True)
+    assert 'name="forma_pj"' in tela and "sociedade <strong>EMPRESÁRIA</strong>" in tela, "a ficha não avisa"
+    campos = {k: v for k, v in F._campos_da_lista("PJ_A", natureza).items() if k != "forma_pj"}
+    dados = {"serie": "PJ_A", "teor": "CONTRATO SOCIAL.", "protocolo_id": str(titulo["protocolo_geral_id"]),
+             **campos}
+    r = postar_e_seguir(b.c, f"{url}/registrar", {"csrf_token": F._token(b.c, url), **dados})
+    assert "diga a forma da pessoa jurídica" in F._avisos(r) and not b.ler("SELECT id FROM rg_registros"), \
+        F._avisos(r)
+    r = postar_e_seguir(b.c, f"{url}/registrar", {"csrf_token": F._token(b.c, url), **dados,
+                                                  "forma_pj": "SOCIEDADE_SIMPLES"})
+    registro = b.um("SELECT * FROM rg_registros WHERE serie='PJ_A'")
+    assert registro and registro["pj_forma"] == "SOCIEDADE_SIMPLES", F._avisos(r)

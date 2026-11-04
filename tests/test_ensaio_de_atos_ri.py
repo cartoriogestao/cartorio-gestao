@@ -222,8 +222,6 @@ def _avisos(html: str) -> str:
     return " ".join(" ".join(re.sub(r"<[^>]+>", " ", p).split()) for p in pedacos)
 
 
-@_defeito("a lavratura não olha as outras prenotações abertas da matrícula: o título prenotado depois vai ao "
-          "livro, com selo e sem aviso, enquanto o anterior, contraditório, espera")
 def test_o_titulo_prenotado_depois_nao_passa_na_frente_do_anterior(casa):  # noqa: F811
     """LRP arts. 182, 186 e 191: o número de ordem da prenotação determina a prioridade do título, e esta a
     preferência dos direitos. Duas vendas da mesma dona a compradores diferentes, prenotadas nesta ordem: a
@@ -249,6 +247,18 @@ def test_o_titulo_prenotado_depois_nao_passa_na_frente_do_anterior(casa):  # noq
     # O NÚMERO DA PRIMEIRA PERTO DE «PRENOTAÇÃO»/«PROTOCOLO»: um «2» solto casava com o «R-2 lavrado».
     avisou = re.search(rf"(?i)(prenota\w*|protocolo)\s+(n\.?\s*º?\s*)?{primeira['numero']}\b", avisos)
     assert not lavrado or avisou, f"a venda da prenotação {segunda['numero']} foi ao livro sem aviso: {avisos!r}"
+    # CONSERTADO (decisão do oficial, 03/11/2026, «d1»): sem a confirmação, nada se lavra; com ela e o
+    # motivo, lavra-se, e a auditoria guarda quem passou na frente de qual prenotação.
+    assert not lavrado, avisos
+    html = F._lavrar(casa, m, tipo="R", teor=teor, natureza="Compra e venda", prenotacao=segunda, cx=cx,
+                     itens=["16.3.14"], partes=[(F.COMPRADORA, "transmitente"), (CONJUGE, "adquirente")],
+                     base_calculo="100.000,00", modelo="R-COMPRA-VENDA", confirmo_prioridade="1",
+                     motivo_prioridade="A primeira prenotação foi retirada pelo apresentante, que desistiu.")
+    ato = F._um(casa, "SELECT id FROM ri_atos WHERE matricula_id=%s AND numero=2", (m["id"],))
+    assert ato, _avisos(html)
+    log = F._um(casa, "SELECT details FROM audit_logs WHERE action='RI_PRIORIDADE_CONFIRMADA' AND entity_id=%s",
+                (ato["id"],))
+    assert log and "desistiu" in str(log["details"]), log
 
 
 # ------------------------------------------------------------------ a partilha

@@ -714,6 +714,23 @@ def _conferir_denominacao(con, nome, fundamentacao) -> dict | None:
     return {"parecidos": [r["id"] for r in achados["parecidos"]], "fundamentacao": razao}
 
 
+#: As formas da pessoa jurídica do Livro A do RCPJ (CC art. 44; LRP art. 114), na ordem da tela.
+FORMAS_DA_PJ: dict[str, str] = {
+    "ASSOCIACAO": "Associação",
+    "FUNDACAO": "Fundação",
+    "SOCIEDADE_SIMPLES": "Sociedade simples",
+    "ORGANIZACAO_RELIGIOSA": "Organização religiosa",
+    "PARTIDO_POLITICO": "Partido político",
+    "OUTRA": "Outra (dizer no teor)",
+}
+
+
+def natureza_diz_empresaria(natureza) -> bool:
+    """A natureza do título fala em sociedade EMPRESÁRIA, que é da Junta Comercial (CC arts. 967 e
+    1.150), e não do RCPJ. Só calcula — a tela avisa (decisão do oficial, 03/11/2026, «n»)."""
+    return "empresari" in _sem_acento(natureza).lower()
+
+
 def registrar(con: sqlite3.Connection, titulo_id: int, *, serie: str,
               sv: dict, agora: str, data_extenso: str,
               teor: str | None = None, teor_formato: str = "texto",
@@ -721,7 +738,8 @@ def registrar(con: sqlite3.Connection, titulo_id: int, *, serie: str,
               declaracoes: dict | None = None,
               lista_presenca: dict | None = None,
               conferir_denominacao: bool = False,
-              fundamentacao_denominacao: str | None = None) -> dict:
+              fundamentacao_denominacao: str | None = None,
+              forma_pj: str | None = None) -> dict:
     """Lavra o registro do título qualificado. ESCREVE.
 
     **SÓ DEPOIS DA QUALIFICAÇÃO POSITIVA** — é a frase do oficial, e ela é
@@ -760,6 +778,13 @@ def registrar(con: sqlite3.Connection, titulo_id: int, *, serie: str,
             f"O livro {escolhida or '(em branco)'} não é do "
             f"{NOME_DA_ATRIBUICAO[int(titulo['atribuicao'])]}.")
 
+    # A FORMA DA PESSOA JURÍDICA (decisão do oficial, 03/11/2026, «n»): a tela a pergunta no Livro A.
+    forma = _texto(forma_pj).upper() or None
+    if conferir_denominacao and escolhida == "PJ_A" and forma not in FORMAS_DA_PJ:
+        raise TituloError(
+            "No Livro A, diga a forma da pessoa jurídica (associação, fundação, sociedade simples, "
+            "organização religiosa, partido político ou outra) — CC art. 44. Nada foi lavrado.")
+
     # Só a tela confere (`conferir_denominacao`): a carga do acervo grava o que o livro já tem.
     denominacao = (_conferir_denominacao(con, titulo["apresentante"], fundamentacao_denominacao)
                    if conferir_denominacao and escolhida == "PJ_A" else None)
@@ -772,13 +797,14 @@ def registrar(con: sqlite3.Connection, titulo_id: int, *, serie: str,
         declaracoes=declaracoes, lista_presenca=lista_presenca)
 
     bd = banco(con)
-    bd.escrever("UPDATE rg_registros SET titulo_id=%s WHERE id=%s",
-                (int(titulo_id), int(feito["registro_id"])))
+    bd.escrever("UPDATE rg_registros SET titulo_id=%s, pj_forma=%s WHERE id=%s",
+                (int(titulo_id), forma if escolhida == "PJ_A" else None, int(feito["registro_id"])))
     bd.escrever("UPDATE rg_titulos SET situacao=%s, registro_id=%s, serie=%s "
                 "WHERE id=%s",
                 (REGISTRADO, int(feito["registro_id"]), escolhida,
                  int(titulo_id)))
-    return {"titulo_id": int(titulo_id), **feito, "denominacao_parecida": denominacao}
+    return {"titulo_id": int(titulo_id), **feito, "denominacao_parecida": denominacao,
+            "empresaria": escolhida == "PJ_A" and natureza_diz_empresaria(titulo["natureza"])}
 
 
 def encerrar(con: sqlite3.Connection, titulo_id: int, *, situacao: str,

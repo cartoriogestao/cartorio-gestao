@@ -566,6 +566,21 @@
             — {{ p.apresentante or 'sem apresentante' }}</option>
         {% endfor %}
       </datalist>
+      {#- A PRIORIDADE (decisão do oficial, 03/11/2026, «d1»): prenotação anterior aberta sobre a matrícula
+          se cita aqui (a view a calcula pela régua da rota), e o ato só se lavra confirmando, com o motivo. #}
+      {% set _antes = prioridade_anteriores or [] %}
+      {% if _antes %}
+      <div class="notice danger" style="margin-top:8px">
+        <strong>Há prenotação ANTERIOR aberta sobre esta matrícula:</strong>
+        {% for p in _antes %}protocolo {{ p.numero }}, de {{ fmt_date(p.data_prenotacao) }}{{ '; ' if not loop.last }}{% endfor %}.
+        O número de ordem determina a prioridade do título (Lei 6.015/1973, arts. 186 e 191).
+        <label style="display:block"><input type="checkbox" name="confirmo_prioridade" value="1" style="width:auto">
+          Confirmo que este título se lavra antes da anterior</label>
+        <label style="display:block">Motivo
+          <input name="motivo_prioridade" minlength="10"
+                 placeholder="O título anterior é uma hipoteca, que não contradiz esta venda."></label>
+      </div>
+      {% endif %}
       <label>Observação / data da prenotação (campo do ato)
         <input name="prenotacao"
           value="{{ mn.prenotacao or '' if mn else '' }}">

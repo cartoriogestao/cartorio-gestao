@@ -215,6 +215,9 @@ def _bd_de_varios(caminhos):
 
 
 def test_qualificacao_aceita_pdf_acima_do_limite_que_cabe_comprimido(tmp_path, monkeypatch):
+    # A qualificação está suspensa (#310, 04/11/2026) até validar a base normativa; aqui se testa
+    # a compressão por dentro dela, como em test_ri_qualificacao_ia.
+    monkeypatch.setattr(QIA, "SUSPENSA_POR_BASE_NORMATIVA", False)
     caminho = tmp_path / "titulo.pdf"
     caminho.write_bytes(b"%PDF-ficticio")
     monkeypatch.setattr(MI, "pdf_para_envio",
@@ -227,6 +230,9 @@ def test_qualificacao_aceita_pdf_acima_do_limite_que_cabe_comprimido(tmp_path, m
 
 
 def test_qualificacao_sem_compressao_mantem_a_recusa_de_hoje(tmp_path, monkeypatch):
+    # A qualificação está suspensa (#310, 04/11/2026) até validar a base normativa; aqui se testa
+    # a compressão por dentro dela, como em test_ri_qualificacao_ia.
+    monkeypatch.setattr(QIA, "SUSPENSA_POR_BASE_NORMATIVA", False)
     caminho = tmp_path / "titulo.pdf"
     caminho.write_bytes(b"%PDF-ficticio")
     monkeypatch.setattr(MI, "pdf_para_envio",

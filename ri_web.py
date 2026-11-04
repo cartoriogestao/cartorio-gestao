@@ -770,6 +770,20 @@ def prenotacoes_abertas_da_matricula(
     return lista
 
 
+def _sem_acento_minusculo(texto) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", str(texto or ""))
+                   if unicodedata.category(c) != "Mn").lower()
+
+
+def _so_digitos_e_rotulos(teor) -> str:
+    """O teor para procurar rótulo e número de matrícula: sem os pontos dos números («4.100» -> «4100»), em
+    caixa alta, e cada rótulo na forma da casa («R-2», «R 02» -> «R-02»). Só calcula."""
+    texto = str(teor or "").upper().replace(".", "")
+    return re.sub(r"\b(R|AV)\s*-?\s*0*(\d{1,4})\b",
+                  lambda m: f"{m.group(1)}-{int(m.group(2)):02d}", texto)
+
+
 def clausula_html_prenotacoes_abertas(
         prenotacoes: list[dict], *, fmt_date=str, con=None) -> str:
     """HTML do fecho sobre protocolo/prenotação em aberto. Só calcula.
@@ -2128,8 +2142,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         item["ir"] = ""
             return abas
 
+        # O ÔNUS DA ORIGEM AINDA NÃO TRANSPORTADO (03/11/2026, «e2»): a ficha avisa até a averbação.
+        with db.connect() as _c_onus:
+            onus_da_origem = onus_da_origem_por_transportar(_c_onus, dict(m))
         return render_template(
             "ri_ficha.html", m=m, atos=atos, partes=partes, imagens=imagens,
+            onus_da_origem=onus_da_origem,
+            aviso_do_onus_da_origem=(_aviso_do_onus_da_origem(onus_da_origem)
+                                     if onus_da_origem else ""),
             abas_da_ficha=abas_da_ficha,
             onus_painel=onus_painel, RESULTADOS_ONUS=RONIA.RESULTADOS,
 
@@ -7577,6 +7597,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                "tipo_ficha": "ACERVO" if e_acervo else "ESTRUTURADA"})
         flash(f"Matrícula {numero} aberta no livro {livro}. "
               f"O próximo número do livro passou a ser {numero + 1}.", "success")
+        # O ÔNUS DA ORIGEM (decisão do oficial, 03/11/2026, «e2»): o aviso sai já na abertura.
+        with db.connect() as _c_onus:
+            _nova = banco(_c_onus).um("SELECT * FROM ri_matriculas WHERE id=%s", (novo_id,))
+            _por_transportar = onus_da_origem_por_transportar(_c_onus, dict(_nova)) if _nova else []
+        if _por_transportar:
+            flash(_aviso_do_onus_da_origem(_por_transportar), "warning")
         _RASCT.saiu_com_o_ato(db, audit, "ri_nova_matricula",
                               url_for("ri_ficha", matricula_id=novo_id),
                               app.extensions["usuario_nome"]())
@@ -11149,6 +11175,51 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if r.get("achou") is False:
             return ""
         return ""
+
+    def onus_da_origem_por_transportar(con, matricula: dict) -> list[dict]:
+        """Os ônus em vigor na matrícula de ORIGEM que esta ainda não averbou. Só LÊ.
+
+        LRP art. 230: se na certidão da origem constar ônus, o oficial abre a matrícula e, logo em
+        seguida, averba a existência do ônus. Decisão do oficial, 03/11/2026 (ensaio de atos do RI,
+        defeito 5, «e2»): avisar, e a casa ganhou o modelo AV-TRANSPORTE-ONUS. A origem se acha pelo
+        registro anterior, com a régua da certidão dominial; os ônus, com a régua da certidão de ônus.
+        O ônus já transportado é o que uma AV de transporte desta matrícula cita (rótulo e número da
+        origem no texto).
+        """
+        bd = banco(con)
+        numeros = RIDOM.sugerir_numeros_origem(matricula.get("registro_anterior"),
+                                               numero_atual=matricula.get("numero"))
+        if not numeros:
+            return []
+        transportes = [_so_digitos_e_rotulos(a["teor"]) for a in bd.ler(
+            """SELECT teor FROM ri_atos WHERE matricula_id=%s AND tipo='AV'
+                 AND COALESCE(cancelado, 0)=0""", (int(matricula["id"]),))
+            if "transporte de onus" in _sem_acento_minusculo(a["teor"])]
+        pendentes = []
+        for numero in numeros:
+            origem = bd.um("SELECT id, numero FROM ri_matriculas WHERE numero=%s ORDER BY id LIMIT 1",
+                           (str(numero),))
+            if not origem or int(origem["id"]) == int(matricula["id"]):
+                continue
+            atos = [dict(a) for a in bd.ler(
+                "SELECT * FROM ri_atos WHERE matricula_id=%s ORDER BY numero, id", (int(origem["id"]),))]
+            digitos_origem = "".join(c for c in str(origem["numero"]) if c.isdigit())
+            for o in RIONUS.onus_vigentes(atos, rotulo=lambda a: rotulo_ato(a["tipo"], a["numero"],
+                                                                            origem["numero"])):
+                curto = f"{o['tipo']}-{int(o['numero']):02d}"
+                if any(curto in t and digitos_origem in t for t in transportes):
+                    continue
+                pendentes.append({"rotulo": o["rotulo"], "natureza": o.get("natureza_titulo"),
+                                  "origem_id": origem["id"], "origem_numero": origem["numero"]})
+        return pendentes
+
+    def _aviso_do_onus_da_origem(pendentes: list[dict]) -> str:
+        """O recado do ônus da origem por transportar, o mesmo na abertura e na ficha."""
+        quais = "; ".join(f"{p['rotulo']}{(' (' + p['natureza'] + ')') if p.get('natureza') else ''}"
+                          for p in pendentes)
+        return (f"A matrícula de origem tem ônus em vigor que esta ainda não averbou: {quais}. "
+                f"Averbe o transporte logo em seguida à abertura (Lei 6.015/1973, art. 230) — modelo "
+                f"«Transporte de ônus da matrícula de origem» (AV-TRANSPORTE-ONUS).")
 
     def prenotacoes_anteriores_abertas(con, matricula: dict, protocolo_escrito) -> list[dict]:
         """As prenotações ABERTAS da mesma matrícula com número MENOR que a deste ato. Só LÊ.

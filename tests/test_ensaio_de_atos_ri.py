@@ -5,7 +5,7 @@ simular todos atos possíveis previstos em lei ou nos códigos de normas […] e
 crítica apurada sobre o resultado de saída.» O RI veio depois das Notas (03/11/2026).
 
 O QUE ESTE TESTE FAZ
-    `test_fluxo_ri` já leva cada um dos 25 modelos de ato da casa da prenotação paga à certidão, cada
+    `test_fluxo_ri` já leva cada um dos modelos de ato da casa da prenotação paga à certidão, cada
     um numa matrícula limpa. Este pratica, pelas mesmas telas e com os mesmos passos (os auxiliares de
     lá), as SEQUÊNCIAS em que a certidão de propriedade e a de ônus podem errar: a venda com a hipoteca
     de pé, o cancelamento, a penhora, a indisponibilidade, o casal que adquire, o usufruto e a extinção;
@@ -281,8 +281,6 @@ def test_a_partilha_poe_a_meeira_e_os_herdeiros_e_tira_a_falecida(casa):  # noqa
 
 # ------------------------------------------------------------------ o desmembramento
 
-@_defeito("a matrícula aberta de outra não olha os ônus da de origem: aberta a filha da 4.100, que tem a "
-          "hipoteca R-02 de pé, nem a abertura nem a ficha da filha dizem nada da hipoteca")
 def test_a_matricula_filha_aberta_de_imovel_hipotecado_traz_o_onus(casa):  # noqa: F811
     """LRP art. 230: se na certidão da origem constar ônus, o oficial abre a matrícula e, logo em seguida,
     averba a existência do ônus. Desmembrado o imóvel hipotecado, a filha nasce gravada — e a tela que a abre
@@ -301,6 +299,15 @@ def test_a_matricula_filha_aberta_de_imovel_hipotecado_traz_o_onus(casa):  # noq
     assert rotulo in _avisos(abertura) or rotulo in _avisos(ficha) or re.search(
         rf"(?is)origem.{{0,300}}{re.escape(rotulo)}", re.sub(r"<[^>]+>", " ", ficha)), \
         f"nada sobre a hipoteca da origem: {_avisos(abertura)!r}"
+    # CONSERTADO (decisão do oficial, 03/11/2026, «e2»): averbado o transporte pelo modelo novo, o aviso
+    # sai da ficha, e a certidão de ônus da filha oferece o ônus transportado.
+    transporte = _ato(casa, filha, "AV-TRANSPORTE-ONUS", interessado=F.COMPRADORA,
+                      valores={"ATO DE ORIGEM": "R-02", "MATRICULA DE ORIGEM": f"{F.PRIMEIRA_MATRICULA}",
+                               "NATUREZA DO ONUS": "hipoteca", "CREDOR OU BENEFICIARIO": F.BANCO["nome"]})
+    assert transporte["ato"] and transporte["ato"]["selo_texto"], transporte["recado"][:1200]
+    ficha = casa["balcao"].get(f"/registro-imoveis/{filha['id']}").get_data(as_text=True)
+    assert "ainda não averbou" not in ficha, "o aviso continua depois do transporte"
+    assert transporte["ato"]["id"] in _onus_oferecidos(casa, filha)
 
 
 # ------------------------------------------------------------------ a doação com reserva de usufruto

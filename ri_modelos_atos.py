@@ -605,6 +605,26 @@ O ato cancelado permanece constando desta matricula, na forma dos arts. 248 e
 seguintes da Lei 6.015/73.</p>"""),
     },
     {
+        # O TRANSPORTE DO ÔNUS PARA A MATRÍCULA NOVA (decisão do oficial, 03/11/2026, ensaio de atos do RI,
+        # defeito 5, «e2»): aberta a matrícula de imóvel desmembrado de outro gravado, o ônus de pé na
+        # origem se averba logo em seguida na nova (LRP art. 230). A casa não tinha o modelo.
+        "codigo": "AV-TRANSPORTE-ONUS",
+        "tipo": "AV",
+        "nome": "Transporte de ônus da matrícula de origem",
+        "natureza": "Transporte de ônus",
+        "fundamentacao": "Lei 6.015/73, art. 230",
+        "requisitos": [
+            "Certidão ou ficha da matrícula de origem com o ônus em vigor",
+            "Identificação do registro do ônus na origem (rótulo e matrícula)",
+            "Averbar logo em seguida à abertura da matrícula nova",
+        ],
+        "corpo": _corpo("""<p><b>{{ rotulo }} —</b> <b>TRANSPORTE DE ONUS.</b> {{ protocolo_frase }}
+Nos termos do art. 230 da Lei 6.015/73, averba-se que sobre o imovel objeto desta matricula,
+aberta por {ORIGEM: desmembramento | unificacao | abertura} da matricula n. [MATRICULA DE ORIGEM]
+deste Oficio, pesa o onus constante do ato [ATO DE ORIGEM] daquela matricula — [NATUREZA DO ONUS],
+em favor de [CREDOR OU BENEFICIARIO] —, nos termos ali constantes.</p>"""),
+    },
+    {
         "codigo": "AV-ENCERRAMENTO",
         "tipo": "AV",
         "nome": "Encerramento de matrícula",

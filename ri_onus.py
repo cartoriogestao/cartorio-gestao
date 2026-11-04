@@ -142,6 +142,10 @@ def classificar(ato) -> dict | None:
     tipo = (_campo(ato, "tipo") or "").upper()
     natureza = _campo(ato, "natureza_titulo") or ""
     teor = _campo(ato, "teor") or ""
+    # O ÔNUS TRANSPORTADO DA MATRÍCULA DE ORIGEM É ÔNUS DESTA (LRP art. 230; modelo AV-TRANSPORTE-ONUS,
+    # decisão do oficial, 03/11/2026, «e2»): a certidão de ônus da matrícula nova o traz.
+    if tipo == "AV" and "TRANSPORTE DE ONUS" in _sem_acento(natureza):
+        return {"criterio": "natureza", "conferir": False}
     if tipo == "R":
         alvo = _sem_acento(natureza + " " + _titulo_do_registro(teor))
         termos = _TERMOS_COMUNS

@@ -3589,7 +3589,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                           feriados)
             except ValueError:
                 restam = None
-        notas = q("""SELECT * FROM ri_notas_devolutivas WHERE protocolo_id=%s
+        notas = q("""SELECT * FROM ri_notas_devolutivas WHERE protocolo_id=%s AND situacao <> 'EXCLUIDA'
                      ORDER BY id DESC""", (protocolo_id,))
         with db.connect() as _q:
             qualificacoes = PED.qualificacoes_de(_q, protocolo_id)
@@ -8531,7 +8531,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         p = q1("SELECT * FROM ri_protocolos WHERE id=%s", (protocolo_id,))
         if not p:
             abort(404)
-        notas = q("""SELECT * FROM ri_notas_devolutivas WHERE protocolo_id=%s
+        notas = q("""SELECT * FROM ri_notas_devolutivas WHERE protocolo_id=%s AND situacao <> 'EXCLUIDA'
                      ORDER BY numero DESC, id DESC""", (protocolo_id,))
 
         if request.method == "GET":
@@ -8548,6 +8548,31 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # em Word e assinada; com o arquivo, as exigências digitadas ficam opcionais.
         arquivos = [f for f in request.files.getlist("arquivo_nota") if f and f.filename]
         return _emitir_nota_devolutiva(p, arquivos=arquivos)
+
+    @app.route("/registro-imoveis/protocolo/<int:protocolo_id>/nota/<int:nota_id>/excluir", methods=["GET", "POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def ri_nota_excluir(protocolo_id, nota_id):
+        p = q1("SELECT * FROM ri_protocolos WHERE id=%s", (protocolo_id,))
+        n = q1("SELECT * FROM ri_notas_devolutivas WHERE id=%s AND protocolo_id=%s",
+               (nota_id, protocolo_id))
+        if not p or not n:
+            abort(404)
+        if request.method == 'POST':
+            if request.form.get('confirmar') != '1':
+                flash("Confirme a exclusão desta nota.", "danger")
+            else:
+                try:
+                    with db.transaction() as con:
+                        feito = RND.excluir(con, protocolo_id, nota_id,
+                            motivo=request.form.get('motivo') or '',
+                            usuario_id=app.extensions['usuario_id'](), agora=db.now())
+                except (RND.NotaError, ValueError) as erro:
+                    flash(str(erro), "danger")
+                else:
+                    flash(f"Nota nº {feito['numero']} excluída do fluxo. Histórico e arquivos preservados.", "success")
+                    return redirect(url_for('ri_protocolo_ver', protocolo_id=protocolo_id))
+        return render_template('ri_nota_excluir.html', p=p, n=n,
+                               motivo=request.form.get('motivo') or '')
 
     def _emitir_nota_devolutiva(p, *, arquivos, descricao=None):
         """A nota devolutiva, pela tela da nota ou pelo anexo do protocolo — uma porta só.
@@ -8609,6 +8634,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         n = q1("SELECT * FROM ri_notas_devolutivas WHERE id=%s", (nota_id,))
         if not n:
             abort(404)
+        if n['situacao'] == 'EXCLUIDA':
+            abort(410)
         p = q1("SELECT * FROM ri_protocolos WHERE id=%s", (n["protocolo_id"],))
         s = db.get_settings()
         try:

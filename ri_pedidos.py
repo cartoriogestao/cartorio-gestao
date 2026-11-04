@@ -140,8 +140,9 @@ def etapa(p: Mapping, ultima: Mapping | None, hoje: str) -> str:
 def qualificacoes_de(con: sqlite3.Connection, protocolo_id: int) -> list[dict]:
     """As qualificações de uma prenotação, da primeira à última. SÓ LÊ."""
     return banco(con).ler(
-        """SELECT * FROM ri_qualificacoes WHERE protocolo_id=%s
-           ORDER BY ordem, id""", (int(protocolo_id),))
+        """SELECT q.* FROM ri_qualificacoes q WHERE q.protocolo_id=%s
+           AND NOT EXISTS (SELECT 1 FROM ri_notas_devolutivas n WHERE n.id=q.nota_id AND n.situacao='EXCLUIDA')
+           ORDER BY q.ordem, q.id""", (int(protocolo_id),))
 
 
 def _prenotacao(con: sqlite3.Connection, protocolo_id: int) -> dict:
@@ -291,9 +292,9 @@ def listar(con: sqlite3.Connection, *, hoje: date,
 
     ultimas: dict[int, dict] = {}
     for r in bd.ler(
-            """SELECT protocolo_id, ordem, resultado, data_qualificacao,
-                      qualificada_por
-               FROM ri_qualificacoes ORDER BY protocolo_id, ordem, id"""):
+            """SELECT q.protocolo_id, q.ordem, q.resultado, q.data_qualificacao,
+                      q.qualificada_por
+               FROM ri_qualificacoes q WHERE NOT EXISTS (SELECT 1 FROM ri_notas_devolutivas n WHERE n.id=q.nota_id AND n.situacao='EXCLUIDA') ORDER BY q.protocolo_id, q.ordem, q.id"""):
         ultimas[int(r["protocolo_id"])] = dict(r)
 
     geral: dict[int, dict] = {}

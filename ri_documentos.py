@@ -146,6 +146,7 @@ def documentos_de(con: Any, entidade: str,
         """SELECT a.*, u.full_name enviado_por_nome
              FROM attachments a LEFT JOIN users u ON u.id = a.uploaded_by
             WHERE a.entity_type = %s AND a.entity_id = %s
+                AND a.retirado_em IS NULL
             ORDER BY a.id DESC""", (entidade, int(entidade_id)))
 
 
@@ -154,7 +155,7 @@ def quantos_documentos(con: Any, entidade: str,
     """Quantos anexos, para a tela dizer o numero sem carregar a lista."""
     return int(banco(con).valor(
         """SELECT COUNT(*) AS n FROM attachments
-            WHERE entity_type = %s AND entity_id = %s""",
+            WHERE entity_type = %s AND entity_id = %s AND retirado_em IS NULL""",
         (entidade, int(entidade_id))))
 
 

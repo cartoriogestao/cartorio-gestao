@@ -143,6 +143,8 @@ DAS_FICHAS: tuple[str, ...] = (
     "notas_publica_forma",     # notas_publica_forma.html → notas_publica_forma_emitir
     "rcpj_rtd_notificacao",    # rcpj_rtd_notificacao.html → as três da notificação
     "ri_ficha",                # ri_ficha.html → ri_lavrar_ato
+    "ri_protocolo_ver",         # consulta para excluir nota por ordem do usuario
+    "ri_nota_excluir",          # conta de robo com responsavel humano, conferido pelo dominio
 )
 
 # A FILA DE CORREÇÕES DE OFÍCIO (29/10/2026) — e este grupo não é do selo.

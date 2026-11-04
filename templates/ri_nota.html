@@ -57,6 +57,7 @@
       <a class="button" href="{{ url_for('ri_nota_odt', nota_id=n.id, formato='odt') }}">.odt</a>
     </div>
     {% if n.situacao == 'ABERTA' %}
+    <p><a class="button danger" href="{{ url_for('ri_nota_excluir', protocolo_id=p.id, nota_id=n.id) }}">Excluir nota cadastrada com erro</a></p>
     <form method="post" action="{{ url_for('ri_reingresso', nota_id=n.id) }}" class="form-grid"
           enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

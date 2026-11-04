@@ -530,7 +530,7 @@
     <tbody>
     {% for n in notas %}
       <tr><td class="small">{{ n.numero }}</td><td class="small">{{ fmt_date(n.data_nota) }}</td>
-          <td class="small">{{ n.situacao }}</td>
+          <td class="small">{{ n.situacao }}{% if n.situacao == 'ABERTA' and user.role in ('ADMIN','MANAGER','USER') %} · <a href="{{ url_for('ri_nota_excluir', protocolo_id=p.id, nota_id=n.id) }}">Excluir por erro</a>{% endif %}</td>
           <td class="small">{{ fmt_date(n.data_reingresso) if n.data_reingresso else '—' }}</td></tr>
     {% endfor %}
     </tbody>

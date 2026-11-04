@@ -50,7 +50,7 @@
     <div class="table-wrap"><table>
       <thead><tr><th></th><th>Vencimento</th><th>Favorecido</th><th>Despesa</th><th>Pagar por</th><th>Valor</th><th></th></tr></thead>
       <tbody>{% for d in a_autorizar %}<tr>
-        <td>{% if not d.pendencia %}<input type="checkbox" name="marcada" value="{{ d.id }}:{{ d.valor }}" checked aria-label="Autorizar a despesa {{ d.id }}">{% endif %}</td>
+        <td>{% if not d.pendencia %}<input type="checkbox" name="marcada" value="{{ d.id }}:{{ d.valor }}" checked aria-label="Autorizar a despesa {{ d.id }}"><input type="hidden" name="revisao_{{ d.id }}" value="{{ revisao_pagamento(d) }}">{% endif %}</td>
         <td>{{ d.vencimento }}</td><td>{{ d.beneficiario_nome }}</td><td>{{ d.descricao }}</td>
         <td>{{ formas[d.forma] if d.forma in formas else d.forma }}<br><code style="word-break:break-all">{{ d.codigo }}</code></td>
         <td>R$ {{ reais(d.valor) }}</td>

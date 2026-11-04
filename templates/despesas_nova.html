@@ -32,6 +32,7 @@
     <select name="forma" required>{% for k, v in formas.items() %}<option value="{{ k }}" {% if f.forma == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
   <label>Código de pagamento (linha digitável, Pix copia e cola ou chave Pix)
     <textarea name="codigo" rows="3" cols="60">{{ f.codigo or '' }}</textarea></label>
+  {% include '_despesas_ler_codigo.html' %}
   <label>Documento que comprova (espécie) <input name="documento_especie" value="{{ f.documento_especie or '' }}" placeholder="Nota fiscal, recibo, guia, boleto" size="30" required></label>
   <label>Número do documento <input name="documento_numero" value="{{ f.documento_numero or '' }}" size="20"></label>
   <label>Arquivo do documento (PDF, imagem ou XML) <input type="file" name="documento" accept=".pdf,.png,.jpg,.jpeg,.xml"></label>

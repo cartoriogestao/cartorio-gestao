@@ -3,6 +3,7 @@
 {% block heading %}<h1>Despesa {{ d.id }} — {{ situacoes[d.situacao] }}</h1>{% endblock %}
 {% block content %}
 <div class="actions"><a class="button" href="{{ url_for('despesas_lista') }}">&larr; Despesas</a></div>
+{% if orientacao %}<div class="notice" role="status">{{ orientacao }}</div>{% endif %}
 
 <section class="panel">
   <p><strong>{{ d.beneficiario_nome }}</strong>{% if d.beneficiario_documento %} · {{ d.beneficiario_documento }}{% endif %}</p>
@@ -28,6 +29,30 @@
   {% if d.motivo_cancelamento %}<p class="small">Cancelada por {{ d.cancelada_por }}: {{ d.motivo_cancelamento }}</p>{% endif %}
 </section>
 
+{% if papel == 'ADMIN' and pode_corrigir %}
+<details class="panel" id="corrigir-pagamento"{% if d.situacao == 'FALHOU' %} open{% endif %}>
+  <summary><strong>Corrigir dados do pagamento sem cadastrar outra despesa</strong></summary>
+  <p>A correção conserva esta despesa, seus documentos e seu histórico. A autorização anterior será retirada;
+    os novos dados precisarão de nova autorização. Salvar não envia pagamento.</p>
+  <form method="post" action="{{ url_for('despesas_corrigir_pagamento', despesa_id=d.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="revisao" value="{{ revisao }}">
+    <label>Favorecido <input name="beneficiario_nome" value="{{ d.beneficiario_nome }}" required size="40"></label>
+    <label>CPF/CNPJ do favorecido (obrigatório no Pix por chave)
+      <input name="beneficiario_documento" value="{{ d.beneficiario_documento or '' }}" size="20"></label>
+    <label>Valor (R$) <input name="valor" value="{{ reais(d.valor) }}" required size="12"></label>
+    <label>Vencimento <input type="date" name="vencimento" value="{{ d.vencimento }}" required></label>
+    <label>Forma de pagamento <select name="forma" required>
+      {% for k, v in formas.items() %}{% if k != 'MANUAL' %}<option value="{{ k }}"{% if d.forma == k %} selected{% endif %}>{{ v }}</option>{% endif %}{% endfor %}
+    </select></label>
+    <label>Código de pagamento <textarea name="codigo" rows="3" cols="60" maxlength="4096" required>{{ d.codigo or '' }}</textarea></label>
+    {% include '_despesas_ler_codigo.html' %}
+    <label>O que foi corrigido e por quê <textarea name="motivo" rows="2" minlength="10" maxlength="500" required></textarea></label>
+    <button type="submit">Salvar correção e pedir nova autorização</button>
+  </form>
+</details>
+{% endif %}
+
 {# O VALOR PODE MUDAR ATÉ A AUTORIZAÇÃO (30/10/2026): a folha vem pré-carregada. #}
 {% if papel in ['ADMIN', 'MANAGER'] and d.situacao == 'AGUARDANDO_AUTORIZACAO' %}
 <section class="panel"><h2>Ajustar o valor deste mês</h2>
@@ -43,6 +68,7 @@
 <section class="panel"><h2>Autorizar o pagamento</h2>
   <form method="post" action="{{ url_for('despesas_acao', despesa_id=d.id, acao='autorizar') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="revisao" value="{{ revisao }}">
     {% if d.valor > tetos.pagamento %}<label><input type="checkbox" name="acima_do_teto" value="1"> Autorizo acima do teto por pagamento (R$ {{ reais(tetos.pagamento) }})</label>{% endif %}
     {% if d.divergencia %}<label>Por que o valor está certo assim <input name="motivo" size="60"></label>{% endif %}
     <button type="submit">Autorizar</button>
@@ -51,9 +77,10 @@
 
 {% if papel == 'ADMIN' and d.situacao == 'AUTORIZADA' %}
 <section class="panel"><h2>Pagar</h2>
-  <p class="small">Sai sozinho na próxima rodada da automação. Para não esperar:</p>
+  <p class="small">Sai sozinho na próxima rodada da automação. A solicitação ao banco é para
+    {{ d.vencimento if d.vencimento > hoje else hoje }}. Data futura gera agendamento; não significa que já foi pago.</p>
   <form method="post" action="{{ url_for('despesas_acao', despesa_id=d.id, acao='pagar') }}" class="inline">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Pagar agora pelo Inter</button></form>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Solicitar pagamento pelo Inter</button></form>
 </section>
 {% endif %}
 {% if papel == 'ADMIN' and d.situacao in ['ENVIADA', 'PAGA'] %}

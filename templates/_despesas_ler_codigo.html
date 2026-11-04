@@ -1,0 +1,7 @@
+<div data-leitor-pagamento data-url="{{ url_for('despesas_ler_codigo') }}">
+  <button type="button" data-ler-codigo>Ler código e conferir dados</button>
+  <p class="small" data-resultado-codigo role="status" aria-live="polite"></p>
+  <button type="button" data-usar-codigo hidden>Usar os dados lidos (forma, valor e vencimento disponíveis)</button>
+  <p class="small muted">A leitura não envia pagamento. Confira os dados na fatura antes de autorizar.</p>
+</div>
+<script defer src="{{ url_for('static', filename='despesas_codigo.js') }}"></script>

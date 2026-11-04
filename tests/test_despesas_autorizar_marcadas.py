@@ -15,6 +15,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 import despesas as DP
+import despesas_fluxo as DF
 from tests.conftest import cg_login
 
 AGORA = datetime(2026, 10, 30, 9, 0, tzinfo=timezone(timedelta(hours=-3)))
@@ -51,6 +52,11 @@ def _situacao(db, i):
         return DP.despesa(con, i)["situacao"]
 
 
+def _revisoes(db, *ids):
+    with db.connect() as con:
+        return {f'revisao_{i}': DF.revisao(DP.despesa(con, i)) for i in ids}
+
+
 def test_a_lista_mostra_o_que_se_confere_e_ja_vem_marcada(cg_casa_logada):
     _tetos_altos(cg_casa_logada["db"])
     i = _nova(cg_casa_logada["db"])
@@ -64,7 +70,7 @@ def test_autoriza_as_marcadas_e_a_desmarcada_continua_esperando(cg_casa_logada):
     _tetos_altos(cg_casa_logada["db"])
     db, c = cg_casa_logada["db"], cg_casa_logada["c"]
     a, b, fica = _nova(db), _nova(db, 200000), _nova(db, 300000)
-    r = c.post(ROTA, data={"csrf_token": _token(c), "marcada": [f"{a}:193532", f"{b}:200000"]},
+    r = c.post(ROTA, data={"csrf_token": _token(c), **_revisoes(db, a, b), "marcada": [f"{a}:193532", f"{b}:200000"]},
                follow_redirects=True)
     assert "2 despesa(s) autorizada(s), R$ 3.935,32" in r.get_data(as_text=True)
     assert (_situacao(db, a), _situacao(db, b)) == (DP.AUTORIZADA, DP.AUTORIZADA)
@@ -75,7 +81,7 @@ def test_valor_que_mudou_depois_da_tela_nao_se_autoriza(cg_casa_logada):
     _tetos_altos(cg_casa_logada["db"])
     db, c = cg_casa_logada["db"], cg_casa_logada["c"]
     i, outra = _nova(db), _nova(db, 200000)
-    r = c.post(ROTA, data={"csrf_token": _token(c), "marcada": [f"{i}:100", f"{outra}:200000"]},
+    r = c.post(ROTA, data={"csrf_token": _token(c), **_revisoes(db, i, outra), "marcada": [f"{i}:100", f"{outra}:200000"]},
                follow_redirects=True)
     assert "O valor mudou" in r.get_data(as_text=True)
     assert _situacao(db, i) == DP.AGUARDANDO

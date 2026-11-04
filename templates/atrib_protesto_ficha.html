@@ -643,6 +643,22 @@
     <input type="hidden" name="ato" value="{{ ato }}">
     {% if not abas %}<div style="grid-column:1/-1"><strong>{{ ato | capitalize }}</strong></div>{% endif %}
 
+    {#- O MESMO TÍTULO JÁ EM PÉ (decisão do oficial, 03/11/2026, «g1»): protestado, não se aponta; só
+        apontado ou intimado, aponta-se afirmando — campo próprio, `afirmo_dobrado`. #}
+    {% if ato == 'APONTAMENTO' and dobrados %}
+      {% set protestado = dobrados | selectattr('situacao', 'equalto', 'PROTESTADO') | list %}
+      <div class="notice danger" style="grid-column:1/-1">
+        <strong>Este título já está nesta casa:</strong>
+        {% for o in dobrados %}protocolo {{ o.protocolo or '—' }} ({{ o.situacao | lower }}){{ '; ' if not loop.last }}{% endfor %}.
+        {% if protestado %}O mesmo título não se protesta duas vezes (Lei 9.492/1997, art. 9º): devolva-o ao
+        apresentante.{% else %}Apontá-lo de novo é apresentá-lo em duplicidade.{% endif %}
+      </div>
+      {% if not protestado %}
+        {{ afirmacao('_dobrado', 'Se é a reapresentação de um título retirado, ou outro título com os mesmos dados, diga por quê.',
+                     rotulo='Apontar mesmo assim — afirmação expressa (título em duplicidade)', valores=v_ato) }}
+      {% endif %}
+    {% endif %}
+
     {% if ato == 'INTIMACAO' %}
       <label>Como foi intimado
         <select name="modo">

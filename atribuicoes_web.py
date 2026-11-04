@@ -3370,6 +3370,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return None
         return _campo(f"afirmacao{sufixo}") or None
 
+    def _avisar_motivo_trocado(r: dict) -> None:
+        """O protesto que se lavrou por falta de pagamento, e não pelo motivo do cadastro (Lei 9.492/1997,
+        art. 21, § 2º; decisão do oficial, 03/11/2026). Quem lavra precisa saber, e o apresentante também."""
+        troca = (r or {}).get("motivo_trocado")
+        if troca:
+            flash(f"O título venceu em {troca['vencimento'][8:10]}/{troca['vencimento'][5:7]}/"
+                  f"{troca['vencimento'][:4]}, e o protesto foi lavrado POR FALTA DE PAGAMENTO, e não "
+                  f"por {troca['de_extenso']}: {troca['fundamento']}.", "warning")
+
     def _auditar_afirmacoes(entity_type: str, entity_id: object,
                             registros: object) -> None:
         """Uma linha de `AFIRMACAO_EXPRESSA` por trava vencida. `audit` abre
@@ -3539,6 +3548,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         af_selo = _afirmacao_da_trava("selo")
         # O FALIMENTAR POR EDITAL (decisão do oficial, 03/11/2026, «k»): campo próprio, `afirmo_falimentar`.
         af_falimentar = _afirmacao_da_trava("falimentar")
+        # O TÍTULO EM DUPLICIDADE (decisão do oficial, 03/11/2026, «g1»): campo próprio, `afirmo_dobrado`.
+        af_dobrado = _afirmacao_da_trava("dobrado")
         if ato in CCONF.ATOS_QUE_A_CENPROT_TRAVA:
             try:
                 afirmacao_cenprot = CCONF.trava_do_ato(
@@ -3568,7 +3579,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     r = PT.lancar_apontamento(con, titulo_id, sv=sv(),
                                               agora=agora(),
                                               data_extenso=hoje_extenso(),
-                                              usuario=usuario_nome())
+                                              usuario=usuario_nome(),
+                                              conferir_dobrado=True,
+                                              afirmo_dobrado=af_dobrado["afirmo"],
+                                              afirmacao_dobrado=af_dobrado["texto"],
+                                              robo=af_dobrado["robo"])
                 elif ato == "INTIMACAO":
                     r = PT.lancar_intimacao(
                         con, titulo_id, modo=_campo("modo") or "PESSOAL",
@@ -3740,7 +3755,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     _vencida("irmaos", (irmao or {}).get("afirmacao_expressa"),
                              af_irmaos),
                     _vencida("selo", afirmacao_aceita, af_selo),
-                    _vencida("falimentar", r.get("falimentar_por_edital"), af_falimentar)])
+                    _vencida("falimentar", r.get("falimentar_por_edital"), af_falimentar),
+                    _vencida("dobrado", (r.get("dobrado") or {}).get("afirmacao_expressa"),
+                             af_dobrado)])
                 if afirmacao_aceita:
                     PSELO.anotar_afirmacao_no_ato(
                         con, r["ato_id"], afirmacao_aceita,
@@ -3815,6 +3832,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if r.get("falimentar_por_edital"):
             audit("AFIRMACAO_EXPRESSA", "pt_titulos", titulo_id,
                   {**r["falimentar_por_edital"], "ato": ato, "ato_id": r["ato_id"]})
+        # O TÍTULO EM DUPLICIDADE apontado afirmando (03/11/2026, «g1»): a afirmação vai à auditoria.
+        dobrado = (r.get("dobrado") or {}).get("afirmacao_expressa")
+        if dobrado:
+            audit("AFIRMACAO_EXPRESSA", "pt_titulos", titulo_id,
+                  {**dobrado, "ato": ato, "ato_id": r["ato_id"],
+                   "outros": [o["id"] for o in r["dobrado"]["outros"]]})
         if irmao and irmao.get("afirmacao_expressa"):
             af = irmao["afirmacao_expressa"]
             audit("AFIRMACAO_EXPRESSA", "pt_titulos", titulo_id,
@@ -3909,6 +3932,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 flash("O protesto foi lançado, mas o preenchimento salvo "
                       "continua na lista de Rascunhos.", "warning")
         flash(f"{ato.capitalize()} lançado.{onde}{aviso}", "success")
+        _avisar_motivo_trocado(r)
         return voltar
 
     @app.route("/protesto/<int:titulo_id>/situacao/corrigir", methods=["POST"])
@@ -4109,6 +4133,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             irmaos = IRM.quadro_da_ficha(con, titulo_id)
             # O FALIMENTAR POR EDITAL (03/11/2026, «k»): a ficha pede a afirmação antes do clique.
             falimentar_por_edital = PT.falimentar_por_edital(con, titulo_id)
+            # O MESMO TÍTULO JÁ EM PÉ (03/11/2026, «g1»): a ficha o mostra antes de apontar.
+            dobrados = (PT.duplicados(con, titulo_id)
+                        if (titulo or {}).get("situacao") == "RECEBIDO" else [])
             atos = bd.ler(
                 "SELECT * FROM pt_atos WHERE titulo_id=%s ORDER BY id",
                 (titulo_id,))
@@ -4288,6 +4315,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                    "triduo_situacao"),
                                irmaos=irmaos, cedente_origem=cedente_origem,
                                falimentar_por_edital=falimentar_por_edital,
+                               dobrados=dobrados,
                                prova=prova, pedidos_cra=pedidos_cra,
                                edital_comprovante=edital_comprovante,
                                preparo_protesto=preparo_protesto,
@@ -12523,6 +12551,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                    "em_lote": True})
             _auditar_afirmacoes("pt_atos", r.get("ato_id"),
                                 [r.get("afirmacao_expressa")])
+        for _titulo_id, r in feitos:
+            _avisar_motivo_trocado(r)
         if feitos:
             flash(f"{len(feitos)} protesto(s) lavrado(s). Eles ainda não têm "
                   f"selo nem cobrança: sele e cobre pela ficha de cada título. "

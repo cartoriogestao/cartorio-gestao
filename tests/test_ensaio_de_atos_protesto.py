@@ -69,36 +69,67 @@ def _emitir(s, *, nome: str, documento: str, **campos) -> dict:  # noqa: F811
 
 # ------------------------------------------------------------------ o título apresentado duas vezes
 
-@_defeito("o mesmo título (espécie, número, credor, devedor e valor iguais) se cadastra, aponta e protesta "
-          "duas vezes pelo balcão, sem uma palavra: o devedor sai com dois protestos de uma dívida só")
 def test_o_mesmo_titulo_nao_se_protesta_duas_vezes(s):  # noqa: F811
     """Lei 9.492/1997, art. 9º (o tabelião examina os caracteres formais do título); o vocabulário da CRA
-    já tem a recusa: «Título apresentado em duplicidade» (52) e «Título já protestado» (53). O segundo
-    apontamento do mesmo título não vai ao protesto sem que a tela o diga."""
+    tem a recusa: «Título já protestado» (53). Decisão do oficial, 03/11/2026 («g1»; CONSERTADO): com o
+    mesmo título PROTESTADO, o segundo não se aponta, e a ficha diz por quê antes do clique."""
     primeiro = _ate_o_protesto(s)
     assert primeiro["situacao"] == "PROTESTADO", primeiro["avisos"]
-    segundo = _ate_o_protesto(s)
-    avisou = any(("duplic" in a.lower() or "já protestado" in a.lower() or "já apontado" in a.lower())
-                 for a in segundo["avisos"])
-    assert segundo["situacao"] != "PROTESTADO" or avisou, segundo["avisos"]
+    p = F._protocolo(s, F.PROTESTO)
+    segundo, _ = _cadastrado(s)
+    ficha = s["c"].get(f"/protesto/{segundo}").get_data(as_text=True)
+    assert "Este título já está nesta casa" in ficha and "protestado" in ficha, "a ficha não avisa"
+    r = F._lancar(s, segundo, "APONTAMENTO", p, p["itens"][0])
+    assert F._situacao(s, segundo) == "RECEBIDO", F._avisos(r)
+    assert any("PROTESTADO" in a and "art. 9º" in a for a in F._avisos(r)), F._avisos(r)
+
+
+def test_o_mesmo_titulo_so_apontado_se_aponta_de_novo_afirmando(s):  # noqa: F811
+    """A outra metade de «g1» (decisão do oficial, 03/11/2026): o mesmo título só APONTADO pode ser a
+    reapresentação de um título retirado — o segundo apontamento pede a afirmação expressa, e ela vai à
+    auditoria com o nome de quem afirmou (`afirmacoes_expressas`, o contrato comum da casa)."""
+    p = F._protocolo(s, F.PROTESTO, F.PROTESTO)
+    primeiro, _ = _cadastrado(s, numero_titulo="NP-0031")
+    assert F._lancado(F._lancar(s, primeiro, "APONTAMENTO", p, p["itens"][0]), "Apontamento")
+    segundo, _ = _cadastrado(s, numero_titulo="NP-0031")
+    r = F._lancar(s, segundo, "APONTAMENTO", p, p["itens"][1])
+    assert F._situacao(s, segundo) == "RECEBIDO" and any("duplicidade" in a for a in F._avisos(r)), F._avisos(r)
+    r = F._lancar(s, segundo, "APONTAMENTO", p, p["itens"][1], afirmo_dobrado="1",
+                  afirmacao_dobrado="o credor retirou o primeiro por engano e o reapresentou no mesmo dia.")
+    assert F._lancado(r, "Apontamento"), F._avisos(r)
+    log = F._um(s, """SELECT details FROM audit_logs WHERE action='AFIRMACAO_EXPRESSA'
+                       AND entity_type='pt_titulos' AND entity_id=%s ORDER BY id DESC LIMIT 1""", (segundo,))
+    assert log and "PROTESTO_TITULO_EM_DUPLICIDADE" in str(log["details"]), log
 
 
 # ------------------------------------------------------------------ o motivo e a espécie
 
-@_defeito("o protesto por falta de aceite (ou de devolução) se lavra depois do vencimento, e com esse motivo "
-          "no registro")
 @pytest.mark.parametrize("motivo,por_extenso", [("2", "FALTA DE ACEITE"), ("3", "FALTA DE DEVOLU")])
 def test_depois_do_vencimento_o_protesto_e_sempre_por_falta_de_pagamento(s, motivo, por_extenso):  # noqa: F811
     """Lei 9.492/1997, art. 21, § 1º: o protesto por falta de aceite «somente poderá ser efetuado antes do
     vencimento da obrigação»; § 2º: depois do vencimento, «o protesto sempre será efetuado por falta de
     pagamento». O § 3º (a falta de devolução) só muda a base do protesto — a segunda via, as indicações —,
-    e não a regra do § 2º. O título do balcão vence em 10/02/2025: nem por falta de aceite, nem de
-    devolução."""
+    e não a regra do § 2º. O título do balcão vence em 10/02/2025: o protesto se lavra por falta de
+    pagamento, e a tela avisa a troca (decisão do oficial, 03/11/2026, «h2»; CONSERTADO)."""
     feito = _ate_o_protesto(s, especie="DMI", numero_titulo=f"DMI-000{motivo}", motivo_protesto=motivo)
-    if feito["situacao"] != "PROTESTADO":
-        return
-    termo = F._ato(s, feito["id"], "PROTESTO")["teor"] or ""
-    assert por_extenso not in termo.upper(), termo
+    assert feito["situacao"] == "PROTESTADO", feito["avisos"]
+    ato = F._ato(s, feito["id"], "PROTESTO")
+    termo = (ato["teor"] or "").upper()
+    assert por_extenso not in termo and "FALTA DE PAGAMENTO" in termo, termo
+    assert any("POR FALTA DE PAGAMENTO" in a and "art. 21, § 2º" in a for a in feito["avisos"]), feito["avisos"]
+    import json
+    assert json.loads(ato["detalhe_json"])["motivo_trocado"]["de"] == motivo
+
+
+def test_antes_do_vencimento_a_falta_de_aceite_fica(s):  # noqa: F811
+    """O outro lado da régua: a duplicata que ainda não venceu se protesta por falta de aceite, como o
+    cadastro diz, e sem aviso de troca (Lei 9.492/1997, art. 21, § 1º)."""
+    feito = _ate_o_protesto(s, especie="DMI", numero_titulo="DMI-0099", motivo_protesto="2",
+                            data_vencimento="2099-12-31")
+    assert feito["situacao"] == "PROTESTADO", feito["avisos"]
+    termo = (F._ato(s, feito["id"], "PROTESTO")["teor"] or "").upper()
+    assert "FALTA DE ACEITE" in termo, termo
+    assert not any("POR FALTA DE PAGAMENTO" in a for a in feito["avisos"]), feito["avisos"]
 
 
 @_defeito("o cheque se cadastra e se protesta pelo balcão sem nada da apresentação ao banco sacado: a ficha "

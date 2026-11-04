@@ -34,6 +34,14 @@ escrito «conferir».
 
 ## 1. O mesmo título se protesta duas vezes
 
+**CONSERTADO em 03/11/2026** (decisão do oficial, «g1»). No apontamento pela ficha, `protesto.duplicados`
+procura título da mesma espécie, número, vencimento e valor, com um devedor do mesmo documento, que esteja
+apontado, intimado ou protestado. O credor não entra na chave, porque o cedente do acervo da CRA não é
+confiável. Se o outro está PROTESTADO, a ficha avisa e o apontamento é barrado. Se está só apontado ou
+intimado, aponta-se com a afirmação expressa (`afirmo_dobrado`), que vai à auditoria. **O lote da CRA não
+passa por esta trava**: uma recusa ali pararia a remessa inteira, e o caminho seria devolver o título com
+a irregularidade 52 ou 53. Fica a pergunta ao oficial.
+
 **O que se fez.** A nota promissória NP-0001, do mesmo credor contra o mesmo devedor, no mesmo valor,
 cadastrada pelo balcão, apontada, intimada e protestada. Depois, o mesmo título outra vez, do começo.
 
@@ -51,6 +59,11 @@ a confirmação com o motivo. A sugestão é a (g1) para o protestado e a (g2) p
 segundo pode ser a reapresentação de um título retirado.
 
 ## 2. O protesto por falta de aceite (e de devolução) se lavra depois do vencimento
+
+**CONSERTADO em 03/11/2026** (decisão do oficial, «h2»: trocar e avisar). Na lavratura, a falta de aceite
+ou de devolução com o vencimento no dia do protesto ou antes dele se troca para falta de pagamento
+(`protesto._motivo_depois_do_vencimento`). O motivo de antes fica no detalhe do ato, e a ficha e o lote
+«A protestar» avisam a troca, com o § 2º. O título que ainda não venceu continua por falta de aceite.
 
 **O que se fez.** Uma duplicata por indicação (DMI), vencida em 10/02/2025, com o motivo «2» (falta de
 aceite), pelo mesmo caminho.

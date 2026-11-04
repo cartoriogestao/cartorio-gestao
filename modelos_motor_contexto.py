@@ -180,7 +180,8 @@ def _obito_extras(a: dict, quem: dict, dados: dict) -> dict[str, str]:
             or ""
         ).strip(),
         "numero_do": str(
-            a.get("numero_do") or dados.get("strNumeroDO") or dados.get("strDO") or ""
+            a.get("numero_do") or dados.get("strNumeroDeclaracaoObito")
+            or dados.get("strNumeroDO") or dados.get("strDO") or ""
         ).strip(),
         "eleitor": str(
             fal.get("titulo_eleitor")

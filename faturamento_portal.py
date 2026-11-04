@@ -25,7 +25,8 @@ def _xml(z, nome):
     if z.getinfo(nome).file_size>MAX_BYTES:
         raise DP.DespesaError('O relatorio descompactado passa do limite de 2 MB.')
     conteudo=z.read(nome)
-    if b'<!DOCTYPE' in conteudo.upper() or b'<!ENTITY' in conteudo.upper():
+    seguro=conteudo.replace(b'\x00', b'').upper()
+    if b'<!DOCTYPE' in seguro or b'<!ENTITY' in seguro:
         raise DP.DespesaError('O relatorio contem XML nao permitido.')
     return ET.fromstring(conteudo)
 
@@ -44,9 +45,9 @@ def _centavos(v):
         raise DP.DespesaError('Valor monetario invalido no relatorio do portal.') from erro
 
 
-def ler(conteudo: bytes, *, cns: str) -> dict:
+def linhas_xlsx(conteudo: bytes) -> list[dict]:
     if not conteudo or len(conteudo)>MAX_BYTES:
-        raise DP.DespesaError('Use o XLSX do relatorio de faturamento, de ate 2 MB.')
+        raise DP.DespesaError('Use um relatorio XLSX de ate 2 MB.')
     try:
         with zipfile.ZipFile(BytesIO(conteudo)) as z:
             if len(z.infolist())>100 or sum(i.file_size for i in z.infolist())>5*MAX_BYTES:
@@ -58,6 +59,8 @@ def ler(conteudo: bytes, *, cns: str) -> dict:
             for row in _xml(z,'xl/worksheets/sheet1.xml').findall('.//s:sheetData/s:row',NS):
                 linha={}
                 for cell in row.findall('s:c',NS):
+                    if cell.find('s:f',NS) is not None:
+                        raise DP.DespesaError('O relatorio contem formulas. Use a exportacao original do portal.')
                     valor=cell.find('s:v',NS)
                     valor=valor.text if valor is not None else ''.join(t.text or '' for t in cell.findall('.//s:t',NS))
                     if cell.get('t')=='s': valor=strings[int(valor)]
@@ -65,9 +68,11 @@ def ler(conteudo: bytes, *, cns: str) -> dict:
                 linhas.append(linha)
     except (zipfile.BadZipFile,KeyError,IndexError,ET.ParseError,ValueError) as erro:
         raise DP.DespesaError('Nao reconheci o XLSX do relatorio de faturamento do Portal do Selo.') from erro
+    return linhas
+
+
+def periodo_mensal(linhas: list[dict]) -> tuple[date, date]:
     texto='\n'.join(' '.join(l.values()) for l in linhas)
-    if 'RELATÓRIO DE FATURAMENTO DAS SERVENTIAS' not in texto.upper():
-        raise DP.DespesaError('O arquivo nao e o relatorio de faturamento das serventias.')
     periodo=re.search(r'(\d{2}/\d{2}/\d{4})\s+at[eé]\s+(\d{2}/\d{2}/\d{4})',texto,re.IGNORECASE)
     if not periodo: raise DP.DespesaError('O periodo do relatorio nao foi encontrado.')
     try:
@@ -75,6 +80,15 @@ def ler(conteudo: bytes, *, cns: str) -> dict:
     except ValueError as erro: raise DP.DespesaError('Periodo invalido no relatorio.') from erro
     if inicio.day!=1 or fim!=date(inicio.year,inicio.month,calendar.monthrange(inicio.year,inicio.month)[1]):
         raise DP.DespesaError('Exporte um mes completo, do primeiro ao ultimo dia.')
+    return inicio,fim
+
+
+def ler(conteudo: bytes, *, cns: str) -> dict:
+    linhas=linhas_xlsx(conteudo)
+    texto='\n'.join(' '.join(l.values()) for l in linhas)
+    if 'RELATÓRIO DE FATURAMENTO DAS SERVENTIAS' not in texto.upper():
+        raise DP.DespesaError('O arquivo nao e o relatorio de faturamento das serventias.')
+    inicio,_fim=periodo_mensal(linhas)
     cabecalho=next((l for l in linhas if 'EMOLUMENTO (A)' in l.values() and 'FERJ' in l.values()),None)
     if not cabecalho: raise DP.DespesaError('As colunas de emolumentos e FERJ nao foram encontradas.')
     col={v:k for k,v in cabecalho.items()}

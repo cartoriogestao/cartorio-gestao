@@ -40,6 +40,8 @@
 {% if livro %}
 <section class="panel">
   <h2>Demonstrativo do mês (art. 190, IV)</h2>
+  <p class="notice">Antes do fechamento, <a href="{{ url_for('despesas_conferencia', mes=comp) }}">confira cancelamentos, quantidades e FERJ por selo com os relatórios do portal</a>.
+    A conferência aponta pendências; as versões já geradas permanecem preservadas.</p>
   <div class="table-wrap"><table>
     <tr><th>Receita bruta (emolumentos)</th><td>R$ {{ em_reais(livro.receita_bruta) }}</td></tr>
     <tr><th>Despesas</th><td>R$ {{ em_reais(livro.despesas) }}</td></tr>

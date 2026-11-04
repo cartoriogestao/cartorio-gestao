@@ -35,6 +35,7 @@ from flask import (
 )
 
 import cofre_do_titular as COT
+import conferencia_selos as CS
 import csv_seguro as CSVS
 import despesas as DP
 import despesas_comprovante as DC
@@ -170,7 +171,68 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             flash(f"Referencia de {feito['competencia']} importada: bruto R$ {DP.reais(feito['bruto'])}, "
                   f"FERJ R$ {DP.reais(feito['ferj'])}, liquido R$ {DP.reais(feito['liquido'])}. "
                   'Original e autoria preservados; nenhum selo ou lancamento de receita foi criado.','success')
+            if request.form.get('volta') == 'conferencia':
+                return redirect(url_for('despesas_conferencia', mes=feito['competencia']))
         return redirect(url_for('despesas_lista')+'#faturamento-portal')
+
+    @app.route('/administrativo/despesas/conferencia')
+    @login_required
+    @roles_required('ADMIN')
+    @so_o_titular
+    def despesas_conferencia():
+        import selos_emitidos as SEM
+        try:
+            comp = FP.LD.competencia(request.args.get('mes') or DV._mes_anterior(_agora().date()))
+            with db.connect() as con:
+                quadro = CS.conferir(con, comp, cns=FP.cns_da_casa(con))
+                destinos = SEM.destinos_dos_selos(con, [d['local'] for d in quadro['diferencas'] if d['local']])
+        except (DP.DespesaError, FP.LD.DiarioError, ValueError) as erro:
+            flash(str(erro), 'danger')
+            return redirect(url_for('despesas_lista'))
+        tipo = request.args.get('tipo', '')
+        if tipo and tipo not in CS.TIPOS:
+            abort(400)
+        diferencas = [d for d in quadro['diferencas'] if not tipo or tipo in d['tipos']]
+        return render_template('despesas_conferencia.html', q=quadro, diferencas=diferencas,
+                               tipos=CS.TIPOS, tipo=tipo, destinos=destinos, reais=DP.reais)
+
+    @app.route('/administrativo/despesas/conferencia/importar', methods=['POST'])
+    @login_required
+    @roles_required('ADMIN')
+    @so_o_titular
+    def despesas_conferencia_importar():
+        comp = None
+        try:
+            arquivo = request.files.get('analitico')
+            if not arquivo or not archive_root:
+                raise DP.DespesaError('Escolha o XLSX analitico e confira a pasta de documentos.')
+            with db.transaction() as con:
+                ref = CS.registrar(con, arquivo.read(FP.MAX_BYTES + 1), cns=FP.cns_da_casa(con),
+                                   pasta=archive_root()/'faturamento_portal', usuario_id=usuario_id(),
+                                   por=usuario_nome(), agora=db.now())
+                comp = ref['competencia']
+            flash('Analitico registrado. Confira as diferencas por selo; nenhum ato, cancelamento ou receita foi alterado.', 'success')
+        except (DP.DespesaError, ValueError) as erro:
+            flash(str(erro), 'danger')
+        return redirect(url_for('despesas_conferencia', mes=comp))
+
+    @app.route('/administrativo/despesas/conferencia/quantidades', methods=['POST'])
+    @login_required
+    @roles_required('ADMIN')
+    @so_o_titular
+    def despesas_conferencia_quantidades():
+        comp = request.form.get('mes')
+        try:
+            if request.form.get('confirmo') != '1':
+                raise DP.DespesaError('Confira a lista e confirme as quantidades antes de aplicar.')
+            with db.transaction() as con:
+                n = CS.aplicar_quantidades(con, comp, cns=FP.cns_da_casa(con),
+                                          revisao=request.form.get('revisao'), motivo=request.form.get('motivo'),
+                                          usuario_id=usuario_id(), agora=db.now())
+            flash(f'{n} quantidade(s) completada(s), com origem e auditoria. Livros ja gerados permanecem preservados.', 'success')
+        except (DP.DespesaError, FP.LD.DiarioError, ValueError) as erro:
+            flash(str(erro), 'danger')
+        return redirect(url_for('despesas_conferencia', mes=comp))
 
     @app.route("/administrativo/despesas/ler-codigo", methods=["POST"])
     @login_required

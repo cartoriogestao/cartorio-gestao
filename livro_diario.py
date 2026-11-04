@@ -334,10 +334,10 @@ def receitas_do_mes(con, comp: str, pct_ferj: int | None = None) -> list[dict]:
     nomes = _descricoes(bd)
     saida = []
     for s in bd.ler(
-            """SELECT id, numero, texto, atribuicao, referencia, tabela, ato_id, usado_em
+            """SELECT id, numero, texto, atribuicao, referencia, tabela, ato_id, usado_em, quantidade
                  FROM sd_selos
                 WHERE usado_em >= %s AND usado_em < %s
-                  AND cancelado_em IS NULL AND ambiente = 'PRODUCAO'
+                  AND TRIM(COALESCE(cancelado_em,'')) = '' AND ambiente = 'PRODUCAO'
                 ORDER BY usado_em, id""", (inicio, fim)):
         lido = SL.ler_texto(s["texto"] or "")
         marcas = " ".join(lido.get("marcas") or []).upper()
@@ -359,7 +359,7 @@ def receitas_do_mes(con, comp: str, pct_ferj: int | None = None) -> list[dict]:
             "emolumentos": emol,
             # Selo sem valor não tem de onde tirar o FERJ: «—», e não zero.
             "fundos": {FERJ: (None if emol is None
-                              else custas.ferj_do_emolumento(emol, pct_ferj)),
+                              else custas.ferj_do_emolumento(emol, pct_ferj, quantidade=s['quantidade'])),
                        **{f: _cent(fundos.get(f)) for f, _ in FUNDOS_DO_SELO}},
             "sem_valor": emol is None,
             # Receita é o emolumento do ato praticado e cobrado (art. 191).

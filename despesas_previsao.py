@@ -149,6 +149,10 @@ def vencimento_do_darf(con, competencia: str) -> date:
     return OO._ultimo_dia_util(ano, mes)
 
 
+def pendencias_fiscais(apuracao: dict) -> bool:
+    return bool(apuracao.get('a_classificar') or apuracao.get('outras_entradas'))
+
+
 def formulario_do_darf(con, competencia: Any) -> dict:
     """A despesa do DARF, preenchida para colar o código. Só LÊ. Quem grava é o titular.
 
@@ -159,7 +163,11 @@ def formulario_do_darf(con, competencia: Any) -> dict:
         comp = CL.competencia(competencia)
     except CL.CarneLeaoError as erro:
         raise DP.DespesaError(str(erro)) from erro
-    imposto = CL.apurar(con, comp)["imposto"]
+    apuracao = CL.apurar(con, comp)
+    if pendencias_fiscais(apuracao):
+        raise DP.DespesaError('Apuracao incompleta: classifique as despesas e confira as outras entradas '
+                              'no Carne-leao antes de preencher o DARF. A estimativa ainda nao e imposto confirmado.')
+    imposto = apuracao["imposto"]
     if imposto is None:
         raise DP.DespesaError("Sem tabela progressiva cadastrada, o imposto não foi calculado: "
                               "cadastre a tabela em Carnê-leão → Configuração.")
@@ -204,8 +212,9 @@ def quadro_do_mes(con, hoje: date) -> dict:
     fundos_do_mes = projetar(fundos_ate_agora, passados, uteis)
     fundos_a_sair = max(0, fundos_do_mes - _ja_previstas(CATEGORIAS_DE_FUNDO))
     imposto = anterior["imposto"]
+    fiscal_pendente = pendencias_fiscais(anterior)
     darf_cadastrado = _ja_previstas(("CARNE_LEAO",))
-    imposto_a_sair = None if imposto is None else max(0, int(imposto) - darf_cadastrado)
+    imposto_a_sair = None if imposto is None or fiscal_pendente else max(0, int(imposto) - darf_cadastrado)
     emolumentos_anteriores = int(LD.apurar(bd, _mes_anterior(hoje))["receita_bruta"])
     aliquota = aliquota_do_iss(bd)
     iss_anterior = iss_preliminar(emolumentos_anteriores, aliquota)
@@ -223,8 +232,11 @@ def quadro_do_mes(con, hoje: date) -> dict:
         {"rotulo": "Fundos dos atos do mês, projetados", "valor": fundos_a_sair, "ja_saiu": False,
          "nota": f"R$ {DP.reais(fundos_ate_agora)} até agora, em {passados} de {uteis} dias úteis."},
         {"rotulo": f"Carnê-leão de {_mes_anterior(hoje)[5:]}/{_mes_anterior(hoje)[:4]}, que vence neste mês",
-         "valor": imposto_a_sair or 0, "ja_saiu": False,
-         "nota": "Sem tabela progressiva cadastrada: o imposto não foi calculado." if imposto is None
+         "valor": imposto_a_sair or 0, "ja_saiu": False, "pendente": fiscal_pendente or imposto is None,
+         "nota": ('Apuracao incompleta: ha despesas sem classificacao fiscal ou entradas a conferir. '
+                  + (f'Estimativa antes da conferencia: R$ {DP.reais(imposto)}. ' if imposto is not None else '')
+                  + 'Nao incluida no total previsto; confira no Carne-leao.') if fiscal_pendente
+                 else "Sem tabela progressiva cadastrada: o imposto não foi calculado." if imposto is None
                  else "Sai da conta quando o DARF é cadastrado na categoria do carnê-leão."},
         {"rotulo": f"ISS de {_mes_anterior(hoje)[5:]}/{_mes_anterior(hoje)[:4]}, preliminar",
          "valor": max(0, iss_anterior - iss_cadastrado), "ja_saiu": False,
@@ -239,10 +251,12 @@ def quadro_do_mes(con, hoje: date) -> dict:
             "receita": receita, "receita_pelo_selo": int(livro["receita_bruta"]),
             "despesas": pago_no_livro, "saldo": receita - pago_no_livro,
             "sobra": receita - pago_no_livro - falta_sair,
-            "imposto_do_mes": caixa["imposto"], "dias_passados": passados, "dias_uteis": uteis,
+            "imposto_do_mes": caixa["imposto"], "imposto_do_mes_pendente": pendencias_fiscais(caixa),
+            "dias_passados": passados, "dias_uteis": uteis,
             "darf": {"competencia": _mes_anterior(hoje), "imposto": imposto,
                      "vencimento": vencimento_do_darf(bd, _mes_anterior(hoje)).isoformat(),
-                     "falta_cadastrar": bool(imposto) and not darf_cadastrado},
+                     "pendente": fiscal_pendente, "despesas_a_classificar": int(anterior.get('a_classificar') or 0),
+                     "falta_cadastrar": bool(imposto) and not darf_cadastrado and not fiscal_pendente},
             "iss": {"competencia": _mes_anterior(hoje), "valor": iss_anterior,
                     "falta_cadastrar": bool(iss_anterior) and not iss_cadastrado,
                     "do_mes": iss_preliminar(int(livro["receita_bruta"]), aliquota)}}

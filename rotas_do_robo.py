@@ -163,7 +163,7 @@ DA_FILA_DE_CORRECOES: tuple[str, ...] = (
 
 # Carga e complementação solicitadas pelo oficial: pelo sistema, com conta
 # identificada e responsável humano ativo, cópia anterior e auditoria.
-DO_ACERVO_TRANSCRITO: tuple[str, ...] = ("rcpn_acervo_transcrito_lote",)
+DO_ACERVO_TRANSCRITO: tuple[str, ...] = ("rcpn_acervo_transcrito_lote", "rcpn_acervo_transcrito_sequencia")
 
 #: A LISTA FECHADA. `selo_robo.rota_permitida_ao_robo` a consulta; vedada
 #: (`selo_robo.ROTAS_VEDADAS_AO_ROBO`) vence permitida.

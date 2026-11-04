@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}Sequência do acervo transcrito{% endblock %}
+{% block heading %}<h1>Importar sequência de livros transcritos</h1>{% endblock %}
+{% block content %}
+<p>O servidor processa um bloco de cada vez, com prevalência da transcrição nos campos preenchidos.
+Dados anteriores e recibos são preservados. Blocos já concluídos são reconhecidos pelo recibo.</p>
+{% if erro %}<div class="notice danger">{{ erro }}</div>{% endif %}
+{% if andamento %}
+<div class="notice {% if andamento.situacao=='CONCLUIDA' %}ok{% endif %}">
+<strong>{{ andamento.situacao }}</strong>: {{ andamento.concluidos }} de {{ andamento.total }} blocos concluídos.
+{{ andamento.incluidos }} incluído(s), {{ andamento.complementados }} complementado(s),
+{{ andamento.recusados }} separado(s) para revisão.
+{% if andamento.livro_atual %} Livro atual: {{ andamento.livro_atual }}.{% endif %}
+</div>
+{% if andamento.erro %}<div class="notice danger">{{ andamento.erro }}</div>{% endif %}
+<a class="button" href="{{ url_for('rcpn_acervo_transcrito_sequencia', execucao=andamento.id) }}">Atualizar andamento</a>
+<p>Responsável pela solicitação: {{ andamento.usuario }}. Início: {{ andamento.criado_em }}.</p>
+<table class="table"><tr><th>Livro</th><th>Incluídos</th><th>Complementados</th><th>Para revisão</th><th>Recibo</th></tr>
+{% for r in andamento.resultados %}<tr><td>{{ r.livro }}</td><td>{{ r.incluidos }}</td><td>{{ r.complementados }}</td><td>{{ r.recusados|length }}</td><td><a href="{{ url_for('rcpn_acervo_transcrito_lote', recibo=r.sha256) }}">Conferir</a></td></tr>{% endfor %}</table>
+{% else %}
+<form method="post">
+ <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+ <label>Caminho do índice da sequência
+ <input name="indice" value="{{ caminho }}" required style="width:100%"></label>
+ <button class="button" name="acao" value="conferir">Conferir sequência</button>
+</form>
+{% if previa %}
+<p><strong>{{ previa.lotes|length }}</strong> blocos, <strong>{{ previa.registros }}</strong> registros para conferir.
+Os blocos com recibo serão reconhecidos; os demais serão conferidos novamente antes de gravar.</p>
+<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+ <input type="hidden" name="indice" value="{{ caminho }}">
+ <label><input type="checkbox" name="confirmar" value="1" required>
+ Confirmo a execução de todos os blocos, com prevalência da transcrição e preservação dos dados anteriores.</label>
+ <button class="button primary" name="acao" value="iniciar">Iniciar sequência de importação</button>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}

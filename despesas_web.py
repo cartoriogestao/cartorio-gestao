@@ -23,12 +23,22 @@ import logging
 from datetime import date, datetime
 from io import BytesIO
 
-from flask import abort, flash, redirect, render_template, request, send_file, url_for
+from flask import (
+    abort,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    url_for,
+)
 
-import csv_seguro as CSVS
 import cofre_do_titular as COT
+import csv_seguro as CSVS
 import despesas as DP
 import despesas_comprovante as DC
+import despesas_fluxo as DF
 import despesas_inter as INTER
 import despesas_previsao as DV
 import despesas_recorrentes as RC
@@ -127,7 +137,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                recorrentes_carregadas=carregadas, a_autorizar=a_autorizar,
                                balanco=balanco, em_duvida=em_duvida, quadro=quadro,
                                quadro_falhou=quadro_falhou, quadro_trancado=quadro_trancado,
-                               formas=DP.FORMAS)
+                               formas=DP.FORMAS, revisao_pagamento=DF.revisao)
+
+    @app.route("/administrativo/despesas/ler-codigo", methods=["POST"])
+    @login_required
+    @roles_required(*QUEM_CADASTRA)
+    def despesas_ler_codigo():
+        # So calcula o texto enviado; nao le despesas, credenciais ou o banco Inter.
+        try:
+            return jsonify(DF.ler_codigo(request.form.get('codigo'), hoje=_agora().date()))
+        except DP.DespesaError as erro:
+            return jsonify(erro=str(erro)), 400
 
     @app.route("/administrativo/despesas/nova", methods=["GET", "POST"])
     @login_required
@@ -307,7 +327,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                tetos=DP.tetos(cfg), cfg=cfg, reais=DP.reais,
                                papel=usuario_papel(), hoje=date.today().isoformat(),
                                foi_paga=DC.foi_paga(d), demonstrativo=DC.pode_gerar(d),
-                               whatsapp=whatsapp)
+                               whatsapp=whatsapp, orientacao=DF.orientacao(d),
+                               pode_corrigir=DF.pode_corrigir(d), revisao=DF.revisao(d))
+
+    @app.route("/administrativo/despesas/<int:despesa_id>/corrigir-pagamento", methods=["POST"])
+    @login_required
+    @roles_required("ADMIN")
+    @so_o_titular
+    def despesas_corrigir_pagamento(despesa_id: int):
+        try:
+            with db.transaction() as con:
+                DF.corrigir(con, despesa_id, dados=request.form,
+                            motivo=request.form.get('motivo') or '',
+                            versao=request.form.get('revisao') or '',
+                            agora=_agora(), por=usuario_nome(), papel=usuario_papel(),
+                            usuario_id=usuario_id())
+        except (DP.DespesaError, ValueError) as erro:
+            flash(str(erro), 'danger')
+        else:
+            flash('Dados corrigidos na mesma despesa. Historico preservado; '
+                  'confira os novos dados e autorize novamente. Nenhum pagamento foi enviado.', 'success')
+        return _ficha(despesa_id)
 
     @app.route("/administrativo/despesas/<int:despesa_id>/<acao>", methods=["POST"])
     @login_required
@@ -324,6 +364,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                          papel=papel,
                                          valor_centavos=DP.centavos_da_tela(f.get("valor")))
                     elif acao == "autorizar":
+                        DF.conferir_revisao(con, despesa_id, f.get('revisao') or '')
                         DP.autorizar(con, despesa_id, agora=_agora(), por=usuario_nome(),
                                      papel=papel, acima_do_teto=f.get("acima_do_teto") == "1",
                                      motivo_divergencia=f.get("motivo"))
@@ -388,6 +429,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         for despesa_id, valor in marcadas.items():
             try:
                 with db.transaction() as con:
+                    DF.conferir_revisao(con, despesa_id,
+                                        request.form.get(f'revisao_{despesa_id}') or '')
                     DP.autorizar(con, despesa_id, agora=_agora(), por=usuario_nome(),
                                  papel=usuario_papel(), valor_visto=valor)
             except DP.DespesaError as erro:

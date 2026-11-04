@@ -283,3 +283,64 @@ def reingresso(con: Any, nota: Any, p: Any, *, quando: str, observacao: str | No
                      descricao=_com_a_descricao_antiga(descricao_do_cumprimento(nota["numero"]),
                                                        antiga))
     return dentro
+
+
+# A exclusao pela tela retira a nota do fluxo e conserva documento e auditoria.
+EXCLUIDA = "EXCLUIDA"
+
+
+def excluir(con, protocolo_id: int, nota_id: int, *, motivo: str,
+            usuario_id: int, agora: str) -> dict:
+    """Exclui logicamente uma nota com erro, na transacao da rota autenticada."""
+    import identidade_do_robo as IDR
+    import onr_acompanhamento as ACOMP
+    bd = banco(con)
+    motivo = (motivo or "").strip()
+    if len(motivo) < 10:
+        raise NotaError("Escreva o motivo da exclusão (pelo menos 10 caracteres).")
+    pessoa = bd.um("SELECT id,username,full_name,role,active,eh_robo,robo_responsavel_id "
+                   "FROM users WHERE id=%s", (int(usuario_id),))
+    if not pessoa or not pessoa['active'] or pessoa['role'] not in ('ADMIN','MANAGER','USER'):
+        raise NotaError("A exclusão exige um usuário ativo que pratique atos.")
+    if pessoa['eh_robo']:
+        if not pessoa['robo_responsavel_id']:
+            raise NotaError("O robô precisa de um responsável humano cadastrado.")
+        IDR.validar_responsavel_de_robo(bd, int(pessoa['robo_responsavel_id']))
+    bd.travar("ri_notas_devolutivas.numero")
+    p = bd.um("SELECT * FROM ri_protocolos WHERE id=%s FOR UPDATE", (int(protocolo_id),))
+    n = bd.um("SELECT * FROM ri_notas_devolutivas WHERE id=%s FOR UPDATE", (int(nota_id),))
+    if not p or not n or int(n['protocolo_id']) != int(protocolo_id):
+        raise NotaError("A nota não pertence a este protocolo.")
+    if n['situacao'] != 'ABERTA' or n.get('data_reingresso'):
+        raise NotaError("Só é possível excluir uma nota aberta, sem reingresso.")
+    if p.get('ato_id') or p['situacao'] not in ('ABERTO','DEVOLVIDO'):
+        raise NotaError("Este protocolo já não permite a exclusão de notas.")
+    eventos = []
+    if bd.tem_tabela('onr_at_eventos'):
+        eventos = bd.ler("SELECT * FROM onr_at_eventos WHERE origem_tabela=%s "
+                         "AND origem_id=%s ORDER BY id FOR UPDATE",
+                         ('ri_notas_devolutivas', int(nota_id)))
+        if any(e['situacao'] not in ('PENDENTE','DESCARTADO') for e in eventos):
+            raise NotaError("A nota tem andamento enviado ou em envio ao ONR. Confira-o antes de excluir.")
+    documentos = bd.ler("SELECT * FROM attachments WHERE entity_type='RI_PROTOCOLO' "
+                        "AND entity_id=%s ORDER BY id FOR UPDATE", (int(protocolo_id),))
+    anexos = [int(a['id']) for a in anexos_da_nota(documentos, n['numero']) if not a.get('retirado_em')]
+    for e in eventos:
+        if e['situacao'] == 'PENDENTE':
+            ACOMP.descartar(con, e['id'], motivo=motivo,
+                           quem=pessoa['full_name'] or pessoa['username'], agora=agora)
+    bd.escrever("UPDATE ri_notas_devolutivas SET situacao=%s WHERE id=%s",
+                (EXCLUIDA, int(nota_id)))
+    for aid in anexos:
+        bd.escrever("UPDATE attachments SET retirado_em=%s, retirado_por=%s, retirado_motivo=%s WHERE id=%s",
+                    (agora, pessoa['full_name'] or pessoa['username'], motivo, aid))
+    if p['situacao'] == 'DEVOLVIDO' and not nota_aberta(con, protocolo_id):
+        bd.escrever("UPDATE ri_protocolos SET situacao='ABERTO' WHERE id=%s", (int(protocolo_id),))
+    feito = {'nota_id': int(nota_id), 'numero': n['numero'],
+             'protocolo_id': int(protocolo_id), 'protocolo': p['numero'],
+             'motivo': motivo, 'anexos_historicos': anexos,
+             'eventos_descartados': [e['id'] for e in eventos if e['situacao']=='PENDENTE']}
+    IDR.registrar(con, ts=agora, user_id=pessoa['id'], username=pessoa['username'],
+                  action='RI_NOTA_EXCLUIDA', entity_type='RI_PROTOCOLO',
+                  entity_id=int(protocolo_id), details=feito)
+    return feito

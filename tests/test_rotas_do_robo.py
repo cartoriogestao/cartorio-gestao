@@ -83,7 +83,9 @@ LISTA_NEGRA = re.compile(r"cancel|expurg|apagar|excluir|enviar|importar|configur
 
 #: Exceção à lista negra: rota -> por que o robô precisa dela E qual teste
 #: prova que ela recusa o robô por dentro no que é perigoso. Vazia hoje.
-EXCECOES_DA_LISTA_NEGRA: dict[str, str] = {}
+EXCECOES_DA_LISTA_NEGRA: dict[str, str] = {
+    "ri_nota_excluir": "Ordem do usuario: excluir pelo sistema com conta de robo responsavel; test_robo_sem_responsavel_nao_exclui prova a recusa por dentro."
+}
 
 
 def test_nenhuma_permitida_cai_na_lista_negra_sem_excecao_declarada():

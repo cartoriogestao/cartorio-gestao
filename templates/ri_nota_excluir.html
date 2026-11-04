@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Excluir nota nº {{ n.numero }} — protocolo {{ p.numero }}</h1>{% endblock %}
+{% block content %}
+<p>A nota será retirada do fluxo e seus andamentos ainda pendentes serão descartados. O histórico e os arquivos serão preservados. As demais notas não mudam.</p>
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Motivo da exclusão<textarea name="motivo" required minlength="10" rows="3">{{ motivo }}</textarea></label>
+  <label><input type="checkbox" name="confirmar" value="1" required> Confirmo excluir somente a nota nº {{ n.numero }} do protocolo {{ p.numero }}.</label>
+  <button class="danger">Excluir esta nota</button>
+  <a href="{{ url_for('ri_protocolo_ver', protocolo_id=p.id) }}">Voltar sem excluir</a>
+</form>
+{% endblock %}

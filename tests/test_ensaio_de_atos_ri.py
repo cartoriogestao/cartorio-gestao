@@ -417,3 +417,26 @@ def test_a_lista_das_averbacoes_antigas_acha_o_cancelamento_sem_marca(casa):  # 
     assert [a["averbacao_id"] for a in achadas] == [cancela["ato"]["id"]], achadas
     assert [(c["tipo"], c["numero"]) for c in achadas[0]["citados"]] == [("R", 2)], achadas
     assert "de pé — candidato" in LISTA.em_texto(achadas)
+
+
+
+# ------------------------------------------------------------------ o nome do modelo e o da tabela
+
+@pytest.mark.parametrize("nome_do_modelo,nome_da_tabela,codigo", [
+    ("Arrematação", "Carta de Arrematação", 31),
+    ("Adjudicação", "Carta de Adjudicação", 33),
+    ("Partilha", "Formal de Partilha", 32),
+    ("Usucapião", "Sentenças Declaratórias de Usucapião", 34),
+])
+def test_o_ato_judicial_se_reconhece_pelo_nome_do_modelo_e_pelo_da_tabela(nome_do_modelo, nome_da_tabela,
+                                                                          codigo):
+    """Decisão do oficial, 05/11/2026 («t»): os modelos não se renomeiam à força, e a régua não depende de o
+    nome bater. A consulta obrigatória à CNIB (TJMA 506) e a trava da indisponibilidade reconhecem a
+    arrematação, a adjudicação, a partilha e a usucapião pelos dois nomes — e o modelo da casa é um deles."""
+    import ri_cnib as CNIB
+    import ri_modelos_atos as MOD
+    assert nome_do_modelo in {m["natureza"] for m in MOD.MODELOS}
+    for nome in (nome_do_modelo, nome_da_tabela):
+        assert CNIB.codigo_reconhecido(nome) == codigo, nome
+        assert CNIB.exige_consulta(nome, "R"), nome
+        assert codigo not in CNIB.NATUREZAS_VOLUNTARIAS          # avisa, e não barra («b1»)

@@ -693,3 +693,45 @@ def test_sem_documento_a_pessoa_se_reconhece_pelo_nome_e_vazio_nao_apaga():
 def test_quem_nao_e_titular_ativo_nao_entra():
     partes = [_parte(1, "VENDEDOR EXEMPLO", "00000000353", "casado", 0)]
     assert RC.titulares_com_a_qualificacao_atual(partes) == []
+
+
+# ------------------------------------- a fração de cada titular (item f, 05/11/2026)
+
+
+@pytest.mark.parametrize("escrito,gravado,percentual", [
+    ("50%", "50%", 50), ("50", "50%", 50), ("33,33 %", "33,33%", 33.33),
+    ("25.5", "25,5%", 25.5), ("1/4", "1/4", 25), ("1 / 2", "1/2", 50), ("100", "100%", 100),
+])
+def test_a_fracao_se_escreve_como_a_matricula(escrito, gravado, percentual):
+    assert RC.fracao_escrita(escrito) == gravado
+    assert float(RC.fracao_em_percentual(escrito)) == pytest.approx(percentual)
+
+
+@pytest.mark.parametrize("ruim", ["0", "0%", "150%", "metade", "1/0", "-5"])
+def test_fracao_que_nao_e_fracao_e_recusada(ruim):
+    with pytest.raises(RC.CorrecaoError, match="não é fração do imóvel"):
+        RC.fracao_escrita(ruim)
+
+
+def test_vazio_nao_e_fracao_e_nao_e_erro():
+    assert RC.fracao_escrita("  ") is None and RC.fracao_em_percentual(None) is None
+
+
+def test_o_aviso_das_fracoes():
+    assert RC.aviso_das_fracoes([{"fracao": None}, {"fracao": ""}]) == ""
+    assert RC.aviso_das_fracoes([{"fracao": "50%"}, {"fracao": "1/4"}, {"fracao": "25"}]) == ""
+    assert "1 de 2 titulares" in RC.aviso_das_fracoes([{"fracao": "50%"}, {"fracao": None}])
+    assert "somam 83,33%" in RC.aviso_das_fracoes([{"fracao": "50%"}, {"fracao": "1/3"}])
+
+
+def test_a_fracao_se_corrige_na_linha_e_vai_para_o_titular(con):
+    m = matricula(con, 4011, "2")
+    a = ato(con, m, "R", 1, "4011", "R-01/4011")
+    ana = parte(con, m, a, "ANA EXEMPLO", "adquirente", "00000000272", ativo=1)
+    saida = RC.corrigir_parte(con, ana, fracao="50", agora=AGORA,
+                              motivo="Fração do formal de partilha, folha 3")
+    assert saida["mudancas"]["fracao"] == {"de": None, "para": "50%"}
+    partes = [dict(r) for r in con.execute("SELECT * FROM ri_partes")]
+    assert RC.titulares_com_a_qualificacao_atual(partes)[0]["fracao"] == "50%"
+    with pytest.raises(RC.CorrecaoError, match="não é fração"):
+        RC.corrigir_parte(con, ana, fracao="200%", agora=AGORA, motivo="Tentando fração maior que o todo")

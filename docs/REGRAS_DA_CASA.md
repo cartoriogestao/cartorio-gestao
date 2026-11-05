@@ -83,6 +83,10 @@ diferença deve ser apontada ao oficial.
 - A certidão de propriedade traz a **qualificação atual** de cada titular,
   estado civil inclusive: a mais nova que a matrícula tem da pessoa (a da AV de
   casamento, depois dela). Decisão do oficial de 05/11/2026.
+- A **fração** de cada titular («50%», «1/4») se guarda no quadro das partes,
+  informada em **Partes → Corrigir**, e a certidão de propriedade a diz. A
+  ficha avisa quando falta a de algum titular ou a soma não fecha 100%. Ela não
+  se deduz do texto do ato. Decisão do oficial de 05/11/2026.
 - Matrícula aberta a partir de outra: o sistema avisa os ônus da origem por
   transportar, e há modelo de averbação de transporte de ônus.
 - A qualificação assistida por IA está **suspensa** até ser abastecida com as

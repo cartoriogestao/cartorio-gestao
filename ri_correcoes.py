@@ -37,6 +37,8 @@ O HASH, E POR QUE ELE E RECALCULADO
 """
 from __future__ import annotations
 
+import re
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from bd_nativo import banco
@@ -276,6 +278,67 @@ def e_titular(papel: Any) -> bool:
     return any(p.startswith(x) for x in PAPEL_DE_TITULAR)
 
 
+# A FRACAO DO IMOVEL QUE CADA TITULAR TEM (05/11/2026, decisao do oficial, item
+# f do ensaio do RI). Escrita como a matricula a escreve: «50%», «33,33%» ou
+# «1/4». Guarda-se o texto, e a conta se faz por `fracao_em_percentual`.
+_FRACAO_PERCENTUAL = re.compile(r"^(\d{1,3}(?:[.,]\d{1,6})?)\s*%?$")
+_FRACAO_ORDINARIA = re.compile(r"^(\d{1,6})\s*/\s*(\d{1,6})$")
+
+
+def fracao_em_percentual(texto: Any) -> Decimal | None:
+    """«50%» → 50; «1/4» → 25; vazio → None. Recusa o que nao e fracao do imovel."""
+    bruto = str(texto or "").strip()
+    if not bruto:
+        return None
+    ordinaria = _FRACAO_ORDINARIA.match(bruto)
+    percentual = _FRACAO_PERCENTUAL.match(bruto)
+    try:
+        if ordinaria:
+            num, den = Decimal(ordinaria.group(1)), Decimal(ordinaria.group(2))
+            valor = num * 100 / den if den else Decimal(0)
+        elif percentual:
+            valor = Decimal(percentual.group(1).replace(",", "."))
+        else:
+            valor = None
+    except InvalidOperation:
+        valor = None
+    if valor is None or not (0 < valor <= 100):
+        raise CorrecaoError(
+            f"«{bruto}» não é fração do imóvel. Escreva como a matrícula: "
+            "50%, 33,33% ou 1/4 — maior que zero e até 100%.")
+    return valor
+
+
+def fracao_escrita(texto: Any) -> str | None:
+    """A fracao como se grava: conferida, sem espaco sobrando, com «%» no percentual."""
+    bruto = str(texto or "").strip()
+    if fracao_em_percentual(bruto) is None:
+        return None
+    if _FRACAO_ORDINARIA.match(bruto):
+        return re.sub(r"\s*/\s*", "/", bruto)
+    return bruto.rstrip("%").strip().replace(".", ",") + "%"
+
+
+def aviso_das_fracoes(titulares: list[dict]) -> str:
+    """Vazio quando as frações informadas somam 100%, ou quando ninguém as informou.
+
+    A FRACAO NAO SE DEDUZ: quando so parte dos titulares a tem, ou quando a
+    soma nao fecha, a ficha diz isso — e quem corrige e o balcao, pela linha.
+    """
+    com = [t for t in titulares if str(t.get("fracao") or "").strip()]
+    if not com:
+        return ""
+    if len(com) < len(titulares):
+        return (f"{len(com)} de {len(titulares)} titulares têm a fração informada. "
+                "Informe a dos demais em Corrigir, na linha de cada um.")
+    soma = sum(fracao_em_percentual(t["fracao"]) for t in com)
+    if abs(soma - 100) > Decimal("0.05"):
+        texto = f"{soma.quantize(Decimal('0.01'))}".replace(".", ",")
+        return (f"As frações dos titulares somam {texto}%, e não 100%. "
+                "Confira no teor dos atos e corrija na linha de cada um.")
+    return ""
+
+
 def titulares_com_a_qualificacao_atual(partes: list[dict]) -> list[dict]:
     """Os titulares ativos, uma linha por pessoa, com a qualificacao mais nova. **So calcula.**
 
@@ -311,7 +374,13 @@ def titulares_com_a_qualificacao_atual(partes: list[dict]) -> list[dict]:
         if k in vistos:
             continue
         vistos.add(k)
-        titulares.append(dict(p) | {"qualificacao_atual": mais_nova.get(k, "")})
+        # A FRACAO E A DA LINHA ATIVA QUE A TEM (item f): a AV que trouxe a
+        # titular de novo nao a repete, e a primeira linha pode estar sem ela.
+        fracao = next((str(x.get("fracao") or "").strip() for x in partes
+                       if x.get("proprietario_ativo") and chave(x) == k
+                       and str(x.get("fracao") or "").strip()), "")
+        titulares.append(dict(p) | {"qualificacao_atual": mais_nova.get(k, ""),
+                                    "fracao": fracao or None})
     return titulares
 
 
@@ -434,8 +503,9 @@ def corrigir_parte(con: Any, parte_id: int, *, motivo: str, agora: str,
                    nome: str | None = None, documento: str | None = None,
                    qualificacao: str | None = None, papel: str | None = None,
                    titular: bool | None = None,
+                   fracao: str | None = None,
                    usuario: str | None = None) -> dict[str, Any]:
-    """Corrige nome, documento, qualificacao e papel de uma parte.
+    """Corrige nome, documento, qualificacao, papel e fracao de uma parte.
 
     Campo nao informado (None) fica como esta. Roda DENTRO da transacao de quem
     chama, e nao audita.
@@ -500,6 +570,12 @@ def corrigir_parte(con: Any, parte_id: int, *, motivo: str, agora: str,
     if qualificacao is not None and qualificacao.strip() != (p["qualificacao"] or ""):
         campos["qualificacao"] = qualificacao.strip() or None
         mudancas["qualificacao"] = {"de": p["qualificacao"], "para": qualificacao.strip() or None}
+
+    if fracao is not None:
+        escrita = fracao_escrita(fracao)
+        if escrita != (p.get("fracao") or None):
+            campos["fracao"] = escrita
+            mudancas["fracao"] = {"de": p.get("fracao"), "para": escrita}
 
     if papel is not None:
         limpo = papel.strip()

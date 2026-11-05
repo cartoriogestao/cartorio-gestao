@@ -37,7 +37,7 @@
 <p>Certifico, a pedido de parte interessada{% if requerente %} — <b>{{ requerente }}</b>{% if requerente_documento %}, {{ requerente_documento }}{% endif %}{% endif %}, que, revendo os livros de Registro de Imóveis a meu cargo, neles encontrei a <b>MATRÍCULA Nº {{ m.numero }}</b>{% if m.livro %}, do Livro {{ m.livro }}{% endif %}{% if m.folha %}, folha {{ m.folha }}{% endif %}{% if m.cnm %}, CNM {{ m.cnm }}{% endif %}, cujo teor é o seguinte:</p>
 <p><b>IMÓVEL: </b>{% if m.descricao_perimetro %}{{ m.descricao_perimetro }}{% else %}{{ m.logradouro or "" }}{% if m.bairro %}, {{ m.bairro }}{% endif %}{% if m.cidade %}, {{ m.cidade }}/{{ m.uf }}{% endif %}{% if m.area_valor %}, área de {{ m.area_valor }} {{ m.area_unidade or "" }}{% endif %}{% endif %}.</p>
 {% if proprietarios %}
-<p><b>PROPRIETÁRIO(S) ATUAL(IS): </b>{% for p in proprietarios %}{{ p.nome }}{% if p.qualificacao_atual %}, {{ p.qualificacao_atual }}{% endif %}{% if p.documento_numero %}, {{ p.documento_tipo }} {{ p.documento_numero }}{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}.</p>
+<p><b>PROPRIETÁRIO(S) ATUAL(IS): </b>{% for p in proprietarios %}{{ p.nome }}{% if p.qualificacao_atual %}, {{ p.qualificacao_atual }}{% endif %}{% if p.documento_numero %}, {{ p.documento_tipo }} {{ p.documento_numero }}{% endif %}{% if p.fracao %}, na fração de {{ p.fracao }}{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}.</p>
 {% else %}
 <p><b>PROPRIETÁRIO:</b> não consta titularidade ativa registrada nesta matrícula.</p>
 {% endif %}

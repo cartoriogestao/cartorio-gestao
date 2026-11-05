@@ -1858,6 +1858,8 @@
             <label class="span2">Qualificação
               <input name="qualificacao" autocomplete="off"
                      placeholder="nacionalidade, estado civil, profissão, residência e domicílio"></label>
+            <label>Fração do imóvel
+              <input name="fracao" autocomplete="off" placeholder="opcional — 50%, 1/4"></label>
             <div class="span2"><button class="primary">Cadastrar proprietário</button></div>
           </form>
           {% endif %}
@@ -1906,9 +1908,10 @@
     inclui ou se retira por <strong>averbação</strong>, com o motivo escrito.
   </p>
   {% endif %}
+  {% if aviso_fracoes %}<p class="notice warn small">{{ aviso_fracoes }}</p>{% endif %}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Nome</th><th>Documento</th><th>Qualificação</th><th>Papel</th><th>Ato</th><th>Proprietário</th>{% if user.role in ['ADMIN','MANAGER'] %}<th></th>{% endif %}</tr></thead>
+      <thead><tr><th>Nome</th><th>Documento</th><th>Qualificação</th><th>Papel</th><th>Ato</th><th>Proprietário</th><th>Fração</th>{% if user.role in ['ADMIN','MANAGER'] %}<th></th>{% endif %}</tr></thead>
       <tbody>
       {% for p in partes %}
         <tr>
@@ -1920,6 +1923,7 @@
           <td>{% if p.papel %}{{ p.papel }}{% else %}<span class="badge alta" title="sem papel, esta parte não conta como titular em nenhum lugar do sistema">sem papel</span>{% endif %}</td>
           <td>{% if p.ato_id %}{% for a in atos %}{% if a.id == p.ato_id %}{{ a.tipo }}-{{ a.numero }}{% endif %}{% endfor %}{% else %}<small class="muted">—</small>{% endif %}</td>
           <td>{% if p.proprietario_ativo %}<span class="badge ok">Ativo</span>{% elif p.proprietario %}<span class="badge">Anterior</span>{% else %}—{% endif %}</td>
+          <td>{{ p.fracao or '—' }}</td>
           {% if user.role in ['ADMIN','MANAGER'] %}
           <td>
             <details class="corrigir-parte">
@@ -1932,6 +1936,7 @@
                   <input name="papel" value="{{ p.papel or '' }}" list="papeis-ri" placeholder="transmitente, adquirente...">
                 </label>
                 <label class="span2">Qualificação<input name="qualificacao" value="{{ p.qualificacao or '' }}"></label>
+                <label>Fração do imóvel<input name="fracao" value="{{ p.fracao or '' }}" placeholder="50%, 1/4"></label>
                 <label class="span2">Titular atual
                   <select name="titular">
                     <option value="papel">deduzir do papel</option>
@@ -1952,7 +1957,7 @@
           </td>
           {% endif %}
         </tr>
-      {% else %}<tr><td colspan="7">Nenhuma parte registrada.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="8">Nenhuma parte registrada.</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>

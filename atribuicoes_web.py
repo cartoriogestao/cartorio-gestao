@@ -12061,6 +12061,38 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash(r["frase"], r["cor"])
         return linhas
 
+    def _trazer_pendencias_da_cenprot() -> list[dict]:
+        """Anuências, ordens, cancelamentos e o resto da CENPROT, no mesmo clique.
+
+        Só baixa. Não decide e não envia resposta. A falha de uma espécie não
+        derruba a remessa nem as outras. A auditoria é a mesma da tela manual
+        (`cenprot_baixar`), com a marca de que veio deste clique.
+        """
+        import cenprot_pendencias as PEND
+        try:
+            linhas = PEND.trazer_com_a_cra(
+                db, dia=hoje(), quem=usuario_nome(),
+                pasta=pasta_dos_arquivos())
+        except Exception as erro:  # noqa: BLE001 — o clique não cai por isto
+            flash(f"Pendências da CENPROT não foram consultadas: {erro}",
+                  "danger")
+            return []
+        for r in linhas:
+            detalhe = {"especie": r.get("especie"), "inicio": r.get("inicio"),
+                       "fim": r.get("fim"), "vieram": r.get("vieram"),
+                       "entraram": r.get("entraram"),
+                       "repetidas": r.get("repetidas"),
+                       "sem_titulo": r.get("sem_titulo"),
+                       "sem_codigo": r.get("sem_codigo"),
+                       "pelo_clique_da_cra": True}
+            if r.get("ok"):
+                audit("cenprot_baixar", "cn_pendencias", None, detalhe)
+            else:
+                audit("cenprot_baixar_falha", "cn_pendencias", None,
+                      {**detalhe, "erro": str(r.get("erro") or "")[:300]})
+            flash(r["frase"], r["cor"])
+        return linhas
+
     @app.route("/protesto/remessas")
     @login_required
     def protesto_remessas():
@@ -12115,6 +12147,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         inteira antes de ler (`protesto_cra_pedidos`); a falha de uma não
         derruba as outras nem a remessa, e a remessa que falha não impede as
         três.
+
+        E, NO MESMO CLIQUE, AS PENDÊNCIAS DA CENPROT (05/11/2026): anuências,
+        decisões judiciais, cancelamentos, certidões, pedidos de protesto e
+        renegociações. Só baixa — não aprova, não recusa e não envia. A falha
+        de uma espécie não derruba a remessa.
         """
         import cra21_web as CRAW
         qual = (_campo("o_que") or "remessa").strip()
@@ -12142,6 +12179,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 flash("A CRA não devolveu remessa nenhuma agora.", "warning")
         # OS PEDIDOS DA CRA, DEPOIS DA REMESSA — e mesmo quando ela falhou.
         linhas = _trazer_pedidos_da_cra()
+        # AS PENDÊNCIAS DA CENPROT, NO MESMO CLIQUE. Só baixa; não responde.
+        _trazer_pendencias_da_cenprot()
         # NEM O BANCO NEM O DISCO ACEITARAM UMA RESPOSTA: ela vai ao navegador,
         # com a remessa junto (que ainda não foi guardada), para nada sumir
         # das duas pontas — a CRA pode já tê-las marcado como baixadas.

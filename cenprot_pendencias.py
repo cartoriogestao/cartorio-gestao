@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date, timedelta
 from typing import Any
 
 import cenprot_api as API
@@ -275,6 +276,105 @@ def baixar(db, especie: Any, *, ambiente: Any = CRED.PRODUCAO,
     return {"especie": qual, "ambiente": onde, "vieram": len(itens),
             "entraram": entraram, "repetidas": repetidas,
             "sem_codigo": sem_codigo, "sem_titulo": sem_titulo}
+
+
+# ------------------------------------------------------------------ o clique da CRA
+
+# O QUE O BOTÃO DA REMESSA TAMBÉM BAIXA NA CENPROT. A mesma lista da tela
+# manual, na ordem em que o balcão fala delas. Não inclui resposta: `enviar`
+# continua sendo outro botão, olhado item a item.
+ESPECIES_DO_CLIQUE_DA_CRA: tuple[str, ...] = (
+    CN.ANUENCIA, CN.DECISAO_JUDICIAL, CN.CANCELAMENTO, CN.CERTIDAO,
+    CN.PEDIDO_PROTESTO, CN.RENEGOCIACAO)
+
+# Sete dias corridos, com o dia do clique. Cobre o fim de semana e um feriado
+# encostado (o clique é uma vez por dia). Repetir é seguro: a baixa não
+# duplica linha (`ON CONFLICT DO NOTHING`) e não responde à Central.
+DIAS_DO_CLIQUE_DA_CRA = 7
+
+
+def _dia_iso(texto: Any) -> date:
+    bruto = str(texto or "").strip()[:10]
+    try:
+        return date.fromisoformat(bruto)
+    except ValueError as erro:
+        raise PendenciaError(
+            f"Data inválida para baixar a CENPROT: «{texto}».") from erro
+
+
+def periodo_do_clique(dia: Any) -> tuple[str, str]:
+    """O intervalo que o clique da CRA pede à CENPROT. Só calcula."""
+    fim = _dia_iso(dia)
+    inicio = fim - timedelta(days=DIAS_DO_CLIQUE_DA_CRA - 1)
+    return inicio.isoformat(), fim.isoformat()
+
+
+def _filtros_do_clique(especie: str, quando: str, inicio: str, fim: str) -> dict:
+    """Os nomes de data de cada espécie — os mesmos da tela manual."""
+    if especie == CN.DECISAO_JUDICIAL:
+        return {"de": inicio, "ate": fim}
+    if especie == CN.PEDIDO_PROTESTO:
+        return {"data": quando}
+    return {"inicio": inicio, "fim": fim}
+
+
+def _somar_baixa(acumulado: dict | None, parte: dict) -> dict:
+    if acumulado is None:
+        return dict(parte)
+    for chave in ("vieram", "entraram", "repetidas", "sem_codigo", "sem_titulo"):
+        acumulado[chave] = int(acumulado.get(chave) or 0) + int(parte.get(chave) or 0)
+    return acumulado
+
+
+def frase_da_baixa(resultado: dict) -> tuple[str, str]:
+    """A frase do balcão e a cor do aviso. Só calcula. Sem nome de pessoa."""
+    nome = CN.NOME_DA_ESPECIE.get(resultado.get("especie"), "Pendência da CENPROT")
+    if not resultado.get("ok", True):
+        return (f"{nome} — não baixou: {resultado.get('erro') or 'falha sem detalhe'}.",
+                "danger")
+    texto = (f"{nome}: vieram {resultado['vieram']}, "
+             f"{resultado['entraram']} nova(s) e "
+             f"{resultado['repetidas']} que já estavam.")
+    if resultado.get("sem_titulo"):
+        texto += f" {resultado['sem_titulo']} sem título desta casa."
+    if resultado.get("sem_codigo"):
+        texto += (f" {resultado['sem_codigo']} sem código, não entraram.")
+    return texto, ("success" if resultado.get("entraram") else "info")
+
+
+def trazer_com_a_cra(db, *, dia: Any, quem: str = "", pasta=None) -> list[dict]:
+    """Baixa as pendências da CENPROT no mesmo clique da remessa. Não responde.
+
+    Uma espécie que falha não derruba as outras nem a remessa. O pedido de
+    protesto só aceita uma data: percorre o período, um dia por chamada.
+    """
+    inicio, fim = periodo_do_clique(dia)
+    dias = []
+    cursor = _dia_iso(inicio)
+    ultimo = _dia_iso(fim)
+    while cursor <= ultimo:
+        dias.append(cursor.isoformat())
+        cursor += timedelta(days=1)
+    saida = []
+    for especie in ESPECIES_DO_CLIQUE_DA_CRA:
+        quando = dias if especie == CN.PEDIDO_PROTESTO else [fim]
+        acumulado = None
+        try:
+            for dia_pedido in quando:
+                parte = baixar(
+                    db, especie, quem=quem, pasta=pasta,
+                    **_filtros_do_clique(especie, dia_pedido, inicio, fim))
+                acumulado = _somar_baixa(acumulado, parte)
+            resultado = dict(acumulado or {}, ok=True, erro="")
+        except Exception as erro:  # noqa: BLE001 — uma espécie não derruba o clique
+            resultado = {"especie": especie, "ok": False,
+                         "erro": str(erro).strip()[:300],
+                         "vieram": 0, "entraram": 0, "repetidas": 0,
+                         "sem_codigo": 0, "sem_titulo": 0}
+        frase, cor = frase_da_baixa(resultado)
+        saida.append({**resultado, "frase": frase, "cor": cor,
+                      "inicio": inicio, "fim": fim})
+    return saida
 
 
 # ------------------------------------------------------------------ olhar

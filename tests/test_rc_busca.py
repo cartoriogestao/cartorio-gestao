@@ -272,12 +272,16 @@ def test_ano_torto_e_recusado_com_frase(con):
 
 
 @pytest.fixture
-def tela(request):
-    """O app logado — só no PostgreSQL: sem ele, `create_app` não sobe."""
+def tela(cg_casa_logada):
+    """O app logado — só no PostgreSQL: sem ele, `create_app` não sobe.
+
+    A casa vem como dependência, e não por `request.getfixturevalue`: pedida assim, a
+    casa do módulo era desmontada depois do primeiro teste, e o segundo achava o esquema
+    sem `ag_config` (04/11/2026)."""
     import os
     if os.environ.get("CG_TEST_BACKEND", "").strip().lower() != "pg":
         pytest.skip("o app é PostgreSQL nativo: rode com CG_TEST_BACKEND=pg")
-    return request.getfixturevalue("cg_casa_logada")
+    return cg_casa_logada
 
 
 def test_a_tela_abre_vazia_e_explica(tela):

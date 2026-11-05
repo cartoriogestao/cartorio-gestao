@@ -103,6 +103,10 @@ diferença deve ser apontada ao oficial.
   afirmação de que a procura do devedor se esgotou.
 - A frase do pagamento a posteriori sai no termo só quando o regime é o
   diferido.
+- Título em **moeda estrangeira** (Lei 9.492/1997, art. 10): a casa recebe. A
+  ficha guarda a moeda e o valor de origem; o valor e o saldo vão em **reais**,
+  convertidos, e são obrigatórios — é o que se cobra e se intima. Decisão do
+  oficial de 05/11/2026.
 - Gratuidade no Protesto: **nenhuma**. O que existe é o diferimento
   (pagamento a posteriori). Se alguma tela oferecer gratuidade no Protesto,
   aponte ao oficial.

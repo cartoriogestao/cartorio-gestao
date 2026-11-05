@@ -118,6 +118,20 @@
             <option value="{{ k }}" {% if form.get('tipo_moeda', '1') == k %}selected{% endif %}>{{ v }}</option>
           {% endfor %}
         </select></label>
+      {# O TÍTULO EM MOEDA ESTRANGEIRA (05/11/2026, decisão do oficial, item j;
+         Lei 9.492/1997, art. 10). #}
+      <label>Moeda estrangeira (se for)
+        <input name="moeda_estrangeira" value="{{ form.get('moeda_estrangeira','') }}"
+               placeholder="dólar americano (USD)"></label>
+      <label>Valor na moeda de origem
+        <input name="valor_na_moeda" value="{{ form.get('valor_na_moeda','') }}"
+               placeholder="1.000,00"></label>
+      <p style="grid-column:1/-1"><small>
+        <strong>Título em moeda estrangeira</strong> (Lei 9.492/1997, art. 10): informe a
+        moeda e o valor de origem, e ponha em <strong>Valor do título</strong> e
+        <strong>Saldo a protestar</strong> o valor <strong>convertido em reais</strong> —
+        é o que se cobra e se intima.
+      </small></p>
 
       <label>Motivo do protesto
         <select name="motivo_protesto">

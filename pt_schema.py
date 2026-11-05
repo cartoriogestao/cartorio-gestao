@@ -930,6 +930,13 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # «AMAZONAS DO BRA» no lugar de 000000009000002. No título da CENPROT ela
     # é o número do pedido na Gestão de Pedidos.
     ("pt_titulos", "cra_identificacao", "TEXT"),
+    # O TITULO EM MOEDA ESTRANGEIRA (05/11/2026, decisao do oficial, item j do
+    # ensaio do Protesto; Lei 9.492/1997, art. 10). A casa recebe: a ficha
+    # guarda a moeda e o valor na moeda de origem, e o valor em REAIS
+    # (`valor_centavos`, `saldo_centavos`) e o convertido — o que se cobra e se
+    # intima. Vazias no titulo em real.
+    ("pt_titulos", "moeda_estrangeira", "TEXT"),
+    ("pt_titulos", "valor_na_moeda", "TEXT"),
     ("pt_atos", "retorno_id", "INTEGER"),
     # em que XML da CENPROT o ato já foi (15/10/2026) — nada sai duas vezes
     ("pt_atos", "cenprot_xml_id", "INTEGER"),

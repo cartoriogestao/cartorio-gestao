@@ -24,40 +24,6 @@
 </div>
 {% endif %}
 
-{% if global_stats.disputas_de_escrita and user.role in ['ADMIN','MANAGER'] %}
-<div class="flash warning flash-compact" data-aviso>
-  <div class="flash-compact-linha">
-    <strong>O banco travou {{ global_stats.disputas_de_escrita }}
-    vez(es){% if global_stats.disputas_recentes %} — {{ global_stats.disputas_recentes }}
-    nos últimos 30 dias{% endif %}</strong>
-    <button type="button" class="flash-compact-expandir link-button"
-            data-aviso-expand aria-expanded="false"
-            aria-controls="aviso-disputa-detalhe">Ver detalhes</button>
-  </div>
-  <div id="aviso-disputa-detalhe" class="flash-compact-detalhe" hidden>
-    {% if global_stats.disputas_desde %}
-    <p>A primeira ocorrência registrada foi em {{ global_stats.disputas_desde[:10] }}.</p>
-    {% endif %}
-    <p>Quando dois balcões gravam ao mesmo tempo, um espera; se a espera estoura,
-    o sistema devolve erro em vez de gravar. <strong>Nada se perde</strong> — o
-    ato volta atrás inteiro —, mas quem estava atendendo leva o erro.</p>
-    <p>Uma vez ou outra é normal.
-    {% if global_stats.disputas_recentes >= 5 %}
-    <strong>Cinco ou mais em trinta dias já é rotina</strong>, e é o sinal medido
-    de que o banco atual deixou de bastar para esta casa: vale conversar sobre
-    trocar de banco de dados.
-    {% else %}
-    Se virar rotina — cinco ou mais em trinta dias —, é o sinal medido de que
-    vale conversar sobre trocar de banco de dados.
-    {% endif %}
-    Está tudo explicado, com o custo e o risco, em
-    <code>DOCUMENTACAO/MIGRAR_DE_BANCO.md</code>.</p>
-  </div>
-  {{ aviso.fechar() }}
-</div>
-{% endif %}
-
-
 {% if nu_avisos_faixa_critica %}
 <div class="flash flash-compact flash-compact-aviso-critico" data-aviso>
   <div class="flash-compact-linha flash-compact-linha-avisos-criticos">

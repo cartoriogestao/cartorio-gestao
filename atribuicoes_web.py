@@ -12177,9 +12177,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """
         import cenprot_pendencias as PEND
         try:
+            # SEM `pasta`: em `centrais_cred` ela e a pasta das CREDENCIAIS
+            # (ProgramData), nao a do acervo. Com o acervo, a credencial da
+            # CENPROT "nao era informada" (hotfix 05/11/2026).
             linhas = PEND.trazer_com_a_cra(
-                db, dia=hoje(), quem=usuario_nome(),
-                pasta=pasta_dos_arquivos())
+                db, dia=hoje(), quem=usuario_nome())
         except Exception as erro:  # noqa: BLE001 — o clique não cai por isto
             flash(f"Pendências da CENPROT não foram consultadas: {erro}",
                   "danger")

@@ -273,7 +273,7 @@ def documentos(con, protocolo_id) -> dict:
     sumir da tela seria o `DELETE` com outra cara.
     """
     todos = [_enfeitar(dict(d)) for d in
-             RDOC.documentos_de(con, ENTIDADE, int(protocolo_id))]
+             RDOC.documentos_de(con, ENTIDADE, int(protocolo_id), incluir_retirados=True)]
     return {"ativos": [d for d in todos if not d.get("retirado_em")],
             "retirados": [d for d in todos if d.get("retirado_em")]}
 

@@ -222,6 +222,7 @@ def _prenotacoes(casa) -> None:
     casa.ids["_ri_nota"] = int(nota["id"])
     casa.pagina("ri_nota_odt", {"formato": "odt"}, nota_id=int(nota["id"]))
     casa.pagina("ri_nota_devolutiva", protocolo_id=em_exigencia)
+    casa.pagina("ri_nota_excluir", protocolo_id=em_exigencia, nota_id=int(nota["id"]))
 
     cancelada = _id(casa, "ri_pren_cancelada")
     _mandar(casa, f"/registro-imoveis/protocolo/{cancelada}", acao="encerrar", motivo="DESISTENCIA", confirmar="1",

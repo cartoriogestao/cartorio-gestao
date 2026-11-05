@@ -566,4 +566,4 @@ def test_as_telas_abrem_e_o_cadastro_pela_tela_espera_a_emissao_ligada(casa):
 
 def test_o_protocolo_oferece_cobrar_por_boleto(casa):
     pagina = casa["c"].get(f"/caixa/protocolos/{casa['protocolo_id']}").get_data(as_text=True)
-    assert "Cobrar por boleto" in pagina
+    assert "Cobrar por Pix, boleto ou cartão" in pagina

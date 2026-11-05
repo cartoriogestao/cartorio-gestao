@@ -350,7 +350,7 @@ class ClienteCobrancaParcela:
         maquina = str(self._campos.get(CAMPO_DA_MAQUININHA) or "").strip()
         if not maquina:
             raise Recusa(
-                "Cadastre o código da maquininha em Cobrança por boleto → "
+                "Cadastre o código da maquininha em Pix, boleto e cartão → "
                 "Configuração, no campo da Parcela Express.")
         forma = str(c.get("forma_pedida") or "").upper()
         servico = _service_id(c)

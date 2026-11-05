@@ -303,8 +303,8 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          ("Recibos e NFS-e", (
              _i("Recibos", "caixa_recibos", AMA),
              _i("NFS-e", "nfse_fila", termos="nota fiscal"),)),
-         ("Cobrança por boleto", (
-             _i("Cobrança por boleto", "cobranca_lista"),)),
+         ("Pix, boleto e cartão", (
+             _i("Pix, boleto e cartão", "cobranca_lista"),)),
          ("Tabela de emolumentos", (
              _i("Emolumentos", "caixa_emolumentos", AMA, termos="custas tabela preco"),)),
          ("Modelos do caixa", (
@@ -600,9 +600,9 @@ PAI: dict[str, tuple[str, str]] = {
     "andamento_protocolo_geral": ("CAIXA", "Protocolo geral"),
     "andamento_prenotacao": ("RI", "Protocolo"),
     "notas_leitura_ficha": ("NOTAS", "Procurações"),
-    "cobranca_ficha": ("CAIXA", "Cobrança por boleto"),
-    "cobranca_nova": ("CAIXA", "Cobrança por boleto"),
-    "cobranca_configuracao": ("CAIXA", "Cobrança por boleto"),
+    "cobranca_ficha": ("CAIXA", "Pix, boleto e cartão"),
+    "cobranca_nova": ("CAIXA", "Pix, boleto e cartão"),
+    "cobranca_configuracao": ("CAIXA", "Pix, boleto e cartão"),
     "configuracoes_cobranca": ("GESTAO", "Configurações"),
     "nfse_apuracao": ("CAIXA", "Recibos e NFS-e"),
     "nfse_recibo": ("CAIXA", "Recibos e NFS-e"),

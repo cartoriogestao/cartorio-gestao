@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% block title %}Nova cobrança{% endblock %}
-{% block heading %}<h1>Nova cobrança por boleto — {{ bancos[cfg.cobranca_banco] }}</h1>{% endblock %}
+{% block heading %}<h1>Nova cobrança — Pix, boleto ou cartão — {{ bancos[cfg.cobranca_banco] }}</h1>{% endblock %}
 {% block content %}
 {% if cfg.cobranca_ambiente != 'producao' %}
-<div class="notice">Ambiente de <strong>teste</strong>: este boleto não cobra ninguém de verdade.</div>
+<div class="notice">Ambiente de <strong>teste</strong>: esta cobrança não cobra ninguém de verdade.</div>
 {% endif %}
 
 {% if a_pagar %}

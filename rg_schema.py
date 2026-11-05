@@ -461,6 +461,11 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # O que a DOI pede de cada parte, e que o indicador não precisa (CN-MA art. 962).
     ("rg_partes", "participacao", "TEXT"),
     ("rg_partes", "doi_lado", "TEXT"),
+    # O DOMICÍLIO DA PARTE (05/11/2026, decisão do oficial, item o do ensaio do
+    # RTD; LRP art. 130): a cidade e a UF. É por ele que se confere se o título
+    # se registra nesta serventia. Vazias quando ninguém informou.
+    ("rg_partes", "domicilio_cidade", "TEXT"),
+    ("rg_partes", "domicilio_uf", "TEXT"),
 )
 
 

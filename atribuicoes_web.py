@@ -10110,6 +10110,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                reservadas=(NORMAS.avisos_do_nome(registro["requerente_nome"])
                                            if registro["serie"] == "PJ_A" else []),
                                papeis_sugeridos=RGL.PAPEIS_SUGERIDOS,
+                               # O DOMICÍLIO DAS PARTES (05/11/2026, item o; LRP art. 130):
+                               # só no RTD, que é quem registra no domicílio.
+                               aviso_domicilio=(RGL.aviso_do_domicilio(
+                                   partes, cidade=sv().get("ri_cidade") or "",
+                                   uf=sv().get("ri_uf") or "")
+                                   if registro["atribuicao"] == 4 else ""),
                                especies_de_bem=RGL.ESPECIES_DE_BEM,
                                registro=dict(registro), atos=atos,
                                receitas=receitas, caixa=caixa, fraudes=fraudes,

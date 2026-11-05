@@ -87,6 +87,22 @@
 </nav>
 {% endif %}
 
+{# O CARTÃO DOS INSTRUMENTOS DE HOJE (pt580u, 04/11/2026): o protesto lavrado
+   hoje sem o instrumento assinado não vai no XML P. No alto, para não passar. #}
+{% set si = sem_instrumento_hoje %}
+{% if si and si.faltam %}
+<section class="panel rt-conduta s-ATRASADO" id="instrumentos-de-hoje">
+  <div class="panel-head"><span>Protestos de hoje sem instrumento assinado</span>
+    <small>{{ si.faltam }} de {{ si.lavrados }} lavrado(s) hoje</small></div>
+  <p style="padding:0 14px"><strong>Falta emitir e assinar o instrumento — sem isso o título não vai no XML da CENPROT.</strong>
+    {{ si.sem_instrumento | length }} sem instrumento emitido, {{ si.sem_assinatura | length }} emitido(s) sem a assinatura A3.</p>
+  <ul class="rt-lista small">
+    {% for x in si.sem_instrumento + si.sem_assinatura %}<li><a href="{{ url_for('protesto_titulo', titulo_id=x.titulo_id) }}">{{ x.protocolo or x.titulo_id }}</a> — {{ x.frase }}</li>{% endfor %}
+  </ul>
+  <p style="padding:0 14px 10px"><a class="button" href="{{ url_for('protesto_instrumentos') }}">Emitir e assinar na tela dos instrumentos</a></p>
+</section>
+{% endif %}
+
 {# PRIMEIRO, O QUE FICOU DE ANTES — acréscimo do oficial em 29/10/2026: «não
    deixar margem para a escrevente esquecer». O último encerramento (com o
    que se afirmou), se o dia útil anterior foi encerrado, e o que está

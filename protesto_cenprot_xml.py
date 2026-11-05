@@ -940,9 +940,21 @@ def montar_titulo(con, ato_id: int, *,
         if com_instrumento:
             p7s = PI.assinado_do_titulo(bd, titulo["id"])
             if not p7s:
-                raise CenprotXmlError(
-                    "o instrumento do protesto ainda não foi assinado com o "
-                    "A3 — assine-o na tela dos instrumentos")
+                # NÃO EMITIDO NÃO É SEM ASSINATURA (pt580u, 04/11/2026): o
+                # balcão precisa saber o que fazer, e `falta` vai junto para a
+                # tela agrupar. Nada aqui emite nem assina.
+                falta = PI.falta_do_titulo(bd, titulo["id"]) or PI.FALTA_ASSINAR
+                if falta == PI.FALTA_EMITIR:
+                    erro = CenprotXmlError(
+                        "o instrumento do protesto ainda não foi emitido — "
+                        "emita-o e assine com o A3 na tela dos instrumentos")
+                else:
+                    erro = CenprotXmlError(
+                        "o instrumento do protesto foi emitido, mas ainda não "
+                        "foi assinado com o A3 — assine-o na tela dos "
+                        "instrumentos")
+                erro.falta = falta
+                raise erro
             t["instrumento"] = p7s
     else:
         t.update(num_livro="0", num_folha="0")
@@ -1086,7 +1098,8 @@ def pendentes(con, letra: str, *,
                              apresentante_atual=getattr(erro, "atual", {})))
             continue
         except CenprotXmlError as erro:
-            fora.append(dict(base, motivo=str(erro)))
+            fora.append(dict(base, motivo=str(erro),
+                             falta=getattr(erro, "falta", None)))
             continue
         apr = item["apresentante"]
         primeiro = blocos.setdefault(_chave_do_bloco(apr), apr)

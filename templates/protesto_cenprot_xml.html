@@ -28,6 +28,29 @@
   O campo <em>edital</em> vai verdadeiro quando o edital foi publicado.
 </div>
 
+{# O AVISO DO QUE FICOU FORA DO P (pt580u, 04/11/2026): «eu só descobri
+   porque mandei aqui». Em destaque, ANTES do botão de gerar, separando o que
+   falta emitir do que falta assinar. Nada aqui emite nem assina. #}
+{% set fora_p = listas['P'].fora %}
+{% if fora_p %}
+{% set sem_emitir = fora_p | selectattr('falta', 'equalto', 'INSTRUMENTO') | list %}
+{% set sem_assinar = fora_p | selectattr('falta', 'equalto', 'ASSINATURA') | list %}
+{% set outros = fora_p | rejectattr('falta') | list %}
+<div class="notice danger" id="aviso-fora-do-p">
+  <strong>{{ fora_p | length }} protesto(s) NÃO vão no arquivo P de hoje.</strong>
+  Sem o instrumento emitido e assinado com o A3, o título não vai no XML da CENPROT.
+  {% for grupo, rotulo in ((sem_emitir, 'Instrumento ainda não emitido'), (sem_assinar, 'Instrumento emitido, falta assinar com o A3'), (outros, 'Outro motivo')) if grupo %}
+  <p style="margin:8px 0 0"><strong>{{ rotulo }} ({{ grupo | length }}):</strong></p>
+  <ul style="margin:4px 0 0">
+    {% for r in grupo %}<li><a href="{{ url_for('protesto_titulo', titulo_id=r.titulo_id) }}">{{ r.protocolo or r.titulo_id }}</a> — {{ r.motivo }}</li>{% endfor %}
+  </ul>
+  {% endfor %}
+  {% if sem_emitir or sem_assinar %}
+  <p style="margin:8px 0 0"><a class="button" href="{{ url_for('protesto_instrumentos') }}">Emitir e assinar na tela dos instrumentos</a></p>
+  {% endif %}
+</div>
+{% endif %}
+
 {% for letra, nome in (('P', 'P — protestos lavrados'), ('D', 'D — pagos, retirados e cancelados')) %}
 {% set l = listas[letra] %}
 <section class="panel">
@@ -78,7 +101,8 @@
   <form method="post" action="{{ url_for('protesto_cenprot_xml_gerar') }}" style="padding:10px 14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="letra" value="{{ letra }}">
-    <button type="submit">Gerar o arquivo {{ letra }} de hoje ({{ l.entram | length }})</button>
+    {% set ns = namespace(n=0) %}{% for r in l.entram %}{% set ns.n = ns.n + ((r.atos_ids | length) if r.atos_ids else 1) %}{% endfor %}
+    <button type="submit">Gerar o arquivo {{ letra }} de hoje ({{ ns.n }} de {{ ns.n + (l.fora | length) }} prontos)</button>
   </form>
   {% endif %}
 </section>

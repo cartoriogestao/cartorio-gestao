@@ -928,6 +928,96 @@ def assinado_do_titulo(con, titulo_id: int) -> bytes | None:
     return Path(caminho).read_bytes()
 
 
+# ------------------------------- o que falta para o protesto ir ao XML P
+#
+# Pedido do oficial, 04/11/2026: «não tinha que avisar isso e forçar a
+# assinatura? eu só descobri porque mandei aqui». Quatro protestos ficaram
+# fora do XML P do dia e nenhuma tela avisou. A REGRA É SÓ AVISAR: nada aqui
+# emite, assina ou sela — a assinatura com o A3 é humana -, e a lavratura não
+# se trava. O que se separa é o que o balcão precisa fazer: EMITIR (não há
+# instrumento) ou ASSINAR (emitido, sem o `.p7s` guardado).
+FALTA_EMITIR = "INSTRUMENTO"
+FALTA_ASSINAR = "ASSINATURA"
+FRASE_DA_FALTA: dict[str, str] = {
+    FALTA_EMITIR: "instrumento ainda não emitido",
+    FALTA_ASSINAR: "instrumento emitido, falta assinar com o A3",
+}
+AVISO_DEPOIS_DE_LAVRAR = ("Falta emitir e assinar o instrumento — sem isso o "
+                          "título não vai no XML da CENPROT")
+
+
+def falta_do_titulo(con, titulo_id: int) -> str | None:
+    """`FALTA_EMITIR`, `FALTA_ASSINAR` ou None (há o assinado). Só LÊ.
+
+    A mesma régua de `assinado_do_titulo` — o `.p7s` guardado e existente no
+    disco -, sem ler os bytes do arquivo."""
+    from pathlib import Path
+    bd = banco(con)
+    if not bd.valor("SELECT COUNT(*) FROM pt_instrumentos WHERE titulo_id=%s",
+                    (int(titulo_id),)):
+        return FALTA_EMITIR
+    caminho = bd.valor(
+        """SELECT d.caminho_assinado FROM pt_instrumentos i
+             JOIN as_documentos d ON d.entidade=%s AND d.entidade_id=i.id
+            WHERE i.titulo_id=%s AND d.caminho_assinado IS NOT NULL
+            ORDER BY i.id DESC LIMIT 1""",
+        (ENTIDADE_DA_ASSINATURA, int(titulo_id)))
+    if not caminho or not Path(caminho).exists():
+        return FALTA_ASSINAR
+    return None
+
+
+def _sql_do_protesto_que_espera_o_xml(bd) -> str:
+    """O protesto lavrado NESTE sistema que ainda não foi a XML nenhum — a
+    régua de `protesto_cenprot_xml.pendentes`. O do E-Ofício ele já mandou."""
+    sql = ("a.tipo = 'PROTESTO' AND a.cancelado = 0 "
+           "AND COALESCE(a.origem, '') <> 'EOFICIO'")
+    if bd.tem_coluna("pt_atos", "cenprot_xml_id"):
+        sql += " AND a.cenprot_xml_id IS NULL"
+    return sql
+
+
+def falta_para_o_xml(con, titulo_id: int) -> str | None:
+    """O que falta para o protesto deste título ir ao XML P. Só LÊ.
+
+    None quando não há protesto deste sistema esperando o arquivo (nada a
+    avisar) ou quando o instrumento já está assinado."""
+    bd = banco(con)
+    if not bd.valor(
+            f"""SELECT COUNT(*) FROM pt_atos a
+                 WHERE a.titulo_id = %s AND {_sql_do_protesto_que_espera_o_xml(bd)}""",
+            (int(titulo_id),)):
+        return None
+    return falta_do_titulo(con, titulo_id)
+
+
+def protestos_do_dia_sem_instrumento(con, dia: str) -> dict:
+    """Os protestos lavrados no dia que ainda não podem ir ao XML P. Só LÊ.
+
+    É o cartão do painel do Protesto: quantos esperam o instrumento e quantos
+    esperam a assinatura com o A3, com o protocolo de cada um."""
+    bd = banco(con)
+    linhas = bd.ler(
+        f"""SELECT a.titulo_id, MIN(t.protocolo) AS protocolo
+              FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
+             WHERE {_sql_do_protesto_que_espera_o_xml(bd)}
+               AND substr(a.data_ato, 1, 10) = %s
+             GROUP BY a.titulo_id ORDER BY a.titulo_id""",
+        (_texto(dia)[:10],))
+    faltas: dict[str, list[dict]] = {FALTA_EMITIR: [], FALTA_ASSINAR: []}
+    for linha in linhas:
+        falta = falta_do_titulo(con, linha["titulo_id"])
+        if falta:
+            faltas[falta].append({"titulo_id": linha["titulo_id"],
+                                  "protocolo": linha["protocolo"],
+                                  "falta": falta,
+                                  "frase": FRASE_DA_FALTA[falta]})
+    return {"dia": _texto(dia)[:10], "lavrados": len(linhas),
+            "sem_instrumento": faltas[FALTA_EMITIR],
+            "sem_assinatura": faltas[FALTA_ASSINAR],
+            "faltam": len(faltas[FALTA_EMITIR]) + len(faltas[FALTA_ASSINAR])}
+
+
 # ------------------------------------------------------------- em lote
 #
 # Pedido do oficial, 29/10/2026: «não quero ter que clicar um por um, tem que

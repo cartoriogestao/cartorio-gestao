@@ -3933,8 +3933,37 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 flash("O protesto foi lançado, mas o preenchimento salvo "
                       "continua na lista de Rascunhos.", "warning")
         flash(f"{ato.capitalize()} lançado.{onde}{aviso}", "success")
+        if ato == "PROTESTO":
+            _avisar_falta_do_instrumento([titulo_id])
         _avisar_motivo_trocado(r)
         return voltar
+
+    # O AVISO DEPOIS DE LAVRAR (pt580u, 04/11/2026): «não tinha que avisar
+    # isso e forçar a assinatura?». Só LÊ e avisa — não trava a lavratura,
+    # não emite nem assina instrumento (a assinatura com o A3 é humana). Falha
+    # da leitura não pode parecer falha do ato já lavrado: cala.
+    def _falta_para_o_xml(titulo_id: int) -> str | None:
+        try:
+            with db.connect() as con:
+                return PI.falta_para_o_xml(con, titulo_id)
+        except Exception:
+            return None
+
+    def _avisar_falta_do_instrumento(titulo_ids) -> None:
+        faltas = [f for f in (_falta_para_o_xml(t) for t in titulo_ids) if f]
+        if not faltas:
+            return
+        sem_emitir = faltas.count(PI.FALTA_EMITIR)
+        sem_assinar = len(faltas) - sem_emitir
+        partes = []
+        if sem_emitir:
+            partes.append(f"{sem_emitir} sem instrumento emitido")
+        if sem_assinar:
+            partes.append(f"{sem_assinar} com o instrumento emitido e sem a "
+                          f"assinatura A3")
+        flash(f"**{PI.AVISO_DEPOIS_DE_LAVRAR}.** {' e '.join(partes)}. Emita e "
+              f"assine em Protesto — Instrumentos de protesto "
+              f"({url_for('protesto_instrumentos')}).", "warning")
 
     @app.route("/protesto/<int:titulo_id>/situacao/corrigir", methods=["POST"])
     @roles_required("ADMIN", "MANAGER")
@@ -4287,6 +4316,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 pode_averbar=bool(admin and averbacao and averbacao.get("atos")))
 
         return render_template("atrib_protesto_ficha.html", titulo=dict(titulo),
+                               falta_instrumento=_falta_para_o_xml(titulo_id),
                                abas_da_ficha=abas_da_ficha,
                                fase_do_ato=PFASES.fase_do_ato,
                                rotulo_do_ato=PFASES.rotulo_do_ato,
@@ -12627,6 +12657,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   f"selo nem cobrança: sele e cobre pela ficha de cada título. "
                   f"E lembre de gerar o retorno E o andamento.",
                   "success")
+            _avisar_falta_do_instrumento([t for t, _r in feitos])
         for titulo_id, motivo in falharam:
             flash(f"Título {titulo_id}: {motivo}", "danger")
         return redirect(url_for("protesto_a_protestar"))
@@ -12753,7 +12784,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             dados = PROT.roteiro(con, agora=agora(), papel=_papel_atual())
             afirmacoes = AFX.contar(con, hoje=hoje())
         conferencia_titulos = _conferencia_dos_titulos(resumo=True)
+        # O CARTÃO DOS INSTRUMENTOS DE HOJE (pt580u, 04/11/2026). Só LÊ.
+        try:
+            with db.connect() as con:
+                sem_instrumento_hoje = PI.protestos_do_dia_sem_instrumento(
+                    con, hoje())
+        except Exception:
+            sem_instrumento_hoje = None
         return render_template("protesto_painel.html", r=dados,
+                               sem_instrumento_hoje=sem_instrumento_hoje,
                                cobertura=PROT.quantos_o_sistema_faz(),
                                afirmacoes_7_dias=afirmacoes,
                                conferencia_titulos=conferencia_titulos)

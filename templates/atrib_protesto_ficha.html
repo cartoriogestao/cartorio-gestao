@@ -25,6 +25,16 @@
 </div>
 {% endif %}
 
+{# O AVISO DO INSTRUMENTO (pt580u, 04/11/2026): o protesto lavrado sem o
+   instrumento emitido e assinado não vai no XML P da CENPROT. Só avisa. #}
+{% if falta_instrumento %}
+<div class="notice danger" data-falta-instrumento="{{ falta_instrumento }}">
+  <strong>Falta emitir e assinar o instrumento — sem isso o título não vai no XML da CENPROT.</strong>
+  {% if falta_instrumento == 'INSTRUMENTO' %}O instrumento deste protesto ainda não foi emitido.{% else %}O instrumento foi emitido, mas falta assinar com o A3.{% endif %}
+  <a href="{{ url_for('protesto_instrumentos') }}">Emitir e assinar na tela dos instrumentos</a>.
+</div>
+{% endif %}
+
 {# A SITUAÇÃO SEM O ATO QUE A SUSTENTE (29/10/2026): o título afirma um fato
    que o livro não tem — o 9614 ficou PAGO com o pagamento desfeito. A
    conferência (`protesto_selo_previo`) só mostra; não corrige. #}

@@ -1228,6 +1228,8 @@ def _cobrar_xml(con, ctx: dict) -> list[dict]:
             not banco(con).tem_coluna("pt_atos", "cenprot_xml_id"):
         return [_sem_tabela(chave, rotulo, regra, "pt_cenprot_xml")]
     import protesto_cenprot_xml as PCXML
+    import protesto_instrumento as PI
+    tem_instrumentos = _existe(con, "pt_instrumentos", "as_documentos")
     letra_do_ato = {tipo: letra for letra, tipos in PCXML.ATOS_DA_LETRA.items()
                     for tipo in tipos}
     marcas = ", ".join(["%s"] * len(letra_do_ato))
@@ -1245,11 +1247,23 @@ def _cobrar_xml(con, ctx: dict) -> list[dict]:
                  ORDER BY a.data_ato, a.id""", tuple(letra_do_ato)):
         a = dict(a)
         d = _dia(a.get("data_ato"))
+        texto = (f"XML {letra_do_ato.get(a['tipo'], '?')} — "
+                 f"{str(a['tipo']).lower()}, {_titulo_do_ato(a)}")
+        tela, args = "protesto_titulo", {"titulo_id": a["titulo_id"]}
+        # O MOTIVO NA PENDÊNCIA (pt580u, 04/11/2026): o protesto sem o
+        # instrumento assinado não entra no XML P, e a linha diz o que falta
+        # e leva à tela que resolve. Só LÊ.
+        falta = (PI.falta_do_titulo(con, a["titulo_id"])
+                 if tem_instrumentos and letra_do_ato.get(a["tipo"]) == "P"
+                 else None)
+        if falta:
+            texto += (" — esperando instrumento" if falta == PI.FALTA_EMITIR
+                      else " — esperando assinatura A3")
+            tela, args = "protesto_instrumentos", {}
         itens.append(_item(
-            f"XML {letra_do_ato.get(a['tipo'], '?')} — "
-            f"{str(a['tipo']).lower()}, {_titulo_do_ato(a)}",
+            texto,
             quando=a.get("data_ato"), prazo=_as(d, "23:59") if d else None,
-            ctx=ctx, tela="protesto_titulo", args={"titulo_id": a["titulo_id"]}))
+            ctx=ctx, tela=tela, args=args))
     gerados = _um(con, "pt_cenprot_xml",
                   "SELECT COUNT(*) FROM pt_cenprot_xml WHERE dia = %s",
                   ctx["dia"])

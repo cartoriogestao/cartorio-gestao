@@ -775,6 +775,18 @@ def test_dia_sem_edital_e_arquivo_falso_sao_recusados(s):
                                nome="x.pdf").get_data(as_text=True)
 
 
+def test_a_recusa_do_comprovante_aparece_dentro_do_quadro(s):
+    """Hotfix 04/11/2026: a volta rola ate o quadro, e o aviso do alto ficava fora da vista."""
+    eid = _edital(s, numero=41199)
+    html = _anexar(s, "2026-10-22", conteudo=b"isto nao e imagem", nome="tela.jpg").get_data(as_text=True)
+    quadro = html[html.index('id="envio-do-edital"'):]
+    assert "data-envio-recusado" in quadro
+    assert "n\u00e3o come\u00e7a como um JPG" in " ".join(quadro.split())
+    assert _anexos_do_edital(s, eid) == 0
+    ok = _anexar(s, "2026-10-22").get_data(as_text=True)
+    assert "data-envio-recusado" not in ok and _anexos_do_edital(s, eid) == 1
+
+
 def test_o_mesmo_comprovante_nao_entra_duas_vezes(s):
     eid = _edital(s, numero=41199)
     _anexar(s, "2026-10-22")

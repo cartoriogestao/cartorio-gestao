@@ -576,6 +576,10 @@
     editais daquele dia. Para conferir a publicação, use a consulta
     «Edital Eletrônico» do site público da CENPROT.
   </small></p>
+  {# A RECUSA DO ANEXO, AQUI DENTRO (hotfix 04/11/2026): a volta rola ate este quadro. #}
+  {% for categoria, mensagem in get_flashed_messages(with_categories=true) if 'envio-do-edital' in categoria.split() %}
+  <div class="flash danger" role="alert" style="margin:10px 14px 0" data-envio-recusado><strong>Não anexado.</strong> {{ mensagem|forte }}</div>
+  {% endfor %}
   {% if not envios %}
     <p style="padding:14px">Nenhum edital publicado nos últimos 30 dias.</p>
   {% else %}

@@ -252,3 +252,32 @@ def test_a_frase_do_pagamento_a_posteriori_so_sai_no_diferido(s, vencimento, dif
         assert (POSTERIORI.regime(con, feito["id"])["regime"] == "DIFERIDO") is diferido
     termo = F._ato(s, feito["id"], "PROTESTO")["teor"] or ""
     assert (FRASE_POSTERIORI in termo) is diferido, termo
+
+
+# ------------------------------------------------------------------ o título em moeda estrangeira
+
+def test_o_titulo_em_moeda_estrangeira_guarda_a_origem_e_cobra_em_reais(s):  # noqa: F811
+    """Lei 9.492/1997, art. 10. Decisão do oficial, 05/11/2026 («j»): a casa recebe o título em moeda
+    estrangeira; a ficha guarda a moeda e o valor de origem, e o valor em REAIS é obrigatório — é o
+    convertido, o que se cobra e se intima. Até a decisão, o sistema só conhecia o real (observação O3)."""
+    tid, _ = _cadastrado(s, numero_titulo="NP-USD1", moeda_estrangeira="dólar americano (USD)",
+                         valor_na_moeda="1.000,00", valor="5.432,10", saldo="5.432,10")
+    t = F._um(s, "SELECT * FROM pt_titulos WHERE id=%s", (tid,))
+    assert (t["moeda_estrangeira"], t["valor_na_moeda"]) == ("dólar americano (USD)", "1.000,00")
+    assert t["valor_centavos"] == 543210 and t["saldo_centavos"] == 543210
+    ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
+    assert "convertido de 1.000,00 — dólar americano (USD)" in ficha
+
+
+@pytest.mark.parametrize("mudar,recado", [
+    ({"moeda_estrangeira": "euro (EUR)"}, "informe a moeda e o valor na moeda de origem"),
+    ({"valor_na_moeda": "1.000,00"}, "informe a moeda e o valor na moeda de origem"),
+    ({"moeda_estrangeira": "euro (EUR)", "valor_na_moeda": "mil"}, "não é um número"),
+    ({"moeda_estrangeira": "euro (EUR)", "valor_na_moeda": "1.000,00", "valor": "0,00", "saldo": "0,00"},
+     "o valor e o saldo vão em REAIS"),
+])
+def test_o_titulo_em_moeda_estrangeira_incompleto_e_recusado(s, mudar, recado):  # noqa: F811
+    antes = F._um(s, "SELECT count(*) AS n FROM pt_titulos")["n"]
+    r = F._post(s, "/protesto/novo", "/protesto/novo", **{**F.TITULO, "numero_titulo": "NP-EUR1", **mudar})
+    assert any(recado in a for a in F._avisos(r)), F._avisos(r)
+    assert F._um(s, "SELECT count(*) AS n FROM pt_titulos")["n"] == antes

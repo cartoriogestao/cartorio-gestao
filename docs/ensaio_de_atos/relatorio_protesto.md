@@ -135,6 +135,12 @@ descrição e a tradução (§ 1º). O sistema só conhece o real: `protesto_cra
 entrada, «1». A CRA tem a recusa «falta tradução por tradutor público» (55). Pergunta ao oficial: a
 casa recebe esse título? Se recebe, faltam o campo da tradução e a frase no registro.
 
+**CONSERTADO em 05/11/2026** (decisão do oficial, «j»): a casa recebe. O cadastro pelo balcão tem «Moeda
+estrangeira» e «Valor na moeda de origem», que vão juntos; o valor e o saldo do título vão em REAIS,
+convertidos, e são obrigatórios — é o que se cobra e se intima. A ficha mostra «convertido de …». Fica
+com o oficial a tradução por tradutor público e a frase no registro (art. 10, § 1º). Ensaio:
+`test_o_titulo_em_moeda_estrangeira_guarda_a_origem_e_cobra_em_reais` e o da recusa do incompleto.
+
 **O4. O protesto para fins falimentares por edital se lavra sem aviso.** **DECIDIDO E CONSERTADO em 03/11/2026** (o oficial,
 «k»): a lavratura pede a afirmação de que a procura se esgotou (`protesto.falimentar_por_edital`, campo
 `afirmo_falimentar`), e ela vai ao ato e à auditoria. No lote «A protestar» o título é recusado e vai pela

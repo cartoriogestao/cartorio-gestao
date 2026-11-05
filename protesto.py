@@ -438,6 +438,26 @@ def cadastrar_titulo(con, dados: dict, *, origem: str,
         if not valor_legivel(dados.get(campo)):
             raise ProtestoError(f"{rotulo} do título não é um número: veio {dados.get(campo)!r}. "
                                 f"Escreva como 1.234,56.")
+    # O TITULO EM MOEDA ESTRANGEIRA (05/11/2026, decisao do oficial, item j;
+    # Lei 9.492/1997, art. 10): a moeda e o valor de origem vao juntos, e o
+    # valor em REAIS e obrigatorio — e o convertido, o que se cobra e se
+    # intima. Um sem o outro e titulo que ninguem sabe quanto vale.
+    moeda = str(dados.get("moeda_estrangeira") or "").strip()
+    na_moeda = str(dados.get("valor_na_moeda") or "").strip()
+    if moeda or na_moeda:
+        if not (moeda and na_moeda):
+            raise ProtestoError(
+                "Título em moeda estrangeira: informe a moeda e o valor na moeda "
+                "de origem, os dois (Lei 9.492/1997, art. 10).")
+        if not valor_legivel(na_moeda) or centavos(na_moeda) <= 0:
+            raise ProtestoError(
+                f"O valor na moeda de origem não é um número: veio {na_moeda!r}. "
+                f"Escreva como 1.234,56.")
+        if centavos(dados.get("valor")) <= 0 or centavos(dados.get("saldo")) <= 0:
+            raise ProtestoError(
+                "Título em moeda estrangeira: o valor e o saldo vão em REAIS, "
+                "convertidos — é o que se cobra e se intima (Lei 9.492/1997, "
+                "art. 10). Informe os dois.")
     # O CPF/CNPJ DO APRESENTANTE VAI AO AVISO (CN-MA art. 923), e número que
     # não fecha o dígito é documento de ninguém num papel que a casa assina.
     # Vazio não é erro: quem exige ou não é o oficial (LD08.perguntas, 1).
@@ -468,8 +488,8 @@ def cadastrar_titulo(con, dados: dict, *, origem: str,
                cedente_nome, cedente_documento, cedente_endereco,
                cedente_cep, cedente_cidade, cedente_uf,
                situacao, origem, origem_chave, importacao_id,
-               criado_em, criado_por)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               criado_em, criado_por, moeda_estrangeira, valor_na_moeda)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT (origem, origem_chave) DO NOTHING
            RETURNING id""",
         (dados.get("especie"), dados.get("numero_titulo"), dados.get("nosso_numero"),
@@ -486,7 +506,8 @@ def cadastrar_titulo(con, dados: dict, *, origem: str,
          (str(dados.get("cra_identificacao") or "").strip() or None),
          cedente.get("nome"), cedente.get("documento"), cedente.get("endereco"),
          cedente.get("cep"), cedente.get("cidade"), cedente.get("uf"),
-         "RECEBIDO", origem, chave, importacao_id, agora, usuario))
+         "RECEBIDO", origem, chave, importacao_id, agora, usuario,
+         moeda or None, na_moeda or None))
     if not novo:
         return int(titulo_por_origem(bd, origem, chave)["id"])
     titulo_id = int(novo[0]["id"])

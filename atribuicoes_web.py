@@ -2595,6 +2595,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             "motivo_protesto": _campo("motivo_protesto") or None,
             "tipo_endosso": _campo("tipo_endosso") or None,
             "tipo_moeda": _campo("tipo_moeda") or "1",
+            # MOEDA ESTRANGEIRA (05/11/2026, item j): a moeda e o valor de
+            # origem; o valor e o saldo acima vão em reais, convertidos.
+            "moeda_estrangeira": _campo("moeda_estrangeira") or None,
+            "valor_na_moeda": _campo("valor_na_moeda") or None,
             "aceite": _campo("aceite") or None,
             # O APRESENTANTE (LD04, 21/10/2026) — quem traz o título ao
             # balcão: o próprio credor, ou quem o representa. Lei 9.492/1997,

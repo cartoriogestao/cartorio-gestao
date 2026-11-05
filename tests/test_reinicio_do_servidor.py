@@ -473,5 +473,113 @@ class AReguaRodaTests(unittest.TestCase):
                     pass
 
 
+def _funcao_do_componente(nome: str) -> str:
+    """O corpo de uma `function` do componente, para rodar sozinha no PowerShell.
+
+    O componente age ao ser carregado (para e sobe); por isso a funcao e recortada
+    do texto, e nao o arquivo inteiro carregado.
+    """
+    texto = COMPONENTE.read_text(encoding="utf-8", errors="replace")
+    inicio = texto.find(f"function {nome}")
+    assert inicio > -1, f"o componente nao tem a funcao {nome}"
+    fim = texto.find("\nfunction ", inicio + 1)
+    return texto[inicio:fim if fim > -1 else len(texto)]
+
+
+class OEscutaDeDonoZeroTests(unittest.TestCase):
+    """**TRES "RESULTADO: OK" SEM TROCAR O SERVIDOR** — 05/11/2026.
+
+    Medido nesta instalacao: o socket que escuta a 8765 vinha com dono **0** no
+    `Get-NetTCPConnection` (mesmo elevado) e nem aparecia como LISTENING no `netstat`;
+    so as conexoes aceitas traziam o PID do python. O `PidsNaPorta` descarta o 0, a
+    lista saia vazia, e a parada dizia "Porta 8765 livre" com o python antigo VIVO.
+    A subida conferia a versao — a mesma, porque hotfix nao muda versao — e dizia
+    "No ar". Tres reinicios seguidos deram OK e as correcoes ficaram so no disco ate
+    o processo velho ser parado a mao.
+    """
+
+    def rotina(self) -> str:
+        return COMPONENTE.read_text(encoding="utf-8", errors="replace")
+
+    def test_livre_exige_ninguem_atendendo_e_nao_so_lista_vazia(self):
+        texto = self.rotina()
+        self.assertIn("function PortaAtende", texto)
+        self.assertIn(
+            "if ($restam.Count -eq 0 -and -not (PortaAtende)) { Dizer \"Porta $Port livre.\"; return 0 }",
+            texto)
+        codigo = "\n".join(l for l in texto.splitlines() if not l.strip().startswith("#"))
+        self.assertNotIn(
+            "if ($restam.Count -eq 0) { Dizer \"Porta $Port livre.\"; return 0 }", codigo,
+            "a lista vazia voltou a bastar para dizer 'porta livre'")
+
+    def test_a_parada_procura_quem_roda_o_app_py_da_instalacao(self):
+        texto = self.rotina()
+        self.assertIn("function PidsDoServidor", texto)
+        self.assertIn("foreach ($p in @(PidsDoServidor))", texto)
+        self.assertIn("Join-Path $InstallDir 'app.py'", _funcao_do_componente("PidsDoServidor"))
+
+    def test_a_subida_recusa_servidor_antigo_vivo_mesmo_com_a_versao_certa(self):
+        texto = self.rotina()
+        subir = texto[texto.find("function Subir"):]
+        self.assertIn("$script:ServidoresAntigos", subir)
+        self.assertIn("o servidor de antes da parada continua vivo", subir)
+        # E a conferencia vem ANTES do "No ar".
+        self.assertLess(subir.find("$sobreviventes.Count -gt 0"), subir.find('Dizer "No ar'))
+
+    @unittest.skipUnless(WINDOWS, "a porta e o PowerShell sao do Windows")
+    def test_porta_atende_mede_a_porta_de_verdade(self):
+        """A pergunta e feita a propria porta: com alguem ouvindo, ATENDE; fechada,
+        LIVRE — sem depender de o Windows dizer quem e o dono."""
+        funcao = _funcao_do_componente("PortaAtende")
+
+        def perguntar(porta: int) -> str:
+            r = subprocess.run(
+                [PS, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+                 f"$Port = {porta}\n{funcao}\nif (PortaAtende) {{ 'ATENDE' }} else {{ 'LIVRE' }}"],
+                capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace")
+            return r.stdout.strip() + r.stderr.strip()
+
+        with socket.socket() as ouvinte:
+            ouvinte.bind(("127.0.0.1", 0))
+            ouvinte.listen(5)
+            porta = ouvinte.getsockname()[1]
+            self.assertEqual(perguntar(porta), "ATENDE")
+        self.assertEqual(perguntar(porta), "LIVRE")
+
+    @unittest.skipUnless(WINDOWS, "o agendador e os processos sao do Windows")
+    def test_o_servidor_e_parado_pelo_app_py_mesmo_sem_ninguem_na_porta(self):
+        """**O CASO DE 05/11, SEM A PORTA.** O servidor de ensaio roda `<InstallDir>\\app.py`
+        e a porta passada esta livre: a unica pista e a linha de comando. Antes deste
+        conserto a parada nao o via, dizia "livre" e ele seguia vivo."""
+        with TemporaryDirectory() as td:
+            td = Path(td)
+            app = td / "app.py"
+            app.write_text("import time\ntime.sleep(120)\n", encoding="utf-8")
+            servidor = subprocess.Popen([sys.executable, str(app), "--service"])
+            try:
+                time.sleep(1.5)
+                self.assertIsNone(servidor.poll(), "o servidor de ensaio nao ficou de pe")
+                r = subprocess.run(
+                    [PS, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(COMPONENTE),
+                     "-Acao", "Parar", "-InstallDir", str(td), "-DataDir", str(td),
+                     "-TaskName", AReguaRodaTests.TAREFA_QUE_NAO_EXISTE,
+                     "-Port", str(AReguaRodaTests.PORTA_LIVRE), "-EsperaParaLiberar", "3"],
+                    capture_output=True, text=True, timeout=150,
+                    encoding="utf-8", errors="replace")
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertIn("parei o PID", r.stdout, r.stdout)
+                for _ in range(20):
+                    if servidor.poll() is not None:
+                        break
+                    time.sleep(0.25)
+                self.assertIsNotNone(servidor.poll(),
+                                     "a parada disse OK e o servidor de ensaio seguiu vivo")
+            finally:
+                try:
+                    servidor.kill()
+                except Exception:
+                    pass
+
+
 if __name__ == "__main__":
     unittest.main()

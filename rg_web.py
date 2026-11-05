@@ -784,8 +784,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 pode_decidir=pode_decidir, central_falhou=bool(falha_da_central),
                 sobrestado=bool(sobrestamento))
 
+        # O ITEM DA TABELA PELO VALOR DECLARADO (05/11/2026, item p): só no RTD.
+        with db.connect() as con:
+            item_do_valor = TIT.item_pelo_valor_declarado(con, dict(titulo))
         return render_template(
             "rcpj_rtd_titulo.html", t=titulo, anexos=anexos, para_ver=para_ver,
+            item_do_valor=item_do_valor,
             denominacoes=denominacoes,
             formas_da_pj=TIT.FORMAS_DA_PJ,
             natureza_empresaria=(int(titulo["atribuicao"]) == TIT.RCPJ

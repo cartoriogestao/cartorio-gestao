@@ -85,7 +85,11 @@
         {% if t.apresentante_documento %}<br><small class="muted">{{ t.apresentante_documento }}</small>{% endif %}</td></tr>
       <tr><th>Natureza</th><td>{{ t.natureza or '—' }}</td></tr>
       <tr><th>Livro pretendido</th><td>{{ t.serie or '— a decidir na qualificação —' }}</td></tr>
-      <tr><th>Valor declarado</th><td>{{ t.valor_declarado or '—' }}</td></tr>
+      <tr><th>Valor declarado</th><td>{{ t.valor_declarado or '—' }}
+        {% if item_do_valor %}<br><small>Item da tabela pelo valor: <strong>{{ item_do_valor.codigo_tj }}</strong>
+          (faixa de R$ {{ item_do_valor.de }} a R$ {{ item_do_valor.ate }}) — total R$ {{ item_do_valor.total }}.
+          {% if item_do_valor.acima_do_teto %}<strong>O valor passa do teto da tabela:</strong> confira a regra do ato normativo.{% endif %}
+          Lance este item no protocolo; o selo do registro ainda sai pelo caminho de atos em geral.</small>{% endif %}</td></tr>
       <tr><th>Vias</th><td>{{ t.vias }}</td></tr>
       {% if t.observacao %}<tr><th>Observação</th><td style="white-space:pre-wrap">{{ t.observacao }}</td></tr>{% endif %}
     </tbody>

@@ -173,6 +173,7 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
      "cor": "RCPN", "icone": "pessoas", "lavra": True, "secoes": (
          ("Balcão", (
              _i("Assentos", "rcpn_assentos"),
+             _i("Pesquisa ampla", "rcpn_pesquisa"),
              _i("Importar pré-cadastros", "rcpn_importar"),)),
          ("Nascimento", (
              _i("Novo registro", "rcpn_assento_novo", especie_url="nascimento", antigo="Novo registro de nascimento"),

@@ -1,0 +1,151 @@
+{% extends 'base.html' %}
+{% block title %}Pesquisa ampla de assentos — Registro Civil{% endblock %}
+{% block heading %}<h1>Pesquisa ampla de assentos</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+
+{# A PESQUISA AMPLA — pedido de 04/11/2026: «localizar registros por relação no
+   número do livro, por número de livro e folha, pelo nome dos pais, do
+   declarante». A regra mora em `rc_busca`; esta tela só pergunta e mostra. #}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_assentos') }}">&larr; Assentos</a>
+  <a class="button" href="{{ url_for('rcpn_certidoes') }}">Certidões</a>
+</div>
+
+<section class="panel" style="border-left:3px solid var(--cor-do-modulo)">
+  <div class="panel-head">
+    <span>Procurar</span>
+    <small>um campo só, ou os campos separados — pode juntar os dois</small>
+  </div>
+  <form method="get" style="padding:14px">
+    <label>Digite o que souber
+      <input name="q" value="{{ f.q }}" autofocus
+             placeholder="ex.: maria das graças · A-3/45 · livro 3 folha 45 · C-5 · 1985 · matrícula"></label>
+    <p class="small muted" style="margin:6px 0 14px">
+      Nome de <strong>qualquer pessoa</strong> do assento (registrado, pais, avós, declarante,
+      testemunhas) · <strong>livro/folha</strong> como <code>A-3/45</code> ou <code>livro 3 fl 45</code> ·
+      só o livro (<code>C-5</code>) para ver a <strong>relação do livro inteiro</strong> ·
+      um número solto procura termo, folha, livro e ano · a matrícula, com ou sem espaços.
+    </p>
+
+    <details {% if f.nome or f.pais or f.declarante or f.pessoa or f.livro or f.folha or f.termo or f.matricula or f.especie or f.ano or f.situacao %}open{% endif %}>
+      <summary><strong>Campos separados</strong> <small class="muted">(quando se sabe o que é cada coisa)</small></summary>
+      <div class="grid2" style="margin-top:10px">
+        <label>Nome do registrado / nubentes / falecido
+          <input name="nome" value="{{ f.nome }}"></label>
+        <label>Nome do pai ou da mãe (filiação)
+          <input name="pais" value="{{ f.pais }}"></label>
+        <label>Nome do declarante (ou requerente)
+          <input name="declarante" value="{{ f.declarante }}"></label>
+        <label>Qualquer pessoa citada (avós, testemunhas…)
+          <input name="pessoa" value="{{ f.pessoa }}"></label>
+        <label>Livro
+          <input name="livro" value="{{ f.livro }}" placeholder="ex.: A-3, C5, 12"></label>
+        <label>Folha
+          <input name="folha" value="{{ f.folha }}" placeholder="ex.: 45 ou 45v"></label>
+        <label>Termo (número do registro)
+          <input name="termo" value="{{ f.termo }}" inputmode="numeric"></label>
+        <label>Matrícula
+          <input name="matricula" value="{{ f.matricula }}" inputmode="numeric"></label>
+        <label>Espécie
+          <select name="especie">
+            <option value="">todas</option>
+            {% for k, v in especies.items() %}
+              <option value="{{ k }}" {% if k == f.especie %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select></label>
+        <label>Ano (do registro ou do fato)
+          <input name="ano" value="{{ f.ano }}" inputmode="numeric" placeholder="ex.: 1985"></label>
+        <label>Situação
+          <select name="situacao">
+            <option value="">todas</option>
+            {% for s in ['ATIVO', 'CANCELADO'] %}
+              <option value="{{ s }}" {% if s == f.situacao %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select></label>
+        <label>Ordem
+          <select name="ordem">
+            <option value="">automática</option>
+            {% for k, v in ordens.items() %}
+              <option value="{{ k }}" {% if k == f.ordem %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select></label>
+      </div>
+    </details>
+
+    <div class="actions" style="margin-top:14px">
+      <button class="button">Procurar</button>
+      <a class="button" href="{{ url_for('rcpn_pesquisa') }}">Limpar</a>
+    </div>
+  </form>
+</section>
+
+{% if erro %}
+  <div class="notice" style="border-left:3px solid var(--danger, #b00020)">{{ erro }}</div>
+{% endif %}
+
+{% if not r.vazio %}
+<section class="panel">
+  <div class="panel-head">
+    <span>Resultado — {{ r.total }} assento{{ '' if r.total == 1 else 's' }}</span>
+    <small>
+      {% if r.entendido %}procurei: {{ r.entendido | join(' · ') }} ·{% endif %}
+      ordem: {{ ordens.get(r.ordem, r.ordem) | lower }} · página {{ r.pagina }} de {{ r.paginas }}
+    </small>
+  </div>
+  {% if not r.linhas %}
+    <p style="padding:14px">
+      Nenhum assento casou com o filtro. Tente menos palavras, só o sobrenome,
+      ou só o número do livro.
+    </p>
+  {% else %}
+  <div style="overflow-x:auto">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Livro</th><th>Folha</th><th>Termo</th>
+        <th>Espécie</th><th>Nome</th><th>Filiação</th><th>Declarante</th>
+        <th>Registro</th><th>Fato</th><th>Situação</th><th>Achado em</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in r.linhas %}
+      <tr>
+        <td>{{ l.livro or '—' }}</td>
+        <td>{{ l.folha or '—' }}</td>
+        <td>{{ l.termo or '—' }}</td>
+        <td>{{ l.especie_diz }}</td>
+        <td><a href="{{ url_for('rcpn_assento', assento_id=l.id) }}"><strong>{{ l.nome }}</strong></a>
+          {% if l.matricula %}<div><small class="muted">{{ l.matricula }}</small></div>{% endif %}</td>
+        <td><small>{% for p in l.pais %}{{ p }}{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</small></td>
+        <td><small>{{ l.declarante or '—' }}</small></td>
+        <td>{{ l.data_ato or '—' }}</td>
+        <td>{{ l.data_fato or '—' }}</td>
+        <td>{{ l.situacao }}</td>
+        <td><small>{{ l.achado_em | join('; ') if l.achado_em else '—' }}</small></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+
+  {% if r.paginas > 1 %}
+  <div class="actions" style="padding:14px">
+    {% if r.pagina > 1 %}
+      <a class="button" href="{{ url_for('rcpn_pesquisa', pagina=r.pagina-1, **mesmos) }}">&larr; anterior</a>
+    {% endif %}
+    {% if r.pagina < r.paginas %}
+      <a class="button" href="{{ url_for('rcpn_pesquisa', pagina=r.pagina+1, **mesmos) }}">próxima &rarr;</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+{% else %}
+<div class="notice">
+  Esta tela <strong>só consulta</strong>. Digite um nome, um livro e folha, ou só o livro
+  para ver a relação dos assentos dele. Para lançar ato, abra a ficha do assento.
+</div>
+{% endif %}
+{% endblock %}

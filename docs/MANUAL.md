@@ -467,6 +467,16 @@ e na ficha, e quitá-lo lança o dinheiro no caixa sem serviço nenhum: se o cli
 decidiu fazer o ato, abra um protocolo de serviço.
 
 - **Quitar um item lança no caixa**, pelo valor calculado quando o item entrou.
+- **Pagamento feito em data anterior** (o Pix de dias atrás): na quitação do item
+  ou do lote, marque **pagamento feito em data anterior** e informe a data, o
+  comprovante e a justificativa. São duas datas: o lançamento continua no dia em
+  que se registra (o caixa fechado não reabre), e a data do pagamento fica
+  guardada à parte e sai na ficha e no recibo («Pago em …, registrado em …»).
+  No ano corrente, qualquer pessoa do caixa lança; de ano anterior, só com a
+  aprovação de outra pessoa (administrador ou gerente, com a senha dela). Data
+  futura é recusada. Vale para Pix, TED, depósito e cartão — espécie e boleto,
+  não. A data do pagamento só **sugere** a entrada do serviço: sozinha, não muda
+  prazo.
 - **Um recibo para o atendimento inteiro.**
 - O protocolo termina como **Entregue** ou **Cancelado**, com motivo. Com item
   pago, não se cancela: o caminho é o estorno.
@@ -502,10 +512,46 @@ usar o saldo não é receita nova; devolver gera saída, com motivo.
 - **Despesas**: cadastrar, autorizar, pagar, conferir e o relatório do mês. Todos
   cadastram, e o escrevente vê só as que cadastrou. Autorizar é só do
   administrador.
+  - **Ler o Pix ou o boleto do documento**: no cadastro, anexe a fatura (PDF,
+    PNG ou JPG, até 15 MB e 12 páginas) e clique em **Ler documento e buscar
+    códigos**. A leitura é feita na própria serventia; escolha o código achado
+    e **Usar o código escolhido no pagamento**. **Ler código e conferir dados**
+    preenche forma, valor e vencimento quando o código os traz. Ler não paga
+    nada: confira na fatura antes de autorizar.
+  - **Corrigir dados do pagamento sem cadastrar outra despesa**: na ficha da
+    despesa, corrija favorecido, documento, valor, vencimento, forma ou código
+    e diga o que foi corrigido e por quê. A despesa, os documentos e o
+    histórico continuam os mesmos; **a autorização anterior cai**, e os dados
+    novos precisam de nova autorização.
+- **Conferência mensal dos selos** (em Despesas e no Livro Diário, **Conferir o
+  fechamento por selo**): importe os relatórios do mês do Portal do Selo — o
+  analítico de fiscalização e o consolidado de faturamento, em XLSX — e a tela
+  compara selos, cancelamentos, quantidades e os totais de emolumentos e do
+  fundo estadual entre o sistema, o analítico e o consolidado **(norma estadual
+  — confira a do seu estado)**. Diferença fica à vista até ser conferida: nada
+  se ajusta sozinho, e a importação não cria selo, receita nem cancelamento. No
+  mês em curso a conferência é parcial; repita com o mês completo antes de
+  fechar.
 - **Livro Diário Auxiliar**: a receita e a despesa da serventia **(norma estadual
   — confira a do seu estado)**.
 - **Carnê-leão**: o imposto de renda pessoal do titular e o livro-caixa dele. Só
   o administrador vê, e a tela abre no mês anterior, que é o que se apura.
+  **A receita do item de protocolo conta no mês do selo do ato**, e não no da
+  quitação:
+  - pago antes e selado depois: conta no selo;
+  - selado antes e pago depois (o diferido): conta no pagamento;
+  - pago e nunca selado, sem estorno nem devolução: fica na lista dos **pagos
+    sem selo**, fora da receita, e entra em **31/12** do ano do pagamento se até
+    lá não for selado;
+  - pago em dezembro e selado em janeiro: conta em janeiro, com aviso nas duas
+    telas;
+  - item que não tem selo próprio (diligência, arquivamento por folha,
+    publicação, comunicação — a lista de códigos da tabela): conta no
+    **primeiro selo do mesmo protocolo** emitido no dia do pagamento ou depois;
+  - lançamento avulso, sem protocolo: conta no pagamento.
+
+  Cada mês mostra quanto o critério muda em relação ao de antes, e o livro-caixa
+  exportado diz o critério.
 
 ---
 
@@ -585,6 +631,23 @@ estadual — confira a do seu estado)**.
 No layout novo, a ficha do ato é dividida em fases, e as listas têm o botão de
 lavrar direto (seção 23.4).
 
+**O que a minuta e a lavratura conferem** (ensaio de atos, novembro de 2026):
+
+- **As partes**: o lado de cada parte vem da qualidade dela na CEP. Quem
+  representa fica fora dos lados e vem na qualificação do representado, com o
+  instrumento; o anuente consente e não vende; o casal em comunhão vende junto.
+  O **advogado** assiste e não é parte: entra com «OAB nº / UF», no bloco «DOS
+  ADVOGADOS».
+- **A filiação** em dois campos (mãe e pai), com a data de nascimento, em toda
+  parte. No testamento, o estado civil vem da parte, «sabe | pode» é escolha, e
+  há «nome de solteiro(a)».
+- **A emancipação** confere os dezesseis anos e fala no singular quando é um só
+  genitor; ato sem teor não se lavra.
+- **A abertura** escreve o nome do estado por extenso, do cadastro da serventia, e
+  **a linha das assinaturas** diz quem assina por quem.
+- **O feminino** de doador, donatário e cessionário sai certo na CEP e na DOI; o
+  divórcio e o inventário saem prontos para a CESDI.
+
 **Consulta e livros**: **Cartões de autógrafo**; **Sinais públicos** e
 **Reconhecer sinal**; **Pendências das escrituras**; **Livros do tabelionato**
 (capacidade, folha atual, termos). **Remessa às centrais** reúne as obrigações
@@ -611,6 +674,19 @@ prova a prioridade.
 lista e define a situação, e «Outro» pede observação. Prenotação devolvida também
 entra, e tudo fica na auditoria.
 
+**A prioridade.** Se a mesma matrícula tem prenotação **anterior ainda aberta**,
+a lavratura do título posterior cita qual é e só segue com confirmação e motivo.
+
+**Nota de exigência cadastrada com erro**: na ficha da prenotação, a nota tem
+**Excluir por erro**, com motivo e confirmação. A nota sai do fluxo e os
+andamentos dela ainda pendentes são descartados; o histórico e os arquivos
+ficam, e as demais notas não mudam.
+
+**Qualificação assistida por IA: suspensa.** O botão não aparece, e a ficha diz
+por quê: o recurso precisa ser abastecido e validado com as normas estaduais, a
+Lei de Registros Públicos e a legislação das cédulas de crédito. Até a
+liberação, que é decisão do oficial, a qualificação é manual.
+
 ### 9.2 Matrículas e atos
 
 1. Localize a matrícula (número ou CNM) e confira imagem, teor, atos, selos e
@@ -626,6 +702,22 @@ entra, e tudo fica na auditoria.
 5. Para encerrar a matrícula (por exemplo, transporte para ficha nova), marque
    no próprio ato de encerramento que ele encerra a matrícula — assim não se
    lavra segunda averbação. Só o administrador encerra.
+
+**O que a lavratura confere** (ensaio de atos, novembro de 2026):
+
+- **Cancelamento e extinção** (hipoteca, usufruto, cancelamento de ato) se
+  lavram pelo **Novo ato** da matrícula, com o modelo próprio. O modelo pergunta
+  **qual ato se cancela**, e esse ato passa a constar como cancelado: sai da
+  certidão de ônus. O botão **Cancelar este ato**, no próprio ato, continua
+  valendo.
+- **Indisponibilidade averbada** (CNIB) **barra** o ato voluntário sobre o
+  imóvel. Arrematação, adjudicação, partilha e usucapião só **avisam**; o
+  sistema os reconhece pelo nome do modelo ou pelo nome da tabela.
+- **Matrícula aberta a partir de outra**: a abertura e a ficha avisam os ônus
+  da origem que faltam transportar, e há o modelo de averbação de **transporte
+  de ônus**.
+- **Retificação e usucapião**: a notificação se sela, e a prenotação e o
+  protocolo ficam gravados nela.
 
 **Minutas** recebidas de fora ficam como «a revisar»: não tomam número, não
 selam, não cobram; a revisão pode ser guardada aos poucos; descartar exige
@@ -759,6 +851,17 @@ título volta no alto da lista. **Cancelamento** exige hipótese legal e
 fundamento escrito. **Certidões**: a busca roda de novo na emissão e o teor
 congela; não sai negativa para quem tem protesto.
 
+**O que o sistema confere** (ensaio de atos, novembro de 2026):
+
+- **Título em duplicidade**: se o mesmo título já foi protestado, o apontamento
+  é recusado; se só foi apontado, a tela avisa e pede o motivo para seguir.
+- **Falta de aceite ou de devolução depois do vencimento**: na lavratura, o
+  protesto passa a ser por **falta de pagamento**, e a tela avisa.
+- **Protesto para fins falimentares por edital**: a tela avisa e pede a
+  afirmação de que a procura do devedor se esgotou.
+- A frase do **pagamento a posteriori** sai no termo só quando os emolumentos
+  são diferidos.
+
 **O dia da CENPROT**: **Pendências da CENPROT** reúne anuências, pedidos de
 cancelamento, pedidos de certidão, decisões judiciais e propostas de
 renegociação. **Decidir e enviar são dois botões**, e a tela não lavra ato — o
@@ -815,6 +918,18 @@ Não altere a data de publicação para liberar uma etapa bloqueada.
 declarante. **O que falta perguntar** reúne as respostas que disparam
 comunicações (eleitor, filhos, bens, pessoa não identificada).
 
+- **Pessoa não identificada**: o que não se sabe sai como «ignorado» no termo, e
+  a tela lembra os sinais e as indicações que a lei manda registrar.
+- **Natimorto**: sem nome, com breve relato próprio; sepultamento e causa ficam
+  na tela.
+
+**Pesquisa ampla de assentos** (menu Registro Civil → **Pesquisa ampla**, ou o
+botão na lista de assentos): um campo só entende o nome de qualquer pessoa do
+assento — registrado, pais, declarante —, livro e folha («A-3/45», «livro 3
+folha 45»), só o livro (a relação dele, em ordem de folha e termo), número solto
+e matrícula. Os campos separados (filiação, declarante, livro, folha, termo,
+espécie, ano, situação) podem ser usados junto. A pesquisa só lê.
+
 **Assento já lavrado.**
 
 - **Averbação**, **anotação** e **retificação** são atos distintos, em blocos
@@ -828,6 +943,19 @@ comunicações (eleitor, filhos, bens, pessoa não identificada).
 - **Matrículas**: a matrícula nacional deve aparecer completa no teor e na
   certidão. **Atos sem checklist**, **Termos a escrever**, **Informações
   importadas** e **Conferência da filiação** tratam pendências do acervo.
+- **Reconhecimento de paternidade e mudança de prenome**: a certidão sai
+  atualizada e **sem revelar a averbação**; a de inteiro teor desse assento pede
+  decisão judicial.
+- **Acervo transcrito em lote** (em **Importar de outro sistema** →
+  **Acervo transcrito: incluir e complementar em lote com PDF**): inclui
+  nascimentos antigos e complementa os já cadastrados a partir de um lote de
+  transcrição. Nos campos preenchidos prevalece a transcrição; campo vazio não
+  apaga o cadastro. Os dados anteriores e a autoria ficam guardados, e o termo de
+  identificação ambígua fica separado para conferência. **Conferir lote**
+  mostra o que entraria, sem gravar; **Importar e complementar lote** grava,
+  depois de você confirmar que a transcrição prevalece. Para vários livros, **Executar vários blocos em
+  sequência**: o servidor processa um bloco de cada vez, e o bloco já concluído é
+  reconhecido pelo recibo, de modo que a sequência se retoma de onde parou.
 
 **Certidões e folhas de segurança.** Escolha a espécie, revise teor,
 matrícula, averbações, emissor e selo; gere, reabra, confira. A certidão segue
@@ -923,6 +1051,15 @@ correção tem partes e a habilitação tem fases (seção 23.4).
     confira a do seu estado)**. Marque na ficha do registro, com a operação, a matrícula e o
     valor, e informe lado e participação em cada parte. A linha entra na tela da DOI, no
     mesmo arquivo da serventia.
+18. **O que o sistema confere** (ensaio de atos, novembro de 2026):
+    - **Denominação** de pessoa jurídica **idêntica** a outra já registrada: o registro é
+      recusado. **Parecida**: a tela avisa e pede a fundamentação.
+    - **Forma da pessoa jurídica** no Livro A: a tela pergunta, e avisa quando a natureza
+      diz «empresária», que se registra na Junta Comercial.
+    - O **breve relato** confere a leitura da ficha pela ordem dos atos, e não pela hora.
+    - A **releitura** de um registro não muda o cadastro da pessoa jurídica: mudar o
+      cadastro é ato próprio.
+    - **Notificação** não se abre sobre registro cancelado.
 
 ---
 
@@ -1095,6 +1232,23 @@ Escreva o que tentou, o resultado e a mensagem de erro.
 - Quem pode consultar, o provedor e a chave são definidos pelo administrador em
   **Ajuda — configurar**, com teto diário de uso. Sem chave, o sistema funciona
   normalmente. A **Base de conhecimento da ajuda** guarda verbetes da casa.
+- Ela responde **pela documentação que vem com o sistema** (a pasta `docs/`,
+  com o manual e as decisões) e pelas **regras da casa**
+  (`docs/REGRAS_DA_CASA.md`), as duas atualizadas junto com o programa.
+  **Ajuda — configurar** avisa o administrador quando a instalação está sem os
+  documentos: sem eles, a ajuda responde pela regra geral, e não por este
+  sistema.
+- Ela **lê a norma e cita o artigo**: o Código de Normas do estado, o Código
+  Nacional de Normas do CNJ, a Lei de Registros Públicos, a Lei do Protesto, o
+  Código Civil, o CPC, as leis das cédulas de crédito e as demais da atividade,
+  que vêm com o sistema na pasta `base_normativa/` (a lista e a origem de cada
+  texto estão no `README.md` de lá). A resposta diz como o sistema faz **e** o
+  que a norma manda, com a norma e o artigo. Antes de citar a terceiros,
+  confira o artigo na fonte oficial. O agente do sistema lê a norma do mesmo
+  jeito.
+- Resposta que não terminou **diz que não terminou**: cortada no limite de
+  tamanho, ou sem chegar ao fim das leituras. Pergunte de novo, de forma mais
+  estreita — dizendo a tela ou o ato.
 
 **Problemas do sistema** (Administrativo → Ajuda):
 

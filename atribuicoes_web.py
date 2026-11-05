@@ -11365,9 +11365,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         para anexar o comprovante de envio do edital». CN-MA art. 922, § 1º.
         """
         voltar = redirect(url_for("protesto_avisos") + "#envio-do-edital")
+        # A RECUSA APARECE NO QUADRO (hotfix 04/11/2026): a volta rola ate o quadro, e o aviso
+        # vermelho do alto ficava fora da vista - o balcao achava que "nao salva".
+        RECUSA = "danger envio-do-edital"
         enviado = request.files.get("comprovante")
         if not enviado or not enviado.filename:
-            flash("Escolha o arquivo do comprovante do envio.", "danger")
+            flash("Escolha o arquivo do comprovante do envio.", RECUSA)
             return voltar
         dia = (_campo("dia") or hoje())[:10]
         titulo_volta = numero_digitado(_campo("titulo_id"), maximo=MAIOR_INTEGER)
@@ -11384,7 +11387,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     pasta_de_arquivos=pasta_dos_arquivos(), agora=agora(),
                     usuario_id=usuario_id_do_sistema())
         except AV.AvisoError as erro:
-            flash(str(erro), "danger")
+            flash(str(erro), RECUSA)
             return voltar
         audit("PROTESTO_EDITAL_ENVIO_CENPROT", "pt_editais", None,
               {"dia": dia, "editais": r["editais"], "anexos": r["anexos"],

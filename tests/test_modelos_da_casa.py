@@ -4758,6 +4758,12 @@ MUDOU_DEPOIS_DO_OURO["RI_CERTIDAO"]["texto"] += ((
     "{% for p in proprietarios %}{{ p.nome }}{% if p.documento_numero %}",
     "{% for p in proprietarios %}{{ p.nome }}{% if p.qualificacao_atual %}, "
     "{{ p.qualificacao_atual }}{% endif %}{% if p.documento_numero %}"),)
+# E A FRAÇÃO DE CADA TITULAR (item f, mesma data): «…, na fração de 50%», quando
+# informada no quadro das partes. O contexto do ouro não a tem.
+MUDOU_DEPOIS_DO_OURO["RI_CERTIDAO"]["texto"] += ((
+    "{{ p.documento_tipo }} {{ p.documento_numero }}{% endif %}{% if not loop.last %}",
+    "{{ p.documento_tipo }} {{ p.documento_numero }}{% endif %}{% if p.fracao %}, "
+    "na fração de {{ p.fracao }}{% endif %}{% if not loop.last %}"),)
 MUDOU_DEPOIS_DO_OURO["RI_CERTIDAO_NEGATIVA_IMOVEL"] = {
     "texto": (_LH13_VALIDADE,), "papel": (_LH13_VALIDADE,)}
 # As saídas do LF06B que citavam a validade, por parte — e só estas mudam.

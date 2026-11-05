@@ -1623,6 +1623,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 "natureza": mo["natureza"]}
 
 
+    def _aviso_das_fracoes(partes) -> str:
+        try:
+            return RC.aviso_das_fracoes(
+                RC.titulares_com_a_qualificacao_atual([dict(p) for p in partes]))
+        except RC.CorrecaoError as erro:
+            return f"Há fração de titular que não se lê: {erro}"
+
     @app.route("/registro-imoveis/<int:matricula_id>")
     @login_required
     def ri_ficha(matricula_id):
@@ -2147,6 +2154,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             onus_da_origem = onus_da_origem_por_transportar(_c_onus, dict(m))
         return render_template(
             "ri_ficha.html", m=m, atos=atos, partes=partes, imagens=imagens,
+            # O AVISO DAS FRACOES (05/11/2026, item f): parte dos titulares sem
+            # ela, ou a soma longe de 100%. Fracao invalida gravada antes da
+            # regra nao derruba a ficha: o aviso diz que ha o que conferir.
+            aviso_fracoes=_aviso_das_fracoes(partes),
             onus_da_origem=onus_da_origem,
             aviso_do_onus_da_origem=(_aviso_do_onus_da_origem(onus_da_origem)
                                      if onus_da_origem else ""),
@@ -7105,18 +7116,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 else "CNPJ" if len(doc) == 14
                 else (request.form.get("documento_tipo") or None))
         papel = (request.form.get("papel") or "proprietario").strip() or "proprietario"
+        # A FRACAO DO DONO DA ABERTURA (05/11/2026, item f): opcional, e
+        # conferida como na correcao da parte.
+        try:
+            fracao = RC.fracao_escrita(request.form.get("fracao"))
+        except RC.CorrecaoError as erro:
+            flash(str(erro), "danger")
+            return voltar
         with db.transaction() as con:
             banco(con).escrever(
                 """INSERT INTO ri_partes
                    (matricula_id, ato_id, nome, nome_norm, documento_tipo,
                     documento_numero, documento_valido, papel, qualificacao,
-                    proprietario, proprietario_ativo, origem, origem_chave)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    proprietario, proprietario_ativo, origem, origem_chave,
+                    fracao)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (matricula_id, None, nome, normalizar_busca(nome),
                  tipo, doc or None,
                  1 if doc and valida_cpf_cnpj(doc) else (0 if doc else None),
                  papel, (request.form.get("qualificacao") or "").strip() or None,
-                 1, 1, "MANUAL", "parte_abertura_antes_selo"),
+                 1, 1, "MANUAL", "parte_abertura_antes_selo", fracao),
             )
         audit("RI_PARTE_ABERTURA_INCLUIDA", "RI_MATRICULA", matricula_id,
               {"matricula": m["numero"], "nome": nome, "documento": doc or None})
@@ -7147,7 +7166,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     documento=request.form.get("documento"),
                     qualificacao=request.form.get("qualificacao"),
                     papel=request.form.get("papel"),
-                    titular=None if titular in (None, "", "papel") else titular == "1")
+                    titular=None if titular in (None, "", "papel") else titular == "1",
+                    fracao=request.form.get("fracao"))
         except RC.CorrecaoError as erro:
             flash(str(erro), "danger")
             return redirect(url_for("ri_ficha", matricula_id=p["matricula_id"]))

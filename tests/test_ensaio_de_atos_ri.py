@@ -290,8 +290,8 @@ def test_o_titulo_prenotado_depois_nao_passa_na_frente_do_anterior(casa):  # noq
 
 def test_a_partilha_poe_a_meeira_e_os_herdeiros_e_tira_a_falecida(casa):  # noqa: F811
     """CPC arts. 610 e 659; LRP art. 167, I, 25, e art. 19, § 9º: registrado o formal de partilha, os donos são
-    a meeira e os herdeiros a quem o imóvel coube, e a falecida sai do quadro. (A fração de cada um fica no
-    texto do ato: o quadro de titulares não guarda fração — observação O4 do relatório.)"""
+    a meeira e os herdeiros a quem o imóvel coube, e a falecida sai do quadro. (A fração de cada um: o teste
+    seguinte, depois da decisão do oficial sobre a observação O4.)"""
     f = F._compra_e_venda(casa)
     m = f["matricula"]
     partilha = _ato(casa, m, "R-PARTILHA", interessado=CONJUGE,
@@ -302,6 +302,30 @@ def test_a_partilha_poe_a_meeira_e_os_herdeiros_e_tira_a_falecida(casa):  # noqa
     for quem in (CONJUGE, HERDEIRO, HERDEIRA):
         assert quem["nome"] in dono, dono
     assert F.COMPRADORA["nome"] not in dono, dono
+
+
+def test_a_fracao_de_cada_titular_se_guarda_e_sai_na_certidao_de_propriedade(casa):  # noqa: F811
+    """Decisão do oficial (05/11/2026, item f; observação O4): o quadro de titulares guarda a fração de cada
+    um, informada em Partes → Corrigir, e a certidão de propriedade a diz. Enquanto falta a de algum, ou a
+    soma não fecha, a ficha avisa."""
+    f = F._compra_e_venda(casa)
+    m = f["matricula"]
+    partilha = _ato(casa, m, "R-PARTILHA", interessado=CONJUGE,
+                    partes=[(F.COMPRADORA, "transmitente"), (CONJUGE, "adquirente"),
+                            (HERDEIRO, "adquirente"), (HERDEIRA, "adquirente")])
+    assert partilha["ato"] and partilha["ato"]["selo_texto"], partilha["recado"][:1200]
+    ficha = f"/registro-imoveis/{m['id']}"
+    quinhao = {CONJUGE["nome"]: "50%", HERDEIRO["nome"]: "1/4", HERDEIRA["nome"]: "25"}
+    for i, (nome, fracao) in enumerate(quinhao.items()):
+        pid = F._um(casa, "SELECT id FROM ri_partes WHERE matricula_id=%s AND nome=%s AND proprietario_ativo=1",
+                    (m["id"], nome))["id"]
+        html = F._clicar(casa["balcao"], ficha, f"/registro-imoveis/partes/{pid}/corrigir",
+                         fracao=fracao, motivo="Quinhão do formal de partilha, folha 4")
+        if i == 0:
+            assert "1 de 3 titulares têm a fração informada" in html, html[:2000]
+    assert "têm a fração informada" not in casa["balcao"].get(ficha).get_data(as_text=True)
+    dono = _dono_na_certidao(casa, m)
+    assert "na fração de 50%" in dono and "na fração de 1/4" in dono and "na fração de 25%" in dono, dono
 
 
 # ------------------------------------------------------------------ o desmembramento

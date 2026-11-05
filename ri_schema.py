@@ -967,6 +967,11 @@ MIGRACOES = (
     # Busca sem acento e sem caixa. O SQLite nao remove acento sozinho, entao
     # guardamos a forma normalizada ao lado - indexavel e previsivel.
     ("ri_partes", "nome_norm", "TEXT"),
+    # A FRACAO DO IMOVEL QUE O TITULAR TEM (05/11/2026, decisao do oficial,
+    # item f do ensaio do RI): «50%», «1/4». Nao e a `participacao`, que e a
+    # parte na OPERACAO (DOI, CTP): na venda de parte ideal as duas diferem.
+    # Vazia quando ninguem informou; a certidao de propriedade a diz quando ha.
+    ("ri_partes", "fracao", "TEXT"),
     ("ri_matriculas", "imovel_norm", "TEXT"),
     # Codigo do modelo usado na lavratura. Guardado para que a exportacao da
     # CTP saiba a operacao imobiliaria sem ter de adivinhar pelo texto livre

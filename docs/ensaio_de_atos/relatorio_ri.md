@@ -228,6 +228,12 @@ e a lei a exige lá (LRP art. 176, § 1º, III, e o quinhão do formal), mas nã
 O próprio sistema já avisa na transmissão de parte ideal («ponha de volta em Partes → Corrigir»). Para o
 oficial: guardar a fração no quadro, e a certidão de propriedade dizê-la?
 
+**CONSERTADO em 05/11/2026** (decisão do oficial, «f»): a coluna `ri_partes.fracao` guarda a fração de cada
+titular («50%», «1/4»), informada em Partes → Corrigir (ou no cadastro do dono da abertura); a certidão de
+propriedade diz «…, na fração de 50%», e a ficha avisa quando falta a de algum titular ou a soma não fecha
+100%. Não é a `participacao`, que é a parte na operação (DOI). Ensaio:
+`test_a_fracao_de_cada_titular_se_guarda_e_sai_na_certidao_de_propriedade`.
+
 ## Terceira leva (03/11/2026): sem defeito novo
 
 Cinco conferências. **Todas estão certas**, e agora têm teste:

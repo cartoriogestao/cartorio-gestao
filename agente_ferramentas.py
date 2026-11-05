@@ -59,6 +59,7 @@ from typing import Any
 import agente_provedores as PROV
 import agente_schema as AG
 import ajuda_base as BASE
+import normativa as NORMA
 import ajuda_codigo as CODIGO
 import ajuda_mapa as MAPA
 import ajuda_privacidade as PRIV
@@ -1398,6 +1399,34 @@ def _procura_nos_documentos(ctx: Contexto, *, termo: str = "",
     return _cortar(PROJ.procurar_nos_documentos(termo, limite=quantas))
 
 
+def _consulta_norma(ctx: Contexto, *, termo: str = "", norma: str = "",
+                    artigo: str = "", limite: int = 0) -> str:
+    """O texto da norma, com a citação — pelo artigo ou pela busca. **Só lê.**
+
+    PEDIDO DO OFICIAL (05/11/2026): os agentes abastecidos com o código de
+    normas estadual e o nacional e com as leis da atividade, e a resposta
+    citando o artigo. Vai só o artigo pertinente, e não o acervo (4,8 MB):
+    quem parte e procura é `normativa`, uma vez por processo.
+
+    Com `norma` e `artigo`, o artigo inteiro; com `termo`, os mais pertinentes
+    (em `norma`, se vier); sem nada, a lista das normas que a base tem.
+    """
+    if str(artigo or "").strip():
+        if not str(norma or "").strip():
+            raise FerramentaError(
+                "Para ler um artigo, diga a norma também — por exemplo "
+                "norma «LRP», artigo «167».")
+        a = NORMA.artigo(norma, artigo, inteiro=True)
+        aviso = " (REVOGADO)" if a["revogado"] else ""
+        return _cortar(f"[{a['citacao']}]{aviso}\n{a['texto']}")
+    if str(termo or "").strip():
+        quantas = int(limite) if int(limite or 0) > 0 else NORMA.LIMITE_DA_BUSCA
+        achados = NORMA.buscar(termo, limite=quantas, em=str(norma or "").strip())
+        return _cortar(NORMA.para_o_modelo(achados, termo))
+    return ("As normas da base, pelo nome com que se pedem:\n"
+            + "\n".join(f"- {n['nome']}" for n in NORMA.normas()))
+
+
 def _busca_na_base(ctx: Contexto, *, termo: str = "", limite: int = 0) -> str:
     """Procura um termo nas TRÊS fontes da base, numa chamada só.
 
@@ -1739,6 +1768,29 @@ FERRAMENTAS: tuple[Ferramenta, ...] = (
         # aqui são nome de regra e de tabela.
         tipo=LEITURA, nomes_livres=False, executar=_busca_na_base),
     Ferramenta(
+        nome="consultar_norma",
+        descricao=(
+            "O texto das normas da atividade, com a citação: o Código de "
+            "Normas do TJMA (CN-MA), o Código Nacional de Normas do CNJ (CNN), "
+            "a LRP, a Lei 8.935, a Lei do Protesto (9.492), o Código Civil, o "
+            "CPC, as leis das cédulas de crédito e as demais. Com `norma` e "
+            "`artigo`, devolve o artigo inteiro; com `termo`, os artigos mais "
+            "pertinentes (só daquela norma, se vier `norma`); sem nada, a "
+            "lista das normas. **Use para dizer o que a norma manda, e cite o "
+            "artigo como veio na citação** — não cite artigo que não leu."),
+        esquema={"type": "object", "properties": {
+            "termo": {"type": "string",
+                      "description": "ex.: protesto de cheque furtado"},
+            "norma": {"type": "string",
+                      "description": "ex.: CN-MA, CNN, LRP, Lei 9.492, CC"},
+            "artigo": {"type": "string",
+                       "description": "ex.: 167, 216-A, 1.020"},
+            "limite": {"type": "integer",
+                       "description": "máximo de artigos na busca; vazio = 8"}}},
+        # TEXTO DE NORMA PÚBLICA, E NÃO BANCO: a mesma passagem fechada da
+        # documentação. Ele não traz dado de pessoa da serventia.
+        tipo=LEITURA, nomes_livres=False, executar=_consulta_norma),
+    Ferramenta(
         nome="listar_telas",
         descricao="As telas do sistema, com o módulo de cada uma.",
         esquema={"type": "object", "properties": {}},
@@ -1836,6 +1888,11 @@ FERRAMENTAS_DA_AJUDA: tuple[str, ...] = (
     # Ler prosa da casa é o que o balcão mais precisa para não responder pela
     # regra geral — por isso ela é de todos, como as duas que ela junta.
     "buscar_na_base",
+    # **A NORMA É DE TODOS (05/11/2026).** O balcão é quem mais precisa dizer
+    # ao cliente o que a norma manda, com o artigo; o texto é público e não lê
+    # nada da serventia. Pedido do oficial: a resposta diz como o sistema faz
+    # E o que a norma manda.
+    "consultar_norma",
     # **AS REGRAS DA CASA SÃO DE TODOS, E ESSA É A DIFERENÇA DELAS.** As outras
     # leituras contam o que o sistema tem; esta conta **como se decide aqui** —
     # e quem está no balcão é justamente quem precisa dela para não responder

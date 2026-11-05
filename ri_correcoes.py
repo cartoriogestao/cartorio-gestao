@@ -276,6 +276,45 @@ def e_titular(papel: Any) -> bool:
     return any(p.startswith(x) for x in PAPEL_DE_TITULAR)
 
 
+def titulares_com_a_qualificacao_atual(partes: list[dict]) -> list[dict]:
+    """Os titulares ativos, uma linha por pessoa, com a qualificacao mais nova. **So calcula.**
+
+    DECISAO DO OFICIAL (05/11/2026, item c do ensaio do RI): a certidao de
+    propriedade traz a QUALIFICACAO ATUAL do titular, estado civil inclusive.
+    Quem pede a certidao quer saber, entre outras coisas, se precisa da outorga
+    conjugal (CC art. 1.647), e a linha do titular dizia so nome e documento.
+
+    A QUALIFICACAO ATUAL E A DA PARTE MAIS NOVA DA MATRICULA, e nao a do ato que
+    fez dela titular: a AV de casamento (AV-ESTADO-CIVIL) traz a pessoa com a
+    qualificacao nova, e e essa que vale depois dela. «Mais nova» e a ordem de
+    gravacao (`id`), que e a ordem dos atos. A pessoa se reconhece pelo
+    documento e, sem documento, pelo nome normalizado.
+
+    UMA LINHA POR PESSOA: a AV que traz a titular com papel de proprietaria
+    grava outra linha ativa da mesma pessoa, e a certidao a diria duas vezes.
+    """
+    def chave(p: dict) -> str:
+        doc = so_digitos(p.get("documento_numero") or "")
+        return doc or "NOME:" + (p.get("nome_norm") or normalizar_busca(p.get("nome") or ""))
+
+    mais_nova: dict[str, str] = {}
+    for p in sorted(partes, key=lambda x: int(x.get("id") or 0)):
+        texto = (p.get("qualificacao") or "").strip()
+        if texto:
+            mais_nova[chave(p)] = texto
+    vistos: set[str] = set()
+    titulares = []
+    for p in partes:
+        if not p.get("proprietario_ativo"):
+            continue
+        k = chave(p)
+        if k in vistos:
+            continue
+        vistos.add(k)
+        titulares.append(dict(p) | {"qualificacao_atual": mais_nova.get(k, "")})
+    return titulares
+
+
 # Papel de quem TRANSMITE o imovel no ato — o espelho de `PAPEL_DE_TITULAR`.
 PAPEL_DE_QUEM_TRANSMITE = ("transmitente",)
 

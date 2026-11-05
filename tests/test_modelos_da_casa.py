@@ -4749,6 +4749,15 @@ MUDOU_DEPOIS_DO_OURO["RI_CERTIDAO"] = {
                    for antes in _LH13_ANTES_DA_VALIDADE),
     "papel": (_LH13_VALIDADE,),
 }
+# A QUALIFICAÇÃO ATUAL DO TITULAR (item c do ensaio do RI, decisão do oficial
+# de 05/11/2026): a linha dos proprietários traz, depois do nome, a qualificação
+# mais nova que a matrícula tem da pessoa — o estado civil da AV de casamento
+# inclusive. Só o molde muda: o contexto do ouro não tem `qualificacao_atual`,
+# e o papel dele sai igual.
+MUDOU_DEPOIS_DO_OURO["RI_CERTIDAO"]["texto"] += ((
+    "{% for p in proprietarios %}{{ p.nome }}{% if p.documento_numero %}",
+    "{% for p in proprietarios %}{{ p.nome }}{% if p.qualificacao_atual %}, "
+    "{{ p.qualificacao_atual }}{% endif %}{% if p.documento_numero %}"),)
 MUDOU_DEPOIS_DO_OURO["RI_CERTIDAO_NEGATIVA_IMOVEL"] = {
     "texto": (_LH13_VALIDADE,), "papel": (_LH13_VALIDADE,)}
 # As saídas do LF06B que citavam a validade, por parte — e só estas mudam.

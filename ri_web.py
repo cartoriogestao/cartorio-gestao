@@ -8118,7 +8118,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     lido=_fechos),
             } for a in atos_para_o_papel],
             "partes": [dict(p) for p in partes],
-            "proprietarios": [dict(p) for p in partes if p["proprietario_ativo"]],
+            # A QUALIFICACAO ATUAL DE CADA TITULAR, UMA LINHA POR PESSOA
+            # (decisao do oficial, 05/11/2026, item c): ver
+            # `RC.titulares_com_a_qualificacao_atual`.
+            "proprietarios": RC.titulares_com_a_qualificacao_atual(
+                [dict(p) for p in partes]),
             # HOTFIX-2026-10-07-04: a ABERTURA mostra os titulares de origem
             # (partes da abertura, sem ato), e não quem é dono hoje.
             "proprietarios_abertura": [dict(p) for p in partes

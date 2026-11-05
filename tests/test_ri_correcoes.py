@@ -657,3 +657,39 @@ def test_acatar_a_leitura_da_ia_decide_quem_sai_dentro_da_trava_da_ficha(con, mo
         f"o quadro foi lido fora da trava da ficha: {vistos}")
     assert all("FOR UPDATE" in s for s, _ in leituras), (
         f"o quadro foi lido sem prender as linhas: {vistos}")
+
+
+# ------------------------------- a qualificação atual do titular (item c, 05/11/2026)
+
+
+def _parte(id_, nome, doc, qualificacao, ativo):
+    return {"id": id_, "nome": nome, "documento_numero": doc,
+            "qualificacao": qualificacao, "proprietario_ativo": ativo}
+
+
+def test_a_qualificacao_atual_e_a_da_parte_mais_nova_da_mesma_pessoa():
+    partes = [_parte(1, "ANA EXEMPLO", "00000000272", "brasileira, solteira", 1),
+              _parte(2, "ANA EXEMPLO", "000.000.002-72", "brasileira, casada", 0)]
+    titulares = RC.titulares_com_a_qualificacao_atual(partes)
+    assert [t["qualificacao_atual"] for t in titulares] == ["brasileira, casada"]
+
+
+def test_a_mesma_pessoa_ativa_duas_vezes_sai_uma_vez_so():
+    partes = [_parte(1, "ANA EXEMPLO", "00000000272", "solteira", 1),
+              _parte(2, "BRUNO EXEMPLO", "00000000353", "solteiro", 1),
+              _parte(3, "ANA EXEMPLO", "00000000272", "casada", 1)]
+    titulares = RC.titulares_com_a_qualificacao_atual(partes)
+    assert [t["nome"] for t in titulares] == ["ANA EXEMPLO", "BRUNO EXEMPLO"]
+    assert titulares[0]["qualificacao_atual"] == "casada"
+
+
+def test_sem_documento_a_pessoa_se_reconhece_pelo_nome_e_vazio_nao_apaga():
+    partes = [_parte(1, "Ana Exemplo", None, "solteira", 1),
+              _parte(2, "ANA EXEMPLO", None, "casada", 0),
+              _parte(3, "ANA EXEMPLO", None, "", 0)]
+    assert RC.titulares_com_a_qualificacao_atual(partes)[0]["qualificacao_atual"] == "casada"
+
+
+def test_quem_nao_e_titular_ativo_nao_entra():
+    partes = [_parte(1, "VENDEDOR EXEMPLO", "00000000353", "casado", 0)]
+    assert RC.titulares_com_a_qualificacao_atual(partes) == []

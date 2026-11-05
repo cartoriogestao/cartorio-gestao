@@ -170,6 +170,38 @@ def test_a_resposta_guardada_se_baixa_como_chegou(s, monkeypatch):
     assert s["c"].get("/protesto/cra/consultas/999999/arquivo").status_code == 404
 
 
+def test_o_clique_da_remessa_baixa_a_cenprot_sem_responder(s, monkeypatch):
+    """Anuências, ordens e cancelamentos entram no mesmo botão. Sem rede."""
+    import cenprot_pendencias as PEND
+    _a_cra(monkeypatch, {"desistencias": NADA_DP, "cancelamentos": NADA_CP,
+                         "autorizacoes": NADA_CP})
+    chamadas = []
+
+    def trazer(db, *, dia, quem="", pasta=None):
+        chamadas.append(dia)
+        return [{"especie": "ANUENCIA", "ok": True, "inicio": "2026-10-29",
+                 "fim": dia[:10], "vieram": 2, "entraram": 1, "repetidas": 1,
+                 "sem_titulo": 0, "sem_codigo": 0,
+                 "frase": "Anuência do credor: vieram 2, 1 nova(s) e 1 que já estavam.",
+                 "cor": "success", "erro": ""}]
+
+    def responder(*_a, **_k):
+        raise AssertionError("o clique respondeu à CENPROT")
+
+    monkeypatch.setattr(PEND, "trazer_com_a_cra", trazer)
+    monkeypatch.setattr(PEND, "enviar", responder)
+    html = _clicar(s).get_data(as_text=True)
+    assert chamadas
+    assert "Anuência do credor: vieram 2" in html
+    with _con(s) as con:
+        detalhe = con.execute(
+            "SELECT details FROM audit_logs WHERE action='cenprot_baixar'"
+        ).fetchone()
+    assert detalhe is not None
+    assert "ANUENCIA" in detalhe[0]
+    assert "pelo_clique_da_cra" in detalhe[0]
+
+
 def test_a_lista_dos_pedidos_esta_no_menu_e_abre_vazia(s):
     html = s["c"].get("/protesto").get_data(as_text=True)
     assert "/protesto/cra/pedidos" in html

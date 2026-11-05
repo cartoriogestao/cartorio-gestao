@@ -1026,18 +1026,33 @@ def guardar_comprovante_do_envio(con: sqlite3.Connection, dia: str, *,
             f"do arquivo dos editais do dia — publique o edital primeiro.")
     nome_limpo = Path(str(nome or "")).name.strip()
     ext = Path(nome_limpo).suffix.lower()
+    conteudo = bytes(conteudo or b"")
+    if ext == ".xml":
+        raise AvisoError(
+            "Este é o XML do edital, gerado pelo sistema — não é o "
+            "comprovante. Anexe o PDF (ou a captura) da tela do portal da "
+            "CENPROT que confirma o envio.")
+    # O PDF que a CENPROT exporta (hotfix 04/11/2026): a marca `%PDF-` pode
+    # vir depois de alguns bytes (a norma tolera até 1024), em qualquer caixa,
+    # e o nome pode vir sem extensão. Quem decide é o CONTEÚDO — não o tipo
+    # que o navegador declara, nem a caixa da extensão, nem o `%%EOF` final.
+    e_pdf = b"%pdf-" in conteudo[:1024].lower()
+    if e_pdf:
+        ext = ".pdf"
+        if Path(nome_limpo).suffix.lower() != ".pdf":
+            nome_limpo = f"{nome_limpo or 'comprovante-cenprot'}.pdf"
     if ext not in ASSINATURA_DO_COMPROVANTE:
         raise AvisoError(
             "O comprovante tem de ser PDF, PNG ou JPG — a tela do portal da "
             "CENPROT salva em PDF, ou uma captura dela.")
-    conteudo = bytes(conteudo or b"")
     if not conteudo:
         raise AvisoError("O arquivo do comprovante está vazio.")
     if len(conteudo) > LIMITE_DO_COMPROVANTE:
         raise AvisoError(
             f"O comprovante passa de "
             f"{LIMITE_DO_COMPROVANTE // 1024 // 1024} MB.")
-    if not conteudo.startswith(ASSINATURA_DO_COMPROVANTE[ext]):
+    if not (e_pdf if ext == ".pdf"
+            else conteudo.startswith(ASSINATURA_DO_COMPROVANTE[ext])):
         raise AvisoError(
             f"O arquivo diz ser {ext} e não é — o conteúdo não começa como um "
             f"{ext[1:].upper()}. Salve de novo e anexe.")

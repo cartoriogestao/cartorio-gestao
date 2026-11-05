@@ -49,6 +49,9 @@ def _montar(molde: str, **contexto) -> str:
     for filtro in ("forte", "sem_script", "so_http", "com_links"):
         env.filters[filtro] = lambda texto: texto
     env.filters["filesize"] = str
+    # Os avisos do Protesto leem o recado da tela (#326, a recusa do comprovante do edital dentro do
+    # quadro): sem o Flask, não há recado nenhum.
+    env.globals["get_flashed_messages"] = lambda **_: []
     return env.get_template(molde).render(url_for=_url, csrf_token="t", sv=SERVENTIA, **contexto)
 
 

@@ -296,7 +296,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash(f"Credencial da Unicred gravada ({onde}).", "success")
                 elif f.get("parte") == "parcela":
                     onde = PARCELA.gravar_credencial(
-                        {k: f.get(k) for k in PARCELA.CAMPOS_DA_CREDENCIAL})["onde"]
+                        {k: f.get(k) for k in (
+                            *PARCELA.CAMPOS_DA_CREDENCIAL, PARCELA.CAMPO_DA_MAQUININHA)})["onde"]
                     audit("COBRANCA_CREDENCIAL_PARCELA", "settings", None, {"onde": onde})
                     flash(f"Credencial da Parcela Express gravada ({onde}).", "success")
                 else:

@@ -35,13 +35,14 @@
 <h2>Parcela Express</h2>
 <p>Pix, boleto e cartão no mesmo link, para os atos do caixa. Situação da credencial:
   {% if parcela and parcela.erro %}<span class="badge alta">{{ parcela.erro }}</span>
-  {% elif parcela %}gravada ({{ parcela.onde }}{% if parcela.email %}, {{ parcela.email }}{% endif %})
+  {% elif parcela %}gravada ({{ parcela.onde }}{% if parcela.email %}, {{ parcela.email }}{% endif %}{% if parcela.terminal_id %}, maquininha {{ parcela.terminal_id }}{% endif %})
   {% else %}<strong>não cadastrada</strong>{% endif %}.</p>
 <form method="post" class="form-grid card" autocomplete="off">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <input type="hidden" name="parte" value="parcela">
   {% for k, rotulo in rotulos_parcela.items() %}
-  <label>{{ rotulo }} <input name="{{ k }}" {% if k == 'senha' %}type="password"{% endif %} required></label>
+  <label>{{ rotulo }} <input name="{{ k }}" {% if k == 'senha' %}type="password"{% endif %}{% if k != 'terminal_id' %} required{% endif %}
+    {% if k == 'terminal_id' %}placeholder="código que identifica a maquininha no portal"{% endif %}></label>
   {% endfor %}
   <button type="submit">Gravar a credencial da Parcela Express</button>
 </form>

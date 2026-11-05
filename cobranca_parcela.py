@@ -55,10 +55,12 @@ CAMINHO_DO_TOKEN = "/v2/auth/login"
 NOME_NO_COFRE = "banco_parcela"
 ARQUIVO_DA_CREDENCIAL = "banco_parcela.cred"
 CAMPOS_DA_CREDENCIAL = ("email", "senha", "seller_id")
+CAMPO_DA_MAQUININHA = "terminal_id"
 ROTULOS_DA_CREDENCIAL = {
     "email": "E-mail do portal Parcela Express",
     "senha": "Senha do portal Parcela Express",
     "seller_id": "sellerId do estabelecimento",
+    "terminal_id": "Código da maquininha (terminal_id)",
 }
 PRAZO_SEGUNDOS = 30
 VIDA_DO_TOKEN = 50 * 60
@@ -130,11 +132,22 @@ def conferir_credencial(campos: Mapping[str, Any]) -> dict:
         raise CB.CobrancaError("O e-mail da Parcela Express não está completo.")
     if len(limpos["seller_id"]) < 8:
         raise CB.CobrancaError("O sellerId da Parcela Express está curto demais.")
+    maquina = str(campos.get(CAMPO_DA_MAQUININHA) or "").strip()
+    if maquina and not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", maquina):
+        raise CB.CobrancaError(
+            "O código da maquininha só pode ter letras, números, _ e -.")
+    limpos[CAMPO_DA_MAQUININHA] = maquina
     return limpos
 
 
 def gravar_credencial(campos: Mapping[str, Any], pasta: Any = None) -> dict:
     limpos = conferir_credencial(campos)
+    if not limpos.get(CAMPO_DA_MAQUININHA):
+        try:
+            anterior = credencial(pasta)
+        except BancoError:
+            anterior = {}
+        limpos[CAMPO_DA_MAQUININHA] = str(anterior.get(CAMPO_DA_MAQUININHA) or "").strip()
     cofre = _cofre()
     if cofre is not None:
         try:
@@ -172,7 +185,8 @@ def resumo_da_credencial(pasta: Any = None) -> dict | None:
         campos = credencial(pasta)
     except BancoError:
         return None
-    return {"onde": "arquivo cifrado", "email": campos.get("email", "")}
+    return {"onde": "arquivo cifrado", "email": campos.get("email", ""),
+            "terminal_id": campos.get(CAMPO_DA_MAQUININHA, "")}
 
 
 def transporte_https(prazo: int = PRAZO_SEGUNDOS) -> Transporte:

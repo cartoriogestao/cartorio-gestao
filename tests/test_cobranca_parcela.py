@@ -88,6 +88,15 @@ def test_o_cancelamento_usa_o_id_do_link():
     assert any(c[0] == "POST" and c[1].endswith("/id-real/cancel") for c in t.chamadas)
 
 
+def test_o_codigo_da_maquininha_e_opcional():
+    sem = PX.conferir_credencial(CAMPOS)
+    assert sem["terminal_id"] == ""
+    com = PX.conferir_credencial({**CAMPOS, "terminal_id": " POS-01 "})
+    assert com["terminal_id"] == "POS-01"
+    with pytest.raises(CB.CobrancaError):
+        PX.conferir_credencial({**CAMPOS, "terminal_id": "com espaço"})
+
+
 def test_a_producao_e_a_base_do_portal():
     assert PX.ENDERECOS["producao"] == "https://api-prod.parcelaexpress.com.br"
     assert PX.ENDERECOS["sandbox"].startswith("https://sandbox.")

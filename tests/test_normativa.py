@@ -216,11 +216,23 @@ def test_as_duas_instrucoes_mandam_citar_o_artigo_lido():
         assert "Não cite artigo que não leu" in instrucao
 
 
-def test_nenhum_artigo_e_bloqueado_pela_barreira_de_privacidade():
-    """O texto é público e não traz dado da serventia; um bloqueio tiraria a
-    norma inteira do agente, em vez de um pedaço dela."""
+def test_nenhum_artigo_e_bloqueado_nem_adulterado_pela_barreira():
+    """O texto é público e não traz dado da serventia. Decisão do oficial (05/11/2026): a ferramenta o
+    declara texto público, e a barreira pula as passagens de nome, endereço e dado sensível — antes, cerca
+    de um quarto dos artigos chegava ao modelo com «[PESSOA_01]» no lugar de «em nome do loteador». Só o
+    identificador inequívoco continua trocado: o e-mail institucional do art. 446 do CNN."""
     import ajuda_privacidade as PRIV
+    alterados = []
     for n in N.normas():
         for a in n["artigos"]:
-            PRIV.sanitizar_para_modelo(
-                f"[{N.citacao(n, a)}]\n{N._cortar(a['texto'])}", nomes_livres=False)
+            texto = f"[{N.citacao(n, a)}]\n{N._cortar(a['texto'])}"
+            if PRIV.sanitizar_para_modelo(texto, nomes_livres=False, texto_publico=True) != texto:
+                alterados.append((n["chave"], a["numero"]))
+    assert alterados == [("codigo_nacional_de_normas_cnj", "446")], alterados[:10]
+
+
+def test_a_ferramenta_da_norma_e_texto_publico_e_a_lei_chega_inteira():
+    assert AF.POR_NOME["consultar_norma"].texto_publico is True
+    assert not any(f.texto_publico for f in AF.FERRAMENTAS if f.nome != "consultar_norma")
+    r = AF.executar(_contexto(), "consultar_norma", {"norma": "Lei 6.766", "termo": "em nome do loteador"})
+    assert "em nome do loteador" in r["conteudo"] and "[PESSOA_" not in r["conteudo"], r["conteudo"][:600]

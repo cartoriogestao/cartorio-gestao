@@ -8,6 +8,116 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.11 — o ensaio de atos nas Notas, no RI, no Protesto e no RTD/RCPJ, a receita no selo, a Ajuda que volta a ler o sistema e a base normativa
+
+São 91 mudanças juntadas desde a 3.7.10 (#251 a #344). A suíte inteira rodou em partes no layout novo, na
+máquina da integração: 18.333 verdes, nenhuma falha. O ensaio de atos pedido pelo oficial em
+01/11/2026 — praticar pelas telas os atos que a lei prevê e conferir o que sai — passou pelas Notas, pelo
+Registro de Imóveis, pelo Protesto e pelo RTD/RCPJ, e cada defeito que ele achou foi consertado com a
+decisão do oficial. Os relatórios estão em `docs/ensaio_de_atos/`.
+
+**Atenção ao instalar**
+- **O carnê-leão reconhece a receita no SELO do ato, e não mais no pagamento** (decisão do oficial de
+  03/11/2026). O item pago antes conta no dia do selo; o selado antes e pago depois conta no pagamento; o
+  pago e nunca selado entra em 31/12. A diligência, o arquivamento por folha e a publicação, quando não
+  vão marcados em ato nenhum, contam no primeiro selo do mesmo protocolo depois do pagamento. A tela do
+  carnê-leão mostra, mês a mês, a diferença em relação ao critério de antes.
+- **Colunas novas** nas partes das Notas, no caixa, no RCPJ, na retificação e na usucapião nascem
+  sozinhas na primeira abertura.
+- **O termo do protesto** só diz «pagamento a posteriori» no título de emolumentos diferidos; no pago no
+  balcão a frase não sai. A frase virou peça própria, que se edita na tela de Modelos.
+- **A qualificação assistida do RI está suspensa** até a base normativa ser validada (#310).
+- **A Ajuda responde pela documentação que vem com o sistema** (`docs/`) e pelas **regras da casa**
+  (`docs/REGRAS_DA_CASA.md`). A pasta `DOCUMENTACAO\` e o `CLAUDE.md` que ficaram no servidor, da
+  instalação antiga, **deixam de ser lidos**. Ajuda → Configurar avisa se os documentos não chegaram.
+- **A pasta nova `base_normativa/`** traz o Código de Normas do TJMA, o Código Nacional de Normas do CNJ e
+  as leis da atividade (4,8 MB, um arquivo por norma). Viaja com a atualização.
+- **Mais colunas novas**, que também nascem sozinhas: a fração de cada titular (RI), a moeda estrangeira
+  e os dados do cheque (Protesto), e o domicílio das partes (RTD).
+
+**Notas — o que o ensaio de atos achou e já está certo**
+- Quem comparece por outro (procurador, representante da empresa, pai ou mãe do menor) sai qualificado e
+  fora dos dois lados do negócio, com o instrumento; a linha das assinaturas diz quem assina por quem.
+- O lado de cada parte vem da qualidade da CEP, no masculino e no feminino (doadora, donatária,
+  cessionária); o anuente consente e não vende, e o casal em comunhão vende junto.
+- A emancipação confere os dezesseis anos; o estado civil do testador vem da parte; «sabe | pode» é
+  escolha no testamento; «nome de solteiro(a)» e «Estado do Maranhão» por extenso nas minutas.
+- O advogado no inventário e no divórcio, a CENSEC, a DOI, a revogação e a certidão do testamento
+  conferidos na segunda leva. Sem teor, o ato não vai ao livro.
+
+**Registro de Imóveis**
+- A indisponibilidade averbada na matrícula **barra** a venda, a doação, a hipoteca e os demais atos
+  voluntários, e **avisa** na arrematação, na adjudicação e na partilha. A régua reconhece esses atos
+  pelo nome do modelo da casa e pelo da tabela de naturezas.
+- A prenotação **anterior** aberta sobre a matrícula se cita na lavratura, e o título posterior só se
+  lavra confirmando, com o motivo (fica na auditoria).
+- Os modelos de cancelamento de hipoteca, de extinção de usufruto e de cancelamento de ato perguntam
+  **qual ato se cancela** e o marcam, como o botão «Cancelar este ato»: o ato cancelado sai da certidão
+  de ônus. A lista `ri_cancelamentos_sem_marca.py` acha os cancelamentos antigos sem a marca.
+- A matrícula aberta de imóvel gravado avisa o ônus da origem até a averbação do transporte, e a casa
+  ganhou o modelo **Transporte de ônus da matrícula de origem** (LRP art. 230).
+- A nota com erro se exclui pela tela; a retificação de área acha a matrícula pelo número.
+- A certidão de propriedade traz a **qualificação atual** de cada titular, estado civil inclusive (a da
+  AV de casamento, depois dela), e a dona que a averbação traz de novo sai uma vez só.
+- O quadro de titulares guarda a **fração** de cada um («50%», «1/4»), informada em Partes → Corrigir; a
+  certidão de propriedade a diz, e a ficha avisa quando falta a de alguém ou a soma não fecha 100%.
+
+**Protesto**
+- O mesmo título não se protesta duas vezes: com o outro protestado, barra; só apontado, aponta-se
+  afirmando.
+- Depois do vencimento, a falta de aceite ou de devolução se lavra **por falta de pagamento**, e a tela
+  avisa a troca (Lei 9.492/1997, art. 21).
+- O protesto para fins falimentares intimado por edital só se lavra com a afirmação de que a procura se
+  esgotou.
+- O título da CRA e da CENPROT (diferido) lança sem caixa; todo título apontado recebe a chave da CENPROT;
+  o XML termina com CRLF; o clique da remessa baixa as pendências da Central; a tela avisa o instrumento
+  que falta emitir ou assinar antes do XML; o comprovante do edital aceita o PDF da CENPROT e mostra a
+  recusa dentro do quadro.
+- O recado da sustação concorda com o ato; dois títulos irmãos, um pago e um protestado com o mesmo
+  valor, não são mais acusados de incoerência.
+- O título em **moeda estrangeira** (Lei 9.492/1997, art. 10): a ficha guarda a moeda e o valor de
+  origem, e o valor em reais, convertido, é obrigatório — é o que se cobra e se intima.
+- O **cheque** do balcão pede o banco sacado, o motivo da devolução e a data da apresentação ao banco,
+  salvo o protesto para instruir medida contra o próprio banco (CN-MA art. 910). Os motivos 20, 25, 28,
+  30 e 35 (furto, roubo, extravio, fraude) não se apontam; o cheque de mais de um ano pede o endereço do
+  emitente.
+
+**RTD e RCPJ**
+- A mesma denominação não se inscreve no Livro A; a parecida, só com a fundamentação.
+- O Livro A pergunta a **forma** da pessoa jurídica e avisa quando a natureza diz «empresária» (é da
+  Junta Comercial).
+- A releitura da ficha pergunta a denominação, e o breve relato certifica a lida e confere a leitura
+  pela ordem dos atos.
+- O registro cancelado não abre notificação.
+- Cada parte do registro tem o **domicílio** (cidade e UF), e a ficha do RTD avisa quando ele não aponta
+  para esta circunscrição (LRP art. 130).
+- O título do RTD com **valor declarado** mostra o item da tabela pela faixa do valor (15.2.N).
+
+**Registro Civil**
+- O termo de óbito longo cabe na frente; a folha do livro em ODT com as três colunas e a pauta.
+- O número da D.O. na certidão de óbito; a pesquisa ampla de assentos (livro e folha, pais, declarante);
+  o acervo transcrito se inclui e se completa em lote pela tela, e a carga longa se retoma pelo servidor.
+
+**A Ajuda e os agentes de IA**
+- A consulta da Ajuda estava lenta e respondia pela regra geral: a base de conhecimento procurava os
+  documentos numa pasta que a atualização não leva, e subia vazia. Agora lê `docs/` e as regras da casa,
+  a busca entende a pergunta do balcão, e a resposta diz quando foi cortada ou não terminou.
+- A Ajuda e o agente do sistema **leem a norma e citam o artigo** (o CN-MA, o CNN, a LRP, a Lei do
+  Protesto, o Código Civil, o CPC e as demais), só o trecho pertinente a cada pergunta.
+- O manual (`docs/MANUAL.md`) acompanha o que entrou desde a 3.7.10.
+
+**Caixa, despesas e financeiro**
+- Quitar o item com o pagamento feito em data anterior, com a aprovação de outra pessoa.
+- O item revogado da tabela aparece «REVOGADO – sem valor» e não entra no protocolo.
+- Os anexos de Pix e de boleto se leem, e o faturamento do Portal do Selo se confere; o fechamento por
+  selo e a apuração fiscal incompleta se identificam.
+- Os documentos retirados voltam à ficha do protocolo; a correção de pagamento de despesa pede nova
+  autorização.
+
+**Segurança e testes**
+- Alertas do CodeQL fechados nas despesas (as recusas respondem frase fixa).
+- Testes que dependiam da data e do SQLite da máquina deixaram de depender.
+
 ## 3.7.10 — o Registro Civil conferido com a lei, atualizar pelo GitHub e a tela ajustável
 
 São 17 mudanças juntadas desde a 3.7.9 (#233 a #249). A suíte inteira rodou no layout novo, na máquina

@@ -407,6 +407,17 @@ def _mensagens_anthropic(conversa: list[dict]) -> list[dict]:
             conteudo.append({"type": "text", "text": str(evento.get("texto") or "")})
             saida.append({"role": "user", "content": conteudo})
         elif tipo == "assistant":
+            # O TURNO VOLTA COMO VEIO QUANDO QUEM CHAMA O GUARDOU (05/11/2026,
+            # decisão do oficial). O modelo pensa antes de pedir a leitura, e
+            # o pensamento só vale no turno seguinte se voltar INTACTO, na
+            # ordem e com a assinatura: remontado só com texto e ferramenta,
+            # ele se perdia a cada leitura e a resposta final saía de quem
+            # tinha esquecido por que leu. `conteudo_original` é o `content`
+            # da resposta, guardado por `ler_resposta`.
+            if evento.get("conteudo_original"):
+                saida.append({"role": "assistant",
+                              "content": list(evento["conteudo_original"])})
+                continue
             blocos: list[dict] = []
             if evento.get("texto"):
                 blocos.append({"type": "text", "text": str(evento["texto"])})
@@ -601,6 +612,10 @@ def ler_resposta(provedor: Any, bruto: bytes) -> dict:
         entrada = int(uso.get("input_tokens") or 0)
         saida = int(uso.get("output_tokens") or 0)
         parou = str(dados.get("stop_reason") or "")
+        # O CONTEÚDO INTEIRO, PENSAMENTO INCLUSIVE, para quem quiser devolvê-lo
+        # no turno seguinte (ver `_mensagens_anthropic`). Só os blocos que são
+        # dicionário: o resto não volta à API de qualquer forma.
+        original = [b for b in blocos if isinstance(b, dict)]
     else:
         escolhas = dados.get("choices") or []
         if not escolhas:
@@ -620,8 +635,10 @@ def ler_resposta(provedor: Any, bruto: bytes) -> dict:
         entrada = int(uso.get("prompt_tokens") or 0)
         saida = int(uso.get("completion_tokens") or 0)
         parou = str(escolha.get("finish_reason") or "")
+        original = []
 
     return {"texto": texto, "chamadas": chamadas, "parou": parou,
+            "conteudo_original": original,
             "entrada": entrada, "saida": saida,
             "modelo": str(dados.get("model") or "")}
 

@@ -844,3 +844,122 @@ def test_a_leitura_do_relato_com_o_banco_e_a_parte_e_so_do_admin(monkeypatch):
     assert {"consultar_banco", "ler_codigo"} <= ferramentas
     with pytest.raises(AP.ProblemaError, match="só do administrador"):
         _diagnostico(monkeypatch, papel="MANAGER", com_banco=True)
+
+
+# ------------------------------------- o que a ajuda diz quando não terminou
+
+# 05/11/2026: o oficial reclamou que a consulta «demora muito e responde com
+# respostas genéricas». Parte era a resposta cortada no limite, ou o «vou
+# procurar…» do último turno, mostrados como se fossem resposta inteira.
+
+
+def test_a_resposta_cortada_no_limite_diz_que_foi_cortada(monkeypatch):
+    con = banco()
+    monkeypatch.setattr(PROV, "conversar", lambda *a, **k: {
+        "texto": "Para quitar com data anterior, abra", "entrada": 1,
+        "saida": 1, "chamadas": [], "parou": "max_tokens"})
+    r = AJ.consultar(_DbDeMentira(con), pergunta="como quito?",
+                     pasta_de_dados=".", agora=AGORA, papel="ADMIN")
+    assert r["resposta"].startswith("Para quitar com data anterior, abra")
+    assert AJ.AVISO_RESPOSTA_CORTADA in r["resposta"]
+
+
+def test_a_resposta_inteira_nao_ganha_aviso(monkeypatch):
+    con = banco()
+    monkeypatch.setattr(PROV, "conversar", lambda *a, **k: {
+        "texto": "Pelo «Novo ato» da matrícula.", "entrada": 1, "saida": 1,
+        "chamadas": [], "parou": "end_turn"})
+    r = AJ.consultar(_DbDeMentira(con), pergunta="onde lavro?",
+                     pasta_de_dados=".", agora=AGORA, papel="ADMIN")
+    assert r["resposta"] == "Pelo «Novo ato» da matrícula."
+
+
+def test_o_teto_de_leituras_acabado_diz_que_nao_chegou_a_resposta(monkeypatch):
+    con = banco()
+    pedidos = []
+
+    def sempre_le(pasta, *, sistema, conversa, ferramentas, **resto):
+        pedidos.append(1)
+        return {"texto": "Vou procurar mais.", "entrada": 1, "saida": 1,
+                "chamadas": [{"id": f"c{len(pedidos)}",
+                              "nome": "estado_do_sistema", "argumentos": {}}]}
+
+    monkeypatch.setattr(PROV, "conversar", sempre_le)
+    monkeypatch.setattr(FER, "executar", lambda ctx, nome, argumentos: {
+        "ferramenta": nome, "erro": False, "conteudo": "ok"})
+    r = AJ.consultar(_DbDeMentira(con), pergunta="como está?",
+                     pasta_de_dados=".", agora=AGORA, papel="ADMIN")
+    assert len(pedidos) == AJ.TETO_DE_TURNOS_DA_AJUDA
+    assert AJ.AVISO_TETO_DE_LEITURAS.format(
+        n=AJ.TETO_DE_TURNOS_DA_AJUDA) in r["resposta"]
+
+
+def test_cada_turno_da_ajuda_pede_o_teto_de_saida_dela(monkeypatch):
+    """Decisão do oficial (05/11/2026): 8.000, e não os 2.000 do transporte."""
+    con = banco()
+    tetos = []
+
+    def espia(pasta, *, maximo_de_saida=2000, **resto):
+        tetos.append(maximo_de_saida)
+        return {"texto": "ok", "entrada": 1, "saida": 1, "chamadas": []}
+
+    monkeypatch.setattr(PROV, "conversar", espia)
+    AJ.consultar(_DbDeMentira(con), pergunta="como está?",
+                 pasta_de_dados=".", agora=AGORA, papel="ADMIN")
+    assert tetos == [AJ.MAXIMO_DE_SAIDA_DA_AJUDA] == [8000]
+
+
+def test_o_pensamento_volta_intacto_no_turno_seguinte(monkeypatch):
+    """Decisão do oficial (05/11/2026): o turno com leitura volta como veio,
+    pensamento e assinatura inclusive — e na ordem em que veio."""
+    con = banco()
+    original = [
+        {"type": "thinking", "thinking": "preciso do estado",
+         "signature": "assinatura-de-teste"},
+        {"type": "tool_use", "id": "c1", "name": "estado_do_sistema",
+         "input": {}},
+    ]
+    pedidos = []
+
+    def leitor(pasta, *, sistema, conversa, ferramentas, **resto):
+        pedidos.append([dict(e) for e in conversa])
+        if len(pedidos) == 1:
+            return {"texto": "", "entrada": 1, "saida": 1,
+                    "chamadas": [{"id": "c1", "nome": "estado_do_sistema",
+                                  "argumentos": {}}],
+                    "conteudo_original": original}
+        return {"texto": "pronto", "entrada": 1, "saida": 1, "chamadas": []}
+
+    monkeypatch.setattr(PROV, "conversar", leitor)
+    monkeypatch.setattr(FER, "executar", lambda ctx, nome, argumentos: {
+        "ferramenta": nome, "erro": False, "conteudo": "ok"})
+    AJ.consultar(_DbDeMentira(con), pergunta="como está?",
+                 pasta_de_dados=".", agora=AGORA, papel="ADMIN")
+
+    mensagens = PROV._mensagens_anthropic(pedidos[1])
+    assert mensagens[1] == {"role": "assistant", "content": original}
+    assert mensagens[2]["content"][0]["tool_use_id"] == "c1"
+
+
+def test_ler_resposta_guarda_o_conteudo_inteiro_da_anthropic():
+    import json
+    bruto = json.dumps({"model": "m", "stop_reason": "tool_use",
+                        "usage": {"input_tokens": 3, "output_tokens": 4},
+                        "content": [
+                            {"type": "thinking", "thinking": "x",
+                             "signature": "s"},
+                            {"type": "text", "text": "vou ler"},
+                            {"type": "tool_use", "id": "t1", "name": "f",
+                             "input": {"a": 1}}]}).encode()
+    lida = PROV.ler_resposta("claude", bruto)
+    assert [b["type"] for b in lida["conteudo_original"]] == [
+        "thinking", "text", "tool_use"]
+    assert lida["texto"] == "vou ler"
+    assert lida["parou"] == "tool_use"
+
+
+def test_a_instrucao_nao_manda_o_balcao_ler_o_codigo():
+    """O balcão não tem a leitura do código; a instrução mandava «veja o
+    código» e o modelo gastava turno procurando o que não podia ler."""
+    assert "veja o código ou as telas" not in AJ.INSTRUCAO
+    assert "Use só as ferramentas que vieram na sua lista" in AJ.INSTRUCAO

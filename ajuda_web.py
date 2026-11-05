@@ -60,6 +60,7 @@ O ANEXO DE ARQUIVO À PERGUNTA SAIU EM 08/09/2026
 """
 from __future__ import annotations
 
+import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -395,6 +396,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         except (AJ.AjudaError, PROV.AgenteError) as erro:
             return jsonify({"ok": False, "erro": str(erro)}), 200
         except Exception:
+            # A JANELA REGISTRA A FALHA, COMO A TELA INTEIRA (05/11/2026). Ela
+            # devolvia a frase e engolia o motivo: a pergunta feita de dentro
+            # de outra tela falhava sem deixar rastro, e a reclamação do
+            # oficial («demora e responde genérico») não tinha log para
+            # conferir. O detalhe fica só no log; a tela recebe a frase fixa.
+            logging.getLogger("ajuda").exception(
+                "falha ao chamar provedor pela janela (detalhe so no log)")
             return jsonify({
                 "ok": False,
                 "erro": ("A ajuda nao conseguiu falar com o provedor de IA agora. "
@@ -1035,7 +1043,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             tem_chave=PROV.tem_chave(pasta_de_dados(), escolha["provedor"]),
             caminho_da_chave=PROV.caminho_da_credencial(pasta_de_dados()),
             teto=AJ.TETO_DE_CONSULTAS_POR_DIA,
-            teto_de_tokens=AJ.TETO_DE_TOKENS_POR_DIA, mapa=mapa)
+            teto_de_tokens=AJ.TETO_DE_TOKENS_POR_DIA, mapa=mapa,
+            # A BIBLIOTECA VAZIA APARECE A QUEM CONFIGURA (05/11/2026). O aviso
+            # já existia e ia só para o modelo, no contexto da consulta: a base
+            # ficou vazia em toda instalação atualizada e ninguém viu.
+            biblioteca_vazia=PROJ.conferir_biblioteca())
 
     def _grava_chave() -> None:
         """A chave de um provedor. **ESCREVE EM DISCO.**

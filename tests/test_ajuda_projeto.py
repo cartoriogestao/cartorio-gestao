@@ -35,11 +35,13 @@ pytestmark = pytest.mark.lento  # inventaria a arvore inteira; fica na suite com
 
 pytestmark = pytest.mark.lento  # gate rapido: pytest -m "not lento" — DROP TABLE
 RAIZ = Path(__file__).resolve().parent.parent
-# AS REGRAS E A DOCUMENTAÇÃO DA CASA FICAM FORA DO GITHUB (decisão do
-# oficial): no clone público este módulo PULA, em vez de falhar inteiro
-# por falta do material que ele lê (23/10/2026).
-if not (RAIZ / "CLAUDE.md").is_file() or not (RAIZ / "DOCUMENTACAO").is_dir():
-    pytest.skip("CLAUDE.md e DOCUMENTACAO/ ficam fora do repositório público",
+# AS REGRAS E A DOCUMENTAÇÃO DA CASA ESTÃO NO REPOSITÓRIO DESDE 05/11/2026
+# (decisão do oficial: «vamos fazer parte do repositório do github que é
+# clonado»), em `docs/` e `docs/REGRAS_DA_CASA.md`. Até ali este módulo
+# PULAVA inteiro no clone público — e foi assim que a base vazia passou
+# sem nenhum teste ver.
+if not (RAIZ / "docs" / "REGRAS_DA_CASA.md").is_file():
+    pytest.skip("docs/REGRAS_DA_CASA.md não está nesta cópia",
                 allow_module_level=True)
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(RAIZ / "tests"))
@@ -89,10 +91,12 @@ def test_os_documentos_saem_da_pasta_e_nao_de_uma_lista():
     motivo escrito lá: quem lê a lista velha não é um operador que estranha, é
     uma máquina que responde com convicção."""
     docs = PROJ.documentos()
-    assert docs, "a pasta DOCUMENTACAO não foi achada"
+    assert docs, "a pasta docs/ não foi achada"
     nomes = {d["arquivo"] for d in docs}
-    na_pasta = {p.name for p in (RAIZ / "DOCUMENTACAO").glob("*.md")}
-    assert nomes == na_pasta
+    # COM AS SUBPASTAS, e SEM o arquivo das regras, que é outra fonte (05/11/2026).
+    pasta = RAIZ / "docs"
+    na_pasta = {p.relative_to(pasta).as_posix() for p in pasta.rglob("*.md")}
+    assert nomes == na_pasta - {"REGRAS_DA_CASA.md"}
 
 
 def test_a_documentacao_viaja_com_o_sistema():
@@ -102,8 +106,12 @@ def test_a_documentacao_viaja_com_o_sistema():
     Foi o que se mediu ao construir isto: havia duas pastas, 67 documentos na
     raiz do projeto e 13 dentro, e só a de dentro viaja no `.cgu`. O servidor
     nunca teve um único documento."""
-    assert (RAIZ / "DOCUMENTACAO").is_dir()
-    assert len(list((RAIZ / "DOCUMENTACAO").glob("*.md"))) >= 70
+    # A PASTA É `docs/` DESDE A ABERTURA DO CÓDIGO, e a ajuda passou a lê-la
+    # em 05/11/2026 — até ali procurava a `DOCUMENTACAO/`, que o pacote não
+    # leva, e subia vazia.
+    assert (RAIZ / "docs").is_dir()
+    assert len(list((RAIZ / "docs").rglob("*.md"))) >= PROJ.PISO_DE_DOCUMENTOS
+    assert PROJ.conferir_biblioteca() == ""
 
 
 def test_cada_documento_traz_titulo():
@@ -152,7 +160,7 @@ def test_o_indice_nao_leva_a_primeira_frase_dos_documentos():
         "o índice dos documentos cresceu de mais — confira se a primeira frase "
         f"voltou a ele ({len(indice)} caracteres, teto {teto})")
     d = PROJ.documentos()[0]
-    texto = (RAIZ / "DOCUMENTACAO" / d["arquivo"]).read_text(encoding="utf-8")
+    texto = (PROJ.PASTA / d["arquivo"]).read_text(encoding="utf-8")
     prosa = [ln.strip() for ln in texto.splitlines()
              if len(ln.strip()) > 80 and not ln.lstrip().startswith("#")]
     assert prosa, f"{d['arquivo']} não tem prosa para conferir"
@@ -170,9 +178,9 @@ def test_a_busca_acha_o_trecho_e_diz_de_que_documento_e():
     """O que a primeira frase do índice fazia mal, e isto faz bem: achar o
     assunto DENTRO de um documento de cem mil caracteres, e dizer onde."""
     achado = PROJ.procurar_nos_documentos("impressora")
-    assert "ROTEIRO_3.6.65.md" in achado
+    assert "tecnico/ROTEIRO_3.6.65.md" in achado
     assert "linha(s) com «impressora»" in achado
-    assert "[ROTEIRO_3.6.65.md:" in achado       # arquivo E linha, que é o endereço
+    assert "[tecnico/ROTEIRO_3.6.65.md:" in achado   # arquivo E linha: o endereço
 
 
 def test_a_busca_acha_sem_acento_o_que_esta_escrito_com_acento():
@@ -218,13 +226,27 @@ def test_o_nome_do_documento_nao_vira_caminho():
     assert PROJ.documento("/etc/passwd") is None
     assert PROJ.documento("app.py") is None          # não é `.md`
     assert PROJ.documento("nao_existe_mesmo.md") is None
+    # com as subpastas no índice, o nome com barra passou a valer — e só o que
+    # o índice mediu: o `..` no meio não acha documento nenhum
+    assert PROJ.documento("tecnico/../MANUAL.md") is None
+    assert PROJ.documento("../docs/MANUAL.md") is None
+    assert PROJ.documento("..\\app.md") is None
 
 
 def test_um_documento_pedido_pelo_nome_vem_inteiro():
     doc = PROJ.documento("MODELOS_DA_CASA.md")
     assert doc is not None
-    assert doc["arquivo"] == "MODELOS_DA_CASA.md"
+    # O NOME SOLTO ACHA O DOCUMENTO DA SUBPASTA, e a resposta diz onde ele mora.
+    assert doc["arquivo"] == "tecnico/MODELOS_DA_CASA.md"
     assert len(doc["texto"]) > 500
+    assert PROJ.documento("tecnico/MODELOS_DA_CASA.md") == doc
+
+
+def test_nome_solto_repetido_em_duas_subpastas_nao_escolhe_sozinho():
+    """`README.md` existe em `decisoes/` e em `tecnico/`: escolher um seria a
+    ferramenta decidindo o que a pergunta era."""
+    assert PROJ.documento("README.md") is None
+    assert PROJ.documento("decisoes/README.md") is not None
 
 
 def test_documento_grande_e_cortado_avisando():
@@ -334,14 +356,22 @@ def test_o_contexto_leva_o_indice_das_regras_da_casa(casa):
     assert secao["titulo"] in texto, "o índice das regras não chegou ao contexto"
     # o texto das seções não vai: quem quiser pede pelo número
     corpo = REGRAS.ler(str(secao["n"]))
-    longa = [linha for linha in corpo.splitlines() if len(linha.strip()) > 120]
+    longa = [linha for linha in corpo.splitlines()
+             if len(linha.strip()) > 60 and not linha.lstrip().startswith("#")]
     assert longa and longa[0].strip() not in texto
 
 
-def test_o_contexto_avisa_quando_o_material_escrito_ficou_para_tras(casa):
+def test_o_contexto_avisa_quando_o_material_escrito_ficou_para_tras(
+        casa, monkeypatch):
     """Rodando uma versão à frente do arquivo das regras, o aviso aparece — e
     ele aparece NO CONTEXTO, porque quem lê a resposta precisa saber que a
     própria ajuda está apoiada em material velho."""
+    # O ARQUIVO REAL NÃO TEM CARIMBO DE VERSÃO DESDE 05/11/2026 (ver
+    # `test_ajuda_regras`): aqui o carimbo é dado, e o que se mede é o caminho
+    # do aviso até o contexto.
+    import ajuda_regras as REGRAS
+    monkeypatch.setattr(REGRAS, "carimbo", lambda: {
+        "arquivo": "regras", "versao": "3.6.130", "testes": "", "aprovados": ""})
     con = _con(casa)
     texto = PROJ.para_a_consulta(con, versao="99.0.0")
     assert "material escrito pode estar atrás" in texto
@@ -438,7 +468,7 @@ def test_a_tela_recusa_sair_da_pasta(casa):
     maior = max(REGRAS._secoes(), key=lambda s: max((len(x) for x in s["linhas"]),
                                                     default=0))
     linha = max((x.strip() for x in maior["linhas"]), key=len)
-    assert len(linha) > 120, linha
+    assert len(linha) > 60, linha
     assert linha not in html
 
 

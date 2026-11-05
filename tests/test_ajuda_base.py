@@ -57,11 +57,13 @@ from pathlib import Path
 import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
-# AS REGRAS E A DOCUMENTAÇÃO DA CASA FICAM FORA DO GITHUB (decisão do
-# oficial): no clone público este módulo PULA, em vez de falhar inteiro
-# por falta do material que ele lê (23/10/2026).
-if not (RAIZ / "CLAUDE.md").is_file() or not (RAIZ / "DOCUMENTACAO").is_dir():
-    pytest.skip("CLAUDE.md e DOCUMENTACAO/ ficam fora do repositório público",
+# AS REGRAS E A DOCUMENTAÇÃO DA CASA ESTÃO NO REPOSITÓRIO DESDE 05/11/2026
+# (decisão do oficial: «vamos fazer parte do repositório do github que é
+# clonado»), em `docs/` e `docs/REGRAS_DA_CASA.md`. Até ali este módulo
+# PULAVA inteiro no clone público — e foi assim que a base vazia passou
+# sem nenhum teste ver.
+if not (RAIZ / "docs" / "REGRAS_DA_CASA.md").is_file():
+    pytest.skip("docs/REGRAS_DA_CASA.md não está nesta cópia",
                 allow_module_level=True)
 sys.path.insert(0, str(RAIZ))
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
@@ -156,8 +158,11 @@ def test_a_base_nao_carrega_documento_de_outra_pasta_da_casa():
     r = BASE.carregar()
     origens = {f["origem"] for f in BASE.fontes()}
     assert BASE.NOME_DAS_REGRAS in origens
-    na_pasta = {p.name for p in BASE.PASTA_DOS_DOCUMENTOS.glob("*.md")}
-    assert origens - {BASE.NOME_DAS_REGRAS} == na_pasta
+    # COM AS SUBPASTAS, desde 05/11/2026: em `docs/` elas são prosa da casa
+    # (as decisões, os relatórios técnicos, o ensaio de atos).
+    pasta = BASE.PASTA_DOS_DOCUMENTOS
+    na_pasta = {p.relative_to(pasta).as_posix() for p in pasta.rglob("*.md")}
+    assert origens - {BASE.NOME_DAS_REGRAS} == na_pasta - {BASE.NOME_DAS_REGRAS}
     assert r["total_de_caracteres"] > 0
 
 
@@ -195,11 +200,11 @@ def test_o_endereco_que_ela_devolve_aponta_para_a_linha_certa():
 def test_o_endereco_das_regras_leva_a_secao_e_nao_a_um_numero_solto():
     """Nas regras o endereço é a SEÇÃO, com o número e o título.
 
-    Número solto não se encontra no `CLAUDE.md`, que tem 42 seções e nenhum
-    marcador de linha; a seção se encontra.
+    Número solto não se encontra no arquivo das regras, que não tem marcador
+    de linha; a seção se encontra.
     """
-    achado = BASE.buscar("carimbo", fonte=BASE.FONTE_REGRA, limite=5)
-    assert achado["achados"], "as regras não falaram de «carimbo»"
+    achado = BASE.buscar("selo", fonte=BASE.FONTE_REGRA, limite=5)
+    assert achado["achados"], "as regras não falaram de «selo»"
     for a in achado["achados"]:
         endereco = BASE._endereco(a)
         assert endereco.startswith("regras, seção ")
@@ -678,3 +683,36 @@ def test_alterar_verbete_que_outra_tela_apaga_no_meio_recusa():
             c.close()
         assert isinstance(saida.get("erro"), BASE.BaseError), saida
         assert "não existe mais" in str(saida["erro"])
+
+
+# ----------------------------- a pergunta do balcão, como o modelo a passa
+
+# 05/11/2026: a base procurava em `DOCUMENTACAO/`, que o pacote não leva, e
+# subia vazia; e a busca exigia TODAS as palavras na mesma linha. As duas
+# perguntas-padrão do oficial não achavam nada.
+
+
+def test_duas_palavras_continuam_exigindo_as_duas_e_mais_exigem_metade():
+    assert BASE._minimo_de_palavras(["selo", "civil"]) == 2
+    assert BASE._minimo_de_palavras(["a1", "b1", "c1"]) == 2
+    assert BASE._minimo_de_palavras(["a1", "b1", "c1", "d1", "e1"]) == 3
+
+
+def test_palavra_de_pergunta_nao_conta_como_assunto():
+    assert BASE._palavras("como faco a quitacao no sistema") == ["quitacao"]
+
+
+def test_onde_lavro_o_cancelamento_de_hipoteca_acha_o_caminho():
+    BASE.carregar(forcar=True)
+    achado = BASE.buscar("onde lavro o cancelamento de hipoteca?", limite=20)
+    textos = " ".join(a["texto"] for a in achado["achados"])
+    assert "AV-CANCELAMENTO-HIPOTECA" in textos, textos[:500]
+
+
+def test_quitacao_com_data_anterior_acha_a_regra_da_casa_primeiro():
+    BASE.carregar(forcar=True)
+    achado = BASE.buscar(
+        "como faço a quitação com data de pagamento anterior?", limite=10)
+    assert achado["achados"], "a pergunta do balcão não achou nada"
+    primeiro = achado["achados"][0]
+    assert primeiro["fonte"] == BASE.FONTE_REGRA, primeiro

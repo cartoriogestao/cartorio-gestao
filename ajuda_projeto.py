@@ -217,18 +217,30 @@ def procurar_nos_documentos(termo: str, *, limite: int = LIMITE_DA_BUSCA) -> str
 
 
 def documento(nome: str) -> dict | None:
-    """O texto de UM documento, pelo nome do arquivo.
+    """O texto de UM documento, pelo nome com que o índice o mostra.
 
-    O NOME NAO VIRA CAMINHO. `Path(nome).name` descarta qualquer `..` ou barra:
-    sem isso, um nome vindo da tela poderia ler arquivo de fora da pasta — e
+    O NOME NAO VIRA CAMINHO. Ele é procurado na lista MEDIDA da pasta
+    (`BASE.arquivos_dos_documentos`), e não montado: `..`, barra invertida ou
+    caminho absoluto não acham nada, porque não há documento com esse nome —
+    sem isso, um nome vindo da tela poderia ler arquivo de fora da pasta, e
     esta funcao existe justamente para alimentar uma consulta que sai da casa.
+
+    O NOME SOLTO TAMBÉM SERVE (05/11/2026). Com as subpastas no índice, o
+    documento se chama `tecnico/AJUDA_DO_SISTEMA.md`; quem pedir só
+    `AJUDA_DO_SISTEMA.md` o recebe, desde que só um arquivo tenha esse nome.
     """
-    seguro = Path(str(nome or "")).name
-    if not seguro.lower().endswith(".md"):
+    pedido = str(nome or "").strip().lower()
+    if not pedido.endswith(".md"):
         return None
-    caminho = PASTA / seguro
-    if not caminho.is_file():
+    por_nome = {BASE.nome_do_documento(c).lower(): c
+                for c in BASE.arquivos_dos_documentos()}
+    caminho = por_nome.get(pedido)
+    if caminho is None and "/" not in pedido:
+        soltos = [c for c in por_nome.values() if c.name.lower() == pedido]
+        caminho = soltos[0] if len(soltos) == 1 else None
+    if caminho is None:
         return None
+    seguro = BASE.nome_do_documento(caminho)
     texto = caminho.read_text(encoding="utf-8", errors="replace")
     cortado = len(texto) > LIMITE_DO_DOCUMENTO
     if cortado:

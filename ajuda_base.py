@@ -28,7 +28,7 @@ O QUE ESTAVA ACONTECENDO, E O CUSTO ESTAVA MEDIDO NA DIREÇÃO OPOSTA
 
 O QUE A BASE É
     O corpus da prosa desta casa — os **documentos do projeto**
-    (`DOCUMENTACAO/`), as **regras da casa** (`CLAUDE.md`) e o **que o oficial
+    (`docs/`), as **regras da casa** (`docs/REGRAS_DA_CASA.md`) e o **que o oficial
     escreve** (`aj_verbetes`) — lido, quebrado em blocos e normalizado **uma
     vez**, e procurado em memória a partir daí. Ela se reconstrói sozinha
     quando algum arquivo muda.
@@ -95,8 +95,22 @@ RAIZ = Path(__file__).resolve().parent
 # regras moram aqui porque quem os localiza e os lê é esta base — e ter o
 # caminho escrito em dois módulos é a mesma família das duas listas que
 # envelhecem em lugares diferentes.
-PASTA_DOS_DOCUMENTOS = RAIZ / "DOCUMENTACAO"
-NOME_DAS_REGRAS = "CLAUDE.md"
+#
+# A PASTA É `docs/`, E NÃO `DOCUMENTACAO/` (05/11/2026). A documentação foi
+# para `docs/` na abertura do código (3.7.2), e esta linha ficou apontando para
+# a pasta antiga, que o pacote não leva: a base subia VAZIA em toda instalação
+# atualizada, as quatro leituras de documento do balcão voltavam «não achei», e
+# a ajuda respondia pela regra geral, depois de gastar turnos procurando. O
+# oficial reclamou da lentidão e das respostas genéricas; a causa era esta.
+PASTA_DOS_DOCUMENTOS = RAIZ / "docs"
+#
+# E AS REGRAS SÃO `docs/REGRAS_DA_CASA.md`, E NÃO O `CLAUDE.md` (05/11/2026).
+# Decisão do oficial: «vamos fazer parte do repositório do github que é
+# clonado». A base vem do que está no repositório, e não de arquivo solto no
+# servidor: o `CLAUDE.md` e a `DOCUMENTACAO\` que ficaram lá, da árvore
+# privada, são de antes e NÃO são mais lidos — nem como reserva, porque
+# reserva velha que responde é carimbo que mente.
+NOME_DAS_REGRAS = "REGRAS_DA_CASA.md"
 
 FONTE_DOCUMENTO = "DOCUMENTO"
 FONTE_REGRA = "REGRA"
@@ -203,9 +217,36 @@ def _palavras(procurado: str) -> list[str]:
 
     Quando o termo é uma palavra só, esta lista sai vazia e a busca fica
     exatamente o que sempre foi — casamento por trecho.
+
+    A PALAVRA DE PERGUNTA SAI (05/11/2026). O modelo passa a pergunta do
+    balcão quase inteira como termo — «como faço a quitação com data de
+    pagamento anterior» —, e «como», «faço» e «sistema» têm quatro letras ou
+    mais sem dizer nada do assunto: contavam como palavra a exigir.
     """
     return [p for p in re.findall(r"[0-9a-z]+", procurado)
-            if len(p) >= 4 and p != procurado]
+            if len(p) >= 4 and p != procurado and p not in PALAVRAS_DE_PERGUNTA]
+
+
+# AS PALAVRAS QUE A PERGUNTA TRAZ E O ASSUNTO NÃO (05/11/2026). Já sem acento
+# e em minúscula, como `sem_acento` as deixa. Lista curta de propósito: cada
+# uma aqui é uma palavra que a busca deixa de exigir.
+PALAVRAS_DE_PERGUNTA = frozenset({
+    "como", "onde", "quando", "qual", "quais", "faco", "fazer", "faz",
+    "posso", "pode", "preciso", "tenho", "devo", "para", "pelo", "pela",
+    "sobre", "este", "esta", "esse", "essa", "isso", "isto", "sistema", "tela",
+})
+
+
+def _minimo_de_palavras(palavras: list[str]) -> int:
+    """Quantas palavras soltas uma linha precisa trazer para ser achado.
+
+    ATÉ DUAS, TODAS — como sempre foi. DE TRÊS PARA CIMA, METADE (05/11/2026),
+    e nunca menos de duas. Exigir todas numa linha só fazia «quitação data
+    pagamento anterior» achar ZERO linhas num manual que fala das quatro em
+    linhas vizinhas; e uma palavra sozinha já é a busca por trecho, que acha
+    demais. A linha com mais palavras ganha da que tem menos (`_pontuar`).
+    """
+    return len(palavras) if len(palavras) <= 2 else max(2, -(-len(palavras) // 2))
 
 
 def _pontuar(linha_norm: str, procurado: str, palavras: list[str]) -> int:
@@ -218,11 +259,12 @@ def _pontuar(linha_norm: str, procurado: str, palavras: list[str]) -> int:
     estável e o resto do mundo não tem como ser medido.
     """
     inteiro = bool(procurado) and procurado in linha_norm
-    if not inteiro and (not palavras or any(p not in linha_norm
-                                            for p in palavras)):
+    presentes = [p for p in palavras if p in linha_norm]
+    if not inteiro and (not palavras
+                        or len(presentes) < _minimo_de_palavras(palavras)):
         return 0
-    pontos = 1000 if inteiro else 10 * len(palavras)
-    ocorrencias = sum(linha_norm.count(p) for p in (palavras or [procurado]))
+    pontos = 1000 if inteiro else 10 * len(presentes)
+    ocorrencias = sum(linha_norm.count(p) for p in (presentes or [procurado]))
     return pontos + min(ocorrencias, 9)
 
 
@@ -230,18 +272,14 @@ def _pontuar(linha_norm: str, procurado: str, palavras: list[str]) -> int:
 
 
 def caminhos_das_regras() -> list[Path]:
-    """Onde o arquivo das regras pode estar, em ordem.
+    """Onde o arquivo das regras pode estar: em `docs/`, e só ali.
 
-    A primeira é a instalação — o `.cgu` e o `ATUALIZAR_SISTEMA.cmd` copiam o
-    arquivo para a raiz do programa. As outras duas são a árvore de
-    desenvolvimento, onde ele de fato mora: quem o lê hoje é o editor, e mover
-    seria quebrar quem o lê.
+    UM LUGAR SÓ DESDE 05/11/2026. Eram três — a raiz do programa, a pasta de
+    cima e a raiz do projeto —, porque o `CLAUDE.md` morava fora do pacote. As
+    regras agora estão no repositório, e procurar acima da instalação acharia o
+    `CLAUDE.md` velho que ficou no servidor (ver `NOME_DAS_REGRAS`).
     """
-    return [
-        RAIZ / NOME_DAS_REGRAS,                # a instalacao
-        RAIZ.parent / NOME_DAS_REGRAS,         # SERVIDOR\
-        RAIZ.parent.parent / NOME_DAS_REGRAS,  # a raiz do projeto
-    ]
+    return [PASTA_DOS_DOCUMENTOS / NOME_DAS_REGRAS]
 
 
 def arquivo_das_regras() -> Path | None:
@@ -282,30 +320,50 @@ def titulo_de(caminho: Path) -> str:
     return caminho.stem
 
 
+def arquivos_dos_documentos() -> list[Path]:
+    """Os `.md` da pasta dos documentos, COM as subpastas, em ordem. Só lê.
+
+    AS SUBPASTAS ENTRAM (05/11/2026). Em `docs/` elas são prosa da casa: as
+    decisões (`decisoes/`), os relatórios técnicos (`tecnico/`, a maior parte do
+    que a antiga `DOCUMENTACAO/` tinha) e o ensaio de atos. Ficar só na raiz
+    deixaria de fora as decisões — que são, no código aberto, as regras da casa.
+    """
+    pasta = PASTA_DOS_DOCUMENTOS
+    if not pasta.is_dir():
+        return []
+    # AS REGRAS MORAM NA MESMA PASTA E SÃO OUTRA FONTE: entrar também como
+    # documento as poria duas vezes em cada busca.
+    regras = pasta / NOME_DAS_REGRAS
+    return sorted((c for c in pasta.rglob("*.md") if c != regras),
+                  key=lambda c: c.relative_to(pasta).as_posix().lower())
+
+
+def nome_do_documento(caminho: Path) -> str:
+    """O nome com que o documento aparece: o caminho dentro da pasta, com «/».
+
+    Na raiz é só o nome do arquivo, como sempre foi; na subpasta leva a
+    subpasta junto (`decisoes/05_protesto.md`), porque é isso que permite
+    pedi-lo de volta a `ler_documentacao` sem ambiguidade.
+    """
+    return caminho.relative_to(PASTA_DOS_DOCUMENTOS).as_posix()
+
+
 def documentos() -> list[dict]:
     """O índice dos documentos do projeto, MEDIDO na pasta.
 
     Não há lista escrita à mão: documento novo aparece sozinho, e documento
     apagado some. É a lição do menu, que este projeto já pagou.
 
-    **E O QUE NÃO ENTRA FICA DITO.** Lê a **raiz** da pasta: os `.md` que
-    moram ali. Os que estão em subpasta — os modelos do RTDPJ e o LEIA-ME
-    deles — **não entram no índice nem na busca**. São anexo de terceiro, e
-    não prosa da casa; mas quem procurasse um deles receberia «nada» e
-    concluiria que ninguém escreveu, que é a conclusão errada com cara de
-    medição.
+    Lê a pasta inteira, subpastas inclusive (`arquivos_dos_documentos`).
     """
-    pasta = PASTA_DOS_DOCUMENTOS
-    if not pasta.is_dir():
-        return []
     achados = []
-    for caminho in sorted(pasta.glob("*.md")):
+    for caminho in arquivos_dos_documentos():
         try:
             tamanho = caminho.stat().st_size
         except OSError:
             continue
-        achados.append({"arquivo": caminho.name, "titulo": titulo_de(caminho),
-                        "tamanho": tamanho})
+        achados.append({"arquivo": nome_do_documento(caminho),
+                        "titulo": titulo_de(caminho), "tamanho": tamanho})
     return achados
 
 
@@ -390,29 +448,25 @@ def _assinatura() -> tuple:
     caminho = arquivo_das_regras()
     if caminho is not None:
         marcas.append(_marca(caminho))
-    pasta = PASTA_DOS_DOCUMENTOS
-    if pasta.is_dir():
-        for c in sorted(pasta.glob("*.md")):
-            marcas.append(_marca(c))
+    for c in arquivos_dos_documentos():
+        marcas.append(_marca(c))
     return tuple(marcas)
 
 
 def _medir() -> list[dict]:
     """Lê as fontes do disco e as indexa. **A parte cara, e ela roda uma vez.**"""
     fontes: list[dict] = []
-    pasta = PASTA_DOS_DOCUMENTOS
-    if pasta.is_dir():
-        for caminho in sorted(pasta.glob("*.md")):
-            texto = _ler(caminho)
-            if not texto:
-                continue
-            fontes.append({
-                "fonte": FONTE_DOCUMENTO, "origem": caminho.name,
-                "titulo": titulo_de(caminho), "caminho": str(caminho),
-                "caracteres": len(texto),
-                "linhas": len(texto.splitlines()),
-                "blocos": blocos(texto),
-            })
+    for caminho in arquivos_dos_documentos():
+        texto = _ler(caminho)
+        if not texto:
+            continue
+        fontes.append({
+            "fonte": FONTE_DOCUMENTO, "origem": nome_do_documento(caminho),
+            "titulo": titulo_de(caminho), "caminho": str(caminho),
+            "caracteres": len(texto),
+            "linhas": len(texto.splitlines()),
+            "blocos": blocos(texto),
+        })
     caminho = arquivo_das_regras()
     if caminho is not None:
         texto = _ler(caminho)

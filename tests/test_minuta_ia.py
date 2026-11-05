@@ -562,3 +562,16 @@ def test_o_agente_nao_lavra_nao_sela_nao_numera_nao_cobra():
     publicos = [n for n in dir(MI) if not n.startswith("_") and callable(getattr(MI, n))]
     proibidas = ("lavrar", "selar", "numerar", "cobrar", "lancar")
     assert not [n for n in publicos if any(p in n.lower() for p in proibidas)]
+
+
+def test_a_minuta_leva_a_norma_pertinente_com_a_citacao(casa):
+    """Decisão do oficial (05/11/2026, item 5): o agente de minutas recebe os artigos pertinentes ao ato —
+    pela natureza, o tipo e as instruções —, cada um com a citação."""
+    mid, prenot = _matricula_com_prenotacao(casa)
+    anexo = _anexar(casa, "RI_PROTOCOLO", prenot)
+    ia = IA()
+    _pedir_e_executar(casa, MI.RI, mid, [anexo], ia, tipo_ato="R",
+                      instrucao="compra e venda da totalidade")
+    texto = ia.pedidos[0]["conversa"][0]["texto"]
+    assert "=== A NORMA PERTINENTE" in texto
+    assert "[Lei 6.015/1973 (LRP), art." in texto

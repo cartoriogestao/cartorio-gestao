@@ -974,6 +974,15 @@ def _montar_conversa(bd, pedido: dict) -> tuple[list[dict], list[str]]:
     else:
         contexto = contexto_notas(bd, pedido["alvo_id"])
     blocos = ["=== CONTEXTO DO SISTEMA ===", contexto]
+    # A NORMA PERTINENTE (05/11/2026, decisão do oficial, item 5): os artigos do
+    # assunto do pedido — a natureza, o tipo e as instruções iniciais —, com a
+    # citação. Vazio quando nada se acha, e a minuta segue como antes.
+    import normativa as NORMA
+    norma = NORMA.trechos_para_o_pedido(
+        " ".join(_texto(pedido.get(c)) for c in ("natureza", "tipo_ato", "instrucao")),
+        atribuicao=pedido["atribuicao"])
+    if norma:
+        blocos += ["", norma]
     if textos:
         blocos += ["", *textos]
     blocos += ["", "=== O PEDIDO ===",

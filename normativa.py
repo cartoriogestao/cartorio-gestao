@@ -325,3 +325,54 @@ def para_o_modelo(achados: list[dict], termo: str = "") -> str:
     for a in achados:
         partes.append(f"[{a['citacao']}]\n{a['texto']}")
     return "\n\n".join(partes)
+
+
+# ------------------------------------------- os agentes de chamada única (05/11/2026)
+
+# DECISÃO DO OFICIAL (05/11/2026, «Sim, todas», item 5): a minuta IA, a revisão
+# prévia e o ônus do RI recebem os artigos pertinentes ao ato. Eles não têm
+# ferramenta — fazem uma chamada só —, e por isso a norma vai junto no pedido.
+# Poucos artigos, e não o acervo: cada um custa tokens em toda chamada.
+LIMITE_PARA_O_PEDIDO = 6
+
+# Onde cada atribuição procura primeiro. A busca é a mesma `buscar`; a lista só
+# a estreita, para o artigo da LRP não perder para o do CPC que fala de outra
+# coisa com as mesmas palavras.
+NORMAS_DA_ATRIBUICAO: dict[str, tuple[str, ...]] = {
+    "RI": ("lei-6015-1973-12-31", "codigo_de_normas_tjma", "codigo_nacional_de_normas_cnj",
+           "lei-10406-2002-01-10"),
+    "NOTAS": ("codigo_de_normas_tjma", "codigo_nacional_de_normas_cnj", "lei-10406-2002-01-10",
+              "lei-7433-1985-12-18", "dec-93240-1986-09-09"),
+}
+
+
+def trechos_para_o_pedido(termo: str, *, atribuicao: str = "",
+                          limite: int = LIMITE_PARA_O_PEDIDO) -> str:
+    """O bloco da norma pertinente para ir junto no pedido ao modelo. Só lê.
+
+    Vazio quando o termo é vazio ou nada se acha: a chamada segue sem o bloco, e
+    não com um bloco que diz «não achei». O texto já passou pela barreira como
+    texto público (`PRIV.sanitizar_para_modelo(texto_publico=True)`): quem chama
+    o junta DEPOIS de mascarar o dossiê, e a norma chega inteira.
+    """
+    procurado = str(termo or "").strip()
+    if not procurado:
+        return ""
+    chaves = NORMAS_DA_ATRIBUICAO.get(str(atribuicao or "").upper(), ())
+    achados: list[dict] = []
+    try:
+        if chaves:
+            por_norma = [a for chave in chaves for a in buscar(procurado, em=chave, limite=limite)]
+            achados = sorted(por_norma, key=lambda a: -a["pontos"])[:limite]
+        else:
+            achados = buscar(procurado, limite=limite)
+    except NormaError:
+        return ""
+    if not achados:
+        return ""
+    import ajuda_privacidade as PRIV
+    corpo = PRIV.sanitizar_para_modelo(para_o_modelo(achados), nomes_livres=False,
+                                       texto_publico=True)
+    return ("=== A NORMA PERTINENTE (da base normativa da casa: cite o artigo como "
+            "veio na citação, e não cite artigo que não esteja aqui ou que você não "
+            "tenha certeza) ===\n" + corpo)

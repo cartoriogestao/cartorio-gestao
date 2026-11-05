@@ -236,3 +236,27 @@ def test_a_ferramenta_da_norma_e_texto_publico_e_a_lei_chega_inteira():
     assert not any(f.texto_publico for f in AF.FERRAMENTAS if f.nome != "consultar_norma")
     r = AF.executar(_contexto(), "consultar_norma", {"norma": "Lei 6.766", "termo": "em nome do loteador"})
     assert "em nome do loteador" in r["conteudo"] and "[PESSOA_" not in r["conteudo"], r["conteudo"][:600]
+
+
+# ------------------------------------- os agentes de chamada única (05/11/2026, item 5)
+
+def test_o_bloco_do_pedido_traz_os_artigos_da_atribuicao_com_a_citacao():
+    bloco = N.trechos_para_o_pedido("compra e venda registro", atribuicao="RI")
+    assert bloco.startswith("=== A NORMA PERTINENTE")
+    citadas = {linha.split(", art.")[0].lstrip("[") for linha in bloco.splitlines() if linha.startswith("[")}
+    nomes_ri = {N.norma(c)["nome"] for c in N.NORMAS_DA_ATRIBUICAO["RI"]}
+    assert citadas and citadas <= nomes_ri, citadas
+    assert bloco.count("— fonte: ") <= N.LIMITE_PARA_O_PEDIDO
+
+
+def test_sem_assunto_ou_sem_achado_nao_ha_bloco():
+    assert N.trechos_para_o_pedido("", atribuicao="RI") == ""
+    assert N.trechos_para_o_pedido("xilofone azulado tonitroante", atribuicao="RI") == ""
+
+
+def test_a_qualificacao_assistida_continua_suspensa_e_sem_a_norma():
+    """A qualificação assistida continua SUSPENSA (#310): liberar é decisão do oficial, depois de validar."""
+    import ri_qualificacao_ia as QIA
+    assert QIA.SUSPENSA_POR_BASE_NORMATIVA is True
+    fonte = open(QIA.__file__, encoding="utf-8").read()
+    assert "import normativa" not in fonte and "trechos_para_o_pedido" not in fonte

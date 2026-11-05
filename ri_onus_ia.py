@@ -160,6 +160,10 @@ class OnusError(ValueError):
 
 # ------------------------------------------------------------------ texto
 
+# O QUE A CERTIDAO DE ONUS PROCURA NA BASE NORMATIVA (05/11/2026, item 5).
+TERMO_DA_NORMA = "certidão de ônus reais ações reipersecutórias"
+
+
 def normalizar(texto) -> str:
     """Sem HTML, com as entidades traduzidas e o espaço colapsado."""
     sem_tags = html.unescape(re.sub(r"<[^>]+>", " ", str(texto or "")))
@@ -507,6 +511,12 @@ def executar(banco: Path, pasta_dados: Path, sugestao_id: int, conversar=None) -
             if passou:
                 raise RuntimeError(passou)
             seguro, mapa = RP.preparar_para_ia(bd, linha["dossie"])
+            # A NORMA DA CERTIDAO DE ONUS (05/11/2026, decisao do oficial, item
+            # 5): os artigos sobre onus e certidao, depois da mascara.
+            import normativa as NORMA
+            norma = NORMA.trechos_para_o_pedido(TERMO_DA_NORMA, atribuicao="RI")
+            if norma:
+                seguro = f"{seguro}\n\n{norma}"
             # O REGISTRO DO USO DE IA (LF01): a sugestão, sem o texto da ficha.
             resposta = conversar(pasta_dados, provedor=RP.PROVEDOR, sistema=INSTRUCAO,
                                  conversa=[{"tipo": "user", "texto": seguro}],

@@ -709,10 +709,13 @@ def test_onde_lavro_o_cancelamento_de_hipoteca_acha_o_caminho():
     assert "AV-CANCELAMENTO-HIPOTECA" in textos, textos[:500]
 
 
-def test_quitacao_com_data_anterior_acha_a_regra_da_casa_primeiro():
+def test_quitacao_com_data_anterior_acha_a_resposta_primeiro():
+    """O primeiro achado é o que responde — o manual (desde a 3.7.11) ou as
+    regras da casa, que empatam —, e a regra da casa vem entre os primeiros."""
     BASE.carregar(forcar=True)
     achado = BASE.buscar(
         "como faço a quitação com data de pagamento anterior?", limite=10)
     assert achado["achados"], "a pergunta do balcão não achou nada"
     primeiro = achado["achados"][0]
-    assert primeiro["fonte"] == BASE.FONTE_REGRA, primeiro
+    assert "data anterior" in primeiro["texto"].lower(), primeiro
+    assert BASE.FONTE_REGRA in {a["fonte"] for a in achado["achados"][:3]}

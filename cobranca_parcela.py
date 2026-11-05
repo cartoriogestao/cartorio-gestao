@@ -3,7 +3,8 @@
 O CONTRATO (OpenAPI de parceiros em docs.parcelaexpress.com.br, lida em
 05/11/2026)
     Base de teste: https://sandbox.parcelaexpress.com.br
-    Base de produção: https://api.parcelaexpress.com.br
+    Base de produção: https://api-prod.parcelaexpress.com.br
+    (o portal CartExpress, cartorios.parcelaexpress.com.br, usa essa base)
     Toda chamada depois do login leva `Authorization: Bearer` com JWT.
 
     - Login: POST /v2/auth/login {email, password} → access_token (ou token).
@@ -47,7 +48,7 @@ from cobranca_banco import (
 from despesas_inter import Resposta
 
 ENDERECOS = {
-    "producao": "https://api.parcelaexpress.com.br",
+    "producao": "https://api-prod.parcelaexpress.com.br",
     "sandbox": "https://sandbox.parcelaexpress.com.br",
 }
 CAMINHO_DO_TOKEN = "/v2/auth/login"

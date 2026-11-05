@@ -88,6 +88,11 @@ def test_o_cancelamento_usa_o_id_do_link():
     assert any(c[0] == "POST" and c[1].endswith("/id-real/cancel") for c in t.chamadas)
 
 
+def test_a_producao_e_a_base_do_portal():
+    assert PX.ENDERECOS["producao"] == "https://api-prod.parcelaexpress.com.br"
+    assert PX.ENDERECOS["sandbox"].startswith("https://sandbox.")
+
+
 def test_login_inexistente_diz_o_caminho():
     cliente, _t = _cliente({
         PX.CAMINHO_DO_TOKEN: Resposta(404, {"message": "not found"}),

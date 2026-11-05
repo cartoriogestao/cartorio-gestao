@@ -81,6 +81,15 @@ from seguranca_web import destino_interno  # M1: o «volte para» que vem de for
 from seguranca_web import numero_digitado  # LD13: o número que a tela mandou
 from serventia import dados as dados_da_serventia
 
+# As frases da janela da Ajuda quando a pergunta não sai (ver `_frase_da_recusa_da_janela`).
+JANELA_SEM_RESPOSTA = ("A ajuda não conseguiu resposta do serviço de IA agora. Tente de novo em "
+                       "instantes; o detalhe ficou no registro do servidor.")
+JANELA_PRIVACIDADE = ("A pergunta foi segurada porque parecia trazer dado pessoal (nome, CPF, "
+                      "endereço). Reescreva sem o dado e pergunte de novo.")
+JANELA_RECUSADA = ("A ajuda não aceitou esta pergunta: ela pode não estar liberada para o seu "
+                   "perfil, ter passado do teto do dia ou estar vazia. Abra Ajuda → Perguntar para "
+                   "ver o motivo exato.")
+
 
 def registrar_rotas(app, db, login_required, roles_required, audit,
                     fmt_date=str):
@@ -367,6 +376,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # e é o seletor que sabe qual é qual.
             modelos=AJ.modelos_do_provedor(escolha["provedor"]))
 
+    def _frase_da_recusa_da_janela(erro) -> str:
+        """A frase fixa da janela para cada tipo de recusa. Só escolhe pelo tipo."""
+        if isinstance(erro, PROV.AgenteError):
+            return JANELA_SEM_RESPOSTA
+        if isinstance(erro, AJ.AjudaPrivacidadeError) or isinstance(erro.__cause__, AJ.AjudaPrivacidadeError):
+            return JANELA_PRIVACIDADE
+        return JANELA_RECUSADA
+
     @app.route("/ajuda/janela", methods=["POST"])
     @login_required
     def ajuda_janela():
@@ -394,7 +411,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 raiz=Path(app.root_path), app=app, versao=versao,
                 login=login_do_usuario())
         except (AJ.AjudaError, PROV.AgenteError) as erro:
-            return jsonify({"ok": False, "erro": str(erro)}), 200
+            # O TEXTO DA EXCEÇÃO NÃO VAI NO JSON (CodeQL py/stack-trace-exposure, alerta #304,
+            # 05/11/2026): o erro do provedor traz texto de fora, e a recusa da privacidade
+            # chega embrulhada. A janela diz a frase fixa do caso; o motivo exato fica no
+            # registro e na Ajuda em tela inteira.
+            logging.getLogger("ajuda").info("a janela da ajuda recusou: %s", erro)
+            return jsonify({"ok": False, "erro": _frase_da_recusa_da_janela(erro)}), 200
         except Exception:
             # A JANELA REGISTRA A FALHA, COMO A TELA INTEIRA (05/11/2026). Ela
             # devolvia a frase e engolia o motivo: a pergunta feita de dentro

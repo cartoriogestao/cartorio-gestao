@@ -193,6 +193,10 @@
         <th>Vencimento</th><td>{{ titulo.data_vencimento or '—' }}</td></tr>
     <tr><th>Valor</th><td>{{ titulo.valor_centavos | centavos_reais }}{% if titulo.moeda_estrangeira %}<br><small>convertido de {{ titulo.valor_na_moeda }} — {{ titulo.moeda_estrangeira }} (Lei 9.492/1997, art. 10)</small>{% endif %}</td>
         <th>Saldo a protestar</th><td>{{ titulo.saldo_centavos | centavos_reais }}</td></tr>
+    {% if titulo.especie == 'CH' and (titulo.cheque_banco_sacado or titulo.cheque_contra_o_banco) %}
+    <tr><th>Cheque</th><td colspan="3">{% if titulo.cheque_contra_o_banco %}Protesto para instruir medida contra o próprio banco (CN-MA art. 910).{% endif %}
+        {% if titulo.cheque_banco_sacado %}Banco sacado: {{ titulo.cheque_banco_sacado }}{% if titulo.cheque_motivo_devolucao %} — devolvido pelo motivo {{ titulo.cheque_motivo_devolucao }}{% endif %}{% if titulo.cheque_apresentado_em %}, apresentado em {{ titulo.cheque_apresentado_em }}{% endif %}.{% endif %}</td></tr>
+    {% endif %}
     <tr><th>Praça</th><td>{{ titulo.praca_protesto or '—' }}</td>
         <th>Endosso</th><td>{{ titulo.tipo_endosso or '—' }}</td></tr>
     <tr><th>Origem</th><td>{{ titulo.origem }}</td>

@@ -937,6 +937,15 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # intima. Vazias no titulo em real.
     ("pt_titulos", "moeda_estrangeira", "TEXT"),
     ("pt_titulos", "valor_na_moeda", "TEXT"),
+    # O CHEQUE DO BALCAO (05/11/2026, decisao do oficial, item i; Lei
+    # 9.492/1997, art. 6o; CN-MA arts. 883 e 910): o banco sacado, o motivo da
+    # devolucao (a alinea do BACEN), a data da apresentacao ao banco, e a marca
+    # de que o protesto e para instruir medida contra o proprio banco, que
+    # dispensa os tres (art. 910). Vazias nos outros titulos e no da CRA.
+    ("pt_titulos", "cheque_banco_sacado", "TEXT"),
+    ("pt_titulos", "cheque_motivo_devolucao", "TEXT"),
+    ("pt_titulos", "cheque_apresentado_em", "TEXT"),
+    ("pt_titulos", "cheque_contra_o_banco", "INTEGER"),
     ("pt_atos", "retorno_id", "INTEGER"),
     # em que XML da CENPROT o ato já foi (15/10/2026) — nada sai duas vezes
     ("pt_atos", "cenprot_xml_id", "INTEGER"),

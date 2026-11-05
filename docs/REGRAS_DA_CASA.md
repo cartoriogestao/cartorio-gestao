@@ -107,6 +107,13 @@ diferença deve ser apontada ao oficial.
   ficha guarda a moeda e o valor de origem; o valor e o saldo vão em **reais**,
   convertidos, e são obrigatórios — é o que se cobra e se intima. Decisão do
   oficial de 05/11/2026.
+- **Cheque**: a casa recebe. O cadastro exige banco sacado, motivo da
+  devolução e data da apresentação ao banco (Lei 9.492/1997, art. 6º; CN-MA
+  art. 910), salvo quando o protesto é para instruir medida contra o próprio
+  banco. Os motivos 20, 25, 28, 30 e 35 se recusam (CN-MA art. 883, § 1º),
+  **mesmo com endosso ou aval, por ora** — a exceção dos §§ 2º e 3º não está no
+  sistema. Cheque com mais de um ano da emissão: comprovar o endereço do
+  emitente (§ 5º). Decisão do oficial de 05/11/2026.
 - Gratuidade no Protesto: **nenhuma**. O que existe é o diferimento
   (pagamento a posteriori). Se alguma tela oferecer gratuidade no Protesto,
   aponte ao oficial.

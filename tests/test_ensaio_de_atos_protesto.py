@@ -132,15 +132,58 @@ def test_antes_do_vencimento_a_falta_de_aceite_fica(s):  # noqa: F811
     assert not any("POR FALTA DE PAGAMENTO" in a for a in feito["avisos"]), feito["avisos"]
 
 
-@_defeito("o cheque se cadastra e se protesta pelo balcão sem nada da apresentação ao banco sacado: a ficha "
-          "não tem o campo, e nem a lavratura nem o registro dizem a devolução")
+# O CHEQUE, DEPOIS DA DECISÃO DO OFICIAL (05/11/2026, «i» e «u»): a casa recebe cheque. Banco sacado,
+# motivo da devolução e data da apresentação são obrigatórios (Lei 9.492/1997, art. 6º; CN-MA art. 910),
+# salvo o protesto para instruir medida contra o próprio banco; os motivos 20, 25, 28, 30 e 35 se recusam
+# (art. 883, § 1º) — mesmo com endosso ou aval, por ora; e o cheque de mais de um ano pede o endereço do
+# emitente (§ 5º).
+CHEQUE = {"especie": "CH", "cheque_banco_sacado": "Banco Exemplo S.A.", "cheque_motivo_devolucao": "11",
+          "cheque_apresentado_em": "2025-02-12"}
+
+
+def _recusado(s, recado: str, **mudar):  # noqa: F811
+    antes = F._um(s, "SELECT count(*) AS n FROM pt_titulos")["n"]
+    r = F._post(s, "/protesto/novo", "/protesto/novo", **{**F.TITULO, **mudar})
+    assert any(recado in a for a in F._avisos(r)), F._avisos(r)
+    assert F._um(s, "SELECT count(*) AS n FROM pt_titulos")["n"] == antes
+
+
 def test_o_cheque_pede_a_prova_da_apresentacao_ao_banco(s):  # noqa: F811
-    """Lei 9.492/1997, art. 6º: no protesto do cheque, «deve dele constar a prova de apresentação ao Banco
-    sacado», salvo se o protesto for para instruir medida contra o próprio banco (conferir também o CN-MA).
-    O cheque do balcão sem essa prova não vai ao protesto sem a tela pedi-la."""
-    feito = _ate_o_protesto(s, especie="CH", numero_titulo="CH-0005")
-    pediu = any("banco" in a.lower() and "apresenta" in a.lower() for a in feito["avisos"])
-    assert feito["situacao"] != "PROTESTADO" or pediu, feito["avisos"]
+    """Lei 9.492/1997, art. 6º; CN-MA art. 910: sem a apresentação ao banco sacado, o cheque não entra."""
+    _recusado(s, "a data da apresentação ao banco", especie="CH", numero_titulo="CH-0005",
+              cheque_banco_sacado="Banco Exemplo S.A.", cheque_motivo_devolucao="11")
+    _recusado(s, "falta o banco sacado, o motivo da devolução", especie="CH", numero_titulo="CH-0005")
+
+
+def test_o_cheque_com_a_apresentacao_vai_ao_protesto_e_a_ficha_a_diz(s):  # noqa: F811
+    feito = _ate_o_protesto(s, numero_titulo="CH-0006", **CHEQUE)
+    assert feito["situacao"] == "PROTESTADO", feito["avisos"]
+    ficha = s["c"].get(f"/protesto/{feito['id']}").get_data(as_text=True)
+    assert "Banco sacado: Banco Exemplo S.A. — devolvido pelo motivo 11, apresentado em 2025-02-12" in ficha
+
+
+@pytest.mark.parametrize("motivo", ["20", "25", "28", "30", "35"])
+def test_o_cheque_furtado_ou_extraviado_nao_se_aponta(s, motivo):  # noqa: F811
+    """CN-MA art. 883, § 1º, e art. 911 (CNN art. 390). A exceção do endosso e do aval (§§ 2º e 3º) não está
+    no sistema, e a recusa o diz."""
+    _recusado(s, "essa exceção ainda não está no sistema",
+              **{**CHEQUE, "numero_titulo": f"CH-1{motivo}", "cheque_motivo_devolucao": motivo})
+
+
+def test_o_protesto_contra_o_proprio_banco_dispensa_a_apresentacao(s):  # noqa: F811
+    tid, _ = _cadastrado(s, especie="CH", numero_titulo="CH-0007", cheque_contra_o_banco="1")
+    t = F._um(s, "SELECT * FROM pt_titulos WHERE id=%s", (tid,))
+    assert t["cheque_contra_o_banco"] == 1 and t["cheque_banco_sacado"] is None
+
+
+def test_o_cheque_de_mais_de_um_ano_pede_o_endereco_do_emitente(s):  # noqa: F811
+    """CN-MA art. 883, § 5º: avisa, e não barra."""
+    _, avisos = _cadastrado(s, numero_titulo="CH-0008", **CHEQUE)
+    assert any("comprovar o endereço do emitente" in a for a in avisos), avisos
+    recente = (F.date.fromisoformat(F._hoje(s)) - F.timedelta(days=30)).isoformat()
+    _, avisos = _cadastrado(s, numero_titulo="CH-0009", **{**CHEQUE, "data_emissao": recente,
+                                                           "cheque_apresentado_em": recente})
+    assert not any("comprovar o endereço do emitente" in a for a in avisos), avisos
 
 
 # ------------------------------------------------------------------ o devedor e a certidão

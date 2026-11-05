@@ -133,6 +133,27 @@
         é o que se cobra e se intima.
       </small></p>
 
+      {# O CHEQUE (05/11/2026, decisão do oficial, item i; Lei 9.492/1997, art. 6º;
+         CN-MA arts. 883 e 910). Só para a espécie «Cheque». #}
+      <fieldset style="grid-column:1/-1">
+        <legend>Se for cheque — a apresentação ao banco (Lei 9.492/1997, art. 6º; CN-MA art. 910)</legend>
+        <label>Banco sacado
+          <input name="cheque_banco_sacado" value="{{ form.get('cheque_banco_sacado','') }}"
+                 placeholder="nome ou número do banco"></label>
+        <label>Motivo da devolução (alínea)
+          <input name="cheque_motivo_devolucao" value="{{ form.get('cheque_motivo_devolucao','') }}"
+                 inputmode="numeric" placeholder="ex.: 11, 12"></label>
+        <label>Apresentado ao banco em
+          <input type="date" name="cheque_apresentado_em" value="{{ form.get('cheque_apresentado_em','') }}"></label>
+        <label><input type="checkbox" name="cheque_contra_o_banco" value="1"
+                      {% if form.get('cheque_contra_o_banco') == '1' %}checked{% endif %}>
+          O protesto é para instruir medida contra o próprio banco (dispensa os três — art. 910)</label>
+        <p><small>Os motivos <strong>20, 25, 28, 30 e 35</strong> (furto, roubo, extravio, fraude) não
+          se apontam (CN-MA art. 883, § 1º). O CN-MA, art. 883, §§ 2º e 3º, admite o protesto quando o
+          cheque circulou por endosso ou tem aval, com o emitente «desconhecido» e índice próprio — essa
+          exceção ainda não está no sistema.</small></p>
+      </fieldset>
+
       <label>Motivo do protesto
         <select name="motivo_protesto">
           <option value="">—</option>

@@ -2599,6 +2599,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # origem; o valor e o saldo acima vão em reais, convertidos.
             "moeda_estrangeira": _campo("moeda_estrangeira") or None,
             "valor_na_moeda": _campo("valor_na_moeda") or None,
+            # O CHEQUE (05/11/2026, item i): só vale para a espécie CH, e quem
+            # confere é `PT.cadastrar_titulo`.
+            "cheque": {
+                "banco_sacado": _campo("cheque_banco_sacado") or None,
+                "motivo_devolucao": _campo("cheque_motivo_devolucao") or None,
+                "apresentado_em": _campo("cheque_apresentado_em") or None,
+                "contra_o_banco": _campo("cheque_contra_o_banco") == "1",
+            },
             "aceite": _campo("aceite") or None,
             # O APRESENTANTE (LD04, 21/10/2026) — quem traz o título ao
             # balcão: o próprio credor, ou quem o representa. Lei 9.492/1997,
@@ -2641,6 +2649,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         flash(f"Título {dados['numero_titulo']} cadastrado. Ele está "
               f"RECEBIDO: o apontamento é o próximo ato, e sai aqui embaixo.",
               "success")
+        # O CHEQUE COM MAIS DE UM ANO (CN-MA art. 883, § 5º): avisa, não barra.
+        antigo = PT.aviso_do_cheque_antigo(dados, date.fromisoformat(hoje()))
+        if antigo:
+            flash(antigo, "warning")
         RASC.saiu_com_o_ato(db, audit, "protesto_titulo_novo",
                             url_for("protesto_titulo", titulo_id=titulo_id), usuario_nome())
         return redirect(url_for("protesto_titulo", titulo_id=titulo_id))

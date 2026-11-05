@@ -109,6 +109,12 @@ obrigatória à CNIB na lavratura (`exige_consulta`, quando a casa liga o protoc
 reconhece. É a mesma família da observação O2 (o nome da natureza do modelo diferente do da tabela).
 Pergunta ao oficial: alinhar os nomes dos modelos aos da tabela?
 
+**DECIDIDO E CONSERTADO em 05/11/2026** (o oficial, «t»: «podem seguir... mas não necessariamente»): os
+modelos não se renomeiam. `ri_cnib.codigo_reconhecido` reconhece o ato pelo nome exato da tabela e, sem
+ele, pela palavra (arrematação 31, partilha 32, adjudicação 33, usucapião 34, ou 35 a extrajudicial,
+desapropriação 41). As duas réguas usam a função: a consulta obrigatória à CNIB (`exige_consulta`) e a
+trava da indisponibilidade averbada. O «Título de domínio», que o oficial não nomeou, segue sem código.
+
 **O que se fez.** R-1 compra e venda; AV-2 indisponibilidade (AV-INDISPONIBILIDADE, ordem da CNIB
 contra a proprietária); R-3 compra e venda da proprietária para um terceiro.
 

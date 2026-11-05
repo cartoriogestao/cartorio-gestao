@@ -398,11 +398,47 @@ POSITIVO = "POSITIVO"
 CHAVE_EXIGIR_PROTOCOLO = "ri_cnib_exigir_protocolo_na_lavratura"
 
 
+#: O ATO PELO NOME DO MODELO DA CASA, E NÃO SÓ PELO DA TABELA (decisão do oficial, 05/11/2026, «t»: «podem
+#: seguir... mas não necessariamente» — o nome do modelo continua livre, e a régua não pode depender de ele
+#: bater). Os modelos escrevem «Arrematação», «Adjudicação», «Partilha», «Usucapião»; a tabela de
+#: naturezas (`ri_naturezas`), «Carta de Arrematação», «Carta de Adjudicação», «Formal de Partilha»,
+#: «Sentenças Declaratórias de Usucapião». Pela palavra, o código da tabela. A ordem importa: a
+#: extrajudicial antes da usucapião em geral.
+NATUREZAS_PELA_PALAVRA: tuple[tuple[tuple[str, ...], int], ...] = (
+    (("arremat",), 31),
+    (("partilha",), 32),
+    (("adjudic",), 33),
+    (("usucap", "extrajudicial"), 35),
+    (("usucap",), 34),
+    (("desapropr",), 41),
+)
+
+
+def codigo_reconhecido(natureza_titulo) -> int | None:
+    """O código de `ri_naturezas` do ato: pelo nome exato da tabela e, sem ele, pela palavra. Só calcula.
+
+    Para as duas réguas que o oficial nomeou («t», 05/11/2026): a consulta obrigatória à CNIB
+    (`exige_consulta`) e a trava da indisponibilidade averbada. O cancelamento não é o ato: «Cancelamento
+    de Penhora» casa pelo nome exato, e a palavra não se usa para ele.
+    """
+    import ri_onus as ONUS
+    codigo = ONUS.codigo_da_natureza(natureza_titulo)
+    if codigo is not None:
+        return codigo
+    texto = _sem_acento(natureza_titulo)
+    if "cancel" in texto:
+        return None
+    for palavras, codigo in NATUREZAS_PELA_PALAVRA:
+        if all(p in texto for p in palavras):
+            return codigo
+    return None
+
+
 def exige_consulta(natureza_titulo, tipo: str) -> bool:
     """Alienacao ou oneracao do imovel (TJMA 506): transmissao ou onus."""
     import ri_naturezas as NAT
     import ri_onus as ONUS
-    codigo = ONUS.codigo_da_natureza(natureza_titulo)
+    codigo = codigo_reconhecido(natureza_titulo)
     if codigo is None:
         return False
     if codigo in ONUS.CODIGOS_DE_ONUS:
@@ -420,11 +456,6 @@ def exige_consulta(natureza_titulo, tipo: str) -> bool:
 NATUREZAS_VOLUNTARIAS: frozenset[int] = frozenset({
     1, 2, 7, 8, 11, 12, 13, 14, 16, 17, 18, 19, 20, 26, 27, 36, 37, 38, 39, 40, 44, 53,
 })
-#: O ato judicial ou de aquisição que não é disposição voluntária, PELA PALAVRA: os modelos da casa
-#: escrevem «Arrematação», «Adjudicação», «Partilha», «Usucapião», e a tabela de naturezas diz «Carta de
-#: Arrematação», «Formal de Partilha» — o código não casa (ver o relatório do ensaio de atos do RI).
-PALAVRAS_DO_ATO_NAO_VOLUNTARIO = ("arremat", "adjudic", "partilha", "usucap", "desapropr", "penhora",
-                                  "arresto", "sequestro")
 
 
 def _sem_acento(texto) -> str:
@@ -455,11 +486,9 @@ def indisponibilidades_averbadas(con, matricula_id: int) -> list[dict]:
 def conferir_indisponibilidade_averbada(con, matricula_id: int, natureza_titulo) -> dict | None:
     """O que a lavratura faz diante da indisponibilidade averbada: `{"barra": True|False, "mensagem"}`,
     ou None quando não há indisponibilidade ou o ato não é de disposição. Só LÊ."""
-    import ri_onus as ONUS
-    codigo = ONUS.codigo_da_natureza(natureza_titulo)
+    codigo = codigo_reconhecido(natureza_titulo)
     voluntario = codigo in NATUREZAS_VOLUNTARIAS
-    pela_palavra = any(p in _sem_acento(natureza_titulo) for p in PALAVRAS_DO_ATO_NAO_VOLUNTARIO)
-    if not voluntario and not pela_palavra and not exige_consulta(natureza_titulo, ""):
+    if not voluntario and not exige_consulta(natureza_titulo, ""):
         return None
     averbadas = indisponibilidades_averbadas(con, matricula_id)
     if not averbadas:

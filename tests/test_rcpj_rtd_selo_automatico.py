@@ -858,3 +858,46 @@ def test_selos_do_ato_traz_todos_nao_so_os_dois_da_coluna(s):
     assert len(todos) == 2, (
         "os dois itens (15.1 e 15.9.1) deviam ter, cada um, o seu selo — "
         "e AS.selos_do_ato tem de trazer os dois")
+
+# ------------------------------------- o registro do RTD com valor declarado (05/11/2026, item 6)
+
+import ato_selado as _AS  # noqa: E402
+
+_DO_REGISTRO_COM_VALOR = dict(tipo="REGISTRO", serie="TD_B", codigo_tj="15.2.2",
+                              valor_declarado="10.000,00", protocolo="123", ligado=True)
+
+
+def test_o_com_valor_so_entra_com_tudo_conferido_e_a_chave_ligada():
+    """Decisão do oficial (05/11/2026): selar pelo com-valor. O formato é inferido, e por isso a chave nasce
+    DESLIGADA — sem ela, o registro sela por atos-em-geral, como sempre."""
+    geral = _AS.CAMINHO_RTDPJ_GERAL
+    assert _AS.caminho_com_valor(geral, **_DO_REGISTRO_COM_VALOR) == _AS.CAMINHO_RTDPJ_COM_VALOR
+    for mudar in ({"ligado": False}, {"tipo": "AVERBACAO"}, {"serie": "PJ_A"}, {"codigo_tj": "15.3.1"},
+                  {"valor_declarado": ""}, {"valor_declarado": "0,00"}, {"protocolo": ""}):
+        assert _AS.caminho_com_valor(geral, **{**_DO_REGISTRO_COM_VALOR, **mudar}) == geral, mudar
+    assert _AS.caminho_com_valor(geral, **_DO_REGISTRO_COM_VALOR, isento=True) == geral
+
+
+def test_a_chave_do_com_valor_nasce_desligada(s):
+    assert s["db"].get_setting(_AS.CHAVE_DO_SELO_COM_VALOR, "") != "1"
+
+
+def test_o_envelope_com_valor_leva_a_base_no_selo_e_nao_leva_quantidade():
+    """RtdpjComValorDeclarado, pela classe do E-Ofício (só como referência): natureza, partes, selo e ato;
+    no selo, escrevente, livro (só os números), protocolo, baseCalculo, registro e folha."""
+    env = _AS.envelope_do_rtdpj(
+        caminho=_AS.CAMINHO_RTDPJ_COM_VALOR, codigo_tj="15.2.2", escrevente="ESCREVENTE DE EXEMPLO",
+        versao_tabela="2026", partes=[{"nome": "EMPRESA DE EXEMPLO", "documento": ""}],
+        natureza_descricao="Contrato de mútuo", livro="B-3", folha="12", protocolo="123",
+        registro_averbacao="45", base_calculo="10.000,00")
+    assert set(env) == {"natureza", "partes", "selo", "ato"}
+    assert env["selo"] == {"escrevente": "ESCREVENTE DE EXEMPLO", "livro": "3", "protocolo": "123",
+                           "baseCalculo": 10000.0, "registro": "45", "folha": "12"}
+    assert env["ato"]["codigo"] == "15.2.2"
+
+
+def test_o_envelope_com_valor_sem_o_necessario_recusa():
+    with pytest.raises(_AS.AtoError, match="o valor declarado"):
+        _AS.envelope_do_rtdpj(
+            caminho=_AS.CAMINHO_RTDPJ_COM_VALOR, codigo_tj="15.2.2", escrevente="E", versao_tabela="2026",
+            livro="3", protocolo="123", registro_averbacao="45", base_calculo="")

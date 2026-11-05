@@ -398,6 +398,44 @@ def conferir_pagador(pagador: Mapping[str, Any]) -> dict:
 
 
 FORMAS_NA_MAQUINA = ("PIX", "CREDITO", "DEBITO")
+FORMAS_DE_DENTRO = frozenset({"GRATUITO", "DEPOSITO_PREVIO"})
+CIENCIA_DO_POR_FORA = (
+    "Os próximos pagamentos serão recebidos dentro do sistema, "
+    "nas formas que ele oferece."
+)
+
+
+def instituicao_ligada(cfg: Mapping[str, Any]) -> str:
+    """O nome da instituição de pagamento, se a emissão está ligada. Senão, vazio."""
+    if str(cfg.get("cobranca_ligada") or "") != "1":
+        return ""
+    return BANCOS.get(str(cfg.get("cobranca_banco") or ""), "")
+
+
+def conferir_pagamento_por_fora(forma: str, cfg: Mapping[str, Any], *,
+                                afirmo: Any, afirmacao: Any,
+                                ciencia: Any) -> dict | None:
+    """Recusa quitar por fora sem a afirmação e a ciência. Só calcula.
+
+    Gratuito e depósito prévio não são dinheiro novo por fora. Sem instituição
+    ligada, o balcão quita como antes.
+    """
+    import afirmacoes_expressas as AFX
+    instituicao = instituicao_ligada(cfg)
+    if not instituicao:
+        return None
+    if str(forma or "").strip().upper() in FORMAS_DE_DENTRO:
+        return None
+    try:
+        texto = AFX.validar(
+            afirmo, afirmacao,
+            por_que=f"Pagamento por fora de {instituicao}.")
+    except AFX.AfirmacaoError as erro:
+        raise CobrancaError(str(erro)) from erro
+    if not ciencia:
+        raise CobrancaError("Marque a ciência: " + CIENCIA_DO_POR_FORA)
+    return {"afirmacao": texto, "instituicao": instituicao,
+            "ciencia": CIENCIA_DO_POR_FORA}
 
 
 def cadastrar(con, *, agora: datetime, por: str, banco_codigo: str, ambiente: str,

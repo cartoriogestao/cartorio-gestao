@@ -1697,6 +1697,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 exigencias=exigencias_abertas, tarefas=tarefas_do_protocolo,
                 lancamentos=lanc, acompanhamento=acompanhamento)
         quitados = sum(1 for a in atos if a["quitado"])
+
+        def _pagamento_integrado() -> str:
+            import cobranca as CB
+            with db.connect() as con:
+                return CB.instituicao_ligada(CB.configuracao(con))
+
         return render_template("caixa_protocolo.html", p=p, atos=atos,
                                abas_da_ficha=abas_da_ficha,
                                quitados=quitados,
@@ -1729,7 +1735,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                prenotacao_ligada=prenotacao_ligada,
                                prenotacoes_ri=prenotacoes_ri,
                                acima_do_teto=acima_do_teto,
-                               acompanhamento=acompanhamento)
+                               acompanhamento=acompanhamento,
+                               pagamento_integrado=_pagamento_integrado())
 
     # ---------------------------------------- o cálculo que vira serviço
 
@@ -2258,6 +2265,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         SEM_FORMA_DE_PAGAMENTO = (
             "Escolha a forma de pagamento: sem ela o lançamento entra no caixa "
             "sem dizer como o cliente pagou. Nada foi quitado.")
+
+        def _ciencia_do_por_fora(forma: str) -> dict | None:
+            import cobranca as CB
+            with db.connect() as con:
+                cfg = CB.configuracao(con)
+            try:
+                return CB.conferir_pagamento_por_fora(
+                    forma, cfg,
+                    afirmo=request.form.get("afirmo") == "1",
+                    afirmacao=request.form.get("afirmacao"),
+                    ciencia=request.form.get("afirmo_ciencia") == "1")
+            except CB.CobrancaError as erro:
+                raise CaixaError(str(erro)) from erro
         """Acrescenta, quita ou remove um item do protocolo.
 
         O valor NÃO é digitado: vem da tabela do tribunal. Ou o ato tem valor
@@ -2452,6 +2472,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 if aberto and not forma:
                     raise CaixaError(SEM_FORMA_DE_PAGAMENTO)
                 anterior = pagamento_anterior(forma, agora[:10])
+                ciencia = _ciencia_do_por_fora(forma)
                 with db.transaction() as con:
                     r = cobrar_item_do_protocolo(
                         con, item_id,
@@ -2467,6 +2488,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             audit("PROTOCOLO_ITEM_QUITADO", "PROTOCOLO", protocolo_id,
                   {"item": item_id, "lancamento": r["lancamento_id"],
                    **auditoria_do_pagamento(anterior, agora[:10])})
+            if ciencia:
+                audit("AFIRMACAO_EXPRESSA", "PROTOCOLO", protocolo_id, {
+                    "regra": "PAGAMENTO_POR_FORA", "forma": forma,
+                    "afirmacao": ciencia["afirmacao"],
+                    "ciencia": ciencia["ciencia"],
+                    "instituicao": ciencia["instituicao"]})
             flash(f"Item quitado e lançado no caixa: R$ {r['valor']}."
                   + (f" Pago em {fmt_date(anterior['data_pagamento'])}, registrado hoje."
                      if anterior else ""), "success")
@@ -2526,6 +2553,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 except CaixaError as erro:
                     flash(str(erro), "danger")
                     return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
+                try:
+                    ciencia_lote = _ciencia_do_por_fora(forma)
+                except CaixaError as erro:
+                    flash(str(erro), "danger")
+                    return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
                 quitados, soma_quitada, recusados = 0, 0, []
                 for item_id in pendentes_id:
                     try:
@@ -2562,6 +2594,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                            "em_lote": True, **auditoria_do_pagamento(anterior, agora[:10])})
                     quitados += 1
                     soma_quitada += centavos(r["valor"])
+                if quitados and ciencia_lote:
+                    audit("AFIRMACAO_EXPRESSA", "PROTOCOLO", protocolo_id, {
+                        "regra": "PAGAMENTO_POR_FORA", "forma": forma,
+                        "afirmacao": ciencia_lote["afirmacao"],
+                        "ciencia": ciencia_lote["ciencia"],
+                        "instituicao": ciencia_lote["instituicao"],
+                        "em_lote": True, "itens": quitados})
                 if quitados:
                     flash(f"{quitados} "
                           f"{'item quitado' if quitados == 1 else 'itens quitados'}"

@@ -113,6 +113,24 @@ def test_sem_codigo_a_maquininha_recusa():
     assert "maquininha" in str(erro.value)
 
 
+def test_pagamento_por_fora_pede_afirmacao_e_ciencia():
+    cfg = {"cobranca_ligada": "1", "cobranca_banco": "PARCELA"}
+    assert CB.instituicao_ligada(cfg).startswith("Parcela")
+    with pytest.raises(CB.CobrancaError):
+        CB.conferir_pagamento_por_fora(
+            "DINHEIRO", cfg, afirmo=False, afirmacao="", ciencia=False)
+    motivo = ("o cliente pagou em dinheiro neste atendimento de transicao "
+              "porque a maquininha estava sem rede no balcao")
+    feito = CB.conferir_pagamento_por_fora(
+        "DINHEIRO", cfg, afirmo=True, afirmacao=motivo, ciencia=True)
+    assert "dentro do sistema" in feito["ciencia"]
+    assert CB.conferir_pagamento_por_fora(
+        "GRATUITO", cfg, afirmo=False, afirmacao="", ciencia=False) is None
+    assert CB.conferir_pagamento_por_fora(
+        "DINHEIRO", {"cobranca_ligada": "0", "cobranca_banco": "PARCELA"},
+        afirmo=False, afirmacao="", ciencia=False) is None
+
+
 def test_o_codigo_da_maquininha_e_opcional():
     sem = PX.conferir_credencial(CAMPOS)
     assert sem["terminal_id"] == ""

@@ -1,0 +1,10 @@
+{% if pagamento_integrado %}
+<div class="small" style="flex-basis:100%;max-width:42rem">
+  <p>Por fora de <strong>{{ pagamento_integrado }}</strong> só nesta transição.</p>
+  <label style="display:block"><input type="checkbox" name="afirmo_ciencia" value="1">
+    Dou ciência de que os próximos pagamentos serão recebidos dentro do sistema, nas formas que ele oferece.</label>
+  <label style="display:block">Afirmo, sob minha responsabilidade, que
+    <input type="checkbox" name="afirmo" value="1">
+    <input name="afirmacao" size="48" placeholder="por que este pagamento entrou por fora — 30 letras"></label>
+</div>
+{% endif %}

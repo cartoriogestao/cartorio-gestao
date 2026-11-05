@@ -31,9 +31,6 @@
       nesta casa: *lista vazia que só mostra nada faz o operador achar que
       quebrou*. O lugar do botão passa a explicar e a apontar onde se resolve —
       e ele volta a aparecer sozinho assim que o primeiro item entrar. #}
-  {# COBRAR POR BOLETO (27/10/2026): a cobrança nasce do protocolo, com o
-     que falta pagar sugerido. #}
-  {% if atos %}<a class="button" href="{{ url_for('cobranca_nova', protocolo_id=p.id) }}">Cobrar por Pix, boleto ou cartão</a>{% endif %}
   {% if atos %}<a class="button" href="{{ url_for('caixa_orcamento', protocolo_id=p.id) }}">
     {% if p.tipo == 'ORCAMENTO' %}Emitir cálculo de emolumentos{% else %}Emitir orçamento{% endif %}</a>
   {% else %}
@@ -364,6 +361,22 @@
    daqui, com etiqueta e comprovante em PDF — `ri_conferencia_web`. #}
 {% if conferencia_digital %}{% include '_ri_conferencia.html' %}{% endif %}
 
+{% if atos and not encerrado %}
+<section class="panel cg-lado-largo" data-fase="itens" style="padding:18px 16px">
+  <a class="button primary" style="font-size:1.2rem;padding:16px 28px;display:inline-block"
+     href="{{ url_for('cobranca_nova', protocolo_id=p.id) }}">Cobrar por Pix, boleto ou cartão</a>
+  <p class="small" style="margin:10px 0 0">
+    {% if pagamento_integrado %}
+    O pagamento deste protocolo entra por <strong>{{ pagamento_integrado }}</strong>.
+    Receber por fora só nesta transição, com a afirmação e a ciência no quadro de baixo.
+    {% else %}
+    Este é o recebimento do protocolo. Quando a instituição de pagamento estiver ligada,
+    o dinheiro entra por ela.
+    {% endif %}
+  </p>
+</section>
+{% endif %}
+
 <section class="cards" data-fase="itens">
   <div class="stat"><strong>{{ soma.total }}</strong><small>total do protocolo</small></div>
   <div class="stat"><strong>{{ pendente.total }}</strong><small>ainda a quitar</small></div>
@@ -397,6 +410,7 @@
           {% for cod, rotulo in FORMAS.items() %}<option value="{{ cod }}">{{ rotulo }}</option>{% endfor %}
         </select></label>
       {% include "_caixa_pagamento_anterior.html" %}
+      {% include "_pagamento_por_fora.html" %}
       <button class="primary" name="acao" value="quitar_todos"
         onclick="return confirm('Quitar os {{ faltam }} itens que faltam, quitando-os e lançando cada um no caixa? O total a receber é {{ pendente.total }}.')">
         Quitar os {{ faltam }} que faltam — {{ pendente.total }}</button>
@@ -465,6 +479,7 @@
               </select>
               <button class="small" name="acao" value="quitar">quitar</button>
               {% include "_caixa_pagamento_anterior.html" %}
+              {% include "_pagamento_por_fora.html" %}
               <button class="small" name="acao" value="remover" formnovalidate
                 onclick="return confirm('Remover este item do protocolo?')">remover</button>
             {% endif %}

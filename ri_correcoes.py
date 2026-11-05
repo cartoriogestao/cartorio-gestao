@@ -315,7 +315,9 @@ def fracao_escrita(texto: Any) -> str | None:
     if fracao_em_percentual(bruto) is None:
         return None
     if _FRACAO_ORDINARIA.match(bruto):
-        return re.sub(r"\s*/\s*", "/", bruto)
+        # SEM EXPRESSÃO REGULAR (CodeQL py/polynomial-redos, 05/11/2026): `\s*/\s*` sobre o
+        # texto digitado custa caro com muitos espaços; o corte em «/» faz o mesmo.
+        return "/".join(parte.strip() for parte in bruto.split("/"))
     return bruto.rstrip("%").strip().replace(".", ",") + "%"
 
 

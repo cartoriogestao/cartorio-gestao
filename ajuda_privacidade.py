@@ -522,7 +522,8 @@ class _Sanitizador:
             texto,
         )
 
-    def sanitizar(self, valor: Any, *, nomes_livres: bool = True) -> str:
+    def sanitizar(self, valor: Any, *, nomes_livres: bool = True,
+                  texto_publico: bool = False) -> str:
         texto = str(valor or "")
 
         # Primeiro os identificadores inequívocos. Assim um segredo ou e-mail
@@ -534,6 +535,17 @@ class _Sanitizador:
         texto = self.simples(texto, "TELEFONE", _TELEFONE)
         texto = self.rotulado(texto, "TELEFONE", _TELEFONE_ROTULADO)
         texto = self.simples(texto, "TELEFONE", _TELEFONE_LOCAL)
+        texto = self.simples(texto, "IP", _IP) if texto_publico else texto
+        # O TEXTO PÚBLICO PARA AQUI (05/11/2026, decisão do oficial, item 5 «b»).
+        # Texto de lei e de código de normas não tem dado de pessoa da
+        # serventia, e as passagens seguintes o adulteravam: «em nome do
+        # loteador» virava [PESSOA_01], «domicílio e residência atual dos
+        # cônjuges» virava [ENDERECO_01] — cerca de um quarto dos artigos da
+        # base normativa chegava ao modelo trocado. Os identificadores
+        # inequívocos acima continuam trocados, e a conferência de resíduos
+        # (`sanitizar_para_modelo`) continua levantando.
+        if texto_publico:
+            return texto
         texto = self.rotulado(texto, "CEP", _CEP_ROTULADO)
         texto = self.simples(texto, "CEP", _CEP)
         texto = self.simples(texto, "IP", _IP)
@@ -621,7 +633,8 @@ def sanitizar_texto(texto: Any) -> str:
     return seguro
 
 
-def sanitizar_para_modelo(texto: Any, *, nomes_livres: bool = True) -> str:
+def sanitizar_para_modelo(texto: Any, *, nomes_livres: bool = True,
+                          texto_publico: bool = False) -> str:
     """A barreira na forma em que o AGENTE devolve ao modelo o que ele leu.
 
     **Ela existe porque a Ajuda tinha uma porta só, e agora são muitas.** Até
@@ -648,7 +661,15 @@ def sanitizar_para_modelo(texto: Any, *, nomes_livres: bool = True) -> str:
     Se a conferência ainda achar resíduo, isto **levanta**, como o
     `preparar_saida`: o chamador trata a recusa e devolve ao modelo «este
     resultado não pode ser lido», em vez de deixar passar.
+
+    **`texto_publico=True` É PARA O TEXTO DE NORMA DA `base_normativa/`** (05/11/2026,
+    decisão do oficial): lei e código de normas, arquivos estáticos do
+    repositório, sem nada da serventia. Troca só os identificadores inequívocos
+    (segredo, e-mail, CNPJ, CPF, telefone, IP) e pula as passagens de nome,
+    endereço e dado sensível, que adulteravam o texto da lei. A conferência de
+    resíduos continua. Quem declara é a ferramenta (`Ferramenta.texto_publico`).
     """
-    seguro = _Sanitizador().sanitizar(texto, nomes_livres=nomes_livres)
+    seguro = _Sanitizador().sanitizar(texto, nomes_livres=nomes_livres,
+                                      texto_publico=texto_publico)
     _conferir_residuos(seguro)
     return seguro

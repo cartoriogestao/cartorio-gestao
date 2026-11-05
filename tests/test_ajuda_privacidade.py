@@ -198,3 +198,16 @@ def test_o_vocabulario_esta_escrito_na_forma_em_que_se_compara():
 def test_o_que_tambem_e_nome_esta_no_vocabulario():
     """O segundo nível é um recorte do primeiro; fora dele não teria efeito."""
     assert PRIV._VOCABULARIO_QUE_TAMBEM_E_NOME <= PRIV._VOCABULARIO_COMUM
+
+
+def test_o_texto_publico_troca_so_o_inequivoco_e_continua_conferido():
+    """Decisão do oficial (05/11/2026): o texto de norma da base_normativa/ pula as passagens de nome,
+    endereço e dado sensível — que adulteravam a lei —, e o CPF, o e-mail, o telefone e o segredo continuam
+    trocados, com a conferência de resíduos de pé."""
+    lei = ("Art. 18. Aprovado o projeto, o loteador o submeterá ao registro, em nome do loteador, com o "
+           "domicílio e residência atual dos cônjuges; contato fulano@exemplo.com.br, CPF 000.000.002-72.")
+    publico = PRIV.sanitizar_para_modelo(lei, nomes_livres=False, texto_publico=True)
+    assert "em nome do loteador" in publico and "domicílio e residência atual dos cônjuges" in publico
+    assert "fulano@exemplo.com.br" not in publico and "000.000.002-72" not in publico
+    fechado = PRIV.sanitizar_para_modelo(lei, nomes_livres=False)
+    assert "em nome do loteador" not in fechado or "domicílio e residência atual" not in fechado

@@ -620,3 +620,21 @@ def test_a_ia_so_le_quando_alguem_clica():
     assert "pela_tela" not in tela and "lerSozinha" not in tela and "ler_sozinha" not in tela
     fonte = (Path(__file__).resolve().parent.parent / "ri_onus_ia.py").read_text(encoding="utf-8")
     assert "ler_sozinha" not in fonte
+
+
+def test_a_sugestao_de_onus_leva_a_norma_da_certidao(tmp_path):
+    """Decisão do oficial (05/11/2026, item 5): a leitura da ficha para a certidão de ônus recebe os artigos
+    da certidão de ônus e das ações, com a citação, depois da máscara."""
+    banco, con = _banco_com_ficha(tmp_path)
+    sid, _ = RONIA.pedir(con, 1)
+    con.commit()
+    enviados = []
+
+    def conversar(pasta, **kw):
+        enviados.append(kw["conversa"][0]["texto"])
+        return {"texto": json.dumps({"onus": "NEGATIVA", "acoes": "NEGATIVA", "itens": [],
+                                     "cancelados": [], "parecer": "nada"}),
+                "modelo": "teste", "entrada": 10, "saida": 5}
+
+    RONIA.executar(banco, tmp_path, sid, conversar=conversar)
+    assert "=== A NORMA PERTINENTE" in enviados[0] and "— fonte: " in enviados[0]

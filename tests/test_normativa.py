@@ -216,11 +216,47 @@ def test_as_duas_instrucoes_mandam_citar_o_artigo_lido():
         assert "Não cite artigo que não leu" in instrucao
 
 
-def test_nenhum_artigo_e_bloqueado_pela_barreira_de_privacidade():
-    """O texto é público e não traz dado da serventia; um bloqueio tiraria a
-    norma inteira do agente, em vez de um pedaço dela."""
+def test_nenhum_artigo_e_bloqueado_nem_adulterado_pela_barreira():
+    """O texto é público e não traz dado da serventia. Decisão do oficial (05/11/2026): a ferramenta o
+    declara texto público, e a barreira pula as passagens de nome, endereço e dado sensível — antes, cerca
+    de um quarto dos artigos chegava ao modelo com «[PESSOA_01]» no lugar de «em nome do loteador». Só o
+    identificador inequívoco continua trocado: o e-mail institucional do art. 446 do CNN."""
     import ajuda_privacidade as PRIV
+    alterados = []
     for n in N.normas():
         for a in n["artigos"]:
-            PRIV.sanitizar_para_modelo(
-                f"[{N.citacao(n, a)}]\n{N._cortar(a['texto'])}", nomes_livres=False)
+            texto = f"[{N.citacao(n, a)}]\n{N._cortar(a['texto'])}"
+            if PRIV.sanitizar_para_modelo(texto, nomes_livres=False, texto_publico=True) != texto:
+                alterados.append((n["chave"], a["numero"]))
+    assert alterados == [("codigo_nacional_de_normas_cnj", "446")], alterados[:10]
+
+
+def test_a_ferramenta_da_norma_e_texto_publico_e_a_lei_chega_inteira():
+    assert AF.POR_NOME["consultar_norma"].texto_publico is True
+    assert not any(f.texto_publico for f in AF.FERRAMENTAS if f.nome != "consultar_norma")
+    r = AF.executar(_contexto(), "consultar_norma", {"norma": "Lei 6.766", "termo": "em nome do loteador"})
+    assert "em nome do loteador" in r["conteudo"] and "[PESSOA_" not in r["conteudo"], r["conteudo"][:600]
+
+
+# ------------------------------------- os agentes de chamada única (05/11/2026, item 5)
+
+def test_o_bloco_do_pedido_traz_os_artigos_da_atribuicao_com_a_citacao():
+    bloco = N.trechos_para_o_pedido("compra e venda registro", atribuicao="RI")
+    assert bloco.startswith("=== A NORMA PERTINENTE")
+    citadas = {linha.split(", art.")[0].lstrip("[") for linha in bloco.splitlines() if linha.startswith("[")}
+    nomes_ri = {N.norma(c)["nome"] for c in N.NORMAS_DA_ATRIBUICAO["RI"]}
+    assert citadas and citadas <= nomes_ri, citadas
+    assert bloco.count("— fonte: ") <= N.LIMITE_PARA_O_PEDIDO
+
+
+def test_sem_assunto_ou_sem_achado_nao_ha_bloco():
+    assert N.trechos_para_o_pedido("", atribuicao="RI") == ""
+    assert N.trechos_para_o_pedido("xilofone azulado tonitroante", atribuicao="RI") == ""
+
+
+def test_a_qualificacao_assistida_continua_suspensa_e_sem_a_norma():
+    """A qualificação assistida continua SUSPENSA (#310): liberar é decisão do oficial, depois de validar."""
+    import ri_qualificacao_ia as QIA
+    assert QIA.SUSPENSA_POR_BASE_NORMATIVA is True
+    fonte = open(QIA.__file__, encoding="utf-8").read()
+    assert "import normativa" not in fonte and "trechos_para_o_pedido" not in fonte

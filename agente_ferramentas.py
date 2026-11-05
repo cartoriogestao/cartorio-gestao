@@ -222,6 +222,10 @@ class Ferramenta:
     tipo: str
     nomes_livres: bool
     executar: Callable[..., str]
+    # TEXTO PÚBLICO DO REPOSITÓRIO (05/11/2026, decisão do oficial): a barreira
+    # pula as passagens de nome, endereço e dado sensível, e a conferência de
+    # resíduos continua (`PRIV.sanitizar_para_modelo`). Só a leitura da norma.
+    texto_publico: bool = False
 
     @property
     def e_escrita(self) -> bool:
@@ -1787,9 +1791,12 @@ FERRAMENTAS: tuple[Ferramenta, ...] = (
                        "description": "ex.: 167, 216-A, 1.020"},
             "limite": {"type": "integer",
                        "description": "máximo de artigos na busca; vazio = 8"}}},
-        # TEXTO DE NORMA PÚBLICA, E NÃO BANCO: a mesma passagem fechada da
-        # documentação. Ele não traz dado de pessoa da serventia.
-        tipo=LEITURA, nomes_livres=False, executar=_consulta_norma),
+        # TEXTO DE NORMA PÚBLICA, E NÃO BANCO. Desde 05/11/2026 (decisão do
+        # oficial) a barreira o trata como texto público: troca só o que é
+        # identificador inequívoco e confere os resíduos; antes, a passagem de
+        # nomes e endereços adulterava cerca de um quarto dos artigos.
+        tipo=LEITURA, nomes_livres=False, executar=_consulta_norma,
+        texto_publico=True),
     Ferramenta(
         nome="listar_telas",
         descricao="As telas do sistema, com o módulo de cada uma.",
@@ -1996,7 +2003,8 @@ def executar(ctx: Contexto, nome: str, argumentos: dict) -> dict:
 
     try:
         seguro = PRIV.sanitizar_para_modelo(bruto,
-                                           nomes_livres=ferramenta.nomes_livres)
+                                           nomes_livres=ferramenta.nomes_livres,
+                                           texto_publico=ferramenta.texto_publico)
     except PRIV.PrivacidadeError as erro:
         return {"ferramenta": ferramenta.nome, "erro": True,
                 "conteudo": (

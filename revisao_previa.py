@@ -391,6 +391,20 @@ def _com_os_anexos(dossie: str, bloco: str) -> str:
     return titulo + bloco + "\n\n" + dossie
 
 
+# O ASSUNTO DO ATO, LIDO DO DOSSIÊ QUE ESTE MÓDULO MONTA (`dossie_ri`,
+# `dossie_ri_lavrado`, `dossie_notas`): a natureza do título e o tipo.
+_ASSUNTO_DO_DOSSIE = re.compile(
+    r"^(?:Natureza do título|Tipo|ATO DAS NOTAS): *(.+)$", re.M)
+
+
+def _com_a_norma(seguro: str, dossie: str, atribuicao: str) -> str:
+    """O dossiê já mascarado, mais o bloco da norma pertinente. Só calcula."""
+    import normativa as NORMA
+    assunto = " ".join(m.group(1) for m in _ASSUNTO_DO_DOSSIE.finditer(dossie or ""))
+    norma = NORMA.trechos_para_o_pedido(assunto.replace("—", " "), atribuicao=atribuicao)
+    return f"{seguro}\n\n{norma}" if norma else seguro
+
+
 def _ler_json(texto: str) -> dict:
     m = re.search(r"\{.*\}", texto or "", re.S)
     if not m:
@@ -447,6 +461,9 @@ def executar(banco: Path, pasta_dados: Path, revisao_id: int, conversar=None) ->
                              lido["aviso"] or None, lido["tokens"], revisao_id))
                 con.commit()
             seguro, mapa = preparar_para_ia(bd, dossie)
+            # A NORMA PERTINENTE (05/11/2026, decisão do oficial, item 5) vai
+            # DEPOIS da máscara: é texto público, e chega inteira.
+            seguro = _com_a_norma(seguro, dossie, linha["atribuicao"] or "")
             # O REGISTRO DO USO DE IA (LF01): a revisão e a atribuição, sem texto.
             resposta = conversar(pasta_dados, provedor=PROVEDOR, sistema=instrucao,
                                  conversa=[{"tipo": "user", "texto": seguro}],

@@ -373,3 +373,12 @@ def test_importar_em_lote_confere_a_repeticao_dentro_da_trava(cg_casa, tmp_path,
     finally:
         con.close()
     assert vistas == [False], "a conferência rodou com a trava livre"
+
+
+def test_a_revisao_leva_a_norma_pertinente_depois_da_mascara(con, cg_casa, com_chave, tmp_path):
+    """Decisão do oficial (05/11/2026, item 5): a revisão prévia recebe os artigos do assunto do ato
+    (a natureza do título), DEPOIS da máscara do dossiê — a norma é texto público e chega inteira."""
+    mid = _matricula(con)
+    _rid, ia = _revisar(con, cg_casa["banco"], mid, "R-1: venda de 20 ha", '{"achados": []}')
+    assert "=== A NORMA PERTINENTE" in ia.enviados[0]
+    assert "[Lei 6.015/1973 (LRP), art." in ia.enviados[0]

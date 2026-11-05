@@ -1216,6 +1216,50 @@ CAMINHO_AVERBACAO_PJ = "/selo/rtdpj/pessoa-juridica/averbacao"
 CAMINHO_AVERBACAO_TD = "/selo/rtdpj/ato-declarado/averbacao/integral/sem-valor"
 CAMINHO_RTDPJ_GERAL = "/selo/rtdpj/atos-em-geral"
 
+# O REGISTRO DO RTD COM VALOR DECLARADO (05/11/2026, decisao do oficial, item
+# 6: «SIM, selar pelo com-valor»). O item e o 15.2 da tabela, por faixa (#344).
+# O FORMATO E INFERIDO, E NAO MEDIDO: veio da classe do E-Oficio
+# (DadosRtdpjAtoComValorDeclarado — escrevente, livro, protocolo, baseCalculo,
+# registro, folha), lida so como referencia; os nomes JSON nao decompilaram, e
+# `registro` e `baseCalculo` dentro de `selo` sao a melhor leitura, pela
+# analogia com o RtdpjSemValorDeclarado medido. POR ISSO A CHAVE NASCE
+# DESLIGADA: so o oficial a liga, depois de uma resposta real do selador
+# confirmar o formato — ate la o registro sela por atos-em-geral, como sempre.
+CAMINHO_RTDPJ_COM_VALOR = "/selo/rtdpj/ato-declarado/integral/com-valor"
+CHAVE_DO_SELO_COM_VALOR = "rtd_selo_com_valor_ligado"
+
+
+def caminho_com_valor(caminho: str, *, tipo: Any, serie: Any, codigo_tj: Any,
+                      valor_declarado: Any, protocolo: Any, ligado: bool,
+                      isento: bool = False) -> str:
+    """O caminho do selo do REGISTRO do RTD com valor, ou o de antes. So calcula.
+
+    Troca so quando TUDO confere: a chave ligada, registro (e nao averbacao) em
+    serie de titulo (TD_*), item 15.2.N, valor declarado maior que zero, o
+    protocolo (obrigatorio no schema) e ato que nao e gratuito (a isencao neste
+    caminho nao esta medida). Faltou um, fica o caminho de sempre.
+    """
+    if not ligado or isento:
+        return caminho
+    if str(tipo or "").strip().upper() != "REGISTRO":
+        return caminho
+    if not str(serie or "").strip().upper().startswith("TD_"):
+        return caminho
+    if not str(codigo_tj or "").strip().startswith("15.2."):
+        return caminho
+    if not str(protocolo or "").strip() or _base_em_reais(valor_declarado) <= 0:
+        return caminho
+    return CAMINHO_RTDPJ_COM_VALOR
+
+
+def _base_em_reais(valor: Any) -> float:
+    """«1.234,56» → 1234.56; o que nao e numero → 0."""
+    texto = str(valor or "").strip().replace(".", "").replace(",", ".")
+    try:
+        return round(float(texto), 2)
+    except ValueError:
+        return 0.0
+
 
 def caminho_do_rtdpj(tipo: Any, serie: Any = None) -> str | None:
     """O endpoint do selador do RCPJ/RTD, pela serie. So calcula.
@@ -1251,8 +1295,14 @@ def envelope_do_rtdpj(*, caminho: Any, codigo_tj: Any, escrevente: Any,
                       folha: Any = None, protocolo: Any = None,
                       registro_averbacao: Any = None,
                       quantidade: Any = 1, isento: bool = False,
-                      motivo_isencao: Any = None) -> dict:
+                      motivo_isencao: Any = None,
+                      base_calculo: Any = None) -> dict:
     """O que vai dentro do pedido de selo do RCPJ/RTD. So calcula.
+
+    O COM-VALOR (05/11/2026, `CAMINHO_RTDPJ_COM_VALOR`): `natureza`, `partes`,
+    `selo` e `ato`, sem `quantidade`; no `selo`, `escrevente`, `livro` (so os
+    numeros), `protocolo`, `baseCalculo`, `registro` e `folha` quando houver.
+    Formato inferido — ver a constante.
 
     Dois formatos, pelo caminho:
       - `atos-em-geral`        → AtosEmGeral (escrevente, partes, ato)
@@ -1301,6 +1351,39 @@ def envelope_do_rtdpj(*, caminho: Any, codigo_tj: Any, escrevente: Any,
         raise AtoError(
             "O selo isento da averbação do RCPJ/RTD pelo caminho próprio não "
             "está medido; o ato gratuito sela pelo caminho geral.")
+
+    if caminho == CAMINHO_RTDPJ_COM_VALOR:
+        # RtdpjComValorDeclarado — o REGISTRO do RTD com valor (05/11/2026).
+        # SEM `quantidade`, que e so do sem-valor; o valor vai em
+        # `selo.baseCalculo`. Formato inferido: ver CAMINHO_RTDPJ_COM_VALOR.
+        base = _base_em_reais(base_calculo)
+        precisa = [nome for nome, valor in
+                   (("o livro", livro),
+                    ("o protocolo", protocolo),
+                    ("o número do registro", registro_averbacao))
+                   if not str(valor or "").strip()]
+        if base <= 0:
+            precisa.append("o valor declarado")
+        if precisa:
+            raise AtoError(
+                f"O selo do registro com valor declarado não sai sem "
+                f"{', '.join(precisa)}.")
+        selo_cv: dict[str, Any] = {
+            "escrevente": str(escrevente).strip(),
+            "livro": "".join(c for c in str(livro) if c.isdigit()) or str(livro).strip(),
+            "protocolo": str(protocolo).strip(),
+            "baseCalculo": base,
+            "registro": str(registro_averbacao).strip(),
+        }
+        if folha is not None and str(folha).strip():
+            selo_cv["folha"] = str(folha).strip()
+        return {
+            "natureza": {"tipo": int(natureza_tipo or 0),
+                         "descricao": str(natureza_descricao or "").strip() or "REGISTRO"},
+            "partes": pessoas,
+            "selo": selo_cv,
+            "ato": ato,
+        }
 
     # RtdpjSemValorDeclarado — pessoa-juridica/averbacao e
     # ato-declarado/averbacao/integral/sem-valor.

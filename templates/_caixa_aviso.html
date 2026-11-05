@@ -36,7 +36,10 @@
     {% for o in a.outros %}{{ o.operador }} ({{ o.data[8:10] }}/{{ o.data[5:7] }}){% if not loop.last %}, {% endif %}{% endfor %}.</small>{% endif %}
 </div>
 
-{% if not a.na_tela_do_caixa and a.nivel in ('BLOQUEIO', 'FIM_DO_EXPEDIENTE') %}
+{# No boleto, a janela do fim do expediente não cobre o «Emitir no banco»
+   nem a resposta do banco. A faixa vermelha fica. O caixa de ontem continua
+   trancando. #}
+{% if not a.na_tela_do_caixa and (a.nivel == 'BLOQUEIO' or (a.nivel == 'FIM_DO_EXPEDIENTE' and not a.na_tela_do_boleto)) %}
 {% if a.nivel == 'FIM_DO_EXPEDIENTE' %}<input type="checkbox" id="caixa-aviso-ok">{% endif %}
 <div class="caixa-aviso-fundo" role="alertdialog" aria-modal="true" aria-labelledby="caixa-aviso-titulo">
   <div class="caixa-aviso-janela">

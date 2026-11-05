@@ -46,4 +46,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # A TELA DO CAIXA FICA LIVRE: é nela que se fecha. Bloquear também
             # ali seria trancar a porta de saída junto com as outras.
             aviso["na_tela_do_caixa"] = onde == "caixa"
+            # A faixa continua. A janela do fim do expediente é que sai:
+            # ela cobria o «Emitir no banco» e a resposta do banco.
+            aviso["na_tela_do_boleto"] = onde in CA.TELAS_DO_BOLETO
         return {"caixa_aviso": aviso}

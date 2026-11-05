@@ -18,6 +18,9 @@
 <div class="actions">
   <a class="button" href="{{ url_for('ajuda_consultar') }}">&larr; Ajuda do sistema</a>
 </div>
+{% if biblioteca_vazia %}
+<p class="notice danger cg-aj-aviso"><strong>A base de conhecimento da ajuda está sem os documentos.</strong> {{ biblioteca_vazia }} Sem eles a ajuda responde pela regra geral, e não por este sistema. Confira em <a href="{{ url_for('ajuda_base') }}">A base da ajuda</a>.</p>
+{% endif %}
 {% if layout_novo and not tem_chave %}
 <p class="notice danger cg-aj-aviso"><strong>A chave da API ainda não foi informada</strong>, então nenhuma consulta sai. Quem responde hoje é o {{ escolha.provedor_nome }}: é a chave dele que falta. Informe em <a href="#aj-chaves">As chaves de API</a>.</p>
 {% endif %}

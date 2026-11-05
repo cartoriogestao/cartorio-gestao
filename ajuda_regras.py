@@ -7,7 +7,7 @@ A FRASE DO OFICIAL, EM 15/09/2026:
      casa decidiu, e não com o que o modelo sabe em geral.»
 
 E POR QUE ISSO É DIFERENTE DO QUE JÁ EXISTIA
-    `ajuda_projeto` já levava os **documentos** do projeto (`DOCUMENTACAO/`) e
+    `ajuda_projeto` já levava os **documentos** do projeto (`docs/`) e
     os **relatos** da casa. Os dois contam o que foi construído e o que foi
     medido — e nenhum dos dois conta **como se decide aqui**.
 
@@ -53,7 +53,9 @@ import ajuda_base as BASE
 
 RAIZ = Path(__file__).resolve().parent
 
-NOME = "CLAUDE.md"
+# O NOME VEM DA BASE (05/11/2026): era «CLAUDE.md» escrito aqui também, e o
+# arquivo passou a ser `docs/REGRAS_DA_CASA.md` — ver `ajuda_base`.
+NOME = BASE.NOME_DAS_REGRAS
 
 
 def _caminhos() -> list[Path]:
@@ -342,7 +344,7 @@ def _versao_em_tupla(texto: str) -> tuple[int, ...]:
 
 def roteiro_mais_novo(pasta: Path | None = None) -> str:
     """A maior versão entre os `ROTEIRO_*.md` da pasta dos documentos."""
-    pasta = pasta or (RAIZ / "DOCUMENTACAO")
+    pasta = pasta or BASE.PASTA_DOS_DOCUMENTOS
     if not pasta.is_dir():
         return ""
     versoes = []

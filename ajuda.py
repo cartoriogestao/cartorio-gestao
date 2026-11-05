@@ -151,6 +151,26 @@ PROVEDOR_DE_NASCENCA = "claude"
 # quem precisa de mais está fazendo perícia, e perícia é do Agente do sistema.
 TETO_DE_TURNOS_DA_AJUDA = 4
 
+# QUANTO CADA TURNO PODE ESCREVER (05/11/2026, decisão do oficial). Era o
+# padrão do transporte, 2.000 tokens — e o modelo da ajuda pensa antes de
+# responder, e o pensamento conta dentro do mesmo teto: sobrava pouco para a
+# resposta, que saía curta, genérica ou cortada. É TETO, e não gasto: a
+# resposta de balcão continua do tamanho que tem.
+MAXIMO_DE_SAIDA_DA_AJUDA = 8000
+
+# O QUE A AJUDA DIZ QUANDO NÃO CHEGOU AO FIM DA RESPOSTA (05/11/2026). Antes a
+# resposta saía como estava — meia frase cortada no limite de tamanho, ou o
+# «vou procurar…» do último turno —, e quem estava no balcão lia como resposta
+# inteira. O oficial reclamou de respostas genéricas; parte delas era isto.
+AVISO_RESPOSTA_CORTADA = (
+    "(A resposta foi cortada no limite de tamanho e pode estar incompleta. "
+    "Pergunte de novo, de forma mais estreita.)")
+AVISO_TETO_DE_LEITURAS = (
+    "(A ajuda usou as {n} rodadas de leitura que tem e não chegou a uma "
+    "resposta completa. Pergunte de novo, de forma mais estreita — por "
+    "exemplo, dizendo a tela ou o ato.)")
+PAROU_NO_LIMITE = frozenset({"max_tokens", "length"})
+
 # Quanto de texto do ato pode ir junto. Acima disso é engano de quem montou.
 LIMITE_DO_CONTEXTO = 40_000
 
@@ -601,16 +621,22 @@ COMO RESPONDER
 
 A BASE DE CONHECIMENTO DESTA CASA
 - Existe uma base já carregada, e **uma chamada de `buscar_na_base` procura nas
-  três fontes de uma vez**: os documentos do projeto, as regras da casa
-  (CLAUDE.md) e o que o oficial escreveu. Comece por ELA antes de responder
+  três fontes de uma vez**: os documentos do projeto (o manual, as decisões
+  do sistema em `decisoes/` e os relatórios), as regras da casa, quando a
+  instalação as tiver, e o que o oficial escreveu. Comece por ELA antes de responder
   sobre como este sistema se comporta ou o que já foi decidido.
 - Não procure documento por documento, e não peça o texto de um documento só
   para conferir um termo: a base responde com a linha e o endereço de onde ela
   saiu. Só quando a base não tiver nada sobre o assunto é que se lê um arquivo
-  inteiro ou o código.
+  inteiro — ou o código, se a leitura do código estiver entre as suas
+  ferramentas.
 - Quando a base não achar nada, diga isso — e diga que «não está escrito» não
   quer dizer «não existe»: o sistema pode fazer sem documento nenhum. Nesse
-  caso, veja o código ou as telas antes de afirmar.
+  caso, veja as telas (`listar_telas`) — ou o código, se essa ferramenta veio
+  na sua lista — antes de afirmar.
+- Use só as ferramentas que vieram na sua lista. Se duas buscas não acharem
+  o assunto, responda com o que tem e diga o que não achou: cada leitura a
+  mais é espera de quem está com o cliente na frente.
 
 O QUE VOCÊ NÃO FAZ, E ISTO É IMPORTANTE
 - Você NÃO decide o ato. Qualificar, recusar, lavrar e cancelar são atos do
@@ -915,6 +941,7 @@ def _conversar(db, *, pacote: Any, provedor: str, modelo: str,
         resposta = PROV.conversar(
             pasta_de_dados, provedor=provedor, sistema=pacote.instrucao,
             conversa=conversa, ferramentas=ferramentas, modelo=modelo,
+            maximo_de_saida=MAXIMO_DE_SAIDA_DA_AJUDA,
             modulo="ajuda", finalidade="ajuda", usuario=usuario or "",
             mascarado=True)
         entrada += int(resposta.get("entrada") or 0)
@@ -926,11 +953,18 @@ def _conversar(db, *, pacote: Any, provedor: str, modelo: str,
                      "nome": str(c.get("nome") or ""),
                      "argumentos": c.get("argumentos") or {}}
                     for i, c in enumerate(resposta.get("chamadas") or [], 1)]
+        # O PENSAMENTO VOLTA NO TURNO SEGUINTE (05/11/2026, decisão do
+        # oficial): `conteudo_original` leva o turno como veio — ver
+        # `PROV._mensagens_anthropic`. Os outros provedores não o têm.
         conversa.append({"tipo": "assistant", "texto": texto,
-                         "chamadas": chamadas})
+                         "chamadas": chamadas,
+                         "conteudo_original": resposta.get("conteudo_original")
+                         or []})
         passo = {"turno": turno, "texto": texto, "leituras": []}
         if not chamadas:
             passos.append(passo)
+            if str(resposta.get("parou") or "") in PAROU_NO_LIMITE:
+                texto = f"{texto}\n\n{AVISO_RESPOSTA_CORTADA}".strip()
             break
 
         resultados = []
@@ -964,6 +998,11 @@ def _conversar(db, *, pacote: Any, provedor: str, modelo: str,
                 "caracteres": len(conteudo)})
         passos.append(passo)
         conversa.append({"tipo": "tool", "resultados": resultados})
+    else:
+        # O TETO ACABOU COM LEITURA PEDIDA: o último texto é o de quem ia ler
+        # mais, e não uma resposta. Diz-se isso, em vez de mostrá-lo como tal.
+        aviso = AVISO_TETO_DE_LEITURAS.format(n=TETO_DE_TURNOS_DA_AJUDA)
+        texto = f"{texto}\n\n{aviso}".strip()
 
     return texto, {"entrada": entrada, "saida": saida,
                    "modelo": modelo_que_respondeu}, passos

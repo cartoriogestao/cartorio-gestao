@@ -37,11 +37,13 @@ from pathlib import Path
 import pytest
 
 RAIZ = Path(__file__).resolve().parent.parent
-# AS REGRAS E A DOCUMENTAÇÃO DA CASA FICAM FORA DO GITHUB (decisão do
-# oficial): no clone público este módulo PULA, em vez de falhar inteiro
-# por falta do material que ele lê (23/10/2026).
-if not (RAIZ / "CLAUDE.md").is_file() or not (RAIZ / "DOCUMENTACAO").is_dir():
-    pytest.skip("CLAUDE.md e DOCUMENTACAO/ ficam fora do repositório público",
+# AS REGRAS E A DOCUMENTAÇÃO DA CASA ESTÃO NO REPOSITÓRIO DESDE 05/11/2026
+# (decisão do oficial: «vamos fazer parte do repositório do github que é
+# clonado»), em `docs/` e `docs/REGRAS_DA_CASA.md`. Até ali este módulo
+# PULAVA inteiro no clone público — e foi assim que a base vazia passou
+# sem nenhum teste ver.
+if not (RAIZ / "docs" / "REGRAS_DA_CASA.md").is_file():
+    pytest.skip("docs/REGRAS_DA_CASA.md não está nesta cópia",
                 allow_module_level=True)
 
 # O ATUALIZADOR MORA AO LADO DA PASTA INSTALÁVEL (INSTALAR_CARTORIO_GESTAO); no
@@ -60,7 +62,62 @@ def _ler_atualizador() -> str:
 sys.path.insert(0, str(RAIZ))
 
 import agente_ferramentas as AF                                   # noqa: E402
+import ajuda_base as BASE                                         # noqa: E402
 import ajuda_regras as REGRAS                                     # noqa: E402
+
+
+# O MECANISMO SE MEDE NUM ARQUIVO DE TESTE, E O ARQUIVO REAL NO DELE (05/11/2026).
+#
+# Estes testes nasceram medindo o `CLAUDE.md` privado — 42 seções, uma de 40 mil
+# caracteres, carimbo de versão na primeira linha. As regras passaram a ser
+# `docs/REGRAS_DA_CASA.md`, curtas e SEM carimbo de propósito (carimbo escrito à
+# mão é o que já mentiu duas vezes). O que é régua — ler por número e por
+# título, recusar o título ambíguo, conferir o carimbo — se confere aqui, num
+# arquivo montado com o que a régua precisa; o que é do arquivo real tem os
+# testes de «o arquivo».
+_SECAO_GRANDE = "\n".join(
+    f"- Linha {i} da seção grande, escrita longa de propósito para passar dos "
+    f"cento e vinte caracteres que a conferência do índice exige aqui."
+    for i in range(120))
+REGRAS_DE_TESTE = f"""Regras de teste — **versão 3.6.130**, **5.826 testes coletados**.
+
+# As regras do teste
+
+## Antes de escrever
+Confira a tela antes de mexer no modelo.
+
+## O selo eletrônico
+O selo sai do aparelho da rede local.
+
+## O selo do civil
+O civil tem selo próprio.
+
+## O carimbo
+Carimbo que mente é pior que carimbo nenhum.
+
+## A seção grande
+{_SECAO_GRANDE}
+"""
+
+
+@pytest.fixture()
+def regras_de_teste(tmp_path, monkeypatch):
+    """A pasta dos documentos aponta para um `REGRAS_DA_CASA.md` de teste.
+
+    A base tem índice global com conferência a cada dois segundos: sem
+    `forcar`, a busca das regras continuaria lendo o arquivo real.
+    """
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / BASE.NOME_DAS_REGRAS).write_text(REGRAS_DE_TESTE, encoding="utf-8")
+    guardado = dict(BASE._INDICE)
+    monkeypatch.setattr(BASE, "PASTA_DOS_DOCUMENTOS", docs)
+    BASE.carregar(forcar=True)
+    try:
+        yield docs
+    finally:
+        BASE._INDICE.clear()
+        BASE._INDICE.update(guardado)
 
 
 # ------------------------------------------------------------------ o arquivo
@@ -73,11 +130,27 @@ def test_as_regras_desta_casa_sao_lidas():
         f"{[str(c) for c in REGRAS._caminhos()]}"
     )
     indice = REGRAS.indice()
-    assert len(indice) > 20, "o arquivo das regras perdeu as seções"
-    assert REGRAS.onde().endswith("CLAUDE.md")
+    assert len(indice) >= 9, "o arquivo das regras perdeu as seções"
+    assert REGRAS.onde().endswith("REGRAS_DA_CASA.md")
 
 
-def test_o_indice_traz_titulo_e_tamanho_e_NAO_traz_o_texto():
+def test_as_regras_vem_so_do_repositorio_e_nao_de_arquivo_solto():
+    """Decisão do oficial (05/11/2026): a base vem do que está no repositório.
+    O `CLAUDE.md` velho que ficou no servidor, ao lado ou acima da pasta do
+    programa, não pode ganhar — nem como reserva."""
+    caminhos = REGRAS._caminhos()
+    assert caminhos == [BASE.PASTA_DOS_DOCUMENTOS / "REGRAS_DA_CASA.md"]
+    assert all(c.name != "CLAUDE.md" for c in caminhos)
+
+
+def test_o_arquivo_real_nao_traz_carimbo_de_versao():
+    """Sem carimbo de propósito: o que diria a versão é o `app.py`, e carimbo
+    escrito à mão envelhece. A conferência diz «não conferível», sem aviso."""
+    assert REGRAS.carimbo()["versao"] == ""
+    assert REGRAS.resumo_da_conferencia("3.7.10") == ""
+
+
+def test_o_indice_traz_titulo_e_tamanho_e_NAO_traz_o_texto(regras_de_teste):
     """A medição que decide o custo da ajuda: vai o índice, não a biblioteca."""
     indice = REGRAS.indice()
     secao = max(indice, key=lambda s: s["caracteres"])
@@ -92,7 +165,7 @@ def test_o_indice_traz_titulo_e_tamanho_e_NAO_traz_o_texto():
     assert secao["titulo"] in contexto
 
 
-def test_le_a_secao_pelo_numero_e_pelo_titulo():
+def test_le_a_secao_pelo_numero_e_pelo_titulo(regras_de_teste):
     por_numero = REGRAS.ler("2")
     por_titulo = REGRAS.ler("Antes de escrever")
     assert "regras, seção 2" in por_numero
@@ -105,7 +178,7 @@ def test_secao_que_nao_existe_recusa_dizendo_a_faixa():
     assert "9999" in str(erro.value)
 
 
-def test_titulo_ambiguo_recusa_e_diz_quais_sao():
+def test_titulo_ambiguo_recusa_e_diz_quais_sao(regras_de_teste):
     """«selo» casa com mais de uma seção, e escolher por conta própria seria a
     ferramenta decidindo o que a pergunta era."""
     with pytest.raises(REGRAS.RegraError) as erro:
@@ -115,13 +188,13 @@ def test_titulo_ambiguo_recusa_e_diz_quais_sao():
     assert mensagem.count("(") >= 2, "a recusa deve nomear as seções que casaram"
 
 
-def test_procurar_devolve_as_linhas_com_a_secao_de_origem():
+def test_procurar_devolve_as_linhas_com_a_secao_de_origem(regras_de_teste):
     """É o caminho curto e o mais usado: quem pergunta «como se decide sobre
     selo» quer a frase que decide, e não a seção inteira."""
     achado = REGRAS.procurar("carimbo que mente")
     assert "linha(s) com" in achado
     assert "[seção " in achado
-    assert "carimbo que mente" in achado
+    assert "carimbo que mente" in achado.lower()
 
 
 def test_termo_que_a_casa_nunca_escreveu_diz_que_NAO_escreveu():
@@ -141,7 +214,7 @@ def test_procurar_sem_termo_e_recusa():
 # ----------------------------------------------------------------- o carimbo
 
 
-def test_o_carimbo_do_arquivo_e_lido():
+def test_o_carimbo_do_arquivo_e_lido(regras_de_teste):
     """A versão e o tamanho da suíte saem do texto do arquivo.
 
     **A PRIMEIRA VERSÃO DESTA LEITURA NÃO ACHAVA A VERSÃO**, e não avisava: o
@@ -154,7 +227,7 @@ def test_o_carimbo_do_arquivo_e_lido():
     assert re.fullmatch(r"[\d.]+", carimbo["testes"]), carimbo
 
 
-def test_versao_atras_do_sistema_gera_aviso():
+def test_versao_atras_do_sistema_gera_aviso(regras_de_teste):
     """O sistema numa versão adiante do material escrito: é o dia em que a
     ajuda diria ao balcão que o sistema está numa versão e o arquivo em outra."""
     atras = REGRAS.conferir("99.0.0")
@@ -167,7 +240,7 @@ def test_versao_atras_do_sistema_gera_aviso():
     assert "99.0.0" in resumo
 
 
-def test_versao_igual_nao_gera_aviso_nenhum(tmp_path):
+def test_versao_igual_nao_gera_aviso_nenhum(tmp_path, regras_de_teste):
     """**Vazio é o caso normal**, e o silêncio é o que faz o aviso valer: um
     bloco dizendo «tudo certo» em toda pergunta custaria token em toda pergunta
     para não dizer nada.
@@ -183,7 +256,7 @@ def test_versao_igual_nao_gera_aviso_nenhum(tmp_path):
     que o silêncio é devido: **tudo o que está escrito acompanha o que roda.**
     """
     igual = REGRAS.carimbo()["versao"]
-    docs = tmp_path / "DOCUMENTACAO"
+    docs = tmp_path / "roteiros"
     docs.mkdir()
     (docs / f"ROTEIRO_{igual}.md").write_text("roteiro do dia", encoding="utf-8")
 
@@ -193,7 +266,8 @@ def test_versao_igual_nao_gera_aviso_nenhum(tmp_path):
     assert versao["veredito"] == "de_acordo"
 
 
-def test_o_roteiro_atras_e_avisado_SEM_contaminar_o_outro_carimbo(tmp_path):
+def test_o_roteiro_atras_e_avisado_SEM_contaminar_o_outro_carimbo(
+        tmp_path, regras_de_teste):
     """**SÃO DOIS CARIMBOS, E O AVISO DIZ QUAL DOS DOIS ESTÁ ATRÁS.**
 
     O `ROTEIRO_*.md` é escrito quando há entrega ou interrupção — não a cada
@@ -206,7 +280,7 @@ def test_o_roteiro_atras_e_avisado_SEM_contaminar_o_outro_carimbo(tmp_path):
     **régua**, e a pasta de verdade muda a cada versão.
     """
     igual = REGRAS.carimbo()["versao"]
-    docs = tmp_path / "DOCUMENTACAO"
+    docs = tmp_path / "roteiros"
     docs.mkdir()
     (docs / "ROTEIRO_1.0.0.md").write_text("roteiro velho", encoding="utf-8")
 
@@ -377,25 +451,28 @@ def _pacote():
 
 
 def test_o_pacote_cgu_leva_o_arquivo_das_regras():
-    """O `criar_atualizacao.py` empacota a pasta do programa, e o arquivo das
-    regras mora UM NÍVEL ACIMA dela. Sem o `DE_FORA` ele não viaja, e a ajuda
-    do servidor fica sem as regras."""
+    """O `criar_atualizacao.py` empacota a pasta do programa, e as regras moram
+    nela desde 05/11/2026 (`docs/REGRAS_DA_CASA.md`): viajam como qualquer
+    documento. Antes moravam UM NÍVEL ACIMA, e só o `DE_FORA` as levava."""
     CA = _pacote()
 
     # A ORDEM DO PAR SE DESFAZ AQUI, e é legítimo: `todos_os_arquivos` devolve
     # `(arquivo, destino)`, como o `iter_files` — **e já devolveu o contrário**,
     # pelo dicionário de dentro, o que quebrou o empacotamento em 15/09/2026.
     por_destino = {rel: p for p, rel in CA.todos_os_arquivos(RAIZ)}
-    assert "CLAUDE.md" in por_destino, sorted(por_destino)[:20]
+    assert "docs/REGRAS_DA_CASA.md" in por_destino, sorted(por_destino)[:20]
     # entra UMA vez: destino repetido no manifesto é o pacote se sobrescrevendo
     destinos = [rel for _p, rel in CA.todos_os_arquivos(RAIZ)]
     assert len(destinos) == len(set(destinos))
 
     # e o que veio de fora é o arquivo das regras de verdade
-    texto = por_destino["CLAUDE.md"].read_text(encoding="utf-8",
-                                               errors="replace")
-    assert texto.startswith("# CartorioGestao")
+    texto = por_destino["docs/REGRAS_DA_CASA.md"].read_text(
+        encoding="utf-8", errors="replace")
+    assert texto.startswith("# As regras da casa")
     assert REGRAS._quebrar(texto), "o arquivo empacotado não tem seções"
+    # E OS DOCUMENTOS VIAJAM JUNTO: é deles que a base da ajuda se faz.
+    assert sum(1 for d in por_destino if d.startswith("docs/")) >= (
+        BASE.PISO_DE_DOCUMENTOS)
 
 
 def test_a_atualizacao_rapida_copia_os_documentos_e_as_regras():

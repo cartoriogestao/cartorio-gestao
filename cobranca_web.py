@@ -1,4 +1,4 @@
-"""As telas da cobrança — o boleto do protocolo, pelo Inter ou pela Unicred.
+"""As telas da cobrança — o boleto do protocolo, pelo Inter, pela Unicred ou pela Parcela Express.
 
 QUEM FAZ O QUÊ
     - Ver, cadastrar e lançar no caixa: quem opera o caixa (ADMIN, MANAGER e
@@ -6,8 +6,8 @@ QUEM FAZ O QUÊ
     - Cancelar no banco, conceder abatimento e mexer no protesto automático:
       ADMIN e MANAGER. É dinheiro que deixa de entrar, e protesto é ato
       contra o cliente.
-    - Configurar e cadastrar a credencial da Unicred: só o ADMIN. A do Inter
-      é a mesma das despesas, e mora na configuração delas.
+    - Configurar e cadastrar a credencial da Unicred e da Parcela Express:
+      só o ADMIN. A do Inter é a mesma das despesas, e mora na configuração delas.
 
 QUEM FALA COM O BANCO
     Com o cofre da automação instalado, a tela NÃO lê a credencial: grava o
@@ -24,6 +24,7 @@ from flask import abort, flash, redirect, render_template, request, send_file, u
 
 import cobranca as CB
 import cobranca_banco as CBB
+import cobranca_parcela as PARCELA
 import cobranca_unicred as UNICRED
 import despesas as DP
 from bd_nativo import banco
@@ -293,6 +294,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         {k: f.get(k) for k in UNICRED.CAMPOS_DA_CREDENCIAL})["onde"]
                     audit("COBRANCA_CREDENCIAL_UNICRED", "settings", None, {"onde": onde})
                     flash(f"Credencial da Unicred gravada ({onde}).", "success")
+                elif f.get("parte") == "parcela":
+                    onde = PARCELA.gravar_credencial(
+                        {k: f.get(k) for k in PARCELA.CAMPOS_DA_CREDENCIAL})["onde"]
+                    audit("COBRANCA_CREDENCIAL_PARCELA", "settings", None, {"onde": onde})
+                    flash(f"Credencial da Parcela Express gravada ({onde}).", "success")
                 else:
                     with db.transaction() as con:
                         mudou = CB.gravar_configuracao(con, f)
@@ -308,4 +314,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                bancos=CB.BANCOS, ambientes=CB.AMBIENTES,
                                unicred=UNICRED.resumo_da_credencial(),
                                rotulos_unicred=UNICRED.ROTULOS_DA_CREDENCIAL,
-                               procedencia_token=UNICRED.PROCEDENCIA_DO_TOKEN)
+                               procedencia_token=UNICRED.PROCEDENCIA_DO_TOKEN,
+                               parcela=PARCELA.resumo_da_credencial(),
+                               rotulos_parcela=PARCELA.ROTULOS_DA_CREDENCIAL)

@@ -14,6 +14,8 @@
   <p>Protocolo: {% if protocolo %}{{ protocolo.numero }}{% else %}—{% endif %}</p>
   <p>Pagador: {{ c.pagador_nome }} · {{ c.pagador_documento }}{% if c.pagador_email %} · {{ c.pagador_email }}{% endif %}<br>
      {{ endereco.logradouro }}{% if endereco.numero %}, {{ endereco.numero }}{% endif %}{% if endereco.complemento %} {{ endereco.complemento }}{% endif %}{% if endereco.bairro %} — {{ endereco.bairro }}{% endif %}, {{ endereco.cidade }}/{{ endereco.uf }}, CEP {{ endereco.cep }}</p>
+  {% if c.link_pagamento %}<p>Link de pagamento (Pix, boleto ou cartão):
+    <a href="{{ c.link_pagamento }}" target="_blank" rel="noopener">{{ c.link_pagamento }}</a></p>{% endif %}
   {% if c.linha_digitavel %}<p>Linha digitável: <code>{{ c.linha_digitavel }}</code></p>{% endif %}
   {% if c.pix_copia_e_cola %}<p>Pix copia e cola: <code style="word-break:break-all">{{ c.pix_copia_e_cola }}</code></p>{% endif %}
   {% if c.valor_recebido %}<p>Recebido R$ {{ reais(c.valor_recebido) }} em {{ c.data_pagamento or '?' }} ({{ c.forma_recebida|lower or 'boleto' }}).</p>{% endif %}

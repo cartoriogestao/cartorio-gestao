@@ -572,10 +572,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         info = save_upload(arquivo, pasta_dos_arquivos() / "PROTESTO"
                            / "MANDADOS_DE_GRATUIDADE"
                            / safe_component(f"{tabela}-{ato_id}"))
-        db.add_attachment(
-            "PT_GRATUIDADE_MANDADO_" + ("ATO" if tabela == "pt_atos" else "CERTIDAO"),
-            int(ato_id), info, session.get("user_id"),
-            "Mandado judicial de gratuidade da justiça (CPC art. 98, § 1º, IX)")
+        # O TIPO VAI ESCRITO POR INTEIRO, e não montado: `TELA_DO_ANEXO` (app.py) diz quem
+        # o abre, e o teste da LS02 lê o tipo no código.
+        descricao = "Mandado judicial de gratuidade da justiça (CPC art. 98, § 1º, IX)"
+        if tabela == "pt_atos":
+            db.add_attachment("PT_GRATUIDADE_MANDADO_ATO", int(ato_id), info,
+                              session.get("user_id"), descricao)
+        else:
+            db.add_attachment("PT_GRATUIDADE_MANDADO_CERTIDAO", int(ato_id), info,
+                              session.get("user_id"), descricao)
 
     def _cobrar_se_pedido(con, tabela: str, ato_id: int, tipo: str,
                           busca: str | None = None,

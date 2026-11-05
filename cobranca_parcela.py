@@ -155,7 +155,7 @@ def gravar_credencial(campos: Mapping[str, Any], pasta: Any = None) -> dict:
         except Exception as erro:
             raise CB.CobrancaError(
                 f"O cofre não gravou a credencial da Parcela Express: {erro}") from erro
-        return {"onde": "cofre"}
+        return {"onde": "cofre", "terminal_id": limpos.get(CAMPO_DA_MAQUININHA, "")}
     import cofre_cred
     base = _pasta(pasta)
     base.mkdir(parents=True, exist_ok=True)
@@ -168,7 +168,8 @@ def gravar_credencial(campos: Mapping[str, Any], pasta: Any = None) -> dict:
     if any(conferido.get(k, "") != v for k, v in limpos.items()):
         raise CB.CobrancaError(
             "A credencial da Parcela Express não voltou igual na conferência.")
-    return {"onde": "arquivo cifrado da pasta de dados"}
+    return {"onde": "arquivo cifrado da pasta de dados",
+            "terminal_id": limpos.get(CAMPO_DA_MAQUININHA, "")}
 
 
 def resumo_da_credencial(pasta: Any = None) -> dict | None:

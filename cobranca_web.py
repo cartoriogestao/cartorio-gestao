@@ -295,11 +295,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     audit("COBRANCA_CREDENCIAL_UNICRED", "settings", None, {"onde": onde})
                     flash(f"Credencial da Unicred gravada ({onde}).", "success")
                 elif f.get("parte") == "parcela":
-                    onde = PARCELA.gravar_credencial(
+                    gravado = PARCELA.gravar_credencial(
                         {k: f.get(k) for k in (
-                            *PARCELA.CAMPOS_DA_CREDENCIAL, PARCELA.CAMPO_DA_MAQUININHA)})["onde"]
+                            *PARCELA.CAMPOS_DA_CREDENCIAL, PARCELA.CAMPO_DA_MAQUININHA)})
+                    onde = gravado["onde"]
                     audit("COBRANCA_CREDENCIAL_PARCELA", "settings", None, {"onde": onde})
-                    flash(f"Credencial da Parcela Express gravada ({onde}).", "success")
+                    aviso = f"Credencial da Parcela Express gravada ({onde})."
+                    if gravado.get("terminal_id"):
+                        aviso += f" Maquininha {gravado['terminal_id']}."
+                    flash(aviso, "success")
                 else:
                     with db.transaction() as con:
                         mudou = CB.gravar_configuracao(con, f)

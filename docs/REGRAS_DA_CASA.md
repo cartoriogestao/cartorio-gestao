@@ -129,6 +129,9 @@ diferença deve ser apontada ao oficial.
 - A releitura de um registro **não muda o cadastro**: o que muda o cadastro é
   ato próprio.
 - Notificação não se abre sobre registro cancelado.
+- **Registro com valor declarado** no RTD: o item é o **15.2** da tabela do
+  TJMA, pela faixa do valor, e a ficha do título o mostra. Decisão do oficial
+  de 05/11/2026.
 
 ## 8. Notas
 

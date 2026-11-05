@@ -276,3 +276,54 @@ def test_o_livro_a_pergunta_a_forma_e_avisa_a_sociedade_empresaria(casa):  # noq
                                                   "forma_pj": "SOCIEDADE_SIMPLES"})
     registro = b.um("SELECT * FROM rg_registros WHERE serie='PJ_A'")
     assert registro and registro["pj_forma"] == "SOCIEDADE_SIMPLES", F._avisos(r)
+
+
+# ------------------------------------------------------------------ o registro com valor declarado
+
+def _faixas_do_valor_declarado(b) -> None:  # noqa: F811
+    """A tabela 4 (o 15.2, por faixa) do `custas_reais.json`, na vigência vigente: a serventia de teste do
+    RTD carrega os itens, e não as faixas — como os testes das Notas fazem com a tabela 3."""
+    import json
+    from pathlib import Path
+    from bd_nativo import banco
+    custas = json.loads((Path(__file__).parent / "custas_reais.json").read_text("utf-8"))
+    reais = lambda v: f"{float(v or 0):.2f}"  # noqa: E731
+    with b.db.transaction() as con:
+        bd = banco(con)
+        vigencia = bd.um("SELECT codigo FROM cx_vigencias WHERE vigente=1 ORDER BY codigo")["codigo"]
+        if bd.um("SELECT 1 AS um FROM cx_faixas WHERE tabela=4 AND vigencia=%s", (vigencia,)):
+            return
+        for x in custas["faixas_2026"]:
+            if int(x["intCodigoTabela"]) != 4:
+                continue
+            total = x["curValor"] + x["curFERMOJUPI"] + x["curValor_MP"] + x["curValor_DP"] + (
+                x["curvalor_ferrfis"] or 0)
+            bd.escrever("""INSERT INTO cx_faixas (vigencia, tabela, de, ate, codigo_tj, emolumentos, ferc, femp,
+                               fadep, ferrfis, total) VALUES (%s, 4, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        (vigencia, reais(x["curDe"]), reais(x["curAte"]), x["strCodigoTJ"], reais(x["curValor"]),
+                         reais(x["curFERMOJUPI"]), reais(x["curValor_MP"]), reais(x["curValor_DP"]),
+                         reais(x["curvalor_ferrfis"]), reais(total)))
+
+@pytest.mark.parametrize("valor,item", [("10.000,00", "15.2.2"), ("7.396,72", "15.2.1"), ("7.396,73", "15.2.2")])
+def test_o_titulo_com_valor_declarado_mostra_o_item_da_tabela_pela_faixa(casa, valor, item):  # noqa: F811
+    """Decisão do oficial (05/11/2026, item p; observação O3): a casa registra títulos com valor declarado. O
+    item da tabela do TJMA é o 15.2 («Registro completo … de contrato, título ou documento com valor
+    declarado»), pela faixa do valor — e a ficha do título o mostra, com a faixa e o total."""
+    b = F.Balcao(casa)
+    _faixas_do_valor_declarado(b)
+    titulo = b.receber_titulo(4, serie="TD_B", natureza="Contrato de mútuo",
+                              apresentante="EMPRESA DE EXEMPLO LTDA", documento=F.CNPJ,
+                              valor_declarado=valor)
+    ficha = b.c.get(f"/rcpj-rtd/titulo/{titulo['id']}").get_data(as_text=True)
+    assert f"Item da tabela pelo valor: <strong>{item}</strong>" in ficha, ficha[:3000]
+
+
+def test_o_titulo_sem_valor_e_o_do_rcpj_nao_sugerem_item(casa):  # noqa: F811
+    b = F.Balcao(casa)
+    _faixas_do_valor_declarado(b)
+    sem = b.receber_titulo(4, serie="TD_B", natureza="Notificação extrajudicial",
+                           apresentante="EMPRESA DE EXEMPLO LTDA", documento=F.CNPJ)
+    assert "Item da tabela pelo valor" not in b.c.get(f"/rcpj-rtd/titulo/{sem['id']}").get_data(as_text=True)
+    pj = b.receber_titulo(3, serie="PJ_A", natureza="Constituição de associação",
+                          apresentante="ASSOCIAÇÃO DE EXEMPLO", documento=F.CNPJ, valor_declarado="10.000,00")
+    assert "Item da tabela pelo valor" not in b.c.get(f"/rcpj-rtd/titulo/{pj['id']}").get_data(as_text=True)

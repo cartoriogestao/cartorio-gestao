@@ -78,7 +78,11 @@ TABELAS_FAIXA = {
     1: "17.1 — Protesto: registro de protesto",
     2: "17.4 — Protesto: cancelamento",
     3: "13.1 — Notas: escritura com valor declarado",
-    4: "15.2 — Registro Civil de Pessoas Jurídicas",
+    # O ROTULO DIZIA «Registro Civil de Pessoas Juridicas» (corrigido em
+    # 05/11/2026, item p do ensaio do RTD): o 15.2 da tabela do TJMA e o
+    # «Registro completo ... de contrato, titulo ou documento com valor
+    # declarado», do RTD — conferido na descricao do item, nas 36 faixas.
+    4: "15.2 — RTD: registro de título ou documento com valor declarado",
     5: "16.3 — Registro de Imóveis: registro com valor declarado",
     6: "16.9 — Registro de Imóveis: registros torrens com valor declarado",
     7: "16.11 — Registro de Imóveis: registro completo de bem de família",

@@ -78,6 +78,14 @@ teste». O ensaio não pratica isto sem saber como a tabela do TJMA cobra o RTD 
 percentual), e o que o selo do TJMA espera. Pergunta ao oficial: a casa registra títulos com valor? Por
 qual item?
 
+**EM PARTE em 05/11/2026** (decisão do oficial, «p»: a casa registra com valor declarado). O item é o
+**15.2** da tabela do TJMA («Registro completo com as anotações e remissões de contrato, título ou documento
+com valor declarado»), **por faixa** do valor (`cx_faixas`, tabela 4: 15.2.1 até R$ 7.396,72, … 15.2.36) —
+o mesmo que o E-Ofício usava, com o selo em «/selo/rtdpj/ato-declarado/integral/com-valor». A ficha do
+título do RTD mostra o item da faixa, com o total. **Fica com o oficial:** o selo do registro continua por
+«atos-em-geral»; o caminho «com-valor» (schema `RtdpjComValorDeclarado`) pede campos que o repositório não
+documenta. Ensaio: `test_o_titulo_com_valor_declarado_mostra_o_item_da_tabela_pela_faixa`.
+
 **O4. A leitura da ficha e o ato do mesmo segundo.** **CONSERTADO em 03/11/2026**, sem depender do
 oficial. O breve relato só sai se a leitura da ficha é posterior ao último ato, e a régua comparava as
 horas ao segundo, com «maior que» (`atrib_certidao`, `criado_em > pj_dados_em`). No mesmo segundo, a

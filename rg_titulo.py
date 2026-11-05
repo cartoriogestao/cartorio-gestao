@@ -86,6 +86,7 @@ from __future__ import annotations
 
 import sqlite3
 
+import emolumentos as EMO
 import escrituracao as ESC
 import livro_nucleo as LN
 import rg_registro as RG
@@ -101,6 +102,35 @@ class TituloError(ValueError):
 RCPJ = 3
 RTD = 4
 ATRIBUICOES = (RCPJ, RTD)
+
+# O TITULO DO RTD COM VALOR DECLARADO (05/11/2026, decisao do oficial, item p
+# do ensaio do RTD/RCPJ): a casa registra. O item da tabela do TJMA e o 15.2 —
+# «Registro completo com as anotacoes e remissoes de contrato, titulo ou
+# documento com valor declarado» —, por FAIXA do valor (`cx_faixas`, tabela 4):
+# 15.2.1 ate R$ 7.396,72, e assim por diante, ate a 15.2.36. E o mesmo que o
+# E-Oficio fazia: os servicos do RTD dele apontavam o selo para
+# «/selo/rtdpj/ato-declarado/integral/com-valor» (LEVANTAMENTO_QUATRO_ATRIBUICOES).
+TABELA_DO_VALOR_DECLARADO = 4
+
+
+def item_pelo_valor_declarado(con, titulo: dict) -> dict | None:
+    """O item 15.2.N da faixa do valor declarado do titulo do RTD. So le.
+
+    `None` quando nao e RTD, quando nao ha valor, ou quando a tabela nao tem as
+    faixas carregadas. A tela SUGERE o item; quem escolhe a cobranca continua
+    sendo o caixa, e o selo ainda vai pelo caminho de hoje (ver o PR).
+    """
+    if int(titulo.get("atribuicao") or 0) != RTD:
+        return None
+    valor = _texto(titulo.get("valor_declarado"))
+    if not valor or not any(c.isdigit() for c in valor):
+        return None
+    try:
+        faixa = EMO.faixa_por_valor(con, valor, tabela=TABELA_DO_VALOR_DECLARADO)
+    except (ValueError, TypeError):
+        return None
+    return dict(faixa) if faixa else None
+
 
 NOME_DA_ATRIBUICAO: dict[int, str] = {
     RCPJ: "RCPJ — Registro Civil das Pessoas Jurídicas",

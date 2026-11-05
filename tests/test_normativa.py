@@ -171,3 +171,56 @@ def test_o_vazio_diz_que_e_vazio_e_nao_que_a_norma_nao_trata():
 def test_termo_vazio_e_recusado():
     with pytest.raises(N.NormaError):
         N.buscar("   ")
+
+
+# ------------------------------------------- a ferramenta dos agentes (etapa 3)
+
+import agente_ferramentas as AF                                  # noqa: E402
+
+
+def _contexto():
+    return AF.Contexto(db=None, raiz=RAIZ, pasta_de_dados=RAIZ, agora="",
+                       usuario="", sessao_id=0)
+
+
+def test_a_norma_e_de_leitura_e_vai_para_o_balcao_e_para_o_agente():
+    assert "consultar_norma" in AF.FERRAMENTAS_DA_AJUDA
+    assert "consultar_norma" not in AF.FERRAMENTAS_DA_AJUDA_SO_ADMIN
+    assert AF.POR_NOME["consultar_norma"].e_escrita is False
+    assert "consultar_norma" in {f.nome for f in AF.catalogo(escrita=False)}
+    for admin in (True, False):
+        assert "consultar_norma" in {f["nome"] for f in AF.esquemas_da_ajuda(admin=admin)}
+
+
+def test_a_ferramenta_devolve_o_artigo_com_a_citacao():
+    r = AF.executar(_contexto(), "consultar_norma", {"norma": "CNN", "artigo": "390"})
+    assert r["erro"] is False
+    assert r["conteudo"].startswith("[CNN (Prov. CNJ 149/2023), art. 390 — fonte:")
+    assert "20, 25, 28, 30 e 35" in r["conteudo"]
+
+
+def test_a_ferramenta_procura_e_pede_a_norma_para_o_artigo():
+    r = AF.executar(_contexto(), "consultar_norma", {"termo": "cancelamento de hipoteca"})
+    assert r["erro"] is False and "art. 251" in r["conteudo"]
+    sem_norma = AF.executar(_contexto(), "consultar_norma", {"artigo": "390"})
+    assert sem_norma["erro"] is True and "diga a norma" in sem_norma["conteudo"]
+    lista = AF.executar(_contexto(), "consultar_norma", {})
+    assert "Lei 9.492/1997 (Protesto)" in lista["conteudo"]
+
+
+def test_as_duas_instrucoes_mandam_citar_o_artigo_lido():
+    import agente
+    import ajuda
+    for instrucao in (agente.INSTRUCAO, ajuda.INSTRUCAO):
+        assert "consultar_norma" in instrucao
+        assert "Não cite artigo que não leu" in instrucao
+
+
+def test_nenhum_artigo_e_bloqueado_pela_barreira_de_privacidade():
+    """O texto é público e não traz dado da serventia; um bloqueio tiraria a
+    norma inteira do agente, em vez de um pedaço dela."""
+    import ajuda_privacidade as PRIV
+    for n in N.normas():
+        for a in n["artigos"]:
+            PRIV.sanitizar_para_modelo(
+                f"[{N.citacao(n, a)}]\n{N._cortar(a['texto'])}", nomes_livres=False)

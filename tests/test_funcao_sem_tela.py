@@ -724,14 +724,6 @@ ACHADAS_EM_30_10_2026: dict[str, str] = {
                      "local, fora do Flask"),
 }
 
-# A BASE NORMATIVA POR ARTIGO (05/11/2026, etapa 2 do pedido do oficial).
-# `para_o_modelo` formata os artigos achados para o agente; quem a chama é a
-# ferramenta da etapa 3, que liga a busca a cada agente. Sai daqui com ela.
-ACHADAS_EM_05_11_2026: dict[str, str] = {
-    "para_o_modelo": ("normativa — a ferramenta dos agentes chega na etapa 3 "
-                      "da base normativa"),
-}
-
 
 def _conhecidas() -> set[str]:
     """As medições datadas que formam o piso do varredor."""
@@ -750,8 +742,7 @@ def _conhecidas() -> set[str]:
             | set(ACHADAS_EM_26_10_2026)
             | set(ACHADAS_EM_27_10_2026)
             | set(ACHADAS_EM_29_10_2026_REPASSE)
-            | set(ACHADAS_EM_30_10_2026)
-            | set(ACHADAS_EM_05_11_2026))
+            | set(ACHADAS_EM_30_10_2026))
 
 
 def test_nenhuma_funcao_nova_fica_sem_tela():

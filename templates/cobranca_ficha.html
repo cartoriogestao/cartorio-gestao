@@ -5,7 +5,8 @@
 {% if c.ambiente != 'producao' %}<div class="notice">Emitida no ambiente de <strong>teste</strong>.</div>{% endif %}
 
 <div class="card">
-  <p><strong>{{ situacoes[c.situacao] }}</strong>{% if c.banco_status %} <span class="muted">(o banco diz {{ c.banco_status }})</span>{% endif %}</p>
+  <p><strong>{{ situacoes[c.situacao] }}</strong>{% if c.banco_status %} <span class="muted">(o banco diz {{ c.banco_status }})</span>{% endif %}
+    {% if c.forma_pedida in ['PIX','CREDITO','DEBITO'] %} <span class="badge">na maquininha</span>{% endif %}</p>
   {% if c.banco_motivo %}<p>{{ c.banco_motivo }}</p>{% endif %}
   {% if c.erro %}<p class="badge alta">{{ c.erro }}</p>{% endif %}
   {% if pedido %}<p class="badge">Pedido esperando o banco: {{ pedidos[pedido.acao] }} (por {{ pedido.por }}, {{ pedido.em }}).</p>{% endif %}

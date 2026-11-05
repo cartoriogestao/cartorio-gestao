@@ -88,6 +88,31 @@ def test_o_cancelamento_usa_o_id_do_link():
     assert any(c[0] == "POST" and c[1].endswith("/id-real/cancel") for c in t.chamadas)
 
 
+def test_o_pix_vai_para_a_maquininha():
+    t = Transporte({
+        PX.CAMINHO_DO_TOKEN: Resposta(200, {"access_token": "jwt", "expires_in": 3600}),
+        "/v1/pos/payments/": Resposta(201, {"id": "venda-1"}),
+    })
+    cliente = PX.ClienteCobrancaParcela(
+        "sandbox", t, {**CAMPOS, "terminal_id": "S1F2-TESTE"})
+    assert cliente.emitir({**COBRANCA, "forma_pedida": "PIX"}) == "pos:venda-1"
+    corpo = t.chamadas[1][2]
+    assert corpo["terminal_id"] == "S1F2-TESTE"
+    assert corpo["is_pix"] is True
+    assert corpo["is_debit"] is False
+    assert corpo["amount"] == 15000
+    assert t.chamadas[1][1].endswith("/v1/pos/payments/" + CAMPOS["seller_id"])
+
+
+def test_sem_codigo_a_maquininha_recusa():
+    cliente, _t = _cliente({
+        PX.CAMINHO_DO_TOKEN: Resposta(200, {"access_token": "jwt", "expires_in": 3600}),
+    })
+    with pytest.raises(PX.Recusa) as erro:
+        cliente.emitir({**COBRANCA, "forma_pedida": "CREDITO"})
+    assert "maquininha" in str(erro.value)
+
+
 def test_o_codigo_da_maquininha_e_opcional():
     sem = PX.conferir_credencial(CAMPOS)
     assert sem["terminal_id"] == ""

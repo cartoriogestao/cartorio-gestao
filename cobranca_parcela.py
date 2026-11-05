@@ -333,6 +333,8 @@ class ClienteCobrancaParcela:
         }
 
     def emitir(self, c: Mapping[str, Any]) -> str:
+        if str(c.get("forma_pedida") or "").upper() in CB.FORMAS_NA_MAQUINA:
+            return self._emitir_na_maquina(c)
         r = self._ir("POST", "/v1/payment-links", json_corpo=self.corpo(c))
         if r.status in (200, 201) and isinstance(r.corpo, dict):
             achado = str(r.corpo.get("token") or r.corpo.get("id") or "").strip()
@@ -343,8 +345,44 @@ class ClienteCobrancaParcela:
         raise Recusa(_frase(r.corpo) or
                      f"A Parcela Express recusou a emissão (HTTP {r.status}).")
 
+    def _emitir_na_maquina(self, c: Mapping[str, Any]) -> str:
+        """Manda o valor para a maquininha. Pix, crédito ou débito."""
+        maquina = str(self._campos.get(CAMPO_DA_MAQUININHA) or "").strip()
+        if not maquina:
+            raise Recusa(
+                "Cadastre o código da maquininha em Cobrança por boleto → "
+                "Configuração, no campo da Parcela Express.")
+        forma = str(c.get("forma_pedida") or "").upper()
+        servico = _service_id(c)
+        r = self._ir(
+            "POST", f"/v1/pos/payments/{urllib_quote(self._campos['seller_id'])}",
+            json_corpo={
+                "terminal_id": maquina,
+                "amount": int(c["valor"]),
+                "is_debit": forma == "DEBITO",
+                "instalments": 1 if forma == "CREDITO" else 0,
+                "service_id": servico,
+                "is_pix": forma == "PIX",
+                "description": CB._texto(c.get("mensagem") or servico, 80),
+                "document": CB.digitos(c.get("pagador_documento")),
+                "pre_capture": False,
+            })
+        if r.status in (200, 201):
+            ident = ""
+            if isinstance(r.corpo, dict):
+                ident = str(r.corpo.get("id") or r.corpo.get("sale_id")
+                            or r.corpo.get("saleId") or "").strip()
+            return "pos:" + (ident or servico)
+        if r.status >= 500:
+            raise Indisponivel(f"A maquininha não respondeu (HTTP {r.status}).")
+        raise Recusa(_frase(r.corpo) or
+                     f"A Parcela Express não enviou à maquininha (HTTP {r.status}).")
+
     def consultar(self, c: Mapping[str, Any]) -> dict | None:
-        token = str(c.get("banco_id") or "").strip()
+        ident = str(c.get("banco_id") or "").strip()
+        if ident.startswith("pos:"):
+            return self._consultar_maquina(ident[4:])
+        token = ident
         r = self._ir("GET", "/v1/payment-links/" + urllib_quote(token))
         if r.status == 404:
             return None
@@ -363,8 +401,45 @@ class ClienteCobrancaParcela:
             "A Parcela Express entrega o pagamento no link, não num PDF. "
             "Abra o link da cobrança.")
 
+    def _consultar_maquina(self, venda: str) -> dict | None:
+        if not venda:
+            return {"situacao": CB.ABERTA, "banco_status": "NA_MAQUINA",
+                    "banco_motivo": "Aguardando o pagamento na maquininha."}
+        r = self._ir(
+            "GET",
+            f"/v1/sellers/{urllib_quote(self._campos['seller_id'])}/sales/"
+            f"{urllib_quote(venda)}")
+        if r.status == 404:
+            return {"situacao": CB.ABERTA, "banco_status": "NA_MAQUINA",
+                    "banco_motivo": "Aguardando o pagamento na maquininha."}
+        if r.status == 200 and isinstance(r.corpo, dict):
+            lido = ler(r.corpo if "status" in r.corpo or "sale" in r.corpo
+                       else {"sale": r.corpo, "status": r.corpo.get("status")})
+            lido.setdefault("banco_motivo", "Pagamento na maquininha.")
+            return lido
+        if r.status >= 500:
+            raise Indisponivel(f"A Parcela Express não consultou a maquininha (HTTP {r.status}).")
+        raise Recusa(_frase(r.corpo) or
+                     f"A Parcela Express recusou a consulta da maquininha (HTTP {r.status}).")
+
     def cancelar(self, c: Mapping[str, Any], motivo: str) -> str:
-        token = str(c.get("banco_id") or "").strip()
+        ident = str(c.get("banco_id") or "").strip()
+        if ident.startswith("pos:"):
+            servico = _service_id(c)
+            r = self._ir(
+                "POST", f"/v1/pos/cancel_sale/{urllib_quote(self._campos['seller_id'])}",
+                json_corpo={
+                    "terminal_id": self._campos.get(CAMPO_DA_MAQUININHA) or "",
+                    "abort_reason": CB._texto(motivo, 80) or "cancelado no caixa",
+                    "service_id": servico,
+                    "cancel_sale_id": ident[4:],
+                    "cancel_service_id": servico,
+                })
+            if r.status in (200, 201, 204):
+                return ""
+            raise Recusa(_frase(r.corpo) or
+                         f"A maquininha não cancelou (HTTP {r.status}).")
+        token = ident
         atual = self._ir("GET", "/v1/payment-links/" + urllib_quote(token))
         identificador = token
         if atual.status == 200 and isinstance(atual.corpo, dict) and atual.corpo.get("id"):
@@ -376,6 +451,12 @@ class ClienteCobrancaParcela:
             return ""
         raise Recusa(_frase(r.corpo) or
                      f"A Parcela Express recusou o cancelamento (HTTP {r.status}).")
+
+
+def _service_id(c: Mapping[str, Any]) -> str:
+    """Até 10 letras ou números, como a maquininha exige."""
+    bruto = re.sub(r"[^A-Za-z0-9]", "", str(c.get("seu_numero") or "CG"))
+    return (bruto or "CG")[:10]
 
 
 def _centavos(valor: Any) -> int | None:

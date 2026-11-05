@@ -114,7 +114,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                                        "numero", "complemento", "bairro",
                                                        "cidade", "uf", "cep")},
                         mensagem=f.get("mensagem") or "",
-                        dias_apos_vencimento=int(cfg["cobranca_dias_apos_vencimento"] or 0))
+                        dias_apos_vencimento=int(cfg["cobranca_dias_apos_vencimento"] or 0),
+                        forma_pedida=f.get("forma_maquina") or "")
             except (CB.CobrancaError, ValueError) as erro:
                 flash(str(erro), "danger")
                 return render_template("cobranca_nova.html", f=f, cfg=cfg, a_pagar=a_pagar,

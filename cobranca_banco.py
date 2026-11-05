@@ -60,6 +60,9 @@ def cliente_da_casa(cfg: dict, *, banco_codigo: str | None = None, pasta: Any = 
     if qual == CB.UNICRED:
         import cobranca_unicred
         return cobranca_unicred.cliente_da_casa(cfg, pasta=pasta, transporte=transporte)
+    if qual == CB.PARCELA:
+        import cobranca_parcela
+        return cobranca_parcela.cliente_da_casa(cfg, pasta=pasta, transporte=transporte)
     raise BancoError(f"Banco desconhecido: «{qual}».")
 
 

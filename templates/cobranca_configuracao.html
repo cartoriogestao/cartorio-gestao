@@ -31,6 +31,22 @@
   {% endfor %}
   <button type="submit">Gravar a credencial da Unicred</button>
 </form>
+
+<h2>Parcela Express</h2>
+<p>Pix, boleto e cartão no mesmo link, para os atos do caixa. Situação da credencial:
+  {% if parcela and parcela.erro %}<span class="badge alta">{{ parcela.erro }}</span>
+  {% elif parcela %}gravada ({{ parcela.onde }}{% if parcela.email %}, {{ parcela.email }}{% endif %})
+  {% else %}<strong>não cadastrada</strong>{% endif %}.</p>
+<form method="post" class="form-grid card" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="parte" value="parcela">
+  {% for k, rotulo in rotulos_parcela.items() %}
+  <label>{{ rotulo }} <input name="{{ k }}" {% if k == 'senha' %}type="password"{% endif %} required></label>
+  {% endfor %}
+  <button type="submit">Gravar a credencial da Parcela Express</button>
+</form>
+<p class="muted">No formulário de cima, escolha <strong>Parcela Express</strong> e ligue a emissão.
+  O ambiente de teste não movimenta dinheiro. O link que sair serve para Pix, boleto e cartão.</p>
 <div class="notice">
   <p><strong>O que é preciso saber, e o que ainda falta pedir ao gerente:</strong></p>
   <ul>

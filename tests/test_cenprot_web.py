@@ -834,3 +834,20 @@ def test_o_xml_da_cenprot_le_cedente_e_sacador_do_pedido(s, cg_casa):
     assert reg["cedente_documento"] == "00000011000171"
     cedente, sacador, endosso = X._cedente_e_sacador(reg)
     assert endosso == "H" and sacador["nome"] == "SACADOR EXEMPLO LTDA"
+
+
+@pytest.mark.parametrize("custas", ["0", "0,00"])
+def test_a_anuencia_nao_se_responde_com_custa_zero(custas):
+    """Decisão do oficial (05/11/2026): no Protesto não há gratuidade, e custa zero, para a Central, é
+    anuência gratuita. O mandado de gratuidade da justiça se cumpre na ficha do título."""
+    from flask import Flask
+
+    import cenprot_pendencias as PEND
+    import cenprot_web as WEB
+
+    p = {"especie": CN.ANUENCIA, "codigo": "99000001",
+         "teor_aberto": ANUENCIA_COMO_A_PRODUCAO_MANDA}
+    with Flask(__name__).test_request_context(
+            method="POST", data={"decisao": "aprovar", "vl_custas": custas}):
+        with pytest.raises(PEND.PendenciaError, match="no Protesto não há gratuidade"):
+            WEB._decisao_do_formulario(p)

@@ -631,6 +631,18 @@ def _decisao_do_formulario(p: dict) -> dict:
         corpo["ic_aprovado"] = aprovado
         if aprovado:
             corpo["vl_custas"] = _numero(request.values.get("vl_custas"))
+            # CUSTA ZERO NÃO É RESPOSTA DO PROTESTO (05/11/2026, decisão do
+            # oficial): zero, para a Central, é anuência gratuita, e no
+            # Protesto não há gratuidade — só o diferimento. O mandado de
+            # gratuidade da justiça, a única exceção, se cumpre na ficha do
+            # título, com o mandado anexado.
+            if corpo["vl_custas"] is not None and corpo["vl_custas"] <= 0:
+                raise PEND.PendenciaError(
+                    "Custa zero é anuência gratuita, e no Protesto não há "
+                    "gratuidade — só o diferimento (decisão do oficial, "
+                    "05/11/2026). O mandado judicial de gratuidade da justiça "
+                    "(CPC art. 98, § 1º, IX) se cumpre na ficha do título, com o "
+                    "mandado anexado.")
         else:
             corpo["motivo_recusa"] = str(
                 request.values.get("motivo_recusa") or "").strip()

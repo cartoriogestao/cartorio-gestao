@@ -3209,6 +3209,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         # O COMPROVANTE DO PIX DO PROTESTO (29/10/2026): abre para quem abre a
         # lista dos PIX — o balcão que o registra e quem confere o crédito.
         "PT_PIX": ("protesto_pix_lista",),
+        # O MANDADO DE GRATUIDADE DO PROTESTO (05/11/2026): abre na ficha do título (o ato)
+        # ou na da certidão.
+        "PT_GRATUIDADE_MANDADO_ATO": ("protesto_titulo",),
+        "PT_GRATUIDADE_MANDADO_CERTIDAO": ("protesto_certidao",),
         "SELO_GRATUIDADE": ("gratuidade_comprovantes", "selo_gratuidades_portal"),
         "SELO_GRATUIDADE_CERTIDAO": ("selo_gratuidades_portal",),
         "ONR_CERTIDAO": ("onr_certidao_ficha",),

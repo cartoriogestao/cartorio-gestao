@@ -250,6 +250,28 @@ ATOS_QUE_A_SUSTACAO_BLOQUEIA = ("PROTESTO", "PAGAMENTO", "DESISTENCIA",
 
 ORIGENS_TITULO = ("CRA", "CENPROT", "MANUAL")
 
+# A GRATUIDADE NO PROTESTO (05/11/2026, decisao do oficial): NAO HA — so o
+# diferimento. A unica excecao e o cumprimento de mandado judicial de gratuidade
+# da justica (CPC art. 98, par. 1o, IX; Tabela XVII, item 17.8), com o motivo
+# escrito (que `_gratuidade_do_form` ja exige) e o mandado anexado.
+CODIGOS_DA_GRATUIDADE_NO_PROTESTO = ("ASSISTENCIA_JUDICIARIA", "17.8")
+
+
+def conferir_gratuidade(codigo: Any, *, marcado: bool, tem_mandado: bool) -> None:
+    """Recusa a gratuidade no Protesto, salvo a do mandado anexado. So calcula."""
+    if not marcado:
+        return
+    if str(codigo or "").strip().upper() not in CODIGOS_DA_GRATUIDADE_NO_PROTESTO:
+        raise ProtestoError(
+            "No Protesto não há gratuidade — só o diferimento (decisão do oficial, "
+            "05/11/2026). A única exceção é o cumprimento de mandado judicial de "
+            "gratuidade da justiça (CPC art. 98, § 1º, IX; Tabela XVII, item 17.8), "
+            "com o motivo escrito e o mandado anexado.")
+    if not tem_mandado:
+        raise ProtestoError(
+            "A gratuidade da justiça no Protesto exige o mandado judicial anexado "
+            "(CPC art. 98, § 1º, IX). Anexe o arquivo do mandado.")
+
 # O CHEQUE QUE NAO SE APONTA (05/11/2026, decisao do oficial, item i «u»).
 # CN-MA art. 883, § 1o (e CNN art. 390): os motivos de devolucao 20, 25, 28, 30
 # e 35 do BACEN — furto, roubo, extravio, fraude. O § 2o admite o protesto

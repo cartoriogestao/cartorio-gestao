@@ -651,7 +651,7 @@
   {% if abas %}<details class="panel cg-ato-do-titulo" data-fase="{{ fase_do_ato(ato) }}"{% if ato in abas.atos_em_vista or v_ato %} open{% endif %}>
     <summary>{{ rotulo_do_ato(ato) }}</summary>{% endif %}
   <form method="post" action="{{ url_for('protesto_lancar', titulo_id=titulo.id) }}"
-        id="lancar-{{ ato }}"
+        id="lancar-{{ ato }}" enctype="multipart/form-data"
         class="grid2" style="padding:14px; border-top:1px solid #e5e7eb">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="ato" value="{{ ato }}">
@@ -841,6 +841,18 @@
 
     {% if ato not in ('SUSTACAO', 'REVOGACAO_SUSTACAO',
                   'EFEITO_SUSPENSIVO', 'REVOGACAO_EFEITO_SUSPENSIVO') %}
+    {# A ÚNICA GRATUIDADE NO PROTESTO (05/11/2026, decisão do oficial): o mandado judicial de
+       gratuidade da justiça, com o motivo e o mandado anexado. Só vale quando se cobra. #}
+    <details style="grid-column:1/-1">
+      <summary>Gratuidade da justiça por mandado judicial (CPC art. 98, § 1º, IX)</summary>
+      <p><small>No Protesto não há gratuidade — só o diferimento. A única exceção é o cumprimento de
+        mandado judicial de gratuidade da justiça (Tabela XVII, item 17.8), com o motivo escrito e o
+        mandado anexado.</small></p>
+      <label><input type="checkbox" name="gratuidade_codigo" value="ASSISTENCIA_JUDICIARIA">
+        Cumprimento de mandado judicial de gratuidade da justiça</label>
+      <label>Motivo <input name="motivo_gratuidade" placeholder="Processo nº …, juízo …"></label>
+      <label>Mandado (PDF ou imagem) <input type="file" name="mandado_gratuidade"></label>
+    </details>
     <label>Selo <small>(opcional)</small>
       <input name="selo" placeholder="AVESVD000000..." pattern="[A-Za-z0-9]*"
              value="{{ v_ato.get('selo', '') }}"></label>

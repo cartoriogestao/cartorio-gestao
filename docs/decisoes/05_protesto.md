@@ -28,11 +28,11 @@ Decisões do módulo de Protesto que valem para qualquer serventia: modelo do t�
 **Por quê.** Sem semear, o primeiro ato novo nasce com o número 1 sobre um livro que já passou dele. Teste em banco vazio nunca vê esse defeito.
 **No código.** `acervo_carga.semear_numeracao`, `implantacao.py`.
 
-### Gratuidade e cancelamento exigem motivo do catálogo mais fundamento escrito
-**Regra.** O cancelamento exige uma das hipóteses do catálogo (pagamento, ordem judicial, anuência do credor, erro do apresentante) **e** o fundamento do caso. A gratuidade exige motivo escrito; «título apresentado em duplicidade» é irregularidade do contrato da CRA, e não isenção, e se registra como tal.
-**Por quê.** Um cadastro único («erro material») ou texto livre faz o livro não explicar o que aconteceu; duplicidade e permuta não são isenção legal.
-**Fundamento.** Lei 9.492/1997 (hipóteses de cancelamento). A hipótese de isenção por mandado judicial a favor de beneficiário de assistência judiciária vem da tabela de emolumentos (norma estadual — TJMA; confira a tabela do seu estado).
-**No código.** `protesto.CATALOGO_CANCELAMENTO`.
+### O cancelamento exige motivo do catálogo mais fundamento escrito, e no Protesto não há gratuidade
+**Regra.** O cancelamento exige uma das hipóteses do catálogo (pagamento, ordem judicial, anuência do credor, erro do apresentante) **e** o fundamento do caso. **No Protesto não há gratuidade — só o diferimento.** A única exceção é o cumprimento de mandado judicial de gratuidade da justiça, com o motivo escrito e o mandado anexado no mesmo lançamento; qualquer outra gratuidade se recusa, e a anuência da CENPROT não se responde com custa zero. «Título apresentado em duplicidade» é irregularidade do contrato da CRA, e não isenção, e se registra como tal.
+**Por quê.** Decisão da serventia de origem (05/11/2026): o emolumento do Protesto é pago pelo devedor, e o diferimento já cobre quem não paga no protocolo. Um cadastro único («erro material») ou texto livre faz o livro não explicar o que aconteceu; duplicidade e permuta não são isenção legal.
+**Fundamento.** Lei 9.492/1997 (hipóteses de cancelamento); CPC art. 98, § 1º, IX, e a tabela de emolumentos para a isenção por mandado (norma estadual — TJMA, Tabela XVII, item 17.8; confira a tabela do seu estado).
+**No código.** `protesto.CATALOGO_CANCELAMENTO`; `atribuicoes_web._so_a_gratuidade_do_mandado`; `cenprot_web` (anuência sem custa zero).
 
 ## O ciclo do título
 

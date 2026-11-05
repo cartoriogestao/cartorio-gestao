@@ -115,8 +115,10 @@ diferença deve ser apontada ao oficial.
   sistema. Cheque com mais de um ano da emissão: comprovar o endereço do
   emitente (§ 5º). Decisão do oficial de 05/11/2026.
 - Gratuidade no Protesto: **nenhuma**. O que existe é o diferimento
-  (pagamento a posteriori). Se alguma tela oferecer gratuidade no Protesto,
-  aponte ao oficial.
+  (pagamento a posteriori). A **única exceção** é o cumprimento de mandado
+  judicial de gratuidade da justiça (CPC art. 98, § 1º, IX; Tabela XVII, item
+  17.8), com o motivo escrito e o mandado anexado no lançamento. A anuência da
+  CENPROT não se responde com custa zero. Decisão do oficial de 05/11/2026.
 
 ## 7. RTD e RCPJ
 

@@ -324,3 +324,39 @@ def test_o_titulo_em_moeda_estrangeira_incompleto_e_recusado(s, mudar, recado): 
     r = F._post(s, "/protesto/novo", "/protesto/novo", **{**F.TITULO, "numero_titulo": "NP-EUR1", **mudar})
     assert any(recado in a for a in F._avisos(r)), F._avisos(r)
     assert F._um(s, "SELECT count(*) AS n FROM pt_titulos")["n"] == antes
+
+
+# ------------------------------------------------------------------ a gratuidade no Protesto
+
+@pytest.mark.parametrize("codigo,mandado,recado", [
+    ("HIPOSSUFICIENCIA", True, "No Protesto não há gratuidade"),
+    ("17.8", False, "exige o mandado judicial anexado"),
+    ("ASSISTENCIA_JUDICIARIA", False, "exige o mandado judicial anexado"),
+])
+def test_no_protesto_so_a_gratuidade_do_mandado_com_o_mandado_anexado(codigo, mandado, recado):
+    """Decisão do oficial (05/11/2026): no Protesto não há gratuidade — só o diferimento. A única exceção é o
+    mandado judicial de gratuidade da justiça (CPC art. 98, § 1º, IX; Tabela XVII, item 17.8), com o motivo
+    escrito e o mandado anexado."""
+    import protesto as PT
+    with pytest.raises(PT.ProtestoError, match=recado):
+        PT.conferir_gratuidade(codigo, marcado=True, tem_mandado=mandado)
+    PT.conferir_gratuidade("ASSISTENCIA_JUDICIARIA", marcado=True, tem_mandado=True)
+    PT.conferir_gratuidade(None, marcado=False, tem_mandado=False)
+
+
+def test_a_gratuidade_vinda_do_formulario_e_recusada_pela_tela(s):  # noqa: F811
+    """O servidor aceitava a gratuidade que viesse no formulário do Protesto, embora nenhuma tela a mostrasse."""
+    p = F._protocolo(s, F.PROTESTO, F.PROTESTO)
+    tid, _ = _cadastrado(s, numero_titulo="NP-GRAT1")
+    r = F._lancar(s, tid, "APONTAMENTO", p, p["itens"][0], cobrar="1",
+                  gratuidade_codigo="HIPOSSUFICIENCIA", motivo_gratuidade="Declarou não poder pagar")
+    assert any("No Protesto não há gratuidade" in a for a in F._avisos(r)), F._avisos(r)
+    assert F._situacao(s, tid) == "RECEBIDO"
+
+
+def test_a_ficha_oferece_so_a_gratuidade_do_mandado(s):  # noqa: F811
+    tid, _ = _cadastrado(s, numero_titulo="NP-GRAT2")
+    ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
+    assert "Gratuidade da justiça por mandado judicial (CPC art. 98, § 1º, IX)" in ficha
+    assert 'name="mandado_gratuidade"' in ficha and 'enctype="multipart/form-data"' in ficha
+    assert 'value="HIPOSSUFICIENCIA"' not in ficha

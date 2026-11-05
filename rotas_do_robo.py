@@ -165,9 +165,24 @@ DA_FILA_DE_CORRECOES: tuple[str, ...] = (
 # identificada e responsável humano ativo, cópia anterior e auditoria.
 DO_ACERVO_TRANSCRITO: tuple[str, ...] = ("rcpn_acervo_transcrito_lote", "rcpn_acervo_transcrito_sequencia")
 
+# RETIFICAR O CADASTRO E TRABALHAR A TAREFA (05/11/2026, ordem do usuario:
+# "sobre a mensagem de erro que aparece quando voce tenta retificar, resolva
+# o problema"). Pela ordem de 04/11 o robo nao escreve no banco: a alteracao
+# e feita DENTRO do sistema, com a conta de robo. Sem estas duas rotas a
+# conta `agente` recebia 403 ao abrir a retificacao cadastral da matricula e
+# a ficha da tarefa. Nenhuma das duas sela: `ri_editar_matricula` grava so o
+# cadastro (versao conferida, motivo e auditoria por campo; matricula
+# encerrada recusa) e `task_detail` atualiza, anota, conclui e passa a
+# tarefa, com a auditoria da conta de robo e do responsavel humano.
+DO_CADASTRO_E_DAS_TAREFAS: tuple[str, ...] = (
+    "ri_editar_matricula",   # Retificar dados cadastrais (GET mostra, POST grava)
+    "task_detail",           # /tarefas/<id> - ficha, andamento e conclusao
+)
+
 #: A LISTA FECHADA. `selo_robo.rota_permitida_ao_robo` a consulta; vedada
 #: (`selo_robo.ROTAS_VEDADAS_AO_ROBO`) vence permitida.
 ROTAS_PERMITIDAS_AO_ROBO: frozenset[str] = frozenset(
     DA_SESSAO + DOS_AVISOS + DO_SELO_AUTOMATICO_ATRIBUICOES
     + DO_SELO_AUTOMATICO_NOTAS + DO_SELO_AUTOMATICO_NOTIFICACAO
-    + DO_SELO_AUTOMATICO_RI + DAS_FICHAS + DA_FILA_DE_CORRECOES + DO_ACERVO_TRANSCRITO)
+    + DO_SELO_AUTOMATICO_RI + DAS_FICHAS + DA_FILA_DE_CORRECOES + DO_ACERVO_TRANSCRITO
+    + DO_CADASTRO_E_DAS_TAREFAS)

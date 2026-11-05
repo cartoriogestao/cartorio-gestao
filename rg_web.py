@@ -381,6 +381,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 if (caminho != AS.CAMINHO_RTDPJ_GERAL
                         and not str(protocolo or "").strip()):
                     caminho = AS.CAMINHO_RTDPJ_GERAL
+                # O REGISTRO DO RTD COM VALOR DECLARADO (05/11/2026, item 6):
+                # só com a chave ligada — ver `AS.CAMINHO_RTDPJ_COM_VALOR`.
+                valor_declarado = None
+                if linha["titulo_id"]:
+                    with db.connect() as con_v:
+                        v = banco(con_v).um(
+                            "SELECT valor_declarado FROM rg_titulos WHERE id=%s",
+                            (int(linha["titulo_id"]),))
+                    valor_declarado = v["valor_declarado"] if v else None
+                caminho = AS.caminho_com_valor(
+                    caminho, tipo=tipo, serie=serie_u, codigo_tj=codigo_tj,
+                    valor_declarado=valor_declarado, protocolo=protocolo,
+                    ligado=db.get_setting(AS.CHAVE_DO_SELO_COM_VALOR, "") == "1",
+                    isento=bool(gratuidade))
                 versao = AS.versao_da_tabela_de_custas(
                     caminho, db.get_setting("selo_tabela_custas_em", ""))
                 if not versao:
@@ -403,7 +417,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     registro_averbacao=(linha["numero_ordem"]
                                         if linha["numero_ordem"] is not None
                                         else linha["registro_numero"]),
-                    isento=bool(gratuidade), motivo_isencao=gratuidade)
+                    isento=bool(gratuidade), motivo_isencao=gratuidade,
+                    base_calculo=valor_declarado)
             except (AS.AtoError, sqlite3.Error) as erro:
                 faltou.append(str(erro))
                 continue

@@ -268,3 +268,43 @@ def test_a_regua_nao_alcanca_gente(cg_casa):
 def test_nome_vedado_nunca_entra(vedada):
     import selo_robo as SR
     assert SR.rota_permitida_ao_robo(vedada) is False
+
+
+# ------------------------------- retificar o cadastro e trabalhar a tarefa
+#
+# 05/11/2026: pela ordem de 04/11 o robo nao escreve no banco - a alteracao e
+# feita DENTRO do sistema, com a conta de robo. A conta de robo recebia 403 na
+# retificacao cadastral da matricula e na ficha da tarefa.
+
+
+@pytest.mark.parametrize("nome", ["ri_editar_matricula", "task_detail"])
+def test_retificar_o_cadastro_e_a_ficha_da_tarefa_sao_do_robo(nome):
+    import selo_robo as SR
+    assert SR.rota_permitida_ao_robo(nome) is True
+
+
+@pytest.mark.parametrize("rota", ["/registro-imoveis/999999/editar", "/tarefas/999999"])
+def test_o_robo_abre_a_retificacao_e_a_tarefa(cg_casa, rota):
+    """A regua deixa passar: o registro que nao existe responde 404 da propria
+    tela, e nao o 403 de antes."""
+    c = _robo_logado(cg_casa)
+    assert c.get(rota).status_code == 404, rota
+
+
+def test_o_robo_abre_a_tarefa_que_existe(cg_casa):
+    c = _robo_logado(cg_casa)
+    db = cg_casa["db"]
+    joana = db.create_user("joana", "JOANA EXEMPLO", SENHA, "USER")
+    tid = db.create_task({"title": "Tarefa de exemplo", "assigned_user_id": int(joana)},
+                         int(joana))
+    r = c.get(f"/tarefas/{int(tid)}")
+    assert r.status_code == 200, r.status_code
+
+
+def test_o_robo_continua_sem_selar_e_sem_cancelar_no_ri():
+    """Abrir a retificacao nao abre o selo: os botoes Selar e o cancelamento
+    do RI seguem fora da lista."""
+    import selo_robo as SR
+    for nome in ("ri_selar_ato", "ri_selar_prenotacao", "ri_selar_arquivamento",
+                 "ri_cancelar_ato", "ri_expurgar_ato"):
+        assert SR.rota_permitida_ao_robo(nome) is False, nome

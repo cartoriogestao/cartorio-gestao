@@ -182,6 +182,23 @@ def test_o_casal_que_compra_sai_inteiro_na_certidao_de_propriedade(casa):  # noq
 
 
 
+def test_depois_do_casamento_a_certidao_de_propriedade_diz_a_qualificacao_atual(casa):  # noqa: F811
+    """Decisão do oficial (05/11/2026, item c): a certidão de propriedade traz a qualificação ATUAL do
+    titular, estado civil inclusive — quem a pede quer saber se precisa da outorga conjugal (CC art.
+    1.647). A AV de casamento traz a dona com a qualificação nova, e é ela que vale; a dona sai UMA vez."""
+    f = F._compra_e_venda(casa)
+    m = f["matricula"]
+    assert "solteira" in _dono_na_certidao(casa, m)
+    casada = dict(F.COMPRADORA, qualificacao=(
+        "brasileira, casada sob o regime da comunhão parcial de bens, maior, professora, residente e "
+        "domiciliada na Rua Exemplo, 20, Centro, Cidade Exemplo/MA"))
+    av = _ato(casa, m, "AV-ESTADO-CIVIL", interessado=F.COMPRADORA, partes=[(casada, "proprietária")])
+    assert av["ato"] and av["ato"]["selo_texto"], av["recado"][:1200]
+    dono = _dono_na_certidao(casa, m)
+    assert "casada sob o regime da comunhão parcial" in dono and "solteira" not in dono, dono
+    assert dono.count(F.COMPRADORA["nome"]) == 1, dono
+
+
 # ------------------------------------------------------------------ o usufruto
 
 def test_o_usufruto_e_onus_e_extinto_deixa_de_ser(casa):  # noqa: F811

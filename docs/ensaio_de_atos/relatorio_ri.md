@@ -142,6 +142,11 @@ exige o estado civil nessa certidão (a de inteiro teor traz a averbação), mas
 saber se precisa da outorga conjugal (CC art. 1.647). Para o oficial: incluir a qualificação atual do
 titular?
 
+**CONSERTADO em 05/11/2026** (decisão do oficial, «c»): a certidão de propriedade traz, depois do nome de
+cada titular, a qualificação mais nova que a matrícula tem dele — a da AV de casamento, depois dela
+(`ri_correcoes.titulares_com_a_qualificacao_atual`). A titular que a AV traz com papel de proprietária sai
+uma vez só. Ensaio: `test_depois_do_casamento_a_certidao_de_propriedade_diz_a_qualificacao_atual`.
+
 **O2. A indisponibilidade entra como ônus «pela palavra do teor, sem natureza reconhecida — confira».**
 A natureza do modelo AV-INDISPONIBILIDADE («Indisponibilidade») não casa com o nome da tabela
 («Indisponibilidade de Bens», código 115). O resultado está certo, mas o escrevente vê um aviso de

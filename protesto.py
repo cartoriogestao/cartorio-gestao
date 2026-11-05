@@ -250,6 +250,80 @@ ATOS_QUE_A_SUSTACAO_BLOQUEIA = ("PROTESTO", "PAGAMENTO", "DESISTENCIA",
 
 ORIGENS_TITULO = ("CRA", "CENPROT", "MANUAL")
 
+# O CHEQUE QUE NAO SE APONTA (05/11/2026, decisao do oficial, item i «u»).
+# CN-MA art. 883, § 1o (e CNN art. 390): os motivos de devolucao 20, 25, 28, 30
+# e 35 do BACEN — furto, roubo, extravio, fraude. O § 2o admite o protesto
+# quando o cheque circulou por endosso ou tem aval, com o emitente
+# «desconhecido» e indice proprio (§ 3o); o oficial decidiu RECUSAR POR ORA
+# tambem nesse caso, porque essa excecao nao esta no sistema.
+MOTIVOS_DE_CHEQUE_VEDADOS = ("20", "25", "28", "30", "35")
+ESPECIE_CHEQUE = "CH"
+
+
+def _conferir_cheque(dados: dict) -> dict:
+    """O que o cheque do balcao precisa ter, e o que se grava dele. Levanta quando falta.
+
+    Lei 9.492/1997, art. 6o, e CN-MA art. 910: a prova da apresentacao ao banco
+    sacado e o motivo da recusa — salvo quando o protesto e para instruir medida
+    contra o proprio banco. O motivo vedado (art. 883, § 1o) se recusa sempre.
+    """
+    cheque = dados.get("cheque") or {}
+    banco_sacado = str(cheque.get("banco_sacado") or "").strip()
+    motivo = so_digitos(cheque.get("motivo_devolucao")).lstrip("0")
+    apresentado = str(cheque.get("apresentado_em") or "").strip()
+    contra_o_banco = bool(cheque.get("contra_o_banco"))
+    if motivo in MOTIVOS_DE_CHEQUE_VEDADOS:
+        raise ProtestoError(
+            f"Cheque devolvido pelo motivo {motivo} (furto, roubo, extravio ou fraude) não se "
+            f"aponta: CN-MA art. 883, § 1º, e art. 911 (CNN art. 390). O CN-MA, art. 883, "
+            f"§§ 2º e 3º, admite o protesto quando o cheque circulou por endosso ou tem aval, "
+            f"com o emitente «desconhecido» e índice próprio — essa exceção ainda não está no "
+            f"sistema. Leve o caso ao oficial.")
+    if not contra_o_banco:
+        faltam = [rotulo for valor, rotulo in ((banco_sacado, "o banco sacado"),
+                                               (motivo, "o motivo da devolução"),
+                                               (apresentado, "a data da apresentação ao banco"))
+                  if not valor]
+        if faltam:
+            raise ProtestoError(
+                "Cheque: falta " + ", ".join(faltam) + ". A prova da apresentação ao banco "
+                "sacado e o motivo da recusa são exigidos (Lei 9.492/1997, art. 6º; CN-MA "
+                "art. 910), salvo quando o protesto é para instruir medida contra o próprio "
+                "banco — marque isso, se for o caso.")
+    if apresentado:
+        try:
+            date.fromisoformat(apresentado)
+        except ValueError:
+            raise ProtestoError(
+                f"A data da apresentação do cheque não é uma data: veio {apresentado!r}.") from None
+    return {"cheque_banco_sacado": banco_sacado or None,
+            "cheque_motivo_devolucao": motivo or None,
+            "cheque_apresentado_em": apresentado or None,
+            "cheque_contra_o_banco": 1 if contra_o_banco else 0}
+
+
+def aviso_do_cheque_antigo(dados: dict, hoje: date) -> str:
+    """CN-MA art. 883, § 5o: cheque apresentado mais de um ano depois da emissão.
+
+    Avisa, e nao barra: a comprovacao do endereco do emitente e do
+    apresentante, e quem confere o papel e o balcao.
+    """
+    if str(dados.get("especie") or "").upper() != ESPECIE_CHEQUE:
+        return ""
+    try:
+        emissao = date.fromisoformat(str(dados.get("data_emissao") or ""))
+    except ValueError:
+        return ""
+    try:
+        um_ano_depois = emissao.replace(year=emissao.year + 1)
+    except ValueError:                     # 29 de fevereiro
+        um_ano_depois = emissao.replace(year=emissao.year + 1, day=28)
+    if hoje <= um_ano_depois:
+        return ""
+    return ("Cheque apresentado mais de um ano depois da emissão: o apresentante tem de "
+            "comprovar o endereço do emitente (CN-MA art. 883, § 5º; CNN art. 391). "
+            "Confira o comprovante antes do apontamento.")
+
 # AS ESPECIES QUE ESTA CASA USOU, e quantas vezes cada uma. Medido em
 # 25/08/2026 nos 1.366 titulos do acervo (`tbAvisoProtesto.strEspecie`).
 #
@@ -458,6 +532,12 @@ def cadastrar_titulo(con, dados: dict, *, origem: str,
                 "Título em moeda estrangeira: o valor e o saldo vão em REAIS, "
                 "convertidos — é o que se cobra e se intima (Lei 9.492/1997, "
                 "art. 10). Informe os dois.")
+    # O CHEQUE DO BALCAO (05/11/2026, item i): o da CRA e o da CENPROT vem
+    # pelo contrato deles, que nao traz estes campos.
+    do_cheque = {"cheque_banco_sacado": None, "cheque_motivo_devolucao": None,
+                 "cheque_apresentado_em": None, "cheque_contra_o_banco": None}
+    if origem == "MANUAL" and str(dados.get("especie") or "").upper() == ESPECIE_CHEQUE:
+        do_cheque = _conferir_cheque(dados)
     # O CPF/CNPJ DO APRESENTANTE VAI AO AVISO (CN-MA art. 923), e número que
     # não fecha o dígito é documento de ninguém num papel que a casa assina.
     # Vazio não é erro: quem exige ou não é o oficial (LD08.perguntas, 1).
@@ -488,8 +568,10 @@ def cadastrar_titulo(con, dados: dict, *, origem: str,
                cedente_nome, cedente_documento, cedente_endereco,
                cedente_cep, cedente_cidade, cedente_uf,
                situacao, origem, origem_chave, importacao_id,
-               criado_em, criado_por, moeda_estrangeira, valor_na_moeda)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               criado_em, criado_por, moeda_estrangeira, valor_na_moeda,
+               cheque_banco_sacado, cheque_motivo_devolucao,
+               cheque_apresentado_em, cheque_contra_o_banco)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT (origem, origem_chave) DO NOTHING
            RETURNING id""",
         (dados.get("especie"), dados.get("numero_titulo"), dados.get("nosso_numero"),
@@ -507,7 +589,9 @@ def cadastrar_titulo(con, dados: dict, *, origem: str,
          cedente.get("nome"), cedente.get("documento"), cedente.get("endereco"),
          cedente.get("cep"), cedente.get("cidade"), cedente.get("uf"),
          "RECEBIDO", origem, chave, importacao_id, agora, usuario,
-         moeda or None, na_moeda or None))
+         moeda or None, na_moeda or None,
+         do_cheque["cheque_banco_sacado"], do_cheque["cheque_motivo_devolucao"],
+         do_cheque["cheque_apresentado_em"], do_cheque["cheque_contra_o_banco"]))
     if not novo:
         return int(titulo_por_origem(bd, origem, chave)["id"])
     titulo_id = int(novo[0]["id"])

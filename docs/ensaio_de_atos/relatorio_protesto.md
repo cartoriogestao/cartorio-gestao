@@ -104,6 +104,15 @@ apresentação», obrigatórios para lavrar, salvo marcando que o protesto é co
 instrumento os dizem. Pergunta ao oficial: a casa recebe cheque pelo balcão? E quais alíneas o CN-MA
 proíbe?
 
+**CONSERTADO em 05/11/2026** (decisão do oficial, «i» e «u»). A casa recebe cheque. No cadastro pelo balcão,
+o cheque (CH) exige banco sacado, motivo da devolução e data da apresentação ao banco (Lei 9.492/1997, art.
+6º; CN-MA art. 910), salvo marcando que o protesto é para instruir medida contra o próprio banco. Os motivos
+20, 25, 28, 30 e 35 se recusam (CN-MA art. 883, § 1º, e art. 911; CNN art. 390) — **mesmo com endosso ou
+aval, por ora**: a recusa diz que o art. 883, §§ 2º e 3º, admite o protesto com o emitente «desconhecido» e
+índice próprio, e que essa exceção não está no sistema. O cheque apresentado mais de um ano depois da
+emissão traz o aviso de comprovar o endereço do emitente (§ 5º). A ficha mostra o banco, o motivo e a data.
+O registro e o instrumento não mudaram. Ensaio: os cinco testes do cheque, sem xfail.
+
 ---
 
 ## Observações (sem teste)

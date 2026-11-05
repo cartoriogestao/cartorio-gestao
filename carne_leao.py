@@ -797,8 +797,30 @@ _FUNDOS_DO_LANCAMENTO = ("ferc", "fadep", "femp", "ferrfis", "fermoju")
 # O PAGO E NUNCA SELADO (caso B, decisão do oficial de 03/11/2026): sem estorno nem devolução, fica na
 # lista dos «pagos sem selo» e entra como receita em 31/12 do ano do pagamento, se até lá não for selado.
 # Pago num ano e selado no seguinte, conta no selo (caso E): a regra vale também na virada do ano.
+#
+# O ITEM SEM SELO PRÓPRIO SEGUE O SELO DO PROTOCOLO (caso C, decisão do oficial de 03/11/2026, «seguir
+# tudo conforme recomendado»): a diligência, o arquivamento por folha, a publicação — o item que vai no
+# envelope do selo de OUTRO ato — reconhece-se pela LISTA DE CÓDIGOS abaixo. Pago e não marcado em ato
+# nenhum, ele conta no PRIMEIRO selo do mesmo protocolo no dia do pagamento ou depois dele; sem selo
+# nenhum no protocolo, segue o caso B (31/12). O item que não está na lista espera o próprio selo.
+# O lançamento avulso, sem protocolo, continua contando no pagamento (pergunta 3 do caso C).
 SELO, PAGAMENTO = "SELO", "PAGAMENTO"
 CRITERIO = "receita reconhecida na emissão do selo do ato (o mais tarde entre o pagamento e o selo)"
+
+#: OS ITENS SEM SELO PRÓPRIO — PROPOSTA PARA O OFICIAL CONFERIR (03/11/2026). Tirados da tabela de 2026
+#: (`tests/custas_reais.json`): as diligências, o arquivamento por folha que acompanha o ato e as
+#: publicações e comunicações. FICAM FORA os que esta casa sela por si: 15.8.1 (diligência da
+#: notificação do RTD), 16.39 (arquivamento do RI, «Selar arquivamento»), 17.9 (edital do Protesto) e
+#: 13.18 (autenticação de cópia).
+ITENS_SEM_SELO_PROPRIO: frozenset[str] = frozenset({
+    # diligências
+    "13.21", "13.21.1", "13.21.2", "14.1.3", "14.1.4", "15.8.1.1", "15.8.1.2", "16.34",
+    "17.10.1", "17.10.2", "17.10.3",
+    # arquivamento por folha, que vai com o ato
+    "13.30", "14.12", "15.22",
+    # publicação e comunicação
+    "14.1.10", "16.2.1",
+})
 
 
 def _recebido_no_caixa(bd, comp: str, forma: str, bp: int, criterio: str = SELO
@@ -814,15 +836,17 @@ def _recebido_no_caixa(bd, comp: str, forma: str, bp: int, criterio: str = SELO
         consulta = f"""SELECT l.id, l.data, l.natureza, l.sentido, l.forma_pagamento, l.descricao,
                               l.valor, l.emolumentos, l.ferc, l.fadep, l.femp, l.ferrfis, l.fermoju,
                               l.estornado, COALESCE(l.excluido, 0) AS excluido, {resposta},
-                              a.id AS item_id, a.usado_em AS selado_em
+                              a.id AS item_id, a.usado_em AS selado_em, a.codigo_ato,
+                              a.protocolo_id
                          FROM cx_lancamentos l
                          LEFT JOIN cx_protocolo_atos a ON a.lancamento_id = l.id
                         WHERE (l.data >= %s AND l.data < %s)
                            OR (a.usado_em >= %s AND a.usado_em < %s AND l.data < %s)
                            OR (a.id IS NOT NULL AND a.usado_em IS NULL AND l.data >= %s AND l.data < %s)
                         ORDER BY l.data, l.id"""
-        # a terceira linha: o pago sem selo do ano, que vai a 31/12 (caso B)
-        parametros = (inicio, fim, inicio, fim, fim, f"{comp[:4]}-01-01", fim)
+        # a terceira linha: o pago sem selo — do ano anterior também, porque o item sem selo próprio
+        # pago em dezembro segue o selo do protocolo de janeiro (casos B, C e E)
+        parametros = (inicio, fim, inicio, fim, fim, f"{int(comp[:4]) - 1}-01-01", fim)
     else:
         consulta = f"""SELECT id, data, natureza, sentido, forma_pagamento, descricao, valor,
                               emolumentos, ferc, fadep, femp, ferrfis, fermoju, estornado,
@@ -834,6 +858,17 @@ def _recebido_no_caixa(bd, comp: str, forma: str, bp: int, criterio: str = SELO
     for lan in bd.ler(consulta, parametros):
         pago_em = str(lan["data"])[:10]
         selado_em = str(lan["selado_em"] or "")[:10] or None
+        pelo_protocolo = False
+        if (criterio == SELO and not selado_em and lan["item_id"]
+                and str(lan["codigo_ato"] or "").strip() in ITENS_SEM_SELO_PROPRIO):
+            # O PRIMEIRO SELO DO MESMO PROTOCOLO no dia do pagamento ou depois (caso C, pergunta 2).
+            primeiro = bd.valor(
+                """SELECT MIN(usado_em) AS d FROM cx_protocolo_atos
+                    WHERE protocolo_id = %s AND usado_em IS NOT NULL
+                      AND SUBSTR(usado_em, 1, 10) >= %s""",
+                (lan["protocolo_id"], pago_em))
+            if primeiro:
+                selado_em, pelo_protocolo = str(primeiro)[:10], True
         if criterio == SELO and selado_em:
             dia = max(pago_em, selado_em)
         elif criterio == SELO and lan["item_id"]:
@@ -874,7 +909,9 @@ def _recebido_no_caixa(bd, comp: str, forma: str, bp: int, criterio: str = SELO
                           "selado_em": selado_em, "bruto": valor,
                           "receita": receita, "discriminado": discriminado,
                           # o item do protocolo pago e sem selo, reconhecido em 31/12 (caso B)
-                          "sem_selo": bool(lan["item_id"]) and not selado_em})
+                          "sem_selo": bool(lan["item_id"]) and not selado_em,
+                          # o item sem selo próprio, no selo de outro item do protocolo (caso C)
+                          "pelo_selo_do_protocolo": pelo_protocolo})
     return recebidos, outras, outras_receitas
 
 

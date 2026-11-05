@@ -136,3 +136,84 @@ def test_o_resumo_do_ano_mostra_a_mudanca_de_cada_mes(casa):
         ano = CL.apurar_com_o_ano(con, "2026-11", ate="2026-11")[1]
     por_mes = {m["competencia"]: m["mudanca_do_criterio"] for m in ano}
     assert por_mes["2026-10"] == -10000 and por_mes["2026-11"] == 10000
+
+
+
+# ------------------------------------------------- o caso C: o item sem selo próprio segue o do protocolo
+
+def _item_do_protocolo(db, protocolo_id: int, pago_em: str, emol: str, *, codigo: str,
+                       selado_em: str | None) -> int:
+    """Outro item do MESMO protocolo, com o código da tabela, pago em `pago_em` e consumido pelo selo
+    em `selado_em` (ou não) — como `_item_pago`, que abre um protocolo por item."""
+    with db.transaction() as con:
+        bd = banco(con)
+        lan = bd.escrever(
+            """INSERT INTO cx_lancamentos (data, natureza, sentido, forma_pagamento, descricao, valor,
+                   emolumentos, estornado, criado_em)
+               VALUES (%s, 'RECEBIMENTO', 'ENTRADA', 'PIX', 'Item de ensaio', %s, %s, 0, %s) RETURNING id""",
+            (pago_em, emol, emol, AGORA))[0]["id"]
+        bd.escrever(
+            """INSERT INTO cx_protocolo_atos (protocolo_id, descricao, codigo_ato, quantidade, valor_total,
+                   emolumentos, quitado, lancamento_id, quantidade_usada, usado_em,
+                   usado_por_tabela, usado_por_ato_id)
+               VALUES (%s, 'Item de ensaio', %s, 1, %s, %s, 1, %s, %s, %s, %s, %s)""",
+            (protocolo_id, codigo, emol, emol, lan, 1 if selado_em else 0,
+             f"{selado_em}T10:00:00" if selado_em else None,
+             "nt_atos" if selado_em else None, lan if selado_em else None))
+        return int(lan)
+
+
+def _protocolo_de(db, lancamento_id: int) -> int:
+    with db.connect() as con:
+        return int(banco(con).valor("SELECT protocolo_id FROM cx_protocolo_atos WHERE lancamento_id=%s",
+                                    (lancamento_id,)))
+
+
+def test_a_diligencia_paga_e_nao_marcada_conta_no_primeiro_selo_do_protocolo(casa):
+    """Caso C (decisão do oficial, 03/11/2026): a diligência (16.34) paga em outubro e nunca marcada em ato
+    conta no PRIMEIRO selo do mesmo protocolo no dia do pagamento ou depois — o do ato, em novembro —, e
+    não em 31/12."""
+    db = casa["db"]
+    ato = _item_pago(db, "2026-10-10", "100,00", selado_em="2026-11-05")
+    _item_do_protocolo(db, _protocolo_de(db, ato), "2026-10-10", "45,33", codigo="16.34", selado_em=None)
+    outubro, novembro = _apurar(db, "2026-10"), _apurar(db, "2026-11")
+    assert outubro["caixa"] == 0
+    assert novembro["caixa"] == 14533     # o ato e a diligência, no selo de 05/11
+    assert novembro["pagos_sem_selo"]["n"] == 0
+
+
+def test_o_item_fora_da_lista_espera_o_proprio_selo(casa):
+    """O item que NÃO está na lista (uma certidão, 16.24.1) não segue o selo de outro item: pago e sem o
+    próprio selo, fica entre os «pagos sem selo» e vai a 31/12 (caso B)."""
+    db = casa["db"]
+    ato = _item_pago(db, "2026-10-10", "100,00", selado_em="2026-11-05")
+    _item_do_protocolo(db, _protocolo_de(db, ato), "2026-10-10", "47,84", codigo="16.24.1", selado_em=None)
+    novembro = _apurar(db, "2026-11")
+    assert novembro["caixa"] == 10000
+    assert novembro["pagos_sem_selo"]["n"] == 1
+
+
+def test_vale_o_primeiro_selo_no_dia_do_pagamento_ou_depois(casa):
+    """Caso C, pergunta 2: com selos em dias diferentes, vale o PRIMEIRO no dia do pagamento ou depois —
+    o selo de antes do pagamento não conta."""
+    db = casa["db"]
+    antes = _item_pago(db, "2026-09-01", "10,00", selado_em="2026-09-02")
+    protocolo = _protocolo_de(db, antes)
+    _item_do_protocolo(db, protocolo, "2026-10-20", "60,00", codigo="16.24.1", selado_em="2026-12-01")
+    _item_do_protocolo(db, protocolo, "2026-10-20", "70,00", codigo="16.24.1", selado_em="2026-11-15")
+    _item_do_protocolo(db, protocolo, "2026-10-10", "23,44", codigo="17.10.1", selado_em=None)
+    assert _apurar(db, "2026-11")["caixa"] == 7000 + 2344   # o selo de 15/11, e a diligência com ele
+    assert _apurar(db, "2026-09")["caixa"] == 1000          # o selo de 02/09 é antes do pagamento
+
+
+def test_o_avulso_sem_protocolo_continua_no_pagamento(casa):
+    """Caso C, pergunta 3: o lançamento sem item de protocolo conta no pagamento, como era."""
+    db = casa["db"]
+    with db.transaction() as con:
+        banco(con).escrever(
+            """INSERT INTO cx_lancamentos (data, natureza, sentido, forma_pagamento, descricao, valor,
+                   emolumentos, estornado, criado_em)
+               VALUES ('2026-10-10', 'RECEBIMENTO', 'ENTRADA', 'PIX', 'Diligência avulsa', '45,33',
+                       '45,33', 0, %s)""",
+            (AGORA,))
+    assert _apurar(db, "2026-10")["caixa"] == 4533

@@ -21,3 +21,5 @@ devedor_documento = {tipo_documento} {documento}
 sem_tipo_de_documento = documento
 devedor_endereco = endereço {endereco}
 tipo_e_motivo = Tipo: protesto {tipo}. Motivo: {motivo}.
+cheque_devolucao = devolvido pelo banco sacado {banco}, motivo {motivo}, apresentado em {data}
+cheque_contra_o_banco = protesto para instruir medida contra o próprio banco sacado (CN-MA art. 910)

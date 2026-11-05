@@ -160,6 +160,20 @@ def test_o_cheque_com_a_apresentacao_vai_ao_protesto_e_a_ficha_a_diz(s):  # noqa
     assert feito["situacao"] == "PROTESTADO", feito["avisos"]
     ficha = s["c"].get(f"/protesto/{feito['id']}").get_data(as_text=True)
     assert "Banco sacado: Banco Exemplo S.A. — devolvido pelo motivo 11, apresentado em 2025-02-12" in ficha
+    # O TERMO E O INSTRUMENTO DIZEM A DEVOLUÇÃO (decisão do oficial, 05/11/2026): Lei 9.492/1997, art. 6º;
+    # CN-MA art. 910. Os dois usam os mesmos pedaços da descrição do título.
+    devolucao = "devolvido pelo banco sacado Banco Exemplo S.A., motivo 11, apresentado em 12/02/2025"
+    assert devolucao in (F._ato(s, feito["id"], "PROTESTO")["teor"] or "")
+    import protesto_instrumento as PI
+    with s["db"].connect() as con:
+        assert devolucao in PI.descricao_do_documento(PI.dados(con, feito["id"]), con)
+
+
+def test_o_cheque_contra_o_proprio_banco_o_diz_no_termo(s):  # noqa: F811
+    feito = _ate_o_protesto(s, especie="CH", numero_titulo="CH-0010", cheque_contra_o_banco="1")
+    assert feito["situacao"] == "PROTESTADO", feito["avisos"]
+    assert "instruir medida contra o próprio banco sacado (CN-MA art. 910)" in (
+        F._ato(s, feito["id"], "PROTESTO")["teor"] or "")
 
 
 @pytest.mark.parametrize("motivo", ["20", "25", "28", "30", "35"])

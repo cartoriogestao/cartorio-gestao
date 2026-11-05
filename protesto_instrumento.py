@@ -439,6 +439,17 @@ def pedacos_da_descricao(d: dict, con: Any = None) -> dict:
         (_p("valor_protestado", valor=_reais(t.get("saldo_centavos")))
          if t.get("saldo_centavos") and t.get("saldo_centavos") != t.get("valor_centavos")
          else None)]
+    # O CHEQUE DIZ A APRESENTACAO AO BANCO E A DEVOLUCAO (05/11/2026, decisao do
+    # oficial): Lei 9.492/1997, art. 6o, e CN-MA art. 910. O registro e o
+    # instrumento usam estes pedacos, e por isso os dois dizem o mesmo. O
+    # cheque da CRA nao traz estes campos, e sai como antes.
+    if _texto(t.get("especie")).upper() == "CH":
+        if t.get("cheque_contra_o_banco"):
+            do_titulo.append(_p("cheque_contra_o_banco"))
+        elif _texto(t.get("cheque_banco_sacado")):
+            do_titulo.append(_p("cheque_devolucao", banco=_texto(t["cheque_banco_sacado"]),
+                                motivo=_texto(t.get("cheque_motivo_devolucao")),
+                                data=_data_br(t.get("cheque_apresentado_em"))))
     pedacos["titulo"] = ", ".join(x for x in do_titulo if x) + "."
     # O NOME E O ENDEREÇO DO APRESENTANTE — Lei 9.492/1997, art. 22, II; CN-MA
     # art. 914, III (LD08, 21/10/2026). O endereço vem em `d["apresentante"]`,

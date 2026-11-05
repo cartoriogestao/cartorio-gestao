@@ -937,6 +937,13 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # intima. Vazias no titulo em real.
     ("pt_titulos", "moeda_estrangeira", "TEXT"),
     ("pt_titulos", "valor_na_moeda", "TEXT"),
+    # A TRADUCAO DO TITULO EM MOEDA ESTRANGEIRA (05/11/2026, decisao do
+    # oficial, item 4; Lei 9.492/1997, art. 10, caput e § 1o; recusa 55 da CRA,
+    # «falta traducao por tradutor publico»): quem traduziu, a matricula dele e
+    # a data. O registro do protesto a cita.
+    ("pt_titulos", "traducao_tradutor", "TEXT"),
+    ("pt_titulos", "traducao_matricula", "TEXT"),
+    ("pt_titulos", "traducao_data", "TEXT"),
     # O CHEQUE DO BALCAO (05/11/2026, decisao do oficial, item i; Lei
     # 9.492/1997, art. 6o; CN-MA arts. 883 e 910): o banco sacado, o motivo da
     # devolucao (a alinea do BACEN), a data da apresentacao ao banco, e a marca

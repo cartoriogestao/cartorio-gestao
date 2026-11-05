@@ -2638,6 +2638,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # origem; o valor e o saldo acima vão em reais, convertidos.
             "moeda_estrangeira": _campo("moeda_estrangeira") or None,
             "valor_na_moeda": _campo("valor_na_moeda") or None,
+            # A TRADUÇÃO (05/11/2026, item 4; Lei 9.492/1997, art. 10, § 1º).
+            "traducao": {"tradutor": _campo("traducao_tradutor") or None,
+                         "matricula": _campo("traducao_matricula") or None,
+                         "data": _campo("traducao_data") or None},
             # O CHEQUE (05/11/2026, item i): só vale para a espécie CH, e quem
             # confere é `PT.cadastrar_titulo`.
             "cheque": {

@@ -21,3 +21,5 @@ devedor_documento = {tipo_documento} {documento}
 sem_tipo_de_documento = documento
 devedor_endereco = endereço {endereco}
 tipo_e_motivo = Tipo: protesto {tipo}. Motivo: {motivo}.
+moeda_estrangeira = em moeda estrangeira: {valor} — {moeda}, convertido em reais pelo apresentante (Lei 9.492/1997, art. 10, § 2º)
+traducao = tradução por tradutor público juramentado {tradutor}, matrícula {matricula}, de {data} (Lei 9.492/1997, art. 10, § 1º)

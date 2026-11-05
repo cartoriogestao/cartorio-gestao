@@ -132,6 +132,11 @@ diferença deve ser apontada ao oficial.
 - **Registro com valor declarado** no RTD: o item é o **15.2** da tabela do
   TJMA, pela faixa do valor, e a ficha do título o mostra. Decisão do oficial
   de 05/11/2026.
+- **Domicílio das partes** no RTD (LRP art. 130): cada parte tem a cidade e a
+  UF do domicílio, e a ficha avisa quando o domicílio informado não aponta para
+  esta circunscrição (mesma circunscrição; senão a de um devedor ou
+  garantidor; senão a de uma das partes). Avisa, e não barra. Decisão do
+  oficial de 05/11/2026.
 
 ## 8. Notas
 

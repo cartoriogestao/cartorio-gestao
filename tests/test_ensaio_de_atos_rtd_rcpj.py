@@ -327,3 +327,39 @@ def test_o_titulo_sem_valor_e_o_do_rcpj_nao_sugerem_item(casa):  # noqa: F811
     pj = b.receber_titulo(3, serie="PJ_A", natureza="Constituição de associação",
                           apresentante="ASSOCIAÇÃO DE EXEMPLO", documento=F.CNPJ, valor_declarado="10.000,00")
     assert "Item da tabela pelo valor" not in b.c.get(f"/rcpj-rtd/titulo/{pj['id']}").get_data(as_text=True)
+
+# ------------------------------------------------------------------ o domicílio das partes (LRP art. 130)
+
+def test_o_domicilio_das_partes_se_informa_e_a_ficha_confere_o_art_130(casa):  # noqa: F811
+    """Decisão do oficial (05/11/2026, item o; observação O2): os campos do domicílio das partes. LRP art.
+    130: o registro é no domicílio das partes (I), de um dos devedores ou garantidores quando moram em
+    circunscrições diversas (II), ou de uma das partes sem devedor nem garantidor (III). A ficha avisa, e não
+    barra: a competência é de quem qualifica."""
+    b = F.Balcao(casa)
+    b.abrir_caixa()
+    titulo = b.receber_titulo(4, serie="TD_B", natureza="Contrato de mútuo",
+                              apresentante="EMPRESA DE EXEMPLO LTDA", documento=F.CNPJ)
+    b.pagar(titulo["protocolo_geral_id"], "15.8")
+    b.qualificar(titulo["id"], resultado="POSITIVA")
+    url = f"/rcpj-rtd/titulo/{titulo['id']}"
+    postar_e_seguir(b.c, f"{url}/registrar", {
+        "csrf_token": F._token(b.c, url), "serie": "TD_B",
+        "teor": "CONTRATO DE MÚTUO DE EXEMPLO, entre as partes qualificadas.",
+        "protocolo_id": str(titulo["protocolo_geral_id"])})
+    registro = b.um("SELECT * FROM rg_registros ORDER BY id DESC LIMIT 1")
+    ficha = f"/rcpj-rtd/{registro['id']}"
+    aviso_ii = "nenhum devedor ou garantidor informado mora nesta"
+    r = b.post(f"{ficha}/partes", ficha, nome="CREDORA DE EXEMPLO", papel="Credor",
+               domicilio_cidade="Cidade Exemplo", domicilio_uf="MA")
+    assert "entrou no indicador" in F._avisos(r), F._avisos(r)
+    r = b.post(f"{ficha}/partes", ficha, nome="DEVEDOR DE EXEMPLO", papel="Devedor",
+               domicilio_cidade="Outra Cidade", domicilio_uf="PI")
+    assert aviso_ii in r.get_data(as_text=True)
+    linha = b.um("SELECT * FROM rg_partes WHERE nome='DEVEDOR DE EXEMPLO'")
+    assert (linha["domicilio_cidade"], linha["domicilio_uf"]) == ("Outra Cidade", "PI")
+    r = b.post(f"{ficha}/partes", ficha, nome="FIADOR DE EXEMPLO", papel="Fiador",
+               domicilio_cidade="Cidade Exemplo", domicilio_uf="MA")
+    assert aviso_ii not in r.get_data(as_text=True)
+    r = b.post(f"{ficha}/partes", ficha, nome="OUTRO DE EXEMPLO", papel="Interveniente",
+               domicilio_cidade="Cidade Exemplo", domicilio_uf="XX")
+    assert "não é UF" in F._avisos(r), F._avisos(r)

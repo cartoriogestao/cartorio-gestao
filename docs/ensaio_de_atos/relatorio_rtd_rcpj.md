@@ -71,6 +71,13 @@ sociedade simples, associação, fundação ou outra, e avisar quando a natureza
 guarda o apresentante, mas não as partes do contrato nem o domicílio delas. Pergunta ao oficial: a casa
 confere isso no balcão, no papel? Se a resposta for que deveria conferir no sistema, faltam os campos.
 
+**CONSERTADO em 05/11/2026** (decisão do oficial, «o»): cada parte do registro tem o domicílio (cidade e UF),
+informado ao incluí-la no indicador. Na ficha do RTD, um aviso confere o art. 130 com a redação da Lei
+14.382/2022 — mesma circunscrição (I), a de um devedor ou garantidor quando moram em circunscrições
+diversas (II), a de uma das partes sem devedor nem garantidor (III) — contra a cidade da serventia. Avisa, e
+não barra: a competência é de quem qualifica. Ensaio:
+`test_o_domicilio_das_partes_se_informa_e_a_ficha_confere_o_art_130`.
+
 **O3. O registro com valor declarado (serviços 305 e 307).** O valor declarado se grava no título
 (`rg_titulos.valor_declarado`), mas o item da tabela se escolhe à mão no caixa, e o valor não entra no
 selo: o RTD/RCPJ sela por `atos-em-geral` (`ato_selado.caminho_do_rtdpj`). A cobertura já marca «✗ sem

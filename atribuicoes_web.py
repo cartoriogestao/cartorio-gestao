@@ -549,6 +549,34 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 WHERE operador_nome=%s AND situacao='ABERTO'
                 ORDER BY data DESC, id DESC LIMIT 1""", (usuario_nome(),))
 
+    # A GRATUIDADE NO PROTESTO (05/11/2026, decisão do oficial, «Sim, todas»):
+    # NÃO HÁ — só o diferimento. A única exceção é o mandado judicial de
+    # gratuidade da justiça (CPC art. 98, § 1º, IX; Tabela XVII, item 17.8), com
+    # o motivo escrito e o mandado ANEXADO no mesmo envio. Até aqui a cobrança
+    # do Protesto aceitava qualquer gratuidade que viesse no formulário — nenhuma
+    # tela a mostrava, mas o servidor não a recusava.
+    def _so_a_gratuidade_do_mandado(tabela: str, ato_id: int):
+        """A gratuidade do Protesto conferida (`PT.conferir_gratuidade`); devolve o arquivo do mandado, ou None."""
+        codigo, _motivo, marcado = _gratuidade_do_form()
+        arquivo = request.files.get("mandado_gratuidade")
+        tem = bool(arquivo and arquivo.filename)
+        try:
+            PT.conferir_gratuidade(codigo, marcado=marcado, tem_mandado=tem)
+        except PT.ProtestoError as erro:
+            raise AS.AtoError(str(erro)) from None
+        return arquivo if (marcado and tem) else None
+
+    def _guardar_o_mandado(tabela: str, ato_id: int, arquivo) -> None:
+        """O mandado de gratuidade, anexado ao ato ou à certidão. ESCREVE o anexo."""
+        from storage import safe_component, save_upload
+        info = save_upload(arquivo, pasta_dos_arquivos() / "PROTESTO"
+                           / "MANDADOS_DE_GRATUIDADE"
+                           / safe_component(f"{tabela}-{ato_id}"))
+        db.add_attachment(
+            "PT_GRATUIDADE_MANDADO_" + ("ATO" if tabela == "pt_atos" else "CERTIDAO"),
+            int(ato_id), info, session.get("user_id"),
+            "Mandado judicial de gratuidade da justiça (CPC art. 98, § 1º, IX)")
+
     def _cobrar_se_pedido(con, tabela: str, ato_id: int, tipo: str,
                           busca: str | None = None,
                           data_do_ato: str | None = None) -> str:
@@ -590,6 +618,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                               if n is not None]
         if not servicos and not ids_protocolo_item:
             return ""
+        mandado = (_so_a_gratuidade_do_mandado(tabela, ato_id)
+                   if tabela in ("pt_atos", "pt_certidoes") else None)
         # A BUSCA ENTRA NA MESMA COBRANÇA DA CERTIDÃO — pedido do oficial,
         # 15/10/2026. Só quando se está cobrando (a cobrança continua
         # escolhida), só se o item gera selo (o «.9» não cobra), e só se a
@@ -663,6 +693,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                               motivo_gratuidade=grat_mot,
                               usuario_id=None)
                 total += r["total_centavos"]
+        # O MANDADO SE GUARDA DEPOIS DA COBRANÇA, e não antes: recusada a
+        # cobrança, não fica arquivo de um ato que não houve.
+        if mandado is not None:
+            _guardar_o_mandado(tabela, ato_id, mandado)
         from caixa_schema import reais
         return f" Lançado no caixa: R$ {reais(total)}."
 

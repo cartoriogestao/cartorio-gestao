@@ -4,7 +4,8 @@ O QUE ESTES TESTES GUARDAM
   - o cedente do título H vai com o CEP e a UF da serventia, sem documento;
     sem os dois na configuração, o título espera com o motivo;
   - dois atos com a mesma chave não entram como dois títulos: fundem se têm a
-    mesma data, folha e instrumento; divergindo, o par espera, e os outros seguem;
+    mesma data, folha e dados do título (o instrumento não conta);
+    divergindo, o par espera, e os outros seguem;
   - o devedor do protocolo com dois títulos é o do próprio título, e nunca o da
     primeira linha do protocolo;
   - arquivo recusado devolve os atos, e arquivo que subiu sem alguns atos devolve
@@ -129,9 +130,13 @@ def test_mesma_data_folha_e_instrumento_fundem_num_titulo_com_dois_devedores():
     assert [d["edital"] for d in so["titulo"]["devedores"]] == [False, True]
 
 
-@pytest.mark.parametrize("campo,valor", [("data_ocorrencia", "2026-10-28"),
-                                         ("num_folha", "200"),
-                                         ("instrumento", b"0\x82OUTRO")])
+@pytest.mark.parametrize("campo,valor", [
+    ("data_ocorrencia", "2026-10-28"), ("num_folha", "200"),
+    ("valor", X.valor(99)), ("saldo", X.valor(99)),
+    ("data_vencimento", "2026-10-01"),
+    ("cedente", {"nome": "OUTRO CREDOR"}),
+    ("cedente", {"nome": "LOJA EXEMPLO LTDA", "documento": "00000001000055"}),
+    ("numero_titulo", "78/1"), ("especie", "CDA")])
 def test_divergindo_o_par_espera_com_o_motivo_e_os_outros_seguem(campo, valor):
     um, dois = _dois_devedores()
     outro = _item(3, 12)
@@ -142,6 +147,28 @@ def test_divergindo_o_par_espera_com_o_motivo_e_os_outros_seguem(campo, valor):
     assert [i["ato_id"] for i in r["entram"]] == [3]
     assert sorted(i["ato_id"] for i in r["fora"]) == [1, 2]
     assert all("decisão do oficial" in i["motivo"] for i in r["fora"])
+
+
+def test_instrumentos_diferentes_nao_seguram_o_par_vai_o_do_primeiro():
+    """04/11/2026: a CDA com dois devedores tem um ato e um instrumento
+    assinado por devedor, e os bytes sempre divergem. O título é o mesmo: funde,
+    com os dois devedores, e leva o instrumento do primeiro ato (o layout leva
+    UM `instrumento_eletronico` por `<titulo>`)."""
+    um, dois = _dois_devedores()
+    r = X._uma_chave_um_titulo(
+        [_item(1, 10, devedores=um, instrumento=b"0\x82PRIMEIRO"),
+         _item(2, 11, devedores=dois, instrumento=b"0\x82SEGUNDO")], [])
+    assert not r["fora"]
+    [so] = r["entram"]
+    assert so["atos_ids"] == [1, 2]
+    assert len(so["titulo"]["devedores"]) == 2
+    assert so["titulo"]["instrumento"] == b"0\x82PRIMEIRO"
+    raiz = ET.fromstring(X.escrever(
+        letra="P", uf="MA", comarca="2199999", cartorio="01",
+        apresentantes=[dict(so["apresentante"], titulos=[so["titulo"]])]))
+    assert len(raiz.findall(".//titulo")) == 1
+    assert len(raiz.findall(".//titulo/instrumento_eletronico")) == 1
+    assert raiz.find(".//titulo/devedores").get("total") == "2"
 
 
 def test_com_um_do_par_ja_esperando_o_outro_nao_sai_sozinho():

@@ -980,8 +980,20 @@ def _no_que_o_par_diverge(grupo: list[dict]) -> list[str]:
             ("a ocorrência", lambda i: i["titulo"].get("ocorrencia")),
             ("o livro", lambda i: i["titulo"].get("num_livro")),
             ("a folha", lambda i: i["titulo"].get("num_folha")),
-            ("o instrumento",
-             lambda i: bytes(i["titulo"].get("instrumento") or b"")),
+            # Os dados do TÍTULO: divergindo, não é o mesmo título.
+            ("o valor", lambda i: str(i["titulo"].get("valor"))),
+            ("o saldo", lambda i: str(i["titulo"].get("saldo"))),
+            ("o vencimento", lambda i: i["titulo"].get("data_vencimento")),
+            ("o credor", lambda i: (
+                (i["titulo"].get("cedente") or {}).get("nome"),
+                (i["titulo"].get("cedente") or {}).get("documento"))),
+            ("o número", lambda i: i["titulo"].get("numero_titulo")),
+            ("a espécie", lambda i: i["titulo"].get("especie")),
+            # O INSTRUMENTO NÃO ENTRA (04/11/2026): cada devedor tem o seu ato e
+            # o seu instrumento assinado, e os bytes sempre divergem. O layout
+            # leva UM `instrumento_eletronico` por `<titulo>` (ver `_titulo`):
+            # vai o do primeiro ato, e cada ato já precisa do seu assinado
+            # para estar aqui (sem ele, espera e segura o par).
             ("o apresentante", lambda i: _chave_do_bloco(i["apresentante"]))):
         if any(valor(i) != valor(um) for i in grupo[1:]):
             saida.append(rotulo)
@@ -999,7 +1011,9 @@ def _uma_chave_um_titulo(entram: list[dict], fora: list[dict]) -> dict:
     `<devedores total="2">` (4 casos no P de 31/08/2026), cada devedor com o
     seu `intimado` e o seu `edital`.
 
-      - mesma data, ocorrência, livro, folha e instrumento: funde num título só;
+      - mesma data, ocorrência, livro, folha e os dados do título (valor, saldo,
+        vencimento, credor, número, espécie): funde num título só, com o
+        instrumento do primeiro ato (o layout leva um por título);
       - divergem em algum: o par fica esperando, com o motivo, e os outros
         seguem. Como mandar esse par é decisão do oficial, e aqui não se inventa;
       - um deles já esperando por outro motivo: o outro espera com ele, porque

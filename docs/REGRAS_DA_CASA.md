@@ -129,6 +129,11 @@ diferença deve ser apontada ao oficial.
 - A releitura de um registro **não muda o cadastro**: o que muda o cadastro é
   ato próprio.
 - Notificação não se abre sobre registro cancelado.
+- **Domicílio das partes** no RTD (LRP art. 130): cada parte tem a cidade e a
+  UF do domicílio, e a ficha avisa quando o domicílio informado não aponta para
+  esta circunscrição (mesma circunscrição; senão a de um devedor ou
+  garantidor; senão a de uma das partes). Avisa, e não barra. Decisão do
+  oficial de 05/11/2026.
 
 ## 8. Notas
 

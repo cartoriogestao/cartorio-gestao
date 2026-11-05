@@ -221,7 +221,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 feito = RGL.incluir_parte(
                     con, registro_id, nome=_campo("nome"), documento=_campo("documento"),
                     papel=_campo("papel"), participacao=_campo("participacao"),
-                    doi_lado=_campo("doi_lado"), agora=db.now(), usuario=usuario_nome())
+                    doi_lado=_campo("doi_lado"), agora=db.now(), usuario=usuario_nome(),
+                    domicilio_cidade=_campo("domicilio_cidade"),
+                    domicilio_uf=_campo("domicilio_uf"))
         except (RGL.LivroDoRegistroError, RG.RgError) as erro:
             flash(str(erro), "danger")
             return _de_volta(registro_id)

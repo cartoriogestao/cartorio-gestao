@@ -119,12 +119,13 @@
     <small><a href="{{ url_for('rcpj_rtd_livros', atribuicao=registro.atribuicao, livro='indice' if registro.atribuicao == 3 else 'd') }}">Ver o índice</a></small></div>
   {% if partes %}
   <div class="table-wrap"><table class="table">
-    <thead><tr><th>Nome</th><th>CPF ou CNPJ</th><th>Papel</th><th>Origem</th><th></th></tr></thead>
+    <thead><tr><th>Nome</th><th>CPF ou CNPJ</th><th>Papel</th><th>Domicílio</th><th>Origem</th><th></th></tr></thead>
     <tbody>
     {% for p in partes %}
     <tr>
       <td>{% if p.retirada_em %}<s>{{ p.nome }}</s>{% else %}{{ p.nome }}{% endif %}</td>
-      <td>{{ p.documento_formatado or '—' }}</td><td>{{ p.papel or '—' }}</td><td>{{ p.origem }}</td>
+      <td>{{ p.documento_formatado or '—' }}</td><td>{{ p.papel or '—' }}</td>
+      <td>{% if p.domicilio_cidade %}{{ p.domicilio_cidade }}{% if p.domicilio_uf %}/{{ p.domicilio_uf }}{% endif %}{% else %}—{% endif %}</td><td>{{ p.origem }}</td>
       <td>
         {% if p.retirada_em %}<small>Retirada em {{ fmt_date(p.retirada_em[:10]) }} por {{ p.retirada_por or '—' }}: {{ p.retirada_motivo }}</small>
         {% elif user.role in ['ADMIN','MANAGER'] %}
@@ -142,6 +143,7 @@
   {% else %}
   <p style="padding:14px">Só o requerente está no indicador deste registro. Inclua as outras partes do título.</p>
   {% endif %}
+  {% if aviso_domicilio %}<p class="notice warn" style="margin:0 14px">{{ aviso_domicilio }}</p>{% endif %}
   {% if user.role in ['ADMIN','MANAGER','USER'] %}
   <form method="post" class="form-grid" style="padding:14px"
         action="{{ url_for('rcpj_rtd_parte_incluir', registro_id=registro.id) }}">
@@ -149,6 +151,10 @@
     <label>Nome <input name="nome" required></label>
     <label>CPF ou CNPJ <input name="documento"></label>
     <label>Papel <input name="papel" list="papeis-do-registro"></label>
+    {# O DOMICÍLIO (05/11/2026, item o; LRP art. 130): é por ele que o RTD confere
+       se o título se registra aqui. #}
+    <label>Domicílio — cidade <input name="domicilio_cidade"></label>
+    <label>UF <input name="domicilio_uf" maxlength="2" size="3"></label>
     {% if registro.atribuicao == 4 %}
     <label>Participação na operação, em % <small class="muted">— só para a DOI</small> <input name="participacao"></label>
     <label>Lado na DOI <select name="doi_lado"><option value="">Pelo papel</option><option value="ALIENANTE">Alienante</option><option value="ADQUIRENTE">Adquirente</option><option value="FORA">Fora da declaração</option></select></label>

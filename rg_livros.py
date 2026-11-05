@@ -63,6 +63,57 @@ NOMES_QUE_NAO_SAO_NOME = {"apresentante", "requerente", "nao informado"}
 
 POR_PAGINA = 50
 MINIMO_DO_MOTIVO = 10
+
+# QUEM É DEVEDOR OU GARANTIDOR, PARA O ART. 130, II, DA LRP (05/11/2026, item o):
+# pelo começo do papel, sem acento e em minúscula. Lista curta de propósito.
+PAPEIS_DE_DEVEDOR_OU_GARANTIDOR = ("devedor", "garant", "fiador", "avalista",
+                                   "fiduciante", "locatario")
+UFS = ("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG",
+       "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO")
+
+
+def _lugar(cidade: Any, uf: Any) -> tuple[str, str]:
+    return ((normalizar_nome(_texto(cidade)) or ""), _texto(uf).upper())
+
+
+def aviso_do_domicilio(partes: list[dict], *, cidade: str, uf: str) -> str:
+    """O título é desta serventia pelo domicílio das partes? Vazio quando é, ou quando não se sabe. Só calcula.
+
+    LRP art. 130 (Lei 14.382/2022): registra-se no domicílio I — das partes,
+    quando residem na mesma circunscrição; II — de um dos devedores ou
+    garantidores, quando residem em circunscrições diversas; III — de uma das
+    partes, quando não há devedor nem garantidor. Decisão do oficial
+    (05/11/2026, item o): os CAMPOS do domicílio; a tela AVISA, e não barra —
+    quem decide a competência é quem qualifica.
+    """
+    casa = _lugar(cidade, uf)
+    if not casa[0]:
+        return ""
+    com = [p for p in partes if not p.get("retirada_em") and _texto(p.get("domicilio_cidade"))]
+    if not com:
+        return ""
+    lugares = {_lugar(p.get("domicilio_cidade"), p.get("domicilio_uf")) for p in com}
+    sem_acento = lambda t: (normalizar_nome(_texto(t)) or "").lower()  # noqa: E731
+    devedores = [p for p in com
+                 if sem_acento(p.get("papel")).startswith(PAPEIS_DE_DEVEDOR_OU_GARANTIDOR)]
+    def casa_esta_em(grupo):
+        return any(lugar[0] == casa[0] and (not lugar[1] or not casa[1] or lugar[1] == casa[1])
+                   for lugar in grupo)
+    if len(lugares) == 1:
+        if casa_esta_em(lugares):
+            return ""
+        return ("As partes informadas moram todas fora desta circunscrição: o registro é no "
+                "domicílio delas (LRP art. 130, I). Confira a competência.")
+    if devedores:
+        if casa_esta_em({_lugar(p.get("domicilio_cidade"), p.get("domicilio_uf")) for p in devedores}):
+            return ""
+        return ("As partes moram em circunscrições diversas, e nenhum devedor ou garantidor "
+                "informado mora nesta: o registro é no domicílio de um deles (LRP art. 130, II). "
+                "Confira a competência.")
+    if casa_esta_em(lugares):
+        return ""
+    return ("Nenhuma parte informada mora nesta circunscrição: sem devedor nem garantidor, o "
+            "registro é no domicílio de uma das partes (LRP art. 130, III). Confira a competência.")
 AGUARDA_QUALIFICACAO = "aguarda qualificação"
 AGUARDA_LAVRATURA = "qualificado, aguarda a lavratura"
 
@@ -575,7 +626,9 @@ def _registro_ou_recusa(con, registro_id: int) -> dict:
 def incluir_parte(con, registro_id: int, *, nome: str, documento: str | None = None,
                   papel: str | None = None, participacao: str | None = None,
                   doi_lado: str | None = None, agora: str, usuario: str | None = None,
-                  origem: str = "MANUAL", origem_chave: str | None = None) -> dict:
+                  origem: str = "MANUAL", origem_chave: str | None = None,
+                  domicilio_cidade: str | None = None,
+                  domicilio_uf: str | None = None) -> dict:
     """Põe uma pessoa no indicador daquele registro. ESCREVE.
 
     **NÃO É ATO E NÃO MUDA TEOR.** É o cadastro em volta do registro, como o requerente:
@@ -590,6 +643,9 @@ def incluir_parte(con, registro_id: int, *, nome: str, documento: str | None = N
     digitos = DOC.so_digitos(documento)
     if digitos and DOC.documento_valido(digitos) is False:
         raise LivroDoRegistroError(DOC.mensagem_documento_invalido(digitos))
+    uf = _texto(domicilio_uf).upper()
+    if uf and uf not in UFS:
+        raise LivroDoRegistroError(f"«{_texto(domicilio_uf)}» não é UF. Escreva a sigla: MA, PI, SP…")
     bd = banco(con)
     norma = normalizar_nome(limpo) or ""
     ja = bd.um(
@@ -601,11 +657,12 @@ def incluir_parte(con, registro_id: int, *, nome: str, documento: str | None = N
             f"{limpo} já está neste registro com o papel «{_texto(papel) or 'sem papel'}».")
     linha = bd.escrever(
         """INSERT INTO rg_partes(registro_id, nome, nome_norm, documento, papel, participacao,
-               doi_lado, origem, origem_chave, criado_em, criado_por)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+               doi_lado, origem, origem_chave, criado_em, criado_por,
+               domicilio_cidade, domicilio_uf)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (int(registro_id), limpo, norma, digitos or None, _texto(papel) or None,
          _texto(participacao).replace(",", ".") or None, _texto(doi_lado).upper() or None, origem,
-         origem_chave, agora, usuario))
+         origem_chave, agora, usuario, _texto(domicilio_cidade) or None, uf or None))
     return {"parte_id": int(linha[0]["id"]), "registro_id": int(registro_id), "nome": limpo}
 
 

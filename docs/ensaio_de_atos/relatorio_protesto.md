@@ -149,7 +149,9 @@ casa recebe esse título? Se recebe, faltam o campo da tradução e a frase no r
 **CONSERTADO em 05/11/2026** (decisão do oficial, «j»): a casa recebe. O cadastro pelo balcão tem «Moeda
 estrangeira» e «Valor na moeda de origem», que vão juntos; o valor e o saldo do título vão em REAIS,
 convertidos, e são obrigatórios — é o que se cobra e se intima. A ficha mostra «convertido de …». Fica
-com o oficial a tradução por tradutor público e a frase no registro (art. 10, § 1º). Ensaio:
+com o oficial a tradução por tradutor público e a frase no registro (art. 10, § 1º). **Decidido e consertado
+na mesma data** (item 4): o cadastro exige o tradutor público, a matrícula e a data da tradução, e o registro
+do protesto e o instrumento dizem o valor de origem e a tradução. Ensaio:
 `test_o_titulo_em_moeda_estrangeira_guarda_a_origem_e_cobra_em_reais` e o da recusa do incompleto.
 
 **O4. O protesto para fins falimentares por edital se lavra sem aviso.** **DECIDIDO E CONSERTADO em 03/11/2026** (o oficial,

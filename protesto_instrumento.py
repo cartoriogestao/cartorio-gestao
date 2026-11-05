@@ -450,6 +450,17 @@ def pedacos_da_descricao(d: dict, con: Any = None) -> dict:
             do_titulo.append(_p("cheque_devolucao", banco=_texto(t["cheque_banco_sacado"]),
                                 motivo=_texto(t.get("cheque_motivo_devolucao")),
                                 data=_data_br(t.get("cheque_apresentado_em"))))
+    # O TITULO EM MOEDA ESTRANGEIRA E A TRADUCAO (05/11/2026, decisao do
+    # oficial, item 4): Lei 9.492/1997, art. 10, § 1o — «constarao
+    # obrigatoriamente do registro do protesto a descricao do documento e sua
+    # traducao». O registro e o instrumento dizem o mesmo, por estes pedacos.
+    if _texto(t.get("moeda_estrangeira")):
+        do_titulo.append(_p("moeda_estrangeira", moeda=_texto(t["moeda_estrangeira"]),
+                            valor=_texto(t.get("valor_na_moeda"))))
+        if _texto(t.get("traducao_tradutor")):
+            do_titulo.append(_p("traducao", tradutor=_texto(t["traducao_tradutor"]),
+                                matricula=_texto(t.get("traducao_matricula")),
+                                data=_data_br(t.get("traducao_data"))))
     pedacos["titulo"] = ", ".join(x for x in do_titulo if x) + "."
     # O NOME E O ENDEREÇO DO APRESENTANTE — Lei 9.492/1997, art. 22, II; CN-MA
     # art. 914, III (LD08, 21/10/2026). O endereço vem em `d["apresentante"]`,

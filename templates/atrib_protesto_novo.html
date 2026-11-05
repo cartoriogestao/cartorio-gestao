@@ -126,9 +126,16 @@
       <label>Valor na moeda de origem
         <input name="valor_na_moeda" value="{{ form.get('valor_na_moeda','') }}"
                placeholder="1.000,00"></label>
+      {# A TRADUÇÃO POR TRADUTOR PÚBLICO (05/11/2026, item 4; Lei 9.492/1997, art. 10, § 1º). #}
+      <label>Tradutor público juramentado
+        <input name="traducao_tradutor" value="{{ form.get('traducao_tradutor','') }}"></label>
+      <label>Matrícula do tradutor (Junta Comercial)
+        <input name="traducao_matricula" value="{{ form.get('traducao_matricula','') }}"></label>
+      <label>Data da tradução
+        <input type="date" name="traducao_data" value="{{ form.get('traducao_data','') }}"></label>
       <p style="grid-column:1/-1"><small>
         <strong>Título em moeda estrangeira</strong> (Lei 9.492/1997, art. 10): informe a
-        moeda e o valor de origem, e ponha em <strong>Valor do título</strong> e
+        moeda, o valor de origem e a <strong>tradução por tradutor público</strong> (§ 1º), e ponha em <strong>Valor do título</strong> e
         <strong>Saldo a protestar</strong> o valor <strong>convertido em reais</strong> —
         é o que se cobra e se intima.
       </small></p>

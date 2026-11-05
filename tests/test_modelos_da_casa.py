@@ -900,6 +900,27 @@ def test_o_cheque_esta_no_padrao_e_o_ouro_nao_o_ve(ouro_e):
         assert marca not in gravado, marca
 
 
+# O TÍTULO EM MOEDA ESTRANGEIRA E A TRADUÇÃO (decisão do oficial, 05/11/2026,
+# item 4; Lei 9.492/1997, art. 10, § 1º): os rótulos `moeda_estrangeira` e
+# `traducao` de PT_INSTRUMENTO_DESCRICAO, que o registro do protesto
+# (PT_TERMO_QUALIFICACAO) e o instrumento usam. Como os do LD08 e os do cheque,
+# só entram com um dado que nenhum contexto do ouro tem — a moeda estrangeira —,
+# e sem ele o PT_TERMO_PROTESTO e o instrumento saem byte a byte os de antes. O
+# papel inteiro está no ensaio do Protesto.
+MUDOU_NA_MOEDA = {"PT_INSTRUMENTO_DESCRICAO": ("moeda_estrangeira", "traducao")}
+
+
+def test_a_moeda_estrangeira_esta_no_padrao_e_o_ouro_nao_a_ve(ouro_e):
+    import json
+    for chave, rotulos in MUDOU_NA_MOEDA.items():
+        lidos = PECAS._rotulos(MOD.padrao_de(chave))
+        for rotulo in rotulos:
+            assert rotulo in lidos, (chave, rotulo)
+    gravado = json.dumps(ouro_e, ensure_ascii=False)
+    for marca in ("em moeda estrangeira:", "tradutor público juramentado"):
+        assert marca not in gravado, marca
+
+
 def _ouro_e_de_hoje(secao: str, nome: str, antes):
     """O retrato de antes com as trocas declaradas acima, e só elas."""
     import json

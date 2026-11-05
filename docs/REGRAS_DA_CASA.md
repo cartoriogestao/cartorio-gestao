@@ -105,8 +105,9 @@ diferença deve ser apontada ao oficial.
   diferido.
 - Título em **moeda estrangeira** (Lei 9.492/1997, art. 10): a casa recebe. A
   ficha guarda a moeda e o valor de origem; o valor e o saldo vão em **reais**,
-  convertidos, e são obrigatórios — é o que se cobra e se intima. Decisão do
-  oficial de 05/11/2026.
+  convertidos, e são obrigatórios — é o que se cobra e se intima. O cadastro
+  exige a tradução por tradutor público (quem, matrícula e data), e o termo e
+  o instrumento a citam (art. 10, § 1º). Decisão do oficial de 05/11/2026.
 - **Cheque**: a casa recebe. O cadastro exige banco sacado, motivo da
   devolução e data da apresentação ao banco (Lei 9.492/1997, art. 6º; CN-MA
   art. 910), salvo quando o protesto é para instruir medida contra o próprio

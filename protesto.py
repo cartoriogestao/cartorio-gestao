@@ -554,6 +554,24 @@ def cadastrar_titulo(con, dados: dict, *, origem: str,
                 "Título em moeda estrangeira: o valor e o saldo vão em REAIS, "
                 "convertidos — é o que se cobra e se intima (Lei 9.492/1997, "
                 "art. 10). Informe os dois.")
+        # A TRADUCAO POR TRADUTOR PUBLICO (05/11/2026, decisao do oficial, item
+        # 4): Lei 9.492/1997, art. 10, caput e § 1o — o titulo vem acompanhado
+        # dela, e o registro do protesto a descreve. A CRA recusa sem ela (55).
+        traducao = dados.get("traducao") or {}
+        faltam = [rotulo for chave, rotulo in (("tradutor", "o tradutor público"),
+                                               ("matricula", "a matrícula dele"),
+                                               ("data", "a data da tradução"))
+                  if not str(traducao.get(chave) or "").strip()]
+        if faltam:
+            raise ProtestoError(
+                "Título em moeda estrangeira: falta " + ", ".join(faltam) + " da "
+                "tradução por tradutor público juramentado (Lei 9.492/1997, art. "
+                "10, caput e § 1º).")
+        try:
+            date.fromisoformat(str(traducao["data"]).strip())
+        except ValueError:
+            raise ProtestoError(
+                f"A data da tradução não é uma data: veio {traducao['data']!r}.") from None
     # O CHEQUE DO BALCAO (05/11/2026, item i): o da CRA e o da CENPROT vem
     # pelo contrato deles, que nao traz estes campos.
     do_cheque = {"cheque_banco_sacado": None, "cheque_motivo_devolucao": None,
@@ -592,8 +610,9 @@ def cadastrar_titulo(con, dados: dict, *, origem: str,
                situacao, origem, origem_chave, importacao_id,
                criado_em, criado_por, moeda_estrangeira, valor_na_moeda,
                cheque_banco_sacado, cheque_motivo_devolucao,
-               cheque_apresentado_em, cheque_contra_o_banco)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+               cheque_apresentado_em, cheque_contra_o_banco,
+               traducao_tradutor, traducao_matricula, traducao_data)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT (origem, origem_chave) DO NOTHING
            RETURNING id""",
         (dados.get("especie"), dados.get("numero_titulo"), dados.get("nosso_numero"),
@@ -613,7 +632,9 @@ def cadastrar_titulo(con, dados: dict, *, origem: str,
          "RECEBIDO", origem, chave, importacao_id, agora, usuario,
          moeda or None, na_moeda or None,
          do_cheque["cheque_banco_sacado"], do_cheque["cheque_motivo_devolucao"],
-         do_cheque["cheque_apresentado_em"], do_cheque["cheque_contra_o_banco"]))
+         do_cheque["cheque_apresentado_em"], do_cheque["cheque_contra_o_banco"],
+         *(((str((dados.get("traducao") or {}).get(c) or "").strip() or None)
+            if moeda else None) for c in ("tradutor", "matricula", "data"))))
     if not novo:
         return int(titulo_por_origem(bd, origem, chave)["id"])
     titulo_id = int(novo[0]["id"])

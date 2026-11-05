@@ -318,20 +318,41 @@ def test_o_titulo_em_moeda_estrangeira_guarda_a_origem_e_cobra_em_reais(s):  # n
     estrangeira; a ficha guarda a moeda e o valor de origem, e o valor em REAIS é obrigatório — é o
     convertido, o que se cobra e se intima. Até a decisão, o sistema só conhecia o real (observação O3)."""
     tid, _ = _cadastrado(s, numero_titulo="NP-USD1", moeda_estrangeira="dólar americano (USD)",
-                         valor_na_moeda="1.000,00", valor="5.432,10", saldo="5.432,10")
+                         valor_na_moeda="1.000,00", valor="5.432,10", saldo="5.432,10", **TRADUCAO)
     t = F._um(s, "SELECT * FROM pt_titulos WHERE id=%s", (tid,))
     assert (t["moeda_estrangeira"], t["valor_na_moeda"]) == ("dólar americano (USD)", "1.000,00")
     assert t["valor_centavos"] == 543210 and t["saldo_centavos"] == 543210
     ficha = s["c"].get(f"/protesto/{tid}").get_data(as_text=True)
     assert "convertido de 1.000,00 — dólar americano (USD)" in ficha
+    assert "tradução de TRADUTORA DE EXEMPLO, matrícula 999" in ficha
+
+
+def test_o_registro_do_protesto_em_moeda_estrangeira_cita_a_traducao(s):  # noqa: F811
+    """Lei 9.492/1997, art. 10, § 1º: «constarão obrigatoriamente do registro do protesto a descrição do
+    documento e sua tradução». O termo e o instrumento dizem o mesmo."""
+    feito = _ate_o_protesto(s, numero_titulo="NP-USD2", moeda_estrangeira="dólar americano (USD)",
+                            valor_na_moeda="1.000,00", valor="5.432,10", saldo="5.432,10", **TRADUCAO)
+    assert feito["situacao"] == "PROTESTADO", feito["avisos"]
+    termo = F._ato(s, feito["id"], "PROTESTO")["teor"] or ""
+    assert "em moeda estrangeira: 1.000,00 — dólar americano (USD)" in termo, termo
+    assert ("tradução por tradutor público juramentado TRADUTORA DE EXEMPLO, matrícula 999, de 20/01/2025"
+            in termo), termo
+
+
+# A TRADUÇÃO POR TRADUTOR PÚBLICO (decisão do oficial, 05/11/2026, item 4; Lei 9.492/1997, art. 10, § 1º).
+TRADUCAO = {"traducao_tradutor": "TRADUTORA DE EXEMPLO", "traducao_matricula": "999",
+            "traducao_data": "2025-01-20"}
 
 
 @pytest.mark.parametrize("mudar,recado", [
+    ({"moeda_estrangeira": "euro (EUR)", "valor_na_moeda": "1.000,00"}, "falta o tradutor público"),
+    ({"moeda_estrangeira": "euro (EUR)", "valor_na_moeda": "1.000,00", **TRADUCAO, "traducao_data": "ontem"},
+     "não é uma data"),
     ({"moeda_estrangeira": "euro (EUR)"}, "informe a moeda e o valor na moeda de origem"),
     ({"valor_na_moeda": "1.000,00"}, "informe a moeda e o valor na moeda de origem"),
     ({"moeda_estrangeira": "euro (EUR)", "valor_na_moeda": "mil"}, "não é um número"),
-    ({"moeda_estrangeira": "euro (EUR)", "valor_na_moeda": "1.000,00", "valor": "0,00", "saldo": "0,00"},
-     "o valor e o saldo vão em REAIS"),
+    ({"moeda_estrangeira": "euro (EUR)", "valor_na_moeda": "1.000,00", "valor": "0,00", "saldo": "0,00",
+      **TRADUCAO}, "o valor e o saldo vão em REAIS"),
 ])
 def test_o_titulo_em_moeda_estrangeira_incompleto_e_recusado(s, mudar, recado):  # noqa: F811
     antes = F._um(s, "SELECT count(*) AS n FROM pt_titulos")["n"]

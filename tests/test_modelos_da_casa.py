@@ -879,13 +879,34 @@ def test_o_que_o_ld08_pos_nos_padroes_esta_la_e_o_ouro_nao_o_ve(ouro_e):
         assert marca not in gravado, marca
 
 
+# O CHEQUE NO TERMO E NO INSTRUMENTO (decisão do oficial, 05/11/2026): os rótulos
+# `cheque_devolucao` e `cheque_contra_o_banco` de PT_INSTRUMENTO_DESCRICAO, que o
+# registro do protesto (PT_TERMO_QUALIFICACAO) e o instrumento usam. Como os do
+# LD08, só entram com um dado que nenhum contexto do ouro tem — o cheque do
+# balcão com a apresentação ao banco —, e sem ele o PT_TERMO_PROTESTO e o
+# instrumento saem byte a byte os de antes. O papel inteiro está no ensaio do
+# Protesto (`test_o_cheque_com_a_apresentacao_vai_ao_protesto_e_a_ficha_a_diz`).
+MUDOU_NO_CHEQUE = {"PT_INSTRUMENTO_DESCRICAO": ("cheque_devolucao", "cheque_contra_o_banco")}
+
+
+def test_o_cheque_esta_no_padrao_e_o_ouro_nao_o_ve(ouro_e):
+    import json
+    for chave, rotulos in MUDOU_NO_CHEQUE.items():
+        lidos = PECAS._rotulos(MOD.padrao_de(chave))
+        for rotulo in rotulos:
+            assert rotulo in lidos, (chave, rotulo)
+    gravado = json.dumps(ouro_e, ensure_ascii=False)
+    for marca in ("devolvido pelo banco sacado", "medida contra o próprio banco"):
+        assert marca not in gravado, marca
+
+
 # O TÍTULO EM MOEDA ESTRANGEIRA E A TRADUÇÃO (decisão do oficial, 05/11/2026,
 # item 4; Lei 9.492/1997, art. 10, § 1º): os rótulos `moeda_estrangeira` e
 # `traducao` de PT_INSTRUMENTO_DESCRICAO, que o registro do protesto
-# (PT_TERMO_QUALIFICACAO) e o instrumento usam. Como os do LD08, só entram com um
-# dado que nenhum contexto do ouro tem — a moeda estrangeira —, e sem ele o
-# PT_TERMO_PROTESTO e o instrumento saem byte a byte os de antes. O papel inteiro
-# está no ensaio do Protesto.
+# (PT_TERMO_QUALIFICACAO) e o instrumento usam. Como os do LD08 e os do cheque,
+# só entram com um dado que nenhum contexto do ouro tem — a moeda estrangeira —,
+# e sem ele o PT_TERMO_PROTESTO e o instrumento saem byte a byte os de antes. O
+# papel inteiro está no ensaio do Protesto.
 MUDOU_NA_MOEDA = {"PT_INSTRUMENTO_DESCRICAO": ("moeda_estrangeira", "traducao")}
 
 

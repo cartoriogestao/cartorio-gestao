@@ -114,7 +114,8 @@ diferença deve ser apontada ao oficial.
   banco. Os motivos 20, 25, 28, 30 e 35 se recusam (CN-MA art. 883, § 1º),
   **mesmo com endosso ou aval, por ora** — a exceção dos §§ 2º e 3º não está no
   sistema. Cheque com mais de um ano da emissão: comprovar o endereço do
-  emitente (§ 5º). Decisão do oficial de 05/11/2026.
+  emitente (§ 5º). O termo e o instrumento dizem o banco, o motivo e a data da
+  devolução. Decisão do oficial de 05/11/2026.
 - Gratuidade no Protesto: **nenhuma**. O que existe é o diferimento
   (pagamento a posteriori). A **única exceção** é o cumprimento de mandado
   judicial de gratuidade da justiça (CPC art. 98, § 1º, IX; Tabela XVII, item

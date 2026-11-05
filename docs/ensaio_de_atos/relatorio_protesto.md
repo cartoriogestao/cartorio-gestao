@@ -111,7 +111,9 @@ o cheque (CH) exige banco sacado, motivo da devolução e data da apresentação
 aval, por ora**: a recusa diz que o art. 883, §§ 2º e 3º, admite o protesto com o emitente «desconhecido» e
 índice próprio, e que essa exceção não está no sistema. O cheque apresentado mais de um ano depois da
 emissão traz o aviso de comprovar o endereço do emitente (§ 5º). A ficha mostra o banco, o motivo e a data.
-O registro e o instrumento não mudaram. Ensaio: os cinco testes do cheque, sem xfail.
+Ensaio: os cinco testes do cheque, sem xfail. **E o registro e o instrumento dizem a devolução** (decisão do
+oficial, 05/11/2026): «devolvido pelo banco sacado …, motivo …, apresentado em …», ou que o protesto instrui
+medida contra o próprio banco — pelos rótulos novos de `PT_INSTRUMENTO_DESCRICAO`, que os dois papéis usam.
 
 ---
 

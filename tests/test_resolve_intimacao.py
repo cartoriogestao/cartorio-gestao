@@ -804,3 +804,33 @@ def test_o_comprovante_abre_pela_tela_dos_avisos(s):
     assert s["c"].get(f"/arquivo/{anexo}/ver").status_code == 200
     assert s["app"].extensions["tela_do_anexo"]["PT_EDITAL_CENPROT"] == (
         "protesto_avisos",)
+
+
+def test_o_pdf_exportado_pela_cenprot_e_aceito_pelo_conteudo(s):
+    """O PDF que a CENPROT exporta: bytes antes de `%PDF-`, nome sem extensão
+    ou em maiúsculas, lixo depois do `%%EOF` - é PDF, e entra. O que não é
+    PDF, o vazio e o XML do edital continuam recusados (hotfix 04/11/2026)."""
+    a = _edital(s, numero=41199)
+    b = _edital(s, dia="2026-10-26", numero=41210)
+    c = _edital(s, dia="2026-10-27", numero=41220)
+    exportado = b"\xef\xbb\xbf\r\n  %PDF-1.7\n1 0 obj\n%%EOF\r\n\x00\x00"
+    r = _anexar(s, "2026-10-22", conteudo=exportado, nome="CONFIRMACAO.PDF")
+    assert "anexado aos 1 edital(is)" in " ".join(r.get_data(as_text=True).split())
+    assert _anexos_do_edital(s, a) == 1
+    r = _anexar(s, "2026-10-26", conteudo=b"%pdf-1.4\n" + b"x" * 40,
+                nome="comprovante")
+    assert _anexos_do_edital(s, b) == 1
+    con = sqlite3.connect(s["banco"])
+    nome = con.execute("SELECT original_name FROM attachments WHERE entity_id=?"
+                       " AND entity_type='PT_EDITAL_CENPROT'", (b,)).fetchone()[0]
+    con.close()
+    assert nome == "comprovante.pdf"
+    longe = b" " * 1100 + b"%PDF-1.4\n"
+    assert "não é" in _anexar(s, "2026-10-27", conteudo=longe,
+                               nome="x.pdf").get_data(as_text=True)
+    assert "vazio" in _anexar(s, "2026-10-27", conteudo=b"",
+                              nome="x.pdf").get_data(as_text=True)
+    assert "XML do edital" in _anexar(
+        s, "2026-10-27", conteudo=b"<?xml version='1.0'?><edital/>",
+        nome="Edital_Eletronico_2107001_27102026_001.xml").get_data(as_text=True)
+    assert _anexos_do_edital(s, c) == 0

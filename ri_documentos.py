@@ -130,7 +130,7 @@ def documentos_para_lavrar(con: Any, ato_id: int) -> dict:
 
 
 def documentos_de(con: Any, entidade: str,
-                  entidade_id: int) -> list[dict]:
+                  entidade_id: int, *, incluir_retirados: bool = False) -> list[dict]:
     """Os anexos daquela entidade, do mais novo para o mais velho. So LE.
 
     Le a MESMA tabela `attachments` do expediente e da tarefa. Uma segunda
@@ -142,6 +142,14 @@ def documentos_de(con: Any, entidade: str,
         raise DocumentoError(
             f"«{entidade}» não é um lugar onde eu saiba guardar documento. "
             f"São dois: {', '.join(ENTIDADES)}.")
+    # O RETIRADO SAI DAS TELAS DO RI (#313), MAS NÃO DA FICHA DO PROTOCOLO: lá ele fica à
+    # vista no quadro «Retirados», com o motivo (`protocolo_documentos.documentos`, 04/11/2026).
+    if incluir_retirados:
+        return banco(con).ler(
+            """SELECT a.*, u.full_name enviado_por_nome
+                 FROM attachments a LEFT JOIN users u ON u.id = a.uploaded_by
+                WHERE a.entity_type = %s AND a.entity_id = %s
+                ORDER BY a.id DESC""", (entidade, int(entidade_id)))
     return banco(con).ler(
         """SELECT a.*, u.full_name enviado_por_nome
              FROM attachments a LEFT JOIN users u ON u.id = a.uploaded_by

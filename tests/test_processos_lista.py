@@ -96,7 +96,9 @@ def test_a_etapa_do_ri_vem_da_regua_do_agente_do_ri():
     con.executescript("""
         CREATE TABLE ri_protocolos (id INTEGER PRIMARY KEY, numero INTEGER, natureza_titulo TEXT, ato_id INTEGER,
             situacao TEXT, data_limite TEXT, prazo_suspenso_desde TEXT);
-        CREATE TABLE ri_qualificacoes (id INTEGER PRIMARY KEY, protocolo_id INTEGER, ordem INTEGER, resultado TEXT);
+        CREATE TABLE ri_qualificacoes (id INTEGER PRIMARY KEY, protocolo_id INTEGER, ordem INTEGER, resultado TEXT,
+            nota_id INTEGER);
+        CREATE TABLE ri_notas_devolutivas (id INTEGER PRIMARY KEY, protocolo_id INTEGER, situacao TEXT);
     """)
     con.execute("INSERT INTO ri_protocolos VALUES (1, 11600, 'Escritura', NULL, 'ABERTO', '2099-01-01', NULL)")
     assert PASTA.etapa_do_ri(con, 1) == "A qualificar"

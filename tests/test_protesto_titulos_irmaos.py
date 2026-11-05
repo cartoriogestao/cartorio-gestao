@@ -355,11 +355,30 @@ def test_a_conferencia_acha_o_caso_real_e_nao_corrige_nada():
     assert r["protocolos"] == 1
     [g] = r["incoerentes"]
     texto = " ".join(g["frases"])
-    assert "PAGO" in texto and "PROTESTADO" in texto and "mesmo valor" in texto
+    # 04/11/2026: "pago e protestado com o mesmo valor", por si, NAO e
+    # incoerencia (ordem do oficial); o que acusa e o pago de vencimento
+    # POSTERIOR ao protestado.
+    assert "PAGO" in texto and "PROTESTADO" in texto
     assert "ANTERIOR" in texto
+    assert not any("mesmo valor" in f and "POSTERIOR" not in f and "ANTERIOR" not in f
+                   for f in g["frases"])
     sit = {row["id"]: row["situacao"] for row in con.execute(
         "SELECT id, situacao FROM pt_titulos")}
     assert sit[p1] == "PROTESTADO" and sit[p2] == "PAGO"
+
+
+def test_um_pago_e_um_protestado_e_o_correto_nao_e_incoerencia():
+    """Ordem do oficial (04/11/2026): a /1 PAGA e a /2 PROTESTADA, com o mesmo
+    valor, e o desfecho correto - nao aparece na conferencia, nao vira
+    pendencia do roteiro e nao trava nem acusa nada na ficha."""
+    con = banco()
+    p1, p2 = _parcelas(con, situacao_1="PAGO", situacao_2="PROTESTADO")
+    r = IRM.irmaos_incoerentes(con)
+    assert r["protocolos"] == 1 and r["incoerentes"] == []
+    assert IRM.pendencias_dos_irmaos(con) == []
+    sit = {row["id"]: row["situacao"] for row in con.execute(
+        "SELECT id, situacao FROM pt_titulos")}
+    assert sit[p1] == "PAGO" and sit[p2] == "PROTESTADO"
 
 
 def test_a_conferencia_acha_a_mesma_divida_com_dois_desfechos():

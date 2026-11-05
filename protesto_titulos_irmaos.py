@@ -74,12 +74,14 @@ A AFIRMAÇÃO EXPRESSA — o contrato comum da casa (29/10/2026)
     afirma**: a afirmação é de uma pessoa, sob a responsabilidade dela.
 
 A CONFERÊNCIA — só lê, não corrige
-    1. Irmãos com situações que não se explicam juntas (um pago e o outro
-       protestado com o mesmo valor; pago o de vencimento posterior e o
+    1. Irmãos com situações que não se explicam juntas (pago o de
+       vencimento posterior e o
        anterior em aberto; um pago e o outro sem intimação; o mesmo título
        com situações diferentes para cada devedor). Medido em 29/10/2026:
        **zero** — o caso das parcelas já foi corrigido por ordem do oficial,
        e antes da correção ele teria aparecido em duas regras.
+       UM PAGO E UM PROTESTADO NÃO ENTRA (oficial, 04/11/2026): é o
+       desfecho correto de duas parcelas, e o aviso não se baixava.
     2. Títulos cujo CEDENTE diverge do registro de origem (o registro de 600
        posições da remessa, o teor do pedido da CENPROT, ou a linha do
        E-Ofício). Medido em 29/10/2026: **1.404 de 1.407** títulos com
@@ -266,7 +268,10 @@ def _sinais(este: dict, irmao: dict) -> list[str]:
                           f"{este['situacao']}")
         return sinais
     if irmao["situacao"] == "PAGO" and este["situacao"] != "PAGO":
-        if int(irmao.get("valor_centavos") or 0) == int(este.get("valor_centavos") or 0):
+        # Um pago e o outro protestado é o correto (oficial, 04/11/2026): o
+        # protestado não recebe o aviso do mesmo valor.
+        if (int(irmao.get("valor_centavos") or 0) == int(este.get("valor_centavos") or 0)
+                and este["situacao"] != "PROTESTADO"):
             sinais.append("está PAGO, com o mesmo valor deste: confira se o "
                           "pagamento não era deste título")
         vi, ve = _vencimento(irmao.get("data_vencimento")), _vencimento(
@@ -584,13 +589,13 @@ def _incoerencias_do_grupo(grupo: list[dict]) -> list[str]:
         for o in grupo:
             if o is p:
                 continue
-            mesmo_valor = (int(o.get("valor_centavos") or 0)
-                           == int(p.get("valor_centavos") or 0))
-            if o["situacao"] == "PROTESTADO" and mesmo_valor:
-                frases.append(
-                    f"{p['numero_titulo']} está PAGO e {o['numero_titulo']} "
-                    f"está PROTESTADO, com o mesmo valor ({p['valor_br']}): "
-                    f"confira se o pagamento não era do protestado.")
+            # UM PAGO E O OUTRO PROTESTADO NÃO É INCOERÊNCIA (ordem do oficial,
+            # 04/11/2026: "o correto é um pago e um protestado mesmo"). É o
+            # desfecho normal de duas parcelas - o devedor pagou uma e a outra
+            # foi a protesto - e o aviso não se baixava. CONTINUA o aviso do
+            # PAGO de vencimento POSTERIOR com o anterior em aberto ou
+            # protestado, logo abaixo: é a assinatura do caso de 29/10/2026
+            # (a parcela anterior protestada estando paga).
             vp, vo = _vencimento(p.get("data_vencimento")), _vencimento(
                 o.get("data_vencimento"))
             if (vp and vo and vp > vo and o["situacao"] in SITUACOES_EM_ABERTO):

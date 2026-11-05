@@ -17,18 +17,22 @@ POR QUE EXISTE (27/10/2026)
 
 O CICLO
     A_EMITIR → EMITINDO → ABERTA → RECEBIDA → LANCADA
-     cadastrar   banco     CIP     o banco    o balcão lança no caixa
+     cadastrar   banco     CIP     o banco    depósito no caixa
     Fora do caminho: FALHOU (o banco recusou a emissão), CANCELADA (pedida
     por nós), BAIXADA (o banco baixou: prazo vencido, protesto, ou marcada
     como recebida FORA do banco).
 
-    **O ROBÔ ACOMPANHA; QUEM LANÇA NO CAIXA É O BALCÃO.** Dinheiro que entrou
-    no banco vira DEPÓSITO PRÉVIO do protocolo (`caixa_depositos.criar`), que
-    é o caminho que a casa já usa para dinheiro que chega antes do ato — com
-    número próprio, orçamento congelado e saldo para quitar os itens. E o
-    depósito precisa de um CAIXA ABERTO para entrar no dia: o robô não tem
-    gaveta. Por isso a automação marca RECEBIDA e avisa; o clique «lançar no
-    caixa» é de quem está com o caixa aberto.
+    O dinheiro pago vira DEPÓSITO PRÉVIO do protocolo (`caixa_depositos.criar`),
+    com número próprio, orçamento congelado e saldo. Os itens do protocolo
+    não se quitam nesse passo: quem atende usa o saldo depois.
+
+    **PARCELA EXPRESS ENTRA SOZINHA NO CAIXA GERAL** (oficial, 05/11/2026).
+    Pix, boleto ou cartão confirmado pela Parcela vira depósito no caixa
+    geral da serventia (`OPERADOR_DO_CAIXA_GERAL`), não no caixa de um
+    escrevente. Sem esse caixa aberto hoje, a cobrança fica RECEBIDA até a
+    abertura, e entra quando ele abre. Não há clique «lançar no meu caixa»
+    para a Parcela. Inter e Unicred seguem no clique de quem está com o
+    próprio caixa aberto.
 
     **«MARCADO COMO RECEBIDO» NÃO É RECEBIDO.** O Inter tem a situação
     MARCADO_RECEBIDO: alguém marcou no Internet Banking que recebeu por fora.
@@ -73,7 +77,7 @@ SITUACOES = {
     A_EMITIR: "A emitir",
     EMITINDO: "Emitindo no banco",
     ABERTA: "Aberta — esperando o pagamento",
-    RECEBIDA: "Paga no banco — falta lançar no caixa",
+    RECEBIDA: "Paga — ainda não entrou no caixa",
     LANCADA: "Lançada no caixa",
     FALHOU: "O banco recusou",
     CANCELADA: "Cancelada",
@@ -549,6 +553,11 @@ def gravar_resposta(con, cobranca_id: int, r: Mapping[str, Any], *, por: str,
         _evento(bd, int(cobranca_id), operacao, nova,
                 r.get("erro") or r.get("banco_motivo") or r.get("banco_status") or "",
                 por, _carimbo(agora))
+    # A Parcela paga não espera clique: entra no caixa geral se ele estiver
+    # aberto hoje. Sem ele, continua RECEBIDA até a abertura.
+    if c["banco"] == PARCELA and nova == RECEBIDA and not c["deposito_id"]:
+        if entrar_no_caixa_geral(con, cobranca_id, por=por, agora=agora):
+            nova = LANCADA
     return nova
 
 
@@ -599,48 +608,119 @@ def caixa_aberto(con, operador: str) -> dict | None:
             ORDER BY data DESC LIMIT 1""", (operador,))
 
 
-def lancar_no_caixa(con, cobranca_id: int, *, por: str, agora: datetime,
-                    caixa_id: int | None) -> dict:
-    """A cobrança paga no banco vira DEPÓSITO PRÉVIO do protocolo. ESCREVE.
+#: O caixa da serventia, não o de um escrevente. Pix, boleto e cartão da
+#: Parcela entram aqui. Uma linha por dia (`UNIQUE` de data + operador).
+OPERADOR_DO_CAIXA_GERAL = "CAIXA GERAL"
 
-    O depósito é `caixa_depositos.criar`, e não um lançamento escrito aqui: é
-    lá que moram o número de controle, o orçamento congelado (CN-MA art. 198,
-    VI) e o saldo que quita os itens. Uma segunda porta para o mesmo dinheiro
-    seria a versão que diverge no primeiro conserto.
 
-    SEM CAIXA ABERTO NÃO SE LANÇA: o depósito entraria fora do dia e a
-    conferência não bateria. A frase diz o que fazer.
-    """
+def caixa_geral_de_hoje(con, hoje: date) -> dict | None:
+    """O caixa geral aberto na data `hoje`. O de ontem, ainda aberto, não vale:
+    dinheiro de dois dias na mesma gaveta é o que a conferência não fecha."""
+    return banco(con).um(
+        """SELECT * FROM cx_caixas
+            WHERE operador_nome = %s AND situacao = 'ABERTO' AND data = %s
+            ORDER BY id DESC LIMIT 1""",
+        (OPERADOR_DO_CAIXA_GERAL, hoje.isoformat()))
+
+
+def _data_do_pagamento(texto: Any, hoje: date) -> date:
+    try:
+        return date.fromisoformat(str(texto or "")[:10])
+    except ValueError:
+        return hoje
+
+
+def _depositar_cobranca(con, c: Mapping[str, Any], *, caixa_id: int, por: str,
+                        agora: datetime) -> dict:
+    """A cobrança paga vira depósito prévio. Não quita item. ESCREVE."""
     import caixa_depositos as DEP
     bd = banco(con)
-    bd._escrita()
-    c = bd.um("SELECT * FROM cb_cobrancas WHERE id = %s FOR UPDATE", (int(cobranca_id),))
-    if not c:
-        raise CobrancaError("Cobrança não encontrada.")
-    if c["situacao"] != RECEBIDA:
-        raise CobrancaError("Só se lança no caixa a cobrança que o banco diz que foi paga.")
-    if c["deposito_id"]:
-        raise CobrancaError("Esta cobrança já foi lançada no caixa.")
-    if not caixa_id:
-        raise CobrancaError("Abra o seu caixa antes de lançar: o depósito entra no caixa do dia.")
     valor = int(c["valor_recebido"] or 0)
     if valor <= 0:
         raise CobrancaError("O banco não informou o valor recebido. Atualize a cobrança antes.")
     forma = str(c["forma_recebida"] or "").upper()
     if forma not in ("PIX", "BOLETO", "CARTAO"):
         forma = "BOLETO"
+    hoje = agora.date()
     feito = DEP.criar(
         bd, valor_centavos=valor, depositante=c["pagador_nome"],
         documento=c["pagador_documento"], agora=_carimbo(agora), forma_pagamento=forma,
         caixa_id=int(caixa_id), protocolo_id=c["protocolo_id"],
         observacao=(f"Cobrança {c['seu_numero']} paga no {BANCOS[c['banco']]} em "
                     f"{c['data_pagamento'] or '?'} ({forma.lower()})."),
-        hoje=agora.date())
+        hoje=hoje, data_do_deposito=_data_do_pagamento(c.get("data_pagamento"), hoje))
     bd.escrever("UPDATE cb_cobrancas SET situacao = 'LANCADA', deposito_id = %s WHERE id = %s",
-                (int(feito["id"]), int(cobranca_id)))
-    _evento(bd, int(cobranca_id), "LANCAR_NO_CAIXA", "OK",
+                (int(feito["id"]), int(c["id"])))
+    _evento(bd, int(c["id"]), "LANCAR_NO_CAIXA", "OK",
             f"depósito prévio {feito['numero']}, R$ {reais(valor)}", por, _carimbo(agora))
     return feito
+
+
+def entrar_no_caixa_geral(con, cobranca_id: int, *, por: str, agora: datetime) -> dict | None:
+    """A Parcela paga entra no caixa geral de hoje. Sem ele, fica pendente.
+
+    Devolve o depósito, ou None quando ainda não há caixa geral aberto hoje,
+    quando o valor não veio, ou quando a cobrança não é da Parcela. Não quita
+    os itens do protocolo. Não usa o caixa de um escrevente.
+    """
+    bd = banco(con)
+    bd._escrita()
+    c = bd.um("SELECT * FROM cb_cobrancas WHERE id = %s FOR UPDATE", (int(cobranca_id),))
+    if not c or c["banco"] != PARCELA:
+        return None
+    if c["situacao"] != RECEBIDA or c["deposito_id"]:
+        return None
+    caixa = caixa_geral_de_hoje(con, agora.date())
+    if not caixa or int(c["valor_recebido"] or 0) <= 0:
+        return None
+    return _depositar_cobranca(con, c, caixa_id=int(caixa["id"]), por=por, agora=agora)
+
+
+def recolher_no_caixa_geral(con, *, por: str, agora: datetime) -> list[dict]:
+    """As Parcela já pagas entram no caixa geral que acabou de abrir. ESCREVE.
+
+    Sem caixa geral aberto hoje, não faz nada: continuam RECEBIDA. Não quita itens.
+    """
+    if not caixa_geral_de_hoje(con, agora.date()):
+        return []
+    ids = [int(r["id"]) for r in banco(con).ler(
+        """SELECT id FROM cb_cobrancas
+            WHERE banco = %s AND situacao = %s AND deposito_id IS NULL
+            ORDER BY id""", (PARCELA, RECEBIDA))]
+    feitos = []
+    for cobranca_id in ids:
+        feito = entrar_no_caixa_geral(con, cobranca_id, por=por, agora=agora)
+        if feito:
+            feitos.append(feito)
+    return feitos
+
+
+def lancar_no_caixa(con, cobranca_id: int, *, por: str, agora: datetime,
+                    caixa_id: int | None) -> dict:
+    """A cobrança paga no Inter ou na Unicred vira depósito no caixa de quem clica.
+
+    A Parcela não passa por aqui: ela entra sozinha no caixa geral. O depósito
+    é `caixa_depositos.criar`. Não quita os itens.
+
+    SEM CAIXA ABERTO NÃO SE LANÇA: o depósito entraria fora do dia e a
+    conferência não bateria.
+    """
+    bd = banco(con)
+    bd._escrita()
+    c = bd.um("SELECT * FROM cb_cobrancas WHERE id = %s FOR UPDATE", (int(cobranca_id),))
+    if not c:
+        raise CobrancaError("Cobrança não encontrada.")
+    if c["banco"] == PARCELA:
+        raise CobrancaError(
+            "O pagamento da Parcela entra sozinho no caixa geral da serventia. "
+            "Não se lança no caixa de quem está atendendo.")
+    if c["situacao"] != RECEBIDA:
+        raise CobrancaError("Só se lança no caixa a cobrança que o banco diz que foi paga.")
+    if c["deposito_id"]:
+        raise CobrancaError("Esta cobrança já foi lançada no caixa.")
+    if not caixa_id:
+        raise CobrancaError("Abra o seu caixa antes de lançar: o depósito entra no caixa do dia.")
+    return _depositar_cobranca(con, c, caixa_id=int(caixa_id), por=por, agora=agora)
 
 
 # ------------------------------------------------- os pedidos ao banco

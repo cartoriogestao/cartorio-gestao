@@ -24,7 +24,8 @@ O CONTRATO (OpenAPI de parceiros em docs.parcelaexpress.com.br, lida em
     digitável e o Pix copia-e-cola entram na ficha quando a consulta os traz
     (billet_data ou o bloco do Pix). Sem eles, o pagamento é o link.
 
-NADA AQUI LANÇA NO CAIXA.
+NADA AQUI LANÇA NO CAIXA. A Parcela paga entra no caixa geral em
+`cobranca.entrar_no_caixa_geral`, quando a resposta é gravada.
 """
 from __future__ import annotations
 

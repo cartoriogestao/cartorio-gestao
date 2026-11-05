@@ -258,6 +258,69 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 flash("Caixa aberto.", "success")
                 return redirect(url_for("caixa"))
 
+            if acao == "abrir_geral":
+                # O caixa da serventia, não o de quem clicou. A Parcela paga
+                # espera este caixa; ao abrir, o que já estava pendente entra.
+                import cobranca as CB
+                hoje_d = date.today()
+                with db.transaction() as con:
+                    ja = CB.caixa_geral_de_hoje(con, hoje_d)
+                    if not ja:
+                        banco(con).escrever(
+                            """INSERT INTO cx_caixas
+                               (data, operador_nome, saldo_inicial, aberto_em, situacao)
+                               VALUES (%s,%s,%s,%s, 'ABERTO')
+                               ON CONFLICT DO NOTHING""",
+                            (hoje_d.isoformat(), CB.OPERADOR_DO_CAIXA_GERAL,
+                             "0,00", db.now()))
+                    feitos = CB.recolher_no_caixa_geral(
+                        con, por=operador, agora=datetime.now())
+                audit("CAIXA_GERAL_ABERTO", "CAIXA", None,
+                      {"data": hoje_d.isoformat(), "entraram": len(feitos)})
+                if ja:
+                    flash(f"O caixa geral de hoje já está aberto. "
+                          f"{len(feitos)} pagamento(s) da Parcela entraram agora.",
+                          "warning" if not feitos else "success")
+                else:
+                    flash(f"Caixa geral aberto. {len(feitos)} pagamento(s) da Parcela "
+                          f"entraram como depósito prévio. Os itens do protocolo "
+                          f"não foram quitados.", "success")
+                return redirect(url_for("caixa"))
+
+            if acao == "fechar_geral":
+                import cobranca as CB
+                geral = q1(
+                    """SELECT * FROM cx_caixas
+                        WHERE operador_nome=%s AND situacao='ABERTO' AND data=%s
+                        ORDER BY id DESC LIMIT 1""",
+                    (CB.OPERADOR_DO_CAIXA_GERAL, date.today().isoformat()))
+                if not geral:
+                    flash("O caixa geral de hoje não está aberto.", "warning")
+                    return redirect(url_for("caixa"))
+                lanc_geral = lancamentos_do_caixa(geral["id"])
+                res_geral = resumo_caixa(lanc_geral, geral["saldo_inicial"])
+                contado = centavos(request.form.get("valor_contado_geral"))
+                diferenca = contado - res_geral["em_especie"]
+                justificativa = (request.form.get("justificativa_geral") or "").strip()
+                if diferenca and not justificativa:
+                    flash(f"Há diferença de R$ {reais(abs(diferenca))} no caixa geral. "
+                          f"Explique antes de fechar.", "danger")
+                    return redirect(url_for("caixa"))
+                with db.transaction() as con:
+                    banco(con).escrever(
+                        """UPDATE cx_caixas SET situacao='FECHADO', valor_esperado=%s,
+                           valor_contado=%s, diferenca=%s, justificativa=%s,
+                           fechado_em=%s, fechado_por=%s WHERE id=%s""",
+                        (reais(res_geral["em_especie"]), reais(contado), reais(diferenca),
+                         justificativa or None, db.now(), usuario_id(), geral["id"]))
+                audit("CAIXA_GERAL_FECHADO", "CAIXA", geral["id"],
+                      {"esperado": reais(res_geral["em_especie"]), "contado": reais(contado),
+                       "diferenca": reais(diferenca)})
+                flash(f"Caixa geral fechado. Esperado em espécie R$ "
+                      f"{reais(res_geral['em_especie'])}, contado R$ {reais(contado)}.",
+                      "warning" if diferenca else "success")
+                return redirect(url_for("caixa"))
+
             if acao == "conferir":
                 # A CONFERÊNCIA DO CAIXA FECHADO — um ato que não existia.
                 #
@@ -599,9 +662,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                            WHERE situacao='FECHADO' AND conferido_em IS NULL
                              AND operador_nome <> %s
                            ORDER BY data DESC, id DESC LIMIT 30""", (operador,))
+        import cobranca as CB
+        caixa_geral = q1(
+            """SELECT * FROM cx_caixas
+                WHERE operador_nome=%s AND situacao='ABERTO' AND data=%s
+                ORDER BY id DESC LIMIT 1""",
+            (CB.OPERADOR_DO_CAIXA_GERAL, date.today().isoformat()))
+        lanc_geral = lancamentos_do_caixa(caixa_geral["id"]) if caixa_geral else []
+        resumo_geral = resumo_caixa(lanc_geral, caixa_geral["saldo_inicial"] if caixa_geral else 0)
         return render_template("caixa.html", aberto=aberto, lancamentos=lanc,
                                resumo=res, anteriores=anteriores,
                                a_conferir=a_conferir, operador=operador,
+                               caixa_geral=caixa_geral, resumo_geral=resumo_geral,
                                FORMAS=FORMAS_PAGAMENTO, NATUREZAS=NATUREZAS,
                                reais=reais, hoje=date.today().isoformat())
 

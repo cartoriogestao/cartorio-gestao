@@ -19,7 +19,9 @@ O CONTRATO DE UM ADAPTADOR
     abatimento(c, valor, justificativa), cancelar_abatimento(c, justificativa),
     protesto_automatico(c, ligado=, dias=, dias_uteis=) -> codigo_instrucao
 
-NADA AQUI LANÇA NO CAIXA. Ver `cobranca.lancar_no_caixa`, que é do balcão.
+O lançamento no caixa não mora aqui. A Parcela paga entra em
+`cobranca.entrar_no_caixa_geral` quando `gravar_resposta` guarda o pago.
+Inter e Unicred seguem no clique, `cobranca.lancar_no_caixa`.
 """
 from __future__ import annotations
 

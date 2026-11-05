@@ -9,6 +9,32 @@
   <a class="button" href="{{ url_for('caixa_emolumentos') }}">Tabela de emolumentos</a>
 </div>
 
+<section class="panel">
+  <div class="panel-head"><span>Caixa geral da serventia</span></div>
+  <div style="padding:14px">
+    <p class="small">Pix, boleto e cartão confirmados pela Parcela entram neste caixa,
+      não no caixa de quem atende. Sem ele aberto hoje, o pagamento fica pendente
+      até a abertura. O depósito não quita os itens do protocolo.</p>
+    {% if caixa_geral %}
+    <p>Aberto hoje. Entradas R$ {{ resumo_geral.entradas|centavos_reais }}.
+      Em espécie na gaveta: R$ {{ resumo_geral.em_especie|centavos_reais }}.</p>
+    <form method="post" class="grid2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Valor contado em espécie
+        <input name="valor_contado_geral" placeholder="0,00"></label>
+      <label>Justificativa, se o contado diferir
+        <input name="justificativa_geral"></label>
+      <div><button name="acao" value="fechar_geral">Fechar o caixa geral</button></div>
+    </form>
+    {% else %}
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="primary" name="acao" value="abrir_geral">Abrir o caixa geral de hoje</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+
 {% if not aberto %}
 <section class="panel">
   <div class="panel-head"><span>Caixa fechado</span></div>

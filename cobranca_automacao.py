@@ -16,11 +16,11 @@ O PROCESSO
     entregar a credencial dentro de uma requisição web, e a tela então só
     grava o pedido e chama a rodada.
 
-    **ELE NÃO LANÇA NO CAIXA.** O dinheiro pago no banco vira depósito prévio
-    pelo clique de quem está com o caixa aberto (`cobranca.lancar_no_caixa`):
-    o robô não tem gaveta, e depósito fora do caixa do dia não fecha a
-    conferência. O que ele faz é LISTAR as pagas que esperam o balcão — é
-    isso que vira AVISO.
+    A PARCELA PAGA ENTRA SOZINHA no caixa geral, dentro de `gravar_resposta`,
+    quando esse caixa está aberto hoje. Sem ele, a cobrança fica RECEBIDA e
+    esta rodada avisa que espera o caixa geral — não um clique. Inter e
+    Unicred continuam no clique de quem tem o próprio caixa aberto
+    (`cobranca.lancar_no_caixa`): depósito fora do dia não fecha a conferência.
 
     Cofre trancado, credencial que falta e banco fora do ar são AVISO: a
     cobrança fica onde estava, e a rodada seguinte retoma.
@@ -62,12 +62,27 @@ def _pasta(contexto):
 
 def _achados(contexto, falharam=()) -> list[dict[str, Any]]:
     pagas = _esperando_o_balcao(contexto)
-    achados: list[dict[str, Any]] = [
-        {"tipo": "PAGA_FALTA_LANCAR", "cobranca_id": int(c["id"]),
-         "protocolo": c.get("protocolo_numero") or "",
-         "valor": reais(int(c["valor_recebido"] or 0))} for c in pagas]
+    achados: list[dict[str, Any]] = []
+    for c in pagas:
+        # Parcela espera o caixa geral abrir. Inter e Unicred esperam o clique.
+        tipo = ("PAGA_ESPERA_CAIXA_GERAL" if c.get("banco") == CB.PARCELA
+                else "PAGA_FALTA_LANCAR")
+        achados.append({"tipo": tipo, "cobranca_id": int(c["id"]),
+                        "protocolo": c.get("protocolo_numero") or "",
+                        "valor": reais(int(c["valor_recebido"] or 0))})
     achados += [{"tipo": "FALHOU", "cobranca_id": i, "motivo": m} for i, m in falharam]
     return achados
+
+
+def _frase_das_pagas(achados: list[dict[str, Any]]) -> str:
+    geral = sum(1 for a in achados if a["tipo"] == "PAGA_ESPERA_CAIXA_GERAL")
+    clique = sum(1 for a in achados if a["tipo"] == "PAGA_FALTA_LANCAR")
+    partes = []
+    if geral:
+        partes.append(f"{geral} pagamento(s) da Parcela esperando o caixa geral")
+    if clique:
+        partes.append(f"{clique} cobrança(s) esperando o lançamento no caixa")
+    return "; ".join(partes)
 
 
 def acompanhar(contexto) -> dict:
@@ -80,11 +95,11 @@ def acompanhar(contexto) -> dict:
     pendentes = (sum(n.get(s, 0) for s in CB.EM_ABERTO) + pedidos
                  + (n.get(CB.A_EMITIR, 0) if ligada else 0))
     achados = _achados(contexto)
-    pagas = sum(1 for a in achados if a["tipo"] == "PAGA_FALTA_LANCAR")
+    pagas = sum(1 for a in achados if a["tipo"] in ("PAGA_FALTA_LANCAR", "PAGA_ESPERA_CAIXA_GERAL"))
     if not pendentes:
+        frase = _frase_das_pagas(achados)
         return {"situacao": "AVISO" if pagas else "OK",
-                "relato": (f"Nada esperando o banco; {pagas} cobrança(s) paga(s) esperando o "
-                           f"lançamento no caixa." if pagas else "Nada esperando o banco."),
+                "relato": (f"Nada esperando o banco; {frase}." if frase else "Nada esperando o banco."),
                 "achados": achados, "acoes": []}
     if not contexto.processo.get("pode_agir"):
         return {"situacao": "AVISO",
@@ -106,11 +121,12 @@ def acompanhar(contexto) -> dict:
     for i, frase in r["pedidos"]:
         _auditar(contexto, "COBRANCA_PEDIDO_AO_BANCO", i, {"resposta": frase})
     achados = _achados(contexto, r["falharam"])
-    pagas = sum(1 for a in achados if a["tipo"] == "PAGA_FALTA_LANCAR")
+    pagas = sum(1 for a in achados if a["tipo"] in ("PAGA_FALTA_LANCAR", "PAGA_ESPERA_CAIXA_GERAL"))
+    espera = _frase_das_pagas(achados) or "nenhuma paga esperando o caixa"
     relato = (f"{CB.BANCOS[cliente.banco]}: {len(r['emitidas'])} emitida(s), "
               f"{len(r['pedidos'])} pedido(s), {r['consultadas']} consultada(s), "
               f"{len(r['mudaram'])} mudaram, {len(r['pdfs'])} PDF(s) guardado(s); "
-              f"{pagas} paga(s) esperando o lançamento no caixa.")
+              f"{espera}.")
     acoes = [f"cobrança {i}: {CB.SITUACOES.get(s, s)}" for i, s in r["emitidas"] + r["mudaram"]]
     acoes += [f"cobrança {i}: {frase}" for i, frase in r["pedidos"]]
     return {"situacao": "AVISO" if pagas or r["falharam"] else "OK", "relato": relato,

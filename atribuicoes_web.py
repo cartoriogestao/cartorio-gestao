@@ -13067,7 +13067,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             minimo_do_motivo=PCXML.MINIMO_DO_MOTIVO_DA_DEVOLUCAO,
             ocorrencias={"PROTESTO": "2 — protestado", "PAGAMENTO": "1 — pago",
                          "DESISTENCIA": "3 — retirado",
-                         "CANCELAMENTO": "A — cancelado"})
+                         "CANCELAMENTO": "A — cancelado"},
+            # `?baixar=<id>` vem do gerar: a lista pede o arquivo que acabou
+            # de ser gravado, pela mesma rota do botão Baixar. Zero e texto
+            # não são id.
+            baixar_xml_id=numero_digitado(request.args.get("baixar")) or None)
 
     @app.route("/protesto/cenprot-xml/gerar", methods=["POST"])
     # 21/10/2026: aberto às escreventes por ordem do oficial (era ("ADMIN")).
@@ -13101,7 +13105,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               f"título(s). Baixe e suba no portal da CENPROT."
               + (f" {len(feito['fora'])} ficaram de fora — veja o motivo de "
                  f"cada um." if feito["fora"] else ""), "success")
-        return redirect(url_for("protesto_cenprot_xml"))
+        # A lista volta com o aviso, e o `?baixar=` dispara o download do
+        # arquivo que esta geração acabou de gravar — não se gera outro.
+        return redirect(url_for("protesto_cenprot_xml", baixar=feito["id"]))
 
     @app.route("/protesto/cenprot-xml/<int:xml_id>/baixar")
     @roles_required("ADMIN", "MANAGER", "USER")

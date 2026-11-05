@@ -79,6 +79,43 @@ def test_a_tela_trava_mas_a_do_caixa_fica_livre(cg_casa):
     assert "Feche o caixa de ontem antes de continuar" not in caixa
 
 
+def test_o_fim_do_expediente_nao_cobre_o_boleto(cg_casa, monkeypatch):
+    """«Emitir no banco» volta para a ficha. Com a janela por cima, o balcão
+    vê o aviso de novo e não vê se o banco recebeu."""
+    import caixa_aviso_web
+
+    class _Relogio:
+        @staticmethod
+        def now():
+            return datetime(2026, 10, 6, 15, 0)
+
+    monkeypatch.setattr(caixa_aviso_web, "datetime", _Relogio)
+    cg_casa["db"].create_user("elisa", NOME, "Senha#12345", "USER")
+    con = _con(cg_casa)
+    _caixa(con, "2026-10-06")
+    c = cg_casa["c"]
+    cg_login(c, "elisa", "Senha#12345")
+    tarefas = c.get("/tarefas", follow_redirects=True).get_data(as_text=True)
+    assert "Fim do expediente" in tarefas and 'id="caixa-aviso-ok"' in tarefas
+    boleto = c.get("/caixa/cobranca").get_data(as_text=True)
+    assert "O EXPEDIENTE ACABOU" in boleto
+    assert "Fim do expediente" not in boleto
+    assert 'id="caixa-aviso-ok"' not in boleto
+    assert 'class="caixa-aviso-fundo"' not in boleto
+    assert {"cobranca_ficha", "cobranca_acao", "protesto_boletos",
+            "protesto_boleto_emitir"} <= CA.TELAS_DO_BOLETO
+
+
+def test_o_caixa_de_ontem_continua_trancando_o_boleto(cg_casa):
+    cg_casa["db"].create_user("elisa", NOME, "Senha#12345", "USER")
+    con = _con(cg_casa)
+    _caixa(con, (date.today() - timedelta(days=1)).isoformat())
+    c = cg_casa["c"]
+    cg_login(c, "elisa", "Senha#12345")
+    boleto = c.get("/caixa/cobranca").get_data(as_text=True)
+    assert "Feche o caixa de ontem antes de continuar" in boleto
+
+
 def test_sem_configuracao_o_aviso_comeca_as_14h(cg_casa):
     """«avisas 14h pra fechar o caixa» — o oficial, 06/10/2026."""
     con = _con(cg_casa)

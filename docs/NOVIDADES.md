@@ -8,6 +8,28 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.12 — o boleto sem a janela do expediente por cima, e a Parcela Express no protocolo
+
+Desde a 3.7.11.
+
+**Caixa**
+- Depois do fim do expediente a faixa vermelha continua pedindo para fechar o caixa, mas a janela não cobre mais as telas do boleto. O «Emitir no banco» e a resposta do banco ficam visíveis. O caixa de um dia anterior ainda aberto continua trancando as telas.
+- A Parcela Express emite Pix, boleto e cartão no protocolo. O login de produção usa o host do portal.
+
+**RTD**
+- O registro com valor declarado pode selar pelo caminho com valor. A chave nasce desligada.
+
+**Protesto**
+- O título em moeda estrangeira exige a tradução por tradutor público, e o registro a cita.
+- O termo e o instrumento do cheque dizem o banco sacado, o motivo e a data da devolução.
+- Não há gratuidade, só o diferimento. A exceção é o mandado de gratuidade da justiça, com o mandado anexado.
+
+**Robô**
+- A conta de robô abre a retificação cadastral da matrícula e a ficha da tarefa.
+
+**Base normativa**
+- A minuta, a revisão prévia e o ônus do RI recebem os artigos do ato. O texto da lei chega inteiro ao modelo.
+
 ## 3.7.11 — o ensaio de atos nas Notas, no RI, no Protesto e no RTD/RCPJ, a receita no selo, a Ajuda que volta a ler o sistema e a base normativa
 
 São 91 mudanças juntadas desde a 3.7.10 (#251 a #344). A suíte inteira rodou em partes no layout novo, na

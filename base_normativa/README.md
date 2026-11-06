@@ -8,8 +8,22 @@ ao RTD e ao RCPJ.
 Pedido do oficial (05/11/2026): abastecer os agentes de IA com a documentação
 pertinente, e fazer disso parte do repositório que é clonado («vamos fazer
 parte do repositório do github que é clonado»). Esta pasta é a primeira
-etapa — **a seleção e a ingestão**. O índice por artigo, a busca e a ligação a
-cada agente vêm em PRs seguintes. Nenhum agente lê esta pasta ainda.
+etapa — **a seleção e a ingestão**. O índice e a ferramenta `consultar_norma`
+permitem ler artigos completos. A ligação comum aos dois transportes de IA e
+a retomada da qualificação foram acrescentadas em 06/11/2026, a pedido do oficial.
+O acervo instalado contém 40 normas e 7.003 artigos; isso não representa toda
+a legislação brasileira nem certifica atualização permanente das fontes.
+
+As análises recebem somente os artigos pertinentes, com limite de contexto.
+OCR e transcrição continuam literais, sem inserir interpretação jurídica no
+documento. A qualificação confere a existência e o trecho das referências;
+fonte ausente, redação original ou transcrição não localizada exige confirmação
+humana na fonte oficial. O rascunho negativo usa o modelo `RI_NOTA` da própria
+instalação, sem reservar número, assinar ou alterar a prenotação.
+
+Em 06/11/2026 também entraram as Leis 8.629/1993, 4.504/1964, 5.868/1972,
+10.267/2001, 8.009/1990 e 11.441/2007, do mesmo commit do ctresb/leis.
+`ingestao_20261106.json` registra a origem, o commit e o SHA-256 desses arquivos.
 
 **Um arquivo por norma**, e não por artigo: o pacote de atualização tem teto
 de arquivos (`update_manager.MAX_FILES`), e o índice por artigo se monta na

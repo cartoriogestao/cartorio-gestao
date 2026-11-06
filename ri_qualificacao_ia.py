@@ -119,7 +119,7 @@ FINALIDADE = "ri_qualificacao_ia"
 CHAVE_LIGADA = "qualificacao_ia"
 
 # Suspensao geral no codigo ate completar e validar a base normativa.
-SUSPENSA_POR_BASE_NORMATIVA = True
+SUSPENSA_POR_BASE_NORMATIVA = False
 AVISO_DA_SUSPENSAO = 'Qualificação assistida temporariamente suspensa. O recurso precisa ser abastecido e validado com as normativas estaduais, a Lei de Registros Públicos e as demais leis aplicáveis à atividade registral, inclusive a legislação das cédulas de crédito. Até a liberação, realize a qualificação manualmente.'
 
 PENDENTE, LENDO, PRONTA, ERRO = MI.PENDENTE, MI.LENDO, MI.PRONTA, MI.ERRO
@@ -210,7 +210,12 @@ def _sem_acento(texto: str) -> str:
 
 def motivo_da_suspensao() -> str | None:
     """Aviso da suspensao geral, sem consultar banco ou provedor."""
-    return AVISO_DA_SUSPENSAO if SUSPENSA_POR_BASE_NORMATIVA else None
+    if SUSPENSA_POR_BASE_NORMATIVA:
+        return AVISO_DA_SUSPENSAO
+    import ia_conhecimento as CONHEC
+    if not CONHEC.situacao()["pronta"]:
+        return "A base normativa está incompleta nesta instalação; confira os códigos estadual e nacional e a LRP antes de ativar a qualificação."
+    return None
 
 
 def por_que_nao(con, pasta_dados) -> str | None:
@@ -379,6 +384,21 @@ regras 1 e 2.
 «exigencias» vazia e liste em «conferidos» tudo o que você cruzou. Nunca invente \
 exigência para preencher a nota."""
 
+INSTRUCAO += """
+
+PADRÃO DA NOTA DEVOLUTIVA DA SERVENTIA
+A negativa será exibida no modelo RI_NOTA da casa: identificação do protocolo,
+apresentante, título e matrícula; exigências numeradas; fundamento por item;
+prazo do protocolo e orientação de reingresso e dúvida registral.
+Cada exigência deve explicar o fato concreto, a providência para saná-lo e o
+fundamento pertinente. Não copie fatos, pessoas ou exigências de outros casos.
+Para cada fundamento, preencha referencias_normativas com norma, artigo e um
+trecho literal do dispositivo recebido ou consultado. A existência e a transcrição
+serão conferidas pelo sistema; a aplicabilidade será conferida pelo oficial.
+Sem fonte recuperada, deixe referencias_normativas vazia e indique a necessidade
+de conferência em duvidas. Não trate doutrina ou modelo de nota como lei vigente.
+"""
+
 ESQUEMA_DA_RESPOSTA = {
     "type": "object",
     "additionalProperties": False,
@@ -388,12 +408,18 @@ ESQUEMA_DA_RESPOSTA = {
         "especie_do_titulo": {"type": "string"},
         "exigencias": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
-            "required": ["exigencia", "fundamento", "documento", "pagina", "trecho"],
+            "required": ["exigencia", "fundamento", "documento", "pagina", "trecho", "referencias_normativas"],
             "properties": {"exigencia": {"type": "string"},
                            "fundamento": {"type": "string"},
                            "documento": {"type": "string"},
                            "pagina": {"type": "string"},
-                           "trecho": {"type": "string"}}}},
+                           "trecho": {"type": "string"},
+                           "referencias_normativas": {"type": "array", "items": {
+                               "type": "object", "additionalProperties": False,
+                               "required": ["norma", "artigo", "trecho"],
+                               "properties": {"norma": {"type": "string"},
+                                              "artigo": {"type": "string"},
+                                              "trecho": {"type": "string"}}}}}}},
         "conferidos": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
             "required": ["item", "documento", "trecho"],
@@ -618,6 +644,10 @@ def _contexto(bd, pedido: dict) -> str:
     lista = lista_de_conferencia(pedido.get("especie") or "")
     if lista:
         partes += ["", lista]
+    import ia_conhecimento as CONHEC
+    partes += ["", CONHEC.contexto(" ".join(str(x or "") for x in (
+        p.get("natureza_titulo"), p.get("objeto"), pedido.get("especie"),
+        pedido.get("instrucao"))))]
     return "\n".join(partes)
 
 
@@ -663,6 +693,11 @@ def _lista_de(d: dict, chave: str, campos: tuple[str, ...], limite: int) -> list
     for x in (d.get(chave) or [])[:limite]:
         if isinstance(x, dict):
             item = {c: _texto(x.get(c)) for c in campos}
+            if chave == "exigencias":
+                item["referencias_normativas"] = [
+                    {k: _texto(ref.get(k))[:1000] for k in ("norma", "artigo", "trecho")}
+                    for ref in (x.get("referencias_normativas") or [])[:10]
+                    if isinstance(ref, dict)]
             if item[campos[0]]:
                 saida.append(item)
     return saida
@@ -840,6 +875,14 @@ def executar(banco_caminho, pasta_dados: Path, pedido_id: int, conversar=None) -
                 if not texto.strip():
                     sem_texto.append(d["nome"])
             conferir_citacoes(r, fontes, contexto)
+            import ia_conhecimento as CONHEC
+            for item in r["exigencias"]:
+                refs = item.get("referencias_normativas") or []
+                conferencias = [CONHEC.conferir_referencia(x) for x in refs]
+                item["fontes_normativas"] = conferencias
+                item["fundamento_conferido"] = bool(conferencias) and all(
+                    x["conferida"] for x in conferencias)
+            r["base_normativa"] = CONHEC.situacao()
             r["nao_lidos"] = [f"Não foi lido: {x}" for x in fora] + r["nao_lidos"]
             r["sem_texto_para_conferir"] = sem_texto
             bd.escrever(
@@ -913,7 +956,8 @@ def linha_da_exigencia(item: dict) -> str:
     return texto
 
 
-def levar(con, pedido_id: int, escolhidas: list[tuple[int, str]], *, usuario: str) -> list[str]:
+def levar(con, pedido_id: int, escolhidas: list[tuple[int, str]], *, usuario: str,
+          fundamentos_confirmados=()) -> list[str]:
     """Guarda as exigências que a pessoa marcou (com o texto como ela editou) para
     PREENCHER o formulário da nota. ESCREVE (só `ri_qualificacao_ia`).
 
@@ -941,6 +985,12 @@ def levar(con, pedido_id: int, escolhidas: list[tuple[int, str]], *, usuario: st
     for indice, texto in escolhidas:
         if not 0 <= int(indice) < len(exigencias):
             raise QualificacaoIAError("Uma das exigências marcadas não é deste pedido.")
+        item = exigencias[int(indice)]
+        if item.get("fundamento_conferido") is False and int(indice) not in {
+                int(x) for x in fundamentos_confirmados}:
+            raise QualificacaoIAError(
+                "Confira a fonte oficial e confirme o fundamento de cada exigência "
+                "marcada como não conferida antes de levá-la à nota.")
         original = linha_da_exigencia(exigencias[int(indice)])
         final = " ".join(_texto(texto).split())[:MAXIMO_DA_LINHA] or original
         linhas.append(final)

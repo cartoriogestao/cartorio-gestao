@@ -74,6 +74,12 @@ NOMES: dict[str, tuple[str, tuple[str, ...]]] = {
     "mpv-2200-2-2001-08-24": ("MP 2.200-2/2001 (ICP-Brasil)", ("2200", "2.200", "icp")),
     "lei-13140-2015-06-26": ("Lei 13.140/2015 (Mediação)", ("13140", "13.140", "mediacao")),
     "lei-9109-2009": ("Lei estadual MA 9.109/2009 (Emolumentos)", ("9109", "9.109", "emolumentos")),
+    "lei-8629-1993-02-25": ("Lei 8.629/1993 (Reforma agrária)", ("8629", "8.629", "reforma agraria")),
+    "lei-4504-1964-11-30": ("Lei 4.504/1964 (Estatuto da Terra)", ("4504", "4.504", "estatuto da terra")),
+    "lei-5868-1972-12-12": ("Lei 5.868/1972 (Cadastro rural)", ("5868", "5.868", "cadastro rural")),
+    "lei-10267-2001-08-28": ("Lei 10.267/2001 (Georreferenciamento)", ("10267", "10.267", "georreferenciamento")),
+    "lei-8009-1990-03-29": ("Lei 8.009/1990 (Bem de família)", ("8009", "8.009", "bem de familia")),
+    "lei-11441-2007-01-04": ("Lei 11.441/2007 (Inventário extrajudicial)", ("11441", "11.441")),
 }
 
 # O NÚMERO DO ARTIGO EM TODAS AS FORMAS QUE OS ARQUIVOS TRAZEM. Medido nos 35

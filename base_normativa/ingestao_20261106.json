@@ -1,0 +1,38 @@
+[
+  {
+    "arquivo": "base_normativa\\federal\\lei-8629-1993-02-25.md",
+    "repositorio": "https://github.com/ctresb/leis",
+    "commit": "c9f21b4ab11aa0d7ca6fe861d75028e94219c2d6",
+    "sha256": "fd972c40344039881c6096dd8e94404d18b988f937cdf1ce6dd4429488e8d9dc"
+  },
+  {
+    "arquivo": "base_normativa\\federal\\lei-4504-1964-11-30.md",
+    "repositorio": "https://github.com/ctresb/leis",
+    "commit": "c9f21b4ab11aa0d7ca6fe861d75028e94219c2d6",
+    "sha256": "348b70ef11da06f721ebc1db1bb889a309fd8788d34574dfec9b9e57616a49a1"
+  },
+  {
+    "arquivo": "base_normativa\\federal\\lei-5868-1972-12-12.md",
+    "repositorio": "https://github.com/ctresb/leis",
+    "commit": "c9f21b4ab11aa0d7ca6fe861d75028e94219c2d6",
+    "sha256": "b29bfccb8305b0eef73f230a83f6527e33aa23e522015671b295e1c07ec973cf"
+  },
+  {
+    "arquivo": "base_normativa\\federal\\lei-10267-2001-08-28.md",
+    "repositorio": "https://github.com/ctresb/leis",
+    "commit": "c9f21b4ab11aa0d7ca6fe861d75028e94219c2d6",
+    "sha256": "d79c4783c0386412e1cc6ac796d6bc461ad85f2da88ddcfda186cb5ccf2c44cf"
+  },
+  {
+    "arquivo": "base_normativa\\federal\\lei-8009-1990-03-29.md",
+    "repositorio": "https://github.com/ctresb/leis",
+    "commit": "c9f21b4ab11aa0d7ca6fe861d75028e94219c2d6",
+    "sha256": "426b23157a8778b497292b05e5f4d6fe84418eb0d291a568fa6edc348098a9e0"
+  },
+  {
+    "arquivo": "base_normativa\\federal\\lei-11441-2007-01-04.md",
+    "repositorio": "https://github.com/ctresb/leis",
+    "commit": "c9f21b4ab11aa0d7ca6fe861d75028e94219c2d6",
+    "sha256": "45abaf7bd98ab74c2582f12f48503a243a69582e557e9be92200f9c9c6b75c3a"
+  }
+]

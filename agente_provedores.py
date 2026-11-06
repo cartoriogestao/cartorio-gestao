@@ -839,6 +839,9 @@ def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
     Registro que não grava vai para o log e não derruba o turno
     (`ia_uso.registrar`).
     """
+    import ia_conhecimento as CONHEC
+    sistema = CONHEC.enriquecer(sistema, conversa, finalidade=finalidade,
+                              atribuicao=atribuicao)
     registro = {"modulo": modulo, "finalidade": finalidade, "usuario": usuario,
                 "atribuicao": atribuicao, "referencia": referencia,
                 "mascarado": mascarado,

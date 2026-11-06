@@ -2,6 +2,18 @@
 {% block title %}Qualificação assistida — teto do dia{% endblock %}
 {% block heading %}<h1>Qualificação assistida (RI) — teto do dia</h1>{% endblock %}
 {% block content %}
+<section class="panel">
+  <h2>API e base normativa</h2>
+  <p>Qualificação assistida: <strong>{{ 'ativada' if ligada else 'desativada' }}</strong>.</p>
+  <p>Acervo instalado: {{ base_normativa.normas }} normas e {{ base_normativa.artigos }} artigos.
+    O recurso consulta as fontes pertinentes a cada título. A aplicabilidade e a vigência são conferidas pelo responsável.</p>
+  {% if suspensao %}<p class="notice warning">{{ suspensao }}</p>{% endif %}
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="{{ 'desativar' if ligada else 'ativar' }}">
+    <button class="primary" {% if not ligada and suspensao %}disabled{% endif %}>{{ 'Desativar' if ligada else 'Ativar a qualificação com a API' }}</button>
+  </form>
+</section>
 {#
   O TETO DIÁRIO DA QUALIFICAÇÃO ASSISTIDA — decisão do oficial em 26/10/2026:
   20 leituras por dia de fábrica, e só o ADMIN o muda. Cada leitura é uma

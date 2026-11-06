@@ -49,6 +49,12 @@ O TURNO DE QUEM NÃO É DO EXPEDIENTE (acréscimo do oficial, 29/10/2026)
 
 O MÓDULO SÓ LÊ. Não fecha caixa nenhum — fechar exige contar o dinheiro, e
 isso é de quem está com a gaveta.
+
+A JANELA DO FIM DO EXPEDIENTE NÃO COBRE O BOLETO. «Entendi» só esconde a
+janela na página atual. O clique em «Emitir no banco» grava e volta para a
+ficha: a janela nasce de novo por cima, o balcão não vê se o banco aceitou
+e o clique seguinte não é o botão. Nessas telas fica a faixa vermelha. O
+bloqueio do caixa de um dia anterior continua valendo — inclusive no boleto.
 """
 from __future__ import annotations
 
@@ -60,6 +66,23 @@ from bd_nativo import banco
 
 CHAVE_FIM = "caixa_fim_do_expediente"
 FIM_PADRAO = "14:00"
+
+#: Onde a janela do fim do expediente não cobre o formulário. A faixa fica.
+#: O caixa de ontem aberto continua trancando estas telas.
+TELAS_DO_BOLETO = frozenset({
+    "cobranca_lista",
+    "cobranca_nova",
+    "cobranca_ficha",
+    "cobranca_acao",
+    "cobranca_boleto_pdf",
+    "protesto_boletos",
+    "protesto_boleto_emitir",
+    "protesto_boleto_cancelar",
+    "protesto_boleto_conferir",
+    "protesto_boletos_pagamentos",
+    "protesto_boleto_simular",
+    "protesto_boleto_resolver",
+})
 
 #: O turno por operador: `caixa_turno:<login em minúsculas>` = «HH:MM-HH:MM».
 PREFIXO_DO_TURNO = "caixa_turno:"

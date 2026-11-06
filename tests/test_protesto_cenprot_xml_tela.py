@@ -166,13 +166,17 @@ def test_o_cadastro_recusa_documento_torto(s):
 # ------------------------------------------------------------- a tela
 
 
-def test_a_tela_mostra_o_pronto_e_gera_e_baixa(pronto, s):
+def _codigos_da_casa(s) -> None:
     con = _con(s)
     with con:
         for k, v in (("ibge_uf", "21"), ("ibge_municipio", "99999"),
                      ("ibge_cartorio", "01")):
             con.execute("INSERT OR REPLACE INTO settings(key, value) VALUES (?,?)",
                         (k, v))
+
+
+def test_a_tela_mostra_o_pronto_e_gera_e_baixa(pronto, s):
+    _codigos_da_casa(s)
     html = s["c"].get("/protesto/cenprot-xml").get_data(as_text=True)
     assert "1 pronto(s)" in html and "Gerar o arquivo P" in html
     r = s["c"].post("/protesto/cenprot-xml/gerar",
@@ -185,6 +189,43 @@ def test_a_tela_mostra_o_pronto_e_gera_e_baixa(pronto, s):
     assert baixa.status_code == 200
     assert baixa.data.startswith("﻿".encode("utf-8"))
     assert "-P-" in baixa.headers["Content-Disposition"]
+
+
+@pytest.mark.parametrize("letra", ["P", "D"])
+def test_gerar_redireciona_com_baixar_e_a_lista_pede_o_arquivo_salvo(pronto, s, letra):
+    """Gerar o P ou o D volta à lista com o aviso e dispara o download do
+    arquivo que acabou de ser gravado — o mesmo GET do botão Baixar, sem
+    segundo arquivo. O aviso continua na tela."""
+    if letra == "D":
+        con = _con(s)
+        with con:
+            PT.lancar_cancelamento(
+                con, pronto, hipotese="ANUENCIA_CREDOR",
+                fundamento="carta de anuência do credor apresentada no balcão",
+                agora="2026-10-15T09:00:00")
+    _codigos_da_casa(s)
+    antes = _con(s).execute("SELECT COUNT(*) FROM pt_cenprot_xml").fetchone()[0]
+    html = s["c"].get("/protesto/cenprot-xml").get_data(as_text=True)
+    r = s["c"].post("/protesto/cenprot-xml/gerar",
+                    data={"csrf_token": _token(html), "letra": letra},
+                    follow_redirects=False)
+    assert r.status_code == 302
+    xml_id = _con(s).execute(
+        "SELECT id FROM pt_cenprot_xml WHERE letra=? ORDER BY id DESC",
+        (letra,)).fetchone()[0]
+    assert r.headers["Location"].endswith(f"/protesto/cenprot-xml?baixar={xml_id}")
+    tela = s["c"].get(r.headers["Location"]).get_data(as_text=True)
+    assert "gerado com 1 título" in tela
+    caminho = f"/protesto/cenprot-xml/{xml_id}/baixar"
+    assert f'<iframe hidden src="{caminho}"' in tela
+    sem = s["c"].get("/protesto/cenprot-xml").get_data(as_text=True)
+    assert "<iframe" not in sem
+    baixa = s["c"].get(caminho)
+    assert baixa.status_code == 200
+    assert baixa.data.startswith("﻿".encode("utf-8"))
+    assert baixa.data.endswith(b"</estados>\r\n")
+    assert _con(s).execute(
+        "SELECT COUNT(*) FROM pt_cenprot_xml").fetchone()[0] == antes + 1
 
 
 def test_a_tela_mostra_o_motivo_de_quem_fica_de_fora(s):

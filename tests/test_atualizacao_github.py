@@ -191,6 +191,47 @@ def test_senha_errada_nao_baixa_nada(tela):
     baixar.assert_not_called()
 
 
+def test_a_atualizacao_grava_so_o_banco_e_deixa_as_digitalizacoes(tela):
+    """A troca do programa não reempacota o acervo: isso enche o disco e a atualização nem começa."""
+    import backup as BKP
+    app, c, pasta = tela
+    _guardar(pasta)
+    dados, sha = pacote()
+    folha = pasta / "arquivos" / "livro" / "folha.pdf"
+    folha.parent.mkdir(parents=True)
+    folha.write_bytes(b"%PDF-1.4 folha de teste")
+
+    def baixar(release, destino, *, limite_bytes, abrir=None):
+        Path(destino).mkdir(parents=True, exist_ok=True)
+        arq = Path(destino) / "baixado.cgu"
+        arq.write_bytes(dados)
+        return arq, sha
+
+    def timer_imediato(intervalo, func):
+        class _T:
+            def start(self):
+                func()
+        return _T()
+
+    with mock.patch.object(AG, "baixar", side_effect=baixar), \
+         mock.patch("app.pode_aplicar_sozinho", return_value=(True, "")), \
+         mock.patch("app.launch_windows_updater") as subir, \
+         mock.patch("app.threading.Timer", side_effect=timer_imediato):
+        r = c.post("/atualizacoes", data={"csrf_token": _csrf(c.get("/atualizacoes").get_data(as_text=True)),
+                                          "action": "github_atualizar", "senha_do_oficial": SENHA},
+                   follow_redirects=True)
+    assert r.status_code == 200
+    assert f"Atualizacao {VERSAO_ALVO} aprovada" in r.get_data(as_text=True)
+    zips = list(pasta.rglob("backup_pre_atualizacao_*.zip"))
+    assert len(zips) == 1
+    with zipfile.ZipFile(zips[0]) as zf:
+        nomes = zf.namelist()
+    assert BKP.resumo(zips[0])["tipo"] == "banco"
+    assert not any(n.startswith("arquivos/") for n in nomes)
+    assert not any(n.endswith("folha.pdf") for n in nomes)
+    subir.assert_called_once()
+
+
 def test_com_a_senha_baixa_prepara_e_chega_a_aplicacao(tela):
     """Até onde o teste vai: a aplicação de verdade é a do Windows, e aqui ela diz por que não aplica."""
     app, c, pasta = tela

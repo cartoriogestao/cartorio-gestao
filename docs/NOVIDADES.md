@@ -8,6 +8,13 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.13 — a atualização grava só o backup do banco
+
+Desde a 3.7.12.
+
+**Atualização**
+- Antes de aplicar a versão nova, a cópia é a do banco, a mesma do backup do dia. As digitalizações não são copiadas de novo: ficam na pasta de dados e no backup completo da semana. A cópia do programa anterior, para voltar se a versão nova não responder, continua.
+
 ## 3.7.12 — o boleto sem a janela do expediente por cima, e a Parcela Express no protocolo
 
 Desde a 3.7.11.

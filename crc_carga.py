@@ -488,10 +488,40 @@ def _codigo_ibge_municipio(con: sqlite3.Connection, cidade: Any,
     pessoa (`naturalidade_cidade`/`naturalidade_uf`). Reaproveitada, e não
     reescrita — a lição da `normalizar_nome` copiada.
     """
-    if _e_ausencia_de_municipio(_cidade_para_busca(cidade)):
+    # **O POVOADO NO MESMO TEXTO FAZIA A BUSCA NÃO ACHAR — 22/09/2026.**
+    # Dos 19 nascimentos retidos naquele dia, a naturalidade vinha como
+    # «VÃO DA POSSE, Cidade Exemplo-MA» ou «Cidade Exemplo-MA». Procurar o
+    # texto inteiro procura o povoado, e o povoado não está em
+    # `ib_municipios`. `municipio_da_naturalidade` já separa o município e
+    # a UF sem cortar nome com hífen (Mogi-Mirim continua Mogi-Mirim) e sem
+    # inventar UF quando o texto não traz as duas letras.
+    from rc_assento import municipio_da_naturalidade
+    cidade_lida, uf_lida = municipio_da_naturalidade(cidade)
+    if not cidade_lida or _e_ausencia_de_municipio(cidade_lida):
         return ""
-    achado = _lugar_ibge(con, _cidade_para_busca(cidade), _uf_crc(uf))
+    uf_busca = _texto(uf).strip(" .").upper()
+    if not (len(uf_busca) == 2 and uf_busca.isalpha()):
+        uf_busca = uf_lida
+    achado = _lugar_ibge(con, cidade_lida, uf_busca)
     return achado["codigo_ibge"] if achado.get("achou") else ""
+
+
+def _naturalidade_que_a_crc_le(assento: dict, pessoa: dict | None
+                               ) -> tuple[Any, Any]:
+    """Cidade e UF que a carga procura no IBGE. Só lê.
+
+    A pessoa vem primeiro: é o campo que a Central lê. Quando ele está
+    vazio, vale a naturalidade declarada no assento. Medido em 22/09/2026:
+    17 dos 19 retidos tinham o município escrito no termo e a ficha da
+    pessoa em branco, e a mensagem dizia que o município não estava na
+    ficha. Não grava nada. Quem grava, e só o que o cadastro do IBGE
+    confirma, é `rc_assento._naturalidade_do_titular`.
+    """
+    pessoa = pessoa or {}
+    if _texto(pessoa.get("naturalidade_cidade")):
+        return pessoa.get("naturalidade_cidade"), pessoa.get("naturalidade_uf")
+    return ((assento or {}).get("naturalidade_declarada"),
+            pessoa.get("naturalidade_uf"))
 
 
 def _texto_livre_municipio_nat(pessoa: dict) -> str:
@@ -980,15 +1010,16 @@ def o_que_falta(con: sqlite3.Connection, assento: dict,
         # instalação sem carga nenhuma, mesmo com a naturalidade certa.
         if _ibge_carregado(con):
             registrado = pessoas.get("REGISTRADO") or {}
-            cidade_nasc = _texto(registrado.get("naturalidade_cidade"))
+            cidade_nasc, uf_nasc = _naturalidade_que_a_crc_le(
+                assento, registrado)
+            cidade_nasc = _texto(cidade_nasc)
             if not cidade_nasc:
                 faltas.append(
                     "o município de nascimento do registrado não está na "
                     "ficha — a CRC exige o código do município (obrigatório "
                     "desde 13/10/2015), e a Central recusa o registro sem "
                     "ele")
-            elif not _codigo_ibge_municipio(
-                    con, cidade_nasc, registrado.get("naturalidade_uf")):
+            elif not _codigo_ibge_municipio(con, cidade_nasc, uf_nasc):
                 faltas.append(
                     f"o município de nascimento «{cidade_nasc}» não foi "
                     "encontrado no cadastro do IBGE desta casa — confira a "
@@ -1267,7 +1298,7 @@ def registro_de_nascimento(con: sqlite3.Connection, assento: dict,
         # REGISTRADO, a mesma busca que a remessa do IBGE já faz contra
         # `ib_municipios`.
         _tag("CODIGOIBGEMUNNASCIMENTO", _codigo_ibge_municipio(
-            con, reg.get("naturalidade_cidade"), reg.get("naturalidade_uf"))),
+            con, *_naturalidade_que_a_crc_le(assento, reg))),
         _tag("PAISNASCIMENTO", ""),
         _tag("NACIONALIDADE", ""),
         _tag("TEXTONACIONALIDADEESTRANGEIRO", ""),
@@ -1573,6 +1604,12 @@ def montar(con: sqlite3.Connection, assentos: list[int], *, cns: str) -> dict:
             continue
 
         pessoas = _pessoas_do_assento(con, aid)
+        # A coluna vazia não é «não informado» quando o pacote do E-Ofício
+        # tem a resposta. Sem isto a hora não sai, o sexo do registrado vai
+        # como ignorado e o óbito fica retido por POSSUIBENS — medido em
+        # 0/244 nas colunas e preenchido no `dados_json`. Não grava: quem
+        # grava é `rc_campos_do_acervo.gravar`, na abertura do banco.
+        a, pessoas = _com_o_acervo(a, pessoas)
         faltas = o_que_falta(con, a, pessoas)
         if faltas:
             retidos.append({"assento_id": aid, "nome": a.get("nome"),
@@ -1607,6 +1644,17 @@ def montar(con: sqlite3.Connection, assentos: list[int], *, cns: str) -> dict:
 
     return {"xml": "".join(partes), "quantos": indice, "retidos": retidos,
             "a_arrumar": a_arrumar}
+
+
+def _com_o_acervo(assento: dict, pessoas: dict) -> tuple[dict, dict]:
+    """O pacote do acervo por cima da coluna vazia. Só calcula.
+
+    A régua é uma só e mora em `rc_campos_do_acervo`: a carga, a quarentena
+    e a conferência na lavratura têm de ver o mesmo assento, senão a tela
+    diz que falta o que o XML já levaria — ou o contrário.
+    """
+    from rc_campos_do_acervo import completar
+    return completar(assento, pessoas)
 
 
 def _pessoas_do_assento(con: sqlite3.Connection, assento_id: Any) -> dict:
@@ -1659,8 +1707,9 @@ def em_quarentena(con: sqlite3.Connection, limite: int = 20_000) -> list[dict]:
                   AND COALESCE(situacao,'ATIVO') = 'ATIVO'
              ORDER BY data_ato NULLS FIRST, id LIMIT %s""", (limite,)):
         assento = dict(linha)
-        faltas = o_que_falta(con, assento,
-                             _pessoas_do_assento(con, assento["id"]))
+        pessoas = _pessoas_do_assento(con, assento["id"])
+        assento, pessoas = _com_o_acervo(assento, pessoas)
+        faltas = o_que_falta(con, assento, pessoas)
         if faltas:
             retidos.append({
                 "id": assento["id"], "especie": assento["especie"],

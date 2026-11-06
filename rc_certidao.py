@@ -761,7 +761,8 @@ def montar_teor(*, assento: dict, pessoas_do_assento: list[dict],
         obito = especie == "OBITO"
         linhas += _linha("DATA DO ÓBITO POR EXTENSO" if obito else "DATA DO PARTO POR EXTENSO", do_fato)
         linhas += _linha("HORA DO ÓBITO" if obito else "HORA DO PARTO",
-                         a.get("hora_fato") or dados.get("strHoraObito"))
+                         a.get("hora_fato") or dados.get("strHoraObito")
+                         or dados.get("strHoraNascimento"))
         linhas += _linha("SEXO", _sexo_por_extenso(
             _de(quem, titular, "sexo", dados, "strSexo")))
     if especie == "OBITO":
@@ -795,9 +796,11 @@ def montar_teor(*, assento: dict, pessoas_do_assento: list[dict],
         linhas += _linha("NATUREZA E CAUSA DA MORTE",
                          a.get("causa_morte") or dados.get("strCausaMorte"))
         linhas += _linha("ATESTOU O ÓBITO", " — ".join(
-            x for x in (str(a.get("atestante") or dados.get("strNomeMedico")
-                               or "").strip(),
+            x for x in (str(a.get("atestante")
+                            or dados.get("strAtestantePrimario")
+                            or dados.get("strNomeMedico") or "").strip(),
                         str(a.get("atestante_documento")
+                            or dados.get("strCRMAtestantePrimario")
                             or dados.get("strCRM")
                             or dados.get("strDocumentoMedico") or "").strip())
             if x))
@@ -816,9 +819,12 @@ def montar_teor(*, assento: dict, pessoas_do_assento: list[dict],
         # era eleitor, se deixou bens e os filhos (LRP art. 80, 7º, 10º e
         # 11º; art. 21) estão no termo, e o breve relato não os trazia.
         # A marca se lê pela régua do termo (`marca_no_papel`).
-        linhas += _linha("ERA ELEITOR", marca_no_papel(a.get("obito_eleitor")))
-        linhas += _linha("DEIXOU BENS",
-                         marca_no_papel(a.get("obito_possui_bens")))
+        # A coluna nasceu vazia na importação; a resposta está no bit do
+        # E-Ofício (31/31). Coluna preenchida ganha: é o que o balcão corrigiu.
+        linhas += _linha("ERA ELEITOR", marca_no_papel(
+            a.get("obito_eleitor") or dados.get("bitEleitor")))
+        linhas += _linha("DEIXOU BENS", marca_no_papel(
+            a.get("obito_possui_bens") or dados.get("bitPossuiBens")))
         linhas += _linha("DEIXOU FILHOS", filhos_do_falecido(a))
     if especie in ("OBITO", "NATIMORTO"):
         linhas.append("")

@@ -1346,6 +1346,20 @@ def carregar_rcpn(con: sqlite3.Connection, acervo: sqlite3.Connection,
     # ficha de cada um — e nao so numa aba que ninguem abre.
     carga.contar("assentos_com_livro_a_confirmar",
                  _marcar_livro_a_confirmar(bd, acervo, agora=agora))
+    # O PACOTE JÁ ESTÁ NA LINHA. As colunas que a ficha, a certidão e a CRC
+    # leem é que nasciam vazias: esta carga copia um pedaço e o
+    # `ON CONFLICT DO NOTHING` não volta para o resto. A passada olha o
+    # que falta, como as outras, e não apaga o `dados_json`.
+    try:
+        from rc_campos_do_acervo import gravar as _gravar_campos
+        feito = _gravar_campos(con, agora=agora)
+        quantos = (feito.get("assentos", 0) + feito.get("pessoas_novas", 0)
+                   + feito.get("pessoas_atualizadas", 0))
+        if quantos:
+            carga.contar("campos_do_acervo", quantos)
+    except Exception as erro:                          # noqa: BLE001
+        carga.avisar("campos_do_acervo",
+                     f"não completou as colunas do acervo: {erro}")
     return carga
 
 

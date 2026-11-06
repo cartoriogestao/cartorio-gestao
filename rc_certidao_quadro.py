@@ -374,9 +374,12 @@ def _quadro_obito(a, quem, dados, do_fato, dma_fato) -> dict:
         "genitores": gen,
         "causa": str(a.get("causa_morte") or dados.get("strCausaMorte")
                      or "").strip(),
-        "medico": str(a.get("atestante") or dados.get("strNomeMedico")
-                      or "").strip(),
-        "crm": str(a.get("atestante_documento") or dados.get("strCRM")
+        "medico": str(a.get("atestante")
+                      or dados.get("strAtestantePrimario")
+                      or dados.get("strNomeMedico") or "").strip(),
+        "crm": str(a.get("atestante_documento")
+                   or dados.get("strCRMAtestantePrimario")
+                   or dados.get("strCRM")
                    or dados.get("strDocumentoMedico") or "").strip(),
         "sepultamento": str(a.get("local_sepultamento")
                             or dados.get("strLocalSepultamento") or "").strip(),
@@ -388,7 +391,8 @@ def _quadro_obito(a, quem, dados, do_fato, dma_fato) -> dict:
         "numero_do": str(a.get("numero_do")
                          or dados.get("strNumeroDeclaracaoObito") or "").strip(),
         "bens": (str(dados.get("strBens") or "").strip()
-                 or _sim_ou_nao(a.get("obito_possui_bens"))),
+                 or _sim_ou_nao(a.get("obito_possui_bens")
+                                or dados.get("bitPossuiBens"))),
         "filhos": (str(dados.get("strFilhos") or "").strip()
                    or str(a.get("obito_filhos") or "").strip()
                    or _sim_ou_nao(a.get("obito_possui_filho"))),

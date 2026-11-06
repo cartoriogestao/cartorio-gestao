@@ -498,8 +498,8 @@ def _quadro_de_dicts(assento: dict, certidao: dict, sv: dict,
         pai = quem.get("PAI") or {}
         q.update({
             "local_nascimento": str(
-                assento.get("local_fato_nome") or dados.get("strNomeLocalNascimento")
-                or ""
+                assento.get("local_fato_nome") or dados.get("strNomeLocal")
+                or dados.get("strNomeLocalNascimento") or ""
             ).strip(),
             "naturalidade": str(
                 (quem.get("REGISTRADO") or {}).get("naturalidade_cidade")
@@ -512,12 +512,13 @@ def _quadro_de_dicts(assento: dict, certidao: dict, sv: dict,
             "mae": mae, "pai": pai,
             "filiacao": RCE._e_junta([
                 str(mae.get("nome") or ""), str(pai.get("nome") or "")]),
-            "avos_maternos": "",
-            "avos_paternos": "",
-            "genitores": [
-                {"nome": str(mae.get("nome") or ""), "municipio": "", "uf": "", "avos": ""},
-                {"nome": str(pai.get("nome") or ""), "municipio": "", "uf": "", "avos": ""},
-            ] if (mae or pai) else [],
+            "avos_maternos": RCE._e_junta([
+                RCE._nome(quem.get("AVO_MATERNO")),
+                RCE._nome(quem.get("AVO_MATERNA"))]) or "",
+            "avos_paternos": RCE._e_junta([
+                RCE._nome(quem.get("AVO_PATERNO")),
+                RCE._nome(quem.get("AVO_PATERNA"))]) or "",
+            "genitores": RCQ._genitores_nascimento(quem, dados) if (mae or pai) else [],
             "dnv": str(assento.get("dnv") or dados.get("strDeclaracaoNascidoVivo") or ""),
         })
         q.update(_gemeo_canonic(assento, dados))
@@ -565,8 +566,12 @@ def _quadro_de_dicts(assento: dict, certidao: dict, sv: dict,
                 str((quem.get("PAI") or {}).get("nome") or ""),
             ]),
             "causa": str(assento.get("causa_morte") or dados.get("strCausaMorte") or ""),
-            "medico": str(assento.get("atestante") or dados.get("strNomeMedico") or ""),
-            "crm": str(assento.get("atestante_documento") or dados.get("strCRM") or ""),
+            "medico": str(assento.get("atestante")
+                          or dados.get("strAtestantePrimario")
+                          or dados.get("strNomeMedico") or ""),
+            "crm": str(assento.get("atestante_documento")
+                       or dados.get("strCRMAtestantePrimario")
+                       or dados.get("strCRM") or ""),
             "sepultamento": str(
                 assento.get("local_sepultamento") or dados.get("strLocalSepultamento") or ""),
             "sepultamento_mun": str(dados.get("strMunicipioSepultamento") or ""),

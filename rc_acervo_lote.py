@@ -20,10 +20,15 @@ from storage import hash_file
 FORMATO = 'CARTORIO_GESTAO_ACERVO_RCPN_LOTE'
 ORIGENS = frozenset({'EOFICIO', 'IMPORTACAO', 'ARQUIVO', 'ACERVO'})
 CAMPOS = frozenset({'nome', 'data_ato', 'data_fato', 'matricula', 'dnv',
-    'cpf_registrado', 'hora_fato', 'local_fato_nome', 'naturalidade_declarada',
-    'cor_raca', 'teor', 'teor_formato', 'livro_a_confirmar'})
+    'cpf_registrado', 'hora_fato', 'local_fato_nome', 'local_fato_endereco',
+    'local_fato_municipio', 'naturalidade_declarada', 'cor_raca', 'teor',
+    'teor_formato', 'livro_a_confirmar', 'ibge_local_nascimento', 'ibge_gemeo',
+    'registro_tardio', 'gemeo_ordem'})
 PESSOA = frozenset({'papel', 'nome', 'sexo', 'data_nascimento',
-    'documento_tipo', 'documento_numero', 'idade_no_fato'})
+    'documento_tipo', 'documento_numero', 'documento_orgao', 'idade_no_fato',
+    'profissao', 'nacionalidade', 'naturalidade_cidade', 'naturalidade_uf',
+    'naturalidade_pais', 'estado_civil', 'endereco', 'bairro', 'cidade', 'uf',
+    'cep', 'nome_pos'})
 
 
 class LoteError(ValueError):

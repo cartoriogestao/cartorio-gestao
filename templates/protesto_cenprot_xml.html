@@ -1,6 +1,14 @@
 {% extends 'base.html' %}
 {% block heading %}<h1>Arquivo XML da CENPROT</h1>{% endblock %}
 {% block content %}
+{# Depois de gerar, a lista abre com ?baixar=<id>. Este quadro invisível pede
+   o arquivo que ACABOU de ser gravado — a mesma rota do botão Baixar — e a
+   lista e o aviso ficam nesta tela. `hidden` vem antes do src: a régua do
+   visualizador de PDF (problema #80) lê a etiqueta até o endereço, e um
+   quadro que não mostra arquivo não pede para esconder a coluna. #}
+{% if baixar_xml_id %}
+<iframe hidden src="{{ url_for('protesto_cenprot_xml_baixar', xml_id=baixar_xml_id) }}" style="display:none;width:0;height:0;border:0"></iframe>
+{% endif %}
 <div class="actions">
   <a class="button" href="{{ url_for('protesto_painel') }}">&larr; Roteiro das Centrais</a>
   <a class="button" href="{{ url_for('protesto_instrumentos') }}">Instrumentos de protesto</a>

@@ -147,6 +147,9 @@ import protesto_lista as PLISTA
 # O EMOLUMENTO A POSTERIORI (LG05, 19/10/2026): quem paga cada ato do título
 # diferido, quando, e por qual tabela — CN-MA art. 925, §§ 11 e 12.
 import protesto_posteriori as POST
+# O SELO DO PROTESTO JÁ LAVRADO (05/11/2026): o lote e o robô não selam.
+# O escrevente sela depois, e o emolumento fica devido — sem entrada no caixa.
+import protesto_selo_em_lote as PSL
 # OS TÍTULOS IRMÃOS — os do mesmo protocolo (29/10/2026): lado a lado na
 # ficha e no lote, a trava de «qual título está no papel?» e a conferência.
 import protesto_titulos_irmaos as IRM
@@ -4167,6 +4170,72 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                  "confira no caixa."), "success")
         return voltar
 
+    @app.route("/protesto/selar-pendentes", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_selar_pendentes():
+        """Sela os protestos já lavrados e deixa o emolumento DEVIDO. ESCREVE.
+
+        O lote «Gerar protesto» e o robô lavram sem selo. Este botão é o
+        clique humano que sela — no máximo dez por vez — e lança a faixa
+        17.1.N como devida. Não cria lançamento nem recibo: o dinheiro entra
+        só quando pagam para cancelar ou desistir.
+
+        O SELO FICA FORA DA TRANSAÇÃO, como todo pedido ao aparelho. `preparar`
+        grava o devido com a linha presa; a cobertura DIFERIDO nasce quando o
+        selo é pedido, lendo esse devido. A rota não está em `rotas_do_robo`:
+        conta de robô leva 403.
+        """
+        import selo_robo as SR
+        if SR.exige_humano_para_selar():
+            abort(403)
+        ato_id = numero_digitado(request.form.get("ato_id"))
+        titulo_volta = numero_digitado(request.form.get("titulo_id"))
+
+        def voltar_daqui():
+            if titulo_volta:
+                return redirect(url_for("protesto_titulo",
+                                        titulo_id=titulo_volta))
+            return redirect(url_for("protesto_a_protestar"))
+
+        try:
+            with db.transaction() as con:
+                preparado = PSL.preparar(
+                    con, eh_robo=SR.usuario_e_robo(), usuario=usuario_nome(),
+                    agora=agora(), ato_id=ato_id, hoje=hoje())
+        except PSL.SeloEmLoteError as erro:
+            flash(str(erro), "danger")
+            return voltar_daqui()
+
+        selados, falhas = [], []
+        for item in preparado["prontos"]:
+            # A MESMA LISTA que ficou devida: o selo pede o 17.1 e a cobertura
+            # acha a faixa 17.1.N em `pt_emolumentos_diferidos`.
+            g.protesto_itens_da_tabela = list(item.get("itens") or [])
+            recado = _selar_o_protesto(PSL.TABELA, int(item["ato_id"]),
+                                       PSL.TIPO)
+            with db.connect() as con:
+                linha = banco(con).um(
+                    "SELECT selo FROM pt_atos WHERE id=%s",
+                    (int(item["ato_id"]),))
+            numero = str((linha or {}).get("selo") or "").strip()
+            if numero:
+                audit(PSL.ACAO_DA_AUDITORIA, "pt_atos", int(item["ato_id"]),
+                      {"titulo_id": int(item["titulo_id"]),
+                       "entrou_no_caixa": False, "selo": numero})
+                selados.append(item)
+            else:
+                falhas.append(recado.strip() or "o selo não saiu")
+        g.protesto_itens_da_tabela = []
+        if selados:
+            flash(f"{len(selados)} protesto(s) selado(s). O emolumento ficou "
+                  f"devido e não entrou no caixa.", "success")
+        for texto in falhas:
+            flash(texto, "danger")
+        if not preparado["prontos"]:
+            flash("Nenhum protesto lavrado sem selo para selar neste clique.",
+                  "warning")
+        return voltar_daqui()
+
     @app.route("/protesto/<int:titulo_id>/averbacao-retificacao",
                methods=["POST"])
     @roles_required("ADMIN")
@@ -4322,6 +4391,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             import correcoes_de_oficio as CDO
             propostas_de_oficio = CDO.propostas_do_titulo(_c, titulo_id)
             pendencias_do_selo = PSELO.pendencias_do_selo(_c, titulo_id=titulo_id)
+            # O PROTESTO DESTE TÍTULO LAVRADO SEM SELO (05/11/2026): o botão
+            # da ficha sela este ato e deixa o emolumento devido.
+            protesto_sem_selo = PSL.pendentes(_c, titulo_id=titulo_id,
+                                              hoje=hoje())
             # OS PEDIDOS DA CRA (29/10/2026): desistência, cancelamento e
             # autorização que vieram da Central e ainda esperam a casa.
             pedidos_cra = PCP.do_titulo(_c, titulo_id)
@@ -4394,6 +4467,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                sem_ato=sem_ato,
                                propostas_de_oficio=propostas_de_oficio,
                                pendencias_do_selo=pendencias_do_selo,
+                               protesto_sem_selo=protesto_sem_selo,
                                averbacao=averbacao,
                                modelo_da_afirmacao=PSELO.MODELO_DA_AFIRMACAO,
                                minimo_da_afirmacao=PSELO.MINIMO_DE_LETRAS_DA_AFIRMACAO,
@@ -12177,9 +12251,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """
         import cenprot_pendencias as PEND
         try:
+            # SEM `pasta`: em `centrais_cred` ela e a pasta das CREDENCIAIS
+            # (ProgramData), nao a do acervo. Com o acervo, a credencial da
+            # CENPROT "nao era informada" (hotfix 05/11/2026).
             linhas = PEND.trazer_com_a_cra(
-                db, dia=hoje(), quem=usuario_nome(),
-                pasta=pasta_dos_arquivos())
+                db, dia=hoje(), quem=usuario_nome())
         except Exception as erro:  # noqa: BLE001 — o clique não cai por isto
             flash(f"Pendências da CENPROT não foram consultadas: {erro}",
                   "danger")
@@ -12636,9 +12712,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             travados = [{**t, "trava": travas[t["id"]]} for t in linhas
                         if t["id"] in travas]
             linhas = [t for t in linhas if t["id"] not in travas]
+            # OS JÁ LAVRADOS SEM SELO (05/11/2026): a fila que o botão sela.
+            # Leitura só. O lote, logo abaixo, continua sem selar.
+            sem_selo = PSL.pendentes(con, hoje=hoje())
         return render_template("protesto_a_protestar.html", linhas=linhas,
                                revogados=revogados, sustados=sustados,
-                               hoje=hoje(), irmaos=irmaos, travados=travados)
+                               hoje=hoje(), irmaos=irmaos, travados=travados,
+                               sem_selo=sem_selo)
 
     @app.route("/protesto/a-protestar/lavrar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -12656,7 +12736,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         O LOTE NÃO SELA E NÃO COBRA — a mesma regra da remessa, e pelo mesmo
         motivo: vinte selos são vinte chamadas de rede de 20 s, e segurá-las
         aqui poria toda a casa no `busy_timeout`. Eles saem sem selo e sem
-        cobrança, e selar e cobrar é na ficha de cada título.
+        cobrança. Quem sela depois é o botão «Selar e lançar no caixa
+        (devido)» nesta tela (`/protesto/selar-pendentes`): o valor fica
+        devido e não entra no caixa. O lote continua sem selar.
 
         E UM QUE FALHA NÃO DERRUBA OS OUTROS: cada título é lavrado na sua
         própria transação. Protesto lavrado é protesto lavrado; desfazer
@@ -12731,8 +12813,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             _avisar_motivo_trocado(r)
         if feitos:
             flash(f"{len(feitos)} protesto(s) lavrado(s). Eles ainda não têm "
-                  f"selo nem cobrança: sele e cobre pela ficha de cada título. "
-                  f"E lembre de gerar o retorno E o andamento.",
+                  f"selo nem cobrança: use «Selar e lançar no caixa (devido) "
+                  f"todos os protestos pendentes» nesta tela. O lote não sela, "
+                  f"e o dinheiro não entra agora. E lembre de gerar o retorno "
+                  f"E o andamento.",
                   "success")
             _avisar_falta_do_instrumento([t for t, _r in feitos])
         for titulo_id, motivo in falharam:
@@ -13067,7 +13151,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             minimo_do_motivo=PCXML.MINIMO_DO_MOTIVO_DA_DEVOLUCAO,
             ocorrencias={"PROTESTO": "2 — protestado", "PAGAMENTO": "1 — pago",
                          "DESISTENCIA": "3 — retirado",
-                         "CANCELAMENTO": "A — cancelado"})
+                         "CANCELAMENTO": "A — cancelado"},
+            # `?baixar=<id>` vem do gerar: a lista pede o arquivo que acabou
+            # de ser gravado, pela mesma rota do botão Baixar. Zero e texto
+            # não são id.
+            baixar_xml_id=numero_digitado(request.args.get("baixar")) or None)
 
     @app.route("/protesto/cenprot-xml/gerar", methods=["POST"])
     # 21/10/2026: aberto às escreventes por ordem do oficial (era ("ADMIN")).
@@ -13101,7 +13189,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               f"título(s). Baixe e suba no portal da CENPROT."
               + (f" {len(feito['fora'])} ficaram de fora — veja o motivo de "
                  f"cada um." if feito["fora"] else ""), "success")
-        return redirect(url_for("protesto_cenprot_xml"))
+        # A lista volta com o aviso, e o `?baixar=` dispara o download do
+        # arquivo que esta geração acabou de gravar — não se gera outro.
+        return redirect(url_for("protesto_cenprot_xml", baixar=feito["id"]))
 
     @app.route("/protesto/cenprot-xml/<int:xml_id>/baixar")
     @roles_required("ADMIN", "MANAGER", "USER")

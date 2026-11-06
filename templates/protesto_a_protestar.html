@@ -221,8 +221,10 @@
       <p><small>
         Eles saem <strong>sem selo e sem cobrança</strong>, de propósito: vinte
         selos são vinte chamadas ao aparelho, e segurá-las aqui deixaria o
-        balcão inteiro esperando. Depois de protestar, sele e cobre pela ficha de
-        cada título — e lembre de gerar o <strong>retorno e o andamento</strong>.
+        balcão inteiro esperando. O lote não sela. Depois de protestar, use
+        <strong>Selar e lançar no caixa (devido) todos os protestos pendentes</strong>
+        — o valor fica devido e o dinheiro não entra agora. E lembre de gerar
+        o <strong>retorno e o andamento</strong>.
       </small></p>
       <div class="actions">
         <button class="button primary">Lavrar o protesto dos marcados</button>
@@ -236,6 +238,8 @@
   </p>
   {% endif %}
 </section>
+
+{% include '_protesto_sem_selo.html' %}
 
 {% if sustados %}
 <section class="panel">

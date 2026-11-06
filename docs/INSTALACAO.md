@@ -130,7 +130,7 @@ parcial (`tools/criar_atualizacao.py … --desde v<versão instalada>`).
 3. Clique em **Validar, fazer backup e atualizar**.
 
 O sistema confere o SHA-256 do pacote e de cada arquivo, recusa caminho que
-saia da pasta de instalação, faz backup do banco e dos documentos, guarda o
+saia da pasta de instalação, faz backup do banco, guarda o
 programa anterior, aplica, reinicia e testa `/saude` — e **volta sozinho** à
 versão anterior se o servidor novo não responder. O banco só recebe migrações
 que acrescentam (nunca apagam coluna nem tabela).

@@ -23,7 +23,6 @@ O QUE ESTES TESTES CONFEREM
 """
 from __future__ import annotations
 
-import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -150,15 +149,13 @@ def test_registro_ilegivel_nao_derruba_a_tela(db):
 
 
 # ---------------------------------------------------------- aviso na tela
+#
+# A FAIXA SAIU EM 05/11/2026. Ela contava as travas e mandava migrar do
+# SQLite. A casa já está no PostgreSQL: o registro continua no arquivo, e
+# nenhuma tela diz mais «o banco travou» nem aponta `MIGRAR_DE_BANCO.md`.
 
 SENHA = "Senha#12345"
 AVISO_DISPUTA = "O banco travou"
-
-
-def _token(html: str) -> str:
-    achado = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html)
-    assert achado, "a tela não trouxe csrf_token"
-    return achado.group(1)
 
 
 def _sessao(cg_casa, papel: str = "ADMIN"):
@@ -175,35 +172,12 @@ def _semear_disputa(cg_casa, linhas: str = "2026-08-26T10:00:00\tdatabase is loc
     registro.write_text(linhas, encoding="utf-8")
 
 
-def test_o_aviso_de_disputa_aparece_em_qualquer_tela(cg_casa):
+def test_a_faixa_de_migrar_nao_aparece_mesmo_com_o_registro_cheio(cg_casa):
     s = _sessao(cg_casa)
-    _semear_disputa(s)
+    _semear_disputa(s, "2026-08-26T10:00:00\tdatabase is locked\n" * 8)
     for caminho in ("/", "/protesto/titulos", "/nucleo/livros"):
         html = s["c"].get(caminho, follow_redirects=True).get_data(as_text=True)
-        assert AVISO_DISPUTA in html, caminho
-
-
-def test_o_aviso_de_disputa_e_de_quem_responde_pela_serventia(cg_casa):
-    s = _sessao(cg_casa, papel="AUDITOR")
-    _semear_disputa(s)
-    html = s["c"].get("/").get_data(as_text=True)
-    assert AVISO_DISPUTA not in html
-
-
-def test_o_aviso_de_disputa_compacto_expande_os_detalhes(cg_casa):
-    s = _sessao(cg_casa)
-    _semear_disputa(s)
-    html = s["c"].get("/").get_data(as_text=True)
-    assert "flash-compact" in html
-    assert 'data-aviso-expand' in html
-    assert 'aria-expanded="false"' in html
-    assert 'id="aviso-disputa-detalhe"' in html
-    assert "flash-compact-detalhe" in html
-    assert "MIGRAR_DE_BANCO.md" in html
-    assert re.search(r"dois balcões gravam", html)
-    linha = re.search(
-        r'<div class="flash-compact-linha">.*?</div>', html, re.DOTALL)
-    assert linha, "a linha compacta do aviso sumiu"
-    trecho = linha.group(0)
-    assert "MIGRAR_DE_BANCO.md" not in trecho
-    assert not re.search(r"dois balcões gravam", trecho)
+        assert AVISO_DISPUTA not in html, caminho
+        assert "MIGRAR_DE_BANCO" not in html, caminho
+        assert "aviso-disputa-detalhe" not in html, caminho
+        assert "trocar de banco" not in html, caminho

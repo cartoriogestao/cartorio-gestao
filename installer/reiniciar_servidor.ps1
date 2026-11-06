@@ -140,9 +140,61 @@ function PidsNaPorta {
     foreach ($l in @(& netstat.exe -ano 2>$null)) {
       $t = @(($l -split '\s+') | Where-Object { $_ -ne '' })
       if ($t.Count -ge 5 -and $t[1] -match ":$Port$" -and $t[3] -eq 'LISTENING') { $achados += [int]$t[4] }
+      #   O LADO DO SERVIDOR DAS CONEXOES ABERTAS - 05/11/2026. Ver PortaAtende:
+      #   o socket que ESCUTA chegou a aparecer com dono 0, mas cada conexao que
+      #   o servidor aceitou traz o PID de verdade (porta local = $Port).
+      if ($t.Count -ge 5 -and $t[1] -match ":$Port$" -and $t[3] -ne 'LISTENING' -and $t[4] -match '^\d+$') { $achados += [int]$t[4] }
     }
   } catch {}
   return @($achados | Where-Object { $_ -and [int]$_ -gt 0 } | Select-Object -Unique)
+}
+
+function PidsDoServidor {
+  #   O SERVIDOR SE ACHA PELO QUE ELE RODA, E NAO SO PELA PORTA - 05/11/2026.
+  #
+  #     Medido nesta instalacao: o socket que escuta a 8765 vinha com dono **0**
+  #     no Get-NetTCPConnection (mesmo elevado) e nem aparecia como LISTENING no
+  #     netstat. O PidsNaPorta descarta o 0 - com razao, nao se mata o PID 0 -,
+  #     a lista saia vazia e a parada dizia "Porta 8765 livre" com o python das
+  #     13:33 VIVO. Tres reinicios seguidos (14:25, 14:46, 16:17) deram
+  #     "RESULTADO: OK" sem trocar o processo, e tres hotfixes ficaram so no disco.
+  #
+  #     Quem roda `<InstallDir>\app.py` E o servidor desta instalacao: o lancador
+  #     do venv e o interpretador de verdade trazem o caminho na linha de comando.
+  #     A linha volta vazia sem elevacao - e sem elevacao tambem nao se mata nada.
+  $app = Join-Path $InstallDir 'app.py'
+  $achados = @()
+  try {
+    foreach ($q in @(Get-CimInstance Win32_Process -Filter "Name like 'python%'" -ErrorAction Stop)) {
+      $linha = [string]$q.CommandLine
+      if ($linha -and $linha.IndexOf($app, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        $achados += [int]$q.ProcessId
+      }
+    }
+  } catch {}
+  return @($achados | Where-Object { $_ -and [int]$_ -gt 0 } | Select-Object -Unique)
+}
+
+function PortaAtende {
+  #   PORTA LIVRE E PORTA QUE NINGUEM ATENDE, MEDIDO NA PORTA - 05/11/2026.
+  #     "Nenhum PID achado" nao e "livre": o escuta com dono 0 nao entra em
+  #     PidsNaPorta. Aqui se pergunta a propria porta (uma conexao de verdade) e
+  #     se conta o LISTEN de qualquer dono, inclusive o 0.
+  $cliente = New-Object System.Net.Sockets.TcpClient
+  try {
+    $tentativa = $cliente.ConnectAsync('127.0.0.1', $Port)
+    if ($tentativa.Wait(1500) -and $cliente.Connected) { return $true }
+  } catch {} finally { $cliente.Close() }
+  try {
+    if (@(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop).Count -gt 0) { return $true }
+  } catch {}
+  try {
+    foreach ($l in @(& netstat.exe -ano 2>$null)) {
+      $t = @(($l -split '\s+') | Where-Object { $_ -ne '' })
+      if ($t.Count -ge 4 -and $t[1] -match ":$Port$" -and $t[3] -eq 'LISTENING') { return $true }
+    }
+  } catch {}
+  return $false
 }
 
 function Arvore([int]$raiz, [int]$profundidade = 4) {
@@ -227,6 +279,7 @@ while ($subindo -gt 0 -and $MeusAncestrais.Count -lt 8) {
 }
 $NuncaMatar = @([int]$PID)
 if ($MeusAncestrais.Count -gt 0) { $NuncaMatar += [int]$MeusAncestrais[0] }
+$script:ServidoresAntigos = @()
 
 function Parar {
   Dizer "Parando o servico do Cartorio Gestao..."
@@ -239,6 +292,9 @@ function Parar {
   #   AGORA O QUE O AGENDADOR NAO ALCANCA: quem tem a porta. O `schtasks /End`
   #   para o cmd.exe da tarefa e deixa os netos vivos - medido em 15/09/2026.
   $alvos = @()
+  #   A SONDA ANTES DA BUSCA - 05/11/2026: com o escuta de dono 0, uma conexao
+  #   aceita e o que faz o PID de quem atende aparecer (porta local = $Port).
+  $null = PortaAtende
   $naPorta = PidsNaPorta
   $alvos += $naPorta
   foreach ($p in $naPorta) {
@@ -249,6 +305,10 @@ function Parar {
     $alvos += Arvore $p
   }
   if ($ParentPid -gt 0) { $alvos += [int]$ParentPid; $alvos += Arvore $ParentPid }
+  #   E O QUE RODA O app.py DESTA INSTALACAO, mesmo que a porta nao diga quem e
+  #   (dono 0 - ver PidsDoServidor). Guardados para a Subida conferir que
+  #   nenhum deles sobreviveu.
+  foreach ($p in @(PidsDoServidor)) { $alvos += $p; $alvos += Arvore $p; $script:ServidoresAntigos += [int]$p }
   $alvos = @($alvos | Where-Object { $_ -and [int]$_ -gt 0 } | Select-Object -Unique)
   $naoPararam = @()
   foreach ($p in $alvos) { if (-not (Matar ([int]$p))) { $naoPararam += [int]$p } }
@@ -258,11 +318,23 @@ function Parar {
   #   defeito de hoje foi exatamente um processo velho segurando o socket.
   for ($i = 0; $i -lt $EsperaParaLiberar; $i++) {
     $restam = PidsNaPorta
-    if ($restam.Count -eq 0) { Dizer "Porta $Port livre."; return 0 }
+    #   LIVRE E SEM PID **E** SEM NINGUEM ATENDENDO - 05/11/2026. So a lista
+    #   vazia dizia "livre" com o escuta de dono 0 no ar.
+    if ($restam.Count -eq 0 -and -not (PortaAtende)) { Dizer "Porta $Port livre."; return 0 }
+    #   QUEM SO APARECEU AGORA (pela conexao da sonda) tambem e parado, uma vez.
+    foreach ($p in $restam) {
+      if (-not ($alvos -contains [int]$p)) {
+        $alvos += [int]$p
+        if (-not (Matar ([int]$p))) { $naoPararam += [int]$p }
+      }
+    }
     Start-Sleep -Seconds 1
   }
   $restam = PidsNaPorta
   Dizer "A porta $Port continua ocupada. Quem a esta segurando:"
+  if ($restam.Count -eq 0) {
+    Dizer "  a porta atende, mas o Windows nao diz de quem (dono 0). Procure o python que roda $(Join-Path $InstallDir 'app.py')."
+  }
   foreach ($p in $restam) {
     #   A LINHA TEM DE SERVIR PARA ALGUEM IR ACHAR O PROCESSO. `CommandLine`
     #   volta VAZIO para processo de outra elevacao - medido no primeiro ensaio,
@@ -344,6 +416,16 @@ function Subir {
     Dizer "ATENCAO: quem respondeu esta na versao $noAr, e a instalada e $esperada."
     Dizer "Isso quer dizer que o servidor antigo continuou no ar. O codigo novo esta em disco"
     Dizer "e entra no proximo reinicio - pare o servidor por inteiro antes."
+    return 4
+  }
+  #   A MESMA VERSAO NAO PROVA PROCESSO NOVO - 05/11/2026. Hotfix nao muda a
+  #   versao: o /saude do servidor antigo respondia a mesma 3.7.10 e a subida
+  #   dizia "No ar". Se algum python que rodava o app.py antes da parada
+  #   continua vivo, quem respondeu pode ser ele.
+  $sobreviventes = @($script:ServidoresAntigos | Where-Object { Vivo ([int]$_) })
+  if ($sobreviventes.Count -gt 0) {
+    Dizer "ATENCAO: o servidor de antes da parada continua vivo (PID $($sobreviventes -join ', '))."
+    Dizer "Quem respondeu o /saude pode ser ele, com o codigo antigo - pare o servidor por inteiro antes."
     return 4
   }
   Dizer "No ar: versao $noAr."

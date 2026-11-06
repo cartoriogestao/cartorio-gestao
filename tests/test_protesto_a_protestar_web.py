@@ -118,6 +118,24 @@ def intimado(s, *, numero="84713/1", nome="MARIA SANTOS",
 MOTIVO = "Cenário de teste: tríduo vencido"
 
 
+def _fila_dos_intimados(html: str) -> str:
+    """O miolo da lista «a protestar», sem a seção dos já lavrados sem selo.
+
+    O protestado sai desta lista e pode continuar na ficha pelo quadro
+    «Protestos lavrados sem selo», que também aponta para `/protesto/<id>`.
+    A ausência se prova nesta âncora, e não num `href` solto na página.
+    """
+    marca = "Títulos intimados e sem movimentação"
+    ini = html.find(marca)
+    assert ini >= 0, "a lista dos intimados sumiu"
+    resto = html[ini:]
+    for fim in ("Protestos lavrados sem selo", "Sustados por ordem"):
+        i = resto.find(fim)
+        if i > 0:
+            return resto[:i]
+    return resto
+
+
 def lavrar(s, ids, *, motivo=MOTIVO):
     tela = s["c"].get("/protesto/a-protestar").get_data(as_text=True)
     dados = {"csrf_token": _token(tela), "titulo_id": [str(x) for x in ids]}
@@ -241,20 +259,19 @@ def test_o_protestado_SAI_da_lista(s):
     """É a prova de que a consulta e o ato falam da mesma coisa: o protesto é
     ato posterior à intimação, e por isso o título deixa de esperar.
 
-    E A AUSÊNCIA SE PROVA PELO LINK DA LINHA, e não pelo número solto: eu
-    havia escrito `assert "84713/1" not in html` e o teste ficou vermelho com
-    o conserto funcionando — **a janela da ajuda, que existe em toda tela,
-    escreve esse mesmo número no exemplo do campo** («do título 84713/1,
-    marquei pagamento e cliquei em lançar»). É a quinta vez neste projeto que
-    procurar palavra solta num HTML inteiro dá resposta errada, e a segunda
-    em que quem a dá é a janela da ajuda.
+    E A AUSÊNCIA SE PROVA PELO LINK DA LINHA NA LISTA DOS INTIMADOS, e não
+    pelo número solto: eu havia escrito `assert "84713/1" not in html` e o
+    teste ficou vermelho com o conserto funcionando — **a janela da ajuda,
+    que existe em toda tela, escreve esse mesmo número no exemplo do campo**
+    («do título 84713/1, marquei pagamento e cliquei em lançar»). O quadro
+    dos lavrados sem selo também aponta para a ficha: a âncora é a lista.
     """
     tid = intimado(s)
     antes = s["c"].get("/protesto/a-protestar").get_data(as_text=True)
-    assert f'href="/protesto/{tid}"' in antes
+    assert f'href="/protesto/{tid}"' in _fila_dos_intimados(antes)
     lavrar(s, [tid])
     depois = s["c"].get("/protesto/a-protestar").get_data(as_text=True)
-    assert f'href="/protesto/{tid}"' not in depois
+    assert f'href="/protesto/{tid}"' not in _fila_dos_intimados(depois)
 
 
 def test_um_que_falha_NAO_derruba_os_outros(s):

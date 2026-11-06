@@ -176,9 +176,11 @@ def test_o_clique_da_remessa_baixa_a_cenprot_sem_responder(s, monkeypatch):
     _a_cra(monkeypatch, {"desistencias": NADA_DP, "cancelamentos": NADA_CP,
                          "autorizacoes": NADA_CP})
     chamadas = []
+    pastas = []
 
     def trazer(db, *, dia, quem="", pasta=None):
         chamadas.append(dia)
+        pastas.append(pasta)
         return [{"especie": "ANUENCIA", "ok": True, "inicio": "2026-10-29",
                  "fim": dia[:10], "vieram": 2, "entraram": 1, "repetidas": 1,
                  "sem_titulo": 0, "sem_codigo": 0,
@@ -192,6 +194,10 @@ def test_o_clique_da_remessa_baixa_a_cenprot_sem_responder(s, monkeypatch):
     monkeypatch.setattr(PEND, "enviar", responder)
     html = _clicar(s).get_data(as_text=True)
     assert chamadas
+    # A `pasta` de `trazer_com_a_cra` e a das CREDENCIAIS (centrais_cred):
+    # com a raiz do acervo a credencial da CENPROT "nao era informada"
+    # (05/11/2026). O clique nao a passa, e o cofre padrao e usado.
+    assert pastas == [None]
     assert "Anuência do credor: vieram 2" in html
     with _con(s) as con:
         detalhe = con.execute(

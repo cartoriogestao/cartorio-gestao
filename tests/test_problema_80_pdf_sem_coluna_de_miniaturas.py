@@ -40,12 +40,19 @@ def _quadros_que_mostram_arquivo() -> list[tuple[str, int, str]]:
 
     As prévias de modelo (`sandbox`, sem `src`) não mostram arquivo e ficam de
     fora por construção: a régua olha só `src="{{ url_for(`.
+
+    O iframe `hidden` também fica de fora, desde que `hidden` apareça antes
+    do `src` (a régua lê a etiqueta só até o endereço). Ele não abre o
+    visualizador: só pede o download do XML da CENPROT depois de gerar. A
+    coluna de miniaturas é do PDF mostrado na tela.
     """
     achados = []
     for html in sorted((RAIZ / "templates").glob("*.html")):
         texto = html.read_text(encoding="utf-8-sig")
         for m in re.finditer(r"<iframe\b[^>]*?src=\"\{\{\s*url_for\([^\"]*\"",
                              texto, re.S):
+            if re.search(r"\bhidden\b", m.group(0)):
+                continue
             linha = texto.count("\n", 0, m.start()) + 1
             achados.append((html.name, linha, m.group(0)))
     return achados

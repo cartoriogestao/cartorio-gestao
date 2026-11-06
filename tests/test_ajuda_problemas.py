@@ -296,24 +296,17 @@ def test_problema_resolvido_some_da_janela():
 # ------------------------------------------------- a conferencia da casa
 
 
-def test_a_conferencia_ve_o_gatilho_medido_das_disputas():
-    """Cinco em trinta dias e o sinal de conversar sobre trocar de banco."""
+def test_a_conferencia_nao_pede_mais_para_migrar():
+    """A casa já está no PostgreSQL. Trava no registro não vira achado
+    nem manda abrir `MIGRAR_DE_BANCO.md`."""
     con = banco()
     achados = AP.conferir_a_casa(
         con, agora=AGORA,
         disputas={"total": 9, "recentes": 6, "primeira": "2026-08-01",
                   "ultima": "2026-08-26"})
-    graves = [a for a in achados if a["chave"] == "disputas"]
-    assert graves and graves[0]["grave"]
-    assert "MIGRAR_DE_BANCO" in graves[0]["detalhe"]
-
-
-def test_uma_disputa_ou_outra_e_normal_e_nao_e_grave():
-    con = banco()
-    achados = AP.conferir_a_casa(
-        con, agora=AGORA,
-        disputas={"total": 1, "recentes": 1, "ultima": "2026-08-26"})
-    assert not [a for a in achados if a["grave"]]
+    assert not [a for a in achados if a["chave"] == "disputas"]
+    assert not any("MIGRAR_DE_BANCO" in a["detalhe"] or "banco travou" in a["titulo"]
+                   for a in achados)
 
 
 def test_a_conferencia_ve_o_que_so_o_oficial_pode_informar():
@@ -366,7 +359,9 @@ def test_a_conferencia_ve_a_ajuda_que_nao_respondeu():
 def test_o_que_a_conferencia_achou_entra_na_lista():
     con = banco()
     achados = AP.conferir_a_casa(
-        con, agora=AGORA, disputas={"total": 12, "recentes": 7})
+        con, agora=AGORA,
+        banco={"integridade": "ok", "orfas": 3, "orfas_detalhe": "pt_atos -> 9"})
+    assert len(achados) == 1
     r = AP.anotar_achados(con, achados, agora=AGORA, versao="3.6.15")
     assert r["novos"] == 1
     # De novo no dia seguinte: continua sendo uma linha, com o contador.

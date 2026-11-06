@@ -2008,9 +2008,9 @@ class Database:
             # O QUE SAIU DAS VISTAS APARECE — não entra nos números acima e não
             # desaparece do sistema: a régua é a mesma da tela de tarefas.
             fora_do_vocabulario = TP.tarefas_fora_do_vocabulario(con)
-        # A DISPUTA DE ESCRITA VIAJA COM O RESTO DOS AVISOS, para aparecer em
-        # qualquer tela: ela e rara, e aviso raro que mora numa tela so e
-        # aviso que ninguem ve.
+        # A CONTA DAS TRAVAS FICA NO PAINEL E NO ARQUIVO. A faixa que dizia
+        # «o banco travou, migre» saiu em 05/11/2026: a casa já está no
+        # PostgreSQL, e aquele número era o gatilho da conversa sobre o SQLite.
         disputas = self.disputas_de_escrita()
         # O QUE SO O OFICIAL PODE INFORMAR viaja junto, pelo mesmo motivo: sao
         # coisas que travam o balcao e que ninguem ve se morarem numa aba so.

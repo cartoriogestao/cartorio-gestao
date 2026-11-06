@@ -1,0 +1,64 @@
+{# Protestos lavrados sem selo — o mesmo quadro em «A protestar» e na ficha.
+   O botão é humano: o robô vê a lista, se a rota o deixar entrar, e não vê
+   o botão. O clique posta em /protesto/selar-pendentes. O valor fica devido;
+   dinheiro não entra neste momento. #}
+{% set quadro = protesto_sem_selo if protesto_sem_selo is defined else (sem_selo if sem_selo is defined else none) %}
+{% set um_ato = protesto_sem_selo is defined %}
+{% if quadro and quadro.selaveis %}
+<section class="panel" id="protestos-sem-selo" data-protestos-sem-selo>
+  <div class="panel-head">
+    <span>Protestos lavrados sem selo</span>
+    <small>{{ quadro.selaveis | length }}</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    Lavrados pelo lote ou pelo robô, ainda sem selo. O clique sela e lança o
+    emolumento como <strong>devido</strong> — não entra dinheiro no caixa
+    agora. Cada clique leva até <strong>{{ quadro.limite }}</strong>.
+    Confira a lista antes de clicar.
+  </small></p>
+  <table class="table">
+    <thead><tr>
+      <th>Título</th><th>Devedor</th><th>Ato</th><th>Item</th><th>Data</th>
+      {% if um_ato %}<th></th>{% endif %}
+    </tr></thead>
+    <tbody>
+    {% for p in quadro.selaveis %}
+      <tr data-protesto-sem-selo="{{ p.ato_id }}">
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}"
+              >{{ p.numero_titulo or p.protocolo or p.titulo_id }}</a></td>
+        <td>{{ p.devedor or '—' }}</td>
+        <td><small>{{ p.ato_id }}</small></td>
+        <td><small>{{ p.codigo_tj or '—' }}</small></td>
+        <td><small>{{ p.data_ato or '—' }}</small></td>
+        {% if um_ato %}
+        <td>
+          {% if user and not user.eh_robo %}
+          <form method="post" action="{{ url_for('protesto_selar_pendentes') }}"
+                data-selo-em-lote>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="ato_id" value="{{ p.ato_id }}">
+            <input type="hidden" name="titulo_id" value="{{ p.titulo_id }}">
+            <button class="button primary">Selar e lançar no caixa (devido) este protesto</button>
+          </form>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if not um_ato and user and not user.eh_robo %}
+  <form method="post" action="{{ url_for('protesto_selar_pendentes') }}"
+        data-selo-em-lote style="padding:0 14px 14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button primary">Selar e lançar no caixa (devido) todos os protestos pendentes</button>
+  </form>
+  {% endif %}
+  {% if quadro.de_fora %}
+  <p style="padding:0 14px 14px"><small>
+    {{ quadro.de_fora | length }} ficaram de fora deste botão (acervo,
+    E-Ofício, antecipado de balcão ou sem item na tabela). Este clique não os sela.
+  </small></p>
+  {% endif %}
+</section>
+{% endif %}

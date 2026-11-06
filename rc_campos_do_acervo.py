@@ -408,6 +408,12 @@ def gravar(con: sqlite3.Connection, *, agora: str | None = None) -> dict:
 
     Idempotente: a segunda rodada não muda linha nenhuma. Assento cujo
     JSON não abre é pulado e contado em `erros`.
+
+    No fim, a naturalidade que está no assento e falta na pessoa passa pela
+    mesma função da tela (`rc_assento._naturalidade_do_titular`). Ela só
+    grava município que o cadastro do IBGE confirma, e não mexe em pessoa
+    que já tem cidade. É o que tirava da quarentena, em 22/09/2026, os
+    nascimentos cuja naturalidade estava escrita no termo.
     """
     from datetime import datetime
     bd = banco(con)
@@ -432,10 +438,36 @@ def gravar(con: sqlite3.Connection, *, agora: str | None = None) -> dict:
             bd, a, pessoas, pessoas_novas_mapa, quando)
         pessoas_atualizadas += atualizadas
         pessoas_novas += novas
+    pessoas_atualizadas += _gravar_naturalidade_declarada(con, bd)
     return {"assentos": assentos,
             "pessoas_atualizadas": pessoas_atualizadas,
             "pessoas_novas": pessoas_novas,
             "erros": erros}
+
+
+def _gravar_naturalidade_declarada(con: sqlite3.Connection, bd) -> int:
+    """Copia a naturalidade do termo para a pessoa, quando o IBGE confirma.
+
+    A decisão de gravar não mora aqui: é `rc_assento._naturalidade_do_titular`,
+    a mesma da tela e do script `tools/naturalidade_dos_assentos_do_rcpn.py`.
+    Município parecido não entra. Pessoa que já tem cidade não é tocada.
+    """
+    import rc_assento as RC
+    especies = tuple(RC.TITULAR_DA_NATURALIDADE)
+    marcas = ", ".join("%s" for _ in especies)
+    linhas = bd.ler(
+        f"""SELECT id, especie, naturalidade_declarada FROM rc_assentos
+            WHERE especie IN ({marcas})
+              AND TRIM(COALESCE(naturalidade_declarada, '')) <> ''
+            ORDER BY id""", especies)
+    gravadas = 0
+    for a in linhas:
+        r = RC._naturalidade_do_titular(
+            con, int(a["id"]), str(a["especie"] or "").upper(),
+            a["naturalidade_declarada"])
+        if r.get("gravou"):
+            gravadas += 1
+    return gravadas
 
 
 def _pessoas(bd, assento_id: int) -> dict:

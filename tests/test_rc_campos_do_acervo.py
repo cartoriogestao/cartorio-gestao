@@ -15,7 +15,7 @@ sys.path.insert(0, str(RAIZ))
 
 from banco_de_teste import conexao_de_teste          # noqa: E402
 from bd_nativo import banco                          # noqa: E402
-from ibge_schema import init_ibge_schema             # noqa: E402
+from ibge_schema import init_ibge_schema, normalizar_nome  # noqa: E402
 from nucleo_schema import init_nucleo_schema         # noqa: E402
 from rc_schema import init_rc_schema                 # noqa: E402
 import crc_carga as CRC                              # noqa: E402
@@ -24,7 +24,9 @@ import rc_certidao as CERT                           # noqa: E402
 
 AGORA = "2026-08-20T09:00:00"
 M32 = "00000001552026100002269100086802"
-CPF = "00000005070"
+# Dígitos que não fecham o DV: o módulo guarda o que veio no pacote, e um
+# CPF com dígito válido num arquivo novo é recusado pela varredura do CI.
+CPF = "00000000000"
 
 
 def _con() -> sqlite3.Connection:
@@ -205,3 +207,116 @@ def test_texto_de_avos_nao_vira_pessoa_nem_coluna():
     assert "AVO_PATERNO" not in papeis
     assert "AVO_PATERNA" not in papeis
     assert papeis == ["REGISTRADO"]
+
+
+def _municipio(con, nome, uf, codigo):
+    banco(con).escrever(
+        """INSERT INTO ib_municipios (codigo_ibge, codigo_uf, codigo_mun, uf,
+               nome, nome_norm, origem, criado_em)
+           VALUES (%s, %s, %s, %s, %s, %s, 'TESTE', %s)""",
+        (codigo, int(str(codigo)[:2]), str(codigo)[2:], uf, nome,
+         normalizar_nome(nome), AGORA))
+
+
+def _faltas(con, aid) -> list[str]:
+    return [f for r in CRC.em_quarentena(con) if r["id"] == aid
+            for f in r["o_que_falta"]]
+
+
+def test_povoado_junto_da_cidade_sai_da_quarentena():
+    """22/09/2026: a CRC retinha porque a busca procurava o povoado.
+
+    O município está escrito, depois da vírgula. A ficha continua com o
+    texto inteiro — não se apaga o povoado para a carga achar a cidade.
+    """
+    con = _con()
+    _municipio(con, "Cidade Exemplo", "MA", 2198765)
+    aid = _assento(con, origem_chave="povoado", dados_json="{}")
+    _pessoa(con, aid, "REGISTRADO", "ANA EXEMPLO", sexo="F",
+            naturalidade_cidade="VÃO DA POSSE, Cidade Exemplo-MA")
+    assert _faltas(con, aid) == []
+    xml = CRC.montar(con, [aid], cns="000000")["xml"]
+    assert "<CODIGOIBGEMUNNASCIMENTO>2198765</CODIGOIBGEMUNNASCIMENTO>" in xml
+    cidade = banco(con).um(
+        "SELECT naturalidade_cidade FROM rc_pessoas WHERE assento_id=%s",
+        (aid,))["naturalidade_cidade"]
+    assert cidade == "VÃO DA POSSE, Cidade Exemplo-MA"
+
+
+def test_naturalidade_so_no_assento_sai_da_quarentena_e_grava_na_pessoa():
+    """22/09/2026: 17 dos 19 retidos tinham a cidade no termo, não na pessoa.
+
+    A carga lê a pessoa. Enquanto a coluna está vazia, a busca usa o que o
+    termo declarou. Gravar na pessoa só acontece quando o IBGE confirma, e
+    grava o município separado do povoado — a mesma função da tela.
+    """
+    con = _con()
+    _municipio(con, "Cidade Exemplo", "MA", 2198765)
+    aid = _assento(
+        con, origem_chave="declarada", dados_json="{}",
+        naturalidade_declarada="VÃO DA POSSE, Cidade Exemplo-MA")
+    _pessoa(con, aid, "REGISTRADO", "ANA EXEMPLO", sexo="F")
+    assert _faltas(con, aid) == []
+    xml = CRC.montar(con, [aid], cns="000000")["xml"]
+    assert "<CODIGOIBGEMUNNASCIMENTO>2198765</CODIGOIBGEMUNNASCIMENTO>" in xml
+    feito = CAMPOS.gravar(con, agora=AGORA)
+    assert feito["pessoas_atualizadas"] == 1
+    p = dict(banco(con).um(
+        """SELECT naturalidade_cidade, naturalidade_uf FROM rc_pessoas
+           WHERE assento_id=%s AND papel='REGISTRADO'""", (aid,)))
+    assert p == {"naturalidade_cidade": "Cidade Exemplo",
+                 "naturalidade_uf": "MA"}
+    assert CAMPOS.gravar(con, agora=AGORA)["pessoas_atualizadas"] == 0
+
+
+def test_grafia_que_o_ibge_nao_confirma_continua_em_quarentena():
+    """Não se corrige município por semelhança. Edson não vira Edison.
+
+    Medido na importação do acervo: quinze cidades com a grafia fora do
+    cadastro ficam retidas, e a mensagem pede para conferir na ficha.
+    """
+    con = _con()
+    _municipio(con, "Governador Edison Lobão", "MA", 2104552)
+    aid = _assento(con, origem_chave="grafia", dados_json="{}",
+                   naturalidade_declarada="Governador Edson Lobão/MA")
+    _pessoa(con, aid, "REGISTRADO", "ANA EXEMPLO", sexo="F",
+            naturalidade_cidade="Governador Edson Lobão")
+    faltas = _faltas(con, aid)
+    assert any("não foi encontrado" in f for f in faltas), faltas
+    CAMPOS.gravar(con, agora=AGORA)
+    cidade = banco(con).um(
+        "SELECT naturalidade_cidade FROM rc_pessoas WHERE assento_id=%s",
+        (aid,))["naturalidade_cidade"]
+    assert cidade == "Governador Edson Lobão"
+
+
+def test_sexo_e_cidade_so_no_pacote_saem_da_quarentena():
+    """O E-Ofício guardou sexo e cidade no pacote, e a ficha nasceu vazia.
+
+    Com o cadastro do IBGE carregado, os dois reteriam o nascimento. A
+    carga enxerga o pacote antes de gravar, e gravar põe os dois na ficha.
+    """
+    con = _con()
+    _municipio(con, "Imperatriz", "MA", 2105302)
+    aid = _assento(con, origem_chave="pacote-quarentena", dados_json=json.dumps({
+        "strSexo": "Masculino", "strCidade": "IMPERATRIZ/MA.", "strUF": "MA",
+    }))
+    _pessoa(con, aid, "REGISTRADO", "ANA EXEMPLO")
+    assert _faltas(con, aid) == []
+    CAMPOS.gravar(con, agora=AGORA)
+    p = dict(banco(con).um(
+        """SELECT sexo, naturalidade_cidade, naturalidade_uf FROM rc_pessoas
+           WHERE assento_id=%s""", (aid,)))
+    assert p["sexo"] == "M"
+    assert p["naturalidade_cidade"] == "IMPERATRIZ/MA."
+    assert p["naturalidade_uf"] == "MA"
+
+
+def test_sem_municipio_em_lugar_nenhum_continua_em_quarentena():
+    """O que o documento não trouxe continua retido. Não se inventa cidade."""
+    con = _con()
+    _municipio(con, "Cidade Exemplo", "MA", 2198765)
+    aid = _assento(con, origem_chave="sem-cidade", dados_json="{}")
+    _pessoa(con, aid, "REGISTRADO", "ANA EXEMPLO", sexo="F")
+    faltas = _faltas(con, aid)
+    assert any("não está na ficha" in f for f in faltas), faltas

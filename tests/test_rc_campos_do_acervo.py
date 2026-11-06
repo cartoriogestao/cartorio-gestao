@@ -24,7 +24,7 @@ import rc_certidao as CERT                           # noqa: E402
 
 AGORA = "2026-08-20T09:00:00"
 M32 = "00000001552026100002269100086802"
-CPF = "52998224725"
+CPF = "00000005070"
 
 
 def _con() -> sqlite3.Connection:

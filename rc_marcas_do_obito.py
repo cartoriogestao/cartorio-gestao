@@ -142,6 +142,16 @@ def normalizar(valor: Any) -> str:
     ou de carga deve cair no estado que **pede para ser perguntado de novo**,
     e não num «não» que ninguém disse.
     """
+    # O bit do E-Ofício chega como 0/1 e, em JSON, às vezes como 0.0/1.0.
+    # `str(0.0)` é «0.0», que não é o «0» do formulário — e a certidão
+    # imprimiria «não perguntado» numa resposta que o acervo deu.
+    # 7 e 7.0 continuam sem resposta: número solto não é marca.
+    if isinstance(valor, bool):
+        valor = int(valor)
+    elif isinstance(valor, float) and valor in (0.0, 1.0):
+        valor = int(valor)
+    elif isinstance(valor, str) and valor.strip() in ("0.0", "1.0"):
+        valor = int(valor.strip())
     v = ("" if valor is None else str(valor)).strip().upper()
     if v in ("SIM", "S", "1", "TRUE", "T"):
         return SIM

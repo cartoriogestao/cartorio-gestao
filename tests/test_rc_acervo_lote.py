@@ -162,6 +162,27 @@ def test_robo_sem_responsavel_recusado_no_dominio(cg_casa_logada):
     with pytest.raises(L.LoteError,match='responsável humano'):aplicar(casa,carregado)
 
 
+def test_a_qualificacao_do_registrado_nao_recusa_o_lote():
+    """Naturalidade e município do parto são o que a CRC cobra.
+
+    Fora da lista, o lote recusa o registro inteiro («campo não permitido»)
+    e a transcrição não entra. Avós continuam texto, sem virar pessoa.
+    """
+    v = L._registro({'valores': {
+        'livro_volume': 'A-1', 'numero': 7, 'nome': 'ANA EXEMPLO',
+        'teor': 'Transcrição integral.',
+        'local_fato_municipio': 'Cidade Exemplo',
+        'local_fato_endereco': 'Rua Exemplo, 10',
+        'pessoas': [{'papel': 'REGISTRADO', 'nome': 'ANA EXEMPLO', 'sexo': 'F',
+                     'naturalidade_cidade': 'Cidade Exemplo',
+                     'naturalidade_uf': 'MA', 'profissao': 'estudante'}],
+        'dados_json': '{"acervo_transcrito": {"avos_paternos": "JOÃO e MARIA"}}',
+    }})
+    assert v['local_fato_municipio'] == 'Cidade Exemplo'
+    assert v['pessoas'][0]['naturalidade_cidade'] == 'Cidade Exemplo'
+    assert v['pessoas'][0]['naturalidade_uf'] == 'MA'
+
+
 def test_avos_transcritos_prevalecem_sem_inferir_sexo(cg_casa_logada):
     from rc_certidao_quadro import quadro_da_certidao
     casa=cg_casa_logada;carregado,_,_=lote(casa);r=aplicar(casa,carregado)

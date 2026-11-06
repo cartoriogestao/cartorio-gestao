@@ -1044,6 +1044,17 @@ class Database:
             self.colunas_norm_preenchidas = IMP_PADRAO.preencher_colunas_derivadas(con)
         except Exception as erro:                          # noqa: BLE001
             self.colunas_norm_preenchidas = {"erro": str(erro)}
+        # O QUE O ACERVO GRAVOU SÓ NO PACOTE passa para a coluna vazia.
+        # Medido em 07/09/2026: hora, cor, causa, atestante, CPF, eleitor e
+        # bens estavam em `dados_json` e em 0 linhas na coluna. A certidão
+        # e a CRC leem a coluna. Não sobrescreve o que o balcão já corrigiu
+        # e não derruba a subida — o mesmo combinado das colunas de busca.
+        try:
+            import rc_campos_do_acervo as CAMPOS_ACERVO
+            self.campos_do_acervo_preenchidos = CAMPOS_ACERVO.gravar(
+                con, agora=self.now())
+        except Exception as erro:                          # noqa: BLE001
+            self.campos_do_acervo_preenchidos = {"erro": str(erro)}
         # The defaults go in only after the whole schema exists.
         for key, value in DEFAULT_SETTINGS.items():
             bd.escrever("INSERT INTO settings(key,value) VALUES (%s,%s) "

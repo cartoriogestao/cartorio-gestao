@@ -1573,6 +1573,12 @@ def montar(con: sqlite3.Connection, assentos: list[int], *, cns: str) -> dict:
             continue
 
         pessoas = _pessoas_do_assento(con, aid)
+        # A coluna vazia não é «não informado» quando o pacote do E-Ofício
+        # tem a resposta. Sem isto a hora não sai, o sexo do registrado vai
+        # como ignorado e o óbito fica retido por POSSUIBENS — medido em
+        # 0/244 nas colunas e preenchido no `dados_json`. Não grava: quem
+        # grava é `rc_campos_do_acervo.gravar`, na abertura do banco.
+        a, pessoas = _com_o_acervo(a, pessoas)
         faltas = o_que_falta(con, a, pessoas)
         if faltas:
             retidos.append({"assento_id": aid, "nome": a.get("nome"),
@@ -1607,6 +1613,17 @@ def montar(con: sqlite3.Connection, assentos: list[int], *, cns: str) -> dict:
 
     return {"xml": "".join(partes), "quantos": indice, "retidos": retidos,
             "a_arrumar": a_arrumar}
+
+
+def _com_o_acervo(assento: dict, pessoas: dict) -> tuple[dict, dict]:
+    """O pacote do acervo por cima da coluna vazia. Só calcula.
+
+    A régua é uma só e mora em `rc_campos_do_acervo`: a carga, a quarentena
+    e a conferência na lavratura têm de ver o mesmo assento, senão a tela
+    diz que falta o que o XML já levaria — ou o contrário.
+    """
+    from rc_campos_do_acervo import completar
+    return completar(assento, pessoas)
 
 
 def _pessoas_do_assento(con: sqlite3.Connection, assento_id: Any) -> dict:
@@ -1659,8 +1676,9 @@ def em_quarentena(con: sqlite3.Connection, limite: int = 20_000) -> list[dict]:
                   AND COALESCE(situacao,'ATIVO') = 'ATIVO'
              ORDER BY data_ato NULLS FIRST, id LIMIT %s""", (limite,)):
         assento = dict(linha)
-        faltas = o_que_falta(con, assento,
-                             _pessoas_do_assento(con, assento["id"]))
+        pessoas = _pessoas_do_assento(con, assento["id"])
+        assento, pessoas = _com_o_acervo(assento, pessoas)
+        faltas = o_que_falta(con, assento, pessoas)
         if faltas:
             retidos.append({
                 "id": assento["id"], "especie": assento["especie"],

@@ -632,9 +632,10 @@ CLAROS_OBITO: tuple[dict, ...] = (
     claro("tipo_de_morte", "Tipo de morte",
           lambda ctx: _texto(ctx["d"].get("strTipoMorte")),
           de_onde="`strTipoMorte` do acervo (31/31)"),
-    # AS QUATRO PERGUNTAS DO ÓBITO têm coluna própria e **não têm equivalente
-    # no blob**: elas nasceram nesta casa (`rc_marcas_do_obito`, 30/08/2026).
-    # Saem vazias no acervo, e vazio aparece na conferência.
+    # Eleitor e bens têm coluna e, no E-Ofício, bit (`bitEleitor`,
+    # `bitPossuiBens`, 31/31). `rc_campos_do_acervo` copia o bit para a
+    # coluna vazia; o claro continua lendo a coluna. Filho e desconhecido
+    # não tiveram o nome do bit medido, e ficam na coluna.
     claro("possui_bens", "Deixou bens",
           lambda ctx: _texto(ctx["a"].get("obito_possui_bens")),
           de_onde="`obito_possui_bens` — art. 80, § 1º"),

@@ -88,11 +88,16 @@ def o_que_falta(con, assento_id: int, *,
     assento = dict(linha)
     especie = _texto(assento.get("especie")).upper()
     faltas: list[dict] = []
+    # O mesmo visto da carga. Sem ele a tela de editar pede bens, hora e
+    # município que o pacote do acervo já tem — e a CRC, mais abaixo, já
+    # não pediria. As duas réguas têm de olhar o mesmo assento.
+    from rc_campos_do_acervo import completar
+    pessoas = CRCM._pessoas_do_assento(con, assento["id"])
+    assento, pessoas = completar(assento, pessoas)
 
     # A CRC — a mesma chamada de `crc_carga.montar`, com as pessoas
     # montadas pela mesma função que ela usa.
     if especie in CRCM.MOVIMENTO_DA_ESPECIE:
-        pessoas = CRCM._pessoas_do_assento(con, assento["id"])
         for frase in CRCM.o_que_falta(con, assento, pessoas):
             faltas.append({"central": CRC, "falta": frase})
 

@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% block title %}Nova cobrança{% endblock %}
-{% block heading %}<h1>Nova cobrança por boleto — {{ bancos[cfg.cobranca_banco] }}</h1>{% endblock %}
+{% block heading %}<h1>Nova cobrança — Pix, boleto ou cartão — {{ bancos[cfg.cobranca_banco] }}</h1>{% endblock %}
 {% block content %}
 {% if cfg.cobranca_ambiente != 'producao' %}
-<div class="notice">Ambiente de <strong>teste</strong>: este boleto não cobra ninguém de verdade.</div>
+<div class="notice">Ambiente de <strong>teste</strong>: esta cobrança não cobra ninguém de verdade.</div>
 {% endif %}
 
 {% if a_pagar %}
@@ -22,6 +22,16 @@
 <form method="post" class="form-grid">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <input type="hidden" name="protocolo_id" value="{{ f.get('protocolo_id', '') }}">
+  {% if cfg.cobranca_banco == 'PARCELA' %}
+  <label>Onde o cliente paga
+    <select name="forma_maquina" required>
+      <option value="PIX" {% if f.get('forma_maquina','PIX') == 'PIX' %}selected{% endif %}>Pix na maquininha</option>
+      <option value="CREDITO" {% if f.get('forma_maquina') == 'CREDITO' %}selected{% endif %}>Cartão de crédito na maquininha</option>
+      <option value="DEBITO" {% if f.get('forma_maquina') == 'DEBITO' %}selected{% endif %}>Cartão de débito na maquininha</option>
+      <option value="BOLETO" {% if f.get('forma_maquina') == 'BOLETO' %}selected{% endif %}>Boleto (link, sem maquininha)</option>
+    </select>
+  </label>
+  {% endif %}
   <label>Valor (R$) <input name="valor" value="{{ f.get('valor', '') }}" required></label>
   <label>Vencimento <input type="date" name="vencimento" value="{{ f.get('vencimento', '') }}" required></label>
   <h3>Pagador <small class="muted">— o banco exige nome, CPF/CNPJ e endereço completo</small></h3>

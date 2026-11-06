@@ -24,7 +24,8 @@ O CONTRATO (OpenAPI de parceiros em docs.parcelaexpress.com.br, lida em
     digitável e o Pix copia-e-cola entram na ficha quando a consulta os traz
     (billet_data ou o bloco do Pix). Sem eles, o pagamento é o link.
 
-NADA AQUI LANÇA NO CAIXA.
+NADA AQUI LANÇA NO CAIXA. A Parcela paga entra no caixa geral em
+`cobranca.entrar_no_caixa_geral`, quando a resposta é gravada.
 """
 from __future__ import annotations
 
@@ -55,10 +56,12 @@ CAMINHO_DO_TOKEN = "/v2/auth/login"
 NOME_NO_COFRE = "banco_parcela"
 ARQUIVO_DA_CREDENCIAL = "banco_parcela.cred"
 CAMPOS_DA_CREDENCIAL = ("email", "senha", "seller_id")
+CAMPO_DA_MAQUININHA = "terminal_id"
 ROTULOS_DA_CREDENCIAL = {
     "email": "E-mail do portal Parcela Express",
     "senha": "Senha do portal Parcela Express",
     "seller_id": "sellerId do estabelecimento",
+    "terminal_id": "Código da maquininha (terminal_id)",
 }
 PRAZO_SEGUNDOS = 30
 VIDA_DO_TOKEN = 50 * 60
@@ -130,11 +133,22 @@ def conferir_credencial(campos: Mapping[str, Any]) -> dict:
         raise CB.CobrancaError("O e-mail da Parcela Express não está completo.")
     if len(limpos["seller_id"]) < 8:
         raise CB.CobrancaError("O sellerId da Parcela Express está curto demais.")
+    maquina = str(campos.get(CAMPO_DA_MAQUININHA) or "").strip()
+    if maquina and not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", maquina):
+        raise CB.CobrancaError(
+            "O código da maquininha só pode ter letras, números, _ e -.")
+    limpos[CAMPO_DA_MAQUININHA] = maquina
     return limpos
 
 
 def gravar_credencial(campos: Mapping[str, Any], pasta: Any = None) -> dict:
     limpos = conferir_credencial(campos)
+    if not limpos.get(CAMPO_DA_MAQUININHA):
+        try:
+            anterior = credencial(pasta)
+        except BancoError:
+            anterior = {}
+        limpos[CAMPO_DA_MAQUININHA] = str(anterior.get(CAMPO_DA_MAQUININHA) or "").strip()
     cofre = _cofre()
     if cofre is not None:
         try:
@@ -142,7 +156,7 @@ def gravar_credencial(campos: Mapping[str, Any], pasta: Any = None) -> dict:
         except Exception as erro:
             raise CB.CobrancaError(
                 f"O cofre não gravou a credencial da Parcela Express: {erro}") from erro
-        return {"onde": "cofre"}
+        return {"onde": "cofre", "terminal_id": limpos.get(CAMPO_DA_MAQUININHA, "")}
     import cofre_cred
     base = _pasta(pasta)
     base.mkdir(parents=True, exist_ok=True)
@@ -155,7 +169,8 @@ def gravar_credencial(campos: Mapping[str, Any], pasta: Any = None) -> dict:
     if any(conferido.get(k, "") != v for k, v in limpos.items()):
         raise CB.CobrancaError(
             "A credencial da Parcela Express não voltou igual na conferência.")
-    return {"onde": "arquivo cifrado da pasta de dados"}
+    return {"onde": "arquivo cifrado da pasta de dados",
+            "terminal_id": limpos.get(CAMPO_DA_MAQUININHA, "")}
 
 
 def resumo_da_credencial(pasta: Any = None) -> dict | None:
@@ -172,7 +187,8 @@ def resumo_da_credencial(pasta: Any = None) -> dict | None:
         campos = credencial(pasta)
     except BancoError:
         return None
-    return {"onde": "arquivo cifrado", "email": campos.get("email", "")}
+    return {"onde": "arquivo cifrado", "email": campos.get("email", ""),
+            "terminal_id": campos.get(CAMPO_DA_MAQUININHA, "")}
 
 
 def transporte_https(prazo: int = PRAZO_SEGUNDOS) -> Transporte:
@@ -318,6 +334,8 @@ class ClienteCobrancaParcela:
         }
 
     def emitir(self, c: Mapping[str, Any]) -> str:
+        if str(c.get("forma_pedida") or "").upper() in CB.FORMAS_NA_MAQUINA:
+            return self._emitir_na_maquina(c)
         r = self._ir("POST", "/v1/payment-links", json_corpo=self.corpo(c))
         if r.status in (200, 201) and isinstance(r.corpo, dict):
             achado = str(r.corpo.get("token") or r.corpo.get("id") or "").strip()
@@ -328,8 +346,44 @@ class ClienteCobrancaParcela:
         raise Recusa(_frase(r.corpo) or
                      f"A Parcela Express recusou a emissão (HTTP {r.status}).")
 
+    def _emitir_na_maquina(self, c: Mapping[str, Any]) -> str:
+        """Manda o valor para a maquininha. Pix, crédito ou débito."""
+        maquina = str(self._campos.get(CAMPO_DA_MAQUININHA) or "").strip()
+        if not maquina:
+            raise Recusa(
+                "Cadastre o código da maquininha em Pix, boleto e cartão → "
+                "Configuração, no campo da Parcela Express.")
+        forma = str(c.get("forma_pedida") or "").upper()
+        servico = _service_id(c)
+        r = self._ir(
+            "POST", f"/v1/pos/payments/{urllib_quote(self._campos['seller_id'])}",
+            json_corpo={
+                "terminal_id": maquina,
+                "amount": int(c["valor"]),
+                "is_debit": forma == "DEBITO",
+                "instalments": 1 if forma == "CREDITO" else 0,
+                "service_id": servico,
+                "is_pix": forma == "PIX",
+                "description": CB._texto(c.get("mensagem") or servico, 80),
+                "document": CB.digitos(c.get("pagador_documento")),
+                "pre_capture": False,
+            })
+        if r.status in (200, 201):
+            ident = ""
+            if isinstance(r.corpo, dict):
+                ident = str(r.corpo.get("id") or r.corpo.get("sale_id")
+                            or r.corpo.get("saleId") or "").strip()
+            return "pos:" + (ident or servico)
+        if r.status >= 500:
+            raise Indisponivel(f"A maquininha não respondeu (HTTP {r.status}).")
+        raise Recusa(_frase(r.corpo) or
+                     f"A Parcela Express não enviou à maquininha (HTTP {r.status}).")
+
     def consultar(self, c: Mapping[str, Any]) -> dict | None:
-        token = str(c.get("banco_id") or "").strip()
+        ident = str(c.get("banco_id") or "").strip()
+        if ident.startswith("pos:"):
+            return self._consultar_maquina(ident[4:])
+        token = ident
         r = self._ir("GET", "/v1/payment-links/" + urllib_quote(token))
         if r.status == 404:
             return None
@@ -348,8 +402,45 @@ class ClienteCobrancaParcela:
             "A Parcela Express entrega o pagamento no link, não num PDF. "
             "Abra o link da cobrança.")
 
+    def _consultar_maquina(self, venda: str) -> dict | None:
+        if not venda:
+            return {"situacao": CB.ABERTA, "banco_status": "NA_MAQUINA",
+                    "banco_motivo": "Aguardando o pagamento na maquininha."}
+        r = self._ir(
+            "GET",
+            f"/v1/sellers/{urllib_quote(self._campos['seller_id'])}/sales/"
+            f"{urllib_quote(venda)}")
+        if r.status == 404:
+            return {"situacao": CB.ABERTA, "banco_status": "NA_MAQUINA",
+                    "banco_motivo": "Aguardando o pagamento na maquininha."}
+        if r.status == 200 and isinstance(r.corpo, dict):
+            lido = ler(r.corpo if "status" in r.corpo or "sale" in r.corpo
+                       else {"sale": r.corpo, "status": r.corpo.get("status")})
+            lido.setdefault("banco_motivo", "Pagamento na maquininha.")
+            return lido
+        if r.status >= 500:
+            raise Indisponivel(f"A Parcela Express não consultou a maquininha (HTTP {r.status}).")
+        raise Recusa(_frase(r.corpo) or
+                     f"A Parcela Express recusou a consulta da maquininha (HTTP {r.status}).")
+
     def cancelar(self, c: Mapping[str, Any], motivo: str) -> str:
-        token = str(c.get("banco_id") or "").strip()
+        ident = str(c.get("banco_id") or "").strip()
+        if ident.startswith("pos:"):
+            servico = _service_id(c)
+            r = self._ir(
+                "POST", f"/v1/pos/cancel_sale/{urllib_quote(self._campos['seller_id'])}",
+                json_corpo={
+                    "terminal_id": self._campos.get(CAMPO_DA_MAQUININHA) or "",
+                    "abort_reason": CB._texto(motivo, 80) or "cancelado no caixa",
+                    "service_id": servico,
+                    "cancel_sale_id": ident[4:],
+                    "cancel_service_id": servico,
+                })
+            if r.status in (200, 201, 204):
+                return ""
+            raise Recusa(_frase(r.corpo) or
+                         f"A maquininha não cancelou (HTTP {r.status}).")
+        token = ident
         atual = self._ir("GET", "/v1/payment-links/" + urllib_quote(token))
         identificador = token
         if atual.status == 200 and isinstance(atual.corpo, dict) and atual.corpo.get("id"):
@@ -361,6 +452,12 @@ class ClienteCobrancaParcela:
             return ""
         raise Recusa(_frase(r.corpo) or
                      f"A Parcela Express recusou o cancelamento (HTTP {r.status}).")
+
+
+def _service_id(c: Mapping[str, Any]) -> str:
+    """Até 10 letras ou números, como a maquininha exige."""
+    bruto = re.sub(r"[^A-Za-z0-9]", "", str(c.get("seu_numero") or "CG"))
+    return (bruto or "CG")[:10]
 
 
 def _centavos(valor: Any) -> int | None:

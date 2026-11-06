@@ -114,7 +114,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                                        "numero", "complemento", "bairro",
                                                        "cidade", "uf", "cep")},
                         mensagem=f.get("mensagem") or "",
-                        dias_apos_vencimento=int(cfg["cobranca_dias_apos_vencimento"] or 0))
+                        dias_apos_vencimento=int(cfg["cobranca_dias_apos_vencimento"] or 0),
+                        forma_pedida=f.get("forma_maquina") or "")
             except (CB.CobrancaError, ValueError) as erro:
                 flash(str(erro), "danger")
                 return render_template("cobranca_nova.html", f=f, cfg=cfg, a_pagar=a_pagar,
@@ -295,10 +296,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     audit("COBRANCA_CREDENCIAL_UNICRED", "settings", None, {"onde": onde})
                     flash(f"Credencial da Unicred gravada ({onde}).", "success")
                 elif f.get("parte") == "parcela":
-                    onde = PARCELA.gravar_credencial(
-                        {k: f.get(k) for k in PARCELA.CAMPOS_DA_CREDENCIAL})["onde"]
+                    gravado = PARCELA.gravar_credencial(
+                        {k: f.get(k) for k in (
+                            *PARCELA.CAMPOS_DA_CREDENCIAL, PARCELA.CAMPO_DA_MAQUININHA)})
+                    onde = gravado["onde"]
                     audit("COBRANCA_CREDENCIAL_PARCELA", "settings", None, {"onde": onde})
-                    flash(f"Credencial da Parcela Express gravada ({onde}).", "success")
+                    aviso = f"Credencial da Parcela Express gravada ({onde})."
+                    if gravado.get("terminal_id"):
+                        aviso += f" Maquininha {gravado['terminal_id']}."
+                    flash(aviso, "success")
                 else:
                     with db.transaction() as con:
                         mudou = CB.gravar_configuracao(con, f)

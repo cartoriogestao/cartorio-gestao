@@ -5,7 +5,8 @@
 {% if c.ambiente != 'producao' %}<div class="notice">Emitida no ambiente de <strong>teste</strong>.</div>{% endif %}
 
 <div class="card">
-  <p><strong>{{ situacoes[c.situacao] }}</strong>{% if c.banco_status %} <span class="muted">(o banco diz {{ c.banco_status }})</span>{% endif %}</p>
+  <p><strong>{{ situacoes[c.situacao] }}</strong>{% if c.banco_status %} <span class="muted">(o banco diz {{ c.banco_status }})</span>{% endif %}
+    {% if c.forma_pedida in ['PIX','CREDITO','DEBITO'] %} <span class="badge">na maquininha</span>{% endif %}</p>
   {% if c.banco_motivo %}<p>{{ c.banco_motivo }}</p>{% endif %}
   {% if c.erro %}<p class="badge alta">{{ c.erro }}</p>{% endif %}
   {% if pedido %}<p class="badge">Pedido esperando o banco: {{ pedidos[pedido.acao] }} (por {{ pedido.por }}, {{ pedido.em }}).</p>{% endif %}
@@ -40,7 +41,14 @@
 {% if com_cofre %}<p class="muted small">Com o cofre da automação instalado, os botões que falam com o banco pedem a rodada
   do despachante: o resultado aparece aqui no minuto seguinte.</p>{% endif %}
 
-{% if c.situacao == 'RECEBIDA' %}
+{% if c.situacao == 'RECEBIDA' and c.banco == 'PARCELA' %}
+<div class="card">
+  <p>A Parcela confirmou o pagamento. Ele entra sozinho no <strong>caixa geral</strong>
+    da serventia, como depósito prévio deste protocolo. Os itens não se quitam com isso.</p>
+  <p>Enquanto o caixa geral de hoje não estiver aberto, o depósito fica pendente
+    e entra quando esse caixa abrir. Não há lançamento no caixa de quem atende.</p>
+</div>
+{% elif c.situacao == 'RECEBIDA' %}
 <form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='lancar') }}" class="card">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <p>O banco diz que o cliente pagou. Lançar no caixa cria um <strong>depósito prévio</strong> do protocolo,

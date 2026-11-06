@@ -1153,10 +1153,10 @@ def conferir_a_casa(con, *, agora: str,
                     disputas: Any = None, banco: Any = None) -> list[dict]:
     """Mede o que a casa já sabe medir, e devolve o que está errado. Só LÊ.
 
-    RECEBE AS MEDIÇÕES DE FORA — as disputas e a integridade do banco vêm de
-    `Database`, que é quem tem o arquivo de registro e a quem pertencem os
-    comandos de conferência que só o SQLite tem. Assim esta função se testa sem
-    um banco de produção, e o acoplamento ao SQLite não entra num módulo novo.
+    RECEBE AS MEDIÇÕES DE FORA — a integridade do banco vem de `Database`.
+    `disputas` continua no contrato (quem já mede passa o número), e não vira
+    achado: a faixa que pedia migrar saiu quando a casa foi para o PostgreSQL.
+    Assim esta função se testa sem um banco de produção.
 
     NÃO CONSERTA NADA, e não decide nada. Escreve o que mediu.
     """
@@ -1164,25 +1164,13 @@ def conferir_a_casa(con, *, agora: str,
     bd = Banco(con)
     achados: list[dict] = []
 
-    # 1. AS DISPUTAS DE ESCRITA. Cinco em trinta dias é o gatilho medido da
-    #    conversa sobre trocar de banco (DOCUMENTACAO/MIGRAR_DE_BANCO.md).
-    d = dict(disputas or {})
-    recentes = int(d.get("recentes") or 0)
-    if recentes >= 5:
-        achados.append(_achado(
-            "disputas", f"O banco travou {recentes} vezes em trinta dias",
-            f"Total desde {d.get('primeira') or 'sempre'}: "
-            f"{d.get('total')}. Cinco ou mais em trinta dias é o sinal medido "
-            f"de que o SQLite deixou de bastar para esta casa. "
-            f"Ver DOCUMENTACAO/MIGRAR_DE_BANCO.md.", grave=True))
-    elif int(d.get("total") or 0) > 0:
-        achados.append(_achado(
-            "disputas", f"O banco travou {d.get('total')} vez(es)",
-            f"A última em {d.get('ultima')}. Uma vez ou outra é normal; "
-            f"cinco em trinta dias é o sinal de conversar sobre trocar de "
-            f"banco.", grave=False))
+    # AS TRAVAS NÃO VIRAM AVISO (05/11/2026). O gatilho existia para a conversa
+    # sobre sair do SQLite. A casa já está no PostgreSQL; o registro continua
+    # no arquivo (`Database.disputas_de_escrita`) e a faixa que mandava migrar
+    # saiu. `disputas` segue no contrato para quem já mede e passa o número.
+    _ = disputas
 
-    # 2. A INTEGRIDADE DO BANCO E AS CHAVES ÓRFÃS.
+    # 1. A INTEGRIDADE DO BANCO E AS CHAVES ÓRFÃS.
     b = dict(banco or {})
     if b:
         if str(b.get("integridade") or "ok").lower() != "ok":

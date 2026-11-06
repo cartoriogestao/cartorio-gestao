@@ -141,9 +141,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 return jsonify({"id": p["id"], "situacao": p["situacao"]})
             prenot = banco(con).valor("SELECT numero FROM ri_protocolos WHERE id = %s",
                                       (int(p["protocolo_id"]),))
+            nota_previa = ""
+            nota_previa_erro = ""
+            if p["situacao"] == QIA.PRONTA and (p["resultado"] or {}).get("exigencias"):
+                import ri_qualificacao_nota as NOTA
+                from jinja2 import TemplateError
+                try:
+                    nota_previa = NOTA.previa(con, p, db.get_settings, fmt_date=fmt_date)
+                except (ValueError, TemplateError):
+                    nota_previa_erro = "Não foi possível montar a prévia no modelo da nota. Confira o modelo RI_NOTA da serventia."
         linhas = [QIA.linha_da_exigencia(x)
                   for x in (p["resultado"] or {}).get("exigencias") or []]
         return render_template("ri_qualificacao_ia.html", p=p, linhas=linhas,
+                               nota_previa=nota_previa,
+                               nota_previa_erro=nota_previa_erro,
                                prenotacao_numero=prenot or "",
                                suspensao=QIA.motivo_da_suspensao(),
                                papeis_que_pedem=PAPEIS_QUE_PEDEM,
@@ -163,7 +174,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                       for i in request.form.getlist("escolhida") if i.isdigit()]
         try:
             with db.transaction() as con:
-                linhas = QIA.levar(con, pedido_id, escolhidas, usuario=usuario_nome())
+                linhas = QIA.levar(con, pedido_id, escolhidas, usuario=usuario_nome(),
+                                  fundamentos_confirmados=[int(x) for x in request.form.getlist(
+                                      "fundamento_confirmado") if x.isdigit()])
         except ValueError as erro:
             flash(str(erro), "danger")
             return redirect(url_for("ri_qualificacao_ia_ver", pedido_id=pedido_id))
@@ -174,6 +187,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return redirect(url_for(TELA_DA_NOTA, protocolo_id=p["protocolo_id"],
                                 qualificacao=pedido_id) + "#emitir-nota")
 
+    @app.route("/registro-imoveis/qualificacao-ia/<int:pedido_id>/nota")
+    @roles_required(*PAPEIS_QUE_PEDEM)
+    def ri_qualificacao_ia_nota(pedido_id: int):
+        import ri_qualificacao_nota as NOTA
+        with db.connect() as con:
+            pedido = QIA.mostrar(con, pedido_id)
+            if not pedido:
+                abort(404)
+            if pedido["situacao"] != QIA.PRONTA:
+                abort(409)
+            try:
+                documento = NOTA.previa(con, pedido, db.get_settings, fmt_date=fmt_date)
+            except ValueError as erro:
+                flash(str(erro), "warning")
+                return redirect(url_for("ri_qualificacao_ia_ver", pedido_id=pedido_id))
+        return render_template("ri_qualificacao_ia_nota.html", p=pedido,
+                               documento=documento)
+
     @app.route("/registro-imoveis/qualificacao-ia/configuracao", methods=["GET", "POST"])
     @roles_required("ADMIN")
     def ri_qualificacao_ia_configuracao():
@@ -182,6 +213,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         (`RI_QUALIFICACAO_IA_TETO`, com o antes e o depois). Vazio volta ao
         padrão do catálogo de IA."""
         if request.method == "POST":
+            if request.form.get("acao") in ("ativar", "desativar"):
+                import ia_conhecimento as CONHEC
+                import agente_provedores as AP
+                ativar = request.form["acao"] == "ativar"
+                motivo = QIA.motivo_da_suspensao()
+                if ativar and (motivo or not AP.tem_chave(pasta(), QIA.PROVEDOR)):
+                    flash(motivo or "Configure a chave da API do Claude antes de ativar.", "danger")
+                    return redirect(url_for("ri_qualificacao_ia_configuracao"))
+                antes = db.get_setting(QIA.CHAVE_LIGADA, "1")
+                db.set_settings({QIA.CHAVE_LIGADA: "1" if ativar else "0"})
+                audit("RI_QUALIFICACAO_IA_ATIVACAO", "settings", None,
+                      {"antes": antes, "depois": "1" if ativar else "0",
+                       "base": CONHEC.situacao(), "motivo": "decisão do administrador"})
+                flash("Qualificação assistida ativada." if ativar else
+                      "Qualificação assistida desativada.", "success")
+                return redirect(url_for("ri_qualificacao_ia_configuracao"))
             try:
                 novo = QIA.validar_teto(request.form.get("teto"))
             except QIA.QualificacaoIAError as erro:
@@ -198,10 +245,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   + (" (o padrão de fábrica)." if novo is None else "."), "success")
             return redirect(url_for("ri_qualificacao_ia_configuracao"))
         import ia_uso as USO
+        import ia_conhecimento as CONHEC
         with db.connect() as con:
             teto = QIA.teto_do_dia(con)
             feitas = USO.usos_do_dia(banco(con), QIA.FINALIDADE, db.now()[:10])
         return render_template("ri_qualificacao_ia_config.html", teto=teto,
                                padrao=QIA.teto_padrao(), feitas=feitas,
                                gravado=db.get_setting(QIA.CHAVE_DO_TETO, "") or "",
-                               minimo=QIA.TETO_MINIMO, maximo=QIA.TETO_MAXIMO)
+                               minimo=QIA.TETO_MINIMO, maximo=QIA.TETO_MAXIMO,
+                               base_normativa=CONHEC.situacao(),
+                               ligada=db.get_setting(QIA.CHAVE_LIGADA, "1") != "0",
+                               suspensao=QIA.motivo_da_suspensao())

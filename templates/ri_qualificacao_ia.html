@@ -54,6 +54,17 @@
 {% if p.resultado %}
 {% set r = p.resultado %}
 {% if r.especie_do_titulo %}<p><strong>Título, como a IA o leu:</strong> {{ r.especie_do_titulo }}</p>{% endif %}
+{% if r.exigencias and p.situacao == 'PRONTA' and not suspensao %}
+{% if nota_previa_erro %}<p class="notice warning">{{ nota_previa_erro }}</p>{% endif %}
+<p><a class="btn" href="{{ url_for('ri_qualificacao_ia_nota', pedido_id=p.id) }}">Ver rascunho da nota devolutiva no modelo da serventia</a></p>
+{% if nota_previa %}
+<section class="panel" id="nota-devolutiva-previa">
+  <div class="panel-head">Nota devolutiva — rascunho no modelo da serventia</div>
+  <p class="notice warning">Não emitida e não assinada. Revise os fundamentos abaixo e selecione as exigências antes de emitir.</p>
+  <article style="padding:24px;background:white;color:black;font-family:'Times New Roman',serif;line-height:1.4">{{ nota_previa|safe }}</article>
+</section>
+{% endif %}
+{% endif %}
 
 <section class="panel" id="exigencias">
   <div class="panel-head"><span>Exigências sugeridas</span><span class="small muted">{{ (r.exigencias or [])|length }}</span></div>
@@ -64,8 +75,14 @@
       {% for x in r.exigencias %}
       <div class="notice" style="margin-bottom:8px">
         <label style="display:block"><input type="checkbox" name="escolhida" value="{{ loop.index0 }}" style="width:auto"
-          {% if x.citacao != 'NAO_ACHADO' %}checked{% endif %}> <strong>{{ loop.index }}.</strong> {{ x.exigencia }}</label>
+          {% if x.citacao != 'NAO_ACHADO' and x.fundamento_conferido is not sameas false %}checked{% endif %}> <strong>{{ loop.index }}.</strong> {{ x.exigencia }}</label>
         <p class="small" style="margin:4px 0"><strong>Fundamento:</strong> {{ x.fundamento or '—' }}</p>
+        {% if x.fundamento_conferido is sameas false %}
+        <p class="notice warning">Fonte normativa não conferida automaticamente. Consulte a redação oficial antes de usar esta exigência.</p>
+        <label><input type="checkbox" name="fundamento_confirmado" value="{{ loop.index0 }}" style="width:auto"> Conferi o fundamento na fonte oficial e sua aplicação a este caso.</label>
+        {% elif x.fundamento_conferido is sameas true %}
+        <p class="small">Norma, artigo e trecho localizados no acervo. Confira a vigência e a aplicação ao caso.</p>
+        {% endif %}
         <p class="small" style="margin:4px 0"><strong>De onde saiu:</strong> {{ x.documento or '—' }}{% if x.pagina %}, pág. {{ x.pagina }}{% endif %}
           {{ marca(x) }}</p>
         {% if x.trecho %}<blockquote class="small" style="margin:4px 0 6px 12px">«{{ x.trecho }}»</blockquote>{% endif %}

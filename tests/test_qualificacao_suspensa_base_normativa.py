@@ -6,6 +6,12 @@ from jinja2 import Environment, FileSystemLoader, ChoiceLoader, DictLoader
 import ri_qualificacao_ia as QIA
 
 
+@pytest.fixture(autouse=True)
+def simular_suspensao_expressa(monkeypatch):
+    """O bloqueio de emergência continua testado após a retomada autorizada."""
+    monkeypatch.setattr(QIA, 'SUSPENSA_POR_BASE_NORMATIVA', True)
+
+
 def test_suspensao_padrao_e_aviso_antes_de_banco_ou_chave(monkeypatch):
     monkeypatch.setattr(QIA, 'banco', Mock(side_effect=AssertionError('nao consulta')))
     assert QIA.SUSPENSA_POR_BASE_NORMATIVA is True

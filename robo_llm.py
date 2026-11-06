@@ -210,6 +210,9 @@ def chamar_provedor(
     NUNCA o texto. Sem `pasta_de_dados` o registro vai para o log do sistema
     (não há banco onde gravar), e a chamada segue igual.
     """
+    import ia_conhecimento as CONHEC
+    system = CONHEC.enriquecer(system, [{"tipo": "user", "texto": user}],
+                             finalidade=finalidade, atribuicao=atribuicao)
     registro = {"modulo": modulo, "finalidade": finalidade, "usuario": usuario,
                 "atribuicao": atribuicao, "referencia": referencia,
                 "mascarado": mascarado,

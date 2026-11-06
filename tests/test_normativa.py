@@ -254,9 +254,8 @@ def test_sem_assunto_ou_sem_achado_nao_ha_bloco():
     assert N.trechos_para_o_pedido("xilofone azulado tonitroante", atribuicao="RI") == ""
 
 
-def test_a_qualificacao_assistida_continua_suspensa_e_sem_a_norma():
-    """A qualificação assistida continua SUSPENSA (#310): liberar é decisão do oficial, depois de validar."""
+def test_a_qualificacao_assistida_recebe_a_base_por_ordem_do_oficial():
     import ri_qualificacao_ia as QIA
-    assert QIA.SUSPENSA_POR_BASE_NORMATIVA is True
+    assert QIA.SUSPENSA_POR_BASE_NORMATIVA is False
     fonte = open(QIA.__file__, encoding="utf-8").read()
-    assert "import normativa" not in fonte and "trechos_para_o_pedido" not in fonte
+    assert "CONHEC.contexto" in fonte

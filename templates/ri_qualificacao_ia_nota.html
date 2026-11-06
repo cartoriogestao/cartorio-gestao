@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}Rascunho da nota devolutiva{% endblock %}
+{% block heading %}<h1>Rascunho da nota devolutiva</h1>{% endblock %}
+{% block content %}
+<p class="notice warning"><strong>Rascunho — não emitido e não assinado.</strong>
+  Confira os documentos, os fundamentos e a vigência das normas. Nenhuma nota foi numerada e a prenotação não foi alterada.</p>
+<p><a class="btn" href="{{ url_for('ri_qualificacao_ia_ver', pedido_id=p.id) }}#exigencias">Revisar exigências e levar ao formulário de emissão</a></p>
+<article class="panel" style="padding:32px;max-width:850px;margin:auto;background:white;color:black;font-family:'Times New Roman',serif;line-height:1.4">
+{{ documento|safe }}
+</article>
+{% endblock %}

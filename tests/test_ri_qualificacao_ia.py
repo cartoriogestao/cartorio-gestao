@@ -216,7 +216,7 @@ def test_sobem_o_titulo_o_itbi_a_ficha_e_a_lista_e_volta_o_rascunho(casa):
     assert enviado["extras"]["output_config"]["effort"] == "high"
     esquema = enviado["extras"]["output_config"]["format"]["schema"]
     assert set(esquema["properties"]["exigencias"]["items"]["required"]) == {
-        "exigencia", "fundamento", "documento", "pagina", "trecho"}
+        "exigencia", "fundamento", "documento", "pagina", "trecho", "referencias_normativas"}
     assert enviado["finalidade"] == "ri_qualificacao_ia" and enviado["mascarado"] is False
     turno = enviado["conversa"][0]
     assert [d["mime"] for d in turno["documentos"]] == ["application/pdf"] * 2
@@ -365,6 +365,7 @@ def test_levar_so_preenche_e_a_rota_de_sempre_emite_e_liga(casa):
     assert "Levar para a nota devolutiva" in pagina
     r = casa["c"].post(f"/registro-imoveis/qualificacao-ia/{pedido}/levar", data={
         "csrf_token": _token(pagina), "escolhida": ["0", "2"],
+        "fundamento_confirmado": ["0", "2"],
         "texto_0": "Apresentar a anuência de CARLA EXEMPLO (EDITADA À MÃO).",
         "texto_2": ""})
     assert r.status_code == 302 and f"qualificacao={pedido}" in r.headers["Location"]
@@ -761,6 +762,35 @@ def test_o_teto_padrao_e_20_por_dia(casa):
     # o quadro e a tela de configuração dizem o número
     tela = casa["c"].get("/registro-imoveis/qualificacao-ia/configuracao").get_data(as_text=True)
     assert "20 leitura(s) por dia" in tela
+
+
+def test_negativa_mostra_nota_no_modelo_e_nao_emite(casa):
+    _, pid = _prenotacao(casa)
+    escritura, itbi = _titulo_e_itbi(casa, pid)
+    pedido = _pedir_e_executar(casa, pid, [escritura, itbi], IA())
+    pagina = casa['c'].get(f'/registro-imoveis/qualificacao-ia/{pedido}').get_data(as_text=True)
+    assert 'nota-devolutiva-previa' in pagina and 'RASCUNHO' in pagina
+    resposta = casa['c'].get(f'/registro-imoveis/qualificacao-ia/{pedido}/nota')
+    assert resposta.status_code == 200
+    assert 'RASCUNHO' in resposta.get_data(as_text=True)
+    con = _con(casa)
+    assert con.execute('SELECT count(*) FROM ri_notas_devolutivas').fetchone()[0] == 0
+    assert con.execute('SELECT count(*) FROM ri_qualificacoes').fetchone()[0] == 0
+    con.close()
+
+
+def test_reativacao_passa_pela_rota_admin_com_auditoria(casa, monkeypatch):
+    casa['db'].set_settings({QIA.CHAVE_LIGADA:'0'})
+    monkeypatch.setattr(AP, 'tem_chave', lambda *a: True)
+    pagina = casa['c'].get('/registro-imoveis/qualificacao-ia/configuracao')
+    assert pagina.status_code == 200
+    resposta = casa['c'].post('/registro-imoveis/qualificacao-ia/configuracao', data={
+        'csrf_token': _token(pagina.get_data(as_text=True)), 'acao':'ativar'})
+    assert resposta.status_code == 302
+    assert casa['db'].get_setting(QIA.CHAVE_LIGADA) == '1'
+    con = _con(casa)
+    assert con.execute("SELECT count(*) FROM audit_logs WHERE action='RI_QUALIFICACAO_IA_ATIVACAO'").fetchone()[0] == 1
+    con.close()
 
 
 def test_o_admin_muda_o_teto_para_5_e_o_sexto_pedido_e_recusado(casa):

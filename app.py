@@ -69,7 +69,7 @@ APP_NAME = "Gestão Integrada da Serventia"
 # servidor avisou «quem respondeu está na versão 3.6.137, e a instalada é
 # 3.6.138» sobre uma atualização que tinha funcionado (504 de 505 arquivos
 # batendo byte a byte). `tests/test_os_dois_carimbos_da_versao.py` guarda isso.
-VERSION = "3.7.12"
+VERSION = "3.7.13"
 # 3.6.286 - 06/10/2026 Release do sandbox para o oficial: centrais (fila/log/trava), A3, editor/motor de modelos, produtividade, selo robo, F10-F12 do RI, SIRC (cancelados)
 # 3.6.285 - CENPROT: POST /token com form usuario/senha (x-www-form-urlencoded)
 # 3.6.284 - Projetos lista: coluna Atualizado (DD/MM/AA - HH:MM, fuso local)
@@ -2628,7 +2628,10 @@ def create_app(test_config: dict | None = None) -> Flask:
                     f"backup_pre_atualizacao_{VERSION}_para_{versao_solicitada}_"
                     f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
                 )
-                full_backup(backup_target)
+                # SÓ O BANCO (05/11/2026). A atualização troca o programa; as
+                # digitalizações ficam na pasta de dados e no completo semanal.
+                # Copiá-las aqui enche o disco e a troca nem começa.
+                full_backup(backup_target, com_arquivos=False)
                 aprovado = mark_approved(
                     Path(meta["stage_dir"]),
                     approved_by=str(usuario["username"]),

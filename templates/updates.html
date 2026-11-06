@@ -48,7 +48,7 @@
         <label>{{ 'Senha do oficial' if senha_do_titular else 'Sua senha de login' }}
           <input type="password" name="senha_do_oficial" required autocomplete="current-password"></label>
         <button class="button" type="submit">Baixar e atualizar para a {{ versao_nova_github.versao }}</button>
-        <small class="muted">O sistema baixa o pacote, confere o SHA-256 e a assinatura, faz o backup do banco e dos documentos, aplica, reinicia e testa. Se a versão nova não responder, volta sozinho à {{ current_version }}.</small>
+        <small class="muted">O sistema baixa o pacote, confere o SHA-256 e a assinatura, faz o backup do banco (as digitalizações ficam na pasta de dados e no backup completo da semana), aplica, reinicia e testa. Se a versão nova não responder, volta sozinho à {{ current_version }}.</small>
       </form>
     {% else %}
       <p class="muted">Só o oficial titular atualiza o sistema.</p>

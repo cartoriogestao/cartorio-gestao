@@ -54,7 +54,9 @@ def situacao() -> dict:
 
 def selecionar(assunto: str, *, limite: int = 8) -> list[dict]:
     """Busca em TODAS as normas: leis especiais não somem por ser análise do RI."""
-    texto = re.sub(r"<[^>]+>", " ", str(assunto or ""))[:40_000]
+    # A busca não precisa interpretar HTML. Limite antes de procurar: remover
+    # tags por regex pode ficar quadrático numa entrada com muitos '<'.
+    texto = str(assunto or "")[:40_000]
     termos = [t for padrao, t in TEMAS if re.search(padrao, texto, re.I)]
     if not termos:
         palavras = N.BASE._palavras(N.BASE.sem_acento(texto[:1200]))

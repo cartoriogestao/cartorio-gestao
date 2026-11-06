@@ -22,6 +22,11 @@ def test_busca_especial_nao_se_limita_as_quatro_normas_do_ri():
     assert len(C.contexto('cancelamento de hipoteca')) <= C.LIMITE_DE_CONTEXTO
 
 
+def test_entrada_malformada_e_limitada_antes_da_busca():
+    # Nenhuma remoção de tags nem busca nos caracteres que excedem o teto.
+    assert C.selecionar('<' * 100_000 + 'cédula de crédito bancário') == []
+
+
 def test_ocr_e_transcricao_nao_recebem_instrucoes_de_qualificacao():
     for finalidade in C.SEM_ANALISE_JURIDICA:
         assert C.enriquecer('Transcreva literalmente.', [{'tipo':'user','texto':'hipoteca'}],

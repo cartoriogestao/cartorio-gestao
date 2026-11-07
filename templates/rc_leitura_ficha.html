@@ -59,6 +59,36 @@
   certo: confira com os originais assim mesmo.</p>
 {% endif %}
 
+{% if leitura.nao_aplicados or leitura.anotacoes_lidas or leitura.pede_instrucao %}
+<div class="card">
+  <h2>Lido e não aplicado</h2>
+  <p>A divergência não apagou o que a primeira leitura trouxe. Escreva a instrução
+    específica e processe de novo: a imagem não é relida.</p>
+  {% if leitura.nao_aplicados %}
+  <ul>{% for p in leitura.nao_aplicados %}
+    <li><strong>{{ p.nome }}</strong>
+      {% if p.documento_numero %} · {{ p.documento_tipo }} {{ p.documento_numero }}{% endif %}
+      {% if p.data_nascimento %} · nasc. {{ p.data_nascimento }}{% endif %}
+      {% if p.naturalidade_cidade %} · {{ p.naturalidade_cidade }}{% endif %}
+      {% if p.filiacao_pai or p.filiacao_mae %} · filiação {{ p.filiacao_pai }} / {{ p.filiacao_mae }}{% endif %}
+      <br><span class="small">{{ p.problema }}</span></li>
+  {% endfor %}</ul>
+  {% endif %}
+  {% if leitura.anotacoes_lidas %}
+  <ul>{% for n in leitura.anotacoes_lidas %}
+    <li>{% for k, v in n.campos.items() %}<strong>{{ k }}</strong>: {{ v }}{% if not loop.last %}; {% endif %}{% endfor %}</li>
+  {% endfor %}</ul>
+  {% endif %}
+  <form method="post" action="{{ url_for('rcpn_leitura_instrucao', leitura_id=leitura.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Instrução específica
+      <input name="instrucao" size="72" required minlength="10"
+             placeholder="ex.: o nome da DNV é a mesma pessoa do RG; o outro documento é o pai"></label>
+    <button class="button" type="submit">Aplicar a instrução nesta leitura</button>
+  </form>
+</div>
+{% endif %}
+
 {% if leitura.registro %}
 {% if virou_ato %}
 <p>Esta leitura já virou ato{% if virou_ato.endereco %}:

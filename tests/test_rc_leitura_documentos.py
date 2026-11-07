@@ -118,6 +118,70 @@ def test_nascimento_junta_a_dnv_e_os_documentos():
     assert "Residência da mãe: a leitura ficou em dúvida" in textos
 
 
+def test_nome_divergente_com_a_mesma_data_nao_descarta_o_documento():
+    """O RG da mãe não casa no nome, mas a data de nascimento é a mesma."""
+    dnv = dict(DNV, nome_mae="Ana Pohek Exemplo", nascimento_mae="16/08/2003")
+    rg = {"pessoas": [{
+        "tipo_documento": "RG", "nome": "JOYCILEIA JOHEH EXEMPLO",
+        "cpf": "000.000.001-91", "data_nascimento": "16/08/2003",
+        "naturalidade": "CIDADE EXEMPLO - MA",
+        "filiacao_pai": "JOSE POHEK EXEMPLO", "filiacao_mae": "MARIA JOHEH EXEMPLO",
+    }]}
+    dnv_doc = dict(DNV)
+    dnv_doc["outros_campos"] = {"anotacao_a_mao": "Natural: Cidade Exemplo. Solteiros."}
+    junto = LEIT.juntar_nascimento([
+        _doc("DNV", {**dnv, "outros_campos": dnv_doc["outros_campos"]}),
+        _doc("IDENTIDADE", rg, 2)])
+    por_papel = {p["papel"]: p for p in junto["pessoas"]}
+    mae = por_papel["MAE"]
+    assert mae["documento_numero"] == CPF_MAE
+    assert por_papel["AVO_MATERNO"]["nome"] == "Jose Pohek Exemplo"
+    assert por_papel["AVO_MATERNA"]["nome"] == "Maria Joheh Exemplo"
+    textos = " | ".join(a["texto"] for a in junto["conferencia"])
+    assert "data de nascimento é a mesma" in textos
+    assert "Não há documento de identidade da mãe" not in textos
+    assert junto["anotacoes_lidas"][0]["campos"]["anotacao_a_mao"].startswith("Natural")
+    assert junto["nao_aplicados"] == []
+
+
+def test_divergencia_sem_data_comum_guarda_o_lido_para_a_instrucao():
+    dnv = dict(DNV, nome_mae="Ana Pohek Exemplo", nascimento_mae="16/08/2003")
+    rg = {"pessoas": [
+        {"tipo_documento": "RG", "nome": "JOYCILEIA JOHEH EXEMPLO",
+         "cpf": "000.000.001-91", "data_nascimento": "01/01/1990",
+         "filiacao_pai": "JOSE POHEK EXEMPLO", "filiacao_mae": "MARIA JOHEH EXEMPLO"},
+        {"tipo_documento": "RG", "nome": "PEDRO TESTE SOUSA", "cpf": "000.000.002-72",
+         "data_nascimento": "02/02/1991", "filiacao_pai": "JOAO TESTE SOUSA",
+         "filiacao_mae": "RITA TESTE LIMA"},
+    ]}
+    junto = LEIT.juntar_nascimento([_doc("DNV", dnv), _doc("IDENTIDADE", rg, 2)])
+    nomes = {p["nome"].upper() for p in junto["nao_aplicados"]}
+    assert "JOYCILEIA JOHEH EXEMPLO" in nomes
+    assert "PEDRO TESTE SOUSA" in nomes
+    assert all(p.get("documento_numero") for p in junto["nao_aplicados"])
+    assert junto["pede_instrucao"] is True
+    assert "casou com o nome da mãe" in " | ".join(a["texto"] for a in junto["conferencia"])
+
+
+def test_a_instrucao_especifica_aplica_quem_a_escrevente_nomeou():
+    dnv = dict(DNV, nome_mae="Ana Pohek Exemplo", nascimento_mae="01/01/1980")
+    rg = {"pessoas": [{
+        "tipo_documento": "RG", "nome": "JOYCILEIA JOHEH EXEMPLO",
+        "cpf": "000.000.001-91", "data_nascimento": "02/02/1990",
+        "filiacao_pai": "JOSE POHEK EXEMPLO", "filiacao_mae": "MARIA JOHEH EXEMPLO",
+    }]}
+    docs = [_doc("DNV", dnv), _doc("IDENTIDADE", rg, 2)]
+    sem = LEIT.juntar_nascimento(docs)
+    assert "MAE" in {p["papel"] for p in sem["pessoas"]}
+    assert all(p["papel"] != "MAE" or p.get("documento_numero") != CPF_MAE
+               for p in sem["pessoas"]) or sem["nao_aplicados"]
+    com = LEIT.juntar_nascimento(
+        docs, instrucao="Joycileia Joheh Exemplo é a mãe, apesar do nome na DNV")
+    mae = {p["papel"]: p for p in com["pessoas"]}["MAE"]
+    assert mae["documento_numero"] == CPF_MAE
+    assert "instrução da escrevente" in " | ".join(a["texto"] for a in com["conferencia"])
+
+
 def test_nascimento_sem_dnv_recusa():
     with pytest.raises(LEIT.LeituraError, match="não há uma DNV"):
         LEIT.juntar_nascimento([_doc("IDENTIDADE", IDENTIDADES)])

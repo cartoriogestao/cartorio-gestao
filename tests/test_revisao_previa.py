@@ -135,6 +135,14 @@ def test_ia_fora_do_ar_nao_trava_e_leitura_presa_desiste(con, cg_casa, com_chave
     assert RV.exigir_para_lavrar(con, tmp_path, "RI", mid, "outro") == "falhou"
 
 
+def test_o_registro_civil_usa_o_sonnet_em_esforco_alto():
+    modelo, instrucao = RV.modelo_e_instrucao(None, "RCPN", 1)
+    assert modelo == RV.MODELO_DO_RCPN == "claude-sonnet-5-5"
+    assert RV.ESFORCO_DO_RCPN == "high"
+    assert "primeira leitura" in instrucao.lower() or "PRIMEIRA LEITURA" in instrucao
+    assert "não invente" in instrucao.lower() or "Não invente" in instrucao
+
+
 def test_a_rota_de_lavrar_recusa_sem_revisao_e_nao_toma_numero(cg_casa, com_chave):
     cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", "Senha#12345", "ADMIN")
     con = sqlite3.connect(cg_casa["banco"])

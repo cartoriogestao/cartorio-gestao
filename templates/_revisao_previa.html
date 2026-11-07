@@ -10,10 +10,20 @@
      data-andamento-url="{{ url_for('revisao_previa_andamento', revisao_id=0) }}"
      style="border:2px solid #5b3fa0;border-radius:8px;padding:10px 14px;margin:10px 0">
   <strong>Revisão antes de lavrar (IA)</strong>
+  {% if revisao_do_registro_civil %}
+  <p class="small muted" style="margin:4px 0">O Sonnet lê o formulário junto com a
+  primeira leitura dos documentos, sem abrir a imagem de novo. Divergência que a
+  leitura não casou continua no dossiê. A instrução específica diz o que fazer com
+  ela. A revisão não decide e não lavra.</p>
+  <label class="span2">Instrução específica, se a leitura divergiu
+    <textarea name="revisao_instrucao" rows="2"
+      placeholder="ex.: a mãe da DNV é a do RG, apesar do nome; o outro documento é o pai"></textarea></label>
+  {% else %}
   <p class="small muted" style="margin:4px 0">A IA lê o ato junto com a matrícula e aponta o
   que não fecha. <strong>Revisão consultiva:</strong> para gerente/administrador e para
   ato de ofício/encerramento/gratuito ela não impede a lavratura. Ela não decide: apontamento grave só se lavra com justificativa escrita (ou marcado como «já verificado/suprido» pelo gerente). Aviso de «atenção» <strong>não impede</strong> a lavratura.
   Se você mudar o texto depois, revise de novo.</p>
+  {% endif %}
   <button type="button" class="button" data-revisar>Revisar com IA</button>
   <span class="small" data-revisao-estado></span>
   <div data-revisao-resultado></div>

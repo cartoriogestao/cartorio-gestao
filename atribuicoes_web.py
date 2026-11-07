@@ -5002,6 +5002,29 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     {k: v for k, v in request.form.items() if k != "csrf_token"})
             forcar_motivo = _campo("forcar_motivo")
 
+        # A REVISÃO DO REGISTRO CIVIL, antes de lavrar. Sem chave da IA a etapa
+        # não existe. O dossiê é a primeira leitura, não uma imagem nova.
+        _rid = numero_digitado(
+            request.form.get("_rascunho_id") or request.form.get("_rascunho_id_tela"))
+        _acervo = (request.form.get("do_acervo") or request.args.get("do_acervo") or "").strip()
+        if _rid and not _acervo:
+            import revisao_previa as RV
+            _texto = RV.texto_do_registro_civil(request.form)
+            try:
+                with db.connect() as _con_rv:
+                    RV.exigir_para_lavrar(
+                        _con_rv, Path(app.config["DATA_DIR"]), "RCPN", int(_rid),
+                        RV.hash_do_ato("RCPN", _texto),
+                        justificativa=request.form.get("revisao_justificativa") or "",
+                        usuario=usuario_nome(),
+                        papel=_papel_atual(),
+                        texto_atual=_texto, tipo="RCPN",
+                        prosseguir=request.form.get("revisao_prosseguir") == "1")
+            except RV.RevisaoPendente as erro:
+                flash(f"{erro} Nada foi lavrado.", "danger")
+                return _tela_conferencia(
+                    {k: v for k, v in request.form.items() if k != "csrf_token"})
+
         nome = _campo("nome")
         if not nome and especie in {"NASCIMENTO", "OBITO", "NATIMORTO"}:
             nome = _campo("pessoa_nome")

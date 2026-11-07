@@ -316,11 +316,16 @@ def casa(cg_app, _cg_boot, tmp_path_factory):
     # quem a grava por fora. Aqui nada se grava: muda só o padrão, neste processo, e ele volta no fim.
     fim_de_fabrica = CA.FIM_PADRAO
     CA.FIM_PADRAO = "23:59"
-    c = montar_casa(cg_app, _cg_boot, tmp_path_factory.getbasetemp())
-    for papel in E.PAPEIS:
-        for layout in E.LAYOUTS:
-            c.preparar_sessao(papel, layout)
-    c.congelar()
-    yield c
-    E.desligar_trava()
-    CA.FIM_PADRAO = fim_de_fabrica
+    # A TRAVA SAI MESMO QUANDO A SEMENTE QUEBRA (07/11/2026): a falha na montagem pulava o
+    # desligar, e a trava seguia ligada no processo, barrando o subprocess e a rede dos testes de
+    # OUTROS arquivos que caíam nele (`test_modo_reserva` com o rsync, na suíte inteira).
+    try:
+        c = montar_casa(cg_app, _cg_boot, tmp_path_factory.getbasetemp())
+        for papel in E.PAPEIS:
+            for layout in E.LAYOUTS:
+                c.preparar_sessao(papel, layout)
+        c.congelar()
+        yield c
+    finally:
+        E.desligar_trava()
+        CA.FIM_PADRAO = fim_de_fabrica

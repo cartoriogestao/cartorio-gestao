@@ -103,7 +103,9 @@ RECUSADOS = {
     # O DESCONHECIDO COM AS PERGUNTAS EM BRANCO: a trava da CRC exige S ou N, e por decisão do oficial
     # (02/11/2026, item 8) o balcão marca «não» — o termo é que declara que se ignora (ver #242).
     "obito_desconhecido_ignora": ("se o falecido possuía bens", "CN-MA art. 255, § 1º; decisão de 02/11/2026"),
-    "nasc_naturalidade_fora_do_ibge": ("a CRC exige o código do município", "LRP art. 54, § 4º; CNN art. 474"),
+    # Desde o #364 a carga lê o município da naturalidade escrita no termo: com a grafia errada, a
+    # recusa diz que ele não está no IBGE, e não mais que falta na ficha.
+    "nasc_naturalidade_fora_do_ibge": ("não foi encontrado no cadastro do IBGE", "LRP art. 54, § 4º; CNN art. 474"),
 }
 #: Os que a lei permite e a tela ainda recusa.
 RECUSA_INDEVIDA = {

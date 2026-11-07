@@ -38,6 +38,9 @@ import layout_ensaio as E
 SEM_SEMENTE: dict[str, str] = {
     "onr_saec_ficha": ("a ficha é montada com a resposta ao vivo da API do ONR (SAEC), que a trava barra e para a qual "
                        "esta casa nem tem credencial: não existe linha local que a sustente"),
+    "ri_qualificacao_ia_nota": ("a nota devolutiva (#365) só abre com o pedido PRONTO, e pronto só fica com a "
+                                "resposta da IA, que a trava barra; a semente gera o pedido e anota a ficha dele "
+                                "(`ri_qualificacao_ia_ver`)"),
     "onr_cobranca_ficha": ("a ficha é montada com a resposta ao vivo da API do ONR, pelo hash que ele devolve ao gerar a "
                            "cobrança: sem rede e sem credencial não há hash nem linha local que a sustente"),
 }

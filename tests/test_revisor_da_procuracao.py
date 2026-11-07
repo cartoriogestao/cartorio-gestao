@@ -210,7 +210,7 @@ def test_a_leitura_da_procuracao_sai_pelo_sonnet_com_a_instrucao_dela(con, cg_ca
 
     RV.executar(Path(cg_casa["banco"]), Path("."), rid, conversar=ia)
     assert vistos["modelo"] == "claude-sonnet-5-5"
-    assert vistos["sistema"] == RV.INSTRUCAO_DA_PROCURACAO
+    assert vistos["sistema"] == RV.INSTRUCAO_DA_PROCURACAO + RV.CONCISAO
     linha = con.execute("SELECT situacao, modelo FROM rv_revisoes WHERE id=?",
                         (rid,)).fetchone()
     assert linha == ("PRONTA", "claude-sonnet-5-5")

@@ -53,6 +53,11 @@ ESTADOS: dict[str, str] = {
 # O razão de selos não aceita o mesmo número duas vezes, e as outras áreas semeiam na mesma casa:
 # o fim do selo é do Protesto («PT»), e não o que o pedido da semente sugere para todas.
 SELO = "AVESVD000000PT{:014d}"
+#: Os itens que o cancelamento e a desistência pagam no caixa (#373), na vigência das sementes
+#: (a do RCPJ): (código interno, código TJ, descrição).
+CANCELAMENTO_NO_CAIXA = (990703, "17.3", "Cancelamento do protesto (ensaio)")
+DESISTENCIA_NO_CAIXA = (990704, "17.4.1", "Desistência após o apontamento (ensaio)")
+VIGENCIA_DO_CAIXA = 10022
 NOME = "Beatriz Exemplo"
 CPF = "00000000191"
 # Dois CNPJ fictícios, e nenhum é o da serventia (a base usa o 00.000.001/0000-55).
@@ -141,6 +146,40 @@ class _Semeador:
             raise AssertionError(f"{ato} não foi lançado no título {titulo_id}: {self.recados(resposta)}")
         return max(novos)
 
+    def pago_no_caixa(self, servico: int, codigo_tj: str, descricao: str, interessado: str) -> dict:
+        """O protocolo geral QUITADO, com o item do ato (17.3 do cancelamento, 17.4 da desistência).
+
+        Desde o #373, desistência e cancelamento só se efetivam com o emolumento pago no caixa:
+        a semente faz o que o balcão faz — abre o caixa, abre o protocolo, quita — e o ato se
+        lança com o item marcado. Devolve os campos que a ficha manda junto.
+        """
+        casa = self.casa
+        # A MESMA vigência que a semente do RCPJ cria (com início, que é a que `custas` prefere):
+        # uma segunda vigência vigente faria a semente da gestão pôr os itens dela na errada.
+        vigencia = VIGENCIA_DO_CAIXA
+        casa.sql("INSERT INTO cx_vigencias (codigo, descricao, vigente, inicio, fim, importado_em) "
+                 "VALUES (%s, '2026', 1, '2026-01-01', NULL, '2026-08-21') ON CONFLICT (codigo) DO NOTHING",
+                 (vigencia,))
+        casa.sql("INSERT INTO cx_servicos (codigo, codigo_tj, descricao, ativo) VALUES (%s, %s, %s, 1) "
+                 "ON CONFLICT (codigo) DO NOTHING",
+                 (servico, codigo_tj, descricao))
+        casa.sql("INSERT INTO cx_servico_valores (servico, vigencia, emolumentos, ferc, fadep, femp, "
+                 "ferrfis, total) VALUES (%s, %s, '40,00', '0,00', '0,00', '0,00', '0,00', '40,00') "
+                 "ON CONFLICT (servico, vigencia) DO NOTHING", (servico, vigencia))
+        if not casa.um("SELECT id FROM cx_caixas WHERE situacao = 'ABERTO' ORDER BY id LIMIT 1"):
+            casa.postar("/caixa", _cliente=self.c, acao="abrir", saldo_inicial="0")
+        casa.postar("/caixa/protocolos", _cliente=self.c, acao="novo", interessado=interessado,
+                    telefone="(00) 90000-0000", atribuicao="PROTESTO")
+        pid = int(casa.um("SELECT id FROM cx_protocolos ORDER BY id DESC LIMIT 1")["id"])
+        ficha = f"/caixa/protocolos/{pid}/itens"
+        casa.postar(ficha, _cliente=self.c, acao="acrescentar", servico=str(servico))
+        casa.postar(ficha, _cliente=self.c, acao="quitar_todos", forma_pagamento="DINHEIRO")
+        item = casa.um("SELECT id, quitado FROM cx_protocolo_atos WHERE protocolo_id = %s "
+                       "ORDER BY id DESC LIMIT 1", (pid,))
+        if not item or not item["quitado"]:
+            raise AssertionError(f"o protocolo {pid} não ficou quitado com o item {codigo_tj}")
+        return {"protocolo_id": str(pid), "protocolo_item_id": str(item["id"])}
+
     def apontado(self, numero: str, **mudar) -> int:
         titulo_id = self.titulo(numero, **mudar)
         self.lancar(titulo_id, "APONTAMENTO", com_selo=False)
@@ -221,7 +260,8 @@ class _Semeador:
 
         cancelado = self.intimado_ha_tempo("ENSAIO-08", devedor_nome="JOÃO MODELO")
         self.lancar(cancelado, "PROTESTO", motivo_atraso="Comprovante da intimação devolvido depois do prazo.")
-        self.lancar(cancelado, "CANCELAMENTO", hipotese="ANUENCIA_CREDOR",
+        self.lancar(cancelado, "CANCELAMENTO", **self.pago_no_caixa(*CANCELAMENTO_NO_CAIXA, "JOÃO MODELO"),
+                    hipotese="ANUENCIA_CREDOR",
                     fundamento="Anuência do credor, com firma reconhecida, trazida ao balcão.")
         casa.ids["protesto_cancelado"] = cancelado
 
@@ -249,6 +289,10 @@ class _Semeador:
         desistencia = casa.um("SELECT id FROM pt_desistencias ORDER BY id DESC LIMIT 1")
         if not desistencia:
             raise AssertionError("o arquivo de desistência não foi guardado")
+        # Desde o #373 o arquivo só se guarda: a desistência se lança na ficha, paga no caixa.
+        self.lancar(desistido, "DESISTENCIA",
+                    **self.pago_no_caixa(*DESISTENCIA_NO_CAIXA, "BEATRIZ EXEMPLO"),
+                    motivo="O apresentante desistiu pela CRA; o emolumento foi pago no caixa.")
         casa.ids["protesto_desistido"] = desistido
         casa.ids["protesto_desistencia"] = int(desistencia["id"])
         casa.ids["protesto_consultas_da_cra"] = [int(r["id"]) for r in casa.ler(

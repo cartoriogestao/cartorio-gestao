@@ -17,6 +17,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import modulos as MOD
+import modo_reserva as MRES
+import banco_pg
 import titulo_aba as TITULOABA
 import nome_humano as NOMEHUM
 import centrais_cred as CENTCRED
@@ -272,6 +274,19 @@ def json_list(value: str, fallback: list[str]) -> list[str]:
 
 
 def create_app(test_config: dict | None = None) -> Flask:
+    """O sistema montado. No SERVIDOR RESERVA (`modo_reserva`), a montagem roda marcada como
+    subida: o que os `init_schema` dos módulos gravam e criam fica de fora — o banco é o do
+    principal, que já tem tudo (`banco_pg.ignorado_na_reserva`)."""
+    if not MRES.ativo():
+        return _montar_app(test_config)
+    banco_pg.subida_da_reserva(True)
+    try:
+        return _montar_app(test_config)
+    finally:
+        banco_pg.subida_da_reserva(False)
+
+
+def _montar_app(test_config: dict | None = None) -> Flask:
     data_dir = Path((test_config or {}).get("DATA_DIR", get_data_dir()))
     data_dir.mkdir(parents=True, exist_ok=True)
     (data_dir / "arquivos").mkdir(parents=True, exist_ok=True)
@@ -523,6 +538,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         return s
 
     def archive_root() -> Path:
+        # NO SERVIDOR RESERVA a pasta do banco é a do PRINCIPAL (`C:\\...`), que chega pela
+        # réplica: vale a cópia local dela, dita no ambiente (`modo_reserva`).
+        if MRES.ativo() and MRES.raiz_dos_arquivos() is not None:
+            return MRES.raiz_dos_arquivos()
         configured = db.get_setting("archive_root", "").strip()
         root = Path(configured).expanduser() if configured else data_dir / "arquivos"
         root.mkdir(parents=True, exist_ok=True)
@@ -683,6 +702,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     def before_request():
         if request.endpoint == "static":
             return
+        # O SERVIDOR RESERVA SÓ LÊ (`modo_reserva`): formulário nenhum entra, a não ser o de
+        # entrar e o de sair. O banco recusaria de qualquer jeito (o usuário dele só tem SELECT);
+        # aqui a recusa vem antes, inteira, e com a frase certa.
+        if MRES.ativo() and request.method not in {"GET", "HEAD", "OPTIONS"} \
+                and request.endpoint not in {"login", "logout"}:
+            return render_template("error.html", code=503, message=MRES.AVISO), 503
         # O CORPO DO POST SEM LOGIN TEM TETO, E ELE VALE ANTES DE LER (LS02
         # M5; LX12, 19/10/2026). O token de formulário, logo abaixo, lê
         # `request.form` — e com isso qualquer máquina da rede fazia o servidor
@@ -697,14 +722,17 @@ def create_app(test_config: dict | None = None) -> Flask:
             if (request.content_length or 0) > teto:
                 abort(413)
             request.max_content_length = teto
-        automatic_backup_once()
+        # As rotinas do dia (backup, CNIB, manutenção) gravam e saem para a rede: na reserva,
+        # quem as faz é o principal.
+        if not MRES.ativo():
+            automatic_backup_once()
         # A LEITURA DIARIA DO CNIB, na mesma porta do backup automatico — e
         # pela mesma razao: e aqui que se sabe que a casa abriu hoje. Ela e
         # buscada em `app.extensions` porque nasce la embaixo, quando
         # `cnib_web` registra as rotas; e a chamada e protegida porque **tela
         # nao cai por causa de rotina de fundo**.
         rotina_cnib = app.extensions.get("cnib_uma_vez_por_dia")
-        if rotina_cnib:
+        if rotina_cnib and not MRES.ativo():
             try:
                 rotina_cnib()
             except Exception:
@@ -809,7 +837,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                                 quem, funcao),
                   "warning")
             return redirect(url_for("dashboard"))
-        manutencao_do_dia()
+        if not MRES.ativo():
+            manutencao_do_dia()
 
     @app.after_request
     def cabecalhos_de_seguranca(resposta):
@@ -953,6 +982,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         atrib = request.args.get("atribuicao", "")
         ctx_modulo = MOD.contexto(request.endpoint, atrib)
         return {
+            "MODO_RESERVA": MRES.ativo(),
+            "AVISO_RESERVA": MRES.AVISO,
             # O que o balcao NAO ve. O menu pergunta a mesma funcao que a
             # guarda do `before_request` usa — uma regra so.
             # O que o menu NAO oferece a ESTE operador — depende de quem
@@ -3919,6 +3950,13 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.errorhandler(500)
     def erro_interno(erro):
         original = getattr(erro, "original_exception", None) or erro
+        # A TELA QUE GRAVA AO ABRIR, NO SERVIDOR RESERVA: não é defeito (o banco dele só lê), e
+        # anotar na lista de problemas seria outra escrita recusada.
+        if MRES.ativo() and "readonly database" in str(original):
+            return render_template(
+                "error.html", code=503,
+                message="Esta tela grava alguma coisa ao abrir, e o servidor reserva só lê. "
+                        "Abra-a no servidor principal."), 503
         try:
             user = current_user()
             ajuda_problemas.anotar_falha_de_tela(
@@ -3976,8 +4014,10 @@ def main():
     # E ELE NAO DERRUBA A ABERTURA. Se a fotografia falhar, o sistema sobe sem
     # ela - e a ajuda fica sem saber o que mudou, que e menos do que ela sabia
     # antes, e nao o fim do expediente.
+    reserva = MRES.ativo()
     import ajuda
-    ajuda.fotografar(db, app, versao=VERSION, agora=db.now())
+    if not reserva:   # a reserva só lê: a fotografia (e os vigias abaixo) são do principal
+        ajuda.fotografar(db, app, versao=VERSION, agora=db.now())
 
     # O VIGIA DO WHATSAPP (29/10/2026): busca a caixa-postal de 20 em 20
     # segundos, baixa os arquivos, roda o atendente com IA e o aviso de fora do
@@ -3986,6 +4026,8 @@ def main():
     # Sem a caixa-postal configurada ele so espera; e falha nele nao derruba o
     # servidor.
     try:
+        if reserva:
+            raise RuntimeError("servidor reserva: o vigia é do principal")
         import wa_vigia
         wa_vigia.iniciar(db, pasta_dados=Path(app.config["DATA_DIR"]),
                          pasta_arquivos=app.extensions["archive_root"])
@@ -3993,6 +4035,8 @@ def main():
         print(f"Vigia do WhatsApp nao ligou: {exc}")
     # A VERSÃO NOVA NO GITHUB (02/11/2026): pergunta ao subir e uma vez por dia; sem rede, só não avisa.
     try:
+        if reserva:
+            raise RuntimeError("servidor reserva: atualização à mão")
         ATUGH.iniciar_vigia(Path(app.config["DATA_DIR"]) / "updates")
     except Exception as exc:  # noqa: BLE001
         print(f"Consulta de versao nova nao ligou: {exc}")
@@ -4003,6 +4047,13 @@ def main():
     port = parse_int(db.get_setting("network_port", "8765")) or 8765
     discovery_enabled = db.get_setting("discovery_enabled", "1") == "1"
     discovery_port = parse_int(db.get_setting("discovery_port", "8766")) or 8766
+    # O SERVIDOR RESERVA: a porta e a rede vêm do ambiente (as do banco são as do principal), e
+    # ele NÃO responde à descoberta — um balcão que achasse a reserva no lugar do principal
+    # passaria o dia sem conseguir lançar.
+    if reserva:
+        host = (os.environ.get("CG_RESERVA_HOST") or "0.0.0.0").strip() or "0.0.0.0"
+        port = MRES.porta()
+        discovery_enabled = False
 
     def discovery_payload(client_ip: str) -> dict:
         ip = best_local_ip_for(client_ip)
@@ -4011,13 +4062,14 @@ def main():
             "hostname": socket.gethostname(), "host": ip, "port": port, "url": f"http://{ip}:{port}",
         }
 
-    DiscoveryResponder(discovery_port, discovery_payload, discovery_enabled).start()
+    if not reserva:
+        DiscoveryResponder(discovery_port, discovery_payload, discovery_enabled).start()
     # A porta 8766 permanece como canal de descoberta compativel com o localizador
     # instalado nos clientes, mesmo que um administrador configure uma porta adicional.
     if discovery_enabled and discovery_port != 8766:
         DiscoveryResponder(8766, discovery_payload, True).start()
     url = local_url(host, port)
-    print(f"{APP_NAME} v{VERSION}")
+    print(f"{APP_NAME} v{VERSION}" + ("  [SERVIDOR RESERVA: só consulta]" if reserva else ""))
     print(f"Servidor local: {url}")
     for ip in lan_ipv4_addresses():
         print(f"Rede: http://{ip}:{port}")

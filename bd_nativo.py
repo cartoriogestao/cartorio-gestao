@@ -134,6 +134,9 @@ class Banco:
     def _rodar(self, sql: str, parametros: Parametros = None) -> list[dict]:
         if self._pg is None:      # a ponte foi fechada: o sqlite3 também recusa
             raise sqlite3.ProgrammingError("Cannot operate on a closed database.")
+        if banco_pg.ignorado_na_reserva(sql):
+            self.linhas_afetadas = -1      # servidor reserva: ver `banco_pg.ignorado_na_reserva`
+            return []
         protege = self._ponte is not None and self._ponte._em_transacao
         try:
             with self._pg.cursor(row_factory=dict_row) as c:

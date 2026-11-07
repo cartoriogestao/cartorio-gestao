@@ -6,6 +6,9 @@
 > parte já pronta para os dois sistemas é o **módulo de automação** (o
 > despachante, o guardião do cofre e o cofre).
 
+> **07/11/2026:** o primeiro uso real do macOS é o **servidor reserva** (cópia de consulta do
+> principal, que assume se ele cair): `docs/SERVIDOR_RESERVA_MACOS.md`.
+
 ## Como foi medido
 
 `git grep` sobre os arquivos versionados do `main` (v3.7.4), **fora de

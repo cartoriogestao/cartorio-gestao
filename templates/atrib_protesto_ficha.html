@@ -13,6 +13,7 @@
 {% from '_cobrar.html' import quadro, cobrado %}
 {% from '_protesto_afirmacao.html' import afirmacao, prova_da_intimacao %}
 {% import '_protesto_irmaos.html' as IRM %}
+{% import '_protesto_sem_selo.html' as SEMSELO with context %}
 {% include '_serventia.html' %}
 <div class="actions"><a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a></div>
 
@@ -120,13 +121,15 @@
       {% endif %}
     {% else %}
       <strong>Selar {{ p.ato }}</strong> (ato {{ p.ato_id }}, de {{ p.quando_br }}) —
-      {{ p.motivo }}. Quem sela é o escrevente.
+      {{ p.motivo }}. Quem sela é o escrevente{% if p.tipo == 'PROTESTO' %}:
+      «Protestos lavrados sem selo», logo abaixo{% endif %}.
     {% endif %}
     </li>
   {% endfor %}
   </ul>
 </div>
 {% endif %}
+{{ SEMSELO.quadro(protesto_sem_selo, titulo_id=titulo.id) }}
 
 {% include '_protesto_sem_selo.html' %}
 
@@ -569,6 +572,20 @@
       {% endfor %}
     </tbody>
   </table>
+  <form method="post" action="{{ url_for('protesto_cobrar_emolumento_devido', titulo_id=titulo.id) }}"
+        style="padding:0 14px 14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Forma em que o apresentante pagou
+      <select name="forma_pagamento">
+        <option value="TRANSFERENCIA">Transferência</option>
+        <option value="PIX">Pix</option>
+        <option value="BOLETO">Boleto</option>
+        <option value="DINHEIRO">Dinheiro</option>
+      </select></label>
+    <button class="primary">Cobrar o emolumento devido no meu caixa</button>
+    <p class="small">Só quando o apresentante pagou. Entra no caixa de quem clica. Não sela.
+      Sem caixa aberto, o valor continua aqui.</p>
+  </form>
   {% elif emolumento.regime == 'DIFERIDO' %}
   <p style="padding:0 14px 14px"><small>Nada devido registrado. Ato lavrado antes
     desta conta (ou trazido do E-Ofício) não deixou item devido: no desfecho,

@@ -269,6 +269,10 @@ ITEM_DA_TABELA_DO_ATO: dict[str, str] = {
 }
 #: Os itens da tabela que são FAIXA pelo valor do título.
 ITENS_POR_FAIXA_DO_VALOR = frozenset({"17.1"})
+#: A faixa da desistência ou da liquidação depois do apontamento. O texto da
+#: tabela é este caso: «quando, após o apontamento e antes ou depois da
+#: intimação, ocorrer a liquidação do título ou a desistência».
+FAIXA_DA_DESISTENCIA = "17.4"
 
 
 def _centavos_br(texto: Any) -> int | None:
@@ -390,6 +394,67 @@ def diferir(con, *, titulo_id: int, ato_id: int, tipo_ato: str,
             registrados += 1
             total += int(conta.get("total_centavos") or 0)
     return {"registrados": registrados, "estimado_centavos": total}
+
+
+def item_da_desistencia(con, titulo_id: int, *, data: str) -> dict | None:
+    """O subitem 17.4.N da desistência, pela faixa do valor do título. Só LÊ.
+
+    O cabeçalho 17.4 vale zero: o preço está no subitem. Sem faixa para o
+    valor, devolve None — cobrar zero seria dizer que a desistência é de graça.
+    """
+    import custas as CU
+    try:
+        vigencia = CU.vigencia_do_dia(con, str(data)[:10])
+    except CU.CustasError:
+        return None
+    tit = banco(con).um(
+        "SELECT valor_centavos FROM pt_titulos WHERE id=%s", (int(titulo_id),))
+    valor = int((tit or {}).get("valor_centavos") or 0)
+    if valor <= 0:
+        return None
+    codigo = _faixa_do_valor(con, FAIXA_DA_DESISTENCIA, valor, int(vigencia["codigo"]))
+    if not codigo:
+        return None
+    servico = banco(con).um(
+        """SELECT s.codigo, s.codigo_tj, s.descricao FROM cx_servicos s
+            JOIN cx_servico_valores v ON v.servico = s.codigo
+            WHERE s.codigo_tj = %s AND v.vigencia = %s AND COALESCE(s.ativo, 1) = 1
+            ORDER BY s.codigo LIMIT 1""",
+        (codigo, int(vigencia["codigo"])))
+    if not servico:
+        return None
+    return {"servico": int(servico["codigo"]), "codigo_tj": codigo,
+            "descricao": f"{codigo} — desistência após o apontamento",
+            "quantidade": 1}
+
+
+def deixar_devida_a_desistencia(con, titulo_id: int, ato_id: int, *,
+                                agora: str, usuario: str | None = None) -> dict | None:
+    """A desistência do título diferido deixa o item 17.4 devido. ESCREVE.
+
+    Não cobra e não sela. Intimação e diligência não entram: elas são outro
+    ato. Se o mesmo serviço já está devido ou cobrado neste título, não
+    repete. Título antecipado não passa aqui — nele quem lavra marca o item.
+    """
+    cobranca = cobranca_do_ato(con, titulo_id, "DESISTENCIA", hoje=str(agora)[:10])
+    if cobranca.get("regime") != "DIFERIDO":
+        return None
+    data = cobranca.get("data_da_tabela") or str(agora)[:10]
+    item = item_da_desistencia(con, titulo_id, data=data)
+    if not item:
+        return None
+    ja = banco(con).um(
+        """SELECT id FROM pt_emolumentos_diferidos
+            WHERE titulo_id = %s AND servico = %s
+              AND situacao IN ('PENDENTE', 'COBRADO')
+            LIMIT 1""",
+        (int(titulo_id), int(item["servico"])))
+    if ja:
+        return None
+    feito = diferir(con, titulo_id=int(titulo_id), ato_id=int(ato_id),
+                    tipo_ato="DESISTENCIA", itens=[item], data_do_ato=data,
+                    agora=agora, usuario=usuario)
+    return {**feito, "item": item, "data_da_tabela": data}
 
 
 def pendentes(con, titulo_id: int) -> list[dict]:

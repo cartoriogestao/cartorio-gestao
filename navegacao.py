@@ -491,6 +491,7 @@ PAI: dict[str, tuple[str, str]] = {
     "ri_nota_devolutiva": ("RI", "Protocolo"),
     "ri_nota_excluir": ("RI", "Protocolo"),
     "ri_qualificacao_ia_ver": ("RI", "Protocolo"),
+    "ri_qualificacao_ia_nota": ("RI", "Protocolo"),
     "onr_auto_fila": ("RI", "Certidões"),
     "onr_auto_pedido": ("RI", "Certidões"),
     "onr_certidao_ficha": ("RI", "Certidões"),

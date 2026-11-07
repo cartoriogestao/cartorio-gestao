@@ -254,12 +254,34 @@ MARCA_DO_SIMULADOR = "[SIMULADOR DO SANDBOX]"
 
 
 def _pedir(conversar, pasta: Path, modelo: str, instrucao: str, texto: str,
-           imagens: list[str], maximo: int = 4000) -> dict:
-    r = conversar(pasta, provedor=PROVEDOR, sistema=instrucao,
-                  conversa=[{"tipo": "user", "texto": texto,
-                             "imagens": [{"mime": "image/jpeg", "base64": b}
-                                         for b in imagens]}],
-                  ferramentas=[], modelo=modelo, maximo_de_saida=maximo)
+           imagens: list[str], maximo: int = 4000, *, triagem=False) -> dict:
+    import ia_leitura_cache as CACHE
+
+    def chamar():
+        return conversar(pasta, provedor=PROVEDOR, sistema=instrucao,
+                         conversa=[{"tipo": "user", "texto": texto,
+                                    "imagens": [{"mime": "image/jpeg", "base64": b}
+                                                for b in imagens]}],
+                         ferramentas=[], modelo=modelo, maximo_de_saida=maximo)
+
+    def validar(resposta):
+        if (resposta.get("parou") not in (None, "", "end_turn", "stop")
+                or MARCA_DO_SIMULADOR in str(resposta.get("texto") or "")):
+            return False
+        dados = _json(resposta.get("texto") or "")
+        if not isinstance(dados, dict) or not dados:
+            return False
+        if not triagem:
+            return True
+        itens = dados.get("paginas")
+        return (isinstance(itens, list) and len(itens) == len(imagens)
+                and all(isinstance(x, dict) and isinstance(x.get("n"), int)
+                        and x.get("tipo") for x in itens)
+                and {x["n"] for x in itens} == set(range(1, len(imagens) + 1)))
+
+    r = CACHE.obter(pasta, pedido={"modelo": modelo, "sistema": instrucao,
+                    "texto": texto, "imagens": imagens, "maximo": maximo,
+                    "triagem": triagem}, chamar=chamar, validar=validar)
     if MARCA_DO_SIMULADOR in str((r or {}).get("texto") or ""):
         raise LeituraError(
             "Este é o sistema de teste: a IA daqui é um simulador e não lê "
@@ -300,9 +322,9 @@ def triar(conversar, pasta: Path, modelo: str, paginas: list[dict], *,
     for inicio in range(0, len(paginas), PAGINAS_POR_LOTE_DA_TRIAGEM):
         lote = paginas[inicio:inicio + PAGINAS_POR_LOTE_DA_TRIAGEM]
         imagens = [_miniatura(p["imagem"]()) for p in lote]
-        texto = "\n".join(f"Página {i}: arquivo {p['arquivo']}, folha {p['n']}"
+        texto = "\n".join(f"Página {i}"
                           for i, p in enumerate(lote, start=1))
-        r = _pedir(conversar, pasta, modelo, instrucao, texto, imagens, 1500)
+        r = _pedir(conversar, pasta, modelo, instrucao, texto, imagens, 1500, triagem=True)
         por_n = {}
         for item in _json(r.get("texto") or "").get("paginas") or []:
             try:
@@ -313,7 +335,8 @@ def triar(conversar, pasta: Path, modelo: str, paginas: list[dict], *,
                        for i in range(1, len(lote) + 1)]
         envios.append({"etapa": "triagem", "modelo": r.get("modelo") or modelo,
                        "paginas": [f"{p['arquivo']} p{p['n']}" for p in lote],
-                       "entrada": r.get("entrada"), "saida": r.get("saida")})
+                       "entrada": r.get("entrada"), "saida": r.get("saida"),
+                       "cache": bool(r.get("cache"))})
     return escolhidos, envios
 
 
@@ -327,12 +350,13 @@ def ler_pagina(conversar, pasta: Path, modelos_em_uso: dict, pagina: dict,
     modelo = modelos_em_uso["manuscrito" if molde["manuscrito"] else "impresso"]
     texto_da_instrucao = instrucao.format(nome=molde["nome"], campos=molde["campos"])
     r = _pedir(conversar, pasta, modelo, texto_da_instrucao,
-               f"Transcreva: {pagina['arquivo']}, folha {pagina['n']}.",
+               "Transcreva a página anexada.",
                [pagina["imagem"]()], 4000)
     dados = _json(r.get("texto") or "")
     envio = {"etapa": "leitura", "tipo": tipo, "modelo": r.get("modelo") or modelo,
              "paginas": [f"{pagina['arquivo']} p{pagina['n']}"],
-             "entrada": r.get("entrada"), "saida": r.get("saida")}
+             "entrada": r.get("entrada"), "saida": r.get("saida"),
+             "cache": bool(r.get("cache"))}
     return dados, envio
 
 

@@ -59,6 +59,9 @@ class _Rede:
         rede = self
 
         class _Conexao:
+            def connect(self):
+                pass
+
             def request(self, metodo, caminho, body=None, headers=None):
                 rede.corpos.append(body)
 

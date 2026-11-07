@@ -73,6 +73,7 @@ import http.client
 import json
 import ssl
 import time
+import uuid
 from pathlib import Path
 import re
 from typing import Any
@@ -729,7 +730,7 @@ def _turno(pasta_de_dados: Any, *, provedor: Any, sistema: str,
            modelo: Any = None, maximo_de_saida: int = 2000,
            prazo: int = PRAZO_PADRAO, extras: dict | None = None,
            betas: list[str] | None = None,
-           limite_de_envio: int | None = None) -> dict:
+           limite_de_envio: int | None = None, registro: dict | None = None) -> dict:
     """O turno em si, sem o registro — quem chama é `conversar`.
 
     `limite_de_envio` existe para quem manda DOCUMENTO: um PDF digitalizado em
@@ -757,60 +758,63 @@ def _turno(pasta_de_dados: Any, *, provedor: Any, sistema: str,
         falha.enviado = False
         raise
 
-    # O RELÓGIO COMEÇA AQUI, E ELE EXISTE PARA A MENSAGEM DO FIM — problema #74.
-    # «Não consegui falar com o provedor» não dizia se o problema foi a rede ou o
-    # TAMANHO do que subiu, e as duas coisas pedem providências diferentes. Com o
-    # tempo decorrido e os KB enviados na frase, a próxima pessoa responde a
-    # pergunta olhando a tela, em vez de ir medir de novo.
-    inicio = time.time()
-    ultimo = ""
-    # O PEDIDO SAIU? `request` só volta depois de mandar o corpo inteiro; se
-    # qualquer tentativa chegou até ali, o provedor pode ter processado.
-    saiu = False
+    pedido_id = uuid.uuid4().hex
     for tentativa in range(1, TENTATIVAS + 1):
+        saiu, situacao, bruto, request_id = False, 0, b"", ""
+
+        def anotar(estado, resposta=None):
+            USO.registrar_tentativa(pasta_de_dados, pedido_id=pedido_id,
+                tentativa=tentativa, estado=estado, registro=registro,
+                http_status=situacao, request_id=request_id, resposta=resposta)
+
+        anotar("iniciada")
         try:
             conexao = http.client.HTTPSConnection(
                 pedido["host"], pedido["porta"], timeout=prazo,
                 context=ssl.create_default_context())
             try:
+                # Separar conexão/TLS de POST permite repetir SÓ antes do envio.
+                conexao.connect()
+                saiu = True   # request pode enviar parcialmente antes de falhar
                 conexao.request("POST", pedido["caminho"], body=corpo,
                                 headers=cabecalhos)
-                saiu = True
                 resposta = conexao.getresponse()
-                bruto = resposta.read()
                 situacao = int(resposta.status)
+                request_id = getattr(resposta, "getheader", lambda *a: "")("request-id") or ""
+                bruto = resposta.read()
             finally:
                 conexao.close()
-        except OSError as erro:
-            ultimo = f"{type(erro).__name__}: {erro}"
-            situacao, bruto = 0, b""
+        except (OSError, http.client.HTTPException) as erro:
+            anotar("indeterminado" if saiu else "nao_enviado")
+            if not saiu and tentativa < TENTATIVAS:
+                time.sleep(2 * tentativa)
+                continue
+            mensagem = ("A API pode ter recebido o pedido, mas a resposta não foi confirmada. "
+                        "Não houve reenvio automático; confira o histórico antes de tentar novamente."
+                        if saiu else "Não foi possível conectar à API; nenhum pedido foi enviado.")
+            raise AgenteError(mensagem,
+                motivo="envio sem confirmacao" if saiu else "sem rede", enviado=saiu) from erro
 
         if situacao == 200:
-            lida = ler_resposta(prov, bruto)
-            lida["provedor"] = prov
+            try:
+                lida = ler_resposta(prov, bruto)
+            except Exception:
+                anotar("resposta_ilegivel")
+                raise
+            anotar("ok", lida)
+            lida.update(provedor=prov, pedido_id=pedido_id, tentativas=tentativa)
             return lida
 
-        # 429 e 5xx melhoram repetindo; o resto não.
-        if situacao and situacao not in (429, 500, 502, 503, 504):
-            raise AgenteError(_explicar(prov, situacao, bruto),
-                              motivo=f"HTTP {situacao}",
-                              recusado=400 <= situacao < 500, enviado=True)
-        ultimo = ultimo or _explicar(prov, situacao, bruto)
-        if tentativa < TENTATIVAS:
+        anotar("http_erro")
+        # Apenas recusa explícita de limite pode repetir após POST.
+        # 5xx e falha de leitura podem ter sido processados/cobrados: não reenviar.
+        if situacao == 429 and tentativa < TENTATIVAS:
             time.sleep(2 * tentativa)
-
-    if situacao:
-        motivo = f"HTTP {situacao}"
-    elif "timed out" in ultimo.lower() or "timeout" in ultimo.lower():
-        motivo = "sem resposta no prazo"
-    else:
-        motivo = "sem rede"
-    # PRAZO ESGOTADO CONTA COMO ENVIADO, mesmo na conexão: não se sabe se o
-    # provedor recebeu, e a vaga fica gasta (reconferência de 26/10/2026).
-    raise AgenteError(_nao_consegui(prov, ultimo, corpo=corpo, prazo=prazo,
-                                    segundos=time.time() - inicio),
-                      motivo=motivo,
-                      enviado=saiu or motivo == "sem resposta no prazo")
+            continue
+        raise AgenteError(_explicar(prov, situacao, bruto),
+                          motivo=f"HTTP {situacao}",
+                          recusado=400 <= situacao < 500 and situacao != 429,
+                          enviado=True)
 
 
 def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
@@ -870,7 +874,7 @@ def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
                       conversa=conversa, ferramentas=ferramentas,
                       modelo=modelo, maximo_de_saida=maximo_de_saida,
                       prazo=prazo, extras=extras, betas=betas,
-                      limite_de_envio=limite_de_envio)
+                      limite_de_envio=limite_de_envio, registro=registro)
     except AgenteError as falha:
         if falha.enviado is False:
             USO.devolver(pasta_de_dados, reserva)

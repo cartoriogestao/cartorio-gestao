@@ -1011,6 +1011,10 @@ def esperando_protesto(con, *, hoje: str,
               -- pode chegar antes, e ai o titulo continuaria aqui. Lei
               -- 9.492/1997, art. 17: sustado nao se protesta.
               AND NOT EXISTS (
+                    SELECT 1 FROM pt_cra_pedidos p
+                     WHERE p.titulo_id = t.id AND p.tipo = 'DP'
+                       AND p.estado = 'PENDENTE')
+              AND NOT EXISTS (
                     SELECT 1 FROM pt_atos s
                      WHERE s.titulo_id = t.id AND s.cancelado = 0
                        AND s.tipo = 'SUSTACAO'
@@ -1532,6 +1536,30 @@ def lancar_revogacao_efeito_suspensivo(
     return {"ato_id": ato_id, "titulo_id": titulo_id}
 
 
+ATOS_SO_DEPOIS_DO_CAIXA = frozenset({"DESISTENCIA", "CANCELAMENTO"})
+
+
+def tem_pagamento_no_caixa(con, ato_id: int) -> bool:
+    """O ato já tem lançamento de emolumento no caixa? Só LÊ."""
+    return banco(con).um(
+        """SELECT id FROM cx_lancamentos
+            WHERE origem = 'ATO' AND origem_chave LIKE %s
+            LIMIT 1""",
+        (f"pt_atos:{int(ato_id)}:%",)) is not None
+
+
+def desistencia_aguardando_caixa(con, titulo_id: int) -> bool:
+    """A CRA já pediu a desistência e o caixa ainda não a efetivou? Só LÊ."""
+    bd = banco(con)
+    if not bd.tem_tabela("pt_cra_pedidos"):
+        return False
+    return bd.um(
+        """SELECT id FROM pt_cra_pedidos
+            WHERE titulo_id = %s AND tipo = 'DP' AND estado = 'PENDENTE'
+            LIMIT 1""",
+        (int(titulo_id),)) is not None
+
+
 def lancar_protesto(con, titulo_id: int, *, sv: dict,
                     agora: str, data_extenso: str,
                     usuario: str | None = None,
@@ -1577,6 +1605,11 @@ def lancar_protesto(con, titulo_id: int, *, sv: dict,
     tit = titulo_para_gravar(con, titulo_id)
     if not tit:
         raise ProtestoError(f"Título {titulo_id} não encontrado.")
+    if desistencia_aguardando_caixa(con, titulo_id):
+        raise ProtestoError(
+            f"O título {tit['numero_titulo']} tem desistência da CRA aguardando "
+            f"o pagamento no caixa. Não se protesta. Efetive a desistência na "
+            f"ficha, com o caixa aberto.")
     # Art. 17, § 1o: sustado so se protesta com autorizacao judicial.
     _recusar_se_sustado(con, titulo_id, "o protesto")
     if tit["situacao"] != "INTIMADO":

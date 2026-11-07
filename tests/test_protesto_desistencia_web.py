@@ -177,15 +177,13 @@ def test_sem_escolher_arquivo_avisa_e_volta(s):
 def test_aplicar_desiste_do_titulo_marcado(s):
     tid = titulo_apontado(s)
     html = aplicar(s).get_data(as_text=True)
-    assert "Desistência aplicada em 1 título" in html
+    assert "depois do pagamento" in html
 
     con = _con(s)
     assert con.execute("SELECT situacao FROM pt_titulos WHERE id=?",
-                       (tid,)).fetchone()[0] == "DESISTIDO"
-    ato = con.execute(
-        "SELECT * FROM pt_atos WHERE tipo='DESISTENCIA'").fetchone()
-    assert ato["origem"] == "CRA"
-    assert "001" in ato["detalhe_json"]
+                       (tid,)).fetchone()[0] == "APONTADO"
+    assert con.execute(
+        "SELECT COUNT(*) FROM pt_atos WHERE tipo='DESISTENCIA'").fetchone()[0] == 0
 
 
 def test_o_que_NAO_foi_marcado_nao_entra(s):
@@ -222,7 +220,7 @@ def test_aplicar_de_novo_nao_cria_outro_registro(s):
     titulo_apontado(s)
     aplicar(s)
     html = aplicar(s).get_data(as_text=True)
-    assert "Desistência aplicada em 0 título" in html
+    assert "depois do pagamento" in html
     assert _con(s).execute(
         "SELECT COUNT(*) c FROM pt_desistencias").fetchone()["c"] == 1
 

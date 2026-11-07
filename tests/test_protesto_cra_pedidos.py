@@ -363,14 +363,14 @@ def test_dp_aplica_pelo_caminho_que_existe_e_o_protestado_vem_grave(con):
                              "autorizacoes": NADA_CP})
     r = linhas["DP"]
     assert r["resultado"] == PCP.RECEBIDO
-    assert (r["aplicados"], r["pendentes"], r["graves"]) == (1, 1, 1)
+    assert (r["aplicados"], r["pendentes"], r["graves"]) == (0, 2, 1)
     assert r["cor"] == "danger"
     situ = {row[0]: row[1] for row in con.execute(
         "SELECT id, situacao FROM pt_titulos").fetchall()}
-    assert situ[apontado] == "DESISTIDO"
+    assert situ[apontado] == "APONTADO"               # só efetiva depois do caixa
     assert situ[protestado] == "PROTESTADO"           # nada se desfaz sozinho
-    ato = con.execute("SELECT * FROM pt_atos WHERE tipo='DESISTENCIA'").fetchone()
-    assert ato["origem"] == "CRA" and ato["desistencia_id"] == r["desistencia_id"]
+    assert con.execute("SELECT COUNT(*) FROM pt_atos WHERE tipo='DESISTENCIA'"
+                       ).fetchone()[0] == 0
     # O ARQUIVO ENTROU EM `pt_desistencias`, que o roteiro já lê.
     assert con.execute("SELECT COUNT(*) FROM pt_desistencias").fetchone()[0] == 1
     abertas = DS.pendencias_da_cra(con)
@@ -390,9 +390,9 @@ def test_dp_de_titulo_intimado_se_aplica_e_vem_destacado(con):
     trazer(con, {"desistencias": dp, "cancelamentos": NADA_CP,
                  "autorizacoes": NADA_CP})
     p = pedidos(con)[0]
-    assert p["estado"] == PCP.APLICADO and p["destaque"] == PCP.POR_POUCO
-    assert p["titulo_id"] == tid and p["ato_id"]
-    assert DS.pendencias_da_cra(con) == []
+    assert p["estado"] == PCP.PENDENTE and p["destaque"] == PCP.POR_POUCO
+    assert p["titulo_id"] == tid and not p["ato_id"]
+    assert DS.pendencias_da_cra(con)
 
 
 def test_os_irmaos_desistem_juntos_e_o_limit_1_acabou(con):
@@ -409,14 +409,12 @@ def test_os_irmaos_desistem_juntos_e_o_limit_1_acabou(con):
     assert [x["id"] for x in visto["titulos"][0]["titulos"]] == [um, dois]
     linhas, _ = trazer(con, {"desistencias": dp, "cancelamentos": NADA_CP,
                              "autorizacoes": NADA_CP})
-    assert linhas["DP"]["aplicados"] == 2
+    assert linhas["DP"]["pendentes"] == 2 and linhas["DP"]["aplicados"] == 0
     assert {r[0] for r in con.execute(
         "SELECT situacao FROM pt_titulos WHERE protocolo='2610200007'"
-    ).fetchall()} == {"DESISTIDO"}
-    # UMA desistência por título — as duas linhas do arquivo não desistem duas
-    # vezes do mesmo.
+    ).fetchall()} == {"APONTADO"}
     assert con.execute("SELECT COUNT(*) FROM pt_atos WHERE tipo='DESISTENCIA'"
-                       ).fetchone()[0] == 2
+                       ).fetchone()[0] == 0
 
 
 def test_o_aplicar_da_tela_tambem_alcanca_os_irmaos(con):
@@ -464,10 +462,10 @@ def test_o_sustado_volta_recusado_e_nao_derruba_o_arquivo(con):
     linhas, _ = trazer(con, {"desistencias": dp, "cancelamentos": NADA_CP,
                              "autorizacoes": NADA_CP})
     assert linhas["DP"]["resultado"] == PCP.RECEBIDO
-    assert linhas["DP"]["aplicados"] == 1
+    assert linhas["DP"]["aplicados"] == 0
     situ = {r[0]: r[1] for r in con.execute(
         "SELECT id, situacao FROM pt_titulos").fetchall()}
-    assert situ[livre] == "DESISTIDO" and situ[sustado] != "DESISTIDO"
+    assert situ[livre] == "APONTADO" and situ[sustado] != "DESISTIDO"
     pendente = [p for p in DS.pendencias_da_cra(con) if p["titulo_id"] == sustado]
     assert pendente and "SUSTADO" in pendente[0]["explicacao"]
 

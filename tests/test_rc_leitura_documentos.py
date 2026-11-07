@@ -124,7 +124,7 @@ def test_nome_divergente_com_a_mesma_data_nao_descarta_o_documento():
     rg = {"pessoas": [{
         "tipo_documento": "RG", "nome": "JOYCILEIA JOHEH EXEMPLO",
         "cpf": "000.000.001-91", "data_nascimento": "16/08/2003",
-        "naturalidade": "MONTES ALTOS - MA",
+        "naturalidade": "CIDADE EXEMPLO - MA",
         "filiacao_pai": "JOSE POHEK EXEMPLO", "filiacao_mae": "MARIA JOHEH EXEMPLO",
     }]}
     dnv_doc = dict(DNV)
@@ -150,7 +150,7 @@ def test_divergencia_sem_data_comum_guarda_o_lido_para_a_instrucao():
         {"tipo_documento": "RG", "nome": "JOYCILEIA JOHEH EXEMPLO",
          "cpf": "000.000.001-91", "data_nascimento": "01/01/1990",
          "filiacao_pai": "JOSE POHEK EXEMPLO", "filiacao_mae": "MARIA JOHEH EXEMPLO"},
-        {"tipo_documento": "RG", "nome": "PEDRO TESTE SOUSA", "cpf": "39053344705",
+        {"tipo_documento": "RG", "nome": "PEDRO TESTE SOUSA", "cpf": "000.000.002-72",
          "data_nascimento": "02/02/1991", "filiacao_pai": "JOAO TESTE SOUSA",
          "filiacao_mae": "RITA TESTE LIMA"},
     ]}

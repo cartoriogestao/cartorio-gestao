@@ -498,6 +498,9 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     # 31/10/2026 (PR #205): apagar o pacote aberto depois de selar é do oficial,
     # na linha de comando — de propósito sem tela.
     "apagar_arquivo": "cofre_do_titular — a porta é `tools/selar_titularidade.py`",
+    # 07/11/2026: o par de chaves da reserva do macOS nasce no instalador, na linha de comando.
+    "gerar_par": "reserva_chaves — a porta é `tools/reserva.py chave-da-reserva` (instalar_reserva.sh)",
+    "publica_de": "reserva_chaves — a porta é `tools/reserva.py sql-do-principal`",
     # 02/11/2026 (PR #233): o termo de nascimento não fala mais do casamento dos pais (Lei 8.560/1992,
     # art. 5º, decisão do oficial). A frase fica para quem reproduz termo antigo, e o teste-ouro a confere.
     "frase_do_casamento_dos_pais": "rc_modelos_do_livro — " + _TESTE + " (sem uso no termo novo desde 02/11/2026)",

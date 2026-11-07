@@ -150,6 +150,8 @@ import protesto_posteriori as POST
 # O SELO DO PROTESTO JÁ LAVRADO (05/11/2026): o lote e o robô não selam.
 # O escrevente sela depois, e o emolumento fica devido — sem entrada no caixa.
 import protesto_selo_em_lote as PSL
+import protesto_selo_intimacao as PSI
+import protesto_selo_do_desfecho as PSD
 # OS TÍTULOS IRMÃOS — os do mesmo protocolo (29/10/2026): lado a lado na
 # ficha e no lote, a trava de «qual título está no papel?» e a conferência.
 import protesto_titulos_irmaos as IRM
@@ -2581,12 +2583,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # situação sem o ato que a sustente e os atos a refazer.
             sem_ato = PSELO.titulos_sem_ato_que_sustente(con)
             pendencias_do_selo = PSELO.pendencias_do_selo(con)
+            desfecho_sem_selo = PSD.pendentes(con)
         session["protesto_lista_filtro"] = PLISTA.params(
             filtro, pagina=r["pagina"] if r["pagina"] > 1 else None)
         contagem_vistas = r.pop("vistas")
         return render_template(
             "protesto_titulos.html", filtro=filtro, lembrado=lembrado,
             sem_ato=sem_ato, pendencias_do_selo=pendencias_do_selo,
+            desfecho_sem_selo=desfecho_sem_selo,
             apresentantes=apresentantes, vistas=PLISTA.VISTAS,
             contagem_vistas=contagem_vistas,
             ordens=PLISTA.ORDENS, filtro_sustado=PLISTA.FILTRO_SUSTADO,
@@ -4257,6 +4261,108 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   "warning")
         return voltar_daqui()
 
+    def _selar_os_prontos(prontos, *, tipo: str, acao: str,
+                          frase_ok: str) -> tuple[list, list]:
+        """Pede o selo de cada ato preparado, fora da transação. FALA COM A REDE."""
+        selados, falhas = [], []
+        for item in prontos:
+            g.protesto_itens_da_tabela = list(item.get("itens") or [])
+            recado = _selar_o_protesto(PSI.TABELA, int(item["ato_id"]), tipo)
+            with db.connect() as con:
+                linha = banco(con).um(
+                    "SELECT selo FROM pt_atos WHERE id=%s",
+                    (int(item["ato_id"]),))
+            numero = str((linha or {}).get("selo") or "").strip()
+            if numero:
+                audit(acao, "pt_atos", int(item["ato_id"]),
+                      {"titulo_id": int(item["titulo_id"]),
+                       "entrou_no_caixa": tipo in PT.ATOS_SO_DEPOIS_DO_CAIXA,
+                       "selo": numero})
+                selados.append(item)
+            else:
+                falhas.append(recado.strip() or "o selo não saiu")
+        g.protesto_itens_da_tabela = []
+        if selados:
+            flash(frase_ok.format(n=len(selados)), "success")
+        for texto in falhas:
+            flash(texto, "danger")
+        return selados, falhas
+
+    @app.route("/protesto/selar-intimacoes", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_selar_intimacoes():
+        """Sela intimações já lavradas e deixa o 17.2 DEVIDO. ESCREVE.
+
+        O painel fica no alto de Avisos. No máximo dez por clique. O selo
+        sai fora da transação. Conta de robô leva 403.
+        """
+        import selo_robo as SR
+        if SR.exige_humano_para_selar():
+            abort(403)
+        ato_id = numero_digitado(request.form.get("ato_id"))
+        titulo_volta = numero_digitado(request.form.get("titulo_id"))
+
+        def voltar_daqui():
+            if titulo_volta:
+                return redirect(url_for("protesto_titulo",
+                                        titulo_id=titulo_volta))
+            return redirect(url_for("protesto_avisos") + "#intimacoes-sem-selo")
+
+        try:
+            with db.transaction() as con:
+                preparado = PSI.preparar(
+                    con, eh_robo=SR.usuario_e_robo(), usuario=usuario_nome(),
+                    agora=agora(), ato_id=ato_id, hoje=hoje())
+        except PSI.SeloIntimacaoError as erro:
+            flash(str(erro), "danger")
+            return voltar_daqui()
+        _selar_os_prontos(
+            preparado["prontos"], tipo=PSI.TIPO, acao=PSI.ACAO_DA_AUDITORIA,
+            frase_ok=("{n} intimação(ões) selada(s). O emolumento ficou "
+                      "devido e não entrou no caixa."))
+        if not preparado["prontos"]:
+            flash("Nenhuma intimação lavrada sem selo para selar neste clique.",
+                  "warning")
+        return voltar_daqui()
+
+    @app.route("/protesto/selar-desfecho", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_selar_desfecho():
+        """Sela desistência ou cancelamento cujo emolumento já está no caixa.
+
+        Não cobra de novo e não deixa devido. Sem lançamento, a fila mostra
+        o título e este botão recusa. Conta de robô leva 403.
+        """
+        import selo_robo as SR
+        if SR.exige_humano_para_selar():
+            abort(403)
+        ato_id = numero_digitado(request.form.get("ato_id"))
+        titulo_volta = numero_digitado(request.form.get("titulo_id"))
+
+        def voltar_daqui():
+            if titulo_volta:
+                return redirect(url_for("protesto_titulo",
+                                        titulo_id=titulo_volta))
+            return redirect(url_for("protesto_titulos") + "#desfecho-sem-selo")
+
+        try:
+            with db.transaction() as con:
+                preparado = PSD.preparar(
+                    con, eh_robo=SR.usuario_e_robo(), usuario=usuario_nome(),
+                    agora=agora(), ato_id=ato_id)
+        except PSD.SeloDesfechoError as erro:
+            flash(str(erro), "danger")
+            return voltar_daqui()
+        for item in preparado["prontos"]:
+            _selar_os_prontos(
+                [item], tipo=item["tipo"], acao=PSD.ACAO_DA_AUDITORIA,
+                frase_ok=("{n} ato(s) selado(s). O emolumento já estava "
+                          "no caixa."))
+        if not preparado["prontos"]:
+            flash("Nenhum desfecho pago sem selo para selar neste clique.",
+                  "warning")
+        return voltar_daqui()
+
     @app.route("/protesto/<int:titulo_id>/averbacao-retificacao",
                methods=["POST"])
     @roles_required("ADMIN")
@@ -4416,6 +4522,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # da ficha sela este ato e deixa o emolumento devido.
             protesto_sem_selo = PSL.pendentes(_c, titulo_id=titulo_id,
                                               hoje=hoje())
+            intimacao_sem_selo = PSI.pendentes(_c, titulo_id=titulo_id,
+                                               hoje=hoje())
+            desfecho_sem_selo = PSD.pendentes(_c, titulo_id=titulo_id)
             # OS PEDIDOS DA CRA (29/10/2026): desistência, cancelamento e
             # autorização que vieram da Central e ainda esperam a casa.
             pedidos_cra = PCP.do_titulo(_c, titulo_id)
@@ -4489,6 +4598,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                propostas_de_oficio=propostas_de_oficio,
                                pendencias_do_selo=pendencias_do_selo,
                                protesto_sem_selo=protesto_sem_selo,
+                               intimacao_sem_selo=intimacao_sem_selo,
+                               intimacao_na_ficha=True,
+                               desfecho_sem_selo=desfecho_sem_selo,
+                               desfecho_na_ficha=True,
                                averbacao=averbacao,
                                modelo_da_afirmacao=PSELO.MODELO_DA_AFIRMACAO,
                                minimo_da_afirmacao=PSELO.MINIMO_DE_LETRAS_DA_AFIRMACAO,
@@ -11342,6 +11455,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # da CENPROT, na entrega, no edital e na intimação digital.
             import cenprot_conferencia as CCONF
             cenprot_pago = CCONF.pagos_por_liquidacao(con)
+            intimacao_sem_selo = PSI.pendentes(con, hoje=hoje())
         motivos = AV.motivos_para_escolher()
         destaque = [{"codigo": c, "motivo": AV.ROTULO_DO_DESTAQUE[c]}
                     for c in AV.MOTIVOS_EM_DESTAQUE]
@@ -11357,6 +11471,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                motivos_destaque=destaque,
                                motivos_outros=outros,
                                cenprot_pago=cenprot_pago,
+                               intimacao_sem_selo=intimacao_sem_selo,
                                entregadores=AV.ENTREGADORES, hoje=hoje())
 
     @app.route("/protesto/<int:titulo_id>/aviso", methods=["POST"])
@@ -12304,7 +12419,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash(f"Pendências da CENPROT não foram consultadas: {erro}",
                   "danger")
             return []
+        falhas = [r for r in linhas if not r.get("ok")]
+        mesmo_erro = {str(r.get("erro") or "") for r in falhas}
+        credencial = (len(falhas) > 1 and len(mesmo_erro) == 1
+                      and "ainda não foi informada" in next(iter(mesmo_erro)))
+        if credencial:
+            texto = str(next(iter(mesmo_erro)))[:300]
+            audit("cenprot_baixar_falha", "cn_pendencias", None,
+                  {"especies": [r.get("especie") for r in falhas],
+                   "erro": texto, "pelo_clique_da_cra": True})
+            flash("Pendências da CENPROT não baixaram: " + texto, "warning")
         for r in linhas:
+            if credencial and not r.get("ok"):
+                continue
             detalhe = {"especie": r.get("especie"), "inicio": r.get("inicio"),
                        "fim": r.get("fim"), "vieram": r.get("vieram"),
                        "entraram": r.get("entraram"),

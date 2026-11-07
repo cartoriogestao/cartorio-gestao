@@ -602,6 +602,24 @@ def proximo_numero(con, ano: int) -> int:
 # ------------------------------------------------------------- emitir
 
 
+def _instrumento_sem_assinatura(bd, ato_id: int) -> bool:
+    """Já existe instrumento deste protesto sem o arquivo assinado? Só LÊ."""
+    if not bd.tem_tabela("pt_instrumentos"):
+        return False
+    if not bd.tem_tabela("as_documentos"):
+        return bool(bd.valor(
+            "SELECT COUNT(*) FROM pt_instrumentos WHERE ato_id=%s",
+            (int(ato_id),)))
+    return bd.um(
+        """SELECT i.id FROM pt_instrumentos i
+             LEFT JOIN as_documentos d
+               ON d.entidade = %s AND d.entidade_id = i.id
+            WHERE i.ato_id = %s
+              AND (d.id IS NULL OR d.caminho_assinado IS NULL)
+            LIMIT 1""",
+        (ENTIDADE_DA_ASSINATURA, int(ato_id))) is not None
+
+
 def emitir(con, titulo_id: int, *, serventia: str,
            agora: str, modelo: str | None = None,
            usuario: str | None = None) -> dict:
@@ -653,6 +671,10 @@ def emitir(con, titulo_id: int, *, serventia: str,
     # protesto do acervo do E-Ofício não tem texto aqui, e não é alcançado.
     import protesto_averbacao as PAV
     divergencia = PAV.divergencia_do_credor(bd, prot)
+    if _instrumento_sem_assinatura(bd, int(prot["id"])):
+        raise InstrumentoError(
+            "Este protesto já tem instrumento esperando a assinatura com o "
+            "A3. Assine o que saiu; emitir outro numeraria o livro de novo.")
     if divergencia:
         o_que = ("não indica credor nenhum" if divergencia["forma"] == PAV.OMITIDO
                  else "indica outro credor")

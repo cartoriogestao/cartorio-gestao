@@ -348,6 +348,11 @@ def test_segunda_via_e_outra_linha_e_nao_a_primeira_reescrita():
     con = banco()
     tid = protestado(con)
     a = PI.emitir(con, tid, serventia=SERVENTIA, agora=AGORA)
+    # Desde o #377, a segunda via só sai depois de a primeira estar assinada com o A3:
+    # emitir outra antes numeraria o livro de novo.
+    with pytest.raises(PI.InstrumentoError, match="esperando a assinatura"):
+        PI.emitir(con, tid, serventia=SERVENTIA, agora=AGORA)
+    con.execute("UPDATE as_documentos SET caminho_assinado = 'assinado.pdf'")
     b = PI.emitir(con, tid, serventia=SERVENTIA, agora=AGORA)
     assert b["numero"] == a["numero"] + 1
     assert len(PI.do_titulo(con, tid)) == 2

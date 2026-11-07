@@ -1,0 +1,55 @@
+{# Intimações lavradas sem selo. O painel fica no alto de Avisos, que é onde
+   a intimação se trabalha, e na ficha do título. O clique posta em
+   /protesto/selar-intimacoes. O 17.2 fica devido; dinheiro não entra agora. #}
+{% set quadro = intimacao_sem_selo if intimacao_sem_selo is defined else none %}
+{% set um_ato = intimacao_na_ficha is defined and intimacao_na_ficha %}
+{% if quadro and quadro.selaveis %}
+<section class="panel" id="intimacoes-sem-selo" data-intimacoes-sem-selo>
+  <div class="panel-head">
+    <span>Intimações lavradas sem selo</span>
+    <small>{{ quadro.selaveis | length }}</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    O selo da intimação é o 17.2, pessoal ou por edital, conforme o modo do
+    ato. O clique sela e deixa o emolumento <strong>devido</strong> — não
+    entra dinheiro no caixa agora. Cada clique leva até
+    <strong>{{ quadro.limite }}</strong>.
+  </small></p>
+  <table class="table">
+    <thead><tr>
+      <th>Título</th><th>Protocolo</th><th>Devedor</th><th>Data</th>
+      {% if um_ato %}<th></th>{% endif %}
+    </tr></thead>
+    <tbody>
+    {% for p in quadro.selaveis %}
+      <tr data-intimacao-sem-selo="{{ p.ato_id }}">
+        <td><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}"
+              >{{ p.numero_titulo or p.titulo_id }}</a></td>
+        <td><small>{{ p.protocolo or '—' }}</small></td>
+        <td>{{ p.devedor or '—' }}</td>
+        <td><small>{{ p.data_ato or '—' }}</small></td>
+        {% if um_ato %}
+        <td>
+          {% if user and not user.eh_robo %}
+          <form method="post" action="{{ url_for('protesto_selar_intimacoes') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="ato_id" value="{{ p.ato_id }}">
+            <input type="hidden" name="titulo_id" value="{{ p.titulo_id }}">
+            <button class="button primary">Selar esta intimação (devido)</button>
+          </form>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if not um_ato and user and not user.eh_robo %}
+  <form method="post" action="{{ url_for('protesto_selar_intimacoes') }}"
+        style="padding:0 14px 14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button primary">Selar as intimações pendentes (devido)</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}

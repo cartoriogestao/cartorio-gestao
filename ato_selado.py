@@ -4749,7 +4749,8 @@ def _devido_do_proprio_ato(bd, tabela: Any, ato_id: int,
              FROM pt_emolumentos_diferidos d
              JOIN pt_atos a ON a.id = d.ato_id
              LEFT JOIN cx_servicos s ON s.codigo = d.servico
-            WHERE d.ato_id = %s AND COALESCE(a.cancelado, 0) = 0
+            WHERE d.ato_id = %s AND d.situacao = 'PENDENTE'
+              AND COALESCE(a.cancelado, 0) = 0
             ORDER BY d.id""", (int(ato_id),))
     if not codigo:
         return linhas[0] if len(linhas) == 1 else None

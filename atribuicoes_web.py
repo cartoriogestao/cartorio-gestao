@@ -2654,6 +2654,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             "moeda_estrangeira": _campo("moeda_estrangeira") or None,
             "valor_na_moeda": _campo("valor_na_moeda") or None,
             # A TRADUÇÃO (05/11/2026, item 4; Lei 9.492/1997, art. 10, § 1º).
+            "moeda_emitido_no_brasil": _campo("moeda_emitido_no_brasil") == "1",
             "traducao": {"tradutor": _campo("traducao_tradutor") or None,
                          "matricula": _campo("traducao_matricula") or None,
                          "data": _campo("traducao_data") or None},
@@ -2711,6 +2712,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         antigo = PT.aviso_do_cheque_antigo(dados, date.fromisoformat(hoje()))
         if antigo:
             flash(antigo, "warning")
+        no_brasil = PT.aviso_da_moeda_emitida_no_brasil(dados)
+        if no_brasil:
+            flash(no_brasil, "warning")
         RASC.saiu_com_o_ato(db, audit, "protesto_titulo_novo",
                             url_for("protesto_titulo", titulo_id=titulo_id), usuario_nome())
         return redirect(url_for("protesto_titulo", titulo_id=titulo_id))

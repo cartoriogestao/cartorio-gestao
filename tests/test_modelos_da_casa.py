@@ -907,7 +907,9 @@ def test_o_cheque_esta_no_padrao_e_o_ouro_nao_o_ve(ouro_e):
 # só entram com um dado que nenhum contexto do ouro tem — a moeda estrangeira —,
 # e sem ele o PT_TERMO_PROTESTO e o instrumento saem byte a byte os de antes. O
 # papel inteiro está no ensaio do Protesto.
-MUDOU_NA_MOEDA = {"PT_INSTRUMENTO_DESCRICAO": ("moeda_estrangeira", "traducao")}
+MUDOU_NA_MOEDA = {"PT_INSTRUMENTO_DESCRICAO": ("moeda_estrangeira", "traducao",
+                                              # o emitido no Brasil (07/11/2026; art. 10, § 3º)
+                                              "moeda_emitido_no_brasil")}
 
 
 def test_a_moeda_estrangeira_esta_no_padrao_e_o_ouro_nao_a_ve(ouro_e):
@@ -917,7 +919,7 @@ def test_a_moeda_estrangeira_esta_no_padrao_e_o_ouro_nao_a_ve(ouro_e):
         for rotulo in rotulos:
             assert rotulo in lidos, (chave, rotulo)
     gravado = json.dumps(ouro_e, ensure_ascii=False)
-    for marca in ("em moeda estrangeira:", "tradutor público juramentado"):
+    for marca in ("em moeda estrangeira:", "tradutor público juramentado", "emitido no Brasil"):
         assert marca not in gravado, marca
 
 

@@ -166,6 +166,11 @@ aponte."""
 #: procurador. Os campos obrigatórios são TRAVA FIXA em `notas_web`
 #: (`_travas_da_procuracao`); aqui o Sonnet confere o TEXTO contra o cadastro.
 MODELO_DA_PROCURACAO = "claude-sonnet-5-5"
+#: O REGISTRO CIVIL, antes de lavrar, é o Sonnet em esforço alto — ordem do
+#: oficial em 07/11/2026. Não relê a imagem: usa a primeira leitura dos
+#: documentos, já gravada.
+MODELO_DO_RCPN = "claude-sonnet-5-5"
+ESFORCO_DO_RCPN = "high"
 TIPOS_DA_PROCURACAO = ("PROCURACAO", "PROCURACAO_PREVIDENCIARIA", "SUBSTABELECIMENTO")
 
 INSTRUCAO_DA_PROCURACAO = """Você é o revisor de PROCURAÇÕES PÚBLICAS de uma serventia \
@@ -199,9 +204,42 @@ GRAVE é o que, lavrado, exige retificação ou invalida a procuração. Na dúv
 Sem achado, lista vazia. Não invente."""
 
 
+INSTRUCAO_DO_RCPN = """Você é o revisor do Registro Civil de uma serventia extrajudicial \
+no Maranhão, lendo um assento ANTES de ele ser lavrado. Recebe o formulário que está \
+na tela, a PRIMEIRA LEITURA dos documentos (já transcrita; não há imagem nova) e, \
+quando a escrevente escreveu, a INSTRUÇÃO ESPECÍFICA dela.
+
+O que a primeira leitura não conseguiu casar vem em «lidos e não aplicados», com os \
+campos inteiros. Isso NÃO é ausência de documento: é divergência. A instrução da \
+escrevente manda o que fazer com esses dados. Se ela diz quem é a mãe ou o pai, \
+confira se o formulário obedece. Se o formulário deixou de fora dado que a leitura \
+trouxe e a instrução não dispensou, isso é ATENCAO.
+
+Procure:
+- nome da criança, da mãe e do pai que divergem entre o formulário, a DNV e o \
+documento de identidade;
+- data de nascimento da mãe igual nos dois papéis e nome diferente — o documento \
+não pode ter sido ignorado;
+- avós, CPF, naturalidade e profissão lidos e ausentes no formulário;
+- anotação lida (nome escolhido, naturalidade, profissão) que o formulário não usou;
+- data, hora e DNV impossíveis ou cortadas.
+
+NÃO são problemas: a falta de selo, livro, folha e número do termo (saem na \
+lavratura); a naturalidade ainda em branco quando a leitura avisou que ela é \
+escolha do declarante.
+
+Responda SÓ com JSON, sem texto em volta:
+{"achados": [{"gravidade": "GRAVE" | "ATENCAO", "o_que": "...", "trecho": "...", \
+"por_que": "..."}], "parecer": "uma ou duas frases"}
+GRAVE é o que, lavrado, exige retificação. Na dúvida, ATENCAO. Sem achado, lista \
+vazia. Não invente dado que não está no dossiê."""
+
+
 def modelo_e_instrucao(con: sqlite3.Connection, atribuicao: str,
                        alvo_id: int) -> tuple[str, str]:
-    """Quem lê e com que instrução: a procuração tem revisor próprio (Sonnet)."""
+    """Quem lê e com que instrução: procuração e registro civil usam o Sonnet."""
+    if atribuicao == "RCPN":
+        return MODELO_DO_RCPN, INSTRUCAO_DO_RCPN
     bd = banco(con)
     if atribuicao == "NOTAS" and _tem_tabela(bd, "nt_atos"):
         linha = bd.um("SELECT tipo FROM nt_atos WHERE id = %s", (alvo_id,))
@@ -345,6 +383,50 @@ def dossie_notas(con: sqlite3.Connection, ato_id: int) -> str:
     return "\n".join(partes)[-LIMITE_DO_DOSSIE:]
 
 
+_FORA_DO_TEXTO_RCPN = {
+    "csrf_token", "revisao_justificativa", "revisao_prosseguir",
+    "revisao_usar_anterior", "revisao_justificativa_anterior",
+}
+
+
+def texto_do_registro_civil(formulario) -> str:
+    """O que identifica o assento que se vai lavrar. Só calcula.
+
+    A instrução específica entra no texto: mudou a instrução, a revisão
+    anterior não vale."""
+    chaves = sorted(set(getattr(formulario, "keys", lambda: formulario)()) - _FORA_DO_TEXTO_RCPN)
+    linhas = []
+    for chave in chaves:
+        valor = formulario.get(chave) if hasattr(formulario, "get") else formulario[chave]
+        if isinstance(valor, (list, tuple)):
+            valor = valor[0] if valor else ""
+        texto = str(valor or "").strip()
+        if texto:
+            linhas.append(f"{chave}={texto}")
+    return "\n".join(linhas)
+
+
+def dossie_rcpn(con: sqlite3.Connection, rascunho_id: int, formulario: str,
+                instrucao: str = "") -> str:
+    """O assento a lavrar e a primeira leitura, sem reler imagem. Só lê."""
+    bd = banco(con)
+    partes = ["REGISTRO CIVIL A LAVRAR", "", "FORMULÁRIO:", formulario or "(vazio)"]
+    if (instrucao or "").strip():
+        partes += ["", "INSTRUÇÃO DA ESCREVENTE:", instrucao.strip()]
+    if _tem_tabela(bd, "rc_leituras"):
+        leitura = bd.um(
+            "SELECT id, documentos_json, conferencia_json FROM rc_leituras "
+            "WHERE rascunho_id = %s ORDER BY id DESC LIMIT 1", (int(rascunho_id),))
+        if leitura:
+            partes += ["", f"PRIMEIRA LEITURA nº {leitura['id']} (já transcrita; sem imagem nova):",
+                       (leitura["documentos_json"] or "")[:80_000],
+                       "", "O QUE NÃO CASOU E O QUE FOI LIDO À PARTE:",
+                       (leitura["conferencia_json"] or "")[:40_000]]
+        else:
+            partes.append("\nNão há primeira leitura gravada neste rascunho.")
+    return "\n".join(partes)[-LIMITE_DO_DOSSIE:]
+
+
 # -------------------------------------------------------------- o pedido
 
 def pedir(con: sqlite3.Connection, atribuicao: str, alvo_id: int, hash_texto: str,
@@ -465,6 +547,8 @@ def executar(banco: Path, pasta_dados: Path, revisao_id: int, conversar=None) ->
             # DEPOIS da máscara: é texto público, e chega inteira.
             seguro = _com_a_norma(seguro, dossie, linha["atribuicao"] or "")
             # O REGISTRO DO USO DE IA (LF01): a revisão e a atribuição, sem texto.
+            extras = ({"output_config": {"effort": ESFORCO_DO_RCPN}}
+                      if (linha["atribuicao"] or "") == "RCPN" else None)
             resposta = conversar(pasta_dados, provedor=PROVEDOR, sistema=instrucao,
                                  conversa=[{"tipo": "user", "texto": seguro}],
                                  ferramentas=[], modelo=modelo,
@@ -472,7 +556,8 @@ def executar(banco: Path, pasta_dados: Path, revisao_id: int, conversar=None) ->
                                  modulo="revisao_previa", finalidade="revisao_previa",
                                  atribuicao=linha["atribuicao"] or "",
                                  referencia=f"rv_revisoes:{revisao_id}",
-                                 mascarado=mascarar_na_revisao(bd))
+                                 mascarado=mascarar_na_revisao(bd),
+                                 extras=extras)
             r = desmascarar(_ler_json(resposta.get("texto") or ""), mapa)
             graves = sum(a["gravidade"] == "GRAVE" for a in r["achados"])
             bd.escrever(

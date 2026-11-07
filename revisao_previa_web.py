@@ -18,7 +18,8 @@ import revisao_previa as RV
 from seguranca_web import numero_digitado  # LD13: o número que a tela mandou
 
 #: As telas em que o painel aparece (as que lavram ato do RI e das Notas).
-TELAS_COM_REVISAO = ("ri_ficha", "ri_preencher_modelo", "notas_ato")
+TELAS_COM_REVISAO = ("ri_ficha", "ri_preencher_modelo", "notas_ato",
+                     "rcpn_assento_novo")
 
 
 def registrar_rotas(app, db, login_required, roles_required, audit,
@@ -90,6 +91,31 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return _comecar("NOTAS", ato_id, RV.hash_do_ato(a["tipo"], a["teor"]), dossie,
                         f"{a['tipo']} das Notas id {ato_id}",
                         {"entidade": "NT_ATO", "id": ato_id})
+
+    @app.route("/revisao-previa/rcpn/<int:rascunho_id>", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def revisao_previa_rcpn(rascunho_id: int):
+        texto = RV.texto_do_registro_civil(request.form)
+        if not RV.normalizar(texto):
+            return jsonify({"erro": "Preencha o assento antes de revisar."}), 400
+        instrucao = (request.form.get("revisao_instrucao") or "").strip()
+        with db.connect() as con:
+            if not RV.ligada(con, pasta()):
+                return jsonify({"desligada": True})
+            try:
+                dossie = RV.dossie_rcpn(con, rascunho_id, texto, instrucao)
+            except RV.RevisaoPendente as erro:
+                return jsonify({"erro": str(erro)}), 404
+        return _comecar("RCPN", rascunho_id, RV.hash_do_ato("RCPN", texto), dossie,
+                        f"Registro civil, rascunho {rascunho_id}")
+
+    @app.route("/revisao-previa/rcpn/<int:rascunho_id>/ultima")
+    @login_required
+    def revisao_previa_rcpn_ultima(rascunho_id: int):
+        with db.connect() as con:
+            r = RV.ultima(con, "RCPN", rascunho_id, None)
+            r = RV.anotar_supridos(con, r) if r else r
+        return jsonify(r or {})
 
     # A ÚLTIMA REVISÃO, PARA A TELA MOSTRAR AO ABRIR (07/10/2026): recarregar a
     # página não pode sumir com uma resposta que está gravada.

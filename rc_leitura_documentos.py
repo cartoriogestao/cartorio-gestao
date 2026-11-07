@@ -514,6 +514,61 @@ def _a_que_mais_se_parece(nome: str, pessoas: list[dict]) -> tuple[dict | None, 
     return melhor, nota
 
 
+def _pela_data(data_ref: str, pessoas: list[dict]) -> dict | None:
+    """A única identidade com a mesma data de nascimento. Só calcula.
+
+    Nome que não casa não apaga o documento: se a data é a mesma e só uma
+    pessoa a tem, é ela. Mais de uma, ou nenhuma, não escolhe."""
+    if not data_ref:
+        return None
+    iguais = [p for p in pessoas if data_iso(p.get("data_nascimento")) == data_ref]
+    return iguais[0] if len(iguais) == 1 else None
+
+
+def _nao_aplicado(ident: dict, problema: str, papel: str = "") -> dict:
+    """O que a leitura leu e o formulário ainda não usou. Nada se joga fora."""
+    pessoa = _pessoa_da_identidade(ident, papel or "A_ESCOLHER")
+    pessoa["filiacao_pai"] = _limpo(ident.get("filiacao_pai"))
+    pessoa["filiacao_mae"] = _limpo(ident.get("filiacao_mae"))
+    pessoa["onde"] = ident.get("_onde") or ""
+    pessoa["problema"] = problema
+    return {k: v for k, v in pessoa.items() if v}
+
+
+def _anotacoes_lidas(documentos: list[dict]) -> list[dict]:
+    """O que a página trouxe fora dos campos do formulário (anotação à mão)."""
+    saida = []
+    for d in documentos:
+        outros = (d.get("dados") or {}).get("outros_campos")
+        if isinstance(outros, dict) and any(_limpo(v) for v in outros.values()):
+            saida.append({
+                "onde": f"{d.get('arquivo') or ''} p{d.get('n') or ''}".strip(),
+                "campos": {k: _limpo(v) for k, v in outros.items() if _limpo(v)},
+            })
+    return saida
+
+
+def _papel_na_instrucao(instrucao: str, nome: str) -> str:
+    """A instrução da escrevente nomeia esta pessoa num papel? Só calcula.
+
+    «Fulana é a mãe» casa Fulana com MAE. Sem o nome e sem o papel juntos,
+    não casa ninguém."""
+    texto = _sem_acento(instrucao or "").lower()
+    if not texto.strip():
+        return ""
+    nome_limpo = _sem_acento(_limpo(nome)).lower()
+    tokens = [p for p in re.split(r"[^a-z0-9]+", nome_limpo) if len(p) >= 5]
+    if not tokens or not any(tok in texto for tok in tokens):
+        return ""
+    onde = min(texto.find(tok) for tok in tokens if tok in texto)
+    janela = texto[max(0, onde - 40):onde + 40]
+    for palavra, papel in (("mae", "MAE"), ("pai", "PAI"),
+                           ("declarante", "DECLARANTE")):
+        if palavra in janela:
+            return papel
+    return ""
+
+
 def _aviso(lista: list, gravidade: str, texto: str, onde: str = "") -> None:
     lista.append({"gravidade": gravidade, "texto": texto, "onde": onde})
 
@@ -547,7 +602,8 @@ def _pais_de(pessoa: dict, ident: dict | None, onde_pai: str, onde_mae: str,
                         "sexo": "F"})
 
 
-def juntar_nascimento(documentos: list[dict], tardio: bool = False) -> dict:
+def juntar_nascimento(documentos: list[dict], tardio: bool = False,
+                      instrucao: str = "") -> dict:
     """O registro de nascimento que os documentos permitem montar. SÓ CALCULA.
 
     `tardio` é a marca «É registro tardio» da caixa de juntar os documentos
@@ -640,17 +696,47 @@ def juntar_nascimento(documentos: list[dict], tardio: bool = False) -> dict:
     id_mae, nota = _a_que_mais_se_parece(mae["nome"], ids)
     if id_mae is not None and nota < 0.5:
         id_mae = None
+    casou_pela_data = False
+    pela_instrucao = False
+    if id_mae is None:
+        # Nome divergente não apaga o RG: a mesma data de nascimento, numa
+        # pessoa só, casa. A escrevente vê o aviso e confere o nome.
+        por_data = _pela_data(mae["data_nascimento"], ids)
+        if por_data is not None:
+            id_mae = por_data
+            casou_pela_data = True
+    if instrucao and id_mae is None:
+        for ident in ids:
+            if _papel_na_instrucao(instrucao, _limpo(ident.get("nome"))) == "MAE":
+                id_mae = ident
+                pela_instrucao = True
+                break
     if id_mae is not None:
         if _limpo(id_mae.get("nome")).upper() == mae["nome"].upper():
             pass
         elif _sem_acento(_limpo(id_mae.get("nome"))) == _sem_acento(mae["nome"]):
             mae["nome"] = _capitalizar(_limpo(id_mae.get("nome")))      # só o acento
         else:
-            _aviso(avisos, "CONFERIR",
-                   f"O nome da mãe na DNV («{mae['nome']}») e no documento dela "
-                   f"(«{_limpo(id_mae.get('nome'))}») não são iguais letra a letra — "
-                   f"vale o do documento de identidade, conferido no original.",
-                   id_mae["_onde"])
+            if pela_instrucao:
+                _aviso(avisos, "CONFERIR",
+                       f"«{_limpo(id_mae.get('nome'))}» entrou como mãe pela "
+                       f"instrução da escrevente. O nome na DNV era «{mae['nome']}». "
+                       f"Confira no original.",
+                       id_mae.get("_onde") or "")
+            elif casou_pela_data:
+                _aviso(avisos, "CONFERIR",
+                       f"O nome da mãe na DNV («{mae['nome']}») e no documento "
+                       f"(«{_limpo(id_mae.get('nome'))}») não batem, mas a data de "
+                       f"nascimento é a mesma ({mae['data_nascimento'] or '—'}). "
+                       f"O documento entrou inteiro — CPF, naturalidade e avós. "
+                       f"Confira qual nome vale, no original.",
+                       id_mae.get("_onde") or "")
+            else:
+                _aviso(avisos, "CONFERIR",
+                       f"O nome da mãe na DNV («{mae['nome']}») e no documento dela "
+                       f"(«{_limpo(id_mae.get('nome'))}») não são iguais letra a letra — "
+                       f"vale o do documento de identidade, conferido no original.",
+                       id_mae["_onde"])
             mae["nome"] = _capitalizar(_limpo(id_mae.get("nome")))
         _documento(mae, id_mae)
         nasc_rg = data_iso(id_mae.get("data_nascimento"))
@@ -663,8 +749,15 @@ def juntar_nascimento(documentos: list[dict], tardio: bool = False) -> dict:
             mae["naturalidade_cidade"], mae["naturalidade_uf"] = _uf_e_cidade(id_mae.get("naturalidade"))
         _pais_de(mae, id_mae, "AVO_MATERNO", "AVO_MATERNA", pessoas)
     else:
-        _aviso(avisos, "CONFERIR", "Não há documento de identidade da mãe entre os "
-               "anexos — CPF e avós maternos ficam para digitar.")
+        if ids:
+            _aviso(avisos, "CONFERIR",
+                   "Nenhum documento de identidade casou com o nome da mãe na DNV. "
+                   "Nada do que foi lido foi descartado: está em «lidos e não "
+                   "aplicados». Escreva a instrução específica (quem é a mãe, quem "
+                   "é o pai) e processe de novo — a imagem não é relida.")
+        else:
+            _aviso(avisos, "CONFERIR", "Não há documento de identidade da mãe entre os "
+                   "anexos — CPF e avós maternos ficam para digitar.")
 
     if mae["data_nascimento"] and data_fato:
         idade = _idade_em(mae["data_nascimento"], data_fato)
@@ -676,26 +769,56 @@ def juntar_nascimento(documentos: list[dict], tardio: bool = False) -> dict:
             mae["idade_no_fato"] = str(idade)
     pessoas.append(mae)
 
-    outros = [p for p in ids if p is not id_mae]
-    if len(outros) == 1:
-        p = outros[0]
-        pai = {"papel": "PAI", "nome": _limpo(p.get("nome")), "sexo": "M",
-               "data_nascimento": data_iso(p.get("data_nascimento"))}
-        pai["naturalidade_cidade"], pai["naturalidade_uf"] = _uf_e_cidade(p.get("naturalidade"))
-        _documento(pai, p)
-        pessoas.append(pai)
-        _pais_de(pai, p, "AVO_PATERNO", "AVO_PATERNA", pessoas)
+    nao_aplicados: list[dict] = []
+
+    def _entrar_pela_instrucao(ident: dict) -> bool:
+        papel = _papel_na_instrucao(instrucao, _limpo(ident.get("nome")))
+        if papel not in ("PAI", "DECLARANTE"):
+            return False
+        pessoa = _pessoa_da_identidade(ident, papel)
+        pessoas.append(pessoa)
+        if papel == "PAI":
+            _pais_de(pessoa, ident, "AVO_PATERNO", "AVO_PATERNA", pessoas)
         _aviso(avisos, "CONFERIR",
-               f"«{pai['nome']}» entrou como PAI porque é a outra pessoa identificada "
-               f"nos documentos — confirme a paternidade e se é ele quem declara.", p["_onde"])
-    elif len(outros) > 1:
-        _aviso(avisos, "CONFERIR",
-               "Há mais de uma pessoa identificada além da mãe ("
-               + "; ".join(_limpo(p.get("nome")) for p in outros)
-               + ") — o pai e o declarante ficam para escolher na tela.")
+               f"«{pessoa['nome']}» entrou como {papel} pela instrução "
+               f"da escrevente. Confira no original.", ident.get("_onde") or "")
+        return True
+
+    if id_mae is None:
+        for ident in ids:
+            if not _entrar_pela_instrucao(ident):
+                nao_aplicados.append(_nao_aplicado(
+                    ident, "Não casou com a mãe da DNV. Diga na instrução quem é."))
     else:
-        _aviso(avisos, "CONFERIR", "Não há documento do pai entre os anexos — a filiação "
-               "paterna fica para digitar (ou para o reconhecimento posterior).")
+        outros = [p for p in ids if p is not id_mae]
+        escolhidos = [p for p in outros if _entrar_pela_instrucao(p)]
+        restantes = [p for p in outros if p not in escolhidos]
+        if len(restantes) == 1 and not escolhidos:
+            p = restantes[0]
+            pai = {"papel": "PAI", "nome": _limpo(p.get("nome")), "sexo": "M",
+                   "data_nascimento": data_iso(p.get("data_nascimento"))}
+            pai["naturalidade_cidade"], pai["naturalidade_uf"] = _uf_e_cidade(
+                p.get("naturalidade"))
+            _documento(pai, p)
+            pessoas.append(pai)
+            _pais_de(pai, p, "AVO_PATERNO", "AVO_PATERNA", pessoas)
+            _aviso(avisos, "CONFERIR",
+                   f"«{pai['nome']}» entrou como PAI porque é a outra pessoa identificada "
+                   f"nos documentos — confirme a paternidade e se é ele quem declara.",
+                   p["_onde"])
+        elif restantes:
+            for ident in restantes:
+                nao_aplicados.append(_nao_aplicado(
+                    ident, "Há mais de uma pessoa além da mãe. Diga na instrução quem é o pai."))
+            _aviso(avisos, "CONFERIR",
+                   "Há mais de uma pessoa identificada além da mãe ("
+                   + "; ".join(_limpo(p.get("nome")) for p in restantes)
+                   + "). Os dados lidos ficam em «lidos e não aplicados» — "
+                   "escreva quem é o pai. Nada foi descartado.")
+        elif not any(p.get("papel") == "PAI" for p in pessoas):
+            _aviso(avisos, "CONFERIR",
+                   "Não há documento do pai entre os anexos — a filiação "
+                   "paterna fica para digitar (ou para o reconhecimento posterior).")
 
     _aviso(avisos, "CONFERIR",
            f"A naturalidade é escolha do declarante (Lei 6.015/1973, art. 54, § 4º): o "
@@ -724,8 +847,17 @@ def juntar_nascimento(documentos: list[dict], tardio: bool = False) -> dict:
         _aviso(avisos, "CONFERIR", AVISO_DO_TARDIO)
     for p in pessoas:
         p["nome"] = _capitalizar(p.get("nome") or "")
+    anotacoes = _anotacoes_lidas(documentos)
+    for nota in anotacoes:
+        _aviso(avisos, "CONFERIR",
+               "A leitura guardou anotação que não entrou sozinha no formulário ("
+               + ", ".join(nota["campos"])
+               + "). Ela está em «anotações lidas». Se for usar, escreva a instrução.",
+               nota["onde"])
     return {"valores": valores, "pessoas": [p for p in pessoas if p.get("nome")],
-            "conferencia": avisos}
+            "conferencia": avisos, "nao_aplicados": nao_aplicados,
+            "anotacoes_lidas": anotacoes,
+            "pede_instrucao": bool(nao_aplicados or anotacoes)}
 
 
 def _do_requerimento(v: Any, papel: str, ids: list[dict]) -> dict | None:
@@ -1647,11 +1779,55 @@ def concluir(con, leitura_id: int, *, arquivos: list[dict],
             if especie == "HABILITACAO":
                 _naturalidades_nos_valores(junto)
             texto = registro_padrao(leitura_id, especie, junto, f"leitura de documentos nº {leitura_id}")
+            pacote = {"avisos": junto["conferencia"],
+                      "nao_aplicados": junto.get("nao_aplicados") or [],
+                      "anotacoes_lidas": junto.get("anotacoes_lidas") or [],
+                      "pede_instrucao": bool(junto.get("pede_instrucao"))}
             bd.escrever("UPDATE rc_leituras SET registro_json=%s, conferencia_json=%s WHERE id=%s",
-                        (texto, json.dumps(junto["conferencia"], ensure_ascii=False), leitura_id))
+                        (texto, json.dumps(pacote, ensure_ascii=False), leitura_id))
         except LeituraError as recusa:
             bd.escrever("UPDATE rc_leituras SET situacao='FALHOU', erro=%s WHERE id=%s",
                         (str(recusa), leitura_id))
+
+
+def reprocessar(con, leitura_id: int, instrucao: str) -> dict:
+    """Aplica a instrução da escrevente sobre a leitura JÁ GRAVADA. ESCREVE.
+
+    Não relê imagem e não fala com a rede: os documentos estão em
+    `documentos_json`. A instrução só diz quem é quem quando a primeira
+    juntada não casou."""
+    texto = (instrucao or "").strip()
+    if len(texto) < 10:
+        raise LeituraError(
+            "Escreva a instrução com pelo menos dez letras — quem é a mãe, "
+            "quem é o pai, o que fazer com a anotação.")
+    bd = banco(con)
+    init_schema(bd)
+    linha = bd.um("SELECT * FROM rc_leituras WHERE id = %s", (int(leitura_id),))
+    if not linha:
+        raise LeituraError(f"Não há leitura nº {leitura_id}.")
+    carregada = _carregar(dict(linha))
+    if carregada["especie"] != "NASCIMENTO":
+        raise LeituraError(
+            "A instrução específica reaplica o nascimento. As outras espécies "
+            "continuam na primeira juntada.")
+    if not carregada.get("documentos"):
+        raise LeituraError("Esta leitura não guardou os documentos lidos.")
+    tardio = str((carregada.get("registro") or {}).get("registro_tardio") or "") in ("1", "True")
+    junto = juntar_nascimento(carregada["documentos"], tardio=tardio, instrucao=texto)
+    corrigir_municipios(junto, municipios_oficiais(bd))
+    registro = registro_padrao(leitura_id, "NASCIMENTO", junto,
+                               f"leitura de documentos nº {leitura_id}")
+    pacote = {"avisos": junto["conferencia"],
+              "nao_aplicados": junto.get("nao_aplicados") or [],
+              "anotacoes_lidas": junto.get("anotacoes_lidas") or [],
+              "pede_instrucao": bool(junto.get("pede_instrucao")),
+              "instrucao": texto}
+    bd.escrever(
+        """UPDATE rc_leituras SET situacao='LIDA', registro_json=%s, conferencia_json=%s,
+               erro=NULL WHERE id=%s""",
+        (registro, json.dumps(pacote, ensure_ascii=False), int(leitura_id)))
+    return junto
 
 
 def _carregar(linha: dict) -> dict:
@@ -1661,6 +1837,16 @@ def _carregar(linha: dict) -> dict:
         d[campo[:-5]] = json.loads(d.get(campo) or "[]")
     registro = json.loads(d.get("registro_json") or "{}")
     d["registro"] = (registro.get("registros") or [{}])[0] if registro else {}
+    bruto = d.get("conferencia")
+    if isinstance(bruto, dict):
+        d["conferencia"] = bruto.get("avisos") or []
+        d["nao_aplicados"] = bruto.get("nao_aplicados") or []
+        d["anotacoes_lidas"] = bruto.get("anotacoes_lidas") or []
+        d["pede_instrucao"] = bool(bruto.get("pede_instrucao"))
+    else:
+        d["nao_aplicados"] = []
+        d["anotacoes_lidas"] = []
+        d["pede_instrucao"] = False
     return d
 
 

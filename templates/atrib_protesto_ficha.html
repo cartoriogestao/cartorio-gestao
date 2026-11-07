@@ -194,7 +194,7 @@
         <th>Nosso número</th><td>{{ titulo.nosso_numero or '—' }}</td></tr>
     <tr><th>Emissão</th><td>{{ titulo.data_emissao or '—' }}</td>
         <th>Vencimento</th><td>{{ titulo.data_vencimento or '—' }}</td></tr>
-    <tr><th>Valor</th><td>{{ titulo.valor_centavos | centavos_reais }}{% if titulo.moeda_estrangeira %}<br><small>convertido de {{ titulo.valor_na_moeda }} — {{ titulo.moeda_estrangeira }} (Lei 9.492/1997, art. 10){% if titulo.traducao_tradutor %}<br>tradução de {{ titulo.traducao_tradutor }}, matrícula {{ titulo.traducao_matricula }}, em {{ titulo.traducao_data }}{% endif %}</small>{% endif %}</td>
+    <tr><th>Valor</th><td>{{ titulo.valor_centavos | centavos_reais }}{% if titulo.moeda_estrangeira %}<br><small>convertido de {{ titulo.valor_na_moeda }} — {{ titulo.moeda_estrangeira }} (Lei 9.492/1997, art. 10){% if titulo.moeda_emitido_no_brasil %}<br>emitido no Brasil (art. 10, § 3º){% endif %}{% if titulo.traducao_tradutor %}<br>tradução de {{ titulo.traducao_tradutor }}, matrícula {{ titulo.traducao_matricula }}, em {{ titulo.traducao_data }}{% endif %}</small>{% endif %}</td>
         <th>Saldo a protestar</th><td>{{ titulo.saldo_centavos | centavos_reais }}</td></tr>
     {% if titulo.especie == 'CH' and (titulo.cheque_banco_sacado or titulo.cheque_contra_o_banco) %}
     <tr><th>Cheque</th><td colspan="3">{% if titulo.cheque_contra_o_banco %}Protesto para instruir medida contra o próprio banco (CN-MA art. 910).{% endif %}

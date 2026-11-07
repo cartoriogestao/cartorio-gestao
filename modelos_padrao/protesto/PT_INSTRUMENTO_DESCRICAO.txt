@@ -25,3 +25,4 @@ cheque_devolucao = devolvido pelo banco sacado {banco}, motivo {motivo}, apresen
 cheque_contra_o_banco = protesto para instruir medida contra o próprio banco sacado (CN-MA art. 910)
 moeda_estrangeira = em moeda estrangeira: {valor} — {moeda}, convertido em reais pelo apresentante (Lei 9.492/1997, art. 10, § 2º)
 traducao = tradução por tradutor público juramentado {tradutor}, matrícula {matricula}, de {data} (Lei 9.492/1997, art. 10, § 1º)
+moeda_emitido_no_brasil = emitido no Brasil (Lei 9.492/1997, art. 10, § 3º)

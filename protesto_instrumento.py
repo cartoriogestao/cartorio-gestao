@@ -457,6 +457,8 @@ def pedacos_da_descricao(d: dict, con: Any = None) -> dict:
     if _texto(t.get("moeda_estrangeira")):
         do_titulo.append(_p("moeda_estrangeira", moeda=_texto(t["moeda_estrangeira"]),
                             valor=_texto(t.get("valor_na_moeda"))))
+        if t.get("moeda_emitido_no_brasil"):
+            do_titulo.append(_p("moeda_emitido_no_brasil"))
         if _texto(t.get("traducao_tradutor")):
             do_titulo.append(_p("traducao", tradutor=_texto(t["traducao_tradutor"]),
                                 matricula=_texto(t.get("traducao_matricula")),

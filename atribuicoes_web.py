@@ -3861,7 +3861,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         aviso += _cobrar_os_diferidos(con, titulo_id,
                                                       r["ato_id"], cobranca)
                     if (ato in PT.ATOS_SO_DEPOIS_DO_CAIXA
-                            and not PT.tem_pagamento_no_caixa(con, r["ato_id"])):
+                            and not PT.tem_pagamento_no_caixa(con, r["ato_id"])
+                            and not PT.pago_no_protocolo(
+                                con, numero_digitado(_campo("protocolo_id")),
+                                [n for n in (numero_digitado(x) for x in
+                                             request.form.getlist("protocolo_item_id"))
+                                 if n is not None])):
                         raise PT.ProtestoError(
                             "Este ato só se efetiva depois do pagamento no "
                             "caixa. Abra o caixa, marque o item do emolumento "

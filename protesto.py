@@ -1548,6 +1548,25 @@ def tem_pagamento_no_caixa(con, ato_id: int) -> bool:
         (f"pt_atos:{int(ato_id)}:%",)) is not None
 
 
+def pago_no_protocolo(con, protocolo_id: int | None, itens: list[int]) -> bool:
+    """O ato vem de um item JÁ QUITADO do protocolo geral do caixa? Só LÊ.
+
+    É o caminho de todo dia: o cliente paga no protocolo, e a ficha lança o ato com o item
+    marcado. Sem item marcado, vale qualquer item quitado e ainda não usado do protocolo —
+    o mesmo critério com que o selo escolhe os itens (`_itens_para_selar`).
+    """
+    if protocolo_id is None or not banco(con).tem_tabela("cx_protocolo_atos"):
+        return False
+    sql = """SELECT id FROM cx_protocolo_atos
+              WHERE protocolo_id = %s AND usado_em IS NULL
+                AND COALESCE(quitado, 0) = 1"""
+    parametros: list = [int(protocolo_id)]
+    if itens:
+        sql += " AND id IN (" + ",".join(["%s"] * len(itens)) + ")"
+        parametros += [int(i) for i in itens]
+    return banco(con).um(sql + " LIMIT 1", parametros) is not None
+
+
 def desistencia_aguardando_caixa(con, titulo_id: int) -> bool:
     """A CRA já pediu a desistência e o caixa ainda não a efetivou? Só LÊ."""
     bd = banco(con)

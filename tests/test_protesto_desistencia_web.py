@@ -194,14 +194,17 @@ def test_o_que_NAO_foi_marcado_nao_entra(s):
         "SELECT situacao FROM pt_titulos").fetchone()[0] == "APONTADO"
 
 
-def test_a_ficha_do_arquivo_mostra_o_que_foi_desistido(s):
+def test_a_ficha_do_arquivo_diz_que_a_desistencia_espera_o_caixa(s):
+    """Desde o #373 o arquivo só se guarda: a desistência se lança na ficha do título, com o
+    pagamento no caixa. A ficha do arquivo diz isso, e não «mande de novo»."""
     titulo_apontado(s)
     aplicar(s)
     con = _con(s)
     did = con.execute("SELECT id FROM pt_desistencias").fetchone()["id"]
     html = s["c"].get(f"/protesto/desistencias/{did}").get_data(as_text=True)
     assert "Desistência recebida" in html
-    assert "NF-74654-/1" in html
+    assert "depois do pagamento" in html and "Mande o arquivo de novo" not in html
+    assert "NF-74654-/1" not in html                     # nenhum título desistido ainda
     assert "baixar" in html
 
 

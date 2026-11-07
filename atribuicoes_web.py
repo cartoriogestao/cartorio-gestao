@@ -12682,6 +12682,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
     # ------------------------------- o passo da tarde: gerar protesto
 
+    @app.route("/protesto/encerrados-sem-selo")
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_encerrados_sem_selo():
+        """Desistências e cancelamentos sem selo. Só LÊ.
+
+        A lista de protestos lavrados sem selo não os mostra. O E-Ofício fica
+        separado: esta página não sela.
+        """
+        import protesto_encerrados_sem_selo as PESS
+        with db.connect() as con:
+            quadro = PESS.listar(con)
+        return render_template("protesto_encerrados_sem_selo.html", **quadro)
+
     @app.route("/protesto/a-protestar")
     @roles_required("ADMIN", "MANAGER", "USER")
     def protesto_a_protestar():

@@ -72,6 +72,16 @@ def _i(rotulo: str, endpoint: str, papeis: tuple[str, ...] | None = TODOS, *,
 MODULOS_DA_BARRA: tuple[dict, ...] = (
     {"chave": "INICIO", "curto": "Início", "nome": "Início", "cor": "", "icone": "casa",
      "lavra": False, "secoes": ()},
+    {"chave": "TRABALHO", "curto": "Trabalho", "nome": "Atendimentos e aprendizagem", "cor": "ADM",
+     "icone": "pessoas", "lavra": False, "secoes": (
+         ("Atendimentos", (
+             _i("Meu trabalho", "at_meu_trabalho"),
+             _i("Atendimentos", "at_lista", antigo="Protocolo geral", termos="pedido protocolo cliente"),)),
+         ("Treinamento", (
+             _i("Treinamento", "tr_inicio", termos="aprender aula escrevente"),
+             _i("Primeiro dia", "tr_trilha", trilha="primeiro-dia"),
+             _i("Aprendizagem da equipe", "tr_equipe", AM),)),
+     )},
     {"chave": "NOTAS", "curto": "Notas", "nome": "Tabelionato de Notas", "cor": "NOTAS",
      "icone": "pena", "lavra": True, "secoes": (
          ("Painel do dia", (
@@ -117,7 +127,7 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
     {"chave": "RI", "curto": "Registro de Imóveis", "nome": "Registro de Imóveis", "cor": "RI",
      "icone": "predio", "lavra": True, "secoes": (
          ("Protocolo", (
-             _i("Protocolo / prenotação", "ri_protocolo", termos="prenotar titulo exigencia"),
+             _i("Prenotação RI - Livro 1", "ri_protocolo", antigo="Protocolo / prenotação", termos="prenotar titulo exigencia"),
              _i("Pedidos em andamento", "ri_pedidos"),)),
          ("Matrículas", (
              _i("Matrículas", "ri_matriculas", termos="ficha imovel"),)),
@@ -239,6 +249,7 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Desistências", "protesto_desistencias"),
              _i("Pedidos da CRA", "protesto_cra_pedidos"),
              _i("A protestar", "protesto_a_protestar"),
+             _i("Desistidos sem selo", "protesto_encerrados_sem_selo"),
              _i("Retorno", "protesto_retornos", antigo="Retorno à CRA"),
              _i("Falar pela API", "protesto_cra_api", AMU, antigo="CRA — falar pela API"),)),
          ("Dia da CENPROT", (
@@ -291,12 +302,12 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Ajustar a etiqueta de registro", "rcpj_rtd_etiqueta_ajuste", AM),
              _i("Modelos dos documentos", "rcpj_rtd_modelos_papeis", AMU, antigo="Modelos dos documentos do RCPJ"),)),
      )},
-    {"chave": "CAIXA", "curto": "Caixa e Protocolo", "nome": "Caixa e Protocolo", "cor": "ADM",
+    {"chave": "CAIXA", "curto": "Entrada de caixa e protocolo geral", "nome": "Entrada de caixa e protocolo geral", "cor": "ADM",
      "icone": "caixa", "lavra": False, "secoes": (
          ("Caixa do dia", (
-             _i("Caixa", "caixa"),)),
+             _i("Entrada de caixa", "caixa", antigo="Caixa"),)),
          ("Protocolo geral", (
-             _i("Protocolo geral", "caixa_protocolos"),
+             _i("Protocolo geral", "caixa_protocolos", termos="entrada atendimento protocolo"),
              _i("Protocolos parados", "caixa_protocolos_parados"),)),
          ("Depósito prévio", (
              _i("Depósito prévio", "caixa_depositos"),)),
@@ -310,7 +321,7 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          ("Modelos do caixa", (
              _i("Modelos do caixa", "caixa_modelos_papeis", AMU),)),
      )},
-    {"chave": "ATEND", "curto": "Atendimento", "nome": "Atendimento", "cor": "ADM",
+    {"chave": "ATEND", "curto": "Recepção", "nome": "Recepção e canais", "cor": "ADM",
      "icone": "balao", "lavra": False, "secoes": (
          ("Senhas", (
              _i("Atendimento / senhas", "service_queue"),
@@ -458,6 +469,14 @@ ENTRADAS_NOVAS: frozenset[tuple[str, tuple]] = frozenset({
 # chega nela. Sem isto a tela abriria com o menu fechado — o defeito que `modulos.py`
 # existe para impedir.
 PAI: dict[str, tuple[str, str]] = {
+    "caixa_protocolos": ("CAIXA", "Protocolo geral"),
+    "ri_qualificacao_ia_nota": ("RI", "Protocolo"),
+    "at_ficha": ("TRABALHO", "Atendimentos"),
+    "tr_aula": ("TRABALHO", "Treinamento"),
+    "tr_normas": ("TRABALHO", "Treinamento"),
+    "tr_equipe": ("TRABALHO", "Treinamento"),
+    "tr_trilha": ("TRABALHO", "Treinamento"),
+    "tr_orientacao": ("TRABALHO", "Treinamento"),
     # Notas
     "notas_ato_novo": ("NOTAS", "Procurações"),
     "notas_leituras": ("NOTAS", "Procurações"),

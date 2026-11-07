@@ -58,6 +58,7 @@ SEM_PORTA_DE_PROPOSITO: dict[str, str] = {
     "nu_avisos_pendentes_json": _MOTIVO_JS,
     "revisao_previa_notas_ultima": _MOTIVO_JS,
     "revisao_previa_ri_ultima": _MOTIVO_JS,
+    "revisao_previa_rcpn_ultima": _MOTIVO_JS,   # #371: a tela do rascunho a chama ao abrir
     # Entrada no sistema: o próprio sistema redireciona para elas.
     "login_dois_fatores": "a entrada redireciona para ela",
     "login_dois_fatores_cadastrar": "a entrada redireciona para ela",

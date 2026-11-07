@@ -2658,6 +2658,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             "moeda_estrangeira": _campo("moeda_estrangeira") or None,
             "valor_na_moeda": _campo("valor_na_moeda") or None,
             # A TRADUÇÃO (05/11/2026, item 4; Lei 9.492/1997, art. 10, § 1º).
+            "moeda_emitido_no_brasil": _campo("moeda_emitido_no_brasil") == "1",
             "traducao": {"tradutor": _campo("traducao_tradutor") or None,
                          "matricula": _campo("traducao_matricula") or None,
                          "data": _campo("traducao_data") or None},
@@ -2715,6 +2716,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         antigo = PT.aviso_do_cheque_antigo(dados, date.fromisoformat(hoje()))
         if antigo:
             flash(antigo, "warning")
+        no_brasil = PT.aviso_da_moeda_emitida_no_brasil(dados)
+        if no_brasil:
+            flash(no_brasil, "warning")
         RASC.saiu_com_o_ato(db, audit, "protesto_titulo_novo",
                             url_for("protesto_titulo", titulo_id=titulo_id), usuario_nome())
         return redirect(url_for("protesto_titulo", titulo_id=titulo_id))
@@ -3865,7 +3869,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         aviso += _cobrar_os_diferidos(con, titulo_id,
                                                       r["ato_id"], cobranca)
                     if (ato in PT.ATOS_SO_DEPOIS_DO_CAIXA
-                            and not PT.tem_pagamento_no_caixa(con, r["ato_id"])):
+                            and not PT.tem_pagamento_no_caixa(con, r["ato_id"])
+                            and not PT.pago_no_protocolo(
+                                con, numero_digitado(_campo("protocolo_id")),
+                                [n for n in (numero_digitado(x) for x in
+                                             request.form.getlist("protocolo_item_id"))
+                                 if n is not None])):
                         raise PT.ProtestoError(
                             "Este ato só se efetiva depois do pagamento no "
                             "caixa. Abra o caixa, marque o item do emolumento "
@@ -5109,6 +5118,29 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 return _tela_conferencia(
                     {k: v for k, v in request.form.items() if k != "csrf_token"})
             forcar_motivo = _campo("forcar_motivo")
+
+        # A REVISÃO DO REGISTRO CIVIL, antes de lavrar. Sem chave da IA a etapa
+        # não existe. O dossiê é a primeira leitura, não uma imagem nova.
+        _rid = numero_digitado(
+            request.form.get("_rascunho_id") or request.form.get("_rascunho_id_tela"))
+        _acervo = (request.form.get("do_acervo") or request.args.get("do_acervo") or "").strip()
+        if _rid and not _acervo:
+            import revisao_previa as RV
+            _texto = RV.texto_do_registro_civil(request.form)
+            try:
+                with db.connect() as _con_rv:
+                    RV.exigir_para_lavrar(
+                        _con_rv, Path(app.config["DATA_DIR"]), "RCPN", int(_rid),
+                        RV.hash_do_ato("RCPN", _texto),
+                        justificativa=request.form.get("revisao_justificativa") or "",
+                        usuario=usuario_nome(),
+                        papel=_papel_atual(),
+                        texto_atual=_texto, tipo="RCPN",
+                        prosseguir=request.form.get("revisao_prosseguir") == "1")
+            except RV.RevisaoPendente as erro:
+                flash(f"{erro} Nada foi lavrado.", "danger")
+                return _tela_conferencia(
+                    {k: v for k, v in request.form.items() if k != "csrf_token"})
 
         nome = _campo("nome")
         if not nome and especie in {"NASCIMENTO", "OBITO", "NATIMORTO"}:
@@ -12803,6 +12835,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     # ---------------------------- a desistência, que se confere 3x por dia
 
     # ------------------------------- o passo da tarde: gerar protesto
+
+    @app.route("/protesto/encerrados-sem-selo")
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_encerrados_sem_selo():
+        """Desistências e cancelamentos sem selo. Só LÊ.
+
+        A lista de protestos lavrados sem selo não os mostra. O E-Ofício fica
+        separado: esta página não sela.
+        """
+        import protesto_encerrados_sem_selo as PESS
+        with db.connect() as con:
+            quadro = PESS.listar(con)
+        return render_template("protesto_encerrados_sem_selo.html", **quadro)
 
     @app.route("/protesto/a-protestar")
     @roles_required("ADMIN", "MANAGER", "USER")

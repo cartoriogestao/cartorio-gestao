@@ -51,6 +51,45 @@ def ativo() -> bool:
     return bool(dsn())
 
 
+def _reserva() -> bool:
+    """O processo é o servidor reserva (`modo_reserva`)? Lido aqui, sem importar o módulo,
+    para a ponte não depender de nada do sistema."""
+    return (os.environ.get("CG_MODO_RESERVA") or "").strip() == "1"
+
+
+#: O que mexe no ESQUEMA, e não nas linhas.
+_RE_DDL = re.compile(r"^\s*(CREATE|ALTER|DROP|COMMENT|GRANT|REVOKE|REINDEX|CLUSTER|ANALYZE|VACUUM)\b",
+                     re.I)
+#: O que grava linha.
+_RE_ESCRITA = re.compile(r"^\s*(INSERT|UPDATE|DELETE|REPLACE|UPSERT|TRUNCATE|MERGE)\b", re.I)
+_SUBINDO_NA_RESERVA = False
+
+
+def subida_da_reserva(subindo: bool) -> None:
+    """Marca a subida do sistema no servidor reserva (`app.create_app`): enquanto ela dura, a
+    escrita também se ignora — ver `ignorado_na_reserva`."""
+    global _SUBINDO_NA_RESERVA
+    _SUBINDO_NA_RESERVA = subindo and _reserva()
+
+
+def ignorado_na_reserva(sql: str) -> bool:
+    """O comando que o servidor reserva NÃO roda — e não deixa cair:
+
+    - o de ESQUEMA, sempre: o esquema é o do principal, que chega pela réplica
+      (`tools/reserva.py esquema`). É o `init_schema` de cada módulo, chamado ao registrar as
+      rotas, num banco em que o usuário só lê (medido em 07/11/2026: o primeiro deles
+      derrubava a subida);
+    - a ESCRITA, só durante a subida: são as sementes desses mesmos `init_schema` (a trava do
+      despachante, os padrões da configuração), que o principal já gravou e a réplica trouxe.
+      Depois da subida a escrita NÃO é ignorada: o banco a recusa, e a tela diz que a reserva
+      só lê — calar ali faria o escrevente achar que gravou.
+    """
+    if not _reserva():
+        return False
+    texto = _sem_comentario_na_frente(sql or "")
+    return bool(_RE_DDL.match(texto) or (_SUBINDO_NA_RESERVA and _RE_ESCRITA.match(texto)))
+
+
 def _caminho_e_modo(db_path: Any) -> tuple[str, bool]:
     """O caminho do arquivo e se é só-leitura, aceitando também o URI do
     sqlite3 (`file:C:/x.sqlite3?mode=ro`, `file:///C:/x.sqlite3`). Sem isto o
@@ -260,7 +299,10 @@ def _traduzir_erro(erro: BaseException) -> BaseException:
     if isinstance(erro, (_pgerr.LockNotAvailable, _pgerr.DeadlockDetected,
                          _pgerr.QueryCanceled)):
         return OperationalError("database is locked")
-    if isinstance(erro, _pgerr.ReadOnlySqlTransaction):
+    if isinstance(erro, _pgerr.ReadOnlySqlTransaction) or (
+            _reserva() and isinstance(erro, _pgerr.InsufficientPrivilege)):
+        # NO SERVIDOR RESERVA, a falta de permissão É a recusa de escrita: o usuário do banco
+        # só tem SELECT. Vira a mesma frase do sqlite3 só-leitura, que o sistema já entende.
         return OperationalError("attempt to write a readonly database")
     if isinstance(erro, _pgerr.SyntaxError):
         return OperationalError(f"syntax error: {texto}")
@@ -1407,6 +1449,11 @@ class Conexao:
         marca = (dsn(), self.schema)
         if marca in _SCHEMAS_PRONTOS:
             return
+        if _reserva():
+            self._conferir_schema_da_reserva()
+            _FUNCOES_PRONTAS.add(dsn())
+            _SCHEMAS_PRONTOS.add(marca)
+            return
         with _TRAVA_SCHEMAS:
             if marca in _SCHEMAS_PRONTOS:
                 return
@@ -1441,6 +1488,20 @@ class Conexao:
                 finally:
                     c.execute("SET lock_timeout = '15s'")
             _SCHEMAS_PRONTOS.add(marca)
+
+    def _conferir_schema_da_reserva(self) -> None:
+        """SERVIDOR RESERVA (`modo_reserva`): o esquema e as funções chegam pela réplica, e o
+        usuário do banco só lê — criar qualquer coisa aqui cairia com «permission denied». Só
+        confere que chegaram, e diz o que falta numa frase que o oficial entende."""
+        with self._pg.cursor() as c:
+            c.execute("SELECT to_regclass('public.cg_funcoes') IS NOT NULL, "
+                      "to_regclass(%s) IS NOT NULL", (f'"{self.schema}".cg_meta',))
+            funcoes, meta = c.fetchone()
+        if not (funcoes and meta):
+            falta = "as funções do sistema (public)" if not funcoes else f"o schema «{self.schema}»"
+            raise OperationalError(
+                f"servidor reserva: o banco ainda não tem {falta}. Copie o esquema do principal "
+                "antes de ligar a réplica (docs/SERVIDOR_RESERVA_MACOS.md).")
 
     # -- o que o sqlite3 oferece
     @property
@@ -1807,7 +1868,7 @@ class Conexao:
         if not isinstance(sql, str):
             raise ProgrammingError("O comando SQL tem de ser texto.")
         texto = _sem_comentario_na_frente(sql)
-        if not texto:
+        if not texto or ignorado_na_reserva(texto):
             cur._carregar((), [], -1)
             return
         # comandos de transação

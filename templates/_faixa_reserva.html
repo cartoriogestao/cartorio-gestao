@@ -1,0 +1,7 @@
+{# O SERVIDOR RESERVA (`modo_reserva`): a faixa fica em toda tela, logado ou não, para ninguém
+   confundir a reserva com o principal. Some quando a reserva assume (o modo é desligado). #}
+{% if MODO_RESERVA %}
+<div class="faixa-reserva" role="status">
+  <strong>SERVIDOR RESERVA</strong> — {{ AVISO_RESERVA }}
+</div>
+{% endif %}

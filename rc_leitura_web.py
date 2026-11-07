@@ -282,3 +282,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
               "originais antes de lavrar — a leitura adiantou a digitação, e não decidiu "
               "nada.", "warning")
         return redirect(_url_do_rascunho(especie, rascunho_id))
+
+    @app.route("/rcpn/leitura/<int:leitura_id>/instrucao", methods=["POST"])
+    @login_required
+    @roles_required(*QUEM_LE)
+    def rcpn_leitura_instrucao(leitura_id: int):
+        """A escrevente diz quem é quem. Reaplica a leitura guardada, sem imagem nova."""
+        with db.connect() as con:
+            leitura = LEIT.uma(con, leitura_id)
+            if leitura is not None and not _pode_ver(con, leitura):
+                leitura = None
+        if leitura is None:
+            flash(f"Não há leitura nº {leitura_id}.", "danger")
+            return redirect(url_for("rcpn_leitura"))
+        try:
+            with db.transaction() as con:
+                LEIT.reprocessar(con, leitura_id, request.form.get("instrucao") or "")
+        except LEIT.LeituraError as recusa:
+            flash(str(recusa), "danger")
+            return redirect(url_for("rcpn_leitura_ficha", leitura_id=leitura_id))
+        audit("RC_LEITURA_INSTRUCAO", "rc_leituras", leitura_id, {})
+        flash("A instrução foi aplicada sobre a primeira leitura. Confira de novo "
+              "antes de abrir a tela de lavrar.", "warning")
+        return redirect(url_for("rcpn_leitura_ficha", leitura_id=leitura_id))

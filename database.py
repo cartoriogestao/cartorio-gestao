@@ -250,6 +250,11 @@ class Database:
             # 20h). Quem o abre pelo sqlite3 cai no desvio e vai ao schema.
             if not self.db_path.exists():
                 self.db_path.touch()
+            # SERVIDOR RESERVA (`modo_reserva`): o esquema é o do principal, que chega pela
+            # réplica, e o usuário do banco só lê. Criar ou migrar aqui seria escrever num
+            # banco que não é dele — e a primeira conexão já confere que o esquema chegou.
+            if banco_pg._reserva():
+                return
             # Banco novo: reproduz a criação gravada (ver banco_pg); o primeiro
             # do processo roda o init_schema e grava. Banco existente migra
             # pelo init_schema de sempre.

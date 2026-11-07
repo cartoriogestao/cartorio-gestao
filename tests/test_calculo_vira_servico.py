@@ -223,7 +223,8 @@ def test_a_tela_de_corrigir_e_do_oficial_e_do_gerente(casa):
 
 
 def test_a_tela_de_corrigir_tem_lugar_na_barra():
-    assert NAV.PAI["caixa_calculos_quitados"] == ("CAIXA", "Protocolo geral")
+    # 07/11/2026 (#368): a seção «Protocolo geral» do Caixa passou a se chamar «Atendimentos».
+    assert NAV.PAI["caixa_calculos_quitados"] == ("CAIXA", "Atendimentos")
 
 
 # ------------------------------------------------------------------- o papel

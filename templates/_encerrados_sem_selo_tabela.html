@@ -1,0 +1,20 @@
+{% set linhas = linhas if linhas is defined else da_casa %}
+<table class="table">
+  <thead><tr>
+    <th>Título</th><th>Protocolo</th><th>Situação</th><th>Ato</th>
+    <th>Devedor</th><th>Data</th><th>Devido</th>
+  </tr></thead>
+  <tbody>
+  {% for p in linhas %}
+    <tr>
+      <td><a href="{{ url_for('protesto_titulo', titulo_id=p.titulo_id) }}">{{ p.numero_titulo or p.titulo_id }}</a></td>
+      <td>{{ p.protocolo or '—' }}</td>
+      <td>{{ p.situacao }}</td>
+      <td><small>{{ p.tipo }}{% if p.origem_ato %} · {{ p.origem_ato }}{% endif %}</small></td>
+      <td>{{ p.devedor or '—' }}</td>
+      <td><small>{{ p.data_ato or '—' }}</small></td>
+      <td><small>{{ p.devido or '—' }}</small></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>

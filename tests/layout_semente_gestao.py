@@ -860,6 +860,18 @@ PARTES = (_balcao, _andamento_e_inacabados, _cobranca, _nfse, _tarefas, _expedie
           _automacao, _agente, _ajuda, _selos, _whatsapp)
 
 
+def _atendimento_e_treinamento(casa) -> None:
+    """O atendimento do protocolo e as aulas do treinamento (#368). As aulas e as trilhas são do
+    código (`treinamento_roteiros`), e não do banco: a semente só anota os endereços."""
+    casa.pagina("at_ficha", protocolo_id=casa.ids["gestao_protocolo_pago"])
+    casa.pagina("tr_trilha", trilha="primeiro-dia")
+    casa.pagina("tr_aula", chave="roteiro-atendimento")
+    casa.pagina("tr_orientacao", chave="roteiro-atendimento")
+
+
+PARTES = PARTES + (_atendimento_e_treinamento,)
+
+
 def semear(casa) -> None:
     """Cada parte roda sozinha: uma que falha não esconde as outras, mas o conjunto falha."""
     falhas = []

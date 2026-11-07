@@ -267,11 +267,12 @@ ITEM_DA_TABELA_DO_ATO: dict[str, str] = {
     "INTIMACAO": "17.2",
     "PROTESTO": "17.1",
 }
-#: A desistência cobra a faixa 17.4 do valor do título, pela tabela da
-#: protocolização. O cabeçalho 17.4 vale zero.
-FAIXA_DA_DESISTENCIA = "17.4"
 #: Os itens da tabela que são FAIXA pelo valor do título.
 ITENS_POR_FAIXA_DO_VALOR = frozenset({"17.1"})
+#: A faixa da desistência ou da liquidação depois do apontamento. O texto da
+#: tabela é este caso: «quando, após o apontamento e antes ou depois da
+#: intimação, ocorrer a liquidação do título ou a desistência».
+FAIXA_DA_DESISTENCIA = "17.4"
 
 
 def _centavos_br(texto: Any) -> int | None:
@@ -402,6 +403,12 @@ def item_da_desistencia(con, titulo_id: int, *, data: str) -> dict | None:
     valor, devolve None — cobrar zero seria dizer que a desistência é de graça.
     """
     import custas as CU
+    # Sem a tabela de emolumentos (banco sem o caixa), não há o que deixar devido. Perguntar
+    # antes, e não pegar o erro: no PostgreSQL, a consulta que falha derruba a transação da
+    # desistência inteira.
+    if not all(banco(con).tem_tabela(t) for t in ("cx_vigencias", "cx_servicos",
+                                                   "cx_servico_valores")):
+        return None
     try:
         vigencia = CU.vigencia_do_dia(con, str(data)[:10])
     except CU.CustasError:
@@ -431,8 +438,9 @@ def deixar_devida_a_desistencia(con, titulo_id: int, ato_id: int, *,
                                 agora: str, usuario: str | None = None) -> dict | None:
     """A desistência do título diferido deixa o item 17.4 devido. ESCREVE.
 
-    Não cobra e não sela. Se o mesmo serviço já está devido ou cobrado neste
-    título, não repete. Título antecipado não passa aqui.
+    Não cobra e não sela. Intimação e diligência não entram: elas são outro
+    ato. Se o mesmo serviço já está devido ou cobrado neste título, não
+    repete. Título antecipado não passa aqui — nele quem lavra marca o item.
     """
     cobranca = cobranca_do_ato(con, titulo_id, "DESISTENCIA", hoje=str(agora)[:10])
     if cobranca.get("regime") != "DIFERIDO":

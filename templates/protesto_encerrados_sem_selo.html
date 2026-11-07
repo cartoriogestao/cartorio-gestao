@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Desistidos e cancelados sem selo{% endblock %}
+{% block heading %}<h1>Desistidos e cancelados sem selo</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a>
+  <a class="button" href="{{ url_for('protesto_a_protestar') }}">A protestar</a>
+</div>
+
+<div class="notice">
+  Aqui estão a desistência, a retirada e o cancelamento <strong>sem selo</strong>.
+  O quadro «Protestos lavrados sem selo», em A protestar, não os mostra: ele só
+  lista protesto de título que continua protestado.
+  O apontamento não entra nesta lista.
+</div>
+
+<section class="cards">
+  <div class="stat"><strong>{{ da_casa|length }}</strong><small>desta casa</small></div>
+  <div class="stat"><strong>{{ acervo|length }}</strong><small>do E-Ofício</small></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Desta casa</span>
+    <small>{{ da_casa|length }}</small>
+  </div>
+  {% if da_casa %}
+  <p style="padding:14px 14px 0"><small>
+    Lavrados aqui. O selo, quando couber, sai na ficha do título. Esta página não sela.
+  </small></p>
+  {% include '_encerrados_sem_selo_tabela.html' %}
+  {% else %}
+  <p style="padding:14px">Nenhum desistido ou cancelado desta casa está sem selo.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>E-Ofício</span>
+    <small>{{ acervo|length }}</small>
+  </div>
+  <p style="padding:14px 14px 0"><small>
+    Vieram do sistema antigo. O botão que sela o protesto lavrado não os sela.
+  </small></p>
+  {% if acervo %}
+  {% with linhas=acervo %}{% include '_encerrados_sem_selo_tabela.html' %}{% endwith %}
+  {% else %}
+  <p style="padding:14px">Nenhum do E-Ofício está sem selo nestes atos.</p>
+  {% endif %}
+</section>
+{% endblock %}

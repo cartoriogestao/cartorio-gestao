@@ -22,6 +22,9 @@ COMANDOS
     conferir           conta as linhas de cada tabela nos dois lados
     esquema            acrescenta na reserva as tabelas e colunas novas do principal
     assumir            a reserva vira o principal (o principal caiu e não volta hoje)
+    chave-da-reserva   sorteia o par de chaves da reserva (uma vez) e mostra a pública
+    chaves             abre o pacote de segredos que o principal cifrou para a reserva
+    pastas             copia as pastas configuradas FORA da pasta de arquivos (--apontar: assumir)
 
 AS CONEXÕES (nunca com senha na linha: a senha vai no `~/.pgpass`, como no principal — ver
 `docs/SEGURANCA_REDE.md`, item 3):
@@ -37,6 +40,10 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import reserva_chaves as RCH  # noqa: E402
 
 try:
     import psycopg
@@ -59,7 +66,7 @@ FRASE_DE_ASSUMIR = "ASSUMIR"
 
 # ------------------------------------------------------------------ o SQL do principal
 
-def sql_do_principal(schema: str, dono: str) -> str:
+def sql_do_principal(schema: str, dono: str, publica: str = "") -> str:
     """O SQL que se roda uma vez no banco do principal, com `psql -v senha=...`.
 
     Tudo é idempotente: rodar de novo não desfaz nem duplica nada. O que exige reiniciar o
@@ -67,6 +74,16 @@ def sql_do_principal(schema: str, dono: str) -> str:
     """
     if not re.fullmatch(r"[a-z_][a-z0-9_]*", schema) or not re.fullmatch(r"[a-z_][a-z0-9_]*", dono):
         raise ValueError("schema e dono: só minúsculas, dígitos e _")
+    if publica and not (re.fullmatch(r"[A-Za-z0-9+/]{43}=", publica) and RCH.publica_valida(publica)):
+        raise ValueError("a chave pública da reserva não é X25519 em base64")
+    if publica:
+        chaves = (f"-- 6. A chave PÚBLICA da reserva: o principal cifra para ela os segredos da pasta de\n"
+                  f"--    dados (reserva_chaves.py). Só a privada, que não sai do Mac, abre o pacote.\n"
+                  f"INSERT INTO {schema}.settings(key, value) VALUES ('{RCH.CHAVE_PUBLICA}', '{publica}')\n"
+                  f"    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;\n")
+    else:
+        chaves = ("-- 6. SEM a chave da reserva: os segredos da pasta de dados NÃO vão. Rode no Mac\n"
+                  "--    `reserva.py chave-da-reserva` e gere este SQL de novo.\n")
     return f"""\\set ON_ERROR_STOP on
 -- Servidor reserva (docs/SERVIDOR_RESERVA_MACOS.md): o lado do PRINCIPAL. Rode com
 --   psql -h 127.0.0.1 -p 5434 -U {dono} -d cartorio -v senha=<senha do cg_replica> -f principal.sql
@@ -107,7 +124,8 @@ SELECT 'CREATE PUBLICATION {PUBLICACAO} FOR TABLES IN SCHEMA {schema}'
 -- 5. Conferência: o que falta para a reserva conectar.
 SELECT name, setting, CASE WHEN pending_restart THEN 'REINICIE O SERVIÇO' ELSE 'ok' END AS estado
   FROM pg_settings WHERE name IN ('wal_level', 'max_slot_wal_keep_size', 'listen_addresses');
-"""
+
+{chaves}"""
 
 
 # ------------------------------------------------------------------ as conexões
@@ -378,6 +396,169 @@ def acertar_sequencias(c, schema: str) -> int:
     return feitas
 
 
+# ------------------------------------------------------------------ as chaves (os segredos)
+
+def _caminho_da_chave(dado: str | None) -> Path:
+    valor = (dado or os.environ.get("CG_RESERVA_CHAVE") or "").strip()
+    if not valor:
+        sys.exit("falta o caminho da chave da reserva: --chave ou a variável CG_RESERVA_CHAVE")
+    return Path(valor).expanduser()
+
+
+def receber_chaves(local: str, schema: str, privada: Path, pasta_dados: Path) -> int:
+    """Abre o pacote que o principal cifrou para esta reserva e grava os segredos na pasta de
+    dados. Só regrava quando o pacote mudou (a impressão fica em `.reserva-impressao`)."""
+    with _abrir(local) as pg, pg.cursor() as c:
+        if c.execute("SELECT to_regclass(format('%%I.%%I', %s::text, %s::text))",
+                     (schema, RCH.TABELA)).fetchone()[0] is None:
+            print("chaves: o principal ainda não publicou o pacote (falta a chave pública lá: "
+                  "roteiro, passo A2)")
+            return 0
+        linha = c.execute(S.SQL("SELECT impressao, pacote FROM {}.{} WHERE id = 1").format(
+            S.Identifier(schema), S.Identifier(RCH.TABELA))).fetchone()
+    if not linha:
+        print("chaves: a tabela chegou, o pacote ainda não")
+        return 0
+    marca = pasta_dados / ".reserva-impressao"
+    if marca.exists() and marca.read_text(encoding="ascii").strip() == linha[0]:
+        print("chaves: em dia")
+        return 0
+    try:
+        arquivos = RCH.decifrar(linha[1], privada)
+    except ValueError as erro:
+        print(f"chaves: {erro} — a pública no principal é a deste Mac? (`chave-da-reserva`)")
+        return 1
+    gravados = RCH.gravar(pasta_dados, arquivos)
+    marca.write_text(linha[0] + "\n", encoding="ascii")
+    print(f"chaves: {len(gravados)} arquivo(s) recebidos ({', '.join(gravados)})")
+    return 0
+
+
+# ------------------------------------------------------------------ as pastas fora dos arquivos
+
+#: As pastas que o oficial escolhe em Configurações e que podem ficar FORA da pasta de arquivos.
+#: O `backup_dir` fica de fora de propósito: o backup do principal é do banco do principal, e a
+#: reserva tem o banco em dia pela réplica (copiar os backups dobraria o disco do Mac à toa).
+PASTAS_DA_CONFIGURACAO = ("ri_pasta_matriculas_doc", "nt_pasta_firmas", "nt_pasta_export",
+                          "gratuidade_pasta", "pastas_de_importacao")
+
+
+def _normal(caminho: str) -> str:
+    return caminho.strip().replace("/", "\\").rstrip("\\").lower()
+
+
+def dentro_de(caminho: str, raiz: str) -> bool:
+    """`caminho` (do Windows) fica em `raiz` ou abaixo dela? Sem diferença de maiúsculas."""
+    c, r = _normal(caminho), _normal(raiz)
+    return bool(r) and (c == r or c.startswith(r + "\\"))
+
+
+def ler_mapa(texto: str) -> list[tuple[str, str]]:
+    """`CG_RESERVA_SMB_PASTAS`: «C:\\Pasta=//usuario@ip/compartilhamento», separados por «;».
+    A origem pode ser também uma pasta local (o ensaio usa assim)."""
+    mapa = []
+    for parte in re.split(r"[;\n]", texto or ""):
+        raiz, sinal, origem = parte.strip().rpartition("=")
+        if sinal and raiz.strip() and origem.strip():
+            mapa.append((raiz.strip(), origem.strip()))
+    # a raiz mais longa primeiro: «C:\\A\\B» ganha de «C:\\A»
+    return sorted(mapa, key=lambda m: -len(_normal(m[0])))
+
+
+def pastas_fora(config: dict[str, str], arquivos: str) -> list[tuple[str, str]]:
+    """(chave, caminho) de cada pasta configurada fora da pasta de arquivos."""
+    fora = []
+    for chave in PASTAS_DA_CONFIGURACAO:
+        for linha in (config.get(chave) or "").splitlines():
+            linha = linha.strip()
+            if linha and not (arquivos and dentro_de(linha, arquivos)):
+                fora.append((chave, linha))
+    return fora
+
+
+def raiz_que_cobre(caminho: str, mapa: list[tuple[str, str]]) -> tuple[str, str] | None:
+    return next((m for m in mapa if dentro_de(caminho, m[0])), None)
+
+
+def destino_de(raiz: str, base: Path) -> Path:
+    """Onde a cópia de `raiz` mora no Mac: «C:\\Matriculas» → <base>/C_Matriculas."""
+    return base / (re.sub(r"[\\/:]+", "_", raiz.strip()).strip("_") or "raiz")
+
+
+def _ler_config(c, schema: str) -> dict[str, str]:
+    c.execute(S.SQL("SELECT key, value FROM {}.settings WHERE key = ANY(%s)").format(
+        S.Identifier(schema)), (list(PASTAS_DA_CONFIGURACAO) + ["archive_root"],))
+    return {k: v or "" for k, v in c.fetchall()}
+
+
+def _montado(ponto: Path) -> bool:
+    saida = subprocess.run(["mount"], capture_output=True, text=True, check=False).stdout
+    return f" on {ponto} (" in saida
+
+
+def copiar_pastas(local: str, schema: str, base: Path, mapa_texto: str) -> int:
+    """Copia cada pasta configurada fora da pasta de arquivos, do compartilhamento dela para
+    `<base>/<nome>`. Como a pasta de arquivos: só acrescenta e atualiza, nunca apaga."""
+    with _abrir(local) as pg, pg.cursor() as c:
+        config = _ler_config(c, schema)
+    mapa = ler_mapa(mapa_texto)
+    usadas: dict[str, str] = {}
+    for chave, caminho in pastas_fora(config, config.get("archive_root", "")):
+        m = raiz_que_cobre(caminho, mapa)
+        if m is None:
+            print(f"pastas: FALTA COMPARTILHAR {caminho} ({chave}) — ver o roteiro, passo B3")
+        else:
+            usadas[m[0]] = m[1]
+    erros = 0
+    for raiz, origem in usadas.items():
+        destino = destino_de(raiz, base)
+        destino.mkdir(parents=True, exist_ok=True)
+        if origem.startswith("//"):
+            ponto = base / ".montagens" / destino.name
+            ponto.mkdir(parents=True, exist_ok=True)
+            if not _montado(ponto):
+                subprocess.run(["mount_smbfs", origem, str(ponto)], check=False)
+            if not _montado(ponto):
+                print(f"pastas: não montei {origem} ({raiz})")
+                erros += 1
+                continue
+            fonte = ponto
+        else:
+            fonte = Path(origem)
+        r = subprocess.run(["rsync", "-rt", "--partial", "--exclude", "~$*", "--exclude", "*.tmp",
+                            f"{fonte}/", f"{destino}/"], capture_output=True, text=True, check=False)
+        if r.returncode != 0:
+            print(f"pastas: a cópia de {raiz} parou com erro: {r.stderr.strip()[-500:]}")
+            erros += 1
+        else:
+            print(f"pastas: {raiz} em dia")
+    return 1 if erros else 0
+
+
+def apontar_pastas(local: str, schema: str, base: Path, mapa_texto: str) -> int:
+    """No `assumir`: cada pasta configurada que tem cópia neste Mac passa a apontar para ela."""
+    mapa = ler_mapa(mapa_texto)
+    trocadas = 0
+    with _abrir(local) as pg, pg.cursor() as c:
+        for chave, valor in _ler_config(c, schema).items():
+            if chave == "archive_root":
+                continue
+            linhas = []
+            for linha in valor.splitlines():
+                m = raiz_que_cobre(linha.strip(), mapa) if linha.strip() else None
+                if m:
+                    resto = linha.strip()[len(m[0].rstrip("\\/")):].replace("\\", "/").strip("/")
+                    linha = str(destino_de(m[0], base) / resto) if resto else str(destino_de(m[0], base))
+                linhas.append(linha)
+            novo = "\n".join(linhas)
+            if novo != valor:
+                c.execute(S.SQL("UPDATE {}.settings SET value = %s WHERE key = %s").format(
+                    S.Identifier(schema)), (novo, chave))
+                trocadas += 1
+    print(f"pastas: {trocadas} configuração(ões) apontadas para as cópias deste Mac")
+    return 0
+
+
 # ------------------------------------------------------------------ linha de comando
 
 def main(argv: list[str] | None = None) -> int:
@@ -389,6 +570,16 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="comando", required=True)
     p = sub.add_parser("sql-do-principal")
     p.add_argument("--dono", default="cg", help="o dono das tabelas no principal")
+    p.add_argument("--chave", help="a chave privada da reserva (ou CG_RESERVA_CHAVE): vai só a pública")
+    p = sub.add_parser("chave-da-reserva")
+    p.add_argument("--chave", help="onde fica a privada (ou CG_RESERVA_CHAVE)")
+    p = sub.add_parser("chaves")
+    p.add_argument("--chave", help="a privada da reserva (ou CG_RESERVA_CHAVE)")
+    p.add_argument("--dados", help="a pasta de dados da reserva (ou CARTORIO_GESTAO_DATA)")
+    p = sub.add_parser("pastas")
+    p.add_argument("--base", help="onde ficam as cópias (ou CG_RESERVA_PASTAS)")
+    p.add_argument("--apontar", action="store_true",
+                   help="no assumir: as configurações passam a apontar para as cópias")
     p = sub.add_parser("montar")
     p.add_argument("--refazer", action="store_true", help="apaga a reserva e copia tudo de novo")
     sub.add_parser("situacao")
@@ -402,13 +593,31 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
 
     if a.comando == "sql-do-principal":
-        sys.stdout.write(sql_do_principal(a.schema, a.dono))
+        caminho = Path(a.chave or os.environ.get("CG_RESERVA_CHAVE") or "").expanduser()
+        publica = RCH.publica_de(caminho) if str(caminho) not in {"", "."} and caminho.is_file() else ""
+        sys.stdout.write(sql_do_principal(a.schema, a.dono, publica))
+        return 0
+    if a.comando == "chave-da-reserva":
+        print(RCH.gerar_par(_caminho_da_chave(a.chave)))
         return 0
     local = _dsn("CG_RESERVA_LOCAL_DSN", a.local)
     if a.comando == "situacao":
         return situacao(local)
     if a.comando == "assumir":
         return assumir(local, a.schema, a.confirmo, a.principal_vivo)
+    if a.comando == "chaves":
+        dados = (a.dados or os.environ.get("CARTORIO_GESTAO_DATA") or "").strip()
+        if not dados:
+            sys.exit("falta a pasta de dados: --dados ou CARTORIO_GESTAO_DATA")
+        return receber_chaves(local, a.schema, _caminho_da_chave(a.chave), Path(dados).expanduser())
+    if a.comando == "pastas":
+        base = (a.base or os.environ.get("CG_RESERVA_PASTAS") or "").strip()
+        if not base:
+            sys.exit("falta onde ficam as cópias: --base ou CG_RESERVA_PASTAS")
+        mapa = os.environ.get("CG_RESERVA_SMB_PASTAS", "")
+        if a.apontar:
+            return apontar_pastas(local, a.schema, Path(base).expanduser(), mapa)
+        return copiar_pastas(local, a.schema, Path(base).expanduser(), mapa)
     principal = _dsn("CG_RESERVA_PRINCIPAL_DSN", a.principal)
     if a.comando == "montar":
         montar(principal, local, a.schema, a.refazer)

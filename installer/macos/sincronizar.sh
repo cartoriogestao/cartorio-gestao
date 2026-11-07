@@ -1,8 +1,10 @@
 #!/bin/bash
-# A SINCRONIA DA RESERVA, de 5 em 5 minutos (LaunchAgent). Três coisas, nesta ordem:
-#   1. a pasta de arquivos do principal → a cópia local (sem apagar nada daqui);
+# A SINCRONIA DA RESERVA, de 5 em 5 minutos (LaunchAgent). Nesta ordem:
+#   1. a pasta de arquivos do principal → a cópia local (sem apagar nada daqui), e as pastas
+#      configuradas fora dela (`reserva.py pastas`);
 #   2. o esquema: tabela ou coluna nova de uma versão nova do principal entra antes das linhas
 #      (sem isto a réplica para na primeira linha que as usa);
+#      depois, os segredos da pasta de dados (`reserva.py chaves`: o pacote cifrado para este Mac);
 #   3. a situação da réplica, anotada em sincronia.log — o `situacao` sai 1 se atrasou.
 # Depois de assumir (CG_MODO_RESERVA=0), não faz mais nada: não há de onde copiar.
 set -uo pipefail
@@ -29,8 +31,12 @@ if [ -n "${CG_RESERVA_SMB:-}" ]; then
   fi
 fi
 
-# 2. o esquema e 3. a situação
+# 1b. as pastas configuradas FORA da pasta de arquivos (cada uma do seu compartilhamento)
+"$PY" "$FERRAMENTA" pastas >>"$LOG" 2>&1 || echo "$(agora) pastas: falhou" >>"$LOG"
+
+# 2. o esquema, as chaves (o pacote cifrado que o principal publica pela réplica) e 3. a situação
 "$PY" "$FERRAMENTA" esquema --aplicar >>"$LOG" 2>&1 || echo "$(agora) esquema: falhou" >>"$LOG"
+"$PY" "$FERRAMENTA" chaves >>"$LOG" 2>&1 || echo "$(agora) chaves: falhou" >>"$LOG"
 echo "$(agora) $("$PY" "$FERRAMENTA" situacao 2>&1 | tr '\n' ' ')" >>"$LOG"
 # o log não cresce sem fim: fica com as últimas 5000 linhas
 tail -n 5000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"

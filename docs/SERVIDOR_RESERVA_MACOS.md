@@ -14,7 +14,8 @@
 | como o banco chega | publicação `cg_reserva` | assinatura `cg_reserva` (réplica **lógica**, segundos de atraso) |
 | o sistema | porta 8765, descoberta na 8766 | porta **8775**, sem descoberta, faixa «SERVIDOR RESERVA» |
 | quem grava | o sistema, como sempre | **ninguém**: o sistema entra no banco com `cg_leitor`, que só tem SELECT |
-| arquivos | a pasta da casa (`archive_root`) | cópia de 5 em 5 minutos, sem apagar nada (`sincronizar.sh`) |
+| arquivos | a pasta da casa (`archive_root`) e as pastas configuradas fora dela | cópia de 5 em 5 minutos, sem apagar nada (`sincronizar.sh`) |
+| segredos | `secret.key`, `cofre.key`, `*.cred` na pasta de dados | pacote cifrado **para a chave do Mac**, que chega pela réplica |
 
 **Por que só lê.** Protocolo, selo, folha e ato saem de sequências do banco. Com os dois servidores
 lançando, o mesmo número sairia duas vezes, um em cada lado, e isso não tem conserto no livro.
@@ -30,8 +31,40 @@ mesmo idioma do banco. Windows e macOS não têm nem um nem outro em comum. A l�
 
 **O que a reserva mostra.** Medido na casa de ensaio, com o perfil ADMIN: das 893 telas, 848 abrem.
 As outras gravam algum rastro ao abrir e mostram «abra-a no servidor principal», em vez do erro 500.
-Formulário nenhum entra, salvo o de entrar e o de sair. O login na reserva não fica na tabela de
+Formulário nenhum entra, salvo o de entrar e o de sair. Enquanto é reserva, as telas que abrem
+documento das pastas configuradas fora da pasta de arquivos procuram o caminho do Windows e não
+acham. Depois do `assumir`, elas apontam para as cópias do Mac. O login na reserva não fica na tabela de
 auditoria (o banco não grava), só no log do servidor.
+
+## Os segredos da pasta de dados
+
+A réplica leva o banco, e a sincronia leva os arquivos. Faltavam os segredos da pasta de dados do
+principal:
+
+- `secret.key`, que assina as sessões e os códigos dos links impressos;
+- `cofre.key` e os `*.cred`, com as senhas das integrações e a chave dos códigos de acompanhamento
+  que vão para os clientes.
+
+Sem eles, a reserva que assume perde as integrações, e os códigos entregues deixam de abrir.
+
+Eles vão **cifrados de uma instalação para a outra** (`reserva_chaves.py`):
+
+1. Na instalação, o Mac sorteia um par de chaves. A **privada** nunca sai dele
+   (`reserva-chave.privada`, só o dono lê). A **pública** vai ao principal no SQL do passo A2.
+2. O principal, de 5 em 5 minutos, cifra os segredos para essa pública e grava o pacote na tabela
+   `reserva_pacote`, só quando algum mudou.
+3. A réplica leva a tabela ao Mac, pela conexão SSL. A sincronia abre o pacote com a privada e
+   grava os arquivos na pasta de dados do Mac.
+
+Só a privada do Mac abre o pacote. Nem o próprio principal o abre depois de cifrado. Quem copiar o
+banco, um backup ou o tráfego leva bytes que não abrem. Ficam de fora o `pgpass.conf` do Windows (o
+Mac tem o seu) e o certificado `.pfx`.
+
+## A ordem
+
+1. **B1**, no Mac: instalar. É o que sorteia a chave da reserva.
+2. **Parte A**, no Windows: o SQL (que já leva a pública do Mac), o SSL, o acesso e o reinício.
+3. **B2 a B4**, no Mac.
 
 ## Parte A — o lado do Windows (uma vez)
 
@@ -45,10 +78,12 @@ auditoria (o banco não grava), só no log do servidor.
 >
 > O túnel SSH, a outra opção, ficou de fora: pedia ligar o servidor SSH do Windows.
 
-**A1.** No Mac, gere o SQL do principal e leve-o ao Windows:
+**A1.** No Mac, **depois do B1**, gere o SQL do principal e leve-o ao Windows. Ele leva a chave
+pública da reserva (a privada não sai do Mac):
 
 ```
-venv/bin/python tools/reserva.py sql-do-principal > principal.sql
+cd ~/Library/Application\ Support/CartorioGestao
+(set -a; source reserva.env; venv/bin/python sistema/tools/reserva.py sql-do-principal) > principal.sql
 ```
 
 **A2.** No Windows, rode o SQL. A senha do `cg_replica` é nova: anote-a, porque ela vai para o
@@ -65,7 +100,9 @@ O que o SQL faz (pode rodar de novo sem estragar nada):
   principal;
 - cria o usuário `cg_replica`, que entra, replica e lê, mais nada;
 - dá identidade de réplica a tabela sem chave, se houver alguma (a casa tinha 0 em 07/11/2026);
-- cria a publicação.
+- cria a publicação;
+- grava a chave **pública** da reserva em Configurações. A partir do reinício do sistema, o
+  principal publica o pacote de segredos cifrado para ela.
 
 A conferência no fim mostra `REINICIE O SERVIÇO` enquanto o `wal_level` não valer.
 
@@ -105,6 +142,7 @@ O instalador:
 - copia o código para `~/Library/Application Support/CartorioGestao/sistema` e monta o venv;
 - cria um PostgreSQL só da reserva (porta 5434, com senha, idioma pt-BR pelo ICU);
 - cria os usuários `cg` e `cg_leitor`, com as senhas no `~/.pgpass`;
+- sorteia a chave da reserva (`reserva-chave.privada`), uma vez só;
 - instala três serviços do launchd: `br.com.cartoriogestao.postgres`, `.servidor` e `.sincronia`.
 
 Pode rodar de novo, e é assim que se atualiza o código.
@@ -116,12 +154,36 @@ Pode rodar de novo, e é assim que se atualiza o código.
 <IP do Windows>:5434:cartorio:cg_replica:<a senha do A2>
 ```
 
-**B3.** A pasta de arquivos (opcional, recomendado):
+**B3.** Os arquivos (recomendado). A cópia vai **direto do Windows para o Mac**, pela rede da
+casa, por compartilhamento do Windows (SMB). Nenhum serviço de fora entra no caminho.
 
 - compartilhe no Windows a pasta da casa, só leitura, para um usuário só da reserva;
+- **ligue a criptografia do compartilhamento**, porque sem ela os documentos passam abertos pela
+  rede. No PowerShell do Windows, como administrador:
+  `Set-SmbShare -Name arquivos -EncryptData $true`. O macOS fala SMB 3 cifrado sozinho;
 - ponha `CG_RESERVA_SMB=//usuario@<IP do Windows>/arquivos` no `reserva.env`;
 - monte-a uma vez pelo Finder (Ir › Conectar ao Servidor) marcando «lembrar a senha». A senha fica
   nas Chaves, e a sincronia monta sozinha dali em diante.
+
+**As pastas configuradas fora da pasta de arquivos** (Configurações: documentos das matrículas,
+firmas e exportação de Notas, gratuidade, pastas de importação): a sincronia lê no banco onde cada
+uma está e anota no `sincronia.log` as que ficam fora da pasta de arquivos e não têm
+compartilhamento: `pastas: FALTA COMPARTILHAR D:\Matriculas (ri_pasta_matriculas_doc)`. Para
+cada uma:
+
+- compartilhe-a no Windows do mesmo jeito: só leitura, mesmo usuário, `-EncryptData $true`;
+- acrescente-a em `CG_RESERVA_SMB_PASTAS`, no `reserva.env`:
+  `D:\Matriculas=//cartorio@<IP do Windows>/matriculas`, várias separadas por `;`;
+- monte-a uma vez pelo Finder, como a primeira.
+
+As cópias ficam em `pastas/` na instalação (`D:\Matriculas` → `pastas/D_Matriculas`), também
+sem apagar nada. A pasta de backup fica de fora de propósito: o banco já chega pela réplica.
+
+**Como a cópia anda.** De 5 em 5 minutos, o `rsync` compara cada arquivo dos dois lados pelo
+tamanho e pela data, e só passa pela rede o que é novo ou mudou. Um arquivo interrompido no meio
+continua na volta seguinte. O que sumir do Windows continua no Mac. A primeira volta traz o acervo
+inteiro e é a demorada; as seguintes levam segundos. A defasagem é de até 5 minutos, contra
+segundos do banco.
 
 **B4.** Monte a réplica:
 
@@ -138,8 +200,9 @@ que falta. Abra `http://<IP do Mac>:8775`: a faixa vermelha diz «SERVIDOR RESER
 
 ## O dia a dia
 
-- **`sincronia.log`** (na pasta da instalação): uma linha a cada 5 minutos, terminando em `EM DIA`
-  ou `ATRASADA`. Atrasada por mais de uma hora, veja o log do PostgreSQL da reserva
+- **`sincronia.log`** (na pasta da instalação): a cada 5 minutos, as pastas, as chaves
+  (`chaves: em dia` ou `chaves: N arquivo(s) recebidos`) e uma linha terminando em `EM DIA` ou
+  `ATRASADA`. Atrasada por mais de uma hora, veja o log do PostgreSQL da reserva
   (`logs/postgres.log`).
 - **Versão nova:** atualize primeiro o principal, como sempre. O esquema chega à reserva sozinho em
   até 5 minutos. Depois atualize o código do Mac (`git pull` e `instalar_reserva.sh`). O contrário,
@@ -160,7 +223,7 @@ que falta. Abra `http://<IP do Mac>:8775`: a faixa vermelha diz «SERVIDOR RESER
    O script:
    - desliga a réplica;
    - acerta as sequências (no ensaio: 286 numa base de 331 tabelas, em menos de um segundo);
-   - aponta a pasta de arquivos do banco para a cópia do Mac;
+   - aponta a pasta de arquivos e as outras pastas configuradas para as cópias do Mac;
    - troca o `reserva.env` para o modo principal;
    - reinicia o servidor. Ele sobe na porta do principal (8765) e responde à descoberta, e os balcões
      o acham sozinhos.
@@ -206,6 +269,11 @@ tinha o esquema verdadeiro, criado pelo próprio sistema (330 tabelas). O que se
   Documentos, e o macOS barrou;
 - `assumir.sh` com o principal desligado: sequências acertadas, servidor de volta na 8765 sem a
   faixa, cadastro novo com o id seguinte, pasta de arquivos apontada para o Mac.
+
+Depois do ensaio, entraram os segredos e as pastas configuradas. Esses dois foram testados contra o
+banco de teste, com uma pasta local no lugar do compartilhamento: o principal publica, a reserva
+abre e grava, e o `pastas --apontar` troca a configuração. O SMB de verdade e o pacote atravessando
+a réplica entre duas máquinas ficam para a implantação.
 
 Os testes automáticos são `tests/test_modo_reserva.py` (o sistema com o usuário só de leitura,
 inclusive a subida inteira) e `tests/test_ferramenta_reserva.py`.

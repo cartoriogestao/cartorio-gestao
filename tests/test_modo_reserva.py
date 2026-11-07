@@ -147,3 +147,50 @@ def test_o_que_a_ponte_deixa_de_rodar_na_reserva(monkeypatch):
         banco_pg.subida_da_reserva(False)
     monkeypatch.setenv("CG_MODO_RESERVA", "")
     assert not banco_pg.ignorado_na_reserva("CREATE TABLE x (a int)")
+
+
+def test_a_sincronia_traz_as_chaves_e_as_pastas_e_o_assumir_aponta(cg_casa, tmp_path, monkeypatch):
+    """Do lado do Mac, contra um banco de verdade: `reserva.py chaves` abre o pacote que o
+    principal publicou; `pastas` copia a pasta configurada fora dos arquivos (origem local, no
+    lugar do compartilhamento) e avisa a que não tem compartilhamento; `pastas --apontar`, no
+    assumir, troca a configuração para a cópia do Mac."""
+    import sys
+    from pathlib import Path
+    import reserva_chaves as RCH
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+    import reserva as R
+
+    db = cg_casa["db"]
+    dsn = os.environ["CG_PG_DSN"]
+    schema = banco_pg.schema_do_caminho(cg_casa["banco"])
+    privada = tmp_path / "mac" / "reserva-chave.privada"
+    db.set_settings({RCH.CHAVE_PUBLICA: RCH.gerar_par(privada)})
+    dados_win = tmp_path / "win-dados"
+    dados_win.mkdir()
+    (dados_win / "cofre.key").write_text("chave-do-cofre")
+    (dados_win / "portal.cred").write_bytes(b"\x00cifrado")
+    dados_mac = tmp_path / "mac" / "dados"
+
+    assert R.receber_chaves(dsn, schema, privada, dados_mac) == 0      # ainda sem tabela: avisa
+    assert not dados_mac.exists()
+    assert RCH.publicar(db, dados_win) == "publicado"
+    assert R.receber_chaves(dsn, schema, privada, dados_mac) == 0
+    assert (dados_mac / "cofre.key").read_text() == "chave-do-cofre"
+    assert (dados_mac / "portal.cred").read_bytes() == b"\x00cifrado"
+    (dados_mac / "cofre.key").write_text("mexida")
+    assert R.receber_chaves(dsn, schema, privada, dados_mac) == 0      # em dia: não regrava
+    assert (dados_mac / "cofre.key").read_text() == "mexida"
+
+    origem = tmp_path / "win-matriculas"
+    (origem / "2026").mkdir(parents=True)
+    (origem / "2026" / "m1.pdf").write_bytes(b"%PDF")
+    db.set_settings({"archive_root": r"C:\Cartorio\Arquivos",
+                     "ri_pasta_matriculas_doc": r"D:\Matriculas\2026",
+                     "gratuidade_pasta": r"E:\Gratuidade"})
+    base = tmp_path / "mac" / "pastas"
+    mapa = f"D:\\Matriculas={origem}"
+    assert R.copiar_pastas(dsn, schema, base, mapa) == 0
+    assert (base / "D_Matriculas" / "2026" / "m1.pdf").read_bytes() == b"%PDF"
+    assert R.apontar_pastas(dsn, schema, base, mapa) == 0
+    assert db.get_setting("ri_pasta_matriculas_doc") == str(base / "D_Matriculas" / "2026")
+    assert db.get_setting("gratuidade_pasta") == r"E:\Gratuidade"     # sem cópia: fica

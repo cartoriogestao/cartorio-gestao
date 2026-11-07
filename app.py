@@ -4040,6 +4040,14 @@ def main():
         ATUGH.iniciar_vigia(Path(app.config["DATA_DIR"]) / "updates")
     except Exception as exc:  # noqa: BLE001
         print(f"Consulta de versao nova nao ligou: {exc}")
+    # AS CHAVES PARA A RESERVA DO macOS (07/11/2026, `reserva_chaves`): só se há reserva
+    # instalada (a chave pública dela em settings); cifradas para ela, pela réplica.
+    try:
+        if not reserva:
+            import reserva_chaves
+            reserva_chaves.iniciar_vigia(db, Path(app.config["DATA_DIR"]))
+    except Exception as exc:  # noqa: BLE001
+        print(f"Pacote de chaves da reserva nao ligou: {exc}")
     host = db.get_setting("network_host", "0.0.0.0") or "0.0.0.0"
     # Para a instalacao oficial em rede, 127.0.0.1 impediria os clientes.
     if "--service" in sys.argv and host in {"127.0.0.1", "localhost"}:

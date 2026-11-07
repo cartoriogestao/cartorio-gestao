@@ -42,7 +42,16 @@ if [ ! -f "$PASTA/reserva.env" ]; then
       "$PASTA/sistema/installer/macos/reserva.env.exemplo" > "$PASTA/reserva.env"
   echo "   criado $PASTA/reserva.env — ponha nele o IP do servidor Windows"
 fi
+# instalação antiga (antes das chaves e das pastas): acrescenta o que falta, sem mexer no resto
+for var in CG_RESERVA_SMB_PASTAS CG_RESERVA_PASTAS CG_RESERVA_CHAVE; do
+  grep -q "^$var=" "$PASTA/reserva.env" || grep "^$var=" "$PASTA/sistema/installer/macos/reserva.env.exemplo" \
+    | sed -e "s#\$HOME/Library/Application Support/CartorioGestao#$PASTA#" >> "$PASTA/reserva.env"
+done
 chmod 600 "$PASTA/reserva.env"
+# a chave privada da reserva (uma vez; nunca sai deste Mac) — a pública vai no SQL do principal
+CHAVE="$(set -a; source "$PASTA/reserva.env"; echo "$CG_RESERVA_CHAVE")"
+"$PASTA/venv/bin/python" "$PASTA/sistema/tools/reserva.py" chave-da-reserva --chave "$CHAVE" >/dev/null
+echo "   chave da reserva: $CHAVE"
 
 echo "3/4 o banco da reserva (porta $PORTA_PG)"
 touch "$HOME/.pgpass"; chmod 600 "$HOME/.pgpass"
@@ -103,6 +112,8 @@ SEGUNDOS=300 plist sincronia /bin/bash "$PASTA/sistema/installer/macos/sincroniz
 
 echo
 echo "Instalado. Falta (roteiro, parte B):"
+echo "  - gerar o SQL do principal (leva a chave pública desta reserva) e rodá-lo no Windows:"
+echo "      (set -a; source \"$PASTA/reserva.env\"; \"$PASTA/venv/bin/python\" \"$PASTA/sistema/tools/reserva.py\" sql-do-principal) > principal.sql"
 echo "  - pôr o IP do Windows em $PASTA/reserva.env"
 echo "  - anotar a senha do cg_replica no ~/.pgpass: IP_DO_WINDOWS:5434:cartorio:cg_replica:<senha>"
 echo "  - montar a réplica: $PASTA/venv/bin/python $PASTA/sistema/tools/reserva.py montar"

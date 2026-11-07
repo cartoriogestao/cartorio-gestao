@@ -6,7 +6,8 @@
 #
 # O que faz, nesta ordem:
 #   1. desliga a réplica e acerta o próximo número de cada tabela (tools/reserva.py assumir);
-#   2. a pasta de arquivos do sistema passa a ser a cópia deste Mac;
+#   2. a pasta de arquivos do sistema, e as outras pastas configuradas, passam a ser as cópias
+#      deste Mac;
 #   3. troca reserva.env para o modo principal (CG_MODO_RESERVA=0, usuário cg do banco);
 #   4. reinicia o servidor: ele sobe na porta do principal (8765) e responde à descoberta, e os
 #      balcões o acham sozinhos.
@@ -31,6 +32,8 @@ PY="$PASTA/venv/bin/python"
 SET search_path TO :"schema";
 UPDATE settings SET value = :'pasta' WHERE key = 'archive_root';
 SQL
+# e as pastas configuradas fora dela, que têm cópia aqui
+"$PY" "$PASTA/sistema/tools/reserva.py" pastas --apontar
 
 # 3. o modo principal (cópia do arquivo antigo ao lado)
 cp "$ENV" "$ENV.antes-de-assumir"

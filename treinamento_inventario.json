@@ -4391,8 +4391,8 @@
     },
     {
       "id": "tela-879b5f5ce176f3db",
-      "nome": "Caixa",
-      "grupo": "Caixa e financeiro",
+      "nome": "Entrada de caixa",
+      "grupo": "Entrada de caixa e protocolo geral",
       "secao": "Caixa do dia",
       "endpoint": "caixa",
       "args": {},
@@ -4441,14 +4441,54 @@
       ],
       "template": "caixa.html",
       "familia": "caixa",
-      "assinatura": "fb18cba235d5c010f5b32d094426faa4db734d9c1c804818f8b98b58df02a99a",
+      "assinatura": "00df8bd146afc8ef8f409ebfb760153fe3f5703d0aecb231eeb6f1b226fb41c8",
+      "tipo": "funcao"
+    },
+    {
+      "id": "tela-7eea79389cee8125",
+      "nome": "Protocolo geral",
+      "grupo": "Entrada de caixa e protocolo geral",
+      "secao": "Protocolo geral",
+      "endpoint": "caixa_protocolos",
+      "args": {},
+      "papeis": [
+        "ADMIN",
+        "AUDITOR",
+        "MANAGER",
+        "USER"
+      ],
+      "campos": [
+        "Tipo",
+        "Interessado (obrigatório na tela)",
+        "CPF/CNPJ",
+        "Telefone *",
+        "E-mail *",
+        "Atribuição (obrigatório na tela)",
+        "Previsão de entrega",
+        "Documento apresentado",
+        "Nº do documento",
+        "Descrição do documento",
+        "Assunto",
+        "Observação",
+        "Prenotação do RI (Livro 1)",
+        "Situação",
+        "Atribuição",
+        "Buscar"
+      ],
+      "comandos": [
+        "Abrir protocolo",
+        "Filtrar"
+      ],
+      "template": "caixa_protocolos.html",
+      "familia": "atendimento",
+      "assinatura": "59b33ea6843ff404e9f831f0b9b861e417ce438efca57a76a949747416bb08a3",
       "tipo": "funcao"
     },
     {
       "id": "tela-23b9c471cf595a57",
       "nome": "Protocolos parados",
-      "grupo": "Caixa e financeiro",
-      "secao": "Atendimentos",
+      "grupo": "Entrada de caixa e protocolo geral",
+      "secao": "Protocolo geral",
       "endpoint": "caixa_protocolos_parados",
       "args": {},
       "papeis": [
@@ -4467,7 +4507,7 @@
     {
       "id": "tela-077a7d06068964f6",
       "nome": "Depósito prévio",
-      "grupo": "Caixa e financeiro",
+      "grupo": "Entrada de caixa e protocolo geral",
       "secao": "Depósito prévio",
       "endpoint": "caixa_depositos",
       "args": {},
@@ -4509,7 +4549,7 @@
     {
       "id": "tela-4401db010212a922",
       "nome": "Recibos",
-      "grupo": "Caixa e financeiro",
+      "grupo": "Entrada de caixa e protocolo geral",
       "secao": "Recibos e NFS-e",
       "endpoint": "caixa_recibos",
       "args": {},
@@ -4532,7 +4572,7 @@
     {
       "id": "tela-a8407398e265e52d",
       "nome": "NFS-e",
-      "grupo": "Caixa e financeiro",
+      "grupo": "Entrada de caixa e protocolo geral",
       "secao": "Recibos e NFS-e",
       "endpoint": "nfse_fila",
       "args": {},
@@ -4556,7 +4596,7 @@
     {
       "id": "tela-d5bc73b715fade25",
       "nome": "Pix, boleto e cartão",
-      "grupo": "Caixa e financeiro",
+      "grupo": "Entrada de caixa e protocolo geral",
       "secao": "Pix, boleto e cartão",
       "endpoint": "cobranca_lista",
       "args": {},
@@ -4575,7 +4615,7 @@
     {
       "id": "tela-62b32273006adb0c",
       "nome": "Emolumentos",
-      "grupo": "Caixa e financeiro",
+      "grupo": "Entrada de caixa e protocolo geral",
       "secao": "Tabela de emolumentos",
       "endpoint": "caixa_emolumentos",
       "args": {},
@@ -4601,7 +4641,7 @@
     {
       "id": "tela-587eb6cbe992fe38",
       "nome": "Modelos do caixa",
-      "grupo": "Caixa e financeiro",
+      "grupo": "Entrada de caixa e protocolo geral",
       "secao": "Modelos do caixa",
       "endpoint": "caixa_modelos_papeis",
       "args": {},

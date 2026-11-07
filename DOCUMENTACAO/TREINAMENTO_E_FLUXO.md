@@ -1,6 +1,8 @@
 # Atendimento e aprendizagem
 
-O módulo **Trabalho** reúne os atendimentos e o treinamento. O atendimento conserva
+O módulo **Trabalho** reúne os atendimentos e o treinamento.
+**Entrada de caixa e protocolo geral** identifica a entrada financeira e o cadastro
+do protocolo geral no balcão. O atendimento conserva
 o número do protocolo geral; a apresentação ao RI conserva o número do Livro 1.
 A ficha mostra separadamente a etapa do trabalho, a prenotação e o financeiro.
 Pagamento não conclui o serviço nem concede prioridade registral.
@@ -52,3 +54,25 @@ As tabelas novas são inicializadas pelo próprio servidor: `at_responsaveis`,
 `at_exigencia_itens`, `tr_tentativas` e `tr_orientacoes`. GETs consultam; gravações
 exigem usuário autorizado e CSRF. O histórico anterior permanece nas rotinas de
 origem. O sistema não cria vínculos de pedidos por semelhança de nome.
+
+## Entregar o serviço concluído
+
+Na aba **Atos e entrega**, identifique quem recebeu, descreva o que foi entregue e
+confirme as conferências de documentos, assinaturas, selos e arquivamento. A ação
+exige quitação (ou gratuidade já registrada), ausência de exigência aberta e saldo
+de depósito resolvido. No RI, exige ato válido e selado e selo de arquivamento.
+A entrega e sua auditoria são gravadas na mesma transação; repetir a confirmação
+não troca o recebedor, a data nem cria outra ocorrência. Pagamentos, recibos,
+documentos e selos são preservados.
+
+O encerramento de um atendimento que não virou serviço continua na rotina
+anterior. Não se estorna um pagamento para entregar o serviço concluído.
+
+O Financeiro deriva total e quitação dos itens. Um depósito aplicado não é nova
+entrada: o recibo do depósito comprova seu recebimento e o recibo do pagamento
+direto comprova o saldo recebido depois. A ficha oferece os dois comprovantes.
+A trilha do primeiro dia e as trilhas das atribuições incluem a aula de entrega.
+
+A jornada de integração usa um escrevente USER, cliente fictício, tabela de ensaio,
+matrícula histórica fictícia e selador HTTPS local de teste. Percorre os dois
+layouts pelos formulários autenticados, até a entrega, sem API ou selagem reais.

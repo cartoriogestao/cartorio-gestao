@@ -36,6 +36,9 @@ superusuário, medido no LS03).
    ::1/128 do `pg_hba.conf`, e recarregar (`pg_ctl reload`). Nenhuma linha
    para fora de 127.0.0.1: o banco não escuta a rede (`listen_addresses =
    'localhost'`), e a porta 5434 fica fechada no firewall.
+   **Exceção (07/11/2026):** o servidor reserva do macOS. Uma linha `hostssl`
+   só para o `cg_replica`, só do IP do Mac, e a 5434 liberada só para esse IP
+   (`docs/SERVIDOR_RESERVA_MACOS.md`, Parte A).
 3. **A senha vai num `pgpass`, e NÃO no `CG_PG_DSN`.** O sistema passa o
    `CG_PG_DSN` inteiro ao `pg_dump` do backup (`-d <dsn>`, em
    `banco_pg.copiar_para_arquivo`): uma senha dentro dele apareceria na linha

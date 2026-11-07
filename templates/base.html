@@ -113,6 +113,7 @@
   <script defer src="{{ url_for('static', filename='ri_partes_do_ato.js') }}"></script>
 </head>
 <body>
+{% include '_faixa_reserva.html' %}
 {% if user %}
 <div class="layout">
   <aside class="sidebar" id="app-sidebar" aria-label="Navegação principal">

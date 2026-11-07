@@ -47,6 +47,7 @@
   <script defer src="{{ url_for('static', filename='casca.js') }}?v={{ VERSION }}"></script>
 </head>
 <body class="cg-corpo">
+{% include '_faixa_reserva.html' %}
 {% if user %}
 <a class="cg-pular" href="#conteudo">Pular para o conteúdo</a>
 <div class="cg-app{% if not nav.secoes %} cg-sem-secoes{% endif %}{% if cg_colunas_recolhidas %} cg-recolhido{% endif %}" data-cg-app>

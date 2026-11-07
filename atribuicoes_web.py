@@ -3851,10 +3851,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     aviso += _cobrar_se_pedido(
                         con, "pt_atos", r["ato_id"], ato,
                         data_do_ato=(cobranca or {}).get("data_da_tabela"))
-                    if (cobranca and cobranca["cobra_diferidos"]
-                            and request.form.get("cobrar_diferidos")):
+                    # Desistência e cancelamento cobram o que ficou devido
+                    # sempre: o checkbox não dispensa o caixa.
+                    cobra_o_devido = (
+                        cobranca and cobranca["cobra_diferidos"]
+                        and (ato in PT.ATOS_SO_DEPOIS_DO_CAIXA
+                             or request.form.get("cobrar_diferidos")))
+                    if cobra_o_devido:
                         aviso += _cobrar_os_diferidos(con, titulo_id,
                                                       r["ato_id"], cobranca)
+                    if (ato in PT.ATOS_SO_DEPOIS_DO_CAIXA
+                            and not PT.tem_pagamento_no_caixa(con, r["ato_id"])
+                            and not PT.pago_no_protocolo(
+                                con, numero_digitado(_campo("protocolo_id")),
+                                [n for n in (numero_digitado(x) for x in
+                                             request.form.getlist("protocolo_item_id"))
+                                 if n is not None])):
+                        raise PT.ProtestoError(
+                            "Este ato só se efetiva depois do pagamento no "
+                            "caixa. Abra o caixa, marque o item do emolumento "
+                            "e lance de novo. Sem o lançamento, o título não "
+                            "muda e o selo não sai.")
         except AFX.AfirmacoesSeparadasError as erro:
             # UMA AFIRMAÇÃO POR TRAVA: a ficha volta preenchida, com um campo
             # para cada trava que pediu — e o que falta em cada uma.
@@ -13662,27 +13679,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash("O arquivo não veio junto. Escolha-o de novo.", "warning")
             return redirect(url_for("protesto_desistencias"))
         escolhidos = [x for x in request.form.getlist("protocolo") if x.strip()]
+        if not escolhidos:
+            flash("Nenhum título foi marcado. Marque os que o apresentante "
+                  "desistiu.", "warning")
+            return redirect(url_for("protesto_desistencias"))
         try:
             with db.transaction() as con:
-                r = DS.aplicar(con, conteudo, protocolos=escolhidos,
-                               agora=agora(),
-                               nome_arquivo=_campo("nome_arquivo") or None,
-                               usuario=usuario_nome())
-        except (DS.DesistenciaError, PT.ProtestoError) as erro:
+                visto = DS.conferir(con, conteudo)
+                desistencia_id = DS.guardar_arquivo(
+                    con, visto, nome_arquivo=_campo("nome_arquivo") or None,
+                    agora=agora(), usuario=usuario_nome())
+        except DS.DesistenciaError as erro:
             flash(str(erro), "danger")
             return redirect(url_for("protesto_desistencias"))
-        # `audit` abre transação própria: FORA do `with`.
-        audit("PROTESTO_DESISTENCIA", "pt_desistencias", r["desistencia_id"],
-              {"apresentante": r["apresentante_codigo"],
-               "aplicados": len(r["aplicados"]),
-               "recusados": len(r["recusados"])})
-        recusa = ("" if not r["recusados"] else
-                  f" {len(r['recusados'])} não entrou/entraram — o motivo está "
-                  f"na lista.")
-        flash(f"Desistência aplicada em {len(r['aplicados'])} título(s)."
-              f"{recusa}", "success" if r["aplicados"] else "warning")
+        audit("PROTESTO_DESISTENCIA_AGUARDA_CAIXA", "pt_desistencias",
+              desistencia_id, {"protocolos": escolhidos})
+        flash("A desistência não se efetiva neste arquivo. Abra a ficha de "
+              "cada título marcado, com o caixa aberto, e lance a desistência "
+              "lá: o ato e o selo só saem depois do pagamento. Protocolos: "
+              + ", ".join(escolhidos) + ".", "warning")
         return redirect(url_for("protesto_desistencia",
-                                desistencia_id=r["desistencia_id"]))
+                                desistencia_id=desistencia_id))
 
     @app.route("/protesto/desistencias/<int:desistencia_id>")
     @login_required

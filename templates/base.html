@@ -873,10 +873,11 @@
           esta no balcao, o que a casa deve, a ajuda, e o que so se mexe uma
           vez. O que muda e onde a pessoa PROCURA; nenhuma tela saiu.
         #}
-        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Dinheiro</div>
+        {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Entrada de caixa e protocolo geral</div>
         {# CAIXA E PROTOCOLO GERAL SAO A MESMA COISA desde 27/08/2026, e por
            isso ficam juntos e nesta ordem. #}
-        <a href="{{ url_for('caixa') }}">Caixa</a>
+        <a href="{{ url_for('caixa') }}">Entrada de caixa</a>
+        <a href="{{ url_for('caixa_protocolos') }}">Protocolo geral</a>
         <a href="{{ url_for('at_meu_trabalho') }}">Meu trabalho</a>
         <a href="{{ url_for('at_lista') }}" title="Atendimentos - protocolo geral">Atendimentos</a>
         <a href="{{ url_for('tr_inicio') }}">Treinamento</a>

@@ -3243,7 +3243,7 @@
       ],
       "template": "protesto_titulos.html",
       "familia": "protesto",
-      "assinatura": "1b573cb41281cf88e8bffe134d8bffc1dc4c92e4d9ce90f905ba92ebcf9cf3b9",
+      "assinatura": "46697a2ef0773249ade331dec88824fb0e51054ad3e9cb9a06ff5a9e1b6fb29b",
       "tipo": "funcao"
     },
     {
@@ -3440,6 +3440,25 @@
       "template": "protesto_a_protestar.html",
       "familia": "protesto",
       "assinatura": "709915ccef031a8762a12d7f5d252342144e758333fa8f55ae0c78d425b33985",
+      "tipo": "funcao"
+    },
+    {
+      "id": "tela-ce9c0e8f6a575d5a",
+      "nome": "Desistidos sem selo",
+      "grupo": "Protesto",
+      "secao": "Dia da CRA",
+      "endpoint": "protesto_encerrados_sem_selo",
+      "args": {},
+      "papeis": [
+        "ADMIN",
+        "MANAGER",
+        "USER"
+      ],
+      "campos": [],
+      "comandos": [],
+      "template": "protesto_encerrados_sem_selo.html",
+      "familia": "protesto",
+      "assinatura": "37ad9fbcd009c067b8c72d7118024c5a87ed5e46ef3d338e0a586ad2f108d979",
       "tipo": "funcao"
     },
     {
@@ -4391,8 +4410,8 @@
     },
     {
       "id": "tela-879b5f5ce176f3db",
-      "nome": "Caixa",
-      "grupo": "Caixa e financeiro",
+      "nome": "Entrada de caixa",
+      "grupo": "Entrada de caixa e protocolo geral",
       "secao": "Caixa do dia",
       "endpoint": "caixa",
       "args": {},
@@ -4441,14 +4460,54 @@
       ],
       "template": "caixa.html",
       "familia": "caixa",
-      "assinatura": "fb18cba235d5c010f5b32d094426faa4db734d9c1c804818f8b98b58df02a99a",
+      "assinatura": "00df8bd146afc8ef8f409ebfb760153fe3f5703d0aecb231eeb6f1b226fb41c8",
+      "tipo": "funcao"
+    },
+    {
+      "id": "tela-7eea79389cee8125",
+      "nome": "Protocolo geral",
+      "grupo": "Entrada de caixa e protocolo geral",
+      "secao": "Protocolo geral",
+      "endpoint": "caixa_protocolos",
+      "args": {},
+      "papeis": [
+        "ADMIN",
+        "AUDITOR",
+        "MANAGER",
+        "USER"
+      ],
+      "campos": [
+        "Tipo",
+        "Interessado (obrigatório na tela)",
+        "CPF/CNPJ",
+        "Telefone *",
+        "E-mail *",
+        "Atribuição (obrigatório na tela)",
+        "Previsão de entrega",
+        "Documento apresentado",
+        "Nº do documento",
+        "Descrição do documento",
+        "Assunto",
+        "Observação",
+        "Prenotação do RI (Livro 1)",
+        "Situação",
+        "Atribuição",
+        "Buscar"
+      ],
+      "comandos": [
+        "Abrir protocolo",
+        "Filtrar"
+      ],
+      "template": "caixa_protocolos.html",
+      "familia": "atendimento",
+      "assinatura": "59b33ea6843ff404e9f831f0b9b861e417ce438efca57a76a949747416bb08a3",
       "tipo": "funcao"
     },
     {
       "id": "tela-23b9c471cf595a57",
       "nome": "Protocolos parados",
-      "grupo": "Caixa e financeiro",
-      "secao": "Atendimentos",
+      "grupo": "Entrada de caixa e protocolo geral",
+      "secao": "Protocolo geral",
       "endpoint": "caixa_protocolos_parados",
       "args": {},
       "papeis": [
@@ -4467,7 +4526,7 @@
     {
       "id": "tela-077a7d06068964f6",
       "nome": "Depósito prévio",
-      "grupo": "Caixa e financeiro",
+      "grupo": "Entrada de caixa e protocolo geral",
       "secao": "Depósito prévio",
       "endpoint": "caixa_depositos",
       "args": {},
@@ -4509,7 +4568,7 @@
     {
       "id": "tela-4401db010212a922",
       "nome": "Recibos",
-      "grupo": "Caixa e financeiro",
+      "grupo": "Entrada de caixa e protocolo geral",
       "secao": "Recibos e NFS-e",
       "endpoint": "caixa_recibos",
       "args": {},
@@ -4532,7 +4591,7 @@
     {
       "id": "tela-a8407398e265e52d",
       "nome": "NFS-e",
-      "grupo": "Caixa e financeiro",
+      "grupo": "Entrada de caixa e protocolo geral",
       "secao": "Recibos e NFS-e",
       "endpoint": "nfse_fila",
       "args": {},
@@ -4556,7 +4615,7 @@
     {
       "id": "tela-d5bc73b715fade25",
       "nome": "Pix, boleto e cartão",
-      "grupo": "Caixa e financeiro",
+      "grupo": "Entrada de caixa e protocolo geral",
       "secao": "Pix, boleto e cartão",
       "endpoint": "cobranca_lista",
       "args": {},
@@ -4575,7 +4634,7 @@
     {
       "id": "tela-62b32273006adb0c",
       "nome": "Emolumentos",
-      "grupo": "Caixa e financeiro",
+      "grupo": "Entrada de caixa e protocolo geral",
       "secao": "Tabela de emolumentos",
       "endpoint": "caixa_emolumentos",
       "args": {},
@@ -4601,7 +4660,7 @@
     {
       "id": "tela-587eb6cbe992fe38",
       "nome": "Modelos do caixa",
-      "grupo": "Caixa e financeiro",
+      "grupo": "Entrada de caixa e protocolo geral",
       "secao": "Modelos do caixa",
       "endpoint": "caixa_modelos_papeis",
       "args": {},
@@ -13328,8 +13387,8 @@
       ],
       "familia": "protesto",
       "tipo": "documento",
-      "explica": "Uma linha por rótulo, no formato «nome = texto». O NOME é do sistema e não muda; o TEXTO é seu. Linha apagada, ou deixada sem texto, volta ao padrão — o sistema nunca fica sem a palavra. É o {descricao} do instrumento — o «documento abaixo descrito», item a item do CN-MA art. 914. O sistema decide QUAIS pedaços entram (o que o ato e o título têm); título, devedor e as partes do título se juntam com «, » e fecham com ponto. «apresentante_endereco» (LD08) é o apresentante com o endereço (Lei 9.492/1997, art. 22, II), quando o título ou o cadastro dos apresentantes o tem; sem ele, vale «apresentante». Os pedaços servem também ao registro do protesto (PT_TERMO_QUALIFICACAO). «cheque_devolucao» e «cheque_contra_o_banco» (05/11/2026, decisão do oficial) dizem, no cheque, a apresentação ao banco sacado e a devolução (Lei 9.492/1997, art. 6º; CN-MA art. 910), ou que o protesto instrui medida contra o próprio banco. «moeda_estrangeira» e «traducao» (05/11/2026, decisão do oficial) dizem, no título em moeda estrangeira, o valor de origem e a tradução por tradutor público (Lei 9.492/1997, art. 10, §§ 1º e 2º).",
-      "assinatura": "cb3fd4bed4d56820587e2b4bc7d9f61c0294a01d89e7c6ab5797f828d2787df9"
+      "explica": "Uma linha por rótulo, no formato «nome = texto». O NOME é do sistema e não muda; o TEXTO é seu. Linha apagada, ou deixada sem texto, volta ao padrão — o sistema nunca fica sem a palavra. É o {descricao} do instrumento — o «documento abaixo descrito», item a item do CN-MA art. 914. O sistema decide QUAIS pedaços entram (o que o ato e o título têm); título, devedor e as partes do título se juntam com «, » e fecham com ponto. «apresentante_endereco» (LD08) é o apresentante com o endereço (Lei 9.492/1997, art. 22, II), quando o título ou o cadastro dos apresentantes o tem; sem ele, vale «apresentante». Os pedaços servem também ao registro do protesto (PT_TERMO_QUALIFICACAO). «cheque_devolucao» e «cheque_contra_o_banco» (05/11/2026, decisão do oficial) dizem, no cheque, a apresentação ao banco sacado e a devolução (Lei 9.492/1997, art. 6º; CN-MA art. 910), ou que o protesto instrui medida contra o próprio banco. «moeda_estrangeira» e «traducao» (05/11/2026, decisão do oficial) dizem, no título em moeda estrangeira, o valor de origem e a tradução por tradutor público (Lei 9.492/1997, art. 10, §§ 1º e 2º). «moeda_emitido_no_brasil» (07/11/2026) diz que o título foi emitido no Brasil, e por isso vem sem tradução (art. 10, § 3º).",
+      "assinatura": "f2f5e5318846d6628b80eea73292cfd08f408c6bbedef2a796858910c76eb6ba"
     },
     {
       "id": "papel-pt-instrumento-copia-arquivada",

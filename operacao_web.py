@@ -87,7 +87,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date):
                 eventos = banco(con).ler("""SELECT ts,action,username_snapshot FROM audit_logs
                     WHERE (entity_type IN ('ATENDIMENTO','CX_PROTOCOLO','PROTOCOLO') AND entity_id=%s)
                        OR (entity_type='RI_PROTOCOLO' AND entity_id=%s)
-                    ORDER BY id DESC LIMIT 80""",(protocolo_id,dados["ri"]["id"] if dados["ri"] else -1))
+                       OR (entity_type='RI_NOTA' AND entity_id IN
+                           (SELECT id FROM ri_notas_devolutivas WHERE protocolo_id=%s))
+                    ORDER BY id DESC LIMIT 80""",(protocolo_id,dados["ri"]["id"] if dados["ri"] else -1,
+                                                dados["ri"]["id"] if dados["ri"] else -1))
         except FL.FluxoError:
             abort(404)
         p, ri, e = dados["p"], dados["ri"], dados["etapa"]
@@ -98,9 +101,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date):
         elif e == "VENCIDA":
             proxima = ("Examinar situação da prenotação",link("ri_protocolo_ver",protocolo_id=ri["id"])+"#prazo","prenotacao")
         elif e == "APTO":
-            proxima = ("Preparar o ato",link("ri_matricula",matricula_id=ri.get("matricula_id")) if ri.get("matricula_id") else link("ri_minutas"),"ri_ato")
+            proxima = ("Preparar o ato",link("ri_ficha",matricula_id=ri.get("matricula_id")) if ri.get("matricula_id") else link("ri_minutas"),"ri_ato")
         elif e == "REGISTRADO":
-            proxima = ("Conferir arquivamento e entrega",link("ri_protocolo_ver",protocolo_id=ri["id"]),"ri_ato")
+            proxima = ("Conferir arquivamento e entrega",url_for("at_ficha",protocolo_id=protocolo_id,aba="atos"),"entrega")
+        elif e == "ENTREGUE":
+            proxima = ("Consultar o histórico da entrega",url_for("at_ficha",protocolo_id=protocolo_id,aba="historico"),"entrega")
         elif e == "ORCAMENTO":
             proxima = ("Conferir orçamento / transformar em serviço",link("caixa_protocolo",protocolo_id=protocolo_id)+"#virar-servico","atendimento")
         elif not ri and p["atribuicao"] == "RI" and e not in ("ENTREGUE","CANCELADO"):
@@ -109,9 +114,38 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date):
             proxima = ("Abrir rotina do serviço",link("caixa_protocolo",protocolo_id=protocolo_id),"atendimento")
         guia = TR.aula("roteiro-"+proxima[2],papel())
         import protocolo_documentos as DOC
+        rotulos={'ATENDIMENTO_ENTREGUE':'Entrega registrada','RI_NOTA_DEVOLUTIVA':'Nota devolutiva emitida',
+                 'RI_REINGRESSO':'Reingresso registrado','ATENDIMENTO_ITEM_CONFERIDO':'Conferência de exigência',
+                 'ATENDIMENTO_RESPONSAVEL':'Responsável designado','RI_QUALIFICACAO':'Qualificação registrada',
+                 'RI_QUALIFICACAO_POSITIVA':'Qualificação positiva registrada','RI_PRENOTACAO':'Título prenotado',
+                 'RI_PROTOCOLO_ENCERRADO':'Prenotação encerrada','PROTOCOLO_ABERTO':'Atendimento aberto',
+                 'PROTOCOLO_ITEM_ACRESCENTADO':'Item de serviço acrescentado',
+                 'PROTOCOLO_ITEM_QUITADO':'Pagamento de item confirmado','RI_NOTA_IMPRESSA':'Documento da nota emitido',
+                 'PROTOCOLO_DOCUMENTO_ANEXADO':'Documento recebido',
+                 'SELO_PROTOCOLO_EM_ATENDIMENTO':'Protocolo selecionado para o serviço'}
         return render_template("at_ficha.html", **dados, aba=aba, proxima=proxima, guia=guia,
             usuarios=users,eventos=eventos,moeda=moeda,pratica=papel() in PRATICA,
-            tipos_documento=DOC.ROTULO_DO_TIPO)
+            tipos_documento=DOC.ROTULO_DO_TIPO,
+            rotulo_evento=lambda acao:rotulos.get(acao,str(acao).replace('_',' ').capitalize()))
+
+    @app.route("/atendimentos/<int:protocolo_id>/entrega",methods=["POST"])
+    @roles_required(*PRATICA)
+    def at_entregar(protocolo_id):
+        try:
+            with db.transaction() as con:
+                feito=FL.entregar(con,protocolo_id,recebido_por=request.form.get('recebido_por'),
+                    observacao=request.form.get('observacao'),
+                    conferencias={k:request.form.get(k)=='1' for k in ('documentos_conferidos','assinaturas_selos','arquivamento_conferido')},
+                    quem=app.extensions['usuario_nome'](),agora=db.now())
+                import identidade_do_robo as IDR
+                usuario=banco(con).um('SELECT username FROM users WHERE id=%s',(uid(),))
+                IDR.registrar(con,ts=db.now(),user_id=uid(),username=usuario['username'],
+                    action='ATENDIMENTO_ENTREGUE',entity_type='ATENDIMENTO',entity_id=protocolo_id,
+                    details=feito,ip_address=request.remote_addr)
+            flash("Entrega registrada. Os pagamentos, recibos e documentos foram preservados.","success")
+        except FL.FluxoError as e:
+            flash(str(e),'danger')
+        return redirect(url_for('at_ficha',protocolo_id=protocolo_id,aba='atos'))
 
     @app.route("/atendimentos/<int:protocolo_id>/responsavel",methods=["POST"])
     @roles_required(*PRATICA)
@@ -213,14 +247,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date):
     @roles_required(*LEITURA)
     def tr_trilha(trilha):
         trilhas={
-            "primeiro-dia":("Primeiro dia no cartório",["atendimento","prenotacao","qualificacao","nota","reingresso","caixa","ri_ato","certidao"]),
-            "notas":("Tabelionato de Notas",["atendimento","firma","autenticacao","procuracao","notas_ato","ata","certidao","caixa"]),
-            "civil":("Registro Civil",["atendimento","nascimento","casamento","obito","rcpn","certidao","caixa"]),
+            "primeiro-dia":("Primeiro dia no cartório",["atendimento","prenotacao","qualificacao","nota","reingresso","caixa","ri_ato","certidao","entrega"]),
+            "notas":("Tabelionato de Notas",["atendimento","firma","autenticacao","procuracao","notas_ato","ata","certidao","caixa","entrega"]),
+            "civil":("Registro Civil",["atendimento","nascimento","casamento","obito","rcpn","certidao","caixa","entrega"]),
             "imoveis":("Registro de Imóveis",["prenotacao","qualificacao","nota","reingresso","ri_ato","livro3","especial_ri","certidao"]),
             "protesto":("Protesto",["atendimento","protesto","nota","caixa","certidao"]),
-            "rtd-rpj":("RTD e RCPJ",["atendimento","rtd_rpj","qualificacao","nota","reingresso","certidao","caixa"])}
+            "rtd-rpj":("RTD e RCPJ",["atendimento","rtd_rpj","qualificacao","nota","reingresso","certidao","caixa","entrega"])}
         if trilha not in trilhas:abort(404)
         titulo,ids=trilhas[trilha]
+        if 'entrega' not in ids:
+            ids=[*ids,'entrega']
         with db.connect() as con:
             aulas=[TR.aula_corrente(con,"roteiro-"+i,papel()) for i in ids]
             prog=TR.progresso(con,uid())

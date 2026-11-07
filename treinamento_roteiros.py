@@ -3,6 +3,12 @@ from __future__ import annotations
 
 # objetivo; preparação; execução; conferência final; quando encaminhar.
 ROTEIROS = {
+    "entrega": (
+        "Entregar o serviço concluído, com recebedor identificado e histórico preservado.",
+        "Abra Atos e entrega na ficha. Confira o resultado, documentos finais e originais a devolver, assinaturas, selos e arquivamento. No Financeiro, confira quitação, depósito aplicado, saldo ou restituição e recibo.",
+        "No RI, conclua o ato e o arquivamento pelas rotinas próprias. Em Atos e entrega, informe quem recebeu, descreva o material entregue e marque as conferências realizadas. Confirme a entrega uma vez.",
+        "Confira a mensagem de entrega registrada, data, responsável e histórico. O atendimento sai das filas de trabalho em andamento; seus pagamentos, recibos e atos permanecem consultáveis.",
+        "Exigência aberta, ato sem selo, arquivamento pendente, saldo de depósito ou item a quitar devem ser resolvidos antes da entrega. Encerramento de pedido que não virou serviço é outra ação; não estorne um pagamento para poder entregar."),
     "aprendizagem": (
         "Aprender as rotinas do sistema e acompanhar a prática na versão estudada.",
         "Escolha a trilha da sua função e confira a orientação do responsável sobre o que você poderá executar.",

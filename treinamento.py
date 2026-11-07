@@ -44,6 +44,7 @@ def _base():
     dados = json.loads(Path(__file__).with_name("treinamento_inventario.json").read_text("utf-8"))
     nomes = {
         "aprendizagem":"Aprender com as trilhas e a prática fictícia",
+        "entrega":"Conferir e registrar a entrega do serviço",
         "atendimento":"Começar pelo atendimento", "prenotacao":"Prenotar um título no RI",
         "qualificacao":"Qualificar um título", "nota":"Preparar a nota devolutiva",
         "reingresso":"Receber cumprimento e requalificar", "caixa":"Operar o caixa e os depósitos",

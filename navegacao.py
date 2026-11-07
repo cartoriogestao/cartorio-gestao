@@ -301,11 +301,12 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Ajustar a etiqueta de registro", "rcpj_rtd_etiqueta_ajuste", AM),
              _i("Modelos dos documentos", "rcpj_rtd_modelos_papeis", AMU, antigo="Modelos dos documentos do RCPJ"),)),
      )},
-    {"chave": "CAIXA", "curto": "Caixa", "nome": "Caixa e financeiro", "cor": "ADM",
+    {"chave": "CAIXA", "curto": "Entrada de caixa e protocolo geral", "nome": "Entrada de caixa e protocolo geral", "cor": "ADM",
      "icone": "caixa", "lavra": False, "secoes": (
          ("Caixa do dia", (
-             _i("Caixa", "caixa"),)),
-         ("Atendimentos", (
+             _i("Entrada de caixa", "caixa", antigo="Caixa"),)),
+         ("Protocolo geral", (
+             _i("Protocolo geral", "caixa_protocolos", termos="entrada atendimento protocolo"),
              _i("Protocolos parados", "caixa_protocolos_parados"),)),
          ("Depósito prévio", (
              _i("Depósito prévio", "caixa_depositos"),)),
@@ -467,7 +468,7 @@ ENTRADAS_NOVAS: frozenset[tuple[str, tuple]] = frozenset({
 # chega nela. Sem isto a tela abriria com o menu fechado — o defeito que `modulos.py`
 # existe para impedir.
 PAI: dict[str, tuple[str, str]] = {
-    "caixa_protocolos": ("TRABALHO", "Atendimentos"),
+    "caixa_protocolos": ("CAIXA", "Protocolo geral"),
     "ri_qualificacao_ia_nota": ("RI", "Protocolo"),
     "at_ficha": ("TRABALHO", "Atendimentos"),
     "tr_aula": ("TRABALHO", "Treinamento"),
@@ -610,11 +611,11 @@ PAI: dict[str, tuple[str, str]] = {
     "rcpj_rtd_livro_contabil_papel": ("RCPJ", "Livros contábeis"),
     "atribuicoes_certidao": ("RCPJ", "Certidões"),
     # Caixa
-    "caixa_protocolo": ("CAIXA", "Atendimentos"),
-    "caixa_calculos_quitados": ("CAIXA", "Atendimentos"),
-    "caixa_protocolos_novo": ("CAIXA", "Atendimentos"),
-    "caixa_exigencias": ("CAIXA", "Atendimentos"),
-    "andamento_protocolo_geral": ("CAIXA", "Atendimentos"),
+    "caixa_protocolo": ("CAIXA", "Protocolo geral"),
+    "caixa_calculos_quitados": ("CAIXA", "Protocolo geral"),
+    "caixa_protocolos_novo": ("CAIXA", "Protocolo geral"),
+    "caixa_exigencias": ("CAIXA", "Protocolo geral"),
+    "andamento_protocolo_geral": ("CAIXA", "Protocolo geral"),
     "andamento_prenotacao": ("RI", "Protocolo"),
     "notas_leitura_ficha": ("NOTAS", "Procurações"),
     "cobranca_ficha": ("CAIXA", "Pix, boleto e cartão"),

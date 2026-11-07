@@ -94,6 +94,8 @@ def etapa(con, p, *, hoje=None):
     if p.get("ri_protocolo_id"):
         r = bd.um("SELECT * FROM ri_protocolos WHERE id=%s", (p["ri_protocolo_id"],))
         if r:
+            if r.get("ato_id"):
+                return "REGISTRADO", "Registrado — conferir entrega"
             if r["situacao"] not in ("ABERTO", "DEVOLVIDO"):
                 return "RI_ENCERRADA", f"Prenotação {str(r['situacao']).lower()} - conferir entrega"
             qq = RI.qualificacoes_de(bd, r["id"])
@@ -147,7 +149,7 @@ def listar(con, *, busca="", usuario_id=None, sem_responsavel=False, pagina=1,
     return {"pedidos": rows, "total": total, "pagina": pagina, "paginas": max(1, (total + 39)//40)}
 
 
-def financeiro(p):
+def financeiro(p, *, itens=None):
     def valor(v):
         if v in (None, ""):
             return None
@@ -156,9 +158,12 @@ def financeiro(p):
         except (ValueError, TypeError):
             return None
     total, pago = valor(p.get("valor_total")), valor(p.get("valor_pago"))
+    if itens:
+        total = sum(valor(i.get("valor_total")) or 0 for i in itens)
+        pago = sum(valor(i.get("valor_total")) or 0 for i in itens if i.get("quitado"))
     return {"total": total, "pago": pago, "saldo": max(0, total - (pago or 0)) if total is not None else None,
             "rotulo": "Só cálculo" if p.get("tipo") == "ORCAMENTO" else (
-                "Gratuito" if p.get("gratuito") else "Pago" if p["situacao"] == "PAGO" else
+                "Gratuito" if p.get("gratuito") else "Pago" if p["situacao"] == "PAGO" or (itens and all(i.get('quitado') for i in itens)) else
                 "A receber" if p["situacao"] == "A_PAGAR" else "A conferir")}
 
 
@@ -182,16 +187,59 @@ def ficha(con, pid):
             atual = next((x for x in controles if x["origem"]==n["origem"] and x["nota_id"]==n["id"]
                           and x["ordem"]==i and x["texto_hash"]==h), None)
             n["controle"].append({"ordem": i, "texto": texto, "atual": atual,"versao":versao_item(atual)})
-    depositos = bd.ler("""SELECT * FROM cx_depositos WHERE protocolo_id=%s
-        OR ri_protocolo_id=%s ORDER BY id DESC""", (int(pid),ri["id"] if ri else -1))
+    depositos = bd.ler("""SELECT d.*,l.recibo_id FROM cx_depositos d
+        LEFT JOIN cx_lancamentos l ON l.id=d.lancamento_id WHERE d.protocolo_id=%s
+        OR d.ri_protocolo_id=%s ORDER BY d.id DESC""", (int(pid),ri["id"] if ri else -1))
+    itens = bd.ler("SELECT * FROM cx_protocolo_atos WHERE protocolo_id=%s ORDER BY id", (int(pid),))
     return {"p": p, "etapa": e, "etapa_nome": nome, "ri": ri,
-            "responsavel": responsavel(bd, pid), "financeiro": financeiro(p),
+            "responsavel": responsavel(bd, pid), "financeiro": financeiro(p,itens=itens),
             "anotacoes_anteriores": anotacoes_anteriores(bd, p),
             "documentos": docs, "anexos_ri": anexos_ri, "notas": notas, "exigencias": exigencias,
             "qualificacoes": RI.qualificacoes_de(bd, ri["id"]) if ri else [],
-            "itens": bd.ler("SELECT * FROM cx_protocolo_atos WHERE protocolo_id=%s ORDER BY id", (int(pid),)),
+            "itens": itens,
             "depositos": depositos,
             "recibos": bd.ler("SELECT id,numero,ano,data_emissao,valor_total FROM cx_recibos WHERE protocolo_id=%s ORDER BY id DESC", (int(pid),))}
+
+
+def entregar(con, pid, *, recebido_por, observacao, conferencias, quem, agora):
+    """Entrega de serviço concluído. Conserva integralmente o financeiro nativo."""
+    bd=banco(con)
+    # A linha também serializa alterações nativas do protocolo e confirmações repetidas.
+    p=bd.um("SELECT * FROM cx_protocolos WHERE id=%s FOR UPDATE",(int(pid),))
+    if not p:
+        raise FluxoError("Atendimento não encontrado.")
+    if p['situacao'] in ('ENTREGUE','CANCELADO'):
+        raise FluxoError("O atendimento já está encerrado. Consulte o histórico.")
+    if p.get('tipo')=='ORCAMENTO':
+        raise FluxoError("Este pedido é só orçamento. A entrega do serviço exige sua entrada como serviço.")
+    recebido_por,observacao=str(recebido_por or '').strip(),str(observacao or '').strip()
+    if not 3<=len(recebido_por)<=160 or not 10<=len(observacao)<=2000:
+        raise FluxoError("Identifique quem recebeu e descreva o que foi entregue (mínimo 10 caracteres).")
+    if not all(conferencias.get(k) for k in ('documentos_conferidos','assinaturas_selos','arquivamento_conferido')):
+        raise FluxoError("Confira o serviço, as assinaturas e selos e o arquivamento antes de entregar.")
+    dados=ficha(bd,pid)
+    if dados['exigencias']:
+        raise FluxoError("Há exigência aguardando cumprimento. Conclua a análise antes da entrega do serviço.")
+    if p.get('ri_protocolo_id'):
+        ri=dados['ri']
+        ato=bd.um("SELECT * FROM ri_atos WHERE id=%s",(ri['ato_id'],)) if ri and ri.get('ato_id') else None
+        if not ato or ato.get('cancelado') or not str(ato.get('selo_texto') or '').strip():
+            raise FluxoError("O título ainda precisa de ato válido e selado. Confira a ficha do RI.")
+        if ri['situacao'] in ('CANCELADO','DEVOLVIDO'):
+            raise FluxoError("Confira a situação do título no RI antes da entrega do serviço registrado.")
+        if not str(ato.get('selo_arquivamento') or '').strip():
+            raise FluxoError("Falta registrar o arquivamento do título na rotina do RI antes da entrega.")
+    if not p.get('gratuito') and (not dados['itens'] or any(not i.get('quitado') for i in dados['itens'])):
+        raise FluxoError("Há itens a quitar ou o cálculo não foi informado. Confira o financeiro antes da entrega.")
+    if any(CX.centavos(d.get('saldo')) for d in dados['depositos'] if not d.get('encerrado')):
+        raise FluxoError("Há depósito com saldo. Confira a aplicação ou restituição antes de concluir a entrega.")
+    anterior=str(p.get('encerramento_motivo') or '').strip()
+    descricao=f"Entrega a {recebido_por}: {observacao}"
+    historia=(anterior+'\n'+descricao).strip()
+    bd.escrever("""UPDATE cx_protocolos SET situacao='ENTREGUE',finalizado=1,
+        data_finalizacao=%s,encerrado_por=%s,encerramento_motivo=%s WHERE id=%s""",
+        (agora,quem,historia,int(pid)))
+    return {'numero':p['numero'],'recebido_por':recebido_por,'observacao':observacao,'quando':agora}
 
 
 def conferir_item(con, pid, *, origem, nota_id, ordem, estado, anexo_id, observacao,

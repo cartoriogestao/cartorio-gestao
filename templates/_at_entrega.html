@@ -1,0 +1,15 @@
+{% if p.situacao=='ENTREGUE' %}
+<section class="op-note"><h2>Entrega registrada</h2><p>{{ p.data_finalizacao }} · {{ p.encerrado_por }}</p><p style="white-space:pre-wrap">{{ p.encerramento_motivo }}</p><a href="{{ url_for('at_ficha',protocolo_id=p.id,aba='historico') }}">Consultar o histórico da entrega</a></section>
+{% elif pratica and p.situacao!='CANCELADO' %}
+<section class="op-note"><h2>Registrar a entrega do serviço concluído</h2><p>Confira o resultado e os documentos que serão entregues. No RI, o ato e o arquivamento precisam estar concluídos. A quitação e eventual saldo de depósito são conferidos antes da confirmação.</p>
+<p><a href="{{ url_for('at_ficha',protocolo_id=p.id,aba='financeiro') }}">Conferir o financeiro e emitir o recibo</a> · <a href="{{ url_for('tr_aula',chave='roteiro-entrega') }}">Aprender a conferir e registrar a entrega</a></p>
+<form method="post" action="{{ url_for('at_entregar',protocolo_id=p.id) }}" class="op-itemform">
+ <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+ <label class="op-wide">Quem recebeu<input name="recebido_por" required minlength="3" maxlength="160" autocomplete="off"></label>
+ <label class="op-wide">O que foi entregue e observações<textarea name="observacao" rows="3" required minlength="10" maxlength="2000"></textarea></label>
+ <label class="op-option op-wide"><input type="checkbox" name="documentos_conferidos" value="1" required><span>Conferi o serviço, os documentos finais e os originais que serão devolvidos.</span></label>
+ <label class="op-option op-wide"><input type="checkbox" name="assinaturas_selos" value="1" required><span>Conferi as assinaturas e os selos exigidos para o serviço.</span></label>
+ <label class="op-option op-wide"><input type="checkbox" name="arquivamento_conferido" value="1" required><span>Conferi o arquivamento e os comprovantes correspondentes.</span></label>
+ <button class="primary">Confirmar entrega ao recebedor</button>
+</form></section>
+{% endif %}

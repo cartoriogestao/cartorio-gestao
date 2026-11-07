@@ -239,6 +239,7 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Desistências", "protesto_desistencias"),
              _i("Pedidos da CRA", "protesto_cra_pedidos"),
              _i("A protestar", "protesto_a_protestar"),
+             _i("Desistidos sem selo", "protesto_encerrados_sem_selo"),
              _i("Retorno", "protesto_retornos", antigo="Retorno à CRA"),
              _i("Falar pela API", "protesto_cra_api", AMU, antigo="CRA — falar pela API"),)),
          ("Dia da CENPROT", (
@@ -491,6 +492,7 @@ PAI: dict[str, tuple[str, str]] = {
     "ri_nota_devolutiva": ("RI", "Protocolo"),
     "ri_nota_excluir": ("RI", "Protocolo"),
     "ri_qualificacao_ia_ver": ("RI", "Protocolo"),
+    "ri_qualificacao_ia_nota": ("RI", "Protocolo"),
     "onr_auto_fila": ("RI", "Certidões"),
     "onr_auto_pedido": ("RI", "Certidões"),
     "onr_certidao_ficha": ("RI", "Certidões"),

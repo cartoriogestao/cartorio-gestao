@@ -46,12 +46,10 @@ O NOME DO ARQUIVO PEDIDO
     manual diz que a CRA confere o prefixo e a data.
 
 O QUE SE FAZ COM O QUE VEIO
-    DP — pelo caminho que já existe (`protesto_desistencia.aplicar`), só nos
-        títulos que casam pelo protocolo E pelo número (os irmãos inclusive) e
-        estão numa situação que aceita desistir. O resto vira pendência. A
-        desistência de título já PROTESTADO é o caso grave — o protesto pode
-        ter sido lavrado depois de o credor desistir — e vem destacada; a de
-        título INTIMADO se aplica, e também vem destacada.
+    DP — o arquivo se guarda e cada título que cabe vira PENDÊNCIA. O ato e
+        o selo só saem na ficha, depois do pagamento no caixa. Título já
+        PROTESTADO continua o caso grave. Título INTIMADO vem destacado para
+        não ser protestado antes desse pagamento.
     CP, AC e AD — NÃO se lavram sozinhos: o cancelamento (e a desistência
         autorizada) exige o pagamento das custas pelo devedor. Cada título vira
         uma pendência, visível na ficha e na lista, com o arquivo guardado, até
@@ -86,6 +84,7 @@ from bd_nativo import banco
 import centrais_cred as CRED
 import centrais_http as HTTP
 import cra21_api as CRA
+import protesto as PT
 import protesto_desistencia as DS
 
 
@@ -372,33 +371,21 @@ def receber_desistencias(con, bruto: str, *, consulta_id: int,
                          usuario: str | None) -> dict:
     """O arquivo DP que veio no clique. ESCREVE.
 
-    APLICA PELO CAMINHO QUE JÁ EXISTE — `protesto_desistencia.aplicar` —, e só
-    nos protocolos em que a conferência diz que cabe: casou pelo protocolo e
-    pelo número, e o título está recebido, apontado ou intimado. `aplicar`
-    lavra o ato na hora, nos irmãos inclusive, e devolve o sustado como
-    recusado. O arquivo se guarda em `pt_desistencias` mesmo quando nada cabe.
+    NÃO LAVRA. A desistência e o selo só se efetivam na ficha, depois do
+    pagamento no caixa. O arquivo fica guardado e cada título que cabe vira
+    pendência. Título já protestado continua grave. Enquanto a pendência
+    existe, `lancar_protesto` recusa.
     """
     visto = DS.conferir(con, bruto)
     nome = visto.get("nome_arquivo") or nome_arquivo
-    cabem = [l["protocolo"] for l in visto["titulos"] if l["cabe"]]
-    aplicados: dict[int, dict] = {}
-    recusados: dict[int, str] = {}
-    if cabem:
-        r = DS.aplicar(con, bruto, protocolos=cabem, agora=agora,
-                       nome_arquivo=nome, usuario=usuario)
-        desistencia_id = int(r["desistencia_id"])
-        aplicados = {int(a["titulo"]["id"]): a for a in r["aplicados"]}
-        recusados = {int(x["titulo_id"]): x["porque"] for x in r["recusados"]
-                     if x.get("titulo_id")}
-    else:
-        desistencia_id = DS.guardar_arquivo(con, visto, nome_arquivo=nome,
-                                            agora=agora, usuario=usuario)
+    desistencia_id = DS.guardar_arquivo(con, visto, nome_arquivo=nome,
+                                        agora=agora, usuario=usuario)
     dia = visto.get("dia")
     resumo = {"titulos": len(visto["titulos"]), "aplicados": 0,
               "pendentes": 0, "graves": 0, "por_pouco": 0,
               "desistencia_id": desistencia_id,
               "apresentante": visto.get("apresentante_codigo"),
-              "recusados": len(recusados)}
+              "recusados": 0}
     # O TÍTULO SE CONTA UMA VEZ: dois devedores do mesmo protocolo são duas
     # linhas do arquivo, e cada uma casa com os dois irmãos — o ato sai uma
     # vez por título (`aplicar`), e o resumo contava linha × título.
@@ -412,21 +399,23 @@ def receber_desistencias(con, bruto: str, *, consulta_id: int,
             continue
         for x in linha["titulos"]:
             tid = int(x["id"])
-            if tid in aplicados:
+            ordem = PT.sustacao_em_vigor(con, tid)
+            if x.get("cabe") and x["situacao"] != "PROTESTADO" and not ordem:
                 por_pouco = x["situacao"] == "INTIMADO"
                 _gravar_pedido(
                     con, consulta_id=consulta_id, tipo="DP", pedido=linha,
-                    titulo=x, estado=APLICADO,
+                    titulo=x, estado=PENDENTE,
                     destaque=POR_POUCO if por_pouco else None,
-                    ato_id=int(aplicados[tid]["ato_id"]), agora=agora,
+                    agora=agora,
                     explicacao=(
-                        "Desistência aplicada no clique do dia"
-                        + (" — o título estava INTIMADO: confira que nenhum "
-                           "protesto dele ficou preparado." if por_pouco
-                           else ".")))
+                        "A desistência da CRA chegou. O título só fica "
+                        "desistido, e o selo só sai, depois do pagamento no "
+                        "caixa — na ficha do título."
+                        + (" Estava INTIMADO: não proteste antes desse "
+                           "pagamento." if por_pouco else "")))
                 if tid not in contados:
                     contados.add(tid)
-                    resumo["aplicados"] += 1
+                    resumo["pendentes"] += 1
                     resumo["por_pouco"] += int(por_pouco)
             elif x["situacao"] == "DESISTIDO":
                 _gravar_pedido(con, consulta_id=consulta_id, tipo="DP",
@@ -446,11 +435,21 @@ def receber_desistencias(con, bruto: str, *, consulta_id: int,
                         f"cancelamento. Decide o oficial."))
                 resumo["pendentes"] += 1
                 resumo["graves"] += 1
+            elif ordem:
+                _gravar_pedido(
+                    con, consulta_id=consulta_id, tipo="DP", pedido=linha,
+                    titulo=x, estado=PENDENTE, agora=agora,
+                    explicacao=(
+                        "O título está SUSTADO por ordem judicial"
+                        + (f" ({ordem.get('juizo')})" if ordem.get("juizo") else "")
+                        + " — a desistência só se faz com autorização "
+                          "judicial (Lei 9.492/1997, art. 17, § 1º)."))
+                resumo["pendentes"] += 1
             else:
                 _gravar_pedido(
                     con, consulta_id=consulta_id, tipo="DP", pedido=linha,
                     titulo=x, estado=PENDENTE, agora=agora,
-                    explicacao=(recusados.get(tid) or x.get("porque")
+                    explicacao=(x.get("porque")
                                 or f"O título está {x['situacao']}."))
                 resumo["pendentes"] += 1
     return resumo

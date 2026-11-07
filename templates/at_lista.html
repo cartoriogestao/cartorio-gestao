@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>{{ 'Meu trabalho' if vista == 'meus' else 'Atendimentos' }}</h1>{% endblock %}
+{% block content %}
+<p class="op-muted">Localize o serviço, confira a etapa e continue pela próxima ação. O atendimento e a prenotação mantêm seus próprios números.</p>
+<nav class="op-tabs" aria-label="Filas"><a href="{{ url_for('at_lista') }}" {% if vista=='todos' %}aria-current="page"{% endif %}>Em andamento</a><a href="{{ url_for('at_lista',vista='meus') }}" {% if vista=='meus' %}aria-current="page"{% endif %}>Meu trabalho</a><a href="{{ url_for('at_lista',vista='sem-responsavel') }}" {% if vista=='sem-responsavel' %}aria-current="page"{% endif %}>A designar na ficha</a><a href="{{ url_for('ri_pedidos') }}">Filas de qualificação e registro do RI</a></nav>
+<form method="get" class="op-filter"><input type="hidden" name="vista" value="{{ vista }}">
+ <label>Buscar atendimento, prenotação, matrícula ou interessado<input name="busca" value="{{ request.args.get('busca','') }}" maxlength="120"></label>
+ <label>Atribuição<select name="atribuicao"><option value="">Todas</option>{% for a in ['RI','NOTAS','FIRMAS','RCPN','RTD','RCPJ','PROTESTO','OUTROS'] %}<option {% if request.args.get('atribuicao')==a %}selected{% endif %}>{{ a }}</option>{% endfor %}</select></label>
+ <label>Período de trabalho<select name="historico"><option value="0">Trabalho atual</option><option value="1" {% if request.args.get('historico')=='1' %}selected{% endif %}>Incluir histórico e acervo</option></select></label><button class="primary">Buscar</button>
+</form>
+{% if user.role in ['ADMIN','MANAGER','USER'] %}<p><a class="button primary" href="{{ url_for('caixa_protocolos_novo') }}">Novo atendimento / orçamento</a></p>{% endif %}
+<p class="op-muted">{{ total }} atendimento(s). A busca inclui os números relacionados. As filas específicas do RI conservam a ordenação e os controles da atribuição.</p>
+<div class="op-table-wrap"><table class="op-table"><thead><tr><th>Atendimento e serviço</th><th>Interessado</th><th>Etapa do pedido</th><th>Quem cuida</th><th></th></tr></thead><tbody>
+{% for p in pedidos %}<tr><td><strong>{{ p.numero }}</strong><br>{{ p.assunto or p.atribuicao or 'Serviço a identificar' }}<br><small>{{ fmt_date(p.data_abertura) }} · {{ p.atribuicao or 'A definir' }}</small></td><td>{{ p.interessado or 'A completar' }}</td><td><span class="op-tag">{{ p.etapa_nome }}</span></td><td>{{ p.responsavel.full_name if p.responsavel else 'Sem designação nesta ficha' }}{% for a in p.anotacoes_anteriores if a.responsavel %}<br><small>Acompanhamento {{ 'RI' if a.tabela=='ri_protocolos' else 'geral' }}: {{ a.responsavel }}</small>{% endfor %}</td><td><a class="button" href="{{ url_for('at_ficha',protocolo_id=p.id) }}">Abrir ficha</a></td></tr>
+{% else %}<tr><td colspan="5">Nenhum atendimento nesta fila. Você pode buscar pelo número ou escolher outra vista.</td></tr>{% endfor %}</tbody></table></div>
+<div class="op-actions">{% if pagina>1 %}<a href="{{ url_for('at_lista',vista=vista,pagina=pagina-1,busca=request.args.get('busca',''),atribuicao=request.args.get('atribuicao',''),historico=request.args.get('historico','0')) }}">Anterior</a>{% endif %}<span>Página {{ pagina }} de {{ paginas }}</span>{% if pagina<paginas %}<a href="{{ url_for('at_lista',vista=vista,pagina=pagina+1,busca=request.args.get('busca',''),atribuicao=request.args.get('atribuicao',''),historico=request.args.get('historico','0')) }}">Próxima</a>{% endif %}</div>
+{% endblock %}

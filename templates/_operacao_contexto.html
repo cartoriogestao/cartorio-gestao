@@ -1,0 +1,16 @@
+{% if user %}
+<link rel="stylesheet" href="{{ url_for('static',filename='operacao.css') }}?v=1">
+{% if not layout_novo or not (request.endpoint or '').startswith(('at_','tr_')) %}
+<div class="op-atalhos" aria-label="Trabalho e aprendizagem">
+ <a href="{{ url_for('at_meu_trabalho') }}">Meu trabalho</a>
+ <a href="{{ url_for('at_lista') }}">Atendimentos</a>
+ <a href="{{ url_for('tr_inicio') }}">Treinamento</a>
+</div>
+{% endif %}
+{% if atendimento_da_operacao or aula_da_operacao %}
+<aside class="op-contexto" aria-label="Contexto deste trabalho">
+ {% if atendimento_da_operacao %}<a href="{{ url_for('at_ficha',protocolo_id=atendimento_da_operacao) }}">Voltar à ficha do atendimento</a>{% endif %}
+ {% if aula_da_operacao %}<a href="{{ url_for('tr_aula',chave=aula_da_operacao.id) }}">Aprender esta função: {{ aula_da_operacao.nome }}</a>{% endif %}
+</aside>
+{% endif %}
+{% endif %}

@@ -278,7 +278,7 @@
           sai. Era «Matriculas» primeiro porque foi a primeira tela feita.
         #}
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">O dia</div>
-        <a href="{{ url_for('ri_protocolo') }}">Protocolo / prenotação</a>
+        <a href="{{ url_for('ri_protocolo') }}">Prenotação RI - Livro 1</a>
         <a href="{{ url_for('ri_pedidos') }}">Pedidos em andamento</a>
         <a href="{{ url_for('ri_matriculas') }}">Matrículas</a>
         <a href="{{ url_for('ri_certidoes') }}">Certidões</a>
@@ -875,7 +875,11 @@
         {# CAIXA E PROTOCOLO GERAL SAO A MESMA COISA desde 27/08/2026, e por
            isso ficam juntos e nesta ordem. #}
         <a href="{{ url_for('caixa') }}">Caixa</a>
-        <a href="{{ url_for('caixa_protocolos') }}">Protocolo geral</a>
+        <a href="{{ url_for('at_meu_trabalho') }}">Meu trabalho</a>
+        <a href="{{ url_for('at_lista') }}" title="Atendimentos - protocolo geral">Atendimentos</a>
+        <a href="{{ url_for('tr_inicio') }}">Treinamento</a>
+        <a href="{{ url_for('tr_trilha',trilha='primeiro-dia') }}">Primeiro dia</a>
+        {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('tr_equipe') }}">Aprendizagem da equipe</a>{% endif %}
         <a href="{{ url_for('caixa_protocolos_parados') }}">Protocolos parados</a>
         <a href="{{ url_for('caixa_depositos') }}">Depósito prévio</a>
         {# A COBRANÇA POR BOLETO (27/10/2026) — ao lado do depósito prévio, que é
@@ -1092,6 +1096,7 @@
         {% for category, message in messages %}<div class="flash {{ category }}" data-aviso>{{ message|forte }}{{ aviso.fechar() }}</div>{% endfor %}
       {% endwith %}
 
+      {% if operacao_disponivel %}{% include '_operacao_contexto.html' %}{% endif %}
       {% block content %}{% endblock %}
     </div>
   </main>

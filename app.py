@@ -3792,6 +3792,9 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     # PROCESSOS — a lista única (fase 3, 12/10/2026): tarefas e expedientes
     # num módulo só; o expediente é a entrada do processo.
+    import operacao_web
+    operacao_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
     import processos_web
     processos_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 

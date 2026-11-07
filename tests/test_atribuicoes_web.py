@@ -469,9 +469,12 @@ def test_a_certidao_sem_item_e_recusada_antes_de_tomar_numero(s):
 
 def test_o_selo_digitado_entra_amarrado_ao_ato(s):
     ids = _semear(s)
+    # Desde o #373 o cancelamento só se efetiva pago no caixa: o emolumento entra junto.
+    servico = _com_servico(s)
+    _abrir_caixa(s)
     html = _post(s, f"/protesto/{ids['titulo']}/lancar", ato="CANCELAMENTO",
                  hipotese="PAGAMENTO", fundamento="Título quitado, com prova.",
-                 selo=SELO_BOM)
+                 selo=SELO_BOM, cobrar=str(servico))
     assert SELO_BOM in html
     con = _con(s)
     linha = con.execute("SELECT * FROM sd_selos WHERE numero=?",

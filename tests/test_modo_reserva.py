@@ -59,7 +59,7 @@ def test_entra_e_mostra_a_faixa_da_reserva(reserva):
     r = cg_login(c, "mario", SENHA)
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "cg-faixa-reserva" in html and "SERVIDOR RESERVA" in html
+    assert "faixa-reserva" in html and "SERVIDOR RESERVA" in html
     assert "permission denied" not in html
 
 
@@ -86,7 +86,7 @@ def test_tela_que_grava_ao_abrir_mostra_a_pagina_da_reserva(reserva):
 
 def test_sem_o_modo_nada_muda(cg_casa_logada):
     html = cg_casa_logada["c"].get("/").get_data(as_text=True)
-    assert "cg-faixa-reserva" not in html
+    assert "faixa-reserva" not in html
 
 
 def test_schema_que_nao_chegou_diz_o_que_falta(cg_casa, monkeypatch):

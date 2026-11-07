@@ -49,13 +49,16 @@ def test_tela_do_menu_ganha_modulo_quando_faz_sentido():
         ("notas_reconhecimento", "Notas", ("Reconhecer", "Notas")),
         ("notas_autenticacao", "Notas", ("Autenticar", "Notas")),
         ("ri_matriculas", "Registro de Imóveis", ("Matrícula", "Registro")),
-        ("ri_protocolo", "Registro de Imóveis", ("Protocolo", "Registro")),
+        # 07/11/2026 (#368): o item virou «Prenotação RI - Livro 1».
+        ("ri_protocolo", "Registro de Imóveis", ("Prenotação", "Registro")),
         # «Tarefas e pendências», «Expedientes / Malote» e «Expedientes
         # prontos para encerrar» SAÍRAM DO MENU em 12/10/2026, por ordem do
         # oficial: viraram a lista única de Processos (templates/base.html,
         # grupo «Processos e malote»). A aba agora se mede nela — 14/10/2026.
         ("processos_lista", "Malote", ("Processos", "Malote")),
-        ("caixa_protocolos", "Administrativo", ("Protocolo", "Administrativo")),
+        # «Protocolo geral» saiu do menu em 07/11/2026 (#368): o menu leva a «Atendimentos»
+        # (`at_lista`), a lista antiga fica pelo endereço, e a aba cai no nome do módulo.
+        ("caixa_protocolos", "Administrativo", ("Administrativo",)),
         ("inspections", "Malote", ("Inspe", "Malote")),
         ("nucleo_livros", "Livros e acervo", ("termos", "Livros")),
         ("nucleo_encerramento_diario", "Livros e acervo", ("Encerramento", "Livros")),

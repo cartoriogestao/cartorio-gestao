@@ -651,6 +651,15 @@ def _leituras(casa) -> None:
         LEIT.concluir(con, falhou, arquivos=arquivos, lido=None,
                       erro="A IA não respondeu: a casa de ensaio não tem rede.")
     casa.ids["civil_leitura_lida"], casa.ids["civil_leitura_falhou"] = int(lida), int(falhou)
+    # A ÚLTIMA REVISÃO DO RASCUNHO (#371): uma terceira leitura vira rascunho, e a rota que a tela
+    # chama ao abrir responde por ele.
+    with casa.transacao() as con:
+        outra = LEIT.abrir(con, especie="NASCIMENTO", agora=agora, por=nome)
+        LEIT.concluir(con, outra, arquivos=arquivos, lido={
+            "paginas": [{"arquivo": "documentos.pdf", "n": 1, "tipo": "DNV"}],
+            "documentos": documentos[:1], "envios": []})
+        rascunho = LEIT.para_rascunho(con, outra, agora=agora, por=nome)
+    casa.pagina("revisao_previa_rcpn_ultima", rascunho_id=int(rascunho))
 
 
 # ------------------------------------------------------------------ os endereços

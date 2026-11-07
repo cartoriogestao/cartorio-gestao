@@ -1408,7 +1408,7 @@ html[data-escala]:not([data-layout=novo]) body{zoom:var(--cg-escala,1)}
 .sidebar-escalas .link-button{padding:2px 0;font-size:11px}.sidebar-escalas .atual{font-weight:700;text-decoration:underline}
 
 /* O servidor reserva (modo_reserva): a faixa que não deixa confundir a reserva com o principal. */
-.cg-faixa-reserva {
+.faixa-reserva {
   position: sticky; top: 0; z-index: 1000;
   padding: .45rem 1rem; text-align: center;
   background: #7a1f1f; color: #fff; font-size: .9rem;

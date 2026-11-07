@@ -172,6 +172,9 @@ MODELO_DA_PROCURACAO = "claude-sonnet-5-5"
 #: documentos, já gravada.
 MODELO_DO_RCPN = "claude-sonnet-5-5"
 ESFORCO_DO_RCPN = "high"
+#: O pedido de concisão (#366), que vai ao fim de toda instrução da revisão.
+CONCISAO = ("\nSeja conciso: agrupe achados repetidos, cite só o trecho indispensável e "
+            "preserve todos os problemas distintos.")
 TIPOS_DA_PROCURACAO = ("PROCURACAO", "PROCURACAO_PREVIDENCIARIA", "SUBSTABELECIMENTO")
 
 INSTRUCAO_DA_PROCURACAO = """Você é o revisor de PROCURAÇÕES PÚBLICAS de uma serventia \
@@ -564,9 +567,7 @@ def executar(banco: Path, pasta_dados: Path, revisao_id: int, conversar=None) ->
             config = {"format": {"type": "json_schema", "schema": ESQUEMA_DA_RESPOSTA}}
             if (linha["atribuicao"] or "") == "RCPN":
                 config["effort"] = ESFORCO_DO_RCPN
-            resposta = conversar(pasta_dados, provedor=PROVEDOR, sistema=instrucao + (
-                                     "\nSeja conciso: agrupe achados repetidos, cite só o "
-                                     "trecho indispensável e preserve todos os problemas distintos."),
+            resposta = conversar(pasta_dados, provedor=PROVEDOR, sistema=instrucao + CONCISAO,
                                  extras={"output_config": config},
                                  conversa=[{"tipo": "user", "texto": seguro}],
                                  ferramentas=[], modelo=modelo,

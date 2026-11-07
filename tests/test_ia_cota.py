@@ -309,9 +309,11 @@ class _Rede:
                     "usage": {"prompt_tokens": 1, "completion_tokens": 1}}).encode()
 
         class _Conexao:
-            def request(self, *a, **k):
+            def connect(self):
                 if rede.modo == "recusa":
                     raise ConnectionRefusedError("recusada")
+
+            def request(self, *a, **k):
                 rede.enviados += 1
 
             def getresponse(self):

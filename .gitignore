@@ -41,6 +41,8 @@ ci/denylist.local.txt
 CARTORIO_GESTAO_DATA/
 
 # --- Bancos e dados locais ---
+# Respostas de OCR são dados privados da instalação.
+cache_ia_leituras/
 *.sqlite3
 *.sqlite
 *.db

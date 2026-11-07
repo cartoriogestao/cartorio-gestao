@@ -93,6 +93,11 @@
   <input type="hidden" name="habilitacao_id" value="{{ form.get('habilitacao_id') }}">
   {% endif %}
   {% if do_acervo %}<input type="hidden" name="do_acervo" value="1">{% endif %}
+  {% if rascunho_id and not do_acervo %}
+  {% with revisao_url=url_for('revisao_previa_rcpn', rascunho_id=rascunho_id), revisao_do_registro_civil=True %}
+  {% include '_revisao_previa.html' %}
+  {% endwith %}
+  {% endif %}
 
   {# OS PASSOS SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026. Eles seguem a arrumação abaixo, que é a
      ordem do papel na mão do escrevente, e cada espécie diz os seus. É UM FORMULÁRIO SÓ: o que

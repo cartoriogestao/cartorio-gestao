@@ -944,6 +944,11 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("pt_titulos", "traducao_tradutor", "TEXT"),
     ("pt_titulos", "traducao_matricula", "TEXT"),
     ("pt_titulos", "traducao_data", "TEXT"),
+    # O TITULO EMITIDO NO BRASIL EM MOEDA ESTRANGEIRA (07/11/2026, o oficial:
+    # «segue a lei de protesto»): Lei 9.492/1997, art. 10 — a traducao e do
+    # titulo «emitido fora do Brasil» (caput); o emitido aqui segue o § 3o. Com
+    # 1, a traducao nao se exige.
+    ("pt_titulos", "moeda_emitido_no_brasil", "INTEGER"),
     # O CHEQUE DO BALCAO (05/11/2026, decisao do oficial, item i; Lei
     # 9.492/1997, art. 6o; CN-MA arts. 883 e 910): o banco sacado, o motivo da
     # devolucao (a alinea do BACEN), a data da apresentacao ao banco, e a marca

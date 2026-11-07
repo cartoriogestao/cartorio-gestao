@@ -120,7 +120,8 @@
       {% endif %}
     {% else %}
       <strong>Selar {{ p.ato }}</strong> (ato {{ p.ato_id }}, de {{ p.quando_br }}) —
-      {{ p.motivo }}. Quem sela é o escrevente.
+      {{ p.motivo }}. Quem sela é o escrevente{% if p.tipo == 'PROTESTO' %}:
+      «Protestos lavrados sem selo», logo abaixo{% endif %}.
     {% endif %}
     </li>
   {% endfor %}
@@ -193,7 +194,7 @@
         <th>Nosso número</th><td>{{ titulo.nosso_numero or '—' }}</td></tr>
     <tr><th>Emissão</th><td>{{ titulo.data_emissao or '—' }}</td>
         <th>Vencimento</th><td>{{ titulo.data_vencimento or '—' }}</td></tr>
-    <tr><th>Valor</th><td>{{ titulo.valor_centavos | centavos_reais }}{% if titulo.moeda_estrangeira %}<br><small>convertido de {{ titulo.valor_na_moeda }} — {{ titulo.moeda_estrangeira }} (Lei 9.492/1997, art. 10){% if titulo.traducao_tradutor %}<br>tradução de {{ titulo.traducao_tradutor }}, matrícula {{ titulo.traducao_matricula }}, em {{ titulo.traducao_data }}{% endif %}</small>{% endif %}</td>
+    <tr><th>Valor</th><td>{{ titulo.valor_centavos | centavos_reais }}{% if titulo.moeda_estrangeira %}<br><small>convertido de {{ titulo.valor_na_moeda }} — {{ titulo.moeda_estrangeira }} (Lei 9.492/1997, art. 10){% if titulo.moeda_emitido_no_brasil %}<br>emitido no Brasil (art. 10, § 3º){% endif %}{% if titulo.traducao_tradutor %}<br>tradução de {{ titulo.traducao_tradutor }}, matrícula {{ titulo.traducao_matricula }}, em {{ titulo.traducao_data }}{% endif %}</small>{% endif %}</td>
         <th>Saldo a protestar</th><td>{{ titulo.saldo_centavos | centavos_reais }}</td></tr>
     {% if titulo.especie == 'CH' and (titulo.cheque_banco_sacado or titulo.cheque_contra_o_banco) %}
     <tr><th>Cheque</th><td colspan="3">{% if titulo.cheque_contra_o_banco %}Protesto para instruir medida contra o próprio banco (CN-MA art. 910).{% endif %}
@@ -569,6 +570,20 @@
       {% endfor %}
     </tbody>
   </table>
+  <form method="post" action="{{ url_for('protesto_cobrar_emolumento_devido', titulo_id=titulo.id) }}"
+        style="padding:0 14px 14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Forma em que o apresentante pagou
+      <select name="forma_pagamento">
+        <option value="TRANSFERENCIA">Transferência</option>
+        <option value="PIX">Pix</option>
+        <option value="BOLETO">Boleto</option>
+        <option value="DINHEIRO">Dinheiro</option>
+      </select></label>
+    <button class="primary">Cobrar o emolumento devido no meu caixa</button>
+    <p class="small">Só quando o apresentante pagou. Entra no caixa de quem clica. Não sela.
+      Sem caixa aberto, o valor continua aqui.</p>
+  </form>
   {% elif emolumento.regime == 'DIFERIDO' %}
   <p style="padding:0 14px 14px"><small>Nada devido registrado. Ato lavrado antes
     desta conta (ou trazido do E-Ofício) não deixou item devido: no desfecho,

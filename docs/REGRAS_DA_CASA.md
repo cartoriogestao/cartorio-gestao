@@ -108,6 +108,10 @@ diferença deve ser apontada ao oficial.
   convertidos, e são obrigatórios — é o que se cobra e se intima. O cadastro
   exige a tradução por tradutor público (quem, matrícula e data), e o termo e
   o instrumento a citam (art. 10, § 1º). Decisão do oficial de 05/11/2026.
+  O título **emitido no Brasil** em moeda estrangeira vem sem tradução (a lei
+  a pede só do emitido fora, art. 10, caput); o § 3º remete ao Decreto-lei
+  857/1969, revogado pela Lei 14.286/2021, cujo art. 13 diz quando a
+  estipulação vale — a tela avisa para conferir. O oficial, 07/11/2026.
 - **Cheque**: a casa recebe. O cadastro exige banco sacado, motivo da
   devolução e data da apresentação ao banco (Lei 9.492/1997, art. 6º; CN-MA
   art. 910), salvo quando o protesto é para instruir medida contra o próprio

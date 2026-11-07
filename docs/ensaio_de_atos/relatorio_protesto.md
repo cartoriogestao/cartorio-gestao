@@ -151,7 +151,10 @@ estrangeira» e «Valor na moeda de origem», que vão juntos; o valor e o saldo
 convertidos, e são obrigatórios — é o que se cobra e se intima. A ficha mostra «convertido de …». Fica
 com o oficial a tradução por tradutor público e a frase no registro (art. 10, § 1º). **Decidido e consertado
 na mesma data** (item 4): o cadastro exige o tradutor público, a matrícula e a data da tradução, e o registro
-do protesto e o instrumento dizem o valor de origem e a tradução. Ensaio:
+do protesto e o instrumento dizem o valor de origem e a tradução. **E o título emitido no Brasil** (o oficial,
+07/11/2026: «segue a lei de protesto»): uma marca dispensa a tradução, que a lei pede só do emitido fora do
+Brasil (art. 10, caput); o § 3º remete ao Decreto-lei 857/1969, revogado pela Lei 14.286/2021 (art. 28, XIV),
+e a tela avisa para conferir a estipulação pelo art. 13 dela. O termo diz «emitido no Brasil». Ensaio:
 `test_o_titulo_em_moeda_estrangeira_guarda_a_origem_e_cobra_em_reais` e o da recusa do incompleto.
 
 **O4. O protesto para fins falimentares por edital se lavra sem aviso.** **DECIDIDO E CONSERTADO em 03/11/2026** (o oficial,

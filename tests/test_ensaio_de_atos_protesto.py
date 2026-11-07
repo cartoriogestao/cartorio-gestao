@@ -327,6 +327,21 @@ def test_o_titulo_em_moeda_estrangeira_guarda_a_origem_e_cobra_em_reais(s):  # n
     assert "tradução de TRADUTORA DE EXEMPLO, matrícula 999" in ficha
 
 
+def test_o_titulo_emitido_no_brasil_em_moeda_estrangeira_vem_sem_traducao(s):  # noqa: F811
+    """O oficial (07/11/2026): «segue a lei de protesto». Lei 9.492/1997, art. 10: a tradução é do título
+    «emitido fora do Brasil» (caput); o emitido aqui segue o § 3º, que remete ao Decreto-lei 857/1969 —
+    revogado pela Lei 14.286/2021, cujo art. 13 diz quando a estipulação em moeda estrangeira vale. A tela
+    avisa para conferir isso, e o termo diz que o título foi emitido no Brasil."""
+    feito = _ate_o_protesto(s, numero_titulo="NP-USD3", moeda_estrangeira="dólar americano (USD)",
+                            valor_na_moeda="1.000,00", valor="5.432,10", saldo="5.432,10",
+                            moeda_emitido_no_brasil="1")
+    assert any("Lei 14.286/2021" in a and "art. 13" in a for a in feito["avisos"]), feito["avisos"]
+    assert feito["situacao"] == "PROTESTADO", feito["avisos"]
+    termo = F._ato(s, feito["id"], "PROTESTO")["teor"] or ""
+    assert "emitido no Brasil (Lei 9.492/1997, art. 10, § 3º)" in termo, termo
+    assert "tradutor público" not in termo
+
+
 def test_o_registro_do_protesto_em_moeda_estrangeira_cita_a_traducao(s):  # noqa: F811
     """Lei 9.492/1997, art. 10, § 1º: «constarão obrigatoriamente do registro do protesto a descrição do
     documento e sua tradução». O termo e o instrumento dizem o mesmo."""

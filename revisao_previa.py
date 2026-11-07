@@ -42,6 +42,7 @@ from pathlib import Path
 
 import banco_pg
 from bd_nativo import Banco, banco
+from ia_contexto_ri import ato_no_contexto, juntar_contexto
 
 PROVEDOR = "claude"
 MODELO = "claude-opus-5-5"
@@ -293,11 +294,10 @@ def dossie_ri_lavrado(con: sqlite3.Connection, ato_id: int) -> str:
             """SELECT tipo, numero, data_ato, teor FROM ri_atos WHERE matricula_id = %s
                   AND id <> %s AND numero < %s AND COALESCE(cancelado,0) = 0
                 ORDER BY numero, id""", (a["matricula_id"], ato_id, a["numero"] or 0)):
-        partes.append(f"{x['tipo']}-{x['numero']} ({x['data_ato'] or '—'}): "
-                      f"{normalizar(x['teor'])}")
+        partes.append(ato_no_contexto(x, normalizar(m["teor"]), normalizar))
     partes += ["", "=== ATO JÁ LAVRADO, A REVISAR ===", f"Tipo: {a['tipo']}-{a['numero']}",
                f"Natureza do título: {a['natureza_titulo'] or '—'}", normalizar(a["teor"])]
-    return "\n".join(partes)[-LIMITE_DO_DOSSIE:]
+    return juntar_contexto(partes, LIMITE_DO_DOSSIE)
 
 def dossie_ri(con: sqlite3.Connection, matricula_id: int, tipo: str, teor: str,
               natureza: str | None = None) -> str:
@@ -312,11 +312,10 @@ def dossie_ri(con: sqlite3.Connection, matricula_id: int, tipo: str, teor: str,
     for x in bd.ler(
             """SELECT tipo, numero, data_ato, teor FROM ri_atos WHERE matricula_id = %s
                   AND COALESCE(cancelado,0) = 0 ORDER BY numero, id""", (matricula_id,)):
-        partes.append(f"{x['tipo']}-{x['numero']} ({x['data_ato'] or '—'}): "
-                      f"{normalizar(x['teor'])}")
+        partes.append(ato_no_contexto(x, normalizar(m["teor"]), normalizar))
     partes += ["", "=== ATO A LAVRAR ===", f"Tipo: {tipo}",
                f"Natureza do título: {natureza or '—'}", normalizar(teor)]
-    return "\n".join(partes)[-LIMITE_DO_DOSSIE:]
+    return juntar_contexto(partes, LIMITE_DO_DOSSIE)
 
 
 def dossie_notas(con: sqlite3.Connection, ato_id: int) -> str:
@@ -405,6 +404,20 @@ def _com_a_norma(seguro: str, dossie: str, atribuicao: str) -> str:
     return f"{seguro}\n\n{norma}" if norma else seguro
 
 
+ESQUEMA_DA_RESPOSTA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["achados", "parecer"],
+    "properties": {
+        "parecer": {"type": "string"},
+        "achados": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["gravidade", "o_que", "trecho", "por_que"],
+            "properties": {
+                "gravidade": {"type": "string", "enum": ["GRAVE", "ATENCAO"]},
+                "o_que": {"type": "string"}, "trecho": {"type": "string"},
+                "por_que": {"type": "string"}}}}}}
+
+
 def _ler_json(texto: str) -> dict:
     m = re.search(r"\{.*\}", texto or "", re.S)
     if not m:
@@ -433,6 +446,7 @@ def executar(banco: Path, pasta_dados: Path, revisao_id: int, conversar=None) ->
         bd.escrever("UPDATE rv_revisoes SET situacao='LENDO', provedor=%s, modelo=%s "
                     "WHERE id=%s", (PROVEDOR, modelo, revisao_id))
         con.commit()
+        resposta = {}
         try:
             # O TETO DO DIA ANTES DA REDE (LX13, B5 da auditoria LS03): o registro
             # de uso só conta o que já foi. Passou do teto, a revisão termina em
@@ -465,7 +479,11 @@ def executar(banco: Path, pasta_dados: Path, revisao_id: int, conversar=None) ->
             # DEPOIS da máscara: é texto público, e chega inteira.
             seguro = _com_a_norma(seguro, dossie, linha["atribuicao"] or "")
             # O REGISTRO DO USO DE IA (LF01): a revisão e a atribuição, sem texto.
-            resposta = conversar(pasta_dados, provedor=PROVEDOR, sistema=instrucao,
+            resposta = conversar(pasta_dados, provedor=PROVEDOR, sistema=instrucao + (
+                                     "\nSeja conciso: agrupe achados repetidos, cite só o "
+                                     "trecho indispensável e preserve todos os problemas distintos."),
+                                 extras={"output_config": {"format": {
+                                     "type": "json_schema", "schema": ESQUEMA_DA_RESPOSTA}}},
                                  conversa=[{"tipo": "user", "texto": seguro}],
                                  ferramentas=[], modelo=modelo,
                                  maximo_de_saida=MAXIMO_DE_SAIDA,
@@ -473,6 +491,9 @@ def executar(banco: Path, pasta_dados: Path, revisao_id: int, conversar=None) ->
                                  atribuicao=linha["atribuicao"] or "",
                                  referencia=f"rv_revisoes:{revisao_id}",
                                  mascarado=mascarar_na_revisao(bd))
+            if resposta.get("parou") in ("max_tokens", "length", "refusal"):
+                raise ValueError("Resposta incompleta ou recusada pela API; "
+                                 "não houve reenvio automático. Confira a revisão.")
             r = desmascarar(_ler_json(resposta.get("texto") or ""), mapa)
             graves = sum(a["gravidade"] == "GRAVE" for a in r["achados"])
             bd.escrever(
@@ -483,9 +504,11 @@ def executar(banco: Path, pasta_dados: Path, revisao_id: int, conversar=None) ->
                  resposta.get("modelo") or modelo, resposta.get("entrada"),
                  resposta.get("saida"), revisao_id))
         except Exception as erro:                       # noqa: BLE001 — vai à tabela
-            bd.escrever("UPDATE rv_revisoes SET situacao='ERRO', terminado_em=%s, erro=%s "
-                        "WHERE id=%s",
-                        (_agora(), f"{type(erro).__name__}: {str(erro)[:300]}", revisao_id))
+            bd.escrever("UPDATE rv_revisoes SET situacao='ERRO', terminado_em=%s, erro=%s, "
+                        "tokens_entrada=%s, tokens_saida=%s WHERE id=%s",
+                        (_agora(), f"{type(erro).__name__}: {str(erro)[:300]}",
+                         resposta.get("entrada") if type(resposta.get("entrada")) is int else None,
+                         resposta.get("saida") if type(resposta.get("saida")) is int else None, revisao_id))
         con.commit()
     finally:
         con.close()

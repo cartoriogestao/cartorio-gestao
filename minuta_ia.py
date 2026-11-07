@@ -631,9 +631,9 @@ def contexto_ri(con, matricula_id: int, tipo: str, prenotacao_id=None) -> str:
     atos = bd.ler("""SELECT tipo, numero, data_ato, teor FROM ri_atos
                       WHERE matricula_id = %s AND COALESCE(cancelado, 0) = 0
                       ORDER BY numero, id""", (int(matricula_id),))
+    from ia_contexto_ri import ato_no_contexto, juntar_contexto
     for x in atos:
-        partes.append(f"{x['tipo']}-{x['numero']} ({x['data_ato'] or '—'}): "
-                      f"{texto_corrido(x['teor'])}")
+        partes.append(ato_no_contexto(x, texto_corrido(m["teor"]), texto_corrido))
     if not atos:
         partes.append("(nenhum ato no sistema — os atos antigos podem estar dentro "
                       "do teor da ficha)")
@@ -662,7 +662,7 @@ def contexto_ri(con, matricula_id: int, tipo: str, prenotacao_id=None) -> str:
     if exemplos:
         partes += ["", "=== EXEMPLOS DE REDAÇÃO DESTA SERVENTIA (só a forma; os dados "
                        "são de OUTRAS matrículas e não se copiam) ==="] + exemplos
-    return "\n".join(partes)[-LIMITE_DO_CONTEXTO:]
+    return juntar_contexto(partes, LIMITE_DO_CONTEXTO)
 
 
 def _exemplos_notas(bd, tipo: str, ato_id: int) -> list[str]:

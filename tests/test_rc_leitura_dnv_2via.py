@@ -11,7 +11,9 @@ tela, porque o conserto só vale se a rota disser a espécie ao `ler`.
 from __future__ import annotations
 
 import json
+import base64
 from io import BytesIO
+from PIL import Image
 
 import pytest
 
@@ -42,8 +44,11 @@ class IA:
 
     def __call__(self, pasta, *, provedor, sistema, conversa, ferramentas, modelo,
                  maximo_de_saida, **_registro):
-        pedido = json.dumps(conversa, ensure_ascii=False, default=str)
-        arquivo = "dnv.png" if "dnv.png" in pedido else "rg.png"
+        # Documentos distintos têm pixels distintos. O OCR agora se identifica
+        # pelo conteúdo, sem depender do nome que o usuário deu ao arquivo.
+        imagem = conversa[0]["imagens"][0]["base64"]
+        with Image.open(BytesIO(base64.b64decode(imagem))) as im:
+            arquivo = "dnv.png" if im.convert("L").getpixel((0, 0)) < 128 else "rg.png"
         if sistema == LEIT.INSTRUCAO_TRIAGEM:
             molde, corpo = "TRIAGEM", {"paginas": [{"n": i, "tipo": t}
                                                    for i, t in enumerate(self.tipos, 1)]}
@@ -57,7 +62,12 @@ class IA:
 
 
 def _arquivos(tmp_path):
-    return [{"caminho": str(_png(tmp_path / n)), "nome": n} for n in ("rg.png", "dnv.png")]
+    arquivos = []
+    for nome in ("rg.png", "dnv.png"):
+        caminho = tmp_path / nome
+        Image.new("RGB", (60, 80), "black" if nome == "dnv.png" else "white").save(caminho)
+        arquivos.append({"caminho": str(caminho), "nome": nome})
+    return arquivos
 
 
 def test_a_triagem_instrui_que_a_dnv_2via_e_sempre_dnv():
@@ -159,7 +169,7 @@ def test_pela_tela_o_nascimento_com_a_dnv_triada_errado_fica_lido_e_avisa(cg_cas
     arquivos = []
     for nome in ("rg.png", "dnv.png"):
         b = BytesIO()
-        Image.new("RGB", (60, 80), "white").save(b, format="PNG")
+        Image.new("RGB", (60, 80), "black" if nome == "dnv.png" else "white").save(b, format="PNG")
         b.seek(0)
         arquivos.append((b, nome))
     r = c.post("/rcpn/leitura", data={"csrf_token": _token(r.get_data(as_text=True)),

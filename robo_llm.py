@@ -7,6 +7,8 @@ Se a chamada falhar, cai no local com aviso. Nunca loga API key.
 from __future__ import annotations
 
 import json
+import uuid
+import socket
 import urllib.error
 import urllib.request
 from typing import Any, Callable
@@ -166,9 +168,8 @@ def _pedido_nao_saiu(erro: BaseException) -> bool:
     """O pedido falhou ANTES de sair? Só aí a vaga da cota volta (26/10/2026).
 
     - recusa antes da rede (provedor desconhecido, chave vazia): não saiu;
-    - `URLError` é o que o `urllib` levanta quando a CONEXÃO ou o ENVIO falham
-      (ele embrulha só o `request`, e não a leitura da resposta): não saiu —
-      salvo se a razão for prazo esgotado, que conta como enviado;
+    - `URLError`: apenas conexão recusada e falha de DNS provam não envio;
+      demais falhas podem ocorrer após envio parcial e conservam a vaga;
     - `HTTPError` (o provedor respondeu), prazo esgotado na leitura, resposta
       ilegível ou vazia: saiu, e a vaga fica gasta.
     """
@@ -180,7 +181,7 @@ def _pedido_nao_saiu(erro: BaseException) -> bool:
         razao = erro.reason
         if isinstance(razao, TimeoutError) or "timed out" in str(razao).lower():
             return False
-        return True
+        return isinstance(razao, (ConnectionRefusedError, socket.gaierror))
     return False
 
 
@@ -230,16 +231,24 @@ def chamar_provedor(
                             if isinstance(teto, USO.ReservaIndisponivel)
                             else "teto do dia"))
         raise
+    pedido_id = uuid.uuid4().hex
+    USO.registrar_tentativa(pasta_de_dados, pedido_id=pedido_id, tentativa=1,
+                           estado="iniciada", registro=registro)
     try:
         lida = _pedir(provedor, api_key, system, user, timeout=timeout)
     except Exception as erro:
         resultado, motivo = _motivo(erro)
+        USO.registrar_tentativa(pasta_de_dados, pedido_id=pedido_id, tentativa=1,
+            estado="nao_enviado" if _pedido_nao_saiu(erro) else "indeterminado",
+            registro=registro, http_status=getattr(erro, "code", 0))
         if _pedido_nao_saiu(erro):
             USO.devolver(pasta_de_dados, reserva)
         else:
             USO.consumida_sem_resposta(reserva, motivo)
         USO.registrar(pasta_de_dados, **registro, resultado=resultado, erro=motivo)
         raise
+    USO.registrar_tentativa(pasta_de_dados, pedido_id=pedido_id, tentativa=1,
+                           estado="ok", registro=registro, http_status=200, resposta=lida)
     registro["modelo"] = lida["modelo"] or registro["modelo"]
     USO.registrar(pasta_de_dados, **registro, resultado=USO.OK,
                   tokens_entrada=lida["entrada"], tokens_saida=lida["saida"])

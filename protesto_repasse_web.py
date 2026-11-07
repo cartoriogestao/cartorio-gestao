@@ -524,3 +524,59 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
               + (r["regime"].lower() if r["regime"] else "pela regra") + ".",
               "success")
         return redirect(url_for("protesto_titulo", titulo_id=titulo_id))
+
+    @app.route("/protesto/<int:titulo_id>/cobrar-emolumento-devido", methods=["POST"])
+    @login_required
+    @roles_required(*QUEM_VE)
+    def protesto_cobrar_emolumento_devido(titulo_id: int):
+        """Cobra no caixa de quem clica o que a desistência deixou devido.
+
+        Não sela. Sem caixa aberto, não lança: o devido continua na ficha.
+        """
+        from bd_nativo import banco
+        import ato_selado as AS
+        from caixa_schema import FORMAS_PAGAMENTO
+        operador = usuario_nome()
+        forma = _campo("forma_pagamento").upper()
+        if forma not in FORMAS_PAGAMENTO:
+            flash("Diga a forma em que o apresentante pagou.", "danger")
+            return redirect(url_for("protesto_titulo", titulo_id=titulo_id))
+        try:
+            with db.transaction() as con:
+                caixa = banco(con).um(
+                    """SELECT id, data FROM cx_caixas
+                        WHERE operador_nome = %s AND situacao = 'ABERTO'
+                        ORDER BY data DESC LIMIT 1""", (operador,))
+                if not caixa:
+                    raise POST.PosterioriError(
+                        "Abra o seu caixa antes. Sem caixa aberto o emolumento "
+                        "não entra na conferência do dia.")
+                if not POST.pendentes(con, titulo_id):
+                    raise POST.PosterioriError("Este título não tem emolumento devido.")
+                reg = POST.regime(con, titulo_id)
+                tit = banco(con).um(
+                    "SELECT apresentante_nome FROM pt_titulos WHERE id = %s",
+                    (int(titulo_id),))
+                ato = banco(con).um(
+                    """SELECT id FROM pt_atos
+                        WHERE titulo_id = %s AND tipo = 'DESISTENCIA' AND cancelado = 0
+                        ORDER BY id DESC LIMIT 1""", (int(titulo_id),))
+                if not ato:
+                    raise POST.PosterioriError(
+                        "Não há ato de desistência para amarrar esta cobrança.")
+                r = POST.cobrar_pendentes(
+                    con, titulo_id, ato_do_desfecho_id=int(ato["id"]),
+                    data_da_tabela=reg.get("data_da_protocolizacao") or hoje(),
+                    caixa_id=int(caixa["id"]), agora=agora(), hoje=hoje(),
+                    hora=agora()[11:16],
+                    pagador=(tit or {}).get("apresentante_nome"),
+                    forma_pagamento=forma, usuario=operador)
+        except RECUSAS + (AS.AtoError,) as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_titulo", titulo_id=titulo_id))
+        audit("PROTESTO_EMOLUMENTO_DEVIDO_COBRADO", "pt_titulos", titulo_id,
+              {"itens": r["itens"], "total_centavos": r["total_centavos"],
+               "caixa_id": int(caixa["id"])})
+        flash(f"Emolumento devido lançado no caixa: R$ {reais(r['total_centavos'])}. "
+              f"Quem paga é o apresentante. Não selou.", "success")
+        return redirect(url_for("protesto_titulo", titulo_id=titulo_id))

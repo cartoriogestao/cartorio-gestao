@@ -752,6 +752,12 @@ def aplicar(con: sqlite3.Connection, conteudo: str | bytes, *,
                 usuario=usuario, origem="CRA")
             bd.escrever("UPDATE pt_atos SET desistencia_id=%s WHERE id=%s",
                         (desistencia_id, r["ato_id"]))
+            # O EMOLUMENTO DA DESISTÊNCIA (17.4) fica devido. Não cobra e não
+            # sela: sem caixa aberto o dinheiro não entra na gaveta, e o selo
+            # é de quem lavra. A ficha mostra o que o apresentante deve.
+            import protesto_posteriori as POST
+            POST.deixar_devida_a_desistencia(
+                con, tid, r["ato_id"], agora=agora, usuario=usuario)
             aplicados.append({**t, "titulo": x, "ato_id": r["ato_id"]})
 
     bd.escrever(

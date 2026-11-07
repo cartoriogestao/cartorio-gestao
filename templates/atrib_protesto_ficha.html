@@ -13,7 +13,6 @@
 {% from '_cobrar.html' import quadro, cobrado %}
 {% from '_protesto_afirmacao.html' import afirmacao, prova_da_intimacao %}
 {% import '_protesto_irmaos.html' as IRM %}
-{% import '_protesto_sem_selo.html' as SEMSELO with context %}
 {% include '_serventia.html' %}
 <div class="actions"><a class="button" href="{{ url_for('protesto_titulos') }}">&larr; Títulos</a></div>
 
@@ -129,7 +128,6 @@
   </ul>
 </div>
 {% endif %}
-{{ SEMSELO.quadro(protesto_sem_selo, titulo_id=titulo.id) }}
 
 {% include '_protesto_sem_selo.html' %}
 

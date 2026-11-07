@@ -403,6 +403,12 @@ def item_da_desistencia(con, titulo_id: int, *, data: str) -> dict | None:
     valor, devolve None — cobrar zero seria dizer que a desistência é de graça.
     """
     import custas as CU
+    # Sem a tabela de emolumentos (banco sem o caixa), não há o que deixar devido. Perguntar
+    # antes, e não pegar o erro: no PostgreSQL, a consulta que falha derruba a transação da
+    # desistência inteira.
+    if not all(banco(con).tem_tabela(t) for t in ("cx_vigencias", "cx_servicos",
+                                                   "cx_servico_valores")):
+        return None
     try:
         vigencia = CU.vigencia_do_dia(con, str(data)[:10])
     except CU.CustasError:

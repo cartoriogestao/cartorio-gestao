@@ -239,6 +239,7 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Desistências", "protesto_desistencias"),
              _i("Pedidos da CRA", "protesto_cra_pedidos"),
              _i("A protestar", "protesto_a_protestar"),
+             _i("Desistidos sem selo", "protesto_encerrados_sem_selo"),
              _i("Retorno", "protesto_retornos", antigo="Retorno à CRA"),
              _i("Falar pela API", "protesto_cra_api", AMU, antigo="CRA — falar pela API"),)),
          ("Dia da CENPROT", (

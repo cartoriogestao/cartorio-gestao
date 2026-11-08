@@ -56,9 +56,8 @@ def test_tela_do_menu_ganha_modulo_quando_faz_sentido():
         # oficial: viraram a lista única de Processos (templates/base.html,
         # grupo «Processos e malote»). A aba agora se mede nela — 14/10/2026.
         ("processos_lista", "Malote", ("Processos", "Malote")),
-        # «Protocolo geral» saiu do menu em 07/11/2026 (#368): o menu leva a «Atendimentos»
-        # (`at_lista`), a lista antiga fica pelo endereço, e a aba cai no nome do módulo.
-        ("caixa_protocolos", "Administrativo", ("Administrativo",)),
+        # «Protocolo geral» saiu do menu no #368 e voltou no #376 (07/11/2026).
+        ("caixa_protocolos", "Administrativo", ("Protocolo", "Administrativo")),
         ("inspections", "Malote", ("Inspe", "Malote")),
         ("nucleo_livros", "Livros e acervo", ("termos", "Livros")),
         ("nucleo_encerramento_diario", "Livros e acervo", ("Encerramento", "Livros")),

@@ -322,10 +322,10 @@ def test_o_local_escrito_vira_codigo_do_ibge_sem_chutar_cidade():
     assert c("Casa Pontifícia Alívio do Sofrimento nesta cidade") == 1
     assert c("posto de saúde da sede") == 2
     assert c("domicílio no lugar Arraias, deste município") == 3
-    assert c("aldeia São José de Montes Altos-MA") == 5
+    assert c("aldeia São José de Serra Azul-MA") == 5
     assert c("o lugar Água Boa, deste município") == 5
     assert c("na Clínica Dr. Carlos Cruz, Imperatriz-MA") == 1
-    assert c("Casa Aluvio do Sofrimento de Montes Altos-MA") == 1
+    assert c("Casa Aluvio do Sofrimento de Serra Azul-MA") == 1
     assert c("EM CASA NESTE MUNICIPIO") == 3
     assert c("fazenda Bacaba deste município") == 5
     assert c("na Faz. Tabatinga neste município") == 5

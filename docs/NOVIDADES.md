@@ -8,6 +8,38 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.14 — protesto só depois do caixa, Parcela Express na maquininha e revisão no registro civil
+
+Desde a 3.7.13.
+
+**Protesto**
+- Desistência e cancelamento só se efetivam depois que o emolumento entra no caixa. O clique da CRA guarda o pedido e não lavra; o item quitado no protocolo geral vale como pagamento.
+- No título diferido, a desistência depois do apontamento deixa o emolumento 17.4 devido, sem cobrar sozinha e sem selar.
+- A intimação lavrada sem selo aparece no alto de Avisos e na ficha: o clique sela e deixa o emolumento devido. Os lavrados sem selo se selam até 10 por clique.
+- Página nova com os desistidos e cancelados sem selo, separando o que a casa lavrou do que veio do E-Ofício.
+- O título emitido no Brasil em moeda estrangeira tem a marca «Emitido no Brasil — sem tradução (art. 10, § 3º)» e não exige tradução; a tela avisa para conferir a estipulação pelo art. 13 da Lei 14.286/2021.
+- Gerar o XML P ou D da CENPROT já baixa o arquivo; a credencial da CENPROT vem da pasta das credenciais.
+
+**Caixa**
+- Parcela Express: Pix e cartão vão para a maquininha (código da maquininha na configuração); o boleto continua no link. O pagamento confirmado entra sozinho no caixa geral, e quitar por fora pede confirmação. O menu passa a se chamar «Pix, boleto e cartão».
+
+**Registro civil**
+- Revisão com IA antes de lavrar, no mesmo lugar do RI e das Notas, aproveitando a primeira leitura sem reler a imagem.
+- O lugar do nascimento escrito (hospital, posto, domicílio, aldeia, fazenda) vira o código do SIRC.
+- Os assentos importados do E-Ofício ganham as colunas que estavam vazias (hora, local, causa, CPF e outras), e a certidão e a CRC saem completas. O nascimento cujo município já está escrito sai da quarentena da CRC.
+
+**Registro de Imóveis**
+- A qualificação cita as fontes normativas e prepara o rascunho da nota devolutiva no modelo da casa.
+
+**Atendimento e treinamento**
+- Atendimentos reorganizados e treinamento do escrevente, da recepção até a entrega.
+
+**Servidor e sistema**
+- Servidor reserva no macOS, só de leitura, com cópia do banco e dos arquivos do principal; assume se o principal cair. Roteiro em `docs/SERVIDOR_RESERVA_MACOS.md`.
+- A IA gasta menos: reaproveita o OCR já feito e não reenvia pedido incerto.
+- Sai a faixa que mandava migrar o banco: a casa já está no PostgreSQL.
+- O reinício recusa deixar um servidor antigo vivo na mesma porta.
+
 ## 3.7.13 — a atualização grava só o backup do banco
 
 Desde a 3.7.12.

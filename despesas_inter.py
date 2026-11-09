@@ -568,6 +568,9 @@ def pagar(db, despesa_id: int, *, cliente: ClienteInter, por: str,
         cfg = DP.configuracao(bd)
         if d["situacao"] != DP.AUTORIZADA:
             return {"situacao": d["situacao"], "mensagem": "Não está autorizada."}
+        if d["categoria"] in DP.FUNDOS_SOMENTE_BANCO_DO_BRASIL:
+            return {"situacao": DP.AUTORIZADA,
+                    "mensagem": "Esta guia é paga no Banco do Brasil. O executor do Inter não a envia."}
         if cfg.get("despesas_pagamento_ligado") != "1":
             return {"situacao": DP.AUTORIZADA, "mensagem": "O pagamento automático está "
                     "desligado (Despesas → Configuração)."}

@@ -1,0 +1,20 @@
+GUIAS DO PORTAL DO SELO — CONTRATO DE INTEGRAÇÃO
+
+O executor tools/portal_selo_worker.mjs roda no Mac com Google Chrome e SafeID do usuário. Não precisa de um modelo para a agenda; tools/portal_selo_mcp.mjs permite que um cliente MCP local consulte ou solicite a mesma rotina. Não contém credenciais e não exporta certificado.
+
+No servidor, /administrativo/despesas/portal-selo exige a sessão existente do titular ADMIN e CSRF, inclusive para a API. GET apresenta o formulário. POST multipart recebe documento (PDF até 2 MB); conferir=1 apenas lê e devolve o retrato operacional. Sem conferir, importa com anexo e responde JSON quando Accept=application/json. Nenhum campo enviado pelo cliente controla categoria, favorecido, valor esperado ou situação.
+
+FERJ/FERC podem nascer autorizados quando o valor confere com os selos do período e fica no teto da casa. O cadastro autorizado pede rodada ao processo DESPESAS_PAGAR quando ele tem pode_agir. A fila e o cadastro confirmam na mesma transação. A rota não lê segredo bancário e não faz chamada ao banco.
+FADEP/FEMP/FERRFIS ficam aguardando autorização para pagamento fora do Inter. O executor do Inter os recusa mesmo se um cadastro antigo já estiver autorizado. Repasse continua fora do Livro Diário.
+
+O importador confere o PDF, faz a leitura do código e calcula o valor esperado no servidor. Consulta número e código para reconhecer também cadastros manuais. Não duplica nem eleva a autorização de uma despesa preexistente. Uma colisão com campos diferentes é recusada.
+
+O executor mantém diário privado por fundo/período. Grava a intenção antes da emissão, preserva o PDF antes da API e usa Ver Guias -> ações -> 2ª Via para recuperar uma guia pendente existente. Se a emissão está incerta e não é possível recuperar uma guia única, pede conferência em vez de repetir o clique.
+
+Configuração local (fora do repositório): sistema, httpRedePrivada (opção expressa para a rede privada), playwrightMcp (CLI oficial já instalada), perfil (diretório dedicado), pastaDados e producaoLiberada. O padrão operacional é producaoLiberada=false até a atualização assinada e a validação completa. O cliente MCP não aceita destinos nem código arbitrário como argumentos.
+
+Agenda preparada no Mac: segunda às 08h, novas chamadas a cada 30 min até a conclusão ou o fim da segunda. A sessão gráfica, SafeID e sessões autenticadas continuam necessários. Os tetos são ajustes de cada instalação; não se mudaram os padrões globais para todas as serventias.
+
+Validação: unittest tests.test_despesas_portal_selo_unidade; node --test tests/test_portal_selo_worker.mjs; testes de API em tests/test_despesas_portal_selo_api.py com PostgreSQL isolado, conforme conftest. O teste de regras sem banco não substitui o da API, do navegador ou do executor bancário.
+
+O processo AGENTE_IA do sistema já usa o provedor escolhido, mas esta integração não publica o Mac na rede nem inclui uma ponte do agente interno ao MCP local. Para orquestrar pelo Claude configurado no sistema, é necessário acrescentar ferramenta/fila autenticada que o executor do Mac consuma. A agenda não depende da API de IA.

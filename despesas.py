@@ -26,12 +26,13 @@ O CICLO, E QUEM FAZ CADA PASSO
       banco, ou voltar com erro.
 
 A REGRA DAS GUIAS (decisão do oficial, 24/10/2026)
-    As guias que o robô da automação baixa do Portal do Selo (FERJ, FERC e
-    demais fundos) podem nascer AUTORIZADAS sem ele, quando as três condições
+    Somente FERJ e FERC que o robô baixa do Portal do Selo podem nascer
+    AUTORIZADAS sem ele, quando as três condições
     se cumprem juntas: a origem é o robô do Portal do Selo, o valor da guia é
     igual ao que o sistema calculou dos selos (`valor_esperado_centavos`), e
     fica dentro do teto das guias. Falhou uma, a guia espera o oficial. O
     robô nunca chama `autorizar`: quem aplica a regra é este módulo.
+    FADEP, FEMP e FERRFIS só são cadastrados; o pagamento é no Banco do Brasil.
 
 GUIA DE FUNDO NÃO É DESPESA (decisão do oficial, 24/10/2026)
     O fundo não é receita da serventia (art. 191 do CN-MA; `livro_diario`
@@ -140,6 +141,8 @@ FORMAS = {
 }
 
 ORIGEM_PORTAL_SELO = "AUTOMACAO:PORTAL_SELO"
+FUNDOS_AUTORIZACAO_AUTOMATICA = frozenset(("FUNDO_FERJ", "FUNDO_FERC"))
+FUNDOS_SOMENTE_BANCO_DO_BRASIL = frozenset(("FUNDO_FADEP", "FUNDO_FEMP", "FUNDO_FERRFIS"))
 
 # A CONFIGURAÇÃO, COM O PADRÃO DE QUEM NUNCA MEXEU. Mora em `settings`. O
 # pagamento automático nasce DESLIGADO e no SANDBOX, e os tetos nascem baixos
@@ -161,7 +164,7 @@ ROTULOS: dict[str, str] = {
     "despesas_teto_por_pagamento": "Teto por pagamento (R$)",
     "despesas_teto_por_dia": "Teto por dia (R$)",
     "despesas_teto_guia": "Teto das guias autorizadas pela regra (R$)",
-    "despesas_regra_guias_ligada": "Guias do Portal do Selo com valor conferido nascem autorizadas",
+    "despesas_regra_guias_ligada": "FERJ e FERC do Portal do Selo com valor conferido nascem autorizados",
     "despesas_aliquota_iss": "Alíquota do ISS do município (%), para a estimativa do balanço",
 }
 AMBIENTES = {"sandbox": "Teste (sandbox do Inter, sem dinheiro de verdade)",
@@ -777,7 +780,7 @@ def cadastrar(con, *, agora: datetime, por: str, origem: str, chave_origem: str 
     quando = _carimbo(agora)
     cfg = configuracao(bd)
     regra = ""
-    if (origem == ORIGEM_PORTAL_SELO and natureza == REPASSE
+    if (origem == ORIGEM_PORTAL_SELO and categoria in FUNDOS_AUTORIZACAO_AUTOMATICA
             and cfg.get("despesas_regra_guias_ligada") == "1"
             and valor_esperado_centavos is not None and not divergencia
             and valor <= tetos(cfg)["guia"]):

@@ -7,6 +7,7 @@
    conferida, mas fora do livro (decisão do oficial, 24/10/2026). #}
 <div class="actions">
   <a class="button" href="{{ url_for('despesas_nova') }}">Nova despesa</a>
+  {% if papel == 'ADMIN' %}<a class="button" href="{{ url_for('despesas_portal_selo') }}">Guias do Portal do Selo</a>{% endif %}
   <a class="button" href="{{ url_for('despesas_relatorio') }}">Relatório do mês e SIAFERJ</a>
   <a class="button" href="{{ url_for('despesas_recorrentes') }}">Recorrentes</a>
   {% if papel == 'ADMIN' %}<a class="button" href="{{ url_for('despesas_configuracao') }}">Configuração e Banco Inter</a>{% endif %}

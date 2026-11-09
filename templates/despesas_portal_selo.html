@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block title %}Guias do Portal do Selo{% endblock %}
+{% block heading %}<h1>Guias do Portal do Selo</h1>{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('despesas_lista') }}">Voltar às despesas</a></p>
+<p>Importe o PDF original. O sistema confere o documento e evita repetir uma guia já cadastrada.</p>
+<p>FERJ e FERC podem nascer autorizados quando o valor confere com os selos e está dentro do teto configurado.
+O envio usa o executor bancário existente e suas configurações. FADEP, FEMP e FERRFIS são apenas cadastrados para pagamento no Banco do Brasil.</p>
+<form method="post" enctype="multipart/form-data" class="panel">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Guia original (PDF, até 2 MB)<input type="file" name="documento" accept=".pdf" required></label>
+  <button type="submit">Conferir e cadastrar a guia</button>
+</form>
+{% endblock %}

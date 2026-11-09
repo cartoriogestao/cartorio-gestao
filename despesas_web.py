@@ -44,6 +44,7 @@ import despesas_fluxo as DF
 import despesas_inter as INTER
 import despesas_previsao as DV
 import despesas_recorrentes as RC
+import despesas_portal_selo as PS
 import faturamento_portal as FP
 import serventia as SERV
 import titular_privado as TP
@@ -233,6 +234,52 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         except (DP.DespesaError, FP.LD.DiarioError, ValueError) as erro:
             flash(str(erro), 'danger')
         return redirect(url_for('despesas_conferencia', mes=comp))
+
+    @app.route("/administrativo/despesas/portal-selo", methods=["GET", "POST"])
+    @login_required
+    @roles_required("ADMIN")
+    @so_o_titular
+    def despesas_portal_selo():
+        """Sessão do titular + CSRF; nenhum token administrativo fica com o modelo."""
+        if request.method == "GET":
+            return render_template("despesas_portal_selo.html")
+        arquivo = request.files.get("documento")
+        if not arquivo:
+            return jsonify(erro="Escolha a guia PDF."), 400
+        conteudo = arquivo.read(PS.MAX_BYTES + 1)
+        try:
+            if request.form.get("conferir") == "1":
+                with db.connect() as con:
+                    g = PS.conferir(con, conteudo)
+                # Só os dados operacionais; não devolve o nome/CNPJ ou o código ao modelo.
+                resposta = {k: g[k] for k in ("fundo", "numero", "inicio", "fim", "vencimento",
+                                              "valor_centavos", "valor_esperado_centavos",
+                                              "somente_banco_do_brasil")}
+                resposta["existente"] = ({k: g["existente"][k] for k in ("id", "situacao")}
+                                         if g["existente"] else None)
+                return jsonify(resposta)
+            pasta = _pasta()
+            if pasta is None:
+                raise DP.DespesaError("A pasta dos anexos não está configurada.")
+            with db.transaction() as con:
+                r = PS.importar(con, conteudo, agora=_agora(), por=usuario_nome(),
+                                pasta=pasta, usuario_id=usuario_id())
+                r["envio_solicitado"] = False
+                # O pedido de rodada confirma na mesma transação do cadastro.
+                if r["novo"] and r["fundo"] in ("FERJ", "FERC") and r["situacao"] == DP.AUTORIZADA:
+                    import automacao
+                    processo = automacao.por_codigo(con, "DESPESAS_PAGAR")
+                    if processo and processo.get("pode_agir"):
+                        automacao.pedir_rodada(con, int(processo["id"]), usuario=usuario_nome())
+                        r["envio_solicitado"] = True
+            audit("DESPESA_PORTAL_SELO_IMPORTADA", "dp_despesas", r["id"],
+                  {"fundo": r["fundo"], "novo": r["novo"], "situacao": r["situacao"]})
+            if request.accept_mimetypes.best == "application/json":
+                return jsonify(r)
+            return _ficha(r["id"])
+        except DP.DespesaError as erro:
+            _LOG.info("guia do portal recusada: %s", erro)
+            return jsonify(erro="A guia não foi importada. Confira o documento e o cadastro existente."), 400
 
     @app.route("/administrativo/despesas/ler-codigo", methods=["POST"])
     @login_required

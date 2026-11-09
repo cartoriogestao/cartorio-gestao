@@ -2,6 +2,8 @@ GUIAS DO PORTAL DO SELO — CONTRATO DE INTEGRAÇÃO
 
 O executor tools/portal_selo_worker.mjs roda no Mac com Google Chrome e SafeID do usuário. Não precisa de um modelo para a agenda; tools/portal_selo_mcp.mjs permite que um cliente MCP local consulte ou solicite a mesma rotina. Não contém credenciais e não exporta certificado.
 
+A detecção do login procura o controle Sair nas abas do Portal do Selo do mesmo contexto dedicado, inclusive quando a autenticação termina em outra aba. Não lê sessões de outro perfil nem de outro site. O envio automático do formulário exige usuário preenchido e senha reconhecida pelo Chrome como autofill; a digitação manual aguarda o usuário clicar Entrar. Nenhum valor de senha é lido ou exportado para o agente.
+
 No servidor, /administrativo/despesas/portal-selo exige a sessão existente do titular ADMIN e CSRF, inclusive para a API. GET apresenta o formulário. POST multipart recebe documento (PDF até 2 MB); conferir=1 apenas lê e devolve o retrato operacional. Sem conferir, importa com anexo e responde JSON quando Accept=application/json. Nenhum campo enviado pelo cliente controla categoria, favorecido, valor esperado ou situação.
 
 FERJ/FERC podem nascer autorizados quando o valor confere com os selos do período e fica no teto da casa. O cadastro autorizado pede rodada ao processo DESPESAS_PAGAR quando ele tem pode_agir. A fila e o cadastro confirmam na mesma transação. A rota não lê segredo bancário e não faz chamada ao banco.

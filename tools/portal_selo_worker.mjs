@@ -37,7 +37,33 @@ async function gravar(file, obj) {
 async function autenticado(page, sistema = false) {
   if (sistema) return await page.locator('input[name="csrf_token"]').count() > 0 &&
     page.url().includes('/despesas/portal-selo');
-  return await page.getByRole('link', { name: /SAIR/ }).count() > 0;
+  return await page.getByRole('link', { name: /\bSAIR\b/i }).count() > 0 ||
+    await page.getByRole('button', { name: /\bSAIR\b/i }).count() > 0;
+}
+export async function localizarPortalAutenticado(contexto, preferida) {
+  // A autenticação pode terminar em outra aba. Nunca consulta outro perfil/contexto.
+  const paginas = contexto.pages();
+  const ordem = paginas.includes(preferida) ? [preferida, ...paginas.filter(p => p !== preferida)] : paginas;
+  for (const pagina of ordem) {
+    try {
+      if (!pagina.isClosed() && new URL(pagina.url()).origin === PORTAL && await autenticado(pagina))
+        return pagina;
+    } catch { /* Aba fechada ou em navegação: conferir novamente na próxima tentativa. */ }
+  }
+  return null;
+}
+export async function tentarLoginSalvo(pagina, jaEnviado = false) {
+  if (jaEnviado || pagina.isClosed()) return false;
+  try { if (new URL(pagina.url()).origin !== PORTAL) return false; }
+  catch { return false; }
+  const usuario = pagina.getByPlaceholder('Usuário', { exact: true });
+  const senha = pagina.locator('input[type="password"]');
+  if (await usuario.count() !== 1 || await senha.count() !== 1) return false;
+  // Só retorna booleanos. Não envia um formulário enquanto o usuário digita a senha.
+  if (!await usuario.evaluate(el => Boolean(el.value)) ||
+      !await senha.evaluate(el => Boolean(el.value) && el.matches(':-webkit-autofill'))) return false;
+  await pagina.getByRole('button', { name: 'Entrar', exact: true }).click();
+  return true;
 }
 async function api(page, url, csrf, arquivo, conferir) {
   const r = await page.request.post(url, { headers: { Accept: 'application/json', 'X-CSRF-Token': csrf },
@@ -71,7 +97,8 @@ export async function executar(cfg, modo = '--consultar') {
       channel: 'chrome', headless: false, acceptDownloads: true,
       ignoreDefaultArgs: ['--use-mock-keychain', '--password-store=basic']
     });
-    const portal = await contexto.newPage(), sistema = await contexto.newPage();
+    let portal = await contexto.newPage();
+    const sistema = await contexto.newPage();
     const destino = new URL('/administrativo/despesas/portal-selo', base).href;
     const respostas = await Promise.all([portal.goto(PORTAL, { waitUntil: 'domcontentloaded' }),
       sistema.goto(destino, { waitUntil: 'domcontentloaded' })]);
@@ -79,23 +106,27 @@ export async function executar(cfg, modo = '--consultar') {
       return { estado: 'AGUARDANDO_ATUALIZACAO_E_VALIDACAO', concluido: false };
     let loginEnviado = false;
     async function pronto() {
+      const aberta = await localizarPortalAutenticado(contexto, portal);
+      if (aberta) portal = aberta;
       // O HTML inicial pode terminar antes de o Angular mostrar login ou sessão.
-      await Promise.any([
-        portal.getByRole('link', { name: /SAIR/ }).waitFor({ timeout: 90000 }),
-        portal.locator('input[type="password"]').waitFor({ timeout: 90000 })
-      ]).catch(() => {});
+      if (!aberta) {
+        await Promise.any([
+          portal.getByRole('link', { name: /SAIR/i }).waitFor({ timeout: 90000 }),
+          portal.getByRole('button', { name: /SAIR/i }).waitFor({ timeout: 90000 }),
+          portal.locator('input[type="password"]').waitFor({ timeout: 90000 })
+        ]).catch(() => {});
+        const outra = await localizarPortalAutenticado(contexto, portal);
+        if (outra) portal = outra;
+      }
       if (!sistema.url().includes('/login') && !sistema.url().includes('/despesas/portal-selo'))
         await sistema.goto(destino, { waitUntil: 'domcontentloaded' });
-      // Usa apenas autofill já presente. Nunca lê ou exporta o valor da senha.
-      if (!loginEnviado && !await autenticado(portal) && await portal.locator('input[type="password"]').count()) {
-        const preenchida = await portal.locator('input[type="password"]').evaluate(el => Boolean(el.value));
-        if (preenchida) {
-          loginEnviado = true;
-          await portal.getByRole('button', { name: 'Entrar', exact: true }).click();
-          await portal.getByRole('link', { name: /SAIR/ }).waitFor({ timeout: 30000 }).catch(() => {});
-        }
+      if (!await autenticado(portal) && await tentarLoginSalvo(portal, loginEnviado)) {
+        loginEnviado = true;
+        await portal.getByRole('link', { name: /SAIR/i }).waitFor({ timeout: 30000 }).catch(() => {});
       }
-      return await autenticado(portal) && await autenticado(sistema, true);
+      const pronta = await localizarPortalAutenticado(contexto, portal);
+      if (pronta) portal = pronta;
+      return Boolean(pronta) && await autenticado(sistema, true);
     }
     if (modo === '--autenticar') {
       console.error('Conclua SafeID e os dois logins nas janelas do Chrome. Não envie senhas ao agente.');

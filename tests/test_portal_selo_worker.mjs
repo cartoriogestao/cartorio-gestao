@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { centavos, periodo, confereLinha, janelaSegunda } from '../tools/portal_selo_worker.mjs';
+import { centavos, periodo, confereLinha, janelaSegunda, localizarPortalAutenticado,
+  tentarLoginSalvo, PORTAL } from '../tools/portal_selo_worker.mjs';
 
 test('centavos sem arredondamento e período na virada do ano', () => {
   assert.equal(centavos('R$ 1.234,56'), 123456);
@@ -18,4 +19,47 @@ test('PDF precisa coincidir com fundo, período, vencimento e valor da linha', (
   assert.equal(confereLinha(g, linha), true);
   for (const alterado of [{ fundo: 'FERC' }, { valor_centavos: 101 }, { vencimento: '2026-11-11' }])
     assert.equal(confereLinha({ ...g, ...alterado }, linha), false);
+});
+
+function pagina({ url = PORTAL, fechado = false, sair = '', usuario = true,
+  senha = true, autofill = false } = {}) {
+  const p = { cliques: 0, consultas: 0, isClosed: () => fechado, url: () => url };
+  p.getByRole = (papel, { name }) => ({
+    count: async () => { p.consultas++; return sair === papel && name.test('SAIR') ? 1 : 0; },
+    click: async () => { assert.equal(papel, 'button'); assert.equal(name, 'Entrar'); p.cliques++; }
+  });
+  p.getByPlaceholder = () => ({ count: async () => 1,
+    evaluate: async fn => fn({ value: usuario ? 'preenchido' : '' }) });
+  p.locator = () => ({ count: async () => 1,
+    evaluate: async fn => fn({ value: senha ? 'preenchida' : '', matches: () => autofill }) });
+  return p;
+}
+
+test('login em outra aba do mesmo perfil é reconhecido, incluindo Sair como botão', async () => {
+  const inicial = pagina(), autenticada = pagina({ sair: 'button' });
+  assert.equal(await localizarPortalAutenticado({ pages: () => [inicial, autenticada] }, inicial), autenticada);
+  const outra = pagina({ sair: 'link' });
+  assert.equal(await localizarPortalAutenticado({ pages: () => [outra, autenticada] }, autenticada), autenticada);
+});
+
+test('não consulta sessão de outro site, contexto ou aba fechada', async () => {
+  const externo = pagina({ url: 'https://example.com', sair: 'link' });
+  const fechado = pagina({ fechado: true, sair: 'link' });
+  const outroContexto = pagina({ sair: 'link' });
+  const inicial = pagina();
+  assert.equal(await localizarPortalAutenticado({ pages: () => [externo, fechado, inicial] }, outroContexto), null);
+  assert.equal(externo.consultas + fechado.consultas + outroContexto.consultas, 0);
+});
+
+test('aguarda digitação manual e exige usuário antes de enviar senha salva', async () => {
+  for (const dados of [{ autofill: false }, { autofill: true, usuario: false },
+    { autofill: true, senha: false }, { autofill: true, url: 'https://example.com' }]) {
+    const p = pagina(dados);
+    assert.equal(await tentarLoginSalvo(p), false);
+    assert.equal(p.cliques, 0);
+  }
+  const salvo = pagina({ autofill: true });
+  assert.equal(await tentarLoginSalvo(salvo), true);
+  assert.equal(await tentarLoginSalvo(salvo, true), false);
+  assert.equal(salvo.cliques, 1);
 });

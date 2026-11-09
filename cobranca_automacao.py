@@ -92,7 +92,7 @@ def acompanhar(contexto) -> dict:
         pedidos = len(CB.com_pedido(con, banco_codigo=cfg["cobranca_banco"],
                                     ambiente=cfg["cobranca_ambiente"]))
     ligada = cfg.get("cobranca_ligada") == "1"
-    pendentes = (sum(n.get(s, 0) for s in CB.EM_ABERTO) + pedidos
+    pendentes = (sum(n.get(s, 0) for s in CB.EM_ABERTO) + n.get(CB.RECEBIDA, 0) + pedidos
                  + (n.get(CB.A_EMITIR, 0) if ligada else 0))
     achados = _achados(contexto)
     pagas = sum(1 for a in achados if a["tipo"] in ("PAGA_FALTA_LANCAR", "PAGA_ESPERA_CAIXA_GERAL"))

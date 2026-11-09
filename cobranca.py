@@ -534,6 +534,8 @@ def gravar_resposta(con, cobranca_id: int, r: Mapping[str, Any], *, por: str,
     # a cobrança; o depósito lançado é fato do caixa.
     if c["situacao"] in (LANCADA, CANCELADA) and nova != c["situacao"]:
         nova = c["situacao"]
+    if c["situacao"] == RECEBIDA and nova in (A_EMITIR, EMITINDO, ABERTA, FALHOU):
+        nova = RECEBIDA
     campos = {"situacao": nova, "consultada_em": _carimbo(agora)}
     for k in ("banco_id", "banco_pagamento_id", "nosso_numero", "linha_digitavel", "codigo_barras",
               "pix_copia_e_cola", "banco_status", "banco_motivo", "data_pagamento",
@@ -692,7 +694,11 @@ def entrar_no_caixa_geral(con, cobranca_id: int, *, por: str, agora: datetime) -
     if c["situacao"] != RECEBIDA or c["deposito_id"]:
         return None
     valor = int(c["valor_recebido"] or 0)
-    if valor <= 0 or not c["data_pagamento"] or not c["forma_recebida"]:
+    if valor <= 0 or c["forma_recebida"] not in ("PIX", "BOLETO", "CARTAO"):
+        return None
+    try:
+        date.fromisoformat(str(c["data_pagamento"] or "")[:10])
+    except ValueError:
         return None
     referencia = c.get("banco_pagamento_id") or c.get("banco_id")
     if not referencia:
@@ -911,4 +917,4 @@ def para_acompanhar(con, *, banco_codigo: str, ambiente: str) -> list[dict]:
     return banco(con).ler(
         """SELECT * FROM cb_cobrancas WHERE banco = %s AND ambiente = %s
               AND situacao = ANY(%s) ORDER BY id""",
-        (banco_codigo, ambiente, list(EM_ABERTO)))
+        (banco_codigo, ambiente, [*EM_ABERTO, RECEBIDA]))

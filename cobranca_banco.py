@@ -113,7 +113,7 @@ def atualizar(db, cobranca_id: int, *, cliente, por: str, agora: datetime) -> st
         c = CB.cobranca(con, cobranca_id)
     if not c:
         raise CB.CobrancaError("Cobrança não encontrada.")
-    if c["situacao"] not in CB.EM_ABERTO:
+    if c["situacao"] not in (*CB.EM_ABERTO, CB.RECEBIDA):
         return c["situacao"]
     _confere(c, cliente)
     if not c["banco_id"]:

@@ -11,6 +11,8 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 import cobranca as CB
+import cobranca_automacao as CA
+import cobranca_banco as CBB
 import cobranca_parcela as PX
 import despesas as DP
 import despesas_inter as INTER
@@ -99,7 +101,7 @@ def test_pos_e_centavos_numericos_e_validacao_detalhada():
     assert 'terminal_id deve ser texto' in msg and 'SEGREDO' not in msg
 
 
-def _recebimento(db, *, valor_item=12345, data='2026-11-09', numero='2026.11.99999'):
+def _recebimento(db, *, valor_item=12345, data='2026-11-09', numero='2026.11.99999', resposta=None):
     with db.transaction() as con:
         b = banco(con)
         p = b.escrever("""INSERT INTO cx_protocolos (numero, data_abertura, interessado, criado_em)
@@ -113,7 +115,8 @@ def _recebimento(db, *, valor_item=12345, data='2026-11-09', numero='2026.11.999
                          'logradouro': 'Rua Um', 'numero': '1', 'bairro': 'Centro', 'cidade': 'Cidade Exemplo',
                          'uf': 'MA', 'cep': '65000000'}, mensagem='Servico ficticio')
         CB.gravar_resposta(con, i, {'banco_id': 'token-ficticio', 'situacao': CB.RECEBIDA,
-                          'valor_recebido': 12345, 'forma_recebida': 'PIX', 'data_pagamento': data},
+                          'valor_recebido': 12345, 'forma_recebida': 'PIX', 'data_pagamento': data,
+                          **(resposta or {})},
                           por='automacao', agora=AGORA)
     return i, p
 
@@ -146,6 +149,25 @@ def test_mesmo_recebimento_em_outra_cobranca_nao_duplica_dinheiro(cg_casa_logada
     with db.connect() as con:
         assert CB.cobranca(con, i)['situacao'] == CB.RECEBIDA
         assert banco(con).valor('SELECT count(*) FROM cx_depositos WHERE protocolo_id=%s', (pid,)) == 0
+
+
+@pytest.mark.parametrize('resposta', [{'forma_recebida': 'DESCONHECIDA'}, {'data_pagamento': 'invalida'}])
+def test_dados_incompletos_nao_inventam_forma_ou_data_e_rodada_consulta_de_novo(cg_casa_logada, monkeypatch, tmp_path, resposta):
+    from types import SimpleNamespace
+    db = cg_casa_logada['db']
+    i, pid = _recebimento(db, resposta=resposta)
+    with db.connect() as con:
+        assert CB.cobranca(con, i)['situacao'] == CB.RECEBIDA
+        assert i in [c['id'] for c in CB.para_acompanhar(con, banco_codigo=CB.PARCELA, ambiente='sandbox')]
+    cliente = SimpleNamespace(banco=CB.PARCELA, ambiente='sandbox', fornece_pdf=False,
+                              consultar=lambda c: {'situacao': CB.RECEBIDA, 'forma_recebida': 'PIX',
+                                                   'data_pagamento': '2026-11-09', 'valor_recebido': 12345})
+    monkeypatch.setattr(CBB, 'cliente_da_casa', lambda *a, **kw: cliente)
+    r = CA.acompanhar(SimpleNamespace(db=db, agora=AGORA, pasta_dados=tmp_path, processo={'pode_agir': 1}))
+    assert r['situacao'] == 'OK'
+    with db.connect() as con:
+        assert CB.cobranca(con, i)['situacao'] == CB.LANCADA
+        assert banco(con).valor('SELECT count(*) FROM cx_depositos WHERE protocolo_id=%s', (pid,)) == 1
 
 
 def test_duas_confirmacoes_concorrentes_so_criam_uma_entrada(cg_casa_logada, monkeypatch):

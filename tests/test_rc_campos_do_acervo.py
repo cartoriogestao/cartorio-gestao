@@ -110,7 +110,8 @@ def test_o_nascimento_importado_ganha_as_colunas_e_a_pessoa():
     assert p["nome"] == "ANA EXEMPLO"
     de_novo = CAMPOS.gravar(con, agora=AGORA)
     assert de_novo == {"assentos": 0, "pessoas_atualizadas": 0,
-                       "pessoas_novas": 0, "erros": 0}
+                       "pessoas_novas": 0, "erros": 0,
+                       "locais_de_nascimento": 0}
 
 
 def test_coluna_preenchida_nao_e_trocada_pelo_pacote():
@@ -310,6 +311,38 @@ def test_sexo_e_cidade_so_no_pacote_saem_da_quarentena():
     assert p["sexo"] == "M"
     assert p["naturalidade_cidade"] == "IMPERATRIZ/MA."
     assert p["naturalidade_uf"] == "MA"
+
+
+def test_o_local_escrito_vira_codigo_do_ibge_sem_chutar_cidade():
+    c = CAMPOS.codigo_ibge_do_local_escrito
+    assert c("HOSPITAL REGIONAL DE IMPERATRIZ-MA") == 1
+    assert c("no hosp. nesta cidade") == 1
+    assert c("H.R.M.I de Imperatriz-MA") == 1
+    assert c("o Hospital Casa Alívio do Sofrimento, nesta cidade") == 1
+    assert c("Casa Pontifícia Alívio do Sofrimento nesta cidade") == 1
+    assert c("posto de saúde da sede") == 2
+    assert c("domicílio no lugar Arraias, deste município") == 3
+    assert c("aldeia São José de Serra Azul-MA") == 5
+    assert c("o lugar Água Boa, deste município") == 5
+    assert c("na Clínica Dr. Carlos Cruz, Imperatriz-MA") == 1
+    assert c("Casa Aluvio do Sofrimento de Serra Azul-MA") == 1
+    assert c("EM CASA NESTE MUNICIPIO") == 3
+    assert c("fazenda Bacaba deste município") == 5
+    assert c("na Faz. Tabatinga neste município") == 5
+    assert c("no povoado Campestre, município de Porto Franco-MA") == 5
+    assert c("lugar ignorado") is None
+    assert c("no sítio Água Branca") == 5
+    assert c("SITIO NOVO - MA") is None
+    assert c("na cidade de Sitio Novo-MA") is None
+    assert c("EM SÍTIO NOVO-MA") is None
+    assert c("clínica da cidade Sítio Novo-MA") == 1
+    assert c("avos paternos e maternos") is None
+    assert c("EM TRANSITO, situado na Rua 01, Vila Angical") is None
+    assert c("maternidade municipal") == 1
+    assert c("em Porto Franco-MA") is None
+    assert c("nesta cidade") is None
+    assert c("ignorado") is None
+    assert c("") is None
 
 
 def test_sem_municipio_em_lugar_nenhum_continua_em_quarentena():

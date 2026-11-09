@@ -29,6 +29,7 @@ e no fim da carga do acervo, para a ficha mostrar o mesmo.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from typing import Any
 
@@ -198,6 +199,52 @@ def _marca(valor: Any) -> str:
     return ""
 
 
+def codigo_ibge_do_local_escrito(texto: Any) -> int | None:
+    """O código do IBGE quando o texto diz o tipo do lugar. Só calcula.
+
+    Hospital e maternidade são 1. Posto de saúde é 2. Domicílio é 3.
+    Aldeia e «lugar» rural são 5 (outros, fora de unidade de saúde).
+    Cidade sem o tipo, vazio e «ignorado» ficam sem código: o SIRC não
+    tem marcador de ignorado, e escolher um lado afirmaria o que ninguém
+    escreveu. Vale o lugar escrito no campo, não o termo inteiro: no termo,
+    «avós maternos» e o endereço do cartório não são o lugar do nascimento.
+    """
+    from ibge_schema import normalizar_nome
+    t = normalizar_nome(texto)
+    if not t or "ignorad" in t:
+        return None
+    unidade = (
+        r"(?:^|[^a-z0-9])(?:"
+        r"hospital|hosp(?:ital|\.|(?=\s))|maternidade|matern(?:\.|(?=\s))|"
+        r"clinica|h\.?\s*r\.?\s*m\.?\s*i"
+        r")(?:[^a-z0-9]|$)"
+    )
+    if re.search(unidade, t) or "alivio do sofrimento" in t \
+            or "aluvio do sofrimento" in t or "casa pontificia" in t \
+            or "casa de saude" in t:
+        return 1
+    if "posto de saude" in t or "posto saude" in t:
+        return 2
+    domicilio = (
+        r"(?:^|[^a-z0-9])(?:"
+        r"domicilio|domic(?:\.|(?=\s))|residencia|resid(?:\.|(?=\s))|em casa"
+        r")(?:[^a-z0-9]|$)"
+    )
+    if re.search(domicilio, t):
+        return 3
+    rural = (
+        r"(?:^|[^a-z0-9])(?:"
+        r"aldeia|lugar|povoado|fazenda|faz(?:\.|(?=\s))"
+        r")(?:[^a-z0-9]|$)"
+    )
+    if re.search(rural, t):
+        return 5
+    # «Sítio Novo» é município. O nome da cidade, sozinho, não diz o tipo.
+    if re.search(r"(?:^|[^a-z0-9])sitio(?:[^a-z0-9]|$)", t) and "sitio novo" not in t:
+        return 5
+    return None
+
+
 def _hora(valor: Any) -> str:
     from crc_carga import _hora as hora_crc
     return hora_crc(valor)
@@ -252,6 +299,10 @@ def _preencher_assento(a: dict, dados: dict) -> None:
                 _norm_ibge(dados.get("strTipoMorte")))
             if codigo:
                 a["ibge_natureza_obito"] = codigo
+    if especie in ("NASCIMENTO", "NATIMORTO") and _vazio(a.get("ibge_local_nascimento")):
+        codigo = codigo_ibge_do_local_escrito(a.get("local_fato_nome"))
+        if codigo:
+            a["ibge_local_nascimento"] = codigo
     if especie in ("NASCIMENTO", "NATIMORTO") and a.get("ibge_gemeo") is None:
         if _presente(dados, "bitGemeos") or _presente(
                 dados, "intQuantidadeGemeos"):
@@ -403,6 +454,37 @@ def _quem_falta(especie: str, assento: dict, dados: dict,
     return faltam
 
 
+def gravar_local_do_nascimento(con: sqlite3.Connection) -> int:
+    """Grava o código do IBGE do lugar, quando o texto do assento já o diz.
+
+    Não mexe em 1, 2, 3, 5 nem em 9 (ignorado). Um número de município
+    parado nessa coluna não é código de tipo: o texto, se disser o tipo,
+    substitui. Não preenche o que o texto não diz.
+    ESCREVE. Devolve quantos nascimentos ganharam o código.
+    """
+    bd = banco(con)
+    if not bd.tem_coluna("rc_assentos", "ibge_local_nascimento"):
+        return 0
+    linhas = bd.ler(
+        """SELECT id, local_fato_nome FROM rc_assentos
+            WHERE especie IN ('NASCIMENTO', 'NATIMORTO')
+              AND (ibge_local_nascimento IS NULL
+                   OR ibge_local_nascimento NOT IN (1, 2, 3, 5, 9))
+            ORDER BY id""")
+    n = 0
+    for linha in linhas:
+        codigo = codigo_ibge_do_local_escrito(linha["local_fato_nome"])
+        if codigo is None:
+            continue
+        bd.escrever(
+            "UPDATE rc_assentos SET ibge_local_nascimento=%s WHERE id=%s "
+            "AND (ibge_local_nascimento IS NULL "
+            "OR ibge_local_nascimento NOT IN (1, 2, 3, 5, 9))",
+            (codigo, int(linha["id"])))
+        n += 1
+    return n
+
+
 def gravar(con: sqlite3.Connection, *, agora: str | None = None) -> dict:
     """Copia para as colunas o que ainda falta. Não apaga o pacote.
 
@@ -439,7 +521,8 @@ def gravar(con: sqlite3.Connection, *, agora: str | None = None) -> dict:
         pessoas_atualizadas += atualizadas
         pessoas_novas += novas
     pessoas_atualizadas += _gravar_naturalidade_declarada(con, bd)
-    return {"assentos": assentos,
+    locais = gravar_local_do_nascimento(con)
+    return {"assentos": assentos, "locais_de_nascimento": locais,
             "pessoas_atualizadas": pessoas_atualizadas,
             "pessoas_novas": pessoas_novas,
             "erros": erros}

@@ -73,8 +73,10 @@ export async function executar(cfg, modo = '--consultar') {
     });
     const portal = await contexto.newPage(), sistema = await contexto.newPage();
     const destino = new URL('/administrativo/despesas/portal-selo', base).href;
-    await Promise.all([portal.goto(PORTAL, { waitUntil: 'domcontentloaded' }),
+    const respostas = await Promise.all([portal.goto(PORTAL, { waitUntil: 'domcontentloaded' }),
       sistema.goto(destino, { waitUntil: 'domcontentloaded' })]);
+    if (respostas[1]?.status() === 404)
+      return { estado: 'AGUARDANDO_ATUALIZACAO_E_VALIDACAO', concluido: false };
     let loginEnviado = false;
     async function pronto() {
       // O HTML inicial pode terminar antes de o Angular mostrar login ou sessão.

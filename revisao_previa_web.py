@@ -102,10 +102,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as con:
             if not RV.ligada(con, pasta()):
                 return jsonify({"desligada": True})
-            try:
-                dossie = RV.dossie_rcpn(con, rascunho_id, texto, instrucao)
-            except RV.RevisaoPendente as erro:
-                return jsonify({"erro": str(erro)}), 404
+            # dossie_rcpn só lê e não recusa; o texto da exceção não vai para a tela
+            # (CodeQL py/stack-trace-exposure, alerta 307).
+            dossie = RV.dossie_rcpn(con, rascunho_id, texto, instrucao)
         return _comecar("RCPN", rascunho_id, RV.hash_do_ato("RCPN", texto), dossie,
                         f"Registro civil, rascunho {rascunho_id}")
 

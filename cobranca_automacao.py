@@ -16,11 +16,8 @@ O PROCESSO
     entregar a credencial dentro de uma requisição web, e a tela então só
     grava o pedido e chama a rodada.
 
-    A PARCELA PAGA ENTRA SOZINHA no caixa geral, dentro de `gravar_resposta`,
-    quando esse caixa está aberto hoje. Sem ele, a cobrança fica RECEBIDA e
-    esta rodada avisa que espera o caixa geral — não um clique. Inter e
-    Unicred continuam no clique de quem tem o próprio caixa aberto
-    (`cobranca.lancar_no_caixa`): depósito fora do dia não fecha a conferência.
+    Pagamentos confirmados entram no caixa bancário automaticamente, sem
+    usar a gaveta de atendentes. Retoma também os já recebidos sem lançamento.
 
     Cofre trancado, credencial que falta e banco fora do ar são AVISO: a
     cobrança fica onde estava, e a rodada seguinte retoma.
@@ -79,13 +76,16 @@ def _frase_das_pagas(achados: list[dict[str, Any]]) -> str:
     clique = sum(1 for a in achados if a["tipo"] == "PAGA_FALTA_LANCAR")
     partes = []
     if geral:
-        partes.append(f"{geral} pagamento(s) da Parcela esperando o caixa geral")
+        partes.append(f"{geral} pagamento(s) da Parcela com lançamento bancário pendente")
     if clique:
-        partes.append(f"{clique} cobrança(s) esperando o lançamento no caixa")
+        partes.append(f"{clique} cobrança(s) com lançamento bancário pendente")
     return "; ".join(partes)
 
 
 def acompanhar(contexto) -> dict:
+    if contexto.processo.get("pode_agir"):
+        with contexto.db.transaction() as con:
+            CB.recolher_no_caixa_geral(con, por="automação", agora=contexto.agora)
     with contexto.db.connect() as con:
         cfg = CB.configuracao(con)
         n = CB.contagem(con)

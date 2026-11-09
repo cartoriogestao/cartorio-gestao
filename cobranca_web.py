@@ -85,6 +85,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                situacoes=CB.SITUACOES, situacao=situacao, cfg=cfg,
                                bancos=CB.BANCOS, reais=DP.reais, papel=usuario_papel())
 
+    @app.route('/caixa/recebimentos-bancarios')
+    @login_required
+    @roles_required(*QUEM_DECIDE)
+    def cobranca_caixa_bancario():
+        try:
+            dia = date.fromisoformat(request.args.get('dia') or date.today().isoformat()).isoformat()
+        except ValueError:
+            abort(400)
+        with db.connect() as con:
+            linhas = banco(con).ler("""SELECT l.*, d.data AS data_pagamento,
+                                               d.numero AS deposito_numero, p.numero AS protocolo_numero
+                FROM cx_lancamentos l JOIN cx_caixas c ON c.id=l.caixa_id
+                LEFT JOIN cx_depositos d ON d.lancamento_id=l.id
+                LEFT JOIN cx_protocolos p ON p.id=l.protocolo_id
+                WHERE c.operador_nome=%s AND c.data=%s ORDER BY l.id""",
+                                      (CB.OPERADOR_DO_CAIXA_BANCARIO, dia))
+        return render_template('cobranca_caixa_bancario.html', linhas=linhas, dia=dia)
+
     # ----------------------------------------------------------------- nova
 
     @app.route("/caixa/cobranca/nova", methods=["GET", "POST"])

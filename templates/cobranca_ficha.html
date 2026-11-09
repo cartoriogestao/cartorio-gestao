@@ -41,21 +41,13 @@
 {% if com_cofre %}<p class="muted small">Com o cofre da automação instalado, os botões que falam com o banco pedem a rodada
   do despachante: o resultado aparece aqui no minuto seguinte.</p>{% endif %}
 
-{% if c.situacao == 'RECEBIDA' and c.banco == 'PARCELA' %}
+{% if c.situacao == 'RECEBIDA' %}
 <div class="card">
-  <p>A Parcela confirmou o pagamento. Ele entra sozinho no <strong>caixa geral</strong>
-    da serventia, como depósito prévio deste protocolo. Os itens não se quitam com isso.</p>
-  <p>Enquanto o caixa geral de hoje não estiver aberto, o depósito fica pendente
-    e entra quando esse caixa abrir. Não há lançamento no caixa de quem atende.</p>
+  <p>O banco confirmou o pagamento. O lançamento é automático no <strong>caixa bancário</strong>,
+    separado da gaveta do atendente, com a data do pagamento e auditoria.</p>
+  <p>O lançamento ainda está pendente. Confira o histórico abaixo: a rotina retomará sem
+    duplicar a entrada nem reabrir um caixa conferido. Não cobre novamente este pagamento.</p>
 </div>
-{% elif c.situacao == 'RECEBIDA' %}
-<form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='lancar') }}" class="card">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <p>O banco diz que o cliente pagou. Lançar no caixa cria um <strong>depósito prévio</strong> do protocolo,
-    no seu caixa de hoje; com o saldo dele se quitam os itens.</p>
-  {% if caixa %}<button type="submit">Lançar no meu caixa (aberto em {{ caixa.data }})</button>
-  {% else %}<p class="badge alta">Abra o seu caixa antes: <a href="{{ url_for('caixa') }}">Caixa</a>.</p>{% endif %}
-</form>
 {% endif %}
 
 {% if c.situacao in ['A_EMITIR', 'FALHOU'] %}

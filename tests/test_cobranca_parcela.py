@@ -70,7 +70,7 @@ def test_a_emissao_pede_pix_boleto_e_cartao_em_centavos():
 def test_o_cartao_pago_vira_recebida():
     lido = PX.ler({
         "token": "tok-1", "url": "https://pay.exemplo/tok-1", "status": "active",
-        "sale": {"status": "paid", "form_payment": "credit", "amount": 15000,
+        "sale": {"id": "venda-ficticia", "status": "paid", "form_payment": "credit", "amount": 15000,
                  "updated_at": "2026-11-10T15:00:00Z"},
     })
     assert lido["situacao"] == CB.RECEBIDA
@@ -89,8 +89,9 @@ def test_o_link_aberto_nao_vira_pago():
 def test_o_cancelamento_usa_o_id_do_link():
     cliente, t = _cliente({
         PX.CAMINHO_DO_TOKEN: Resposta(200, {"access_token": "jwt", "expires_in": 3600}),
-        "/v1/payment-links/tok-1": Resposta(200, {"id": "id-real", "token": "tok-1",
-                                                  "status": "active"}),
+        "/v1/sellers/seller-de-teste/payment-links": Resposta(200, {
+            "results": [{"id": "id-real", "token": "tok-1", "status": "active"}],
+            "has_more": False}),
         "/cancel": Resposta(200, {}),
     })
     cliente.cancelar(COBRANCA, "cliente desistiu do ato")
@@ -209,7 +210,7 @@ def _quitado(db, protocolo_id: int) -> int:
     return int(linha["quitado"])
 
 
-def test_paga_com_caixa_geral_aberto_entra_e_nao_quita(protocolo):
+def test_paga_com_caixa_geral_aberto_entra_no_bancario_e_quita(protocolo):
     db, pid = protocolo["db"], protocolo["protocolo_id"]
     with db.transaction() as con:
         geral = _abrir_caixa(con, CB.OPERADOR_DO_CAIXA_GERAL, "2026-11-05")
@@ -222,13 +223,13 @@ def test_paga_com_caixa_geral_aberto_entra_e_nao_quita(protocolo):
         no_escrevente = banco(con).um(
             "SELECT id FROM cx_lancamentos WHERE caixa_id = %s", (escrevente,))
     assert c["situacao"] == CB.LANCADA
-    assert lanc["caixa_id"] == geral and lanc["forma_pagamento"] == "PIX"
+    assert lanc["caixa_id"] != geral and lanc["forma_pagamento"] == "PIX"
     assert dep["protocolo_id"] == pid
     assert no_escrevente is None
-    assert _quitado(db, pid) == 0
+    assert _quitado(db, pid) == 1
 
 
-def test_sem_caixa_geral_fica_pendente_mesmo_com_caixa_de_escrevente(protocolo):
+def test_sem_caixa_geral_cria_bancario_separado_do_escrevente(protocolo):
     db, pid = protocolo["db"], protocolo["protocolo_id"]
     with db.transaction() as con:
         escrevente = _abrir_caixa(con, "ESCREVENTE EXEMPLO", "2026-11-05")
@@ -239,14 +240,14 @@ def test_sem_caixa_geral_fica_pendente_mesmo_com_caixa_de_escrevente(protocolo):
         depositos = banco(con).ler("SELECT id FROM cx_depositos WHERE protocolo_id = %s", (pid,))
         lancamentos = banco(con).ler(
             "SELECT id FROM cx_lancamentos WHERE caixa_id IN (%s, %s)", (escrevente, ontem))
-    assert c["situacao"] == CB.RECEBIDA and not c["deposito_id"]
-    assert depositos == [] and lancamentos == []
-    assert _quitado(db, pid) == 0
-    with db.transaction() as con, pytest.raises(CB.CobrancaError, match="caixa geral"):
+    assert c["situacao"] == CB.LANCADA and c["deposito_id"]
+    assert len(depositos) == 1 and lancamentos == []
+    assert _quitado(db, pid) == 1
+    with db.transaction() as con, pytest.raises(CB.CobrancaError, match="já foi lançada"):
         CB.lancar_no_caixa(con, i, por="balcao", agora=AGORA, caixa_id=escrevente)
 
 
-def test_ao_abrir_o_caixa_geral_o_pendente_entra_e_nao_quita(protocolo):
+def test_abrir_caixa_geral_nao_duplica_recebimento_bancario(protocolo):
     db, pid = protocolo["db"], protocolo["protocolo_id"]
     i = _cobranca_paga(db, pid)
     with db.transaction() as con:
@@ -254,10 +255,10 @@ def test_ao_abrir_o_caixa_geral_o_pendente_entra_e_nao_quita(protocolo):
         _abrir_caixa(con, CB.OPERADOR_DO_CAIXA_GERAL, "2026-11-05")
         feitos = CB.recolher_no_caixa_geral(con, por="balcao", agora=AGORA)
         de_novo = CB.recolher_no_caixa_geral(con, por="balcao", agora=AGORA)
-    assert len(feitos) == 1 and de_novo == []
+    assert feitos == [] and de_novo == []
     with db.connect() as con:
         assert CB.cobranca(con, i)["situacao"] == CB.LANCADA
-    assert _quitado(db, pid) == 0
+    assert _quitado(db, pid) == 1
 
 
 def test_a_tela_abre_o_caixa_geral_e_recolhe_o_pendente(protocolo):
@@ -274,4 +275,4 @@ def test_a_tela_abre_o_caixa_geral_e_recolhe_o_pendente(protocolo):
         cobranca = CB.cobranca(con, i)
         caixa = CB.caixa_geral_de_hoje(con, datetime.now().date())
     assert cobranca["situacao"] == CB.LANCADA and caixa
-    assert _quitado(db, pid) == 0
+    assert _quitado(db, pid) == 1

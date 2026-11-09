@@ -65,7 +65,7 @@ def test_o_recebedor_diverge_pelo_documento_ou_pelo_nome():
     assert "CARLA EXEMPLO" in DP.recebedor_diverge(d, "CARLA EXEMPLO", "***.000.001-**")
     assert DP.recebedor_diverge(d, "", "") == "", "o banco não disse: não há o que acusar"
     empresa = {"beneficiario_nome": "NOME FANTASIA", "beneficiario_documento": "00000010000127"}
-    assert DP.recebedor_diverge(empresa, "RAZAO SOCIAL LTDA", "00000010000127") == ""
+    assert "RAZAO SOCIAL LTDA" in DP.recebedor_diverge(empresa, "RAZAO SOCIAL LTDA", "00000010000127")
 
 
 # ------------------------------------------------------ antes de pagar
@@ -139,7 +139,9 @@ def test_autorizar_e_pagar_conferem_de_novo(cg_casa_logada):
         DP.gravar_configuracao(con, {**DP.PADRAO, "despesas_teto_por_pagamento": "10.000,00",
                                      "despesas_teto_por_dia": "50.000,00"})
         i = _despesa(con)
-        DP.autorizar(con, i, agora=AGORA, por="mario", papel="ADMIN")
+        DP.autorizar(con, i, agora=AGORA, por="mario", papel="ADMIN", recebedor_previo={
+            'nome': 'BEATRIZ EXEMPLO', 'documento': CPF_DA_BEATRIZ, 'ciencia': True,
+            'evidencia': 'Consulta ficticia no banco'})
         outra = _despesa(con, nome="BEATRIZ EXEMPLO", chave="beatriz@example.com")
         DP.banco(con).escrever("UPDATE dp_despesas SET beneficiario_nome = %s WHERE id = %s",
                                ("CARLA EXEMPLO", outra))

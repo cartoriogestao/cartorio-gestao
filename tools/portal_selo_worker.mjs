@@ -75,17 +75,30 @@ export async function executar(cfg, modo = '--consultar') {
     const destino = new URL('/administrativo/despesas/portal-selo', base).href;
     await Promise.all([portal.goto(PORTAL, { waitUntil: 'domcontentloaded' }),
       sistema.goto(destino, { waitUntil: 'domcontentloaded' })]);
+    let loginEnviado = false;
     async function pronto() {
+      // O HTML inicial pode terminar antes de o Angular mostrar login ou sessão.
+      await Promise.any([
+        portal.getByRole('link', { name: /SAIR/ }).waitFor({ timeout: 90000 }),
+        portal.locator('input[type="password"]').waitFor({ timeout: 90000 })
+      ]).catch(() => {});
+      if (!sistema.url().includes('/login') && !sistema.url().includes('/despesas/portal-selo'))
+        await sistema.goto(destino, { waitUntil: 'domcontentloaded' });
       // Usa apenas autofill já presente. Nunca lê ou exporta o valor da senha.
-      if (!await autenticado(portal) && await portal.locator('input[type="password"]').count()) {
+      if (!loginEnviado && !await autenticado(portal) && await portal.locator('input[type="password"]').count()) {
         const preenchida = await portal.locator('input[type="password"]').evaluate(el => Boolean(el.value));
-        if (preenchida) await portal.getByRole('button', { name: 'Entrar', exact: true }).click();
+        if (preenchida) {
+          loginEnviado = true;
+          await portal.getByRole('button', { name: 'Entrar', exact: true }).click();
+          await portal.getByRole('link', { name: /SAIR/ }).waitFor({ timeout: 30000 }).catch(() => {});
+        }
       }
       return await autenticado(portal) && await autenticado(sistema, true);
     }
     if (modo === '--autenticar') {
       console.error('Conclua SafeID e os dois logins nas janelas do Chrome. Não envie senhas ao agente.');
-      for (let n = 0; n < 360 && !await pronto(); n++) await dormir(5000);
+      const ate = Date.now() + 30 * 60 * 1000;
+      while (Date.now() < ate && !await pronto()) await dormir(5000);
     }
     // No modo agendado, o launchd tenta novamente em 30 min. Não fica preso entre semanas.
     if (!await pronto()) return { estado: 'AGUARDANDO_AUTORIZACAO', concluido: false };

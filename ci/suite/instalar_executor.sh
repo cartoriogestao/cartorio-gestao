@@ -44,6 +44,11 @@ if ! id "$USUARIO" >/dev/null 2>&1; then
   createhomedir -c -u "$USUARIO" >/dev/null
   dscl . -create "/Users/$USUARIO" IsHidden 1
 fi
+# O macOS põe o usuário novo nos grupos de compartilhamento de arquivos (a «Pasta
+# Pública», por SMB). O executor não precisa de nenhum.
+for grupo in $(dscl . -list /Groups | grep "^com.apple.sharepoint.group"); do
+  dseditgroup -o edit -d "$USUARIO" -t user "$grupo" 2>/dev/null || true
+done
 chmod 700 "$CASA"
 sudo -u "$USUARIO" mkdir -p "$TRABALHO"
 

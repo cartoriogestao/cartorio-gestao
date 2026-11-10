@@ -401,7 +401,8 @@ class ClienteCobrancaParcela:
         if corpo is None:
             return None
         lido = ler(corpo)
-        if lido.get("situacao") == CB.RECEBIDA and lido.get("valor_recebido") != int(c["valor"]):
+        if lido.get("situacao") == CB.RECEBIDA and (
+                lido.get("valor_recebido") != int(c["valor"]) or _centavos(corpo.get("amount")) != int(c["valor"])):
             venda = corpo.get("sale") or {}
             # Apenas números do link já identificado, para conferir principal e
             # encargos. Nunca registra corpo completo, credencial ou pagador.
@@ -564,7 +565,9 @@ def ler(corpo: Mapping[str, Any]) -> dict:
         # suficiente para gerar caixa. Não usar data de consulta nem BOLETO por padrão.
         from datetime import datetime
         forma = FORMA.get(forma_bruta)
-        valor = _centavos(venda.get("original_amount") or venda.get("amount"))
+        # amount é o valor da venda. original_amount pode incluir acréscimos
+        # ao pagador. O link e a venda devem bater com o principal cadastrado.
+        valor = _centavos(venda.get("amount"))
         quando = str(venda.get("updated_at") or "")
         try:
             dt = datetime.fromisoformat(quando.replace("Z", "+00:00"))
@@ -580,6 +583,12 @@ def ler(corpo: Mapping[str, Any]) -> dict:
         saida["forma_recebida"] = forma
         saida["valor_recebido"] = valor
         saida["data_pagamento"] = dt.date().isoformat()
+        original = _centavos(venda.get("original_amount"))
+        if original is not None and original != valor:
+            from caixa_schema import reais
+            saida["banco_motivo"] = (f"Valor da venda: R$ {reais(valor)}; campo original_amount da Parcela: "
+                                     f"R$ {reais(original)}. Diferença fora do principal da cobrança: "
+                                     f"R$ {reais(original - valor)}; não somada ao recebimento.")
     elif status_venda in SITUACAO_CANCELADA or status_link in SITUACAO_CANCELADA:
         saida["situacao"] = CB.CANCELADA
     elif status_venda in SITUACAO_BAIXADA or status_link in SITUACAO_BAIXADA:

@@ -91,6 +91,17 @@ def test_valor_diferente_ou_link_ambiguo_nao_baixa():
         cliente.consultar({'banco_id': 'token-ficticio', 'valor': 12345})
 
 
+def test_valor_original_com_acrescimo_nao_incha_receita_e_venda_confere_com_link():
+    venda = {**_pago()['sale'], 'original_amount': 12395}
+    cliente, _ = _cliente([[_pago(sale=venda)]])
+    r = cliente.consultar({'banco_id': 'token-ficticio', 'valor': 12345})
+    assert r['valor_recebido'] == 12345
+    assert '0,50' in r['banco_motivo'] and 'não somada' in r['banco_motivo']
+    cliente, _ = _cliente([[_pago(amount=13000, sale=venda)]])
+    with pytest.raises(PX.Recusa, match='valor'):
+        cliente.consultar({'banco_id': 'token-ficticio', 'valor': 12345})
+
+
 def test_pos_e_centavos_numericos_e_validacao_detalhada():
     assert PX._centavos(12345.0) == 12345
     assert PX._centavos(123.45) is None

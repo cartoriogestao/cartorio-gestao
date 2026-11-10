@@ -21,6 +21,7 @@
   {% if c.pix_copia_e_cola %}<p>Pix copia e cola: <code style="word-break:break-all">{{ c.pix_copia_e_cola }}</code></p>{% endif %}
   {% if c.valor_recebido %}<p>Recebido R$ {{ reais(c.valor_recebido) }} em {{ c.data_pagamento or '?' }} ({{ c.forma_recebida|lower or 'boleto' }}).</p>{% endif %}
   {% if c.deposito_id %}<p>Lançada no caixa: depósito prévio #{{ c.deposito_id }}.</p>{% endif %}
+  {% if c.caixa_lancamentos and c.caixa_lancamentos != '[]' %}<p>Conciliada com os lançamentos de caixa já existentes: {{ c.caixa_lancamentos }}. Nenhuma entrada duplicada.</p>{% endif %}
 </div>
 
 <div class="actions">
@@ -48,6 +49,21 @@
   <p>O lançamento ainda está pendente. Confira o histórico abaixo: a rotina retomará sem
     duplicar a entrada nem reabrir um caixa conferido. Não cobre novamente este pagamento.</p>
 </div>
+{% endif %}
+
+{% if c.situacao == 'RECEBIDA' and recebimentos_manuais and papel in ['ADMIN','MANAGER'] %}
+<section class="card"><h2>Conferir recebimento já lançado</h2>
+  <p>Existem entradas na mesma data, forma e protocolo. O lançamento automático ficou bloqueado para evitar duplicidade.
+    Vincule somente se forem o mesmo pagamento confirmado pelo banco.</p>
+  <form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='vincular_recebimento') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for l in recebimentos_manuais %}<label><input type="checkbox" name="lancamento_id" value="{{ l.id }}">
+      #{{ l.id }} · {{ l.data }} · {{ l.forma_pagamento }} · R$ {{ l.valor }} · {{ l.descricao }}</label>{% endfor %}
+    <label>Justificativa do vínculo <input name="motivo" minlength="10" maxlength="500" required></label>
+    <label><input type="checkbox" name="mesmo_recebimento" value="1" required> Confirmei que os lançamentos selecionados são o mesmo pagamento desta cobrança.</label>
+    <button type="submit">Conciliar sem nova entrada</button>
+  </form>
+</section>
 {% endif %}
 
 {% if c.situacao in ['A_EMITIR', 'FALHOU'] %}

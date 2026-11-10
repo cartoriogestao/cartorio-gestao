@@ -112,7 +112,7 @@ def test_pos_e_centavos_numericos_e_validacao_detalhada():
     assert 'terminal_id deve ser texto' in msg and 'SEGREDO' not in msg
 
 
-def _recebimento(db, *, valor_item=12345, data='2026-11-09', numero='2026.11.99999', resposta=None):
+def _recebimento(db, *, valor_item=12345, data='2026-11-09', numero='2026.11.99999', resposta=None, manual=False):
     with db.transaction() as con:
         b = banco(con)
         p = b.escrever("""INSERT INTO cx_protocolos (numero, data_abertura, interessado, criado_em)
@@ -125,6 +125,14 @@ def _recebimento(db, *, valor_item=12345, data='2026-11-09', numero='2026.11.999
                          vencimento='2026-11-20', pagador={'nome': 'Cliente Ficticio', 'documento': '00000000191',
                          'logradouro': 'Rua Um', 'numero': '1', 'bairro': 'Centro', 'cidade': 'Cidade Exemplo',
                          'uf': 'MA', 'cep': '65000000'}, mensagem='Servico ficticio')
+        if manual:
+            caixa = b.escrever("INSERT INTO cx_caixas (data,operador_nome,aberto_em) VALUES (%s,%s,%s) RETURNING id",
+                              (data, 'Atendente Ficticio', AGORA.isoformat()))[0]['id']
+            b.escrever("""INSERT INTO cx_lancamentos (caixa_id,protocolo_id,data,natureza,sentido,
+                         forma_pagamento,valor,criado_em) VALUES (%s,%s,%s,'RECEBIMENTO','ENTRADA','PIX','123,45',%s)""",
+                       (caixa, p, data, AGORA.isoformat()))
+            b.escrever("UPDATE cx_protocolo_atos SET quitado=1,quitado_por='Atendente Ficticio',quitado_em=%s WHERE protocolo_id=%s",
+                       (AGORA.isoformat(), p))
         CB.gravar_resposta(con, i, {'banco_id': 'token-ficticio', 'situacao': CB.RECEBIDA,
                           'valor_recebido': 12345, 'forma_recebida': 'PIX', 'data_pagamento': data,
                           **(resposta or {})},
@@ -207,6 +215,57 @@ def test_preco_alterado_preserva_credito_sem_quitar_itens_errados(cg_casa_logada
         assert CB.cobranca(con, i)['situacao'] == CB.LANCADA
         assert b.valor('SELECT coalesce(quitado,0) FROM cx_protocolo_atos WHERE protocolo_id=%s', (pid,)) == 0
         assert CB.centavos_do_banco('123.45') == 12345
+
+
+def test_recebimento_manual_bloqueia_duplicidade_e_vinculo_exige_conferencia(cg_casa_logada):
+    db = cg_casa_logada['db']; i, pid = _recebimento(db, manual=True)
+    with db.connect() as con:
+        c = CB.cobranca(con, i); ids = [r['id'] for r in CB.recebimentos_manuais(con, c)]
+        assert c['situacao'] == CB.RECEBIDA and c['deposito_id'] is None
+        assert banco(con).valor('SELECT count(*) FROM cx_depositos WHERE protocolo_id=%s', (pid,)) == 0
+    for extras in ({'ciencia': False}, {'papel': 'USER'}, {'ids': [999999]}, {'motivo': 'x'}):
+        with pytest.raises(CB.CobrancaError), db.transaction() as con:
+            CB.vincular_recebimento_existente(con, i, **{
+                'ids': ids, 'ciencia': True, 'papel': 'ADMIN', 'motivo': 'Mesmo Pix conferido no banco',
+                'por': 'mario', 'agora': AGORA, **extras})
+    with db.transaction() as con:
+        for _ in range(2):
+            CB.vincular_recebimento_existente(con, i, ids=ids, ciencia=True, papel='ADMIN',
+                motivo='Mesmo Pix conferido no banco', por='mario', agora=AGORA)
+    with db.connect() as con:
+        assert CB.cobranca(con, i)['situacao'] == CB.LANCADA
+        assert banco(con).valor('SELECT count(*) FROM cx_lancamentos WHERE protocolo_id=%s', (pid,)) == 1
+        assert banco(con).valor("SELECT count(*) FROM cb_eventos WHERE cobranca_id=%s AND operacao='VINCULAR_CAIXA_EXISTENTE'", (i,)) == 1
+
+
+def test_falha_auditoria_desfaz_vinculo_sem_alterar_caixa(cg_casa_logada, monkeypatch):
+    db = cg_casa_logada['db']; i, pid = _recebimento(db, manual=True)
+    with db.connect() as con:
+        ids = [r['id'] for r in CB.recebimentos_manuais(con, CB.cobranca(con, i))]
+    def falhar(*a, **kw):
+        raise RuntimeError('Auditoria indisponivel')
+    monkeypatch.setattr(CB, '_evento', falhar)
+    with pytest.raises(RuntimeError), db.transaction() as con:
+        CB.vincular_recebimento_existente(con, i, ids=ids, ciencia=True, papel='ADMIN',
+            motivo='Mesmo Pix conferido no banco', por='mario', agora=AGORA)
+    with db.connect() as con:
+        assert CB.cobranca(con, i)['situacao'] == CB.RECEBIDA
+        assert banco(con).valor('SELECT count(*) FROM cx_lancamentos WHERE protocolo_id=%s', (pid,)) == 1
+
+
+def test_tela_vincula_pagamento_existente_sem_nova_entrada(cg_casa_logada):
+    db = cg_casa_logada['db']; i, pid = _recebimento(db, manual=True); c = cg_casa_logada['c']
+    html = c.get(f'/caixa/cobranca/{i}').get_data(as_text=True)
+    assert 'Conciliar sem nova entrada' in html
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+    ids = re.findall(r'name="lancamento_id" value="(\d+)"', html)
+    r = c.post(f'/caixa/cobranca/{i}/vincular_recebimento', data={
+        'csrf_token': token, 'lancamento_id': ids, 'mesmo_recebimento': '1',
+        'motivo': 'Mesmo Pix conferido no banco'}, follow_redirects=True)
+    assert r.status_code == 200 and 'Nenhuma nova entrada' in r.get_data(as_text=True)
+    with db.connect() as con:
+        assert CB.cobranca(con, i)['situacao'] == CB.LANCADA
+        assert banco(con).valor('SELECT count(*) FROM cx_lancamentos WHERE protocolo_id=%s', (pid,)) == 1
 
 
 def test_caixa_bancario_fechado_nao_reabre_nem_perde_confirmacao(cg_casa_logada):

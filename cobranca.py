@@ -211,6 +211,8 @@ def init_cobranca_schema(con) -> None:
         bd.escrever("ALTER TABLE cb_cobrancas ADD COLUMN forma_pedida TEXT NOT NULL DEFAULT ''")
     if bd.tem_tabela("cb_cobrancas") and not bd.tem_coluna("cb_cobrancas", "banco_pagamento_id"):
         bd.escrever("ALTER TABLE cb_cobrancas ADD COLUMN banco_pagamento_id TEXT NOT NULL DEFAULT ''")
+    if bd.tem_tabela("cb_cobrancas") and not bd.tem_coluna("cb_cobrancas", "caixa_lancamentos"):
+        bd.escrever("ALTER TABLE cb_cobrancas ADD COLUMN caixa_lancamentos TEXT NOT NULL DEFAULT '[]'")
     if bd.tem_tabela("cb_cobrancas"):
         definicao = bd.um(
             """SELECT pg_get_constraintdef(oid) AS definicao
@@ -705,12 +707,17 @@ def entrar_no_caixa_geral(con, cobranca_id: int, *, por: str, agora: datetime) -
         return None
     bd.travar(f"cobranca.recebimento:{c['banco']}:{c['ambiente']}:{referencia}")
     duplicada = bd.um("""SELECT id FROM cb_cobrancas WHERE id <> %s AND banco = %s
-                         AND ambiente = %s AND deposito_id IS NOT NULL
+                         AND ambiente = %s AND (deposito_id IS NOT NULL OR caixa_lancamentos <> '[]')
                          AND (banco_pagamento_id = %s OR banco_id = %s) LIMIT 1""",
                        (int(c["id"]), c["banco"], c["ambiente"], referencia, c.get("banco_id") or referencia))
     if duplicada:
         _evento(bd, int(c["id"]), "LANCAR_NO_CAIXA", "PENDENTE",
                 "Recebimento já vinculado a outra cobrança. Confira antes de lançar.", por, _carimbo(agora))
+        return None
+    if recebimentos_manuais(bd, c):
+        _evento(bd, int(c["id"]), "LANCAR_NO_CAIXA", "PENDENTE",
+                "Há recebimento manual no mesmo protocolo, data e forma. Confira o vínculo "
+                "antes de lançar para não duplicar o dinheiro.", por, _carimbo(agora))
         return None
     itens = DEP.prender_itens_a_pagar(bd, c["protocolo_id"]) if c["protocolo_id"] else []
     # Falha de contabilização não apaga a confirmação bancária. O savepoint
@@ -743,6 +750,53 @@ def recolher_no_caixa_geral(con, *, por: str, agora: datetime) -> list[dict]:
         if feito:
             feitos.append(feito)
     return feitos
+
+
+def recebimentos_manuais(con, c: Mapping[str, Any]) -> list[dict]:
+    """Possíveis registros anteriores do mesmo pagamento: nunca associa por palpite."""
+    if not c.get("protocolo_id") or not c.get("data_pagamento"):
+        return []
+    return banco(con).ler("""SELECT l.* FROM cx_lancamentos l
+        WHERE l.protocolo_id=%s AND l.data=%s AND l.forma_pagamento=%s
+          AND l.natureza='RECEBIMENTO' AND l.sentido='ENTRADA' AND coalesce(l.excluido,0)=0
+        ORDER BY l.id""", (c["protocolo_id"], str(c["data_pagamento"])[:10], c["forma_recebida"]))
+
+
+def vincular_recebimento_existente(con, cobranca_id: int, *, ids: list[int], ciencia: bool,
+                                  motivo: str, por: str, papel: str, agora: datetime) -> dict:
+    """Conciliação individual autenticada; não cria nem altera movimento de caixa."""
+    if papel not in ("ADMIN", "MANAGER") or not ciencia or len(_texto(motivo, 500)) < 10:
+        raise CobrancaError("O oficial ou gerente deve confirmar o mesmo recebimento e justificar o vínculo.")
+    try:
+        escolhidos = sorted(set(int(i) for i in ids))
+    except (ValueError, TypeError):
+        raise CobrancaError("Os identificadores dos recebimentos não são válidos.") from None
+    if not escolhidos or len(escolhidos) > 100 or any(i <= 0 or i > 9223372036854775807 for i in escolhidos):
+        raise CobrancaError("Selecione os recebimentos já registrados deste pagamento.")
+    bd = banco(con)
+    bd._escrita()
+    bd.travar("cobranca.vinculo_caixa_existente")
+    c = bd.um("SELECT * FROM cb_cobrancas WHERE id=%s FOR UPDATE", (int(cobranca_id),))
+    if not c:
+        raise CobrancaError("Cobrança não encontrada.")
+    if c["situacao"] == LANCADA and json.loads(c.get("caixa_lancamentos") or '[]') == escolhidos:
+        return c
+    if c["situacao"] != RECEBIDA or c["deposito_id"] or int(c["valor_recebido"] or 0) <= 0:
+        raise CobrancaError("O banco precisa confirmar o recebimento antes do vínculo.")
+    linhas = bd.ler("SELECT * FROM cx_lancamentos WHERE id=ANY(%s) ORDER BY id FOR UPDATE", (escolhidos,))
+    candidatos = {r["id"] for r in recebimentos_manuais(bd, c)}
+    if len(linhas) != len(escolhidos) or not set(escolhidos) <= candidatos or sum(
+            centavos(l["valor"]) for l in linhas) != int(c["valor_recebido"]):
+        raise CobrancaError("Os lançamentos precisam ser entradas válidas do mesmo protocolo, data, forma e valor total confirmado.")
+    outros = bd.ler("SELECT id,caixa_lancamentos FROM cb_cobrancas WHERE id<>%s AND caixa_lancamentos<>'[]'",
+                    (int(cobranca_id),))
+    if any(set(escolhidos) & set(json.loads(r["caixa_lancamentos"])) for r in outros):
+        raise CobrancaError("Este recebimento já está vinculado a outra cobrança.")
+    bd.escrever("UPDATE cb_cobrancas SET situacao='LANCADA',caixa_lancamentos=%s WHERE id=%s",
+                (json.dumps(escolhidos), int(cobranca_id)))
+    _evento(bd, int(cobranca_id), "VINCULAR_CAIXA_EXISTENTE", "OK",
+            f"Lançamentos {escolhidos}; sem nova entrada. Motivo: {_texto(motivo,500)}", por, _carimbo(agora))
+    return cobranca(bd, cobranca_id)
 
 
 def lancar_no_caixa(con, cobranca_id: int, *, por: str, agora: datetime,

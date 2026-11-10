@@ -195,12 +195,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 protocolo = banco(con).um("SELECT id, numero FROM cx_protocolos WHERE id = %s",
                                           (int(c["protocolo_id"]),))
             caixa = CB.caixa_aberto(con, usuario_nome())
+            manuais = CB.recebimentos_manuais(con, c) if c['situacao'] == CB.RECEBIDA else []
         return render_template("cobranca_ficha.html", c=c, rastro=rastro, cfg=cfg,
                                protocolo=protocolo, caixa=caixa, endereco=CB.endereco(c),
                                pedido=CB.pedido(c), pedidos=CB.PEDIDOS,
                                recursos=CB.RECURSOS[c["banco"]], situacoes=CB.SITUACOES,
                                bancos=CB.BANCOS, reais=DP.reais, papel=usuario_papel(),
-                               com_cofre=_com_cofre())
+                               com_cofre=_com_cofre(), recebimentos_manuais=manuais)
 
     @app.route("/caixa/cobranca/<int:cobranca_id>/boleto.pdf")
     @login_required
@@ -228,6 +229,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not c:
             abort(404)
         try:
+            if acao == 'vincular_recebimento':
+                if papel not in QUEM_DECIDE:
+                    abort(403)
+                with db.transaction() as con:
+                    CB.vincular_recebimento_existente(
+                        con, cobranca_id, ids=f.getlist('lancamento_id'), ciencia=f.get('mesmo_recebimento') == '1',
+                        motivo=f.get('motivo') or '', por=por, papel=papel, agora=agora)
+                audit('COBRANCA_VINCULO_CAIXA_EXISTENTE', 'cb_cobrancas', cobranca_id,
+                      {'lancamentos': f.getlist('lancamento_id'), 'motivo': f.get('motivo')})
+                flash('Recebimento conciliado com os lançamentos existentes. Nenhuma nova entrada de dinheiro.', 'success')
+                return _ficha(cobranca_id)
             if acao == "emitir":
                 with db.connect() as con:
                     if CB.configuracao(con)["cobranca_ligada"] != "1":

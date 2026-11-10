@@ -1294,6 +1294,45 @@ def gerar_andamento(con: sqlite3.Connection, *, apresentante_codigo: str,
                  tipos=("SDTBFOAND",))
 
 
+def gerar_andamentos_pendentes(con: sqlite3.Connection, *, dia: str, agora: str,
+                               usuario: str | None = None,
+                               apresentante_codigo: str | None = None) -> dict:
+    """Gera o andamento de cada apresentante com apontamento ainda fora de arquivo.
+
+    NÃO ENVIA. O arquivo fica em `pt_retornos` para a tela do retorno; quem
+    sobe na CRA continua sendo o envio, no horário. Um apresentante que não
+    fecha o arquivo não derruba os outros, e a fila dele permanece.
+
+    Com `apresentante_codigo`, só esse apresentante. Sem ele, todos os que
+    têm apontamento pendente. O título da CENPROT não entra: `pendentes` do
+    andamento só lê origem CRA.
+    """
+    so_este = str(apresentante_codigo or "").strip()
+    vistos: list[str] = []
+    ja: set[str] = set()
+    for ato in pendentes(con, tipo="SDTBFOAND",
+                         apresentante_codigo=so_este or None):
+        codigo = str(ato.get("apresentante_codigo") or "").strip()
+        if codigo and codigo not in ja:
+            ja.add(codigo)
+            vistos.append(codigo)
+    feitos, recusas = [], []
+    for codigo in vistos:
+        try:
+            gerado = gerar_andamento(
+                con, apresentante_codigo=codigo, dia=dia, agora=agora,
+                usuario=usuario)
+        except RetornoError as erro:
+            recusas.append({"apresentante": codigo, "motivo": str(erro)})
+            continue
+        feitos.append({
+            "apresentante": codigo,
+            "andamento_id": gerado.get("andamento_id"),
+            "titulos": len(gerado.get("atos") or []),
+        })
+    return {"feitos": feitos, "recusas": recusas}
+
+
 # --------------------------------------------------------------- consultas
 
 

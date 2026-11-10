@@ -748,3 +748,37 @@ def test_gerar_e_a_virada_leem_ja_com_a_trava_do_nome(monkeypatch):
     contagem = PR.marcar_o_que_o_eoficio_ja_informou(con, fluxo, agora=AGORA)
     assert contagem["retorno"] == 1
     assert livres and not any(livres), f"a virada leu sem a trava: {livres}"
+
+
+def test_o_apontamento_pendente_ganha_andamento_sem_enviar():
+    """O apontamento da CRA não fica na fila à espera de um clique.
+
+    Dois títulos do mesmo apresentante saem num arquivo só. O da CENPROT não
+    entra. A segunda chamada não gera de novo, e nada daqui fala com a Central.
+    """
+    con = banco()
+    primeiro = titulo(con, numero="FIC-01", apresentante="901",
+                      nome_apresentante="APRESENTANTE EXEMPLO FICTICIO")
+    segundo = titulo(con, numero="FIC-02", apresentante="901",
+                     nome_apresentante="APRESENTANTE EXEMPLO FICTICIO")
+    da_cenprot = titulo(con, numero="FIC-03", apresentante="902",
+                        nome_apresentante="CENTRAL EXEMPLO FICTICIA",
+                        origem="CENPROT")
+    for tid in (primeiro, segundo, da_cenprot):
+        PT.lancar_apontamento(con, tid, sv=SV, agora=AGORA, data_extenso="x")
+    resumo = PR.gerar_andamentos_pendentes(con, dia=HOJE, agora=AGORA,
+                                           usuario="MARIO EXEMPLO")
+    assert resumo["recusas"] == []
+    assert [item["apresentante"] for item in resumo["feitos"]] == ["901"]
+    assert resumo["feitos"][0]["titulos"] == 2
+    marcados = {
+        int(r[0]) for r in con.execute(
+            "SELECT titulo_id FROM pt_atos WHERE tipo='APONTAMENTO' "
+            "AND retorno_id IS NOT NULL")}
+    assert marcados == {primeiro, segundo}
+    de_novo = PR.gerar_andamentos_pendentes(con, dia=HOJE, agora=AGORA)
+    assert de_novo == {"feitos": [], "recusas": []}
+    arquivos = con.execute(
+        "SELECT tipo, cra_enviado_em FROM pt_retornos").fetchall()
+    assert len(arquivos) == 1
+    assert arquivos[0][0] == "SDTBFOAND" and arquivos[0][1] is None

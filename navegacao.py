@@ -623,6 +623,7 @@ PAI: dict[str, tuple[str, str]] = {
     "cobranca_ficha": ("CAIXA", "Pix, boleto e cartão"),
     "cobranca_nova": ("CAIXA", "Pix, boleto e cartão"),
     "cobranca_configuracao": ("CAIXA", "Pix, boleto e cartão"),
+    "cobranca_caixa_bancario": ("CAIXA", "Pix, boleto e cartão"),
     "configuracoes_cobranca": ("GESTAO", "Configurações"),
     "nfse_apuracao": ("CAIXA", "Recibos e NFS-e"),
     "nfse_recibo": ("CAIXA", "Recibos e NFS-e"),

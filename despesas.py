@@ -59,6 +59,7 @@ hora se calculam no Python (regra da casa).
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import unicodedata
 from datetime import date, datetime, timedelta
@@ -248,6 +249,7 @@ def init_despesas_schema(con) -> None:
         if not bd.tem_tabela(nome):
             bd.escrever(comando)
     for coluna, tipo in (("recebedor_divergente", "TEXT NOT NULL DEFAULT ''"),
+                         ("recebedor_previo", "TEXT NOT NULL DEFAULT ''"),
                          ("recebedor_aceito_em", "TEXT"),
                          ("banco_recebedor_nome", "TEXT NOT NULL DEFAULT ''"),
                          ("banco_recebedor_documento", "TEXT NOT NULL DEFAULT ''"),
@@ -637,10 +639,74 @@ def recebedor_diverge(d: Mapping[str, Any], nome: Any, documento: Any) -> str:
     """
     bate = documento_confere(d.get("beneficiario_documento"), documento)
     nome = _texto(nome, 150)
-    if bate is False or (nome and len(digitos(documento)) != 14 and not mesmo_nome(nome, d.get("beneficiario_nome"))):
+    if bate is False or (nome and nome_do_recebedor(nome) != nome_do_recebedor(d.get("beneficiario_nome"))):
         return (f"O banco informa que este pagamento foi para {nome or 'outro CPF/CNPJ'}, e o "
                 f"favorecido cadastrado é {d.get('beneficiario_nome')}.")
     return ""
+
+
+def nome_do_recebedor(nome: Any) -> str:
+    """Só ignora caixa, acentos e pontuação; não presume razão social/apelido."""
+    texto = unicodedata.normalize("NFKD", str(nome or "")).casefold()
+    return "".join(c for c in texto if c.isalnum() and not unicodedata.combining(c))
+
+
+def _assinatura_do_destino(d: Mapping[str, Any], ambiente: str, dia: str) -> str:
+    campos = ("id", "forma", "codigo", "codigo_barras", "valor", "vencimento",
+              "beneficiario_nome", "beneficiario_documento")
+    valores = {k: d.get(k) for k in campos}
+    valores.update(ambiente=ambiente, data_pagamento=dia)
+    return hashlib.sha256(json.dumps(valores, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
+
+
+def conferir_destino_antes_de_autorizar(d: Mapping[str, Any], dados: Mapping[str, Any] | None,
+                                      *, por: str, agora: datetime, ambiente: str) -> str:
+    """Conferência humana na tela ANTES de enviar; não simula consulta DICT.
+
+    A API disponível do Inter não fornece identidade prévia da chave. Exige
+    identificação conferida no banco, fonte e ciência individual do ordenador.
+    Não herda o aceite posterior, regras automáticas ou a autorização em lote.
+    """
+    dados = dados or {}
+    nome, documento = _texto(dados.get("nome"), 150), _texto(dados.get("documento"), 30)
+    fonte = _texto(dados.get("evidencia"), 500)
+    if not por or dados.get("ciencia") is not True or not nome or len(digitos(documento)) not in (11, 14) or len(fonte) < 10:
+        raise DespesaError("Confira no banco o nome e CPF/CNPJ do destinatário e registre a fonte "
+                           "na ficha. A API não identifica o titular antes de enviar; "
+                           "a autorização exige sua confirmação individual.")
+    if cpf_cnpj.documento_valido(digitos(documento)) is not True:
+        raise DespesaError("O CPF/CNPJ conferido do destinatário não é válido. Confira no banco.")
+    divergencia = recebedor_diverge(d, nome, documento)
+    motivo = _texto(dados.get("motivo"), 500)
+    if divergencia and (dados.get("autoriza_divergencia") is not True or len(motivo) < 10):
+        raise DespesaError("O destinatário conferido diverge do favorecido cadastrado. "
+                           "É necessária autorização expressa e justificativa antes do pagamento.")
+    dia = max(str(d["vencimento"]), agora.date().isoformat())
+    return json.dumps({"nome": nome, "documento": documento, "evidencia": fonte,
+                       "divergencia": divergencia, "motivo": motivo, "por": por,
+                       "em": _carimbo(agora), "dia": dia,
+                       "assinatura": _assinatura_do_destino(d, ambiente, dia)}, ensure_ascii=False)
+
+
+def destino_autorizado(d: Mapping[str, Any], *, ambiente: str, hoje: str) -> bool:
+    """Última trava antes do POST, inclusive no reenvio. Só calcula."""
+    try:
+        dados = json.loads(d.get("recebedor_previo") or "{}")
+        return bool(dados.get("por") and dados["por"] == d.get("autorizada_por") and
+                    dados.get("em") == d.get("autorizada_em") and
+                    dados.get("assinatura") == _assinatura_do_destino(
+                        d, ambiente, max(str(d["vencimento"]), hoje)))
+    except (TypeError, ValueError, AttributeError, KeyError):
+        return False
+
+
+def destinatario_conferido(d: Mapping[str, Any]) -> dict:
+    """Dados declarados pelo ordenador; não são resposta de consulta à API."""
+    try:
+        dados = json.loads(d.get("recebedor_previo") or "{}")
+        return dados if isinstance(dados, dict) else {}
+    except (ValueError, TypeError):
+        return {}
 
 
 def conferir_favorecido_pix(con, *, chave: Any, documento: Any, nome: Any,
@@ -852,7 +918,7 @@ def _prender(bd, despesa_id: int) -> dict:
 
 def autorizar(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
               acima_do_teto: bool = False, motivo_divergencia: Any = "",
-              valor_visto: int | None = None) -> dict:
+              valor_visto: int | None = None, recebedor_previo: Mapping[str, Any] | None = None) -> dict:
     """Autoriza o pagamento. Só ADMIN (decisão do oficial, 24/10/2026). ESCREVE.
 
     `valor_visto` é o valor que estava na tela de quem marcou a despesa na lista:
@@ -862,7 +928,10 @@ def autorizar(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
         raise DespesaError("Só o oficial (ADMIN) autoriza despesa.")
     bd = banco(con)
     d = _prender(bd, despesa_id)
-    if d["situacao"] != AGUARDANDO:
+    if d["situacao"] != AGUARDANDO and not (
+            d["situacao"] == AUTORIZADA and not d.get("enviada_em") and not d.get("tentativas")
+            and not d.get("banco_codigo") and not d.get("banco_e2e") and not d.get("paga_em")
+            and not d.get("extrato_id")):
         raise DespesaError(f"Esta despesa está «{SITUACOES[d['situacao']]}» e não espera "
                            f"autorização.")
     if d["forma"] == MANUAL:
@@ -878,6 +947,8 @@ def autorizar(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
         raise DespesaError(f"Há divergência de valor ({d['divergencia']}). Diga por que o "
                            f"pagamento está certo assim.")
     cfg = configuracao(bd)
+    previo = conferir_destino_antes_de_autorizar(
+        d, recebedor_previo, por=por, agora=agora, ambiente=cfg.get("despesas_ambiente", "sandbox"))
     if int(d["valor"]) > tetos(cfg)["pagamento"] and not acima_do_teto:
         raise DespesaError(
             f"R$ {reais(int(d['valor']))} passa do teto por pagamento "
@@ -886,8 +957,12 @@ def autorizar(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
     quando = _carimbo(agora)
     bd.escrever(
         """UPDATE dp_despesas SET situacao = 'AUTORIZADA', autorizada_em = %s,
-                  autorizada_por = %s, acima_do_teto = %s WHERE id = %s""",
-        (quando, _texto(por, 120), 1 if acima_do_teto else 0, int(despesa_id)))
+                  autorizada_por = %s, acima_do_teto = %s, recebedor_previo = %s WHERE id = %s""",
+        (quando, _texto(por, 120), 1 if acima_do_teto else 0, previo, int(despesa_id)))
+    conferido = json.loads(previo)
+    _evento(bd, despesa_id, "AUTORIZAR_DESTINATARIO", "expressa" if conferido["divergencia"] else "conferido",
+            f"Destinatário: {conferido['nome']}. Fonte: {conferido['evidencia']}. "
+            f"{conferido['divergencia']} {conferido['motivo']}", por, quando)
     _evento(bd, despesa_id, "AUTORIZAR", "ok",
             ("acima do teto; " if acima_do_teto else "") + (motivo or ""), por, quando)
     return despesa(bd, despesa_id)
@@ -990,7 +1065,7 @@ def devolver(con, despesa_id: int, *, agora: datetime, por: str, papel: str,
     quando = _carimbo(agora)
     bd.escrever("""UPDATE dp_despesas SET situacao = 'AGUARDANDO_AUTORIZACAO',
                           autorizada_em = NULL, autorizada_por = NULL,
-                          autorizada_pela_regra = '', acima_do_teto = 0 WHERE id = %s""",
+                          autorizada_pela_regra = '', recebedor_previo = '', acima_do_teto = 0 WHERE id = %s""",
                 (int(despesa_id),))
     _evento(bd, despesa_id, "DEVOLVER", "ok", motivo, por, quando)
     return despesa(bd, despesa_id)

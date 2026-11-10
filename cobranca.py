@@ -22,17 +22,13 @@ O CICLO
     por nós), BAIXADA (o banco baixou: prazo vencido, protesto, ou marcada
     como recebida FORA do banco).
 
-    O dinheiro pago vira DEPÓSITO PRÉVIO do protocolo (`caixa_depositos.criar`),
-    com número próprio, orçamento congelado e saldo. Os itens do protocolo
-    não se quitam nesse passo: quem atende usa o saldo depois.
-
-    **PARCELA EXPRESS ENTRA SOZINHA NO CAIXA GERAL** (oficial, 05/11/2026).
-    Pix, boleto ou cartão confirmado pela Parcela vira depósito no caixa
-    geral da serventia (`OPERADOR_DO_CAIXA_GERAL`), não no caixa de um
-    escrevente. Sem esse caixa aberto hoje, a cobrança fica RECEBIDA até a
-    abertura, e entra quando ele abre. Não há clique «lançar no meu caixa»
-    para a Parcela. Inter e Unicred seguem no clique de quem está com o
-    próprio caixa aberto.
+    Pagamentos confirmados entram automaticamente no CAIXA BANCÁRIO,
+    separado das gavetas dos atendentes. O depósito nativo conserva a data
+    do pagamento, o lançamento conserva a data do registro e a auditoria
+    identifica quem confirmou. Não reabre caixas conferidos.
+    Quando o valor cobre exatamente os itens pendentes do protocolo, aplica
+    o depósito pelo domínio, sem duplicar entrada. Diferenças permanecem
+    como saldo a conferir. Não sela atos.
 
     **«MARCADO COMO RECEBIDO» NÃO É RECEBIDO.** O Inter tem a situação
     MARCADO_RECEBIDO: alguém marcou no Internet Banking que recebeu por fora.
@@ -213,6 +209,10 @@ def init_cobranca_schema(con) -> None:
         bd.escrever("ALTER TABLE cb_cobrancas ADD COLUMN link_pagamento TEXT NOT NULL DEFAULT ''")
     if bd.tem_tabela("cb_cobrancas") and not bd.tem_coluna("cb_cobrancas", "forma_pedida"):
         bd.escrever("ALTER TABLE cb_cobrancas ADD COLUMN forma_pedida TEXT NOT NULL DEFAULT ''")
+    if bd.tem_tabela("cb_cobrancas") and not bd.tem_coluna("cb_cobrancas", "banco_pagamento_id"):
+        bd.escrever("ALTER TABLE cb_cobrancas ADD COLUMN banco_pagamento_id TEXT NOT NULL DEFAULT ''")
+    if bd.tem_tabela("cb_cobrancas") and not bd.tem_coluna("cb_cobrancas", "caixa_lancamentos"):
+        bd.escrever("ALTER TABLE cb_cobrancas ADD COLUMN caixa_lancamentos TEXT NOT NULL DEFAULT '[]'")
     if bd.tem_tabela("cb_cobrancas"):
         definicao = bd.um(
             """SELECT pg_get_constraintdef(oid) AS definicao
@@ -536,8 +536,10 @@ def gravar_resposta(con, cobranca_id: int, r: Mapping[str, Any], *, por: str,
     # a cobrança; o depósito lançado é fato do caixa.
     if c["situacao"] in (LANCADA, CANCELADA) and nova != c["situacao"]:
         nova = c["situacao"]
+    if c["situacao"] == RECEBIDA and nova in (A_EMITIR, EMITINDO, ABERTA, FALHOU):
+        nova = RECEBIDA
     campos = {"situacao": nova, "consultada_em": _carimbo(agora)}
-    for k in ("banco_id", "nosso_numero", "linha_digitavel", "codigo_barras",
+    for k in ("banco_id", "banco_pagamento_id", "nosso_numero", "linha_digitavel", "codigo_barras",
               "pix_copia_e_cola", "banco_status", "banco_motivo", "data_pagamento",
               "forma_recebida", "link_pagamento"):
         if r.get(k):
@@ -553,11 +555,10 @@ def gravar_resposta(con, cobranca_id: int, r: Mapping[str, Any], *, por: str,
         _evento(bd, int(cobranca_id), operacao, nova,
                 r.get("erro") or r.get("banco_motivo") or r.get("banco_status") or "",
                 por, _carimbo(agora))
-    # A Parcela paga não espera clique: entra no caixa geral se ele estiver
-    # aberto hoje. Sem ele, continua RECEBIDA até a abertura.
-    if c["banco"] == PARCELA and nova == RECEBIDA and not c["deposito_id"]:
-        if entrar_no_caixa_geral(con, cobranca_id, por=por, agora=agora):
-            nova = LANCADA
+    # Confirmação bancária entra no caixa próprio, sem depender de gaveta humana.
+    if nova == RECEBIDA and not c["deposito_id"] and entrar_no_caixa_geral(
+            con, cobranca_id, por=por, agora=agora):
+        nova = LANCADA
     return nova
 
 
@@ -611,6 +612,28 @@ def caixa_aberto(con, operador: str) -> dict | None:
 #: O caixa da serventia, não o de um escrevente. Pix, boleto e cartão da
 #: Parcela entram aqui. Uma linha por dia (`UNIQUE` de data + operador).
 OPERADOR_DO_CAIXA_GERAL = "CAIXA GERAL"
+OPERADOR_DO_CAIXA_BANCARIO = "CAIXA BANCÁRIO"
+
+
+def caixa_bancario(con, *, agora: datetime) -> dict:
+    """Conta bancária diária da serventia, independente das gavetas humanas.
+
+    Confirmações tardias conservam a data do pagamento no depósito e a data
+    do registro no lançamento. Nunca reabre nem altera um caixa já fechado.
+    """
+    bd = banco(con)
+    bd.travar("cobranca.caixa_bancario")
+    hoje = agora.date().isoformat()
+    bd.escrever("""INSERT INTO cx_caixas (data, operador_nome, aberto_em, situacao)
+                    VALUES (%s, %s, %s, 'ABERTO')
+                    ON CONFLICT (data, operador_nome) DO NOTHING""",
+                (hoje, OPERADOR_DO_CAIXA_BANCARIO, _carimbo(agora)))
+    caixa = bd.um("""SELECT * FROM cx_caixas WHERE data = %s AND operador_nome = %s
+                      FOR UPDATE""", (hoje, OPERADOR_DO_CAIXA_BANCARIO))
+    if caixa["situacao"] != "ABERTO":
+        raise CobrancaError("O caixa bancário de hoje já foi fechado. O recebimento fica "
+                            "pendente de lançamento, sem reabrir o caixa conferido.")
+    return caixa
 
 
 def caixa_geral_de_hoje(con, hoje: date) -> dict | None:
@@ -657,36 +680,70 @@ def _depositar_cobranca(con, c: Mapping[str, Any], *, caixa_id: int, por: str,
 
 
 def entrar_no_caixa_geral(con, cobranca_id: int, *, por: str, agora: datetime) -> dict | None:
-    """A Parcela paga entra no caixa geral de hoje. Sem ele, fica pendente.
+    """Recebimento confirmado entra no caixa bancário, uma única vez.
 
-    Devolve o depósito, ou None quando ainda não há caixa geral aberto hoje,
-    quando o valor não veio, ou quando a cobrança não é da Parcela. Não quita
-    os itens do protocolo. Não usa o caixa de um escrevente.
+    Conserva o nome histórico da função para chamadores instalados. Usa o
+    depósito nativo e, se o valor cobre exatamente os itens pendentes, aplica
+    seu saldo pelo domínio. Sem nova entrada, sem selo e sem liberar ato.
     """
+    import caixa_depositos as DEP
+    from caixa_schema import centavos
     bd = banco(con)
     bd._escrita()
     c = bd.um("SELECT * FROM cb_cobrancas WHERE id = %s FOR UPDATE", (int(cobranca_id),))
-    if not c or c["banco"] != PARCELA:
+    if not c:
         return None
     if c["situacao"] != RECEBIDA or c["deposito_id"]:
         return None
-    caixa = caixa_geral_de_hoje(con, agora.date())
-    if not caixa or int(c["valor_recebido"] or 0) <= 0:
+    valor = int(c["valor_recebido"] or 0)
+    if valor <= 0 or c["forma_recebida"] not in ("PIX", "BOLETO", "CARTAO"):
         return None
-    return _depositar_cobranca(con, c, caixa_id=int(caixa["id"]), por=por, agora=agora)
+    try:
+        date.fromisoformat(str(c["data_pagamento"] or "")[:10])
+    except ValueError:
+        return None
+    referencia = c.get("banco_pagamento_id") or c.get("banco_id")
+    if not referencia:
+        return None
+    bd.travar(f"cobranca.recebimento:{c['banco']}:{c['ambiente']}:{referencia}")
+    duplicada = bd.um("""SELECT id FROM cb_cobrancas WHERE id <> %s AND banco = %s
+                         AND ambiente = %s AND (deposito_id IS NOT NULL OR caixa_lancamentos <> '[]')
+                         AND (banco_pagamento_id = %s OR banco_id = %s) LIMIT 1""",
+                       (int(c["id"]), c["banco"], c["ambiente"], referencia, c.get("banco_id") or referencia))
+    if duplicada:
+        _evento(bd, int(c["id"]), "LANCAR_NO_CAIXA", "PENDENTE",
+                "Recebimento já vinculado a outra cobrança. Confira antes de lançar.", por, _carimbo(agora))
+        return None
+    if recebimentos_manuais(bd, c):
+        _evento(bd, int(c["id"]), "LANCAR_NO_CAIXA", "PENDENTE",
+                "Há recebimento manual no mesmo protocolo, data e forma. Confira o vínculo "
+                "antes de lançar para não duplicar o dinheiro.", por, _carimbo(agora))
+        return None
+    itens = DEP.prender_itens_a_pagar(bd, c["protocolo_id"]) if c["protocolo_id"] else []
+    # Falha de contabilização não apaga a confirmação bancária. O savepoint
+    # desfaz caixa/depósito/uso juntos e a rodada seguinte retoma RECEBIDA.
+    try:
+        with bd.ponto_de_retorno("cobranca_entrada_bancaria"):
+            caixa = caixa_bancario(bd, agora=agora)
+            feito = _depositar_cobranca(bd, c, caixa_id=int(caixa["id"]), por=por, agora=agora)
+            if itens and all(centavos(i.get("valor_total")) > 0 for i in itens) and sum(
+                    centavos(i.get("valor_total")) for i in itens) == valor:
+                DEP.quitar_itens_com_o_deposito(
+                    bd, int(feito["id"]), itens, valor, agora=_carimbo(agora), quem=por)
+                _evento(bd, int(c["id"]), "APLICAR_NO_PROTOCOLO", "OK",
+                        "Saldo do recebimento aplicado aos itens, sem nova entrada.", por, _carimbo(agora))
+            return feito
+    except CobrancaError as erro:
+        _evento(bd, int(c["id"]), "LANCAR_NO_CAIXA", "PENDENTE", str(erro), por, _carimbo(agora))
+        return None
 
 
 def recolher_no_caixa_geral(con, *, por: str, agora: datetime) -> list[dict]:
-    """As Parcela já pagas entram no caixa geral que acabou de abrir. ESCREVE.
-
-    Sem caixa geral aberto hoje, não faz nada: continuam RECEBIDA. Não quita itens.
-    """
-    if not caixa_geral_de_hoje(con, agora.date()):
-        return []
+    """Retoma recebimentos confirmados ainda sem entrada. ESCREVE."""
     ids = [int(r["id"]) for r in banco(con).ler(
         """SELECT id FROM cb_cobrancas
-            WHERE banco = %s AND situacao = %s AND deposito_id IS NULL
-            ORDER BY id""", (PARCELA, RECEBIDA))]
+            WHERE situacao = %s AND deposito_id IS NULL
+            ORDER BY id""", (RECEBIDA,))]
     feitos = []
     for cobranca_id in ids:
         feito = entrar_no_caixa_geral(con, cobranca_id, por=por, agora=agora)
@@ -695,32 +752,66 @@ def recolher_no_caixa_geral(con, *, por: str, agora: datetime) -> list[dict]:
     return feitos
 
 
-def lancar_no_caixa(con, cobranca_id: int, *, por: str, agora: datetime,
-                    caixa_id: int | None) -> dict:
-    """A cobrança paga no Inter ou na Unicred vira depósito no caixa de quem clica.
+def recebimentos_manuais(con, c: Mapping[str, Any]) -> list[dict]:
+    """Possíveis registros anteriores do mesmo pagamento: nunca associa por palpite."""
+    if not c.get("protocolo_id") or not c.get("data_pagamento"):
+        return []
+    return banco(con).ler("""SELECT l.* FROM cx_lancamentos l
+        WHERE l.protocolo_id=%s AND l.data=%s AND l.forma_pagamento=%s
+          AND l.natureza='RECEBIMENTO' AND l.sentido='ENTRADA' AND coalesce(l.excluido,0)=0
+        ORDER BY l.id""", (c["protocolo_id"], str(c["data_pagamento"])[:10], c["forma_recebida"]))
 
-    A Parcela não passa por aqui: ela entra sozinha no caixa geral. O depósito
-    é `caixa_depositos.criar`. Não quita os itens.
 
-    SEM CAIXA ABERTO NÃO SE LANÇA: o depósito entraria fora do dia e a
-    conferência não bateria.
-    """
+def vincular_recebimento_existente(con, cobranca_id: int, *, ids: list[int], ciencia: bool,
+                                  motivo: str, por: str, papel: str, agora: datetime) -> dict:
+    """Conciliação individual autenticada; não cria nem altera movimento de caixa."""
+    if papel not in ("ADMIN", "MANAGER") or not ciencia or len(_texto(motivo, 500)) < 10:
+        raise CobrancaError("O oficial ou gerente deve confirmar o mesmo recebimento e justificar o vínculo.")
+    try:
+        escolhidos = sorted(set(int(i) for i in ids))
+    except (ValueError, TypeError):
+        raise CobrancaError("Os identificadores dos recebimentos não são válidos.") from None
+    if not escolhidos or len(escolhidos) > 100 or any(i <= 0 or i > 9223372036854775807 for i in escolhidos):
+        raise CobrancaError("Selecione os recebimentos já registrados deste pagamento.")
     bd = banco(con)
     bd._escrita()
+    bd.travar("cobranca.vinculo_caixa_existente")
+    c = bd.um("SELECT * FROM cb_cobrancas WHERE id=%s FOR UPDATE", (int(cobranca_id),))
+    if not c:
+        raise CobrancaError("Cobrança não encontrada.")
+    if c["situacao"] == LANCADA and json.loads(c.get("caixa_lancamentos") or '[]') == escolhidos:
+        return c
+    if c["situacao"] != RECEBIDA or c["deposito_id"] or int(c["valor_recebido"] or 0) <= 0:
+        raise CobrancaError("O banco precisa confirmar o recebimento antes do vínculo.")
+    linhas = bd.ler("SELECT * FROM cx_lancamentos WHERE id=ANY(%s) ORDER BY id FOR UPDATE", (escolhidos,))
+    candidatos = {r["id"] for r in recebimentos_manuais(bd, c)}
+    if len(linhas) != len(escolhidos) or not set(escolhidos) <= candidatos or sum(
+            centavos(l["valor"]) for l in linhas) != int(c["valor_recebido"]):
+        raise CobrancaError("Os lançamentos precisam ser entradas válidas do mesmo protocolo, data, forma e valor total confirmado.")
+    outros = bd.ler("SELECT id,caixa_lancamentos FROM cb_cobrancas WHERE id<>%s AND caixa_lancamentos<>'[]'",
+                    (int(cobranca_id),))
+    if any(set(escolhidos) & set(json.loads(r["caixa_lancamentos"])) for r in outros):
+        raise CobrancaError("Este recebimento já está vinculado a outra cobrança.")
+    bd.escrever("UPDATE cb_cobrancas SET situacao='LANCADA',caixa_lancamentos=%s WHERE id=%s",
+                (json.dumps(escolhidos), int(cobranca_id)))
+    _evento(bd, int(cobranca_id), "VINCULAR_CAIXA_EXISTENTE", "OK",
+            f"Lançamentos {escolhidos}; sem nova entrada. Motivo: {_texto(motivo,500)}", por, _carimbo(agora))
+    return cobranca(bd, cobranca_id)
+
+
+def lancar_no_caixa(con, cobranca_id: int, *, por: str, agora: datetime,
+                    caixa_id: int | None) -> dict:
+    """Compatibilidade da rota antiga: também usa somente o caixa bancário."""
+    bd = banco(con)
     c = bd.um("SELECT * FROM cb_cobrancas WHERE id = %s FOR UPDATE", (int(cobranca_id),))
     if not c:
         raise CobrancaError("Cobrança não encontrada.")
-    if c["banco"] == PARCELA:
-        raise CobrancaError(
-            "O pagamento da Parcela entra sozinho no caixa geral da serventia. "
-            "Não se lança no caixa de quem está atendendo.")
-    if c["situacao"] != RECEBIDA:
-        raise CobrancaError("Só se lança no caixa a cobrança que o banco diz que foi paga.")
-    if c["deposito_id"]:
-        raise CobrancaError("Esta cobrança já foi lançada no caixa.")
-    if not caixa_id:
-        raise CobrancaError("Abra o seu caixa antes de lançar: o depósito entra no caixa do dia.")
-    return _depositar_cobranca(con, c, caixa_id=int(caixa_id), por=por, agora=agora)
+    if c["deposito_id"] or c["situacao"] == LANCADA:
+        raise CobrancaError("Esta cobrança já foi lançada no caixa bancário.")
+    feito = entrar_no_caixa_geral(bd, cobranca_id, por=por, agora=agora)
+    if not feito:
+        raise CobrancaError("O lançamento automático no caixa bancário está pendente. Confira o histórico da cobrança.")
+    return feito
 
 
 # ------------------------------------------------- os pedidos ao banco
@@ -880,4 +971,4 @@ def para_acompanhar(con, *, banco_codigo: str, ambiente: str) -> list[dict]:
     return banco(con).ler(
         """SELECT * FROM cb_cobrancas WHERE banco = %s AND ambiente = %s
               AND situacao = ANY(%s) ORDER BY id""",
-        (banco_codigo, ambiente, list(EM_ABERTO)))
+        (banco_codigo, ambiente, [*EM_ABERTO, RECEBIDA]))

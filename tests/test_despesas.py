@@ -175,6 +175,10 @@ def _cadastrar(db, *, valor=12345, forma=DP.BOLETO, codigo=None, categoria="CONC
 
 def _autorizar(db, i, **kw):
     with db.transaction() as con:
+        d = DP.despesa(con, i)
+        kw.setdefault('recebedor_previo', {'nome': d['beneficiario_nome'],
+                      'documento': d['beneficiario_documento'], 'ciencia': True,
+                      'evidencia': 'Consulta ficticia do destinatario no banco'})
         return DP.autorizar(con, i, agora=AGORA, por="mario", papel="ADMIN", **kw)
 
 
@@ -307,6 +311,7 @@ def test_so_o_debito_no_extrato_leva_a_despesa_ao_livro_diario(casa):
                       categoria="FUNDO_FERJ", esperado=12345, valor=12345,
                       codigo=boleto(12345, "2026-11-11"), vencimento="2026-11-11")
     _autorizar(db, despesa)
+    _autorizar(db, guia)  # regra de guia não substitui a conferência prévia do destinatário
     INTER.pagar_autorizadas(db, cliente=casa["cliente"], por="t", agora=AGORA)
     r = INTER.conciliar(db, cliente=casa["cliente"], por="t", agora=AGORA)
     assert r["conciliadas"] == []                       # extrato vazio: nada conferido

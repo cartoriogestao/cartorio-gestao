@@ -17,7 +17,7 @@ O CONTRATO (OpenAPI de parceiros em docs.parcelaexpress.com.br, lida em
       → {id, url, token, status}. Um link só: o cliente escolhe Pix, boleto
       ou cartão. Não se emite um boleto e um Pix separados — seriam duas
       cobranças do mesmo ato.
-    - Consultar: GET /v1/payment-links/{token}.
+    - Consultar: GET /v1/sellers/{sellerId}/payment-links (autenticado).
     - Cancelar: POST /v1/payment-links/sellers/{sellerId}/{id}/cancel.
 
     O PDF do boleto não vem neste link. A tela mostra o endereço. A linha
@@ -68,13 +68,13 @@ VIDA_DO_TOKEN = 50 * 60
 FORMAS = ("pix", "billet", "card")
 
 SITUACAO_PAGA = frozenset({
-    "PAID", "SUCCEEDED", "APPROVED", "CONFIRMED", "CAPTURED", "PAID_OUT",
-    "SUCCESS",
+    "PAID", "SUCCEEDED", "CAPTURED", "PAID_OUT",
 })
 SITUACAO_CANCELADA = frozenset({"CANCELED", "CANCELLED", "VOIDED", "INACTIVE"})
 SITUACAO_BAIXADA = frozenset({"EXPIRED", "EXPIRADO"})
 FORMA = {
     "PIX": "PIX",
+    "PIX_POS": "PIX",
     "BILLET": "BOLETO",
     "BOLETO": "BOLETO",
     "CREDIT": "CARTAO",
@@ -221,13 +221,26 @@ def transporte_https(prazo: int = PRAZO_SEGUNDOS) -> Transporte:
 
 
 def _frase(corpo: Any) -> str:
-    if isinstance(corpo, dict):
-        for chave in ("message", "error", "erro", "detail"):
-            if corpo.get(chave):
-                return CB._texto(corpo[chave], 300)
-    if isinstance(corpo, (bytes, bytearray)):
-        return CB._texto(corpo.decode("utf-8", "replace"), 300)
-    return CB._texto(corpo, 300)
+    """Mensagens de validação, limitadas; não expõe target/value/headers."""
+    fila = [corpo]
+    partes = []
+    for _ in range(40):
+        if not fila:
+            break
+        atual = fila.pop(0)
+        if isinstance(atual, dict):
+            for chave in ("message", "error", "erro", "detail", "errors"):
+                if atual.get(chave):
+                    fila.append(atual[chave])
+            if isinstance(atual.get("constraints"), dict):
+                fila.extend(list(atual["constraints"].values())[:10])
+        elif isinstance(atual, list):
+            fila.extend(atual[:10])
+        elif isinstance(atual, str):
+            frase = CB._texto(atual, 300)
+            if frase and frase not in partes:
+                partes.append(frase)
+    return " · ".join(partes)[:600]
 
 
 def _primeiro(corpo: Mapping[str, Any], *chaves: str) -> str:
@@ -251,6 +264,7 @@ class ClienteCobrancaParcela:
     """A API de links da Parcela Express, por um transporte injetável."""
 
     banco = CB.PARCELA
+    fornece_pdf = False
 
     def __init__(self, ambiente: str, transporte: Transporte, campos: dict):
         self.ambiente = ambiente if ambiente in ENDERECOS else "sandbox"
@@ -376,23 +390,74 @@ class ClienteCobrancaParcela:
             return "pos:" + (ident or servico)
         if r.status >= 500:
             raise Indisponivel(f"A maquininha não respondeu (HTTP {r.status}).")
-        raise Recusa(_frase(r.corpo) or
-                     f"A Parcela Express não enviou à maquininha (HTTP {r.status}).")
+        detalhe = _frase(r.corpo)
+        raise Recusa(f"A Parcela Express não enviou à maquininha (HTTP {r.status}). {detalhe}".strip())
 
     def consultar(self, c: Mapping[str, Any]) -> dict | None:
         ident = str(c.get("banco_id") or "").strip()
         if ident.startswith("pos:"):
             return self._consultar_maquina(ident[4:])
-        token = ident
-        r = self._ir("GET", "/v1/payment-links/" + urllib_quote(token))
-        if r.status == 404:
+        corpo = self._link_do_estabelecimento(ident)
+        if corpo is None:
             return None
-        if r.status == 200 and isinstance(r.corpo, dict):
-            return ler(r.corpo)
-        if r.status >= 500:
-            raise Indisponivel(f"A Parcela Express não consultou (HTTP {r.status}).")
-        raise Recusa(_frase(r.corpo) or
-                     f"A Parcela Express recusou a consulta (HTTP {r.status}).")
+        lido = ler(corpo)
+        if lido.get("situacao") == CB.RECEBIDA and (
+                lido.get("valor_recebido") != int(c["valor"]) or _centavos(corpo.get("amount")) != int(c["valor"])):
+            venda = corpo.get("sale") or {}
+            # Apenas números do link já identificado, para conferir principal e
+            # encargos. Nunca registra corpo completo, credencial ou pagador.
+            valores = {k: v if isinstance(v, (int, float)) or (
+                       isinstance(v, str) and re.fullmatch(r"\d{1,15}(?:\.\d{1,4})?", v)) else None
+                       for k, v in {"link_amount": corpo.get("amount"),
+                                    "sale_amount": venda.get("amount"),
+                                    "sale_original_amount": venda.get("original_amount")}.items()}
+            raise Recusa("O valor pago na Parcela difere da cobrança. "
+                         f"Esperado {int(c['valor'])} centavos; campos numéricos da API: {json.dumps(valores)}. "
+                         "Confira principal e encargos antes de lançar.")
+        return lido
+
+    def _link_do_estabelecimento(self, ident: str) -> dict | None:
+        """O checkout público recusa links pagos/expirados. Nunca é conciliação.
+
+        A API guarda tanto id como token; instalações antigas guardam token.
+        Percorre a paginação inteira, sem escolher por valor/nome ou emitir de novo.
+        """
+        if not ident:
+            return None
+        achado = None
+        for pagina in range(1, 1001):
+            caminho = (f"/v1/sellers/{urllib_quote(self._campos['seller_id'])}/payment-links"
+                       f"?limit=100&current_page={pagina}")
+            r = self._ir("GET", caminho)
+            if r.status >= 500 or r.status == 429:
+                raise Indisponivel(f"A Parcela Express não consultou (HTTP {r.status}).")
+            if r.status != 200 or not isinstance(r.corpo, dict):
+                raise Recusa(_frase(r.corpo) or "A Parcela recusou a consulta do estabelecimento.")
+            linhas = r.corpo.get("results")
+            if not isinstance(linhas, list) or any(not isinstance(v, dict) for v in linhas):
+                raise Recusa("A Parcela devolveu uma lista de cobranças incompleta.")
+            for v in linhas:
+                if ident not in (str(v.get("id") or ""), str(v.get("token") or "")):
+                    continue
+                seller = v.get("seller") or {}
+                if not isinstance(seller, dict) or (seller.get("id") and
+                        str(seller["id"]) != self._campos["seller_id"]):
+                    raise Recusa("A cobrança retornada pertence a outro estabelecimento.")
+                if achado is not None:
+                    raise Recusa("A Parcela retornou cobranças duplicadas. Confira a identificação.")
+                achado = v
+            if r.corpo.get("has_more") is False:
+                return achado
+            try:
+                total = int(r.corpo["total_pages"])
+                atual = int(r.corpo["current_page"])
+            except (KeyError, ValueError, TypeError):
+                raise Recusa("A Parcela não informou a paginação completa.") from None
+            if atual != pagina or total < pagina:
+                raise Recusa("A paginação da Parcela está inconsistente.")
+            if pagina == total:
+                return achado
+        raise Recusa("A consulta da Parcela excedeu o limite de páginas; nenhuma baixa foi feita.")
 
     def procurar(self, c: Mapping[str, Any], *, data_inicial: str, data_final: str) -> None:
         return None
@@ -414,7 +479,7 @@ class ClienteCobrancaParcela:
             return {"situacao": CB.ABERTA, "banco_status": "NA_MAQUINA",
                     "banco_motivo": "Aguardando o pagamento na maquininha."}
         if r.status == 200 and isinstance(r.corpo, dict):
-            lido = ler(r.corpo if "status" in r.corpo or "sale" in r.corpo
+            lido = ler(r.corpo if isinstance(r.corpo.get("sale"), dict)
                        else {"sale": r.corpo, "status": r.corpo.get("status")})
             lido.setdefault("banco_motivo", "Pagamento na maquininha.")
             return lido
@@ -440,11 +505,12 @@ class ClienteCobrancaParcela:
                 return ""
             raise Recusa(_frase(r.corpo) or
                          f"A maquininha não cancelou (HTTP {r.status}).")
-        token = ident
-        atual = self._ir("GET", "/v1/payment-links/" + urllib_quote(token))
-        identificador = token
-        if atual.status == 200 and isinstance(atual.corpo, dict) and atual.corpo.get("id"):
-            identificador = str(atual.corpo["id"])
+        atual = self._link_do_estabelecimento(ident)
+        if not atual or not atual.get("id"):
+            raise Recusa("A Parcela não localizou a cobrança para cancelar.")
+        if str(atual.get("status") or "").upper() == "PAID":
+            raise Recusa("A cobrança já foi paga; consulte o pagamento antes de qualquer cancelamento.")
+        identificador = str(atual["id"])
         caminho = (f"/v1/payment-links/sellers/{self._campos['seller_id']}/"
                    f"{urllib_quote(identificador)}/cancel")
         r = self._ir("POST", caminho, json_corpo={})
@@ -464,8 +530,10 @@ def _centavos(valor: Any) -> int | None:
     """Inteiro da Parcela Express é centavo. Texto com ponto é real."""
     if valor is None or valor == "":
         return None
-    if isinstance(valor, int):
-        return valor
+    if isinstance(valor, (int, float)) and not isinstance(valor, bool):
+        from decimal import Decimal
+        numero = Decimal(str(valor))
+        return int(numero) if numero.is_finite() and numero == numero.to_integral_value() else None
     texto = str(valor).strip()
     if texto.isdigit():
         return int(texto)
@@ -492,17 +560,35 @@ def ler(corpo: Mapping[str, Any]) -> dict:
         "pix_copia_e_cola": _primeiro(corpo, "qrcode_data", "qrCodeData", "pixCopiaECola"),
         "nosso_numero": _primeiro(corpo, "nosso_numero", "nossoNumero"),
     }
-    if status_venda in SITUACAO_PAGA:
-        saida["situacao"] = CB.RECEBIDA
-        saida["forma_recebida"] = FORMA.get(forma_bruta, "BOLETO")
+    if status_venda in SITUACAO_PAGA or status_link == "PAID":
+        # Link pago sem venda liquidada, método, data ou valor não é prova
+        # suficiente para gerar caixa. Não usar data de consulta nem BOLETO por padrão.
+        from datetime import datetime
+        forma = FORMA.get(forma_bruta)
+        # amount é o valor da venda. original_amount pode incluir acréscimos
+        # ao pagador. O link e a venda devem bater com o principal cadastrado.
         valor = _centavos(venda.get("amount"))
-        if valor is None:
-            valor = _centavos(corpo.get("amount"))
-        if valor:
-            saida["valor_recebido"] = valor
-        quando = str(venda.get("updated_at") or "")[:10]
-        if quando:
-            saida["data_pagamento"] = quando
+        quando = str(venda.get("updated_at") or "")
+        try:
+            dt = datetime.fromisoformat(quando.replace("Z", "+00:00"))
+        except ValueError:
+            raise Recusa("A Parcela informou pagamento sem data válida de liquidação.") from None
+        if not venda.get("id") or status_venda not in SITUACAO_PAGA or not forma or not valor or valor <= 0:
+            raise Recusa("A Parcela informou pagamento sem os dados da venda liquidada. Confira no portal.")
+        if dt.tzinfo is not None:
+            from datetime import timedelta, timezone
+            dt = dt.astimezone(timezone(timedelta(hours=-3)))
+        saida["situacao"] = CB.RECEBIDA
+        saida["banco_pagamento_id"] = str(venda["id"])
+        saida["forma_recebida"] = forma
+        saida["valor_recebido"] = valor
+        saida["data_pagamento"] = dt.date().isoformat()
+        original = _centavos(venda.get("original_amount"))
+        if original is not None and original != valor:
+            from caixa_schema import reais
+            saida["banco_motivo"] = (f"Valor da venda: R$ {reais(valor)}; campo original_amount da Parcela: "
+                                     f"R$ {reais(original)}. Diferença fora do principal da cobrança: "
+                                     f"R$ {reais(original - valor)}; não somada ao recebimento.")
     elif status_venda in SITUACAO_CANCELADA or status_link in SITUACAO_CANCELADA:
         saida["situacao"] = CB.CANCELADA
     elif status_venda in SITUACAO_BAIXADA or status_link in SITUACAO_BAIXADA:

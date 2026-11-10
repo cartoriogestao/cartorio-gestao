@@ -8,6 +8,16 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.16 — Malote com anexos na lista de atenção e integração com o agente local
+
+Desde a 3.7.15. Para a instalação ainda na 3.7.10, gerar pacote cumulativo com
+`--desde v3.7.10` e conferir as alterações locais antes de aplicar.
+
+- A lista de atenção para fraudes permite juntar a circular e seus anexos aos alertas já cadastrados. Os PDFs originais ficam disponíveis para ver e baixar, sem criar expediente ou tarefa apenas para arquivar o aviso.
+- O robô pode fazer a triagem depois do cadastro e retomar o que ficou pendente. A distribuição separa trabalho técnico, conferência/impressão, digitalização, RCPN e Protesto/Livro E, com responsáveis escolhidos na tela.
+- O agente local pode consultar, solicitar e acompanhar a rotina por ferramentas fixas, sem receber senha ou escolher arquivos e pessoas. Pedidos repetidos e rodadas em andamento são reconhecidos.
+- PDF sem texto legível ou com leitura incompleta continua pendente de OCR/conferência. A rotina não responde ao remetente e não pratica atos.
+
 ## 3.7.15 — Parcela no caixa bancário, avisos falsos do Protesto, dispositivo lembrado e a suíte verde
 
 Desde a 3.7.14.

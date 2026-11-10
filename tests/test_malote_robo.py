@@ -8,6 +8,7 @@ falsa, e o cofre é um dicionário em memória.
 from __future__ import annotations
 
 import json
+import re
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -31,6 +32,8 @@ PAGINA_LOGIN = """<html><body><p>Habilitado duplo fator de acesso (2FA).</p>
 
 PAGINA_2FA = """<html><body><p>Informe o código de verificação enviado ao seu e-mail.</p>
 <form id="f2fa" method="post" action="/malotedigital/login.jsf">
+<input type="text" name="Login" value="robo">
+<input type="password" name="Senha" value="segredo">
 <input type="text" name="f2fa:codigo" id="f2fa:codigo" value="">
 <input type="submit" name="f2fa:confirmar" value="Confirmar">
 <input type="hidden" name="javax.faces.ViewState" value="vs2">
@@ -82,6 +85,8 @@ class MaloteFalso:
         self.cookies = RequestsCookieJar()
 
     def get(self, url, timeout=None):
+        if self.cookies.get("aparelho") == "lembrado":
+            self.logado = True
         if url.endswith("login.jsf"):
             return Resposta(PAGINA_INICIAL if self.logado else PAGINA_LOGIN, url)
         if url.endswith("inicial.jsf"):
@@ -94,6 +99,12 @@ class MaloteFalso:
         from urllib.parse import parse_qsl
         pares = dict(parse_qsl(data.decode()))
         self.posts.append(pares)
+        if "f2fa:codigo" in pares:
+            if pares["f2fa:codigo"] == self.codigo_certo:
+                self.logado = True
+                self.cookies.set("aparelho", "lembrado", domain="malote.tjma.jus.br", path="/")
+                return Resposta(PAGINA_INICIAL, url)
+            return Resposta(PAGINA_2FA, url)
         if "Login" in pares:
             if pares.get("Senha") != self.senha_certa:
                 return Resposta(PAGINA_LOGIN, url)
@@ -102,12 +113,6 @@ class MaloteFalso:
                 return Resposta(PAGINA_2FA, url)
             self.logado = True
             return Resposta(PAGINA_INICIAL, url)
-        if "f2fa:codigo" in pares:
-            if pares["f2fa:codigo"] == self.codigo_certo:
-                self.logado = True
-                self.cookies.set("aparelho", "lembrado", domain="malote.tjma.jus.br", path="/")
-                return Resposta(PAGINA_INICIAL, url)
-            return Resposta(PAGINA_2FA, url)
         if "menuLateral:m:naoLidos" in pares:
             return Resposta(_lista(sorted(self.nao_lidos.items())), url)
         if pares.get("idDocumentoLeitura"):
@@ -169,6 +174,12 @@ def arquivos(tmp_path, monkeypatch):
     monkeypatch.setattr(MA, "archive_root_de", lambda pasta, con=None: tmp_path / "arquivos")
     monkeypatch.setattr(MA, "capa_do_pdf", lambda caminho: {
         "codigo": caminho.read_bytes().decode().split()[-1], "nome_original": "oficio.pdf"})
+    monkeypatch.setattr(MA, "usuario_responsavel", lambda con: 1)
+    monkeypatch.setattr(MA, "pasta_do_malote", lambda con: None)
+    monkeypatch.setattr(MA, "medir", lambda con, dados, pasta: {
+        "cadastrados": 0, "erros": [], "grupos": [
+            {"nome": p.name, "situacao": "A_CADASTRAR", "nota": ""}
+            for p in (tmp_path / "arquivos" / MA.SUBPASTA_ENTRADA).glob("*.pdf")]})
     return tmp_path / "arquivos"
 
 
@@ -192,6 +203,14 @@ def test_reconhece_as_tres_paginas():
     assert MR.pagina(PAGINA_INICIAL) == MR.LOGADO
     assert MR.pagina(PAGINA_2FA) == MR.DOIS_FATORES
     assert MR.pagina("<html><body>outra coisa</body></html>") == MR.DESCONHECIDA
+
+
+def test_mfa_com_login_e_senha_nao_e_recusa_de_senha():
+    pagina = PAGINA_2FA.replace("Informe o código de verificação enviado ao seu e-mail.", "Código MFA:")
+    assert MR.pagina(pagina) == MR.DOIS_FATORES
+    # Um campo desabilitado não é um pedido de código disponível para enviar.
+    pagina = pagina.replace('name="f2fa:codigo"', 'disabled name="f2fa:codigo"')
+    assert MR.pagina(pagina) == MR.LOGIN
 
 
 def test_a_lista_traz_id_e_codigo_de_rastreabilidade():
@@ -241,6 +260,80 @@ def test_nada_nao_lido_nao_copia_nem_cadastra(tmp_path, monkeypatch, arquivos):
     assert r["situacao"] == "OK" and chamadas == [] and r["relato"] == "Nenhum documento não lido no malote."
 
 
+@pytest.mark.parametrize("inexistente", [False, True])
+def test_sem_responsavel_nao_da_ciencia(tmp_path, monkeypatch, arquivos, inexistente):
+    import malote_agente as MA
+    CofreNaMemoria({MR.CREDENCIAL: {"usuario": "robo", "senha": "segredo"}}).instalar(monkeypatch)
+
+    def responsavel(con):
+        if inexistente:
+            raise MA.MaloteError("O usuário configurado não existe. Confira em Configurações.")
+        return None
+    monkeypatch.setattr(MA, "usuario_responsavel", responsavel)
+    malote = MaloteFalso({"101": "81020265990001"})
+    r, chamadas = _rodar(_ctx(tmp_path), malote)
+    assert r["situacao"] == "AVISO" and malote.lidos == [] and chamadas == []
+    assert "Nenhum documento aberto" in r["relato"]
+
+
+@pytest.mark.parametrize("situacao", ["FRAUDE_PENDENTE", "SEM_RESPONSAVEL", "PARCIAL"])
+def test_pendencia_de_inclusao_nao_vira_sucesso(tmp_path, monkeypatch, arquivos, situacao):
+    import malote_agente as MA
+    CofreNaMemoria({MR.CREDENCIAL: {"usuario": "robo", "senha": "segredo"}}).instalar(monkeypatch)
+    monkeypatch.setattr(MA, "medir", lambda *a: {"grupos": [
+        {"nome": "oficio.pdf", "situacao": "A_CADASTRAR", "nota": ""}]})
+    r = MR.ciencia_diaria(_ctx(tmp_path), cliente=MR.ClienteMalote(MaloteFalso({})),
+        copiar=lambda *a: "copia.sqlite3", cadastrar=lambda con: {
+            "grupos": [{"nome": "oficio.pdf", "situacao": situacao, "nota": "Confira a pendência."}]})
+    assert r["situacao"] == "AVISO"
+    assert "1 grupo(s) pendente(s)" in r["relato"]
+    assert r["achados"][-1]["situacao"] == situacao
+
+
+def test_retorna_ao_pdf_baixado_apos_falha_sem_novo_nao_lido(cg_casa, tmp_path, monkeypatch):
+    """Portal falso, cofre em memória e PostgreSQL isolado: ciência uma vez,
+    backup falha; próxima rodada inclui o PDF e a terceira não o duplica."""
+    import malote_agente as MA
+    db = cg_casa["db"]
+    db.create_user("beatriz", "Beatriz Exemplo de Souza", "Senha#12345", "ADMIN")
+    raiz = tmp_path / "acervo_configurado"
+    db.set_settings({"archive_root": str(raiz), "malote_cadastra_em_nome_de": "beatriz"})
+    CofreNaMemoria({MR.CREDENCIAL: {"usuario": "robo", "senha": "segredo"}}).instalar(monkeypatch)
+    monkeypatch.setattr(MA, "capa_do_pdf", lambda p: {
+        "codigo": "81020265990001", "nome_original": "oficio.pdf", "assunto": "Ofício de exemplo"})
+    ctx = SimpleNamespace(db=db, pasta_dados=cg_casa["dados"], processo={"pode_agir": True})
+    malote = MaloteFalso({"101": "81020265990001"})
+    copias = []
+
+    def copiar(con, banco):
+        copias.append(banco)
+        if len(copias) == 1:
+            raise OSError("destino da cópia indisponível")
+        return "copia.sqlite3"
+
+    r = MR.ciencia_diaria(ctx, cliente=MR.ClienteMalote(malote), copiar=copiar)
+    assert r["situacao"] == "ERRO" and malote.lidos == ["101"] and not malote.nao_lidos
+    assert list((raiz / MA.SUBPASTA_ENTRADA).glob("*.pdf"))
+    assert not (cg_casa["dados"] / "arquivos" / MA.SUBPASTA_ENTRADA).exists()
+    with db.connect() as con:
+        assert con.execute("SELECT count(*) FROM expedientes").fetchone()[0] == 0
+        medicao = MA.medir(con, cg_casa["dados"], None)
+        assert medicao["grupos"][0]["situacao"] == "A_CADASTRAR"
+
+    for esperado in (1, 0):
+        r = MR.ciencia_diaria(ctx, cliente=MR.ClienteMalote(malote), copiar=copiar)
+        assert r["situacao"] == "OK", r
+        if esperado:
+            assert "1 expediente(s)" in r["relato"]
+        else:
+            assert r["relato"] == "Nenhum documento não lido no malote."
+        with db.connect() as con:
+            assert con.execute("SELECT count(*) FROM expedientes").fetchone()[0] == 1
+            a = con.execute("SELECT stored_path FROM attachments WHERE entity_type='EXPEDIENTE'").fetchone()
+            assert Path(a[0]).is_relative_to(raiz) and Path(a[0]).is_file()
+    assert len(copias) == 2 and malote.lidos == ["101"]
+
+
 def test_sem_credencial_e_erro_com_o_caminho(tmp_path, monkeypatch, arquivos):
     CofreNaMemoria().instalar(monkeypatch)
     r, _ = _rodar(_ctx(tmp_path), MaloteFalso({"101": "1"}))
@@ -275,6 +368,21 @@ def test_o_2fa_espera_o_codigo_e_retoma_a_mesma_sessao(tmp_path, monkeypatch, ar
     assert MR.CODIGO not in cofre.itens                             # usado, apagado
     assert any(c["name"] == "aparelho" for c in json.loads(cofre.itens[MR.SESSAO]["campos"]["cookies"]))
     assert "formulario_2fa" not in cofre.itens[MR.SESSAO]["campos"]
+    # Outro cliente, na próxima rodada, usa o pote do cofre sem novo login/2FA.
+    malote3 = MaloteFalso({}, pede_codigo=True)
+    r, _ = _rodar(_ctx(tmp_path), malote3)
+    assert r["situacao"] == "OK"
+    assert not any("Login" in p or "f2fa:codigo" in p for p in malote3.posts)
+
+
+def test_diagnostico_do_mfa_so_guarda_estrutura(tmp_path, arquivos):
+    pagina = PAGINA_2FA.replace('value="vs2"', "value='estado-secreto'") + (
+        "<script>token='token-secreto'</script><p>contato-privado@example.test</p>")
+    alvo = MR._guardar_pagina_para_conferir(_ctx(tmp_path), pagina, "pedido_do_codigo")
+    salvo = Path(alvo).read_text(encoding="utf-8")
+    assert "f2fa:codigo" in salvo and "javax.faces.ViewState" in salvo
+    assert all(segredo not in salvo for segredo in (
+        "segredo", "estado-secreto", "token-secreto", "contato-privado@example.test"))
 
 
 def test_codigo_velho_nao_e_usado(tmp_path, monkeypatch, arquivos):
@@ -372,3 +480,72 @@ def test_o_formulario_do_malote_guarda_o_cpf_como_usuario(monkeypatch):
     assert r.status_code == 302
     assert cofre.itens[MR.CREDENCIAL]["campos"] == {"usuario": "00011122233", "senha": "segredo"}
     assert "segredo" not in repr(auditoria) and "00011122233" not in repr(auditoria)
+
+
+def test_tela_escolhe_responsavel_ativo_e_audita(cg_casa_logada):
+    casa = cg_casa_logada
+    db, c = casa["db"], casa["c"]
+    db.create_user("beatriz", "Beatriz Exemplo de Souza", "Senha#12345", "USER")
+    tela = c.get("/automacao/malote/codigo").get_data(as_text=True)
+    csrf = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', tela).group(1)
+    r = c.post("/automacao/malote/responsavel", data={"responsavel_malote": "beatriz", "csrf_token": csrf})
+    assert r.status_code == 302
+    assert db.get_setting("malote_cadastra_em_nome_de") == "beatriz"
+    with db.connect() as con:
+        log = con.execute("SELECT details FROM audit_logs WHERE action='MALOTE_ROBO_RESPONSAVEL'").fetchone()
+        assert json.loads(log[0])["em_nome_de"] == "beatriz"
+    r = c.get("/automacao/malote/codigo")
+    assert r.status_code == 200
+    assert b'name="responsavel_malote"' in r.data
+    assert b'value="beatriz" selected' in r.data
+    with db.connect() as con:
+        ident = con.execute("SELECT id FROM users WHERE username='beatriz'").fetchone()[0]
+    db.set_user_active(ident, False)
+    # Inativo, inexistente ou vazio: a configuração anterior não é sobrescrita.
+    for login in ("beatriz", "ninguem", ""):
+        r = c.post("/automacao/malote/responsavel", data={"responsavel_malote": login, "csrf_token": csrf})
+        assert r.status_code == 302 and db.get_setting("malote_cadastra_em_nome_de") == "beatriz"
+
+
+def test_escolher_responsavel_exige_admin(cg_casa):
+    from conftest import cg_login
+    db, c = cg_casa["db"], cg_casa["c"]
+    r = c.post("/automacao/malote/responsavel", data={"responsavel_malote": "beatriz"})
+    assert r.status_code in (302, 403)
+    db.create_user("beatriz", "Beatriz Exemplo de Souza", "Senha#12345", "USER")
+    cg_login(c, "beatriz", "Senha#12345")
+    with c.session_transaction() as sessao:
+        csrf = sessao["csrf_token"]
+    r = c.post("/automacao/malote/responsavel", data={"responsavel_malote": "beatriz", "csrf_token": csrf})
+    assert r.status_code == 403
+    assert db.get_setting("malote_cadastra_em_nome_de") == ""
+
+
+def test_fluxo_com_triagem_retorna_pendencia_e_retoma_sem_novo_documento(tmp_path, monkeypatch, arquivos):
+    import malote_fluxo as FL
+    import malote_agente as MA
+    cofre = CofreNaMemoria({MR.CREDENCIAL: {'usuario': '00011122233', 'senha': 'segredo'}})
+    cofre.instalar(monkeypatch)
+    monkeypatch.setattr(FL, 'conferir_distribuicao', lambda con: {})
+    monkeypatch.setattr(MA, 'medir', lambda *a: {'cadastrados': 0, 'grupos': [], 'erros': []})
+    ctx = _ctx(tmp_path)
+    ctx.processo['parametros'] = {'triar_recebidos': True}
+    chamadas = []
+    def triagem(*a, **kw):
+        chamadas.append(kw)
+        return {'triados': 0, 'tarefas': 0, 'pendentes': 1}
+    r = MR.ciencia_diaria(ctx, cliente=MR.ClienteMalote(MaloteFalso({})), triar=triagem)
+    assert r['situacao'] == 'ERRO' and 'triagem pendente' in r['relato']
+    assert chamadas == [{'somente_malote': True}]
+
+
+def test_distribuicao_incompleta_para_antes_da_ciencia(tmp_path, monkeypatch, arquivos):
+    import malote_fluxo as FL
+    cofre = CofreNaMemoria({MR.CREDENCIAL: {'usuario': '00011122233', 'senha': 'segredo'}})
+    cofre.instalar(monkeypatch)
+    def recusa(*a):raise FL.FluxoMaloteError('falta responsável')
+    monkeypatch.setattr(FL, 'conferir_distribuicao', recusa)
+    ctx = _ctx(tmp_path); ctx.processo['parametros'] = {'triar_recebidos': True}
+    portal = MaloteFalso({'1': '81000000000001'})
+    r = MR.ciencia_diaria(ctx, cliente=MR.ClienteMalote(portal))
+    assert r['situacao'] == 'AVISO' and not portal.lidos

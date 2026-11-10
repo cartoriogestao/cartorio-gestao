@@ -919,10 +919,13 @@
       <small>Guarda os textos para continuar depois. A confirmação de responsabilidade é feita ao lançar o ato.</small>
     </div>
     {% endif %}
-    <div class="actions"><button class="button">Lançar {{ rotulo_do_ato(ato) | lower if abas else ato | lower }}</button></div>
-
     {{ quadro(receitas.get(ato), caixa, protocolos, form=v_ato,
               diferido=(cob and cob.diferir)) }}
+
+    {# O BOTÃO FICA NO FIM (relato #146): o quadro de cobrança traz protocolo,
+       itens a selar, pagador e forma de pagamento, e o botão antes dele fazia
+       lançar o ato com metade do formulário ainda por preencher. #}
+    <div class="actions"><button class="button">Lançar {{ rotulo_do_ato(ato) | lower if abas else ato | lower }}</button></div>
   </form>
   {% if abas %}</details>{% endif %}
   {% endfor %}

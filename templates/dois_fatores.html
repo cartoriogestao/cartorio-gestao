@@ -21,6 +21,18 @@
 </section>
 
 <section class="panel">
+  <h2>Dispositivos lembrados</h2>
+  <p>A opção de lembrar dispensa o código nos próximos logins por até 30 dias, mas mantém a senha.
+  Esqueça os dispositivos se compartilhou o computador ou perdeu acesso a ele.</p>
+  <form method="post" action="{{ url_for('dois_fatores') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Sua senha <input type="password" name="senha" required autocomplete="current-password"></label>
+    <label>Código <input name="codigo" autocomplete="one-time-code" required></label>
+    <button type="submit">Esquecer todos os dispositivos</button>
+  </form>
+</section>
+
+<section class="panel">
   <h2>Gerar novos códigos de recuperação</h2>
   <p class="muted">Os dez de agora deixam de valer.</p>
   <form method="post" action="{{ url_for('dois_fatores_codigos') }}">

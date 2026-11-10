@@ -124,7 +124,16 @@ def verificar_cra(ctx: Contexto) -> dict:
     lado de lá, e baixar sem receber no sistema faria a remessa sumir das duas
     pontas. A medida é o log das Centrais (`centrais_log`), onde toda chamada
     da CRA feita pelo sistema fica anotada.
+
+    EM DIA SEM EXPEDIENTE NÃO HÁ REMESSA A BAIXAR. A agenda só conhece o dia da
+    semana, e o aviso de 02/11/2026 (Finados) cobrou do balcão a remessa de um
+    feriado nacional. Feriado nacional, estadual ou municipal (a lista de
+    `ri_feriados_locais`) responde OK sem falar com a Central.
     """
+    from ri_schema import eh_dia_util
+    if not eh_dia_util(ctx.hoje, ctx.feriados()):
+        return resultado(SCH.OK, f"Hoje ({ctx.hoje:%d/%m/%Y}) não é dia útil: não há "
+                         "remessa da CRA a cobrar.", [{"dia_util": False}])
     import centrais_cred as CRED
     if not CRED.tem(CRED.CRA, CRED.PRODUCAO, ctx.pasta_dados):
         return _sem_credencial("CRA", "Administrativo → Configurações → Centrais")

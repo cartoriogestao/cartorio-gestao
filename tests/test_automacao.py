@@ -625,6 +625,22 @@ def test_central_sem_credencial_e_aviso_e_nao_queda(casa, tmp_path):
         assert r["situacao"] == SCH.AVISO and "credencial" in r["relato"]
 
 
+def test_cra_em_feriado_nao_cobra_a_remessa(casa, tmp_path):
+    """02/11/2026 (Finados) gerou «Ninguém baixou a remessa da CRA hoje» às
+    11:30 e às 14:10. Em dia sem expediente a verificação responde OK antes de
+    olhar credencial ou Central."""
+    db = casa["db"]
+    finados = PROC.Contexto(db=db, agora=datetime(2026, 11, 2, 11, 30), pasta_dados=tmp_path,
+                            raiz=RAIZ, processo={"codigo": "T", "parametros": {}})
+    r = PROC.verificar_cra(finados)
+    assert r["situacao"] == SCH.OK and "não é dia útil" in r["relato"]
+    sabado = PROC.Contexto(db=db, agora=datetime(2026, 10, 31, 11, 30), pasta_dados=tmp_path,
+                           raiz=RAIZ, processo={"codigo": "T", "parametros": {}})
+    assert PROC.verificar_cra(sabado)["situacao"] == SCH.OK
+    # dia útil continua cobrando (aqui, pela falta da credencial)
+    assert PROC.verificar_cra(_ctx(db, tmp_path))["situacao"] == SCH.AVISO
+
+
 def test_o_sirc_vazio_esta_em_dia(casa, tmp_path):
     assert PROC.verificar_sirc(_ctx(casa["db"], tmp_path))["situacao"] == SCH.OK
 

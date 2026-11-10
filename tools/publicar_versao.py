@@ -4,7 +4,7 @@ Oficial, 02/11/2026: a atualização sai do GitHub, com a senha do oficial, sem 
 Esta ferramenta é o outro lado: roda NA MÁQUINA DO OFICIAL, onde está a chave de assinatura, e faz o que
 antes eram passos à mão:
 
-    python tools/publicar_versao.py --versao 3.7.14 --desde v3.7.13 --chave E:\\chave_cartorio.pem
+    python tools/publicar_versao.py --versao 3.7.15 --desde v3.7.14 --chave E:\\chave_cartorio.pem
 
 1. monta o pacote a partir da etiqueta `v<versão>` (uma cópia limpa dela, e não a pasta de trabalho);
 2. `--desde`: só o que mudou desde a versão anterior — o atualizador da 3.7.8 recusa o pacote completo;

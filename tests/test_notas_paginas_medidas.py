@@ -207,6 +207,10 @@ def test_termo_maior_que_o_reservado_nao_sai(serventia, medida):
 
 # ------------------------------------------------------------- o LibreOffice
 
+# O teste abaixo converte de verdade: o conftest não esconde o LibreOffice aqui.
+USA_O_LIBREOFFICE_DE_VERDADE = True
+
+
 def test_contra_o_libreoffice_o_termo_fecha_as_folhas_reservadas(serventia):
     import impressao_pdf as IPDF
     if IPDF.onde_esta_o_conversor() is None:

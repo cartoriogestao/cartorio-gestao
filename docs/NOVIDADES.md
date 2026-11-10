@@ -8,6 +8,49 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.16 — Malote com anexos na lista de atenção e integração com o agente local
+
+Desde a 3.7.15. Para a instalação ainda na 3.7.10, gerar pacote cumulativo com
+`--desde v3.7.10` e conferir as alterações locais antes de aplicar.
+
+- A lista de atenção para fraudes permite juntar a circular e seus anexos aos alertas já cadastrados. Os PDFs originais ficam disponíveis para ver e baixar, sem criar expediente ou tarefa apenas para arquivar o aviso.
+- O robô pode fazer a triagem depois do cadastro e retomar o que ficou pendente. A distribuição separa trabalho técnico, conferência/impressão, digitalização, RCPN e Protesto/Livro E, com responsáveis escolhidos na tela.
+- O agente local pode consultar, solicitar e acompanhar a rotina por ferramentas fixas, sem receber senha ou escolher arquivos e pessoas. Pedidos repetidos e rodadas em andamento são reconhecidos.
+- PDF sem texto legível ou com leitura incompleta continua pendente de OCR/conferência. A rotina não responde ao remetente e não pratica atos.
+
+## 3.7.15 — Parcela no caixa bancário, avisos falsos do Protesto, dispositivo lembrado e a suíte verde
+
+Desde a 3.7.14.
+
+> **Para a instalação que está na 3.7.10:** a 3.7.14 não chegou a ser publicada como pacote, e
+> esta versão leva tudo o que veio desde a 3.7.10 (as novidades da 3.7.11 à 3.7.14, abaixo). O
+> pacote para ela se gera com `--desde v3.7.10`:
+> `python tools/publicar_versao.py --versao 3.7.15 --desde v3.7.10 --chave <chave do oficial>`.
+
+**Protesto**
+- A verificação da CRA não cobra mais a remessa em feriado (nacional ou da lista de feriados locais): em 02/11 ela avisou duas vezes que «ninguém baixou a remessa».
+- A lista vazia da CENPROT (o 404 de «nada pendente») fica no log das Centrais como informação, e não como aviso. Os 32 avisos de 27/10 a 09/11 eram todos isso.
+- Na ficha do título, o botão «Lançar …» fica no fim do formulário, depois do quadro de cobrança (protocolo, itens a selar, pagador).
+- A escolha da faixa do item da tabela de emolumentos (17.1, 17.4) ocupa a largura da tabela, e a descrição do item sai inteira.
+- O apontamento feito pela ficha do título da CRA já gera o arquivo de andamento do apresentante, sem enviar: quem sobe na Central continua sendo o envio, até as 11:30.
+- O andamento que a CRA recusa só com o código 2336 («registro em duplicidade») fica como já informado, e não como recusado: a Central já tinha o apontamento, e reenviar repetiria a recusa. Recusa com outro código continua recusa, e o XML do andamento leva cada protocolo uma vez só, mesmo com dois devedores.
+
+**Caixa e Parcela**
+- A conciliação da Parcela usa a listagem autenticada do estabelecimento: o link pago ou expirado não fica mais aberto. O recebimento confirmado entra sozinho, uma vez só, no caixa bancário da serventia (separado das gavetas), com a data do pagamento.
+- Recebimento manual já lançado na mesma data, forma e protocolo bloqueia a entrada automática; conciliar com o que já existe pede a confirmação do oficial ou do gerente, com justificativa.
+- Pix e débito na maquininha deixam de ser recusados («instalments must not be less than 1»), e a recusa da maquininha aparece na tela com o motivo.
+- Antes de enviar uma despesa ao Inter, o ordenador confere o destinatário um a um.
+
+**Acesso**
+- «Lembrar este dispositivo por 30 dias» depois da senha e do código de duas etapas. A senha continua obrigatória. Funciona só com o sistema em HTTPS; no acesso por HTTP da rede local a opção não se aplica. Orientações em `docs/DISPOSITIVOS_LEMBRADOS.md`.
+
+**Servidor reserva**
+- O código da verificação em duas etapas entra no servidor reserva, que é só de leitura.
+- Fora do Windows, o perfil do LibreOffice fica na pasta de dados, e não numa pasta chamada «C:\ProgramData» dentro da pasta atual.
+
+**Testes**
+- A suíte inteira passa numa máquina com LibreOffice, Chrome e PostgreSQL instalados, como o servidor: 18.617 testes, nenhuma falha.
+
 ## 3.7.14 — protesto só depois do caixa, Parcela Express na maquininha e revisão no registro civil
 
 Desde a 3.7.13.

@@ -7,7 +7,6 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 # `ambiente` mora em SANDBOX\ambiente.py, FORA da pasta sistema, e nao viaja
 # quando a arvore e copiada para empacotar - ali a coleta morria com
 # ImportError (suite de 14/10/2026). Este ensaio so existe no SANDBOX: sem o

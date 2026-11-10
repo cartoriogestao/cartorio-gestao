@@ -141,6 +141,26 @@ def test_lista_vazia_volta_404_e_isso_nao_e_erro(monkeypatch):
         API.arquivos_da_anuencia(1234)
 
 
+def test_no_log_a_lista_vazia_vai_marcada_e_o_item_nao(monkeypatch):
+    """De 27/10 a 09/11/2026 os 32 AVISOS da CENPROT no log eram 404 de lista
+    vazia. `_bater` diz ao log quando o 404 é «nada pendente»: GET de lista
+    sim; GET de UM item e POST, não."""
+    import centrais_http as HTTP
+    anotados = []
+    monkeypatch.setattr(API, "token", lambda *a, **k: "t")
+    monkeypatch.setattr(API.HTTP, "requisitar", lambda metodo, url, **k: HTTP.Resposta(
+        status=404, cabecalhos={}, corpo=b"", texto="", json=None, metodo=metodo, url=url))
+    monkeypatch.setattr(API.LOG, "anotar_resposta",
+                        lambda central, operacao, resposta, **k: anotados.append(
+                            (operacao, k.get("vazio_e_404"))))
+    API._bater(CRED.PRODUCAO, "GET", API.CAMINHO["certidoes"] + "?pagina=1")
+    API._bater(CRED.PRODUCAO, "GET", API.CAMINHO["pedidos_consulta"] + "?nr_pedido=1")
+    API._bater(CRED.PRODUCAO, "POST", API.CAMINHO["pedidos_consulta"])
+    API._bater(CRED.PRODUCAO, "GET", API.CAMINHO["anuencias_legado"])
+    assert anotados == [("certidoes", True), ("pedidos_consulta", True),
+                        ("pedidos_consulta", False), ("anuencias_legado", False)]
+
+
 def test_as_anuencias_exigem_as_duas_datas_antes_da_rede(monkeypatch):
     """A produção responde 422 sem `data_inicio` e `data_fim` (13/10/2026),
     embora o contrato as chame de opcionais."""

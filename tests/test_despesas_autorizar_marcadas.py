@@ -1,9 +1,4 @@
-"""AUTORIZAR NA LISTA, SEM ABRIR UMA POR UMA.
-
-Pedido do oficial (30/10/2026): «uma maneira mais fácil de autorizar as despesas, sem
-precisar clicar em abrir em cada uma». As travas continuam: só o ADMIN autoriza, o que
-passa do teto ou tem valor divergente fica na ficha, e o valor autorizado é o da tela.
-"""
+"""A lista orienta a conferência individual; lote antigo não contorna o destinatário."""
 from __future__ import annotations
 
 import re
@@ -57,23 +52,24 @@ def _revisoes(db, *ids):
         return {f'revisao_{i}': DF.revisao(DP.despesa(con, i)) for i in ids}
 
 
-def test_a_lista_mostra_o_que_se_confere_e_ja_vem_marcada(cg_casa_logada):
+def test_a_lista_mostra_o_que_se_confere_e_abre_autorizacao_individual(cg_casa_logada):
     _tetos_altos(cg_casa_logada["db"])
     i = _nova(cg_casa_logada["db"])
     html = cg_casa_logada["c"].get(LISTA).get_data(as_text=True)
     assert "Esperando a sua autorização (1)" in html
     assert "beatriz@example.com" in html and "1.935,32" in html
-    assert f'value="{i}:193532" checked' in html
+    assert f'/administrativo/despesas/{i}' in html and 'Conferir destinatário e autorizar' in html
+    assert 'Autorizar as marcadas' not in html
 
 
-def test_autoriza_as_marcadas_e_a_desmarcada_continua_esperando(cg_casa_logada):
+def test_lote_antigo_sem_conferencia_individual_nao_autoriza(cg_casa_logada):
     _tetos_altos(cg_casa_logada["db"])
     db, c = cg_casa_logada["db"], cg_casa_logada["c"]
     a, b, fica = _nova(db), _nova(db, 200000), _nova(db, 300000)
     r = c.post(ROTA, data={"csrf_token": _token(c), **_revisoes(db, a, b), "marcada": [f"{a}:193532", f"{b}:200000"]},
                follow_redirects=True)
-    assert "2 despesa(s) autorizada(s), R$ 3.935,32" in r.get_data(as_text=True)
-    assert (_situacao(db, a), _situacao(db, b)) == (DP.AUTORIZADA, DP.AUTORIZADA)
+    assert "confirmação individual" in r.get_data(as_text=True)
+    assert (_situacao(db, a), _situacao(db, b)) == (DP.AGUARDANDO, DP.AGUARDANDO)
     assert _situacao(db, fica) == DP.AGUARDANDO
 
 
@@ -85,7 +81,7 @@ def test_valor_que_mudou_depois_da_tela_nao_se_autoriza(cg_casa_logada):
                follow_redirects=True)
     assert "O valor mudou" in r.get_data(as_text=True)
     assert _situacao(db, i) == DP.AGUARDANDO
-    assert _situacao(db, outra) == DP.AUTORIZADA, "a recusa de uma não segura a outra"
+    assert _situacao(db, outra) == DP.AGUARDANDO, "a outra também exige conferência individual"
 
 
 def test_teto_e_divergencia_ficam_na_ficha(cg_casa_logada):
@@ -128,7 +124,9 @@ def test_o_balanco_soma_o_que_falta_sair_da_conta(cg_casa_logada):
     db = cg_casa_logada["db"]
     autorizada, _espera = _nova(db, 100000), _nova(db, 50000, vencimento="2026-11-20")
     with db.transaction() as con:
-        DP.autorizar(con, autorizada, agora=AGORA, por="mario", papel="ADMIN")
+        DP.autorizar(con, autorizada, agora=AGORA, por="mario", papel="ADMIN", recebedor_previo={
+            'nome': 'BEATRIZ EXEMPLO', 'documento': '00000000191', 'ciencia': True,
+            'evidencia': 'Consulta ficticia no banco'})
         DP.cadastrar(con, agora=AGORA, por="mario", origem="MANUAL", chave_origem=None,
                      beneficiario_nome="BEATRIZ EXEMPLO", beneficiario_documento="",
                      valor_centavos=999900, vencimento="2026-10-30", forma=DP.MANUAL, codigo="",

@@ -113,7 +113,7 @@ Sem internet nada quebra: o aviso só não aparece, e o botão «Procurar versã
 Publicar uma versão é na máquina do oficial, onde está a chave:
 
 ```
-python tools/publicar_versao.py --versao 3.7.14 --desde v3.7.13 --chave E:\chave_cartorio.pem
+python tools/publicar_versao.py --versao 3.7.16 --desde v3.7.10 --chave E:\chave_cartorio.pem
 ```
 
 Ela monta o pacote **só com o que mudou** desde a versão anterior, pede a senha da chave, assina e publica

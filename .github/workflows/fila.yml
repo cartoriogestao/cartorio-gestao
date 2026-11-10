@@ -1,0 +1,46 @@
+# A FILA DE MERGE (ci/fila.py) — nos executores do GitHub, que em repositório
+# público não custam nada e não tocam no servidor reserva.
+#
+# Acorda quando a suíte termina, quando um PR é aberto ou fica pronto, e de 10
+# em 10 minutos como rede de segurança. Cada rodada dá um passo e sai.
+#
+# `pull_request_target` aqui só ACORDA a fila: nenhum código do PR é baixado
+# nem executado — o checkout é do main.
+name: fila
+
+on:
+  workflow_run:
+    workflows: [suite, anti-leak]
+    types: [completed]
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize, unlabeled]
+    branches: [main]
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+  statuses: read
+  checks: read
+
+concurrency:
+  group: fila
+  cancel-in-progress: false
+
+jobs:
+  fila:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Um passo da fila
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 ci/fila.py

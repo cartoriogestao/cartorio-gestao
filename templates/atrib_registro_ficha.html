@@ -421,7 +421,8 @@
     <p style="padding:14px"><small>Sem ato lançado. O registro veio do acervo como
       bloco único.</small></p>
   {% else %}
-  <table class="table">
+  {# A tabela dos atos rola dentro da caixa (como as outras desta ficha): com a letra em 150% as colunas «Etiqueta» e «Cobrado» esticavam a página 138 px. #}
+  <div class="table-wrap"><table class="table">
     <thead><tr><th>Tipo</th><th>Data</th><th>Livro / folha / ordem</th><th>Teor</th>
                <th>Selos</th><th>PDF</th><th>Etiqueta</th><th>Cobrado</th></tr></thead>
     <tbody>
@@ -476,7 +477,7 @@
       </tr>
       {% endfor %}
     </tbody>
-  </table>
+  </table></div>
   {% endif %}
 </section>
 

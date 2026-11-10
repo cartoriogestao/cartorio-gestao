@@ -29,6 +29,8 @@ from flask import (abort, flash, make_response, redirect, render_template,
                    request, session, url_for)
 
 import dois_fatores as DF
+import dois_fatores_dispositivos as DD
+import modo_reserva as MRES
 from security import new_csrf_token
 from seguranca_web import destino_interno
 
@@ -62,6 +64,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     """Pendura as três telas e publica o desvio que o `/login` consulta."""
 
     pasta = app.config["DATA_DIR"]
+    # SERVIDOR RESERVA: o último passo e as falhas ficam aqui, e não no banco (só SELECT).
+    memoria_da_reserva = DF.MemoriaDaReserva()
 
     def _log(user, acao, detalhes=None):
         db.log(int(user["id"]), user["username"], acao, "USER", int(user["id"]),
@@ -104,6 +108,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         exige = DF.exigido(db.get_setting, row["role"])
         if estado != DF.ATIVO and not exige:
             return None
+        if estado == DF.ATIVO and request.is_secure and not MRES.ativo():
+            with db.connect() as con:
+                lembrado = DD.confere(con, int(row["id"]), request.cookies.get(DD.COOKIE, ""),
+                                     agora=DF.relogio(), agora_iso=DF.agora_iso())
+            if lembrado:
+                # O chamador já conferiu a senha. A sessão segue com os prazos normais.
+                app.extensions["abrir_sessao"](row, {"segundo_fator": "DISPOSITIVO_LEMBRADO"})
+                return redirect(destino_seguro(proximo, url_for("dashboard")))
+        if estado != DF.ATIVO and MRES.ativo():
+            # A ativação grava a chave nova: no SERVIDOR RESERVA não há onde. Avisa já,
+            # em vez de deixar a pessoa ler o QR e cair na recusa do formulário.
+            session.clear()
+            flash("Esta conta precisa ativar a verificação em duas etapas, e isso se faz "
+                  "no servidor principal. " + MRES.AVISO, "warning")
+            return redirect(url_for("login"))
         session.clear()
         session["csrf_token"] = new_csrf_token()
         session["df_uid"] = int(row["id"])
@@ -135,6 +154,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         if resultado["motivo"] == "bloqueado":
             return (f"Muitas tentativas erradas. A verificação desta conta está "
                     f"travada até {resultado['bloqueado_ate'][11:16]}.")
+        if resultado["motivo"] == "recuperacao_na_reserva":
+            return ("O servidor reserva não aceita código de recuperação: usá-lo é "
+                    "gastá-lo, e a reserva só consulta. Use o código do aplicativo, "
+                    "ou entre pelo servidor principal.")
+        if resultado["cofre_ilegivel"] and MRES.ativo():
+            return ("O código não confere — e a chave da verificação ainda não chegou "
+                    "a este servidor reserva. Entre pelo servidor principal.")
         if resultado["cofre_ilegivel"]:
             return ("O código não confere — e a chave guardada desta conta não "
                     "abre nesta instalação. Use um código de recuperação, ou "
@@ -146,7 +172,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
 
         O código de recuperação é procurado ANTES da transação (os PBKDF2 não
         seguram a trava de escrita da casa — LX20); a transação só grava.
+
+        No SERVIDOR RESERVA não há transação: o banco só lê, e a contagem fica
+        na memória do processo (`DF.conferir_so_leitura`). O rastro segue pelo
+        `db.log`, que lá registra a recusa no log do servidor sem derrubar a tela.
         """
+        if MRES.ativo():
+            with db.connect() as con:
+                resultado = DF.conferir_so_leitura(con, int(user["id"]), codigo,
+                                                   pasta=pasta, memoria=memoria_da_reserva)
+            if not resultado["ok"]:
+                _log(user, acao_da_falha, {"motivo": resultado["motivo"]})
+            return resultado
         with db.connect() as con:
             achado = DF.achar_codigo(con, int(user["id"]), codigo)
         with db.transaction() as con:
@@ -194,6 +231,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         if user is None or session.get("df_cadastro"):
             return redirect(url_for("login"))
         if request.method == "POST":
+            with db.connect() as con:
+                versao = DD.versao(con, int(user["id"])) if not MRES.ativo() else ""
             resultado = _conferir_e_registrar(
                 user, request.form.get("codigo", ""), "LOGIN_DOIS_FATORES_FALHA")
             if resultado["ok"]:
@@ -203,7 +242,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                           f"{resultado['restantes']}. Se o celular se perdeu, "
                           f"desative e ative de novo em «Verificação em duas "
                           f"etapas».", "warning")
-                return redirect(destino)
+                resposta = redirect(destino)
+                if (request.form.get("lembrar_dispositivo") == "1" and request.is_secure
+                        and not MRES.ativo() and resultado["meio"] == DF.TOTP):
+                    with db.transaction() as con:
+                        token = DD.emitir(con, int(user["id"]), esperada=versao,
+                                          agora=DF.relogio())
+                    if token:
+                        resposta.set_cookie(DD.COOKIE, token, max_age=DD.SEGUNDOS,
+                                            secure=True, httponly=True, samesite="Lax", path="/")
+                        _log(user, "DOIS_FATORES_DISPOSITIVO_LEMBRADO", {"dias": DD.DIAS})
+                return _sem_cache(resposta)
             if resultado["motivo"] == "sem_dois_fatores":
                 # O Gestor zerou a verificação enquanto a pessoa digitava:
                 # recomeça pela senha, e a entrada segue a regra de agora.
@@ -215,7 +264,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         # Sem cache: voltar no navegador não pode reapresentar o token já trocado.
         return _sem_cache(render_template("login_dois_fatores.html", conta=user["username"],
                                           tentativas=DF.MAX_FALHAS,
-                                          bloqueio=DF.BLOQUEIO_MINUTOS))
+                                          bloqueio=DF.BLOQUEIO_MINUTOS,
+                                          pode_lembrar=request.is_secure and not MRES.ativo()))
 
     @app.route("/login/dois-fatores/cadastrar", methods=["GET", "POST"])
     def login_dois_fatores_cadastrar():
@@ -263,12 +313,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     def _eu():
         return app.extensions["current_user"]()
 
-    @app.route("/conta/dois-fatores")
+    @app.route("/conta/dois-fatores", methods=["GET", "POST"])
     @login_required
     def dois_fatores():
         """A verificação de quem está logado. Só LÊ."""
         user = _eu()
         uid = int(user["id"])
+        if request.method == "POST":
+            if _senha_e_codigo(user, "DOIS_FATORES_DISPOSITIVOS_REVOGAR_RECUSADO"):
+                with db.transaction() as con:
+                    DD.revogar(con, uid)
+                _log(user, "DOIS_FATORES_DISPOSITIVOS_REVOGADOS")
+                flash("Os dispositivos lembrados foram esquecidos. O próximo login pedirá código.",
+                      "success")
+                resposta = redirect(url_for("dois_fatores"))
+                resposta.delete_cookie(DD.COOKIE, secure=True, httponly=True, samesite="Lax", path="/")
+                return _sem_cache(resposta)
+            return redirect(url_for("dois_fatores"))
         with db.connect() as con:
             sit = DF.situacao(con, uid)
             segredo = DF.segredo_pendente(con, uid, pasta) if sit["estado"] == DF.PENDENTE else None

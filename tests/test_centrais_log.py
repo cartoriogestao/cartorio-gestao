@@ -92,6 +92,23 @@ def test_registrar_resposta_por_faixa_de_status(con):
     assert LOG.ultimos(con, nivel="ERRO")[0]["evento"] == "FALHA_DE_TRANSPORTE"
 
 
+def test_lista_vazia_404_e_info_e_nao_aviso(con):
+    """A CENPROT responde 404 à lista vazia. Quem chama avisa (`vazio_e_404`),
+    e o log grava INFO «nada pendente». Sem o aviso, 404 continua AVISO, e o
+    500 continua ERRO mesmo com ele."""
+    def resp(st):
+        return HTTP.Resposta(status=st, cabecalhos={}, corpo=b"", texto="",
+                             json=None, tentativas=1, duracao_ms=5,
+                             url="https://c.invalid/lista", metodo="GET")
+    LOG.registrar_resposta(con, "CENPROT", "certidoes", resp(404), vazio_e_404=True)
+    LOG.registrar_resposta(con, "CENPROT", "anuencia_arquivos", resp(404))
+    LOG.registrar_resposta(con, "CENPROT", "certidoes", resp(500), vazio_e_404=True)
+    linhas = LOG.ultimos(con, central="CENPROT")
+    assert [r["nivel"] for r in linhas] == [SCH.ERRO, SCH.AVISO, SCH.INFO]
+    assert linhas[-1]["mensagem"] == "GET 404 (nada pendente)"
+    assert linhas[1]["mensagem"] == "GET 404"
+
+
 def test_ultimos_filtra_e_ordena(con):
     for i in range(5):
         LOG.registrar(con, "ONR", f"op{i % 2}", "E")

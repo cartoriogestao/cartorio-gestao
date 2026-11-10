@@ -109,6 +109,9 @@ def test_autorizada_nao_se_ajusta_e_quem_so_cadastra_nao_ajusta(cg_casa_logada):
     with db.transaction() as con, pytest.raises(DP.DespesaError, match="oficial ou o gerente"):
         DP.ajustar_valor(con, i, valor_centavos=100, agora=AGORA, por="carla", papel="USER")
     with db.transaction() as con:
-        DP.autorizar(con, i, agora=AGORA, por="mario", papel="ADMIN", acima_do_teto=True)
+        d = DP.despesa(con, i)
+        DP.autorizar(con, i, agora=AGORA, por="mario", papel="ADMIN", acima_do_teto=True,
+                     recebedor_previo={'nome': d['beneficiario_nome'], 'documento': d['beneficiario_documento'],
+                                      'ciencia': True, 'evidencia': 'Consulta ficticia no banco'})
     with db.transaction() as con, pytest.raises(DP.DespesaError, match="espera a autorização"):
         DP.ajustar_valor(con, i, valor_centavos=100, agora=AGORA, por="mario", papel="ADMIN")

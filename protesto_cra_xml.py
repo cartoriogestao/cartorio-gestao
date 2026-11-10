@@ -108,6 +108,17 @@ def _inteiro(elemento: ET.Element, atributo: str) -> int:
     return int(valor)
 
 
+def _quantidade_de_titulos(registros: list[ET.Element]) -> int:
+    """O cabeçalho conta títulos, não as linhas dos devedores seguintes.
+
+    t22=1 abre título; os demais controles pertencem ao mesmo título. Campo
+    vazio mantém a leitura dos arquivos antigos, que não traziam o controle.
+    A projeção e as somas do trailer continuam usando todos os registros.
+    """
+    return sum(1 for registro in registros
+               if str(registro.get("t22") or "1").strip() == "1")
+
+
 def _data(elemento: ET.Element, atributo: str) -> None:
     valor = elemento.get(atributo, "")
     try:
@@ -227,9 +238,10 @@ def ler(conteudo: str | bytes) -> PreviaXml:
         _data(hd, "h04")
         if hd.get("h04") != tl.get("t04"):
             raise RemessaXmlError(f"Lote {numero}: data difere no trailer.")
-        if _inteiro(hd, "h10") != len(titulos):
+        quantidade = _quantidade_de_titulos(titulos)
+        if _inteiro(hd, "h10") != quantidade:
             raise RemessaXmlError(f"Lote {numero}: h10 difere da quantidade de títulos.")
-        if _inteiro(hd, "h11") + _inteiro(hd, "h12") != len(titulos):
+        if _inteiro(hd, "h11") + _inteiro(hd, "h12") != quantidade:
             raise RemessaXmlError(f"Lote {numero}: indicações mais originais não fecham.")
         seguranca = sum(_inteiro(hd, f"h{i:02}") for i in range(9, 13))
         if _inteiro(tl, "t05") != seguranca:

@@ -510,6 +510,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                situacoes=DP.SITUACOES, formas=DP.FORMAS,
                                categorias=DP.CATEGORIAS, naturezas=DP.NATUREZAS,
                                tetos=DP.tetos(cfg), cfg=cfg, reais=DP.reais,
+                               destino_valido=DP.destino_autorizado(d, ambiente=cfg['despesas_ambiente'], hoje=date.today().isoformat()),
+                               destino_conferido=DP.destinatario_conferido(d),
                                papel=usuario_papel(), hoje=date.today().isoformat(),
                                foi_paga=DC.foi_paga(d), demonstrativo=DC.pode_gerar(d),
                                whatsapp=whatsapp, orientacao=DF.orientacao(d),
@@ -552,7 +554,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         DF.conferir_revisao(con, despesa_id, f.get('revisao') or '')
                         DP.autorizar(con, despesa_id, agora=_agora(), por=usuario_nome(),
                                      papel=papel, acima_do_teto=f.get("acima_do_teto") == "1",
-                                     motivo_divergencia=f.get("motivo"))
+                                     motivo_divergencia=f.get("motivo"), recebedor_previo={
+                                         "nome": f.get("destino_nome"), "documento": f.get("destino_documento"),
+                                         "evidencia": f.get("destino_fonte"), "ciencia": f.get("destino_ciencia") == "1",
+                                         "autoriza_divergencia": f.get("destino_divergente") == "1",
+                                         "motivo": f.get("destino_motivo")})
                     elif acao == "devolver":
                         DP.devolver(con, despesa_id, agora=_agora(), por=usuario_nome(),
                                     papel=papel, motivo=f.get("motivo"))

@@ -95,6 +95,7 @@ from wa_schema import init_wa_schema
 from robo_schema import init_robo_schema
 from agente_schema import init_agente_schema
 from automacao_schema import init_automacao_schema
+from malote_fluxo import init_schema as init_malote_fluxo_schema
 from andamento_schema import init_andamento_schema
 from backup_restauracao import init_backup_restauracao_schema
 from ia_uso import init_ia_schema
@@ -908,6 +909,7 @@ class Database:
         # avisos, a trava do despachante e a config. Não aponta para tabela
         # nenhuma de fora (o responsável é guardado como número).
         init_automacao_schema(con)
+        init_malote_fluxo_schema(con)
         # OS AVISOS DE ANDAMENTO AO CLIENTE (26/10/2026) — o consentimento por
         # canal e a fila do que saiu. Não apontam para tabela nenhuma de fora
         # (o protocolo é guardado como origem + número), e por isso vêm aqui.
@@ -1175,6 +1177,8 @@ class Database:
                 banco(con).escrever(
                     "UPDATE users SET username=%s, full_name=%s, role=%s, eh_robo=%s WHERE id=%s",
                     (username, full_name, role, eh_robo, user_id))
+                # A autorização antiga não volta se o perfil for alterado e depois restaurado.
+                banco(con).escrever("DELETE FROM dois_fatores_dispositivos WHERE user_id=%s", (user_id,))
             except sqlite3.IntegrityError as exc:
                 raise ValueError(
                     "Já existe outro usuário com este nome de usuário."
@@ -1221,6 +1225,8 @@ class Database:
     def set_user_active(self, user_id: int, active: bool) -> None:
         with self.transaction() as con:
             banco(con).escrever("UPDATE users SET active=%s WHERE id=%s", (1 if active else 0, user_id))
+            if not active:
+                banco(con).escrever("DELETE FROM dois_fatores_dispositivos WHERE user_id=%s", (user_id,))
 
     def reset_password(self, user_id: int, password: str) -> None:
         ok, msg = self.validate_password(password)
@@ -1229,6 +1235,7 @@ class Database:
         rec = hash_password(password)
         with self.transaction() as con:
             banco(con).escrever("UPDATE users SET password_salt=%s,password_hash=%s WHERE id=%s", (rec.salt_hex, rec.hash_hex, user_id))
+            banco(con).escrever("DELETE FROM dois_fatores_dispositivos WHERE user_id=%s", (user_id,))
 
     def get_setting(self, key: str, default: str = "") -> str:
         with self.connect() as con:

@@ -1,0 +1,4 @@
+self-hosted-runner:
+  # O executor do servidor reserva (ci/suite/instalar_executor.sh).
+  labels:
+    - cartorio-suite

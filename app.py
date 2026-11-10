@@ -71,7 +71,7 @@ APP_NAME = "Gestão Integrada da Serventia"
 # servidor avisou «quem respondeu está na versão 3.6.137, e a instalada é
 # 3.6.138» sobre uma atualização que tinha funcionado (504 de 505 arquivos
 # batendo byte a byte). `tests/test_os_dois_carimbos_da_versao.py` guarda isso.
-VERSION = "3.7.14"
+VERSION = "3.7.16"
 # 3.6.286 - 06/10/2026 Release do sandbox para o oficial: centrais (fila/log/trava), A3, editor/motor de modelos, produtividade, selo robo, F10-F12 do RI, SIRC (cancelados)
 # 3.6.285 - CENPROT: POST /token com form usuario/senha (x-www-form-urlencoded)
 # 3.6.284 - Projetos lista: coluna Atualizado (DD/MM/AA - HH:MM, fuso local)
@@ -702,11 +702,12 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     def before_request():
         if request.endpoint == "static":
             return
-        # O SERVIDOR RESERVA SÓ LÊ (`modo_reserva`): formulário nenhum entra, a não ser o de
-        # entrar e o de sair. O banco recusaria de qualquer jeito (o usuário dele só tem SELECT);
-        # aqui a recusa vem antes, inteira, e com a frase certa.
+        # O SERVIDOR RESERVA SÓ LÊ (`modo_reserva`): formulário nenhum entra, a não ser os de
+        # entrar (a senha e o código da verificação em duas etapas) e o de sair. O banco
+        # recusaria de qualquer jeito (o usuário dele só tem SELECT); aqui a recusa vem antes,
+        # inteira, e com a frase certa.
         if MRES.ativo() and request.method not in {"GET", "HEAD", "OPTIONS"} \
-                and request.endpoint not in {"login", "logout"}:
+                and request.endpoint not in MRES.FORMULARIOS_LIBERADOS:
             return render_template("error.html", code=503, message=MRES.AVISO), 503
         # O CORPO DO POST SEM LOGIN TEM TETO, E ELE VALE ANTES DE LER (LS02
         # M5; LX12, 19/10/2026). O token de formulário, logo abaixo, lê
@@ -3220,6 +3221,7 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     # aberto a todos por esquecimento (o teste `test_todo_tipo_de_anexo_...`
     # cobra a lista contra quem grava anexo).
     TELA_DO_ANEXO: dict[str, tuple[str, ...]] = {
+        "MALOTE_FRAUDE": ("fraudes",),
         "EXPEDIENTE": ("expediente_detail",),
         "TASK": ("task_detail",),
         "NT_ATO": ("notas_ato",),

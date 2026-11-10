@@ -12,6 +12,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A fila de merge (ci/fila.py) o pede depois de atualizar a branch de um PR:
+  # o que o token da fila faz não dispara o `pull_request` (10/11/2026).
+  workflow_dispatch:
 
 permissions:
   contents: read

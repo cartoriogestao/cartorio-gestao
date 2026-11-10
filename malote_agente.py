@@ -300,8 +300,9 @@ def assunto_do_nome(nome: str) -> str:
     return " ".join(base.replace("_", " ").split())[:200] or "Sem assunto"
 
 
-def pastas_de_entrada(pasta_dados: Path, pasta_malote: Path | None) -> list[Path]:
-    pastas = [archive_root_de(pasta_dados) / SUBPASTA_ENTRADA]
+def pastas_de_entrada(pasta_dados: Path, pasta_malote: Path | None,
+                     con: sqlite3.Connection | None = None) -> list[Path]:
+    pastas = [archive_root_de(pasta_dados, con) / SUBPASTA_ENTRADA]
     if pasta_malote is not None:
         pastas.append(pasta_malote / SUBPASTA_A_CADASTRAR)
     return pastas
@@ -428,11 +429,24 @@ def usuario_responsavel(con: sqlite3.Connection, em_nome_de: str | None = None) 
     login = login or EM_NOME_DE_PADRAO
     if not login:
         return None
-    r = banco(con).um("SELECT id FROM users WHERE username = %s", (login,))
+    r = banco(con).um("SELECT id, active FROM users WHERE username = %s", (login,))
     if not r:
         raise MaloteError(f"O usuário «{login}», em nome de quem o agente do malote cadastra, "
                           "não existe. Confira em Configurações.")
+    if not r["active"]:
+        raise MaloteError("O usuário em nome de quem o agente do malote cadastra está inativo. "
+                          "Escolha um usuário ativo na tela do malote.")
     return int(r["id"])
+
+
+def configurar_responsavel(con: sqlite3.Connection, login: str) -> None:
+    """Autoria explícita do cadastro, escolhida pelo administrador na tela."""
+    login = (login or "").strip()
+    if not login:
+        raise MaloteError("Escolha em nome de quem o agente cadastra os documentos do malote.")
+    usuario_responsavel(con, login)
+    banco(con).escrever("""INSERT INTO settings (key, value) VALUES ('malote_cadastra_em_nome_de', %s)
+                          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""", (login,))
 
 
 def _proximo_protocolo(con: sqlite3.Connection) -> str:
@@ -592,7 +606,7 @@ def rodada(con: sqlite3.Connection, pasta_dados: Path, *, pasta_malote: Path | N
     con.commit()
     resumo: dict = {"grupos": [], "cadastrados": 0, "erros": [], "fraudes": []}
     try:
-        grupos = classificar(con, varrer(pastas_de_entrada(pasta_dados, pasta_malote)))
+        grupos = classificar(con, varrer(pastas_de_entrada(pasta_dados, pasta_malote, con)))
         usuario, motivo = None, ("não cadastrei: falta dizer em nome de quem o agente cadastra "
                                  "(settings.malote_cadastra_em_nome_de)")
         if confirmar:
@@ -775,7 +789,7 @@ def main(argv=None) -> int:
 
 def medir(con: sqlite3.Connection, pasta_dados: Path, pasta_malote: Path | None, sondar: bool = False) -> dict:
     """A rodada sem gravar nada — nem a linha de execução. Serve à produção lida em `mode=ro`."""
-    grupos = classificar(con, varrer(pastas_de_entrada(pasta_dados, pasta_malote)))
+    grupos = classificar(con, varrer(pastas_de_entrada(pasta_dados, pasta_malote, con)))
     resumo = {"cadastrados": 0, "erros": [], "so_mediu": True,
               "grupos": [{"nome": g.nome, "pasta": g.pasta_origem, "situacao": g.situacao, "nota": g.nota,
                           "expediente_id": g.expediente_id, "protocolo": None, "recebido_em": g.recebido_em,

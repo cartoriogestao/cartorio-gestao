@@ -36,6 +36,8 @@ import impressao_pdf as PDF
 
 MOLDE = RAIZ / "modelos" / "certidao_nascimento_modelo.odt"
 TEM_LIBREOFFICE = PDF.onde_esta_o_conversor() is not None
+# Este módulo converte de verdade: o conftest não esconde o LibreOffice aqui.
+USA_O_LIBREOFFICE_DE_VERDADE = True
 
 
 # ------------------------------------------------- a regra, sem converter
@@ -87,18 +89,38 @@ def test_documento_vazio_recusa_em_vez_de_devolver_nada():
         PDF.pdf_de_odt(b"", nome="papel")
 
 
-def test_sem_conversor_a_recusa_diz_o_que_fazer():
+def test_sem_conversor_a_recusa_diz_o_que_fazer(monkeypatch):
     """«Nao encontrado» faria o balcao achar que o sistema quebrou.
 
     O caminho configurado fica DENTRO da pasta de programas (revisão de
     segurança de 22/10/2026, M3: fora dela o caminho é ignorado e vale a
-    detecção) — e não existe: a recusa diz onde consertar."""
+    detecção) — e não existe: a recusa diz onde consertar.
+
+    A detecção também não acha nada aqui: fora do Windows o caminho «C:/…» é
+    ignorado e valeria o `soffice` do PATH (10/11/2026, macOS da reserva)."""
+    monkeypatch.setattr(PDF, "CAMINHOS_CONHECIDOS", ())
+    monkeypatch.setattr(PDF.shutil, "which", lambda *a, **k: None)
     sem_nada = lambda chave, padrao=None: "C:/Program Files/nao/existe/soffice.exe"
     with pytest.raises(PDF.PdfError) as e:
         PDF.pdf_de_odt(b"conteudo", nome="p", get_setting=sem_nada)
     frase = str(e.value)
     assert "LibreOffice" in frase
     assert "Configurações" in frase
+
+
+def test_o_perfil_do_conversor_fora_do_windows_fica_na_pasta_de_dados(tmp_path, monkeypatch):
+    r"""No macOS da reserva, `C:\ProgramData` virava uma pasta com esse nome na pasta
+    atual (10/11/2026). Fora do Windows o perfil fica na pasta de dados; no Windows,
+    no ProgramData de sempre."""
+    monkeypatch.setattr(PDF.sys, "platform", "darwin")
+    monkeypatch.setenv("CARTORIO_GESTAO_DATA", str(tmp_path / "dados"))
+    assert PDF._pasta_do_perfil() == tmp_path / "dados" / "libreoffice_perfil"
+    monkeypatch.delenv("CARTORIO_GESTAO_DATA")
+    assert PDF._pasta_do_perfil() == Path.home() / ".cartorio_gestao" / "libreoffice_perfil"
+    assert "ProgramData" not in str(PDF._pasta_do_perfil())
+    monkeypatch.setattr(PDF.sys, "platform", "win32")
+    monkeypatch.setenv("PROGRAMDATA", str(tmp_path / "PD"))
+    assert PDF._pasta_do_perfil() == tmp_path / "PD" / "CartorioGestao" / "libreoffice_perfil"
 
 
 def test_a_configuracao_manda_sobre_os_caminhos_conhecidos(tmp_path, monkeypatch):

@@ -42,17 +42,6 @@
   <form method="post" action="{{ url_for('despesas_corrigir_pagamento', despesa_id=d.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="revisao" value="{{ revisao }}">
-    <fieldset><legend>Destinatário conferido antes do pagamento</legend>
-      <p>Confira o titular da chave ou conta na identificação apresentada pelo banco. A API do Inter
-        disponível não consulta o titular antes de enviar. Ler o código ou repetir o cadastro não faz essa conferência.</p>
-      <label>Nome apresentado pelo banco <input name="destino_nome" maxlength="150" required></label>
-      <label>CPF/CNPJ apresentado pelo banco <input name="destino_documento" maxlength="30" required></label>
-      <label>Onde conferiu (documento ou referência da consulta) <input name="destino_fonte" maxlength="500" minlength="10" required></label>
-      <label><input type="checkbox" name="destino_ciencia" value="1" required> Conferi o destinatário no banco para este pagamento e autorizo o envio para ele.</label>
-      <p>Se o nome ou CPF/CNPJ acima diferir do favorecido cadastrado, a autorização só será aceita com os campos seguintes:</p>
-      <label>Justificativa da divergência <input name="destino_motivo" maxlength="500"></label>
-      <label><input type="checkbox" name="destino_divergente" value="1"> Autorizo expressamente pagar a este destinatário diferente do cadastro, pela justificativa informada.</label>
-    </fieldset>
     <label>Favorecido <input name="beneficiario_nome" value="{{ d.beneficiario_nome }}" required size="40"></label>
     <label>CPF/CNPJ do favorecido (obrigatório no Pix por chave)
       <input name="beneficiario_documento" value="{{ d.beneficiario_documento or '' }}" size="20"></label>
@@ -86,6 +75,17 @@
   <form method="post" action="{{ url_for('despesas_acao', despesa_id=d.id, acao='autorizar') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="revisao" value="{{ revisao }}">
+    <fieldset><legend>Destinatário conferido antes do pagamento</legend>
+      <p>Confira o titular da chave ou conta na identificação apresentada pelo banco. A API do Inter
+        disponível não consulta o titular antes de enviar. Ler o código ou repetir o cadastro não faz essa conferência.</p>
+      <label>Nome apresentado pelo banco <input name="destino_nome" maxlength="150" required></label>
+      <label>CPF/CNPJ apresentado pelo banco <input name="destino_documento" maxlength="30" required></label>
+      <label>Onde conferiu (documento ou referência da consulta) <input name="destino_fonte" maxlength="500" minlength="10" required></label>
+      <label><input type="checkbox" name="destino_ciencia" value="1" required> Conferi o destinatário no banco para este pagamento e autorizo o envio para ele.</label>
+      <p>Se o nome ou CPF/CNPJ acima diferir do favorecido cadastrado, a autorização só será aceita com os campos seguintes:</p>
+      <label>Justificativa da divergência <input name="destino_motivo" maxlength="500"></label>
+      <label><input type="checkbox" name="destino_divergente" value="1"> Autorizo expressamente pagar a este destinatário diferente do cadastro, pela justificativa informada.</label>
+    </fieldset>
     {% if d.valor > tetos.pagamento %}<label><input type="checkbox" name="acima_do_teto" value="1"> Autorizo acima do teto por pagamento (R$ {{ reais(tetos.pagamento) }})</label>{% endif %}
     {% if d.divergencia %}<label>Por que o valor está certo assim <input name="motivo" size="60"></label>{% endif %}
     <button type="submit">Autorizar</button>

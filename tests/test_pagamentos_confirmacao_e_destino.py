@@ -282,7 +282,17 @@ def test_tela_e_post_sem_conferencia_nao_autorizam(casa):
     db = casa['db']; i = _cadastrar(db); c = casa['c']
     html = c.get(f'/administrativo/despesas/{i}').get_data(as_text=True)
     assert 'Nome apresentado pelo banco' in html and 'Autorizo expressamente' in html
+    autorizar = re.search(r'<form[^>]*action="' + re.escape(f'/administrativo/despesas/{i}/autorizar') +
+                         r'"[^>]*>(.*?)</form>', html, re.S).group(1)
+    assert all(f'name="{campo}"' in autorizar for campo in (
+        'destino_nome', 'destino_documento', 'destino_fonte', 'destino_ciencia', 'destino_divergente', 'destino_motivo'))
     campos = {n: v for n, v in re.findall(r'name="([^"]+)"[^>]*value="([^"]*)"', html)}
     r = c.post(f'/administrativo/despesas/{i}/autorizar', data=campos, follow_redirects=True)
     assert r.status_code == 200 and _d(db, i)['situacao'] == DP.AGUARDANDO
+    assert casa['inter'].chamadas == []
+    d = _d(db, i)
+    c.post(f'/administrativo/despesas/{i}/autorizar', data={**campos,
+           'destino_nome': d['beneficiario_nome'], 'destino_documento': d['beneficiario_documento'],
+           'destino_fonte': 'Consulta ficticia no banco', 'destino_ciencia': '1'}, follow_redirects=True)
+    assert _d(db, i)['situacao'] == DP.AUTORIZADA
     assert casa['inter'].chamadas == []

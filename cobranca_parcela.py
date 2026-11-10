@@ -402,7 +402,17 @@ class ClienteCobrancaParcela:
             return None
         lido = ler(corpo)
         if lido.get("situacao") == CB.RECEBIDA and lido.get("valor_recebido") != int(c["valor"]):
-            raise Recusa("O valor pago na Parcela difere da cobrança. Confira antes de lançar.")
+            venda = corpo.get("sale") or {}
+            # Apenas números do link já identificado, para conferir principal e
+            # encargos. Nunca registra corpo completo, credencial ou pagador.
+            valores = {k: v if isinstance(v, (int, float)) or (
+                       isinstance(v, str) and re.fullmatch(r"\d{1,15}(?:\.\d{1,4})?", v)) else None
+                       for k, v in {"link_amount": corpo.get("amount"),
+                                    "sale_amount": venda.get("amount"),
+                                    "sale_original_amount": venda.get("original_amount")}.items()}
+            raise Recusa("O valor pago na Parcela difere da cobrança. "
+                         f"Esperado {int(c['valor'])} centavos; campos numéricos da API: {json.dumps(valores)}. "
+                         "Confira principal e encargos antes de lançar.")
         return lido
 
     def _link_do_estabelecimento(self, ident: str) -> dict | None:

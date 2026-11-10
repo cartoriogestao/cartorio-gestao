@@ -176,11 +176,18 @@ def registrar(con, central: str, operacao: str,
 
 def registrar_resposta(con, central: str, operacao: str,
                        resposta: Any, *, ambiente: str | None = None,
-                       fila_id: int | None = None) -> int:
+                       fila_id: int | None = None,
+                       vazio_e_404: bool = False) -> int:
     """Registra uma `centrais_http.Resposta` (ou `CentralHttpError`).
 
     2xx vira INFO; 4xx, AVISO; 5xx e falha de transporte, ERRO. O corpo da
     resposta **não** entra — só o status, a duração e as tentativas.
+
+    `vazio_e_404`: a Central responde 404 quando a LISTA pedida está vazia
+    (CENPROT: «Nenhum pedido encontrado»). Quem chama sabe disso e avisa; o 404
+    vira INFO «nada pendente», e não AVISO. Medido de 27/10 a 09/11/2026: os
+    32 AVISOS da CENPROT no log eram todos lista vazia, e escondiam o que fosse
+    aviso de verdade.
     """
     if isinstance(resposta, BaseException):
         return registrar(
@@ -189,13 +196,14 @@ def registrar_resposta(con, central: str, operacao: str,
             detalhe={"tentativas": getattr(resposta, "tentativas", None),
                      "tipo": type(resposta).__name__})
     status = int(getattr(resposta, "status", 0) or 0)
-    nivel = (SCH.INFO if 200 <= status < 400
+    nivel = (SCH.INFO if 200 <= status < 400 or (vazio_e_404 and status == 404)
              else SCH.AVISO if status < 500 else SCH.ERRO)
+    sufixo = " (nada pendente)" if vazio_e_404 and status == 404 else ""
     return registrar(
         con, central, operacao, "REQUISICAO", nivel=nivel, ambiente=ambiente,
         fila_id=fila_id, status_http=status,
         duracao_ms=getattr(resposta, "duracao_ms", None),
-        mensagem=f"{getattr(resposta, 'metodo', '')} {status}".strip(),
+        mensagem=f"{getattr(resposta, 'metodo', '')} {status}".strip() + sufixo,
         detalhe={"tentativas": getattr(resposta, "tentativas", None),
                  "url": getattr(resposta, "url", "")})
 
@@ -226,7 +234,8 @@ def ligar_banco(db: Any) -> None:
 
 def anotar_resposta(central: str, operacao: str, resposta: Any, *,
                     ambiente: str | None = None,
-                    fila_id: int | None = None) -> int | None:
+                    fila_id: int | None = None,
+                    vazio_e_404: bool = False) -> int | None:
     """`registrar_resposta` no banco ligado, em conexão curta. NUNCA estoura.
 
     Sem banco ligado (teste, script de linha de comando), vai só para o
@@ -249,7 +258,8 @@ def anotar_resposta(central: str, operacao: str, resposta: Any, *,
                 # para esta conexão curta; o `close()` a devolve no padrão.
                 banco(con).ler(f"SET lock_timeout = '{int(ESPERA_DO_LOG_MS)}ms'")
                 novo = registrar_resposta(con, central, operacao, resposta,
-                                          ambiente=ambiente, fila_id=fila_id)
+                                          ambiente=ambiente, fila_id=fila_id,
+                                          vazio_e_404=vazio_e_404)
                 con.commit()
                 return novo
             except Exception:
@@ -259,7 +269,8 @@ def anotar_resposta(central: str, operacao: str, resposta: Any, *,
                 con.close()
         with db.transaction() as con:
             return registrar_resposta(con, central, operacao, resposta,
-                                      ambiente=ambiente, fila_id=fila_id)
+                                      ambiente=ambiente, fila_id=fila_id,
+                                      vazio_e_404=vazio_e_404)
     except Exception as erro:  # o log não derruba a resposta da Central
         LOGGER.warning(linha_estruturada(
             central=central, operacao=operacao, ambiente=ambiente,

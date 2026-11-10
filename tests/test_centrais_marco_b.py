@@ -193,7 +193,10 @@ def test_cenprot_cada_chamada_vira_linha_de_log_sem_segredo(rede, banco, cofre):
     linhas = _log(banco)
     assert [(x["central"], x["operacao"], x["status_http"]) for x in linhas] \
         == [("CENPROT", "pedidos_consulta", 404), ("CENPROT", "token", 200)]
-    assert linhas[0]["nivel"] == SCH.AVISO
+    # Lista vazia no log é INFO «nada pendente», e não AVISO (10/11/2026: os
+    # 32 AVISOS da CENPROT de duas semanas eram todos lista vazia).
+    assert linhas[0]["nivel"] == SCH.INFO
+    assert linhas[0]["mensagem"] == "GET 404 (nada pendente)"
     tudo = json.dumps(linhas, ensure_ascii=False)
     for proibido in ("jwt-que-nao-pode-aparecer", "Senha-Ficticia-1",
                      "usuario-ficticio", "777123", "nr_pedido"):

@@ -58,6 +58,8 @@ def _cidade_uf(texto: str) -> tuple[str, str]:
     if "/" in t:
         a, b = t.rsplit("/", 1)
         return a.strip(), b.strip()
+    if re.fullmatch(r"[A-Za-z]{2}", t):
+        return "", t.upper()
     return t, ""
 
 
@@ -230,15 +232,16 @@ def quadro_da_certidao(con, certidao: dict, sv: dict) -> dict:
                 RCE._nome(quem.get("AVO_PATERNA"))]),
         })
         # A carga transcrita traz o par de avós, sem identificar separadamente
-        # avô e avó. Preserva a leitura literal sem deduzir sexo pelo nome.
+        # avô e avó. Completa apenas onde não há avós como pessoas cadastradas;
+        # uma leitura antiga não substitui os nomes já conferidos na ficha.
         transcrito = dados.get('acervo_transcrito') or {}
         if isinstance(transcrito, dict):
             for campo in ('avos_maternos', 'avos_paternos'):
-                if str(transcrito.get(campo) or '').strip():
+                if not q[campo] and str(transcrito.get(campo) or '').strip():
                     q[campo] = str(transcrito[campo]).strip()
             for genitor in q['genitores']:
                 chave = 'avos_maternos' if genitor['nome'] == RCE._nome(mae) else 'avos_paternos'
-                if str(transcrito.get(chave) or '').strip():
+                if not genitor['avos'] and str(transcrito.get(chave) or '').strip():
                     genitor['avos'] = str(transcrito[chave]).strip()
     elif especie in ("CASAMENTO", "CASAMENTO_RELIGIOSO"):
         q.update(_quadro_casamento(a, quem, dados, do_fato, dma_fato))

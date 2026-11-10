@@ -334,11 +334,21 @@ SCHEMA: tuple[tuple[str, str], ...] = (
     ("ix_dois_fatores_recuperacao_user",
      "CREATE INDEX IF NOT EXISTS ix_dois_fatores_recuperacao_user "
      "ON dois_fatores_recuperacao (user_id, id)"),
+    ("dois_fatores_dispositivos", """
+        CREATE TABLE IF NOT EXISTS dois_fatores_dispositivos (
+            token_hash TEXT PRIMARY KEY,
+            user_id bigint NOT NULL REFERENCES users(id),
+            versao TEXT NOT NULL,
+            expira_em double precision NOT NULL
+        )"""),
+    ("ix_dois_fatores_dispositivos_user",
+     "CREATE INDEX IF NOT EXISTS ix_dois_fatores_dispositivos_user "
+     "ON dois_fatores_dispositivos (user_id, expira_em)"),
 )
 
 
 def init_dois_fatores_schema(con) -> None:
-    """Cria as duas tabelas e o índice que faltarem. Idempotente."""
+    """Cria as tabelas e os índices que faltarem. Idempotente."""
     bd = banco(con)
     for nome, comando in SCHEMA:
         if not bd.tem_tabela(nome):
@@ -733,6 +743,7 @@ def desativar(con, user_id: int) -> bool:
     bd = banco(con)
     bd._escrita()
     bd.um("SELECT user_id FROM dois_fatores WHERE user_id = %s FOR UPDATE", (user_id,))
+    bd.escrever("DELETE FROM dois_fatores_dispositivos WHERE user_id = %s", (user_id,))
     bd.escrever("DELETE FROM dois_fatores_recuperacao WHERE user_id = %s", (user_id,))
     return bool(bd.escrever("DELETE FROM dois_fatores WHERE user_id = %s "
                             "RETURNING user_id", (user_id,)))
@@ -752,6 +763,7 @@ def trocar_codigos(con, user_id: int, agora: str | None = None,
     if not bd.um("SELECT user_id FROM dois_fatores WHERE user_id = %s "
                  "AND situacao = 'ATIVO' FOR UPDATE", (user_id,)):
         raise DoisFatoresError("A verificação em duas etapas não está ativa.")
+    bd.escrever("DELETE FROM dois_fatores_dispositivos WHERE user_id = %s", (user_id,))
     return _gravar_codigos(bd, user_id, agora or agora_iso(), prontos)
 
 

@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}Caixa bancário{% endblock %}
+{% block heading %}<h1>Caixa bancário</h1>{% endblock %}
+{% block content %}
+<p>Recebimentos confirmados automaticamente, separados das gavetas dos atendentes.
+  A data do pagamento é conservada; a data do registro identifica quando entrou no sistema.</p>
+<form method="get"><label>Data do registro <input type="date" name="dia" value="{{ dia }}" required></label><button>Consultar</button></form>
+<div class="table-wrap"><table><thead><tr><th>Registro</th><th>Pagamento</th><th>Protocolo</th><th>Depósito</th><th>Pagador</th><th>Forma</th><th>Valor</th><th>Situação</th></tr></thead>
+<tbody>{% for l in linhas %}<tr>
+  <td>{{ l.data }} {{ l.hora }}</td><td>{{ l.data_pagamento or '—' }}</td>
+  <td>{% if l.protocolo_id %}<a href="{{ url_for('caixa_protocolo', protocolo_id=l.protocolo_id) }}">{{ l.protocolo_numero }}</a>{% else %}—{% endif %}</td>
+  <td>{{ l.deposito_numero or '—' }}</td><td>{{ l.pagador }}</td><td>{{ l.forma_pagamento }}</td><td>R$ {{ l.valor }}</td><td>{{ 'Estornado' if l.excluido else 'Registrado' }}</td>
+</tr>{% else %}<tr><td colspan="8">Nenhum recebimento bancário registrado neste dia.</td></tr>{% endfor %}</tbody></table></div>
+<p><a href="{{ url_for('cobranca_lista') }}">Pix, boleto e cartão</a></p>
+{% endblock %}

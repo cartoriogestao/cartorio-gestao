@@ -4032,6 +4032,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 flash("O protesto foi lançado, mas o preenchimento salvo "
                       "continua na lista de Rascunhos.", "warning")
         flash(f"{ato.capitalize()} lançado.{onde}{aviso}", "success")
+        if ato == "APONTAMENTO":
+            _gerar_andamento_do_apontamento(titulo_id)
         if ato == "PROTESTO":
             _avisar_falta_do_instrumento([titulo_id])
         _avisar_motivo_trocado(r)
@@ -4041,6 +4043,41 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     # isso e forçar a assinatura?». Só LÊ e avisa — não trava a lavratura,
     # não emite nem assina instrumento (a assinatura com o A3 é humana). Falha
     # da leitura não pode parecer falha do ato já lavrado: cala.
+    def _gerar_andamento_do_apontamento(titulo_id: int) -> None:
+        """O apontamento pela ficha gera o andamento da CRA. Não envia.
+
+        A remessa já fazia isso no lote. O título apontado um a um ficava em
+        «apontamentos sem andamento» até alguém abrir a tela do retorno. A
+        falha do arquivo não desfaz o apontamento, que já está no livro.
+        """
+        import protesto_arquivo as PA
+        import protesto_retorno as PRE
+        try:
+            with db.connect() as con:
+                tit = PT.titulo(con, titulo_id)
+            codigo = str((tit or {}).get("apresentante_codigo") or "").strip()
+            if (not tit or str(tit.get("origem") or "").upper() != "CRA"
+                    or not codigo):
+                return
+            with db.transaction() as con:
+                resumo = PRE.gerar_andamentos_pendentes(
+                    con, dia=hoje(), agora=agora(), usuario=usuario_nome(),
+                    apresentante_codigo=codigo)
+        except (PRE.RetornoError, PA.ArquivoError) as erro:
+            flash("O andamento não saiu: "
+                  f"{erro} O apontamento ficou lavrado; o arquivo sai pela "
+                  "tela do retorno.", "warning")
+            return
+        if resumo["feitos"]:
+            quantos = sum(int(item["titulos"]) for item in resumo["feitos"])
+            flash(f"Andamento gerado para {len(resumo['feitos'])} "
+                  f"apresentante(s), {quantos} apontamento(s). Não foi enviado "
+                  "à CRA: baixe o arquivo e suba na Central até 11h30.",
+                  "success")
+        for item in resumo["recusas"]:
+            flash(f"O andamento do apresentante {item['apresentante']} não "
+                  f"saiu: {item['motivo']}", "warning")
+
     def _falta_para_o_xml(titulo_id: int) -> str | None:
         try:
             with db.connect() as con:

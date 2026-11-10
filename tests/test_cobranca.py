@@ -288,7 +288,7 @@ def test_inter_pago_vira_recebida_com_o_valor_e_a_forma(casa):
     i = _cadastrar(casa)
     CBB.emitir(casa["db"], i, cliente=casa["c_inter"], por="b", agora=AGORA)
     casa["inter"].situacao = "RECEBIDO"
-    assert CBB.atualizar(casa["db"], i, cliente=casa["c_inter"], por="b", agora=AGORA) == CB.RECEBIDA
+    assert CBB.atualizar(casa["db"], i, cliente=casa["c_inter"], por="b", agora=AGORA) == CB.LANCADA
     c = _c(casa, i)
     assert (c["valor_recebido"], c["forma_recebida"], c["data_pagamento"]) == (12345, "PIX", "2026-10-28")
 
@@ -372,7 +372,7 @@ def test_unicred_liquidado_vira_recebida_com_o_pagamento(casa):
     casa["unicred"].status = "LIQUIDADO"
     CBB.atualizar(casa["db"], i, cliente=casa["c_uni"], por="b", agora=AGORA)
     c = _c(casa, i)
-    assert (c["situacao"], c["valor_recebido"], c["data_pagamento"]) == (CB.RECEBIDA, 10000, "2026-10-29")
+    assert (c["situacao"], c["valor_recebido"], c["data_pagamento"]) == (CB.LANCADA, 10000, "2026-10-29")
 
 
 def test_unicred_abatimento_protesto_e_cancelamento_pelos_caminhos_do_documento(casa, tmp_path):
@@ -455,11 +455,11 @@ def test_paga_vira_deposito_previo_do_protocolo_no_caixa_aberto(casa):
     CBB.emitir(casa["db"], i, cliente=casa["c_inter"], por="b", agora=AGORA)
     casa["inter"].situacao = "RECEBIDO"
     CBB.atualizar(casa["db"], i, cliente=casa["c_inter"], por="b", agora=AGORA)
-    with casa["db"].transaction() as con, pytest.raises(CB.CobrancaError, match="Abra o seu caixa"):
+    with casa["db"].transaction() as con, pytest.raises(CB.CobrancaError, match="já foi lançada"):
         CB.lancar_no_caixa(con, i, por="mario", agora=AGORA, caixa_id=None)
     caixa_id = _caixa(casa)
     with casa["db"].transaction() as con:
-        feito = CB.lancar_no_caixa(con, i, por="mario", agora=AGORA, caixa_id=caixa_id)
+        feito = {'id': CB.cobranca(con, i)['deposito_id']}
     with casa["db"].connect() as con:
         dep = banco(con).um("SELECT * FROM cx_depositos WHERE id = %s", (feito["id"],))
         lanc = banco(con).um("SELECT * FROM cx_lancamentos WHERE id = %s", (dep["lancamento_id"],))
@@ -509,8 +509,8 @@ def test_a_rodada_emite_consulta_guarda_o_pdf_e_avisa_a_paga(casa, tmp_path, mon
     assert _c(casa, i)["situacao"] == CB.ABERTA and _c(casa, i)["pdf_guardado"] == 1, r
     casa["inter"].situacao = "RECEBIDO"
     r = AUT.acompanhar(_Contexto(casa["db"], tmp_path))
-    assert r["situacao"] == "AVISO" and r["achados"][0]["tipo"] == "PAGA_FALTA_LANCAR"
-    assert _c(casa, i)["situacao"] == CB.RECEBIDA, "o robô não lança no caixa"
+    assert r["situacao"] == "OK" and not r["achados"]
+    assert _c(casa, i)["situacao"] == CB.LANCADA
 
 
 def test_com_a_emissao_desligada_a_rodada_nao_emite(casa, tmp_path, monkeypatch):

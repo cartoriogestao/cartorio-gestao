@@ -157,6 +157,28 @@ def _moldura_do_teste(request, monkeypatch):
     if request.node.get_closest_marker("moldura_antiga"):
         monkeypatch.setattr(_navegacao_web, "PADRAO_DE_FABRICA", "antigo")
 
+
+# O LIBREOFFICE DA MÁQUINA NÃO ENTRA NO TESTE QUE NÃO O PEDIU — 10/11/2026.
+# A suíte inteira no servidor reserva (macOS, com LibreOffice) deu 15 falhas
+# que a CI (sem LibreOffice) não vê: a certidão saía em PDF em vez da tela, o
+# ensaio do layout barrava a conversão como «gravar arquivo», e o perfil do
+# conversor nascia numa pasta «C:\ProgramData» dentro da árvore, invalidando
+# a rodada. O servidor principal também tem LibreOffice. Quem testa a
+# conversão de verdade declara no módulo `USA_O_LIBREOFFICE_DE_VERDADE = True`.
+import impressao_pdf as _impressao_pdf  # noqa: E402
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _sem_libreoffice_da_maquina(request):
+    # ESCOPO DE MÓDULO: o ensaio do layout varre as telas na preparação do
+    # módulo (fixture `scope="module"`), antes de qualquer fixture por teste.
+    if getattr(request.module, "USA_O_LIBREOFFICE_DE_VERDADE", False):
+        yield
+        return
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_impressao_pdf, "onde_esta_o_conversor", lambda get_setting=None: None)
+        yield
+
 _SEED_NAME = "_cg_seed_schema.sqlite3"
 _DB_NAME = "cartorio_gestao.sqlite3"
 _TRAVA_SUITE = None

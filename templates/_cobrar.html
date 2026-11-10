@@ -99,7 +99,7 @@
                      class="protocolo-item-check"
                      {%- if i.marcado is not defined or i.marcado %} checked{% endif %}></td>
           <td>{{ i.codigo_ato }}</td>
-          <td><small>{{ (i.descricao or '—')[:70] }}</small></td>
+          <td><small>{{ i.descricao or '—' }}</small></td>
           <td>{{ i.quantidade }}</td>
           <td>{% if i.valor_total %}R$ {{ i.valor_total }}{% else %}—{% endif %}</td>
           {% if caixa and cobrar_itens %}
@@ -172,19 +172,14 @@
         <tr>
           <td>
             {% if i.faixas %}
-              <select name="cobrar" aria-label="Faixa do item {{ i.codigo_tj }}" style="max-width:100%"{% if not caixa and not diferido %} disabled{% endif %}>
-                <option value="">— escolha a faixa do valor do título —</option>
-                {% for faixa in i.faixas %}
-                <option value="{{ faixa.servico }}"{% if faixa.preco is none %} disabled{% endif %}{% if form and (faixa.servico|string) in form.getlist('cobrar') %} selected{% endif %}>{{ faixa.codigo_tj }} — {{ faixa.descricao }}{% if faixa.preco is not none %} — R$ {{ faixa.preco|centavos_reais }}{% else %} — {{ faixa.motivo }}{% endif %}</option>
-                {% endfor %}
-              </select>
+              {# a escolha da faixa vai na linha de baixo, na largura da tabela #}
             {% elif i.preco is not none %}
               <input type="checkbox" name="cobrar" value="{{ i.servico }}"
                      {% if not caixa and not diferido %}disabled{% endif %}{% if form and (i.servico|string) in form.getlist('cobrar') %} checked{% endif %}>
             {% endif %}
           </td>
           <td>{{ i.codigo_tj }}</td>
-          <td><small>{{ (i.descricao or '—')[:70] }}</small></td>
+          <td><small>{{ i.descricao or '—' }}</small></td>
           <td>{{ i.vezes }}</td>
           <td>
             {% if i.preco is not none %}R$ {{ i.preco | centavos_reais }}
@@ -192,6 +187,21 @@
             {% else %}<small>{{ i.motivo }}</small>{% endif %}
           </td>
         </tr>
+        {% if i.faixas %}
+        {# RELATO #158: na primeira coluna, sem cabeçalho e sem largura, o
+           seletor encolhia e o subitem escolhido aparecia cortado. Na linha
+           própria ele ocupa a largura da tabela. #}
+        <tr>
+          <td colspan="5">
+              <select name="cobrar" aria-label="Faixa do item {{ i.codigo_tj }}" style="width:100%"{% if not caixa and not diferido %} disabled{% endif %}>
+                <option value="">— escolha a faixa do valor do título —</option>
+                {% for faixa in i.faixas %}
+                <option value="{{ faixa.servico }}"{% if faixa.preco is none %} disabled{% endif %}{% if form and (faixa.servico|string) in form.getlist('cobrar') %} selected{% endif %}>{{ faixa.codigo_tj }} — {{ faixa.descricao }}{% if faixa.preco is not none %} — R$ {{ faixa.preco|centavos_reais }}{% else %} — {{ faixa.motivo }}{% endif %}</option>
+                {% endfor %}
+              </select>
+          </td>
+        </tr>
+        {% endif %}
         {% endfor %}
       </tbody>
     </table>

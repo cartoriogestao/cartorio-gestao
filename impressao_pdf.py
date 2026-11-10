@@ -74,6 +74,7 @@ import re
 import base64
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import zipfile
@@ -93,8 +94,21 @@ CAMINHOS_CONHECIDOS: tuple[str, ...] = (
 #
 # Mora ao lado do banco e do `selador.cred`, e **e persistente**: montado a cada
 # vez, a conversao pagaria os 11 s da primeira montagem sempre.
-PASTA_DO_PERFIL = Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData")) / \
-    "CartorioGestao" / "libreoffice_perfil"
+#
+# FORA DO WINDOWS NAO HA `C:\ProgramData` (10/11/2026, servidor reserva no
+# macOS): o caminho virava uma pasta com esse NOME dentro da pasta atual. La
+# o perfil fica na pasta de dados da instalacao, a mesma do `app.get_data_dir`.
+# No Windows nada muda.
+def _pasta_do_perfil() -> Path:
+    if sys.platform.startswith("win"):
+        return Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData")) / \
+            "CartorioGestao" / "libreoffice_perfil"
+    dados = os.environ.get("CARTORIO_GESTAO_DATA")
+    base = Path(dados).expanduser() if dados else Path.home() / ".cartorio_gestao"
+    return base / "libreoffice_perfil"
+
+
+PASTA_DO_PERFIL = _pasta_do_perfil()
 
 # Prazo largo de proposito: medido de 1 a 92 segundos, e o alto foi com a
 # maquina ocupada. Prazo curto transformaria maquina carregada em papel que nao

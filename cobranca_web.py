@@ -85,6 +85,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                situacoes=CB.SITUACOES, situacao=situacao, cfg=cfg,
                                bancos=CB.BANCOS, reais=DP.reais, papel=usuario_papel())
 
+    @app.route('/caixa/recebimentos-bancarios')
+    @login_required
+    @roles_required(*QUEM_DECIDE)
+    def cobranca_caixa_bancario():
+        try:
+            dia = date.fromisoformat(request.args.get('dia') or date.today().isoformat()).isoformat()
+        except ValueError:
+            abort(400)
+        with db.connect() as con:
+            linhas = banco(con).ler("""SELECT l.*, d.data AS data_pagamento,
+                                               d.numero AS deposito_numero, p.numero AS protocolo_numero
+                FROM cx_lancamentos l JOIN cx_caixas c ON c.id=l.caixa_id
+                LEFT JOIN cx_depositos d ON d.lancamento_id=l.id
+                LEFT JOIN cx_protocolos p ON p.id=l.protocolo_id
+                WHERE c.operador_nome=%s AND c.data=%s ORDER BY l.id""",
+                                      (CB.OPERADOR_DO_CAIXA_BANCARIO, dia))
+        return render_template('cobranca_caixa_bancario.html', linhas=linhas, dia=dia)
+
     # ----------------------------------------------------------------- nova
 
     @app.route("/caixa/cobranca/nova", methods=["GET", "POST"])
@@ -177,12 +195,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 protocolo = banco(con).um("SELECT id, numero FROM cx_protocolos WHERE id = %s",
                                           (int(c["protocolo_id"]),))
             caixa = CB.caixa_aberto(con, usuario_nome())
+            manuais = CB.recebimentos_manuais(con, c) if c['situacao'] == CB.RECEBIDA else []
         return render_template("cobranca_ficha.html", c=c, rastro=rastro, cfg=cfg,
                                protocolo=protocolo, caixa=caixa, endereco=CB.endereco(c),
                                pedido=CB.pedido(c), pedidos=CB.PEDIDOS,
                                recursos=CB.RECURSOS[c["banco"]], situacoes=CB.SITUACOES,
                                bancos=CB.BANCOS, reais=DP.reais, papel=usuario_papel(),
-                               com_cofre=_com_cofre())
+                               com_cofre=_com_cofre(), recebimentos_manuais=manuais)
 
     @app.route("/caixa/cobranca/<int:cobranca_id>/boleto.pdf")
     @login_required
@@ -210,6 +229,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not c:
             abort(404)
         try:
+            if acao == 'vincular_recebimento':
+                if papel not in QUEM_DECIDE:
+                    abort(403)
+                with db.transaction() as con:
+                    CB.vincular_recebimento_existente(
+                        con, cobranca_id, ids=f.getlist('lancamento_id'), ciencia=f.get('mesmo_recebimento') == '1',
+                        motivo=f.get('motivo') or '', por=por, papel=papel, agora=agora)
+                audit('COBRANCA_VINCULO_CAIXA_EXISTENTE', 'cb_cobrancas', cobranca_id,
+                      {'lancamentos': f.getlist('lancamento_id'), 'motivo': f.get('motivo')})
+                flash('Recebimento conciliado com os lançamentos existentes. Nenhuma nova entrada de dinheiro.', 'success')
+                return _ficha(cobranca_id)
             if acao == "emitir":
                 with db.connect() as con:
                     if CB.configuracao(con)["cobranca_ligada"] != "1":

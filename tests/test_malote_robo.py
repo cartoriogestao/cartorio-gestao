@@ -519,3 +519,33 @@ def test_escolher_responsavel_exige_admin(cg_casa):
     r = c.post("/automacao/malote/responsavel", data={"responsavel_malote": "beatriz", "csrf_token": csrf})
     assert r.status_code == 403
     assert db.get_setting("malote_cadastra_em_nome_de") == ""
+
+
+def test_fluxo_com_triagem_retorna_pendencia_e_retoma_sem_novo_documento(tmp_path, monkeypatch, arquivos):
+    import malote_fluxo as FL
+    import malote_agente as MA
+    cofre = CofreNaMemoria({MR.CREDENCIAL: {'usuario': '00011122233', 'senha': 'segredo'}})
+    cofre.instalar(monkeypatch)
+    monkeypatch.setattr(FL, 'conferir_distribuicao', lambda con: {})
+    monkeypatch.setattr(MA, 'medir', lambda *a: {'cadastrados': 0, 'grupos': [], 'erros': []})
+    ctx = _ctx(tmp_path)
+    ctx.processo['parametros'] = {'triar_recebidos': True}
+    chamadas = []
+    def triagem(*a, **kw):
+        chamadas.append(kw)
+        return {'triados': 0, 'tarefas': 0, 'pendentes': 1}
+    r = MR.ciencia_diaria(ctx, cliente=MR.ClienteMalote(MaloteFalso({})), triar=triagem)
+    assert r['situacao'] == 'ERRO' and 'triagem pendente' in r['relato']
+    assert chamadas == [{'somente_malote': True}]
+
+
+def test_distribuicao_incompleta_para_antes_da_ciencia(tmp_path, monkeypatch, arquivos):
+    import malote_fluxo as FL
+    cofre = CofreNaMemoria({MR.CREDENCIAL: {'usuario': '00011122233', 'senha': 'segredo'}})
+    cofre.instalar(monkeypatch)
+    def recusa(*a):raise FL.FluxoMaloteError('falta responsável')
+    monkeypatch.setattr(FL, 'conferir_distribuicao', recusa)
+    ctx = _ctx(tmp_path); ctx.processo['parametros'] = {'triar_recebidos': True}
+    portal = MaloteFalso({'1': '81000000000001'})
+    r = MR.ciencia_diaria(ctx, cliente=MR.ClienteMalote(portal))
+    assert r['situacao'] == 'AVISO' and not portal.lidos

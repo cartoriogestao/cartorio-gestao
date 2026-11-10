@@ -71,7 +71,7 @@ APP_NAME = "Gestão Integrada da Serventia"
 # servidor avisou «quem respondeu está na versão 3.6.137, e a instalada é
 # 3.6.138» sobre uma atualização que tinha funcionado (504 de 505 arquivos
 # batendo byte a byte). `tests/test_os_dois_carimbos_da_versao.py` guarda isso.
-VERSION = "3.7.14"
+VERSION = "3.7.15"
 # 3.6.286 - 06/10/2026 Release do sandbox para o oficial: centrais (fila/log/trava), A3, editor/motor de modelos, produtividade, selo robo, F10-F12 do RI, SIRC (cancelados)
 # 3.6.285 - CENPROT: POST /token com form usuario/senha (x-www-form-urlencoded)
 # 3.6.284 - Projetos lista: coluna Atualizado (DD/MM/AA - HH:MM, fuso local)
@@ -3221,6 +3221,7 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     # aberto a todos por esquecimento (o teste `test_todo_tipo_de_anexo_...`
     # cobra a lista contra quem grava anexo).
     TELA_DO_ANEXO: dict[str, tuple[str, ...]] = {
+        "MALOTE_FRAUDE": ("fraudes",),
         "EXPEDIENTE": ("expediente_detail",),
         "TASK": ("task_detail",),
         "NT_ATO": ("notas_ato",),

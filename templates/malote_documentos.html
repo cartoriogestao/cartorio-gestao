@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>PDFs das comunicações de fraude</h1>{% endblock %}
+{% block content %}
+<p>Junte a circular e os anexos aos alertas já cadastrados. O código do PDF precisa
+constar na procedência da comunicação. Repetir o mesmo arquivo não duplica o anexo.</p>
+<p>Esta inclusão conserva o PDF original; não cria pessoa, expediente ou tarefa.</p>
+<form method="post" enctype="multipart/form-data" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Código principal do Malote <input name="grupo" required pattern="[0-9]{14}" maxlength="14" value="{{ grupo }}"></label>
+  <label>PDF recebido <input type="file" name="documento" accept="application/pdf,.pdf" required></label>
+  <button type="submit">Guardar e vincular aos alertas</button>
+</form>
+<p><a href="{{ url_for('fraudes') }}">Voltar à lista de atenção</a> ·
+<a href="{{ url_for('malote_robo_codigo') }}">Login e código do robô</a></p>
+{% endblock %}

@@ -59,10 +59,14 @@ def banco() -> sqlite3.Connection:
 
 def nascimento(con, *, local_ibge=1, **kw):
     ibge = {"local_nascimento": local_ibge} if local_ibge is not None else {}
+    # Desde o #380, «Hospital …» escrito JÁ É o código 1 do SIRC. O caso «sem
+    # onde nasceu» precisa de um lugar escrito que não diga o tipo: cidade
+    # sozinha não vira código (rc_campos_do_acervo.codigo_ibge_do_local_escrito).
+    lugar = "Hospital Municipal" if local_ibge is not None else "Cidade Exemplo"
     return RC.lavrar_assento(
         con, especie="NASCIMENTO", nome="JOÃO EXEMPLO", sv=SV, agora=AGORA,
         data_extenso=EXTENSO, data_fato="2026-10-10", dados={"sexo": "M"},
-        termo_dados={"local_fato_nome": "Hospital Municipal"}, ibge=ibge,
+        termo_dados={"local_fato_nome": lugar}, ibge=ibge,
         pessoas=[{"papel": "REGISTRADO", "nome": "JOÃO EXEMPLO", "sexo": "M"},
                  {"papel": "MAE", "nome": "MARIA EXEMPLO"},
                  {"papel": "PAI", "nome": "IGNORADO"},
@@ -350,6 +354,8 @@ from test_fila_e_arrumar_rcpn import _abrir_e_conferir, _quantos  # noqa: E402
 def test_a_rota_recusa_devolve_o_formulario_e_nao_grava(casa):
     dados = _rascunho_nascimento()
     dados["ibge_local"] = ""                          # «onde nasceu» em branco
+    # e o lugar escrito sem o tipo: desde o #380 «Maternidade …» já é o código 1
+    dados["local_fato_nome"] = "Cidade Exemplo"
     slug, conf = _abrir_e_conferir(casa, dados)
     antes = _quantos(casa)
     envio = _como_o_navegador(conf, ("acao", "lavrar"),

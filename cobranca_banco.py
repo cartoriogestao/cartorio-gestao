@@ -19,9 +19,8 @@ O CONTRATO DE UM ADAPTADOR
     abatimento(c, valor, justificativa), cancelar_abatimento(c, justificativa),
     protesto_automatico(c, ligado=, dias=, dias_uteis=) -> codigo_instrucao
 
-O lançamento no caixa não mora aqui. A Parcela paga entra em
-`cobranca.entrar_no_caixa_geral` quando `gravar_resposta` guarda o pago.
-Inter e Unicred seguem no clique, `cobranca.lancar_no_caixa`.
+A confirmação entra no caixa bancário em `cobranca.gravar_resposta`.
+O adaptador não lança dinheiro por conta própria.
 """
 from __future__ import annotations
 
@@ -114,7 +113,7 @@ def atualizar(db, cobranca_id: int, *, cliente, por: str, agora: datetime) -> st
         c = CB.cobranca(con, cobranca_id)
     if not c:
         raise CB.CobrancaError("Cobrança não encontrada.")
-    if c["situacao"] not in CB.EM_ABERTO:
+    if c["situacao"] not in (*CB.EM_ABERTO, CB.RECEBIDA):
         return c["situacao"]
     _confere(c, cliente)
     if not c["banco_id"]:
@@ -233,8 +232,13 @@ def rodada(db, *, cliente, por: str, agora: datetime, pasta: Any, emitir_ligado:
         pedidas = CB.com_pedido(con, banco_codigo=cliente.banco, ambiente=cliente.ambiente)
     for c in novas:
         try:
-            feito["emitidas"].append((int(c["id"]), emitir(db, c["id"], cliente=cliente,
-                                                           por=por, agora=agora)))
+            nova = emitir(db, c["id"], cliente=cliente, por=por, agora=agora)
+            if nova in (CB.FALHOU, CB.EMITINDO):
+                with db.connect() as con:
+                    atual = CB.cobranca(con, c["id"])
+                feito["falharam"].append((int(c["id"]), atual.get("erro") or CB.SITUACOES[nova]))
+            else:
+                feito["emitidas"].append((int(c["id"]), nova))
         except Indisponivel:
             raise
         except (BancoError, CB.CobrancaError) as erro:
@@ -260,7 +264,8 @@ def rodada(db, *, cliente, por: str, agora: datetime, pasta: Any, emitir_ligado:
         if nova != c["situacao"]:
             feito["mudaram"].append((int(c["id"]), nova))
     with db.transaction() as con:
-        faltam = CB.sem_pdf(con, banco_codigo=cliente.banco, ambiente=cliente.ambiente)
+        faltam = (CB.sem_pdf(con, banco_codigo=cliente.banco, ambiente=cliente.ambiente)
+                  if getattr(cliente, "fornece_pdf", True) else [])
     for c in faltam:
         try:
             guardar_pdf(db, c["id"], cliente=cliente, pasta=pasta)

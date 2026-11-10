@@ -143,6 +143,14 @@ def _gancho(evento, args) -> None:
     elif evento == "ctypes.dlopen" and "pkcs" in str(args[0]).lower():
         _barrar(f"token A3: {args[0]}")
     elif evento in _EVENTOS_DE_ARQUIVO:
+        # NO macOS E NO LINUX O `shutil.rmtree` APAGA POR DESCRITOR (10/11/2026): os filhos
+        # chegam como nome RELATIVO com `dir_fd`, e a trava os lia contra a pasta atual —
+        # a limpeza de toda pasta temporária virava «mexer em arquivo» e a tela, HTTP 500.
+        # A raiz dessa árvore já passou por aqui no evento `shutil.rmtree`. No Windows o
+        # `rmtree` usa caminho absoluto, e nada muda.
+        if evento in ("os.remove", "os.rmdir") and len(args) > 1 and args[1] is not None \
+                and isinstance(args[0], (str, bytes)) and not os.path.isabs(os.fsdecode(args[0])):
+            return
         for n in _EVENTOS_DE_ARQUIVO[evento]:
             if n < len(args) and isinstance(args[n], (str, bytes, os.PathLike)) \
                     and not _dentro(_normal(args[n]), _trava["permitidas"]):

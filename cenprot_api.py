@@ -317,7 +317,12 @@ def _bater(ambiente: str, metodo: str, caminho: str, *, corpo: bytes | None = No
             f"Não consegui falar com a CENPROT em {hospedeiro}: "
             f"{erro.causa or erro}. Confira a internet da serventia e tente "
             f"de novo; nada foi enviado.") from erro
-    LOG.anotar_resposta(CENTRAL_NO_LOG, operacao, resposta, ambiente=qual)
+    # LISTA VAZIA RESPONDE 404 — ver `LISTAS_QUE_RESPONDEM_404_QUANDO_VAZIAS`.
+    # No log ela é «nada pendente» (INFO), e não um AVISO a investigar.
+    LOG.anotar_resposta(
+        CENTRAL_NO_LOG, operacao, resposta, ambiente=qual,
+        vazio_e_404=(metodo == "GET"
+                     and operacao in LISTAS_QUE_RESPONDEM_404_QUANDO_VAZIAS))
     return resposta.como_dict()
 
 

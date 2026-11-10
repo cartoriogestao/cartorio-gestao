@@ -21,6 +21,7 @@
   {% if c.pix_copia_e_cola %}<p>Pix copia e cola: <code style="word-break:break-all">{{ c.pix_copia_e_cola }}</code></p>{% endif %}
   {% if c.valor_recebido %}<p>Recebido R$ {{ reais(c.valor_recebido) }} em {{ c.data_pagamento or '?' }} ({{ c.forma_recebida|lower or 'boleto' }}).</p>{% endif %}
   {% if c.deposito_id %}<p>Lançada no caixa: depósito prévio #{{ c.deposito_id }}.</p>{% endif %}
+  {% if c.caixa_lancamentos and c.caixa_lancamentos != '[]' %}<p>Conciliada com os lançamentos de caixa já existentes: {{ c.caixa_lancamentos }}. Nenhuma entrada duplicada.</p>{% endif %}
 </div>
 
 <div class="actions">
@@ -29,11 +30,11 @@
   <form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='emitir') }}" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Emitir no banco</button></form>
   {% endif %}
-  {% if c.situacao in ['EMITINDO', 'ABERTA'] %}
+  {% if c.situacao in ['EMITINDO', 'ABERTA', 'RECEBIDA'] %}
   <form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='atualizar') }}" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Consultar o banco agora</button></form>
   {% endif %}
-  {% if c.situacao == 'ABERTA' and not c.pdf_guardado %}
+  {% if c.situacao == 'ABERTA' and not c.pdf_guardado and 'pdf' in recursos %}
   <form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='baixar_pdf') }}" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Baixar o PDF do banco</button></form>
   {% endif %}
@@ -41,21 +42,28 @@
 {% if com_cofre %}<p class="muted small">Com o cofre da automação instalado, os botões que falam com o banco pedem a rodada
   do despachante: o resultado aparece aqui no minuto seguinte.</p>{% endif %}
 
-{% if c.situacao == 'RECEBIDA' and c.banco == 'PARCELA' %}
+{% if c.situacao == 'RECEBIDA' %}
 <div class="card">
-  <p>A Parcela confirmou o pagamento. Ele entra sozinho no <strong>caixa geral</strong>
-    da serventia, como depósito prévio deste protocolo. Os itens não se quitam com isso.</p>
-  <p>Enquanto o caixa geral de hoje não estiver aberto, o depósito fica pendente
-    e entra quando esse caixa abrir. Não há lançamento no caixa de quem atende.</p>
+  <p>O banco confirmou o pagamento. O lançamento é automático no <strong>caixa bancário</strong>,
+    separado da gaveta do atendente, com a data do pagamento e auditoria.</p>
+  <p>O lançamento ainda está pendente. Confira o histórico abaixo: a rotina retomará sem
+    duplicar a entrada nem reabrir um caixa conferido. Não cobre novamente este pagamento.</p>
 </div>
-{% elif c.situacao == 'RECEBIDA' %}
-<form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='lancar') }}" class="card">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <p>O banco diz que o cliente pagou. Lançar no caixa cria um <strong>depósito prévio</strong> do protocolo,
-    no seu caixa de hoje; com o saldo dele se quitam os itens.</p>
-  {% if caixa %}<button type="submit">Lançar no meu caixa (aberto em {{ caixa.data }})</button>
-  {% else %}<p class="badge alta">Abra o seu caixa antes: <a href="{{ url_for('caixa') }}">Caixa</a>.</p>{% endif %}
-</form>
+{% endif %}
+
+{% if c.situacao == 'RECEBIDA' and recebimentos_manuais and papel in ['ADMIN','MANAGER'] %}
+<section class="card"><h2>Conferir recebimento já lançado</h2>
+  <p>Existem entradas na mesma data, forma e protocolo. O lançamento automático ficou bloqueado para evitar duplicidade.
+    Vincule somente se forem o mesmo pagamento confirmado pelo banco.</p>
+  <form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='vincular_recebimento') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for l in recebimentos_manuais %}<label><input type="checkbox" name="lancamento_id" value="{{ l.id }}">
+      #{{ l.id }} · {{ l.data }} · {{ l.forma_pagamento }} · R$ {{ l.valor }} · {{ l.descricao }}</label>{% endfor %}
+    <label>Justificativa do vínculo <input name="motivo" minlength="10" maxlength="500" required></label>
+    <label><input type="checkbox" name="mesmo_recebimento" value="1" required> Confirmei que os lançamentos selecionados são o mesmo pagamento desta cobrança.</label>
+    <button type="submit">Conciliar sem nova entrada</button>
+  </form>
+</section>
 {% endif %}
 
 {% if c.situacao in ['A_EMITIR', 'FALHOU'] %}

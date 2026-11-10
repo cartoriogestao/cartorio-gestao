@@ -510,7 +510,7 @@ def _copia_do_banco(con, banco: Path) -> str:
     return str(copia)
 
 
-def ciencia_diaria(ctx, *, cliente: ClienteMalote | None = None, cadastrar=None, copiar=None) -> dict:
+def ciencia_diaria(ctx, *, cliente: ClienteMalote | None = None, cadastrar=None, copiar=None, triar=None) -> dict:
     """O processo MALOTE_CIENCIA_DIARIA (contrato de `automacao_processos`)."""
     import automacao_cofre as COFRE
     import malote_agente as MA
@@ -551,6 +551,15 @@ def ciencia_diaria(ctx, *, cliente: ClienteMalote | None = None, cadastrar=None,
         return {"situacao": "AVISO", "relato": f"Nenhum documento aberto: {erro}",
                 "achados": [], "acoes": [], "erro": str(erro)}
 
+    fazer_triagem = bool((ctx.processo.get("parametros") or {}).get("triar_recebidos"))
+    if fazer_triagem:
+        import malote_fluxo as FL
+        try:
+            with ctx.db.connect() as con:
+                FL.conferir_distribuicao(con)
+        except FL.FluxoMaloteError as erro:
+            return {"situacao": "AVISO", "relato": "Nenhum documento aberto: " + str(erro),
+                    "achados": [], "acoes": [], "erro": "distribuição do malote incompleta"}
     from malote_agente import capa_do_pdf
     entrada.mkdir(parents=True, exist_ok=True)
     abertos: list[dict] = []
@@ -609,18 +618,35 @@ def ciencia_diaria(ctx, *, cliente: ClienteMalote | None = None, cadastrar=None,
                 resumo = (cadastrar or (lambda c: MA.rodada(c, ctx.pasta_dados, confirmar=True)))(con)
         except Exception as erro:                # noqa: BLE001 — os PDFs ficam na entrada
             falhas.append(f"cadastro: {type(erro).__name__}: {erro}")
+    triagem = None
+    if fazer_triagem and not falhas:
+        # Retoma também quando o cadastro já ocorreu numa rodada anterior.
+        import gestor_expedientes as GX
+        try:
+            with ctx.db.connect() as con:
+                triagem = (triar or GX.triar_pendentes)(con, ctx.pasta_dados, somente_malote=True)
+            if triagem.get("sem_chave") or triagem.get("erros") or triagem.get("pendentes"):
+                falhas.append("triagem pendente: confira a configuração de IA e as leituras do Malote")
+        except Exception as erro:
+            falhas.append("triagem pendente: " + type(erro).__name__)
     pendentes = [g for g in resumo.get("grupos", []) if g["situacao"] in {
         "A_CADASTRAR", "SEM_RESPONSAVEL", "FRAUDE_PENDENTE", "PARCIAL"}]
     acoes = [{"acao": "abriu no malote (ciência)", "codigo": a["codigo"], "arquivo": a["arquivo"]} for a in abertos]
+    if fazer_triagem:
+        acoes.append({"acao": "triagem_malote", "concluida": bool(triagem is not None and not
+                      (triagem.get("sem_chave") or triagem.get("erros") or triagem.get("pendentes"))),
+                      "triados": (triagem or {}).get("triados", 0)})
     if copia:
         acoes.append({"acao": "cópia do banco antes de cadastrar", "arquivo": copia})
     relato = (f"{len(abertos)} documento(s) aberto(s) no malote (ciência dada) e baixado(s); "
               f"{resumo.get('cadastrados', 0)} expediente(s) em Processos → Entradas; "
               f"{len(resumo.get('fraudes') or [])} aviso(s) de fraude levado(s) à lista.")
+    if triagem:
+        relato += f" Triagem: {triagem.get('triados', 0)} expediente(s), {triagem.get('tarefas', 0)} tarefa(s) de cumprimento."
     if pendentes:
         relato += f" {len(pendentes)} grupo(s) pendente(s) de inclusão: " + \
             "; ".join(f"{g['nome']}: {g['nota'] or g['situacao']}" for g in pendentes[:5]) + "."
-    if not abertos and not falhas and not pendentes and not resumo.get("cadastrados") and not resumo.get("fraudes"):
+    if not abertos and not falhas and not pendentes and not resumo.get("cadastrados") and not resumo.get("fraudes") and not (triagem or {}).get("triados"):
         relato = "Nenhum documento não lido no malote."
     if falhas or resumo.get("erros"):
         relato += f" {len(falhas) + len(resumo.get('erros') or [])} falha(s): " + \

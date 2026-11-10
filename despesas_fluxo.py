@@ -47,7 +47,7 @@ def revisao(d: dict) -> str:
     """Detecta formulario antigo; autorizacao e estado bancario tambem contam."""
     campos = ('id', *CAMPOS, 'situacao', 'autorizada_em', 'autorizada_por',
               'acima_do_teto', 'enviada_em', 'tentativas', 'banco_codigo',
-              'banco_e2e', 'banco_status', 'paga_em', 'extrato_id')
+              'banco_e2e', 'banco_status', 'paga_em', 'extrato_id', 'recebedor_previo')
     return hashlib.sha256(json.dumps({k: d.get(k) for k in campos},
                                     sort_keys=True, default=str).encode()).hexdigest()
 
@@ -145,7 +145,7 @@ def corrigir(con, despesa_id: int, *, dados: Any, motivo: str, versao: str,
     bd.escrever("""UPDATE dp_despesas SET forma=%s,codigo=%s,codigo_barras=%s,valor=%s,
         vencimento=%s,beneficiario_nome=%s,beneficiario_documento=%s,divergencia=%s,
         situacao='AGUARDANDO_AUTORIZACAO',autorizada_em=NULL,autorizada_por=NULL,
-        autorizada_pela_regra='',acima_do_teto=0,ambiente=NULL,enviada_em=NULL,
+        autorizada_pela_regra='',recebedor_previo='',acima_do_teto=0,ambiente=NULL,enviada_em=NULL,
         tentativas=0,banco_status='',mensagem='' WHERE id=%s""",
         (*[novo[k] for k in CAMPOS], divergencia, int(despesa_id)))
     quando = DP._carimbo(agora)

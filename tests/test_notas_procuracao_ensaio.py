@@ -8,7 +8,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 # `ambiente` mora em SANDBOX\ambiente.py, FORA da pasta sistema, e não viaja
 # quando a árvore é copiada para empacotar — ali a coleta morria com
 # ImportError (suíte de 14/10/2026). Este ensaio só existe no SANDBOX: sem o

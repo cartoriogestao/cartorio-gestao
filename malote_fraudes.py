@@ -391,17 +391,26 @@ def texto_dos_arquivos(arquivos, limite: int = LIMITE_DO_TEXTO) -> str:
     for p in arquivos:
         p = Path(p)
         if p.suffix.lower() != ".pdf":
-            partes.append(f"[arquivo {p.name}: não é PDF, não lido]")
+            partes.append(f"[LEITURA_INCOMPLETA: arquivo {p.name} não é PDF]")
             continue
         try:
             from pypdf import PdfReader
             logging.getLogger("pypdf").setLevel(logging.ERROR)
-            texto = " ".join((pg.extract_text() or "") for pg in PdfReader(str(p)).pages[:8])
+            leitor = PdfReader(str(p))
+            textos = [(pg.extract_text() or "") for pg in leitor.pages[:64]]
+            incompleto = len(leitor.pages) > 64 or any(
+                pg.images and len(texto.strip()) < 80 for pg, texto in zip(leitor.pages[:64], textos))
+            texto = " ".join(textos)
+            if incompleto:
+                texto = "[LEITURA_INCOMPLETA: há página digitalizada sem texto; conferir por OCR] " + texto
         except Exception as erro:                       # noqa: BLE001 — vai ao texto
-            partes.append(f"[arquivo {p.name}: não abriu ({type(erro).__name__})]")
+            partes.append(f"[LEITURA_INCOMPLETA: arquivo {p.name} não abriu ({type(erro).__name__})]")
             continue
         partes.append(f"--- arquivo: {p.name}\n{' '.join(texto.split())}")
-    return "\n".join(partes)[:limite]
+    texto = "\n".join(partes)
+    if len(texto) > limite:
+        texto = "[LEITURA_INCOMPLETA: texto excede o limite] " + texto
+    return texto[:limite]
 
 
 def parece_fraude(*textos: str) -> bool:
@@ -580,6 +589,9 @@ def tratar_grupo(con: sqlite3.Connection, g, pasta_dados: Path, raiz_arquivos: P
     texto = (ler_texto or texto_dos_arquivos)(g.arquivos)
     if not parece_fraude(capa.get("assunto") or "", g.nome, texto):
         return {"caminho": "EXPEDIENTE", "motivo": "nenhuma palavra de fraude", "leu": False}
+    if "[LEITURA_INCOMPLETA:" in texto:
+        return {"caminho": "PENDENTE", "leu": False,
+                "motivo": "aviso de fraude com leitura incompleta (imagem ou PDF sem texto legível): precisa de OCR ou conferência das páginas; PDF preservado na entrada"}
     if letras_do_texto(texto) < MINIMO_DE_LETRAS:
         return {"caminho": "PENDENTE", "leu": False,
                 "motivo": "parece aviso de fraude, mas o PDF não tem texto (é imagem digitalizada) e a IA "
@@ -660,6 +672,14 @@ def tratar_grupo(con: sqlite3.Connection, g, pasta_dados: Path, raiz_arquivos: P
                                visto_em = EXCLUDED.visto_em, situacao = EXCLUDED.situacao,
                                expediente_id = NULL, nota = EXCLUDED.nota""",
                         (c["sha256"], str(p), agora, nota))
+        # A lista deve oferecer o PDF original, não apenas o caminho em texto.
+        import malote_documentos as MD
+        autor = bd.um("SELECT id FROM users WHERE username=%s AND active=1", (usuario,))
+        alertas = [x["alerta_id"] for x in incluidos + ja_havia]
+        for c in copiados:
+            if str(c["original_name"]).lower().endswith(".pdf"):
+                MD.vincular(con, dict(c, alertas=alertas, codigo=capa.get("codigo") or g.nome),
+                            usuario_id=int(autor["id"]) if autor else None, agora=agora)
         # O agente diz quem é e a mando de quem age (26/10/2026).
         IDR.registrar(bd, ts=agora, user_id=None, username=QUEM,
                       action="FRAUDE_ALERTAS_DO_MALOTE", entity_type="FR_ALERTAS",

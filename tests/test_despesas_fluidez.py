@@ -150,7 +150,10 @@ def test_tela_corrige_sem_chamar_banco_e_exige_nova_autorizacao(cg_casa_logada, 
     assert 'Ler código' in html and 'Salvar correção' in html
     assert c.post(f'{BASE}/{i}/autorizar', data={'csrf_token':dados['csrf_token'], 'revisao':dados['revisao']}).status_code == 302
     assert _d(db, i)['situacao'] == DP.AGUARDANDO
-    c.post(f'{BASE}/{i}/autorizar', data={'csrf_token':dados['csrf_token'], 'revisao':DF.revisao(_d(db,i))})
+    d = _d(db, i)
+    c.post(f'{BASE}/{i}/autorizar', data={'csrf_token':dados['csrf_token'], 'revisao':DF.revisao(d),
+           'destino_nome': d['beneficiario_nome'], 'destino_documento': d['beneficiario_documento'],
+           'destino_fonte': 'Consulta ficticia no banco', 'destino_ciencia': '1'})
     assert _d(db, i)['situacao'] == DP.AUTORIZADA
 
 

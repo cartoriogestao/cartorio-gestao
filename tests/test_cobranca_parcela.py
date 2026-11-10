@@ -70,7 +70,7 @@ def test_a_emissao_pede_pix_boleto_e_cartao_em_centavos():
 def test_o_cartao_pago_vira_recebida():
     lido = PX.ler({
         "token": "tok-1", "url": "https://pay.exemplo/tok-1", "status": "active",
-        "sale": {"status": "paid", "form_payment": "credit", "amount": 15000,
+        "sale": {"id": "venda-ficticia", "status": "paid", "form_payment": "credit", "amount": 15000,
                  "updated_at": "2026-11-10T15:00:00Z"},
     })
     assert lido["situacao"] == CB.RECEBIDA
@@ -89,8 +89,9 @@ def test_o_link_aberto_nao_vira_pago():
 def test_o_cancelamento_usa_o_id_do_link():
     cliente, t = _cliente({
         PX.CAMINHO_DO_TOKEN: Resposta(200, {"access_token": "jwt", "expires_in": 3600}),
-        "/v1/payment-links/tok-1": Resposta(200, {"id": "id-real", "token": "tok-1",
-                                                  "status": "active"}),
+        "/v1/sellers/seller-de-teste/payment-links": Resposta(200, {
+            "results": [{"id": "id-real", "token": "tok-1", "status": "active"}],
+            "has_more": False}),
         "/cancel": Resposta(200, {}),
     })
     cliente.cancelar(COBRANCA, "cliente desistiu do ato")
@@ -209,7 +210,7 @@ def _quitado(db, protocolo_id: int) -> int:
     return int(linha["quitado"])
 
 
-def test_paga_com_caixa_geral_aberto_entra_e_nao_quita(protocolo):
+def test_paga_com_caixa_geral_aberto_entra_no_bancario_e_quita(protocolo):
     db, pid = protocolo["db"], protocolo["protocolo_id"]
     with db.transaction() as con:
         geral = _abrir_caixa(con, CB.OPERADOR_DO_CAIXA_GERAL, "2026-11-05")
@@ -222,13 +223,13 @@ def test_paga_com_caixa_geral_aberto_entra_e_nao_quita(protocolo):
         no_escrevente = banco(con).um(
             "SELECT id FROM cx_lancamentos WHERE caixa_id = %s", (escrevente,))
     assert c["situacao"] == CB.LANCADA
-    assert lanc["caixa_id"] == geral and lanc["forma_pagamento"] == "PIX"
+    assert lanc["caixa_id"] != geral and lanc["forma_pagamento"] == "PIX"
     assert dep["protocolo_id"] == pid
     assert no_escrevente is None
-    assert _quitado(db, pid) == 0
+    assert _quitado(db, pid) == 1
 
 
-def test_sem_caixa_geral_fica_pendente_mesmo_com_caixa_de_escrevente(protocolo):
+def test_sem_caixa_geral_cria_bancario_separado_do_escrevente(protocolo):
     db, pid = protocolo["db"], protocolo["protocolo_id"]
     with db.transaction() as con:
         escrevente = _abrir_caixa(con, "ESCREVENTE EXEMPLO", "2026-11-05")
@@ -239,14 +240,14 @@ def test_sem_caixa_geral_fica_pendente_mesmo_com_caixa_de_escrevente(protocolo):
         depositos = banco(con).ler("SELECT id FROM cx_depositos WHERE protocolo_id = %s", (pid,))
         lancamentos = banco(con).ler(
             "SELECT id FROM cx_lancamentos WHERE caixa_id IN (%s, %s)", (escrevente, ontem))
-    assert c["situacao"] == CB.RECEBIDA and not c["deposito_id"]
-    assert depositos == [] and lancamentos == []
-    assert _quitado(db, pid) == 0
-    with db.transaction() as con, pytest.raises(CB.CobrancaError, match="caixa geral"):
+    assert c["situacao"] == CB.LANCADA and c["deposito_id"]
+    assert len(depositos) == 1 and lancamentos == []
+    assert _quitado(db, pid) == 1
+    with db.transaction() as con, pytest.raises(CB.CobrancaError, match="já foi lançada"):
         CB.lancar_no_caixa(con, i, por="balcao", agora=AGORA, caixa_id=escrevente)
 
 
-def test_ao_abrir_o_caixa_geral_o_pendente_entra_e_nao_quita(protocolo):
+def test_abrir_caixa_geral_nao_duplica_recebimento_bancario(protocolo):
     db, pid = protocolo["db"], protocolo["protocolo_id"]
     i = _cobranca_paga(db, pid)
     with db.transaction() as con:
@@ -254,10 +255,10 @@ def test_ao_abrir_o_caixa_geral_o_pendente_entra_e_nao_quita(protocolo):
         _abrir_caixa(con, CB.OPERADOR_DO_CAIXA_GERAL, "2026-11-05")
         feitos = CB.recolher_no_caixa_geral(con, por="balcao", agora=AGORA)
         de_novo = CB.recolher_no_caixa_geral(con, por="balcao", agora=AGORA)
-    assert len(feitos) == 1 and de_novo == []
+    assert feitos == [] and de_novo == []
     with db.connect() as con:
         assert CB.cobranca(con, i)["situacao"] == CB.LANCADA
-    assert _quitado(db, pid) == 0
+    assert _quitado(db, pid) == 1
 
 
 def test_a_tela_abre_o_caixa_geral_e_recolhe_o_pendente(protocolo):
@@ -274,4 +275,158 @@ def test_a_tela_abre_o_caixa_geral_e_recolhe_o_pendente(protocolo):
         cobranca = CB.cobranca(con, i)
         caixa = CB.caixa_geral_de_hoje(con, datetime.now().date())
     assert cobranca["situacao"] == CB.LANCADA and caixa
-    assert _quitado(db, pid) == 0
+    assert _quitado(db, pid) == 1
+
+
+# ------------- a recusa da maquininha com o motivo (10/11/2026, OpenAPI V1)
+
+LOGIN = {PX.CAMINHO_DO_TOKEN: Resposta(200, {"id_token": "jwt", "refresh_token": "r"})}
+NA_MAQUINA = {**COBRANCA, "forma_pedida": "PIX", "seu_numero": "CG9"}
+
+
+def _maquina(respostas) -> tuple[PX.ClienteCobrancaParcela, Transporte]:
+    t = Transporte({**LOGIN, **respostas})
+    return PX.ClienteCobrancaParcela("sandbox", t, {**CAMPOS, "terminal_id": "S1F2-TESTE"}), t
+
+
+def _venda(ident, status, **mais):
+    return {"id": ident, "service_id": "CG9", "status": status, "form_payment": "pix_pos",
+            "amount": 15000, "updated_at": "2026-11-10T14:00:00Z", **mais}
+
+
+@pytest.mark.parametrize("forma", ["PIX", "DEBITO", "CREDITO"])
+def test_a_maquininha_recebe_ao_menos_uma_parcela(forma):
+    """A Parcela recusa instalments 0: «instalments must not be less than 1»."""
+    cliente, t = _maquina({"/v1/pos/payments/": Resposta(201, {"id": "venda-1"})})
+    assert cliente.emitir({**NA_MAQUINA, "forma_pedida": forma}) == "pos:venda-1"
+    corpo = t.chamadas[1][2]
+    assert corpo["instalments"] == 1
+    assert corpo["is_pix"] is (forma == "PIX")
+    assert corpo["is_debit"] is (forma == "DEBITO")
+
+
+def test_a_resposta_fora_do_json_chega_a_tela():
+    cliente, _t = _maquina({"/v1/pos/payments/": Resposta(
+        400, b"<html><body><h1>Terminal inativo</h1></body></html>", "text/html")})
+    with pytest.raises(PX.Recusa) as erro:
+        cliente.emitir(NA_MAQUINA)
+    assert "HTTP 400" in str(erro.value)
+    assert "Terminal inativo" in str(erro.value)
+    assert "<h1>" not in str(erro.value)
+
+
+def test_a_venda_recusada_na_maquininha_vira_falhou_com_o_motivo():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(200, [_venda("venda-1", "refused",
+                                             refused_reason="Pix expirado no terminal")]),
+        "/sales/venda-1": Resposta(200, _venda("venda-1", "refused",
+                                               refused_reason="Pix expirado no terminal")),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:venda-1"})
+    assert lido["situacao"] == CB.FALHOU
+    assert "Pix expirado no terminal" in lido["erro"]
+    assert "refused" in lido["erro"] and "venda-1" in lido["erro"]
+
+
+def test_a_venda_abortada_sem_motivo_diz_que_a_parcela_nao_informou():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(404, {"message": "not found"}),
+        "/sales/venda-1": Resposta(200, _venda("venda-1", "abort")),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:venda-1"})
+    assert lido["situacao"] == CB.FALHOU
+    assert "sem motivo informado pela Parcela" in lido["erro"]
+
+
+def test_recusada_e_depois_paga_no_mesmo_service_id_vale_a_paga():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(200, [_venda("venda-1", "failed"),
+                                      _venda("venda-2", "succeeded")]),
+        "/sales/venda-1": Resposta(200, _venda("venda-1", "failed")),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:venda-1"})
+    assert lido["situacao"] == CB.RECEBIDA
+    assert lido["banco_id"] == "pos:venda-2"
+    assert lido["forma_recebida"] == "PIX" and lido["valor_recebido"] == 15000
+
+
+def test_sem_id_no_envio_a_venda_se_acha_pelo_service_id():
+    cliente, t = _maquina({
+        "/service-id": Resposta(200, [_venda("venda-9", "succeeded")]),
+        "/sales/CG9": Resposta(404, {"message": "Sale not found"}),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:CG9"})
+    assert lido["situacao"] == CB.RECEBIDA
+    assert lido["banco_id"] == "pos:venda-9"
+    assert any(c[1].endswith("/sales/CG9/service-id") for c in t.chamadas)
+
+
+def test_sem_venda_alguma_continua_aguardando():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(404, {"message": "not found"}),
+        "/sales/CG9": Resposta(404, {"message": "Sale not found"}),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:CG9"})
+    assert lido["situacao"] == CB.ABERTA and lido["banco_status"] == "NA_MAQUINA"
+
+
+def test_duas_vendas_pagas_no_mesmo_service_id_nao_escolhe():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(200, [_venda("venda-1", "succeeded"),
+                                      _venda("venda-2", "succeeded")]),
+        "/sales/CG9": Resposta(404, {}),
+    })
+    with pytest.raises(PX.Recusa, match="mais de uma venda"):
+        cliente.consultar({**NA_MAQUINA, "banco_id": "pos:CG9"})
+
+
+def test_venda_de_outro_estabelecimento_e_recusada():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(200, [_venda("venda-1", "succeeded",
+                                             seller={"id": "outro-seller"})]),
+    })
+    with pytest.raises(PX.Recusa, match="outro estabelecimento"):
+        cliente.procurar(NA_MAQUINA, data_inicial="2026-11-09", data_final="2026-11-10")
+
+
+def test_procurar_acha_a_venda_da_maquininha_e_nao_o_link():
+    cliente, t = _maquina({"/service-id": Resposta(200, [_venda("venda-9", "pending")])})
+    assert cliente.procurar(NA_MAQUINA, data_inicial="2026-11-09",
+                            data_final="2026-11-10") == "pos:venda-9"
+    antes = len(t.chamadas)
+    assert cliente.procurar(COBRANCA, data_inicial="2026-11-09", data_final="2026-11-10") is None
+    assert len(t.chamadas) == antes
+
+
+def test_no_link_a_tentativa_recusada_nao_encerra_a_cobranca():
+    lido = PX.ler({"token": "tok-1", "status": "active",
+                   "sale": {"id": "v", "status": "refused", "refused_reason": "cartao negado"}})
+    assert lido["situacao"] == CB.ABERTA
+
+
+def test_a_recusa_da_maquininha_fica_no_rastro_da_cobranca(protocolo):
+    db, pid = protocolo["db"], protocolo["protocolo_id"]
+    with db.transaction() as con:
+        i = CB.cadastrar(
+            con, agora=AGORA, por="balcao", banco_codigo=CB.PARCELA, ambiente="sandbox",
+            protocolo_id=pid, valor_centavos=12345, vencimento="2026-11-20",
+            pagador=PAGADOR, mensagem="Emolumentos.", forma_pedida="PIX")
+        CB.gravar_resposta(con, i, {"banco_id": "pos:venda-1", "situacao": CB.ABERTA},
+                           por="automação", agora=AGORA, operacao="EMITIR")
+    with db.connect() as con:
+        c = CB.cobranca(con, i)
+    cliente, _t = _maquina({
+        "/service-id": Resposta(200, [{**_venda("venda-1", "refused",
+                                                 refused_reason="Pix nao concluido"),
+                                       "service_id": c["seu_numero"]}]),
+        "/sales/venda-1": Resposta(200, _venda("venda-1", "refused",
+                                               refused_reason="Pix nao concluido")),
+    })
+    import cobranca_banco as CBB
+    assert CBB.atualizar(db, i, cliente=cliente, por="automação", agora=AGORA) == CB.FALHOU
+    with db.connect() as con:
+        c = CB.cobranca(con, i)
+        rastro = CB.eventos(con, i)
+    assert "Pix nao concluido" in c["erro"]
+    assert rastro[-1]["resultado"] == CB.FALHOU and "Pix nao concluido" in rastro[-1]["mensagem"]
+    assert c["deposito_id"] is None

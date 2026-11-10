@@ -29,11 +29,11 @@
   <form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='emitir') }}" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Emitir no banco</button></form>
   {% endif %}
-  {% if c.situacao in ['EMITINDO', 'ABERTA'] %}
+  {% if c.situacao in ['EMITINDO', 'ABERTA', 'RECEBIDA'] %}
   <form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='atualizar') }}" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Consultar o banco agora</button></form>
   {% endif %}
-  {% if c.situacao == 'ABERTA' and not c.pdf_guardado %}
+  {% if c.situacao == 'ABERTA' and not c.pdf_guardado and 'pdf' in recursos %}
   <form method="post" action="{{ url_for('cobranca_acao', cobranca_id=c.id, acao='baixar_pdf') }}" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Baixar o PDF do banco</button></form>
   {% endif %}

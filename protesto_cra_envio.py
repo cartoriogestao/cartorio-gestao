@@ -59,6 +59,8 @@ TIPO_DO_ANDAMENTO = "SDTBFOAND"
 CODIGO_DO_APONTADO = "AA"
 #: Respostas por título que querem dizer «entrou» (manual da P21).
 _COMPLEMENTO_OK = frozenset({"2322", "2318"})
+#: A CRA já tinha este apontamento. Não é falha de gravação: reenviar repete a recusa.
+_COMPLEMENTO_JA_CONSTAVA = frozenset({"2336"})
 
 #: O nome que a CRA aceita: letra, apresentante (3), DDMM, «.», AA e sequência.
 NOME_FEBRABAN = re.compile(r"^[CRM][0-9A-Z]{3}\d{4}\.\d{3}$")
@@ -304,8 +306,14 @@ def montar_complemento(con: Any, andamento_id: int,
     q = str(quando or "")
     data_hora = f"{q[8:10]}/{q[5:7]}/{q[:4]} {q[11:19] or '00:00:00'}"
     titulos = []
+    # UM PROTOCOLO, UM <titulo>. Dois devedores do mesmo título são dois atos
+    # e o mesmo protocolo; a CRA recusa o segundo com 2336.
+    vistos: set[str] = set()
     for r in linhas:
         prot = str(r["protocolo"] or "").strip()
+        if prot in vistos:
+            continue
+        vistos.add(prot)
         titulos.append(
             "<titulo>" + el("protocolo", prot)
             + el("documento_devedor", "".join(c for c in str(r["documento"] or "")
@@ -338,13 +346,15 @@ def interpretar_resposta_complemento(texto: str, *, o_que: str) -> dict[str, Any
                              bruto=bruto)
     if raiz.tag == "relatorio":
         return interpretar_resposta_envio(bruto, o_que=o_que)
-    recusas, aceitos, primeiro_codigo = [], 0, None
+    recusas, aceitos, ja_constava, primeiro_codigo = [], 0, 0, None
     for titulo in raiz.iter("titulo"):
         for msg in titulo.iter("mensagens"):
             for item in msg:
                 codigo = (item.findtext("codigo") or "").strip()
                 if codigo in _COMPLEMENTO_OK:
                     aceitos += 1
+                elif codigo in _COMPLEMENTO_JA_CONSTAVA:
+                    ja_constava += 1
                 else:
                     primeiro_codigo = primeiro_codigo or codigo
                     recusas.append(f"{titulo.findtext('protocolo')}: {codigo} "
@@ -357,13 +367,18 @@ def interpretar_resposta_complemento(texto: str, *, o_que: str) -> dict[str, Any
         raise CRA.CraRecusou(f"A CRA recusou ao {o_que}: {motivo}",
                              bruto=bruto, codigo=primeiro_codigo,
                              motivo=motivo)
-    if not aceitos:
+    if not aceitos and not ja_constava:
         # Sem título confirmado e sem título recusado não se sabe o que a
         # Central gravou: fica como erro, sem código, e não como recusa.
         raise CRA.CraRecusou(
             f"A CRA recusou ao {o_que}: nenhum título confirmado",
             bruto=bruto)
-    return {"ok": True, "codigo": "2322", "resposta": bruto[:500]}
+    if ja_constava and not aceitos:
+        return {"ok": True, "codigo": "2336", "ja_constava": ja_constava,
+                "resposta": (f"2336 — a CRA já tinha o apontamento de "
+                             f"{ja_constava} protocolo(s); não se reenvia.")}
+    return {"ok": True, "codigo": "2322", "ja_constava": ja_constava,
+            "resposta": bruto[:500]}
 
 
 def _preparar(linha: Any, *, con: Any | None = None,
@@ -748,4 +763,42 @@ def reclassificar_recusas_gravadas(con: Any) -> int:
               f"{resumo}")[:CORTE_DO_ERRO],
              int(linha["id"])))
         feitos += 1
+    return feitos
+
+
+def reconhecer_andamento_que_ja_constava(con: Any) -> list[int]:
+    """Andamento recusado só com 2336: a CRA já tinha o apontamento. ESCREVE.
+
+    Não solta os atos e não reenvia. O arquivo passa a informado na hora em
+    que a Central recusou, com o motivo no resumo. Recusa misturada com outro
+    código fica como está.
+    """
+    bd = banco(con)
+    linhas = bd.ler(
+        """SELECT id, nome_arquivo, cra_envio_erro, cra_recusado_em
+             FROM pt_retornos
+            WHERE tipo = %s AND cra_recusado_em IS NOT NULL
+              AND cra_enviado_em IS NULL AND cra_recusa_codigo = %s""",
+        (TIPO_DO_ANDAMENTO, "2336"))
+    feitos: list[int] = []
+    for linha in linhas:
+        erro = str(linha["cra_envio_erro"] or "")
+        resposta = erro.split("Resposta:", 1)[1].strip() if "Resposta:" in erro else ""
+        try:
+            lido = interpretar_resposta_complemento(resposta, o_que="reler o andamento")
+        except (CRA.CraRecusou, CRA.CraError):
+            continue
+        if lido.get("codigo") != "2336":
+            continue
+        bd.escrever(
+            """UPDATE pt_retornos
+                  SET cra_enviado_em = cra_recusado_em,
+                      cra_recusado_em = NULL,
+                      cra_recusa_codigo = NULL,
+                      cra_recusa_motivo = NULL,
+                      cra_envio_erro = NULL,
+                      cra_envio_resumo = %s
+                WHERE id = %s AND cra_recusado_em IS NOT NULL""",
+            (str(lido["resposta"])[:500], int(linha["id"])))
+        feitos.append(int(linha["id"]))
     return feitos

@@ -18,6 +18,7 @@
 #
 # Desfazer: ver docs/CI_EXECUTOR.md, «Remover o executor».
 set -euo pipefail
+cd /   # nada de rodar a partir de uma pasta que o ci-runner não pode ler
 
 REPO="cartoriogestao/cartorio-gestao"
 USUARIO="ci-runner"
@@ -51,12 +52,18 @@ if [ ! -x "$EXECUTOR/run.sh" ]; then
   INFO="$(sudo -u "$QUEM" "$BREW/gh" api repos/actions/runner/releases/latest)"
   VERSAO="$(printf '%s' "$INFO" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"].lstrip("v"))')"
   ARQUIVO="actions-runner-osx-arm64-$VERSAO.tar.gz"
+  # O SHA-256 por DUAS fontes que precisam concordar: o campo `digest` do arquivo na API
+  # e a marcação «BEGIN SHA osx-arm64» da página da versão. (A primeira versão deste
+  # roteiro pegava o primeiro número depois do nome do arquivo — que era o do Windows.)
   ESPERADO="$(printf '%s' "$INFO" | /usr/bin/python3 -c "
 import json,re,sys
-corpo=json.load(sys.stdin)['body']
-m=re.search(r'$ARQUIVO.*?([0-9a-f]{64})', corpo, re.S)
-print(m.group(1) if m else '')")"
-  [ -n "$ESPERADO" ] || { echo "Não achei o SHA-256 publicado de $ARQUIVO"; exit 1; }
+info=json.load(sys.stdin)
+api=[a.get('digest') or '' for a in info['assets'] if a['name']=='$ARQUIVO']
+api=api[0].removeprefix('sha256:') if api else ''
+m=re.search(r'BEGIN SHA osx-arm64 -->\s*([0-9a-f]{64})\s*<!-- END SHA osx-arm64', info['body'])
+pagina=m.group(1) if m else ''
+print(api if api and api==pagina else '')")"
+  [ -n "$ESPERADO" ] || { echo "O SHA-256 de $ARQUIVO não confere entre a API e a página da versão."; exit 1; }
   sudo -u "$USUARIO" curl -fsSL -o "$EXECUTOR/$ARQUIVO" \
     "https://github.com/actions/runner/releases/download/v$VERSAO/$ARQUIVO"
   OBTIDO="$(shasum -a 256 "$EXECUTOR/$ARQUIVO" | cut -d' ' -f1)"

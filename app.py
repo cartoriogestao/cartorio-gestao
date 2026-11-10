@@ -3221,6 +3221,7 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     # aberto a todos por esquecimento (o teste `test_todo_tipo_de_anexo_...`
     # cobra a lista contra quem grava anexo).
     TELA_DO_ANEXO: dict[str, tuple[str, ...]] = {
+        "MALOTE_FRAUDE": ("fraudes",),
         "EXPEDIENTE": ("expediente_detail",),
         "TASK": ("task_detail",),
         "NT_ATO": ("notas_ato",),

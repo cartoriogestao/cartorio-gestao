@@ -230,3 +230,23 @@ def test_o_item_de_ciencia_entra_no_que_so_o_oficial_decide(con, com_chave, tmp_
     texto = GR.despacho_do_oficial(con, HOJE, {}, dono)
     decide = texto.split("2. CAIXAS")[0]
     assert "[Só ciência — confira]" in decide
+
+
+def test_outra_rodada_terminou_durante_a_leitura_nao_repete_tarefa(con,com_chave,tmp_path):
+    eid = _exp(con, 'ofício de conferência')
+    resposta = {'tipo':'PROVIDENCIA','setor':'RCPN','resumo':'Conferir','o_que_fazer':'Conferir no original'}
+    def ia(*a,**kw):
+        # Outra execução despachou enquanto esta aguardava a IA.
+        GX.despachar(con,dict(con.execute('SELECT * FROM expedientes WHERE id=?',(eid,)).fetchone()),resposta,HOJE)
+        con.commit()
+        return {'texto':json.dumps(resposta)}
+    assert GX.triar_pendentes(con,tmp_path,HOJE,conversar=ia)['triados']==0
+    assert con.execute('SELECT count(*) FROM tasks WHERE linked_expediente_id=?',(eid,)).fetchone()[0]==1
+
+
+def test_rotina_do_malote_nao_tria_expediente_de_outra_origem(con,com_chave,tmp_path):
+    eid=_exp(con,'Outro recebimento')
+    con.execute("UPDATE expedientes SET source='Balcão' WHERE id=?",(eid,));con.commit()
+    def ia(*a,**kw):raise AssertionError('outra origem enviada à IA')
+    r=GX.triar_pendentes(con,tmp_path,HOJE,conversar=ia,somente_malote=True)
+    assert r['triados']==0 and r['pendentes']==0

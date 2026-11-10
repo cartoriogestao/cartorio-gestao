@@ -95,6 +95,7 @@ from wa_schema import init_wa_schema
 from robo_schema import init_robo_schema
 from agente_schema import init_agente_schema
 from automacao_schema import init_automacao_schema
+from malote_fluxo import init_schema as init_malote_fluxo_schema
 from andamento_schema import init_andamento_schema
 from backup_restauracao import init_backup_restauracao_schema
 from ia_uso import init_ia_schema
@@ -908,6 +909,7 @@ class Database:
         # avisos, a trava do despachante e a config. Não aponta para tabela
         # nenhuma de fora (o responsável é guardado como número).
         init_automacao_schema(con)
+        init_malote_fluxo_schema(con)
         # OS AVISOS DE ANDAMENTO AO CLIENTE (26/10/2026) — o consentimento por
         # canal e a fila do que saiu. Não apontam para tabela nenhuma de fora
         # (o protocolo é guardado como origem + número), e por isso vêm aqui.

@@ -74,6 +74,7 @@ anexos. Nomes e documentos de pessoas vêm mascarados como marcas — use as mar
 Responda SÓ com um objeto JSON, sem texto em volta:
 {
   "tipo": "CUMPRIMENTO" | "RESPOSTA" | "PROVIDENCIA" | "CIENCIA",
+  "natureza": "TECNICA" | "MANUAL" | "DIGITALIZACAO" | "LIVRO_E",
   "setor": "RCPN" | "RI" | "RI_QUALIFICACAO" | "NOTAS" | "NOTAS_QUALIFICACAO" | "RCPJ_RTD" | "PROTESTO" | "GESTAO" | "TI",
   "resumo": "até 300 caracteres: quem manda, o que é",
   "o_que_fazer": "passos concretos, até 600 caracteres; vazio se CIENCIA",
@@ -94,6 +95,9 @@ e nada pede à serventia.
 - Setor: certidão/registro de pessoa → RCPN; ato em matrícula, penhora, usucapião \
 → RI_QUALIFICACAO; certidão de matrícula → RI; escritura/procuração → \
 NOTAS_QUALIFICACAO; COGEX, correição, declarações, produtividade → GESTAO.
+- Natureza: MANUAL para busca material, conferência e impressão; DIGITALIZACAO
+para digitalizar documentos; LIVRO_E para providência do Livro E do RCPN;
+TECNICA para qualificação e demais providências. Não escolha pessoas pelo nome.
 - Prazo: o que o documento disser; se disser "X dias" sem data, prazo_dias=X e \
 dias_uteis conforme o texto (prazo judicial em dias é útil, salvo se disser \
 corridos). Se não houver prazo, null.
@@ -129,12 +133,20 @@ def texto_dos_anexos(con: sqlite3.Connection, expediente_id: int,
             # linha: medido em 06/10/2026, centenas de avisos inúteis no log.
             logging.getLogger("pypdf").setLevel(logging.ERROR)
             leitor = PdfReader(str(caminho))
-            texto = " ".join((p.extract_text() or "") for p in leitor.pages[:8])
+            textos = [(p.extract_text() or "") for p in leitor.pages[:64]]
+            incompleto = len(leitor.pages) > 64 or any(
+                p.images and len(t.strip()) < 80 for p, t in zip(leitor.pages[:64], textos))
+            texto = " ".join(textos)
+            if incompleto:
+                texto = "[LEITURA_INCOMPLETA: página digitalizada sem texto; conferir por OCR] " + texto
         except Exception as erro:                       # noqa: BLE001 — vai ao dossiê
             partes.append(f"[anexo {nome}: não abriu ({type(erro).__name__})]")
             continue
         partes.append(f"--- anexo: {nome}\n{' '.join(texto.split())}")
-    return "\n".join(partes)[:limite]
+    texto = "\n".join(partes)
+    if len(texto) > limite:
+        texto = "[LEITURA_INCOMPLETA: texto excede o limite] " + texto
+    return texto[:limite]
 
 
 def candidatos(con: sqlite3.Connection) -> list[dict]:
@@ -380,6 +392,11 @@ def despachar(con: sqlite3.Connection, e: dict, r: dict, hoje: date) -> int | No
     # cumpre é o setor; a tarefa diz quando é preciso levar ao oficial.
     setor = r["setor"]
     dono, substituto = GR.escolher_responsavel(con, responsaveis, setor)
+    if e.get("source") == "Malote Digital":
+        import malote_fluxo as FL
+        escolhidos = FL.responsaveis(con, r)
+        if escolhidos:
+            dono, substituto = escolhidos
     prazo = _prazo(e, r)
     prioridade = _PRIORIDADE.get(r.get("urgencia"), "MEDIA")
     if prazo and prazo <= (hoje + timedelta(days=2)).isoformat():
@@ -420,7 +437,7 @@ def _regravar_triagem(bd, expediente_id, hash_dossie, lido_em, provedor, *, mode
 
 
 def triar_pendentes(con: sqlite3.Connection, pasta_dados: Path, hoje: date | None = None,
-                    *, teto: int = TETO_POR_DIA, conversar=None) -> dict:
+                    *, teto: int = TETO_POR_DIA, conversar=None, somente_malote: bool = False) -> dict:
     """Lê e despacha o que chegou. FALA COM A REDE, fora de transação."""
     import agente_provedores as AP
     conversar = conversar or AP.conversar
@@ -441,6 +458,8 @@ def triar_pendentes(con: sqlite3.Connection, pasta_dados: Path, hoje: date | Non
                           (hoje.isoformat() + "%",)))
     triados = tarefas = ciencias = erros = 0
     for e in candidatos(con):
+        if somente_malote and e.get("source") != "Malote Digital":
+            continue
         if feitos + triados + erros >= teto:
             break
         texto = dossie(con, e)
@@ -451,6 +470,8 @@ def triar_pendentes(con: sqlite3.Connection, pasta_dados: Path, hoje: date | Non
             continue
         agora = datetime.now().isoformat(timespec="seconds")
         try:
+            if "[LEITURA_INCOMPLETA:" in texto or "não abriu (" in texto or "não é PDF, não lido" in texto:
+                raise ValueError("PDF com leitura incompleta: conferir original ou realizar OCR antes da triagem")
             # O REGISTRO DO USO DE IA (LF01): finalidade do catálogo e o
             # expediente — o texto, mascarado ou não, não vai para o registro.
             resposta = conversar(pasta_dados, provedor=provedor, sistema=INSTRUCAO,
@@ -472,6 +493,12 @@ def triar_pendentes(con: sqlite3.Connection, pasta_dados: Path, hoje: date | Non
             continue
         try:
             bd.travar("ge_triagens.expediente")
+            # A leitura de IA corre sem trava. Outra rodada pode ter terminado
+            # nesse intervalo: refazer a pergunta já dentro da transação.
+            if bd.um("SELECT 1 AS um FROM ge_triagens WHERE expediente_id=%s AND hash_dossie=%s AND erro IS NULL", (e["id"], h)) or bd.um(
+                    "SELECT id FROM tasks WHERE linked_expediente_id=%s AND status NOT IN ('CONCLUIDA','CANCELADA')", (e["id"],)):
+                con.commit()
+                continue
             tarefa = despachar(con, e, r, hoje)
             _regravar_triagem(bd, e["id"], h, agora, provedor, modelo=resposta.get("modelo"),
                               resultado_json=json.dumps(r, ensure_ascii=False),
@@ -487,8 +514,11 @@ def triar_pendentes(con: sqlite3.Connection, pasta_dados: Path, hoje: date | Non
             ciencias += 1
         else:
             tarefas += tarefa is not None
-    return {"triados": triados, "tarefas": tarefas, "ciencias": ciencias, "erros": erros,
-            "provedor": provedor}
+    resultado = {"triados": triados, "tarefas": tarefas, "ciencias": ciencias, "erros": erros,
+                 "provedor": provedor}
+    if somente_malote:
+        resultado["pendentes"] = sum(e.get("source") == "Malote Digital" for e in candidatos(con))
+    return resultado
 
 
 def para_ciencia(con: sqlite3.Connection) -> list[dict]:

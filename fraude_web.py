@@ -23,6 +23,7 @@ import sqlite3
 from flask import flash, redirect, render_template, request, url_for
 
 import fraude as FR
+import malote_documentos as MD
 from seguranca_web import destino_interno  # M1/B3 (LX11): o «volte para» só leva a caminho desta casa
 
 
@@ -59,6 +60,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             situacao = "ATIVO"
         with _ler() as con:
             linhas = FR.listar(con, situacao=situacao, busca=busca or None)
+            arquivos = MD.anexos_da_lista(con, [int(r["id"]) for r in linhas])
+            for r in linhas:
+                r["anexos_malote"] = arquivos.get(int(r["id"]), [])
             contas = FR.contagem(con)
             rastro = FR.conferencias(con, limite=30)
         return render_template("fraudes.html", linhas=linhas, contas=contas,

@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Malote e agente local</h1>{% endblock %}
+{% block content %}
+<p>O agente local solicita a rotina; o robô do sistema acessa o Malote e conserva
+as credenciais no cofre. A triagem usa a IA configurada no sistema. Se faltar
+código de acesso ou o PDF não puder ser lido, o relatório indica a pendência.</p>
+<p><a href="{{ url_for('malote_robo_codigo') }}">Login e código do robô</a> ·
+<a href="{{ url_for('malote_documentos') }}">Juntar PDFs aos alertas de fraude</a></p>
+{% if estado.processo %}
+<p>Processo {{ estado.processo.id }}:
+{{ 'ligado' if estado.processo.ativo else 'desligado' }};
+{{ 'autorizado a dar ciência' if estado.processo.pode_agir else 'somente consulta' }}.
+{{ 'Despachante sem batida recente.' if estado.despachante_parado else 'Despachante com batida recente.' }}</p>
+<a href="{{ url_for('automacao_processo', processo_id=estado.processo.id) }}">Abrir o processo e a agenda</a>
+<form method="post" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% for rota in rotas %}
+  {% set r = distribuicao.get(rota, {}) %}
+  <fieldset><legend>{{ rota.replace('_', ' ') }}</legend>
+    <label>Responsável {{ rota }} <select name="{{ rota }}" required>
+      <option value="">Escolha</option>{% for u in usuarios %}
+      <option value="{{ u.id }}" {% if r.get('principal') == u.id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
+    </select></label>
+    <label>Substituto {{ rota }} <select name="{{ rota }}_sub" required>
+      <option value="">Escolha</option>{% for u in usuarios %}
+      <option value="{{ u.id }}" {% if r.get('substituto') == u.id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
+    </select></label>
+  </fieldset>
+  {% endfor %}
+  <label><input type="checkbox" name="triar" value="1" {% if estado.processo.triagem %}checked{% endif %}>
+    Fazer triagem após o cadastro e retomar triagens pendentes nas próximas rodadas</label>
+  <button type="submit">Guardar triagem e responsáveis</button>
+</form>
+<form method="post" action="{{ url_for('malote_agente_pedir') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="chave" value="manual-{{ chave_manual }}">
+  <input type="hidden" name="modo" value="{{ 'executar' if estado.processo.pode_agir else 'consultar' }}">
+  <button type="submit">Solicitar rodada do Malote</button>
+</form>
+{% endif %}
+{% endblock %}

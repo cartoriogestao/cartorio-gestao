@@ -11,6 +11,7 @@
 {% include '_serventia.html' %}
 <div class="actions">
   <a class="button" href="{{ url_for('fraude_consultar') }}">Consultar um nome</a>
+  {% if user and user.role == 'ADMIN' %}<a class="button" href="{{ url_for('malote_documentos') }}">Juntar PDFs do Malote</a>{% endif %}
 </div>
 
 <div class="notice">
@@ -120,6 +121,10 @@
       {% for a in linhas %}
       <tr>
         <td>{{ a.nome or '—' }}
+            {% for arq in a.anexos_malote %}<div><small>
+              <a href="{{ url_for('attachment_view', attachment_id=arq.id) }}" target="_blank" rel="noopener">Ver {{ arq.original_name }}</a> ·
+              <a href="{{ url_for('attachment_download', attachment_id=arq.id) }}">Baixar</a>
+            </small></div>{% endfor %}
             {% if a.documento %}
               <div><small>{{ a.documento_tipo or 'documento' }}
                 {{ a.documento }}</small></div>

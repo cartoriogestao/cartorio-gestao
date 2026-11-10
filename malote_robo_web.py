@@ -26,6 +26,7 @@ from flask import flash, redirect, render_template, request, url_for
 import automacao as AU
 import automacao_cofre as COFRE
 import malote_robo as MR
+import malote_agente as MA
 
 PROCESSO = MR.CATALOGO[0]["codigo"]
 _CODIGO_VALIDO = re.compile(r"^[A-Za-z0-9]{4,12}$")
@@ -45,6 +46,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     def _pasta():
         from centrais_cred import pasta_de_dados
         return pasta_de_dados()
+
+    @app.route("/automacao/malote/responsavel", methods=["POST"])
+    @roles_required("ADMIN")
+    def malote_robo_responsavel():
+        login = (request.form.get("responsavel_malote") or "").strip()
+        try:
+            with db.transaction() as con:
+                MA.configurar_responsavel(con, login)
+        except MA.MaloteError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("malote_robo_codigo"))
+        audit("MALOTE_ROBO_RESPONSAVEL", "settings", None, {"em_nome_de": login})
+        flash("Responsável pelo cadastro do malote guardado.", "success")
+        return redirect(url_for("malote_robo_codigo"))
 
     @app.route("/automacao/malote/credencial", methods=["POST"])
     @roles_required("ADMIN")
@@ -98,4 +113,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         return render_template("malote_robo_codigo.html", processo=processo, ultima=ultima,
                                esperando=esperando, cofre=COFRE.estado(caminho=caminho),
                                credencial=COFRE.tem(MR.CREDENCIAL, caminho=caminho),
-                               nome_da_credencial=MR.CREDENCIAL)
+                               nome_da_credencial=MR.CREDENCIAL,
+                               responsavel=db.get_setting("malote_cadastra_em_nome_de", ""),
+                               usuarios=db.list_users(active_only=True))

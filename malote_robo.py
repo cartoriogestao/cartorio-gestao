@@ -65,7 +65,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timedelta
-from html import unescape
+from html import escape, unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -210,13 +210,15 @@ def pagina(html: str) -> str:
     if re.search(r"Fazer Logoff", texto, re.IGNORECASE):
         return LOGADO
     leitor = ler_pagina(html)
+    # O MFA mantém Login e Senha no mesmo formulário. A presença desses dois
+    # campos, sozinha, não significa que a senha tenha sido recusada.
+    if re.search(r"c[óo]digo|token|autentica|dois fatores|duplo fator|2FA|verifica|MFA", texto, re.IGNORECASE) \
+            and campo_do_codigo(leitor) is not None:
+        return DOIS_FATORES
     for f in leitor.formularios:
         nomes = {c["name"] for c in f["campos"]}
         if "Login" in nomes and "Senha" in nomes:
             return LOGIN
-    if re.search(r"c[óo]digo|token|autentica|dois fatores|duplo fator|2FA|verifica", texto, re.IGNORECASE) \
-            and campo_do_codigo(leitor) is not None:
-        return DOIS_FATORES
     return DESCONHECIDA
 
 
@@ -225,8 +227,9 @@ def campo_do_codigo(leitor: _LeitorDePagina) -> tuple[dict, dict] | None:
     de texto que não é login, senha nem estado do JSF."""
     for f in leitor.formularios:
         for c in f["campos"]:
-            if c["type"] in ("text", "number", "tel", "password") and c["name"] \
-                    and c["name"] not in ("Login", "Senha") and "ViewState" not in c["name"]:
+            if not c["disabled"] and c["type"] in ("text", "number", "tel", "password") and c["name"] \
+                    and c["name"] not in ("Login", "Senha") and "ViewState" not in c["name"] \
+                    and "captcha" not in c["name"].lower():
                 return f, c
     return None
 
@@ -441,12 +444,20 @@ def _guardar_sessao(COFRE, caminho, cliente: ClienteMalote, formulario_2fa: dict
 
 
 def _guardar_pagina_para_conferir(ctx, html: str, nome: str) -> str:
-    """A página que o robô não reconheceu (ou o 2FA da primeira vez), para conferência."""
+    """Estrutura dos formulários para conferir, sem valores nem HTML da sessão.
+
+    O MFA conserva a senha, o login e o ViewState na página. O formulário
+    completo só pode ficar no cofre; um diagnóstico no disco não os repete.
+    """
     from malote_agente import archive_root_de
     pasta = archive_root_de(ctx.pasta_dados) / "malote" / "robo"
     pasta.mkdir(parents=True, exist_ok=True)
     alvo = pasta / f"{datetime.now():%Y%m%d_%H%M%S}_{nome}.html"
-    alvo.write_text(re.sub(r'(name="(?:Senha|csrf)"[^>]*value=")[^"]*', r"\1", html or ""), encoding="utf-8")
+    estrutura = [{"id": f["id"], "campos": [
+        {k: c[k] for k in ("tag", "name", "id", "type", "disabled")} for c in f["campos"]]}
+        for f in ler_pagina(html or "").formularios]
+    alvo.write_text("<!doctype html><meta charset='utf-8'><title>Estrutura do formulário do Malote</title>"
+                    "<pre>" + escape(json.dumps(estrutura, ensure_ascii=False, indent=2)) + "</pre>", encoding="utf-8")
     return str(alvo)
 
 
@@ -527,8 +538,20 @@ def ciencia_diaria(ctx, *, cliente: ClienteMalote | None = None, cadastrar=None,
                            else "Nenhum documento não lido no malote."),
                 "achados": [{"codigo": l["codigo"], "linha": l["texto"]} for l in linhas], "acoes": []}
 
-    from malote_agente import SUBPASTA_ENTRADA, archive_root_de, capa_do_pdf
-    entrada = archive_root_de(ctx.pasta_dados) / SUBPASTA_ENTRADA
+    # Conferir a autoria ANTES de dar ciência: sem ela o cadastro recusaria os
+    # PDFs depois de o portal já ter marcado os documentos como lidos.
+    try:
+        with ctx.db.connect() as con:
+            responsavel = MA.usuario_responsavel(con)
+            entrada = MA.archive_root_de(ctx.pasta_dados, con) / MA.SUBPASTA_ENTRADA
+        if responsavel is None:
+            raise MA.MaloteError("Configure em nome de quem o agente cadastra "
+                                 "(settings.malote_cadastra_em_nome_de).")
+    except MA.MaloteError as erro:
+        return {"situacao": "AVISO", "relato": f"Nenhum documento aberto: {erro}",
+                "achados": [], "acoes": [], "erro": str(erro)}
+
+    from malote_agente import capa_do_pdf
     entrada.mkdir(parents=True, exist_ok=True)
     abertos: list[dict] = []
     falhas: list[str] = []
@@ -575,24 +598,35 @@ def ciencia_diaria(ctx, *, cliente: ClienteMalote | None = None, cadastrar=None,
 
     resumo: dict[str, Any] = {"cadastrados": 0, "fraudes": [], "erros": []}
     copia = None
-    if abertos:
-        with ctx.db.connect() as con:
-            try:
+    with ctx.db.connect() as con:
+        try:
+            # O original continua na entrada depois do cadastro. Medir distingue
+            # os já cadastrados dos PDFs que ficaram de uma rodada interrompida,
+            # mesmo quando não há mais não lidos no portal. Sem escrita na medição.
+            resumo = MA.medir(con, ctx.pasta_dados, MA.pasta_do_malote(con))
+            if any(g["situacao"] == "A_CADASTRAR" for g in resumo["grupos"]):
                 copia = (copiar or _copia_do_banco)(con, Path(ctx.db.db_path))
                 resumo = (cadastrar or (lambda c: MA.rodada(c, ctx.pasta_dados, confirmar=True)))(con)
-            except Exception as erro:            # noqa: BLE001 — os PDFs ficam na entrada
-                falhas.append(f"cadastro: {type(erro).__name__}: {erro}")
+        except Exception as erro:                # noqa: BLE001 — os PDFs ficam na entrada
+            falhas.append(f"cadastro: {type(erro).__name__}: {erro}")
+    pendentes = [g for g in resumo.get("grupos", []) if g["situacao"] in {
+        "A_CADASTRAR", "SEM_RESPONSAVEL", "FRAUDE_PENDENTE", "PARCIAL"}]
     acoes = [{"acao": "abriu no malote (ciência)", "codigo": a["codigo"], "arquivo": a["arquivo"]} for a in abertos]
     if copia:
         acoes.append({"acao": "cópia do banco antes de cadastrar", "arquivo": copia})
     relato = (f"{len(abertos)} documento(s) aberto(s) no malote (ciência dada) e baixado(s); "
               f"{resumo.get('cadastrados', 0)} expediente(s) em Processos → Entradas; "
               f"{len(resumo.get('fraudes') or [])} aviso(s) de fraude levado(s) à lista.")
-    if not abertos and not falhas:
+    if pendentes:
+        relato += f" {len(pendentes)} grupo(s) pendente(s) de inclusão: " + \
+            "; ".join(f"{g['nome']}: {g['nota'] or g['situacao']}" for g in pendentes[:5]) + "."
+    if not abertos and not falhas and not pendentes and not resumo.get("cadastrados") and not resumo.get("fraudes"):
         relato = "Nenhum documento não lido no malote."
     if falhas or resumo.get("erros"):
         relato += f" {len(falhas) + len(resumo.get('erros') or [])} falha(s): " + \
             "; ".join((falhas + list(resumo.get("erros") or []))[:5])
-    situacao = "ERRO" if (falhas or resumo.get("erros")) else "OK"
+    situacao = "ERRO" if (falhas or resumo.get("erros")) else ("AVISO" if pendentes else "OK")
     return {"situacao": situacao, "relato": relato[:1500],
-            "achados": abertos + [{"falha": f} for f in falhas], "acoes": acoes}
+            "achados": abertos + [{"falha": f} for f in falhas] +
+                [{"pendente": g["nome"], "situacao": g["situacao"], "motivo": g["nota"]} for g in pendentes],
+            "acoes": acoes}

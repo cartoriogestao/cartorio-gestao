@@ -25,6 +25,21 @@
       <input type="password" name="senha_malote" required autocomplete="new-password"></label>
     <button class="button primary" type="submit" {% if not cofre.aberto %}disabled{% endif %}>Guardar no cofre</button>
   </form>
+  <h2>Cadastro no sistema</h2>
+  <p>O agente abre os documentos novos (dá ciência), baixa os PDFs e cadastra em Processos → Entradas.
+    Escolha em nome de quem os cadastros serão feitos. Sem um responsável válido, ele não abre documentos.</p>
+  <form method="post" action="{{ url_for('malote_robo_responsavel') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Responsável pelo cadastro
+      <select name="responsavel_malote" required>
+        <option value="">Selecione um usuário ativo</option>
+        {% for u in usuarios %}
+        <option value="{{ u.username }}" {% if u.username == responsavel %}selected{% endif %}>{{ u.full_name }} ({{ u.username }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="button" type="submit">Guardar responsável</button>
+  </form>
   <h2>Robô e código de dois fatores</h2>
   {% if not processo %}
     <p><span class="badge critica">sem processo</span> O processo do robô do malote ainda não está no cadastro da automação.</p>

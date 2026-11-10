@@ -4,6 +4,7 @@ import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { examinarPortal } from './portal_selo_acessibilidade.mjs';
 
 export const PORTAL = 'https://portalselo.tjma.jus.br';
 export const FUNDOS = new Set(['FERJ', 'FERC', 'FADEP', 'FEMP', 'FERRFIS']);
@@ -37,8 +38,7 @@ async function gravar(file, obj) {
 async function autenticado(page, sistema = false) {
   if (sistema) return await page.locator('input[name="csrf_token"]').count() > 0 &&
     page.url().includes('/despesas/portal-selo');
-  return await page.getByRole('link', { name: /\bSAIR\b/i }).count() > 0 ||
-    await page.getByRole('button', { name: /\bSAIR\b/i }).count() > 0;
+  return (await examinarPortal(page)).autenticado;
 }
 export async function localizarPortalAutenticado(contexto, preferida) {
   // A autenticação pode terminar em outra aba. Nunca consulta outro perfil/contexto.
@@ -56,14 +56,11 @@ export async function tentarLoginSalvo(pagina, jaEnviado = false) {
   if (jaEnviado || pagina.isClosed()) return false;
   try { if (new URL(pagina.url()).origin !== PORTAL) return false; }
   catch { return false; }
-  const usuario = pagina.getByPlaceholder('Usuário', { exact: true });
-  const senha = pagina.locator('input[type="password"]');
-  if (await usuario.count() !== 1 || await senha.count() !== 1) return false;
-  // Só retorna booleanos. Não envia um formulário enquanto o usuário digita a senha.
-  if (!await usuario.evaluate(el => Boolean(el.value)) ||
-      !await senha.evaluate(el => Boolean(el.value) && el.matches(':-webkit-autofill'))) return false;
-  await pagina.getByRole('button', { name: 'Entrar', exact: true }).click();
-  return true;
+  return Boolean((await examinarPortal(pagina, true)).login_enviado);
+}
+export async function novaPaginaAposClique(contexto, clicar) {
+  const [pagina] = await Promise.all([contexto.waitForEvent('page', { timeout: 90000 }), Promise.resolve().then(clicar)]);
+  return pagina;
 }
 async function api(page, url, csrf, arquivo, conferir) {
   const r = await page.request.post(url, { headers: { Accept: 'application/json', 'X-CSRF-Token': csrf },
@@ -110,11 +107,13 @@ export async function executar(cfg, modo = '--consultar') {
       if (aberta) portal = aberta;
       // O HTML inicial pode terminar antes de o Angular mostrar login ou sessão.
       if (!aberta) {
-        await Promise.any([
-          portal.getByRole('link', { name: /SAIR/i }).waitFor({ timeout: 90000 }),
-          portal.getByRole('button', { name: /SAIR/i }).waitFor({ timeout: 90000 }),
-          portal.locator('input[type="password"]').waitFor({ timeout: 90000 })
-        ]).catch(() => {});
+        const ate = Date.now() + 90000;
+        while (Date.now() < ate) {
+          const outra = await localizarPortalAutenticado(contexto, portal);
+          if (outra) { portal = outra; break; }
+          if ((await examinarPortal(portal)).formulario_login) break;
+          await dormir(500);
+        }
         const outra = await localizarPortalAutenticado(contexto, portal);
         if (outra) portal = outra;
       }
@@ -122,7 +121,12 @@ export async function executar(cfg, modo = '--consultar') {
         await sistema.goto(destino, { waitUntil: 'domcontentloaded' });
       if (!await autenticado(portal) && await tentarLoginSalvo(portal, loginEnviado)) {
         loginEnviado = true;
-        await portal.getByRole('link', { name: /SAIR/i }).waitFor({ timeout: 30000 }).catch(() => {});
+        const ate = Date.now() + 30000;
+        while (Date.now() < ate) {
+          const pronta = await localizarPortalAutenticado(contexto, portal);
+          if (pronta) { portal = pronta; break; }
+          await dormir(500);
+        }
       }
       const pronta = await localizarPortalAutenticado(contexto, portal);
       if (pronta) portal = pronta;
@@ -177,15 +181,13 @@ export async function executar(cfg, modo = '--consultar') {
             resultados.push({ ...linha, estado: 'CONSULTAR_GUIA_EXISTENTE' }); continue;
           }
           await pendente.getByRole('button').click();
-          baixar = portal.getByRole('link', { name: '2ª Via', exact: true });
+          baixar = portal.getByText('2ª Via', { exact: true });
         } else {
           // Intenção durável ANTES do efeito externo. Retomada incerta nunca reemite.
           await gravar(journal, { ...linha, emissaoIniciada: true });
           baixar = row.getByRole('button', { name: 'Emitir guia', exact: true });
         }
-        const nova = contexto.waitForEvent('page', { timeout: 90000 });
-        await baixar.click();
-        const pagina = await nova;
+        const pagina = await novaPaginaAposClique(contexto, () => baixar.click());
         await pagina.waitForURL(u => u.href.startsWith('blob:' + PORTAL + '/'), { timeout: 90000 });
         const bytes = await pagina.evaluate(async () => {
           const b = await (await fetch(location.href)).arrayBuffer();

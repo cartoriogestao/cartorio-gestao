@@ -2,7 +2,7 @@ GUIAS DO PORTAL DO SELO — CONTRATO DE INTEGRAÇÃO
 
 O executor tools/portal_selo_worker.mjs roda no Mac com Google Chrome e SafeID do usuário. Não precisa de um modelo para a agenda; tools/portal_selo_mcp.mjs permite que um cliente MCP local consulte ou solicite a mesma rotina. Não contém credenciais e não exporta certificado.
 
-A detecção do login procura o controle Sair nas abas do Portal do Selo do mesmo contexto dedicado, inclusive quando a autenticação termina em outra aba. Não lê sessões de outro perfil nem de outro site. O envio automático do formulário exige usuário preenchido e senha reconhecida pelo Chrome como autofill; a digitação manual aguarda o usuário clicar Entrar. Nenhum valor de senha é lido ou exportado para o agente.
+A detecção do login procura o controle Sair na árvore nativa de acessibilidade das abas do mesmo contexto dedicado, inclusive quando a autenticação termina em outra aba. Isso reconhece a âncora sem href usada pelo portal. Não lê sessões de outro perfil nem de outro site. O envio automático exige usuário e senha com seletores CSS de autofill efetivamente aplicados pelo Chrome. Não consulta valores dos campos: identifica o botão Entrar pela acessibilidade e clica dentro de seus limites visíveis. Digitação manual e botões ambíguos não são enviados automaticamente.
 
 No servidor, /administrativo/despesas/portal-selo exige a sessão existente do titular ADMIN e CSRF, inclusive para a API. GET apresenta o formulário. POST multipart recebe documento (PDF até 2 MB); conferir=1 apenas lê e devolve o retrato operacional. Sem conferir, importa com anexo e responde JSON quando Accept=application/json. Nenhum campo enviado pelo cliente controla categoria, favorecido, valor esperado ou situação.
 
@@ -12,6 +12,7 @@ FADEP/FEMP/FERRFIS ficam aguardando autorização para pagamento fora do Inter. 
 O importador confere o PDF, faz a leitura do código e calcula o valor esperado no servidor. Consulta número e código para reconhecer também cadastros manuais. Não duplica nem eleva a autorização de uma despesa preexistente. Uma colisão com campos diferentes é recusada.
 
 O executor mantém diário privado por fundo/período. Grava a intenção antes da emissão, preserva o PDF antes da API e usa Ver Guias -> ações -> 2ª Via para recuperar uma guia pendente existente. Se a emissão está incerta e não é possível recuperar uma guia única, pede conferência em vez de repetir o clique.
+A ação 2ª Via é localizada pelo texto exato, pois também é uma âncora sem href. A espera da nova aba e o clique são aguardados juntos: uma falha no clique não deixa uma rejeição assíncrona sem tratamento.
 
 Configuração local (fora do repositório): sistema, httpRedePrivada (opção expressa para a rede privada), playwrightMcp (CLI oficial já instalada), perfil (diretório dedicado), pastaDados e producaoLiberada. O padrão operacional é producaoLiberada=false até a atualização assinada e a validação completa. O cliente MCP não aceita destinos nem código arbitrário como argumentos.
 

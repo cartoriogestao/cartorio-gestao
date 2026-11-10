@@ -276,3 +276,146 @@ def test_a_tela_abre_o_caixa_geral_e_recolhe_o_pendente(protocolo):
         caixa = CB.caixa_geral_de_hoje(con, datetime.now().date())
     assert cobranca["situacao"] == CB.LANCADA and caixa
     assert _quitado(db, pid) == 1
+
+
+# ------------- a recusa da maquininha com o motivo (10/11/2026, OpenAPI V1)
+
+LOGIN = {PX.CAMINHO_DO_TOKEN: Resposta(200, {"id_token": "jwt", "refresh_token": "r"})}
+NA_MAQUINA = {**COBRANCA, "forma_pedida": "PIX", "seu_numero": "CG9"}
+
+
+def _maquina(respostas) -> tuple[PX.ClienteCobrancaParcela, Transporte]:
+    t = Transporte({**LOGIN, **respostas})
+    return PX.ClienteCobrancaParcela("sandbox", t, {**CAMPOS, "terminal_id": "S1F2-TESTE"}), t
+
+
+def _venda(ident, status, **mais):
+    return {"id": ident, "service_id": "CG9", "status": status, "form_payment": "pix_pos",
+            "amount": 15000, "updated_at": "2026-11-10T14:00:00Z", **mais}
+
+
+def test_a_resposta_fora_do_json_chega_a_tela():
+    cliente, _t = _maquina({"/v1/pos/payments/": Resposta(
+        400, b"<html><body><h1>Terminal inativo</h1></body></html>", "text/html")})
+    with pytest.raises(PX.Recusa) as erro:
+        cliente.emitir(NA_MAQUINA)
+    assert "HTTP 400" in str(erro.value)
+    assert "Terminal inativo" in str(erro.value)
+    assert "<h1>" not in str(erro.value)
+
+
+def test_a_venda_recusada_na_maquininha_vira_falhou_com_o_motivo():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(200, [_venda("venda-1", "refused",
+                                             refused_reason="Pix expirado no terminal")]),
+        "/sales/venda-1": Resposta(200, _venda("venda-1", "refused",
+                                               refused_reason="Pix expirado no terminal")),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:venda-1"})
+    assert lido["situacao"] == CB.FALHOU
+    assert "Pix expirado no terminal" in lido["erro"]
+    assert "refused" in lido["erro"] and "venda-1" in lido["erro"]
+
+
+def test_a_venda_abortada_sem_motivo_diz_que_a_parcela_nao_informou():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(404, {"message": "not found"}),
+        "/sales/venda-1": Resposta(200, _venda("venda-1", "abort")),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:venda-1"})
+    assert lido["situacao"] == CB.FALHOU
+    assert "sem motivo informado pela Parcela" in lido["erro"]
+
+
+def test_recusada_e_depois_paga_no_mesmo_service_id_vale_a_paga():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(200, [_venda("venda-1", "failed"),
+                                      _venda("venda-2", "succeeded")]),
+        "/sales/venda-1": Resposta(200, _venda("venda-1", "failed")),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:venda-1"})
+    assert lido["situacao"] == CB.RECEBIDA
+    assert lido["banco_id"] == "pos:venda-2"
+    assert lido["forma_recebida"] == "PIX" and lido["valor_recebido"] == 15000
+
+
+def test_sem_id_no_envio_a_venda_se_acha_pelo_service_id():
+    cliente, t = _maquina({
+        "/service-id": Resposta(200, [_venda("venda-9", "succeeded")]),
+        "/sales/CG9": Resposta(404, {"message": "Sale not found"}),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:CG9"})
+    assert lido["situacao"] == CB.RECEBIDA
+    assert lido["banco_id"] == "pos:venda-9"
+    assert any(c[1].endswith("/sales/CG9/service-id") for c in t.chamadas)
+
+
+def test_sem_venda_alguma_continua_aguardando():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(404, {"message": "not found"}),
+        "/sales/CG9": Resposta(404, {"message": "Sale not found"}),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:CG9"})
+    assert lido["situacao"] == CB.ABERTA and lido["banco_status"] == "NA_MAQUINA"
+
+
+def test_duas_vendas_pagas_no_mesmo_service_id_nao_escolhe():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(200, [_venda("venda-1", "succeeded"),
+                                      _venda("venda-2", "succeeded")]),
+        "/sales/CG9": Resposta(404, {}),
+    })
+    with pytest.raises(PX.Recusa, match="mais de uma venda"):
+        cliente.consultar({**NA_MAQUINA, "banco_id": "pos:CG9"})
+
+
+def test_venda_de_outro_estabelecimento_e_recusada():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(200, [_venda("venda-1", "succeeded",
+                                             seller={"id": "outro-seller"})]),
+    })
+    with pytest.raises(PX.Recusa, match="outro estabelecimento"):
+        cliente.procurar(NA_MAQUINA, data_inicial="2026-11-09", data_final="2026-11-10")
+
+
+def test_procurar_acha_a_venda_da_maquininha_e_nao_o_link():
+    cliente, t = _maquina({"/service-id": Resposta(200, [_venda("venda-9", "pending")])})
+    assert cliente.procurar(NA_MAQUINA, data_inicial="2026-11-09",
+                            data_final="2026-11-10") == "pos:venda-9"
+    antes = len(t.chamadas)
+    assert cliente.procurar(COBRANCA, data_inicial="2026-11-09", data_final="2026-11-10") is None
+    assert len(t.chamadas) == antes
+
+
+def test_no_link_a_tentativa_recusada_nao_encerra_a_cobranca():
+    lido = PX.ler({"token": "tok-1", "status": "active",
+                   "sale": {"id": "v", "status": "refused", "refused_reason": "cartao negado"}})
+    assert lido["situacao"] == CB.ABERTA
+
+
+def test_a_recusa_da_maquininha_fica_no_rastro_da_cobranca(protocolo):
+    db, pid = protocolo["db"], protocolo["protocolo_id"]
+    with db.transaction() as con:
+        i = CB.cadastrar(
+            con, agora=AGORA, por="balcao", banco_codigo=CB.PARCELA, ambiente="sandbox",
+            protocolo_id=pid, valor_centavos=12345, vencimento="2026-11-20",
+            pagador=PAGADOR, mensagem="Emolumentos.", forma_pedida="PIX")
+        CB.gravar_resposta(con, i, {"banco_id": "pos:venda-1", "situacao": CB.ABERTA},
+                           por="automação", agora=AGORA, operacao="EMITIR")
+    with db.connect() as con:
+        c = CB.cobranca(con, i)
+    cliente, _t = _maquina({
+        "/service-id": Resposta(200, [{**_venda("venda-1", "refused",
+                                                 refused_reason="Pix nao concluido"),
+                                       "service_id": c["seu_numero"]}]),
+        "/sales/venda-1": Resposta(200, _venda("venda-1", "refused",
+                                               refused_reason="Pix nao concluido")),
+    })
+    import cobranca_banco as CBB
+    assert CBB.atualizar(db, i, cliente=cliente, por="automação", agora=AGORA) == CB.FALHOU
+    with db.connect() as con:
+        c = CB.cobranca(con, i)
+        rastro = CB.eventos(con, i)
+    assert "Pix nao concluido" in c["erro"]
+    assert rastro[-1]["resultado"] == CB.FALHOU and "Pix nao concluido" in rastro[-1]["mensagem"]
+    assert c["deposito_id"] is None

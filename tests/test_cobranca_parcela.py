@@ -294,6 +294,17 @@ def _venda(ident, status, **mais):
             "amount": 15000, "updated_at": "2026-11-10T14:00:00Z", **mais}
 
 
+@pytest.mark.parametrize("forma", ["PIX", "DEBITO", "CREDITO"])
+def test_a_maquininha_recebe_ao_menos_uma_parcela(forma):
+    """A Parcela recusa instalments 0: «instalments must not be less than 1»."""
+    cliente, t = _maquina({"/v1/pos/payments/": Resposta(201, {"id": "venda-1"})})
+    assert cliente.emitir({**NA_MAQUINA, "forma_pedida": forma}) == "pos:venda-1"
+    corpo = t.chamadas[1][2]
+    assert corpo["instalments"] == 1
+    assert corpo["is_pix"] is (forma == "PIX")
+    assert corpo["is_debit"] is (forma == "DEBITO")
+
+
 def test_a_resposta_fora_do_json_chega_a_tela():
     cliente, _t = _maquina({"/v1/pos/payments/": Resposta(
         400, b"<html><body><h1>Terminal inativo</h1></body></html>", "text/html")})

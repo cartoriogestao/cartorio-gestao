@@ -387,7 +387,10 @@ class ClienteCobrancaParcela:
                 "terminal_id": maquina,
                 "amount": int(c["valor"]),
                 "is_debit": forma == "DEBITO",
-                "instalments": 1 if forma == "CREDITO" else 0,
+                # A Parcela recusa 0 em qualquer forma (HTTP 400 «instalments
+                # must not be less than 1», cobrança CG10 de 10/11/2026):
+                # Pix, débito e crédito à vista vão com 1.
+                "instalments": 1,
                 "service_id": servico,
                 "is_pix": forma == "PIX",
                 "description": CB._texto(c.get("mensagem") or servico, 80),

@@ -3,6 +3,12 @@
   {#- NO LAYOUT NOVO O LIVRO E O TERMO ESTÃO NO TÍTULO: não somem ao trocar de aba. #}
   {%- if layout_novo %} <span class="small muted">{{ assento.livro_volume or assento.serie }}{% if assento.numero %}, termo {{ assento.numero }}{% endif %}{% if assento.situacao != 'ATIVO' %} · {{ assento.situacao }}{% endif %}</span>{% endif %}</h1>{% endblock %}
 {% block content %}
+{% if dados and dados.get('margem_a_conferir') %}
+<div class="notice critical" role="alert">
+  <strong>Confira no livro antes de certificar</strong>
+  <p style="white-space:pre-wrap">{{ dados.get('margem_a_conferir') }}</p>
+</div>
+{% endif %}
 {% if dados and dados.get('acervo_transcrito') %}
 <section class="panel" data-fase="assento"><div class="panel-head"><span>Transcrição do acervo</span></div>
 <div style="padding:14px"><p>Dados do lote de transcrição. As observações e dúvidas da leitura foram preservadas.</p>

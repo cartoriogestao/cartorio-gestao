@@ -6,6 +6,13 @@
 <form method="post" class="stack">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <label>Código<input name="codigo" inputmode="numeric" autocomplete="one-time-code" autofocus required></label>
+  {% if pode_lembrar %}
+  <label><input type="checkbox" name="lembrar_dispositivo" value="1"> Lembrar este dispositivo por 30 dias</label>
+  <p class="muted small">Use apenas no seu computador. A senha continua sendo exigida.
+  Disponível com código do aplicativo; códigos de recuperação não lembram o dispositivo.</p>
+  {% else %}
+  <p class="muted small">Para lembrar este dispositivo por 30 dias, acesse o servidor principal por HTTPS.</p>
+  {% endif %}
   <button class="primary">Entrar</button>
 </form>
 <p class="muted small">Sem o celular? Digite um dos códigos de recuperação (formato <code>abcde-fghjk</code>);

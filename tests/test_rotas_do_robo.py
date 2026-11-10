@@ -259,8 +259,8 @@ def test_a_regua_nao_alcanca_gente(cg_casa):
     c = cg_casa["app"].test_client()
     cg_login(c, "beatriz", SENHA)
     import rotas_do_robo as RR
-    assert "tasks" not in RR.ROTAS_PERMITIDAS_AO_ROBO
-    assert c.get("/tarefas").status_code != 403
+    assert "rcpn_assentos" not in RR.ROTAS_PERMITIDAS_AO_ROBO
+    assert c.get("/rcpn").status_code != 403
 
 
 @pytest.mark.parametrize("vedada", ["users", "settings", "backup", "caixa_abrir",
@@ -277,7 +277,7 @@ def test_nome_vedado_nunca_entra(vedada):
 # retificacao cadastral da matricula e na ficha da tarefa.
 
 
-@pytest.mark.parametrize("nome", ["ri_editar_matricula", "task_detail"])
+@pytest.mark.parametrize("nome", ["ri_editar_matricula", "task_detail", "tasks"])
 def test_retificar_o_cadastro_e_a_ficha_da_tarefa_sao_do_robo(nome):
     import selo_robo as SR
     assert SR.rota_permitida_ao_robo(nome) is True
@@ -308,3 +308,31 @@ def test_o_robo_continua_sem_selar_e_sem_cancelar_no_ri():
     for nome in ("ri_selar_ato", "ri_selar_prenotacao", "ri_selar_arquivamento",
                  "ri_cancelar_ato", "ri_expurgar_ato"):
         assert SR.rota_permitida_ao_robo(nome) is False, nome
+
+
+
+def test_robo_lista_e_cria_tarefa_com_autoria_e_csrf(cg_casa):
+    from bd_nativo import banco
+    c = _robo_logado(cg_casa)
+    db = cg_casa["db"]
+    dono = db.create_user("beatriz_responsavel", "Beatriz Exemplo de Souza", SENHA, "USER")
+    substituto = db.create_user("carla_substituta", "Carla Exemplo", SENHA, "USER")
+    with db.transaction() as con:
+        banco(con).escrever("UPDATE users SET robo_responsavel_id=%s WHERE username='robo_rcpn'", (dono,))
+    resposta = c.get("/tarefas")
+    assert resposta.status_code == 200
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', resposta.get_data(as_text=True))[1]
+    form = {"title": "Conferir documento de exemplo", "assigned_user_id": str(dono),
+            "backup_user_id": str(substituto)}
+    assert c.post("/tarefas", data=form).status_code == 400
+    resposta = c.post("/tarefas", data={**form, "csrf_token": token})
+    assert resposta.status_code == 302
+    assert "/tarefas/" in resposta.headers["Location"]
+    tid = int(resposta.headers["Location"].rsplit("/", 1)[-1])
+    with db.connect() as con:
+        task = banco(con).um("SELECT * FROM tasks WHERE id=%s", (tid,))
+        robo = banco(con).um("SELECT id FROM users WHERE username='robo_rcpn'")
+    assert task["title"] == form["title"]
+    assert task["created_by"] == robo["id"]
+    assert task["assigned_user_id"] == dono
+    assert task["backup_user_id"] == substituto

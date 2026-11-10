@@ -1003,6 +1003,8 @@ INSERTS_DE_ANEXO = {
     # o PDF do boleto de repasse que o robô baixa do portal da CRA (#121), na
     # ficha da guia (`protesto_repasse_guia`)
     "protesto_repasse_portal.py": "pt_repasse_guias",
+    # o PDF que chega pelo Malote, junto ao alerta de fraude (#386), na tela `fraudes`
+    "malote_documentos.py": "MALOTE_FRAUDE",
 }
 
 # O QUE SÓ A PRODUÇÃO TEM (LD14, 21/10/2026). `protesto_cra_imagens.py` veio

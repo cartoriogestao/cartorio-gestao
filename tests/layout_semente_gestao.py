@@ -580,7 +580,11 @@ def _despesas(casa) -> None:
     # oficial viu; sem ele, a tela recusa «os dados mudaram» e a despesa fica aguardando.
     import despesas_fluxo as DF
     revisao = DF.revisao(dict(_um(casa, "SELECT * FROM dp_despesas WHERE id = %s", (autorizada,))))
-    _postar(casa, f"{base}/{autorizada}/autorizar", rf"^{base}/{autorizada}$", revisao=revisao)
+    # E A CONFERÊNCIA DO DESTINATÁRIO (#384, 10/11/2026): antes de autorizar, o ordenador confere no
+    # banco o nome e o CPF de quem recebe, diz de onde conferiu e marca a ciência — como na ficha.
+    _postar(casa, f"{base}/{autorizada}/autorizar", rf"^{base}/{autorizada}$", revisao=revisao,
+            destino_nome=CARLA, destino_documento=CPF, destino_ciencia="1",
+            destino_fonte="Conferido no aplicativo do banco, pela chave Pix cadastrada.")
     paga = cadastrar("Salário líquido da escrevente, competência anterior", "1.935,32")
     casa.sql("UPDATE dp_despesas SET situacao = %s, data_pagamento = %s, banco_e2e = %s WHERE id = %s",
              (DP.PAGA, casa.hoje, "E00000000202610301200abcdefghijk", paga))

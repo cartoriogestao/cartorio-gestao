@@ -294,8 +294,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         f = request.form
         if request.method == "POST":
             arquivo = request.files.get("documento")
-            anexo = (arquivo.filename, arquivo.read()) if arquivo and arquivo.filename else None
             try:
+                anexo = None
+                if arquivo and arquivo.filename:
+                    # O mesmo teto da leitura do documento (15 MB). Ler o
+                    # arquivo inteiro, sem limite, estourava a tela ao lançar
+                    # a despesa (of-0155, 01/11/2026).
+                    conteudo = arquivo.read(DD.MAX_BYTES + 1)
+                    if len(conteudo) > DD.MAX_BYTES:
+                        raise DP.DespesaError(
+                            "O documento passa de 15 MB. Envie um arquivo menor.")
+                    anexo = (arquivo.filename, conteudo)
                 with db.transaction() as con:
                     # Vinda do botão de uma recorrente, a despesa leva a chave do
                     # mês: é isso que tira o mês do aviso (`despesas_recorrentes`).
@@ -316,6 +325,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         contato_whatsapp=f.get("contato_whatsapp"))
             except DP.DespesaError as erro:
                 flash(str(erro), "danger")
+                return render_template("despesas_nova.html", f=f, formas=DP.FORMAS,
+                                       categorias=DP.CATEGORIAS, naturezas=DP.NATUREZAS)
+            except Exception as exc:  # noqa: BLE001 — lançar despesa não pode cair em 500
+                # of-0155: «erro 500 ao lançar despesa». A transação já
+                # desfez o que tinha escrito. A frase leva o tipo; o rastro
+                # fica no log.
+                _LOG.exception("despesa não cadastrada")
+                flash(f"A despesa não foi cadastrada ({type(exc).__name__}). "
+                      "Nada foi gravado.", "danger")
                 return render_template("despesas_nova.html", f=f, formas=DP.FORMAS,
                                        categorias=DP.CATEGORIAS, naturezas=DP.NATUREZAS)
             audit("DESPESA_CADASTRADA", "dp_despesas", novo,

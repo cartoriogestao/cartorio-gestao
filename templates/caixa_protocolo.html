@@ -450,7 +450,9 @@
       <tr>
         <td>{{ a.codigo_ato or '—' }}
           {% if a.origem_valor %}<br><span class="small muted">{{ a.origem_valor|lower }}</span>{% endif %}</td>
-        <td class="small">{{ (a.descricao or '—')[:70] }}
+        {# A descrição inteira (of-0147, 28/10/2026): cortar em 70 letras
+           escondia qual ato era, e o balcão não distinguia o que se selava. #}
+        <td class="small" style="white-space:normal; overflow-wrap:anywhere">{{ a.descricao or '—' }}
           {% if a.usado_em %}<br><span class="small muted">já lançado na
             {{ a.usado_rotulo or 'lavratura' }}, em {{ fmt_date(a.usado_em) }}</span>{% endif %}</td>
         <td>{{ a.quantidade }}</td>
@@ -664,7 +666,7 @@
         <td class="small">{{ fmt_date(l.data) }}</td>
         <td class="small">{{ l.natureza }}{% if l.estornado %} <span class="badge alta">estornado</span>{% endif %}
           {% if l.excluido %} <span class="badge alta">excluído</span>{% endif %}</td>
-        <td class="small">{{ (l.descricao or '')[:60] }}</td>
+        <td class="small" style="white-space:normal; overflow-wrap:anywhere">{{ l.descricao or '' }}</td>
         <td style="text-align:right">{{ l.valor }}</td></tr>
     {% endfor %}</tbody>
   </table></div>

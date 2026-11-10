@@ -254,6 +254,36 @@ def test_com_a_senha_baixa_prepara_e_chega_a_aplicacao(tela):
     assert meta["state"] == "READY_FOR_APPROVAL"
 
 
+def test_pg_dump_ausente_na_aprovacao_volta_com_aviso(tela):
+    """of-0156: sem pg_dump a atualização avisa e não cai em HTTP 500."""
+    import banco_pg
+    app, c, pasta = tela
+    _guardar(pasta)
+    dados, sha = pacote()
+
+    def baixar(release, destino, *, limite_bytes, abrir=None):
+        Path(destino).mkdir(parents=True, exist_ok=True)
+        arq = Path(destino) / "baixado.cgu"
+        arq.write_bytes(dados)
+        return arq, sha
+
+    with mock.patch.object(AG, "baixar", side_effect=baixar), \
+         mock.patch("app.pode_aplicar_sozinho", return_value=(True, "")), \
+         mock.patch("banco_pg.binario_do_postgres",
+                    side_effect=banco_pg.OperationalError(
+                        "pg_dump não encontrado: defina CG_PG_BIN com a pasta bin do PostgreSQL.")):
+        r = c.post("/atualizacoes", data={
+            "csrf_token": _csrf(c.get("/atualizacoes").get_data(as_text=True)),
+            "action": "github_atualizar", "senha_do_oficial": SENHA},
+            follow_redirects=True)
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200
+    assert "pg_dump não encontrado" in html
+    assert "aprovada" not in html
+    meta = json.loads((pasta / "updates" / "staged" / VERSAO_ALVO / "_update_meta.json").read_text("utf-8"))
+    assert meta["state"] == "READY_FOR_APPROVAL"
+
+
 def test_erro_inesperado_ao_preparar_vira_aviso_e_nao_500(tela):
     app, c, pasta = tela
     dados, sha = pacote()

@@ -392,6 +392,43 @@ def test_api_cronometro_unico(cg_casa_logada):
     assert st.get_json().get("cronometro") is None
 
 
+def test_ler_o_cronometro_nao_consulta_o_catalogo():
+    """of-0153: status e painel leem; quem cria coluna é a escrita e o init."""
+    con = _mem()
+    PR.init_produtividade_schema(con)
+    chamadas = []
+    original = PR._ensure_colunas
+
+    def espiao(bd):
+        chamadas.append(1)
+        return original(bd)
+
+    PR._ensure_colunas = espiao
+    try:
+        assert PR.cronometro_em_andamento(con, responsavel_user_id=1) is None
+        assert PR.encerrados_sem_ciencia(con, responsavel_user_id=1) == []
+        PR.painel_kpis(con, data_filtro="2026-11-10")
+    finally:
+        PR._ensure_colunas = original
+    assert chamadas == []
+
+
+def test_status_do_cronometro_sem_memoria_devolve_json(cg_casa_logada, monkeypatch):
+    """of-0153: o PostgreSQL sem memória não vira a página de erro 500."""
+    import sqlite3
+    c = cg_casa_logada["c"]
+
+    def estourou(*_a, **_k):
+        raise sqlite3.OperationalError("out of memory")
+
+    monkeypatch.setattr(PR, "cronometro_em_andamento", estourou)
+    st = c.get("/administrativo/produtividade/api/cronometro/status")
+    assert st.status_code == 503
+    corpo = st.get_json()
+    assert corpo["ok"] is False
+    assert "cronômetro" in corpo["erro"]
+
+
 
 def test_exportar_xlsx_zip_headers_e_linhas():
     import zipfile

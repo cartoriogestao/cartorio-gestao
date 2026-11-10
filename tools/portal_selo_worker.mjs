@@ -29,34 +29,48 @@ export function janelaSegunda(agora = new Date()) {
     .formatToParts(agora).reduce((a, x) => ({ ...a, [x.type]: x.value }), {});
   return { aberta: p.weekday === 'Mon' && Number(p.hour) >= 8, chave: `${p.year}-${p.month}-${p.day}` };
 }
+export function origemSistema(cfg) {
+  const u = new URL(cfg.sistema), octetos = u.hostname.split('.').map(Number);
+  const tailscale = octetos.length === 4 && octetos.every(n => Number.isInteger(n) && n >= 0 && n <= 255) &&
+    octetos[0] === 100 && octetos[1] >= 64 && octetos[1] <= 127;
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+  if (u.username || u.password || u.search || u.hash || !['', '/'].includes(u.pathname) ||
+      !(u.protocol === 'https:' || (u.protocol === 'http:' && cfg.httpRedePrivada === true && (local || tailscale))))
+    throw Error('Use a origem HTTPS do sistema ou o endereço privado autorizado na configuração.');
+  return u.origin;
+}
 const dormir = ms => new Promise(r => setTimeout(r, ms));
 async function gravar(file, obj) {
   const temp = file + '.tmp';
   await fs.writeFile(temp, JSON.stringify(obj, null, 2) + '\n', { mode: 0o600 });
   await fs.rename(temp, file);
 }
-async function autenticado(page, sistema = false) {
-  if (sistema) return await page.locator('input[name="csrf_token"]').count() > 0 &&
+async function autenticado(page, sistema = false, origem, examinar = examinarPortal) {
+  if (sistema) {
+    const atual = new URL(page.url());
+    if (atual.origin !== origem || atual.pathname !== '/administrativo/despesas/portal-selo') return false;
+    return await page.locator('input[name="csrf_token"]').count() > 0 &&
     page.url().includes('/despesas/portal-selo');
-  return (await examinarPortal(page)).autenticado;
+  }
+  return (await examinar(page)).autenticado;
 }
-export async function localizarPortalAutenticado(contexto, preferida) {
+export async function localizarPortalAutenticado(contexto, preferida, examinar = examinarPortal) {
   // A autenticação pode terminar em outra aba. Nunca consulta outro perfil/contexto.
   const paginas = contexto.pages();
   const ordem = paginas.includes(preferida) ? [preferida, ...paginas.filter(p => p !== preferida)] : paginas;
   for (const pagina of ordem) {
     try {
-      if (!pagina.isClosed() && new URL(pagina.url()).origin === PORTAL && await autenticado(pagina))
+      if (!pagina.isClosed() && new URL(pagina.url()).origin === PORTAL && await autenticado(pagina, false, undefined, examinar))
         return pagina;
     } catch { /* Aba fechada ou em navegação: conferir novamente na próxima tentativa. */ }
   }
   return null;
 }
-export async function tentarLoginSalvo(pagina, jaEnviado = false) {
+export async function tentarLoginSalvo(pagina, jaEnviado = false, examinar = examinarPortal) {
   if (jaEnviado || pagina.isClosed()) return false;
   try { if (new URL(pagina.url()).origin !== PORTAL) return false; }
   catch { return false; }
-  return Boolean((await examinarPortal(pagina, true)).login_enviado);
+  return Boolean((await examinar(pagina, true)).login_enviado);
 }
 export async function novaPaginaAposClique(contexto, clicar) {
   const [pagina] = await Promise.all([contexto.waitForEvent('page', { timeout: 90000 }), Promise.resolve().then(clicar)]);
@@ -73,14 +87,12 @@ async function api(page, url, csrf, arquivo, conferir) {
   return data;
 }
 
-export async function executar(cfg, modo = '--consultar') {
-  const require = createRequire(realpathSync(cfg.playwrightMcp));
-  const { chromium } = require('playwright');
-  const base = new URL(cfg.sistema);
-  // Não recebe destino do modelo. HTTP local apenas com opção expressa na configuração.
-  if (base.protocol !== 'https:' && !(cfg.httpRedePrivada === true &&
-      /^(127\.0\.0\.1|localhost|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(base.hostname + '.')))
-    throw Error('Use HTTPS ou configure expressamente o endereço privado da serventia.');
+export async function executar(cfg, modo = '--consultar', dependencias = {}) {
+  if (!['--consultar', '--executar', '--autenticar', '--agendado'].includes(modo)) throw Error('MODO_RECUSADO');
+  const origem = origemSistema(cfg);
+  if (['--executar', '--agendado'].includes(modo) && cfg.producaoLiberada !== true)
+    return { estado: 'AGUARDANDO_ATUALIZACAO_E_VALIDACAO', concluido: false };
+  const examinar = dependencias.examinarPortal || examinarPortal;
   const raiz = path.resolve(cfg.pastaDados);
   await fs.mkdir(raiz, { recursive: true, mode: 0o700 });
   const lock = path.join(raiz, 'executor.lock');
@@ -90,47 +102,52 @@ export async function executar(cfg, modo = '--consultar') {
   await dono.writeFile(String(process.pid));
   let contexto;
   try {
-    contexto = await chromium.launchPersistentContext(path.resolve(cfg.perfil), {
-      channel: 'chrome', headless: false, acceptDownloads: true,
-      ignoreDefaultArgs: ['--use-mock-keychain', '--password-store=basic']
-    });
+    if (dependencias.abrir) contexto = await dependencias.abrir();
+    else {
+      const require = createRequire(realpathSync(cfg.playwrightMcp));
+      const { chromium } = require('playwright');
+      contexto = await chromium.launchPersistentContext(path.resolve(cfg.perfil), {
+        channel: 'chrome', headless: false, acceptDownloads: true,
+        ignoreDefaultArgs: ['--use-mock-keychain', '--password-store=basic']
+      });
+    }
     let portal = await contexto.newPage();
     const sistema = await contexto.newPage();
-    const destino = new URL('/administrativo/despesas/portal-selo', base).href;
+    const destino = new URL('/administrativo/despesas/portal-selo', origem).href;
     const respostas = await Promise.all([portal.goto(PORTAL, { waitUntil: 'domcontentloaded' }),
       sistema.goto(destino, { waitUntil: 'domcontentloaded' })]);
     if (respostas[1]?.status() === 404)
       return { estado: 'AGUARDANDO_ATUALIZACAO_E_VALIDACAO', concluido: false };
     let loginEnviado = false;
     async function pronto() {
-      const aberta = await localizarPortalAutenticado(contexto, portal);
+      const aberta = await localizarPortalAutenticado(contexto, portal, examinar);
       if (aberta) portal = aberta;
       // O HTML inicial pode terminar antes de o Angular mostrar login ou sessão.
       if (!aberta) {
         const ate = Date.now() + 90000;
         while (Date.now() < ate) {
-          const outra = await localizarPortalAutenticado(contexto, portal);
+          const outra = await localizarPortalAutenticado(contexto, portal, examinar);
           if (outra) { portal = outra; break; }
-          if ((await examinarPortal(portal)).formulario_login) break;
+          if ((await examinar(portal)).formulario_login) break;
           await dormir(500);
         }
-        const outra = await localizarPortalAutenticado(contexto, portal);
+        const outra = await localizarPortalAutenticado(contexto, portal, examinar);
         if (outra) portal = outra;
       }
       if (!sistema.url().includes('/login') && !sistema.url().includes('/despesas/portal-selo'))
         await sistema.goto(destino, { waitUntil: 'domcontentloaded' });
-      if (!await autenticado(portal) && await tentarLoginSalvo(portal, loginEnviado)) {
+      if (!await autenticado(portal, false, undefined, examinar) && await tentarLoginSalvo(portal, loginEnviado, examinar)) {
         loginEnviado = true;
         const ate = Date.now() + 30000;
         while (Date.now() < ate) {
-          const pronta = await localizarPortalAutenticado(contexto, portal);
+          const pronta = await localizarPortalAutenticado(contexto, portal, examinar);
           if (pronta) { portal = pronta; break; }
           await dormir(500);
         }
       }
-      const pronta = await localizarPortalAutenticado(contexto, portal);
+      const pronta = await localizarPortalAutenticado(contexto, portal, examinar);
       if (pronta) portal = pronta;
-      return Boolean(pronta) && await autenticado(sistema, true);
+      return Boolean(pronta) && await autenticado(sistema, true, origem);
     }
     if (modo === '--autenticar') {
       console.error('Conclua SafeID e os dois logins nas janelas do Chrome. Não envie senhas ao agente.');
@@ -152,14 +169,19 @@ export async function executar(cfg, modo = '--consultar') {
         existente: await row.getByRole('button', { name: 'Ver Guias', exact: true }).count() > 0 });
     }
     if (modo === '--consultar') return { estado: 'CONSULTA', linhas, concluido: false };
+    if (!linhas.length) return { estado: 'AGUARDANDO_GUIAS', linhas, concluido: false };
     const csrf = await sistema.locator('input[name="csrf_token"]').inputValue();
     for (const linha of linhas) {
-      if (!linha.disponivel && !linha.existente) continue;
+      if (!linha.disponivel && !linha.existente) {
+        resultados.push({ ...linha, estado: 'AGUARDANDO_LIBERACAO_PORTAL' }); continue;
+      }
       const chave = `${linha.fundo}_${linha.inicio}_${linha.fim}`;
       const journal = path.join(raiz, chave + '.json'), pdf = path.join(raiz, chave + '.pdf');
       let estado = await fs.readFile(journal, 'utf8').then(JSON.parse).catch(e => {
         if (e.code === 'ENOENT') return {}; throw e;
       });
+      if (estado.cadastrado && !confereLinha({ ...estado, valor_centavos: estado.valor }, linha))
+        throw Error('DIARIO_DIVERGE_DO_PORTAL');
       if (estado.cadastrado) { resultados.push({ ...linha, id: estado.id, estado: 'JA_CADASTRADA' }); continue; }
       let temPdf = await fs.stat(pdf).then(x => x.isFile()).catch(() => false);
       if (!temPdf && estado.emissaoIniciada && !linha.existente) {
@@ -208,7 +230,7 @@ export async function executar(cfg, modo = '--consultar') {
       await gravar(journal, estado);
       resultados.push(estado);
     }
-    const incompletos = resultados.some(r => r.estado === 'CONSULTAR_GUIA_EXISTENTE');
+    const incompletos = resultados.some(r => ['CONSULTAR_GUIA_EXISTENTE', 'AGUARDANDO_LIBERACAO_PORTAL'].includes(r.estado));
     return { estado: incompletos ? 'CONFERENCIA_NECESSARIA' : 'CONCLUIDO', resultados, concluido: !incompletos };
   } finally {
     if (contexto) await contexto.close();

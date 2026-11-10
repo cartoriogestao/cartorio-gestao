@@ -1,5 +1,6 @@
 """Contrato das guias e barreiras financeiras, sem rede e sem banco real."""
 import unittest
+from functools import lru_cache
 from contextlib import nullcontext
 from datetime import datetime
 from unittest.mock import Mock, patch
@@ -28,6 +29,15 @@ def texto(fundo='FERJ'):
             '26.000.000.000.000.001-0\n10/11/2026\n09/11/2026\n'
             f'Fundo de Cidade Exemplo - {fundo}\n00.000.010/0001-27\nR$ 123,45\n'
             f'Referente à {fundo}\nPeríodo de apuração: 01/10/2026 a 31/10/2026\n{codigo()}')
+
+
+@lru_cache(maxsize=8)
+def pdf_original(fundo='FERJ'):
+    import fitz
+    with fitz.open() as documento:
+        pagina = documento.new_page()
+        pagina.insert_text((40, 40), texto(fundo), fontsize=10)
+        return documento.tobytes()
 
 
 class Guias(unittest.TestCase):
@@ -87,11 +97,13 @@ class Guias(unittest.TestCase):
         bd = Mock()
         g = {'fundo': 'FERJ', 'existente': {'id': 3, 'situacao': DP.AGUARDANDO}}
         with patch.object(PS, 'banco', return_value=bd), patch.object(PS, 'conferir', return_value=g), \
-                patch.object(DP, 'cadastrar') as cadastrar:
+                patch.object(DP, 'cadastrar') as cadastrar, \
+                patch.object(DP, 'anexos', return_value=[]), patch.object(DP, 'guardar_anexo') as guardar:
             r = PS.importar(None, b'%PDF', agora=datetime(2026, 11, 9), por='automação', pasta=None, usuario_id=None)
             self.assertFalse(r['novo'])
             self.assertEqual(r['situacao'], DP.AGUARDANDO)
             cadastrar.assert_not_called()
+            guardar.assert_called_once()
 
 
 if __name__ == '__main__':

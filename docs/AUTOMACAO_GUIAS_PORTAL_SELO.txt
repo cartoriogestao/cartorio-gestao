@@ -21,3 +21,36 @@ Agenda preparada no Mac: segunda às 08h, novas chamadas a cada 30 min até a co
 Validação: unittest tests.test_despesas_portal_selo_unidade; node --test tests/test_portal_selo_worker.mjs; testes de API em tests/test_despesas_portal_selo_api.py com PostgreSQL isolado, conforme conftest. O teste de regras sem banco não substitui o da API, do navegador ou do executor bancário.
 
 O processo AGENTE_IA do sistema já usa o provedor escolhido, mas esta integração não publica o Mac na rede nem inclui uma ponte do agente interno ao MCP local. Para orquestrar pelo Claude configurado no sistema, é necessário acrescentar ferramenta/fila autenticada que o executor do Mac consuma. A agenda não depende da API de IA.
+
+EXCEÇÃO FERJ/FERC À CONFERÊNCIA INDIVIDUAL DO DESTINATÁRIO
+A conferência humana do destinatário continua exigida para as outras despesas.
+Para FERJ/FERC o titular autorizou a exceção: envio automático somente quando
+há origem desta importação, autorização pela regra, PDF original anexado com
+SHA-256 íntegro, identidade da guia/código/favorecido/vencimento coincidente,
+valor esperado recalculado dos selos e tetos vigentes respeitados. O executor
+refaz a prova antes de preparar o envio e imediatamente antes da chamada ao
+banco. PDF ausente/alterado, cadastro manual, base ausente/divergente ou regra
+desligada não recebem a exceção. FADEP/FEMP/FERRFIS continuam bloqueados no Inter,
+inclusive com conferência humana. A modalidade é arrecadação por código de
+barras em /banking/v2/pagamento; não é Pix. Pedido de envio não confirma pagamento.
+
+Se a guia já existe como cadastro manual e confere, a importação junta o PDF
+faltante no mesmo cadastro, sem elevar a autorização nem pedir novo pagamento.
+Repetir os mesmos bytes não duplica o anexo. O diário reconhece divergência da
+linha já cadastrada. Portal ainda vazio ou sem botão de emissão não encerra a
+agenda do dia: a rotina continua aguardando a liberação das guias.
+
+VALIDAÇÃO DO CÓDIGO E IMPLANTAÇÃO
+node --test tests/test_portal_selo_worker.mjs tests/test_portal_selo_fluxo.mjs
+pytest tests/test_despesas_portal_selo_api.py tests/test_portal_selo_integracao.py
+O teste de integração usa o worker real, PDFs fictícios válidos, API Flask real
+e PostgreSQL isolado. Só o navegador/portal e o banco externo são simulados.
+O teste requer Node (CG_TEST_NODE ou node no PATH) e é pulado sem esse runtime.
+A emissão por cliques e as retomadas são exercitadas com portal simulado.
+
+Antes de ativar na instalação: conferir PDFs originais de FERJ/FERC, sessão e
+renovação SafeID/Chrome, emissão inicial real, segundo acesso sem duplicação,
+API instalada e política bancária/tetos da serventia. Esses ensaios reais ainda
+são necessários; os testes fictícios não os substituem. A flag local permanece
+producaoLiberada=false até a validação operacional. Tornar o PR pronto libera
+somente a revisão/CI do código; não habilita o executor local nem sua agenda.

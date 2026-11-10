@@ -11,15 +11,14 @@ import despesas_inter as INTER
 import despesas_portal_selo as PS
 from tests.test_despesas import InterFalso, CAMPOS
 from tests.test_despesas_fluidez import _token
-from tests.test_despesas_portal_selo_unidade import texto
+from tests.test_despesas_portal_selo_unidade import texto, pdf_original
 
 BASE = '/administrativo/despesas/portal-selo'
 
 
 def _post(c, fundo='FERJ', **extras):
-    dados = {'csrf_token': _token(c, BASE), 'documento': (io.BytesIO(b'%PDF ficticio'), 'guia.pdf'), **extras}
-    with patch.object(PS, 'ler_pdf', return_value=PS.ler_texto(texto(fundo))):
-        return c.post(BASE, data=dados, headers={'Accept': 'application/json'})
+    dados = {'csrf_token': _token(c, BASE), 'documento': (io.BytesIO(pdf_original(fundo)), 'guia.pdf'), **extras}
+    return c.post(BASE, data=dados, headers={'Accept': 'application/json'})
 
 
 def test_conferir_nao_cadastra_e_commit_e_idempotente_com_anexo(cg_casa_logada):
@@ -77,7 +76,8 @@ def test_ferj_ferc_enfileiram_e_executor_envia_apenas_ao_banco_falso(cg_casa_log
         assert len(DP.anexos(con, r['id'])) == 1
     falso = InterFalso()
     cliente = INTER.ClienteInter('sandbox', falso, CAMPOS)
-    enviado = INTER.pagar(db, r['id'], cliente=cliente, por='automação', agora=datetime(2026, 11, 9))
+    with patch.object(PS, 'esperado_dos_selos', return_value=12345):
+        enviado = INTER.pagar(db, r['id'], cliente=cliente, por='automação', agora=datetime(2026, 11, 9))
     assert enviado['situacao'] == DP.ENVIADA
     assert len(falso.posts('/banking/v2/pagamento')) == 1
     with db.connect() as con:
@@ -91,7 +91,10 @@ def test_banco_do_brasil_nao_sai_no_inter_mesmo_se_autorizado_a_mao(cg_casa_loga
     r = _post(c, fundo).get_json()
     assert r['situacao'] == DP.AGUARDANDO and not r['envio_solicitado']
     with db.transaction() as con:
-        DP.autorizar(con, r['id'], agora=datetime(2026, 11, 9), por='mario', papel='ADMIN')
+        DP.autorizar(con, r['id'], agora=datetime(2026, 11, 9), por='mario', papel='ADMIN',
+                     recebedor_previo={'nome': PS.ler_texto(texto(fundo))['beneficiario_nome'],
+                                      'documento': '00000010000127', 'ciencia': True,
+                                      'evidencia': 'Conferência fictícia no banco de teste'})
     falso = InterFalso()
     resultado = INTER.pagar(db, r['id'], cliente=INTER.ClienteInter('sandbox', falso, CAMPOS),
                             por='automação', agora=datetime(2026, 11, 9))
@@ -119,3 +122,105 @@ def test_cliente_nao_forca_autorizacao_sem_conferencia_servidor(cg_casa_logada, 
     with patch.object(PS, 'esperado_dos_selos', return_value=esperado):
         r = _post(c, valor_esperado_centavos='12345').get_json()
     assert r['situacao'] == DP.AGUARDANDO and not r['envio_solicitado']
+
+
+@pytest.mark.parametrize('mudanca', [
+    {'origem': 'MANUAL'}, {'valor_esperado': 1}, {'autorizada_pela_regra': ''},
+    {'beneficiario_documento': '00000000191'}, {'beneficiario_nome': 'Carla Exemplo'},
+    {'chave_origem': 'outra-guia'}, {'documento_numero': 'outra-guia'}, {'codigo': 'outro'},
+])
+def test_excecao_nao_cobre_cadastro_manual_ou_guia_alterada(cg_casa_logada, mudanca):
+    c, db = cg_casa_logada['c'], cg_casa_logada['db']
+    _preparar_executor(db)
+    with patch.object(PS, 'esperado_dos_selos', return_value=12345):
+        r = _post(c).get_json()
+        with db.transaction() as con:
+            # Campos fixos da parametrização; nunca entrada da API.
+            for campo, valor in mudanca.items():
+                banco(con).escrever(f'UPDATE dp_despesas SET {campo}=%s WHERE id=%s', (valor, r['id']))
+        falso = InterFalso()
+        resultado = INTER.pagar(db, r['id'], cliente=INTER.ClienteInter('sandbox', falso, CAMPOS),
+                                por='automação', agora=datetime(2026, 11, 9))
+    assert resultado['situacao'] == DP.AUTORIZADA
+    assert falso.chamadas == []
+
+
+@pytest.mark.parametrize('defeito', ['ausente', 'alterado', 'sem_base', 'divergente', 'teto_guia', 'teto_pagamento', 'teto_dia'])
+def test_antes_do_banco_reconfere_original_base_e_tetos(cg_casa_logada, defeito):
+    from pathlib import Path
+    c, db = cg_casa_logada['c'], cg_casa_logada['db']
+    _preparar_executor(db)
+    with patch.object(PS, 'esperado_dos_selos', return_value=12345):
+        r = _post(c).get_json()
+    with db.transaction() as con:
+        if defeito in ('ausente', 'alterado'):
+            arquivo = Path(DP.anexos(con, r['id'])[0]['stored_path'])
+            if defeito == 'ausente':
+                arquivo.unlink()
+            else:
+                arquivo.write_bytes(b'%PDF-alterado')
+        if defeito.startswith('teto_'):
+            campo = {'teto_guia': 'despesas_teto_guia', 'teto_pagamento': 'despesas_teto_por_pagamento',
+                     'teto_dia': 'despesas_teto_por_dia'}[defeito]
+            DP.gravar_configuracao(con, {**DP.configuracao(con), campo: '1,00'})
+    esperado = None if defeito == 'sem_base' else 12344 if defeito == 'divergente' else 12345
+    falso = InterFalso()
+    with patch.object(PS, 'esperado_dos_selos', return_value=esperado):
+        resultado = INTER.pagar(db, r['id'], cliente=INTER.ClienteInter('sandbox', falso, CAMPOS),
+                                por='automação', agora=datetime(2026, 11, 9))
+    assert resultado['situacao'] == DP.AUTORIZADA
+    assert falso.chamadas == []
+
+
+def test_cadastro_manual_recebe_pdf_sem_autorizacao_e_sem_duplicar_anexo(cg_casa_logada):
+    c, db = cg_casa_logada['c'], cg_casa_logada['db']
+    _preparar_executor(db)
+    with patch.object(PS, 'esperado_dos_selos', return_value=12345):
+        r = _post(c).get_json()
+        with db.transaction() as con:
+            banco(con).escrever("UPDATE dp_despesas SET situacao=%s, origem='MANUAL', autorizada_por=NULL, "
+                                "autorizada_em=NULL, autorizada_pela_regra='' WHERE id=%s", (DP.AGUARDANDO, r['id']))
+            banco(con).escrever("DELETE FROM attachments WHERE entity_type='DESPESA' AND entity_id=%s", (r['id'],))
+        with patch('automacao.pedir_rodada') as pedir:
+            for _ in range(2):
+                retomada = _post(c).get_json()
+                assert retomada['id'] == r['id'] and not retomada['novo']
+                assert retomada['situacao'] == DP.AGUARDANDO and not retomada['envio_solicitado']
+            pedir.assert_not_called()
+    with db.connect() as con:
+        assert len(DP.anexos(con, r['id'])) == 1
+        assert banco(con).valor('SELECT count(*) FROM dp_despesas') == 1
+
+
+def test_pdf_alterado_entre_preparar_e_enviar_falha_sem_contato_bancario(cg_casa_logada):
+    from pathlib import Path
+    c, db = cg_casa_logada['c'], cg_casa_logada['db']
+    _preparar_executor(db)
+    enviar = INTER._enviar
+    def alterar_antes_do_post(db, d, **kw):
+        with db.connect() as con:
+            Path(DP.anexos(con, d['id'])[0]['stored_path']).write_bytes(b'%PDF-alterado')
+        return enviar(db, d, **kw)
+    falso = InterFalso()
+    with patch.object(PS, 'esperado_dos_selos', return_value=12345):
+        r = _post(c).get_json()
+        with patch.object(INTER, '_enviar', side_effect=alterar_antes_do_post):
+            resultado = INTER.pagar(db, r['id'], cliente=INTER.ClienteInter('sandbox', falso, CAMPOS),
+                                    por='automação', agora=datetime(2026, 11, 9))
+    assert resultado['situacao'] == DP.FALHOU
+    assert falso.chamadas == []
+    with db.connect() as con:
+        assert DP.despesa(con, r['id'])['banco_status'] == 'BLOQUEADO_ANTES_DO_ENVIO'
+
+
+def test_excecao_nao_permite_enviar_sem_passar_pela_preparacao_e_tetos(cg_casa_logada):
+    c, db = cg_casa_logada['c'], cg_casa_logada['db']
+    _preparar_executor(db)
+    falso = InterFalso()
+    with patch.object(PS, 'esperado_dos_selos', return_value=12345):
+        r = _post(c).get_json()
+        with db.connect() as con:
+            d = DP.despesa(con, r['id'])
+        INTER._enviar(db, d, cliente=INTER.ClienteInter('sandbox', falso, CAMPOS),
+                       por='automação', hoje='2026-11-09')
+    assert falso.chamadas == []

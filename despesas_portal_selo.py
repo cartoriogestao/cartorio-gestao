@@ -1,6 +1,7 @@
 """Importação conferida das guias do TJMA; o modelo não decide o destino do dinheiro."""
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import date, datetime
 from pathlib import Path
@@ -89,7 +90,7 @@ def conferir(con, conteudo: bytes) -> dict:
     guia = ler_pdf(conteudo)
     bd = banco(con)
     barras = DP.ler_codigo_de_barras(guia["codigo"])["barras"]
-    existentes = bd.ler("SELECT id, situacao, categoria, valor, codigo_barras FROM dp_despesas "
+    existentes = bd.ler("SELECT id, situacao, categoria, valor, codigo_barras, vencimento, beneficiario_documento FROM dp_despesas "
                        "WHERE codigo_barras = %s OR documento_numero = %s ORDER BY id",
                        (barras, guia["numero"]))
     if len(existentes) > 1:
@@ -97,7 +98,9 @@ def conferir(con, conteudo: bytes) -> dict:
     existente = existentes[0] if existentes else None
     if existente and (existente["codigo_barras"] != barras or
                       int(existente["valor"]) != guia["valor_centavos"] or
-                      existente["categoria"] != "FUNDO_" + guia["fundo"]):
+                      existente["categoria"] != "FUNDO_" + guia["fundo"] or
+                      existente["vencimento"] != guia["vencimento"] or
+                      DP.digitos(existente["beneficiario_documento"]) != guia["beneficiario_documento"]):
         raise DP.DespesaError("A guia difere da despesa já cadastrada. Confira antes de continuar.")
     esperado = None
     if guia["fundo"] in ("FERJ", "FERC"):
@@ -116,7 +119,13 @@ def importar(con, conteudo: bytes, *, agora: datetime, por: str, pasta: Path,
     bd.travar("despesas.portal_selo.importar")
     g = conferir(con, conteudo)
     if g["existente"]:
-        # Inclui as despesas MANUAIS: a automação não duplica nem eleva sua autorização.
+        # Inclui as despesas MANUAIS sem elevar sua autorização. O PDF faltante
+        # entra no mesmo cadastro; reenvio dos mesmos bytes não repete o anexo.
+        digest = hashlib.sha256(conteudo).hexdigest()
+        if not any(a["sha256"] == digest for a in DP.anexos(con, int(g["existente"]["id"]))):
+            DP.guardar_anexo(con, int(g["existente"]["id"]), nome_arquivo=g["fundo"] + ".pdf",
+                             conteudo=conteudo, pasta=pasta, usuario_id=usuario_id,
+                             agora=agora.isoformat(timespec="seconds"))
         return {"id": int(g["existente"]["id"]), "situacao": g["existente"]["situacao"],
                 "novo": False, "fundo": g["fundo"]}
     numero = DP.cadastrar(con, agora=agora, por=por, origem=DP.ORIGEM_PORTAL_SELO,
@@ -132,3 +141,43 @@ def importar(con, conteudo: bytes, *, agora: datetime, por: str, pasta: Path,
                           pasta_anexos=pasta, usuario_id=usuario_id)
     d = DP.despesa(con, numero)
     return {"id": numero, "situacao": d["situacao"], "novo": True, "fundo": g["fundo"]}
+
+
+def destinatario_automatico(con, d: dict, *, hoje: str) -> dict | None:
+    """Exceção FERJ/FERC aprovada pelo titular: prova refeita antes de enviar.
+
+    Só aceita a autorização pela regra desta importação. Cadastro manual,
+    autorização antiga, PDF ausente/alterado ou valores sem base não entram.
+    A conferência humana de todas as outras despesas continua no seu domínio.
+    """
+    fundo = str(d.get("categoria") or "").removeprefix("FUNDO_")
+    if (fundo not in ("FERJ", "FERC") or d.get("origem") != DP.ORIGEM_PORTAL_SELO
+            or d.get("forma") != DP.ARRECADACAO or not d.get("autorizada_pela_regra")
+            or d.get("autorizada_por") != "regra das guias"
+            or d.get("situacao") not in (DP.AUTORIZADA, DP.ENVIADA)):
+        return None
+    cfg = DP.configuracao(con)
+    valor = int(d["valor"])
+    if (cfg.get("despesas_regra_guias_ligada") != "1" or d.get("valor_esperado") != valor
+            or valor > min(DP.tetos(cfg)["guia"], DP.tetos(cfg)["pagamento"])):
+        return None
+    for anexo in DP.anexos(con, int(d["id"])):
+        arquivo = Path(anexo["stored_path"])
+        if arquivo.suffix.lower() != ".pdf":
+            continue
+        try:
+            with arquivo.open("rb") as origem:
+                conteudo = origem.read(MAX_BYTES + 1)
+            if len(conteudo) > MAX_BYTES or hashlib.sha256(conteudo).hexdigest() != anexo["sha256"]:
+                continue
+            g = conferir(con, conteudo)
+        except (OSError, DP.DespesaError):
+            continue
+        if (g["fundo"] == fundo and g["existente"] and int(g["existente"]["id"]) == int(d["id"])
+                and g["numero"] == d.get("documento_numero")
+                and DP.digitos(g["codigo"]) == DP.digitos(d.get("codigo"))
+                and d.get("chave_origem") == fundo + ":" + g["numero"]
+                and g["valor_esperado_centavos"] == valor and g["vencimento"] >= hoje
+                and DP.nome_do_recebedor(g["beneficiario_nome"]) == DP.nome_do_recebedor(d.get("beneficiario_nome"))):
+            return {"nome": g["beneficiario_nome"], "documento": g["beneficiario_documento"]}
+    return None

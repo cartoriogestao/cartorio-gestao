@@ -174,8 +174,11 @@ DO_ACERVO_TRANSCRITO: tuple[str, ...] = ("rcpn_acervo_transcrito_lote", "rcpn_ac
 # cadastro (versao conferida, motivo e auditoria por campo; matricula
 # encerrada recusa) e `task_detail` atualiza, anota, conclui e passa a
 # tarefa, com a auditoria da conta de robo e do responsavel humano.
+# A lista e a criação em /tarefas também passam pela sessão identificada,
+# com CSRF e as regras de responsável/substituto do cadastro de tarefas.
 DO_CADASTRO_E_DAS_TAREFAS: tuple[str, ...] = (
     "ri_editar_matricula",   # Retificar dados cadastrais (GET mostra, POST grava)
+    "tasks",                 # /tarefas - lista e criação pela conta identificada
     "task_detail",           # /tarefas/<id> - ficha, andamento e conclusao
 )
 

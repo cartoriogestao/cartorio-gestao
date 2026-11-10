@@ -38,7 +38,7 @@ Desde a 3.7.14.
 - Fora do Windows, o perfil do LibreOffice fica na pasta de dados, e não numa pasta chamada «C:\ProgramData» dentro da pasta atual.
 
 **Testes**
-- A suíte inteira passa numa máquina com LibreOffice, Chrome e PostgreSQL instalados, como o servidor: 18.507 testes, nenhuma falha.
+- A suíte inteira passa numa máquina com LibreOffice, Chrome e PostgreSQL instalados, como o servidor: 18.616 testes, nenhuma falha.
 
 ## 3.7.14 — protesto só depois do caixa, Parcela Express na maquininha e revisão no registro civil
 

@@ -1,0 +1,139 @@
+# A SUÍTE COMPLETA em todo PR — no executor do servidor reserva, num contêiner sem rede.
+#
+# SEGURANÇA, POR QUE É ASSIM (10/11/2026):
+# - `pull_request_target`: os PASSOS vêm do `main` (confiável). Um PR não consegue
+#   trocar o que roda no executor; o código dele só roda dentro do contêiner, sem
+#   rede e sem pasta nenhuma do Mac (ci/suite/rodar.sh).
+# - Só PR da conta proprietária, do próprio repositório, pronto. Fork nunca chega aqui.
+# - O código do PR é baixado sem credencial (`persist-credentials: false`).
+# - Permissões mínimas: ler o código, escrever o status `suite` e comentar.
+#
+# O STATUS `suite` vai no commit do PR (o `pull_request_target` registraria a
+# verificação no commit do main, e a regra do main não a veria).
+name: suite
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Número do PR"
+        required: true
+
+permissions:
+  contents: read
+  statuses: write
+  pull-requests: write
+
+concurrency:
+  group: suite-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.draft == false &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.user.login == github.repository_owner &&
+       (github.event.action != 'labeled' || github.event.label.name == 'ci-revisado'))
+    # Só o rótulo próprio (o executor é registrado com --no-default-labels): nenhum
+    # outro trabalho que peça «self-hosted» cai no servidor reserva.
+    runs-on: [cartorio-suite]
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number || inputs.pr }}
+    steps:
+      - name: O PR, pela API (vale para os dois gatilhos)
+        id: pr
+        run: |
+          set -euo pipefail
+          json=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/$PR")
+          python3 - "$json" <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, sys
+          p = json.loads(sys.argv[1])
+          print(f"head={p['head']['sha']}")
+          print(f"autor={p['user']['login']}")
+          print(f"mesmo={str((p['head']['repo'] or {}).get('full_name') == '${{ github.repository }}').lower()}")
+          print(f"rascunho={str(p['draft']).lower()}")
+          print(f"revisado={str(any(l['name'] == 'ci-revisado' for l in p['labels'])).lower()}")
+          EOF
+
+      - name: Recusa o que não é da conta proprietária
+        if: steps.pr.outputs.autor != github.repository_owner || steps.pr.outputs.mesmo != 'true' || steps.pr.outputs.rascunho == 'true'
+        run: |
+          echo "::error::Só PR pronto, da conta proprietária e do próprio repositório roda no executor."
+          exit 1
+
+      - name: Status «suite» pendente no commit do PR
+        run: |
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/${{ steps.pr.outputs.head }}" \
+            -d '{"state":"pending","context":"suite","description":"A suíte completa está rodando","target_url":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' >/dev/null
+
+      - name: Código confiável (main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: confiavel
+          persist-credentials: false
+
+      - name: Código do PR (só dado; roda no contêiner)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.head }}
+          path: pr
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: O PR junto com o main de agora
+        working-directory: pr
+        run: |
+          set -euo pipefail
+          git -c user.name=suite -c user.email=suite@invalid fetch -q origin main
+          # Testa o que vai entrar: o PR mesclado com o main deste instante.
+          git -c user.name=suite -c user.email=suite@invalid merge -q --no-edit FETCH_HEAD \
+            || { echo "::error::O PR conflita com o main."; exit 1; }
+          rm -rf .git
+
+      - name: Suíte completa (contêiner sem rede)
+        id: suite
+        env:
+          CG_SUITE_REVISADO: ${{ steps.pr.outputs.revisado }}
+        run: confiavel/ci/suite/rodar.sh confiavel pr saida
+
+      - name: Status «suite» final no commit do PR
+        if: always() && steps.pr.outputs.head != ''
+        run: |
+          case "${{ steps.suite.outcome }}" in
+            success) estado=success ;;
+            *) estado=failure ;;
+          esac
+          texto="$(head -c 140 saida/situacao.txt 2>/dev/null || echo 'a suíte não terminou')"
+          python3 - "$estado" "$texto" <<'EOF' > corpo.json
+          import json, sys
+          print(json.dumps({"state": sys.argv[1], "context": "suite", "description": sys.argv[2][:140],
+                            "target_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}))
+          EOF
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/${{ steps.pr.outputs.head }}" \
+            --data-binary @corpo.json >/dev/null
+
+      - name: Comentário com o que falhou, agrupado pela causa
+        if: failure() && steps.suite.outcome == 'failure'
+        run: |
+          python3 confiavel/ci/suite/resumir.py saida > comentario.md
+          python3 - <<'EOF' > corpo.json
+          import json
+          print(json.dumps({"body": open("comentario.md", encoding="utf-8").read()[:60000]}))
+          EOF
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/$PR/comments" --data-binary @corpo.json >/dev/null
+
+      - name: Limpeza
+        if: always()
+        run: rm -rf pr saida corpo.json comentario.md

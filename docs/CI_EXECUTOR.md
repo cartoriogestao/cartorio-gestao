@@ -88,3 +88,8 @@ sudo rm /Library/LaunchDaemons/br.cartoriogestao.ci-*.plist
 
 Depois, em *Settings → Actions → Runners* do repositório, remova o `servidor-reserva`
 e, se quiser, apague o usuário: `sudo sysadminctl -deleteUser ci-runner`.
+
+## Histórico
+
+- 10/11/2026: o executor `servidor-reserva` entrou em operação; o primeiro PR a passar pela suíte
+  no contêiner e pela fila foi o de ensaio que acrescentou esta linha.

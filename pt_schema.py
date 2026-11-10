@@ -1130,3 +1130,8 @@ def init_pt_schema(con) -> None:
     # aqui dentro porque o esquema é aberto antes do resto do Protesto.
     from protesto_cra_envio import reclassificar_recusas_gravadas
     reclassificar_recusas_gravadas(con)
+    # E O ANDAMENTO RECUSADO SÓ COM 2336 (#392, 10/11/2026): a CRA já tinha o apontamento,
+    # e o arquivo passa a informado. Depois da releitura acima, que pode tê-lo marcado
+    # como recusado. Idempotente; não solta ato nem reenvia.
+    from protesto_cra_envio import reconhecer_andamento_que_ja_constava
+    reconhecer_andamento_que_ja_constava(con)

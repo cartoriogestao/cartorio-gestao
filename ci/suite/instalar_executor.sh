@@ -18,6 +18,8 @@
 #
 # Desfazer: ver docs/CI_EXECUTOR.md, «Remover o executor».
 set -euo pipefail
+# Nada de parar calado: diz a linha e o comando que falhou.
+trap 'echo "PAROU na linha $LINENO: $BASH_COMMAND" >&2' ERR
 cd /   # nada de rodar a partir de uma pasta que o ci-runner não pode ler
 
 REPO="cartoriogestao/cartorio-gestao"
@@ -69,7 +71,7 @@ m=re.search(r'BEGIN SHA osx-arm64 -->\s*([0-9a-f]{64})\s*<!-- END SHA osx-arm64'
 pagina=m.group(1) if m else ''
 print(api if api and api==pagina else '')")"
   [ -n "$ESPERADO" ] || { echo "O SHA-256 de $ARQUIVO não confere entre a API e a página da versão."; exit 1; }
-  sudo -u "$USUARIO" curl -fsSL -o "$EXECUTOR/$ARQUIVO" \
+  sudo -u "$USUARIO" curl -fSL --show-error --retry 2 -o "$EXECUTOR/$ARQUIVO" \
     "https://github.com/actions/runner/releases/download/v$VERSAO/$ARQUIVO"
   OBTIDO="$(shasum -a 256 "$EXECUTOR/$ARQUIVO" | cut -d' ' -f1)"
   [ "$OBTIDO" = "$ESPERADO" ] || { echo "SHA-256 não confere: $OBTIDO ≠ $ESPERADO"; exit 1; }

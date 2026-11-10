@@ -253,6 +253,32 @@ def test_a_resposta_do_andamento_e_lida_titulo_a_titulo():
         ENV.interpretar_resposta_complemento("", o_que="x")
 
 
+def _resposta_de(*pares: tuple[str, str]) -> str:
+    titulos = "".join(
+        f"<titulo><protocolo>{prot}</protocolo><mensagens><andamento>"
+        f"<codigo>{codigo}</codigo><descricao>Registro.</descricao>"
+        f"</andamento></mensagens></titulo>"
+        for prot, codigo in pares)
+    return ("<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>"
+            "<complementos><apresentantes><apresentante><codigo>901</codigo>"
+            f"<titulos>{titulos}</titulos></apresentante></apresentantes>"
+            "</complementos>")
+
+
+def test_o_2336_em_todos_os_titulos_ja_constava_e_nao_se_reenvia():
+    """10/11/2026, andamento M9011011.261: a CRA respondeu 2336 em todos os
+    protocolos. O apontamento já estava lá; reenviar repete a recusa."""
+    lido = ENV.interpretar_resposta_complemento(
+        _resposta_de(("2611100002", "2336"), ("2611100003", "2336")),
+        o_que="enviar o andamento")
+    assert lido["ok"] and lido["codigo"] == "2336" and lido["ja_constava"] == 2
+    assert "não se reenvia" in lido["resposta"]
+    with pytest.raises(API.CraRecusou, match="2301"):
+        ENV.interpretar_resposta_complemento(
+            _resposta_de(("2611100002", "2336"), ("2611100004", "2301")),
+            o_que="enviar o andamento")
+
+
 # --------------------------------------------------------- o retorno
 
 def test_o_retorno_sai_preenchido_como_o_eoficio_mandava(con):

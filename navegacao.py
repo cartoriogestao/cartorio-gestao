@@ -701,6 +701,9 @@ PAI: dict[str, tuple[str, str]] = {
     "automacao_execucao": ("GESTAO", "Rotinas e robôs"),
     "automacao_processo": ("GESTAO", "Rotinas e robôs"),
     "malote_robo_codigo": ("GESTAO", "Rotinas e robôs"),
+    # o agente local e os documentos do Malote (#386), nas rotinas como o robô dele
+    "malote_agente_local": ("GESTAO", "Rotinas e robôs"),
+    "malote_documentos": ("GESTAO", "Rotinas e robôs"),
     "robos_config": ("GESTAO", "Rotinas e robôs"),
     "robos_editar": ("GESTAO", "Rotinas e robôs"),
     "robos_novo": ("GESTAO", "Rotinas e robôs"),

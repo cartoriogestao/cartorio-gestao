@@ -702,11 +702,12 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     def before_request():
         if request.endpoint == "static":
             return
-        # O SERVIDOR RESERVA SÓ LÊ (`modo_reserva`): formulário nenhum entra, a não ser o de
-        # entrar e o de sair. O banco recusaria de qualquer jeito (o usuário dele só tem SELECT);
-        # aqui a recusa vem antes, inteira, e com a frase certa.
+        # O SERVIDOR RESERVA SÓ LÊ (`modo_reserva`): formulário nenhum entra, a não ser os de
+        # entrar (a senha e o código da verificação em duas etapas) e o de sair. O banco
+        # recusaria de qualquer jeito (o usuário dele só tem SELECT); aqui a recusa vem antes,
+        # inteira, e com a frase certa.
         if MRES.ativo() and request.method not in {"GET", "HEAD", "OPTIONS"} \
-                and request.endpoint not in {"login", "logout"}:
+                and request.endpoint not in MRES.FORMULARIOS_LIBERADOS:
             return render_template("error.html", code=503, message=MRES.AVISO), 503
         # O CORPO DO POST SEM LOGIN TEM TETO, E ELE VALE ANTES DE LER (LS02
         # M5; LX12, 19/10/2026). O token de formulário, logo abaixo, lê

@@ -53,6 +53,7 @@ import json
 import os
 import secrets
 import struct
+import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -580,6 +581,86 @@ def conferir(con, user_id: int, codigo: Any, *, pasta: Any,
     resultado["restantes"] = int(bd.valor(
         "SELECT count(*) AS n FROM dois_fatores_recuperacao "
         "WHERE user_id = %s AND usado_em = ''", (user_id,)) or 0)
+    return resultado
+
+
+# --------------------------------------------- o segundo passo no servidor reserva
+
+
+class MemoriaDaReserva:
+    """O que o `conferir` grava no banco, guardado na memória do processo da reserva.
+
+    No SERVIDOR RESERVA (`modo_reserva`) o usuário do banco só tem SELECT, e o
+    `conferir` — que grava o último passo aceito e conta as falhas — não roda lá.
+    Sem guardar nada, a reserva aceitaria o mesmo código duas vezes e não travaria
+    quem erra sem parar. Aqui fica a contagem, POR PROCESSO: reiniciar a reserva a
+    zera, e ela nunca volta ao principal (o principal tem a dele).
+
+    A chave é o usuário E o segredo cifrado que a réplica trouxe: se o principal
+    reativa ou zera a verificação, a linha muda e a memória velha deixa de valer.
+    """
+
+    def __init__(self) -> None:
+        self.trava = threading.Lock()
+        self.estado: dict[tuple[int, str], dict] = {}
+
+
+def conferir_so_leitura(con, user_id: int, codigo: Any, *, pasta: Any,
+                        memoria: MemoriaDaReserva, instante: float | None = None,
+                        agora: str | None = None) -> dict:
+    """O `conferir` do SERVIDOR RESERVA: confere o código SEM GRAVAR no banco.
+
+    Lê a linha que a réplica trouxe (o bloqueio do principal continua valendo)
+    e guarda em `memoria` o último passo aceito e as falhas — o mesmo código não
+    vale duas vezes, e `MAX_FALHAS` erros travam por `BLOQUEIO_MINUTOS`, como no
+    principal. O CÓDIGO DE RECUPERAÇÃO NÃO ENTRA: usá-lo é marcá-lo como gasto
+    (um UPDATE), e um código aceito aqui sem ser gasto valeria de novo no
+    principal. A recusa vem com `motivo` = `recuperacao_na_reserva`.
+
+    Devolve o mesmo dicionário do `conferir`.
+    """
+    instante = relogio() if instante is None else instante
+    agora = agora or agora_iso()
+    resultado = {"ok": False, "meio": "", "motivo": "", "bloqueado_ate": "",
+                 "bloqueou_agora": False, "restantes": 0, "cofre_ilegivel": False}
+    bd = banco(con)
+    linha = bd.um("SELECT segredo_cifrado, ultimo_passo, bloqueado_ate "
+                  "FROM dois_fatores WHERE user_id = %s AND situacao = 'ATIVO'",
+                  (user_id,))
+    if not linha:
+        resultado["motivo"] = "sem_dois_fatores"
+        return resultado
+    if (linha["bloqueado_ate"] or "") > agora:
+        resultado.update(motivo="bloqueado", bloqueado_ate=linha["bloqueado_ate"])
+        return resultado
+    resultado["restantes"] = int(bd.valor(
+        "SELECT count(*) AS n FROM dois_fatores_recuperacao "
+        "WHERE user_id = %s AND usado_em = ''", (user_id,)) or 0)
+    if parece_recuperacao(codigo):
+        resultado["motivo"] = "recuperacao_na_reserva"
+        return resultado
+    segredo = decifrar(linha["segredo_cifrado"], user_id, pasta)
+    resultado["cofre_ilegivel"] = segredo is None
+    with memoria.trava:
+        estado = memoria.estado.setdefault(
+            (int(user_id), str(linha["segredo_cifrado"])),
+            {"ultimo_passo": 0, "falhas": 0, "bloqueado_ate": ""})
+        if estado["bloqueado_ate"] > agora:
+            resultado.update(motivo="bloqueado", bloqueado_ate=estado["bloqueado_ate"])
+            return resultado
+        ultimo = max(int(linha["ultimo_passo"] or 0), estado["ultimo_passo"])
+        passo = passo_aceito(segredo, codigo, instante, ultimo) if segredo else None
+        if passo is not None:
+            estado.update(ultimo_passo=passo, falhas=0, bloqueado_ate="")
+            resultado.update(ok=True, meio=TOTP)
+            return resultado
+        estado["falhas"] += 1
+        if estado["falhas"] >= MAX_FALHAS:
+            ate = _somar_minutos(agora, BLOQUEIO_MINUTOS)
+            estado.update(falhas=0, bloqueado_ate=ate)
+            resultado.update(motivo="bloqueado", bloqueado_ate=ate, bloqueou_agora=True)
+        else:
+            resultado["motivo"] = "codigo"
     return resultado
 
 

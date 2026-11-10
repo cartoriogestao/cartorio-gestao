@@ -29,6 +29,7 @@ from flask import (abort, flash, make_response, redirect, render_template,
                    request, session, url_for)
 
 import dois_fatores as DF
+import modo_reserva as MRES
 from security import new_csrf_token
 from seguranca_web import destino_interno
 
@@ -62,6 +63,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     """Pendura as três telas e publica o desvio que o `/login` consulta."""
 
     pasta = app.config["DATA_DIR"]
+    # SERVIDOR RESERVA: o último passo e as falhas ficam aqui, e não no banco (só SELECT).
+    memoria_da_reserva = DF.MemoriaDaReserva()
 
     def _log(user, acao, detalhes=None):
         db.log(int(user["id"]), user["username"], acao, "USER", int(user["id"]),
@@ -104,6 +107,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         exige = DF.exigido(db.get_setting, row["role"])
         if estado != DF.ATIVO and not exige:
             return None
+        if estado != DF.ATIVO and MRES.ativo():
+            # A ativação grava a chave nova: no SERVIDOR RESERVA não há onde. Avisa já,
+            # em vez de deixar a pessoa ler o QR e cair na recusa do formulário.
+            session.clear()
+            flash("Esta conta precisa ativar a verificação em duas etapas, e isso se faz "
+                  "no servidor principal. " + MRES.AVISO, "warning")
+            return redirect(url_for("login"))
         session.clear()
         session["csrf_token"] = new_csrf_token()
         session["df_uid"] = int(row["id"])
@@ -135,6 +145,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         if resultado["motivo"] == "bloqueado":
             return (f"Muitas tentativas erradas. A verificação desta conta está "
                     f"travada até {resultado['bloqueado_ate'][11:16]}.")
+        if resultado["motivo"] == "recuperacao_na_reserva":
+            return ("O servidor reserva não aceita código de recuperação: usá-lo é "
+                    "gastá-lo, e a reserva só consulta. Use o código do aplicativo, "
+                    "ou entre pelo servidor principal.")
+        if resultado["cofre_ilegivel"] and MRES.ativo():
+            return ("O código não confere — e a chave da verificação ainda não chegou "
+                    "a este servidor reserva. Entre pelo servidor principal.")
         if resultado["cofre_ilegivel"]:
             return ("O código não confere — e a chave guardada desta conta não "
                     "abre nesta instalação. Use um código de recuperação, ou "
@@ -146,7 +163,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
 
         O código de recuperação é procurado ANTES da transação (os PBKDF2 não
         seguram a trava de escrita da casa — LX20); a transação só grava.
+
+        No SERVIDOR RESERVA não há transação: o banco só lê, e a contagem fica
+        na memória do processo (`DF.conferir_so_leitura`). O rastro segue pelo
+        `db.log`, que lá registra a recusa no log do servidor sem derrubar a tela.
         """
+        if MRES.ativo():
+            with db.connect() as con:
+                resultado = DF.conferir_so_leitura(con, int(user["id"]), codigo,
+                                                   pasta=pasta, memoria=memoria_da_reserva)
+            if not resultado["ok"]:
+                _log(user, acao_da_falha, {"motivo": resultado["motivo"]})
+            return resultado
         with db.connect() as con:
             achado = DF.achar_codigo(con, int(user["id"]), codigo)
         with db.transaction() as con:

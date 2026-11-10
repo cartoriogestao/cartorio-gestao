@@ -32,6 +32,11 @@ from pathlib import Path
 #: endereço errado, cai numa tela que diz «reserva», e não numa que parece a de sempre.
 PORTA_PADRAO = 8775
 
+#: Os únicos formulários (POST) que a reserva aceita: entrar — a senha E o código da verificação
+#: em duas etapas, sem o qual quem a tem ativa parava no meio da entrada — e sair. O código é
+#: conferido sem gravar (`dois_fatores.conferir_so_leitura`).
+FORMULARIOS_LIBERADOS = frozenset({"login", "login_dois_fatores", "logout"})
+
 
 def ativo() -> bool:
     """O processo é o servidor reserva? Só lê o ambiente."""

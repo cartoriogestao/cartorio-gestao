@@ -67,7 +67,8 @@ def test_lembra_somente_apos_totp_e_a_senha_continua_obrigatoria(casa):
     with casa['c'].session_transaction() as s:
         assert s['user_id'] == casa['uid'] and 'inicio' in s and 'last_activity' in s
     sair(casa['c'])
-    assert '/login/dois-fatores' not in senha(casa['c'], password='incorreta').location
+    recusada = senha(casa['c'], password='incorreta')
+    assert recusada.status_code == 200 and recusada.location is None
     with casa['c'].session_transaction() as s:
         assert not s.get('user_id')
     with casa['db'].connect() as con:
@@ -170,3 +171,21 @@ def test_limite_dez_e_mudanca_entre_conferencia_e_emissao(casa):
 @pytest.mark.parametrize('token', ['', 'x', 'a'*42, 'a'*44, '!'*43, None])
 def test_formato_invalido_nao_consulta_banco(token):
     assert not DD.confere(None, 1, token, agora=T0, agora_iso='2027-01-15T08:00:00')
+
+
+@pytest.mark.parametrize('mudanca', ['desativar_reativar', 'perfil_volta', 'senha'])
+def test_mudar_cadastro_revoga_sem_revalidar_ao_restaurar(casa, mudanca):
+    lembrar(casa)
+    db, uid = casa['db'], casa['uid']
+    if mudanca == 'desativar_reativar':
+        db.set_user_active(uid, False)
+        db.set_user_active(uid, True)
+    elif mudanca == 'perfil_volta':
+        db.update_user(uid, 'mario', 'Mario Exemplo dos Santos', 'MANAGER')
+        db.update_user(uid, 'mario', 'Mario Exemplo dos Santos', 'USER')
+    else:
+        db.reset_password(uid, SENHA)
+    sair(casa['c'])
+    assert '/login/dois-fatores' in senha(casa['c']).location
+    with db.connect() as con:
+        assert not banco(con).valor('SELECT count(*) FROM dois_fatores_dispositivos')

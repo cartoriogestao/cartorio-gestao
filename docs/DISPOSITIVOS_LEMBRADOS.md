@@ -8,7 +8,7 @@ de inatividade e duração máxima. Limpar cookies ou usar janela anônima perde
 lembrança. Código de recuperação não autoriza lembrar o dispositivo.
 
 Em Conta → Verificação em duas etapas, «Esquecer todos os dispositivos» exige
-senha e código. Trocar senha ou papel, desativar a conta, zerar/reativar a
+senha e código. Trocar senha, editar o cadastro, desativar a conta, zerar/reativar a
 verificação ou gerar novos códigos de recuperação invalida as autorizações.
 Bloqueio por tentativas de 2FA também impede o uso do comprovante. Esquecer
 os dispositivos afeta o próximo login; não encerra sessões já abertas.

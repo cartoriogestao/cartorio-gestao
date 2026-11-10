@@ -1175,6 +1175,8 @@ class Database:
                 banco(con).escrever(
                     "UPDATE users SET username=%s, full_name=%s, role=%s, eh_robo=%s WHERE id=%s",
                     (username, full_name, role, eh_robo, user_id))
+                # A autorização antiga não volta se o perfil for alterado e depois restaurado.
+                banco(con).escrever("DELETE FROM dois_fatores_dispositivos WHERE user_id=%s", (user_id,))
             except sqlite3.IntegrityError as exc:
                 raise ValueError(
                     "Já existe outro usuário com este nome de usuário."
@@ -1221,6 +1223,8 @@ class Database:
     def set_user_active(self, user_id: int, active: bool) -> None:
         with self.transaction() as con:
             banco(con).escrever("UPDATE users SET active=%s WHERE id=%s", (1 if active else 0, user_id))
+            if not active:
+                banco(con).escrever("DELETE FROM dois_fatores_dispositivos WHERE user_id=%s", (user_id,))
 
     def reset_password(self, user_id: int, password: str) -> None:
         ok, msg = self.validate_password(password)
@@ -1229,6 +1233,7 @@ class Database:
         rec = hash_password(password)
         with self.transaction() as con:
             banco(con).escrever("UPDATE users SET password_salt=%s,password_hash=%s WHERE id=%s", (rec.salt_hex, rec.hash_hex, user_id))
+            banco(con).escrever("DELETE FROM dois_fatores_dispositivos WHERE user_id=%s", (user_id,))
 
     def get_setting(self, key: str, default: str = "") -> str:
         with self.connect() as con:

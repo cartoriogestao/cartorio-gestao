@@ -23,6 +23,7 @@ Desde a 3.7.14.
 - Na ficha do título, o botão «Lançar …» fica no fim do formulário, depois do quadro de cobrança (protocolo, itens a selar, pagador).
 - A escolha da faixa do item da tabela de emolumentos (17.1, 17.4) ocupa a largura da tabela, e a descrição do item sai inteira.
 - O apontamento feito pela ficha do título da CRA já gera o arquivo de andamento do apresentante, sem enviar: quem sobe na Central continua sendo o envio, até as 11:30.
+- O andamento que a CRA recusa só com o código 2336 («registro em duplicidade») fica como já informado, e não como recusado: a Central já tinha o apontamento, e reenviar repetiria a recusa. Recusa com outro código continua recusa, e o XML do andamento leva cada protocolo uma vez só, mesmo com dois devedores.
 
 **Caixa e Parcela**
 - A conciliação da Parcela usa a listagem autenticada do estabelecimento: o link pago ou expirado não fica mais aberto. O recebimento confirmado entra sozinho, uma vez só, no caixa bancário da serventia (separado das gavetas), com a data do pagamento.

@@ -18,7 +18,7 @@ máquina com LibreOffice, como o servidor.
 | `.github/workflows/suite.yml` | executor `servidor-reserva` (o Mac da reserva) | baixa o PR, mescla com o `main` de agora e roda a suíte no contêiner; publica o status `suite` no commit do PR; comenta o que falhou |
 | `ci/suite/rodar.sh` | idem, fora do contêiner | monta a imagem (só a partir do `main`) e roda o contêiner sem rede |
 | `ci/suite/Dockerfile`, `dentro_do_conteiner.sh` | dentro do contêiner | Python 3.12, PostgreSQL 18 descartável, LibreOffice, Chromium; roda o pytest |
-| `ci/suite/resumir.py` | executor, fora do contêiner | o comentário de falha: o relatório do pytest e um resumo do modelo local (Ollama, `qwen3:8b`, só em 127.0.0.1) |
+| `ci/suite/resumir.py` | executor, fora do contêiner | o comentário de falha: as falhas agrupadas pela causa (do `junit.xml`) e o primeiro erro, sem IA |
 | `.github/workflows/fila.yml` + `ci/fila.py` | executores do GitHub (grátis em repositório público) | a fila: mescla o verde atualizado, atualiza o próximo e pede a suíte; um por vez |
 | `ci/suite/instalar_executor.sh` | uma vez, com `sudo` | cria o usuário `ci-runner`, a máquina virtual e os serviços |
 
@@ -40,8 +40,11 @@ reserva e o acesso ao servidor principal. Por isso:
   `ci/suite/` ou `.github/` fica vermelho até o proprietário revisar e pôr o rótulo
   **`ci-revisado`** — só então a imagem se monta com o que o PR traz (a montagem é o
   único momento com rede, e `pip install` executa código dos pacotes).
-- **O agente de IA só comenta.** Recebe o trecho das falhas (nunca o código), com a
-  instrução de ignorar ordens contidas nele, e não tem permissão de push nem de merge.
+- **O comentário de falha é feito por código, sem IA.** Ele agrupa as falhas pela
+  mensagem de erro (294 quedas de uma causa só aparecem como uma linha) e mostra o
+  primeiro erro como o pytest o deu. Um resumo por modelo de linguagem foi testado e
+  descartado em 10/11/2026: só reescrevia o relatório, com o risco de errar. O que vem
+  do PR entra só dentro de bloco de código, e o `junit.xml` com DOCTYPE/ENTITY é recusado.
 - **O status `suite` só vale vindo do GitHub Actions**: a regra do `main` o exige
   dessa origem.
 

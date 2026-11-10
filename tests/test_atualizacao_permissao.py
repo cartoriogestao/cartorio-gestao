@@ -1,4 +1,4 @@
-"""A ATUALIZACAO QUE NAO CONSEGUE SE APLICAR PRECISA DIZER ISSO ANTES — E NAO DEPOIS.
+r"""A ATUALIZACAO QUE NAO CONSEGUE SE APLICAR PRECISA DIZER ISSO ANTES — E NAO DEPOIS.
 
 MEDIDO EM 15/09/2026, no servidor: a tela de atualizacoes oferecia o botao, o
 administrador digitava a senha, o sistema criava o backup, marcava a aprovacao, parava o

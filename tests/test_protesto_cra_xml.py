@@ -90,3 +90,61 @@ def test_atributo_desconhecido_na_raiz_continua_recusado():
     bruto = _arquivo_xml().replace(b'<remessa>', b'<remessa inesperado="1">')
     with pytest.raises(XML.RemessaXmlError, match='atributos não previstos.*inesperado'):
         XML.ler(bruto)
+
+
+# O cabeçalho conta títulos; o corpo mantém uma linha por devedor.
+def _xml_com_dois_devedores():
+    from copy import deepcopy
+    import xml.etree.ElementTree as ET
+    raiz = ET.fromstring(_arquivo_xml())
+    comarca = raiz.find("comarca")
+    hd, primeiro, tl = list(comarca)
+    primeiro.set("t22", "1")
+    segundo = deepcopy(primeiro)
+    segundo.set("t22", "2")
+    segundo.set("t23", "BEATRIZ EXEMPLO DE SOUZA")
+    segundo.set("t52", str(int(primeiro.get("t52")) + 1).zfill(4))
+    comarca.insert(2, segundo)
+    tl.set("t06", str(int(primeiro.get("t18")) * 2).zfill(18))
+    tl.set("t08", str(int(segundo.get("t52")) + 1).zfill(4))
+    return raiz, hd, primeiro, segundo, tl
+
+
+@pytest.mark.parametrize("original", [False, True])
+def test_cabecalho_conta_um_titulo_com_dois_devedores(original):
+    import xml.etree.ElementTree as ET
+    raiz, hd, _, _, tl = _xml_com_dois_devedores()
+    hd.set("h11", "0000" if original else "0001")
+    hd.set("h12", "0001" if original else "0000")
+    tl.set("t05", str(sum(int(hd.get(f"h{i:02}")) for i in range(9, 13))).zfill(5))
+    previa = XML.ler(ET.tostring(raiz))
+    assert previa.titulos == 2  # registros preservados para o agrupador existente
+    assert len(previa.conteudo_fixo.splitlines()) == 4
+    assert previa.conteudo_fixo.splitlines()[2][296] == "2"
+
+
+@pytest.mark.parametrize("campo", ["h10", "h11"])
+def test_cabecalho_nao_pode_contar_devedor_seguinte_como_titulo(campo):
+    import xml.etree.ElementTree as ET
+    raiz, hd, _, _, tl = _xml_com_dois_devedores()
+    hd.set(campo, "0002")
+    tl.set("t05", str(sum(int(hd.get(f"h{i:02}")) for i in range(9, 13))).zfill(5))
+    with pytest.raises(XML.RemessaXmlError, match="h10|indicações"):
+        XML.ler(ET.tostring(raiz))
+
+
+def test_cabecalho_conta_titulos_distintos_com_seus_devedores():
+    from copy import deepcopy
+    import xml.etree.ElementTree as ET
+    raiz, hd, primeiro, segundo, tl = _xml_com_dois_devedores()
+    outro = deepcopy(primeiro)
+    outro.set("t22", "1")
+    outro.set("t09", "TITULO-EXEMPLO-2")
+    outro.set("t52", str(int(segundo.get("t52")) + 1).zfill(4))
+    raiz.find("comarca").insert(3, outro)
+    hd.set("h10", "0002")
+    hd.set("h11", "0002")
+    tl.set("t05", str(sum(int(hd.get(f"h{i:02}")) for i in range(9, 13))).zfill(5))
+    tl.set("t06", str(int(primeiro.get("t18")) * 3).zfill(18))
+    tl.set("t08", str(int(outro.get("t52")) + 1).zfill(4))
+    assert XML.ler(ET.tostring(raiz)).titulos == 3

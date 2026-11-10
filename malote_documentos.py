@@ -16,7 +16,7 @@ from bd_nativo import banco
 
 LIMITE = 16 * 1024 * 1024
 TIPO = "MALOTE_FRAUDE"
-_CODIGO = re.compile(r"\d{14}\Z")
+_CODIGO = re.compile(r"[0-9]{14}\Z")
 
 
 class DocumentoMaloteError(ValueError):
@@ -78,9 +78,14 @@ def receber(con, conteudo: bytes, grupo: str, *, raiz: Path, usuario_id: int, ag
     bd = banco(con)
     bd.travar("malote.documentos." + str(grupo))
     info = examinar(con, conteudo, grupo)
-    pasta = Path(raiz) / "malote" / "fraudes" / grupo
+    # A pasta usa um número reconstruído, nunca o texto recebido na requisição.
+    # Além da validação da capa, isto elimina separadores e caracteres especiais
+    # na própria fronteira que escreve o arquivo.
+    codigo_pasta = f"{int(grupo):014d}"
+    pasta = Path(raiz) / "malote" / "fraudes" / codigo_pasta
     pasta.mkdir(parents=True, exist_ok=True)
-    alvo = pasta / (info["sha256"] + ".pdf")
+    digest = hashlib.sha256(conteudo).hexdigest()
+    alvo = pasta / (digest + ".pdf")
     if alvo.exists():
         if hashlib.sha256(alvo.read_bytes()).hexdigest() != info["sha256"]:
             raise DocumentoMaloteError("O arquivo guardado diverge do hash. Peça conferência antes de repetir.")

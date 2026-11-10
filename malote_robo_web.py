@@ -96,7 +96,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                                      usuario_id=int(app.extensions["usuario_id"]()), usuario=usuario_nome())
         except FL.FluxoMaloteError as erro:
             if request.accept_mimetypes.best == "application/json":
-                return jsonify(erro=str(erro)), 409
+                return jsonify(erro="Pedido recusado. Confira a configuração e as rodadas pendentes na tela do Malote."), 409
             flash(str(erro), "danger")
             return redirect(url_for("malote_agente_local"))
         audit("MALOTE_PEDIDO_LOCAL", "au_processos", None, resultado)
@@ -128,7 +128,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 resultado = MD.receber(con, conteudo, grupo, raiz=raiz, usuario_id=uid, agora=db.now())
         except MD.DocumentoMaloteError as erro:
             if request.accept_mimetypes.best == "application/json":
-                return jsonify(erro=str(erro)), 400
+                return jsonify(erro="PDF recusado. Confira a capa do Malote, os códigos da comunicação e a validade do arquivo."), 400
             flash(str(erro), "danger")
             return redirect(url_for("malote_documentos", grupo=grupo))
         audit("MALOTE_FRAUDE_DOCUMENTO", "attachments", None,

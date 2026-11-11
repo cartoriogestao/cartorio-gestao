@@ -663,6 +663,7 @@ PAI: dict[str, tuple[str, str]] = {
     "despesas_recorrente": ("FIN", "Despesas"),
     "despesas_recorrentes": ("FIN", "Despesas"),
     "despesas_relatorio": ("FIN", "Despesas"),
+    "despesas_portal_selo": ("FIN", "Despesas"),
     "gratuidade_comprovantes": ("FIN", "Gratuidades"),
     "selo_portal_remessa": ("FIN", "Gratuidades"),
     "livro_diario_versao": ("FIN", "Livro Diário"),

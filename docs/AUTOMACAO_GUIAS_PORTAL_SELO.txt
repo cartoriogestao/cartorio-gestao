@@ -47,6 +47,18 @@ Só sai sozinho o Pix que:
   o QR dinâmico. O nome dentro do Pix quem escreve é o emissor do QR e não prova
   nada; a chave conferida, sim. O recebedor vale no momento do envio: trocado
   depois do cadastro, o envio é bloqueado.
+- QR DINÂMICO (11/11/2026): a guia real do FERRFIS traz QR dinâmico do Banco do
+  Brasil (qrcodepix.bb.com.br), com o valor e sem chave. O domínio só prova que
+  a cobrança é do BB — qualquer cliente dele gera QR ali. Por isso o QR dinâmico
+  também precisa se apresentar com o nome conferido do fundo (campo 59; nasce
+  FERJ/FERC e se troca na tela) e a cidade conferida (campo 60), ambos em
+  Despesas → Configuração. Isso barra o QR de
+  outra conta do mesmo banco colado numa guia; o recebedor assinado pelo banco
+  só aparece no pagamento, e a casa o confere na consulta seguinte.
+- MARGEM (11/11/2026): selos emitidos fora do sistema entram na guia e não no
+  cálculo. A guia FERJ/FERC pode vir até a margem da Configuração (nasce 10%)
+  ACIMA do calculado dos selos; abaixo do calculado, ou acima da margem, espera
+  o titular. A margem vale no cadastro e de novo no envio.
 Guia sem QR, recebedor não configurado ou Pix de outro recebedor: a guia é
 cadastrada e espera a autorização do titular, como qualquer despesa. O Pix sem
 resposta do banco se reenvia uma vez, com a mesma chave de idempotência.

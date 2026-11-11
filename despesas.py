@@ -164,6 +164,19 @@ PADRAO: dict[str, str] = {
     # estático) ou o domínio do banco que gera o QR dinâmico; vazio, nada sai sozinho.
     "despesas_pix_ferj": "",
     "despesas_pix_ferc": "",
+    # O QR dinâmico do Banco do Brasil (guia real do FERRFIS, 11/11/2026) não traz chave:
+    # o domínio só prova que a cobrança é do BB. Exige-se também que ele se apresente
+    # como o fundo (campo 59) e na cidade do Tribunal (campo 60) — ver
+    # `pix_do_fundo_confere`.
+    "despesas_pix_cidade": "",
+    # O nome com que o QR dinâmico se apresenta (campo 59), por fundo. Nasce com o
+    # código do fundo — a guia real do FERRFIS vem «FERRFIS» — e se troca na tela.
+    "despesas_pix_nome_ferj": "FERJ",
+    "despesas_pix_nome_ferc": "FERC",
+    # A MARGEM DAS GUIAS (oficial, 11/11/2026): a guia FERJ/FERC pode vir até 10% acima
+    # do que o sistema calculou dos selos — selos emitidos fora do sistema entram na
+    # guia e não no cálculo. Só PARA CIMA: guia abaixo do calculado espera o oficial.
+    "despesas_margem_guias": "10,00",
 }
 ROTULOS: dict[str, str] = {
     "despesas_pagamento_ligado": "Pagamento automático ligado",
@@ -175,7 +188,12 @@ ROTULOS: dict[str, str] = {
     "despesas_aliquota_iss": "Alíquota do ISS do município (%), para a estimativa do balanço",
     "despesas_pix_ferj": "Recebedor do Pix do FERJ (chave conferida, ou domínio do QR dinâmico)",
     "despesas_pix_ferc": "Recebedor do Pix do FERC (chave conferida, ou domínio do QR dinâmico)",
+    "despesas_pix_cidade": "Cidade que o QR dinâmico das guias informa (a do Tribunal)",
+    "despesas_pix_nome_ferj": "Nome com que o QR dinâmico do FERJ se apresenta",
+    "despesas_pix_nome_ferc": "Nome com que o QR dinâmico do FERC se apresenta",
+    "despesas_margem_guias": "Margem do FERJ/FERC acima do calculado dos selos (%), para selos emitidos fora do sistema",
 }
+NOMES_DO_PIX_DOS_FUNDOS = {"FUNDO_FERJ": "despesas_pix_nome_ferj", "FUNDO_FERC": "despesas_pix_nome_ferc"}
 PIX_DOS_FUNDOS = {"FUNDO_FERJ": "despesas_pix_ferj", "FUNDO_FERC": "despesas_pix_ferc"}
 AMBIENTES = {"sandbox": "Teste (sandbox do Inter, sem dinheiro de verdade)",
              "producao": "Produção (dinheiro de verdade)"}
@@ -531,6 +549,20 @@ def _dominio_do_qr(url: Any) -> str:
     return re.split(r"[/:?#]", texto, maxsplit=1)[0]
 
 
+def valor_confere_com_o_calculado(valor: int, esperado: int | None, cfg: Mapping[str, str]) -> bool:
+    """A guia FERJ/FERC confere com o calculado dos selos? Só calcula.
+
+    Igual, ou ACIMA até a margem da Configuração (selos emitidos fora do sistema
+    entram na guia e não no cálculo). Abaixo do calculado, ou sem cálculo, não.
+    Conta em inteiros: centésimos de ponto percentual, sem arredondamento.
+    """
+    if esperado is None or int(esperado) <= 0:
+        return False
+    valor, esperado = int(valor), int(esperado)
+    margem = centavos_da_tela(cfg.get("despesas_margem_guias") or "0")   # 10,00% → 1000
+    return esperado <= valor and (valor - esperado) * 10000 <= esperado * margem
+
+
 def recebedor_pix_configurado(valor: Any) -> str:
     """O recebedor do Pix de um fundo, como o oficial o escreve na tela. Só calcula.
 
@@ -575,9 +607,25 @@ def pix_do_fundo_confere(cfg: Mapping[str, str], categoria: str, payload: Any) -
             pass
         return "A chave do Pix da guia não é a conferida para o fundo."
     if lido["url"]:
-        if _dominio_do_qr(lido["url"]) == configurado:
-            return ""
-        return "O QR dinâmico da guia é de outro domínio que não o conferido para o fundo."
+        if _dominio_do_qr(lido["url"]) != configurado:
+            return "O QR dinâmico da guia é de outro domínio que não o conferido para o fundo."
+        # O domínio é do BANCO, e qualquer cliente dele gera QR ali (11/11/2026). O QR
+        # do fundo se apresenta como o fundo e na cidade do Tribunal: o de outra conta
+        # do mesmo banco, colado numa guia, não. Não é a prova final (o recebedor só
+        # vem assinado pelo banco na hora de pagar, e a casa o confere depois), mas
+        # barra o QR trocado.
+        fundo = categoria.removeprefix("FUNDO_")
+        nome = nome_do_recebedor(cfg.get(NOMES_DO_PIX_DOS_FUNDOS[categoria]))
+        if not nome:
+            return f"Falta conferir o nome do QR dinâmico do {fundo} (Despesas → Configuração)."
+        if nome_do_recebedor(lido["nome"]) != nome:
+            return f"O QR dinâmico da guia não se apresenta com o nome conferido do {fundo}."
+        cidade = nome_do_recebedor(cfg.get("despesas_pix_cidade"))
+        if not cidade:
+            return "Falta conferir a cidade do QR dinâmico das guias (Despesas → Configuração)."
+        if nome_do_recebedor(lido["cidade"]) != cidade:
+            return "O QR dinâmico da guia é de outra cidade que não a conferida."
+        return ""
     return "O Pix da guia não traz chave nem endereço de cobrança."
 
 
@@ -612,6 +660,9 @@ def gravar_configuracao(con, valores: Mapping[str, Any]) -> dict[str, tuple[str,
     if not 0 < centavos_da_tela(novo["despesas_aliquota_iss"]) <= 10000:
         raise DespesaError(f"{ROTULOS['despesas_aliquota_iss']}: informe um percentual entre 0 e 100.")
     novo["despesas_aliquota_iss"] = reais(centavos_da_tela(novo["despesas_aliquota_iss"]))
+    if not 0 <= centavos_da_tela(novo["despesas_margem_guias"]) <= 5000:
+        raise DespesaError(f"{ROTULOS['despesas_margem_guias']}: informe um percentual entre 0 e 50.")
+    novo["despesas_margem_guias"] = reais(centavos_da_tela(novo["despesas_margem_guias"]))
     bd = banco(con)
     antes = configuracao(bd)
     for chave, valor in novo.items():
@@ -919,12 +970,15 @@ def cadastrar(con, *, agora: datetime, por: str, origem: str, chave_origem: str 
     lido = conferir_pagamento(forma, codigo, valor, vencimento)
     if forma == PIX_CHAVE:
         conferir_favorecido_pix(bd, chave=lido["codigo"], documento=documento, nome=nome)
+    cfg = configuracao(bd)
+    guia_com_margem = origem == ORIGEM_PORTAL_SELO and categoria in FUNDOS_AUTORIZACAO_AUTOMATICA
     divergencia = ""
-    if valor_esperado_centavos is not None and int(valor_esperado_centavos) != valor:
+    if valor_esperado_centavos is not None and not (
+            valor_confere_com_o_calculado(valor, valor_esperado_centavos, cfg) if guia_com_margem
+            else int(valor_esperado_centavos) == valor):
         divergencia = (f"O sistema calculou R$ {reais(int(valor_esperado_centavos))} e a "
                        f"guia traz R$ {reais(valor)}.")
     quando = _carimbo(agora)
-    cfg = configuracao(bd)
     regra = ""
     # A regra só vale para o Pix da guia com o recebedor conferido (10/11/2026): a guia
     # sem QR, ou com QR de outro recebedor, espera o oficial como qualquer despesa.
@@ -933,9 +987,13 @@ def cadastrar(con, *, agora: datetime, por: str, origem: str, chave_origem: str 
             and valor_esperado_centavos is not None and not divergencia
             and valor <= tetos(cfg)["guia"]
             and forma == PIX_COPIA_E_COLA and not pix_do_fundo_confere(cfg, categoria, lido["codigo"])):
-        regra = (f"Regra das guias: valor conferido com o calculado dos selos, Pix da guia "
-                 f"para o recebedor conferido do fundo e dentro do teto de "
-                 f"R$ {reais(tetos(cfg)['guia'])}.")
+        acima = valor - int(valor_esperado_centavos)
+        regra = (f"Regra das guias: valor conferido com o calculado dos selos"
+                 + (f" (R$ {reais(acima)} acima, dentro da margem de "
+                    f"{cfg.get('despesas_margem_guias')}% para selos emitidos fora do sistema)"
+                    if acima else "")
+                 + f", Pix da guia para o recebedor conferido do fundo e dentro do teto de "
+                   f"R$ {reais(tetos(cfg)['guia'])}.")
     situacao = AUTORIZADA if regra else AGUARDANDO
     contato = conferir_contato(contato_email, contato_whatsapp)
     novo = bd.escrever(

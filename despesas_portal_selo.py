@@ -195,7 +195,8 @@ def destinatario_automatico(con, d: dict, *, hoje: str) -> dict | None:
         return None
     cfg = DP.configuracao(con)
     valor = int(d["valor"])
-    if (cfg.get("despesas_regra_guias_ligada") != "1" or d.get("valor_esperado") != valor
+    if (cfg.get("despesas_regra_guias_ligada") != "1"
+            or not DP.valor_confere_com_o_calculado(valor, d.get("valor_esperado"), cfg)
             or valor > min(DP.tetos(cfg)["guia"], DP.tetos(cfg)["pagamento"])):
         return None
     for anexo in DP.anexos(con, int(d["id"])):
@@ -214,7 +215,8 @@ def destinatario_automatico(con, d: dict, *, hoje: str) -> dict | None:
                 and g["numero"] == d.get("documento_numero")
                 and g["pix"] == d.get("codigo") and g["pix_conferido"]
                 and d.get("chave_origem") == fundo + ":" + g["numero"]
-                and g["valor_esperado_centavos"] == valor and g["vencimento"] >= hoje
+                and DP.valor_confere_com_o_calculado(valor, g["valor_esperado_centavos"], cfg)
+                and g["vencimento"] >= hoje
                 and DP.nome_do_recebedor(g["beneficiario_nome"]) == DP.nome_do_recebedor(d.get("beneficiario_nome"))):
             return {"nome": g["beneficiario_nome"], "documento": g["beneficiario_documento"]}
     return None

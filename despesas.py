@@ -158,6 +158,12 @@ PADRAO: dict[str, str] = {
     # O ISS É DO MUNICÍPIO E CADA UM TEM A SUA ALÍQUOTA (oficial, 01/11/2026): 5% é o de
     # fábrica, e outra serventia troca na tela. Não é cobrado do cliente.
     "despesas_aliquota_iss": "5,00",
+    # O RECEBEDOR DO PIX DE CADA FUNDO (10/11/2026): FERJ e FERC se pagam pelo Pix do
+    # QR code da guia, e não pelo código de barras («demora muito e se der erro não dá
+    # tempo de pagar no dia», oficial). O oficial confere UMA vez a chave do fundo (QR
+    # estático) ou o domínio do banco que gera o QR dinâmico; vazio, nada sai sozinho.
+    "despesas_pix_ferj": "",
+    "despesas_pix_ferc": "",
 }
 ROTULOS: dict[str, str] = {
     "despesas_pagamento_ligado": "Pagamento automático ligado",
@@ -167,7 +173,10 @@ ROTULOS: dict[str, str] = {
     "despesas_teto_guia": "Teto das guias autorizadas pela regra (R$)",
     "despesas_regra_guias_ligada": "FERJ e FERC do Portal do Selo com valor conferido nascem autorizados",
     "despesas_aliquota_iss": "Alíquota do ISS do município (%), para a estimativa do balanço",
+    "despesas_pix_ferj": "Recebedor do Pix do FERJ (chave conferida, ou domínio do QR dinâmico)",
+    "despesas_pix_ferc": "Recebedor do Pix do FERC (chave conferida, ou domínio do QR dinâmico)",
 }
+PIX_DOS_FUNDOS = {"FUNDO_FERJ": "despesas_pix_ferj", "FUNDO_FERC": "despesas_pix_ferc"}
 AMBIENTES = {"sandbox": "Teste (sandbox do Inter, sem dinheiro de verdade)",
              "producao": "Produção (dinheiro de verdade)"}
 
@@ -500,7 +509,68 @@ def ler_pix_copia_e_cola(texto: Any) -> dict:
             raise DespesaError("O valor dentro do Pix copia e cola está ilegível.") from erro
     return {"valor_centavos": valor, "nome": campos.get("59", ""),
             "cidade": campos.get("60", ""), "chave": conta.get("01", ""),
-            "dinamico": bool(conta.get("25"))}
+            "dinamico": bool(conta.get("25")), "url": conta.get("25", "")}
+
+
+_DOMINIO = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}")
+
+
+def _dominio_do_qr(url: Any) -> str:
+    """O domínio do endereço de um QR dinâmico (campo 26/25), sem esquema nem porta."""
+    texto = str(url or "").strip().lower()
+    for prefixo in ("https://", "http://"):
+        texto = texto.removeprefix(prefixo)
+    return re.split(r"[/:?#]", texto, maxsplit=1)[0]
+
+
+def recebedor_pix_configurado(valor: Any) -> str:
+    """O recebedor do Pix de um fundo, como o oficial o escreve na tela. Só calcula.
+
+    Vazio é «não conferido». Domínio (`qrcodepix.exemplo.com.br`) vale para QR
+    dinâmico; o resto é chave Pix, gravada na forma que o banco usa.
+    """
+    texto = _texto(valor, 100)
+    if not texto:
+        return ""
+    if "@" not in texto and _DOMINIO.fullmatch(texto.lower()):
+        return texto.lower()
+    try:
+        return normalizar_chave_pix(texto)
+    except DespesaError as erro:
+        raise DespesaError(f"Recebedor do Pix do fundo: {erro}") from erro
+
+
+def pix_do_fundo_confere(cfg: Mapping[str, str], categoria: str, payload: Any) -> str:
+    """Por que o Pix da guia NÃO pode sair sozinho; vazio quando confere. Só calcula.
+
+    O nome dentro do Pix quem escreve é o emissor do QR — não prova nada. O que
+    prova é o que o oficial conferiu uma vez: a chave do fundo (QR estático) ou
+    o domínio do banco que gera a cobrança (QR dinâmico, em que a chave fica no
+    banco). O valor, quando o QR o traz, já foi conferido com o da guia.
+    """
+    chave = PIX_DOS_FUNDOS.get(categoria)
+    if not chave:
+        return "Só FERJ e FERC se pagam pelo Pix da guia."
+    configurado = str(cfg.get(chave) or "")
+    if not configurado:
+        return (f"Falta conferir o recebedor do Pix do {categoria.removeprefix('FUNDO_')} "
+                f"(Despesas → Configuração).")
+    try:
+        lido = ler_pix_copia_e_cola(payload)
+    except DespesaError as erro:
+        return str(erro)
+    if lido["chave"]:
+        try:
+            if normalizar_chave_pix(lido["chave"]) == configurado:
+                return ""
+        except DespesaError:
+            pass
+        return "A chave do Pix da guia não é a conferida para o fundo."
+    if lido["url"]:
+        if _dominio_do_qr(lido["url"]) == configurado:
+            return ""
+        return "O QR dinâmico da guia é de outro domínio que não o conferido para o fundo."
+    return "O Pix da guia não traz chave nem endereço de cobrança."
 
 
 # ----------------------------------------------------------- a configuração
@@ -521,6 +591,8 @@ def tetos(cfg: Mapping[str, str]) -> dict[str, int]:
 def gravar_configuracao(con, valores: Mapping[str, Any]) -> dict[str, tuple[str, str]]:
     """Grava a configuração (só ADMIN, na rota). ESCREVE. Devolve o que mudou."""
     novo = {k: _texto(valores.get(k, PADRAO[k]), 40) for k in PADRAO}
+    for chave in PIX_DOS_FUNDOS.values():
+        novo[chave] = recebedor_pix_configurado(valores.get(chave, PADRAO[chave]))
     for chave in ("despesas_pagamento_ligado", "despesas_regra_guias_ligada"):
         novo[chave] = "1" if str(valores.get(chave) or "") in ("1", "on") else "0"
     if novo["despesas_ambiente"] not in AMBIENTES:
@@ -846,12 +918,16 @@ def cadastrar(con, *, agora: datetime, por: str, origem: str, chave_origem: str 
     quando = _carimbo(agora)
     cfg = configuracao(bd)
     regra = ""
+    # A regra só vale para o Pix da guia com o recebedor conferido (10/11/2026): a guia
+    # sem QR, ou com QR de outro recebedor, espera o oficial como qualquer despesa.
     if (origem == ORIGEM_PORTAL_SELO and categoria in FUNDOS_AUTORIZACAO_AUTOMATICA
             and cfg.get("despesas_regra_guias_ligada") == "1"
             and valor_esperado_centavos is not None and not divergencia
-            and valor <= tetos(cfg)["guia"]):
-        regra = (f"Regra das guias: valor conferido com o calculado dos selos e dentro do "
-                 f"teto de R$ {reais(tetos(cfg)['guia'])}.")
+            and valor <= tetos(cfg)["guia"]
+            and forma == PIX_COPIA_E_COLA and not pix_do_fundo_confere(cfg, categoria, lido["codigo"])):
+        regra = (f"Regra das guias: valor conferido com o calculado dos selos, Pix da guia "
+                 f"para o recebedor conferido do fundo e dentro do teto de "
+                 f"R$ {reais(tetos(cfg)['guia'])}.")
     situacao = AUTORIZADA if regra else AGUARDANDO
     contato = conferir_contato(contato_email, contato_whatsapp)
     novo = bd.escrever(

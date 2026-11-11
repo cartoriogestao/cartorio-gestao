@@ -36,6 +36,11 @@
     <label>{{ rotulos.despesas_teto_por_dia }} <input name="despesas_teto_por_dia" value="{{ cfg.despesas_teto_por_dia }}" size="12"></label>
     <label><input type="checkbox" name="despesas_regra_guias_ligada" value="1" {% if cfg.despesas_regra_guias_ligada == '1' %}checked{% endif %}> {{ rotulos.despesas_regra_guias_ligada }}</label>
     <label>{{ rotulos.despesas_teto_guia }} <input name="despesas_teto_guia" value="{{ cfg.despesas_teto_guia }}" size="12"></label>
+    <label>{{ rotulos.despesas_pix_ferj }} <input name="despesas_pix_ferj" value="{{ cfg.despesas_pix_ferj }}" size="40" autocomplete="off"></label>
+    <label>{{ rotulos.despesas_pix_ferc }} <input name="despesas_pix_ferc" value="{{ cfg.despesas_pix_ferc }}" size="40" autocomplete="off"></label>
+    <p class="small muted">FERJ e FERC se pagam pelo Pix do QR code da guia, no dia. Confira uma vez, com o banco ou o
+      Tribunal, a chave Pix de cada fundo (ou, se o QR for dinâmico, o domínio do banco que o gera). Vazio, a guia
+      espera a sua autorização.</p>
     <label>{{ rotulos.despesas_aliquota_iss }} <input name="despesas_aliquota_iss" value="{{ cfg.despesas_aliquota_iss }}" size="6"></label>
     <button type="submit">Gravar</button>
   </form>

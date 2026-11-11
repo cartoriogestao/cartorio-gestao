@@ -11,27 +11,37 @@ import despesas_inter as INTER
 import despesas_portal_selo as PS
 from tests.test_despesas import InterFalso, CAMPOS
 from tests.test_despesas_fluidez import _token
-from tests.test_despesas_portal_selo_unidade import texto, pdf_original
+from tests.test_despesas_portal_selo_unidade import texto, pdf_original, pix, CHAVE_DO_FUNDO, DOMINIO_DO_QR
 
 BASE = '/administrativo/despesas/portal-selo'
 
 
-def _post(c, fundo='FERJ', **extras):
-    dados = {'csrf_token': _token(c, BASE), 'documento': (io.BytesIO(pdf_original(fundo)), 'guia.pdf'), **extras}
+def _post(c, fundo='FERJ', *, pdf=None, **extras):
+    dados = {'csrf_token': _token(c, BASE),
+             'documento': (io.BytesIO(pdf or pdf_original(fundo)), 'guia.pdf'), **extras}
     return c.post(BASE, data=dados, headers={'Accept': 'application/json'})
+
+
+def _recebedores(db, ferj=CHAVE_DO_FUNDO, ferc=CHAVE_DO_FUNDO):
+    with db.transaction() as con:
+        DP.gravar_configuracao(con, {**DP.configuracao(con), 'despesas_pix_ferj': ferj,
+                                     'despesas_pix_ferc': ferc})
 
 
 def test_conferir_nao_cadastra_e_commit_e_idempotente_com_anexo(cg_casa_logada):
     c, db = cg_casa_logada['c'], cg_casa_logada['db']
+    _recebedores(db)
     with patch.object(PS, 'esperado_dos_selos', return_value=12345):
         lido = _post(c, conferir='1', valor_esperado_centavos='999999').get_json()
         assert lido['valor_esperado_centavos'] == 12345  # o cliente não decide a conferência
-        assert 'codigo' not in lido and 'beneficiario_documento' not in lido
+        assert 'codigo' not in lido and 'beneficiario_documento' not in lido and 'pix' not in lido
+        assert lido['tem_pix'] and lido['pix_conferido'] and not lido['motivo_pix']
         a, b = _post(c).get_json(), _post(c).get_json()
     assert a['id'] == b['id'] and a['novo'] and not b['novo']
     with db.connect() as con:
         d = DP.despesa(con, a['id'])
         assert d['situacao'] == DP.AUTORIZADA
+        assert (d['forma'], d['codigo'], d['codigo_barras']) == (DP.PIX_COPIA_E_COLA, pix(), '')
         assert len(DP.anexos(con, a['id'])) == 1
 
 
@@ -57,7 +67,9 @@ def _preparar_executor(db):
         p = AU.por_codigo(con, 'DESPESAS_PAGAR')
         AU.definir_pode_agir(con, p['id'], True, papel='ADMIN', usuario='mario')
         DP.gravar_configuracao(con, {**DP.PADRAO, 'despesas_pagamento_ligado': '1',
-                                     'despesas_ambiente': 'sandbox'})
+                                     'despesas_ambiente': 'sandbox',
+                                     'despesas_pix_ferj': CHAVE_DO_FUNDO,
+                                     'despesas_pix_ferc': CHAVE_DO_FUNDO})
 
 
 @pytest.mark.parametrize('fundo', ['FERJ', 'FERC'])
@@ -79,7 +91,11 @@ def test_ferj_ferc_enfileiram_e_executor_envia_apenas_ao_banco_falso(cg_casa_log
     with patch.object(PS, 'esperado_dos_selos', return_value=12345):
         enviado = INTER.pagar(db, r['id'], cliente=cliente, por='automação', agora=datetime(2026, 11, 9))
     assert enviado['situacao'] == DP.ENVIADA
-    assert len(falso.posts('/banking/v2/pagamento')) == 1
+    # Pelo Pix do QR code da guia, no dia (09/11), e não agendado para o vencimento (10/11).
+    assert falso.posts('/banking/v2/pagamento') == []
+    [envio] = falso.posts('/banking/v2/pix')
+    assert envio['json']['destinatario'] == {'tipo': 'PIX_COPIA_E_COLA', 'pixCopiaECola': pix()}
+    assert envio['json']['valor'] == 123.45 and envio['json']['dataPagamento'] == '2026-11-09'
     with db.connect() as con:
         assert DP.despesa(con, r['id'])['situacao'] == DP.ENVIADA  # pedido não é confirmação
 
@@ -224,3 +240,91 @@ def test_excecao_nao_permite_enviar_sem_passar_pela_preparacao_e_tetos(cg_casa_l
         INTER._enviar(db, d, cliente=INTER.ClienteInter('sandbox', falso, CAMPOS),
                        por='automação', hoje='2026-11-09')
     assert falso.chamadas == []
+
+
+# --- O Pix do QR code da guia (FERJ/FERC, 10/11/2026) -------------------------------
+
+@pytest.mark.parametrize('caso', ['sem_qr', 'outra_chave', 'sem_recebedor_conferido', 'dinamico_outro_dominio'])
+def test_pix_sem_recebedor_conferido_espera_o_oficial_e_nao_vai_ao_banco(cg_casa_logada, caso):
+    c, db = cg_casa_logada['c'], cg_casa_logada['db']
+    _preparar_executor(db)
+    pdf = {'sem_qr': pdf_original('FERJ', None),
+           'outra_chave': pdf_original('FERJ', pix(chave='fundo@outro.test')),
+           'sem_recebedor_conferido': pdf_original('FERJ'),
+           'dinamico_outro_dominio': pdf_original('FERJ', pix(valor=None, url='qr.outro-banco.test/cobv/1')),
+           }[caso]
+    if caso == 'sem_recebedor_conferido':
+        _recebedores(db, ferj='')
+    with patch.object(PS, 'esperado_dos_selos', return_value=12345), patch('automacao.pedir_rodada') as pedir:
+        r = _post(c, pdf=pdf).get_json()
+        pedir.assert_not_called()
+    assert r['situacao'] == DP.AGUARDANDO and not r['envio_solicitado']
+    with db.connect() as con:
+        d = DP.despesa(con, r['id'])
+    assert d['forma'] == (DP.ARRECADACAO if caso == 'sem_qr' else DP.PIX_COPIA_E_COLA)
+    falso = InterFalso()
+    with patch.object(PS, 'esperado_dos_selos', return_value=12345):
+        INTER.pagar(db, r['id'], cliente=INTER.ClienteInter('sandbox', falso, CAMPOS),
+                    por='automação', agora=datetime(2026, 11, 9))
+    assert falso.chamadas == []
+
+
+def test_qr_dinamico_do_dominio_conferido_sai_sozinho(cg_casa_logada):
+    c, db = cg_casa_logada['c'], cg_casa_logada['db']
+    _preparar_executor(db)
+    _recebedores(db, ferj=DOMINIO_DO_QR)
+    dinamico = pix(valor=None, url=DOMINIO_DO_QR + '/cobv/guia-ficticia')
+    with patch.object(PS, 'esperado_dos_selos', return_value=12345), patch('automacao.pedir_rodada'):
+        r = _post(c, pdf=pdf_original('FERJ', dinamico)).get_json()
+    assert r['situacao'] == DP.AUTORIZADA
+    falso = InterFalso()
+    with patch.object(PS, 'esperado_dos_selos', return_value=12345):
+        INTER.pagar(db, r['id'], cliente=INTER.ClienteInter('sandbox', falso, CAMPOS),
+                    por='automação', agora=datetime(2026, 11, 9))
+    [envio] = falso.posts('/banking/v2/pix')
+    assert envio['json']['destinatario']['pixCopiaECola'] == dinamico
+    assert envio['json']['valor'] == 123.45  # o valor da guia, conferido com os selos
+
+
+@pytest.mark.parametrize('qrs', [(12346,), (None, 'outro')])
+def test_guia_com_pix_de_outro_valor_ou_dois_pix_nao_entra(cg_casa_logada, qrs):
+    c, db = cg_casa_logada['c'], cg_casa_logada['db']
+    _preparar_executor(db)
+    pdf = (pdf_original('FERJ', pix(valor=qrs[0])) if len(qrs) == 1 else
+           pdf_original('FERJ', pix(), pix(chave='fundo@outro.test')))
+    with patch.object(PS, 'esperado_dos_selos', return_value=12345):
+        r = _post(c, pdf=pdf)
+    assert r.status_code == 400
+    with db.connect() as con:
+        assert banco(con).valor('SELECT count(*) FROM dp_despesas') == 0
+
+
+def test_recebedor_trocado_depois_do_cadastro_bloqueia_o_envio(cg_casa_logada):
+    c, db = cg_casa_logada['c'], cg_casa_logada['db']
+    _preparar_executor(db)
+    with patch.object(PS, 'esperado_dos_selos', return_value=12345), patch('automacao.pedir_rodada'):
+        r = _post(c).get_json()
+    assert r['situacao'] == DP.AUTORIZADA
+    _recebedores(db, ferj='fundo@outro.test')
+    falso = InterFalso()
+    with patch.object(PS, 'esperado_dos_selos', return_value=12345):
+        resultado = INTER.pagar(db, r['id'], cliente=INTER.ClienteInter('sandbox', falso, CAMPOS),
+                                por='automação', agora=datetime(2026, 11, 9))
+    assert resultado['situacao'] == DP.AUTORIZADA and 'bloqueado' in resultado['mensagem']
+    assert falso.chamadas == []
+
+
+def test_pix_sem_resposta_reenvia_uma_vez_com_a_mesma_chave(cg_casa_logada):
+    c, db = cg_casa_logada['c'], cg_casa_logada['db']
+    _preparar_executor(db)
+    falso = InterFalso()
+    cliente = INTER.ClienteInter('sandbox', falso, CAMPOS)
+    with patch.object(PS, 'esperado_dos_selos', return_value=12345), patch('automacao.pedir_rodada'):
+        r = _post(c).get_json()
+        falso.perder_resposta = True
+        assert INTER.pagar(db, r['id'], cliente=cliente, por='automação',
+                           agora=datetime(2026, 11, 9))['situacao'] == DP.ENVIADA
+        INTER.atualizar(db, r['id'], cliente=cliente, por='automação', agora=datetime(2026, 11, 9, 1))
+    envios = falso.posts('/banking/v2/pix')
+    assert len(envios) == 2
+    assert envios[0]['cab']['x-id-idempotente'] == envios[1]['cab']['x-id-idempotente']

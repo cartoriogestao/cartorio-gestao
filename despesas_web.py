@@ -250,11 +250,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         try:
             if request.form.get("conferir") == "1":
                 with db.connect() as con:
-                    g = PS.conferir(con, conteudo)
+                    g = PS.conferir(con, conteudo, hoje=_agora().date())
                 # Só os dados operacionais; não devolve o nome/CNPJ ou o código ao modelo.
                 resposta = {k: g[k] for k in ("fundo", "numero", "inicio", "fim", "vencimento",
                                               "valor_centavos", "valor_esperado_centavos",
-                                              "somente_banco_do_brasil")}
+                                              "somente_banco_do_brasil", "pix_conferido",
+                                              "motivo_pix")}
+                resposta["tem_pix"] = bool(g["pix"])
                 resposta["existente"] = ({k: g["existente"][k] for k in ("id", "situacao")}
                                          if g["existente"] else None)
                 return jsonify(resposta)

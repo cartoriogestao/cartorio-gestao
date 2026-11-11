@@ -2,7 +2,7 @@
 import unittest
 from functools import lru_cache
 from contextlib import nullcontext
-from datetime import datetime
+from datetime import date, datetime
 from unittest.mock import Mock, patch
 
 import despesas as DP
@@ -31,12 +31,40 @@ def texto(fundo='FERJ'):
             f'Referente à {fundo}\nPeríodo de apuração: 01/10/2026 a 31/10/2026\n{codigo()}')
 
 
-@lru_cache(maxsize=8)
-def pdf_original(fundo='FERJ'):
+# Recebedor fictício do Pix dos fundos (o CNPJ de teste dos favorecidos).
+CHAVE_DO_FUNDO = '00000010000127'
+DOMINIO_DO_QR = 'qrpix.banco-exemplo.test'
+PADRAO = 'padrão'
+
+
+def pix(valor=12345, chave=CHAVE_DO_FUNDO, url=None):
+    """Pix copia e cola fictício, com CRC válido (estático com chave, ou dinâmico com URL)."""
+    def tlv(campo, v):
+        return f'{campo}{len(v):02d}{v}'
+    conta = tlv('00', 'br.gov.bcb.pix') + (tlv('25', url) if url else tlv('01', chave))
+    corpo = (tlv('00', '01') + tlv('26', conta) + tlv('52', '0000') + tlv('53', '986')
+             + (tlv('54', f'{valor / 100:.2f}') if valor is not None else '')
+             + tlv('58', 'BR') + tlv('59', 'FUNDO EXEMPLO') + tlv('60', 'CIDADE EXEMPLO')
+             + tlv('62', tlv('05', '***')) + '6304')
+    return corpo + DP._crc16(corpo.encode())
+
+
+@lru_cache(maxsize=32)
+def pdf_original(fundo='FERJ', qr=PADRAO, *qrs):
+    """A guia fictícia; FERJ e FERC trazem o QR code do Pix, como imagem (o leitor o lê
+    pela câmera virtual, e não pelo texto). `qr=None` tira o QR; `qrs` põe outros."""
     import fitz
+    import io
+    import segno
+    if qr == PADRAO:
+        qr = pix() if fundo in ('FERJ', 'FERC') else None
     with fitz.open() as documento:
         pagina = documento.new_page()
         pagina.insert_text((40, 40), texto(fundo), fontsize=10)
+        for i, conteudo in enumerate(q for q in (qr, *qrs) if q):
+            png = io.BytesIO()
+            segno.make(conteudo, error='m').save(png, kind='png', scale=3, border=4)
+            pagina.insert_image(fitz.Rect(380, 40 + 200 * i, 560, 220 + 200 * i), stream=png.getvalue())
         return documento.tobytes()
 
 
@@ -64,21 +92,64 @@ class Guias(unittest.TestCase):
         with patch.object(PS.LD, 'receitas_do_mes', return_value=[{**receita, 'sem_valor': True}]):
             self.assertIsNone(PS.esperado_dos_selos(None, g))
 
-    def test_regra_so_autoriza_ferj_e_ferc(self):
+    def _situacao_do_cadastro(self, fundo, forma, codigo_pago, cfg):
+        bd = Mock()
+        bd.um.return_value = None
+        bd.escrever.return_value = [{'id': 1}]
+        with patch.object(DP, 'banco', return_value=bd), \
+                patch.object(DP, 'configuracao', return_value=cfg), patch.object(DP, '_evento'):
+            DP.cadastrar(None, agora=datetime(2026, 11, 9), por='automação',
+                         origem=DP.ORIGEM_PORTAL_SELO, chave_origem='guia-ficticia',
+                         beneficiario_nome='Fundo de Cidade Exemplo', beneficiario_documento='00000010000127',
+                         valor_centavos=12345, valor_esperado_centavos=12345, vencimento='2026-11-10',
+                         forma=forma, codigo=codigo_pago, descricao='Guia fictícia de outubro',
+                         categoria='FUNDO_' + fundo, documento_especie='Guia')
+        return bd.escrever.call_args.args[1][0]
+
+    def test_regra_so_autoriza_ferj_e_ferc_pelo_pix_do_recebedor_conferido(self):
+        cfg = {**DP.PADRAO, 'despesas_pix_ferj': CHAVE_DO_FUNDO, 'despesas_pix_ferc': CHAVE_DO_FUNDO}
         for fundo in PS.FUNDOS:
-            bd = Mock()
-            bd.um.return_value = None
-            bd.escrever.return_value = [{'id': 1}]
-            with self.subTest(fundo=fundo), patch.object(DP, 'banco', return_value=bd), \
-                    patch.object(DP, 'configuracao', return_value=DP.PADRAO), patch.object(DP, '_evento'):
-                DP.cadastrar(None, agora=datetime(2026, 11, 9), por='automação',
-                             origem=DP.ORIGEM_PORTAL_SELO, chave_origem='guia-ficticia',
-                             beneficiario_nome='Fundo de Cidade Exemplo', beneficiario_documento='00000010000127',
-                             valor_centavos=12345, valor_esperado_centavos=12345, vencimento='2026-11-10',
-                             forma=DP.ARRECADACAO, codigo=codigo(), descricao='Guia fictícia de outubro',
-                             categoria='FUNDO_' + fundo, documento_especie='Guia')
-                params = bd.escrever.call_args.args[1]
-                self.assertEqual(params[0], DP.AUTORIZADA if fundo in ('FERJ', 'FERC') else DP.AGUARDANDO)
+            with self.subTest(fundo=fundo):
+                self.assertEqual(self._situacao_do_cadastro(fundo, DP.PIX_COPIA_E_COLA, pix(), cfg),
+                                 DP.AUTORIZADA if fundo in ('FERJ', 'FERC') else DP.AGUARDANDO)
+                # O código de barras não sai mais sozinho: espera o oficial.
+                self.assertEqual(self._situacao_do_cadastro(fundo, DP.ARRECADACAO, codigo(), cfg), DP.AGUARDANDO)
+        for outro in ({**cfg, 'despesas_pix_ferj': ''}, {**cfg, 'despesas_pix_ferj': '+5599985274255'}):
+            with self.subTest(cfg=outro['despesas_pix_ferj']):
+                self.assertEqual(self._situacao_do_cadastro('FERJ', DP.PIX_COPIA_E_COLA, pix(), outro),
+                                 DP.AGUARDANDO)
+
+    def test_recebedor_do_pix_por_chave_ou_dominio(self):
+        cfg = {'despesas_pix_ferj': CHAVE_DO_FUNDO, 'despesas_pix_ferc': DOMINIO_DO_QR}
+        dinamico = pix(valor=None, url=DOMINIO_DO_QR + '/cobv/abc123')
+        self.assertEqual(DP.pix_do_fundo_confere(cfg, 'FUNDO_FERJ', pix()), '')
+        self.assertEqual(DP.pix_do_fundo_confere(cfg, 'FUNDO_FERC', dinamico), '')
+        self.assertEqual(DP.pix_do_fundo_confere(cfg, 'FUNDO_FERC', pix(valor=None, url='https://' + DOMINIO_DO_QR + ':443/x')), '')
+        for categoria, payload in (('FUNDO_FERJ', pix(chave='fundo@outro.test')),
+                                   ('FUNDO_FERJ', dinamico),
+                                   ('FUNDO_FERC', pix(valor=None, url='qrpix.banco-exemplo.test.golpe.test/cobv/1')),
+                                   ('FUNDO_FERC', pix()),
+                                   ('FUNDO_FADEP', pix()),
+                                   ('FUNDO_FERJ', pix()[:-1] + '0')):
+            with self.subTest(categoria=categoria, payload=payload[-30:]):
+                self.assertTrue(DP.pix_do_fundo_confere(cfg, categoria, payload))
+        self.assertIn('Falta conferir', DP.pix_do_fundo_confere({}, 'FUNDO_FERJ', pix()))
+
+    def test_recebedor_configurado_normaliza_chave_e_dominio(self):
+        self.assertEqual(DP.recebedor_pix_configurado(' 00.000.010/0001-27 '), CHAVE_DO_FUNDO)
+        self.assertEqual(DP.recebedor_pix_configurado('QRPix.Banco-Exemplo.test'), DOMINIO_DO_QR)
+        self.assertEqual(DP.recebedor_pix_configurado('Fundo@Exemplo.test'), 'fundo@exemplo.test')
+        self.assertEqual(DP.recebedor_pix_configurado(''), '')
+        with self.assertRaises(DP.DespesaError):
+            DP.recebedor_pix_configurado('00.000.010/0001-28')
+
+    def test_qr_da_guia(self):
+        hoje = date(2026, 11, 9)
+        self.assertEqual(PS.ler_pix(pdf_original('FERJ'), hoje=hoje), pix())
+        self.assertIsNone(PS.ler_pix(pdf_original('FERJ', None), hoje=hoje))
+        self.assertIsNone(PS.ler_pix(pdf_original('FADEP'), hoje=hoje))
+        with self.assertRaises(DP.DespesaError):
+            PS.ler_pix(pdf_original('FERJ', pix(), pix(chave='fundo@outro.test')), hoje=hoje)
 
     def test_inter_nao_envia_fundos_do_bb_mesmo_se_ja_estiverem_autorizados(self):
         for categoria in DP.FUNDOS_SOMENTE_BANCO_DO_BRASIL:

@@ -645,6 +645,10 @@ def _enviar(db, d: dict, *, cliente: ClienteInter, por: str, hoje: str) -> dict:
             return {"situacao": DP.FALHOU, "mensagem": mensagem}
         return {"situacao": d["situacao"], "mensagem": mensagem}
     data_pagamento = max(d["vencimento"], hoje)
+    if d["forma"] == DP.PIX_COPIA_E_COLA and d.get("origem") == DP.ORIGEM_PORTAL_SELO:
+        # O Pix da guia FERJ/FERC sai no dia, e não agendado para o vencimento: se der
+        # erro, ainda há tempo de pagar antes de vencer (oficial, 10/11/2026).
+        data_pagamento = hoje
     try:
         if d["forma"] in (DP.BOLETO, DP.ARRECADACAO):
             r = cliente.pagar_codigo(d["codigo_barras"] or d["codigo"], int(d["valor"]),
@@ -749,7 +753,9 @@ def _reenviar_pix(db, despesa_id: int, *, cliente: ClienteInter, por: str,
         if cfg.get("despesas_ambiente") != cliente.ambiente:
             return {"situacao": DP.ENVIADA, "mensagem": "O ambiente do banco mudou; não "
                     "reenvio."}
-        if not DP.destino_autorizado(d, ambiente=cliente.ambiente, hoje=quando.date().isoformat()):
+        import despesas_portal_selo as PS
+        if (not DP.destino_autorizado(d, ambiente=cliente.ambiente, hoje=quando.date().isoformat())
+                and PS.destinatario_automatico(con, d, hoje=quando.date().isoformat()) is None):
             return {"situacao": DP.ENVIADA, "mensagem": "Pix sem resposta: o destinatário não tem "
                     "autorização prévia válida. Não reenvio. Confira o pagamento no banco antes de "
                     "qualquer nova autorização."}

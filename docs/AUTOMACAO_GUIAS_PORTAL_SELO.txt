@@ -31,8 +31,29 @@ valor esperado recalculado dos selos e tetos vigentes respeitados. O executor
 refaz a prova antes de preparar o envio e imediatamente antes da chamada ao
 banco. PDF ausente/alterado, cadastro manual, base ausente/divergente ou regra
 desligada não recebem a exceção. FADEP/FEMP/FERRFIS continuam bloqueados no Inter,
-inclusive com conferência humana. A modalidade é arrecadação por código de
-barras em /banking/v2/pagamento; não é Pix. Pedido de envio não confirma pagamento.
+inclusive com conferência humana. Pedido de envio não confirma pagamento.
+
+FERJ E FERC SE PAGAM PELO PIX DO QR CODE DA GUIA (10/11/2026)
+Decisão do titular: o código de barras demora a compensar e, se der erro, não
+há tempo de pagar no dia. O importador lê o QR code da guia (o mesmo leitor das
+despesas: texto do PDF e imagem do QR) e cadastra FERJ/FERC como Pix copia e
+cola; o envio é POST /banking/v2/pix, no dia (não agendado para o vencimento).
+Só sai sozinho o Pix que:
+- traz o valor igual ao da guia (Pix com outro valor, ou dois Pix diferentes na
+  guia, recusa a importação; QR dinâmico sem valor no texto paga o valor da
+  guia, já conferido com os selos);
+- vai para o recebedor que o titular conferiu UMA vez em Despesas →
+  Configuração: a chave Pix do fundo (QR estático) ou o domínio do banco que gera
+  o QR dinâmico. O nome dentro do Pix quem escreve é o emissor do QR e não prova
+  nada; a chave conferida, sim. O recebedor vale no momento do envio: trocado
+  depois do cadastro, o envio é bloqueado.
+Guia sem QR, recebedor não configurado ou Pix de outro recebedor: a guia é
+cadastrada e espera a autorização do titular, como qualquer despesa. O Pix sem
+resposta do banco se reenvia uma vez, com a mesma chave de idempotência.
+FADEP/FEMP/FERRFIS continuam pelo código de barras, pagos no Banco do Brasil.
+Antes de ativar: conferir num PDF real se o QR do FERJ/FERC é estático ou
+dinâmico, gravar o recebedor e testar no sandbox do Inter um Pix copia e cola
+do mesmo tipo.
 
 Se a guia já existe como cadastro manual e confere, a importação junta o PDF
 faltante no mesmo cadastro, sem elevar a autorização nem pedir novo pagamento.

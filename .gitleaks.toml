@@ -75,3 +75,16 @@ regexTarget = "secret"
 regexes = [
   '''^segredo-ficticio-(?:123|456)$''',
 ]
+
+# 11/11/2026: o `workflow_dispatch` da fila roda `gitleaks detect` no histórico
+# inteiro. Dois falsos positivos ficaram no commit cd9ed9c (23/10/2026) e o
+# código de hoje já não os escreve como literal ao lado de refresh_token/key.
+# Não são credencial: um é o token de teste da ONR/CNIB, o outro é o nome de
+# uma chave de `settings` do ensaio do selo.
+[[allowlists]]
+description = "Fictícios do histórico de testes (token de exemplo e nome de setting), não credencial"
+regexTarget = "secret"
+regexes = [
+  '''^segredo-que-nao-sai-0003$''',
+  '''^lx20_rastro_da_cobertura$''',
+]

@@ -719,6 +719,12 @@ def instrucao_do_escrevente(cfg: dict, conhecimento: str) -> str:
     setores = "\n".join(f"- {codigo}: {descricao}"
                         for codigo, descricao in WA.DESCRICAO_DOS_SETORES.items())
     servicos = "\n".join(f"- {s['id']} | {s['setor']} | {s['nome']}" for s in OFICIO.SERVICOS)
+    # O ofício entra sempre. A norma desta pergunta pode vir sem ele — o ensaio
+    # fixa o artigo — e a instrução não pode perder o que a casa faz.
+    oficio = OFICIO.texto_do_oficio()
+    bloco = (conhecimento or "").strip()
+    if "=== O OFÍCIO DESTA SERVENTIA ===" not in bloco:
+        bloco = oficio if not bloco else oficio + "\n\n" + bloco
     return (
         "Você é o atendimento de WhatsApp de uma serventia extrajudicial (cartório). "
         "Fala como o escrevente na recepção: português do Brasil, frases curtas, "
@@ -755,7 +761,7 @@ def instrucao_do_escrevente(cfg: dict, conhecimento: str) -> str:
         "=== TEXTO-BASE ===\n" + (cfg["texto_base"] or "(vazio — horário, endereço e "
         "telefone desta casa não estão aprovados; não os invente)") + "\n"
         "=== LISTA DE VALORES ===\n" + lista + "\n"
-        "=== CONHECIMENTO ===\n" + (conhecimento or OFICIO.texto_do_oficio()) + "\n")
+        "=== CONHECIMENTO ===\n" + bloco + "\n")
 
 
 def ler_decisao(texto: str) -> dict | None:

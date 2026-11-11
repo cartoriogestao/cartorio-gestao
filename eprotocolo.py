@@ -601,7 +601,7 @@ def cumprir(db, sessao, protocolo_id: int, *, certidao: dict, responsavel: dict,
 #: DESLIGADO. A rodada lê e guarda: não altera protocolo, por isso não usa «pode agir».
 CATALOGO = (
     {"codigo": "RCPN_EPROTOCOLO", "nome": "e-Protocolo — Unidade Interligada e e-Óbito",
-     "setor": "RCPN", "funcao": "eprotocolo.rodada", "timeout_s": 600,
+     "setor": "RCPN", "funcao": "eprotocolo.rodada", "robo_oficial": "CARGAS_RCPN", "timeout_s": 600,
      "agenda": {"dias": [0, 1, 2, 3, 4, 5, 6], "intervalo_min": 5, "janela": ["00:00", "23:59"]},
      "descricao": "A cada 5 minutos, todos os dias: traz as notificações do e-Protocolo, grava e "
                   "consulta cada protocolo. Registro Civil → e-Protocolo — pendências mostra o que "

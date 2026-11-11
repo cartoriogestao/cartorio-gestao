@@ -1032,6 +1032,7 @@ _UTEIS = [0, 1, 2, 3, 4]
 #: «satisfacao_envio» à tupla, ver o PR). Nasce DESLIGADO, como todos.
 CATALOGO = (
     {"codigo": CODIGO_DO_PROCESSO, "nome": "Convites da pesquisa de satisfação",
+     "robo_oficial": "ATENDIMENTO",
      # O nome sai da própria função: renomeá-la não deixa o catálogo apontando
      # para o vazio (e é por aqui que o varredor de função órfã a alcança).
      "setor": "GESTAO", "funcao": f"satisfacao_envio.{rodar.__name__}", "timeout_s": 600,

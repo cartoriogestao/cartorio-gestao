@@ -103,7 +103,8 @@
     <label>Lembrar o problema a cada (horas; vazio = o padrão da configuração) <input name="lembrar_a_cada_h" value="{{ p.lembrar_a_cada_h or '' }}" size="3"></label>
     <label>Credencial do cofre (só script ou verificação) <select name="usa_credencial"><option value="">nenhuma</option>
       {% for c in credenciais %}<option value="{{ c.nome }}" {% if c.nome == p.usa_credencial %}selected{% endif %}>{{ c.nome }} — {{ c.nome_do_tipo }}</option>{% endfor %}</select></label>
-    <label>Robô do quadro antigo (opcional) <input name="robo_oficial" value="{{ p.robo_oficial or '' }}" size="14"></label>
+    <label>Robô <input name="robo_oficial" value="{{ p.robo_oficial or '' }}" size="16" placeholder="{{ robo_fabrica_nome or 'Casa' }}"></label>
+    <p class="small muted">Vazio usa o robô de fábrica{% if robo_fabrica_nome %}: {{ robo_fabrica_nome }}{% endif %}. O e-mail do dia e esta lista agrupam por ele.</p>
     <button class="button primary" type="submit">Gravar</button>
   </form>
 {% if layout_novo %}</div></details>{% else %}

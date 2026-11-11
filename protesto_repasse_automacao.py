@@ -56,7 +56,7 @@ AGENTE = "automação — guia de repasse do Protesto"
 CATALOGO = (
     {"codigo": CODIGO,
      "nome": "Protesto — relação da guia de repasse (CRA e CENPROT)",
-     "setor": "PROTESTO",
+     "setor": "PROTESTO", "robo_oficial": "PROTESTO",
      "funcao": "protesto_repasse_automacao.gerar_a_relacao_do_dia",
      "timeout_s": 120,
      "agenda": {"dias": [0, 1, 2, 3, 4], "horarios": ["08:00", "17:00"]},

@@ -280,6 +280,8 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          ("Registros lavrados", (
              _i("RCPJ", "rcpj_rtd_registros", atribuicao=3, antigo="RCPJ — registros lavrados"),
              _i("RTD", "rcpj_rtd_registros", atribuicao=4, antigo="RTD — registros lavrados"),
+             _i("Lançar registro de acervo", "rcpj_rtd_registro_acervo", AMU,
+                antigo="RCPJ/RTD — lançar registro de acervo"),
              _i("Últimos atos praticados", "rcpj_rtd_ultimos_atos"),
              _i("Atos sem lista de presença", "rcpj_rtd_pendencias_lista_presenca", AM,
                 antigo="RCPJ — atos sem lista de presença"),)),
@@ -454,6 +456,9 @@ ENTRADA_DO_INICIO = _i("Início", "dashboard", antigo="Visão geral", termos="pa
 # O QUE ENTROU NO MENU POR ESTE REGISTRO, e não estava no antigo: filtros de uma tela
 # que já existia. A lista é fechada, para o teste de paridade não aceitar qualquer coisa.
 ENTRADAS_NOVAS: frozenset[tuple[str, tuple]] = frozenset({
+    # O lançamento do livro físico do RCPJ/RTD nasceu no menu novo. A lista
+    # /rcpj-rtd também leva até ele; o menu antigo em HTML não o tinha.
+    ("rcpj_rtd_registro_acervo", ()),
     ("notas_atos", (("tipo", "PROCURACAO"),)),
     ("notas_atos", (("tipo", "PROCURACAO_PREVIDENCIARIA"),)),
     ("notas_atos", (("tipo", "SUBSTABELECIMENTO"),)),
@@ -602,6 +607,7 @@ PAI: dict[str, tuple[str, str]] = {
     "rcpj_rtd_titulo_nota": ("RCPJ", "Títulos apresentados"),
     "rcpj_rtd_registro": ("RCPJ", "Registros lavrados"),
     "rcpj_rtd_registro_novo": ("RCPJ", "Registros lavrados"),
+    "rcpj_rtd_registro_acervo": ("RCPJ", "Registros lavrados"),
     "rcpj_rtd_fiduciaria": ("RCPJ", "Alienação fiduciária"),
     "rcpj_rtd_fiduciaria_nova": ("RCPJ", "Alienação fiduciária"),
     "rcpj_rtd_notificacao": ("RCPJ", "Notificações"),

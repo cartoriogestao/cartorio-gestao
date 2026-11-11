@@ -575,8 +575,14 @@ def _onde(reg: dict, registro_ato: dict | None, con=None) -> str:
         "livro": _livro_impresso(serie, volume),
         "registro": nome_registro}, "onde")
     if registro_ato and registro_ato.get("folha"):
+        # A faixa do acervo (25V a 30) mora no rótulo. Sem ela, a certidão
+        # continua dizendo só o número da folha inicial, como sempre disse.
+        folha_txt = registro_ato["folha"]
+        rotulo = str(registro_ato.get("rotulo") or "").strip()
+        if registro_ato.get("folha_final") not in (None, "") and " a " in rotulo:
+            folha_txt = rotulo
         onde += _preencher(frase("onde_folha", con),
-                           {"folha": registro_ato["folha"]}, "onde_folha")
+                           {"folha": folha_txt}, "onde_folha")
     if reg.get("numero"):
         onde += _preencher(frase("onde_ato", con),
                            {"numero": reg["numero"]}, "onde_ato")

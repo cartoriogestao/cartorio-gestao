@@ -143,6 +143,23 @@ def _ligar(db, codigo, quando):
     return _processo(db, codigo)
 
 
+def test_o_cadastro_vazio_recebe_o_robo_de_fabrica_e_recusa_codigo_estranho(casa):
+    db = casa["db"]
+    disco = _processo(db, "CASA_DISCO")
+    with db.transaction() as con:
+        banco(con).escrever("UPDATE au_processos SET robo_oficial=NULL WHERE codigo='CASA_DISCO'")
+        banco(con).escrever("UPDATE au_processos SET robo_oficial='RI' WHERE codigo='CASA_BACKUP'")
+        assert AU.semear(con) == 0
+    assert _processo(db, "CASA_DISCO")["robo_oficial"] == "CASA"
+    assert _processo(db, "CASA_BACKUP")["robo_oficial"] == "RI"
+    with db.transaction() as con, pytest.raises(AU.AutomacaoError):
+        AU.salvar(con, disco["id"], {"robo_oficial": "NAO_EXISTE"}, usuario="mario")
+    assert _processo(db, "CASA_DISCO")["robo_oficial"] == "CASA"
+    with db.transaction() as con:
+        AU.salvar(con, disco["id"], {"robo_oficial": ""}, usuario="mario")
+    assert _processo(db, "CASA_DISCO")["robo_oficial"] == "CASA"
+
+
 def test_os_processos_de_fabrica_nascem_desligados_e_nao_duplicam(casa):
     db = casa["db"]
     with db.transaction() as con:
@@ -818,6 +835,11 @@ def test_as_telas_abrem_para_o_admin(casa):
     assert lista.index("5. Protesto") < lista.index("CRA — a remessa do dia foi baixada?")
     assert "Pede gente hoje" in lista and "Parou" not in lista
     assert "Automação (rotinas)" in c.get("/").get_data(as_text=True)
+    ficha = c.get(f"/automacao/{p['id']}").get_data(as_text=True)
+    assert '<select name="robo_oficial">' in ficha and 'value="CASA"' in ficha
+    cfg = c.get("/automacao/configuracao").get_data(as_text=True)
+    assert "Os robôs" in cfg and "5. Protesto" in cfg and "Casa" in cfg
+    assert "agrupado pelo robô da casa" in cfg
 
 
 def test_o_painel_avisa_o_cofre_trancado_mesmo_sem_processo_de_credencial(casa, monkeypatch):

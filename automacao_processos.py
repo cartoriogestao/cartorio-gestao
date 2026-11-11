@@ -1044,6 +1044,25 @@ def nome_do_robo(codigo: str | None) -> str:
     return oficial_robos.NOME_DO_ROBO.get(codigo, codigo)
 
 
+def codigos_de_robo() -> tuple[str, ...]:
+    """Os códigos que o cadastro aceita.
+
+    O robô oficial mede os outros e não recebe processo: uma falha de rotina
+    não pode pintá-lo de parado.
+    """
+    import oficial_robos
+    codigos = [r["codigo"] for r in oficial_robos.ROBOS if r["codigo"] != "OFICIAL"]
+    codigos.extend(_ROBOS_DA_CENTRAL)
+    return tuple(codigos)
+
+
+def robos_para_o_cadastro() -> list[dict]:
+    """A lista fechada da tela, na ordem do quadro."""
+    itens = [{"codigo": codigo, "nome": nome_do_robo(codigo)} for codigo in codigos_de_robo()]
+    itens.sort(key=lambda item: ordem_do_robo(item["codigo"]))
+    return itens
+
+
 def ordem_do_robo(codigo: str | None) -> tuple:
     """A ordem do quadro antigo, e depois malote, atendimento e a casa."""
     import oficial_robos

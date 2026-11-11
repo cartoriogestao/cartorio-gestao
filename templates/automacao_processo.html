@@ -103,8 +103,16 @@
     <label>Lembrar o problema a cada (horas; vazio = o padrão da configuração) <input name="lembrar_a_cada_h" value="{{ p.lembrar_a_cada_h or '' }}" size="3"></label>
     <label>Credencial do cofre (só script ou verificação) <select name="usa_credencial"><option value="">nenhuma</option>
       {% for c in credenciais %}<option value="{{ c.nome }}" {% if c.nome == p.usa_credencial %}selected{% endif %}>{{ c.nome }} — {{ c.nome_do_tipo }}</option>{% endfor %}</select></label>
-    <label>Robô <input name="robo_oficial" value="{{ p.robo_oficial or '' }}" size="16" placeholder="{{ robo_fabrica_nome or 'Casa' }}"></label>
-    <p class="small muted">Vazio usa o robô de fábrica{% if robo_fabrica_nome %}: {{ robo_fabrica_nome }}{% endif %}. O e-mail do dia e esta lista agrupam por ele.</p>
+    <label>Robô <select name="robo_oficial">
+      <option value=""{% if not p.robo_oficial %} selected{% endif %}>o de fábrica{% if robo_fabrica_nome %}: {{ robo_fabrica_nome }}{% endif %}</option>
+      {% for r in robos_do_cadastro or [] %}
+      <option value="{{ r.codigo }}"{% if r.codigo == p.robo_oficial %} selected{% endif %}>{{ r.nome }}</option>
+      {% endfor %}
+      {% if p.robo_oficial and codigos_de_robo is defined and p.robo_oficial not in codigos_de_robo %}
+      <option value="{{ p.robo_oficial }}" selected>{{ p.robo_oficial }}</option>
+      {% endif %}
+    </select></label>
+    <p class="small muted">Em branco, fica o de fábrica{% if robo_fabrica_nome %}: {{ robo_fabrica_nome }}{% endif %}. O e-mail do dia, a lista e a configuração agrupam por ele.</p>
     <button class="button primary" type="submit">Gravar</button>
   </form>
 {% if layout_novo %}</div></details>{% else %}

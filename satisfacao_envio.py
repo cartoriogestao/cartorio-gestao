@@ -534,10 +534,13 @@ HTTP: dict[str, Callable] = {"chamar": _http}
 
 
 def quem_faz(processo: dict | None) -> tuple[str, str]:
-    """(agente, a_mando_de) desta rodada. Só calcula."""
+    """(agente, a_mando_de) desta rodada. Só calcula.
+
+    O agente é o processo (`automacao:CÓDIGO`). O robô da casa agrupa o
+    e-mail e a configuração; não troca quem a auditoria registra.
+    """
     p = processo or {}
-    agente = str(p.get("robo_oficial") or "").strip() or \
-        f"automacao:{p.get('codigo') or CODIGO_DO_PROCESSO}"
+    agente = f"automacao:{str(p.get('codigo') or CODIGO_DO_PROCESSO).strip() or CODIGO_DO_PROCESSO}"
     mando = (str(p.get("alterado_por") or p.get("criado_por") or "").strip()
              or "oficial (processo ligado na central da automação)")
     return agente, mando

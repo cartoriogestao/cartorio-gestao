@@ -512,7 +512,15 @@ def ler_pix_copia_e_cola(texto: Any) -> dict:
             "dinamico": bool(conta.get("25")), "url": conta.get("25", "")}
 
 
-_DOMINIO = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}")
+_ROTULO_DO_DOMINIO = re.compile(r"[a-z0-9-]{1,63}")
+
+
+def _eh_dominio(texto: str) -> bool:
+    """`banco.exemplo.com.br`: rótulo a rótulo, sem expressão aninhada (CodeQL
+    py/polynomial-redos, 10/11/2026 — a versão de uma expressão só retrocedia)."""
+    partes = texto.split(".")
+    return (len(texto) <= 253 and len(partes) >= 2 and partes[-1].isalpha() and len(partes[-1]) >= 2
+            and all(_ROTULO_DO_DOMINIO.fullmatch(p) and p[0] != "-" and p[-1] != "-" for p in partes))
 
 
 def _dominio_do_qr(url: Any) -> str:
@@ -532,7 +540,7 @@ def recebedor_pix_configurado(valor: Any) -> str:
     texto = _texto(valor, 100)
     if not texto:
         return ""
-    if "@" not in texto and _DOMINIO.fullmatch(texto.lower()):
+    if "@" not in texto and _eh_dominio(texto.lower()):
         return texto.lower()
     try:
         return normalizar_chave_pix(texto)

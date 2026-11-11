@@ -140,6 +140,9 @@ class Guias(unittest.TestCase):
         self.assertEqual(DP.recebedor_pix_configurado('QRPix.Banco-Exemplo.test'), DOMINIO_DO_QR)
         self.assertEqual(DP.recebedor_pix_configurado('Fundo@Exemplo.test'), 'fundo@exemplo.test')
         self.assertEqual(DP.recebedor_pix_configurado(''), '')
+        for nao_dominio in ('-banco.test', 'banco-.test', 'banco..test', 'banco.t', 'banco.123', '0.' * 40):
+            with self.subTest(texto=nao_dominio[:20]), self.assertRaises(DP.DespesaError):
+                DP.recebedor_pix_configurado(nao_dominio)
         with self.assertRaises(DP.DespesaError):
             DP.recebedor_pix_configurado('00.000.010/0001-28')
 

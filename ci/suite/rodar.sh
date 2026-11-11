@@ -29,13 +29,15 @@ ORIGEM_DA_IMAGEM="$MAIN"
 for item in $SENSIVEIS; do
   if ! diff -rq "$MAIN/$item" "$PR/$item" >/dev/null 2>&1; then
     if [ -e "$MAIN/$item" ] || [ -e "$PR/$item" ]; then
+      # ${item}, e não $item: o » logo em seguida, com set -u, o bash do Mac
+      # lê como parte do nome e a suíte morre antes de rodar (11/11/2026).
       if [ "${CG_SUITE_REVISADO:-false}" = "true" ]; then
-        echo "O PR muda «$item» e tem o rótulo ci-revisado: a imagem se monta com o que o PR traz."
+        echo "O PR muda «${item}» e tem o rótulo ci-revisado: a imagem se monta com o que o PR traz."
         ORIGEM_DA_IMAGEM="$PR"
       else
-        echo "O PR muda «$item»: a imagem da suíte só se monta a partir do main, e mudança"
+        echo "O PR muda «${item}»: a imagem da suíte só se monta a partir do main, e mudança"
         echo "de dependência ou da CI exige revisão humana (rótulo «ci-revisado») antes do merge."
-        echo "codigo=3 o PR muda $item: falta o rotulo ci-revisado" >"$SAIDA/situacao.txt"
+        echo "codigo=3 o PR muda ${item}: falta o rotulo ci-revisado" >"$SAIDA/situacao.txt"
         exit 3
       fi
     fi

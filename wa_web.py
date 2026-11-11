@@ -37,8 +37,10 @@ import serventia as SERV
 import tetos_de_entrada as TETO
 import wa_atendente as ATENDENTE
 import wa_balcao as WA
+import wa_conhecimento as CONHEC
 import wa_contato as CONTATO
 import wa_fila as FILA
+import wa_pedido as PEDIDO
 import wa_midia as MIDIA
 import wa_modelos as MODELOS
 import wa_puxar as PUXAR
@@ -341,6 +343,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 return redirect(url_for("whatsapp_atendente"))
             audit("wa_atendente_config", "wa_config", None,
                   {"ia_ligada": request.form.get("ia_ligada") == "1",
+                   "ia_escrevente": request.form.get("ia_escrevente") == "1",
                    "audio_ligado": request.form.get("audio_ligado") == "1"})
             for aviso in avisos:
                 flash(aviso, "warning")
@@ -355,6 +358,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             linhas = ATENDENTE.registros(con, limite=100)
             hoje = ATENDENTE.resumo_do_dia(con, agora=db.now())
             por_que = ATENDENTE.por_que_passou(con, agora=db.now())
+            pedidos = PEDIDO.abertos(con)
             pode_enviar = WA.pode_enviar_meta(con)
             rotina = ROTINA.config(con)
         return render_template(
@@ -370,11 +374,30 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             vigia_padrao=ROTINA.VIGIA_PADRAO_S, encerrar_padrao=ROTINA.ENCERRAR_PADRAO_DIAS,
             rotulos=ATENDENTE.ROTULO_DO_CASO, exemplo=ATENDENTE.TEXTO_BASE_EXEMPLO,
             tentativas=ATENDENTE.TENTATIVAS_POR_DIA,
-            por_que=por_que, ensaio=ensaio, ensaio_conversa=ensaio_conversa,
+            por_que=por_que, pedidos=pedidos, panorama=CONHEC.panorama(),
+            ensaio=ensaio, ensaio_conversa=ensaio_conversa,
             ensaio_texto=ensaio_texto or ATENDENTE.PERGUNTAS_DE_EXEMPLO,
             limite_do_ensaio=ATENDENTE.LINHAS_DO_ENSAIO,
             pode_ensaiar=app.extensions["usuario_papel"]() in ("ADMIN", "MANAGER"),
             e_admin=app.extensions["usuario_papel"]() == "ADMIN")
+
+    @app.route("/whatsapp/pedido/<int:pedido_id>/feito", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def whatsapp_pedido_feito(pedido_id: int):
+        """O escrevente marcou o pedido como feito. A conversa continua com a IA."""
+        with db.transaction() as con:
+            ok = PEDIDO.concluir(con, pedido_id, por=_quem(), quando=db.now())
+        if ok:
+            audit("wa_pedido_feito", "wa_pedido", pedido_id, {})
+            flash("Pedido marcado como feito. O ato, se houver, segue no atendimento.",
+                  "success")
+        else:
+            flash("Esse pedido já estava feito ou não existe.", "warning")
+        volta = (request.form.get("volta") or "").strip()
+        if volta.isdigit():
+            return redirect(url_for("whatsapp_conversa", conversa_id=int(volta)))
+        return redirect(url_for("whatsapp_atendente") + "#pedidos")
 
     def _volta_da_transcricao():
         return redirect(url_for("whatsapp_atendente") + "#transcricao")
@@ -718,6 +741,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 # que a casa tem é o cartão de firma e o protocolo com o
                 # mesmo telefone (`wa_contato`).
                 d["contato"] = CONTATO.quem_e(con, d.get("wa_id"))
+                d["pedidos"] = PEDIDO.da_conversa(con, conversa_id)
                 d["iniciais"] = FILA.iniciais(d.get("nome"), d.get("wa_id"))
                 vista = _vista(d, request.args.get("historico") == "1")
                 d["sugestao_na_caixa"] = WA.sugestao_visivel(con, conversa_id, d.get("sugestao"))

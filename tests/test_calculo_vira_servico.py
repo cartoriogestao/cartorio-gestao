@@ -249,3 +249,24 @@ def test_a_recepcao_da_correcao_afirma_o_dia_da_abertura(casa):
     _virar(casa, pid, motivo="Aberto como cálculo por engano.")
     texto = _recepcao(casa, pid)
     assert "20/10/2026" in texto and "09:15" in texto
+
+
+def test_a_descricao_do_ato_sai_inteira_no_protocolo(casa):
+    """of-0147: cortar a descrição em 70 letras escondia qual ato se selava."""
+    cauda = "que nao cabe em setenta letras do protocolo"
+    descricao = "Certidao de casamento dos vendedores da matricula de ensaio " + cauda
+    assert len(descricao) > 70
+    with casa["db"].transaction() as con:
+        bd = banco(con)
+        pid = int(bd.escrever(
+            """INSERT INTO cx_protocolos (numero, data_abertura, hora, atribuicao, interessado,
+                   assunto, tipo, situacao, origem, criado_em)
+               VALUES (%s, '2026-11-10', '09:15', 'NOTAS', 'Ana Exemplo', 'Procuração',
+                       'SERVICO', 'ABERTO', 'MANUAL', '2026-11-10T09:15:00') RETURNING id""",
+            (f"2026.11.{next(_NUMEROS)}",))[0]["id"])
+        bd.escrever(
+            """INSERT INTO cx_protocolo_atos (protocolo_id, codigo_ato, descricao, quantidade,
+                   quitado, origem) VALUES (%s, '13.1', %s, 1, 0, 'MANUAL')""",
+            (pid, descricao))
+    html = casa["cliente"].get(f"/caixa/protocolos/{pid}").get_data(as_text=True)
+    assert cauda in html

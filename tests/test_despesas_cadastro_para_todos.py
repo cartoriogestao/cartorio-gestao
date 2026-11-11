@@ -7,6 +7,7 @@ que acabou de gravar; outro ADMIN também não; o carnê-leão segue a mesma ré
 """
 from __future__ import annotations
 
+import io
 import re
 import sys
 from datetime import datetime, timedelta, timezone
@@ -18,6 +19,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
 import despesas as DP
+import despesas_documento as DD
 from tests.conftest import cg_login
 
 FAVORECIDO = "00000010000127"     # 00.000.010/0001-27, fictício (o de test_despesas)
@@ -60,6 +62,38 @@ def _post_da_papelaria(c):
         "beneficiario_documento": FAVORECIDO, "valor": "123,45", "vencimento": "2026-11-10",
         "forma": DP.PIX_CHAVE, "codigo": "papelaria@example.com",
         "documento_especie": "Nota fiscal"}, follow_redirects=True)
+
+
+def test_documento_grande_nao_estoura_a_tela(cg_casa_logada):
+    """of-0155: arquivo acima de 15 MB volta com aviso, sem gravar e sem 500."""
+    c = _como(cg_casa_logada, "carla", "CARLA EXEMPLO", "USER")
+    grande = b"x" * (DD.MAX_BYTES + 1)
+    r = c.post(NOVA, data={
+        "csrf_token": _token(c), "categoria": "MATERIAIS",
+        "descricao": "Papel A4 para o balcão", "beneficiario_nome": "PAPELARIA FICTICIA",
+        "beneficiario_documento": FAVORECIDO, "valor": "123,45", "vencimento": "2026-11-10",
+        "forma": DP.PIX_CHAVE, "codigo": "papelaria@example.com",
+        "documento_especie": "Nota fiscal",
+        "documento": (io.BytesIO(grande), "nota.pdf")},
+        content_type="multipart/form-data")
+    assert r.status_code == 200
+    assert "15 MB" in r.get_data(as_text=True)
+    with cg_casa_logada["db"].connect() as con:
+        nomes = [d["beneficiario_nome"] for d in DP.listar(con)]
+    assert "PAPELARIA FICTICIA" not in nomes
+
+
+def test_falha_inesperada_ao_lancar_nao_vira_500(cg_casa_logada, monkeypatch):
+    """of-0155: o que não é regra da despesa volta à tela, e nada fica gravado."""
+    def estourou(*_a, **_k):
+        raise RuntimeError("coluna que faltou")
+
+    monkeypatch.setattr(DP, "cadastrar", estourou)
+    c = _como(cg_casa_logada, "carla", "CARLA EXEMPLO", "USER")
+    r = _post_da_papelaria(c)
+    assert r.status_code == 200
+    assert "RuntimeError" in r.get_data(as_text=True)
+    assert "Nada foi gravado" in r.get_data(as_text=True)
 
 
 @pytest.mark.parametrize("papel", ["USER", "MANAGER"])

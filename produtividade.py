@@ -837,7 +837,10 @@ def painel_kpis(
         params.append(int(responsavel_user_id))
 
     bd = banco(con)
-    _ensure_colunas(bd)
+    # LEITURA NÃO MIGRA O ESQUEMA (of-0153, 29/10/2026). O painel e o status do
+    # cronômetro perguntavam `information_schema` a cada abertura; com o
+    # PostgreSQL sem memória, um pedido de 240 bytes estourava a tela. As
+    # colunas nascem no `init_produtividade_schema` e nas escritas.
     rows = bd.ler(
         f"SELECT * FROM prod_registros WHERE data_registro=%s{filtro_resp} ORDER BY id",
         tuple(params),
@@ -1112,7 +1115,8 @@ def cronometro_em_andamento(
 ) -> dict[str, Any] | None:
     """Único cronômetro aberto do usuário (Em andamento ou Pausada, sem fim)."""
     bd = banco(con)
-    _ensure_colunas(bd)
+    # Só lê. A migração das colunas do cronômetro não mora aqui (of-0153):
+    # o status é consultado o tempo todo, e cada consulta batia no catálogo.
     row = bd.um(
         """
         SELECT * FROM prod_registros
@@ -1378,7 +1382,6 @@ def encerrar_esquecidos(
 def encerrados_sem_ciencia(con: sqlite3.Connection, *, responsavel_user_id: int) -> list[dict[str, Any]]:
     """Os encerramentos automáticos que a pessoa ainda não viu. Só lê."""
     bd = banco(con)
-    _ensure_colunas(bd)
     rows = bd.ler(
         "SELECT id, data_registro, hora_inicio, hora_fim, tarefa, observacoes FROM prod_registros "
         "WHERE responsavel_user_id=%s AND observacoes ILIKE %s AND ciencia_em IS NULL ORDER BY id",

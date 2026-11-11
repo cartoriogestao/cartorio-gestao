@@ -1,6 +1,7 @@
 """Rotas web — Controle de produtividade (ADMIN, MANAGER, USER)."""
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime
 from typing import Any, Callable
 
@@ -532,9 +533,17 @@ def register_produtividade_routes(
         uid, nome, username, _role = _identidade()
         if uid is None:
             return _json_erro("Sessão inválida.", 401)
-        with get_db() as con:
-            crono = PR.cronometro_em_andamento(con, responsavel_user_id=uid)
-            avisos = PR.encerrados_sem_ciencia(con, responsavel_user_id=uid)
+        try:
+            with get_db() as con:
+                crono = PR.cronometro_em_andamento(con, responsavel_user_id=uid)
+                avisos = PR.encerrados_sem_ciencia(con, responsavel_user_id=uid)
+        except sqlite3.OperationalError:
+            # Memória do PostgreSQL esgotada (of-0153): a consulta do relógio
+            # não pode virar a página de erro 500. O detalhe fica no log.
+            app.logger.exception("cronometro: leitura recusada pelo banco")
+            return _json_erro(
+                "O cronômetro não pôde ser lido agora. Tente de novo em instantes.",
+                503)
         return jsonify({"ok": True, "cronometro": crono, "encerrados_sem_ciencia": avisos})
 
     @app.route("/administrativo/produtividade/api/cronometro/ciencia", methods=["POST"])

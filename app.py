@@ -2690,7 +2690,10 @@ def _montar_app(test_config: dict | None = None) -> Flask:
                     "reiniciado; se a nova versao falhar, o rollback sera automatico.",
                     "success",
                 )
-            except (UpdateError, OSError, ValueError) as exc:
+            except (UpdateError, OSError, ValueError, banco_pg.OperationalError) as exc:
+                # O pg_dump ausente (of-0156, 02/11/2026) é OperationalError: a
+                # tela de atualizar caía em HTTP 500 no meio da aprovação, com
+                # a preparação intacta e nada aplicado.
                 audit("UPDATE_APPROVAL_FAILED", "SYSTEM", None, {
                     "to": versao_solicitada, "error": str(exc),
                 })

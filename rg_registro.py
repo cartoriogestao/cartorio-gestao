@@ -34,7 +34,6 @@ FUNDAMENTO
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 from datetime import date
 
@@ -812,9 +811,6 @@ def abrir_registro(con: sqlite3.Connection, *, serie: str, sv: dict,
 # ------------------------------------------------- o livro físico já feito
 
 
-_FOLHA = re.compile(r"^0*(\d+)(v)?$")
-
-
 def rotulo_do_livro(serie: str, volume: str | None) -> str:
     """`PJ_A` + `5` -> `A-5`. A letra sai da série. Só calcula."""
     letra = (serie or "").split("_")[-1] or "?"
@@ -839,21 +835,26 @@ def _face_bonita(folha: int, verso: int) -> str:
 
 
 def ler_folha(texto: str) -> tuple[int, int]:
-    """`25`, `25V` ou `fls. 025v` -> (número, verso 0 ou 1). Só calcula."""
+    """`25`, `25V` ou `fls. 025v` -> (número, verso 0 ou 1). Só calcula.
+
+    Sem expressão regular: `0*` seguido de dígitos regride numa sequência
+    longa de zeros, e a folha vem do que a pessoa digitou.
+    """
     bruto = _limpo(texto).lower().replace(" ", "").replace("-", "")
     for prefixo in ("fls.", "fl.", "folha", "fls", "fl"):
         if bruto.startswith(prefixo):
             bruto = bruto[len(prefixo):].lstrip(".")
             break
-    achado = _FOLHA.match(bruto)
-    if not achado:
+    verso = 1 if bruto.endswith("v") else 0
+    numero_txt = bruto[:-1] if verso else bruto
+    if not numero_txt.isdigit() or len(numero_txt) > 6:
         raise RgError(
             f"Folha inválida: {texto!r}. Escreva o número como no livro, "
             f"com V no verso (ex.: 25 ou 25V).")
-    numero = int(achado.group(1))
+    numero = int(numero_txt)
     if numero < 1:
         raise RgError("A folha começa em 1.")
-    return numero, 1 if achado.group(2) else 0
+    return numero, verso
 
 
 def rotulo_da_faixa(folha: int, verso: int, folha_final: int,

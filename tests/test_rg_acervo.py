@@ -188,6 +188,13 @@ def test_o_acervo_nao_entra_na_lista_de_ato_sem_selo():
     assert ids, "o ato novo, sem selo, continua na lista"
 
 
+def test_folha_so_de_zeros_nao_entra_e_nao_regride():
+    con = banco()
+    with pytest.raises(RG.RgError, match="Folha inválida"):
+        _lancar(con, folha_inicial="0" * 8000)
+    assert bd(con).valor("SELECT COUNT(*) n FROM rg_registros") == 0
+
+
 def test_folha_invertida_e_cnpj_ruim_nao_gravam():
     con = banco()
     with pytest.raises(RG.RgError, match="folha final"):

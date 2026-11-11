@@ -22,6 +22,9 @@ COMANDOS
     conferir           conta as linhas de cada tabela nos dois lados
     esquema            acrescenta na reserva as tabelas e colunas novas do principal
     assumir            a reserva vira o principal (o principal caiu e não volta hoje)
+    emergencia         o botão: trava a escrita do principal se ele responder, desliga a
+                       assinatura, despeja a reserva e promove (é o que o assumir.sh chama)
+    voltar             devolve ao principal o que a reserva gravou e religa a réplica
     chave-da-reserva   sorteia o par de chaves da reserva (uma vez) e mostra a pública
     chaves             abre o pacote de segredos que o principal cifrou para a reserva
     pastas             copia as pastas configuradas FORA da pasta de arquivos (--apontar: assumir)
@@ -42,8 +45,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+_RAIZ = Path(__file__).resolve().parent
+sys.path.insert(0, str(_RAIZ.parent))
+sys.path.insert(0, str(_RAIZ))
 import reserva_chaves as RCH  # noqa: E402
+import trava_producao as TRAVA  # noqa: E402
+import contingencia as CONT  # noqa: E402
 
 try:
     import psycopg
@@ -118,8 +125,11 @@ SELECT format('ALTER TABLE %I.%I REPLICA IDENTITY FULL', n.nspname, k.relname)
    AND NOT EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = k.oid AND i.indisprimary) \\gexec
 
 -- 4. A publicação: o schema inteiro, com as tabelas que as versões novas criarem.
-SELECT 'CREATE PUBLICATION {PUBLICACAO} FOR TABLES IN SCHEMA {schema}'
+--    Só linha nova, linha mudada e linha apagada. Esvaziar a tabela no principal
+--    não viaja: a reserva não perde o acervo por um comando desses.
+SELECT 'CREATE PUBLICATION {PUBLICACAO} FOR TABLES IN SCHEMA {schema} WITH (publish = ''insert, update, delete'')'
  WHERE NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = '{PUBLICACAO}') \\gexec
+ALTER PUBLICATION {PUBLICACAO} SET (publish = 'insert, update, delete');
 
 -- 5. Conferência: o que falta para a reserva conectar.
 SELECT name, setting, CASE WHEN pending_restart THEN 'REINICIE O SERVIÇO' ELSE 'ok' END AS estado
@@ -169,6 +179,7 @@ def _colunas(c, schema: str) -> dict[str, dict[str, str]]:
 def montar(principal: str, local: str, schema: str, refazer: bool) -> None:
     """Cria a reserva: o esquema inteiro do principal (com as funções do `public`), os papéis, e a
     assinatura, que copia as linhas e depois segue o principal sozinha."""
+    TRAVA.recusar_montar(local, principal, schema)
     with _abrir(local) as pg, pg.cursor() as c:
         existe = c.execute("SELECT 1 FROM pg_subscription WHERE subname=%s", (ASSINATURA,)).fetchone()
         if existe and not refazer:
@@ -559,6 +570,311 @@ def apontar_pastas(local: str, schema: str, base: Path, mapa_texto: str) -> int:
     return 0
 
 
+# ------------------------------------------------------------------ emergência e volta
+
+FRASE_DE_EMERGENCIA = "EMERGENCIA"
+FRASE_DE_VOLTA = "VOLTAR"
+PUBLICAR = "insert, update, delete"
+
+
+@dataclass(frozen=True)
+class Retrato:
+    """Uma tabela, dos dois lados: quantas linhas, o maior id, e o hash das linhas."""
+    contagem: int
+    max_id: int | None
+    resumo: str
+
+
+def confirmou_emergencia(frase: str) -> bool:
+    return frase in {FRASE_DE_EMERGENCIA, FRASE_DE_ASSUMIR}
+
+
+def executar_emergencia(*, confirmacao: str, principal_alcancavel: bool, tem_assinatura: bool,
+                        travar_principal, desligar, despejar, promover) -> int:
+    """A ordem que não deixa dois gravando.
+
+    Se o principal responde, a trava de escrita vem primeiro (ela fica em `public`,
+    fora da publicação). Depois a assinatura para, o despejo guarda a reserva como
+    está, e só então as sequências avançam para ela poder lançar.
+    """
+    if not confirmou_emergencia(confirmacao):
+        return 2
+    if principal_alcancavel:
+        travar_principal()
+    if tem_assinatura:
+        desligar()
+    despejar()
+    promover()
+    return 0
+
+
+def comparar(principal: dict[str, Retrato], reserva: dict[str, Retrato]) -> list[str]:
+    """Onde a contagem, o maior id ou o hash não batem."""
+    falhas = []
+    for tabela in sorted(set(principal) | set(reserva)):
+        a, b = principal.get(tabela), reserva.get(tabela)
+        if a is None or b is None or a != b:
+            falhas.append(tabela)
+    return falhas
+
+
+def tabelas_a_levar(principal: dict[str, Retrato], reserva: dict[str, Retrato]) -> list[str]:
+    """Tabelas em que a reserva tem linha nova (id maior) ou conteúdo diferente."""
+    return comparar(principal, reserva)
+
+
+def executar_volta(*, confirmacao: str, principal: dict[str, Retrato],
+                   reserva: dict[str, Retrato], copiar, reler, acertar,
+                   remontar, soltar, remonta: bool) -> int:
+    """Leva para o principal o que a reserva gravou. Só solta a trava se a conferência fecha.
+
+    `reler` devolve os retratos depois da cópia. Divergência para aqui: a assinatura
+    não religa e o principal continua somente leitura.
+    """
+    if confirmacao != FRASE_DE_VOLTA:
+        return 2
+    copiar(tabelas_a_levar(principal, reserva))
+    falhas = comparar(*reler())
+    if falhas:
+        return 1
+    acertar()
+    if remonta:
+        remontar()
+    soltar()
+    return 0
+
+
+def _schema_valido(schema: str) -> str:
+    nome = (schema or "").strip()
+    if not re.fullmatch(r"[a-z_][a-z0-9_]*", nome):
+        raise ValueError("schema: só minúsculas, dígitos e _")
+    return nome
+
+
+def _tabela_valida(nome: str) -> str:
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", nome):
+        raise ValueError("tabela inválida")
+    return nome
+
+
+def sql_linhas_novas(schema: str, tabela: str, max_id: int) -> str:
+    """As linhas cujo id a reserva criou depois que o principal parou."""
+    schema, tabela = _schema_valido(schema), _tabela_valida(tabela)
+    teto = int(max_id)
+    return (f'COPY (SELECT * FROM "{schema}"."{tabela}" WHERE id > {teto}) TO STDOUT')
+
+
+def comandos_de_remontar(principal_dsn: str) -> list[str]:
+    """Recria a assinatura `cg_reserva` depois que as tabelas do principal foram recriadas.
+
+    `copy_data = false`: a volta já levou as linhas. A assinatura só segue o que vier depois.
+    A senha não entra na conexão (ela iria parar no catálogo da reserva).
+    """
+    if re.search(r"password\s*=", principal_dsn or "", re.I):
+        raise ValueError("a senha não vai na conexão (use o pgpass)")
+    if not principal_dsn or re.search(r"[\n;']", principal_dsn):
+        raise ValueError("conexão inválida")
+    return [
+        f"ALTER SUBSCRIPTION {ASSINATURA} DISABLE",
+        f"ALTER SUBSCRIPTION {ASSINATURA} SET (slot_name = NONE)",
+        f"DROP SUBSCRIPTION IF EXISTS {ASSINATURA}",
+        f"ALTER PUBLICATION {PUBLICACAO} SET (publish = '{PUBLICAR}')",
+        (f"CREATE SUBSCRIPTION {ASSINATURA} CONNECTION '{principal_dsn}' "
+         f"PUBLICATION {PUBLICACAO} "
+         "WITH (copy_data = false, create_slot = true, disable_on_error = false)"),
+        f"ALTER SUBSCRIPTION {ASSINATURA} ENABLE",
+    ]
+
+
+def desligar_assinatura(c) -> None:
+    """Para a réplica sem apagar a assinatura. A volta ainda pode remontá-la."""
+    c.execute(S.SQL("ALTER SUBSCRIPTION {} DISABLE").format(S.Identifier(ASSINATURA)))
+
+
+def marcar_somente_leitura(c) -> None:
+    for comando in CONT.sql_de_travar().split(";\n"):
+        texto = comando.strip().rstrip(";")
+        if texto:
+            c.execute(texto)
+
+
+def soltar_somente_leitura(c) -> None:
+    c.execute(CONT.sql_de_soltar().rstrip(";"))
+
+
+def comando_de_despejo(binario: str, dsn: str, schema: str, destino: Path) -> list[str]:
+    if re.search(r"password\s*=", dsn or "", re.I):
+        raise TRAVA.ProducaoProtegida("a senha não vai no pg_dump")
+    _schema_valido(schema)
+    return [binario, "--format=custom", "--no-password", "-n", schema, "-f", str(destino), dsn]
+
+
+def retratos(c, schema: str) -> dict[str, Retrato]:
+    """Contagem, maior id e hash das linhas de cada tabela do schema."""
+    schema = _schema_valido(schema)
+    c.execute("""SELECT k.relname FROM pg_class k
+                   JOIN pg_namespace n ON n.oid = k.relnamespace
+                  WHERE n.nspname = %s AND k.relkind = 'r' ORDER BY 1""", (schema,))
+    nomes = [r[0] for r in c.fetchall()]
+    saida: dict[str, Retrato] = {}
+    for nome in nomes:
+        _tabela_valida(nome)
+        alvo = S.SQL("{}.{}").format(S.Identifier(schema), S.Identifier(nome))
+        c.execute(S.SQL("SELECT count(*) FROM {}").format(alvo))
+        contagem = int(c.fetchone()[0])
+        c.execute("""SELECT 1 FROM information_schema.columns
+                      WHERE table_schema = %s AND table_name = %s AND column_name = 'id'""",
+                  (schema, nome))
+        if c.fetchone():
+            c.execute(S.SQL("SELECT max(id) FROM {}").format(alvo))
+            bruto = c.fetchone()[0]
+            max_id = None if bruto is None else int(bruto)
+            c.execute(S.SQL("SELECT md5(coalesce(string_agg(md5(t::text), '' ORDER BY t.id), '')) "
+                            "FROM {} AS t").format(alvo))
+            resumo = c.fetchone()[0] or ""
+        else:
+            max_id = None
+            c.execute(S.SQL("SELECT md5(count(*)::text) FROM {}").format(alvo))
+            resumo = c.fetchone()[0] or ""
+        saida[nome] = Retrato(contagem, max_id, resumo)
+    return saida
+
+
+def _principal_responde(principal: str) -> bool:
+    try:
+        with _abrir(principal) as pg, pg.cursor() as c:
+            c.execute("SELECT 1")
+        return True
+    except Exception:  # noqa: BLE001 — inalcançável é o caso do botão
+        return False
+
+
+def _tem_assinatura(c) -> bool:
+    return c.execute("SELECT 1 FROM pg_subscription WHERE subname=%s", (ASSINATURA,)).fetchone() is not None
+
+
+def emergencia(local: str, principal: str, schema: str, confirmacao: str, destino: Path) -> int:
+    """O botão. Não conecta no destino errado: a produção não é a reserva."""
+    if not confirmou_emergencia(confirmacao):
+        print(f"para a emergência, repita com --confirmo {FRASE_DE_EMERGENCIA}. "
+              "O servidor Windows, se ainda responder, fica somente leitura.")
+        return 2
+    TRAVA.recusar_emergencia_no_principal(local, principal)
+    schema = _schema_valido(schema)
+    alcancavel = _principal_responde(principal)
+
+    def travar() -> None:
+        with _abrir(principal) as pg, pg.cursor() as c:
+            marcar_somente_leitura(c)
+        print("principal somente leitura")
+
+    def desligar() -> None:
+        with _abrir(local) as pg, pg.cursor() as c:
+            desligar_assinatura(c)
+        print("assinatura desligada")
+
+    def despejar() -> None:
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        argv = comando_de_despejo(_binario("pg_dump"), local, schema, destino)
+        feito = subprocess.run(argv, capture_output=True, text=True, check=False)
+        if feito.returncode != 0:
+            raise SystemExit(f"o despejo da reserva falhou:\n{feito.stderr[-2000:]}")
+        print(f"despejo em {destino}")
+
+    def promover() -> None:
+        with _abrir(local) as pg, pg.cursor() as c:
+            n = acertar_sequencias(c, schema)
+        print(f"{n} sequência(s) acertadas pelo maior id")
+        print("troque o sistema da reserva para o modo principal: emergencia.sh (ou assumir.sh)")
+
+    with _abrir(local) as pg, pg.cursor() as c:
+        tem = _tem_assinatura(c)
+    return executar_emergencia(
+        confirmacao=confirmacao, principal_alcancavel=alcancavel, tem_assinatura=tem,
+        travar_principal=travar, desligar=desligar, despejar=despejar, promover=promover)
+
+
+def voltar(local: str, principal: str, schema: str, confirmacao: str, *, remonta: bool) -> int:
+    """Devolve ao principal o que a reserva gravou, confere, e pode remontar a assinatura."""
+    if confirmacao != FRASE_DE_VOLTA:
+        print(f"para voltar, repita com --confirmo {FRASE_DE_VOLTA}. "
+              "Nada é copiado sem essa frase.")
+        return 2
+    schema = _schema_valido(schema)
+
+    def ler() -> tuple[dict[str, Retrato], dict[str, Retrato]]:
+        with _abrir(principal) as p, p.cursor() as cp, _abrir(local) as r, r.cursor() as cr:
+            return retratos(cp, schema), retratos(cr, schema)
+
+    def copiar(tabelas: list[str]) -> None:
+        if not tabelas:
+            print("nada a copiar")
+            return
+        _copiar_tabelas(local, principal, schema, tabelas, principal_antes)
+
+    principal_antes, reserva_antes = ler()
+    return executar_volta(
+        confirmacao=confirmacao, principal=principal_antes, reserva=reserva_antes,
+        copiar=copiar, reler=ler, acertar=lambda: _acertar_no(principal, schema),
+        remontar=lambda: _remontar(local, principal), soltar=lambda: _soltar(principal),
+        remonta=remonta)
+
+
+def _copiar_tabelas(local: str, principal: str, schema: str, tabelas: list[str],
+                    antes: dict[str, Retrato]) -> None:
+    with _abrir(local) as origem, origem.cursor() as co, _abrir(principal) as dest, dest.cursor() as cd:
+        for tabela in tabelas:
+            foto = antes.get(tabela)
+            if foto is None or foto.max_id is None:
+                print(f"  {tabela}: sem coluna id; a conferência acusa se o conteúdo divergir")
+                continue
+            pedacos = []
+            with co.copy(sql_linhas_novas(schema, tabela, foto.max_id)) as copiado:
+                while True:
+                    bloco = copiado.read()
+                    if not bloco:
+                        break
+                    pedacos.append(bloco)
+            dados = b"".join(pedacos)
+            if not dados:
+                continue
+            with cd.copy(f'COPY "{schema}"."{_tabela_valida(tabela)}" FROM STDIN') as gravar:
+                gravar.write(dados)
+            print(f"  {tabela}: linhas com id > {foto.max_id}")
+
+
+def _acertar_no(dsn: str, schema: str) -> None:
+    with _abrir(dsn) as pg, pg.cursor() as c:
+        n = acertar_sequencias(c, schema)
+    print(f"{n} sequência(s) acertadas no principal")
+
+
+def _soltar(principal: str) -> None:
+    with _abrir(principal) as pg, pg.cursor() as c:
+        soltar_somente_leitura(c)
+    print("principal pode gravar de novo")
+
+
+def _remontar(local: str, principal: str) -> None:
+    """Roda na reserva. A publicação no principal já tem de existir (sql-do-principal)."""
+    for comando in comandos_de_remontar(principal):
+        if comando.startswith("ALTER PUBLICATION"):
+            try:
+                with _abrir(principal) as pg, pg.cursor() as c:
+                    c.execute(comando)
+            except Exception as erro:  # noqa: BLE001 — publicação ausente: o SQL do principal a recria
+                print(f"publicação não ajustada ({erro}). Rode antes `sql-do-principal` no Windows.")
+            continue
+        try:
+            with _abrir(local) as pg, pg.cursor() as c:
+                c.execute(comando)
+        except Exception as erro:  # noqa: BLE001 — assinatura já caída: segue para recriar
+            if comando.startswith("CREATE SUBSCRIPTION") or comando.startswith("ALTER SUBSCRIPTION") and "ENABLE" in comando:
+                raise
+            print(f"passo já feito ou sem assinatura antiga: {comando.split()[0]} ({erro})")
+    print("assinatura cg_reserva recriada, sem copiar de novo as linhas já conferidas")
+
+
 # ------------------------------------------------------------------ linha de comando
 
 def main(argv: list[str] | None = None) -> int:
@@ -590,6 +906,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--confirmo", default="")
     p.add_argument("--principal-vivo", action="store_true",
                    help="o principal está no ar (troca planejada): o slot de lá também se apaga")
+    p = sub.add_parser("emergencia")
+    p.add_argument("--confirmo", default="")
+    p.add_argument("--dump", default="", help="arquivo do pg_dump da reserva")
+    p = sub.add_parser("voltar")
+    p.add_argument("--confirmo", default="")
+    p.add_argument("--remontar", action="store_true",
+                   help="recria a assinatura cg_reserva (tabelas do principal foram recriadas)")
     a = ap.parse_args(argv)
 
     if a.comando == "sql-do-principal":
@@ -605,6 +928,26 @@ def main(argv: list[str] | None = None) -> int:
         return situacao(local)
     if a.comando == "assumir":
         return assumir(local, a.schema, a.confirmo, a.principal_vivo)
+    if a.comando == "emergencia":
+        principal = _dsn("CG_RESERVA_PRINCIPAL_DSN", a.principal)
+        pasta = (a.dump or os.environ.get("CARTORIO_GESTAO_DATA") or "").strip()
+        if not pasta:
+            sys.exit("falta onde guardar o despejo: --dump ou CARTORIO_GESTAO_DATA")
+        destino = Path(pasta)
+        if destino.suffix.lower() not in {".dump", ".backup"}:
+            destino = destino / "contingencia" / "reserva.dump"
+        try:
+            return emergencia(local, principal, a.schema, a.confirmo, destino)
+        except TRAVA.ProducaoProtegida as erro:
+            print(f"Recuso: {erro}", file=sys.stderr)
+            return 2
+    if a.comando == "voltar":
+        principal = _dsn("CG_RESERVA_PRINCIPAL_DSN", a.principal)
+        try:
+            return voltar(local, principal, a.schema, a.confirmo, remonta=a.remontar)
+        except TRAVA.ProducaoProtegida as erro:
+            print(f"Recuso: {erro}", file=sys.stderr)
+            return 2
     if a.comando == "chaves":
         dados = (a.dados or os.environ.get("CARTORIO_GESTAO_DATA") or "").strip()
         if not dados:
@@ -620,7 +963,11 @@ def main(argv: list[str] | None = None) -> int:
         return copiar_pastas(local, a.schema, Path(base).expanduser(), mapa)
     principal = _dsn("CG_RESERVA_PRINCIPAL_DSN", a.principal)
     if a.comando == "montar":
-        montar(principal, local, a.schema, a.refazer)
+        try:
+            montar(principal, local, a.schema, a.refazer)
+        except TRAVA.ProducaoProtegida as erro:
+            print(f"Recuso: {erro}", file=sys.stderr)
+            return 2
         return 0
     if a.comando == "conferir":
         return conferir(principal, local, a.schema)

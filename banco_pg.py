@@ -1251,6 +1251,8 @@ def _carregar_gravacao_compartilhada() -> bool:
 
 
 def _esvaziar(c, schema: str) -> None:
+    from tools.trava_producao import exigir_schema_descartavel
+    exigir_schema_descartavel(schema, origem="banco_pg._esvaziar")
     semente = _SEMENTE["schema"]
     c.execute("SET session_replication_role = replica")   # sem gatilho de FK
     try:

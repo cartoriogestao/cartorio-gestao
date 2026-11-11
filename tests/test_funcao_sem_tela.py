@@ -728,6 +728,15 @@ ACHADAS_EM_30_10_2026: dict[str, str] = {
 }
 
 
+# 11/11/2026 — a contingência da reserva. O SQL que trava e solta a escrita do
+# principal é o botão de emergência, na linha de comando, de propósito sem tela:
+# quem o chama é `tools/reserva.py` (`emergencia` e `voltar`).
+ACHADAS_EM_11_11_2026: dict[str, str] = {
+    "sql_de_travar": "contingencia — a porta é `tools/reserva.py emergencia`",
+    "sql_de_soltar": "contingencia — a porta é `tools/reserva.py voltar`",
+}
+
+
 def _conhecidas() -> set[str]:
     """As medições datadas que formam o piso do varredor."""
     return (set(JA_SABIDAS) | set(NASCIDAS_DEPOIS_DA_3_6_51)
@@ -745,7 +754,8 @@ def _conhecidas() -> set[str]:
             | set(ACHADAS_EM_26_10_2026)
             | set(ACHADAS_EM_27_10_2026)
             | set(ACHADAS_EM_29_10_2026_REPASSE)
-            | set(ACHADAS_EM_30_10_2026))
+            | set(ACHADAS_EM_30_10_2026)
+            | set(ACHADAS_EM_11_11_2026))
 
 
 def test_nenhuma_funcao_nova_fica_sem_tela():

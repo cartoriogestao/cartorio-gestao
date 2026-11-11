@@ -4,4 +4,8 @@
 <div class="faixa-reserva" role="status">
   <strong>SERVIDOR RESERVA</strong> — {{ AVISO_RESERVA }}
 </div>
+{% elif CONTINGENCIA %}
+<div class="faixa-reserva" role="status">
+  <strong>SOMENTE LEITURA</strong> — {{ AVISO_CONTINGENCIA }}
+</div>
 {% endif %}

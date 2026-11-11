@@ -21,6 +21,8 @@ def test_o_sql_do_principal_e_idempotente_e_tem_as_travas():
     assert "WHERE NOT EXISTS (SELECT 1 FROM pg_publication" in sql
     assert "PASSWORD :'senha'" in sql and "senha=" not in sql.split("\n", 3)[3]
     assert "SUPERUSER" not in sql.upper()
+    assert "publish = 'insert, update, delete'" in sql
+    assert "truncate" not in sql.lower()
 
 
 @pytest.mark.parametrize("schema, dono", [("producao; drop", "cg"), ("producao", "cg x")])

@@ -54,6 +54,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import automacao_schema as SCH
+import contingencia as CONT
 from bd_nativo import banco
 
 RAIZ = Path(__file__).resolve().parent
@@ -823,6 +824,8 @@ def tique(db, *, agora: datetime | None = None,
     """
     agora = agora or datetime.now()
     lancar = lancar or lancar_corredor
+    if CONT.ativo(db):
+        return {"lancadas": [], "puladas": ["somente_leitura"], "recuperadas": [], "erros": []}
     dono = f"{os.getpid()}:{uuid.uuid4().hex[:8]}"
     with db.transaction() as con:
         SCH.init_automacao_schema(con)

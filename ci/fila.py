@@ -52,8 +52,10 @@ ROTULO_CONFLITO = "conflito"
 CONTEXTO_DA_SUITE = "suite"
 CONTEXTO_DO_MAIN_TESTADO = "suite-main"
 # O que muda tudo: se o main mexeu nisto depois do teste, o teste do PR venceu.
+# `ci/suite/` é o ambiente da suíte (imagem, script); a fila e os workflows não mudam
+# o resultado dos testes de um PR, e não entram aqui.
 ARQUIVOS_DE_BASE = ("requirements", "tests/conftest.py", "banco_pg.py", "bd_nativo.py",
-                    "app.py", "ci/", ".github/")
+                    "app.py", "ci/suite/")
 # O GitHub corta a lista de arquivos de uma comparação em 300: passou disso, não se sabe.
 LIMITE_DA_COMPARACAO = 300
 VERIFICACAO_ANTI_LEAK = "anti-leak"

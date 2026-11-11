@@ -60,7 +60,7 @@ enableOwnership`) exige conferir antes o acesso da reserva aos próprios arquivo
   decide se o teste ainda vale é a fila: a suíte testa o PR mesclado com o `main` daquele
   instante e grava esse `main` no status `suite-main`; se depois o `main` mexeu em arquivo
   do PR ou em arquivo de base (`ARQUIVOS_DE_BASE` em `ci/fila.py`: requirements,
-  `tests/conftest.py`, `banco_pg.py`, `bd_nativo.py`, `app.py`, `ci/`, `.github/`), a fila
+  `tests/conftest.py`, `banco_pg.py`, `bd_nativo.py`, `app.py`, `ci/suite/`), a fila
   atualiza a branch e testa de novo. Com o `strict` ligado a fila também funciona, só que
   refaz a suíte de todo PR a cada merge;
 - nem administrador passa por cima.

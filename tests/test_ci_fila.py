@@ -102,8 +102,11 @@ def test_sobrepoe_pelo_arquivo_do_pr_ou_pelo_de_base():
     assert not F.sobrepoe(["despesas.py", "templates/a.html"], ["wa_atendente.py"])
     assert F.sobrepoe(["despesas.py"], ["despesas.py", "tests/test_despesas.py"])
     for base in ("requirements.txt", "tests/conftest.py", "banco_pg.py", "app.py",
-                 "ci/fila.py", ".github/workflows/suite.yml"):
+                 "ci/suite/rodar.sh", "ci/suite/Dockerfile"):
         assert F.sobrepoe([base], ["wa_atendente.py"]), base
+    # A fila e os workflows não mudam o resultado dos testes de um PR.
+    for fora in ("ci/fila.py", ".github/workflows/suite.yml", "docs/CI_EXECUTOR.md"):
+        assert not F.sobrepoe([fora], ["wa_atendente.py"]), fora
     # Lista cortada: não se sabe, então refaz.
     assert F.sobrepoe(None, ["a.py"]) and F.sobrepoe(["a.py"], None)
 

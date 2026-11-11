@@ -479,6 +479,7 @@ def rodar_automacao(ctx) -> dict:
 CATALOGO = (
     {"codigo": "PORTAL_ENVIO", "nome": "Portal do cliente — enviar os protocolos à VPS",
      "setor": "GESTAO", "funcao": f"portal_cliente.{rodar_automacao.__name__}",
+     "robo_oficial": "ATENDIMENTO",
      "timeout_s": 600,
      "agenda": {"dias": [0, 1, 2, 3, 4, 5, 6], "intervalo_min": 15,
                 "janela": ["07:00", "20:00"]},

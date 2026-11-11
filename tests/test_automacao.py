@@ -158,6 +158,16 @@ def test_os_processos_de_fabrica_nascem_desligados_e_nao_duplicam(casa):
             "ROTINA_CONFERENCIA_DIARIA", "ROTINA_COMPLIANCE", "ROTINA_CENSEC_ENVIO"} <= codigos
     cra = next(p for p in todos if p["codigo"] == "PROTESTO_CRA")
     assert cra["agenda"]["horarios"] == ["11:30", "14:10"]
+    por = {p["codigo"]: p["robo_oficial"] for p in todos}
+    assert por["PROTESTO_CRA"] == "PROTESTO"
+    assert por["DESPESAS_PAGAR"] == "FINANCEIRO"
+    assert por["RI_CNIB_MINUTAS"] == "RI"
+    assert por["RI_ONR_CERTIDOES"] == "CARGAS_RI"
+    assert por["RCPN_EPROTOCOLO"] == "CARGAS_RCPN"
+    assert por["CASA_DISCO"] == "CASA"
+    assert por["MALOTE_CIENCIA_DIARIA"] == "MALOTE"
+    assert por["AVISOS_ANDAMENTO"] == "ATENDIMENTO"
+    assert por["ROTINA_CONFERENCIA_DIARIA"] == "GESTOR"
     de_fora = {s["alvo"] for s in PROC.sementes_de_outros_modulos()}
     assert all(p["alvo"] in PROC.CATALOGO or p["alvo"] in de_fora
                for p in todos if p["tipo"] == SCH.FUNCAO)
@@ -383,7 +393,8 @@ def test_o_resumo_do_dia_sai_uma_vez_a_partir_da_hora_e_so_com_problema(casa, mo
     AU._resumo_do_dia(db, dia.replace(hour=8, minute=0), None)
     assert len(enviados) == 1
     assunto, corpo = enviados[0]
-    assert "2 processos" in assunto
+    assert "1 parou, 1 pendência" in assunto
+    assert "Parou" in corpo and "Pede gente hoje" in corpo
     nome_backup = _processo(db, "CASA_BACKUP")["nome"]
     nome_disco = _processo(db, "CASA_DISCO")["nome"]
     assert corpo.index(nome_backup) < corpo.index(nome_disco)       # o erro antes do aviso
@@ -399,6 +410,82 @@ def test_o_resumo_do_dia_sai_uma_vez_a_partir_da_hora_e_so_com_problema(casa, mo
     _finalizar(db, "CASA_DISCO", SCH.OK, dia + timedelta(hours=10))
     AU._resumo_do_dia(db, dia.replace(hour=8) + timedelta(days=1), None)
     assert len(enviados) == 1
+
+
+def test_falta_de_cadastro_nao_vira_e_mail_de_pane(casa, monkeypatch):
+    # 11/11/2026: credencial ou caminho faltando, todo dia, lia-se como «está
+    # tudo errado». Continua no painel e na tarefa; o e-mail do dia não leva.
+    db = casa["db"]
+    enviados = []
+    monkeypatch.setitem(AV.ENVIO, "email", lambda cfg, senha, **k: enviados.append(k["assunto"]))
+    with db.transaction() as con:
+        SCH.gravar_config(con, SCH.CHAVE_SMTP_HOST, "smtp.exemplo.invalid")
+        SCH.gravar_config(con, SCH.CHAVE_EMAIL_DESTINO, "oficial@exemplo.invalid")
+        SCH.gravar_config(con, SCH.CHAVE_RESUMO_HORA, "8")
+    _ligar(db, "RI_WSOFICIO", SEG - timedelta(days=1))
+    p = _processo(db, "RI_WSOFICIO")
+    with db.transaction() as con:
+        e = AU._criar_execucao(con, p, disparo=SCH.MANUAL, agendada_para=None, quem="t", agora=SEG)
+    AU.finalizar(db, e, {"situacao": SCH.AVISO, "erro": "credencial não cadastrada",
+                         "relato": "A credencial da WSOfício não está cadastrada."}, agora=SEG)
+    AU._resumo_do_dia(db, SEG.replace(hour=8), None)
+    assert enviados == []
+    with db.connect() as con:
+        assert AU.contar_problemas(con) == 1
+        assert AV.quadros(con, so_ligados=True)[AV.SEM_ARRANJO][0]["codigo"] == "RI_WSOFICIO"
+
+
+def test_o_cofre_trancado_sai_como_um_aviso_so(casa, monkeypatch):
+    db = casa["db"]
+    enviados = []
+    monkeypatch.setitem(AV.ENVIO, "email",
+                        lambda cfg, senha, **k: enviados.append((k["assunto"], k["corpo"])))
+    with db.transaction() as con:
+        SCH.gravar_config(con, SCH.CHAVE_SMTP_HOST, "smtp.exemplo.invalid")
+        SCH.gravar_config(con, SCH.CHAVE_EMAIL_DESTINO, "oficial@exemplo.invalid")
+        SCH.gravar_config(con, SCH.CHAVE_RESUMO_HORA, "8")
+    dia = SEG.replace(hour=8)
+    for codigo in ("CASA_BACKUP", "DESPESAS_PAGAR"):
+        _ligar(db, codigo, dia - timedelta(days=1))
+        _finalizar(db, codigo, SCH.AVISO, dia - timedelta(hours=1),
+                   "Cofre trancado: a senha-mestra não foi digitada desde que a máquina ligou.")
+    AU._resumo_do_dia(db, dia, None)
+    assert len(enviados) == 1
+    assunto, corpo = enviados[0]
+    assert "cofre está trancado" in assunto
+    assert "parou" not in assunto and "Parou" not in corpo
+    assert _processo(db, "CASA_BACKUP")["nome"] in corpo
+    assert _processo(db, "DESPESAS_PAGAR")["nome"] in corpo
+
+
+def test_o_resumo_agrupa_pelo_robo_e_nao_soma_como_se_tudo_tivesse_parado(casa, monkeypatch):
+    db = casa["db"]
+    enviados = []
+    monkeypatch.setitem(AV.ENVIO, "email",
+                        lambda cfg, senha, **k: enviados.append((k["assunto"], k["corpo"])))
+    with db.transaction() as con:
+        SCH.gravar_config(con, SCH.CHAVE_SMTP_HOST, "smtp.exemplo.invalid")
+        SCH.gravar_config(con, SCH.CHAVE_EMAIL_DESTINO, "oficial@exemplo.invalid")
+        SCH.gravar_config(con, SCH.CHAVE_RESUMO_HORA, "8")
+        banco(con).escrever("UPDATE au_processos SET robo_oficial=NULL WHERE codigo='PROTESTO_CRA'")
+    dia = SEG.replace(hour=8)
+    _ligar(db, "PROTESTO_CRA", dia - timedelta(days=1))
+    _ligar(db, "PROTESTO_CENPROT", dia - timedelta(days=1))
+    _finalizar(db, "PROTESTO_CRA", SCH.AVISO, dia - timedelta(hours=2),
+               "Ninguém baixou a remessa da CRA hoje até as 14:10.")
+    _finalizar(db, "PROTESTO_CENPROT", SCH.ERRO, dia - timedelta(hours=1),
+               "A CENPROT não respondeu.")
+    assert PROC.robo_que_responde(_processo(db, "PROTESTO_CRA")) == "PROTESTO"
+    AU._resumo_do_dia(db, dia, None)
+    assunto, corpo = enviados[0]
+    assert "1 parou, 1 pendência" in assunto
+    assert PROC.nome_do_robo("PROTESTO") in corpo
+    assert corpo.index("Parou") < corpo.index("A CENPROT não respondeu") < corpo.index("Pede gente hoje")
+    assert corpo.index("Pede gente hoje") < corpo.index("Ninguém baixou a remessa")
+    import oficial_robos
+    with db.connect() as con:
+        batida = oficial_robos.ultima_batida(con, "PROTESTO")
+    assert batida and batida["situacao"] == "ERRO" and batida["resumo"]["processo"] == "PROTESTO_CENPROT"
 
 
 def test_o_resumo_desligado_nao_sai_e_a_falha_nao_repete_a_cada_minuto(casa, monkeypatch):
@@ -726,6 +813,10 @@ def test_as_telas_abrem_para_o_admin(casa):
         r = c.get(url)
         assert r.status_code == 200, url
     assert "disco apertado" in c.get(f"/automacao/execucoes/{e['id']}").get_data(as_text=True)
+    lista = c.get("/automacao").get_data(as_text=True)
+    assert "5. Protesto" in lista and "Casa" in lista
+    assert lista.index("5. Protesto") < lista.index("CRA — a remessa do dia foi baixada?")
+    assert "Pede gente hoje" in lista and "Parou" not in lista
     assert "Automação (rotinas)" in c.get("/").get_data(as_text=True)
 
 

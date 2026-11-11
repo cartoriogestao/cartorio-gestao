@@ -552,6 +552,7 @@ def painel(con, agora: datetime | None = None) -> list[dict]:
                             WHERE situacao <> %s GROUP BY processo_id)""", (SCH.PULADA,))}
     rodando = {r["processo_id"] for r in bd.ler(
         "SELECT processo_id FROM au_execucoes WHERE situacao=%s", (SCH.RODANDO,))}
+    import automacao_processos as PROC
     saida = []
     for p in listar(con):
         ultima = _decodificar_execucao(ultimas.get(p["id"]))
@@ -566,11 +567,14 @@ def painel(con, agora: datetime | None = None) -> list[dict]:
             luz = "nunca"
         else:
             luz = {SCH.OK: "ok", SCH.AVISO: "atencao"}.get(ultima["situacao"], "problema")
+        robo = PROC.robo_que_responde(p)
         saida.append({**p, "ultima": ultima, "proxima": _iso(proxima),
                       "agenda_texto": descrever_agenda(p["agenda"]), "luz": luz,
                       "rodando": p["id"] in rodando,
                       "na_fila": bool(p.get("pedido_manual_em")),
-                      "nome_do_tipo": SCH.NOME_DO_TIPO.get(p["tipo"], p["tipo"])})
+                      "nome_do_tipo": SCH.NOME_DO_TIPO.get(p["tipo"], p["tipo"]),
+                      "robo": robo, "robo_nome": PROC.nome_do_robo(robo)})
+    saida.sort(key=lambda linha: (PROC.ordem_do_robo(linha["robo"]), linha["nome"]))
     return saida
 
 
@@ -941,8 +945,13 @@ def finalizar(db, execucao_id: int, resultado: dict, *, agora: datetime | None =
 
 
 def _bater_no_quadro_dos_robos(db, processo: dict, e: dict) -> None:
-    """A tela antiga dos robôs continua dizendo a verdade (`oficial_robos.bater`)."""
-    robo = (processo or {}).get("robo_oficial")
+    """A tela antiga dos robôs continua dizendo a verdade (`oficial_robos.bater`).
+
+    O robô é o gravado no processo ou, vazio, o de fábrica. Vazio não significa
+    «este processo não é de robô nenhum».
+    """
+    import automacao_processos as PROC
+    robo = PROC.robo_que_responde(processo)
     if not robo or e["situacao"] == SCH.PULADA:
         return
     situacao = {SCH.OK: "OK", SCH.AVISO: "AVISO"}.get(e["situacao"], "ERRO")

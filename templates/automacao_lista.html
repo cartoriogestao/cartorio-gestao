@@ -22,24 +22,50 @@
     {% if not cofre.aberto %}<span class="small muted">— os processos que usam credencial ficam em «cofre trancado».</span>{% endif %}</p>
 </section>
 
-{% if problemas %}
+{% macro lista_de(itens) %}
+<ul>
+{% for p in itens %}<li><a href="{{ url_for('automacao_processo', processo_id=p.id) }}">{{ p.nome }}</a>
+  <span class="small muted">· {{ p.robo_nome }}</span>
+  — <span class="badge {{ selo(p.situacao).classe }}">{{ p.selo }}</span>
+  desde {{ p.desde }}</li>{% endfor %}
+</ul>
+{% endmacro %}
+{% if quadros.parou or quadros.pede_gente or quadros.cofre or quadros.sem_arranjo %}
 <section class="panel">
-  <div class="panel-head"><h2>Problemas em aberto ({{ problemas|length }})</h2></div>
-  <ul>
-  {% for p in problemas %}<li><a href="{{ url_for('automacao_processo', processo_id=p.id) }}">{{ p.nome }}</a>
-    — <span class="badge {{ selo(p.alerta_situacao).classe }}">{{ selo(p.alerta_situacao).texto }}</span>
-    desde {{ (p.alerta_desde or '')[:16]|replace('T', ' ') }}</li>{% endfor %}
-  </ul>
+  <div class="panel-head"><h2>O que os robôs deixaram</h2></div>
+  {% if quadros.parou %}
+  <h3>Parou ({{ quadros.parou|length }})</h3>
+  <p class="small muted">Isto não funcionou.</p>
+  {{ lista_de(quadros.parou) }}
+  {% endif %}
+  {% if quadros.pede_gente %}
+  <h3>Pede gente hoje ({{ quadros.pede_gente|length }})</h3>
+  <p class="small muted">O robô rodou e achou trabalho.</p>
+  {{ lista_de(quadros.pede_gente) }}
+  {% endif %}
+  {% if quadros.cofre %}
+  <h3>Cofre trancado ({{ quadros.cofre|length }})</h3>
+  <p class="small muted">Não mediram. Abra o cofre na máquina do servidor; não é uma pane de cada processo.</p>
+  {{ lista_de(quadros.cofre) }}
+  {% endif %}
+  {% if quadros.sem_arranjo %}
+  <h3>Ainda sem cadastro ({{ quadros.sem_arranjo|length }})</h3>
+  <p class="small muted">Falta credencial ou caminho. Não entra no e-mail do dia.</p>
+  {{ lista_de(quadros.sem_arranjo) }}
+  {% endif %}
 </section>
 {% endif %}
 
 <section class="panel">
   <div class="panel-head"><h2>Processos</h2></div>
-  <p class="small muted">Todo processo nasce <strong>desligado</strong>. «Pode agir» é o oficial liberando o
-    processo a gravar sozinho; desligado, ele só lê e propõe.</p>
+  <p class="small muted">Todo processo nasce <strong>desligado</strong>, agrupado pelo robô da casa.
+    «Pode agir» é o oficial liberando o processo a gravar sozinho; desligado, ele só lê e propõe.</p>
   <div class="table-wrap"><table><thead><tr><th>Luz</th><th>Processo</th><th>Setor</th><th>Agenda</th>
     <th>Última rodada</th><th>Próxima</th><th>Ligado</th></tr></thead><tbody>
   {% for l in linhas %}
+  {% if loop.first or l.robo_nome != loop.previtem.robo_nome %}
+  <tr><td colspan="7"><strong>{{ l.robo_nome }}</strong></td></tr>
+  {% endif %}
   <tr>
     <td>{% if l.luz == 'ok' %}<span class="badge ok">ok</span>{% elif l.luz == 'atencao' %}<span class="badge media">atenção</span>{% elif l.luz == 'problema' %}<span class="badge critica">problema</span>{% elif l.luz == 'rodando' %}<span class="badge">rodando</span>{% else %}<span class="badge">nunca rodou</span>{% endif %}</td>
     <td><a href="{{ url_for('automacao_processo', processo_id=l.id) }}">{{ l.nome }}</a>

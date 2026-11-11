@@ -95,3 +95,7 @@ e, se quiser, apague o usuário: `sudo sysadminctl -deleteUser ci-runner`.
   no contêiner e pela fila foi o de ensaio que acrescentou esta linha.
 - 11/11/2026: pôr um rótulo num PR (o `nao-mesclar`, por exemplo) cancelava a suíte que já corria
   nele — a concorrência estava no workflow, e todo evento entrava no grupo. Passou para o job.
+- 11/11/2026: um PR verde ficava travado para sempre quando uma rodada da suíte era cancelada.
+  O job também se chamava `suite`: a verificação cancelada ficava no commit do PR, a rodada nova da
+  fila (por `workflow_dispatch`) ia para o commit do main, e a regra do main via a cancelada. O job
+  passou a se chamar «suíte no contêiner»; a exigência `suite` fica só com o status (PR #408).

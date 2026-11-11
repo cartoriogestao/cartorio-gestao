@@ -6,14 +6,19 @@ voltar. Nada disto roda sozinho: o oficial aprova e só então liga.
 ## Antes de ligar (uma vez, no Windows, com superusuário)
 
 1. Ler `installer/sql/travas_da_producao.sql`.
-2. Rodar esse arquivo no PostgreSQL da casa. Ele liga o log de DDL e de
+2. Conferir que `producao.nu_ferj_ferc_aviso_dispensa` não existe.
+   `nu_avisos_gestao.py` ainda roda `DROP TABLE IF EXISTS` dessa tabela ao
+   preparar o banco. Se ela existir, a trava recusa o comando e a preparação
+   para. Apague-a antes do SQL. Se já não existir, o `IF EXISTS` não apaga
+   nada e a trava não dispara.
+3. Rodar esse arquivo no PostgreSQL da casa. Ele liga o log de DDL e de
    conexões, cria a marca de somente leitura, impede apagar o schema
    `producao`, apagar tabela dele e esvaziá-la. O esvaziamento não cabe num
    gatilho de evento: cada tabela da casa ganha um gatilho, e tabela criada
    depois também. A publicação, à parte, não leva esvaziamento. Se uma
    tentativa anterior parou em `filter value "TRUNCATE" not recognized`,
    rode o arquivo de novo: ele completa o que faltou.
-3. No Mac, o `reserva.env` continua com `CG_MODO_RESERVA=1`. Sem isso, o
+4. No Mac, o `reserva.env` continua com `CG_MODO_RESERVA=1`. Sem isso, o
    `montar` recusa a porta 5434 — no Windows essa porta é a produção; no Mac,
    com o modo reserva, é a cópia.
 

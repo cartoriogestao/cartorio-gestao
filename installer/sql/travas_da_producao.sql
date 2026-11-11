@@ -7,6 +7,10 @@
 -- Idempotente. Se uma tentativa anterior parou no erro
 -- «filter value TRUNCATE not recognized», rode de novo: o que faltou entra agora.
 --
+-- Antes: confira que producao.nu_ferj_ferc_aviso_dispensa não existe.
+-- nu_avisos_gestao.py ainda faz DROP TABLE IF EXISTS nela ao preparar o banco.
+-- Se a tabela existir, a trava recusa e a preparação para. Apague-a antes.
+--
 -- O PostgreSQL não tem gatilho de evento para TRUNCATE. Esvaziar a tabela da
 -- casa é recusado por um gatilho comum, em cada tabela do schema, e também
 -- nas tabelas criadas depois. A publicação, à parte, não leva esvaziamento.

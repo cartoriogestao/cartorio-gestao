@@ -1065,13 +1065,13 @@ def test_cns_de_outra_serventia_fica_retido(casa):
     a Carga» — 11/11/2026."""
     import rc_matricula as RCM
     con = _con(casa)
-    outra = RCM.compor(cns="111111", ano=2026, livro_tipo="1",
+    outra = RCM.compor(cns="999998", ano=2026, livro_tipo="1",
                        livro=1, folha=1, termo=9)
     with con:
         aid = _nascimento(con, matricula=outra, numero=9)
     r = CRC.montar(con, [aid], cns=CNS)
     assert r["quantos"] == 0
-    assert "111111" in r["retidos"][0]["faltas"][0]
+    assert "999998" in r["retidos"][0]["faltas"][0]
     assert "000000" in r["retidos"][0]["faltas"][0]
 
 

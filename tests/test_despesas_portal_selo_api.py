@@ -11,7 +11,7 @@ import despesas_inter as INTER
 import despesas_portal_selo as PS
 from tests.test_despesas import InterFalso, CAMPOS
 from tests.test_despesas_fluidez import _token
-from tests.test_despesas_portal_selo_unidade import texto, pdf_original, pix, CHAVE_DO_FUNDO, DOMINIO_DO_QR
+from tests.test_despesas_portal_selo_unidade import texto, pdf_original, pix, CHAVE_DO_FUNDO, DOMINIO_DO_QR, CIDADE_DO_QR
 
 BASE = '/administrativo/despesas/portal-selo'
 
@@ -22,10 +22,10 @@ def _post(c, fundo='FERJ', *, pdf=None, **extras):
     return c.post(BASE, data=dados, headers={'Accept': 'application/json'})
 
 
-def _recebedores(db, ferj=CHAVE_DO_FUNDO, ferc=CHAVE_DO_FUNDO):
+def _recebedores(db, ferj=CHAVE_DO_FUNDO, ferc=CHAVE_DO_FUNDO, cidade=CIDADE_DO_QR):
     with db.transaction() as con:
         DP.gravar_configuracao(con, {**DP.configuracao(con), 'despesas_pix_ferj': ferj,
-                                     'despesas_pix_ferc': ferc})
+                                     'despesas_pix_ferc': ferc, 'despesas_pix_cidade': cidade})
 
 
 def test_conferir_nao_cadastra_e_commit_e_idempotente_com_anexo(cg_casa_logada):
@@ -244,7 +244,8 @@ def test_excecao_nao_permite_enviar_sem_passar_pela_preparacao_e_tetos(cg_casa_l
 
 # --- O Pix do QR code da guia (FERJ/FERC, 10/11/2026) -------------------------------
 
-@pytest.mark.parametrize('caso', ['sem_qr', 'outra_chave', 'sem_recebedor_conferido', 'dinamico_outro_dominio'])
+@pytest.mark.parametrize('caso', ['sem_qr', 'outra_chave', 'sem_recebedor_conferido', 'dinamico_outro_dominio',
+                                  'dinamico_outra_conta'])
 def test_pix_sem_recebedor_conferido_espera_o_oficial_e_nao_vai_ao_banco(cg_casa_logada, caso):
     c, db = cg_casa_logada['c'], cg_casa_logada['db']
     _preparar_executor(db)
@@ -252,9 +253,13 @@ def test_pix_sem_recebedor_conferido_espera_o_oficial_e_nao_vai_ao_banco(cg_casa
            'outra_chave': pdf_original('FERJ', pix(chave='fundo@outro.test')),
            'sem_recebedor_conferido': pdf_original('FERJ'),
            'dinamico_outro_dominio': pdf_original('FERJ', pix(valor=None, url='qr.outro-banco.test/cobv/1')),
+           'dinamico_outra_conta': pdf_original('FERJ', pix(url=DOMINIO_DO_QR + '/cobv/1', nome='LOJA EXEMPLO',
+                                                            cidade=CIDADE_DO_QR)),
            }[caso]
     if caso == 'sem_recebedor_conferido':
         _recebedores(db, ferj='')
+    if caso == 'dinamico_outra_conta':   # o domínio do banco confere; o nome não
+        _recebedores(db, ferj=DOMINIO_DO_QR)
     with patch.object(PS, 'esperado_dos_selos', return_value=12345), patch('automacao.pedir_rodada') as pedir:
         r = _post(c, pdf=pdf).get_json()
         pedir.assert_not_called()
@@ -273,7 +278,7 @@ def test_qr_dinamico_do_dominio_conferido_sai_sozinho(cg_casa_logada):
     c, db = cg_casa_logada['c'], cg_casa_logada['db']
     _preparar_executor(db)
     _recebedores(db, ferj=DOMINIO_DO_QR)
-    dinamico = pix(valor=None, url=DOMINIO_DO_QR + '/cobv/guia-ficticia')
+    dinamico = pix(valor=None, url=DOMINIO_DO_QR + '/cobv/guia-ficticia', nome='FERJ', cidade=CIDADE_DO_QR)
     with patch.object(PS, 'esperado_dos_selos', return_value=12345), patch('automacao.pedir_rodada'):
         r = _post(c, pdf=pdf_original('FERJ', dinamico)).get_json()
     assert r['situacao'] == DP.AUTORIZADA

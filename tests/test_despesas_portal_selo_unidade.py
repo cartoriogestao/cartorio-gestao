@@ -34,17 +34,18 @@ def texto(fundo='FERJ'):
 # Recebedor fictício do Pix dos fundos (o CNPJ de teste dos favorecidos).
 CHAVE_DO_FUNDO = '00000010000127'
 DOMINIO_DO_QR = 'qrpix.banco-exemplo.test'
+CIDADE_DO_QR = 'CIDADE_EXEMPLO'
 PADRAO = 'padrão'
 
 
-def pix(valor=12345, chave=CHAVE_DO_FUNDO, url=None):
+def pix(valor=12345, chave=CHAVE_DO_FUNDO, url=None, nome='FUNDO EXEMPLO', cidade='CIDADE EXEMPLO'):
     """Pix copia e cola fictício, com CRC válido (estático com chave, ou dinâmico com URL)."""
     def tlv(campo, v):
         return f'{campo}{len(v):02d}{v}'
     conta = tlv('00', 'br.gov.bcb.pix') + (tlv('25', url) if url else tlv('01', chave))
     corpo = (tlv('00', '01') + tlv('26', conta) + tlv('52', '0000') + tlv('53', '986')
              + (tlv('54', f'{valor / 100:.2f}') if valor is not None else '')
-             + tlv('58', 'BR') + tlv('59', 'FUNDO EXEMPLO') + tlv('60', 'CIDADE EXEMPLO')
+             + tlv('58', 'BR') + tlv('59', nome) + tlv('60', cidade)
              + tlv('62', tlv('05', '***')) + '6304')
     return corpo + DP._crc16(corpo.encode())
 
@@ -120,11 +121,21 @@ class Guias(unittest.TestCase):
                                  DP.AGUARDANDO)
 
     def test_recebedor_do_pix_por_chave_ou_dominio(self):
-        cfg = {'despesas_pix_ferj': CHAVE_DO_FUNDO, 'despesas_pix_ferc': DOMINIO_DO_QR}
-        dinamico = pix(valor=None, url=DOMINIO_DO_QR + '/cobv/abc123')
+        cfg = {'despesas_pix_ferj': CHAVE_DO_FUNDO, 'despesas_pix_ferc': DOMINIO_DO_QR,
+               'despesas_pix_cidade': 'Cidade Exemplo'}
+        dinamico = pix(valor=None, url=DOMINIO_DO_QR + '/cobv/abc123', nome='FERC', cidade=CIDADE_DO_QR)
         self.assertEqual(DP.pix_do_fundo_confere(cfg, 'FUNDO_FERJ', pix()), '')
         self.assertEqual(DP.pix_do_fundo_confere(cfg, 'FUNDO_FERC', dinamico), '')
-        self.assertEqual(DP.pix_do_fundo_confere(cfg, 'FUNDO_FERC', pix(valor=None, url='https://' + DOMINIO_DO_QR + ':443/x')), '')
+        self.assertEqual(DP.pix_do_fundo_confere(cfg, 'FUNDO_FERC', pix(
+            valor=None, url='https://' + DOMINIO_DO_QR + ':443/x', nome='ferc', cidade='Cidade Exemplo')), '')
+        # Mesmo domínio do banco, mas outra conta: outro nome, outra cidade, ou cidade não conferida.
+        for outro, motivo in ((pix(url=DOMINIO_DO_QR + '/cobv/1', nome='LOJA EXEMPLO', cidade=CIDADE_DO_QR), 'apresenta'),
+                              (pix(url=DOMINIO_DO_QR + '/cobv/1', nome='FERJ', cidade=CIDADE_DO_QR), 'apresenta'),
+                              (pix(url=DOMINIO_DO_QR + '/cobv/1', nome='FERC', cidade='OUTRA CIDADE'), 'cidade')):
+            with self.subTest(motivo=motivo):
+                self.assertIn(motivo, DP.pix_do_fundo_confere(cfg, 'FUNDO_FERC', outro))
+        self.assertIn('Falta conferir a cidade', DP.pix_do_fundo_confere(
+            {**cfg, 'despesas_pix_cidade': ''}, 'FUNDO_FERC', dinamico))
         for categoria, payload in (('FUNDO_FERJ', pix(chave='fundo@outro.test')),
                                    ('FUNDO_FERJ', dinamico),
                                    ('FUNDO_FERC', pix(valor=None, url='qrpix.banco-exemplo.test.golpe.test/cobv/1')),

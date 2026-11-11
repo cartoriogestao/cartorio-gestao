@@ -164,6 +164,11 @@ PADRAO: dict[str, str] = {
     # estático) ou o domínio do banco que gera o QR dinâmico; vazio, nada sai sozinho.
     "despesas_pix_ferj": "",
     "despesas_pix_ferc": "",
+    # O QR dinâmico do Banco do Brasil (guia real do FERRFIS, 11/11/2026) não traz chave:
+    # o domínio só prova que a cobrança é do BB. Exige-se também que ele se apresente
+    # como o fundo (campo 59) e na cidade do Tribunal (campo 60) — ver
+    # `pix_do_fundo_confere`.
+    "despesas_pix_cidade": "",
 }
 ROTULOS: dict[str, str] = {
     "despesas_pagamento_ligado": "Pagamento automático ligado",
@@ -175,6 +180,7 @@ ROTULOS: dict[str, str] = {
     "despesas_aliquota_iss": "Alíquota do ISS do município (%), para a estimativa do balanço",
     "despesas_pix_ferj": "Recebedor do Pix do FERJ (chave conferida, ou domínio do QR dinâmico)",
     "despesas_pix_ferc": "Recebedor do Pix do FERC (chave conferida, ou domínio do QR dinâmico)",
+    "despesas_pix_cidade": "Cidade que o QR dinâmico das guias informa (a do Tribunal)",
 }
 PIX_DOS_FUNDOS = {"FUNDO_FERJ": "despesas_pix_ferj", "FUNDO_FERC": "despesas_pix_ferc"}
 AMBIENTES = {"sandbox": "Teste (sandbox do Inter, sem dinheiro de verdade)",
@@ -575,9 +581,22 @@ def pix_do_fundo_confere(cfg: Mapping[str, str], categoria: str, payload: Any) -
             pass
         return "A chave do Pix da guia não é a conferida para o fundo."
     if lido["url"]:
-        if _dominio_do_qr(lido["url"]) == configurado:
-            return ""
-        return "O QR dinâmico da guia é de outro domínio que não o conferido para o fundo."
+        if _dominio_do_qr(lido["url"]) != configurado:
+            return "O QR dinâmico da guia é de outro domínio que não o conferido para o fundo."
+        # O domínio é do BANCO, e qualquer cliente dele gera QR ali (11/11/2026). O QR
+        # do fundo se apresenta como o fundo e na cidade do Tribunal: o de outra conta
+        # do mesmo banco, colado numa guia, não. Não é a prova final (o recebedor só
+        # vem assinado pelo banco na hora de pagar, e a casa o confere depois), mas
+        # barra o QR trocado.
+        fundo = categoria.removeprefix("FUNDO_")
+        if nome_do_recebedor(lido["nome"]) != nome_do_recebedor(fundo):
+            return f"O QR dinâmico da guia não se apresenta como {fundo}."
+        cidade = nome_do_recebedor(cfg.get("despesas_pix_cidade"))
+        if not cidade:
+            return "Falta conferir a cidade do QR dinâmico das guias (Despesas → Configuração)."
+        if nome_do_recebedor(lido["cidade"]) != cidade:
+            return "O QR dinâmico da guia é de outra cidade que não a conferida."
+        return ""
     return "O Pix da guia não traz chave nem endereço de cobrança."
 
 

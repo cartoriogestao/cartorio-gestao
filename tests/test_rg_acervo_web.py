@@ -21,7 +21,7 @@ from tests.conftest import cg_login  # noqa: E402
 PDF = (b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
        b"trailer<</Root 1 0 R>>\n%%EOF\n")
 SENHA = "Senha#12345"
-CNPJ = "00.000.000/0001-91"
+CNPJ = "00.000.043/0001-77"
 
 
 def _token(html: str) -> str:

@@ -33,7 +33,7 @@ SV = {
     "serventia_titulo": "Tabelião e Oficial de Registro",
     "ri_cns": "000000", "ri_cidade": "Cidade Exemplo", "ri_uf": "MA",
 }
-CNPJ = "00000000000191"
+CNPJ = "00000043000177"
 TEOR = ("Estatuto de exemplo, trasladado do livro físico, sem dado de "
         "pessoa real.")
 

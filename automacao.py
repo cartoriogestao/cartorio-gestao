@@ -626,17 +626,6 @@ def painel(con, agora: datetime | None = None) -> list[dict]:
     return saida
 
 
-def problemas_atuais(con) -> list[dict]:
-    """Os processos com problema em aberto (o alerta já saiu e ainda não normalizou)."""
-    return [_decodificar(r) for r in banco(con).ler(
-        "SELECT * FROM au_processos WHERE alerta_desde IS NOT NULL ORDER BY alerta_desde")]
-
-
-def contar_problemas(con) -> int:
-    return int(banco(con).valor(
-        "SELECT COUNT(*) FROM au_processos WHERE alerta_desde IS NOT NULL") or 0)
-
-
 def batida_do_despachante(con, agora: datetime | None = None) -> dict:
     """Quando foi o último tique, e se está atrasado (mais de cinco minutos)."""
     agora = agora or datetime.now()

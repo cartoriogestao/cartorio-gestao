@@ -35,6 +35,12 @@ SENHA = "Senha#12345"
 SEG = datetime(2026, 10, 26, 9, 0)        # uma segunda-feira
 
 
+def _com_alerta(con) -> int:
+    """Processos com alerta em aberto. O painel conta pelos quadros do aviso; o teste olha a coluna."""
+    return int(banco(con).valor(
+        "SELECT COUNT(*) FROM au_processos WHERE alerta_desde IS NOT NULL") or 0)
+
+
 # ------------------------------------------------------------------ a agenda (sem banco)
 
 
@@ -352,7 +358,7 @@ def test_o_aviso_sai_na_transicao_e_lembra_a_cada_n_horas(casa, monkeypatch):
     with db.connect() as con:
         t = banco(con).um("SELECT status FROM tasks WHERE id=%s", (abertas[0]["id"],))
         p = AU.por_codigo(con, "CASA_BACKUP")
-        assert AU.contar_problemas(con) == 0
+        assert _com_alerta(con) == 0
     assert t["status"] == "CONCLUIDA" and p["alerta_desde"] is None
     assert SCH.NORMALIZOU in {a["motivo"] for a in _avisos(db, "CASA_BACKUP")}
 
@@ -448,7 +454,7 @@ def test_falta_de_cadastro_nao_vira_e_mail_de_pane(casa, monkeypatch):
     AU._resumo_do_dia(db, SEG.replace(hour=8), None)
     assert enviados == []
     with db.connect() as con:
-        assert AU.contar_problemas(con) == 1
+        assert _com_alerta(con) == 1
         assert AV.quadros(con, so_ligados=True)[AV.SEM_ARRANJO][0]["codigo"] == "RI_WSOFICIO"
 
 

@@ -4,7 +4,12 @@
 --
 --   psql -h 127.0.0.1 -p 5434 -d cartorio -f installer/sql/travas_da_producao.sql
 --
--- Idempotente.
+-- Idempotente. Se uma tentativa anterior parou no erro
+-- «filter value TRUNCATE not recognized», rode de novo: o que faltou entra agora.
+--
+-- O PostgreSQL não tem gatilho de evento para TRUNCATE. Esvaziar a tabela da
+-- casa é recusado por um gatilho comum, em cada tabela do schema, e também
+-- nas tabelas criadas depois. A publicação, à parte, não leva esvaziamento.
 
 \set ON_ERROR_STOP on
 
@@ -54,9 +59,6 @@ AS $$
 DECLARE
   obj record;
 BEGIN
-  IF tg_tag = 'TRUNCATE' THEN
-    RAISE EXCEPTION 'recusado: esvaziar tabela no banco da produção';
-  END IF;
   IF tg_event = 'sql_drop' THEN
     FOR obj IN SELECT * FROM pg_event_trigger_dropped_objects()
     LOOP
@@ -70,16 +72,70 @@ BEGIN
   END IF;
 END $$;
 
+-- O nome antigo era um gatilho de evento em TRUNCATE, que o PostgreSQL recusa.
 DROP EVENT TRIGGER IF EXISTS cg_recusar_truncate;
-CREATE EVENT TRIGGER cg_recusar_truncate
-  ON ddl_command_start
-  WHEN TAG IN ('TRUNCATE')
-  EXECUTE FUNCTION public.cg_recusar_ddl_destrutivo();
 
 DROP EVENT TRIGGER IF EXISTS cg_recusar_drop;
 CREATE EVENT TRIGGER cg_recusar_drop
   ON sql_drop
   EXECUTE FUNCTION public.cg_recusar_ddl_destrutivo();
+
+CREATE OR REPLACE FUNCTION public.cg_recusar_esvaziar()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION 'recusado: esvaziar tabela no banco da produção';
+END $$;
+
+CREATE OR REPLACE FUNCTION public.cg_ligar_trava_de_esvaziar()
+RETURNS event_trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  cmd record;
+BEGIN
+  FOR cmd IN
+    SELECT schema_name, object_type, objid
+      FROM pg_event_trigger_ddl_commands()
+     WHERE object_type = 'table' AND schema_name = 'producao'
+  LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_trigger
+       WHERE tgrelid = cmd.objid AND tgname = 'cg_recusar_esvaziar'
+    ) THEN
+      EXECUTE format(
+        'CREATE TRIGGER cg_recusar_esvaziar BEFORE TRUNCATE ON %s '
+        'FOR EACH STATEMENT EXECUTE FUNCTION public.cg_recusar_esvaziar()',
+        cmd.objid::regclass);
+    END IF;
+  END LOOP;
+END $$;
+
+DROP EVENT TRIGGER IF EXISTS cg_ligar_trava_de_esvaziar;
+CREATE EVENT TRIGGER cg_ligar_trava_de_esvaziar
+  ON ddl_command_end
+  WHEN TAG IN ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
+  EXECUTE FUNCTION public.cg_ligar_trava_de_esvaziar();
+
+-- Tabelas que já existem quando o oficial roda o arquivo.
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN
+    SELECT n.nspname, c.relname
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'producao' AND c.relkind IN ('r', 'p')
+  LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS cg_recusar_esvaziar ON %I.%I', r.nspname, r.relname);
+    EXECUTE format(
+      'CREATE TRIGGER cg_recusar_esvaziar BEFORE TRUNCATE ON %I.%I '
+      'FOR EACH STATEMENT EXECUTE FUNCTION public.cg_recusar_esvaziar()',
+      r.nspname, r.relname);
+  END LOOP;
+END $$;
 
 -- 4. A publicação deixa de levar o esvaziamento de tabela. Se a publicação
 --    ainda não existe, o sql-do-principal de tools/reserva.py a cria já assim.

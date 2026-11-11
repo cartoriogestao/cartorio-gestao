@@ -8,7 +8,11 @@ voltar. Nada disto roda sozinho: o oficial aprova e só então liga.
 1. Ler `installer/sql/travas_da_producao.sql`.
 2. Rodar esse arquivo no PostgreSQL da casa. Ele liga o log de DDL e de
    conexões, cria a marca de somente leitura, impede apagar o schema
-   `producao` e tira o esvaziamento de tabela da publicação.
+   `producao`, apagar tabela dele e esvaziá-la. O esvaziamento não cabe num
+   gatilho de evento: cada tabela da casa ganha um gatilho, e tabela criada
+   depois também. A publicação, à parte, não leva esvaziamento. Se uma
+   tentativa anterior parou em `filter value "TRUNCATE" not recognized`,
+   rode o arquivo de novo: ele completa o que faltou.
 3. No Mac, o `reserva.env` continua com `CG_MODO_RESERVA=1`. Sem isso, o
    `montar` recusa a porta 5434 — no Windows essa porta é a produção; no Mac,
    com o modo reserva, é a cópia.

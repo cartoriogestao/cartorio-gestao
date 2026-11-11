@@ -36,9 +36,12 @@
     <label>{{ rotulos.despesas_teto_por_dia }} <input name="despesas_teto_por_dia" value="{{ cfg.despesas_teto_por_dia }}" size="12"></label>
     <label><input type="checkbox" name="despesas_regra_guias_ligada" value="1" {% if cfg.despesas_regra_guias_ligada == '1' %}checked{% endif %}> {{ rotulos.despesas_regra_guias_ligada }}</label>
     <label>{{ rotulos.despesas_teto_guia }} <input name="despesas_teto_guia" value="{{ cfg.despesas_teto_guia }}" size="12"></label>
+    <label>{{ rotulos.despesas_margem_guias }} <input name="despesas_margem_guias" value="{{ cfg.despesas_margem_guias }}" size="6"></label>
     <label>{{ rotulos.despesas_pix_ferj }} <input name="despesas_pix_ferj" value="{{ cfg.despesas_pix_ferj }}" size="40" autocomplete="off"></label>
     <label>{{ rotulos.despesas_pix_ferc }} <input name="despesas_pix_ferc" value="{{ cfg.despesas_pix_ferc }}" size="40" autocomplete="off"></label>
     <label>{{ rotulos.despesas_pix_cidade }} <input name="despesas_pix_cidade" value="{{ cfg.despesas_pix_cidade }}" size="30" autocomplete="off"></label>
+    <label>{{ rotulos.despesas_pix_nome_ferj }} <input name="despesas_pix_nome_ferj" value="{{ cfg.despesas_pix_nome_ferj }}" size="25" autocomplete="off"></label>
+    <label>{{ rotulos.despesas_pix_nome_ferc }} <input name="despesas_pix_nome_ferc" value="{{ cfg.despesas_pix_nome_ferc }}" size="25" autocomplete="off"></label>
     <p class="small muted">FERJ e FERC se pagam pelo Pix do QR code da guia, no dia. Confira uma vez, com o banco ou o
       Tribunal, a chave Pix de cada fundo (ou, se o QR for dinâmico, o domínio do banco que o gera e a cidade que
       ele informa; o QR dinâmico também precisa se apresentar com o nome do fundo). Vazio, a guia espera a sua

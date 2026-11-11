@@ -131,7 +131,7 @@ def test_falha_ao_pedir_rodada_reverte_cadastro_e_anexo_no_banco(cg_casa_logada,
         assert banco(con).valor("SELECT count(*) FROM attachments WHERE entity_type = 'DESPESA'") == 0
 
 
-@pytest.mark.parametrize('esperado', [None, 12000])
+@pytest.mark.parametrize('esperado', [None, 11000, 12346])   # sem base, 12,2% acima, abaixo
 def test_cliente_nao_forca_autorizacao_sem_conferencia_servidor(cg_casa_logada, esperado):
     c, db = cg_casa_logada['c'], cg_casa_logada['db']
     _preparar_executor(db)
@@ -179,7 +179,7 @@ def test_antes_do_banco_reconfere_original_base_e_tetos(cg_casa_logada, defeito)
             campo = {'teto_guia': 'despesas_teto_guia', 'teto_pagamento': 'despesas_teto_por_pagamento',
                      'teto_dia': 'despesas_teto_por_dia'}[defeito]
             DP.gravar_configuracao(con, {**DP.configuracao(con), campo: '1,00'})
-    esperado = None if defeito == 'sem_base' else 12344 if defeito == 'divergente' else 12345
+    esperado = None if defeito == 'sem_base' else 12346 if defeito == 'divergente' else 12345
     falso = InterFalso()
     with patch.object(PS, 'esperado_dos_selos', return_value=esperado):
         resultado = INTER.pagar(db, r['id'], cliente=INTER.ClienteInter('sandbox', falso, CAMPOS),
@@ -333,3 +333,18 @@ def test_pix_sem_resposta_reenvia_uma_vez_com_a_mesma_chave(cg_casa_logada):
     envios = falso.posts('/banking/v2/pix')
     assert len(envios) == 2
     assert envios[0]['cab']['x-id-idempotente'] == envios[1]['cab']['x-id-idempotente']
+
+
+def test_margem_dos_selos_emitidos_fora_vale_no_cadastro_e_de_novo_no_envio(cg_casa_logada):
+    c, db = cg_casa_logada['c'], cg_casa_logada['db']
+    _preparar_executor(db)
+    with patch.object(PS, 'esperado_dos_selos', return_value=11500), patch('automacao.pedir_rodada'):
+        r = _post(c).get_json()   # a guia de R$ 123,45 está 7,3% acima do calculado
+    assert r['situacao'] == DP.AUTORIZADA
+    with db.transaction() as con:   # o oficial aperta a margem depois do cadastro
+        DP.gravar_configuracao(con, {**DP.configuracao(con), 'despesas_margem_guias': '5'})
+    falso = InterFalso()
+    with patch.object(PS, 'esperado_dos_selos', return_value=11500):
+        resultado = INTER.pagar(db, r['id'], cliente=INTER.ClienteInter('sandbox', falso, CAMPOS),
+                                por='automação', agora=datetime(2026, 11, 9))
+    assert resultado['situacao'] == DP.AUTORIZADA and falso.chamadas == []

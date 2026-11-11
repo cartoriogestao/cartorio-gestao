@@ -228,8 +228,14 @@ def test_regra_das_guias_conferida_e_no_teto_nasce_autorizada(casa):
     ok = _cadastrar(db, chave_origem="FERJ:a", esperado=12345, **guia)
     assert _d(db, ok)["situacao"] == DP.AUTORIZADA
     assert _d(db, ok)["natureza"] == DP.REPASSE
-    divergente = _cadastrar(db, chave_origem="FERJ:b", esperado=12000, **guia)
+    divergente = _cadastrar(db, chave_origem="FERJ:b", esperado=11000, **guia)   # 12,2% acima
     assert _d(db, divergente)["situacao"] == DP.AGUARDANDO and _d(db, divergente)["divergencia"]
+    abaixo = _cadastrar(db, chave_origem="FERJ:f", esperado=12346, **guia)
+    assert _d(db, abaixo)["situacao"] == DP.AGUARDANDO and _d(db, abaixo)["divergencia"]
+    # Selos emitidos fora do sistema: a guia até 10% acima do calculado sai pela regra.
+    na_margem = _cadastrar(db, chave_origem="FERJ:g", esperado=11223, **guia)    # 9,99% acima
+    assert _d(db, na_margem)["situacao"] == DP.AUTORIZADA and not _d(db, na_margem)["divergencia"]
+    assert "dentro da margem de 10,00%" in _d(db, na_margem)["autorizada_pela_regra"]
     acima = _cadastrar(db, valor=90000, chave_origem="FERJ:c", esperado=90000, **guia)
     assert _d(db, acima)["situacao"] == DP.AGUARDANDO
     outro_recebedor = _cadastrar(db, chave_origem="FERJ:d", esperado=12345,

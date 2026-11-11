@@ -121,7 +121,7 @@ class Guias(unittest.TestCase):
                                  DP.AGUARDANDO)
 
     def test_recebedor_do_pix_por_chave_ou_dominio(self):
-        cfg = {'despesas_pix_ferj': CHAVE_DO_FUNDO, 'despesas_pix_ferc': DOMINIO_DO_QR,
+        cfg = {**DP.PADRAO, 'despesas_pix_ferj': CHAVE_DO_FUNDO, 'despesas_pix_ferc': DOMINIO_DO_QR,
                'despesas_pix_cidade': 'Cidade Exemplo'}
         dinamico = pix(valor=None, url=DOMINIO_DO_QR + '/cobv/abc123', nome='FERC', cidade=CIDADE_DO_QR)
         self.assertEqual(DP.pix_do_fundo_confere(cfg, 'FUNDO_FERJ', pix()), '')
@@ -136,6 +136,11 @@ class Guias(unittest.TestCase):
                 self.assertIn(motivo, DP.pix_do_fundo_confere(cfg, 'FUNDO_FERC', outro))
         self.assertIn('Falta conferir a cidade', DP.pix_do_fundo_confere(
             {**cfg, 'despesas_pix_cidade': ''}, 'FUNDO_FERC', dinamico))
+        # O nome esperado vem da Configuração, e não do código.
+        self.assertIn('nome conferido', DP.pix_do_fundo_confere(
+            {**cfg, 'despesas_pix_nome_ferc': 'FERC TJ'}, 'FUNDO_FERC', dinamico))
+        self.assertEqual(DP.pix_do_fundo_confere({**cfg, 'despesas_pix_nome_ferc': 'Ferc TJ'}, 'FUNDO_FERC',
+                         pix(url=DOMINIO_DO_QR + '/cobv/1', nome='FERC TJ', cidade=CIDADE_DO_QR)), '')
         for categoria, payload in (('FUNDO_FERJ', pix(chave='fundo@outro.test')),
                                    ('FUNDO_FERJ', dinamico),
                                    ('FUNDO_FERC', pix(valor=None, url='qrpix.banco-exemplo.test.golpe.test/cobv/1')),
@@ -145,6 +150,16 @@ class Guias(unittest.TestCase):
             with self.subTest(categoria=categoria, payload=payload[-30:]):
                 self.assertTrue(DP.pix_do_fundo_confere(cfg, categoria, payload))
         self.assertIn('Falta conferir', DP.pix_do_fundo_confere({}, 'FUNDO_FERJ', pix()))
+
+    def test_margem_so_para_cima_e_ate_o_limite(self):
+        cfg = {'despesas_margem_guias': '10,00'}
+        casos = [(10000, 10000, True), (11000, 10000, True), (11001, 10000, False),
+                 (9999, 10000, False), (10000, None, False), (10000, 0, False)]
+        for valor, esperado, confere in casos:
+            with self.subTest(valor=valor, esperado=esperado):
+                self.assertIs(DP.valor_confere_com_o_calculado(valor, esperado, cfg), confere)
+        self.assertFalse(DP.valor_confere_com_o_calculado(10001, 10000, {'despesas_margem_guias': '0,00'}))
+        self.assertTrue(DP.valor_confere_com_o_calculado(10250, 10000, {'despesas_margem_guias': '2,50'}))
 
     def test_recebedor_configurado_normaliza_chave_e_dominio(self):
         self.assertEqual(DP.recebedor_pix_configurado(' 00.000.010/0001-27 '), CHAVE_DO_FUNDO)

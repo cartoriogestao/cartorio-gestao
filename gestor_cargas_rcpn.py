@@ -364,17 +364,30 @@ def preparar_crc(con, hoje: date, *, s: dict, ret: dict[int, str]) -> dict:
                     "faltas": x.get("faltas")} for x in montado["retidos"]]
     r["quantos"] = montado["quantos"]
     if montado["quantos"]:
-        erros = validar_crc(montado["xml"])
-        r["xsd"] = "NAO_MEDIU" if erros is None else ("OK" if not erros else "ERRO")
-        if erros:
-            r["problemas"] += erros
-            r["erros_xsd"] = erros
+        # Mais de 2500 registros vira outro arquivo — a CRC recusa a carga
+        # que passa disso. Um arquivo só (o dia comum) guarda o nome de antes.
+        varios = len(montado["lotes"]) > 1
+        erros_todos = []
+        nao_mediu = False
+        for lote in montado["lotes"]:
+            erros = validar_crc(lote["xml"])
+            if erros is None:
+                nao_mediu = True
+                break
+            erros_todos.extend(
+                f"arquivo {lote['numero']}: {e}" for e in erros)
+        r["xsd"] = "NAO_MEDIU" if nao_mediu else ("OK" if not erros_todos else "ERRO")
+        if erros_todos:
+            r["problemas"] += erros_todos
+            r["erros_xsd"] = erros_todos
         else:
-            r["arquivos"].append({"nome": f"CRC_carga_{hoje.isoformat()}.xml",
-                                  "dados": montado["xml"].encode("utf-8"),
-                                  "quantos": montado["quantos"],
-                                  "assentos": [i for i in ids if i not in
-                                               {x.get("assento_id") for x in montado["retidos"]}]})
+            for lote in montado["lotes"]:
+                sufixo = f"_{lote['numero']:03d}" if varios else ""
+                r["arquivos"].append({
+                    "nome": f"CRC_carga_{hoje.isoformat()}{sufixo}.xml",
+                    "dados": lote["xml"].encode("utf-8"),
+                    "quantos": lote["quantos"],
+                    "assentos": lote["assentos"]})
     r["prazo"] = min(prazos)
     return r
 

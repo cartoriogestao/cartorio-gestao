@@ -193,6 +193,39 @@ def test_o_arquivo_sai_em_utf8(casa):
     assert "<CNS>000000</CNS>" in texto
 
 
+def test_mais_de_2500_baixa_um_zip_com_um_xml_por_arquivo(casa, monkeypatch):
+    """A CRC recusa a carga acima de 2500. A tela entrega um arquivo por lote."""
+    import io
+    import zipfile
+
+    import crc_carga as CRC
+    import rc_matricula as RCM
+
+    monkeypatch.setattr(CRC, "MAXIMO_POR_ARQUIVO", 1)
+    um = _nascimento(casa, "ANA PRIMEIRA", numero=1,
+                     matricula=RCM.compor(cns="000000", ano=2026, livro_tipo="1",
+                                          livro=1, folha=1, termo=1))
+    dois = _nascimento(casa, "BIA SEGUNDA", numero=2,
+                       matricula=RCM.compor(cns="000000", ano=2026, livro_tipo="1",
+                                            livro=1, folha=1, termo=2))
+    html = casa["cliente"].get("/rcpn/crc").get_data(as_text=True)
+    montado = casa["cliente"].post("/rcpn/crc", data=_campos(html, [um, dois]))
+    pagina = _liso(montado.get_data(as_text=True))
+    assert "2 arquivos" in pagina
+    assert "Baixar os 2 arquivos" in pagina
+    r = casa["cliente"].post("/rcpn/crc/arquivo", data=_campos(html, [um, dois]))
+    assert r.status_code == 200
+    assert r.mimetype == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(r.data)) as z:
+        nomes = sorted(z.namelist())
+        assert len(nomes) == 2
+        assert nomes[0].endswith("-001.xml") and nomes[1].endswith("-002.xml")
+        textos = [z.read(n).decode("utf-8") for n in nomes]
+    assert any("ANA PRIMEIRA" in t for t in textos)
+    assert any("BIA SEGUNDA" in t for t in textos)
+    assert sum(t.count("<REGISTRONASCIMENTOINCLUSAO>") for t in textos) == 2
+
+
 def test_o_arquivo_sem_escolha_volta_avisando(casa):
     html = casa["cliente"].get("/rcpn/crc").get_data(as_text=True)
     r = casa["cliente"].post("/rcpn/crc/arquivo",

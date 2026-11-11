@@ -143,6 +143,34 @@ def test_enviar_carga_completa_com_transporte_simulado(monkeypatch, token_falso)
     assert resultado["resposta"] == "OK-123"
 
 
+def test_enviar_carga_manda_um_arquivo_por_lote(monkeypatch, token_falso):
+    """Acima de 2500 a CRC recusa o arquivo. Cada lote segue numa chamada."""
+    def _montar(con, assentos, *, cns):
+        return {"xml": "<CARGAREGISTROS/>", "quantos": 3,
+                "lotes": [
+                    {"xml": "<CARGAREGISTROS><VERSAO>1</VERSAO></CARGAREGISTROS>",
+                     "quantos": 2},
+                    {"xml": "<CARGAREGISTROS><VERSAO>2</VERSAO></CARGAREGISTROS>",
+                     "quantos": 1},
+                ],
+                "retidos": [], "a_arrumar": []}
+    monkeypatch.setattr(crc_carga, "montar", _montar)
+    chamadas = []
+
+    def _bater(ambiente, corpo, *, prazo=180):
+        chamadas.append(corpo)
+        etree.fromstring(corpo)
+        return f"<return>OK-{len(chamadas)}</return>"
+    monkeypatch.setattr(crc_soap, "_bater", _bater)
+
+    resultado = crc_soap.enviar_carga(
+        None, [1, 2, 3], cns="000000", driver="fake.dll", pin="000000")
+    assert len(chamadas) == 2
+    assert resultado["enviado"] == 3
+    assert resultado["arquivos"] == 2
+    assert resultado["resposta"] == "OK-1 | OK-2"
+
+
 def test_ler_resposta_reconhece_falha_cfc():
     texto = ("<soap:Envelope><soap:Body><soap:Fault>"
              "<faultstring>CFCInvocationException: XML inválido</faultstring>"

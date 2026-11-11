@@ -392,6 +392,152 @@ def _texto(v: Any) -> str:
     return s
 
 
+# **A CRC RECUSOU «NOMEREGISTRADO está inválido» EM 11/11/2026**, em centenas
+# de nascimentos. O XSD só limita o tamanho (100). A validação de negócio é
+# outra, e ela foi medida nos que ela aceitou e nos que ela recusou na mesma
+# carga:
+#
+#   · passou o nome (a recusa foi só «matrícula já existe»): letra, acento
+#     do português, espaço e apóstrofo — `HYC'CWYJ`, `KAUÃ`, `HELOÍSA`;
+#   · recusou: ponto, vírgula, parêntese, colchete, aspas, e as marcas `¿`,
+#     `ý` e `ÿ` que o nome krikati ganhou quando a oclusiva não foi escrita
+#     com o apóstrofo que o resto do acervo já usa (`A'CAHUC`, `CRY'CRY`).
+#
+# O que se tira não é letra do nome: é a anotação que o livro põe ao lado
+# («retificado para…», «[riscado: …]», «digo»). O nome que sobra é o que
+# estava escrito antes da anotação. Quando o «digo» corrige a palavra
+# anterior, fica a correção — é o que o escrevente escreveu no lugar do
+# erro, e não um nome inventado.
+_MARCA_DE_OCLOSIVA = ("¿", "ʔ", "ˀ", "ˈ")
+_Y_QUE_A_CRC_NAO_LE = str.maketrans({"ý": "y", "ÿ": "y", "Ý": "Y", "Ÿ": "Y"})
+_FORA_DO_NOME = re.compile(
+    r"[^A-Za-zÁÀÂÃÉÈÊÍÏÓÔÕÖÚÜÇáàâãéèêíïóôõöúüçÑñ '\-]")
+_NOTA_NO_NOME = re.compile(
+    r"retific|averb|passou|passara|obs\b|texto|anotad|escrito|em tempo|"
+    r"\bapos\b|\bnota\b|\bav\b|av-|sexo |comunicad|alterad|chamar|\bdigo\b")
+_DIGO = re.compile(r"\bdigo\b", re.IGNORECASE)
+_PARTICULA = {"DE", "DA", "DO", "DOS", "DAS", "E"}
+_PARENTESE = re.compile(r"\(([^()]*)\)")
+
+
+def _e_nota_de_nome(miolo: str) -> bool:
+    """Se o que está entre parênteses é anotação, e não parte do nome."""
+    return _NOTA_NO_NOME.search(_sem_acento(miolo)) is not None
+
+
+def _e_pedaco_de_nome(miolo: str) -> bool:
+    """`(DE)` e `(Leonardo)` são o nome entre parênteses. A nota não é."""
+    miolo = miolo.strip()
+    if not miolo or _e_nota_de_nome(miolo) or _FORA_DO_NOME.search(miolo):
+        return False
+    return 1 <= len(miolo.split()) <= 4
+
+
+def _tirar_colchetes(s: str) -> str:
+    """`[riscado: dos]` e `[entrelinha: …]` saem inteiros: o colchete é a
+    marca de que aquilo não se lê como nome."""
+    while True:
+        novo = re.sub(r"\[[^\[\]]*\]", " ", s)
+        if novo == s:
+            return s
+        s = novo
+
+
+def _tirar_parenteses(s: str) -> str:
+    """Tira a anotação e desembrulha o pedaço de nome.
+
+    O parêntese que vem logo depois de «digo» é a correção, não uma nota
+    para jogar fora: «digo (averbação: JOÃO GOMES DE ALMEIDA FILHO)» fica
+    com o nome que o escrevente mandou ler.
+    """
+    while True:
+        achado = _PARENTESE.search(s)
+        if not achado:
+            return s
+        miolo = achado.group(1).strip()
+        antes = s[:achado.start()]
+        if re.search(r"\bdigo\s*$", antes, re.IGNORECASE):
+            if ":" in miolo:
+                miolo = miolo.split(":")[-1].strip(" '\"")
+            troca = " " + miolo + " "
+        elif _e_pedaco_de_nome(miolo):
+            troca = " " + miolo + " "
+        else:
+            troca = " "
+        s = antes + troca + s[achado.end():]
+
+
+def _aplicar_digo(nome: str) -> str:
+    """«X digo Y» lê-se Y no lugar do que o «digo» corrige.
+
+    Uma palavra depois do «digo» troca a palavra de antes. Duas, quando a
+    correção começa por «de/da/do», trocam o «de …» de antes. Três ou mais,
+    do tamanho do nome, são o nome reescrito por inteiro — «CARLOS SOUSA
+    LIMA digo Carlos Lima Sousa».
+    """
+    achado = _DIGO.search(nome)
+    if not achado:
+        return nome
+    esquerda = nome[:achado.start()].strip(" ,.;:")
+    direita = _aplicar_digo(nome[achado.end():].strip(" ,.;:"))
+    if not direita:
+        return esquerda
+    esq, direita_palavras = esquerda.split(), direita.split()
+    if not esq:
+        return direita
+    if len(direita_palavras) >= 3 and len(direita_palavras) >= len(esq):
+        return direita
+    quantas = 1
+    if (len(esq) >= 2 and esq[-2].upper() in _PARTICULA
+            and direita_palavras[0].upper() in _PARTICULA):
+        quantas = 2
+    if len(esq) <= quantas:
+        return direita
+    return " ".join(esq[:-quantas] + direita_palavras)
+
+
+def _nome_crc(v: Any) -> str:
+    """O nome como a CRC aceita. Só calcula — não grava a ficha.
+
+    Ponto, vírgula e aspas viram espaço. A anotação entre parênteses ou
+    colchetes sai. A oclusiva krikati que chegou como `¿` vira o apóstrofo
+    que o resto do acervo já usa, e `ý`/`ÿ` viram `y` — a Central recusou
+    os dois e aceitou o `y`. O que não é letra, espaço, apóstrofo ou hífen
+    não sobe.
+    """
+    s = _texto(v)
+    if not s:
+        return ""
+    for marca in _MARCA_DE_OCLOSIVA:
+        s = s.replace(marca, "'")
+    s = s.translate(_Y_QUE_A_CRC_NAO_LE)
+    s = _tirar_colchetes(s)
+    s = _tirar_parenteses(s)
+    s = re.sub(r"[\"“”„«»]", " ", s)
+    # A vírgula cola na palavra («GINA,») e o «digo» deixa de achar a
+    # partícula de antes. Ela separa palavras; não é letra do nome.
+    s = re.sub(r"[,;:.]+", " ", s)
+    s = _aplicar_digo(s)
+    s = _FORA_DO_NOME.sub(" ", s)
+    return " ".join(s.split()).strip(" '-")
+
+
+def _aviso_de_nome_alterado(rotulo: str, original: Any, limpo: str) -> str:
+    """Aviso quando o que sobe não é só o ponto do fim da frase.
+
+    O ponto final de «SANDRA MARIA SILVA DE SOUSA.» não avisa: é o mesmo
+    nome. A anotação que saiu avisa, para alguém conferir no livro se o
+    que subiu é o nome.
+    """
+    base = " ".join(_texto(original).split()).strip(".,;:")
+    if not limpo or limpo == base:
+        return ""
+    return (f"o {rotulo} sobe como «{limpo}» — a ficha diz "
+            f"«{_texto(original)}». A CRC não aceita ponto, vírgula, "
+            "parêntese nem anotação dentro do nome. Confira no livro se "
+            "o que subiu é o nome")
+
+
 # Palavras que NÃO são município. O acervo às vezes grava «não consta»;
 # a tela da CRC, quando o campo falta no XML, interpola a palavra JS
 # «undefined». Nenhuma das duas pode ir como nome de cidade.
@@ -787,8 +933,24 @@ def o_que_arrumar(con: sqlite3.Connection, assento: dict,
             avisos.append(
                 f"o estado civil do falecido está gravado como «{civil}», "
                 "que não é um estado civil — a CRC aceita solteiro, casado, "
-                "viúvo, divorciado, separado, outros e ignorado. Sem ele o "
-                "registro sobe, e a Central não recebe essa informação")
+                "viúvo, divorciado, separado, outros e ignorado. O registro "
+                "sobe com **ignorado**; corrija na ficha se for outro")
+        natureza = _texto(assento.get("ibge_natureza_obito"))
+        if natureza and not TIPO_MORTE.get(_chave(natureza)):
+            avisos.append(
+                f"o tipo da morte está gravado como «{natureza}», que a "
+                "CRC não tem — ela aceita natural, violenta e ignorada. "
+                "O registro sobe com **ignorada**")
+        aviso_nome = _aviso_de_nome_alterado(
+            "nome do falecido", fal.get("nome") or assento.get("nome"),
+            _nome_crc(fal.get("nome") or assento.get("nome")))
+        if aviso_nome:
+            avisos.append(aviso_nome)
+        aviso_atestante = _aviso_de_nome_alterado(
+            "nome do atestante", assento.get("atestante"),
+            _nome_crc(assento.get("atestante")))
+        if aviso_atestante:
+            avisos.append(aviso_atestante)
         # **A NATURALIDADE DO FALECIDO ESTAVA MEDIDA E NÃO CONFERIDA —
         # 13/09/2026, pedido do oficial.** O nascimento tem esta mesma
         # checagem em `o_que_falta` (RETÉM), porque a CRC recusou de verdade
@@ -861,6 +1023,13 @@ def o_que_arrumar(con: sqlite3.Connection, assento: dict,
                 "parcial, comunhão universal, participação final nos "
                 "aquestos, separação de bens, separação legal de bens, "
                 "outros e ignorado")
+        for n, papel in ((1, "NUBENTE1"), (2, "NUBENTE2")):
+            aviso_nome = _aviso_de_nome_alterado(
+                f"nome do cônjuge {n}",
+                pessoas.get(papel, {}).get("nome"),
+                _nome_crc(pessoas.get(papel, {}).get("nome")))
+            if aviso_nome:
+                avisos.append(aviso_nome)
         return avisos
 
     if especie not in ("NASCIMENTO", "NATIMORTO"):
@@ -876,9 +1045,14 @@ def o_que_arrumar(con: sqlite3.Connection, assento: dict,
     ROTULOS_QUE_AVISAM_SE_FALTAM = ("MAE",)
 
     faltas: list[str] = []
+    aviso_nome = _aviso_de_nome_alterado(
+        "nome do registrado", assento.get("nome"),
+        _nome_crc(assento.get("nome")))
+    if aviso_nome:
+        faltas.append(aviso_nome)
     for papel in ("MAE", "PAI"):
         quem = pessoas.get(papel) or {}
-        nome = _texto(quem.get("nome"))
+        nome = _nome_crc(quem.get("nome"))
         rotulo = ROTULO_DO_GENITOR[papel]
         if not nome:
             if papel in ROTULOS_QUE_AVISAM_SE_FALTAM:
@@ -892,6 +1066,10 @@ def o_que_arrumar(con: sqlite3.Connection, assento: dict,
             # sobe, e isso está certo. Não se cobra o sexo de quem o livro diz
             # que não foi declarado.
             continue
+        aviso_filiacao = _aviso_de_nome_alterado(
+            f"nome da {rotulo}", quem.get("nome"), nome)
+        if aviso_filiacao:
+            faltas.append(aviso_filiacao)
         if not SEXO.get(_texto(quem.get("sexo")).upper()):
             faltas.append(
                 f"o sexo da {rotulo} («{nome}») — **sem ele esta filiação não "
@@ -913,7 +1091,7 @@ def o_que_arrumar(con: sqlite3.Connection, assento: dict,
 
 
 def o_que_falta(con: sqlite3.Connection, assento: dict,
-                pessoas: dict) -> list[str]:
+                pessoas: dict, *, cns: str = "") -> list[str]:
     """O que impede este assento de ir para a CRC. Só calcula.
 
     **A LISTA VEM ANTES DO ARQUIVO.** A Central valida e recusa depois — e a
@@ -967,6 +1145,20 @@ def o_que_falta(con: sqlite3.Connection, assento: dict,
                     "os dois sejam o mesmo ano. A matrícula foi gravada com "
                     "o ano errado; recalcule e grave a certa na ficha do "
                     "assento")
+            # **"O cnj da matricula deve ser igual a do cartorio que esta
+            # enviando a Carga" — relato da CRC em 11/11/2026.** O CNS é os
+            # seis primeiros dígitos. Mandar a matrícula de outra serventia
+            # a Central recusa o registro, sempre.
+            cns_pedido = _digitos(cns).zfill(6) if _digitos(cns) else ""
+            cns_matricula = conferida["partes"].get("cns", "")
+            if (cns_pedido and cns_matricula
+                    and cns_pedido != cns_matricula):
+                faltas.append(
+                    f"o CNS dentro da matrícula é **{cns_matricula}**, e o "
+                    f"desta serventia é **{cns_pedido}** — a CRC recusa "
+                    "quando os dois não são o mesmo cartório. A matrícula "
+                    "foi composta com o CNS de outra serventia; recalcule "
+                    "e grave a certa na ficha do assento")
 
     if not _data(assento.get("data_ato")):
         faltas.append("a data do registro")
@@ -993,8 +1185,14 @@ def o_que_falta(con: sqlite3.Connection, assento: dict,
                     "o livro de papel antes de mandar")
 
     if especie in ("NASCIMENTO", "NATIMORTO"):
-        if not _texto(assento.get("nome")):
+        nome = _nome_crc(assento.get("nome"))
+        if not nome:
             faltas.append("o nome do registrado")
+        elif len(nome) > 100:
+            faltas.append(
+                "o nome do registrado passa de 100 caracteres, que é o "
+                "máximo que a CRC aceita — enxugue na ficha o que não é "
+                "o nome")
         if not SEXO.get(_texto(
                 pessoas.get("REGISTRADO", {}).get("sexo")).upper()):
             faltas.append("o sexo do registrado")
@@ -1027,13 +1225,13 @@ def o_que_falta(con: sqlite3.Connection, assento: dict,
                     "recusa o registro")
     elif especie in ("CASAMENTO", "CASAMENTO_RELIGIOSO"):
         for papel, rotulo in (("NUBENTE1", "primeiro"), ("NUBENTE2", "segundo")):
-            if not _texto(pessoas.get(papel, {}).get("nome")):
+            if not _nome_crc(pessoas.get(papel, {}).get("nome")):
                 faltas.append(f"o nome do {rotulo} cônjuge")
         if not _data(assento.get("data_fato")):
             faltas.append("a data da celebração do casamento")
     elif especie == "OBITO":
-        if not _texto(pessoas.get("FALECIDO", {}).get("nome")
-                      or assento.get("nome")):
+        if not _nome_crc(pessoas.get("FALECIDO", {}).get("nome")
+                         or assento.get("nome")):
             faltas.append("o nome do falecido")
         cor = _texto(assento.get("cor_raca")).upper()
         if cor and cor not in COR_PELE:
@@ -1187,7 +1385,7 @@ def _filiacao(con: sqlite3.Connection, pessoa: dict, indice: int,
     assento tem um pai e uma mãe, e o par decide. Sem nome e sexo, a filiação
     não identifica ninguém.
     """
-    nome = _texto(pessoa.get("nome"))
+    nome = _nome_crc(pessoa.get("nome"))
     sexo = SEXO.get(_texto(pessoa.get("sexo")).upper(), "")
     if not nome or not sexo:
         return ""
@@ -1261,7 +1459,7 @@ def registro_de_nascimento(con: sqlite3.Connection, assento: dict,
     reg = pessoas.get("REGISTRADO", {})
     partes = [
         _tag("INDICEREGISTRO", indice),
-        _tag("NOMEREGISTRADO", assento.get("nome")),
+        _tag("NOMEREGISTRADO", _nome_crc(assento.get("nome"))),
         _tag("CPFREGISTRADO", _cpf(reg)),
         _tag("MATRICULA", _digitos(assento.get("matricula"))),
         _tag("DATAREGISTRO", _data(assento.get("data_ato"))),
@@ -1348,9 +1546,9 @@ def _novo_nome(pessoa: dict) -> str:
     («XISTO FALCAO NEIVA.», medido em 1 dos 22 casamentos) — os dois
     passam pelo `maxLength=100` do XSD, e por isso só a Central acusa.
     """
-    nome_pos = _texto(pessoa.get("nome_pos")).strip(" .")
+    nome_pos = _nome_crc(pessoa.get("nome_pos"))
     if not nome_pos or _chave(nome_pos) in {_chave(v) for v in _SEM_TROCA}:
-        return _texto(pessoa.get("nome"))
+        return _nome_crc(pessoa.get("nome"))
     return nome_pos
 
 
@@ -1383,7 +1581,7 @@ def registro_de_casamento(con: sqlite3.Connection, assento: dict,
         # nome de casada preenchido travava exatamente no próximo campo
         # (`CPFCONJUGE1`), com a mensagem apontando para o campo ANTERIOR —
         # o mesmo padrão do `CPFREGISTRADO` que motivou toda esta correção.
-        partes.append(_tag(f"NOMECONJUGE{n}", p.get("nome")))
+        partes.append(_tag(f"NOMECONJUGE{n}", _nome_crc(p.get("nome"))))
         # O NOME QUE CADA UM PASSOU A USAR — e o motivo pelo qual a
         # certidão de casamento existe. Medido: o segundo cônjuge muda em
         # 17 dos 20.
@@ -1395,10 +1593,10 @@ def registro_de_casamento(con: sqlite3.Connection, assento: dict,
                            SEXO.get(_texto(p.get("sexo")).upper(), "I")))
         partes.append(_tag(f"DATANASCIMENTOCONJUGE{n}",
                            _data(p.get("data_nascimento"))))
-        partes.append(_tag(f"NOMEPAICONJUGE{n}", pai.get("nome")))
+        partes.append(_tag(f"NOMEPAICONJUGE{n}", _nome_crc(pai.get("nome"))))
         if pai.get("nome"):
             partes.append(_tag(f"SEXOPAICONJUGE{n}", "M"))
-        partes.append(_tag(f"NOMEMAECONJUGE{n}", mae.get("nome")))
+        partes.append(_tag(f"NOMEMAECONJUGE{n}", _nome_crc(mae.get("nome"))))
         if mae.get("nome"):
             partes.append(_tag(f"SEXOMAECONJUGE{n}", "F"))
         # Sem coluna nesta casa — a tag existe, vazia, pela mesma razão do
@@ -1460,7 +1658,7 @@ def registro_de_obito(con: sqlite3.Connection, assento: dict, pessoas: dict,
                       indice: int) -> str:
     """O bloco de inclusão de um óbito. Só calcula — 78 tags no manual."""
     fal = pessoas.get("FALECIDO", {})
-    nome = _texto(fal.get("nome") or assento.get("nome"))
+    nome = _nome_crc(fal.get("nome") or assento.get("nome"))
     idade, idade_unidade = _idade_do_falecido(
         fal.get("data_nascimento"), assento.get("data_fato"))
     dec = pessoas.get("DECLARANTE", {})
@@ -1475,7 +1673,7 @@ def registro_de_obito(con: sqlite3.Connection, assento: dict, pessoas: dict,
     ]
     for papel, tag, sexo in (("PAI", "NOMEPAI", "M"), ("MAE", "NOMEMAE", "F")):
         p = pessoas.get(papel, {})
-        partes.append(_tag(tag, p.get("nome")))
+        partes.append(_tag(tag, _nome_crc(p.get("nome"))))
         partes.append(_tag(f"CPF{papel}", _cpf(p)))
         if p.get("nome"):
             partes.append(_tag(f"SEXO{papel}", sexo))
@@ -1485,7 +1683,14 @@ def registro_de_obito(con: sqlite3.Connection, assento: dict, pessoas: dict,
         _tag("SEXO", SEXO.get(_texto(fal.get("sexo")).upper(), "I")),
         _tag("CORPELE", COR_PELE.get(_texto(assento.get("cor_raca")).upper(),
                                      "IGNORADA")),
-        _tag("ESTADOCIVIL", ESTADO_CIVIL.get(_chave(fal.get("estado_civil")), "")),
+        # **VALOR FORA DA LISTA SUBIA VAZIO, E A CRC DISSE «ESTADO_CIVIL
+        # inexistente» — 11/11/2026.** Vazio não é um dos oito. Ignorado é,
+        # e é a resposta honesta quando a ficha tem uma palavra que não é
+        # estado civil. Campo em branco continua vazio: não se declara
+        # ignorado por quem não escreveu nada.
+        _tag("ESTADOCIVIL", ESTADO_CIVIL.get(
+            _chave(fal.get("estado_civil")),
+            "IGNORADO" if _texto(fal.get("estado_civil")) else "")),
         _tag("DATANASCIMENTOFALECIDO", _data(fal.get("data_nascimento"))),
         _tag("IDADE", idade),
         _tag("IDADE_DIAS_MESES_ANOS", idade_unidade),
@@ -1523,8 +1728,14 @@ def registro_de_obito(con: sqlite3.Connection, assento: dict, pessoas: dict,
     # saía**, em 31 de 31 óbitos, sem erro em lugar nenhum.
     partes.append(_tag("TIPOLOCALOBITO", TIPO_LOCAL_OBITO.get(
         _texto(assento.get("ibge_local_obito")), "")))
+    # **O MESMO RELATO, NO TIPO DA MORTE: «TIPO_MORTE inexistente».**
+    # «Acidental» não está no XSD (ele tem natural, violenta e ignorada),
+    # e mandar a palavra crua — ou o vazio, que a Central também não tem —
+    # recusa o óbito. Ignorada é o valor que existe para «não é nenhum
+    # dos dois que a lista nomeia».
+    natureza = _texto(assento.get("ibge_natureza_obito"))
     partes.append(_tag("TIPOMORTE", TIPO_MORTE.get(
-        _chave(assento.get("ibge_natureza_obito")), "")))
+        _chave(natureza), "IGNORADA" if natureza else "")))
     if assento.get("numero_do"):
         partes.append(_tag("NUMDECLARACAOOBITO",
                            _digitos(assento["numero_do"])))
@@ -1550,12 +1761,13 @@ def registro_de_obito(con: sqlite3.Connection, assento: dict, pessoas: dict,
     partes.append(_tag("LUGARFALECIMENTO", assento.get("local_fato_nome")))
     partes.append(_tag("LUGARSEPULTAMENTOCEMITERIO",
                        assento.get("local_sepultamento")))
-    partes.append(_tag("NOMEATESTANTEPRIMARIO", assento.get("atestante")))
+    partes.append(_tag("NOMEATESTANTEPRIMARIO",
+                       _nome_crc(assento.get("atestante"))))
     partes.append(_tag("CRMATESTANTEPRIMARIO",
                            _crm_atestante(assento.get("atestante_documento"))))
     partes.append(_tag("NOMEATESTANTESECUNDARIO", ""))
     partes.append(_tag("CRMATESTANTESECUNDARIO", ""))
-    partes.append(_tag("NOMEDECLARANTE", dec.get("nome")))
+    partes.append(_tag("NOMEDECLARANTE", _nome_crc(dec.get("nome"))))
     partes.append(_tag("CPFDECLARANTE", _cpf(dec)))
     partes.append(_tag("OBSERVACOES", ""))
     return "".join(partes)
@@ -1570,8 +1782,32 @@ MONTADOR = {
 }
 
 
+# **A CRC ACEITA NO MÁXIMO 2500 REGISTROS POR CARGA — relato do oficial
+# em 11/11/2026.** Passou disso, ela recusa o arquivo inteiro, não só o
+# que excedeu. A carga desta casa já passou de 7.000 assentos; um arquivo
+# só nunca ia entrar. O índice de cada registro recomeça em 1 em cada
+# arquivo: ele numera o arquivo, e não a seleção.
+MAXIMO_POR_ARQUIVO = 2500
+
+
+def _xml_da_carga(cns: str, por_movimento: dict[str, list[str]]) -> str:
+    """Um arquivo. A ordem dos blocos é a do XSD, não a da chegada."""
+    partes = ['<?xml version="1.0" encoding="utf-8"?>', "<CARGAREGISTROS>",
+              _tag("VERSAO", VERSAO), _tag("ACAO", ACAO_CARGA),
+              _tag("CNS", _digitos(cns))]
+    # NA ORDEM DO XSD, e não na ordem em que os assentos chegaram — ver
+    # `ORDEM_DOS_MOVIMENTOS`. Percorrer `por_movimento` direto escrevia o
+    # arquivo na ordem de inserção, e a Central recusava a carga inteira.
+    for bloco in ORDEM_DOS_MOVIMENTOS:
+        itens = por_movimento.get(bloco)
+        if itens:
+            partes.append(f"<{bloco}>" + "".join(itens) + f"</{bloco}>")
+    partes.append("</CARGAREGISTROS>")
+    return "".join(partes)
+
+
 def montar(con: sqlite3.Connection, assentos: list[int], *, cns: str) -> dict:
-    """O XML da carga, e a lista do que ficou de fora. Só lê.
+    """Os XMLs da carga, e a lista do que ficou de fora. Só lê.
 
     **AS INCLUSÕES VÊM ANTES DAS ALTERAÇÕES**, e a ordem é imposta pelo manual:
     «deve-se formatar o XML primeiro com as INCLUSÕES e depois com as ALTERAÇÕES
@@ -1580,12 +1816,15 @@ def montar(con: sqlite3.Connection, assentos: list[int], *, cns: str) -> dict:
     **E o que não pode ir NÃO some**: volta em `retidos`, com o motivo. Mandar
     só o que deu certo produziria um arquivo bem formado e incompleto — e a
     Central o aceitaria, que é o pior desfecho.
+
+    **MAIS DE 2500 VIRA OUTRO ARQUIVO.** `lotes` traz um XML por arquivo, com
+    no máximo `MAXIMO_POR_ARQUIVO` registros. `xml` continua sendo o primeiro
+    — quem lia um arquivo só, com até 2500, lê o mesmo de antes.
     """
     bd = banco(con)
-    por_movimento: dict[str, list[str]] = {}
     retidos: list[dict] = []
     a_arrumar: list[dict] = []
-    indice = 0
+    prontos: list[dict] = []
 
     for aid in assentos:
         a = bd.um("SELECT * FROM rc_assentos WHERE id = %s", (aid,))
@@ -1610,7 +1849,7 @@ def montar(con: sqlite3.Connection, assentos: list[int], *, cns: str) -> dict:
         # 0/244 nas colunas e preenchido no `dados_json`. Não grava: quem
         # grava é `rc_campos_do_acervo.gravar`, na abertura do banco.
         a, pessoas = _com_o_acervo(a, pessoas)
-        faltas = o_que_falta(con, a, pessoas)
+        faltas = o_que_falta(con, a, pessoas, cns=cns)
         if faltas:
             retidos.append({"assento_id": aid, "nome": a.get("nome"),
                             "especie": especie, "faltas": faltas})
@@ -1624,26 +1863,29 @@ def montar(con: sqlite3.Connection, assentos: list[int], *, cns: str) -> dict:
             a_arrumar.append({"assento_id": aid, "nome": a.get("nome"),
                               "especie": especie, "arrumar": arrumar})
 
-        indice += 1
-        bloco, inclusao, _ = MOVIMENTO_DA_ESPECIE[especie]
-        corpo = MONTADOR[especie](con, a, pessoas, indice)
-        por_movimento.setdefault(bloco, []).append(
-            f"<{inclusao}>{corpo}</{inclusao}>")
+        prontos.append({"id": aid, "especie": especie, "assento": a,
+                        "pessoas": pessoas})
 
-    partes = ['<?xml version="1.0" encoding="utf-8"?>', "<CARGAREGISTROS>",
-              _tag("VERSAO", VERSAO), _tag("ACAO", ACAO_CARGA),
-              _tag("CNS", _digitos(cns))]
-    # NA ORDEM DO XSD, e não na ordem em que os assentos chegaram — ver
-    # `ORDEM_DOS_MOVIMENTOS`. Percorrer `por_movimento` direto escrevia o
-    # arquivo na ordem de inserção, e a Central recusava a carga inteira.
-    for bloco in ORDEM_DOS_MOVIMENTOS:
-        itens = por_movimento.get(bloco)
-        if itens:
-            partes.append(f"<{bloco}>" + "".join(itens) + f"</{bloco}>")
-    partes.append("</CARGAREGISTROS>")
+    lotes: list[dict] = []
+    for inicio in range(0, len(prontos), MAXIMO_POR_ARQUIVO):
+        fatia = prontos[inicio:inicio + MAXIMO_POR_ARQUIVO]
+        por_movimento: dict[str, list[str]] = {}
+        for indice, item in enumerate(fatia, 1):
+            bloco, inclusao, _ = MOVIMENTO_DA_ESPECIE[item["especie"]]
+            corpo = MONTADOR[item["especie"]](
+                con, item["assento"], item["pessoas"], indice)
+            por_movimento.setdefault(bloco, []).append(
+                f"<{inclusao}>{corpo}</{inclusao}>")
+        lotes.append({
+            "numero": len(lotes) + 1,
+            "xml": _xml_da_carga(cns, por_movimento),
+            "quantos": len(fatia),
+            "assentos": [item["id"] for item in fatia],
+        })
 
-    return {"xml": "".join(partes), "quantos": indice, "retidos": retidos,
-            "a_arrumar": a_arrumar}
+    xml = lotes[0]["xml"] if lotes else _xml_da_carga(cns, {})
+    return {"xml": xml, "lotes": lotes, "quantos": len(prontos),
+            "retidos": retidos, "a_arrumar": a_arrumar}
 
 
 def _com_o_acervo(assento: dict, pessoas: dict) -> tuple[dict, dict]:

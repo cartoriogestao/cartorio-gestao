@@ -739,14 +739,25 @@ def test_o_cpf_e_a_preferencia(casa):
 
 def test_o_texto_vai_escapado(casa):
     """E com o escape CERTO do XML, e não o do manual — a tabela dele, como sai
-    do PDF, está invertida."""
+    do PDF, está invertida.
+
+    O nome não carrega mais `<` nem `&`: a CRC recusa o registro
+    («NOMEREGISTRADO está inválido», 11/11/2026). O escape fica provado na
+    causa da morte, que é texto livre e continua indo por extenso.
+    """
     con = _con(casa)
     with con:
-        aid = _nascimento(con, nome="MARIA & JOSÉ <SILVA>")
+        aid = _assento(con, especie="OBITO", nome="MARIA",
+                       data_fato="2026-08-18", cor_raca="BRANCA",
+                       obito_possui_bens="N", ibge_natureza_obito="1",
+                       ibge_local_obito="1",
+                       causa_morte="parada <cardíaca> & edema")
+        _pessoa(con, aid, "FALECIDO", "MARIA", sexo="F")
     xml = CRC.montar(con, [aid], cns=CNS)["xml"]
     assert "&amp;" in xml
-    assert "&lt;SILVA&gt;" in xml
-    assert "<SILVA>" not in xml
+    assert "&lt;cardíaca&gt;" in xml or "&lt;cardiaca&gt;" in xml
+    assert "<cardíaca>" not in xml
+    assert "<cardiaca>" not in xml
 
 
 def test_o_nome_que_o_conjuge_passou_a_usar_vai(casa):
@@ -972,6 +983,151 @@ def test_idade_digitada_com_texto_valida_contra_o_xsd(casa, xsd):
     assert "<IDADE>21</IDADE>" in r["xml"]
     assert "ANOS</IDADE>" not in r["xml"]
     assert _validar(xsd, r["xml"]) == []
+
+
+# -------------------------------- o nome que a CRC aceita (11/11/2026)
+
+
+@pytest.mark.parametrize("cru,limpo", [
+    ("SANDRA MARIA SILVA DE SOUSA.", "SANDRA MARIA SILVA DE SOUSA"),
+    ("DAMARA SOUSA . DA SILVA", "DAMARA SOUSA DA SILVA"),
+    ("MARCIA, CRISTINA DA SILVA RIBEIRO", "MARCIA CRISTINA DA SILVA RIBEIRO"),
+    ("FRANCISCO OLIVEIRA LIMA, FILHO", "FRANCISCO OLIVEIRA LIMA FILHO"),
+    ("WELLINGTON OLIVEIRA GOMES,", "WELLINGTON OLIVEIRA GOMES"),
+    ("Daniela. da Luz Bandeira", "Daniela da Luz Bandeira"),
+    ("WDSON FRANCISCO (DE) SOUSA DE MORAIS",
+     "WDSON FRANCISCO DE SOUSA DE MORAIS"),
+    ("(Leonardo) dos Santos Barbosa", "Leonardo dos Santos Barbosa"),
+    ('DÁVILA "TEIXEIRA" DA SILVA', "DÁVILA TEIXEIRA DA SILVA"),
+    ("Julia Silva Ferreira (retificado para JÚLIO SILVA FERREIRA, "
+     "sexo masculino, pela AV-1)", "Julia Silva Ferreira"),
+    ("ANA CAROLINA SOUSA DA SILVA. (averbado: Ana Carolina da Silva Brito)",
+     "ANA CAROLINA SOUSA DA SILVA"),
+    ("CRISTINA [entrelinha: [ilegível]] BEZERRA NERES",
+     "CRISTINA BEZERRA NERES"),
+    ("LÍLIA MESQUITA [riscado: dos] SANTOS digo Santos",
+     "LÍLIA MESQUITA Santos"),
+    ("Keiteane de Li, digo, Lima Parente", "Keiteane de Lima Parente"),
+    ("MARIA LOURDES GINA, DE SOUSA digo DOS ANJOS",
+     "MARIA LOURDES GINA DOS ANJOS"),
+    ("CARLOS SOUSA LIMA digo, Carlos Lima Sousa", "Carlos Lima Sousa"),
+    ("JOÃO FILHO [riscado: COSTA DE ALMEIDA], digo "
+     "(averbação: JOÃO GOMES DE ALMEIDA FILHO)",
+     "JOÃO GOMES DE ALMEIDA FILHO"),
+    ("CLÁUDIO CRY¿COHKROM KRIKATI", "CLÁUDIO CRY'COHKROM KRIKATI"),
+    ("Wanderson Hýcre Krikati", "Wanderson Hycre Krikati"),
+    ("Samyra Cujÿ'tip Krikati", "Samyra Cujy'tip Krikati"),
+    ("MARIA ÍSIS", "MARIA ÍSIS"),
+])
+def test_o_nome_que_a_crc_recusou_sai_sem_anotacao(cru, limpo):
+    """Relato de 11/11/2026: «NOMEREGISTRADO está inválido». O XSD só limita
+    o tamanho; a Central recusa ponto, vírgula, parêntese, colchete, aspas
+    e a marca krikati que não é o apóstrofo."""
+    assert CRC._nome_crc(cru) == limpo
+
+
+def test_o_ponto_final_nao_avisa_e_a_anotacao_avisa():
+    assert CRC._aviso_de_nome_alterado(
+        "nome do registrado", "SANDRA MARIA SILVA DE SOUSA.",
+        "SANDRA MARIA SILVA DE SOUSA") == ""
+    aviso = CRC._aviso_de_nome_alterado(
+        "nome do registrado",
+        "Julia Silva Ferreira (retificado para JÚLIO SILVA FERREIRA)",
+        "Julia Silva Ferreira")
+    assert "Julia Silva Ferreira" in aviso
+    assert "retificado" in aviso
+
+
+def test_nome_com_ponto_sobe_limpo_e_valida_o_xsd(casa, xsd):
+    con = _con(casa)
+    with con:
+        aid = _nascimento(con, nome="SANDRA MARIA SILVA DE SOUSA.")
+    r = CRC.montar(con, [aid], cns=CNS)
+    assert r["quantos"] == 1, r["retidos"]
+    assert "<NOMEREGISTRADO>SANDRA MARIA SILVA DE SOUSA</NOMEREGISTRADO>" in r["xml"]
+    assert r["a_arrumar"] == []
+    assert _validar(xsd, r["xml"]) == []
+
+
+def test_anotacao_no_nome_sobe_o_nome_e_avisa(casa):
+    con = _con(casa)
+    with con:
+        aid = _nascimento(
+            con, nome="Julia Silva Ferreira (retificado para JÚLIO SILVA FERREIRA)")
+    r = CRC.montar(con, [aid], cns=CNS)
+    assert r["quantos"] == 1, r["retidos"]
+    assert "<NOMEREGISTRADO>Julia Silva Ferreira</NOMEREGISTRADO>" in r["xml"]
+    assert "retificado" in " ".join(r["a_arrumar"][0]["arrumar"])
+
+
+def test_cns_de_outra_serventia_fica_retido(casa):
+    """«O cnj da matricula deve ser igual a do cartorio que esta enviando
+    a Carga» — 11/11/2026."""
+    import rc_matricula as RCM
+    con = _con(casa)
+    outra = RCM.compor(cns="111111", ano=2026, livro_tipo="1",
+                       livro=1, folha=1, termo=9)
+    with con:
+        aid = _nascimento(con, matricula=outra, numero=9)
+    r = CRC.montar(con, [aid], cns=CNS)
+    assert r["quantos"] == 0
+    assert "111111" in r["retidos"][0]["faltas"][0]
+    assert "000000" in r["retidos"][0]["faltas"][0]
+
+
+def test_tipo_de_morte_fora_da_lista_sobe_como_ignorada(casa, xsd):
+    """A coluna é o código do IBGE. O 3 não está em natural, violenta nem
+    ignorada; mandar vazio a CRC acusou como «TIPO_MORTE inexistente»."""
+    con = _con(casa)
+    with con:
+        aid = _assento(con, especie="OBITO", nome="JULIA VITORIA",
+                       data_fato="2026-08-18", cor_raca="PARDA",
+                       obito_possui_bens="N", ibge_natureza_obito="3",
+                       ibge_local_obito="1")
+        _pessoa(con, aid, "FALECIDO", "JULIA VITORIA", sexo="F")
+    r = CRC.montar(con, [aid], cns=CNS)
+    assert r["quantos"] == 1, r["retidos"]
+    assert "<TIPOMORTE>IGNORADA</TIPOMORTE>" in r["xml"]
+    assert "«3»" in " ".join(r["a_arrumar"][0]["arrumar"])
+    assert _validar(xsd, r["xml"]) == []
+
+
+def test_estado_civil_fora_da_lista_sobe_como_ignorado(casa, xsd):
+    con = _con(casa)
+    with con:
+        aid = _assento(con, especie="OBITO", nome="ADAUTO ROCHA",
+                       data_fato="2026-08-18", cor_raca="PARDA",
+                       obito_possui_bens="N", ibge_natureza_obito="1",
+                       ibge_local_obito="1")
+        _pessoa(con, aid, "FALECIDO", "ADAUTO ROCHA", sexo="M",
+                estado_civil="união estável")
+    r = CRC.montar(con, [aid], cns=CNS)
+    assert r["quantos"] == 1, r["retidos"]
+    assert "<ESTADOCIVIL>IGNORADO</ESTADOCIVIL>" in r["xml"]
+    assert _validar(xsd, r["xml"]) == []
+
+
+def test_mais_de_2500_vira_outro_arquivo(casa, monkeypatch):
+    """A CRC recusa a carga com mais de 2500 registros. O índice de cada
+    arquivo recomeça em 1."""
+    monkeypatch.setattr(CRC, "MAXIMO_POR_ARQUIVO", 2)
+    import rc_matricula as RCM
+    con = _con(casa)
+    ids = []
+    with con:
+        for n, nome in enumerate(("ANA PRIMEIRA", "BIA SEGUNDA", "CIA TERCEIRA"), 1):
+            matricula = RCM.compor(cns=CNS, ano=2026, livro_tipo="1",
+                                   livro=1, folha=1, termo=n)
+            ids.append(_nascimento(con, nome=nome, numero=n, matricula=matricula))
+    r = CRC.montar(con, ids, cns=CNS)
+    assert r["quantos"] == 3
+    assert [lote["quantos"] for lote in r["lotes"]] == [2, 1]
+    assert r["xml"] == r["lotes"][0]["xml"]
+    assert "ANA PRIMEIRA" in r["lotes"][0]["xml"]
+    assert "CIA TERCEIRA" not in r["lotes"][0]["xml"]
+    assert "CIA TERCEIRA" in r["lotes"][1]["xml"]
+    assert "<INDICEREGISTRO>1</INDICEREGISTRO>" in r["lotes"][1]["xml"]
+    assert "<INDICEREGISTRO>3</INDICEREGISTRO>" not in r["xml"]
 
 
 def test_idade_com_texto_avisa_para_corrigir_a_ficha(casa):

@@ -18,6 +18,7 @@ from tempfile import TemporaryDirectory
 
 import modulos as MOD
 import modo_reserva as MRES
+import contingencia as CONT
 import banco_pg
 import titulo_aba as TITULOABA
 import nome_humano as NOMEHUM
@@ -709,6 +710,8 @@ def _montar_app(test_config: dict | None = None) -> Flask:
         if MRES.ativo() and request.method not in {"GET", "HEAD", "OPTIONS"} \
                 and request.endpoint not in MRES.FORMULARIOS_LIBERADOS:
             return render_template("error.html", code=503, message=MRES.AVISO), 503
+        if CONT.ativo(db) and CONT.bloqueia_escrita(request.method, request.endpoint):
+            return render_template("error.html", code=503, message=CONT.AVISO), 503
         # O CORPO DO POST SEM LOGIN TEM TETO, E ELE VALE ANTES DE LER (LS02
         # M5; LX12, 19/10/2026). O token de formulário, logo abaixo, lê
         # `request.form` — e com isso qualquer máquina da rede fazia o servidor
@@ -725,7 +728,7 @@ def _montar_app(test_config: dict | None = None) -> Flask:
             request.max_content_length = teto
         # As rotinas do dia (backup, CNIB, manutenção) gravam e saem para a rede: na reserva,
         # quem as faz é o principal.
-        if not MRES.ativo():
+        if not MRES.ativo() and not CONT.ativo(db):
             automatic_backup_once()
         # A LEITURA DIARIA DO CNIB, na mesma porta do backup automatico — e
         # pela mesma razao: e aqui que se sabe que a casa abriu hoje. Ela e
@@ -733,7 +736,7 @@ def _montar_app(test_config: dict | None = None) -> Flask:
         # `cnib_web` registra as rotas; e a chamada e protegida porque **tela
         # nao cai por causa de rotina de fundo**.
         rotina_cnib = app.extensions.get("cnib_uma_vez_por_dia")
-        if rotina_cnib and not MRES.ativo():
+        if rotina_cnib and not MRES.ativo() and not CONT.ativo(db):
             try:
                 rotina_cnib()
             except Exception:
@@ -838,7 +841,7 @@ def _montar_app(test_config: dict | None = None) -> Flask:
                                 quem, funcao),
                   "warning")
             return redirect(url_for("dashboard"))
-        if not MRES.ativo():
+        if not MRES.ativo() and not CONT.ativo(db):
             manutencao_do_dia()
 
     @app.after_request
@@ -985,6 +988,8 @@ def _montar_app(test_config: dict | None = None) -> Flask:
         return {
             "MODO_RESERVA": MRES.ativo(),
             "AVISO_RESERVA": MRES.AVISO,
+            "CONTINGENCIA": CONT.ativo(db),
+            "AVISO_CONTINGENCIA": CONT.AVISO,
             # O que o balcao NAO ve. O menu pergunta a mesma funcao que a
             # guarda do `before_request` usa — uma regra so.
             # O que o menu NAO oferece a ESTE operador — depende de quem
@@ -4023,8 +4028,9 @@ def main():
     # ela - e a ajuda fica sem saber o que mudou, que e menos do que ela sabia
     # antes, e nao o fim do expediente.
     reserva = MRES.ativo()
+    parado = reserva or CONT.ativo(db)
     import ajuda
-    if not reserva:   # a reserva só lê: a fotografia (e os vigias abaixo) são do principal
+    if not parado:   # reserva e contingência só leem: a fotografia é de quem grava
         ajuda.fotografar(db, app, versao=VERSION, agora=db.now())
 
     # O VIGIA DO WHATSAPP (29/10/2026): busca a caixa-postal de 20 em 20
@@ -4034,8 +4040,8 @@ def main():
     # Sem a caixa-postal configurada ele so espera; e falha nele nao derruba o
     # servidor.
     try:
-        if reserva:
-            raise RuntimeError("servidor reserva: o vigia é do principal")
+        if parado:
+            raise RuntimeError("servidor reserva ou contingência: o vigia é de quem grava")
         import wa_vigia
         wa_vigia.iniciar(db, pasta_dados=Path(app.config["DATA_DIR"]),
                          pasta_arquivos=app.extensions["archive_root"])

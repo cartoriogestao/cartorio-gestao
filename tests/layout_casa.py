@@ -147,8 +147,11 @@ class Casa:
         Tabela mudada é a que tem outra contagem, ou uma linha gravada depois do marco (`xmin`).
         """
         import conftest as C
+        from tools.trava_producao import exigir_schema_descartavel
         q = self._congelada
         esquema, semente = q["esquema"], q["semente"]
+        exigir_schema_descartavel(esquema, origem="layout_casa.restaurar")
+        exigir_schema_descartavel(semente, origem="layout_casa.restaurar")
         with C._pg_cru() as pg, pg.cursor() as c:
             c.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name=%s "
                       "AND state LIKE 'idle in transaction%%' AND pid<>pg_backend_pid()", (esquema[:60],))

@@ -1489,6 +1489,14 @@ def principal(argv=None) -> int:
     if args.recriar and args.schema.lower() == "public":
         print("Recuso recriar o schema public.", file=sys.stderr)
         return 2
+    if args.recriar:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import trava_producao as _trava
+        try:
+            _trava.recusar_migrar(args.schema, args.dsn)
+        except _trava.ProducaoProtegida as erro:
+            print(f"Recuso: {erro}", file=sys.stderr)
+            return 2
     if args.recriar and args.so_conferir:
         print("--recriar e --so-conferir não andam juntos.", file=sys.stderr)
         return 2

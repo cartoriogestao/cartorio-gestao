@@ -92,6 +92,13 @@ def _banco_do_trabalhador(dsn: str, trabalhador: str) -> str:
 if BACKEND_PG:
     if not os.environ.get("CG_PG_DSN", "").strip():
         raise RuntimeError("CG_TEST_BACKEND=pg exige CG_PG_DSN")
+    # 11/11/2026: a suíte herdou CG_PG_SCHEMA=producao e o semear derrubou a
+    # produção. A recusa é antes de qualquer conexão, inclusive a do trabalhador.
+    from tools.trava_producao import ProducaoProtegida, exigir_schema_de_teste
+    try:
+        exigir_schema_de_teste(os.environ.get("CG_PG_SCHEMA", ""))
+    except ProducaoProtegida as _erro_de_producao:
+        raise RuntimeError(str(_erro_de_producao)) from _erro_de_producao
     if os.environ.get("PYTEST_XDIST_WORKER", "").strip():
         os.environ["CG_PG_DSN"] = _banco_do_trabalhador(
             os.environ["CG_PG_DSN"], os.environ["PYTEST_XDIST_WORKER"].strip())
@@ -332,8 +339,11 @@ def _pg_com_linha(c, esquema: str, tabelas: list[str]) -> list[str]:
 
 
 def _pg_semear(db_path: Path, seed_path: Path) -> list[str]:
+    from tools.trava_producao import exigir_schema_descartavel
     esquema = banco_pg.schema_do_caminho(db_path)
     semente = banco_pg.schema_do_caminho(seed_path)
+    exigir_schema_descartavel(esquema, origem="conftest._pg_semear")
+    exigir_schema_descartavel(semente, origem="conftest._pg_semear")
     with _pg_cru() as pg, pg.cursor() as c:
         c.execute(f'DROP SCHEMA IF EXISTS "{semente}" CASCADE')
         c.execute(f'CREATE SCHEMA "{semente}"')
@@ -345,8 +355,11 @@ def _pg_semear(db_path: Path, seed_path: Path) -> list[str]:
 
 
 def _pg_restaurar(db_path: Path, seed_path: Path, seed_tables: list[str]) -> None:
+    from tools.trava_producao import exigir_schema_descartavel
     esquema = banco_pg.schema_do_caminho(db_path)
     semente = banco_pg.schema_do_caminho(seed_path)
+    exigir_schema_descartavel(esquema, origem="conftest._pg_restaurar")
+    exigir_schema_descartavel(semente, origem="conftest._pg_restaurar")
     with _pg_cru() as pg, pg.cursor() as c:
         # conexão esquecida no meio de uma transação seguraria o TRUNCATE
         c.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE "

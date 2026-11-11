@@ -308,24 +308,34 @@ def enviar_carga(con, assentos: list[int], *, cns: str, driver: str,
     precisam de conserto.
     """
     montado = crc_carga.montar(con, assentos, cns=cns)
-    if montado["quantos"] == 0:
+    lotes = list(montado.get("lotes") or [])
+    if not lotes and montado["quantos"]:
+        lotes = [{"xml": montado["xml"], "quantos": montado["quantos"]}]
+    if not lotes:
         raise CrcSoapError(
             "Nenhum dos assentos indicados pôde entrar na carga — veja "
             "«retidos» para o motivo de cada um. Nada foi enviado.")
 
-    xml_bytes = montado["xml"].encode("utf-8")
-    envelope_cms = crc_cms.assinar_anexado(xml_bytes, driver=driver, pin=pin)
-    conteudo_base64 = base64.b64encode(envelope_cms).decode("ascii")
+    # **UM ENVIO POR ARQUIVO.** A CRC recusa a carga com mais de 2500
+    # registros. Cada lote já vem cortado; cada um assina e segue sozinho.
+    respostas = []
+    enviados = 0
+    for lote in lotes:
+        xml_bytes = lote["xml"].encode("utf-8")
+        envelope_cms = crc_cms.assinar_anexado(xml_bytes, driver=driver, pin=pin)
+        conteudo_base64 = base64.b64encode(envelope_cms).decode("ascii")
 
-    # **DUAS CHAMADAS AO TOKEN, E NÃO UMA** — uma para o CMS do conteúdo
-    # (dentro de `crc_cms.assinar_anexado`, acima) e outra para o
-    # `ds:Signature` do pacote SOAP (dentro de `envelope`, abaixo). São
-    # assinaturas de bytes diferentes, em formatos diferentes; a mesma
-    # chave assina as duas, mas nenhuma reaproveita o resultado da outra.
-    # O PIN é pedido pelo delegatário a cada uma.
-    corpo = envelope(conteudo_base64, driver=driver, pin=pin)
-    texto_resposta = _bater(ambiente, corpo)
-    resposta = ler_resposta(texto_resposta)
+        # **DUAS CHAMADAS AO TOKEN, E NÃO UMA** — uma para o CMS do conteúdo
+        # (dentro de `crc_cms.assinar_anexado`, acima) e outra para o
+        # `ds:Signature` do pacote SOAP (dentro de `envelope`, abaixo). São
+        # assinaturas de bytes diferentes, em formatos diferentes; a mesma
+        # chave assina as duas, mas nenhuma reaproveita o resultado da outra.
+        # O PIN é pedido pelo delegatário a cada uma.
+        corpo = envelope(conteudo_base64, driver=driver, pin=pin)
+        texto_resposta = _bater(ambiente, corpo)
+        respostas.append(ler_resposta(texto_resposta))
+        enviados += lote["quantos"]
 
-    return {"enviado": montado["quantos"], "retidos": montado["retidos"],
-            "a_arrumar": montado["a_arrumar"], "resposta": resposta}
+    return {"enviado": enviados, "retidos": montado["retidos"],
+            "a_arrumar": montado["a_arrumar"],
+            "resposta": " | ".join(respostas), "arquivos": len(lotes)}

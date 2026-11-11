@@ -7507,8 +7507,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         with db.connect() as con:
             r = CRC.montar(con, escolhidos, cns=_cns_rcpn())
         audit("RCPN_CRC_ARQUIVO", "rc_assentos", None,
-              {"quantos": r["quantos"], "retidos": len(r["retidos"])})
-        nome = f"crc-carga-{db.now()[:10]}.xml"
+              {"quantos": r["quantos"], "retidos": len(r["retidos"]),
+               "arquivos": len(r["lotes"])})
+        dia = db.now()[:10]
+        # **UM ARQUIVO SÓ ATÉ 2500.** Passou disso, a CRC recusa a carga
+        # inteira. O zip traz um XML por lote, numerado, para subir um de
+        # cada vez no site da Central.
+        if len(r["lotes"]) > 1:
+            pacote = io.BytesIO()
+            with zipfile.ZipFile(pacote, "w", compression=zipfile.ZIP_DEFLATED) as z:
+                for lote in r["lotes"]:
+                    z.writestr(
+                        f"crc-carga-{dia}-{lote['numero']:03d}.xml",
+                        lote["xml"].encode("utf-8"))
+            nome = f"crc-carga-{dia}.zip"
+            return Response(
+                pacote.getvalue(), mimetype="application/zip",
+                headers={"Content-Disposition":
+                         f'attachment; filename="{nome}"'})
+        nome = f"crc-carga-{dia}.xml"
         return Response(
             r["xml"].encode("utf-8"), mimetype="application/xml",
             headers={"Content-Disposition": f'attachment; filename="{nome}"'})

@@ -44,7 +44,15 @@
 
 {% if resultado %}
 <div class="card">
-  <h2 style="margin-top:0">{{ resultado.quantos }} registro(s) no arquivo</h2>
+  <h2 style="margin-top:0">{{ resultado.quantos }} registro(s)
+     {% if resultado.lotes|length > 1 %}em {{ resultado.lotes|length }} arquivos{% else %}no arquivo{% endif %}</h2>
+  {% if resultado.lotes|length > 1 %}
+  <p>A CRC aceita no máximo <strong>{{ norma.MAXIMO_POR_ARQUIVO }}</strong>
+     registros por carga. Esta seleção está em
+     <strong>{{ resultado.lotes|length }} arquivos</strong>
+     ({% for lote in resultado.lotes %}{{ lote.quantos }}{% if not loop.last %} + {% endif %}{% endfor %}).
+     O download traz os arquivos juntos; no site da CRC, suba um de cada vez.</p>
+  {% endif %}
 
   {# **O BOTÃO DE BAIXAR VEM LOGO AQUI, ANTES DAS TABELAS DE ACHADO — relato
      do oficial em 13/09/2026: "cliquei de novo e não baixou nada".**
@@ -65,7 +73,7 @@
     <form method="post" action="{{ url_for('rcpn_crc_arquivo') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="token_escolhidos" value="{{ token_escolhidos }}">
-      <button class="button">Baixar o XML</button>
+      <button class="button">{% if resultado.lotes|length > 1 %}Baixar os {{ resultado.lotes|length }} arquivos{% else %}Baixar o XML{% endif %}</button>
     </form>
   </div>
   {% endif %}
@@ -142,7 +150,7 @@
    travado. Quem quer o arquivo completo já tem o botão "Baixar o XML"
    acima — este trecho é só para conferir a forma, sem carregar tudo. #}
 <details>
-  <summary>ver o começo do XML</summary>
+  <summary>ver o começo do {% if resultado.lotes|length > 1 %}primeiro arquivo{% else %}XML{% endif %}</summary>
   <pre style="white-space:pre-wrap;font-size:11px">{{ resultado.xml[:4000] }}{% if resultado.xml|length > 4000 %}
 
 … ({{ resultado.xml|length }} caracteres ao todo — o resto está no arquivo baixado){% endif %}</pre>

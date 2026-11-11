@@ -568,7 +568,15 @@ def pagar(db, despesa_id: int, *, cliente: ClienteInter, por: str,
         cfg = DP.configuracao(bd)
         if d["situacao"] != DP.AUTORIZADA:
             return {"situacao": d["situacao"], "mensagem": "Não está autorizada."}
-        if not DP.destino_autorizado(d, ambiente=cliente.ambiente, hoje=hoje):
+        # As duas travas do envio ficam (resolução do conflito do #385 com o #384, 10/11/2026):
+        # a guia do Banco do Brasil nunca sai pelo Inter, conferida ou não; e o que sai pelo
+        # Inter exige a conferência individual do destinatário. Nenhuma das duas envia nada.
+        if d["categoria"] in DP.FUNDOS_SOMENTE_BANCO_DO_BRASIL:
+            return {"situacao": DP.AUTORIZADA,
+                    "mensagem": "Esta guia é paga no Banco do Brasil. O executor do Inter não a envia."}
+        import despesas_portal_selo as PS
+        if (not DP.destino_autorizado(d, ambiente=cliente.ambiente, hoje=hoje)
+                and PS.destinatario_automatico(con, d, hoje=hoje) is None):
             return {"situacao": DP.AUTORIZADA, "mensagem": "Pagamento bloqueado: falta conferência "
                     "individual válida do destinatário. Devolva à autorização e confira na ficha. "
                     "Nenhum pagamento foi enviado ao banco."}
@@ -619,12 +627,30 @@ def pagar(db, despesa_id: int, *, cliente: ClienteInter, por: str,
 
 
 def _enviar(db, d: dict, *, cliente: ClienteInter, por: str, hoje: str) -> dict:
-    if not DP.destino_autorizado(d, ambiente=cliente.ambiente, hoje=hoje):
-        return {"situacao": d["situacao"], "mensagem": "Envio bloqueado: destinatário sem autorização prévia válida. Confira a ficha e o banco."}
+    if d["situacao"] != DP.ENVIADA:
+        return {"situacao": d["situacao"], "mensagem": "O envio precisa passar pela preparação e pelos tetos do pagamento."}
+    if d["categoria"] in DP.FUNDOS_SOMENTE_BANCO_DO_BRASIL:
+        return {"situacao": d["situacao"], "mensagem": "Esta guia é paga no Banco do Brasil. O executor do Inter não a envia."}
+    destinatario = DP.destinatario_conferido(d) if DP.destino_autorizado(
+        d, ambiente=cliente.ambiente, hoje=hoje) else None
+    if destinatario is None:
+        import despesas_portal_selo as PS
+        with db.connect() as con:
+            destinatario = PS.destinatario_automatico(con, d, hoje=hoje)
+    if destinatario is None:
+        mensagem = "Envio bloqueado: destinatário sem autorização prévia válida. Confira a ficha e o banco."
+        if d["situacao"] == DP.ENVIADA and d.get("banco_status") == "SEM_RESPOSTA" and d.get("tentativas") == 1:
+            _gravar(db, d["id"], situacao=DP.FALHOU, status="BLOQUEADO_ANTES_DO_ENVIO", codigo=None,
+                    mensagem=mensagem, usuario=por, operacao="PAGAR")
+            return {"situacao": DP.FALHOU, "mensagem": mensagem}
+        return {"situacao": d["situacao"], "mensagem": mensagem}
     data_pagamento = max(d["vencimento"], hoje)
+    if d["forma"] == DP.PIX_COPIA_E_COLA and d.get("origem") == DP.ORIGEM_PORTAL_SELO:
+        # O Pix da guia FERJ/FERC sai no dia, e não agendado para o vencimento: se der
+        # erro, ainda há tempo de pagar antes de vencer (oficial, 10/11/2026).
+        data_pagamento = hoje
     try:
         if d["forma"] in (DP.BOLETO, DP.ARRECADACAO):
-            destinatario = DP.destinatario_conferido(d)
             r = cliente.pagar_codigo(d["codigo_barras"] or d["codigo"], int(d["valor"]),
                                      d["vencimento"], data_pagamento,
                                      DP.digitos(destinatario["documento"]))
@@ -727,7 +753,9 @@ def _reenviar_pix(db, despesa_id: int, *, cliente: ClienteInter, por: str,
         if cfg.get("despesas_ambiente") != cliente.ambiente:
             return {"situacao": DP.ENVIADA, "mensagem": "O ambiente do banco mudou; não "
                     "reenvio."}
-        if not DP.destino_autorizado(d, ambiente=cliente.ambiente, hoje=quando.date().isoformat()):
+        import despesas_portal_selo as PS
+        if (not DP.destino_autorizado(d, ambiente=cliente.ambiente, hoje=quando.date().isoformat())
+                and PS.destinatario_automatico(con, d, hoje=quando.date().isoformat()) is None):
             return {"situacao": DP.ENVIADA, "mensagem": "Pix sem resposta: o destinatário não tem "
                     "autorização prévia válida. Não reenvio. Confira o pagamento no banco antes de "
                     "qualquer nova autorização."}

@@ -3,6 +3,11 @@
 O arquivo oficial tem `ALTER SYSTEM` e gatilho de evento. Gatilho de evento
 pede superusuário. Na suíte, o usuário do PostgreSQL descartável é superusuário.
 Neste servidor da casa, o papel não é: o teste não roda, e não mexe no cluster.
+
+O que vale para o CLUSTER inteiro fica de fora do ensaio: `ALTER SYSTEM`,
+`pg_reload_conf()` e `ALTER ROLE`. O banco descartável é só um banco; papel e
+configuração são do servidor. Rodado contra um cluster que tenha o papel `cg`,
+o ensaio tiraria dele o superusuário — o acidente que este arquivo quer evitar.
 """
 from __future__ import annotations
 
@@ -15,6 +20,9 @@ psycopg = pytest.importorskip("psycopg")
 
 RAIZ = Path(__file__).resolve().parent.parent
 ARQUIVO = RAIZ / "installer" / "sql" / "travas_da_producao.sql"
+
+# O que muda o servidor, e não o banco do ensaio. Pulado, e conferido que existe.
+DO_CLUSTER = ("ALTER SYSTEM", "PG_RELOAD_CONF", "ALTER ROLE")
 
 
 def _comandos(texto: str):
@@ -62,8 +70,14 @@ def test_o_sql_das_travas_recusa_apagar_e_esvaziar():
             c.execute("CREATE SCHEMA producao")
             c.execute("CREATE TABLE producao.t (id int)")
             c.execute("INSERT INTO producao.t VALUES (1)")
+            pulados: set[str] = set()
             for comando in _comandos(ARQUIVO.read_text(encoding="utf-8")):
+                do_cluster = {m for m in DO_CLUSTER if m in comando.upper()}
+                if do_cluster:
+                    pulados |= do_cluster
+                    continue
                 c.execute(comando)
+            assert pulados == set(DO_CLUSTER), "o arquivo mudou: confira o que vale para o cluster"
             with pytest.raises(psycopg.Error, match="recusado"):
                 c.execute("TRUNCATE producao.t")
             assert c.execute("SELECT count(*) FROM producao.t").fetchone()[0] == 1

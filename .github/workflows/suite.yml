@@ -11,6 +11,9 @@
 # O STATUS `suite` vai no commit do PR (o `pull_request_target` registraria a
 # verificação no commit do main, e a regra do main não a veria).
 name: suite
+# O nome da rodada leva o número do PR nos dois gatilhos (11/11/2026): a fila olha as
+# rodadas que esperam o executor e não pede outra por cima (ci/fila.py, `na_fila`).
+run-name: "suite #${{ github.event.pull_request.number || inputs.pr }}"
 
 on:
   pull_request_target:
@@ -94,10 +97,14 @@ jobs:
           persist-credentials: false
 
       - name: O PR junto com o main de agora
+        id: juntar
         working-directory: pr
         run: |
           set -euo pipefail
           git -c user.name=suite -c user.email=suite@invalid fetch -q origin main
+          # O main testado vai para o status `suite-main`: a fila decide por ele se o
+          # teste ainda vale depois que o main andar (ci/fila.py, `julgar_o_teste`).
+          echo "main=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
           # Testa o que vai entrar: o PR mesclado com o main deste instante.
           git -c user.name=suite -c user.email=suite@invalid merge -q --no-edit FETCH_HEAD \
             || { echo "::error::O PR conflita com o main."; exit 1; }
@@ -125,6 +132,13 @@ jobs:
           curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/statuses/${{ steps.pr.outputs.head }}" \
             --data-binary @corpo.json >/dev/null
+
+      - name: Status «suite-main» com o main que se testou junto
+        if: steps.suite.outcome == 'success' && steps.juntar.outputs.main != ''
+        run: |
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/${{ steps.pr.outputs.head }}" \
+            -d '{"state":"success","context":"suite-main","description":"${{ steps.juntar.outputs.main }}"}' >/dev/null
 
       - name: Comentário com o que falhou, agrupado pela causa
         if: failure() && steps.suite.outcome == 'failure'

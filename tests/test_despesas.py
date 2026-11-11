@@ -222,18 +222,24 @@ def test_a_mesma_guia_nao_entra_duas_vezes(casa):
 
 def test_regra_das_guias_conferida_e_no_teto_nasce_autorizada(casa):
     db = casa["db"]
-    ok = _cadastrar(db, origem=DP.ORIGEM_PORTAL_SELO, chave_origem="FERJ:a",
-                    categoria="FUNDO_FERJ", esperado=12345)
+    with db.transaction() as con:   # o recebedor do Pix do FERJ, conferido pelo oficial
+        DP.gravar_configuracao(con, {**DP.configuracao(con), "despesas_pix_ferj": "fornecedor@example.com"})
+    guia = dict(origem=DP.ORIGEM_PORTAL_SELO, categoria="FUNDO_FERJ", forma=DP.PIX_COPIA_E_COLA)
+    ok = _cadastrar(db, chave_origem="FERJ:a", esperado=12345, **guia)
     assert _d(db, ok)["situacao"] == DP.AUTORIZADA
     assert _d(db, ok)["natureza"] == DP.REPASSE
-    divergente = _cadastrar(db, origem=DP.ORIGEM_PORTAL_SELO, chave_origem="FERJ:b",
-                            categoria="FUNDO_FERJ", esperado=12000)
+    divergente = _cadastrar(db, chave_origem="FERJ:b", esperado=12000, **guia)
     assert _d(db, divergente)["situacao"] == DP.AGUARDANDO and _d(db, divergente)["divergencia"]
-    acima = _cadastrar(db, valor=90000, origem=DP.ORIGEM_PORTAL_SELO, chave_origem="FERJ:c",
-                       categoria="FUNDO_FERJ", esperado=90000)
+    acima = _cadastrar(db, valor=90000, chave_origem="FERJ:c", esperado=90000, **guia)
     assert _d(db, acima)["situacao"] == DP.AGUARDANDO
+    outro_recebedor = _cadastrar(db, chave_origem="FERJ:d", esperado=12345,
+                                 codigo=pix("123.45", chave="outra@example.com"), **guia)
+    assert _d(db, outro_recebedor)["situacao"] == DP.AGUARDANDO
+    codigo_de_barras = _cadastrar(db, chave_origem="FERJ:e", esperado=12345, origem=DP.ORIGEM_PORTAL_SELO,
+                                  categoria="FUNDO_FERJ")
+    assert _d(db, codigo_de_barras)["situacao"] == DP.AGUARDANDO   # FERJ sai pelo Pix da guia
     despesa_do_robo = _cadastrar(db, origem=DP.ORIGEM_PORTAL_SELO, chave_origem="x",
-                                 esperado=12345)
+                                 esperado=12345, forma=DP.PIX_COPIA_E_COLA)
     assert _d(db, despesa_do_robo)["situacao"] == DP.AGUARDANDO   # só guia de fundo
 
 

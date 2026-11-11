@@ -1,0 +1,77 @@
+GUIAS DO PORTAL DO SELO — CONTRATO DE INTEGRAÇÃO
+
+O executor tools/portal_selo_worker.mjs roda no Mac com Google Chrome e SafeID do usuário. Não precisa de um modelo para a agenda; tools/portal_selo_mcp.mjs permite que um cliente MCP local consulte ou solicite a mesma rotina. Não contém credenciais e não exporta certificado.
+
+A detecção do login procura o controle Sair na árvore nativa de acessibilidade das abas do mesmo contexto dedicado, inclusive quando a autenticação termina em outra aba. Isso reconhece a âncora sem href usada pelo portal. Não lê sessões de outro perfil nem de outro site. O envio automático exige usuário e senha com seletores CSS de autofill efetivamente aplicados pelo Chrome. Não consulta valores dos campos: identifica o botão Entrar pela acessibilidade e clica dentro de seus limites visíveis. Digitação manual e botões ambíguos não são enviados automaticamente.
+
+No servidor, /administrativo/despesas/portal-selo exige a sessão existente do titular ADMIN e CSRF, inclusive para a API. GET apresenta o formulário. POST multipart recebe documento (PDF até 2 MB); conferir=1 apenas lê e devolve o retrato operacional. Sem conferir, importa com anexo e responde JSON quando Accept=application/json. Nenhum campo enviado pelo cliente controla categoria, favorecido, valor esperado ou situação.
+
+FERJ/FERC podem nascer autorizados quando o valor confere com os selos do período e fica no teto da casa. O cadastro autorizado pede rodada ao processo DESPESAS_PAGAR quando ele tem pode_agir. A fila e o cadastro confirmam na mesma transação. A rota não lê segredo bancário e não faz chamada ao banco.
+FADEP/FEMP/FERRFIS ficam aguardando autorização para pagamento fora do Inter. O executor do Inter os recusa mesmo se um cadastro antigo já estiver autorizado. Repasse continua fora do Livro Diário.
+
+O importador confere o PDF, faz a leitura do código e calcula o valor esperado no servidor. Consulta número e código para reconhecer também cadastros manuais. Não duplica nem eleva a autorização de uma despesa preexistente. Uma colisão com campos diferentes é recusada.
+
+O executor mantém diário privado por fundo/período. Grava a intenção antes da emissão, preserva o PDF antes da API e usa Ver Guias -> ações -> 2ª Via para recuperar uma guia pendente existente. Se a emissão está incerta e não é possível recuperar uma guia única, pede conferência em vez de repetir o clique.
+A ação 2ª Via é localizada pelo texto exato, pois também é uma âncora sem href. A espera da nova aba e o clique são aguardados juntos: uma falha no clique não deixa uma rejeição assíncrona sem tratamento.
+
+Configuração local (fora do repositório): sistema, httpRedePrivada (opção expressa para a rede privada), playwrightMcp (CLI oficial já instalada), perfil (diretório dedicado), pastaDados e producaoLiberada. O padrão operacional é producaoLiberada=false até a atualização assinada e a validação completa. O cliente MCP não aceita destinos nem código arbitrário como argumentos.
+
+Agenda preparada no Mac: segunda às 08h, novas chamadas a cada 30 min até a conclusão ou o fim da segunda. A sessão gráfica, SafeID e sessões autenticadas continuam necessários. Os tetos são ajustes de cada instalação; não se mudaram os padrões globais para todas as serventias.
+
+Validação: unittest tests.test_despesas_portal_selo_unidade; node --test tests/test_portal_selo_worker.mjs; testes de API em tests/test_despesas_portal_selo_api.py com PostgreSQL isolado, conforme conftest. O teste de regras sem banco não substitui o da API, do navegador ou do executor bancário.
+
+O processo AGENTE_IA do sistema já usa o provedor escolhido, mas esta integração não publica o Mac na rede nem inclui uma ponte do agente interno ao MCP local. Para orquestrar pelo Claude configurado no sistema, é necessário acrescentar ferramenta/fila autenticada que o executor do Mac consuma. A agenda não depende da API de IA.
+
+EXCEÇÃO FERJ/FERC À CONFERÊNCIA INDIVIDUAL DO DESTINATÁRIO
+A conferência humana do destinatário continua exigida para as outras despesas.
+Para FERJ/FERC o titular autorizou a exceção: envio automático somente quando
+há origem desta importação, autorização pela regra, PDF original anexado com
+SHA-256 íntegro, identidade da guia/código/favorecido/vencimento coincidente,
+valor esperado recalculado dos selos e tetos vigentes respeitados. O executor
+refaz a prova antes de preparar o envio e imediatamente antes da chamada ao
+banco. PDF ausente/alterado, cadastro manual, base ausente/divergente ou regra
+desligada não recebem a exceção. FADEP/FEMP/FERRFIS continuam bloqueados no Inter,
+inclusive com conferência humana. Pedido de envio não confirma pagamento.
+
+FERJ E FERC SE PAGAM PELO PIX DO QR CODE DA GUIA (10/11/2026)
+Decisão do titular: o código de barras demora a compensar e, se der erro, não
+há tempo de pagar no dia. O importador lê o QR code da guia (o mesmo leitor das
+despesas: texto do PDF e imagem do QR) e cadastra FERJ/FERC como Pix copia e
+cola; o envio é POST /banking/v2/pix, no dia (não agendado para o vencimento).
+Só sai sozinho o Pix que:
+- traz o valor igual ao da guia (Pix com outro valor, ou dois Pix diferentes na
+  guia, recusa a importação; QR dinâmico sem valor no texto paga o valor da
+  guia, já conferido com os selos);
+- vai para o recebedor que o titular conferiu UMA vez em Despesas →
+  Configuração: a chave Pix do fundo (QR estático) ou o domínio do banco que gera
+  o QR dinâmico. O nome dentro do Pix quem escreve é o emissor do QR e não prova
+  nada; a chave conferida, sim. O recebedor vale no momento do envio: trocado
+  depois do cadastro, o envio é bloqueado.
+Guia sem QR, recebedor não configurado ou Pix de outro recebedor: a guia é
+cadastrada e espera a autorização do titular, como qualquer despesa. O Pix sem
+resposta do banco se reenvia uma vez, com a mesma chave de idempotência.
+FADEP/FEMP/FERRFIS continuam pelo código de barras, pagos no Banco do Brasil.
+Antes de ativar: conferir num PDF real se o QR do FERJ/FERC é estático ou
+dinâmico, gravar o recebedor e testar no sandbox do Inter um Pix copia e cola
+do mesmo tipo.
+
+Se a guia já existe como cadastro manual e confere, a importação junta o PDF
+faltante no mesmo cadastro, sem elevar a autorização nem pedir novo pagamento.
+Repetir os mesmos bytes não duplica o anexo. O diário reconhece divergência da
+linha já cadastrada. Portal ainda vazio ou sem botão de emissão não encerra a
+agenda do dia: a rotina continua aguardando a liberação das guias.
+
+VALIDAÇÃO DO CÓDIGO E IMPLANTAÇÃO
+node --test tests/test_portal_selo_worker.mjs tests/test_portal_selo_fluxo.mjs
+pytest tests/test_despesas_portal_selo_api.py tests/test_portal_selo_integracao.py
+O teste de integração usa o worker real, PDFs fictícios válidos, API Flask real
+e PostgreSQL isolado. Só o navegador/portal e o banco externo são simulados.
+O teste requer Node (CG_TEST_NODE ou node no PATH) e é pulado sem esse runtime.
+A emissão por cliques e as retomadas são exercitadas com portal simulado.
+
+Antes de ativar na instalação: conferir PDFs originais de FERJ/FERC, sessão e
+renovação SafeID/Chrome, emissão inicial real, segundo acesso sem duplicação,
+API instalada e política bancária/tetos da serventia. Esses ensaios reais ainda
+são necessários; os testes fictícios não os substituem. A flag local permanece
+producaoLiberada=false até a validação operacional. Tornar o PR pronto libera
+somente a revisão/CI do código; não habilita o executor local nem sua agenda.

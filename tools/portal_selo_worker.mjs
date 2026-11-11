@@ -1,0 +1,260 @@
+// Executor fixo: o LLM só solicita a rotina; nunca fornece código, URLs ou regras bancárias.
+import fs from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import { examinarPortal } from './portal_selo_acessibilidade.mjs';
+
+export const PORTAL = 'https://portalselo.tjma.jus.br';
+export const FUNDOS = new Set(['FERJ', 'FERC', 'FADEP', 'FEMP', 'FERRFIS']);
+export function centavos(s) {
+  const m = String(s).match(/R\$\s*([\d.]+),(\d{2})/);
+  if (!m) throw Error('Valor monetário não reconhecido.');
+  return Number(m[1].replaceAll('.', '')) * 100 + Number(m[2]);
+}
+export function periodo(s) {
+  const m = s.match(/(\d{2})\/(\d{2})\s+a\s+(\d{2})\/(\d{2}).*?(\d{4})/);
+  if (!m) throw Error('Período não reconhecido.');
+  const ano = Number(m[5]), anterior = Number(m[2]) > Number(m[4]) ? ano - 1 : ano;
+  return { inicio: `${anterior}-${m[2]}-${m[1]}`, fim: `${ano}-${m[4]}-${m[3]}` };
+}
+export function confereLinha(g, linha) {
+  return g.fundo === linha.fundo && g.inicio === linha.inicio && g.fim === linha.fim &&
+    g.vencimento === linha.vencimento && g.valor_centavos === linha.valor;
+}
+export function janelaSegunda(agora = new Date()) {
+  const p = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', weekday: 'short',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' })
+    .formatToParts(agora).reduce((a, x) => ({ ...a, [x.type]: x.value }), {});
+  return { aberta: p.weekday === 'Mon' && Number(p.hour) >= 8, chave: `${p.year}-${p.month}-${p.day}` };
+}
+export function origemSistema(cfg) {
+  const u = new URL(cfg.sistema), octetos = u.hostname.split('.').map(Number);
+  const tailscale = octetos.length === 4 && octetos.every(n => Number.isInteger(n) && n >= 0 && n <= 255) &&
+    octetos[0] === 100 && octetos[1] >= 64 && octetos[1] <= 127;
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+  if (u.username || u.password || u.search || u.hash || !['', '/'].includes(u.pathname) ||
+      !(u.protocol === 'https:' || (u.protocol === 'http:' && cfg.httpRedePrivada === true && (local || tailscale))))
+    throw Error('Use a origem HTTPS do sistema ou o endereço privado autorizado na configuração.');
+  return u.origin;
+}
+const dormir = ms => new Promise(r => setTimeout(r, ms));
+async function gravar(file, obj) {
+  const temp = file + '.tmp';
+  await fs.writeFile(temp, JSON.stringify(obj, null, 2) + '\n', { mode: 0o600 });
+  await fs.rename(temp, file);
+}
+async function autenticado(page, sistema = false, origem, examinar = examinarPortal) {
+  if (sistema) {
+    const atual = new URL(page.url());
+    if (atual.origin !== origem || atual.pathname !== '/administrativo/despesas/portal-selo') return false;
+    return await page.locator('input[name="csrf_token"]').count() > 0 &&
+    page.url().includes('/despesas/portal-selo');
+  }
+  return (await examinar(page)).autenticado;
+}
+export async function localizarPortalAutenticado(contexto, preferida, examinar = examinarPortal) {
+  // A autenticação pode terminar em outra aba. Nunca consulta outro perfil/contexto.
+  const paginas = contexto.pages();
+  const ordem = paginas.includes(preferida) ? [preferida, ...paginas.filter(p => p !== preferida)] : paginas;
+  for (const pagina of ordem) {
+    try {
+      if (!pagina.isClosed() && new URL(pagina.url()).origin === PORTAL && await autenticado(pagina, false, undefined, examinar))
+        return pagina;
+    } catch { /* Aba fechada ou em navegação: conferir novamente na próxima tentativa. */ }
+  }
+  return null;
+}
+export async function tentarLoginSalvo(pagina, jaEnviado = false, examinar = examinarPortal) {
+  if (jaEnviado || pagina.isClosed()) return false;
+  try { if (new URL(pagina.url()).origin !== PORTAL) return false; }
+  catch { return false; }
+  return Boolean((await examinar(pagina, true)).login_enviado);
+}
+export async function novaPaginaAposClique(contexto, clicar) {
+  const [pagina] = await Promise.all([contexto.waitForEvent('page', { timeout: 90000 }), Promise.resolve().then(clicar)]);
+  return pagina;
+}
+async function api(page, url, csrf, arquivo, conferir) {
+  const r = await page.request.post(url, { headers: { Accept: 'application/json', 'X-CSRF-Token': csrf },
+    multipart: { documento: { name: path.basename(arquivo), mimeType: 'application/pdf',
+      buffer: await fs.readFile(arquivo) }, conferir: conferir ? '1' : '0' }, maxRedirects: 0 });
+  if (!r.ok() || !(r.headers()['content-type'] || '').includes('application/json'))
+    throw Error(`Importação recusada pelo sistema (HTTP ${r.status()}); confira a sessão e a atualização instalada.`);
+  const data = await r.json();
+  if (data.erro) throw Error('Importação recusada pelo sistema.');
+  return data;
+}
+
+export async function executar(cfg, modo = '--consultar', dependencias = {}) {
+  if (!['--consultar', '--executar', '--autenticar', '--agendado'].includes(modo)) throw Error('MODO_RECUSADO');
+  const origem = origemSistema(cfg);
+  if (['--executar', '--agendado'].includes(modo) && cfg.producaoLiberada !== true)
+    return { estado: 'AGUARDANDO_ATUALIZACAO_E_VALIDACAO', concluido: false };
+  const examinar = dependencias.examinarPortal || examinarPortal;
+  const raiz = path.resolve(cfg.pastaDados);
+  await fs.mkdir(raiz, { recursive: true, mode: 0o700 });
+  const lock = path.join(raiz, 'executor.lock');
+  let dono;
+  try { dono = await fs.open(lock, 'wx', 0o600); }
+  catch (e) { throw Error('Outra execução usa o perfil, ou há trava de execução interrompida. Confira antes de retomar.'); }
+  await dono.writeFile(String(process.pid));
+  let contexto;
+  try {
+    if (dependencias.abrir) contexto = await dependencias.abrir();
+    else {
+      const require = createRequire(realpathSync(cfg.playwrightMcp));
+      const { chromium } = require('playwright');
+      contexto = await chromium.launchPersistentContext(path.resolve(cfg.perfil), {
+        channel: 'chrome', headless: false, acceptDownloads: true,
+        ignoreDefaultArgs: ['--use-mock-keychain', '--password-store=basic']
+      });
+    }
+    let portal = await contexto.newPage();
+    const sistema = await contexto.newPage();
+    const destino = new URL('/administrativo/despesas/portal-selo', origem).href;
+    const respostas = await Promise.all([portal.goto(PORTAL, { waitUntil: 'domcontentloaded' }),
+      sistema.goto(destino, { waitUntil: 'domcontentloaded' })]);
+    if (respostas[1]?.status() === 404)
+      return { estado: 'AGUARDANDO_ATUALIZACAO_E_VALIDACAO', concluido: false };
+    let loginEnviado = false;
+    async function pronto() {
+      const aberta = await localizarPortalAutenticado(contexto, portal, examinar);
+      if (aberta) portal = aberta;
+      // O HTML inicial pode terminar antes de o Angular mostrar login ou sessão.
+      if (!aberta) {
+        const ate = Date.now() + 90000;
+        while (Date.now() < ate) {
+          const outra = await localizarPortalAutenticado(contexto, portal, examinar);
+          if (outra) { portal = outra; break; }
+          if ((await examinar(portal)).formulario_login) break;
+          await dormir(500);
+        }
+        const outra = await localizarPortalAutenticado(contexto, portal, examinar);
+        if (outra) portal = outra;
+      }
+      if (!sistema.url().includes('/login') && !sistema.url().includes('/despesas/portal-selo'))
+        await sistema.goto(destino, { waitUntil: 'domcontentloaded' });
+      if (!await autenticado(portal, false, undefined, examinar) && await tentarLoginSalvo(portal, loginEnviado, examinar)) {
+        loginEnviado = true;
+        const ate = Date.now() + 30000;
+        while (Date.now() < ate) {
+          const pronta = await localizarPortalAutenticado(contexto, portal, examinar);
+          if (pronta) { portal = pronta; break; }
+          await dormir(500);
+        }
+      }
+      const pronta = await localizarPortalAutenticado(contexto, portal, examinar);
+      if (pronta) portal = pronta;
+      return Boolean(pronta) && await autenticado(sistema, true, origem);
+    }
+    if (modo === '--autenticar') {
+      console.error('Conclua SafeID e os dois logins nas janelas do Chrome. Não envie senhas ao agente.');
+      const ate = Date.now() + 30 * 60 * 1000;
+      while (Date.now() < ate && !await pronto()) await dormir(5000);
+    }
+    // No modo agendado, o launchd tenta novamente em 30 min. Não fica preso entre semanas.
+    if (!await pronto()) return { estado: 'AGUARDANDO_AUTORIZACAO', concluido: false };
+    if (modo === '--autenticar') return { estado: 'AUTENTICADO', concluido: false };
+    await portal.goto(PORTAL + '/#/gestao-fundos/repasses-pendentes');
+    await portal.getByRole('table').waitFor({ timeout: 60000 });
+    const linhas = [], resultados = [];
+    for (const row of await portal.getByRole('row').all()) {
+      const c = await row.locator('td').allTextContents();
+      if (c.length < 10 || !FUNDOS.has(c[0].trim()) || c[1].trim() !== 'Normal') continue;
+      const d = c[3].trim().split('/');
+      linhas.push({ fundo: c[0].trim(), periodoPortal: c[2].trim(), ...periodo(c[2]), vencimento: `${d[2]}-${d[1]}-${d[0]}`,
+        valor: centavos(c[7]), disponivel: await row.getByRole('button', { name: 'Emitir guia', exact: true }).count() > 0,
+        existente: await row.getByRole('button', { name: 'Ver Guias', exact: true }).count() > 0 });
+    }
+    if (modo === '--consultar') return { estado: 'CONSULTA', linhas, concluido: false };
+    if (!linhas.length) return { estado: 'AGUARDANDO_GUIAS', linhas, concluido: false };
+    const csrf = await sistema.locator('input[name="csrf_token"]').inputValue();
+    for (const linha of linhas) {
+      if (!linha.disponivel && !linha.existente) {
+        resultados.push({ ...linha, estado: 'AGUARDANDO_LIBERACAO_PORTAL' }); continue;
+      }
+      const chave = `${linha.fundo}_${linha.inicio}_${linha.fim}`;
+      const journal = path.join(raiz, chave + '.json'), pdf = path.join(raiz, chave + '.pdf');
+      let estado = await fs.readFile(journal, 'utf8').then(JSON.parse).catch(e => {
+        if (e.code === 'ENOENT') return {}; throw e;
+      });
+      if (estado.cadastrado && !confereLinha({ ...estado, valor_centavos: estado.valor }, linha))
+        throw Error('DIARIO_DIVERGE_DO_PORTAL');
+      if (estado.cadastrado) { resultados.push({ ...linha, id: estado.id, estado: 'JA_CADASTRADA' }); continue; }
+      let temPdf = await fs.stat(pdf).then(x => x.isFile()).catch(() => false);
+      if (!temPdf && estado.emissaoIniciada && !linha.existente) {
+        resultados.push({ ...linha, estado: 'CONSULTAR_GUIA_EXISTENTE' }); continue;
+      }
+      if (!temPdf) {
+        const row = portal.getByRole('row').filter({ has: portal.getByRole('cell', { name: linha.fundo, exact: true }) })
+          .filter({ has: portal.getByRole('cell', { name: linha.periodoPortal, exact: true }) });
+        if (await row.count() !== 1) throw Error('Linha da guia ambígua. Emissão interrompida para conferência.');
+        let baixar;
+        if (linha.existente) {
+          // Fluxo medido: Ver Guias -> linha Pendente -> menu de ações -> 2ª Via.
+          await row.getByRole('button', { name: 'Ver Guias', exact: true }).click();
+          const tabela = portal.getByRole('table').filter({ has: portal.getByRole('columnheader', { name: 'Nº da guia', exact: true }) });
+          await tabela.waitFor({ timeout: 90000 });
+          const pendente = tabela.getByRole('row').filter({ has: portal.getByRole('cell', { name: 'Pendente', exact: true }) });
+          if (await pendente.count() !== 1) {
+            await portal.getByRole('button', { name: 'Fechar', exact: true }).click();
+            resultados.push({ ...linha, estado: 'CONSULTAR_GUIA_EXISTENTE' }); continue;
+          }
+          await pendente.getByRole('button').click();
+          baixar = portal.getByText('2ª Via', { exact: true });
+        } else {
+          // Intenção durável ANTES do efeito externo. Retomada incerta nunca reemite.
+          await gravar(journal, { ...linha, emissaoIniciada: true });
+          baixar = row.getByRole('button', { name: 'Emitir guia', exact: true });
+        }
+        const pagina = await novaPaginaAposClique(contexto, () => baixar.click());
+        await pagina.waitForURL(u => u.href.startsWith('blob:' + PORTAL + '/'), { timeout: 90000 });
+        const bytes = await pagina.evaluate(async () => {
+          const b = await (await fetch(location.href)).arrayBuffer();
+          if (b.byteLength > 2 * 1024 * 1024) throw Error('PDF excedeu 2 MB');
+          return Array.from(new Uint8Array(b));
+        });
+        const conteudo = Buffer.from(bytes);
+        if (!conteudo.subarray(0, 4).equals(Buffer.from('%PDF'))) throw Error('A resposta não é PDF.');
+        await fs.writeFile(pdf, conteudo, { flag: 'wx', mode: 0o600 });
+        await pagina.close();
+        if (linha.existente) await portal.getByRole('button', { name: 'Fechar', exact: true }).click();
+      }
+      const lido = await api(sistema, destino, csrf, pdf, true);
+      if (!confereLinha(lido, linha)) throw Error('PDF difere da linha do portal; cadastro interrompido.');
+      const feito = await api(sistema, destino, csrf, pdf, false);
+      estado = { ...linha, cadastrado: true, id: feito.id, situacao: feito.situacao,
+        envio_solicitado: feito.envio_solicitado, atualizado: new Date().toISOString() };
+      await gravar(journal, estado);
+      resultados.push(estado);
+    }
+    const incompletos = resultados.some(r => ['CONSULTAR_GUIA_EXISTENTE', 'AGUARDANDO_LIBERACAO_PORTAL'].includes(r.estado));
+    return { estado: incompletos ? 'CONFERENCIA_NECESSARIA' : 'CONCLUIDO', resultados, concluido: !incompletos };
+  } finally {
+    if (contexto) await contexto.close();
+    await dono.close(); await fs.unlink(lock);
+  }
+}
+
+async function main() {
+  const [arquivo, modo = '--consultar'] = process.argv.slice(2);
+  if (!arquivo || !['--consultar', '--executar', '--autenticar', '--agendado'].includes(modo))
+    throw Error('Uso: node portal_selo_worker.mjs configuracao.json [--consultar|--executar|--autenticar|--agendado]');
+  const cfg = JSON.parse(await fs.readFile(arquivo, 'utf8'));
+  if (['--executar', '--agendado'].includes(modo) && cfg.producaoLiberada !== true)
+    return console.log(JSON.stringify({ estado: 'AGUARDANDO_ATUALIZACAO_E_VALIDACAO', concluido: false }));
+  if (modo === '--agendado') {
+    const janela = janelaSegunda();
+    if (!janela.aberta) return console.log(JSON.stringify({ estado: 'FORA_DA_AGENDA' }));
+    const marker = path.join(cfg.pastaDados, 'ultima-segunda.json');
+    const anterior = await fs.readFile(marker, 'utf8').then(JSON.parse).catch(() => ({}));
+    if (anterior.chave === janela.chave && anterior.concluido) return;
+    const r = await executar(cfg, modo);
+    await gravar(marker, { ...r, chave: janela.chave });
+    console.log(JSON.stringify(r));
+  } else console.log(JSON.stringify(await executar(cfg, modo)));
+}
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  main().catch(() => { console.error('ERRO_EXECUTOR: confira a sessão, o perfil e o diário local; não repita uma emissão incerta.'); process.exitCode = 1; });

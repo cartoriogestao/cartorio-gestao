@@ -116,6 +116,9 @@
 {% if user.role in ['ADMIN','MANAGER','USER'] %}
 <div class="actions">
   <a class="button" href="{{ url_for(rota_novo) }}">+ {{ diz_novo }}</a>
+  {% if chave == 'rcpj_rtd' %}
+  <a class="button" href="{{ url_for('rcpj_rtd_registro_acervo') }}">Lançar registro de acervo</a>
+  {% endif %}
   {% if chave == 'protesto' %}
     <a class="button" href="{{ url_for('protesto_certidoes') }}">Certidão de protesto</a>
   {% elif chave == 'rcpn' %}
@@ -202,6 +205,7 @@
              Numa lista que ja e so do RTD, ela repetiria «RTD» em toda linha. #}
           <th>Nº</th>{% if not atribuicao %}<th>Atribuição</th>{% endif %}
           <th>Série</th><th>Requerente</th><th>Natureza</th><th>Situação</th>
+          <th>Origem</th>
         {% else %}
           <th>Nº</th><th>Título</th><th>Número do título</th><th>Valor</th>
           <th>Vencimento</th><th>Situação</th>
@@ -231,10 +235,11 @@
         {% elif chave == 'rcpj_rtd' %}
           <td><a href="{{ url_for(rota_ficha, registro_id=l.id) }}">{{ l.numero or '—' }}</a></td>
           {% if not atribuicao %}<td>{{ 'RCPJ' if l.atribuicao == 3 else 'RTD' }}</td>{% endif %}
-          <td>{{ l.serie }}</td>
+          <td>{{ l.serie }}{% if l.volume %} · vol. {{ l.volume }}{% endif %}</td>
           <td>{{ l.requerente_nome or '—' }}</td>
           <td>{{ l.natureza or '—' }}</td>
           <td>{{ l.situacao }}</td>
+          <td>{% if l.origem == 'ACERVO' %}<strong>ACERVO</strong>{% else %}{{ l.origem or '—' }}{% endif %}</td>
         {% else %}
           <td><a href="{{ url_for(rota_ficha, registro_id=l.id) }}">{{ l.numero }}</a></td>
           <td>{{ (l.titulo_tipo or '—')[:52] }}</td>

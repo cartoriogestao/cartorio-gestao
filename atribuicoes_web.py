@@ -10147,6 +10147,76 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
               "success")
         return _destino_apos_selar_rtdpj(r["ato_id"], r["registro_id"])
 
+    @app.route("/rcpj-rtd/acervo", methods=["GET", "POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def rcpj_rtd_registro_acervo():
+        """Lança no acervo um registro que o livro físico já tem. ESCREVE.
+
+        Não passa por `abrir_registro`: aquele gasta número e folha e a tela
+        nova tenta selar na hora. Aqui o número, a folha, a data e o protocolo
+        são os do papel. Não sela, não cobra e não abre protocolo.
+        """
+        series = [{"codigo": c, "nome": LN.serie(c).nome,
+                   "atribuicao": "RCPJ" if c in RG.SERIES_RCPJ else "RTD"}
+                  for c in RG.SERIES_CONHECIDAS]
+
+        def tela():
+            return render_template(
+                "atrib_registro_acervo.html", series=series, form=request.form)
+
+        if request.method != "POST":
+            return tela()
+
+        arquivos = [a for a in request.files.getlist("arquivo")
+                    if a and (a.filename or "").strip()]
+        aceitos = []
+        for arquivo in arquivos:
+            nome = (arquivo.filename or "").lower()
+            if nome.endswith((".pdf", ".jpg", ".jpeg", ".png")):
+                aceitos.append(arquivo)
+        if not aceitos:
+            flash("Anexe ao menos um PDF (ou imagem) da digitalização do "
+                  "livro. Nada foi lançado.", "danger")
+            return tela()
+        try:
+            with db.transaction() as con:
+                r = RG.lancar_registro_de_acervo(
+                    con, serie=_campo("serie"), volume=_campo("volume"),
+                    numero_ordem=_campo("numero_ordem"),
+                    folha_inicial=_campo("folha_inicial"),
+                    folha_final=_campo("folha_final"),
+                    data_registro=_campo("data_registro"),
+                    protocolo=_campo("protocolo"),
+                    natureza=_campo("natureza"),
+                    requerente_nome=_campo("requerente_nome"),
+                    requerente_documento=_campo("requerente_documento") or None,
+                    teor=_campo("teor") or None,
+                    selos_antigos=_campo("selos_antigos") or None,
+                    lista_presenca_livro=_campo("lista_presenca_livro") or None,
+                    agora=agora(), usuario=usuario_nome())
+        except RG.RgError as erro:
+            flash(str(erro), "danger")
+            return tela()
+        novos_ids = _anexar_novos_arquivos_ao_registro(
+            db, registro_id=r["registro_id"], serie=r["serie"],
+            numero=r["numero_ordem"], arquivos=aceitos,
+            descricao="Digitalização do livro físico",
+            user_id=usuario_id_do_sistema(),
+            pasta_dos_arquivos=pasta_dos_arquivos)
+        audit("RG_REGISTRO_ACERVO", "rg_registros", r["registro_id"],
+              {"serie": r["serie"], "volume": r["volume"],
+               "livro": r["livro"], "numero_ordem": r["numero_ordem"],
+               "folha": r["rotulo"], "protocolo": r["protocolo"],
+               "data_registro": r["data_registro"],
+               "anexos": len(novos_ids)})
+        flash(f"Registro de acervo lançado no Livro {r['livro']}, "
+              f"nº {r['numero_ordem']}, fls. {r['rotulo']}. "
+              f"Não gerou número novo, não emitiu selo e não cobrou "
+              f"emolumentos."
+              + (f" {len(novos_ids)} arquivo(s) anexado(s)." if novos_ids else ""),
+              "success")
+        return redirect(url_for("rcpj_rtd_registro", registro_id=r["registro_id"]))
+
     @app.route("/rcpj-rtd/<int:registro_id>/lancar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def rcpj_rtd_lancar(registro_id: int):
@@ -10682,6 +10752,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 protocolo = str(tit["numero"])
                 if not data_apresentacao:
                     data_apresentacao = str(tit["data_apresentacao"] or "")[:10]
+        if not protocolo and registro.get("protocolo_original"):
+            # Livro físico lançado no acervo: o protocolo é o do papel, e
+            # não um título nem um protocolo de balcão desta casa.
+            protocolo = str(registro["protocolo_original"]).strip()
         data_registro = (request.values.get("data_registro") or "").strip()
         if not data_registro and ato_reg and ato_reg["data_ato"]:
             data_registro = str(ato_reg["data_ato"])[:10]
@@ -14889,6 +14963,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             if tit and tit["numero"] is not None:
                 protocolo_da_averbacao = str(tit["numero"])
                 data_apresentacao_do_titulo = str(tit["data_apresentacao"] or "")[:10]
+        if not protocolo_da_averbacao and registro.get("protocolo_original"):
+            protocolo_da_averbacao = str(registro["protocolo_original"]).strip()
         # A DATA DA CERTIDÃO É A DA EMISSÃO (LT05): sem `dia`, a capa e o fecho
         # saíam com a data da reimpressão, e a segunda via de amanhã diria que
         # a certidão foi expedida amanhã — o hash dela diz outra coisa.

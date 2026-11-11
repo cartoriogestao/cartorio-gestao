@@ -505,6 +505,7 @@ def regra_atos_sem_selo(con, hoje: date) -> list[dict]:
               FROM rg_atos
              WHERE criado_em >= %s AND COALESCE(selo,'') = ''
                AND COALESCE(motivo_cancelamento,'') = ''
+               AND COALESCE(origem,'') NOT IN ('EOFICIO', 'ACERVO')
              ORDER BY id"""),
         ("NOTAS_QUALIFICACAO", "nt_atos", """
             SELECT id, tipo, NULL AS tipo2, livro AS numero, folha AS numero2,

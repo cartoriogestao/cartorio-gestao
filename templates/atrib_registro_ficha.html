@@ -27,8 +27,20 @@
     <tr><th>Natureza</th><td>{{ registro.natureza or '—' }}</td>
         <th>Requerente</th><td>{{ registro.requerente_nome or '—' }}</td></tr>
     <tr><th>Documento</th><td>{{ documento_na_tela(registro.requerente_documento) or '—' }}</td>
-        <th>Origem</th><td>{{ registro.origem }}</td></tr>
+        <th>Origem</th><td>{% if registro.origem == 'ACERVO' %}<strong>ACERVO</strong>{% else %}{{ registro.origem }}{% endif %}</td></tr>
+    {% if registro.volume or registro.protocolo_original %}
+    <tr>
+      {% if registro.volume %}<th>Volume do livro</th><td>{{ registro.volume }}</td>{% endif %}
+      {% if registro.protocolo_original %}<th>Protocolo original</th><td>{{ registro.protocolo_original }}</td>{% endif %}
+    </tr>
+    {% endif %}
   </table>
+  {% if registro.origem == 'ACERVO' %}
+  <p class="notice" style="margin:0">Registro de <strong>acervo</strong>: o número,
+    a folha e a data são os do livro físico. Este lançamento não gerou número
+    novo, não emitiu selo e não cobrou emolumentos. Averbações e certidões
+    posteriores saem pelas telas de sempre.</p>
+  {% endif %}
   {% if registro.atribuicao == 4 %}
   <p style="padding:14px"><small>
     No RTD a averbação <strong>consome protocolo</strong>; no RCPJ não:
@@ -431,12 +443,15 @@
       <tr>
         <td><strong>{{ a.tipo }}</strong></td>
         <td>{{ a.data_ato }}</td>
-        <td>{% if a.numero_ordem %}fl. {{ a.folha }}{% if a.verso %}v{% endif %} · nº {{ a.numero_ordem }}{% else %}—{% endif %}</td>
+        <td>{% if a.numero_ordem %}{% if a.rotulo and ' a ' in a.rotulo %}fls. {{ a.rotulo }}{% else %}fl. {{ a.folha }}{% if a.verso %}v{% endif %}{% endif %} · nº {{ a.numero_ordem }}{% else %}—{% endif %}</td>
         <td>{{ (a.teor or a.motivo_cancelamento or '—') }}
           {% if a.lista_presenca_texto %}<br><small>{{ a.lista_presenca_texto }}</small>{% endif %}</td>
         <td>
+          {% if a.selos_antigos %}
+          <small>No livro: {{ a.selos_antigos }}</small>
+          {% endif %}
           {% if not selos_do_a %}
-          <small class="muted">sem selo</small>
+          <small class="muted">{% if a.selos_antigos %}<br>sem selo desta casa{% else %}sem selo{% endif %}</small>
           {% else %}
           <small><strong>{{ selos_do_a|length }}</strong> selo(s)</small>
           <ul style="margin:2px 0 0; padding-left:16px">

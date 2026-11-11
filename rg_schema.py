@@ -466,6 +466,14 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # se registra nesta serventia. Vazias quando ninguém informou.
     ("rg_partes", "domicilio_cidade", "TEXT"),
     ("rg_partes", "domicilio_uf", "TEXT"),
+    # O LANÇAMENTO MANUAL DO LIVRO FÍSICO (acervo). O número e a folha já
+    # existem no papel: a faixa (25V a 30) não cabe em `folha`+`verso`, o
+    # protocolo antigo não é um `cx_protocolos` novo, e o selo antigo é
+    # texto de consulta — não entra em `selo`, que é o selo desta casa.
+    ("rg_atos", "folha_final", "INTEGER"),
+    ("rg_atos", "verso_final", "INTEGER NOT NULL DEFAULT 0"),
+    ("rg_atos", "selos_antigos", "TEXT"),
+    ("rg_registros", "protocolo_original", "TEXT"),
 )
 
 

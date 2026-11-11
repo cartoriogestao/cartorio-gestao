@@ -2580,6 +2580,9 @@ def selos_do_ato(con: sqlite3.Connection, tabela: str,
 #   E o que fica de fora **nao some calado**: as funcoes devolvem tambem
 #   quantos foram excluidos, para a tela poder dizer.
 MARCA_DO_ACERVO = "EOFICIO"
+# O livro físico digitado à mão (`ACERVO`) também já saiu selado no papel.
+# Comprar selo hoje para ele seria inventar, como na carga do E-Ofício.
+MARCAS_DO_ACERVO = (MARCA_DO_ACERVO, "ACERVO")
 
 
 def _tem_coluna(con: sqlite3.Connection, tabela: str, coluna: str) -> bool:
@@ -2617,7 +2620,8 @@ def _so_o_que_esta_casa_lavrou(con: sqlite3.Connection, tabela: str) -> str:
     """
     if not _tem_coluna(con, tabela, "origem"):
         return ""
-    return f" AND COALESCE(origem,'') <> '{MARCA_DO_ACERVO}'"
+    marcas = ", ".join(f"'{m}'" for m in MARCAS_DO_ACERVO)
+    return f" AND COALESCE(origem,'') NOT IN ({marcas})"
 
 
 def quantos_do_acervo_ficaram_de_fora(con: sqlite3.Connection, tabela: str,
@@ -2630,10 +2634,10 @@ def quantos_do_acervo_ficaram_de_fora(con: sqlite3.Connection, tabela: str,
     """
     if not _so_o_que_esta_casa_lavrou(con, tabela):
         return 0
+    marcas = ", ".join(f"'{m}'" for m in MARCAS_DO_ACERVO)
     return int(banco(con).valor(
         f"""SELECT count(*) AS n FROM {tabela}
-             WHERE {onde} AND COALESCE(origem,'') = %s""",
-        (MARCA_DO_ACERVO,)))
+             WHERE {onde} AND COALESCE(origem,'') IN ({marcas})"""))
 
 
 def conferir_ato(codigo_do_ato: Any) -> dict:

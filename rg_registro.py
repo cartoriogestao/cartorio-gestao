@@ -34,9 +34,12 @@ FUNDAMENTO
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
+from datetime import date
 
 from bd_nativo import banco
+import cpf_cnpj
 import escrituracao as ESC
 import livro_nucleo as LN
 
@@ -48,6 +51,10 @@ class RgError(ValueError):
 SERIES_RCPJ = ("PJ_A", "PJ_B")
 SERIES_RTD = ("TD_B", "TD_C", "TD_F")
 SERIES_CONHECIDAS = SERIES_RCPJ + SERIES_RTD
+
+# Registro digitado a partir do livro físico já selado. Não é carga do
+# E-Ofício (`EOFICIO`) e não é ato novo (`MANUAL`).
+ORIGEM_ACERVO = "ACERVO"
 
 # Medido em LEVANTAMENTO_QUATRO_ATRIBUICOES.md, `tbTD_Propriedade`:
 # `bitIncrementoProtocoloAVTD` é verdadeiro só no RTD. Ainda não gera
@@ -527,6 +534,10 @@ def texto_da_lista_presenca(declaracoes) -> str:
     if escolha == "NAO_APRESENTADA_CERTIDAO":
         ref = str(bloco.get("certidao_ref") or "").strip() or "—"
         return f"Lista de presença: certidão de não apresentação nº {ref}"
+    if escolha == "NO_LIVRO":
+        ref = str(bloco.get("referencia_doc") or "").strip()
+        return (f"Lista de presença no livro: {ref}" if ref
+                else "Lista de presença no livro")
     return ""
 
 
@@ -577,10 +588,11 @@ def atos_sem_declaracao_de_lista(con) -> list[dict]:
               JOIN rg_registros r ON r.id = a.registro_id
              WHERE r.serie IN ({", ".join("%s" for _ in SERIES_RCPJ)})
                AND a.tipo IN ('REGISTRO', 'AVERBACAO')
+               AND COALESCE(a.origem, '') <> %s
                AND (a.declaracoes IS NULL
                     OR a.declaracoes NOT LIKE %s)
              ORDER BY a.id DESC""",
-        (*SERIES_RCPJ, f'%"{CHAVE_LISTA_PRESENCA}"%'))
+        (*SERIES_RCPJ, ORIGEM_ACERVO, f'%"{CHAVE_LISTA_PRESENCA}"%'))
 
 
 def dados_do_termo(con, ato: dict, registro: dict) -> dict:
@@ -795,6 +807,243 @@ def abrir_registro(con: sqlite3.Connection, *, serie: str, sv: dict,
     if lista:
         feito["cnma_lista_presenca"] = lista
     return feito
+
+
+# ------------------------------------------------- o livro físico já feito
+
+
+_FOLHA = re.compile(r"^0*(\d+)(v)?$")
+
+
+def rotulo_do_livro(serie: str, volume: str | None) -> str:
+    """`PJ_A` + `5` -> `A-5`. A letra sai da série. Só calcula."""
+    letra = (serie or "").split("_")[-1] or "?"
+    v = str(volume or "").strip().lstrip("0")
+    return f"{letra}-{v}" if v else letra
+
+
+def volume_canonico(texto: str) -> str:
+    """`05`, `A-5` e `5` são o volume 5. Só calcula."""
+    digitos = "".join(c for c in str(texto or "") if c.isdigit())
+    if not digitos:
+        raise RgError(
+            "Informe o volume do livro, como na capa (ex.: 5 para o Livro A-5).")
+    numero = int(digitos)
+    if numero < 1:
+        raise RgError("O volume do livro começa em 1.")
+    return str(numero)
+
+
+def _face_bonita(folha: int, verso: int) -> str:
+    return f"{int(folha)}V" if verso else str(int(folha))
+
+
+def ler_folha(texto: str) -> tuple[int, int]:
+    """`25`, `25V` ou `fls. 025v` -> (número, verso 0 ou 1). Só calcula."""
+    bruto = _limpo(texto).lower().replace(" ", "").replace("-", "")
+    for prefixo in ("fls.", "fl.", "folha", "fls", "fl"):
+        if bruto.startswith(prefixo):
+            bruto = bruto[len(prefixo):].lstrip(".")
+            break
+    achado = _FOLHA.match(bruto)
+    if not achado:
+        raise RgError(
+            f"Folha inválida: {texto!r}. Escreva o número como no livro, "
+            f"com V no verso (ex.: 25 ou 25V).")
+    numero = int(achado.group(1))
+    if numero < 1:
+        raise RgError("A folha começa em 1.")
+    return numero, 1 if achado.group(2) else 0
+
+
+def rotulo_da_faixa(folha: int, verso: int, folha_final: int,
+                    verso_final: int) -> str:
+    """`25V a 30`, ou só `25` quando o ato cabe numa face. Só calcula."""
+    inicio = _face_bonita(folha, verso)
+    fim = _face_bonita(folha_final, verso_final)
+    return inicio if inicio == fim else f"{inicio} a {fim}"
+
+
+def _data_do_livro(texto: str, *, hoje: str) -> str:
+    bruto = _limpo(texto)
+    if len(bruto) >= 10 and bruto[2] == "/" and bruto[5] == "/":
+        dia = f"{bruto[6:10]}-{bruto[3:5]}-{bruto[0:2]}"
+    else:
+        dia = bruto[:10]
+    try:
+        date.fromisoformat(dia)
+    except ValueError:
+        raise RgError(
+            "A data do registro original não é uma data. Use o dia em que "
+            "o livro foi assinado (AAAA-MM-DD).") from None
+    if dia < "1900-01-01" or (hoje and dia > hoje[:10]):
+        raise RgError(
+            "A data do registro original não parece a do livro. Confira o ano: "
+            "o lançamento de acervo copia a data do papel, não a de hoje.")
+    return dia
+
+
+def _numero_de_ordem(valor) -> int:
+    texto = _limpo(valor)
+    if not texto.isdigit():
+        raise RgError(
+            "Informe o número de ordem original, como está no livro. "
+            "O lançamento de acervo não gera número novo.")
+    numero = int(texto)
+    if numero < 1 or numero > 1_000_000:
+        raise RgError(
+            "O número de ordem original não parece o do livro. Confira.")
+    return numero
+
+
+def _volume_gravado(bd, reg: dict) -> str | None:
+    """O volume canônico do registro, ou None se o livro não está dito."""
+    bruto = str(reg.get("volume") or "").strip()
+    if bruto:
+        try:
+            return volume_canonico(bruto)
+        except RgError:
+            return bruto
+    ato = bd.um(
+        """SELECT livro_id FROM rg_atos
+            WHERE registro_id=%s AND tipo='REGISTRO' AND livro_id IS NOT NULL
+            ORDER BY id LIMIT 1""", (int(reg["id"]),))
+    if not ato:
+        return None
+    livro = bd.um("SELECT numero FROM nu_livros WHERE id=%s",
+                  (int(ato["livro_id"]),))
+    if not livro or livro["numero"] in (None, ""):
+        return None
+    try:
+        return volume_canonico(str(livro["numero"]))
+    except RgError:
+        return str(livro["numero"]).strip() or None
+
+
+def _outro_com_o_mesmo_lugar(bd, serie: str, volume: str,
+                             numero: int) -> dict | None:
+    """Registro ou ato que já ocupa este livro e este número. Só lê."""
+    for reg in bd.ler(
+            """SELECT id, serie, numero, volume, origem, requerente_nome
+                 FROM rg_registros WHERE serie=%s AND numero=%s""",
+            (serie, numero)):
+        conhecido = _volume_gravado(bd, reg)
+        if conhecido is None or conhecido == volume:
+            return {"id": int(reg["id"]), "tipo": "REGISTRO",
+                    "origem": reg["origem"],
+                    "nome": reg.get("requerente_nome")}
+    for ato in bd.ler(
+            """SELECT a.tipo, r.id, r.volume, r.origem, r.requerente_nome
+                 FROM rg_atos a
+                 JOIN rg_registros r ON r.id = a.registro_id
+                WHERE r.serie=%s AND a.numero_ordem=%s""",
+            (serie, numero)):
+        conhecido = _volume_gravado(bd, {"id": ato["id"], "volume": ato["volume"]})
+        if conhecido is None or conhecido == volume:
+            return {"id": int(ato["id"]), "tipo": ato["tipo"],
+                    "origem": ato["origem"],
+                    "nome": ato.get("requerente_nome")}
+    return None
+
+
+def lancar_registro_de_acervo(
+        con: sqlite3.Connection, *, serie: str, volume: str,
+        numero_ordem, folha_inicial: str, folha_final: str,
+        data_registro: str, protocolo: str, natureza: str,
+        requerente_nome: str, agora: str,
+        requerente_documento: str | None = None,
+        teor: str | None = None, selos_antigos: str | None = None,
+        lista_presenca_livro: str | None = None,
+        usuario: str | None = None) -> dict:
+    """Lança no acervo um registro que o livro físico já tem. ESCREVE.
+
+    O número, a folha, a data e o protocolo são os do papel. Não chama
+    `escrituracao.reservar`: não gasta sequência, não abre folha nova, não
+    emite selo, não cobra e não abre protocolo. A lista de presença dos arts.
+    410, 412 e 413 não se exige — o ato já está no livro; a referência, se
+    vier, fica só como consulta.
+
+    O mesmo livro (série + volume) com o mesmo número de ordem não entra
+    duas vezes.
+    """
+    s = _serie(serie)
+    vol = volume_canonico(volume)
+    numero = _numero_de_ordem(numero_ordem)
+    folha, verso = ler_folha(folha_inicial)
+    folha_ate, verso_ate = ler_folha(folha_final)
+    if (folha_ate * 2 + verso_ate) < (folha * 2 + verso):
+        raise RgError(
+            "A folha final não pode ser anterior à inicial. Nada foi lançado.")
+    dia = _data_do_livro(data_registro, hoje=str(agora or "")[:10])
+    proto = _limpo(protocolo)
+    if not proto:
+        raise RgError(
+            "Informe o protocolo original, como está no livro. O lançamento "
+            "de acervo não abre protocolo novo.")
+    o_que = _limpo(natureza)
+    if len(o_que) < 3:
+        raise RgError("Informe a natureza do ato, como está no livro.")
+    nome = _limpo(requerente_nome)
+    if len(nome) < 3:
+        raise RgError(
+            "Informe a denominação da entidade, ou o nome de quem figura "
+            "no registro.")
+    documento = cpf_cnpj.so_digitos(requerente_documento) or None
+    if requerente_documento and _limpo(requerente_documento) and not documento:
+        raise RgError("O CNPJ não tem dígitos. Confira ou deixe em branco.")
+    if documento and cpf_cnpj.documento_valido(documento) is not True:
+        raise RgError(
+            "O CNPJ não confere. Confira os dígitos ou deixe em branco se o "
+            "livro antigo não o traz.")
+    texto = _limpo(teor) or None
+    selos = _limpo(selos_antigos) or None
+    nota_lista = _limpo(lista_presenca_livro) or None
+    onde = rotulo_do_livro(serie, vol)
+    chave = f"{ORIGEM_ACERVO}:{serie}:{vol}:{numero}"
+
+    bd = banco(con)
+    bd.travar("rg_registros.acervo")
+    ocupado = _outro_com_o_mesmo_lugar(bd, serie, vol, numero)
+    if ocupado:
+        quem = f", {ocupado['nome']}" if ocupado.get("nome") else ""
+        raise RgError(
+            f"Já existe o nº {numero} no Livro {onde} "
+            f"(ficha {ocupado['id']}, origem {ocupado['origem']}{quem}). "
+            f"O mesmo livro e o mesmo número de ordem não entram duas vezes. "
+            f"Nada foi lançado.")
+    if registro_por_origem(bd, ORIGEM_ACERVO, chave):
+        raise RgError(
+            f"O nº {numero} do Livro {onde} já foi lançado no acervo. "
+            f"Nada foi lançado de novo.")
+
+    registro_id = int(bd.escrever(
+        """INSERT INTO rg_registros(atribuicao, serie, numero, volume,
+               natureza, requerente_nome, requerente_documento, situacao,
+               teor, teor_formato, origem, origem_chave, protocolo_original,
+               criado_em, criado_por)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
+        (s.atribuicao, serie, numero, vol, o_que, nome, documento, "ATIVO",
+         texto, "texto", ORIGEM_ACERVO, chave, proto, agora, usuario))[0]["id"])
+    rotulo = rotulo_da_faixa(folha, verso, folha_ate, verso_ate)
+    ato_id = int(bd.escrever(
+        """INSERT INTO rg_atos(registro_id, tipo, data_ato, teor, teor_formato,
+               folha, verso, folha_final, verso_final, numero_ordem, rotulo,
+               origem, origem_chave, selos_antigos, criado_em, criado_por)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+           RETURNING id""",
+        (registro_id, "REGISTRO", dia, texto, "texto", folha, verso,
+         folha_ate, verso_ate, numero, rotulo, ORIGEM_ACERVO,
+         f"{chave}:REGISTRO", selos, agora, usuario))[0]["id"])
+    if nota_lista:
+        _gravar_declaracoes_do_ato(bd, ato_id, {}, {
+            "enquadramento": "ACERVO",
+            "lista_presenca": "NO_LIVRO",
+            "referencia_doc": nota_lista,
+        })
+    return {"registro_id": registro_id, "ato_id": ato_id, "serie": serie,
+            "volume": vol, "livro": onde, "numero_ordem": numero,
+            "rotulo": rotulo, "protocolo": proto, "data_registro": dia}
 
 
 # -------------------------------------------------------------- a averbacao

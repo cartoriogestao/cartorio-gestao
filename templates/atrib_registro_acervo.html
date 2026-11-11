@@ -1,0 +1,88 @@
+{#
+  Lançamento de registro que o livro físico já tem — RCPJ e RTD.
+
+  O número, a folha, a data e o protocolo são os do papel. Esta tela não
+  gasta a sequência do livro, não emite selo, não cobra e não abre protocolo.
+#}
+{% extends 'base.html' %}
+{% block heading %}<h1>Lançar registro de acervo — RCPJ / RTD</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions"><a class="button" href="{{ url_for('rcpj_rtd_registros') }}">&larr; Registros</a></div>
+
+<div class="notice">
+  <strong>Isto é o livro que já foi feito.</strong> Informe o número de ordem,
+  as folhas e a data como estão no papel. O sistema <strong>não</strong> gera
+  número novo, <strong>não</strong> ocupa folha da sequência, <strong>não</strong>
+  emite selo, <strong>não</strong> cobra emolumentos e <strong>não</strong>
+  abre protocolo. Para um ato de hoje, use
+  <a href="{{ url_for('rcpj_rtd_registro_novo') }}">Registro novo</a>.
+</div>
+
+<form method="post" class="grid2" style="padding:0 0 14px" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>O que o livro já diz</span></div>
+    <div class="grid2" style="padding:14px">
+      <label>Livro
+        <select name="serie" required>
+          <option value="">— escolha —</option>
+          {% for s in series %}
+            <option value="{{ s.codigo }}"
+                    {% if form.get('serie') == s.codigo %}selected{% endif %}>
+              {{ s.atribuicao }} — {{ s.nome }}
+            </option>
+          {% endfor %}
+        </select></label>
+      <label>Volume <small>(o 5 de «Livro A-5»)</small>
+        <input name="volume" required value="{{ form.get('volume','') }}"
+               placeholder="5" inputmode="numeric"></label>
+      <label>Número de ordem original
+        <input name="numero_ordem" required value="{{ form.get('numero_ordem','') }}"
+               placeholder="342" inputmode="numeric"></label>
+      <label>Data do registro original
+        <input type="date" name="data_registro" required
+               value="{{ form.get('data_registro','') }}"></label>
+      <label>Folha inicial <small>(frente ou verso, ex.: 25V)</small>
+        <input name="folha_inicial" required value="{{ form.get('folha_inicial','') }}"
+               placeholder="25V"></label>
+      <label>Folha final <small>(ex.: 30)</small>
+        <input name="folha_final" required value="{{ form.get('folha_final','') }}"
+               placeholder="30"></label>
+      <label>Protocolo original
+        <input name="protocolo" required value="{{ form.get('protocolo','') }}"
+               placeholder="como está no livro"></label>
+      <label>Natureza / espécie do ato
+        <input name="natureza" required value="{{ form.get('natureza','') }}"
+               placeholder="Estatuto · Ata de assembleia · Contrato"></label>
+      <label>Denominação da entidade
+        <input name="requerente_nome" required value="{{ form.get('requerente_nome','') }}"></label>
+      <label>CNPJ <small>(se o livro trouxer)</small>
+        <input name="requerente_documento" value="{{ form.get('requerente_documento','') }}"
+               placeholder="00.000.000/0001-91"></label>
+      <label style="grid-column:1/-1">Teor ou resumo <small>(opcional)</small>
+        <textarea name="teor" rows="6">{{ form.get('teor','') }}</textarea></label>
+      <label style="grid-column:1/-1">Selos antigos <small>(opcional, só texto — não emite selo)</small>
+        <textarea name="selos_antigos" rows="2"
+                  placeholder="números que já estão carimbados no livro">{{ form.get('selos_antigos','') }}</textarea></label>
+      <label style="grid-column:1/-1">Lista de presença no livro <small>(opcional: folha ou anexo)</small>
+        <input name="lista_presenca_livro" value="{{ form.get('lista_presenca_livro','') }}"
+               placeholder="ex.: folha 12 do livro, ou anexo da ata">
+        <small class="muted">Não trava o lançamento. O ato já está no livro físico.</small></label>
+    </div>
+  </section>
+
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Digitalização</span></div>
+    <div style="padding:14px">
+      <label>PDF ou imagem do livro <small>(um ou mais)</small>
+        <input type="file" name="arquivo" required multiple
+               accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*"></label>
+      <div class="actions" style="margin-top:12px">
+        <button class="button primary">Lançar no acervo</button>
+      </div>
+    </div>
+  </section>
+</form>
+{% endblock %}

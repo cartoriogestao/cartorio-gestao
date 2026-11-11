@@ -97,7 +97,8 @@ LOGADO, LOGIN, DOIS_FATORES, DESCONHECIDA = "LOGADO", "LOGIN", "DOIS_FATORES", "
 
 CATALOGO = (
     {"codigo": "MALOTE_CIENCIA_DIARIA", "nome": "Malote — ciência diária e cadastro",
-     "setor": "GESTAO", "funcao": "malote_robo.ciencia_diaria", "timeout_s": 1800,
+     "setor": "GESTAO", "funcao": "malote_robo.ciencia_diaria", "robo_oficial": "MALOTE",
+     "timeout_s": 1800,
      "agenda": {"dias": [0, 1, 2, 3, 4], "horarios": ["08:00"]},
      "descricao": "Às 8h dos dias úteis: entra no Malote Digital com a senha do cofre, ABRE os não "
                   "lidos (é a ciência), baixa os PDFs e cadastra — fraude na lista de fraudes, o resto "

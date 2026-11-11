@@ -35,6 +35,26 @@
   {% endif %}
 </section>
 
+{% if robos is defined and robos %}
+<section class="panel">
+  <div class="panel-head"><h2>Os robôs</h2></div>
+  <p class="small">Cada processo responde a um robô da casa. Onde o cadastro ainda está vazio, o próximo
+    arranque grava o de fábrica. O robô que o oficial escolheu não muda. Processo sem credencial ou caminho
+    aparece aqui como falta de cadastro e não entra no e-mail do dia.</p>
+  {% for r in robos %}
+  <h3>{{ r.nome }} <span class="small muted">{{ r.resumo }}</span></h3>
+  <ul>
+    {% for p in r.processos %}
+    <li><a href="{{ url_for('automacao_processo', processo_id=p.id) }}">{{ p.nome }}</a>
+      {% if not p.ativo %} <span class="small muted">desligado</span>{% endif %}
+      {% if p.falta %} <span class="badge warning">falta cadastro</span> <span class="small">{{ p.falta }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endfor %}
+</section>
+{% endif %}
+
 <form method="post" action="{{ url_for('automacao_configuracao_salvar') }}"{% if layout_novo %} class="cg-au-cfg"{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   {% if layout_novo %}{{ abre('au-smtp', 'E-mail (SMTP)', ('servidor informado' if cfg.get('smtp_host') else 'sem servidor') ~ ' · ' ~ ('senha guardada' if senha_guardada else 'sem senha') ~ ' · ' ~ ((destinos ~ ' destino(s)') if destinos else 'sem destino')) }}<div class="cg-quadro-corpo">{% else %}
@@ -73,9 +93,11 @@
   {% endif %}
     <label>Resumo do dia por e-mail — a partir de que hora (0 a 23; «desligado» para não mandar)
       <input name="email_resumo_hora" value="{{ cfg.email_resumo_hora }}" size="9"></label>
-    <p class="small muted">Um e-mail por dia, com todos os processos que seguem com problema; nenhum quando
-      está tudo bem. O painel e as tarefas avisam na hora. O e-mail na hora de cada aviso só sai nos processos
-      que marcarem o canal e-mail, na tela de cada um.</p>
+    <p class="small muted">Um e-mail por dia, agrupado pelo robô da casa: o que parou, o que pede uma pessoa
+      e, numa linha só, o cofre trancado. Processo ainda sem credencial ou caminho fica nesta configuração e
+      na lista, e não entra nesse e-mail. Nenhum e-mail quando não há parada nem pendência. O painel e as
+      tarefas avisam na hora. O e-mail na hora de cada aviso só sai nos processos que marcarem o canal
+      e-mail, na tela de cada um.</p>
     <label>Lembrar o problema que continua a cada (horas) <input name="lembrar_a_cada_h" value="{{ cfg.lembrar_a_cada_h }}" size="3"></label>
     <label>Arquivo de estado do backup (ESTADO_DO_BACKUP.json) <input name="backup_estado_caminho" value="{{ cfg.backup_estado_caminho }}"></label>
     <label>Log das minutas do CNIB (.log ou .txt) <input name="cnib_minutas_log_caminho" value="{{ cfg.cnib_minutas_log_caminho }}"></label>

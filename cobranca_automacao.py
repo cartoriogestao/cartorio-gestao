@@ -32,7 +32,7 @@ from caixa_schema import reais
 
 CATALOGO = (
     {"codigo": "COBRANCA_ACOMPANHAR", "nome": "Cobrança — acompanhar os boletos no banco",
-     "setor": "GESTAO", "funcao": "cobranca_automacao.acompanhar",
+     "setor": "GESTAO", "funcao": "cobranca_automacao.acompanhar", "robo_oficial": "FINANCEIRO",
      "agenda": {"dias": [0, 1, 2, 3, 4], "intervalo_min": 30, "janela": ["08:00", "18:00"]}},
 )
 

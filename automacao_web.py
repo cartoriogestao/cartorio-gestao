@@ -80,7 +80,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 return vazio
             with db.connect() as con:
                 processos = AU.listar(con)
-                painel = {"problemas": AU.contar_problemas(con),
+                q = AV.quadros(con, so_ligados=True)
+                painel = {"problemas": len(q[AV.PAROU]) + len(q[AV.PEDE_GENTE]),
+                          "parados": len(q[AV.PAROU]),
+                          "pendencias": len(q[AV.PEDE_GENTE]),
                           "despachante": AU.batida_do_despachante(con),
                           "ativos": sum(1 for p in processos if p["ativo"]),
                           "precisam_do_cofre": sum(1 for p in processos if p["ativo"] and (
@@ -107,9 +110,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     def automacao_lista():
         with db.connect() as con:
             linhas = AU.painel(con)
-            problemas = AU.problemas_atuais(con)
+            quadros = AV.quadros(con, so_ligados=False)
             batida = AU.batida_do_despachante(con)
-        return render_template("automacao_lista.html", linhas=linhas, problemas=problemas,
+        return render_template("automacao_lista.html", linhas=linhas, quadros=quadros,
                                batida=batida, selo=SCH.selo, cofre=COFRE.estado(caminho=cofre()))
 
     @app.route("/automacao/<int:processo_id>/ligar", methods=["POST"])
@@ -141,7 +144,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 abort(404)
             historico = AU.execucoes(con, processo_id)
             batida = AU.batida_do_despachante(con)
+        robo_fabrica = PROC.robo_de_fabrica(p["codigo"])
         return render_template("automacao_processo.html", p=p, historico=historico, batida=batida,
+                               robo_fabrica_nome=PROC.nome_do_robo(robo_fabrica) if robo_fabrica else "",
+                               robos_do_cadastro=PROC.robos_para_o_cadastro(),
+                               codigos_de_robo=PROC.codigos_de_robo(),
                                agenda_texto=AU.descrever_agenda(p["agenda"]),
                                catalogo=sorted(AU.funcoes_permitidas()), tipos=SCH.TIPOS,
                                nome_do_tipo=SCH.NOME_DO_TIPO, canais=SCH.CANAIS,
@@ -245,10 +252,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             cfg = {c: SCH.ler_config(con, c) for c in SCH.CHAVES_CONFIG}
             batida = AU.batida_do_despachante(con)
             ultimos = banco(con).ler("SELECT * FROM au_avisos ORDER BY id DESC LIMIT 20")
+            robos = AU.arranjo_dos_robos(con)
         return render_template("automacao_configuracao.html", cfg=cfg, batida=batida,
                                seguranca=SCH.SEGURANCAS_SMTP, ultimos=ultimos,
                                senha_guardada=AV.tem_senha_do_smtp(pasta()),
-                               nome_do_canal=SCH.NOME_DO_CANAL)
+                               nome_do_canal=SCH.NOME_DO_CANAL, robos=robos)
 
     @app.route("/automacao/configuracao", methods=["POST"])
     @roles_required("ADMIN")

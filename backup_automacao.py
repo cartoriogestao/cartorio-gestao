@@ -286,7 +286,8 @@ def _relato_do_teste(r: dict, numero: int, pacote: Path, agora: datetime, idade_
 #: envelhece no primeiro conserto, e o processo nasceria apontando para o nada.
 CATALOGO = (
     {"codigo": "BACKUP_DIARIO", "nome": "Backup do banco no horário (e o completo semanal)",
-     "setor": "TI", "funcao": f"backup_automacao.{rodar_backup.__name__}", "timeout_s": 3 * 3600,
+     "setor": "TI", "funcao": f"backup_automacao.{rodar_backup.__name__}", "robo_oficial": "CASA",
+     "timeout_s": 3 * 3600,
      # 18h: decisão do oficial em 26/10/2026 («roda 18h»). Nasce desligado
      # como todo processo da central; o horário é o de fábrica, e se ajusta
      # na tela da Automação.
@@ -297,6 +298,7 @@ CATALOGO = (
                   "falhou, a central avisa. Provimento CN/CNJ 213/2026, art. 12, § 3º, I, e § 10."},
     {"codigo": "BACKUP_TESTE_RESTAURACAO", "nome": "Teste de restauração do backup",
      "setor": "TI", "funcao": f"backup_automacao.{rodar_teste_de_restauracao.__name__}",
+     "robo_oficial": "CASA",
      "timeout_s": 3 * 3600, "agenda": {"dias": [6], "horarios": ["04:00"]},
      "parametros": {"idade_maxima_h": 48},
      "descricao": "Restaura o pacote mais novo num banco DESCARTÁVEL (nunca por cima do banco da "

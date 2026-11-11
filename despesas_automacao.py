@@ -33,13 +33,13 @@ from caixa_schema import reais
 
 CATALOGO = (
     {"codigo": "DESPESAS_PAGAR", "nome": "Despesas — pagar as autorizadas (Banco Inter)",
-     "setor": "GESTAO", "funcao": "despesas_automacao.pagar"},
+     "setor": "GESTAO", "funcao": "despesas_automacao.pagar", "robo_oficial": "FINANCEIRO"},
     {"codigo": "DESPESAS_CONCILIAR", "nome": "Despesas — conferir o extrato do Inter",
-     "setor": "GESTAO", "funcao": "despesas_automacao.conciliar"},
+     "setor": "GESTAO", "funcao": "despesas_automacao.conciliar", "robo_oficial": "FINANCEIRO"},
     # 28/10/2026: as recorrentes. Carrega as do Pix e AVISA as outras; o aviso
     # vai no resumo do dia, e não num e-mail por despesa.
     {"codigo": "DESPESAS_RECORRENTES", "nome": "Despesas — carregar e avisar as recorrentes do mês",
-     "setor": "GESTAO", "funcao": "despesas_automacao.recorrentes",
+     "setor": "GESTAO", "funcao": "despesas_automacao.recorrentes", "robo_oficial": "FINANCEIRO",
      "agenda": {"dias": [0, 1, 2, 3, 4], "horarios": ["07:30"]}},
 )
 

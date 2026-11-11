@@ -217,7 +217,8 @@ def busca_automatica_ligada(con: Any) -> bool:
 
 CATALOGO = (
     {"codigo": "WHATSAPP_CAIXA_POSTAL", "nome": "WhatsApp — buscar na caixa-postal",
-     "setor": "GESTAO", "funcao": f"wa_puxar.{rodar_automacao.__name__}", "timeout_s": 120,
+     "setor": "GESTAO", "funcao": f"wa_puxar.{rodar_automacao.__name__}",
+     "robo_oficial": "ATENDIMENTO", "timeout_s": 120,
      "agenda": {"dias": [0, 1, 2, 3, 4, 5, 6], "intervalo_min": 2,
                 "janela": ["06:00", "22:00"]},
      "descricao": "De 2 em 2 minutos: a reserva do vigia do servidor (que busca de "

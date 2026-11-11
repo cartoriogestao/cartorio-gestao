@@ -303,8 +303,9 @@ def por_codigo(con, codigo: str) -> dict | None:
 def semear(con, agora: datetime | None = None) -> int:
     """Põe no cadastro os processos de fábrica que ainda não estão lá. **DESLIGADOS.**
 
-    Idempotente pelo código. Não mexe em processo que já existe — o que o
-    oficial ajustou é dele.
+    Idempotente pelo código. Não mexe no que o oficial já ajustou. Onde o
+    robô está vazio, grava o de fábrica — vazio no cadastro não é uma escolha,
+    é o processo de antes desta organização.
     """
     import automacao_processos as PROC
     SCH.init_automacao_schema(con)
@@ -312,6 +313,7 @@ def semear(con, agora: datetime | None = None) -> int:
     agora_txt = _iso(agora or datetime.now())
     novos = 0
     for s in PROC.todas_as_sementes():
+        robo = str(s.get("robo_oficial") or "").strip() or None
         bd.escrever(
             """INSERT INTO au_processos (codigo, nome, descricao, setor, tipo, alvo,
                    parametros, agenda, ativo, pode_agir, timeout_s, max_tentativas,
@@ -322,8 +324,13 @@ def semear(con, agora: datetime | None = None) -> int:
              s.get("tipo", SCH.FUNCAO), s["alvo"], _dump(s.get("parametros") or {}),
              _dump(normalizar_agenda(s["agenda"])), int(s.get("timeout_s", 300)),
              int(s.get("max_tentativas", 1)), _dump(s.get("canais") or CANAIS_PADRAO),
-             s.get("robo_oficial"), agora_txt))
+             robo, agora_txt))
         novos += bd.linhas_afetadas or 0
+        if robo:
+            bd.escrever(
+                """UPDATE au_processos SET robo_oficial=%s
+                    WHERE codigo=%s AND (robo_oficial IS NULL OR TRIM(robo_oficial)='')""",
+                (robo, s["codigo"]))
     return novos
 
 
@@ -449,6 +456,14 @@ def salvar(con, processo_id: int, campos: dict, *, usuario: str,
     novo["parametros"] = _json(novo.get("parametros"), None)
     if not isinstance(novo["parametros"], dict):
         raise AutomacaoError("Os parâmetros têm de ser um objeto JSON (ex.: {\"dias\": 7}).")
+    import automacao_processos as PROC
+    robo = str(novo.get("robo_oficial") or "").strip().upper()
+    guardado = str(atual.get("robo_oficial") or "").strip().upper()
+    if robo and robo not in PROC.codigos_de_robo() and robo != guardado:
+        raise AutomacaoError("Escolha um robô da casa, ou deixe em branco para usar o de fábrica.")
+    if not robo:
+        robo = str(PROC.robo_de_fabrica(str(atual.get("codigo") or "")) or "").strip().upper()
+    novo["robo_oficial"] = robo or None
     banco(con).escrever(
         """UPDATE au_processos SET nome=%s, descricao=%s, setor=%s, tipo=%s, alvo=%s,
                parametros=%s, agenda=%s, usa_credencial=%s, timeout_s=%s,
@@ -459,7 +474,7 @@ def salvar(con, processo_id: int, campos: dict, *, usuario: str,
          tipo, novo["alvo"], _dump(novo["parametros"]), _dump(novo["agenda"]), cred,
          novo["timeout_s"], novo["max_tentativas"], novo["responsavel_user_id"],
          _dump(novo["canais"]), novo["lembrar_a_cada_h"],
-         (str(novo.get("robo_oficial") or "").strip() or None), usuario,
+         novo["robo_oficial"], usuario,
          _iso(agora or datetime.now()), int(processo_id)))
     return obter(con, processo_id)
 
@@ -543,6 +558,39 @@ def _referencia(con, processo: dict) -> datetime | None:
     return max(candidatos) if candidatos else None
 
 
+def arranjo_dos_robos(con) -> list[dict]:
+    """Cada robô com os processos que responde, para a configuração. **SÓ LÊ.**
+
+    `falta` é o relato quando o alerta aberto é credencial ou caminho ainda
+    não cadastrados. Processo desligado não é falta: nasce desligado.
+    """
+    import automacao_avisos as AV
+    import automacao_processos as PROC
+    faltas = {item["id"]: item["relato"] for item in AV.quadros(con).get(AV.SEM_ARRANJO, [])}
+    grupos: dict[str, dict] = {}
+    for p in listar(con):
+        robo = PROC.robo_que_responde(p) or ""
+        grupo = grupos.get(robo)
+        if grupo is None:
+            grupo = {"codigo": robo or "CASA", "nome": PROC.nome_do_robo(robo),
+                     "ordem": PROC.ordem_do_robo(robo), "processos": [], "ligados": 0, "faltam": 0}
+            grupos[robo] = grupo
+        falta = faltas.get(p["id"], "")
+        if p.get("ativo"):
+            grupo["ligados"] += 1
+        if falta:
+            grupo["faltam"] += 1
+        grupo["processos"].append({
+            "id": p["id"], "nome": p["nome"], "ativo": bool(p.get("ativo")), "falta": falta})
+    saida = list(grupos.values())
+    for grupo in saida:
+        grupo["processos"].sort(key=lambda item: item["nome"])
+        n, total = grupo["ligados"], len(grupo["processos"])
+        grupo["resumo"] = f"{n} ligado de {total}" if n == 1 else f"{n} ligados de {total}"
+    saida.sort(key=lambda grupo: grupo["ordem"])
+    return saida
+
+
 def painel(con, agora: datetime | None = None) -> list[dict]:
     """Uma linha por processo, com a luz, a última rodada e a próxima. **SÓ LÊ.**"""
     agora = agora or datetime.now()
@@ -553,6 +601,7 @@ def painel(con, agora: datetime | None = None) -> list[dict]:
                             WHERE situacao <> %s GROUP BY processo_id)""", (SCH.PULADA,))}
     rodando = {r["processo_id"] for r in bd.ler(
         "SELECT processo_id FROM au_execucoes WHERE situacao=%s", (SCH.RODANDO,))}
+    import automacao_processos as PROC
     saida = []
     for p in listar(con):
         ultima = _decodificar_execucao(ultimas.get(p["id"]))
@@ -567,23 +616,15 @@ def painel(con, agora: datetime | None = None) -> list[dict]:
             luz = "nunca"
         else:
             luz = {SCH.OK: "ok", SCH.AVISO: "atencao"}.get(ultima["situacao"], "problema")
+        robo = PROC.robo_que_responde(p)
         saida.append({**p, "ultima": ultima, "proxima": _iso(proxima),
                       "agenda_texto": descrever_agenda(p["agenda"]), "luz": luz,
                       "rodando": p["id"] in rodando,
                       "na_fila": bool(p.get("pedido_manual_em")),
-                      "nome_do_tipo": SCH.NOME_DO_TIPO.get(p["tipo"], p["tipo"])})
+                      "nome_do_tipo": SCH.NOME_DO_TIPO.get(p["tipo"], p["tipo"]),
+                      "robo": robo, "robo_nome": PROC.nome_do_robo(robo)})
+    saida.sort(key=lambda linha: (PROC.ordem_do_robo(linha["robo"]), linha["nome"]))
     return saida
-
-
-def problemas_atuais(con) -> list[dict]:
-    """Os processos com problema em aberto (o alerta já saiu e ainda não normalizou)."""
-    return [_decodificar(r) for r in banco(con).ler(
-        "SELECT * FROM au_processos WHERE alerta_desde IS NOT NULL ORDER BY alerta_desde")]
-
-
-def contar_problemas(con) -> int:
-    return int(banco(con).valor(
-        "SELECT COUNT(*) FROM au_processos WHERE alerta_desde IS NOT NULL") or 0)
 
 
 def batida_do_despachante(con, agora: datetime | None = None) -> dict:
@@ -944,8 +985,13 @@ def finalizar(db, execucao_id: int, resultado: dict, *, agora: datetime | None =
 
 
 def _bater_no_quadro_dos_robos(db, processo: dict, e: dict) -> None:
-    """A tela antiga dos robôs continua dizendo a verdade (`oficial_robos.bater`)."""
-    robo = (processo or {}).get("robo_oficial")
+    """A tela antiga dos robôs continua dizendo a verdade (`oficial_robos.bater`).
+
+    O robô é o gravado no processo ou, vazio, o de fábrica. Vazio não significa
+    «este processo não é de robô nenhum».
+    """
+    import automacao_processos as PROC
+    robo = PROC.robo_que_responde(processo)
     if not robo or e["situacao"] == SCH.PULADA:
         return
     situacao = {SCH.OK: "OK", SCH.AVISO: "AVISO"}.get(e["situacao"], "ERRO")

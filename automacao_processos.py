@@ -850,7 +850,7 @@ SEMENTES: tuple[dict, ...] = (
      "descricao": "Matrículas com parte que bate com ordem ativa de indisponibilidade e ainda sem "
                   "decisão do cartório."},
     {"codigo": "RI_CNIB_MINUTAS", "nome": "CNIB — minutas diárias (rotina de fora)", "setor": "RI",
-     "alvo": "automacao_processos:verificar_log", "robo_oficial": None, "timeout_s": 60,
+     "alvo": "automacao_processos:verificar_log", "robo_oficial": "RI", "timeout_s": 60,
      "parametros": {"chave_config": SCH.CHAVE_CNIB_LOG, "nome": "as minutas do CNIB", "horas": 26,
                     "padrao_ok": r"FEITO:", "padrao_erro": r"Traceback|ERRO:"},
      "agenda": {"dias": _UTEIS, "horarios": ["09:15"]},
@@ -865,7 +865,7 @@ SEMENTES: tuple[dict, ...] = (
      "parametros": {"dias": 10}, "agenda": {"dias": _UTEIS, "horarios": ["08:10"]},
      "descricao": "Assentos lavrados nos últimos dias que ainda não foram à carga da CRC."},
     {"codigo": "CASA_MALOTE", "nome": "Malote Digital responde?", "setor": "GESTAO",
-     "alvo": "automacao_processos:verificar_malote", "timeout_s": 60,
+     "alvo": "automacao_processos:verificar_malote", "robo_oficial": "MALOTE", "timeout_s": 60,
      "agenda": {"dias": _UTEIS, "intervalo_min": 120, "janela": ["08:00", "18:00"]},
      "descricao": "Sonda a porta do Malote Digital, sem login nem senha."},
     {"codigo": "CASA_CENSEC", "nome": "CENSEC — situação do envio automático", "setor": "NOTAS",
@@ -873,25 +873,26 @@ SEMENTES: tuple[dict, ...] = (
      "agenda": {"dias": _TODOS, "horarios": ["07:40"]},
      "descricao": "O envio automático da madrugada falhou? Há ato impedido ou quinzena vencendo?"},
     {"codigo": "CASA_BACKUP", "nome": "Backup da noite", "setor": "TI",
-     "alvo": "automacao_processos:verificar_backup", "timeout_s": 60, "parametros": {"horas": 26},
+     "alvo": "automacao_processos:verificar_backup", "robo_oficial": "CASA", "timeout_s": 60,
+     "parametros": {"horas": 26},
      "agenda": {"dias": _TODOS, "horarios": ["07:15"]},
      "descricao": "Lê o ESTADO_DO_BACKUP.json (caminho em Configuração) e diz se o backup terminou bem e há quanto tempo."},
     {"codigo": "CASA_DISCO", "nome": "Espaço livre no disco", "setor": "TI",
-     "alvo": "automacao_processos:verificar_disco", "timeout_s": 30,
+     "alvo": "automacao_processos:verificar_disco", "robo_oficial": "CASA", "timeout_s": 30,
      "parametros": {"aviso_gb": 20, "critico_gb": 5},
      "agenda": {"dias": _TODOS, "intervalo_min": 60},
      "descricao": "Menos de 20 GB livres pede atenção; menos de 5 GB é crítico."},
     {"codigo": "CASA_SELADOR", "nome": "Selador responde?", "setor": "TI",
-     "alvo": "automacao_processos:verificar_selador", "timeout_s": 60,
+     "alvo": "automacao_processos:verificar_selador", "robo_oficial": "CASA", "timeout_s": 60,
      "agenda": {"dias": _UTEIS, "intervalo_min": 30, "janela": ["07:30", "18:00"]},
      "descricao": "O aparelho do selo responde e é a mesma máquina conferida. Não pede selo nem token."},
     {"codigo": "COFRE_VALIDADE", "nome": "Cofre — validade das credenciais", "setor": "TI",
-     "alvo": "automacao_processos:verificar_validade_do_cofre", "timeout_s": 30,
+     "alvo": "automacao_processos:verificar_validade_do_cofre", "robo_oficial": "CASA", "timeout_s": 30,
      "parametros": {"dias_antes": 90}, "agenda": {"dias": _TODOS, "horarios": ["07:20"]},
      "descricao": "Avisa 90 dias antes de vencer o certificado ou a chave guardada no cofre (o "
                   "certificado do banco vale um ano). Lê só os metadados: roda com o cofre trancado."},
     {"codigo": "ROTINA_CONFERENCIA_DIARIA", "nome": "Conferência diária do gestor (rotina)", "setor": "GESTAO",
-     "alvo": "automacao_processos:rodar_conferencia_diaria", "timeout_s": 1800,
+     "alvo": "automacao_processos:rodar_conferencia_diaria", "robo_oficial": "GESTOR", "timeout_s": 1800,
      "agenda": {"dias": _TODOS, "horarios": ["07:30", "14:00", "14:30"]},
      "descricao": "A mesma rodada da tarefa «Conferência diária» do Agendador. NÃO ligue aqui enquanto "
                   "a tarefa do Agendador estiver ligada — rodaria duas vezes."},
@@ -901,7 +902,7 @@ SEMENTES: tuple[dict, ...] = (
      "descricao": "A mesma rodada da tarefa do compliance no Agendador. NÃO ligue aqui enquanto a "
                   "tarefa do Agendador estiver ligada."},
     {"codigo": "ROTINA_CENSEC_ENVIO", "nome": "Envio automático à CENSEC (rotina)", "setor": "NOTAS",
-     "alvo": "automacao_processos:rodar_censec_envio", "timeout_s": 1800,
+     "alvo": "automacao_processos:rodar_censec_envio", "robo_oficial": "NOTAS", "timeout_s": 1800,
      "agenda": {"dias": _TODOS, "horarios": ["02:00"]},
      "descricao": "ESTE ENVIA à CENSEC — o mesmo envio da tarefa «CENSEC-Envio» do Agendador. NÃO ligue "
                   "aqui enquanto a tarefa do Agendador estiver ligada."},
@@ -972,6 +973,7 @@ def sementes_de_outros_modulos() -> list[dict]:
                 "nome": item.get("nome") or codigo,
                 "setor": item.get("setor") or "GESTAO",
                 "alvo": alvo,
+                "robo_oficial": str(item.get("robo_oficial") or "").strip() or None,
                 "descricao": item.get("descricao") or f"Processo trazido por «{nome_modulo}».",
                 "agenda": item.get("agenda") or AGENDA_SUGERIDA.get(codigo)
                           or {"dias": _UTEIS, "horarios": ["09:00"]},
@@ -988,3 +990,87 @@ def todas_as_sementes() -> list[dict]:
     """As de fábrica mais as dos outros módulos, sem repetir código."""
     vistas = {s["codigo"] for s in SEMENTES}
     return list(SEMENTES) + [s for s in sementes_de_outros_modulos() if s["codigo"] not in vistas]
+
+
+#: Robôs que não estão no quadro antigo (`oficial_robos.ROBOS`): a casa (backup,
+#: disco, selador, cofre), o malote e o atendimento. Bater ponto neles não pinta
+#: um dos doze como parado.
+_ROBOS_DA_CENTRAL = {
+    "CASA": "Casa",
+    "MALOTE": "Malote",
+    "ATENDIMENTO": "Atendimento",
+}
+
+_mapa_de_fabrica: dict[str, str] | None = None
+
+
+def _mapa_dos_robos_de_fabrica() -> dict[str, str]:
+    global _mapa_de_fabrica
+    if _mapa_de_fabrica is None:
+        mapa = {}
+        for s in todas_as_sementes():
+            robo = str(s.get("robo_oficial") or "").strip()
+            if robo:
+                mapa[s["codigo"]] = robo
+        _mapa_de_fabrica = mapa
+    return _mapa_de_fabrica
+
+
+def robo_de_fabrica(codigo: str) -> str | None:
+    """O robô que a semente declara. None quando o processo não é de fábrica."""
+    return _mapa_dos_robos_de_fabrica().get(str(codigo or ""))
+
+
+def robo_que_responde(processo: dict | None) -> str | None:
+    """O robô do processo: o que está gravado, senão o de fábrica.
+
+    Vazio no cadastro não apaga o arranjo — volta o de fábrica. Quem quiser
+    outro robô grava o código. Processo sem os dois não bate ponto.
+    """
+    marcado = str((processo or {}).get("robo_oficial") or "").strip()
+    if marcado:
+        return marcado
+    return robo_de_fabrica(str((processo or {}).get("codigo") or ""))
+
+
+def nome_do_robo(codigo: str | None) -> str:
+    """O nome para gente. Código desconhecido aparece como está."""
+    codigo = str(codigo or "").strip()
+    if not codigo or codigo == "CASA":
+        return _ROBOS_DA_CENTRAL["CASA"]
+    if codigo in _ROBOS_DA_CENTRAL:
+        return _ROBOS_DA_CENTRAL[codigo]
+    import oficial_robos
+    return oficial_robos.NOME_DO_ROBO.get(codigo, codigo)
+
+
+def codigos_de_robo() -> tuple[str, ...]:
+    """Os códigos que o cadastro aceita.
+
+    O robô oficial mede os outros e não recebe processo: uma falha de rotina
+    não pode pintá-lo de parado.
+    """
+    import oficial_robos
+    codigos = [r["codigo"] for r in oficial_robos.ROBOS if r["codigo"] != "OFICIAL"]
+    codigos.extend(_ROBOS_DA_CENTRAL)
+    return tuple(codigos)
+
+
+def robos_para_o_cadastro() -> list[dict]:
+    """A lista fechada da tela, na ordem do quadro."""
+    itens = [{"codigo": codigo, "nome": nome_do_robo(codigo)} for codigo in codigos_de_robo()]
+    itens.sort(key=lambda item: ordem_do_robo(item["codigo"]))
+    return itens
+
+
+def ordem_do_robo(codigo: str | None) -> tuple:
+    """A ordem do quadro antigo, e depois malote, atendimento e a casa."""
+    import oficial_robos
+    codigo = str(codigo or "").strip() or "CASA"
+    quadro = [r["codigo"] for r in oficial_robos.ROBOS]
+    extras = ("MALOTE", "ATENDIMENTO", "CASA")
+    if codigo in quadro:
+        return (0, quadro.index(codigo), "")
+    if codigo in extras:
+        return (1, extras.index(codigo), "")
+    return (2, 0, nome_do_robo(codigo))

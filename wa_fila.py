@@ -59,6 +59,9 @@ EV_SETOR_PELO_ASSUNTO = "setor_pelo_assunto"
 # A conversa respondida em que o cliente não voltou, resolvida pela rotina
 # depois de N dias (`wa_rotina.encerrar_paradas`, 29/10/2026).
 EV_ENCERRADA = "encerrada_parada"
+# O PEDIDO PARA O ESCREVENTE (10/11/2026). A conversa não muda de modo: a IA
+# continua respondendo, e o trabalho fica em `wa_pedido`.
+EV_PEDIDO = "pedido_escrevente"
 
 # O RESPONSÁVEL NA VOLTA DA RESOLVIDA (decisão do oficial, 27/10/2026): até 7
 # dias depois de resolvida, quem atendeu ainda lembra do caso, e a conversa
@@ -88,6 +91,7 @@ ROTULO_DO_EVENTO = {
     EV_SEM_RESPONSAVEL_NA_VOLTA: "voltou sem responsável",
     EV_SETOR_PELO_ASSUNTO: "setor pelo assunto",
     EV_ENCERRADA: "resolvida sozinha (o cliente não voltou)",
+    EV_PEDIDO: "pedido para o escrevente",
 }
 
 # AS PALAVRAS QUE DIZEM O SETOR — UMA TABELA SÓ (27/10/2026, segunda revisão do

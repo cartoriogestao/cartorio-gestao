@@ -31,6 +31,19 @@
     aprovada pelo responsável). Reclamação, dado protegido, arquivo, pedido de
     falar com alguém e tudo o que a IA não souber <strong>passam para uma pessoa</strong>, com
     a conversa marcada para o setor e um resumo para quem atende.
+    Isso vale com o atendimento do escrevente <strong>desligado</strong>.
+  </p>
+  <p class="small">
+    <strong>O atendimento do escrevente (10/11/2026).</strong> Com ele ligado, a IA usa a
+    mesma API do sistema (<code>agente.cred</code>) e responde com o texto-base desta casa,
+    o ofício do escrevente, a base da ajuda e a base normativa.
+    {% if panorama %}
+    Agora: {{ panorama.origens }} documento(s) e regra(s), {{ panorama.linhas }} linha(s);
+    {{ panorama.normas }} norma(s), {{ panorama.artigos }} artigo(s);
+    {{ panorama.servicos }} serviço(s) do balcão.
+    {% endif %}
+    Quando a pessoa quer o serviço feito, a conversa <strong>continua com a IA</strong> e o
+    trabalho vai para o escrevente (abaixo). A IA não lavra, não sela e não qualifica.
   </p>
   <p class="small">
     <strong>O que sai da serventia.</strong> Para o provedor que responde: a mensagem do
@@ -83,6 +96,38 @@
   {% endif %}
 </div>
 
+<div class="card" id="pedidos">
+  <h2>Pedidos para o escrevente</h2>
+  <p class="small">
+    A IA anota aqui o que a pessoa pediu para ser feito. O escrevente faz o serviço em
+    <a href="{{ url_for('at_lista') }}">Trabalho → Atendimentos</a> e no módulo da
+    atribuição. Marcar «feito» não lavra o ato: só tira o pedido desta lista.
+  </p>
+  {% if pedidos %}
+  <table class="tabela small">
+    <tr><th>quando</th><th>setor</th><th>serviço</th><th>o que a pessoa pediu</th><th></th></tr>
+    {% for p in pedidos %}
+    <tr>
+      <td>{{ (p.quando or '')[:16]|replace('T', ' ') }}</td>
+      <td>{{ p.setor_nome }}</td>
+      <td>{{ p.servico_nome }}</td>
+      <td>{{ p.resumo }}
+        <div class="muted"><a href="{{ url_for('whatsapp_conversa', conversa_id=p.conversa_id) }}">{{ p.nome or p.wa_id }}</a></div>
+      </td>
+      <td>
+        <form method="post" action="{{ url_for('whatsapp_pedido_feito', pedido_id=p.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button secondary">feito</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="small muted">Nenhum pedido aberto.</p>
+  {% endif %}
+</div>
+
 {% if pode_ensaiar %}
 <form method="post" action="{{ url_for('whatsapp_atendente_ensaio') }}" id="ensaio">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -123,6 +168,9 @@
     {% if not e_admin %}<p class="small muted">Só o administrador grava esta tela.</p>{% endif %}
     <p><label class="check"><input type="checkbox" name="ia_ligada" value="1" {% if ia.ia_ligada %}checked{% endif %}>
       Atendente com IA ligado (responde, pergunta e encaminha sozinho)</label></p>
+    <p><label class="check"><input type="checkbox" name="ia_escrevente" value="1" {% if ia.escrevente %}checked{% endif %}>
+      Atendimento do escrevente: responde com o sistema, o cartório e a norma, e abre o pedido
+      para o escrevente fazer o serviço — a conversa fica com a IA</label></p>
     <p><label class="check"><input type="checkbox" name="audio_ligado" value="1" {% if ia.audio_ligado %}checked{% endif %}>
       Transcrever o áudio do cliente ({{ escolhas_de_transcricao[ia.audio_onde] }})</label></p>
     <p><label class="check"><input type="checkbox" name="aviso_passagem" value="1" {% if ia.aviso_passagem %}checked{% endif %}>
@@ -135,10 +183,10 @@
   <div class="card">
     <h2>Texto-base (aprovado pelo oficial)</h2>
     <p class="small muted">
-      A IA só responde o que está aqui. Hora, endereço e telefone que não estiverem
-      escritos aqui <strong>não saem</strong>: a resposta com número fora deste texto é
-      barrada e a conversa vai para uma pessoa. Gravar este texto como administrador é a
-      aprovação.
+      Horário, endereço e telefone <strong>desta casa</strong> só saem se estiverem aqui.
+      Com o atendimento do escrevente ligado, o restante (o que o sistema faz, como o
+      escrevente trabalha e a norma) vem da base; número que não esteja neste texto nem
+      na base da pergunta não sai. Gravar este texto como administrador é a aprovação.
       {% if ia.texto_base_em %}Aprovado por {{ ia.texto_base_por }} em {{ ia.texto_base_em[:16]|replace('T', ' ') }}.{% else %}Ainda não aprovado.{% endif %}
     </p>
     <textarea name="texto_base" rows="14" style="width:100%" placeholder="{{ exemplo }}">{{ ia.texto_base }}</textarea>

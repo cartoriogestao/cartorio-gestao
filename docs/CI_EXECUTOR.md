@@ -19,7 +19,7 @@ máquina com LibreOffice, como o servidor.
 | `ci/suite/rodar.sh` | idem, fora do contêiner | monta a imagem (só a partir do `main`) e roda o contêiner sem rede |
 | `ci/suite/Dockerfile`, `dentro_do_conteiner.sh` | dentro do contêiner | Python 3.12, PostgreSQL 18 descartável, LibreOffice, Chromium; roda o pytest |
 | `ci/suite/resumir.py` | executor, fora do contêiner | o comentário de falha: as falhas agrupadas pela causa (do `junit.xml`) e o primeiro erro, sem IA |
-| `.github/workflows/fila.yml` + `ci/fila.py` | executores do GitHub (grátis em repositório público) | a fila: mescla o verde atualizado, atualiza o próximo e pede a suíte; um por vez |
+| `.github/workflows/fila.yml` + `ci/fila.py` | executores do GitHub (grátis em repositório público) | a fila: mescla o verde cujo teste ainda vale, atualiza o próximo e pede a suíte; um por vez |
 | `ci/suite/instalar_executor.sh` | uma vez, com `sudo` | cria o usuário `ci-runner`, a máquina virtual e os serviços |
 
 ## Segurança
@@ -56,13 +56,19 @@ enableOwnership`) exige conferir antes o acesso da reserva aos próprios arquivo
 ## A regra do `main`
 
 - verificações obrigatórias: `anti-leak` e `suite` (esta, só do GitHub Actions);
-- o PR precisa estar **atualizado** com o `main` (o que se testou é o que entra);
+- o PR **não** precisa estar em dia com o `main` (`strict` desligado, 11/11/2026). Quem
+  decide se o teste ainda vale é a fila: a suíte testa o PR mesclado com o `main` daquele
+  instante e grava esse `main` no status `suite-main`; se depois o `main` mexeu em arquivo
+  do PR ou em arquivo de base (`ARQUIVOS_DE_BASE` em `ci/fila.py`: requirements,
+  `tests/conftest.py`, `banco_pg.py`, `bd_nativo.py`, `app.py`, `ci/suite/`), a fila
+  atualiza a branch e testa de novo. Com o `strict` ligado a fila também funciona, só que
+  refaz a suíte de todo PR a cada merge;
 - nem administrador passa por cima.
 
 ## O dia a dia
 
 - **Abrir um PR pronto** (não rascunho) basta: a suíte roda, e a fila o mescla em
-  squash quando ele estiver verde e atualizado.
+  squash quando ele estiver verde e o teste dele ainda valer.
 - **Tirar um PR da fila:** rótulo `nao-mesclar`.
 - **Conflito:** a fila põe o rótulo `conflito` e comenta; resolvido o conflito, tire o
   rótulo.
@@ -99,3 +105,8 @@ e, se quiser, apague o usuário: `sudo sysadminctl -deleteUser ci-runner`.
   O job também se chamava `suite`: a verificação cancelada ficava no commit do PR, a rodada nova da
   fila (por `workflow_dispatch`) ia para o commit do main, e a regra do main via a cancelada. O job
   passou a se chamar «suíte no contêiner»; a exigência `suite` fica só com o status (PR #408).
+- 11/11/2026: a fila refazia a suíte de todo PR verde a cada merge (a regra exigia a branch em
+  dia): um PR ficou verde três vezes sem entrar. A suíte passou a gravar o `main` testado
+  (`suite-main`), e a fila só refaz quando o `main` mexeu no que o PR toca. Também deixou de
+  pedir suíte por cima da que esperava o executor (a nova cancelava a antiga): as rodadas
+  se chamam `suite #N`, e a fila espera por elas.

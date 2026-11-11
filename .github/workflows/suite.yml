@@ -32,6 +32,13 @@ permissions:
 
 jobs:
   suite:
+    # O NOME DO JOB NÃO PODE SER «suite» (11/11/2026). O job vira uma verificação
+    # (check run) com o nome dele, e a regra do main exige «suite». Quando a fila
+    # dispara de novo por `workflow_dispatch`, a rodada nova registra a verificação
+    # no commit do main, e a do PR fica CANCELADA para sempre: o status «suite»
+    # dava verde, mas o GitHub travava o merge (PR #408). Com outro nome, só o
+    # status que este workflow posta responde pela exigência.
+    name: suíte no contêiner
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.draft == false &&

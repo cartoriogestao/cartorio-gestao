@@ -93,3 +93,5 @@ e, se quiser, apague o usuário: `sudo sysadminctl -deleteUser ci-runner`.
 
 - 10/11/2026: o executor `servidor-reserva` entrou em operação; o primeiro PR a passar pela suíte
   no contêiner e pela fila foi o de ensaio que acrescentou esta linha.
+- 11/11/2026: pôr um rótulo num PR (o `nao-mesclar`, por exemplo) cancelava a suíte que já corria
+  nele — a concorrência estava no workflow, e todo evento entrava no grupo. Passou para o job.

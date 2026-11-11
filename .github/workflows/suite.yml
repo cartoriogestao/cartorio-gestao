@@ -27,10 +27,6 @@ permissions:
   statuses: write
   pull-requests: write
 
-concurrency:
-  group: suite-${{ github.event.pull_request.number || inputs.pr }}
-  cancel-in-progress: true
-
 jobs:
   suite:
     if: >-
@@ -39,6 +35,13 @@ jobs:
        github.event.pull_request.head.repo.full_name == github.repository &&
        github.event.pull_request.user.login == github.repository_owner &&
        (github.event.action != 'labeled' || github.event.label.name == 'ci-revisado'))
+    # A CONCORRÊNCIA É DO JOB, e não do workflow (11/11/2026): no workflow, todo
+    # evento entrava no grupo — inclusive o rótulo `nao-mesclar`, cujo job é pulado —
+    # e cancelava a suíte que já corria no PR. No job, só a rodada que de fato roda
+    # (push novo, PR pronto, `ci-revisado`) substitui a anterior.
+    concurrency:
+      group: suite-${{ github.event.pull_request.number || inputs.pr }}
+      cancel-in-progress: true
     # Só o rótulo próprio (o executor é registrado com --no-default-labels): nenhum
     # outro trabalho que peça «self-hosted» cai no servidor reserva.
     runs-on: [cartorio-suite]

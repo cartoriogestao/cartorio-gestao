@@ -38,6 +38,20 @@ UM E-MAIL POR DIA, E NÃO UM POR AVISO — 28/10/2026
     painel e a tarefa continuam avisando na hora. Quem quiser o e-mail na hora
     de um processo marca o canal nele.
 
+O RESUMO DIZ O QUE PAROU, E NÃO QUE TUDO QUEBROU — 11/11/2026
+    O e-mail único virou outra parede: cada aviso aberto, lado a lado, com o
+    mesmo peso. Falta de credencial, caminho não configurado e cofre trancado
+    saíam como «N processos pedem atenção», e a leitura era «está tudo errado
+    e nada funcionando». O resumo agora separa quatro coisas e agrupa pelo
+    robô (`automacao_processos.robo_que_responde`):
+      parou        ERRO, prazo estourado ou parou no meio — isto não funcionou;
+      pede gente   AVISO de trabalho do dia (remessa, pendência, disco);
+      cofre        o processo não mediu porque a senha-mestra não foi digitada;
+      sem arranjo  credencial ou caminho ainda não cadastrados.
+    Sem arranjo NÃO entra no e-mail: alarme todo dia deixa de ser alarme. Fica
+    na central. Cofre sozinho vira um assunto só («o cofre está trancado»),
+    e não uma lista de panes.
+
 O QUE VAI NA MENSAGEM
     O relato, que fala em números («3 comunicações vencidas»), o nome do
     processo e onde ver o relatório. **Nome de parte, CPF e teor não vão** —
@@ -249,39 +263,143 @@ def _canal_email(db, processo, execucao, motivo, *, agora, pasta_dados) -> dict:
 #: o teto é para um relato comprido não virar um e-mail de dez páginas.
 TETO_DO_RELATO_NO_RESUMO = 300
 
+PAROU, PEDE_GENTE, COFRE, SEM_ARRANJO = "parou", "pede_gente", "cofre", "sem_arranjo"
+CLASSES = (PAROU, PEDE_GENTE, COFRE, SEM_ARRANJO)
+
+#: Frases que a verificação já usa quando o que falta é cadastro, e não uma pane.
+#: «não está configurad» pega configurado e configurada.
+_MARCAS_DE_SEM_ARRANJO = (
+    "credencial não está cadastrada",
+    "credencial não cadastrada",
+    "credencial indisponível",
+    "não está configurad",
+    "caminho não configurado",
+    "caminho fora das pastas",
+)
+
+
+def classe_do_alerta(situacao: Any, relato: Any, erro: Any) -> str:
+    """parou, pede gente, cofre ou sem arranjo. **SÓ CLASSIFICA.**
+
+    Erro, prazo estourado e parada no meio são pane mesmo que o texto fale em
+    credencial. Cofre vem antes de «sem arranjo»: a senha-mestra destrava
+    vários processos de uma vez, e não é um defeito de cada um.
+    """
+    if str(situacao or "").upper() in (SCH.ERRO, SCH.TEMPO_ESGOTADO, SCH.INTERROMPIDA):
+        return PAROU
+    texto = f"{erro or ''}\n{relato or ''}".casefold()
+    if "cofre trancado" in texto or "cofre está trancado" in texto:
+        return COFRE
+    if any(marca in texto for marca in _MARCAS_DE_SEM_ARRANJO):
+        return SEM_ARRANJO
+    return PEDE_GENTE
+
+
+def _relato_curto(texto: Any) -> str:
+    relato = " ".join(str(texto or "(sem relato)").split())
+    if len(relato) > TETO_DO_RELATO_NO_RESUMO:
+        return relato[:TETO_DO_RELATO_NO_RESUMO - 1].rstrip() + "…"
+    return relato
+
+
+def quadros(con, *, so_ligados: bool = False) -> dict[str, list[dict]]:
+    """Os alertas abertos, separados e agrupáveis pelo robô. **SÓ LÊ.**
+
+    Cada item traz o processo, a classe, o robô, o relato da última rodada
+    que não está rodando e o id dela (para o link). A ordem é a do quadro
+    dos robôs, e dentro do robô o pior primeiro.
+    """
+    import automacao_processos as PROC
+    filtro = "AND ativo = 1" if so_ligados else ""
+    bd = banco(con)
+    abertos = bd.ler(
+        f"""SELECT id, codigo, nome, robo_oficial, alerta_situacao, alerta_desde, ativo
+              FROM au_processos WHERE alerta_desde IS NOT NULL {filtro}""")
+    saida: dict[str, list[dict]] = {classe: [] for classe in CLASSES}
+    for p in abertos:
+        ultima = bd.um("""SELECT id, relato, erro FROM au_execucoes WHERE processo_id = %s
+                           AND situacao <> %s ORDER BY id DESC LIMIT 1""", (p["id"], SCH.RODANDO)) or {}
+        robo = PROC.robo_que_responde(p)
+        classe = classe_do_alerta(p.get("alerta_situacao"), ultima.get("relato"), ultima.get("erro"))
+        saida[classe].append({
+            "id": p["id"], "codigo": p["codigo"], "nome": p["nome"],
+            "robo": robo, "robo_nome": PROC.nome_do_robo(robo),
+            "situacao": p.get("alerta_situacao"),
+            "selo": SCH.selo(p.get("alerta_situacao"))["texto"],
+            "desde": str(p.get("alerta_desde") or "")[:16].replace("T", " "),
+            "relato": _relato_curto(ultima.get("relato")),
+            "execucao_id": ultima.get("id"),
+            "ordem": PROC.ordem_do_robo(robo),
+            "peso": SCH.PESO.get(p.get("alerta_situacao"), 0),
+        })
+    for classe in CLASSES:
+        saida[classe].sort(key=lambda item: (item["ordem"], -item["peso"], item["nome"]))
+    return saida
+
+
+def _bloco(titulo: str, itens: list[dict]) -> str:
+    if not itens:
+        return ""
+    linhas = [titulo]
+    robo = None
+    for item in itens:
+        if item["robo_nome"] != robo:
+            robo = item["robo_nome"]
+            linhas.append(f"\n{robo}")
+        linha = (f"• {item['nome']} — {item['selo']}, desde {item['desde']}\n"
+                 f"  {item['relato']}")
+        if item.get("execucao_id"):
+            linha += f"\n  /automacao/execucoes/{item['execucao_id']}"
+        linhas.append(linha)
+    return "\n".join(linhas)
+
+
+def _assunto(agora: datetime, q: dict[str, list[dict]]) -> str:
+    data = f"{agora:%d/%m}"
+    n_parou, n_gente, n_cofre = len(q[PAROU]), len(q[PEDE_GENTE]), len(q[COFRE])
+    if not n_parou and not n_gente and n_cofre:
+        return (f"[Automação] Resumo de {data}: o cofre está trancado"
+                + (f" ({n_cofre} processos esperando)" if n_cofre != 1 else ""))
+    pedacos = []
+    if n_parou:
+        pedacos.append("1 parou" if n_parou == 1 else f"{n_parou} pararam")
+    if n_gente:
+        pedacos.append("1 pendência" if n_gente == 1 else f"{n_gente} pendências")
+    if n_cofre:
+        pedacos.append("cofre trancado")
+    return f"[Automação] Resumo de {data}: " + ", ".join(pedacos)
+
 
 def resumo_do_dia(con, *, agora: datetime) -> tuple[str, str] | None:
-    """O assunto e o corpo do resumo, ou None quando nada segue com problema. **SÓ MONTA.**
+    """O assunto e o corpo do resumo, ou None quando o e-mail não tem o que dizer. **SÓ MONTA.**
 
-    Entra quem está LIGADO e com alerta aberto (`alerta_desde`), o pior
-    primeiro. Quem rodou bem não aparece: o resumo é do que pede gente.
+    Entra quem está LIGADO e com alerta aberto. Quem rodou bem não aparece.
+    Quem só está sem credencial ou sem caminho também não: isso fica na central.
     """
-    bd = banco(con)
-    abertos = bd.ler("""SELECT id, codigo, nome, alerta_situacao, alerta_desde FROM au_processos
-                         WHERE ativo = 1 AND alerta_desde IS NOT NULL""")
-    if not abertos:
+    q = quadros(con, so_ligados=True)
+    if not q[PAROU] and not q[PEDE_GENTE] and not q[COFRE]:
         return None
-    abertos.sort(key=lambda p: (-SCH.PESO.get(p["alerta_situacao"], 0), p["nome"]))
-    blocos = []
-    for p in abertos:
-        ultima = bd.um("""SELECT id, relato FROM au_execucoes WHERE processo_id = %s
-                           AND situacao <> %s ORDER BY id DESC LIMIT 1""", (p["id"], SCH.RODANDO))
-        relato = " ".join(str((ultima or {}).get("relato") or "(sem relato)").split())
-        if len(relato) > TETO_DO_RELATO_NO_RESUMO:
-            relato = relato[:TETO_DO_RELATO_NO_RESUMO - 1].rstrip() + "…"
-        desde = str(p["alerta_desde"] or "")[:16].replace("T", " ")
-        blocos.append(f"• {p['nome']} — {SCH.selo(p['alerta_situacao'])['texto']}, desde {desde}\n"
-                      f"  {relato}"
-                      + (f"\n  /automacao/execucoes/{ultima['id']}" if ultima else ""))
-    n = len(abertos)
-    assunto = (f"[Automação] Resumo de {agora:%d/%m}: "
-               + ("1 processo pede atenção" if n == 1 else f"{n} processos pedem atenção"))
-    corpo = (f"Resumo dos robôs em {agora:%d/%m/%Y, %H:%M}.\n\n"
-             + "\n\n".join(blocos)
-             + "\n\nOs processos que rodaram bem não aparecem. Este é o único e-mail da automação no "
-               "dia; o painel e as tarefas continuam mostrando cada problema na hora. O relatório "
-               "completo está no sistema, em Administrativo → Automação.")
-    return assunto, corpo
+    partes = [f"Resumo dos robôs em {agora:%d/%m/%Y, %H:%M}."]
+    bloco = _bloco("Parou — isto não funcionou", q[PAROU])
+    if bloco:
+        partes.append(bloco)
+    bloco = _bloco("Pede gente hoje — o robô rodou e achou trabalho", q[PEDE_GENTE])
+    if bloco:
+        partes.append(bloco)
+    if q[COFRE]:
+        nomes = "\n".join(f"• {item['robo_nome']} — {item['nome']}" for item in q[COFRE])
+        partes.append("O cofre está trancado. Estes processos não mediram; "
+                      "não é uma pane de cada um. Abra o cofre na máquina do servidor "
+                      "(Automação → Cofre → Desbloquear).\n" + nomes)
+    if q[SEM_ARRANJO]:
+        n = len(q[SEM_ARRANJO])
+        fora = ("1 processo ainda sem credencial ou caminho não entra neste e-mail."
+                if n == 1 else
+                f"{n} processos ainda sem credencial ou caminho não entram neste e-mail.")
+        partes.append(fora + " Estão em Administrativo → Automação.")
+    partes.append("Os que rodaram bem não aparecem. Este é o único e-mail da automação no dia; "
+                  "o painel e as tarefas continuam mostrando cada problema na hora.")
+    return _assunto(agora, q), "\n\n".join(partes)
 
 
 def enviar_resumo(db, *, agora: datetime | None = None, pasta_dados: Any = None) -> dict | None:

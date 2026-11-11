@@ -784,7 +784,7 @@ _UTEIS = [0, 1, 2, 3, 4]
 #: MODULOS_COM_PROCESSOS`). Nasce DESLIGADO, como todos.
 CATALOGO = (
     {"codigo": "AVISOS_ANDAMENTO", "nome": "Avisos de andamento ao cliente", "setor": "GESTAO",
-     "funcao": "andamento_avisos.rodar", "timeout_s": 600,
+     "funcao": "andamento_avisos.rodar", "robo_oficial": "ATENDIMENTO", "timeout_s": 600,
      "agenda": {"dias": _UTEIS, "intervalo_min": 15, "janela": ["08:00", "18:00"]},
      "parametros": {"dias_antes": DIAS_ANTES_PADRAO, "max_tentativas": MAX_TENTATIVAS_PADRAO,
                     "eventos": list(AS.EVENTOS)},

@@ -94,7 +94,7 @@ PORTAIS: dict[str, dict[str, Any]] = {
 CATALOGO = (
     {"codigo": CODIGO,
      "nome": "Protesto — emitir o boleto de repasse no portal da CRA",
-     "setor": "PROTESTO",
+     "setor": "PROTESTO", "robo_oficial": "PROTESTO",
      "funcao": "protesto_repasse_portal.emitir_boletos_da_cra",
      "timeout_s": 300,
      "agenda": {"dias": [0, 1, 2, 3, 4], "horarios": ["14:30"]},

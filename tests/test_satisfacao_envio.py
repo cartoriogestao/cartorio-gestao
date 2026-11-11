@@ -731,6 +731,12 @@ def test_ligado_sem_a_vps_o_whatsapp_espera_e_nao_vai_a_rede(cg_casa, tmp_path, 
     assert r["situacao"] == "AVISO"
 
 
+def test_o_robo_da_casa_nao_substitui_quem_fez():
+    agente, mando = ENVIO.quem_faz({
+        "codigo": ENVIO.CODIGO_DO_PROCESSO, "robo_oficial": "ATENDIMENTO", "alterado_por": "mario"})
+    assert agente == f"automacao:{ENVIO.CODIGO_DO_PROCESSO}" and mando == "mario"
+
+
 def test_ligado_a_vps_recebe_o_convite_do_whatsapp_junto_com_o_do_email(cg_casa, tmp_path,
                                                                       monkeypatch, pontas):
     with cg_casa["db"].connect() as con:

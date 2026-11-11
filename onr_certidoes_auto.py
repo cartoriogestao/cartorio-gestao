@@ -724,7 +724,7 @@ def marcar_a_mao(con, pedido_id: int, motivo: str, *, usuario: str, agora: str) 
 #: MODULOS_COM_PROCESSOS`). Nasce DESLIGADO; o «pode agir» liga o envio.
 CATALOGO = (
     {"codigo": "RI_ONR_CERTIDOES", "nome": "ONR — certidões pedidas (preparar e enviar)",
-     "setor": "RI", "funcao": "onr_certidoes_auto.rodada", "timeout_s": 900,
+     "setor": "RI", "funcao": "onr_certidoes_auto.rodada", "robo_oficial": "CARGAS_RI", "timeout_s": 900,
      "agenda": {"dias": [0, 1, 2, 3, 4], "horarios": ["08:00", "11:00", "14:00", "17:00"]},
      "descricao": "Às 8h, 11h, 14h e 17h: traz do ONR os pedidos de certidão e prepara cada um "
                   "(tipo, custas, ou o motivo de ir à mão) em Registro de Imóveis → Certidões do "

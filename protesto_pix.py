@@ -122,7 +122,7 @@ CODIGO_DO_PROCESSO = "PROTESTO_PIX_CREDITO"
 CATALOGO = (
     {"codigo": CODIGO_DO_PROCESSO,
      "nome": "Protesto — localizar no extrato o crédito dos PIX lançados",
-     "setor": "PROTESTO", "funcao": "protesto_pix.conferir",
+     "setor": "PROTESTO", "funcao": "protesto_pix.conferir", "robo_oficial": "PROTESTO",
      "descricao": ("Lê o extrato do Banco Inter (só leitura, escopo extrato.read) e "
                    "confirma o PIX do Protesto cujo crédito está lá: pelo E2E do "
                    "comprovante, ou pelo valor e pelo dia quando o crédito é um só. "

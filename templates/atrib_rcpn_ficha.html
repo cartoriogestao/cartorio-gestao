@@ -4,10 +4,27 @@
   {%- if layout_novo %} <span class="small muted">{{ assento.livro_volume or assento.serie }}{% if assento.numero %}, termo {{ assento.numero }}{% endif %}{% if assento.situacao != 'ATIVO' %} · {{ assento.situacao }}{% endif %}</span>{% endif %}</h1>{% endblock %}
 {% block content %}
 {% if dados and dados.get('margem_a_conferir') %}
-<div class="notice critical" role="alert">
+{# A margem pode estar gravada como texto ou como lista de itens
+   (espécie, o que conferir, trecho). SEM EFEITO fica em destaque.
+   A tela só mostra; não lança ato. #}
+{% set margem = dados.get('margem_a_conferir') %}
+{% if margem is string %}
+<div class="notice critical" role="alert" data-margem="texto">
   <strong>Confira no livro antes de certificar</strong>
-  <p style="white-space:pre-wrap">{{ dados.get('margem_a_conferir') }}</p>
+  <p style="white-space:pre-wrap">{{ margem }}</p>
 </div>
+{% elif margem is mapping %}
+{% set itens = margem.get('itens') or [] %}
+<div class="notice{% if itens|selectattr('especie', 'equalto', 'SEM EFEITO')|list %} critical{% endif %}" role="alert" data-margem="lista" style="margin:0 0 14px" data-fase="assento">
+  <strong>Confira no livro antes de certificar: a margem deste assento tem o que a ficha ainda não tem.</strong>
+  <ul style="margin:8px 0 0 18px">
+  {% for i in itens %}
+    <li><strong>{{ i.especie|capitalize }}</strong> — {{ i.o_que_conferir }}
+      {% if i.texto_da_margem %}<br><span class="small">no livro: «{{ i.texto_da_margem }}»</span>{% endif %}</li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
 {% endif %}
 {% if dados and dados.get('acervo_transcrito') %}
 <section class="panel" data-fase="assento"><div class="panel-head"><span>Transcrição do acervo</span></div>

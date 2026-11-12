@@ -819,6 +819,211 @@ def pode_aplicar_sozinho(data_dir: Path | None = None,
     return pode_escrever_na_instalacao(pasta)
 
 
+# A TAREFA QUE APLICA A ATUALIZACAO NAO PODE SER FILHA DA TAREFA DO SERVIDOR.
+#   O servidor do Windows vive na tarefa agendada `CartorioGestaoServidor`
+#   (`/RU SYSTEM /RL HIGHEST`, ver installer/instalar_servidor.ps1). O
+#   `aplicar_atualizacao.ps1`, ao aplicar, pede para essa tarefa PARAR. O
+#   Agendador encerra o job inteiro: pai, filhos e netos. Se o atualizador
+#   nasceu com um `Popen` comum, ele morre no mesmo instante em que o servico
+#   cai — e a troca dos arquivos fica pela metade, sem log final e sem
+#   rollback. Por isso ele nasce numa tarefa PROPRIA, ou, se o agendador
+#   recusar, num processo que saiu do job (`CREATE_BREAKAWAY_FROM_JOB`).
+#   Nao se cai de volta no `Popen` dentro da arvore: isso e o defeito.
+TAREFA_DO_ATUALIZADOR = "CartorioGestaoAtualizar"
+CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+
+
+def _quote_cmd(arg: str) -> str:
+    """Aspas no estilo do `cmd.exe` para um argumento do lancador."""
+    texto = str(arg)
+    if not texto or any(ch in texto for ch in ' \t"&<>|^()%'):
+        return '"' + texto.replace('"', '""') + '"'
+    return texto
+
+
+def argv_do_atualizador(
+    script: Path,
+    install_dir: Path,
+    stage_dir: Path,
+    data_dir: Path,
+    task_name: str,
+    parent_pid: int,
+    port: int,
+) -> list[str]:
+    return [
+        "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+        "-File", str(script),
+        "-InstallDir", str(install_dir),
+        "-StageDir", str(stage_dir),
+        "-DataDir", str(data_dir),
+        "-TaskName", task_name,
+        "-ParentPid", str(parent_pid),
+        "-Port", str(int(port)),
+    ]
+
+
+def registrar_lancamento(data_dir: Path, texto: str) -> None:
+    """A mesma fita do `aplicar_atualizacao.ps1`: `updates/update.log`."""
+    pasta = Path(data_dir) / "updates"
+    pasta.mkdir(parents=True, exist_ok=True)
+    linha = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {texto}\n"
+    with (pasta / "update.log").open("a", encoding="utf-8") as fh:
+        fh.write(linha)
+
+
+def escrever_lancador_do_atualizador(caminho: Path, comando: list[str], data_dir: Path) -> Path:
+    """Um `.cmd` curto para a tarefa propria invocar o `ps1`, e ja deixar rastro no log."""
+    caminho = Path(caminho)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    log = Path(data_dir) / "updates" / "update.log"
+    # ASCII de proposito: o `cmd.exe` da tarefa SYSTEM nem sempre le UTF-8.
+    linhas = [
+        "@echo off",
+        "rem Gerado para rodar o atualizador FORA da tarefa CartorioGestaoServidor.",
+        f"echo %DATE% %TIME% Atualizador iniciado pela tarefa {TAREFA_DO_ATUALIZADOR}.>> {_quote_cmd(str(log))}",
+        " ".join(_quote_cmd(parte) for parte in comando),
+    ]
+    caminho.write_text("\r\n".join(linhas) + "\r\n", encoding="ascii")
+    return caminho
+
+
+def _escapar_xml(valor: str) -> str:
+    return (
+        str(valor)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def xml_da_tarefa_do_atualizador(
+    *,
+    cmd_exe: Path,
+    lancador: Path,
+    como_system: bool = True,
+) -> str:
+    """Tarefa de uso unico: so dispara por `/Run`, nunca sozinha no boot ou a meia-noite.
+
+    O gatilho fica em 2099-01-01 de proposito. Um `/SC ONCE /ST 00:00` sem data
+    voltaria a rodar a meia-noite e tentaria aplicar de novo o pacote ja
+    aplicado. `/SC ONSTART` subiria no proximo boot. Quem dispara e o
+    `schtasks /Run` na hora do clique.
+    """
+    usuario = """    <Principal id="Author">
+      <UserId>S-1-5-18</UserId>
+      <LogonType>ServiceAccount</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>""" if como_system else """    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>"""
+    return (
+        '<?xml version="1.0" encoding="UTF-16"?>\n'
+        '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">\n'
+        "  <RegistrationInfo>\n"
+        "    <Description>Aplica a atualizacao do Cartorio Gestao fora da "
+        "arvore da tarefa CartorioGestaoServidor.</Description>\n"
+        "  </RegistrationInfo>\n"
+        "  <Triggers>\n"
+        "    <TimeTrigger>\n"
+        "      <StartBoundary>2099-01-01T00:00:00</StartBoundary>\n"
+        "      <Enabled>true</Enabled>\n"
+        "    </TimeTrigger>\n"
+        "  </Triggers>\n"
+        "  <Principals>\n"
+        f"{usuario}\n"
+        "  </Principals>\n"
+        "  <Settings>\n"
+        "    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\n"
+        "    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\n"
+        "    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\n"
+        "    <AllowHardTerminate>true</AllowHardTerminate>\n"
+        "    <StartWhenAvailable>false</StartWhenAvailable>\n"
+        "    <AllowStartOnDemand>true</AllowStartOnDemand>\n"
+        "    <Enabled>true</Enabled>\n"
+        "    <Hidden>true</Hidden>\n"
+        "    <ExecutionTimeLimit>PT4H</ExecutionTimeLimit>\n"
+        "    <Priority>7</Priority>\n"
+        "  </Settings>\n"
+        "  <Actions Context=\"Author\">\n"
+        "    <Exec>\n"
+        f"      <Command>{_escapar_xml(str(cmd_exe))}</Command>\n"
+        f"      <Arguments>/d /c {_escapar_xml(_quote_cmd(str(lancador)))}</Arguments>\n"
+        "    </Exec>\n"
+        "  </Actions>\n"
+        "</Task>\n"
+    )
+
+
+def flags_fora_da_arvore() -> int:
+    """Sai do job do Agendador e nao abre janela.
+
+    Sem `CREATE_BREAKAWAY_FROM_JOB`, o processo continua na arvore de
+    `CartorioGestaoServidor` e morre quando essa tarefa e encerrada. Nao se
+    usa `DETACHED_PROCESS`: no Windows ele faz o `CREATE_NO_WINDOW` ser
+    ignorado (o mesmo defeito medido no lancador da automacao).
+    """
+    no_window = int(getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
+    novo_grupo = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200))
+    return no_window | novo_grupo | CREATE_BREAKAWAY_FROM_JOB
+
+
+def _cmd_do_sistema() -> Path:
+    raiz = Path(os.environ.get("SystemRoot") or r"C:\Windows")
+    return raiz / "System32" / "cmd.exe"
+
+
+def _rodar_schtasks(argumentos: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["schtasks", *argumentos],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+
+def lancar_atualizador_por_tarefa(lancador: Path, data_dir: Path) -> bool:
+    """Registra (ou reescreve) a tarefa propria e a dispara agora.
+
+    Devolve True so quando o `/Run` foi aceito. Recusar aqui nao e erro
+    final: o chamador ainda tenta o processo desanexado.
+    """
+    xml_path = Path(data_dir) / "updates" / "_tarefa_atualizador.xml"
+    cmd_exe = _cmd_do_sistema()
+    for como_system in (True, False):
+        xml_path.write_bytes(
+            xml_da_tarefa_do_atualizador(
+                cmd_exe=cmd_exe, lancador=lancador, como_system=como_system
+            ).encode("utf-16")
+        )
+        criado = _rodar_schtasks([
+            "/Create", "/TN", TAREFA_DO_ATUALIZADOR,
+            "/XML", str(xml_path), "/F",
+        ])
+        if criado.returncode != 0:
+            detalhe = (criado.stderr or criado.stdout or "").strip()
+            modo = "SYSTEM" if como_system else "conta atual"
+            registrar_lancamento(
+                data_dir,
+                f"Agendador recusou criar a tarefa {TAREFA_DO_ATUALIZADOR} "
+                f"como {modo}" + (f": {detalhe}" if detalhe else "."),
+            )
+            continue
+        disparo = _rodar_schtasks(["/Run", "/TN", TAREFA_DO_ATUALIZADOR])
+        if disparo.returncode == 0:
+            return True
+        detalhe = (disparo.stderr or disparo.stdout or "").strip()
+        registrar_lancamento(
+            data_dir,
+            f"Agendador criou {TAREFA_DO_ATUALIZADOR} mas recusou o disparo"
+            + (f": {detalhe}" if detalhe else "."),
+        )
+        return False
+    return False
+
+
 def launch_windows_updater(stage_dir: Path, data_dir: Path, parent_pid: int, port: int = 8765, task_name: str = "CartorioGestaoServidor") -> None:
     if not sys.platform.startswith("win"):
         raise UpdateError("Aplicacao automatica de atualizacao so esta disponivel no Windows instalado.")
@@ -833,13 +1038,45 @@ def launch_windows_updater(stage_dir: Path, data_dir: Path, parent_pid: int, por
     pode, motivo = pode_aplicar_sozinho(data_dir, install_dir)
     if not pode:
         raise UpdateError(motivo)
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    subprocess.Popen(
-        [
-            "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
-            "-InstallDir", str(install_dir), "-StageDir", str(stage_dir), "-DataDir", str(data_dir),
-            "-TaskName", task_name, "-ParentPid", str(parent_pid), "-Port", str(int(port)),
-        ],
-        close_fds=True,
-        creationflags=creationflags,
+    data_dir = Path(data_dir)
+    comando = argv_do_atualizador(
+        script, install_dir, Path(stage_dir), data_dir, task_name, parent_pid, port,
+    )
+    lancador = Path(data_dir) / "updates" / "_lancar_atualizacao.cmd"
+    escrever_lancador_do_atualizador(lancador, comando, data_dir)
+    registrar_lancamento(
+        data_dir,
+        "Lancando o atualizador fora da arvore da tarefa CartorioGestaoServidor.",
+    )
+    if lancar_atualizador_por_tarefa(lancador, data_dir):
+        registrar_lancamento(
+            data_dir,
+            f"Atualizador disparado pela tarefa {TAREFA_DO_ATUALIZADOR}.",
+        )
+        return
+    try:
+        subprocess.Popen(
+            comando,
+            close_fds=True,
+            creationflags=flags_fora_da_arvore(),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as exc:
+        registrar_lancamento(
+            data_dir,
+            f"Falha ao lancar o atualizador fora da arvore: {exc}. NADA FOI ALTERADO.",
+        )
+        raise UpdateError(
+            "Nao consegui lancar o atualizador fora da tarefa "
+            "CartorioGestaoServidor. Se ele nascesse dentro dela, parar o "
+            "servico o mataria junto e a atualizacao ficaria pela metade. "
+            "Use o ATUALIZAR_SISTEMA.cmd. NADA FOI ALTERADO e o sistema "
+            "continua no ar."
+        ) from exc
+    registrar_lancamento(
+        data_dir,
+        "Atualizador lancado com CREATE_BREAKAWAY_FROM_JOB "
+        "(o agendador recusou a tarefa propria).",
     )

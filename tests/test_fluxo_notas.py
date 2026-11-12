@@ -125,6 +125,31 @@ def _reais(valor: float) -> str:
     return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _faixa_da_tabela_3(ato: str, envelope: dict):
+    """A faixa da escritura: pelo código 13.1.N, ou pelo valor quando o item é 13.1.
+
+    O aparelho de verdade recebe o item pai `13.1` (é o código que o TJ conhece)
+    e o `valorDeclarado`, e devolve no `textoSelo` os emolumentos da faixa em
+    que o valor cai. O caixa continua no 13.1.N. Sem esta busca, o falso
+    devolvia o selo sem «Total R$» nem «Emol R$», e o termo da escritura com
+    valor saía sem os emolumentos (CN-MA art. 87, XVI).
+    """
+    por_codigo = next((f for f in CUSTAS["faixas_2026"]
+                       if f["strCodigoTJ"] == ato), None)
+    if por_codigo or ato != "13.1":
+        return por_codigo
+    declarado = envelope.get("valorDeclarado") or {}
+    valor = (declarado.get("valorDeclarado") if isinstance(declarado, dict)
+             else declarado)
+    try:
+        valor = float(valor)
+    except (TypeError, ValueError):
+        return None
+    return next((f for f in CUSTAS["faixas_2026"]
+                 if int(f["intCodigoTabela"]) == 3
+                 and float(f["curDe"]) <= valor <= float(f["curAte"])), None)
+
+
 def _texto_do_selo(numero: str, envelope: dict) -> str:
     """O `textoSelo` como o aparelho de verdade o escreve — com os valores.
 
@@ -152,13 +177,33 @@ def _texto_do_selo(numero: str, envelope: dict) -> str:
                    f"FERC R$ {_reais(ferc)} FADEP R$ {_reais(fadp)} "
                    f"FEMP R$ {_reais(femp)}")
     else:
-        faixa = next((f for f in CUSTAS["faixas_2026"]
-                      if f["strCodigoTJ"] == ato), None)
+        faixa = _faixa_da_tabela_3(ato, envelope)
         valores = (f"Total R$ {_reais(faixa['curValor'] * 1.1)} Emol R$ "
                    f"{_reais(faixa['curValor'])}") if faixa else ""
     return (f"Poder Judiciário – TJMA. Selo: {numero}, 20/10/2026 10:00:00, "
             f"Ato: {ato}, Parte(s): {partes}, {valores} "
             "Consulte em https://selo.tjma.jus.br")
+
+
+def test_o_aparelho_falso_declara_os_emolumentos_do_item_13_1():
+    """O TJ recebe 13.1 e devolve a faixa do valor; o termo precisa desses valores."""
+    texto = _texto_do_selo("ESCRIT000000AAAAAAAAAAAAAA01", {
+        "ato": {"codigo": "13.1"},
+        "valorDeclarado": {"valorDeclarado": 100000.0,
+                           "valorAvaliado": 100000.0},
+        "partes": {"parteAto": [{"nome": "MARIO EXEMPLO DOS SANTOS"}]},
+    })
+    # R$ 100.000,00 cai na 13.1.12 (R$ 85.971,19 a R$ 107.463,97): emol 1.571,33.
+    assert "Ato: 13.1" in texto
+    assert "Total R$ 1.728,46" in texto and "Emol R$ 1.571,33" in texto
+    assert "MARIO EXEMPLO DOS SANTOS" in texto
+    # A faixa pelo código, como antes do hotfix, continua igual.
+    pela_faixa = _texto_do_selo("ESCRIT000000AAAAAAAAAAAAAA02",
+                                {"ato": {"codigo": "13.1.12"}})
+    assert "Ato: 13.1.12" in pela_faixa and "Emol R$ 1.571,33" in pela_faixa
+    sem_valor = _texto_do_selo("ESCRIT000000AAAAAAAAAAAAAA03",
+                               {"ato": {"codigo": "13.1"}})
+    assert "Total R$" not in sem_valor and "Emol R$" not in sem_valor
 
 
 def _aparelho_com_valores(aparelho) -> None:

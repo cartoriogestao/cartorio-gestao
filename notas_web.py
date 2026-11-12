@@ -1811,7 +1811,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         a = q1("SELECT * FROM nt_atos WHERE id=%s", (int(ato_id),))
         if not a:
             return " O ato não existe."
-        erro_item = _conferir_item_da_escritura(a, codigo_tj)
+        erro_item = _conferir_item_da_escritura(
+            a, codigo_tj, valor_centavos=valor_declarado_centavos)
         if erro_item:
             return f" O ato foi lavrado SEM SELO: {erro_item}"
         if str(a["selo"] or "").strip():
@@ -4686,13 +4687,28 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                               "danger")
                         return redirect(url_for("notas_ato", ato_id=ato_id))
                 item = (request.form.get("codigo_tj") or "").strip()
+                # O VALOR DESTE SELO (escritura de mais de um imóvel, 12/11/2026):
+                # preenchido, o item sai da faixa dele e o campo do item é ignorado.
+                valor_selo, erro_valor = _valor_do_selo_da_tela(a)
+                if erro_valor:
+                    flash(f"Ato NÃO lançado: {erro_valor}", "danger")
+                    return redirect(url_for("notas_ato", ato_id=ato_id))
+                if valor_selo:
+                    faixa_selo = _faixa_por_valor_em_centavos(valor_selo)
+                    if (not faixa_selo or not faixa_selo.get("codigo_tj")
+                            or faixa_selo.get("acima_do_teto")):
+                        flash("Ato NÃO lançado: não foi possível achar a faixa "
+                              "do 13.1 para o valor deste selo; revise a tabela "
+                              "de custas.", "danger")
+                        return redirect(url_for("notas_ato", ato_id=ato_id))
+                    item = faixa_selo["codigo_tj"]
                 if not item:
                     flash("Ato NÃO lançado: escolha o item da tabela de "
                           "emolumentos. É por ele que o selo é emitido; sem "
                           "o item o livro ficaria com um ato sem selo.",
                           "danger")
                     return redirect(url_for("notas_ato", ato_id=ato_id))
-                erro_item = _conferir_item_da_escritura(a, item)
+                erro_item = _conferir_item_da_escritura(a, item, valor_selo)
                 if erro_item:
                     flash(f"Ato NÃO lançado: {erro_item}", "danger")
                     return redirect(url_for("notas_ato", ato_id=ato_id))
@@ -4811,9 +4827,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     ato_id, codigo_tj=item,
                     especie_procuracao=request.form.get(
                         "especie_procuracao"),
+                    valor_declarado_centavos=valor_selo,
                     isento=request.form.get("selo_isento") == "1",
                     motivo_isencao=request.form.get("motivo_isencao"))
                 motivo = motivo_da_falha_do_selo(recado_do_selo)
+                if valor_selo and not motivo:
+                    _gravar_valor_do_selo(
+                        ato_id, ordem=1, codigo_tj=item,
+                        valor_centavos=valor_selo,
+                        selo=str((q1("SELECT selo FROM nt_atos WHERE id=%s",
+                                     (ato_id,)) or {}).get("selo") or ""))
                 audit("NT_ATO_SELO_AUTOMATICO", "NT_ATO", ato_id,
                       {"item": item or None, "motivo": motivo,
                        "recado": recado_do_selo.strip()})
@@ -4967,11 +4990,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 # desfazê-lo é o que o sistema recusa. É o mesmo botão que o
                 # RI ganhou em 15/09, pela mesma razão.
                 item = (request.form.get("codigo_tj") or "").strip()
+                valor_selo, erro_valor = _valor_do_selo_da_tela(a)
+                if erro_valor:
+                    flash(f"O selo não foi pedido: {erro_valor}", "danger")
+                    return redirect(url_for("notas_ato", ato_id=ato_id))
+                if valor_selo:
+                    faixa_selo = _faixa_por_valor_em_centavos(valor_selo)
+                    if (not faixa_selo or not faixa_selo.get("codigo_tj")
+                            or faixa_selo.get("acima_do_teto")):
+                        flash("O selo não foi pedido: não foi possível achar a "
+                              "faixa do 13.1 para o valor deste selo; revise a "
+                              "tabela de custas.", "danger")
+                        return redirect(url_for("notas_ato", ato_id=ato_id))
+                    item = faixa_selo["codigo_tj"]
                 if not item:
                     flash("Marque o item da tabela de emolumentos: é por ele "
                           "que o selo sai.", "danger")
                     return redirect(url_for("notas_ato", ato_id=ato_id))
-                erro_item = _conferir_item_da_escritura(a, item)
+                erro_item = _conferir_item_da_escritura(a, item, valor_selo)
                 if erro_item:
                     flash(f"O selo não foi pedido: {erro_item}", "danger")
                     return redirect(url_for("notas_ato", ato_id=ato_id))
@@ -4993,9 +5029,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 recado = selar_o_ato_de_livro(
                     ato_id, codigo_tj=item,
                     especie_procuracao=request.form.get("especie_procuracao"),
+                    valor_declarado_centavos=valor_selo,
                     isento=request.form.get("selo_isento") == "1",
                     motivo_isencao=request.form.get("motivo_isencao"))
                 motivo = motivo_da_falha_do_selo(recado)
+                if valor_selo and not motivo:
+                    _gravar_valor_do_selo(
+                        ato_id, ordem=1, codigo_tj=item,
+                        valor_centavos=valor_selo,
+                        selo=str((q1("SELECT selo FROM nt_atos WHERE id=%s",
+                                     (ato_id,)) or {}).get("selo") or ""))
                 audit("NT_ATO_SELO_AUTOMATICO", "NT_ATO", ato_id,
                       {"item": item, "motivo": motivo,
                        "recado": recado.strip()})
@@ -5164,6 +5207,37 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                       {"selo_arquivamento": selo, "folhas": folhas_m})
                 flash(f"Selo de arquivamento {selo} registrado ({folhas_m} "
                       "folha(s)), e ele entrou no razão dos selos.", "success")
+
+            elif acao == "selar_extra":
+                # **OUTRO SELO NA MESMA ESCRITURA** — 12/11/2026, a compra e
+                # venda de duas áreas (dois 13.1, cada um com o valor de uma
+                # área). O ato continua com o selo que tem; este é um selo a
+                # mais, com o SEU valor e o SEU item pago. NÃO mexe na situação.
+                valor_extra = CXC.centavos(request.form.get("valor_do_selo"))
+                escolhido = (request.form.get("protocolo_selo") or "").strip()
+                if escolhido:
+                    import caixa_protocolo as CXP
+                    try:
+                        with db.transaction() as con:
+                            feito = AS.escolher_protocolo_do_selo(
+                                con, usuario=usuario_nome(), protocolo=escolhido,
+                                agora=datetime.now().isoformat(timespec="seconds"))
+                        if feito:
+                            audit("SELO_PROTOCOLO_EM_ATENDIMENTO", "CX_PROTOCOLO",
+                                  feito["protocolo_id"],
+                                  {"numero": feito["numero"],
+                                   "pela": "tela do selo adicional da escritura"})
+                    except CXP.ProtocoloError as erro:
+                        flash(str(erro), "warning")
+                selou, recado_extra = selar_selo_adicional_da_escritura(
+                    ato_id, valor_centavos=valor_extra,
+                    confirmou_mesmo_valor=request.form.get(
+                        "confirmo_mesmo_valor") == "1")
+                audit("NT_ATO_SELO_ADICIONAL" if selou
+                      else "NT_ATO_SELO_ADICIONAL_NAO_SAIU", "NT_ATO", ato_id,
+                      {"valor_centavos": valor_extra or None,
+                       "recado": recado_extra})
+                flash(recado_extra, "success" if selou else "danger")
 
             elif acao == "anotacao_de_lavratura":
                 # **A ANOTAÇÃO ANTES DA LAVRATURA** — 17/09/2026, pedido do
@@ -5449,6 +5523,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                # caminho, em ordem de frequencia, e as tres
                                # procuracoes; quem decide o caminho e o
                                # dominio, e nao esta lista.
+                               selos_da_escritura=selos_da_escritura(a),
                                **_o_selo_desta_tela(a))
 
     def _o_selo_desta_tela(a) -> dict:
@@ -5543,11 +5618,191 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return {"selo_caminhos": fora, "selo_sem_caminho": False,
                 "selo_aviso": aviso}
 
-    def _faixa_da_escritura(a):
-        with db.connect() as con:
-            return EMOL.faixa_por_valor(con, a["valor_transacao"], tabela=3)
+    def _faixa_por_valor_em_centavos(valor_centavos):
+        """A faixa do 13.1 (tabela 3) para um valor em CENTAVOS. SÓ LÊ.
 
-    def _conferir_item_da_escritura(a, item: str) -> str | None:
+        O valor vai ao `faixa_por_valor` como TEXTO em reais, e não como
+        inteiro: `centavos()` trata inteiro abaixo de 10.000.000 como REAIS, e
+        o valor do ato está em centavos. Uma área de R$ 38.815,53 (3.881.553)
+        era lida como R$ 3.881.553,00 e caía na faixa errada.
+        """
+        with db.connect() as con:
+            return EMOL.faixa_por_valor(con, reais(int(valor_centavos)), tabela=3)
+
+    def _faixa_da_escritura(a):
+        try:
+            return _faixa_por_valor_em_centavos(int(a["valor_transacao"]))
+        except (TypeError, ValueError):
+            with db.connect() as con:
+                return EMOL.faixa_por_valor(con, a["valor_transacao"], tabela=3)
+
+    def _valor_do_selo_da_tela(a) -> tuple[int | None, str | None]:
+        """O campo «valor deste selo» (R$): `(centavos, None)`, `(None, None)` se vazio ou `(None, erro)`.
+
+        Só a ESCRITURA tem mais de um imóvel com o seu próprio 13.1. Em branco,
+        o selo sai pelo valor do ato, como sempre saiu.
+        """
+        bruto = (request.form.get("valor_do_selo") or "").strip()
+        if not bruto or (a["tipo"] or "").upper() != "ESCRITURA":
+            return None, None
+        valor = CXC.centavos(bruto)
+        if valor <= 0:
+            return None, "o valor deste selo precisa ser maior que zero."
+        return int(valor), None
+
+    def _gravar_valor_do_selo(ato_id: int, *, ordem: int, codigo_tj: str,
+                              valor_centavos: int, selo: str,
+                              referencia: str | None = None) -> None:
+        """Anota item e valor declarado de um selo do ato. NUNCA DERRUBA o selo que já saiu.
+
+        Uma linha por (ato, ordem); a repetida (duplo clique, mesmo SID, mesmo
+        número de selo) é ignorada.
+        """
+        try:
+            with db.transaction() as con:
+                banco(con).escrever(
+                    """INSERT INTO nt_ato_selos_extras
+                           (ato_id, ordem, codigo_tj, valor_centavos, selo,
+                            referencia, criado_em, criado_por)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT (ato_id, ordem) DO NOTHING""",
+                    (int(ato_id), int(ordem), codigo_tj, int(valor_centavos),
+                     str(selo), referencia, db.now(), usuario_nome()))
+        except Exception as erro:                             # noqa: BLE001
+            app.logger.warning("Valor do selo %s do ato %s não foi anotado: %s",
+                               ordem, ato_id, erro)
+
+    def selos_da_escritura(a) -> list[dict]:
+        """Os selos da escritura, na ordem: `[{ordem, codigo_tj, valor_centavos, selo}]`. SÓ LÊ.
+
+        O 1º é o de `nt_atos.selo`: com a linha de ordem 1 quando saiu com valor
+        diferente do valor do ato, e sem ela pelo valor do ato (o item é o da
+        faixa dele). Os adicionais vêm de `nt_ato_selos_extras`. Ato sem selo,
+        lista vazia.
+        """
+        if not str(a["selo"] or "").strip():
+            return []
+        linhas = {int(r["ordem"]): dict(r) for r in q(
+            """SELECT ordem, codigo_tj, valor_centavos, selo
+                 FROM nt_ato_selos_extras WHERE ato_id=%s ORDER BY ordem""",
+            (int(a["id"]),))}
+        primeiro = linhas.pop(1, None)
+        if primeiro is None:
+            codigo = None
+            if a["valor_transacao"]:
+                try:
+                    faixa = _faixa_da_escritura(a)
+                    codigo = (faixa or {}).get("codigo_tj") or None
+                except Exception:                             # noqa: BLE001
+                    codigo = None
+            primeiro = {"ordem": 1, "codigo_tj": codigo,
+                        "valor_centavos": a["valor_transacao"] or None,
+                        "selo": a["selo"]}
+        lista = [primeiro] + [linhas[o] for o in sorted(linhas)]
+        for s in lista:
+            try:
+                s["valor_texto"] = (reais(int(s["valor_centavos"]))
+                                    if s.get("valor_centavos") else "")
+            except (TypeError, ValueError):
+                s["valor_texto"] = ""
+        return lista
+
+    def selar_selo_adicional_da_escritura(
+            ato_id: int, *, valor_centavos: int,
+            confirmou_mesmo_valor: bool = False) -> tuple[bool, str]:
+        """Pede o selo de OUTRO imóvel da mesma escritura. FALA COM A REDE.
+
+        12/11/2026, a compra e venda de duas áreas: cada área é um 13.1 com o
+        SEU valor, o SEU selo e o SEU item pago no protocolo. O selo do ato
+        (`nt_atos.selo`) não muda; este fica no razão (`sd_selos`, amarrado ao
+        ato) e em `nt_ato_selos_extras`, com o item e o valor que declarou.
+
+        O item sai do VALOR (a faixa do 13.1), e não da escolha de quem atende:
+        a tela do ato já exige o item da faixa. NUNCA mexe na situação do ato:
+        o ato continua LAVRADO com o selo que já tem, saia ou não este.
+        `(selou, recado)`.
+        """
+        import selo_robo as SR
+        if not SR.pode_selar_automatico():
+            return False, str(SR.recado_pendente_selo()).strip()
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (int(ato_id),))
+        if not a:
+            return False, "O ato não existe."
+        if (a["tipo"] or "").upper() != "ESCRITURA":
+            return False, "Selo adicional só existe na escritura."
+        if not str(a["selo"] or "").strip():
+            return False, ("Peça primeiro o selo do ato (o 1º selo): o "
+                           "adicional vem depois dele.")
+        if (a["situacao"] or "") not in ("LAVRADO", "SUSPENSO_SELO"):
+            return False, ("O ato precisa estar lavrado e já selado; ele está "
+                           f"«{a['situacao']}».")
+        if not str(a["livro"] or "").strip():
+            return False, ("O pedido leva o livro e a folha, e este ato ainda "
+                           "não foi lançado no livro.")
+        if not valor_centavos or int(valor_centavos) <= 0:
+            return False, "Informe o valor declarado deste imóvel."
+        valor_centavos = int(valor_centavos)
+        faixa = _faixa_por_valor_em_centavos(valor_centavos)
+        if not faixa or not faixa.get("codigo_tj") or faixa.get("acima_do_teto"):
+            return False, ("Não foi possível achar a faixa do 13.1 para R$ "
+                           f"{reais(valor_centavos)}; revise a tabela de custas.")
+        codigo = faixa["codigo_tj"]
+        ja = selos_da_escritura(a)
+        # A TRAVA DO SELO EM DOBRO: o mesmo item com o mesmo valor é, quase
+        # sempre, o mesmo imóvel pedido duas vezes. Dois imóveis de valor igual
+        # existem — e quem os declara marca isso.
+        if not confirmou_mesmo_valor:
+            for s in ja:
+                if (s["codigo_tj"] == codigo
+                        and int(s["valor_centavos"] or 0) == valor_centavos):
+                    return False, (
+                        f"O ato já tem o selo {s['selo']} do item {codigo} com "
+                        f"R$ {reais(valor_centavos)}. Para não gastar o mesmo "
+                        f"item pago duas vezes, nada foi pedido. Se é OUTRO "
+                        f"imóvel com o mesmo valor, marque «É outro imóvel, "
+                        f"com o mesmo valor».")
+        ordem = max([int(s["ordem"]) for s in ja] + [1]) + 1
+        versao = AS.versao_da_tabela_de_custas(
+            "/selo/notas/ato-declarado/com-valor",
+            db.get_setting("selo_tabela_custas_em", ""))
+        if not versao:
+            return False, ("Falta dizer de que data é a tabela de custas em "
+                           "vigor, em Administrativo → Configurações.")
+        partes = [dict(p) for p in q(
+            "SELECT nome, documento FROM nt_ato_partes WHERE ato_id=%s ORDER BY id",
+            (int(ato_id),))]
+        try:
+            envelope, caminho = AS.envelope_do_ato_de_livro_das_notas(
+                tipo=a["tipo"], codigo_tj=codigo, escrevente=usuario_nome(),
+                versao_tabela=versao, livro=a["livro"], folha=a["folha"],
+                termo=a["termo"], partes=partes,
+                valor_declarado=valor_centavos / 100.0)
+        except AS.AtoError as erro:
+            return False, str(erro)
+        referencia = f"nt_atos:{int(ato_id)}:{codigo}:{ordem}"
+        r = AS.selar_o_ato_lavrado(
+            db, Path(app.config["DATA_DIR"]), tabela="nt_atos",
+            ato_id=int(ato_id), tipo=(a["tipo"] or "ATO"), atribuicao="NOTAS",
+            agora=datetime.now().isoformat(timespec="seconds"),
+            cns=db.get_setting("ri_cns", ""), usuario=usuario_nome(),
+            dados=envelope, caminho=caminho, referencia=referencia,
+            selo_adicional=True)
+        if not r["selado"]:
+            if r.get("aguardando_cobertura"):
+                return False, (
+                    f"Este selo adicional precisa do SEU item {codigo} pago e "
+                    f"livre no protocolo escolhido (não vale o item que já "
+                    f"pagou o selo do ato). {r['motivo']}")
+            return False, str(r["motivo"])
+        _gravar_valor_do_selo(int(ato_id), ordem=ordem, codigo_tj=codigo,
+                              valor_centavos=valor_centavos,
+                              selo=r["numero"], referencia=referencia)
+        return True, (f"Selo adicional {r['numero']} (item {codigo}, "
+                      f"R$ {reais(valor_centavos)}).")
+
+
+    def _conferir_item_da_escritura(a, item: str,
+                                    valor_centavos: int | None = None) -> str | None:
         # O TESTAMENTO TAMBÉM TEM ITEM CERTO (LG04): o cerrado é 13.10.3 e o
         # público 13.10.1/13.10.2/13.10.4. Conferido aqui, antes de lançar e de
         # pedir o selo, para a recusa vir antes de a folha ser reservada.
@@ -5555,10 +5810,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if do_testamento:
             return do_testamento
         # a ata para usucapião também se cobra pela faixa (LD02; CNN art. 423, I)
+        # O VALOR DO SELO, quando a tela o diz (escritura de mais de um imóvel,
+        # 12/11/2026), manda no lugar do valor do ato.
+        valor = valor_centavos or a["valor_transacao"]
         if ((a["tipo"] or "").upper() not in AS.TIPOS_COBRADOS_PELA_FAIXA
-                or not a["valor_transacao"]):
+                or not valor):
             return None
-        faixa = _faixa_da_escritura(a)
+        faixa = (_faixa_por_valor_em_centavos(valor) if valor_centavos
+                 else _faixa_da_escritura(a))
         if not faixa or not faixa.get("codigo_tj") or faixa.get("acima_do_teto"):
             return "não foi possível conferir a faixa vigente da escritura; revise a tabela de custas"
         if item != faixa["codigo_tj"]:

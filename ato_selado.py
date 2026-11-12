@@ -2848,7 +2848,7 @@ def registrar_selo_obtido_a_mao(con: sqlite3.Connection, numero: Any, *,
 def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
                referencia: Any, atribuicao: str, agora: str, cns: Any,
                usuario: str | None = None, tabela: str | None = None,
-               ato_id: Any = None) -> list:
+               ato_id: Any = None, selo_adicional: bool = False) -> list:
     """Pede o selo ao aparelho da rede local. ESCREVE, em transacao PROPRIA.
 
     Recebe `db` e nao `con` DE PROPOSITO: a chamada tem prazo de 20 segundos e
@@ -2913,7 +2913,8 @@ def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
             cobertura = cobrir_o_selo(con, tabela=tabela, ato_id=ato_id,
                                       referencia=recebida, dados=dados,
                                       usuario=usuario, agora=agora, cns=cns,
-                                      atribuicao=atribuicao)
+                                      atribuicao=atribuicao,
+                                      item_proprio=selo_adicional)
             # SEM COBERTURA, A TRANSACAO VOLTA (LX20, revisao do LX16): o
             # selo nao vai ser pedido, entao nada do que a cobertura tentou —
             # debito, quitacao, unidade — pode ficar.
@@ -2953,7 +2954,11 @@ def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
             else:
                 _estornar_reserva(con, reserva, agora=agora,
                                   motivo="o selador respondeu sem selo")
-            _tirar_aguardando(con, tabela=tabela, ato_id=ato_id)
+            # O selo ADICIONAL não mexe na fila do ato: quem está «aguardando
+            # cobertura» é o selo que falta (o do ato, o arquivamento), e o
+            # adicional que sai não o resolve — nem o que falha o põe na fila.
+            if not selo_adicional:
+                _tirar_aguardando(con, tabela=tabela, ato_id=ato_id)
             if selos:
                 assinar_o_que_ficou_pendente(con, tabela=tabela, ato_id=ato_id,
                                              quem=usuario)
@@ -2961,9 +2966,10 @@ def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
     # SEM COBERTURA: o ato fica «aguardando cobertura», com o motivo, numa
     # transacao propria — a de cima voltou atras.
     recado = recado_da_cobertura(cobertura.get("quadro") or {})
-    with db.transaction() as con:
-        _marcar_aguardando(con, tabela=tabela, ato_id=ato_id, motivo=recado,
-                           usuario=usuario, agora=agora)
+    if not selo_adicional:
+        with db.transaction() as con:
+            _marcar_aguardando(con, tabela=tabela, ato_id=ato_id, motivo=recado,
+                               usuario=usuario, agora=agora)
     raise SeloSemCobertura(recado, cobertura.get("quadro"))
 
 
@@ -2973,7 +2979,8 @@ def selar_o_ato_lavrado(db, pasta_de_dados: Any, *, tabela: str, ato_id: int,
                         dados: dict | None = None, referencia: Any = None,
                         usuario: str | None = None,
                         especie: Any = None,
-                        caminho: Any = None) -> dict:
+                        caminho: Any = None,
+                        selo_adicional: bool = False) -> dict:
     """O SELO SAI QUANDO O ATO E PRATICADO — decisao do oficial em 27/08/2026.
 
         «O selo deve ser emitido quando praticado o ato. Igual o E-Ofício.»
@@ -3030,7 +3037,8 @@ def selar_o_ato_lavrado(db, pasta_de_dados: Any, *, tabela: str, ato_id: int,
                            dados=dict(dados or {}),
                            referencia=referencia or f"{tabela}:{int(ato_id)}",
                            atribuicao=atribuicao, agora=agora, cns=cns,
-                           usuario=usuario, tabela=tabela, ato_id=ato_id)
+                           usuario=usuario, tabela=tabela, ato_id=ato_id,
+                           selo_adicional=selo_adicional)
     except SeloSemCobertura as falta:
         # NAO E FALHA DO APARELHO: o selo nem foi pedido. O quadro vai junto
         # para a tela mostrar os botoes; o recado e a mesma frase para o
@@ -3051,7 +3059,7 @@ def selar_o_ato_lavrado(db, pasta_de_dados: Any, *, tabela: str, ato_id: int,
                 if not numero:
                     continue
                 vincular_ao_ato(con, numero, tabela=tabela, ato_id=ato_id,
-                                agora=agora)
+                                agora=agora, na_coluna=not selo_adicional)
                 numeros.append(str(numero))
     except Exception as erro:                                  # noqa: BLE001
         # O SELO JA EXISTE E JA ESTA NO RAZAO — o que falhou foi amarra-lo ao
@@ -3114,7 +3122,7 @@ COLUNA_DO_SELO: dict[str, str] = {
 
 
 def vincular_ao_ato(con: sqlite3.Connection, numero: Any, *, tabela: str,
-                    ato_id: int, agora: Any) -> None:
+                    ato_id: int, agora: Any, na_coluna: bool = True) -> None:
     """Amarra ao ato o selo que ja esta no razao. ESCREVE.
 
     Chamada DENTRO da transacao do ato, depois de ele existir. Antes disto o
@@ -3136,9 +3144,13 @@ def vincular_ao_ato(con: sqlite3.Connection, numero: Any, *, tabela: str,
     import selador_cliente as CL
     CL.vincular(con, str(numero), tabela=tabela, ato_id=int(ato_id),
                 agora=str(agora))
-    coluna = COLUNA_DO_SELO.get(tabela, "selo")
-    banco(con).escrever(f"UPDATE {tabela} SET {coluna} = %s WHERE id = %s",
-                        (str(numero), int(ato_id)))
+    # `na_coluna=False` é o SELO ADICIONAL do ato (a escritura de dois imóveis,
+    # 12/11/2026): ele fica amarrado em `sd_selos` (tabela + ato_id), mas NÃO
+    # troca o selo que o ato já guarda na própria coluna.
+    if na_coluna:
+        coluna = COLUNA_DO_SELO.get(tabela, "selo")
+        banco(con).escrever(f"UPDATE {tabela} SET {coluna} = %s WHERE id = %s",
+                            (str(numero), int(ato_id)))
     assinar_o_que_ficou_pendente(
         con, tabela=tabela, ato_id=ato_id,
         quem=banco(con).valor("SELECT obtido_por FROM sd_selos WHERE numero = %s",
@@ -4765,9 +4777,80 @@ def _devido_do_proprio_ato(bd, tabela: Any, ato_id: int,
     return None
 
 
+def _itens_ja_usados_pelo_ato(bd, tabela: Any, ato_id: int) -> set[int]:
+    """Os itens de protocolo que JÁ pagam outro selo deste ato. Só LÊ.
+
+    Vários selos no mesmo ato (a escritura de dois imóveis, dois 13.1) só são
+    seguros se CADA selo tiver o SEU item pago: o item ligado ao ato, o item
+    que uma cobertura anterior usou sem gastar unidade e o lançamento do ato
+    cobririam o 2º selo com o mesmo dinheiro do 1º.
+    """
+    import caixa_protocolo as CXP
+    usados = {int(it["id"]) for it in CXP.itens_do_ato(bd, tabela, ato_id)}
+    if bd.tem_tabela("cx_selo_coberturas"):
+        for r in bd.ler(
+                """SELECT item_id FROM cx_selo_coberturas
+                    WHERE tabela = %s AND ato_id = %s
+                      AND item_id IS NOT NULL
+                      AND COALESCE(unidades_gastas, 0) = 0""",
+                (str(tabela), int(ato_id))):
+            usados.add(int(r["item_id"]))
+    return usados
+
+
+def _cobrir_com_item_proprio(bd, *, tabela: Any, ato_id: Any, dados: Any,
+                             usuario: Any, agora: str, referencia: str) -> dict:
+    """O selo ADICIONAL do ato tem de ter o SEU item pago. RESERVA. ESCREVE.
+
+    12/11/2026, a escritura com dois imóveis (dois 13.1, cada um com o valor
+    de uma área). Só vale o protocolo em atendimento, só vale item do MESMO
+    código do envelope e com saldo, e nunca o item que já cobre outro selo do
+    ato: o item ligado ao ato, o lançamento do ato e a liberação do admin
+    NÃO cobrem selo adicional — cobririam o 2º selo com o pagamento do 1º.
+    Gasta a unidade que o envelope pede, como o passo 3 de `cobrir_o_selo`.
+    """
+    import caixa_protocolo as CXP
+    ato_id = int(ato_id)
+    gravar = dict(referencia=referencia, tabela=tabela, ato_id=ato_id,
+                  usuario=usuario, agora=agora)
+    codigo = codigo_do_envelope(dados)
+    pedidas = quantidade_do_envelope(dados)
+    atendendo = CXP.em_atendimento(bd, usuario)
+    if atendendo and codigo:
+        ocupados = _itens_ja_usados_pelo_ato(bd, tabela, ato_id)
+        for it in CXP.itens_para_o_selo(bd, atendendo["id"], codigo):
+            if int(it["id"]) in ocupados:
+                continue
+            bd._escrita()
+            preso = bd.um("SELECT * FROM cx_protocolo_atos WHERE id = %s FOR UPDATE",
+                          (int(it["id"]),))
+            if not preso or CXP.saldo_do_item(preso) <= 0:
+                continue
+            it = it | dict(preso)
+            achou = _cobre_o_item(bd, it, tabela=tabela, ato_id=ato_id,
+                                  usuario=usuario, agora=agora)
+            if not achou:
+                continue
+            gastas = CXP.consumir_item(bd, it["id"], ato_id=ato_id, tabela=tabela,
+                                       agora=agora, quantas=pedidas,
+                                       origem=CXP.ORIGEM_SELO, quem=usuario)
+            if not gastas:
+                raise AtoError(
+                    f"A unidade do item {it.get('codigo_ato') or ''} acabou "
+                    f"enquanto o selo era coberto. Nada foi debitado: peça o "
+                    f"selo de novo.")
+            return _gravar_cobertura(bd, forma=achou[0], item=it,
+                                     deposito=achou[1], unidades=gastas,
+                                     **gravar)
+    quadro = quadro_para_selar(bd, tabela=tabela, ato_id=ato_id,
+                               usuario=usuario, dados=dados)
+    return {"coberto": False, "quadro": quadro,
+            "faltam": quadro.get("faltam") or []}
+
+
 def cobrir_o_selo(con, *, tabela: Any, ato_id: Any, referencia: Any,
                   dados: Any, usuario: Any, agora: str, cns: Any = None,
-                  atribuicao: Any = None) -> dict:
+                  atribuicao: Any = None, item_proprio: bool = False) -> dict:
     """O selo pago tem protocolo e dinheiro? RESERVA a cobertura. ESCREVE.
 
     Devolve `{"coberto": True, "forma": ..., "reserva": ...}` ou
@@ -4813,6 +4896,13 @@ def cobrir_o_selo(con, *, tabela: Any, ato_id: Any, referencia: Any,
         return {"coberto": True, "forma": ja["forma"], "repetido": True}
     if _selo_ja_obtido(bd, cns=cns, atribuicao=atribuicao, referencias=grafias):
         return {"coberto": True, "forma": "JA_OBTIDO"}
+    if item_proprio and tabela is not None and ato_id is not None:
+        # SELO ADICIONAL DO ATO (12/11/2026): só o item pago PRÓPRIO dele, e
+        # nunca a trava desligada, o item ligado ao ato, o lançamento ou a
+        # liberação — ver `_cobrir_com_item_proprio`.
+        return _cobrir_com_item_proprio(bd, tabela=tabela, ato_id=ato_id,
+                                        dados=dados, usuario=usuario,
+                                        agora=agora, referencia=ref)
     if e_certidao_eletronica_da_crc(bd, tabela, ato_id, dados):
         # O valor vem pela CRC, e não pelo caixa (22/10/2026).
         return _gravar_cobertura(bd, referencia=ref, tabela=tabela,

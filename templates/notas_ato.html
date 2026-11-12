@@ -1,4 +1,4 @@
-{% macro campos_do_selo(caminhos, sem_caminho, aviso=none) %}
+{% macro campos_do_selo(caminhos, sem_caminho, aviso=none, com_valor_do_selo=false) %}
   {# O ITEM DA TABELA DE EMOLUMENTOS — é por ele que o selo sai, e ele é a
      única coisa que o sistema não tem como saber sozinho. Os itens são os que
      esta casa usou NAQUELE caminho, medidos nos 283 envelopes reais e em
@@ -33,6 +33,16 @@
       {% endfor %}
       {% endfor %}
     </select></label>
+  {% if com_valor_do_selo %}
+  {# ESCRITURA DE MAIS DE UM IMÓVEL (12/11/2026): cada imóvel é um 13.1 com o seu
+     valor e o seu selo. Preenchido, o item sai da faixa deste valor. #}
+  <label class="span2">Valor declarado deste selo (R$)
+    <input name="valor_do_selo" inputmode="decimal"
+           placeholder="só se a escritura tem mais de um imóvel — ex.: 205.863,95">
+    <small class="muted">Em branco, vale o valor do ato. Preenchido, o item da
+      faixa sai deste valor e o campo do item acima é ignorado. Os outros
+      imóveis entram depois, em «Acrescentar outro selo deste ato».</small></label>
+  {% endif %}
   <label>Selo isento?
     <select name="selo_isento"><option value="">não</option>
       <option value="1">sim</option></select></label>
@@ -229,7 +239,7 @@
   <div class="grid2" style="padding:14px">
     <div><small class="muted">Natureza</small><div>{{ a.natureza or '—' }}</div></div>
     <div><small class="muted">Interessado</small><div>{{ a.interessado or '—' }}</div></div>
-    <div><small class="muted">Selo</small><div>{{ a.selo or '— não anotado —' }}</div></div>
+    <div><small class="muted">Selo</small><div>{{ a.selo or '— não anotado —' }}{% for s in selos_da_escritura[1:] %}<br>{{ s.selo }} <small class="muted">({{ s.ordem }}º — {{ s.codigo_tj }}, R$ {{ s.valor_texto }})</small>{% endfor %}</div></div>
     <div><small class="muted">Lavrado por</small><div>{{ a.lavrado_nome or '—' }}{% if a.lavrado_titulo %} — {{ a.lavrado_titulo }}{% endif %}{% if agente_do_ato %}<br><small class="muted">{{ agente_do_ato }}</small>{% endif %}</div></div>
   </div>
 </section>
@@ -976,7 +986,7 @@
          emitido quando praticado o ato, igual o E-Ofício». O pedido leva o
          livro e a folha, que só existem depois do lançamento: por isso ele
          acontece logo em seguida, na mesma tela e no mesmo clique. #}
-      {{ campos_do_selo(selo_caminhos, selo_sem_caminho, selo_aviso) }}
+      {{ campos_do_selo(selo_caminhos, selo_sem_caminho, selo_aviso, a.tipo == 'ESCRITURA') }}
       {% if arquivamento and arquivamento.obrigatorio %}
       {# OBRIGATÓRIO: a caixa vem marcada e não se desmarca, e a quantidade é a
          CONFIRMADA no quadro acima — o servidor lê a confirmação gravada, e
@@ -1348,6 +1358,43 @@
     <p class="small muted" style="margin:6px 0 0">Este ato já está selado.
       Pedir outro seria o dinheiro da serventia saindo duas vezes.</p>
   </div>
+  {% if a.tipo == 'ESCRITURA' and selos_da_escritura|length > 1 %}
+  <div style="padding:0 14px 14px">
+    <strong class="small">Selos desta escritura (um por imóvel)</strong>
+    <table class="small">
+      <thead><tr><th>Ordem</th><th>Item</th><th>Valor declarado</th><th>Selo</th></tr></thead>
+      <tbody>
+      {% for s in selos_da_escritura %}
+      <tr><td>{{ s.ordem }}º</td><td>{{ s.codigo_tj or '—' }}</td>
+        <td>{% if s.valor_texto %}R$ {{ s.valor_texto }}{% else %}—{% endif %}</td>
+        <td>{{ s.selo }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% if a.tipo == 'ESCRITURA' and a.livro and a.situacao in ('LAVRADO', 'SUSPENSO_SELO') %}
+  {# OUTRO SELO NA MESMA ESCRITURA — 12/11/2026, a compra e venda de duas áreas.
+     Cada imóvel é um 13.1 com o seu valor, o seu selo e o SEU item pago. O ato
+     continua com o selo que tem; este é um a mais. #}
+  <details style="padding:0 14px 14px">
+    <summary class="small">Acrescentar outro selo deste ato (ex.: 2º imóvel, outro 13.1)</summary>
+    <form method="post" class="grid2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="notice small span2">Digite o valor declarado do OUTRO imóvel:
+        o item do 13.1 sai da faixa desse valor, e o selo consome o item
+        correspondente, já pago no protocolo escolhido abaixo. Não vale o item
+        que já pagou o selo do ato.</div>
+      <label>Valor declarado deste imóvel (R$)
+        <input name="valor_do_selo" inputmode="decimal" required
+               placeholder="ex.: 38.815,53"></label>
+      <label><input type="checkbox" name="confirmo_mesmo_valor" value="1">
+        É outro imóvel, com o mesmo valor de um selo já pedido</label>
+      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s2 = seletor_do_selo('nt_atos') %}<div class="span2">{{ protocolo_do_selo(_s2.candidatos, _s2.pedidos, atendendo=_s2.atendendo) }}</div>
+      <div class="span2"><button class="primary" name="acao" value="selar_extra">Pedir o selo adicional ao aparelho</button></div>
+    </form>
+  </details>
+  {% endif %}
   {% if arquivamento and arquivamento.obrigatorio and a.selo and not a.selo_arquivamento
         and a.situacao in ('LAVRADO', 'SUSPENSO_SELO') %}
   {# OBRIGATÓRIO E AINDA NÃO SELADO: o quadro vem aberto, e a quantidade é a
@@ -1420,7 +1467,7 @@
     <div class="notice small span2">O ato está no livro
       {{ a.livro }}, folha {{ a.folha }}{% if a.termo %}, termo {{ a.termo }}{% endif %}
       e <strong>sem selo</strong>. Peça-o ao aparelho da rede local:</div>
-    {{ campos_do_selo(selo_caminhos, selo_sem_caminho, selo_aviso) }}
+    {{ campos_do_selo(selo_caminhos, selo_sem_caminho, selo_aviso, a.tipo == 'ESCRITURA') }}
     <div class="span2"><button class="primary" name="acao" value="selar">Pedir o selo ao aparelho</button></div>
   </form>
   {% elif selo_sem_caminho %}

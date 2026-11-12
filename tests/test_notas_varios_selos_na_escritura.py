@@ -138,6 +138,22 @@ def _pedidos(aparelho):
             if p["caminho"].endswith("/selo/notas/ato-declarado/com-valor")]
 
 
+def _codigo_no_aparelho(codigo_da_faixa: str) -> str:
+    """O código que o aparelho recebe para esta faixa do caixa.
+
+    A faixa (13.1.N) é o que o caixa cobra e o que fica anotado no ato. O
+    hotfix das 18:35 (`dados_para_o_aparelho`) troca só o envelope do
+    aparelho para o item pai 13.1, que é o código que o TJ conhece. Neste
+    ramo a troca ainda pode não estar: o teste acompanha a função, e com os
+    dois hotfixes juntos o aparelho tem de receber 13.1.
+    """
+    import ato_selado as AS
+    trocar = getattr(AS, "dados_para_o_aparelho", None)
+    if trocar is None:
+        return codigo_da_faixa
+    return trocar({"ato": {"codigo": codigo_da_faixa}})["ato"]["codigo"]
+
+
 # ------------------------------------------------- o caso da compra e venda
 
 
@@ -159,11 +175,12 @@ def test_duas_areas_dois_13_1_cada_um_com_o_seu_selo_valor_e_item(casa):
     razao = _razao(casa, aid)
     assert len(razao) == 2 and razao[0]["numero"] == primeiro
     assert razao[1]["numero"] != primeiro
-    # cada selo foi pedido com o SEU item e o SEU valor
+    # cada selo foi pedido com o SEU valor; o código no aparelho é o 13.1
+    # quando a troca das 18:35 está no módulo, e a faixa segue no caixa
     um, dois = _pedidos(aparelho)
-    assert um["ato"]["codigo"] == "13.1.15"
+    assert um["ato"]["codigo"] == _codigo_no_aparelho("13.1.15")
     assert um["valorDeclarado"]["valorDeclarado"] == 205863.95
-    assert dois["ato"]["codigo"] == "13.1.8"
+    assert dois["ato"]["codigo"] == _codigo_no_aparelho("13.1.8")
     assert dois["valorDeclarado"]["valorDeclarado"] == 38815.53
     # e gastou o item pago de CADA um: um do 13.1.15, um do 13.1.8
     itens = _itens(casa, p["protocolo_id"])
@@ -175,6 +192,16 @@ def test_duas_areas_dois_13_1_cada_um_com_o_seu_selo_valor_e_item(casa):
     assert [(e["ordem"], e["codigo_tj"], e["valor_centavos"]) for e in extras] == [
         (1, "13.1.15", 20586395), (2, "13.1.8", 3881553)]
     assert extras[1]["selo"] == razao[1]["numero"]
+    # teor e certidão leem o razão (os dois selos), e o arquivamento segue um só
+    import ato_selado as AS
+    con = sqlite3.connect(casa["banco"])
+    try:
+        etiquetas = AS.etiquetas_do_ato(con, "nt_atos", aid, r["selo"])
+    finally:
+        con.close()
+    assert {e["numero"] for e in etiquetas} == {
+        razao[0]["numero"], razao[1]["numero"]}
+    assert not str(r["selo_arquivamento"] or "").strip()
     # a tela lista os dois selos, com item e valor
     assert "Selos desta escritura" in html
     assert razao[1]["numero"] in html and "13.1.8" in html and AREA_B in html
@@ -311,7 +338,7 @@ def test_sem_valor_do_selo_o_primeiro_selo_sai_como_sempre(casa):
         _postar(casa, aid, acao="selar", codigo_tj="13.1.8", valor_do_selo="")
     assert (_ato_linha(casa, aid)["selo"] or "").strip()
     (pedido,) = _pedidos(aparelho)
-    assert pedido["ato"]["codigo"] == "13.1.8"
+    assert pedido["ato"]["codigo"] == _codigo_no_aparelho("13.1.8")
     assert pedido["valorDeclarado"]["valorDeclarado"] == 38815.53
     assert not _sql(casa, "SELECT 1 FROM nt_ato_selos_extras WHERE ato_id=?",
                     (aid,)), "sem valor do selo não se grava linha nenhuma"
@@ -343,7 +370,7 @@ def test_lancar_no_livro_com_o_valor_do_selo_pede_o_item_do_valor(casa):
     r = _ato_linha(casa, aid)
     assert (r["livro"] or "").strip() and (r["selo"] or "").strip()
     (pedido,) = _pedidos(aparelho)
-    assert pedido["ato"]["codigo"] == "13.1.15"
+    assert pedido["ato"]["codigo"] == _codigo_no_aparelho("13.1.15")
     assert pedido["valorDeclarado"]["valorDeclarado"] == 205863.95
     (linha,) = _sql(casa, "SELECT * FROM nt_ato_selos_extras WHERE ato_id=?", (aid,))
     assert (linha["ordem"], linha["codigo_tj"]) == (1, "13.1.15")

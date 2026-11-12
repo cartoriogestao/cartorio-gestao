@@ -120,9 +120,11 @@ def test_as_rotas_apontadas_pela_revisao_estao_fora(nome):
 def test_a_lista_nao_volta_a_ser_o_modulo_inteiro():
     """A primeira versão listava 357 rotas — todas as dos módulos que citavam
     o robô. A medida é o que ele FAZ; crescer muito é sinal de que voltou a
-    ser o módulo inteiro, e quem crescer revê este número com o motivo."""
+    ser o módulo inteiro, e quem crescer revê este número com o motivo.
+    (60 -> 62 em 12/11/2026: `rascunho_salvar` e `rascunhos`, o salvar rascunho do
+    assento que o robô precisa — ver `DO_RASCUNHO_DO_ASSENTO`.)"""
     import rotas_do_robo as RR
-    assert len(RR.ROTAS_PERMITIDAS_AO_ROBO) <= 60, len(RR.ROTAS_PERMITIDAS_AO_ROBO)
+    assert len(RR.ROTAS_PERMITIDAS_AO_ROBO) <= 62, len(RR.ROTAS_PERMITIDAS_AO_ROBO)
 
 
 # ------------------------------------------------- contra o app de verdade
@@ -336,3 +338,50 @@ def test_robo_lista_e_cria_tarefa_com_autoria_e_csrf(cg_casa):
     assert task["created_by"] == robo["id"]
     assert task["assigned_user_id"] == dono
     assert task["backup_user_id"] == substituto
+
+
+# ------------------------------- salvar o rascunho do assento (12/11/2026)
+#
+# O robo que prepara o assento (RCPN) recebia 403 ao clicar em «Salvar rascunho e
+# continuar depois». Rascunho nao e ato: nao toma numero, nao sela, nao cobra.
+# So o salvar (e a lista para onde ele redireciona) entram; o que apaga, vira
+# processo ou abre tarefa continua de gente.
+
+
+@pytest.mark.parametrize("nome", ["rascunho_salvar", "rascunhos"])
+def test_salvar_rascunho_e_a_lista_sao_do_robo(nome):
+    import selo_robo as SR
+    assert SR.rota_permitida_ao_robo(nome) is True
+
+
+@pytest.mark.parametrize("nome", ["rascunho_apagar", "rascunho_virar_processo",
+                                  "rascunho_salvar_e_abrir_processo"])
+def test_apagar_e_virar_processo_continuam_de_gente(nome):
+    import selo_robo as SR
+    assert SR.rota_permitida_ao_robo(nome) is False
+
+
+def test_o_robo_salva_o_rascunho_do_assento_e_nao_cai_no_403(cg_casa):
+    """O formulario da macro `salvar_rascunho` (_rascunho.html): POST em
+    /rascunhos/salvar com o token. Salva e redireciona para /rascunhos, que
+    abre (200) - sem o 403 de antes, no salvar e no redirecionamento."""
+    c = _robo_logado(cg_casa)
+    html = c.get("/").get_data(as_text=True)
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+    r = c.post("/rascunhos/salvar", data={
+        "csrf_token": token, "_tela": "rcpn_assento_novo",
+        "_volta": "/rcpn/assento/novo", "_titulo": "Assento de exemplo",
+        "nome": "Fulano de Exemplo"})
+    assert r.status_code == 302, r.status_code
+    assert r.headers["Location"].endswith("/rascunhos")
+    assert c.get("/rascunhos").status_code == 200
+
+
+def test_o_robo_nao_apaga_nem_abre_processo_pelo_rascunho(cg_casa):
+    c = _robo_logado(cg_casa)
+    html = c.get("/").get_data(as_text=True)
+    token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
+    for rota in ("/rascunhos/1/apagar", "/rascunhos/1/processo",
+                 "/rascunhos/salvar-e-abrir-processo"):
+        r = c.post(rota, data={"csrf_token": token})
+        assert r.status_code == 403, rota

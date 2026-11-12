@@ -1413,3 +1413,123 @@ html[data-escala]:not([data-layout=novo]) body{zoom:var(--cg-escala,1)}
   padding: .45rem 1rem; text-align: center;
   background: #7a1f1f; color: #fff; font-size: .9rem;
 }
+
+/* A FOLHA DO DIA (12/11/2026) — o painel como a folha de um livro de expediente.
+   Tudo começa em `.folha-dia`: nenhuma regra daqui toca outra tela. Sem fonte
+   baixada da rede — a letra condensada é a Bahnschrift, que já vem no Windows
+   da casa, e o número é a Consolas. Vermelho só para o que venceu ou parou. */
+.folha-dia{--fd-folha:#fbfcfa;--fd-tinta:#1a2340;--fd-apagada:#5d6779;--fd-pauta:#c7d1ca;
+  --fd-carimbo:#56399c;--fd-vencido:#b3261e;--fd-alerta:#8f5a00;--fd-selo:#1c6a4d;
+  --fd-letra:"Bahnschrift","Archivo Narrow","Arial Narrow","Helvetica Neue",Arial,sans-serif;
+  --fd-dado:Consolas,"SF Mono",Menlo,monospace;
+  position:relative;background:var(--fd-folha);color:var(--fd-tinta);border:1px solid var(--fd-pauta);
+  padding:22px 26px 26px 34px;line-height:1.45}
+.folha-dia::before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px;
+  background:repeating-linear-gradient(180deg,var(--fd-pauta) 0 1px,transparent 1px 7px)}
+.folha-dia a:not(.button){color:inherit;text-decoration:underline;text-decoration-color:var(--fd-pauta);text-underline-offset:3px}
+.folha-dia a:not(.button):hover{text-decoration-color:var(--fd-carimbo)}
+.folha-dia .panel-head a{font-size:12.5px;color:var(--fd-apagada)}
+.folha-dia .fd-rot,.folha-dia .fd-margem .panel h2{font-family:var(--fd-letra);font-stretch:75%;font-weight:600;
+  font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fd-apagada);margin:0}
+.folha-dia h2{margin:0;font-family:var(--fd-letra);font-stretch:70%;font-weight:700;font-size:13px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--fd-tinta)}
+.folha-dia .fd-v{color:var(--fd-vencido)}.folha-dia .fd-a{color:var(--fd-alerta)}
+
+.fd-cab{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-between;align-items:flex-start}
+.fd-casa{margin:2px 0 0;font-family:var(--fd-letra);font-stretch:70%;font-weight:700;font-size:15px;
+  letter-spacing:.14em;text-transform:uppercase}
+.fd-selo{border:1.5px dashed var(--fd-selo);padding:3px;transform:rotate(1.2deg)}
+.fd-selo div{border:1px solid var(--fd-selo);padding:6px 12px;text-align:center;color:var(--fd-selo);
+  font-family:var(--fd-letra);font-stretch:72%;font-weight:700;letter-spacing:.1em;font-size:11px;text-transform:uppercase}
+.fd-selo b{display:block;font-size:22px;letter-spacing:.04em;line-height:1.05}
+
+.fd-termo{max-width:980px;padding:18px 0 22px}
+.fd-termo p{margin:0;font-family:var(--fd-letra);font-stretch:88%;font-size:clamp(20px,2.3vw,28px);line-height:1.32}
+.fd-termo strong,.fd-termo p:first-child a{font-weight:700}
+.fd-termo p.fd-resto{margin-top:10px;font-family:inherit;font-size:14px;line-height:1.5;color:var(--fd-apagada)}
+
+.fd-regua{border-top:2px solid var(--fd-tinta);border-bottom:1px solid var(--fd-pauta);padding:10px 0 12px}
+.fd-regua-topo{display:flex;justify-content:space-between;gap:6px 12px;flex-wrap:wrap;margin-bottom:8px}
+.fd-dias{display:grid;grid-template-columns:repeat(var(--fd-casas,12),minmax(0,1fr));align-items:end}
+.fd-dia{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;min-height:74px;
+  padding:0 2px;border-left:1px solid var(--fd-pauta)}
+.fd-dia:first-child{border-left:0}
+.fd-dia.fd-folga{background:repeating-linear-gradient(135deg,transparent 0 5px,rgba(199,209,202,.55) 5px 6px)}
+.fd-dia.fd-hoje{border-left:2px solid var(--fd-tinta);background:rgba(86,57,156,.07)}
+.fd-m{display:block;width:14px;height:14px;background:var(--fd-alerta)}
+.fd-m.fd-v{background:var(--fd-vencido)}
+.fd-mais{font-family:var(--fd-dado);font-size:11px;color:var(--fd-apagada)}
+.fd-d{font-family:var(--fd-dado);font-size:12px;margin-top:4px}
+.fd-s{font-family:var(--fd-letra);font-stretch:75%;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--fd-apagada)}
+.fd-hoje .fd-s{color:var(--fd-carimbo);font-weight:700}
+.fd-leg{margin:8px 0 0;font-size:12px;color:var(--fd-apagada)}
+.fd-vazio{margin:10px 0 0;color:var(--fd-apagada)}
+
+.fd-corpo{display:grid;grid-template-columns:minmax(0,1fr) 290px;margin-top:26px}
+.fd-corpo.fd-sem-margem{grid-template-columns:minmax(0,1fr)}
+.fd-livro{min-width:0;padding-right:24px;display:flex;flex-direction:column;gap:30px}
+.fd-sem-margem .fd-livro{padding-right:0}
+.fd-margem{min-width:0;border-left:1px solid var(--fd-vencido);padding-left:18px}
+.fd-margem>h2{color:var(--fd-vencido);padding-bottom:6px;border-bottom:2px solid var(--fd-tinta)}
+.fd-sub{display:flex;justify-content:space-between;gap:6px 12px;flex-wrap:wrap;align-items:baseline;
+  border-bottom:2px solid var(--fd-tinta);padding-bottom:6px}
+.fd-sub a{font-size:12.5px;color:var(--fd-apagada)}
+
+.fd-lin{display:grid;grid-template-columns:54px minmax(0,1fr) 112px 128px;gap:0 14px;align-items:center;
+  padding:9px 0;border-bottom:1px solid var(--fd-pauta)}
+.fd-ord{font-family:var(--fd-dado);font-size:12px;color:var(--fd-apagada)}
+.folha-dia .fd-tit{font-weight:600;font-size:14.5px;overflow-wrap:anywhere}
+.folha-dia a.fd-tit{text-decoration:none}
+.folha-dia a.fd-tit:hover{text-decoration:underline}
+.fd-quem{display:block;font-size:12.5px;color:var(--fd-apagada)}
+.fd-prazo{font-family:var(--fd-dado);font-size:12.5px;font-variant-numeric:tabular-nums}
+.fd-prazo small{display:block;font-family:inherit;font-size:11.5px;color:var(--fd-apagada)}
+.fd-vencida .fd-prazo{color:var(--fd-vencido)}
+.folha-dia .fd-carimbo,.folha-dia .fd-margem .badge{display:inline-block;justify-self:start;font-family:var(--fd-letra);
+  font-stretch:68%;font-weight:700;font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap;
+  border:2px solid currentColor;border-radius:0;background:none;padding:2px 7px 1px;color:var(--fd-carimbo);transform:rotate(-2deg)}
+.folha-dia .fd-carimbo.fd-v,.folha-dia .fd-margem .badge.critica{color:var(--fd-vencido);transform:rotate(-3.5deg)}
+.folha-dia .fd-carimbo.fd-a,.folha-dia .fd-margem .badge.media{color:var(--fd-alerta);transform:rotate(1.5deg)}
+.folha-dia .fd-carimbo.fd-leve{border-width:1px;font-weight:600;color:var(--fd-apagada);transform:none}
+
+.fd-ato{display:grid;grid-template-columns:minmax(0,240px) minmax(0,1fr) auto;gap:6px 14px;align-items:center;
+  padding:9px 0;border-bottom:1px solid var(--fd-pauta)}
+.fd-folhas{display:flex;flex-wrap:wrap;gap:3px}
+.fd-folhas span{width:11px;height:20px;border:1px solid var(--fd-tinta);background:var(--fd-folha)}
+.fd-folhas span.fd-p,.fd-barra span{background:var(--fd-vencido);border-color:var(--fd-vencido)}
+.fd-barra{height:20px;border:1px solid var(--fd-tinta)}
+.fd-barra span{display:block;height:100%}
+.fd-ct{font-family:var(--fd-dado);font-size:12.5px;text-align:right;white-space:nowrap}
+
+/* Os blocos que vêm prontos de outros modelos (automação, ouvidoria, relatos,
+   erros) entram na folha sem moldura: a regra desfaz a caixa, não o conteúdo. */
+.folha-dia .panel{border:0;border-radius:0;box-shadow:none;background:none;padding:0;margin:0}
+.folha-dia .fd-livro .panel-head{border-bottom:2px solid var(--fd-tinta);padding-bottom:6px;margin-bottom:8px}
+.folha-dia .fd-livro .table-wrap{border-radius:0;border-color:var(--fd-pauta)}
+.folha-dia .fd-margem .panel{padding:12px 0;border-bottom:1px solid var(--fd-pauta)}
+.folha-dia .fd-margem .panel-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 10px;border:0;padding:0;margin:0 0 4px;font-size:12px}
+.folha-dia .fd-margem .panel p{margin:6px 0 0}
+.folha-dia .fd-margem .cards{display:block;margin:0}
+.folha-dia .fd-margem .card{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:0 10px;
+  border:0;border-radius:0;box-shadow:none;background:none;padding:2px 0}
+.folha-dia .fd-margem .stat span{font-size:13px;letter-spacing:0;text-transform:none;color:var(--fd-tinta)}
+.folha-dia .fd-margem .stat strong,.fd-grande{font-family:var(--fd-dado);font-size:14px;font-weight:500;letter-spacing:0}
+.folha-dia .fd-margem .stat.danger strong{color:var(--fd-vencido)}
+.folha-dia .fd-margem .stat.warning strong{color:var(--fd-alerta)}
+.folha-dia .fd-margem .stat small{flex-basis:100%;font-size:11.5px}
+.folha-dia .fd-grande{font-size:21px}
+
+@media (max-width:1100px){
+  .fd-corpo{grid-template-columns:minmax(0,1fr)}
+  .fd-livro{padding-right:0}
+  .fd-margem{border-left:0;border-top:1px solid var(--fd-vencido);padding:18px 0 0;margin-top:26px}
+}
+@media (max-width:700px){
+  .folha-dia{padding:16px 14px 20px 20px}
+  .fd-lin{grid-template-columns:44px minmax(0,1fr);row-gap:4px}
+  .fd-lin .fd-prazo,.fd-lin .fd-carimbo{grid-column:2}
+  .fd-prazo small{display:inline;margin-left:6px}
+  .fd-ato{grid-template-columns:minmax(0,1fr) auto}
+  .fd-ato .fd-folhas,.fd-ato .fd-barra{grid-column:1/-1;grid-row:2}
+  .fd-m{width:10px;height:10px}
+}

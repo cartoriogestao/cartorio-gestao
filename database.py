@@ -1975,6 +1975,25 @@ class Database:
                 "desistencias": r["desistencias"], "na_fila": r["na_fila"],
                 "hourly": m["por_hora"]}
 
+    def prazos_por_dia(self, desde: str, ate: str) -> dict[str, int]:
+        """Quantos processos cobráveis vencem em cada dia, de `desde` a `ate`.
+
+        Alimenta a régua do painel (`painel_folha.regua`). A RÉGUA É A MESMA de
+        `dashboard_stats` — aberta e não suspensa —, para o desenho não
+        discordar da frase que o encabeça.
+        """
+        today = date.today()
+        aberta, params_abertas = TP.condicao_aberta()
+        suspensa, params_suspensa = TS.condicao_suspensa(None, today)
+        cobravel = f"{_pg(aberta)} AND NOT {_pg(suspensa)}"
+        with self.connect() as con:
+            linhas = banco(con).ler(
+                f"""SELECT due_date, COUNT(*) AS n FROM tasks
+                    WHERE {cobravel} AND due_date >= %s AND due_date <= %s
+                    GROUP BY due_date""",
+                (*params_abertas, *params_suspensa, desde, ate))
+        return {str(l["due_date"])[:10]: int(l["n"] or 0) for l in linhas}
+
     def dashboard_stats(self, alert_days: int = 5) -> dict[str, int]:
         today = date.today()
         soon = (today + timedelta(days=alert_days)).isoformat()

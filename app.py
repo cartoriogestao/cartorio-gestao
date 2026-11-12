@@ -1330,7 +1330,23 @@ def _montar_app(test_config: dict | None = None) -> Flask:
         # 13/10/2026: o bloco de expedientes saiu do painel (ordem do oficial —
         # «substituído por processos»), e com ele as duas leituras que só o
         # alimentavam. A entrada que espera decisão aparece em Processos.
-        return render_template("dashboard.html", stats=stats, tasks=tasks, inspections=inspections, today=hoje, alert_days=alert_days, andamento=andamento, andamento_erro=andamento_erro)
+        # A FOLHA DO DIA (12/11/2026): o termo de abertura e a régua de prazos.
+        # A régua mede à parte e falha à parte — se a conta dela quebrar, a
+        # folha diz que não mediu, e o resto do painel continua de pé.
+        import painel_folha as FOLHA
+        dia = date.today()
+        folha = FOLHA.cabecalho(dia)
+        regua, regua_erro = None, ""
+        try:
+            desde = (dia - timedelta(days=FOLHA.DIAS_ATRAS)).isoformat()
+            ate = (dia + timedelta(days=alert_days)).isoformat()
+            regua = FOLHA.regua(db.prazos_por_dia(desde, ate), dia, alert_days,
+                                vencidos_ao_todo=stats["overdue"])
+        except Exception as erro:                       # noqa: BLE001
+            regua_erro = f"não deu para medir: {erro}"
+        return render_template("dashboard.html", stats=stats, tasks=tasks, inspections=inspections, today=hoje, alert_days=alert_days, andamento=andamento, andamento_erro=andamento_erro,
+                               folha=folha, regua=regua, regua_erro=regua_erro,
+                               aperto=lambda prazo: FOLHA.aperto(prazo, dia))
 
     @app.route("/expedientes", methods=["GET", "POST"])
     @login_required

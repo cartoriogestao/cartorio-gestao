@@ -29,4 +29,14 @@ def test_as_tabelas_do_painel_usam_table_wrap():
     # ADMIN) é a quarta tabela do painel — e também vem na moldura.
     # 3 DESDE 13/10/2026: o quadro «Expedientes em andamento» saiu do painel por
     # ordem do oficial (substituído por Processos). Ficam processos, atos e erros.
-    assert html.count('class="table-wrap"') == 3
+    # 1 DESDE 12/11/2026: na «folha do dia» os processos e os atos deixaram de
+    # ser tabela — são linhas em grade, que encolhem e empilham sozinhas
+    # (`minmax(0,1fr)`), sem nada para arrastar. Só os erros continuam tabela.
+    assert html.count('class="table-wrap"') == 1
+    assert "<table" not in html.replace('<div class="table-wrap"><table>', "")
+
+
+def test_as_linhas_da_folha_deixam_encolher_a_coluna_do_texto():
+    css = CSS.read_text(encoding="utf-8")
+    assert ".fd-lin{display:grid;grid-template-columns:54px minmax(0,1fr) 112px 128px" in css
+    assert ".fd-corpo{display:grid;grid-template-columns:minmax(0,1fr) 290px" in css

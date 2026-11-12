@@ -648,7 +648,8 @@ def _conferir_pessoas(das_pessoas: Any, campos_delas: list[dict],
 
 
 def conferir(con, texto: str, *,
-             dispensar: frozenset[str] = frozenset()) -> dict:
+             dispensar: frozenset[str] = frozenset(),
+             origem: str | None = None) -> dict:
     """O que o arquivo traria — **e não grava nada**. Só lê.
 
     **CONFERIR E IMPORTAR SÃO DOIS PASSOS**, como na remessa da CRA. Cinquenta
@@ -675,9 +676,10 @@ def conferir(con, texto: str, *,
         raise ImportacaoError(
             "O arquivo não tem nenhum registro em «registros».")
 
+    marca = _texto(origem) or MARCA_DA_ORIGEM
     ja_estao = {r["origem_chave"] for r in banco(con).ler(
         f'SELECT origem_chave FROM "{modelo["tabela"]}" WHERE origem = %s',
-        (MARCA_DA_ORIGEM,))}
+        (marca,))}
 
     entram: list[dict] = []
     recusados: list[dict] = []
@@ -765,14 +767,15 @@ def conferir(con, texto: str, *,
 
 
 def importar(con, texto: str, *, agora: str,
-             por: str = "") -> dict:
+             por: str = "", origem: str | None = None) -> dict:
     """Grava o que a conferência aprovou. GRAVA.
 
     **O QUE FOI RECUSADO NÃO DERRUBA O QUE PASSOU** — é a regra da remessa da
     CRA e da carga do acervo: título ruim não impede os bons de entrar, e o
     motivo de cada recusa fica escrito para quem for corrigir o arquivo.
     """
-    quadro = conferir(con, texto)
+    marca = _texto(origem) or MARCA_DA_ORIGEM
+    quadro = conferir(con, texto, origem=marca)
     tabela = quadro["tabela"]
     colunas_do_registro = _colunas(con, tabela)
     das_pessoas = MODELOS[quadro["especie"]].get("pessoas")
@@ -783,7 +786,7 @@ def importar(con, texto: str, *, agora: str,
     pessoas_entraram = 0
     for item in quadro["entram"]:
         valores = dict(item["valores"])
-        valores["origem"] = MARCA_DA_ORIGEM
+        valores["origem"] = marca
         valores["origem_chave"] = item["chave"]
         valores["criado_em"] = agora
         # Acervo RCPN: serie pode faltar no arquivo antigo — deriva da espécie.
@@ -818,7 +821,7 @@ def importar(con, texto: str, *, agora: str,
             linha = dict(pessoa)
             linha[das_pessoas["chave_estrangeira"]] = novo_id
             linha["ordem"] = ordem
-            linha["origem"] = MARCA_DA_ORIGEM
+            linha["origem"] = marca
             # **A CHAVE DE ORIGEM É DA PESSOA, E NÃO DO ASSENTO** — a lição
             # está escrita neste projeto e custou uma carga inteira: com a
             # chave do assento, os dois nubentes colidiriam no

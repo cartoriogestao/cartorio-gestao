@@ -46,11 +46,12 @@
 
 {% if do_acervo %}
 <div class="notice">
-  <strong>Digitando assento já lavrado / do acervo.</strong>
-  Preencha só o que o livro de papel trouxer. Registro antigo costuma ter
-  poucos campos — o que faltar pode ficar em branco. Se a informação não
-  existe no livro, declare «IGNORADO» ou «não tem» (não invente). Livro,
-  folha e número saem da lavratura desta casa.
+  <strong>Assento já lavrado no livro de papel.</strong>
+  Informe o livro, a folha (48 ou 48v) e o termo escritos no papel.
+  O sistema grava esses números como estão, com origem ARQUIVO.
+  Não lavra ato novo, não avança a numeração desta casa e não pede selo.
+  O que o papel não trouxer pode ficar em branco. Se a informação não
+  existe no livro, declare «IGNORADO» ou «não tem» (não invente).
 </div>
 {% endif %}
 
@@ -105,10 +106,11 @@
      formulário sai inteiro. #}
   {% set cg_passos = none %}
   {% if layout_novo %}
-    {% if nascimento %}{% set cg_passos = [('fato', 'Nascimento'), ('pessoa', 'Registrado'), ('filiacao', 'Filiação'), ('declarante', 'Declarante'), ('termo', 'Termo e selo')] %}
-    {% elif natimorto %}{% set cg_passos = [('fato', 'Natimorto'), ('pessoa', 'Registrado'), ('filiacao', 'Filiação'), ('declarante', 'Declarante'), ('termo', 'Termo e selo')] %}
-    {% elif obito %}{% set cg_passos = [('fato', 'Óbito'), ('pessoa', 'Falecido'), ('filiacao', 'Filiação'), ('perguntas', 'Perguntas'), ('declarante', 'Declarante'), ('termo', 'Termo e selo')] %}
-    {% elif casamento %}{% set cg_passos = [('fato', 'Celebração'), ('pessoa', 'Primeiro cônjuge'), ('conjuge2', 'Segundo cônjuge'), ('declarante', 'Testemunhas'), ('termo', 'Termo e selo')] %}
+    {% set _passo_termo = 'Termo do papel' if do_acervo else 'Termo e selo' %}
+    {% if nascimento %}{% set cg_passos = [('fato', 'Nascimento'), ('pessoa', 'Registrado'), ('filiacao', 'Filiação'), ('declarante', 'Declarante'), ('termo', _passo_termo)] %}
+    {% elif natimorto %}{% set cg_passos = [('fato', 'Natimorto'), ('pessoa', 'Registrado'), ('filiacao', 'Filiação'), ('declarante', 'Declarante'), ('termo', _passo_termo)] %}
+    {% elif obito %}{% set cg_passos = [('fato', 'Óbito'), ('pessoa', 'Falecido'), ('filiacao', 'Filiação'), ('perguntas', 'Perguntas'), ('declarante', 'Declarante'), ('termo', _passo_termo)] %}
+    {% elif casamento %}{% set cg_passos = [('fato', 'Celebração'), ('pessoa', 'Primeiro cônjuge'), ('conjuge2', 'Segundo cônjuge'), ('declarante', 'Testemunhas'), ('termo', _passo_termo)] %}
     {% endif %}
   {% endif %}
   {% if cg_passos %}
@@ -116,6 +118,32 @@
   <nav class="cg-passos" style="grid-column:1/-1" data-cg-passos="form-do-ato" data-inicial="fato" aria-label="Passos deste registro">
     {% for chave, rotulo in cg_passos %}<button type="button" class="cg-passo" data-passo-ir="{{ chave }}"><span class="cg-fase-n" aria-hidden="true">{{ loop.index }}</span>{{ rotulo }}</button>{% endfor %}
   </nav>
+  {% endif %}
+
+  {% if do_acervo %}
+  <section class="panel" style="grid-column:1/-1">
+    <div class="panel-head"><span>Livro de papel</span><small>obrigatório</small></div>
+    <div class="grid2" style="padding:14px">
+      <label>Livro
+        <input name="livro_papel" required value="{{ form.get('livro_papel','') }}"
+               placeholder="{% if casamento %}B-3 ou 3{% elif obito %}C-3 ou 3{% else %}A-12 ou 12{% endif %}">
+        <small>O número escrito na capa. A letra é a deste tipo de assento.</small>
+      </label>
+      <label>Folha
+        <input name="folha_papel" required value="{{ form.get('folha_papel','') }}"
+               placeholder="48 ou 48v" pattern="[0-9]+\s*[vV]?"
+               title="Número da folha, com v no verso (48 ou 48v)">
+        <small>Frente: 48. Verso: 48v.</small>
+      </label>
+      <label>Termo
+        <input name="termo_papel" required value="{{ form.get('termo_papel','') }}"
+               inputmode="numeric" pattern="[0-9]+" placeholder="o número do termo no papel">
+      </label>
+      <label>Data do assento no papel <small>(se estiver escrita)</small>
+        <input type="date" name="data_ato" value="{{ form.get('data_ato','') }}">
+      </label>
+    </div>
+  </section>
   {% endif %}
 
   {# A ARRUMAÇÃO DESTA TELA — 13/10/2026, pedido do oficial: «vamos separar os
@@ -709,21 +737,32 @@
      é o que o escrevente normalmente deixa em branco. #}
   {% if cg_passos %}<div class="cg-passo-bloco" data-passo="termo">{% endif %}
   <section class="panel" style="grid-column:1/-1">
-    <div class="panel-head"><span>Termo, matrícula e selo</span>
-      <small>o sistema faz sozinho ao lavrar</small></div>
+    <div class="panel-head"><span>{% if do_acervo %}Termo do papel{% else %}Termo, matrícula e selo{% endif %}</span>
+      <small>{% if do_acervo %}o que está escrito no livro{% else %}o sistema faz sozinho ao lavrar{% endif %}</small></div>
     <div class="grid2" style="padding:14px">
       <label style="grid-column:1/-1">Teor do registro <small>(opcional)</small>
         <textarea name="teor" rows="6">{{ form.get('teor','') }}</textarea>
+        {% if do_acervo %}
+        <small>Cole o texto do papel, se quiser guardá-lo. Em branco, o sistema
+          não escreve um termo novo.</small>
+        {% else %}
         <small>Em branco, o termo é escrito pelo modelo da casa a partir dos
-          campos acima, na lavratura.</small></label>
+          campos acima, na lavratura.</small>
+        {% endif %}</label>
       <label>Matrícula de 32 dígitos <small>(opcional)</small>
         <input name="matricula" value="{{ form.get('matricula','') }}"
-               placeholder="deixe em branco para compor ao lavrar"></label>
+               placeholder="{% if do_acervo %}só se já estiver escrita no papel{% else %}deixe em branco para compor ao lavrar{% endif %}"></label>
       <p><small>
+        {% if do_acervo %}
+        Em branco, fica em branco: esta inclusão não compõe matrícula nem reserva número.
+        Se o papel já tem a matrícula nacional, digite-a.
+        {% else %}
         Em branco, a matrícula é composta depois que livro, folha e número são
         reservados. Se já existir uma matrícula nacional, digite-a: ela não é
         substituída.
+        {% endif %}
       </small></p>
+      {% if not do_acervo %}
       {# O SELO SAI SOZINHO — relato #37, item 2. #}
       <p style="grid-column:1/-1"><small>
         <strong>Você não precisa digitar selo</strong> — o selo sai sozinho ao lavrar.
@@ -751,9 +790,21 @@
       {% if not (nascimento or obito or natimorto) %}
       {{ quadro(receita, caixa, protocolos, form=form_do_quadro) }}
       {% endif %}
+      {% endif %}
     </div>
   </section>
 
+  {% if do_acervo %}
+  <div class="actions" style="grid-column:1/-1">
+    <button class="button primary" name="acao" value="incluir_papel">
+      Incluir assento do papel</button>
+    <a class="button" href="{{ url_for('rcpn_assento_novo', especie_url=especie_url, do_acervo=1) }}">Cancelar</a>
+    <p style="grid-column:1/-1"><small>
+      <strong>Incluir assento do papel</strong> grava o livro, a folha e o termo
+      digitados. Não lavra, não avança a numeração desta casa e não pede selo.
+    </small></p>
+  </div>
+  {% else %}
   <div class="actions" style="grid-column:1/-1">
     <button class="button primary" name="acao" value="conferir">
       Conferir {{ so_especie | lower }}</button>
@@ -764,6 +815,7 @@
       vê os dados do CPF — só lá se lavra.
     </small></p>
   </div>
+  {% endif %}
   {% if cg_passos %}</div>
   <div class="cg-passos-fim" style="grid-column:1/-1" hidden data-cg-passos-fim>
     <button type="button" class="button" data-passo-voltar>&larr; Voltar</button>

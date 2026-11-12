@@ -100,6 +100,8 @@ Em Óbito, registre a declaração e confira dados da pessoa, falecimento e decl
 
 ### Assento já lavrado, CPF e segunda via
 
+**Digitar nascimento já lavrado**, **Digitar casamento já lavrado** e **Digitar óbito já lavrado** incluem o livro de papel. Preencha livro, folha (48 ou 48v) e termo e use **Incluir assento do papel**. A numeração atual da casa não anda e não há selo. Livro e termo já cadastrados na mesma espécie são recusados.
+
 Retificação e suprimento é o caminho para corrigir, restaurar ou suprir assento, com fundamento e histórico. Use Atos sem checklist, Termos a escrever e Conferência da filiação para pendências do acervo. Informações importadas não devem ser confundidas com assentos novos. CPF nos assentos antigos trata a averbação em registros anteriores; examine se já existe averbação antes de criar outra, confira qual fica válida e use cancelamento na indevida. A matrícula nacional do assento deve aparecer completa no teor e na certidão; consulte a tela Matrículas se faltar ou estiver inconsistente.
 
 Para segunda via, localize o assento existente, selecione a espécie e confira os dados atuais e as averbações antes de emitir. Caso uma importação tenha teor ou vínculo incompleto, registre o identificador e a mensagem na Ajuda; não duplique o assento para liberar a certidão. Confira o selo específico da segunda via ou a justificativa apresentada pelo sistema.

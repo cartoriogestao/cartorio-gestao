@@ -59,7 +59,7 @@ def test_inclui_em_lote_com_pessoas_teor_pdf_e_autoria(cg_casa_logada):
     aid=r['resultados'][0]['id']
     with casa['db'].connect() as c:
         bd=banco(c); a=bd.um('SELECT * FROM rc_assentos WHERE id=%s',(aid,))
-        assert a['numero']==101 and a['livro_volume']=='A-9' and a['origem']=='IMPORTACAO'
+        assert a['numero']==101 and a['livro_volume']=='A-9' and a['origem']=='ARQUIVO'
         assert a['teor'].startswith('Transcrição integral')
         assert sha256(Path(a['digi_path']).read_bytes()).hexdigest()==a['digi_sha256']
         assert len(bd.ler('SELECT * FROM rc_pessoas WHERE assento_id=%s',(aid,)))==2
@@ -214,7 +214,12 @@ def test_escrevente_e_robo_responsavel_importam_pela_sessao(cg_casa_logada,robo)
     with casa['db'].connect() as c:
         aud=banco(c).um("SELECT * FROM audit_logs WHERE action='RCPN_ACERVO_TRANSCRITO' AND entity_id=%s",(r['resultados'][0]['id'],))
     assert aud['user_id']==u['id']
-    if robo:assert 'LAURA' in aud['a_mando_de']
+    if robo:
+        assert 'LAURA' in aud['a_mando_de']
+        assert aud['username_snapshot']=='LAURA RESPONSAVEL'
+    else:
+        assert aud['username_snapshot']==u['full_name']
+    assert 'PENDENTE' not in (aud['username_snapshot'] or '')
 
 
 def test_falha_ao_salvar_recibo_informa_que_lote_foi_gravado(cg_casa_logada,monkeypatch):
@@ -258,3 +263,84 @@ def test_matricula_contraditoria_nao_cria_nem_complementa(cg_casa_logada):
     carregado,_,_=lote(casa)
     with casa['db'].connect() as c:q=L.conferir(c,carregado)
     assert not q['aceitos'] and 'contradiz a matrícula' in q['recusados'][0]['porque']
+
+
+def test_folha_tardio_naturalidade_e_quem_incluiu(cg_casa_logada):
+    """A ficha lia «—» na folha e na naturalidade, e o tardio ficava só no JSON."""
+    casa = cg_casa_logada
+    carregado, _, _ = lote(casa, extra={
+        'folha': '48V',
+        'dados_json': json.dumps({
+            'registro_tardio': True,
+            'acervo_transcrito': {'avos_paternos': 'JOÃO EXEMPLO e MARIA EXEMPLO'},
+        }),
+        'pessoas': [
+            {'papel': 'REGISTRADO', 'nome': 'ANA EXEMPLO', 'sexo': 'F',
+             'naturalidade': 'Cidade Exemplo/MA'},
+            {'papel': 'MAE', 'nome': 'MAE NOVA', 'naturalidade': 'Outra Cidade-MA'},
+        ],
+    })
+    r = aplicar(casa, carregado)
+    aid = r['resultados'][0]['id']
+    with casa['db'].connect() as c:
+        bd = banco(c)
+        a = bd.um('SELECT * FROM rc_assentos WHERE id=%s', (aid,))
+        assert a['origem'] == 'ARQUIVO'
+        assert a['registro_tardio'] == 1
+        assert json.loads(a['dados_json'])['folha'] == '48v'
+        pessoas = {p['papel']: p for p in bd.ler(
+            'SELECT * FROM rc_pessoas WHERE assento_id=%s', (aid,))}
+        assert pessoas['REGISTRADO']['naturalidade_cidade'] == 'Cidade Exemplo'
+        assert pessoas['REGISTRADO']['naturalidade_uf'] == 'MA'
+        assert pessoas['MAE']['naturalidade_cidade'] == 'Outra Cidade'
+        assert pessoas['REGISTRADO']['origem'] == 'ARQUIVO'
+        aud = bd.um(
+            "SELECT username_snapshot FROM audit_logs "
+            "WHERE action='RCPN_ACERVO_TRANSCRITO' AND entity_id=%s", (aid,))
+        assert aud['username_snapshot'] == usuario(casa)['full_name']
+        assert bd.valor(
+            "SELECT count(*) FROM rc_atos WHERE assento_id=%s", (aid,)) == 0
+    html = casa['c'].get(f'/rcpn/{aid}').get_data(as_text=True)
+    assert '48v' in html
+    assert 'Cidade Exemplo' in html
+    assert 'ARQUIVO' in html
+
+
+def test_campo_vazio_nao_apaga_folha_tardio_nem_naturalidade(cg_casa_logada):
+    casa = cg_casa_logada
+    aid = antigo(casa)
+    with casa['db'].transaction() as c:
+        bd = banco(c)
+        bd.escrever(
+            "UPDATE rc_assentos SET registro_tardio=1, "
+            "dados_json=%s WHERE id=%s",
+            (json.dumps({'preservar': 'sim', 'folha': '10v'}), aid))
+        bd.escrever(
+            "UPDATE rc_pessoas SET naturalidade_cidade=%s, naturalidade_uf=%s "
+            "WHERE assento_id=%s AND papel='MAE'",
+            ('Cidade Guardada', 'MA', aid))
+    carregado, _, _ = lote(casa, extra={
+        'dados_json': json.dumps({'acervo_transcrito': {
+            'avos_paternos': 'JOÃO EXEMPLO e MARIA EXEMPLO'}}),
+    })
+    aplicar(casa, carregado)
+    with casa['db'].connect() as c:
+        bd = banco(c)
+        a = bd.um('SELECT * FROM rc_assentos WHERE id=%s', (aid,))
+        assert a['registro_tardio'] == 1
+        dados = json.loads(a['dados_json'])
+        assert dados['folha'] == '10v' and dados['preservar'] == 'sim'
+        assert a['nome'] == 'ANA EXEMPLO'
+        mae = bd.um(
+            "SELECT nome, naturalidade_cidade FROM rc_pessoas "
+            "WHERE assento_id=%s AND papel='MAE'", (aid,))
+        assert mae['nome'] == 'MAE NOVA'
+        assert mae['naturalidade_cidade'] == 'Cidade Guardada'
+
+
+def test_folha_invalida_nao_entra_no_lote():
+    with pytest.raises(L.LoteError, match='48 ou 48v'):
+        L._registro({'valores': {
+            'livro_volume': 'A-1', 'numero': 7, 'nome': 'ANA EXEMPLO',
+            'teor': 'Transcrição integral.', 'folha': '48x',
+        }})

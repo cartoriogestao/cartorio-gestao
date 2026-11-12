@@ -50,19 +50,32 @@ def volume(valor):
 ORIGEM_DO_PAPEL = 'ARQUIVO'
 LETRA_DO_PAPEL = {'NASCIMENTO': 'A', 'CASAMENTO': 'B', 'OBITO': 'C'}
 ESPECIES_DO_PAPEL = frozenset(LETRA_DO_PAPEL)
-_FOLHA = re.compile(r'^0*(\d+)\s*([vV])?$')
 _NOME_DA_ESPECIE = {
     'NASCIMENTO': 'nascimento', 'CASAMENTO': 'casamento', 'OBITO': 'óbito'}
 
 
+def _inteiro_do_papel(texto: str) -> int:
+    """O número, sem zero à esquerda. Recusa o que não é só dígitos.
+
+    Não usa expressão com `0*` antes de `\\d`: os dois casam o zero, e uma
+    sequência longa de zeros deixa o casamento lento (CodeQL).
+    """
+    if not texto.isdigit() or len(texto) > 7:
+        return 0
+    return int(texto)
+
+
 def folha_do_papel(valor) -> str:
     """«48» na frente e «48v» no verso. Só calcula."""
-    m = _FOLHA.fullmatch(str(valor if valor is not None else '').strip())
-    if not m or int(m.group(1)) < 1:
+    bruto = str(valor if valor is not None else '').strip()
+    verso = bruto.endswith(('v', 'V'))
+    nucleo = bruto[:-1].strip() if verso else bruto
+    numero = _inteiro_do_papel(nucleo)
+    if numero < 1:
         raise LoteError(
             'A folha do papel precisa ser o número da folha, com «v» no verso '
             '(exemplo: 48 ou 48v).')
-    return f'{int(m.group(1))}{"v" if m.group(2) else ""}'
+    return f'{numero}{"v" if verso else ""}'
 
 
 def livro_do_papel(valor, especie: str) -> str:
@@ -76,15 +89,18 @@ def livro_do_papel(valor, especie: str) -> str:
         raise LoteError(
             'O livro de papel desta tela é o de nascimento, casamento ou óbito.')
     texto = str(valor or '').strip()
-    com_letra = re.fullmatch(
-        rf'(?:livro\s+)?{letra}\s*[- ]?\s*0*(\d+)', texto, re.I)
-    so_numero = re.fullmatch(r'0*(\d+)', texto)
-    achado = com_letra or so_numero
-    if not achado or int(achado.group(1)) < 1:
+    if texto.casefold().startswith('livro') and texto[5:6].isspace():
+        texto = texto[5:].strip()
+    if texto[:1].upper() == letra:
+        resto = texto[1:].lstrip(' -')
+        if _inteiro_do_papel(resto) >= 1:
+            texto = resto
+    numero = _inteiro_do_papel(texto)
+    if numero < 1:
         raise LoteError(
             f'O livro do papel precisa ser o {letra} desta espécie '
             f'(exemplo: {letra}-12 ou 12).')
-    return f'{letra}-{int(achado.group(1))}'
+    return f'{letra}-{numero}'
 
 
 def nome_de_quem_inclui(conta: dict, informado: str, mandante: str) -> str:
@@ -497,10 +513,7 @@ def incluir_avulso(con, *, especie: str, livro, folha, termo, nome: str,
     especie = str(especie or '').strip().upper()
     livro_n = livro_do_papel(livro, especie)
     folha_n = folha_do_papel(folha)
-    try:
-        numero = int(str(termo).strip())
-    except (TypeError, ValueError):
-        numero = 0
+    numero = _inteiro_do_papel(str(termo if termo is not None else '').strip())
     if numero < 1:
         raise LoteError(
             'O termo do papel precisa ser o número escrito no livro.')

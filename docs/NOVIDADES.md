@@ -8,6 +8,16 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.18 — a margem do assento no formato em que a ficha já a guarda
+
+Desde a 3.7.17. Para a instalação ainda na 3.7.10, o pacote continua cumulativo:
+`--desde v3.7.10`.
+
+**Registro civil**
+- O aviso no alto da ficha lista cada anotação da margem (o que conferir e o trecho do livro). Quando alguma diz SEM EFEITO, o aviso fica em destaque. Se a margem foi guardada como um texto só, esse texto continua no aviso.
+
+O pacote cumulativo desde a 3.7.10 não apaga `docs/tecnico/REGISTRO_HOTFIXES_OFICIAL.md` da instalação.
+
 ## 3.7.17 — Guias FERJ/FERC pagas pelo Pix da guia, WhatsApp do escrevente, acervo do RCPJ/RTD e a contingência da reserva
 
 Desde a 3.7.16. Para a instalação ainda na 3.7.10, o pacote continua cumulativo:

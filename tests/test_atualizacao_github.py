@@ -307,15 +307,22 @@ def test_o_pacote_parcial_leva_so_o_que_mudou_e_o_que_sumiu(tmp_path):
     (raiz / "igual.py").write_text("x = 1\n", encoding="utf-8")
     (raiz / "muda.py").write_text("y = 1\n", encoding="utf-8")
     (raiz / "some.py").write_text("z = 1\n", encoding="utf-8")
+    registro = raiz / "docs" / "tecnico" / "REGISTRO_HOTFIXES_OFICIAL.md"
+    registro.parent.mkdir(parents=True)
+    registro.write_text("registro interno da instalacao\n", encoding="utf-8")
     (raiz / "VERSAO.txt").write_text("1.0.0\n", encoding="utf-8")
     (raiz / "app.py").write_text('VERSION = "1.0.0"\n', encoding="utf-8")
-    git = ["git", "-C", str(raiz), "-c", "user.name=t", "-c", "user.email=t@t.invalid"]
-    subprocess.run(git[:3] + ["init", "-q"], check=True)
+    # autocrlf ligado troca o hash do blob e o pacote passa a levar arquivo que não mudou.
+    git = ["git", "-C", str(raiz),
+           "-c", "core.autocrlf=false", "-c", "core.safecrlf=false",
+           "-c", "user.name=t", "-c", "user.email=t@t.invalid"]
+    subprocess.run(["git", "-C", str(raiz), "init", "-q"], check=True)
     subprocess.run(git + ["add", "-A"], check=True)
     subprocess.run(git + ["commit", "-qm", "1"], check=True)
     subprocess.run(git + ["tag", "v1.0.0"], check=True)
     (raiz / "muda.py").write_text("y = 2\n", encoding="utf-8")
     (raiz / "some.py").unlink()
+    registro.unlink()
     (raiz / "novo.py").write_text("w = 1\n", encoding="utf-8")
     (raiz / "VERSAO.txt").write_text("1.0.1\n", encoding="utf-8")
     (raiz / "app.py").write_text('VERSION = "1.0.1"\n', encoding="utf-8")
@@ -328,6 +335,8 @@ def test_o_pacote_parcial_leva_so_o_que_mudou_e_o_que_sumiu(tmp_path):
     assert {"muda.py", "novo.py", "VERSAO.txt", "app.py"} <= caminhos
     assert "igual.py" not in caminhos
     assert manifesto["delete"] == ["some.py"]
+    assert "docs/tecnico/REGISTRO_HOTFIXES_OFICIAL.md" not in manifesto["delete"]
+    assert "docs/tecnico/REGISTRO_HOTFIXES_OFICIAL.md" not in caminhos
 
 
 def test_as_novidades_da_versao_saem_do_trecho_dela():

@@ -93,3 +93,51 @@ def test_aviso_da_margem_aparece_no_alto_da_ficha(cg_casa_logada, margem):
         assert html.index(aviso) < html.index("O assento")
     else:
         assert aviso not in html
+
+
+def test_genitor_so_com_uf_nao_poe_a_sigla_no_municipio():
+    assert Q._nasc_pessoa(
+        {"MAE": {"naturalidade_cidade": "", "naturalidade_uf": "ma"}},
+        "MAE", {}) == ("", "MA")
+    assert Q._nasc_pessoa(
+        {"MAE": {"naturalidade_cidade": "Cidade Exemplo", "naturalidade_uf": "MA"}},
+        "MAE", {}) == ("Cidade Exemplo", "MA")
+
+
+def test_aviso_da_margem_em_lista_mostra_os_itens(cg_casa_logada):
+    casa = cg_casa_logada
+    aid = _assento(casa, {"margem_a_conferir": {
+        "desde": "2026-11-10",
+        "itens": [
+            {"especie": "SEM EFEITO",
+             "o_que_conferir": "não certificar sem conferir no livro",
+             "texto_da_margem": "Trecho genérico <da margem>"},
+            {"especie": "ANOTAÇÃO",
+             "o_que_conferir": "lance a anotação na ficha",
+             "texto_da_margem": ""},
+        ],
+    }})
+    resposta = casa["c"].get(f"/rcpn/{aid}")
+    assert resposta.status_code == 200
+    html = resposta.get_data(as_text=True)
+    assert 'data-margem="lista"' in html
+    assert 'class="notice critical" role="alert" data-margem="lista"' in html
+    assert "Sem efeito" in html
+    assert "não certificar sem conferir no livro" in html
+    assert "Anotação" in html
+    assert "lance a anotação na ficha" in html
+    assert "Trecho genérico &lt;da margem&gt;" in html
+    assert "{'desde'" not in html and '{"desde"' not in html
+    assert html.index("Confira no livro antes de certificar") < html.index("O assento")
+
+
+def test_aviso_da_margem_sem_efeito_ausente_nao_fica_critico(cg_casa_logada):
+    casa = cg_casa_logada
+    aid = _assento(casa, {"margem_a_conferir": {"itens": [
+        {"especie": "ANOTAÇÃO", "o_que_conferir": "confira a anotação",
+         "texto_da_margem": "outro trecho genérico"},
+    ]}})
+    html = casa["c"].get(f"/rcpn/{aid}").get_data(as_text=True)
+    assert 'class="notice" role="alert" data-margem="lista"' in html
+    assert 'data-margem="lista"' in html
+    assert "Sem efeito" not in html

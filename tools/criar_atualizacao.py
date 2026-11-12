@@ -321,9 +321,15 @@ def so_o_que_mudou(root: Path, desde: str, arquivos):
         blob = hashlib.sha1(b'blob %d\0' % len(dados) + dados).hexdigest()
         if rel in de_fora or na_etiqueta.get(rel) != blob:
             escolhidos.append((p, rel))
+    # O registro interno saiu do repositório (não é código público). Uma
+    # etiqueta antiga ainda o tem, e o pacote parcial o punha em `delete`:
+    # a atualização apagava a cópia que a instalação já guarda. O pacote
+    # não leva o arquivo e também não manda apagá-lo (12/11/2026).
+    nao_apagar = {"docs/tecnico/REGISTRO_HOTFIXES_OFICIAL.md"}
     apagados = sorted(
         rel for rel in na_etiqueta
         if rel not in presentes and not (root / rel).exists()
+        and rel not in nao_apagar
         and not any(part in EXCLUDE_DIRS for part in Path(rel).parts))
     return escolhidos, apagados
 

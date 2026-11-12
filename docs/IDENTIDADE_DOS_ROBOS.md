@@ -10,7 +10,10 @@ mando de quem está agindo».
    escolhe a **pessoa responsável** por ela (`users.robo_responsavel_id`: uma
    pessoa com cadastro ativo, de qualquer perfil **menos AUDITOR** — quem
    confere não manda —, nunca outro robô). Conta de robô só tem perfil USER ou
-   AUDITOR.
+   AUDITOR. **A única exceção** é o superusuário (ordem do oficial,
+   12/11/2026): a conta `superusuario`, robô com perfil ADMIN, que só o
+   oficial aciona e que responde a ele — ver [`SUPERUSUARIO.md`](SUPERUSUARIO.md).
+   Nenhum outro robô administra.
 2. **Robô com a senha de uma pessoa é proibido.** Isto não se impede por
    programa — nenhum programa distingue a mão da pessoa da mão do robô que tem
    a senha dela. É regra escrita, e quem a descumpre responde por ela.

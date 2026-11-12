@@ -253,10 +253,19 @@ function imprimirRequerimentoTardio() {
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <input type="hidden" name="especie" value="{{ especie }}">
   {% for k, v in form.items() %}
-    {% if k not in ('csrf_token', 'acao', 'folha_seguranca', 'especie', 'cpf_registrado', 'forcar_motivo') %}
+    {% if k not in ('csrf_token', 'acao', 'folha_seguranca', 'especie', 'cpf_registrado', 'forcar_motivo', 'revisao_instrucao', 'revisao_justificativa', 'revisao_prosseguir', 'revisao_usar_anterior', 'revisao_justificativa_anterior') %}
     <input type="hidden" name="{{ k }}" value="{{ v }}">
     {% endif %}
   {% endfor %}
+
+  {# A revisão vale para todo assento novo (não é acervo). O Sonnet lê o
+     formulário com a primeira leitura do preenchedor; quem trava ou libera
+     continua sendo a regra já existente da revisão prévia. #}
+  {% if rascunho_id and not do_acervo %}
+  {% with revisao_url=url_for('revisao_previa_rcpn', rascunho_id=rascunho_id), revisao_do_registro_civil=True %}
+  {% include '_revisao_previa.html' %}
+  {% endwith %}
+  {% endif %}
 
   <section class="panel">
     <div class="panel-head"><span>Folha de segurança</span>

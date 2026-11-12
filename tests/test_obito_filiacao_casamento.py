@@ -301,6 +301,17 @@ def test_o_dossie_leva_a_previa_e_a_instrucao_checa_filiacao_e_conjuge():
     assert "cônjuge" in instrucao
     assert "filiação" in instrucao
     assert "Não invente" in instrucao
+    assert "preenchedor" in baixa
+    assert "natimorto" in baixa
+    assert "nubentes" in baixa
+    assert "declaração de óbito" in baixa
+    sem_folha = RV.texto_do_registro_civil({
+        "especie": "OBITO", "pessoa_nome": "CARLOS EXEMPLO",
+        "acao": "lavrar", "folha_seguranca": "9999999",
+        "_rascunho_id_tela": "4", "forcar_motivo": "emergencia longa",
+    })
+    assert sem_folha == RV.texto_do_registro_civil(
+        {"especie": "OBITO", "pessoa_nome": "CARLOS EXEMPLO"})
     fonte = (RAIZ / "revisao_previa.py").read_text(encoding="utf-8")
     assert "'consultivo' (padrão)" in fonte
     assert RV.CHAVE_MODO == "revisao_previa_modo"

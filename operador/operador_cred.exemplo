@@ -1,0 +1,35 @@
+# O SUPERUSUÁRIO — a configuração da ponte (docs/SUPERUSUARIO.md).
+# O instalador copia este arquivo para <dados>/operador/operador.cred, e é LÁ
+# que se edita. Ele guarda segredos: só o oficial o lê (chmod 600 no macOS;
+# só Administradores e SYSTEM no Windows). Nunca vai para o git.
+
+# O bot DESTE servidor (um bot para o principal, outro para o reserva),
+# criado pelo oficial no @BotFather do Telegram.
+TELEGRAM_TOKEN=
+
+# O número de usuário do oficial no Telegram. Vazio, o bot não atende ninguém:
+# só responde a quem escrever qual é o número dessa pessoa, para colar aqui.
+OPERADOR_TELEGRAM_USUARIO=
+
+# A chave da API da Anthropic (console.anthropic.com), só deste operador,
+# com limite de gasto mensal definido lá.
+ANTHROPIC_API_KEY=
+
+# O modelo. Vazio = claude-opus-5-5.
+OPERADOR_MODELO=claude-opus-5-5
+
+# principal ou reserva. Vazio = decide pelo CG_MODO_RESERVA.
+OPERADOR_NOME=
+
+# O executável do Claude Code, se não estiver no PATH do serviço.
+OPERADOR_CLAUDE=
+
+# O clone do repositório privado para onde vão os relatórios (o mesmo da
+# sincronia dos problemas). Vazio = os relatórios ficam só no servidor.
+OPERADOR_REPOSITORIO=
+
+# O banco, onde o serviço da ponte não herda estas variáveis do ambiente.
+# No reserva, o instalador já as lê do reserva.env.
+#CG_PG_DSN=
+#CG_PG_SCHEMA=producao
+#CG_PG_BIN=

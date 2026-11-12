@@ -186,6 +186,24 @@ TIPOS: dict[str, dict[str, Any]] = {
             "declarante, cpf_declarante, moradores (lista de nomes), cpf_morador, "
             "logradouro, numero, bairro, municipio, uf, cep, data"),
     },
+    # A ERRATA DA DO E A DECLARAÇÃO DO DECLARANTE — 12/11/2026, óbito de Ulise:
+    # as duas vinham como OUTRO e, como `juntar_obito` só usa DO e IDENTIDADE,
+    # eram lidas, pagas e jogadas fora. Moldes de campos fixos, para o
+    # `juntar_obito` não depender do rótulo que o modelo inventa.
+    "ERRATA": {
+        "nome": "Errata da Declaração de Óbito (correção feita pela Secretaria de Saúde)",
+        "manuscrito": False,
+        "campos": (
+            "numero_do, nome_falecido, secao, item, onde_le_se, leia_se, "
+            "responsavel, cargo, data_da_errata"),
+    },
+    "DECLARANTE": {
+        "nome": "Declaração de dados do declarante do óbito",
+        "manuscrito": True,
+        "campos": (
+            "nome, rg, cpf, profissao, endereco, numero, bairro, cidade, estado, "
+            "cep, telefone, celular, data"),
+    },
     "OUTRO": LIA.TIPO_OUTRO,
 }
 
@@ -199,7 +217,11 @@ INSTRUCAO_TRIAGEM = (
     "do prazo — com o registrando, a filiação e as testemunhas), "
     "HABILITACAO (requerimento, memorial ou declaração de habilitação "
     "para casamento, inclusive a declaração das testemunhas), RESIDENCIA "
-    "(comprovante ou declaração de residência), OUTRO. "
+    "(comprovante ou declaração de residência — inclusive conta de luz, água ou "
+    "telefone), ERRATA (errata ou correção de uma Declaração de Óbito, feita pela "
+    "Secretaria de Saúde: «onde se lê… leia-se…»), DECLARANTE (declaração, em "
+    "formulário do cartório, com os dados de quem declara o óbito: nome, RG, CPF, "
+    "endereço, telefone), OUTRO. "
     "A DECLARAÇÃO DE NASCIDO VIVO É SEMPRE DNV, NUNCA IDENTIDADE — inclusive a "
     "«2ª via – Cartório», o formulário do Ministério da Saúde / SINASC, e a página "
     "que traz o número no formato NN-NNNNNNNN-N, os dados do recém-nascido e os da "
@@ -1277,6 +1299,136 @@ def sugerir_conjuge_da_certidao(valores: dict, falecido: dict,
                "preenchido — ficou o que a escrevente digitou.", onde)
 
 
+def _chave_do_rotulo(texto: Any) -> str:
+    """«Onde lê-se» e «onde_le_se» dão a mesma chave. SÓ CALCULA."""
+    return re.sub(r"[^a-z]", "", _sem_acento(str(texto or "")).lower())
+
+
+def _e_do_tipo(doc: dict, tipo: str, trecho: str) -> bool:
+    """A página é do `tipo` — ou a triagem (miniatura de 700 px) a chamou de OUTRO e
+    a própria transcrição diz o que ela é. Assim as leituras já gravadas, de antes
+    dos moldes novos, também se reaproveitam. SÓ CALCULA."""
+    if doc.get("tipo") == tipo:
+        return True
+    dados = doc.get("dados") if isinstance(doc.get("dados"), dict) else {}
+    return doc.get("tipo") == "OUTRO" and trecho in _chave_do_rotulo(dados.get("tipo_do_documento"))
+
+
+def _campo(dados: dict, *rotulos: str) -> Any:
+    """O valor da primeira chave cujo rótulo (sem acento, sem pontuação) é um dos
+    pedidos. SÓ CALCULA."""
+    chaves = {_chave_do_rotulo(r) for r in rotulos}
+    for k, val in (dados or {}).items():
+        if _chave_do_rotulo(k) in chaves and _limpo(val):
+            return val
+    return None
+
+
+def _certidao_de_nascimento(documentos: list[dict]) -> dict | None:
+    for d in documentos:
+        if d.get("tipo") == "CERTIDAO" and isinstance(d.get("dados"), dict) \
+                and "nasc" in _chave_do_rotulo(d["dados"].get("especie")):
+            return d
+    return None
+
+
+def _nomes_do_falecido_fora_da_do(documentos: list[dict], cert: dict | None,
+                                  do: dict) -> list[tuple[str, str]]:
+    """Nomes do falecido que não vêm da DO: o do registrado na certidão de
+    nascimento e o da errata que cita o número desta DO. SÓ CALCULA."""
+    saida: list[tuple[str, str]] = []
+    if cert is not None:
+        nomes = cert["dados"].get("nomes")
+        nome = _limpo(nomes[0] if isinstance(nomes, list) and nomes else nomes)
+        if nome:
+            saida.append((nome, f"certidão de nascimento, {cert['arquivo']} p{cert['n']}"))
+    numero = so_digitos(do.get("numero_do"))
+    for d in documentos:
+        if _e_do_tipo(d, "ERRATA", "errata") and isinstance(d.get("dados"), dict):
+            dados = d["dados"]
+            cita = any(so_digitos(x) == numero for x in dados.values()
+                       if isinstance(x, (str, int))) if numero else False
+            nome = _limpo(_campo(dados, "nome_falecido", "nome do falecido"))
+            if nome and cita:
+                saida.append((nome, f"errata da DO, {d['arquivo']} p{d['n']}"))
+    return saida
+
+
+def _pais_fora_da_do(pessoas: list[dict], avisos: list, do: dict, cert: dict | None,
+                     ident: dict | None) -> None:
+    """Quando a DO não confere com os documentos, a filiação vem da certidão de
+    nascimento (ou do RG) e não da DO manuscrita. SÓ CALCULA."""
+    fonte, onde = None, ""
+    if cert is not None and (_limpo(cert["dados"].get("pai")) or _limpo(cert["dados"].get("mae"))):
+        fonte, onde = cert["dados"], f"{cert['arquivo']} p{cert['n']}"
+        pai, mae = _limpo(fonte.get("pai")), _limpo(fonte.get("mae"))
+    elif ident is not None:
+        pai, mae = _limpo(ident.get("filiacao_pai")), _limpo(ident.get("filiacao_mae"))
+        onde = ident.get("_onde") or ""
+    else:
+        return
+    if not (pai or mae):
+        return
+    pessoas[:] = [p for p in pessoas if p.get("papel") not in ("PAI", "MAE")]
+    if pai:
+        pessoas.append({"papel": "PAI", "nome": pai, "sexo": "M"})
+    if mae:
+        pessoas.append({"papel": "MAE", "nome": mae, "sexo": "F"})
+    _aviso(avisos, "CONFERIR",
+           f"Pai e mãe vieram do documento do falecido, e não da DO (lida: pai "
+           f"«{_limpo(do.get('nome_pai'))}», mãe «{_limpo(do.get('nome_mae'))}») — "
+           f"confira a grafia no original.", onde)
+
+
+def _errata_da_do(valores: dict, avisos: list, documentos: list[dict], do: dict) -> None:
+    """A errata da Secretaria de Saúde corrige a DO, e vale mais que ela. Só se
+    aplica a ERRATA DE DATA cujo «onde se lê» é a data que a DO trouxe — e diz,
+    sempre, o que viu. SÓ CALCULA."""
+    numero = so_digitos(do.get("numero_do"))
+    for d in documentos:
+        if not (_e_do_tipo(d, "ERRATA", "errata") and isinstance(d.get("dados"), dict)):
+            continue
+        dados = d["dados"]
+        antes, depois = data_iso(_campo(dados, "onde_le_se")), data_iso(_campo(dados, "leia_se"))
+        onde = f"{d['arquivo']} p{d['n']}"
+        if not (antes and depois):
+            continue
+        outro_numero = so_digitos(_campo(dados, "numero_do", "numero da declaracao de obito"))
+        if numero and outro_numero and outro_numero != numero:
+            continue
+        if valores.get("data_fato") == antes:
+            valores["data_fato"] = depois
+            _aviso(avisos, "CONFERIR",
+                   f"A errata da DO corrige a data de {antes} para {depois}; a data do "
+                   f"óbito foi trocada pela da errata.", onde)
+        elif valores.get("data_fato") == depois:
+            _aviso(avisos, "CONFERIR",
+                   f"A errata da DO ({antes} → {depois}) confere com a data lida.", onde)
+        else:
+            _aviso(avisos, "CONFERIR",
+                   f"A errata da DO diz «leia-se {depois}», mas a data lida foi "
+                   f"«{valores.get('data_fato')}» — confira.", onde)
+
+
+def _declarante_da_pagina(documentos: list[dict]) -> dict | None:
+    for d in documentos:
+        if _e_do_tipo(d, "DECLARANTE", "dadosdodeclarante") and isinstance(d.get("dados"), dict):
+            nome = _limpo(_campo(d["dados"], "nome"))
+            if nome:
+                return {"nome": nome, "cpf": _campo(d["dados"], "cpf"),
+                        "_onde": f"{d['arquivo']} p{d['n']}"}
+    return None
+
+
+def _identidade_do_declarante(decl: dict, candidatos: list[dict]) -> dict | None:
+    cpf = so_digitos(decl.get("cpf"))
+    for p in candidatos:
+        if len(cpf) == 11 and cpf == so_digitos(p.get("cpf")):
+            return p
+    melhor, nota = _a_que_mais_se_parece(decl["nome"], candidatos)
+    return melhor if melhor is not None and nota >= 0.5 else None
+
+
 def juntar_obito(documentos: list[dict]) -> dict:
     """O registro de óbito que os documentos permitem montar. SÓ CALCULA.
 
@@ -1332,8 +1484,26 @@ def juntar_obito(documentos: list[dict]) -> dict:
     if _limpo(v.get("nome_mae")):
         pessoas.append({"papel": "MAE", "nome": _limpo(v.get("nome_mae")), "sexo": "F"})
 
+    _errata_da_do(valores, avisos, documentos, v)   # antes da idade: a data certa é a da errata
     ids = _identidades(documentos)
     id_fal, nota = _a_que_mais_se_parece(falecido["nome"], ids)
+    nasc_cert = _certidao_de_nascimento(documentos)
+    do_nao_confere = False
+    if id_fal is None or nota < 0.5:
+        # A DO é manuscrita (e a via do cartório sai desbotada): quando o nome lido
+        # não se parece com nenhum documento, procura-se o falecido pelo que os
+        # outros papéis dizem dele — a certidão de nascimento (o registrado vem
+        # primeiro) e a errata da DO. 12/11/2026: «Albir Conceição Kokoho» na DO,
+        # ULISE CAVALCANTE Y KRHAHO no RG e na certidão — e o RG era ignorado.
+        for nome_alt, onde_alt in _nomes_do_falecido_fora_da_do(documentos, nasc_cert, v):
+            cand, n2 = _a_que_mais_se_parece(nome_alt, ids)
+            if cand is not None and n2 >= 0.5:
+                id_fal, nota, do_nao_confere = cand, 1.0, True
+                _aviso(avisos, "CONFERIR",
+                       f"O nome lido na DO («{falecido['nome']}») não se parece com o de "
+                       f"nenhum documento; o falecido foi achado pelo nome «{nome_alt}» "
+                       f"({onde_alt}) — confira a DO no original.", id_fal["_onde"])
+                break
     if id_fal is not None and nota >= 0.5:
         if _limpo(id_fal.get("nome")).upper() == falecido["nome"].upper():
             pass
@@ -1366,8 +1536,39 @@ def juntar_obito(documentos: list[dict]) -> dict:
         if idade is not None and not falecido["idade_no_fato"]:
             falecido["idade_no_fato"] = str(idade)
 
+    if do_nao_confere:
+        _pais_fora_da_do(pessoas, avisos, v, nasc_cert, id_fal)
+        if falecido["data_nascimento"] and valores["data_fato"]:
+            idade = _idade_em(falecido["data_nascimento"], valores["data_fato"])
+            if idade is not None and str(idade) != falecido["idade_no_fato"]:
+                falecido["idade_no_fato"] = str(idade)   # a da DO veio da data torta
+
     outros = [p for p in ids if p is not id_fal]
-    if len(outros) == 1:
+    decl_pagina = _declarante_da_pagina(documentos)
+    if decl_pagina is not None:
+        # O formulário «dados do declarante» diz quem declarou: a identidade que
+        # casa com ele (CPF igual, ou nome parecido) é a do declarante, e as outras
+        # pessoas dos documentos não viram «escolha na tela».
+        alvo = _identidade_do_declarante(decl_pagina, outros)
+        decl = {"papel": "DECLARANTE", "nome": _limpo(decl_pagina["nome"])}
+        if alvo is not None:
+            decl["nome"] = _limpo(alvo.get("nome")) or decl["nome"]
+            decl["data_nascimento"] = data_iso(alvo.get("data_nascimento"))
+            _documento(decl, alvo)
+        elif len(so_digitos(decl_pagina.get("cpf"))) == 11:
+            decl.update(documento_tipo="CPF", documento_numero=so_digitos(decl_pagina["cpf"]))
+        pessoas.append(decl)
+        _aviso(avisos, "CONFERIR",
+               f"«{decl['nome']}» é o declarante, pelo formulário de dados do "
+               f"declarante — confira.", decl_pagina["_onde"])
+        for p in outros:
+            if p is not alvo:
+                _aviso(avisos, "CONFERIR",
+                       f"O documento de «{_limpo(p.get('nome'))}» "
+                       f"(nascimento {_limpo(p.get('data_nascimento'))}) não foi aplicado: "
+                       f"não é o falecido nem o declarante — pode ser o registro antigo "
+                       f"do falecido; confira.", p["_onde"])
+    elif len(outros) == 1:
         p = outros[0]
         decl = {"papel": "DECLARANTE", "nome": _limpo(p.get("nome")),
                 "data_nascimento": data_iso(p.get("data_nascimento"))}

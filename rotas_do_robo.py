@@ -182,10 +182,26 @@ DO_CADASTRO_E_DAS_TAREFAS: tuple[str, ...] = (
     "task_detail",           # /tarefas/<id> - ficha, andamento e conclusao
 )
 
+# SALVAR O RASCUNHO DO ASSENTO (12/11/2026, ordem do oficial: "fazer tudo"). O
+# robo que prepara o assento (RCPN, p. ex. o obito) so recebia 403 ao clicar em
+# «Salvar rascunho e continuar depois» (macro `salvar_rascunho`, _rascunho.html,
+# formulario com action `rascunho_salvar` = POST /rascunhos/salvar). Rascunho NAO
+# e ato: nao toma numero, nao ocupa folha, nao sela e nao cobra - guarda o que
+# foi digitado. FICA DE FORA o outro botao da macro, «Nao termina hoje: salvar e
+# abrir processo» (`rascunho_salvar_e_abrir_processo`), que abre tarefa, e o
+# apagar/virar processo (`rascunho_apagar`, `rascunho_virar_processo`).
+# `rascunhos` (GET /rascunhos, SO LE) entra porque `rascunho_salvar` termina com
+# `redirect(url_for("rascunhos"))`: sem ele o robo salvaria e cairia num 403,
+# acharia que falhou e salvaria de novo (rascunho duplicado).
+DO_RASCUNHO_DO_ASSENTO: tuple[str, ...] = (
+    "rascunho_salvar",   # POST /rascunhos/salvar - so grava o rascunho, sem ato
+    "rascunhos",         # GET /rascunhos - a lista, para onde o salvar redireciona
+)
+
 #: A LISTA FECHADA. `selo_robo.rota_permitida_ao_robo` a consulta; vedada
 #: (`selo_robo.ROTAS_VEDADAS_AO_ROBO`) vence permitida.
 ROTAS_PERMITIDAS_AO_ROBO: frozenset[str] = frozenset(
     DA_SESSAO + DOS_AVISOS + DO_SELO_AUTOMATICO_ATRIBUICOES
     + DO_SELO_AUTOMATICO_NOTAS + DO_SELO_AUTOMATICO_NOTIFICACAO
     + DO_SELO_AUTOMATICO_RI + DAS_FICHAS + DA_FILA_DE_CORRECOES + DO_ACERVO_TRANSCRITO
-    + DO_CADASTRO_E_DAS_TAREFAS)
+    + DO_CADASTRO_E_DAS_TAREFAS + DO_RASCUNHO_DO_ASSENTO)

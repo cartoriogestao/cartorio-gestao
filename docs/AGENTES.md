@@ -5,6 +5,11 @@ ChatGPT e outros). Leia antes de propor mudança. As regras de arquitetura
 estão em [`ARQUITETURA.md`](ARQUITETURA.md); aqui fica o que costuma dar
 errado quando quem escreve não conhece a casa.
 
+> **A exceção ao fluxo abaixo** é o superusuário — o operador que o oficial
+> aciona pelo Telegram e que corrige direto na instalação em uso. O que ele
+> muda vira relatório e chega aqui como PR, pelo caminho de sempre:
+> [`SUPERUSUARIO.md`](SUPERUSUARIO.md). Ninguém mais corrige direto em produção.
+
 ## O fluxo
 
 1. Trabalhe num ramo seu e abra um *pull request*. Ninguém envia direto para

@@ -2,6 +2,20 @@ from __future__ import annotations
 
 import nome_humano as NOMEHUM
 
+#: A ÚNICA EXCEÇÃO A «ROBÔ NÃO ADMINISTRA» (ordem do oficial, 12/11/2026): o
+#: superusuário — o operador de IA que só o oficial aciona
+#: (`docs/SUPERUSUARIO.md`). A exceção é deste login e do perfil ADMIN, e de
+#: mais nenhum: a credencial dele não mora em script (a senha é sorteada e fica
+#: em `<dados>/operador/superusuario.cred`), e todo o resto da regra continua
+#: valendo para ele — conta de robô, com pessoa responsável.
+ROBO_QUE_ADMINISTRA = "superusuario"
+
+
+def robo_que_administra(username: str, role: str) -> bool:
+    return (str(username or "").strip() == ROBO_QUE_ADMINISTRA
+            and str(role or "").strip().upper() == "ADMIN")
+
+
 import json
 import logging
 import re
@@ -1116,7 +1130,8 @@ class Database:
         # ROBÔ NÃO ADMINISTRA (revisão de segurança de 22/10/2026, A6): a
         # credencial dele mora num script; com ADMIN ou MANAGER ela abriria
         # usuários, atualizações, backup e caixa a quem a lesse.
-        if eh_robo and role not in {"USER", "AUDITOR"}:
+        if (eh_robo and role not in {"USER", "AUDITOR"}
+                and not robo_que_administra(username, role)):
             raise ValueError(
                 "Conta de robô só pode ter o perfil USER ou AUDITOR: robô não "
                 "administra, não mexe no caixa e não atualiza o sistema.")
@@ -1168,7 +1183,8 @@ class Database:
         # ROBÔ NÃO ADMINISTRA (revisão de segurança de 22/10/2026, A6): a
         # credencial dele mora num script; com ADMIN ou MANAGER ela abriria
         # usuários, atualizações, backup e caixa a quem a lesse.
-        if eh_robo and role not in {"USER", "AUDITOR"}:
+        if (eh_robo and role not in {"USER", "AUDITOR"}
+                and not robo_que_administra(username, role)):
             raise ValueError(
                 "Conta de robô só pode ter o perfil USER ou AUDITOR: robô não "
                 "administra, não mexe no caixa e não atualiza o sistema.")

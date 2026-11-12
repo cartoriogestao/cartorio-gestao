@@ -43,7 +43,7 @@ import atualizacao_github as ATUGH
 from waitress import serve
 
 from bd_nativo import banco
-from database import Database
+from database import Database, robo_que_administra
 from serventia import dados as dados_serventia
 from security import new_csrf_token, new_secret_key
 import arquivo_visivel as ARQVIS
@@ -2386,7 +2386,8 @@ def _montar_app(test_config: dict | None = None) -> Flask:
                 if uid:
                     marca = 1 if request.form.get("eh_robo") == "1" else 0
                     alvo = db.get_user(uid)
-                    if marca and alvo and str(alvo["role"]).upper() not in ("USER", "AUDITOR"):
+                    if (marca and alvo and str(alvo["role"]).upper() not in ("USER", "AUDITOR")
+                            and not robo_que_administra(alvo["username"], alvo["role"])):
                         # a mesma regra de `create_user` (22/10/2026, A6)
                         flash("Robô só pode ter o perfil USER ou AUDITOR. Troque o "
                               "perfil antes de marcar como robô.", "danger")

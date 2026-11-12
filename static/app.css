@@ -1475,7 +1475,7 @@ html[data-escala]:not([data-layout=novo]) body{zoom:var(--cg-escala,1)}
   border-bottom:2px solid var(--fd-tinta);padding-bottom:6px}
 .fd-sub a{font-size:12.5px;color:var(--fd-apagada)}
 
-.fd-lin{display:grid;grid-template-columns:54px minmax(0,1fr) 112px 128px;gap:0 14px;align-items:center;
+.fd-lin{display:grid;grid-template-columns:54px minmax(0,1fr) 112px 150px;gap:0 14px;align-items:center;
   padding:9px 0;border-bottom:1px solid var(--fd-pauta)}
 .fd-ord{font-family:var(--fd-dado);font-size:12px;color:var(--fd-apagada)}
 .folha-dia .fd-tit{font-weight:600;font-size:14.5px;overflow-wrap:anywhere}

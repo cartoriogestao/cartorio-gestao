@@ -38,5 +38,5 @@ def test_as_tabelas_do_painel_usam_table_wrap():
 
 def test_as_linhas_da_folha_deixam_encolher_a_coluna_do_texto():
     css = CSS.read_text(encoding="utf-8")
-    assert ".fd-lin{display:grid;grid-template-columns:54px minmax(0,1fr) 112px 128px" in css
+    assert ".fd-lin{display:grid;grid-template-columns:54px minmax(0,1fr) 112px 150px" in css
     assert ".fd-corpo{display:grid;grid-template-columns:minmax(0,1fr) 290px" in css

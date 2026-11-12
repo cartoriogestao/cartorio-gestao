@@ -8,6 +8,46 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.17 — Guias FERJ/FERC pagas pelo Pix da guia, WhatsApp do escrevente, acervo do RCPJ/RTD e a contingência da reserva
+
+Desde a 3.7.16. Para a instalação ainda na 3.7.10, o pacote continua cumulativo:
+`--desde v3.7.10`.
+
+**Despesas e guias do Portal do Selo**
+- As guias do Portal do Selo entram sozinhas em Despesas, com o PDF original e sem duplicar a que já foi lançada à mão. Só o FERJ e o FERC são autorizados automaticamente, com o valor conferido pelos selos do período e o teto da instalação. FADEP, FEMP e FERRFIS ficam cadastrados para pagar fora do Inter, e o executor recusa esses fundos mesmo em registro antigo já autorizado.
+- O FERJ e o FERC se pagam pelo Pix do QR da guia. O QR dinâmico, além do domínio do banco, precisa trazer o nome do fundo e a cidade configurados. Sem a cidade configurada, o QR dinâmico não paga sozinho.
+- A guia pode vir até 10% acima do calculado pelos selos (a margem cobre selo emitido fora do sistema e se ajusta de 0 a 50%). A margem só vale para cima, é conferida no cadastro e de novo antes de mandar ao banco, e o histórico diz quanto passou.
+
+**WhatsApp**
+- Com **Atendimento do escrevente** ligado em `/whatsapp/atendente`, a IA responde com o ofício da casa, a base da ajuda e os artigos da base normativa que cabem na pergunta. Quando a pessoa quer o serviço feito, abre um pedido para o escrevente do setor. Horário, endereço e telefone continuam saindo só do texto-base aprovado, e valor só do cálculo de emolumentos, como estimativa. Desligado, nada muda.
+
+**RCPJ e RTD**
+- **Lançar registro de acervo** (menu RCPJ e RTD, ou `/rcpj-rtd/acervo`): o registro que já está no livro físico e já foi selado entra com livro, volume, número de ordem, folhas, data, protocolo original e a digitalização. Não gasta número nem folha, não emite selo e não cobra. O mesmo livro com o mesmo número não entra duas vezes. A certidão de inteiro teor diz a faixa de folhas original.
+
+**Registro Civil**
+- A carga da CRC sai em arquivos de no máximo 2500 registros (um zip quando passa disso). O nome registrado sobe sem a anotação entre parênteses, sem pontuação que a Central recusa e com a correção de «X digo Y» já aplicada; quando o nome que sobe muda, a tela mostra os dois para conferir no livro. Matrícula com CNS de outra serventia fica retida, e tipo de morte ou estado civil fora da lista sobem como ignorado, com aviso.
+- Na certidão, os avós cadastrados como pessoas não são mais trocados pelo texto da transcrição, e a UF isolada vai para o campo próprio. A ficha avisa «Confira no livro antes de certificar» quando há dúvida de leitura anotada.
+
+**Protesto**
+- A remessa com um título e dois devedores não é mais recusada: os totais do cabeçalho contam títulos, não linhas.
+
+**Automação**
+- O e-mail do dia agrupa por robô e separa o que parou, o que pede gente hoje e o cofre trancado (um aviso só). Credencial ou caminho ainda não cadastrado continua no painel e na tarefa, mas sai do e-mail.
+- O robô identificado lista e cria tarefas em `/tarefas`, com CSRF e auditoria.
+
+**Telas que estouravam**
+- Sem `pg_dump`, a aprovação da atualização mostra o motivo em vez de erro 500. Despesa com arquivo acima de 15 MB volta ao formulário sem gravar nada. O cronômetro não cai quando o PostgreSQL está sem memória. No protocolo, a descrição do ato sai inteira.
+
+**Contingência da reserva**
+- O botão de emergência e a volta da reserva (`tools/reserva.py emergencia` e `voltar`), com o passo a passo em `docs/CONTINGENCIA_RESERVA.md` e um ensaio mensal que não abre banco.
+- Testes e ferramentas recusam apagar ou esvaziar o schema `producao`. O arquivo `installer/sql/travas_da_producao.sql` leva a mesma trava para o PostgreSQL da casa, mas não se aplica sozinho.
+
+### Depois de instalar
+
+1. **Despesas → Configuração:** recebedor do FERJ e do FERC (o domínio do QR dinâmico do banco), cidade no QR dos fundos, nomes FERJ e FERC conferidos contra um QR real de cada fundo, e margem (10%, o padrão).
+2. **WhatsApp:** ligar o **Atendimento do escrevente** em `/whatsapp/atendente`, se a casa quiser.
+3. **Travas do PostgreSQL** (oficial, com superusuário, no Windows): primeiro conferir que `producao.nu_ferj_ferc_aviso_dispensa` não existe, depois rodar `installer/sql/travas_da_producao.sql`. O passo a passo está em `docs/CONTINGENCIA_RESERVA.md`.
+
 ## 3.7.16 — Malote com anexos na lista de atenção e integração com o agente local
 
 Desde a 3.7.15. Para a instalação ainda na 3.7.10, gerar pacote cumulativo com

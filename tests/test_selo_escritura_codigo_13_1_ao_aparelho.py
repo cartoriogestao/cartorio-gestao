@@ -54,3 +54,68 @@ def test_outros_itens_seguem_como_estao(codigo):
 def test_sem_ato_nao_quebra():
     assert AS.dados_para_o_aparelho({"x": 1}) == {"x": 1}
     assert AS.dados_para_o_aparelho(None) is None
+
+
+def test_obter_selo_manda_o_13_1_e_a_cobertura_fica_na_faixa(monkeypatch):
+    """A troca acontece na hora de pedir o selo, e só ali. Dublê, sem rede.
+
+    `dados_para_o_aparelho` sozinha não conserta o defeito: `obter_selo` é
+    quem entrega o envelope ao aparelho. A cobertura continua lendo a faixa,
+    que é o item pago no protocolo.
+    """
+    import selador_cliente as CL
+
+    envelope, caminho = _envelope("13.1.8", 38815.53)
+    visto = {}
+
+    def cobrir(con, **kw):
+        visto["cobertura"] = kw["dados"]
+        return {"coberto": True, "forma": "TESTE"}
+
+    def selar(con, pasta, caminho_pedido, dados, **kw):
+        visto["aparelho"] = dados
+        visto["caminho"] = caminho_pedido
+        return [{"numero": "ESCRIT000000AAAAAAAAAAAAAA99"}]
+
+    monkeypatch.setattr(AS, "cobrir_o_selo", cobrir)
+    monkeypatch.setattr(AS, "_conferir_as_orfas", lambda *a, **k: None)
+    # `banco(con)` é argumento de `_selo_ja_obtido`: avalia antes da chamada.
+    monkeypatch.setattr(AS, "banco", lambda con: object())
+    monkeypatch.setattr(AS, "_selo_ja_obtido", lambda *a, **k: None)
+    monkeypatch.setattr(AS, "proxima_tentativa", lambda *a, **k: 1)
+    monkeypatch.setattr(AS, "_confirmar_reserva", lambda *a, **k: True)
+    monkeypatch.setattr(AS, "_tirar_aguardando", lambda *a, **k: None)
+    monkeypatch.setattr(AS, "assinar_o_que_ficou_pendente", lambda *a, **k: [])
+    monkeypatch.setattr(CL, "selar", selar)
+
+    class _Db:
+        def get_setting(self, chave, padrao=""):
+            return padrao
+
+        def connect(self):
+            from contextlib import contextmanager
+
+            @contextmanager
+            def _abrir():
+                class _Con:
+                    def rollback(self):
+                        return None
+                yield _Con()
+
+            return _abrir()
+
+        def transaction(self):
+            return self.connect()
+
+    selos = AS.obter_selo(
+        _Db(), "/tmp", caminho=caminho, dados=envelope,
+        referencia="nt_atos:1", atribuicao="NOTAS",
+        agora="2026-11-12T18:35:00", cns="000000",
+        usuario="Escrevente Teste", tabela="nt_atos", ato_id=1)
+
+    assert selos[0]["numero"] == "ESCRIT000000AAAAAAAAAAAAAA99"
+    assert visto["cobertura"]["ato"]["codigo"] == "13.1.8"
+    assert visto["aparelho"]["ato"]["codigo"] == "13.1"
+    assert visto["caminho"] == caminho
+    assert envelope["ato"]["codigo"] == "13.1.8"
+    assert visto["aparelho"]["valorDeclarado"]["valorDeclarado"] == 38815.53

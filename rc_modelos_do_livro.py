@@ -1185,8 +1185,22 @@ def _testemunhas_qualificadas(pessoas: list[dict] | None) -> str:
         and _texto(p.get("nome"))])
 
 
+def _papel_do_genitor(pessoa: dict, mae: dict | None, pai: dict | None) -> str:
+    """«a mãe» ou «o pai», pelo lugar em que a pessoa entrou. Só calcula.
+
+    O primeiro argumento de `_filiacao_qualificada` é a mãe; o segundo, o pai.
+    A concordância da qualificação («domiciliada»/«domiciliado») continua
+    saindo do sexo, em `qualificacao_inteira`."""
+    if mae is not None and pessoa is mae:
+        return "a mãe"
+    if pai is not None and pessoa is pai:
+        return "o pai"
+    return "o genitor"
+
+
 def _filiacao_qualificada(mae: dict | None, pai: dict | None,
-                          campos: tuple[str, ...]) -> str:
+                          campos: tuple[str, ...], *,
+                          repetir_de: bool = False) -> str:
     """«ANA e JOÃO (respectivamente: brasileira, …; e brasileiro, …)». Só calcula.
 
     **OS NOMES FICAM JUNTOS, E A QUALIFICAÇÃO VAI DEPOIS** — LD01, 21/10/2026.
@@ -1198,8 +1212,15 @@ def _filiacao_qualificada(mae: dict | None, pai: dict | None,
 
     Os dois nomes continuam lado a lado, como o termo sempre os escreveu; a
     qualificação de cada um vem entre parênteses, na ordem dos nomes
-    («respectivamente»). Só um com qualificação, ela leva o nome junto, para
-    não ficar dito de quem não é. Sem qualificação nenhuma, só os nomes.
+    («respectivamente»). Sem qualificação nenhuma, só os nomes.
+
+    **SÓ UM QUALIFICADO, O PAPEL NO LUGAR DO NOME** — 12/11/2026. O ramo de
+    um só (LD01) repetia o nome: «Filho de ANA SILVA e JOÃO SOUZA (ANA SILVA,
+    residente…)». A redação do oficial é «Filho de ANA SILVA e de JOÃO SOUZA
+    (a mãe, residente…)»: entre parênteses entra «a mãe» ou «o pai», e no
+    óbito (`repetir_de`) a conjunção é «e de». Os dois qualificados ficam
+    como estavam («respectivamente»). O nascimento não passa por aqui — a
+    filiação dele é a qualificação inteira de cada um.
     """
     pais = [p for p in (mae, pai) if p and _texto(p.get("nome"))]
     nomes = _dois_nomes(mae or {}, pai or {})
@@ -1215,8 +1236,11 @@ def _filiacao_qualificada(mae: dict | None, pai: dict | None,
                   else _frase("RC_QUALIFICACAO__respectivamente",
                               qualificacoes=_lista_de_qualificados(quais)))
     else:
-        dentro = "; ".join(f"{_texto(p.get('nome'))}, {q}"
-                           for p, q in zip(pais, quais) if q)
+        dentro = "; ".join(
+            f"{_papel_do_genitor(p, mae, pai)}, {q}"
+            for p, q in zip(pais, quais) if q)
+        if repetir_de and len(pais) >= 2:
+            nomes = " e de ".join(_texto(p.get("nome")) for p in pais)
     return f"{nomes} ({dentro})"
 
 
@@ -1841,11 +1865,60 @@ def _data_br(iso: Any) -> str:
     return t
 
 
+def _nome_da_paroquia(texto: Any) -> str:
+    """Tira «Paróquia» do começo: a peça já diz «na paróquia». Só calcula."""
+    import re
+    return re.sub(r"^(par[oó]quia|igreja|matriz)\s+", "", _texto(texto),
+                  count=1, flags=re.IGNORECASE)
+
+
+def _sufixo_do_casamento_do_falecido(assento: dict) -> str:
+    """O pedaço do casamento depois do nome do cônjuge, com a vírgula. Só calcula.
+
+    Sem tipo, é a frase de sempre («com casamento registrado em …»): o assento
+    antigo não ganha a palavra «civil» nem «religioso» que ninguém declarou.
+    Com tipo, o termo distingue. No religioso entram a paróquia e, quando
+    houver, livro, folha e termo; o cartório, se também houver, é o registro
+    civil. A vírgula da frente é a cola; cada frase é peça.
+    """
+    tipo = _texto(assento.get("obito_casamento_tipo")).upper()
+    cartorio = _texto(assento.get("obito_conjuge_cartorio"))
+    if tipo == "CIVIL":
+        if cartorio:
+            return ", " + _frase("RC_TERMO_OBITO__casamento_civil",
+                                 cartorio=cartorio)
+        return ", " + _frase("RC_TERMO_OBITO__casamento_civil_so")
+    if tipo == "RELIGIOSO":
+        miolo = _frase("RC_TERMO_OBITO__casamento_religioso")
+        paroquia = _nome_da_paroquia(assento.get("obito_casamento_paroquia"))
+        if paroquia:
+            miolo += " " + _frase("RC_TERMO_OBITO__casamento_religioso_paroquia",
+                                  paroquia=paroquia)
+        refs = ", ".join(
+            f"{rotulo} {valor}" for rotulo, valor in (
+                ("livro", _texto(assento.get("obito_casamento_livro"))),
+                ("folha", _texto(assento.get("obito_casamento_folha"))),
+                ("termo", _texto(assento.get("obito_casamento_termo"))))
+            if valor)
+        if refs:
+            miolo += ", " + refs
+        if cartorio:
+            miolo += ", " + _frase(
+                "RC_TERMO_OBITO__casamento_religioso_registro",
+                cartorio=cartorio)
+        return ", " + miolo
+    if cartorio:
+        return _frase("RC_TERMO_OBITO__casamento_do_conjuge", cartorio=cartorio)
+    return ""
+
+
 def frase_do_conjuge_do_falecido(assento: dict, estado_civil: str) -> str:
     """Art. 80, 4º; CN art. 255, IV — o cônjuge sobrevivente (mesmo separado
-    ou divorciado) ou o pré-morto, e o cartório do casamento. So calcula."""
+    ou divorciado) ou o pré-morto, e o cartório do casamento. So calcula.
+
+    O tipo do casamento (civil ou religioso) entra quando a ficha o diz
+    (`obito_casamento_tipo`); sem ele, a frase é a de antes."""
     nome = _texto(assento.get("obito_conjuge_nome"))
-    cartorio = _texto(assento.get("obito_conjuge_cartorio"))
     if not nome:
         return (_frase("RC_TERMO_OBITO__estado_civil", estado_civil=estado_civil)
                 if estado_civil else "")
@@ -1860,9 +1933,7 @@ def frase_do_conjuge_do_falecido(assento: dict, estado_civil: str) -> str:
     else:
         frase = _frase("RC_TERMO_OBITO__teve_conjuge" if pre_morto
                        else "RC_TERMO_OBITO__deixou_conjuge", nome=nome)
-    if cartorio:
-        frase += _frase("RC_TERMO_OBITO__casamento_do_conjuge",
-                        cartorio=cartorio)
+    frase += _sufixo_do_casamento_do_falecido(assento)
     return frase + "."
 
 
@@ -2069,7 +2140,7 @@ def valores_do_obito(assento: dict, pessoas: list[dict], *,
         local = f"{local}, {endereco}"
 
     filiacao = _filiacao_qualificada(por_papel.get("MAE"), por_papel.get("PAI"),
-                                     CAMPOS_DOS_PAIS_NO_OBITO)
+                                     CAMPOS_DOS_PAIS_NO_OBITO, repetir_de=True)
     estado_civil = _texto(falecido.get("estado_civil"))
     numero_do = _texto(assento.get("numero_do"))
     sepultamento = _texto(assento.get("local_sepultamento"))
@@ -2187,6 +2258,78 @@ def montar_obito_do_assento(assento: dict, pessoas: list[dict],
     """O termo de obito montado do assento. So le."""
     valores = valores_do_obito(assento, pessoas, **kw)
     return montar_do_formulario("OBITO", valores, texto)
+
+
+def _valor_de_formulario(valores: dict, chave: str) -> str:
+    """O campo da tela, mesmo quando o pedido manda lista. Só calcula."""
+    bruto = valores.get(chave) if hasattr(valores, "get") else None
+    if isinstance(bruto, (list, tuple)):
+        bruto = bruto[0] if bruto else ""
+    return _texto(bruto)
+
+
+def teor_previsto_do_formulario(valores: dict | None, *,
+                                sv: dict | None = None) -> str:
+    """O termo que a lavratura escreveria com estes campos, sem gravar. Só calcula.
+
+    É a prévia que o revisor do RCPN lê: o dossiê tinha o formulário e a
+    leitura, e não o texto que iria ao livro. Sem teor digitado, a lavratura
+    usa este mesmo caminho (`rc_termo.congelar`). Espécie que este módulo não
+    monta devolve vazio — a revisão segue com o formulário.
+    """
+    import rc_assento as RC
+    import rc_conferencia_dados as CONF
+
+    v = valores or {}
+    plano = {k: _valor_de_formulario(v, k) for k in getattr(v, "keys", lambda: v)()}
+    base = CONF.dados_do_formulario(plano)
+    especie = str(base.get("especie") or "").upper()
+    if not especie:
+        return ""
+    assento = {
+        "especie": especie,
+        "nome": base.get("nome") or "",
+        "data_fato": plano.get("data_fato"),
+        "data_ato": plano.get("data_ato"),
+        "hora_fato": plano.get("hora_fato"),
+        "local_fato_nome": plano.get("local_fato_nome"),
+        "local_fato_endereco": plano.get("local_fato_endereco"),
+        "cor_raca": plano.get("cor_raca"),
+        "dnv": plano.get("dnv"),
+        "numero_do": plano.get("numero_do"),
+        "causa_morte": plano.get("causa_morte"),
+        "atestante": plano.get("atestante"),
+        "atestante_documento": plano.get("atestante_documento"),
+        "local_sepultamento": plano.get("local_sepultamento"),
+        "testamento": plano.get("testamento"),
+        "cpf_registrado": plano.get("cpf_registrado"),
+        "naturalidade_declarada": plano.get("naturalidade_declarada"),
+        "ibge_gemeo": plano.get("ibge_gemeo"),
+        "gemeo_ordem": plano.get("gemeo_ordem"),
+        "regime_bens": plano.get("regime_bens"),
+        "ibge_natureza_obito": plano.get("natureza_obito") or plano.get("ibge_natureza_obito"),
+    }
+    for campo in RC.CAMPOS_DA_LEI:
+        if plano.get(campo):
+            assento[campo] = plano[campo]
+    pessoas = base.get("pessoas") or []
+    marcas = {k: plano[k] for k in (
+        "obito_eleitor", "obito_possui_bens", "obito_possui_filho",
+        "obito_testamento", "obito_desconhecido") if plano.get(k)}
+    try:
+        if especie == "OBITO":
+            pronto = montar_obito_do_assento(assento, pessoas, marcas=marcas, sv=sv)
+        elif especie in ("NASCIMENTO", "NATIMORTO"):
+            pronto = montar_do_assento(assento, pessoas, sv=sv)
+        elif especie in ("CASAMENTO", "CASAMENTO_RELIGIOSO"):
+            pronto = montar_casamento_do_assento(assento, pessoas, sv=sv)
+        elif especie in RC.TITULOS_DO_LIVRO_E:
+            pronto = montar_livro_e_do_assento(assento, pessoas, sv=sv)
+        else:
+            return ""
+    except (ModeloError, KeyError, ValueError, IndexError):
+        return ""
+    return str((pronto or {}).get("texto") or "")
 
 
 # =========================================================================

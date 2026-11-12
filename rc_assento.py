@@ -323,7 +323,11 @@ def municipio_do_local_padrao(sv: dict | None) -> str:
 #: quando há dado. As colunas estão em `rc_schema.MIGRACOES`.
 CAMPOS_DA_LEI_POR_ESPECIE: dict[str, tuple[str, ...]] = {
     "OBITO": ("obito_conjuge_nome", "obito_conjuge_situacao",
-              "obito_conjuge_cartorio", "obito_filhos",
+              "obito_conjuge_cartorio",
+              "obito_casamento_tipo", "obito_casamento_paroquia",
+              "obito_casamento_livro", "obito_casamento_folha",
+              "obito_casamento_termo",
+              "obito_filhos",
               "obito_herdeiros_menores",
               # Os sinais do desconhecido (LRP art. 81; ensaio de atos, item 8, 02/11/2026).
               "obito_desconhecido_estatura", "obito_desconhecido_idade_presumida",

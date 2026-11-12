@@ -35,8 +35,11 @@ DUAS GRAVIDADES, E A FRONTEIRA É A OBJETIVIDADE
       `lavrar_assento` recusa, com a lista em português de balcão.
     AVISA — pode estar certo e merece olho humano: avós cujo sobrenome não
       aparece no genitor daquele lado, nome do genitor que não está no termo,
-      idade declarada que não bate com as datas. Aparece na conferência antes
-      de lavrar e na fiscalização diária (`gestor_rcpn`), e não trava.
+      idade declarada que não bate com as datas, nome de mãe, pai ou titular
+      que aparece no termo mais vezes do que o papel explica, cônjuge na ficha
+      ou certidão de casamento no dossiê que o termo não cita. Aparece na
+      conferência antes de lavrar e na fiscalização diária (`gestor_rcpn`),
+      e não trava.
 
     Registro de nascimento é imperativo legal (art. 250) e o balcão não pode
     parar por suspeita: só o que é objetivamente errado trava. É a mesma régua
@@ -160,6 +163,165 @@ def _sobrenomes(nome: Any) -> set[str]:
 def _no_texto(nome: Any, texto_letras: str) -> bool:
     n = _so_letras(nome)
     return bool(n) and n in texto_letras
+
+
+def _nome_conta(nome: Any, texto_letras: str) -> bool:
+    """Nome longo o bastante para contar ocorrência sem casar com um prenome."""
+    n = _so_letras(nome)
+    return bool(n) and not _ignorado(nome) and (" " in n or len(n) >= 12)
+
+
+def _ocorrencias_do_nome(nome: Any, texto_letras: str,
+                         nomes_mais_longos: tuple[str, ...] = ()) -> int:
+    """Quantas vezes o nome inteiro está no termo. Só calcula.
+
+    Um nome que é só o começo de outro nome do assento («ANA SILVA» dentro de
+    «ANA SILVA SANTOS») não conta: senão a conferência avisaria de toda filiação
+    em que um sobrenome continua no outro.
+    """
+    n = _so_letras(nome)
+    if not n:
+        return 0
+    achados = re.finditer(r"(?<![A-Z0-9])" + re.escape(n) + r"(?![A-Z0-9])",
+                          texto_letras)
+    vezes = 0
+    for m in achados:
+        resto = texto_letras[m.end():]
+        if any(outro.startswith(n + " ") and resto.startswith(outro[len(n):])
+               for outro in nomes_mais_longos if outro != n):
+            continue
+        vezes += 1
+    return vezes
+
+
+#: Papéis cujo nome o termo de cada espécie escreve. A testemunha do óbito não
+#: entra: o modelo do óbito não a nomeia, e contá-la esconderia a repetição.
+_NOMES_ESCRITOS_NO_TERMO = {
+    "OBITO": ("FALECIDO", "MAE", "PAI", "DECLARANTE"),
+    "NATIMORTO": ("REGISTRADO", "MAE", "PAI", "DECLARANTE"),
+    "NASCIMENTO": ("REGISTRADO", "MAE", "PAI", "DECLARANTE",
+                   "AVO_MATERNA", "AVO_MATERNO", "AVO_PATERNA", "AVO_PATERNO",
+                   "TESTEMUNHA", "TESTEMUNHA2"),
+    "CASAMENTO": ("NUBENTE1", "NUBENTE2", "MAE_NUBENTE1", "PAI_NUBENTE1",
+                  "MAE_NUBENTE2", "PAI_NUBENTE2", "TESTEMUNHA"),
+}
+_NOMES_ESCRITOS_NO_TERMO["CASAMENTO_RELIGIOSO"] = _NOMES_ESCRITOS_NO_TERMO["CASAMENTO"]
+
+#: De quem a conferência conta repetição: mãe, pai e o titular do assento.
+_PAPEIS_DO_NOME_REPETIDO = ("MAE", "PAI", "FALECIDO", "REGISTRADO")
+
+
+def _vezes_esperadas(nome_norm: str, dados: dict, por_papel: dict) -> int:
+    """Quantas vezes o termo escreve este nome de propósito. Só calcula.
+
+    A mãe que também declara aparece duas vezes, e está certo. O cônjuge do
+    óbito, quando o nome é o mesmo, é mais uma. O campo `nome` do assento não
+    soma de novo se a pessoa titular já entrou.
+    """
+    especie = str(dados.get("especie") or "").upper()
+    papeis = _NOMES_ESCRITOS_NO_TERMO.get(
+        especie, ("MAE", "PAI", "DECLARANTE", "FALECIDO", "REGISTRADO"))
+    n = 0
+    tem_titular = False
+    for papel in papeis:
+        for p in por_papel.get(papel, []):
+            if _so_letras(p.get("nome")) == nome_norm and not _ignorado(p.get("nome")):
+                n += 1
+                if papel in TITULARES or papel == "REGISTRADO":
+                    tem_titular = True
+                break
+    if not tem_titular and _so_letras(dados.get("nome")) == nome_norm:
+        n += 1
+    if _so_letras(dados.get("obito_conjuge_nome")) == nome_norm:
+        n += 1
+    return n
+
+
+def _nomes_do_assento(dados: dict, por_papel: dict) -> tuple[str, ...]:
+    nomes = [_so_letras(p.get("nome")) for ps in por_papel.values() for p in ps]
+    nomes.append(_so_letras(dados.get("nome")))
+    nomes.append(_so_letras(dados.get("obito_conjuge_nome")))
+    cert = dados.get("certidao_casamento")
+    if isinstance(cert, dict):
+        nomes.append(_so_letras(cert.get("conjuge")))
+        nomes.extend(_so_letras(n) for n in (cert.get("nomes") or []))
+    return tuple(n for n in nomes if n)
+
+
+def _avisos_de_nome_repetido(dados: dict, por_papel: dict,
+                             teor_letras: str) -> list[dict]:
+    """AVISA quando mãe, pai ou titular aparecem demais no termo. Só calcula."""
+    especie = str(dados.get("especie") or "").upper()
+    if especie not in ("OBITO", "NASCIMENTO", "NATIMORTO", "CASAMENTO",
+                       "CASAMENTO_RELIGIOSO"):
+        return []
+    outros = _nomes_do_assento(dados, por_papel)
+    saida = []
+    vistos: set[str] = set()
+    alvos: list[tuple[str, str]] = []
+    for papel in _PAPEIS_DO_NOME_REPETIDO:
+        for p in por_papel.get(papel, []):
+            alvos.append((papel, str(p.get("nome") or "")))
+    if especie == "OBITO" and not por_papel.get("FALECIDO") and dados.get("nome"):
+        alvos.append(("FALECIDO", str(dados.get("nome"))))
+    if especie in ("NASCIMENTO", "NATIMORTO") and not por_papel.get("REGISTRADO") \
+            and dados.get("nome"):
+        alvos.append(("REGISTRADO", str(dados.get("nome"))))
+    for papel, nome in alvos:
+        chave = _so_letras(nome)
+        if not _nome_conta(nome, teor_letras) or chave in vistos:
+            continue
+        vezes = _ocorrencias_do_nome(nome, teor_letras, outros)
+        esperado = _vezes_esperadas(chave, dados, por_papel)
+        if esperado and vezes > esperado:
+            vistos.add(chave)
+            saida.append(_problema(
+                AVISA, "NOME_REPETIDO",
+                f"O nome de {nome} ({ROTULO.get(papel, papel)}) aparece {vezes} "
+                f"vezes no termo; o esperado, pelo que a ficha declara, é "
+                f"{esperado}. Confira a filiação: quando só um genitor tem "
+                "qualificação, o termo diz «a mãe» ou «o pai», e não repete o nome.",
+                papel))
+    return saida
+
+
+def _termo_cita(nome: Any, teor_letras: str) -> bool:
+    n = _so_letras(nome)
+    if not n:
+        return False
+    return _ocorrencias_do_nome(nome, teor_letras) > 0
+
+
+def _aviso_de_conjuge_fora_do_termo(dados: dict, teor_letras: str) -> dict | None:
+    """AVISA se há cônjuge na ficha ou certidão de casamento e o termo cala. Só calcula."""
+    if str(dados.get("especie") or "").upper() != "OBITO":
+        return None
+    nome_ficha = str(dados.get("obito_conjuge_nome") or "").strip()
+    cert = dados.get("certidao_casamento") if isinstance(
+        dados.get("certidao_casamento"), dict) else {}
+    nome_cert = str((cert or {}).get("conjuge") or "").strip()
+    tem_cert = bool(cert)
+    if not nome_ficha and not tem_cert:
+        return None
+    if nome_ficha and _termo_cita(nome_ficha, teor_letras):
+        return None
+    if nome_cert and _termo_cita(nome_cert, teor_letras):
+        return None
+    if not nome_ficha and not nome_cert and tem_cert and re.search(
+            r"\b(CONJUGE|CASAMENTO)\b", teor_letras):
+        return None
+    if nome_ficha:
+        quem = nome_ficha
+    elif nome_cert:
+        quem = nome_cert
+    else:
+        quem = "o cônjuge da certidão de casamento"
+    return _problema(
+        AVISA, "CONJUGE_FORA_DO_TERMO",
+        f"{quem} está na ficha ou na certidão de casamento do dossiê e o termo "
+        "não o cita. O óbito declara o cônjuge sobrevivente ou pré-morto e se o "
+        "casamento foi civil ou religioso (Lei 6.015/1973, art. 80, 4º).",
+        "obito_conjuge_nome")
 
 
 def _problema(gravidade: str, codigo: str, mensagem: str, campo: str = "") -> dict:
@@ -371,6 +533,10 @@ def conferir(dados: dict) -> list[dict]:
                         AVISA, "PESSOA_FORA_DO_TERMO",
                         f"{p['nome']} ({ROTULO.get(papel, papel)}) está nas pessoas e "
                         "não aparece no termo.", papel))
+        probs += _avisos_de_nome_repetido(dados, por_papel, teor_letras)
+        fora = _aviso_de_conjuge_fora_do_termo(dados, teor_letras)
+        if fora:
+            probs.append(fora)
 
     # 4-A. O GÊMEO SEM A ORDEM — ensaio de atos, 02/11/2026 (item 6). «No caso de gêmeos, será declarada
     # no assento especial de cada um a ordem de nascimento» (LRP art. 63; CN-MA art. 234): o parto
@@ -586,7 +752,45 @@ def dados_do_formulario(valores: dict, *, especie: str = "", data_ato: Any = Non
             "ibge_gemeo": v.get("ibge_gemeo"), "gemeo_ordem": v.get("gemeo_ordem"),
             "regime_bens": v.get("regime_bens"), "pacto_data": v.get("pacto_data"),
             "pacto_serventia": v.get("pacto_serventia"),
+            "obito_conjuge_nome": v.get("obito_conjuge_nome"),
+            "obito_casamento_tipo": v.get("obito_casamento_tipo"),
+            "certidao_casamento": v.get("certidao_casamento") or "",
             "pessoas": pessoas}
+
+
+def avisos_do_termo_gerado(dados: dict, teor: str) -> list[dict]:
+    """Os avisos novos sobre o termo que o modelo escreveria. Só calcula.
+
+    Não passa pelas travas do termo digitado (marca de rascunho, DNV, hora):
+    a prévia ainda não tem a data do ato nem quem assina, e o traço dela não
+    é o texto que vai ao livro. Serve para o nome repetido e o cônjuge
+    ausente aparecerem antes da lavratura, quando o campo do teor está vazio.
+    """
+    teor_letras = _so_letras(teor)
+    if not teor_letras:
+        return []
+    por_papel: dict[str, list] = {}
+    for p in dados.get("pessoas") or []:
+        por_papel.setdefault(str(p.get("papel") or "").upper(), []).append(p)
+    saida = _avisos_de_nome_repetido(dados, por_papel, teor_letras)
+    fora = _aviso_de_conjuge_fora_do_termo(dados, teor_letras)
+    if fora:
+        saida.append(fora)
+    return saida
+
+
+def teor_para_conferir(valores: dict, teor_digitado: str = "", *,
+                       sv: dict | None = None) -> str:
+    """O texto que a conferência compara com a ficha. Só calcula.
+
+    O que a escrevente digitou no campo do teor é o que vai ao livro. Sem
+    ele, a lavratura escreve pelo modelo — e é essa prévia que se confere,
+    senão o nome repetido na filiação só aparece depois de lavrado.
+    """
+    if str(teor_digitado or "").strip():
+        return str(teor_digitado)
+    import rc_modelos_do_livro as LIVRO
+    return LIVRO.teor_previsto_do_formulario(valores, sv=sv) or ""
 
 
 # ------------------------------------------------- arrumar só o que travou

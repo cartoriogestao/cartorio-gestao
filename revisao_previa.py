@@ -210,8 +210,10 @@ Sem achado, lista vazia. Não invente."""
 
 INSTRUCAO_DO_RCPN = """Você é o revisor do Registro Civil de uma serventia extrajudicial \
 no Maranhão, lendo um assento ANTES de ele ser lavrado. Recebe o formulário que está \
-na tela, a PRIMEIRA LEITURA dos documentos (já transcrita; não há imagem nova) e, \
-quando a escrevente escreveu, a INSTRUÇÃO ESPECÍFICA dela.
+na tela, o TEOR QUE SERIA GERADO (prévia do modelo, ainda não lavrado), a PRIMEIRA \
+LEITURA dos documentos (já transcrita; não há imagem nova) e, quando a escrevente \
+escreveu, a INSTRUÇÃO ESPECÍFICA dela. O modo continua consultivo: você aponta, \
+não trava a lavratura.
 
 O que a primeira leitura não conseguiu casar vem em «lidos e não aplicados», com os \
 campos inteiros. Isso NÃO é ausência de documento: é divergência. A instrução da \
@@ -226,7 +228,17 @@ documento de identidade;
 não pode ter sido ignorado;
 - avós, CPF, naturalidade e profissão lidos e ausentes no formulário;
 - anotação lida (nome escolhido, naturalidade, profissão) que o formulário não usou;
-- data, hora e DNV impossíveis ou cortadas.
+- data, hora e DNV impossíveis ou cortadas;
+- no TEOR QUE SERIA GERADO, nome repetido: o nome da mãe, do pai ou do falecido \
+não pode aparecer mais vezes do que a ficha explica. Quando só um genitor tem \
+qualificação, a filiação diz «a mãe» ou «o pai» entre parênteses, e não repete \
+o nome («Filho de ANA e de JOÃO (a mãe, residente…)», e não «(ANA, residente…)»);
+- a filiação do termo é a do formulário e a dos documentos (mãe e pai, cada um \
+no seu papel);
+- cônjuge e casamento coerentes com a ficha e com a certidão de casamento do \
+dossiê, civil ou religioso. No religioso, paróquia, livro, folha e termo têm de \
+bater com a certidão. Cônjuge na ficha ou certidão de casamento que o termo não \
+cita é ATENCAO.
 
 NÃO são problemas: a falta de selo, livro, folha e número do termo (saem na \
 lavratura); a naturalidade ainda em branco quando a leitura avisou que ela é \
@@ -409,8 +421,13 @@ def texto_do_registro_civil(formulario) -> str:
 
 
 def dossie_rcpn(con: sqlite3.Connection, rascunho_id: int, formulario: str,
-                instrucao: str = "") -> str:
-    """O assento a lavrar e a primeira leitura, sem reler imagem. Só lê."""
+                instrucao: str = "", valores: dict | None = None) -> str:
+    """O assento a lavrar, a prévia do termo e a primeira leitura. Só lê.
+
+    `valores` são os campos da tela (os mesmos do formulário). Deles sai o
+    teor que a lavratura escreveria pelo modelo, para o revisor ver o texto
+    e não só as chaves. Sem `valores`, o dossiê fica como era.
+    """
     bd = banco(con)
     partes = ["REGISTRO CIVIL A LAVRAR", "", "FORMULÁRIO:", formulario or "(vazio)"]
     if (instrucao or "").strip():
@@ -426,6 +443,16 @@ def dossie_rcpn(con: sqlite3.Connection, rascunho_id: int, formulario: str,
                        (leitura["conferencia_json"] or "")[:40_000]]
         else:
             partes.append("\nNão há primeira leitura gravada neste rascunho.")
+    # A PRÉVIA FICA NO FIM: o corte do dossiê guarda o fim, e o fim é o texto
+    # que iria ao livro. Leitura grande não pode empurrá-lo para fora.
+    if valores is not None:
+        import rc_modelos_do_livro as LIVRO
+        try:
+            previsto = LIVRO.teor_previsto_do_formulario(valores)
+        except Exception:                               # noqa: BLE001
+            previsto = ""
+        partes += ["", "TEOR QUE SERIA GERADO (prévia; ainda não lavrado):",
+                   previsto or "(a prévia não pôde ser montada com estes campos)"]
     return "\n".join(partes)[-LIMITE_DO_DOSSIE:]
 
 

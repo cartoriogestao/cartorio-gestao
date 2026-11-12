@@ -11,15 +11,16 @@ fim da suíte, do horário de 10 em 10 minutos, ou de um PR novo):
   1. PR elegível e verde, cujo teste ainda vale → merge em squash (e repete o 1)
   2. alguma suíte ainda correndo, ou na fila do executor → espera
   3. o mais antigo elegível ainda não testado:
-       teste vencido  → atualiza a branch e pede a suíte e o anti-leak
+       teste vencido  → pede a suíte de novo, sem mexer na branch
+       branch atrás («behind», só com o `strict`) → atualiza e pede a suíte e o anti-leak
        sem resultado  → pede a suíte e o anti-leak
   PR com suíte vermelha ou com conflito fica parado até alguém mexer nele.
 
 QUANDO O TESTE AINDA VALE (11/11/2026). A suíte testa o PR mesclado com o main
 daquele instante e grava esse main no status `suite-main`. Se o main andou depois,
 o teste continua valendo quando o que entrou no main não toca em arquivo do PR nem
-em arquivo de base (`ARQUIVOS_DE_BASE`). Se toca, a fila atualiza a branch e testa
-de novo. Antes, todo merge obrigava cada PR verde a rodar a suíte inteira outra vez
+em arquivo de base (`ARQUIVOS_DE_BASE`). Se toca, a fila pede a suíte de novo: ela
+junta o PR com o main da hora, e a branch não precisa mudar. Antes, todo merge obrigava cada PR verde a rodar a suíte inteira outra vez
 (no 11/11, um PR ficou verde três vezes sem entrar). Para isso valer, a regra do
 main não pode exigir a branch em dia (`strict`); com ela ligada, o GitHub responde
 «behind» e a fila atualiza e testa de novo, como antes.
@@ -121,8 +122,14 @@ def decidir(prs: list[Pr], dono: str) -> list[tuple]:
             continue
         if pr.suite in ("failure", "error") or pr.anti_leak == "failure":
             continue  # parado até um push novo
-        if pr.estado_merge == "behind" or pr.teste_vencido:
+        if pr.estado_merge == "behind":
             return acoes + [("atualizar", pr.numero), ("disparar", pr.numero)]
+        if pr.teste_vencido:
+            # Sem atualizar a branch (12/11/2026): o commit de junção da fila sai em nome do
+            # github-actions[bot], e o GitHub deixa o `pull_request` do anti-leak nele
+            # esperando aprovação manual. A regra do main olha essa rodada parada, e o PR
+            # verde não entra (#408, #424). A suíte já testa o PR junto com o main atual.
+            return acoes + [("disparar", pr.numero)]
         if pr.suite is None or pr.anti_leak is None:
             return acoes + [("disparar", pr.numero)]
     return acoes

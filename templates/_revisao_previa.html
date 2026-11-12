@@ -17,7 +17,7 @@
   ela. A revisão não decide e não lavra.</p>
   <label class="span2">Instrução específica, se a leitura divergiu
     <textarea name="revisao_instrucao" rows="2"
-      placeholder="ex.: a mãe da DNV é a do RG, apesar do nome; o outro documento é o pai"></textarea></label>
+      placeholder="ex.: a mãe da DNV é a do RG, apesar do nome; o outro documento é o pai">{% if revisao_do_registro_civil and form is defined %}{{ form.get('revisao_instrucao', '') }}{% endif %}</textarea></label>
   {% else %}
   <p class="small muted" style="margin:4px 0">A IA lê o ato junto com a matrícula e aponta o
   que não fecha. <strong>Revisão consultiva:</strong> para gerente/administrador e para

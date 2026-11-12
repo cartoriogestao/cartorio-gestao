@@ -141,6 +141,56 @@ def test_o_registro_civil_usa_o_sonnet_em_esforco_alto():
     assert RV.ESFORCO_DO_RCPN == "high"
     assert "primeira leitura" in instrucao.lower() or "PRIMEIRA LEITURA" in instrucao
     assert "não invente" in instrucao.lower() or "Não invente" in instrucao
+    assert "óbito" in instrucao.lower() or "OBITO" in instrucao or "ÓBITO" in instrucao
+    assert "natimorto" in instrucao.lower()
+    assert "nubentes" in instrucao.lower()
+    assert "preenchedor" in instrucao.lower()
+
+
+def test_a_conferencia_de_todo_assento_tem_revisar_com_ia(cg_casa, com_chave):
+    """Óbito, casamento e nascimento pedem a revisão na conferência, mesmo
+    sem rascunho prévio. O escrevente não lavra sem ela. Acervo não pede."""
+    cg_casa["db"].create_user("elisa", "ELISA EXEMPLO", "Senha#12345", "USER")
+    c = cg_casa["c"]
+    cg_login(c, "elisa", "Senha#12345")
+
+    def token_de(caminho: str) -> str:
+        html = c.get(caminho).get_data(as_text=True)
+        achado = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html)
+        assert achado, caminho
+        return achado.group(1)
+
+    def conferir(especie_url: str, **campos) -> str:
+        html = c.post(f"/rcpn/novo/{especie_url}", data={
+            "csrf_token": token_de(f"/rcpn/novo/{especie_url}"),
+            "especie": especie_url.upper(), "acao": "conferir", **campos,
+        }).get_data(as_text=True)
+        assert "Revisar com IA" in html, especie_url
+        assert 'name="_rascunho_id_tela"' in html, especie_url
+        return html
+
+    obito = conferir("obito", pessoa_nome="CARLOS EXEMPLO")
+    conferir("casamento", nubente1_nome="ANA EXEMPLO", nubente2_nome="BRUNO EXEMPLO")
+    conferir("nascimento", pessoa_nome="CAIO EXEMPLO")
+    conferir("natimorto", pessoa_nome="SEM NOME")
+    acervo = c.post("/rcpn/novo/obito", data={
+        "csrf_token": token_de("/rcpn/novo/obito"),
+        "especie": "OBITO", "acao": "conferir", "do_acervo": "1",
+        "pessoa_nome": "LIVRO ANTIGO",
+    }).get_data(as_text=True)
+    assert "Revisar com IA" not in acervo
+
+    rid = re.search(r'name="_rascunho_id_tela" value="(\d+)"', obito).group(1)
+    recusa = c.post("/rcpn/novo/obito", data={
+        "csrf_token": token_de("/rcpn/novo/obito"),
+        "especie": "OBITO", "acao": "lavrar", "pessoa_nome": "CARLOS EXEMPLO",
+        "folha_seguranca": "1", "_rascunho_id_tela": rid,
+    }).get_data(as_text=True)
+    assert "Revisar com IA" in recusa
+    assert "Nada foi lavrado" in recusa
+    con = sqlite3.connect(cg_casa["banco"])
+    assert con.execute("SELECT count(*) FROM rc_assentos").fetchone()[0] == 0
+    con.close()
 
 
 def test_a_rota_de_lavrar_recusa_sem_revisao_e_nao_toma_numero(cg_casa, com_chave):

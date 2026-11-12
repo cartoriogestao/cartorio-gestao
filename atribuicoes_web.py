@@ -5008,13 +5008,59 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         # CPF — SEM lavrar. Lavrar so sai dessa tela, com a folha escolhida.
         acao = (_campo("acao") or "").strip().lower()
 
-        def _tela_conferencia(valores_form, recusa=None):
-            """Monta a conferencia a partir do form. Nao grava.
+        def _garantir_rascunho_da_revisao(valores: dict) -> int | None:
+            """O rascunho em que a revisão grava. Sem acervo e com a IA ligada,
+            o assento ganha um se ainda não tinha.
 
-            Mostra o PROXIMO assento (livro/folha/termo) separado da folha
-            de seguranca, e permite incluir o CPF (copiar CRC + campo
-            cpf_registrado que grava na lavratura).
+            Sem esse número o botão «Revisar com IA» não tem onde pendurar a
+            leitura do preenchedor, e a lavratura pula a revisão. Acervo
+            digitado continua fora: livro antigo não passa por esta etapa.
             """
+            if str(valores.get("do_acervo") or "").strip():
+                return None
+            rid = numero_digitado(
+                valores.get("_rascunho_id_tela") or valores.get("_rascunho_id"))
+            if rid:
+                return rid
+            import revisao_previa as RV
+            try:
+                with db.connect() as con:
+                    if not RV.ligada(con, Path(app.config["DATA_DIR"])):
+                        return None
+            except sqlite3.Error:
+                return None
+            fora = {"acao", "folha_seguranca", "forcar_motivo", "csrf_token"}
+            dados = {k: v for k, v in valores.items()
+                     if not str(k).startswith("_") and k not in fora
+                     and str(v or "").strip()}
+            if not dados:
+                return None
+            titulo = (valores.get("pessoa_nome") or valores.get("nome")
+                      or valores.get("nubente1_nome") or especie or "assento")
+            try:
+                with db.transaction() as con:
+                    salvo = RASC.salvar(
+                        con, tela="rcpn_assento_novo", dados=dados,
+                        titulo=str(titulo), agora=agora(), por=usuario_nome())
+                    leitura_id = numero_digitado(valores.get("leitura_id"))
+                    if (leitura_id and salvo.get("novo")
+                            and banco(con).tem_tabela("rc_leituras")):
+                        banco(con).escrever(
+                            """UPDATE rc_leituras SET rascunho_id=%s
+                                WHERE id=%s AND rascunho_id IS NULL""",
+                            (int(salvo["id"]), int(leitura_id)))
+            except (RASC.RascunhoError, sqlite3.Error):
+                return None
+            valores["_rascunho_id_tela"] = str(salvo["id"])
+            return int(salvo["id"])
+
+        def _tela_conferencia(valores_form, recusa=None):
+            """Monta a conferencia a partir do form. Nao lavra.
+
+            Com a revisão ligada, grava o rascunho que o botão usa. O assento
+            em si só nasce no botão Lavrar.
+            """
+            _garantir_rascunho_da_revisao(valores_form)
             with db.connect() as con:
                 folhas = PP.listar(con, situacao="EM BRANCO", limite=None)
                 sug = PP.proxima_folha(con)
@@ -5149,6 +5195,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 pode_forcar=_papel_atual() in CONF.PAPEIS_QUE_FORCAM,
                 motivo_minimo=CONF.MOTIVO_MINIMO_LETRAS,
                 veio_da_recusa=bool(recusa),
+                do_acervo=str(valores_form.get("do_acervo") or "").strip(),
+                rascunho_id=numero_digitado(
+                    valores_form.get("_rascunho_id_tela")
+                    or valores_form.get("_rascunho_id")),
                 especie=especie,
                 especie_url=RCPN_SLUG_DA_ESPECIE[especie],
                 nome_especie=RC.NOME_DA_ESPECIE[especie],
@@ -5225,11 +5275,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     {k: v for k, v in request.form.items() if k != "csrf_token"})
             forcar_motivo = _campo("forcar_motivo")
 
-        # A REVISÃO DO REGISTRO CIVIL, antes de lavrar. Sem chave da IA a etapa
-        # não existe. O dossiê é a primeira leitura, não uma imagem nova.
-        _rid = numero_digitado(
-            request.form.get("_rascunho_id") or request.form.get("_rascunho_id_tela"))
+        # A REVISÃO DO REGISTRO CIVIL, antes de lavrar todo assento novo.
+        # Sem chave da IA a etapa não existe. O dossiê é a primeira leitura
+        # do preenchedor, não uma imagem nova. Acervo digitado fica de fora.
+        # A regra de quem pode lavrar sem revisão é a que já existe
+        # (consultiva para gerente e administrador).
         _acervo = (request.form.get("do_acervo") or request.args.get("do_acervo") or "").strip()
+        _valores_rev = {k: v for k, v in request.form.items() if k != "csrf_token"}
+        _rid = numero_digitado(
+            _valores_rev.get("_rascunho_id") or _valores_rev.get("_rascunho_id_tela"))
+        if not _acervo:
+            _rid = _garantir_rascunho_da_revisao(_valores_rev) or _rid
         if _rid and not _acervo:
             import revisao_previa as RV
             _texto = RV.texto_do_registro_civil(request.form)
@@ -5245,8 +5301,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         prosseguir=request.form.get("revisao_prosseguir") == "1")
             except RV.RevisaoPendente as erro:
                 flash(f"{erro} Nada foi lavrado.", "danger")
-                return _tela_conferencia(
-                    {k: v for k, v in request.form.items() if k != "csrf_token"})
+                return _tela_conferencia(_valores_rev)
 
         nome = _campo("nome")
         if not nome and especie in {"NASCIMENTO", "OBITO", "NATIMORTO"}:

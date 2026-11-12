@@ -5,10 +5,12 @@
     «sim, facamos assim» — o oficial, 06/10/2026
 
 ONDE ELA ENTRA
-    RI (registro e averbação, pela rota de sempre, `ri_lavrar_ato`) e Notas
-    (o lançamento do ato no livro). Entre preencher e lavrar há o botão
-    «Revisar com IA»; a leitura roda em segundo plano, e o apontamento aparece
-    ao lado do texto.
+    RI (registro e averbação, pela rota de sempre, `ri_lavrar_ato`), Notas
+    (o lançamento do ato no livro) e todo assento novo do Registro Civil
+    (nascimento, casamento, óbito, natimorto e Livro E), na conferência,
+    antes de lavrar. O botão é «Revisar com IA»; a leitura roda em segundo
+    plano, e o apontamento aparece ao lado do texto. No civil o modelo é o
+    Sonnet e o dossiê reusa a primeira leitura do preenchedor.
 
 O QUE ELA LÊ: o ato a lavrar E O CONTEXTO — no RI, a ficha inteira e os
     atos dela (medido em 06/10/2026: ~10 mil tokens por ato); nas Notas, o
@@ -211,7 +213,8 @@ Sem achado, lista vazia. Não invente."""
 INSTRUCAO_DO_RCPN = """Você é o revisor do Registro Civil de uma serventia extrajudicial \
 no Maranhão, lendo um assento ANTES de ele ser lavrado. Recebe o formulário que está \
 na tela, o TEOR QUE SERIA GERADO (prévia do modelo, ainda não lavrado), a PRIMEIRA \
-LEITURA dos documentos (já transcrita; não há imagem nova) e, quando a escrevente \
+LEITURA dos documentos feita pelo preenchedor (já transcrita; não há imagem nova) \
+e, quando a escrevente \
 escreveu, a INSTRUÇÃO ESPECÍFICA dela. O modo continua consultivo: você aponta, \
 não trava a lavratura.
 
@@ -238,7 +241,18 @@ no seu papel);
 - cônjuge e casamento coerentes com a ficha e com a certidão de casamento do \
 dossiê, civil ou religioso. No religioso, paróquia, livro, folha e termo têm de \
 bater com a certidão. Cônjuge na ficha ou certidão de casamento que o termo não \
-cita é ATENCAO.
+cita é ATENCAO;
+- ÓBITO: nome do falecido, data, hora, número da Declaração de Óbito, causa, \
+médico atestante, sepultamento, filiação e cônjuge que divergem entre o \
+formulário, a DO, o documento de identidade e o teor previsto;
+- NATIMORTO: os mesmos cuidados do nascimento e do óbito que os papéis \
+trouxerem (DNV ou DO, filiação, data e hora);
+- CASAMENTO, civil ou religioso com efeito civil: nome e documento dos dois \
+nubentes, regime de bens e testemunhas que divergem entre o formulário, as \
+certidões e o requerimento da primeira leitura;
+- nas espécies do Livro E (ausência, interdição, tutela, emancipação, união \
+estável, opção de nacionalidade): dado da primeira leitura que o formulário \
+não usou e a instrução não dispensou, e contradição interna do formulário.
 
 NÃO são problemas: a falta de selo, livro, folha e número do termo (saem na \
 lavratura); a naturalidade ainda em branco quando a leitura avisou que ela é \
@@ -400,6 +414,9 @@ def dossie_notas(con: sqlite3.Connection, ato_id: int) -> str:
 _FORA_DO_TEXTO_RCPN = {
     "csrf_token", "revisao_justificativa", "revisao_prosseguir",
     "revisao_usar_anterior", "revisao_justificativa_anterior",
+    # O botão de lavrar e a folha da gaveta não são o assento: se entrassem
+    # no texto, a revisão feita na conferência não valeria na lavratura.
+    "acao", "folha_seguranca", "forcar_motivo",
 }
 
 
@@ -408,7 +425,9 @@ def texto_do_registro_civil(formulario) -> str:
 
     A instrução específica entra no texto: mudou a instrução, a revisão
     anterior não vale."""
-    chaves = sorted(set(getattr(formulario, "keys", lambda: formulario)()) - _FORA_DO_TEXTO_RCPN)
+    chaves = sorted(
+        k for k in set(getattr(formulario, "keys", lambda: formulario)())
+        if k not in _FORA_DO_TEXTO_RCPN and not str(k).startswith("_"))
     linhas = []
     for chave in chaves:
         valor = formulario.get(chave) if hasattr(formulario, "get") else formulario[chave]

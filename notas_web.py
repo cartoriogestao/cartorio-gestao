@@ -5213,22 +5213,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 # venda de duas áreas (dois 13.1, cada um com o valor de uma
                 # área). O ato continua com o selo que tem; este é um selo a
                 # mais, com o SEU valor e o SEU item pago. NÃO mexe na situação.
+                #
+                # O protocolo pago marcado no formulário vira o «em atendimento»
+                # no gancho que corre antes desta rota — o mesmo caminho de
+                # «Lançar» e «Selar». Escolher de novo aqui sairia em dobro na
+                # auditoria, e tirar a rota inteira do gancho deixaria o
+                # lançamento sem escolha.
                 valor_extra = CXC.centavos(request.form.get("valor_do_selo"))
-                escolhido = (request.form.get("protocolo_selo") or "").strip()
-                if escolhido:
-                    import caixa_protocolo as CXP
-                    try:
-                        with db.transaction() as con:
-                            feito = AS.escolher_protocolo_do_selo(
-                                con, usuario=usuario_nome(), protocolo=escolhido,
-                                agora=datetime.now().isoformat(timespec="seconds"))
-                        if feito:
-                            audit("SELO_PROTOCOLO_EM_ATENDIMENTO", "CX_PROTOCOLO",
-                                  feito["protocolo_id"],
-                                  {"numero": feito["numero"],
-                                   "pela": "tela do selo adicional da escritura"})
-                    except CXP.ProtocoloError as erro:
-                        flash(str(erro), "warning")
                 selou, recado_extra = selar_selo_adicional_da_escritura(
                     ato_id, valor_centavos=valor_extra,
                     confirmou_mesmo_valor=request.form.get(

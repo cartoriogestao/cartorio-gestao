@@ -539,6 +539,13 @@ def gravar_resposta(con, cobranca_id: int, r: Mapping[str, Any], *, por: str,
     if c["situacao"] == RECEBIDA and nova in (A_EMITIR, EMITINDO, ABERTA, FALHOU):
         nova = RECEBIDA
     campos = {"situacao": nova, "consultada_em": _carimbo(agora)}
+    # EVIDENCIA (HOTFIX-2026-11-12-COBRANCA-BAIXADA): o resumo da resposta da Parcela, sem
+    # token, link, pagador ou credencial, na primeira consulta e a cada mudanca de situacao.
+    evidencia = r.get("_evidencia")
+    if evidencia and (nova != c["situacao"] or not bd.um(
+            "SELECT 1 AS x FROM cb_eventos WHERE cobranca_id = %s AND operacao = 'RESPOSTA_BANCO' LIMIT 1",
+            (int(cobranca_id),))):
+        _evento(bd, int(cobranca_id), "RESPOSTA_BANCO", nova, evidencia, por, _carimbo(agora))
     for k in ("banco_id", "banco_pagamento_id", "nosso_numero", "linha_digitavel", "codigo_barras",
               "pix_copia_e_cola", "banco_status", "banco_motivo", "data_pagamento",
               "forma_recebida", "link_pagamento"):
@@ -720,6 +727,15 @@ def entrar_no_caixa_geral(con, cobranca_id: int, *, por: str, agora: datetime) -
                 "antes de lançar para não duplicar o dinheiro.", por, _carimbo(agora))
         return None
     itens = DEP.prender_itens_a_pagar(bd, c["protocolo_id"]) if c["protocolo_id"] else []
+    if c["protocolo_id"] and not itens:
+        # HOTFIX-2026-11-12-COBRANCA-BAIXADA: cobranca reaberta pela consulta nao entra no
+        # caixa de protocolo ja quitado sem conferencia (evita dinheiro contado duas vezes).
+        proto = bd.um("SELECT situacao FROM cx_protocolos WHERE id = %s", (int(c["protocolo_id"]),))
+        if proto and proto["situacao"] == "PAGO":
+            _evento(bd, int(c["id"]), "LANCAR_NO_CAIXA", "PENDENTE",
+                    "O protocolo já está quitado e não há item a pagar. Confira se este "
+                    "recebimento já foi lançado antes de entrar no caixa.", por, _carimbo(agora))
+            return None
     # Falha de contabilização não apaga a confirmação bancária. O savepoint
     # desfaz caixa/depósito/uso juntos e a rodada seguinte retoma RECEBIDA.
     try:
@@ -966,9 +982,37 @@ def contagem(con) -> dict[str, int]:
         "SELECT situacao, count(*) AS n FROM cb_cobrancas GROUP BY situacao")}
 
 
-def para_acompanhar(con, *, banco_codigo: str, ambiente: str) -> list[dict]:
-    """As que o banco ainda pode mudar, DESTE banco e DESTE ambiente."""
-    return banco(con).ler(
+def baixada_a_reconsultar(c: Mapping[str, Any], hoje: date) -> bool:
+    """BAIXADA da Parcela que ainda pode ser paga: o link pode vir expirado enquanto o
+    boleto gerado nele segue valendo. Vale ate vencimento + dias_apos_vencimento.
+    HOTFIX-2026-11-12-COBRANCA-BAIXADA."""
+    if c.get("banco") != PARCELA or c.get("situacao") != BAIXADA:
+        return False
+    ident = str(c.get("banco_id") or "")
+    if not ident or ident.startswith("pos:"):
+        return False
+    try:
+        limite = date.fromisoformat(str(c.get("vencimento") or "")[:10]) + timedelta(
+            days=int(c.get("dias_apos_vencimento") or 0))
+    except (ValueError, TypeError):
+        return False
+    return hoje <= limite
+
+
+def para_acompanhar(con, *, banco_codigo: str, ambiente: str,
+                    hoje: date | None = None) -> list[dict]:
+    """As que o banco ainda pode mudar, DESTE banco e DESTE ambiente.
+
+    Na Parcela, a BAIXADA dentro do prazo de pagamento tambem volta a ser consultada."""
+    bd = banco(con)
+    linhas = bd.ler(
         """SELECT * FROM cb_cobrancas WHERE banco = %s AND ambiente = %s
               AND situacao = ANY(%s) ORDER BY id""",
         (banco_codigo, ambiente, [*EM_ABERTO, RECEBIDA]))
+    if banco_codigo == PARCELA and hoje is not None:
+        linhas += [c for c in bd.ler(
+            """SELECT * FROM cb_cobrancas WHERE banco = %s AND ambiente = %s
+                  AND situacao = %s ORDER BY id""",
+            (banco_codigo, ambiente, BAIXADA)) if baixada_a_reconsultar(c, hoje)]
+        linhas.sort(key=lambda c: int(c["id"]))
+    return linhas

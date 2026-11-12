@@ -113,7 +113,8 @@ def atualizar(db, cobranca_id: int, *, cliente, por: str, agora: datetime) -> st
         c = CB.cobranca(con, cobranca_id)
     if not c:
         raise CB.CobrancaError("Cobrança não encontrada.")
-    if c["situacao"] not in (*CB.EM_ABERTO, CB.RECEBIDA):
+    if c["situacao"] not in (*CB.EM_ABERTO, CB.RECEBIDA) and not CB.baixada_a_reconsultar(
+            c, agora.date()):
         return c["situacao"]
     _confere(c, cliente)
     if not c["banco_id"]:
@@ -252,7 +253,8 @@ def rodada(db, *, cliente, por: str, agora: datetime, pasta: Any, emitir_ligado:
         except (BancoError, CB.CobrancaError) as erro:
             feito["falharam"].append((int(c["id"]), str(erro)))
     with db.transaction() as con:
-        abertas = CB.para_acompanhar(con, banco_codigo=cliente.banco, ambiente=cliente.ambiente)
+        abertas = CB.para_acompanhar(con, banco_codigo=cliente.banco, ambiente=cliente.ambiente,
+                                     hoje=agora.date())
     for c in abertas:
         try:
             nova = atualizar(db, c["id"], cliente=cliente, por=por, agora=agora)

@@ -80,6 +80,12 @@ SITUACAO_BAIXADA = frozenset({"EXPIRED", "EXPIRADO"})
 # Só na MAQUININHA: a venda recusada não volta a ser cobrada. No link, a
 # tentativa recusada de um cartão não encerra o link: o cliente tenta de novo.
 RECUSADA_NA_MAQUINA = frozenset({"FAILED", "REFUSED", "ABORT"})
+# HOTFIX-2026-11-12-COBRANCA-BAIXADA: venda ainda esperando o pagamento. Link expirado
+# com venda assim (boleto gerado no link) NAO e cobranca baixada.
+VENDA_EM_ANDAMENTO = frozenset({
+    "PENDING", "PENDING_CAPTURE", "IN_PROGRESS_CAPTURE", "WAITING_CONFIRMATION",
+    "WAITING_CASHIN", "CAPTURE_NEAR_EXPIRATION",
+})
 FORMA = {
     "PIX": "PIX",
     "PIX_POS": "PIX",
@@ -416,6 +422,7 @@ class ClienteCobrancaParcela:
         if corpo is None:
             return None
         lido = ler(corpo)
+        lido["_evidencia"] = evidencia(corpo)
         if lido.get("situacao") == CB.RECEBIDA and (
                 lido.get("valor_recebido") != int(c["valor"]) or _centavos(corpo.get("amount")) != int(c["valor"])):
             venda = corpo.get("sale") or {}
@@ -678,10 +685,28 @@ def ler(corpo: Mapping[str, Any]) -> dict:
     elif status_venda in SITUACAO_CANCELADA or status_link in SITUACAO_CANCELADA:
         saida["situacao"] = CB.CANCELADA
     elif status_venda in SITUACAO_BAIXADA or status_link in SITUACAO_BAIXADA:
-        saida["situacao"] = CB.BAIXADA
+        if status_venda in VENDA_EM_ANDAMENTO:
+            saida["situacao"] = CB.ABERTA
+        else:
+            saida["situacao"] = CB.BAIXADA
     elif status_link in ("ACTIVE", "PENDING", "") or status_venda in ("PENDING", "WAITING", ""):
         saida["situacao"] = CB.ABERTA
     return saida
+
+
+def evidencia(corpo: Mapping[str, Any]) -> str:
+    """Resumo da resposta da consulta para o historico: so campos de situacao e valor.
+
+    Nada de token, link, pagador, e-mail, telefone, documento ou credencial."""
+    venda = corpo.get("sale") if isinstance(corpo.get("sale"), dict) else {}
+    link = {k: corpo[k] for k in ("status", "formatted_status", "amount", "created_at",
+                                  "updated_at", "expires_in", "billet_payment_is_permitted",
+                                  "qrcode_payment_is_permitted", "card_payment_is_permitted")
+            if k in corpo}
+    v = {k: venda[k] for k in ("id", "status", "type", "form_payment", "amount",
+                               "original_amount", "created_at", "updated_at") if k in venda}
+    return json.dumps({"link": link, "venda": v}, ensure_ascii=False,
+                      separators=(",", ":"), default=str)
 
 
 def cliente_da_casa(cfg: Mapping[str, str], *, pasta: Any = None,

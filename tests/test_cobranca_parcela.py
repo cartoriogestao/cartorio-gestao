@@ -430,3 +430,159 @@ def test_a_recusa_da_maquininha_fica_no_rastro_da_cobranca(protocolo):
     assert "Pix nao concluido" in c["erro"]
     assert rastro[-1]["resultado"] == CB.FALHOU and "Pix nao concluido" in rastro[-1]["mensagem"]
     assert c["deposito_id"] is None
+
+
+# ---- BAIXADA que ainda pode ser paga (12/11/2026, boleto gerado no link) -------
+
+def test_link_expirado_com_venda_pendente_continua_aberta():
+    lido = PX.ler({"token": "tok-1", "status": "expired", "url": "https://pay.exemplo/tok-1",
+                   "sale": {"id": "v", "status": "pending", "form_payment": "billet"}})
+    assert lido["situacao"] == CB.ABERTA
+    assert lido["banco_status"] == "PENDING"
+
+
+@pytest.mark.parametrize("venda", [{}, {"id": "v", "status": "expired"}, {"id": "v", "status": "canceled"}])
+def test_link_expirado_sem_venda_viva_continua_baixada_ou_cancelada(venda):
+    lido = PX.ler({"token": "tok-1", "status": "expired", "sale": venda})
+    assert lido["situacao"] in (CB.BAIXADA, CB.CANCELADA)
+    assert lido["situacao"] != CB.ABERTA
+
+
+def test_a_evidencia_nao_leva_token_link_pagador_nem_contato():
+    corpo = {"id": "id-1", "token": "tok-SECRETO", "url": "https://pay.exemplo/tok-SECRETO",
+             "status": "expired", "amount": 15000, "payer_name": "FULANO", "payer_document": "00000000191",
+             "email": "a@b.test", "phone": "99999", "payer": {"name": "FULANO"},
+             "seller": {"id": "seller-de-teste"},
+             "sale": {"id": "v1", "status": "pending", "form_payment": "billet", "amount": 15000,
+                      "original_amount": 15050, "updated_at": "2026-11-10T15:00:00Z"}}
+    texto = PX.evidencia(corpo)
+    for proibido in ("SECRETO", "pay.exemplo", "FULANO", "00000000191", "a@b.test", "99999", "seller-de-teste"):
+        assert proibido not in texto
+    assert '"status":"expired"' in texto and '"status":"pending"' in texto and "15050" in texto
+
+
+def _link_pago(valor=12345):
+    return {"results": [{"id": "id-1", "token": "tok-1", "status": "paid", "amount": valor,
+                         "seller": {"id": CAMPOS["seller_id"]},
+                         "sale": {"id": "venda-boleto", "status": "succeeded", "form_payment": "billet",
+                                  "amount": valor, "original_amount": valor,
+                                  "updated_at": "2026-11-05T14:00:00Z"}}],
+            "has_more": False}
+
+
+def _link_expirado_pendente(valor=12345):
+    return {"results": [{"id": "id-1", "token": "tok-1", "status": "expired", "amount": valor,
+                         "seller": {"id": CAMPOS["seller_id"]},
+                         "sale": {"id": "venda-boleto", "status": "pending", "form_payment": "billet",
+                                  "amount": valor, "original_amount": valor,
+                                  "updated_at": "2026-11-05T14:00:00Z"}}],
+            "has_more": False}
+
+
+def _baixada(db, protocolo_id, *, vencimento="2026-11-13", dias=30):
+    with db.transaction() as con:
+        i = CB.cadastrar(
+            con, agora=AGORA, por="balcao", banco_codigo=CB.PARCELA, ambiente="sandbox",
+            protocolo_id=protocolo_id, valor_centavos=12345, vencimento=vencimento,
+            pagador=PAGADOR, mensagem="Emolumentos.", forma_pedida="BOLETO",
+            dias_apos_vencimento=dias)
+        CB.gravar_resposta(con, i, {"banco_id": "tok-1", "situacao": CB.BAIXADA,
+                                    "banco_status": "PENDING"}, por="automacao", agora=AGORA)
+    return i
+
+
+def _consulta(corpo):
+    t = Transporte({**LOGIN, "/payment-links": Resposta(200, corpo)})
+    return PX.ClienteCobrancaParcela("sandbox", t, CAMPOS), t
+
+
+def test_baixada_no_prazo_volta_a_ser_consultada_e_a_paga_entra_no_caixa_uma_vez(protocolo):
+    import cobranca_banco as CBB
+    db, pid = protocolo["db"], protocolo["protocolo_id"]
+    i = _baixada(db, pid)
+    with db.connect() as con:
+        assert [c["id"] for c in CB.para_acompanhar(
+            con, banco_codigo=CB.PARCELA, ambiente="sandbox", hoje=AGORA.date())] == [i]
+        assert CB.para_acompanhar(con, banco_codigo=CB.PARCELA, ambiente="sandbox") == []
+    cliente, _t = _consulta(_link_pago())
+    assert CBB.atualizar(db, i, cliente=cliente, por="automacao", agora=AGORA) == CB.LANCADA
+    assert CBB.atualizar(db, i, cliente=cliente, por="automacao", agora=AGORA) == CB.LANCADA
+    with db.connect() as con:
+        depositos = banco(con).ler("SELECT id FROM cx_depositos WHERE protocolo_id = %s", (pid,))
+        c = CB.cobranca(con, i)
+        rastro = CB.eventos(con, i)
+    assert len(depositos) == 1 and c["deposito_id"] and c["forma_recebida"] == "BOLETO"
+    assert _quitado(db, pid) == 1
+    respostas = [e for e in rastro if e["operacao"] == "RESPOSTA_BANCO"]
+    assert len(respostas) == 1 and "venda-boleto" in respostas[0]["mensagem"]
+    assert "tok-1" not in respostas[0]["mensagem"] and "https" not in respostas[0]["mensagem"]
+
+
+def test_baixada_no_prazo_com_link_expirado_e_venda_pendente_volta_a_aberta(protocolo):
+    import cobranca_banco as CBB
+    db, pid = protocolo["db"], protocolo["protocolo_id"]
+    i = _baixada(db, pid)
+    cliente, _t = _consulta(_link_expirado_pendente())
+    assert CBB.atualizar(db, i, cliente=cliente, por="automacao", agora=AGORA) == CB.ABERTA
+
+
+def test_baixada_fora_do_prazo_nao_e_consultada(protocolo):
+    import cobranca_banco as CBB
+    db, pid = protocolo["db"], protocolo["protocolo_id"]
+    i = _baixada(db, pid, vencimento="2026-11-13", dias=30)
+    depois = AGORA + timedelta(days=60)
+    with db.connect() as con:
+        assert CB.para_acompanhar(con, banco_codigo=CB.PARCELA, ambiente="sandbox",
+                                  hoje=depois.date()) == []
+    cliente, t = _consulta(_link_pago())
+    assert CBB.atualizar(db, i, cliente=cliente, por="automacao", agora=depois) == CB.BAIXADA
+    assert t.chamadas == []
+
+
+def test_baixada_de_outro_banco_ou_da_maquininha_nunca_e_reconsultada():
+    base = {"situacao": CB.BAIXADA, "vencimento": "2026-11-13", "dias_apos_vencimento": 30,
+            "banco_id": "tok-1", "banco": CB.PARCELA}
+    assert CB.baixada_a_reconsultar(base, AGORA.date())
+    assert not CB.baixada_a_reconsultar({**base, "banco": CB.INTER}, AGORA.date())
+    assert not CB.baixada_a_reconsultar({**base, "banco_id": "pos:venda-1"}, AGORA.date())
+    assert not CB.baixada_a_reconsultar({**base, "banco_id": ""}, AGORA.date())
+    assert not CB.baixada_a_reconsultar({**base, "situacao": CB.CANCELADA}, AGORA.date())
+
+
+def test_baixada_paga_em_protocolo_ja_quitado_fica_recebida_sem_entrar_no_caixa(protocolo):
+    import cobranca_banco as CBB
+    db, pid = protocolo["db"], protocolo["protocolo_id"]
+    with db.transaction() as con:
+        banco(con).escrever("UPDATE cx_protocolo_atos SET quitado = 1 WHERE protocolo_id = %s", (pid,))
+        banco(con).escrever("UPDATE cx_protocolos SET situacao = 'PAGO' WHERE id = %s", (pid,))
+    i = _baixada(db, pid)
+    cliente, _t = _consulta(_link_pago())
+    assert CBB.atualizar(db, i, cliente=cliente, por="automacao", agora=AGORA) == CB.RECEBIDA
+    with db.connect() as con:
+        c = CB.cobranca(con, i)
+        depositos = banco(con).ler("SELECT id FROM cx_depositos WHERE protocolo_id = %s", (pid,))
+        rastro = CB.eventos(con, i)
+    assert c["deposito_id"] is None and depositos == []
+    assert any(e["operacao"] == "LANCAR_NO_CAIXA" and e["resultado"] == "PENDENTE" for e in rastro)
+
+
+class _Ctx:
+    def __init__(self, db, pasta):
+        self.db, self.agora, self.pasta_dados = db, AGORA, pasta
+        self.processo = {"pode_agir": True}
+
+
+def test_a_rodada_sai_quando_so_ha_baixada_no_prazo(protocolo, tmp_path, monkeypatch):
+    import cobranca_automacao as AUT
+    import cobranca_banco as CBB
+    db, pid = protocolo["db"], protocolo["protocolo_id"]
+    with db.transaction() as con:
+        CB.gravar_configuracao(con, {**CB.PADRAO, "cobranca_ligada": "1", "cobranca_banco": "PARCELA",
+                                     "cobranca_ambiente": "sandbox"})
+    i = _baixada(db, pid)
+    cliente, t = _consulta(_link_pago())
+    monkeypatch.setattr(CBB, "cliente_da_casa", lambda cfg, **kw: cliente)
+    r = AUT.acompanhar(_Ctx(db, tmp_path))
+    assert r["relato"] != "Nada esperando o banco." and t.chamadas
+    with db.connect() as con:
+        assert CB.cobranca(con, i)["situacao"] == CB.LANCADA

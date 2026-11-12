@@ -752,10 +752,11 @@ Acessos relacionados: Digitar as informações → Novo assento; Lista de assent
 
 ### Digitar informações (assento)
 
-Caminho: Registro Civil das Pessoas Naturais > Assento já lavrado > Digitar informações (assento).
-Tela-fonte: `templates/atrib_rcpn_escolher.html`.
-Campos da tela: nenhum campo de formulário nomeado nesta tela.
-Comandos: nenhum botão local nomeado.
+Caminho: Registro Civil das Pessoas Naturais > Nascimento, Casamento ou Óbito > Digitar nascimento/casamento/óbito já lavrado.
+Tela-fonte: `templates/atrib_rcpn_novo.html` (com `do_acervo=1`).
+Campos da tela: Livro; Folha (48 ou 48v); Termo; Data do assento no papel. O botão é **Incluir assento do papel**. Não lavra, não sela e não consome a numeração da casa.
+A tela de escolha (`templates/atrib_rcpn_escolher.html`) só encaminha ao tipo.
+Comandos: Incluir assento do papel.
 Acessos relacionados: ← Consultar assentos; Importar arquivo; Averbações; Digitar informações deste tipo Abrir a tela deste registro.
 
 ### CPF nos assentos antigos

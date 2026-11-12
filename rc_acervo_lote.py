@@ -44,6 +44,171 @@ def volume(valor):
     return f'A-{int(m[1])}' if m else ''
 
 
+# O papel antigo não é ato desta casa. A letra é a da espécie (Livro A, B ou C);
+# o número é o que está escrito na capa. Origem ARQUIVO: não houve lavratura
+# nem selo, e a marca de «assina quem selar» não tem o que assinar.
+ORIGEM_DO_PAPEL = 'ARQUIVO'
+LETRA_DO_PAPEL = {'NASCIMENTO': 'A', 'CASAMENTO': 'B', 'OBITO': 'C'}
+ESPECIES_DO_PAPEL = frozenset(LETRA_DO_PAPEL)
+_FOLHA = re.compile(r'^0*(\d+)\s*([vV])?$')
+_NOME_DA_ESPECIE = {
+    'NASCIMENTO': 'nascimento', 'CASAMENTO': 'casamento', 'OBITO': 'óbito'}
+
+
+def folha_do_papel(valor) -> str:
+    """«48» na frente e «48v» no verso. Só calcula."""
+    m = _FOLHA.fullmatch(str(valor if valor is not None else '').strip())
+    if not m or int(m.group(1)) < 1:
+        raise LoteError(
+            'A folha do papel precisa ser o número da folha, com «v» no verso '
+            '(exemplo: 48 ou 48v).')
+    return f'{int(m.group(1))}{"v" if m.group(2) else ""}'
+
+
+def livro_do_papel(valor, especie: str) -> str:
+    """O volume do papel: A no nascimento, B no casamento, C no óbito.
+
+    «12», «A-12» e «Livro A 12» são o mesmo livro. A letra de outra espécie
+    não entra — óbito não se grava no livro de nascimento.
+    """
+    letra = LETRA_DO_PAPEL.get(str(especie or '').strip().upper())
+    if not letra:
+        raise LoteError(
+            'O livro de papel desta tela é o de nascimento, casamento ou óbito.')
+    texto = str(valor or '').strip()
+    com_letra = re.fullmatch(
+        rf'(?:livro\s+)?{letra}\s*[- ]?\s*0*(\d+)', texto, re.I)
+    so_numero = re.fullmatch(r'0*(\d+)', texto)
+    achado = com_letra or so_numero
+    if not achado or int(achado.group(1)) < 1:
+        raise LoteError(
+            f'O livro do papel precisa ser o {letra} desta espécie '
+            f'(exemplo: {letra}-12 ou 12).')
+    return f'{letra}-{int(achado.group(1))}'
+
+
+def nome_de_quem_inclui(conta: dict, informado: str, mandante: str) -> str:
+    """O nome da pessoa que incluiu. Não é a marca de selo pendente.
+
+    Este caminho não sela. «PENDENTE — assina quem selar» ficaria para sempre
+    na auditoria, porque não há selo que troque a marca pelo nome de quem
+    assinou. Conta de robô registra o responsável humano.
+    """
+    import nome_humano as NOMEHUM
+    if conta.get('eh_robo'):
+        candidato = str(mandante or '').strip()
+    else:
+        candidato = (str(conta.get('full_name') or '').strip()
+                     or str(informado or '').strip())
+    if NOMEHUM.eh_rotulo_de_maquina(candidato):
+        raise LoteError(
+            'A inclusão do livro de papel precisa do nome de quem incluiu. '
+            'Esta conta não tem nome de pessoa, e não há selo que assine depois.')
+    return candidato
+
+
+def _conta_que_inclui(bd, usuario_id, usuario):
+    u = bd.um('SELECT * FROM users WHERE id=%s', (int(usuario_id),))
+    if not u or not u['active'] or u['role'] not in ('ADMIN', 'MANAGER', 'USER'):
+        raise LoteError('Usuário sem permissão para importar acervo.')
+    mandante = usuario
+    if u.get('eh_robo'):
+        responsavel = bd.um(
+            'SELECT * FROM users WHERE id=%s', (u.get('robo_responsavel_id'),))
+        if not responsavel or not responsavel['active'] or responsavel.get('eh_robo'):
+            raise LoteError('O robô precisa de um responsável humano ativo.')
+        mandante = responsavel['full_name']
+    return u, mandante, nome_de_quem_inclui(u, usuario, mandante)
+
+
+def _naturalidade_da_pessoa(pessoa: dict, declarada, titular) -> dict:
+    """A ficha mostra `naturalidade_cidade`. O texto «Cidade/UF» e a
+    naturalidade declarada do assento vão para essa coluna quando ela está
+    vazia. O que já está escrito na pessoa prevalece."""
+    import rc_assento as RC
+    p = dict(pessoa)
+    texto = p.pop('naturalidade', None)
+    if (not str(p.get('naturalidade_cidade') or '').strip()
+            and str(texto or '').strip()):
+        cidade, uf = RC.municipio_da_naturalidade(texto)
+        if cidade:
+            p['naturalidade_cidade'] = cidade
+        if uf and not str(p.get('naturalidade_uf') or '').strip():
+            p['naturalidade_uf'] = uf
+    papel = str(p.get('papel') or '').strip().upper()
+    if (titular and papel == titular
+            and not str(p.get('naturalidade_cidade') or '').strip()
+            and str(declarada or '').strip()):
+        cidade, uf = RC.municipio_da_naturalidade(declarada)
+        if cidade:
+            p['naturalidade_cidade'] = cidade
+        if uf and not str(p.get('naturalidade_uf') or '').strip():
+            p['naturalidade_uf'] = uf
+    return p
+
+
+def _promover_folha_tardio_naturalidade(v: dict, especie: str) -> dict:
+    """Folha na ficha, tardio na coluna, naturalidade na pessoa.
+
+    Sem ato de registro, a ficha lê a folha em `dados_json`. O tardio que só
+    viaja no JSON deixa a coluna vazia. Campo ausente não entra no dicionário:
+    na complementação, o que não veio não apaga o que já estava.
+    """
+    import rc_assento as RC
+    try:
+        dados = json.loads(v.get('dados_json') or '{}')
+    except (ValueError, TypeError) as erro:
+        raise LoteError('Dados da transcrição fora do formato JSON.') from erro
+    if not isinstance(dados, dict):
+        raise LoteError('Os dados da transcrição precisam ser um objeto.')
+    bruto_folha = v.pop('folha', None)
+    if bruto_folha not in (None, ''):
+        dados['folha'] = folha_do_papel(bruto_folha)
+    elif dados.get('folha') not in (None, ''):
+        dados['folha'] = folha_do_papel(dados.get('folha'))
+    trans = (dados.get('acervo_transcrito')
+             if isinstance(dados.get('acervo_transcrito'), dict) else {})
+    marca = v.get('registro_tardio')
+    if marca in (None, ''):
+        for fonte in (dados.get('registro_tardio'), dados.get('bitRegistroTardio'),
+                      trans.get('registro_tardio') if isinstance(trans, dict) else None):
+            if fonte not in (None, ''):
+                marca = fonte
+                break
+    if marca not in (None, '') and RC.e_tardio(marca):
+        v['registro_tardio'] = 1
+    declarada = (v.get('naturalidade_declarada')
+                 or dados.get('naturalidade_declarada')
+                 or (trans.get('naturalidade_declarada') if isinstance(trans, dict) else None))
+    titular = RC.TITULAR_DA_NATURALIDADE.get(str(especie or '').strip().upper())
+    if v.get('pessoas'):
+        v['pessoas'] = [
+            _naturalidade_da_pessoa(p, declarada, titular) if isinstance(p, dict) else p
+            for p in v['pessoas']]
+    v['dados_json'] = _json(dados) if dados else (v.get('dados_json') or '{}')
+    return v
+
+
+def _recusar_duplicado(bd, especie: str, livro: str, numero: int) -> None:
+    """Livro + termo na mesma espécie é o mesmo assento de papel."""
+    linhas = bd.ler(
+        """SELECT id, livro_volume, situacao FROM rc_assentos
+            WHERE especie=%s AND numero=%s ORDER BY id""",
+        (especie, int(numero)))
+    for linha in linhas:
+        try:
+            mesmo = livro_do_papel(linha.get('livro_volume'), especie) == livro
+        except LoteError:
+            mesmo = False
+        if not mesmo:
+            continue
+        situacao = str(linha.get('situacao') or '').strip()
+        extra = '' if situacao == 'ATIVO' else f' (situação {situacao.lower()})'
+        raise LoteError(
+            f'Já existe um assento de {_NOME_DA_ESPECIE[especie]} no '
+            f'Livro {livro}, termo {numero}{extra}. Nada foi incluído.')
+
+
 def carregar(caminho: Path) -> dict:
     caminho = Path(caminho)
     if caminho.stat().st_size > 20 * 1024 * 1024:
@@ -83,7 +248,7 @@ def _registro(item):
     if not isinstance(item, dict) or not isinstance(item.get('valores'), dict):
         raise LoteError('Registro fora do formato esperado.')
     v = dict(item['valores'])
-    if set(v) - CAMPOS - {'livro_volume', 'numero', 'dados_json', 'pessoas'}:
+    if set(v) - CAMPOS - {'livro_volume', 'numero', 'dados_json', 'pessoas', 'folha'}:
         raise LoteError('O registro contém campo não permitido nesta carga.')
     b, n = volume(v.get('livro_volume')), v.get('numero')
     if not b or type(n) is not int or n < 1:
@@ -102,9 +267,17 @@ def _registro(item):
                 date.fromisoformat(v[campo])
             except (ValueError, TypeError) as erro:
                 raise LoteError(f'Data inválida em {campo}.') from erro
+    pessoas = []
+    for p in v.get('pessoas') or []:
+        if isinstance(p, dict) and 'naturalidade' in p:
+            p = _naturalidade_da_pessoa(p, '', None)
+        pessoas.append(p)
+    if v.get('pessoas') is not None:
+        v['pessoas'] = pessoas
     for p in v.get('pessoas') or []:
         if not isinstance(p, dict) or set(p) - PESSOA:
             raise LoteError('Pessoa com campo não permitido nesta carga.')
+    _promover_folha_tardio_naturalidade(v, 'NASCIMENTO')
     v.update(livro_volume=b, especie='NASCIMENTO', serie='RC_A',
              chave=f'ACERVO_TRANSCRITO:NASCIMENTO:{b}:{n}')
     return v
@@ -220,15 +393,7 @@ def conferir(con, lote):
 
 def aplicar(con, lote, *, assinatura, raiz, usuario_id, usuario, agora):
     bd = banco(con)
-    u = bd.um('SELECT * FROM users WHERE id=%s', (int(usuario_id),))
-    if not u or not u['active'] or u['role'] not in ('ADMIN', 'MANAGER', 'USER'):
-        raise LoteError('Usuário sem permissão para importar acervo.')
-    mandante = usuario
-    if u.get('eh_robo'):
-        responsavel = bd.um('SELECT * FROM users WHERE id=%s', (u.get('robo_responsavel_id'),))
-        if not responsavel or not responsavel['active'] or responsavel.get('eh_robo'):
-            raise LoteError('O robô precisa de um responsável humano ativo.')
-        mandante = responsavel['full_name']
+    u, mandante, quem = _conta_que_inclui(bd, usuario_id, usuario)
     bd.valor("SELECT pg_advisory_xact_lock(hashtextextended('rc_acervo_lote', 0))")
     q = conferir(con, lote)
     if assinatura != q['assinatura']:
@@ -244,7 +409,7 @@ def aplicar(con, lote, *, assinatura, raiz, usuario_id, usuario, agora):
     # Reconfere sob a trava das linhas para não substituir edição concorrente.
     if conferir(con, lote)['assinatura'] != assinatura:
         raise LoteError('Um assento foi alterado durante a conferência. Confira novamente.')
-    antes = {'manifesto': lote['manifesto'], 'sha256': lote['sha256'], 'por': usuario,
+    antes = {'manifesto': lote['manifesto'], 'sha256': lote['sha256'], 'por': quem,
              'em': agora, 'assentos': [e['atual'] for e in q['aceitos'] if e.get('atual')],
              'pessoas': bd.ler('SELECT * FROM rc_pessoas WHERE assento_id=ANY(%s) ORDER BY id', (ids,)) if ids else []}
     pasta = Path(raiz) / 'rc' / 'acervo_lotes' / lote['sha256']
@@ -255,7 +420,8 @@ def aplicar(con, lote, *, assinatura, raiz, usuario_id, usuario, agora):
     novos = [e['valores'] for e in q['aceitos'] if e['acao'] == 'INCLUIR']
     if novos:
         feito = IMP.importar(con, _json({'formato': IMP.FORMATO, 'versao': IMP.VERSAO,
-                    'especie': 'RCPN_ASSENTO', 'registros': novos}), agora=agora, por=usuario)
+                    'especie': 'RCPN_ASSENTO', 'registros': novos}), agora=agora, por=quem,
+                    origem=ORIGEM_DO_PAPEL)
         if feito['entraram'] != len(novos):
             raise LoteError('O acervo mudou: nem todos os novos assentos puderam ser incluídos.')
     resultados = []
@@ -265,6 +431,11 @@ def aplicar(con, lote, *, assinatura, raiz, usuario_id, usuario, agora):
             aid = atual['id']
             alterados = {k: v[k] for k in CAMPOS if v.get(k) not in (None, '')}
             alterados['livro_volume'] = v['livro_volume']
+            # O lote antigo gravava IMPORTACAO. A transcrição do papel é ARQUIVO:
+            # não houve lavratura. EOFICIO e ACERVO continuam com a origem que
+            # a carga deles já tinha.
+            if atual.get('origem') == 'IMPORTACAO':
+                alterados['origem'] = ORIGEM_DO_PAPEL
             try:
                 dados = json.loads(atual.get('dados_json') or '{}')
             except ValueError as erro:
@@ -282,25 +453,99 @@ def aplicar(con, lote, *, assinatura, raiz, usuario_id, usuario, agora):
                 valores['nome_norm'] = normalizar_nome(p['nome'])
                 cols = sorted(valores)
                 if antigas:
+                    if antigas[0].get('origem') == 'IMPORTACAO':
+                        valores['origem'] = ORIGEM_DO_PAPEL
+                        cols = sorted(valores)
                     bd.escrever('UPDATE rc_pessoas SET ' + ', '.join(f'{c}=%s' for c in cols) + ' WHERE id=%s',
                                 [valores[c] for c in cols] + [antigas[0]['id']])
                 else:
-                    valores.update(assento_id=aid, ordem=1, criado_em=agora, origem='IMPORTACAO',
+                    valores.update(assento_id=aid, ordem=1, criado_em=agora, origem=ORIGEM_DO_PAPEL,
                                    origem_chave=f"{v['chave']}:{p['papel']}:complemento")
                     cols = sorted(valores)
                     bd.escrever('INSERT INTO rc_pessoas (' + ', '.join(cols) + ') VALUES (' + ', '.join(['%s']*len(cols)) + ')', [valores[c] for c in cols])
         else:
-            aid = bd.valor("SELECT id FROM rc_assentos WHERE origem='IMPORTACAO' AND origem_chave=%s", (v['chave'],))
+            aid = bd.valor(
+                "SELECT id FROM rc_assentos WHERE origem=%s AND origem_chave=%s",
+                (ORIGEM_DO_PAPEL, v['chave']))
         # A transcrição é a fonte escolhida pelo solicitante; o PDF anterior é preservado.
-        digi = DIG.anexar_digitalizacao(con, aid, e['pdf'], usuario,
+        digi = DIG.anexar_digitalizacao(con, aid, e['pdf'], quem,
                   raiz_arquivos=raiz, agora=agora, agente='importação de acervo RCPN pela tela',
                   a_mando_de=mandante, preservar_arquivo_atual=True)
         if digi['sha256'] != e['item']['sha256']:
             raise LoteError('O PDF mudou durante a cópia. O lote foi desfeito; confira o arquivo.')
-        IDR.registrar(con, ts=agora, user_id=int(usuario_id), username=usuario,
+        IDR.registrar(con, ts=agora, user_id=int(usuario_id), username=quem,
             action='RCPN_ACERVO_TRANSCRITO', entity_type='rc_assentos', entity_id=aid,
             details={'acao':e['acao'], 'manifesto_sha256':lote['sha256'], 'linha':e['linha'],
                      'backup':str(backup), 'transcricao_prevalece':True, 'digitalizacao':digi['acao']})
         resultados.append({'id':aid, 'acao':e['acao'], 'livro':v['livro_volume'], 'numero':v['numero']})
     return {'incluir':q['incluir'], 'complementar':q['complementar'], 'recusados':q['recusados'],
             'resultados':resultados, 'backup':str(backup), 'sha256':lote['sha256']}
+
+
+def incluir_avulso(con, *, especie: str, livro, folha, termo, nome: str,
+                   usuario_id, agora: str, extras: dict | None = None,
+                   pessoas: list | None = None, usuario: str = '') -> dict:
+    """Grava um assento de livro de papel, sem lavrar e sem selo.
+
+    É a mesma inclusão do lote (origem ARQUIVO, livro e termo do papel, sem
+    avançar `nu_numeracao`), para um registro digitado na tela. Não cria ato
+    de REGISTRO: sem ato não há selo nem numeração da casa.
+    """
+    import rc_assento as RC
+    bd = banco(con)
+    _conta, _mandante, quem = _conta_que_inclui(bd, usuario_id, usuario)
+    especie = str(especie or '').strip().upper()
+    livro_n = livro_do_papel(livro, especie)
+    folha_n = folha_do_papel(folha)
+    try:
+        numero = int(str(termo).strip())
+    except (TypeError, ValueError):
+        numero = 0
+    if numero < 1:
+        raise LoteError(
+            'O termo do papel precisa ser o número escrito no livro.')
+    nome_limpo = str(nome or '').strip()
+    if not nome_limpo:
+        raise LoteError(
+            'Informe o nome de quem é o assento, como está no papel.')
+    bd.valor("SELECT pg_advisory_xact_lock(hashtextextended('rc_acervo_lote', 0))")
+    _recusar_duplicado(bd, especie, livro_n, numero)
+    valores = {
+        'especie': especie,
+        'serie': RC.SERIE_DA_ESPECIE[especie],
+        'livro_volume': livro_n,
+        'numero': numero,
+        'nome': nome_limpo,
+        'chave': f'PAPEL:{especie}:{livro_n}:{numero}',
+        'dados_json': '{}',
+        'pessoas': [dict(p) for p in (pessoas or [])],
+    }
+    for chave, valor in (extras or {}).items():
+        if chave in CAMPOS and valor not in (None, ''):
+            valores[chave] = valor
+    valores['folha'] = folha_n
+    _promover_folha_tardio_naturalidade(valores, especie)
+    try:
+        feito = IMP.importar(
+            con, _json({'formato': IMP.FORMATO, 'versao': IMP.VERSAO,
+                        'especie': 'RCPN_ASSENTO', 'registros': [valores]}),
+            agora=agora, por=quem, origem=ORIGEM_DO_PAPEL)
+    except IMP.ImportacaoError as erro:
+        raise LoteError(str(erro)) from erro
+    if feito.get('entraram') != 1:
+        recusa = (feito.get('recusados') or [None])[0]
+        if recusa and recusa.get('porque'):
+            raise LoteError(recusa['porque'])
+        raise LoteError(
+            f'Já existe um assento de {_NOME_DA_ESPECIE[especie]} no '
+            f'Livro {livro_n}, termo {numero}. Nada foi incluído.')
+    aid = bd.valor(
+        "SELECT id FROM rc_assentos WHERE origem=%s AND origem_chave=%s",
+        (ORIGEM_DO_PAPEL, valores['chave']))
+    IDR.registrar(
+        con, ts=agora, user_id=int(usuario_id), username=quem,
+        action='RCPN_ACERVO_PAPEL', entity_type='rc_assentos', entity_id=aid,
+        details={'especie': especie, 'livro': livro_n, 'folha': folha_n,
+                 'termo': numero, 'sem_selo': True, 'sem_lavratura': True})
+    return {'id': aid, 'livro': livro_n, 'folha': folha_n, 'numero': numero,
+            'quem': quem}

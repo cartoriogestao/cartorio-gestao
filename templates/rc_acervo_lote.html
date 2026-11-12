@@ -5,8 +5,10 @@
 <p><a class="button" href="{{ url_for('rcpn_acervo_transcrito_sequencia') }}">Executar vários blocos em sequência</a></p>
 <p>Inclui nascimentos antigos e complementa os já cadastrados. Nos campos preenchidos,
   <strong>prevalece a transcrição</strong>. Campos vazios não apagam o cadastro.
-  O sistema guarda os dados anteriores e a autoria da alteração. Termos com identificação
-  ambígua ficam separados para conferência.</p>
+  O sistema guarda os dados anteriores e o nome de quem incluiu. Termos com identificação
+  ambígua ficam separados para conferência. O registro entra com origem ARQUIVO,
+  sem selo. O manifesto aceita <code>folha</code> (48 ou 48v); o registro tardio
+  vai para a coluna do assento e a naturalidade, para a pessoa.</p>
 {% if erro %}<div class="notice danger">{{ erro }}</div>{% endif %}
 <section class="panel"><div style="padding:14px">
 <form method="post">

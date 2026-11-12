@@ -930,6 +930,8 @@ folha 45»), só o livro (a relação dele, em ordem de folha e termo), número 
 e matrícula. Os campos separados (filiação, declarante, livro, folha, termo,
 espécie, ano, situação) podem ser usados junto. A pesquisa só lê.
 
+**Digitar nascimento, casamento ou óbito já lavrado** (menus Nascimento, Casamento e Óbito). É o livro de papel antigo. Abra o item, preencha **Livro**, **Folha** (48 na frente, 48v no verso) e **Termo**, mais o que o papel trouxer, e clique em **Incluir assento do papel**. O sistema grava esses números, com origem ARQUIVO. Não lavra, não pede selo e não consome a numeração atual da casa. Livro e termo repetidos na mesma espécie são recusados, com o aviso de que o assento já existe.
+
 **Assento já lavrado.**
 
 - **Averbação**, **anotação** e **retificação** são atos distintos, em blocos
@@ -950,8 +952,10 @@ espécie, ano, situação) podem ser usados junto. A pesquisa só lê.
   **Acervo transcrito: incluir e complementar em lote com PDF**): inclui
   nascimentos antigos e complementa os já cadastrados a partir de um lote de
   transcrição. Nos campos preenchidos prevalece a transcrição; campo vazio não
-  apaga o cadastro. Os dados anteriores e a autoria ficam guardados, e o termo de
-  identificação ambígua fica separado para conferência. **Conferir lote**
+  apaga o cadastro. Os dados anteriores e o nome de quem incluiu ficam guardados, e o termo de
+  identificação ambígua fica separado para conferência. O registro entra com origem ARQUIVO, sem selo.
+  O manifesto traz a **folha** (48 ou 48v); o registro tardio fica na coluna do assento e a naturalidade, na pessoa.
+  **Conferir lote**
   mostra o que entraria, sem gravar; **Importar e complementar lote** grava,
   depois de você confirmar que a transcrição prevalece. Para vários livros, **Executar vários blocos em
   sequência**: o servidor processa um bloco de cada vez, e o bloco já concluído é

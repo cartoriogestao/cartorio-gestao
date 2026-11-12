@@ -4946,6 +4946,51 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if request.method != "POST":
             return tela(habilitacao_origem)
 
+        def _incluir_assento_de_papel():
+            """Livro, folha e termo do papel. Não lavra, não numera e não sela.
+
+            A rota continua liberada ao robô (é a mesma de lavrar ato novo).
+            Este ramo não chama `_selar_o_ato` nem `lavrar_assento`: sem ato
+            não há selo para o robô tirar.
+            """
+            import rc_acervo_lote as ACLOTE
+            nome_papel = _campo("nome")
+            if not nome_papel and especie in {"NASCIMENTO", "OBITO", "NATIMORTO"}:
+                nome_papel = _campo("pessoa_nome")
+            if not nome_papel and especie in RC.ESPECIES_DE_CASAMENTO:
+                nome_papel = " e ".join(
+                    x for x in (_campo("nubente1_nome"), _campo("nubente2_nome")) if x)
+            extras = {}
+            for campo in ACLOTE.CAMPOS:
+                if campo == "nome":
+                    continue
+                valor = _campo(campo)
+                if valor:
+                    extras[campo] = valor
+            try:
+                with db.transaction() as con:
+                    feito = ACLOTE.incluir_avulso(
+                        con, especie=especie,
+                        livro=_campo("livro_papel"),
+                        folha=_campo("folha_papel"),
+                        termo=_campo("termo_papel"),
+                        nome=nome_papel, extras=extras,
+                        pessoas=_pessoas_do_formulario(especie),
+                        usuario_id=session["user_id"], agora=agora())
+            except ACLOTE.LoteError as erro:
+                flash(str(erro), "danger")
+                return tela(None)
+            flash(
+                f"Assento do livro de papel incluído: Livro {feito['livro']}, "
+                f"folha {feito['folha']}, termo {feito['numero']}. "
+                "Não houve lavratura, a numeração da casa não mudou e não há selo.",
+                "success")
+            return redirect(url_for("rcpn_assento", assento_id=feito["id"]))
+
+        # Do acervo de papel: sai antes da conferência, da régua e do selo.
+        if (request.form.get("do_acervo") or request.args.get("do_acervo") or "").strip() not in ("", "0"):
+            return _incluir_assento_de_papel()
+
         # O NÚMERO QUE VEM NO FORMULÁRIO: a habilitação pode ter mudado desde que a tela abriu.
         hc_no_form = (numero_digitado(_campo("habilitacao_id"))
                       if especie in RC.ESPECIES_DE_CASAMENTO else None)

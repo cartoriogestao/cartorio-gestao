@@ -137,10 +137,12 @@ TIPOS: dict[str, dict[str, Any]] = {
         "nome": "Certidão de registro civil",
         "manuscrito": True,
         "campos": (
-            "especie (nascimento/casamento/óbito), nomes (lista; na de nascimento o "
-            "registrado primeiro), matricula, data_registro, livro, folha, termo, "
-            "filiacao (lista), pai, mae, sexo, data_nascimento, naturalidade, "
-            "cartorio, averbacoes (texto)"),
+            "especie (nascimento/casamento/óbito; no casamento diga também se é "
+            "civil ou religioso), nomes (lista; na de nascimento o registrado "
+            "primeiro; no casamento, os dois cônjuges), matricula, data_registro, "
+            "livro, folha, termo, filiacao (lista), pai, mae, sexo, data_nascimento, "
+            "naturalidade, cartorio, paroquia (nome da paróquia, se o casamento for "
+            "religioso), tipo_casamento (civil ou religioso), averbacoes (texto)"),
     },
     # O REQUERIMENTO DA HABILITAÇÃO é o único papel que diz profissão, nome
     # que se passa a usar e regime de bens — as certidões não dizem. Costuma
@@ -1156,6 +1158,125 @@ def juntar_tardio_dos_documentos(documentos: list[dict]) -> dict:
             "conferencia": avisos}
 
 
+def _nomes_da_certidao(dados: dict) -> list[str]:
+    bruto = dados.get("nomes")
+    if isinstance(bruto, list):
+        nomes = [_limpo(x) for x in bruto]
+    else:
+        nomes = [_limpo(bruto)]
+    return [n for n in nomes if n]
+
+
+def _texto_livre_da_certidao(dados: dict) -> str:
+    pedacos = [_limpo(dados.get(k)) for k in (
+        "especie", "tipo_casamento", "paroquia", "cartorio", "celebrante")]
+    outros = dados.get("outros_campos")
+    if isinstance(outros, dict):
+        pedacos.extend(_limpo(v) for v in outros.values())
+    return " ".join(p for p in pedacos if p)
+
+
+def certidao_de_casamento_lida(documentos: list[dict]) -> dict:
+    """A certidão de casamento do dossiê, se a leitura a reconheceu. SÓ CALCULA.
+
+    Religioso quando a certidão diz religião, paróquia ou igreja; senão, se a
+    espécie é casamento, civil. O cônjuge ainda não está escolhido: `nomes`
+    traz os dois, e quem junta o óbito tira o que não é o falecido.
+    """
+    for d in documentos or []:
+        if str(d.get("tipo") or "") != "CERTIDAO":
+            continue
+        v = d.get("dados") or {}
+        if not isinstance(v, dict):
+            continue
+        livre = _sem_acento(_texto_livre_da_certidao(v))
+        especie = _sem_acento(_limpo(v.get("especie")))
+        if not (especie.startswith("CASA") or "CASAMENT" in livre):
+            continue
+        religioso = ("RELIG" in livre or "PAROQU" in livre or "IGREJA" in livre
+                     or bool(_limpo(v.get("paroquia"))))
+        tipo = "RELIGIOSO" if religioso else "CIVIL"
+        cartorio = _limpo(v.get("cartorio"))
+        paroquia = _limpo(v.get("paroquia"))
+        if not paroquia and religioso and cartorio and any(
+                x in _sem_acento(cartorio) for x in ("PAROQU", "IGREJA", "MATRIZ")):
+            paroquia, cartorio = cartorio, ""
+        return {
+            "nomes": _nomes_da_certidao(v),
+            "tipo": tipo,
+            "cartorio": cartorio,
+            "paroquia": paroquia,
+            "livro": _limpo(v.get("livro")),
+            "folha": _limpo(v.get("folha")),
+            "termo": _limpo(v.get("termo")),
+            "onde": f"{d.get('arquivo') or ''} p{d.get('n') or ''}".strip(),
+        }
+    return {}
+
+
+def _situacao_do_conjuge(falecido: dict) -> str:
+    """Sobrevivente, salvo quando o falecido é viúvo. Só calcula."""
+    estado = _sem_acento(_limpo(falecido.get("estado_civil")))
+    if estado.startswith("VIUV"):
+        return "PRE_MORTO"
+    return "SOBREVIVENTE"
+
+
+def sugerir_conjuge_da_certidao(valores: dict, falecido: dict,
+                                documentos: list[dict],
+                                avisos: list[dict]) -> None:
+    """Preenche o cônjuge do óbito com a certidão, sem apagar o que já está.
+
+    Sugestão conferível: campo que a escrevente (ou a DO) já preencheu fica.
+    O nome do cônjuge é o da certidão que não é o do falecido. ALTERA `valores`
+    só nos campos vazios, e a lista de avisos.
+    """
+    cert = certidao_de_casamento_lida(documentos)
+    if not cert:
+        return
+    onde = cert.get("onde") or ""
+    nome_falecido = _limpo(falecido.get("nome"))
+    conjuge = ""
+    o_falecido_esta = False
+    for nome in cert.get("nomes") or []:
+        if nome_falecido and mesmo_nome(nome, nome_falecido) >= 0.75:
+            o_falecido_esta = True
+        elif not conjuge:
+            conjuge = nome
+    if cert.get("nomes") and nome_falecido and not o_falecido_esta:
+        _aviso(avisos, "CONFERIR",
+               "Há certidão de casamento no dossiê, mas o nome do falecido não "
+               "está nela — o cônjuge não foi preenchido. Confira se é deste "
+               "registro.", onde)
+        return
+    ja_tinha_nome = bool(_valor(valores.get("obito_conjuge_nome")))
+    sugestoes = {
+        "obito_conjuge_nome": _capitalizar(conjuge) if conjuge else "",
+        "obito_conjuge_situacao": _situacao_do_conjuge(falecido),
+        "obito_conjuge_cartorio": cert.get("cartorio") or "",
+        "obito_casamento_tipo": cert.get("tipo") or "",
+        "obito_casamento_paroquia": cert.get("paroquia") or "",
+        "obito_casamento_livro": cert.get("livro") or "",
+        "obito_casamento_folha": cert.get("folha") or "",
+        "obito_casamento_termo": cert.get("termo") or "",
+    }
+    entrou = []
+    for chave, valor in sugestoes.items():
+        if _valor(valor) and not _valor(valores.get(chave)):
+            valores[chave] = valor
+            entrou.append(chave)
+    if "obito_conjuge_nome" in entrou:
+        como = "religioso" if cert.get("tipo") == "RELIGIOSO" else "civil"
+        _aviso(avisos, "CONFERIR",
+               f"O cônjuge «{valores['obito_conjuge_nome']}» e o casamento {como} "
+               "foram sugeridos pela certidão de casamento. Confira com o "
+               "original — o que já estava digitado não foi trocado.", onde)
+    elif ja_tinha_nome:
+        _aviso(avisos, "CONFERIR",
+               "A certidão de casamento foi lida e o nome do cônjuge já estava "
+               "preenchido — ficou o que a escrevente digitou.", onde)
+
+
 def juntar_obito(documentos: list[dict]) -> dict:
     """O registro de óbito que os documentos permitem montar. SÓ CALCULA.
 
@@ -1261,6 +1382,7 @@ def juntar_obito(documentos: list[dict]) -> dict:
                + ") — o declarante fica para escolher na tela.")
     if not causas:
         _aviso(avisos, "CONFERIR", "A causa da morte não foi lida na DO.", onde)
+    sugerir_conjuge_da_certidao(valores, falecido, documentos, avisos)
     _conferir_numeros(avisos, v, onde, {"cartao_sus": "Cartão SUS do falecido"})
     _conferir_cpfs(avisos, pessoas)
     for p in pessoas:

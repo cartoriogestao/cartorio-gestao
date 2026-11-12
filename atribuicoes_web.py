@@ -5042,12 +5042,30 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # traço de quem assina não é erro aqui.
             try:
                 import rc_conferencia_dados as CONF
+                rid_conf = numero_digitado(
+                    valores_form.get("_rascunho_id")
+                    or valores_form.get("_rascunho_id_tela"))
                 with db.connect() as con_conf:
-                    teor_conf = _teor_com_quem_assina(
-                        con_conf, valores_form.get("teor") or "", especie)
+                    teor_digitado = _teor_com_quem_assina(
+                        con_conf, valores_form.get("teor") or "", especie) or ""
+                    leitura_conf = None
+                    if rid_conf and especie == "OBITO":
+                        try:
+                            import rc_leitura_documentos as LEIT
+                            leitura_conf = LEIT.leitura_do_rascunho(
+                                con_conf, int(rid_conf))
+                        except Exception:               # noqa: BLE001
+                            leitura_conf = None
+                teor_conf = CONF.teor_para_conferir(
+                    valores_form, teor_digitado, sv=sv())
                 dados_conf = CONF.dados_do_formulario(
                     {**valores_form, "teor": teor_conf or ""},
                     especie=especie, data_ato=data_iso)
+                if leitura_conf:
+                    cert_conf = LEIT.certidao_de_casamento_lida(
+                        leitura_conf.get("documentos") or [])
+                    if cert_conf:
+                        dados_conf["certidao_casamento"] = cert_conf
                 dados_conf["numero"] = termo_previsto
                 conferencia_dos_dados = CONF.conferir(dados_conf)
             except Exception:                           # noqa: BLE001

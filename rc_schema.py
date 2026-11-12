@@ -764,6 +764,17 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("rc_assentos", "obito_conjuge_nome", "TEXT"),       # IV
     ("rc_assentos", "obito_conjuge_situacao", "TEXT"),   # IV: SOBREVIVENTE | PRE_MORTO
     ("rc_assentos", "obito_conjuge_cartorio", "TEXT"),   # IV: o cartório do casamento
+    # O TIPO DO CASAMENTO DO FALECIDO — 12/11/2026. A certidão religiosa
+    # (paroquial) chegava no dossiê e o termo só sabia dizer «casamento
+    # registrado em». CIVIL ou RELIGIOSO; no religioso, a paróquia e o
+    # assento (livro, folha, termo). Texto livre, opcional, sem CHECK: o
+    # assento antigo fica nulo e a frase de antes não muda. As cinco colunas
+    # são TEXT no PostgreSQL e no SQLite.
+    ("rc_assentos", "obito_casamento_tipo", "TEXT"),
+    ("rc_assentos", "obito_casamento_paroquia", "TEXT"),
+    ("rc_assentos", "obito_casamento_livro", "TEXT"),
+    ("rc_assentos", "obito_casamento_folha", "TEXT"),
+    ("rc_assentos", "obito_casamento_termo", "TEXT"),
     ("rc_assentos", "obito_filhos", "TEXT"),             # VIII: um por linha, nome e idade
     ("rc_assentos", "obito_herdeiros_menores", "TEXT"),  # XI: SIM | NAO | vazio
     # CASAMENTO — art. 70 da Lei 6.015/1973; art. 284 do Código de Normas.

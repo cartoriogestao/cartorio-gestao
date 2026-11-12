@@ -221,6 +221,20 @@
         </select></label>
       <label>Cartório do casamento
         <input name="obito_conjuge_cartorio" value="{{ form.get('obito_conjuge_cartorio','') }}"></label>
+      <label>Tipo do casamento
+        <select name="obito_casamento_tipo">
+          <option value="">— não informado —</option>
+          <option value="CIVIL" {% if form.get('obito_casamento_tipo') == 'CIVIL' %}selected{% endif %}>civil</option>
+          <option value="RELIGIOSO" {% if form.get('obito_casamento_tipo') == 'RELIGIOSO' %}selected{% endif %}>religioso</option>
+        </select></label>
+      <label>Paróquia <small>(religioso)</small>
+        <input name="obito_casamento_paroquia" value="{{ form.get('obito_casamento_paroquia','') }}"></label>
+      <label>Livro do casamento religioso
+        <input name="obito_casamento_livro" value="{{ form.get('obito_casamento_livro','') }}"></label>
+      <label>Folha
+        <input name="obito_casamento_folha" value="{{ form.get('obito_casamento_folha','') }}"></label>
+      <label>Termo
+        <input name="obito_casamento_termo" value="{{ form.get('obito_casamento_termo','') }}"></label>
       <label>Herdeiros menores ou interditados <small>(CN art. 255, XI)</small>
         <select name="obito_herdeiros_menores">
           <option value="">— não perguntado —</option>

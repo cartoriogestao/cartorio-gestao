@@ -618,7 +618,10 @@
            data-se-valor="casad|vi[uú]v|divorc|separad">
         <p style="grid-column:1/-1"><small><strong>Cônjuge</strong> — se casado,
           o sobrevivente, mesmo separado ou divorciado; se viúvo, o pré-morto; e o
-          cartório do casamento (art. 80, 4º; CN art. 255, IV). Opcional.</small></p>
+          cartório do casamento (art. 80, 4º; CN art. 255, IV). Diga se o
+          casamento foi civil ou religioso; no religioso, a paróquia e o
+          assento. Opcional. O que a leitura sugerir não apaga o que já foi
+          digitado.</small></p>
         <label>Cônjuge
           <select name="obito_conjuge_situacao">
             <option value="SOBREVIVENTE" {% if form.get('obito_conjuge_situacao') != 'PRE_MORTO' %}selected{% endif %}>sobrevivente</option>
@@ -629,6 +632,24 @@
         <label style="grid-column:1/-1">Cartório onde o casamento foi registrado
           <input name="obito_conjuge_cartorio" placeholder="serventia, município/UF"
                  value="{{ form.get('obito_conjuge_cartorio','') }}"></label>
+        <div class="grid2" style="grid-column:1/-1"
+             data-se-campo="pessoa_estado_civil"
+             data-se-valor="casad|vi[uú]v|divorc|separad">
+          <label>Tipo do casamento
+            <select name="obito_casamento_tipo">
+              <option value="">— não informado —</option>
+              <option value="CIVIL" {% if form.get('obito_casamento_tipo') == 'CIVIL' %}selected{% endif %}>civil</option>
+              <option value="RELIGIOSO" {% if form.get('obito_casamento_tipo') == 'RELIGIOSO' %}selected{% endif %}>religioso</option>
+            </select></label>
+          <label>Paróquia <small>(casamento religioso)</small>
+            <input name="obito_casamento_paroquia" value="{{ form.get('obito_casamento_paroquia','') }}"></label>
+          <label>Livro do casamento religioso
+            <input name="obito_casamento_livro" value="{{ form.get('obito_casamento_livro','') }}"></label>
+          <label>Folha
+            <input name="obito_casamento_folha" value="{{ form.get('obito_casamento_folha','') }}"></label>
+          <label>Termo
+            <input name="obito_casamento_termo" value="{{ form.get('obito_casamento_termo','') }}"></label>
+        </div>
       </div>
       <label style="grid-column:1/-1">Testamento conhecido <small>(se houver — art. 80, 6º)</small>
         <input name="testamento" value="{{ form.get('testamento','') }}"

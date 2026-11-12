@@ -48,8 +48,8 @@
        dizer por quê — o carimbo que mente ao contrário. #}
     {% if stats.tarefas_fora_do_vocabulario %}
     <p class="fd-resto"><span class="fd-carimbo fd-a">Fora das vistas</span>
-      {{ conta(stats.tarefas_fora_do_vocabulario, 'processo tem', 'processos têm') }} uma situação que o sistema não conhece e não
-      {{ 'entra' if stats.tarefas_fora_do_vocabulario == 1 else 'entram' }} na conta acima — abra em <a href="{{ url_for('processos_lista') }}">Processos</a>, vista «Todos».</p>
+      {{ conta(stats.tarefas_fora_do_vocabulario, 'processo', 'processos') }}: a situação não é nenhuma das que o sistema conhece, e por isso não
+      {{ 'entra' if stats.tarefas_fora_do_vocabulario == 1 else 'entram' }} na conta acima. Ele não sabe se ainda {{ 'pede' if stats.tarefas_fora_do_vocabulario == 1 else 'pedem' }} alguma coisa — abra em <a href="{{ url_for('processos_lista') }}">Processos</a>, vista «Todos».</p>
     {% endif %}
   </section>
 

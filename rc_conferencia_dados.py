@@ -758,6 +758,27 @@ def dados_do_formulario(valores: dict, *, especie: str = "", data_ato: Any = Non
             "pessoas": pessoas}
 
 
+def avisos_do_termo_gerado(dados: dict, teor: str) -> list[dict]:
+    """Os avisos novos sobre o termo que o modelo escreveria. Só calcula.
+
+    Não passa pelas travas do termo digitado (marca de rascunho, DNV, hora):
+    a prévia ainda não tem a data do ato nem quem assina, e o traço dela não
+    é o texto que vai ao livro. Serve para o nome repetido e o cônjuge
+    ausente aparecerem antes da lavratura, quando o campo do teor está vazio.
+    """
+    teor_letras = _so_letras(teor)
+    if not teor_letras:
+        return []
+    por_papel: dict[str, list] = {}
+    for p in dados.get("pessoas") or []:
+        por_papel.setdefault(str(p.get("papel") or "").upper(), []).append(p)
+    saida = _avisos_de_nome_repetido(dados, por_papel, teor_letras)
+    fora = _aviso_de_conjuge_fora_do_termo(dados, teor_letras)
+    if fora:
+        saida.append(fora)
+    return saida
+
+
 def teor_para_conferir(valores: dict, teor_digitado: str = "", *,
                        sv: dict | None = None) -> str:
     """O texto que a conferência compara com a ficha. Só calcula.

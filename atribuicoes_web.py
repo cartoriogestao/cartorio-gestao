@@ -5056,10 +5056,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                 con_conf, int(rid_conf))
                         except Exception:               # noqa: BLE001
                             leitura_conf = None
-                teor_conf = CONF.teor_para_conferir(
-                    valores_form, teor_digitado, sv=sv())
                 dados_conf = CONF.dados_do_formulario(
-                    {**valores_form, "teor": teor_conf or ""},
+                    {**valores_form, "teor": teor_digitado or ""},
                     especie=especie, data_ato=data_iso)
                 if leitura_conf:
                     cert_conf = LEIT.certidao_de_casamento_lida(
@@ -5068,6 +5066,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         dados_conf["certidao_casamento"] = cert_conf
                 dados_conf["numero"] = termo_previsto
                 conferencia_dos_dados = CONF.conferir(dados_conf)
+                # Sem teor digitado, a lavratura escreve pelo modelo. As
+                # travas do texto (o traço de quem ainda não assina) não se
+                # aplicam a essa prévia; os avisos de nome repetido e de
+                # cônjuge ausente, sim.
+                if not (teor_digitado or "").strip():
+                    previa = CONF.teor_para_conferir(valores_form, "", sv=sv())
+                    conferencia_dos_dados += CONF.avisos_do_termo_gerado(
+                        dados_conf, previa)
             except Exception:                           # noqa: BLE001
                 # Conferir não pode derrubar a tela de conferência: a
                 # lavratura confere de novo, e lá ela recusa.

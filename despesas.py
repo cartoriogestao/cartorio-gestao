@@ -795,21 +795,28 @@ def _assinatura_do_destino(d: Mapping[str, Any], ambiente: str, dia: str) -> str
 
 def conferir_destino_antes_de_autorizar(d: Mapping[str, Any], dados: Mapping[str, Any] | None,
                                       *, por: str, agora: datetime, ambiente: str) -> str:
-    """Conferência humana na tela ANTES de enviar; não simula consulta DICT.
+    """Grava para quem vale esta autorização. Só calcula o JSON; quem grava é `autorizar`.
 
-    A API disponível do Inter não fornece identidade prévia da chave. Exige
-    identificação conferida no banco, fonte e ciência individual do ordenador.
-    Não herda o aceite posterior, regras automáticas ou a autorização em lote.
+    Pedido do oficial (13/11/2026): autorizar não pede nome, CPF nem fonte digitados
+    de novo. A autorização vale para o favorecido que a despesa já tem, e a
+    conferência de quem recebeu é na hora do pagamento, com esses dados
+    (`recebedor_diverge`, depois que o banco responde). Quem informa outro nome ou
+    outro documento continua precisando da autorização expressa da divergência.
     """
-    dados = dados or {}
+    dados = dict(dados or {})
     nome, documento = _texto(dados.get("nome"), 150), _texto(dados.get("documento"), 30)
     fonte = _texto(dados.get("evidencia"), 500)
-    if not por or dados.get("ciencia") is not True or not nome or len(digitos(documento)) not in (11, 14) or len(fonte) < 10:
-        raise DespesaError("Confira no banco o nome e CPF/CNPJ do destinatário e registre a fonte "
-                           "na ficha. A API não identifica o titular antes de enviar; "
-                           "a autorização exige sua confirmação individual.")
-    if cpf_cnpj.documento_valido(digitos(documento)) is not True:
-        raise DespesaError("O CPF/CNPJ conferido do destinatário não é válido. Confira no banco.")
+    if not (nome or documento or fonte):
+        nome = _texto(d.get("beneficiario_nome"), 150)
+        documento = _texto(d.get("beneficiario_documento"), 30)
+        fonte = "cadastro da despesa"
+        dados["ciencia"] = True
+    if not por or dados.get("ciencia") is not True or not nome or len(fonte) < 10:
+        raise DespesaError("A autorização usa o favorecido já cadastrado na despesa. "
+                           "Não há favorecido para autorizar.")
+    if documento and (len(digitos(documento)) not in (11, 14)
+                      or cpf_cnpj.documento_valido(digitos(documento)) is not True):
+        raise DespesaError("O CPF/CNPJ do favorecido não confere.")
     divergencia = recebedor_diverge(d, nome, documento)
     motivo = _texto(dados.get("motivo"), 500)
     if divergencia and (dados.get("autoriza_divergencia") is not True or len(motivo) < 10):

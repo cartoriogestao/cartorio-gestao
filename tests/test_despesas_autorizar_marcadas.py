@@ -1,4 +1,4 @@
-"""A lista orienta a conferência individual; lote antigo não contorna o destinatário."""
+"""A lista autoriza as marcadas com o favorecido que a despesa já tem."""
 from __future__ import annotations
 
 import re
@@ -52,24 +52,24 @@ def _revisoes(db, *ids):
         return {f'revisao_{i}': DF.revisao(DP.despesa(con, i)) for i in ids}
 
 
-def test_a_lista_mostra_o_que_se_confere_e_abre_autorizacao_individual(cg_casa_logada):
+def test_a_lista_mostra_o_que_se_confere_e_autoriza_as_marcadas(cg_casa_logada):
     _tetos_altos(cg_casa_logada["db"])
     i = _nova(cg_casa_logada["db"])
     html = cg_casa_logada["c"].get(LISTA).get_data(as_text=True)
     assert "Esperando a sua autorização (1)" in html
     assert "beatriz@example.com" in html and "1.935,32" in html
-    assert f'/administrativo/despesas/{i}' in html and 'Conferir destinatário e autorizar' in html
-    assert 'Autorizar as marcadas' not in html
+    assert f'value="{i}:193532"' in html and "Autorizar as marcadas" in html
+    assert "Nome apresentado pelo banco" not in html
 
 
-def test_lote_antigo_sem_conferencia_individual_nao_autoriza(cg_casa_logada):
+def test_as_marcadas_autorizam_com_o_favorecido_da_despesa(cg_casa_logada):
     _tetos_altos(cg_casa_logada["db"])
     db, c = cg_casa_logada["db"], cg_casa_logada["c"]
     a, b, fica = _nova(db), _nova(db, 200000), _nova(db, 300000)
     r = c.post(ROTA, data={"csrf_token": _token(c), **_revisoes(db, a, b), "marcada": [f"{a}:193532", f"{b}:200000"]},
                follow_redirects=True)
-    assert "confirmação individual" in r.get_data(as_text=True)
-    assert (_situacao(db, a), _situacao(db, b)) == (DP.AGUARDANDO, DP.AGUARDANDO)
+    assert "2 despesa(s) autorizada(s)" in r.get_data(as_text=True)
+    assert (_situacao(db, a), _situacao(db, b)) == (DP.AUTORIZADA, DP.AUTORIZADA)
     assert _situacao(db, fica) == DP.AGUARDANDO
 
 
@@ -81,7 +81,7 @@ def test_valor_que_mudou_depois_da_tela_nao_se_autoriza(cg_casa_logada):
                follow_redirects=True)
     assert "O valor mudou" in r.get_data(as_text=True)
     assert _situacao(db, i) == DP.AGUARDANDO
-    assert _situacao(db, outra) == DP.AGUARDANDO, "a outra também exige conferência individual"
+    assert _situacao(db, outra) == DP.AUTORIZADA
 
 
 def test_teto_e_divergencia_ficam_na_ficha(cg_casa_logada):

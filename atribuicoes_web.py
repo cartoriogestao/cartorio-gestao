@@ -12653,12 +12653,53 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             flash(r["frase"], r["cor"])
         return linhas
 
+    def _receber_pedidos_cenprot_no_clique() -> None:
+        """Pedido baixado e ainda sem título: cadastra e aponta. Não responde.
+
+        Uma pendência que recusa não desfaz as outras nem a remessa. O
+        protocolo fica na ficha; devolvê-lo à CENPROT continua sendo o
+        envio da pendência, que este clique não faz.
+        """
+        import protesto as PT
+        import protesto_remessa as PRM
+        import cenprot_pendencias as PEND
+
+        with db.connect() as con:
+            ids = PRM.pedidos_da_cenprot_sem_titulo(con)
+        feitos = []
+        for pid in ids:
+            try:
+                with db.transaction() as con:
+                    item = PRM.receber_pedido_da_cenprot(
+                        con, pid, agora=agora(), data_extenso=hoje_extenso(),
+                        sv=sv(), usuario=usuario_nome(),
+                        pasta_de_arquivos=pasta_dos_arquivos(),
+                        usuario_id=usuario_id_do_sistema())
+            except (PEND.PendenciaError, PT.ProtestoError) as erro:
+                flash(f"Pedido da CENPROT não entrou: {erro}", "warning")
+                continue
+            except Exception as erro:  # noqa: BLE001 — um pedido não derruba o clique
+                app.logger.exception("pedido da CENPROT não entrou")
+                flash(f"Pedido da CENPROT não entrou: {erro}", "danger")
+                continue
+            feitos.append(item)
+            audit("PROTESTO_TITULO_NOVO", "pt_titulos", item["titulo_id"],
+                  {"origem": "pedido da CENPROT no clique da remessa",
+                   "pendencia_id": pid, "anexos": item["anexos"],
+                   "apontado": True})
+        if feitos:
+            flash(f"Pedidos da CENPROT: {len(feitos)} título(s) recebidos e "
+                  f"apontados, no mesmo clique da remessa. O protocolo ainda "
+                  f"não foi enviado à Central — ele sai pela pendência de "
+                  f"cada um.", "success")
+
     def _trazer_pendencias_da_cenprot() -> list[dict]:
         """Anuências, ordens, cancelamentos e o resto da CENPROT, no mesmo clique.
 
-        Só baixa. Não decide e não envia resposta. A falha de uma espécie não
-        derruba a remessa nem as outras. A auditoria é a mesma da tela manual
-        (`cenprot_baixar`), com a marca de que veio deste clique.
+        A baixa não decide e não envia resposta. O pedido de protesto sem
+        título é recebido e apontado em seguida. A falha de uma espécie não
+        derruba a remessa nem as outras. A auditoria da baixa é a mesma da
+        tela manual (`cenprot_baixar`), com a marca de que veio deste clique.
         """
         import cenprot_pendencias as PEND
         try:
@@ -12670,6 +12711,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         except Exception as erro:  # noqa: BLE001 — o clique não cai por isto
             flash(f"Pendências da CENPROT não foram consultadas: {erro}",
                   "danger")
+            _receber_pedidos_cenprot_no_clique()
             return []
         falhas = [r for r in linhas if not r.get("ok")]
         mesmo_erro = {str(r.get("erro") or "") for r in falhas}
@@ -12697,6 +12739,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 audit("cenprot_baixar_falha", "cn_pendencias", None,
                       {**detalhe, "erro": str(r.get("erro") or "")[:300]})
             flash(r["frase"], r["cor"])
+        _receber_pedidos_cenprot_no_clique()
         return linhas
 
     @app.route("/protesto/remessas")
@@ -12756,8 +12799,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
 
         E, NO MESMO CLIQUE, AS PENDÊNCIAS DA CENPROT (05/11/2026): anuências,
         decisões judiciais, cancelamentos, certidões, pedidos de protesto e
-        renegociações. Só baixa — não aprova, não recusa e não envia. A falha
-        de uma espécie não derruba a remessa.
+        renegociações. A baixa não aprova, não recusa e não envia. O pedido
+        de protesto que ainda não é título entra no mesmo clique: cadastra e
+        aponta, como a remessa. Não sela e não devolve o protocolo à Central.
+        A falha de uma espécie não derruba a remessa.
         """
         import cra21_web as CRAW
         qual = (_campo("o_que") or "remessa").strip()

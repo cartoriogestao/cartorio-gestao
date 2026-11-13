@@ -933,3 +933,54 @@ def recusas(linha: dict) -> list[dict]:
         return json.loads(bruto) if bruto else []
     except (TypeError, ValueError):
         return []
+
+
+# ------------------------------------------------ pedido da CENPROT no clique
+
+
+def pedidos_da_cenprot_sem_titulo(con: sqlite3.Connection) -> list[int]:
+    """Pedidos de protesto já baixados que ainda não são título. Só LÊ.
+
+    A baixa da CENPROT, no mesmo clique da remessa, guarda a pendência e
+    para. Quem ainda não tem título entra aqui, para o clique recebê-lo
+    como a remessa recebe o dela.
+    """
+    import centrais_cred as CRED
+    import cn_schema as CN
+
+    linhas = banco(con).ler(
+        """SELECT id FROM cn_pendencias
+            WHERE especie = %s AND ambiente = %s AND titulo_id IS NULL
+              AND situacao = %s
+            ORDER BY id""",
+        (CN.PEDIDO_PROTESTO, CRED.PRODUCAO, CN.PENDENTE))
+    return [int(linha["id"]) for linha in linhas]
+
+
+def receber_pedido_da_cenprot(con: sqlite3.Connection, pendencia_id: int, *,
+                              agora: str, data_extenso: str, sv: dict,
+                              usuario: str | None = None,
+                              pasta_de_arquivos=None,
+                              usuario_id: int | None = None) -> dict:
+    """Cadastra o pedido e lança o apontamento. ESCREVE. Não fala com a Central.
+
+    O mesmo movimento da remessa da CRA: o título nasce e já sai apontado,
+    com protocolo e lugar no livro. Não sela, não cobra e não devolve o
+    protocolo à CENPROT — isso continua na pendência, olhado um a um.
+    Pedido parecido com título que já está na casa recusa, e a transação
+    de quem chamou desfaz o que este pedido tiver começado.
+    """
+    import cenprot_pendencias as PEND
+
+    entrada = PEND.cadastrar_titulo_do_pedido(
+        con, int(pendencia_id), agora=agora, usuario=usuario,
+        pasta_de_arquivos=pasta_de_arquivos, usuario_id=usuario_id)
+    lugar = PT.lancar_apontamento(
+        con, int(entrada["titulo_id"]), sv=sv, agora=agora,
+        data_extenso=data_extenso, usuario=usuario, origem="CENPROT")
+    titulo = banco(con).um(
+        "SELECT protocolo, numero_titulo FROM pt_titulos WHERE id=%s",
+        (int(entrada["titulo_id"]),))
+    return {**entrada, "lugar": lugar,
+            "protocolo": (titulo or {}).get("protocolo"),
+            "numero_titulo": (titulo or {}).get("numero_titulo")}

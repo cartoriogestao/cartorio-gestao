@@ -836,6 +836,49 @@ def test_o_xml_da_cenprot_le_cedente_e_sacador_do_pedido(s, cg_casa):
     assert endosso == "H" and sacador["nome"] == "SACADOR EXEMPLO LTDA"
 
 
+def test_o_clique_da_remessa_recebe_e_aponta_o_pedido_sem_responder(
+        s, cg_casa, monkeypatch):
+    """A baixa da CENPROT no clique da CRA cadastra e aponta. Não protocola."""
+    import cra21_web as CRAW
+    import cenprot_api as API
+    import cenprot_pendencias as PEND
+
+    pid = _pedido(s, cg_casa)
+    parecido = _pedido(s, cg_casa, numero=3600002)
+
+    def responder(*_a, **_k):
+        raise AssertionError("o clique respondeu à CENPROT")
+
+    monkeypatch.setattr(CRAW, "_trazer", lambda *a, **k: "")
+    monkeypatch.setattr(PEND, "trazer_com_a_cra", lambda *a, **k: [])
+    monkeypatch.setattr(PEND, "enviar", responder)
+    monkeypatch.setattr(API, "protocolar_pedidos", responder)
+    tela = s["c"].get("/protesto/remessas").get_data(as_text=True)
+    html = s["c"].post("/protesto/remessas/da-cra",
+                       data={"csrf_token": _token(tela), "o_que": "pendentes"},
+                       follow_redirects=True).get_data(as_text=True)
+    assert "1 título(s) recebidos e apontados" in html
+    assert "mesmo número e o mesmo devedor" in html
+    assert "não foi enviado à Central" in html
+    con = _con(s)
+    t = con.execute("SELECT * FROM pt_titulos WHERE origem_chave=?",
+                    ("CENPROT-PEDIDO:3600001",)).fetchone()
+    assert t is not None
+    assert t["situacao"] == "APONTADO" and t["protocolo"]
+    assert t["origem"] == "CENPROT"
+    ato = con.execute(
+        "SELECT tipo FROM pt_atos WHERE titulo_id=? AND tipo='APONTAMENTO'",
+        (t["id"],)).fetchone()
+    assert ato is not None
+    assert con.execute("SELECT titulo_id FROM cn_pendencias WHERE id=?",
+                       (pid,)).fetchone()[0] == t["id"]
+    assert con.execute("SELECT titulo_id FROM cn_pendencias WHERE id=?",
+                       (parecido,)).fetchone()[0] is None
+    assert con.execute(
+        "SELECT COUNT(*) FROM pt_titulos WHERE numero_titulo=?",
+        ("000777/1",)).fetchone()[0] == 1
+
+
 @pytest.mark.parametrize("custas", ["0", "0,00"])
 def test_a_anuencia_nao_se_responde_com_custa_zero(custas):
     """Decisão do oficial (05/11/2026): no Protesto não há gratuidade, e custa zero, para a Central, é

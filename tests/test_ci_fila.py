@@ -90,7 +90,7 @@ def test_main_andou_longe_do_pr_e_o_verde_entra_sem_refazer():
 
 
 def test_main_andou_no_que_o_pr_toca_e_o_teste_se_refaz():
-    assert F.decidir([pr(1, teste_vencido=True)], DONO) == [("atualizar", 1), ("disparar", 1)]
+    assert F.decidir([pr(1, teste_vencido=True)], DONO) == [("disparar", 1)]
 
 
 def test_teste_vencido_espera_a_suite_que_corre():

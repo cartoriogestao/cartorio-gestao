@@ -19,7 +19,7 @@ máquina com LibreOffice, como o servidor.
 | `ci/suite/rodar.sh` | idem, fora do contêiner | monta a imagem (só a partir do `main`) e roda o contêiner sem rede |
 | `ci/suite/Dockerfile`, `dentro_do_conteiner.sh` | dentro do contêiner | Python 3.12, PostgreSQL 18 descartável, LibreOffice, Chromium; roda o pytest |
 | `ci/suite/resumir.py` | executor, fora do contêiner | o comentário de falha: as falhas agrupadas pela causa (do `junit.xml`) e o primeiro erro, sem IA |
-| `.github/workflows/fila.yml` + `ci/fila.py` | executores do GitHub (grátis em repositório público) | a fila: mescla o verde cujo teste ainda vale, atualiza o próximo e pede a suíte; um por vez |
+| `.github/workflows/fila.yml` + `ci/fila.py` | executores do GitHub (grátis em repositório público) | a fila: mescla o verde cujo teste ainda vale e pede a suíte do próximo; um por vez |
 | `ci/suite/instalar_executor.sh` | uma vez, com `sudo` | cria o usuário `ci-runner`, a máquina virtual e os serviços |
 
 ## Segurança
@@ -61,7 +61,7 @@ enableOwnership`) exige conferir antes o acesso da reserva aos próprios arquivo
   instante e grava esse `main` no status `suite-main`; se depois o `main` mexeu em arquivo
   do PR ou em arquivo de base (`ARQUIVOS_DE_BASE` em `ci/fila.py`: requirements,
   `tests/conftest.py`, `banco_pg.py`, `bd_nativo.py`, `app.py`, `ci/suite/`), a fila
-  atualiza a branch e testa de novo. Com o `strict` ligado a fila também funciona, só que
+  pede a suíte de novo, sem mexer na branch (a suíte junta o PR com o `main` da hora). Com o `strict` ligado a fila também funciona, só que
   refaz a suíte de todo PR a cada merge;
 - nem administrador passa por cima.
 
@@ -110,3 +110,7 @@ e, se quiser, apague o usuário: `sudo sysadminctl -deleteUser ci-runner`.
   (`suite-main`), e a fila só refaz quando o `main` mexeu no que o PR toca. Também deixou de
   pedir suíte por cima da que esperava o executor (a nova cancelava a antiga): as rodadas
   se chamam `suite #N`, e a fila espera por elas.
+- 12/11/2026: o PR que a fila atualizava ficava verde e travado. O commit de junção sai em nome
+  do github-actions[bot], e o GitHub deixa o anti-leak de `pull_request` nele esperando aprovação
+  manual; a regra do `main` olha essa rodada parada (#408, #424). Com o teste vencido, a fila
+  agora só pede a suíte de novo: ela já junta o PR com o `main` atual, e a branch não muda.

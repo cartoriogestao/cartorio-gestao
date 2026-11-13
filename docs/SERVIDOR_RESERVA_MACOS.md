@@ -16,6 +16,7 @@
 | quem grava | o sistema, como sempre | **ninguém**: o sistema entra no banco com `cg_leitor`, que só tem SELECT |
 | arquivos | a pasta da casa (`archive_root`) e as pastas configuradas fora dela | cópia de 5 em 5 minutos, sem apagar nada (`sincronizar.sh`) |
 | segredos | `secret.key`, `cofre.key`, `*.cred` na pasta de dados | pacote cifrado **para a chave do Mac**, que chega pela réplica |
+| o programa | o número em `settings.sistema_versao`, gravado ao subir | a sincronia baixa a etiqueta `vX.Y.Z` no GitHub, depois do esquema |
 
 **Por que só lê.** Protocolo, selo, folha e ato saem de sequências do banco. Com os dois servidores
 lançando, o mesmo número sairia duas vezes, um em cada lado, e isso não tem conserto no livro.
@@ -28,6 +29,8 @@ mesmo idioma do banco. Windows e macOS não têm nem um nem outro em comum. A l�
 - **Esquema.** Uma versão nova pode criar tabela ou coluna. A sincronia roda o `reserva.py esquema`
   de 5 em 5 minutos. Sem isso, a réplica para na primeira linha que usa a coluna nova (ensaiado).
 - **Sequências.** O `assumir` acerta o próximo número de cada tabela pelo maior que já existe.
+- **O programa.** A réplica não leva o código. A sincronia baixa a etiqueta que o principal
+  gravou, e só quando o esquema dos dois lados já é o mesmo.
 
 **O que a reserva mostra.** Medido na casa de ensaio, com o perfil ADMIN: das 893 telas, 848 abrem.
 As outras gravam algum rastro ao abrir e mostram «abra-a no servidor principal», em vez do erro 500.
@@ -201,12 +204,17 @@ que falta. Abra `http://<IP do Mac>:8775`: a faixa vermelha diz «SERVIDOR RESER
 ## O dia a dia
 
 - **`sincronia.log`** (na pasta da instalação): a cada 5 minutos, as pastas, as chaves
-  (`chaves: em dia` ou `chaves: N arquivo(s) recebidos`) e uma linha terminando em `EM DIA` ou
+  (`chaves: em dia` ou `chaves: N arquivo(s) recebidos`), a versão (`versao: EM DIA`,
+  `ESPERA o esquema` ou `3.7.14 -> 3.7.17`) e uma linha terminando em `EM DIA` ou
   `ATRASADA`. Atrasada por mais de uma hora, veja o log do PostgreSQL da reserva
-  (`logs/postgres.log`).
-- **Versão nova:** atualize primeiro o principal, como sempre. O esquema chega à reserva sozinho em
-  até 5 minutos. Depois atualize o código do Mac (`git pull` e `instalar_reserva.sh`). O contrário,
-  código novo num esquema velho, pode quebrar telas da reserva.
+  (`logs/postgres.log`). `versao: falhou` é o código que não entrou, ou o serviço que não
+  reiniciou: a volta seguinte tenta de novo, e o que está no ar continua o anterior.
+- **Versão nova:** atualize primeiro o principal, como sempre. Ao subir, ele grava o número
+  em `settings`. O esquema chega à reserva sozinho em até 5 minutos, e a sincronia então
+  baixa essa etiqueta e troca o código. Não desce de versão. Código novo em esquema velho
+  não entra: a linha fica `ESPERA o esquema`. A primeira vez desta sincronia, no Mac, ainda
+  é à mão (`git pull` da mesma etiqueta e `instalar_reserva.sh`). Daí em diante, ela anda
+  sozinha. Correção sem etiqueta publicada no GitHub não viaja.
 - **Reserva desligada por dias:** passados os 20 GB, o principal descarta o log, e a réplica não
   retoma sozinha. Remonte com `reserva.py montar --refazer` (minutos).
 

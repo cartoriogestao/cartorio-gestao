@@ -4,8 +4,10 @@
 #      configuradas fora dela (`reserva.py pastas`);
 #   2. o esquema: tabela ou coluna nova de uma versão nova do principal entra antes das linhas
 #      (sem isto a réplica para na primeira linha que as usa);
-#      depois, os segredos da pasta de dados (`reserva.py chaves`: o pacote cifrado para este Mac);
-#   3. a situação da réplica, anotada em sincronia.log — o `situacao` sai 1 se atrasou.
+#   3. o programa: a etiqueta que o principal publicou, só com o esquema já igual
+#      (`reserva.py versao`);
+#   4. os segredos da pasta de dados (`reserva.py chaves`: o pacote cifrado para este Mac);
+#   5. a situação da réplica, anotada em sincronia.log — o `situacao` sai 1 se atrasou.
 # Depois de assumir (CG_MODO_RESERVA=0), não faz mais nada: não há de onde copiar.
 set -uo pipefail
 # A pasta da instalação: este script mora em <pasta>/sistema/installer/macos.
@@ -34,8 +36,9 @@ fi
 # 1b. as pastas configuradas FORA da pasta de arquivos (cada uma do seu compartilhamento)
 "$PY" "$FERRAMENTA" pastas >>"$LOG" 2>&1 || echo "$(agora) pastas: falhou" >>"$LOG"
 
-# 2. o esquema, as chaves (o pacote cifrado que o principal publica pela réplica) e 3. a situação
+# 2. o esquema, 3. a versão do programa, 4. as chaves e 5. a situação
 "$PY" "$FERRAMENTA" esquema --aplicar >>"$LOG" 2>&1 || echo "$(agora) esquema: falhou" >>"$LOG"
+"$PY" "$FERRAMENTA" versao >>"$LOG" 2>&1 || echo "$(agora) versao: falhou" >>"$LOG"
 "$PY" "$FERRAMENTA" chaves >>"$LOG" 2>&1 || echo "$(agora) chaves: falhou" >>"$LOG"
 echo "$(agora) $("$PY" "$FERRAMENTA" situacao 2>&1 | tr '\n' ' ')" >>"$LOG"
 # o log não cresce sem fim: fica com as últimas 5000 linhas

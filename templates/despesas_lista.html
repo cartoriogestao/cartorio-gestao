@@ -78,21 +78,22 @@
 
 {% if a_autorizar %}
 <section class="panel"><h2>Esperando a sua autorização ({{ a_autorizar|length }})</h2>
-  <p class="small">Abra a ficha para conferir destinatário, chave e valor antes de autorizar.
+  <p class="small">Favorecido, chave e valor estão nesta lista. Desmarque o que não for autorizar.
+    A conferência de quem recebeu é na hora do pagamento, com os dados da despesa.
     {% if cfg.despesas_pagamento_ligado == '1' %}Autorizada, a despesa é paga na próxima rodada da automação.{% endif %}</p>
   <form method="post" action="{{ url_for('despesas_autorizar_marcadas') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="table-wrap"><table>
       <thead><tr><th></th><th>Vencimento</th><th>Favorecido</th><th>Despesa</th><th>Pagar por</th><th>Valor</th><th></th></tr></thead>
       <tbody>{% for d in a_autorizar %}<tr>
-        <td><a href="{{ url_for('despesas_ficha', despesa_id=d.id) }}">Conferir destinatário e autorizar</a></td>
+        <td>{% if not d.pendencia %}<input type="checkbox" name="marcada" value="{{ d.id }}:{{ d.valor }}" checked aria-label="Autorizar a despesa {{ d.id }}"><input type="hidden" name="revisao_{{ d.id }}" value="{{ revisao_pagamento(d) }}">{% endif %}</td>
         <td>{{ d.vencimento }}</td><td>{{ d.beneficiario_nome }}</td><td>{{ d.descricao }}</td>
         <td>{{ formas[d.forma] if d.forma in formas else d.forma }}<br><code style="word-break:break-all">{{ d.codigo }}</code></td>
         <td>R$ {{ reais(d.valor) }}</td>
         <td>{% if d.pendencia %}<span class="badge alta">{{ d.pendencia }}</span> {% endif %}<a class="small" href="{{ url_for('despesas_ficha', despesa_id=d.id) }}">abrir</a></td>
       </tr>{% endfor %}</tbody>
     </table></div>
-    <p>A autorização é individual, com o destinatário conferido antes do envio ao banco. Divergências exigem autorização expressa na ficha.</p>
+    {% if a_autorizar|rejectattr('pendencia')|list %}<button type="submit">Autorizar as marcadas</button>{% endif %}
   </form>
 </section>
 {% endif %}

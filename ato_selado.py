@@ -66,6 +66,7 @@ from __future__ import annotations
 import nome_humano as NOMEHUM
 
 import logging
+import re
 import sqlite3
 from typing import Any
 
@@ -2845,6 +2846,27 @@ def registrar_selo_obtido_a_mao(con: sqlite3.Connection, numero: Any, *,
 # --------------------------------------------- o selo pedido ao aparelho
 
 
+_SUBITEM_DA_FAIXA_13_1 = re.compile(r"^13\.1\.\d+$")
+
+
+def dados_para_o_aparelho(dados: Any) -> Any:
+    """O que vai ao aparelho: o TJ conhece o item 13.1, e nao as faixas. So calcula.
+
+    As faixas 13.1.1 a 13.1.34 sao do CAIXA (cobram pelo valor do ato); o selo da
+    escritura com valor sai pelo item pai `13.1`, com o valor em `valorDeclarado`.
+    Medido (12/11/2026): os 21 selos de /selo/notas/ato-declarado/com-valor no
+    razao sao todos «Ato: 13.1», e o `13.1.8` foi recusado pelo TJ («Nao foi
+    encontrado um ato para o codigo informado»). So o envelope do aparelho troca
+    de codigo: a cobertura (item pago no protocolo) continua lendo o 13.1.N.
+    """
+    ato = dados.get("ato") if isinstance(dados, dict) else None
+    if (isinstance(ato, dict)
+            and _SUBITEM_DA_FAIXA_13_1.match(str(ato.get("codigo") or "").strip())):
+        dados = dict(dados)
+        dados["ato"] = {**ato, "codigo": "13.1"}
+    return dados
+
+
 def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
                referencia: Any, atribuicao: str, agora: str, cns: Any,
                usuario: str | None = None, tabela: str | None = None,
@@ -2940,7 +2962,8 @@ def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
                 # tentativa anda enquanto o SID só tiver selo cancelado.
                 tentativa = (1 if do_sid else proxima_tentativa(
                     con, cns=cns, atribuicao=atribuicao, referencia=referencia))
-                selos = CL.selar(con, pasta_de_dados, caminho, dados,
+                selos = CL.selar(con, pasta_de_dados, caminho,
+                                 dados_para_o_aparelho(dados),
                                  referencia=do_sid or referencia,
                                  atribuicao=atribuicao, tentativa=tentativa,
                                  agora=agora, cns=cns, usuario=usuario)

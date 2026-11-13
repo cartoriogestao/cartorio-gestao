@@ -13,6 +13,8 @@ que o macOS não tem. A lógica manda LINHAS, e linha não tem sistema operacion
 O QUE A RÉPLICA LÓGICA NÃO LEVA, e quem leva aqui:
     - o ESQUEMA (tabela e coluna novas de uma versão nova): `esquema`, que roda sozinho de
       tempos em tempos (o LaunchAgent da sincronia) e antes de cada atualização;
+    - o PROGRAMA: `versao` troca o código pela etiqueta que o principal publicou, e só
+      depois do esquema (código novo em esquema velho quebra tela);
     - as SEQUÊNCIAS (o próximo id de cada tabela): `assumir` acerta cada uma pelo maior id.
 
 COMANDOS
@@ -21,6 +23,7 @@ COMANDOS
     situacao           a réplica está em dia? (sai 1 se não estiver)
     conferir           conta as linhas de cada tabela nos dois lados
     esquema            acrescenta na reserva as tabelas e colunas novas do principal
+    versao             deixa o código na versão que o principal publicou
     assumir            a reserva vira o principal (o principal caiu e não volta hoje)
     emergencia         o botão: trava a escrita do principal se ele responder, desliga a
                        assinatura, despeja a reserva e promove (é o que o assumir.sh chama)
@@ -51,6 +54,7 @@ sys.path.insert(0, str(_RAIZ))
 import reserva_chaves as RCH  # noqa: E402
 import trava_producao as TRAVA  # noqa: E402
 import contingencia as CONT  # noqa: E402
+import reserva_versao as RV  # noqa: E402
 
 try:
     import psycopg
@@ -875,6 +879,28 @@ def _remontar(local: str, principal: str) -> None:
     print("assinatura cg_reserva recriada, sem copiar de novo as linhas já conferidas")
 
 
+
+def _versao_no_banco(c, schema: str) -> str:
+    c.execute(
+        S.SQL("SELECT value FROM {}.settings WHERE key = %s").format(S.Identifier(schema)),
+        (RV.CHAVE,))
+    linha = c.fetchone()
+    return str(linha[0] or "") if linha else ""
+
+
+def sincronizar_a_versao(principal: str, local: str, schema: str, sistema: Path) -> int:
+    """A pasta do programa fica na versão que o principal publicou. O esquema primeiro."""
+    with (_abrir(local) as banco_local, banco_local.cursor() as cl,
+          _abrir(principal) as banco_principal, banco_principal.cursor() as cp):
+        publicada = _versao_no_banco(cl, schema)
+        faltam, colunas = diferenca_de_esquema(_colunas(cp, schema), _colunas(cl, schema))
+    instalada = ""
+    arquivo = sistema / "VERSAO.txt"
+    if arquivo.is_file():
+        instalada = arquivo.read_text(encoding="utf-8").strip()
+    return RV.executar(sistema, publicada, instalada, not faltam and not colunas)
+
+
 # ------------------------------------------------------------------ linha de comando
 
 def main(argv: list[str] | None = None) -> int:
@@ -902,6 +928,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("conferir")
     p = sub.add_parser("esquema")
     p.add_argument("--aplicar", action="store_true")
+    sub.add_parser("versao", help="deixa o código na versão que o principal publicou")
     p = sub.add_parser("assumir")
     p.add_argument("--confirmo", default="")
     p.add_argument("--principal-vivo", action="store_true",
@@ -973,6 +1000,11 @@ def main(argv: list[str] | None = None) -> int:
         return conferir(principal, local, a.schema)
     if a.comando == "esquema":
         return esquema(principal, local, a.schema, a.aplicar)
+    if a.comando == "versao":
+        if os.name != "posix" or os.environ.get("CG_MODO_RESERVA") != "1":
+            print("versao: isto só roda no servidor reserva")
+            return 2
+        return sincronizar_a_versao(principal, local, a.schema, Path(__file__).resolve().parent.parent)
     return 2
 
 

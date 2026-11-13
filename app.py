@@ -4063,6 +4063,15 @@ def main():
             reserva_chaves.iniciar_vigia(db, Path(app.config["DATA_DIR"]))
     except Exception as exc:  # noqa: BLE001
         print(f"Pacote de chaves da reserva nao ligou: {exc}")
+    # A VERSÃO PARA A RESERVA (13/11/2026). O número vai em settings e a réplica o
+    # leva. A sincronia do Mac baixa essa etiqueta, e só depois do esquema: código
+    # novo em tabela que ainda não chegou quebra a tela.
+    try:
+        if not parado:
+            import reserva_versao
+            reserva_versao.publicar(db, VERSION)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Versao para a reserva nao foi publicada: {exc}")
     host = db.get_setting("network_host", "0.0.0.0") or "0.0.0.0"
     # Para a instalacao oficial em rede, 127.0.0.1 impediria os clientes.
     if "--service" in sys.argv and host in {"127.0.0.1", "localhost"}:

@@ -129,7 +129,8 @@ CHAVE_IA_LIGADA_POR = "ia_ligada_por"
 # O ATENDIMENTO DO ESCREVENTE (10/11/2026). Com "1", a IA responde pelo
 # conhecimento da casa (sistema, ofício e norma) e, quando o cliente quer o
 # serviço feito, abre `wa_pedido` para o escrevente. A conversa continua com
-# a IA. Vazio = o comportamento de 26/10 e 30/10 (texto-base e passagem).
+# a IA. Vazio = ainda não escolhido: ao subir, o servidor grava «1»
+# (pedido de 14/11/2026). «0» = desligado na tela. «1» = ligado.
 CHAVE_IA_ESCREVENTE = "ia_escrevente"
 CHAVE_AUDIO_LIGADO = "ia_audio_ligado"         # "1" = transcreve o audio
 CHAVE_IA_AVISO_PASSAGEM = "ia_aviso_passagem"  # "1" = avisa o cliente da passagem

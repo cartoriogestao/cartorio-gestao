@@ -399,6 +399,19 @@ def conferir_valores(con: Any, texto: str) -> list[str]:
     return erros
 
 
+def adotar_escrevente_se_vazio(con: Any) -> bool:
+    """A chave vazia nunca foi escolhida na tela. ESCREVE «1» uma vez.
+
+    «0» gravado pelo administrador continua desligado, e «1» fica como está.
+    Não mexe no texto-base nem no interruptor geral. Quem chama é a abertura
+    do servidor (14/11/2026): a IA passa a responder com o conhecimento da casa.
+    """
+    if _ler(con, WA.CHAVE_IA_ESCREVENTE) in ("0", "1"):
+        return False
+    BALCAO.gravar_config(con, WA.CHAVE_IA_ESCREVENTE, "1")
+    return True
+
+
 def gravar_configuracao(con: Any, form: dict, *, por: str, agora: str) -> list[str]:
     """Grava o que a tela do atendente mandou. ESCREVE. Devolve os avisos.
 
@@ -417,7 +430,9 @@ def gravar_configuracao(con: Any, form: dict, *, por: str, agora: str) -> list[s
         BALCAO.gravar_config(con, WA.CHAVE_IA_LIGADA_POR, por)
     BALCAO.gravar_config(con, WA.CHAVE_IA_LIGADA, "1" if ligar else "")
     escrevente = form.get("ia_escrevente") == "1"
-    BALCAO.gravar_config(con, WA.CHAVE_IA_ESCREVENTE, "1" if escrevente else "")
+    # «0» é desligado de propósito. Vazio fica para «ainda não escolhido»,
+    # e o servidor, ao subir, grava «1» (14/11/2026).
+    BALCAO.gravar_config(con, WA.CHAVE_IA_ESCREVENTE, "1" if escrevente else "0")
     BALCAO.gravar_config(con, WA.CHAVE_AUDIO_LIGADO,
                          "1" if form.get("audio_ligado") == "1" else "")
     BALCAO.gravar_config(con, WA.CHAVE_IA_AVISO_PASSAGEM,

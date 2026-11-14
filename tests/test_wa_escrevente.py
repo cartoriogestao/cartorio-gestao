@@ -201,3 +201,25 @@ def test_sem_texto_base_a_duvida_ainda_sobe_quando_o_escrevente_esta_ligado(casa
     _rodar(db, casa["pasta"], conversar=modelo, http_post=graph)
     assert len(modelo.chamadas) == 1
     assert "art. 12" in graph.enviados[0]["payload"]["text"]["body"]
+
+
+def test_a_chave_vazia_liga_o_escrevente_e_o_zero_fica_desligado(casa):
+    db = casa["db"]
+    _cfg(db)
+    with db.connect() as con:
+        assert AT.configuracao(con)["escrevente"] is False
+    with db.transaction() as con:
+        assert AT.adotar_escrevente_se_vazio(con) is True
+    with db.connect() as con:
+        assert AT.configuracao(con)["escrevente"] is True
+    with db.transaction() as con:
+        assert AT.adotar_escrevente_se_vazio(con) is False
+        AT.gravar_configuracao(
+            con, {"ia_ligada": "1", "provedor": "claude"},
+            por="MARIO EXEMPLO", agora=AGORA)
+    assert _um(db, "SELECT valor FROM wa_config WHERE chave=%s",
+               (SCH.CHAVE_IA_ESCREVENTE,))["valor"] == "0"
+    with db.connect() as con:
+        assert AT.configuracao(con)["escrevente"] is False
+    with db.transaction() as con:
+        assert AT.adotar_escrevente_se_vazio(con) is False

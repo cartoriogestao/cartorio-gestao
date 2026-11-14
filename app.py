@@ -4045,6 +4045,19 @@ def main():
     if not parado:   # reserva e contingência só leem: a fotografia é de quem grava
         ajuda.fotografar(db, app, versao=VERSION, agora=db.now())
 
+    # O ATENDIMENTO DO ESCREVENTE (14/11/2026): a chave vazia nunca foi
+    # escolhida na tela. O oficial pediu que a IA responda o cliente. Grava
+    # «1» uma vez. «0» gravado pelo administrador continua desligado.
+    # Aqui, e nao em create_app: a suite monta milhares de aplicacoes.
+    try:
+        if not parado:
+            import wa_atendente as _WA_AT
+            with db.transaction() as con:
+                if _WA_AT.adotar_escrevente_se_vazio(con):
+                    print("Atendimento do escrevente adotado (chave estava vazia).")
+    except Exception as exc:  # noqa: BLE001
+        print(f"Atendimento do escrevente nao foi adotado: {exc}")
+
     # O VIGIA DO WHATSAPP (29/10/2026): busca a caixa-postal de 20 em 20
     # segundos, baixa os arquivos, roda o atendente com IA e o aviso de fora do
     # horario (`wa_vigia`). Aqui, e nao em `create_app`, pela razao da

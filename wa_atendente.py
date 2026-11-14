@@ -1152,9 +1152,19 @@ def _resumo_interno(texto: str) -> bool:
     return any(t == " ".join(frase.split()).lower() for frase in RAZOES.values())
 
 
+def _sem_dado_pessoal(texto: str) -> str:
+    """O relato que o escrevente lê, com o CPF e o resto mascarados. Se a máscara
+    recusa o texto, volta vazio. Só calcula."""
+    try:
+        pacote = PRIV.preparar_saida(instrucao="", pergunta=texto)
+    except PRIV.PrivacidadeError:
+        return ""
+    return " ".join(str(pacote.pergunta or "").split())
+
+
 def assunto_do_cliente(con: Any, conversa: dict) -> str:
-    """O que a pessoa já contou neste atendimento, sem cortesia e sem o código
-    do protocolo. SÓ LÊ. O escrevente lê isto; o código não entra."""
+    """O que a pessoa já contou neste atendimento, sem cortesia, sem o código
+    do protocolo e sem dado pessoal. SÓ LÊ. O escrevente lê isto."""
     desde = int(conversa.get("atendimento_desde_id") or 0)
     linhas = banco(con).ler(
         """SELECT texto, tipo, transcricao FROM wa_mensagem
@@ -1168,7 +1178,9 @@ def assunto_do_cliente(con: Any, conversa: dict) -> str:
         t = " ".join(str(bruto or "").split()).strip()
         if not t or identificacao(t) or BALCAO.TEXTOS.tipo_de_cortesia(t):
             continue
-        partes.append(t)
+        limpo = _sem_dado_pessoal(t)
+        if limpo:
+            partes.append(limpo)
     return " | ".join(partes)[:1500]
 
 

@@ -125,7 +125,7 @@ def test_dado_pessoal_nao_sobe_e_o_pedido_nao_repete_o_cpf(casa, monkeypatch):
             or SCH.MODO_IA) == SCH.MODO_IA
 
 
-def test_quem_pede_pessoa_continua_com_a_ia(casa, monkeypatch):
+def test_quem_pede_pessoa_abre_pedido_e_a_conversa_fica_com_a_ia(casa, monkeypatch):
     db = casa["db"]
     _ligar(db)
     _fixar_conhecimento(monkeypatch)
@@ -134,8 +134,10 @@ def test_quem_pede_pessoa_continua_com_a_ia(casa, monkeypatch):
     graph = Graph()
     _rodar(db, casa["pasta"], conversar=modelo, http_post=graph)
     assert modelo.chamadas == []
-    assert "passo para o escrevente" in graph.enviados[0]["payload"]["text"]["body"]
-    assert _um(db, "SELECT count(*) AS n FROM wa_pedido WHERE conversa_id=%s", (cid,))["n"] == 0
+    corpo = graph.enviados[0]["payload"]["text"]["body"]
+    assert "Vou passar ao escrevente" in corpo
+    assert "Pode falar comigo" not in corpo
+    assert _um(db, "SELECT count(*) AS n FROM wa_pedido WHERE conversa_id=%s", (cid,))["n"] == 1
     assert (_um(db, "SELECT modo FROM wa_conversa WHERE id=%s", (cid,))["modo"]
             or SCH.MODO_IA) == SCH.MODO_IA
 
@@ -277,6 +279,13 @@ def test_a_resposta_do_modelo_fica_e_o_audio_sem_texto_pede_para_escrever():
     pedido = AT.completar_encaminhamento(audio, assunto="", ultimo="")
     assert "ouvir" in pedido["resposta"].lower()
     assert "Me diga o serviço" not in pedido["resposta"]
+
+
+def test_o_relato_do_escrevente_nao_leva_o_cpf():
+    limpo = AT._sem_dado_pessoal("meu CPF é 123.456.789-00, quero uma certidão")
+    assert "123.456.789-00" not in limpo
+    assert "certidão" in limpo
+    assert AT._sem_dado_pessoal("quero registrar o imóvel") == "quero registrar o imóvel"
 
 
 def test_falar_com_o_tabeliao_abre_pedido_da_gestao():

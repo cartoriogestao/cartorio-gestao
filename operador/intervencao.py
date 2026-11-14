@@ -11,6 +11,7 @@ módulo guarda.
     python operador/intervencao.py abrir "o pedido, nas palavras do oficial"
     python operador/intervencao.py guardar caminho/do/arquivo.py [...]
     python operador/intervencao.py nota "o que achei, o que decidi"
+    python operador/intervencao.py consulta "SELECT ..."          (só lê)
     python operador/intervencao.py sql mudanca.sql --tabelas users,settings --motivo "..."
     python operador/intervencao.py fechar --resumo "o que ficou feito"
     python operador/intervencao.py listar
@@ -23,6 +24,13 @@ O QUE CADA UMA GARANTE
       jeito — sem o diff, mas com o nome.
     - `guardar` copia o arquivo ANTES da edição. A guarda (`guarda.py`) chama
       sozinha a cada Edit/Write; para edição pelo shell, chama-se à mão.
+      Arquivo de FORA da pasta do sistema (o `.cmd` do serviço, o
+      `reserva.env`, um plist) também é guardado: é ato de informática, e o
+      relatório o lista à parte — sem entrar no patch nem na exportação.
+    - a guarda anota cada comando de shell (`comandos.jsonl`): o relatório os
+      traz, e o pedido que só rodou comando fica no diário do operador.
+    - `consulta` roda um SELECT em transação só de leitura. Não deixa
+      relatório: perguntar não é intervir.
     - `sql` faz `pg_dump` das tabelas ditas, roda o arquivo numa transação só
       (`psql -1`, para no primeiro erro) e guarda o SQL e a saída. RECUSA no
       servidor reserva (o banco dele é réplica: escrever ali quebra a réplica
@@ -48,6 +56,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -127,8 +136,69 @@ def servidor() -> str:
     return dito or ("reserva" if no_reserva() else "principal")
 
 
+def situacao() -> str:
+    """Em que pé está este servidor, em frase — vai no contexto do operador."""
+    if no_reserva():
+        return "reserva: o banco é réplica e só lê"
+    if servidor() == "reserva":
+        return "reserva que ASSUMIU: é o principal agora, e grava no banco"
+    return "principal"
+
+
 def _agora() -> str:
     return datetime.now().isoformat(timespec="seconds")  # noqa: DTZ005
+
+
+# ------------------------------------------------------------------ o ambiente
+
+#: O que vem dos arquivos de ambiente da casa: o banco e a pasta de dados.
+_PREFIXOS_DO_AMBIENTE = ("CG_", "CARTORIO_GESTAO_", "PG")
+
+
+def ler_ambiente(caminho: Any) -> dict[str, str]:
+    """As linhas NOME=valor de um arquivo de ambiente da casa: o `reserva.env`
+    do macOS (`NOME=valor`) ou o `.cmd` do serviço no Windows (`set NOME=valor`
+    ou `set "NOME=valor"`). O que não é atribuição é ignorado."""
+    dados: dict[str, str] = {}
+    try:
+        linhas = Path(caminho).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return dados
+    for linha in linhas:
+        resto = re.sub(r"(?i)^\s*(set|export)\s+", "", linha.strip())
+        if len(resto) >= 2 and resto[0] == resto[-1] == '"' and "=" in resto:
+            resto = resto[1:-1]                      # set "NOME=valor"
+        nome, igual, valor = resto.partition("=")
+        nome = nome.strip()
+        if not igual or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", nome):
+            continue
+        valor = valor.strip()
+        if len(valor) >= 2 and valor[0] == valor[-1] and valor[0] in "\"'":
+            valor = valor[1:-1]
+        if os.name == "nt":
+            valor = os.path.expandvars(valor)        # %PROGRAMDATA% e afins
+        dados[nome] = valor
+    return dados
+
+
+def carregar_ambiente() -> list[str]:
+    """Relê os arquivos de `OPERADOR_AMBIENTE` e põe NESTE processo o banco e
+    a pasta de dados que eles dizem AGORA. Devolve o que mudou.
+
+    POR QUE RELER: o `emergencia.sh` troca o `reserva.env` quando o reserva
+    assume (`CG_MODO_RESERVA=0`, usuário que grava) e só reinicia o servidor.
+    A ponte e a sessão do operador nasceram antes e ficariam com o ambiente
+    de réplica — recusando gravar justamente na emergência. O arquivo é quem
+    manda; o que o processo herdou é só o retrato de quando ele nasceu."""
+    mudou = []
+    for caminho in (os.environ.get("OPERADOR_AMBIENTE") or "").split(os.pathsep):
+        if not caminho.strip():
+            continue
+        for nome, valor in ler_ambiente(caminho.strip()).items():
+            if nome.startswith(_PREFIXOS_DO_AMBIENTE) and os.environ.get(nome) != valor:
+                os.environ[nome] = valor
+                mudou.append(nome)
+    return mudou
 
 
 # ------------------------------------------------------------- a confirmação
@@ -232,8 +302,10 @@ def _versao(raiz: Path) -> str:
         return ""
 
 
-def abrir(pedido: str, *, automatica: bool = False) -> Path:
-    """Abre uma intervenção. Com outra aberta, devolve a que já está."""
+def abrir(pedido: str, *, automatica: bool = False, porta: str = "",
+          sessao: str = "") -> Path:
+    """Abre uma intervenção. Com outra aberta, devolve a que já está. `porta`
+    é por onde o pedido chegou (telegram, sistema, app)."""
     aberta = atual()
     if aberta:
         return aberta
@@ -251,7 +323,8 @@ def abrir(pedido: str, *, automatica: bool = False) -> Path:
         "id": pasta.name, "servidor": servidor(), "versao": _versao(raiz),
         "raiz": str(raiz), "aberta_em": _agora(), "fechada_em": None,
         "pedido": (pedido or "").strip(), "automatica": bool(automatica),
-        "notas": [], "guardados": [], "sql": [], "resumo": "",
+        "porta": str(porta or ""), "sessao": str(sessao or ""),
+        "notas": [], "guardados": [], "de_fora": [], "sql": [], "resumo": "",
         "auditoria": "", "exportada_em": None,
     })
     _arquivo_da_atual().write_text(pasta.name, encoding="utf-8")
@@ -269,12 +342,53 @@ def _relativo(caminho: Any, raiz: Path) -> str | None:
         return None
 
 
+def _pastas_de_rascunho() -> list[Path]:
+    """Onde o operador escreve o que é DELE (o SQL do pedido, a memória, o
+    arquivo que vai devolver) ou o que é passageiro. Mudança ali não é ato de
+    informática e não vai para o relatório."""
+    pastas = [base(), Path(tempfile.gettempdir()), Path.home() / ".claude"]
+    pastas += [Path(p) for p in ("/tmp", "/private/tmp", "/var/folders",
+                                 "/private/var/folders") if os.name != "nt"]
+    resolvidas = []
+    for pasta in pastas:
+        try:
+            resolvidas.append(pasta.resolve())
+        except OSError:
+            continue
+    return resolvidas
+
+
+def _de_fora(caminho: Any, raiz: Path) -> Path | None:
+    """O caminho inteiro de um arquivo de FORA do sistema cuja mudança
+    interessa ao relatório (configuração, serviço), ou None."""
+    alvo = Path(caminho)
+    if not alvo.is_absolute():
+        alvo = Path.cwd() / alvo
+    try:
+        alvo = alvo.resolve()
+    except OSError:
+        return None
+    for pasta in [raiz, *_pastas_de_rascunho()]:
+        try:
+            alvo.relative_to(pasta)
+            return None
+        except ValueError:
+            continue
+    return alvo
+
+
 def guardar(caminhos: list[Any], *, pedido: str = "") -> list[str]:
     """Copia cada arquivo, como está AGORA, para `antes/`. Uma vez só por
-    intervenção: a segunda chamada não troca o original pela versão do meio."""
+    intervenção: a segunda chamada não troca o original pela versão do meio.
+
+    O arquivo do sistema vai para `antes/<caminho relativo>` e entra no patch.
+    O de FORA do sistema (o `.cmd` do serviço, o `reserva.env`, um plist) vai
+    para `antes/_fora/` e é listado à parte: não é código da casa, não entra
+    no patch e não é exportado — pode trazer endereço de banco."""
     raiz = raiz_do_sistema()
     relativos = [r for r in (_relativo(c, raiz) for c in caminhos) if r]
-    if not relativos:
+    de_fora = [f for f in (_de_fora(c, raiz) for c in caminhos) if f]
+    if not relativos and not de_fora:
         return []
     pasta = abrir(pedido or "Aberta sozinha pela guarda, na primeira edição.",
                   automatica=True)
@@ -292,9 +406,67 @@ def guardar(caminhos: list[Any], *, pedido: str = "") -> list[str]:
         else:
             dados["guardados"].append({"arquivo": rel, "existia": False})
         feitos.append(rel)
+    lista_de_fora = dados.setdefault("de_fora", [])
+    for alvo in de_fora:
+        if any(g["caminho"] == str(alvo) for g in lista_de_fora):
+            continue
+        registro = {"caminho": str(alvo), "existia": alvo.is_file(), "copia": "",
+                    "antes": _retrato(alvo)}
+        if registro["existia"] and registro["antes"]["bytes"] <= _TAMANHO_MAXIMO:
+            copia = pasta / "antes" / "_fora" / f"{len(lista_de_fora) + 1:03d}_{alvo.name}"
+            copia.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.copyfile(alvo, copia)
+                registro["copia"] = copia.relative_to(pasta).as_posix()
+            except OSError:
+                registro["copia"] = ""
+        lista_de_fora.append(registro)
+        feitos.append(str(alvo))
     if feitos:
         _gravar(pasta, dados)
     return feitos
+
+
+def _retrato(arquivo: Path) -> dict:
+    """O tamanho e o SHA-256 de um arquivo, para saber depois se mudou sem
+    precisar guardar a cópia dele (o arquivo grande de fora do sistema)."""
+    try:
+        if not arquivo.is_file():
+            return {"bytes": 0, "sha": ""}
+        tamanho = arquivo.stat().st_size
+        resumo = hashlib.sha256()
+        with arquivo.open("rb") as aberto:
+            for pedaco in iter(lambda: aberto.read(1024 * 1024), b""):
+                resumo.update(pedaco)
+        return {"bytes": tamanho, "sha": resumo.hexdigest()}
+    except OSError:
+        return {"bytes": 0, "sha": ""}
+
+
+def registrar_comando(ferramenta: str, comando: str, barrado: str = "") -> None:
+    """Uma linha em `comandos.jsonl` da intervenção aberta (abre uma, se não
+    houver). Chamado pela guarda a cada comando de shell: é o que faz o ato de
+    informática — reiniciar serviço, mexer em tarefa — ficar registrado."""
+    pasta = abrir("Aberta sozinha pela guarda, num comando.", automatica=True)
+    linha = {"quando": _agora(), "ferramenta": str(ferramenta or ""),
+             "comando": str(comando or "")[:4000], "barrado": str(barrado or "")[:200]}
+    with (pasta / "comandos.jsonl").open("a", encoding="utf-8") as arquivo:
+        arquivo.write(json.dumps(linha, ensure_ascii=False) + "\n")
+
+
+def comandos(pasta: Path) -> list[dict]:
+    """Os comandos anotados numa intervenção, na ordem."""
+    lidos = []
+    try:
+        linhas = (pasta / "comandos.jsonl").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return lidos
+    for linha in linhas:
+        try:
+            lidos.append(json.loads(linha))
+        except ValueError:
+            continue
+    return lidos
 
 
 def nota(texto: str) -> None:
@@ -327,6 +499,42 @@ def _dsn_e_schema() -> tuple[str, str]:
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", schema):
         raise Recusa(f"CG_PG_SCHEMA estranho: «{schema}».")
     return dsn, schema
+
+
+def consultar(sql: str = "", *, arquivo: Any = None, limite: int = 30000,
+              rodar=subprocess.run) -> tuple[int, str]:
+    """Um SELECT, em transação SÓ DE LEITURA, no schema da casa. Devolve
+    (código de saída, texto). Não abre intervenção nem deixa relatório.
+
+    É a forma de ler nos dois sistemas operacionais sem montar o `psql` à mão
+    (no Windows ele nem está no PATH), e a leitura que não tem como gravar por
+    engano: o texto com verbo de escrita é recusado antes, e o banco recusa
+    depois (`default_transaction_read_only`)."""
+    if arquivo:
+        origem = Path(arquivo)
+        if not origem.is_file():
+            raise Recusa(f"Não achei o arquivo de SQL: {arquivo}")
+        sql = origem.read_text(encoding="utf-8")
+    if not sql.strip():
+        raise Recusa("Diga a consulta: consulta \"SELECT ...\" ou --arquivo.")
+    sem_textos = re.sub(r"'(?:[^']|'')*'", "''", sql)
+    if _RE_ESCRITA.search(sem_textos):
+        raise Recusa("A consulta é só de leitura. Para gravar, use `sql` com "
+                     "--tabelas e --motivo: ele copia as tabelas antes.")
+    dsn, schema = _dsn_e_schema()
+    ambiente = dict(os.environ)
+    ambiente["PGOPTIONS"] = (f"-c search_path={schema},public "
+                             "-c default_transaction_read_only=on "
+                             "-c statement_timeout=120000")
+    comando = [_binario("psql"), "-d", dsn, "-X", "-v", "ON_ERROR_STOP=1",
+               "-P", "pager=off"]
+    comando += ["-f", str(arquivo)] if arquivo else ["-c", sql]
+    feito = rodar(comando, capture_output=True, text=True, env=ambiente)
+    saida = (feito.stdout or "") + (("\n" + feito.stderr) if feito.stderr else "")
+    if len(saida) > limite:
+        saida = (saida[:limite] + f"\n[... cortado em {limite} caracteres: "
+                 "restrinja a consulta (WHERE, LIMIT, menos colunas)]")
+    return feito.returncode, saida
 
 
 def executar_sql(arquivo: Any, tabelas: list[str], motivo: str, *,
@@ -368,7 +576,8 @@ def executar_sql(arquivo: Any, tabelas: list[str], motivo: str, *,
     registro = {"numero": numero, "quando": _agora(), "motivo": motivo.strip(),
                 "tabelas": tabelas, "arquivo": f"banco/{numero:02d}.sql",
                 "copia": "", "saida": f"banco/{numero:02d}.saida.txt",
-                "codigo_de_saida": None, "sem_volta": perigo or ""}
+                "codigo_de_saida": None, "sem_volta": perigo or "",
+                "escreve": escreve}
     if escreve:
         copia = banco / f"{numero:02d}-antes.dump"
         comando = [_binario("pg_dump"), "-Fc", "-d", dsn, "-f", str(copia)]
@@ -442,6 +651,40 @@ def _mudancas(pasta: Path, dados: dict, raiz: Path) -> tuple[str, list[dict]]:
     return "".join(patch), lista
 
 
+def _mudancas_de_fora(pasta: Path, dados: dict) -> tuple[str, list[dict]]:
+    """O que mudou nos arquivos de FORA do sistema que a guarda guardou: o
+    diff (só deste servidor) e a lista para o relatório."""
+    diff: list[str] = []
+    lista: list[dict] = []
+    for registro in dados.get("de_fora") or []:
+        agora = Path(registro["caminho"])
+        depois = _retrato(agora)
+        if depois == (registro.get("antes") or {"bytes": 0, "sha": ""}):
+            continue
+        situacao = ("criado" if not registro["existia"]
+                    else "apagado" if not agora.is_file() else "alterado")
+        lista.append({"caminho": registro["caminho"], "situacao": situacao,
+                      "copia": registro.get("copia") or ""})
+        # o diff só do que é texto e pequeno: o PDF criado numa pasta da casa
+        # entra na lista, e não despeja bytes no relatório
+        original = pasta / registro["copia"] if registro.get("copia") else None
+        if (registro["existia"] and not original) or depois["bytes"] > _TAMANHO_MAXIMO:
+            continue
+        try:
+            bruto = (original.read_bytes() if original else b"") + \
+                (agora.read_bytes() if agora.is_file() else b"")
+        except OSError:
+            continue
+        if b"\0" in bruto:
+            continue
+        diff.extend(difflib.unified_diff(
+            _linhas(original) if original else [], _linhas(agora) if agora.is_file() else [],
+            "antes: " + registro["caminho"], "depois: " + registro["caminho"]))
+        if diff and not diff[-1].endswith("\n"):
+            diff.append("\n")
+    return "".join(diff), lista
+
+
 def _um(db, sql: str, parametros: tuple):
     """Uma linha do banco da casa, pela ponte do sistema."""
     from bd_nativo import banco
@@ -482,7 +725,7 @@ def _auditar(dados: dict, mudancas: list[dict]) -> str:
         return f"não gravada: {type(erro).__name__}: {erro}"[:300]
 
 
-def _relatorio(dados: dict, mudancas: list[dict]) -> str:
+def _relatorio(dados: dict, mudancas: list[dict], feitos: list[dict] | None = None) -> str:
     partes = [
         f"# Intervenção {dados['id']} — servidor {dados['servidor']}", "",
         f"- Versão do sistema: {dados['versao'] or 'não lida'}",
@@ -506,6 +749,13 @@ def _relatorio(dados: dict, mudancas: list[dict]) -> str:
         partes += ["", "O diff está em `codigo.patch` (aplica com `git apply`)."]
     else:
         partes.append("Nenhum arquivo do sistema mudou.")
+    de_fora = dados.get("de_fora_mudou") or []
+    if de_fora:
+        partes += ["", "## Fora da pasta do sistema", ""]
+        partes += [f"- `{f['caminho']}` ({f['situacao']})" for f in de_fora]
+        partes += ["", "Não é código da casa: não entra no patch nem vai para o "
+                   "repositório. O antes está em `antes/_fora/` e o diff em "
+                   "`fora_do_sistema.diff`, só neste servidor."]
     partes += ["", "## Banco de dados", ""]
     if dados["sql"]:
         for s in dados["sql"]:
@@ -528,6 +778,14 @@ def _relatorio(dados: dict, mudancas: list[dict]) -> str:
             partes.append("")
     else:
         partes.append("Nenhum SQL rodou por esta ferramenta.")
+    if feitos:
+        partes += ["", f"## Comandos de shell ({len(feitos)})", ""]
+        for feito in feitos[:150]:
+            marca = " — **barrado pela guarda**" if feito.get("barrado") else ""
+            linha = " ".join(str(feito.get("comando") or "").split())[:200]
+            partes.append(f"- `{linha}`{marca}")
+        if len(feitos) > 150:
+            partes.append(f"- … e mais {len(feitos) - 150}, em `comandos.jsonl`.")
     partes += [
         "", "## Para o revisor", "",
         "1. Aplicar `codigo.patch` num ramo novo a partir do `main`, com os "
@@ -542,28 +800,44 @@ def _relatorio(dados: dict, mudancas: list[dict]) -> str:
     return "\n".join(partes)
 
 
-def fechar(resumo: str = "") -> dict | None:
-    """Fecha a intervenção aberta. Sem nenhuma aberta, devolve None. A que não
-    mudou nada (nem código, nem SQL, nem nota) é descartada, sem relatório."""
+def fechar(resumo: str = "", detalhes: dict | None = None) -> dict | None:
+    """Fecha a intervenção aberta. Sem nenhuma aberta, devolve None.
+
+    A que não mudou nada — nem código, nem arquivo de fora, nem SQL que grava,
+    nem nota — é descartada, sem relatório: perguntar e consultar não é
+    intervir. Os comandos de shell dela não se perdem: voltam em
+    `detalhes["comandos"]`, e quem chamou os leva ao diário do operador."""
     pasta = atual()
     if not pasta:
         return None
     dados = _ler(pasta)
     raiz = raiz_do_sistema()
     patch, mudancas = _mudancas(pasta, dados, raiz)
+    diff_de_fora, de_fora = _mudancas_de_fora(pasta, dados)
+    feitos = comandos(pasta)
+    gravou = [s for s in dados["sql"] if s.get("escreve", bool(s.get("copia")))]
+    if isinstance(detalhes, dict):
+        detalhes.update({"id": pasta.name, "comandos": feitos,
+                         "pedido": dados.get("pedido") or "",
+                         "porta": dados.get("porta") or ""})
     try:
         _arquivo_da_atual().unlink()
     except OSError:
         pass
-    if not mudancas and not dados["sql"] and not dados["notas"]:
+    if not mudancas and not de_fora and not gravou and not dados["notas"]:
         shutil.rmtree(pasta, ignore_errors=True)
         return None
     dados["resumo"] = (resumo or dados["resumo"] or "").strip()
     dados["fechada_em"] = _agora()
     dados["mudancas"] = mudancas
+    dados["de_fora_mudou"] = de_fora
+    dados["comandos"] = len(feitos)
     dados["auditoria"] = _auditar(dados, mudancas)
     (pasta / "codigo.patch").write_text(patch, encoding="utf-8", newline="")
-    (pasta / "RELATORIO.md").write_text(_relatorio(dados, mudancas),
+    if diff_de_fora:
+        (pasta / "fora_do_sistema.diff").write_text(diff_de_fora, encoding="utf-8",
+                                                    newline="")
+    (pasta / "RELATORIO.md").write_text(_relatorio(dados, mudancas, feitos),
                                         encoding="utf-8", newline="\n")
     _gravar(pasta, dados)
     return dados
@@ -698,20 +972,30 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("abrir").add_argument("pedido")
     sub.add_parser("guardar").add_argument("arquivos", nargs="+")
     sub.add_parser("nota").add_argument("texto")
+    co = sub.add_parser("consulta")
+    co.add_argument("texto", nargs="?", default="")
+    co.add_argument("--arquivo", default="")
     sq = sub.add_parser("sql")
     sq.add_argument("arquivo")
     sq.add_argument("--tabelas", default="")
     sq.add_argument("--motivo", default="")
-    sub.add_parser("fechar").add_argument("--resumo", default="")
+    fe = sub.add_parser("fechar")
+    fe.add_argument("--resumo", default="")
+    fe.add_argument("--resumo-arquivo", default="")
     sub.add_parser("listar")
     ex = sub.add_parser("exportar")
     ex.add_argument("--pasta", required=True)
     ex.add_argument("--enviar", action="store_true")
     sub.add_parser("criar-conta").add_argument("--responsavel", required=True)
     a = ap.parse_args(argv)
+    carregar_ambiente()
     try:
         if a.comando == "abrir":
             print(f"Intervenção {abrir(a.pedido).name} aberta.")
+        elif a.comando == "consulta":
+            codigo, saida = consultar(a.texto, arquivo=a.arquivo or None)
+            print(saida)
+            return 0 if codigo == 0 else 1
         elif a.comando == "guardar":
             feitos = guardar(a.arquivos)
             print("Guardado: " + (", ".join(feitos) or "nada novo (já estava, ou é de fora do sistema)"))
@@ -724,7 +1008,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[código de saída {r['codigo_de_saida']}; cópia de antes: {r['copia'] or 'não houve'}]")
             return 0 if r["codigo_de_saida"] == 0 else 1
         elif a.comando == "fechar":
-            dados = fechar(a.resumo)
+            resumo = a.resumo
+            if a.resumo_arquivo:
+                resumo = Path(a.resumo_arquivo).read_text(encoding="utf-8")
+            dados = fechar(resumo)
             print(f"Intervenção {dados['id']} fechada: {len(dados['mudancas'])} arquivo(s), "
                   f"{len(dados['sql'])} SQL. Auditoria: {dados['auditoria']}."
                   if dados else "Nada aberto, ou nada mudou: sem relatório.")

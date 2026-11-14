@@ -1,0 +1,206 @@
+{% extends 'base.html' %}
+{% block title %}Superusuário{% endblock %}
+{% block heading %}<h1>Superusuário</h1>{% endblock %}
+{% block content %}
+{#
+  A PORTA DE DENTRO DO SISTEMA (12/11/2026) — o mesmo superusuário do Telegram
+  e do app do Claude. Esta tela não roda nada: deixa o pedido na bandeja, de
+  onde a ponte o colhe, e mostra o diário, que é um só para todas as portas.
+  Nada aqui grava no banco; por isso ela vale também no servidor reserva.
+  As regras estão em `operador_web.py` e em `docs/SUPERUSUARIO.md`.
+#}
+
+{% if acesso == 'sem_conta' %}
+<section class="panel">
+  <h2>Ainda não há superusuário neste banco</h2>
+  <p>O superusuário é o operador de IA que só o oficial aciona. Ele precisa de uma conta
+    própria, de robô, com um responsável. No servidor principal, rode:</p>
+  <p><code>python operador\intervencao.py criar-conta --responsavel &lt;seu login&gt;</code></p>
+  <p class="muted" style="margin-bottom:0">Depois disso, esta tela passa a atender só o
+    responsável. O roteiro inteiro está em <code>docs/SUPERUSUARIO.md</code>.</p>
+</section>
+
+{% elif trancada %}
+<section class="panel">
+  <h2>Diga a frase</h2>
+  <form method="post" action="{{ url_for('superusuario_abrir') }}" class="stack" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>A frase do superusuário
+      <input type="password" name="frase" autocomplete="off" autofocus required></label>
+    <div class="actions"><button class="button primary">Abrir</button></div>
+  </form>
+  <p class="muted" style="margin-bottom:0">É a mesma frase do Telegram. Cinco erros seguidos
+    trancam as duas portas por quinze minutos.</p>
+</section>
+
+{% else %}
+{% set rodando = estado.rodando %}
+<div class="notice" style="margin:0 0 12px" id="superusuario-estado"
+     data-andamento="{{ url_for('superusuario_andamento') }}"
+     data-ultima="{{ entradas[0].quando if entradas else '' }}"
+     data-rodando="{{ rodando.numero if rodando else '' }}">
+  {% if not estado.viva %}
+    <strong>A ponte não está no ar neste servidor.</strong> O pedido fica na bandeja até ela
+    voltar. Para ligá-la, veja <code>docs/SUPERUSUARIO.md</code>.
+  {% elif rodando %}
+    <strong>Trabalhando</strong> em «{{ rodando.texto[:120] }}» —
+    <span id="superusuario-agora">{{ rodando.andamento }}</span>
+    <small class="muted">({{ rodando.passos }} passos; pedido pelo {{ 'Telegram' if rodando.porta == 'telegram' else 'sistema' }})</small>
+  {% else %}
+    <strong>Parado,</strong> esperando pedido.
+  {% endif %}
+  <br><small class="muted">Servidor {{ estado.servidor or '?' }} — {{ estado.situacao or 'situação não informada' }}.
+    {% if estado.pagamento %}Fala com a Anthropic por {{ estado.pagamento }}.{% endif %}
+    {% if estado.fila %}Na fila: {{ estado.fila|length }}.{% endif %}
+    Conversa {{ 'em andamento' if estado.conversa else 'nova' }}.</small>
+</div>
+{% if reserva %}
+<div class="notice" style="margin:0 0 12px"><strong>Servidor reserva.</strong> Aqui o
+  superusuário lê tudo e conserta código, serviço e sincronia, mas não grava no banco.</div>
+{% endif %}
+
+<section class="panel">
+  <h2>Pedir</h2>
+  <form method="post" action="{{ url_for('superusuario_pedir') }}" enctype="multipart/form-data"
+        class="stack" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="tela" value="{{ de }}">
+    <label>O pedido
+      <textarea name="texto" rows="4" style="width:100%" id="superusuario-texto"
+                placeholder="O que é para resolver, conferir ou fazer"></textarea></label>
+    {% if de %}<p class="muted" style="margin:0">Vai junto: você estava em <code>{{ de }}</code>.</p>{% endif %}
+    <label>Anexos (PDF, foto, planilha)
+      <input type="file" name="anexos" multiple></label>
+    <div class="actions"><button class="button primary">Pedir</button></div>
+  </form>
+  <div class="actions" style="padding:0 14px 14px">
+    <form method="post" action="{{ url_for('superusuario_comando') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="comando" value="novo">
+      <button class="button" title="Esquece a conversa atual. A memória e o diário continuam.">Conversa nova</button>
+    </form>
+    {% if rodando %}
+    <form method="post" action="{{ url_for('superusuario_comando') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="comando" value="parar">
+      <button class="button" title="Interrompe o pedido em andamento. O que já mudou fica no relatório.">Parar</button>
+    </form>
+    {% endif %}
+    <form method="post" action="{{ url_for('superusuario_comando') }}"
+          onsubmit="return confirm('CONFIRMO libera, por 10 minutos, o que NÃO TEM VOLTA (apagar, restaurar, assumir). Confirma?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="comando" value="confirmo">
+      <button class="button" title="Só quando ele explicar o que vai fazer e pedir o CONFIRMO.">CONFIRMO</button>
+    </form>
+  </div>
+</section>
+
+{% if esperando %}
+<section class="panel">
+  <h2>Na bandeja</h2>
+  <table class="table">
+    <tbody>
+    {% for p in esperando %}
+      <tr><td>{{ p.quando[:16]|replace('T', ' ') }}</td><td>{{ p.texto[:200] or '(só anexos)' }}</td>
+          <td><span class="badge">esperando a ponte</span></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>O diário — todos os pedidos, de todas as portas</h2>
+  {% if not entradas %}
+    <p class="muted" style="padding:0 14px 14px;margin:0">Nenhum pedido ainda.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Quando</th><th>Pedido e resposta</th><th>O que ficou</th></tr></thead>
+    <tbody>
+    {% for e in entradas %}
+      <tr>
+        <td style="white-space:nowrap">{{ e.quando[:16]|replace('T', ' ') }}<br>
+          <small class="muted">{{ {'telegram': 'Telegram', 'sistema': 'sistema', 'app': 'app do Claude'}.get(e.porta, e.porta) }}
+            · {{ e.servidor }}</small></td>
+        <td><strong>{{ e.pedido or '(sem texto)' }}</strong>
+          <div style="white-space:pre-wrap;margin-top:6px">{{ e.resposta }}</div>
+          {% for nome in e.arquivos or [] %}
+            <a class="button" style="margin-top:6px"
+               href="{{ url_for('superusuario_arquivo', pedido=e.numero, nome=nome) }}">Baixar {{ nome }}</a>
+          {% endfor %}</td>
+        <td>{% if e.relatorio %}
+              <a href="{{ url_for('superusuario_relatorio', id=e.relatorio.id) }}">Relatório {{ e.relatorio.id }}</a><br>
+              <small class="muted">{{ e.relatorio.arquivos }} arquivo(s), {{ e.relatorio.sql }} SQL{% if e.relatorio.de_fora %}, {{ e.relatorio.de_fora }} fora do sistema{% endif %}</small>
+            {% else %}<small class="muted">nada mudou no código nem no banco</small>{% endif %}
+            {% if e.comandos %}<br><small class="muted">{{ e.comandos }} comando(s)</small>{% endif %}
+            {% if e.custo_usd %}<br><small class="muted">US$ {{ ('%.2f'|format(e.custo_usd))|replace('.', ',') }}</small>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Relatórios — o que mudou no código e no banco</h2>
+  {% if not relatorios %}
+    <p class="muted" style="padding:0 14px 14px;margin:0">Nenhuma intervenção com mudança.</p>
+  {% else %}
+  <table class="table">
+    <thead><tr><th>Intervenção</th><th>Pedido</th><th>Situação</th></tr></thead>
+    <tbody>
+    {% for r in relatorios %}
+      <tr><td><a href="{{ url_for('superusuario_relatorio', id=r.id) }}">{{ r.id }}</a></td>
+          <td>{{ (r.pedido or '')[:140] }}</td>
+          <td>{% if r.exportada_em %}<span class="badge ok">enviado para revisão</span>
+              {% else %}<span class="badge media">por exportar</span>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted" style="padding:0 14px 14px;margin:0">A correção direta vale até o próximo
+    pacote de atualização: relatório por exportar ou PR aberto é correção que o pacote desfaz.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>A memória dele</h2>
+  <form method="post" action="{{ url_for('superusuario_comando') }}" class="stack" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="comando" value="lembrar">
+    <label>Um fato que vale daqui para a frente
+      <input type="text" name="texto" maxlength="400"
+             placeholder="Ex.: o malote do banco sai às 16h"></label>
+    <div class="actions"><button class="button">Guardar na memória</button></div>
+  </form>
+  {% if memoria %}<pre style="white-space:pre-wrap;margin:0;padding:0 14px 14px">{{ memoria }}</pre>
+  {% else %}<p class="muted" style="padding:0 14px 14px;margin:0">Vazia ainda.</p>{% endif %}
+</section>
+
+<script>
+/* A tela pergunta sozinha pelo andamento. Com resposta nova, recarrega — a
+   não ser que o oficial esteja escrevendo: aí só avisa. */
+(function () {
+  var caixa = document.getElementById('superusuario-estado');
+  if (!caixa || !window.fetch) { return; }
+  var agora = document.getElementById('superusuario-agora');
+  var texto = document.getElementById('superusuario-texto');
+  function perguntar() {
+    fetch(caixa.dataset.andamento, {credentials: 'same-origin'})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.acesso) { return; }
+        var rodando = d.rodando ? String(d.rodando.numero) : '';
+        if (d.ultima !== caixa.dataset.ultima || rodando !== caixa.dataset.rodando) {
+          if (texto && texto.value.trim()) {
+            caixa.dataset.ultima = d.ultima; caixa.dataset.rodando = rodando;
+            caixa.insertAdjacentHTML('beforeend',
+              ' <a href="" class="button">Há novidade: recarregar</a>');
+          } else { window.location.reload(); }
+        } else if (d.rodando && agora) { agora.textContent = d.rodando.andamento; }
+      }).catch(function () {});
+  }
+  window.setInterval(perguntar, 4000);
+})();
+</script>
+{% endif %}
+{% endblock %}

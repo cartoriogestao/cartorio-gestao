@@ -14,6 +14,7 @@
 {% import '_aviso.html' as aviso %}
 {% set nav = nav_da_tela(papel=user.role, escondidos=MODULOS_ESCONDIDOS or [],
                          ajuda_liberada=ajuda_liberada, agente_no_menu=agente_no_menu,
+                         superusuario_no_menu=superusuario_no_menu,
                          tipo_do_ato=(a.tipo if a is defined and a and a.tipo is defined else '')) if user else none %}
 {% macro ic(nome, tam=18) %}<svg class="cg-ic" width="{{ tam }}" height="{{ tam }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">{{ nav.icones[nome]|safe }}</svg>{% endmacro %}
 <!doctype html>

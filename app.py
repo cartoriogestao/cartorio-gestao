@@ -696,8 +696,11 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     # prazo é conferido nelas como em qualquer rota; só não é renovado.
     # O alerta do atalho do WhatsApp (27/10/2026) pergunta a cada 30 s em toda
     # tela logada: a mesma regra.
+    # A tela do superusuário (12/11/2026) pergunta pelo andamento a cada 4 s:
+    # a mesma regra.
     ENDPOINTS_QUE_NAO_RENOVAM_A_SESSAO = frozenset({
-        "whatsapp_novas", "whatsapp_lista_parcial", "whatsapp_nao_respondidas"})
+        "whatsapp_novas", "whatsapp_lista_parcial", "whatsapp_nao_respondidas",
+        "superusuario_andamento"})
 
     @app.before_request
     def before_request():
@@ -3892,6 +3895,14 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     import agente_web
     agente_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                fmt_date)
+
+    # O SUPERUSUÁRIO (12/11/2026) — o operador de IA que só o oficial aciona,
+    # no lugar do agente acima (fora da tela desde 06/10; ordem do oficial:
+    # «pode substituir, é um projeto abandonado»). A tela é só a porta de
+    # dentro do sistema: deixa o pedido na bandeja da ponte e mostra o diário.
+    # Ele mesmo roda fora daqui, no posto do servidor (docs/SUPERUSUARIO.md).
+    import operador_web
+    operador_web.registrar_rotas(app, db, login_required, roles_required, audit)
 
     # A AUTOMAÇÃO (24/10/2026) — a central única das rotinas: o cadastro, o
     # relatório de cada rodada, a configuração dos avisos e o cofre. A tela

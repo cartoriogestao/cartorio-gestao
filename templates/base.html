@@ -1024,6 +1024,11 @@
            Isto é educação de menu; a recusa de verdade é do `roles_required`
            da rota e das funções de domínio. #}
         {% if user.role == 'ADMIN' and agente_no_menu %}<a href="{{ url_for('agente_console') }}">Agente do sistema</a>{% endif %}
+        {# O SUPERUSUÁRIO (12/11/2026) — no lugar do agente acima. Só o oficial
+           que responde pela conta dele vê o link (`operador_web`). A tela
+           de onde ele veio vai junto com o pedido — «estou nesta tela» é
+           metade do pedido —, e quem a descobre é a rota, pelo Referer. #}
+        {% if superusuario_no_menu %}<a href="{{ url_for('superusuario_console') }}">Superusuário</a>{% endif %}
         {# A AUTOMAÇÃO (24/10/2026): a central das rotinas — o que roda sozinho,
            quando rodou e se rodou bem. O gerente vê; o oficial mexe. #}
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('automacao_lista') }}">Automação (rotinas)</a>{% endif %}

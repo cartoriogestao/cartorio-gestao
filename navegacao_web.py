@@ -143,13 +143,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         return exigidos is None or (metodos is not None and "GET" not in metodos) or papel in exigidos
 
     def nav_da_tela(*, papel="", escondidos=(), ajuda_liberada=False,
-                    agente_no_menu=False, tipo_do_ato=""):
+                    agente_no_menu=False, tipo_do_ato="", superusuario_no_menu=False):
         args = dict(request.args.to_dict())
         args.update(request.view_args or {})
         return NAV.montar(request.endpoint or "", args, papel, url_for,
                           escondidos=escondidos, ajuda_liberada=ajuda_liberada,
                           agente_no_menu=agente_no_menu, tipo_do_ato=tipo_do_ato,
-                          e_o_titular=_e_o_titular(), abre=_abre)
+                          e_o_titular=_e_o_titular(), abre=_abre,
+                          superusuario_no_menu=superusuario_no_menu)
 
     def portas_de_lavrar(grupo: str) -> list[dict]:
         """As portas de um módulo, do mesmo registro do botão Novo: quem vê uma vê a outra."""

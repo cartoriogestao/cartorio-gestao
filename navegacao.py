@@ -426,6 +426,10 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Base de conhecimento da ajuda", "ajuda_base", AM),
              _i("Ajuda: configurar", "ajuda_configurar", A, antigo="Ajuda — configurar"),
              _i("Agente do sistema", "agente_console", A, quando="agente_no_menu"),
+             # O SUPERUSUÁRIO (12/11/2026), no lugar do agente: só o oficial que responde
+             # pela conta dele vê (`operador_web`), e por isso a condição é da pessoa.
+             _i("Superusuário", "superusuario_console", A, quando="superusuario_no_menu",
+                termos="operador ia claude agente telegram"),
              _i("Agente: configurar", "agente_configurar", A, quando="agente_no_menu", antigo="Agente — configurar"),)),
          ("·Configuração", ()),
          ("Usuários e acesso", (
@@ -829,10 +833,11 @@ def _ve(entrada: dict, papel: str, flags: dict) -> bool:
     return abre is None or not entrada.get("endpoint") or abre(entrada["endpoint"], papel)
 
 
-def _flags(ajuda_liberada: Any, agente_no_menu: Any, escondidos: Any, e_o_titular: Any = True) -> dict:
+def _flags(ajuda_liberada: Any, agente_no_menu: Any, escondidos: Any, e_o_titular: Any = True,
+           superusuario_no_menu: Any = False) -> dict:
     fora = set(escondidos or ())
     return {"ajuda_liberada": bool(ajuda_liberada), "agente_no_menu": bool(agente_no_menu),
-            "e_o_titular": bool(e_o_titular),
+            "e_o_titular": bool(e_o_titular), "superusuario_no_menu": bool(superusuario_no_menu),
             "apostila_visivel": "APOSTILA" not in fora, "apostila_escondida": "APOSTILA" in fora,
             "_escondidos": fora}
 
@@ -881,13 +886,15 @@ def sem_acento(texto: Any) -> str:
 
 def montar(endpoint: str, args: dict, papel: str, gerar_url: Callable[..., str], *,
            escondidos: Any = (), ajuda_liberada: Any = False, agente_no_menu: Any = False,
-           tipo_do_ato: str = "", e_o_titular: Any = True, abre: Callable[[str, str], bool] | None = None) -> dict:
+           tipo_do_ato: str = "", e_o_titular: Any = True, abre: Callable[[str, str], bool] | None = None,
+           superusuario_no_menu: Any = False) -> dict:
     """Tudo o que a casca desenha naquela tela. Só calcula.
 
     `gerar_url` é o `url_for`. Entrada cujo endereço não se monta some em vez de
     derrubar a página: um módulo desligado não pode tirar o menu do ar.
     """
-    flags = {**_flags(ajuda_liberada, agente_no_menu, escondidos, e_o_titular), "_abre": abre}
+    flags = {**_flags(ajuda_liberada, agente_no_menu, escondidos, e_o_titular, superusuario_no_menu),
+             "_abre": abre}
 
     def _url(entrada: dict) -> str | None:
         try:

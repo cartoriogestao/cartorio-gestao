@@ -1,32 +1,69 @@
-# O SUPERUSUÁRIO — a configuração da ponte (docs/SUPERUSUARIO.md).
+# O SUPERUSUÁRIO — a configuração deste servidor (docs/SUPERUSUARIO.md).
 # O instalador copia este arquivo para <dados>/operador/operador.cred, e é LÁ
 # que se edita. Ele guarda segredos: só o oficial o lê (chmod 600 no macOS;
 # só Administradores e SYSTEM no Windows). Nunca vai para o git.
 
-# O bot DESTE servidor (um bot para o principal, outro para o reserva),
-# criado pelo oficial no @BotFather do Telegram.
-TELEGRAM_TOKEN=
+# ---------------------------------------------------------------------------
+# 1. COMO ELE FALA COM A ANTHROPIC — escolha UMA forma. A assinatura ganha da
+#    API quando as duas estão preenchidas.
+#
+#  a) pela sua assinatura do Claude, sem gastar a API: neste servidor, rode
+#     `claude setup-token` e cole aqui o token que ele der.
+CLAUDE_CODE_OAUTH_TOKEN=
+#  b) pela assinatura, com o login já feito nesta conta do servidor
+#     (`claude auth login`): ponha 1.
+OPERADOR_ASSINATURA=
+#  c) pela API: uma chave só deste operador (console.anthropic.com), com
+#     limite de gasto mensal definido lá.
+ANTHROPIC_API_KEY=
+#  d) pela API, com a chave que a casa já guardou para o agente do sistema
+#     (Administrativo → Agente: configurar): ponha 1.
+OPERADOR_CHAVE_DA_CASA=
 
+# ---------------------------------------------------------------------------
+# 2. AS PORTAS. A tela do sistema (Superusuário, no menu do oficial) não pede
+#    nada aqui: basta a ponte estar no ar.
+#
+# O Telegram: o bot DESTE servidor (um bot para o principal, outro para o
+# reserva), criado pelo oficial no @BotFather. Vazio = sem Telegram.
+TELEGRAM_TOKEN=
 # O número de usuário do oficial no Telegram. Vazio, o bot não atende ninguém:
 # só responde a quem escrever qual é o número dessa pessoa, para colar aqui.
 OPERADOR_TELEGRAM_USUARIO=
+# A frase-senha (opcional): com ela, o Telegram só atende depois de
+# «/abrir <frase>», e a tela do sistema pede a frase. Cinco erros trancam as
+# duas portas por 15 minutos.
+OPERADOR_FRASE=
+# O app do Claude (celular e claude.ai/code): 1 liga o Remote Control neste
+# servidor. Exige o login da assinatura nesta conta (`claude auth login`).
+OPERADOR_APP=
 
-# A chave da API da Anthropic (console.anthropic.com), só deste operador,
-# com limite de gasto mensal definido lá.
-ANTHROPIC_API_KEY=
-
-# O modelo. Vazio = claude-opus-5-5.
+# ---------------------------------------------------------------------------
+# 3. O MODELO
 OPERADOR_MODELO=claude-opus-5-5
+# O esforço de raciocínio: low, medium, high, xhigh, max (ou «padrao»).
+OPERADOR_ESFORCO=high
+# O modelo que assume quando o principal está sobrecarregado. Vazio = nenhum.
+OPERADOR_MODELO_RESERVA=
+# O teto de gasto de UM pedido, em dólares (só vale pela API). Vazio = sem teto.
+OPERADOR_TETO_USD=
 
+# ---------------------------------------------------------------------------
+# 4. O RESTO
 # principal ou reserva. Vazio = decide pelo CG_MODO_RESERVA.
 OPERADOR_NOME=
-
 # O executável do Claude Code, se não estiver no PATH do serviço.
 OPERADOR_CLAUDE=
-
-# O clone do repositório privado para onde vão os relatórios (o mesmo da
-# sincronia dos problemas). Vazio = os relatórios ficam só no servidor.
+# O clone do repositório privado para onde vão os relatórios e o conhecimento
+# (o mesmo da sincronia dos problemas). É por ele que um servidor fica
+# sabendo o que o outro fez. Vazio = tudo fica só neste servidor.
 OPERADOR_REPOSITORIO=
+# O áudio do Telegram: auto (neste servidor se o modelo estiver instalado;
+# senão pela OpenAI, como os áudios do WhatsApp), local, ou nao.
+OPERADOR_AUDIO=auto
+# Parada mais que isto (horas), a conversa recomeça. O que importa dela já
+# está na memória e no diário.
+OPERADOR_CONVERSA_HORAS=12
 
 # O banco, onde o serviço da ponte não herda estas variáveis do ambiente.
 # No reserva, o instalador já as lê do reserva.env.

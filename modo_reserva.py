@@ -35,7 +35,13 @@ PORTA_PADRAO = 8775
 #: Os únicos formulários (POST) que a reserva aceita: entrar — a senha E o código da verificação
 #: em duas etapas, sem o qual quem a tem ativa parava no meio da entrada — e sair. O código é
 #: conferido sem gravar (`dois_fatores.conferir_so_leitura`).
-FORMULARIOS_LIBERADOS = frozenset({"login", "login_dois_fatores", "logout"})
+#:
+#: E os três do SUPERUSUÁRIO (12/11/2026, `operador_web`): o pedido, o comando e a frase. Nenhum
+#: grava no banco — escrevem arquivo na pasta do operador, de onde a ponte deste servidor colhe.
+#: Sem eles, o oficial não teria como pedir conserto justamente no servidor que ficou de pé.
+FORMULARIOS_LIBERADOS = frozenset({"login", "login_dois_fatores", "logout",
+                                   "superusuario_pedir", "superusuario_comando",
+                                   "superusuario_abrir"})
 
 
 def ativo() -> bool:

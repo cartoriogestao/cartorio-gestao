@@ -488,9 +488,21 @@ def _sem_acento(texto: Any) -> str:
 _SO_ATENDENTE = re.compile(r"\W*atendente\W*")
 _PEDE_PESSOA = re.compile(
     r"\b(humano|falar com (alguem|uma pessoa|(o |a |um |uma )?atendente|o cartorio|"
-    r"a escrevente|o escrevente|o oficial|a oficial)|"
+    r"a escrevente|o escrevente|o oficial|a oficial|"
+    r"(o |a )?(tabeliao|tabelia|notario|titular|substitut\w*))|"
     r"(quero|preciso de|chama|chamar|chame|passa para|passe para) "
-    r"(o |a |um |uma )?atendente|pessoa de verdade)\b")
+    r"(o |a |um |uma )?(atendente|tabeliao|tabelia|notario|oficial|escrevente|"
+    r"titular|substitut\w*)|pessoa de verdade)\b")
+# Pedir o tabelião, o oficial ou a substituta vai para a gestão. «tabeliao» vem
+# antes de «tabelia»: sem acento, «tabelião» contém «tabelia».
+_PEDE_O_TABELIAO = re.compile(
+    r"\b(falar com (o |a )?(tabeliao|tabelia|notario|oficial|titular|substitut\w*)|"
+    r"(chamar|chama|chame|passa|passe|passar)\s+(para |pro |pra |com )?"
+    r"(o |a )?(tabeliao|tabelia|notario|oficial|titular|substitut\w*)|"
+    r"(quero|preciso) (falar com |chamar )?(o |a )?"
+    r"(tabeliao|tabelia|notario|oficial|titular|substitut\w*))\b")
+FRASE_DO_TABELIAO = "Vou avisar o tabelião."
+RESUMO_DO_TABELIAO = "Pediu para falar com o tabelião."
 # «protocolo» sozinho não é andamento: precisa de sentido de acompanhar, ou do número.
 _QUER_ANDAMENTO = re.compile(
     r"\b(andamento|(meu|minha|do meu|o meu) protocolo|protocolo (n\w*\W*)?\d+|"
@@ -511,7 +523,13 @@ _CODIGO = re.compile(
 
 def pede_pessoa(texto: str) -> bool:
     t = _sem_acento(texto)
-    return bool(_SO_ATENDENTE.fullmatch(t) or _PEDE_PESSOA.search(t))
+    return bool(_SO_ATENDENTE.fullmatch(t) or _PEDE_PESSOA.search(t)
+                or _PEDE_O_TABELIAO.search(t))
+
+
+def pede_o_tabeliao(texto: str) -> bool:
+    """A pessoa quer o tabelião, o oficial ou a substituta. Só calcula."""
+    return bool(_PEDE_O_TABELIAO.search(_sem_acento(texto)))
 
 
 def dado_protegido(texto: str, setor_atual: str) -> str | None:
@@ -777,6 +795,11 @@ def instrucao_do_escrevente(cfg: dict, conhecimento: str) -> str:
         "a tarefa dele. Não descreva o ato.\n"
         "12. Se o conhecimento não tiver a resposta, não invente. Uma frase e "
         "pedir, com o fato no resumo.\n"
+        "13. Se a pessoa pedir para falar com o tabelião, o oficial ou a "
+        "substituta, a ação é pedir, o setor é GESTAO, a resposta é "
+        "«Vou avisar o tabelião.» e o resumo começa com "
+        "«Pediu para falar com o tabelião.». Se pedir o escrevente ou um "
+        "atendente, a ação é pedir no setor da conversa.\n"
         "SETORES:\n" + setores + "\n"
         "SERVIÇOS (o campo servico, quando pedir):\n" + servicos + "\n"
         "Responda APENAS um objeto JSON, sem nada fora dele:\n"
@@ -855,8 +878,21 @@ def _virar_pedido(d: dict) -> dict:
         return d
     razao = d.get("razao") or RAZAO_FALHA
     if razao == RAZAO_PEDIU_PESSOA:
-        return {**d, "caso": CASO_DUVIDA, "passar": None, "pedido": None,
-                "resposta": RESPOSTA_ESTE_E_O_ATENDIMENTO}
+        setor = d["passar"]
+        nome = WA.SETORES.get(setor) or ""
+        if setor == "GESTAO":
+            frase = FRASE_DO_TABELIAO
+            servico = "orientacao"
+        elif nome and setor not in ("", WA.SETOR_PADRAO):
+            frase = f"Vou passar ao escrevente de {nome}."
+            servico = OFICIO.servico_de(setor)
+        else:
+            frase = "Vou passar ao escrevente."
+            servico = "orientacao"
+        resumo = (d.get("resumo") or "Pediu para falar com o escrevente.")[:TAMANHO_DO_RESUMO]
+        return {**d, "caso": CASO_PEDIDO, "passar": None, "razao": razao,
+                "resumo": resumo, "resposta": frase,
+                "pedido": {"setor": setor, "servico": servico, "resumo": resumo}}
     setor = d["passar"]
     resumo = (d.get("resumo") or d.get("motivo") or RAZOES.get(razao, ""))[:TAMANHO_DO_RESUMO]
     return {**d, "caso": CASO_PEDIDO, "passar": None, "razao": razao,
@@ -916,8 +952,12 @@ def decidir(db: Any, conversa: dict, texto: str, cfg: dict, *, agora: str,
     if not texto.strip():
         return _mao(cfg, setor_atual, RAZAO_FALHA,
                       motivo="mensagem sem texto (anexo, ou áudio sem transcrição)")
-    if pede_pessoa(texto):
-        return _mao(cfg, setor_atual, RAZAO_PEDIU_PESSOA, lido="(pedido de atendente)")
+    if pede_o_tabeliao(texto) or pede_pessoa(texto):
+        if pede_o_tabeliao(texto):
+            return _mao(cfg, "GESTAO", RAZAO_PEDIU_PESSOA, lido="(pedido de atendente)",
+                        resumo=RESUMO_DO_TABELIAO)
+        return _mao(cfg, setor_atual, RAZAO_PEDIU_PESSOA, lido="(pedido de atendente)",
+                    resumo="Pediu para falar com o escrevente.")
 
     # A CORTESIA, ANTES DA REDE E SEM CUSTO. Com pergunta da IA sem resposta, «ok» e 👍
     # são a resposta dela, e sobem com o contexto.
@@ -1145,6 +1185,12 @@ def ultimo_texto_da_ia(con: Any, conversa_id: int) -> str:
 def _aviso_do_encaminhamento(decisao: dict, setor: str, assunto: str) -> str:
     """Uma frase, com o setor quando ele já é conhecido. Sem o cardápio de serviços."""
     motivo = _sem_acento(decisao.get("motivo") or "")
+    if setor == "GESTAO":
+        if decisao.get("razao") == RAZAO_FALHA and "sem texto" in motivo:
+            return "Não consegui ouvir o áudio. Vou avisar o tabelião."
+        if decisao.get("razao") == RAZAO_ARQUIVO:
+            return "Recebi. Vou avisar o tabelião."
+        return FRASE_DO_TABELIAO
     nome = WA.SETORES.get(setor) or ""
     conhecido = bool(nome) and setor not in ("", WA.SETOR_PADRAO)
     if decisao.get("razao") == RAZAO_FALHA and "sem texto" in motivo:
@@ -1196,6 +1242,10 @@ def completar_encaminhamento(decisao: dict, *, assunto: str = "", ultimo: str = 
                 setor = codigo
                 break
     if not _trocar_a_frase(decisao):
+        aviso = " ".join(str(decisao.get("resposta") or "").split())
+        if aviso and aviso == " ".join(str(ultimo or "").split()):
+            decisao["resposta"] = ""
+            decisao["ja_avisado"] = True
         return decisao
     aviso = _aviso_do_encaminhamento(decisao, setor, assunto)
     if " ".join(str(ultimo or "").split()) == aviso:
@@ -1204,6 +1254,19 @@ def completar_encaminhamento(decisao: dict, *, assunto: str = "", ultimo: str = 
     else:
         decisao["resposta"] = aviso
     return decisao
+
+
+def _relato_da_tarefa(resumo: str, relato: str) -> str:
+    """O texto da tarefa. O pedido de falar com alguém fica na frente do caso."""
+    texto = " ".join(str(resumo or "").split())
+    conta = " ".join(str(relato or "").split())
+    if texto.lower().startswith("pediu para falar") and conta:
+        texto = f"{texto} {conta}"
+    elif _resumo_interno(texto):
+        texto = conta or texto
+    elif conta and len(conta) > len(texto):
+        texto = conta
+    return texto[:2000]
 
 
 def _tarefa_do_pedido(db: Any, pedido_id: int, *, setor: str, servico: str,
@@ -1216,12 +1279,7 @@ def _tarefa_do_pedido(db: Any, pedido_id: int, *, setor: str, servico: str,
     nome = OFICIO.nome_do_servico(servico)
     titulo = f"WhatsApp — {nome} (pedido {int(pedido_id)})"[:200]
     ref = f"wa_pedido:{int(pedido_id)}"
-    texto = " ".join(str(resumo or "").split())
-    if _resumo_interno(texto):
-        texto = " ".join(str(relato or "").split()) or texto
-    elif relato and len(" ".join(str(relato).split())) > len(texto):
-        texto = " ".join(str(relato).split())
-    texto = texto[:2000]
+    texto = _relato_da_tarefa(resumo, relato)
     dono = None
     try:
         with db.connect() as con:
@@ -1289,6 +1347,55 @@ def acertar_pedidos_abertos(db: Any) -> int:
         _tarefa_do_pedido(db, int(linha["id"]), setor=linha["setor"],
                           servico=linha["servico"], resumo=resumo,
                           relato=assunto or resumo, quando=agora)
+    n += _garantir_chamado_ao_tabeliao(db, agora)
+    return n
+
+
+def _garantir_chamado_ao_tabeliao(db: Any, agora: str) -> int:
+    """Conversa aberta em que a pessoa pediu o tabelião ganha pedido e tarefa
+    na gestão, se ainda não tem. ESCREVE. Não manda mensagem."""
+    inicio = ((FILA._dt(agora) or datetime.now()) - timedelta(hours=JANELA_HORAS)
+              ).strftime("%Y-%m-%dT%H:%M:%S")
+    with db.connect() as con:
+        linhas = banco(con).ler(
+            """SELECT m.conversa_id, m.texto, m.transcricao, m.tipo, c.atendimento_desde_id
+                 FROM wa_mensagem m
+                 JOIN wa_conversa c ON c.id = m.conversa_id
+                WHERE m.direcao=%s AND m.criado_em >= %s
+                  AND c.status IN (%s, %s)
+                ORDER BY m.id""",
+            (BALCAO.DIR_IN, inicio, WA.ABERTA, WA.AGUARDANDO))
+    alvos: dict[int, dict] = {}
+    for m in linhas:
+        bruto = (m.get("transcricao") or "") if (m.get("tipo") or "") == "audio" else (m.get("texto") or "")
+        if pede_o_tabeliao(str(bruto or "")):
+            alvos[int(m["conversa_id"])] = m
+    n = 0
+    for cid, m in alvos.items():
+        with db.connect() as con:
+            ja = banco(con).um(
+                """SELECT id FROM wa_pedido
+                    WHERE conversa_id=%s AND setor=%s AND situacao=%s
+                      AND resumo LIKE %s
+                    ORDER BY id DESC LIMIT 1""",
+                (cid, "GESTAO", PEDIDO.ABERTO, RESUMO_DO_TABELIAO + "%"))
+        conversa = {"id": cid, "atendimento_desde_id": m.get("atendimento_desde_id") or 0}
+        with db.connect() as con:
+            assunto = assunto_do_cliente(con, conversa)
+        if ja:
+            _tarefa_do_pedido(db, int(ja["id"]), setor="GESTAO", servico="orientacao",
+                              resumo=RESUMO_DO_TABELIAO, relato=assunto or RESUMO_DO_TABELIAO,
+                              quando=agora)
+            continue
+        with db.transaction() as con:
+            gravado = PEDIDO.abrir(
+                con, cid, setor="GESTAO", servico="orientacao",
+                resumo=RESUMO_DO_TABELIAO, orientacao="", por="atendente com IA",
+                quando=agora)
+        _tarefa_do_pedido(db, int(gravado["id"]), setor="GESTAO", servico="orientacao",
+                          resumo=RESUMO_DO_TABELIAO, relato=assunto or RESUMO_DO_TABELIAO,
+                          quando=agora)
+        n += 1
     return n
 
 

@@ -532,10 +532,12 @@ def test_pessoa_e_sinonimo_de_encaminhar_e_acao_desconhecida_e_falha(casa):
 
 def test_pede_pessoa_mais_fino():
     for sim in ("ATENDENTE", " atendente! ", "quero falar com o atendente",
-                "quero falar com uma pessoa", "preciso de um atendente"):
+                "quero falar com uma pessoa", "preciso de um atendente",
+                "quero falar com o tabelião", "chama o tabelião"):
         assert AT.pede_pessoa(sim), sim
     for nao in ("qual o horário de atendimento?", "o atendente me disse que estava pronto",
-                "qual o horário do atendente?"):
+                "qual o horário do atendente?", "o tabelião assinou a escritura",
+                "quero uma certidão do oficial de registro"):
         assert not AT.pede_pessoa(nao), nao
 
 

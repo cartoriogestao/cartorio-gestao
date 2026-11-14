@@ -279,6 +279,45 @@ def test_a_resposta_do_modelo_fica_e_o_audio_sem_texto_pede_para_escrever():
     assert "Me diga o serviço" not in pedido["resposta"]
 
 
+def test_falar_com_o_tabeliao_abre_pedido_da_gestao():
+    assert AT.pede_o_tabeliao("quero falar com o tabelião")
+    assert AT.pede_o_tabeliao("me passa para o oficial")
+    assert not AT.pede_o_tabeliao("quero falar com o escrevente")
+    assert not AT.pede_o_tabeliao("o tabelião assinou a escritura")
+    assert not AT.pede_o_tabeliao("quero uma certidão do oficial de registro")
+    d = AT._virar_pedido({
+        "passar": "GESTAO", "razao": AT.RAZAO_PEDIU_PESSOA,
+        "resumo": AT.RESUMO_DO_TABELIAO, "caso": "duvida", "resposta": "",
+    })
+    assert d["caso"] == AT.CASO_PEDIDO
+    assert d["pedido"]["setor"] == "GESTAO"
+    assert d["pedido"]["servico"] == "orientacao"
+    assert d["resposta"] == "Vou avisar o tabelião."
+    assert "Gestão" not in d["resposta"]
+    repetido = AT.completar_encaminhamento(
+        d, assunto="quero falar com o tabelião e registrar o imóvel",
+        ultimo="Vou avisar o tabelião.")
+    assert repetido["resposta"] == "" and repetido["ja_avisado"] is True
+    assert repetido["pedido"]["setor"] == "GESTAO"
+    texto = AT._relato_da_tarefa(AT.RESUMO_DO_TABELIAO, "quero registrar o imóvel " * 20)
+    assert texto.startswith("Pediu para falar com o tabelião.")
+    assert "registrar o imóvel" in texto
+    assert "Vou avisar o tabelião." in AT.instrucao_do_escrevente(
+        {"texto_base": "", "valores": []}, "")
+
+
+def test_falar_com_o_escrevente_abre_o_pedido_do_setor():
+    assert AT.pede_pessoa("quero falar com o escrevente")
+    assert not AT.pede_o_tabeliao("quero falar com o escrevente")
+    d = AT._virar_pedido({
+        "passar": "RI", "razao": AT.RAZAO_PEDIU_PESSOA,
+        "resumo": "Pediu para falar com o escrevente.",
+    })
+    assert d["pedido"]["setor"] == "RI"
+    assert d["resposta"] == "Vou passar ao escrevente de Registro de Imóveis."
+    assert "Pode falar comigo" not in d["resposta"]
+
+
 def test_o_historico_guarda_o_numero_da_matricula_e_abre_tarefa(casa, monkeypatch):
     db = casa["db"]
     _ligar(db)

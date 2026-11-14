@@ -262,7 +262,10 @@ TEXTO_BASE_EXEMPLO = (
     "DOCUMENTOS — ESCRITURA: [preencha]\n"
     "\nPROTESTO\n"
     "COMO FUNCIONA O PROTESTO E O CANCELAMENTO: [preencha]\n"
-    "DOCUMENTOS — CANCELAMENTO DE PROTESTO: [preencha]\n")
+    "DOCUMENTOS — CANCELAMENTO DE PROTESTO: [preencha]\n"
+    "\nTÍTULOS E DOCUMENTOS\n"
+    "DOCUMENTOS — NOTIFICAÇÃO: [preencha]\n"
+    "DOCUMENTOS — REGISTRO DE TÍTULO OU DOCUMENTO: [preencha]\n")
 # As perguntas de exemplo do ensaio, fictícias, cobrindo as seis atribuições.
 PERGUNTAS_DE_EXEMPLO = (
     "bom dia\n"

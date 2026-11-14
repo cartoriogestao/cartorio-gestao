@@ -863,8 +863,10 @@ def test_a_instrucao_traz_os_setores_os_dados_e_o_texto_base(casa):
 
 def test_o_modelo_de_texto_base_tem_as_atribuicoes_e_a_gravada_nao_muda(casa):
     for secao in ("REGISTRO DE IMÓVEIS", "REGISTRO CIVIL", "NOTAS", "PROTESTO",
-                  "TÍTULOS E DOCUMENTOS E PESSOA JURÍDICA"):
+                  "TÍTULOS E DOCUMENTOS"):
         assert secao in AT.TEXTO_BASE_EXEMPLO
+    assert "PESSOA JURÍDICA" not in AT.TEXTO_BASE_EXEMPLO
+    assert "contrato social" not in AT.TEXTO_BASE_EXEMPLO.lower()
     db = casa["db"]
     with db.connect() as con:
         assert AT.configuracao(con)["texto_base"] == ""

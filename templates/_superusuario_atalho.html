@@ -1,0 +1,30 @@
+{#
+  O ATALHO DO SUPERUSUÁRIO (14/11/2026) — na coluna da direita do layout novo,
+  junto de WhatsApp, Produtividade e Ajuda desta tela. Ordem do oficial: «na
+  barra lateral direita, compatível com o novo padrão» — nada flutuante, no
+  lugar da gaveta do agente antigo.
+
+  Só o oficial que responde pela conta do superusuário o vê (o mesmo
+  `superusuario_no_menu` do menu, de `operador_web`), e não na própria tela do
+  superusuário. O clique leva à tela dele, e a tela de onde se clicou vai junto
+  com o pedido: quem a descobre é a rota, pelo Referer.
+
+  Em azul quando ele está trabalhando num pedido (`superusuario_trabalhando`,
+  lido do estado que a ponte publica — um arquivo, sem banco).
+#}
+{% if superusuario_no_menu and request.endpoint != 'superusuario_console' %}
+<a class="su-atalho{% if superusuario_trabalhando %} trabalhando{% endif %}"
+   href="{{ url_for('superusuario_console') }}"
+   title="{{ 'O superusuário está trabalhando num pedido' if superusuario_trabalhando else 'Pedir ao superusuário, a partir desta tela' }}">
+  <svg class="su-atalho-icone" viewBox="0 0 24 24" width="24" height="24" fill="none"
+       stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"
+       aria-hidden="true" focusable="false">
+    <rect x="3.5" y="4.5" width="17" height="13" rx="2"/>
+    <path d="M7.5 9.5l2.5 2-2.5 2"/>
+    <path d="M12.5 13.5h4"/>
+    <path d="M9 20.5h6"/>
+  </svg>
+  {# a quebra suave: a coluna tem 72 px, e a palavra inteira não cabe #}
+  <span>Super&shy;usuário</span>
+</a>
+{% endif %}

@@ -248,8 +248,7 @@ def credencial(pasta_de_dados: Any, provedor: Any) -> str:
             f"A chave do {PROVEDORES[prov]['nome']} ainda não foi informada. "
             f"Ela é gravada em {caminho_da_credencial(pasta_de_dados)}, fora do "
             f"banco — o banco vai no backup, e o backup sai da serventia. "
-            f"Informe em Administrativo → Agente do sistema → "
-            f"Configuração.", motivo="sem chave", recusado=True)
+            f"Informe na configuração dos provedores de IA (endereço /agente/configurar, só o ADMIN).", motivo="sem chave", recusado=True)
     return achada
 
 
@@ -656,9 +655,9 @@ def _explicar(provedor: str, situacao: int, bruto: bytes) -> str:
     except (UnicodeDecodeError, ValueError):
         detalhe = ""
     if situacao == 401:
-        return (f"A chave do {nome} não foi aceita. Confira em Administrativo "
-                f"→ Agente do sistema → Configuração se ela foi "
-                f"copiada inteira e se ainda está ativa no painel do provedor.")
+        return (f"A chave do {nome} não foi aceita. Confira na configuração dos provedores de IA (endereço /agente/configurar, só o ADMIN) "
+                f"se ela foi copiada inteira e se ainda está ativa no painel do "
+                f"provedor.")
     if situacao == 402:
         return (f"O {nome} recusou por falta de crédito na conta. O agente não "
                 f"gasta mais nada até a conta ser reforçada.")

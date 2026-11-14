@@ -406,12 +406,13 @@ CATALOGO: tuple[dict[str, Any], ...] = (
     },
     {
         "codigo": "agente",
-        "nome": "Agente do sistema",
+        "nome": "Agente do sistema (rotinas de IA da automação)",
         "modulo": "agente",
-        "onde": "Administrativo → Agente do sistema (só ADMIN)",
-        "finalidade": "diagnosticar problemas do sistema lendo o banco, o código "
-                      "e a documentação e, se o oficial ligar a escrita, fazer "
-                      "correções reversíveis",
+        "onde": "Gestão → Automação, nas rotinas do tipo «agente de IA» (só ADMIN). "
+                "O console do agente saiu em 14/11/2026",
+        "finalidade": "cumprir o pedido escrito numa rotina da automação lendo o "
+                      "banco, o código e a documentação e, se o oficial deixar a "
+                      "rotina agir sozinha, fazer correções reversíveis",
         "inciso": "I",
         "enquadramento": "análise — manutenção do sistema, e não ato; "
                          "enquadramento a conferir",

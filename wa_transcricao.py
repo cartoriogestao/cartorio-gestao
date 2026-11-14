@@ -171,8 +171,7 @@ def transcrever(pasta_de_dados: Any, audio: bytes, mime: str, *,
                       erro="sem chave")
         raise TranscricaoErro(
             "A transcrição usa a chave da OpenAI (provedor «GPT»), e ela ainda "
-            "não foi informada em Administrativo → Agente do sistema → "
-            "Configuração.") from falha
+            "não foi informada na configuração dos provedores de IA (endereço /agente/configurar, só o ADMIN).") from falha
     mime = (mime or "audio/ogg").split(";")[0].strip()
     corpo, tipo = _multipart({"model": escolhido, "language": "pt",
                               "response_format": "verbose_json"},

@@ -1,5 +1,10 @@
 """
-Testes das TELAS do agente do sistema.
+Testes da TELA que sobrou do agente do sistema: a configuração dos provedores.
+
+O CONSOLE SAIU EM 14/11/2026 (ordem do oficial: «é um projeto abandonado»); o
+superusuário tem tela própria (`tests/test_operador_web.py`). A configuração
+ficou porque as chaves dela servem à Ajuda, ao WhatsApp, às revisões e à
+automação.
 
 POR QUE TELA, E NAO SO DOMINIO
     "Buraco de tela nao aparece em teste de dominio" e a licao que se repetiu
@@ -8,20 +13,14 @@ POR QUE TELA, E NAO SO DOMINIO
     que estes testes provam e que **o oficial consegue chegar nele**.
 
 O QUE ELES CONFEREM
-      - o ADMIN entra; o escrevente NAO — nem pela tela, nem mandando POST
-        direto na rota;
-      - o menu mostra o agente SO para o ADMIN, e nao para o gerente: aqui a
-        regua e mais estreita que a da ajuda, e e de proposito;
-      - SEM CHAVE o pedido nao vira sessao: recusa antes de gravar, para nao
-        deixar na lista uma sessao que nunca falou com ninguem;
+      - o console, a gaveta e as sessoes nao existem mais; a configuracao e
+        so do ADMIN;
       - A CHAVE VAI PARA O ARQUIVO, e nao para o banco;
       - CAMPO VAZIO NAO APAGA NADA — quem apaga e o botao que diz que apaga;
       - A ESCRITA NASCE DESLIGADA, e so liga por clique;
       - o teto digitado na tela e PRESO no limite duro, e a tela diz o que
         passou a valer;
-      - GET nao grava nada;
-      - a sessao desenhada na tela mostra o que se pediu e o que as ferramentas
-        devolveram.
+      - GET nao grava nada.
 """
 from __future__ import annotations
 
@@ -84,41 +83,16 @@ def _pasta(s) -> Path:
 # ------------------------------------------------------- quem entra
 
 
-def test_o_administrador_ve_o_console(admin, monkeypatch):
-    import agente_web
-    monkeypatch.setattr(agente_web, "AGENTE_VISIVEL", True)
-    html = admin["c"].get("/agente").get_data(as_text=True)
-    assert "Pedir ao agente" in html
-    # e o menu do sistema leva ate ele
-    menu = admin["c"].get("/").get_data(as_text=True)
-    assert "Agente do sistema" in menu
-
-
-def test_o_agente_saiu_da_tela_por_ordem_do_oficial(admin):
-    """06/10/2026: «desativar o modulo de agente do sistema. apenas nao aparecer
-    mais». Nem o menu, nem o «configurar», nem a gaveta — e nada se apagou."""
+def test_o_console_do_agente_saiu_e_a_configuracao_ficou(admin):
+    """06/10/2026: «apenas não aparecer mais»; 14/11/2026: o console, a gaveta e
+    as sessões foram apagados («é um projeto abandonado»). A configuração dos
+    provedores fica, só do ADMIN."""
     menu = admin["c"].get("/").get_data(as_text=True)
     assert "Agente do sistema" not in menu and "Agente — configurar" not in menu
     assert "agente.js" not in menu and "agente-chamar" not in menu
-    assert admin["c"].get("/agente").status_code == 200    # a rota continua, só do ADMIN
-
-
-def test_o_escrevente_nao_ve_o_console(tmp_path):
-    s = _sessao(tmp_path, "USER")
-    resposta = s["c"].get("/agente")
-    assert resposta.status_code == 403
-    assert "permissão" in resposta.get_data(as_text=True)
-
-
-def test_o_gerente_tambem_nao_ve(tmp_path):
-    """**A RÉGUA AQUI É MAIS ESTREITA QUE A DA AJUDA**, e é de propósito.
-
-    A ajuda abre para o gerente porque saber o que está quebrado é de quem
-    responde pela serventia. O agente não é «saber»: é ter permissão de mudar o
-    sistema, e essa fica com quem responde por ele.
-    """
-    s = _sessao(tmp_path, "MANAGER")
-    assert s["c"].get("/agente").status_code == 403
+    for rota in ("/agente", "/agente/gaveta", "/agente/sessao/1", "/agente/andamento/1"):
+        assert admin["c"].get(rota).status_code == 404, rota
+    assert admin["c"].get("/agente/configurar").status_code == 200
 
 
 def test_o_menu_esconde_o_agente_de_quem_nao_pode(tmp_path):
@@ -128,63 +102,6 @@ def test_o_menu_esconde_o_agente_de_quem_nao_pode(tmp_path):
         assert "Agente do sistema" not in menu, f"{papel} viu o agente no menu"
         # e a tela de configuração, que também é do admin, também não abre
         assert s["c"].get("/agente/configurar").status_code == 403
-
-
-def test_o_escrevente_mandando_POST_direto_tambem_e_recusado(tmp_path):
-    """A tela esconde por educação; a ROTA recusa por dever.
-
-    Este teste não passa por tela nenhuma: manda o POST como faria quem
-    digitasse a URL. E confere que a recusa **não deixou rastro** — sessão
-    gravada para quem não podia pedir seria trabalho feito para ninguém.
-    """
-    s = _sessao(tmp_path, "USER")
-    html = s["c"].get("/").get_data(as_text=True)
-    resposta = s["c"].post("/agente/pedir",
-                           data={"csrf_token": _token(html),
-                                 "pedido": "quero isto"})
-    assert resposta.status_code == 403
-    con = _con(s)
-    assert con.execute(
-        "SELECT COUNT(*) c FROM ag_sessoes").fetchone()["c"] == 0
-    con.close()
-
-
-# ------------------------------------------------- o pedido sem chave
-
-
-def test_sem_chave_o_pedido_nao_vira_sessao(admin):
-    """Recusa ANTES de gravar: sessão sem chave é linha na lista que nunca falou
-    com ninguém, e quem a visse procuraria o que ela disse."""
-    html = admin["c"].get("/agente").get_data(as_text=True)
-    resposta = admin["c"].post(
-        "/agente/pedir",
-        data={"csrf_token": _token(html),
-              "pedido": "veja o que a conferência mede sobre o selo"},
-        follow_redirects=True)
-    texto = resposta.get_data(as_text=True)
-    # A RECUSA É DO DOMÍNIO, e diz onde a chave mora — a frase é conferida
-    # inteira: um recado que só dissesse «sem chave» deixaria quem não sabe
-    # procurando onde informá-la.
-    assert "Não há chave do DeepSeek informada" in texto
-    assert "fora do banco" in texto
-    con = _con(admin)
-    assert con.execute(
-        "SELECT COUNT(*) c FROM ag_sessoes").fetchone()["c"] == 0
-    con.close()
-
-
-def test_pedido_vazio_e_recusado_sem_gastar_turno(admin):
-    html = admin["c"].get("/agente").get_data(as_text=True)
-    resposta = admin["c"].post("/agente/pedir",
-                               data={"csrf_token": _token(html), "pedido": "  "},
-                               follow_redirects=True)
-    assert "pedido vazio" in resposta.get_data(as_text=True)
-
-
-def test_a_tela_diz_que_sem_chave_ele_nao_responde(admin):
-    """O aviso aparece ANTES do clique, e nao depois do erro."""
-    html = admin["c"].get("/agente").get_data(as_text=True)
-    assert "ainda não tem chave informada" in html
 
 
 # ------------------------------------------------------------- a chave
@@ -275,8 +192,6 @@ def test_a_escrita_nasce_desligada(admin):
     con = _con(admin)
     assert AGS.escrita_ligada(con) is False
     con.close()
-    html = admin["c"].get("/agente").get_data(as_text=True)
-    assert "escrita desligada" in html
 
 
 def test_ligar_a_escrita_pela_tela(admin):
@@ -294,9 +209,6 @@ def test_ligar_a_escrita_pela_tela(admin):
     assert AGS.escrita_ligada(con) is True
     assert AGS.teto_de_turnos(con) == 10
     con.close()
-    # e o aviso do console passa a dizer que ela está ligada
-    assert "A escrita está LIGADA" in admin["c"].get("/agente") \
-        .get_data(as_text=True)
 
 
 def test_o_teto_digitado_e_preso_no_limite(admin):
@@ -329,12 +241,6 @@ def test_a_tela_de_configurar_mostra_os_provedores(admin):
         assert nome in html, f"o provedor {nome} não aparece na tela"
 
 
-def test_a_tela_diz_que_ele_nao_toca_em_ato(admin):
-    """É a frase que sustenta a permissão de escrever."""
-    html = admin["c"].get("/agente").get_data(as_text=True)
-    assert "Não há ferramenta que toque em ato" in html
-
-
 # ------------------------------------------------------- GET não grava
 
 
@@ -345,7 +251,6 @@ def test_GET_nao_grava_nada(admin):
     antes = [tuple(r) for r in con.execute("SELECT * FROM ag_config")]
     con.close()
     for _ in range(2):
-        admin["c"].get("/agente")
         admin["c"].get("/agente/configurar")
     con = _con(admin)
     assert con.execute(
@@ -356,57 +261,6 @@ def test_GET_nao_grava_nada(admin):
 
 
 # --------------------------------------------------- a sessão desenhada
-
-
-def test_a_sessao_mostra_o_que_se_pediu_e_o_que_voltou(admin):
-    """**A CONVERSA DESENHADA SAI DA MESMA TABELA QUE O AGENTE LÊ.**
-
-    Aqui a sessão é montada à mão, sem rede: o que se prova é a tela, que é
-    justamente o que teste de domínio não alcança.
-    """
-    import agente_schema as AGS
-
-    con = _con(admin)
-    AGS.init_agente_schema(con)
-    sessao_id = AGS.abrir_sessao(
-        con, titulo="o selo não responde", pedido="o selo não responde",
-        provedor="deepseek", modelo="deepseek-chat",
-        agora="2026-09-14T10:00:00", criada_por="MARIO EXEMPLO DOS SANTOS")
-    AGS.registrar_passo(con, sessao_id, ordem=1, tipo=AGS.PEDIDO,
-                        conteudo="o selo não responde",
-                        agora="2026-09-14T10:00:00")
-    AGS.registrar_passo(con, sessao_id, ordem=2, tipo=AGS.FERRAMENTA,
-                        ferramenta="estado_do_sistema",
-                        chamada_id="call_1", argumentos='{"o_que": "selo"}',
-                        agora="2026-09-14T10:00:01")
-    AGS.registrar_passo(con, sessao_id, ordem=3, tipo=AGS.RESULTADO,
-                        ferramenta="estado_do_sistema", chamada_id="call_1",
-                        conteudo="o selador respondeu pela última vez às 09:58",
-                        agora="2026-09-14T10:00:02")
-    AGS.registrar_mudanca(con, sessao_id, ferramenta="anotar_no_problema",
-                          alvo="problema 12", antes="aberto", depois="com nota",
-                          agora="2026-09-14T10:00:03", criada_por="tabeliao")
-    AGS.atualizar_sessao(con, sessao_id, estado=AGS.CONCLUIDA, turnos=3,
-                         tokens_de_entrada=1200, tokens_de_saida=340,
-                         erro="", agora="2026-09-14T10:00:04")
-    con.commit()
-    con.close()
-
-    html = admin["c"].get(f"/agente/sessao/{sessao_id}").get_data(as_text=True)
-    assert "o selo não responde" in html
-    assert "estado_do_sistema" in html
-    assert "o selador respondeu pela última vez" in html
-    assert "anotar_no_problema" in html
-    # o gasto aparece: oficial que não vê o preço não pode decidir sobre ele
-    assert "1200" in html and "340" in html
-    assert "terminou" in html
-    # e o que ele mudou volta com um clique
-    assert "desfazer" in html
-
-
-def test_sessao_que_nao_existe_e_recusada_com_recado(admin):
-    resposta = admin["c"].get("/agente/sessao/9999", follow_redirects=True)
-    assert "Não achei a sessão #9999" in resposta.get_data(as_text=True)
 
 
 # ------------------------------------- a mudança proposta (LS03, M4 — LX13)
@@ -431,60 +285,3 @@ def test_ligar_a_escrita_nao_desliga_a_confirmacao(admin):
     con.close()
 
 
-def _proposta(s) -> tuple[int, int, str, str, str]:
-    """Uma sessão com uma mudança de alcance PROPOSTA, montada à mão."""
-    import agente_schema as AGS
-    import modulos_ligados as ML
-    from database import Database
-
-    chave = sorted(ML.CHAVE_DA_CONFIGURACAO)[0]
-    nome = ML.CHAVE_DA_CONFIGURACAO[chave]
-    antes = Database(s["banco"]).get_setting(
-        nome, ML.ALCANCE_DE_FABRICA.get(chave, ML.TODOS))
-    outro = [a for a in ML.ALCANCES if a != antes][0]
-    con = _con(s)
-    AGS.init_agente_schema(con)
-    sessao_id = AGS.abrir_sessao(
-        con, titulo="feche o módulo", pedido="feche o módulo",
-        provedor="deepseek", modelo="deepseek-chat",
-        agora="2026-09-14T10:00:00", criada_por="MARIO EXEMPLO DOS SANTOS")
-    mudanca_id = AGS.registrar_mudanca(
-        con, sessao_id, ferramenta="definir_alcance_do_modulo", alvo=nome,
-        antes=antes, depois=outro, agora="2026-09-14T10:00:01",
-        criada_por="MARIO EXEMPLO DOS SANTOS", proposta=True)
-    con.commit()
-    con.close()
-    return sessao_id, mudanca_id, nome, antes, outro
-
-
-def test_o_oficial_aplica_pela_tela_a_mudanca_que_o_agente_propos(admin):
-    """**M4.** A proposta aparece com o botão «aplicar», e o alcance só muda
-    no clique — com o recado do que passou a valer."""
-    from database import Database
-
-    sessao_id, mudanca_id, nome, antes, outro = _proposta(admin)
-    html = admin["c"].get(f"/agente/sessao/{sessao_id}").get_data(as_text=True)
-    assert "proposta" in html and "aplicar" in html and "descartar" in html
-    assert Database(admin["banco"]).get_setting(nome, antes) == antes
-
-    resposta = admin["c"].post(
-        f"/agente/mudanca/{mudanca_id}/aplicar",
-        data={"csrf_token": _token(html), "sessao_id": str(sessao_id)},
-        follow_redirects=True)
-    assert "Aplicado" in resposta.get_data(as_text=True)
-    assert Database(admin["banco"]).get_setting(nome, antes) == outro
-    depois = admin["c"].get(f"/agente/sessao/{sessao_id}").get_data(as_text=True)
-    assert "desfazer" in depois
-
-
-def test_o_escrevente_nao_aplica_a_proposta_mandando_post(tmp_path):
-    """A rota nova é do ADMIN, como o resto do agente."""
-    from database import Database
-
-    s = _sessao(tmp_path, "USER")
-    _, mudanca_id, nome, antes, _ = _proposta(s)
-    html = s["c"].get("/").get_data(as_text=True)
-    resposta = s["c"].post(f"/agente/mudanca/{mudanca_id}/aplicar",
-                           data={"csrf_token": _token(html)})
-    assert resposta.status_code == 403
-    assert Database(s["banco"]).get_setting(nome, antes) == antes

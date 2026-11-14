@@ -55,17 +55,6 @@
   #}
   <script defer src="{{ url_for('static', filename='ajuda.js') }}"></script>
   {#
-    A gaveta do agente, que também existe em toda tela — para quem responde
-    pela serventia.
-
-    IRMÃ DA AJUDA E DO OUTRO LADO DA TELA: a ajuda fica à direita e esta à
-    esquerda, porque as duas podem estar abertas ao mesmo tempo e uma em cima
-    da outra obrigaria a fechar uma para ler a outra. Aqui também `defer`: o
-    botão e a gaveta já vêm no HTML, e o script só troca a ida ao console por
-    uma caixa que não recarrega a página.
-  #}
-  {% if agente_na_tela %}<script defer src="{{ url_for('static', filename='agente.js') }}"></script>{% endif %}
-  {#
     Os botões de negrito, itálico e sublinhado do teor, e a prévia que acompanha
     o que se digita. Só agem onde existe `textarea[data-teor]` — hoje, a tela do
     ato de livro. `defer` porque a caixa e a prévia já vêm no HTML: sem o
@@ -1023,8 +1012,7 @@
 
            Isto é educação de menu; a recusa de verdade é do `roles_required`
            da rota e das funções de domínio. #}
-        {% if user.role == 'ADMIN' and agente_no_menu %}<a href="{{ url_for('agente_console') }}">Agente do sistema</a>{% endif %}
-        {# O SUPERUSUÁRIO (12/11/2026) — no lugar do agente acima. Só o oficial
+        {# O SUPERUSUÁRIO (12/11/2026) — no lugar do console do agente. Só o oficial
            que responde pela conta dele vê o link (`operador_web`). A tela
            de onde ele veio vai junto com o pedido — «estou nesta tela» é
            metade do pedido —, e quem a descobre é a rota, pelo Referer. #}
@@ -1116,18 +1104,6 @@
     não no fim dela.
   #}
   {% if ajuda_tela %}{% include '_ajuda.html' %}{% endif %}
-  {#
-    A GAVETA DO AGENTE, EM TODA TELA — para quem responde pela serventia.
-
-    FORA DO `<main>` PELO MESMO MOTIVO, e do outro lado: as duas ficam presas
-    no canto e não rolam com a página. A ajuda à direita, esta à esquerda,
-    porque as duas podem estar abertas ao mesmo tempo.
-
-    QUEM DECIDE SE APARECE É O SERVIDOR (`agente_na_tela`), e ele responde com
-    o papel de quem está logado: o balcão não tem o que fazer com uma gaveta
-    que OPERA o sistema, e a lista de ferramentas dela não chega até ele.
-  #}
-  {% if agente_na_tela %}{% include '_agente.html' %}{% endif %}
   {% include '_nu_avisos_modal.html' %}
   {% include '_produtividade_rapida.html' %}
   {% include '_whatsapp_atalho.html' %}

@@ -1264,10 +1264,11 @@ Escreva o que tentou, o resultado e a mensagem de erro.
 - O desenvolvimento anota o que fez e a prova; **Resolvido** é marcação de quem
   usa e conferiu no ato real, e exige dizer o que foi feito.
 
-**Agente do sistema** (opcional, só do administrador): apura problemas lendo a
-instalação; **não pratica ato**, não executa programas e mascara dados. Suas
-poucas ações de escrita nascem desligadas, e cada mudança se desfaz com um
-clique.
+**Superusuário** (só o oficial que responde pela conta dele): o operador de IA
+que substituiu o antigo Agente do sistema em 14/11/2026. Ele recebe o pedido
+pelo Telegram, pela tela **Superusuário** (Gestão → Agente e leituras) ou pelo
+app do Claude, resolve com prudência e deixa relatório de tudo o que mudou. O
+roteiro está em `docs/SUPERUSUARIO.md`.
 
 **Agente de minutas** (RI e Notas, desde a 3.7.4): o quadro **«Agente de
 minutas (IA)»** aparece na ficha da matrícula e no ato em lavratura das Notas.

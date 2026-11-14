@@ -35,7 +35,6 @@
   <script defer src="{{ url_for('static', filename='ficha-envio.js') }}"></script>
   <script defer src="{{ url_for('static', filename='cadastro_captura.js') }}"></script>
   <script defer src="{{ url_for('static', filename='ajuda.js') }}"></script>
-  {% if agente_na_tela %}<script defer src="{{ url_for('static', filename='agente.js') }}"></script>{% endif %}
   <script defer src="{{ url_for('static', filename='teor-marcas.js') }}"></script>
   <script defer src="{{ url_for('static', filename='copiar_pessoa.js') }}"></script>
   <script defer src="{{ url_for('static', filename='busca_ato.js') }}"></script>
@@ -253,7 +252,7 @@
     {% include '_whatsapp_atalho.html' %}
     {% include '_produtividade_rapida.html' %}
     {% if ajuda_tela %}{% include '_ajuda.html' %}{% endif %}
-    {% if agente_na_tela %}{% include '_agente.html' %}{% endif %}
+    {% include '_superusuario_atalho.html' %}
   </aside>
 
   {# A JANELA DE PENDÊNCIAS ABRE SOZINHA também aqui (decisão do oficial, 01/11/2026): o aviso

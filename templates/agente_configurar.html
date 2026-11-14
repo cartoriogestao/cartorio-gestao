@@ -1,10 +1,12 @@
 {% extends 'base.html' %}
-{% block heading %}<h1>Agente do sistema — configurar</h1>{% endblock %}
+{% block heading %}<h1>Provedores de IA — chaves e configuração</h1>{% endblock %}
 {% block content %}
 {% include '_serventia.html' %}
 
 <div class="actions">
-  <a class="button" href="{{ url_for('agente_console') }}">&larr; Agente do sistema</a>
+  {# O console do agente saiu em 14/11/2026 (o superusuário o substituiu). As
+     chaves daqui servem à Ajuda, ao WhatsApp, às revisões e às rotinas de IA
+     da automação. #}
   <a class="button" href="{{ url_for('ajuda_configurar') }}">Ajuda do sistema — configurar</a>
 </div>
 
@@ -96,8 +98,8 @@
     da serventia. Chave dentro dele é chave publicada.
     <br><br>
     <strong>Campo vazio não apaga nada:</strong> quem apaga é o botão que diz
-    que apaga. E o uso é cobrado por token, então o que se gasta aparece em cada
-    sessão, no console.
+    que apaga. E o uso é cobrado por token: o que se gasta aparece no relatório
+    anual de IA (Gestão → LGPD e auditoria).
   </small></p>
 
   {% for pr in provedores %}

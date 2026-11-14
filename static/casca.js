@@ -261,9 +261,9 @@
   /* ---------------------------------------------------- a coluna de apoio */
   /* UMA GAVETA DE CADA VEZ: quem fecha é o botão de fechar de cada uma, para o
      script dela saber que fechou. */
-  var FECHAR = ["[data-ajuda-fechar]", "[data-agente-fechar]", "[data-prod-fechar]"];
-  var ABRIR = [".ajuda-chamar", ".agente-chamar", ".prod-rapida-btn"];
-  var PAINEL = ["[data-ajuda-gaveta]", "[data-agente-gaveta]", "[data-prod-painel]"];
+  var FECHAR = ["[data-ajuda-fechar]", "[data-prod-fechar]"];
+  var ABRIR = [".ajuda-chamar", ".prod-rapida-btn"];
+  var PAINEL = ["[data-ajuda-gaveta]", "[data-prod-painel]"];
 
   ABRIR.forEach(function (seletor, n) {
     var botao = document.querySelector(".cg-apoio " + seletor);

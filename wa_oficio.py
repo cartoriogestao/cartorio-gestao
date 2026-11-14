@@ -34,8 +34,8 @@ SERVICOS: tuple[dict, ...] = (
      "quando": "apontar título, intimação, pagamento, cancelamento ou instrumento"},
     {"id": "certidao_protesto", "setor": "PROTESTO", "nome": "Certidão de protesto",
      "quando": "certidão de protesto ou certidão negativa"},
-    {"id": "rtd_rcpj", "setor": "RCPJ_RTD", "nome": "RTD ou pessoa jurídica",
-     "quando": "contrato, notificação, contrato social, estatuto ou ata de pessoa jurídica"},
+    {"id": "rtd_rcpj", "setor": "RCPJ_RTD", "nome": "Títulos e documentos",
+     "quando": "notificação ou registro de título ou documento"},
     {"id": "manifestacao", "setor": "GESTAO", "nome": "Manifestação",
      "quando": "reclamação, ouvidoria ou elogio sobre o atendimento"},
     {"id": "conferir_arquivo", "setor": "ATENDIMENTO", "nome": "Conferir arquivo",
@@ -86,25 +86,22 @@ def texto_do_oficio() -> str:
     """O que o cartório faz e como o escrevente trabalha. Sem número. Só calcula."""
     linhas = [
         "=== O OFÍCIO DESTA SERVENTIA ===",
-        "O Cartório Gestão é o sistema da serventia extrajudicial. O escrevente, "
-        "no balcão, faz o seguinte, e o WhatsApp faz a mesma recepção:",
+        "Isto é para você saber o caminho. Não leia este texto para o cliente. "
+        "Fale como a pessoa do atendimento: frase curta, e diga que vai passar "
+        "ao escrevente.",
         "1. Entende o que a pessoa precisa (certidão, registro, escritura, firma, "
-        "protesto, título ou pessoa jurídica).",
-        "2. Diz o caminho, os documentos de forma geral e o que o cartório faz. "
-        "Não promete o ato pronto.",
-        "3. Quando a pessoa quer o serviço feito, o pedido fica para o escrevente. "
-        "Ele abre o atendimento em Trabalho → Atendimentos e, quando vira serviço, "
-        "o protocolo em Caixa → Protocolo geral.",
-        "4. Confere documento e qualificação no módulo da atribuição, lavra, sela "
-        "e entrega. Qualificar, recusar, lavrar, cancelar e dispensar são do "
-        "delegatário, ou de quem ele autorizou. O sistema e esta conversa avisam "
-        "e orientam; não decidem o ato.",
+        "protesto ou título).",
+        "2. Diz o caminho e os documentos de forma geral. Não promete o ato pronto.",
+        "3. Quando a pessoa quer o serviço feito, diga que vai passar ao escrevente.",
+        "4. O oficial, ou quem ele autorizou, decide o ato. Esta conversa não "
+        "decide o ato.",
         "Atribuições: Registro Civil (nascimento, casamento, óbito, habilitação e "
         "as certidões); Registro de Imóveis (matrícula, registro, averbação, "
         "certidão); Tabelionato de Notas (escritura, procuração, testamento, ata "
         "notarial, reconhecimento de firma e autenticação); Protesto (apontamento, "
-        "intimação, pagamento, cancelamento, instrumento e certidão); RCPJ e RTD "
-        "(pessoa jurídica, contrato, notificação e títulos e documentos).",
+        "intimação, pagamento, cancelamento, instrumento e certidão); Títulos e "
+        "Documentos (notificação e registro de título ou documento). Esta "
+        "serventia não registra empresa nem pessoa jurídica.",
         "O valor em dinheiro só sai da tabela de emolumentos da casa, como "
         "estimativa, e só para o item da lista aprovada. Prazo, selo, livro e "
         "matrícula não se inventam: ou estão no texto-base, ou no trecho de norma "

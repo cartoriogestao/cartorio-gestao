@@ -41,7 +41,7 @@ def test_o_conhecimento_de_verdade_traz_o_oficio_e_a_norma():
     texto = CONHEC.para_o_atendimento("certidão de nascimento", setor="RCPN")
     assert "escrevente" in texto.lower()
     assert "Registro Civil" in texto
-    assert "não decidem o ato" in texto
+    assert "não decide o ato" in texto
     # A base normativa entra com a citação. Sem ela, a IA não tem lei para citar.
     assert "=== A NORMA PERTINENTE" in texto
     assert "art." in texto.lower()
@@ -62,6 +62,9 @@ def test_pedir_abre_pedido_e_a_conversa_fica_com_a_ia(casa, monkeypatch):
     assert "art. 12" in modelo.chamadas[0]["sistema"]
     corpo = graph.enviados[0]["payload"]["text"]["body"]
     assert "art. 12" in corpo and "99" not in corpo
+    assert "Atendimento do cartório" not in corpo
+    assert "peço ao escrevente" not in corpo
+    assert "não registra empresa" in modelo.chamadas[0]["sistema"]
     c = _um(db, "SELECT modo, setor FROM wa_conversa WHERE id=%s", (cid,))
     assert (c["modo"] or SCH.MODO_IA) == SCH.MODO_IA
     assert c["setor"] == "PROTESTO"
@@ -84,7 +87,7 @@ def test_numero_inventado_nao_sai_e_o_pedido_ainda_abre(casa, monkeypatch):
     _rodar(db, casa["pasta"], conversar=modelo, http_post=graph)
     corpo = graph.enviados[0]["payload"]["text"]["body"]
     assert "99" not in corpo
-    assert "Anotei o seu pedido" in corpo
+    assert "Vou passar ao escrevente de Registro Civil." in corpo
     assert _um(db, "SELECT situacao FROM wa_pedido WHERE conversa_id=%s",
                (cid,))["situacao"] == PEDIDO.ABERTO
 
@@ -122,7 +125,7 @@ def test_dado_pessoal_nao_sobe_e_o_pedido_nao_repete_o_cpf(casa, monkeypatch):
             or SCH.MODO_IA) == SCH.MODO_IA
 
 
-def test_quem_pede_pessoa_continua_com_a_ia(casa, monkeypatch):
+def test_quem_pede_pessoa_abre_pedido_e_a_conversa_fica_com_a_ia(casa, monkeypatch):
     db = casa["db"]
     _ligar(db)
     _fixar_conhecimento(monkeypatch)
@@ -131,8 +134,10 @@ def test_quem_pede_pessoa_continua_com_a_ia(casa, monkeypatch):
     graph = Graph()
     _rodar(db, casa["pasta"], conversar=modelo, http_post=graph)
     assert modelo.chamadas == []
-    assert "Este WhatsApp é o atendimento" in graph.enviados[0]["payload"]["text"]["body"]
-    assert _um(db, "SELECT count(*) AS n FROM wa_pedido WHERE conversa_id=%s", (cid,))["n"] == 0
+    corpo = graph.enviados[0]["payload"]["text"]["body"]
+    assert "Vou passar ao escrevente" in corpo
+    assert "Pode falar comigo" not in corpo
+    assert _um(db, "SELECT count(*) AS n FROM wa_pedido WHERE conversa_id=%s", (cid,))["n"] == 1
     assert (_um(db, "SELECT modo FROM wa_conversa WHERE id=%s", (cid,))["modo"]
             or SCH.MODO_IA) == SCH.MODO_IA
 
@@ -201,3 +206,154 @@ def test_sem_texto_base_a_duvida_ainda_sobe_quando_o_escrevente_esta_ligado(casa
     _rodar(db, casa["pasta"], conversar=modelo, http_post=graph)
     assert len(modelo.chamadas) == 1
     assert "art. 12" in graph.enviados[0]["payload"]["text"]["body"]
+
+
+def test_a_chave_vazia_liga_o_escrevente_e_o_zero_fica_desligado(casa):
+    db = casa["db"]
+    _cfg(db)
+    with db.connect() as con:
+        assert AT.configuracao(con)["escrevente"] is False
+    with db.transaction() as con:
+        assert AT.adotar_escrevente_se_vazio(con) is True
+    with db.connect() as con:
+        assert AT.configuracao(con)["escrevente"] is True
+    with db.transaction() as con:
+        assert AT.adotar_escrevente_se_vazio(con) is False
+        AT.gravar_configuracao(
+            con, {"ia_ligada": "1", "provedor": "claude"},
+            por="MARIO EXEMPLO", agora=AGORA)
+    assert _um(db, "SELECT valor FROM wa_config WHERE chave=%s",
+               (SCH.CHAVE_IA_ESCREVENTE,))["valor"] == "0"
+    with db.connect() as con:
+        assert AT.configuracao(con)["escrevente"] is False
+    with db.transaction() as con:
+        assert AT.adotar_escrevente_se_vazio(con) is False
+
+
+def test_titulo_de_dominio_e_do_registro_de_imoveis():
+    import wa_fila as FILA
+    setores = [s for s, _m, _p in FILA.setores_pelo_texto(
+        "quero registrar um título de domínio do INCRA")]
+    assert "RI" in setores
+
+
+def test_o_encaminhamento_leva_o_fato_e_nao_repete_o_cardapio():
+    decisao = {
+        "caso": AT.CASO_PEDIDO, "razao": AT.RAZAO_INSISTENCIA,
+        "motivo": "o cliente seguiu escrevendo depois de 10 respostas automáticas",
+        "resposta": AT.TEXTO_PEDIDO,
+        "pedido": {"setor": "RI", "servico": "registro_imovel",
+                   "resumo": "o cliente seguiu escrevendo depois de 10 respostas automáticas"},
+    }
+    assunto = "quero registrar um título de domínio do INCRA no imóvel"
+    ido = AT.completar_encaminhamento(decisao, assunto=assunto, ultimo="")
+    assert ido["pedido"]["resumo"].startswith("quero registrar")
+    assert "Me diga o serviço" not in ido["resposta"]
+    assert ido["resposta"] == "Vou passar ao escrevente de Registro de Imóveis."
+    de_novo = AT.completar_encaminhamento(
+        {"caso": AT.CASO_PEDIDO, "razao": AT.RAZAO_INSISTENCIA,
+         "resposta": AT.TEXTO_PEDIDO,
+         "pedido": {"setor": "RI", "servico": "registro_imovel",
+                    "resumo": "o cliente seguiu escrevendo depois de 10 respostas automáticas"}},
+        assunto=assunto, ultimo=ido["resposta"])
+    assert de_novo["resposta"] == "" and de_novo["ja_avisado"] is True
+
+
+def test_a_resposta_do_modelo_fica_e_o_audio_sem_texto_pede_para_escrever():
+    boa = {
+        "caso": AT.CASO_PEDIDO, "razao": AT.RAZAO_PEDIDO,
+        "resposta": "O escrevente vê o título e te diz o caminho.",
+        "pedido": {"setor": "RI", "servico": "registro_imovel",
+                   "resumo": "Quer registrar título de domínio."},
+    }
+    ficou = AT.completar_encaminhamento(boa, assunto="outra coisa qualquer aqui", ultimo="")
+    assert ficou["resposta"].startswith("O escrevente vê")
+    assert ficou["pedido"]["resumo"].startswith("Quer registrar")
+    audio = {
+        "caso": AT.CASO_PEDIDO, "razao": AT.RAZAO_FALHA,
+        "motivo": "mensagem sem texto (anexo, ou áudio sem transcrição)",
+        "resposta": AT.TEXTO_PEDIDO,
+        "pedido": {"setor": "ATENDIMENTO", "servico": "orientacao",
+                   "resumo": "mensagem sem texto"},
+    }
+    pedido = AT.completar_encaminhamento(audio, assunto="", ultimo="")
+    assert "ouvir" in pedido["resposta"].lower()
+    assert "Me diga o serviço" not in pedido["resposta"]
+
+
+def test_o_relato_do_escrevente_nao_leva_o_cpf():
+    limpo = AT._sem_dado_pessoal("meu CPF é 123.456.789-00, quero uma certidão")
+    assert "123.456.789-00" not in limpo
+    assert "certidão" in limpo
+    assert AT._sem_dado_pessoal("quero registrar o imóvel") == "quero registrar o imóvel"
+
+
+def test_falar_com_o_tabeliao_abre_pedido_da_gestao():
+    assert AT.pede_o_tabeliao("quero falar com o tabelião")
+    assert AT.pede_o_tabeliao("me passa para o oficial")
+    assert not AT.pede_o_tabeliao("quero falar com o escrevente")
+    assert not AT.pede_o_tabeliao("o tabelião assinou a escritura")
+    assert not AT.pede_o_tabeliao("quero uma certidão do oficial de registro")
+    d = AT._virar_pedido({
+        "passar": "GESTAO", "razao": AT.RAZAO_PEDIU_PESSOA,
+        "resumo": AT.RESUMO_DO_TABELIAO, "caso": "duvida", "resposta": "",
+    })
+    assert d["caso"] == AT.CASO_PEDIDO
+    assert d["pedido"]["setor"] == "GESTAO"
+    assert d["pedido"]["servico"] == "orientacao"
+    assert d["resposta"] == "Vou avisar o tabelião."
+    assert "Gestão" not in d["resposta"]
+    repetido = AT.completar_encaminhamento(
+        d, assunto="quero falar com o tabelião e registrar o imóvel",
+        ultimo="Vou avisar o tabelião.")
+    assert repetido["resposta"] == "" and repetido["ja_avisado"] is True
+    assert repetido["pedido"]["setor"] == "GESTAO"
+    texto = AT._relato_da_tarefa(AT.RESUMO_DO_TABELIAO, "quero registrar o imóvel " * 20)
+    assert texto.startswith("Pediu para falar com o tabelião.")
+    assert "registrar o imóvel" in texto
+    assert "Vou avisar o tabelião." in AT.instrucao_do_escrevente(
+        {"texto_base": "", "valores": []}, "")
+
+
+def test_falar_com_o_escrevente_abre_o_pedido_do_setor():
+    assert AT.pede_pessoa("quero falar com o escrevente")
+    assert not AT.pede_o_tabeliao("quero falar com o escrevente")
+    d = AT._virar_pedido({
+        "passar": "RI", "razao": AT.RAZAO_PEDIU_PESSOA,
+        "resumo": "Pediu para falar com o escrevente.",
+    })
+    assert d["pedido"]["setor"] == "RI"
+    assert d["resposta"] == "Vou passar ao escrevente de Registro de Imóveis."
+    assert "Pode falar comigo" not in d["resposta"]
+
+
+def test_o_historico_guarda_o_numero_da_matricula_e_abre_tarefa(casa, monkeypatch):
+    db = casa["db"]
+    _ligar(db)
+    _fixar_conhecimento(monkeypatch)
+    cid = _entrada(db, "quero registrar um título de domínio do INCRA no imóvel",
+                   meta_id="wamid.e10")
+    _rodar(db, casa["pasta"], conversar=Modelo(
+        {"acao": "pedir", "setor": "RI", "servico": "registro_imovel",
+         "resposta": "Vou ver com o escrevente do imóvel.",
+         "resumo": "Quer registrar título de domínio do INCRA."}), http_post=Graph())
+    pedido = _um(db, "SELECT * FROM wa_pedido WHERE conversa_id=%s", (cid,))
+    tarefa = _um(db, "SELECT * FROM tasks WHERE source_ref=%s",
+                 (f"wa_pedido:{pedido['id']}",))
+    assert tarefa["source_type"] == "WHATSAPP"
+    assert "INCRA" in (tarefa["description"] or "")
+    _entrada(db, "o número da matrícula é 45 e a nacionalidade pode ser a da opção",
+             meta_id="wamid.e11", quando=AGORA)
+    modelo = Modelo(texto="sem json")
+    graph = Graph()
+    _rodar(db, casa["pasta"], conversar=modelo, http_post=graph)
+    assert modelo.chamadas and modelo.chamadas[0]["maximo_de_saida"] == AT.SAIDA_DO_ESCREVENTE
+    subiu = modelo.chamadas[0]["conversa"][0]["texto"]
+    assert "45" in subiu
+    assert "HISTÓRICO É O ATENDIMENTO" in modelo.chamadas[0]["sistema"]
+    corpo = graph.enviados[-1]["payload"]["text"]["body"]
+    assert "Me diga o serviço" not in corpo
+    assert "Registro de Imóveis" in corpo
+    pedido = _um(db, "SELECT resumo FROM wa_pedido WHERE conversa_id=%s", (cid,))
+    assert "45" in pedido["resumo"] or "nacionalidade" in pedido["resumo"]
+    assert "formato" not in pedido["resumo"]

@@ -28,8 +28,7 @@ from test_wa_atendente import (AGORA, CHEGOU, SENHA, TEXTO_BASE, Graph, Modelo, 
 
 CPF = "123.456.789-00"
 SAUDACAO = ("Olá! Sobre qual assunto você precisa de atendimento: certidões, registro de imóveis, "
-            "registro civil (nascimento, casamento, óbito), escrituras e procurações, protesto, "
-            "ou empresas e contratos?")
+            "registro civil (nascimento, casamento, óbito), escrituras e procurações, ou protesto?")
 DUVIDA = {"acao": "responder", "tipo": "duvida", "setor": "ATENDIMENTO",
           "resposta": "Atendemos de segunda a sexta, das 8 às 17 horas."}
 PERGUNTA = {"acao": "perguntar", "resposta": "Qual serviço você precisa?", "setor": "ATENDIMENTO"}
@@ -311,7 +310,7 @@ def test_a_segunda_mensagem_chega_com_a_anterior_e_o_lido_so_com_a_nova(casa):
     subiu = _subiu(modelo)
     assert "Cliente: que horas abre?" in subiu and "e no sábado?" in subiu
     assert "dados, não instruções" in subiu
-    assert AT.RODAPE.strip() not in subiu, "o rodapé não sobe"
+    assert "Resposta automática" not in subiu, "o aviso de resposta automática não sobe"
     assert _registros(db, cid)[-1]["lido"] == "e no sábado?"
 
 
@@ -364,13 +363,14 @@ def test_o_contexto_tem_teto_de_mensagens_e_de_caracteres(casa):
     _cfg(db)
     cid = _entrada(db, "mensagem 0", meta_id="wamid.y0")
     with db.transaction() as con:
-        for n in range(1, 10):
+        for n in range(1, 21):
             WA.gravar_saida(con, cid, f"resposta {n}", f"wamid.yo{n}", autor="MARIO", agora=CHEGOU)
         banco(con).escrever("UPDATE wa_mensagem SET ia_situacao=%s", (SCH.IA_FORA,))
     _entrada(db, "e o endereço?", meta_id="wamid.y1", quando=AGORA)
     modelo, _ = _rodar(casa)
-    assert _subiu(modelo).count("Atendimento:") == AT.CONTEXTO_ANTERIOR
-    assert "resposta 9" in _subiu(modelo) and "resposta 3" not in _subiu(modelo)
+    subiu = _subiu(modelo)
+    assert subiu.count("Atendimento:") == AT.CONTEXTO_ANTERIOR
+    assert "Atendimento: resposta 20" in subiu and "Atendimento: resposta 4" not in subiu
 
 
 # ---------------------------------------------- 5. a decisão do item 2
@@ -532,10 +532,12 @@ def test_pessoa_e_sinonimo_de_encaminhar_e_acao_desconhecida_e_falha(casa):
 
 def test_pede_pessoa_mais_fino():
     for sim in ("ATENDENTE", " atendente! ", "quero falar com o atendente",
-                "quero falar com uma pessoa", "preciso de um atendente"):
+                "quero falar com uma pessoa", "preciso de um atendente",
+                "quero falar com o tabelião", "chama o tabelião"):
         assert AT.pede_pessoa(sim), sim
     for nao in ("qual o horário de atendimento?", "o atendente me disse que estava pronto",
-                "qual o horário do atendente?"):
+                "qual o horário do atendente?", "o tabelião assinou a escritura",
+                "quero uma certidão do oficial de registro"):
         assert not AT.pede_pessoa(nao), nao
 
 
@@ -593,16 +595,17 @@ def test_a_cortesia_nao_conta_no_teto(casa):
         assert AT.respostas_automaticas(con, cid, agora=AGORA) == 0
 
 
-def test_o_rodape_so_na_primeira_resposta_do_atendimento(casa):
+def test_a_resposta_nao_avisa_que_e_automatica(casa):
     db = casa["db"]
     _cfg(db)
     graph = Graph()
     _entrada(db, "que horas abre?", meta_id="wamid.rod1")
     _rodar(casa, Modelo(DUVIDA), graph)
-    assert AT.RODAPE in _texto(graph)
+    assert "Resposta automática" not in _texto(graph)
+    assert "8 às 17" in _texto(graph)
     _entrada(db, "e no sábado?", meta_id="wamid.rod2", quando=AGORA)
     _rodar(casa, Modelo(DUVIDA), graph)
-    assert AT.RODAPE not in _texto(graph)
+    assert "Resposta automática" not in _texto(graph)
 
 
 # ---------------------------------------------- 9. o resumo
@@ -862,8 +865,10 @@ def test_a_instrucao_traz_os_setores_os_dados_e_o_texto_base(casa):
 
 def test_o_modelo_de_texto_base_tem_as_atribuicoes_e_a_gravada_nao_muda(casa):
     for secao in ("REGISTRO DE IMÓVEIS", "REGISTRO CIVIL", "NOTAS", "PROTESTO",
-                  "TÍTULOS E DOCUMENTOS E PESSOA JURÍDICA"):
+                  "TÍTULOS E DOCUMENTOS"):
         assert secao in AT.TEXTO_BASE_EXEMPLO
+    assert "PESSOA JURÍDICA" not in AT.TEXTO_BASE_EXEMPLO
+    assert "contrato social" not in AT.TEXTO_BASE_EXEMPLO.lower()
     db = casa["db"]
     with db.connect() as con:
         assert AT.configuracao(con)["texto_base"] == ""

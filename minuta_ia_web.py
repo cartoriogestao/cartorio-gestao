@@ -171,7 +171,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             abort(404)
         if not AP.tem_chave(pasta(), MI.PROVEDOR):
             flash("Esta instalação não tem a chave do Claude: o agente de minutas não "
-                  "funciona sem ela (Administrativo → Agente do sistema).", "danger")
+                  "funciona sem ela. Informe-a na configuração dos provedores de IA (endereço /agente/configurar, só o ADMIN).", "danger")
             return volta(atribuicao, alvo_id)
         try:
             with db.connect() as con:

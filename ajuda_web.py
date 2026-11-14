@@ -1092,7 +1092,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         audit("AJUDA_CHAVE_GRAVADA", "aj_config", 1,
               {"provedor": provedor, "arquivo": str(caminho)})
         flash(f"Chave do {PROV.PROVEDORES[provedor]['nome']} gravada em "
-              f"{caminho}, fora do banco — o Agente do sistema usa a mesma.",
+              f"{caminho}, fora do banco — a configuração dos provedores de IA usa a mesma.",
               "success")
 
     def _apaga_chave() -> None:

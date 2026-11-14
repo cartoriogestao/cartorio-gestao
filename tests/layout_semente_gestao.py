@@ -744,35 +744,6 @@ def _automacao(casa) -> None:
         casa.pagina("automacao_execucao", execucao_id=e)
 
 
-def _agente(casa) -> None:
-    import agente_schema as AGS
-    ids = casa.ids
-    agora = _agora(casa)
-    with casa.transacao() as con:
-        concluida = AGS.abrir_sessao(con, titulo="o selo não responde", pedido="o selo não responde",
-                                     provedor="deepseek", modelo="deepseek-chat", agora=agora, criada_por=MARIO)
-        AGS.registrar_passo(con, concluida, ordem=1, tipo=AGS.PEDIDO, conteudo="o selo não responde", agora=agora)
-        AGS.registrar_passo(con, concluida, ordem=2, tipo=AGS.FERRAMENTA, ferramenta="estado_do_sistema",
-                            chamada_id="call_1", argumentos='{"o_que": "selo"}', agora=agora)
-        AGS.registrar_passo(con, concluida, ordem=3, tipo=AGS.RESULTADO, ferramenta="estado_do_sistema",
-                            chamada_id="call_1", conteudo="o selador respondeu pela última vez às 09:58",
-                            agora=agora)
-        AGS.registrar_mudanca(con, concluida, ferramenta="anotar_no_problema", alvo="problema 12", antes="aberto",
-                              depois="com nota", agora=agora, criada_por=MARIO)
-        AGS.atualizar_sessao(con, concluida, estado=AGS.CONCLUIDA, turnos=3, tokens_de_entrada=1200,
-                             tokens_de_saida=340, erro="", agora=agora)
-        com_erro = AGS.abrir_sessao(con, titulo="conferir o caixa", pedido="conferir o caixa de ontem",
-                                    provedor="deepseek", modelo="deepseek-chat", agora=agora, criada_por=MARIO)
-        AGS.registrar_passo(con, com_erro, ordem=1, tipo=AGS.PEDIDO, conteudo="conferir o caixa de ontem",
-                            agora=agora)
-        AGS.atualizar_sessao(con, com_erro, estado=AGS.ERRO, turnos=1, tokens_de_entrada=300, tokens_de_saida=0,
-                             erro="O provedor não respondeu no prazo.", agora=agora)
-    _anotar(casa, agente_concluida=concluida, agente_com_erro=com_erro)
-    for sessao in (concluida, com_erro):
-        casa.pagina("agente_sessao", sessao_id=sessao)
-        casa.pagina("agente_andamento", sessao_id=sessao)
-
-
 def _ajuda(casa) -> None:
     import agente_provedores as PROV
     import ajuda as AJ
@@ -857,7 +828,7 @@ def _whatsapp(casa) -> None:
 
 PARTES = (_balcao, _andamento_e_inacabados, _cobranca, _nfse, _tarefas, _expedientes, _rotinas, _avisos, _senhas,
           _ouvidoria, _pld, _correcoes, _despesas, _livros, _nucleo, _modelos, _robos, _desenvolvimento,
-          _automacao, _agente, _ajuda, _selos, _whatsapp)
+          _automacao, _ajuda, _selos, _whatsapp)
 
 
 def _atendimento_e_treinamento(casa) -> None:

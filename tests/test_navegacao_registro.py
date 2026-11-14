@@ -290,8 +290,10 @@ def test_os_avisos_que_nao_fecham_continuam_a_vista_na_moldura_nova():
 
 
 def test_a_coluna_de_apoio_leva_as_tres_ferramentas_de_sempre():
+    # A gaveta do agente saiu com o console (14/11/2026): o superusuário tem tela própria.
     apoio = BASE_NOVO[BASE_NOVO.index('class="cg-apoio"'):BASE_NOVO.index("</aside>")]
-    for parcial in ("_whatsapp_atalho.html", "_produtividade_rapida.html", "_ajuda.html", "_agente.html"):
+    for parcial in ("_whatsapp_atalho.html", "_produtividade_rapida.html", "_ajuda.html",
+                    "_superusuario_atalho.html"):
         assert parcial in apoio, parcial
 
 

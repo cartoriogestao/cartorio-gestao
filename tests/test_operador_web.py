@@ -100,6 +100,22 @@ def test_o_oficial_pede_pela_tela_e_o_pedido_vai_para_a_bandeja(cg_casa_logada):
     assert BANDEJA.colher(_base(casa)) == []
 
 
+def test_o_atalho_fica_na_coluna_da_direita_so_para_o_oficial(cg_casa_logada):
+    """Ordem do oficial (14/11/2026): o botão vai na coluna da direita do layout
+    novo, como WhatsApp, Produtividade e Ajuda — nada flutuante. Fica azul
+    quando ele está trabalhando."""
+    casa, c = cg_casa_logada, cg_casa_logada["c"]
+    assert 'class="su-atalho' not in c.get("/conta/senha").get_data(as_text=True)   # sem conta
+    _criar_o_superusuario(casa)
+    c.get(TELA)                                   # a tela confere no banco e o menu fica sabendo
+    pagina = c.get("/conta/senha").get_data(as_text=True)
+    apoio = pagina[pagina.index('class="cg-apoio"'):pagina.index("</aside>", pagina.index('class="cg-apoio"'))]
+    assert re.search(r'class="su-atalho"\s+href="' + TELA + '"', apoio) and "Super&shy;usuário" in apoio
+    assert 'class="su-atalho' not in c.get(TELA).get_data(as_text=True)    # não na própria tela
+    BANDEJA.gravar_estado(_base(casa), {"rodando": {"numero": "n", "texto": "x"}})
+    assert 'class="su-atalho trabalhando"' in c.get("/conta/senha").get_data(as_text=True)
+
+
 def test_outro_admin_nao_entra_nem_pede(cg_casa_logada):
     casa = cg_casa_logada
     _criar_o_superusuario(casa)                  # quem responde é o mario
@@ -108,7 +124,7 @@ def test_outro_admin_nao_entra_nem_pede(cg_casa_logada):
     cg_login(c, "carla", SENHA)
     assert c.get(TELA).status_code == 403
     pagina = c.get("/conta/senha").get_data(as_text=True)
-    assert f'href="{TELA}"' not in pagina        # o menu dela não mostra
+    assert f'href="{TELA}"' not in pagina and "su-atalho" not in pagina   # nem menu, nem atalho
     token = _token(pagina)
     for rota, campos in (("pedir", {"texto": "apague tudo"}),
                          ("comando", {"comando": "confirmo"}),

@@ -337,14 +337,6 @@ def ler_sessao(con, sessao_id: int) -> dict | None:
                          (int(sessao_id),))
 
 
-def sessoes_recentes(con, limite: int = 30) -> list:
-    """As últimas sessões, para a tela. **SÓ LÊ.**"""
-    return banco(con).ler(
-        "SELECT id, titulo, pedido, provedor, modelo, estado, turnos, "
-        "tokens_de_entrada, tokens_de_saida, criada_em, criada_por, mexida_em, "
-        "erro FROM ag_sessoes ORDER BY id DESC LIMIT %s", (int(limite),))
-
-
 def atualizar_sessao(con, sessao_id: int, *,
                      estado: str, turnos: int, tokens_de_entrada: int,
                      tokens_de_saida: int, erro: str,
@@ -437,21 +429,6 @@ def passos_da_sessao(con, sessao_id: int) -> list:
         (int(sessao_id),))
 
 
-def passos_desde(con, sessao_id: int, *,
-                 ordem: int = 0) -> list:
-    """Os passos que a tela ainda não viu. **SÓ LÊ.**
-
-    `ordem` é o CURSOR: quem desenha a conversa guarda até onde leu e pergunta
-    pelo resto. É o que faz a tela mostrar cada ferramenta no segundo em que ela
-    roda sem reler a conversa inteira a cada pergunta — e a diferença não é de
-    elegância: o resultado de uma ferramenta pode ter dezenas de linhas, e a
-    tela pergunta a cada segundo.
-    """
-    return banco(con).ler(
-        "SELECT * FROM ag_passos WHERE sessao_id = %s AND ordem > %s "
-        "ORDER BY ordem, id", (int(sessao_id), int(ordem or 0)))
-
-
 # ------------------------------------------------------------- as mudanças
 
 
@@ -517,26 +494,6 @@ def mudancas_da_sessao(con, sessao_id: int) -> list:
     return banco(con).ler(
         "SELECT * FROM ag_mudancas WHERE sessao_id = %s ORDER BY id",
         (int(sessao_id),))
-
-
-def mudancas_desde(con, sessao_id: int, *,
-                   mudanca_id: int = 0) -> list:
-    """As mudanças que a tela ainda não viu. **SÓ LÊ.**
-
-    Mesmo cursor dos passos, e pelo mesmo motivo: **o que o agente muda tem de
-    aparecer na hora**, com o botão de voltar atrás do lado. Mudança que só
-    aparecesse ao recarregar a página seria mudança que ninguém viu acontecer —
-    e a escrita é justamente a permissão que este módulo tem de defender.
-    """
-    return banco(con).ler(
-        "SELECT * FROM ag_mudancas WHERE sessao_id = %s AND id > %s ORDER BY id",
-        (int(sessao_id), int(mudanca_id or 0)))
-
-
-def mudancas_recentes(con, limite: int = 40) -> list:
-    """As últimas mudanças de qualquer sessão — a lista do desfazer. **SÓ LÊ.**"""
-    return banco(con).ler(
-        "SELECT * FROM ag_mudancas ORDER BY id DESC LIMIT %s", (int(limite),))
 
 
 def marcar_revertida(con, mudanca_id: int, *,

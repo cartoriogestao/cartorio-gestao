@@ -204,7 +204,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         não custar uma consulta a cada página. A ROTA confere sempre."""
         try:
             if not session.get("user_id") or app.extensions["usuario_papel"]() != "ADMIN":
-                return {"superusuario_no_menu": False}       # sem abrir o banco
+                return {"superusuario_no_menu": False,       # sem abrir o banco
+                        "superusuario_trabalhando": False}
             visto = session.get("superusuario_menu")
             vale = MINUTOS_DO_MENU if isinstance(visto, list) and visto and visto[0] \
                 else MINUTOS_DO_MENU_SEM_LINK
@@ -212,9 +213,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                     time.time() - float(visto[1]) > vale * 60:
                 visto = [_acesso(_eu()) == "oficial", time.time()]
                 session["superusuario_menu"] = visto
-            return {"superusuario_no_menu": bool(visto[0])}
+            trabalhando = False
+            if visto[0]:            # só o oficial: um arquivo pequeno, sem banco
+                trabalhando = bool(BANDEJA.ler_estado(base()).get("rodando"))
+            return {"superusuario_no_menu": bool(visto[0]),
+                    "superusuario_trabalhando": trabalhando}
         except Exception:  # noqa: BLE001 — o menu não derruba tela nenhuma
-            return {"superusuario_no_menu": False}
+            return {"superusuario_no_menu": False, "superusuario_trabalhando": False}
 
     # ----------------------------------------------------------- a tela
 

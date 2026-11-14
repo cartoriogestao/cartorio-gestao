@@ -107,9 +107,9 @@
 
 /* a coluna de apoio: as mesmas ferramentas de sempre, no mesmo lugar em toda tela */
 .cg-apoio{background:#edf0f3;border-left:1px solid #dde2e8;display:flex;flex-direction:column;justify-content:flex-end;padding:8px 0;gap:3px;min-height:0;position:relative;z-index:40}
-.cg-apoio .wa-atalho,.cg-apoio .prod-rapida,.cg-apoio .ajuda-caixa,.cg-apoio .agente-caixa{position:static;inset:auto;width:auto;height:auto;margin:0;padding:0;background:none;border:0;border-radius:0;box-shadow:none;z-index:auto;display:block;color:#2c3845}
-.cg-apoio .wa-atalho,.cg-apoio .prod-rapida-btn,.cg-apoio .ajuda-chamar,.cg-apoio .agente-chamar{display:flex;flex-direction:column;align-items:center;gap:2px;width:calc(100% - 10px);margin:0 5px;padding:7px 2px 6px;border-radius:8px;font-size:9.8px;line-height:1.12;text-align:center;color:#2c3845;font-weight:500;background:none;border:0;box-shadow:none;position:relative;text-decoration:none;cursor:pointer;white-space:normal;min-height:0}
-.cg-apoio .wa-atalho:hover,.cg-apoio .prod-rapida-btn:hover,.cg-apoio .ajuda-chamar:hover,.cg-apoio .agente-chamar:hover{background:#f6f7f9;color:#14202c;text-decoration:none}
+.cg-apoio .wa-atalho,.cg-apoio .prod-rapida,.cg-apoio .ajuda-caixa,.cg-apoio .su-atalho{position:static;inset:auto;width:auto;height:auto;margin:0;padding:0;background:none;border:0;border-radius:0;box-shadow:none;z-index:auto;display:block;color:#2c3845}
+.cg-apoio .wa-atalho,.cg-apoio .prod-rapida-btn,.cg-apoio .ajuda-chamar,.cg-apoio .su-atalho{display:flex;flex-direction:column;align-items:center;gap:2px;width:calc(100% - 10px);margin:0 5px;padding:7px 2px 6px;border-radius:8px;font-size:9.8px;line-height:1.12;text-align:center;color:#2c3845;font-weight:500;background:none;border:0;box-shadow:none;position:relative;text-decoration:none;cursor:pointer;white-space:normal;min-height:0}
+.cg-apoio .wa-atalho:hover,.cg-apoio .prod-rapida-btn:hover,.cg-apoio .ajuda-chamar:hover,.cg-apoio .su-atalho:hover{background:#f6f7f9;color:#14202c;text-decoration:none}
 .cg-apoio .wa-atalho::after{content:"WhatsApp"}
 .cg-apoio .wa-atalho-icone{width:18px;height:18px}
 .cg-apoio .wa-atalho-alerta{position:static;background:#e7f0fa;color:#0b4f96;font-size:9.4px;font-weight:600;border-radius:8px;padding:0 4px;order:3;box-shadow:none;min-width:0;height:auto;line-height:1.4;border:0}
@@ -118,15 +118,15 @@
 .cg-apoio .prod-rapida-tempo{font-size:9.4px;font-weight:600;background:#e6f3ec;color:#17693f;border-radius:8px;padding:0 4px}
 .cg-apoio .ajuda-chamar::before{content:"?";display:flex;width:18px;height:18px;border:1.6px solid currentColor;border-radius:50%;align-items:center;justify-content:center;font-weight:700;font-size:11px;line-height:1}
 .cg-apoio .ajuda-marca{background:#fbe9ec;color:#b00020;font-size:9.4px;font-weight:600;border-radius:8px;padding:0 4px;margin:0}
-.cg-apoio .ajuda-caixa.aberta .ajuda-chamar,.cg-apoio .agente-caixa.aberta .agente-chamar,.cg-apoio .prod-rapida[data-aberta] .prod-rapida-btn{background:#fff;box-shadow:0 0 0 1px #dde2e8;font-weight:600}
+.cg-apoio .ajuda-caixa.aberta .ajuda-chamar,.cg-apoio .prod-rapida[data-aberta] .prod-rapida-btn{background:#fff;box-shadow:0 0 0 1px #dde2e8;font-weight:600}
 
 /* a gaveta abre ao lado do ato, e o ato continua à vista e digitável */
-.cg-apoio .ajuda-gaveta,.cg-apoio .agente-gaveta,.cg-apoio .prod-rapida-painel{position:fixed;top:0;right:72px;bottom:0;left:auto;width:360px;max-height:none;margin:0;border:0;border-left:1px solid #cfd6de;border-radius:0;box-shadow:-10px 0 24px -16px rgba(20,32,44,.45);background:#fff;overflow:auto;z-index:45;color:#16202b;font-size:13.2px;text-align:left}
+.cg-apoio .ajuda-gaveta,.cg-apoio .prod-rapida-painel{position:fixed;top:0;right:72px;bottom:0;left:auto;width:360px;max-height:none;margin:0;border:0;border-left:1px solid #cfd6de;border-radius:0;box-shadow:-10px 0 24px -16px rgba(20,32,44,.45);background:#fff;overflow:auto;z-index:45;color:#16202b;font-size:13.2px;text-align:left}
 .cg-apoio .prod-rapida-alerta{position:fixed;right:84px;bottom:14px;left:auto;top:auto;z-index:50;width:360px}
-.cg-app:has(.ajuda-gaveta:not([hidden]),.agente-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])) .cg-area{margin-right:360px}
+.cg-app:has(.ajuda-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])) .cg-area{margin-right:360px}
 @media (max-width:1499px){
-  .cg-app:has(.ajuda-gaveta:not([hidden]),.agente-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])){grid-template-columns:96px minmax(0,1fr) 72px}
-  .cg-app:has(.ajuda-gaveta:not([hidden]),.agente-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])) .cg-secoes{display:none}
+  .cg-app:has(.ajuda-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])){grid-template-columns:96px minmax(0,1fr) 72px}
+  .cg-app:has(.ajuda-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])) .cg-secoes{display:none}
 }
 
 /* a busca */
@@ -169,8 +169,8 @@
   .cg-rolagem{overflow:visible}
   .cg-apoio{flex-direction:row;justify-content:space-around;border-left:0;border-top:1px solid #dde2e8;flex:none;position:sticky;bottom:0}
   .cg-apoio>*{flex:1}
-  .cg-apoio .ajuda-gaveta,.cg-apoio .agente-gaveta,.cg-apoio .prod-rapida-painel{top:auto;right:0;left:0;bottom:56px;width:auto;height:70vh}
-  .cg-app:has(.ajuda-gaveta:not([hidden]),.agente-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])) .cg-area{margin-right:0}
+  .cg-apoio .ajuda-gaveta,.cg-apoio .prod-rapida-painel{top:auto;right:0;left:0;bottom:56px;width:auto;height:70vh}
+  .cg-app:has(.ajuda-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])) .cg-area{margin-right:0}
 }
 @media (prefers-reduced-motion:reduce){.cg-corpo *{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 
@@ -334,16 +334,20 @@ html[data-escala] .cg-app{height:calc(100vh / var(--cg-escala))}
 .cg-app.cg-recolhido .cg-mod>span:not(.cg-mod-ic),.cg-app.cg-recolhido .cg-eu-nome,.cg-app.cg-recolhido .cg-recolher-t{display:none}
 .cg-app.cg-recolhido .cg-mod{margin:0 4px;padding:5px 2px}
 .cg-app.cg-recolhido .cg-mod-ic{width:26px;height:26px}
-.cg-app.cg-recolhido:has(.ajuda-gaveta:not([hidden]),.agente-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])){grid-template-columns:56px minmax(0,1fr) 72px}
+.cg-app.cg-recolhido:has(.ajuda-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])){grid-template-columns:56px minmax(0,1fr) 72px}
 
 /* A COLUNA DA DIREITA EM DESTAQUE — pedido do oficial, 02/11/2026: «o cronômetro precisa de mais destaque
    para mostrar que está correndo, e o WhatsApp precisa de mais destaque para saber que tem gente chamando».
    Ícones maiores e com mais contraste; o estado se vê pela cor e pelo selo, e o pulso só para quem não pediu
    menos movimento ao sistema. */
-.cg-apoio .wa-atalho,.cg-apoio .prod-rapida-btn,.cg-apoio .ajuda-chamar,.cg-apoio .agente-chamar{font-size:10.4px;color:#14202c;font-weight:600}
+.cg-apoio .wa-atalho,.cg-apoio .prod-rapida-btn,.cg-apoio .ajuda-chamar,.cg-apoio .su-atalho{font-size:10.4px;color:#14202c;font-weight:600}
 .cg-apoio .wa-atalho-icone{width:24px;height:24px}
 .cg-apoio .prod-rapida-ico{font-size:21px}
 .cg-apoio .ajuda-chamar::before{width:22px;height:22px;font-size:13px}
+/* O SUPERUSUÁRIO (14/11/2026): o atalho dele, no lugar da gaveta do agente — e
+   em azul quando ele está trabalhando num pedido. */
+.cg-apoio .su-atalho-icone{width:24px;height:24px}
+.cg-apoio .su-atalho.trabalhando{background:#e7f0fa;color:#0b4f96;box-shadow:inset 0 0 0 2px #0b5cad}
 .cg-apoio .prod-rapida.correndo .prod-rapida-btn{background:#17693f;color:#fff;box-shadow:inset 0 0 0 2px #0f4f2e}
 .cg-apoio .prod-rapida.correndo .prod-rapida-tempo{background:#fff;color:#0f4f2e;font-size:10.4px}
 .cg-apoio .wa-atalho:has(.wa-atalho-alerta){background:#e3f6ea;color:#0f6b3a;box-shadow:inset 0 0 0 2px #25a35a}
@@ -363,12 +367,12 @@ html[data-escala] .cg-app{height:calc(100vh / var(--cg-escala))}
   html[data-escala="150"] .cg-secoes,html[data-escala="150"] .cg-recolher-f{display:none}
   html[data-escala="150"] .cg-mod>span:not(.cg-mod-ic),html[data-escala="150"] .cg-eu-nome{display:none}
   html[data-escala="150"] .cg-mod{margin:0 4px;padding:5px 2px}
-  html[data-escala="150"] .cg-app:has(.ajuda-gaveta:not([hidden]),.agente-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])){grid-template-columns:56px minmax(0,1fr) 72px}
+  html[data-escala="150"] .cg-app:has(.ajuda-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])){grid-template-columns:56px minmax(0,1fr) 72px}
 }
 @media (max-width:1497px){
   html[data-escala="130"] .cg-app{grid-template-columns:56px minmax(0,1fr) 72px}
   html[data-escala="130"] .cg-secoes,html[data-escala="130"] .cg-recolher-f{display:none}
   html[data-escala="130"] .cg-mod>span:not(.cg-mod-ic),html[data-escala="130"] .cg-eu-nome{display:none}
   html[data-escala="130"] .cg-mod{margin:0 4px;padding:5px 2px}
-  html[data-escala="130"] .cg-app:has(.ajuda-gaveta:not([hidden]),.agente-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])){grid-template-columns:56px minmax(0,1fr) 72px}
+  html[data-escala="130"] .cg-app:has(.ajuda-gaveta:not([hidden]),.prod-rapida-painel:not([hidden])){grid-template-columns:56px minmax(0,1fr) 72px}
 }

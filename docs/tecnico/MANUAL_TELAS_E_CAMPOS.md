@@ -1216,14 +1216,6 @@ Campos da tela: Procurar [procurar]; Titulo [titulo] (obrigatório na tela); Ass
 Comandos: Procurar na base; apagar; Salvar a alteração Gravar na base.
 Acessos relacionados: editar; Cancelar.
 
-### Agente do sistema
-
-Caminho: Administrativo > Ajuda > Agente do sistema.
-Tela-fonte: `templates/agente.html`.
-Campos da tela: O que você quer que ele apure [pedido] (obrigatório na tela); Provedor [provedor]; Modelo (vazio = o padrão do provedor) [modelo].
-Comandos: Pedir; desfazer.
-Acessos relacionados: Configuração do agente; Problemas do sistema.
-
 ### Modelos dos documentos
 
 Caminho: Administrativo > Configuração > Modelos dos documentos.
@@ -1276,7 +1268,7 @@ Caminho: Administrativo > Configuração > Agente — configurar.
 Tela-fonte: `templates/agente_configurar.html`.
 Campos da tela: Provedor [provedor_padrao]; Modelo (vazio = o padrão do provedor) [modelo_padrao]; Teto de turnos por rodada [teto_de_turnos]; Teto de sessões por dia [teto_de_sessoes]; Escrita ligada [escrita_ligada]; Api key [api_key].
 Comandos: Guardar; Gravar a chave; apagar a chave deste provedor.
-Acessos relacionados: ← Agente do sistema; Ajuda do sistema — configurar; painel do provedor.
+Acessos relacionados: Ajuda do sistema — configurar; painel do provedor. (O console do agente saiu em 14/11/2026; o superusuário o substituiu.)
 
 ### Ajuda — configurar
 
@@ -1312,13 +1304,6 @@ Acessos relacionados: Verificar integridade dos anexos.
 ## Telas de ficha, etapa e documento
 
 Estas telas não têm entrada própria no menu principal. Abrem a partir de listas, fichas, etapas ou links de outra tela. O nome abaixo vem do título HTML quando há um título estático; caso contrário, do arquivo. Para voltar ao processo ou registro, use o link de retorno da própria tela.
-
-### Sessão do agente #
-
-Tela-fonte: `templates/agente_sessao.html`.
-Campos da tela: O que você quer acrescentar [pedido] (obrigatório na tela).
-Comandos: Continuar.
-Acessos relacionados: ← Agente do sistema; Problemas do sistema.
 
 ### Consulta
 

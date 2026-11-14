@@ -425,7 +425,6 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("O que a ajuda sabe do projeto", "ajuda_projeto", AM),
              _i("Base de conhecimento da ajuda", "ajuda_base", AM),
              _i("Ajuda: configurar", "ajuda_configurar", A, antigo="Ajuda — configurar"),
-             _i("Agente do sistema", "agente_console", A, quando="agente_no_menu"),
              # O SUPERUSUÁRIO (12/11/2026), no lugar do agente: só o oficial que responde
              # pela conta dele vê (`operador_web`), e por isso a condição é da pessoa.
              _i("Superusuário", "superusuario_console", A, quando="superusuario_no_menu",
@@ -680,7 +679,6 @@ PAI: dict[str, tuple[str, str]] = {
     "relatos_diarios": ("FIN", "Produtividade"),
     "produtividade_relatorio": ("FIN", "Produtividade"),
     # Gestão
-    "agente_sessao": ("GESTAO", "Agente e leituras"),
     "gestor_relatorio_ia_papel": ("GESTAO", "LGPD e auditoria"),
     "minuta_ia_pedido": ("GESTAO", "Agente e leituras"),
     "ajuda_consulta": ("GESTAO", "Agente e leituras"),

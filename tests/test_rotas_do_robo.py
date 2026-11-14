@@ -266,7 +266,7 @@ def test_a_regua_nao_alcanca_gente(cg_casa):
 
 
 @pytest.mark.parametrize("vedada", ["users", "settings", "backup", "caixa_abrir",
-                                    "agente_console", "modelos_editor"])
+                                    "agente_configurar", "modelos_editor"])
 def test_nome_vedado_nunca_entra(vedada):
     import selo_robo as SR
     assert SR.rota_permitida_ao_robo(vedada) is False

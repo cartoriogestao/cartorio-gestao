@@ -317,98 +317,6 @@ body.lupa-aberta{overflow:hidden}
 @media print{.ajuda-caixa{display:none!important}}
 
 
-/* ------------------------------------------- A GAVETA DO AGENTE, EM TODA TELA
-
-   IRMA DA JANELA DA AJUDA, E DO OUTRO LADO DA TELA.
-       As duas ficam presas no canto e nao rolam com a pagina. A ajuda fica a
-       direita e o agente a ESQUERDA de proposito: as duas podem estar abertas
-       ao mesmo tempo, e uma em cima da outra faria fechar uma para ler a outra.
-
-   O QUE FAZ ELA SER RESPONSIVA, EM UMA LINHA
-       A gaveta e uma coluna de tres partes — topo fixo, conversa que rola,
-       formulario fixo embaixo —, e a conversa e `flex:1;min-height:0`. Sem o
-       `min-height:0` o `overflow` NAO pega num filho de flex: a caixa cresceria
-       com a conversa e empurraria o formulario para fora da tela, que e o
-       defeito classico de gaveta de conversa.
-
-   A COR E PROPRIA, e nao a da ajuda: sao duas coisas diferentes, e quem opera
-   precisa saber qual botao abre qual antes de clicar. */
-.agente-caixa{position:fixed;left:18px;bottom:18px;z-index:899;
-  display:flex;flex-direction:column;align-items:flex-start;gap:8px}
-.agente-chamar{display:inline-flex;align-items:center;gap:7px;
-  background:#334155;color:#fff;border:1px solid #1f2937;
-  border-radius:999px;padding:9px 16px;font-weight:600;font-size:13px;
-  box-shadow:0 3px 10px rgba(16,42,58,.22);cursor:pointer}
-.agente-chamar:hover{background:#1f2937;text-decoration:none;color:#fff}
-.agente-chamar:focus-visible{outline:3px solid #cbd5e1;outline-offset:2px}
-/* O PONTO DIZ QUE ELE ESTA RODANDO AGORA, e so isso: quem ve a gaveta fechada
-   e o ponto aceso sabe que ha trabalho em curso sem precisar abri-la. */
-.agente-ponto{width:8px;height:8px;border-radius:50%;background:#22c55e;
-  box-shadow:0 0 0 3px rgba(34,197,94,.28);animation:agente-pulsa 1.6s infinite}
-@keyframes agente-pulsa{0%,100%{opacity:1}50%{opacity:.35}}
-
-.agente-gaveta{width:min(540px,calc(100vw - 36px));max-height:80vh;
-  display:flex;flex-direction:column;
-  background:var(--panel);border:1px solid var(--border);border-radius:10px;
-  box-shadow:0 12px 34px rgba(16,42,58,.20)}
-.agente-gaveta[hidden]{display:none}
-.agente-topo{display:flex;justify-content:space-between;align-items:center;
-  gap:10px;padding:11px 14px;border-bottom:1px solid var(--border);
-  background:#f8fafb;border-radius:10px 10px 0 0;flex:0 0 auto}
-.agente-topo small{display:block}
-.agente-fechar{border:0;background:transparent;font-size:20px;line-height:1;
-  padding:0 4px;color:#65727e;cursor:pointer}
-
-/* flex:1 + min-height:0 = a conversa rola, o topo e o formulario nao saem do
-   lugar. E o que faz a gaveta continuar usavel com cinquenta passos dentro. */
-.agente-corpo{display:flex;flex-direction:column;min-height:0;
-  padding:12px 14px;gap:10px;overflow:hidden}
-.agente-conversa{flex:1;min-height:80px;overflow:auto;display:grid;gap:8px;
-  align-content:start;padding-right:4px}
-.agente-gaveta label{font-size:13px}
-.agente-gaveta textarea,.agente-gaveta input,.agente-gaveta select{font-size:13px}
-.agente-acoes{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:9px}
-.agente-nota{margin:9px 0 0;font-size:12px;color:var(--muted);line-height:1.45}
-.agente-estado{margin:0;font-size:12px;color:var(--muted);min-height:16px}
-.agente-estado.ruim{color:#b42318;font-weight:600}
-.agente-estado.feito{color:var(--ok);font-weight:600}
-
-.agente-avisos{background:#fffaeb;border:1px solid #fedf89;border-radius:7px;
-  padding:9px 11px;font-size:12px;line-height:1.45;color:#7a4a00}
-.agente-avisos ul{margin:4px 0 0;padding-left:18px}
-.agente-avisos[hidden]{display:none}
-
-/* --------------------------------------------- A CONVERSA, NOS DOIS LUGARES
-
-   Estas classes servem a gaveta E a tela da sessao, porque as duas desenham o
-   mesmo `_agente_passos.html`. Escritas duas vezes, o segundo desenho
-   divergiria no primeiro conserto. */
-.ag-fala{border-left:3px solid var(--border);padding:5px 0 5px 9px}
-.ag-fala-eu{border-left-color:var(--accent)}
-.ag-fala-ele{border-left-color:#cbd5e1}
-.ag-quem{font-size:11px;letter-spacing:.04em;color:var(--muted);
-  display:block;margin-bottom:2px}
-.ag-conteudo{white-space:pre-wrap;font-size:13px;line-height:1.5;
-  word-break:break-word}
-.ag-ferramenta{border:1px solid var(--border);border-radius:6px;
-  background:#fafbfc}
-.ag-ferramenta>summary{cursor:pointer;padding:5px 9px;font-size:12px;
-  display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.ag-selo{background:#eef2f6;border:1px solid var(--border);border-radius:999px;
-  padding:0 7px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;
-  color:#4b5563}
-.ag-selo.ruim{background:#fef3f2;border-color:#fecdca;color:#b42318}
-.ag-pre{margin:0;padding:8px 10px;border-top:1px solid var(--border);
-  font-size:11px;line-height:1.42;white-space:pre-wrap;word-break:break-word;
-  max-height:220px;overflow:auto;color:#334155}
-.ag-aviso{background:#fffaeb;border:1px solid #fedf89;border-radius:6px;
-  padding:7px 10px;font-size:12px;color:#7a4a00;margin:0}
-
-@media(max-width:640px){.agente-caixa{left:10px;right:10px;bottom:10px;
-  align-items:stretch}
-  .agente-gaveta{width:auto}}
-/* Papel nao tem botao de agente. */
-@media print{.agente-caixa{display:none!important}}
 
 
 /* ------------------------------------------------ A COR DE CADA MODULO
@@ -467,7 +375,7 @@ body.lupa-aberta{overflow:hidden}
   --bg:#f5f5f7;--panel:rgba(255,255,255,.94);--text:#1d1d1f;--muted:#6e6e73;
   --border:rgba(60,60,67,.16);--accent:#0675df;--accent2:#005bb5;
   --sidebar:#f0f1f5;--hairline:rgba(60,60,67,.12);
-  --sidebar-width:300px;--sidebar-agente-reserva:52px;
+  --sidebar-width:300px;
   --shadow-card:0 1px 2px rgba(0,0,0,.03),0 10px 30px rgba(0,0,0,.055);
   --shadow-float:0 18px 48px rgba(0,0,0,.18);--radius:16px;--radius-small:11px;
   --balao-recebido:#e7f1fc;--balao-recebido-texto:var(--text);
@@ -746,14 +654,6 @@ tr:hover td,tbody tr:nth-child(even):hover td{background:#f0f6fc}
     padding:10px 6px;text-align:center}
   html.sidebar-recolhida .user-copy{display:none}
   html.sidebar-recolhida .link-button{min-width:32px;padding:6px;font-size:11px}
-  html.sidebar-recolhida .layout>.agente-caixa .agente-chamar{padding:8px 10px;font-size:11px;
-    line-height:1.25;text-align:center;white-space:normal;max-width:100%}
-  /* O botão flutuante do agente fica no rodapé da coluna; o bloco do usuário
-     sobe para não ficar por baixo dele nem por baixo do fim do menu. */
-  .layout:has(> .agente-caixa) .sidebar-footer{margin-bottom:var(--sidebar-agente-reserva)}
-  .layout>.agente-caixa{left:12px;bottom:12px;width:calc(var(--sidebar-width) - 24px);
-    max-width:calc(var(--sidebar-width) - 24px)}
-  .layout>.agente-caixa .agente-chamar{width:100%;justify-content:center}
 }
 @media(max-width:1100px){
   :root{--sidebar-width:272px}
@@ -761,8 +661,6 @@ tr:hover td,tbody tr:nth-child(even):hover td{background:#f0f6fc}
 }
 @media(max-width:900px){
   .sidebar-footer{margin-bottom:0}
-  .layout>.agente-caixa{left:18px;width:auto;max-width:none}
-  .layout>.agente-caixa .agente-chamar{width:auto;justify-content:flex-start}
   body.nav-aberta{overflow:hidden}
   .sidebar{width:min(320px,88vw);transform:translateX(-104%);transition:transform .22s ease;
     z-index:40;box-shadow:var(--shadow-float)}

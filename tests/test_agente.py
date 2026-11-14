@@ -788,46 +788,6 @@ def test_o_resumo_obedecido_ainda_fecha_no_limite(casa, monkeypatch):
           AGS.PADROES[AGS.CHAVE_TETO_TURNOS])
 
 
-def test_o_teto_de_tokens_e_da_sessao_e_nao_da_rodada(casa, monkeypatch):
-    """O #68, com o teto baixado para caber num teste.
-
-    A sessão 1 desta instalação gastou **1.395.475 tokens de entrada + 24.946 de
-    saída = 1.420.421** — 3,55 vezes o teto — porque a conferência era contra o
-    contador DESTA RODADA, que nasce em zero a cada fala nova do oficial. Aqui o
-    teto são 300 tokens: a primeira rodada gasta 540 e termina; a segunda não
-    pode mais trabalhar, e para pedindo o resumo.
-
-    **O TETO NÃO É FATURA, É PONTO DE PARADA:** uma rodada pode ultrapassá-lo
-    (foi o que a primeira fez), e o que ele garante é que a SEGUINTE não comece a
-    trabalhar — nem que seja recomeçando a contagem.
-    """
-    monkeypatch.setattr(AGT, "TETO_DE_TOKENS", 300)
-    retrato, _ = _pedir(
-        casa, monkeypatch,
-        _fala(chamadas=[_pedido_ferramenta("estado_do_sistema", id_="c1")],
-              entrada=250, saida=20),
-        _fala("O QUE EU VI: nada.", entrada=250, saida=20))
-    assert retrato["sessao"]["estado"] == AGS.CONCLUIDA
-    assert retrato["sessao"]["tokens_de_entrada"] == 500
-
-    falso = _roteiro(_fala("O QUE EU VI: o que deu para ver até aqui."))
-    monkeypatch.setattr(PROV, "conversar", falso)
-    retrato = AGT.responder(casa["db"], retrato["sessao"]["id"],
-                            pedido="e agora?", pasta_de_dados=casa["dados"],
-                            raiz=RAIZ, agora=HORA, usuario="MARIO",
-                            app=casa["app"])
-    sessao = retrato["sessao"]
-    assert sessao["estado"] == AGS.LIMITE
-    # UMA chamada só, e ela é o fecho: a rodada nova não voltou a trabalhar
-    assert len(falso.recebido) == 1, "a rodada nova recomeçou a contagem"
-    assert falso.recebido[0]["ferramentas"] == []
-    avisos = [p["conteudo"] for p in retrato["passos"] if p["tipo"] == AGS.AVISO]
-    assert any("540 até aqui" in a for a in avisos), avisos
-    # e o gasto continua sendo o DA SESSÃO, somadas as duas rodadas
-    assert sessao["tokens_de_entrada"] == 600
-    assert sessao["tokens_de_saida"] == 60
-
-
 def test_o_que_ja_foi_lido_nao_volta_inteiro_a_cada_turno(casa, monkeypatch):
     """A segunda metade do #68: a conversa INTEIRA vai ao provedor a cada turno,
     e nada a podava.
@@ -1073,57 +1033,6 @@ def test_a_falha_do_provedor_vira_estado_e_nao_perde_o_trabalho(casa,
                if p["tipo"] == AGS.AVISO)
 
 
-def test_a_sessao_interrompida_retoma_com_o_resultado_que_faltou(casa,
-                                                                 monkeypatch):
-    """**FALTA LUZ, ALGUÉM FECHA O CONSOLE, O PROCESSO CAI** entre a gravação
-    do pedido e a do resultado. O provedor recusa a conversa quando falta um
-    resultado — e a sessão ficaria irrecuperável, com o trabalho perdido."""
-    con = _con(casa)
-    AGS.init_agente_schema(con)
-    sessao = AGS.abrir_sessao(con, titulo="interrompida", pedido="confira",
-                              provedor="deepseek", modelo="deepseek-chat",
-                              agora=HORA, criada_por="MARIO")
-    AGS.registrar_passo(con, sessao, ordem=1, tipo=AGS.PEDIDO,
-                        conteudo="confira o selo", agora=HORA)
-    AGS.registrar_passo(con, sessao, ordem=2, tipo=AGS.FERRAMENTA,
-                        ferramenta="estado_do_sistema", chamada_id="c9",
-                        argumentos="{}", agora=HORA)
-    con.commit()
-    con.close()
-
-    # O PROGRAMA ABRIU DE NOVO — e é aqui que esta sessão volta a ter conserto:
-    # `responder` recusa sessão aberta, e sem esta passada ela ficaria presa com
-    # o trabalho (já pago) dentro. É a mesma reconciliação da abertura do banco.
-    con = _con(casa)
-    assert AGT.recuperar_sessoes_interrompidas(con, agora=HORA) >= 1
-    assert AGS.ler_sessao(con, sessao)["estado"] == AGS.INTERROMPIDA
-    avisos = [p["conteudo"] for p in AGS.passos_da_sessao(con, sessao)
-              if p["tipo"] == AGS.AVISO]
-    assert any("interrompida" in a for a in avisos), avisos
-    # e rodar de novo não move o que já está fechado
-    assert AGT.recuperar_sessoes_interrompidas(con, agora=HORA) == 0
-    con.commit()
-    con.close()
-
-    _chave(casa)
-    falso = _roteiro(_fala("O QUE EU VI: retomei."))
-    monkeypatch.setattr(PROV, "conversar", falso)
-
-    retrato = AGT.responder(casa["db"], sessao, pedido="continue",
-                            pasta_de_dados=casa["dados"], raiz=RAIZ,
-                            agora=HORA, usuario="MARIO", app=casa["app"])
-    conversa = falso.recebido[0]["conversa"]
-    blocos = [e for e in conversa if e["tipo"] == "tool"]
-    assert blocos, "o pedido de ferramenta ficou sem resposta — o provedor "
-    assert blocos[0]["resultados"][0]["id"] == "c9"
-    assert blocos[0]["resultados"][0]["erro"] is True
-    assert "interromp" in blocos[0]["resultados"][0]["conteudo"].lower()
-    # e o pedido novo do oficial entrou na conversa
-    assert any(e["tipo"] == "user" and e["texto"] == "continue"
-               for e in conversa)
-    assert retrato["sessao"]["estado"] == AGS.CONCLUIDA
-
-
 def test_duas_aberturas_do_banco_nao_fecham_a_mesma_sessao_duas_vezes(casa):
     """A recuperação lê as sessões ABERTAS e grava nelas (L001R).
 
@@ -1167,22 +1076,6 @@ def test_duas_aberturas_do_banco_nao_fecham_a_mesma_sessao_duas_vezes(casa):
     con.close()
     assert len(avisos) == 1, [p["ordem"] for p in avisos]
     assert resposta["r"] == 0
-
-
-def test_o_gasto_soma_entre_as_rodadas_da_mesma_sessao(casa, monkeypatch):
-    """Gravar só a última rodada faria a tela dizer um preço que ninguém
-    pagou — e o teto de gasto olharia para o número errado."""
-    retrato, _ = _pedir(casa, monkeypatch, _fala(entrada=1000, saida=200))
-    primeiro = retrato["sessao"]["tokens_de_entrada"]
-
-    falso = _roteiro(_fala(entrada=500, saida=100))
-    monkeypatch.setattr(PROV, "conversar", falso)
-    retrato = AGT.responder(casa["db"], retrato["sessao"]["id"],
-                            pedido="e mais isto", pasta_de_dados=casa["dados"],
-                            raiz=RAIZ, agora=HORA, usuario="MARIO",
-                            app=casa["app"])
-    assert retrato["sessao"]["tokens_de_entrada"] == primeiro + 500
-    assert retrato["sessao"]["tokens_de_saida"] == 200 + 100
 
 
 def test_o_teto_de_sessoes_do_dia_recusa_a_seguinte(casa, monkeypatch):

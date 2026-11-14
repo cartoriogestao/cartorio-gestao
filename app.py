@@ -4055,6 +4055,9 @@ def main():
             with db.transaction() as con:
                 if _WA_AT.adotar_escrevente_se_vazio(con):
                     print("Atendimento do escrevente adotado (chave estava vazia).")
+            acertados = _WA_AT.acertar_pedidos_abertos(db)
+            if acertados:
+                print(f"Pedidos do WhatsApp acertados para o escrevente: {acertados}.")
     except Exception as exc:  # noqa: BLE001
         print(f"Atendimento do escrevente nao foi adotado: {exc}")
 

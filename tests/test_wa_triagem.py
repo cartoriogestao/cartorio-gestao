@@ -363,13 +363,14 @@ def test_o_contexto_tem_teto_de_mensagens_e_de_caracteres(casa):
     _cfg(db)
     cid = _entrada(db, "mensagem 0", meta_id="wamid.y0")
     with db.transaction() as con:
-        for n in range(1, 10):
+        for n in range(1, 21):
             WA.gravar_saida(con, cid, f"resposta {n}", f"wamid.yo{n}", autor="MARIO", agora=CHEGOU)
         banco(con).escrever("UPDATE wa_mensagem SET ia_situacao=%s", (SCH.IA_FORA,))
     _entrada(db, "e o endereço?", meta_id="wamid.y1", quando=AGORA)
     modelo, _ = _rodar(casa)
-    assert _subiu(modelo).count("Atendimento:") == AT.CONTEXTO_ANTERIOR
-    assert "resposta 9" in _subiu(modelo) and "resposta 3" not in _subiu(modelo)
+    subiu = _subiu(modelo)
+    assert subiu.count("Atendimento:") == AT.CONTEXTO_ANTERIOR
+    assert "Atendimento: resposta 20" in subiu and "Atendimento: resposta 4" not in subiu
 
 
 # ---------------------------------------------- 5. a decisão do item 2

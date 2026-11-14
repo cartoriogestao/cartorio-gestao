@@ -116,7 +116,8 @@ SETOR_POR_PALAVRA: tuple[tuple[str, str, re.Pattern], ...] = (
         r"\b(escritura\w*|procurac\w*|testamento\w*|ata notarial|"
         r"reconhecimento de firma|reconhecer (a )?firma|autenticac\w*)\b")),
     ("RI", "assunto de registro de imóveis", re.compile(
-        r"\b(matricula\w*|imove(l|is)|registro de imoveis|usucapiao|averbac\w*)\b")),
+        r"\b(matricula\w*|imove(l|is)|registro de imoveis|usucapiao|averbac\w*|"
+        r"titulo de dominio|incra)\b")),
     ("RCPJ_RTD", "assunto de títulos e documentos ou pessoa jurídica", re.compile(
         r"\b(contrato social|estatuto\w*|ata de assembleia|titulos e documentos)\b")),
 )

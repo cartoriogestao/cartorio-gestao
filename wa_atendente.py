@@ -194,8 +194,8 @@ TAMANHO_DA_RESPOSTA = 1200
 # pessoa, sem subir. O pedido inteiro leva, além da pergunta, só a instrução.
 TAMANHO_DA_PERGUNTA = 2000
 FOLGA_DO_PEDIDO = 16_384   # bytes além da instrução: a pergunta (até ~8 KB em UTF-8) e o envelope
-CONTEXTO_ANTERIOR = 6
-TETO_DO_CONTEXTO = 3000    # caracteres do histórico inteiro
+CONTEXTO_ANTERIOR = 16
+TETO_DO_CONTEXTO = 8000    # caracteres do histórico inteiro
 # O JUSTO MOTIVO DA PASSAGEM (29/10/2026). Pedido do oficial: «configure a IA
 # para fazer o primeiro atendimento, passando para atendente quando houver
 # justo motivo». Às regras de antes (pediu pessoa, assunto sensível, dado
@@ -208,6 +208,11 @@ TETO_DO_CONTEXTO = 3000    # caracteres do histórico inteiro
 #     e não medida de qualidade: resposta boa não empurra para pessoa.
 TIPOS_QUE_PASSAM = ("image", "document", "video")
 RESPOSTAS_ANTES_DE_PESSOA = 8
+# 14/11/2026: no atendimento do escrevente a conversa segue. Oito respostas
+# cortava o caso no meio e a frase pronta se repetia. O teto de saída de 900
+# cortava o JSON: no Sonnet o esforço alto conta no mesmo limite.
+RESPOSTAS_DO_ESCREVENTE = 24
+SAIDA_DO_ESCREVENTE = 4096
 
 RODAPE = ""
 # 14/11/2026: o oficial mandou falar como quem atende e encaminha ao
@@ -745,7 +750,9 @@ def instrucao_do_escrevente(cfg: dict, conhecimento: str) -> str:
         "LISTA DE VALORES: o sistema calcula. Se nenhum item servir, peça.\n"
         "3. Nunca escreva número que não esteja no TEXTO-BASE ou no CONHECIMENTO. "
         "Artigo de lei só com a citação que veio no conhecimento.\n"
-        "4. Andamento de protocolo não se responde aqui.\n"
+        "4. Andamento de protocolo não se inventa. O sistema confere quando a "
+        "pessoa manda o número e o código do recibo juntos. Sem os dois, peça "
+        "os dois numa frase. Não repita a situação de memória.\n"
         "5. Nunca peça CPF, documento, nome, telefone, endereço nem outro dado pessoal.\n"
         "6. Marcadores entre colchetes ([PESSOA_01] e outros) são dados ocultados: "
         "não os repita.\n"
@@ -758,6 +765,15 @@ def instrucao_do_escrevente(cfg: dict, conhecimento: str) -> str:
         "seu pedido».\n"
         "9. Esta serventia não registra empresa nem pessoa jurídica. Não ofereça "
         "empresa, contrato social, estatuto nem ata de assembleia.\n"
+        "10. O HISTÓRICO É O ATENDIMENTO. Continue do que a pessoa já disse. "
+        "Não peça de novo o que ela já respondeu. No máximo uma pergunta, e só "
+        "se ainda não deu para saber o serviço.\n"
+        "11. Quando a pessoa quer o serviço feito, ou a resposta não está no "
+        "texto-base nem no conhecimento, a ação é pedir. O resumo é o fato "
+        "para o escrevente: o que ela quer e o que já contou. O sistema abre "
+        "a tarefa dele. Não descreva o ato.\n"
+        "12. Se o conhecimento não tiver a resposta, não invente. Uma frase e "
+        "pedir, com o fato no resumo.\n"
         "SETORES:\n" + setores + "\n"
         "SERVIÇOS (o campo servico, quando pedir):\n" + servicos + "\n"
         "Responda APENAS um objeto JSON, sem nada fora dele:\n"
@@ -989,7 +1005,8 @@ def decidir(db: Any, conversa: dict, texto: str, cfg: dict, *, agora: str,
         lida = fn(pasta_de_dados, provedor=cfg["provedor"], sistema=sistema,
                   conversa=[{"tipo": "user", "texto": pedido}], ferramentas=[],
                   modelo=cfg["modelo"],
-                  maximo_de_saida=900 if cfg.get("escrevente") else 600, prazo=PRAZO_IA,
+                  maximo_de_saida=(SAIDA_DO_ESCREVENTE if cfg.get("escrevente") else 600),
+                  prazo=PRAZO_IA,
                   modulo="wa_atendente", finalidade="wa_atendente",
                   usuario=AUTOR_IA, referencia=f"wa_conversa:{conversa['id']}",
                   mascarado=True,
@@ -1068,10 +1085,214 @@ def _mascarado_para_contexto(texto: str) -> str:
     return "" if set(pacote.contagens) - NAO_E_DADO_SENSIVEL else pacote.pergunta
 
 
+def _linha_repetida(texto: str) -> bool:
+    """A frase pronta do cardápio não ocupa o lugar do fato no histórico."""
+    t = " ".join(str(texto or "").split())
+    if t in (TEXTO_PEDIDO, RESPOSTA_ARQUIVO, RESPOSTA_ESTE_E_O_ATENDIMENTO):
+        return True
+    return t.startswith("Vou passar ao escrevente") or t.startswith("Vou passar para o escrevente")
+
+
+def _resumo_interno(texto: str) -> bool:
+    """Verdadeiro quando o texto é motivo da regra, e não o que o cliente contou."""
+    t = " ".join(str(texto or "").split()).strip().lower()
+    if len(t) < 8:
+        return True
+    marcas = (
+        "o cliente seguiu escrevendo", "respostas automaticas", "respostas automáticas",
+        "a ia não respondeu", "não respondeu no formato", "mensagem sem texto",
+        "mensagem longa", "pedido ao escrevente", "o texto-base", "teto de uso",
+        "tentativas de identificação", "consulta de protocolo",
+    )
+    if any(m in t for m in marcas):
+        return True
+    return any(t == " ".join(frase.split()).lower() for frase in RAZOES.values())
+
+
+def assunto_do_cliente(con: Any, conversa: dict) -> str:
+    """O que a pessoa já contou neste atendimento, sem cortesia e sem o código
+    do protocolo. SÓ LÊ. O escrevente lê isto; o código não entra."""
+    desde = int(conversa.get("atendimento_desde_id") or 0)
+    linhas = banco(con).ler(
+        """SELECT texto, tipo, transcricao FROM wa_mensagem
+            WHERE conversa_id=%s AND id >= %s AND direcao=%s
+              AND COALESCE(tipo, '') <> 'aviso'
+            ORDER BY id""",
+        (int(conversa["id"]), desde, BALCAO.DIR_IN))
+    partes: list[str] = []
+    for m in linhas:
+        bruto = (m.get("transcricao") or "") if (m.get("tipo") or "") == "audio" else (m.get("texto") or "")
+        t = " ".join(str(bruto or "").split()).strip()
+        if not t or identificacao(t) or BALCAO.TEXTOS.tipo_de_cortesia(t):
+            continue
+        partes.append(t)
+    return " | ".join(partes)[:1500]
+
+
+def ultimo_texto_da_ia(con: Any, conversa_id: int) -> str:
+    """A última frase que a IA mandou, para não repetir o mesmo aviso. SÓ LÊ."""
+    linha = banco(con).um(
+        """SELECT texto FROM wa_mensagem
+            WHERE conversa_id=%s AND direcao=%s AND COALESCE(tipo, '') <> 'aviso'
+            ORDER BY id DESC LIMIT 1""",
+        (int(conversa_id), BALCAO.DIR_OUT))
+    return " ".join(str((linha or {}).get("texto") or "").split())
+
+
+def _aviso_do_encaminhamento(decisao: dict, setor: str, assunto: str) -> str:
+    """Uma frase, com o setor quando ele já é conhecido. Sem o cardápio de serviços."""
+    motivo = _sem_acento(decisao.get("motivo") or "")
+    nome = WA.SETORES.get(setor) or ""
+    conhecido = bool(nome) and setor not in ("", WA.SETOR_PADRAO)
+    if decisao.get("razao") == RAZAO_FALHA and "sem texto" in motivo:
+        if assunto and conhecido:
+            return (f"Não consegui ouvir este áudio. O escrevente de {nome} "
+                    "já está com o que você escreveu.")
+        return "Não consegui ouvir o áudio. Pode escrever o que você precisa?"
+    if decisao.get("razao") == RAZAO_ARQUIVO:
+        if conhecido:
+            return f"Recebi. Vou passar ao escrevente de {nome}."
+        return RESPOSTA_ARQUIVO
+    if conhecido:
+        return f"Vou passar ao escrevente de {nome}."
+    return TEXTO_PEDIDO
+
+
+def _trocar_a_frase(decisao: dict) -> bool:
+    """A frase pronta sai. A resposta que o modelo escreveu, e que passou na conferência, fica."""
+    razao = decisao.get("razao") or ""
+    if razao in (RAZAO_DADO_PROTEGIDO, RAZAO_RECLAMACAO, RAZAO_PEDIU_PESSOA):
+        return False
+    resposta = " ".join(str(decisao.get("resposta") or "").split())
+    if razao in (RAZAO_INSISTENCIA, RAZAO_FALHA, RAZAO_ARQUIVO):
+        return True
+    if resposta in (TEXTO_PEDIDO, RESPOSTA_ARQUIVO):
+        return True
+    return resposta.startswith("Vou passar para o escrevente")
+
+
+def completar_encaminhamento(decisao: dict, *, assunto: str = "", ultimo: str = "") -> dict:
+    """O pedido leva o que a pessoa contou, e o cliente não ouve o cardápio de novo.
+
+    Só calcula. Quando o setor já está na conversa, a frase diz o setor. Se essa
+    frase já foi a última, não manda outra igual."""
+    pedido = decisao.get("pedido")
+    if not pedido:
+        return decisao
+    assunto = " ".join(str(assunto or "").split())
+    if assunto and _resumo_interno(pedido.get("resumo")):
+        curto = assunto[:300]
+        pedido["resumo"] = curto
+        decisao["resumo"] = curto
+    setor = pedido.get("setor") or WA.SETOR_PADRAO
+    if setor == WA.SETOR_PADRAO and assunto:
+        for codigo, _motivo, _palavra in FILA.setores_pelo_texto(assunto):
+            if codigo not in FILA.SETORES_SENSIVEIS and codigo != WA.SETOR_PADRAO:
+                pedido["setor"] = codigo
+                pedido["servico"] = OFICIO.servico_de(codigo, decisao.get("razao") or "")
+                setor = codigo
+                break
+    if not _trocar_a_frase(decisao):
+        return decisao
+    aviso = _aviso_do_encaminhamento(decisao, setor, assunto)
+    if " ".join(str(ultimo or "").split()) == aviso:
+        decisao["resposta"] = ""
+        decisao["ja_avisado"] = True
+    else:
+        decisao["resposta"] = aviso
+    return decisao
+
+
+def _tarefa_do_pedido(db: Any, pedido_id: int, *, setor: str, servico: str,
+                      resumo: str, relato: str, quando: str) -> int | None:
+    """Uma tarefa aberta para o escrevente do setor, ligada ao pedido.
+
+    ESCREVE pela via da tarefa da casa (`Database.create_task`). O mesmo pedido
+    não abre outra: o título e a referência são estáveis, e o relato é atualizado.
+    Falha aqui não desfaz o pedido nem a mensagem."""
+    nome = OFICIO.nome_do_servico(servico)
+    titulo = f"WhatsApp — {nome} (pedido {int(pedido_id)})"[:200]
+    ref = f"wa_pedido:{int(pedido_id)}"
+    texto = " ".join(str(resumo or "").split())
+    if _resumo_interno(texto):
+        texto = " ".join(str(relato or "").split()) or texto
+    elif relato and len(" ".join(str(relato).split())) > len(texto):
+        texto = " ".join(str(relato).split())
+    texto = texto[:2000]
+    dono = None
+    try:
+        with db.connect() as con:
+            linha = banco(con).um(
+                "SELECT user_id FROM ge_responsaveis WHERE setor=%s", (setor,))
+        if linha and linha.get("user_id"):
+            dono = int(linha["user_id"])
+    except Exception:                               # noqa: BLE001
+        dono = None
+    try:
+        tid = int(db.create_task({
+            "source_type": "WHATSAPP",
+            "source_ref": ref,
+            "title": titulo,
+            "description": texto,
+            "sector": WA.SETORES.get(setor, setor),
+            "system_name": "WhatsApp",
+            "priority": "MEDIA",
+            "status": "ABERTA",
+            "assigned_user_id": dono,
+            "evidence_required": 0,
+            "start_date": (quando or "")[:10],
+        }, None))
+    except Exception:                               # noqa: BLE001
+        LOG.exception("a tarefa do pedido do WhatsApp não abriu")
+        return None
+    try:
+        with db.transaction() as con:
+            banco(con).escrever(
+                """UPDATE tasks SET description=%s, updated_at=%s
+                    WHERE id=%s AND source_ref=%s""",
+                (texto, quando, tid, ref))
+    except Exception:                               # noqa: BLE001
+        LOG.exception("a tarefa do pedido do WhatsApp não atualizou o relato")
+    return tid
+
+
+def acertar_pedidos_abertos(db: Any) -> int:
+    """Pedido aberto cujo resumo é motivo interno passa a levar o que o cliente
+    contou, e ganha a tarefa do escrevente. ESCREVE. Não manda mensagem."""
+    with db.connect() as con:
+        linhas = banco(con).ler(
+            """SELECT p.id, p.conversa_id, p.setor, p.servico, p.resumo,
+                      c.atendimento_desde_id
+                 FROM wa_pedido p
+                 JOIN wa_conversa c ON c.id = p.conversa_id
+                WHERE p.situacao=%s
+                ORDER BY p.id""",
+            (PEDIDO.ABERTO,))
+    agora = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    n = 0
+    for linha in linhas:
+        conversa = {"id": linha["conversa_id"],
+                    "atendimento_desde_id": linha.get("atendimento_desde_id") or 0}
+        with db.connect() as con:
+            assunto = assunto_do_cliente(con, conversa)
+        resumo = str(linha.get("resumo") or "")
+        if assunto and _resumo_interno(resumo):
+            with db.transaction() as con:
+                PEDIDO.abrir(con, int(linha["conversa_id"]), setor=linha["setor"],
+                             servico=linha["servico"], resumo=assunto[:300],
+                             orientacao="", por="atendente com IA", quando=agora)
+            resumo = assunto[:300]
+            n += 1
+        _tarefa_do_pedido(db, int(linha["id"]), setor=linha["setor"],
+                          servico=linha["servico"], resumo=resumo,
+                          relato=assunto or resumo, quando=agora)
+    return n
+
+
 def _contexto(db: Any, conversa: dict, antes_de: int, *, agora: str) -> list[tuple[str, str]]:
     """As mensagens anteriores DO ATENDIMENTO ATUAL, mascaradas e na ordem. Fora: aviso,
-    anexo e rodapé. NÚMERO E CÓDIGO DE PROTOCOLO NUNCA SOBEM: nem a mensagem que os traz,
-    nem a resposta de andamento, que diz o protocolo e a situação. SÓ LÊ."""
+    anexo, rodapé e a frase pronta repetida. O código do protocolo não sobe, nem a
+    resposta de andamento. «número da matrícula» sobe: é o caso, não o recibo. SÓ LÊ."""
     inicio = ((FILA._dt(agora) or datetime.now()) - timedelta(hours=JANELA_HORAS)
               ).strftime("%Y-%m-%dT%H:%M:%S")
     with db.connect() as con:
@@ -1097,7 +1318,9 @@ def _contexto(db: Any, conversa: dict, antes_de: int, *, agora: str) -> list[tup
         if not t:
             continue
         do_cliente = m.get("direcao") == BALCAO.DIR_IN
-        if do_cliente and (identificacao(t) or _NUMERO.search(_sem_acento(t))):
+        if not do_cliente and _linha_repetida(t):
+            continue
+        if do_cliente and identificacao(t):
             continue
         mascarado = _mascarado_para_contexto(t)
         if not mascarado or total + len(mascarado) > TETO_DO_CONTEXTO:
@@ -1107,6 +1330,12 @@ def _contexto(db: Any, conversa: dict, antes_de: int, *, agora: str) -> list[tup
         if len(saida) >= CONTEXTO_ANTERIOR:
             break
     saida.reverse()
+    if do_andamento:
+        saida.insert(0, (
+            "Atendimento",
+            "O protocolo desta conversa já foi conferido no sistema. "
+            "Não invente a situação. Se a pessoa quiser atualizar, ela manda "
+            "o número e o código de novo."))
     return saida
 
 
@@ -1481,9 +1710,10 @@ def atender_conversa(db: Any, conversa_id: int, cfg: dict, *, agora: str,
         ja_falou = _ia_ja_falou(con, conversa, agora=agora)
         import wa_rotina as ROTINA
         rotina = ROTINA.config(con)
+    teto = RESPOSTAS_DO_ESCREVENTE if cfg.get("escrevente") else RESPOSTAS_ANTES_DE_PESSOA
     if any((p.get("tipo") or "") in TIPOS_QUE_PASSAM for p in pegas):
         decisao = _mao(cfg, setor_atual, RAZAO_ARQUIVO, lido="(arquivo — não subiu à IA)")
-    elif ja_respondeu >= RESPOSTAS_ANTES_DE_PESSOA:
+    elif ja_respondeu >= teto:
         decisao = _mao(cfg, setor_atual, RAZAO_INSISTENCIA,
                        motivo=f"o cliente seguiu escrevendo depois de {ja_respondeu} "
                               "respostas automáticas",
@@ -1495,8 +1725,14 @@ def atender_conversa(db: Any, conversa_id: int, cfg: dict, *, agora: str,
                           perguntas_feitas=triagem["perguntas"],
                           pergunta_pendente=triagem["pendente"],
                           cortesias=triagem["cortesias"])
+    assunto = ""
     if cfg.get("escrevente") and decisao.get("passar"):
         decisao = _virar_pedido(decisao)
+    if cfg.get("escrevente") and decisao.get("pedido"):
+        with db.connect() as con:
+            assunto = assunto_do_cliente(con, conversa)
+            ultimo = ultimo_texto_da_ia(con, conversa_id)
+        decisao = completar_encaminhamento(decisao, assunto=assunto, ultimo=ultimo)
 
     enviar = decisao["resposta"]
     # A CORTESIA SAI COMO AVISO (30/10/2026): não é resposta. Não limpa o rascunho de quem
@@ -1546,10 +1782,13 @@ def atender_conversa(db: Any, conversa_id: int, cfg: dict, *, agora: str,
         situacao = WA.IA_CORTESIA
     elif decisao.get("passar"):
         situacao = WA.IA_PASSADA
+    elif decisao.get("ja_avisado"):
+        situacao = WA.IA_RESPONDIDA
     elif decisao.get("pedido") and not enviado:
         situacao = WA.IA_ERRO
     else:
         situacao = WA.IA_RESPONDIDA
+    pedido_id = None
     with db.transaction() as con:
         if enviado:
             # O AVISO DE PASSAGEM NÃO É RESPOSTA (29/10/2026): sai como `aviso`, e a
@@ -1559,9 +1798,10 @@ def atender_conversa(db: Any, conversa_id: int, cfg: dict, *, agora: str,
                                 tipo=ROTINA.TIPO_AVISO if e_aviso else "text")
         if decisao.get("pedido"):
             item = decisao["pedido"]
-            PEDIDO.abrir(con, conversa_id, setor=item["setor"], servico=item["servico"],
-                         resumo=item.get("resumo") or "", orientacao=texto_saida,
-                         por="atendente com IA", quando=agora)
+            gravado = PEDIDO.abrir(con, conversa_id, setor=item["setor"], servico=item["servico"],
+                                   resumo=item.get("resumo") or "", orientacao=texto_saida,
+                                   por="atendente com IA", quando=agora)
+            pedido_id = gravado["id"]
         if decisao.get("passar"):
             FILA.passar_para_pessoa(con, conversa_id, setor=decisao["passar"],
                                     motivo=decisao.get("resumo") or decisao.get("motivo") or "",
@@ -1580,6 +1820,10 @@ def atender_conversa(db: Any, conversa_id: int, cfg: dict, *, agora: str,
                 (WA.AGUARDANDO, int(conversa_id), WA.ABERTA))
         _registrar(con, conversa, decisao, enviado=enviado, meta_id=meta_id,
                    agora=agora, respondido=texto_saida)
+    if pedido_id and cfg.get("escrevente"):
+        item = decisao["pedido"]
+        _tarefa_do_pedido(db, pedido_id, setor=item["setor"], servico=item["servico"],
+                          resumo=item.get("resumo") or "", relato=assunto, quando=agora)
     try:
         # quem age é o atendente, a mando de quem responde pelas rotinas (PR #36)
         db.log(None, None, "WA_IA_RESPOSTA", "wa_conversa", int(conversa_id),

@@ -87,7 +87,7 @@ def test_numero_inventado_nao_sai_e_o_pedido_ainda_abre(casa, monkeypatch):
     _rodar(db, casa["pasta"], conversar=modelo, http_post=graph)
     corpo = graph.enviados[0]["payload"]["text"]["body"]
     assert "99" not in corpo
-    assert "Vou passar para o escrevente" in corpo
+    assert "Vou passar ao escrevente de Registro Civil." in corpo
     assert _um(db, "SELECT situacao FROM wa_pedido WHERE conversa_id=%s",
                (cid,))["situacao"] == PEDIDO.ABERTO
 
@@ -226,3 +226,86 @@ def test_a_chave_vazia_liga_o_escrevente_e_o_zero_fica_desligado(casa):
         assert AT.configuracao(con)["escrevente"] is False
     with db.transaction() as con:
         assert AT.adotar_escrevente_se_vazio(con) is False
+
+
+def test_titulo_de_dominio_e_do_registro_de_imoveis():
+    import wa_fila as FILA
+    setores = [s for s, _m, _p in FILA.setores_pelo_texto(
+        "quero registrar um título de domínio do INCRA")]
+    assert "RI" in setores
+
+
+def test_o_encaminhamento_leva_o_fato_e_nao_repete_o_cardapio():
+    decisao = {
+        "caso": AT.CASO_PEDIDO, "razao": AT.RAZAO_INSISTENCIA,
+        "motivo": "o cliente seguiu escrevendo depois de 10 respostas automáticas",
+        "resposta": AT.TEXTO_PEDIDO,
+        "pedido": {"setor": "RI", "servico": "registro_imovel",
+                   "resumo": "o cliente seguiu escrevendo depois de 10 respostas automáticas"},
+    }
+    assunto = "quero registrar um título de domínio do INCRA no imóvel"
+    ido = AT.completar_encaminhamento(decisao, assunto=assunto, ultimo="")
+    assert ido["pedido"]["resumo"].startswith("quero registrar")
+    assert "Me diga o serviço" not in ido["resposta"]
+    assert ido["resposta"] == "Vou passar ao escrevente de Registro de Imóveis."
+    de_novo = AT.completar_encaminhamento(
+        {"caso": AT.CASO_PEDIDO, "razao": AT.RAZAO_INSISTENCIA,
+         "resposta": AT.TEXTO_PEDIDO,
+         "pedido": {"setor": "RI", "servico": "registro_imovel",
+                    "resumo": "o cliente seguiu escrevendo depois de 10 respostas automáticas"}},
+        assunto=assunto, ultimo=ido["resposta"])
+    assert de_novo["resposta"] == "" and de_novo["ja_avisado"] is True
+
+
+def test_a_resposta_do_modelo_fica_e_o_audio_sem_texto_pede_para_escrever():
+    boa = {
+        "caso": AT.CASO_PEDIDO, "razao": AT.RAZAO_PEDIDO,
+        "resposta": "O escrevente vê o título e te diz o caminho.",
+        "pedido": {"setor": "RI", "servico": "registro_imovel",
+                   "resumo": "Quer registrar título de domínio."},
+    }
+    ficou = AT.completar_encaminhamento(boa, assunto="outra coisa qualquer aqui", ultimo="")
+    assert ficou["resposta"].startswith("O escrevente vê")
+    assert ficou["pedido"]["resumo"].startswith("Quer registrar")
+    audio = {
+        "caso": AT.CASO_PEDIDO, "razao": AT.RAZAO_FALHA,
+        "motivo": "mensagem sem texto (anexo, ou áudio sem transcrição)",
+        "resposta": AT.TEXTO_PEDIDO,
+        "pedido": {"setor": "ATENDIMENTO", "servico": "orientacao",
+                   "resumo": "mensagem sem texto"},
+    }
+    pedido = AT.completar_encaminhamento(audio, assunto="", ultimo="")
+    assert "ouvir" in pedido["resposta"].lower()
+    assert "Me diga o serviço" not in pedido["resposta"]
+
+
+def test_o_historico_guarda_o_numero_da_matricula_e_abre_tarefa(casa, monkeypatch):
+    db = casa["db"]
+    _ligar(db)
+    _fixar_conhecimento(monkeypatch)
+    cid = _entrada(db, "quero registrar um título de domínio do INCRA no imóvel",
+                   meta_id="wamid.e10")
+    _rodar(db, casa["pasta"], conversar=Modelo(
+        {"acao": "pedir", "setor": "RI", "servico": "registro_imovel",
+         "resposta": "Vou ver com o escrevente do imóvel.",
+         "resumo": "Quer registrar título de domínio do INCRA."}), http_post=Graph())
+    pedido = _um(db, "SELECT * FROM wa_pedido WHERE conversa_id=%s", (cid,))
+    tarefa = _um(db, "SELECT * FROM tasks WHERE source_ref=%s",
+                 (f"wa_pedido:{pedido['id']}",))
+    assert tarefa["source_type"] == "WHATSAPP"
+    assert "INCRA" in (tarefa["description"] or "")
+    _entrada(db, "o número da matrícula é 45 e a nacionalidade pode ser a da opção",
+             meta_id="wamid.e11", quando=AGORA)
+    modelo = Modelo(texto="sem json")
+    graph = Graph()
+    _rodar(db, casa["pasta"], conversar=modelo, http_post=graph)
+    assert modelo.chamadas and modelo.chamadas[0]["maximo_de_saida"] == AT.SAIDA_DO_ESCREVENTE
+    subiu = modelo.chamadas[0]["conversa"][0]["texto"]
+    assert "45" in subiu
+    assert "HISTÓRICO É O ATENDIMENTO" in modelo.chamadas[0]["sistema"]
+    corpo = graph.enviados[-1]["payload"]["text"]["body"]
+    assert "Me diga o serviço" not in corpo
+    assert "Registro de Imóveis" in corpo
+    pedido = _um(db, "SELECT resumo FROM wa_pedido WHERE conversa_id=%s", (cid,))
+    assert "45" in pedido["resumo"] or "nacionalidade" in pedido["resumo"]
+    assert "formato" not in pedido["resumo"]

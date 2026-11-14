@@ -12,6 +12,11 @@ cada servidor — e caminho comprido é onde o modelo erra.
     op lembrar "fato que vale daqui para a frente" vai para a memória
     op procurar <termo>                            memória e diário, daqui e do outro servidor
     op diario [quantos]                            os últimos pedidos
+    op robos quadro                                toda a automação e os robôs, e O QUE FALTA
+    op robos conta <login> --cofre <item>          cria a conta de robô ou troca a senha (ela não aparece)
+    op robos responsavel <login>                   define quem responde pelo robô, sem mexer na senha
+    op robos ligar|desligar|rodar <código>         liga, desliga ou roda agora uma rotina
+    op robos semear                                cadastra as rotinas de fábrica novas
     op rodar -- <comando>                          roda na pasta do sistema, com o ambiente da casa
     op enviar <arquivo> [...]                      devolve o arquivo ao oficial com a resposta
     op situacao                                    em que servidor estou, e em que pé ele está
@@ -88,6 +93,9 @@ def main(argv: list[str] | None = None) -> int:
         return INT.main([comando, *resto])
     if comando in ("lembrar", "procurar", "diario", "memoria"):
         return CONH.main([comando, *resto])
+    if comando == "robos":
+        import robos as ROBOS        # só aqui: ele carrega os módulos da casa
+        return ROBOS.main(resto)
     if comando == "rodar":
         return rodar(resto)
     if comando == "enviar":

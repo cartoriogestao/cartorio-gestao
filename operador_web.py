@@ -115,6 +115,20 @@ def relatorios(base: Path, limite: int = RELATORIOS_NA_TELA) -> list[dict]:
     return lidos
 
 
+def filho(pasta: Path, nome: str) -> Path | None:
+    """O item de `pasta` que tem exatamente aquele nome — achado na LISTA da
+    pasta, e não montado com o que veio do navegador. Assim o endereço não tem
+    como apontar para fora dela (`..`, caminho inteiro): o que não está na
+    lista não existe."""
+    try:
+        for item in pasta.iterdir():
+            if item.name == nome:
+                return item
+    except OSError:
+        pass
+    return None
+
+
 def na_bandeja(base: Path) -> list[dict]:
     """Os pedidos que a tela deixou e a ponte ainda não colheu. Só LÊ."""
     esperando = []
@@ -342,12 +356,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     def superusuario_arquivo():
         """Um arquivo que o superusuário devolveu com a resposta. SÓ LÊ."""
         _o_oficial()
-        pedido = BANDEJA.nome_seguro(request.args.get("pedido"))
-        nome = BANDEJA.nome_seguro(request.args.get("nome"))
-        arquivo = base() / "saida" / pedido / nome
-        if not arquivo.is_file():
+        pasta = filho(base() / "saida", str(request.args.get("pedido") or ""))
+        arquivo = filho(pasta, str(request.args.get("nome") or "")) if pasta else None
+        if arquivo is None or not arquivo.is_file():
             abort(404)
-        return send_file(arquivo, as_attachment=True, download_name=nome)
+        return send_file(arquivo, as_attachment=True, download_name=arquivo.name)
 
     @app.route("/agente/superusuario/relatorio")
     @login_required
@@ -355,8 +368,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
     def superusuario_relatorio():
         """O relatório de uma intervenção, como texto. SÓ LÊ."""
         _o_oficial()
-        ident = BANDEJA.nome_seguro(request.args.get("id"))
-        texto = _texto(base() / "intervencoes" / ident / "RELATORIO.md")
+        pasta = filho(base() / "intervencoes", str(request.args.get("id") or ""))
+        texto = _texto(pasta / "RELATORIO.md") if pasta is not None else ""
         if not texto:
             abort(404)
         return app.response_class(texto, mimetype="text/plain")

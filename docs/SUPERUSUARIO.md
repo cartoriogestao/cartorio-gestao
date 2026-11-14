@@ -15,7 +15,10 @@ revisão e para o PR. Decidido com ele:
 - **conhecimento que se acumula**: «nada avulso»; ele sabe o que já foi feito
   de importante, por qualquer porta e nos dois servidores;
 - **no lugar do agente antigo** (`/agente`, fora da tela desde 06/10/2026):
-  «pode substituir, é um projeto abandonado».
+  «pode substituir, é um projeto abandonado»;
+- **ele gerencia os outros robôs** (14/11/2026): «com um pedido simples, ele
+  configura o acesso de toda a automação e deixa tudo funcionando — a de hoje
+  e as futuras».
 
 ## Como funciona
 
@@ -49,6 +52,7 @@ app do Claude ─────────────────► Claude Code
 | `operador/bandeja.py` | Os arquivos por onde a tela do sistema fala com a ponte. |
 | `operador_web.py` | A tela «Superusuário», dentro do sistema. |
 | `operador/op.py` | O atalho das ferramentas do operador (`./op consulta`, `./op sql`, `./op lembrar`…). |
+| `operador/robos.py` | Os outros robôs e a automação: o quadro de tudo, a conta de robô com a senha que ninguém vê, ligar e rodar as rotinas. |
 | `operador/ouvir.py` | Transcreve o áudio do Telegram, pelo caminho dos áudios do WhatsApp. |
 | `operador/ensaio.py` | Prova, no servidor, que a guarda e o relatório funcionam com o Claude Code instalado. |
 | `<dados>/operador/` | Tudo o que é dele neste servidor: a configuração (`operador.cred`), o posto, o conhecimento, os anexos, as intervenções. Fora do sistema e fora do git. |
@@ -146,6 +150,38 @@ repositório privado, e o outro servidor os traz: o reserva sabe o que o
 principal fez, e o contrário. A conversa parada há mais de 12 horas recomeça
 sozinha — o que importa dela já está aqui.
 
+## Ele gerencia os outros robôs
+
+O pedido é simples — «arrume a automação», «ligue o robô do protesto» — e ele
+sai com tudo funcionando, ou com a lista curta do que só você pode fazer. A
+casa já tinha as peças (as rotinas e o despachante em `automacao.py`, o cofre
+em `automacao_cofre.py`, o quadro em `oficial_robos.py`, as contas de robô com
+responsável); `operador/robos.py` só as lê e chama, pelas mesmas funções das
+telas.
+
+| comando do operador | o que faz |
+|---|---|
+| `op robos quadro` | Tudo numa tela: o despachante, o cofre, cada rotina por robô (ligada? rodou? rodou bem? tem a credencial?), o quadro dos robôs, as contas — e **o que falta**, separado em o que ele resolve e o que só o oficial pode fazer. |
+| `op robos conta <login> --cofre <item>` | Cria a conta de robô (ou troca a senha da que existe) e guarda a senha **sorteada** direto no cofre — ou num `.cred`, com `--arquivo`. |
+| `op robos responsavel <login>` | Define quem responde pelo robô, sem mexer na senha. Sem nome dito, é o oficial. |
+| `op robos ligar` / `desligar` / `rodar <código>` | Liga, desliga ou pede a rodada de uma rotina. |
+| `op robos semear` | Cadastra as rotinas de fábrica que uma versão nova trouxe (nascem desligadas). É assim que as **futuras** entram. |
+
+O que continua sendo só seu, e o quadro diz exatamente o quê:
+
+- **abrir o cofre** — a senha-mestra é sua. Com o cofre trancado, ele não mexe
+  em conta nenhuma (a senha nova não teria onde ficar);
+- **digitar a senha de fora** (Central, banco, portal), em Automação → Cofre.
+  Ele diz qual item e quais campos faltam. **O segredo nunca vai ao modelo**:
+  ele grava e lista o cofre, e nunca o lê — há teste que varre o código dele;
+- **«pode agir sozinho»** numa rotina: só com o seu «pode» para aquela rotina.
+
+As regras da casa valem para ele como gerente: robô tem conta própria, de
+robô, com responsável, e só USER ou AUDITOR (`docs/IDENTIDADE_DOS_ROBOS.md`);
+conta de pessoa ele não toca; e liberar rota nova para um robô
+(`rotas_do_robo.py`) é mudança de código, que segue o caminho do relatório e
+do PR. No reserva ele só olha o quadro: as rotinas rodam no principal.
+
 ## O que a prudência garante por programa, e o que é só instrução
 
 | | garantido por programa | só instrução |
@@ -157,6 +193,7 @@ sozinha — o que importa dela já está aqui.
 | «CONFIRMO» para o que não tem volta | sim, pelos padrões conhecidos; a confirmação só a porta grava | o que os padrões não pegam |
 | Não ler segredo (`*.key`, `*.cred`, `.pgpass`) | sim, pelo nome do arquivo (guarda e regra do Claude Code) | |
 | Não gravar no banco do reserva | sim: `cg_leitor` só lê, e o `sql` recusa | |
+| Não ver a senha de robô nem ler o cofre | sim: a senha é sorteada e guardada pela ferramenta, que nunca chama `cofre.ler` | não pedir senha pela conversa |
 | Não enviar nada para fora por iniciativa própria | | sim |
 | Não obedecer a texto de documento | | sim |
 
@@ -261,7 +298,9 @@ diário.
   PowerShell. O ensaio foi feito para isso: rode-o no principal;
 - o Remote Control como serviço (no ensaio ele subiu sem terminal e parou no
   login, que é o esperado sem a assinatura);
-- a transcrição de áudio pela ponte.
+- a transcrição de áudio pela ponte;
+- a gestão dos robôs contra o cofre e o despachante de verdade (os testes
+  usam um cofre de mentira e o banco de teste).
 
 ## O que ficou para o oficial decidir
 

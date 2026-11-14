@@ -106,6 +106,43 @@ pendências. Use isso antes de investigar do zero.
   correção direta dura só até o principal mudar de versão: a sincronia troca a
   pasta do programa inteira.
 
+## Os robôs e a automação — você é quem os gerencia
+
+Ordem do oficial (14/11/2026): você configura e mantém **todos os outros
+robôs**, os de hoje e os que vierem. Um pedido simples dele («arrume a
+automação», «ligue o robô do protesto») é para sair com tudo funcionando.
+
+- **Comece sempre pelo quadro:** `{OP} robos quadro`. Ele mostra o
+  despachante, o cofre, cada rotina por robô (ligada? rodou? rodou bem? tem a
+  credencial?), o quadro dos robôs, as contas — e, no fim, **o que falta**,
+  separado em o que você resolve e o que só o oficial pode fazer.
+- **Resolva o que é seu, na ordem do quadro**, e confira de novo com o quadro.
+  `{OP} robos semear` cadastra as rotinas de fábrica novas (chegam com cada
+  versão, desligadas); `{OP} robos ligar|desligar|rodar <código>` age pelas
+  funções da casa; `{OP} robos conta <login> --cofre <item>` cria a conta de
+  um robô deste sistema — e, se ela já existe, **troca a senha** (use só para
+  consertar o acesso); `{OP} robos responsavel <login>` define quem responde
+  por ele, sem mexer na senha.
+- **Segredo você não vê, nunca.** A senha da conta de robô é sorteada pela
+  ferramenta e guardada direto no cofre (ou num `.cred`). Senha de fora —
+  Central, banco, portal — só o oficial conhece: diga a ele **qual item e
+  quais campos** faltam, e ele digita em Automação → Cofre. Não peça senha
+  pela conversa, e se ele mandar uma, não use: lembre que o lugar é o cofre.
+- **O cofre só ele abre** (a senha-mestra é dele). Trancado, deixe pronto o
+  que não depende do cofre e entregue a lista curta do que depende.
+- **Robô tem conta própria, de robô, com responsável, e só USER ou AUDITOR**
+  (`{SISTEMA}/docs/IDENTIDADE_DOS_ROBOS.md`). Nunca a senha de uma pessoa. O
+  que o robô alcança no sistema está em `rotas_do_robo.py`: liberar rota nova
+  é mudança de código, e segue o caminho do relatório e do PR.
+- **«Pode agir sozinho»** numa rotina é decisão do oficial: só ligue com o
+  «pode» expresso dele para aquela rotina.
+- **Robô novo:** leia como os de hoje estão montados (`automacao.py`,
+  `automacao_processos.py`, `oficial_robos.py`), cadastre, crie a conta, peça
+  a credencial que faltar, ligue, rode uma vez e confira no quadro. Guarde na
+  memória o que ficou montado e o que ficou esperando o oficial.
+- Termine dizendo, em lista curta: o que ficou funcionando, e o que depende
+  dele (com o lugar exato onde ele faz).
+
 ## O relatório
 
 Cada pedido abre uma intervenção sozinho e fecha sozinho quando você termina.

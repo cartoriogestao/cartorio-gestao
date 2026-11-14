@@ -194,11 +194,18 @@ def test_a_tela_mostra_o_diario_de_todas_as_portas_e_devolve_os_arquivos(cg_casa
     assert "A ponte não está no ar" not in tela
     r = c.get(f"{TELA}/arquivo?pedido={numero}&nome=certidao.pdf")
     assert r.status_code == 200 and r.data == b"%PDF-ficticio"
-    assert c.get(f"{TELA}/arquivo?pedido=..&nome=operador.cred").status_code == 404
+    for pedido, nome in (("..", "operador.cred"), (numero, "../../operador.cred"),
+                         (numero, "nao_existe.pdf"), ("", "certidao.pdf"),
+                         (f"../saida/{numero}", "certidao.pdf")):
+        assert c.get(f"{TELA}/arquivo", query_string={"pedido": pedido, "nome": nome}) \
+            .status_code == 404, (pedido, nome)
     r = c.get(f"{TELA}/relatorio?id=2026-11-12-001")
     assert r.status_code == 200 and r.mimetype == "text/plain"
     assert "# Intervenção 2026-11-12-001" in r.get_data(as_text=True)
-    assert c.get(f"{TELA}/relatorio?id=../../operador.cred").status_code == 404
+    (base / "operador.cred").write_text("TELEGRAM_TOKEN=segredo-de-teste\n", encoding="utf-8")
+    for ident in ("../../operador.cred", "..", "", "2026-11-12-001/..", "nao-existe"):
+        r = c.get(f"{TELA}/relatorio", query_string={"id": ident})
+        assert r.status_code == 404 and b"segredo-de-teste" not in r.data, ident
     andamento = c.get(f"{TELA}/andamento").get_json()
     assert andamento["acesso"] and andamento["viva"]
     assert andamento["rodando"]["andamento"] == "rodando: consulta"

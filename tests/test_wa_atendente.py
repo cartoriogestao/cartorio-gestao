@@ -228,7 +228,7 @@ def test_duvida_pelo_texto_base_sai_com_rodape_e_fica_registrada(casa):
     assert r["conversas"][0]["caso"] == AT.CASO_DUVIDA
     assert len(graph.enviados) == 1
     corpo = graph.enviados[0]["payload"]["text"]["body"]
-    assert "das 8 às 17 horas" in corpo and "Resposta automática" in corpo
+    assert "das 8 às 17 horas" in corpo and "Resposta automática" not in corpo
     chamada = modelo.chamadas[0]
     assert chamada["finalidade"] == "wa_atendente" and chamada["mascarado"] is True
     assert TEXTO_BASE.strip().splitlines()[0] in chamada["sistema"]

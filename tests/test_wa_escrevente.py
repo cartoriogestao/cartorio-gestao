@@ -41,7 +41,7 @@ def test_o_conhecimento_de_verdade_traz_o_oficio_e_a_norma():
     texto = CONHEC.para_o_atendimento("certidão de nascimento", setor="RCPN")
     assert "escrevente" in texto.lower()
     assert "Registro Civil" in texto
-    assert "não decidem o ato" in texto
+    assert "não decide o ato" in texto
     # A base normativa entra com a citação. Sem ela, a IA não tem lei para citar.
     assert "=== A NORMA PERTINENTE" in texto
     assert "art." in texto.lower()
@@ -62,6 +62,9 @@ def test_pedir_abre_pedido_e_a_conversa_fica_com_a_ia(casa, monkeypatch):
     assert "art. 12" in modelo.chamadas[0]["sistema"]
     corpo = graph.enviados[0]["payload"]["text"]["body"]
     assert "art. 12" in corpo and "99" not in corpo
+    assert "Atendimento do cartório" not in corpo
+    assert "peço ao escrevente" not in corpo
+    assert "não registra empresa" in modelo.chamadas[0]["sistema"]
     c = _um(db, "SELECT modo, setor FROM wa_conversa WHERE id=%s", (cid,))
     assert (c["modo"] or SCH.MODO_IA) == SCH.MODO_IA
     assert c["setor"] == "PROTESTO"
@@ -84,7 +87,7 @@ def test_numero_inventado_nao_sai_e_o_pedido_ainda_abre(casa, monkeypatch):
     _rodar(db, casa["pasta"], conversar=modelo, http_post=graph)
     corpo = graph.enviados[0]["payload"]["text"]["body"]
     assert "99" not in corpo
-    assert "Anotei o seu pedido" in corpo
+    assert "Vou passar para o escrevente" in corpo
     assert _um(db, "SELECT situacao FROM wa_pedido WHERE conversa_id=%s",
                (cid,))["situacao"] == PEDIDO.ABERTO
 
@@ -131,7 +134,7 @@ def test_quem_pede_pessoa_continua_com_a_ia(casa, monkeypatch):
     graph = Graph()
     _rodar(db, casa["pasta"], conversar=modelo, http_post=graph)
     assert modelo.chamadas == []
-    assert "Este WhatsApp é o atendimento" in graph.enviados[0]["payload"]["text"]["body"]
+    assert "passo para o escrevente" in graph.enviados[0]["payload"]["text"]["body"]
     assert _um(db, "SELECT count(*) AS n FROM wa_pedido WHERE conversa_id=%s", (cid,))["n"] == 0
     assert (_um(db, "SELECT modo FROM wa_conversa WHERE id=%s", (cid,))["modo"]
             or SCH.MODO_IA) == SCH.MODO_IA

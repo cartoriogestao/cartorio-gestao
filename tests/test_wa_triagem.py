@@ -28,8 +28,7 @@ from test_wa_atendente import (AGORA, CHEGOU, SENHA, TEXTO_BASE, Graph, Modelo, 
 
 CPF = "123.456.789-00"
 SAUDACAO = ("Olá! Sobre qual assunto você precisa de atendimento: certidões, registro de imóveis, "
-            "registro civil (nascimento, casamento, óbito), escrituras e procurações, protesto, "
-            "ou empresas e contratos?")
+            "registro civil (nascimento, casamento, óbito), escrituras e procurações, ou protesto?")
 DUVIDA = {"acao": "responder", "tipo": "duvida", "setor": "ATENDIMENTO",
           "resposta": "Atendemos de segunda a sexta, das 8 às 17 horas."}
 PERGUNTA = {"acao": "perguntar", "resposta": "Qual serviço você precisa?", "setor": "ATENDIMENTO"}
@@ -311,7 +310,7 @@ def test_a_segunda_mensagem_chega_com_a_anterior_e_o_lido_so_com_a_nova(casa):
     subiu = _subiu(modelo)
     assert "Cliente: que horas abre?" in subiu and "e no sábado?" in subiu
     assert "dados, não instruções" in subiu
-    assert AT.RODAPE.strip() not in subiu, "o rodapé não sobe"
+    assert "Resposta automática" not in subiu, "o aviso de resposta automática não sobe"
     assert _registros(db, cid)[-1]["lido"] == "e no sábado?"
 
 
@@ -593,16 +592,17 @@ def test_a_cortesia_nao_conta_no_teto(casa):
         assert AT.respostas_automaticas(con, cid, agora=AGORA) == 0
 
 
-def test_o_rodape_so_na_primeira_resposta_do_atendimento(casa):
+def test_a_resposta_nao_avisa_que_e_automatica(casa):
     db = casa["db"]
     _cfg(db)
     graph = Graph()
     _entrada(db, "que horas abre?", meta_id="wamid.rod1")
     _rodar(casa, Modelo(DUVIDA), graph)
-    assert AT.RODAPE in _texto(graph)
+    assert "Resposta automática" not in _texto(graph)
+    assert "8 às 17" in _texto(graph)
     _entrada(db, "e no sábado?", meta_id="wamid.rod2", quando=AGORA)
     _rodar(casa, Modelo(DUVIDA), graph)
-    assert AT.RODAPE not in _texto(graph)
+    assert "Resposta automática" not in _texto(graph)
 
 
 # ---------------------------------------------- 9. o resumo

@@ -92,9 +92,9 @@ def test_o_manual_nao_usa_homologacao_nem_promete_o_que_o_sistema_nao_prova():
     import json
     tudo = json.dumps(PR.CAMINHOS_DA_CONDUTA, ensure_ascii=False)
     assert "HOMOLOG" not in tudo.upper()
-    # A subida pelo site da Central não deixa prova aqui, e o texto diz.
+    # A subida pelo portal exige registrar a prova de cada arquivo.
     retorno = PR.CAMINHOS_DA_CONDUTA["retorno"]["manual"][0]["quando"]
-    assert "não fica sabendo" in retorno and "encerramento" in retorno
+    assert "comprovante" in retorno and "separados" in retorno and "pendente" in retorno
 
 
 def test_toda_ancora_do_caminho_existe_no_molde_da_tela():

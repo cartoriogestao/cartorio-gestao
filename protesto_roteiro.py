@@ -458,9 +458,10 @@ CAMINHOS_DA_CONDUTA: dict[str, dict] = {
              "ancora": "arquivos-gerados",
              "quando": ("Se a API da CRA não responder: o nome do arquivo, em "
                         "«Arquivos gerados», baixa o arquivo para subir no "
-                        "site. O sistema não fica sabendo da subida pelo site: "
-                        "o arquivo continua como não enviado, e no encerramento "
-                        "do dia se afirma que subiu por lá.")},
+                        "site. Depois do aceite, anexe o comprovante em "
+                        "«Este arquivo foi aceito pelo portal da CRA?». "
+                        "Retorno e andamento precisam de comprovantes "
+                        "separados; sem esse registro, o envio continua pendente.")},
         )},
     "remessa": {
         "rito": ("Protocolizar e apontar o título; conferir a intimação e o "

@@ -152,7 +152,7 @@
 {% endif %}
 
 {% if layout_novo %}{{ abre('esperando', 'Saíram e esperam desfecho', (esperando | length) ~ ' aviso(s)', aberto=abrir == 'esperando') }}<div class="cg-quadro-corpo">{% else %}
-<section class="panel">
+<section class="panel" id="esperando">
   <div class="panel-head">
     <span>Saíram e esperam desfecho</span><small>{{ esperando | length }}</small>
   </div>
@@ -257,7 +257,7 @@
 {% endif %}
 
 {% if layout_novo %}{{ abre('nao-entregues', 'Não entregues — Resolve, e depois edital', (para_edital | length) ~ ' aviso(s)', aberto=abrir == 'nao-entregues') }}<div class="cg-quadro-corpo">{% else %}
-<section class="panel">
+<section class="panel" id="nao-entregues">
   <div class="panel-head">
     <span>Não entregues — Resolve, e depois edital</span><small>{{ para_edital | length }}</small>
   </div>

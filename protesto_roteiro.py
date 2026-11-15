@@ -416,6 +416,257 @@ CONDUTAS_DO_DIA: tuple[dict, ...] = (
                  "tela": "nucleo_encerramento_diario", "args": {}})},
 )
 
+# ------------------------------------- os dois caminhos de cada conduta
+#
+# PEDIDO DO OFICIAL, 15/11/2026: *«preciso que o curso manual do protesto seja
+# de fácil acesso, mas privilegiando a didática do fluxo automatizado por meio
+# das APIs e o cumprimento do rito dos títulos no cartório»*.
+#
+# O QUE HAVIA: cada tela já punha o botão da integração em cima e o formulário
+# do arquivo embaixo, mas o roteiro levava só à tela. Quem estava sem a API num
+# dia de Central fora do ar tinha de saber, de memória, em que tela e em que
+# quadro estava o caminho pela mão — e quem nunca viu a integração funcionar
+# não tinha onde ler o que o clique faz sozinho.
+#
+# O QUE CADA CONDUTA GANHA, e nesta ordem na tela:
+#   `rito`: o passo do rito do título que a conduta cumpre, com o fundamento.
+#       SO SE CITA O QUE ESTE MODULO OU A TELA JA CITAVAM, e a Lei 9.492/1997;
+#   `integracao`: o que o caminho da casa FAZ — o clique, o que ele traz, o que
+#       sobe sozinho. E o texto que ensina; o botao continua sendo o primeiro
+#       de `botoes`;
+#   `manual`: os atalhos do caminho pela mão, cada um com o `quando` — a
+#       condição em que ele cabe. Leva ao QUADRO que faz (`ancora`), e não só à
+#       tela. `tela` e endpoint de verdade: NAO SE INVENTA TELA.
+#
+# O MANUAL NAO E ESCONDIDO NEM IGUALADO: fica a um clique, ao lado, e sempre
+# com a condição escrita. Quando o caminho pela mão deixa o sistema sem prova
+# (a subida pelo site da Central), o texto DIZ — e a obrigação continua cobrada
+# até a afirmação do encerramento, como já era.
+#
+# O ENCERRAMENTO NAO TEM DOIS CAMINHOS, e por isso não está aqui.
+CAMINHOS_DA_CONDUTA: dict[str, dict] = {
+    "retorno": {
+        "rito": ("Dar notícia do desfecho a quem apresentou o título: "
+                 "protestado, pago, retirado ou cancelado."),
+        "integracao": ("«Gerar retorno + andamento» monta os dois arquivos com "
+                       "os atos que esperam; «Enviar à CRA», em «Arquivos "
+                       "gerados», sobe cada um pela API e mostra na hora se a "
+                       "Central aceitou ou recusou."),
+        "manual": (
+            {"rotulo": "Baixar o arquivo e subir no site da CRA",
+             "tela": "protesto_retornos", "args": {},
+             "ancora": "arquivos-gerados",
+             "quando": ("Se a API da CRA não responder: o nome do arquivo, em "
+                        "«Arquivos gerados», baixa o arquivo para subir no "
+                        "site. O sistema não fica sabendo da subida pelo site: "
+                        "o arquivo continua como não enviado, e no encerramento "
+                        "do dia se afirma que subiu por lá.")},
+        )},
+    "remessa": {
+        "rito": ("Protocolizar e apontar o título; conferir a intimação e o "
+                 "prazo na ficha (Lei 9.492/1997, arts. 5º, 12 e 14)."),
+        "integracao": ("«Baixar todas e conferir» traz da CRA todas as remessas "
+                       "disponíveis, com as imagens, e no mesmo clique as "
+                       "desistências, os cancelamentos e as autorizações e as "
+                       "pendências da CENPROT. «Receber» cadastra e aponta cada "
+                       "título; a confirmação e o andamento sobem sozinhos "
+                       "quando o envio automático está ligado."),
+        "manual": (
+            {"rotulo": "Receber a remessa pelo arquivo",
+             "tela": "protesto_remessas", "args": {},
+             "ancora": "receber-pelo-arquivo",
+             "quando": ("Se a API da CRA não responder: baixe a remessa no site "
+                        "da CRA (TXT de 600 posições ou XML) e mande o arquivo. "
+                        "A conferência e o recebimento são os mesmos.")},
+            {"rotulo": "Título trazido ao balcão",
+             "tela": "protesto_titulo_novo", "args": {},
+             "quando": ("O título que não vem de Central nenhuma: cadastre-o. "
+                        "Ele nasce RECEBIDO, e o apontamento se lança na ficha "
+                        "dele.")},
+            {"rotulo": "Imagens pelo pacote .zip",
+             "tela": "protesto_imagens", "args": {},
+             "quando": ("Só quando a remessa chegou sem as imagens e a CRA as "
+                        "entregou à parte.")},
+        )},
+    "pedidos_cra": {
+        "rito": ("A desistência do apresentante cabe até a lavratura (Lei "
+                 "9.492/1997, art. 16) — por isso se confere antes de "
+                 "protestar."),
+        "integracao": ("O clique da remessa já traz o arquivo de desistência e "
+                       "o aplica no título que casa pelo protocolo e pelo "
+                       "número. O que não casou, os cancelamentos e as "
+                       "autorizações ficam em «Pedidos da CRA», esperando a "
+                       "casa."),
+        "manual": (
+            {"rotulo": "Receber o arquivo de desistência",
+             "tela": "protesto_desistencias", "args": {},
+             "ancora": "receber-pelo-arquivo",
+             "quando": ("Se o arquivo DP foi baixado no site da CRA: mande-o "
+                        "aqui. Confere-se primeiro e aplica-se título por "
+                        "título.")},
+            {"rotulo": "Desistência, cancelamento ou ordem judicial na ficha",
+             "tela": "protesto_titulos", "args": {"vista": "pendentes"},
+             "quando": ("O pedido que chega ao balcão, e não pela Central: "
+                        "abra a ficha do título e lance o ato na fase "
+                        "Desfecho.")},
+        )},
+    "entregas": {
+        "rito": ("Intimar o devedor (Lei 9.492/1997, art. 14). O aviso é o "
+                 "papel; a intimação é o ato, e só se lavra com a prova da "
+                 "entrega (CN-MA art. 921)."),
+        "integracao": ("O aviso que não pôde ser entregue vai primeiro à "
+                       "Intimação Digital (Resolve), por e-mail e WhatsApp, e "
+                       "só depois ao edital. O AR digital dos Correios traz o "
+                       "canhoto como imagem, e a entrega lavra a intimação. As "
+                       "duas dependem da credencial e de estarem ligadas."),
+        "botoes": (
+            {"rotulo": "Intimação Digital", "tela": "protesto_resolve",
+             "args": {}},
+            {"rotulo": "AR digital", "tela": "protesto_ar", "args": {}},
+        ),
+        "manual": (
+            {"rotulo": "Registrar a entrega pela mão da casa",
+             "tela": "protesto_avisos", "args": {}, "ancora": "esperando",
+             "quando": ("O aviso entregue por pessoa da casa: registre quem "
+                        "recebeu e anexe o canhoto. A intimação é lavrada na "
+                        "hora.")},
+            {"rotulo": "Várias entregas num PDF só",
+             "tela": "protesto_avisos_lote", "args": {},
+             "quando": ("Quando os canhotos do dia foram escaneados juntos.")},
+            {"rotulo": "Apontados que ainda não têm aviso",
+             "tela": "protesto_avisos", "args": {},
+             "ancora": "apontados-sem-aviso",
+             "quando": ("O aviso se emite na ficha do título; esta lista "
+                        "mostra quem ainda espera por ele.")},
+        )},
+    "editais": {
+        "rito": ("Devedor não encontrado intima-se por edital (Lei "
+                 "9.492/1997, art. 15), e o protesto só se lavra do fim do "
+                 "primeiro dia útil depois da publicação (CN-MA art. 922, "
+                 "§ 1º)."),
+        "integracao": ("O sistema numera e publica o edital, congela o teor e "
+                       "gera o arquivo do edital eletrônico do dia. A subida "
+                       "no portal da CENPROT é pela mão, e a prova dela é o "
+                       "comprovante anexado ao dia."),
+        "manual": (
+            {"rotulo": "Publicar o edital de um aviso não entregue",
+             "tela": "protesto_avisos", "args": {}, "ancora": "nao-entregues",
+             "quando": ("Depois de a entrega falhar e a Intimação Digital não "
+                        "dar ciência: publique o edital do aviso.")},
+            {"rotulo": "Gerar o arquivo de outro dia",
+             "tela": "protesto_cenprot", "args": {},
+             "quando": ("Se o arquivo de um dia anterior ficou sem gerar: a "
+                        "tela da CENPROT deixa escolher o dia dos editais.")},
+        )},
+    "protestos": {
+        "rito": ("Esgotado o tríduo sem pagamento, desistência ou sustação, "
+                 "lavra-se o protesto (Lei 9.492/1997, arts. 12 e 20)."),
+        "integracao": ("«A protestar» junta os intimados cujo prazo venceu, "
+                       "confere a prova da intimação, a CENPROT e o selo de "
+                       "cada um, e lavra os marcados de uma vez."),
+        "manual": (
+            {"rotulo": "Lavrar um título só, pela ficha",
+             "tela": "protesto_titulos",
+             "args": {"vista": "pendentes", "situacao": "INTIMADO"},
+             "quando": ("Para protestar um título só, ou lançar o pagamento, a "
+                        "desistência e a ordem judicial de última hora: abra a "
+                        "ficha, na fase Desfecho.")},
+        )},
+    "instrumentos": {
+        "rito": ("O instrumento é o documento do protesto lavrado, entregue ao "
+                 "apresentante (Lei 9.492/1997, arts. 20 e 22)."),
+        "integracao": ("«Emitir os marcados» gera o instrumento dos protestos "
+                       "do dia, e «Assinar os marcados com o A3» assina em "
+                       "lote. O instrumento assinado entra sozinho no XML P."),
+        "manual": (
+            {"rotulo": "Emitir ou assinar um instrumento só",
+             "tela": "protesto_instrumentos", "args": {}, "ancora": "a-emitir",
+             "quando": ("Para o protesto que ficou fora do lote: «Emitir só "
+                        "este», e depois «Assinar com o A3» na linha dele.")},
+        )},
+    "xml": {
+        "rito": ("Informar à CENPROT, no mesmo dia, os protestos lavrados (P) "
+                 "e os pagos, retirados e cancelados (D) — art. 4º da "
+                 "Resolução n. 1 do IEPTB-BR."),
+        "integracao": ("O sistema monta o P e o D com o que está pronto e "
+                       "entrega o arquivo ao gerar. A API da CENPROT não "
+                       "recebe este arquivo: a subida é no portal, e a prova "
+                       "dela é o comprovante anexado a cada arquivo."),
+        "manual": (
+            {"rotulo": "Anexar o comprovante ou afirmar a subida",
+             "tela": "protesto_cenprot_xml", "args": {},
+             "ancora": "arquivos-gerados",
+             "quando": ("Depois de subir no portal: anexe a tela do envio ao "
+                        "arquivo. Sem ela, afirme a subida por escrito, na "
+                        "linha do próprio arquivo.")},
+        )},
+    "cenprot": {
+        "rito": ("Responder à Central o que ela pede sobre os títulos da casa: "
+                 "pedido de protesto, anuência, cancelamento e certidão."),
+        "integracao": ("«Trazer da Central» baixa as pendências pela API, sem "
+                       "responder nada; cada uma se decide na ficha dela, e a "
+                       "resposta sobe pela API. O pedido de protesto vira "
+                       "título em «Dar entrada no título», e o arquivo de "
+                       "emolumentos sobe pelo botão «Enviar à CENPROT pela "
+                       "API»."),
+        "manual": (
+            {"rotulo": "Chave do título pelo arquivo da CENPROT",
+             "tela": "protesto_cenprot", "args": {},
+             "quando": ("O título que ficou sem a chave de 23 dígitos: gere o "
+                        "arquivo de protestados no portal da CENPROT e mande "
+                        "aqui. Nada é lavrado.")},
+            {"rotulo": "Cancelamento na ficha do título",
+             "tela": "protesto_titulos", "args": {"vista": "encerrados"},
+             "quando": ("O cancelamento se lavra na ficha do título; a tela "
+                        "das pendências só informa a Central do que já foi "
+                        "lavrado.")},
+        )},
+    "repasse": {
+        "rito": ("O valor do título pago é do apresentante no primeiro dia "
+                 "útil seguinte (Lei 9.492/1997, art. 19, § 2º; CN-MA "
+                 "art. 929)."),
+        "integracao": ("O boleto do devedor dá baixa sozinho quando tudo bate, "
+                       "e o PIX vira pagamento com o crédito conferido no "
+                       "banco. A relação da guia e o boleto de repasse no "
+                       "portal da CRA têm rotina própria na Automação."),
+        "botoes": (
+            {"rotulo": "Boleto do devedor", "tela": "protesto_boletos",
+             "args": {}},
+        ),
+        "manual": (
+            {"rotulo": "Pagamento recebido no balcão",
+             "tela": "protesto_titulos", "args": {"vista": "pendentes"},
+             "quando": ("O devedor que paga no caixa: abra a ficha do título e "
+                        "lance o pagamento, na fase Desfecho.")},
+            {"rotulo": "Repasse direto ao apresentante",
+             "tela": "protesto_repasses", "args": {}, "ancora": "do-balcao",
+             "quando": ("O título do balcão não vai pela guia do IEPTB: "
+                        "registre o repasse feito direto ao apresentante.")},
+        )},
+}
+
+
+def caminhos_da_conduta(chave: str) -> dict | None:
+    """Os dois caminhos de uma conduta, em cópia. `None` para a que não tem."""
+    c = CAMINHOS_DA_CONDUTA.get(chave)
+    if not c:
+        return None
+    return {"rito": c["rito"], "integracao": c["integracao"],
+            "botoes": [dict(b) for b in c.get("botoes", ())],
+            "manual": [dict(m) for m in c["manual"]]}
+
+
+def caminho_manual() -> list[dict]:
+    """O curso manual inteiro, na ordem do dia: um atalho por linha. SO LE.
+
+    E o que a tela põe no alto, para quem está sem a integração achar o passo
+    sem abrir conduta por conduta.
+    """
+    return [dict(m, conduta_n=c["n"], conduta=c["titulo"],
+                 conduta_ancora=c["ancora"])
+            for c in CONDUTAS_DO_DIA
+            for m in CAMINHOS_DA_CONDUTA.get(c["chave"], {}).get("manual", ())]
+
 # ------------------------------------------- os ganchos das outras pecas
 
 # AS PENDENCIAS QUE AS OUTRAS PECAS DA REESTRUTURACAO DE 29/10/2026 MEDEM. Cada
@@ -1715,6 +1966,7 @@ def cobrar_o_dia(con: sqlite3.Connection, *, agora: str,
     for c in CONDUTAS_DO_DIA:
         linha = dict(c)
         linha["botoes"] = [dict(b) for b in c["botoes"]]
+        linha["caminhos"] = caminhos_da_conduta(c["chave"])
         h = horas.get(c.get("hora") or "")
         linha["hora_limite"] = h["hora"] if h else None
         linha["obrigacoes"] = _COBRANCA_DA_CONDUTA[c["chave"]](con, ctx)
@@ -2054,6 +2306,8 @@ def roteiro(con: sqlite3.Connection, *, agora: str,
             "minimo_de_letras": MINIMO_DE_LETRAS_DA_AFIRMACAO,
             "modelo_da_afirmacao": MODELO_DA_AFIRMACAO,
             "fora_do_roteiro": [dict(f) for f in FORA_DO_ROTEIRO],
+            # O CURSO MANUAL, A UM CLIQUE (15/11/2026): a lista do alto.
+            "caminho_manual": caminho_manual(),
             "papel": passos, "horarios": [dict(h) for h in HORARIOS_DA_CRA],
             "so_o_tabeliao": list(SO_O_TABELIAO), "fontes": list(FONTES),
             "rotulo_da_situacao": dict(ROTULO_DA_SITUACAO),

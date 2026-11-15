@@ -4631,6 +4631,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                abas_da_ficha=abas_da_ficha,
                                fase_do_ato=PFASES.fase_do_ato,
                                rotulo_do_ato=PFASES.rotulo_do_ato,
+                               # OS DOIS CAMINHOS DA FASE QUE ESPERA AÇÃO (15/11/2026). Só lê.
+                               canais=PFASES.canais_do_titulo(
+                                   situacao, (triduo or {}).get("triduo_situacao")),
                                sem_ato=sem_ato,
                                propostas_de_oficio=propostas_de_oficio,
                                pendencias_do_selo=pendencias_do_selo,

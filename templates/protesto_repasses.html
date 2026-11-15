@@ -229,7 +229,7 @@
 {% endif %}
 
 {% if layout_novo %}{{ abre('do-balcao', 'Do balcão — repasse direto ao apresentante', (do_balcao | length) ~ ' pagamento(s)', aberto=do_balcao | length > 0) }}<div class="cg-quadro-corpo">{% else %}
-<section class="panel">
+<section class="panel" id="do-balcao">
   <div class="panel-head"><span>Do balcão — repasse direto ao apresentante</span>
     <small>{{ do_balcao | length }} pagamento(s)</small></div>
 {% endif %}

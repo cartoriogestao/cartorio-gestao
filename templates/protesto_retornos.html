@@ -336,7 +336,11 @@
           {% if g.cra_enviado_ambiente == 'EOFICIO' %}
             <small>informado pelo sistema antigo antes da virada</small>
           {% elif g.cra_enviado_em %}
-            <strong>enviado</strong><div><small>{{ g.cra_enviado_em[:16] }}</small></div>
+            <strong>{{ 'aceite no portal registrado' if g.envio_manual else 'enviado' }}</strong>
+            <div><small>{{ g.cra_enviado_em[:16] }}</small></div>
+            {% if g.envio_manual %}<div><small>Conferido por {{ g.cra_enviado_por }} ·
+              <a href="{{ url_for('attachment_view', attachment_id=g.envio_manual.anexo_id) }}">Comprovante do portal</a>
+            </small></div>{% endif %}
           {% elif g.cra_recusado_em %}
             {# RECUSADO PELA CRA — 28/10/2026. Seis retornos recusados (2161,
                «NENHUM REGISTRO FOI GRAVADO») apareciam aqui como «enviado».
@@ -389,6 +393,22 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="button primary">Enviar à CRA</button>
             </form>
+          {% endif %}
+          {% if not g.cra_enviado_em and g.cra_enviado_ambiente != 'EOFICIO' and user.role in ['ADMIN','MANAGER','USER'] %}
+          <details data-aceite-portal>
+            <summary><small>Este arquivo foi aceito pelo portal da CRA?</small></summary>
+            <p class="small">Registre o aceite já conferido no portal, com o comprovante deste arquivo.
+              Retorno e andamento precisam de comprovantes separados.</p>
+            <form method="post" enctype="multipart/form-data" class="stack"
+                  action="{{ url_for('protesto_retorno_comprovante_portal', retorno_id=g.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label>Comprovante do aceite <input type="file" name="comprovante" accept=".pdf,.png,.jpg,.jpeg" required></label>
+              <label class="check"><input type="checkbox" name="afirmo" value="1" required> Afirmo que conferi o aceite deste arquivo no portal.</label>
+              <label>Descreva a conferência <textarea name="afirmacao" rows="2" required></textarea>
+                <small>Pelo menos 30 letras, além da frase de abertura.</small></label>
+              <button class="button secondary">Registrar aceite com comprovante</button>
+            </form>
+          </details>
           {% endif %}
         </td>
       </tr>

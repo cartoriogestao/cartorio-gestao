@@ -927,7 +927,7 @@ SEMENTES: tuple[dict, ...] = (
 #: no dia do pagamento — a guia em si sai do portal da Central —, e o robô que
 #: emite o boleto de repasse no portal da CRA (29/10/2026, ordem do oficial).
 MODULOS_COM_PROCESSOS = ("despesas_automacao", "onr_certidoes_auto", "andamento_avisos",
-                         "backup_automacao", "satisfacao_envio", "cobranca_automacao",
+                         "backup_automacao", "satisfacao_envio", "cobranca_automacao", "caixa_automacao",
                          "portal_cliente", "wa_puxar", "protesto_repasse_automacao",
                          "protesto_repasse_portal",
                          # o crédito dos PIX do Protesto no extrato (29/10/2026)

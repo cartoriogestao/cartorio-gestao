@@ -193,6 +193,7 @@ def test_o_esquema_se_parte_em_comandos_inteiros():
 @pytest.mark.parametrize("metodo", ["GET", "POST"])
 def test_quem_volta_ao_rascunho_que_virou_ato_vai_para_o_ato(bd, metodo):
     bd.marcas[3] = {"rascunho_id": 3, "endereco": "/ato/9"}
+    bd.rascunhos.pop(3)  # convertido: a marca fica, o rascunho já saiu
     with _app().test_request_context("/x?rascunho_id=3", method=metodo):
         with pytest.raises(HTTPException) as saida:
             R.barrar_se_ja_virou_ato(_Db())
@@ -203,6 +204,7 @@ def test_quem_volta_ao_rascunho_que_virou_ato_vai_para_o_ato(bd, metodo):
 def test_sem_o_endereco_do_ato_vai_para_a_lista(bd):
     """É o caso do botão do processo, que sabe que o ato existe e não sabe onde."""
     bd.marcas[3] = {"rascunho_id": 3, "endereco": None}
+    bd.rascunhos.pop(3)  # convertido: a marca fica, o rascunho já saiu
     with _app().test_request_context("/x?rascunho_id=3"):
         with pytest.raises(HTTPException) as saida:
             R.barrar_se_ja_virou_ato(_Db())
@@ -220,6 +222,7 @@ def test_o_rascunho_vivo_e_o_apagado_a_mao_nao_barram(bd, endereco):
 def test_a_tela_de_ato_tambem_barra(bd):
     """É `para_a_tela`, e por isso as oito telas que a chamam não precisam lembrar."""
     bd.marcas[3] = {"rascunho_id": 3, "endereco": "/ato/9"}
+    bd.rascunhos.pop(3)  # convertido: a marca fica, o rascunho já saiu
     with _app().test_request_context("/x?rascunho_id=3", method="POST"):
         with pytest.raises(HTTPException):
             R.para_a_tela(_Db(), "t", "outra")
@@ -433,3 +436,10 @@ def test_a_pasta_do_processo_aponta_para_o_ato(cg_casa_logada):
     html = c.get(f"/tarefas/{tid}").get_data(as_text=True)
     assert 'href="/notas/atos/77"' in html and 'name="apagar_rascunho"' not in html
     assert "O ato foi lavrado: concluir o processo" in html
+
+
+def test_rascunho_vivo_com_marca_antiga_nao_desvia_para_ato_alheio(bd):
+    bd.marcas[3] = {"rascunho_id": 3, "endereco": "/ato/9"}
+    with _app().test_request_context("/x?rascunho_id=3", method="POST"):
+        R.barrar_se_ja_virou_ato(_Db())
+        assert flask.get_flashed_messages() == []

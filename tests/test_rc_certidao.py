@@ -542,3 +542,13 @@ def test_importado_sem_selo_registro_presume_segunda_via():
     )
     assert CE.eh_primeira_certidao_do_registro(con, aid3) is False
 
+
+
+def test_assento_do_acervo_sem_selo_do_registro_nao_ganha_primeira_via():
+    con = banco()
+    try:
+        aid = assento_completo(con, nome="REGISTRO EXEMPLO DO ACERVO", origem="ACERVO")
+        con.execute("DELETE FROM rc_atos WHERE assento_id=? AND tipo='REGISTRO'", (aid,))
+        assert CE.eh_primeira_certidao_do_registro(con, aid) is False
+    finally:
+        con.close()

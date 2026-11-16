@@ -960,11 +960,31 @@ def suprir(con: sqlite3.Connection, revisao_id: int, itens, *, usuario: str = ""
     return feitos
 
 
+_SECOES_DEPOIS_DO_FORMULARIO = ("\n\nINSTRUÇÃO DA ESCREVENTE:", "\n\nPRIMEIRA LEITURA nº",
+                                "\nNão há primeira leitura", "\n\nTEOR QUE SERIA GERADO")
+
+
+def _texto_revisado_do_rcpn(dossie: str) -> tuple[str | None, str]:
+    """O texto do formulário que a revisão do Registro Civil leu. Só calcula."""
+    cabeca = "\nFORMULÁRIO:\n"
+    if not dossie.startswith("REGISTRO CIVIL A LAVRAR") or cabeca not in dossie:
+        return None, ""
+    corpo = dossie.split(cabeca, 1)[1]
+    fim = min([corpo.find(s) for s in _SECOES_DEPOIS_DO_FORMULARIO if s in corpo] or [len(corpo)])
+    texto = corpo[:fim].strip()
+    return "RCPN", "" if texto == "(vazio)" else texto
+
+
 def _texto_revisado(dossie: str) -> tuple[str | None, str]:
-    """(tipo, texto) do ato que a revisão leu - o fim do dossiê."""
+    """(tipo, texto) do ato que a revisão leu - o fim do dossiê.
+
+    O REGISTRO CIVIL NÃO TEM A MARCA (16/11/2026, óbito do rascunho 53): o
+    dossiê dele leva o texto em «FORMULÁRIO:». Sem ler essa seção, o texto
+    revisado vinha vazio, a semelhança dava zero, e o balcão (USER) não lavrava
+    se a conferência mudasse uma linha do que a tela do assento revisou."""
     marca = "=== ATO A LAVRAR ==="
     if marca not in (dossie or ""):
-        return None, ""
+        return _texto_revisado_do_rcpn(dossie or "")
     linhas = dossie.rsplit(marca, 1)[1].strip("\n").split("\n")
     tipo, corpo = None, []
     for linha in linhas:

@@ -8,6 +8,57 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.19 — Atualização com os consertos da produção preservados
+
+Reúne as mudanças preparadas para a 3.7.18 e os consertos encontrados na
+produção antes da aplicação. A 3.7.18 foi retida; o pacote continua cumulativo
+desde a 3.7.10.
+
+- Uma trava compartilhada protege o PDFium na impressão, nas miniaturas, nas revisões e nos teores. A imagem é copiada antes de fechar o bitmap, para não depender de memória já liberada.
+- Rascunho com número reaproveitado não redireciona para o ato de outro atendimento. Ao converter o novo rascunho em ato, a marca antiga é substituída.
+- Assento do acervo sem selo do registro segue a regra de segunda via da certidão.
+- A revisão do Registro Civil reconhece o formulário que leu. O botão de prosseguir leva ao passo correto e aciona «Conferir», sem clicar em «Lavrar».
+- A transcrição dos áudios pode usar o serviço da reserva já configurado na instalação, mantendo um áudio por rodada e o registro de uso.
+- A certidão reprográfica conserva até 300 dpi nas folhas internas, conforme a resolução da origem, e mantém o texto completo dos modelos no cabeçalho. **A primeira imagem só divide a capa se couber sem encolher**, conforme a regra escolhida pelo oficial; senão, vai para uma folha própria. O teor conserva a folha de encerramento separada quando necessária.
+
+As orientações de configuração do WhatsApp e da automação de caixa, descritas
+na 3.7.18 abaixo, também se aplicam a esta versão.
+
+## 3.7.18 — WhatsApp com ferramentas, fechamento dos caixas e documentos legíveis
+
+Inclui todas as mudanças posteriores à 3.7.17. O pacote é cumulativo desde a
+3.7.10 (`--desde v3.7.10`).
+
+**WhatsApp**
+- O atendimento do escrevente conversa com o histórico e o estado do pedido, consulta valores pela tabela e normas pela base da casa, abre ou completa pedidos e informa o encaminhamento ao responsável.
+- O manual do atendimento só vale depois de aprovado pelo oficial. A tela permite definir o responsável pelo balcão geral e a lista de valores.
+- Pedidos parados são cobrados uma vez na tarefa, conforme o prazo e o horário de atendimento. O escrevente pode vincular o pedido ao protocolo do Caixa e copiar os anexos da conversa para a tarefa ou para esse protocolo.
+- Dados pessoais continuam mascarados antes do envio ao provedor. O código de acompanhamento do protocolo não é enviado ao modelo.
+
+**Caixa**
+- Nova rotina para fechar caixas compartilhados de datas anteriores, preservando valores, lançamentos e conferência pendente. Dinheiro físico e movimentos que exigem contagem ficam para conferência humana.
+- A rotina nasce desligada; o oficial a habilita na tela da Automação. Não declara contagem nem atribui o fechamento a uma pessoa.
+
+**RCPJ e RTD**
+- A primeira página da certidão reprográfica só divide a capa quando cabe sem encolher. No teor, o encerramento passa para uma folha própria quando necessário para preservar o tamanho da última página do documento.
+
+**Registro Civil e Notas**
+- Revisão com IA antes de lavrar novo assento do Registro Civil; inclusão de assento de papel pelo livro, folha e termo, sem lavrar nem selar.
+- Ajustes na leitura de óbito, filiação, casamento religioso, margem do livro e prévia no revisor.
+- Escrituras com vários imóveis recebem os itens de selo correspondentes por imóvel; correção do item 13.1 na comunicação com o aparelho.
+- A leitura de PDFs pela IA renderiza cada página uma vez e usa o PDFium em uma thread por vez.
+
+**Protesto, despesas e gestão**
+- Caminhos das integrações do Protesto, curso manual do retorno e comprovante do aceite pela CRA; correção da contagem de títulos em confirmação parcial com codevedor e do vínculo da remessa ao pedido da CENPROT.
+- Correções na baixa de cobranças Parcela e na autorização de despesas com favorecido já cadastrado.
+- Posto do superusuário com acesso pelo oficial e atualização da organização da tela. A sincronia de problemas abre o banco existente sem migrar o esquema; a reserva acompanha a versão do principal depois do esquema.
+
+### Depois de instalar
+
+1. Em **WhatsApp → Atendente**, revisar e aprovar o manual, conferir o texto-base e a lista de valores, escolher o responsável pelo balcão e gravar o horário de atendimento.
+2. Para usar o fechamento automático, habilitar a nova rotina na **Automação**. A conferência dos caixas continua humana.
+3. Conferir a impressão do teor e da certidão reprográfica: o teor pode ganhar uma folha de encerramento.
+
 ## 3.7.17 — Guias FERJ/FERC pagas pelo Pix da guia, WhatsApp do escrevente, acervo do RCPJ/RTD e a contingência da reserva
 
 Desde a 3.7.16. Para a instalação ainda na 3.7.10, o pacote continua cumulativo:

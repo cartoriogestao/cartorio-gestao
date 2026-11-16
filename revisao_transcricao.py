@@ -76,6 +76,7 @@ import banco_pg
 import revisao_previa as RP
 import tetos_de_entrada as TETO
 from bd_nativo import Banco, banco
+from trava_pdfium import TRAVA as TRAVA_DO_PDFIUM, imagem_pil
 
 PROVEDOR = RP.PROVEDOR
 #: O MODELO BOM, O MESMO DA REVISÃO PRÉVIA — ordem do LH11.
@@ -339,7 +340,7 @@ def hash_do_texto(texto: str) -> str:
 # O PDFIUM NÃO PODE SER USADO POR DUAS LINHAS DE EXECUÇÃO AO MESMO TEMPO (derruba
 # o processo, que é o servidor do balcão — ver `revisao_anexos.transcrever`).
 # O lote e o botão da certidão rodam em linhas diferentes; a trava é desta casa.
-_PDFIUM = threading.Lock()
+_PDFIUM = TRAVA_DO_PDFIUM     # a do sistema inteiro (16/11/2026), não só desta casa
 
 
 def _caminho_da_pagina(raiz: Path, linha: dict) -> Path | None:
@@ -389,7 +390,7 @@ def _desenhar(caminho: Path, tipo: str, quadro: int) -> str:
             try:
                 largura, altura = doc[quadro].get_size()
                 escala = RA.LADO_MAIOR_PX / max(largura, altura, 1)
-                return RA._jpeg(doc[quadro].render(scale=escala, grayscale=True).to_pil())
+                return RA._jpeg(imagem_pil(doc[quadro], scale=escala, grayscale=True))
             finally:
                 doc.close()
     from PIL import Image

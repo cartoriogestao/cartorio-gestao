@@ -421,11 +421,25 @@ def do_envio() -> int | None:
 
 
 def o_ato_do_rascunho(con, rascunho_id: int) -> dict | None:
-    """A marca do rascunho que virou ato, ou `None`. Só lê."""
-    linha = banco(con).um(
+    """A marca do rascunho que virou ato, ou `None`. Só lê.
+
+    A MARCA DE UM NÚMERO QUE AINDA TEM RASCUNHO VIVO É VELHA, e não vale
+    (16/11/2026, leitura nº 29 da produção, óbito). Entre 11 e 12/11 a
+    numeração dos rascunhos voltou ao maior número que restava na tabela, e os
+    números 49 a 52, que já tinham virado ato e saído da lista, nasceram de
+    novo. O rascunho 52 de hoje abria o ato do rascunho 52 de 11/11 — a
+    escrevente processava os documentos e caía no registro de outra pessoa.
+    `virou_ato` apaga o rascunho na mesma transação em que grava a marca: o
+    rascunho vivo com marca é sempre outro rascunho com o mesmo número."""
+    bd = banco(con)
+    linha = bd.um(
         "SELECT * FROM rascunhos_que_viraram_ato WHERE rascunho_id=%s",
         (int(rascunho_id),))
-    return dict(linha) if linha else None
+    if not linha:
+        return None
+    if bd.um("SELECT 1 FROM rascunhos_de_tela WHERE id=%s", (int(rascunho_id),)):
+        return None
+    return dict(linha)
 
 
 def chave_ja_recebida(con, chave: str) -> bool:
@@ -455,11 +469,15 @@ def virou_ato(con, rascunho_id: int, *, endereco: str | None, agora: str,
               (int(rascunho_id),))
     if not r:
         return
+    # Marca velha do mesmo número (numeração que voltou, 16/11/2026) dá lugar à
+    # deste ato: com DO NOTHING ela ficaria, e levaria ao ato de outra pessoa.
     bd.escrever(
         """INSERT INTO rascunhos_que_viraram_ato
                (rascunho_id, tela, chave, endereco, em, por)
            VALUES (%s,%s,%s,%s,%s,%s)
-           ON CONFLICT (rascunho_id) DO NOTHING""",
+           ON CONFLICT (rascunho_id) DO UPDATE SET tela = EXCLUDED.tela,
+               chave = EXCLUDED.chave, endereco = EXCLUDED.endereco,
+               em = EXCLUDED.em, por = EXCLUDED.por""",
         (int(rascunho_id), r["tela"], r["chave"], endereco, agora, por))
     bd.escrever("DELETE FROM rascunhos_de_tela WHERE id=%s", (int(rascunho_id),))
 

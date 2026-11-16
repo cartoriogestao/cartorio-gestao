@@ -1018,8 +1018,10 @@ def origens_importadas_sem_selo_de_registro() -> tuple[str, ...]:
 
     Pedido do oficial 09/09/2026: nesses casos, sem selo do REGISTRO,
     a certidao se presume segunda via (compra CERTID) — nao 1a via gratuita.
+    O acervo digitado do livro de papel entra na mesma regra (16/11/2026):
+    a 1ª via já saiu no papel antigo e não há selo desta serventia no registro.
     """
-    return ("EOFICIO", "ARQUIVO", "IMPORTACAO")
+    return ("EOFICIO", "ARQUIVO", "IMPORTACAO", "ACERVO")
 
 
 def eh_primeira_certidao_do_registro(
@@ -1031,8 +1033,8 @@ def eh_primeira_certidao_do_registro(
     Conta so certidoes NAO canceladas. Se a unica ativa e a que estamos
     emitindo agora (`certidao_id`), ainda e a primeira.
 
-    Assento IMPORTADO (EOFICIO/ARQUIVO) SEM selo do REGISTRO: nao e 1a via —
-    presume-se segunda via (oficial 09/09/2026).
+    Assento vindo de fora (EOFICIO, ARQUIVO, IMPORTACAO ou ACERVO) SEM selo
+    do REGISTRO: nao e 1a via — presume-se segunda via (oficial 09/09/2026).
     """
     esp = str(especie or "").strip().upper()
     bd = banco(con)

@@ -106,6 +106,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import re
 import sys
 import time
@@ -1763,7 +1764,11 @@ def transcrever_pendentes(db: Any, cfg: dict, *, agora: str, pasta_de_dados: Any
     # NESTE SERVIDOR A RODADA ESPERA O ÁUDIO (30/10/2026, `wa_transcricao_local`): um por
     # vez. A busca de mensagens corre em outra linha do vigia e não para, mas cada áudio
     # segura por até 180 s os downloads, a IA das outras conversas e o aviso de fora do horário.
-    neste_servidor = cfg.get("audio_onde") == LOCAL.AQUI
+    # A URL da reserva também é «neste servidor»: um áudio por rodada, provedor
+    # este-servidor, modelo large-v3. Não se grava ia_audio_onde=AQUI — sem a
+    # URL, AQUI falha porque o Windows não tem o modelo.
+    na_reserva = bool(LOCAL._url_da_reserva())
+    neste_servidor = cfg.get("audio_onde") == LOCAL.AQUI or na_reserva
     limite = 1 if neste_servidor else limite
     inicio = ((FILA._dt(agora) or datetime.now()) - timedelta(hours=JANELA_HORAS)
               ).strftime("%Y-%m-%dT%H:%M:%S")

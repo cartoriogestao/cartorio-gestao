@@ -42,8 +42,7 @@ ATRIBUICAO_RTD = TEOR.ATRIBUICAO_RTD
 
 A4_W, A4_H = TEOR.A4_W, TEOR.A4_H
 SIDE = TEOR.SIDE
-FAIXA_H = 150  # banda no topo das folhas internas (~120–160 px)
-FOLHA_INTERNA_BAIXO = 28  # margem de baixo da imagem na folha interna
+FAIXA_H = 150  # piso antigo da faixa; a folha interna não usa mais esse piso
 
 EXTENSOES_IMAGEM = TEOR.EXTENSOES_IMAGEM
 EXTENSOES_PDF = TEOR.EXTENSOES_PDF
@@ -527,9 +526,10 @@ def montar_capa(textos: dict[str, Any], *,
                 ) -> tuple[Image.Image, bool]:
     im = Image.new("RGB", (A4_W, A4_H), "white")
     d = ImageDraw.Draw(im)
-    fb, fn, ft = _font(22, True), _font(16), _font(20, True)
-    y = 28
-    max_w = A4_W - 2 * SIDE
+    fb, fn, ft = _font(16, True), _font(12), _font(15, True)
+    y = 10
+    margem = 16
+    max_w = A4_W - 2 * margem
 
     for i, ln in enumerate(
             [x.strip() for x in textos["cabecalho"].splitlines() if x.strip()]):
@@ -537,10 +537,10 @@ def montar_capa(textos: dict[str, Any], *,
         for wrap in _wrap(d, ln, font, max_w):
             tw = d.textlength(wrap, font=font)
             d.text(((A4_W - tw) / 2, y), wrap, fill="black", font=font)
-            y += 26 if i == 0 else 22
-    y += 10
-    d.line([(SIDE, y), (A4_W - SIDE, y)], fill="black", width=1)
-    y += 16
+            y += 18 if i == 0 else 14
+    y += 4
+    d.line([(margem, y), (A4_W - margem, y)], fill="black", width=1)
+    y += 8
 
     for i, ln in enumerate(
             [x.strip() for x in textos["titulo"].splitlines() if x.strip()]):
@@ -548,108 +548,131 @@ def montar_capa(textos: dict[str, Any], *,
         for wrap in _wrap(d, ln, font, max_w):
             tw = d.textlength(wrap, font=font)
             d.text(((A4_W - tw) / 2, y), wrap, fill="black", font=font)
-            y += 30 if i == 0 else 26
-    y += 14
+            y += 18 if i == 0 else 15
+    y += 6
 
     for ln in textos["corpo"].splitlines():
         s = ln.strip()
         if not s:
-            y += 8
+            y += 4
             continue
         for wrap in _wrap(d, s, fn, max_w):
-            d.text((SIDE, y), wrap, fill="black", font=fn)
-            y += 22
-    y += 16
+            d.text((margem, y), wrap, fill="black", font=fn)
+            y += 15
+    y += 6
 
     den_lines = [x for x in textos["denominacao"].splitlines() if x.strip()]
     for i, ln in enumerate(den_lines):
-        font = fb if i in (0, 2) else _font(18, True) if i in (1, 3) else fn
-        # rótulos (Denominação / Natureza) em bold menor; valores maiores
-        if ln.strip().lower().startswith("denom") or ln.strip().lower().startswith("natur"):
-            font = fb
-        elif i in (1, 3) or (i > 0 and not den_lines[i - 1].lower().startswith(
-                ("denom", "natur"))):
-            font = _font(18, True)
-        d.text((SIDE, y), ln.strip(), fill="black", font=font)
-        y += 26
-    y += 20
+        font = fb if ln.strip().lower().startswith(("denom", "natur")) else ft
+        d.text((margem, y), ln.strip(), fill="black", font=font)
+        y += 16
+    y += 4
 
     for ln in textos["fecho"].splitlines():
         s = ln.strip()
         if not s:
-            y += 8
+            y += 4
             continue
         for wrap in _wrap(d, s, fn, max_w):
-            d.text((SIDE, y), wrap, fill="black", font=fn)
-            y += 22
-    y += 24
+            d.text((margem, y), wrap, fill="black", font=fn)
+            y += 15
+    y += 6
 
     if com_emolumentos:
-        emol = normalizar_emolumentos(emolumentos)
-        y = _desenhar_quadro_emol(im, emol, y)
-        y += 8
+        y = _desenhar_mini_emol(d, normalizar_emolumentos(emolumentos), y)
 
-    # **A PRIMEIRA FOLHA DO DOCUMENTO CABE NA CAPA** — pedido do oficial em
-    # 11/09/2026: a capa é só cabeçalho/texto/emolumentos, e a primeira
-    # imagem do documento sempre nascia numa folha à parte — uma página
-    # inteira gasta com quase nada, quando sobrava espaço em branco embaixo
-    # do quadro de emolumentos. Cola aqui SE sobrar altura que valha a pena
-    # (120 px é pouco menos que uma linha de texto de sobra); senão, a
-    # imagem cai para a primeira folha interna, como sempre foi — nunca
-    # força um encaixe que cortaria a imagem.
-    #
-    # **MAS SÓ NA MESMA ESCALA DAS FOLHAS INTERNAS** — 16/11/2026: colada no
-    # que sobrava da capa, uma página A4/Carta saía com ~13 cm de largura
-    # (18,6 cm nas outras) e ficava ilegível. A regra é a da reprográfica do
-    # RI (of-0151) e a do modelo de SP: o documento não encolhe por causa do
-    # texto. A 1ª página só divide a folha com a capa se couber inteira na
-    # escala que teria numa folha interna (página curta, deitada); senão,
-    # abre a 1ª folha interna, como as demais.
+    # O selo fica no pé da capa. A primeira imagem ocupa o que sobra entre
+    # o texto e o selo, no maior tamanho que ainda cabe na folha.
+    altura_selo = 160
+    y_selo = A4_H - 8 - altura_selo
     colou_primeira_folha = False
-    espaco_do_selo = 170
-    if primeira_folha is not None:
-        limite_inferior = A4_H - 20 - espaco_do_selo
+    if primeira_folha is not None and y_selo - y > 80:
         src = primeira_folha.convert("RGB")
+        # A interna tem o dobro dos pontos (300 dpi). A comparação é pelo
+        # tamanho no papel, não pela quantidade de pixels de cada folha.
+        e = _resolucao_da_folha(src)
+        desenho = ImageDraw.Draw(Image.new("RGB", (A4_W * e, 1), "white"))
+        topo = _cabecalho_da_folha_interna(
+            desenho, textos, pagina=1, total_paginas=1, escala=e,
+            emolumentos=emolumentos, com_emolumentos=com_emolumentos,
+            desenhar=False)
         escala_interna = TEOR._escala_que_cabe(
-            src, FAIXA_H + 8, A4_H - FOLHA_INTERNA_BAIXO)
-        cabe_sem_encolher = (
-            TEOR._escala_que_cabe(src, y, limite_inferior)
-            >= escala_interna * 0.98)
-        if limite_inferior - y > 120 and cabe_sem_encolher:
-            TEOR._colar_imagem(im, src, y, limite_inferior,
+            src, topo, A4_H * e - 4 * e, largura=A4_W * e,
+            margem=8 * e, folga=1.0, respiro=2 * e) / e
+        escala_capa = TEOR._escala_que_cabe(
+            src, y + 2, y_selo - 2, margem=margem, folga=1.0, respiro=2)
+        if escala_capa >= escala_interna * 0.98:
+            TEOR._colar_imagem(im, src, y + 2, y_selo - 2,
+                               margem=margem, folga=1.0, respiro=2,
                                escala=escala_interna)
-            y = limite_inferior
             colou_primeira_folha = True
-
-    # Área do selo — sempre reservada na capa; vazia na prévia, ou com o
-    # carimbo de verdade quando a certidão já foi selada.
-    if y + 170 < A4_H - 20:
-        _desenhar_area_selo(im, max(y, A4_H - 190), selo=selo,
-                            rotulos=textos.get("moldura"))
-    else:
-        _desenhar_area_selo(im, y, selo=selo, rotulos=textos.get("moldura"))
+    _desenhar_area_selo(im, y_selo, selo=selo, rotulos=textos.get("moldura"))
     return im, colou_primeira_folha
 
 
 # ------------------------------------------------------ folhas internas
 
 def _desenhar_mini_emol(d: ImageDraw.ImageDraw, emol: dict[str, str],
-                       y: int) -> int:
-    fn = _font(10)
-    fb = _font(10, True)
-    x = SIDE
-    max_x = A4_W - SIDE
+                       y: int, *, escala: int = 1, margem: int | None = None) -> int:
+    fn = _font(10 * escala)
+    fb = _font(10 * escala, True)
+    x = SIDE if margem is None else margem
+    max_x = A4_W * escala - x
     for chave, rotulo in CAMPOS_EMOL_FAIXA:
-        cell = 108
+        cell = 108 * escala
         if x + cell > max_x:
             break
-        d.rectangle([x, y, x + cell - 2, y + 28], outline=(120, 120, 120),
-                    width=1)
-        d.text((x + 2, y + 1), rotulo, fill="black", font=fb)
-        d.text((x + 2, y + 13), emol.get(chave, "R$ 0,00"), fill="black",
-               font=fn)
+        d.rectangle([x, y, x + cell - 2 * escala, y + 28 * escala],
+                    outline=(120, 120, 120), width=escala)
+        d.text((x + 2 * escala, y + escala), rotulo, fill="black", font=fb)
+        d.text((x + 2 * escala, y + 13 * escala),
+               emol.get(chave, "R$ 0,00"), fill="black", font=fn)
         x += cell
-    return y + 32
+    return y + 32 * escala
+
+
+def _resolucao_da_folha(src: Image.Image) -> int:
+    # 300 dpi quando há pontos na origem. Ampliar uma imagem pequena não
+    # melhora o traço e quadruplica a memória de cada página do documento.
+    return 2 if src.width > A4_W or src.height > A4_H else 1
+
+
+def _cabecalho_da_folha_interna(d: ImageDraw.ImageDraw, textos: dict[str, Any], *,
+                               pagina: int, total_paginas: int, escala: int,
+                               emolumentos=None, com_emolumentos=True,
+                               desenhar=True) -> int:
+    e = escala
+    margem, largura = 8 * e, A4_W * e
+    fb, fn = _font(11 * e, True), _font(11 * e)
+    ctx = dict(textos["ctx"])
+    ctx["pagina"] = f"{pagina:06d}"
+    ctx["total_paginas"] = f"{total_paginas:06d}"
+    piso(textos["chave_faixa"], se_outra="RCPJ_CERTIDAO_FAIXA")
+    rotulos = textos.get("moldura") or TEOR.moldura()
+    rotulo_curto = ctx.get("identificacao_curta") or TEOR.preencher_moldura(
+        rotulos, "IDENTIFICACAO", {"numero": ctx["numero"]})
+    data_curta = ctx.get("identificacao_data") or ctx["data_registro"]
+    linha = (f"{rotulos['PAGINA']} {ctx['pagina']}/{ctx['total_paginas']}"
+             f"   {rotulo_curto}   {data_curta}")
+    y = 4 * e
+    if desenhar:
+        d.text((margem, y), linha, fill="black", font=fb)
+    y += 16 * e
+    # Compactar o cabeçalho não pode suprimir a faixa aprovada na tela de
+    # Modelos. Todas as palavras e os valores continuam na folha.
+    for linha in _wrap(d, textos["faixa"], fn, largura - 2 * margem):
+        if desenhar:
+            d.text((margem, y), linha, fill="black", font=fn)
+        y += 13 * e
+    if com_emolumentos:
+        if desenhar:
+            y = _desenhar_mini_emol(d, normalizar_emolumentos(emolumentos), y,
+                                    escala=e, margem=margem)
+        else:
+            y += 32 * e
+    if desenhar:
+        d.line([(margem, y), (largura - margem, y)], fill="black", width=e)
+    return y + 2 * e
 
 
 def montar_folha_interna(
@@ -661,64 +684,23 @@ def montar_folha_interna(
     emolumentos: dict[str, str] | None = None,
     com_emolumentos: bool = True,
 ) -> Image.Image:
-    im = Image.new("RGB", (A4_W, A4_H), "white")
+    e = _resolucao_da_folha(src)
+    im = Image.new("RGB", (A4_W * e, A4_H * e), "white")
     d = ImageDraw.Draw(im)
-    fn, fb = _font(13), _font(13, True)
-    ctx = dict(textos["ctx"])
-    ctx["pagina"] = f"{pagina:06d}"
-    ctx["total_paginas"] = f"{total_paginas:06d}"
-    # Reaplica faixa com página atual
-    chave_f = textos["chave_faixa"]
-    bruto = piso(chave_f, se_outra="RCPJ_CERTIDAO_FAIXA")
-    # Usa o texto já resolvido trocando só a página via re-format se preciso
-    faixa_txt = textos["faixa"]
-
-    y = 10
-    # Caixa Página / Registro Nº / data (esquerda)
-    box_w = 160
-    d.rectangle([SIDE, y, SIDE + box_w, y + 70], outline="black", width=1)
-    rotulos = textos.get("moldura") or TEOR.moldura()
-    d.text((SIDE + 6, y + 4), rotulos["PAGINA"], fill="black", font=fb)
-    d.text((SIDE + 6, y + 22),
-           f"{ctx['pagina']}/{ctx['total_paginas']}", fill="black", font=fn)
-    # **NÃO É SEMPRE "Registro Nº X"** — achado do oficial em 12/09/2026:
-    # «segue o registro 148 na parte esquerda superior do cabeçalho». Numa
-    # certidão de averbação, `identificacao_curta`/`identificacao_data` (de
-    # `contexto_certidao`) já trazem o rótulo e a data do que de fato está
-    # sendo certificado; só caem no registro quando a rota não manda nada
-    # de diferente (certidão do próprio registro).
-    rotulo_curto = ctx.get("identificacao_curta") or TEOR.preencher_moldura(
-        rotulos, "IDENTIFICACAO", {"numero": ctx["numero"]})
-    fb_rotulo = fb if len(rotulo_curto) <= 18 else _font(11, True)
-    d.text((SIDE + 6, y + 40), rotulo_curto, fill="black", font=fb_rotulo)
-    d.text((SIDE + 6, y + 54),
-           ctx.get("identificacao_data") or ctx["data_registro"],
-           fill="black", font=fn)
-
-    # Texto da faixa à direita
-    tx = SIDE + box_w + 12
-    max_w = A4_W - SIDE - tx
-    ty = y
-    for wrap in _wrap(d, faixa_txt, fn, max_w):
-        d.text((tx, ty), wrap, fill="black", font=fn)
-        ty += 16
-    y = max(y + 74, ty + 4)
-
-    if com_emolumentos:
-        y = _desenhar_mini_emol(d, normalizar_emolumentos(emolumentos), y)
-
-    y = max(y + 4, FAIXA_H)
-    d.line([(SIDE - 4, y), (A4_W - SIDE + 4, y)], fill="black", width=1)
-    top = y + 8
-    bottom = A4_H - FOLHA_INTERNA_BAIXO
-    TEOR._colar_imagem(im, src.convert("RGB"), top, bottom)
+    top = _cabecalho_da_folha_interna(
+        d, textos, pagina=pagina, total_paginas=total_paginas, escala=e,
+        emolumentos=emolumentos, com_emolumentos=com_emolumentos)
+    TEOR._colar_imagem(im, src.convert("RGB"), top, im.height - 4 * e,
+                       margem=8 * e, folga=1.0, respiro=2 * e)
     return im
 
 
 # ------------------------------------------------------ carregar folhas
 
 def carregar_folhas(caminhos: Sequence[str | Path]) -> list[Image.Image]:
-    return TEOR.carregar_folhas(caminhos)
+    # 300 dpi: a digitalização entra com o dobro dos pontos da folha antiga
+    # (150 dpi), para a imagem da certidão não perder o traço do livro.
+    return TEOR.carregar_folhas(caminhos, escala=300 / 72)
 
 
 def anexo_padrao_marcado(nome: str | None, descricao: str | None = None) -> bool:
@@ -917,20 +899,19 @@ def gerar_pdf(
                 "ajuste o texto em Modelos da casa.")
 
     n = len(folhas)
+    # A primeira imagem só divide a capa quando cabe na escala física das
+    # folhas internas, conforme a regra do PR #442. Senão, tem folha própria.
     capa, colou_primeira = montar_capa(
         textos, emolumentos=emolumentos, com_emolumentos=com_emolumentos,
         primeira_folha=folhas[0], selo=selo)
     pages = [capa]
-    # Se a 1ª folha já entrou na capa, as internas começam da 2ª — mas o
-    # NÚMERO da página impressa na faixa continua sendo o da folha real do
-    # documento (a 2ª folha do papel é "página 2/N", nunca "1/N-1").
     restantes = folhas[1:] if colou_primeira else folhas
     deslocamento = 1 if colou_primeira else 0
     for i, src in enumerate(restantes):
         pages.append(montar_folha_interna(
             src, textos=textos, pagina=i + 1 + deslocamento, total_paginas=n,
             emolumentos=emolumentos, com_emolumentos=com_emolumentos))
-    return TEOR._images_to_pdf_bytes(pages)
+    return TEOR._images_to_pdf_bytes(pages, quality=92)
 
 
 def __getattr__(nome: str):

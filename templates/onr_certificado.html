@@ -7,18 +7,22 @@
   <p>Ambiente: <strong>{{ ambiente }}</strong>. Selecione um certificado válido do CPF já cadastrado na integração.</p>
   <p>Série cadastrada: <strong>{{ credencial.certificado or 'nenhuma' }}</strong>.</p>
   {% if erro %}<p class="warning">{{ erro }}</p>{% endif %}
-  {% if certificados %}
   <form method="post">
+  {% if certificados %}
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Certificado disponível nesta conta do Windows
-      <select name="certificado" required>
+      <select name="certificado">
         <option value="">Selecione</option>
         {% for c in certificados %}<option value="{{ c.SERIALNUMBER }}"{% if c.SERIALNUMBER == credencial.certificado %} selected{% endif %}>{{ c.SUBJECTCN }} — {{ c.EMISSOR }} — validade {{ c.VALIDUNTIL }} — série {{ c.SERIALNUMBER }}</option>{% endfor %}
       </select>
     </label>
+  {% elif not erro %}<p class="warning">Nenhum certificado válido do CPF cadastrado está disponível para a conta que executa o servidor.</p>{% endif %}
+    <details><summary>Usar o certificado público de outra conta do Windows</summary>
+      <p>Quando o servidor não enxerga o certificado do seu perfil, cole a exportação pública em formato PEM. Não informe PIN, senha, arquivo PFX ou chave privada.</p>
+      <label>Certificado público PEM <textarea name="certificado_pem" rows="5" autocomplete="off" placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
+    </details>
     <button class="button primary" type="submit">Guardar certificado</button>
   </form>
-  {% elif not erro %}<p class="warning">Nenhum certificado válido do CPF cadastrado está disponível para a conta que executa o servidor.</p>{% endif %}
   <p class="small muted">Esta escolha vale para as consultas do WSOfício e para as certidões do ONR. A chave do parceiro é preservada. A chave privada do certificado não é lida.</p>
 </section>
 {% endblock %}

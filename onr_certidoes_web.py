@@ -79,12 +79,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 erro = str(exc)
         if request.method == "POST":
             serie = (request.form.get("certificado") or "").strip().upper()
+            pem = (request.form.get("certificado_pem") or "").strip()
             permitidas = {str(c.get("SERIALNUMBER") or "").upper() for c in certificados}
+            if pem:
+                try:
+                    publico = WS.certificado_publico_do_pem(pem, situacao.get("cpf") or "")
+                except WS.WSOficioError as exc:
+                    flash(str(exc), "danger")
+                    return redirect(url_for("onr_certidoes_certificado"))
+                serie = publico["SERIALNUMBER"]
+                permitidas.add(serie)
+                erro = ""
             if erro or not serie or serie not in permitidas:
                 flash(erro or "Escolha um certificado valido do CPF cadastrado, disponivel nesta conta do Windows.", "danger")
                 return redirect(url_for("onr_certidoes_certificado"))
             try:
-                WS.configurar(ambiente=amb, pasta=pasta, certificado=serie)
+                WS.configurar(ambiente=amb, pasta=pasta, certificado=serie, certificado_publico=pem)
             except (OSError, WS.WSOficioError) as exc:
                 flash(f"Nao foi possivel guardar o certificado: {exc}", "danger")
                 return redirect(url_for("onr_certidoes_certificado"))

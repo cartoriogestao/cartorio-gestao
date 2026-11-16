@@ -58,7 +58,7 @@ def test_grava_somente_a_serie_valida_e_audita_sem_segredos(casa):
     response = casa.client.post(URL, data={"certificado": " novo "})
     assert response.status_code == 302
     assert casa.gravados == [{"ambiente": WEB.WS.PRODUCAO, "pasta": casa.pasta,
-                              "certificado": "NOVO"}]
+                              "certificado": "NOVO", "certificado_publico": ""}]
     assert casa.auditoria == [("ONR_CERTIFICADO_ALTERADO", "WSOFICIO", None,
                               {"ambiente": WEB.WS.PRODUCAO, "serie_anterior": "ANTIGO", "serie": "NOVO"})]
 
@@ -83,3 +83,20 @@ def test_falha_do_windows_fica_legivel_e_nao_grava(casa, monkeypatch):
     assert casa.client.get(URL).json["erro"] == "Windows indisponivel"
     casa.client.post(URL, data={"certificado": "NOVO"})
     assert not casa.gravados
+
+
+def test_certificado_publico_da_conta_do_usuario_funciona_sem_certificado_no_servico(casa, monkeypatch):
+    casa.certificados.clear()
+    monkeypatch.setattr(WEB.WS, "certificado_publico_do_pem", lambda pem, cpf: {"SERIALNUMBER": "PUBLICO"})
+    assert casa.client.post(URL, data={"certificado_pem": "CERTIFICADO DE TESTE"}).status_code == 302
+    assert casa.gravados == [{"ambiente": WEB.WS.PRODUCAO, "pasta": casa.pasta,
+                              "certificado": "PUBLICO", "certificado_publico": "CERTIFICADO DE TESTE"}]
+
+
+def test_certificado_publico_invalido_nao_substitui_o_cadastro(casa, monkeypatch):
+    def recusar(pem, cpf):
+        raise WEB.WS.WSOficioError("Certificado invalido")
+    monkeypatch.setattr(WEB.WS, "certificado_publico_do_pem", recusar)
+    casa.client.post(URL, data={"certificado_pem": "INVALIDO"})
+    assert not casa.gravados
+    assert not casa.auditoria

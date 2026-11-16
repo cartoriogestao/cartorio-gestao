@@ -289,12 +289,13 @@ def situacao(ambiente: str = PRODUCAO, pasta=None) -> dict:
 
 
 def configurar(*, ambiente: str = PRODUCAO, pasta=None, id_parceiro=None, chave=None,
-               cpf=None, email=None, certificado=None) -> Path:
+               cpf=None, email=None, certificado=None, certificado_publico=None) -> Path:
     """Grava o que vier (`None` = não mexe). A chave nunca volta por função."""
     tudo = _ler_cred(pasta)
     d = dict(tudo.get(ambiente) or {})
     for campo, valor in (("usuario", id_parceiro), ("senha", chave), ("cpf", cpf),
-                         ("email", email), ("certificado", certificado)):
+                         ("email", email), ("certificado", certificado),
+                         ("certificado_publico", certificado_publico)):
         if valor is not None:
             v = str(valor).strip()
             if campo == "cpf":
@@ -359,6 +360,54 @@ def certificados_do_windows(cpf: str = "") -> list[dict]:
     lista = dados if isinstance(dados, list) else [dados]
     cpf = re.sub(r"\D", "", cpf or "")
     return [c for c in lista if not cpf or cpf in (c.get("ASSUNTO") or "")]
+
+
+def certificado_publico_do_pem(pem: str, cpf: str) -> dict:
+    """Le apenas um X.509 publico; nao aceita PFX nem chave privada.
+
+    O servico do Windows pode nao enxergar o repositorio do usuario. O WSOficio
+    usa os dados PUBLICOS do certificado no login, sem operacao de assinatura.
+    A validade e o CPF sao conferidos tambem em cada login automatizado.
+    """
+    from datetime import datetime, timezone
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+    texto = str(pem or "").strip()
+    if len(texto) > 32000 or not texto.startswith("-----BEGIN CERTIFICATE-----") or "PRIVATE KEY" in texto:
+        raise WSOficioError("Informe somente o certificado publico em formato PEM, sem chave privada.")
+    try:
+        cert = x509.load_pem_x509_certificate(texto.encode("ascii"))
+    except (ValueError, UnicodeError) as exc:
+        raise WSOficioError("O certificado publico PEM nao e valido.") from exc
+    agora = datetime.now(timezone.utc)
+    inicio = (cert.not_valid_before_utc if hasattr(cert, "not_valid_before_utc")
+              else cert.not_valid_before.replace(tzinfo=timezone.utc))
+    fim = (cert.not_valid_after_utc if hasattr(cert, "not_valid_after_utc")
+           else cert.not_valid_after.replace(tzinfo=timezone.utc))
+    if not inicio <= agora <= fim:
+        raise WSOficioError("O certificado publico esta fora da validade.")
+    def atributo(nome, oid):
+        valores = nome.get_attributes_for_oid(oid)
+        return valores[0].value if valores else ""
+    cn = atributo(cert.subject, NameOID.COMMON_NAME)
+    documento = re.sub(r"\D", "", cpf or "")
+    identificadores = [cn, atributo(cert.subject, NameOID.SERIAL_NUMBER)]
+    if len(documento) != 11 or not any(documento in re.sub(r"\D", "", v) for v in identificadores):
+        raise WSOficioError("O certificado publico nao pertence ao CPF cadastrado no WSOficio.")
+    chave = cert.public_key()
+    if not isinstance(chave, rsa.RSAPublicKey):
+        raise WSOficioError("Este tipo de chave publica ainda nao e aceito nesta integracao.")
+    serie = format(cert.serial_number, "X")
+    if len(serie) % 2:
+        serie = "0" + serie
+    return {"SUBJECTCN": cn, "ISSUERO": atributo(cert.issuer, NameOID.ORGANIZATION_NAME),
+            "EMISSOR": atributo(cert.issuer, NameOID.COMMON_NAME),
+            "PUBLICKEY": chave.public_bytes(serialization.Encoding.DER,
+                                             serialization.PublicFormat.PKCS1).hex().upper(),
+            "SERIALNUMBER": serie,
+            "VALIDUNTIL": fim.astimezone().strftime("%d/%m/%Y %H:%M:%S")}
 
 
 def dados_do_login(*, cpf: str, email: str, id_parceiro: Any, certificado: dict) -> dict:
@@ -500,6 +549,11 @@ class Sessao:
     # -- login
     def entrar(self) -> dict:
         cert = self._certificado
+        if cert is None and self._cred.get("certificado_publico"):
+            publico = certificado_publico_do_pem(self._cred["certificado_publico"], self._cred["cpf"])
+            if publico["SERIALNUMBER"] != (self._cred.get("certificado") or "").upper():
+                raise WSOficioError("A serie selecionada nao corresponde ao certificado publico guardado.")
+            cert = publico
         if cert is None:
             serie = (self._cred.get("certificado") or "").upper()
             opcoes = certificados_do_windows(self._cred["cpf"])

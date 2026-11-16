@@ -155,6 +155,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # Arquivo que não abre como imagem (o PIL levanta
             # `UnidentifiedImageError`, que é `OSError`) — 27/10/2026: subia cru,
             # a tela dava HTTP 500 e a leitura ficava «LENDO» para sempre.
+            # O TRACEBACK VAI PARA O LOG (16/11/2026, leitura RC nº 27).
+            app.logger.exception("Leitura NT nº %s não abriu um arquivo", leitura_id)
             erro = (f"Um dos arquivos não pôde ser aberto ({type(falha).__name__}). "
                     f"Confira se é uma foto ou um PDF legível.")
         with db.transaction() as con:

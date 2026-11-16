@@ -42,6 +42,7 @@ import io
 import json
 import re
 import sqlite3
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -193,6 +194,17 @@ def assinatura(lista: list[dict]) -> str:
 
 # ------------------------------------------------------------ as páginas
 
+#: UM PDFium POR VEZ NO PROCESSO INTEIRO (16/11/2026, leitura nº 27 da
+#: produção, óbito). O PDFium não pode ser chamado por duas threads ao mesmo
+#: tempo, nem com documentos diferentes. A leitura por IA renderizava as páginas
+#: dentro das 4 threads da rede: a triagem (em série) leu as 6 páginas, e a
+#: leitura (em paralelo) caiu com «Um dos arquivos não pôde ser aberto
+#: (OSError)». No ensaio com o mesmo PDF, 4 threads ao mesmo tempo falharam 170
+#: de 180 vezes e devolveram 2 imagens TROCADAS sem erro nenhum. A trava também
+#: cobre dois balcões lendo ao mesmo tempo, que são duas threads do servidor.
+_PDFIUM = threading.RLock()
+
+
 def _jpeg(imagem) -> str:
     imagem = imagem.convert("L")
     maior = max(imagem.size)
@@ -229,34 +241,36 @@ def paginas_do_arquivo(caminho: Path, nome: str) -> list[dict]:
     if ext != ".pdf":
         raise AnexoIlegivel(f"formato {ext or 'sem extensão'} não é lido pela revisão")
     import pypdfium2 as pdfium
-    try:
-        doc = pdfium.PdfDocument(str(caminho))
-    except Exception as erro:                      # noqa: BLE001 — vira motivo na tela
-        raise AnexoIlegivel(f"o PDF não abre ({type(erro).__name__})") from erro
-    # O NÚMERO DE PÁGINAS TEM TETO (LX12, LS02 M3, 19/10/2026): cada página
-    # tem o texto lido aqui e pode virar imagem depois; um PDF de cem mil
-    # páginas prendia o servidor. A imagem já sai com o lado maior em
-    # `LADO_MAIOR_PX`, e por isso a área não precisa de teto próprio.
-    try:
-        TETO.conferir_paginas(len(doc), "o PDF")
-    except TETO.TetoExcedido as erro:
-        doc.close()
-        raise AnexoIlegivel(str(erro)) from erro
-    paginas = []
-    for i in range(len(doc)):
-        pagina = doc[i]
-        texto = pagina.get_textpage().get_text_bounded() or ""
+    with _PDFIUM:
+        try:
+            doc = pdfium.PdfDocument(str(caminho))
+        except Exception as erro:                  # noqa: BLE001 — vira motivo na tela
+            raise AnexoIlegivel(f"o PDF não abre ({type(erro).__name__})") from erro
+        # O NÚMERO DE PÁGINAS TEM TETO (LX12, LS02 M3, 19/10/2026): cada página
+        # tem o texto lido aqui e pode virar imagem depois; um PDF de cem mil
+        # páginas prendia o servidor. A imagem já sai com o lado maior em
+        # `LADO_MAIOR_PX`, e por isso a área não precisa de teto próprio.
+        try:
+            TETO.conferir_paginas(len(doc), "o PDF")
+        except TETO.TetoExcedido as erro:
+            doc.close()
+            raise AnexoIlegivel(str(erro)) from erro
+        paginas = []
+        for i in range(len(doc)):
+            pagina = doc[i]
+            texto = pagina.get_textpage().get_text_bounded() or ""
 
-        def imagem(c=caminho, i=i):
-            d = pdfium.PdfDocument(str(c))
-            try:
-                largura, altura = d[i].get_size()
-                escala = LADO_MAIOR_PX / max(largura, altura, 1)
-                return _jpeg(d[i].render(scale=escala, grayscale=True).to_pil())
-            finally:
-                d.close()
-        paginas.append({"texto": texto.strip(), "imagem": imagem})
-    doc.close()
+            def imagem(c=caminho, i=i):
+                with _PDFIUM:
+                    d = pdfium.PdfDocument(str(c))
+                    try:
+                        largura, altura = d[i].get_size()
+                        escala = LADO_MAIOR_PX / max(largura, altura, 1)
+                        return _jpeg(d[i].render(scale=escala, grayscale=True).to_pil())
+                    finally:
+                        d.close()
+            paginas.append({"texto": texto.strip(), "imagem": imagem})
+        doc.close()
     return paginas
 
 

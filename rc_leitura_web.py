@@ -109,6 +109,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         except (OSError, ValueError) as falha:
             # Arquivo que não abre como imagem (`UnidentifiedImageError` do PIL
             # é `OSError`) — 27/10/2026: era HTTP 500 e a leitura ficava «LENDO».
+            # O TRACEBACK VAI PARA O LOG (16/11/2026): a leitura nº 27 só dizia
+            # «OSError», e a causa (o PDFium em 4 threads) teve de ser reproduzida.
+            app.logger.exception("Leitura RC nº %s não abriu um arquivo", leitura_id)
             erro = (f"Um dos arquivos não pôde ser aberto ({type(falha).__name__}). "
                     f"Confira se é uma foto ou um PDF legível.")
         with db.transaction() as con:

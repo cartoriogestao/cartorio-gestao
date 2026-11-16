@@ -19,7 +19,7 @@ desde a 3.7.10.
 - Assento do acervo sem selo do registro segue a regra de segunda via da certidão.
 - A revisão do Registro Civil reconhece o formulário que leu. O botão de prosseguir leva ao passo correto e aciona «Conferir», sem clicar em «Lavrar».
 - A transcrição dos áudios pode usar o serviço da reserva já configurado na instalação, mantendo um áudio por rodada e o registro de uso.
-- A certidão reprográfica conserva a resolução de 300 dpi nas folhas internas. **A primeira imagem só divide a capa se couber sem encolher**, conforme a regra escolhida pelo oficial; senão, vai para uma folha própria. O teor conserva a folha de encerramento separada quando necessária.
+- A certidão reprográfica conserva até 300 dpi nas folhas internas, conforme a resolução da origem, e mantém o texto completo dos modelos no cabeçalho. **A primeira imagem só divide a capa se couber sem encolher**, conforme a regra escolhida pelo oficial; senão, vai para uma folha própria. O teor conserva a folha de encerramento separada quando necessária.
 
 As orientações de configuração do WhatsApp e da automação de caixa, descritas
 na 3.7.18 abaixo, também se aplicam a esta versão.

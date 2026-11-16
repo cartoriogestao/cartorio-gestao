@@ -99,7 +99,7 @@ def test_imagem_na_capa_e_na_interna_tem_mesma_largura_no_papel():
     texts = CERT.textos_prontos(numero=148, lavrante_nome='MARIA EXEMPLO',
                                lavrante_funcao='Oficial', denominacao='EXEMPLO',
                                natureza='Ata', paginas=1, serie='PJ_A')
-    source = Image.new('RGB', (1100, 500), (50, 50, 50))
+    source = Image.new('RGB', (2200, 1000), (50, 50, 50))
     cover, pasted = CERT.montar_capa(texts, primeira_folha=source)
     internal = CERT.montar_folha_interna(source, textos=texts, pagina=1, total_paginas=1)
     assert pasted and internal.width == cover.width * 2

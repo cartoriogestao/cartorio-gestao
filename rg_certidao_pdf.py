@@ -590,9 +590,15 @@ def montar_capa(textos: dict[str, Any], *,
         src = primeira_folha.convert("RGB")
         # A interna tem o dobro dos pontos (300 dpi). A comparação é pelo
         # tamanho no papel, não pela quantidade de pixels de cada folha.
+        e = _resolucao_da_folha(src)
+        desenho = ImageDraw.Draw(Image.new("RGB", (A4_W * e, 1), "white"))
+        topo = _cabecalho_da_folha_interna(
+            desenho, textos, pagina=1, total_paginas=1, escala=e,
+            emolumentos=emolumentos, com_emolumentos=com_emolumentos,
+            desenhar=False)
         escala_interna = TEOR._escala_que_cabe(
-            src, 44, A4_H * 2 - 8, largura=A4_W * 2,
-            margem=16, folga=1.0, respiro=4) / 2
+            src, topo, A4_H * e - 4 * e, largura=A4_W * e,
+            margem=8 * e, folga=1.0, respiro=2 * e) / e
         escala_capa = TEOR._escala_que_cabe(
             src, y + 2, y_selo - 2, margem=margem, folga=1.0, respiro=2)
         if escala_capa >= escala_interna * 0.98:
@@ -607,22 +613,66 @@ def montar_capa(textos: dict[str, Any], *,
 # ------------------------------------------------------ folhas internas
 
 def _desenhar_mini_emol(d: ImageDraw.ImageDraw, emol: dict[str, str],
-                       y: int) -> int:
-    fn = _font(10)
-    fb = _font(10, True)
-    x = SIDE
-    max_x = A4_W - SIDE
+                       y: int, *, escala: int = 1, margem: int | None = None) -> int:
+    fn = _font(10 * escala)
+    fb = _font(10 * escala, True)
+    x = SIDE if margem is None else margem
+    max_x = A4_W * escala - x
     for chave, rotulo in CAMPOS_EMOL_FAIXA:
-        cell = 108
+        cell = 108 * escala
         if x + cell > max_x:
             break
-        d.rectangle([x, y, x + cell - 2, y + 28], outline=(120, 120, 120),
-                    width=1)
-        d.text((x + 2, y + 1), rotulo, fill="black", font=fb)
-        d.text((x + 2, y + 13), emol.get(chave, "R$ 0,00"), fill="black",
-               font=fn)
+        d.rectangle([x, y, x + cell - 2 * escala, y + 28 * escala],
+                    outline=(120, 120, 120), width=escala)
+        d.text((x + 2 * escala, y + escala), rotulo, fill="black", font=fb)
+        d.text((x + 2 * escala, y + 13 * escala),
+               emol.get(chave, "R$ 0,00"), fill="black", font=fn)
         x += cell
-    return y + 32
+    return y + 32 * escala
+
+
+def _resolucao_da_folha(src: Image.Image) -> int:
+    # 300 dpi quando há pontos na origem. Ampliar uma imagem pequena não
+    # melhora o traço e quadruplica a memória de cada página do documento.
+    return 2 if src.width > A4_W or src.height > A4_H else 1
+
+
+def _cabecalho_da_folha_interna(d: ImageDraw.ImageDraw, textos: dict[str, Any], *,
+                               pagina: int, total_paginas: int, escala: int,
+                               emolumentos=None, com_emolumentos=True,
+                               desenhar=True) -> int:
+    e = escala
+    margem, largura = 8 * e, A4_W * e
+    fb, fn = _font(11 * e, True), _font(11 * e)
+    ctx = dict(textos["ctx"])
+    ctx["pagina"] = f"{pagina:06d}"
+    ctx["total_paginas"] = f"{total_paginas:06d}"
+    piso(textos["chave_faixa"], se_outra="RCPJ_CERTIDAO_FAIXA")
+    rotulos = textos.get("moldura") or TEOR.moldura()
+    rotulo_curto = ctx.get("identificacao_curta") or TEOR.preencher_moldura(
+        rotulos, "IDENTIFICACAO", {"numero": ctx["numero"]})
+    data_curta = ctx.get("identificacao_data") or ctx["data_registro"]
+    linha = (f"{rotulos['PAGINA']} {ctx['pagina']}/{ctx['total_paginas']}"
+             f"   {rotulo_curto}   {data_curta}")
+    y = 4 * e
+    if desenhar:
+        d.text((margem, y), linha, fill="black", font=fb)
+    y += 16 * e
+    # Compactar o cabeçalho não pode suprimir a faixa aprovada na tela de
+    # Modelos. Todas as palavras e os valores continuam na folha.
+    for linha in _wrap(d, textos["faixa"], fn, largura - 2 * margem):
+        if desenhar:
+            d.text((margem, y), linha, fill="black", font=fn)
+        y += 13 * e
+    if com_emolumentos:
+        if desenhar:
+            y = _desenhar_mini_emol(d, normalizar_emolumentos(emolumentos), y,
+                                    escala=e, margem=margem)
+        else:
+            y += 32 * e
+    if desenhar:
+        d.line([(margem, y), (largura - margem, y)], fill="black", width=e)
+    return y + 2 * e
 
 
 def montar_folha_interna(
@@ -634,34 +684,14 @@ def montar_folha_interna(
     emolumentos: dict[str, str] | None = None,
     com_emolumentos: bool = True,
 ) -> Image.Image:
-    # Folha em 300 dpi. O cabeçalho fica numa linha, para a digitalização
-    # ocupar o resto da página com os pontos do livro.
-    e = 2
-    largura, altura = A4_W * e, A4_H * e
-    im = Image.new("RGB", (largura, altura), "white")
+    e = _resolucao_da_folha(src)
+    im = Image.new("RGB", (A4_W * e, A4_H * e), "white")
     d = ImageDraw.Draw(im)
-    fb = _font(11 * e, True)
-    ctx = dict(textos["ctx"])
-    ctx["pagina"] = f"{pagina:06d}"
-    ctx["total_paginas"] = f"{total_paginas:06d}"
-    chave_f = textos["chave_faixa"]
-    piso(chave_f, se_outra="RCPJ_CERTIDAO_FAIXA")
-    margem = 8 * e
-
-    y = 4 * e
-    rotulos = textos.get("moldura") or TEOR.moldura()
-    rotulo_curto = ctx.get("identificacao_curta") or TEOR.preencher_moldura(
-        rotulos, "IDENTIFICACAO", {"numero": ctx["numero"]})
-    data_curta = ctx.get("identificacao_data") or ctx["data_registro"]
-    linha = (f"{rotulos['PAGINA']} {ctx['pagina']}/{ctx['total_paginas']}"
-             f"   {rotulo_curto}   {data_curta}")
-    d.text((margem, y), linha, fill="black", font=fb)
-    y += 16 * e
-    d.line([(margem, y), (largura - margem, y)], fill="black", width=e)
-    top = y + 2 * e
-    bottom = altura - 4 * e
-    TEOR._colar_imagem(im, src.convert("RGB"), top, bottom,
-                       margem=margem, folga=1.0, respiro=2 * e)
+    top = _cabecalho_da_folha_interna(
+        d, textos, pagina=pagina, total_paginas=total_paginas, escala=e,
+        emolumentos=emolumentos, com_emolumentos=com_emolumentos)
+    TEOR._colar_imagem(im, src.convert("RGB"), top, im.height - 4 * e,
+                       margem=8 * e, folga=1.0, respiro=2 * e)
     return im
 
 

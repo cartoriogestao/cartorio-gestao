@@ -221,7 +221,7 @@ def test_o_modulo_nao_numera_nem_lavra():
     for proibido in ("numero_ordem", "reservar", "MAX(numero"):
         assert proibido not in codigo, f"o módulo mexe com «{proibido}»"
     import re
-    for alvo in re.findall(r"(?:INSERT INTO|UPDATE|DELETE FROM)\s+(\w+)",
+    for alvo in re.findall(r"(?:INSERT INTO|UPDATE(?!\s+SET\b)|DELETE FROM)\s+(\w+)",
                            codigo):
         assert alvo in ("rascunhos_de_tela", "rascunhos_que_viraram_ato"), f"escreve em «{alvo}»"
 

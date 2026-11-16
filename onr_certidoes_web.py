@@ -16,6 +16,7 @@ do RI operacional (medido de 06 a 09/10/2026).
 from __future__ import annotations
 
 from datetime import date, timedelta
+from pathlib import Path
 
 from flask import flash, redirect, render_template, request, url_for
 
@@ -55,6 +56,45 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                ambiente=ambiente(), credencial=WS.situacao(ambiente()),
                                rotulo_do_tipo=OC.rotulo_do_tipo,
                                rotulo_do_status=OC.rotulo_do_status)
+
+    @app.route("/ri/onr/certidoes/certificado", methods=["GET", "POST"])
+    @roles_required("ADMIN")
+    def onr_certidoes_certificado():
+        """Escolhe apenas um certificado publico valido do CPF ja cadastrado.
+
+        A chave do parceiro continua guardada: esta tela nunca a recebe nem
+        a devolve. A mudanca passa pela conta autenticada e pela auditoria.
+        """
+        pasta = Path(db.db_path).parent
+        amb = ambiente()
+        situacao = WS.situacao(amb, pasta=pasta)
+        certificados = []
+        erro = ""
+        if not situacao.get("cpf"):
+            erro = "Falta o CPF do usuario do WSOficio no cadastro da integracao."
+        else:
+            try:
+                certificados = WS.certificados_do_windows(situacao["cpf"])
+            except WS.WSOficioError as exc:
+                erro = str(exc)
+        if request.method == "POST":
+            serie = (request.form.get("certificado") or "").strip().upper()
+            permitidas = {str(c.get("SERIALNUMBER") or "").upper() for c in certificados}
+            if erro or not serie or serie not in permitidas:
+                flash(erro or "Escolha um certificado valido do CPF cadastrado, disponivel nesta conta do Windows.", "danger")
+                return redirect(url_for("onr_certidoes_certificado"))
+            try:
+                WS.configurar(ambiente=amb, pasta=pasta, certificado=serie)
+            except (OSError, WS.WSOficioError) as exc:
+                flash(f"Nao foi possivel guardar o certificado: {exc}", "danger")
+                return redirect(url_for("onr_certidoes_certificado"))
+            audit("ONR_CERTIFICADO_ALTERADO", "WSOFICIO", None,
+                  {"ambiente": amb, "serie_anterior": situacao.get("certificado") or "",
+                   "serie": serie})
+            flash("Certificado do WSOficio atualizado. A chave do parceiro foi preservada.", "success")
+            return redirect(url_for("onr_certidoes_certificado"))
+        return render_template("onr_certificado.html", ambiente=amb, credencial=situacao,
+                               certificados=certificados, erro=erro)
 
     @app.route("/ri/onr/certidoes/buscar", methods=["POST"])
     @roles_required(*QUEM)

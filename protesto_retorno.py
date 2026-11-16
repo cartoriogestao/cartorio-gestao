@@ -1674,7 +1674,7 @@ def listar(con: sqlite3.Connection, limite: int = 100) -> list[dict]:
                   r.apresentante_nome, r.dia, r.numero_da_remessa, r.titulos,
                   r.soma_centavos, r.nome_arquivo, r.hash_arquivo, r.gerado_em,
                   r.gerado_por, r.cra_enviado_em, r.cra_enviado_ambiente,
-                  r.cra_envio_erro, r.cra_enviado_por, r.cra_recusado_em,
+                  r.cra_envio_erro, r.cra_envio_resumo, r.cra_enviado_por, r.cra_recusado_em,
                   r.cra_recusa_codigo, r.cra_recusa_motivo,
                   (SELECT COUNT(*) FROM pt_atos a
                     WHERE a.retorno_id = r.id) AS atos_presos,

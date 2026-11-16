@@ -4631,6 +4631,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                abas_da_ficha=abas_da_ficha,
                                fase_do_ato=PFASES.fase_do_ato,
                                rotulo_do_ato=PFASES.rotulo_do_ato,
+                               # OS DOIS CAMINHOS DA FASE QUE ESPERA AÇÃO (15/11/2026). Só lê.
+                               canais=PFASES.canais_do_titulo(
+                                   situacao, (triduo or {}).get("triduo_situacao")),
                                sem_ato=sem_ato,
                                propostas_de_oficio=propostas_de_oficio,
                                pendencias_do_selo=pendencias_do_selo,
@@ -14308,6 +14311,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         voltam: a Central fica sem saber o que aconteceu com o título que
         mandou.
         """
+        import protesto_retorno_manual as PRMAN
         with db.connect() as con:
             grupos = PRE.apresentantes_pendentes(con)
             atos = PRE.pendentes(con)
@@ -14315,6 +14319,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # QUE ATOS ENTRARAM EM CADA ARQUIVO (revisão de telas, 30/10/2026). Só
             # pergunta de quem tem ato amarrado: a confirmação não tem nenhum.
             for arquivo in gerados:
+                arquivo["envio_manual"] = PRMAN.dados_do_envio(arquivo)
                 arquivo["atos_do_arquivo"] = (
                     PRE.atos_do_retorno(con, arquivo["id"])
                     if arquivo["atos_presos"] else [])
@@ -14326,6 +14331,36 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return render_template("protesto_retornos.html", grupos=grupos,
                                atos=atos, gerados=gerados, hoje=hoje(),
                                desfeitos=desfeitos, ja_aceitas=ja_aceitas)
+
+    import protesto_retorno_manual as PRMAN
+    app.extensions.setdefault("tela_do_anexo", {})[PRMAN.ENTIDADE] = ("protesto_retornos",)
+
+    @app.route("/protesto/retornos/<int:retorno_id>/comprovante-portal", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def protesto_retorno_comprovante_portal(retorno_id: int):
+        import selo_robo as SR
+        voltar = redirect(url_for("protesto_retornos") + "#arquivos-gerados")
+        enviado = request.files.get("comprovante")
+        if not enviado or not enviado.filename:
+            flash("Anexe o comprovante do aceite deste arquivo no portal da CRA.", "danger")
+            return voltar
+        try:
+            with db.transaction() as con:
+                r = PRMAN.registrar(
+                    con, retorno_id, nome=enviado.filename,
+                    conteudo=enviado.read(PRMAN.LIMITE_DO_COMPROVANTE + 1),
+                    pasta_de_arquivos=pasta_dos_arquivos(), agora=agora(),
+                    usuario=usuario_nome(), usuario_id=usuario_id_do_sistema(),
+                    afirmo=_campo("afirmo") == "1", afirmacao=_campo("afirmacao"),
+                    robo=SR.usuario_e_robo())
+        except (PRMAN.EnvioManualError, AFX.AfirmacaoError) as erro:
+            flash(str(erro), "danger")
+            return voltar
+        audit("PROTESTO_CRA_ACEITE_PORTAL", "pt_retornos", retorno_id,
+              {"arquivo": r["nome_arquivo"], "anexo": r["anexo_id"],
+               "afirmacao": r["afirmacao"]})
+        flash(f"Aceite de «{r['nome_arquivo']}» registrado com o comprovante do portal.", "success")
+        return voltar
 
     @app.route("/protesto/retornos/gerar", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")

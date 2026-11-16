@@ -189,6 +189,20 @@
 </div>
 {% endif %}
 
+{# OS DOIS CAMINHOS DA FASE QUE ESPERA AÇÃO — pedido do oficial em 15/11/2026. A ficha só tinha os
+   formulários, que são o caminho pela mão; a Intimação Digital, o AR e o boleto só estavam no menu.
+   Primeiro o que a integração faz, com o link, e depois o que se faz aqui. Sai uma vez só, na fase em
+   que o título está; título encerrado não tem. É leitura: nenhum botão faz nada por aqui. #}
+{% if canais %}
+<div class="notice" data-canais="{{ canais.fase }}" data-fase="{{ canais.fase }}">
+  <small><strong>No rito:</strong> {{ canais.rito }}</small><br>
+  <strong>Pela integração — o caminho da casa:</strong> {{ canais.integracao }}
+  {% for t in canais.telas %}<a href="{{ url_for(t.tela) }}">{{ t.rotulo }} &rarr;</a>{% if not loop.last %} · {% endif %}{% endfor %}
+  <br><strong>Pela mão:</strong> {{ canais.manual }}
+  {% for t in canais.telas_da_mao %}<a href="{{ url_for(t.tela) }}">{{ t.rotulo }} &rarr;</a>{% if not loop.last %} · {% endif %}{% endfor %}
+</div>
+{% endif %}
+
 <section class="panel" data-fase="apontamento">
   <div class="panel-head"><span>O título</span><small>{{ titulo.situacao }}</small></div>
   <table class="table">

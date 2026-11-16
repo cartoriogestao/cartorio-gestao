@@ -32,6 +32,7 @@ LIBERADA = "liberada"
 TRAVADA = "travada"
 
 SITUACOES_FINAIS = ("DESISTIDO", "PAGO", "CANCELADO", "DEVOLVIDO")
+SITUACOES_DO_RITO_EM_CURSO = ("RECEBIDO", "APONTADO", "INTIMADO")
 ATOS_DA_FASE = {"APONTAMENTO": APONTAMENTO, "INTIMACAO": INTIMACAO}
 ROTULOS = {
     "INTIMACAO": "Intimação", "DESISTENCIA": "Desistência", "SUSTACAO": "Sustação",
@@ -87,6 +88,66 @@ def _fase_inicial(situacao: str, triduo: str) -> str:
     if situacao == "PROTESTADO":
         return DESFECHO
     return VIDA
+
+
+# OS CANAIS DE CADA FASE — pedido do oficial em 15/11/2026: «o curso manual do protesto seja de fácil
+# acesso, mas privilegiando a didática do fluxo automatizado por meio das APIs e o cumprimento do rito».
+#
+# A FICHA SÓ TINHA O CAMINHO PELA MÃO: os formulários dos atos. Quem abria um título apontado não via
+# que a intimação pode ir pela Intimação Digital ou pelo AR, nem que o pagamento pode entrar pelo
+# boleto — essas telas só estavam no menu. Aqui a fase que espera ação diz primeiro o que a integração
+# faz, com o link, e depois o que se faz pela mão, que é o que a ficha tem logo abaixo.
+#
+# `telas` SÃO ENDPOINTS DE VERDADE, sem argumento. O texto não promete o que a integração não faz: a
+# Intimação Digital dá a ciência, e quem lavra a intimação continua sendo a casa.
+CANAIS_DA_FASE: dict[str, dict] = {
+    APONTAMENTO: {
+        "rito": "Protocolize e aponte o título; confira a intimação e o prazo na ficha (Lei 9.492/1997, arts. 5º, 12 e 14).",
+        "integracao": ("O recebimento da remessa da CRA cadastra, protocola e aponta. O pedido da CENPROT "
+                       "entra por «Dar entrada no título» como RECEBIDO: depois, lance o apontamento na ficha."),
+        "telas": (("Remessa da CRA", "protesto_remessas"), ("Pendências da CENPROT", "protesto_pendencias")),
+        "manual": ("Este título está RECEBIDO e ainda não foi apontado, como o que chega ao balcão: "
+                   "lance o apontamento no formulário abaixo."),
+        "telas_da_mao": ()},
+    INTIMACAO: {
+        "rito": ("O devedor é intimado para pagar ou responder (Lei 9.492/1997, art. 14); não encontrado, "
+                 "por edital (art. 15). A intimação só se lavra com a prova da entrega."),
+        "integracao": ("Emitido o aviso, ele pode ir pelos Correios com AR digital — o canhoto que volta lavra a "
+                       "intimação — e o que não foi entregue vai à Intimação Digital, que dá a ciência do "
+                       "devedor por e-mail e WhatsApp, antes do edital."),
+        "telas": (("Intimação Digital", "protesto_resolve"), ("AR digital", "protesto_ar")),
+        "manual": ("Emita o aviso abaixo. A entrega pela mão da casa, com o canhoto, e o edital se registram em "
+                   "Avisos e editais; a intimação já feita por outro meio se lança no formulário desta fase."),
+        "telas_da_mao": (("Avisos e editais", "protesto_avisos"),)},
+    DESFECHO: {
+        "rito": ("Até a lavratura cabem o pagamento (Lei 9.492/1997, art. 19), a desistência (art. 16) e a "
+                 "sustação (art. 17); esgotado o prazo, lavra-se o protesto (arts. 12 e 20)."),
+        "integracao": ("O boleto do devedor dá baixa sozinho quando tudo bate, e o PIX vira pagamento com o "
+                       "crédito conferido no banco. A desistência da CRA chega com o clique da remessa, e os "
+                       "protestos do dia se lavram juntos em «A protestar»."),
+        "telas": (("Boleto do devedor", "protesto_boletos"), ("Pedidos da CRA", "protesto_cra_pedidos"),
+                  ("A protestar", "protesto_a_protestar")),
+        "manual": ("O pagamento no balcão, a desistência pedida aqui, a ordem judicial e o protesto deste "
+                   "título só se lançam nos formulários abaixo. Só aparecem os atos que cabem."),
+        "telas_da_mao": ()},
+}
+
+
+def canais_do_titulo(situacao: Any, triduo: Any = "") -> dict | None:
+    """Os dois caminhos da fase que espera ação. `None` fora do rito em curso.
+
+    O protestado não tem: o que cabe depois da lavratura (cancelamento, ordem judicial) não tem dois
+    caminhos, e o texto do desfecho falaria de pagamento que a serventia já não recebe.
+    """
+    if str(situacao or "") not in SITUACOES_DO_RITO_EM_CURSO:
+        return None
+    fase = _fase_inicial(str(situacao or ""), str(triduo or ""))
+    canais = CANAIS_DA_FASE.get(fase)
+    if not canais:
+        return None
+    return {"fase": fase, "rito": canais["rito"], "integracao": canais["integracao"], "manual": canais["manual"],
+            "telas": [{"rotulo": r, "tela": t} for r, t in canais["telas"]],
+            "telas_da_mao": [{"rotulo": r, "tela": t} for r, t in canais["telas_da_mao"]]}
 
 
 def fases_do_titulo(titulo: Mapping[str, Any], *, cabem: Sequence[str] = (), atos: Sequence = (), avisos: Sequence = (),

@@ -193,6 +193,7 @@ def test_o_esquema_se_parte_em_comandos_inteiros():
 @pytest.mark.parametrize("metodo", ["GET", "POST"])
 def test_quem_volta_ao_rascunho_que_virou_ato_vai_para_o_ato(bd, metodo):
     bd.marcas[3] = {"rascunho_id": 3, "endereco": "/ato/9"}
+    bd.rascunhos.pop(3)   # virou ato: saiu da lista (a marca de número vivo é velha)
     with _app().test_request_context("/x?rascunho_id=3", method=metodo):
         with pytest.raises(HTTPException) as saida:
             R.barrar_se_ja_virou_ato(_Db())
@@ -203,6 +204,7 @@ def test_quem_volta_ao_rascunho_que_virou_ato_vai_para_o_ato(bd, metodo):
 def test_sem_o_endereco_do_ato_vai_para_a_lista(bd):
     """É o caso do botão do processo, que sabe que o ato existe e não sabe onde."""
     bd.marcas[3] = {"rascunho_id": 3, "endereco": None}
+    bd.rascunhos.pop(3)   # virou ato: saiu da lista (a marca de número vivo é velha)
     with _app().test_request_context("/x?rascunho_id=3"):
         with pytest.raises(HTTPException) as saida:
             R.barrar_se_ja_virou_ato(_Db())
@@ -220,6 +222,7 @@ def test_o_rascunho_vivo_e_o_apagado_a_mao_nao_barram(bd, endereco):
 def test_a_tela_de_ato_tambem_barra(bd):
     """É `para_a_tela`, e por isso as oito telas que a chamam não precisam lembrar."""
     bd.marcas[3] = {"rascunho_id": 3, "endereco": "/ato/9"}
+    bd.rascunhos.pop(3)   # virou ato: saiu da lista (a marca de número vivo é velha)
     with _app().test_request_context("/x?rascunho_id=3", method="POST"):
         with pytest.raises(HTTPException):
             R.para_a_tela(_Db(), "t", "outra")

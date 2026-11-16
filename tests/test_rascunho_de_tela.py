@@ -221,6 +221,28 @@ def test_o_modulo_nao_numera_nem_lavra():
     for proibido in ("numero_ordem", "reservar", "MAX(numero"):
         assert proibido not in codigo, f"o módulo mexe com «{proibido}»"
     import re
-    for alvo in re.findall(r"(?:INSERT INTO|UPDATE|DELETE FROM)\s+(\w+)",
+    for alvo in re.findall(r"(?:INSERT INTO|(?<!DO )UPDATE|DELETE FROM)\s+(\w+)",
                            codigo):
         assert alvo in ("rascunhos_de_tela", "rascunhos_que_viraram_ato"), f"escreve em «{alvo}»"
+
+
+def test_numero_reusado_nao_leva_ao_ato_de_outra_pessoa():
+    """16/11/2026, leitura nº 29 da produção: a numeração dos rascunhos voltou
+    (11-12/11), o rascunho 52 nasceu de novo, e abria o ato do 52 antigo."""
+    from bd_nativo import banco
+    con = _banco()
+    r = R.salvar(con, tela="rcpn_assento_novo", titulo="Óbito — FORTUNATO",
+                 dados={"especie": "OBITO"}, agora=AGORA, por="vanessa",
+                 chave="arquivo:leitura-29")
+    banco(con).escrever(
+        """INSERT INTO rascunhos_que_viraram_ato (rascunho_id, tela, chave, endereco, em, por)
+           VALUES (%s, 'rcpn_assento_novo', 'arquivo:leitura-22', '/rcpn/17069', %s, 'vanessa')""",
+        (r["id"], AGORA))
+    assert R.o_ato_do_rascunho(con, r["id"]) is None
+
+    R.virou_ato(con, r["id"], endereco="/rcpn/20000", agora=AGORA, por="vanessa")
+    marca = R.o_ato_do_rascunho(con, r["id"])
+    assert marca["endereco"] == "/rcpn/20000"
+    assert marca["chave"] == "arquivo:leitura-29"
+    assert R.chave_ja_recebida(con, "arquivo:leitura-29")
+    con.close()

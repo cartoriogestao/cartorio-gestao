@@ -38,6 +38,10 @@ SERVICOS: tuple[dict, ...] = (
      "quando": "notificação ou registro de título ou documento"},
     {"id": "manifestacao", "setor": "GESTAO", "nome": "Manifestação",
      "quando": "reclamação, ouvidoria ou elogio sobre o atendimento"},
+    # 15/11/2026: pedir o tabelião era «orientação» na gestão, e a tarefa não
+    # dizia o que era. O serviço próprio põe o nome certo no título dela.
+    {"id": "tabeliao", "setor": "GESTAO", "nome": "Falar com o tabelião",
+     "quando": "a pessoa pede o tabelião, o oficial ou a substituta"},
     {"id": "conferir_arquivo", "setor": "ATENDIMENTO", "nome": "Conferir arquivo",
      "quando": "a pessoa mandou foto, PDF ou documento"},
     {"id": "conferir_no_balcao", "setor": "ATENDIMENTO", "nome": "Conferir no balcão",
@@ -60,6 +64,12 @@ def servico_valido(valor: object) -> str:
     """O id da lista, ou vazio se o modelo inventou um. Só calcula."""
     chave = str(valor or "").strip().lower()
     return chave if chave in _POR_ID else ""
+
+
+def setor_do_servico(valor: object) -> str:
+    """O setor que recebe aquele serviço; o balcão, se o id é desconhecido."""
+    chave = servico_valido(valor)
+    return _POR_ID[chave]["setor"] if chave else "ATENDIMENTO"
 
 
 def nome_do_servico(valor: object) -> str:

@@ -489,10 +489,36 @@ def _mensagens_openai(conversa: list[dict], sistema: str) -> list[dict]:
 EXTRAS_ACEITOS = ("output_config", "fallbacks")
 
 
+#: QUANTO TEMPO O PREFIXO FIXO FICA GUARDADO NO PROVEDOR (15/11/2026, o
+#: escrevente do WhatsApp). "" é o padrão da Anthropic, 5 minutos; "1h" custa o
+#: dobro na escrita e serve à conversa em que o cliente demora a responder.
+TTLS_DO_CACHE = ("", "1h")
+
+
+def _sistema_anthropic(sistema: str, sistema_fixo: str, cache_ttl: str) -> Any:
+    """O `system` da Anthropic. Sem prefixo fixo, o texto de sempre.
+
+    COM PREFIXO FIXO, DOIS BLOCOS, E A MARCA DE CACHE NO PRIMEIRO: o provedor
+    guarda as ferramentas e o prefixo (a ordem dele é ferramentas → sistema →
+    mensagens) e cobra a releitura a uma fração do preço. O que muda a cada
+    pedido — a hora, o estado do atendimento — vai no SEGUNDO bloco, depois da
+    marca: um byte diferente antes dela e nada é reaproveitado."""
+    if not sistema_fixo.strip():
+        return sistema
+    marca: dict[str, Any] = {"type": "ephemeral"}
+    if cache_ttl:
+        marca["ttl"] = cache_ttl
+    blocos = [{"type": "text", "text": sistema_fixo, "cache_control": marca}]
+    if sistema.strip():
+        blocos.append({"type": "text", "text": sistema})
+    return blocos
+
+
 def montar_pedido(provedor: Any, *, sistema: str, conversa: list[dict],
                   ferramentas: list[dict], modelo: Any = None,
                   maximo_de_saida: int = 2000, extras: dict | None = None,
-                  betas: list[str] | None = None) -> dict:
+                  betas: list[str] | None = None, sistema_fixo: str = "",
+                  cache_ttl: str = "") -> dict:
     """O pedido inteiro, pronto para ir: endereço, corpo e cabeçalhos.
 
     Devolve o que já está pronto em vez de mandar direto: assim o teste confere
@@ -515,11 +541,14 @@ def montar_pedido(provedor: Any, *, sistema: str, conversa: list[dict],
         raise AgenteError("Esforço, formato e desvio do pedido só existem no "
                           "Claude.", motivo="extra noutro provedor", recusado=True)
 
+    if cache_ttl not in TTLS_DO_CACHE:
+        raise AgenteError("Prazo de cache que este transporte não conhece.",
+                          motivo="cache desconhecido", recusado=True)
     if dados["familia"] == ANTHROPIC:
         corpo: dict[str, Any] = {
             "model": escolhido,
             "max_tokens": int(maximo_de_saida),
-            "system": sistema,
+            "system": _sistema_anthropic(sistema, sistema_fixo, cache_ttl),
             "messages": _mensagens_anthropic(conversa),
         }
         if ferramentas:
@@ -529,7 +558,9 @@ def montar_pedido(provedor: Any, *, sistema: str, conversa: list[dict],
         corpo = {
             "model": escolhido,
             "max_tokens": int(maximo_de_saida),
-            "messages": _mensagens_openai(conversa, sistema),
+            # Fora da Anthropic não há marca de cache: o prefixo vai na frente.
+            "messages": _mensagens_openai(
+                conversa, "\n\n".join(t for t in (sistema_fixo, sistema) if t.strip())),
         }
         if ferramentas:
             corpo["tools"] = _ferramentas_openai(ferramentas)
@@ -611,6 +642,10 @@ def ler_resposta(provedor: Any, bruto: bytes) -> dict:
         uso = dados.get("usage") or {}
         entrada = int(uso.get("input_tokens") or 0)
         saida = int(uso.get("output_tokens") or 0)
+        # COM CACHE, `input_tokens` É SÓ O QUE NÃO VEIO DELE: a escrita e a
+        # leitura do prefixo vêm à parte, e têm preço próprio.
+        cache_escrita = int(uso.get("cache_creation_input_tokens") or 0)
+        cache_lida = int(uso.get("cache_read_input_tokens") or 0)
         parou = str(dados.get("stop_reason") or "")
         # O CONTEÚDO INTEIRO, PENSAMENTO INCLUSIVE, para quem quiser devolvê-lo
         # no turno seguinte (ver `_mensagens_anthropic`). Só os blocos que são
@@ -634,12 +669,14 @@ def ler_resposta(provedor: Any, bruto: bytes) -> dict:
         uso = dados.get("usage") or {}
         entrada = int(uso.get("prompt_tokens") or 0)
         saida = int(uso.get("completion_tokens") or 0)
+        cache_escrita = cache_lida = 0
         parou = str(escolha.get("finish_reason") or "")
         original = []
 
     return {"texto": texto, "chamadas": chamadas, "parou": parou,
             "conteudo_original": original,
             "entrada": entrada, "saida": saida,
+            "cache_escrita": cache_escrita, "cache_lida": cache_lida,
             "modelo": str(dados.get("model") or "")}
 
 
@@ -729,7 +766,8 @@ def _turno(pasta_de_dados: Any, *, provedor: Any, sistema: str,
            modelo: Any = None, maximo_de_saida: int = 2000,
            prazo: int = PRAZO_PADRAO, extras: dict | None = None,
            betas: list[str] | None = None,
-           limite_de_envio: int | None = None, registro: dict | None = None) -> dict:
+           limite_de_envio: int | None = None, registro: dict | None = None,
+           sistema_fixo: str = "", cache_ttl: str = "") -> dict:
     """O turno em si, sem o registro — quem chama é `conversar`.
 
     `limite_de_envio` existe para quem manda DOCUMENTO: um PDF digitalizado em
@@ -741,7 +779,8 @@ def _turno(pasta_de_dados: Any, *, provedor: Any, sistema: str,
         pedido = montar_pedido(prov, sistema=sistema, conversa=conversa,
                                ferramentas=ferramentas, modelo=modelo,
                                maximo_de_saida=maximo_de_saida, extras=extras,
-                               betas=betas)
+                               betas=betas, sistema_fixo=sistema_fixo,
+                               cache_ttl=cache_ttl)
         corpo = json.dumps(pedido["corpo"], ensure_ascii=False).encode("utf-8")
         if len(corpo) > (limite_de_envio or LIMITE_DE_ENVIO):
             raise AgenteError(
@@ -823,8 +862,15 @@ def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
               finalidade: str = "", usuario: str = "", atribuicao: str = "",
               referencia: str = "", mascarado: bool | None = None,
               extras: dict | None = None, betas: list[str] | None = None,
-              limite_de_envio: int | None = None) -> dict:
+              limite_de_envio: int | None = None, sistema_fixo: str = "",
+              cache_ttl: str = "", fontes_normativas: bool = True) -> dict:
     """Um turno. **FALA COM A REDE** e devolve a resposta em forma neutra.
+
+    `sistema_fixo` é o prefixo que não muda entre pedidos (instrução, manual,
+    ferramentas): na Anthropic ele leva a marca de cache, e a resposta traz
+    `cache_escrita` e `cache_lida`. `fontes_normativas=False` é de quem já
+    consulta a norma por ferramenta: o bloco comum mudaria o sistema a cada
+    pergunta, e o cliente do balcão não pergunta artigo de lei toda hora.
 
     **NÃO RECEBE `con`, E ISSO É DE PROPÓSITO** — a mesma assinatura de
     `ato_selado.obter_selo` e do antigo `claude_cliente.perguntar`, pelo mesmo
@@ -842,9 +888,10 @@ def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
     Registro que não grava vai para o log e não derruba o turno
     (`ia_uso.registrar`).
     """
-    import ia_conhecimento as CONHEC
-    sistema = CONHEC.enriquecer(sistema, conversa, finalidade=finalidade,
-                              atribuicao=atribuicao)
+    if fontes_normativas:
+        import ia_conhecimento as CONHEC
+        sistema = CONHEC.enriquecer(sistema, conversa, finalidade=finalidade,
+                                    atribuicao=atribuicao)
     registro = {"modulo": modulo, "finalidade": finalidade, "usuario": usuario,
                 "atribuicao": atribuicao, "referencia": referencia,
                 "mascarado": mascarado,
@@ -873,7 +920,8 @@ def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
                       conversa=conversa, ferramentas=ferramentas,
                       modelo=modelo, maximo_de_saida=maximo_de_saida,
                       prazo=prazo, extras=extras, betas=betas,
-                      limite_de_envio=limite_de_envio, registro=registro)
+                      limite_de_envio=limite_de_envio, registro=registro,
+                      sistema_fixo=sistema_fixo, cache_ttl=cache_ttl)
     except AgenteError as falha:
         if falha.enviado is False:
             USO.devolver(pasta_de_dados, reserva)
@@ -890,7 +938,11 @@ def conversar(pasta_de_dados: Any, *, provedor: Any, sistema: str,
                       erro=type(falha).__name__)
         raise
     registro["modelo"] = lida.get("modelo") or registro["modelo"]
+    # O REGISTRO DA CASA CONTA TUDO O QUE SUBIU, viesse ou não do cache: é a
+    # régua de «quanto saiu da serventia», e não a da fatura.
     USO.registrar(pasta_de_dados, **registro, resultado=USO.OK,
-                  tokens_entrada=lida.get("entrada") or 0,
+                  tokens_entrada=(int(lida.get("entrada") or 0)
+                                  + int(lida.get("cache_escrita") or 0)
+                                  + int(lida.get("cache_lida") or 0)),
                   tokens_saida=lida.get("saida") or 0)
     return lida

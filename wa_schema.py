@@ -146,6 +146,12 @@ CHAVE_TEXTO_BASE = "ia_texto_base"
 CHAVE_TEXTO_BASE_POR = "ia_texto_base_aprovado_por"
 CHAVE_TEXTO_BASE_EM = "ia_texto_base_aprovado_em"
 CHAVE_VALORES = "ia_valores"                   # "codigo_tj | nome", um por linha
+# O MANUAL DO ATENDIMENTO (15/11/2026): o que o cliente precisa saber de cada
+# serviço — documentos, caminho, prazo de lei. Vem de fábrica em `wa_manual`, e
+# a IA só usa o texto que o ADMIN gravou aqui: gravar é aprovar.
+CHAVE_IA_MANUAL = "ia_manual"
+CHAVE_IA_MANUAL_POR = "ia_manual_aprovado_por"
+CHAVE_IA_MANUAL_EM = "ia_manual_aprovado_em"
 CHAVE_PRAZO_MINUTOS = "prazo_resposta_minutos"
 
 # OS MODELOS DA META (27/10/2026, `wa_modelos`). Nada disto e segredo. O
@@ -195,6 +201,7 @@ CHAVES_CONFIG = (
     CHAVE_IA_MODELO, CHAVE_IA_PRECO_ENTRADA, CHAVE_IA_PRECO_SAIDA,
     CHAVE_AUDIO_MODELO, CHAVE_AUDIO_PRECO_MINUTO, CHAVE_TEXTO_BASE,
     CHAVE_TEXTO_BASE_POR, CHAVE_TEXTO_BASE_EM, CHAVE_VALORES,
+    CHAVE_IA_MANUAL, CHAVE_IA_MANUAL_POR, CHAVE_IA_MANUAL_EM,
     CHAVE_PRAZO_MINUTOS,
     CHAVE_MODELOS_APROVADOS, CHAVE_NOME_NO_MODELO, CHAVE_MODELO_EXIGENCIA,
     CHAVE_MODELO_PRONTO, CHAVE_MODELO_PRAZO, CHAVE_MODELO_PESQUISA,
@@ -343,6 +350,13 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     # POR QUE PASSOU PARA PESSOA (30/10/2026): o vocabulário é `wa_atendente.RAZOES`.
     # Vazio é registro de antes desta versão.
     ("wa_ia_registro", "razao", "TEXT"),
+    # O PREFIXO QUE O PROVEDOR GUARDA (15/11/2026): com cache, `tokens_entrada` é só o
+    # que não veio dele. A escrita e a leitura têm preço próprio, e sem as duas o custo
+    # medido da conversa sairia menor que a fatura.
+    ("wa_ia_registro", "tokens_cache_escrita", "bigint NOT NULL DEFAULT 0"),
+    ("wa_ia_registro", "tokens_cache_lida", "bigint NOT NULL DEFAULT 0"),
+    # QUANTAS IDAS AO PROVEDOR CUSTOU A RESPOSTA: uma consulta de valor são duas.
+    ("wa_ia_registro", "chamadas", "bigint NOT NULL DEFAULT 0"),
     # A RESOLVIDA FICA GUARDADA E VOLTA COM O HISTÓRICO OCULTO (27/10/2026).
     # Nada se apaga: `resolvida_em` diz quando ela saiu das abas de trabalho
     # (e conta os 7 dias do responsável na volta), e `atendimento_desde_id` é

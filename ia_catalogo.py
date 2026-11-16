@@ -112,6 +112,11 @@ CHAMADAS_POR_DIA = {
     # (as mensagens seguidas do mesmo cliente vão juntas). Quatrocentas por dia
     # é várias vezes o movimento do balcão; o que passar disso vai para pessoa.
     "wa_atendente": 400,
+    # O ESCREVENTE DO WHATSAPP (15/11/2026): a conversa com ferramentas. Cada
+    # resposta são de uma a quatro idas ao provedor (a ferramenta, a resposta, uma
+    # correção); mil e duzentas por dia cobrem as mesmas quatrocentas respostas do
+    # atendente. Passado o teto, o recado vai ao escrevente, sem resposta da IA.
+    "wa_escrevente": 1200,
     # A TRANSCRIÇÃO: uma chamada por áudio.
     "wa_audio": 200,
     # A QUALIFICAÇÃO ASSISTIDA DO RI (26/10/2026): uma chamada ao Opus por
@@ -505,6 +510,41 @@ CATALOGO = CATALOGO + (
                    "que não venha do cálculo da casa",
         "teto": ("ia_catalogo", "CHAMADAS_POR_DIA", "chamadas ao provedor por dia",
                  "wa_atendente"),
+        "chave": CHAVE_FORA_DO_BANCO,
+    },
+    {
+        "codigo": "wa_escrevente",
+        "nome": "Escrevente do WhatsApp (conversa com ferramentas)",
+        "modulo": "wa_escrevente",
+        "onde": "fila do WhatsApp, com «atendente ligado» e «atendimento do "
+                "escrevente» (só o ADMIN liga)",
+        "finalidade": "conversar com o cliente: tirar dúvida pelo texto-base e pelo "
+                      "manual do atendimento aprovados pelo oficial, dizer o andamento "
+                      "do protocolo que o cliente identificou com número e código "
+                      "(conferidos pelo sistema, sem IA), estimar valor pelo cálculo de "
+                      "custas da casa, e deixar pedido e tarefa para o escrevente "
+                      "responsável",
+        "inciso": "IV",
+        "enquadramento": "atendimento, com escalonamento para pessoa",
+        "dado": "as mensagens do atendimento, mascaradas (CPF, telefone, e-mail, "
+                "documento, endereço e nome viram marcas); a situação pública do "
+                "protocolo identificado; os pedidos da conversa; o texto-base, o "
+                "manual e a lista de valores da casa. O código do recibo, o número do "
+                "protocolo e o conteúdo dos arquivos não sobem",
+        "mascara": "sim (wa_vocabulario + preparar_saida): o dado pessoal sobe como "
+                   "marca, e a mensagem que a máscara não consegue limpar não sobe; "
+                   "reclamação e assunto reservado não sobem",
+        "mascarado": True,
+        "revisao_humana": "a IA não decide ato: o que o cliente quer feito vira pedido "
+                          "e tarefa do escrevente do setor; reclamação, assunto "
+                          "reservado e pedido de falar com o tabelião vão à pessoa por "
+                          "regra; a resposta com número ou valor fora das fontes não "
+                          "sai; cada resposta fica registrada (wa_ia_registro)",
+        "nao_faz": "não lavra, não numera, não sela, não cobra, não qualifica, não "
+                   "abre protocolo do Caixa nem prenota, não lê o arquivo enviado, não "
+                   "informa valor que não venha do cálculo da casa",
+        "teto": ("ia_catalogo", "CHAMADAS_POR_DIA", "chamadas ao provedor por dia",
+                 "wa_escrevente"),
         "chave": CHAVE_FORA_DO_BANCO,
     },
     {

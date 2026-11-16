@@ -27,11 +27,13 @@ Este trecho vale mais que o resto do arquivo quando os dois discordarem: as fati
 | respostas prontas | `wa_rotina.ler_respostas` | «atalho \| texto», com {nome} |
 | conversa parada | `wa_rotina.encerrar_paradas` | respondida e sem volta do cliente há N dias (padrão 3) → resolvida, com o rastro |
 
+**O escrevente conversa (15/11/2026).** Com «atendimento do escrevente» ligado, quem responde é `wa_escrevente`: o modelo lê a conversa em turnos e o estado do atendimento, sabe o que o oficial aprovou (texto-base, manual do atendimento em `wa_manual`, lista de valores) e usa as ferramentas de `wa_ferramentas` — abrir ou completar o pedido e a tarefa do escrevente (com protocolo de atendimento `WA-AAAA-NNNNN` quando o cliente pede), estimar valor pelo cálculo de custas (inclusive os atos de faixa, com o valor do negócio) e consultar a base normativa. O arquivo do cliente não passa mais a conversa: o modelo sabe que ele chegou, não lê o conteúdo e liga o envio ao pedido. A identificação do protocolo continua aqui, por número e código. O prefixo (instrução, manual, ferramentas) fica em cache no provedor por uma hora. A decisão está em `docs/decisoes/02_modelos_ia_privacidade.md`.
+
 **O aviso automático não é resposta.** O aviso de passagem e o de fora do horário saem com `tipo='aviso'`: não contam no «esperando resposta», nem no tempo da primeira resposta, e não põem a conversa em «aguardando». Até 29/10/2026 contavam, e a conversa que a IA passava para uma pessoa sumia do alerta.
 
 **O aviso do Windows exige endereço seguro.** O navegador só libera a notificação do sistema em `https` ou no próprio servidor (`127.0.0.1`); nos balcões em `http://<ip>:8765` ficam o som, o título e o cartão, até o Chrome receber a política `OverrideSecurityRestrictionsOnInsecureOrigin` com o endereço do servidor (ou o sistema ganhar `https` na rede).
 
-**A FAZER:** feriado no horário; vincular a conversa a protocolo e cliente; a pesquisa de satisfação ao resolver (o modelo da Meta já existe, falta a aprovação).
+**A FAZER:** feriado no horário; vincular a conversa a protocolo e cliente; a pesquisa de satisfação ao resolver (o modelo da Meta já existe, falta a aprovação); quem responde pelo balcão geral (`ATENDIMENTO` não tem linha em `ge_responsaveis`, e a tarefa nasce sem dono); anexar à tarefa ou ao protocolo o arquivo que chegou pela conversa; cobrar a tarefa do WhatsApp que passou do prazo de resposta.
 
 ---
 

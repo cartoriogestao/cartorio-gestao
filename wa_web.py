@@ -40,6 +40,7 @@ import wa_balcao as WA
 import wa_conhecimento as CONHEC
 import wa_contato as CONTATO
 import wa_fila as FILA
+import wa_manual as MANUAL
 import wa_pedido as PEDIDO
 import wa_midia as MIDIA
 import wa_modelos as MODELOS
@@ -361,8 +362,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             pedidos = PEDIDO.abertos(con)
             pode_enviar = WA.pode_enviar_meta(con)
             rotina = ROTINA.config(con)
+            manual = MANUAL.config(con)
         return render_template(
             "whatsapp_atendente.html", ia=ia, linhas=linhas, hoje=hoje,
+            manual=manual, manual_padrao=MANUAL.PADRAO,
+            valores_sugeridos=MANUAL.VALORES_SUGERIDOS,
             pode_enviar=pode_enviar,
             # SÓ O NOME E SE HÁ CHAVE: nenhum pedaço da chave chega ao HTML
             # desta tela, que todo login vê.

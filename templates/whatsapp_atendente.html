@@ -46,6 +46,18 @@
     trabalho vai para o escrevente (abaixo). A IA não lavra, não sela e não qualifica.
   </p>
   <p class="small">
+    <strong>O escrevente conversa (15/11/2026).</strong> Com o atendimento do escrevente ligado,
+    a IA lê a conversa inteira, vê os pedidos já encaminhados e quem responde por eles, o
+    protocolo que o cliente identificou e os arquivos que mandou, e responde pelo
+    <strong>texto-base</strong>, pelo <strong>manual do atendimento</strong>
+    ({% if manual.aprovado %}aprovado por {{ manual.por }} em {{ (manual.em or '')[:16]|replace('T', ' ') }}{% else %}<strong>ainda não aprovado</strong>{% endif %})
+    e pela lista de valores. Ela abre e completa o pedido e a tarefa do escrevente, dá
+    protocolo de atendimento quando o cliente pede, estima valor pela tabela e consulta a
+    norma. Mensagem com CPF ou telefone sobe <strong>mascarada</strong> (antes não subia, e a
+    conversa parava); reclamação e assunto reservado continuam indo direto à pessoa. A quem
+    pergunta a sério se fala com pessoa ou robô, ela diz a verdade e oferece o escrevente.
+  </p>
+  <p class="small">
     <strong>O que sai da serventia.</strong> Para o provedor que responde: a mensagem do
     cliente e as anteriores do atendimento, <strong>mascaradas</strong> (CPF, telefone, e-mail,
     documento e nomes viram marcas; mensagem com dado pessoal nem sobe — a nova vai para uma
@@ -111,8 +123,9 @@
       <td>{{ (p.quando or '')[:16]|replace('T', ' ') }}</td>
       <td>{{ p.setor_nome }}</td>
       <td>{{ p.servico_nome }}</td>
-      <td>{{ p.resumo }}
-        <div class="muted"><a href="{{ url_for('whatsapp_conversa', conversa_id=p.conversa_id) }}">{{ p.nome or p.wa_id }}</a></div>
+      <td>{% if p.cobrado_em %}<strong>PARADO</strong> — passou do prazo sem ninguém atender. {% endif %}{{ p.resumo }}
+        <div class="muted"><a href="{{ url_for('whatsapp_conversa', conversa_id=p.conversa_id) }}">{{ p.nome or p.wa_id }}</a>
+          {% if p.protocolo_numero %} · protocolo {{ p.protocolo_numero }}{% endif %}</div>
       </td>
       <td>
         <form method="post" action="{{ url_for('whatsapp_pedido_feito', pedido_id=p.id) }}">
@@ -176,6 +189,13 @@
     <p><label class="check"><input type="checkbox" name="aviso_passagem" value="1" {% if ia.aviso_passagem %}checked{% endif %}>
       Avisar o cliente quando a conversa passa para uma pessoa</label>
       <br><span class="small muted">Desligado, quem passou para pessoa não recebe nada automático.</span></p>
+    <p><label>Quem responde pelo balcão geral
+      <select name="dono_do_balcao">
+        <option value="">(ninguém — a tarefa nasce sem dono)</option>
+        {% for u in pessoas %}<option value="{{ u.id }}" {% if (u.id|string) == dono_do_balcao %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
+      </select></label>
+      <br><span class="small muted">Recebe a tarefa do pedido do WhatsApp sem setor e a do setor sem responsável na Gestão.
+      O pedido que passa do prazo de resposta abaixo, contado no horário de atendimento, sem ninguém atender, é cobrado uma vez: nota e prioridade alta na tarefa.</span></p>
     <p><label>Prazo de resposta (minutos) — o painel marca «fora do prazo» depois disso
       <input type="text" name="prazo_minutos" value="{{ ia.prazo_minutos }}" size="5"></label></p>
   </div>
@@ -192,15 +212,38 @@
     <textarea name="texto_base" rows="14" style="width:100%" placeholder="{{ exemplo }}">{{ ia.texto_base }}</textarea>
   </div>
 
+  <div class="card" id="manual">
+    <h2>Manual do atendimento (aprovado pelo oficial)</h2>
+    <p class="small muted">
+      O que o atendimento do escrevente sabe de cada serviço: documentos, caminho e prazo de
+      lei. <strong>Sem valor em dinheiro</strong> (vem da lista abaixo) e sem horário (vem do
+      texto-base). Linha entre colchetes — <code>[confirmar: ...]</code> — é lembrete para quem
+      revisa: a IA não a usa. Número que a IA escrever tem de estar aqui, no texto-base ou no
+      que as ferramentas devolveram.
+      {% if manual.aprovado %}Aprovado por {{ manual.por }} em {{ (manual.em or '')[:16]|replace('T', ' ') }}.
+      {% else %}<strong>Ainda não aprovado: abaixo está o texto de fábrica, para revisar.</strong>
+      Enquanto não for gravado, a IA responde só com o texto-base e encaminha o resto.{% endif %}
+      {% if manual.lembretes %}Ainda há {{ manual.lembretes|length }} lembrete(s) entre colchetes.{% endif %}
+    </p>
+    <textarea name="manual" rows="24" style="width:100%" aria-label="manual do atendimento">{{ manual.texto or manual_padrao }}</textarea>
+    <p><label class="check"><input type="checkbox" name="manual_aprovo" value="1">
+      Li e aprovo este manual: a IA passa a responder por ele</label>
+      <br><span class="small muted">Só é preciso marcar quando o texto muda. Gravar o manual vazio o desaprova.</span></p>
+  </div>
+
   <div class="card">
     <h2>Valores que a IA pode informar (como estimativa)</h2>
     <p class="small muted">
       Um por linha: <code>código do Tribunal | nome que o cliente entende</code>
       (ex.: <code>13.17.2 | Reconhecimento de firma</code>). O valor sai da tabela de
-      emolumentos importada, pela data de hoje; a IA só escolhe o item. Item de faixa
-      (que depende do valor do negócio) vai para uma pessoa.
+      emolumentos importada, pela data de hoje; a IA só escolhe o item. Com o atendimento
+      do escrevente, o item de faixa (<code>13.1</code> escritura, <code>16.3</code> registro,
+      <code>17.4</code> cancelamento de protesto) é estimado quando o cliente diz o valor do
+      negócio; sem ele ligado, vai para uma pessoa.
     </p>
     <textarea name="valores" rows="8" style="width:100%">{{ ia.valores_texto }}</textarea>
+    <details class="small"><summary>lista sugerida, com os códigos da tabela desta casa</summary>
+      <pre>{{ valores_sugeridos }}</pre></details>
   </div>
 
   <div class="card">

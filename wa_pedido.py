@@ -19,6 +19,10 @@ import wa_fila as FILA
 import wa_oficio as OFICIO
 import wa_schema as WA
 
+class PedidoErro(ValueError):
+    """Pedido recusado. Mensagem pronta para a tela."""
+
+
 ABERTO = "aberto"
 FEITO = "feito"
 SITUACOES = (ABERTO, FEITO)
@@ -48,11 +52,12 @@ def abrir(con: Any, conversa_id: int, *, setor: str, servico: str, resumo: str,
         return {"id": int(ja["id"]), "novo": False, "setor": destino, "servico": chave}
     linhas = bd.escrever(
         """INSERT INTO wa_pedido
-             (conversa_id, quando, setor, servico, resumo, orientacao, situacao, por)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+             (conversa_id, quando, setor, servico, resumo, orientacao, situacao, por,
+              aberto_em)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
            RETURNING id""",
         (int(conversa_id), quando, destino, chave, texto,
-         (orientacao or "")[:2000], ABERTO, (por or "")[:80]))
+         (orientacao or "")[:2000], ABERTO, (por or "")[:80], quando))
     pid = int(linhas[0]["id"])
     atual = FILA.setor_valido(
         (bd.um("SELECT setor FROM wa_conversa WHERE id=%s", (int(conversa_id),)) or {}
@@ -81,10 +86,11 @@ def abertos(con: Any, *, limite: int = 50) -> list[dict]:
     """Os pedidos que o escrevente ainda não marcou como feitos. SÓ LÊ."""
     teto = max(1, min(int(limite or 50), 100))
     linhas = banco(con).ler(
-        """SELECT p.*, c.nome, c.wa_id FROM wa_pedido p
+        """SELECT p.*, c.nome, c.wa_id, x.numero AS protocolo_numero FROM wa_pedido p
              JOIN wa_conversa c ON c.id = p.conversa_id
+             LEFT JOIN cx_protocolos x ON x.id = p.protocolo_id
             WHERE p.situacao=%s
-            ORDER BY p.id DESC LIMIT %s""",
+            ORDER BY p.cobrado_em IS NULL, p.id DESC LIMIT %s""",
         (ABERTO, teto))
     return _com_nome(linhas)
 
@@ -92,10 +98,44 @@ def abertos(con: Any, *, limite: int = 50) -> list[dict]:
 def da_conversa(con: Any, conversa_id: int) -> list[dict]:
     """Os pedidos desta conversa, o aberto primeiro. SÓ LÊ."""
     linhas = banco(con).ler(
-        """SELECT * FROM wa_pedido WHERE conversa_id=%s
-            ORDER BY CASE WHEN situacao=%s THEN 0 ELSE 1 END, id DESC""",
+        """SELECT p.*, x.numero AS protocolo_numero FROM wa_pedido p
+             LEFT JOIN cx_protocolos x ON x.id = p.protocolo_id
+            WHERE p.conversa_id=%s
+            ORDER BY CASE WHEN p.situacao=%s THEN 0 ELSE 1 END, p.id DESC""",
         (int(conversa_id), ABERTO))
     return _com_nome(linhas)
+
+
+def aberto_desde(pedido: dict) -> str:
+    """Quando o pedido nasceu. O de antes de 15/11/2026 não tem `aberto_em`."""
+    return str(pedido.get("aberto_em") or pedido.get("quando") or "")
+
+
+def vincular_protocolo(con: Any, pedido_id: int, numero: Any, *, por: str,
+                       quando: str) -> dict:
+    """Liga o pedido ao protocolo do Caixa que o escrevente abriu. ESCREVE.
+
+    Número vazio desfaz o vínculo. Devolve {"protocolo_id", "numero"}. Quem liga é
+    a pessoa, na tela: a IA não cria nem escolhe protocolo, e a partir daqui ela
+    passa a ver a situação pública dele sem pedir o código do recibo ao cliente."""
+    bd = banco(con)
+    pedido = bd.um("SELECT id, conversa_id FROM wa_pedido WHERE id=%s", (int(pedido_id),))
+    if not pedido:
+        raise PedidoErro("Esse pedido não existe.")
+    numero = " ".join(str(numero or "").split())[:40]
+    achado = None
+    if numero:
+        achado = bd.um("SELECT id, numero FROM cx_protocolos WHERE numero=%s", (numero,))
+        if not achado:
+            raise PedidoErro(f"Não há protocolo nº {numero} no Caixa. Confira o número.")
+    bd.escrever("UPDATE wa_pedido SET protocolo_id=%s WHERE id=%s",
+                ((int(achado["id"]) if achado else None), int(pedido_id)))
+    FILA.registrar_evento(
+        con, int(pedido["conversa_id"]), FILA.EV_PEDIDO, quando=quando, por=por,
+        nota=(f"Pedido {int(pedido_id)} ligado ao protocolo {achado['numero']}" if achado
+              else f"Pedido {int(pedido_id)} sem protocolo ligado"))
+    return {"protocolo_id": int(achado["id"]) if achado else None,
+            "numero": achado["numero"] if achado else ""}
 
 
 def concluir(con: Any, pedido_id: int, *, por: str, quando: str) -> bool:

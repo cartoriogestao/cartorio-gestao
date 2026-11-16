@@ -148,10 +148,11 @@ def o_resto(db: Any, *, pasta_dados: Path, pasta_arquivos: Path, agora: str | No
     import wa_atendente as ATENDENTE
     import wa_balcao as BALCAO
     import wa_midia as MIDIA
+    import wa_cobranca as COBRANCA
     import wa_rotina as ROTINA
     quando = agora or _agora(db)
     r: dict = {"arquivos": 0, "ia": 0, "avisos": 0, "status_descartados": 0, "encerradas": 0,
-               "erros": []}
+               "cobrados": 0, "erros": []}
     passos = (
         ("arquivos", lambda: MIDIA.baixar_pendentes(
             db, pasta_arquivos=pasta_arquivos, agora=quando, https=https)["baixados"]),
@@ -161,6 +162,8 @@ def o_resto(db: Any, *, pasta_dados: Path, pasta_arquivos: Path, agora: str | No
         ("avisos", lambda: ROTINA.avisar_fora_do_horario(db, agora=quando,
                                                           http_post=http_post)),
         ("status_descartados", lambda: BALCAO.arrumar_entregas_pendentes(db, agora=quando)),
+        # 15/11/2026: o pedido que a IA encaminhou e ninguém atendeu (`wa_cobranca`)
+        ("cobrados", lambda: COBRANCA.cobrar(db, agora=quando)),
     )
     if encerrar:
         passos += (("encerradas", lambda: ROTINA.encerrar_paradas(db, agora=quando)),)

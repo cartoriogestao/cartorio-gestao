@@ -159,6 +159,12 @@ Decisões sobre os textos que a serventia emite, a organização das telas e das
 **Por quê.** Pedido do titular («é importante»). A regra antiga continua valendo para todo o resto: o que a IA pode afirmar ao cliente fica limitado ao que a casa aprovou ou calcula, e o que é sensível continua com uma pessoa.
 **No código.** `wa_atendente.py`, `wa_transcricao.py`, `wa_fila.py`, `wa_ia_registro`.
 
+### O escrevente do WhatsApp conversa com ferramentas, e o que ele afirma é o que o titular aprovou (15/11/2026)
+**Regra.** Com o atendimento do escrevente ligado, o modelo lê a conversa em turnos, o estado do atendimento (pedidos e responsável, protocolo identificado, arquivos recebidos) e três textos aprovados pelo titular — texto-base, manual do atendimento e lista de valores —, e usa três ferramentas: abrir ou completar o pedido e a tarefa do escrevente (com protocolo de atendimento quando o cliente pede), estimar valor pelo cálculo de custas e consultar a base normativa. Continua valendo: identificação do protocolo por número e código, feita pelo sistema, com limite de tentativas e sem o código subir; reclamação e assunto reservado por regra, sem IA; teto diário; registro de cada resposta. A resposta com número ou valor fora das fontes volta uma vez ao modelo com o motivo e, se repetir, não sai. Muda uma regra de 26/10/2026: a mensagem com dado pessoal sobe **mascarada**, em vez de não subir. O manual vem de fábrica como rascunho e só vale gravado pelo administrador. A quem pergunta a sério se fala com pessoa ou máquina, a resposta é a verdade, com a oferta do escrevente.
+**Por quê.** Pedido do titular em 14/11/2026 («responda como um ser humano e preste um serviço melhor»). A ficha de uma chamada com frase pronta repetia a mesma frase e não sabia do pedido nem do responsável; a mensagem com CPF parava a conversa; a máscara trocava «Registro de Imóveis» e «meu pai faleceu» por marca de nome, e o modelo não entendia o pedido. O protocolo de atendimento não é prenotação nem protocolo do Caixa: foto em conversa não é título, e prioridade de registro não nasce em mensagem. Negar ser máquina a quem pergunta seria a serventia enganando o cidadão no balcão.
+**Fundamento.** LGPD, arts. 6º, VI, e 20; Lei 8.935/1994, art. 30, II (atender com urbanidade e presteza).
+**No código.** `wa_escrevente.py`, `wa_ferramentas.py`, `wa_manual.py`, `wa_vocabulario.py`, `agente_provedores.py` (prefixo em cache).
+
 ## Atenção para fraudes
 
 ### Alerta não é trava, a vítima se protege, e documento vem antes do nome

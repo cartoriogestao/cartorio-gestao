@@ -39,7 +39,9 @@ import wa_atendente as ATENDENTE
 import wa_balcao as WA
 import wa_conhecimento as CONHEC
 import wa_contato as CONTATO
+import wa_anexos as ANEXOS
 import wa_fila as FILA
+import wa_manual as MANUAL
 import wa_pedido as PEDIDO
 import wa_midia as MIDIA
 import wa_modelos as MODELOS
@@ -361,8 +363,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             pedidos = PEDIDO.abertos(con)
             pode_enviar = WA.pode_enviar_meta(con)
             rotina = ROTINA.config(con)
+            manual = MANUAL.config(con)
+            dono_do_balcao = WA.ler_config(con, SCH.CHAVE_DONO_DO_BALCAO)
+        pessoas = [u for u in db.list_users(active_only=True) if not u.get("eh_robo")]
         return render_template(
             "whatsapp_atendente.html", ia=ia, linhas=linhas, hoje=hoje,
+            manual=manual, manual_padrao=MANUAL.PADRAO,
+            pessoas=pessoas, dono_do_balcao=dono_do_balcao,
+            valores_sugeridos=MANUAL.VALORES_SUGERIDOS,
             pode_enviar=pode_enviar,
             # SÓ O NOME E SE HÁ CHAVE: nenhum pedaço da chave chega ao HTML
             # desta tela, que todo login vê.
@@ -398,6 +406,53 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         if volta.isdigit():
             return redirect(url_for("whatsapp_conversa", conversa_id=int(volta)))
         return redirect(url_for("whatsapp_atendente") + "#pedidos")
+
+    def _volta_do_pedido(pedido_id: int):
+        volta = (request.form.get("volta") or "").strip()
+        if volta.isdigit():
+            return redirect(url_for("whatsapp_conversa", conversa_id=int(volta)))
+        return redirect(url_for("whatsapp_atendente") + "#pedidos")
+
+    @app.route("/whatsapp/pedido/<int:pedido_id>/protocolo", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def whatsapp_pedido_protocolo(pedido_id: int):
+        """O escrevente liga o pedido ao protocolo do Caixa que abriu (15/11/2026).
+        A IA passa a ver a situação pública dele. Número vazio desfaz o vínculo."""
+        try:
+            with db.transaction() as con:
+                r = PEDIDO.vincular_protocolo(con, pedido_id, request.form.get("numero"),
+                                              por=_quem(), quando=db.now())
+        except PEDIDO.PedidoErro as erro:
+            flash(str(erro), "danger")
+            return _volta_do_pedido(pedido_id)
+        audit("wa_pedido_protocolo", "wa_pedido", pedido_id,
+              {"protocolo_id": r["protocolo_id"]})
+        flash(f"Pedido ligado ao protocolo {r['numero']}." if r["numero"]
+              else "O pedido não está mais ligado a protocolo.", "success")
+        return _volta_do_pedido(pedido_id)
+
+    @app.route("/whatsapp/midia/<int:mensagem_id>/anexar", methods=["POST"])
+    @login_required
+    @roles_required(*PRATICA)
+    def whatsapp_midia_anexar(mensagem_id: int):
+        """Leva uma CÓPIA do arquivo do cliente à tarefa ou ao protocolo do pedido."""
+        pedido = str(request.form.get("pedido_id") or "")
+        if not pedido.isdigit():
+            abort(400)
+        try:
+            r = ANEXOS.anexar(db, mensagem_id, int(pedido),
+                              destino=str(request.form.get("destino") or ""),
+                              usuario_id=int(app.extensions["current_user"]()["id"]),
+                              raiz=app.extensions["archive_root"](), agora=db.now())
+        except ANEXOS.AnexoErro as erro:
+            flash(str(erro), "danger")
+            return _volta_do_pedido(int(pedido))
+        audit("wa_midia_anexada", "wa_mensagem", mensagem_id,
+              {"pedido_id": int(pedido), "destino": r["destino"], "anexo_id": r["anexo_id"]})
+        flash(f"«{r['nome']}» anexado " + ("à tarefa do pedido." if r["destino"] == "tarefa"
+              else f"ao protocolo {r['protocolo']}."), "success")
+        return _volta_do_pedido(int(pedido))
 
     def _volta_da_transcricao():
         return redirect(url_for("whatsapp_atendente") + "#transcricao")
@@ -742,6 +797,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 # mesmo telefone (`wa_contato`).
                 d["contato"] = CONTATO.quem_e(con, d.get("wa_id"))
                 d["pedidos"] = PEDIDO.da_conversa(con, conversa_id)
+                # 15/11/2026: os arquivos do cliente, para o escrevente levar à tarefa
+                # ou ao protocolo do pedido (`wa_anexos`)
+                d["arquivos"] = ANEXOS.da_conversa(con, conversa_id)
                 d["iniciais"] = FILA.iniciais(d.get("nome"), d.get("wa_id"))
                 vista = _vista(d, request.args.get("historico") == "1")
                 d["sugestao_na_caixa"] = WA.sugestao_visivel(con, conversa_id, d.get("sugestao"))

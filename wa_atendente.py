@@ -53,6 +53,20 @@ A MUDANÇA DE 10/11/2026: O ATENDIMENTO DO ESCREVENTE
     setor e continua respondendo. A IA não lavra, não sela e não qualifica.
     Sem essa chave, vale o de 26/10 e 30/10.
 
+A MUDANÇA DE 15/11/2026: O ESCREVENTE CONVERSA, COM FERRAMENTAS
+    O oficial pediu o WhatsApp que «responda como um ser humano e preste um
+    serviço melhor que um ser humano preste». Com `ia_escrevente` ligado, quem
+    decide é `wa_escrevente.atender`: o modelo lê a conversa em turnos, o estado
+    do atendimento (pedidos, responsável, protocolo identificado, arquivos) e o
+    que o oficial aprovou (texto-base, manual do atendimento, lista de valores),
+    e usa ferramentas para abrir o pedido e a tarefa, estimar valor e consultar
+    a norma. A ficha JSON, o teto de duas perguntas, a cortesia por frase pronta
+    e a base da ajuda na conversa do cliente ficam só no modo de 26/10 e 30/10.
+    O que continua daqui: a identificação do protocolo por número e código, a
+    reclamação e o assunto reservado por regra, a máscara, o teto do dia e o
+    registro. Mudou uma regra de 26/10: a mensagem com dado pessoal passa a subir
+    MASCARADA, em vez de não subir — ver o cabeçalho de `wa_escrevente`.
+
 O QUE SEGURA ISSO
     - UM INTERRUPTOR GERAL, DESLIGADO DE FÁBRICA (`wa_schema.CHAVE_IA_LIGADA`).
       Só o ADMIN liga, e ligar grava quem e quando; só se responde o que chegou
@@ -213,6 +227,7 @@ RESPOSTAS_ANTES_DE_PESSOA = 8
 # cortava o JSON: no Sonnet o esforço alto conta no mesmo limite.
 RESPOSTAS_DO_ESCREVENTE = 24
 SAIDA_DO_ESCREVENTE = 4096
+ESPERA_DO_AUDIO_MIN = 10   # quanto a conversa espera o áudio que ainda não foi transcrito
 
 RODAPE = ""
 # 14/11/2026: o oficial mandou falar como quem atende e encaminha ao
@@ -456,6 +471,39 @@ def gravar_configuracao(con: Any, form: dict, *, por: str, agora: str) -> list[s
         BALCAO.gravar_config(con, WA.CHAVE_TEXTO_BASE_POR, por if base else "")
         BALCAO.gravar_config(con, WA.CHAVE_TEXTO_BASE_EM, agora if base else "")
     BALCAO.gravar_config(con, WA.CHAVE_VALORES, valores)
+    # O MANUAL DO ATENDIMENTO (15/11/2026). A caixa vem preenchida com o texto de
+    # fábrica enquanto nada foi aprovado: sem a marca «aprovo», gravar a tela por
+    # outro motivo não o aprova por engano.
+    if "manual" in form:
+        import wa_manual as MANUAL
+        manual = str(form.get("manual") or "").replace("\r\n", "\n").strip()
+        if manual != MANUAL.config(con)["texto"]:
+            if manual and form.get("manual_aprovo") != "1":
+                # o texto de fábrica que só veio na caixa não é pedido de gravar
+                if MANUAL.config(con)["aprovado"] or manual != MANUAL.PADRAO.strip():
+                    avisos.append("O manual do atendimento NÃO foi gravado: marque «Li e "
+                                  "aprovo este manual» para a IA passar a usá-lo.")
+            else:
+                try:
+                    MANUAL.gravar(con, manual, por=por, agora=agora)
+                except MANUAL.ManualErro as erro:
+                    raise AtendenteErro(str(erro)) from erro
+                if MANUAL.lembretes(manual):
+                    avisos.append("O manual ainda tem linha entre colchetes («[confirmar: "
+                                  "...]»). A IA não a usa como informação; complete quando "
+                                  "puder.")
+        if ligar and escrevente and not MANUAL.config(con)["aprovado"]:
+            avisos.append("O manual do atendimento ainda não foi aprovado: a IA responde "
+                          "só com o texto-base e encaminha o resto ao escrevente.")
+    if "dono_do_balcao" in form:
+        dono = str(form.get("dono_do_balcao") or "").strip()
+        if dono and not (dono.isdigit() and banco(con).um(
+                "SELECT 1 AS ha FROM users WHERE id=%s AND active=1", (int(dono),))):
+            raise AtendenteErro("Escolha, para o balcão geral, uma pessoa ativa da lista.")
+        BALCAO.gravar_config(con, WA.CHAVE_DONO_DO_BALCAO, dono)
+        if ligar and escrevente and not dono:
+            avisos.append("Ninguém responde pelo balcão geral: o pedido do WhatsApp sem "
+                          "setor nasce sem dono, e a tarefa pode ficar sem ninguém ver.")
     if escrevente and not ligar:
         avisos.append("O atendimento do escrevente só roda com o atendente ligado.")
     elif ligar and escrevente and not base:
@@ -1155,11 +1203,11 @@ def _resumo_interno(texto: str) -> bool:
 def _sem_dado_pessoal(texto: str) -> str:
     """O relato que o escrevente lê, com o CPF e o resto mascarados. Se a máscara
     recusa o texto, volta vazio. Só calcula."""
+    import wa_vocabulario as VOCAB          # «Registro de Imóveis» não é nome de gente
     try:
-        pacote = PRIV.preparar_saida(instrucao="", pergunta=texto)
+        return " ".join(VOCAB.mascarar(texto).split())
     except PRIV.PrivacidadeError:
         return ""
-    return " ".join(str(pacote.pergunta or "").split())
 
 
 def assunto_do_cliente(con: Any, conversa: dict) -> str:
@@ -1253,7 +1301,7 @@ def completar_encaminhamento(decisao: dict, *, assunto: str = "", ultimo: str = 
                 pedido["servico"] = OFICIO.servico_de(codigo, decisao.get("razao") or "")
                 setor = codigo
                 break
-    if not _trocar_a_frase(decisao):
+    if decisao.get("frase_fixa") or not _trocar_a_frase(decisao):
         aviso = " ".join(str(decisao.get("resposta") or "").split())
         if aviso and aviso == " ".join(str(ultimo or "").split()):
             decisao["resposta"] = ""
@@ -1282,7 +1330,8 @@ def _relato_da_tarefa(resumo: str, relato: str) -> str:
 
 
 def _tarefa_do_pedido(db: Any, pedido_id: int, *, setor: str, servico: str,
-                      resumo: str, relato: str, quando: str) -> int | None:
+                      resumo: str, relato: str, quando: str, urgente: bool = False,
+                      arquivos: int = 0, conversa_id: int | None = None) -> int | None:
     """Uma tarefa aberta para o escrevente do setor, ligada ao pedido.
 
     ESCREVE pela via da tarefa da casa (`Database.create_task`). O mesmo pedido
@@ -1292,13 +1341,21 @@ def _tarefa_do_pedido(db: Any, pedido_id: int, *, setor: str, servico: str,
     titulo = f"WhatsApp — {nome} (pedido {int(pedido_id)})"[:200]
     ref = f"wa_pedido:{int(pedido_id)}"
     texto = _relato_da_tarefa(resumo, relato)
+    # 15/11/2026: o escrevente abre a tarefa e precisa chegar à conversa, onde
+    # estão os arquivos que o cliente mandou. O resumo e o relato são coisas
+    # diferentes — o que a IA entendeu e o que a pessoa escreveu — e vão os dois.
+    resumo_limpo = " ".join(str(resumo or "").split())
+    if resumo_limpo and not _resumo_interno(resumo_limpo) and resumo_limpo not in texto:
+        texto = f"{resumo_limpo}\n\nO que a pessoa escreveu: {texto}"[:2000]
+    if arquivos:
+        texto += f"\n\nArquivos recebidos na conversa: {int(arquivos)}."
+    if conversa_id:
+        texto += f"\n\nConversa: WhatsApp → conversa nº {int(conversa_id)} (/whatsapp/{int(conversa_id)})."
     dono = None
     try:
+        import wa_ferramentas as FERR
         with db.connect() as con:
-            linha = banco(con).um(
-                "SELECT user_id FROM ge_responsaveis WHERE setor=%s", (setor,))
-        if linha and linha.get("user_id"):
-            dono = int(linha["user_id"])
+            dono = FERR.responsavel_do_setor(con, setor).get("user_id")
     except Exception:                               # noqa: BLE001
         dono = None
     try:
@@ -1309,7 +1366,7 @@ def _tarefa_do_pedido(db: Any, pedido_id: int, *, setor: str, servico: str,
             "description": texto,
             "sector": WA.SETORES.get(setor, setor),
             "system_name": "WhatsApp",
-            "priority": "MEDIA",
+            "priority": "ALTA" if urgente else "MEDIA",
             "status": "ABERTA",
             "assigned_user_id": dono,
             "evidence_required": 0,
@@ -1358,7 +1415,8 @@ def acertar_pedidos_abertos(db: Any) -> int:
             n += 1
         _tarefa_do_pedido(db, int(linha["id"]), setor=linha["setor"],
                           servico=linha["servico"], resumo=resumo,
-                          relato=assunto or resumo, quando=agora)
+                          relato=assunto or resumo, quando=agora,
+                          conversa_id=int(linha["conversa_id"]))
     n += _garantir_chamado_ao_tabeliao(db, agora)
     return n
 
@@ -1386,7 +1444,7 @@ def _garantir_chamado_ao_tabeliao(db: Any, agora: str) -> int:
     for cid, m in alvos.items():
         with db.connect() as con:
             ja = banco(con).um(
-                """SELECT id FROM wa_pedido
+                """SELECT id, servico FROM wa_pedido
                     WHERE conversa_id=%s AND setor=%s AND situacao=%s
                       AND resumo LIKE %s
                     ORDER BY id DESC LIMIT 1""",
@@ -1395,9 +1453,12 @@ def _garantir_chamado_ao_tabeliao(db: Any, agora: str) -> int:
         with db.connect() as con:
             assunto = assunto_do_cliente(con, conversa)
         if ja:
-            _tarefa_do_pedido(db, int(ja["id"]), setor="GESTAO", servico="orientacao",
+            # o serviço é o do pedido (15/11/2026: «tabeliao», aberto pelo escrevente):
+            # com outro, o título mudava e a mesma conversa ganhava duas tarefas
+            _tarefa_do_pedido(db, int(ja["id"]), setor="GESTAO",
+                              servico=ja.get("servico") or "orientacao",
                               resumo=RESUMO_DO_TABELIAO, relato=assunto or RESUMO_DO_TABELIAO,
-                              quando=agora)
+                              quando=agora, conversa_id=cid)
             continue
         with db.transaction() as con:
             gravado = PEDIDO.abrir(
@@ -1406,7 +1467,7 @@ def _garantir_chamado_ao_tabeliao(db: Any, agora: str) -> int:
                 quando=agora)
         _tarefa_do_pedido(db, int(gravado["id"]), setor="GESTAO", servico="orientacao",
                           resumo=RESUMO_DO_TABELIAO, relato=assunto or RESUMO_DO_TABELIAO,
-                          quando=agora)
+                          quando=agora, conversa_id=cid)
         n += 1
     return n
 
@@ -1538,6 +1599,10 @@ def ensaiar(db: Any, cfg: dict, texto: str, *, agora: str, pasta_de_dados: Any,
     if not str(cfg.get("texto_base") or "").strip() and not cfg.get("escrevente"):
         return {"resultados": [], "parou": False, "sobraram": 0, "custo": 0,
                 "sem_texto_base": True}
+    if cfg.get("escrevente"):
+        import wa_escrevente as ESCREVENTE
+        return ESCREVENTE.ensaiar(db, cfg, texto, agora=agora, pasta_de_dados=pasta_de_dados,
+                                  conversa_alternada=conversa_alternada, conversar=conversar)
     linhas = [l.strip() for l in str(texto or "").splitlines() if l.strip()]
     sobraram = max(0, len(linhas) - LINHAS_DO_ENSAIO)
     linhas = linhas[:LINHAS_DO_ENSAIO]
@@ -1591,9 +1656,10 @@ def _registrar(con: Any, conversa: dict, decisao: dict, *, enviado: bool,
     banco(con).escrever(
         """INSERT INTO wa_ia_registro (conversa_id, wa_id, quando, caso, lido,
                respondido, enviado, meta_id, passou_para, motivo, provedor, modelo,
-               tokens_entrada, tokens_saida, segundos_audio, custo_usd, erro, razao)
+               tokens_entrada, tokens_saida, segundos_audio, custo_usd, erro, razao,
+               tokens_cache_escrita, tokens_cache_lida, chamadas)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                   %s, %s, %s)""",
+                   %s, %s, %s, %s, %s, %s)""",
         (int(conversa["id"]), conversa["wa_id"], agora, decisao["caso"],
          (decisao.get("lido") or "")[:4000], (respondido or "")[:4000],
          1 if enviado else 0, meta_id, decisao.get("passar"),
@@ -1601,7 +1667,8 @@ def _registrar(con: Any, conversa: dict, decisao: dict, *, enviado: bool,
          decisao.get("modelo"), int(decisao.get("entrada") or 0),
          int(decisao.get("saida") or 0), float(decisao.get("segundos") or 0),
          decisao.get("custo"), (decisao.get("erro") or "")[:500] or None,
-         decisao.get("razao")))
+         decisao.get("razao"), int(decisao.get("cache_escrita") or 0),
+         int(decisao.get("cache_lida") or 0), int(decisao.get("chamadas") or 0)))
 
 
 def registros(con: Any, *, limite: int = 200, conversa_id: int | None = None) -> list[dict]:
@@ -1788,6 +1855,31 @@ def _soltar_presas(db: Any, *, agora: str) -> None:
             "AND ia_desde < %s", (WA.IA_ERRO, WA.IA_PROCESSANDO, limite))
 
 
+def _avisar_que_leu(db: Any, pegas: Any, http_post: Callable | None = None) -> None:
+    """Marca a última mensagem como lida e mostra «digitando…» ao cliente.
+
+    **FALA COM A REDE**, e é cortesia: falhou, a resposta sai do mesmo jeito. Quem
+    escreve no WhatsApp espera o ✓✓ azul e o «digitando» de quem leu — sem eles,
+    meio minuto de silêncio parece que ninguém está lá."""
+    try:
+        ultima = max((p for p in pegas if p.get("meta_id")), key=lambda p: int(p["id"]),
+                     default=None)
+        if not ultima:
+            return
+        with db.connect() as con:
+            token = BALCAO.ler_config(con, WA.CHAVE_TOKEN)
+            phone = BALCAO.ler_config(con, WA.CHAVE_PHONE)
+        if not token or not phone:
+            return
+        fn = http_post or BALCAO._http_post_json
+        fn(f"https://graph.facebook.com/{BALCAO.GRAPH_VER}/{phone}/messages",
+           {"messaging_product": "whatsapp", "status": "read",
+            "message_id": str(ultima["meta_id"]), "typing_indicator": {"type": "text"}},
+           {"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+    except Exception:                               # noqa: BLE001
+        LOG.debug("o aviso de leitura do WhatsApp não saiu", exc_info=True)
+
+
 def atender_conversa(db: Any, conversa_id: int, cfg: dict, *, agora: str,
                      pasta_de_dados: Any, conversar: Callable | None = None,
                      http_post: Callable | None = None) -> dict | None:
@@ -1807,7 +1899,7 @@ def atender_conversa(db: Any, conversa_id: int, cfg: dict, *, agora: str,
             """UPDATE wa_mensagem SET ia_situacao=%s, ia_desde=%s
                 WHERE conversa_id=%s AND direcao='in' AND ia_situacao IS NULL
                   AND criado_em >= %s
-            RETURNING id, texto, tipo, transcricao""",
+            RETURNING id, texto, tipo, transcricao, meta_id""",
             (WA.IA_PROCESSANDO, agora, int(conversa_id), desde))
         if not pegas:
             return None
@@ -1833,7 +1925,18 @@ def atender_conversa(db: Any, conversa_id: int, cfg: dict, *, agora: str,
         import wa_rotina as ROTINA
         rotina = ROTINA.config(con)
     teto = RESPOSTAS_DO_ESCREVENTE if cfg.get("escrevente") else RESPOSTAS_ANTES_DE_PESSOA
-    if any((p.get("tipo") or "") in TIPOS_QUE_PASSAM for p in pegas):
+    if cfg.get("escrevente"):
+        # 15/11/2026: a conversa inteira, com ferramentas (`wa_escrevente`). O
+        # arquivo não passa mais por regra — o modelo sabe que ele chegou — e o
+        # teto de respostas é o dele, que entrega a conversa a uma pessoa.
+        import wa_escrevente as ESCREVENTE
+        _avisar_que_leu(db, pegas, http_post)
+        decisao = ESCREVENTE.atender(
+            db, conversa, list(pegas), cfg, agora=agora, pasta_de_dados=pasta_de_dados,
+            rotina=rotina, ja_respondeu=ja_respondeu, conversar=conversar,
+            abrir_tarefa=lambda pid, **k: _tarefa_do_pedido(
+                db, pid, conversa_id=int(conversa_id), **k))
+    elif any((p.get("tipo") or "") in TIPOS_QUE_PASSAM for p in pegas):
         decisao = _mao(cfg, setor_atual, RAZAO_ARQUIVO, lido="(arquivo — não subiu à IA)")
     elif ja_respondeu >= teto:
         decisao = _mao(cfg, setor_atual, RAZAO_INSISTENCIA,
@@ -1848,7 +1951,7 @@ def atender_conversa(db: Any, conversa_id: int, cfg: dict, *, agora: str,
                           pergunta_pendente=triagem["pendente"],
                           cortesias=triagem["cortesias"])
     assunto = ""
-    if cfg.get("escrevente") and decisao.get("passar"):
+    if cfg.get("escrevente") and decisao.get("passar") and not decisao.get("de_fato"):
         decisao = _virar_pedido(decisao)
     if cfg.get("escrevente") and decisao.get("pedido"):
         with db.connect() as con:
@@ -1945,7 +2048,8 @@ def atender_conversa(db: Any, conversa_id: int, cfg: dict, *, agora: str,
     if pedido_id and cfg.get("escrevente"):
         item = decisao["pedido"]
         _tarefa_do_pedido(db, pedido_id, setor=item["setor"], servico=item["servico"],
-                          resumo=item.get("resumo") or "", relato=assunto, quando=agora)
+                          resumo=item.get("resumo") or "", relato=assunto, quando=agora,
+                          conversa_id=int(conversa_id))
     try:
         # quem age é o atendente, a mando de quem responde pelas rotinas (PR #36)
         db.log(None, None, "WA_IA_RESPOSTA", "wa_conversa", int(conversa_id),
@@ -1977,11 +2081,26 @@ def rodada(db: Any, *, agora: str | None = None, pasta_de_dados: Any = None,
     feitas = []
     if cfg["ia_ligada"]:
         with db.connect() as con:
+            # O ESCREVENTE ESPERA O ÁUDIO (15/11/2026). A transcrição neste servidor
+            # é uma por rodada: o segundo áudio da fila era respondido com «não
+            # consegui ouvir» antes de alguém tentar ouvi-lo. A conversa com áudio
+            # ainda não pego fica para a rodada seguinte, por até dez minutos.
+            espera, args = "", [_janela(cfg, quando)]
+            if cfg.get("escrevente") and cfg["audio_ligado"]:
+                espera = """ AND NOT EXISTS (
+                        SELECT 1 FROM wa_mensagem a
+                         WHERE a.conversa_id = m.conversa_id AND a.direcao='in'
+                           AND a.tipo='audio' AND a.transcricao IS NULL
+                           AND a.midia_id IS NOT NULL AND a.criado_em >= %s)"""
+                args.append(((FILA._dt(quando) or datetime.now())
+                             - timedelta(minutes=ESPERA_DO_AUDIO_MIN)
+                             ).strftime("%Y-%m-%dT%H:%M:%S"))
             cids = [int(r["conversa_id"]) for r in banco(con).ler(
-                """SELECT conversa_id, min(id) AS primeira FROM wa_mensagem
-                    WHERE direcao='in' AND ia_situacao IS NULL AND criado_em >= %s
-                    GROUP BY conversa_id ORDER BY primeira LIMIT %s""",
-                (_janela(cfg, quando), int(limite)))]
+                f"""SELECT m.conversa_id, min(m.id) AS primeira FROM wa_mensagem m
+                    WHERE m.direcao='in' AND m.ia_situacao IS NULL AND m.criado_em >= %s
+                    {espera}
+                    GROUP BY m.conversa_id ORDER BY primeira LIMIT %s""",
+                (*args, int(limite)))]
         for cid in cids:
             try:
                 r = atender_conversa(db, cid, cfg, agora=quando, pasta_de_dados=pasta,

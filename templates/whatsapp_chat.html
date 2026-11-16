@@ -165,6 +165,23 @@
         {{ ped.resumo }}
         O serviço se faz em <a href="{{ url_for('at_lista') }}">Atendimentos</a>.
       </p>
+      {% if ped.cobrado_em %}<p><strong>Parado:</strong> passou do prazo de resposta sem ninguém atender.</p>{% endif %}
+      <form method="post" action="{{ url_for('whatsapp_pedido_protocolo', pedido_id=ped.id) }}" data-wa-pedido-protocolo>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="volta" value="{{ c.id }}">
+        <label>protocolo do Caixa <input type="text" name="numero" size="12" value="{{ ped.protocolo_numero or '' }}" placeholder="2026.11.7"></label>
+        <button class="button secondary">ligar</button>
+      </form>
+      {% for arq in c.arquivos %}
+      <form method="post" action="{{ url_for('whatsapp_midia_anexar', mensagem_id=arq.id) }}" data-wa-anexar>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="volta" value="{{ c.id }}">
+        <input type="hidden" name="pedido_id" value="{{ ped.id }}">
+        {{ arq.arquivo_nome or 'arquivo' }} →
+        <button class="button secondary" name="destino" value="tarefa">anexar à tarefa</button>
+        {% if ped.protocolo_numero %}<button class="button secondary" name="destino" value="protocolo">anexar ao protocolo {{ ped.protocolo_numero }}</button>{% endif %}
+      </form>
+      {% endfor %}
       <form method="post" action="{{ url_for('whatsapp_pedido_feito', pedido_id=ped.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="volta" value="{{ c.id }}">

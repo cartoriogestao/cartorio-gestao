@@ -119,3 +119,16 @@ def test_catalogo_semeia_desligado_e_mantem_a_configuracao_do_oficial(cg_casa):
         AU.definir_pode_agir(con, p["id"], True, papel="ADMIN", usuario="mario")
         AU.semear(con, AGORA)
         assert AU.por_codigo(con, M.CODIGO)["pode_agir"]
+
+
+def test_catalogo_oferece_a_rotina_e_os_comandos_na_tela_autenticada(cg_casa_logada):
+    casa = cg_casa_logada
+    casa["app"].extensions["backup_checked"] = True
+    with casa["db"].transaction() as con:
+        AU.semear(con, AGORA)
+        p = AU.por_codigo(con, M.CODIGO)
+    r = casa["c"].get(f"/automacao/{p['id']}")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert p["nome"] in html
+    assert "Rodar agora" in html and "Liberar para agir sozinho" in html

@@ -488,6 +488,32 @@ def test_dry_run_mostra_e_nao_escreve(db, com_cpf, ambiente_da_casa, tmp_path,
     assert f"of-{com_cpf:04d}.md" in saida and "nada foi escrito" in saida
 
 
+def test_exportar_nao_inicializa_schema_nem_funcoes(
+        db, com_cpf, ambiente_da_casa, tmp_path, monkeypatch):
+    from database import Database
+
+    def proibido(*args, **kwargs):
+        raise AssertionError("A sincronia não pode inicializar o banco")
+
+    monkeypatch.setattr(Database, "__init__", proibido)
+    monkeypatch.setattr(Database, "init_schema", proibido)
+    monkeypatch.setattr(banco_pg, "_instalar_funcoes", proibido)
+    assert PS.main(["exportar", "--pasta", str(tmp_path)]) == 0
+    assert (tmp_path / "problemas" / f"of-{com_cpf:04d}.md").is_file()
+
+
+def test_conexao_da_exportacao_recusa_escrita(
+        db, com_cpf, ambiente_da_casa):
+    import psycopg
+
+    leitura = PS._banco_conferido(somente_leitura=True)
+    with leitura.connect() as con:
+        assert con.execute("SHOW transaction_read_only").fetchone()[0] == "on"
+        with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
+            con.execute("UPDATE aj_problemas SET vezes=vezes+1 WHERE id=%s", (com_cpf,))
+        con.rollback()
+
+
 def test_classificar_grava_a_auditoria_assinada_pela_ferramenta(
         db, com_cpf, ambiente_da_casa):
     assert PS.main(["classificar", "--id", str(com_cpf),

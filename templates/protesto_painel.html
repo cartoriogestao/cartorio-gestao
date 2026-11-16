@@ -51,6 +51,25 @@
   .rt-papel-do-passo{color:var(--muted);font-size:.85em}
   details.rt-fonte{margin-top:22px}
   details.rt-fonte > summary{cursor:pointer;font-weight:700;padding:8px 0}
+  /* OS DOIS CAMINHOS (15/11/2026): a integração à esquerda e mais larga, a mão ao lado. */
+  .rt-rito{margin:8px 0 0;color:var(--muted);font-size:.92em}
+  .rt-caminhos{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:10px;margin:10px 0}
+  @media (max-width:860px){.rt-caminhos{grid-template-columns:1fr}}
+  .rt-caminho{border:1px solid var(--border);border-radius:10px;padding:10px 12px;min-width:0}
+  .rt-caminho h3{margin:0 0 6px;font-size:.82em;text-transform:uppercase;letter-spacing:.04em}
+  .rt-caminho p{margin:0 0 8px}
+  .rt-caminho.integracao{border-left:4px solid var(--accent)}
+  .rt-caminho.integracao h3{color:var(--accent)}
+  .rt-caminho.manual{background:transparent;border-style:dashed}
+  .rt-caminho.manual h3{color:var(--muted)}
+  .rt-caminho.manual ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+  .rt-caminho.manual li small{display:block;color:var(--muted);margin-top:2px}
+  .rt-caminho .rt-acoes{margin:0}
+  details.rt-manual{margin:0 0 14px;border:1px dashed var(--border);border-radius:12px;padding:8px 14px}
+  details.rt-manual > summary{cursor:pointer;font-weight:700}
+  details.rt-manual > summary small{font-weight:400;color:var(--muted)}
+  details.rt-manual ol{margin:8px 0 4px;padding-left:1.4em;display:flex;flex-direction:column;gap:6px}
+  details.rt-manual li small{color:var(--muted)}
 </style>
 {# NO LAYOUT NOVO AS CONDUTAS RECOLHEM — projeto do novo layout, 30/10/2026. A tela media 7.311 px, e
    quem a abre quer saber o que falta agora. Vêm abertas as atrasadas e a primeira pendente; a lista
@@ -169,6 +188,29 @@
 </section>
 {% if layout_novo %}</div>{% endif %}
 
+{# O CURSO MANUAL, A UM CLIQUE — pedido do oficial em 15/11/2026: «o curso manual do protesto seja de
+   fácil acesso, mas privilegiando a didática do fluxo automatizado». A casa trabalha pela
+   integração, e cada conduta diz o que ela faz sozinha. Quem está sem a Central, ou com título do
+   balcão, acha aqui o quadro certo de cada passo, na ordem do dia — sem abrir conduta por conduta.
+   Vem recolhido para a tela continuar abrindo no que falta; são links, e nenhum faz nada por aqui. #}
+{% if r.caminho_manual %}
+<details class="rt-manual" id="caminho-manual">
+  <summary>Sem a integração hoje, ou título do balcão? O caminho pela mão, passo a passo
+    <small>— {{ r.caminho_manual | length }} atalhos, na ordem do dia</small></summary>
+  <p class="small" style="margin:8px 0 0">O caminho da casa é o da integração: o botão principal de cada
+    conduta. Use estes quando a Central não responder ou o título não vier por ela — o rito é o mesmo, e
+    as obrigações do dia continuam cobradas.</p>
+  <ol>
+    {% for m in r.caminho_manual %}
+      <li value="{{ m.conduta_n }}">
+        <a href="{{ url_for(m.tela, **m.args) }}{% if m.get('ancora') %}#{{ m.ancora }}{% endif %}">{{ m.rotulo }}</a>
+        <small>· <a href="#{{ m.conduta_ancora }}">{{ m.conduta }}</a> — {{ m.quando }}</small>
+      </li>
+    {% endfor %}
+  </ol>
+</details>
+{% endif %}
+
 {# ISTO É QUADRO DE CONSULTA, E NO LAYOUT NOVO VEM DEPOIS DAS CONDUTAS: quem abre a tela vai direto ao
    que falta. No layout antigo fica onde sempre esteve. #}
 {% set conferencia_e_envio %}
@@ -217,12 +259,44 @@
       <span class="rt-sit s-{{ c.situacao }}">{{ r.rotulo_da_situacao[c.situacao] }}{% if c.faltam %} · falta(m) {{ c.faltam }}{% endif %}{% if c.atrasados %} · {{ c.atrasados }} atrasado(s){% endif %}</span>
     </{{ cabeca }}>
     <p style="margin:8px 0 0"><strong>A conduta:</strong> {{ c.conduta }}</p>
+    {% set cam = c.caminhos %}
+    {% if cam %}
+    {# OS DOIS CAMINHOS (15/11/2026). A integração vem primeiro e com o botão principal: é o que a casa
+       faz, e o texto ensina o que o clique faz sozinho. A mão fica ao lado, à vista, cada atalho com a
+       condição em que cabe — e leva ao quadro que faz, e não só à tela. #}
+    <p class="rt-rito"><strong>No rito do título:</strong> {{ cam.rito }}</p>
+    <div class="rt-caminhos">
+      <div class="rt-caminho integracao" data-caminho="integracao">
+        <h3>Pela integração — o caminho da casa</h3>
+        <p>{{ cam.integracao }}</p>
+        <div class="rt-acoes">
+          {% for b in c.botoes %}
+            <a class="button {{ 'primary' if loop.first else 'secondary' }}"
+               href="{{ url_for(b.tela, **b.args) }}{% if b.get('ancora') %}#{{ b.ancora }}{% endif %}">{{ b.rotulo }}</a>
+          {% endfor %}
+          {% for b in cam.botoes %}
+            <a class="button secondary" href="{{ url_for(b.tela, **b.args) }}">{{ b.rotulo }}</a>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="rt-caminho manual" data-caminho="manual">
+        <h3>Pela mão — quando a integração não alcança</h3>
+        <ul>
+          {% for m in cam.manual %}
+            <li><a href="{{ url_for(m.tela, **m.args) }}{% if m.get('ancora') %}#{{ m.ancora }}{% endif %}">{{ m.rotulo }} &rarr;</a>
+              <small>{{ m.quando }}</small></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% else %}
     <div class="rt-acoes">
       {% for b in c.botoes %}
         <a class="button {{ 'primary' if loop.first else 'secondary' }}"
            href="{{ url_for(b.tela, **b.args) }}{% if b.get('ancora') %}#{{ b.ancora }}{% endif %}">{{ b.rotulo }}</a>
       {% endfor %}
     </div>
+    {% endif %}
     {% for o in c.obrigacoes %}
       <div class="rt-obrig">
         <div>

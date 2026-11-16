@@ -368,7 +368,17 @@ def ler_paginas(conversar, pasta: Path, modelos_em_uso: dict, paginas: list[dict
     banco poria a casa no `busy_timeout`.
 
     Devolve {paginas, tipos, documentos, envios}; `tipos` vem à parte para quem
-    chama poder corrigi-los (a rede de segurança da DNV, no RCPN)."""
+    chama poder corrigi-los (a rede de segurança da DNV, no RCPN).
+
+    AS IMAGENS SE GERAM AQUI, UMA A UMA, E SÓ A REDE VAI EM PARALELO — a mesma
+    regra de `revisao_anexos.transcrever`, que o motor perdeu ao sair do RCPN.
+    16/11/2026, leitura nº 27 da produção (óbito): a página era renderizada
+    dentro das 4 threads da leitura, o PDFium não aceita duas threads ao mesmo
+    tempo, e a leitura caiu com «Um dos arquivos não pôde ser aberto
+    (OSError)» depois de a triagem ter lido as mesmas 6 páginas sem erro. E
+    cada página passa a ser renderizada UMA vez: antes eram duas (triagem e
+    leitura)."""
+    paginas = [{**p, "imagem": (lambda b=p["imagem"](): b)} for p in paginas]
     escolhidos, envios = triar(conversar, pasta, modelos_em_uso["triagem"], paginas,
                                instrucao=instrucao_triagem, tipos=tipos)
     a_ler = list(zip(paginas, escolhidos))

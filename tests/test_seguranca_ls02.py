@@ -915,11 +915,12 @@ def _anexo_de(casa, tmp_path, tipo: str, conteudo=b"%PDF-1.4 anexo") -> int:
     return aid
 
 
+@pytest.mark.parametrize("tipo", ["PT_AVISO", "PT_CRA_ENVIO_MANUAL"])
 def test_o_anexo_do_protesto_nao_abre_para_quem_nao_entra_no_protesto(
-        casa, tmp_path):
+        casa, tmp_path, tipo):
     """O Protesto vem aberto só ao oficial (`modulos_ligados`); o número
     trocado na barra trazia o comprovante da intimação a qualquer login."""
-    aid = _anexo_de(casa, tmp_path, "PT_AVISO")
+    aid = _anexo_de(casa, tmp_path, tipo)
     for quem in ("carla", "beatriz"):
         c = _entrar(casa["app"], quem)
         assert c.get(f"/arquivo/{aid}").status_code == 404
@@ -998,6 +999,8 @@ INSERTS_DE_ANEXO = {
     # o comprovante da subida do XML P/D no portal da CENPROT (29/10/2026),
     # na tela do XML (`protesto_cenprot_xml`)
     "protesto_cenprot_xml.py": "PT_CENPROT_XML_ENVIO",
+    # o aceite pelo portal da CRA, na tela de retornos e andamentos
+    "protesto_retorno_manual.py": "PT_CRA_ENVIO_MANUAL",
     # o comprovante do PIX do Protesto (29/10/2026), na lista `protesto_pix_lista`
     "protesto_pix.py": "PT_PIX",
     # o PDF do boleto de repasse que o robô baixa do portal da CRA (#121), na

@@ -75,7 +75,8 @@ def test_gerar_pdf_uma_folha_e_multi():
         lavrante_funcao="Tabelião e Oficial de Registro",
     )
     assert pdf1.startswith(b"%PDF")
-    assert pdf1.count(b"/Type /Page /Parent") == 1
+    # a folha + a de encerramento: a página não cabe acima dele sem encolher
+    assert pdf1.count(b"/Type /Page /Parent") == 2
 
     pdf3 = TEOR.gerar_pdf(
         numero_registro=148,
@@ -85,7 +86,7 @@ def test_gerar_pdf_uma_folha_e_multi():
         lavrante_funcao="Escrevente",
     )
     assert pdf3.startswith(b"%PDF")
-    assert pdf3.count(b"/Type /Page /Parent") == 3
+    assert pdf3.count(b"/Type /Page /Parent") == 4
 
 
 def test_teor_texto_curto_preenche_campo_do_lancamento():

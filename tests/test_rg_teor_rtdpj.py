@@ -133,7 +133,9 @@ def test_gerar_pdf_averbacao_e_registro_pj_td():
         serie="TD_B", tipo_ato="REGISTRO",
     )
     assert pdf_reg.startswith(b"%PDF")
-    assert pdf_reg.count(b"/Type /Page /Parent") == 2
+    # 2 folhas do documento + a folha de encerramento: a última página não
+    # cabe acima do encerramento sem encolher (16/11/2026).
+    assert pdf_reg.count(b"/Type /Page /Parent") == 3
 
 
 def test_recusa_sem_lavrante_ou_sem_numero():
@@ -310,7 +312,9 @@ def test_gerar_pdf_com_arquivamento_aceita_parametro():
         serie="PJ_A", tipo_ato="AVERBACAO",
         com_arquivamento=True)
     assert pdf.startswith(b"%PDF")
-    assert pdf.count(b"/Type /Page /Parent") == 2
+    # 2 folhas do documento + a folha de encerramento: a última página não
+    # cabe acima do encerramento sem encolher (16/11/2026).
+    assert pdf.count(b"/Type /Page /Parent") == 3
 
 def test_gerar_pdf_escala_individual_por_pagina():
     """Multi: cada imagem cabe na área útil da própria página (sem baliza comum)."""
@@ -337,7 +341,61 @@ def test_gerar_pdf_escala_individual_por_pagina():
         lavrante_nome="MARIO", lavrante_funcao="Oficial",
         serie="PJ_A", tipo_ato="AVERBACAO")
     assert pdf.startswith(b"%PDF")
-    assert pdf.count(b"/Type /Page /Parent") == 2
+    # 2 folhas do documento + a folha de encerramento: a última página não
+    # cabe acima do encerramento sem encolher (16/11/2026).
+    assert pdf.count(b"/Type /Page /Parent") == 3
+
+
+def _larguras_coladas(monkeypatch, **kw) -> list[int]:
+    """A largura (px) com que cada página do documento sai no teor."""
+    larguras: list[int] = []
+    orig = TEOR._colar_imagem
+
+    def espiar(im, src, top, bottom, **resto):
+        escala = TEOR._escala_que_cabe(src, top, bottom)
+        if resto.get("escala") is not None:
+            escala = min(escala, resto["escala"])
+        larguras.append(int(src.size[0] * escala))
+        return orig(im, src, top, bottom, **resto)
+
+    monkeypatch.setattr(TEOR, "_colar_imagem", espiar)
+    kw.setdefault("lavrante_nome", "MARIO")
+    kw.setdefault("lavrante_funcao", "Oficial")
+    kw.setdefault("serie", "PJ_A")
+    kw.setdefault("tipo_ato", "AVERBACAO")
+    pdf = TEOR.gerar_pdf(numero_registro=148, **kw)
+    return larguras, pdf.count(b"/Type /Page /Parent")
+
+
+def test_a_ultima_pagina_sai_no_tamanho_das_outras(monkeypatch):
+    """16/11/2026: o encerramento e a faixa do selo tomavam a altura da
+    última folha, e a última página do documento encolhia (18,6 cm nas
+    outras, 14,4 cm nela) — ilegível no teor e na certidão que o reproduz.
+    Agora ela sai igual às outras, e o encerramento vai para uma folha só
+    dele."""
+    a4 = (1240, 1754)
+    larguras, folhas = _larguras_coladas(
+        monkeypatch, imagens=[_folha(size=a4), _folha(size=a4), _folha(size=a4)])
+    assert len(set(larguras)) == 1, larguras
+    assert folhas == 4  # 3 páginas + a folha de encerramento
+
+
+def test_ultima_pagina_curta_leva_o_encerramento_na_mesma_folha(monkeypatch):
+    """Quando a última página cabe acima do encerramento sem encolher
+    (página deitada, recorte curto), não se gasta folha a mais."""
+    larguras, folhas = _larguras_coladas(
+        monkeypatch, imagens=[_folha(size=(1240, 1754)), _folha(size=(1240, 600))])
+    assert folhas == 2
+    # a curta sai na largura cheia, como a de cima
+    assert larguras[1] >= larguras[0]
+
+
+def test_cancelamento_sem_documento_continua_numa_folha_so():
+    pdf = TEOR.gerar_pdf(numero_registro=148, imagens=[],
+                         lavrante_nome="MARIO", lavrante_funcao="Oficial",
+                         serie="PJ_A", tipo_ato="CANCELAMENTO",
+                         motivo="Mandado judicial de exemplo")
+    assert pdf.count(b"/Type /Page /Parent") == 1
 
 
 def _selo_de_teste(numero="AVERBA000000CARIMBOTESTE0001"):
@@ -430,7 +488,9 @@ def test_gerar_pdf_aceita_selo_averbacao_e_arquivamento():
         selo_averbacao=_selo_de_teste("AVERBA000000UM0000000000001"),
         selo_arquivamento=_selo_de_teste("ARQUIV000000DOIS000000002"))
     assert pdf.startswith(b"%PDF")
-    assert pdf.count(b"/Type /Page /Parent") == 2
+    # 2 folhas do documento + a folha de encerramento: a última página não
+    # cabe acima do encerramento sem encolher (16/11/2026).
+    assert pdf.count(b"/Type /Page /Parent") == 3
 
 
 def test_sem_selo_continua_a_moldura_tracejada_de_sempre():
@@ -611,7 +671,10 @@ def _intro_de_cada_folha(monkeypatch, **kw) -> list[str]:
     montar = TEOR.montar_pagina
 
     def capturar(src, *, textos, **resto):
-        vistas.append(textos["intro"])
+        # só as folhas do documento: a de encerramento (`src=None`, quando a
+        # última página não cabe acima dele) não é folha trasladada
+        if src is not None:
+            vistas.append(textos["intro"])
         return montar(src, textos=textos, **resto)
 
     monkeypatch.setattr(TEOR, "montar_pagina", capturar)

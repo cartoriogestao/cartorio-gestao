@@ -39,6 +39,8 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 import uuid
 from datetime import datetime
 from importlib.util import find_spec
@@ -232,17 +234,73 @@ def _transcrever_no_trabalhador(pasta_de_dados: Any, audio: bytes, mime: str, pr
             "trabalho_s": round(time.monotonic() - inicio, 1)}
 
 
+def _url_da_reserva() -> str:
+    """O serviço de transcrição da reserva, se a instalação apontou para ele."""
+    return (os.environ.get("CG_TRANSCRICAO_URL") or "").strip().rstrip("/")
+
+
+def _numero_da_resposta(dados: dict, *chaves: str) -> float:
+    for chave in chaves:
+        valor = dados.get(chave)
+        if valor in (None, ""):
+            continue
+        try:
+            return float(valor)
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
+def _transcrever_na_reserva(audio: bytes, mime: str, prazo: int) -> dict:
+    """Manda o áudio cru ao Mac da reserva. O modelo fica lá; aqui não se baixa.
+
+    A resposta aceita `texto` ou `text`, e `segundos`, `seconds` ou `duration`.
+    """
+    url = _url_da_reserva()
+    token = (os.environ.get("CG_TRANSCRICAO_TOKEN") or "").strip()
+    if not token:
+        raise TranscricaoErro("Falta o segredo do serviço de transcrição da reserva.")
+    if len(audio) > TETO_DE_BYTES:
+        raise TranscricaoErro("O áudio passa de 16 MB e não foi transcrito.")
+    tipo = (mime or "audio/ogg").split(";")[0].strip() or "application/octet-stream"
+    pedido = urllib.request.Request(
+        f"{url}/transcrever", data=audio, method="POST",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": tipo})
+    inicio = time.monotonic()
+    try:
+        with urllib.request.urlopen(pedido, timeout=prazo) as resp:
+            bruto = resp.read()
+    except (urllib.error.URLError, TimeoutError, OSError) as falha:
+        raise TranscricaoErro(
+            "Não alcancei o serviço de transcrição da reserva.") from falha
+    try:
+        dados = json.loads(bruto.decode("utf-8"))
+    except ValueError as falha:
+        raise TranscricaoErro(
+            "A transcrição na reserva voltou num formato que eu não entendi.") from falha
+    if not isinstance(dados, dict):
+        raise TranscricaoErro(
+            "A transcrição na reserva voltou num formato que eu não entendi.")
+    return {"texto": str(dados.get("texto") or dados.get("text") or "").strip(),
+            "segundos": _numero_da_resposta(dados, "segundos", "seconds", "duration"),
+            "trabalho_s": round(time.monotonic() - inicio, 1)}
+
+
 def transcrever(pasta_de_dados: Any, audio: bytes, mime: str, *, modelo: str = "",
                 preco_por_minuto: float | None = None, modulo: str = "", finalidade: str = "",
                 usuario: str = "", referencia: str = "", https: Callable | None = None) -> dict:
-    """O texto do áudio, sem o áudio sair da casa. Mesma forma de `wa_transcricao.transcrever`.
+    """O texto do áudio. Com `CG_TRANSCRICAO_URL`, o modelo roda na reserva.
 
-    `modelo`, o preço e `https` existem só para a chamada ser igual: aqui não há rede nem
-    custo por minuto. A linha de `ia_uso` continua, porque é ela que conta o teto do dia."""
+    Sem a URL, continua o trabalhador deste computador. `modelo`, o preço e
+    `https` existem para a chamada ser igual à da OpenAI: o custo aqui é zero.
+    A linha de `ia_uso` continua, porque é ela que conta o teto do dia."""
     registro = {"modulo": modulo, "finalidade": finalidade, "usuario": usuario,
                 "referencia": referencia, "provedor": PROVEDOR, "modelo": MODELO}
     try:
-        r = _transcrever_no_trabalhador(pasta_de_dados, audio, mime, PRAZO_POR_AUDIO_S)
+        if _url_da_reserva():
+            r = _transcrever_na_reserva(audio, mime, PRAZO_POR_AUDIO_S)
+        else:
+            r = _transcrever_no_trabalhador(pasta_de_dados, audio, mime, PRAZO_POR_AUDIO_S)
     except TranscricaoErro as falha:
         USO.registrar(pasta_de_dados, **registro, resultado=USO.ERRO, erro=str(falha)[:80])
         raise

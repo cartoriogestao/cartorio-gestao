@@ -224,3 +224,22 @@ def test_o_modulo_nao_numera_nem_lavra():
     for alvo in re.findall(r"(?:INSERT INTO|UPDATE|DELETE FROM)\s+(\w+)",
                            codigo):
         assert alvo in ("rascunhos_de_tela", "rascunhos_que_viraram_ato"), f"escreve em «{alvo}»"
+
+
+def test_rascunho_com_numero_reutilizado_nao_abre_ato_de_outra_pessoa():
+    con = _banco()
+    try:
+        primeiro = R.salvar(con, tela="rcpn_assento_novo", titulo="Primeiro",
+                            dados={"nome": "MARIA EXEMPLO"}, agora=AGORA)
+        R.virou_ato(con, primeiro["id"], endereco="/rcpn/assento/101", agora=AGORA)
+        assert R.o_ato_do_rascunho(con, primeiro["id"])["endereco"] == "/rcpn/assento/101"
+        segundo = R.salvar(con, tela="rcpn_assento_novo", titulo="Outro rascunho",
+                           dados={"nome": "JOAO EXEMPLO"}, agora=AGORA)
+        # Reproduz a numeração que voltou e reaproveitou um id já convertido.
+        con.execute("UPDATE rascunhos_de_tela SET id=? WHERE id=?",
+                    (primeiro["id"], segundo["id"]))
+        assert R.o_ato_do_rascunho(con, primeiro["id"]) is None
+        R.virou_ato(con, primeiro["id"], endereco="/rcpn/assento/102", agora=AGORA)
+        assert R.o_ato_do_rascunho(con, primeiro["id"])["endereco"] == "/rcpn/assento/102"
+    finally:
+        con.close()

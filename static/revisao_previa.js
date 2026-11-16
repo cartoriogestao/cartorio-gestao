@@ -208,14 +208,28 @@
     }
     var seguir = ev.target.closest("[data-prosseguir]");
     if (seguir) {
+      // O BOTÃO QUE ENVIA O FORMULÁRIO (16/11/2026, óbito da leitura nº 30). A busca
+      // antiga ficava com o ÚLTIMO botão principal, e na ficha em passos esse é o
+      // «Avançar» (type=button): o clique não levava a lugar nenhum, e o «Conferir»
+      // continuava escondido no passo «Termo». Agora: só botão de envio, o passo dele
+      // se abre, e o «Conferir», que não grava nada, é clicado. «Lavrar» não se clica
+      // daqui (é irreversível): a tela só vai até ele.
       var f = seguir.closest("form");
-      var alvo = null;
+      var alvo = null, reserva = null;
       if (f) {
         f.querySelectorAll("button.primary").forEach(function (b) {
-          if (!b.hasAttribute("formaction")) alvo = b;
+          if (b.hasAttribute("formaction") || b.type === "button") return;
+          if (!b.disabled) alvo = b; else reserva = b;
         });
       }
+      alvo = alvo || reserva;
       if (alvo) {
+        var bloco = alvo.closest("[data-passo]");
+        if (bloco && bloco.hidden) {
+          var ir = document.querySelector("[data-passo-ir='" + bloco.getAttribute("data-passo") + "']");
+          if (ir) ir.click();
+        }
+        if (alvo.value === "conferir" && !alvo.disabled) { alvo.click(); return; }
         alvo.scrollIntoView({ behavior: "smooth", block: "center" });
         alvo.focus();
         alvo.style.outline = "3px solid #1b6e2a";

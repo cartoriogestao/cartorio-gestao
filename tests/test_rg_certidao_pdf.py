@@ -482,21 +482,15 @@ def test_sem_emolumentos_nenhum_quadro_e_desenhado():
     textos = CERT.textos_prontos(
         numero=148, lavrante_nome="MARIO", lavrante_funcao="Oficial",
         denominacao="CAIXA", natureza="Ata", paginas=1, serie="PJ_A")
-    com_quadro, _ = CERT.montar_capa(textos, com_emolumentos=True)
-    sem_quadro, _ = CERT.montar_capa(textos, com_emolumentos=False)
-
-    def _pixels_pretos(im) -> int:
-        # Tudo o mais (cabeçalho/título/corpo/denominação/fecho) é igual
-        # nas duas capas — a única diferença possível de pixel preto é o
-        # quadro de emolumentos (retângulos com outline="black").
-        return sum(
-            1 for x in range(CERT.SIDE, CERT.A4_W - CERT.SIDE, 4)
-            for y in range(0, CERT.A4_H, 4)
-            if im.getpixel((x, y)) == (0, 0, 0))
-
-    assert _pixels_pretos(com_quadro) > _pixels_pretos(sem_quadro), (
-        "sem com_emolumentos, a capa não pode ter mais pixel preto que "
-        "sem o quadro — «retire a tabela» pedia exatamente isso")
+    from PIL import ImageChops
+    valores = {"emolumentos": "10,00", "total": "10,00"}
+    com_quadro, _ = CERT.montar_capa(textos, emolumentos=valores, com_emolumentos=True)
+    sem_quadro, _ = CERT.montar_capa(textos, emolumentos=valores, com_emolumentos=False)
+    sem_valores, _ = CERT.montar_capa(textos, com_emolumentos=False)
+    # O layout compacto usa texto em vez de retângulos. Com valores reais,
+    # o quadro muda o desenho; desligado, nem os valores fornecidos aparecem.
+    assert ImageChops.difference(com_quadro, sem_quadro).getbbox() is not None
+    assert ImageChops.difference(sem_quadro, sem_valores).getbbox() is None
 
 
 def _selo_de_teste(numero="CERTID000000TESTECARIMBO0001"):

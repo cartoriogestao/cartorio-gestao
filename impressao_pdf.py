@@ -80,6 +80,8 @@ import threading
 import zipfile
 from pathlib import Path
 
+from trava_pdfium import TRAVA as TRAVA_DO_PDFIUM, imagem_pil
+
 # ONDE O LIBREOFFICE COSTUMA ESTAR NO WINDOWS, medido nesta maquina em
 # 01/09/2026 (o primeiro caminho e o desta instalacao). A lista e ordenada, e
 # quem manda mesmo e a configuracao `libreoffice_caminho` — porque o dia em que
@@ -346,39 +348,41 @@ def corrigir_rotulos_folha_livro_pdf(pdf: bytes, folha_inicial: int,
     inicio = int(folha_inicial)
     # 1) LEITURA: coordenadas do numero congelado (pdfium nao grava nada).
     caixas: list[tuple[int, float, float, float, float, float, str]] = []
-    doc = pdfium.PdfDocument(pdf)
-    try:
-        for indice in range(len(doc)):
-            pagina = doc[indice]
-            tp = pagina.get_textpage()
-            try:
-                # HOTFIX-FOLHAS-FV: «FICHA» (RI) e «FOLHA» (Notas e demais).
-                caixa = None
-                for _anc in ((ancora,) if ancora != "FICHA"
-                             else ("FICHA", "FOLHA")):
-                    caixa = _caixa_numero_apos_ancora(tp, _anc,
-                                                      devolver_texto=True)
-                    if caixa is not None:
-                        break
-            finally:
-                tp.close()
-            if caixa is None:
-                continue
-            esquerda, baixo, direita, cima, altura, ja_impresso = caixa
-            rotulo = rotulo_folha_da_pagina(inicio, indice + 1)
-            if not rotulo:
-                continue
-            if ja_impresso.lower() == str(rotulo).lower():
-                # A pagina-mestre da cadeia ja imprimiu o rotulo certo.
-                continue
-            caixas.append((
-                indice,
-                float(esquerda), float(baixo), float(direita), float(cima),
-                max(float(altura) * 1.15, 7.0),
-                str(rotulo),
-            ))
-    finally:
-        doc.close()
+    # Um PDFium por vez no processo inteiro (16/11/2026): ver `trava_pdfium`.
+    with TRAVA_DO_PDFIUM:
+        doc = pdfium.PdfDocument(pdf)
+        try:
+            for indice in range(len(doc)):
+                pagina = doc[indice]
+                tp = pagina.get_textpage()
+                try:
+                    # HOTFIX-FOLHAS-FV: «FICHA» (RI) e «FOLHA» (Notas e demais).
+                    caixa = None
+                    for _anc in ((ancora,) if ancora != "FICHA"
+                                 else ("FICHA", "FOLHA")):
+                        caixa = _caixa_numero_apos_ancora(tp, _anc,
+                                                          devolver_texto=True)
+                        if caixa is not None:
+                            break
+                finally:
+                    tp.close()
+                if caixa is None:
+                    continue
+                esquerda, baixo, direita, cima, altura, ja_impresso = caixa
+                rotulo = rotulo_folha_da_pagina(inicio, indice + 1)
+                if not rotulo:
+                    continue
+                if ja_impresso.lower() == str(rotulo).lower():
+                    # A pagina-mestre da cadeia ja imprimiu o rotulo certo.
+                    continue
+                caixas.append((
+                    indice,
+                    float(esquerda), float(baixo), float(direita), float(cima),
+                    max(float(altura) * 1.15, 7.0),
+                    str(rotulo),
+                ))
+        finally:
+            doc.close()
     if not caixas:
         return pdf
 
@@ -479,11 +483,12 @@ def contar_paginas(pdf: bytes) -> int:
         import pypdfium2 as pdfium
     except ImportError as exc:
         raise PdfError("Falta o pacote pypdfium2 para contar as páginas.") from exc
-    doc = pdfium.PdfDocument(pdf)
-    try:
-        return len(doc)
-    finally:
-        doc.close()
+    with TRAVA_DO_PDFIUM:       # um PDFium por vez: ver `trava_pdfium`
+        doc = pdfium.PdfDocument(pdf)
+        try:
+            return len(doc)
+        finally:
+            doc.close()
 
 
 def paginas_do_odt(odt: bytes, *, get_setting=None) -> int:
@@ -667,7 +672,6 @@ def odt_de_pdf_visual(pdf: bytes, *, nome: str = "documento") -> bytes:
     from ri_odt import gerar_odt, ESTILOS_EXTRA
     import io
 
-    doc = pdfium.PdfDocument(pdf)
     imagens: dict[str, tuple[bytes, str]] = {}
     partes: list[str] = []
     w_cm, h_cm = 21.5, 27.9
@@ -683,16 +687,26 @@ def odt_de_pdf_visual(pdf: bytes, *, nome: str = "documento") -> bytes:
         '<style:paragraph-properties fo:break-before="page" '
         'fo:text-align="center" fo:margin-top="0cm" fo:margin-bottom="0cm"/>'
         "</style:style>")
-    for i in range(len(doc)):
-        page = doc[i]
+    # Um PDFium por vez no processo inteiro, e o documento fechado no fim — antes
+    # ficava aberto até o coletor de lixo, que o fechava em qualquer linha
+    # (16/11/2026): ver `trava_pdfium`.
+    desenhos: list[tuple[float, float, object]] = []
+    with TRAVA_DO_PDFIUM:
+        doc = pdfium.PdfDocument(pdf)
         try:
-            pw, ph = page.get_size()
-            if pw > 0 and ph > 0:
-                w_cm = round(pw * 2.54 / 72.0, 2)
-                h_cm = round(ph * 2.54 / 72.0, 2)
-        except Exception:
-            pass
-        pil = page.render(scale=150 / 72).to_pil()
+            for i in range(len(doc)):
+                page = doc[i]
+                try:
+                    pw, ph = page.get_size()
+                except Exception:
+                    pw = ph = 0
+                desenhos.append((pw, ph, imagem_pil(page, scale=150 / 72)))
+        finally:
+            doc.close()
+    for i, (pw, ph, pil) in enumerate(desenhos):
+        if pw > 0 and ph > 0:
+            w_cm = round(pw * 2.54 / 72.0, 2)
+            h_cm = round(ph * 2.54 / 72.0, 2)
         buf = io.BytesIO()
         pil.save(buf, format="PNG")
         img_name = f"folha{i + 1}.png"

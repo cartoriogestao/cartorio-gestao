@@ -48,6 +48,7 @@ from datetime import datetime
 from pathlib import Path
 
 import tetos_de_entrada as TETO
+from trava_pdfium import TRAVA as TRAVA_DO_PDFIUM, imagem_pil
 from bd_nativo import banco
 
 PROVEDOR = "claude"
@@ -202,7 +203,9 @@ def assinatura(lista: list[dict]) -> str:
 #: (OSError)». No ensaio com o mesmo PDF, 4 threads ao mesmo tempo falharam 170
 #: de 180 vezes e devolveram 2 imagens TROCADAS sem erro nenhum. A trava também
 #: cobre dois balcões lendo ao mesmo tempo, que são duas threads do servidor.
-_PDFIUM = threading.RLock()
+#: A trava é a do sistema inteiro (`trava_pdfium`): a miniatura do RI e o teor
+#: do RTD também usam o PDFium, e uma trava só desta casa não os seguraria.
+_PDFIUM = TRAVA_DO_PDFIUM
 
 
 def _jpeg(imagem) -> str:
@@ -266,7 +269,7 @@ def paginas_do_arquivo(caminho: Path, nome: str) -> list[dict]:
                     try:
                         largura, altura = d[i].get_size()
                         escala = LADO_MAIOR_PX / max(largura, altura, 1)
-                        return _jpeg(d[i].render(scale=escala, grayscale=True).to_pil())
+                        return _jpeg(imagem_pil(d[i], scale=escala, grayscale=True))
                     finally:
                         d.close()
             paginas.append({"texto": texto.strip(), "imagem": imagem})

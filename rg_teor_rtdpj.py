@@ -63,6 +63,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from bd_nativo import banco
 from rg_registro import CLAROS_DAS_DECLARACOES
+from trava_pdfium import TRAVA as TRAVA_DO_PDFIUM, imagem_pil
 
 # ------------------------------------------------------------------ nomes
 ATRIBUICAO_RCPJ = "Registro Civil das Pessoas Jurídicas"
@@ -1130,12 +1131,15 @@ def _rodape_reservado(*, with_closing: bool, com_faixa_selo: bool,
     return h
 
 
-def _escala_que_cabe(src: Image.Image, top: int, bottom: int) -> float:
+def _escala_que_cabe(src: Image.Image, top: int, bottom: int, *,
+                     largura: int = A4_W, margem: int | None = None,
+                     folga: float = 0.96, respiro: int = 8) -> float:
     """A escala que faz `src` caber na largura útil e entre `top` e `bottom`
     (com o respiro de 4% de sempre). Só calcula."""
-    max_w, max_h = A4_W - 2 * SIDE, max(80, bottom - top - 8)
+    lado = SIDE if margem is None else int(margem)
+    max_w, max_h = largura - 2 * lado, max(80, bottom - top - respiro)
     iw, ih = src.size
-    return min(max_w / max(iw, 1), max_h / max(ih, 1)) * 0.96
+    return min(max_w / max(iw, 1), max_h / max(ih, 1)) * folga
 
 
 def _topo_do_cabecalho(textos: dict[str, Any]) -> int:
@@ -1147,20 +1151,23 @@ def _topo_do_cabecalho(textos: dict[str, Any]) -> int:
 
 
 def _colar_imagem(im: Image.Image, src: Image.Image, top: int,
-                  bottom: int, *, escala: float | None = None) -> None:
+                  bottom: int, margem: int | None = None,
+                  folga: float = 0.96, respiro: int = 8, *,
+                  escala: float | None = None) -> None:
     """Cola `src` centralizada entre `top` e `bottom`.
 
     Com `escala`, a imagem sai NESSA escala (a das outras folhas), e nunca
     maior do que cabe; sem ela, a que cabe — o comportamento de sempre.
     """
-    max_h = max(80, bottom - top - 8)
+    max_h = max(80, bottom - top - respiro)
     iw, ih = src.size
-    scale = _escala_que_cabe(src, top, bottom)
+    scale = _escala_que_cabe(src, top, bottom, largura=im.width,
+                           margem=margem, folga=folga, respiro=respiro)
     if escala is not None:
         scale = min(scale, escala)
     nw, nh = max(1, int(iw * scale)), max(1, int(ih * scale))
     resized = src.resize((nw, nh), Image.Resampling.LANCZOS)
-    im.paste(resized, ((A4_W - nw) // 2, top + max(0, (max_h - nh) // 2)))
+    im.paste(resized, ((im.width - nw) // 2, top + max(0, (max_h - nh) // 2)))
 
 
 def montar_pagina(src: Image.Image | None, *, textos: dict[str, Any],
@@ -1222,7 +1229,8 @@ def _jpeg_bytes(im: Image.Image, quality: int = 78) -> bytes:
     return buf.getvalue()
 
 
-def _images_to_pdf_bytes(images: Sequence[Image.Image]) -> bytes:
+def _images_to_pdf_bytes(images: Sequence[Image.Image],
+                         quality: int = 78) -> bytes:
     page_w, page_h = 595.27, 841.89
     n = len(images)
     if n < 1:
@@ -1242,7 +1250,7 @@ def _images_to_pdf_bytes(images: Sequence[Image.Image]) -> bytes:
     write_obj(2, f"<< /Type /Pages /Kids [{kids}] /Count {n} >>".encode(
         "latin-1"))
     for i, im in enumerate(images):
-        jpg = _jpeg_bytes(im)
+        jpg = _jpeg_bytes(im, quality=quality)
         page_num, cont_num, img_num = 3 + 3 * i, 4 + 3 * i, 5 + 3 * i
         write_obj(
             page_num,
@@ -1278,7 +1286,7 @@ def _images_to_pdf_bytes(images: Sequence[Image.Image]) -> bytes:
 # ------------------------------------------------------ carregar imagens
 
 
-def _paginas_de_pdf(caminho: Path) -> list[Image.Image]:
+def _paginas_de_pdf(caminho: Path, escala: float = 150 / 72) -> list[Image.Image]:
     try:
         import pypdfium2 as pdfium
     except ImportError as exc:
@@ -1286,19 +1294,20 @@ def _paginas_de_pdf(caminho: Path) -> list[Image.Image]:
             "Para usar PDF como folha do teor, o pacote pypdfium2 precisa "
             "estar instalado (ele já vem no requirements da casa)."
         ) from exc
-    doc = pdfium.PdfDocument(str(caminho))
     out: list[Image.Image] = []
-    try:
-        for i in range(len(doc)):
-            page = doc[i]
-            bitmap = page.render(scale=150 / 72)
-            out.append(bitmap.to_pil().convert("RGB"))
-    finally:
-        doc.close()
+    # Um PDFium por vez no processo inteiro (16/11/2026): ver `trava_pdfium`.
+    with TRAVA_DO_PDFIUM:
+        doc = pdfium.PdfDocument(str(caminho))
+        try:
+            for i in range(len(doc)):
+                out.append(imagem_pil(doc[i], scale=escala).convert("RGB"))
+        finally:
+            doc.close()
     return out
 
 
-def carregar_folhas(caminhos: Sequence[str | Path]) -> list[Image.Image]:
+def carregar_folhas(caminhos: Sequence[str | Path],
+                    escala: float = 150 / 72) -> list[Image.Image]:
     folhas: list[Image.Image] = []
     for raw in caminhos:
         path = Path(raw)
@@ -1308,7 +1317,7 @@ def carregar_folhas(caminhos: Sequence[str | Path]) -> list[Image.Image]:
         if ext in EXTENSOES_IMAGEM:
             folhas.append(Image.open(path).convert("RGB"))
         elif ext in EXTENSOES_PDF:
-            folhas.extend(_paginas_de_pdf(path))
+            folhas.extend(_paginas_de_pdf(path, escala=escala))
         else:
             raise TeorRtdpjError(
                 f"Formato não suportado no teor: {path.name}. "

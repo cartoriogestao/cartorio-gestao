@@ -8,6 +8,22 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.19 — Atualização com os consertos da produção preservados
+
+Reúne as mudanças preparadas para a 3.7.18 e os consertos encontrados na
+produção antes da aplicação. A 3.7.18 foi retida; o pacote continua cumulativo
+desde a 3.7.10.
+
+- Uma trava compartilhada protege o PDFium na impressão, nas miniaturas, nas revisões e nos teores. A imagem é copiada antes de fechar o bitmap, para não depender de memória já liberada.
+- Rascunho com número reaproveitado não redireciona para o ato de outro atendimento. Ao converter o novo rascunho em ato, a marca antiga é substituída.
+- Assento do acervo sem selo do registro segue a regra de segunda via da certidão.
+- A revisão do Registro Civil reconhece o formulário que leu. O botão de prosseguir leva ao passo correto e aciona «Conferir», sem clicar em «Lavrar».
+- A transcrição dos áudios pode usar o serviço da reserva já configurado na instalação, mantendo um áudio por rodada e o registro de uso.
+- A certidão reprográfica conserva a resolução de 300 dpi nas folhas internas. **A primeira imagem só divide a capa se couber sem encolher**, conforme a regra escolhida pelo oficial; senão, vai para uma folha própria. O teor conserva a folha de encerramento separada quando necessária.
+
+As orientações de configuração do WhatsApp e da automação de caixa, descritas
+na 3.7.18 abaixo, também se aplicam a esta versão.
+
 ## 3.7.18 — WhatsApp com ferramentas, fechamento dos caixas e documentos legíveis
 
 Inclui todas as mudanças posteriores à 3.7.17. O pacote é cumulativo desde a

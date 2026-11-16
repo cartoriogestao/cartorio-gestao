@@ -71,12 +71,10 @@ def test_gerar_pdf_capa_e_paginas():
         cns="000000",
     )
     assert pdf.startswith(b"%PDF")
-    # **A 1ª FOLHA CABE NA CAPA** — pedido do oficial (11/09/2026): «fazer
-    # caber a primeira página dos atos já na primeira folha da certidão».
-    # Com capa curta (denominação/natureza pequenas) sobra espaço de sobra
-    # abaixo do quadro de emolumentos, e a 1ª folha entra ali — a certidão
-    # sai com 2 páginas (capa+1ª folha fundidas, + a 2ª folha), e não 3.
-    assert pdf.count(b"/Type /Page /Parent") == 2
+    # **A 1ª FOLHA SÓ ENTRA NA CAPA SE NÃO ENCOLHER** (16/11/2026). Uma
+    # página em retrato não cabe no que sobra da capa na escala das folhas
+    # internas: sai em folha própria, do mesmo tamanho das outras — capa + 2.
+    assert pdf.count(b"/Type /Page /Parent") == 3
 
     # OCR leve: renderizar capa e procurar CNS / CERTIFICO / atribuição
     import pypdfium2 as pdfium
@@ -86,8 +84,8 @@ def test_gerar_pdf_capa_e_paginas():
         pil = doc[0].render(scale=72 / 72).to_pil()
         # Não temos OCR fácil; confere tamanho A4-ish e que gerou
         assert pil.size[0] > 500 and pil.size[1] > 700
-        # Capa com a 1ª folha fundida + a 2ª folha interna == 2 páginas.
-        assert len(doc) == 2
+        # Capa + as duas folhas internas.
+        assert len(doc) == 3
     finally:
         doc.close()
 
@@ -400,12 +398,14 @@ def test_primeira_folha_entra_na_capa_quando_ha_espaco():
 
     página dos atos já na primeira folha da certidão». Com capa curta,
     sobra espaço abaixo do quadro de emolumentos — a 1ª folha do documento
-    entra ali, em vez de abrir uma página só para ela.
+    entra ali, em vez de abrir uma página só para ela. Desde 16/11/2026, só
+    a que cabe ali SEM ENCOLHER (página deitada, curta): ver o teste abaixo.
     """
     textos = CERT.textos_prontos(
         numero=148, lavrante_nome="MARIO", lavrante_funcao="Oficial",
         denominacao="CAIXA", natureza="Ata", paginas=1, serie="PJ_A")
-    primeira = _folha((50, 50, 50))  # cinza escuro — fácil de detectar
+    # cinza escuro — fácil de detectar; deitada, cabe na escala das internas
+    primeira = _folha((50, 50, 50), size=(1100, 500))
     capa, colou = CERT.montar_capa(textos, primeira_folha=primeira)
     assert colou is True, "com capa curta, tinha de caber a 1ª folha"
 
@@ -417,6 +417,44 @@ def test_primeira_folha_entra_na_capa_quando_ha_espaco():
             achou_escuro = True
             break
     assert achou_escuro, "a imagem da 1ª folha não apareceu de verdade na capa"
+
+
+def test_primeira_folha_em_retrato_nao_encolhe_na_capa():
+    """16/11/2026: colada no que sobrava da capa, a 1ª página A4 saía com
+    ~13 cm de largura (18,6 cm nas outras) — ilegível. A regra é a da
+    reprográfica do RI (of-0151): o documento não encolhe por causa do texto;
+    a página vai para a folha interna, na mesma escala de todas."""
+    textos = CERT.textos_prontos(
+        numero=148, lavrante_nome="MARIO", lavrante_funcao="Oficial",
+        denominacao="CAIXA", natureza="Ata", paginas=1, serie="PJ_A")
+    a4 = _folha((50, 50, 50), size=(1240, 1754))
+    capa, colou = CERT.montar_capa(textos, primeira_folha=a4)
+    assert colou is False
+    # o cinza da folha não aparece em ponto nenhum da capa
+    assert not any(capa.getpixel((x, y)) == (50, 50, 50)
+                   for x in range(0, CERT.A4_W, 40)
+                   for y in range(0, CERT.A4_H, 20))
+
+    # E a folha interna dá a ela a mesma largura das outras páginas.
+    larguras = []
+    orig = CERT.TEOR._colar_imagem
+
+    def espiar(im, src, top, bottom, **kw):
+        escala = CERT.TEOR._escala_que_cabe(src, top, bottom)
+        if kw.get("escala") is not None:
+            escala = min(escala, kw["escala"])
+        larguras.append(int(src.size[0] * escala))
+        return orig(im, src, top, bottom, **kw)
+
+    CERT.TEOR._colar_imagem = espiar
+    try:
+        CERT.gerar_pdf(numero=148, imagens=[a4, _folha(size=(1240, 1754)),
+                                            _folha(size=(1240, 1754))],
+                       lavrante_nome="MARIO", lavrante_funcao="Oficial",
+                       denominacao="CAIXA", natureza="Ata", serie="PJ_A")
+    finally:
+        CERT.TEOR._colar_imagem = orig
+    assert len(larguras) == 3 and len(set(larguras)) == 1, larguras
 
 
 def test_primeira_folha_nao_colada_sem_espaco_suficiente():

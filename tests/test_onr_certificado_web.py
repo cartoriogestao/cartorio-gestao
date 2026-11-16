@@ -100,3 +100,23 @@ def test_certificado_publico_invalido_nao_substitui_o_cadastro(casa, monkeypatch
     casa.client.post(URL, data={"certificado_pem": "INVALIDO"})
     assert not casa.gravados
     assert not casa.auditoria
+
+
+@pytest.mark.parametrize("tem_certificado", [False, True])
+def test_formulario_real_preserva_csrf_com_ou_sem_certificado_do_windows(casa, monkeypatch, tem_certificado):
+    from flask import render_template
+    from jinja2 import ChoiceLoader, DictLoader, FileSystemLoader
+    if not tem_certificado:
+        casa.certificados.clear()
+    app = casa.client.application
+    templates = Path(WEB.__file__).parent / "templates"
+    app.jinja_loader = ChoiceLoader([DictLoader({"base.html": "{% block content %}{% endblock %}"}),
+                                    FileSystemLoader(str(templates))])
+    app.jinja_env.globals["url_for"] = lambda *args, **kwargs: "/destino-de-teste"
+    app.context_processor(lambda: {"csrf_token": "TOKEN-CSRF-DE-TESTE"})
+    monkeypatch.setattr(WEB, "render_template", render_template)
+    response = casa.client.get(URL)
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'name="csrf_token" value="TOKEN-CSRF-DE-TESTE"' in html
+    assert 'name="certificado_pem"' in html

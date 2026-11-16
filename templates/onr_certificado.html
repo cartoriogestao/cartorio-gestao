@@ -8,8 +8,8 @@
   <p>Série cadastrada: <strong>{{ credencial.certificado or 'nenhuma' }}</strong>.</p>
   {% if erro %}<p class="warning">{{ erro }}</p>{% endif %}
   <form method="post">
-  {% if certificados %}
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% if certificados %}
     <label>Certificado disponível nesta conta do Windows
       <select name="certificado">
         <option value="">Selecione</option>

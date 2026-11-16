@@ -485,11 +485,13 @@ def estado(db: Any, conversa: dict, *, agora: str, rotina: dict, arquivos: int,
     nome = nome_de_tratamento(conversa.get("nome"))
     linhas.append("Nome: há — escreva {nome} para tratar a pessoa pelo primeiro nome."
                   if nome else "Nome: não há — não use {nome}.")
-    pedidos, conferidos = [], []
+    pedidos, conferidos, donos, ligados = [], [], {}, {}
     if not ensaio:
         with db.connect() as con:
             pedidos = PEDIDO.da_conversa(con, int(conversa["id"]))[:6]
             donos = {p["setor"]: FERR.responsavel_do_setor(con, p["setor"]) for p in pedidos}
+            ligados = {p["id"]: retrato_do_protocolo(con, p["protocolo_numero"], hoje=agora)
+                       for p in pedidos if p.get("protocolo_numero")}
             for numero in protocolos_conferidos(con, conversa, agora=agora):
                 if identificacao and identificacao.get("numero") == numero:
                     continue
@@ -498,11 +500,26 @@ def estado(db: Any, conversa: dict, *, agora: str, rotina: dict, arquivos: int,
                   + ("" if pedidos else " nenhum."))
     for p in pedidos:
         dono = (donos.get(p["setor"]) or {}).get("nome") or "o escrevente do balcão"
-        situacao = ("já atendido pelo escrevente" if p.get("situacao") == PEDIDO.FEITO
-                    else "aguardando o escrevente")
+        if p.get("situacao") == PEDIDO.FEITO:
+            situacao = "já atendido pelo escrevente"
+        else:
+            # 15/11/2026: o tempo de espera, contado no expediente, para a IA não
+            # dizer «já já» a quem espera há dois dias (`wa_cobranca`)
+            import wa_cobranca as COBRANCA
+            minutos = COBRANCA.espera(p, regra, agora)
+            situacao = ("aguardando o escrevente há "
+                        + COBRANCA.espera_em_palavras(minutos)
+                        + (" — já cobrado da equipe" if p.get("cobrado_em") else ""))
+        desde = PEDIDO.aberto_desde(p)
         linhas.append(f"- nº {p['id']}, {p['servico_nome']} ({p['setor_nome']}), aberto em "
-                      f"{_data(p.get('quando'))} às {_hora(p.get('quando'))}, responsável: "
+                      f"{_data(desde)} às {_hora(desde)}, responsável: "
                       f"{dono}, {situacao} — «{FERR._sem_dado(p.get('resumo') or '')}»")
+        if p.get("protocolo_numero"):
+            linhas.append(_linha_do_protocolo(
+                f"do Caixa ligado pelo escrevente a este pedido", ligados.get(p["id"]))
+                if ligados.get(p["id"]) else
+                f"  O escrevente ligou este pedido a um protocolo do Caixa, cuja situação "
+                f"não se informa por aqui (protesto, orçamento, ou leitura indisponível).")
     if identificacao:
         achado = identificacao.get("achado")
         if identificacao.get("ensaio"):

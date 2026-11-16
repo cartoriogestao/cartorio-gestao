@@ -152,6 +152,10 @@ CHAVE_VALORES = "ia_valores"                   # "codigo_tj | nome", um por linh
 CHAVE_IA_MANUAL = "ia_manual"
 CHAVE_IA_MANUAL_POR = "ia_manual_aprovado_por"
 CHAVE_IA_MANUAL_EM = "ia_manual_aprovado_em"
+# QUEM RESPONDE PELO BALCÃO GERAL (15/11/2026): o `users.id` que recebe a tarefa do
+# pedido do setor ATENDIMENTO, e a de setor sem responsável em `ge_responsaveis`.
+# Vazio = a tarefa nasce sem dono, como antes, e a tela avisa.
+CHAVE_DONO_DO_BALCAO = "dono_do_balcao"
 CHAVE_PRAZO_MINUTOS = "prazo_resposta_minutos"
 
 # OS MODELOS DA META (27/10/2026, `wa_modelos`). Nada disto e segredo. O
@@ -201,7 +205,7 @@ CHAVES_CONFIG = (
     CHAVE_IA_MODELO, CHAVE_IA_PRECO_ENTRADA, CHAVE_IA_PRECO_SAIDA,
     CHAVE_AUDIO_MODELO, CHAVE_AUDIO_PRECO_MINUTO, CHAVE_TEXTO_BASE,
     CHAVE_TEXTO_BASE_POR, CHAVE_TEXTO_BASE_EM, CHAVE_VALORES,
-    CHAVE_IA_MANUAL, CHAVE_IA_MANUAL_POR, CHAVE_IA_MANUAL_EM,
+    CHAVE_IA_MANUAL, CHAVE_IA_MANUAL_POR, CHAVE_IA_MANUAL_EM, CHAVE_DONO_DO_BALCAO,
     CHAVE_PRAZO_MINUTOS,
     CHAVE_MODELOS_APROVADOS, CHAVE_NOME_NO_MODELO, CHAVE_MODELO_EXIGENCIA,
     CHAVE_MODELO_PRONTO, CHAVE_MODELO_PRAZO, CHAVE_MODELO_PESQUISA,
@@ -357,6 +361,13 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("wa_ia_registro", "tokens_cache_lida", "bigint NOT NULL DEFAULT 0"),
     # QUANTAS IDAS AO PROVEDOR CUSTOU A RESPOSTA: uma consulta de valor são duas.
     ("wa_ia_registro", "chamadas", "bigint NOT NULL DEFAULT 0"),
+    # O PEDIDO DO ESCREVENTE NÃO FICA PARADO (15/11/2026). `quando` muda a cada vez
+    # que a IA completa o pedido; `aberto_em` é a hora em que ele nasceu, e é dela que
+    # se conta a espera. `cobrado_em` diz que a rotina já cobrou a tarefa — uma vez só.
+    # `protocolo_id` é o protocolo do Caixa que o escrevente ligou ao pedido.
+    ("wa_pedido", "aberto_em", "TEXT"),
+    ("wa_pedido", "cobrado_em", "TEXT"),
+    ("wa_pedido", "protocolo_id", "bigint"),
     # A RESOLVIDA FICA GUARDADA E VOLTA COM O HISTÓRICO OCULTO (27/10/2026).
     # Nada se apaga: `resolvida_em` diz quando ela saiu das abas de trabalho
     # (e conta os 7 dias do responsável na volta), e `atendimento_desde_id` é

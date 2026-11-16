@@ -33,7 +33,9 @@ Este trecho vale mais que o resto do arquivo quando os dois discordarem: as fati
 
 **O aviso do Windows exige endereço seguro.** O navegador só libera a notificação do sistema em `https` ou no próprio servidor (`127.0.0.1`); nos balcões em `http://<ip>:8765` ficam o som, o título e o cartão, até o Chrome receber a política `OverrideSecurityRestrictionsOnInsecureOrigin` com o endereço do servidor (ou o sistema ganhar `https` na rede).
 
-**A FAZER:** feriado no horário; vincular a conversa a protocolo e cliente; a pesquisa de satisfação ao resolver (o modelo da Meta já existe, falta a aprovação); quem responde pelo balcão geral (`ATENDIMENTO` não tem linha em `ge_responsaveis`, e a tarefa nasce sem dono); anexar à tarefa ou ao protocolo o arquivo que chegou pela conversa; cobrar a tarefa do WhatsApp que passou do prazo de resposta.
+**O pedido não fica parado (15/11/2026).** A tela do atendente diz quem responde pelo balcão geral: essa pessoa recebe a tarefa do pedido sem setor e a do setor sem responsável. O pedido aberto que passa do prazo de resposta, contado no horário de atendimento, sem ninguém mexer (tarefa ainda ABERTA e nenhuma pessoa escreveu ao cliente), é cobrado uma vez pelo vigia (`wa_cobranca`): nota e prioridade ALTA na tarefa, e destaque na lista. A IA lê há quanto tempo cada pedido espera. Na conversa, o escrevente liga o pedido ao protocolo do Caixa que abriu (a IA passa a ver a situação pública dele, sem pedir o código ao cliente) e leva os arquivos do cliente, em cópia, à tarefa ou ao protocolo (`wa_anexos`; no protocolo, só PDF, JPG ou PNG conferidos pelo começo do arquivo).
+
+**A FAZER:** feriado no horário (a cobrança também conta o feriado como dia útil); a pesquisa de satisfação ao resolver (o modelo da Meta já existe, falta a aprovação); avisos proativos de pronto e exigência pelo WhatsApp (dependem da aprovação dos modelos na Meta).
 
 ---
 

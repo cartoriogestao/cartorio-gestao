@@ -158,8 +158,9 @@ def primeiro_nome(nome: Any) -> str:
 def responsavel_do_setor(con: Any, setor: str) -> dict:
     """{user_id, nome} de quem responde pelo setor, ou vazio. SÓ LÊ.
 
-    O balcão geral (ATENDIMENTO) não tem linha em `ge_responsaveis`: a tarefa
-    nasce sem dono, e o texto ao cliente diz «o escrevente do balcão»."""
+    O balcão geral (ATENDIMENTO) não tem linha em `ge_responsaveis`: vale quem a
+    tela do atendente diz que responde pelo balcão (15/11/2026), e o mesmo para o
+    setor que ficou sem responsável. Sem ninguém, a tarefa nasce sem dono."""
     try:
         linha = banco(con).um(
             """SELECT r.user_id, u.full_name FROM ge_responsaveis r
@@ -168,9 +169,24 @@ def responsavel_do_setor(con: Any, setor: str) -> dict:
     except Exception:                               # noqa: BLE001
         LOG.exception("o responsável do setor não foi lido")
         return {}
-    if not linha or not linha.get("user_id"):
+    if linha and linha.get("user_id"):
+        return {"user_id": int(linha["user_id"]),
+                "nome": primeiro_nome(linha.get("full_name"))}
+    return dono_do_balcao(con)
+
+
+def dono_do_balcao(con: Any) -> dict:
+    """{user_id, nome} de quem responde pelo balcão geral, gravado na tela do
+    atendente; vazio se ninguém foi escolhido ou se a pessoa não está ativa. SÓ LÊ."""
+    import wa_balcao as BALCAO
+    valor = BALCAO.ler_config(con, WA.CHAVE_DONO_DO_BALCAO)
+    if not valor.isdigit():
         return {}
-    return {"user_id": int(linha["user_id"]), "nome": primeiro_nome(linha.get("full_name"))}
+    linha = banco(con).um("SELECT id, full_name FROM users WHERE id=%s AND active=1",
+                          (int(valor),))
+    if not linha:
+        return {}
+    return {"user_id": int(linha["id"]), "nome": primeiro_nome(linha.get("full_name"))}
 
 
 def quando_responde(rotina: dict, agora: str) -> str:

@@ -123,8 +123,9 @@
       <td>{{ (p.quando or '')[:16]|replace('T', ' ') }}</td>
       <td>{{ p.setor_nome }}</td>
       <td>{{ p.servico_nome }}</td>
-      <td>{{ p.resumo }}
-        <div class="muted"><a href="{{ url_for('whatsapp_conversa', conversa_id=p.conversa_id) }}">{{ p.nome or p.wa_id }}</a></div>
+      <td>{% if p.cobrado_em %}<strong>PARADO</strong> — passou do prazo sem ninguém atender. {% endif %}{{ p.resumo }}
+        <div class="muted"><a href="{{ url_for('whatsapp_conversa', conversa_id=p.conversa_id) }}">{{ p.nome or p.wa_id }}</a>
+          {% if p.protocolo_numero %} · protocolo {{ p.protocolo_numero }}{% endif %}</div>
       </td>
       <td>
         <form method="post" action="{{ url_for('whatsapp_pedido_feito', pedido_id=p.id) }}">
@@ -188,6 +189,13 @@
     <p><label class="check"><input type="checkbox" name="aviso_passagem" value="1" {% if ia.aviso_passagem %}checked{% endif %}>
       Avisar o cliente quando a conversa passa para uma pessoa</label>
       <br><span class="small muted">Desligado, quem passou para pessoa não recebe nada automático.</span></p>
+    <p><label>Quem responde pelo balcão geral
+      <select name="dono_do_balcao">
+        <option value="">(ninguém — a tarefa nasce sem dono)</option>
+        {% for u in pessoas %}<option value="{{ u.id }}" {% if (u.id|string) == dono_do_balcao %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}
+      </select></label>
+      <br><span class="small muted">Recebe a tarefa do pedido do WhatsApp sem setor e a do setor sem responsável na Gestão.
+      O pedido que passa do prazo de resposta abaixo, contado no horário de atendimento, sem ninguém atender, é cobrado uma vez: nota e prioridade alta na tarefa.</span></p>
     <p><label>Prazo de resposta (minutos) — o painel marca «fora do prazo» depois disso
       <input type="text" name="prazo_minutos" value="{{ ia.prazo_minutos }}" size="5"></label></p>
   </div>

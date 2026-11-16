@@ -495,6 +495,15 @@ def gravar_configuracao(con: Any, form: dict, *, por: str, agora: str) -> list[s
         if ligar and escrevente and not MANUAL.config(con)["aprovado"]:
             avisos.append("O manual do atendimento ainda não foi aprovado: a IA responde "
                           "só com o texto-base e encaminha o resto ao escrevente.")
+    if "dono_do_balcao" in form:
+        dono = str(form.get("dono_do_balcao") or "").strip()
+        if dono and not (dono.isdigit() and banco(con).um(
+                "SELECT 1 AS ha FROM users WHERE id=%s AND active=1", (int(dono),))):
+            raise AtendenteErro("Escolha, para o balcão geral, uma pessoa ativa da lista.")
+        BALCAO.gravar_config(con, WA.CHAVE_DONO_DO_BALCAO, dono)
+        if ligar and escrevente and not dono:
+            avisos.append("Ninguém responde pelo balcão geral: o pedido do WhatsApp sem "
+                          "setor nasce sem dono, e a tarefa pode ficar sem ninguém ver.")
     if escrevente and not ligar:
         avisos.append("O atendimento do escrevente só roda com o atendente ligado.")
     elif ligar and escrevente and not base:
@@ -1344,11 +1353,9 @@ def _tarefa_do_pedido(db: Any, pedido_id: int, *, setor: str, servico: str,
         texto += f"\n\nConversa: WhatsApp → conversa nº {int(conversa_id)} (/whatsapp/{int(conversa_id)})."
     dono = None
     try:
+        import wa_ferramentas as FERR
         with db.connect() as con:
-            linha = banco(con).um(
-                "SELECT user_id FROM ge_responsaveis WHERE setor=%s", (setor,))
-        if linha and linha.get("user_id"):
-            dono = int(linha["user_id"])
+            dono = FERR.responsavel_do_setor(con, setor).get("user_id")
     except Exception:                               # noqa: BLE001
         dono = None
     try:

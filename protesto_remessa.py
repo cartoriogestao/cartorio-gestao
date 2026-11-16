@@ -781,8 +781,14 @@ def _confirmar(con: sqlite3.Connection, *, remessa_id: int, visto: dict,
     soma_centavos = sum(_inteiro(t[inicio[17]:inicio[17] + larg[17]], 0)
                         for t in titulos)
     if len(titulos) < k:
-        saida = _contagens_do_que_entrou(saida, recusados=k - len(titulos),
-                                         soma_centavos=soma_centavos)
+        # O CABEÇALHO CONTA TÍTULOS, E O ARQUIVO TEM UMA LINHA POR DEVEDOR
+        # (15/11/2026): as duas contas vão separadas — quantas LINHAS saíram e
+        # quantos TÍTULOS saíram com elas.
+        abriam = sum(1 for x in str(visto["conteudo"]).replace("\r", "").split("\n")
+                     if x[:1] == "1" and _abre_titulo(x))
+        saida = _contagens_do_que_entrou(
+            saida, recusados=k - len(titulos), soma_centavos=soma_centavos,
+            titulos_recusados=abriam - sum(1 for t in titulos if _abre_titulo(t)))
     texto = "\r\n".join(saida) + "\r\n"
     nome = PRE.nome_do_arquivo(TIPO_DA_CONFIRMACAO, visto["apresentante_codigo"],
                                visto["dia"] or str(agora)[:10], con=con)
@@ -813,9 +819,45 @@ def _inteiro(valor: Any, padrao: int = 1) -> int:
         return padrao
 
 
+def _abre_titulo(linha: str) -> bool:
+    """A linha de transação que ABRE título, e não a do devedor seguinte. SÓ LÊ.
+
+    A mesma régua de `protesto_cra_xml._quantidade_de_titulos`, na linha de 600
+    posições: o número de controle do devedor (t22, a posição 297) «1» abre
+    título; outro valor é o devedor seguinte do título da linha anterior. Em
+    branco é o arquivo antigo, que não trazia o controle: cada linha é um título.
+    """
+    larguras = PCRAXML.LARGURAS["tr"]
+    a = sum(larguras[:21])
+    return (linha[a:a + larguras[21]].strip() or "1") == "1"
+
+
 def _contagens_do_que_entrou(saida: list[str], *, recusados: int,
-                             soma_centavos: int) -> list[str]:
+                             soma_centavos: int,
+                             titulos_recusados: int | None = None) -> list[str]:
     """Cabeçalho e rodapé da confirmação PARCIAL, com o que entrou. SÓ CALCULA.
+
+    LINHA NÃO É TÍTULO — 15/11/2026, o que ficou pendente do hotfix de 10/11. O
+    título com dois devedores ocupa duas linhas e é UM no cabeçalho: foi o que
+    `protesto_cra_xml.ler` passou a conferir no #396. Aqui a conta continuava em
+    linhas, e a confirmação parcial de um lote com codevedor saía com h10 e
+    h11 + h12 que o próprio leitor recusa (e a CRA devolve 2122 quando o total
+    do cabeçalho não confere). Agora são duas contas:
+      - `recusados` são as LINHAS que saíram, e `titulos_recusados` os TÍTULOS
+        que saíram com elas (`_abre_titulo`). Sem o segundo, vale o primeiro: é
+        o lote em que cada linha é um título, como sempre foi;
+      - h10, h11 e h12 andam em títulos; o t06 soma o saldo de todas as linhas,
+        como o leitor soma;
+      - o h09 desce na unidade em que veio: em linhas, se a remessa o trouxe
+        igual ao total de linhas e diferente do de títulos; senão em títulos,
+        que é o que ele vale nos exemplos;
+      - o t05 que conta registros (o lote TXT) continua contando LINHAS.
+    Recusar só o devedor seguinte não tira título nenhum do cabeçalho.
+
+    A CONFERIR NA PRIMEIRA VEZ: a linha do primeiro devedor recusada com a do
+    seguinte entrando. A linha que sobra não abre título pela régua do leitor,
+    e é assim que esta conta a trata; o que a CRA faz com ela não está medido,
+    e a conferência da remessa já avisa esse caso antes de receber.
 
     MEDIDO EM 30/10/2026: o título recusado saía do arquivo, o cabeçalho ficava
     o da remessa, e a CRA recusou com 2122 («SOMA DE REGISTROS DE TRANSAÇÃO
@@ -854,17 +896,22 @@ def _contagens_do_que_entrou(saida: list[str], *, recusados: int,
 
     entraram = len(saida) - 2
     total = entraram + recusados
+    if titulos_recusados is None:
+        titulos_recusados = recusados
+    titulos = sum(1 for linha in saida[1:-1] if _abre_titulo(linha))
+    titulos_do_lote = titulos + titulos_recusados
     h09, h10, h11, h12 = (ler(saida[0], "hd", k) for k in (9, 10, 11, 12))
     t05 = ler(saida[-1], "tl", 5)
 
     novos = {9: h09, 10: h10, 11: h11, 12: h12}
     if h09 is not None:
-        novos[9] = max(h09 - recusados, 0)
+        em_linhas = h09 == total and h09 != titulos_do_lote
+        novos[9] = max(h09 - (recusados if em_linhas else titulos_recusados), 0)
     if h10 is not None:
-        novos[10] = entraram
-    if h11 is not None and h12 is not None and h11 + h12 == total:
-        novos[11] = min(h11, entraram)
-        novos[12] = entraram - novos[11]
+        novos[10] = titulos
+    if h11 is not None and h12 is not None and h11 + h12 == titulos_do_lote:
+        novos[11] = min(h11, titulos)
+        novos[12] = titulos - novos[11]
     cabecalho = saida[0]
     for k, valor in novos.items():
         if valor is not None:

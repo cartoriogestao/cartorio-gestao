@@ -440,3 +440,19 @@ def test_a_revisao_leva_a_norma_pertinente_depois_da_mascara(con, cg_casa, com_c
     _rid, ia = _revisar(con, cg_casa["banco"], mid, "R-1: venda de 20 ha", '{"achados": []}')
     assert "=== A NORMA PERTINENTE" in ia.enviados[0]
     assert "[Lei 6.015/1973 (LRP), art." in ia.enviados[0]
+
+
+def test_texto_revisado_do_registro_civil_sai_do_formulario():
+    """16/11/2026, óbito do rascunho 53: o dossiê do RCPN não tem a marca do
+    ATO A LAVRAR, o texto revisado vinha vazio e a semelhança dava zero — o
+    balcão não lavrava se a conferência mudasse uma linha."""
+    import revisao_previa as RV
+    form = "pessoa_nome=FULANO\nnumero_do=123"
+    dossie = "\n".join(["REGISTRO CIVIL A LAVRAR", "", "FORMULÁRIO:", form, "",
+                        "INSTRUÇÃO DA ESCREVENTE:", "o pai é o do RG", "",
+                        "PRIMEIRA LEITURA nº 30 (já transcrita; sem imagem nova):", "{}"])
+    assert RV._texto_revisado(dossie) == ("RCPN", form)
+    sem_leitura = "\n".join(["REGISTRO CIVIL A LAVRAR", "", "FORMULÁRIO:", form,
+                             "\nNão há primeira leitura gravada neste rascunho."])
+    assert RV._texto_revisado(sem_leitura) == ("RCPN", form)
+    assert RV._texto_revisado("dossiê cortado no começo") == (None, "")

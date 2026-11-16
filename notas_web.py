@@ -50,6 +50,7 @@ import notas_naturezas as NNAT
 import arquivo_visivel as ARQVIS
 import pastas_da_casa as PDC
 import tetos_de_entrada as TETOS
+from trava_pdfium import TRAVA as TRAVA_DO_PDFIUM, imagem_pil
 import ri_imagens as RIMG
 import notas_partes as NP
 import cadastro_biometria as CB
@@ -1249,18 +1250,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return None
         import io as _io
         try:
-            pdf = pypdfium2.PdfDocument(_io.BytesIO(dados))
-            if len(pdf) == 0:
-                return None
-            # 200 DPI: acima disso o arquivo cresce sem o traço melhorar, e
-            # ficha de firma é meia folha, não uma planta.
-            #
-            # E A ESCALA CABE NO TETO DE PIXELS (LS02 M3; LX12, 19/10/2026): um
-            # PDF com MediaBox gigante, a 200 DPI, virava bitmap de gigabytes
-            # no único processo do servidor. Página de ficha não muda.
-            largura_pt, altura_pt = pdf[0].get_size()
-            imagem = pdf[0].render(scale=TETOS.escala_que_cabe(
-                largura_pt, altura_pt, 200 / 72)).to_pil()
+            # Um PDFium por vez no processo inteiro, e o documento fechado ainda
+            # dentro da trava (16/11/2026): ver `trava_pdfium`.
+            with TRAVA_DO_PDFIUM:
+                pdf = pypdfium2.PdfDocument(_io.BytesIO(dados))
+                try:
+                    if len(pdf) == 0:
+                        return None
+                    # 200 DPI: acima disso o arquivo cresce sem o traço melhorar, e
+                    # ficha de firma é meia folha, não uma planta.
+                    #
+                    # E A ESCALA CABE NO TETO DE PIXELS (LS02 M3; LX12, 19/10/2026): um
+                    # PDF com MediaBox gigante, a 200 DPI, virava bitmap de gigabytes
+                    # no único processo do servidor. Página de ficha não muda.
+                    largura_pt, altura_pt = pdf[0].get_size()
+                    imagem = imagem_pil(pdf[0], scale=TETOS.escala_que_cabe(
+                        largura_pt, altura_pt, 200 / 72))
+                finally:
+                    pdf.close()
             buf = _io.BytesIO()
             imagem.save(buf, format="PNG", optimize=True)
             return buf.getvalue()

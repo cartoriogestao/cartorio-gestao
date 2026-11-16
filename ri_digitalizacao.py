@@ -29,6 +29,7 @@ import ri_frases
 import tetos_de_entrada as TETO
 from bd_nativo import banco
 from storage import hash_file, safe_component, unique_path
+from trava_pdfium import TRAVA as TRAVA_DO_PDFIUM, imagem_pil
 
 EXTENSOES_OK = {".pdf", ".tif", ".tiff", ".png", ".jpg", ".jpeg"}
 
@@ -232,21 +233,23 @@ def paginas_png(caminho: Path, *, dpi: int = 150) -> list[bytes]:
                 "Falta o pacote pypdfium2 para ler o PDF da digitalizacao. "
                 "Instale no runtime do Cartorio Gestao."
             ) from exc
-        doc = pypdfium2.PdfDocument(str(caminho))
-        try:
-            if len(doc) == 0:
-                raise ValueError("O PDF da digitalizacao nao tem paginas.")
-            TETO.conferir_paginas(len(doc), "o PDF da digitalizacao")
-            for i in range(len(doc)):
-                largura_pt, altura_pt = doc[i].get_size()
-                escala = TETO.escala_que_cabe(largura_pt, altura_pt, dpi / 72)
-                pil = doc[i].render(scale=escala).to_pil()
-                buf = io.BytesIO()
-                pil.save(buf, format="PNG")
-                saida.append(buf.getvalue())
-        finally:
-            # HOTFIX-2026-10-06-01: sem close o Windows trava atual.pdf (WinError 32).
-            doc.close()
+        # Um PDFium por vez no processo inteiro (16/11/2026): ver `trava_pdfium`.
+        with TRAVA_DO_PDFIUM:
+            doc = pypdfium2.PdfDocument(str(caminho))
+            try:
+                if len(doc) == 0:
+                    raise ValueError("O PDF da digitalizacao nao tem paginas.")
+                TETO.conferir_paginas(len(doc), "o PDF da digitalizacao")
+                for i in range(len(doc)):
+                    largura_pt, altura_pt = doc[i].get_size()
+                    escala = TETO.escala_que_cabe(largura_pt, altura_pt, dpi / 72)
+                    pil = imagem_pil(doc[i], scale=escala)
+                    buf = io.BytesIO()
+                    pil.save(buf, format="PNG")
+                    saida.append(buf.getvalue())
+            finally:
+                # HOTFIX-2026-10-06-01: sem close o Windows trava atual.pdf (WinError 32).
+                doc.close()
         return saida
 
     try:
@@ -294,23 +297,27 @@ def miniatura_png(caminho: Path, *, largura: int = 420) -> bytes:
             raise ValueError(
                 "Falta o pacote pypdfium2 para ler o PDF da digitalizacao."
             ) from exc
-        doc = pypdfium2.PdfDocument(str(caminho))
-        try:
-            if len(doc) == 0:
-                raise ValueError("O PDF da digitalizacao nao tem paginas.")
-            pagina = doc[0]
-            # Renderiza perto da largura final: a miniatura nao precisa pagar a
-            # memoria de uma pagina de impressao para depois encolher.
-            largura_pdf, altura_pdf = pagina.get_size()
-            escala = max(0.25, largura / max(float(largura_pdf), 1.0))
-            # A ESCALA MINIMA DE 0,25 NAO SEGURAVA A ALTURA (LX12, LS02 M3):
-            # pagina estreita e altissima virava bitmap de gigabytes. Encolhe
-            # ate caber no teto de pixels — a miniatura nao precisa de mais.
-            escala = TETO.escala_que_cabe(largura_pdf, altura_pdf, escala)
-            imagem = pagina.render(scale=escala).to_pil()
-        finally:
-            # HOTFIX-2026-10-06-01: sem close o Windows trava atual.pdf (WinError 32).
-            doc.close()
+        # Um PDFium por vez no processo inteiro (16/11/2026): ver `trava_pdfium`.
+        # A ficha da matricula pede a miniatura enquanto a leitura por IA de
+        # outro balcao desenha paginas — duas linhas no PDFium derrubavam.
+        with TRAVA_DO_PDFIUM:
+            doc = pypdfium2.PdfDocument(str(caminho))
+            try:
+                if len(doc) == 0:
+                    raise ValueError("O PDF da digitalizacao nao tem paginas.")
+                pagina = doc[0]
+                # Renderiza perto da largura final: a miniatura nao precisa pagar a
+                # memoria de uma pagina de impressao para depois encolher.
+                largura_pdf, altura_pdf = pagina.get_size()
+                escala = max(0.25, largura / max(float(largura_pdf), 1.0))
+                # A ESCALA MINIMA DE 0,25 NAO SEGURAVA A ALTURA (LX12, LS02 M3):
+                # pagina estreita e altissima virava bitmap de gigabytes. Encolhe
+                # ate caber no teto de pixels — a miniatura nao precisa de mais.
+                escala = TETO.escala_que_cabe(largura_pdf, altura_pdf, escala)
+                imagem = imagem_pil(pagina, scale=escala)
+            finally:
+                # HOTFIX-2026-10-06-01: sem close o Windows trava atual.pdf (WinError 32).
+                doc.close()
     else:
         try:
             from PIL import Image

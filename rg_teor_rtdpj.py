@@ -63,6 +63,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from bd_nativo import banco
 from rg_registro import CLAROS_DAS_DECLARACOES
+from trava_pdfium import TRAVA as TRAVA_DO_PDFIUM, imagem_pil
 
 # ------------------------------------------------------------------ nomes
 ATRIBUICAO_RCPJ = "Registro Civil das Pessoas Jurídicas"
@@ -1259,15 +1260,15 @@ def _paginas_de_pdf(caminho: Path) -> list[Image.Image]:
             "Para usar PDF como folha do teor, o pacote pypdfium2 precisa "
             "estar instalado (ele já vem no requirements da casa)."
         ) from exc
-    doc = pdfium.PdfDocument(str(caminho))
     out: list[Image.Image] = []
-    try:
-        for i in range(len(doc)):
-            page = doc[i]
-            bitmap = page.render(scale=150 / 72)
-            out.append(bitmap.to_pil().convert("RGB"))
-    finally:
-        doc.close()
+    # Um PDFium por vez no processo inteiro (16/11/2026): ver `trava_pdfium`.
+    with TRAVA_DO_PDFIUM:
+        doc = pdfium.PdfDocument(str(caminho))
+        try:
+            for i in range(len(doc)):
+                out.append(imagem_pil(doc[i], scale=150 / 72).convert("RGB"))
+        finally:
+            doc.close()
     return out
 
 

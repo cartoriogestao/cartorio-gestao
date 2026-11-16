@@ -968,8 +968,8 @@ class _Recusa(Exception):
     """A linha de comando recusou antes de tocar no banco."""
 
 
-def _banco_conferido():
-    """O `Database` da produção, só depois de conferir que ele existe.
+def _banco_conferido(*, somente_leitura: bool = False):
+    """Abre o banco existente sem executar inicialização ou migração.
 
     **A CONFERÊNCIA VEM ANTES DO `Database(...)`**, porque o construtor cria o
     schema quando ele não existe. Um `CG_PG_SCHEMA` digitado errado viraria um
@@ -996,7 +996,36 @@ def _banco_conferido():
         raise _Recusa(
             f"O schema «{banco_pg.schema_do_caminho(db_path)}» não existe neste "
             "PostgreSQL. Confira o CG_PG_SCHEMA: esta ferramenta não cria banco.")
-    return Database(db_path)
+    import psycopg
+    from psycopg import sql
+
+    dsn = os.environ["CG_PG_DSN"]
+    schema = banco_pg.schema_do_caminho(db_path)
+
+    class BancoDaSincronia(Database):
+        """Reusa transações e auditoria da casa, sem o construtor migrador.
+
+        A ponte também prepara funções em public ao abrir uma conexão. Esta
+        ferramenta trabalha apenas com SQL nativo e um schema já conferido;
+        não precisa de DDL nem de permissão para criar funções.
+        """
+
+        def __init__(self):
+            self.db_path = db_path
+
+        def connect(self):
+            con = psycopg.connect(dsn)
+            try:
+                con.read_only = somente_leitura
+                con.execute(sql.SQL("SET search_path TO {}, public").format(
+                    sql.Identifier(schema)))
+                con.execute("SET lock_timeout = '10s'")
+            except BaseException:
+                con.close()
+                raise
+            return con
+
+    return BancoDaSincronia()
 
 
 def _agora() -> str:
@@ -1163,7 +1192,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_gerar_agendamento(args)
 
     try:
-        db = _banco_conferido()
+        db = _banco_conferido(somente_leitura=(
+            args.comando == "exportar" or getattr(args, "dry_run", False)))
     except _Recusa as erro:
         print(f"RECUSA: {erro}", file=sys.stderr)
         return 2

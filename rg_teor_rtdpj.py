@@ -1130,17 +1130,40 @@ def _rodape_reservado(*, with_closing: bool, com_faixa_selo: bool,
     return h
 
 
-def _colar_imagem(im: Image.Image, src: Image.Image, top: int,
-                  bottom: int) -> None:
+def _escala_que_cabe(src: Image.Image, top: int, bottom: int) -> float:
+    """A escala que faz `src` caber na largura útil e entre `top` e `bottom`
+    (com o respiro de 4% de sempre). Só calcula."""
     max_w, max_h = A4_W - 2 * SIDE, max(80, bottom - top - 8)
     iw, ih = src.size
-    scale = min(max_w / max(iw, 1), max_h / max(ih, 1)) * 0.96
+    return min(max_w / max(iw, 1), max_h / max(ih, 1)) * 0.96
+
+
+def _topo_do_cabecalho(textos: dict[str, Any]) -> int:
+    """Onde a imagem começa numa folha com cabeçalho. Desenha num rascunho
+    (o cabeçalho cresce com a intro), não no papel."""
+    return _desenhar_cabecalho(Image.new("RGB", (A4_W, A4_H), "white"),
+                               linhas=textos["linhas_cabecalho"],
+                               intro_txt=textos["intro"])
+
+
+def _colar_imagem(im: Image.Image, src: Image.Image, top: int,
+                  bottom: int, *, escala: float | None = None) -> None:
+    """Cola `src` centralizada entre `top` e `bottom`.
+
+    Com `escala`, a imagem sai NESSA escala (a das outras folhas), e nunca
+    maior do que cabe; sem ela, a que cabe — o comportamento de sempre.
+    """
+    max_h = max(80, bottom - top - 8)
+    iw, ih = src.size
+    scale = _escala_que_cabe(src, top, bottom)
+    if escala is not None:
+        scale = min(scale, escala)
     nw, nh = max(1, int(iw * scale)), max(1, int(ih * scale))
     resized = src.resize((nw, nh), Image.Resampling.LANCZOS)
     im.paste(resized, ((A4_W - nw) // 2, top + max(0, (max_h - nh) // 2)))
 
 
-def montar_pagina(src: Image.Image, *, textos: dict[str, Any],
+def montar_pagina(src: Image.Image | None, *, textos: dict[str, Any],
                   with_header: bool, with_closing: bool,
                   rotulo: str = "",
                   com_faixa_selo: bool = False,
@@ -1149,6 +1172,9 @@ def montar_pagina(src: Image.Image, *, textos: dict[str, Any],
                   selo_arquivamento: dict[str, Any] | None = None,
                   selos_extra: Sequence[dict] | None = None,
                   ) -> Image.Image:
+    """Uma folha do teor. `src=None` é a folha de encerramento (sem imagem):
+    a que `gerar_pdf` acrescenta quando o encerramento não cabe embaixo da
+    última página sem encolhê-la."""
     linhas_extra = _linhas_reservadas_extra(selos_extra)
     # As frases do desenho vêm com os textos (`textos_prontos` as lê da casa);
     # quem monta os textos à mão recebe as do padrão.
@@ -1163,7 +1189,8 @@ def montar_pagina(src: Image.Image, *, textos: dict[str, Any],
     bottom = A4_H - _rodape_reservado(
         with_closing=with_closing, com_faixa_selo=com_faixa_selo,
         linhas_extra=linhas_extra)
-    _colar_imagem(im, src.convert("RGB"), top, bottom)
+    if src is not None:
+        _colar_imagem(im, src.convert("RGB"), top, bottom)
     if with_closing:
         _desenhar_encerramento(
             im, enc_txt=textos["encerramento"],
@@ -1371,8 +1398,10 @@ def gerar_pdf(*, numero_registro, imagens: Sequence[str | Path | Image.Image],
             caminhos.append(item)
     if caminhos:
         folhas.extend(carregar_folhas(caminhos))
+    sem_documento = False
     if not folhas and normalizar_tipo_ato(tipo_ato) == TIPO_CANCELAMENTO:
         folhas.append(Image.new("RGB", (A4_W, A4_H), "white"))
+        sem_documento = True
     flags = flags_das_paginas(len(folhas))
     if (str(serie or "").strip().upper() in SERIES_COM_TOTAL_DE_PAGINAS
             and normalizar_tipo_ato(tipo_ato) == TIPO_REGISTRO):
@@ -1381,17 +1410,49 @@ def gerar_pdf(*, numero_registro, imagens: Sequence[str | Path | Image.Image],
     n = len(folhas)
     # as declarações do LD09 só na primeira folha — ver `textos_prontos`
     seguintes = {**textos, **textos.get("folhas_seguintes", {})}
+
+    # A ÚLTIMA PÁGINA NA MESMA ESCALA DAS OUTRAS — 16/11/2026. O encerramento
+    # e a faixa do selo tomavam ~1/5 da folha, e a última página do documento
+    # encolhia para caber acima deles (18,6 cm de largura nas outras, 14,4 cm
+    # nela, numa folha Carta): ilegível no teor e, depois, na certidão que
+    # reproduz o teor digitalizado. Agora o documento não cede: se a última
+    # página não cabe inteira acima do encerramento, ela sai como as outras e
+    # o encerramento (com a faixa do selo) vai para uma folha só dele, logo
+    # depois. Uma diferença de até 2% não vale uma folha a mais.
+    encerramento_a_parte = False
+    if not sem_documento:
+        ultima_src = folhas[-1]
+        com_cab_ult, com_enc_ult = flags[-1]
+        topo = (_topo_do_cabecalho(textos if n == 1 else seguintes)
+                if com_cab_ult else 28)
+        cheia = _escala_que_cabe(ultima_src, topo, A4_H - _rodape_reservado(
+            with_closing=False, com_faixa_selo=False))
+        com_fecho = _escala_que_cabe(ultima_src, topo, A4_H - _rodape_reservado(
+            with_closing=com_enc_ult, com_faixa_selo=True,
+            linhas_extra=_linhas_reservadas_extra(selos_extra)))
+        encerramento_a_parte = com_fecho < cheia * 0.98
+
     for i, (src, (com_cab, com_enc)) in enumerate(zip(folhas, flags)):
-        ultima = i == n - 1
+        ultima = i == n - 1 and not encerramento_a_parte
         pages.append(montar_pagina(
             src, textos=textos if i == 0 else seguintes,
-            with_header=com_cab, with_closing=com_enc,
+            with_header=com_cab, with_closing=com_enc and not encerramento_a_parte,
             rotulo=f"{i + 1}/{n}",
             com_faixa_selo=ultima,
             com_arquivamento=bool(com_arquivamento) and ultima,
             selo_averbacao=selo_averbacao if ultima else None,
             selo_arquivamento=selo_arquivamento if ultima else None,
             selos_extra=selos_extra if ultima else None))
+    if encerramento_a_parte:
+        pages.append(montar_pagina(
+            None, textos=seguintes,
+            with_header=True, with_closing=True,
+            rotulo="encerramento",
+            com_faixa_selo=True,
+            com_arquivamento=bool(com_arquivamento),
+            selo_averbacao=selo_averbacao,
+            selo_arquivamento=selo_arquivamento,
+            selos_extra=selos_extra))
     return _images_to_pdf_bytes(pages)
 
 

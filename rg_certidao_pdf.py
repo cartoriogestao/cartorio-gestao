@@ -43,6 +43,7 @@ ATRIBUICAO_RTD = TEOR.ATRIBUICAO_RTD
 A4_W, A4_H = TEOR.A4_W, TEOR.A4_H
 SIDE = TEOR.SIDE
 FAIXA_H = 150  # banda no topo das folhas internas (~120–160 px)
+FOLHA_INTERNA_BAIXO = 28  # margem de baixo da imagem na folha interna
 
 EXTENSOES_IMAGEM = TEOR.EXTENSOES_IMAGEM
 EXTENSOES_PDF = TEOR.EXTENSOES_PDF
@@ -596,13 +597,27 @@ def montar_capa(textos: dict[str, Any], *,
     # (120 px é pouco menos que uma linha de texto de sobra); senão, a
     # imagem cai para a primeira folha interna, como sempre foi — nunca
     # força um encaixe que cortaria a imagem.
+    #
+    # **MAS SÓ NA MESMA ESCALA DAS FOLHAS INTERNAS** — 16/11/2026: colada no
+    # que sobrava da capa, uma página A4/Carta saía com ~13 cm de largura
+    # (18,6 cm nas outras) e ficava ilegível. A regra é a da reprográfica do
+    # RI (of-0151) e a do modelo de SP: o documento não encolhe por causa do
+    # texto. A 1ª página só divide a folha com a capa se couber inteira na
+    # escala que teria numa folha interna (página curta, deitada); senão,
+    # abre a 1ª folha interna, como as demais.
     colou_primeira_folha = False
     espaco_do_selo = 170
     if primeira_folha is not None:
         limite_inferior = A4_H - 20 - espaco_do_selo
-        if limite_inferior - y > 120:
-            TEOR._colar_imagem(im, primeira_folha.convert("RGB"), y,
-                               limite_inferior)
+        src = primeira_folha.convert("RGB")
+        escala_interna = TEOR._escala_que_cabe(
+            src, FAIXA_H + 8, A4_H - FOLHA_INTERNA_BAIXO)
+        cabe_sem_encolher = (
+            TEOR._escala_que_cabe(src, y, limite_inferior)
+            >= escala_interna * 0.98)
+        if limite_inferior - y > 120 and cabe_sem_encolher:
+            TEOR._colar_imagem(im, src, y, limite_inferior,
+                               escala=escala_interna)
             y = limite_inferior
             colou_primeira_folha = True
 
@@ -695,7 +710,7 @@ def montar_folha_interna(
     y = max(y + 4, FAIXA_H)
     d.line([(SIDE - 4, y), (A4_W - SIDE + 4, y)], fill="black", width=1)
     top = y + 8
-    bottom = A4_H - 28
+    bottom = A4_H - FOLHA_INTERNA_BAIXO
     TEOR._colar_imagem(im, src.convert("RGB"), top, bottom)
     return im
 

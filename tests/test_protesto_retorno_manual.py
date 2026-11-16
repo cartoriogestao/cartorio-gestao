@@ -126,6 +126,10 @@ def test_escrevente_registra_no_fluxo_autenticado_e_com_auditoria(casa):
     with db.connect() as con:
         registro = banco(con).um("SELECT * FROM audit_logs WHERE action='PROTESTO_CRA_ACEITE_PORTAL' AND entity_id=%s", (rid,))
         assert registro["username_snapshot"] == "conferente"
+        aid = M.dados_do_envio(PRE.retorno(con, rid))["anexo_id"]
+    for caminho in (f"/arquivo/{aid}", f"/arquivo/{aid}/ver"):
+        assert c.get(caminho).get_data() == PDF
+        assert casa["app"].test_client().get(caminho).status_code == 302
 
 
 def test_rota_anonima_nao_registra_aceite(casa):

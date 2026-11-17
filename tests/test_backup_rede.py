@@ -1,5 +1,7 @@
 """Publicacao no NAS: nada definitivo antes do hash; local so sai apos confirmar."""
 import shutil
+import json
+from datetime import datetime, timedelta
 from sqlite3.dbapi2 import connect as conectar_sqlite
 import zipfile
 from pathlib import Path
@@ -12,6 +14,7 @@ import permissao_local
 @pytest.fixture
 def rede(tmp_path, monkeypatch):
     class Banco:
+        db_path = tmp_path / "banco-ficticio.sqlite3"
         def backup_database(self, destino):
             con = conectar_sqlite(destino)
             con.execute("CREATE TABLE exemplo (id INTEGER)")
@@ -142,3 +145,98 @@ def test_nome_da_versao_nao_cria_caminho_ou_fluxo(rede, nome):
     with pytest.raises(B.BackupInvalido):
         B.gerar_pacote(db, destino.parent / nome, arquivos)
     assert not area.exists()
+
+
+def _guardar_para_retomar(rede, monkeypatch):
+    db, arquivos, destino, area = rede
+    original = B._publicar_pacote
+    def falhar(local, destino):
+        raise OSError("rede ficticia indisponivel")
+    monkeypatch.setattr(B, "_publicar_pacote", falhar)
+    with pytest.raises(B.BackupInvalido):
+        B.gerar_pacote(db, destino, arquivos)
+    monkeypatch.setattr(B, "_publicar_pacote", original)
+    return next(area.glob("envio-backup-*/*.zip"))
+
+
+def test_retomada_confere_pacote_sem_refazer_banco_e_limpa_apos_copia(rede, monkeypatch):
+    db, arquivos, destino, area = rede
+    local = _guardar_para_retomar(rede, monkeypatch)
+    esperado = B._sha256(local)
+    def proibido(*a, **k):
+        pytest.fail("nao deve recriar o banco ao retomar pacote completo")
+    monkeypatch.setattr(db, "backup_database", proibido)
+    B.gerar_pacote(db, destino, arquivos)
+    assert B._sha256(destino) == esperado and list(area.iterdir()) == []
+
+
+@pytest.mark.parametrize("chave,valor", [("origem_banco", "banco-diferente"), ("archive_root", "acervo-diferente"), ("app", "aplicativo-diferente"), ("version", "versao-diferente"), ("created_at", (datetime.now()-timedelta(days=2)).isoformat())])
+def test_retomada_recusa_origem_ou_pacote_antigo(rede, monkeypatch, chave, valor):
+    db, arquivos, destino, area = rede
+    local = _guardar_para_retomar(rede, monkeypatch)
+    with zipfile.ZipFile(local) as z:
+        conteudos = {n:z.read(n) for n in z.namelist()}
+    meta = json.loads(conteudos[B.NOME_MANIFESTO]);meta[chave]=valor
+    conteudos[B.NOME_MANIFESTO]=json.dumps(meta).encode()
+    with zipfile.ZipFile(local, "w") as z:
+        for n,d in conteudos.items():z.writestr(n,d)
+    assert B._completo_para_retomar(area, db, arquivos, "CartorioGestao", "") is None
+
+
+def test_pouco_espaco_recusa_antes_de_criar_pacote(rede, monkeypatch):
+    db, arquivos, destino, area = rede
+    from types import SimpleNamespace
+    monkeypatch.setattr(shutil, "disk_usage", lambda p: SimpleNamespace(free=1))
+    with pytest.raises(B.BackupInvalido, match="espaco local insuficiente"):
+        B.gerar_pacote(db, destino, arquivos)
+    assert not destino.exists() and list(area.iterdir()) == []
+
+
+def test_retomada_nao_exige_espaco_para_segundo_completo(rede, monkeypatch):
+    db, arquivos, destino, area = rede
+    _guardar_para_retomar(rede, monkeypatch)
+    from types import SimpleNamespace
+    monkeypatch.setattr(shutil, "disk_usage", lambda p: SimpleNamespace(free=1))
+    B.gerar_pacote(db, destino, arquivos)
+    assert destino.exists() and list(area.iterdir()) == []
+
+
+def test_pacote_legado_so_pode_ser_retomado_na_propria_producao(rede, monkeypatch):
+    db, arquivos, destino, area = rede
+    local = _guardar_para_retomar(rede, monkeypatch)
+    with zipfile.ZipFile(local) as z:
+        conteudos = {n:z.read(n) for n in z.namelist()}
+    meta=json.loads(conteudos[B.NOME_MANIFESTO]);meta.pop("origem_banco")
+    conteudos[B.NOME_MANIFESTO]=json.dumps(meta).encode()
+    with zipfile.ZipFile(local, "w") as z:
+        for n,d in conteudos.items():z.writestr(n,d)
+    assert B._completo_para_retomar(area, db, arquivos, "CartorioGestao", "") is None
+    import os
+    db.db_path=Path(os.environ["PROGRAMDATA"])/"CartorioGestao"/"cartorio_gestao.sqlite3"
+    assert B._completo_para_retomar(area, db, arquivos, "CartorioGestao", "")==local
+
+
+def test_hash_cobre_blocos_grandes_e_cauda(tmp_path):
+    import hashlib
+    conteudo=(b"conteudo-ficticio-" * 530000)+b"cauda"
+    arquivo=tmp_path / "hash-ficticio.bin"
+    arquivo.write_bytes(conteudo)
+    assert B._sha256(arquivo)==hashlib.sha256(conteudo).hexdigest()
+
+
+def test_manifesto_invalido_preservado_sem_ser_adotado(rede, monkeypatch):
+    db, arquivos, destino, area = rede
+    local = _guardar_para_retomar(rede, monkeypatch)
+    with zipfile.ZipFile(local, "w") as z:z.writestr(B.NOME_MANIFESTO,"[]")
+    assert B._completo_para_retomar(area, db, arquivos, "CartorioGestao", "") is None
+    assert local.exists()
+
+
+def test_retomada_registra_agente_e_mandante(rede, monkeypatch):
+    db, arquivos, destino, area = rede
+    _guardar_para_retomar(rede, monkeypatch)
+    registros=[]
+    monkeypatch.setattr(db,"log",lambda *a, **k:registros.append((a,k)),raising=False)
+    B.gerar_pacote(db, destino, arquivos)
+    assert registros and registros[0][0][2]=="BACKUP_ENVIO_RETOMADO"
+    assert registros[0][1]["agente"] and registros[0][1]["a_mando_de"]

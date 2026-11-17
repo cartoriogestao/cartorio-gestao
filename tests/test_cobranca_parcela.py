@@ -364,9 +364,8 @@ def test_sem_id_no_envio_a_venda_se_acha_pelo_service_id():
 def test_sem_service_id_a_venda_paga_do_dia_no_terminal_confirma():
     cliente, _t = _maquina({
         "/service-id": Resposta(404, {"message": "not found"}),
-        "/sales/pos/": Resposta(200, {"results": [
+        "/sales?": Resposta(200, {"results": [
             _venda("venda-paga", "succeeded", amount=15000),
-            _venda("outra", "succeeded", amount=999),
         ], "has_more": False}),
     })
     lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:CG9",
@@ -379,7 +378,7 @@ def test_sem_service_id_a_venda_paga_do_dia_no_terminal_confirma():
 def test_duas_vendas_do_mesmo_valor_no_terminal_nao_escolhe():
     cliente, _t = _maquina({
         "/service-id": Resposta(404, {"message": "not found"}),
-        "/sales/pos/": Resposta(200, {"results": [
+        "/sales?": Resposta(200, {"results": [
             _venda("uma", "succeeded"),
             _venda("duas", "succeeded"),
         ], "has_more": False}),

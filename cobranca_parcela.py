@@ -550,30 +550,29 @@ class ClienteCobrancaParcela:
         return lido
 
     def _venda_paga_no_terminal(self, c: Mapping[str, Any]) -> dict | None:
-        """A venda que o service_id não achou, no movimento do dia da maquininha.
+        """A venda que o service_id não achou, nas vendas do dia do estabelecimento.
 
         O POST do POS pode aceitar o pedido sem criar a venda com o nosso
-        service_id. O portal mostra o PIX pago e a busca por service_id volta
-        vazia. A lista do terminal no dia só confirma quando há UMA venda paga
-        do mesmo valor e da mesma forma. Duas, e não se escolhe.
+        service_id. A lista do terminal (`/sales/pos/{terminalId}`) pede um
+        token interno que a API pública não entrega (HTTP 400). A lista de
+        vendas do estabelecimento, filtrada pelo valor e pelo dia, só confirma
+        quando há UMA venda paga da mesma forma. Duas, e não se escolhe.
         """
-        terminal = str(self._campos.get(CAMPO_DA_MAQUININHA) or "").strip()
         dia = str(c.get("criada_em") or "")[:10]
-        if not terminal or len(dia) != 10:
-            return None
-        r = self._ir(
-            "GET",
-            f"/v1/sellers/{urllib_quote(self._campos['seller_id'])}/sales/pos/"
-            f"{urllib_quote(terminal)}?limit=50&current_page=1"
-            f"&startDate={dia}&endDate={dia}")
-        if r.status != 200:
-            return None
-        linhas = r.corpo.get("results") if isinstance(r.corpo, dict) else r.corpo
-        if not isinstance(linhas, list):
+        if len(dia) != 10:
             return None
         try:
             esperado = int(c["valor"])
         except (TypeError, ValueError):
+            return None
+        r = self._ir(
+            "GET",
+            f"/v1/sellers/{urllib_quote(self._campos['seller_id'])}/sales"
+            f"?limit=50&current_page=1&startDate={dia}&endDate={dia}&amount={esperado}")
+        if r.status != 200:
+            return None
+        linhas = r.corpo.get("results") if isinstance(r.corpo, dict) else r.corpo
+        if not isinstance(linhas, list):
             return None
         forma_pedida = str(c.get("forma_pedida") or "").upper()
         pagas = []

@@ -2,10 +2,10 @@
 {% block title %}Entrar{% endblock %}
 {% block auth_content %}
 <h1>{{ APP_NAME }}</h1><p class="muted">{{ unit_name }}</p>
-<form method="post" class="stack">
+<form method="post" class="stack" autocomplete="on">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <label>Usuário<input name="username" autofocus required></label>
-  <label>Senha<input type="password" name="password" required></label>
+  <label>Usuário<input name="username" autocomplete="username" autofocus required value="{{ usuario_lembrado|default('') }}"></label>
+  <label>Senha<input type="password" name="password" autocomplete="current-password" required></label>
   <button class="primary">Entrar</button>
 </form>
 <p class="muted small">Ações realizadas no sistema são registradas na trilha de auditoria.</p>

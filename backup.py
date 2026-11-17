@@ -358,6 +358,8 @@ def _destino_autorizado(destino: Path) -> Path:
     if not configurada:
         raise BackupInvalido("destino de rede sem raiz administrativa configurada")
     raiz = Path(configurada) / "backups"
+    if ".." in destino.parts:
+        raise BackupInvalido("segmento relativo proibido no destino de rede")
     nome = secure_filename(destino.name)
     if nome != destino.name or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,159}\.zip", nome):
         raise BackupInvalido("nome de pacote de rede invalido")

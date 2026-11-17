@@ -353,18 +353,19 @@ def _area_de_envio() -> Path:
 
 def _destino_autorizado(destino: Path) -> Path:
     """UNC apenas na pasta de backups da raiz administrativa do servidor."""
+    from werkzeug.utils import secure_filename
     configurada = os.environ.get("CARTORIO_GESTAO_COPIAS", "").strip()
     if not configurada:
         raise BackupInvalido("destino de rede sem raiz administrativa configurada")
-    raiz = Path(configurada).resolve() / "backups"
-    alvo = Path(destino).resolve()
-    nome = alvo.name
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,159}\.zip", nome):
+    raiz = Path(configurada) / "backups"
+    nome = secure_filename(destino.name)
+    if nome != destino.name or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,159}\.zip", nome):
         raise BackupInvalido("nome de pacote de rede invalido")
-    if alvo.parent != raiz:
+    # Comparacao lexical: nao consultar o filesystem de um caminho recebido
+    # antes de comprovar que ele pertence a raiz definida pelo administrador.
+    if Path(os.path.abspath(destino.parent)) != Path(os.path.abspath(raiz)):
         raise BackupInvalido("destino fora da pasta de backups autorizada")
-    # Reconstrucao a partir da raiz administrativa e do nome permitido.
-    return raiz / nome
+    return raiz.resolve() / nome
 
 
 def _publicar_pacote(local: Path, destino: Path) -> None:
@@ -372,7 +373,8 @@ def _publicar_pacote(local: Path, destino: Path) -> None:
     destino.parent.mkdir(parents=True, exist_ok=True)
     parcial = destino.with_suffix(destino.suffix + ".parcial")
     esperado = hashlib.sha256()
-    with local.open("rb") as origem, parcial.open("wb") as saida:
+    parcial.unlink(missing_ok=True)
+    with local.open("rb") as origem, parcial.open("xb") as saida:
         while bloco := origem.read(1024 * 1024):
             saida.write(bloco)
             esperado.update(bloco)

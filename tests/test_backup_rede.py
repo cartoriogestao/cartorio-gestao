@@ -134,3 +134,11 @@ def test_destino_unc_exige_raiz_administrativa(rede, monkeypatch):
     with pytest.raises(B.BackupInvalido, match="raiz administrativa"):
         B.gerar_pacote(db, destino, arquivos)
     assert not area.exists()
+
+
+@pytest.mark.parametrize("nome", ["backup_pre_atualizacao_3.7.19_para_../../fora_20261116.zip", "backup_pre_atualizacao_3.7.19_para_versao:fluxo_20261116.zip"])
+def test_nome_da_versao_nao_cria_caminho_ou_fluxo(rede, nome):
+    db, arquivos, destino, area = rede
+    with pytest.raises(B.BackupInvalido):
+        B.gerar_pacote(db, destino.parent / nome, arquivos)
+    assert not area.exists()

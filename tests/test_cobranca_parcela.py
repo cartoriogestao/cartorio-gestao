@@ -361,6 +361,34 @@ def test_sem_id_no_envio_a_venda_se_acha_pelo_service_id():
     assert any(c[1].endswith("/sales/CG9/service-id") for c in t.chamadas)
 
 
+def test_sem_service_id_a_venda_paga_do_dia_no_terminal_confirma():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(404, {"message": "not found"}),
+        "/sales/pos/": Resposta(200, {"results": [
+            _venda("venda-paga", "succeeded", amount=15000),
+            _venda("outra", "succeeded", amount=999),
+        ], "has_more": False}),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:CG9",
+                              "criada_em": "2026-11-17T12:49:19"})
+    assert lido["situacao"] == CB.RECEBIDA
+    assert lido["banco_id"] == "pos:venda-paga"
+    assert lido["valor_recebido"] == 15000
+
+
+def test_duas_vendas_do_mesmo_valor_no_terminal_nao_escolhe():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(404, {"message": "not found"}),
+        "/sales/pos/": Resposta(200, {"results": [
+            _venda("uma", "succeeded"),
+            _venda("duas", "succeeded"),
+        ], "has_more": False}),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:CG9",
+                              "criada_em": "2026-11-17T12:49:19"})
+    assert lido["situacao"] == CB.ABERTA and lido["banco_status"] == "NA_MAQUINA"
+
+
 def test_sem_venda_alguma_continua_aguardando():
     cliente, _t = _maquina({
         "/service-id": Resposta(404, {"message": "not found"}),

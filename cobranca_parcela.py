@@ -549,6 +549,61 @@ class ClienteCobrancaParcela:
         lido.setdefault("banco_motivo", "Pagamento na maquininha.")
         return lido
 
+    def _venda_paga_no_terminal(self, c: Mapping[str, Any]) -> dict | None:
+        """A venda que o service_id não achou, no movimento do dia da maquininha.
+
+        O POST do POS pode aceitar o pedido sem criar a venda com o nosso
+        service_id. O portal mostra o PIX pago e a busca por service_id volta
+        vazia. A lista do terminal no dia só confirma quando há UMA venda paga
+        do mesmo valor e da mesma forma. Duas, e não se escolhe.
+        """
+        terminal = str(self._campos.get(CAMPO_DA_MAQUININHA) or "").strip()
+        dia = str(c.get("criada_em") or "")[:10]
+        if not terminal or len(dia) != 10:
+            return None
+        r = self._ir(
+            "GET",
+            f"/v1/sellers/{urllib_quote(self._campos['seller_id'])}/sales/pos/"
+            f"{urllib_quote(terminal)}?limit=50&current_page=1"
+            f"&startDate={dia}&endDate={dia}")
+        if r.status != 200:
+            return None
+        linhas = r.corpo.get("results") if isinstance(r.corpo, dict) else r.corpo
+        if not isinstance(linhas, list):
+            return None
+        try:
+            esperado = int(c["valor"])
+        except (TypeError, ValueError):
+            return None
+        forma_pedida = str(c.get("forma_pedida") or "").upper()
+        pagas = []
+        for venda in linhas:
+            if not isinstance(venda, dict) or not venda.get("id"):
+                continue
+            if str(venda.get("status") or "").upper() not in SITUACAO_PAGA:
+                continue
+            forma = str(venda.get("form_payment") or "").upper()
+            if forma_pedida == "PIX" and forma and forma not in ("PIX", "PIX_POS"):
+                continue
+            if forma_pedida == "DEBITO" and forma and forma != "DEBIT":
+                continue
+            if forma_pedida == "CREDITO" and forma and forma != "CREDIT":
+                continue
+            if not _mesmo_centavos(venda, esperado):
+                continue
+            pagas.append(venda)
+        if len(pagas) != 1:
+            return None
+        achada = dict(pagas[0])
+        if _centavos(achada.get("amount")) != esperado:
+            achada["amount"] = esperado
+        return achada
+
+    def _da_maquina(self, achada, c, aguardando):
+        if achada is None:
+            achada = self._venda_paga_no_terminal(c)
+        return aguardando if achada is None else self._ler_venda_da_maquina(achada)
+
     def pdf(self, c: Mapping[str, Any]) -> bytes:
         raise Recusa(
             "A Parcela Express entrega o pagamento no link, não num PDF. "
@@ -567,7 +622,7 @@ class ClienteCobrancaParcela:
             # Sem o id da venda no envio, guardou-se o service_id: este caminho
             # é por saleId. A venda se acha pelo service_id.
             achada = self._venda_pelo_servico(c)
-            return aguardando if achada is None else self._ler_venda_da_maquina(achada)
+            return self._da_maquina(achada, c, aguardando)
         if r.status == 200 and isinstance(r.corpo, dict):
             corpo = r.corpo.get("sale") if isinstance(r.corpo.get("sale"), dict) else r.corpo
             if str(corpo.get("status") or "").upper() in RECUSADA_NA_MAQUINA:
@@ -617,6 +672,20 @@ def _service_id(c: Mapping[str, Any]) -> str:
     """Até 10 letras ou números, como a maquininha exige."""
     bruto = re.sub(r"[^A-Za-z0-9]", "", str(c.get("seu_numero") or "CG"))
     return (bruto or "CG")[:10]
+
+
+def _mesmo_centavos(venda: Mapping[str, Any], esperado: int) -> bool:
+    """O inteiro da Parcela é centavo. O portal às vezes mostra o real."""
+    for campo in ("amount", "original_amount"):
+        if _centavos(venda.get(campo)) == esperado:
+            return True
+        try:
+            numero = float(str(venda.get(campo)).replace(",", "."))
+        except (TypeError, ValueError):
+            continue
+        if esperado > 0 and abs(numero - (esperado / 100)) < 0.001:
+            return True
+    return False
 
 
 def _centavos(valor: Any) -> int | None:

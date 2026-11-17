@@ -1,0 +1,39 @@
+{# Os campos de UM imóvel da escritura (`nt_ato_imoveis`) — 16/11/2026.
+   Incluído em `notas_ato.html` para o imóvel já lançado (`im` é a linha) e
+   para o novo (`im` vazio). Rural vai em HECTARES, com denominação e o código
+   do INCRA; urbano vai em m², com o logradouro. Valores em reais, como na
+   escritura; a gravação converte para centavos. #}
+<label>Matrícula
+  <input name="matricula" value="{{ im.matricula or '' }}" required
+         placeholder="só o número, até 7 dígitos"></label>
+<label>Rural ou urbano
+  <select name="rural">
+    <option value="1" {% if im.rural %}selected{% endif %}>Rural — área em hectares</option>
+    <option value="0" {% if im and not im.rural %}selected{% endif %}>Urbano — área em m²</option>
+  </select></label>
+<label>Tipo do imóvel
+  <select name="tipo_imovel">
+    <option value="">— não informado (rural vai como fazenda/sítio/chácara) —</option>
+    {% for codigo, texto in DOI_IMOVEIS.items() %}
+      <option value="{{ codigo }}" {% if im.tipo_imovel|string == codigo|string %}selected{% endif %}>{{ texto }}</option>
+    {% endfor %}
+  </select></label>
+<label>Área
+  <input name="area" value="{{ im.area or '' }}" placeholder="12,3456 (ha) ou 360,00 (m²)"></label>
+<label class="span2">Denominação (rural) ou logradouro (urbano)
+  <input name="denominacao" value="{{ im.denominacao or '' }}" placeholder="Chácara Boa Vista"></label>
+<label class="span2">Localização (rural)
+  <input name="localizacao" value="{{ im.localizacao or '' }}"
+         placeholder="zona rural do município, povoado ou gleba"></label>
+<label>Código do INCRA (rural)
+  <input name="codigo_incra" value="{{ im.codigo_incra or '' }}" placeholder="950.000.000.000-0"></label>
+<label>CIB
+  <input name="cib" value="{{ im.cib or '' }}" placeholder="9.AB1.CD2-E"></label>
+<label>CNM (opcional)
+  <input name="cnm" value="{{ im.cnm or '' }}" placeholder="000000.2.0001234-00"></label>
+<label>Preço deste imóvel (R$)
+  <input name="valor" value="{{ (im.valor_centavos|centavos_reais) if im.valor_centavos else '' }}"
+         placeholder="50.000,00"></label>
+<label>Avaliação do ITBI deste imóvel (R$)
+  <input name="base_itbi" value="{{ (im.base_itbi_centavos|centavos_reais) if im.base_itbi_centavos else '' }}"
+         placeholder="50.000,00"></label>

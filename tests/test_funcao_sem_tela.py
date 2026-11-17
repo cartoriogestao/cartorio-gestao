@@ -164,7 +164,9 @@ JA_SABIDAS: frozenset[str] = frozenset({
     # `blocos_do` FICA (30/10/2026): a ficha do assento já separa os blocos, com
     # cada ato levando quem lavrou e a folha, que esta função não traz.
     "quantos_do_acervo_ficaram_de_fora", "blocos_do", "caminhos_da_atribuicao",
-    "campos_do_ato", "cib_valido", "claros_restantes", "codigo_da_tabela",
+    # `cib_valido` SAIU DAQUI EM 16/11/2026: a ficha da escritura confere o
+    # CIB de cada imóvel antes de gravar (`nt_ato_imoveis`).
+    "campos_do_ato", "claros_restantes", "codigo_da_tabela",
     # `compor_do_assento` SAIU DAQUI EM 03/09/2026, e o varredor foi quem
     # mandou: ela deixou de ser orfa quando `proclamas.matricula_do_proclama`
     # passou a chama-la para montar a matricula do Livro D que vai ao

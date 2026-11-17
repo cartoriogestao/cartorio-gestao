@@ -205,14 +205,30 @@ def declaracoes_do_mes(con: Any, ano: int, mes: int, cns: str) -> dict:
         ato = dict(linha)
         partes = bd.ler("SELECT * FROM nt_ato_partes WHERE ato_id = %s ORDER BY id",
                         (ato["id"],))
-        reg, problemas = NDOI.declaracao_da_escritura(ato, partes, cns, ibge)
-        item = None
-        if not problemas:
-            item = item_da_declaracao(reg)
-            problemas = [{"campo": "censec", "motivo": e} for e in conferir(
-                item, f"livro {ato.get('livro')}, fl. {ato.get('folha')}")]
+        # UMA DECLARAÇÃO POR IMÓVEL — 16/11/2026 (escritura de duas glebas
+        # rurais, duas matrículas). A escritura vai INTEIRA ou fica INTEIRA: com um
+        # imóvel impedido, nenhum sobe. A CTP não se repete depois de aceita
+        # (`nt_remessa_itens` é por ato), e a metade mandada sozinha deixaria
+        # a outra metade sem caminho para ir depois.
+        imoveis = NDOI.imoveis_da_escritura(con, ato)
+        varios = len(imoveis) > 1
+        linhas, problemas = [], []
+        for d in NDOI.declaracoes_da_escritura(ato, partes, imoveis, cns, ibge):
+            mat = d["imovel"].get("matricula") or "?"
+            onde = (f"livro {ato.get('livro')}, fl. {ato.get('folha')}"
+                    + (f", matrícula {mat}" if varios else ""))
+            achados = d["problemas"]
+            if not achados:
+                item = item_da_declaracao(d["registro"])
+                achados = [{"campo": "censec", "motivo": e} for e in conferir(item, onde)]
+                linhas.append(item)
+            if varios:
+                achados = [dict(x, motivo=f"matrícula {mat}: {x['motivo']}")
+                           for x in achados]
+            problemas += achados
         if problemas:
             impedidos.append({"ato": ato, "problemas": problemas})
         else:
-            aptos.append({"ato": ato, "linha": item})
+            # `linha` FICA (a primeira) para quem lia uma só; `linhas` é a carga.
+            aptos.append({"ato": ato, "linha": linhas[0], "linhas": linhas})
     return {"aptos": aptos, "impedidos": impedidos}

@@ -805,6 +805,12 @@
       <input name="doi_torna_dinheiro" value="{{ '%.2f'|format(a.doi_torna_dinheiro / 100) if a.doi_torna_dinheiro is not none else '' }}"
              placeholder="10000,00"></label>
 
+    {% set lista_imoveis = imoveis_do_ato if imoveis_do_ato is defined else [] %}
+    {% if lista_imoveis %}
+    <p class="span2 small"><strong>Os imóveis estão na lista abaixo</strong>
+      ({{ lista_imoveis|length }}), uma declaração para cada um na DOI e na CTP.
+      Matrícula, tipo, área e endereço se corrigem lá, imóvel por imóvel.</p>
+    {% else %}
     <label>Tipo do imóvel
       <select name="doi_tipo_imovel">
         <option value="">— não informado —</option>
@@ -825,6 +831,7 @@
 
     <label class="span2">Endereço ou denominação
       <input name="doi_endereco" value="{{ a.doi_endereco or '' }}"></label>
+    {% endif %}
 
     {# ===================== AS PARTES, E DE QUE LADO CADA UMA ESTÁ =========
 
@@ -896,6 +903,43 @@
 
     <div class="actions span2"><button class="button">Anotar</button></div>
   </form>
+
+  {# ================= OS IMÓVEIS, UM POR MATRÍCULA — 16/11/2026 =================
+     Uma escritura de 16/11/2026 vende duas glebas rurais, duas matrículas, e a
+     DOI e a CTP pedem UMA DECLARAÇÃO POR IMÓVEL: o layout do DOI-Web tem um
+     campo de matrícula só. Com a lista vazia vale o quadro de cima; com um
+     imóvel nela, a lista manda. Cada imóvel leva o SEU preço e a SUA
+     avaliação do ITBI, como a escritura os reparte. #}
+  {% if a.com_imovel %}
+  <div style="padding:0 14px 14px">
+    <h4 style="margin:8px 0">Imóveis desta escritura — uma declaração por imóvel</h4>
+    {% for im in lista_imoveis %}
+    <form method="post" class="grid2" style="border:1px solid var(--line, #ddd);border-radius:6px;padding:10px;margin-bottom:10px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="imovel_id" value="{{ im.id }}">
+      <p class="span2 small" style="margin:0"><strong>{{ loop.index }}º imóvel</strong>
+        — matrícula {{ im.matricula }}{% if im.rural %} · rural{% else %} · urbano{% endif %}</p>
+      {% include "_notas_ato_imovel_campos.html" %}
+      <div class="actions span2">
+        <button class="button" name="acao" value="imovel_linha">Salvar este imóvel</button>
+        <button class="button" name="acao" value="imovel_retirar"
+                onclick="return confirm('Retirar este imóvel da escritura? Ele sai da DOI e da CTP.')">Retirar</button>
+      </div>
+    </form>
+    {% endfor %}
+    <details>
+      <summary class="small">{% if lista_imoveis %}Acrescentar outro imóvel{% else %}A escritura tem mais de um imóvel, ou imóvel rural? Lance os imóveis um por um{% endif %}</summary>
+      {% set im = {} %}
+      <form method="post" class="grid2" style="padding:10px 0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {% if not lista_imoveis %}<p class="span2 small muted" style="margin:0">O primeiro imóvel lançado aqui
+          substitui o quadro de cima. Lance todos: a DOI e a CTP só saem com a lista completa.</p>{% endif %}
+        {% include "_notas_ato_imovel_campos.html" %}
+        <div class="actions span2"><button class="button primary" name="acao" value="imovel_linha">Lançar o imóvel</button></div>
+      </form>
+    </details>
+  </div>
+  {% endif %}
 </section>
 {% endif %}
 

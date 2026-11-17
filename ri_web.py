@@ -12278,26 +12278,38 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # A MONTAGEM E A CONFERÊNCIA DA ESCRITURA MORAM EM
             # `notas_doi.declaracao_da_escritura` desde 22/10/2026: a CTP da
             # CENSEC declara as mesmas escrituras, e o montador é um só.
-            reg_e, problemas = NDOI.declaracao_da_escritura(ato, partes_e, cns, ibge)
+            # UMA DECLARAÇÃO POR IMÓVEL — 16/11/2026: a escritura de duas
+            # matrículas dá duas linhas aqui e duas declarações no arquivo, e
+            # vai INTEIRA ou fica INTEIRA, como na CTP (`censec_ctp`).
+            with db.connect() as con_im:
+                imoveis_e = NDOI.imoveis_da_escritura(con_im, ato)
+            decls = NDOI.declaracoes_da_escritura(ato, partes_e, imoveis_e, cns, ibge)
+            varias = len(decls) > 1
+            problemas_e = [dict(x, motivo=(f"matrícula {d['imovel'].get('matricula') or '?'}: "
+                                           f"{x['motivo']}" if varias else x["motivo"]))
+                           for d in decls for x in d["problemas"]]
             rotulo_e = (f"Escritura {ato.get('numero_ordem') or ato['id']}"
                         f" — {ato.get('natureza') or 'sem natureza'}")
-            if problemas:
+            if problemas_e:
                 # NÃO ENTRA, E DIZ O QUE FALTA. Declaração incompleta é recusada
                 # pela Receita sem dizer qual linha — e a multa é da serventia.
                 impedidas.append({"ato": ato | {"rotulo": rotulo_e},
-                                  "problemas": problemas})
+                                  "problemas": problemas_e})
             else:
-                registros.append(reg_e)
+                registros.extend(d["registro"] for d in decls)
             # A OPERACAO VAI COMO TEXTO PORQUE `TIPO_OPERACAO` E TABELA DE
             # TEXTO. A coluna e INTEGER, e o `11` volta do banco como numero:
             # `TIPO_OPERACAO.get(11)` nao acha nada, e a tela mostrava o
             # codigo cru — «11» na cara de quem confere, em vez de «Compra e
             # venda». Mesma armadilha da afinidade, agora do lado da tela.
-            linhas.append({"ato": ato, "m": {"numero": ato.get("doi_matricula")},
-                           "dados": {"operacao": str(ato.get("doi_transacao") or "")},
-                           "incluir": True, "problemas": problemas,
-                           "entra": not problemas, "rotulo": rotulo_e,
-                           "do_tabelionato": True})
+            for d in decls:
+                linhas.append({"ato": ato, "m": {"numero": d["imovel"].get("matricula")},
+                               "dados": {"operacao": str(ato.get("doi_transacao") or "")},
+                               "incluir": True, "problemas": problemas_e,
+                               "entra": not problemas_e,
+                               "rotulo": rotulo_e + (f" · matrícula {d['imovel'].get('matricula')}"
+                                                     if varias else ""),
+                               "do_tabelionato": True})
 
         # O RTD NO MESMO ARQUIVO: imóvel por instrumento particular (CN-MA art. 962).
         with db.connect() as con_rtd:

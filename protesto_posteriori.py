@@ -547,6 +547,81 @@ def cobrar_pendentes(con, titulo_id: int, *, ato_do_desfecho_id: int,
     return {"itens": len(linhas), "total_centavos": total}
 
 
+def devidos_ja_pagos_no_protocolo(con, titulo_id: int, protocolo_id: int | None, *,
+                                  data_da_tabela: str) -> list[tuple[dict, dict]]:
+    """HOTFIX 17/11/2026 (provisório). Os devidos do título que o PROTOCOLO
+    escolhido já pagou: (devido, item do protocolo). Só LÊ.
+
+    Casa pelo serviço e pela quantidade, e só se o item está QUITADO, não foi
+    usado por ato nenhum e o valor pago é o da tabela daquele dia. Qualquer
+    dúvida deixa o devido de fora — e ele continua sendo cobrado como antes.
+    """
+    if protocolo_id is None:
+        return []
+    bd = banco(con)
+    candidatos = bd.ler(
+        """SELECT * FROM cx_protocolo_atos
+            WHERE protocolo_id=%s AND usado_em IS NULL
+              AND COALESCE(quitado,0)=1 AND servico_codigo IS NOT NULL
+            ORDER BY id""", (int(protocolo_id),))
+    escolhidos: set[int] = set()
+    pares: list[tuple[dict, dict]] = []
+    for d in pendentes(con, titulo_id):
+        quantidade = int(d.get("quantidade") or 1)
+        try:
+            conta = AS.calcular_custas(con, servico=int(d["servico"]),
+                                       data=data_da_tabela, quantidade=quantidade)
+            esperado = int(conta.get("total_centavos") or 0)
+        except Exception:
+            continue
+        for item in candidatos:
+            if int(item["id"]) in escolhidos:
+                continue
+            if int(item["servico_codigo"]) != int(d["servico"]):
+                continue
+            if int(item.get("quantidade") or 1) != quantidade:
+                continue
+            if _centavos_br(item.get("valor_total")) != esperado:
+                continue
+            escolhidos.add(int(item["id"]))
+            pares.append((d, item))
+            break
+    return pares
+
+
+def quitar_pelo_protocolo(con, titulo_id: int, protocolo_id: int | None, *,
+                          ato_do_desfecho_id: int, data_da_tabela: str,
+                          agora: str, usuario: str | None = None) -> dict:
+    """HOTFIX 17/11/2026 (provisório). Dá por PAGO o devido que o protocolo
+    escolhido já pagou, em vez de lançar de novo no caixa. ESCREVE.
+
+    Consome o item do protocolo (`usado_em`, pelo ato que devia) e fecha o
+    devido como `cobrar_pendentes` o fecha, apontando o lançamento que o
+    protocolo já fez. Não cria lançamento.
+    """
+    bd = banco(con)
+    bd._escrita()
+    total = 0
+    feitos = 0
+    for d, item in devidos_ja_pagos_no_protocolo(
+            con, titulo_id, protocolo_id, data_da_tabela=data_da_tabela):
+        bd.escrever(
+            """UPDATE cx_protocolo_atos
+                  SET usado_em=%s, usado_por_ato_id=%s, usado_por_tabela=%s
+                WHERE id=%s AND usado_em IS NULL""",
+            (agora, int(d["ato_id"]), "pt_atos", int(item["id"])))
+        bd.escrever(
+            """UPDATE pt_emolumentos_diferidos
+                  SET situacao='COBRADO', cobrado_no_ato_id=%s, lancamento_id=%s,
+                      data_da_tabela=%s, cobrado_em=%s, cobrado_por=%s
+                WHERE id=%s AND situacao='PENDENTE'""",
+            (int(ato_do_desfecho_id), item.get("lancamento_id"),
+             str(data_da_tabela)[:10], agora, usuario, int(d["id"])))
+        total += _centavos_br(item.get("valor_total")) or 0
+        feitos += 1
+    return {"itens": feitos, "total_centavos": total}
+
+
 # ---------------------------------------------------------------- o balcão
 
 

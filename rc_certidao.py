@@ -89,9 +89,11 @@ ESPECIES_DO_LIVRO_E = ("EMANCIPACAO", "INTERDICAO", "AUSENCIA", "TUTELA",
 PAPEIS_DA_FILIACAO = ("PAI", "MAE")
 PAPEIS_DOS_AVOS = ("AVO_PATERNO", "AVO_PATERNA", "AVO_MATERNO", "AVO_MATERNA")
 
-# O que a certidão escreve quando o campo não veio. É o que o acervo escreve:
-# `ND` nas anotações de cadastro e `SEM INFORMAÇÃO` no CPF do casamento.
-SEM_DADO = "ND"
+# O que a certidão escreve quando o campo não veio. Era `ND`, como nas
+# anotações de cadastro do acervo; desde 17/11/2026, por decisão do oficial,
+# é «NÃO CONSTA» — o que o livro não diz, a certidão diz que não consta.
+# `SEM INFORMAÇÃO` continua só no CPF do casamento.
+SEM_DADO = "NÃO CONSTA"
 SEM_INFORMACAO = "SEM INFORMAÇÃO"
 
 # O FIM DO TEOR É TEXTO DA CASA, e mora na pasta dos padrões desde o LF06C

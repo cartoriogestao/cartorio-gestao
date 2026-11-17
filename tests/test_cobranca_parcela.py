@@ -110,7 +110,7 @@ def test_o_pix_vai_para_a_maquininha():
     assert corpo["terminal_id"] == "S1F2-TESTE"
     assert corpo["is_pix"] is True
     assert corpo["is_debit"] is False
-    assert corpo["amount"] == 15000
+    assert corpo["amount"] == 150.0
     assert t.chamadas[1][1].endswith("/v1/pos/payments/" + CAMPOS["seller_id"])
 
 
@@ -305,6 +305,18 @@ def test_a_maquininha_recebe_ao_menos_uma_parcela(forma):
     assert corpo["is_debit"] is (forma == "DEBITO")
 
 
+@pytest.mark.parametrize("forma", ["PIX", "DEBITO", "CREDITO"])
+@pytest.mark.parametrize("centavos,reais", [(5358, 53.58), (8214, 82.14), (1, 0.01), (10000, 100.0)])
+def test_pos_recebe_reais_e_preserva_centavos_no_registro(forma, centavos, reais):
+    import json
+    cliente, t = _maquina({"/v1/pos/payments/": Resposta(201, {})})
+    c = {**NA_MAQUINA, "valor": centavos, "forma_pedida": forma}
+    cliente.emitir(c)
+    corpo = json.loads(json.dumps(t.chamadas[1][2]))
+    assert corpo["amount"] == reais
+    assert c["valor"] == centavos
+
+
 def test_a_resposta_fora_do_json_chega_a_tela():
     cliente, _t = _maquina({"/v1/pos/payments/": Resposta(
         400, b"<html><body><h1>Terminal inativo</h1></body></html>", "text/html")})
@@ -359,6 +371,7 @@ def test_sem_id_no_envio_a_venda_se_acha_pelo_service_id():
     assert lido["situacao"] == CB.RECEBIDA
     assert lido["banco_id"] == "pos:venda-9"
     assert any(c[1].endswith("/sales/CG9/service-id") for c in t.chamadas)
+    assert not any(c[1].endswith("/sales/CG9") for c in t.chamadas)
 
 
 def test_sem_venda_alguma_continua_aguardando():
@@ -367,7 +380,39 @@ def test_sem_venda_alguma_continua_aguardando():
         "/sales/CG9": Resposta(404, {"message": "Sale not found"}),
     })
     lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:CG9"})
-    assert lido["situacao"] == CB.ABERTA and lido["banco_status"] == "NA_MAQUINA"
+    assert lido["situacao"] == CB.ABERTA and lido["banco_status"] == "AGUARDANDO_TERMINAL"
+    assert "ainda não localizado" in lido["banco_motivo"]
+
+
+def test_pos_aceito_sem_sale_id_consulta_direto_o_servico_como_na_producao():
+    cliente, t = _maquina({
+        "/v1/pos/payments/": Resposta(201, {}),
+        "/service-id": Resposta(200, []),
+        "/sales/CG9": Resposta(400, {"message": "Sale not found"}),
+    })
+    ident = cliente.emitir(NA_MAQUINA)
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": ident})
+    assert ident == "pos:CG9" and lido["situacao"] == CB.ABERTA
+    assert not any(c[1].endswith("/sales/CG9") for c in t.chamadas)
+    assert sum(c[0] == "POST" and "/pos/payments/" in c[1] for c in t.chamadas) == 1
+
+
+def test_sale_id_nao_encontrado_com_http400_tambem_busca_por_servico():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(200, [_venda("venda-9", "succeeded")]),
+        "/sales/venda-antiga": Resposta(400, {"message": "Sale not found"}),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:venda-antiga"})
+    assert lido["banco_id"] == "pos:venda-9" and lido["situacao"] == CB.RECEBIDA
+
+
+def test_outro_erro_http400_nao_e_tratado_como_venda_ausente():
+    cliente, t = _maquina({
+        "/sales/venda-antiga": Resposta(400, {"message": "Seller blocked"}),
+    })
+    with pytest.raises(PX.Recusa, match="Seller blocked"):
+        cliente.consultar({**NA_MAQUINA, "banco_id": "pos:venda-antiga"})
+    assert not any(c[1].endswith("/service-id") for c in t.chamadas)
 
 
 def test_duas_vendas_pagas_no_mesmo_service_id_nao_escolhe():

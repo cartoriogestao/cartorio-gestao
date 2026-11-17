@@ -39,8 +39,8 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Baixar o PDF do banco</button></form>
   {% endif %}
 </div>
-{% if com_cofre %}<p class="muted small">Com o cofre da automação instalado, os botões que falam com o banco pedem a rodada
-  do despachante: o resultado aparece aqui no minuto seguinte.</p>{% endif %}
+{% if com_cofre %}<p class="muted small">O envio é iniciado ao solicitar a operação.
+  O cofre precisa estar desbloqueado no servidor. Atualize a ficha para ver o retorno do banco.</p>{% endif %}
 
 {% if c.situacao == 'RECEBIDA' %}
 <div class="card">

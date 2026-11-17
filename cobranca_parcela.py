@@ -391,7 +391,9 @@ class ClienteCobrancaParcela:
             "POST", f"/v1/pos/payments/{urllib_quote(self._campos['seller_id'])}",
             json_corpo={
                 "terminal_id": maquina,
-                "amount": int(c["valor"]),
+                # O banco interno guarda centavos; o POS recebe reais.
+                # 5358 centavos devem aparecer como R$ 53,58, não R$ 5.358.
+                "amount": int(c["valor"]) / 100,
                 "is_debit": forma == "DEBITO",
                 # A Parcela recusa 0 em qualquer forma (HTTP 400 «instalments
                 # must not be less than 1», cobrança CG10 de 10/11/2026):
@@ -555,15 +557,23 @@ class ClienteCobrancaParcela:
             "Abra o link da cobrança.")
 
     def _consultar_maquina(self, venda: str, c: Mapping[str, Any]) -> dict | None:
-        aguardando = {"situacao": CB.ABERTA, "banco_status": "NA_MAQUINA",
-                      "banco_motivo": "Aguardando o pagamento na maquininha."}
+        aguardando = {"situacao": CB.ABERTA, "banco_status": "AGUARDANDO_TERMINAL",
+                      "banco_motivo": "Pedido enviado à Parcela Express; pagamento ainda "
+                                      "não localizado. Confira a tela da maquininha."}
         if not venda:
             return aguardando
+        # O POST do POS pode aceitar o pedido sem devolver saleId. Nesse
+        # caso emitir() conserva o service_id, que NÃO pertence à rota de
+        # saleId. A produção devolve HTTP 400 (não 404) nessa rota errada,
+        # e antes a cobrança ficava EMITINDO para sempre (CG21 e CG22).
+        if venda == _service_id(c):
+            achada = self._venda_pelo_servico(c)
+            return aguardando if achada is None else self._ler_venda_da_maquina(achada)
         r = self._ir(
             "GET",
             f"/v1/sellers/{urllib_quote(self._campos['seller_id'])}/sales/"
             f"{urllib_quote(venda)}")
-        if r.status == 404:
+        if r.status == 404 or (r.status == 400 and _frase(r.corpo).strip().lower() == "sale not found"):
             # Sem o id da venda no envio, guardou-se o service_id: este caminho
             # é por saleId. A venda se acha pelo service_id.
             achada = self._venda_pelo_servico(c)

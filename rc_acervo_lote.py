@@ -30,6 +30,16 @@ PESSOA = frozenset({'papel', 'nome', 'sexo', 'data_nascimento',
     'naturalidade_pais', 'estado_civil', 'endereco', 'bairro', 'cidade', 'uf',
     'cep', 'nome_pos'})
 
+# OS ATOS À MARGEM DO PAPEL — 17/11/2026. A certidão transcreve averbação e
+# anotação de `rc_atos`, e só de lá: a nota marginal que ficasse no pacote
+# JSON sairia como «nada consta» — certidão que esconde averbação. O script de
+# 09/11/2026 (ordem do oficial) fez isso por fora para os livros A-6 a A-23;
+# aqui o lote faz o mesmo, sem selo e sem lavratura: é transcrição do papel.
+MARGEM = frozenset({'tipo', 'teor', 'data_ato', 'natureza'})
+TIPOS_DA_MARGEM = frozenset({'AVERBACAO', 'ANOTACAO'})
+NATUREZAS_DA_MARGEM = frozenset({'cpf_347', 'alteracao_nome', 'retificacao',
+                                 'reconhecimento_filiacao', 'outra'})
+
 
 class LoteError(ValueError):
     pass
@@ -260,10 +270,101 @@ def _pdf(lote, item):
     return p
 
 
+def _margem(item) -> list[dict]:
+    """Os atos à margem do registro do lote, conferidos. Só calcula."""
+    brutos = (item.get('valores') or {}).get('atos_a_margem')
+    if brutos in (None, []):
+        return []
+    if not isinstance(brutos, list) or len(brutos) > 30:
+        raise LoteError('Os atos à margem precisam ser uma lista (até 30).')
+    saida = []
+    for m in brutos:
+        if not isinstance(m, dict) or set(m) - MARGEM:
+            raise LoteError('Ato à margem com campo não permitido nesta carga.')
+        tipo = str(m.get('tipo') or '').strip().upper()
+        teor = str(m.get('teor') or '').strip()
+        natureza = str(m.get('natureza') or '').strip() or None
+        if tipo not in TIPOS_DA_MARGEM or not teor:
+            raise LoteError('Ato à margem precisa de tipo (averbação ou anotação) e teor.')
+        if natureza and (tipo != 'AVERBACAO' or natureza not in NATUREZAS_DA_MARGEM):
+            raise LoteError(f'Natureza «{natureza}» não cabe neste ato à margem.')
+        data = str(m.get('data_ato') or '').strip() or None
+        if data:
+            try:
+                date.fromisoformat(data)
+            except ValueError as erro:
+                raise LoteError('Data inválida no ato à margem.') from erro
+        saida.append({'tipo': tipo, 'teor': teor, 'natureza': natureza, 'data_ato': data})
+    return saida
+
+
+def _letras(texto) -> str:
+    return re.sub(r'[^a-z0-9]', '', normalizar_nome(str(texto or '')).lower())
+
+
+def _gravar_margem(bd, aid: int, margem: list[dict], chave: str, *, quem: str,
+                   agora: str, data_do_registro, lote_sha: str) -> int:
+    """Grava os atos à margem que o assento ainda não tem. Devolve quantos.
+
+    NÃO DUPLICA: o assento que já recebeu os atos da margem (pelo script de
+    09/11/2026 ou por lote anterior) não recebe de novo, e o ato cujo texto
+    já está em outro ato do assento — a averbação de CPF lavrada no sistema e
+    colada no livro como etiqueta — fica com o que já existe.
+    """
+    if not margem:
+        return 0
+    if bd.valor("""SELECT 1 FROM rc_atos WHERE assento_id=%s
+                     AND origem_chave LIKE 'ACERVO_TRANSCRITO:MARGEM:%%' LIMIT 1""", (aid,)):
+        return 0
+    existentes = [_letras(x['teor']) for x in bd.ler(
+        'SELECT teor FROM rc_atos WHERE assento_id=%s', (aid,)) if x.get('teor')]
+    feitos = 0
+    for n, m in enumerate(margem, 1):
+        texto = _letras(m['teor'])
+        miolo = texto[:120]
+        if any(miolo and (miolo in e or e[:120] in texto) for e in existentes if e):
+            continue
+        origem_chave = f'{chave}:MARGEM:{n}'
+        if bd.valor('SELECT 1 FROM rc_atos WHERE origem=%s AND origem_chave=%s',
+                    (ORIGEM_DO_PAPEL, origem_chave)):
+            continue
+        data = m['data_ato'] or str(data_do_registro or '')[:10] or agora[:10]
+        fundamento = ('Transcrito do livro de papel (acervo), lote '
+                      f'{lote_sha[:12]}.' + ('' if m['data_ato'] else
+                      ' A nota não traz data; vale a do registro.'))
+        bd.escrever(
+            """INSERT INTO rc_atos (assento_id, tipo, natureza, data_ato, teor,
+                   teor_formato, fundamento, origem, origem_chave, criado_em, criado_por)
+               VALUES (%s,%s,%s,%s,%s,'texto',%s,%s,%s,%s,%s)""",
+            (aid, m['tipo'], m['natureza'], data, m['teor'], fundamento,
+             ORIGEM_DO_PAPEL, origem_chave, agora, quem))
+        existentes.append(texto)
+        feitos += 1
+    return feitos
+
+
+def _ano_da_matricula_contradiz(atual: dict, v: dict, cns: str) -> bool:
+    """A matrícula do assento achado é de outro ano que o registro do lote.
+
+    O mesmo rótulo de livro serviu duas séries nesta casa (o Livro 10 de 1971
+    e o A-10 de 1995; o Livro 1 dos anos 50 e o A-01 de 1976). Termo igual com
+    ano diferente na matrícula é outro assento: complementar seria escrever a
+    vida de uma pessoa na ficha de outra.
+    """
+    if not atual.get('matricula') or not v.get('data_ato'):
+        return False
+    m = MAT.confere(atual['matricula'])
+    p = m.get('partes') or {}
+    if not m.get('ok') or (len(cns) == 6 and p.get('cns') != cns):
+        return False
+    return str(p.get('ano') or '') != str(v['data_ato'])[:4]
+
+
 def _registro(item):
     if not isinstance(item, dict) or not isinstance(item.get('valores'), dict):
         raise LoteError('Registro fora do formato esperado.')
     v = dict(item['valores'])
+    v.pop('atos_a_margem', None)
     if set(v) - CAMPOS - {'livro_volume', 'numero', 'dados_json', 'pessoas', 'folha'}:
         raise LoteError('O registro contém campo não permitido nesta carga.')
     b, n = volume(v.get('livro_volume')), v.get('numero')
@@ -336,8 +437,10 @@ def conferir(con, lote):
     for linha, item in enumerate(lote['dados']['registros'], 1):
         try:
             v = _registro(item)
+            margem = _margem(item)
             p = _pdf(lote, item)
-            entradas.append({'linha': linha, 'item': item, 'valores': v, 'pdf': p})
+            entradas.append({'linha': linha, 'item': item, 'valores': v, 'pdf': p,
+                             'margem': margem})
         except (LoteError, OSError) as e:
             recusados.append({'linha': linha, 'porque': str(e)})
     quantas = Counter((e['valores']['livro_volume'], e['valores']['numero']) for e in entradas)
@@ -346,7 +449,13 @@ def conferir(con, lote):
     for e in entradas:
         v = e['valores']; chave = (v['livro_volume'], v['numero'])
         motivo = None
-        candidatos = por_chave[chave]
+        # O assento de matrícula de outro ano E de outro nome é de outro livro
+        # com o mesmo rótulo (`_ano_da_matricula_contradiz`): não é este, e
+        # não impede este de entrar. Com o mesmo nome, é este assento com a
+        # data errada no cadastro — e a transcrição a corrige.
+        candidatos = [x for x in por_chave[chave]
+                      if not (_ano_da_matricula_contradiz(x, v, cns)
+                              and normalizar_nome(x['nome']) != normalizar_nome(v['nome']))]
         if not candidatos:
             candidatos = [x for x in sem_livro[v['numero']]
                           if normalizar_nome(x['nome']) == normalizar_nome(v['nome'])]
@@ -483,6 +592,10 @@ def aplicar(con, lote, *, assinatura, raiz, usuario_id, usuario, agora):
             aid = bd.valor(
                 "SELECT id FROM rc_assentos WHERE origem=%s AND origem_chave=%s",
                 (ORIGEM_DO_PAPEL, v['chave']))
+        margem = _gravar_margem(
+            bd, aid, e.get('margem') or [], v['chave'], quem=quem, agora=agora,
+            data_do_registro=v.get('data_ato') or (atual or {}).get('data_ato'),
+            lote_sha=lote['sha256'])
         # A transcrição é a fonte escolhida pelo solicitante; o PDF anterior é preservado.
         digi = DIG.anexar_digitalizacao(con, aid, e['pdf'], quem,
                   raiz_arquivos=raiz, agora=agora, agente='importação de acervo RCPN pela tela',
@@ -492,8 +605,10 @@ def aplicar(con, lote, *, assinatura, raiz, usuario_id, usuario, agora):
         IDR.registrar(con, ts=agora, user_id=int(usuario_id), username=quem,
             action='RCPN_ACERVO_TRANSCRITO', entity_type='rc_assentos', entity_id=aid,
             details={'acao':e['acao'], 'manifesto_sha256':lote['sha256'], 'linha':e['linha'],
-                     'backup':str(backup), 'transcricao_prevalece':True, 'digitalizacao':digi['acao']})
-        resultados.append({'id':aid, 'acao':e['acao'], 'livro':v['livro_volume'], 'numero':v['numero']})
+                     'backup':str(backup), 'transcricao_prevalece':True, 'digitalizacao':digi['acao'],
+                     'atos_a_margem':margem})
+        resultados.append({'id':aid, 'acao':e['acao'], 'livro':v['livro_volume'], 'numero':v['numero'],
+                           'atos_a_margem':margem})
     return {'incluir':q['incluir'], 'complementar':q['complementar'], 'recusados':q['recusados'],
             'resultados':resultados, 'backup':str(backup), 'sha256':lote['sha256']}
 

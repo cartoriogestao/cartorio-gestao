@@ -344,3 +344,80 @@ def test_folha_invalida_nao_entra_no_lote():
             'livro_volume': 'A-1', 'numero': 7, 'nome': 'ANA EXEMPLO',
             'teor': 'Transcrição integral.', 'folha': '48x',
         }})
+
+
+# ------------------------------------------------- os atos à margem (17/11/2026)
+
+MARGEM = [
+    {'tipo': 'ANOTACAO', 'teor': 'Obs: O registro foi feito nos termos do art. 30 da Lei 6.015/73.'},
+    {'tipo': 'AVERBACAO', 'natureza': 'reconhecimento_filiacao', 'data_ato': '2009-07-29',
+     'teor': 'Av1. Cumprindo mandado de averbação de reconhecimento de paternidade.'},
+]
+
+
+def test_os_atos_a_margem_entram_sem_selo_e_nao_duplicam(cg_casa_logada):
+    casa = cg_casa_logada
+    carregado, _, arquivo = lote(casa, extra={'atos_a_margem': MARGEM})
+    r = aplicar(casa, carregado)
+    aid = r['resultados'][0]['id']
+    assert r['resultados'][0]['atos_a_margem'] == 2
+    with casa['db'].connect() as c:
+        atos = banco(c).ler('SELECT * FROM rc_atos WHERE assento_id=%s ORDER BY id', (aid,))
+    assert [(a['tipo'], a['natureza']) for a in atos] == [
+        ('ANOTACAO', None), ('AVERBACAO', 'reconhecimento_filiacao')]
+    assert all(a['selo'] is None and a['origem'] == 'ARQUIVO' for a in atos)
+    # sem data na nota, vale a do registro, e o fundamento diz isso
+    assert atos[0]['data_ato'] == '1995-01-02' and 'não traz data' in atos[0]['fundamento']
+    assert atos[1]['data_ato'] == '2009-07-29'
+    # o mesmo lote de novo (complemento) não grava a margem outra vez
+    dados = json.loads(arquivo.read_text(encoding='utf-8'))
+    dados['registros'][0]['valores']['teor'] = 'Transcrição integral revista.'
+    arquivo.write_text(json.dumps(dados, ensure_ascii=False), encoding='utf-8')
+    r2 = aplicar(casa, L.carregar(arquivo))
+    assert r2['complementar'] == 1 and r2['resultados'][0]['atos_a_margem'] == 0
+
+
+def test_a_margem_ja_lavrada_no_sistema_nao_se_repete(cg_casa_logada):
+    """A averbação de CPF feita no sistema volta colada no livro como etiqueta:
+    o texto já está num ato do assento, e o lote não a grava de novo."""
+    casa = cg_casa_logada
+    aid = antigo(casa, nome='ANA EXEMPLO')
+    teor = 'AV-01/101 AVERBAÇÃO CPF: a registrada está inscrita no CPF sob o nº 000.000.001-91.'
+    with casa['db'].transaction() as c:
+        banco(c).escrever("""INSERT INTO rc_atos (assento_id, tipo, natureza, data_ato, teor, origem,
+                             criado_em) VALUES (%s,'AVERBACAO','cpf_347','2026-09-30',%s,'MANUAL',%s)""",
+                          (aid, teor, AGORA))
+    carregado, _, _ = lote(casa, extra={'atos_a_margem': [
+        {'tipo': 'AVERBACAO', 'natureza': 'cpf_347', 'teor': '[etiqueta colada] ' + teor}]})
+    r = aplicar(casa, carregado)
+    assert r['resultados'][0]['id'] == aid and r['resultados'][0]['atos_a_margem'] == 0
+
+
+def test_ato_a_margem_fora_do_formato_recusa_o_registro(cg_casa_logada):
+    casa = cg_casa_logada
+    carregado, _, _ = lote(casa, extra={'atos_a_margem': [
+        {'tipo': 'ANOTACAO', 'natureza': 'cpf_347', 'teor': 'x'}]})
+    with casa['db'].connect() as c:
+        q = L.conferir(c, carregado)
+    assert not q['aceitos'] and 'Natureza' in q['recusados'][0]['porque']
+
+
+def test_livro_homonimo_de_outro_ano_nao_e_complementado(cg_casa_logada):
+    """O Livro 1 dos anos 50 e o A-01 de 1976 têm termos com o mesmo número.
+    A matrícula do assento achado diz outro ano: o lote inclui, não complementa."""
+    import rc_matricula as MAT
+    casa = cg_casa_logada
+    with casa['db'].connect() as c:
+        cns = re.sub(r'\D', '', str(banco(c).valor("SELECT value FROM settings WHERE key='ri_cns'") or ''))
+    if len(cns) != 6:
+        pytest.skip('casa de teste sem CNS')
+    aid = antigo(casa, nome='OUTRA PESSOA DE 1958', livro='A-9')
+    mat = MAT.compor(cns=cns, ano=1958, livro_tipo='1', livro=9, folha=1, termo=101)
+    with casa['db'].transaction() as c:
+        banco(c).escrever('UPDATE rc_assentos SET matricula=%s WHERE id=%s', (mat, aid))
+    carregado, _, _ = lote(casa)  # A-09, termo 101, registro de 1995
+    r = aplicar(casa, carregado)
+    assert (r['incluir'], r['complementar']) == (1, 0)
+    assert r['resultados'][0]['id'] != aid
+    with casa['db'].connect() as c:
+        assert banco(c).valor('SELECT nome FROM rc_assentos WHERE id=%s', (aid,)) == 'OUTRA PESSOA DE 1958'

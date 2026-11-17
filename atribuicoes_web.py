@@ -782,8 +782,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         no pagamento e na desistência, a do dia no cancelamento. Sem caixa
         aberto não se cobra, pela mesma regra de `_cobrar_se_pedido`.
         """
+        # HOTFIX 17/11/2026 (provisório): o devido que o protocolo escolhido já
+        # pagou fecha pelo item do protocolo, sem novo lançamento no caixa.
+        ja_pago = ""
+        _protocolo_do_devido = numero_digitado(_campo("protocolo_id"),
+                                               maximo=MAIOR_INTEGER)
+        if _protocolo_do_devido is not None and POST.pendentes(con, titulo_id):
+            _q = POST.quitar_pelo_protocolo(
+                con, titulo_id, _protocolo_do_devido, ato_do_desfecho_id=ato_id,
+                data_da_tabela=cobranca["data_da_tabela"], agora=agora(),
+                usuario=usuario_nome())
+            if _q["itens"]:
+                from caixa_schema import reais as _reais_do_devido
+                ja_pago = (f" A posteriori: {_q['itens']} item(ns) já pago(s) no "
+                           f"protocolo (R$ {_reais_do_devido(_q['total_centavos'])}), "
+                           f"sem nova cobrança.")
         if not POST.pendentes(con, titulo_id):
-            return ""
+            return ja_pago
         caixa = _caixa_aberto(con)
         if not caixa:
             raise AS.AtoError(
@@ -801,7 +816,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             forma_pagamento=_campo("forma_pagamento") or None,
             usuario=usuario_nome())
         from caixa_schema import reais
-        return (f" A posteriori: R$ {reais(r['total_centavos'])} cobrado(s) pela "
+        return ja_pago + (f" A posteriori: R$ {reais(r['total_centavos'])} cobrado(s) pela "
                 f"tabela de {cobranca['data_da_tabela']}.")
 
     def _fraudes_de(con, pessoas: list[dict]) -> list[dict]:
@@ -895,6 +910,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     # CAMINHOS_USADOS_POR_ESTA_CASA`) — e virou regra geral por engano.
     CODIGO_TJ_AUTENTICACAO_COPIA = "13.18"
 
+    def _sem_o_que_o_devido_ja_cobre(con, protocolo, linhas):
+        """HOTFIX 17/11/2026 (provisório). No CANCELAMENTO/DESISTÊNCIA do
+        Protesto, o item do protocolo que já pagou um devido do título (o 17.1.x
+        do protesto, o 17.2 da intimação) não é item do selo deste ato: é
+        consumido em `_cobrar_os_diferidos`. Qualquer dúvida devolve as linhas
+        como vieram."""
+        try:
+            if not request.path.startswith("/protesto/"):
+                return linhas
+            ato = _campo("ato")
+            if ato not in ("CANCELAMENTO", "DESISTENCIA") or not linhas:
+                return linhas
+            titulo = int((request.view_args or {}).get("titulo_id"))
+            tabela = POST.cobranca_do_ato(con, titulo, ato, hoje=hoje())["data_da_tabela"]
+            pagos = {int(i["id"]) for _d, i in POST.devidos_ja_pagos_no_protocolo(
+                con, titulo, protocolo, data_da_tabela=tabela)}
+        except Exception:
+            return linhas
+        return [r for r in linhas if int(r["id"]) not in pagos]
+
     def _itens_para_selar(con, ids_usados: list | None = None
                           ) -> list[tuple[str, int]]:
         """Os itens da tabela de emolumentos que viram selo. Só LÊ.
@@ -950,7 +985,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             if marcados:
                 lugares = ",".join(["%s"] * len(marcados))
                 linhas = banco(con).ler(
-                    f"""SELECT id, codigo_ato, quantidade FROM cx_protocolo_atos
+                    f"""SELECT id, codigo_ato, quantidade, servico_codigo FROM cx_protocolo_atos
                          WHERE protocolo_id=%s AND usado_em IS NULL
                            AND id IN ({lugares})
                            AND codigo_ato IS NOT NULL
@@ -959,12 +994,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     [protocolo] + marcados)
             else:
                 linhas = banco(con).ler(
-                    """SELECT id, codigo_ato, quantidade FROM cx_protocolo_atos
+                    """SELECT id, codigo_ato, quantidade, servico_codigo FROM cx_protocolo_atos
                         WHERE protocolo_id=%s AND usado_em IS NULL
                           AND codigo_ato IS NOT NULL
                           AND TRIM(codigo_ato) <> ''
                         ORDER BY id""",
                     (protocolo,))
+            # HOTFIX 17/11/2026 (provisório): o que o devido do título já cobre
+            # não vira selo do cancelamento/desistência.
+            linhas = _sem_o_que_o_devido_ja_cobre(con, protocolo, linhas)
             itens: list[tuple[str, int]] = []
             for r in linhas:
                 codigo = str(r["codigo_ato"])
@@ -4487,6 +4525,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             caixa = _caixa_aberto(con)
             cobrancas = _cobrancas_de(con, "pt_atos", atos)
             protocolos = _protocolos_abertos(con)
+            # HOTFIX 17/11/2026 (provisório): a ficha mostra os itens do protocolo
+            # escolhido (coluna «Selar»/«Cobrar»), como as outras fichas.
+            protocolo_escolhido = (request.args.get("protocolo_id")
+                                   or request.form.get("protocolo_id"))
+            itens_do_protocolo = []
+            if numero_digitado(protocolo_escolhido) is not None:
+                itens_do_protocolo = banco(con).ler(
+                    """SELECT id, codigo_ato, descricao, quantidade,
+                              valor_total, servico_codigo
+                         FROM cx_protocolo_atos
+                        WHERE protocolo_id=%s AND usado_em IS NULL
+                          AND codigo_ato IS NOT NULL AND TRIM(codigo_ato) <> ''
+                        ORDER BY id""",
+                    (numero_digitado(protocolo_escolhido),))
+            else:
+                protocolo_escolhido = None
             # OS AVISOS SAO LISTA, e nao um so: 255 dos 1.361 titulos do
             # acervo tem mais de um. Endereco que muda, entrega que nao deu
             # certo, aviso que se refaz.
@@ -4627,6 +4681,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 pode_averbar=bool(admin and averbacao and averbacao.get("atos")))
 
         return render_template("atrib_protesto_ficha.html", titulo=dict(titulo),
+                               protocolo_escolhido=protocolo_escolhido,
+                               itens_do_protocolo=itens_do_protocolo,
                                falta_instrumento=_falta_para_o_xml(titulo_id),
                                abas_da_ficha=abas_da_ficha,
                                fase_do_ato=PFASES.fase_do_ato,

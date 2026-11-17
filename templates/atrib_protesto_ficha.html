@@ -934,7 +934,9 @@
     </div>
     {% endif %}
     {{ quadro(receitas.get(ato), caixa, protocolos, form=v_ato,
-              diferido=(cob and cob.diferir)) }}
+              diferido=(cob and cob.diferir), protocolo_escolhido=protocolo_escolhido,
+              itens_do_protocolo=itens_do_protocolo,
+              reload_url=url_for('protesto_titulo', titulo_id=titulo.id)) }}
 
     {# O BOTÃO FICA NO FIM (relato #146): o quadro de cobrança traz protocolo,
        itens a selar, pagador e forma de pagamento, e o botão antes dele fazia

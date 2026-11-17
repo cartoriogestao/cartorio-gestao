@@ -331,7 +331,7 @@ class Municipios:
             self.por_nome[norm(r['nome'])].append((r['nome'], r['uf']))
         self.casa = (cidade_da_casa, uf_da_casa)
         self.ultimo_por_grafia = ''
-        # «M. Altos», «P. Franco», «MontesAltos»: a inicial do primeiro nome e o
+        # «C. Exemplo», «P. Franco», «CidadeExemplo»: a inicial do primeiro nome e o
         # resto, ou tudo emendado — quando o apelido é único na UF da casa.
         apelidos: dict[str, list] = defaultdict(list)
         for n, opcoes in list(self.por_nome.items()):

@@ -132,6 +132,7 @@ def test_o_layout_recusa_o_que_o_doi_web_recusou():
 import json  # noqa: E402
 import re  # noqa: E402
 import sqlite3  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 import pytest  # noqa: E402
 
@@ -215,3 +216,142 @@ def test_a_tela_da_ctp_sugere_do_teor_e_a_doi_sai_no_layout(casa):
     assert dec["mesAnoUltimaParcela"] == "2036-08-01"
     assert dec["localizacao"] == "zona rural"
     assert ri_doi.conferir_layout(dec) == []
+
+
+# ------------------------------------------------- a tela da DOI, 17/11/2026
+#
+# Três defeitos achados ao montar a rotina que leva a DOI ao DOI-Web: a lista
+# de meses em aberto começava em 1977, a mensagem do mês sem ato mandava
+# procurar na Receita uma «negativa» que o DOI-Web não tem, e gerar de novo
+# trocava o arquivo já gerado sem aviso nem cópia.
+
+
+def _salvar_ctp(casa, aid, folha="2-2v"):
+    """Grava na tela da CTP o que a DOI do título de domínio precisa."""
+    c = casa["cliente"]
+    html = c.get("/registro-imoveis/ctp?competencia=2026-09").get_data(as_text=True)
+    campos = {"csrf_token": _token(html), "acao": "salvar", f"incluir_{aid}": "1"}
+    for nome, valor in re.findall(rf'name="(i{aid}_[a-z_]+)"[^>]*value="([^"]*)"', html):
+        campos[nome] = valor
+    campos.update({f"i{aid}_operacao": "73", f"i{aid}_forma_pagamento": "7",
+                   f"i{aid}_valor_operacao": "7706,83", f"i{aid}_data_negocio": "2017-08-22",
+                   f"i{aid}_valor_base_itbi_nao_consta": "1", f"i{aid}_natureza_titulo": "4",
+                   f"i{aid}_folha_ato": folha})
+    assert c.post("/registro-imoveis/ctp?competencia=2026-09", data=campos).status_code in (200, 302)
+
+
+def _gerar(casa, **extra):
+    c = casa["cliente"]
+    html = c.get("/registro-imoveis/doi?competencia=2026-09").get_data(as_text=True)
+    return c.post("/registro-imoveis/doi?competencia=2026-09",
+                  data={"csrf_token": _token(html), "acao": "gerar", **extra})
+
+
+def _remessa(casa):
+    con = sqlite3.connect(casa["banco"])
+    con.row_factory = sqlite3.Row
+    try:
+        atual = con.execute("SELECT arquivo_hash, conteudo FROM ri_doi_remessas "
+                            "WHERE competencia='2026-09'").fetchone()
+        anteriores = con.execute("SELECT * FROM ri_doi_remessas_anteriores "
+                                 "WHERE competencia='2026-09' ORDER BY id").fetchall()
+        return dict(atual) if atual else None, [dict(a) for a in anteriores]
+    finally:
+        con.close()
+
+
+def test_os_meses_em_aberto_comecam_no_corte_da_implantacao():
+    """O acervo vai a 1977, e a tela listava 597 meses em aberto."""
+    import notas_doi
+    meses = notas_doi.competencias_em_aberto(
+        ["1977-03", "2026-09", "2026-10"], set(), "2026-11-16")
+    assert [m["competencia"] for m in meses] == ["2026-09", "2026-10", "2026-11"]
+    # e quem começou a lavrar depois do corte começa no primeiro ato
+    assert [m["competencia"] for m in notas_doi.competencias_em_aberto(
+        ["2026-10"], set(), "2026-11-16")] == ["2026-10", "2026-11"]
+
+
+def test_o_corte_da_tela_e_o_mesmo_da_conferencia(monkeypatch):
+    """A tela lê a constante da conferência, e não uma cópia dela: mudado o
+    corte num lugar, os dois mudam juntos."""
+    import gestor_conferencia
+    import notas_doi
+    monkeypatch.setattr(gestor_conferencia, "IMPLANTACAO", "2026-10-01")
+    assert notas_doi.competencias_em_aberto(
+        ["1977-03"], set(), "2026-11-16")[0]["competencia"] == "2026-10"
+
+
+def test_a_tela_nao_cobra_os_meses_do_acervo_antigo(casa):
+    aid = _titulo_de_dominio(casa)
+    con = sqlite3.connect(casa["banco"])
+    with con:
+        con.execute(
+            """INSERT INTO ri_atos (matricula_id, tipo, numero, data_ato, teor, teor_formato,
+                   cancelado, acervo, origem, hash_ato, hash_anterior, lavrado_em)
+               SELECT matricula_id, 'R', 9, '1977-05-02', 'acervo antigo', 'html', 0, 1,
+                      'IMPORTACAO', 'h0', NULL, '1977-05-02T09:00'
+                 FROM ri_atos WHERE id=?""", (aid,))
+    con.close()
+    html = casa["cliente"].get("/registro-imoveis/doi?competencia=2026-09").get_data(as_text=True)
+    assert "doi?competencia=2026-09" in html
+    assert "doi?competencia=1977-" not in html, "a lista de meses em aberto voltou ao acervo"
+    assert "doi?competencia=2026-08" not in html
+    assert "10/09/2026" in html
+
+
+def test_o_mes_sem_ato_nao_manda_procurar_negativa_no_doi_web(casa):
+    """O DOI-Web não tem declaração negativa: a prova do mês vazio é do AUDITUS."""
+    c = casa["cliente"]
+    html = c.get("/registro-imoveis/doi?competencia=2026-10").get_data(as_text=True)
+    html = c.post("/registro-imoveis/doi?competencia=2026-10",
+                  data={"csrf_token": _token(html), "acao": "negativa",
+                        "competencia": "2026-10"},
+                  follow_redirects=True).get_data(as_text=True)
+    assert "Mês registrado como sem ato imobiliário" in html
+    assert "não tem declaração negativa" in html
+    assert "AUDITUS" in html
+    assert "fechamento negativo" not in html
+    tela = (Path(__file__).resolve().parent.parent / "templates" / "ri_doi.html").read_text(
+        encoding="utf-8")
+    assert "fechamento negativo" not in tela
+
+
+def test_gerar_de_novo_avisa_e_guarda_o_arquivo_anterior(casa):
+    """Se parte do arquivo já subiu ao DOI-Web, a prova do que foi mandado não
+    pode sumir porque alguém gerou de novo."""
+    aid = _titulo_de_dominio(casa)
+    _salvar_ctp(casa, aid)
+    assert _gerar(casa).mimetype == "application/json"
+    primeiro, anteriores = _remessa(casa)
+    assert anteriores == []
+
+    # a tela avisa, e o botão pede a confirmação
+    html = casa["cliente"].get("/registro-imoveis/doi?competencia=2026-09").get_data(as_text=True)
+    assert "Já há arquivo gerado para 2026-09" in html
+    assert 'name="regerar"' in html
+
+    # sem a confirmação, nada muda
+    resp = _gerar(casa)
+    assert resp.status_code == 302 and resp.mimetype != "application/json"
+    assert _remessa(casa) == (primeiro, [])
+
+    # com ela, o arquivo novo entra e o anterior fica guardado, inteiro
+    _salvar_ctp(casa, aid, folha="3-3v")
+    assert _gerar(casa, regerar="1").mimetype == "application/json"
+    atual, anteriores = _remessa(casa)
+    assert atual["arquivo_hash"] != primeiro["arquivo_hash"]
+    assert len(anteriores) == 1
+    assert anteriores[0]["arquivo_hash"] == primeiro["arquivo_hash"]
+    assert anteriores[0]["conteudo"] == primeiro["conteudo"]
+
+    # e se baixa como saiu, com nome que não se confunde com o atual
+    baixado = casa["cliente"].get(
+        f"/registro-imoveis/doi/2026-09/anterior/{anteriores[0]['id']}")
+    assert baixado.get_data(as_text=True) == primeiro["conteudo"]
+    assert f"_anterior_{anteriores[0]['id']}.json" in baixado.headers["Content-Disposition"]
+    html = casa["cliente"].get("/registro-imoveis/doi?competencia=2026-09").get_data(as_text=True)
+    assert primeiro["arquivo_hash"] in html
+
+    # gerar de novo o MESMO conteúdo não acumula cópia: o atual prova o mesmo
+    assert _gerar(casa, regerar="1").mimetype == "application/json"
+    assert len(_remessa(casa)[1]) == 1

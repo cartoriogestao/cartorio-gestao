@@ -1170,6 +1170,29 @@ def _montar_app(test_config: dict | None = None) -> Flask:
 
     app.extensions["abrir_sessao"] = abrir_sessao
 
+    # O NAVEGADOR NÃO GUARDA O USUÁRIO NO 2FA, E EM HTTP MENOS AINDA.
+    # A senha segue para outra página (o código), e o Chrome trata isso como
+    # login que não terminou: não oferece gravar a conta. Em http:// a memória
+    # de senha do navegador também pode recusar. O nome da conta, só, volta
+    # num cookie sem Secure — a mesma razão do cookie da sessão.
+    COOKIE_USUARIO = "cg_usuario"
+
+    def usuario_lembrado() -> str:
+        nome = (request.cookies.get(COOKIE_USUARIO) or "").strip()
+        if not nome or len(nome) > 80 or any(c in nome for c in "\r\n\x00"):
+            return ""
+        return nome
+
+    def lembrar_usuario(resposta, username: str):
+        nome = (username or "").strip()
+        if nome and len(nome) <= 80 and not any(c in nome for c in "\r\n\x00"):
+            resposta.set_cookie(
+                COOKIE_USUARIO, nome, max_age=400 * 24 * 60 * 60, path="/login",
+                httponly=True, samesite="Lax", secure=False)
+        return resposta
+
+    app.extensions["lembrar_usuario"] = lembrar_usuario
+
     def cadastro_pelo_login(username: str):
         """O usuário com este login, ativo ou não — ou None. Só LÊ.
 
@@ -1218,12 +1241,15 @@ def _montar_app(test_config: dict | None = None) -> Flask:
                         depois = LESP.espera(con, chave, ip, uid_alvo)
             if fim:
                 flash(LESP.recado(fim), "danger")
-                return render_template("login.html"), 429
+                return render_template(
+                    "login.html", usuario_lembrado=username or usuario_lembrado()), 429
             if not row:
                 if depois:
                     flash("Usuário ou senha inválidos. " + LESP.recado(depois), "danger")
                 else:
                     flash("Usuário ou senha inválidos.", "danger")
+                return render_template(
+                    "login.html", usuario_lembrado=username or usuario_lembrado())
             else:
                 # Só caminho DESTE sistema (M1): `next=//fora.exemplo` levava
                 # quem acabou de entrar para uma página que imita esta.
@@ -1235,10 +1261,11 @@ def _montar_app(test_config: dict | None = None) -> Flask:
                 desvio = app.extensions["dois_fatores_depois_da_senha"](
                     row, destino)
                 if desvio is not None:
-                    return desvio
+                    return lembrar_usuario(desvio, row["username"])
                 abrir_sessao(row)
-                return redirect(destino or url_for("dashboard"))
-        return render_template("login.html")
+                return lembrar_usuario(
+                    redirect(destino or url_for("dashboard")), row["username"])
+        return render_template("login.html", usuario_lembrado=usuario_lembrado())
 
     @app.route("/logout", methods=["POST"])
     @login_required

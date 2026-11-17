@@ -252,7 +252,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                         resposta.set_cookie(DD.COOKIE, token, max_age=DD.SEGUNDOS,
                                             secure=True, httponly=True, samesite="Lax", path="/")
                         _log(user, "DOIS_FATORES_DISPOSITIVO_LEMBRADO", {"dias": DD.DIAS})
-                return _sem_cache(resposta)
+                return app.extensions["lembrar_usuario"](_sem_cache(resposta), user["username"])
             if resultado["motivo"] == "sem_dois_fatores":
                 # O Gestor zerou a verificação enquanto a pessoa digitava:
                 # recomeça pela senha, e a entrada segue a regra de agora.
@@ -299,8 +299,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 return redirect(url_for("login_dois_fatores_cadastrar"))
             _log(user, "DOIS_FATORES_ATIVADO", {"na_entrada": True})
             destino = _entrar(user, {"segundo_fator": DF.TOTP, "ativado_agora": True})
-            return _sem_cache(render_template("dois_fatores_codigos.html",
-                                              codigos=codigos, seguir=destino))
+            return app.extensions["lembrar_usuario"](
+                _sem_cache(render_template("dois_fatores_codigos.html",
+                                           codigos=codigos, seguir=destino)),
+                user["username"])
         with db.connect() as con:
             segredo = DF.segredo_pendente(con, uid, pasta)
         contexto = _contexto_da_chave(user, segredo) if segredo else {}

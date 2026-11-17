@@ -7086,6 +7086,48 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
               f"número novo, e os dois hashes de cada ato ficaram na auditoria.", "success")
         return redirect(url_for("ri_ficha", matricula_id=matricula_id))
 
+    @app.route("/registro-imoveis/atos/<int:ato_id>/retificar-tipo", methods=["POST"])
+    @roles_required("ADMIN")
+    def ri_retificar_tipo_ato(ato_id):
+        """Troca o tipo (R <-> AV) de ato ja lavrado e refaz a cadeia de hash.
+
+        So ADMIN, como o expurgo. Motivo obrigatorio. Numero, teor e selo nao
+        mudam; o hash deste ato e dos posteriores e recalculado, e os dois
+        hashes de cada um ficam na auditoria — ver
+        `ri_correcoes.retificar_tipo_do_ato`.
+        """
+        a = q1("SELECT matricula_id FROM ri_atos WHERE id=%s", (ato_id,))
+        if not a:
+            abort(404)
+        voltar = redirect(url_for("ri_ficha", matricula_id=a["matricula_id"]))
+        try:
+            with db.transaction() as con:
+                saida = RC.retificar_tipo_do_ato(
+                    con, ato_id, request.form.get("novo_tipo"),
+                    motivo=(request.form.get("motivo") or ""),
+                    agora=db.now(), usuario=_usuario_atual())
+        except RC.CorrecaoError as erro:
+            flash(str(erro), "danger")
+            return voltar
+
+        audit("RI_ATO_TIPO_RETIFICADO", "RI_ATO", ato_id,
+              {"matricula_id": saida["matricula_id"],
+               "matricula": saida["matricula_numero"],
+               "tipo_antigo": saida["tipo_antigo"], "tipo_novo": saida["tipo_novo"],
+               "rotulo_antigo": saida["rotulo_antigo"],
+               "rotulo_novo": saida["rotulo_novo"],
+               "selo": saida["selo"], "motivo": saida["motivo"],
+               "usuario": saida["usuario"], "atos": saida["atos"]})
+        flash(f"{saida['rotulo_antigo']} passou a ser {saida['rotulo_novo']}. Número, "
+              f"teor e selo não mudaram. A cadeia de integridade de "
+              f"{len(saida['atos'])} ato(s) foi refeita e os dois hashes de cada um "
+              f"ficaram na auditoria.", "success")
+        if not saida["teor_confere"]:
+            flash(f"Atenção: o texto do ato começa com «{saida['teor_comeca_com']}-», "
+                  f"e não com {saida['tipo_novo']}. Confira se era isso mesmo.",
+                  "warning")
+        return voltar
+
     @app.route("/registro-imoveis/<int:matricula_id>/parte-abertura", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def ri_incluir_parte_abertura(matricula_id):

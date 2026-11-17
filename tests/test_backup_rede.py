@@ -24,7 +24,8 @@ def rede(tmp_path, monkeypatch):
     arquivos = tmp_path / "arquivos"
     arquivos.mkdir()
     (arquivos / "ficcao.txt").write_text("documento ficticio", encoding="utf-8")
-    destino = tmp_path / "nas" / "backup.zip"
+    monkeypatch.setenv("CARTORIO_GESTAO_COPIAS", str(tmp_path / "nas"))
+    destino = tmp_path / "nas" / "backups" / "backup.zip"
     area = tmp_path / "programdata" / "CartorioGestaoOperacao" / "backups_temporarios"
     return Banco(), arquivos, destino, area
 
@@ -70,7 +71,7 @@ def test_pacote_transferido_abre_com_e_sem_cifra(rede, senha):
 
 def test_erro_de_copia_preserva_local_e_backup_anterior(rede, monkeypatch):
     db, arquivos, destino, area = rede
-    destino.parent.mkdir()
+    destino.parent.mkdir(parents=True)
     destino.write_bytes(b"backup anterior ficticio")
     def falhar(local, alvo):
         alvo.with_suffix(".zip.parcial").write_bytes(b"interrompido")
@@ -117,3 +118,19 @@ def test_falha_na_limpeza_nao_perde_registro_do_backup_valido(rede, monkeypatch,
     assert B.conferir(destino) is None
     assert "nao foi possivel limpar" in caplog.text
     assert list(area.glob("envio-backup-*/backup.zip"))
+
+
+@pytest.mark.parametrize("nome", ["../fora.zip", "../backups-maliciosos/f.zip", "arquivo:fluxo.zip", "backup.exe"])
+def test_destino_fora_da_raiz_ou_nome_invalido_e_recusado(rede, nome):
+    db, arquivos, destino, area = rede
+    with pytest.raises(B.BackupInvalido):
+        B.gerar_pacote(db, destino.parent / nome, arquivos)
+    assert not area.exists()
+
+
+def test_destino_unc_exige_raiz_administrativa(rede, monkeypatch):
+    db, arquivos, destino, area = rede
+    monkeypatch.delenv("CARTORIO_GESTAO_COPIAS")
+    with pytest.raises(B.BackupInvalido, match="raiz administrativa"):
+        B.gerar_pacote(db, destino, arquivos)
+    assert not area.exists()

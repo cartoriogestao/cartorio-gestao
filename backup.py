@@ -76,6 +76,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import zipfile
@@ -350,6 +351,22 @@ def _area_de_envio() -> Path:
     return area
 
 
+def _destino_autorizado(destino: Path) -> Path:
+    """UNC apenas na pasta de backups da raiz administrativa do servidor."""
+    configurada = os.environ.get("CARTORIO_GESTAO_COPIAS", "").strip()
+    if not configurada:
+        raise BackupInvalido("destino de rede sem raiz administrativa configurada")
+    raiz = Path(configurada).resolve() / "backups"
+    alvo = Path(destino).resolve()
+    nome = alvo.name
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,159}\.zip", nome):
+        raise BackupInvalido("nome de pacote de rede invalido")
+    if alvo.parent != raiz:
+        raise BackupInvalido("destino fora da pasta de backups autorizada")
+    # Reconstrucao a partir da raiz administrativa e do nome permitido.
+    return raiz / nome
+
+
 def _publicar_pacote(local: Path, destino: Path) -> None:
     """Uma transferencia sequencial; so publica depois do SHA-256 no NAS."""
     destino.parent.mkdir(parents=True, exist_ok=True)
@@ -377,7 +394,9 @@ def gerar_pacote(db, destino: Path, archive_root: Path,
                   acervo, senha_da_cifra)
     if not _destino_de_rede(destino):
         return _gerar_pacote(*argumentos)
-    trabalho = Path(mkdtemp(prefix="envio-backup-", dir=_area_de_envio()))
+    destino = _destino_autorizado(destino)
+    area = _area_de_envio().resolve()
+    trabalho = Path(mkdtemp(prefix="envio-backup-", dir=area)).resolve()
     local = trabalho / destino.name
     try:
         _gerar_pacote(db, local, archive_root, com_arquivos, app_nome, versao,
@@ -387,6 +406,8 @@ def gerar_pacote(db, destino: Path, archive_root: Path,
         # Falha de rede nao joga fora a unica copia completa da rodada.
         raise BackupInvalido(f"{erro}; area local preservada: {trabalho}") from erro
     try:
+        if trabalho.parent != area or not trabalho.name.startswith("envio-backup-"):
+            raise OSError("area temporaria fora da raiz prevista")
         shutil.rmtree(trabalho)
     except OSError:
         # O pacote valido ja foi publicado: nao impedir seu registro nativo.

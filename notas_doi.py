@@ -109,6 +109,19 @@ TIPOS_DECLARACAO = {
     "NEGATIVA": "Negativa — mês sem ato imobiliário",
 }
 
+#: A ESCRITURA QUE ENTRA NA DOI E A LAVRADA — 17/11/2026. A tela da DOI pegava
+#: toda escritura com imovel que nao estivesse SEM_EFEITO, e com isso entravam
+#: os rascunhos (EM_LAVRATURA: sem livro, folha nem selo). Rascunho abandonado
+#: aparecia como escritura «parada», e quem conferia lia declaracao atrasada
+#: onde nunca houve ato. A conferencia do gestor (`gestor_conferencia.
+#: regra_doi`) ja contava so a lavrada e so avisava o rascunho; as duas leem
+#: estas constantes, para nao voltarem a divergir. A CTP da CENSEC
+#: (`censec_ctp.declaracoes_do_mes`) ja filtrava a lavrada.
+SITUACAO_QUE_DECLARA = "LAVRADO"
+#: O rascunho com imovel nao declara, mas e avisado: se foi assinado no papel,
+#: e deste mes e da DOI, e alguem precisa concluir a lavratura ou apaga-lo.
+SITUACAO_RASCUNHO = "EM_LAVRATURA"
+
 # Operacoes em que o manual e explicito sobre uma declaracao por imovel, por
 # serem as que mais costumam trazer varios imoveis no mesmo instrumento.
 UMA_POR_IMOVEL_SEMPRE = (13, 69, 70, 45)   # permuta, inventario, partilha, loteamento

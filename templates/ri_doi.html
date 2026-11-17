@@ -203,6 +203,23 @@
     </p>
     {% endif %}
 
+    {# O RASCUNHO É AVISADO À PARTE — 17/11/2026. Escritura em lavratura não tem livro, folha nem selo, e
+       não declara; contada entre as «paradas», parecia declaração atrasada. Fica fora da conta, mas à
+       vista: se foi assinada no papel, é deste mês e da DOI. #}
+    {% if rascunhos %}
+    <div class="notice warning" style="margin-top:12px">
+      <strong>{{ rascunhos|length }} rascunho{{ '' if rascunhos|length == 1 else 's' }} de escritura com
+      imóvel neste mês</strong>, ainda em lavratura: não entra{{ '' if rascunhos|length == 1 else 'm' }} na
+      DOI nem na conta das paradas. Se foi assinada, conclua a lavratura; se não, apague o rascunho.
+      <ul class="small" style="margin:6px 0 0;padding-left:18px">
+        {% for r in rascunhos %}
+        <li><a href="{{ url_for('notas_ato', ato_id=r.id) }}">Escritura {{ r.numero_ordem or r.id }}
+          &mdash; {{ r.natureza or 'sem natureza' }}</a>, {{ r.data }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
     {# GERAR DE NOVO AVISA ANTES — 17/11/2026. Gerar outra vez troca o arquivo e o sha256 desta tela, e o
        que já subiu ao DOI-Web deixaria de ter prova aqui. Com remessa gerada, o botão pede a marca de
        que se sabe disso (o servidor confere a mesma marca), e o arquivo anterior fica guardado. #}

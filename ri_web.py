@@ -12270,11 +12270,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         primeiro = f"{ano:04d}-{mes:02d}-01"
         seguinte = (f"{ano + 1:04d}-01-01" if mes == 12
                     else f"{ano:04d}-{mes + 1:02d}-01")
+        #
+        # SÓ A ESCRITURA LAVRADA DECLARA — 17/11/2026. O filtro era «tudo
+        # menos SEM_EFEITO», e o rascunho (EM_LAVRATURA, sem livro, folha nem
+        # selo) entrava como escritura «parada»: dois rascunhos abandonados
+        # pareciam declarações atrasadas de um mês. A situação vem de
+        # `notas_doi`, a mesma que a conferência do gestor lê.
         escrituras = q("""SELECT * FROM nt_atos
                            WHERE tipo = 'ESCRITURA' AND com_imovel = 1
-                             AND COALESCE(situacao,'') <> 'SEM_EFEITO'
+                             AND situacao = %s
                              AND data >= %s AND data < %s
-                           ORDER BY data, id""", (primeiro, seguinte))
+                           ORDER BY data, id""",
+                       (NDOI.SITUACAO_QUE_DECLARA, primeiro, seguinte))
+        # O rascunho com imóvel não declara nem entra na conta das paradas,
+        # mas é avisado à parte: se foi assinado no papel, é deste mês.
+        rascunhos = q("""SELECT id, numero_ordem, natureza, data FROM nt_atos
+                          WHERE tipo = 'ESCRITURA' AND com_imovel = 1
+                            AND situacao = %s
+                            AND data >= %s AND data < %s
+                          ORDER BY data, id""",
+                      (NDOI.SITUACAO_RASCUNHO, primeiro, seguinte))
 
         linhas, registros, impedidas = [], [], []
         for e in escrituras:
@@ -12466,7 +12481,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return render_template(
             "ri_doi.html", competencia=competencia, linhas=linhas, meses=meses,
             remessa=remessa, remessas=remessas, entregue=entregue, cns=cns,
-            anteriores=anteriores,
+            anteriores=anteriores, rascunhos=rascunhos,
             corte_da_implantacao="/".join(reversed(IMPLANTACAO.split("-"))),
             prontas=len(registros),
             resumo=NDOI.resumo_impedimentos(impedidas),

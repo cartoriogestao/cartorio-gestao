@@ -607,3 +607,155 @@ def corrigir_parte(con: Any, parte_id: int, *, motivo: str, agora: str,
     return {"parte_id": parte_id, "matricula_id": p["matricula_id"],
             "ato_id": p["ato_id"], "nome": campos.get("nome", p["nome"]),
             "motivo": motivo, "mudancas": mudancas}
+
+
+# ------------------------------------------------- tipo do ato lavrado (R/AV)
+#
+# O CASO QUE ORIGINOU (17/11/2026): uma averbacao de retificacao lavrada
+# direto na ficha, sem minuta, saiu com o campo «Tipo de ato» no padrao,
+# Registro (R). O teor diz «AV-03», o selo pedido e o de averbacao, e a ficha
+# mostra «R-03». Nao havia tela para isso: o tipo entra no hash do ato, e o
+# hash encadeia os posteriores.
+#
+# O QUE SE CORRIGE AQUI E SO A CLASSIFICACAO, como na renumeracao da
+# matricula: o numero do ato fica, o teor fica, o selo fica. Muda a coluna
+# `tipo` e, por construcao, o hash deste ato e o de todos os que vieram depois
+# dele na mesma matricula. A cadeia e refeita na ordem de lavratura (a mesma
+# `ORDER BY id` de quem lavra), e os hashes antigos e novos voltam para quem
+# chama gravar na auditoria.
+#
+# ANTES de mexer, a cadeia da matricula tem de conferir. Se ja estiver
+# divergente, refaze-la esconderia a divergencia — e a correcao e recusada.
+
+TIPOS_DE_ATO = ("R", "AV")
+
+_ROTULO_NO_INICIO = re.compile(r"^\s*(AV|R)\s*[-\u2013\u2014.]?\s*0*(\d+)", re.IGNORECASE)
+
+
+def rotulo_do_ato(tipo: Any, numero: Any) -> str:
+    """«R-03», «AV-12»: o rotulo como a ficha escreve."""
+    return f"{str(tipo or '').upper()}-{int(numero or 0):02d}"
+
+
+def tipo_escrito_no_teor(teor: Any) -> str | None:
+    """O tipo com que o proprio teor comeca («AV-03/2.874 ...» -> 'AV').
+
+    So olha o comeco do texto, depois de tirar marcacao HTML. Devolve None
+    quando o teor nao comeca por rotulo de ato.
+    """
+    texto = re.sub(r"<[^>]+>", " ", str(teor or ""))
+    texto = texto.replace("&nbsp;", " ").strip()
+    achado = _ROTULO_NO_INICIO.match(texto)
+    return achado.group(1).upper() if achado else None
+
+
+def _cadeia_por_lavratura(bd: Any, matricula_id: int, matricula_numero: str) -> list[dict]:
+    return [dict(a) | {"matricula_numero": matricula_numero}
+            for a in bd.ler("""SELECT id, tipo, numero, data_ato, teor, hash_ato,
+                                      hash_anterior
+                               FROM ri_atos WHERE matricula_id=%s ORDER BY id""",
+                            (matricula_id,))]
+
+
+def _divergencias(atos: list[dict]) -> list[dict]:
+    """Os atos cuja hash gravada nao confere com a recalculada (ordem de lavratura)."""
+    quebrados = []
+    anterior = None
+    for a in atos:
+        esperado = hash_ato(a["matricula_numero"], a["tipo"], a["numero"],
+                            a.get("data_ato") or "", a.get("teor") or "", anterior)
+        if esperado != a.get("hash_ato"):
+            quebrados.append({"id": a["id"], "ato": rotulo_do_ato(a["tipo"], a["numero"])})
+        anterior = a.get("hash_ato")
+    return quebrados
+
+
+def retificar_tipo_do_ato(con: Any, ato_id: int, novo_tipo: Any, *, motivo: str,
+                          agora: str, usuario: str | None = None) -> dict[str, Any]:
+    """Troca o tipo (R <-> AV) de um ato ja lavrado e refaz a cadeia de hash.
+
+    Mantem numero, teor e selo. Roda DENTRO da transacao de quem chama e nao
+    audita: quem chama grava `RI_ATO_TIPO_RETIFICADO` com o que esta funcao
+    devolve.
+    """
+    motivo = (motivo or "").strip()
+    if len(motivo) < 10:
+        raise CorrecaoError("Escreva o motivo da retificação do tipo com pelo menos "
+                            "dez letras.")
+    novo = str(novo_tipo or "").strip().upper()
+    if novo not in TIPOS_DE_ATO:
+        raise CorrecaoError("O tipo novo tem de ser Registro (R) ou Averbação (AV).")
+
+    bd = banco(con)
+    # A mesma trava de quem lavra: ninguem encadeia ato novo nesta matricula
+    # enquanto a cadeia esta sendo refeita.
+    bd.travar("ri_atos.numero")
+    a = bd.um("""SELECT a.*, m.numero AS matricula_numero, m.id AS mid
+                 FROM ri_atos a JOIN ri_matriculas m ON m.id = a.matricula_id
+                 WHERE a.id=%s""", (ato_id,))
+    if not a:
+        raise CorrecaoError("Este ato não existe (pode ter sido expurgado).")
+    antigo = str(a["tipo"] or "").upper()
+    rotulo_antigo = rotulo_do_ato(antigo, a["numero"])
+    rotulo_novo = rotulo_do_ato(novo, a["numero"])
+    if antigo == novo:
+        raise CorrecaoError(f"O ato já é {rotulo_antigo}. Nada a retificar.")
+    if int(a["cancelado"] or 0):
+        raise CorrecaoError(f"O {rotulo_antigo} está cancelado. Ato cancelado não "
+                            f"tem o tipo retificado.")
+    if int(a["acervo"] or 0) or (a["origem"] or "").upper() != "MANUAL":
+        raise CorrecaoError(
+            f"O {rotulo_antigo} veio do acervo (origem {a['origem']}). O tipo dele é "
+            f"o do livro físico e não se retifica por esta tela.")
+    ocupado = bd.um("""SELECT id FROM ri_atos WHERE matricula_id=%s AND tipo=%s
+                       AND numero=%s AND id<>%s""",
+                    (a["matricula_id"], novo, a["numero"], ato_id))
+    if ocupado:
+        raise CorrecaoError(f"Já existe {rotulo_novo} nesta matrícula.")
+
+    matricula_numero = str(a["matricula_numero"] or "")
+    cadeia = _cadeia_por_lavratura(bd, a["matricula_id"], matricula_numero)
+    quebrados = _divergencias(cadeia)
+    if quebrados:
+        quais = ", ".join(q["ato"] for q in quebrados[:5])
+        raise CorrecaoError(
+            f"A cadeia de integridade da matrícula {matricula_numero} já está divergente "
+            f"({quais}). Refazê-la agora esconderia a divergência: nada foi alterado. "
+            f"Comunique a administração.")
+
+    bd.escrever("UPDATE ri_atos SET tipo=%s WHERE id=%s", (novo, ato_id))
+
+    refeitos = []
+    anterior = None
+    for item in cadeia:
+        tipo = novo if int(item["id"]) == int(ato_id) else item["tipo"]
+        novo_hash = hash_ato(matricula_numero, tipo, item["numero"],
+                             item["data_ato"] or "", item["teor"] or "", anterior)
+        if novo_hash != item["hash_ato"] or anterior != item["hash_anterior"]:
+            bd.escrever("UPDATE ri_atos SET hash_ato=%s, hash_anterior=%s WHERE id=%s",
+                        (novo_hash, anterior, item["id"]))
+            refeitos.append({
+                "id": int(item["id"]),
+                "ato": rotulo_do_ato(tipo, item["numero"]),
+                "hash_antigo": item["hash_ato"], "hash_novo": novo_hash,
+                "hash_anterior_antigo": item["hash_anterior"],
+                "hash_anterior_novo": anterior})
+        anterior = novo_hash
+
+    # Confere de novo, do banco, antes de devolver: se nao fechar, a excecao
+    # desfaz a transacao inteira.
+    if _divergencias(_cadeia_por_lavratura(bd, a["matricula_id"], matricula_numero)):
+        raise CorrecaoError("A cadeia refeita não conferiu. Nada foi alterado.")
+
+    bd.escrever("UPDATE ri_matriculas SET atualizado_em=%s WHERE id=%s",
+                (agora, a["matricula_id"]))
+
+    teor_diz = tipo_escrito_no_teor(a["teor"])
+    return {"ato_id": int(ato_id), "matricula_id": int(a["matricula_id"]),
+            "matricula_numero": matricula_numero, "numero": int(a["numero"]),
+            "tipo_antigo": antigo, "tipo_novo": novo,
+            "rotulo_antigo": rotulo_antigo, "rotulo_novo": rotulo_novo,
+            "selo": a["selo_texto"], "motivo": motivo, "usuario": usuario,
+            "teor_comeca_com": teor_diz,
+            "teor_confere": teor_diz in (None, novo),
+            "atos": refeitos}

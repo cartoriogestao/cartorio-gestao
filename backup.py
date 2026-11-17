@@ -74,13 +74,14 @@ import argparse
 import base64
 import hashlib
 import json
+import logging
 import os
 import shutil
 import sys
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, mkdtemp
 
 NOME_BANCO = "banco/cartorio_gestao.sqlite3"
 NOME_MANIFESTO = "manifesto.json"
@@ -331,7 +332,70 @@ def situacao_da_cifra(pasta_de_dados: Path) -> str:
 # ------------------------------------------------------------- o pacote
 
 
+def _destino_de_rede(destino: Path) -> bool:
+    """UNC: montar o ZIP com milhares de buscas pequenas no NAS custa horas."""
+    return str(destino).replace("\\", "/").startswith("//")
+
+
+def _area_de_envio() -> Path:
+    # O pacote pode estar sem cifra. A area privada e local fica em
+    # ProgramData, fora da pasta do banco e da pasta que sai para a rede.
+    base = Path(os.environ.get("PROGRAMDATA") or r"C:\ProgramData")
+    area = base / "CartorioGestaoOperacao" / "backups_temporarios"
+    area.mkdir(parents=True, exist_ok=True)
+    import permissao_local
+    problema = permissao_local.restringir(area, pasta=True)
+    if problema:
+        raise BackupInvalido(f"nao foi possivel proteger a area temporaria: {problema}")
+    return area
+
+
+def _publicar_pacote(local: Path, destino: Path) -> None:
+    """Uma transferencia sequencial; so publica depois do SHA-256 no NAS."""
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    parcial = destino.with_suffix(destino.suffix + ".parcial")
+    esperado = hashlib.sha256()
+    with local.open("rb") as origem, parcial.open("wb") as saida:
+        while bloco := origem.read(1024 * 1024):
+            saida.write(bloco)
+            esperado.update(bloco)
+        saida.flush()
+        os.fsync(saida.fileno())
+    if _sha256(parcial) != esperado.hexdigest():
+        raise BackupInvalido("o SHA-256 da copia no destino nao confere")
+    # Preserva o pacote bom anterior ate este instante; rename no mesmo NAS.
+    parcial.replace(destino)
+
+
 def gerar_pacote(db, destino: Path, archive_root: Path,
+                 com_arquivos: bool = True, app_nome: str = "CartorioGestao",
+                 versao: str = "", acervo: Path | None = None,
+                 senha_da_cifra: str | None = None) -> Path:
+    """Para UNC, gera e confere localmente; transfere, confere e limpa."""
+    destino = Path(destino)
+    argumentos = (db, destino, archive_root, com_arquivos, app_nome, versao,
+                  acervo, senha_da_cifra)
+    if not _destino_de_rede(destino):
+        return _gerar_pacote(*argumentos)
+    trabalho = Path(mkdtemp(prefix="envio-backup-", dir=_area_de_envio()))
+    local = trabalho / destino.name
+    try:
+        _gerar_pacote(db, local, archive_root, com_arquivos, app_nome, versao,
+                      acervo, senha_da_cifra)
+        _publicar_pacote(local, destino)
+    except Exception as erro:
+        # Falha de rede nao joga fora a unica copia completa da rodada.
+        raise BackupInvalido(f"{erro}; area local preservada: {trabalho}") from erro
+    try:
+        shutil.rmtree(trabalho)
+    except OSError:
+        # O pacote valido ja foi publicado: nao impedir seu registro nativo.
+        logging.getLogger(__name__).exception(
+            "Backup transferido e conferido; nao foi possivel limpar %s", trabalho)
+    return destino
+
+
+def _gerar_pacote(db, destino: Path, archive_root: Path,
                  com_arquivos: bool = True, app_nome: str = "CartorioGestao",
                  versao: str = "", acervo: Path | None = None,
                  senha_da_cifra: str | None = None) -> Path:

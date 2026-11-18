@@ -12217,9 +12217,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          (request.form.get("observacao") or "").strip() or None,
                          agora, agora))
                 audit("RI_DOI_NEGATIVA", "RI_DOI", None, {"competencia": competencia})
+                # O DOI-WEB NÃO TEM DECLARAÇÃO NEGATIVA — manual de importação
+                # da Receita. A mensagem mandava guardar «o comprovante do
+                # fechamento negativo da DOI-Web», e quem a seguisse ia procurar
+                # na Receita um botão que não existe. A «negativa» é o que a
+                # inspeção do TJMA cobra no AUDITUS: a prova do mês vazio é
+                # para ela, e à Receita não se manda nada nesse mês.
                 flash(f"Competência {competencia} registrada como mês sem ato "
-                      f"imobiliário. Guarde o comprovante do fechamento negativo "
-                      f"da DOI-Web junto ao AUDITUS.", "success")
+                      f"imobiliário. Não há o que enviar à Receita: o DOI-Web "
+                      f"não tem declaração negativa. A comprovação do mês sem "
+                      f"ato é para a inspeção do TJMA, no AUDITUS.", "success")
                 return redirect(url_for("ri_doi", competencia=competencia))
 
             if acao == "recibo":
@@ -12305,11 +12312,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         primeiro = f"{ano:04d}-{mes:02d}-01"
         seguinte = (f"{ano + 1:04d}-01-01" if mes == 12
                     else f"{ano:04d}-{mes + 1:02d}-01")
+        #
+        # SÓ A ESCRITURA LAVRADA DECLARA — 17/11/2026. O filtro era «tudo
+        # menos SEM_EFEITO», e o rascunho (EM_LAVRATURA, sem livro, folha nem
+        # selo) entrava como escritura «parada»: dois rascunhos abandonados
+        # pareciam declarações atrasadas de um mês. A situação vem de
+        # `notas_doi`, a mesma que a conferência do gestor lê.
         escrituras = q("""SELECT * FROM nt_atos
                            WHERE tipo = 'ESCRITURA' AND com_imovel = 1
-                             AND COALESCE(situacao,'') <> 'SEM_EFEITO'
+                             AND situacao = %s
                              AND data >= %s AND data < %s
-                           ORDER BY data, id""", (primeiro, seguinte))
+                           ORDER BY data, id""",
+                       (NDOI.SITUACAO_QUE_DECLARA, primeiro, seguinte))
+        # O rascunho com imóvel não declara nem entra na conta das paradas,
+        # mas é avisado à parte: se foi assinado no papel, é deste mês.
+        rascunhos = q("""SELECT id, numero_ordem, natureza, data FROM nt_atos
+                          WHERE tipo = 'ESCRITURA' AND com_imovel = 1
+                            AND situacao = %s
+                            AND data >= %s AND data < %s
+                          ORDER BY data, id""",
+                      (NDOI.SITUACAO_RASCUNHO, primeiro, seguinte))
 
         linhas, registros, impedidas = [], [], []
         for e in escrituras:
@@ -12408,10 +12430,48 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 flash("Nenhuma declaração está pronta. Veja as pendências, ou "
                       "registre o mês como sem ato imobiliário.", "warning")
                 return redirect(url_for("ri_doi", competencia=competencia))
+            # GERAR DE NOVO TROCAVA O ARQUIVO SEM DIZER NADA — 17/11/2026.
+            #
+            #   O `ON CONFLICT` abaixo sobrescreve o conteúdo e o sha256 da
+            #   remessa GERADA. Se parte daquele arquivo já tinha subido ao
+            #   DOI-Web, o que foi mandado deixava de existir aqui, e o recibo anotado
+            #   depois provaria um arquivo que não é o desta tela.
+            #
+            #   Por isso duas coisas: (1) quem gera de novo tem de marcar que
+            #   sabe — a tela avisa, e sem a marca nada muda; (2) o arquivo
+            #   anterior é copiado para `ri_doi_remessas_anteriores` na mesma
+            #   transação, antes de ser trocado. Se o conteúdo novo é idêntico
+            #   (mesmo sha256), não há o que guardar: o atual prova o mesmo.
+            ja_gerada = bool(remessa and remessa["situacao"] == "GERADA"
+                             and remessa["conteudo"])
+            if ja_gerada and request.form.get("regerar") != "1":
+                flash(f"A DOI de {competencia} já foi gerada em "
+                      f"{remessa['gerado_em']} (sha256 "
+                      f"{(remessa['arquivo_hash'] or '')[:12]}…). Se parte "
+                      f"daquele arquivo já foi entregue no DOI-Web, gerar de "
+                      f"novo troca o arquivo desta tela. Para gerar mesmo "
+                      f"assim, marque a confirmação ao lado do botão: o "
+                      f"arquivo anterior fica guardado para baixar.",
+                      "warning")
+                return redirect(url_for("ri_doi", competencia=competencia))
             conteudo = NDOI.gerar_carga(registros, cns, competencia)
             arquivo = NDOI.nome_arquivo(cns, competencia)
+            hash_novo = hashlib.sha256(conteudo.encode("utf-8")).hexdigest()
             with db.transaction() as con:
-                banco(con).escrever(
+                bd = banco(con)
+                bd.escrever(
+                    """INSERT INTO ri_doi_remessas_anteriores
+                       (competencia, quantidade, arquivo_nome, arquivo_hash,
+                        conteudo, gerado_em, substituido_em)
+                       SELECT competencia, quantidade, arquivo_nome,
+                              arquivo_hash, conteudo, gerado_em, %s
+                         FROM ri_doi_remessas
+                        WHERE competencia=%s AND situacao='GERADA'
+                          AND conteudo IS NOT NULL
+                          AND COALESCE(arquivo_hash,'') <> %s""",
+                    (db.now(), competencia, hash_novo))
+                guardou_anterior = bool(bd.linhas_afetadas)
+                bd.escrever(
                     """INSERT INTO ri_doi_remessas
                        (competencia, situacao, quantidade, negativa, prazo,
                         arquivo_nome, arquivo_hash, conteudo, gerado_em)
@@ -12424,10 +12484,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                          gerado_em=excluded.gerado_em""",
                     (competencia, len(registros),
                      NDOI.prazo_de_entrega(f"{competencia}-01"), arquivo,
-                     hashlib.sha256(conteudo.encode("utf-8")).hexdigest(),
-                     conteudo, db.now()))
+                     hash_novo, conteudo, db.now()))
             audit("RI_DOI_GERADA", "RI_DOI", None,
-                  {"competencia": competencia, "declaracoes": len(registros)})
+                  {"competencia": competencia, "declaracoes": len(registros),
+                   "anterior_guardado": guardou_anterior})
+            if guardou_anterior:
+                # A resposta é o download, e o aviso aparece na próxima tela.
+                flash(f"O arquivo anterior da DOI de {competencia} ficou "
+                      f"guardado e pode ser baixado na tela da competência.",
+                      "info")
             return Response(conteudo.encode("utf-8"), mimetype="application/json",
                             headers={"Content-Disposition":
                                      f'attachment; filename="{arquivo}"'})
@@ -12446,10 +12511,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      WHERE data_ato IS NOT NULL AND cancelado = 0
                      GROUP BY 1 ORDER BY c DESC LIMIT 24""")
         remessas = q("SELECT * FROM ri_doi_remessas ORDER BY competencia DESC LIMIT 24")
+        # Os arquivos que uma nova geração substituiu (ver `acao == "gerar"`):
+        # sem o conteúdo, que é grande e só sai pelo download.
+        anteriores = q("""SELECT id, quantidade, arquivo_nome, arquivo_hash,
+                                 gerado_em, substituido_em
+                            FROM ri_doi_remessas_anteriores
+                           WHERE competencia=%s ORDER BY id DESC""",
+                       (competencia,))
+        from gestor_conferencia import IMPLANTACAO
 
         return render_template(
             "ri_doi.html", competencia=competencia, linhas=linhas, meses=meses,
             remessa=remessa, remessas=remessas, entregue=entregue, cns=cns,
+            anteriores=anteriores, rascunhos=rascunhos,
+            corte_da_implantacao="/".join(reversed(IMPLANTACAO.split("-"))),
             prontas=len(registros),
             resumo=NDOI.resumo_impedimentos(impedidas),
             em_aberto=em_aberto, hoje=hoje,
@@ -12467,6 +12542,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return Response(r["conteudo"].encode("utf-8"), mimetype="application/json",
                         headers={"Content-Disposition":
                                  f'attachment; filename="{r["arquivo_nome"]}"'})
+
+    @app.route("/registro-imoveis/doi/<competencia>/anterior/<int:anterior_id>")
+    @roles_required("ADMIN", "MANAGER", "AUDITOR")
+    def ri_doi_arquivo_anterior(competencia, anterior_id):
+        """Rebaixa um arquivo que uma nova geração substituiu, como saiu.
+
+        O nome leva `_anterior_<n>`: baixado ao lado do atual, os dois não se
+        confundem na pasta de quem confere o que subiu ao DOI-Web."""
+        r = q1("""SELECT * FROM ri_doi_remessas_anteriores
+                   WHERE id=%s AND competencia=%s""", (anterior_id, competencia))
+        if not r:
+            abort(404)
+        base = (r["arquivo_nome"] or f"DOI_{competencia}.json").removesuffix(".json")
+        return Response(r["conteudo"].encode("utf-8"), mimetype="application/json",
+                        headers={"Content-Disposition":
+                                 f'attachment; filename="{base}_anterior_{r["id"]}.json"'})
 
     @app.route("/registro-imoveis/ctp/<competencia>/arquivo")
     @roles_required("ADMIN", "MANAGER", "AUDITOR")

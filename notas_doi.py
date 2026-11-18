@@ -102,11 +102,25 @@ TIPOS_DECLARACAO = {
     "ORIGINAL": "Original",
     "RETIFICADORA": "Retificadora",
     "CANCELADORA": "Canceladora",
-    # A negativa nao e um tipo do layout: e a AUSENCIA de carga no mes, provada
-    # pelo fechamento negativo na tela. Fica aqui porque e o que a inspecao
-    # cobra no AUDITUS, e o sistema precisa saber que o mes foi resolvido.
+    # A negativa nao e um tipo do layout: e a AUSENCIA de carga no mes. O
+    # DOI-Web nao tem declaracao negativa (manual de importacao da Receita), e
+    # nada vai a Receita no mes vazio. Fica aqui porque e o que a inspecao do
+    # TJMA cobra no AUDITUS, e o sistema precisa saber que o mes foi resolvido.
     "NEGATIVA": "Negativa — mês sem ato imobiliário",
 }
+
+#: A ESCRITURA QUE ENTRA NA DOI E A LAVRADA — 17/11/2026. A tela da DOI pegava
+#: toda escritura com imovel que nao estivesse SEM_EFEITO, e com isso entravam
+#: os rascunhos (EM_LAVRATURA: sem livro, folha nem selo). Rascunho abandonado
+#: aparecia como escritura «parada», e quem conferia lia declaracao atrasada
+#: onde nunca houve ato. A conferencia do gestor (`gestor_conferencia.
+#: regra_doi`) ja contava so a lavrada e so avisava o rascunho; as duas leem
+#: estas constantes, para nao voltarem a divergir. A CTP da CENSEC
+#: (`censec_ctp.declaracoes_do_mes`) ja filtrava a lavrada.
+SITUACAO_QUE_DECLARA = "LAVRADO"
+#: O rascunho com imovel nao declara, mas e avisado: se foi assinado no papel,
+#: e deste mes e da DOI, e alguem precisa concluir a lavratura ou apaga-lo.
+SITUACAO_RASCUNHO = "EM_LAVRATURA"
 
 # Operacoes em que o manual e explicito sobre uma declaracao por imovel, por
 # serem as que mais costumam trazer varios imoveis no mesmo instrumento.
@@ -922,7 +936,8 @@ def nome_arquivo(cns: str, competencia: str) -> str:
 
 
 def competencias_em_aberto(competencias_com_ato: list[str],
-                           resolvidas: set[str], hoje: str) -> list[dict]:
+                           resolvidas: set[str], hoje: str,
+                           desde: str | None = None) -> list[dict]:
     """Os meses que ainda devem satisfacao a Receita.
 
     POR QUE ISSO E O CORACAO DA TELA
@@ -934,10 +949,27 @@ def competencias_em_aberto(competencias_com_ato: list[str],
         Por isso a lista sai do CALENDARIO, e nao dos atos: todo mes entre o
         primeiro ato do acervo e hoje deve ter uma resposta, nem que seja "nao
         houve ato".
+
+    O CALENDARIO COMECA NO CORTE DA IMPLANTACAO, E NAO NO PRIMEIRO ATO
+        O acervo importado vai ate 1977, e a tela listava 597 meses «em
+        aberto», 595 vencidos: uma lista que ninguem consegue cumprir nem ler,
+        e que escondia os dois ou tres meses que de fato pedem providencia. A
+        conferencia do gestor ja comecava no corte (ordem do oficial,
+        06/10/2026: nada antes de 10/09/2026); a tela agora comeca no mesmo
+        mes. A constante e lida de `gestor_conferencia.IMPLANTACAO`, e nao
+        copiada, para a tela e a conferencia nunca discordarem sobre de onde
+        se conta. A competencia que atravessa o corte (09/2026) entra.
+
+        `desde` (AAAA-MM) existe para o teste fixar o inicio; a tela nao o
+        passa. O import e local porque `gestor_conferencia` e modulo de banco,
+        e este e de regra pura: o caminho de volta fica sem ciclo.
     """
     if not competencias_com_ato:
         return []
-    primeiro = min(competencias_com_ato)
+    if desde is None:
+        from gestor_conferencia import IMPLANTACAO
+        desde = IMPLANTACAO[:7]
+    primeiro = max(min(competencias_com_ato), desde[:7])
     ano, mes = int(primeiro[:4]), int(primeiro[5:7])
     limite = hoje[:7]
     com_ato = set(competencias_com_ato)

@@ -505,3 +505,63 @@ def test_o_select_devolve_a_operacao_que_foi_gravada(casa):
 def _ids_das_partes(casa, ato_id):
     return [r["id"] for r in _con(casa).execute(
         "SELECT id FROM nt_ato_partes WHERE ato_id=? ORDER BY id", (ato_id,))]
+
+
+# ------------------------------------- o rascunho não é escritura parada
+
+
+def _rascunho(casa, data="2026-07-20", natureza="PERMUTA") -> int:
+    """Escritura com imóvel ainda em lavratura: sem livro, folha nem selo."""
+    con = _con(casa)
+    with con:
+        cur = con.execute(
+            """INSERT INTO nt_atos (tipo, data, natureza, situacao, origem, criado_em,
+                   com_imovel, doi_transacao)
+               VALUES ('ESCRITURA', ?, ?, 'EM_LAVRATURA', 'MANUAL',
+                       '2026-07-20T09:00', 1, '13')""", (data, natureza))
+        aid = int(cur.lastrowid)
+        _partes(con, aid, (("OUTORGANTE", "FULANO DE TAL"),
+                           ("OUTORGADO", "BELTRANA DE TAL")))
+    return aid
+
+
+def test_o_rascunho_com_imovel_nao_vira_declaracao_nem_ato_parado(casa):
+    """Dois rascunhos abandonados apareciam como escrituras paradas da DOI,
+    e quem conferia lia declaração atrasada onde nunca houve ato."""
+    lavrada = _escritura(casa, "2026-07-15")
+    _anotar_imovel(casa, lavrada, com_imovel="1", doi_transacao="11",
+                   doi_tipo_imovel="67", doi_matricula="4010",
+                   doi_endereco="RUA DAS FLORES, 10", doi_area="360")
+    rascunho = _rascunho(casa)
+    html = casa["cliente"].get(
+        "/registro-imoveis/doi?competencia=2026-07").get_data(as_text=True)
+    # a lavrada continua entrando, e só ela
+    assert html.count('<span class="badge">Tabelionato</span>') == 1
+    assert "Compra e venda" in html
+    assert "parada" not in html.split("rascunho")[0], "o rascunho entrou na conta das paradas"
+    # o rascunho é avisado à parte, com caminho para a ficha
+    assert "1 rascunho de escritura com" in html
+    assert f"/notas/atos/{rascunho}" in html
+    assert "conclua a lavratura" in html and "apague o rascunho" in html
+
+
+def test_o_rascunho_sozinho_nao_deixa_declaracao_pronta(casa):
+    _rascunho(casa)
+    html = casa["cliente"].get(
+        "/registro-imoveis/doi?competencia=2026-07").get_data(as_text=True)
+    assert '<span class="badge">Tabelionato</span>' not in html
+    assert 'name="acao" value="gerar"' not in html
+    assert "1 rascunho de escritura com" in html
+
+
+def test_a_tela_e_a_conferencia_leem_a_mesma_situacao():
+    """A tela e a conferência do gestor contam a mesma escritura: as duas leem
+    a situação de `notas_doi`, e não cada uma o seu texto."""
+    import inspect
+
+    import gestor_conferencia
+    fonte = inspect.getsource(gestor_conferencia.regra_doi)
+    assert "notas_doi.SITUACAO_QUE_DECLARA" in fonte
+    assert "notas_doi.SITUACAO_RASCUNHO" in fonte
+    tela = (RAIZ / "ri_web.py").read_text(encoding="utf-8")
+    assert "NDOI.SITUACAO_QUE_DECLARA" in tela and "NDOI.SITUACAO_RASCUNHO" in tela

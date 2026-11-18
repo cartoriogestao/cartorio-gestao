@@ -1,0 +1,13 @@
+{# Certidão digital da ONR — CGJ-TJMA: sem cobrança por página/folha.
+   Marca a finalidade «Pedido ONR …» (mesma do robô) para o selo e a
+   cobertura não pedirem folha acrescida. #}
+<label class="check span2">
+  <input type="checkbox" name="certidao_digital_onr" value="1"
+         onchange="(function(c){var b=c.form.querySelector('[data-onr-protocolo]');if(b)b.style.display=c.checked?'':'none';})(this)">
+  <span><strong>Certidão digital da ONR</strong>
+    <small> — pedido da Central; não cobra folha acrescida (CGJ-TJMA).</small></span>
+</label>
+<label class="span2" data-onr-protocolo style="display:none">Pedido ONR nº
+  <input name="protocolo_onr" placeholder="ex.: S26110459602D" autocomplete="off">
+  <small>Grava a finalidade «Pedido ONR …» (mesma marca do robô automático).</small>
+</label>

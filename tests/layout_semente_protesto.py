@@ -344,6 +344,18 @@ class _Semeador:
         self.casa.postar("/protesto/remessas/conferir", _cliente=self.c, arquivo=(io.BytesIO(xml), "remessa-cra.xml"))
         self.casa.ids["protesto_remessa_salva"] = hashlib.sha256(xml).hexdigest()
 
+    def o_arquivo_das_custas_da_cra(self) -> None:
+        """Um arquivo de custas já gerado (CustasTitulo): é o que a rota do arquivo serve."""
+        from datetime import date
+
+        import protesto_cra_custas as CUSTAS
+        dia = date.fromisoformat(self.hoje)
+        conteudo = ('<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+                    "<custas_titulo>\n</custas_titulo>\n")
+        self.casa.ids["protesto_cra_custas_envio"] = self.casa.inserir(
+            "pt_cra_custas_envios", nome_arquivo=CUSTAS.nome_do_arquivo(dia, 1), dia=self.hoje,
+            sequencia=1, conteudo=conteudo, gerado_em=f"{self.hoje}T12:00:00", ambiente="PRODUCAO")
+
     def a_imagem_do_titulo(self) -> None:
         pacote = io.BytesIO()
         with zipfile.ZipFile(pacote, "w") as z:
@@ -484,6 +496,7 @@ class _Semeador:
             ("protesto_repasse_guia", "guia_id", ids.get("protesto_guia"), None),
             ("protesto_repasse_guia_relacao", "guia_id", ids.get("protesto_guia"), None),
             ("protesto_relacao_arquivo", "relacao_id", ids.get("protesto_relacao"), None),
+            ("protesto_cra_custas_arquivo", "envio_id", ids.get("protesto_cra_custas_envio"), None),
             ("protesto_resolve_ficha", "intimacao_id", ids.get("protesto_intimacao_digital"), None),
             ("protesto_avisos_lote_folhas", "sha", ids.get("protesto_maco_de_avisos"), {"p": "1"}),
         )
@@ -609,6 +622,7 @@ def semear(casa) -> None:
             ("o título devolvido", s.o_titulo_devolvido),
             ("a remessa da CRA", s.a_remessa_da_cra),
             ("o XML da remessa guardado", s.o_xml_da_remessa_guardado),
+            ("o arquivo das custas da CRA", s.o_arquivo_das_custas_da_cra),
             ("a imagem do título", s.a_imagem_do_titulo),
             ("o pagamento e a guia do repasse", s.o_pagamento_e_a_guia_do_repasse),
             ("o XML da CENPROT", s.o_xml_da_cenprot),

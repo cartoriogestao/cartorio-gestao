@@ -104,13 +104,17 @@ def _cra(novo=True, credencial=True):
         "protesto_cra_api.html", layout_novo=novo, ambiente="PRODUCAO", fora_de_uso=False,
         tem_credencial=credencial, usuario="mario", endereco="https://exemplo.invalid/cra",
         o_que_se_traz=[("pendentes", "Todas as remessas", "não precisa de nome"), ("ac", "Autorizações", "AC ou AD")],
-        operacoes=["BuscarApresentante", "Imagem"], sem_sentido_medido=["Imagem"], VERSION="1")
+        operacoes=["BuscarApresentante", "Imagem"], sem_sentido_medido=["Imagem"], VERSION="1",
+        custas={"erro": None, "itens": [], "fora": [], "em_dia": 0, "ultimos": [],
+                "vigencia": None, "fim": None},
+        nome_do_tipo={1: "retirada", 2: "cancelamento"})
 
 
 def test_cra_os_downloads_abrem_a_tela_e_a_consulta_fica_recolhida():
     html = _cra()
     _antes(html, "Baixar todas as remessas", "Trazer da CRA", "Consultar na CRA", "Ligação e teste", "Referência — WSDL")
-    assert _ler(html).quadros == {"cra-opcoes": False, "cra-consultar": False, "cra-ligacao": False, "cra-referencia": False}
+    assert _ler(html).quadros == {"cra-opcoes": False, "cra-custas": False, "cra-consultar": False,
+                                  "cra-ligacao": False, "cra-referencia": False}
 
 
 @pytest.mark.parametrize("credencial, frase", [(True, "credencial informada — usuário <code>mario</code>"),

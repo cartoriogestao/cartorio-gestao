@@ -49,7 +49,7 @@ def banco():
 
 
 def titulo(con, *, situacao="APONTADO", valor=10160, protocolo="2611170001",
-           apresentante="237", documento="123.456.789-09", origem="CRA",
+           apresentante="237", documento="000.000.001-91", origem="CRA",
            numero="DM-1", nosso="555") -> int:
     cur = con.execute(
         """INSERT INTO pt_titulos(especie, numero_titulo, nosso_numero,
@@ -133,7 +133,7 @@ def test_apontado_leva_retirada_e_protestado_leva_cancelamento():
     assert [e["tipo"] for e in por_id[p]["emolumentos"]] == ["2"]
     assert por_id[p]["emolumentos"][0]["total_centavos"] == 24826
     assert por_id[a]["data_protocolo"] == "17/11/2026"
-    assert por_id[a]["documento"] == "12345678909"
+    assert por_id[a]["documento"] == "00000000191"
     # A vigência da fixture não tem fim: vai vazia, «indefinida» no manual.
     assert por_id[a]["emolumentos"][0]["vigencia"] == ""
 

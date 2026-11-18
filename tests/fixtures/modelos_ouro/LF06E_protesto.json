@@ -592,6 +592,7 @@
      "CARTAO": "por cartão",
      "CHEQUE": "por cheque",
      "ESPECIE": "em espécie",
+     "PG_ONR": "PG feito pela ONR",
      "PIX": "por PIX",
      "TRANSFERENCIA": "por transferência bancária"
     },

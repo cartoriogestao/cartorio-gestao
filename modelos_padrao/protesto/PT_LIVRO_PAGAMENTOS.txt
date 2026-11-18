@@ -4,6 +4,7 @@ PIX = por PIX
 TRANSFERENCIA = por transferência bancária
 BOLETO = por boleto
 CARTAO = por cartão
+PG_ONR = PG feito pela ONR
 pago = pago {forma}
 pago_com_identificacao = pago {forma} — {identificacao}
 eoficio = pagamento registrado no E-Ofício (forma não consta)

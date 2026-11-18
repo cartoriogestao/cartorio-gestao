@@ -8,6 +8,19 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.21 — Custas dos títulos à CRA, certificado do WSOfício pela tela e backup em rede mais rápido
+
+Reúne a 3.7.20, que não chegou a ser publicada, e as mudanças posteriores a
+ela. O pacote parte da 3.7.19 (`--desde v3.7.19`): é a versão que roda na
+produção. Tudo o que a 3.7.20 descreve abaixo vem junto.
+
+- **Protesto — custas dos títulos à CRA.** A CRA passa a receber quanto custa retirar o título apontado ou intimado e cancelar o protesto lavrado (operação «CustasTitulo»). Vai só o que mudou desde o último valor aceito; título sem CPF/CNPJ, data do protocolo ou faixa fica de fora com o motivo, e nunca vai zero. A tela **Protesto → CRA pela API** mostra o que vai, a prévia do arquivo e os últimos envios; a rotina automática (12:00 e 17:30, dias úteis) nasce desligada.
+- **Protesto — Livro de Pagamentos.** A forma «PG feito pela ONR» (PG_ONR) também pode ser escolhida no ato de pagamento do protesto e sai no livro.
+- **Registro de Imóveis — marcar ato lavrado como encerramento.** Quando a averbação de encerramento já está no livro, mas foi lavrada sem a marca «Este ato encerra a matrícula», a ficha se encerra por ela, sem lavrar outro ato, pedir selo ou cobrar (administrador ou gerente). A tela já sugere a última averbação e avisa quando se escolhe outra; «Reabrir» continua sendo o caminho de volta.
+- **ONR — certificado do WSOfício.** O certificado público usado no WSOfício se escolhe ou se informa (PEM) numa tela do administrador, em **RI → Certidões**; ele precisa ser RSA, válido e do CPF cadastrado. A chave privada não é lida nem guardada.
+- **Cobranças — envio na hora.** A cobrança pedida no balcão é enviada logo, sem esperar o minuto seguinte da automação; com o cofre trancado, o pedido fica guardado e a tela avisa. A venda da maquininha que voltou sem identificador é achada pelo serviço, e a resposta «Sale not found» não prende mais a cobrança em «Emitindo».
+- **Backup na rede.** O pacote é montado e conferido numa pasta local protegida e só então copiado para o compartilhamento, em blocos, com conferência do SHA-256 no destino antes de valer; a cópia local sai depois da conferência. Destino fora da pasta de cópias configurada é recusado.
+
 ## 3.7.20 — Livros de nascimento transcritos, maquininha que confirma em segundos e DOI por imóvel
 
 Inclui todas as mudanças posteriores à 3.7.19. O pacote parte da 3.7.19

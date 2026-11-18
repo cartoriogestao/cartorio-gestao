@@ -102,11 +102,25 @@ TIPOS_DECLARACAO = {
     "ORIGINAL": "Original",
     "RETIFICADORA": "Retificadora",
     "CANCELADORA": "Canceladora",
-    # A negativa nao e um tipo do layout: e a AUSENCIA de carga no mes, provada
-    # pelo fechamento negativo na tela. Fica aqui porque e o que a inspecao
-    # cobra no AUDITUS, e o sistema precisa saber que o mes foi resolvido.
+    # A negativa nao e um tipo do layout: e a AUSENCIA de carga no mes. O
+    # DOI-Web nao tem declaracao negativa (manual de importacao da Receita), e
+    # nada vai a Receita no mes vazio. Fica aqui porque e o que a inspecao do
+    # TJMA cobra no AUDITUS, e o sistema precisa saber que o mes foi resolvido.
     "NEGATIVA": "Negativa — mês sem ato imobiliário",
 }
+
+#: A ESCRITURA QUE ENTRA NA DOI E A LAVRADA — 17/11/2026. A tela da DOI pegava
+#: toda escritura com imovel que nao estivesse SEM_EFEITO, e com isso entravam
+#: os rascunhos (EM_LAVRATURA: sem livro, folha nem selo). Rascunho abandonado
+#: aparecia como escritura «parada», e quem conferia lia declaracao atrasada
+#: onde nunca houve ato. A conferencia do gestor (`gestor_conferencia.
+#: regra_doi`) ja contava so a lavrada e so avisava o rascunho; as duas leem
+#: estas constantes, para nao voltarem a divergir. A CTP da CENSEC
+#: (`censec_ctp.declaracoes_do_mes`) ja filtrava a lavrada.
+SITUACAO_QUE_DECLARA = "LAVRADO"
+#: O rascunho com imovel nao declara, mas e avisado: se foi assinado no papel,
+#: e deste mes e da DOI, e alguem precisa concluir a lavratura ou apaga-lo.
+SITUACAO_RASCUNHO = "EM_LAVRATURA"
 
 # Operacoes em que o manual e explicito sobre uma declaracao por imovel, por
 # serem as que mais costumam trazer varios imoveis no mesmo instrumento.
@@ -183,13 +197,25 @@ def _numero(v: Any) -> float | None:
         return None
 
 
+def cib_limpo(cib: Any) -> str:
+    """O CIB sem pontuacao: oito caracteres, LETRAS E DIGITOS.
+
+    O CIB novo e alfanumerico — o layout do DOI-Web fala do digito
+    verificador «quando os caracteres originais sao exclusivamente
+    numericos» (o Nirf antigo) e de outro calculo quando nao sao. Uma escritura
+    de 16/11/2026 trazia um CIB com letras (forma `9.AB1.CD2-E`); tirar so os
+    digitos, como se fazia, mandava `91` a Receita.
+    """
+    return "".join(c for c in str(cib or "").upper() if c.isalnum())
+
+
 def cib_valido(cib: Any) -> bool | None:
-    """O CIB tem oito digitos, sendo o ultimo o verificador.
+    """O CIB tem oito caracteres, sendo o ultimo o verificador.
 
     Devolve None quando nao ha o que conferir — o manual admite imovel sem
     CIB, e nesse caso o campo vai vazio em vez de errado.
     """
-    n = so_digitos(cib)
+    n = cib_limpo(cib)
     if not n:
         return None
     return len(n) == 8
@@ -598,11 +624,121 @@ def declarar(dec: dict, cns: str, codigo_ibge: str,
 
 
 
+def imovel_do_quadro_antigo(ato: dict) -> dict:
+    """O imóvel único das colunas de `nt_atos`, na forma de `nt_ato_imoveis`.
+
+    É o quadro de antes de 16/11/2026: um imóvel por escritura, urbano, sem
+    CIB nem INCRA. Escritura sem linha em `nt_ato_imoveis` continua assim.
+    """
+    return {"matricula": ato.get("doi_matricula"), "rural": 0,
+            "tipo_imovel": ato.get("doi_tipo_imovel"),
+            "denominacao": ato.get("doi_endereco"), "area": ato.get("doi_area"),
+            "valor_centavos": None, "base_itbi_centavos": None,
+            "do_quadro_antigo": True}
+
+
+def imoveis_da_escritura(con: Any, ato: dict) -> list[dict]:
+    """Os imóveis da escritura, um por declaração. Só LÊ.
+
+    Com linha em `nt_ato_imoveis`, são elas, na ordem. Sem, é o quadro antigo
+    das colunas do ato — e escritura sem matrícula nenhuma devolve o quadro
+    antigo vazio, para a conferência dizer «falta a matrícula».
+    """
+    from bd_nativo import banco
+    linhas = [dict(x) for x in banco(con).ler(
+        "SELECT * FROM nt_ato_imoveis WHERE ato_id = %s ORDER BY ordem, id",
+        (ato["id"],))]
+    return linhas or [imovel_do_quadro_antigo(ato)]
+
+
+def _imovel_para_declarar(imovel: dict) -> dict:
+    """A linha de `nt_ato_imoveis` na forma que `declarar` lê."""
+    rural = bool(imovel.get("rural"))
+    base = {"matricula": imovel.get("matricula"), "cnm": imovel.get("cnm"),
+            "rural": rural, "cib": cib_limpo(imovel.get("cib")) or None}
+    if rural:
+        return base | {"denominacao": imovel.get("denominacao"),
+                       "localizacao": imovel.get("localizacao"),
+                       "area_hectares": imovel.get("area"),
+                       "codigo_incra": imovel.get("codigo_incra"),
+                       "tipo": imovel.get("tipo_imovel")}
+    return base | {"logradouro": imovel.get("denominacao"),
+                   "area_terreno": imovel.get("area"),
+                   "tipo": imovel.get("tipo_imovel")}
+
+
+def _problemas_do_imovel(imovel: dict) -> list[dict]:
+    """O que o imóvel não pode ir sem — dito antes do layout, com o nome do campo."""
+    p = []
+    if not so_digitos(imovel.get("matricula")):
+        p.append({"campo": "doi_matricula", "motivo": "falta a matrícula do imóvel"})
+    elif len(so_digitos(imovel.get("matricula"))) > 7:
+        p.append({"campo": "doi_matricula",
+                  "motivo": "a matrícula passa de 7 dígitos, o limite do DOI-Web: "
+                            "um imóvel por linha"})
+    if cib_valido(imovel.get("cib")) is False:
+        p.append({"campo": "cib", "motivo": "o CIB tem oito caracteres"})
+    if imovel.get("do_quadro_antigo"):
+        return p
+    if imovel.get("rural"):
+        if not _texto(imovel.get("denominacao")):
+            p.append({"campo": "denominacao", "motivo": "imóvel rural sem denominação"})
+        if _numero(imovel.get("area")) is None:
+            p.append({"campo": "area",
+                      "motivo": "imóvel rural: a área vai em HECTARES, e está vazia"})
+        if not so_digitos(imovel.get("codigo_incra")):
+            p.append({"campo": "codigo_incra", "motivo": "imóvel rural sem código do INCRA"})
+    elif not _texto(imovel.get("denominacao")):
+        p.append({"campo": "denominacao", "motivo": "imóvel urbano sem logradouro"})
+    return p
+
+
+def declaracoes_da_escritura(ato: dict, partes: list[dict], imoveis: list[dict],
+                             cns: str, codigo_ibge: str) -> list[dict]:
+    """UMA DECLARAÇÃO POR IMÓVEL da escritura — DOI e CTP, 16/11/2026.
+
+    Devolve uma linha por imóvel: `{"imovel", "registro", "problemas"}`. O
+    valor de cada declaração é o preço DAQUELE imóvel; com um imóvel só e sem
+    preço próprio, vale o valor da escritura, como sempre valeu. Com mais de
+    um, o preço de cada um é obrigatório: repartir o total por conta própria
+    seria inventar o número que a Receita cruza com o ITBI.
+
+    Quem usa decide o que fazer com a escritura que tem UMA linha impedida;
+    a CTP e a DOI seguram a escritura inteira — mandar metade do negócio é
+    pior do que mandar nada, porque a outra metade some da conta.
+    """
+    saida = []
+    varios = len(imoveis) > 1
+    for imovel in imoveis:
+        valor = imovel.get("valor_centavos")
+        if valor is None and not varios:
+            valor = ato.get("valor_transacao")
+        base = imovel.get("base_itbi_centavos")
+        reg, problemas = declaracao_da_escritura(
+            ato, partes, cns, codigo_ibge, imovel=imovel, valor=valor, base_itbi=base)
+        if varios and imovel.get("valor_centavos") is None:
+            problemas = problemas + [{
+                "campo": "valor_centavos",
+                "motivo": f"falta o preço do imóvel da matrícula "
+                          f"{imovel.get('matricula') or '?'}: com mais de um imóvel, "
+                          "cada declaração leva o preço do seu"}]
+            reg = None
+        saida.append({"imovel": imovel, "registro": reg, "problemas": problemas})
+    return saida
+
+
 def declaracao_da_escritura(ato: dict, partes: list[dict], cns: str,
                             codigo_ibge: str, *, natureza_titulo: Any = 2,
                             tipo_servico: str = "1",
-                            tipo_ato: str = "1") -> tuple[dict | None, list[dict]]:
+                            tipo_ato: str = "1", imovel: dict | None = None,
+                            valor: Any = None,
+                            base_itbi: Any = None) -> tuple[dict | None, list[dict]]:
     """A declaração DOI-Web da escritura com imóvel, ou o que impede.
+
+    `imovel` é uma linha de `nt_ato_imoveis` (ver `declaracoes_da_escritura`);
+    sem ele vale o quadro antigo das colunas do ato, e `valor` é o
+    `valor_transacao` da escritura — o comportamento de antes de 16/11/2026,
+    que o RTD (`rg_doi`) continua usando.
 
     MORAVA DENTRO DA ROTA DA DOI (`ri_web.ri_doi`) até 22/10/2026, e saiu
     para cá porque a CTP da CENSEC (`censec_ctp`) declara as MESMAS
@@ -621,19 +757,21 @@ def declaracao_da_escritura(ato: dict, partes: list[dict], cns: str,
     # presentes na lista, ausentes da conta que se le antes de gerar o
     # arquivo. Eu escrevi `texto` na primeira versao.
     problemas = []
+    if imovel is None:
+        imovel = imovel_do_quadro_antigo(ato)
+        valor = ato.get("valor_transacao")
     # `str(...)` PORQUE `doi_transacao` E COLUNA INTEGER: o `11` que
     # a tela gravou como texto volta do banco como o numero 11, e
     # `.strip()` num numero estoura a tela inteira. A afinidade da
     # coluna converte na entrada, calada, e so aparece na leitura.
-    for chave, rotulo in (("doi_transacao", "a operação imobiliária"),
-                          ("doi_matricula", "a matrícula do imóvel")):
-        if not str(ato.get(chave) or "").strip():
-            problemas.append({"campo": chave,
-                              "motivo": f"falta {rotulo}"})
+    if not str(ato.get("doi_transacao") or "").strip():
+        problemas.append({"campo": "doi_transacao",
+                          "motivo": "falta a operação imobiliária"})
+    problemas += _problemas_do_imovel(imovel)
     if str(ato.get("doi_transacao") or "") not in TIPO_OPERACAO:
         problemas.append({"campo": "doi_transacao",
                           "motivo": "operação imobiliária inválida"})
-    if not ato.get("valor_transacao") or ato["valor_transacao"] <= 0:
+    if not valor or valor <= 0:
         problemas.append({"campo": "valor_transacao",
                           "motivo": "falta o valor total da operação"})
     torna = ato.get("doi_torna_dinheiro") or 0
@@ -689,14 +827,21 @@ def declaracao_da_escritura(ato: dict, partes: list[dict], cns: str,
          "natureza_titulo": natureza_titulo,   # 2, escritura; o RTD manda 1 (`rg_doi`)
          "data_ato": (ato.get("data") or "")[:10],
          "livro": ato.get("livro"), "folha": ato.get("folha"),
-         "valor_operacao": ato.get("valor_transacao"),
+         "valor_operacao": valor,
+         "valor_base_calculo": base_itbi,
          "houve_permuta": str(ato.get("doi_transacao") or "") == "13",
          "houve_pagamento_dinheiro": bool(ato.get("doi_torna_dinheiro")),
          "valor_especie": ato.get("doi_torna_dinheiro"),
-         "imovel": {"matricula": ato.get("doi_matricula"),
-                    "tipo": ato.get("doi_tipo_imovel"),
-                    "logradouro": ato.get("doi_endereco"),
-                    "area": ato.get("doi_area")},
+         # O QUADRO ANTIGO VAI COMO IA ANTES, chave por chave — inclusive a
+         # `area`, que `declarar` não lê: mudar isso aqui mudaria a DOI de
+         # escrituras já declaradas. O imóvel novo vai inteiro, com rural,
+         # hectares, CIB e INCRA.
+         "imovel": ({"matricula": imovel.get("matricula"),
+                     "tipo": imovel.get("tipo_imovel"),
+                     "logradouro": imovel.get("denominacao"),
+                     "area": imovel.get("area")}
+                    if imovel.get("do_quadro_antigo")
+                    else _imovel_para_declarar(imovel)),
          "alienantes": alienantes, "adquirentes": adquirentes,
          "ato_id": ato["id"]},
         cns, codigo_ibge, tipo_servico=tipo_servico, tipo_ato=tipo_ato)
@@ -791,7 +936,8 @@ def nome_arquivo(cns: str, competencia: str) -> str:
 
 
 def competencias_em_aberto(competencias_com_ato: list[str],
-                           resolvidas: set[str], hoje: str) -> list[dict]:
+                           resolvidas: set[str], hoje: str,
+                           desde: str | None = None) -> list[dict]:
     """Os meses que ainda devem satisfacao a Receita.
 
     POR QUE ISSO E O CORACAO DA TELA
@@ -803,10 +949,27 @@ def competencias_em_aberto(competencias_com_ato: list[str],
         Por isso a lista sai do CALENDARIO, e nao dos atos: todo mes entre o
         primeiro ato do acervo e hoje deve ter uma resposta, nem que seja "nao
         houve ato".
+
+    O CALENDARIO COMECA NO CORTE DA IMPLANTACAO, E NAO NO PRIMEIRO ATO
+        O acervo importado vai ate 1977, e a tela listava 597 meses «em
+        aberto», 595 vencidos: uma lista que ninguem consegue cumprir nem ler,
+        e que escondia os dois ou tres meses que de fato pedem providencia. A
+        conferencia do gestor ja comecava no corte (ordem do oficial,
+        06/10/2026: nada antes de 10/09/2026); a tela agora comeca no mesmo
+        mes. A constante e lida de `gestor_conferencia.IMPLANTACAO`, e nao
+        copiada, para a tela e a conferencia nunca discordarem sobre de onde
+        se conta. A competencia que atravessa o corte (09/2026) entra.
+
+        `desde` (AAAA-MM) existe para o teste fixar o inicio; a tela nao o
+        passa. O import e local porque `gestor_conferencia` e modulo de banco,
+        e este e de regra pura: o caminho de volta fica sem ciclo.
     """
     if not competencias_com_ato:
         return []
-    primeiro = min(competencias_com_ato)
+    if desde is None:
+        from gestor_conferencia import IMPLANTACAO
+        desde = IMPLANTACAO[:7]
+    primeiro = max(min(competencias_com_ato), desde[:7])
     ano, mes = int(primeiro[:4]), int(primeiro[5:7])
     limite = hoje[:7]
     com_ato = set(competencias_com_ato)

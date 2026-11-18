@@ -20,7 +20,8 @@ CATALOGO = ({
 },)
 
 FORMAS_ELETRONICAS = frozenset({"PIX", "BOLETO", "CARTAO", "DEBITO", "CREDITO",
-                              "TRANSFERENCIA", "DEPOSITO", "GRATUITO", "DEPOSITO_PREVIO"})
+                              "TRANSFERENCIA", "DEPOSITO", "GRATUITO", "DEPOSITO_PREVIO",
+                              "PG_ONR"})
 
 
 def _candidatos(con, hoje: str, *, travar=False):

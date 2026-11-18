@@ -1595,6 +1595,7 @@
     <label>CPF/CNPJ do requerente<input name="requerente_documento"></label>
     <label>Emolumentos<input name="emolumentos"></label>
     <label class="span2">Finalidade<input name="finalidade" placeholder="Para fins de..."></label>
+    {% include '_certidao_digital_onr.html' %}
     {# GRATUIDADE NA CERTIDAO DO RI — 23/09/2026, Beatriz (matricula 582).
        Espelho do RCPN (aviso COBRADO/gratuito + caixa) e dos atos do RI
        (motivo com datalist medido). Sem marcar: cobrado, como hoje.
@@ -2067,6 +2068,24 @@
 (function(){function abrir(){var h=location.hash||'';if(h.indexOf('#selar-ato-')!==0)return;var d=document.getElementById(h.slice(1));if(d){d.open=true;d.scrollIntoView({block:'start'});}}
 document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('hashchange',abrir);})();
 </script>
+{# TIPO DE ATO x TEXTO — 17/11/2026: o «Tipo de ato» vem em Registro (R); uma
+   averbação lavrada sem minuta saiu R-03 com o teor «AV-03». Antes de enviar,
+   se o texto começa com o rótulo do outro tipo, pergunta. Não bloqueia. #}
+<script>
+(function(){
+  var f=document.getElementById('form-lavrar-ato'); if(!f)return;
+  f.addEventListener('submit',function(ev){
+    var s=f.querySelector('select[name="tipo"]'), t=f.querySelector('textarea[name="teor"]');
+    if(!s||!t)return;
+    var txt=(t.value||'').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/^\s+/,'');
+    var m=/^(AV|R)\s*[-\u2013\u2014.]?\s*\d/i.exec(txt); if(!m)return;
+    var noTexto=m[1].toUpperCase(), marcado=(s.value||'').toUpperCase();
+    if(noTexto===marcado)return;
+    var nome={R:'Registro (R)',AV:'Averbação (AV)'};
+    if(!window.confirm('O texto começa com '+noTexto+'-, mas o «Tipo de ato» está '+(nome[marcado]||marcado)+'.\n\nOK = lavrar assim mesmo\nCancelar = voltar e trocar o tipo')){ev.preventDefault();ev.stopImmediatePropagation();}
+  },true);
+})();
+</script>
 {% if atos %}
 {% if f %}<span class="cg-ancora" id="atos"></span>{% endif %}
 <section class="panel" data-fase="atos">
@@ -2160,6 +2179,31 @@ document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('has
       {% endif %}
       {% if user.role == 'ADMIN' and a.id == ultimo_ato_id and a.origem == 'MANUAL' and not a.cancelado %}
         <div class="small"><a href="{{ url_for('ri_expurgar_ato', ato_id=a.id) }}">Expurgar este ato (lavrado em teste)</a></div>
+      {% endif %}
+      {# RETIFICAR O TIPO DO ATO (R <-> AV) — 17/11/2026: averbação lavrada
+         direto na ficha com o «Tipo de ato» no padrão (Registro) saía R-03 com
+         teor e selo de AV-03. Só ADMIN, como o expurgo; número, teor e selo
+         ficam, e a cadeia de hash é refeita (`ri_correcoes.retificar_tipo_do_ato`). #}
+      {% if user.role == 'ADMIN' and not a.cancelado and not a.acervo and a.origem == 'MANUAL' %}
+      {%- set _tipo_novo = 'AV' if a.tipo == 'R' else 'R' %}
+      <details class="retificar-tipo small" id="retificar-tipo-{{ a.id }}">
+        <summary class="small muted">Retificar o tipo ({{ a.tipo }}-{{ '%02d'|format(a.numero) }} &rarr; {{ _tipo_novo }}-{{ '%02d'|format(a.numero) }})</summary>
+        <form method="post" action="{{ url_for('ri_retificar_tipo_ato', ato_id=a.id) }}" class="form-grid">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="novo_tipo" value="{{ _tipo_novo }}">
+          <label class="span2">Motivo da retificação
+            <input name="motivo" required minlength="10"
+                   placeholder="Ex.: lavrado como Registro por engano; o teor e o selo são de averbação">
+          </label>
+          <div class="span2 notice small">
+            Troca só a classificação: {{ a.tipo }}-{{ '%02d'|format(a.numero) }} passa a
+            {{ _tipo_novo }}-{{ '%02d'|format(a.numero) }}. O número, o texto e o selo não mudam.
+            A cadeia de integridade deste ato e dos posteriores é refeita, e os
+            hashes antigos e novos ficam na auditoria.
+          </div>
+          <div class="span2"><button class="danger">Retificar para {{ _tipo_novo }}-{{ '%02d'|format(a.numero) }}</button></div>
+        </form>
+      </details>
       {% endif %}
       {# O ATO GRATUITO FICA ASSINALADO NA FICHA, com o motivo à vista.
          «Assinalando que é exceção dentro do RI» — pedido do oficial em

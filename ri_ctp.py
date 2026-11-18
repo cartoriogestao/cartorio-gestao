@@ -449,8 +449,12 @@ def montar_registro(ato: dict, m: dict, partes: list[dict], dados: dict,
     area = _area(m.get("area_valor")) or _area(dados.get("area"))
     if area is not None:
         reg["areaImovel"] = area
-    if so_digitos(m.get("nirf")):
-        reg["cib"] = so_digitos(m.get("nirf"))[:8]
+    # O CIB E ALFANUMERICO (16/11/2026): `9.AB1.CD2-E` e um CIB valido, e so
+    # os digitos dele davam `912`. Fica letra e digito, sem pontuacao; o Nirf
+    # antigo, todo numerico, sai igual ao que saia.
+    cib = "".join(c for c in str(m.get("nirf") or "").upper() if c.isalnum())
+    if cib:
+        reg["cib"] = cib[:8]
 
     if rural:
         reg["codigoIncra"] = (so_digitos(m.get("incra")) or so_digitos(m.get("ccir")) or

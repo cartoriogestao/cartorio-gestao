@@ -310,7 +310,11 @@ def montar_envio(con, ano: int, mes: int, quinzena: int, cns: Any) -> dict:
         sep = CTP.declaracoes_do_mes(con, ano, mes, cns)
         impedidos[CTP.CENTRAL] = sep["impedidos"]
         if sep["aptos"]:
-            corpo["declaracoes"] = [x["linha"] for x in sep["aptos"]]
+            # UMA DECLARAÇÃO POR IMÓVEL (16/11/2026): a escritura de duas
+            # matrículas leva duas linhas na carga, e UM item na remessa —
+            # o item é do ato, e é ele que não se repete depois de aceito.
+            corpo["declaracoes"] = [linha for x in sep["aptos"]
+                                    for linha in (x.get("linhas") or [x["linha"]])]
             atos[CTP.CENTRAL] = [x["ato"] for x in sep["aptos"]]
     return {"corpo": corpo, "atos": atos, "impedidos": impedidos,
             "prazo": NC.prazo_de_fechamento(ano, mes, quinzena)}

@@ -253,6 +253,7 @@ def apurar_mes(con, ano: int, mes: int) -> dict:
         r["por_operador"][op] = r["por_operador"].get(op, 0.0) + valor
         if forma != "DEPOSITO_PREVIO":
             nome = {"PIX": "PIX", "DINHEIRO": "Dinheiro", "GRATUITO": "Marcado gratuito",
+                    "PG_ONR": "PG feito pela ONR",
                     "": "Forma não informada"}.get(forma, forma.title())
             r["entrou"][nome] = r["entrou"].get(nome, 0.0) + valor
     r["depositos_no_mes"] = int(bd.valor(

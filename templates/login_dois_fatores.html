@@ -3,8 +3,9 @@
 {% block auth_content %}
 <h1>{{ APP_NAME }}</h1><p class="muted">{{ unit_name }}</p>
 <p>Senha conferida para <strong>{{ conta }}</strong>. Falta o código do aplicativo autenticador.</p>
-<form method="post" class="stack">
+<form method="post" class="stack" autocomplete="on">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input name="username" autocomplete="username" value="{{ conta }}" readonly tabindex="-1" aria-hidden="true" style="position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);border:0">
   <label>Código<input name="codigo" inputmode="numeric" autocomplete="one-time-code" autofocus required></label>
   {% if pode_lembrar %}
   <label><input type="checkbox" name="lembrar_dispositivo" value="1"> Lembrar este dispositivo por 30 dias</label>

@@ -9,6 +9,7 @@ etapas para o seu perfil: cadastre o celular para entrar.</p>
   <form method="post" class="stack">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="acao" value="confirmar">
+    <input name="username" autocomplete="username" value="{{ conta }}" readonly tabindex="-1" aria-hidden="true" style="position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);border:0">
     <label>Código do aplicativo<input name="codigo" inputmode="numeric" autocomplete="one-time-code" autofocus required></label>
     <button class="primary">Ativar e entrar</button>
   </form>

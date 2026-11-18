@@ -60,8 +60,8 @@
 </div>
 {% if c.situacao in ['EMITINDO', 'ABERTA'] and c.forma_pedida in ['PIX', 'CREDITO', 'DEBITO'] %}
 <p class="muted small">A maquininha é conferida a cada poucos segundos. Esta tela mostra o pagamento sozinha.</p>
-{% elif com_cofre %}<p class="muted small">Com o cofre da automação instalado, os botões que falam com o banco pedem a rodada
-  do despachante: o resultado aparece aqui no minuto seguinte.</p>{% endif %}
+{% elif com_cofre %}<p class="muted small">O envio é iniciado ao solicitar a operação.
+  O cofre precisa estar desbloqueado no servidor. Atualize a ficha para ver o retorno do banco.</p>{% endif %}
 
 {% if c.situacao == 'RECEBIDA' %}
 <div class="card">

@@ -74,13 +74,15 @@ import argparse
 import base64
 import hashlib
 import json
+import logging
 import os
+import re
 import shutil
 import sys
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, mkdtemp
 
 NOME_BANCO = "banco/cartorio_gestao.sqlite3"
 NOME_MANIFESTO = "manifesto.json"
@@ -112,7 +114,7 @@ class BackupInvalido(RuntimeError):
 def _sha256(caminho: Path) -> str:
     h = hashlib.sha256()
     with caminho.open("rb") as fh:
-        for bloco in iter(lambda: fh.read(1024 * 1024), b""):
+        for bloco in iter(lambda: fh.read(8 * 1024 * 1024), b""):
             h.update(bloco)
     return h.hexdigest()
 
@@ -331,7 +333,166 @@ def situacao_da_cifra(pasta_de_dados: Path) -> str:
 # ------------------------------------------------------------- o pacote
 
 
+def _destino_de_rede(destino: Path) -> bool:
+    """UNC: montar o ZIP com milhares de buscas pequenas no NAS custa horas."""
+    return str(destino).replace("\\", "/").startswith("//")
+
+
+def _area_de_envio() -> Path:
+    # O pacote pode estar sem cifra. A area privada e local fica em
+    # ProgramData, fora da pasta do banco e da pasta que sai para a rede.
+    base = Path(os.environ.get("PROGRAMDATA") or r"C:\ProgramData")
+    area = base / "CartorioGestaoOperacao" / "backups_temporarios"
+    area.mkdir(parents=True, exist_ok=True)
+    import permissao_local
+    problema = permissao_local.restringir(area, pasta=True)
+    if problema:
+        raise BackupInvalido(f"nao foi possivel proteger a area temporaria: {problema}")
+    return area
+
+
+def _destino_autorizado(destino: Path) -> Path:
+    """UNC apenas na pasta de backups da raiz administrativa do servidor."""
+    from werkzeug.utils import secure_filename
+    configurada = os.environ.get("CARTORIO_GESTAO_COPIAS", "").strip()
+    if not configurada:
+        raise BackupInvalido("destino de rede sem raiz administrativa configurada")
+    raiz = Path(configurada) / "backups"
+    if ".." in destino.parts:
+        raise BackupInvalido("segmento relativo proibido no destino de rede")
+    nome = secure_filename(destino.name)
+    if nome != destino.name or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,159}\.zip", nome):
+        raise BackupInvalido("nome de pacote de rede invalido")
+    # Comparacao lexical: nao consultar o filesystem de um caminho recebido
+    # antes de comprovar que ele pertence a raiz definida pelo administrador.
+    if Path(os.path.abspath(destino.parent)) != Path(os.path.abspath(raiz)):
+        raise BackupInvalido("destino fora da pasta de backups autorizada")
+    return raiz.resolve() / nome
+
+
+def _origem_do_banco(db) -> str:
+    caminho = getattr(db, "db_path", None)
+    return str(Path(caminho).resolve()) if caminho else ""
+
+
+def _completo_para_retomar(area: Path, db, archive_root: Path,
+                          app_nome: str, versao: str) -> Path | None:
+    """Retoma o completo mais recente da mesma origem, criado nas ultimas 24 h."""
+    origem = _origem_do_banco(db)
+    if not origem:
+        return None
+    producao = Path(os.environ.get("PROGRAMDATA") or r"C:\ProgramData") / "CartorioGestao" / "cartorio_gestao.sqlite3"
+    candidatos = []
+    for candidato in area.glob("envio-backup-*/*.zip"):
+        try:
+            local = candidato.resolve()
+            if (not local.is_file() or candidato.is_symlink() or local.parent.parent != area
+                    or not local.parent.name.startswith("envio-backup-") or e_cifrado(local)):
+                continue
+            with zipfile.ZipFile(local) as zf:
+                meta = json.loads(zf.read(NOME_MANIFESTO))
+            if not isinstance(meta, dict):
+                continue
+            criado = datetime.fromisoformat(meta["created_at"])
+            if not timedelta(0) <= datetime.now() - criado <= timedelta(hours=24):
+                continue
+            if (meta.get("tipo") != "completo" or meta.get("app") != app_nome
+                    or meta.get("version") != versao
+                    or Path(meta.get("archive_root", "")).resolve() != Path(archive_root).resolve()):
+                continue
+            anterior = meta.get("origem_banco")
+            # Pacotes antigos nao tinham a origem. Aceitos apenas na propria
+            # producao, da area privada local, com acervo/app/versao conferidos.
+            if (anterior and anterior != origem) or (not anterior and Path(origem) != producao.resolve()):
+                continue
+            candidatos.append((criado, local))
+        except (OSError, ValueError, TypeError, KeyError, zipfile.BadZipFile):
+            continue
+    for _, local in sorted(candidatos, key=lambda item: item[0], reverse=True):
+        if conferir(local) is None:
+            return local
+    return None
+
+
+def _exigir_espaco_local(area: Path, archive_root: Path, com_arquivos: bool,
+                         acervo: Path | None, cifrado: bool) -> None:
+    tamanho = 0
+    if com_arquivos:
+        tamanho = sum(p.stat().st_size for p in Path(archive_root).rglob("*") if p.is_file())
+        if acervo and Path(acervo).is_file():
+            tamanho += Path(acervo).stat().st_size
+    necessario = tamanho * (2 if cifrado else 1) + 3 * 1024 ** 3
+    if shutil.disk_usage(area).free < necessario:
+        raise BackupInvalido("espaco local insuficiente para montar o pacote sem encher o disco; "
+                             "os pacotes preservados continuam guardados")
+
+
+def _publicar_pacote(local: Path, destino: Path) -> None:
+    """Uma transferencia sequencial; so publica depois do SHA-256 no NAS."""
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    parcial = destino.with_suffix(destino.suffix + ".parcial")
+    esperado = hashlib.sha256()
+    parcial.unlink(missing_ok=True)
+    with local.open("rb") as origem, parcial.open("xb") as saida:
+        while bloco := origem.read(8 * 1024 * 1024):
+            saida.write(bloco)
+            esperado.update(bloco)
+        saida.flush()
+        os.fsync(saida.fileno())
+    if _sha256(parcial) != esperado.hexdigest():
+        raise BackupInvalido("o SHA-256 da copia no destino nao confere")
+    # Preserva o pacote bom anterior ate este instante; rename no mesmo NAS.
+    parcial.replace(destino)
+
+
 def gerar_pacote(db, destino: Path, archive_root: Path,
+                 com_arquivos: bool = True, app_nome: str = "CartorioGestao",
+                 versao: str = "", acervo: Path | None = None,
+                 senha_da_cifra: str | None = None) -> Path:
+    """Para UNC, gera e confere localmente; transfere, confere e limpa."""
+    destino = Path(destino)
+    argumentos = (db, destino, archive_root, com_arquivos, app_nome, versao,
+                  acervo, senha_da_cifra)
+    if not _destino_de_rede(destino):
+        return _gerar_pacote(*argumentos)
+    destino = _destino_autorizado(destino)
+    area = _area_de_envio().resolve()
+    retomado = (_completo_para_retomar(area, db, archive_root, app_nome, versao)
+                if com_arquivos and not senha_da_cifra else None)
+    if retomado:
+        local, trabalho = retomado, retomado.parent
+    else:
+        _exigir_espaco_local(area, archive_root, com_arquivos, acervo, bool(senha_da_cifra))
+        trabalho = Path(mkdtemp(prefix="envio-backup-", dir=area)).resolve()
+        local = trabalho / destino.name
+    try:
+        if not retomado:
+            _gerar_pacote(db, local, archive_root, com_arquivos, app_nome, versao,
+                          acervo, senha_da_cifra)
+        _publicar_pacote(local, destino)
+        if retomado and callable(getattr(db, "log", None)):
+            try:
+                import identidade_do_robo as IDR
+                db.log(None, "SISTEMA", "BACKUP_ENVIO_RETOMADO", "BACKUP", None,
+                       {"pacote_local": local.name, "pacote_publicado": destino.name},
+                       agente="backup automatico - retomada de envio", a_mando_de=IDR.PELO_RESPONSAVEL)
+            except Exception:
+                logging.getLogger(__name__).exception("Backup retomado; auditoria complementar falhou")
+    except Exception as erro:
+        # Falha de rede nao joga fora a unica copia completa da rodada.
+        raise BackupInvalido(f"{erro}; area local preservada: {trabalho}") from erro
+    try:
+        if trabalho.parent != area or not trabalho.name.startswith("envio-backup-"):
+            raise OSError("area temporaria fora da raiz prevista")
+        shutil.rmtree(trabalho)
+    except OSError:
+        # O pacote valido ja foi publicado: nao impedir seu registro nativo.
+        logging.getLogger(__name__).exception(
+            "Backup transferido e conferido; nao foi possivel limpar %s", trabalho)
+    return destino
+
+
+def _gerar_pacote(db, destino: Path, archive_root: Path,
                  com_arquivos: bool = True, app_nome: str = "CartorioGestao",
                  versao: str = "", acervo: Path | None = None,
                  senha_da_cifra: str | None = None) -> Path:
@@ -438,6 +599,7 @@ def gerar_pacote(db, destino: Path, archive_root: Path,
                 "version": versao,
                 "created_at": datetime.now().isoformat(timespec="seconds"),
                 "archive_root": str(raiz),
+                "origem_banco": _origem_do_banco(db),
                 "tipo": "completo" if com_arquivos else "banco",
                 "cifrado": bool(senha_da_cifra),
                 "banco_sha256": sha_banco,

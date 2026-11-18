@@ -45,6 +45,7 @@ FORMAS_PAGAMENTO = {
     "BOLETO": "Boleto",
     "GRATUITO": "Ato gratuito",
     "DEPOSITO_PREVIO": "Depósito prévio",
+    "PG_ONR": "PG feito pela ONR",
 }
 
 # Natureza do lancamento. ENTRADA e SAIDA movimentam; ESTORNO desfaz.

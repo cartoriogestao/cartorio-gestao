@@ -2112,25 +2112,39 @@ ITEM_DA_FOLHA_ACRESCIDA_DO_RI = {
 }
 
 
-#: **A CERTIDAO DIGITAL DE INTEIRO TEOR NAO COBRA FOLHA EXCEDENTE** —
-#: DECISAO-COGEx 2035/2026 (Processo DIGIDOC 47246/2026, assinada em
-#: 26/10/2026 e recebida pelo malote em 29/10/2026), item «b»: as serventias
-#: de RI cobram a certidao digital de inteiro teor de matricula pelo item
-#: 16.24.4, «vedada a cobranca adicional por folhas excedentes», enquanto valer
-#: a DECISAO-G2VP 25/2023. A ordem do oficial em 29/10/2026 foi «adapte a
-#: cobranca no sistema para respeitar a decisao da cogex».
+#: **A CERTIDAO DIGITAL DA ONR NAO COBRA FOLHA EXCEDENTE** —
+#: DECISAO-COGEx 2035/2026 (Processo DIGIDOC 47246/2026) tratou o inteiro teor
+#: (16.24.4). Em 18/11/2026 o oficial registrou a determinacao da CGJ-TJMA:
+#: **toda** certidao pedida pela ONR e digital e nao cobra por pagina/folha —
+#: nem 16.24.4.1 nem 16.24.2. O balcao impresso continua cobrando a folha
+#: acrescida.
 #:
-#: O QUE E «DIGITAL» AQUI: a certidao pedida pela Central do ONR (a finalidade
-#: comeca com `PREFIXO_DA_FINALIDADE_ONR`), que e a certidao eletronica de que
-#: as duas decisoes tratam. A do balcao, impressa, continua cobrando a folha
-#: acrescida. E a decisao fala de INTEIRO TEOR (16.24.4): a certidao comum
-#: (16.24.1) digital nao e alcancada, e por isso continua com o 16.24.2.
-ITENS_SEM_FOLHA_EXCEDENTE_QUANDO_DIGITAL = frozenset({"16.24.4"})
+#: O QUE E «DIGITAL» AQUI: a finalidade comeca com `PREFIXO_DA_FINALIDADE_ONR`
+#: (robô automatico ou caixa «Certidão digital da ONR» na emissao manual).
+#: O frozenset abaixo ficou com os dois itens-base medidos; a regra em
+#: `itens_da_certidao_do_ri` ignora a folha acrescida para qualquer base
+#: quando `digital=True`.
+ITENS_SEM_FOLHA_EXCEDENTE_QUANDO_DIGITAL = frozenset({"16.24.4", "16.24.1"})
 
 
 def e_certidao_digital_do_ri(finalidade: Any) -> bool:
     """A certidao do RI e a eletronica do ONR? Pela marca da finalidade. Só calcula."""
     return str(finalidade or "").strip().startswith(PREFIXO_DA_FINALIDADE_ONR.strip())
+
+
+def finalidade_da_certidao_do_ri_pelo_form(form: Any) -> str | None:
+    """A finalidade a gravar na emissão. Só monta texto.
+
+    Se o balcão marcou «Certidão digital da ONR», grava a mesma marca do robô
+    (`PREFIXO_DA_FINALIDADE_ONR` + nº do pedido). Senão, o texto livre do campo
+    finalidade — opcional, como antes.
+    """
+    marcado = str((form or {}).get("certidao_digital_onr") or "").strip().lower()
+    if marcado in {"1", "on", "true", "yes", "sim"}:
+        protocolo = str((form or {}).get("protocolo_onr") or "").strip()
+        return f"{PREFIXO_DA_FINALIDADE_ONR}{protocolo}"
+    texto = str((form or {}).get("finalidade") or "").strip()
+    return texto or None
 
 
 def itens_da_certidao_do_ri(tipo: Any, folhas: int = 1, *,
@@ -2145,6 +2159,9 @@ def itens_da_certidao_do_ri(tipo: Any, folhas: int = 1, *,
     selam certidao — a do RI e a do Livro 3 — mandavam um item so, com
     quantidade 1, porque o campo que diria outra coisa nao existia em tela
     nenhuma. Dos 667 envelopes reais, **92 cobraram mais de uma folha**.
+
+    Com `digital=True` (certidão da ONR) devolve só o item base — CGJ-TJMA /
+    DECISÃO-COGEx: sem folha acrescida em nenhum tipo do RI.
     """
     tipo_norm = str(tipo or "").strip().upper()
     base = CODIGO_DA_CERTIDAO_DO_RI.get(tipo_norm)
@@ -2156,9 +2173,9 @@ def itens_da_certidao_do_ri(tipo: Any, folhas: int = 1, *,
             f"«{tipo}». A certidão sai SEM SELO, e o selo se digita na ficha.")
     folhas = max(1, int(folhas or 1))
     itens = [(base, 1)]
+    if digital:
+        return itens                     # CGJ-TJMA / COGEx: ONR digital sem folha
     acrescida = ITEM_DA_FOLHA_ACRESCIDA_DO_RI.get(base)
-    if digital and base in ITENS_SEM_FOLHA_EXCEDENTE_QUANDO_DIGITAL:
-        return itens                     # DECISAO-COGEx 2035/2026: sem folha excedente
     if folhas > 1 and acrescida:
         itens.append((acrescida, folhas - 1))
     return itens

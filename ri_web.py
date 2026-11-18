@@ -936,9 +936,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 "falta a versão da tabela de custas, em Administrativo → "
                 "Configurações (data da tabela em vigor).")
         saiu, faltou, aguardando = [], [], False
-        # A CERTIDAO DIGITAL (a do ONR) DE INTEIRO TEOR NAO COBRA FOLHA
-        # EXCEDENTE — DECISAO-COGEx 2035/2026. Quem diz se e digital e a
-        # finalidade gravada, que vale para a emissao e para o «selar de novo».
+        # A CERTIDAO DIGITAL DA ONR NAO COBRA FOLHA EXCEDENTE — CGJ-TJMA /
+        # DECISÃO-COGEx (qualquer tipo do RI). Quem diz se é digital é a
+        # finalidade gravada, que vale para a emissão e para o «selar de novo».
         with db.connect() as con:
             _finalidade = banco(con).valor(
                 "SELECT finalidade FROM ri_certidoes WHERE id = %s", (int(certidao_id),))
@@ -986,7 +986,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if saiu:
             recado = f" Selo {', '.join(saiu)}."
             if faltou:
-                recado += f" ({len(faltou)} item(ns) sem selo: {faltou[0]})"
+                # Não usar «SEM SELO» aqui: o item base já saiu e cancelar
+                # a certidão queimaria o selo (matrícula 3495, 18/11/2026).
+                recado += (f" ({len(faltou)} item(ns) sem cobertura: "
+                           f"{faltou[0]})")
             return recado
         return f" SEM SELO: {faltou[0] if faltou else ''}"
 
@@ -1111,7 +1114,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return linhas[0] if linhas else None
 
     def _motivo_da_falha_do_selo(recado: str) -> str | None:
-        """Extrai o motivo humano de uma mensagem «SEM SELO». Só LÊ."""
+        """Extrai o motivo humano de uma mensagem «SEM SELO». Só LÊ.
+
+        Não confunde com «item(ns) sem selo» / «sem cobertura» depois do
+        selo base já ter saído — esse caso deixa a certidão de pé.
+        """
         texto = str(recado or "").strip()
         if not texto:
             return None
@@ -1119,9 +1126,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return texto.split("SEM SELO:", 1)[1].strip() or "falha sem detalhe"
         baixo = texto.lower()
         if "sem selo:" in baixo:
-            return texto.split(":", 1)[1].strip() or "falha sem detalhe"
-        if "sem selo" in baixo:
-            return texto or "falha sem detalhe"
+            # Só o padrão «SEM SELO: motivo» (falha total). «item(ns) sem selo»
+            # é aviso parcial e não cancela a certidão já selada.
+            pos = baixo.find("sem selo:")
+            return texto[pos + len("sem selo:"):].strip() or "falha sem detalhe"
         return None
 
     # ------------------------------------------------- delegatarios
@@ -9233,7 +9241,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         requerente = (request.form.get("requerente") or "").strip()
         requerente_documento = so_digitos(
             request.form.get("requerente_documento")) or None
-        finalidade = (request.form.get("finalidade") or "").strip() or None
+        finalidade = AS.finalidade_da_certidao_do_ri_pelo_form(request.form)
         protocolo = (request.form.get("protocolo") or "").strip() or None
         isento, motivo_isencao = ler_isencao_do_form(request.form)
         motivo_isencao = motivo_isencao or ""
@@ -9403,6 +9411,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         recado_do_selo = ""
         folhas_contadas_msg = ""
         aguardando = False
+        pedido = {"saiu": [], "faltou": [], "aguardando": False}
         try:
             folhas = CFOLHAS.decidir_folhas_antes_de_emitir(
                 fonte="TEXTO", caminho_digi=None, paginas_digi=None,
@@ -9434,6 +9443,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   f"mas SEM SELO: {motivo_selo} Ela não pode ser impressa "
                   "até o selo sair. Ligue o protocolo pago e clique em "
                   "«Selar» na lista de certidões.", "warning")
+            return redirect(url_for("ri_certidoes", busca=str(numero)))
+        # SELO BASE JÁ SAIU: não cancelar (18/11/2026, certidão 524 / matr. 3495).
+        if motivo_selo and pedido.get("saiu"):
+            audit("RI_CERTIDAO_SELO_PARCIAL", "RI_CERTIDAO", certidao_id,
+                  {"numero": numero, "ano": hoje.year, "tipo": tipo_cert,
+                   "saiu": list(pedido.get("saiu") or []),
+                   "faltou": list(pedido.get("faltou") or []),
+                   "motivo": motivo_selo})
+            flash(f"{nome_cert} n. {numero}/{hoje.year} emitida com selo base; "
+                  f"item extra sem cobertura: {motivo_selo} A certidão "
+                  "fica de pé — não cancele para não queimar o selo.",
+                  "warning")
             return redirect(url_for("ri_certidoes", busca=str(numero)))
         if motivo_selo:
             quando = db.now()
@@ -10633,7 +10654,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 (numero, hoje.year, tipo, matricula_id, m["numero"],
                  (request.form.get("requerente") or "").strip() or None,
                  so_digitos(request.form.get("requerente_documento")) or None,
-                 (request.form.get("finalidade") or "").strip() or None,
+                 AS.finalidade_da_certidao_do_ri_pelo_form(request.form),
                  hoje.isoformat(), validade, corpo,
                  (request.form.get("protocolo") or "").strip() or None,
                  (request.form.get("selo_texto") or "").strip() or None,
@@ -10760,6 +10781,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # vazia, que é a verdade.
         folhas_contadas_msg = ""
         aguardando = False
+        pedido = {"saiu": [], "faltou": [], "aguardando": False}
         if not (request.form.get("selo_texto") or "").strip():
             try:
                 # **A CERTIDAO DE MAIS DE UMA FOLHA SAO DOIS SELOS** —
@@ -10826,6 +10848,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   f"{motivo_selo} Ela não pode ser impressa até o selo sair. "
                   "Ligue o protocolo pago e clique em «Selar» na lista de "
                   "certidões desta ficha.", "warning")
+            if tipo in TIPOS_DA_CADEIA:
+                _avisar_das_origens(contexto)
+            return redirect(url_for("ri_ficha", matricula_id=matricula_id)
+                            + "#certidoes-da-ficha")
+        # SELO BASE JÁ SAIU: não cancelar (18/11/2026, certidão 524 / matr. 3495).
+        if motivo_selo and pedido.get("saiu"):
+            audit("RI_CERTIDAO_SELO_PARCIAL", "RI_CERTIDAO", certidao_id,
+                  {"numero": numero, "ano": hoje.year, "tipo": tipo,
+                   "matricula": m["numero"],
+                   "saiu": list(pedido.get("saiu") or []),
+                   "faltou": list(pedido.get("faltou") or []),
+                   "motivo": motivo_selo})
+            flash(f"Certidão nº {numero}/{hoje.year} emitida com selo base; "
+                  f"item extra sem cobertura: {motivo_selo} A certidão "
+                  "fica de pé — não cancele para não queimar o selo.",
+                  "warning")
             if tipo in TIPOS_DA_CADEIA:
                 _avisar_das_origens(contexto)
             return redirect(url_for("ri_ficha", matricula_id=matricula_id)

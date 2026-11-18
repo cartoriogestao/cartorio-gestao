@@ -46,6 +46,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 _RAIZ = Path(__file__).resolve().parent
@@ -255,11 +256,16 @@ def _largar_assinatura(c, *, principal_vivo: bool) -> None:
 
 @dataclass
 class Situacao:
+    """O que a sincronia anota. `atraso_s` é o tempo desde a última notícia do principal
+    recebida COM LIGAÇÃO; sem ligação, desde a última vez que a sincronia a viu ligada
+    (o arquivo de `--estado`), ou None se nunca viu."""
     ligada: bool
     atraso_s: float | None
     tabelas_copiando: int
     erros: int
     tabelas: int
+    com_ligacao: bool = True
+    ligada_ate: datetime | None = None
 
     @property
     def em_dia(self) -> bool:
@@ -267,7 +273,54 @@ class Situacao:
                 and self.atraso_s <= ATRASO_TOLERADO_S)
 
 
-def ler_situacao(c) -> Situacao | None:
+#: Por que não basta `last_msg_receipt_time`: o PostgreSQL preenche essa coluna (e a
+#: `latest_end_time`) com a HORA EM QUE O WORKER SOBE. Sem rota até o principal, o worker
+#: tenta, falha no tempo da conexão e sobe de novo — e a coluna fica sempre com «há 30 s».
+#: Foi assim de 16 a 18/11/2026: dois dias sem um byte, e o sincronia.log dizendo EM DIA.
+#: O que só existe com ligação de verdade é `received_lsn`: fica vazio até chegar a
+#: primeira mensagem do principal (um keepalive chega em segundos).
+SQL_DA_LIGACAO = ("SELECT coalesce(bool_or(received_lsn IS NOT NULL), false), "
+                  "extract(epoch FROM now() - max(last_msg_receipt_time) "
+                  "  FILTER (WHERE received_lsn IS NOT NULL)) "
+                  "FROM pg_stat_subscription WHERE subname = %s")
+
+
+def medir(*, ligada: bool, copiando: int, tabelas: int, erros: int, com_ligacao: bool,
+          atraso_com_ligacao_s: float | None, ligada_ate: datetime | None,
+          agora: datetime) -> Situacao:
+    """Só calcula. Com ligação, o atraso é o da última mensagem; sem ligação, conta desde
+    `ligada_ate` (a última vez em que a sincronia viu a réplica ligada)."""
+    if com_ligacao and atraso_com_ligacao_s is not None:
+        atraso: float | None = float(atraso_com_ligacao_s)
+        ligada_ate = agora - timedelta(seconds=atraso)
+    elif ligada_ate is not None:
+        atraso = max(0.0, (agora - ligada_ate).total_seconds())
+    else:
+        atraso = None
+    return Situacao(ligada, atraso, copiando, erros, tabelas, com_ligacao, ligada_ate)
+
+
+def ler_ligada_ate(estado: Path | None) -> datetime | None:
+    if estado is None:
+        return None
+    try:
+        quando = datetime.fromisoformat(estado.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return quando if quando.tzinfo else quando.replace(tzinfo=timezone.utc)
+
+
+def gravar_ligada_ate(estado: Path | None, quando: datetime) -> None:
+    if estado is None:
+        return
+    tmp = estado.with_name(estado.name + ".tmp")
+    tmp.write_text(quando.astimezone(timezone.utc).isoformat(timespec="seconds") + "\n",
+                   encoding="utf-8")
+    tmp.replace(estado)
+
+
+def ler_situacao(c, ligada_ate: datetime | None = None,
+                 agora: datetime | None = None) -> Situacao | None:
     linha = c.execute("SELECT s.subenabled, (SELECT count(*) FROM pg_subscription_rel r "
                       "  WHERE r.srsubid = s.oid AND r.srsubstate <> 'r'), "
                       "(SELECT count(*) FROM pg_subscription_rel r WHERE r.srsubid = s.oid) "
@@ -275,28 +328,79 @@ def ler_situacao(c) -> Situacao | None:
     if linha is None:
         return None
     ligada, copiando, tabelas = linha
-    atraso = c.execute("SELECT extract(epoch FROM now() - max(last_msg_receipt_time)) "
-                       "FROM pg_stat_subscription WHERE subname = %s", (ASSINATURA,)).fetchone()[0]
+    com_ligacao, atraso = c.execute(SQL_DA_LIGACAO, (ASSINATURA,)).fetchone()
     erros = c.execute("SELECT coalesce(apply_error_count + sync_error_count, 0) "
                       "FROM pg_stat_subscription_stats WHERE subname = %s", (ASSINATURA,)).fetchone()
-    return Situacao(ligada, float(atraso) if atraso is not None else None, copiando,
-                    int(erros[0]) if erros else 0, tabelas)
+    return medir(ligada=bool(ligada), copiando=int(copiando), tabelas=int(tabelas),
+                 erros=int(erros[0]) if erros else 0, com_ligacao=bool(com_ligacao),
+                 atraso_com_ligacao_s=float(atraso) if atraso is not None else None,
+                 ligada_ate=ligada_ate, agora=agora or datetime.now(timezone.utc))
 
 
-def situacao(local: str) -> int:
+def _dado_mais_novo(c, schema: str) -> str | None:
+    """A hora da linha mais nova de `audit_logs` na réplica: a prova, em data, de até onde
+    o dado chegou. É só para quem lê o log; a decisão não depende dela (de noite e no fim
+    de semana a tabela fica quieta com a réplica em dia)."""
+    try:
+        linha = c.execute(S.SQL("SELECT max(ts) FROM {}.audit_logs").format(
+            S.Identifier(_schema_valido(schema)))).fetchone()
+    except (psycopg.Error, ValueError):
+        return None
+    return str(linha[0]) if linha and linha[0] else None
+
+
+def _duracao(segundos: float) -> str:
+    s = int(segundos)
+    if s < 120:
+        return f"{s} s"
+    if s < 7200:
+        return f"{s // 60} min"
+    if s < 172800:
+        return f"{s // 3600} h {s % 3600 // 60:02d} min"
+    return f"{s // 86400} d {s % 86400 // 3600} h"
+
+
+def frase_da_situacao(s: Situacao) -> str:
+    if s.com_ligacao:
+        noticia = ("sem notícia do principal" if s.atraso_s is None
+                   else f"última notícia do principal há {_duracao(s.atraso_s)}")
+    elif s.ligada_ate is not None:
+        noticia = (f"SEM LIGAÇÃO com o principal desde "
+                   f"{s.ligada_ate.astimezone().strftime('%Y-%m-%d %H:%M')} "
+                   f"(há {_duracao(s.atraso_s or 0)})")
+    else:
+        noticia = "SEM LIGAÇÃO com o principal (desde quando, não sei: a sincronia ainda não a viu ligada)"
+    return (f"assinatura: {'ligada' if s.ligada else 'DESLIGADA'}; {noticia}; "
+            f"{s.tabelas - s.tabelas_copiando} de {s.tabelas} tabelas copiadas; "
+            f"erros acumulados: {s.erros}")
+
+
+def situacao(local: str, estado: Path | None = None, schema: str = "producao") -> int:
+    """Sai 0 só com a réplica em dia. Sai 1 com ela atrasada, sem ligação ou desligada —
+    e o sincronizar.sh devolve esse 1 ao launchd, para quem confere o serviço ver."""
     with _abrir(local) as pg, pg.cursor() as c:
-        s = ler_situacao(c)
+        s = ler_situacao(c, ler_ligada_ate(estado))
+        mais_novo = _dado_mais_novo(c, schema) if s is not None and not s.em_dia else None
     if s is None:
         print("a reserva não está montada (nenhuma assinatura). Ver `montar`.")
         return 1
-    atraso = "sem notícia do principal" if s.atraso_s is None else f"última notícia há {s.atraso_s:.0f} s"
-    print(f"assinatura: {'ligada' if s.ligada else 'DESLIGADA'}; {atraso}; "
-          f"{s.tabelas - s.tabelas_copiando} de {s.tabelas} tabelas em dia; erros acumulados: {s.erros}")
+    if s.com_ligacao and s.ligada_ate is not None:
+        try:
+            gravar_ligada_ate(estado, s.ligada_ate)
+        except OSError as erro:
+            print(f"  não gravei {estado}: {erro}")
+    print(frase_da_situacao(s))
     if s.tabelas_copiando:
         print(f"  {s.tabelas_copiando} tabela(s) ainda na primeira cópia — normal na primeira hora")
-    if s.erros and not s.em_dia:
+    if not s.com_ligacao and not s.em_dia:
+        print("  o principal não responde na porta do banco: ver o postgres.log da reserva e, no "
+              "principal, o serviço do PostgreSQL, o listen_addresses e o firewall "
+              "(docs/SERVIDOR_RESERVA_MACOS.md, Parte A)")
+    elif s.erros and not s.em_dia:
         print("  houve erro na réplica: rode `reserva.py esquema` (versão nova no principal?) e veja o "
               "log do PostgreSQL da reserva")
+    if mais_novo:
+        print(f"  o dado mais novo na réplica: audit_logs de {mais_novo}")
     print("EM DIA" if s.em_dia else "ATRASADA")
     return 0 if s.em_dia else 1
 
@@ -924,7 +1028,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="no assumir: as configurações passam a apontar para as cópias")
     p = sub.add_parser("montar")
     p.add_argument("--refazer", action="store_true", help="apaga a reserva e copia tudo de novo")
-    sub.add_parser("situacao")
+    p = sub.add_parser("situacao")
+    p.add_argument("--estado", help="arquivo onde fica a última vez que a réplica foi vista "
+                   "ligada (o sincronizar.sh passa um): mede há quanto tempo está sem ligação")
     sub.add_parser("conferir")
     p = sub.add_parser("esquema")
     p.add_argument("--aplicar", action="store_true")
@@ -952,7 +1058,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     local = _dsn("CG_RESERVA_LOCAL_DSN", a.local)
     if a.comando == "situacao":
-        return situacao(local)
+        return situacao(local, Path(a.estado).expanduser() if a.estado else None, a.schema)
     if a.comando == "assumir":
         return assumir(local, a.schema, a.confirmo, a.principal_vivo)
     if a.comando == "emergencia":

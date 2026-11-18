@@ -207,7 +207,14 @@ que falta. Abra `http://<IP do Mac>:8775`: a faixa vermelha diz «SERVIDOR RESER
   (`chaves: em dia` ou `chaves: N arquivo(s) recebidos`), a versão (`versao: EM DIA`,
   `ESPERA o esquema` ou `3.7.14 -> 3.7.17`) e uma linha terminando em `EM DIA` ou
   `ATRASADA`. Atrasada por mais de uma hora, veja o log do PostgreSQL da reserva
-  (`logs/postgres.log`). `versao: falhou` é o código que não entrou, ou o serviço que não
+  (`logs/postgres.log`). `SEM LIGAÇÃO com o principal desde …` é a porta do banco do
+  principal que não responde a este Mac (o serviço do PostgreSQL de lá, o `listen_addresses`
+  ou o firewall: Parte A). A hora vem de `replica-ligada.txt`, na pasta da instalação: a
+  última vez que a sincronia viu a réplica ligada. Com a réplica atrasada, a sincronia sai
+  com código 1, e `launchctl list | grep sincronia` mostra esse 1 na coluna do meio.
+  Até 18/11/2026 a medida era a «última notícia» (`last_msg_receipt_time`), que o
+  PostgreSQL renova a cada tentativa de ligação: com o principal inalcançável por dois dias,
+  o log dizia `EM DIA`. `versao: falhou` é o código que não entrou, ou o serviço que não
   reiniciou: a volta seguinte tenta de novo, e o que está no ar continua o anterior.
 - **Versão nova:** atualize primeiro o principal, como sempre. Ao subir, ele grava o número
   em `settings`. O esquema chega à reserva sozinho em até 5 minutos, e a sincronia então

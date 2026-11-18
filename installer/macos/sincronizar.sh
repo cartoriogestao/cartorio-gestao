@@ -7,7 +7,9 @@
 #   3. o programa: a etiqueta que o principal publicou, só com o esquema já igual
 #      (`reserva.py versao`);
 #   4. os segredos da pasta de dados (`reserva.py chaves`: o pacote cifrado para este Mac);
-#   5. a situação da réplica, anotada em sincronia.log — o `situacao` sai 1 se atrasou.
+#   5. a situação da réplica, anotada em sincronia.log — o `situacao` sai 1 se atrasou ou
+#      perdeu a ligação com o principal, e este script sai com o mesmo código: é o que o
+#      launchd mostra em `launchctl list` (coluna do meio) e o que a conferência lê.
 # Depois de assumir (CG_MODO_RESERVA=0), não faz mais nada: não há de onde copiar.
 set -uo pipefail
 # A pasta da instalação: este script mora em <pasta>/sistema/installer/macos.
@@ -40,6 +42,11 @@ fi
 "$PY" "$FERRAMENTA" esquema --aplicar >>"$LOG" 2>&1 || echo "$(agora) esquema: falhou" >>"$LOG"
 "$PY" "$FERRAMENTA" versao >>"$LOG" 2>&1 || echo "$(agora) versao: falhou" >>"$LOG"
 "$PY" "$FERRAMENTA" chaves >>"$LOG" 2>&1 || echo "$(agora) chaves: falhou" >>"$LOG"
-echo "$(agora) $("$PY" "$FERRAMENTA" situacao 2>&1 | tr '\n' ' ')" >>"$LOG"
+# `replica-ligada.txt`: a última vez que a réplica foi vista com ligação. Sem ele, o
+# `situacao` sabe que está sem ligação, mas não desde quando.
+SITUACAO="$("$PY" "$FERRAMENTA" situacao --estado "$PASTA/replica-ligada.txt" 2>&1)"
+CODIGO_DA_SITUACAO=$?
+echo "$(agora) $(printf '%s' "$SITUACAO" | tr '\n' ' ')" >>"$LOG"
 # o log não cresce sem fim: fica com as últimas 5000 linhas
 tail -n 5000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+exit "$CODIGO_DA_SITUACAO"

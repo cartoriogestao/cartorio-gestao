@@ -172,3 +172,144 @@ def test_o_mapa_e_a_raiz_mais_longa_ganham():
     assert R.raiz_que_cobre(r"D:\Matriculas2", mapa)[1] == "//u@ip/d"
     assert R.raiz_que_cobre(r"E:\Y", mapa) is None
     assert R.destino_de(r"D:\Matriculas", Path("/b")) == Path("/b/D_Matriculas")
+
+
+# ------------------------------------------------------------------ a situação (18/11/2026)
+# De 16 a 18/11/2026 o principal ficou inalcançável na porta do banco, e o sincronia.log dizia
+# «última notícia há 30 s … EM DIA»: o PostgreSQL renova `last_msg_receipt_time` a cada vez
+# que o worker sobe para tentar de novo. A medida agora exige `received_lsn` (só existe com
+# ligação de verdade) e conta a falta de ligação desde a última vez em que a viu.
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+AGORA = datetime(2026, 11, 18, 22, 45, tzinfo=timezone.utc)
+
+
+class _Cursor:
+    """Devolve, em ordem, o que as consultas de `ler_situacao` devolveriam."""
+
+    def __init__(self, *linhas):
+        self.linhas = list(linhas)
+        self.sql = []
+
+    def execute(self, sql, params=None):
+        self.sql.append(str(sql))
+        return self
+
+    def fetchone(self):
+        return self.linhas.pop(0)
+
+
+def _medir(**dado):
+    base = dict(ligada=True, copiando=0, tabelas=351, erros=58, com_ligacao=True,
+                atraso_com_ligacao_s=4.0, ligada_ate=None, agora=AGORA)
+    base.update(dado)
+    return R.medir(**base)
+
+
+def test_com_ligacao_e_mensagem_recente_esta_em_dia():
+    s = _medir()
+    assert s.em_dia and s.atraso_s == 4.0
+    assert s.ligada_ate == AGORA - timedelta(seconds=4)
+
+
+def test_sem_ligacao_nao_esta_em_dia_mesmo_com_a_hora_do_worker_fresca():
+    # o caso de 16 a 18/11: a assinatura ligada, todas as tabelas prontas, sem received_lsn
+    s = _medir(com_ligacao=False, atraso_com_ligacao_s=None,
+               ligada_ate=AGORA - timedelta(days=2, hours=4))
+    assert not s.em_dia
+    assert s.atraso_s == pytest.approx(timedelta(days=2, hours=4).total_seconds())
+    frase = R.frase_da_situacao(s)
+    assert "SEM LIGAÇÃO com o principal desde" in frase and "(há 2 d 4 h)" in frase
+    assert "351 de 351 tabelas copiadas" in frase
+
+
+def test_sem_ligacao_e_sem_estado_fica_atrasada_sem_inventar_a_hora():
+    s = _medir(com_ligacao=False, atraso_com_ligacao_s=None, ligada_ate=None)
+    assert not s.em_dia and s.atraso_s is None
+    assert "desde quando, não sei" in R.frase_da_situacao(s)
+
+
+def test_queda_curta_ainda_cabe_na_tolerancia():
+    # o PostgreSQL de um dos lados reiniciou agora: a ligação volta em segundos
+    s = _medir(com_ligacao=False, atraso_com_ligacao_s=None, ligada_ate=AGORA - timedelta(seconds=90))
+    assert s.em_dia
+
+
+def test_com_ligacao_mas_mensagem_velha_fica_atrasada():
+    assert not _medir(atraso_com_ligacao_s=R.ATRASO_TOLERADO_S + 1).em_dia
+
+
+def test_assinatura_desligada_ou_copiando_nao_esta_em_dia():
+    assert not _medir(ligada=False).em_dia
+    assert not _medir(copiando=3).em_dia
+
+
+def test_ler_situacao_usa_o_received_lsn():
+    c = _Cursor((True, 0, 351), (False, None), (58,))
+    s = R.ler_situacao(c, AGORA - timedelta(hours=3), agora=AGORA)
+    assert "received_lsn IS NOT NULL" in c.sql[1]
+    assert not s.com_ligacao and not s.em_dia and s.erros == 58
+    assert s.atraso_s == pytest.approx(3 * 3600)
+
+
+def test_o_estado_guarda_e_le_a_ultima_ligacao(tmp_path):
+    estado = tmp_path / "replica-ligada.txt"
+    assert R.ler_ligada_ate(estado) is None                 # ainda não existe
+    R.gravar_ligada_ate(estado, AGORA)
+    assert R.ler_ligada_ate(estado) == AGORA
+    estado.write_text("lixo")
+    assert R.ler_ligada_ate(estado) is None                 # arquivo estragado não derruba
+    assert R.ler_ligada_ate(None) is None
+
+
+def test_situacao_sai_1_sem_ligacao_e_grava_so_com_ligacao(monkeypatch, tmp_path, capsys):
+    estado = tmp_path / "replica-ligada.txt"
+    R.gravar_ligada_ate(estado, AGORA - timedelta(days=2))
+
+    respostas = []
+
+    class _Banco:
+        """`with _abrir(dsn) as pg, pg.cursor() as c` — o cursor é o próximo da fila."""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def cursor(self):
+            return _Contexto(respostas.pop(0))
+
+    class _Contexto:
+        def __init__(self, cur):
+            self.cur = cur
+
+        def __enter__(self):
+            return self.cur
+
+        def __exit__(self, *a):
+            return False
+
+    def abrir(_dsn):
+        return _Banco()
+
+    monkeypatch.setattr(R, "_abrir", abrir)
+    # sem ligação: sai 1, diz desde quando, mostra o dado mais novo, não mexe no estado
+    respostas.append(_Cursor((True, 0, 351), (False, None), (58,), ("2026-11-16T18:39:46",)))
+    assert R.situacao("dsn", estado, "producao") == 1
+    saida = capsys.readouterr().out
+    assert "SEM LIGAÇÃO" in saida and saida.strip().endswith("ATRASADA")
+    assert "audit_logs de 2026-11-16T18:39:46" in saida
+    assert R.ler_ligada_ate(estado) == AGORA - timedelta(days=2)
+    # a ligação voltou: sai 0 e o estado anda
+    respostas.append(_Cursor((True, 0, 351), (True, 3.0), (58,)))
+    assert R.situacao("dsn", estado, "producao") == 0
+    assert capsys.readouterr().out.strip().endswith("EM DIA")
+    assert R.ler_ligada_ate(estado) > AGORA
+
+
+def test_sincronizar_devolve_o_codigo_da_situacao():
+    texto = (Path(__file__).resolve().parent.parent / "installer" / "macos" / "sincronizar.sh").read_text()
+    assert 'situacao --estado "$PASTA/replica-ligada.txt"' in texto
+    assert texto.rstrip().endswith('exit "$CODIGO_DA_SITUACAO"')

@@ -221,7 +221,10 @@ REGRAS_SEM_TAREFA |= GRC.REGRAS_SEM_TAREFA   # RCPN: dado complementar do assent
 REGRAS_SEM_TAREFA |= GCRC.REGRAS_DE_DECISAO  # cargas do RCPN: o IBGE que atravessa a
 #                                              troca do E-Ofício é decisão do oficial
 REGRAS_SEM_TAREFA |= AGN.REGRAS_SEM_TAREFA   # Notas: rascunho sobrando e PDF por
-#                                              anexar são controle interno
+#        anexar são controle interno. Decisão do titular, 18/11/2026: o rascunho com
+#        data de quinzena da CENSEC já fechada e o ato lavrado há 30 dias sem o PDF
+#        assinado saem destas regras para regras próprias, que viram tarefa para
+#        quem lavrou (`AGN.RASCUNHO_QUINZENA_FECHADA`, `AGN.PDF_30_DIAS`)
 REGRAS_SEM_TAREFA |= GRT.REGRAS_SEM_TAREFA   # RTD/PJ: livro, termo do dia, dinheiro,
 #                                              acervo repetido e o que o agente corrigiu
 REGRAS_SEM_TAREFA |= GPT.REGRAS_SEM_TAREFA   # Protesto: ato já praticado fora do prazo,
@@ -236,7 +239,9 @@ REGRAS_QUE_SE_REPARTEM += ("FISCAL_SELO_FORA_DO_PORTAL", "FISCAL_CANCELADO_NO_PO
 #: prenotação (prioridade perdida), CNIB e cópia do CNIB parada (registro sobre bem
 #: indisponível), backup e disco (perda do acervo), numeração e corrente do RI, CPF
 #: errado em assento, erro grave no texto do ato selado e o texto/minuta que vai ao
-#: livro (marcador, texto contra o cadastro, minuta em ficha encerrada).
+#: livro (marcador, texto contra o cadastro, minuta em ficha encerrada). Nas Notas
+#: (18/11/2026), o rascunho com data de quinzena da CENSEC fechada e o ato lavrado
+#: há 30 dias ou mais sem o PDF assinado.
 
 #: AS CENTRAIS E AS CARGAS NÃO SÃO TAREFA DE ESCREVENTE — ordem do oficial em
 #: 13/10/2026: «as centrais e cargas automático, não crie mais tarefas para os
@@ -495,7 +500,11 @@ def sincronizar_tarefas(con, achados: list[dict],
     for a in achados:
         if a["regra"] in REGRAS_SEM_TAREFA:
             continue
-        grupos.setdefault((a["regra"], a["setor"]), []).append(a)
+        # A TAREFA DE QUEM LAVROU (18/11/2026): o achado que sabe quem praticou
+        # o ato traz `tarefa_para` («PESSOA:7») e a tarefa vai para essa
+        # pessoa. O achado continua gravado com o setor dele — é o setor que o
+        # relatório, o despacho e o semáforo leem.
+        grupos.setdefault((a["regra"], a.get("tarefa_para") or a["setor"]), []).append(a)
 
     bd = _banco(con)
     abertas = {r["source_ref"]: r for r in bd.ler(
@@ -539,7 +548,8 @@ def sincronizar_tarefas(con, achados: list[dict],
                    VALUES (%s,%s,%s,%s,%s,%s,%s,'ABERTA',%s,%s,%s,%s,0,%s,%s,%s)
                    RETURNING id""",
                 (SOURCE_TYPE, ref, titulo, descricao,
-                 "Caixa" if _pessoa(setor) is not None else SETORES.get(setor, setor),
+                 SETORES.get(itens[0]["setor"])
+                 or ("Caixa" if _pessoa(setor) is not None else setor),
                  f"Conferência diária — {_nome_do_setor(con, setor)}",
                  prioridade, hoje.isoformat(), vencimento, dono, substituto,
                  fundamento, agora, agora))[0]["id"]

@@ -643,6 +643,12 @@ ACHADAS_EM_27_10_2026: dict[str, str] = {
     # texto que este varredor não lê), e a tela dele é a da central.
     "acompanhar": "cobranca_automacao — a porta é o catálogo da central de "
                   "automação (`automacao_processos.MODULOS_COM_PROCESSOS`)",
+    # A confirmação da maquininha (18/11/2026): a tela é a ficha da cobrança,
+    # que atualiza sozinha; quem pergunta à Parcela é o catálogo
+    # («cobranca_automacao.vigiar_maquina»), texto que este varredor não lê.
+    "vigiar_maquina": "cobranca_automacao — a porta é o catálogo da central de "
+                      "automação (`automacao_processos.MODULOS_COM_PROCESSOS`) "
+                      "e a ficha da cobrança, que mostra o pagamento sozinha",
     # O robô do Malote (PR #123, 29/10/2026): o mesmo caminho — o catálogo
     # da automação («malote_robo.ciencia_diaria»).
     "ciencia_diaria": "malote_robo — a porta é o catálogo da central de "

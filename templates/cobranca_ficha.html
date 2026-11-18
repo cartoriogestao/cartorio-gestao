@@ -2,6 +2,25 @@
 {% block title %}Cobrança {{ c.seu_numero }}{% endblock %}
 {% block heading %}<h1>Cobrança {{ c.seu_numero }} — {{ bancos[c.banco] }}</h1>{% endblock %}
 {% block content %}
+{% if c.situacao in ['EMITINDO', 'ABERTA'] and c.forma_pedida in ['PIX', 'CREDITO', 'DEBITO'] %}
+<span id="cg-situacao-maquina" data-situacao="{{ c.situacao }}" hidden></span>
+<script>
+(function () {
+  var visto = document.getElementById("cg-situacao-maquina").getAttribute("data-situacao");
+  setInterval(function () {
+    var ativo = document.activeElement;
+    if (ativo && ativo.form) return;
+    fetch(location.pathname, {credentials: "same-origin"}).then(function (r) {
+      return r.text();
+    }).then(function (html) {
+      var achado = html.match(/id="cg-situacao-maquina"[^>]*data-situacao="([^"]+)"/);
+      if (!achado) { location.reload(); return; }
+      if (achado[1] !== visto) location.reload();
+    }).catch(function () {});
+  }, 4000);
+})();
+</script>
+{% endif %}
 {% if c.ambiente != 'producao' %}<div class="notice">Emitida no ambiente de <strong>teste</strong>.</div>{% endif %}
 
 <div class="card">
@@ -39,7 +58,9 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Baixar o PDF do banco</button></form>
   {% endif %}
 </div>
-{% if com_cofre %}<p class="muted small">Com o cofre da automação instalado, os botões que falam com o banco pedem a rodada
+{% if c.situacao in ['EMITINDO', 'ABERTA'] and c.forma_pedida in ['PIX', 'CREDITO', 'DEBITO'] %}
+<p class="muted small">A maquininha é conferida a cada poucos segundos. Esta tela mostra o pagamento sozinha.</p>
+{% elif com_cofre %}<p class="muted small">Com o cofre da automação instalado, os botões que falam com o banco pedem a rodada
   do despachante: o resultado aparece aqui no minuto seguinte.</p>{% endif %}
 
 {% if c.situacao == 'RECEBIDA' %}

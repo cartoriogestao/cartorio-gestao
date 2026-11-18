@@ -35,8 +35,9 @@
   <div class="panel-head"><span><strong>Custas a informar ao ONR</strong></span></div>
   <form method="post" action="{{ url_for('onr_auto_custas', pedido_id=p.id) }}" class="form-grid" style="padding:0 14px 12px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <p class="span2 small">Calculado pela tabela do dia para a certidão de <strong>uma folha</strong>
-      ({{ a.tipo_ri or 'tipo a definir' }}). Confira e corrija se a certidão tiver mais folhas.</p>
+    <p class="span2 small">Calculado pela tabela do dia para a certidão digital da ONR
+      ({{ a.tipo_ri or 'tipo a definir' }}) — <strong>sem folha acrescida</strong>
+      (CGJ-TJMA). Confira o valor antes de aprovar.</p>
     <label>Valor (R$) <input name="valor" value="{{ a.custas_calculadas or '' }}" size="12"></label>
     <div class="span2"><button class="primary">Aprovar as custas</button>
       <span class="small muted">o robô as informa ao ONR na próxima rodada</span></div>

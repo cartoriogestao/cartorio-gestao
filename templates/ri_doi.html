@@ -68,10 +68,16 @@
 {% endset %}
 
 {% set o_que_a_inspecao_cobra %}
+  {# A «NEGATIVA» É DA INSPEÇÃO, E NÃO DA RECEITA. O DOI-Web não tem declaração negativa (manual de
+     importação da Receita): no mês sem ato não se envia nada a ela. Quem cobra prova do mês vazio é o
+     TJMA, no AUDITUS — e o texto antigo deixava entender que a Receita fechava o mês negativo. #}
   <div style="padding:14px" class="small muted">
-    A inspeção cobra comprovação de DOI <strong>ou declaração negativa</strong> dos meses sem ato
-    imobiliário. Mês vazio também precisa de prova, e é o que mais escapa &mdash; justamente por
-    não aparecer em lista nenhuma. Esta lista sai do calendário, não dos atos.
+    A inspeção do TJMA (AUDITUS) cobra comprovação de DOI <strong>ou declaração negativa</strong>
+    dos meses sem ato imobiliário. A negativa é para a inspeção: o DOI-Web não tem declaração
+    negativa, e no mês sem ato não se envia nada à Receita. Mês vazio também precisa de prova, e é
+    o que mais escapa &mdash; justamente por não aparecer em lista nenhuma. Esta lista sai do
+    calendário, não dos atos, e começa na competência do corte da implantação do sistema
+    ({{ corte_da_implantacao }}): o acervo anterior não é cobrado aqui, como na conferência diária.
   </div>
 {% endset %}
 
@@ -148,6 +154,7 @@
   <div style="padding:14px"{% if layout_novo %} class="cg-doi-miolo"{% endif %}>
     {% if remessa and remessa.negativa %}
       <p><strong>Mês registrado como sem ato imobiliário.</strong>
+         <span class="small muted">Nada vai à Receita neste mês; a comprovação é para o AUDITUS.</span>
          {% if remessa.observacao %}<br><span class="small muted">{{ remessa.observacao }}</span>{% endif %}</p>
     {% else %}
       <p><strong style="font-size:1.4em">{{ prontas }}</strong>
@@ -163,6 +170,18 @@
         &mdash; <a href="{{ url_for('ri_doi_arquivo', competencia=competencia) }}">baixar de novo</a>.
         <br>sha256 {{ remessa.arquivo_hash }}
       </p>
+    {% endif %}
+
+    {% if anteriores %}
+    <p class="small muted" style="margin-top:6px">Arquivos que uma nova geração substituiu:</p>
+    <ul class="small muted" style="margin:0 0 6px;padding-left:18px">
+      {% for a in anteriores %}
+      <li>gerado em {{ a.gerado_em }}, {{ a.quantidade }} declaraç{{ 'ão' if a.quantidade == 1 else 'ões' }},
+        trocado em {{ a.substituido_em }} &mdash;
+        <a href="{{ url_for('ri_doi_arquivo_anterior', competencia=competencia, anterior_id=a.id) }}">baixar</a>
+        <br>sha256 {{ a.arquivo_hash }}</li>
+      {% endfor %}
+    </ul>
     {% endif %}
 
     {% if resumo %}
@@ -184,14 +203,50 @@
     </p>
     {% endif %}
 
+    {# O RASCUNHO É AVISADO À PARTE — 17/11/2026. Escritura em lavratura não tem livro, folha nem selo, e
+       não declara; contada entre as «paradas», parecia declaração atrasada. Fica fora da conta, mas à
+       vista: se foi assinada no papel, é deste mês e da DOI. #}
+    {% if rascunhos %}
+    <div class="notice warning" style="margin-top:12px">
+      <strong>{{ rascunhos|length }} rascunho{{ '' if rascunhos|length == 1 else 's' }} de escritura com
+      imóvel neste mês</strong>, ainda em lavratura: não entra{{ '' if rascunhos|length == 1 else 'm' }} na
+      DOI nem na conta das paradas. Se foi assinada, conclua a lavratura; se não, apague o rascunho.
+      <ul class="small" style="margin:6px 0 0;padding-left:18px">
+        {% for r in rascunhos %}
+        <li><a href="{{ url_for('notas_ato', ato_id=r.id) }}">Escritura {{ r.numero_ordem or r.id }}
+          &mdash; {{ r.natureza or 'sem natureza' }}</a>, {{ r.data }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {# GERAR DE NOVO AVISA ANTES — 17/11/2026. Gerar outra vez troca o arquivo e o sha256 desta tela, e o
+       que já subiu ao DOI-Web deixaria de ter prova aqui. Com remessa gerada, o botão pede a marca de
+       que se sabe disso (o servidor confere a mesma marca), e o arquivo anterior fica guardado. #}
+    {% set ja_gerada = remessa and remessa.situacao == 'GERADA' and remessa.arquivo_nome %}
+    {% if not entregue and prontas and ja_gerada %}
+    <div class="notice warning" style="margin-top:12px">
+      <strong>Já há arquivo gerado para {{ competencia }}</strong> ({{ remessa.gerado_em }}).
+      Se parte dele já foi entregue no DOI-Web, gerar de novo troca o arquivo e o sha256 desta tela.
+      O anterior fica guardado e pode ser baixado aqui embaixo, mas confira no DOI-Web o que já subiu
+      antes de mandar o novo.
+    </div>
+    {% endif %}
     {% if not entregue %}
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
       {% if prontas %}
-      <form method="post" style="display:inline">
+      <form method="post" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="acao" value="gerar">
         <input type="hidden" name="competencia" value="{{ competencia }}">
+        {% if ja_gerada %}
+        <label class="small" style="display:flex;gap:6px;align-items:center;margin:0">
+          <input type="checkbox" name="regerar" value="1" required>
+          Sei que isto substitui o arquivo de {{ remessa.gerado_em }}</label>
+        <button class="primary">Gerar de novo o arquivo das {{ prontas }} declarações</button>
+        {% else %}
         <button class="primary">Gerar o arquivo das {{ prontas }} declarações</button>
+        {% endif %}
       </form>
       {% endif %}
       {% if not linhas %}

@@ -391,9 +391,11 @@ class ClienteCobrancaParcela:
             "POST", f"/v1/pos/payments/{urllib_quote(self._campos['seller_id'])}",
             json_corpo={
                 "terminal_id": maquina,
-                # O banco interno guarda centavos; o POS recebe reais.
-                # 5358 centavos devem aparecer como R$ 53,58, não R$ 5.358.
-                "amount": int(c["valor"]) / 100,
+                # O banco guarda centavos; a maquininha recebe reais. 5358
+                # centavos têm de aparecer como R$ 53,58, não como R$ 5.358.
+                # No crédito à vista a Parcela desconta 2,89% do valor enviado.
+                # O acréscimo faz o cliente pagar essa taxa; o líquido é o principal.
+                "amount": valor_na_maquina(forma, int(c["valor"])) / 100,
                 "is_debit": forma == "DEBITO",
                 # A Parcela recusa 0 em qualquer forma (HTTP 400 «instalments
                 # must not be less than 1», cobrança CG10 de 10/11/2026):
@@ -688,6 +690,30 @@ def _service_id(c: Mapping[str, Any]) -> str:
     """Até 10 letras ou números, como a maquininha exige."""
     bruto = re.sub(r"[^A-Za-z0-9]", "", str(c.get("seu_numero") or "CG"))
     return (bruto or "CG")[:10]
+
+
+# Plano AA18 da Parcela, lido no nome do plano da venda: débito 0,55%,
+# crédito à vista 2,89%, crédito em 2 vezes 4,38%, boleto R$ 1,10, Pix zero.
+# Débito, boleto e Pix já somam a taxa ao que o cliente paga. O crédito à
+# vista tira a taxa do valor enviado, e sem este acréscimo ela sai dos
+# emolumentos.
+TAXA_CREDITO_AVISTA_BPS = 289
+
+
+def _taxa_arredondada(valor: int, basis_points: int) -> int:
+    """A taxa em centavos. Meio centavo sobe, como na venda de R$ 224,04."""
+    return (int(valor) * int(basis_points) + 5000) // 10000
+
+
+def valor_na_maquina(forma: str, principal: int) -> int:
+    """O que vai para a maquininha. Só o crédito à vista leva a taxa por cima."""
+    principal = int(principal)
+    if str(forma or "").upper() != "CREDITO" or principal <= 0:
+        return principal
+    envio = principal
+    while envio - _taxa_arredondada(envio, TAXA_CREDITO_AVISTA_BPS) < principal:
+        envio += 1
+    return envio
 
 
 def _mesmo_centavos(venda: Mapping[str, Any], esperado: int) -> bool:

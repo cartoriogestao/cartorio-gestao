@@ -364,6 +364,16 @@ def _ctp_e_doi(casa) -> None:
     assert casa.um("SELECT 1 AS n FROM ri_doi_remessas WHERE competencia=%s AND conteudo IS NOT NULL", (competencia,)), \
         "a DOI não gerou o arquivo"
     casa.pagina("ri_doi_arquivo", competencia=competencia)
+    # Outra folha muda o sha256: gerar de novo guarda o arquivo e a rota de baixá-lo abre.
+    campos_novos = dict(campos)
+    campos_novos[f"i{ato}_folha_ato"] = "3-3v"
+    _mandar(casa, "/registro-imoveis/ctp", acao="salvar", **campos_novos)
+    _mandar(casa, "/registro-imoveis/doi", acao="gerar", regerar="1", competencia=competencia, esperar=(200,))
+    anterior = casa.um(
+        "SELECT id FROM ri_doi_remessas_anteriores WHERE competencia=%s ORDER BY id DESC LIMIT 1",
+        (competencia,))
+    assert anterior, "gerar de novo não guardou o arquivo anterior da DOI"
+    casa.pagina("ri_doi_arquivo_anterior", competencia=competencia, anterior_id=int(anterior["id"]))
 
 
 def _conferencia(casa) -> None:

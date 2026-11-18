@@ -535,7 +535,116 @@ def test_cofre_trancado_e_aviso_e_nada_muda(casa, tmp_path, monkeypatch):
 
 def test_o_processo_entra_no_catalogo_da_automacao():
     import automacao_processos as PROC
-    assert "COBRANCA_ACOMPANHAR" in {s["codigo"] for s in PROC.todas_as_sementes()}
+    sementes = {s["codigo"]: s for s in PROC.todas_as_sementes()}
+    assert "COBRANCA_ACOMPANHAR" in sementes
+    maquina = sementes["COBRANCA_MAQUINA"]
+    assert maquina["alvo"] == "cobranca_automacao:vigiar_maquina"
+    assert maquina["agenda"]["intervalo_min"] == 1
+    assert maquina["timeout_s"] == 90
+
+
+class _ParcelaFalsa:
+    banco = CB.PARCELA
+    ambiente = "sandbox"
+
+    def __init__(self, respostas):
+        self.respostas = list(respostas)
+        self.n = 0
+
+    def consultar(self, c):
+        self.n += 1
+        resposta = self.respostas.pop(0)
+        if isinstance(resposta, Exception):
+            raise resposta
+        return resposta(c) if callable(resposta) else resposta
+
+
+def _ligar_parcela(casa):
+    with casa["db"].transaction() as con:
+        CB.gravar_configuracao(con, {**CB.PADRAO, "cobranca_ligada": "1",
+                                     "cobranca_banco": CB.PARCELA,
+                                     "cobranca_ambiente": "sandbox"})
+
+
+def _na_maquina(casa, *, criada="2026-10-27T10:00:00"):
+    _ligar_parcela(casa)
+    with casa["db"].transaction() as con:
+        i = CB.cadastrar(con, agora=AGORA, por="beatriz", banco_codigo=CB.PARCELA,
+                         ambiente="sandbox", protocolo_id=casa["protocolo_id"],
+                         valor_centavos=12345, vencimento=VENCIMENTO, pagador=PAGADOR,
+                         forma_pedida="PIX")
+        banco(con).escrever(
+            """UPDATE cb_cobrancas SET situacao = 'ABERTA', banco_id = 'pos:venda-1',
+                   criada_em = %s WHERE id = %s""", (criada, i))
+    return i
+
+
+def _pago(c):
+    return {"situacao": CB.RECEBIDA, "banco_status": "SUCCEEDED",
+            "valor_recebido": int(c["valor"]), "data_pagamento": "2026-10-27",
+            "forma_recebida": "PIX", "banco_motivo": "Pagamento na maquininha."}
+
+
+def _aguardando(_c):
+    return {"situacao": CB.ABERTA, "banco_status": "NA_MAQUINA",
+            "banco_motivo": "Aguardando o pagamento na maquininha."}
+
+
+def test_a_vigilia_confirma_o_pix_na_segunda_pergunta(casa, tmp_path, monkeypatch):
+    i = _na_maquina(casa)
+    falsa = _ParcelaFalsa([_aguardando, _pago])
+    monkeypatch.setattr(CBB, "cliente_da_casa", lambda cfg, **kw: falsa)
+    relogio = {"t": 0}
+
+    def pausa(_segundos):
+        relogio["t"] += 10
+
+    r = AUT.vigiar_maquina(_Contexto(casa["db"], tmp_path), pausa=pausa, limite_s=100,
+                           relogio=lambda: relogio["t"])
+    assert r["situacao"] == "OK" and falsa.n == 2, r
+    assert _c(casa, i)["situacao"] in (CB.RECEBIDA, CB.LANCADA)
+    assert _c(casa, i)["valor_recebido"] == 12345
+
+
+def test_a_vigilia_nao_fica_perguntando_cobranca_velha_do_dia(casa, tmp_path, monkeypatch):
+    _na_maquina(casa, criada="2026-10-27T08:00:00")
+    falsa = _ParcelaFalsa([_aguardando, _aguardando, _aguardando])
+    monkeypatch.setattr(CBB, "cliente_da_casa", lambda cfg, **kw: falsa)
+    pausas = []
+    r = AUT.vigiar_maquina(_Contexto(casa["db"], tmp_path), pausa=lambda s: pausas.append(s),
+                           limite_s=100, relogio=lambda: 0)
+    assert r["situacao"] == "OK" and falsa.n == 1 and pausas == [], r
+
+
+def test_a_vigilia_ignora_a_cobranca_de_ontem_e_nao_chama_o_banco(casa, tmp_path, monkeypatch):
+    _na_maquina(casa, criada="2026-10-26T18:00:00")
+
+    def proibido(cfg, **kw):
+        raise AssertionError("não havia cobrança do dia")
+
+    monkeypatch.setattr(CBB, "cliente_da_casa", proibido)
+    r = AUT.vigiar_maquina(_Contexto(casa["db"], tmp_path), pausa=lambda s: None, limite_s=100,
+                           relogio=lambda: 0)
+    assert r["situacao"] == "OK" and "Nenhuma" in r["relato"]
+
+
+def test_sem_pode_agir_a_vigilia_so_conta(casa, tmp_path, monkeypatch):
+    _na_maquina(casa)
+    monkeypatch.setattr(CBB, "cliente_da_casa", lambda cfg, **kw: (_ for _ in ()).throw(
+        AssertionError("pode_agir desligado")))
+    r = AUT.vigiar_maquina(_Contexto(casa["db"], tmp_path, pode_agir=False))
+    assert r["situacao"] == "AVISO" and "só lê" in r["relato"]
+
+
+def test_a_parcela_fora_do_ar_nao_entra_em_giro(casa, tmp_path, monkeypatch):
+    i = _na_maquina(casa)
+    falsa = _ParcelaFalsa([CBB.Indisponivel("limite de chamadas")])
+    monkeypatch.setattr(CBB, "cliente_da_casa", lambda cfg, **kw: falsa)
+    pausas = []
+    r = AUT.vigiar_maquina(_Contexto(casa["db"], tmp_path), pausa=lambda s: pausas.append(s),
+                           limite_s=100, relogio=lambda: 0)
+    assert r["situacao"] == "AVISO" and pausas == [] and falsa.n == 1
+    assert _c(casa, i)["situacao"] == CB.ABERTA
 
 
 # ------------------------------------------------------------------ telas
@@ -602,6 +711,19 @@ def test_o_cofre_trancado_avisa_no_balcao_e_preserva_o_pedido(casa, monkeypatch)
     with casa["db"].connect() as con:
         assert CB.lista(con)[0]["situacao"] == CB.A_EMITIR
         assert AU.por_codigo(con, "COBRANCA_ACOMPANHAR")["pedido_manual_em"]
+
+
+def test_a_ficha_da_maquininha_atualiza_sozinha_e_a_do_boleto_nao(casa):
+    pix = _na_maquina(casa)
+    boleto = _cadastrar(casa)
+    with casa["db"].transaction() as con:
+        banco(con).escrever(
+            "UPDATE cb_cobrancas SET situacao = 'ABERTA', banco_id = 'boleto-1' WHERE id = %s",
+            (boleto,))
+    pagina_pix = casa["c"].get(f"/caixa/cobranca/{pix}").get_data(as_text=True)
+    pagina_boleto = casa["c"].get(f"/caixa/cobranca/{boleto}").get_data(as_text=True)
+    assert 'id="cg-situacao-maquina"' in pagina_pix and "setInterval" in pagina_pix
+    assert "cg-situacao-maquina" not in pagina_boleto
 
 
 def test_o_protocolo_oferece_cobrar_por_boleto(casa):

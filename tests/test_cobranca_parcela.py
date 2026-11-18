@@ -114,6 +114,19 @@ def test_o_pix_vai_para_a_maquininha():
     assert t.chamadas[1][1].endswith("/v1/pos/payments/" + CAMPOS["seller_id"])
 
 
+def test_o_credito_leva_a_taxa_para_o_cliente_e_o_debito_nao():
+    """R$ 224,04 no crédito à vista: a Parcela tirou R$ 6,47 dos emolumentos.
+    Enviado R$ 230,71, a taxa de 2,89% deixa o líquido nos R$ 224,04."""
+    assert PX._taxa_arredondada(22404, PX.TAXA_CREDITO_AVISTA_BPS) == 647
+    assert PX.valor_na_maquina("CREDITO", 22404) == 23071
+    assert 23071 - PX._taxa_arredondada(23071, PX.TAXA_CREDITO_AVISTA_BPS) == 22404
+    for forma in ("PIX", "DEBITO"):
+        assert PX.valor_na_maquina(forma, 22404) == 22404
+    cliente, t = _maquina({"/v1/pos/payments/": Resposta(201, {"id": "venda-1"})})
+    cliente.emitir({**NA_MAQUINA, "forma_pedida": "CREDITO", "valor": 22404})
+    assert t.chamadas[1][2]["amount"] == 230.71
+
+
 def test_sem_codigo_a_maquininha_recusa():
     cliente, _t = _cliente({
         PX.CAMINHO_DO_TOKEN: Resposta(200, {"access_token": "jwt", "expires_in": 3600}),
@@ -313,7 +326,10 @@ def test_pos_recebe_reais_e_preserva_centavos_no_registro(forma, centavos, reais
     c = {**NA_MAQUINA, "valor": centavos, "forma_pedida": forma}
     cliente.emitir(c)
     corpo = json.loads(json.dumps(t.chamadas[1][2]))
-    assert corpo["amount"] == reais
+    # Reais, e não centavos. No crédito à vista vai a taxa por cima (#455).
+    assert corpo["amount"] == PX.valor_na_maquina(forma, centavos) / 100
+    if forma != "CREDITO":
+        assert corpo["amount"] == reais
     assert c["valor"] == centavos
 
 

@@ -8,7 +8,7 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
-## 3.7.21 — Custas dos títulos à CRA, certificado do WSOfício pela tela e backup em rede mais rápido
+## 3.7.21 — Custas dos títulos à CRA, certificado do WSOfício pela tela, backup em rede mais rápido e conformidade por área
 
 Reúne a 3.7.20, que não chegou a ser publicada, e as mudanças posteriores a
 ela. O pacote parte da 3.7.19 (`--desde v3.7.19`): é a versão que roda na
@@ -20,6 +20,8 @@ produção. Tudo o que a 3.7.20 descreve abaixo vem junto.
 - **ONR — certificado do WSOfício.** O certificado público usado no WSOfício se escolhe ou se informa (PEM) numa tela do administrador, em **RI → Certidões**; ele precisa ser RSA, válido e do CPF cadastrado. A chave privada não é lida nem guardada.
 - **Cobranças — envio na hora.** A cobrança pedida no balcão é enviada logo, sem esperar o minuto seguinte da automação; com o cofre trancado, o pedido fica guardado e a tela avisa. A venda da maquininha que voltou sem identificador é achada pelo serviço, e a resposta «Sale not found» não prende mais a cobrança em «Emitindo».
 - **Backup na rede.** O pacote é montado e conferido numa pasta local protegida e só então copiado para o compartilhamento, em blocos, com conferência do SHA-256 no destino antes de valer; a cópia local sai depois da conferência. Destino fora da pasta de cópias configurada é recusado.
+- **Notas — uma representante para várias partes.** A procuradora, a representante ou a assistente pode representar várias partes do mesmo ato, cada vínculo com o seu instrumento. No teor ela aparece uma vez, os representados pelo mesmo instrumento se agrupam, e a OAB da procuradora entra na qualificação. O ato antigo, com um vínculo só, continua igual.
+- **Conformidade por área.** O painel geral (oficial, gerente e auditor) e o painel do celular mostram uma cor para cada área — RI, Notas, Protesto, Registro Civil, RTD/PJ, Financeiro e selo, Administração —, tirada dos achados abertos do gestor. Vermelho: prazo vencido ou crítico aberto há mais de 1 dia útil. Amarelo: crítico recente, prazo em até 2 dias úteis ou regra que não mediu. Sem rodada válida do gestor, nenhuma área aparece verde: fica «Sem medição».
 
 ## 3.7.20 — Livros de nascimento transcritos, maquininha que confirma em segundos e DOI por imóvel
 

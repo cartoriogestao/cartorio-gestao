@@ -287,7 +287,7 @@ def conferir_participacoes(partes: list[dict], papel: str) -> list[Impedimento]:
 # entra. Na oitava nao ha vendedor nenhum na lista — e ali a escritura para,
 # que e exatamente o que ela deve fazer.
 NAO_E_PARTE_DO_NEGOCIO = (
-    "PROCURADOR", "TESTEMUNHA", "REPRESENTANTE", "INTERPRETE",
+    "PROCURADOR", "TESTEMUNHA", "REPRESENTANTE", "ASSISTENTE", "INTERPRETE",
     "ASSINA A ROGO", "ANUENTE", "INTERVENIENTE",
 )
 

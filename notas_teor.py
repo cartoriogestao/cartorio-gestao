@@ -111,7 +111,8 @@ def qualificar(parte: dict | Any, *, con: Any = None) -> str:
         uniao_estavel=_uniao_estavel(p, textos),
         profissao=(p.get("profissao") or "").strip().lower() or _falta("profissão"),
         identidade=_identidade(p, textos),
-        documento=doc or _falta('cpf'), endereco=endereco or _falta('endereço'))
+        documento=doc or _falta('cpf'), endereco=endereco or _falta('endereço')
+    ) + _oab_na_qualificacao(p)
 
 
 # O QUE O CNN ART. 111 ACRESCENTOU À QUALIFICAÇÃO — LD07, 21/10/2026. «No ato
@@ -133,6 +134,22 @@ def qualificar(parte: dict | Any, *, con: Any = None) -> str:
 #   autógrafo já traz o RG, a filiação e o cônjuge de lá (`notas_partes`).
 def _parte_do_ato(p: dict) -> bool:
     return not p.get("testemunha")
+
+
+def _oab_na_qualificacao(p: dict) -> str:
+    """OAB na qualificação da procuradora/representante (não no «DOS ADVOGADOS»).
+
+    Advogado com qualificação de advogado continua só no parágrafo próprio
+    (`advogados_qualificados`). Aqui entra quem tem OAB gravada e não é esse
+    caso — típico: «PROCURADORA» advogada.
+    """
+    if _sem_acento_maiusculo(p.get("qualificacao")).startswith("ADVOGAD"):
+        return ""
+    numero = " ".join(str(p.get("oab_numero") or "").split())
+    uf = str(p.get("oab_uf") or "").strip().upper()
+    if not (numero and uf):
+        return ""
+    return f", inscrito(a) na OAB/{uf} sob o nº {numero}"
 
 
 def _identidade(p: dict, textos) -> str:
@@ -287,11 +304,23 @@ CHAVE_ASSINANTES = "assinantes_do_ato_e_a_condicao_em_que_assinam"
 # representante legal não assina — assina quem o representa, «por» ele; quem não sabe ou não pode
 # assinar também não, e quem assina a rogo assina «a rogo de» ele (CC art. 215, § 2º). O assistido
 # assina, e o assistente assina com ele: assistir não é representar (CC art. 1.654; CN-MA art. 798, VII).
+def _lista_nomes(nomes: list[str]) -> str:
+    nomes = [n for n in nomes if n]
+    if not nomes:
+        return ""
+    if len(nomes) == 1:
+        return nomes[0]
+    return ", ".join(nomes[:-1]) + " e " + nomes[-1]
+
+
 def _quem_assina(principais: list) -> list[tuple[dict, str]]:
     """[(parte, condição)] na ordem do quadro, sem quem outro assina por ele. So calcula."""
     reps = representantes_por_parte(principais)
     nomes = {dict(p).get("id"): (dict(p).get("nome") or "").strip().upper() for p in principais}
-    por_quem = {r.get("id"): alvo for alvo, lista in reps.items() for r in lista}
+    por_quem: dict[Any, list] = {}
+    for alvo, lista in reps.items():
+        for r in lista:
+            por_quem.setdefault(r.get("id"), []).append(alvo)
     nao_assinam = {alvo for alvo, lista in reps.items()
                    if any(not _sem_acento_maiusculo(r.get("qualificacao")).startswith("ASSISTENTE")
                           for r in lista)}
@@ -301,13 +330,14 @@ def _quem_assina(principais: list) -> list[tuple[dict, str]]:
         if d.get("id") in nao_assinam or lado_da_parte(d) == FALECIDO:
             continue
         condicao = (d.get("qualificacao") or "").strip()
-        alvo = por_quem.get(d.get("id"))
-        if alvo:
+        alvos = por_quem.get(d.get("id")) or []
+        if alvos:
             papel = _sem_acento_maiusculo(d.get("qualificacao"))
             ligacao = ("a rogo de" if papel.startswith("ASSINA A ROGO")
                        else "assistindo" if papel.startswith("ASSISTENTE") else "por")
+            quem = _lista_nomes([nomes[a] for a in alvos if a in nomes])
             condicao = (f"{condicao}, " if condicao and not papel.startswith("ASSINA A ROGO") else "") \
-                + f"{ligacao} {nomes[alvo]}"
+                + f"{ligacao} {quem}"
         saida.append((d, condicao))
     return saida
 
@@ -714,36 +744,170 @@ def _quem_representa(parte, textos: Any = None) -> str:
 # representado). Quem representa diz no quadro «Partes» a parte que representa e o instrumento; sem a
 # parte, ele continua marcado fora dos lados (`_quem_representa`); sem o instrumento, o instrumento é
 # que fica marcado.
+#
+# VARIOS VÍNCULOS — 18/11/2026: a mesma representante pode ter N representados, cada um com o seu
+# instrumento (`representacoes` na parte, ou a coluna antiga). No teor ela aparece uma vez por lado;
+# representados com o mesmo instrumento agrupam; instrumentos diferentes viram trechos na mesma frase.
+def _vinculos_da_parte(d: dict) -> list[dict]:
+    """Lista [{representado_parte_id, instrumento}] — tabela nova ou coluna antiga."""
+    vins = d.get("representacoes")
+    if vins is not None:
+        saida = []
+        for v in vins:
+            v = dict(v)
+            alvo = v.get("representado_parte_id")
+            if alvo:
+                saida.append({
+                    "representado_parte_id": alvo,
+                    "instrumento": v.get("instrumento"),
+                })
+        return saida
+    alvo = d.get("representa_parte_id")
+    if not alvo:
+        return []
+    return [{"representado_parte_id": alvo, "instrumento": d.get("representa_instrumento")}]
+
+
+def anexar_representacoes(partes: list, vinculos: list | None = None) -> list[dict]:
+    """Acrescenta `representacoes` em cada parte (e espelha o primeiro no legado)."""
+    por_rep: dict[Any, list] = {}
+    for v in vinculos or []:
+        v = dict(v)
+        por_rep.setdefault(v.get("representante_parte_id"), []).append({
+            "representado_parte_id": v.get("representado_parte_id"),
+            "instrumento": v.get("instrumento"),
+        })
+    saida = []
+    for p in partes:
+        d = dict(p)
+        vins = list(por_rep.get(d.get("id")) or [])
+        if not vins:
+            vins = _vinculos_da_parte({**d, "representacoes": None})
+        d["representacoes"] = vins
+        if vins:
+            d["representa_parte_id"] = vins[0]["representado_parte_id"]
+            d["representa_instrumento"] = vins[0].get("instrumento")
+        saida.append(d)
+    return saida
+
+
+def carregar_representacoes(con, ato_id: int) -> list[dict]:
+    """Linhas de `nt_ato_representacoes` do ato (vazio se a tabela ainda não existir)."""
+    try:
+        return [dict(r) for r in banco(con).ler(
+            "SELECT ato_id, representante_parte_id, representado_parte_id, instrumento "
+            "FROM nt_ato_representacoes WHERE ato_id=%s ORDER BY id",
+            (ato_id,))]
+    except Exception:  # noqa: BLE001 — banco de teste sem a tabela ainda
+        return []
+
+
+def partes_com_representacoes(con, ato_id: int, partes: list | None = None) -> list[dict]:
+    """Partes do ato com `representacoes` anexadas (legado incluso)."""
+    if partes is None:
+        partes = banco(con).ler(
+            "SELECT * FROM nt_ato_partes WHERE ato_id=%s ORDER BY testemunha, ordem, id",
+            (ato_id,))
+    return anexar_representacoes(partes, carregar_representacoes(con, ato_id))
+
+
 def representantes_por_parte(partes: list) -> dict[int, list[dict]]:
     """{id da parte representada: [quem a representa ou assiste]}, das partes deste ato. So calcula."""
     ids = {dict(p).get("id") for p in partes}
     reps: dict[int, list[dict]] = {}
     for p in partes:
         d = dict(p)
-        alvo = d.get("representa_parte_id")
-        if alvo and alvo in ids and alvo != d.get("id") and not d.get("testemunha"):
-            reps.setdefault(alvo, []).append(d)
+        if d.get("testemunha"):
+            continue
+        for v in _vinculos_da_parte(d):
+            alvo = v.get("representado_parte_id")
+            if alvo and alvo in ids and alvo != d.get("id"):
+                reps.setdefault(alvo, []).append({
+                    **d,
+                    "representa_parte_id": alvo,
+                    "representa_instrumento": v.get("instrumento"),
+                })
     return reps
 
 
+def _falta_instrumento() -> str:
+    return _falta("instrumento da representação — livro, folha e serventia da "
+                  "procuração, o contrato social ou o assento (CN-MA art. 798, VI e VII)")
+
+
+def _frase_de_um_representante(grupo: list[tuple[dict, str]], representante: dict,
+                               textos: Any = None) -> str:
+    """Uma frase para N representados da mesma representante (agrupa por instrumento)."""
+    papel = _sem_acento_maiusculo(representante.get("qualificacao"))
+    qual = qualificar(representante, con=textos)
+    if papel.startswith("ASSINA A ROGO"):
+        # quem assina a rogo não representa: assina pela parte que não sabe ou não pode (CC art.
+        # 215, § 2º), e o instrumento não cabe
+        varios = len(grupo) > 1
+        return (", que não sabem ou não podem assinar, assinando a seu rogo "
+                if varios else
+                ", que não sabe ou não pode assinar, assinando a seu rogo ") \
+            + qual + " (Código Civil, art. 215, § 2º)"
+
+    assistente = papel.startswith("ASSISTENTE")
+    verbo = (("assistidos" if len(grupo) > 1 else "assistido(a)") if assistente
+             else ("representados" if len(grupo) > 1 else "representado(a)"))
+    por_inst: dict[str, list[dict]] = {}
+    for parte, instrumento in grupo:
+        chave = " ".join(str(instrumento or "").split())
+        por_inst.setdefault(chave, []).append(parte)
+
+    if len(por_inst) == 1:
+        instrumento, _ = next(iter(por_inst.items()))
+        return (f", neste ato {verbo} por {qual}, "
+                + (f"conforme {instrumento}" if instrumento else _falta_instrumento()))
+
+    trechos = []
+    for instrumento, lista in por_inst.items():
+        nomes = _lista_nomes([(p.get("nome") or "").strip().upper() for p in lista])
+        if instrumento:
+            trechos.append(f"conforme {instrumento} quanto a {nomes}")
+        else:
+            trechos.append(_falta_instrumento() + f" quanto a {nomes}")
+    return f", neste ato {verbo} por {qual}, " + " e ".join(trechos)
+
+
 def _representacao(parte, reps: dict, textos: Any = None) -> str:
-    """«, neste ato representado(a) por <qualificação>, conforme <instrumento>» — ou nada."""
+    """«, neste ato representado(a) por <qualificação>, conforme <instrumento>» — ou nada.
+
+    Usado quando a parte é o âncora sozinha (um representado). Para agrupamento
+    de vários, ver `_textos_do_lado`.
+    """
     frases = []
     for r in reps.get(dict(parte).get("id"), []):
-        papel = _sem_acento_maiusculo(r.get("qualificacao"))
-        if papel.startswith("ASSINA A ROGO"):
-            # quem assina a rogo não representa: assina pela parte que não sabe ou não pode (CC art.
-            # 215, § 2º), e o instrumento não cabe
-            frases.append(", que não sabe ou não pode assinar, assinando a seu rogo "
-                          + qualificar(r, con=textos) + " (Código Civil, art. 215, § 2º)")
-            continue
-        verbo = "assistido(a)" if papel.startswith("ASSISTENTE") else "representado(a)"
-        instrumento = " ".join(str(r.get("representa_instrumento") or "").split())
-        frases.append(f", neste ato {verbo} por " + qualificar(r, con=textos) + ", "
-                      + (f"conforme {instrumento}" if instrumento else
-                         _falta("instrumento da representação — livro, folha e serventia da "
-                                "procuração, o contrato social ou o assento (CN-MA art. 798, VI e VII)")))
+        frases.append(_frase_de_um_representante(
+            [(dict(parte), r.get("representa_instrumento"))], r, textos))
     return "".join(frases)
+
+
+def _textos_do_lado(partes_lado: list[dict], reps: dict, textos: Any,
+                    montar=None) -> list[str]:
+    """Qualifica as partes do lado; a representante sai uma vez, com instrumentos agrupados."""
+    por_rep: dict[Any, list] = {}
+    for p in partes_lado:
+        for r in reps.get(p.get("id"), []):
+            por_rep.setdefault(r.get("id"), []).append(
+                (p, r.get("representa_instrumento"), r))
+    ancora = {rid: lista[-1][0].get("id") for rid, lista in por_rep.items()}
+    saida = []
+    for p in partes_lado:
+        base = montar(p, textos) if montar else qualificar(p, con=textos)
+        frases = []
+        feitos: set = set()
+        for r in reps.get(p.get("id"), []):
+            rid = r.get("id")
+            if rid in feitos or ancora.get(rid) != p.get("id"):
+                continue
+            feitos.add(rid)
+            grupo = [(pp, inst) for pp, inst, _rr in por_rep[rid]]
+            frases.append(_frase_de_um_representante(grupo, r, textos))
+        saida.append(base + "".join(frases))
+    return saida
 
 
 def _quem_consente(parte, textos: Any = None) -> str:
@@ -776,15 +940,18 @@ def partes_por_lado(partes: list, *, con: Any = None, tipo_ato: Any = None) -> t
             continue                      # sai na qualificação de quem ele representa
         if lado in (ADVOGADO, FALECIDO):
             continue                      # o advogado sai no «DOS ADVOGADOS»; o falecido não comparece
-        texto = montar[lado](d, textos) if lado in montar else qualificar(d, con=textos)
-        lados[lado].append(texto + _representacao(d, reps, textos))
-    outorgantes = ("; ".join(lados[OUTORGANTE]) or
+        lados[lado].append(d)
+    out_a = _textos_do_lado(lados[OUTORGANTE], reps, textos)
+    out_b = _textos_do_lado(lados[OUTORGADO], reps, textos)
+    anuentes = _textos_do_lado(lados[ANUENTE], reps, textos, montar=_quem_consente)
+    por_outro = [montar[REPRESENTA](d, textos) for d in lados[REPRESENTA]]
+    outorgantes = ("; ".join(out_a) or
                    _falta("outorgante(s) — qualifique a parte no ato"))
-    if lados[ANUENTE]:
-        outorgantes += "; " + "; ".join(lados[ANUENTE])
-    if lados[REPRESENTA]:
-        outorgantes += "; " + "; ".join(lados[REPRESENTA])
-    outorgados = ("; ".join(lados[OUTORGADO]) or
+    if anuentes:
+        outorgantes += "; " + "; ".join(anuentes)
+    if por_outro:
+        outorgantes += "; " + "; ".join(por_outro)
+    outorgados = ("; ".join(out_b) or
                   _falta("outorgado(s) — qualifique a parte no ato"))
     return outorgantes, outorgados
 

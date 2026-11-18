@@ -935,7 +935,9 @@ MODULOS_COM_PROCESSOS = ("despesas_automacao", "onr_certidoes_auto", "andamento_
                          # o robô do malote: a ciência diária das 8h (29/10/2026)
                          "malote_robo",
                          # Unidade Interligada e e-Óbito (31/10/2026)
-                         "eprotocolo")
+                         "eprotocolo",
+                         # as custas de retirada e cancelamento à CRA (18/11/2026)
+                         "protesto_cra_custas")
 
 #: A agenda sugerida por quem escreveu o processo, para quando o catálogo
 #: dele não trouxer uma. O processo nasce DESLIGADO do mesmo jeito.

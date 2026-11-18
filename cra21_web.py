@@ -31,6 +31,7 @@ from flask import Response, flash, redirect, render_template, request, url_for
 
 import centrais_cred as CENTCRED
 import cra21_api as CRA
+import protesto_cra_custas as CUSTAS
 
 # QUEM ENTRA. Falar com a CRA é ato de quem responde pela serventia — o balcão
 # baixa arquivo pela tela de remessa, que já existe; **aqui se fala direto com
@@ -75,6 +76,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         que vier no endereço agora não muda nada."""
         return CENTCRED.PRODUCAO
 
+    def usuario_nome() -> str | None:
+        quem = app.extensions.get("usuario_nome")
+        return quem() if quem else None
+
+    def quadro_das_custas() -> dict:
+        """O que o quadro das custas mostra. SÓ LÊ — e não derruba a tela.
+
+        Falha de tabela (sem emolumentos importados, por exemplo) vira a
+        frase no quadro, e o resto da tela continua de pé.
+        """
+        from datetime import date
+        try:
+            with db.connect() as con:
+                p = CUSTAS.pendentes(con, hoje=date.today().isoformat())
+                ultimos = CUSTAS.ultimos_envios(con, limite=8)
+        except Exception as erro:  # noqa: BLE001 — a tela mostra o motivo
+            return {"erro": f"{type(erro).__name__}: {erro}", "itens": [],
+                    "fora": [], "em_dia": 0, "ultimos": []}
+        return {**p, "ultimos": ultimos}
+
     @app.route("/protesto/cra/api")
     @roles_required(*QUEM_FALA_COM_A_CRA)
     def protesto_cra_api():
@@ -89,7 +110,69 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             endereco=CRA.endereco_do_ambiente(ambiente),
             o_que_se_traz=O_QUE_SE_TRAZ,
             operacoes=sorted(CRA.OPERACOES),
-            sem_sentido_medido=sorted(CRA.OPERACOES_SEM_SENTIDO_MEDIDO))
+            sem_sentido_medido=sorted(CRA.OPERACOES_SEM_SENTIDO_MEDIDO),
+            custas=quadro_das_custas(),
+            nome_do_tipo=CUSTAS.NOME_DO_TIPO)
+
+    @app.route("/protesto/cra/api/custas/previa")
+    @roles_required(*QUEM_FALA_COM_A_CRA)
+    def protesto_cra_custas_previa():
+        """O XML que a próxima rodada mandaria. **Não envia nada.**"""
+        from datetime import date
+        try:
+            with db.connect() as con:
+                p = CUSTAS.pendentes(con, hoje=date.today().isoformat())
+            if p["erro"]:
+                raise CUSTAS.CustasCraError(p["erro"])
+            xml = CUSTAS.montar_xml(p["itens"])
+        except RECUSAS_DO_BALCAO as erro:
+            flash(str(erro), "info")
+            return redirect(url_for("protesto_cra_api"))
+        return Response(
+            xml.encode("iso-8859-1", errors="replace"),
+            mimetype="application/xml; charset=iso-8859-1",
+            headers={"Content-Disposition":
+                     'attachment; filename="custas-cra-previa.xml"'})
+
+    @app.route("/protesto/cra/api/custas/<int:envio_id>/arquivo")
+    @roles_required(*QUEM_FALA_COM_A_CRA)
+    def protesto_cra_custas_arquivo(envio_id: int):
+        """Um arquivo de custas já gerado, como foi à CRA."""
+        with db.connect() as con:
+            linha = CUSTAS.envio(con, envio_id)
+        if not linha:
+            flash("Esse arquivo de custas não existe.", "danger")
+            return redirect(url_for("protesto_cra_api"))
+        nome = str(linha["nome_arquivo"])
+        return Response(
+            str(linha["conteudo"]).encode("iso-8859-1", errors="replace"),
+            mimetype="application/xml; charset=iso-8859-1",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{nome}.xml"'})
+
+    @app.route("/protesto/cra/api/custas/enviar", methods=["POST"])
+    @roles_required(*QUEM_FALA_COM_A_CRA)
+    def protesto_cra_custas_enviar():
+        """Manda à CRA as custas novas ou mudadas. ESCREVE (banco e Central).
+
+        A rede corre fora de transação (`protesto_cra_custas.enviar`), e
+        reenviar não faz mal: a `CustasTitulo` atualiza o que a CRA tem.
+        """
+        try:
+            r = CUSTAS.enviar(db.transaction, usuario=usuario_nome())
+        except RECUSAS_DO_BALCAO as erro:
+            audit("cra_custas_falhou", None, None,
+                  {"codigo": getattr(erro, "codigo", None),
+                   "erro": str(erro)[:300]})
+            flash(f"As custas não foram à CRA: {erro}", "danger")
+            return redirect(url_for("protesto_cra_api"))
+        audit("cra_custas_enviadas", "pt_cra_custas_envios", r.get("envio_id"),
+              {"nome": r.get("nome_arquivo"), "titulos": r.get("titulos"),
+               "informados": r.get("informados"),
+               "recusas": len(r.get("recusas") or [])})
+        flash(r["motivo"], "warning" if r.get("recusas") else
+              ("success" if r.get("enviado") else "info"))
+        return redirect(url_for("protesto_cra_api"))
 
     @app.route("/protesto/cra/api/testar", methods=["POST"])
     @roles_required(*QUEM_FALA_COM_A_CRA)

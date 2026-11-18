@@ -8,6 +8,22 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.20 — Livros de nascimento transcritos, maquininha que confirma em segundos e DOI por imóvel
+
+Inclui todas as mudanças posteriores à 3.7.19. O pacote parte da 3.7.19
+(`--desde v3.7.19`): é a versão que roda na produção.
+
+- **Registro Civil — livros de papel transcritos.** O lote do acervo transcrito grava as averbações e anotações à margem como atos do assento, sem selo e sem repetir as que já existem; a certidão passa a transcrevê-las. O assento de outro livro com o mesmo rótulo e número (os livros antigos e os novos usam A-1, A-10…) não é complementado por engano. A ferramenta `tools/acervo_transcrito_lotes.py` prepara os lotes a partir das planilhas de transcrição, com a planilha de conferência do que precisa de decisão.
+- **Certidão de nascimento: «NÃO CONSTA».** O campo que o livro não informa sai como «NÃO CONSTA», e não mais «ND» ou em branco.
+- **SIRC.** A carga do acervo inclui os assentos transcritos do livro de papel. O tipo do local de nascimento que o livro não diz continua retido, porque o SIRC não aceita local ignorado.
+- **Escritura com vários imóveis.** Cada imóvel tem o seu quadro (rural ou urbano, CIB, INCRA, área, preço e avaliação do ITBI), e a DOI e a CTP saem com uma declaração por imóvel.
+- **DOI.** Os meses em aberto contam a partir da implantação; o mês sem ato informa que o DOI-Web não tem declaração negativa; gerar de novo pede confirmação e guarda o arquivo anterior; rascunho não conta como ato parado.
+- **Maquininha (Parcela).** O Pix e o cartão confirmam em segundos, inclusive o Pix que volta sem identificador e o que só aparece na lista de vendas do estabelecimento. O crédito à vista leva a taxa por cima, como os outros meios, em vez de tirá-la dos emolumentos.
+- **Registro de Imóveis.** O tipo de ato lavrado errado (registro × averbação) se retifica pela tela, refazendo o encadeamento. A certidão digital pedida pela ONR não cobra folha acrescida em nenhum tipo de certidão.
+- **Caixa.** Nova forma de pagamento «PG feito pela ONR» (PG_ONR), para o ato pago pela ONR.
+- **Protesto.** O cancelamento diferido usa os itens já pagos do protocolo (selo e valor devido).
+- **Login.** O navegador volta a lembrar o usuário depois do código de dois fatores, também em `http://`.
+
 ## 3.7.19 — Atualização com os consertos da produção preservados
 
 Reúne as mudanças preparadas para a 3.7.18 e os consertos encontrados na

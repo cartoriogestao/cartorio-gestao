@@ -1571,6 +1571,41 @@ def test_a_carga_do_acervo_traz_so_importacao(casa):
     assert [x["nome"] for x in carga] == ["DO DOCX"]
 
 
+def test_a_carga_do_acervo_traz_o_papel_transcrito(casa):
+    """Decisão do oficial em 17/11/2026: o livro de papel transcrito
+    (`rc_acervo_lote`, origem ARQUIVO e chave ACERVO_TRANSCRITO:) sobe na
+    carga do acervo. O ARQUIVO de outra chave continua fora."""
+    con = _con(casa)
+    with con:
+        con.execute(
+            """INSERT INTO rc_assentos (serie, especie, numero, nome, data_ato,
+                   data_fato, situacao, origem, origem_chave, criado_em,
+                   matricula, ibge_local_nascimento)
+               VALUES ('RC_A','NASCIMENTO',5,'DO PAPEL','1968-07-02',
+                       '1948-12-15','ATIVO','ARQUIVO',
+                       'ACERVO_TRANSCRITO:NASCIMENTO:A-7:5',?,?,5)""",
+            (AGORA, _matricula(termo=5)))
+        con.execute(
+            """INSERT INTO rc_assentos (serie, especie, numero, nome, data_ato,
+                   data_fato, situacao, origem, origem_chave, criado_em)
+               VALUES ('RC_A','NASCIMENTO',6,'TEOR COLADO','1967-12-18',
+                       '1967-12-01','ATIVO','ARQUIVO',
+                       'ARQUIVO\\RCPN\\NASCIMENTO\\LV-01\\TERMO6',?)""",
+            (AGORA,))
+        con.execute(
+            """INSERT INTO rc_assentos (serie, especie, numero, nome, data_ato,
+                   data_fato, situacao, origem, origem_chave, dados_json,
+                   criado_em)
+               VALUES ('RC_A','NASCIMENTO',7,'COMPLEMENTADO','1972-01-02',
+                       '1971-12-01','ATIVO','ARQUIVO','00000001551972',
+                       '{"acervo_transcrito": {"termo": "7"}}',?)""",
+            (AGORA,))
+    carga = SIRC.pendentes_de_carga_do_acervo(con)
+    assert sorted(x["nome"] for x in carga) == ["COMPLEMENTADO", "DO PAPEL"]
+    assert SIRC.e_papel_transcrito({"origem": "ARQUIVO",
+                                    "origem_chave": "ARQUIVO\\RCPN\\X"}) is False
+
+
 def test_a_carga_do_acervo_monta_e_valida(casa):
     """A carga usa o MESMO envelope da remessa — o que muda é só a fonte dos
     assentos. Um registro do .docx, com matrícula, sai pronto."""

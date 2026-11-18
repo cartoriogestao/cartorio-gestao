@@ -551,6 +551,65 @@ class ClienteCobrancaParcela:
         lido.setdefault("banco_motivo", "Pagamento na maquininha.")
         return lido
 
+    def _venda_paga_no_terminal(self, c: Mapping[str, Any]) -> dict | None:
+        """A venda que o service_id não achou, nas vendas do dia do estabelecimento.
+
+        O POST do POS pode aceitar o pedido sem criar a venda com o nosso
+        service_id. A lista do terminal pede um token interno e responde
+        HTTP 400. A lista de vendas do estabelecimento, no dia e no valor,
+        confirma quando sobra UMA venda paga da maquininha. Um PIX de link
+        no mesmo valor não conta no lugar do PIX da maquininha. Duas da
+        maquininha, e não se escolhe.
+        """
+        dia = str(c.get("criada_em") or "")[:10]
+        if len(dia) != 10:
+            return None
+        try:
+            esperado = int(c["valor"])
+        except (TypeError, ValueError):
+            return None
+        r = self._ir(
+            "GET",
+            f"/v1/sellers/{urllib_quote(self._campos['seller_id'])}/sales"
+            f"?limit=50&current_page=1&startDate={dia}&endDate={dia}&amount={esperado}")
+        if r.status != 200:
+            return None
+        linhas = r.corpo.get("results") if isinstance(r.corpo, dict) else r.corpo
+        if not isinstance(linhas, list):
+            return None
+        forma_pedida = str(c.get("forma_pedida") or "").upper()
+        pagas = []
+        for venda in linhas:
+            if not isinstance(venda, dict) or not venda.get("id"):
+                continue
+            if str(venda.get("status") or "").upper() not in SITUACAO_PAGA:
+                continue
+            forma = str(venda.get("form_payment") or "").upper()
+            if forma_pedida == "PIX" and forma and forma not in ("PIX", "PIX_POS"):
+                continue
+            if forma_pedida == "DEBITO" and forma and forma != "DEBIT":
+                continue
+            if forma_pedida == "CREDITO" and forma and forma != "CREDIT":
+                continue
+            if not _mesmo_centavos(venda, esperado):
+                continue
+            pagas.append(venda)
+        if forma_pedida == "PIX":
+            da_maquina = [v for v in pagas if str(v.get("form_payment") or "").upper() == "PIX_POS"]
+            if da_maquina:
+                pagas = da_maquina
+        if len(pagas) != 1:
+            return None
+        achada = dict(pagas[0])
+        if _centavos(achada.get("amount")) != esperado:
+            achada["amount"] = esperado
+        return achada
+
+    def _da_maquina(self, achada, c, aguardando):
+        if achada is None:
+            achada = self._venda_paga_no_terminal(c)
+        return aguardando if achada is None else self._ler_venda_da_maquina(achada)
+
     def pdf(self, c: Mapping[str, Any]) -> bytes:
         raise Recusa(
             "A Parcela Express entrega o pagamento no link, não num PDF. "
@@ -577,7 +636,7 @@ class ClienteCobrancaParcela:
             # Sem o id da venda no envio, guardou-se o service_id: este caminho
             # é por saleId. A venda se acha pelo service_id.
             achada = self._venda_pelo_servico(c)
-            return aguardando if achada is None else self._ler_venda_da_maquina(achada)
+            return self._da_maquina(achada, c, aguardando)
         if r.status == 200 and isinstance(r.corpo, dict):
             corpo = r.corpo.get("sale") if isinstance(r.corpo.get("sale"), dict) else r.corpo
             if str(corpo.get("status") or "").upper() in RECUSADA_NA_MAQUINA:
@@ -627,6 +686,20 @@ def _service_id(c: Mapping[str, Any]) -> str:
     """Até 10 letras ou números, como a maquininha exige."""
     bruto = re.sub(r"[^A-Za-z0-9]", "", str(c.get("seu_numero") or "CG"))
     return (bruto or "CG")[:10]
+
+
+def _mesmo_centavos(venda: Mapping[str, Any], esperado: int) -> bool:
+    """O inteiro da Parcela é centavo. O portal às vezes mostra o real."""
+    for campo in ("amount", "original_amount"):
+        if _centavos(venda.get(campo)) == esperado:
+            return True
+        try:
+            numero = float(str(venda.get(campo)).replace(",", "."))
+        except (TypeError, ValueError):
+            continue
+        if esperado > 0 and abs(numero - (esperado / 100)) < 0.001:
+            return True
+    return False
 
 
 def _centavos(valor: Any) -> int | None:

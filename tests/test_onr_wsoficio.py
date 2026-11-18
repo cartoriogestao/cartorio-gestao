@@ -267,3 +267,60 @@ def test_traz_do_onr_cred_so_o_par_com_a_forma_do_wsoficio(tmp_path):
     (outro / "onr.cred").write_text(json.dumps(
         {"PRODUCAO": {"usuario": "abc-client", "senha": "segredo"}}), encoding="utf-8")
     assert W.trazer_do_onr_cred(outro) is False
+
+
+@pytest.fixture
+def certificado_publico_pem(request):
+    from datetime import datetime, timedelta
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+    chave = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    nome = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "USUARIO DE TESTE:00000004421"),
+                      x509.NameAttribute(NameOID.ORGANIZATION_NAME, "ICP-Brasil")])
+    janela = getattr(request, "param", "valido")
+    inicio, fim = {"valido": (-1, 1), "vencido": (-3, -2), "futuro": (1, 2)}[janela]
+    cert = (x509.CertificateBuilder().subject_name(nome).issuer_name(nome)
+            .public_key(chave.public_key()).serial_number(1234)
+            .not_valid_before(datetime.utcnow() + timedelta(days=inicio))
+            .not_valid_after(datetime.utcnow() + timedelta(days=fim)).sign(chave, hashes.SHA256()))
+    return cert.public_bytes(serialization.Encoding.PEM).decode()
+
+
+def test_publico_valida_cpf_e_extrai_so_os_dados_do_login(certificado_publico_pem):
+    cert = W.certificado_publico_do_pem(certificado_publico_pem, "00000004421")
+    assert cert["SERIALNUMBER"] == "04D2"
+    assert cert["SUBJECTCN"] == "USUARIO DE TESTE:00000004421"
+    assert cert["PUBLICKEY"].startswith("3082")
+    with pytest.raises(W.WSOficioError, match="CPF"):
+        W.certificado_publico_do_pem(certificado_publico_pem, "00000000000")
+
+
+@pytest.mark.parametrize("texto", ["INVALIDO", "-----BEGIN PRIVATE KEY-----", "-----BEGIN CERTIFICATE-----\nINVALIDO"])
+def test_nao_aceita_chave_privada_ou_arquivo_invalido(texto):
+    with pytest.raises(W.WSOficioError):
+        W.certificado_publico_do_pem(texto, "00000004421")
+
+
+def test_login_do_servico_usa_publico_guardado_sem_repositorio_do_usuario(pasta, certificado_publico_pem, monkeypatch):
+    W.configurar(pasta=pasta, certificado="04D2", certificado_publico=certificado_publico_pem)
+    def proibido(cpf):
+        raise AssertionError("Nao deve consultar o perfil de outra conta")
+    monkeypatch.setattr(W, "certificados_do_windows", proibido)
+    assert W.Sessao(pasta=pasta, transporte=ONRDeMentira()).entrar()["tokens"] == 5
+    assert "BEGIN CERTIFICATE" not in json.dumps(W.situacao(pasta=pasta))
+
+
+def test_serie_divergente_do_publico_nao_faz_login(pasta, certificado_publico_pem):
+    W.configurar(pasta=pasta, certificado="OUTRA", certificado_publico=certificado_publico_pem)
+    onr = ONRDeMentira()
+    with pytest.raises(W.WSOficioError, match="serie"):
+        W.Sessao(pasta=pasta, transporte=onr).entrar()
+    assert onr.chamadas == []
+
+
+@pytest.mark.parametrize("certificado_publico_pem", ["vencido", "futuro"], indirect=True)
+def test_publico_vencido_ou_ainda_nao_valido_e_recusado(certificado_publico_pem):
+    with pytest.raises(W.WSOficioError, match="validade"):
+        W.certificado_publico_do_pem(certificado_publico_pem, "00000004421")

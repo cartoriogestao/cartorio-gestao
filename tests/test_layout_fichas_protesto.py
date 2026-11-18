@@ -93,6 +93,7 @@ ENTREGA = {
     "protesto_certidao": (200, ("text/html",)),
     "protesto_certidao_odt": (200, (ODT,)),
     "protesto_cra_consulta_arquivo": (200, ("text/plain",)),
+    "protesto_cra_custas_arquivo": (200, ("application/xml",)),
     "protesto_desistencia": (200, ("text/html",)),
     "protesto_desistencia_arquivo": (200, ("text/plain",)),
     "protesto_devedor": (200, ("text/html",)),

@@ -7400,6 +7400,101 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
               f"Não é mais possível lavrar atos nela.", "success")
         return redirect(url_for("ri_ficha", matricula_id=matricula_id))
 
+    @app.route("/registro-imoveis/<int:matricula_id>/encerrar-por-ato",
+               methods=["POST"])
+    @roles_required("ADMIN", "MANAGER")
+    def ri_encerrar_matricula_por_ato(matricula_id):
+        """Marca a ficha encerrada com base numa AV já lavrada e selada.
+
+        PEDIDO DO OFICIAL EM 18/11/2026 — «vamos encerrar a matrícula 2874
+        (já tem averbação)». A AV de encerramento já estava no livro e
+        selada, mas lavrada sem a marca «Este ato encerra a matrícula». O
+        caminho «Encerrar esta matrícula» lavraria outra averbação (AV-08),
+        o que não pode.
+
+        O QUE ELA FAZ
+            Escolhe a AV de referência, grava motivo, destino e data do ato,
+            marca a ficha encerrada e zera a titularidade atual. Não lavra
+            ato, não pede selo e não cobra.
+
+        O QUE ELA NÃO FAZ
+            Não cria averbação nova. Não mexe no teor nem no selo da AV
+            escolhida. Reabrir continua sendo o caminho de volta.
+        """
+        import selo_robo as SR
+        if SR.usuario_e_robo():
+            abort(403)
+
+        m = q1("SELECT * FROM ri_matriculas WHERE id=%s", (matricula_id,))
+        if not m:
+            abort(404)
+        voltar = redirect(url_for("ri_ficha", matricula_id=matricula_id))
+        if m["encerrada"]:
+            flash("Esta matrícula já está encerrada.", "warning")
+            return voltar
+
+        ato_id = numero_digitado(request.form.get("ato_id"))
+        motivo = (request.form.get("motivo") or "").strip()
+        destino = (request.form.get("destino") or "").strip()
+        if ato_id is None:
+            flash("Escolha a averbação de encerramento já lavrada.", "danger")
+            return voltar
+        if len(motivo) < 10:
+            flash("Escreva o motivo do encerramento com pelo menos dez letras.",
+                  "danger")
+            return voltar
+        if not destino:
+            flash("Informe a(s) matrícula(s) de destino.", "danger")
+            return voltar
+
+        ato = q1("""SELECT * FROM ri_atos
+                     WHERE id=%s AND matricula_id=%s""",
+                 (int(ato_id), matricula_id))
+        if not ato:
+            flash("A averbação escolhida não é desta matrícula.", "danger")
+            return voltar
+        if str(ato["tipo"] or "").upper() != "AV":
+            flash("Só averbação (AV) pode encerrar a ficha por este caminho.",
+                  "danger")
+            return voltar
+        if ato["cancelado"]:
+            flash("A averbação escolhida está cancelada — não serve de "
+                  "referência para encerrar.", "danger")
+            return voltar
+
+        tem_selo = bool(str(ato["selo_texto"] or "").strip())
+        if not tem_selo:
+            no_razao = q1("""SELECT 1 AS n FROM sd_selos
+                              WHERE tabela='ri_atos' AND ato_id=%s
+                                AND cancelado_em IS NULL LIMIT 1""",
+                          (int(ato_id),))
+            tem_selo = bool(no_razao)
+        if not tem_selo and not motivo_ja_selado(ato, 0):
+            flash("A averbação precisa estar selada. Sem selo, use «Selar "
+                  "este ato» na lista e só depois marque o encerramento.",
+                  "danger")
+            return voltar
+
+        data_ato = (str(ato["data_ato"] or "").strip()[:10]
+                    or db.now()[:10])
+        rotulo = f"AV-{int(ato['numero']):02d}"
+        motivo_com_ref = (f"{motivo} Encerrada pela {rotulo} já lavrada "
+                          f"(ato id {int(ato_id)}).")
+
+        with db.transaction() as con:
+            _marcar_a_ficha_encerrada(
+                con, matricula_id, motivo=motivo_com_ref,
+                destino=destino, data_ato=data_ato)
+
+        audit("RI_MATRICULA_ENCERRADA_POR_ATO", "RI_MATRICULA", matricula_id,
+              {"numero": m["numero"], "motivo": motivo, "destino": destino,
+               "ato_id": int(ato_id), "averbacao": rotulo,
+               "data_ato": data_ato})
+        flash(f"Matrícula {m['numero']} encerrada com base na {rotulo} já "
+              f"lavrada e selada. Nenhum ato novo foi lavrado, nenhum selo "
+              f"foi pedido e nada foi cobrado.", "success")
+        return redirect(url_for("ri_ficha", matricula_id=matricula_id))
+
     @app.route("/registro-imoveis/<int:matricula_id>/reabrir", methods=["POST"])
     # REABRIR E DO OFICIAL — volta a ADMIN/MANAGER em 14/10/2026. O «USER»
     # entrou na 3.6.160 (21/09) numa troca em lote de perfis do RI, sem ordem

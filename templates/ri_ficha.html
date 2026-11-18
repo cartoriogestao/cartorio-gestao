@@ -1135,6 +1135,35 @@
         </div>
       </div>
     </details>
+    <script>
+    /* Alerta se o teor/modelo fala de ENCERRAMENTO sem a marca «encerra»
+       (18/11/2026): lavrar assim deixa a ficha aberta e o botão «Encerrar»
+       lavraria outra AV. Só lembra — não marca sozinho. */
+    (function () {
+      var form = document.getElementById('form-lavrar-ato');
+      if (!form) return;
+      form.addEventListener('submit', function (ev) {
+        if (ev.defaultPrevented) return;
+        var tipo = form.querySelector('[name="tipo"]');
+        var teor = form.querySelector('textarea[name="teor"]');
+        var encerra = form.querySelector('input[name="encerra"]');
+        if (!teor || !tipo || (tipo.value || '').toUpperCase() !== 'AV') return;
+        if (encerra && encerra.checked) return;
+        if ((teor.value || '').toUpperCase().indexOf('ENCERRAMENTO') < 0) return;
+        var ok = window.confirm(
+          'O teor fala de ENCERRAMENTO, mas «Este ato encerra a matrícula» não está marcado. ' +
+          'Sem marcar, a ficha continua aberta e «Encerrar esta matrícula» lavraria outra averbação. ' +
+          'Continuar sem encerrar a ficha?'
+        );
+        if (!ok) {
+          ev.preventDefault();
+          var det = document.getElementById('encerra-este-ato');
+          if (det) det.open = true;
+          if (encerra) encerra.focus();
+        }
+      });
+    })();
+    </script>
     {% endif %}
 
     <div class="span2 notice small" data-passo="lavrar">
@@ -1297,6 +1326,38 @@
     <div><a class="button danger" href="{{ url_for('ri_ficha', matricula_id=m.id, lavrar=1, encerrar=1) }}#novo-ato">Encerrar matrícula — abrir o formulário do ato</a></div>
     <p class="small muted">Depois de lavrado não tem desfazer: a matrícula não recebe
       mais atos e os proprietários deixam de constar como atuais.</p>
+    {# AV JÁ LAVRADA E SELADA SEM A MARCA «encerra» — 18/11/2026. Lavrar
+       outra averbação de encerramento dobraria o livro. #}
+    {% set _avs_enc = atos|selectattr('tipo', 'equalto', 'AV')|rejectattr('cancelado')|list %}
+    {% if _avs_enc %}
+    <div class="notice warning" id="encerrar-por-ato-aviso">
+      <strong>Já existe AV de encerramento? Use esta opção em vez de lavrar outra.</strong>
+      <p class="small" style="margin:6px 0 0">Marca a ficha encerrada com base numa
+        averbação <strong>já lavrada e selada</strong>. Não lavra ato, não pede
+        selo e não cobra. O «Reabrir» continua sendo o caminho de volta.</p>
+      <form method="post" class="stack" style="margin-top:8px"
+            action="{{ url_for('ri_encerrar_matricula_por_ato', matricula_id=m.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Averbação de referência
+          <select name="ato_id" required>
+            <option value="">— escolha a AV —</option>
+            {% for a in _avs_enc %}
+            <option value="{{ a.id }}">AV-{{ '%02d'|format(a.numero) }}
+              ({{ fmt_date(a.data_ato) }}){% if a.selo_texto or a.ja_selado %} · selada{% else %} · sem selo{% endif %}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Motivo do encerramento
+          <textarea name="motivo" rows="2" required minlength="10"
+                    placeholder="Ex.: transporte para a matrícula 4031, AV já lavrada sem a marca de encerrar."></textarea>
+        </label>
+        <label>Matrícula(s) de destino
+          <input name="destino" required placeholder="4031">
+        </label>
+        <div><button class="danger">Encerrar pela AV já lavrada</button></div>
+      </form>
+    </div>
+    {% endif %}
   </div>
 </details>
 {% endif %}

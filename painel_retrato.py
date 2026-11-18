@@ -209,9 +209,12 @@ _DATA = re.compile(r"^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?)?$")
 
 
 def _rotulos_permitidos() -> frozenset[str]:
+    import conformidade as CF
     return frozenset({PN.FORMATO, *PN.ROTULO_DO_PERIODO.values(),
                       "selos", "receita", "atendimento", "protocolos",
-                      "prenotacoes", "tarefas", "atendimento_agora", "alertas"})
+                      "prenotacoes", "tarefas", "atendimento_agora", "alertas",
+                      # o semáforo (18/11/2026): a cor e o motivo, códigos fechados
+                      "conformidade", *CF.CORES, *CF.ROTULO_DO_MOTIVO})
 
 
 def conferir_que_e_so_agregado(retrato: Any, onde: str = "retrato") -> None:

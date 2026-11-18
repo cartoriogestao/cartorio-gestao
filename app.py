@@ -3857,6 +3857,11 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     import ouvidoria_web
     ouvidoria_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
+    # O SEMÁFORO DA CONFORMIDADE (18/11/2026): uma cor por área no painel geral,
+    # dos achados abertos do gestor — para o oficial, o gerente e o auditor.
+    import conformidade_web
+    conformidade_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
     # A PASTA DO PROCESSO e o rascunho que vira processo (12/10/2026) — fase 1
     # do módulo único de Processos.
     import processo_pasta_web

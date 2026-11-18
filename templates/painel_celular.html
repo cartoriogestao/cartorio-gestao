@@ -16,10 +16,12 @@
   <title>Painel da casa - {{ APP_NAME }}</title>
   <style>
     :root { --fundo:#f4f5f7; --cartao:#fff; --texto:#1d2330; --apagado:#5d6677;
-            --linha:#e2e5ea; --destaque:#1f5fa8; --alerta:#a3261f; --ok:#22703a; }
+            --linha:#e2e5ea; --destaque:#1f5fa8; --alerta:#a3261f; --ok:#22703a;
+            --atencao:#8a5a00; }
     @media (prefers-color-scheme: dark) {
       :root { --fundo:#14171c; --cartao:#1e232b; --texto:#e8ebf0; --apagado:#9aa3b2;
-              --linha:#2e3440; --destaque:#7fb0ef; --alerta:#f08a83; --ok:#7fd08f; }
+              --linha:#2e3440; --destaque:#7fb0ef; --alerta:#f08a83; --ok:#7fd08f;
+              --atencao:#e5b54f; }
     }
     * { box-sizing:border-box; }
     body { margin:0; background:var(--fundo); color:var(--texto);
@@ -43,6 +45,11 @@
     dt { color:var(--apagado); }
     dd { margin:0; text-align:right; font-weight:600; font-variant-numeric:tabular-nums; }
     dd.ruim { color:var(--alerta); }
+    dd.semaforo::before { content:"●"; margin-right:6px; }
+    .semaforo-vermelho { color:var(--alerta); }
+    .semaforo-amarelo { color:var(--atencao); }
+    .semaforo-verde { color:var(--ok); }
+    .semaforo-sem_medicao, .semaforo-sem-medicao { color:var(--apagado); }
     .aviso { border-color:var(--alerta); }
     .aviso p { margin:0; color:var(--alerta); }
     footer { max-width:560px; margin:0 auto; padding:4px 16px 24px; display:flex;
@@ -63,6 +70,20 @@
   {% if n.nao_mediu %}
   <section class="aviso"><p>Não deu para medir: {{ n.nao_mediu|join(', ') }}. Esses números aparecem como «—», e não como zero.</p></section>
   {% endif %}
+
+  {# O SEMÁFORO DA CONFORMIDADE (18/11/2026, `conformidade`): uma cor por
+     área, dos achados abertos do gestor. Sem rodada válida do gestor, nenhuma
+     área fica verde: fica «Sem medição». #}
+  {% set cf = n.agora.conformidade %}
+  <section>
+    <h2>Conformidade por área</h2>
+    {% if cf %}
+    {% if not cf.gestor.medido %}<p class="sub semaforo-sem-medicao">Sem medição: {{ cf_motivos[cf.gestor.motivo] }}.</p>{% endif %}
+    <dl>
+      {% for area, a in cf.areas.items() %}<dt>{{ cf_areas[area] }}</dt><dd class="semaforo semaforo-{{ a.cor|lower }}">{{ cf_cores[a.cor] }}{% if a.abertos %} · {{ a.abertos }}{% endif %}</dd>{% endfor %}
+    </dl>
+    {% else %}<p class="sub">—</p>{% endif %}
+  </section>
 
   {# A RECEITA DO PAINEL (26/10/2026, «apenas emolumentos abatidos do FERJ»):
      o emolumento que cada selo pago declara, menos o FERJ que sai de dentro

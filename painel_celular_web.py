@@ -33,6 +33,7 @@ import json
 from flask import (abort, flash, make_response, redirect, render_template,
                    request, url_for)
 
+import conformidade as CF
 import painel_numeros as PN
 import painel_retrato as PR
 
@@ -81,7 +82,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             "painel_celular.html", n=numeros, periodo=periodo,
             p=numeros["periodos"][periodo], periodos=PN.PERIODOS,
             rotulos=PN.ROTULO_DO_PERIODO, atribuicoes=PN.ATRIBUICOES,
-            outras=PN.OUTRAS, reais=PN.reais))
+            outras=PN.OUTRAS, reais=PN.reais,
+            cf_areas=CF.ROTULO_DA_AREA, cf_cores=CF.ROTULO_DA_COR,
+            cf_motivos=CF.ROTULO_DO_MOTIVO))
 
     @app.route("/painel/retrato", methods=["GET", "POST"])
     @login_required

@@ -3668,6 +3668,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         with db.transaction() as con:
             banco(con).escrever("DELETE FROM nt_ato_anotacoes WHERE ato_id=%s "
                         "OR ato_relacionado_id=%s", (ato_id, ato_id))
+            banco(con).escrever("DELETE FROM nt_ato_representacoes WHERE ato_id=%s", (ato_id,))
             banco(con).escrever("DELETE FROM nt_ato_partes WHERE ato_id=%s", (ato_id,))
             banco(con).escrever("DELETE FROM nt_atos WHERE id=%s", (ato_id,))
         flash(f"Rascunho nº {ato_id} apagado. O texto que estava nele ficou "
@@ -4357,7 +4358,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 with db.transaction() as con:
                     _gravar_representacao(con, ato_id, pid, request.form)
                 audit("NT_ATO_PARTE_REPRESENTACAO", "NT_ATO", ato_id,
-                      {"parte": pid, "representa": request.form.get("representa_parte_id") or None})
+                      {"parte": pid,
+                       "representa": (request.form.getlist("representa_parte_id")
+                                      if hasattr(request.form, "getlist")
+                                      else [request.form.get("representa_parte_id")])})
                 flash("Representação gravada. Monte o teor de novo para ela entrar no texto.", "success")
                 return redirect(url_for("notas_ato", ato_id=ato_id))
             elif acao == "oab":
@@ -4395,6 +4399,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             elif acao == "remover_parte":
                 pid = numero_digitado(request.form.get("parte_id")) or 0
                 with db.transaction() as con:
+                    banco(con).escrever(
+                        "DELETE FROM nt_ato_representacoes WHERE ato_id=%s AND "
+                        "(representante_parte_id=%s OR representado_parte_id=%s)",
+                        (ato_id, pid, pid))
                     banco(con).escrever("DELETE FROM nt_ato_partes WHERE id=%s AND ato_id=%s",
                                 (pid, ato_id))
                 audit("NT_ATO_PARTE_REMOVIDA", "NT_ATO", ato_id, {"parte": pid})
@@ -5464,9 +5472,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash(f"Ato marcado como {SITUACOES_ATO[nova].lower()}.", "success")
             return redirect(url_for("notas_ato", ato_id=ato_id))
 
-        partes = q("""SELECT * FROM nt_ato_partes WHERE ato_id=%s
-                      ORDER BY testemunha, ordem, id""",
-                   (ato_id,))
+        with db.connect() as _con_partes:
+            partes = NT.partes_com_representacoes(_con_partes, ato_id)
         modelo = q1("SELECT * FROM nt_modelos WHERE codigo=%s",
                     (a["modelo_codigo"],)) if a["modelo_codigo"] else None
         familia = NF.do_tipo_ato(a["tipo"])
@@ -6017,16 +6024,47 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return bool(feito)
 
     def _gravar_representacao(con, ato_id: int, parte_id: int, form) -> None:
-        """A parte que `parte_id` representa ou assiste, e o instrumento (item 2 do ensaio de atos das
-        Notas). Só vale parte do mesmo ato, e não ela mesma; vazio desfaz."""
-        alvo = numero_digitado(form.get("representa_parte_id")) or None
-        if alvo and (alvo == parte_id or not banco(con).um(
-                "SELECT id FROM nt_ato_partes WHERE id=%s AND ato_id=%s", (alvo, ato_id))):
-            alvo = None
-        instrumento = " ".join(str(form.get("representa_instrumento") or "").split()) or None
+        """Quem `parte_id` representa ou assiste, e o instrumento de cada vínculo.
+
+        Aceita vários pares `representa_parte_id` / `representa_instrumento` (getlist).
+        Só parte do mesmo ato, nunca ela mesma, nunca testemunha; vazio desfaz.
+        Grava em `nt_ato_representacoes` e espelha o primeiro vínculo nas colunas
+        antigas (compatibilidade com ato/tela de um vínculo só).
+        """
+        alvos = list(form.getlist("representa_parte_id")) if hasattr(form, "getlist") else [
+            form.get("representa_parte_id")]
+        instrumentos = list(form.getlist("representa_instrumento")) if hasattr(form, "getlist") else [
+            form.get("representa_instrumento")]
+        while len(instrumentos) < len(alvos):
+            instrumentos.append("")
+        vinculos: list[tuple[int, str | None]] = []
+        vistos: set[int] = set()
+        for alvo_cru, inst_cru in zip(alvos, instrumentos):
+            alvo = numero_digitado(alvo_cru) or None
+            if not alvo or alvo == parte_id or alvo in vistos:
+                continue
+            if not banco(con).um(
+                    "SELECT id FROM nt_ato_partes WHERE id=%s AND ato_id=%s "
+                    "AND COALESCE(testemunha, 0)=0", (alvo, ato_id)):
+                continue
+            vistos.add(alvo)
+            instrumento = " ".join(str(inst_cru or "").split()) or None
+            vinculos.append((alvo, instrumento))
+        banco(con).escrever(
+            "DELETE FROM nt_ato_representacoes WHERE ato_id=%s AND representante_parte_id=%s",
+            (ato_id, parte_id))
+        agora = datetime.now().isoformat(timespec="seconds")
+        for alvo, instrumento in vinculos:
+            banco(con).escrever(
+                "INSERT INTO nt_ato_representacoes "
+                "(ato_id, representante_parte_id, representado_parte_id, instrumento, criado_em) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (ato_id, parte_id, alvo, instrumento, agora))
+        primeiro = vinculos[0] if vinculos else (None, None)
         banco(con).escrever(
             "UPDATE nt_ato_partes SET representa_parte_id=%s, representa_instrumento=%s "
-            "WHERE id=%s AND ato_id=%s", (alvo, instrumento, parte_id, ato_id))
+            "WHERE id=%s AND ato_id=%s",
+            (primeiro[0], primeiro[1], parte_id, ato_id))
 
     def _gravar_sexo_e_municipio(con, ato_id: int, parte_id: int, form, *, sexo=None, cidade=None,
                                  uf=None) -> None:
@@ -6148,10 +6186,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
         if not a:
             abort(404)
-        partes = [dict(p) for p in q(
-            "SELECT * FROM nt_ato_partes WHERE ato_id=%s "
-            "ORDER BY testemunha, ordem, id",
-            (ato_id,))]
+        with db.connect() as _con_partes:
+            partes = NT.partes_com_representacoes(_con_partes, ato_id)
         if not partes:
             flash("Inclua as partes antes de montar o teor.", "warning")
             return redirect(url_for("notas_ato", ato_id=ato_id))
@@ -6268,10 +6304,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if not modelo:
             flash("Este ato não tem modelo associado.", "danger")
             return redirect(url_for("notas_ato", ato_id=ato_id))
-        partes = [dict(p) for p in q(
-            "SELECT * FROM nt_ato_partes WHERE ato_id=%s "
-            "ORDER BY testemunha, ordem, id",
-            (ato_id,))]
+        with db.connect() as _con_partes:
+            partes = NT.partes_com_representacoes(_con_partes, ato_id)
         ctx = NT.contexto_jinja_partes(partes, con=db.connect, tipo_ato=a["tipo"])
         from jinja2.sandbox import SandboxedEnvironment
         env = SandboxedEnvironment(autoescape=False)

@@ -1,5 +1,11 @@
 """A COBRANÇA NO HUB DA AUTOMAÇÃO — acompanhar os boletos no banco.
 
+A MAQUININHA TEM OUTRA RODADA (`COBRANCA_MAQUINA`). O cliente paga na frente
+do balcão, e esperar a rodada de meia hora deixa o pagamento no ar. Essa
+rodada pergunta a Parcela a cada poucos segundos enquanto a cobrança é
+recente, e uma vez por minuto no resto do dia. Boleto, pedido e PDF
+continuam na rodada de meia hora.
+
 O CONTRATO (o do `automacao_processos`)
     def verificar(contexto) -> {"situacao": "OK"|"AVISO"|"ERRO", "relato": str,
                                 "achados": [...], "acoes": [...]}
@@ -24,16 +30,35 @@ O PROCESSO
 """
 from __future__ import annotations
 
+import time
+from datetime import datetime, timedelta
 from typing import Any
 
 import cobranca as CB
 import cobranca_banco as CBB
+from bd_nativo import banco
 from caixa_schema import reais
+
+#: A vigília cabe num minuto do despachante: 45 s perguntando, e a rodada
+#: seguinte começa sem encontrar esta ainda de pé. Quatro segundos é o
+#: tempo de a Parcela publicar a venda e a tela do balcão mostrar.
+VIGILIA_S = 45
+VIGILIA_PASSO_S = 4
+#: Neste prazo o cliente ainda está no balcão. A pergunta é a cada poucos
+#: segundos. Depois disso, no mesmo dia, uma vez por minuto basta.
+VIGILIA_RECENTE_MIN = 60
 
 CATALOGO = (
     {"codigo": "COBRANCA_ACOMPANHAR", "nome": "Cobrança — acompanhar os boletos no banco",
      "setor": "GESTAO", "funcao": "cobranca_automacao.acompanhar", "robo_oficial": "FINANCEIRO",
      "agenda": {"dias": [0, 1, 2, 3, 4], "intervalo_min": 30, "janela": ["08:00", "18:00"]}},
+    {"codigo": "COBRANCA_MAQUINA", "nome": "Cobrança — confirmar o pagamento na maquininha",
+     "setor": "GESTAO", "funcao": "cobranca_automacao.vigiar_maquina", "robo_oficial": "FINANCEIRO",
+     "timeout_s": 90,
+     "descricao": "Enquanto há cobrança recente na maquininha, pergunta à Parcela "
+                  "a cada poucos segundos e grava o pagamento. A rodada de meia hora "
+                  "segue com boleto, pedido e PDF.",
+     "agenda": {"dias": [0, 1, 2, 3, 4], "intervalo_min": 1, "janela": ["08:00", "18:00"]}},
 )
 
 
@@ -136,3 +161,99 @@ def acompanhar(contexto) -> dict:
     acoes += [f"cobrança {i}: {frase}" for i, frase in r["pedidos"]]
     return {"situacao": "AVISO" if pagas or r["falharam"] else "OK", "relato": relato,
             "achados": achados, "acoes": acoes}
+
+
+def _iso_local(quando: datetime) -> str:
+    return quando.replace(tzinfo=None, microsecond=0).isoformat(timespec="seconds")
+
+
+def _na_maquina(con, *, ambiente: str, desde: str) -> list[dict]:
+    """As da maquininha ainda abertas, deste ambiente, mandadas desde `desde`."""
+    return banco(con).ler(
+        """SELECT * FROM cb_cobrancas
+            WHERE banco = %s AND ambiente = %s
+              AND situacao = ANY(%s)
+              AND forma_pedida = ANY(%s)
+              AND banco_id LIKE 'pos:%%'
+              AND criada_em >= %s
+            ORDER BY id""",
+        (CB.PARCELA, ambiente, list(CB.EM_ABERTO), list(CB.FORMAS_NA_MAQUINA), desde))
+
+
+def vigiar_maquina(contexto, *, pausa=time.sleep, limite_s: int = VIGILIA_S,
+                   passo_s: int = VIGILIA_PASSO_S, recente_min: int = VIGILIA_RECENTE_MIN,
+                   relogio=time.monotonic) -> dict:
+    """Confirma na hora o que foi pago na maquininha. ESCREVE quando pode agir.
+
+    Sem cobrança aberta no dia, termina na hora e não fala com a Parcela.
+    Cobrança da última hora é perguntada de novo a cada poucos segundos,
+    até o prazo desta rodada. Cobrança mais velha, do mesmo dia, é
+    perguntada uma vez: o pago aparece no minuto seguinte, e uma cobrança
+    antiga que ninguém pagou não fica chamando o banco a cada quatro segundos.
+    """
+    base = contexto.agora.replace(tzinfo=None, microsecond=0)
+    inicio_do_dia = _iso_local(base.replace(hour=0, minute=0, second=0))
+    corte = _iso_local(base - timedelta(minutes=int(recente_min)))
+    with contexto.db.connect() as con:
+        cfg = CB.configuracao(con)
+    ambiente = cfg["cobranca_ambiente"]
+    if not contexto.processo.get("pode_agir"):
+        with contexto.db.connect() as con:
+            n = len(_na_maquina(con, ambiente=ambiente, desde=inicio_do_dia))
+        return {"situacao": "AVISO" if n else "OK",
+                "relato": (f"{n} cobrança(s) na maquininha (pode_agir desligado: "
+                           "o processo só lê)." if n else
+                           "Nenhuma cobrança do dia na maquininha."),
+                "achados": [], "acoes": []}
+    fim = relogio() + limite_s
+    mudaram: list[tuple[int, str]] = []
+    falharam: list[tuple[int, str]] = []
+    cliente = None
+    primeira = True
+    consultas = 0
+    while True:
+        with contexto.db.connect() as con:
+            abertas = _na_maquina(con, ambiente=ambiente, desde=inicio_do_dia)
+        recentes = [c for c in abertas if str(c.get("criada_em") or "") >= corte]
+        alvo = abertas if primeira else recentes
+        primeira = False
+        if not alvo:
+            break
+        if cfg.get("cobranca_banco") != CB.PARCELA:
+            return {"situacao": "AVISO",
+                    "relato": "Há cobrança na maquininha, e o banco configurado não é a Parcela.",
+                    "achados": [], "acoes": []}
+        if cliente is None:
+            try:
+                cliente = CBB.cliente_da_casa(cfg, pasta=getattr(contexto, "pasta_dados", None))
+            except CBB.BancoError as erro:
+                return {"situacao": "AVISO", "relato": str(erro), "achados": [], "acoes": []}
+        for c in alvo:
+            consultas += 1
+            try:
+                nova = CBB.atualizar(contexto.db, int(c["id"]), cliente=cliente,
+                                     por="automação", agora=contexto.agora)
+            except CBB.Indisponivel as erro:
+                return {"situacao": "AVISO",
+                        "relato": f"A Parcela não respondeu: {erro}",
+                        "achados": [{"tipo": "FALHOU", "cobranca_id": int(c["id"]),
+                                     "motivo": str(erro)}],
+                        "acoes": []}
+            except (CBB.BancoError, CB.CobrancaError) as erro:
+                falharam.append((int(c["id"]), str(erro)))
+                continue
+            if nova != c["situacao"]:
+                mudaram.append((int(c["id"]), nova))
+                _auditar(contexto, "COBRANCA_ATUALIZADA_PELO_BANCO", int(c["id"]),
+                         {"situacao": nova})
+        if not recentes or relogio() >= fim:
+            break
+        pausa(passo_s)
+    if not consultas and not mudaram:
+        relato = "Nenhuma cobrança do dia na maquininha."
+    else:
+        relato = (f"Maquininha: {consultas} consulta(s), {len(mudaram)} confirmada(s), "
+                  f"{len(falharam)} falha(s).")
+    return {"situacao": "AVISO" if falharam else "OK", "relato": relato,
+            "achados": [{"tipo": "FALHOU", "cobranca_id": i, "motivo": m} for i, m in falharam],
+            "acoes": [f"cobrança {i}: {CB.SITUACOES.get(s, s)}" for i, s in mudaram]}

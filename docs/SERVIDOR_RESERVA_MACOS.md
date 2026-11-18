@@ -115,8 +115,15 @@ A conferência no fim mostra `REINICIE O SERVIÇO` enquanto o `wal_level` não v
 hostssl cartorio cg_replica <IP do Mac>/32 scram-sha-256
 ```
 
-Ponha também `listen_addresses = 'localhost,<IP do Windows>'` e libere a porta 5434 no firewall
-**só para o IP do Mac**.
+Ponha também `listen_addresses = '*'` e libere a porta 5434 no firewall **só para o IP do Mac**
+(uma regra que libera o Mac e outra que bloqueia o resto).
+
+**Por que `'*'`, e não o IP do Windows.** O PostgreSQL sobe no reinício do Windows, e o Tailscale
+pode subir depois dele. Com o IP do Tailscale escrito, o PostgreSQL não acha o endereço, escuta só
+o `127.0.0.1` e não tenta de novo. A réplica para sem aviso até o próximo reinício do serviço: foi o
+que aconteceu de 16 a 18/11/2026, depois de um reinício do Windows Update. Com `'*'` ele escuta
+todas as placas, e quem barra os outros é o firewall e a linha `hostssl` acima, só do IP do Mac. A
+conferência do SQL do passo A2 mostra `PONHA '*'` enquanto o `listen_addresses` for outro.
 
 O `hostssl` exige `ssl = on` no `postgresql.conf`, com um certificado (`server.crt` e `server.key`).
 Sem SSL, a réplica levaria pela rede, em texto aberto, todos os dados da casa. Se o PostgreSQL do
@@ -207,7 +214,9 @@ que falta. Abra `http://<IP do Mac>:8775`: a faixa vermelha diz «SERVIDOR RESER
   (`chaves: em dia` ou `chaves: N arquivo(s) recebidos`), a versão (`versao: EM DIA`,
   `ESPERA o esquema` ou `3.7.14 -> 3.7.17`) e uma linha terminando em `EM DIA` ou
   `ATRASADA`. Atrasada por mais de uma hora, veja o log do PostgreSQL da reserva
-  (`logs/postgres.log`). `versao: falhou` é o código que não entrou, ou o serviço que não
+  (`logs/postgres.log`). **«Sem notícia do principal»** quer dizer que nada chegou dele, nem o
+  «estou vivo». Se o log mostrar `could not connect to the publisher`, confira no Windows se o
+  PostgreSQL escuta a rede (`listen_addresses = '*'`, passo A3) e se a 5434 abre a partir do Mac. `versao: falhou` é o código que não entrou, ou o serviço que não
   reiniciou: a volta seguinte tenta de novo, e o que está no ar continua o anterior.
 - **Versão nova:** atualize primeiro o principal, como sempre. Ao subir, ele grava o número
   em `settings`. O esquema chega à reserva sozinho em até 5 minutos, e a sincronia então

@@ -38,7 +38,9 @@ superusuário, medido no LS03).
    'localhost'`), e a porta 5434 fica fechada no firewall.
    **Exceção (07/11/2026):** o servidor reserva do macOS. Uma linha `hostssl`
    só para o `cg_replica`, só do IP do Mac, e a 5434 liberada só para esse IP
-   (`docs/SERVIDOR_RESERVA_MACOS.md`, Parte A).
+   (`docs/SERVIDOR_RESERVA_MACOS.md`, Parte A). Nesse caso o banco escuta
+   `listen_addresses = '*'`: o IP do Tailscale escrito falha quando o
+   PostgreSQL sobe antes dele. A trava fica no firewall e no `pg_hba`.
 3. **A senha vai num `pgpass`, e NÃO no `CG_PG_DSN`.** O sistema passa o
    `CG_PG_DSN` inteiro ao `pg_dump` do backup (`-d <dsn>`, em
    `banco_pg.copiar_para_arquivo`): uma senha dentro dele apareceria na linha

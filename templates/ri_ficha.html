@@ -1104,7 +1104,8 @@
        TRANSPORTE PARA FICHA». Lavrá-la aqui deixava a ficha aberta, e fechá-la
        depois pelo botão «Encerrar esta matrícula» **lavraria outra averbação**:
        a ficha terminaria com dois encerramentos, e quem a lesse não saberia
-       qual vale.
+       qual vale. Se a averbação de encerramento **já foi lavrada** sem esta
+       marca, use «Marcar ato lavrado como encerramento» — não lavra ato novo.
 
        Fica fechada por padrão, e é só do oficial: quem marca está dizendo que
        esta ficha não recebe mais ato nenhum. #}
@@ -1293,12 +1294,52 @@
       mesmo formulário de «Lavrar novo ato»: texto do ato com modelo sugerido
       (editável, com a prévia de como sai), número, selo com o item da tabela,
       gratuidade com motivo, arquivamento opcional e revisão com IA. Ao lavrar,
-      a ficha é encerrada no mesmo passo — <strong>sem segunda averbação</strong>.</p>
+      a ficha é encerrada no mesmo passo — <strong>sem segunda averbação</strong>.
+      Se a averbação de encerramento <strong>já foi lavrada</strong> sem a marca,
+      use «Marcar ato lavrado como encerramento» abaixo — este botão lavraria
+      outra averbação.</p>
     <div><a class="button danger" href="{{ url_for('ri_ficha', matricula_id=m.id, lavrar=1, encerrar=1) }}#novo-ato">Encerrar matrícula — abrir o formulário do ato</a></div>
     <p class="small muted">Depois de lavrado não tem desfazer: a matrícula não recebe
       mais atos e os proprietários deixam de constar como atuais.</p>
   </div>
 </details>
+{# AV JÁ LAVRADA SEM A MARCA «encerra» — 18/11/2026. Não lavra, não sela. #}
+{% set _avs_encerrar = atos
+     | selectattr('tipo', 'equalto', 'AV')
+     | selectattr('lavrado_em')
+     | rejectattr('cancelado')
+     | list %}
+{% if _avs_encerrar %}
+{% set _ultimo_av_encerrar = _avs_encerrar[-1] %}
+<details class="panel" id="encerrar-pelo-ato" data-fase="novo-ato">
+  <summary class="small">Marcar ato lavrado como encerramento</summary>
+  <form method="post" class="stack"
+        action="{{ url_for('ri_encerrar_pelo_ato', matricula_id=m.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p class="small">Não lava ato novo, não gera selo e não muda o teor. Use
+      quando o ato de encerramento já foi lavrado e a ficha ficou ativa.</p>
+    <label>Averbação de referência
+      <select name="ato_id" required>
+        {% for a in _avs_encerrar %}
+        <option value="{{ a.id }}"{% if a.id == _ultimo_av_encerrar.id %} selected{% endif %}>
+          AV-{{ '%02d'|format(a.numero) }} ({{ fmt_date(a.data_ato) }})
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <p class="small muted">O padrão é o último AV da ficha. Se escolher outro,
+      confira o teor — a rota aceita, mas o usual é o mais recente.</p>
+    <label>Motivo do encerramento
+      <textarea name="motivo" rows="2" required minlength="10"
+                placeholder="Ex.: averbação de encerramento já lavrada sem a marca na ficha."></textarea>
+    </label>
+    <label>Destino (opcional)
+      <input name="destino" placeholder="Ex.: número de outra matrícula">
+    </label>
+    <div><button class="danger">Marcar como encerrada</button></div>
+  </form>
+</details>
+{% endif %}
 {% endif %}
 
 {# AS CERTIDÕES DESTA FICHA, para reimprimir — pedido do oficial em

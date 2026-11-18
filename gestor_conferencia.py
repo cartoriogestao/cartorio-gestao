@@ -405,10 +405,10 @@ def regra_doi(con, hoje: date) -> list[dict]:
             continue
         atos = int(banco(con).valor(
             """SELECT count(*) FROM nt_atos
-                WHERE situacao = 'LAVRADO' AND data ILIKE %s
+                WHERE situacao = %s AND data ILIKE %s
                   AND data >= %s
                   AND (doi_transacao IS NOT NULL OR COALESCE(com_imovel,0) = 1)""",
-            (comp + "%", IMPLANTACAO)))
+            (notas_doi.SITUACAO_QUE_DECLARA, comp + "%", IMPLANTACAO)))
         # **A DOI É DA SERVENTIA, E O REGISTRO DE IMÓVEIS TAMBÉM DECLARA** —
         # achado em 21/10/2026: setembro tinha compra e venda (R-01/[n.]) e
         # duas doações (R-02/[n.] e [n.]) registradas, e este achado dizia
@@ -425,9 +425,9 @@ def regra_doi(con, hoje: date) -> list[dict]:
         # como ato; avisa-se, para alguém fechar ou explicar.
         em_lavratura = int(banco(con).valor(
             """SELECT count(*) FROM nt_atos
-                WHERE situacao = 'EM_LAVRATURA' AND data ILIKE %s
+                WHERE situacao = %s AND data ILIKE %s
                   AND data >= %s AND COALESCE(com_imovel,0) = 1""",
-            (comp + "%", IMPLANTACAO)))
+            (notas_doi.SITUACAO_RASCUNHO, comp + "%", IMPLANTACAO)))
         partes_do_detalhe = []
         if registros:
             partes_do_detalhe.append(

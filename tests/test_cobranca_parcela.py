@@ -110,8 +110,21 @@ def test_o_pix_vai_para_a_maquininha():
     assert corpo["terminal_id"] == "S1F2-TESTE"
     assert corpo["is_pix"] is True
     assert corpo["is_debit"] is False
-    assert corpo["amount"] == 15000
+    assert corpo["amount"] == 150.0
     assert t.chamadas[1][1].endswith("/v1/pos/payments/" + CAMPOS["seller_id"])
+
+
+def test_o_credito_leva_a_taxa_para_o_cliente_e_o_debito_nao():
+    """R$ 224,04 no crédito à vista: a Parcela tirou R$ 6,47 dos emolumentos.
+    Enviado R$ 230,71, a taxa de 2,89% deixa o líquido nos R$ 224,04."""
+    assert PX._taxa_arredondada(22404, PX.TAXA_CREDITO_AVISTA_BPS) == 647
+    assert PX.valor_na_maquina("CREDITO", 22404) == 23071
+    assert 23071 - PX._taxa_arredondada(23071, PX.TAXA_CREDITO_AVISTA_BPS) == 22404
+    for forma in ("PIX", "DEBITO"):
+        assert PX.valor_na_maquina(forma, 22404) == 22404
+    cliente, t = _maquina({"/v1/pos/payments/": Resposta(201, {"id": "venda-1"})})
+    cliente.emitir({**NA_MAQUINA, "forma_pedida": "CREDITO", "valor": 22404})
+    assert t.chamadas[1][2]["amount"] == 230.71
 
 
 def test_sem_codigo_a_maquininha_recusa():
@@ -359,6 +372,51 @@ def test_sem_id_no_envio_a_venda_se_acha_pelo_service_id():
     assert lido["situacao"] == CB.RECEBIDA
     assert lido["banco_id"] == "pos:venda-9"
     assert any(c[1].endswith("/sales/CG9/service-id") for c in t.chamadas)
+
+
+def test_sem_service_id_a_venda_paga_do_dia_no_terminal_confirma():
+    cliente, t = _maquina({
+        "/service-id": Resposta(200, []),
+        "/sales?": Resposta(200, {"results": [
+            _venda("venda-paga", "succeeded", amount=15000),
+            _venda("outra", "succeeded", amount=999),
+        ], "has_more": False}),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:CG9",
+                              "criada_em": "2026-11-17T12:49:19"})
+    assert lido["situacao"] == CB.RECEBIDA
+    assert lido["banco_id"] == "pos:venda-paga"
+    assert lido["valor_recebido"] == 15000
+    assert any("amount=15000" in url for _m, url, _c, _h in t.chamadas)
+    assert not any("/sales/pos/" in url for _m, url, _c, _h in t.chamadas)
+
+
+def test_o_pix_do_link_nao_esconde_o_pix_da_maquininha():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(200, []),
+        "/sales?": Resposta(200, {"results": [
+            _venda("link", "succeeded", form_payment="pix"),
+            _venda("maquina", "succeeded", form_payment="pix_pos"),
+            _venda("abortada", "abort", form_payment="pix_pos"),
+        ], "has_more": False}),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:CG9",
+                              "criada_em": "2026-11-17T12:49:19"})
+    assert lido["situacao"] == CB.RECEBIDA
+    assert lido["banco_id"] == "pos:maquina"
+
+
+def test_duas_vendas_do_mesmo_valor_no_terminal_nao_escolhe():
+    cliente, _t = _maquina({
+        "/service-id": Resposta(404, {"message": "not found"}),
+        "/sales?": Resposta(200, {"results": [
+            _venda("uma", "succeeded"),
+            _venda("duas", "succeeded"),
+        ], "has_more": False}),
+    })
+    lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:CG9",
+                              "criada_em": "2026-11-17T12:49:19"})
+    assert lido["situacao"] == CB.ABERTA and lido["banco_status"] == "NA_MAQUINA"
 
 
 def test_sem_venda_alguma_continua_aguardando():

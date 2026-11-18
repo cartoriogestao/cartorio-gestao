@@ -252,7 +252,12 @@ def valores(quadro: dict, certidao: dict, sv: dict) -> dict[str, str]:
     # `@local_nascimento`, `@municipio_nascimento` e `@uf_nascimento`. O
     # antigo fica porque o oficial edita o molde: se ele repuser a caixa
     # unica, o marcador continua sabendo montar a frase.
-    local_cheio = ", ".join(x for x in (local, mun) if x)
+    # «NÃO CONSTA» de uma caixa não entra na frase da outra: «HOSPITAL X,
+    # NÃO CONSTA» diria menos que «HOSPITAL X». Sem os dois, a frase é
+    # um só «NÃO CONSTA».
+    import rc_certidao as RCE
+    partes = [x for x in (local, mun) if x and not x.startswith(RCE.SEM_DADO)]
+    local_cheio = ", ".join(partes) or (RCE.SEM_DADO if local or mun else "")
 
     # Filiação da casa: 1 = mãe, 2 = pai.
     nome_mae = _nome_de(q.get("mae"))

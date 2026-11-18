@@ -243,6 +243,7 @@ def quadro_da_certidao(con, certidao: dict, sv: dict) -> dict:
                 chave = 'avos_maternos' if genitor['nome'] == RCE._nome(mae) else 'avos_paternos'
                 if not genitor['avos'] and str(transcrito.get(chave) or '').strip():
                     genitor['avos'] = str(transcrito[chave]).strip()
+        _nao_consta_no_nascimento(q)
     elif especie in ("CASAMENTO", "CASAMENTO_RELIGIOSO"):
         q.update(_quadro_casamento(a, quem, dados, do_fato, dma_fato))
     elif especie in RCE.ESPECIES_DO_LIVRO_E:
@@ -250,6 +251,35 @@ def quadro_da_certidao(con, certidao: dict, sv: dict) -> dict:
     else:
         q.update(_quadro_obito(a, quem, dados, do_fato, dma_fato))
     return q
+
+
+#: As células da certidão de nascimento que, vazias, dizem «NÃO CONSTA»
+#: (decisão do oficial, 17/11/2026). Gêmeo vazio é «não é gêmeo», e não
+#: ausência; a UF acompanha a cidade e fica em branco com ela.
+CELULAS_NAO_CONSTA_NASCIMENTO = (
+    "hora", "naturalidade", "local_nascimento", "municipio_nascimento",
+    "sexo", "dnv", "cpf", "avos_maternos", "avos_paternos")
+
+
+def _nao_consta_no_nascimento(q: dict) -> None:
+    """Preenche com `RCE.SEM_DADO` as células sem dado. Só mexe em `q`.
+
+    O município fica em branco quando o local já traz «Cidade/UF» — a
+    célula é omitida de propósito para não repetir a cidade, e «NÃO
+    CONSTA» ali desmentiria o local escrito ao lado.
+    """
+    local = str(q.get("local_nascimento") or "")
+    for celula in CELULAS_NAO_CONSTA_NASCIMENTO:
+        if str(q.get(celula) or "").strip():
+            continue
+        if celula == "municipio_nascimento" and "/" in local:
+            continue
+        q[celula] = RCE.SEM_DADO
+    for genitor in q.get("genitores") or []:
+        if not str(genitor.get("avos") or "").strip():
+            genitor["avos"] = RCE.SEM_DADO
+        if not str(genitor.get("municipio") or "").strip():
+            genitor["municipio"] = RCE.SEM_DADO
 
 
 def _nasc_pessoa(quem, papel, dados) -> tuple[str, str]:

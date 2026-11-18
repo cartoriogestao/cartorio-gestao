@@ -300,6 +300,27 @@ def test_sem_o_arquivo_da_chave_o_codigo_de_recuperacao_ainda_entra(cg_casa, rel
 
 # ------------------------------------------------------------ as telas
 
+def test_o_dois_fatores_grava_o_usuario_no_navegador_sem_https(cg_casa, relogio):
+    """O 2FA troca de página antes de o navegador gravar a conta, e em HTTP
+    a memória de senha pode recusar. O nome volta num cookie sem Secure."""
+    db, c, dados = cg_casa["db"], cg_casa["c"], cg_casa["dados"]
+    uid = db.create_user("escrevente.um", "ESCREVENTE UM DE TESTE", SENHA, "USER")
+    segredo, _ = _ativar(db, uid, dados)
+    r = _senha(c, "escrevente.um")
+    marca = [h for h in r.headers.getlist("Set-Cookie") if h.startswith("cg_usuario=")]
+    assert marca and all("escrevente.um" in h and "Secure" not in h for h in marca)
+    tela = c.get("/login/dois-fatores").get_data(as_text=True)
+    assert 'autocomplete="username"' in tela and 'value="escrevente.um"' in tela
+    r = _post(c, "/login/dois-fatores", "/login/dois-fatores",
+              codigo=DF.totp(segredo, T0 + 30))
+    assert r.status_code == 302
+    painel = c.get(r.headers["Location"]).get_data(as_text=True)
+    c.post("/logout", data={"csrf_token": _token(painel)})
+    de_novo = c.get("/login").get_data(as_text=True)
+    assert 'autocomplete="username"' in de_novo and 'value="escrevente.um"' in de_novo
+    assert 'autocomplete="current-password"' in de_novo
+
+
 def test_o_login_sem_verificacao_continua_o_de_sempre(cg_casa):
     db, c = cg_casa["db"], cg_casa["c"]
     db.create_user("escrevente.um", "ESCREVENTE UM DE TESTE", SENHA, "USER")

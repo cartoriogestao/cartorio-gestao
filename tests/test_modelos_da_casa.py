@@ -4992,7 +4992,45 @@ def _ouro_com_as_mudancas_explicadas(grupo: str, funcoes: dict) -> dict:
     explicadas = _presidente_no_ouro(grupo, _testamento_no_ouro(grupo, _filha_no_ouro(
         grupo, _sem_casamento_dos_pais_no_ouro(grupo, _hab22_no_ouro(grupo, _ld22_no_ouro(
             grupo, _lh05_no_ouro(grupo, _ld01_no_ouro(grupo, saida))))))))
-    return _tres_no_ouro(_o_a_no_ouro(grupo, explicadas), explicadas)
+    return _nao_consta_no_ouro(grupo, _tres_no_ouro(_o_a_no_ouro(grupo, explicadas), explicadas))
+
+
+# ------------------------------- 17/11/2026 — «NÃO CONSTA» no lugar de «ND»
+#
+#   Decisão do oficial ao incluir os livros de papel que faltavam: o campo sem
+#   dado sai na certidão como «NÃO CONSTA» (`rc_certidao.SEM_DADO`), e não «ND».
+#   A saída nova é a esperada com cada linha «ND» trocada — e nada mais; o hash
+#   do teor, que acompanha o texto no `emitir`, sai mascarado dos dois lados.
+_HEXA_64 = re.compile(r"\b[0-9a-f]{64}\b")
+
+
+def _nao_consta_no_ouro(grupo: str, esperado: dict) -> dict:
+    if grupo != "certidoes":
+        return esperado
+    import json as _json
+
+    def _como_antes(depois):
+        texto = _json.dumps(depois, ensure_ascii=False).replace("\\nNÃO CONSTA\\n", "\\nND\\n")
+        if texto == '{"ok": "NÃO CONSTA"}':
+            texto = '{"ok": "ND"}'
+        # O quadro e o ODT: a célula sem dado era vazia (" " no marcador do molde).
+        texto = re.sub(r'("@[^"]+": )"NÃO CONSTA"', r'\1" "', texto)
+        texto = texto.replace("'NÃO CONSTA'", "''").replace('": "NÃO CONSTA"', '": ""')
+        texto = texto.replace(">NÃO CONSTA</text:span>", "> </text:span>")
+        return _json.loads(_HEXA_64.sub("#", texto))
+
+    def _troca(nome, antes):
+        def confere(depois):
+            if _json.dumps(depois, ensure_ascii=False).count("NÃO CONSTA") == 0:
+                return antes(depois) if callable(antes) else depois == antes
+            velho = _como_antes(depois)
+            if callable(antes):
+                return antes(velho) or antes(_json.loads(_json.dumps(depois).replace(
+                    "N\\u00c3O CONSTA", "ND")))
+            return velho == _json.loads(_HEXA_64.sub("#", _json.dumps(antes, ensure_ascii=False)))
+        return confere
+
+    return {nome: _troca(nome, antes) for nome, antes in esperado.items()}
 
 
 # ------------------------------- 03/11/2026 — «três» com acento

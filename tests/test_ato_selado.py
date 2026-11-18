@@ -1641,20 +1641,38 @@ def test_a_certidao_de_mais_de_uma_folha_sao_dois_itens():
         assert sum(q for _, q in itens) == folhas
 
 
-def test_a_certidao_digital_de_inteiro_teor_nao_cobra_folha_excedente():
-    """DECISÃO-COGEx 2035/2026, item «b»: a certidão digital de inteiro teor de
-    matrícula se cobra pelo 16.24.4, «vedada a cobrança adicional por folhas
-    excedentes». A do balcão continua com a folha acrescida, e a comum digital
-    (16.24.1) não é alcançada pela decisão."""
+def test_a_certidao_digital_da_onr_nao_cobra_folha_excedente():
+    """CGJ-TJMA (18/11/2026) + DECISÃO-COGEx 2035/2026: toda certidão digital
+    da ONR se cobra só pelo item base — sem 16.24.4.1 nem 16.24.2. O balcão
+    impresso continua com a folha acrescida."""
     import ato_selado as AS
     assert AS.itens_da_certidao_do_ri("INTEIRO_TEOR", 7, digital=True) == [("16.24.4", 1)]
     assert AS.itens_da_certidao_do_ri("ONUS", 3, digital=True) == [("16.24.4", 1)]
     assert AS.itens_da_certidao_do_ri("INTEIRO_TEOR", 7) == [("16.24.4", 1), ("16.24.4.1", 6)]
-    assert AS.itens_da_certidao_do_ri("PROPRIEDADE", 3, digital=True) == [
+    assert AS.itens_da_certidao_do_ri("PROPRIEDADE", 3, digital=True) == [("16.24.1", 1)]
+    assert AS.itens_da_certidao_do_ri("PROPRIEDADE", 3) == [
         ("16.24.1", 1), ("16.24.2", 2)]
+    assert AS.itens_da_certidao_do_ri("NEGATIVA_IMOVEL", 5, digital=True) == [("16.24.1", 1)]
     assert AS.e_certidao_digital_do_ri(f"{AS.PREFIXO_DA_FINALIDADE_ONR}IS0001234")
     assert not AS.e_certidao_digital_do_ri("Para fins de financiamento")
     assert not AS.e_certidao_digital_do_ri(None)
+
+
+def test_a_ficha_marca_a_finalidade_onr_pelo_formulario():
+    """Emissão manual pela ficha: a caixa «Certidão digital da ONR» grava a
+    mesma marca do robô; sem a caixa, a finalidade livre continua opcional."""
+    import ato_selado as AS
+    assert AS.finalidade_da_certidao_do_ri_pelo_form({
+        "certidao_digital_onr": "1", "protocolo_onr": "S26110459602D",
+        "finalidade": "ignorar este texto",
+    }) == f"{AS.PREFIXO_DA_FINALIDADE_ONR}S26110459602D"
+    assert AS.finalidade_da_certidao_do_ri_pelo_form({
+        "finalidade": "Para fins de financiamento",
+    }) == "Para fins de financiamento"
+    assert AS.finalidade_da_certidao_do_ri_pelo_form({}) is None
+    assert AS.e_certidao_digital_do_ri(
+        AS.finalidade_da_certidao_do_ri_pelo_form({
+            "certidao_digital_onr": "1", "protocolo_onr": "X1"}))
 
 
 def test_a_emissao_do_ri_e_o_orcamento_do_onr_usam_a_regra_digital():
@@ -1663,8 +1681,16 @@ def test_a_emissao_do_ri_e_o_orcamento_do_onr_usam_a_regra_digital():
     raiz = Path(__file__).resolve().parent.parent
     ri = (raiz / "ri_web.py").read_text(encoding="utf-8")
     assert "digital=AS.e_certidao_digital_do_ri(" in ri
+    assert "finalidade_da_certidao_do_ri_pelo_form" in ri
+    assert "RI_CERTIDAO_SELO_PARCIAL" in ri
     onr = (raiz / "onr_certidoes_auto.py").read_text(encoding="utf-8")
     assert "digital=True" in onr
+    ficha = (raiz / "templates" / "ri_ficha.html").read_text(encoding="utf-8")
+    assert "_certidao_digital_onr.html" in ficha
+    parcial = (raiz / "templates" / "_certidao_digital_onr.html").read_text(
+        encoding="utf-8")
+    assert 'name="certidao_digital_onr"' in parcial
+    assert 'name="protocolo_onr"' in parcial
 
 
 def test_o_tipo_que_a_casa_nunca_selou_nao_vira_item():

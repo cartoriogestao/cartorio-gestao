@@ -153,6 +153,28 @@ ORIGENS_QUE_NAO_SE_REMETEM = ("EOFICIO", "ARQUIVO", "IMPORTACAO")
 # que não veio de nenhum sistema — está confirmado como nunca enviado.
 ORIGENS_DA_CARGA_DO_ACERVO = ("IMPORTACAO",)
 
+# **O LIVRO DE PAPEL TRANSCRITO TAMBÉM SOBE — decisão do oficial em
+# 17/11/2026**, ao mandar incluir os livros que faltavam (07, 08, A-10/1971,
+# A-12/1973, A-13/1975, A-01 a A-03). O lote do acervo transcrito
+# (`rc_acervo_lote`) grava `origem='ARQUIVO'` — e, ao complementar, troca
+# IMPORTACAO por ARQUIVO —, o que tiraria da carga justamente o papel que
+# nenhum sistema enviou. A chave diz de onde veio: `ACERVO_TRANSCRITO:` é a
+# transcrição do livro, linha a linha, e não os 196 ARQUIVO de teor colado
+# cuja remessa ainda está por confirmar. Esses continuam fora.
+PREFIXO_DO_ACERVO_TRANSCRITO = "ACERVO_TRANSCRITO:"
+ORIGEM_DO_ACERVO_TRANSCRITO = "ARQUIVO"
+# O assento que o lote COMPLEMENTOU guarda a chave antiga (a matrícula, do
+# .docx) e passa a ARQUIVO; o que o marca como papel transcrito é o pacote.
+MARCA_DO_PACOTE_TRANSCRITO = '"acervo_transcrito"'
+
+
+def e_papel_transcrito(assento: dict) -> bool:
+    """Se o assento é transcrição do livro de papel (chave ou pacote). Só lê."""
+    if str(assento.get("origem") or "").strip().upper() != ORIGEM_DO_ACERVO_TRANSCRITO:
+        return False
+    return (str(assento.get("origem_chave") or "").startswith(PREFIXO_DO_ACERVO_TRANSCRITO)
+            or MARCA_DO_PACOTE_TRANSCRITO in str(assento.get("dados_json") or ""))
+
 PRAZO_DIAS_UTEIS = 1
 PRAZO_SEM_INTERNET_DIAS_UTEIS = 5
 PRAZO_DA_INEXISTENCIA_DIAS_UTEIS = 5
@@ -768,9 +790,10 @@ def pendentes_de_carga_do_acervo(con,
     `pendentes_de_remessa`, mas **sem o prazo de 1 dia útil** — aqui não há
     atraso a contar, porque não é isso que esta lista mede.
 
-    Ver `ORIGENS_DA_CARGA_DO_ACERVO`: por enquanto só `IMPORTACAO` — o
-    E-Ofício e o `ARQUIVO` ficam de fora até se confirmar se já cumpriram a
-    obrigação sozinhos.
+    Ver `ORIGENS_DA_CARGA_DO_ACERVO`: `IMPORTACAO`, e o `ARQUIVO` que veio
+    da transcrição do livro de papel (`PREFIXO_DO_ACERVO_TRANSCRITO`,
+    decisão de 17/11/2026). O E-Ofício e o resto do `ARQUIVO` ficam de fora
+    até se confirmar se já cumpriram a obrigação sozinhos.
     """
     bd = banco(con)
     achados: list[dict] = []
@@ -784,9 +807,13 @@ def pendentes_de_carga_do_acervo(con,
                 WHERE especie IN ('NASCIMENTO','NATIMORTO','CASAMENTO',
                                   'CASAMENTO_RELIGIOSO','OBITO')
                   AND COALESCE(situacao,'ATIVO') = 'ATIVO'
-                  AND COALESCE(origem,'') IN ({marcadores})
+                  AND (COALESCE(origem,'') IN ({marcadores})
+                       OR (origem = %s AND (origem_chave LIKE %s
+                                            OR dados_json LIKE %s)))
              ORDER BY data_ato NULLS FIRST, id LIMIT %s""",
-            (*ORIGENS_DA_CARGA_DO_ACERVO, limite)):
+            (*ORIGENS_DA_CARGA_DO_ACERVO, ORIGEM_DO_ACERVO_TRANSCRITO,
+             PREFIXO_DO_ACERVO_TRANSCRITO + "%",
+             "%" + MARCA_DO_PACOTE_TRANSCRITO + "%", limite)):
         achados.append({**r, "onde": "rc_assentos"})
 
     achados.sort(key=lambda x: (_texto(x.get("data_ato")), x.get("id") or 0))

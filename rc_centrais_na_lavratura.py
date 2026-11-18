@@ -107,7 +107,8 @@ def o_que_falta(con, assento_id: int, *,
     origem = _texto(assento.get("origem")).upper()
     vai_ao_sirc = (para_lavratura
                    or origem not in SIRCM.ORIGENS_QUE_NAO_SE_REMETEM
-                   or origem in SIRCM.ORIGENS_DA_CARGA_DO_ACERVO)
+                   or origem in SIRCM.ORIGENS_DA_CARGA_DO_ACERVO
+                   or SIRCM.e_papel_transcrito(assento))
     if especie in SIRCM.ESPECIES_PRONTAS_PARA_O_SIRC and vai_ao_sirc:
         registro = {**assento, "assento_id": assento["id"],
                     "tipo": especie, "onde": "rc_assentos"}

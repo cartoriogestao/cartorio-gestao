@@ -4568,7 +4568,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                             flash(recusas[0].motivo, "danger")
                             return redirect(url_for("notas_ato", ato_id=ato_id))
                 with db.transaction() as con:
-                    banco(con).escrever(
+                    # COM A LISTA DE IMÓVEIS, O QUADRO DE CIMA NÃO TRAZ MAIS
+                    # matrícula, tipo, área nem endereço (16/11/2026): eles
+                    # moram em `nt_ato_imoveis`. Gravar os campos ausentes
+                    # apagaria a matrícula que a lista mantém aqui.
+                    com_lista = banco(con).valor(
+                        "SELECT COUNT(*) FROM nt_ato_imoveis WHERE ato_id=%s", (ato_id,))
+                    if com_lista:
+                        banco(con).escrever(
+                            """UPDATE nt_atos SET com_imovel=%s, doi_transacao=%s,
+                                      doi_torna_dinheiro=%s WHERE id=%s""",
+                            (1 if com_imovel else 0, operacao or None, torna, ato_id))
+                    else:
+                        banco(con).escrever(
                         """UPDATE nt_atos
                               SET com_imovel=%s, doi_transacao=%s,
                                   doi_tipo_imovel=%s, doi_matricula=%s,
@@ -4594,6 +4606,123 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                       "Marcado como ato SEM imóvel: ele não entra na DOI.",
                       "success")
                 return redirect(url_for("notas_ato", ato_id=ato_id))
+
+            elif acao in ("imovel_linha", "imovel_retirar"):
+                # OS IMÓVEIS DA ESCRITURA, UM POR MATRÍCULA — 16/11/2026.
+                #
+                #   «vamos arrumar e fazer as duas declaracoes, tanto pra ctp,
+                #    como pra doi» — o oficial, sobre uma escritura de duas
+                #   glebas rurais, duas matrículas. A DOI e a CTP
+                #   pedem uma declaração por imóvel, e o quadro de cima só
+                #   tinha um, sempre urbano. Ver `notas_doi.declaracoes_da_escritura`.
+                #
+                #   A matrícula do PRIMEIRO imóvel fica também em
+                #   `nt_atos.doi_matricula`: é por ela que a régua das fases
+                #   (`notas_fases._doi_completa`) sabe que o quadro está feito.
+                if a["tipo"] != "ESCRITURA":
+                    abort(400)
+                imovel_id = (request.form.get("imovel_id") or "").strip()
+                agora_im = db.now()
+                if acao == "imovel_retirar":
+                    with db.transaction() as con:
+                        bd_im = banco(con)
+                        antes = bd_im.um("SELECT * FROM nt_ato_imoveis WHERE id=%s AND ato_id=%s",
+                                         (int(imovel_id or 0), ato_id))
+                        if not antes:
+                            abort(404)
+                        bd_im.escrever("DELETE FROM nt_ato_imoveis WHERE id=%s", (antes["id"],))
+                        primeiro = bd_im.um("""SELECT matricula FROM nt_ato_imoveis WHERE ato_id=%s
+                                               ORDER BY ordem, id LIMIT 1""", (ato_id,))
+                        if primeiro:
+                            bd_im.escrever("UPDATE nt_atos SET doi_matricula=%s WHERE id=%s",
+                                           (primeiro["matricula"], ato_id))
+                    audit("NOTAS_ATO_IMOVEL_RETIRADO", "NOTAS_ATO", ato_id,
+                          {"imovel": {k: antes[k] for k in ("matricula", "rural", "valor_centavos")}})
+                    flash(f"Imóvel da matrícula {antes['matricula']} retirado da escritura.", "success")
+                    return redirect(url_for("notas_ato", ato_id=ato_id) + "#doi")
+
+                def _reais_do_campo(nome):
+                    texto = (request.form.get(nome) or "").strip()
+                    if not texto:
+                        return None
+                    try:
+                        valor_c = EMOL.centavos(texto)
+                    except (ValueError, TypeError):
+                        valor_c = -1
+                    if valor_c is None or valor_c <= 0:
+                        raise ValueError(texto)
+                    return valor_c
+
+                matricula = NDOI.so_digitos(request.form.get("matricula"))
+                rural = request.form.get("rural") == "1"
+                tipo_im = (request.form.get("tipo_imovel") or "").strip()
+                erro = None
+                if not matricula:
+                    erro = "Informe a matrícula do imóvel, só o número."
+                elif len(matricula) > 7:
+                    erro = ("A matrícula passa de 7 dígitos, o limite do DOI-Web. Um imóvel "
+                            "por linha: lance cada matrícula separada.")
+                elif tipo_im and tipo_im not in CTP.TIPO_IMOVEL:
+                    erro = f"{tipo_im} não é um tipo de imóvel da tabela da Receita."
+                elif NDOI.cib_valido(request.form.get("cib")) is False:
+                    erro = "O CIB tem oito caracteres (letras e números)."
+                try:
+                    valor_im = _reais_do_campo("valor")
+                    base_im = _reais_do_campo("base_itbi")
+                except ValueError as ruim:
+                    erro = erro or f"«{ruim}» não é um valor em reais."
+                    valor_im = base_im = None
+                if erro:
+                    flash(erro, "danger")
+                    return redirect(url_for("notas_ato", ato_id=ato_id) + "#doi")
+                campos_im = {
+                    "matricula": matricula, "rural": 1 if rural else 0,
+                    "tipo_imovel": int(tipo_im) if tipo_im else None,
+                    "denominacao": (request.form.get("denominacao") or "").strip() or None,
+                    "localizacao": (request.form.get("localizacao") or "").strip() or None,
+                    "area": (request.form.get("area") or "").strip() or None,
+                    "cib": (request.form.get("cib") or "").strip() or None,
+                    "codigo_incra": (request.form.get("codigo_incra") or "").strip() or None,
+                    "cnm": (request.form.get("cnm") or "").strip() or None,
+                    "valor_centavos": valor_im, "base_itbi_centavos": base_im}
+                with db.transaction() as con:
+                    bd_im = banco(con)
+                    repetida = bd_im.um(
+                        """SELECT id FROM nt_ato_imoveis WHERE ato_id=%s AND matricula=%s
+                             AND id <> %s""", (ato_id, matricula, int(imovel_id or 0)))
+                    if repetida:
+                        flash(f"A matrícula {matricula} já está nesta escritura.", "danger")
+                        return redirect(url_for("notas_ato", ato_id=ato_id) + "#doi")
+                    if imovel_id:
+                        if not bd_im.um("SELECT id FROM nt_ato_imoveis WHERE id=%s AND ato_id=%s",
+                                        (int(imovel_id), ato_id)):
+                            abort(404)
+                        colunas = ", ".join(f"{k}=%s" for k in campos_im)
+                        bd_im.escrever(
+                            f"UPDATE nt_ato_imoveis SET {colunas}, alterado_em=%s, alterado_por=%s "
+                            "WHERE id=%s",
+                            (*campos_im.values(), agora_im, usuario_nome(), int(imovel_id)))
+                    else:
+                        ordem = (bd_im.valor("SELECT MAX(ordem) FROM nt_ato_imoveis WHERE ato_id=%s",
+                                             (ato_id,)) or 0) + 1
+                        colunas = ", ".join(campos_im)
+                        marcas = ", ".join(["%s"] * (len(campos_im) + 4))
+                        bd_im.escrever(
+                            f"INSERT INTO nt_ato_imoveis(ato_id, ordem, {colunas}, criado_em, criado_por) "
+                            f"VALUES ({marcas})",
+                            (ato_id, ordem, *campos_im.values(), agora_im, usuario_nome()))
+                    primeiro = bd_im.um("""SELECT matricula FROM nt_ato_imoveis WHERE ato_id=%s
+                                           ORDER BY ordem, id LIMIT 1""", (ato_id,))
+                    bd_im.escrever("UPDATE nt_atos SET doi_matricula=%s WHERE id=%s",
+                                   (primeiro["matricula"], ato_id))
+                audit("NOTAS_ATO_IMOVEL_LINHA", "NOTAS_ATO", ato_id,
+                      {"imovel_id": int(imovel_id) if imovel_id else None,
+                       **{k: v for k, v in campos_im.items()
+                          if k in ("matricula", "rural", "valor_centavos", "base_itbi_centavos")}})
+                flash(f"Imóvel da matrícula {matricula} "
+                      f"{'atualizado' if imovel_id else 'lançado'}. A DOI e a CTP levam uma "
+                      "declaração para cada imóvel da lista.", "success")
+                return redirect(url_for("notas_ato", ato_id=ato_id) + "#doi")
 
             elif acao == "teor":
                 # ESTA AÇÃO NÃO TOCA MAIS EM FOLHA.
@@ -5481,7 +5610,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 depositos=depositos, foco=foco,
                 modelo_com_imovel=bool(modelo["com_imovel"]) if modelo else None)
 
+        # OS IMÓVEIS DA ESCRITURA, UM POR MATRÍCULA (16/11/2026). Lista vazia
+        # é a escritura do quadro antigo, que continua valendo.
+        imoveis_do_ato = [dict(x) for x in q(
+            "SELECT * FROM nt_ato_imoveis WHERE ato_id=%s ORDER BY ordem, id",
+            (ato_id,))] if a["tipo"] == "ESCRITURA" else []
         return render_template("notas_ato.html", a=dict(a), partes=partes,
+                               imoveis_do_ato=imoveis_do_ato,
                                agente_do_ato=agente_do_ato,
                                lugar=lugar, fases_da_ficha=fases_da_ficha,
                                doi_partes=doi_partes,

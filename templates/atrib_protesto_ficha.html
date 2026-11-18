@@ -595,6 +595,7 @@
         <option value="PIX">Pix</option>
         <option value="BOLETO">Boleto</option>
         <option value="DINHEIRO">Dinheiro</option>
+        <option value="PG_ONR">PG feito pela ONR</option>
       </select></label>
     <button class="primary">Cobrar o emolumento devido no meu caixa</button>
     <p class="small">Só quando o apresentante pagou. Entra no caixa de quem clica. Não sela.
@@ -934,7 +935,9 @@
     </div>
     {% endif %}
     {{ quadro(receitas.get(ato), caixa, protocolos, form=v_ato,
-              diferido=(cob and cob.diferir)) }}
+              diferido=(cob and cob.diferir), protocolo_escolhido=protocolo_escolhido,
+              itens_do_protocolo=itens_do_protocolo,
+              reload_url=url_for('protesto_titulo', titulo_id=titulo.id)) }}
 
     {# O BOTÃO FICA NO FIM (relato #146): o quadro de cobrança traz protocolo,
        itens a selar, pagador e forma de pagamento, e o botão antes dele fazia

@@ -301,6 +301,12 @@ def _alertas(con, db) -> dict:
     }
 
 
+def _conformidade(con, hoje: date) -> dict:
+    """O semáforo por área (`conformidade`) — só códigos, datas e contagens."""
+    import conformidade as CF
+    return CF.medir(con, hoje)
+
+
 # ------------------------------------------------------------------ montar
 
 
@@ -385,6 +391,9 @@ def montar(db, hoje: date | None = None, agora: datetime | None = None) -> dict:
             "atendimento": medir("atendimento_agora",
                                  lambda con: _atendimento_agora(con, hoje)),
             "alertas": alertas,
+            # O SEMÁFORO DA CONFORMIDADE (18/11/2026) — uma cor por área, dos
+            # mesmos achados abertos de `alertas`, e só códigos e contagens.
+            "conformidade": medir("conformidade", lambda con: _conformidade(con, hoje)),
         },
         "nao_mediu": nao_mediu,
     }

@@ -600,6 +600,27 @@ def _abrir(texto: str) -> dict:
     return dados
 
 
+def _livro_de_outra_especie(valores: dict) -> str:
+    """«B-3» num nascimento. Devolve o porquê da recusa, ou vazio. Só lê.
+
+    Auditoria de 18/11/2026: a importação gravou livro de casamento e de óbito
+    em nascimentos, e a certidão imprimiu «LIVRO B-3» num nascimento. A letra
+    é a da espécie (A nascimento, B casamento, C óbito, D proclamas, E os
+    demais); só o número, ou letra que não é de livro, passa como está.
+    """
+    import rc_matricula as MAT
+    especie = _texto(valores.get("especie")).upper()
+    tipo = MAT.LIVRO_DA_ESPECIE.get(especie)
+    certa = (MAT.TIPOS_DE_LIVRO.get(tipo) or {}).get("livro", "")[:1]
+    livro = re.sub(r"^livro\s+", "", _texto(valores.get("livro_volume")),
+                   flags=re.I)
+    letra = livro[:1].upper()
+    if not certa or not letra or letra not in "ABCDE" or letra == certa:
+        return ""
+    return (f"o livro «{_texto(valores.get('livro_volume'))}» é de outra "
+            f"espécie — {especie.lower()} vai no Livro {certa}")
+
+
 def _conferir_pessoas(das_pessoas: Any, campos_delas: list[dict],
                       valores: dict) -> tuple[list[dict], str]:
     """As pessoas de um registro. Devolve `(lidas, porque_recusar)`. Só lê.
@@ -739,6 +760,12 @@ def conferir(con, texto: str, *,
             _recusa("tem data fora do formato AAAA-MM-DD: "
                     + ", ".join(datas_ruins))
             continue
+
+        if especie == "RCPN_ASSENTO":
+            porque = _livro_de_outra_especie(valores)
+            if porque:
+                _recusa(porque)
+                continue
 
         pessoas_lidas, porque = _conferir_pessoas(
             das_pessoas, das_pessoas_campos, valores)

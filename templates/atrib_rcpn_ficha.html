@@ -88,6 +88,8 @@
         <th>Livro</th><td>{{ assento.livro_volume or assento.serie }}
           {%- if assento.livro_a_confirmar %}
             <small><strong>— por confirmar</strong></small>
+          {%- elif livro_divergente %}
+            <small><strong>— diverge da matrícula</strong></small>
           {%- elif assento.livro_conferido_em %}
             {# Dizer que ALGUEM JA FOI poupa a proxima ida a estante. #}
             <small>— conferido no livro de papel em
@@ -341,10 +343,25 @@
    efetivamente». O aviso mora AQUI, e não numa aba, porque é aqui que a
    consulta acontece — e com um botão, porque aviso sem saída fica para
    sempre. #}
-{% if assento.livro_a_confirmar %}
-<div class="notice" style="margin:0 0 14px" data-fase="assento">
+{# O LIVRO QUE A MATRÍCULA CONTRADIZ — 18/11/2026. A certidão imprime o
+   livro do cadastro e a CRC recebe a matrícula; quando os dois discordam, o
+   aviso é este mesmo, com o mesmo botão de quem foi à estante. Se o papel
+   confirmar o cadastro, a errada é a matrícula (corrigir em «Editar»). #}
+{% if assento.livro_a_confirmar or livro_divergente %}
+<div class="notice" style="margin:0 0 14px" data-fase="assento" id="livro-a-conferir">
+  {% if assento.livro_a_confirmar %}
   <strong>O livro deste assento está por confirmar.</strong>
   <p>{{ assento.livro_a_confirmar }}</p>
+  {% endif %}
+  {% if livro_divergente %}
+  <strong>O livro deste assento diverge da matrícula.</strong>
+  <p>{{ livro_divergente }}.</p>
+  {% if assento.livro_conferido_em and not assento.livro_a_confirmar %}
+  <p>O livro do cadastro já foi conferido no papel em
+    {{ assento.livro_conferido_em[:10] }}: se o papel confirma o cadastro, a
+    errada é a matrícula — corrija-a em «Editar».</p>
+  {% endif %}
+  {% endif %}
   <form method="post" class="grid2"
         action="{{ url_for('rcpn_confirmar_livro', assento_id=assento.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -464,6 +481,13 @@
   <p style="padding:0 14px"><small>
     <strong>Confira o livro antes de assinar.</strong> O livro deste assento está
     por confirmar no livro de papel, e a certidão sai com ele escrito —
+    certidão que diz o livro errado é o papel que alguém leva para outro
+    cartório.
+  </small></p>
+  {% elif livro_divergente %}
+  <p style="padding:0 14px"><small>
+    <strong>Confira o livro antes de assinar.</strong> O livro do cadastro
+    diverge do livro da matrícula, e a certidão sai com o do cadastro —
     certidão que diz o livro errado é o papel que alguém leva para outro
     cartório.
   </small></p>

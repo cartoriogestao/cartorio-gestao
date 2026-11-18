@@ -6287,6 +6287,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 habilitacao=dict(habilitacao_vinculo) if habilitacao_vinculo else None,
                 digi=digi)
         return render_template("atrib_rcpn_ficha.html", assento=dict(assento),
+                               livro_divergente=RCE.livro_divergente(
+                                   dict(assento)),
                                abas_da_ficha=abas_da_ficha,
                                habilitacao_vinculo=habilitacao_vinculo,
                                termo_paternidade=termo_paternidade,

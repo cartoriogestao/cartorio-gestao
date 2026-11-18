@@ -170,8 +170,15 @@ def test_retomada_confere_pacote_sem_refazer_banco_e_limpa_apos_copia(rede, monk
     assert B._sha256(destino) == esperado and list(area.iterdir()) == []
 
 
-@pytest.mark.parametrize("chave,valor", [("origem_banco", "banco-diferente"), ("archive_root", "acervo-diferente"), ("app", "aplicativo-diferente"), ("version", "versao-diferente"), ("created_at", (datetime.now()-timedelta(days=2)).isoformat())])
+# O valor do `created_at` se calcula DENTRO do teste: com o relógio no parâmetro, cada
+# processo do xdist coletava um teste com outro nome, e a suíte da CI nem começava.
+HA_DOIS_DIAS = "ha-dois-dias"
+
+
+@pytest.mark.parametrize("chave,valor", [("origem_banco", "banco-diferente"), ("archive_root", "acervo-diferente"), ("app", "aplicativo-diferente"), ("version", "versao-diferente"), ("created_at", HA_DOIS_DIAS)])
 def test_retomada_recusa_origem_ou_pacote_antigo(rede, monkeypatch, chave, valor):
+    if valor == HA_DOIS_DIAS:
+        valor = (datetime.now() - timedelta(days=2)).isoformat()
     db, arquivos, destino, area = rede
     local = _guardar_para_retomar(rede, monkeypatch)
     with zipfile.ZipFile(local) as z:

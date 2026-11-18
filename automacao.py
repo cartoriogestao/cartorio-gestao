@@ -18,9 +18,9 @@ COMO UMA RODADA ACONTECE — TRÊS PROCESSOS, E CADA UM EXISTE POR UM MOTIVO
        verificação do sistema (ou o agente de IA) e imprime o resultado numa
        linha marcada. **Não grava o resultado**: quem grava é o corredor.
 
-    O servidor web NUNCA roda processo. «Rodar agora» só marca o pedido, e o
-    tique do minuto seguinte o pega — uma verificação que fala com Central
-    dentro de uma requisição do waitress seguraria o balcão.
+    O servidor web nunca executa o trabalho dentro da requisição. «Rodar
+    agora» marca o pedido para o tique seguinte; o balcão de cobranças pode
+    lançar o corredor imediatamente, pelas mesmas travas, sem esperar a rede.
 
 AS QUATRO TRAVAS
     - a GLOBAL (`au_trava`): dois tiques não andam juntos; a trava cuja batida
@@ -854,6 +854,36 @@ def tique(db, *, agora: datetime | None = None,
             soltar_trava(con, dono, agora, {k: (len(v) if isinstance(v, list) else v)
                                             for k, v in resumo.items()})
     return resumo
+
+
+def despachar_pedido(db, processo_id: int, *, agora: datetime | None = None,
+                    lancar: Callable[[int], int] | None = None) -> bool:
+    """Lança um pedido já gravado, sem esperar o relógio nem executar trabalho na web.
+
+    A cobrança usa o mesmo corredor, prazo e travas da automação. Se há um
+    tique ou uma rodada em andamento, o pedido fica gravado para a próxima
+    passagem. Não roda agendas de outros processos nem lê credenciais.
+    """
+    if CONT.ativo(db):
+        return False
+    agora = agora or datetime.now()
+    dono = f"pedido:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+    with db.transaction() as con:
+        if not adquirir_trava(con, dono, agora):
+            return False
+    resumo = {"lancadas": [], "puladas": []}
+    try:
+        with db.connect() as con:
+            p = obter(con, processo_id)
+        if p and p.get("pedido_manual_em"):
+            _tique_do_processo(db, p, agora, lancar or lancar_corredor, resumo)
+        return bool(resumo["lancadas"])
+    finally:
+        # Um envio do balcão não é uma batida do agendador: preserve seu
+        # último tique para que a tela continue detectando agendador parado.
+        with db.transaction() as con:
+            banco(con).escrever("UPDATE au_trava SET dono=NULL, batida_em=%s "
+                                "WHERE id=1 AND dono=%s", (_iso(agora), dono))
 
 
 def _tique_do_processo(db, p: dict, agora: datetime, lancar, resumo: dict,

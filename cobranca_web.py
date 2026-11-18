@@ -11,8 +11,8 @@ QUEM FAZ O QUÊ
 
 QUEM FALA COM O BANCO
     Com o cofre da automação instalado, a tela NÃO lê a credencial: grava o
-    pedido e chama a rodada do despachante (`cobranca_automacao`), que roda
-    no minuto seguinte. Sem o cofre, a tela fala com o banco na hora, pelo
+    pedido e lança imediatamente o corredor (`cobranca_automacao`), fora
+    da requisição web. Sem o cofre, a tela fala com o banco na hora, pelo
     mesmo caminho (`cobranca_banco`). Nos dois casos nenhuma transação do
     banco de dados fica aberta durante a rede.
 """
@@ -52,7 +52,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         return UNICRED._cofre() is not None
 
     def _pedir_rodada() -> None:
-        """Com o cofre instalado: o despachante fala com o banco no próximo minuto."""
+        """Grava o pedido e lança o corredor sem aguardar o próximo minuto."""
         import automacao  # type: ignore
         with db.transaction() as con:
             processo = automacao.por_codigo(con, PROCESSO)
@@ -60,8 +60,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 raise CB.CobrancaError(f"O processo {PROCESSO} não está cadastrado na automação. "
                                        f"Cadastre-o lá (Automação → processos).")
             automacao.pedir_rodada(con, int(processo["id"]), usuario=usuario_nome())
-        flash("Pedido ao despachante da automação: o banco é consultado no próximo minuto.",
-              "info")
+        import automacao_cofre as COFRE
+        estado = COFRE.estado(caminho=COFRE.caminho_do_cofre(db.db_path.parent))
+        if not estado.get("aberto"):
+            flash("O cofre está trancado. Desbloqueie-o na máquina do servidor para "
+                  "enviar a cobrança. O pedido foi guardado para retomada.", "warning")
+            return
+        lancada = automacao.despachar_pedido(db, int(processo["id"]))
+        if lancada:
+            flash("Envio iniciado. Atualize a ficha para ver o retorno do banco.", "info")
+        else:
+            flash("Não foi possível iniciar uma nova rodada agora. Consulte o andamento "
+                  "na automação.", "info")
 
     def _cliente(c: dict | None = None):
         with db.connect() as con:

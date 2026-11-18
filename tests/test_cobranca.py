@@ -673,6 +673,46 @@ def test_as_telas_abrem_e_o_cadastro_pela_tela_espera_a_emissao_ligada(casa):
     assert c.get(f"/caixa/cobranca/{linha['id']}").status_code == 200
 
 
+@pytest.mark.parametrize("forma", ["", "PIX", "CREDITO", "DEBITO"])
+def test_o_balcao_lanca_o_envio_sem_esperar_o_minuto(casa, monkeypatch, forma):
+    import automacao as AU
+    import automacao_cofre as COFRE
+    monkeypatch.setattr(CUNI, "_cofre", lambda: COFRE)
+    monkeypatch.setattr(COFRE, "estado", lambda **kw: {"aberto": True})
+    lancados = []
+    monkeypatch.setattr(AU, "lancar_corredor", lambda i: lancados.append(i) or 4242)
+    with casa["db"].transaction() as con:
+        AU.semear(con)
+        CB.gravar_configuracao(con, {**CB.PADRAO, "cobranca_ligada": "1",
+                                     "cobranca_ambiente": "sandbox", "cobranca_banco": CB.PARCELA})
+    c = casa["c"]
+    r = c.post("/caixa/cobranca/nova", data={
+        "csrf_token": _token(c, "/caixa/cobranca/nova"), "protocolo_id": casa["protocolo_id"],
+        "valor": "123,45", "vencimento": VENCIMENTO, "forma_maquina": forma, **PAGADOR})
+    assert r.status_code == 302 and len(lancados) == 1
+    with casa["db"].connect() as con:
+        assert AU.execucao(con, lancados[0])["disparo"] == "MANUAL"
+        assert CB.lista(con)[0]["forma_pedida"] == forma
+
+
+def test_o_cofre_trancado_avisa_no_balcao_e_preserva_o_pedido(casa, monkeypatch):
+    import automacao as AU
+    import automacao_cofre as COFRE
+    monkeypatch.setattr(CUNI, "_cofre", lambda: COFRE)
+    monkeypatch.setattr(COFRE, "estado", lambda **kw: {"aberto": False})
+    monkeypatch.setattr(AU, "lancar_corredor", lambda i: pytest.fail("cofre trancado"))
+    with casa["db"].transaction() as con:
+        AU.semear(con)
+    c = casa["c"]
+    r = c.post("/caixa/cobranca/nova", data={
+        "csrf_token": _token(c, "/caixa/cobranca/nova"), "protocolo_id": casa["protocolo_id"],
+        "valor": "123,45", "vencimento": VENCIMENTO, **PAGADOR}, follow_redirects=True)
+    assert "Desbloqueie-o na máquina do servidor" in r.get_data(as_text=True)
+    with casa["db"].connect() as con:
+        assert CB.lista(con)[0]["situacao"] == CB.A_EMITIR
+        assert AU.por_codigo(con, "COBRANCA_ACOMPANHAR")["pedido_manual_em"]
+
+
 def test_a_ficha_da_maquininha_atualiza_sozinha_e_a_do_boleto_nao(casa):
     pix = _na_maquina(casa)
     boleto = _cadastrar(casa)

@@ -618,15 +618,25 @@ class ClienteCobrancaParcela:
             "Abra o link da cobrança.")
 
     def _consultar_maquina(self, venda: str, c: Mapping[str, Any]) -> dict | None:
-        aguardando = {"situacao": CB.ABERTA, "banco_status": "NA_MAQUINA",
-                      "banco_motivo": "Aguardando o pagamento na maquininha."}
+        aguardando = {"situacao": CB.ABERTA, "banco_status": "AGUARDANDO_TERMINAL",
+                      "banco_motivo": "Pedido enviado à Parcela Express; pagamento ainda "
+                                      "não localizado. Confira a tela da maquininha."}
         if not venda:
             return aguardando
+        # O POST do POS pode aceitar o pedido sem devolver saleId. Nesse
+        # caso emitir() conserva o service_id, que NÃO pertence à rota de
+        # saleId. A produção devolve HTTP 400 (não 404) nessa rota errada,
+        # e antes a cobrança ficava EMITINDO para sempre (CG21 e CG22).
+        if venda == _service_id(c):
+            # Sem saleId, a rota de saleId devolve 400 e prendia a cobrança.
+            # Não achar pelo service_id ainda pode achar a venda do dia.
+            achada = self._venda_pelo_servico(c)
+            return self._da_maquina(achada, c, aguardando)
         r = self._ir(
             "GET",
             f"/v1/sellers/{urllib_quote(self._campos['seller_id'])}/sales/"
             f"{urllib_quote(venda)}")
-        if r.status == 404:
+        if r.status == 404 or (r.status == 400 and _frase(r.corpo).strip().lower() == "sale not found"):
             # Sem o id da venda no envio, guardou-se o service_id: este caminho
             # é por saleId. A venda se acha pelo service_id.
             achada = self._venda_pelo_servico(c)

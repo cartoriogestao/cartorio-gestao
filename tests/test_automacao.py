@@ -234,6 +234,49 @@ def test_a_rodada_que_vence_com_a_anterior_de_pe_vira_pulada_uma_vez(casa):
     assert [e["situacao"] for e in hist] == [SCH.PULADA, SCH.RODANDO]
 
 
+def test_despacho_imediato_so_lanca_o_pedido_e_preserva_batida(casa):
+    db = casa["db"]
+    p = _processo(db, "COBRANCA_ACOMPANHAR")
+    _ligar(db, "CASA_DISCO", SEG - timedelta(hours=3))
+    with db.transaction() as con:
+        AU.pedir_rodada(con, p["id"], usuario="mario", agora=SEG)
+        banco(con).escrever("UPDATE au_trava SET ultimo_tique_em=%s WHERE id=1",
+                            (AU._iso(SEG - timedelta(hours=1)),))
+    lancados = []
+    assert AU.despachar_pedido(db, p["id"], agora=SEG,
+                               lancar=lambda i: lancados.append(i) or 4242)
+    with db.connect() as con:
+        e = AU.execucao(con, lancados[0])
+        assert e["disparo"] == SCH.MANUAL and e["quem"] == "mario"
+        assert e["pid"] == 4242
+        assert not AU.obter(con, p["id"])["pedido_manual_em"]
+        assert AU.batida_do_despachante(con, SEG)["parado"]
+        assert not AU.execucoes(con, _processo(db, "CASA_DISCO")["id"])
+    assert not AU.despachar_pedido(db, p["id"], agora=SEG,
+                                   lancar=lambda i: pytest.fail("duplicou o envio"))
+
+
+def test_despacho_ocupado_preserva_pedido_para_retomada(casa):
+    db = casa["db"]
+    p = _processo(db, "COBRANCA_ACOMPANHAR")
+    with db.transaction() as con:
+        AU.pedir_rodada(con, p["id"], usuario="mario", agora=SEG)
+        assert AU.adquirir_trava(con, "tique", SEG)
+    assert not AU.despachar_pedido(db, p["id"], agora=SEG,
+                                   lancar=lambda i: pytest.fail("ignorou trava"))
+    with db.connect() as con:
+        assert AU.obter(con, p["id"])["pedido_manual_em"]
+    with db.transaction() as con:
+        AU.soltar_trava(con, "tique", SEG)
+    assert AU.despachar_pedido(db, p["id"], agora=SEG, lancar=lambda i: 4242)
+    with db.transaction() as con:
+        AU.pedir_rodada(con, p["id"], usuario="mario", agora=SEG)
+    assert not AU.despachar_pedido(db, p["id"], agora=SEG,
+                                   lancar=lambda i: pytest.fail("duplicou rodada em andamento"))
+    with db.connect() as con:
+        assert AU.obter(con, p["id"])["pedido_manual_em"]
+
+
 def test_a_trava_global_e_de_um_tique_so(casa):
     db = casa["db"]
     with db.transaction() as con:

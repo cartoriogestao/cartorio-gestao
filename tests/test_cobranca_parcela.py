@@ -416,7 +416,7 @@ def test_duas_vendas_do_mesmo_valor_no_terminal_nao_escolhe():
     })
     lido = cliente.consultar({**NA_MAQUINA, "banco_id": "pos:CG9",
                               "criada_em": "2026-11-17T12:49:19"})
-    assert lido["situacao"] == CB.ABERTA and lido["banco_status"] == "NA_MAQUINA"
+    assert lido["situacao"] == CB.ABERTA and lido["banco_status"] == "AGUARDANDO_TERMINAL"
 
 
 def test_sem_venda_alguma_continua_aguardando():

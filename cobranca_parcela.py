@@ -626,8 +626,10 @@ class ClienteCobrancaParcela:
         # saleId. A produção devolve HTTP 400 (não 404) nessa rota errada,
         # e antes a cobrança ficava EMITINDO para sempre (CG21 e CG22).
         if venda == _service_id(c):
+            # Sem saleId, a rota de saleId devolve 400 e prendia a cobrança.
+            # Não achar pelo service_id ainda pode achar a venda do dia.
             achada = self._venda_pelo_servico(c)
-            return aguardando if achada is None else self._ler_venda_da_maquina(achada)
+            return self._da_maquina(achada, c, aguardando)
         r = self._ir(
             "GET",
             f"/v1/sellers/{urllib_quote(self._campos['seller_id'])}/sales/"

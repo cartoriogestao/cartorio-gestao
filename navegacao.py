@@ -522,6 +522,7 @@ PAI: dict[str, tuple[str, str]] = {
     "onr_auto_fila": ("RI", "Certidões"),
     "onr_auto_pedido": ("RI", "Certidões"),
     "onr_certidao_ficha": ("RI", "Certidões"),
+    "onr_certidoes_certificado": ("RI", "Certidões"),
     "ri_retificacao": ("RI", "Processos longos"),
     "ri_retificacao_nova": ("RI", "Processos longos"),
     "ri_retificacao_normas": ("RI", "Processos longos"),

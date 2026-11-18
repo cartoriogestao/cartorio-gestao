@@ -177,6 +177,7 @@ FORMAS_DE_PAGAMENTO = {
     "TRANSFERENCIA": "por transferência bancária",
     "BOLETO": "por boleto",
     "CARTAO": "por cartão",
+    "PG_ONR": "PG feito pela ONR",
 }
 
 # O vocabulario inteiro dos atos da vida de um titulo — de tbAvisoProtesto e

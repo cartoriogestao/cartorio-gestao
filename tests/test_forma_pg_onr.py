@@ -3,9 +3,13 @@
 Decisão da oficial da casa em 18/11/2026: entra no saldo e
 como receita, igual ao PIX; não entra em espécie; vale no Protocolo Geral, no
 Caixa e nos Depósitos; carnê-leão conta como receita normal.
+
+Em 18/11/2026 o mesmo código e rótulo passam a valer no Livro de Pagamentos
+do protesto (select da ficha, validação, gravação e peça do livro).
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -21,10 +25,22 @@ import caixa_schema as CX  # noqa: E402
 import carne_leao as CL  # noqa: E402
 import cobranca as CB  # noqa: E402
 import gestor_financeiro as GF  # noqa: E402
+import protesto as PT  # noqa: E402
+import protesto_livros as PLIV  # noqa: E402
+import protesto_pecas as PECAS  # noqa: E402
 from bd_nativo import banco  # noqa: E402
+from test_protesto_aviso_web import (  # noqa: E402, F401
+    _con, s, titulo_apontado,
+)
 
 AGORA = "2026-09-20T10:00:00"
 ROTULO = "PG feito pela ONR"
+SV = {"unit_name": "SERVENTIA EXTRAJUDICIAL DE CIDADE EXEMPLO",
+      "serventia_titular": "MARIO EXEMPLO DOS SANTOS",
+      "serventia_titulo": "Tabelião e Oficial de Registro",
+      "endereco_completo": "Rua Grande, 1, Centro",
+      "serventia_telefone": "(99) 0000-0000",
+      "ri_cns": "000000", "ri_cidade": "Cidade Exemplo", "ri_uf": "MA"}
 
 
 def test_formas_pagamento_tem_pg_onr():
@@ -98,6 +114,51 @@ def test_telas_oferecem_a_opcao_pg_onr():
     ).render(FORMAS=CX.FORMAS_PAGAMENTO)
     assert 'value="PG_ONR"' in renderizado
     assert ROTULO in renderizado
+
+
+def test_livro_de_pagamentos_tem_pg_onr():
+    assert PT.FORMAS_DE_PAGAMENTO["PG_ONR"] == ROTULO
+    peca = (RAIZ / "modelos_padrao" / "protesto" / "PT_LIVRO_PAGAMENTOS.txt"
+            ).read_text(encoding="utf-8-sig")
+    assert f"PG_ONR = {ROTULO}" in peca
+    assert PECAS.vocabulario(None, "PT_LIVRO_PAGAMENTOS")["PG_ONR"] == ROTULO
+
+
+def test_ficha_do_protesto_oferece_pg_onr_no_select_do_livro():
+    """O 2º select (ato PAGAMENTO / Livro de Pagamentos), não o do emolumento."""
+    html = (RAIZ / "templates" / "atrib_protesto_ficha.html").read_text(
+        encoding="utf-8-sig")
+    trecho = re.search(
+        r"\{%\s*for k, rotulo in \(\((.*?)\)\)\s*%\}.*?O Livro de Pagamentos exige",
+        html, flags=re.S)
+    assert trecho, "select do Livro de Pagamentos não achado"
+    opcoes = trecho.group(1)
+    assert "'PG_ONR'" in opcoes or '"PG_ONR"' in opcoes
+    assert ROTULO in opcoes
+
+
+def test_lancar_pagamento_pg_onr_grava_e_aparece_no_livro(s):
+    import json
+
+    tid = titulo_apontado(s)
+    con = _con(s)
+    with con:
+        PT.lancar_intimacao(con, tid, modo="PESSOAL", agora="2026-10-10T10:00:00")
+        PT.lancar_pagamento(
+            con, tid, sv=SV, agora="2026-10-14T10:00:00", data_extenso="x",
+            valor_pago="1.310,45", emolumentos="82,64",
+            forma_pagamento="PG_ONR",
+            forma_identificacao="comprovante ONR ficticio 1")
+    assert PT.titulo(con, tid)["situacao"] == "PAGO"
+    atos = [a for a in PT.atos_do(con, tid) if a["tipo"] == "PAGAMENTO"]
+    assert atos
+    detalhe = json.loads(atos[-1]["detalhe_json"] or "{}")
+    assert detalhe["forma_pagamento"] == "PG_ONR"
+    linhas = PLIV.livro_de_pagamentos(con, de="2026-10-01", ate="2026-10-31")
+    assert len(linhas) == 1
+    assert ROTULO in linhas[0]["ocorrencias"]
+    assert "comprovante ONR ficticio 1" in linhas[0]["ocorrencias"]
+    con.close()
 
 
 def test_carne_leao_pg_onr_conta_como_receita(cg_casa):

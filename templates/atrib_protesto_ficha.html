@@ -778,7 +778,8 @@
           {% for k, rotulo in (('ESPECIE', 'em espécie'), ('CHEQUE', 'por cheque'),
                                ('PIX', 'por PIX'),
                                ('TRANSFERENCIA', 'por transferência bancária'),
-                               ('BOLETO', 'por boleto'), ('CARTAO', 'por cartão')) %}
+                               ('BOLETO', 'por boleto'), ('CARTAO', 'por cartão'),
+                               ('PG_ONR', 'PG feito pela ONR')) %}
           {% if k == 'PIX' and not pix_lavrar %}
           <option value="PIX" disabled>por PIX — só com o crédito conferido (registre em «Pagamento por PIX»)</option>
           {% else %}

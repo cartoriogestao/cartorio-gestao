@@ -1136,7 +1136,7 @@
       </div>
     </details>
     <script>
-    /* Alerta se o teor/modelo fala de ENCERRAMENTO sem a marca «encerra»
+    /* Alerta se o teor/modelo menciona ENCERRAMENTO sem a marca «encerra»
        (18/11/2026): lavrar assim deixa a ficha aberta e o botão «Encerrar»
        lavraria outra AV. Só lembra — não marca sozinho. */
     (function () {
@@ -1151,7 +1151,7 @@
         if (encerra && encerra.checked) return;
         if ((teor.value || '').toUpperCase().indexOf('ENCERRAMENTO') < 0) return;
         var ok = window.confirm(
-          'O teor fala de ENCERRAMENTO, mas «Este ato encerra a matrícula» não está marcado. ' +
+          'O teor menciona ENCERRAMENTO, mas «Este ato encerra a matrícula» não está marcado. ' +
           'Sem marcar, a ficha continua aberta e «Encerrar esta matrícula» lavraria outra averbação. ' +
           'Continuar sem encerrar a ficha?'
         );

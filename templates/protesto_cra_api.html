@@ -226,6 +226,71 @@
   </div>
 {% endset %}
 
+{# AS CUSTAS DOS TÍTULOS À CRA (18/11/2026) — operação CustasTitulo, manual da
+   P21 «Emolumentos dos títulos». Os valores são os da tabela do dia, os mesmos
+   do retorno e do arquivo da CENPROT; vai só o que mudou. #}
+{% set quadro_custas %}
+  <div class="cra-panel-body">
+    <p style="margin:0 0 8px">
+      Informa à CRA (operação <code>CustasTitulo</code>) quanto custa
+      <strong>retirar</strong> cada título apontado ou intimado e
+      <strong>cancelar</strong> cada protesto lavrado — para o banco saber pela
+      Central. Vai <strong>só o que mudou</strong>; reenviar não faz mal, a CRA
+      atualiza.
+    </p>
+    {% if custas.erro %}
+    <div class="alert alert-danger">As custas não se calculam: {{ custas.erro }}</div>
+    {% else %}
+    <table class="table">
+      <tbody>
+        <tr><td><strong>A informar agora</strong></td>
+            <td>{{ custas.itens|length }} título(s)</td></tr>
+        <tr><td><strong>Já em dia na CRA</strong></td>
+            <td>{{ custas.em_dia }} título(s)</td></tr>
+        <tr><td><strong>Sem dado para ir</strong></td>
+            <td>{{ custas.fora|length }} título(s)
+              {% if custas.fora %}<small class="muted">— por exemplo:
+                {% for f in custas.fora[:3] %}protocolo {{ f.protocolo or '—' }} ({{ f.motivo }}){% if not loop.last %}; {% endif %}{% endfor %}
+              </small>{% endif %}</td></tr>
+        <tr><td><strong>Tabela</strong></td>
+            <td>{{ custas.vigencia or '—' }} · vigência {{ custas.fim or 'indefinida' }}</td></tr>
+      </tbody>
+    </table>
+    {% endif %}
+    <div class="actions">
+      <form method="post" action="{{ url_for('protesto_cra_custas_enviar') }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button primary" type="submit"
+                {% if not tem_credencial or custas.erro or not custas.itens %}disabled{% endif %}>
+          Enviar as custas à CRA</button>
+      </form>
+      {% if custas.itens %}
+      <a class="button" href="{{ url_for('protesto_cra_custas_previa') }}">Baixar a prévia (XML)</a>
+      {% endif %}
+    </div>
+    <p class="muted"><small>A rotina «CRA — custas dos títulos» da central de
+      automação faz o mesmo sozinha, ao meio-dia e às 17h30, quando o oficial a
+      liga com «pode agir».</small></p>
+    {% if custas.ultimos %}
+    <table class="table">
+      <thead><tr><th>Arquivo</th><th>Gerado</th><th>Títulos</th><th>CRA</th></tr></thead>
+      <tbody>
+      {% for e in custas.ultimos %}
+        <tr>
+          <td><a href="{{ url_for('protesto_cra_custas_arquivo', envio_id=e.id) }}"><code>{{ e.nome_arquivo }}</code></a></td>
+          <td><small>{{ (e.gerado_em or '')[:16]|replace('T', ' ') }}{% if e.gerado_por %} · {{ e.gerado_por }}{% endif %}</small></td>
+          <td>{{ e.titulos }}</td>
+          <td>{% if e.enviado_em %}<span class="success">aceito {{ e.codigo or '' }}</span>{% if e.erro %} <small class="danger">{{ e.erro }}</small>{% endif %}
+              {% elif e.erro %}<small class="danger">{{ e.erro }}</small>
+              {% else %}<span class="muted">não enviado</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+{% endset %}
+
 {% set referencia %}
   <div class="cra-panel-body">
     <p style="margin:0 0 8px">
@@ -236,7 +301,8 @@
       se sabe é <em>o que mandar dentro</em>. As operações
       <code>Confirmacao</code> e <code>Retorno</code> — os dois passos com hora
       marcada no roteiro (11h30 e 14h10) — já saem pelo recebimento de remessa,
-      com <code>userDados</code> medido; aqui continuam listadas só as demais.
+      com <code>userDados</code> medido, e a <code>CustasTitulo</code> tem o
+      quadro «Custas dos títulos» acima; aqui continuam listadas só as demais.
     </p>
     <p class="muted" style="margin:0">
       {{ sem_sentido_medido|join(' · ') }}
@@ -260,6 +326,7 @@
     {{ abre('cra-opcoes', 'O que cada opção pede', 'o que vai no nome do arquivo') }}{{ outros_opcoes }}</details>
   </section>
 </div>
+{{ abre('cra-custas', 'Custas dos títulos — retirada e cancelamento', (custas.itens|length) ~ ' a informar') }}{{ quadro_custas }}</details>
 {{ abre('cra-consultar', 'Consultar na CRA', 'as quatro consultas do contrato') }}{{ consultar }}</details>
 {{ abre('cra-ligacao', 'Ligação e teste', nota_da_ligacao) }}{{ ligacao }}</details>
 {{ abre('cra-referencia', 'Referência — WSDL e operações sem botão', (operacoes|length) ~ ' operações no WSDL') }}{{ referencia }}</details>
@@ -293,6 +360,14 @@
   </div>
 
   {{ consultar }}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Custas dos títulos — retirada e cancelamento</span>
+    <small>{{ custas.itens|length }} a informar</small>
+  </div>
+  {{ quadro_custas }}
 </section>
 
 <section class="panel">

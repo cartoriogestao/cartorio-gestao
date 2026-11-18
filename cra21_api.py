@@ -119,9 +119,14 @@ OPERACOES_QUE_ESCREVEM: frozenset[str] = frozenset({
 # **AS QUE AINDA NÃO TÊM SENTIDO MEDIDO**, porque dependem de `userDados` — e
 # o manual não o descreve. Elas **existem** e se alcançam por `chamar()`; o que
 # não existe é uma função nomeada que finja saber o que mandar.
+#
+# A `CustasTitulo` SAIU DAQUI EM 18/11/2026: o manual da P21 a descreve
+# («Estrutura de arquivos — Emolumentos dos títulos»), com o XML de exemplo e
+# os códigos de resposta. Ela tem função nomeada (`enviar_custas_titulo`), e
+# quem monta o arquivo é `protesto_cra_custas`.
 OPERACOES_SEM_SENTIDO_MEDIDO: frozenset[str] = frozenset({
     "Imagem", "Intimacao", "ConsultaIntimacao", "AvisoAutorizacao",
-    "ConsultaAvisoAutorizacao", "CustasTitulo", "TituloComplemento",
+    "ConsultaAvisoAutorizacao", "TituloComplemento",
     "AutorizacoesEfetivadas"})
 
 # O QUE `downloadImagem` ACEITA, medido no manual: **1** baixa a imagem e
@@ -570,6 +575,32 @@ def enviar_retorno(nome_do_arquivo: str, conteudo: str,
     return chamar("Retorno", ambiente, o_que="enviar o retorno",
                   pasta=pasta, userArq=_nome(nome_do_arquivo),
                   userDados=str(conteudo))
+
+
+#: O nome do arquivo de custas: `E000DDMM.AAS` (manual, «Emolumentos dos títulos»).
+NOME_DAS_CUSTAS = re.compile(r"^E000\d{4}\.\d{3}$")
+
+
+def enviar_custas_titulo(nome_do_arquivo: str, conteudo: str,
+                         ambiente: Any = CRED.PRODUCAO, *, pasta=None) -> str:
+    """Envia as custas de retirada e de cancelamento dos títulos.
+
+    **Medido no manual da P21** («Cartórios — Webservice — Estrutura de
+    arquivos — Emolumentos dos títulos», 29/04/2026) e no exemplo oficial
+    `EXEMPLO_CUSTAS_TITULO.zip`: ``userArq`` é o nome ``E000DDMM.AAS`` e
+    ``userDados`` é o XML ``<custas_titulo>``. Quem monta é
+    ``protesto_cra_custas``; aqui só se confere a forma e se transporta.
+    """
+    nome = _nome(nome_do_arquivo)
+    if not NOME_DAS_CUSTAS.match(nome):
+        raise CraError(
+            f"«{nome}» não é nome de arquivo de custas. O manual pede "
+            f"E000DDMM.AAS — por exemplo «E0001811.261».")
+    if not str(conteudo or "").strip():
+        raise CraError("O arquivo de custas está vazio — não há o que enviar.")
+    return chamar("CustasTitulo", ambiente,
+                  o_que="enviar as custas dos títulos", pasta=pasta,
+                  userArq=nome, userDados=str(conteudo))
 
 
 def consultar_slip(protocolo: str, data_do_protocolo: str,

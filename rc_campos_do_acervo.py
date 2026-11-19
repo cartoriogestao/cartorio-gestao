@@ -203,7 +203,10 @@ def _marca(valor: Any) -> str:
 # chegou a gravar «Cidade-UF (o teor não cita estabelecimento; coluna_x
 # deixado NULL)»: o parêntese que fala de coluna é recado para o sistema, e
 # não sai na certidão. Parêntese comum («(domicílio)») fica.
-_NOTA_DE_COLUNA = re.compile(r"\s*\([^()]*\b[a-z]+_[a-z_]+\b[^()]*\)")
+# Sem regex que volte atrás (CodeQL `py/polynomial-redos`): separa os
+# parênteses de um nível e só depois procura «palavra_palavra» dentro.
+_PARENTESE = re.compile(r"(\([^()]*\))")
+_NOME_DE_COLUNA = re.compile(r"[a-z]_[a-z]")
 
 
 def local_nascimento_do_arquivo(dados: Any) -> str:
@@ -219,7 +222,11 @@ def local_nascimento_do_arquivo(dados: Any) -> str:
     valor = dados.get("local_nascimento")
     if not isinstance(valor, str):
         return ""
-    return _NOTA_DE_COLUNA.sub("", valor).strip(" ,;")
+    partes = _PARENTESE.split(valor)
+    limpo = "".join(
+        "" if (i % 2 and _NOME_DE_COLUNA.search(parte)) else parte
+        for i, parte in enumerate(partes))
+    return " ".join(limpo.split()).strip(" ,;")
 
 
 def codigo_ibge_do_local_escrito(texto: Any) -> int | None:

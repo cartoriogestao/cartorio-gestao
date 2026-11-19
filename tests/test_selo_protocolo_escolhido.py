@@ -230,6 +230,13 @@ def test_sem_item_ligado_do_codigo_vale_qualquer_ligado(aparelho):
 def test_o_quadro_traz_os_candidatos_e_o_que_falta(aparelho):
     con = _casa()
     p = _protocolo(con)
+    # O QUADRO OLHA OS ÚLTIMOS 30 DIAS PELO RELÓGIO (`candidatos_para_o_selo`
+    # sem `hoje`). O protocolo da bancada nasce em 19/10/2026 e caducou em
+    # 19/11/2026: aberto hoje, ele é o candidato recente que o teste quer.
+    from datetime import date
+    _banco(con).escrever(
+        "UPDATE cx_protocolos SET data_abertura=%s WHERE id=%s",
+        (date.today().isoformat(), p["protocolo_id"]))
     _item(con, p["protocolo_id"], quitado=1)
     r = _selar(con)
     quadro = r["quadro"]

@@ -11,7 +11,9 @@ outubro de 2026 a casa teve de ir atrás de todos de uma vez (duas escreventes,
 
 COMO SE SABE QUE O ATO É GRATUITO: pelo selo. O aparelho escreve «Selo Isento»
 no texto do selo (medido em 11/10/2026: 179 selos isentos desde 08/09, 157 deles
-averbações do RCPN). É a mesma régua do carimbo (`selo_no_papel`).
+averbações do RCPN). É a mesma régua do carimbo (`selo_no_papel`). O selo
+DIGITADO à mão fica sem texto: para ele valem a resposta do TJ e a marca
+«ato gratuito» da casa — a régua inteira mora em `selo_isento` (G005).
 
 DE QUEM É O AVISO: de quem obteve o selo (`sd_selos.obtido_por`, que o sistema
 grava com o nome da pessoa). O aviso some quando o comprovante está guardado
@@ -50,11 +52,14 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+import selo_isento as SI
 from bd_nativo import banco
 
 ENTIDADE = "SELO_GRATUIDADE"
 DESDE_PADRAO = "2026-10-13"
-MARCA_DO_SELO_ISENTO = "%Selo Isento%"
+#: O padrão do texto do selo isento. A régua inteira (texto, TJ, marca da
+#: casa) é a de `selo_isento.condicao`; isto fica para quem lê só o texto.
+MARCA_DO_SELO_ISENTO = SI.PADRAO
 #: A pasta dos comprovantes é configuração da serventia (`settings.gratuidade_pasta`,
 #: na tela de Configurações): o código não sabe onde ela fica nem como se chama.
 EXTENSOES = (".pdf", ".jpg", ".jpeg", ".png")
@@ -137,14 +142,17 @@ def _todos_pendentes(con: sqlite3.Connection) -> list[dict]:
     caminho = ("s.caminho" if bd.tem_coluna("sd_selos", "caminho")
                else "NULL::text")
     extras = incluidos(con)
+    # A RÉGUA DO ISENTO É A DE `selo_isento` (G005): o selo digitado sem
+    # texto também entra, pela resposta do TJ ou pela marca da casa.
+    isento, args_isento = SI.condicao(bd, "s")
     rows = bd.ler(
         f"SELECT s.id, s.numero, s.tabela, s.ato_id, s.atribuicao, s.obtido_em, s.obtido_por, "
         f"s.texto, {caminho} AS caminho "
-        "FROM sd_selos s WHERE s.texto ILIKE %s AND (s.obtido_em >= %s OR s.id IN ("
+        f"FROM sd_selos s WHERE {isento} AND (s.obtido_em >= %s OR s.id IN ("
         + (",".join(["%s"] * len(extras)) or "NULL") + ")) AND s.cancelado_em IS NULL "
         "AND NOT EXISTS (SELECT 1 FROM attachments a WHERE a.entity_type=%s AND a.entity_id=s.id) "
         "ORDER BY s.obtido_em, s.id",
-        (MARCA_DO_SELO_ISENTO, desde(con), *extras, ENTIDADE))
+        (*args_isento, desde(con), *extras, ENTIDADE))
     return [r for r in rows if not gratuidade_presumida(r["texto"], r["caminho"])]
 
 
@@ -246,12 +254,13 @@ def comprovados(con: sqlite3.Connection, *, nome: str, username: str = "",
     alvos = {_norm(nome), _norm(username)} - {""}
     if not alvos:
         return []
+    isento, args_isento = SI.condicao(con, "s")
     rows = banco(con).ler(
         "SELECT s.id, s.numero, s.tabela, s.ato_id, s.atribuicao, s.obtido_em, s.obtido_por "
-        "FROM sd_selos s WHERE s.texto ILIKE %s AND s.cancelado_em IS NULL "
+        f"FROM sd_selos s WHERE {isento} AND s.cancelado_em IS NULL "
         "AND EXISTS (SELECT 1 FROM attachments a WHERE a.entity_type=%s AND a.entity_id=s.id) "
         "ORDER BY s.obtido_em DESC, s.id DESC LIMIT %s",
-        (MARCA_DO_SELO_ISENTO, ENTIDADE, int(limite)))
+        (*args_isento, ENTIDADE, int(limite)))
     saida = []
     for r in rows:
         if _norm(r["obtido_por"]) in alvos:
@@ -299,7 +308,7 @@ def _selo(con, selo_id: int) -> dict:
                       (int(selo_id),))
     if not r:
         raise ComprovanteError("Selo não encontrado.")
-    if "selo isento" not in (r["texto"] or "").lower():
+    if not SI.selo_e_isento(con, r["id"]):
         raise ComprovanteError("Este selo não é de ato gratuito.")
     return {"id": r["id"], "numero": r["numero"], "obtido_por": r["obtido_por"]}
 

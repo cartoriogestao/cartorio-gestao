@@ -79,6 +79,7 @@ from pathlib import Path
 from typing import Callable
 
 import gestor_conferencia as GC
+import selo_isento as SI
 from bd_nativo import banco
 
 URL_CONSULTA = "https://selo.tjma.jus.br/portal-selo/portal-cidadao/selos/consulta/{}"
@@ -531,12 +532,17 @@ def _isentos_do_dia(bd, hoje: date) -> list[dict]:
     """
     de = hoje.isoformat()
     ate = date.fromordinal(hoje.toordinal() + 1).isoformat()
-    linhas = bd.ler("""SELECT numero, tabela, ato_id, atribuicao, obtido_por, texto
+    linhas = bd.ler("""SELECT id, numero, tabela, ato_id, atribuicao, obtido_por, texto
                          FROM sd_selos
                         WHERE obtido_em >= %s AND obtido_em < %s
                           AND cancelado_em IS NULL
                         ORDER BY obtido_em""", (de, ate))
-    isentos = [r for r in linhas if _isento_no_texto(r.get("texto"))]
+    # O SELO DIGITADO SEM TEXTO TAMBÉM CONTA (G005): para ele vale a régua de
+    # `selo_isento` — a resposta do TJ, ou a marca «ato gratuito» da casa.
+    vazios = SI.isentos_sem_texto(
+        bd, [r.get("id") for r in linhas if SI.sem_texto(r.get("texto"))])
+    isentos = [r for r in linhas
+               if _isento_no_texto(r.get("texto")) or r.get("id") in vazios]
     if not isentos:
         return []
     detalhe = "; ".join(

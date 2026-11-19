@@ -169,6 +169,10 @@ class ConfigError(ValueError):
 MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("sd_selos", "qr_token", "TEXT"),
     ("sd_selos", "quantidade", "INTEGER"),
+    # G005 (19/11/2026): o selo DIGITADO chega sem texto, e sem texto nao ha
+    # «Selo Isento» para ler. 1 = quem digitou marcou «ato / selo gratuito».
+    # Quem le e `selo_isento`, e so quando o texto esta vazio.
+    ("sd_selos", "isento_declarado", "INTEGER"),
 )
 
 

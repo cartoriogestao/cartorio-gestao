@@ -79,6 +79,7 @@ from pathlib import Path
 from typing import Any
 
 import gratuidade_comprovante as GC
+import selo_isento as SI
 import selos_emitidos as SEM
 from bd_nativo import banco
 
@@ -299,6 +300,7 @@ def gratuitos(con, *, inicio: str | None = None, fim: str | None = None,
     fim = fim or "9999-12-31"
     inicio, fim = _periodo(inicio, fim)
     em = ",".join(["%s"] * len(incluidos)) or "NULL"
+    isento, args_isento = SI.condicao(bd, "sd_selos")      # G005: a régua central
     rows = bd.ler(
         f"""SELECT sd_selos.id, sd_selos.numero, sd_selos.atribuicao, sd_selos.referencia,
                    sd_selos.tabela, sd_selos.ato_id, sd_selos.obtido_em, sd_selos.obtido_por,
@@ -316,11 +318,11 @@ def gratuitos(con, *, inicio: str | None = None, fim: str | None = None,
               FROM sd_selos
               LEFT JOIN sd_portal_itens i ON i.tipo = %s AND i.selo_id = sd_selos.id
               LEFT JOIN sd_portal_remessas r ON r.id = i.remessa_id
-             WHERE sd_selos.texto ILIKE %s AND {SEM.SEM_CANCELAR}
+             WHERE {isento} AND {SEM.SEM_CANCELAR}
                AND ((sd_selos.obtido_em >= %s AND sd_selos.obtido_em <= %s)
                     OR sd_selos.id IN ({em}))
              ORDER BY sd_selos.obtido_em, sd_selos.id""",
-        (GC.ENTIDADE, GC.ENTIDADE, ENTIDADE_CERTIDAO, GRATUIDADE, GC.MARCA_DO_SELO_ISENTO,
+        (GC.ENTIDADE, GC.ENTIDADE, ENTIDADE_CERTIDAO, GRATUIDADE, *args_isento,
          inicio, _ate(fim), *incluidos))
     alvos = {GC._norm(nome), GC._norm(username)} - {""}
     saida = []
@@ -359,7 +361,7 @@ def _selo_isento(bd, selo_id: int) -> dict:
     r = bd.um("SELECT id, numero, texto FROM sd_selos WHERE id = %s", (int(selo_id),))
     if not r:
         raise PortalError("Selo não encontrado.")
-    if "selo isento" not in (r["texto"] or "").lower():
+    if not SI.selo_e_isento(bd, r["id"]):
         raise PortalError("Este selo não é de ato gratuito.")
     return r
 

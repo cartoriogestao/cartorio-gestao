@@ -25,7 +25,7 @@ import rc_local_presumido as LP                      # noqa: E402
 import rc_matricula as MAT                           # noqa: E402
 
 AGORA = "2026-11-19T09:00:00"
-CNS = "000001"
+CNS = "000000"
 SEDE, OUTRA = 2198765, 2198766
 
 

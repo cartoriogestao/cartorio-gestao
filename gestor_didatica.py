@@ -289,7 +289,11 @@ def _menu_do_ato(tabela: str, rotulo: str) -> str:
     return rotulo
 
 
-def _onde_da_regra(regra: str) -> tuple[str, str] | None:
+def onde_da_regra(regra: str) -> tuple[str, str] | None:
+    """A tela onde se resolve a regra: (caminho no menu, endereço), ou None.
+
+    Pública porque a checklist de gestão (`gestor_checklist`) leva cada achado
+    aberto à mesma tela que a tarefa manda abrir."""
     if regra in TELA:
         return TELA[regra]
     if regra in ("CAIXA_ABERTO", "CAIXA_DO_DIA_ABERTO", "CAIXA_DIFERENCA"):
@@ -312,7 +316,7 @@ def descricao(con, regra: str, itens: list[dict], gravidades: list[str]) -> str:
     linhas = ["POR QUE ESTA TAREFA EXISTE", por_que, "", "COMO RESOLVER"]
     linhas += [f"{i}. {p}" for i, p in enumerate(passos, 1)]
     linhas += [FECHA_SOZINHA, ""]
-    tela = _onde_da_regra(regra)
+    tela = onde_da_regra(regra)
     if tela:
         linhas += [f"Tela: {tela[0]} — {tela[1]}", ""]
     ordenados = sorted(itens, key=lambda x: (gravidades.index(x["gravidade"])

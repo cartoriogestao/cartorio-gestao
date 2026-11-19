@@ -28,6 +28,23 @@ def _brl(c: int) -> str:
     return ("−" if c < 0 else "") + "R$ " + s
 
 
+#: O visto começou a ser dado pelo sistema a partir deste dia; o que fechou
+#: antes foi conferido no papel.
+VISTO_DESDE = "2026-08-01"
+
+
+def fila_do_visto(con) -> list[dict]:
+    """Os caixas fechados que esperam o visto, do mais antigo. Só LÊ.
+
+    Uma régua só: a tela do visto (`gestor_web`) e a checklist de gestão
+    (`gestor_checklist`) perguntam a mesma coisa.
+    """
+    return banco(con).ler(
+        """SELECT * FROM cx_caixas WHERE situacao = 'FECHADO'
+              AND fechado_em IS NOT NULL AND conferido_em IS NULL
+              AND data >= %s ORDER BY data, id""", (VISTO_DESDE,))
+
+
 def parecer(con: sqlite3.Connection, caixa: dict) -> list[str]:
     """Os pontos do caixa fechado; lista vazia é caixa que fecha. Só LÊ."""
     lans = banco(con).ler(

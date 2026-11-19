@@ -101,10 +101,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def _caixas_para_o_visto(con):
         import gestor_caixa as GX
         prontos, com_pontos = [], []
-        for r in banco(con).ler(
-                """SELECT * FROM cx_caixas WHERE situacao = 'FECHADO'
-                      AND fechado_em IS NOT NULL AND conferido_em IS NULL
-                      AND data >= '2026-08-01' ORDER BY data, id"""):
+        for r in GX.fila_do_visto(con):
             pontos = GX.parecer(con, r)
             item = {"id": r["id"], "data": r["data"], "operador": r["operador_nome"],
                     "pontos": pontos}
@@ -167,17 +164,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # `achados_vigentes` a criaria — GET não escreve.
             tem = banco(con).tem_tabela("ge_leituras")
             itens = GL.achados_vigentes(con) if tem else []
-            revisoes = []
-            if banco(con).tem_tabela("rv_revisoes"):
-                import json as _json
-                for r in banco(con).ler(
-                        """SELECT id, rotulo, resultado_json, graves FROM rv_revisoes
-                            WHERE origem = 'AGENTE' AND situacao = 'PRONTA'
-                              AND justificado_em IS NULL ORDER BY graves DESC, id"""):
-                    achados = _json.loads(r["resultado_json"] or "{}").get("achados") or []
-                    if achados:
-                        revisoes.append({"id": r["id"], "rotulo": r["rotulo"],
-                                         "graves": r["graves"], "achados": achados})
+            revisoes = GL.revisoes_para_conferir(con)
         return render_template("gestor_leituras.html", itens=itens, revisoes=revisoes)
 
     @app.route("/administrativo/gestor/revisoes/<int:revisao_id>/conferi", methods=["POST"])

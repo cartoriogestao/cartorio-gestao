@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{# A CHECKLIST DE GESTÃO DO DIA (19/11/2026, `gestor_checklist`): os achados
+   abertos do gestor pela área do semáforo, e as telas que alguém confere
+   todo dia. «Conferido hoje» grava quem olhou; não fecha achado.
+   Sem rodada válida do gestor, nada aparece como «em dia». #}
+{% block title %}Checklist de gestão do dia{% endblock %}
+{% block heading %}<h1>Checklist de gestão do dia</h1>{% endblock %}
+{% block content %}
+{% set m = ck.medicao %}
+
+{% if not m %}
+<div class="notice critical">Sem medição: não deu para ler o semáforo ({{ ck.erro_medicao }}). Nenhuma área nem item aparece como em dia.</div>
+{% elif not ck.medido %}
+<div class="notice critical">Sem medição: {{ motivos[m.gestor.motivo] }}{% if m.gestor.ultima_rodada %} (última rodada terminada em {{ m.gestor.ultima_rodada[8:10] }}/{{ m.gestor.ultima_rodada[5:7] }} às {{ m.gestor.ultima_rodada[11:16] }}){% endif %}. Os achados abaixo são os que ficaram da última conferência; o que não aparece <strong>não</strong> está em dia — só não foi medido.</div>
+{% endif %}
+
+<section class="panel">
+  <p>Os <strong>achados abertos</strong> do gestor, pela mesma área do semáforo do
+  painel geral, e as <strong>conferências do dia</strong>. O botão «conferido hoje»
+  grava quem olhou e quando — <strong>não resolve achado</strong>: o achado só sai
+  quando a conferência seguinte do gestor vê que foi resolvido.</p>
+  {% if m and m.gestor.ultima_rodada and ck.medido %}<p class="small muted">O gestor rodou em {{ m.gestor.ultima_rodada[8:10] }}/{{ m.gestor.ultima_rodada[5:7] }} às {{ m.gestor.ultima_rodada[11:16] }}.</p>{% endif %}
+  <nav class="filtros" aria-label="Áreas">
+    <a href="{{ url_for('gestor_checklist') }}" {% if not ck.area %}aria-current="page"{% endif %}>{% if not ck.area %}<strong>Todas as áreas</strong>{% else %}Todas as áreas{% endif %}</a>
+    {% for codigo, nome in ordem_areas %}{% set a = m.areas[codigo] if m else none %}
+    · <a href="{{ url_for('gestor_checklist', area=codigo) }}" {% if ck.area == codigo %}aria-current="page"{% endif %}>{% if ck.area == codigo %}<strong>{{ nome }}</strong>{% else %}{{ nome }}{% endif %}</a>
+      {% if a %}<span class="badge {{ {'VERMELHO': 'critica', 'AMARELO': 'alta', 'VERDE': 'ok'}.get(a.cor, '') }}">{{ cores[a.cor] }}{% if a.abertos %} · {{ a.abertos }}{% endif %}</span>{% endif %}
+    {% endfor %}
+    {% if m and outros in m.areas %} · <a href="{{ url_for('gestor_checklist', area=outros) }}">{{ areas[outros] }}</a>{% endif %}
+  </nav>
+</section>
+
+<section class="panel" id="achados">
+  <div class="panel-head"><h2>Achados abertos{% if ck.area %} — {{ areas[ck.area] }}{% endif %} ({{ ck.total_achados }})</h2></div>
+  {% if ck.erro_achados %}
+  <div class="notice critical">Não deu para ler os achados: {{ ck.erro_achados }}. Isto não quer dizer que não há achado.</div>
+  {% elif not ck.achados %}
+    {% if ck.medido %}<p class="muted">Nenhum achado aberto{% if ck.area %} em {{ areas[ck.area] }}{% endif %} na última conferência do gestor.</p>
+    {% else %}<p class="muted">Sem medição: não dá para dizer se {% if ck.area %}{{ areas[ck.area] }} está{% else %}as áreas estão{% endif %} em dia.</p>{% endif %}
+  {% else %}
+  {% for area, lista in ck.achados.items() %}{% set a = m.areas.get(area) if m else none %}
+  <h3>{{ areas[area] }}
+    {% if a %}<span class="badge {{ {'VERMELHO': 'critica', 'AMARELO': 'alta', 'VERDE': 'ok'}.get(a.cor, '') }}">{{ cores[a.cor] }}</span>{% endif %}
+    <small class="muted">{{ lista|length }} aberto(s)</small></h3>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Gravidade</th><th>O que é</th><th>Regra</th><th>Prazo</th><th>Em aberto</th><th>Onde resolver</th></tr>
+    {% for x in lista %}
+    <tr>
+      <td><span class="badge {{ {'VENCIDO': 'critica', 'CRITICO': 'critica', 'PRAZO': 'alta', 'NAO_MEDIU': 'alta', 'OUTRA': 'alta'}.get(x.gravidade, '') }}">{{ gravidades[x.gravidade] }}</span></td>
+      <td>{{ x.titulo }}</td>
+      <td><code>{{ x.regra }}</code></td>
+      <td>{% if x.prazo %}{{ x.prazo[8:10] }}/{{ x.prazo[5:7] }}/{{ x.prazo[:4] }}{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td>{% if x.dias_em_aberto is none %}<span class="muted">?</span>{% elif x.dias_em_aberto == 0 %}desde hoje{% else %}{{ x.dias_em_aberto }} dia(s){% endif %}</td>
+      <td>{% if x.link %}<a href="{{ x.link }}">abrir</a>{% else %}<span class="muted">sem tela</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% endfor %}
+  {% endif %}
+  {% if nao_mede %}<p class="small muted">Ainda não entram: {{ nao_mede|join('; ') }}.</p>{% endif %}
+</section>
+
+<section class="panel" id="conferencias">
+  <div class="panel-head"><h2>Conferências do dia</h2>
+    <span class="small muted">{{ ck.hoje[8:10] }}/{{ ck.hoje[5:7] }}/{{ ck.hoje[:4] }}</span></div>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Tela</th><th>O que olhar</th><th>Agora</th><th>Conferido hoje</th></tr>
+    {% for i in ck.itens %}
+    <tr>
+      <td>{% if i.abre %}<a href="{{ url_for(i.endpoint) }}">{{ i.rotulo }}</a>{% else %}{{ i.rotulo }} <small class="muted">(sem acesso)</small>{% endif %}</td>
+      <td class="small">{{ i.olhar }}</td>
+      <td class="small">
+        {% if i.erro %}<span class="badge alta">não deu para contar</span>
+        {% elif i.contagem %}
+          {% if i.sem_medicao %}<span class="badge alta">sem medição</span> {{ i.contagem.texto }} — o gestor não rodou, zero aqui não quer dizer em dia
+          {% elif i.contagem.n %}<span class="badge alta">{{ i.contagem.texto }}</span>
+          {% else %}<span class="muted">{{ i.contagem.texto }}</span>{% endif %}
+        {% else %}<span class="muted">abrir e olhar</span>{% endif %}
+      </td>
+      <td>
+        {% if i.conferido %}{{ i.conferido.por }} <small class="muted">às {{ i.conferido.em[11:16] }}</small>
+        {% elif ck.pode_conferir %}
+        <form method="post" action="{{ url_for('gestor_checklist_conferido') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="item" value="{{ i.codigo }}">
+          <input type="hidden" name="area" value="{{ ck.area or '' }}">
+          <button type="submit" class="small">Conferido hoje</button>
+        </form>
+        {% else %}<span class="muted">ninguém ainda</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+</section>
+{% endblock %}

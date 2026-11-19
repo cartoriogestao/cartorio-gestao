@@ -437,6 +437,27 @@ def _cpf_da_pessoa(quem: dict, papel: str) -> str:
     return ""
 
 
+def _cpf_da_averbacao(atos: Any, especie: str) -> str:
+    """CPF da averbação de CPF mais recente do assento. Só calcula.
+
+    HOTFIX 19/11/2026: a averbação feita pela tela comum (natureza cpf_347) grava só o teor em
+    rc_atos e não preenche `cpf_registrado`; sem isto a certidão saía sem o CPF averbado. Vale só
+    para nascimento, natimorto e óbito (principal único): no casamento há dois nubentes e o papel
+    do CPF não se adivinha. O CPF vem de `rc_cpf.extrair_cpf_do_teor`, que confere o dígito."""
+    if str(especie or "").upper() not in ("NASCIMENTO", "NATIMORTO", "OBITO"):
+        return ""
+    import rc_cpf as CPFRC
+    for x in reversed(list(atos or [])):
+        if str(x.get("tipo") or "").upper() != "AVERBACAO":
+            continue
+        if not CPFRC.eh_teor_cpf(x.get("teor")):
+            continue
+        n = CPFRC.extrair_cpf_do_teor(x.get("teor"))
+        if n:
+            return n
+    return ""
+
+
 def _cpf_dos_conjuges(quem: dict, especie: str) -> str:
     """«CPF1 e CPF2» dos nubentes, na ordem do «NOME: A e B». Só calcula.
 
@@ -636,9 +657,12 @@ def montar_teor(*, assento: dict, pessoas_do_assento: list[dict],
                         "OBITO": "FALECIDO",
                         **{e: "REGISTRADO" for e in ESPECIES_DO_LIVRO_E}}
                        .get(especie, ""))
+    cpf_legado = _documento(dados)
+    if cpf_legado == SEM_INFORMACAO:
+        cpf_legado = _cpf_da_averbacao(atos, especie) or cpf_legado
     linhas += _linha("CPF", _cpf_da_pessoa(quem, papel_principal)
                      or _cpf_dos_conjuges(quem, especie)
-                     or _documento(dados))
+                     or cpf_legado)
     # A MATRÍCULA SAI COMO ESTÁ. Os 32 dígitos vêm do assento; o sistema não
     # os gera, porque o verificador deles não se explica.
     linhas += _linha("MATRÍCULA Nº", a.get("matricula"))

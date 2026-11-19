@@ -1076,6 +1076,15 @@ class Database:
                 con, agora=self.now())
         except Exception as erro:                          # noqa: BLE001
             self.campos_do_acervo_preenchidos = {"erro": str(erro)}
+        # O LOCAL DE NASCIMENTO DOS LIVROS A-1 A A-5 (decisão do oficial,
+        # 19/11/2026): a naturalidade, ou, na dúvida, a sede; e a matrícula
+        # que faltava. Depois do pacote do acervo, que pode trazer o local.
+        try:
+            import rc_local_presumido as LOCAL_PRESUMIDO
+            self.local_presumido_gravado = LOCAL_PRESUMIDO.gravar(
+                con, agora=self.now())
+        except Exception as erro:                          # noqa: BLE001
+            self.local_presumido_gravado = {"erro": str(erro)}
         # The defaults go in only after the whole schema exists.
         for key, value in DEFAULT_SETTINGS.items():
             bd.escrever("INSERT INTO settings(key,value) VALUES (%s,%s) "

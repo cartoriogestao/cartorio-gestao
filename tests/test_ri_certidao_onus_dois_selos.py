@@ -20,7 +20,11 @@ protocolo aberto, pago e atendido pelas telas do balcão):
     4. três folhas → os dois 16.24.4 e um 16.24.4.1 com quantidade 2;
     5. os outros tipos não mudam;
     6. cancelar a de ônus leva os dois selos ao cancelamento;
-    7. a ONR continua como estava (pergunta 4.1 do plano T006, em aberto).
+    7. a ONR continua como estava (pergunta 4.1, respondida pelo titular em
+       19/11/2026: um selo para os tipos 6, 15, 19 e 20);
+    8. a liberação do ADMIN para o ato cobre também o selo das ações, com as
+       mesmas regras de um selo (titular, 19/11/2026); pedir de novo não vende
+       um terceiro selo, e o selo adicional das Notas continua sem ela.
 """
 from __future__ import annotations
 
@@ -320,3 +324,161 @@ def test_com_a_trava_desligada_o_das_acoes_sai_como_os_outros(casa, folhas):
                                                f"ri_certidoes:{cid}:acoes"}
     assert {c["forma"] for c in _coberturas(casa, cid).values()} == {"TRAVA_DESLIGADA"}
     assert _aguardando(casa, cid) is None
+
+
+# ------------------------------------------------------------------ 8
+
+
+#: A justificativa do ADMIN, como a tela pede: uma frase que diga algo.
+JUSTIFICATIVA = "Cliente volta amanhã para pagar; o oficial autorizou a entrega."
+
+
+def _liberar(casa, certidao_id: int) -> str:
+    """«Liberar selo sem cobertura», do ADMIN, na tela da cobertura do ato."""
+    tela = f"/selo/cobertura?tabela=ri_certidoes&ato_id={certidao_id}"
+    return _clicar(casa["oficial"], tela, "/selo/cobertura/liberar",
+                   tabela="ri_certidoes", ato_id=str(certidao_id),
+                   justificativa=JUSTIFICATIVA)
+
+
+def _onus_sem_pagamento(casa, matricula: dict) -> int:
+    """A certidão de ônus emitida sem protocolo pago. Sem selo, o papel não
+    se imprime — por isso não se pede o .odt, como `_certidao` faz."""
+    c = casa["balcao"]
+    ficha = f"/registro-imoveis/{matricula['id']}"
+    token = _token(c.get(ficha).get_data(as_text=True))
+    r = c.post(f"{ficha}/certidao", data={
+        "csrf_token": token, "tipo": "ONUS", "fonte_corpo": "TEXTO", "folhas": "",
+        "requerente": COMPRADORA["nome"],
+        "requerente_documento": COMPRADORA["cpf_fmt"],
+        "finalidade": "Para fins de financiamento", "emolumentos": "",
+        "protocolo": "", "busca_formulario": "1", "busca_item": "16.25.9", **ONUS})
+    assert r.status_code == 302, r.get_data(as_text=True)[:600]
+    linha = _um(casa, "SELECT * FROM ri_certidoes ORDER BY id DESC LIMIT 1")
+    assert linha["tipo"] == "ONUS" and not linha["cancelada"], linha
+    return int(linha["id"])
+
+
+def _liberacoes(casa, certidao_id: int) -> list[dict]:
+    return _ler(casa, """SELECT * FROM cx_selo_liberacoes
+                          WHERE tabela='ri_certidoes' AND ato_id=%s""", (certidao_id,))
+
+
+def test_a_liberacao_do_admin_cobre_tambem_o_selo_das_acoes(casa, folhas):
+    """Titular, 19/11/2026: «as regras que já existem para 1 selo deve manter
+    para 2». A liberação é do ATO: a mesma, com o mesmo perfil, a mesma
+    justificativa e a mesma auditoria, cobre o selo das ações."""
+    f = _compra_e_venda(casa)
+    m = f["matricula"]
+    cx = _pede_certidao(casa, itens=(("16.24.4", 1),))
+    cert = _certidao(casa, m, "ONUS", cx=cx, **ONUS)
+    cid = int(cert["linha"]["id"])
+    antes = _por_referencia(casa, cid)
+    assert set(antes) == {f"ri_certidoes:{cid}"}
+
+    # SEM A LIBERAÇÃO, COMO HOJE: o das ações continua esperando o seu item.
+    html = _selar(casa, cid, m["id"])
+    assert "ainda espera selo" in html, html[:1500]
+    assert _por_referencia(casa, cid) == antes
+
+    # O ESCREVENTE NÃO LIBERA — a regra de um selo, sem permissão nova.
+    c = casa["balcao"]
+    tela = f"/selo/cobertura?tabela=ri_certidoes&ato_id={cid}"
+    token = _token(c.get(f"/registro-imoveis/{m['id']}").get_data(as_text=True))
+    r = c.post("/selo/cobertura/liberar", data={
+        "csrf_token": token, "tabela": "ri_certidoes", "ato_id": str(cid),
+        "justificativa": JUSTIFICATIVA})
+    assert r.status_code in (302, 403), r.status_code
+    assert not _liberacoes(casa, cid), "o escrevente liberou o selo"
+    assert tela  # a mesma tela que o ADMIN usa, abaixo
+
+    # O ADMIN LIBERA, E O «SELAR» SOLTA O DAS AÇÕES, sem gastar item.
+    assert "Selo liberado" in _liberar(casa, cid)
+    html = _selar(casa, cid, m["id"])
+    depois = _por_referencia(casa, cid)
+    assert set(depois) == {f"ri_certidoes:{cid}", f"ri_certidoes:{cid}:acoes"}, html[:1500]
+    assert depois[f"ri_certidoes:{cid}"]["numero"] == antes[f"ri_certidoes:{cid}"]["numero"]
+    assert depois[f"ri_certidoes:{cid}:acoes"]["codigo"] == "16.24.4"
+    cob = _coberturas(casa, cid)
+    assert cob[f"ri_certidoes:{cid}:acoes"]["forma"] == AS.FORMA_LIBERADO, cob
+    assert cob[f"ri_certidoes:{cid}:acoes"]["situacao"] == "CONFIRMADA", cob
+    assert cob[f"ri_certidoes:{cid}"]["forma"] != AS.FORMA_LIBERADO, \
+        "o primeiro continua pago pelo item"
+    assert int(_item(casa, cx, "16.24.4")[0]["quantidade_usada"]) == 1
+    assert _aguardando(casa, cid) is None
+    (lib,) = _liberacoes(casa, cid)
+    assert lib["justificativa"] == JUSTIFICATIVA and lib["usado_em"]
+
+    # PEDIR DE NOVO NÃO VENDE UM TERCEIRO SELO.
+    html = _selar(casa, cid, m["id"])
+    assert "já tem selo" in html, html[:1500]
+    assert _por_referencia(casa, cid) == depois
+    assert len(_selos(casa, cid)) == 2
+
+
+def test_sem_pagamento_a_liberacao_solta_os_dois_selos(casa, folhas):
+    """Sem item pago nenhum, a certidão espera o selo. Liberada, os dois saem
+    pela liberação, e o ato fica na lista dos liberados sem cobertura com os
+    dois números — a pendência de pagamento continua, como num selo só."""
+    f = _compra_e_venda(casa)
+    m = f["matricula"]
+    cid = _onus_sem_pagamento(casa, m)
+    assert _selos(casa, cid) == [], "sem pagamento não sai selo nenhum"
+    assert _aguardando(casa, cid)
+
+    assert "Selo liberado" in _liberar(casa, cid)
+    html = _selar(casa, cid, m["id"])
+    selos = _por_referencia(casa, cid)
+    assert set(selos) == {f"ri_certidoes:{cid}", f"ri_certidoes:{cid}:acoes"}, html[:1500]
+    assert {c["forma"] for c in _coberturas(casa, cid).values()} == {AS.FORMA_LIBERADO}
+    assert _aguardando(casa, cid) is None
+    with casa["db"].connect() as con:
+        pendentes = [l for l in AS.liberados_sem_cobertura(con)
+                     if l["tabela"] == "ri_certidoes" and int(l["ato_id"]) == cid]
+    assert len(pendentes) == 1
+    assert set(pendentes[0]["selos"]) == {s["numero"] for s in selos.values()}
+
+    html = _selar(casa, cid, m["id"])
+    assert "já tem selo" in html, html[:1500]
+    assert len(_selos(casa, cid)) == 2, "pedir de novo vendeu um terceiro selo"
+
+
+def test_o_selo_adicional_das_notas_continua_sem_a_liberacao(casa, folhas, monkeypatch):
+    """Só o selo das ações recebe a liberação; o adicional das Notas, não
+    (12/11/2026: cobriria o 2º selo com a liberação do 1º)."""
+    f = _compra_e_venda(casa)
+    cid = _onus_sem_pagamento(casa, f["matricula"])
+    assert "Selo liberado" in _liberar(casa, cid)
+
+    # NO DOMÍNIO: com o item próprio e sem `liberacao_cobre`, a liberação do
+    # ato não cobre; com ela, cobre. A transação volta: nada fica gravado.
+    class _Volta(Exception):
+        pass
+    for cobre, esperado in ((False, False), (True, True)):
+        try:
+            with casa["db"].transaction() as con:
+                r = AS.cobrir_o_selo(
+                    con, tabela="ri_certidoes", ato_id=cid,
+                    referencia=f"ri_certidoes:{cid}:teste", dados={},
+                    usuario=ESCREVENTE["nome"], agora="2026-11-19T10:00:00",
+                    item_proprio=True, liberacao_cobre=cobre)
+                assert bool(r["coberto"]) is esperado, (cobre, r)
+                raise _Volta
+        except _Volta:
+            pass
+
+    # EM `obter_selo`: o selo adicional pede sem a liberação; o das ações, com.
+    vistos = []
+    def espiar(con, **kw):
+        vistos.append((kw["item_proprio"], kw["liberacao_cobre"]))
+        return {"coberto": False, "quadro": {}, "faltam": []}
+    monkeypatch.setattr(AS, "cobrir_o_selo", espiar)
+    for extra in ({"selo_adicional": True}, {"item_proprio": True}):
+        with pytest.raises(Exception):
+            AS.obter_selo(casa["db"], casa["app"].config["DATA_DIR"],
+                          caminho="/selo/imovel/certidao", dados={},
+                          referencia=f"ri_certidoes:{cid}:x", atribuicao="IMOVEL",
+                          agora="2026-11-19T10:00:00", cns="",
+                          usuario=ESCREVENTE["nome"], tabela="ri_certidoes",
+                          ato_id=cid, **extra)
+    assert vistos == [(True, False), (True, True)], vistos

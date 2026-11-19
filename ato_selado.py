@@ -2986,7 +2986,10 @@ def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
     cobertura» e vai para a coluna —, mas so se cobre com o SEU item pago,
     como o selo adicional (`_cobrir_com_item_proprio`). Sem isso o item que
     pagou o primeiro selo pagaria tambem o segundo. Com a trava desligada ele
-    se cobre como os outros selos do ato: nao ha item a separar.
+    se cobre como os outros selos do ato: nao ha item a separar. E a
+    liberacao do ADMIN para o ato cobre tambem este selo (titular,
+    19/11/2026: as regras de um selo valem para os dois); o selo adicional
+    das Notas continua sem ela.
     """
     import selador_cliente as CL  # importado aqui: so quem sela paga
     # SEGUNDA TRANCA: mesmo que `usuario_nome` falhe, o escrevente do envelope
@@ -3026,7 +3029,8 @@ def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
                                       referencia=recebida, dados=dados,
                                       usuario=usuario, agora=agora, cns=cns,
                                       atribuicao=atribuicao,
-                                      item_proprio=proprio)
+                                      item_proprio=proprio,
+                                      liberacao_cobre=proprio and not selo_adicional)
             # SEM COBERTURA, A TRANSACAO VOLTA (LX20, revisao do LX16): o
             # selo nao vai ser pedido, entao nada do que a cobertura tentou —
             # debito, quitacao, unidade — pode ficar.
@@ -4965,7 +4969,8 @@ def _cobrir_com_item_proprio(bd, *, tabela: Any, ato_id: Any, dados: Any,
 
 def cobrir_o_selo(con, *, tabela: Any, ato_id: Any, referencia: Any,
                   dados: Any, usuario: Any, agora: str, cns: Any = None,
-                  atribuicao: Any = None, item_proprio: bool = False) -> dict:
+                  atribuicao: Any = None, item_proprio: bool = False,
+                  liberacao_cobre: bool = False) -> dict:
     """O selo pago tem protocolo e dinheiro? RESERVA a cobertura. ESCREVE.
 
     Devolve `{"coberto": True, "forma": ..., "reserva": ...}` ou
@@ -4974,6 +4979,11 @@ def cobrir_o_selo(con, *, tabela: Any, ato_id: Any, referencia: Any,
     `obter_selo`, depois do aparelho. A mesma referência pedida de novo não
     debita nem gasta outra unidade: a cobertura dela já está gravada. E a que
     está RESERVADA agora é de um pedido em voo — sobe `SeloEmAndamento`.
+
+    `liberacao_cobre` só vale com `item_proprio`: sem o seu item pago, a
+    liberação do ADMIN para o ato cobre também este selo. É o selo das ações
+    da certidão de ônus do RI (`obter_selo`); o selo adicional das Notas não
+    a recebe.
     """
     import caixa_protocolo as CXP
     bd = banco(con)
@@ -5015,9 +5025,22 @@ def cobrir_o_selo(con, *, tabela: Any, ato_id: Any, referencia: Any,
         # SELO ADICIONAL DO ATO (12/11/2026): só o item pago PRÓPRIO dele, e
         # nunca a trava desligada, o item ligado ao ato, o lançamento ou a
         # liberação — ver `_cobrir_com_item_proprio`.
-        return _cobrir_com_item_proprio(bd, tabela=tabela, ato_id=ato_id,
-                                        dados=dados, usuario=usuario,
-                                        agora=agora, referencia=ref)
+        proprio = _cobrir_com_item_proprio(bd, tabela=tabela, ato_id=ato_id,
+                                           dados=dados, usuario=usuario,
+                                           agora=agora, referencia=ref)
+        if proprio["coberto"] or not liberacao_cobre:
+            return proprio
+        # O SELO DAS AÇÕES DA CERTIDÃO DE ÔNUS (titular, 19/11/2026): «as
+        # regras que já existem para 1 selo deve manter para 2». A liberação
+        # do ADMIN é do ATO, e cobre este selo como cobre o primeiro — a mesma
+        # linha de `cx_selo_liberacoes`, o mesmo passo 4 e a mesma pendência.
+        lib = _liberacao(bd, tabela, int(ato_id))
+        if not lib:
+            return proprio
+        return _gravar_cobertura(bd, forma=FORMA_LIBERADO, liberacao=lib,
+                                 referencia=ref, tabela=tabela,
+                                 ato_id=int(ato_id), usuario=usuario,
+                                 agora=agora)
     if e_certidao_eletronica_da_crc(bd, tabela, ato_id, dados):
         # O valor vem pela CRC, e não pelo caixa (22/10/2026).
         return _gravar_cobertura(bd, referencia=ref, tabela=tabela,

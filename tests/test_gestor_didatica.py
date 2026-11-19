@@ -60,3 +60,12 @@ def test_a_tela_da_tarefa_poe_link_so_no_endereco_do_sistema(cg_casa_logada):
     assert "O que fazer" in html
     assert '<a href="/registro-imoveis/12">/registro-imoveis/12</a>' in html
     assert "<b>http" not in html                      # o texto é escapado
+
+
+def test_a_tarefa_da_censec_aponta_a_fila_de_remessas():
+    """A tarefa da CENSEC mandava abrir «Notas → CENSEC», menu que não existe;
+    a fila é «Notas → Remessa às centrais» (19/11/2026)."""
+    tela = ("Notas → Remessa às centrais", "/notas/remessas")
+    assert D.onde_da_regra("CENSEC") == tela
+    assert D.onde_da_regra("CENSEC_AUTOMATICO") == tela
+    assert "Remessa às centrais" in D.GUIA["CENSEC"][1][0]

@@ -826,11 +826,17 @@ def pode_aplicar_sozinho(data_dir: Path | None = None,
 #   Agendador encerra o job inteiro: pai, filhos e netos. Se o atualizador
 #   nasceu com um `Popen` comum, ele morre no mesmo instante em que o servico
 #   cai — e a troca dos arquivos fica pela metade, sem log final e sem
-#   rollback. Por isso ele nasce numa tarefa PROPRIA, ou, se o agendador
-#   recusar, num processo que saiu do job (`CREATE_BREAKAWAY_FROM_JOB`).
-#   Nao se cai de volta no `Popen` dentro da arvore: isso e o defeito.
+#   rollback. Por isso ele nasce numa tarefa PROPRIA. Se o agendador recusar,
+#   a atualizacao NAO acontece: nada se para e nada se troca.
+#
+# SEM PLANO B FORA DO AGENDADOR — 18/11/2026. Ate aqui, a tarefa recusada caia
+#   num `Popen` com `CREATE_BREAKAWAY_FROM_JOB`. Na producao (3.7.19 -> 3.7.20)
+#   esse processo conseguiu PARAR o servico, mas tudo o que ele abriu depois —
+#   a copia, o rollback e a subida do servico — morreu ao nascer com
+#   0xC0000142 (-1073741502). O balcao ficou fora do ar das 20:41 as 21:26, com
+#   a tarefa do servidor desabilitada. Um plano B que derruba o servico e pior
+#   que recusar: sem a tarefa propria, a tela diz que nada foi alterado.
 TAREFA_DO_ATUALIZADOR = "CartorioGestaoAtualizar"
-CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 
 
 def _quote_cmd(arg: str) -> str:
@@ -909,10 +915,16 @@ def xml_da_tarefa_do_atualizador(
     voltaria a rodar a meia-noite e tentaria aplicar de novo o pacote ja
     aplicado. `/SC ONSTART` subiria no proximo boot. Quem dispara e o
     `schtasks /Run` na hora do clique.
+
+    O PRINCIPAL SYSTEM E O DA TAREFA DO SERVIDOR, SEM `LogonType` — 18/11/2026.
+    Com `<LogonType>ServiceAccount</LogonType>` numa tarefa `version="1.2"`, o
+    Agendador do Windows 11 da producao recusou o XML («valor formatado
+    incorretamente ou fora do intervalo», linha 15). A tarefa
+    `CartorioGestaoServidor`, que ele aceita, exporta `version="1.3"` com so
+    `<UserId>S-1-5-18</UserId>` e `<RunLevel>`: e esse o formato daqui.
     """
     usuario = """    <Principal id="Author">
       <UserId>S-1-5-18</UserId>
-      <LogonType>ServiceAccount</LogonType>
       <RunLevel>HighestAvailable</RunLevel>
     </Principal>""" if como_system else """    <Principal id="Author">
       <LogonType>InteractiveToken</LogonType>
@@ -920,7 +932,7 @@ def xml_da_tarefa_do_atualizador(
     </Principal>"""
     return (
         '<?xml version="1.0" encoding="UTF-16"?>\n'
-        '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">\n'
+        '<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">\n'
         "  <RegistrationInfo>\n"
         "    <Description>Aplica a atualizacao do Cartorio Gestao fora da "
         "arvore da tarefa CartorioGestaoServidor.</Description>\n"
@@ -956,19 +968,6 @@ def xml_da_tarefa_do_atualizador(
     )
 
 
-def flags_fora_da_arvore() -> int:
-    """Sai do job do Agendador e nao abre janela.
-
-    Sem `CREATE_BREAKAWAY_FROM_JOB`, o processo continua na arvore de
-    `CartorioGestaoServidor` e morre quando essa tarefa e encerrada. Nao se
-    usa `DETACHED_PROCESS`: no Windows ele faz o `CREATE_NO_WINDOW` ser
-    ignorado (o mesmo defeito medido no lancador da automacao).
-    """
-    no_window = int(getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
-    novo_grupo = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200))
-    return no_window | novo_grupo | CREATE_BREAKAWAY_FROM_JOB
-
-
 def _cmd_do_sistema() -> Path:
     raiz = Path(os.environ.get("SystemRoot") or r"C:\Windows")
     return raiz / "System32" / "cmd.exe"
@@ -987,8 +986,8 @@ def _rodar_schtasks(argumentos: list[str]) -> subprocess.CompletedProcess[str]:
 def lancar_atualizador_por_tarefa(lancador: Path, data_dir: Path) -> bool:
     """Registra (ou reescreve) a tarefa propria e a dispara agora.
 
-    Devolve True so quando o `/Run` foi aceito. Recusar aqui nao e erro
-    final: o chamador ainda tenta o processo desanexado.
+    Devolve True so quando o `/Run` foi aceito. Com False, o chamador recusa
+    a atualizacao sem parar o servico.
     """
     xml_path = Path(data_dir) / "updates" / "_tarefa_atualizador.xml"
     cmd_exe = _cmd_do_sistema()
@@ -1054,29 +1053,20 @@ def launch_windows_updater(stage_dir: Path, data_dir: Path, parent_pid: int, por
             f"Atualizador disparado pela tarefa {TAREFA_DO_ATUALIZADOR}.",
         )
         return
-    try:
-        subprocess.Popen(
-            comando,
-            close_fds=True,
-            creationflags=flags_fora_da_arvore(),
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except OSError as exc:
-        registrar_lancamento(
-            data_dir,
-            f"Falha ao lancar o atualizador fora da arvore: {exc}. NADA FOI ALTERADO.",
-        )
-        raise UpdateError(
-            "Nao consegui lancar o atualizador fora da tarefa "
-            "CartorioGestaoServidor. Se ele nascesse dentro dela, parar o "
-            "servico o mataria junto e a atualizacao ficaria pela metade. "
-            "Use o ATUALIZAR_SISTEMA.cmd. NADA FOI ALTERADO e o sistema "
-            "continua no ar."
-        ) from exc
-    registrar_lancamento(
-        data_dir,
-        "Atualizador lancado com CREATE_BREAKAWAY_FROM_JOB "
-        "(o agendador recusou a tarefa propria).",
+    mensagem = (
+        f"O Agendador do Windows recusou a tarefa {TAREFA_DO_ATUALIZADOR}, e "
+        "sem ela o atualizador morreria junto com o servico. NADA FOI "
+        "ALTERADO e o sistema continua no ar. O motivo esta no update.log; "
+        "aplique o pacote pelo aplicar_atualizacao.ps1, como administrador."
     )
+    registrar_lancamento(data_dir, mensagem)
+    # A tela ja disse «aprovada» antes deste lancamento (ele roda num Timer):
+    # o resultado e o que ela mostra na proxima visita.
+    resultado = Path(data_dir) / "updates" / "last_result.json"
+    resultado.write_text(json.dumps({
+        "status": "NAO_APLICADA",
+        "message": mensagem,
+        "version": Path(stage_dir).name,
+        "at": datetime.now().isoformat(timespec="seconds"),
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    raise UpdateError(mensagem)

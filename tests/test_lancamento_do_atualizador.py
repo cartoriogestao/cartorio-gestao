@@ -6,6 +6,7 @@ Agendador encerra o job inteiro. Se o atualizador foi lancado com um
 """
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import unittest
@@ -100,43 +101,43 @@ class LancamentoForaDaArvoreTests(unittest.TestCase):
         self.assertNotIn("ONSTART", xml)
         self.assertIn("_lancar_atualizacao.cmd", xml)
 
-    def test_se_o_agendador_recusa_sai_da_arvore_com_breakaway(self):
+    def test_o_principal_system_e_o_da_tarefa_do_servidor(self):
+        """18/11/2026: o Windows 11 da producao recusou `LogonType ServiceAccount`
+        numa tarefa 1.2. A `CartorioGestaoServidor`, que ele aceita, e 1.3 com
+        so o SID do SYSTEM e o RunLevel."""
+        xml = update_manager.xml_da_tarefa_do_atualizador(
+            cmd_exe=Path(r"C:\Windows\System32\cmd.exe"),
+            lancador=Path(r"C:\dados\updates\_lancar_atualizacao.cmd"),
+        )
+        self.assertIn('<Task version="1.3"', xml)
+        principal = xml[xml.index("<Principal "):xml.index("</Principal>")]
+        self.assertIn("<UserId>S-1-5-18</UserId>", principal)
+        self.assertIn("<RunLevel>HighestAvailable</RunLevel>", principal)
+        self.assertNotIn("LogonType", principal)
+        self.assertNotIn("ServiceAccount", xml)
+
+    def test_se_o_agendador_recusa_nada_e_lancado_e_nada_para(self):
+        """18/11/2026: o plano B fora do Agendador parou o servico e morreu ao
+        abrir a copia e o rollback (0xC0000142). Sem a tarefa propria, recusa."""
         def rodar(_args):
             return _Proc(1, stderr="Acesso negado.")
 
         popen = self._patches(rodar)
-        update_manager.launch_windows_updater(
-            self.preparacao, self.dados, 7, 8765
-        )
-        popen.assert_called_once()
-        flags = popen.call_args.kwargs["creationflags"]
-        self.assertEqual(flags, update_manager.flags_fora_da_arvore())
-        self.assertTrue(flags & update_manager.CREATE_BREAKAWAY_FROM_JOB)
-        self.assertTrue(flags & 0x08000000)  # CREATE_NO_WINDOW
-        self.assertFalse(flags & 0x00000008)  # DETACHED_PROCESS abre janela
-        comando = popen.call_args.args[0]
-        self.assertEqual(comando[0], "powershell.exe")
-        self.assertIn("-File", comando)
-        log = (self.dados / "updates" / "update.log").read_text(encoding="utf-8")
-        self.assertIn("CREATE_BREAKAWAY_FROM_JOB", log)
-        self.assertIn("Acesso negado", log)
-
-    def test_se_nao_consegue_sair_da_arvore_recusa_e_nao_derruba_o_balcao(self):
-        def rodar(_args):
-            return _Proc(1, stderr="recusado")
-
-        popen = mock.Mock(side_effect=OSError(5, "Acesso negado"))
-        self._patches(rodar, popen=popen)
         with self.assertRaises(update_manager.UpdateError) as ctx:
             update_manager.launch_windows_updater(
                 self.preparacao, self.dados, 7, 8765
             )
+        popen.assert_not_called()
         self.assertIn("NADA FOI ALTERADO", str(ctx.exception))
-        self.assertIn("CartorioGestaoServidor", str(ctx.exception))
-        flags = popen.call_args.kwargs["creationflags"]
-        self.assertTrue(flags & update_manager.CREATE_BREAKAWAY_FROM_JOB)
+        self.assertFalse(hasattr(update_manager, "flags_fora_da_arvore"))
         log = (self.dados / "updates" / "update.log").read_text(encoding="utf-8")
+        self.assertIn("Acesso negado", log)
         self.assertIn("NADA FOI ALTERADO", log)
+        resultado = json.loads(
+            (self.dados / "updates" / "last_result.json").read_text(encoding="utf-8"))
+        self.assertEqual(resultado["status"], "NAO_APLICADA")
+        self.assertEqual(resultado["version"], "3.7.18")
+        self.assertIn("NADA FOI ALTERADO", resultado["message"])
 
     def test_fora_do_windows_continua_recusando(self):
         popen = self._patches(lambda args: _Proc(0), plataforma="linux")

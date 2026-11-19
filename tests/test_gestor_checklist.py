@@ -128,6 +128,16 @@ def test_cada_achado_leva_a_tela_onde_se_resolve(cg_casa):
     assert g["ADMINISTRACAO"][0]["link"] is None
 
 
+def test_a_censec_leva_a_fila_de_remessas(cg_casa):
+    """Até 19/11/2026 o achado da CENSEC saía «sem tela»: a regra não tinha tela
+    cadastrada. A quinzena e o envio automático se resolvem na mesma fila."""
+    db = cg_casa["db"]
+    _achado(db, "CENSEC:2026-10-Q2", "CENSEC", "VENCIDO", "NOTAS")
+    _achado(db, "CENSEC_FECHAR:2026-10-Q2", "CENSEC_AUTOMATICO", "PRAZO", "NOTAS")
+    links = {x["regra"]: x["link"] for x in _por_area(db)["NOTAS"]}
+    assert links == {"CENSEC": "/notas/remessas", "CENSEC_AUTOMATICO": "/notas/remessas"}
+
+
 def test_o_filtro_mostra_so_a_area_pedida(cg_casa):
     db = cg_casa["db"]
     _achado(db, "T:1", "CENSEC", "VENCIDO", "NOTAS")

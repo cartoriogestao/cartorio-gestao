@@ -157,6 +157,56 @@ def test_a_fila_diz_por_selo_gratuito_o_que_falta_para_o_portal(db, tmp_path):
         assert [s["id"] for s in SP.gratuitos(con, situacao="PRONTO")] == [um, dois]
 
 
+def test_a_gratuidade_presumida_nao_entra_na_fila_do_portal(db, tmp_path):
+    """Auditoria G002 (G-4): nascimento e óbito apareciam como «faltam os dois».
+    É a régua do aviso (`GC.gratuidade_presumida`): pelo item no texto ou pelo
+    caminho do registro."""
+    nascimento = ISENTO.replace("Ato: 14.4.1", "Ato: 14.a")
+    obito = ISENTO.replace("Ato: 14.4.1", "Ato: 14.c")
+    with db.transaction() as con:
+        comum = _selo(con, "AVERBA000000GRAT0000000071")
+        _selo(con, "AVERBA000000GRAT0000000072", texto=nascimento)
+        _selo(con, "AVERBA000000GRAT0000000073", texto=obito)
+        natimorto = _selo(con, "AVERBA000000GRAT0000000074")
+        banco(con).escrever("UPDATE sd_selos SET caminho = '/selo/civil/natimorto' WHERE id = %s",
+                            (natimorto,))
+        assert [p["id"] for p in GC.pendentes(con, nome=ESCREVENTE)] == [comum]
+        assert [s["id"] for s in SP.gratuitos(con)] == [comum]
+        assert [s["id"] for s in SP.gratuitos(con, situacao="FALTANDO")] == [comum]
+        assert [s["id"] for s in SP.gratuitos(con, nome=ESCREVENTE)] == [comum]
+        assert [s["id"] for s in SP.gratuitos(con, inicio="2026-10-13", fim="2026-10-19")] \
+            == [comum]
+
+
+def test_a_presumida_com_os_papeis_nao_vai_ao_pacote(db, tmp_path):
+    """O TJ não analisa a presumida: mesmo com comprovante e certidão, ela não
+    é «pronta» para o Portal."""
+    nascimento = ISENTO.replace("Ato: 14.4.1", "Ato: 14.a")
+    with db.transaction() as con:
+        selo = _selo(con, "AVERBA000000GRAT0000000075", texto=nascimento)
+        SP.guardar_peca(con, selo, peca="AMBOS", tipo_comprovante="OUTRO", nome_arquivo="t.pdf",
+                        conteudo=_pdf("x"), pasta=tmp_path, usuario_id=None, agora="t")
+        assert SP.gratuitos(con, situacao="PRONTO") == []
+        with pytest.raises(SP.PortalError, match="Nenhum selo gratuito"):
+            SP.gerar_pacote(con, inicio="2026-10-13", fim="2026-10-19", agora="t")
+
+
+def test_a_presumida_ja_posta_num_pacote_continua_a_vista(db):
+    """A que entrou num pacote antes da correção fica à vista: quem a pôs
+    precisa vê-la para tirá-la (ou saber que foi)."""
+    nascimento = ISENTO.replace("Ato: 14.4.1", "Ato: 14.a")
+    with db.transaction() as con:
+        selo = _selo(con, "AVERBA000000GRAT0000000081", texto=nascimento)
+        bd = banco(con)
+        remessa = bd.escrever(
+            "INSERT INTO sd_portal_remessas (tipo, inicio, fim, gerado_em) "
+            "VALUES (%s, '2026-10-13', '2026-10-19', 't') RETURNING id",
+            (SP.GRATUIDADE,))[0]["id"]
+        bd.escrever("INSERT INTO sd_portal_itens (remessa_id, tipo, selo_id) VALUES (%s, %s, %s)",
+                    (remessa, SP.GRATUIDADE, selo))
+        assert [(s["id"], s["situacao"]) for s in SP.gratuitos(con)] == [(selo, "NO_PACOTE")]
+
+
 def test_a_certidao_sozinha_nao_apaga_o_aviso_do_escrevente_e_o_comprovante_apaga(db, tmp_path):
     with db.transaction() as con:
         selo = _selo(con, "AVERBA000000GRAT0000000011")

@@ -248,6 +248,71 @@ def test_valor_e_isencao_divergentes():
     assert r["FISCAL_ISENCAO_DIVERGENTE"][0]["chave"].endswith(isencao)
 
 
+def _resposta_presumida(numero, *, motivo="REGISTRO DE NASCIMENTO", codigo="14.a"):
+    """Como o TJ responde a gratuidade presumida (réplica, 19/11/2026): `isento`
+    falso, o motivo preenchido, sem deferido nem indeferido — não há análise."""
+    return json.dumps({"selo": {
+        "codSelo": numero, "codigoAto": codigo, "dataSelo": "2026-09-10", "horaSelo": "08:48",
+        "codAtoTabelaAto": {"codigoAto": codigo, "emolumento": 0, "valorSelo": 0,
+                            "valorAto": 43.37},
+        "escrevente": "Escrevente Teste",
+        "infoIsento": {"isento": False, "motivoGratuitoIsento": motivo},
+        "cancelado": False, "dataCancelado": None, "deferido": None, "indeferido": None,
+        "motivoIndeferimento": None, "prazoMaximoParaRecorrer": None}}, ensure_ascii=False)
+
+
+def test_gratuito_no_tj_reconhece_a_presumida_pelo_motivo_e_nada_mais():
+    assert GF.gratuito_no_tj(True, None)
+    assert GF.gratuito_no_tj(False, "REGISTRO DE NASCIMENTO")
+    assert GF.gratuito_no_tj(0, "registro de obito ")        # sem acento, minúsculo
+    assert GF.gratuito_no_tj(False, "REGISTRO DE NATIMORTO")
+    assert not GF.gratuito_no_tj(False, None)
+    assert not GF.gratuito_no_tj(False, "DECLARAÇÃO DE HIPOSSUFICIENCIA")
+    assert not GF.gratuito_no_tj(False, "REGISTRO DE NASCIMENTO TARDIO POR SENTENÇA")
+
+
+def test_presumida_isento_false_no_tj_confere_com_selo_isento_da_casa():
+    """Auditoria G002 (G-4): 34 FISCAL_ISENCAO_DIVERGENTE eram nascimento e óbito
+    — o TJ diz `isento:false`, motivo «REGISTRO DE NASCIMENTO/ÓBITO», e chama de
+    gratuito; o texto da casa diz «Selo Isento». É a mesma coisa."""
+    con = _banco()
+    nasc = _selo(con, 1, isento=True)
+    obito = _selo(con, 2, isento=True)
+    _gravar(con, nasc, 200, _resposta_presumida(nasc))
+    _gravar(con, obito, 200, _resposta_presumida(obito, motivo="REGISTRO DE ÓBITO", codigo="14.c"))
+    linha = GF.ler_resposta(nasc, 200, _resposta_presumida(nasc))
+    assert linha["isento"] == 0 and linha["motivo_isencao"] == "REGISTRO DE NASCIMENTO"
+    assert linha["analise"] is None
+    r = _regras(GF.conferir(con, HOJE))
+    assert "FISCAL_ISENCAO_DIVERGENTE" not in r
+    # O TJ não analisa a presumida: nem «sem motivo», nem «em análise».
+    assert "FISCAL_GRATUIDADE_SEM_MOTIVO" not in r and "FISCAL_GRATUIDADE_EM_ANALISE" not in r
+
+
+def test_presumida_no_tj_com_selo_pago_na_casa_continua_divergente():
+    con = _banco()
+    n = _selo(con, 1, isento=False)
+    _gravar(con, n, 200, _resposta_presumida(n))
+    a = _regras(GF.conferir(con, HOJE))["FISCAL_ISENCAO_DIVERGENTE"][0]
+    assert a["chave"].endswith(n) and "o TJ diz gratuito" in a["titulo"]
+
+
+def test_o_falso_alarme_ja_aberto_se_fecha_na_rodada_seguinte():
+    """Os achados abertos antes da correção não se fecham à mão: a rodada
+    seguinte do gestor não os vê mais, e `gravar_achados` lhes dá `resolvido_em`."""
+    con = _banco()
+    n = _selo(con, 1, isento=True)
+    _gravar(con, n, 200, _resposta_presumida(n))
+    velho = GC._achado(f"FISCAL_ISENCAO:{n}", "FISCAL_ISENCAO_DIVERGENTE", "ATENCAO", "RCPN",
+                       f"Selo {n}: o TJ diz pago e o texto do selo diz o contrário",
+                       "rc_atos 1, item 14.a.", None, GF.FONTE)
+    GR.gravar_achados(con, [velho], HOJE)
+    resumo = GR.gravar_achados(con, GF.conferir(con, HOJE), HOJE)
+    assert resumo["resolvidos"] == 1
+    assert con.execute("SELECT resolvido_em FROM ge_achados WHERE chave = ?",
+                       (f"FISCAL_ISENCAO:{n}",)).fetchone()[0]
+
+
 def test_gratuidade_indeferida_vai_para_o_oficial_com_prazo():
     con = _banco()
     n = _selo(con, 1, isento=True)

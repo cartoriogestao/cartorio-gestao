@@ -135,8 +135,13 @@ SELECT 'CREATE PUBLICATION {PUBLICACAO} FOR TABLES IN SCHEMA {schema} WITH (publ
  WHERE NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = '{PUBLICACAO}') \\gexec
 ALTER PUBLICATION {PUBLICACAO} SET (publish = 'insert, update, delete');
 
--- 5. Conferência: o que falta para a reserva conectar.
-SELECT name, setting, CASE WHEN pending_restart THEN 'REINICIE O SERVIÇO' ELSE 'ok' END AS estado
+-- 5. Conferência: o que falta para a reserva conectar. O listen_addresses é '*': com o IP do
+--    Tailscale escrito, o PostgreSQL que sobe antes do Tailscale (no reinício do Windows) não
+--    acha o endereço, escuta só o 127.0.0.1 e não tenta de novo — a réplica para sem aviso.
+--    Quem barra os outros é o firewall e o pg_hba (roteiro, passo A3).
+SELECT name, setting, CASE WHEN pending_restart THEN 'REINICIE O SERVIÇO'
+                           WHEN name = 'listen_addresses' AND setting <> '*' THEN 'PONHA ''*'' (roteiro A3)'
+                           ELSE 'ok' END AS estado
   FROM pg_settings WHERE name IN ('wal_level', 'max_slot_wal_keep_size', 'listen_addresses');
 
 {chaves}"""
@@ -267,6 +272,16 @@ class Situacao:
                 and self.atraso_s <= ATRASO_TOLERADO_S)
 
 
+#: A última notícia conta só do trabalhador que RECEBEU algo do principal. O PostgreSQL põe a hora
+#: de agora em `last_msg_receipt_time` cada vez que (re)lança o trabalhador da assinatura, antes
+#: mesmo de conectar. Com o principal fora do alcance, ele relança a cada poucos segundos, e a
+#: notícia parecia sempre fresca: de 16 a 18/11/2026 a réplica ficou dois dias parada com o
+#: sincronia.log dizendo EM DIA. Quem já recebeu (dado ou o «estou vivo» do principal) tem
+#: `received_lsn`; quem só nasceu, não.
+SQL_ULTIMA_NOTICIA = ("SELECT extract(epoch FROM now() - max(last_msg_receipt_time)) "
+                      "FROM pg_stat_subscription WHERE subname = %s AND received_lsn IS NOT NULL")
+
+
 def ler_situacao(c) -> Situacao | None:
     linha = c.execute("SELECT s.subenabled, (SELECT count(*) FROM pg_subscription_rel r "
                       "  WHERE r.srsubid = s.oid AND r.srsubstate <> 'r'), "
@@ -275,8 +290,7 @@ def ler_situacao(c) -> Situacao | None:
     if linha is None:
         return None
     ligada, copiando, tabelas = linha
-    atraso = c.execute("SELECT extract(epoch FROM now() - max(last_msg_receipt_time)) "
-                       "FROM pg_stat_subscription WHERE subname = %s", (ASSINATURA,)).fetchone()[0]
+    atraso = c.execute(SQL_ULTIMA_NOTICIA, (ASSINATURA,)).fetchone()[0]
     erros = c.execute("SELECT coalesce(apply_error_count + sync_error_count, 0) "
                       "FROM pg_stat_subscription_stats WHERE subname = %s", (ASSINATURA,)).fetchone()
     return Situacao(ligada, float(atraso) if atraso is not None else None, copiando,
@@ -292,6 +306,10 @@ def situacao(local: str) -> int:
     atraso = "sem notícia do principal" if s.atraso_s is None else f"última notícia há {s.atraso_s:.0f} s"
     print(f"assinatura: {'ligada' if s.ligada else 'DESLIGADA'}; {atraso}; "
           f"{s.tabelas - s.tabelas_copiando} de {s.tabelas} tabelas em dia; erros acumulados: {s.erros}")
+    if s.ligada and s.atraso_s is None:
+        print("  nada chegou do principal: ele está no ar e responde na porta do banco? No Windows, o "
+              "PostgreSQL precisa escutar a rede (listen_addresses = '*', roteiro A3). Veja o log do "
+              "PostgreSQL da reserva")
     if s.tabelas_copiando:
         print(f"  {s.tabelas_copiando} tabela(s) ainda na primeira cópia — normal na primeira hora")
     if s.erros and not s.em_dia:

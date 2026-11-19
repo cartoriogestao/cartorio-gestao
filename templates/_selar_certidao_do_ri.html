@@ -7,11 +7,18 @@
 {# `base` é o item base pelo tipo (16.24.4 ou 16.24.1): «Selo e caixa» só acha
    candidato com ao menos um `pedido`. A folha acrescida fica de fora — as
    folhas só se sabem recontando o teor, e o «faltam» dela aparece no «Selar». #}
+{# A CERTIDÃO DE ÔNUS LEVA DOIS 16.24.4 (19/11/2026). Sem selo nenhum, o
+   pedido é 2 × 16.24.4 (`itens_base_da_certidao`); com o primeiro já saído,
+   falta um — o das ações —, e a certidão aparece aqui com selo incompleto. #}
 {% macro botao(c, csrf_token, base) %}
+  {% if c.selo_texto %}
+  <span class="badge alta">Selo incompleto — aguardando pagamento</span>
+  {% else %}
   <span class="badge alta">Sem selo — aguardando pagamento</span>
+  {% endif %}
   {% if base.get(c.tipo) %}
   <a class="small" href="{{ url_for('selo_cobertura', tabela='ri_certidoes', ato_id=c.id,
-                                    pedido=base[c.tipo] ~ ':1',
+                                    pedido=base[c.tipo] ~ ':' ~ (1 if c.selo_texto else itens_base_da_certidao(c)),
                                     selar=url_for('ri_certidao_selar', certidao_id=c.id)) }}"
      >Escolher o protocolo</a>
   {% endif %}

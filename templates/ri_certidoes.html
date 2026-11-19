@@ -70,7 +70,9 @@
                divergiriam no primeiro conserto. #}
             {% if r.cancelada %}<span class="badge critica">Cancelada</span>
             {% elif r.id in aguardando_selo and not r.selo_texto %}{{ selar_certidao(r, csrf_token, CODIGO_BASE_DA_CERTIDAO) }}
-            {% elif r.corpo %}<a href="{{ url_for('ri_certidao_odt', certidao_id=r.id) }}">PDF</a>
+            {% elif r.corpo %}{# a de ônus com o 1º selo e o das ações na fila (19/11/2026) #}
+              {% if r.id in aguardando_selo %}{{ selar_certidao(r, csrf_token, CODIGO_BASE_DA_CERTIDAO) }}<br>{% endif %}
+              <a href="{{ url_for('ri_certidao_odt', certidao_id=r.id) }}">PDF</a>
               · <a href="{{ url_for('ri_certidao_odt', certidao_id=r.id, formato='odt') }}">.odt</a>{% endif %}
             {{ cancelar_certidao(r, csrf_token, user) }}
           </td>

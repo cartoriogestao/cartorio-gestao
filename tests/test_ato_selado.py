@@ -1628,8 +1628,10 @@ def test_a_certidao_de_mais_de_uma_folha_sao_dois_itens():
     assert AS.itens_da_certidao_do_ri("INTEIRO_TEOR", 1) == [("16.24.4", 1)]
     assert AS.itens_da_certidao_do_ri("INTEIRO_TEOR", 5) == [
         ("16.24.4", 1), ("16.24.4.1", 4)]
+    # A de ônus são dois 16.24.4 (ônus reais e ações), e a folha
+    # acrescida vai uma vez, pelo papel — decisão de 19/11/2026.
     assert AS.itens_da_certidao_do_ri("ONUS", 2) == [
-        ("16.24.4", 1), ("16.24.4.1", 1)]
+        ("16.24.4", 1), ("16.24.4", 1), ("16.24.4.1", 1)]
     # A CERTIDAO COMUM TEM O SEU PROPRIO PAR — e ele NAO e o `16.24.1.1`, que
     # aparece uma vez em 667, num protocolo com todos os itens juntos. Um caso
     # nao e regra.

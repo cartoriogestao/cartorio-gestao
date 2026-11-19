@@ -135,6 +135,12 @@ Decisões do módulo de Registro de Imóveis que valem para qualquer serventia: 
 **Por quê.** Com um texto só e vários `if`, mexer no comum estragava os outros tipos. Sem o miolo, a certidão afirmaria «cujo inteiro teor segue:» sem reproduzir nada. Teor de acervo traz `{{ }}`, que renderizado junto seria lido como modelo.
 **No código.** `ri_odt.py` (`MARCADOR_DO_MIOLO`, `MIOLO_DA_CERTIDAO`), `modelos_da_casa.conferir_marcadores`, `ri_schema.TIPOS_CERTIDAO`.
 
+### A certidão de ônus são duas certidões num papel, com dois selos
+**Regra.** A certidão de ônus do balcão pede dois itens 16.24.4, um selo pelos ônus reais e outro pelas ações reais e pessoais reipersecutórias. O papel continua um só, com um número no livro de certidões, e a folha acrescida (16.24.4.1) vai uma vez, pelo papel. O primeiro selo mantém a referência `ri_certidoes:ID`; o segundo usa `ri_certidoes:ID:acoes` e só se cobre com o seu próprio item pago. Sem esse item, o primeiro selo sai, a certidão fica «aguardando cobertura» e o «Selar» pede só o que falta. A certidão digital da ONR continua com um item até o oficial decidir os tipos que respondem uma pergunta só. Certidão antiga, completa e selada, não pede o segundo selo sozinha.
+**Por quê.** Decisão do oficial em 19/11/2026: o balcão relatou a certidão de ônus saindo com um selo, e ela responde a duas perguntas. Referência repetida daria o mesmo SID, e o item que pagou o primeiro selo pagaria o segundo.
+**Fundamento.** Decreto 93.240/1986, art. 1º, IV («certidão de ações reais e pessoais reipersecutórias … e a de ônus reais»); Código de Normas do TJMA («certidão de ônus e certidão de ações reais e pessoais reipersecutórias»).
+**No código.** `ato_selado.py` (`TIPOS_DO_RI_COM_DOIS_SELOS`, `itens_da_certidao_do_ri`, `selos_da_certidao_do_ri`, `obter_selo(item_proprio=)`), `ri_web._pedir_os_selos_da_certidao_do_ri`.
+
 ### Toda limpeza do teor acontece antes do hash, e mudança de forma se prova byte a byte
 **Regra.** Transformações no teor são feitas antes de calcular a impressão da certidão. Reorganizar modelos exige renderizar os tipos contra fichas de ensaio na versão anterior e na nova, com resultado idêntico.
 **Por quê.** Limpar depois do hash faz a conferência do teor falhar em toda certidão nova, calada. O risco de reestruturar modelos é mudar o papel sem ninguém ver.

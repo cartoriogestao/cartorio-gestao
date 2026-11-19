@@ -12,8 +12,10 @@ RAIZ = Path(__file__).resolve().parent.parent
 def test_balcao_continua_cobrando_folha_acrescida():
     assert AS.itens_da_certidao_do_ri("INTEIRO_TEOR", 4) == [
         ("16.24.4", 1), ("16.24.4.1", 3)]
+    # A de ônus são dois 16.24.4 (ônus reais e ações), e a folha
+    # acrescida vai uma vez, pelo papel — decisão de 19/11/2026.
     assert AS.itens_da_certidao_do_ri("ONUS", 2) == [
-        ("16.24.4", 1), ("16.24.4.1", 1)]
+        ("16.24.4", 1), ("16.24.4", 1), ("16.24.4.1", 1)]
     assert AS.itens_da_certidao_do_ri("PROPRIEDADE", 3) == [
         ("16.24.1", 1), ("16.24.2", 2)]
     assert AS.itens_da_certidao_do_ri("NEGATIVA_IMOVEL", 3) == [

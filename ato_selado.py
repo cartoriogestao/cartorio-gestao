@@ -2111,6 +2111,34 @@ ITEM_DA_FOLHA_ACRESCIDA_DO_RI = {
     "16.24.1": "16.24.2",
 }
 
+# **A CERTIDAO DE ONUS SAO DUAS CERTIDOES NUM PAPEL SO** — decisao do oficial
+# em 19/11/2026. O balcao relatou que ela sai com um selo, e ela responde a
+# duas perguntas: os onus reais **e** as acoes reais e pessoais
+# reipersecutorias. O Decreto 93.240/1986, art. 1o, IV, fala da «certidao de
+# acoes reais e pessoais reipersecutorias ... e a de onus reais», e o Codigo
+# de Normas do TJMA, da «certidao de onus e certidao de acoes reais e pessoais
+# reipersecutorias». Entao:
+#
+#   - dois itens 16.24.4, cada um com o seu selo: o primeiro pelos onus reais,
+#     o segundo pelas acoes;
+#   - o papel continua um so, com um numero no livro de certidoes, e por isso
+#     a folha acrescida (16.24.4.1) vai UMA vez, pelo papel (pergunta 4.2 do
+#     plano T006, a confirmar com o oficial);
+#   - a certidao DIGITAL da ONR continua com um item: os tipos 19 (so acoes) e
+#     20 (so onus) da ONR tambem viram `ONUS`, e cobrar dois selos numa
+#     certidao que responde uma pergunta so e o que a pergunta 4.1 do plano
+#     ainda vai decidir. Ate la, a ONR fica como estava.
+TIPOS_DO_RI_COM_DOIS_SELOS = frozenset({"ONUS"})
+
+#: O fim da referencia do selo das ACOES (`ri_certidoes:ID:acoes`). O item tem
+#: o mesmo codigo do primeiro, entao `ri_certidoes:ID:16.24.4` nao diria qual
+#: dos dois e — e e da referencia que sai o SID do aparelho.
+SUFIXO_DO_SELO_DAS_ACOES = "acoes"
+
+#: Como a tela chama o item que falta quando o segundo selo nao sai.
+DESCRICAO_DO_SELO_DAS_ACOES = (
+    "o item 16.24.4 das ações reais e pessoais reipersecutórias")
+
 
 #: **A CERTIDAO DIGITAL DA ONR NAO COBRA FOLHA EXCEDENTE** —
 #: DECISAO-COGEx 2035/2026 (Processo DIGIDOC 47246/2026) tratou o inteiro teor
@@ -2162,6 +2190,10 @@ def itens_da_certidao_do_ri(tipo: Any, folhas: int = 1, *,
 
     Com `digital=True` (certidão da ONR) devolve só o item base — CGJ-TJMA /
     DECISÃO-COGEx: sem folha acrescida em nenhum tipo do RI.
+
+    A certidão de ônus do balcão (`TIPOS_DO_RI_COM_DOIS_SELOS`, 19/11/2026)
+    devolve DOIS itens-base — ônus reais e ações reipersecutórias —, e a
+    folha acrescida, quando há, vem depois deles, uma vez só.
     """
     tipo_norm = str(tipo or "").strip().upper()
     base = CODIGO_DA_CERTIDAO_DO_RI.get(tipo_norm)
@@ -2175,10 +2207,42 @@ def itens_da_certidao_do_ri(tipo: Any, folhas: int = 1, *,
     itens = [(base, 1)]
     if digital:
         return itens                     # CGJ-TJMA / COGEx: ONR digital sem folha
+    if tipo_norm in TIPOS_DO_RI_COM_DOIS_SELOS:
+        itens.append((base, 1))          # o selo das ações (19/11/2026)
     acrescida = ITEM_DA_FOLHA_ACRESCIDA_DO_RI.get(base)
     if folhas > 1 and acrescida:
         itens.append((acrescida, folhas - 1))
     return itens
+
+
+def selos_da_certidao_do_ri(certidao_id: Any,
+                            itens: list[tuple[str, int]]) -> list[dict]:
+    """Cada item da certidão com a referência do seu selo. Só calcula.
+
+    **A REFERÊNCIA DECIDE O SID**, e o SID decide se o aparelho devolve o selo
+    que já deu ou vende outro. Por isso:
+
+    - o primeiro item continua `ri_certidoes:ID`, como sempre — a certidão já
+      emitida, selada de novo, acha o mesmo selo e não compra outro;
+    - a folha acrescida continua `ri_certidoes:ID:código`;
+    - o segundo item-base (as ações, na certidão de ônus) é
+      `ri_certidoes:ID:acoes` — o código repetido não serviria — e leva
+      `acoes=True`: ele precisa do SEU item pago (`item_proprio` no selo).
+    """
+    certidao_id = int(certidao_id)
+    base = itens[0][0] if itens else None
+    saida = []
+    for indice, (codigo, quantidade) in enumerate(itens):
+        acoes = indice > 0 and codigo == base
+        if indice == 0:
+            referencia = f"ri_certidoes:{certidao_id}"
+        elif acoes:
+            referencia = f"ri_certidoes:{certidao_id}:{SUFIXO_DO_SELO_DAS_ACOES}"
+        else:
+            referencia = f"ri_certidoes:{certidao_id}:{codigo}"
+        saida.append({"codigo": codigo, "quantidade": quantidade,
+                      "referencia": referencia, "acoes": acoes})
+    return saida
 
 
 def envelope_da_certidao_do_ri(*, tipo: Any, escrevente: Any, versao_tabela: Any,
@@ -2887,7 +2951,8 @@ def dados_para_o_aparelho(dados: Any) -> Any:
 def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
                referencia: Any, atribuicao: str, agora: str, cns: Any,
                usuario: str | None = None, tabela: str | None = None,
-               ato_id: Any = None, selo_adicional: bool = False) -> list:
+               ato_id: Any = None, selo_adicional: bool = False,
+               item_proprio: bool = False) -> list:
     """Pede o selo ao aparelho da rede local. ESCREVE, em transacao PROPRIA.
 
     Recebe `db` e nao `con` DE PROPOSITO: a chamada tem prazo de 20 segundos e
@@ -2915,6 +2980,13 @@ def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
            a ESTORNA se o aparelho falhou ou nao deu numero.
     A reserva que a queda deixou no meio e conferida por
     `estornar_reservas_orfas`, aqui mesmo e na subida.
+
+    `item_proprio` (19/11/2026, o selo das acoes na certidao de onus do RI):
+    o selo e do ATO, como os outros — entra e sai da fila «aguardando
+    cobertura» e vai para a coluna —, mas so se cobre com o SEU item pago,
+    como o selo adicional (`_cobrir_com_item_proprio`). Sem isso o item que
+    pagou o primeiro selo pagaria tambem o segundo. Com a trava desligada ele
+    se cobre como os outros selos do ato: nao ha item a separar.
     """
     import selador_cliente as CL  # importado aqui: so quem sela paga
     # SEGUNDA TRANCA: mesmo que `usuario_nome` falhe, o escrevente do envelope
@@ -2949,11 +3021,12 @@ def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
     _conferir_as_orfas(db, agora=agora)
     try:
         with db.transaction() as con:
+            proprio = selo_adicional or (item_proprio and trava_ligada(con))
             cobertura = cobrir_o_selo(con, tabela=tabela, ato_id=ato_id,
                                       referencia=recebida, dados=dados,
                                       usuario=usuario, agora=agora, cns=cns,
                                       atribuicao=atribuicao,
-                                      item_proprio=selo_adicional)
+                                      item_proprio=proprio)
             # SEM COBERTURA, A TRANSACAO VOLTA (LX20, revisao do LX16): o
             # selo nao vai ser pedido, entao nada do que a cobertura tentou —
             # debito, quitacao, unidade — pode ficar.
@@ -3020,7 +3093,8 @@ def selar_o_ato_lavrado(db, pasta_de_dados: Any, *, tabela: str, ato_id: int,
                         usuario: str | None = None,
                         especie: Any = None,
                         caminho: Any = None,
-                        selo_adicional: bool = False) -> dict:
+                        selo_adicional: bool = False,
+                        item_proprio: bool = False) -> dict:
     """O SELO SAI QUANDO O ATO E PRATICADO — decisao do oficial em 27/08/2026.
 
         «O selo deve ser emitido quando praticado o ato. Igual o E-Ofício.»
@@ -3078,7 +3152,8 @@ def selar_o_ato_lavrado(db, pasta_de_dados: Any, *, tabela: str, ato_id: int,
                            referencia=referencia or f"{tabela}:{int(ato_id)}",
                            atribuicao=atribuicao, agora=agora, cns=cns,
                            usuario=usuario, tabela=tabela, ato_id=ato_id,
-                           selo_adicional=selo_adicional)
+                           selo_adicional=selo_adicional,
+                           item_proprio=item_proprio)
     except SeloSemCobertura as falta:
         # NAO E FALHA DO APARELHO: o selo nem foi pedido. O quadro vai junto
         # para a tela mostrar os botoes; o recado e a mesma frase para o
@@ -5514,6 +5589,20 @@ def _marcar_aguardando(con, *, tabela: Any, ato_id: Any, motivo: str,
               SET motivo = EXCLUDED.motivo, usuario = EXCLUDED.usuario,
                   atualizado_em = EXCLUDED.atualizado_em""",
         (tabela, int(ato_id), motivo, usuario, agora, agora))
+
+
+def deixar_aguardando_cobertura(db, *, tabela: Any, ato_id: Any, motivo: str,
+                                usuario: Any, agora: str) -> None:
+    """Põe (de novo) o ato na fila «aguardando cobertura». ESCREVE.
+
+    Para o ato de vários selos (a certidão de ônus do RI, 19/11/2026): cada
+    selo que SAI tira o ato da fila (`obter_selo`), e o que falta pode ter
+    ficado antes de outro que saiu — o das ações antes da folha acrescida. Quem
+    pediu os selos do ato, no fim, devolve-o à fila com o motivo do que falta.
+    """
+    with db.transaction() as con:
+        _marcar_aguardando(con, tabela=tabela, ato_id=ato_id, motivo=motivo,
+                           usuario=usuario, agora=agora)
 
 
 def _tirar_aguardando(con, *, tabela: Any, ato_id: Any) -> None:

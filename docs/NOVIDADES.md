@@ -8,6 +8,15 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.21 — O botão de atualizar volta a funcionar no servidor Windows
+
+Traz tudo o que a 3.7.20 trouxe, e o pacote parte da 3.7.19
+(`--desde v3.7.19`): a 3.7.20 foi publicada, mas não chegou a ser
+aplicada na produção.
+
+- **Atualizações — o botão «Baixar e atualizar».** O Agendador do Windows 11 recusava a tarefa que aplica a atualização. O caminho alternativo chegava a parar o servidor e, sem conseguir copiar os arquivos nem religá-lo, deixava o sistema fora do ar até alguém subir o serviço à mão. A tarefa agora é criada no mesmo formato da tarefa do servidor, que o Windows aceita. Se ainda assim ela for recusada, a atualização não começa: o servidor não é parado, e a tela avisa que nada foi alterado.
+- **Servidor reserva.** O roteiro pede que o banco principal escute em todos os endereços (`listen_addresses = '*'`), porque, depois de um reinício do Windows, ele deixava de receber a reserva. A situação da reserva deixa de dizer «EM DIA» quando não chega notícia do principal.
+
 ## 3.7.20 — Livros de nascimento transcritos, maquininha que confirma em segundos e DOI por imóvel
 
 Inclui todas as mudanças posteriores à 3.7.19. O pacote parte da 3.7.19

@@ -1419,7 +1419,7 @@
   </div>
   {% if a.tipo == 'ESCRITURA' and selos_da_escritura|length > 1 %}
   <div style="padding:0 14px 14px">
-    <strong class="small">Selos desta escritura (um por imóvel)</strong>
+    <strong class="small">Selos desta escritura (um por imóvel ou por ato)</strong>
     <table class="small">
       <thead><tr><th>Ordem</th><th>Item</th><th>Valor declarado</th><th>Selo</th></tr></thead>
       <tbody>
@@ -1437,17 +1437,32 @@
      Cada imóvel é um 13.1 com o seu valor, o seu selo e o SEU item pago. O ato
      continua com o selo que tem; este é um a mais. #}
   <details style="padding:0 14px 14px">
-    <summary class="small">Acrescentar outro selo deste ato (ex.: 2º imóvel, outro 13.1)</summary>
+    <summary class="small">Acrescentar outro selo deste ato (ex.: 2º imóvel, ou outro ato sobre o mesmo imóvel)</summary>
+    {# O MOTIVO (19/11/2026, compliance C002): a partilha e a compra e venda do
+       MESMO imóvel na mesma escritura são dois 13.1 de mesmo valor. Sem esta
+       escolha, a trava do selo em dobro recusava, e o valor saiu ajustado em
+       R$ 0,01 para passar. Valor quase igual a um selo já pedido não sai. #}
     <form method="post" class="grid2">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <div class="notice small span2">Digite o valor declarado do OUTRO imóvel:
-        o item do 13.1 sai da faixa desse valor, e o selo consome o item
-        correspondente, já pago no protocolo escolhido abaixo. Não vale o item
-        que já pagou o selo do ato.</div>
-      <label>Valor declarado deste imóvel (R$)
+      <div class="notice small span2">Digite o valor declarado do OUTRO imóvel,
+        ou do outro ato, <strong>exato</strong>: o item do 13.1 sai da faixa
+        desse valor, e o selo consome o item correspondente, já pago no
+        protocolo escolhido abaixo. Não vale o item que já pagou o selo do ato.
+        Não ajuste o valor para o sistema aceitar: diga o motivo.</div>
+      <fieldset class="span2 small"><legend>Por que este selo a mais?</legend>
+        <label><input type="radio" name="motivo_do_selo" value="OUTRO_IMOVEL" checked>
+          Outro imóvel desta escritura</label>
+        <label><input type="radio" name="motivo_do_selo" value="OUTRO_ATO">
+          Outro ato sobre o mesmo imóvel (ex.: inventário e partilha e, na
+          mesma escritura, a compra e venda)</label>
+      </fieldset>
+      <label>Valor declarado deste imóvel ou ato (R$)
         <input name="valor_do_selo" inputmode="decimal" required
                placeholder="ex.: 38.815,53"></label>
-      <label><input type="checkbox" name="confirmo_mesmo_valor" value="1">
+      <label>Qual é o outro ato (só no «outro ato»)
+        <input name="ato_do_selo" maxlength="120"
+               placeholder="ex.: compra e venda"></label>
+      <label class="span2"><input type="checkbox" name="confirmo_mesmo_valor" value="1">
         É outro imóvel, com o mesmo valor de um selo já pedido</label>
       {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s2 = seletor_do_selo('nt_atos') %}<div class="span2">{{ protocolo_do_selo(_s2.candidatos, _s2.pedidos, atendendo=_s2.atendendo) }}</div>
       <div class="span2"><button class="primary" name="acao" value="selar_extra">Pedir o selo adicional ao aparelho</button></div>

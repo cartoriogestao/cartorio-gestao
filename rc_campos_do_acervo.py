@@ -199,6 +199,36 @@ def _marca(valor: Any) -> str:
     return ""
 
 
+# A NOTA DE QUEM TRANSCREVEU NÃO É O LUGAR — 18/11/2026. O lote do papel
+# chegou a gravar «Cidade-UF (o teor não cita estabelecimento; coluna_x
+# deixado NULL)»: o parêntese que fala de coluna é recado para o sistema, e
+# não sai na certidão. Parêntese comum («(domicílio)») fica.
+# Sem regex que volte atrás (CodeQL `py/polynomial-redos`): separa os
+# parênteses de um nível e só depois procura «palavra_palavra» dentro.
+_PARENTESE = re.compile(r"(\([^()]*\))")
+_NOME_DE_COLUNA = re.compile(r"[a-z]_[a-z]")
+
+
+def local_nascimento_do_arquivo(dados: Any) -> str:
+    """O lugar do parto que o formato ARQUIVO guarda no pacote. Só calcula.
+
+    O lote do acervo transcrito escreve `local_nascimento` no `dados_json`,
+    e não as chaves do E-Ofício (`strNomeLocal`…): sem esta leitura, o
+    assento que tem o lugar no pacote e a coluna vazia saía «NÃO CONSTA».
+    É o ÚLTIMO recurso: a coluna, que a tela corrige, vem antes.
+    """
+    if not isinstance(dados, dict):
+        return ""
+    valor = dados.get("local_nascimento")
+    if not isinstance(valor, str):
+        return ""
+    partes = _PARENTESE.split(valor)
+    limpo = "".join(
+        "" if (i % 2 and _NOME_DE_COLUNA.search(parte)) else parte
+        for i, parte in enumerate(partes))
+    return " ".join(limpo.split()).strip(" ,;")
+
+
 def codigo_ibge_do_local_escrito(texto: Any) -> int | None:
     """O código do IBGE quando o texto diz o tipo do lugar. Só calcula.
 
@@ -300,7 +330,8 @@ def _preencher_assento(a: dict, dados: dict) -> None:
             if codigo:
                 a["ibge_natureza_obito"] = codigo
     if especie in ("NASCIMENTO", "NATIMORTO") and _vazio(a.get("ibge_local_nascimento")):
-        codigo = codigo_ibge_do_local_escrito(a.get("local_fato_nome"))
+        codigo = codigo_ibge_do_local_escrito(
+            a.get("local_fato_nome") or local_nascimento_do_arquivo(dados))
         if codigo:
             a["ibge_local_nascimento"] = codigo
     if especie in ("NASCIMENTO", "NATIMORTO") and a.get("ibge_gemeo") is None:

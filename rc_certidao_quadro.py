@@ -184,8 +184,9 @@ def quadro_da_certidao(con, certidao: dict, sv: dict) -> dict:
         nat, nat_uf = _cidade_uf(RCE._lugar_da_pessoa(
             quem, "REGISTRADO", "naturalidade_cidade", "naturalidade_uf",
             dados, "strCidade", "strUF"))
-        local = RCE._local_do_nascimento(dados) or str(
+        local = (RCE._local_do_nascimento(dados) or str(
             a.get("local_fato_nome") or "").strip()
+            or RCE.local_nascimento_do_arquivo(dados))
         # O MUNICÍPIO É O DO LOCAL, E NÃO A RUA — LD01, 21/10/2026. A célula
         # MUNICÍPIO DE NASCIMENTO lia `local_fato_endereco` (rua, número e
         # bairro), e o município de fato não saía (LRP art. 54, 1º). Ele mora

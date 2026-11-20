@@ -293,6 +293,13 @@ def gratuitos(con, *, inicio: str | None = None, fim: str | None = None,
     com os incluídos à mão) até hoje — a mesma régua do aviso do escrevente.
     `situacao` FALTANDO junta as três faltas: é a fila «falta comprovante».
     Com `nome`/`username`, só os selos daquela pessoa (a tela do escrevente).
+
+    A GRATUIDADE PRESUMIDA NÃO ENTRA (`GC.gratuidade_presumida`: nascimento,
+    óbito, natimorto e a 1ª certidão deles) — a mesma régua do aviso e da
+    lista do gestor. Não há comprovante a pedir, e o TJ não a analisa: responde
+    `isento:false` com o motivo «REGISTRO DE NASCIMENTO/ÓBITO» (auditoria G002,
+    18/11/2026: 16 desses selos apareciam aqui como «faltam os dois»). Só fica
+    a que já foi posta num pacote: quem a pôs precisa vê-la para tirá-la.
     """
     bd = banco(con)
     incluidos = GC.incluidos(con) if not inicio else []
@@ -301,9 +308,11 @@ def gratuitos(con, *, inicio: str | None = None, fim: str | None = None,
     inicio, fim = _periodo(inicio, fim)
     em = ",".join(["%s"] * len(incluidos)) or "NULL"
     isento, args_isento = SI.condicao(bd, "sd_selos")      # G005: a régua central
+    caminho = "sd_selos.caminho" if bd.tem_coluna("sd_selos", "caminho") else "NULL::text"
     rows = bd.ler(
         f"""SELECT sd_selos.id, sd_selos.numero, sd_selos.atribuicao, sd_selos.referencia,
                    sd_selos.tabela, sd_selos.ato_id, sd_selos.obtido_em, sd_selos.obtido_por,
+                   sd_selos.texto, {caminho} AS caminho,
                    EXISTS (SELECT 1 FROM attachments a
                              LEFT JOIN sd_gratuidade_pecas p ON p.attachment_id = a.id
                             WHERE a.entity_type = %s AND a.entity_id = sd_selos.id
@@ -330,6 +339,9 @@ def gratuitos(con, *, inicio: str | None = None, fim: str | None = None,
         if alvos and GC._norm(r["obtido_por"]) not in alvos:
             continue
         d = dict(r)
+        presumida = GC.gratuidade_presumida(d.pop("texto"), d.pop("caminho"))
+        if presumida and not d["remessa_id"]:
+            continue
         d["situacao"] = _situacao_da_gratuidade(d)
         if situacao == "FALTANDO" and d["situacao"] not in FALTANDO:
             continue

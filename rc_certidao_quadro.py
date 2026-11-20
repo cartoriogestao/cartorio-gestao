@@ -136,6 +136,10 @@ def quadro_da_certidao(con, certidao: dict, sv: dict) -> dict:
         elif so_digitos(certidao.get("cpf")):
             cpf_bruto = certidao.get("cpf")
     cpf = formatar_cpf(cpf_bruto) if so_digitos(cpf_bruto) else ""
+    if not cpf:
+        # HOTFIX 19/11/2026: averbação de CPF feita pela tela comum só grava o teor em rc_atos.
+        # Usa a mais recente (já carregada em `atos`); só nascimento, natimorto e óbito.
+        cpf = RCE._cpf_da_averbacao(atos, especie)
     matricula = formatar_matricula(a.get("matricula") or certidao.get("matricula"))
     do_fato = RCE.data_por_extenso(a.get("data_fato"))
     do_registro = RCE.data_por_extenso(a.get("data_ato"))
@@ -184,8 +188,9 @@ def quadro_da_certidao(con, certidao: dict, sv: dict) -> dict:
         nat, nat_uf = _cidade_uf(RCE._lugar_da_pessoa(
             quem, "REGISTRADO", "naturalidade_cidade", "naturalidade_uf",
             dados, "strCidade", "strUF"))
-        local = RCE._local_do_nascimento(dados) or str(
+        local = (RCE._local_do_nascimento(dados) or str(
             a.get("local_fato_nome") or "").strip()
+            or RCE.local_nascimento_do_arquivo(dados))
         # O MUNICÍPIO É O DO LOCAL, E NÃO A RUA — LD01, 21/10/2026. A célula
         # MUNICÍPIO DE NASCIMENTO lia `local_fato_endereco` (rua, número e
         # bairro), e o município de fato não saía (LRP art. 54, 1º). Ele mora

@@ -1,7 +1,9 @@
 {# O SEMÁFORO DA CONFORMIDADE (18/11/2026) — uma cor por área, dos achados
    abertos do gestor (`conformidade`). Só para o oficial, o gerente e o
    auditor: o contexto vem vazio para os demais (`conformidade_web`).
-   Sem rodada válida do gestor, nenhuma área fica verde. #}
+   Sem rodada válida do gestor, nenhuma área fica verde.
+   Cada cartão leva à checklist de gestão filtrada pela área (19/11/2026,
+   «não consigo clicar nos itens»), onde estão os achados daquela cor. #}
 {% if conformidade_no_painel %}
 {% set q = conformidade_no_painel %}{% set m = q.medicao %}
 <section class="panel">
@@ -15,14 +17,16 @@
   {% endif %}
   <div class="cards">
     {% for area, a in m.areas.items() %}
-    <div class="card stat {{ 'danger' if a.cor == 'VERMELHO' else ('warning' if a.cor == 'AMARELO' else '') }}"
-         title="{{ a.abertos }} achado(s) aberto(s): {{ a.vencidos }} vencido(s), {{ a.criticos }} crítico(s) ({{ a.criticos_antigos }} há mais de 1 dia útil), {{ a.prazo_proximo }} com prazo em até 2 dias úteis, {{ a.nao_mediu }} regra(s) que não mediram, {{ a.atencao }} de atenção.">
+    <a class="card stat {{ 'danger' if a.cor == 'VERMELHO' else ('warning' if a.cor == 'AMARELO' else '') }}"
+       href="{{ url_for('gestor_checklist', area=area) }}" style="color:inherit;text-decoration:none"
+       title="{{ a.abertos }} achado(s) aberto(s): {{ a.vencidos }} vencido(s), {{ a.criticos }} crítico(s) ({{ a.criticos_antigos }} há mais de 1 dia útil), {{ a.prazo_proximo }} com prazo em até 2 dias úteis, {{ a.nao_mediu }} regra(s) que não mediram, {{ a.atencao }} de atenção.">
       <span>{{ q.areas[area] }}</span>
       <strong><span class="badge {{ {'VERMELHO': 'critica', 'AMARELO': 'alta', 'VERDE': 'ok'}.get(a.cor, '') }}">{{ q.cores[a.cor] }}</span></strong>
       <small class="muted">{% if a.vencidos %}{{ a.vencidos }} vencido(s) · {% endif %}{% if a.criticos %}{{ a.criticos }} crítico(s) · {% endif %}{% if a.prazo_proximo %}{{ a.prazo_proximo }} perto do prazo · {% endif %}{{ a.abertos }} aberto(s)</small>
-    </div>
+    </a>
     {% endfor %}
   </div>
+  <p class="small muted"><a href="{{ url_for('gestor_checklist') }}">Abrir a checklist de gestão do dia</a> — os achados de cada área e as conferências de hoje.</p>
   <p class="small muted">Vermelho: prazo vencido ou crítico aberto há mais de 1 dia útil. Amarelo: crítico recente, prazo em até 2 dias úteis ou regra que não mediu. Ainda não entram: {{ q.nao_mede|join('; ') }}.</p>
   {% endif %}
 </section>

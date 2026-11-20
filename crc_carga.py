@@ -847,6 +847,21 @@ ROTULO_DO_GENITOR: dict[str, str] = {
 
 def o_que_arrumar(con: sqlite3.Connection, assento: dict,
                   pessoas: dict) -> list[str]:
+    """O que sobe, mas precisa de conserto. Só calcula.
+
+    O LIVRO DIVERGENTE VEM PRIMEIRO — auditoria de 18/11/2026: o cadastro
+    dizia um livro e a matrícula outro, e a carga mandava a matrícula sem
+    ninguém ver. Avisa e não retém: a matrícula é válida para a Central; o
+    que diverge é a certidão. A régua é `rc_certidao.livro_divergente`.
+    """
+    import rc_certidao as RCE
+    livro = RCE.livro_divergente(assento)
+    return (([livro] if livro else [])
+            + _o_que_arrumar_da_especie(con, assento, pessoas))
+
+
+def _o_que_arrumar_da_especie(con: sqlite3.Connection, assento: dict,
+                              pessoas: dict) -> list[str]:
     """O que impede a filiação de subir — **relato do oficial em 10/09/2026**.
 
         «preciso que resolva o problema do json das certidoes da crc, estao

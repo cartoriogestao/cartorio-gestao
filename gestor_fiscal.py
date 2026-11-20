@@ -167,8 +167,38 @@ def _tem_tabela(con, nome: str) -> bool:
 
 # ------------------------------------------------------- a resposta do portal
 
+def _sem_acento(texto) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", str(texto or ""))
+                   if unicodedata.category(c) != "Mn").strip().upper()
+
+
+def gratuito_no_tj(isento, motivo) -> bool:
+    """O TJ tem o selo como gratuito — isento OU gratuidade presumida. Só calcula.
+
+    A gratuidade presumida (registro de nascimento, óbito e natimorto, e a 1ª
+    certidão deles — `ato_selado.MOTIVO_DA_ISENCAO`) o TJ NÃO chama de isenta:
+    responde `isento:false` com `motivoGratuitoIsento` «REGISTRO DE NASCIMENTO»
+    ou «REGISTRO DE ÓBITO», e o analítico do Portal a classifica como
+    «gratuito». Para a casa é o mesmo selo isento: a marca «Selo Isento» do
+    texto confere com ele. Lido só como o motivo inteiro, sem acento — medido
+    na réplica em 19/11/2026 (26 de nascimento, 13 de óbito, todos assim).
+    Antes disso, os 36 abertos de FISCAL_ISENCAO_DIVERGENTE eram este falso
+    alarme (auditoria G002, achado G-4). Como o TJ não analisa a presumida,
+    ela segue fora das regras de motivo e de análise (que leem só `isento`).
+    """
+    if isento:
+        return True
+    from ato_selado import MOTIVO_DA_ISENCAO
+    return _sem_acento(motivo) in {_sem_acento(m) for m in MOTIVO_DA_ISENCAO.values()}
+
+
 def ler_resposta(numero: str, status: int, corpo: str) -> dict:
-    """O que o portal disse, na forma de `ge_portal_selos`. Não grava."""
+    """O que o portal disse, na forma de `ge_portal_selos`. Não grava.
+
+    `isento` é o `infoIsento.isento` do TJ, como ele veio; o motivo é guardado
+    mesmo com `isento:false`, porque é por ele que se reconhece a gratuidade
+    presumida (`gratuito_no_tj`)."""
     linha = {"numero": numero, "situacao": "ERRO", "cancelado": None,
              "data_cancelado": None, "isento": None, "motivo_isencao": None,
              "analise": None, "motivo_indeferimento": None, "prazo_recurso": None,
@@ -437,13 +467,15 @@ def _regras_dos_selos(con, hoje: date) -> list[dict]:
                 f"R$ {GC._brl(float(r['valor_ato']))}",
                 f"{_onde(r)}, item {r['codigo_ato'] or '—'}.", None, FONTE))
         isento_tj = bool(r["isento"])
+        gratuito_tj = gratuito_no_tj(isento_tj, r["motivo_isencao"])
         marcas = {"texto do selo": _isento_no_texto(r["texto"]),
                   "ato na casa": _isento_na_casa(con, r["tabela"], r["ato_id"])}
-        divergem = [k for k, v in marcas.items() if v is not None and v != isento_tj]
+        divergem = [k for k, v in marcas.items() if v is not None and v != gratuito_tj]
         if divergem:
+            diz = "isento" if isento_tj else "gratuito" if gratuito_tj else "pago"
             saida.append(GC._achado(
                 f"FISCAL_ISENCAO:{num}", "FISCAL_ISENCAO_DIVERGENTE", "ATENCAO", setor,
-                f"Selo {num}: o TJ diz {'isento' if isento_tj else 'pago'} e o "
+                f"Selo {num}: o TJ diz {diz} e o "
                 f"{' e o '.join(divergem)} diz o contrário",
                 f"{_onde(r)}, item {r['codigo_ato'] or '—'}.", None, FONTE))
         if not isento_tj:

@@ -307,3 +307,149 @@ def test_o_painel_pela_linha_de_comando_abre_o_banco_pelo_caminho_e_so_le(
     caminho = Path(capsys.readouterr().out.strip())
     assert "Minutas em lavratura" in caminho.read_text(encoding="utf-8")
     assert "readonly" in recusa.get("erro", ""), "a linha de comando abriu o banco para escrever"
+
+
+# ================================================ OS CASOS DE RISCO (18/11/2026)
+# Decisão do titular: a ordem do oficial de 06/10/2026 continua para o rascunho
+# sobrando e o PDF por anexar, mas o rascunho com data de quinzena da CENSEC já
+# fechada e o ato lavrado há 30 dias sem o PDF assinado viram TAREFA para quem
+# lavrou — ou para o setor, se o sistema não souber quem foi.
+
+SENHA = "Senha#12345"
+
+
+def _escrevente(cg_casa, login="escrevente", nome="ESCREVENTE EXEMPLO"):
+    return cg_casa["db"].create_user(login, nome, SENHA, "USER")
+
+
+def _anexo(con, ato_id, descricao="PDF assinado do ato"):
+    con.execute(
+        """INSERT INTO attachments (entity_type, entity_id, original_name, stored_name,
+               stored_path, sha256, size_bytes, description, uploaded_at)
+           VALUES ('NT_ATO', ?, 'a.pdf', 'a.pdf', 'a.pdf', 'x', 1, ?, ?)""",
+        (ato_id, descricao, AGORA))
+
+
+def test_rascunho_com_data_de_quinzena_fechada_vira_tarefa_de_quem_abriu(con, cg_casa):
+    autor = _escrevente(cg_casa)
+    # 29/09 é da 2ª quinzena de setembro, que fechou no dia 05/10.
+    rascunho = _ato(con, tipo="PROCURACAO", situacao="EM_LAVRATURA", data="2026-09-29",
+                    lavrado_nome="ESCREVENTE EXEMPLO", teor="<p>texto</p>")
+    achados = AN.regra_rascunhos(con, HOJE)
+    a = _regra(achados, AN.RASCUNHO_QUINZENA_FECHADA)[0]
+    assert not _regra(achados, "NOTAS_RASCUNHO")
+    assert a["chave"] == f"NOTAS_RASCUNHO:nt_atos:{rascunho}"
+    assert a["gravidade"] == "VENCIDO" and a["prazo"] == "2026-10-05"
+    assert "2ª quinzena de 09/2026" in a["titulo"]
+    assert "Acertar a data" in a["detalhe"] and "apagar" in a["detalhe"]
+    assert a["setor"] == AN.SETOR_QUALIFICACAO
+    assert a["tarefa_para"] == f"PESSOA:{autor}"
+    assert AN.RASCUNHO_QUINZENA_FECHADA not in GR.REGRAS_SEM_TAREFA
+    assert AN.RASCUNHO_QUINZENA_FECHADA in GR.ROTULOS
+
+    GR.sincronizar_tarefas(con, achados, GR.inferir_responsaveis(con), HOJE)
+    t = con.execute(
+        """SELECT assigned_user_id, sector, due_date FROM tasks
+            WHERE source_ref = ?""",
+        (f"GESTOR:{AN.RASCUNHO_QUINZENA_FECHADA}:PESSOA:{autor}",)).fetchone()
+    assert t is not None
+    assert t["assigned_user_id"] == autor and t["sector"] == "Notas"
+    assert t["due_date"] == "2026-10-05"
+
+
+def test_rascunho_substituido_e_de_quinzena_fechada_diz_as_duas_coisas(con, cg_casa):
+    _escrevente(cg_casa)
+    rascunho = _ato(con, tipo="PROCURACAO", situacao="EM_LAVRATURA", data="2026-09-29",
+                    lavrado_nome="ESCREVENTE EXEMPLO")
+    _parte(con, rascunho, "DEUSDETE", CPF_A)
+    lavrada = _ato(con, tipo="PROCURACAO", data="2026-10-08", livro="28", folha="46")
+    _parte(con, lavrada, "DEUSDETE", CPF_A)
+    a = _regra(AN.regra_rascunhos(con, HOJE), AN.RASCUNHO_QUINZENA_FECHADA)[0]
+    assert f"procuração {lavrada}" in a["detalhe"]
+
+
+def test_rascunho_da_quinzena_ainda_aberta_fica_so_no_relatorio(con, cg_casa):
+    _escrevente(cg_casa)
+    # 04/10: a 2ª de setembro ainda está aberta (prazo 05/10).
+    _ato(con, tipo="PROCURACAO", situacao="EM_LAVRATURA", data="2026-09-29",
+         lavrado_nome="ESCREVENTE EXEMPLO")
+    achados = AN.regra_rascunhos(con, date(2026, 10, 4))
+    assert not _regra(achados, AN.RASCUNHO_QUINZENA_FECHADA)
+    assert _regra(achados, "NOTAS_RASCUNHO")        # vazio há 5 dias: só relatório
+
+
+def test_rascunho_anterior_ao_corte_nao_vira_tarefa(con):
+    _ato(con, tipo="PROCURACAO", situacao="EM_LAVRATURA", data="2026-09-05")
+    achados = AN.regra_rascunhos(con, HOJE)
+    assert not _regra(achados, AN.RASCUNHO_QUINZENA_FECHADA)
+    assert _regra(achados, "NOTAS_RASCUNHO")
+
+
+def test_sem_saber_quem_abriu_a_tarefa_fica_com_o_setor(con, cg_casa):
+    import nome_humano
+    _escrevente(cg_casa)
+    oficial = cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    _ato(con, tipo="PROCURACAO", situacao="EM_LAVRATURA", data="2026-09-29",
+         lavrado_nome=nome_humano.MARCA_PENDENTE)
+    _ato(con, tipo="PROCURACAO", situacao="EM_LAVRATURA", data="2026-09-28",
+         lavrado_nome="QUEM JÁ SAIU DA CASA")
+    achados = _regra(AN.regra_rascunhos(con, HOJE), AN.RASCUNHO_QUINZENA_FECHADA)
+    assert len(achados) == 2 and all(a["tarefa_para"] is None for a in achados)
+    resp = GR.inferir_responsaveis(con)
+    GR.sincronizar_tarefas(con, achados, resp, HOJE)
+    t = con.execute("SELECT assigned_user_id FROM tasks WHERE source_ref = ?",
+                    (f"GESTOR:{AN.RASCUNHO_QUINZENA_FECHADA}:{AN.SETOR_QUALIFICACAO}",)
+                    ).fetchone()
+    assert t["assigned_user_id"] == resp[AN.SETOR_QUALIFICACAO]["titular"] == oficial
+
+
+def test_pdf_assinado_so_vira_tarefa_com_30_dias(con, cg_casa):
+    autor = _escrevente(cg_casa)
+    hoje = date(2026, 10, 20)
+    velho = _ato(con, tipo="PROCURACAO", data="2026-09-15", livro="28", folha="40",
+                 lancado_em="2026-09-15T10:00:00", lancado_por="ESCREVENTE EXEMPLO")
+    no_dia = _ato(con, tipo="ESCRITURA", data="2026-09-20", livro="30", folha="200",
+                  lancado_em="2026-09-20T10:00:00", lavrado_nome="ESCREVENTE EXEMPLO")
+    recente = _ato(con, tipo="ESCRITURA", data="2026-10-05", livro="30", folha="210",
+                   lancado_em="2026-10-05T10:00:00", lavrado_nome="ESCREVENTE EXEMPLO")
+    com_pdf = _ato(con, tipo="ESCRITURA", data="2026-09-16", livro="30", folha="198",
+                   lancado_em="2026-09-16T10:00:00")
+    _anexo(con, com_pdf)
+    achados = AN.regra_pdf_assinado(con, hoje)
+    risco = {a["chave"]: a for a in _regra(achados, AN.PDF_30_DIAS)}
+    assert set(risco) == {f"NOTAS_PDF:nt_atos:{velho}", f"NOTAS_PDF:nt_atos:{no_dia}"}
+    a = risco[f"NOTAS_PDF:nt_atos:{velho}"]
+    assert a["gravidade"] == "VENCIDO" and a["prazo"] == "2026-10-15"
+    assert a["tarefa_para"] == f"PESSOA:{autor}" and a["setor"] == AN.SETOR_OPERACIONAL
+    assert "incompleta" not in a["detalhe"]           # procuração não é escritura
+    e = risco[f"NOTAS_PDF:nt_atos:{no_dia}"]
+    assert e["gravidade"] == "PRAZO" and e["prazo"] == "2026-10-20"
+    assert "incompleta" in e["detalhe"] and "799" in e["fundamento"]
+    comuns = _regra(achados, "NOTAS_PDF")
+    assert [x["chave"] for x in comuns] == [f"NOTAS_PDF:nt_atos:{recente}"]
+    assert AN.PDF_30_DIAS not in GR.REGRAS_SEM_TAREFA
+
+
+def test_a_rodada_do_gestor_cobra_so_os_casos_de_risco(con, cg_casa):
+    autor = _escrevente(cg_casa)
+    _ato(con, tipo="PROCURACAO", situacao="EM_LAVRATURA", data="2026-09-29",
+         lavrado_nome="ESCREVENTE EXEMPLO")              # quinzena fechada: tarefa
+    _ato(con, tipo="PROCURACAO", situacao="EM_LAVRATURA", data="2026-10-01")  # só relatório
+    _ato(con, tipo="PROCURACAO", data="2026-09-10", livro="28", folha="30",
+         lancado_em="2026-09-10T10:00:00", lavrado_nome="ESCREVENTE EXEMPLO")  # 30 dias
+    _ato(con, tipo="PROCURACAO", data="2026-10-01", livro="28", folha="31",
+         lancado_em="2026-10-01T10:00:00")                 # 8 dias: só relatório
+    GR.rodar(con, date(2026, 10, 10))
+    refs = {r["source_ref"]: r for r in con.execute(
+        "SELECT source_ref, assigned_user_id, priority FROM tasks "
+        "WHERE source_ref LIKE 'GESTOR:NOTAS_%'")}
+    for ref in (f"GESTOR:{AN.RASCUNHO_QUINZENA_FECHADA}:PESSOA:{autor}",
+                f"GESTOR:{AN.PDF_30_DIAS}:PESSOA:{autor}"):
+        assert refs[ref]["assigned_user_id"] == autor
+    # O resto continua só no relatório (ordem do oficial de 06/10/2026).
+    assert not [r for r in refs if r.split(":")[1] in AN.REGRAS_SEM_TAREFA]
+    # O achado fica gravado com o setor das Notas — é ele que o semáforo lê.
+    setores = {r["regra"]: r["setor"] for r in con.execute(
+        "SELECT regra, setor FROM ge_achados WHERE regra LIKE 'NOTAS_%'")}
+    assert setores[AN.RASCUNHO_QUINZENA_FECHADA] == AN.SETOR_QUALIFICACAO
+    assert setores[AN.PDF_30_DIAS] == AN.SETOR_OPERACIONAL

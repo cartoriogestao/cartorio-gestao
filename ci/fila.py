@@ -31,6 +31,15 @@ via o PR sem suíte, pedia outra, e a nova cancelava a que esperava (o mesmo gru
 de concorrência). Agora a fila olha as rodadas da suíte que estão na fila ou
 correndo (o nome delas é `suite #N`) e espera.
 
+«UNSTABLE» COM A VERIFICAÇÃO VELHA DA SUÍTE (20/11/2026). Quando a suíte falha na
+rodada `pull_request_target`, a verificação «suíte no contêiner» fica vermelha no
+commit do PR. A suíte pedida de novo por `workflow_dispatch` posta o status `suite`
+verde no PR, mas a verificação dela vai para o commit do main (ver o comentário do
+job em `suite.yml`): a vermelha antiga fica no PR para sempre, o GitHub responde
+`unstable`, e a fila só mesclava `clean`. Os PRs #472 e #479 ficaram parados assim
+(19/11/2026). Agora `unstable` entra quando a única pendência fora da regra do main
+é essa verificação velha e o status `suite` mais novo é verde — ver `mesclavel`.
+
 O QUE O TOKEN DESTA RODADA FAZ NÃO DISPARA OUTRO WORKFLOW (regra do GitHub):
 por isso a suíte e o anti-leak são pedidos por `workflow_dispatch`, que é a
 exceção permitida.
@@ -60,6 +69,13 @@ ARQUIVOS_DE_BASE = ("requirements", "tests/conftest.py", "banco_pg.py", "bd_nati
 # O GitHub corta a lista de arquivos de uma comparação em 300: passou disso, não se sabe.
 LIMITE_DA_COMPARACAO = 300
 VERIFICACAO_ANTI_LEAK = "anti-leak"
+# O nome do job da suíte (`suite.yml`). Não é exigido pela regra do main: quem responde
+# por ela é o status `suite`. A verificação com este nome só conta a rodada
+# `pull_request_target`; a de `workflow_dispatch` cai no commit do main.
+VERIFICACAO_DA_SUITE = "suíte no contêiner"
+# O que, vermelho ou pendente, a fila deixa de lado num PR `unstable` cujo status
+# `suite` está verde: só a verificação velha da suíte, que o status mais novo substitui.
+PENDENCIAS_SUBSTITUIDAS = frozenset({VERIFICACAO_DA_SUITE})
 
 
 @dataclass
@@ -77,6 +93,9 @@ class Pr:
     branch: str = ""
     suite_na_fila: bool = False        # rodada da suíte na fila do executor ou correndo
     teste_vencido: bool = False        # o main mudou, depois do teste, no que o PR toca
+    # Verificações e status do head que não estão verdes, fora `suite`, `suite-main` e
+    # o anti-leak. Só se apura com `unstable`; `None` é «não se apurou».
+    pendencias: set[str] | None = None
 
 
 def sobrepoe(do_main: list[str] | None, do_pr: list[str] | None) -> bool:
@@ -98,6 +117,32 @@ def verde(pr: Pr) -> bool:
     return pr.suite == "success" and pr.anti_leak == "success"
 
 
+def mesclavel(pr: Pr) -> bool:
+    """O GitHub deixa a fila mesclar este PR sem travar em nada que importe?
+
+    `clean` sempre. `unstable` — algo fora da regra do main está vermelho ou pendente —
+    só quando TUDO o que não está verde é a verificação velha «suíte no contêiner» e o
+    status `suite` é verde (20/11/2026, PRs #472 e #479).
+
+    POR QUE NÃO ACEITAR TODO `unstable` COM A REGRA DO MAIN VERDE. A regra do main
+    exige só `suite` e `anti-leak`, mas uma verificação não exigida que fica vermelha
+    por motivo real (um workflow novo, um aviso que alguém ligou de propósito) é sinal
+    de problema no PR; a fila mescla sozinha, sem ninguém olhando, e não deve passar
+    por cima disso. A verificação da suíte é diferente: ela e o status `suite` medem a
+    mesma coisa, e o status é o mais novo — a vermelha só ficou para trás porque a
+    rodada nova grava a verificação no commit do main. Ignorar só ela resolve o PR
+    parado sem esconder nenhum outro vermelho. Se um dia for preciso aceitar outra,
+    ela entra em `PENDENCIAS_SUBSTITUIDAS`, com o motivo.
+
+    `unstable` sem nenhuma pendência apurada (o GitHub viu algo que a fila não viu,
+    ou mudou no meio) não entra: a próxima rodada olha de novo.
+    """
+    if pr.estado_merge == "clean":
+        return True
+    return (pr.estado_merge == "unstable" and pr.suite == "success"
+            and bool(pr.pendencias) and pr.pendencias <= PENDENCIAS_SUBSTITUIDAS)
+
+
 def correndo(pr: Pr) -> bool:
     return pr.suite == "pending" or pr.anti_leak == "pending" or pr.suite_na_fila
 
@@ -110,7 +155,7 @@ def decidir(prs: list[Pr], dono: str) -> list[tuple]:
     """
     fila = sorted((p for p in prs if elegivel(p, dono)), key=lambda p: (p.criado_em, p.numero))
     for pr in fila:
-        if verde(pr) and pr.estado_merge == "clean" and not pr.teste_vencido and not pr.suite_na_fila:
+        if verde(pr) and mesclavel(pr) and not pr.teste_vencido and not pr.suite_na_fila:
             return [("mesclar", pr.numero)]
     if any(correndo(p) for p in fila):
         return []
@@ -214,8 +259,31 @@ class GitHub:
             c = corridas["check_runs"][0]
             pr.anti_leak = "pending" if c["status"] != "completed" else (
                 "success" if c["conclusion"] == "success" else "failure")
-        if pr.suite == "success" and pr.estado_merge == "clean":
+        if pr.estado_merge == "unstable":
+            pr.pendencias = self.pendencias(pr, estados)
+        if pr.suite == "success" and mesclavel(pr):
             self.julgar_o_teste(pr, main_testado if len(main_testado) == 40 else None)
+
+    def pendencias(self, pr: Pr, estados: list[dict]) -> set[str]:
+        """O que não está verde no head, fora o que a regra do main exige (que a fila já
+        olha por conta própria). Dos status, vale o mais novo de cada contexto; das
+        verificações, o `filter=latest` do GitHub já dá a mais nova de cada nome."""
+        exigidos = {CONTEXTO_DA_SUITE, CONTEXTO_DO_MAIN_TESTADO}
+        nao_verdes: set[str] = set()
+        vistos: set[str] = set()
+        for s in estados:   # o mais recente vem primeiro
+            if s["context"] in vistos:
+                continue
+            vistos.add(s["context"])
+            if s["context"] not in exigidos and s["state"] != "success":
+                nao_verdes.add(s["context"])
+        corridas = self.pedir("GET", f"/commits/{pr.head}/check-runs?filter=latest&per_page=100")
+        for c in corridas["check_runs"]:
+            if c["name"] == VERIFICACAO_ANTI_LEAK:
+                continue
+            if c["status"] != "completed" or c["conclusion"] not in ("success", "neutral", "skipped"):
+                nao_verdes.add(c["name"])
+        return nao_verdes
 
     def mesclar(self, pr: Pr) -> None:
         self.pedir("PUT", f"/pulls/{pr.numero}/merge",

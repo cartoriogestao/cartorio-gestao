@@ -238,6 +238,7 @@ def contexto_de_assento(
             quadro.get("local_nascimento")
             or RCE._local_do_nascimento(dados)
             or assento.get("local_fato_nome")
+            or RCE.local_nascimento_do_arquivo(dados)
             or ""
         ).strip()
         mun, mun_uf = _municipio_nascimento(assento, dados, sv, local)
@@ -328,7 +329,8 @@ def contexto_de_exemplo(dados: dict, *, area: str = "RCPN",
     q = _quadro_de_dicts(assento, certidao, sv, quem=quem)
     q["cpf"] = _cpf_canonic(assento, quem, _dados(assento), certidao)
     if especie == "NASCIMENTO":
-        local = str(q.get("local_nascimento") or assento.get("local_fato_nome") or "").strip()
+        local = str(q.get("local_nascimento") or assento.get("local_fato_nome")
+                    or RCE.local_nascimento_do_arquivo(_dados(assento)) or "").strip()
         mun, mun_uf = _municipio_nascimento(assento, _dados(assento), sv, local)
         q["local_nascimento"] = local
         q["municipio_nascimento"] = mun

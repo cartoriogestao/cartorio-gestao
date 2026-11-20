@@ -54,11 +54,6 @@ def sem_texto(texto: Any) -> bool:
     return not str(texto or "").strip()
 
 
-def marca_no_texto(texto: Any) -> bool:
-    """O texto do selo diz «Selo Isento»? A régua de sempre, em Python."""
-    return MARCA.lower() in str(texto or "").lower()
-
-
 def _fontes(bd) -> set[tuple[str, str]]:
     """As colunas que a régua lê e que existem neste banco. Uma consulta só:
     a barra do comprovante passa por aqui em toda tela."""

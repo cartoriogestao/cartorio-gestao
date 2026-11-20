@@ -389,3 +389,95 @@ def test_uma_linha_por_ato_e_ordem(casa):
                         "codigo_tj, valor_centavos, selo, criado_em) "
                         "VALUES (?,2,'13.1.8',1,'B','x')", (aid,))
     con.close()
+
+# ------------------------------------------- outro ato sobre o mesmo imóvel
+#
+# 19/11/2026, compliance C002: escritura de inventário e partilha seguida de
+# compra e venda do MESMO imóvel — dois 13.1 de mesmo valor, ambos pagos. A
+# tela só conhecia «outro imóvel»; a trava recusou, e o 2º selo saiu com o
+# valor acrescido de R$ 0,01. Agora o motivo se diz, e o valor ajustado não sai.
+
+
+def _auditoria_do_extra(casa, ato_id):
+    return [json.loads(r["details"] or "{}") for r in _sql(
+        casa, "SELECT details FROM audit_logs WHERE action IN "
+              "('NT_ATO_SELO_ADICIONAL', 'NT_ATO_SELO_ADICIONAL_NAO_SAIU') "
+              "AND entity_id=? ORDER BY id", (ato_id,))]
+
+
+def test_partilha_e_compra_e_venda_do_mesmo_imovel_saem_com_o_motivo(casa):
+    """Mesmo valor, mesmo item, dois atos: sai com «outro ato» e o ato dito."""
+    from selador_de_bancada import ligar_o_selador
+    aid = _ato(casa)
+    p = _protocolo_pago(casa, ["13.1.15"], quantidade=2)
+    with ligar_o_selador(casa, protocolo_pago=False) as aparelho:
+        _postar(casa, aid, acao="selar", valor_do_selo=AREA_A)
+        html = _postar(casa, aid, acao="selar_extra", valor_do_selo=AREA_A,
+                       motivo_do_selo="OUTRO_ATO", ato_do_selo="compra e venda",
+                       protocolo_selo=str(p["protocolo_id"]))
+    assert len(_razao(casa, aid)) == 2
+    assert "outro ato sobre o mesmo imóvel: compra e venda" in html
+    # os dois pedidos foram com o valor EXATO do imóvel
+    assert [x["valorDeclarado"]["valorDeclarado"] for x in _pedidos(aparelho)] == [
+        205863.95, 205863.95]
+    assert _itens(casa, p["protocolo_id"])["13.1.15"]["quantidade_usada"] == 2
+    (registro,) = _auditoria_do_extra(casa, aid)
+    assert registro["motivo"] == "OUTRO_ATO"
+    assert registro["ato"] == "compra e venda"
+
+
+def test_outro_ato_sem_dizer_qual_nao_sai(casa):
+    from selador_de_bancada import ligar_o_selador
+    aid = _ato(casa)
+    p = _protocolo_pago(casa, ["13.1.15"], quantidade=2)
+    with ligar_o_selador(casa, protocolo_pago=False) as aparelho:
+        _postar(casa, aid, acao="selar", valor_do_selo=AREA_A)
+        html = _postar(casa, aid, acao="selar_extra", valor_do_selo=AREA_A,
+                       motivo_do_selo="OUTRO_ATO", ato_do_selo="  ",
+                       protocolo_selo=str(p["protocolo_id"]))
+    assert "Diga qual é o outro ato" in html
+    assert len(_razao(casa, aid)) == 1 and len(_pedidos(aparelho)) == 1
+
+
+def test_valor_ajustado_em_centavos_nao_sai_por_nenhum_motivo_sem_confirmar(casa):
+    """R$ 205.863,96 contra R$ 205.863,95: é o mesmo valor mexido, e não sai."""
+    from selador_de_bancada import ligar_o_selador
+    aid = _ato(casa)
+    p = _protocolo_pago(casa, ["13.1.15"], quantidade=2)
+    with ligar_o_selador(casa, protocolo_pago=False) as aparelho:
+        _postar(casa, aid, acao="selar", valor_do_selo=AREA_A)
+        sem_motivo = _postar(casa, aid, acao="selar_extra",
+                             valor_do_selo="205.863,96",
+                             protocolo_selo=str(p["protocolo_id"]))
+        outro_ato = _postar(casa, aid, acao="selar_extra",
+                            valor_do_selo="205.863,96", motivo_do_selo="OUTRO_ATO",
+                            ato_do_selo="compra e venda",
+                            protocolo_selo=str(p["protocolo_id"]))
+    for html in (sem_motivo, outro_ato):
+        assert "difere só R$ 0,01" in html and "Nada foi pedido" in html
+    assert len(_razao(casa, aid)) == 1 and len(_pedidos(aparelho)) == 1
+    assert _itens(casa, p["protocolo_id"])["13.1.15"]["quantidade_usada"] == 1
+    assert [r["motivo"] for r in _auditoria_do_extra(casa, aid)] == [
+        "OUTRO_IMOVEL", "OUTRO_ATO"]
+
+
+def test_dois_imoveis_de_valor_quase_igual_saem_se_confirmado(casa):
+    """Dois imóveis de valor quase igual existem: quem declara confirma."""
+    from selador_de_bancada import ligar_o_selador
+    aid = _ato(casa)
+    p = _protocolo_pago(casa, ["13.1.15"], quantidade=2)
+    with ligar_o_selador(casa, protocolo_pago=False):
+        _postar(casa, aid, acao="selar", valor_do_selo=AREA_A)
+        _postar(casa, aid, acao="selar_extra", valor_do_selo="205.863,96",
+                motivo_do_selo="OUTRO_IMOVEL", confirmo_mesmo_valor="1",
+                protocolo_selo=str(p["protocolo_id"]))
+    assert len(_razao(casa, aid)) == 2
+
+
+def test_a_tela_pergunta_o_motivo_do_selo_a_mais(casa):
+    com_selo = _ato(casa, selo="ESCRIT000000AAAAAAAAAAAAAA05")
+    html = casa["cliente"].get(f"/notas/atos/{com_selo}").get_data(as_text=True)
+    assert 'name="motivo_do_selo" value="OUTRO_IMOVEL" checked' in html
+    assert 'name="motivo_do_selo" value="OUTRO_ATO"' in html
+    assert 'name="ato_do_selo"' in html
+    assert "Outro ato sobre o mesmo imóvel" in html

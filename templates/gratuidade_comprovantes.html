@@ -12,8 +12,11 @@
     se forem dois ou mais, também vale. Por quê: {{ por_que }}.
     Tem só o comprovante? Marque «juntar com a certidão do ato» e o sistema faz o PDF
     com a certidão que já está guardada para o selo.</p>
-  <p>O Portal do Selo pede também a <strong>cópia da certidão do ato</strong>:
-    <a href="{{ url_for('selo_gratuidades_portal') }}">guardar a certidão e ver o que falta para o Portal</a>.</p>
+  {# G003: a cópia da certidão tem campo próprio — o Portal pede as duas peças. #}
+  <p>O Portal do Selo pede também a <strong>cópia da certidão do ato</strong>. Se ela não
+    está no PDF do comprovante, mande-a no campo <strong>«certidão do ato»</strong> (pode ser
+    depois: não trava nada).
+    <a href="{{ url_for('selo_gratuidades_portal') }}">Ver o que falta para o Portal</a>.</p>
 </section>
 <div class="table-wrap">
 <table>
@@ -27,7 +30,9 @@
       <td>
         <form method="post" enctype="multipart/form-data" action="{{ url_for('gratuidade_comprovante_subir', selo_id=p.id) }}" style="display:inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" multiple required>
+          <label>Comprovante <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" multiple required></label>
+          <label>Certidão do ato <small>(se não estiver no comprovante)</small>
+            <input type="file" name="certidao" accept=".pdf,.jpg,.jpeg,.png"></label>
           <select name="fundamento" required>
             <option value="">Fundamento da gratuidade…</option>
             {% for chave, texto in fundamentos.items() %}<option value="{{ chave }}">{{ texto }}</option>{% endfor %}
@@ -60,11 +65,13 @@
       <td><code>{{ p.numero }}</code></td>
       <td>{% if p.rotulo %}<strong>{{ p.rotulo }}</strong> <small>({{ p.atribuicao or '' }})</small>{% else %}{{ p.atribuicao or '' }} {{ (p.tabela or '')|replace('_', ' ') }} {{ p.ato_id or '' }}{% endif %}{# HOTFIX-2026-10-13-08 #}</td>
       <td>{{ (p.obtido_em or '')[:16]|replace('T', ' ') }}</td>
-      <td>{% for a in p.anexos %}<a href="/arquivo/{{ a.id }}/ver" target="_blank">{{ a.nome }}</a>{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+      <td>{% for a in p.anexos %}<a href="/arquivo/{{ a.id }}/ver" target="_blank">{{ a.nome }}</a>{% if not loop.last %}<br>{% endif %}{% endfor %}
+        {% if p.falta_certidao %}<br><span class="badge alta">falta a certidão do ato</span>{% endif %}</td>
       <td>
         <form method="post" enctype="multipart/form-data" action="{{ url_for('gratuidade_comprovante_subir', selo_id=p.id) }}" style="display:inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" multiple required>
+          <label>Comprovante <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" multiple></label>
+          <label>Certidão do ato <input type="file" name="certidao" accept=".pdf,.jpg,.jpeg,.png"></label>
           <button class="button" type="submit">Acrescentar</button>
         </form>
       </td>

@@ -259,7 +259,9 @@ def comprovados(con: sqlite3.Connection, *, nome: str, username: str = "",
                           "ato_id": r["ato_id"], "atribuicao": r["atribuicao"],
                           "obtido_em": r["obtido_em"], "obtido_por": r["obtido_por"],
                           "rotulo": rotulo(con, r["tabela"], r["ato_id"]),
-                          "anexos": anexos(con, r["id"])})
+                          "anexos": anexos(con, r["id"]),
+                          # G003: o Portal pede também a cópia da certidão.
+                          "falta_certidao": not certidao_guardada(con, r["id"])})
     return saida
 
 
@@ -338,13 +340,24 @@ def guardar(con: sqlite3.Connection, selo_id: int, *, nome_arquivo: str, conteud
 def guardar_junto(con: sqlite3.Connection, selo_id: int, *,
                   arquivos: list[tuple[str, bytes]], pasta: Path,
                   usuario_id: int | None, agora: str,
-                  fundamento: str | None = None) -> int:
+                  fundamento: str | None = None,
+                  certidoes: list[tuple[str, bytes]] | None = None) -> int:
     """Junta comprovante + certidão do ato num PDF só e guarda. ESCREVE.
 
-    É o «um clique» da tela: o comprovante que a pessoa mandou e a certidão
-    do ato, na ordem do pacote do Portal (comprovante primeiro). A junção é a
-    do LG07 (`selo_portal.juntar_em_pdf`), para o pacote e o anexo não
-    divergirem na forma.
+    É o «um clique» da tela: o que a pessoa mandou (`arquivos`) e a certidão
+    do ato que o sistema já guardou para o selo (`certidoes`), na ordem do
+    pacote do Portal (comprovante primeiro). A junção é a do LG07
+    (`selo_portal.juntar_em_pdf`), para o pacote e o anexo não divergirem na
+    forma.
+
+    A MARCA AMBOS SÓ VAI QUANDO HÁ COM O QUE JUNTAR (G003, achado G-2 da
+    auditoria G002, 18/11/2026): antes ela ia sempre, e 53 selos apareceram
+    «prontos» na fila do Portal sem nenhuma certidão guardada no banco. Agora
+    o PDF é AMBOS quando entrou certidão guardada ou quando a pessoa mandou
+    mais de um arquivo (o comprovante e, presume-se, a certidão); um arquivo
+    só, sem certidão guardada, é COMPROVANTE — e a fila diz que falta a
+    certidão, que é a verdade. Não trava nada: o comprovante é guardado do
+    mesmo jeito e a pendência do escrevente some.
     """
     import selo_portal as SP
     selo = _selo(con, selo_id)
@@ -354,21 +367,44 @@ def guardar_junto(con: sqlite3.Connection, selo_id: int, *,
     for nome, _ in validos:
         if not nome.lower().endswith(EXTENSOES):
             raise ComprovanteError("Comprovante em PDF ou imagem (JPG, PNG).")
+    guardadas = [(Path(n or "").name, c) for n, c in (certidoes or []) if c]
+    traz_os_dois = bool(guardadas) or len(validos) > 1
     try:
-        pdf = SP.juntar_em_pdf(validos)
+        pdf = SP.juntar_em_pdf(validos + guardadas)
     except Exception as erro:                                  # noqa: BLE001
         raise ComprovanteError(
             "Não consegui juntar os arquivos num PDF só — guarde-os um a um "
             "(a pendência some com o primeiro).") from erro
-    aid = guardar(con, selo_id, nome_arquivo=f"{selo['numero']}_comprovante_e_certidao.pdf",
-                  conteudo=pdf, pasta=pasta, usuario_id=usuario_id, agora=agora,
-                  origem="comprovante + certidão do ato", fundamento=fundamento)
-    # O pacote do Portal (LG07) lê o que cada arquivo é: este traz os dois.
+    if traz_os_dois:
+        nome_do_pdf, origem = (f"{selo['numero']}_comprovante_e_certidao.pdf",
+                               "comprovante + certidão do ato")
+    else:
+        nome_do_pdf, origem = f"{selo['numero']}_comprovante.pdf", "comprovante"
+    aid = guardar(con, selo_id, nome_arquivo=nome_do_pdf, conteudo=pdf, pasta=pasta,
+                  usuario_id=usuario_id, agora=agora, origem=origem, fundamento=fundamento)
+    # O pacote do Portal (LG07) lê o que cada arquivo é.
     bd = banco(con)
     if bd.tem_tabela("sd_gratuidade_pecas"):
-        SP._marcar(bd, aid, int(selo_id), peca=SP.AMBOS, tipo_comprovante="",
-                   agora=agora, usuario="")
+        SP._marcar(bd, aid, int(selo_id), peca=SP.AMBOS if traz_os_dois else SP.COMPROVANTE,
+                   tipo_comprovante="", agora=agora, usuario="")
     return aid
+
+
+def certidao_guardada(con: sqlite3.Connection, selo_id: int) -> bool:
+    """O selo já tem a cópia da certidão do ato (peça CERTIDÃO ou AMBOS)? Só LÊ.
+
+    A mesma régua da fila do Portal (`selo_portal.gratuitos`, `tem_certidao`):
+    sem `sd_gratuidade_pecas`, nenhuma peça foi marcada, e a resposta é não.
+    """
+    import selo_portal as SP
+    bd = banco(con)
+    if not bd.tem_tabela("sd_gratuidade_pecas"):
+        return False
+    return bool(bd.um(
+        "SELECT 1 FROM attachments a JOIN sd_gratuidade_pecas p ON p.attachment_id = a.id "
+        "WHERE a.entity_type IN (%s, %s) AND a.entity_id = %s "
+        "AND p.peca IN ('CERTIDAO', 'AMBOS') LIMIT 1",
+        (ENTIDADE, SP.ENTIDADE_CERTIDAO, int(selo_id))))
 
 
 def na_pasta(codigos: list[str], pasta: Path | None = None) -> dict[str, Path]:

@@ -144,26 +144,42 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     @app.route("/gratuidades/comprovantes/<int:selo_id>", methods=["POST"])
     @roles_required(*QUEM)
     def gratuidade_comprovante_subir(selo_id: int):
+        import selo_portal as SP
         # HOTFIX-2026-10-13-07: varios arquivos de uma vez; nunca apaga os que ja ha.
         arquivos = [a for a in request.files.getlist("arquivo") if a and a.filename]
-        if not arquivos:
-            flash("Escolha o arquivo do comprovante.", "danger")
+        # G003 (achado G-2 da G002): a cópia da certidão do ato tem campo
+        # próprio e vai como peça CERTIDÃO do Portal (`SELO_GRATUIDADE_CERTIDAO`).
+        # Sozinha ela não é o comprovante e não apaga o aviso — e nada trava.
+        certidao = request.files.get("certidao")
+        certidao = certidao if certidao and certidao.filename else None
+        if not arquivos and not certidao:
+            flash("Escolha o arquivo do comprovante (ou da certidão do ato).", "danger")
             return _voltar()
         # LX16: o fundamento vem da lista (`GC.FUNDAMENTOS`); «juntar» faz UM
         # PDF com o que a pessoa mandou e a certidão do ato que o sistema já
         # guardou para este selo (a peça CERTIDÃO do Portal, LG07).
         fundamento = request.form.get("fundamento") or None
-        ids = []
+        nome, username = _quem()
+        ids, certidao_id, juntou_sem_certidao = [], None, False
         try:
             with db.transaction() as con:
-                if request.form.get("juntar"):
+                if certidao:
+                    certidao_id = SP.guardar_peca(
+                        con, selo_id, peca=SP.CERTIDAO, nome_arquivo=certidao.filename,
+                        conteudo=certidao.read(), pasta=archive_root() / "gratuidades",
+                        usuario_id=usuario_id(), usuario=username or nome, agora=db.now())
+                if arquivos and request.form.get("juntar"):
+                    # A certidão que veio neste mesmo envio já é peça própria:
+                    # juntá-la de novo poria as páginas dela duas vezes no pacote.
                     certidoes = [(Path(p["stored_path"]).name, Path(p["stored_path"]).read_bytes())
-                                 for p in _certidoes_guardadas(con, selo_id)]
+                                 for p in _certidoes_guardadas(con, selo_id)
+                                 if p["id"] != certidao_id]
+                    juntou_sem_certidao = (not certidoes and not certidao_id
+                                           and len(arquivos) == 1)
                     ids.append(GC.guardar_junto(
-                        con, selo_id,
-                        arquivos=[(a.filename, a.read()) for a in arquivos] + certidoes,
-                        pasta=archive_root() / "gratuidades", usuario_id=usuario_id(),
-                        agora=db.now(), fundamento=fundamento))
+                        con, selo_id, arquivos=[(a.filename, a.read()) for a in arquivos],
+                        certidoes=certidoes, pasta=archive_root() / "gratuidades",
+                        usuario_id=usuario_id(), agora=db.now(), fundamento=fundamento))
                 else:
                     for arquivo in arquivos:
                         ids.append(GC.guardar(con, selo_id, nome_arquivo=arquivo.filename,
@@ -171,11 +187,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                               pasta=archive_root() / "gratuidades",
                                               usuario_id=usuario_id(), agora=db.now(),
                                               fundamento=fundamento))
-        except GC.ComprovanteError as erro:
+                falta_certidao = not GC.certidao_guardada(con, selo_id)
+        except (GC.ComprovanteError, SP.PortalError) as erro:
             flash(f"{erro} Nenhum arquivo deste envio foi guardado.", "danger")
             return _voltar()
-        audit("GRATUIDADE_COMPROVANTE_GUARDADO", "sd_selos", selo_id, {"anexos": ids})
-        flash(f"{len(ids)} comprovante(s) guardado(s).", "ok")
+        audit("GRATUIDADE_COMPROVANTE_GUARDADO", "sd_selos", selo_id,
+              {"anexos": ids, "certidao": certidao_id})
+        partes = []
+        if ids:
+            partes.append(f"{len(ids)} comprovante(s) guardado(s).")
+        if certidao_id:
+            partes.append("Cópia da certidão do ato guardada.")
+        flash(" ".join(partes), "ok")
+        if juntou_sem_certidao:
+            flash("Não havia certidão do ato guardada para juntar: o arquivo ficou como "
+                  "comprovante.", "warning")
+        if falta_certidao:
+            flash("Falta a cópia da certidão do ato deste selo — o Portal do Selo pede. "
+                  "Mande-a no campo «certidão do ato».", "warning")
         return _voltar()
 
     @app.route("/gratuidades/comprovantes/<int:selo_id>/pasta", methods=["POST"])

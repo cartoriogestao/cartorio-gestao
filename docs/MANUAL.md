@@ -732,7 +732,10 @@ No layout novo, a ficha da matrícula tem abas, e o formulário de lavrar tem pa
 averbações (cancelamentos e restrições não podem sumir), emissor e assinatura;
 prévia, gere, reabra e compare antes de entregar. A certidão reflete o **estado
 atual**. O prazo de validade impresso segue o Código de Normas **(norma
-estadual — confira a do seu estado)**.
+estadual — confira a do seu estado)**. A **certidão de ônus** leva **dois
+selos** (ônus reais e ações reais e pessoais reipersecutórias) e pede **dois
+itens 16.24.4** no protocolo; com um só, o segundo selo fica esperando e o
+botão **Selar** da certidão o pede depois de pago.
 
 **Livro 3**: registros, minutas a revisar, o que revisar antes de selar, o que
 falta conferir (ficha × imagem do livro) e certidões, em que registro e

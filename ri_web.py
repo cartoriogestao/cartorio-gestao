@@ -927,6 +927,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         Devolve `saiu` (números), `faltou` (motivos) e `aguardando` — True
         quando o item base não saiu só por falta de protocolo ou pagamento, e
         não por recusa do aparelho.
+
+        **A CERTIDÃO DE ÔNUS SÃO DOIS SELOS** — decisão do oficial,
+        19/11/2026 (`AS.TIPOS_DO_RI_COM_DOIS_SELOS`). O segundo 16.24.4 (as
+        ações) tem referência própria (`ri_certidoes:ID:acoes`) e só se cobre
+        com o SEU item pago (`item_proprio`): o item que pagou o primeiro não
+        paga o segundo. Sem ele, o primeiro selo sai, a certidão volta à fila
+        «aguardando cobertura» com o motivo das ações, e o «Selar» pede de
+        novo — o que já saiu volta pelo mesmo SID, sem compra nova.
         """
         versao = AS.versao_da_tabela_de_custas(
             "/selo/imovel/certidao",
@@ -936,33 +944,31 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 "falta a versão da tabela de custas, em Administrativo → "
                 "Configurações (data da tabela em vigor).")
         saiu, faltou, aguardando = [], [], False
+        espera = None                    # o motivo do selo que ficou na fila
         # A CERTIDAO DIGITAL DA ONR NAO COBRA FOLHA EXCEDENTE — CGJ-TJMA /
         # DECISÃO-COGEx (qualquer tipo do RI). Quem diz se é digital é a
         # finalidade gravada, que vale para a emissão e para o «selar de novo».
         with db.connect() as con:
             _finalidade = banco(con).valor(
                 "SELECT finalidade FROM ri_certidoes WHERE id = %s", (int(certidao_id),))
-        for indice, (codigo_do_item, quantidade) in enumerate(
-                AS.itens_da_certidao_do_ri(
-                    tipo, folhas, digital=AS.e_certidao_digital_do_ri(_finalidade))):
+        itens = AS.itens_da_certidao_do_ri(
+            tipo, folhas, digital=AS.e_certidao_digital_do_ri(_finalidade))
+        # **A REFERENCIA DO PRIMEIRO ITEM NAO MUDA**, e e dela que sai o SID:
+        # trocar a forma faria o aparelho vender selo novo onde antes devolvia
+        # o mesmo. Os outros itens levam a sua — uma referencia so para dois
+        # itens traria o mesmo selo duas vezes. Ver `AS.selos_da_certidao_do_ri`.
+        for indice, selo in enumerate(AS.selos_da_certidao_do_ri(certidao_id, itens)):
             envelope = AS.envelope_da_certidao_do_ri(
                 tipo=tipo,
                 escrevente=app.extensions["usuario_nome"](),
                 versao_tabela=versao,
-                quantidade=quantidade,
-                codigo_do_item=codigo_do_item,
+                quantidade=selo["quantidade"],
+                codigo_do_item=selo["codigo"],
                 requerente=requerente,
                 requerente_documento=requerente_documento,
                 matricula=matricula,
                 isento=isento,
                 motivo_isencao=motivo_isencao)
-            # **A REFERENCIA DO PRIMEIRO ITEM NAO MUDA**, e e dela que sai o
-            # SID: trocar a forma faria o aparelho vender selo novo onde antes
-            # devolvia o mesmo. O item da folha acrescida, que e novo, leva a
-            # sua propria — uma referencia so para dois itens traria o mesmo
-            # selo duas vezes.
-            referencia = (f"ri_certidoes:{certidao_id}" if indice == 0
-                          else f"ri_certidoes:{certidao_id}:{codigo_do_item}")
             r = AS.selar_o_ato_lavrado(
                 db, Path(app.config["DATA_DIR"]),
                 tabela="ri_certidoes",
@@ -970,14 +976,28 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 agora=datetime.now().isoformat(timespec="seconds"),
                 cns=db.get_setting("ri_cns", ""),
                 usuario=app.extensions["usuario_nome"](),
-                dados=envelope, referencia=referencia)
+                dados=envelope, referencia=selo["referencia"],
+                item_proprio=selo["acoes"])
             if r["selado"]:
                 saiu.append(r["numero"])
                 continue
-            faltou.append(r["motivo"])
+            motivo = r["motivo"]
+            if selo["acoes"]:
+                motivo = f"falta {AS.DESCRICAO_DO_SELO_DAS_ACOES}. {motivo}"
+            faltou.append(motivo)
             if indice == 0:
                 aguardando = bool(r.get("aguardando_cobertura"))
                 break
+            if r.get("aguardando_cobertura") and espera is None:
+                espera = motivo
+        if espera and saiu:
+            # O SELO QUE SAI DEPOIS TIRA O ATO DA FILA (`obter_selo`): o das
+            # ações que faltou antes da folha acrescida sumiria do «Selar».
+            # A certidão volta à fila com o motivo do que falta.
+            AS.deixar_aguardando_cobertura(
+                db, tabela="ri_certidoes", ato_id=int(certidao_id),
+                motivo=espera, usuario=app.extensions["usuario_nome"](),
+                agora=datetime.now().isoformat(timespec="seconds"))
         return {"saiu": saiu, "faltou": faltou, "aguardando": aguardando}
 
     def _recado_dos_selos_da_certidao(pedido: dict) -> str:
@@ -1104,6 +1124,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     "pedidos": pedidos}
 
     app.jinja_env.globals["protocolos_do_selo_ri"] = _protocolos_do_selo_ri
+
+    def _itens_base_da_certidao(c) -> int:
+        """Quantos itens-base esta certidão pede ao protocolo. Só calcula.
+
+        Dois na de ônus do balcão (19/11/2026, `AS.TIPOS_DO_RI_COM_DOIS_SELOS`),
+        um nas outras e na digital da ONR. Lido da mesma regra que sela — a
+        tela não promete o que o selo não faz.
+        """
+        try:
+            itens = AS.itens_da_certidao_do_ri(
+                c["tipo"], 1,
+                digital=AS.e_certidao_digital_do_ri(c.get("finalidade")))
+        except (AS.AtoError, KeyError, TypeError, AttributeError):
+            return 1
+        return sum(q for codigo, q in itens if codigo == itens[0][0]) or 1
+
+    app.jinja_env.globals["itens_base_da_certidao"] = _itens_base_da_certidao
 
     def q(sql, params=()):
         with db.connect() as con:
@@ -9543,7 +9580,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                    "motivo": motivo_selo})
             flash(f"{nome_cert} n. {numero}/{hoje.year} emitida com selo base; "
                   f"item extra sem cobertura: {motivo_selo} A certidão "
-                  "fica de pé — não cancele para não queimar o selo.",
+                  "fica de pé — não cancele para não queimar o selo."
+                  # O «Selar» completa o que ficou na fila (19/11/2026).
+                  + (" Pague o item que falta no protocolo e clique em "
+                     "«Selar» na lista de certidões."
+                     if int(certidao_id) in _certidoes_aguardando_selo(
+                         [certidao_id]) else ""),
                   "warning")
             return redirect(url_for("ri_certidoes", busca=str(numero)))
         if motivo_selo:
@@ -10276,11 +10318,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             flash("Esta certidão está cancelada: não se sela certidão "
                   "cancelada. Emita outra.", "danger")
             return redirect(voltar)
-        if str(c["selo_texto"] or "").strip():
+        # O SELO QUE FALTA NA CERTIDÃO QUE JÁ TEM UM (19/11/2026): a de ônus
+        # leva dois, e o das ações pode ter ficado esperando o seu item pago.
+        # Quem diz que falta é a fila «aguardando cobertura»; a certidão
+        # completa não está nela, e por isso não pede selo nenhum aqui.
+        esperando = int(certidao_id) in _certidoes_aguardando_selo([certidao_id])
+        if str(c["selo_texto"] or "").strip() and not esperando:
             flash("Esta certidão já tem selo. Para outra via, clique no número "
                   "dela: reimprimir não pede selo novo.", "success")
             return redirect(voltar)
-        if int(certidao_id) not in _certidoes_aguardando_selo([certidao_id]):
+        if not esperando:
             flash("Esta certidão não está esperando selo — ela não ficou "
                   "«aguardando cobertura». Selo de certidão antiga se digita "
                   "à mão.", "warning")
@@ -10320,6 +10367,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                    "motivo": (pedido["faltou"] or [""])[0]})
             flash(f"A certidão nº {c['numero']}/{c['ano']} continua sem selo e "
                   f"não pode ser impressa.{recado}", "warning")
+            return redirect(voltar)
+        if pedido["faltou"]:
+            # Saiu o que já tinha saído (o mesmo SID devolve o mesmo selo) e
+            # o que falta continua faltando — a de ônus sem o 2º item pago.
+            audit("RI_CERTIDAO_SELO_PEDIDO_DE_NOVO", "RI_CERTIDAO", certidao_id,
+                  {"numero": c["numero"], "ano": c["ano"], "selado": False,
+                   "selos": pedido["saiu"], "motivo": pedido["faltou"][0]})
+            flash(f"A certidão nº {c['numero']}/{c['ano']} ainda espera selo."
+                  f"{recado} Pague o item que falta no protocolo e clique em "
+                  "«Selar» de novo.", "warning")
             return redirect(voltar)
         busca = _busca_pedida_na_emissao(int(certidao_id))
         if busca:
@@ -10952,7 +11009,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                    "motivo": motivo_selo})
             flash(f"Certidão nº {numero}/{hoje.year} emitida com selo base; "
                   f"item extra sem cobertura: {motivo_selo} A certidão "
-                  "fica de pé — não cancele para não queimar o selo.",
+                  "fica de pé — não cancele para não queimar o selo."
+                  # O «Selar» completa o que ficou na fila (19/11/2026).
+                  + (" Pague o item que falta no protocolo e clique em "
+                     "«Selar» na lista de certidões."
+                     if int(certidao_id) in _certidoes_aguardando_selo(
+                         [certidao_id]) else ""),
                   "warning")
             if tipo in TIPOS_DA_CADEIA:
                 _avisar_das_origens(contexto)

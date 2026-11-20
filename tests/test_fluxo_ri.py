@@ -1020,12 +1020,16 @@ def _pede_certidao(casa, quem: dict = COMPRADORA, itens=(("16.24.4", 1), ("16.24
     return _protocolo_geral(casa, interessado=quem, itens=list(itens))
 
 
+#: A de ônus pede dois 16.24.4 — ônus reais e ações (decisão de 19/11/2026).
+_ITENS_DO_ONUS = (("16.24.4", 2), ("16.24.4.1", 9))
+
+
 def test_a_certidao_de_onus_negativa_diz_livre_e_desembaracado(casa):
     """Ônus e ações reais e reipersecutórias (LRP art. 19, § 9º; CN-MA arts.
     553, § 4º, e 558): sem ônus lavrado, «NADA CONSTA» dos dois — e o que
     identifica a certidão (CN-MA art. 553)."""
     f = _compra_e_venda(casa)
-    cert = _certidao(casa, f["matricula"], "ONUS", cx=_pede_certidao(casa),
+    cert = _certidao(casa, f["matricula"], "ONUS", cx=_pede_certidao(casa, itens=_ITENS_DO_ONUS),
                      onus_formulario="1", resultado_onus="negativa",
                      resultado_acoes="negativa", proprietario_conferido="1")
     _confere(cert["papel"], [
@@ -1046,7 +1050,7 @@ def test_a_certidao_de_onus_positiva_transcreve_a_hipoteca_igual_ao_termo(casa):
     art. 19, § 9º; CN-MA art. 553, § 4º)."""
     f = _com_hipoteca(casa)
     r2 = f["r2"]
-    cert = _certidao(casa, f["matricula"], "ONUS", cx=_pede_certidao(casa),
+    cert = _certidao(casa, f["matricula"], "ONUS", cx=_pede_certidao(casa, itens=_ITENS_DO_ONUS),
                      onus_formulario="1", resultado_onus="positiva",
                      resultado_acoes="negativa", onus_item=f"ATO:{r2['id']}",
                      proprietario_conferido="1")

@@ -794,6 +794,103 @@ def test_cra_em_feriado_nao_cobra_a_remessa(casa, tmp_path):
     assert PROC.verificar_cra(_ctx(db, tmp_path))["situacao"] == SCH.AVISO
 
 
+# ---------------------------- PR004: os prazos da casa com a CRA, no banco
+
+
+def _protesto_sem_retorno(db, dia="2026-10-22"):
+    """Um título da CRA protestado num dia, sem arquivo de retorno."""
+    with db.transaction() as con:
+        bd = banco(con)
+        tid = bd.escrever(
+            """INSERT INTO pt_titulos(especie, numero_titulo, protocolo, situacao, origem,
+                   apresentante_codigo, criado_em)
+               VALUES ('DMI', 'T', '2610209901', 'PROTESTADO', 'CRA', '001', %s)
+               RETURNING id""", (dia,))[0]["id"]
+        bd.escrever("""INSERT INTO pt_atos(titulo_id, tipo, data_ato, criado_em)
+                       VALUES (%s, 'PROTESTO', %s, %s)""", (tid, dia, dia))
+
+
+def _confirmacao_nao_aceita(db, gerada="2026-10-26T08:00:00"):
+    with db.transaction() as con:
+        banco(con).escrever(
+            """INSERT INTO pt_retornos(tipo, apresentante_codigo, dia, nome_arquivo,
+                   conteudo, gerado_em) VALUES ('SDTBFOCRT', '001', %s, 'C001.261', 'x', %s)""",
+            (gerada[:10], gerada))
+
+
+def _com_credencial(monkeypatch):
+    import centrais_cred as CRED
+    monkeypatch.setattr(CRED, "tem", lambda *a, **k: True)
+
+
+def _remessa_baixada(db, quando="2026-10-26T08:30:00"):
+    with db.transaction() as con:
+        banco(con).escrever(
+            """INSERT INTO centrais_log(quando, central, operacao, nivel, evento)
+               VALUES (%s, 'CRA', 'Remessa', 'INFO', 'REQUISICAO')""", (quando,))
+
+
+def test_cra_cobra_o_ato_sem_arquivo_aceito_depois_das_11h30(casa, tmp_path, monkeypatch):
+    """Auditoria PR003, P6 e P14: retornos fora do prazo passaram sem alarme,
+    porque a verificação só olhava a baixa da remessa."""
+    db = casa["db"]
+    _com_credencial(monkeypatch)
+    _remessa_baixada(db)
+    sem_teste = {"testar_conexao": False}
+    r = PROC.verificar_cra(_ctx(db, tmp_path, sem_teste))
+    assert r["situacao"] == SCH.OK and "Nenhum prazo" in r["relato"]
+    _protesto_sem_retorno(db)                       # 22/10; o prazo era 23/10, 11:30
+    r = PROC.verificar_cra(_ctx(db, tmp_path, sem_teste))
+    assert r["situacao"] == SCH.AVISO and "Passaram da hora" in r["relato"]
+    [prazo] = [a for a in r["achados"] if a.get("obrigacao")]
+    assert prazo["obrigacao"] == "atos_sem_retorno" and prazo["atrasados"] == 1
+    assert "2610209901" not in r["relato"]          # o relato fala em números
+
+
+def test_cra_cobra_a_confirmacao_depois_das_14h10(casa, tmp_path, monkeypatch):
+    db = casa["db"]
+    _com_credencial(monkeypatch)
+    _remessa_baixada(db)
+    _confirmacao_nao_aceita(db)
+    sem_teste = {"testar_conexao": False}
+    antes = PROC.Contexto(db=db, agora=datetime(2026, 10, 26, 11, 30), pasta_dados=tmp_path,
+                          raiz=RAIZ, processo={"codigo": "T", "parametros": sem_teste})
+    assert PROC.verificar_cra(antes)["situacao"] == SCH.OK
+    depois = PROC.Contexto(db=db, agora=datetime(2026, 10, 26, 14, 11), pasta_dados=tmp_path,
+                           raiz=RAIZ, processo={"codigo": "T", "parametros": sem_teste})
+    r = PROC.verificar_cra(depois)
+    assert r["situacao"] == SCH.AVISO
+    assert [a["obrigacao"] for a in r["achados"] if a.get("obrigacao")] \
+        == ["confirmacoes_nao_aceitas"]
+
+
+def test_cra_sem_credencial_ainda_diz_o_prazo_vencido(casa, tmp_path):
+    db = casa["db"]
+    _protesto_sem_retorno(db)
+    r = PROC.verificar_cra(_ctx(db, tmp_path))
+    assert r["situacao"] == SCH.AVISO
+    assert "credencial" in r["relato"] and "Passaram da hora" in r["relato"]
+
+
+def test_cra_em_feriado_cobra_so_o_prazo_que_ja_passou(casa, tmp_path):
+    db = casa["db"]
+    _protesto_sem_retorno(db, "2026-10-29")
+    finados = PROC.Contexto(db=db, agora=datetime(2026, 11, 2, 11, 30), pasta_dados=tmp_path,
+                            raiz=RAIZ, processo={"codigo": "T", "parametros": {}})
+    r = PROC.verificar_cra(finados)
+    assert r["situacao"] == SCH.AVISO and "não é dia útil" in r["relato"]
+
+
+def test_cra_que_nao_mede_os_prazos_e_erro(casa, tmp_path, monkeypatch):
+    import protesto_roteiro as PRT
+
+    def quebra(con, ctx):
+        raise RuntimeError("coluna errada")
+    monkeypatch.setattr(PRT, "_cobrar_retorno", quebra)
+    r = PROC.verificar_cra(_ctx(casa["db"], tmp_path))
+    assert r["situacao"] == SCH.ERRO and "coluna errada" in r["relato"]
+
+
 def test_o_sirc_vazio_esta_em_dia(casa, tmp_path):
     assert PROC.verificar_sirc(_ctx(casa["db"], tmp_path))["situacao"] == SCH.OK
 

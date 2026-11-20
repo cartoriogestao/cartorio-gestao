@@ -381,6 +381,18 @@ def test_saldo_mede_o_preco_e_acusa_o_que_saiu_por_fora():
     assert a["chave"] == "FISCAL_FORA_DO_SISTEMA:2026-09" and a["titulo"].startswith("2 selo(s)")
 
 
+def test_a_frase_do_selo_por_fora_sabe_que_o_e_oficio_foi_desligado():
+    """Auditoria PR003, achado P16: em novembro de 2026 o achado ainda dizia «o
+    Protesto ainda é praticado no sistema antigo» — e o E-Ofício foi desligado
+    em 26/10/2026."""
+    assert "ainda selava pelo E-Ofício" in GF._quem_tirou_por_fora("2026-09")
+    assert "26/10/2026" in GF._quem_tirou_por_fora("2026-10")
+    novembro = GF._quem_tirou_por_fora("2026-11")
+    assert "não é o E-Ofício" in novembro and "ainda" not in novembro
+    fonte = (RAIZ / "gestor_fiscal.py").read_text(encoding="utf-8")
+    assert "ainda é praticado" not in fonte
+
+
 def test_recarga_nao_conta_e_classe_sem_preco_fica_de_fora():
     con = _banco()
     saldos = [(round(50 - 0.45 * i, 2), False) for i in range(12)]

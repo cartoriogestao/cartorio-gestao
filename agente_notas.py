@@ -96,6 +96,16 @@ FUND_TEXTO = ("Código de Normas TJMA, art. 795, § 2º (sem claros ou espaços 
               "branco)")
 FUND_INCOMPLETA = ("Código de Normas TJMA, art. 799, III e IV (trinta dias sem as "
                    "assinaturas: escritura incompleta; vedado traslado ou certidão)")
+FUND_RESPONSABILIDADE = ("Lei 8.935/1994, art. 22 (responsabilidade civil por dano a "
+                         "terceiro)")
+
+#: AS DUAS REGRAS DE RISCO — decisão do titular, 18/11/2026. Rascunho sobrando
+#: e PDF por anexar continuam controle interno (`REGRAS_SEM_TAREFA`), mas estes
+#: dois casos, que já podem dar dano a terceiro, viram tarefa para quem lavrou.
+#: A chave do achado é a mesma da regra de origem: o achado muda de regra no
+#: mesmo registro (`gestor_rotina.gravar_achados`), sem perder o «visto desde».
+RASCUNHO_QUINZENA_FECHADA = "NOTAS_RASCUNHO_QUINZENA_FECHADA"
+PDF_30_DIAS = "NOTAS_PDF_30_DIAS"
 
 
 # ------------------------------------------------------------------ ajudantes
@@ -151,6 +161,49 @@ def _rotulo_ato(a) -> str:
     else:
         onde = "ainda sem livro"
     return f"{tipo} {a['id']} ({onde})"
+
+
+def _quem_lavrou(pessoas: dict[str, int], ato) -> str | None:
+    """«PESSOA:<id>» de quem lavrou ou redigiu o ato, se o sistema souber.
+
+    A ordem é a da ficha: `lavrado_nome` (quem praticou, gravado na abertura
+    do rascunho e congelado), `lancado_por` (quem lançou no livro) e
+    `criado_por` (a importação). A marca «assina quem selar» não é ninguém.
+    Nome que não casa com UMA pessoa ativa do cadastro devolve None, e a
+    tarefa fica com o setor, como sempre.
+    """
+    from nome_humano import MARCA_PENDENTE
+    for coluna in ("lavrado_nome", "lancado_por", "criado_por"):
+        valor = str((ato[coluna] if coluna in ato.keys() else None) or "").strip()
+        if not valor or valor == MARCA_PENDENTE:
+            continue
+        uid = pessoas.get(valor.upper())
+        if uid:
+            return f"PESSOA:{uid}"
+    return None
+
+
+def _pessoas(con) -> dict[str, int]:
+    """Login e nome completo → id, das pessoas ativas (o mesmo do gestor)."""
+    if not _tem_tabela(con, "users"):
+        return {}
+    import gestor_rotina as GR
+    return GR._pessoas(con)
+
+
+def _quinzena_fechada(data_iso: str, hoje: date) -> tuple[int, int, int] | None:
+    """A quinzena da data, se ela já fechou na CENSEC hoje; senão None.
+
+    A conta é a do envio automático (`censec_automatico.quinzenas_abertas`):
+    aberta é a em curso e a anterior até o prazo dela. Quinzena futura não é
+    fechada.
+    """
+    import censec_automatico as CA
+    import notas_censec as NC
+    q = NC.quinzena_de(data_iso)
+    if q < NC.quinzena_de(hoje.isoformat()) and q not in CA.quinzenas_abertas(hoje):
+        return q
+    return None
 
 
 def _partes(con, ato_id: int) -> list[dict]:
@@ -632,11 +685,20 @@ def regra_rascunhos(con, hoje: date) -> list[dict]:
     08/10. Ele não é trabalho pendente — é sobra, e ocupa a lista de quem
     procura o que fazer. Quem apaga é a escrevente, pelo botão «Apagar
     rascunho» (que guarda o teor na auditoria); o agente só aponta.
+
+    **O RASCUNHO COM DATA DE QUINZENA JÁ FECHADA É RISCO, E NÃO SOBRA**
+    (decisão do titular, 18/11/2026). O lançamento no livro
+    (`notas_livro.lancar_ato`) não mexe na data do ato: lavrado assim, ele sai
+    com a data velha e vai à CENSEC numa quinzena que a central já não aceita
+    («LoteFechado»). Esse achado muda de regra — `RASCUNHO_QUINZENA_FECHADA`,
+    que vira tarefa para quem abriu o rascunho — e diz «acertar a data antes
+    de lavrar, ou apagar». Ato anterior ao corte continua só no relatório.
     """
     if not _pronto(con):
         return []
     saida = []
     bd = banco(con)
+    pessoas = None
     for a in bd.ler("SELECT * FROM nt_atos WHERE situacao = 'EM_LAVRATURA' ORDER BY id"):
         desde = _dia(a["data"]) or _dia((a["criado_em"] or "")[:10]) or hoje
         dias = (hoje - desde).days
@@ -662,6 +724,30 @@ def regra_rascunhos(con, hoje: date) -> list[dict]:
             motivo = f"rascunho sem texto há {dias} dias"
         if motivo is None and texto and dias >= DIAS_RASCUNHO_PARADO:
             motivo = f"rascunho parado há {dias} dias"
+        data = _dia(a["data"])
+        fechada = (_quinzena_fechada(data.isoformat(), hoje)
+                   if data and not GC.antes_do_corte(a["data"]) else None)
+        if fechada:
+            import notas_censec as NC
+            ano, mes, q = fechada
+            prazo = _dia(NC.prazo_de_fechamento(ano, mes, q))
+            if pessoas is None:
+                pessoas = _pessoas(con)
+            achado = GC._achado(
+                f"NOTAS_RASCUNHO:nt_atos:{a['id']}", RASCUNHO_QUINZENA_FECHADA,
+                "VENCIDO", SETOR_QUALIFICACAO,
+                f"{_nome(a['tipo'])} {a['id']} em lavratura com data de "
+                f"{data:%d/%m/%Y}: a {q}ª quinzena de {mes:02d}/{ano} já fechou na "
+                f"CENSEC (prazo {prazo:%d/%m/%Y})",
+                "Acertar a data na ficha do ato antes de lavrar, ou apagar pelo botão "
+                "«Apagar rascunho» se ele não vai ser lavrado. Lançado no livro como "
+                "está, o ato fica com esta data e vai à CENSEC fora do prazo — a "
+                "central recusa a carga de quinzena fechada."
+                + (f" Além disso: {motivo}." if motivo else ""),
+                prazo, f"{FUND_CENSEC}; {FUND_RESPONSABILIDADE}")
+            achado["tarefa_para"] = _quem_lavrou(pessoas, a)
+            saida.append(achado)
+            continue
         if motivo is None:
             continue
         saida.append(GC._achado(
@@ -680,11 +766,16 @@ def regra_pdf_assinado(con, hoje: date) -> list[dict]:
     do oficial («gerar e receber o upload do pdf assinado após a lavratura e
     selo»). Passados trinta dias, a pergunta muda de natureza: escritura sem
     as assinaturas é incompleta, e dela não sai traslado nem certidão.
+
+    **DOS TRINTA DIAS EM DIANTE É RISCO** (decisão do titular, 18/11/2026):
+    o achado muda para a regra `PDF_30_DIAS`, que vira tarefa para quem
+    lavrou, com prazo no 30º dia. Antes disso fica só no relatório.
     """
     if not _pronto(con) or not _tem_tabela(con, "attachments"):
         return []
     saida = []
     bd = banco(con)
+    pessoas = None
     for a in bd.ler(
             """SELECT * FROM nt_atos WHERE situacao = 'LAVRADO' AND data >= %s
                   AND lancado_em IS NOT NULL ORDER BY id""", (CORTE,)):
@@ -698,16 +789,31 @@ def regra_pdf_assinado(con, hoje: date) -> list[dict]:
         if tem:
             continue
         dias = (hoje - lancado).days
-        incompleta = (a["tipo"] or "").upper() == "ESCRITURA" and \
-            dias >= DIAS_ESCRITURA_INCOMPLETA
+        if dias >= DIAS_ESCRITURA_INCOMPLETA:
+            escritura = (a["tipo"] or "").upper() == "ESCRITURA"
+            prazo = lancado + timedelta(days=DIAS_ESCRITURA_INCOMPLETA)
+            if pessoas is None:
+                pessoas = _pessoas(con)
+            achado = GC._achado(
+                f"NOTAS_PDF:nt_atos:{a['id']}", PDF_30_DIAS,
+                "VENCIDO" if hoje > prazo else "PRAZO", SETOR_OPERACIONAL,
+                f"{_rotulo_ato(a)} lançado há {dias} dias sem o PDF assinado",
+                "Já são 30 dias ou mais: conferir hoje se todas as partes assinaram. "
+                + ("A escritura sem as assinaturas é declarada incompleta, e dela não se "
+                   "extrai traslado nem certidão. " if escritura else
+                   "Sem a prova das assinaturas, o ato não se sustenta se for contestado. ")
+                + "Anexar o PDF assinado na ficha do ato («PDF assinado do ato»); se "
+                  "falta assinatura, levar ao oficial.",
+                prazo, "; ".join(f for f in (FUND_INCOMPLETA if escritura else "",
+                                             FUND_RESPONSABILIDADE) if f))
+            achado["tarefa_para"] = _quem_lavrou(pessoas, a)
+            saida.append(achado)
+            continue
         saida.append(GC._achado(
             f"NOTAS_PDF:nt_atos:{a['id']}", "NOTAS_PDF", "ATENCAO", SETOR_OPERACIONAL,
             f"{_rotulo_ato(a)} lançado há {dias} dias sem o PDF assinado",
-            ("Conferir se todas as partes assinaram. Passados 30 dias sem as assinaturas, "
-             "a escritura é declarada incompleta e dela não se extrai traslado nem "
-             "certidão. " if incompleta else "")
-            + "Anexar o PDF assinado na ficha do ato («PDF assinado do ato»).",
-            None, FUND_INCOMPLETA if incompleta else ""))
+            "Anexar o PDF assinado na ficha do ato («PDF assinado do ato»). Com 30 dias, "
+            "vira tarefa para quem lavrou.", None, ""))
     return saida
 
 
@@ -731,11 +837,21 @@ ROTULOS = {
     "NOTAS_MINUTA": "Notas — minutas: o que falta antes de lavrar",
     "NOTAS_RASCUNHO": "Notas — rascunhos vazios, parados ou já substituídos",
     "NOTAS_PDF": "Notas — atos lançados sem o PDF assinado",
+    RASCUNHO_QUINZENA_FECHADA: "Notas — rascunho com data de quinzena CENSEC já fechada",
+    PDF_30_DIAS: "Notas — ato lavrado há 30 dias ou mais sem o PDF assinado",
 }
 
 #: Ordem do oficial de 06/10/2026: só vira tarefa o que pode gerar
 #: responsabilidade civil (art. 22 da Lei 8.935). Rascunho sobrando e PDF por
 #: anexar são controle interno: ficam no relatório, e não viram tarefa.
+#:
+#: DECISÃO DO TITULAR, 18/11/2026: a ordem continua valendo para o caso comum,
+#: mas DOIS casos destas regras já podem gerar responsabilidade civil e viram
+#: tarefa para quem lavrou ou redigiu o ato (ou para o setor, se o sistema não
+#: souber quem foi): o rascunho com data numa quinzena da CENSEC já fechada
+#: (`RASCUNHO_QUINZENA_FECHADA`) e o ato lavrado há 30 dias ou mais sem o PDF
+#: assinado (`PDF_30_DIAS`). São regras próprias, e não estas duas: o resto de
+#: `NOTAS_RASCUNHO` e `NOTAS_PDF` continua só no relatório.
 REGRAS_SEM_TAREFA = frozenset({"NOTAS_RASCUNHO", "NOTAS_PDF"})
 
 #: «Onde abrir» de quem não tem ato próprio.
@@ -785,6 +901,26 @@ GUIA = {
         ["Abra a minuta pelo «Onde abrir».",
          "Resolva cada ponto ou registre na anotação de lavratura por que ele não se aplica.",
          "Só então lance no livro."]),
+    RASCUNHO_QUINZENA_FECHADA: (
+        "O rascunho tem uma data que cai numa quinzena da CENSEC já fechada. O "
+        "lançamento no livro não muda a data do ato: lavrado assim, ele sai com a "
+        "data velha e vai à CENSEC fora do prazo (art. 785; Provimento CNJ "
+        "149/2023, art. 267), e a central recusa a carga. Ato que não chega à "
+        "central no prazo é dano que a serventia responde (Lei 8.935/1994, art. 22).",
+        ["Abra o rascunho pelo «Onde abrir».",
+         "Se ele vai ser lavrado: acerte a data na ficha para o dia da lavratura "
+         "ANTES de lançar no livro.",
+         "Se não vai: apague pelo botão «Apagar rascunho» (o texto fica guardado na "
+         "auditoria)."]),
+    PDF_30_DIAS: (
+        "O ato foi lançado no livro há 30 dias ou mais e o PDF assinado não foi "
+        "anexado. Escritura sem as assinaturas nesse prazo é incompleta, e dela não "
+        "sai traslado nem certidão (Código de Normas TJMA, art. 799, III e IV); "
+        "ato sem a prova das assinaturas pode virar dano a terceiro (Lei 8.935/1994, "
+        "art. 22).",
+        ["Abra o ato pelo «Onde abrir» e confira no livro se todas as partes assinaram.",
+         "Assinado: digitalize e anexe como «PDF assinado do ato».",
+         "Falta assinatura: leve ao oficial hoje — a declaração de incompleta é dele."]),
 }
 
 

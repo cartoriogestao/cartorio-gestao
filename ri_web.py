@@ -111,6 +111,7 @@ import ri_prenotacao_encerrar as ENCERRAR
 import onr_acompanhamento as ACOMP  # o andamento no ONR (26/10/2026)
 import ri_pedidos as PED
 import ri_busca_acervo as BUSCA  # busca em texto livre no teor (26/10/2026)
+import ri_cancelamentos_sem_marca as RICANCEL
 import ri_situacao_juridica as SITJ  # o resumo da situacao juridica (26/10/2026)
 import ri_nota_devolutiva as RND
 import ri_rascunho as RASC
@@ -4793,19 +4794,32 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         # O MODELO QUE CANCELA OU EXTINGUE (decisão do oficial, 03/11/2026, «a1»): diz qual ato, e o ato
         # tem de ser desta matrícula e estar de pé — antes de gastar número.
-        alvo_do_cancelamento = None
+        # Em ficha de acervo (pedido 20/11/2026): a AV de cancelamento/baixa pode cancelar VÁRIOS
+        # registros citados no teor; o formulário aceita vários `cancela_ato_id`, e sem escolha o
+        # sistema resolve pelos rótulos do próprio teor (R-04, R-05…).
+        alvos_do_cancelamento: list[dict] = []
         modelo_pedido = (request.form.get("modelo_codigo") or "").strip().upper()
-        if modelo_pedido in MODELOS_QUE_CANCELAM:
-            alvo_id = numero_digitado(request.form.get("cancela_ato_id"))
-            alvo_do_cancelamento = (q1("SELECT * FROM ri_atos WHERE id=%s AND matricula_id=%s",
-                                       (alvo_id, matricula_id)) if alvo_id is not None else None)
-            if not alvo_do_cancelamento or alvo_do_cancelamento["cancelado"]:
-                flash("Este modelo cancela ou extingue outro ato da matrícula: escolha em «Qual ato "
-                      "se cancela» um ato desta matrícula que esteja de pé (Lei 6.015/1973, arts. 248 "
-                      "e 250). O ato NÃO foi lavrado — nada se perdeu.", "danger")
-                return redirect(url_for("ri_ficha", matricula_id=matricula_id,
-                                        **({"minuta": minuta_pedida}
-                                           if minuta_pedida else {})))
+        ids_cancela = RICANCEL.ids_do_formulario(request.form)
+        for alvo_id in ids_cancela:
+            candidato = q1("SELECT * FROM ri_atos WHERE id=%s AND matricula_id=%s",
+                           (alvo_id, matricula_id))
+            if candidato and not candidato["cancelado"]:
+                alvos_do_cancelamento.append(dict(candidato))
+        if modelo_pedido in MODELOS_QUE_CANCELAM and not alvos_do_cancelamento:
+            flash("Este modelo cancela ou extingue outro ato da matrícula: escolha em «Qual ato "
+                  "se cancela» um ou mais atos desta matrícula que estejam de pé (Lei 6.015/1973, "
+                  "arts. 248 e 250). O ato NÃO foi lavrado — nada se perdeu.", "danger")
+            return redirect(url_for("ri_ficha", matricula_id=matricula_id,
+                                    **({"minuta": minuta_pedida}
+                                       if minuta_pedida else {})))
+        if (e_acervo and not alvos_do_cancelamento
+                and RICANCEL.e_de_cancelamento(natureza=request.form.get("natureza_titulo"),
+                                               teor=teor, modelo=modelo_pedido)):
+            with db.connect() as con_cit:
+                alvos_do_cancelamento = [
+                    c for c in RICANCEL.citados_do_teor(
+                        banco(con_cit), matricula_id, teor)
+                    if not c.get("cancelado")]
 
         # CNIB NA LAVRATURA (TJMA 506): a consulta sempre fica gravada no ato;
         # o protocolo da Central so e exigido quando a casa liga a regra.
@@ -4945,12 +4959,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                  h, hash_anterior, db.now(), None),
             )[0]["id"]
             ato_id = int(ato_id)
-            # O ATO QUE ESTE MODELO CANCELA recebe a marca do botão, na mesma transação («a1»).
-            if alvo_do_cancelamento:
+            # Os atos que esta averbação cancela recebem a marca do botão, na mesma transação («a1»).
+            for alvo_do_cancelamento in alvos_do_cancelamento:
                 _marcar_cancelado_pela_averbacao(
                     con, matricula=m, alvo=alvo_do_cancelamento, averbacao_id=ato_id,
                     averbacao_numero=numero,
-                    motivo=f"{request.form.get('natureza_titulo') or modelo_pedido} ({modelo_pedido})",
+                    motivo=f"{request.form.get('natureza_titulo') or modelo_pedido or 'cancelamento'}"
+                           f"{f' ({modelo_pedido})' if modelo_pedido else ''}",
                     data_lancamento=data_ato)
 
             # Consome UMA UNIDADE de cada item apontado para este ato.

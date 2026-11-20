@@ -93,6 +93,17 @@ import modelos_motor_etiqueta as MOTOR_ETQ
 POR_PAGINA = 40
 VISTAS_DA_LISTA = {"em_lavratura": "EM_LAVRATURA", "lavrados": "LAVRADO"}
 
+# POR QUE A ESCRITURA PEDE UM SELO A MAIS (19/11/2026, compliance C002): outro
+# imóvel, ou outro ato sobre o mesmo imóvel (inventário e partilha seguido de
+# compra e venda, cada um com o seu 13.1). Ver `selar_selo_adicional_da_escritura`.
+MOTIVOS_DO_SELO_ADICIONAL = {
+    "OUTRO_IMOVEL": "outro imóvel desta escritura",
+    "OUTRO_ATO": "outro ato sobre o mesmo imóvel",
+}
+# Valor de selo adicional que difere de um já pedido por menos que isto (em
+# centavos) é o mesmo valor ajustado para passar pela trava do selo em dobro.
+DIFERENCA_DE_VALOR_AJUSTADO = 100
+
 # O SELO DE ARQUIVAMENTO (13.30) E OBRIGATORIO na procuracao, no
 # substabelecimento e na revogacao — pedido do oficial, 15/10/2026. A regra
 # (quem e obrigado, a contagem das folhas dos anexos, a confirmacao e a
@@ -5364,13 +5375,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 # auditoria, e tirar a rota inteira do gancho deixaria o
                 # lançamento sem escolha.
                 valor_extra = CXC.centavos(request.form.get("valor_do_selo"))
+                # O MOTIVO DO SELO A MAIS (19/11/2026, compliance C002): outro
+                # imóvel, ou outro ato sobre o MESMO imóvel (a partilha e a
+                # compra e venda na mesma escritura). Vai à auditoria com o
+                # selo — é a prova de por que a escritura tem dois 13.1.
+                motivo_extra = (request.form.get("motivo_do_selo") or "").strip()
+                ato_extra = (request.form.get("ato_do_selo") or "").strip()
                 selou, recado_extra = selar_selo_adicional_da_escritura(
                     ato_id, valor_centavos=valor_extra,
                     confirmou_mesmo_valor=request.form.get(
-                        "confirmo_mesmo_valor") == "1")
+                        "confirmo_mesmo_valor") == "1",
+                    motivo=motivo_extra, ato_descricao=ato_extra)
                 audit("NT_ATO_SELO_ADICIONAL" if selou
                       else "NT_ATO_SELO_ADICIONAL_NAO_SAIU", "NT_ATO", ato_id,
                       {"valor_centavos": valor_extra or None,
+                       "motivo": _motivo_do_selo_adicional(motivo_extra),
+                       "ato": ato_extra or None,
                        "recado": recado_extra})
                 flash(recado_extra, "success" if selou else "danger")
 
@@ -5812,6 +5832,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             app.logger.warning("Valor do selo %s do ato %s não foi anotado: %s",
                                ordem, ato_id, erro)
 
+    def _motivo_do_selo_adicional(motivo: str | None) -> str:
+        """`OUTRO_ATO` ou `OUTRO_IMOVEL` (o de sempre, e o que vale se vier vazio)."""
+        motivo = (motivo or "").strip().upper()
+        return motivo if motivo in MOTIVOS_DO_SELO_ADICIONAL else "OUTRO_IMOVEL"
+
     def selos_da_escritura(a) -> list[dict]:
         """Os selos da escritura, na ordem: `[{ordem, codigo_tj, valor_centavos, selo}]`. SÓ LÊ.
 
@@ -5849,13 +5874,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     def selar_selo_adicional_da_escritura(
             ato_id: int, *, valor_centavos: int,
-            confirmou_mesmo_valor: bool = False) -> tuple[bool, str]:
-        """Pede o selo de OUTRO imóvel da mesma escritura. FALA COM A REDE.
+            confirmou_mesmo_valor: bool = False, motivo: str = "",
+            ato_descricao: str = "") -> tuple[bool, str]:
+        """Pede o selo de OUTRO imóvel, ou de OUTRO ato, da mesma escritura. FALA COM A REDE.
 
         12/11/2026, a compra e venda de duas áreas: cada área é um 13.1 com o
         SEU valor, o SEU selo e o SEU item pago no protocolo. O selo do ato
         (`nt_atos.selo`) não muda; este fica no razão (`sd_selos`, amarrado ao
         ato) e em `nt_ato_selos_extras`, com o item e o valor que declarou.
+
+        19/11/2026 (compliance C002, escritura de inventário e partilha seguida
+        de compra e venda do MESMO imóvel): a tela só conhecia «outro imóvel»;
+        a trava recusou o 2º 13.1 de mesmo valor, e o selo saiu com o valor
+        acrescido de R$ 0,01 — o TJ recebeu um valor que não é o do ato. Agora
+        o `motivo` diz qual é o caso (`OUTRO_IMOVEL` ou `OUTRO_ATO`, este com
+        `ato_descricao`), e valor que difere de um selo já pedido por menos de
+        R$ 1,00 não sai: é o mesmo valor ajustado para passar pela trava.
 
         O item sai do VALOR (a faixa do 13.1), e não da escolha de quem atende:
         a tela do ato já exige o item da faixa. NUNCA mexe na situação do ato:
@@ -5887,20 +5921,44 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return False, ("Não foi possível achar a faixa do 13.1 para R$ "
                            f"{reais(valor_centavos)}; revise a tabela de custas.")
         codigo = faixa["codigo_tj"]
+        motivo = _motivo_do_selo_adicional(motivo)
+        ato_descricao = (ato_descricao or "").strip()
+        if motivo == "OUTRO_ATO" and len(ato_descricao) < 3:
+            return False, ("Diga qual é o outro ato sobre o mesmo imóvel (ex.: "
+                           "«compra e venda»): ele fica na auditoria com o "
+                           "selo. Nada foi pedido.")
         ja = selos_da_escritura(a)
         # A TRAVA DO SELO EM DOBRO: o mesmo item com o mesmo valor é, quase
         # sempre, o mesmo imóvel pedido duas vezes. Dois imóveis de valor igual
-        # existem — e quem os declara marca isso.
-        if not confirmou_mesmo_valor:
-            for s in ja:
-                if (s["codigo_tj"] == codigo
-                        and int(s["valor_centavos"] or 0) == valor_centavos):
-                    return False, (
-                        f"O ato já tem o selo {s['selo']} do item {codigo} com "
-                        f"R$ {reais(valor_centavos)}. Para não gastar o mesmo "
-                        f"item pago duas vezes, nada foi pedido. Se é OUTRO "
-                        f"imóvel com o mesmo valor, marque «É outro imóvel, "
-                        f"com o mesmo valor».")
+        # existem — e quem os declara marca isso. Outro ato sobre o mesmo
+        # imóvel (partilha e compra e venda) também: quem pede diz qual.
+        for s in ja:
+            valor_ja = int(s["valor_centavos"] or 0)
+            diferenca = abs(valor_ja - valor_centavos)
+            # O VALOR AJUSTADO EM CENTAVOS (19/11/2026): R$ 100.000,01 contra
+            # R$ 100.000,00 não é outro imóvel nem outro ato — é o mesmo valor
+            # mexido para a trava não ver. O valor declarado ao TJ é o do
+            # imóvel ou do ato, exato.
+            if (valor_ja and 0 < diferenca < DIFERENCA_DE_VALOR_AJUSTADO
+                    and not (motivo == "OUTRO_IMOVEL" and confirmou_mesmo_valor)):
+                return False, (
+                    f"R$ {reais(valor_centavos)} difere só R$ {reais(diferenca)} "
+                    f"do selo {s['selo']} (R$ {reais(valor_ja)}). O selo não se "
+                    f"pede com o valor ajustado: o TJ recebe o valor do imóvel "
+                    f"ou do ato, exato. Nada foi pedido. Se é o mesmo valor, "
+                    f"digite-o exato e escolha o motivo: «Outro ato sobre o "
+                    f"mesmo imóvel» (ex.: partilha e compra e venda) ou «Outro "
+                    f"imóvel» com «É outro imóvel, com o mesmo valor».")
+            if (s["codigo_tj"] == codigo and valor_ja == valor_centavos
+                    and motivo == "OUTRO_IMOVEL" and not confirmou_mesmo_valor):
+                return False, (
+                    f"O ato já tem o selo {s['selo']} do item {codigo} com "
+                    f"R$ {reais(valor_centavos)}. Para não gastar o mesmo "
+                    f"item pago duas vezes, nada foi pedido. Se é OUTRO "
+                    f"imóvel com o mesmo valor, marque «É outro imóvel, "
+                    f"com o mesmo valor». Se é OUTRO ATO sobre o mesmo "
+                    f"imóvel (ex.: partilha e compra e venda), escolha «Outro "
+                    f"ato sobre o mesmo imóvel» e diga qual.")
         ordem = max([int(s["ordem"]) for s in ja] + [1]) + 1
         versao = AS.versao_da_tabela_de_custas(
             "/selo/notas/ato-declarado/com-valor",
@@ -5937,8 +5995,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         _gravar_valor_do_selo(int(ato_id), ordem=ordem, codigo_tj=codigo,
                               valor_centavos=valor_centavos,
                               selo=r["numero"], referencia=referencia)
+        por_que = (f"outro ato sobre o mesmo imóvel: {ato_descricao}"
+                   if motivo == "OUTRO_ATO" else "outro imóvel")
         return True, (f"Selo adicional {r['numero']} (item {codigo}, "
-                      f"R$ {reais(valor_centavos)}).")
+                      f"R$ {reais(valor_centavos)}; {por_que}).")
 
 
     def _conferir_item_da_escritura(a, item: str,

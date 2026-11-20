@@ -1435,8 +1435,11 @@ def iniciar_cronometro(
     encerrar_esquecidos(con, responsavel_user_id=responsavel_user_id, agora=agora)
     ativo = cronometro_em_andamento(con, responsavel_user_id=responsavel_user_id)
     if ativo:
+        # «Pause» não servia de conselho: o pausado continua aberto e também
+        # barra o segundo (`cronometro_em_andamento` lê os dois).
         raise ValueError(
-            "Já existe um cronômetro em andamento. Pare ou pause o atual antes de iniciar outro."
+            f"Já existe um cronômetro aberto («{ativo.get('tarefa') or ''}»). Use «Trocar "
+            "de tarefa», ou pare o atual antes de iniciar outro — o pausado também conta."
         )
     agora_dt = agora or datetime.now()
     return registrar_registro(
@@ -1552,6 +1555,77 @@ def parar_cronometro(
         "SELECT * FROM prod_registros WHERE id=%s", (int(ativo["id"]),)
     )
     return _enriquecer_registro(dict(row)) if row else ativo
+
+
+# ------------------------------------------------ trocar a tarefa que corre
+#
+# A ESCREVENTE «NÃO CONSEGUIA MUDAR O CRONÔMETRO» (19/11/2026). Com o relógio
+# correndo, a tela só mostrava a tarefa, Pausar e «Parar e salvar»: nada
+# deixava corrigir o nome nem passar para a próxima tarefa. O que se viu:
+#   - para corrigir o que digitou, ela parou e reiniciou duas vezes em 20 s, e
+#     ficaram dois lançamentos de zero minuto («vou fazer», «vou fazer 4
+#     certidões aora») antes do certo;
+#   - para não parar, deixou um só lançamento de 5h05 que resume a manhã e a
+#     tarde inteiras, e escreveu a queixa no nome dele.
+# A troca é UM clique e faz as duas coisas, pela hora do relógio:
+#   - começou neste mesmo minuto: é correção, o nome muda no próprio registro
+#     (fechar daria um lançamento de zero minuto, que não diz nada);
+#   - já corre há mais tempo: o atual fecha agora, como no «Parar e salvar», e
+#     o próximo abre na mesma hora, sem buraco entre os dois.
+
+def trocar_cronometro(
+    con: sqlite3.Connection,
+    *,
+    responsavel_user_id: int,
+    responsavel_nome: str,
+    categoria: str,
+    tarefa: str,
+    criado_por: str | None = None,
+    agora: datetime | None = None,
+) -> dict[str, Any]:
+    """Passa o cronômetro aberto para a próxima tarefa (ou corrige o nome).
+
+    Devolve `cronometro` (o que corre agora), `anterior` (o registro fechado,
+    ou None quando foi correção), `corrigido` e, se a regra do expediente
+    fechou o anterior antes, `aviso` com o motivo.
+    """
+    agora_dt = agora or datetime.now()
+    tarefa_txt = (tarefa or "").strip()
+    if not tarefa_txt:
+        raise ValueError("Escreva a próxima tarefa.")
+    bd = banco(con)
+    cat = _exigir_da_lista(categoria, listar_categorias(bd), "Categoria")
+    fechados = encerrar_esquecidos(con, responsavel_user_id=responsavel_user_id, agora=agora_dt)
+    ativo = cronometro_em_andamento(con, responsavel_user_id=responsavel_user_id)
+    if ativo:
+        inicio = _inicio_do_registro(ativo)
+        if inicio and inicio == agora_dt.replace(second=0, microsecond=0):
+            bd.escrever("UPDATE prod_registros SET tarefa=%s, categoria=%s WHERE id=%s",
+                        (tarefa_txt, cat, int(ativo["id"])))
+            return {"cronometro": cronometro_em_andamento(
+                        con, responsavel_user_id=responsavel_user_id),
+                    "anterior": None, "corrigido": True, "aviso": None}
+        anterior = parar_cronometro(con, responsavel_user_id=responsavel_user_id, agora=agora_dt)
+    elif fechados:
+        # A regra do expediente fechou o anterior agora há pouco (aviso das
+        # 14h15 sem resposta): ele fica como ela o gravou, e a próxima abre.
+        row = bd.um("SELECT * FROM prod_registros WHERE id=%s", (int(fechados[-1]["id"]),))
+        anterior = _enriquecer_registro(dict(row))
+        anterior["encerrado_automaticamente"] = fechados[-1]["motivo"]
+    else:
+        raise LookupError("Nenhum cronômetro aberto para trocar — use «Iniciar cronômetro».")
+    iniciar_cronometro(
+        con,
+        responsavel_user_id=responsavel_user_id,
+        responsavel_nome=responsavel_nome,
+        categoria=cat,
+        tarefa=tarefa_txt,
+        criado_por=criado_por,
+        agora=agora_dt,
+    )
+    return {"cronometro": cronometro_em_andamento(con, responsavel_user_id=responsavel_user_id),
+            "anterior": anterior, "corrigido": False,
+            "aviso": anterior.get("encerrado_automaticamente")}
 
 
 def linhas_exportacao(

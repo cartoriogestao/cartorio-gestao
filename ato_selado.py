@@ -2798,8 +2798,19 @@ def registrar_selo_obtido_a_mao(con: sqlite3.Connection, numero: Any, *,
                                 tabela: str, ato_id: int, atribuicao: Any,
                                 agora: str, cns: Any,
                                 usuario: str | None = None,
-                                texto: str | None = None) -> dict:
+                                texto: str | None = None,
+                                isento: bool = False) -> dict:
     """Grava no razao o selo que o escrevente tirou no portal. ESCREVE.
+
+    `isento` e a marca «ato / selo gratuito» do formulario (G005, 19/11/2026).
+    O selo digitado chega SEM TEXTO — a tela pede so o numero desde o relato
+    #66 —, e sem texto nao ha «Selo Isento» para ler: seis averbacoes do RCPN
+    isentas no TJ (24/09 a 16/10/2026) entraram assim e sumiram do aviso do
+    comprovante, da fila do Portal e dos isentos do dia. Com a marca, a
+    cobertura trata o selo como gratuito (a gratuidade NAO trava, regra do
+    oficial de 19/10) e o razao guarda `isento_declarado`, que a regua de
+    `selo_isento` le enquanto o TJ nao responde. O texto, quando vem, decide
+    sozinho.
 
     E o caminho normal do Protesto e do RCPN nesta casa — ver o cabecalho.
     Escreve em `sd_selos` JA VINCULADO ao ato, porque aqui o ato existe antes
@@ -2862,10 +2873,15 @@ def registrar_selo_obtido_a_mao(con: sqlite3.Connection, numero: Any, *,
     # Banco sem o esquema da trava (teste de unidade montado à mão) sai pela
     # régua de antes, como `_gravar_cobertura` já fazia.
     cobertura: dict = {}
+    sem_texto = not str(texto or "").strip()
+    declarado_isento = bool(isento) and sem_texto
+    dados_do_selo = _dados_do_selo_a_mao(texto)
+    if declarado_isento:
+        dados_do_selo["isento"] = True
     if bd.tem_tabela("cx_selo_coberturas"):
         cobertura = cobrir_o_selo(
             con, tabela=tabela, ato_id=int(ato_id),
-            referencia=f"{tabela}:{ato_id}", dados=_dados_do_selo_a_mao(texto),
+            referencia=f"{tabela}:{ato_id}", dados=dados_do_selo,
             usuario=usuario, agora=agora, cns=cns, atribuicao=atribuicao)
         if not cobertura.get("coberto"):
             quadro = cobertura.get("quadro") or {}
@@ -2879,6 +2895,9 @@ def registrar_selo_obtido_a_mao(con: sqlite3.Connection, numero: Any, *,
         (bruto, texto, None, None, str(atribuicao),
          f"{tabela}:{ato_id}", tabela, int(ato_id), _ambiente_do_selo(con), agora,
          usuario, agora))
+    if novo and declarado_isento and bd.tem_coluna("sd_selos", "isento_declarado"):
+        bd.escrever("UPDATE sd_selos SET isento_declarado = 1 WHERE id = %s",
+                    (int(novo[0]["id"]),))
     if not novo:
         try:
             # O dono do selo digitado e o ATO; cancelado nao volta a valer.
@@ -5749,8 +5768,12 @@ def selos_pagos_sem_cobertura(con, desde: str | None = None,
     pagina = max(limite, 200)
     saida: list[dict] = []
     depois = None           # (obtido_em, id) do último selo lido
+    # O ISENTO SAI PELA RÉGUA DE `selo_isento` (G005): o selo digitado sem
+    # texto e isento no TJ entrava aqui como «pago sem cobertura».
+    import selo_isento as SI
+    isento, args_isento = SI.condicao(bd, "sd_selos")
     while len(saida) < limite:
-        filtro, args = "", [inicio, "%Selo Isento%"]
+        filtro, args = "", [inicio, *args_isento]
         if depois:
             filtro = "AND (obtido_em, id) > (%s, %s)"
             args += list(depois)
@@ -5758,7 +5781,7 @@ def selos_pagos_sem_cobertura(con, desde: str | None = None,
             f"""SELECT id, numero, tabela, ato_id, atribuicao, obtido_em, obtido_por
                   FROM sd_selos
                  WHERE obtido_em >= %s AND cancelado_em IS NULL
-                   AND coalesce(texto, '') NOT ILIKE %s {filtro}
+                   AND NOT {isento} {filtro}
                  ORDER BY obtido_em, id LIMIT %s""",
             (*args, pagina))
         for s in lidos:

@@ -881,9 +881,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         numero = _campo("selo")
         if not numero:
             return ""
+        # A MARCA «ATO / SELO GRATUITO» VAI JUNTO (G005, 19/11/2026). Ela se
+        # perdia aqui: o selo digitado entra sem texto, e seis averbações do
+        # RCPN isentas no TJ ficaram invisíveis ao aviso do comprovante, à
+        # fila do Portal e aos isentos do dia. Marcada sem motivo, recusa —
+        # a mesma regra do selo que sai pelo selador.
+        _cod, _motivo, isento = _gratuidade_do_form()
         AS.registrar_selo_obtido_a_mao(
             con, numero, tabela=tabela, ato_id=ato_id, atribuicao=atribuicao,
-            agora=agora(), cns=sv().get("ri_cns"), usuario=usuario_nome())
+            agora=agora(), cns=sv().get("ri_cns"), usuario=usuario_nome(),
+            isento=isento)
         return f" Selo {numero} gravado."
 
     def _especie_do_assento(assento_id) -> str:

@@ -13,6 +13,7 @@ import despesas as DP
 import faturamento_portal as FP
 import identidade_do_robo as IDR
 import selo as SL
+import selo_isento as SI
 from bd_nativo import banco
 
 MAX_SELOS = 20000
@@ -176,6 +177,10 @@ def conferir(con, comp, *, cns):
     for linha in linhas:
         linha['cancelado_em'] = str(linha['cancelado_em'] or '').strip() or None
     local = {s['numero']: s for s in linhas}
+    # G005: o selo digitado sem texto não traz a marca; para ele vale a régua
+    # de `selo_isento` (a resposta do TJ, ou a marca «ato gratuito» da casa).
+    isentos_sem_texto = SI.isentos_sem_texto(
+        bd, [s['id'] for s in linhas if SI.sem_texto(s['texto'])])
     pct = custas.percentual_ferj_da_casa(con)
     diferencas, candidatos = [], []
     for numero in sorted(set(fonte) | set(local)):
@@ -197,7 +202,8 @@ def conferir(con, comp, *, cns):
                     problemas.append('competencia')
                 if emol != p['emolumentos']:
                     problemas.append('emolumentos')
-                if ('ISENT' in marcas) != (p['isento'] or p['gratuito']):
+                isento_local = 'ISENT' in marcas or l['id'] in isentos_sem_texto
+                if isento_local != (p['isento'] or p['gratuito']):
                     problemas.append('gratuidade')
                 if ('DIFERID' in marcas) != p['diferido']:
                     problemas.append('diferimento')

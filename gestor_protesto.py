@@ -4,7 +4,25 @@
      prazos, fiscalizacao de intimacoes, protestos devidos e indevidos.»
                                                        — o oficial, 09/10/2026
 
-SÃO DUAS FONTES, E A PRIMEIRA É A QUE HOJE TEM O DIA DE VERDADE
+DESDE A VIRADA (14/10/2026) O FLUXO DA CRA SE MEDE NO BANCO
+    O protesto passou a ser praticado no sistema em 14/10/2026, e o E-Ofício foi
+    desligado em 26/10. A remessa, a confirmação, o retorno e a desistência
+    moram em `pt_remessas`, `pt_retornos` (`cra_enviado_em` é a prova de que a
+    CRA aceitou), `pt_atos.retorno_id` / `cra_ja_informado_em` e
+    `pt_cra_pedidos`. As quatro regras do fluxo da CRA —
+    `PROTESTO_SEM_RESPOSTA`, `PROTESTO_REMESSA_SEM_CONFIRMACAO`,
+    `PROTESTO_DESISTENCIA_SEM_BAIXA` e `PROTESTO_RETORNO_TARDIO` — leem de lá
+    (`_regras_da_cra_no_banco`, PR004, 20/11/2026). Até então elas liam a
+    pasta abaixo, que deixou de existir em 29/10, e ficaram três semanas sem
+    medir; os achados abertos foram dados por resolvidos naquele dia só porque
+    a regra parou (auditoria PR003, achado P5). Hoje a regra que não mede
+    **segura** os achados dela abertos (`GC.segura`).
+
+    A pasta continua sendo lida quando existe, para o acervo de antes da
+    virada (protocolização tardia, documento do devedor, protesto praticado
+    fora do sistema): é o histórico, e não o dia.
+
+O HISTÓRICO: DUAS FONTES, E EM 09/10/2026 A PASTA TINHA O DIA DE VERDADE
     Medido em 09/10/2026 na produção (só leitura):
 
     | fonte                                   | o que tem                                  |
@@ -59,6 +77,13 @@ O CORTE DE 10/09/2026 VALE AQUI COMO NO RESTO DO GESTOR
     Ato anterior à implantação não vira tarefa (ordem do oficial). O que é
     anterior e continua errado aparece num achado só, de resumo, sem tarefa.
 
+O SELO DOS ATOS DE PROTESTO (PR004, 20/11/2026)
+    `gestor_conferencia.regra_atos_sem_selo` não cobre `pt_atos`, e a auditoria
+    PR003 achou atos lavrados, vivos, sem selo e sem cobertura (achado P4).
+    `PROTESTO_ATO_SEM_SELO` aponta o ato vivo dos tipos que selam
+    (`protesto_selo_previo.TIPOS_QUE_SELAM`) sem selo na coluna, sem selo vivo
+    em `sd_selos` e sem linha em `cx_selo_coberturas`.
+
 O QUE NÃO FAZ
     Não lavra, não sela, não cobra, não manda arquivo à Central e não mexe em
     título. Só lê.
@@ -109,6 +134,9 @@ REGRAS_SEM_TAREFA = frozenset({
     "PROTESTO_RETORNO_TARDIO", "PROTESTO_INTIMACAO_TARDIA",
     "PROTESTO_FORA_DO_SISTEMA", "PROTESTO_MODELO_DO_TERMO",
     "PROTESTO_ANTES_DO_CORTE", "PROTESTO_PAGAMENTO_SEM_LIVRO",
+    # A pasta legada que não se acha não é tarefa de escrevente: o dia da CRA
+    # se mede no banco, e a pasta é configuração (do titular).
+    "PROTESTO_PASTA_CRA",
 })
 
 ROTULOS = {
@@ -130,7 +158,28 @@ ROTULOS = {
     "PROTESTO_ANTES_DO_CORTE": "Protesto — pendências anteriores a 10/09/2026",
     "PROTESTO_PAGAMENTO_SEM_LIVRO": "Protesto — pagamentos sem lugar no Livro de Pagamentos",
     "PROTESTO_PASTA_CRA": "Protesto — pasta dos arquivos da CRA inacessível",
+    "PROTESTO_CRA": "Protesto — o fluxo da CRA não foi medido",
+    "PROTESTO_ATO_SEM_SELO": "Protesto — atos lavrados sem selo",
 }
+
+#: A VIRADA DO PROTESTO: o fluxo da CRA se mede no banco a partir dela. É a de
+#: `protesto_roteiro.VIRADA_DO_PROTESTO` (há teste): antes dela o protesto
+#: corria no E-Ofício, e o que ele mandou à CRA não está no banco.
+VIRADA = "2026-10-14"
+
+#: As regras do fluxo da CRA — as que o banco mede desde a virada.
+REGRAS_DA_CRA = ("PROTESTO_SEM_RESPOSTA", "PROTESTO_REMESSA_SEM_CONFIRMACAO",
+                 "PROTESTO_DESISTENCIA_SEM_BAIXA", "PROTESTO_RETORNO_TARDIO")
+
+#: O que só a pasta legada mede (o acervo de antes da virada), pela chave: é o
+#: que fica seguro quando a pasta está configurada e não se acha.
+CHAVES_DA_PASTA = ("PT_INDEVIDO:*", "PT_DOC:*", "PT_PROTOCOLO_TARDIO",
+                   "PT_FORA_DO_TRIDUO", "PT_FORA_DO_SISTEMA", "PT_ANTES_DO_CORTE:CRA")
+
+#: O que `_regras_do_sistema` aponta, pela chave.
+CHAVES_DO_SISTEMA = ("PT_INDEVIDO_ATO:*", "PT_TRIDUO_ATO:*", "PT_INTIM_ATO:*",
+                     "PT_EDITAL:*", "PT_PARADO:*", "PT_PAGTO_LIVRO:*",
+                     "PT_REVOGADA:*", "PT_CERT_NEG:*")
 
 
 # ---------------------------------------------------------------- miúdos
@@ -287,14 +336,18 @@ def _titulo_curto(t: dict, prot: str = "") -> str:
     return " · ".join(p for p in partes if p)
 
 
-def _regras_do_fluxo(con, fluxo: dict, hoje: date, feriados) -> list[dict]:
+def _regras_do_fluxo(con, fluxo: dict, hoje: date, feriados, *,
+                     so_o_acervo: bool = False) -> list[dict]:
+    """As regras lidas da pasta. `so_o_acervo`: sem as quatro do fluxo da CRA,
+    que desde a virada se medem no banco (`_regras_da_cra_no_banco`) — medir
+    nas duas fontes daria o mesmo título duas vezes, com chaves diferentes."""
     saida: list[dict] = []
     antigos: list[str] = []
     conf, ret = fluxo["confirmado"], fluxo["retorno"]
 
     # 1.a  TRÍDUO VENCIDO E NENHUMA RESPOSTA — o protesto devido não lavrado
     #      (ou lavrado e não informado: para o apresentante dá no mesmo).
-    for prot, t in sorted(conf.items()):
+    for prot, t in sorted(() if so_o_acervo else conf.items()):
         if t["ocorrencia"] not in ("", "0"):
             continue                         # devolvido já na confirmação
         rets = ret.get(prot, [])
@@ -322,7 +375,8 @@ def _regras_do_fluxo(con, fluxo: dict, hoje: date, feriados) -> list[dict]:
 
     # 1.b  RECEBIDO DA CRA E NÃO APONTADO — nenhum protocolo para o título.
     respondido = fluxo["respondido"]
-    for chave, t in sorted(fluxo["remessa"].items(), key=lambda x: x[1]["dia"]):
+    for chave, t in sorted(() if so_o_acervo else fluxo["remessa"].items(),
+                           key=lambda x: x[1]["dia"]):
         if chave in respondido or (chave[0], str(t.get("numero_do_titulo") or "").strip()) \
                 in respondido:
             continue
@@ -434,7 +488,7 @@ def _regras_do_fluxo(con, fluxo: dict, hoje: date, feriados) -> list[dict]:
             None, ART_12))
 
     # 1.e  DESISTÊNCIA RECEBIDA SEM BAIXA.
-    for prot, d in fluxo["desistencia"].items():
+    for prot, d in (() if so_o_acervo else fluxo["desistencia"].items()):
         rets = ret.get(prot, [])
         if any(r["ocorrencia"] in ENCERRA for r in rets):
             continue
@@ -453,7 +507,7 @@ def _regras_do_fluxo(con, fluxo: dict, hoje: date, feriados) -> list[dict]:
 
     # 1.f  RETORNO ENVIADO DEPOIS DO DIA ÚTIL SEGUINTE — sem tarefa.
     tardios = []
-    for prot, rets in ret.items():
+    for prot, rets in (() if so_o_acervo else ret.items()):
         for r in rets:
             if r["data"] and r["enviado"] and not GC.antes_do_corte(r["data"]) \
                     and r["enviado"] > _uteis(r["data"], 1, feriados):
@@ -493,6 +547,281 @@ def _regras_do_fluxo(con, fluxo: dict, hoje: date, feriados) -> list[dict]:
             f"{len(antigos)} pendência(s) do protesto anteriores a 10/09/2026 (arquivos da CRA)",
             "Não viram tarefa pela ordem do corte. " + "; ".join(antigos[:10])
             + ("…" if len(antigos) > 10 else ""), None, ""))
+    return saida
+
+
+# --------------------------------------- 1'. o fluxo da CRA, lido do banco
+
+def _instante(valor) -> datetime | None:
+    s = str(valor or "").strip().replace(" ", "T")[:19]
+    try:
+        return datetime.fromisoformat(s) if s else None
+    except ValueError:
+        return None
+
+
+def _as(dia: date, hora: str) -> datetime:
+    h, m = (int(x) for x in hora.split(":"))
+    return datetime(dia.year, dia.month, dia.day, h, m)
+
+
+def _desde_a_virada(dia: date | None) -> bool:
+    return dia is not None and dia.isoformat() >= VIRADA
+
+
+def _rotulo_do_titulo(r: dict) -> str:
+    return (f"protocolo {r.get('protocolo') or '?'} · título "
+            f"{r.get('numero_titulo') or r.get('titulo_id') or '?'} · apresentante "
+            f"{r.get('apresentante_codigo') or '?'}")
+
+
+def informados_a_cra(con) -> frozenset:
+    """Os protocolos cujo ato final (protesto, pagamento, desistência,
+    cancelamento) a CRA já tem: arquivo ACEITO (`cra_enviado_em`, inclusive a
+    marca da virada do E-Ofício) ou a marca manual de «já informado». Só LÊ.
+    A CRA conhece o protocolo, e não o título (`protesto_retorno`)."""
+    import protesto_retorno as PRE
+    bd = banco(con)
+    marca = ("a.cra_ja_informado_em IS NOT NULL"
+             if bd.tem_coluna("pt_atos", "cra_ja_informado_em") else "1 = 0")
+    tipos = PRE.ATOS_QUE_VOLTAM
+    return frozenset(
+        str(r["protocolo"]) for r in bd.ler(
+            f"""SELECT DISTINCT t.protocolo
+                  FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
+                  LEFT JOIN pt_retornos r ON r.id = a.retorno_id
+                 WHERE a.tipo IN ({','.join(['%s'] * len(tipos))})
+                   AND COALESCE(a.cancelado, 0) = 0 AND t.protocolo IS NOT NULL
+                   AND (r.cra_enviado_em IS NOT NULL OR {marca})
+                 ORDER BY t.protocolo""", tipos))
+
+
+def _cra_sem_resposta(con, hoje: date, feriados) -> list[dict]:
+    """O ato final lavrado que a CRA não tem, passado o prazo do retorno (11h30
+    do dia útil seguinte ao ato). É a fila de `protesto_retorno.pendentes` e o
+    ato preso num arquivo que a CRA não aceitou — a mesma régua do roteiro
+    (`protesto_roteiro._atos_sem_arquivo_da_cra`, `_arquivos_nao_aceitos`).
+
+    O título com o tríduo vencido e SEM ato final é `PROTESTO_TITULO_PARADO`:
+    medir aqui também daria duas tarefas para o mesmo serviço."""
+    import protesto_retorno as PRE
+    import protesto_roteiro as PRT
+    bd = banco(con)
+    atos = [dict(a, porque="não saiu em nenhum arquivo de retorno")
+            for a in PRE.pendentes(con, tipo="SDTBFORTP")]
+    tipos = PRE.ATOS_QUE_VOLTAM
+    recusa = ("r.cra_recusado_em" if bd.tem_coluna("pt_retornos", "cra_recusado_em")
+              else "NULL")
+    for r in bd.ler(
+            f"""SELECT a.id AS ato_id, a.tipo, a.data_ato, t.id AS titulo_id,
+                       t.numero_titulo, t.protocolo, t.apresentante_codigo,
+                       r.nome_arquivo, r.cra_envio_erro, {recusa} AS recusado_em
+                  FROM pt_atos a
+                  JOIN pt_titulos t ON t.id = a.titulo_id
+                  JOIN pt_retornos r ON r.id = a.retorno_id
+                 WHERE COALESCE(a.cancelado, 0) = 0 AND t.origem = 'CRA'
+                   AND a.tipo IN ({','.join(['%s'] * len(tipos))})
+                   AND r.cra_enviado_em IS NULL
+                   AND COALESCE(r.cra_enviado_ambiente, '') <> 'EOFICIO'
+                 ORDER BY a.id""", tipos):
+        r = dict(r)
+        r["porque"] = (f"o arquivo {r.get('nome_arquivo') or '?'} foi "
+                       + ("RECUSADO pela CRA" if r.get("recusado_em") else
+                          "gerado e o envio falhou" if str(r.get("cra_envio_erro") or "").strip()
+                          else "gerado e não foi aceito pela CRA"))
+        atos.append(r)
+    saida = []
+    for a in atos:
+        dia = _d(a.get("data_ato"))
+        if not _desde_a_virada(dia):
+            continue
+        prazo = _uteis(dia, 1, feriados)
+        if hoje <= prazo:
+            continue
+        saida.append(GC._achado(
+            f"PT_RESPOSTA_ATO:{a['ato_id']}", "PROTESTO_SEM_RESPOSTA", "VENCIDO", SETOR,
+            f"{str(a.get('tipo') or '').capitalize()} de {_br(dia)} que a CRA não "
+            f"tem — {_rotulo_do_titulo(a)}",
+            f"Ato {a['ato_id']}: {a['porque']}. O retorno saía até "
+            f"{_br(prazo)}, {PRT.HORA_DO_RETORNO}. Gere e envie em Protesto → "
+            "Retornos da CRA; o arquivo recusado volta à fila antes.",
+            prazo, ROTEIRO))
+    return saida
+
+
+def _cra_remessa_sem_confirmacao(con, hoje: date, feriados) -> list[dict]:
+    """O título recebido da CRA que não foi apontado, ou cuja remessa não tem
+    confirmação ACEITA. A confirmação (`SDTBFOCRT`) vence às 14h10 do dia em
+    que a remessa entrou (`protesto_roteiro`); a rodada do gestor é de manhã,
+    e no dia seguinte ela já passou."""
+    import protesto_roteiro as PRT
+    saida = []
+    for r in banco(con).ler(
+            """SELECT t.id AS titulo_id, t.numero_titulo, t.nosso_numero, t.protocolo,
+                      t.situacao, t.apresentante_codigo, m.id AS remessa_id,
+                      m.nome_arquivo, m.recebida_em, m.confirmacao_id,
+                      c.cra_enviado_em AS confirmada_em, c.cra_enviado_ambiente
+                 FROM pt_titulos t
+                 JOIN pt_remessas m ON m.id = t.remessa_id
+                 LEFT JOIN pt_retornos c ON c.id = m.confirmacao_id
+                WHERE t.origem = 'CRA' AND m.recebida_em >= %s
+                ORDER BY m.id, t.id""", (VIRADA,)):
+        r = dict(r)
+        dia = _d(r["recebida_em"])
+        if dia is None or hoje <= dia:
+            continue
+        faltas = []
+        if r["situacao"] == "RECEBIDO":
+            faltas.append("o título não foi apontado")
+        if not r["confirmacao_id"]:
+            faltas.append("a remessa não tem confirmação gerada")
+        elif not r["confirmada_em"] and r["cra_enviado_ambiente"] != "EOFICIO":
+            faltas.append("a confirmação da remessa não foi aceita pela CRA")
+        if not faltas:
+            continue
+        chave = r["nosso_numero"] or r["numero_titulo"] or r["titulo_id"]
+        saida.append(GC._achado(
+            f"PT_REMESSA:{r['apresentante_codigo'] or '?'}:{chave}",
+            "PROTESTO_REMESSA_SEM_CONFIRMACAO", "VENCIDO", SETOR,
+            f"Título recebido em {_br(dia)} sem apontamento ou sem confirmação aceita "
+            f"— {_rotulo_do_titulo(r)}",
+            f"Remessa {r['nome_arquivo'] or r['remessa_id']}: {'; '.join(faltas)}. "
+            f"Apontar (ou devolver por irregularidade) e confirmar à CRA até as "
+            f"{PRT.HORA_DA_CONFIRMACAO} do dia em que a remessa entra.",
+            dia, f"{ART_907}; Lei 9.492/1997, art. 5º"))
+    return saida
+
+
+def _cra_desistencia_sem_baixa(con, hoje: date, feriados) -> list[dict]:
+    """A desistência que a CRA mandou (`pt_cra_pedidos`, DP/AD) e ainda está
+    aberta depois do dia útil seguinte. Sem a baixa, o título continua na fila
+    e pode ser protestado contra quem o credor desistiu de protestar.
+
+    A desistência APLICADA que não foi à CRA é ato final sem retorno — quem a
+    cobra é `PROTESTO_SEM_RESPOSTA`, pelo ato."""
+    import protesto_cra_pedidos as PCP
+    abertos = PCP.ESTADOS_ABERTOS
+    saida = []
+    for r in banco(con).ler(
+            f"""SELECT p.id, p.tipo, p.protocolo, p.numero_titulo, p.titulo_id,
+                       p.estado, p.recebido_em, t.situacao, t.apresentante_codigo
+                  FROM pt_cra_pedidos p
+                  LEFT JOIN pt_titulos t ON t.id = p.titulo_id
+                 WHERE p.tipo IN ('DP', 'AD') AND p.recebido_em >= %s
+                   AND p.estado IN ({','.join(['%s'] * len(abertos))})
+                 ORDER BY p.id""", (VIRADA, *abertos)):
+        r = dict(r)
+        dia = _d(r["recebido_em"])
+        if dia is None:
+            continue
+        limite = _uteis(dia, 1, feriados)
+        if hoje <= limite:
+            continue
+        saida.append(GC._achado(
+            f"PT_DESIST:{r['protocolo'] or 'pedido-' + str(r['id'])}",
+            "PROTESTO_DESISTENCIA_SEM_BAIXA", "VENCIDO", SETOR,
+            f"Desistência da CRA de {_br(dia)} ainda não aplicada — "
+            f"{_rotulo_do_titulo(r)}",
+            f"Pedido {r['id']} ({PCP.NOME_DO_TIPO.get(r['tipo'], r['tipo'])}), "
+            f"{str(r['estado']).lower()}; o título está "
+            f"{str(r['situacao'] or 'sem cadastro aqui').lower()}. Sem a baixa, ele "
+            "continua na fila e pode ser protestado contra quem o credor desistiu "
+            "de protestar. Aplique na ficha (com o caixa, se houver custas) ou "
+            "registre por que não se aplica em Protesto → Pedidos da CRA.",
+            limite, "Lei 9.492/1997, art. 16; Roteiro das Centrais"))
+    return saida
+
+
+def _cra_retorno_tardio(con, hoje: date, feriados) -> list[dict]:
+    """O ato final que foi à CRA depois das 11h30 do dia útil seguinte. Ato já
+    praticado: relatado, sem tarefa."""
+    import protesto_retorno as PRE
+    import protesto_roteiro as PRT
+    tipos = PRE.ATOS_QUE_VOLTAM
+    tardios = []
+    for r in banco(con).ler(
+            f"""SELECT a.id AS ato_id, a.data_ato, t.protocolo, r.cra_enviado_em
+                  FROM pt_atos a
+                  JOIN pt_titulos t ON t.id = a.titulo_id
+                  JOIN pt_retornos r ON r.id = a.retorno_id
+                 WHERE a.tipo IN ({','.join(['%s'] * len(tipos))})
+                   AND r.tipo = 'SDTBFORTP' AND r.cra_enviado_em IS NOT NULL
+                   AND COALESCE(r.cra_enviado_ambiente, '') <> 'EOFICIO'
+                 ORDER BY a.id""", tipos):
+        dia, enviado = _d(r["data_ato"]), _instante(r["cra_enviado_em"])
+        if not _desde_a_virada(dia) or enviado is None:
+            continue
+        if enviado > _as(_uteis(dia, 1, feriados), PRT.HORA_DO_RETORNO):
+            tardios.append((enviado, r["protocolo"] or f"ato {r['ato_id']}", dia))
+    if not tardios:
+        return []
+    tardios.sort()
+    exemplos = "; ".join(f"{p} (ato de {_br(o)}, aceito em {e:%d/%m/%Y %H:%M})"
+                         for e, p, o in tardios[-8:])
+    return [GC._achado(
+        "PT_RETORNO_TARDIO", "PROTESTO_RETORNO_TARDIO", "ATENCAO", SETOR,
+        f"{len(tardios)} ato(s) informado(s) à CRA depois das "
+        f"{PRT.HORA_DO_RETORNO} do dia útil seguinte",
+        f"Os mais recentes: {exemplos}.", None, ROTEIRO)]
+
+
+def _regras_da_cra_no_banco(con, hoje: date, feriados) -> list[dict]:
+    """As quatro regras do fluxo da CRA, lidas do banco. SÓ LÊ. Tabela que
+    falta é «não mediu» — e não «nada a cobrar»."""
+    if not _tem_tabela(con, "pt_titulos"):
+        return []
+    faltam = [t for t in ("pt_atos", "pt_retornos", "pt_remessas", "pt_cra_pedidos")
+              if not _tem_tabela(con, t)]
+    if faltam:
+        raise LookupError("nesta instalação não existe " + ", ".join(faltam))
+    return (_cra_sem_resposta(con, hoje, feriados)
+            + _cra_remessa_sem_confirmacao(con, hoje, feriados)
+            + _cra_desistencia_sem_baixa(con, hoje, feriados)
+            + _cra_retorno_tardio(con, hoje, feriados))
+
+
+# ------------------------------------------- o selo dos atos de protesto
+
+def _atos_sem_selo(con, hoje: date) -> list[dict]:
+    """O ato de protesto vivo, dos tipos que selam, sem selo na coluna, sem
+    selo vivo em `sd_selos` e sem cobertura em `cx_selo_coberturas` — o molde
+    de `gestor_conferencia.regra_atos_sem_selo`, que não cobre `pt_atos`.
+    Desde a virada, e sem o acervo do E-Ofício. SÓ LÊ."""
+    if not (_tem_tabela(con, "pt_atos") and _tem_tabela(con, "pt_titulos")):
+        return []
+    import protesto_selo_previo as PSP
+    bd = banco(con)
+    tipos = PSP.TIPOS_QUE_SELAM
+    sem_razao = ("""AND NOT EXISTS (SELECT 1 FROM sd_selos s WHERE s.tabela = 'pt_atos'
+                        AND s.ato_id = a.id AND s.cancelado_em IS NULL)"""
+                 if _tem_tabela(con, "sd_selos") else "")
+    sem_cobertura = ("""AND NOT EXISTS (SELECT 1 FROM cx_selo_coberturas c
+                            WHERE c.tabela = 'pt_atos' AND c.ato_id = a.id)"""
+                     if _tem_tabela(con, "cx_selo_coberturas") else "")
+    saida = []
+    for r in bd.ler(
+            f"""SELECT a.id, a.tipo, a.data_ato, a.criado_por, t.id AS titulo_id,
+                       t.numero_titulo, t.protocolo, t.apresentante_codigo
+                  FROM pt_atos a JOIN pt_titulos t ON t.id = a.titulo_id
+                 WHERE COALESCE(a.cancelado, 0) = 0
+                   AND a.tipo IN ({','.join(['%s'] * len(tipos))})
+                   AND COALESCE(a.origem, '') NOT IN ('EOFICIO', 'ACERVO', 'IMPORTACAO')
+                   AND COALESCE(a.selo, '') = ''
+                   {sem_razao} {sem_cobertura}
+                 ORDER BY a.id""", tipos):
+        r = dict(r)
+        dia = _d(r["data_ato"])
+        if not _desde_a_virada(dia):
+            continue
+        saida.append(GC._achado(
+            f"SEM_SELO:pt_atos:{r['id']}", "PROTESTO_ATO_SEM_SELO", "ATENCAO", SETOR,
+            f"Ato sem selo: {str(r['tipo']).lower()} de {_br(dia)}, ato {r['id']} — "
+            f"{_rotulo_do_titulo(r)}",
+            f"Lavrado por {r['criado_por'] or 'quem não ficou gravado'}, sem selo, "
+            "sem selo no razão (`sd_selos`) e sem cobertura no caixa. O selo é de "
+            "quem lavra: na ficha do título («o selo que faltou») ou na lista das "
+            "intimações sem selo. O robô não sela.",
+            None, "Código de Normas do TJMA — selo de fiscalização"))
     return saida
 
 
@@ -664,10 +993,10 @@ def _regras_do_sistema(con, hoje: date, feriados,
                     f"Juízo {s.get('juizo') or '?'}, processo {s.get('processo') or '?'}. "
                     "Sem nova intimação.", limite, "Lei 9.492/1997, art. 17, § 2º"))
     except Exception as erro:                           # noqa: BLE001 — vira NAO_MEDIU
-        saida.append(GC._achado("NAO_MEDIU:PROTESTO_SUSTACAO_REVOGADA",
-                                "PROTESTO_SUSTACAO_REVOGADA", "NAO_MEDIU", "TI",
-                                "A conferência da sustação revogada não mediu",
-                                f"{type(erro).__name__}: {erro}"))
+        saida.append(GC.segura(GC._achado(
+            "NAO_MEDIU:PROTESTO_SUSTACAO_REVOGADA", "PROTESTO_SUSTACAO_REVOGADA",
+            "NAO_MEDIU", "TI", "A conferência da sustação revogada não mediu",
+            f"{type(erro).__name__}: {erro}"), "PT_REVOGADA:*"))
 
     saida.extend(_certidoes_negativas(con, titulos, atos))
     return saida
@@ -740,40 +1069,67 @@ def _modelo_do_termo(con) -> list[dict]:
 
 def conferir(con, hoje: date, *, pasta_cra: Path | None = None) -> list[dict]:
     """Tudo o que o agente do Protesto aponta. SÓ LÊ. Cada parte que quebra
-    vira NAO_MEDIU, e as outras continuam."""
+    vira NAO_MEDIU, as outras continuam — e a que não mediu SEGURA os achados
+    dela que estão abertos (`GC.segura`): deixar de medir não é resolver."""
     feriados = _feriados(con)
     achados: list[dict] = []
-    pasta = Path(pasta_cra) if pasta_cra else _pasta_cra(con)
     respondidos: frozenset = frozenset()
-    if pasta is None or not pasta.is_dir():
-        achados.append(GC._achado(
-            "PT_PASTA_CRA", "PROTESTO_PASTA_CRA", "NAO_MEDIU", SETOR,
-            "A pasta dos arquivos da CRA não foi encontrada — prazos da Central não medidos",
-            (f"Procurada em «{pasta}». " if pasta is not None else
-             "A pasta não está configurada. ")
-            + f"Ajuste em configurações ({CHAVE_PASTA_CRA}).", None, ""))
-    else:
+
+    # 1. O FLUXO DA CRA, NO BANCO — desde a virada, a fonte do dia.
+    try:
+        achados.extend(_regras_da_cra_no_banco(con, hoje, feriados))
+        if _tem_tabela(con, "pt_titulos") and _tem_tabela(con, "pt_retornos"):
+            respondidos = informados_a_cra(con)
+    except Exception as erro:                           # noqa: BLE001
+        achados.append(GC.segura(GC._achado(
+            "NAO_MEDIU:PROTESTO_CRA", "PROTESTO_CRA", "NAO_MEDIU", "TI",
+            "O fluxo da CRA (resposta, confirmação, desistência e retorno) não foi "
+            "medido", f"{type(erro).__name__}: {erro}"), *REGRAS_DA_CRA))
+
+    # 2. A PASTA LEGADA — só o acervo de antes da virada, quando ela existe.
+    pasta = Path(pasta_cra) if pasta_cra else _pasta_cra(con)
+    if pasta is not None and not pasta.is_dir():
+        achados.append(GC.segura(GC._achado(
+            "PT_PASTA_CRA", "PROTESTO_PASTA_CRA", "ATENCAO", SETOR,
+            "A pasta legada dos arquivos da CRA não foi encontrada — só o acervo "
+            "de antes da virada ficou sem medir",
+            f"Procurada em «{pasta}». Os prazos da CRA de hoje se medem no banco; "
+            "da pasta saíam só a protocolização tardia, o documento do devedor e "
+            "o protesto praticado fora do sistema, do tempo do E-Ofício. Se a "
+            f"pasta não existe mais, apague a configuração ({CHAVE_PASTA_CRA}).",
+            None, ""), *CHAVES_DA_PASTA))
+    elif pasta is not None:
         try:
             fluxo = ler_fluxo_da_cra(pasta, hoje)
-            respondidos = frozenset(p for p, rs in fluxo["retorno"].items()
-                                    if any(r["ocorrencia"] in ENCERRA for r in rs))
-            achados.extend(_regras_do_fluxo(con, fluxo, hoje, feriados))
+            respondidos = respondidos | frozenset(
+                p for p, rs in fluxo["retorno"].items()
+                if any(r["ocorrencia"] in ENCERRA for r in rs))
+            achados.extend(_regras_do_fluxo(con, fluxo, hoje, feriados,
+                                            so_o_acervo=True))
             if fluxo["ilegiveis"]:
                 achados.append(GC._achado(
                     "PT_PASTA_CRA:ILEGIVEIS", "PROTESTO_PASTA_CRA", "NAO_MEDIU", SETOR,
                     f"{len(fluxo['ilegiveis'])} arquivo(s) da CRA não se leram",
                     "; ".join(fluxo["ilegiveis"][:5]), None, ""))
         except Exception as erro:                       # noqa: BLE001
-            achados.append(GC._achado(
-                "NAO_MEDIU:PROTESTO_CRA", "PROTESTO_PASTA_CRA", "NAO_MEDIU", "TI",
-                "A leitura dos arquivos da CRA quebrou", f"{type(erro).__name__}: {erro}"))
-    for nome, parte in (("PROTESTO_SISTEMA", lambda: _regras_do_sistema(con, hoje, feriados, respondidos)),
-                        ("PROTESTO_MODELO_DO_TERMO", lambda: _modelo_do_termo(con))):
+            achados.append(GC.segura(GC._achado(
+                "NAO_MEDIU:PROTESTO_PASTA", "PROTESTO_PASTA_CRA", "NAO_MEDIU", "TI",
+                "A leitura dos arquivos da CRA quebrou", f"{type(erro).__name__}: {erro}"),
+                *CHAVES_DA_PASTA))
+
+    for nome, parte, segura in (
+            ("PROTESTO_SISTEMA",
+             lambda: _regras_do_sistema(con, hoje, feriados, respondidos),
+             CHAVES_DO_SISTEMA),
+            ("PROTESTO_ATO_SEM_SELO", lambda: _atos_sem_selo(con, hoje),
+             ("PROTESTO_ATO_SEM_SELO",)),
+            ("PROTESTO_MODELO_DO_TERMO", lambda: _modelo_do_termo(con),
+             ("PROTESTO_MODELO_DO_TERMO",))):
         try:
             achados.extend(parte())
         except Exception as erro:                       # noqa: BLE001
-            achados.append(GC._achado(
+            achados.append(GC.segura(GC._achado(
                 f"NAO_MEDIU:{nome}", nome, "NAO_MEDIU", "TI",
                 f"A conferência «{nome}» não conseguiu medir",
-                f"{type(erro).__name__}: {erro}"))
+                f"{type(erro).__name__}: {erro}"), *segura))
     return achados

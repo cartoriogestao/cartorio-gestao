@@ -173,3 +173,76 @@ def test_julgar_o_teste_com_a_comparacao_cortada_refaz():
     p = pr(1)
     gh.julgar_o_teste(p, MAIN_TESTADO)
     assert p.teste_vencido is True
+
+
+# ------------------------------------- 20/11/2026: «unstable» com a verificação velha da suíte
+
+
+def test_unstable_so_pela_verificacao_velha_da_suite_entra():
+    # #472 e #479: a suíte pedida de novo deu `suite` verde, mas a verificação vermelha
+    # da rodada `pull_request_target` ficou no PR, e o GitHub responde «unstable».
+    p = pr(1, estado_merge="unstable", pendencias={F.VERIFICACAO_DA_SUITE})
+    assert F.decidir([p], DONO) == [("mesclar", 1)]
+
+
+def test_unstable_com_outra_verificacao_vermelha_fica_parado():
+    for pendencias in ({"outra-verificacao"}, {F.VERIFICACAO_DA_SUITE, "outra-verificacao"}):
+        p = pr(1, estado_merge="unstable", pendencias=pendencias)
+        assert F.decidir([p], DONO) == [], pendencias
+
+
+def test_unstable_sem_pendencia_apurada_nao_entra():
+    assert F.decidir([pr(1, estado_merge="unstable")], DONO) == []
+    assert F.decidir([pr(1, estado_merge="unstable", pendencias=set())], DONO) == []
+
+
+def test_unstable_pela_suite_velha_mas_com_o_status_vermelho_nao_entra():
+    p = pr(1, estado_merge="unstable", suite="failure", pendencias={F.VERIFICACAO_DA_SUITE})
+    assert F.decidir([p], DONO) == []
+
+
+def test_unstable_aceito_ainda_respeita_o_teste_vencido_e_a_suite_na_fila():
+    base = dict(estado_merge="unstable", pendencias={F.VERIFICACAO_DA_SUITE})
+    assert F.decidir([pr(1, teste_vencido=True, **base)], DONO) == [("disparar", 1)]
+    assert F.decidir([pr(1, suite_na_fila=True, **base)], DONO) == []
+
+
+def test_pendencias_olha_o_mais_novo_de_cada_status_e_deixa_o_exigido_de_fora():
+    gh = _GitHubDeEnsaio({"/commits/sha1/check-runs": {"check_runs": [
+        {"name": F.VERIFICACAO_DA_SUITE, "status": "completed", "conclusion": "failure"},
+        {"name": F.VERIFICACAO_ANTI_LEAK, "status": "completed", "conclusion": "failure"},
+        {"name": "pulado", "status": "completed", "conclusion": "skipped"},
+        {"name": "ainda-correndo", "status": "in_progress", "conclusion": None},
+    ]}})
+    estados = [
+        {"context": "suite", "state": "success"},
+        {"context": "suite", "state": "failure"},          # o antigo: não conta
+        {"context": "suite-main", "state": "success"},
+        {"context": "outro-status", "state": "success"},
+        {"context": "outro-status", "state": "failure"},   # o antigo: não conta
+        {"context": "status-vermelho", "state": "error"},
+    ]
+    assert gh.pendencias(pr(1), estados) == {F.VERIFICACAO_DA_SUITE, "ainda-correndo",
+                                              "status-vermelho"}
+
+
+def test_completar_com_unstable_apura_as_pendencias_e_julga_o_teste():
+    gh = _GitHubDeEnsaio({
+        "/pulls/1/files": [{"filename": "wa_atendente.py"}],
+        "/pulls/1": {"mergeable_state": "unstable", "head": {"sha": "sha1"}},
+        "/commits/sha1/statuses": [
+            {"context": "suite-main", "state": "success", "description": MAIN_TESTADO},
+            {"context": "suite", "state": "success"},
+        ],
+        "/commits/sha1/check-runs?check_name=": {"check_runs": [
+            {"name": F.VERIFICACAO_ANTI_LEAK, "status": "completed", "conclusion": "success"}]},
+        "/commits/sha1/check-runs?filter=latest": {"check_runs": [
+            {"name": F.VERIFICACAO_DA_SUITE, "status": "completed", "conclusion": "failure"},
+            {"name": F.VERIFICACAO_ANTI_LEAK, "status": "completed", "conclusion": "success"}]},
+        f"/compare/{MAIN_TESTADO}...main": {"ahead_by": 1, "files": [{"filename": "despesas.py"}]},
+    })
+    p = pr(1, estado_merge="unknown", suite=None, anti_leak=None)
+    gh.completar(p)
+    assert p.pendencias == {F.VERIFICACAO_DA_SUITE}
+    assert p.teste_vencido is False
+    assert F.decidir([p], DONO) == [("mesclar", 1)]

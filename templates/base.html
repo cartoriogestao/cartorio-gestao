@@ -931,6 +931,9 @@
         {# OS ENVIOS ÀS CENTRAIS — o que a conferência diária cobra e só some
            com o protocolo registrado. Fica ao lado de «O que ficou pelo
            caminho» porque é a mesma pergunta: o que a casa ainda deve. #}
+        {# A CHECKLIST DE GESTÃO DO DIA (19/11/2026): os achados abertos por
+           área do semáforo e as conferências de hoje. #}
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('gestor_checklist') }}">Checklist de gestão do dia</a>{% endif %}
         <a href="{{ url_for('gestor_envios') }}">Envios às Centrais</a>
         <a href="{{ url_for('gestor_leituras') }}">Leitura dos textos (IA)</a>
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('gestor_caixas') }}">Caixas para o visto</a>{% endif %}

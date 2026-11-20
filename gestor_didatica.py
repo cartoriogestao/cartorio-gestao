@@ -43,6 +43,10 @@ TELA = {
     "CAIXAS_VISTO": ("Administrativo → Caixas para o visto", "/administrativo/gestor/caixas"),
     "SELOS": ("Relatórios → Selos", "/relatorios/selos"),
     "CNIB": ("Registro de Imóveis → CNIB", "/registro-imoveis/cnib"),
+    # A quinzena da CENSEC se gera, se envia (pela API ou à mão) e se acompanha
+    # na fila de remessas de Notas; até 19/11/2026 o achado da CENSEC saía
+    # «sem tela» na checklist e a tarefa mandava abrir um menu que não existe.
+    "CENSEC": ("Notas → Remessa às centrais", "/notas/remessas"),
 }
 
 FECHA_SOZINHA = ("Cada item sai desta lista sozinho na conferência seguinte (07:30, "
@@ -95,7 +99,7 @@ GUIA: dict[str, tuple[str, list[str]]] = {
     "CENSEC": (
         "Escrituras, procurações e atas da quinzena se informam à CENSEC "
         "(Provimento CNJ 18/2012).",
-        ["Abra Notas → CENSEC, gere a remessa da quinzena e envie.",
+        ["Abra Notas → Remessa às centrais, gere a remessa da quinzena e envie.",
          "Marque a remessa como enviada / registre em Envios às Centrais."]),
     "DOI": (
         "Todo mês deve uma DOI à Receita, ou a declaração negativa.",
@@ -289,7 +293,11 @@ def _menu_do_ato(tabela: str, rotulo: str) -> str:
     return rotulo
 
 
-def _onde_da_regra(regra: str) -> tuple[str, str] | None:
+def onde_da_regra(regra: str) -> tuple[str, str] | None:
+    """A tela onde se resolve a regra: (caminho no menu, endereço), ou None.
+
+    Pública porque a checklist de gestão (`gestor_checklist`) leva cada achado
+    aberto à mesma tela que a tarefa manda abrir."""
     if regra in TELA:
         return TELA[regra]
     if regra in ("CAIXA_ABERTO", "CAIXA_DO_DIA_ABERTO", "CAIXA_DIFERENCA"):
@@ -300,6 +308,9 @@ def _onde_da_regra(regra: str) -> tuple[str, str] | None:
         return TELA["LEITURAS"]
     if regra in ("SELO_CANCELADO_LOCAL", "FECHAMENTO_DO_MES"):
         return TELA["SELOS"]
+    if regra == "CENSEC_AUTOMATICO":
+        # impedido, apto fora do prazo, quinzena por fechar: tudo na mesma fila.
+        return TELA["CENSEC"]
     return None
 
 
@@ -312,7 +323,7 @@ def descricao(con, regra: str, itens: list[dict], gravidades: list[str]) -> str:
     linhas = ["POR QUE ESTA TAREFA EXISTE", por_que, "", "COMO RESOLVER"]
     linhas += [f"{i}. {p}" for i, p in enumerate(passos, 1)]
     linhas += [FECHA_SOZINHA, ""]
-    tela = _onde_da_regra(regra)
+    tela = onde_da_regra(regra)
     if tela:
         linhas += [f"Tela: {tela[0]} — {tela[1]}", ""]
     ordenados = sorted(itens, key=lambda x: (gravidades.index(x["gravidade"])

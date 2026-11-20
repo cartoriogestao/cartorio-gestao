@@ -46,6 +46,7 @@
     dd { margin:0; text-align:right; font-weight:600; font-variant-numeric:tabular-nums; }
     dd.ruim { color:var(--alerta); }
     dd.semaforo::before { content:"●"; margin-right:6px; }
+    dt a { color:inherit; text-decoration:underline dotted; }
     .semaforo-vermelho { color:var(--alerta); }
     .semaforo-amarelo { color:var(--atencao); }
     .semaforo-verde { color:var(--ok); }
@@ -73,14 +74,17 @@
 
   {# O SEMÁFORO DA CONFORMIDADE (18/11/2026, `conformidade`): uma cor por
      área, dos achados abertos do gestor. Sem rodada válida do gestor, nenhuma
-     área fica verde: fica «Sem medição». #}
+     área fica verde: fica «Sem medição».
+     Cada área leva à checklist de gestão filtrada (19/11/2026). O link é só
+     DESTA tela: o retrato que sai da casa (`painel_retrato`) continua levando
+     só códigos e contagens, e não endereço nem título de achado. #}
   {% set cf = n.agora.conformidade %}
   <section>
     <h2>Conformidade por área</h2>
     {% if cf %}
     {% if not cf.gestor.medido %}<p class="sub semaforo-sem-medicao">Sem medição: {{ cf_motivos[cf.gestor.motivo] }}.</p>{% endif %}
     <dl>
-      {% for area, a in cf.areas.items() %}<dt>{{ cf_areas[area] }}</dt><dd class="semaforo semaforo-{{ a.cor|lower }}">{{ cf_cores[a.cor] }}{% if a.abertos %} · {{ a.abertos }}{% endif %}</dd>{% endfor %}
+      {% for area, a in cf.areas.items() %}<dt><a href="{{ url_for('gestor_checklist', area=area) }}">{{ cf_areas[area] }}</a></dt><dd class="semaforo semaforo-{{ a.cor|lower }}">{{ cf_cores[a.cor] }}{% if a.abertos %} · {{ a.abertos }}{% endif %}</dd>{% endfor %}
     </dl>
     {% else %}<p class="sub">—</p>{% endif %}
   </section>

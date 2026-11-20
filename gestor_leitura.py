@@ -345,6 +345,27 @@ def ler_pendentes(con, pasta_dados: Path, *,
     return {"lidos": lidos, "erros": erros, "provedor": provedor}
 
 
+def revisoes_para_conferir(con) -> list[dict]:
+    """As revisões em lote do agente (`rv_revisoes`) que apontaram algo e
+    ninguém conferiu. SÓ LÊ; sem a tabela, lista vazia.
+
+    Uma régua só: a tela das leituras (`gestor_web`) as lista, e a checklist
+    de gestão (`gestor_checklist`) as conta.
+    """
+    if not banco(con).tem_tabela("rv_revisoes"):
+        return []
+    saida = []
+    for r in banco(con).ler(
+            """SELECT id, rotulo, resultado_json, graves FROM rv_revisoes
+                WHERE origem = 'AGENTE' AND situacao = 'PRONTA'
+                  AND justificado_em IS NULL ORDER BY graves DESC, id"""):
+        achados = json.loads(r["resultado_json"] or "{}").get("achados") or []
+        if achados:
+            saida.append({"id": r["id"], "rotulo": r["rotulo"],
+                          "graves": r["graves"], "achados": achados})
+    return saida
+
+
 def achados_vigentes(con) -> list[dict]:
     """O que as leituras apontaram e ainda vale: a versão atual, não revisada.
 

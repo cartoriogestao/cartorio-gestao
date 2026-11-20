@@ -136,8 +136,13 @@ SELECT 'CREATE PUBLICATION {PUBLICACAO} FOR TABLES IN SCHEMA {schema} WITH (publ
  WHERE NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = '{PUBLICACAO}') \\gexec
 ALTER PUBLICATION {PUBLICACAO} SET (publish = 'insert, update, delete');
 
--- 5. Conferência: o que falta para a reserva conectar.
-SELECT name, setting, CASE WHEN pending_restart THEN 'REINICIE O SERVIÇO' ELSE 'ok' END AS estado
+-- 5. Conferência: o que falta para a reserva conectar. O listen_addresses é '*': com o IP do
+--    Tailscale escrito, o PostgreSQL que sobe antes do Tailscale (no reinício do Windows) não
+--    acha o endereço, escuta só o 127.0.0.1 e não tenta de novo — a réplica para sem aviso.
+--    Quem barra os outros é o firewall e o pg_hba (roteiro, passo A3).
+SELECT name, setting, CASE WHEN pending_restart THEN 'REINICIE O SERVIÇO'
+                           WHEN name = 'listen_addresses' AND setting <> '*' THEN 'PONHA ''*'' (roteiro A3)'
+                           ELSE 'ok' END AS estado
   FROM pg_settings WHERE name IN ('wal_level', 'max_slot_wal_keep_size', 'listen_addresses');
 
 {chaves}"""
@@ -394,7 +399,7 @@ def situacao(local: str, estado: Path | None = None, schema: str = "producao") -
         print(f"  {s.tabelas_copiando} tabela(s) ainda na primeira cópia — normal na primeira hora")
     if not s.com_ligacao and not s.em_dia:
         print("  o principal não responde na porta do banco: ver o postgres.log da reserva e, no "
-              "principal, o serviço do PostgreSQL, o listen_addresses e o firewall "
+              "principal, o serviço do PostgreSQL, o listen_addresses = '*' (roteiro A3) e o firewall "
               "(docs/SERVIDOR_RESERVA_MACOS.md, Parte A)")
     elif s.erros and not s.em_dia:
         print("  houve erro na réplica: rode `reserva.py esquema` (versão nova no principal?) e veja o "

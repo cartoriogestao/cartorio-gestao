@@ -25,6 +25,62 @@ def test_o_sql_do_principal_e_idempotente_e_tem_as_travas():
     assert "truncate" not in sql.lower()
 
 
+def test_a_conferencia_do_principal_cobra_escutar_todos_os_enderecos():
+    # Com o IP do Tailscale escrito, o PostgreSQL que sobe antes do Tailscale escuta só o
+    # 127.0.0.1 (16–18/11/2026). A conferência aponta o que não for '*'.
+    sql = R.sql_do_principal("producao", "cg")
+    assert "WHEN name = 'listen_addresses' AND setting <> '*'" in sql
+
+
+class _CursorDeMentira:
+    """Responde às três consultas do `ler_situacao` na ordem, e guarda o SQL que recebeu."""
+
+    def __init__(self, respostas):
+        self.respostas, self.sqls = list(respostas), []
+
+    def execute(self, sql, params=None):
+        self.sqls.append(sql)
+        self._linha = self.respostas.pop(0)
+        return self
+
+    def fetchone(self):
+        return self._linha
+
+
+def test_a_ultima_noticia_so_conta_quem_recebeu_do_principal():
+    # O trabalhador relançado tem `last_msg_receipt_time` = agora sem ter conectado: sem o filtro,
+    # a réplica parada parecia em dia.
+    # Juntado com o #469 (20/11/2026): a mesma consulta diz também se há ligação.
+    c = _CursorDeMentira([(True, 0, 353), (False, None), (0,)])
+    s = R.ler_situacao(c)
+    assert "received_lsn IS NOT NULL" in c.sqls[1]
+    assert s.atraso_s is None and not s.com_ligacao and not s.em_dia
+
+
+def test_assinatura_ligada_sem_noticia_sai_atrasada_e_diz_onde_olhar(monkeypatch, capsys):
+    monkeypatch.setenv("CG_RESERVA_LOCAL_DSN", "host=127.0.0.1 user=cg dbname=cartorio")
+
+    class _Conexao:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def cursor(self):
+            return self
+
+    monkeypatch.setattr(R, "_abrir", lambda dsn: _Conexao())
+    monkeypatch.setattr(R, "ler_situacao",
+                        lambda c, *a, **k: R.Situacao(True, None, 0, 0, 353, False, None))
+    monkeypatch.setattr(R, "_dado_mais_novo", lambda c, schema: None)
+    assert R.main(["situacao"]) == 1
+    saida = capsys.readouterr().out
+    assert "SEM LIGAÇÃO com o principal" in saida
+    assert "listen_addresses = '*'" in saida
+    assert saida.strip().endswith("ATRASADA")
+
+
 @pytest.mark.parametrize("schema, dono", [("producao; drop", "cg"), ("producao", "cg x")])
 def test_nome_estranho_e_recusado(schema, dono):
     with pytest.raises(ValueError):

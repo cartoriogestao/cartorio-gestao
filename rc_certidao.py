@@ -45,6 +45,7 @@ from certidao_texto import sem_linha_de_assinatura_a_mao
 
 import hashlib
 import json
+import re
 import sqlite3
 from contextlib import nullcontext
 from typing import Any
@@ -55,6 +56,7 @@ from livro_nucleo import por_extenso
 from pt_schema import normalizar_nome
 import rc_matricula as MAT
 import rc_textos as TEXTOS
+from rc_campos_do_acervo import local_nascimento_do_arquivo
 
 # OS MODELOS, um por espécie, medidos nas 145 certidões reais.
 #
@@ -352,6 +354,58 @@ def lugar_das_colunas(assento: dict, registro: dict | None = None) -> dict:
     return {"livro": livro, "folha": folha or None, "termo": termo}
 
 
+def livro_divergente(assento: dict) -> str:
+    """O livro do cadastro que a matrícula (ou a espécie) contradiz. Só calcula.
+
+    Auditoria de 18/11/2026: a certidão imprime `livro_volume` e a CRC recebe
+    a matrícula, que traz o livro dentro — e nada comparava os dois. O mesmo
+    assento saía com um livro no papel e outro na Central, e houve nascimento
+    com «B-3» no cadastro. Devolve a frase para a tela, ou vazio.
+
+    Compara a LETRA (A nascimento, B casamento, C óbito…) e o NÚMERO. Sem
+    `livro_volume` não há o que comparar: a certidão já usa a matrícula.
+    """
+    volume = str(assento.get("livro_volume") or "").strip()
+    if not volume:
+        return ""
+    texto = re.sub(r"^livro\s+", "", volume, flags=re.I)
+    letra_m = re.match(r"([A-Za-z])", texto)
+    letra = letra_m.group(1).upper() if letra_m else ""
+    numero_m = re.search(r"(\d+)\s*$", texto)
+    numero = int(numero_m.group(1)) if numero_m else None
+
+    partes = None
+    if assento.get("matricula"):
+        try:
+            partes = MAT.partes(assento["matricula"])
+        except MAT.MatriculaError:
+            partes = None
+    if partes and partes.get("livro_nome"):
+        letra_certa = partes["livro_nome"][:1]
+        try:
+            numero_certo = int(partes.get("livro") or "")
+        except ValueError:
+            numero_certo = None
+        de_onde = (f"a matrícula diz Livro {partes['livro_nome']}-"
+                   f"{numero_certo if numero_certo is not None else '?'}")
+    else:
+        tipo = MAT.LIVRO_DA_ESPECIE.get(
+            str(assento.get("especie") or "").strip().upper())
+        letra_certa = (MAT.TIPOS_DE_LIVRO.get(tipo) or {}).get("livro", "")[:1]
+        numero_certo = None
+        de_onde = f"a espécie pede o Livro {letra_certa}"
+
+    letra_errada = bool(letra and letra_certa and letra in "ABCDE"
+                        and letra != letra_certa)
+    numero_errado = (numero is not None and numero_certo is not None
+                     and numero != numero_certo)
+    if not (letra_errada or numero_errado):
+        return ""
+    return (f"o livro do cadastro é «{volume}» e {de_onde} — a certidão "
+            f"imprime o do cadastro e a CRC recebe o da matrícula. Confira "
+            f"no livro de papel e corrija o livro ou a matrícula")
+
+
 def _numero_sem_zero(valor) -> str:
     """`0141` -> `141`. Vazio fica vazio."""
     s = str(valor or "").strip()
@@ -437,6 +491,27 @@ def _cpf_da_pessoa(quem: dict, papel: str) -> str:
     return ""
 
 
+def _cpf_da_averbacao(atos: Any, especie: str) -> str:
+    """CPF da averbação de CPF mais recente do assento. Só calcula.
+
+    HOTFIX 19/11/2026: a averbação feita pela tela comum (natureza cpf_347) grava só o teor em
+    rc_atos e não preenche `cpf_registrado`; sem isto a certidão saía sem o CPF averbado. Vale só
+    para nascimento, natimorto e óbito (principal único): no casamento há dois nubentes e o papel
+    do CPF não se adivinha. O CPF vem de `rc_cpf.extrair_cpf_do_teor`, que confere o dígito."""
+    if str(especie or "").upper() not in ("NASCIMENTO", "NATIMORTO", "OBITO"):
+        return ""
+    import rc_cpf as CPFRC
+    for x in reversed(list(atos or [])):
+        if str(x.get("tipo") or "").upper() != "AVERBACAO":
+            continue
+        if not CPFRC.eh_teor_cpf(x.get("teor")):
+            continue
+        n = CPFRC.extrair_cpf_do_teor(x.get("teor"))
+        if n:
+            return n
+    return ""
+
+
 def _cpf_dos_conjuges(quem: dict, especie: str) -> str:
     """«CPF1 e CPF2» dos nubentes, na ordem do «NOME: A e B». Só calcula.
 
@@ -460,7 +535,8 @@ def _local_do_assento(a: dict, dados: dict, *, nascimento: bool) -> str:
     if partes:
         return ", ".join(partes)
     if nascimento:
-        return _local_do_nascimento(dados)
+        return (_local_do_nascimento(dados)
+                or local_nascimento_do_arquivo(dados))
     return str(dados.get("strNomeLocalObito") or "").strip()
 
 
@@ -636,9 +712,12 @@ def montar_teor(*, assento: dict, pessoas_do_assento: list[dict],
                         "OBITO": "FALECIDO",
                         **{e: "REGISTRADO" for e in ESPECIES_DO_LIVRO_E}}
                        .get(especie, ""))
+    cpf_legado = _documento(dados)
+    if cpf_legado == SEM_INFORMACAO:
+        cpf_legado = _cpf_da_averbacao(atos, especie) or cpf_legado
     linhas += _linha("CPF", _cpf_da_pessoa(quem, papel_principal)
                      or _cpf_dos_conjuges(quem, especie)
-                     or _documento(dados))
+                     or cpf_legado)
     # A MATRÍCULA SAI COMO ESTÁ. Os 32 dígitos vêm do assento; o sistema não
     # os gera, porque o verificador deles não se explica.
     linhas += _linha("MATRÍCULA Nº", a.get("matricula"))

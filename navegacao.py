@@ -397,6 +397,11 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
     {"chave": "GESTAO", "curto": "Gestão", "nome": "Gestão", "cor": "ADM",
      "icone": "escudo", "lavra": False, "secoes": (
          ("·Conformidade", ()),
+         # A CHECKLIST DO DIA (19/11/2026): os achados abertos por área do
+         # semáforo e as conferências de hoje — a porta dos cartões do painel.
+         ("Checklist do dia", (
+             _i("Checklist de gestão do dia", "gestor_checklist", AMA,
+                termos="conformidade semaforo achados conferencia"),)),
          ("Envios às Centrais", (
              _i("Envios às Centrais", "gestor_envios"),)),
          ("Erros e correções", (

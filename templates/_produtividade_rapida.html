@@ -16,6 +16,7 @@
      data-url-pausar="{{ url_for('produtividade_api_crono_pausar') }}"
      data-url-retomar="{{ url_for('produtividade_api_crono_retomar') }}"
      data-url-parar="{{ url_for('produtividade_api_crono_parar') }}"
+     data-url-trocar="{{ url_for('produtividade_api_crono_trocar') }}"
      data-url-status="{{ url_for('produtividade_api_crono_status') }}"
      data-url-confirmar="{{ url_for('produtividade_api_crono_confirmar') }}"
      data-url-encerrar="{{ url_for('produtividade_api_crono_encerrar_esquecidos') }}"
@@ -123,6 +124,21 @@
           <button type="button" class="button" data-prod-pausar>Pausar</button>
           <button type="button" class="button" data-prod-retomar hidden>Retomar</button>
           <button type="button" class="button primary" data-prod-parar>Parar e salvar</button>
+        </div>
+        {# TROCAR SEM PARAR (19/11/2026): «não consigo mudar o cronômetro».
+           Um clique fecha o atual e abre o próximo; no mesmo minuto, só
+           corrige o nome (ver `produtividade.trocar_cronometro`). #}
+        <div class="prod-rapida-troca" data-prod-troca>
+          <label>Mudou de tarefa? Escreva a próxima
+            <input name="proxima_tarefa" list="prod-rapida-tarefas" maxlength="300"
+                   data-prod-proxima placeholder="Ex.: REGISTRO DE ÓBITO">
+          </label>
+          <div class="prod-rapida-acoes">
+            <button type="button" class="button" data-prod-trocar>Trocar de tarefa</button>
+          </div>
+          <p class="prod-rapida-dica small muted">A atual fecha agora e a próxima começa
+            na mesma hora. Errou o nome no primeiro minuto? Escreva o certo e troque:
+            ele só é corrigido.</p>
         </div>
       </div>
     </form>

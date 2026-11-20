@@ -10,6 +10,9 @@
   var cronoTickStart = 0;
   var catsCache = null;
   var STORAGE_MODO = "prod_rapida_modo";
+  var cronoAtual = null;
+  var SESSAO_MUDOU = "Esta aba ficou desatualizada (você entrou de novo no sistema?). " +
+    "Aperte F5 para recarregar a página e tente outra vez — o cronômetro não se perdeu.";
 
   var CATS_PADRAO = [
     "1 - Operacional",
@@ -40,6 +43,12 @@
           return { ok: false, erro: "Falha HTTP " + r.status };
         }
         return j;
+      }, function () {
+        // NÃO É JSON (19/11/2026): o token desta aba venceu porque a pessoa
+        // entrou de novo em outra aba (o login troca o token e o servidor
+        // responde 400 em HTML), ou a sessão caiu e veio a tela de login.
+        // Antes, isso aparecia como «Falha de rede» e o botão parecia quebrado.
+        return { ok: false, erro: SESSAO_MUDOU };
       });
     });
   }
@@ -178,6 +187,7 @@
     var ativo = caixa.querySelector("[data-prod-crono-ativo]");
     var btnPausar = caixa.querySelector("[data-prod-pausar]");
     var btnRetomar = caixa.querySelector("[data-prod-retomar]");
+    cronoAtual = crono || null;
     if (!crono) {
       if (idle) idle.hidden = false;
       if (ativo) ativo.hidden = true;
@@ -492,6 +502,7 @@
     var formC = caixa.querySelector("[data-prod-form-crono]");
     formC.addEventListener("submit", function (ev) {
       ev.preventDefault();
+      if (cronoAtual) { trocarTarefa(); return; }
       var sel = formC.querySelector("[data-prod-categorias-crono]");
       if (sel && !sel.value) {
         sel.value = (catsCache || CATS_PADRAO)[0];
@@ -506,6 +517,8 @@
       }).then(function (j) {
         if (!j || !j.ok) {
           msg((j && j.erro) || "Não foi possível iniciar.", "erro");
+          // Já havia um aberto (de outra aba): mostra-o, com a troca à mão.
+          if (j && j.erro && j.erro !== SESSAO_MUDOU) carregarContexto();
           return;
         }
         msg("");
@@ -530,6 +543,42 @@
       });
     }
 
+    // TROCAR DE TAREFA SEM PARAR (19/11/2026, «não consigo mudar o
+    // cronômetro»): fecha o atual e abre o próximo num clique; no primeiro
+    // minuto, só corrige o nome.
+    function trocarTarefa() {
+      var campo = caixa.querySelector("[data-prod-proxima]");
+      var tarefa = campo ? campo.value.trim() : "";
+      if (!tarefa) {
+        msg("Escreva a próxima tarefa e clique em «Trocar de tarefa».", "erro");
+        if (campo) { try { campo.focus(); } catch (e) {} }
+        return;
+      }
+      var sel = formC.querySelector("[data-prod-categorias-crono]");
+      var categoria = (cronoAtual && cronoAtual.categoria) || (sel && sel.value) ||
+        (catsCache || CATS_PADRAO)[0];
+      msg("Trocando…");
+      postForm(caixa.getAttribute("data-url-trocar"), formC, {
+        tarefa: tarefa, categoria: categoria
+      }).then(function (j) {
+        if (!j || !j.ok) {
+          msg((j && j.erro) || "Não foi possível trocar.", "erro");
+          return;
+        }
+        if (campo) campo.value = "";
+        var ant = j.anterior;
+        msg(j.corrigido ? "Nome corrigido." :
+          "«" + ((ant && ant.tarefa) || "") + "» salva" +
+          (ant && ant.hora_fim ? " às " + ant.hora_fim : "") + ". Agora: «" + tarefa + "».", "ok");
+        mostrarCrono(j.cronometro || null);
+        if (j.aviso) mostrarAlerta(j.aviso, ["ciencia"]);
+      }).catch(function () {
+        msg("Falha de rede ao trocar.", "erro");
+      });
+    }
+    var bt = caixa.querySelector("[data-prod-trocar]");
+    if (bt) bt.addEventListener("click", trocarTarefa);
+
     var bp = caixa.querySelector("[data-prod-pausar]");
     if (bp) bp.addEventListener("click", function () { acaoCrono("data-url-pausar"); });
     var br = caixa.querySelector("[data-prod-retomar]");
@@ -546,6 +595,7 @@
       return getJson(caixa.getAttribute("data-url-status")).then(function (j) {
         if (!j || !j.ok) return;
         if (j.cronometro) mostrarCrono(j.cronometro);
+        else if (cronoAtual) mostrarCrono(null);
         tratarExpediente(j);
       }).catch(function () {});
     }

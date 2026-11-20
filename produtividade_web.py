@@ -526,6 +526,32 @@ def register_produtividade_routes(
         return jsonify({"ok": True, "registro": reg, "cronometro": None,
                         "aviso": reg.get("encerrado_automaticamente")})
 
+    @app.route("/administrativo/produtividade/api/cronometro/trocar", methods=["POST"])
+    @login_required
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def produtividade_api_crono_trocar():
+        """Fecha o atual e abre o próximo num clique — ou corrige o nome (ver
+        `PR.trocar_cronometro`). Pedido de 19/11/2026: «não consigo mudar»."""
+        uid, nome, username, _role = _identidade()
+        if uid is None:
+            return _json_erro("Sessão inválida.", 401)
+        with get_db() as con:
+            try:
+                troca = PR.trocar_cronometro(
+                    con,
+                    responsavel_user_id=uid,
+                    responsavel_nome=nome or username,
+                    categoria=(request.form.get("categoria") or "").strip(),
+                    tarefa=(request.form.get("tarefa") or "").strip(),
+                    criado_por=username,
+                )
+                con.commit()
+            except (ValueError, LookupError) as erro:
+                return _json_erro(str(erro))
+        return jsonify({"ok": True, "cronometro": troca["cronometro"],
+                        "anterior": troca["anterior"], "corrigido": troca["corrigido"],
+                        "aviso": troca["aviso"]})
+
     @app.route("/administrativo/produtividade/api/cronometro/status")
     @login_required
     @roles_required("ADMIN", "MANAGER", "USER")

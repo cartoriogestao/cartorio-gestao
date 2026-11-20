@@ -133,7 +133,10 @@ NÃO É ÔNUS VIGENTE: o que foi cancelado, baixado, quitado ou extinto por ato 
 posterior (averbação de cancelamento, de quitação, de baixa, de extinção do usufruto \
 por morte, de liberação); a frase «livre e desembaraçado de ônus» de uma compra e \
 venda; ônus que gravava OUTRO imóvel ou outra matrícula; a menção histórica de ônus \
-na matrícula de origem que não foi transportado para esta.
+na matrícula de origem que não foi transportado para esta. Ao decidir se um R foi \
+cancelado, leia o teor INTEIRO da averbação de baixa/cancelamento — o rótulo \
+cancelado (ex.: R-04) pode estar no fim da frase («… e R-04/1.197»), nunca ignore \
+a cauda do parágrafo.
 
 Para cada ônus ou ação VIGENTE, copie em «trecho» o texto do ato EXATAMENTE como \
 está escrito no material recebido, do rótulo (ex.: «R-02/2.914») até o fim daquele \
@@ -231,8 +234,10 @@ def categoria(ato) -> str:
     codigo = ri_onus.codigo_da_natureza(_campo(ato, "natureza_titulo"))
     if codigo is not None and codigo not in ri_onus.CODIGOS_SEM_SENTIDO:
         return ACAO if codigo in CODIGOS_DE_ACAO else ONUS
+    # Teor inteiro: citação de ação ou cancelamento no fim da frase não pode
+    # sumir numa janela curta (R-04 no final da AV de baixa, 20/11/2026).
     alvo = _sem_acento(f"{_campo(ato, 'natureza_titulo') or ''} "
-                       f"{normalizar(_campo(ato, 'teor'))[:300]}")
+                       f"{normalizar(_campo(ato, 'teor'))}")
     return ACAO if any(t in alvo for t in _TERMOS_DE_ACAO) else ONUS
 
 
@@ -316,7 +321,10 @@ def dossie(con, matricula_id: int) -> str:
         marca = " [CANCELADO]" if cancelado else ""
         partes.append(f"{tipo}-{numero} ({data_ato or '—'}; natureza: {natureza or '—'})"
                       f"{marca}: {normalizar(teor)}")
-    return "\n".join(partes)[:LIMITE_DO_DOSSIE]
+    # Se passar do limite, fica a CAUDA (como em revisao_previa): as averbações
+    # recentes de baixa/cancelamento — e o R citado no fim da frase — não caem fora.
+    texto = "\n".join(partes)
+    return texto if len(texto) <= LIMITE_DO_DOSSIE else texto[-LIMITE_DO_DOSSIE:]
 
 
 # ---------------------------------------------------------------- a leitura

@@ -1,6 +1,6 @@
 """O AVISO DO SELO ANTES DE EMITIR A CERTIDÃO — relato do oficial 10/09/2026.
 
-    «nao estou conseguindo emitir selo gratuito para certidao do marcos dione.
+    «nao estou conseguindo emitir selo gratuito para certidao do [registrado].
      Na ultima o selo que era pra ser gratuito foi pago»
 
 O QUE ACONTECEU, medido na produção:
@@ -88,7 +88,7 @@ def _registro_selado(con, assento_id, selo="REGNAS000000ABC"):
 # ======================================= o caso que custou dinheiro
 
 def test_assento_importado_sem_selo_de_registro_avisa_que_vai_cobrar(con):
-    """**É o caso do Marcos Dione**, e é o único que ganha faixa de aviso."""
+    """**É o caso do incidente da certidão 16**, e é o único que ganha faixa de aviso."""
     aid = _assento(con, origem="ARQUIVO")
     v = RCE.como_vai_selar(con, aid)
     assert v["via"] == "SEGUNDA"

@@ -11,7 +11,7 @@ Moreira Leitao», nascimento nº 5172 de 1974, origem ARQUIVO): marcar
      selo gratuito precisa do motivo escrito.»
 
 **A CERTIDÃO FICAVA, E FICAVA SEM SELO.** É o desfecho das certidões 16, 17 e
-23 do Marcos Dione por outro caminho — e a folha de segurança **não se
+23 do mesmo registrado por outro caminho — e a folha de segurança **não se
 gastava**, porque ela só se gasta se o selo sair: o papel existia, sem selo e
 sem folha.
 
@@ -69,7 +69,7 @@ def casa(cg_casa):
     return cg_casa
 
 def _assento_importado(casa) -> int:
-    """A forma do Nilton e do Marcos Dione: veio de fora, e o registro nunca
+    """A forma do Nilton e do incidente da certidão 16: veio de fora, e o registro nunca
     foi selado aqui — logo a certidão é tratada como segunda via."""
     con = sqlite3.connect(casa["banco"])
     con.row_factory = sqlite3.Row

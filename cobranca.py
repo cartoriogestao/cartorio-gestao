@@ -402,7 +402,8 @@ def conferir_pagador(pagador: Mapping[str, Any]) -> dict:
 
 
 FORMAS_NA_MAQUINA = ("PIX", "CREDITO", "DEBITO")
-FORMAS_DE_DENTRO = frozenset({"GRATUITO", "DEPOSITO_PREVIO", "PG_ONR"})
+FORMAS_DE_DENTRO = frozenset({"GRATUITO", "DEPOSITO_PREVIO", "PG_ONR",
+                              "PG_CRC"})
 CIENCIA_DO_POR_FORA = (
     "Os próximos pagamentos serão recebidos dentro do sistema, "
     "nas formas que ele oferece."

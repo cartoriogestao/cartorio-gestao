@@ -178,6 +178,7 @@ FORMAS_DE_PAGAMENTO = {
     "BOLETO": "por boleto",
     "CARTAO": "por cartão",
     "PG_ONR": "PG feito pela ONR",
+    "PG_CRC": "PG feito pela CRC",
 }
 
 # O vocabulario inteiro dos atos da vida de um titulo — de tbAvisoProtesto e

@@ -758,9 +758,14 @@ def test_o_comprovante_do_envio_vai_para_todos_os_editais_do_dia(s):
 
 
 def test_a_tela_mostra_o_dia_sem_comprovante_e_o_comprovado(s):
-    _edital(s, numero=41199)
-    _edital(s, dia="2026-10-26", numero=41210)
-    _anexar(s, "2026-10-26")
+    # O quadro mostra os últimos 30 dias contados de hoje: com data fixa, o dia
+    # sai dele sozinho e o teste cai sem nada ter mudado (23/11/2026).
+    from datetime import date, timedelta
+    sem_comprovante = (date.today() - timedelta(days=5)).isoformat()
+    comprovado = (date.today() - timedelta(days=3)).isoformat()
+    _edital(s, dia=sem_comprovante, numero=41199)
+    _edital(s, dia=comprovado, numero=41210)
+    _anexar(s, comprovado)
     html = " ".join(s["c"].get("/protesto/avisos").get_data(as_text=True).split())
     assert "Envio do edital à CENPROT" in html
     assert "sem comprovante" in html and "comprovado" in html

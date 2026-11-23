@@ -21,6 +21,7 @@ import caixa_exigencia as CXEX
 import caixa_abas as CXABAS
 import caixa_protocolo as CXP
 import impressao_web as IMPW
+import nfse as NFSE
 # O PORTAL DO CLIENTE (26/10/2026): o código de acompanhamento no recibo e na
 # recepção, e o envio do retrato dos protocolos para a VPS.
 import acompanhamento_cliente as ACOMP
@@ -450,6 +451,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                       {"numero": f"{numero_ordem}/{ano}", "natureza": natureza,
                        "valor": reais(valor)})
                 flash(f"Lançamento nº {numero_ordem}/{ano} — R$ {reais(valor)}.", "success")
+                _avisar_separacao(natureza, request.form.get("forma_pagamento"),
+                                  request.form, f"{numero_ordem}/{ano}")
                 return redirect(url_for("caixa"))
 
             if acao == "estornar":
@@ -579,6 +582,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                        "depois": reais(novo_valor)})
                 flash("Lançamento alterado. O valor anterior ficou guardado no "
                       "histórico do próprio lançamento.", "success")
+                _avisar_separacao(natureza, request.form.get("forma_pagamento")
+                                  or l["forma_pagamento"], request.form)
                 return redirect(url_for("caixa"))
 
             if acao == "excluir":
@@ -1087,6 +1092,44 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     # ----------------------------------------------------------- recibos
 
+    def _avisar_nfse_do_recibo(recibo_id: int, numero: int, ano: int) -> None:
+        """P1 (23/11/2026): o recibo nasce sabendo se dá nota, e o balcão vê.
+
+        Depois que o recibo já está gravado, e em transação à parte: nada daqui
+        impede o recibo nem muda o teor dele. Com a NFS-e desligada não faz
+        nada. Faltando CPF/CNPJ (ou dígito que não fecha), nome ou endereço do
+        tomador, o recibo SEGUE — a decisão é conservadora: o balcão não é
+        travado —, mas fica marcado «sem condição de gerar nota» (ficha e
+        lista de recibos) e o aviso sai na tela, e não calado. O endereço vem
+        do cadastro `nfse_tomadores` pelo CPF/CNPJ, quando já houve uma nota
+        ou uma correção para a mesma pessoa.
+        """
+        try:
+            with db.transaction() as con:
+                faltas = NFSE.marcar_condicao_do_recibo(con, recibo_id)
+        except Exception:  # noqa: BLE001 — o recibo já saiu; o aviso é ajuda, não trava
+            flash(f"Recibo {numero}/{ano} emitido, mas não deu para conferir se ele "
+                  f"tem os dados da NFS-e. Veja em Caixa → NFS-e.", "warning")
+            return
+        if faltas:
+            flash(f"Recibo {numero}/{ano} emitido SEM CONDIÇÃO DE GERAR NFS-e: "
+                  f"{' '.join(faltas)} Complete em Caixa → NFS-e → recibo "
+                  f"{numero}/{ano} (o teor do recibo não muda).", "warning")
+
+    def _avisar_separacao(natureza, forma, form, numero=None) -> None:
+        """P3 (23/11/2026): lançamento de ato sem emolumento/fundos separados.
+
+        Só AVISA — o balcão não é travado: o lançamento é gravado, e a NFS-e
+        o recusará depois. Quem lança vê agora, com o caminho: editar o
+        lançamento e separar as parcelas, ou marcar «Ato gratuito».
+        """
+        if NFSE.lancamento_sem_separacao(natureza, forma, form):
+            nome = f"O lançamento {numero}" if numero else "Este lançamento"
+            flash(f"{nome} não separa o emolumento dos fundos (FERC, FADEP, FEMP, "
+                  f"FERRFIS). Sem a separação a NFS-e não calcula a base e o recibo "
+                  f"ficará sem nota: edite o lançamento e preencha as parcelas — "
+                  f"ou marque «Ato gratuito», se for o caso.", "warning")
+
     @app.route("/caixa/recibo/<int:lancamento_id>", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def caixa_recibo(lancamento_id):
@@ -1195,6 +1238,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         audit("RECIBO_EMITIDO", "RECIBO", recibo_id,
               {"numero": numero, "ano": ano, "valor": l["valor"]})
+        _avisar_nfse_do_recibo(recibo_id, numero, ano)
         return redirect(url_for("caixa_recibo_odt", recibo_id=recibo_id))
 
     def _pago_e_registrado(itens) -> str | None:
@@ -1305,6 +1349,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         audit("RECIBO_DO_PROTOCOLO", "RECIBO", recibo_id,
               {"numero": numero, "ano": ano, "protocolo": p["numero"],
                "itens": len(itens), "valor": reais(total)})
+        _avisar_nfse_do_recibo(recibo_id, numero, ano)
         return redirect(url_for("caixa_recibo_odt", recibo_id=recibo_id))
 
     @app.route("/caixa/recibo/<int:recibo_id>/odt")

@@ -1093,3 +1093,274 @@ def test_as_telas_abrem_e_a_fila_diz_o_que_falta(casa):
     assert "Falta o CPF ou CNPJ do tomador" in fila.get_data(as_text=True)
     assert c.get("/administrativo/gestor/nfse").status_code == 200
     assert "Emitir NFS-e" in c.get("/caixa/recibos").get_data(as_text=True)
+
+
+# ------------------------------------------- F003 (23/11/2026): a trava no balcão
+#
+# P1 a P4 da proposta ao agente 07. Nenhum destes testes abre rede nem chama o
+# emissor: o que se prova é o aviso, a marca do recibo e a leitura da fila.
+
+def _lancamento_do_balcao(db, *, documento=None, pagador="PAGADORA FICTICIA DE TESTE",
+                          valor="134,43", forma="PIX", **parcelas) -> int:
+    """Um lançamento do balcão, ainda sem recibo, para o POST de «emitir recibo»."""
+    with db.transaction() as con:
+        return int(banco(con).escrever(
+            """INSERT INTO cx_lancamentos (data, natureza, sentido, forma_pagamento, valor,
+                   pagador, pagador_documento, emolumentos, ferc, fadep, femp, ferrfis,
+                   numero, ano, criado_em)
+               VALUES (%s, 'RECEBIMENTO', 'ENTRADA', %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                       901, 2026, %s) RETURNING id""",
+            (date.today().isoformat(), forma, valor, pagador, documento,
+             parcelas.get("emolumentos"), parcelas.get("ferc"), parcelas.get("fadep"),
+             parcelas.get("femp"), parcelas.get("ferrfis"),
+             date.today().isoformat() + "T10:00:00"))[0]["id"])
+
+
+def _emitir_recibo_do_balcao(casa, lancamento_id: int) -> dict:
+    c = casa["c"]
+    resposta = c.post(f"/caixa/recibo/{lancamento_id}", data={"csrf_token": _token(c)})
+    assert resposta.status_code == 302, resposta.status_code
+    with casa["db"].connect() as con:
+        return dict(banco(con).um(
+            "SELECT * FROM cx_recibos ORDER BY id DESC LIMIT 1"))
+
+
+PARCELAS = {"emolumentos": "120,03", "ferc": "3,60", "fadep": "4,80", "femp": "4,80",
+            "ferrfis": "1,20"}
+
+
+def test_recibo_sem_cpf_nasce_marcado_e_o_balcao_ve_o_aviso_sem_ser_travado(casa):
+    lid = _lancamento_do_balcao(casa["db"], **PARCELAS)
+    r = _emitir_recibo_do_balcao(casa, lid)          # o recibo SAIU (302 para a impressão)
+    assert "Falta o CPF ou CNPJ do tomador" in r["nfse_sem_condicao"]
+    assert "Falta o endereço do tomador" in r["nfse_sem_condicao"]
+    # o teor congelado não ganhou nada, e o hash segue o de sempre
+    assert "nfse" not in (r["corpo"] or "").lower() and "sem_condicao" not in r["discriminacao"]
+    c = casa["c"]
+    lista = c.get("/caixa/recibos").get_data(as_text=True)
+    assert "SEM CONDIÇÃO DE GERAR NFS-e" in lista          # o aviso (flash), na tela seguinte
+    assert "sem condição de gerar nota" in lista            # a marca, na linha do recibo
+    assert casa["sefin"].chamadas == []
+
+
+def test_recibo_com_cpf_que_nao_fecha_o_digito_nasce_marcado(casa):
+    lid = _lancamento_do_balcao(casa["db"], documento="00000000271", **PARCELAS)
+    r = _emitir_recibo_do_balcao(casa, lid)
+    assert "não confere (dígito verificador)" in r["nfse_sem_condicao"]
+
+
+def test_recibo_com_cpf_valido_e_endereco_no_cadastro_nasce_sem_marca(casa):
+    db = casa["db"]
+    _endereco(db)                       # o endereço que o cadastro já guarda por CPF
+    lid = _lancamento_do_balcao(db, documento=TOMADOR, **PARCELAS)
+    r = _emitir_recibo_do_balcao(casa, lid)
+    assert not r["nfse_sem_condicao"]
+    assert "sem condição de gerar nota" not in casa["c"].get("/caixa/recibos").get_data(as_text=True)
+
+
+def test_com_a_emissao_desligada_o_recibo_nao_ganha_marca(casa):
+    db = casa["db"]
+    with db.transaction() as con:
+        NFSE.gravar_configuracao(con, {**CONFIG_LIGADA, "nfse_ligada": "0"})
+    r = _emitir_recibo_do_balcao(casa, _lancamento_do_balcao(db, **PARCELAS))
+    assert not r["nfse_sem_condicao"]
+
+
+def test_completar_o_tomador_tira_a_marca_do_recibo_e_dos_outros_do_mesmo_cpf(casa):
+    db = casa["db"]
+    primeiro = _emitir_recibo_do_balcao(
+        casa, _lancamento_do_balcao(db, documento=TOMADOR, **PARCELAS))
+    assert primeiro["nfse_sem_condicao"]                    # sem endereço ainda
+    outro = _recibo(db, numero=170)                         # mesmo CPF, de carga
+    with db.transaction() as con:
+        banco(con).escrever("UPDATE cx_recibos SET nfse_sem_condicao = 'velha' WHERE id = %s",
+                            (outro,))
+    c = casa["c"]
+    c.post(f"/caixa/nfse/recibo/{primeiro['id']}", data={
+        "csrf_token": _token(c), "documento": TOMADOR, "nome": "", "cep": "65000-000",
+        "municipio": MUNICIPIO, "logradouro": "RUA FICTICIA", "numero": "10",
+        "bairro": "CENTRO"})
+    with db.connect() as con:
+        marcas = {r["id"]: r["nfse_sem_condicao"] for r in banco(con).ler(
+            "SELECT id, nfse_sem_condicao FROM cx_recibos WHERE id = ANY(%s) ORDER BY id",
+            ([primeiro["id"], outro],))}
+    assert marcas == {primeiro["id"]: None, outro: None}
+
+
+def test_ato_gratuito_nao_ganha_marca_de_sem_condicao(casa):
+    db = casa["db"]
+    lid = _lancamento_do_balcao(db, forma="GRATUITO", valor="10,00")     # sem parcelas
+    r = _emitir_recibo_do_balcao(casa, lid)
+    assert not r["nfse_sem_condicao"]
+
+
+# P3 — a separação do emolumento no lançamento
+
+def test_lancamento_sem_parcelas_avisa_e_o_gratuito_nao_e_pendencia(casa):
+    c, db = casa["c"], casa["db"]
+    token = _token(c)
+    c.post("/caixa", data={"csrf_token": token, "acao": "abrir", "saldo_inicial": "0"})
+    dados = {"csrf_token": token, "acao": "lancar", "natureza": "RECEBIMENTO",
+             "valor": "50,00", "forma_pagamento": "PIX", "descricao": "ato"}
+    sem = c.post("/caixa", data=dados, follow_redirects=True).get_data(as_text=True)
+    assert "não separa o emolumento dos fundos" in sem        # avisa; o lançamento foi gravado
+    com = c.post("/caixa", data={**dados, "emolumentos": "40,00", "ferc": "10,00"},
+                 follow_redirects=True).get_data(as_text=True)
+    assert "não separa o emolumento dos fundos" not in com
+    gratis = c.post("/caixa", data={**dados, "forma_pagamento": "GRATUITO"},
+                    follow_redirects=True).get_data(as_text=True)
+    assert "não separa o emolumento dos fundos" not in gratis
+    with db.connect() as con:
+        assert banco(con).valor("SELECT count(*) FROM cx_lancamentos") == 3
+
+
+def test_a_regra_da_separacao_so_pega_ato_pago_sem_parcela_nenhuma():
+    sem = {"emolumentos": None, "ferc": "", "fadep": None, "femp": None, "ferrfis": None}
+    assert NFSE.lancamento_sem_separacao("RECEBIMENTO", "PIX", sem)
+    assert NFSE.lancamento_sem_separacao("COMPLEMENTO", "DINHEIRO", sem)
+    assert not NFSE.lancamento_sem_separacao("RECEBIMENTO", "GRATUITO", sem)
+    assert not NFSE.lancamento_sem_separacao("DEPOSITO_PREVIO", "PIX", sem)
+    assert not NFSE.lancamento_sem_separacao("DESPESA", "PIX", sem)
+    assert not NFSE.lancamento_sem_separacao("RECEBIMENTO", "PIX", {**sem, "emolumentos": "0,00"})
+    assert not NFSE.lancamento_sem_separacao("RECEBIMENTO", "PIX", {**sem, "femp": "1,00"})
+
+
+def test_lancamento_gratuito_sem_parcelas_tem_base_zero_e_nao_pendencia_de_corrigir(casa):
+    db = casa["db"]
+    rid = _recibo(db, numero=180, total="10,00", lancamentos=[{"valor": "10,00"}])
+    with db.transaction() as con:
+        banco(con).escrever("UPDATE cx_lancamentos SET forma_pagamento = 'GRATUITO' "
+                            "WHERE recibo_id = %s", (rid,))
+    with db.connect() as con:
+        item = NFSE.avaliar_recibo(con, rid, _cfg(db))
+    assert item["base"] == 0 and item["gratuito"]
+    assert not any("não separa" in p for p in item["pendencias"])
+
+
+# P4 — ISS vazio como pendência de configuração
+
+def test_aliquota_vazia_e_convenio_nao_conferido_sao_pendencia_de_configuracao(casa):
+    db = casa["db"]
+    assert NFSE.pendencias_do_iss(_cfg(db)) != []           # convênio não conferido (padrão)
+    em_ordem = {**_cfg(db), "nfse_convenio_ativo": "1"}
+    assert NFSE.pendencias_do_iss(em_ordem) == []
+    sem_aliquota = {**em_ordem, "nfse_aliquota": "", "nfse_optante_simples": "2"}
+    assert any("alíquota do ISS está vazia" in f for f in NFSE.pendencias_do_iss(sem_aliquota))
+    # optante pelo padrão da casa com convênio ativo: a alíquota é a da Sefin, não é falta
+    assert NFSE.pendencias_do_iss({**em_ordem, "nfse_aliquota": ""}) == []
+
+
+def test_a_tela_do_admin_mostra_a_pendencia_do_iss_e_a_trava_de_emitir_segue_igual(casa):
+    db = casa["db"]
+    with db.transaction() as con:
+        NFSE.gravar_configuracao(con, {**CONFIG_LIGADA, "nfse_aliquota": "",
+                                       "nfse_optante_simples": "2"})
+    rid = _recibo(db, numero=190)
+    _endereco(db)
+    c = casa["c"]
+    fila = c.get("/caixa/nfse").get_data(as_text=True)
+    gestor = c.get("/administrativo/gestor/nfse").get_data(as_text=True)
+    assert "Pendência de configuração: ISS" in fila and "Pendência de configuração: ISS" in gestor
+    with db.connect() as con:
+        item = NFSE.avaliar_recibo(con, rid, _cfg(db))
+        grupos = NFSE.fila(con, _cfg(db))
+    assert item["iss"] is None and item["configuracao_pendente"]
+    assert item["pendencias"] == []                          # a trava de `preparar` não mudou
+    assert [i["recibo"]["id"] for i in grupos["prontos"]] == [rid]
+
+
+# P2 — o aviso diário, só leitura
+
+def _contexto(db, agora=datetime(2026, 11, 24, 8, 30)):
+    from types import SimpleNamespace
+    return SimpleNamespace(db=db, agora=agora, processo={"pode_agir": True, "parametros": {}},
+                           parametros={})
+
+
+def test_o_aviso_diario_conta_o_que_ficou_sem_nota_e_nao_chama_o_emissor(casa):
+    import nfse_aviso as AVISO
+    db = casa["db"]
+    _recibo(db, numero=200, documento=None, data="2026-11-23")      # de ontem, sem os dados
+    pronto = _recibo(db, numero=201, data="2026-11-20")
+    _endereco(db)                                                  # o 201 fica pronto
+    enviando = _recibo(db, numero=202, data="2026-11-21")
+    rejeitada = _recibo(db, numero=203, data="2026-11-21")
+    with db.transaction() as con:
+        bd = banco(con)
+        for rid, situacao, quando in ((enviando, "ENVIANDO", "2026-11-23T10:00:00"),
+                                      (rejeitada, "REJEITADA", "2026-11-23T10:00:00")):
+            bd.escrever(
+                """INSERT INTO nfse_notas (recibo_id, provedor, ambiente, situacao, serie,
+                       numero_dps, id_dps, tomador_documento, tomador_nome, valor_servico,
+                       xml_dps, mensagem, criado_em)
+                   VALUES (%s, 'nacional', 'homologacao', %s, '1', %s, %s, %s, 'X', 100,
+                           '<x/>', 'recusa de teste', %s)""",
+                (rid, situacao, rid, f"DPS{rid}", TOMADOR, quando))
+    antes = _cfg(db)
+    r = AVISO.verificar(_contexto(db))
+    assert r["situacao"] == "AVISO" and r["acoes"] == []
+    # 200 (sem dados) + 201 (pronto) sem nota; 202 ENVIANDO parada; 203 recusada
+    assert (r["recibos_sem_nota"], r["de_ontem"], r["enviando_paradas"], r["recusadas"],
+            r["total"]) == (2, 1, 1, 1, 4)
+    assert {a["tipo"] for a in r["achados"]} == {"RECIBO_SEM_NOTA", "NOTA_ENVIANDO_PARADA",
+                                                 "NOTA_REJEITADA"}
+    assert TOMADOR not in str(r) and "TOMADORA" not in str(r)       # sem dado pessoal
+    assert casa["sefin"].chamadas == [] and _cfg(db) == antes
+    with db.connect() as con:
+        assert banco(con).valor("SELECT count(*) FROM nfse_notas") == 2
+        assert pronto and NFSE.notas_do_recibo(con, pronto) == []
+
+
+def test_o_aviso_diario_nao_acusa_enviando_recente_e_diz_ok_sem_pendencia(casa):
+    import nfse_aviso as AVISO
+    db = casa["db"]
+    assert AVISO.verificar(_contexto(db))["situacao"] == "OK"
+    rid = _recibo(db, numero=210, data="2026-11-24")
+    _endereco(db)
+    with db.transaction() as con:
+        banco(con).escrever(
+            """INSERT INTO nfse_notas (recibo_id, provedor, ambiente, situacao, serie,
+                   numero_dps, id_dps, tomador_documento, tomador_nome, valor_servico,
+                   xml_dps, criado_em)
+               VALUES (%s, 'nacional', 'homologacao', 'ENVIANDO', '1', 1, 'DPS1', %s, 'X',
+                       100, '<x/>', '2026-11-24T08:10:00')""", (rid, TOMADOR))
+    r = AVISO.verificar(_contexto(db))
+    assert r["enviando_paradas"] == 0 and r["recibos_sem_nota"] == 0 and r["situacao"] == "OK"
+
+
+def test_o_aviso_diario_desligado_nao_inventa_pendencia_e_o_banco_ruim_vira_erro(casa):
+    import nfse_aviso as AVISO
+    db = casa["db"]
+    with db.transaction() as con:
+        NFSE.gravar_configuracao(con, {**CONFIG_LIGADA, "nfse_ligada": "0"})
+    assert "desligada" in AVISO.verificar(_contexto(db))["relato"]
+
+    class BancoQuebrado:
+        def connect(self):
+            raise RuntimeError("sem banco")
+    erro = AVISO.verificar(_contexto(BancoQuebrado()))
+    assert erro["situacao"] == "ERRO"                        # «não mediu» não é «zero»
+
+
+def test_o_processo_do_aviso_nasce_desligado_e_sem_poder_de_agir(casa):
+    import automacao as AU
+    import nfse_aviso as AVISO
+    db = casa["db"]
+    with db.transaction() as con:
+        AU.semear(con, datetime(2026, 11, 24, 8, 0))
+        p = AU.por_codigo(con, AVISO.CODIGO)
+    assert p and not p["ativo"] and not p["pode_agir"]
+    assert p["alvo"] == "nfse_aviso:verificar" and p["robo_oficial"] == "FINANCEIRO"
+
+
+def test_o_aviso_nao_importa_o_provedor_nem_chama_escrita_da_nfse():
+    import ast
+    arvore = ast.parse((RAIZ / "nfse_aviso.py").read_text(encoding="utf-8"))
+    nomes = {n.attr for n in ast.walk(arvore) if isinstance(n, ast.Attribute)}
+    nomes |= {n.id for n in ast.walk(arvore) if isinstance(n, ast.Name)}
+    importados = {a.name for n in ast.walk(arvore) if isinstance(n, ast.Import) for a in n.names}
+    importados |= {n.module for n in ast.walk(arvore) if isinstance(n, ast.ImportFrom)}
+    assert "nfse_provedor" not in importados
+    assert not nomes & {"emitir", "enviar", "cancelar", "preparar", "emitir_lote",
+                        "ler_certificado", "provedor_da_casa", "conferir_no_emissor",
+                        "transporte_https"}

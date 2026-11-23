@@ -117,33 +117,101 @@ def _nao_mediu(o_que: str, erro: BaseException | str) -> dict:
 # ------------------------------------------------------------------ Protesto
 
 
+#: As obrigações do roteiro que `verificar_cra` cobra, com a régua do roteiro
+#: (`protesto_roteiro._cobrar_retorno`, que é `_atos_sem_arquivo_da_cra` mais
+#: os arquivos não aceitos, e `_cobrar_remessa`). A `remessa_do_dia` fica de
+#: fora: a baixa da remessa se mede aqui, pelo log das Centrais.
+OBRIGACOES_DA_CRA_COBRADAS = ("atos_sem_retorno", "apontamentos_sem_andamento",
+                              "retornos_nao_aceitos", "titulos_sem_apontamento",
+                              "confirmacoes_nao_aceitas")
+
+
+def _prazos_da_cra(ctx: Contexto) -> tuple[list[dict], str | None]:
+    """As obrigações da casa com a CRA que passaram da hora — o ato lavrado
+    sem arquivo aceito depois das 11h30 do dia útil seguinte, a confirmação
+    (`SDTBFOCRT`) não aceita depois das 14h10, o título recebido e não
+    apontado. SÓ LÊ o banco: não fala com a Central.
+
+    A CONTA É A DO ROTEIRO, e não uma cópia: até 20/11/2026 esta verificação
+    só olhava a baixa da remessa, e os retornos fora do prazo de out–nov
+    (auditoria PR003, P6 e P14) passaram sem alarme nenhum — só a tela do
+    roteiro os mostrava, e só para quem a abria.
+
+    Devolve (as obrigações com atraso, o motivo de não ter medido — ou None).
+    """
+    import protesto_roteiro as PRT
+    try:
+        with ctx.db.connect() as con:
+            c = PRT._contexto(con, ctx.agora.isoformat(timespec="seconds"))
+            todas = [o for o in PRT._cobrar_retorno(con, c) + PRT._cobrar_remessa(con, c)
+                     if o["chave"] in OBRIGACOES_DA_CRA_COBRADAS]
+    except Exception as erro:                       # noqa: BLE001 — vira «não mediu»
+        return [], f"{type(erro).__name__}: {erro}"
+    sem = [o for o in todas if o["situacao"] == PRT.SEM_MEDIDA]
+    atrasadas = [o for o in todas if o["situacao"] == PRT.ATRASADO]
+    motivo = ("; ".join(f"{o['rotulo']}: {o['motivo']}" for o in sem) or None)
+    return atrasadas, motivo
+
+
+def _frase_dos_prazos(atrasadas: list[dict]) -> str:
+    """Em números: quantos de cada obrigação passaram da hora."""
+    return "; ".join(f"{o['atrasados']} em «{o['rotulo']}»" for o in atrasadas)
+
+
+def _achados_dos_prazos(atrasadas: list[dict]) -> list[dict]:
+    return [{"obrigacao": o["chave"], "atrasados": o["atrasados"], "faltam": o["faltam"],
+             "regra": o["regra"],
+             "lista": [i["texto"] for i in o["lista"] if i.get("atrasado")]}
+            for o in atrasadas]
+
+
 def verificar_cra(ctx: Contexto) -> dict:
-    """A remessa da CRA de hoje foi baixada? E a ligação com a Central responde?
+    """A casa está em dia com a CRA? A remessa de hoje foi baixada, a ligação
+    responde, e nenhum prazo da casa passou: o retorno e o andamento (11h30
+    do dia útil seguinte ao ato) e a confirmação (14h10).
 
     NÃO BAIXA NADA: `RemessaPendente` pode marcar o arquivo como baixado do
     lado de lá, e baixar sem receber no sistema faria a remessa sumir das duas
-    pontas. A medida é o log das Centrais (`centrais_log`), onde toda chamada
-    da CRA feita pelo sistema fica anotada.
+    pontas. A medida da baixa é o log das Centrais (`centrais_log`), onde toda
+    chamada da CRA feita pelo sistema fica anotada; a dos prazos é o banco, com
+    a conta do roteiro (`_prazos_da_cra`) — e não precisa da Central nem da
+    credencial.
 
     EM DIA SEM EXPEDIENTE NÃO HÁ REMESSA A BAIXAR. A agenda só conhece o dia da
     semana, e o aviso de 02/11/2026 (Finados) cobrou do balcão a remessa de um
     feriado nacional. Feriado nacional, estadual ou municipal (a lista de
-    `ri_feriados_locais`) responde OK sem falar com a Central.
+    `ri_feriados_locais`) não fala com a Central; só o prazo que já passou
+    (o retorno de ontem, por exemplo) continua cobrado.
     """
     from ri_schema import eh_dia_util
+    atrasadas, nao_mediu = _prazos_da_cra(ctx)
+    prazos = _achados_dos_prazos(atrasadas)
+    atraso = (f" Passaram da hora: {_frase_dos_prazos(atrasadas)}. Veja Protesto → "
+              "O dia da CRA." if atrasadas else "")
     if not eh_dia_util(ctx.hoje, ctx.feriados()):
+        if atrasadas:
+            return resultado(SCH.AVISO, f"Hoje ({ctx.hoje:%d/%m/%Y}) não é dia útil e não "
+                             f"há remessa a cobrar, mas há prazo da CRA vencido.{atraso}",
+                             [{"dia_util": False}, *prazos])
         return resultado(SCH.OK, f"Hoje ({ctx.hoje:%d/%m/%Y}) não é dia útil: não há "
                          "remessa da CRA a cobrar.", [{"dia_util": False}])
+    if nao_mediu:
+        return _nao_mediu("os prazos da casa com a CRA (retorno, andamento e confirmação)",
+                          nao_mediu)
     import centrais_cred as CRED
     if not CRED.tem(CRED.CRA, CRED.PRODUCAO, ctx.pasta_dados):
-        return _sem_credencial("CRA", "Administrativo → Configurações → Centrais")
-    achados, acoes = [], []
+        r = _sem_credencial("CRA", "Administrativo → Configurações → Centrais")
+        r["relato"] += atraso
+        r["achados"] = prazos
+        return r
+    achados, acoes = list(prazos), []
     if ctx.parametros.get("testar_conexao", True):
         import cra21_api as CRA
         diag = CRA.diagnostico(CRED.PRODUCAO, pasta=ctx.pasta_dados)
         if not diag.get("ok"):
-            return resultado(SCH.ERRO, f"A CRA não respondeu como devia: {diag.get('motivo')}"[:600],
-                             erro=str(diag.get("motivo"))[:500])
+            return resultado(SCH.ERRO, (f"A CRA não respondeu como devia: {diag.get('motivo')}."
+                                        + atraso)[:600],
+                             achados, erro=str(diag.get("motivo"))[:500])
         achados.append({"ligacao": "ok", "motivo": diag.get("motivo")})
     with ctx.db.connect() as con:
         bd = banco(con)
@@ -161,9 +229,13 @@ def verificar_cra(ctx: Contexto) -> dict:
             SCH.AVISO,
             f"Ninguém baixou a remessa da CRA hoje até as {ctx.agora:%H:%M}. Pelo roteiro "
             "das Centrais, o retorno e o andamento vão até as 11:30 e a confirmação até as "
-            "14:10. Baixe em Protesto → O dia da CRA.", achados, acoes)
-    return resultado(SCH.OK, f"A remessa da CRA foi baixada hoje ({baixadas} chamada(s), "
-                     f"a última às {str(linha['ultima'])[11:16]}).", achados, acoes)
+            "14:10. Baixe em Protesto → O dia da CRA." + atraso, achados, acoes)
+    feito = (f"A remessa da CRA foi baixada hoje ({baixadas} chamada(s), a última às "
+             f"{str(linha['ultima'])[11:16]}).")
+    if atrasadas:
+        return resultado(SCH.AVISO, feito + atraso, achados, acoes)
+    return resultado(SCH.OK, feito + " Nenhum prazo da casa com a CRA passou da hora.",
+                     achados, acoes)
 
 
 def verificar_cenprot(ctx: Contexto) -> dict:
@@ -816,8 +888,10 @@ SEMENTES: tuple[dict, ...] = (
     {"codigo": "PROTESTO_CRA", "nome": "CRA — a remessa do dia foi baixada?", "setor": "PROTESTO",
      "alvo": "automacao_processos:verificar_cra", "robo_oficial": "PROTESTO", "timeout_s": 120,
      "agenda": {"dias": _UTEIS, "horarios": ["11:30", "14:10"]},
-     "descricao": "Às 11:30 e 14:10 (os prazos da CRA): confere a ligação com a CRA e se a remessa "
-                  "de hoje foi baixada no sistema. Não baixa nada sozinho."},
+     "descricao": "Às 11:30 e 14:10 (os prazos da CRA): confere a ligação com a CRA, se a remessa "
+                  "de hoje foi baixada no sistema e, no banco, se algum ato ficou sem arquivo "
+                  "aceito depois das 11:30 do dia útil seguinte ou alguma confirmação depois "
+                  "das 14:10. Não baixa nem envia nada sozinho."},
     {"codigo": "PROTESTO_CENPROT", "nome": "CENPROT — pedidos de protesto pendentes", "setor": "PROTESTO",
      "alvo": "automacao_processos:verificar_cenprot", "robo_oficial": "PROTESTO", "timeout_s": 180,
      "agenda": {"dias": _UTEIS, "intervalo_min": 60, "janela": ["08:00", "17:00"]},

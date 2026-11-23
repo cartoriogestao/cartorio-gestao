@@ -7,6 +7,12 @@
    marcadas; gravar exige a caixa «conferi com o original». #}
 {% import '_leitura_notas.html' as LNT with context %}
 {% set pre = ((leitura.sugestao or {}).campos or {}) if leitura else {} %}
+{% set f = cadastro or {} %}
+{# Homônimo: o POST reexibe o formulário aberto; `f` tem prioridade sobre a
+   leitura e sobre a busca, para não perder o que o balcão já digitou. #}
+{% macro v(campo, padrao='') -%}
+{{ f.get(campo) or pre.get(campo) or padrao }}
+{%- endmacro %}
 {#
   AS TRES TELAS DAS FIRMAS SAO UMA COISA SO, e agora dizem isso.
 
@@ -90,41 +96,54 @@
 {{ LNT.botao('CARTAO', 'Ler documento de identidade por IA (RG, CIN, CNH) e preencher o cadastro', 'RG, CIN ou CNH') }}
 {{ LNT.quadro(leitura) }}
 
-<details class="panel" {% if (busca and not achados) or leitura %}open{% endif %}>
+<details class="panel" {% if (busca and not achados) or leitura or f or homonimos %}open{% endif %}>
   <summary>Cadastrar cartão novo</summary>
   <form method="post" class="grid2" style="padding:14px">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label class="span2">Nome{{ LNT.duvida(leitura, 'nome') }} <input name="nome" value="{{ pre.nome or (busca if busca and not achados else '') }}" required></label>
-    <label>Pessoa <select name="tipo_pessoa"><option value="F">Física</option><option value="J">Jurídica</option></select></label>
-    <label>CPF/CNPJ{{ LNT.duvida(leitura, 'documento') }} <input name="documento" value="{{ pre.documento or '' }}"></label>
-    <label>RG{{ LNT.duvida(leitura, 'rg') }} <input name="rg" value="{{ pre.rg or '' }}"></label>
-    <label>Órgão emissor{{ LNT.duvida(leitura, 'rg_orgao') }} <input name="rg_orgao" value="{{ pre.rg_orgao or '' }}"></label>
+    <label class="span2">Nome{{ LNT.duvida(leitura, 'nome') }} <input name="nome" value="{{ v('nome', busca if busca and not achados and not f else '') }}" required></label>
+    <label>Pessoa <select name="tipo_pessoa">
+      <option value="F"{% if (f.tipo_pessoa or 'F') == 'F' %} selected{% endif %}>Física</option>
+      <option value="J"{% if f.tipo_pessoa == 'J' %} selected{% endif %}>Jurídica</option>
+    </select></label>
+    <label>CPF/CNPJ{{ LNT.duvida(leitura, 'documento') }} <input name="documento" value="{{ v('documento') }}"></label>
+    <label>RG{{ LNT.duvida(leitura, 'rg') }} <input name="rg" value="{{ v('rg') }}"></label>
+    <label>Órgão emissor{{ LNT.duvida(leitura, 'rg_orgao') }} <input name="rg_orgao" value="{{ v('rg_orgao') }}"></label>
     {# A data de emissão vai à ficha junto com o RG (CN-MA art. 864, § 1º, IV). #}
-    <label>Emissão do RG{{ LNT.duvida(leitura, 'rg_emissao') }} <input type="date" name="rg_emissao" value="{{ pre.rg_emissao or '' }}"></label>
-    <label>Nascimento{{ LNT.duvida(leitura, 'nascimento') }} <input type="date" name="nascimento" value="{{ pre.nascimento or '' }}"></label>
+    <label>Emissão do RG{{ LNT.duvida(leitura, 'rg_emissao') }} <input type="date" name="rg_emissao" value="{{ v('rg_emissao') }}"></label>
+    <label>Nascimento{{ LNT.duvida(leitura, 'nascimento') }} <input type="date" name="nascimento" value="{{ v('nascimento') }}"></label>
     {# «se houver, o número do título eleitoral» (CN-MA art. 864, § 1º, III) — LD07 #}
-    <label>Título eleitoral{{ LNT.duvida(leitura, 'titulo_eleitor') }} <input name="titulo_eleitor" value="{{ pre.titulo_eleitor or '' }}"></label>
-    <label>Nacionalidade{{ LNT.duvida(leitura, 'nacionalidade') }} <input name="nacionalidade" value="{{ pre.nacionalidade or 'BRASILEIRA' }}"></label>
-    <label>Estado civil <input name="estado_civil"></label>
-    <label>Profissão <input name="profissao"></label>
-    <label>Pai{{ LNT.duvida(leitura, 'pai') }} <input name="pai" value="{{ pre.pai or '' }}"></label>
-    <label>Mãe{{ LNT.duvida(leitura, 'mae') }} <input name="mae" value="{{ pre.mae or '' }}"></label>
-    <label class="span2">Endereço <input name="endereco"></label>
-    <label>Número <input name="endereco_numero"></label>
-    <label>Bairro <input name="bairro"></label>
-    <label>Cidade <input name="cidade" value="{{ (sv.ri_cidade or '')|upper }}"></label>
-    <label>UF <input name="uf" value="{{ sv.ri_uf or '' }}" size="3"></label>
-    <label>CEP <input name="cep"></label>
-    <label>Celular <input name="celular"></label>
-    <label>E-mail <input name="email" type="email"></label>
-    <label>Como assina <input name="como_assina" placeholder="a forma abreviada"></label>
-    <label class="span2 check"><input type="checkbox" name="pessoa_exposta" value="1">
+    <label>Título eleitoral{{ LNT.duvida(leitura, 'titulo_eleitor') }} <input name="titulo_eleitor" value="{{ v('titulo_eleitor') }}"></label>
+    <label>Nacionalidade{{ LNT.duvida(leitura, 'nacionalidade') }} <input name="nacionalidade" value="{{ v('nacionalidade', 'BRASILEIRA') }}"></label>
+    <label>Estado civil <input name="estado_civil" value="{{ v('estado_civil') }}"></label>
+    <label>Profissão <input name="profissao" value="{{ v('profissao') }}"></label>
+    <label>Pai{{ LNT.duvida(leitura, 'pai') }} <input name="pai" value="{{ v('pai') }}"></label>
+    <label>Mãe{{ LNT.duvida(leitura, 'mae') }} <input name="mae" value="{{ v('mae') }}"></label>
+    <label class="span2">Endereço <input name="endereco" value="{{ v('endereco') }}"></label>
+    <label>Número <input name="endereco_numero" value="{{ v('endereco_numero') }}"></label>
+    <label>Bairro <input name="bairro" value="{{ v('bairro') }}"></label>
+    <label>Cidade <input name="cidade" value="{{ v('cidade', (sv.ri_cidade or '')|upper) }}"></label>
+    <label>UF <input name="uf" value="{{ v('uf', sv.ri_uf or '') }}" size="3"></label>
+    <label>CEP <input name="cep" value="{{ v('cep') }}"></label>
+    <label>Celular <input name="celular" value="{{ v('celular') }}"></label>
+    <label>E-mail <input name="email" type="email" value="{{ v('email') }}"></label>
+    <label>Como assina <input name="como_assina" value="{{ v('como_assina') }}" placeholder="a forma abreviada"></label>
+    <label class="span2 check"><input type="checkbox" name="pessoa_exposta" value="1"{% if f.pessoa_exposta %} checked{% endif %}>
       Pessoa politicamente exposta — Provimento CNJ 88/2019, art. 20</label>
-    <label class="span2 check"><input type="checkbox" name="confirmar_duplicata" value="1">
-      Já conferi: não é a mesma pessoa de um cartão existente</label>
     {{ LNT.conferencia(leitura) }}
     {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
     {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('nt_cartoes') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
+    {# Homônimo: aviso + caixa + botão juntos — a confirmação não pode ficar
+       escondida no painel fechado depois do redirect antigo. #}
+    {% if homonimos %}
+    <div class="span2 notice warning" id="aviso-homonimo">
+      Já existe cartão para
+      {% for c in homonimos[:3] %}{{ c.nome }} (nº {{ c.id }}){% if not loop.last %}, {% endif %}{% endfor %}.
+      Se ainda assim for outra pessoa, marque a confirmação abaixo e clique em «Abrir cartão».
+    </div>
+    {% endif %}
+    <label class="span2 check"><input type="checkbox" name="confirmar_duplicata" value="1"
+      {% if homonimos %}required{% endif %}{% if f.confirmar_duplicata %} checked{% endif %}>
+      Já conferi: não é a mesma pessoa de um cartão existente</label>
     <div class="span2"><button class="primary" name="acao" value="novo">Abrir cartão</button>
       <span class="small muted">O sistema avisa duplicidade; se o selo de abertura falhar, o cartão não abre sem confirmação expressa.</span></div>
   </form>

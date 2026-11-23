@@ -369,6 +369,51 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     # =================================================== cartao de autografo
 
+    def _tela_cartoes(*, busca="", achados=None, aviso_busca=None,
+                      cadastro=None, homonimos=None):
+        """Monta a tela de busca/cadastro; o POST de homônimo reusa sem redirect."""
+        import nt_leitura_web as NTLW
+        if achados is None:
+            achados = []
+        # A ASSINATURA E DO CARTAO, e por isso o numero dela fica AQUI.
+        #
+        #   «Assinaturas digitalizadas deveria ser campo dos cartoes de
+        #   assinatura, nao faz sentido mais esse campo para dividir e
+        #   complicar a localizacao e o trabalho com as firmas» — o oficial,
+        #   em 27/08/2026.
+        #
+        #   Ele esta certo sobre o LUGAR, e a tela de assinaturas nao e um
+        #   campo: e o mutirao que traz os arquivos do E-Oficio para dentro.
+        #   Entao ela sai do menu e passa a ser chamada daqui, com o numero
+        #   ao lado — cartao sem autografo nao serve para reconhecer por
+        #   semelhanca, e esse e o numero que diz quantos ainda faltam.
+        resumo = q1("""SELECT COUNT(*) total,
+                       COALESCE(SUM(CASE WHEN bloqueado=1 THEN 1 ELSE 0 END),0)::bigint bloqueados,
+                       COALESCE(SUM(CASE WHEN ativo=0 THEN 1 ELSE 0 END),0)::bigint inativos,
+                       COALESCE(SUM(CASE WHEN NOT EXISTS (
+                           SELECT 1 FROM nt_cartao_imagens i
+                            WHERE i.cartao_id = nt_cartoes.id) THEN 1 ELSE 0 END),0)::bigint
+                           sem_assinatura
+                       FROM nt_cartoes""")
+        return render_template(
+            "notas_cartoes.html", busca=busca, achados=achados,
+            aviso_busca=aviso_busca, resumo=resumo,
+            cadastro=cadastro or {},
+            homonimos=list(homonimos or []),
+            leitura=NTLW.leitura_pedida(app, db, "CARTAO"))
+
+    def _buscar_cartoes_da_tela(busca: str):
+        achados, aviso_busca = [], None
+        if not busca:
+            return achados, aviso_busca
+        if len(busca) < 3:
+            return [], "Digite pelo menos três letras ou o CPF."
+        with db.connect() as con:
+            achados = NP.buscar_cartoes(con, busca, limite=POR_PAGINA)
+        for c in achados:
+            c["avisos"] = NP.avisos_do_cartao(c)
+        return achados, aviso_busca
+
     @app.route("/notas/cartoes", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
     # O AUDITOR ve a tela; o que ela GRAVA (POST) exige papel que pratica ato.
@@ -392,15 +437,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if recusa_leitura:
                 flash(recusa_leitura, "danger")
                 return redirect(url_for("notas_cartoes", busca=nome, **com_leitura))
-            # Duplicata: avisa e só cria se o operador insistir.
-            if not request.form.get("confirmar_duplicata"):
+            # Duplicata / homônimo: avisa e só cria se o operador insistir.
+            # Antes o redirect com ?busca=NOME achava o cartão antigo, fechava
+            # o painel «Cadastrar cartão novo» e apagava o formulário — a caixa
+            # confirmar_duplicata sumia da vista e o segundo POST voltava
+            # sem ela. Reexibe a tela com o cadastro aberto e os dados.
+            confirmou = (request.form.get("confirmar_duplicata") or "").strip() == "1"
+            if not confirmou:
                 with db.connect() as con:
                     iguais = NP.possivel_duplicata(con, nome, dados.get("documento"))
                 if iguais:
                     nomes = ", ".join(f"{c['nome']} (nº {c['id']})" for c in iguais[:3])
                     flash(f"Já existe cartão para {nomes}. Se ainda assim for outra "
                           f"pessoa, marque a confirmação e grave de novo.", "warning")
-                    return redirect(url_for("notas_cartoes", busca=nome, **com_leitura))
+                    achados, aviso_busca = _buscar_cartoes_da_tela(nome)
+                    return _tela_cartoes(
+                        busca=nome, achados=achados, aviso_busca=aviso_busca,
+                        cadastro=dados, homonimos=iguais)
             with db.transaction() as con:
                 try:
                     novo = NP.criar_cartao(con, dados, db.now(), usuario_nome(),
@@ -446,38 +499,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return redirect(url_for("notas_cartao", cartao_id=novo))
 
         busca = (request.args.get("busca") or "").strip()
-        achados, aviso_busca = [], None
-        if busca:
-            if len(busca) < 3:
-                aviso_busca = "Digite pelo menos três letras ou o CPF."
-            else:
-                with db.connect() as con:
-                    achados = NP.buscar_cartoes(con, busca, limite=POR_PAGINA)
-                for c in achados:
-                    c["avisos"] = NP.avisos_do_cartao(c)
-        # A ASSINATURA E DO CARTAO, e por isso o numero dela fica AQUI.
-        #
-        #   «Assinaturas digitalizadas deveria ser campo dos cartoes de
-        #   assinatura, nao faz sentido mais esse campo para dividir e
-        #   complicar a localizacao e o trabalho com as firmas» — o oficial,
-        #   em 27/08/2026.
-        #
-        #   Ele esta certo sobre o LUGAR, e a tela de assinaturas nao e um
-        #   campo: e o mutirao que traz os arquivos do E-Oficio para dentro.
-        #   Entao ela sai do menu e passa a ser chamada daqui, com o numero
-        #   ao lado — cartao sem autografo nao serve para reconhecer por
-        #   semelhanca, e esse e o numero que diz quantos ainda faltam.
-        resumo = q1("""SELECT COUNT(*) total,
-                       COALESCE(SUM(CASE WHEN bloqueado=1 THEN 1 ELSE 0 END),0)::bigint bloqueados,
-                       COALESCE(SUM(CASE WHEN ativo=0 THEN 1 ELSE 0 END),0)::bigint inativos,
-                       COALESCE(SUM(CASE WHEN NOT EXISTS (
-                           SELECT 1 FROM nt_cartao_imagens i
-                            WHERE i.cartao_id = nt_cartoes.id) THEN 1 ELSE 0 END),0)::bigint
-                           sem_assinatura
-                       FROM nt_cartoes""")
-        return render_template("notas_cartoes.html", busca=busca, achados=achados,
-                               aviso_busca=aviso_busca, resumo=resumo,
-                               leitura=NTLW.leitura_pedida(app, db, "CARTAO"))
+        achados, aviso_busca = _buscar_cartoes_da_tela(busca)
+        return _tela_cartoes(busca=busca, achados=achados, aviso_busca=aviso_busca)
 
     # ------------------------------------------- a ficha do cartao de autografo
     #

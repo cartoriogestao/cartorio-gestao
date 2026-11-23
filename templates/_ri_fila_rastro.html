@@ -1,0 +1,22 @@
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Quando</th><th>Quem confirmou</th><th>Matrícula</th><th>Campo</th><th>Anterior</th><th>Novo</th><th>Origem</th><th>Motivo</th><th></th></tr></thead>
+    <tbody>
+      {% for a in (rastro if rastro is defined else linhas) %}
+      <tr>
+        <td>{{ a.confirmado_em }}</td>
+        <td>{{ a.confirmado_por }}</td>
+        <td><a href="{{ url_for('ri_fila_ficha', item_id=a.item_id) }}">{{ a.matricula_numero }}</a></td>
+        <td>{{ a.campo }}</td>
+        <td>{{ a.valor_anterior if a.valor_anterior is not none else '—' }}</td>
+        <td>{{ a.valor_novo if a.valor_novo is not none else '—' }}</td>
+        <td>{{ a.origem }}{% if a.amostra_id %} · lote {{ a.amostra_id }}{% endif %}</td>
+        <td>{{ a.motivo or '—' }}</td>
+        <td>{% if a.desfeita %}desfeita{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9">Nenhuma alteração registrada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

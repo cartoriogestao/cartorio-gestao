@@ -158,6 +158,8 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("CTP", "ri_ctp", AMA, antigo="CTP — prefeituras", termos="prefeitura sefin"),
              _i("ONR: índice real e editais", "ri_onr_painel", antigo="ONR — índice real e editais"),
              _i("ONR: endereços a conferir", "ri_onr_enderecos", AMU, antigo="ONR — endereços a conferir"),
+             _i("Fichas: fila de conferência", "ri_fila_fichas", antigo="Fichas — fila de conferência (Livros 4 e 5)",
+                termos="indicador real pessoal livro 4 livro 5 cpf cnpj prontidao"),
              _i("Exportação ONR", "ri_onr", AM),
              _i("Indicador Real: o arquivo inteiro", "onr_ir", AM, antigo="Indicador Real — o arquivo inteiro", termos="xml acervo onr"),
              _i("Carga do Next Cloud SAS", "ri_onr_next_cloud", AM),

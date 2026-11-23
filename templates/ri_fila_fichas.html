@@ -1,0 +1,188 @@
+{% extends 'base.html' %}
+{% block title %}Fila de conferência das fichas{% endblock %}
+{% block heading %}<h1>Fila de conferência das fichas</h1>{% endblock %}
+{% block content %}
+
+<section class="card">
+  <p>
+    A máquina leu o teor e <strong>sugere</strong>. <strong>Nada vai para a ficha sem a
+    confirmação de uma pessoa</strong>, cada alteração fica no
+    <a href="{{ url_for('ri_fila_auditoria') }}">rastro</a> e pode ser desfeita.
+    Esta tela não envia nada ao ONR.
+  </p>
+  <p>
+    <a class="button{% if livro == '4' %} primary{% endif %}" href="{{ url_for('ri_fila_fichas', livro='4') }}">Livro 4 · Indicador Real</a>
+    <a class="button{% if livro == '5' %} primary{% endif %}" href="{{ url_for('ri_fila_fichas', livro='5') }}">Livro 5 · CPF/CNPJ das partes</a>
+  </p>
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}
+  <form method="post" action="{{ url_for('ri_fila_fichas_gerar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Atualizar a fila</button>
+    <small>Lê as fichas de novo. Não altera matrícula e não apaga decisão de ninguém.</small>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Progresso por classe</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Livro</th><th>Classe</th><th>Total</th><th>A conferir</th><th>Puladas</th>
+        <th>Aceitas</th><th>Corrigidas</th><th>Só o oficial</th><th>Prontas para subir</th><th>Conferido</th></tr></thead>
+      <tbody>
+        {% for c in contagem.classes %}
+        <tr>
+          <td>{{ c.livro }}</td>
+          <td><a href="{{ url_for('ri_fila_fichas', livro=c.livro, classe=c.classe, situacao='') }}">{{ c.nome }}</a></td>
+          <td>{{ c.total }}</td><td>{{ c.a_conferir }}</td><td>{{ c.puladas }}</td>
+          <td>{{ c.aceitas }}</td><td>{{ c.corrigidas }}</td>
+          <td>{% if c.sinalizadas %}<a href="{{ url_for('ri_fila_fichas', livro=c.livro, situacao='SINALIZADA') }}">{{ c.sinalizadas }}</a>{% else %}0{% endif %}</td>
+          <td>{% if c.livro == '4' %}{{ c.prontas }}{% else %}—{% endif %}</td>
+          <td>{% if c.classe == 'PRONTA' %}—{% else %}{{ c.percentual }}%{% endif %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="10">A fila ainda não foi montada. Use «Atualizar a fila».</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p><small><strong>Conferida não é o mesmo que pronta.</strong> Com a regra da casa desligada,
+    a ficha pode ser conferida e continuar sem CEP, número, bairro ou tipo, e aí não sobe.</small></p>
+</section>
+
+{% if livro == '4' %}
+<section class="card">
+  <h2>Regra da casa: {{ 'ligada' if ligada else 'desligada' }}</h2>
+  <p>
+    Bairro «Zona Rural» ou «Centro», logradouro «Sem Denominação», número «0», tipo pelo padrão,
+    CEP geral e cidade padrão não são leitura do livro.
+    {% if ligada %}Eles aparecem como opção, marcados como regra da casa.
+    {% else %}Enquanto desligada, eles não aparecem e não podem ser aceitos.{% endif %}
+  </p>
+  {% if e_titular %}
+  <form method="post" action="{{ url_for('ri_fila_regra_casa') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="ligar" value="{{ '0' if ligada else '1' }}">
+    <button type="submit">{{ 'Desligar' if ligada else 'Ligar' }} a regra da casa</button>
+  </form>
+  {% else %}<p><small>Quem liga ou desliga é o titular.</small></p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Aceite em lote</h2>
+  <p>Só confiança alta, só campo vazio, e só depois de uma amostra sorteada e conferida
+    sem nenhuma correção. As fatias separam zona e origem, porque o texto muda.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Fatia</th><th>Fora da amostra</th><th>Amostra</th><th></th></tr></thead>
+      <tbody>
+        {% for f in fatias %}
+        <tr>
+          <td>{{ f.nome }}</td>
+          <td>{{ f.elegiveis }}</td>
+          <td>
+            {% if f.amostra %}
+              <a href="{{ url_for('ri_fila_fichas', amostra=f.amostra.id, situacao='') }}">nº {{ f.amostra.id }}</a>:
+              {{ f.amostra.estado }} · {{ f.amostra.aceitas }} aceitas, {{ f.amostra.corrigidas }} corrigidas,
+              {{ f.amostra.pendentes }} pendentes
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if user.role in ['ADMIN','MANAGER'] %}
+            {% if f.amostra and f.amostra.estado == 'LIMPA' %}
+            <form method="post" action="{{ url_for('ri_fila_lote', amostra_id=f.amostra.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label>Digite {{ f.elegiveis }} para confirmar
+                <input type="text" name="quantidade" inputmode="numeric" autocomplete="off" required>
+              </label>
+              <button type="submit">Aceitar o lote</button>
+            </form>
+            {% elif not f.amostra or f.amostra.estado in ['REPROVADA','USADA'] %}
+            <form method="post" action="{{ url_for('ri_fila_amostra') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="fatia" value="{{ f.fatia }}">
+              <button type="submit">Sortear amostra</button>
+            </form>
+            {% endif %}
+            {% if f.amostra and f.amostra.estado == 'USADA' %}
+            <form method="post" action="{{ url_for('ri_fila_lote_desfazer', amostra_id=f.amostra.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="text" name="motivo" placeholder="Motivo para desfazer o lote" required minlength="10">
+              <button type="submit">Desfazer o lote</button>
+            </form>
+            {% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4">Nenhuma fatia de confiança alta disponível.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<section class="card">
+  <p><strong>CPF/CNPJ não tem aceite em lote.</strong> Cada documento se confere no trecho do
+    teor, porque o número ao lado do nome pode ser o do cônjuge ou o de outra parte.</p>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>A fila{% if amostra_id %} · amostra nº {{ amostra_id }}{% endif %}</h2>
+  <form method="get" action="{{ url_for('ri_fila_fichas') }}">
+    <input type="hidden" name="livro" value="{{ livro }}">
+    {% if amostra_id %}<input type="hidden" name="amostra" value="{{ amostra_id }}">{% endif %}
+    <label>Classe
+      <select name="classe"><option value="">todas</option>
+        {% for k, n in nome_da_classe.items() %}{% if (livro == '5') == (k == 'DOC_TEOR') %}
+        <option value="{{ k }}" {% if k == classe %}selected{% endif %}>{{ n }}</option>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>Confiança
+      <select name="confianca"><option value="">todas</option>
+        {% for k in ['alta','media','baixa'] %}<option value="{{ k }}" {% if k == confianca %}selected{% endif %}>{{ k }}</option>{% endfor %}
+      </select>
+    </label>
+    {% if livro == '4' %}
+    <label>Prioridade
+      <select name="prioridade"><option value="">todas</option>
+        {% for k, n in nome_da_prioridade.items() %}<option value="{{ k }}" {% if k == prioridade %}selected{% endif %}>{{ n }} ({{ contagem.prioridades.get(k, 0) }})</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label>Situação
+      <select name="situacao"><option value="">todas</option>
+        {% for k, n in nome_da_situacao.items() %}<option value="{{ k }}" {% if k == situacao %}selected{% endif %}>{{ n }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit">Filtrar</button>
+  </form>
+  <p><small>{{ fila.total }} item(ns) neste filtro.</small></p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Matrícula</th>{% if livro == '5' %}<th>Parte</th>{% endif %}<th>Classe</th>
+        <th>Prioridade</th><th>Confiança</th><th>Situação</th><th></th></tr></thead>
+      <tbody>
+        {% for i in fila.itens %}
+        <tr>
+          <td>{{ i.matricula_numero }}</td>
+          {% if livro == '5' %}<td>{{ i.parte_nome }}</td>{% endif %}
+          <td>{{ nome_da_classe.get(i.classe, i.classe) }}</td>
+          <td>{{ nome_da_prioridade.get(i.prioridade, i.prioridade) }}</td>
+          <td>{{ i.confianca }}</td>
+          <td>{{ nome_da_situacao.get(i.situacao, i.situacao) }}</td>
+          <td><a class="button" href="{{ url_for('ri_fila_ficha', item_id=i.id) }}">abrir</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7">Nada neste filtro.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p>
+    {% if pagina > 1 %}<a class="button" href="{{ url_for('ri_fila_fichas', livro=livro, classe=classe, situacao=situacao, confianca=confianca, prioridade=prioridade, amostra=amostra_id, pagina=pagina-1) }}">anterior</a>{% endif %}
+    {% if pagina * por_pagina < fila.total %}<a class="button" href="{{ url_for('ri_fila_fichas', livro=livro, classe=classe, situacao=situacao, confianca=confianca, prioridade=prioridade, amostra=amostra_id, pagina=pagina+1) }}">próxima</a>{% endif %}
+  </p>
+</section>
+{% endblock %}

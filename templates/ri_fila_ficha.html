@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+{% block title %}Conferir ficha {{ item.matricula_numero }}{% endblock %}
+{% block heading %}<h1>Matrícula {{ item.matricula_numero }}{% if item.parte_nome %} · {{ item.parte_nome }}{% endif %}</h1>{% endblock %}
+{% block content %}
+
+<section class="card">
+  <p>
+    <a class="button" href="{{ url_for('ri_fila_fichas', livro=item.livro) }}">Voltar à fila</a>
+    <a class="button" href="{{ url_for('ri_ficha', matricula_id=item.matricula_id) }}">Abrir a ficha</a>
+  </p>
+  <p>
+    <strong>{{ nome_da_classe.get(item.classe, item.classe) }}</strong> ·
+    {{ nome_da_prioridade.get(item.prioridade, item.prioridade) }} ·
+    confiança {{ item.confianca }} ·
+    {{ nome_da_situacao.get(item.situacao, item.situacao) }}
+    {% if item.decidido_por %}por {{ item.decidido_por }} em {{ item.decidido_em }}{% endif %}
+  </p>
+  {% if item.situacao == 'SINALIZADA' %}
+  <p class="alert danger"><strong>Só o oficial.</strong> O teor cita encerramento, ou a situação
+    da ficha é incoerente. Encerrar matrícula é ato do oficial, e esta fila não grava nada aqui.</p>
+  {% endif %}
+  {% for a in avisos %}<p><small>⚠ {{ a }}</small></p>{% endfor %}
+</section>
+
+<section class="card">
+  <h2>Atual × sugerido × de onde saiu</h2>
+  {% set aberta = item.situacao in abertas and pode_decidir %}
+  {% if aberta %}<form method="post" action="{{ url_for('ri_fila_ficha_aceitar', item_id=item.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr>{% if aberta %}<th>Aceitar</th>{% endif %}<th>Campo</th><th>Na ficha</th><th>Sugerido</th><th>Origem</th><th>Trecho que sustenta</th></tr></thead>
+      <tbody>
+        {% for c in campos %}
+        <tr>
+          {% if aberta %}<td>{% if c.sugerido %}<input type="checkbox" name="campo" value="{{ c.campo }}" aria-label="Aceitar {{ c.rotulo }}" {% if not c.conflito and c.origem == 'TEOR' %}checked{% endif %}>{% endif %}</td>{% endif %}
+          <td>{{ c.rotulo }}</td>
+          <td>{{ c.atual or '—' }}</td>
+          <td>{% if c.sugerido %}<strong>{{ c.sugerido }}</strong>{% if c.conflito %} <small>(diverge da ficha)</small>{% endif %}
+              {% elif c.oculta_regra %}<small>só com a regra da casa</small>{% else %}—{% endif %}</td>
+          <td>{% if c.origem == 'TEOR' %}teor{% elif c.origem == 'REGRA_CASA' %}<strong>regra da casa</strong>{% else %}—{% endif %}</td>
+          <td><small>{{ c.trecho or '—' }}</small></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if aberta %}
+    <label>Motivo <small>(obrigatório para trocar um valor que a ficha já tem)</small>
+      <input type="text" name="motivo" maxlength="300">
+    </label>
+    {% if item.livro == '5' %}<label><input type="checkbox" name="mesma_pessoa" value="1"> O número já aparece para outro nome e conferi que é a mesma pessoa</label>{% endif %}
+    <button type="submit" class="primary">Aceitar o que está marcado</button>
+  </form>
+  {% endif %}
+</section>
+
+{% if item.bloco %}
+<section class="card">
+  <details><summary>O texto do imóvel no teor</summary><p style="white-space:pre-wrap">{{ item.bloco }}</p></details>
+</section>
+{% endif %}
+
+{% if item.situacao in abertas and pode_decidir %}
+<section class="card">
+  <h2>Corrigir</h2>
+  <form method="post" action="{{ url_for('ri_fila_ficha_corrigir', item_id=item.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% for c in campos %}
+    <label>{{ c.rotulo }}
+      <input type="text" name="valor_{{ c.campo }}" value="" placeholder="{{ c.atual }}" autocomplete="off">
+    </label>
+    {% endfor %}
+    <label>Motivo <small>(obrigatório para trocar um valor que a ficha já tem)</small>
+      <input type="text" name="motivo" maxlength="300">
+    </label>
+    {% if item.livro == '5' %}<label><input type="checkbox" name="mesma_pessoa" value="1"> O número já aparece para outro nome e conferi que é a mesma pessoa</label>{% endif %}
+    <button type="submit">Gravar a correção</button>
+  </form>
+</section>
+<section class="card">
+  <form method="post" action="{{ url_for('ri_fila_ficha_pular', item_id=item.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Pular por agora</button>
+  </form>
+</section>
+{% endif %}
+
+{% if item.situacao in decididas and pode_decidir %}
+<section class="card">
+  <h2>Desfazer</h2>
+  <form method="post" action="{{ url_for('ri_fila_ficha_desfazer', item_id=item.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Motivo <input type="text" name="motivo" required minlength="10" maxlength="300"></label>
+    <button type="submit">Voltar ao valor anterior</button>
+  </form>
+</section>
+{% endif %}
+
+{% if rastro %}
+<section class="card">
+  <h2>Rastro deste item</h2>
+  {% include '_ri_fila_rastro.html' with context %}
+</section>
+{% endif %}
+{% endblock %}

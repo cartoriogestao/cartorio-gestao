@@ -92,6 +92,7 @@ from ouvidoria import init_ouvidoria_schema
 from correcoes_de_oficio import init_correcoes_de_oficio_schema
 from centrais_schema import init_centrais_schema
 from onr_endereco_schema import init_ri_onr_endereco_schema
+from ri_fila_fichas_schema import init_ri_fila_fichas_schema
 import senhas as SEN
 from ri_schema import init_ri_schema
 from security import hash_password, validate_password_strength, verify_password
@@ -886,6 +887,8 @@ class Database:
         # A FILA DA CONFERENCIA DO ENDERECO vem logo depois, e pelo mesmo
         # motivo: ela aponta para `ri_matriculas`, que acabou de existir.
         init_ri_onr_endereco_schema(con)
+        # A FILA DE CONFERENCIA DAS FICHAS (Livros 4 e 5): aponta para `ri_matriculas`.
+        init_ri_fila_fichas_schema(con)
         # A retificacao de area aponta para as MESMAS duas tabelas, e pelo
         # mesmo motivo: ela termina numa averbacao e numa matricula nova.
         init_rt_schema(con)

@@ -190,10 +190,20 @@ def test_o_ato_anterior_de_outra_serventia_nao_trava(monkeypatch):
                for p in NC.conferir_ato_cep(ato, partes))
 
 
-def test_cesdi_e_rcto_nao_travam_porque_nao_ha_onde_corrigir():
+def test_cesdi_divorcio_e_rcto_nao_travam_no_geral():
+    """Divórcio e RCTO continuam só na remessa; inventário tem trava própria."""
     assert NC.central_do_ato({"tipo": "ESCRITURA", "tipo_cesdi": 4}) == "CESDI"
     assert NC.central_do_ato({"tipo": "TESTAMENTO"}) == "RCTO"
     assert "CESDI" not in NC.CENTRAIS_QUE_TRAVAM
     assert "RCTO" not in NC.CENTRAIS_QUE_TRAVAM
     assert NC.impedimentos_para_lavrar(None, {"id": 1, "tipo": "ESCRITURA",
                                               "tipo_cesdi": 4}) == []
+
+
+def test_a_tela_oferece_autor_da_heranca_e_herdeiro(serventia):
+    aid = _abrir_escritura(serventia)
+    _parte(serventia, aid, "FULANO EXEMPLO", None)
+    html = serventia["cliente"].get(f"/notas/atos/{aid}").get_data(as_text=True)
+    assert 'list="qualificacoes-censec"' in html
+    assert 'value="AUTOR DA HERANÇA"' in html
+    assert 'value="HERDEIRO(A)"' in html

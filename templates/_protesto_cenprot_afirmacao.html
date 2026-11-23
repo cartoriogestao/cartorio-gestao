@@ -23,8 +23,9 @@
   <small><strong>Título de origem CENPROT</strong> (pedido {{ cc.pedido or 'não achado no título' }}).
   {% if ato == 'PROTESTO' %}
     Ao lançar, o sistema consulta a Central antes de lavrar: se ela der o título
-    por pago por liquidação, ou por saído por outro caminho dela — ou se não der
-    para conferir —, o protesto <strong>não sai</strong> sem afirmação expressa.
+    por pago, mesmo com um XML nosso no histórico, ou por saído por outro caminho
+    dela — ou se não der para conferir —, o protesto <strong>não sai</strong> sem
+    afirmação expressa.
   {% else %}
     A CENPROT dá este título por <strong>pago por liquidação</strong>, e lá isso
     não se altera: este ato só sai com afirmação expressa.
@@ -35,7 +36,7 @@
   {% for a in travas %}
     <div><small><strong>{{ a.frase }}</strong> <em>Caminho:</em> {{ a.caminho }}</small></div>
   {% endfor %}
-  {% for a in cc.achados if a.regra == 'REENVIAR_XML' %}
+  {% for a in cc.achados if a.regra == 'REENVIAR_XML' and not a.trava %}
     <div><small>{{ a.frase }} <em>{{ a.caminho }}</em></small></div>
   {% endfor %}
   <div><small><a href="{{ url_for('protesto_cenprot_conferencia') }}#titulo-{{ titulo.id }}">Conferência CENPROT × sistema</a></small></div>

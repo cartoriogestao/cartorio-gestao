@@ -43,6 +43,12 @@ CENPROT — trava o protesto e todo ato que contrarie o pago; a situação que
 veio do NOSSO XML (P ou D) se corrige mandando o XML com a situação nova — é
 pendência, e não trava (`de_onde_veio_o_estado`).
 
+O PAGO COM D NOSSO NO HISTÓRICO PEDE CONFERÊNCIA ANTES DO PROTESTO (decisão do
+oficial, 23/11/2026). A API não diz de onde veio o pago: um D antigo, já
+tornado sem efeito, explicaria também a liquidação real feita depois dele.
+Com o título em aberto, o protesto só sai com afirmação de quem olhou o pedido
+no portal e não achou comprovante de liquidação. Os outros atos não param.
+
 O QUE ELE NÃO FAZ: CORRIGIR. Nenhuma função daqui lavra, desfaz, cancela,
 paga ou manda coisa à Central (há teste que varre os nomes públicos). Cada
 divergência vem com o caminho, e quem anda por ele é gente — é a regra do
@@ -792,7 +798,8 @@ def _pago_por_liquidacao(t: dict, rot: str, situacao: str, pedido: str, *,
 def _pendencia_do_xml(rot: str, situacao: str, pedido: str, estado: str,
                       disse: str, informado: dict,
                       ultimo_xml: dict | None) -> dict:
-    """O achado da situação que veio do NOSSO XML — o caso (b): NÃO trava."""
+    """O achado da situação que veio do NOSSO XML — o caso (b). Não trava,
+    salvo o PAGO com o título em aberto, que trava só o protesto."""
     letra = "P" if _txt(informado.get("tipo")).upper() == "PROTESTO" else "D"
     if informado.get("xml_nome"):
         arquivo = (f"arquivo {informado['xml_nome']}, de "
@@ -809,6 +816,19 @@ def _pendencia_do_xml(rot: str, situacao: str, pedido: str, estado: str,
     gerado_depois = bool(ultimo_xml) and (
         not informado.get("cenprot_xml_id")
         or int(ultimo_xml["id"]) > int(informado["cenprot_xml_id"]))
+    # O PAGO COM O TÍTULO EM ABERTO (oficial, 23/11/2026): pode ser o nosso D
+    # velho ou uma liquidação feita depois dele, e a API não separa os dois.
+    if estado in (PAGO, LIQUIDADO) and situacao in ABERTAS:
+        return _achado(
+            "XML_NOVO_A_CONFERIR" if gerado_depois else "REENVIAR_XML", DIVERGE,
+            frase,
+            f"ANTES DE PROTESTAR, abra o pedido {pedido} no portal da CENPROT "
+            "(Gestão de Pedidos) e veja se há comprovante de liquidação. Se "
+            "houver, NÃO PROTESTE: o título foi pago, e a liquidação se "
+            "registra na Conferência CENPROT × sistema. Se não houver, afirme "
+            "isso na ficha: o pago é o nosso XML antigo, e o P deste protesto "
+            "o corrige.",
+            trava=True)
     if gerado_depois:
         return _achado(
             "XML_NOVO_A_CONFERIR", CONFERIR,
@@ -916,7 +936,8 @@ def avaliar(t: dict, conf: dict | None, *, pedidos: list[tuple[str, str]],
                 "Confira no portal o status do pedido; se for um status novo da "
                 "Central, ele precisa entrar na leitura deste módulo."))
         elif contraria and de_onde == DO_NOSSO_XML:
-            # (b) A SITUAÇÃO QUE VEIO DO NOSSO XML: pendência, e não trava.
+            # (b) A SITUAÇÃO QUE VEIO DO NOSSO XML: pendência. Só o PAGO com
+            # o título em aberto pede afirmação, e só para protestar.
             achados.append(_pendencia_do_xml(rot, situacao, pedido, estado,
                                              disse, informado, ultimo_xml))
         elif contraria and de_onde in (DE_LIQUIDACAO_REGISTRADA,
@@ -1390,8 +1411,9 @@ def trava_do_protesto(db, titulo_id: int, *, afirmo: Any = False,
       - `None` — pode protestar sem afirmação: o título não veio da CENPROT,
         não está intimado (o domínio recusa por conta própria), ou a Central
         não diz nada que impeça — e a situação que veio do NOSSO XML não
-        impede (o oficial, 29/10/2026: ela se corrige com o XML novo, e o P
-        deste protesto é justamente o que a corrige);
+        impede (o oficial, 29/10/2026: ela se corrige com o XML novo), salvo
+        o PAGO, que pede a afirmação de que não há liquidação no portal (o
+        oficial, 23/11/2026);
       - a afirmação aceita — `{regra, afirmacao, o_que_faltava, pedido}` —,
         que a rota grava no ato (`anotar_afirmacao_no_ato`) e na auditoria.
 

@@ -45,8 +45,17 @@ IMPLANTACAO = "2026-09-10"
 #: Um prazo entra na fila quando faltam até tantos dias corridos.
 JANELA_DE_AVISO = 10
 #: A cópia local do CNIB é tida como parada quando a ordem mais nova é mais
-#: velha que isto. O CNIB nacional recebe dezenas de milhares de ordens por mês.
+#: velha que isto. O CNIB nacional recebe dezenas de milhares de ordens por mês:
+#: medido em 23/11/2026, a mediana fica perto de 1.000 por dia útil e de 70 no
+#: sábado e no domingo, e de 01/10/2025 a 11/08/2026 nenhum dia ficou sem ordem,
+#: nem no recesso de fim de ano. Três dias sem ordem não é calmaria.
 CNIB_DIAS_TOLERADOS = 3
+#: Dias DIFERENTES de leitura vazia em seguida que já contam como leitura
+#: quebrada. Conta o dia, e não o clique: a Central às vezes responde vazio e
+#: as ordens aparecem horas depois, e quem clica três vezes na mesma manhã não
+#: fez três medições. A janela diária cobre nove dias, então três vazias seguidas
+#: são onze dias sem ordem nenhuma, o que a base nunca teve.
+CNIB_DIAS_DE_LEITURA_VAZIA = 3
 #: O pacote do dia (o diário do banco, ou um completo): o Provimento pede cópia
 #: diária. Um dia de folga porque a conferência roda de manhã (07h30) e o
 #: backup no horário sai às 18h: de manhã, o «do dia» é o da noite anterior.
@@ -711,29 +720,79 @@ def regra_registro_sem_cnib(con, hoje: date) -> list[dict]:
     return saida
 
 
-def regra_cnib_parado(con, hoje: date) -> list[dict]:
-    """A base local do CNIB deixou de ser atualizada.
+def _leituras_vazias_em_seguida(bd) -> tuple[int, int, str | None]:
+    """As leituras vazias depois da última que trouxe ordens.
 
-    Corrigido em 06/10/2026 («já temos a base atualizada»): media a data do PEDIDO
-    da ordem mais nova, que não diz se a base foi atualizada — diz quando a última
-    ordem foi pedida. O que diz é a última LEITURA que a Central respondeu
-    (`ri_cnib_leituras`, situação OK ou VAZIA).
+    Devolve `(leituras, dias diferentes, dia da primeira delas)`. Só contam as
+    leituras que chegam até o dia em que foram pedidas: a posta em dia de um mês
+    antigo não diz nada sobre a base estar em dia, nem para o bem nem para o mal.
+    ERRO e RECUSADA ficam de fora: não são resposta vazia, e a tela já as mostra.
+    """
+    vazias, dias, desde = 0, set(), None
+    for leitura in bd.ler(
+            """SELECT situacao, ate, pedida_em FROM ri_cnib_leituras
+                WHERE situacao IN ('OK', 'VAZIA') AND terminada_em IS NOT NULL
+                ORDER BY id DESC"""):
+        pedida = str(leitura["pedida_em"] or "")[:10]
+        if str(leitura["ate"] or "")[:10] < pedida:
+            continue
+        if leitura["situacao"] == "OK":
+            break
+        vazias += 1
+        dias.add(pedida)
+        desde = pedida
+    return vazias, len(dias), desde
+
+
+def regra_cnib_parado(con, hoje: date) -> list[dict]:
+    """A base local do CNIB parou de receber ordens, ou a leitura volta vazia.
+
+    Mede a data do PEDIDO da ordem mais nova. Em 06/10/2026 esta regra passou a
+    medir a última leitura OK ou VAZIA, e foi assim que uma base parada em
+    12/08/2026 apareceu como atualizada por semanas: a Central respondia «não há
+    ordens», e o zero dela não prova ausência (`cnib_api`, medição 7).
+
+    A ressalva de `cnib_atualizador` (item 7) continua certa e não atrapalha aqui:
+    uma ordem antiga que volta por causa do cancelamento não levanta o máximo. Ele
+    só sobe quando chega ordem nova de verdade, que é o que esta regra pergunta.
     """
     bd = banco(con)
-    if not bd.tem_tabela("ri_cnib_leituras"):
+    if not (bd.tem_tabela("ri_cnib_leituras") and bd.tem_tabela("ri_cnib_ordens")):
         return []
-    ultima = bd.valor(
-        """SELECT max(terminada_em) FROM ri_cnib_leituras
-            WHERE situacao IN ('OK', 'VAZIA')""")
-    dia = _dia(ultima)
-    if dia and (hoje - dia).days <= CNIB_DIAS_TOLERADOS:
+    # Data adiante de hoje é erro de digitação na origem, e não base em dia.
+    base = _dia(bd.valor(
+        "SELECT max(data_pedido) FROM ri_cnib_ordens WHERE data_pedido < %s",
+        ((hoje + timedelta(days=1)).isoformat(),)))
+    vazias, dias_vazios, desde = _leituras_vazias_em_seguida(bd)
+    base_velha = base is None or (hoje - base).days > CNIB_DIAS_TOLERADOS
+    if not base_velha and dias_vazios < CNIB_DIAS_DE_LEITURA_VAZIA:
         return []
-    return [_achado(
-        "CNIB:copia_parada", "CNIB_PARADO", "CRITICO", "TI",
-        f"Base local do CNIB sem atualização desde {dia:%d/%m/%Y}" if dia
-        else "Base local do CNIB nunca foi atualizada",
-        "A conferência de ordem nos registros responde sobre uma base velha.",
-        None, "Provimento CNJ 39/2014")]
+
+    # O título não leva a contagem: ele nomeia a tarefa, e um número que muda
+    # todo dia reescreveria a tarefa todo dia.
+    if base is None:
+        titulo = "Base local do CNIB nunca foi atualizada"
+        frases = ["A base local não tem nenhuma ordem."]
+    else:
+        atraso = (hoje - base).days
+        titulo = (f"Base local do CNIB parada: a ordem mais nova é de {base:%d/%m/%Y}"
+                  if base_velha else
+                  f"Leitura do CNIB voltando vazia desde {_dia(desde):%d/%m/%Y}")
+        frases = [f"A ordem mais nova da base é de {base:%d/%m/%Y}"
+                  + (f", {atraso} dia(s) atrás." if atraso else ", de hoje.")]
+    if vazias:
+        frases.append(
+            f"Depois da última leitura que trouxe ordens, vieram {vazias} "
+            + ("leitura vazia" if vazias == 1 else "leituras vazias seguidas")
+            + f", desde {_dia(desde):%d/%m/%Y}. Resposta vazia da Central não prova "
+              "que não há ordem.")
+    elif base_velha:
+        frases.append("Nenhuma leitura recente voltou vazia: confira se a rotina "
+                      "diária do CNIB está rodando.")
+    frases.append("Enquanto isso, o «nada consta» da cópia local não vale: consulte "
+                  "a indisponibilidade direto na Central antes de lavrar.")
+    return [_achado("CNIB:copia_parada", "CNIB_PARADO", "CRITICO", "TI", titulo,
+                    " ".join(frases), None, "Provimento CNJ 39/2014")]
 
 
 # ------------------------------------------------------------- a casa

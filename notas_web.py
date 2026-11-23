@@ -6055,9 +6055,30 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         "partes.nome": "corrija o nome da parte",
         "partes.qualidade": "escolha a qualificação no quadro «Partes»",
         "partes.numeroDocumento": "corrija o CPF/CNPJ no cartão da parte",
+        "partes.documento": "corrija o CPF/CNPJ no cartão da parte",
+        "partes.oab": "informe OAB nº e UF no quadro «Partes»",
+        "partes.dataNascimento": "complete nascimento no quadro «Partes»",
+        "partes.sexo": "informe o sexo no quadro «Partes»",
+        "partes.localResidenciaMunicipio": "informe cidade e UF de residência no quadro «Partes»",
+        "dataCasamento": "preencha a data no quadro «Para a CESDI»",
+        "regimeBens": "preencha o regime de bens no quadro «Para a CESDI»",
+        "responsavel": "informe o responsável pelos menores no quadro «Para a CESDI»",
         "valor": "informe o valor em Notas → Escrituras pendentes",
         "naturezaEscritura": "escolha a natureza em Notas → Escrituras pendentes",
     }
+
+    def _avisos_cesdi_antes_de_lavrar(a: dict) -> list[str]:
+        """Frases da CESDI para flash na montagem do teor e eco na régua."""
+        if a.get("tipo_cesdi") is None:
+            return []
+        with db.connect() as con:
+            imps = NC.impedimentos_cesdi_corrigiveis(
+                dict(a), NC._partes_do_ato(con, a["id"]))
+        saida = []
+        for imp in imps[:4]:
+            onde = _ONDE_CORRIGIR.get(imp.campo)
+            saida.append(imp.motivo + (f" — {onde}" if onde else ""))
+        return saida
 
     def _pendencias_do_teor(teor: str) -> list[str]:
         """Campo em branco do teor: `[CAMPO]`, `{ESCOLHA}` e a fileira de X.
@@ -6303,6 +6324,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   + "; ".join(faltas[:3]), "warning")
         else:
             flash("Teor montado com a qualificação das partes.", "success")
+        for aviso in _avisos_cesdi_antes_de_lavrar(a):
+            flash(f"Teor montado, mas {aviso}", "warning")
         return redirect(url_for("notas_ato", ato_id=ato_id))
 
     @app.route("/notas/atos/<int:ato_id>/selar-arquivamento", methods=["POST"])
@@ -6452,6 +6475,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   f"{', '.join(faltam[:6])}", "warning")
         else:
             flash("Teor montado a partir do modelo.", "success")
+        for aviso in _avisos_cesdi_antes_de_lavrar(a):
+            flash(f"Teor montado, mas {aviso}", "warning")
         return redirect(url_for("notas_ato", ato_id=ato_id))
 
     @app.route("/notas/atos/<int:ato_id>/traslado")

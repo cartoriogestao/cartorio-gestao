@@ -1621,7 +1621,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         letra = str(p.get("livro_nome") or "").strip()
                         livro = f"{letra}-{num}" if letra and num else num
 
-        if str(tipo or "").strip().upper() == "AVERBACAO":
+        tipo_u = str(tipo or "").strip().upper()
+        if tipo_u == "AVERBACAO":
             teor = ""
             try:
                 teor = str(linha["teor"] or "").strip()
@@ -1656,6 +1657,42 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 codigo_tj=codigo_tj or "14.4.1",
                 isento=isento, motivo_isencao=motivo_isencao,
                 quantidade=quantidade)
+
+        # ANOTAÇÃO USA SCHEMA PRÓPRIO — DadosSeloAnotacaoRegistroCivil
+        # (codigoAto + anotacao), não codigoTipoAtoRegistro (23/11/2026).
+        if tipo_u == "ANOTACAO":
+            teor = ""
+            try:
+                teor = str(linha["teor"] or "").strip()
+            except Exception:
+                teor = ""
+            if not teor:
+                teor = (_campo("teor") or _campo("anotacao")
+                        or _campo("texto") or "").strip()
+            return AS.envelope_da_anotacao_civil(
+                escrevente=usuario_nome(), livro=livro,
+                folha=folha_ato, termo=termo_ato,
+                versao_tabela=versao, anotacao=teor,
+                codigo_tj=codigo_tj or "14.7",
+                isento=isento, motivo_isencao=motivo_isencao)
+
+        # RETIFICAÇÃO USA SCHEMA PRÓPRIO — DadosSeloRetificacaoRegistroCivil
+        # (codigoAto + retificacao), não codigoTipoAtoRegistro.
+        if tipo_u == "RETIFICACAO":
+            teor = ""
+            try:
+                teor = str(linha["teor"] or "").strip()
+            except Exception:
+                teor = ""
+            if not teor:
+                teor = (_campo("teor") or _campo("retificacao")
+                        or _campo("texto") or "").strip()
+            return AS.envelope_da_retificacao_civil(
+                escrevente=usuario_nome(), livro=livro,
+                folha=folha_ato, termo=termo_ato,
+                versao_tabela=versao, retificacao=teor,
+                codigo_tj=codigo_tj or "14.10",
+                isento=isento, motivo_isencao=motivo_isencao)
 
         return AS.envelope_do_civil(
             especie=especie, tipo=tipo,

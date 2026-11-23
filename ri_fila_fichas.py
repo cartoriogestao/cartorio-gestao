@@ -10,11 +10,19 @@ funções que escrevem em `ri_matriculas` ou `ri_partes` são `aceitar`, `corrig
 `onr_indicador_xml.completar_ficha`; o que falta para subir, de
 `ri_onr_central.montar_indicador`. Aqui se decide só de onde veio cada valor.
 
-**A REGRA DA CASA NASCE DESLIGADA.** Bairro «Zona Rural», número «0», CEP geral,
-tipo pelo padrão e semelhantes não são leitura do livro. Enquanto o titular não
-ligar `ri_fila_regra_casa`, esses valores não aparecem como opção nem são
-aceitos, ainda que alguém os envie no formulário. **Na dúvida sobre a origem, o
-valor conta como regra da casa.**
+**A REGRA DA CASA NASCE DESLIGADA, E TEM DOIS NÍVEIS** (`ri_fila_regra_casa`). O
+nível 1 libera só o que o arquivo exige e o teor não dá: município e UF, tipo de
+via, urbano/rural e tipo do imóvel. O nível 2 libera também os opcionais: número
+«0», bairro padrão, CEP geral e unidade presumida da área. Fora do nível, o valor
+não aparece nem é aceito, ainda que venha no formulário. **Na dúvida sobre a
+origem, o valor conta como regra da casa.**
+
+**«PRONTA» É O QUE O ARQUIVO ACEITA, E NÃO O QUE LOCALIZA BEM.** A régua é o Manual
+de Importação do Indicador Real v2.0: obrigatórios são situação, matrícula,
+localização, tipo e nome do logradouro, UF e cidade. Número, bairro, CEP e tipo do
+imóvel são opcionais. Como o manual não diz como representar o tipo ausente, a
+ficha sem ele fica em `SO_FALTA_TIPO` até o ONR responder. `localiza` mede à parte
+se o que vai permite achar o imóvel.
 
 **ENCERRAR NÃO É CORREÇÃO DE CADASTRO.** A ficha cujo teor cita encerramento, e a
 que tem situação incoerente, fica `SINALIZADA` para o oficial: a fila não aceita
@@ -41,6 +49,30 @@ import ri_correcoes as COR
 import ri_onr_central as ONR
 
 CHAVE_REGRA_CASA = "ri_fila_regra_casa"
+REGRA_DESLIGADA = 0
+REGRA_OBRIGATORIOS = 1
+REGRA_TUDO = 2
+NOME_DO_NIVEL = {
+    REGRA_DESLIGADA: "desligada",
+    REGRA_OBRIGATORIOS: "só o que o arquivo exige",
+    REGRA_TUDO: "inteira, com os opcionais",
+}
+#: Opcionais no manual: a regra da casa só os preenche no nível 2.
+CAMPOS_OPCIONAIS = ("numero_predial", "bairro", "cep", "area_valor", "area_unidade")
+
+# Prontidão no arquivo
+NAO_VAI = "NAO_VAI"
+SO_FALTA_TIPO = "SO_FALTA_TIPO"
+VAI_NO_ARQUIVO = "VAI_NO_ARQUIVO"
+# O que vai serve para achar o imóvel?
+LOCALIZA_BOA = "BOA"
+LOCALIZA_PARCIAL = "PARCIAL"
+LOCALIZA_FRACA = "FRACA"
+#: Manual v2.0, seção 11, mais as duas grafias que a casa grava.
+TIPOS_DO_MANUAL = frozenset({
+    "casa", "apartamento", "apto", "loja", "sala/conjunto", "sala", "terreno/fracao", "galpao",
+    "predio comercial", "predio residencial", "fazenda/sitio/chacara", "vaga", "deposito",
+    "publicos", "outros"})
 TAMANHO_DA_AMOSTRA = 100
 
 LIVRO_REAL = "4"
@@ -132,9 +164,14 @@ def _de_json(v: Any, padrao: Any) -> Any:
         return padrao
 
 
-def regra_ligada(settings: Mapping[str, Any]) -> bool:
-    """Só o valor exato «1» liga. Ausente ou qualquer outro é desligado."""
-    return _txt(settings.get(CHAVE_REGRA_CASA)) == "1"
+def nivel_da_regra(settings: Mapping[str, Any]) -> int:
+    """Só «1» e «2» ligam. Ausente ou qualquer outro valor é desligado."""
+    return {"1": REGRA_OBRIGATORIOS, "2": REGRA_TUDO}.get(
+        _txt(settings.get(CHAVE_REGRA_CASA)), REGRA_DESLIGADA)
+
+
+def regra_permite(campo: str, nivel: int) -> bool:
+    return int(nivel) >= (REGRA_TUDO if campo in CAMPOS_OPCIONAIS else REGRA_OBRIGATORIOS)
 
 
 def cns_da_casa(settings: Mapping[str, Any]) -> str:
@@ -172,6 +209,65 @@ def _origem_do_campo(campo: str, de_onde: str, marca_completar: str,
     if campo == "logradouro":
         return ORIGEM_TEOR
     return ORIGEM_REGRA
+
+
+def _chave(v: Any) -> str:
+    return " ".join(_norm(v).split())
+
+
+def nivel_no_arquivo(f: Mapping[str, Any], padrao: Mapping[str, Any]) -> str:
+    """O que o Manual v2.0 faz com esta ficha. SÓ CALCULA."""
+    if not _txt(f.get("numero")).isdigit() or not _txt(f.get("livro_norm")).startswith("2"):
+        return NAO_VAI
+    zona = _chave(f.get("rural_urbano"))
+    if zona not in ("u", "urbano", "urbana", "r", "rural"):
+        return NAO_VAI
+    via = ONR.partir_logradouro(f.get("logradouro"))
+    if via["tipo_codigo"] is None or not _txt(via.get("logradouro")):
+        return NAO_VAI
+    if _txt(f.get("uf")).upper() != _txt(padrao.get("uf")).upper():
+        return NAO_VAI
+    if API.sem_acento(_txt(f.get("cidade"))) not in {
+            API.sem_acento(c) for c in (padrao.get("ceps") or {})}:
+        return NAO_VAI
+    cep = CC.so_digitos(f.get("cep"))
+    if cep and len(cep) != 8:
+        return NAO_VAI
+    cadastros = ("car", "ccir", "sigef", "incra", "nirf")
+    if zona[0] == "u" and any(_txt(f.get(c)) for c in cadastros):
+        return NAO_VAI  # urbana com cadastro rural: alguém precisa olhar
+    if zona[0] == "r":
+        car, ccir = _txt(f.get("car")).upper(), CC.so_digitos(f.get("ccir"))
+        if (car and not re.fullmatch(r"[A-Z]{2}-\d{7}-[A-Za-z0-9]{32}", car)) \
+                or (ccir and len(ccir) != 13):
+            return NAO_VAI
+    return VAI_NO_ARQUIVO if _chave(f.get("tipo_imovel")) in TIPOS_DO_MANUAL else SO_FALTA_TIPO
+
+
+def qualidade_para_localizar(f: Mapping[str, Any], padrao: Mapping[str, Any]) -> str:
+    """Aceito não é localizável. **Valor da regra da casa não conta como dado.**"""
+    if _chave(f.get("rural_urbano"))[:1] == "r":
+        nome = _chave(f.get("logradouro"))
+        real = bool(nome) and "sem denominacao" not in nome
+        cadastro = any(_txt(f.get(c)) for c in ("car", "ccir", "sigef", "nirf", "cib", "incra"))
+        return LOCALIZA_BOA if real and cadastro else LOCALIZA_PARCIAL if real else LOCALIZA_FRACA
+    numero = _chave(f.get("numero_predial"))
+    tem_numero = bool(numero) and not re.fullmatch(r"0+|s\s*/?\s*n", numero)
+    bairro = _chave(f.get("bairro"))
+    gerais = {_chave(padrao.get("bairro_rural")), _chave(padrao.get("bairro_urbano"))} - {""}
+    tem_bairro = bool(bairro) and (bairro not in gerais or bairro in _chave(f.get("teor")))
+    if tem_numero and tem_bairro:
+        return LOCALIZA_BOA
+    return LOCALIZA_PARCIAL if tem_numero or tem_bairro else LOCALIZA_FRACA
+
+
+def _tipo_de_via_acrescentado(p: Mapping[str, Any] | None, valor: str) -> bool:
+    """«Área» à frente de um nome lido: o nome é do livro, o tipo é da casa."""
+    nome = (p or {}).get("nome")
+    if not nome:
+        return False
+    lido = E.logradouro_do_nome(nome["nome"])
+    return bool(lido["acrescentou"]) and _chave(lido["texto"]) == _chave(valor)
 
 
 def _iguais(campo: str, a: str, b: str, m: Mapping[str, Any]) -> bool:
@@ -223,6 +319,10 @@ def _campos_da_ficha(m: Mapping[str, Any], p: Mapping[str, Any] | None,
         trecho = _txt(de_onde.get(campo)) if sugerido else ""
         if campo == "uf" and origem == ORIGEM_TEOR:
             trecho = f"UF da serventia, pela cidade: {cidade_final}"
+        if campo == "logradouro" and origem == ORIGEM_TEOR \
+                and _tipo_de_via_acrescentado(p, sugerido):
+            origem = ORIGEM_REGRA
+            trecho = f"{trecho} (o nome está no teor; o tipo «Área» é da casa)".strip()
         linhas.append({"campo": campo, "atual": atual, "sugerido": sugerido,
                        "origem": origem, "trecho": trecho, "conflito": conflito})
     _amarrar_a_area(linhas, limpa=_txt(marcas_completar.get("area_valor")) == "limpo",
@@ -456,7 +556,7 @@ def _situacao_inicial(classe: str, marcas: list[str]) -> str:
     return JA_PRONTA if classe == PRONTA else A_CONFERIR
 
 
-def _guardar(bd: Any, item: dict, agora: str, ligada: bool) -> str:
+def _guardar(bd: Any, item: dict, agora: str, ligada: int) -> str:
     """Grava a sugestão. **Decisão de pessoa não é apagada por uma nova leitura.**"""
     item["assinatura"] = _assinatura(item)
     ja = bd.um("SELECT id, situacao, assinatura FROM ri_ff_itens "
@@ -465,30 +565,34 @@ def _guardar(bd: Any, item: dict, agora: str, ligada: bool) -> str:
     situacao = _situacao_inicial(item["classe"], item["marcas"])
     valores = (item["classe"], item["prioridade"], item["confianca"], item["fatia"],
                _json(item["marcas"]), _json(item["campos"]), _json(item["avisos"]),
-               item["bloco"], item["assinatura"], int(item["pronta"]))
+               item["bloco"], item["assinatura"], int(item["pronta"]), item["nivel"],
+               item["localiza"])
     if not ja:
         bd.escrever(
             "INSERT INTO ri_ff_itens (classe, prioridade, confianca, fatia, marcas, campos, "
-            " avisos, bloco, assinatura, pronta, livro, matricula_id, parte_id, situacao, "
-            " calculado_em) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            " avisos, bloco, assinatura, pronta, nivel, localiza, livro, matricula_id, parte_id, "
+            " situacao, calculado_em) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (*valores, item["livro"], item["matricula_id"], item["parte_id"], situacao, agora))
         return "novo"
     if ja["situacao"] in DECIDIDAS:
         falta_regra = ligada and not item["pronta"] and any(
             not c["atual"] and c["sugerido"] and c["origem"] == ORIGEM_REGRA
-            for c in item["campos"])
+            and regra_permite(c["campo"], ligada) for c in item["campos"])
         if not falta_regra:
-            bd.escrever("UPDATE ri_ff_itens SET pronta=%s WHERE id=%s",
-                        (int(item["pronta"]), ja["id"]))
+            bd.escrever("UPDATE ri_ff_itens SET pronta=%s, nivel=%s, localiza=%s WHERE id=%s",
+                        (int(item["pronta"]), item["nivel"], item["localiza"], ja["id"]))
             return "decidido"
         situacao = A_CONFERIR  # a regra foi ligada: resta o que antes estava oculto
     elif ja["assinatura"] == item["assinatura"] and ja["situacao"] != FORA:
+        bd.escrever("UPDATE ri_ff_itens SET pronta=%s, nivel=%s, localiza=%s WHERE id=%s",
+                    (int(item["pronta"]), item["nivel"], item["localiza"], ja["id"]))
         return "igual"
     elif ja["situacao"] == PULADA and situacao == A_CONFERIR:
         situacao = PULADA
     bd.escrever(
         "UPDATE ri_ff_itens SET classe=%s, prioridade=%s, confianca=%s, fatia=%s, marcas=%s, "
-        " campos=%s, avisos=%s, bloco=%s, assinatura=%s, pronta=%s, situacao=%s, "
+        " campos=%s, avisos=%s, bloco=%s, assinatura=%s, pronta=%s, nivel=%s, localiza=%s, "
+        " situacao=%s, "
         " amostra_id=NULL, calculado_em=%s WHERE id=%s",
         (*valores, situacao, agora, ja["id"]))
     return "atualizado"
@@ -511,15 +615,19 @@ def _item_do_livro4(con: Any, m: dict, partes: list[dict], atos: dict, informado
                                    "papel": "proprietario", "proprietario": 1,
                                    "proprietario_ativo": 1})
     donos, _ = XML.donos_presumidos(com_informados, atos)
-    pronta = bool(ONR.montar_indicador(con, m["id"], cns=cns)["pronto"])
-    classe, prioridade, marcas = classificar(m, proposta, marcas_completar, pronta=pronta,
+    # A CLASSE segue a régua do RI007 (a da API). O que vale para «pronta» é o manual do arquivo.
+    completa_na_api = bool(ONR.montar_indicador(con, m["id"], cns=cns)["pronto"])
+    classe, prioridade, marcas = classificar(m, proposta, marcas_completar,
+                                             pronta=completa_na_api,
                                              sem_dono=not donos, padrao=padrao)
     campos = _campos_da_ficha(m, proposta, ficha, marcas_completar, padrao)
+    nivel = nivel_no_arquivo(m, padrao)
     return {"livro": LIVRO_REAL, "matricula_id": int(m["id"]), "parte_id": 0, "classe": classe,
             "prioridade": prioridade, "confianca": _confianca_do_item(classe, proposta, campos),
             "fatia": _fatia(classe, ficha, m), "marcas": marcas, "campos": campos,
             "avisos": list((proposta or {}).get("avisos") or []),
-            "bloco": _txt((proposta or {}).get("bloco")), "pronta": pronta}
+            "bloco": _txt((proposta or {}).get("bloco")), "pronta": nivel == VAI_NO_ARQUIVO,
+            "nivel": nivel, "localiza": qualidade_para_localizar(m, padrao)}
 
 
 def gerar(con: Any, *, agora: str, settings: Mapping[str, Any]) -> dict:
@@ -532,7 +640,7 @@ def gerar(con: Any, *, agora: str, settings: Mapping[str, Any]) -> dict:
         raise FilaError("O CNS da serventia não está configurado.")
     bd = banco(con)
     padrao = IR.padrao_do_arquivo(s)
-    ligada = regra_ligada(s)
+    ligada = nivel_da_regra(s)
 
     partes_por_ficha: dict[int, list[dict]] = {}
     donos_do_doc: dict[str, set] = {}
@@ -592,7 +700,7 @@ def gerar(con: Any, *, agora: str, settings: Mapping[str, Any]) -> dict:
                                  "atual": _txt(parte.get("documento_numero")),
                                  "sugerido": sug["documento"], "origem": ORIGEM_TEOR,
                                  "trecho": sug["trecho"], "conflito": False}],
-                     "avisos": alertas, "bloco": "", "pronta": False}
+                     "avisos": alertas, "bloco": "", "pronta": False, "nivel": "", "localiza": ""}
             conta(_guardar(bd, item5, agora, ligada))
             vistos.add((LIVRO_PESSOAL, mid, int(parte["id"])))
             feito["partes"] += 1
@@ -626,20 +734,21 @@ def ler(con: Any, item_id: int) -> dict | None:
     return _abrir(r) if r else None
 
 
-def campos_visiveis(item: Mapping[str, Any], ligada: bool) -> list[dict]:
+def campos_visiveis(item: Mapping[str, Any], ligada: int) -> list[dict]:
     """O que a tela pode mostrar. **O valor da regra desligada não sai daqui.**"""
     saida = []
     for c in item.get("campos") or []:
         c = dict(c)
         c["rotulo"] = ROTULO_DO_CAMPO.get(c["campo"], c["campo"])
-        c["oculta_regra"] = c.get("origem") == ORIGEM_REGRA and not ligada
+        c["oculta_regra"] = c.get("origem") == ORIGEM_REGRA \
+            and not regra_permite(c["campo"], ligada)
         if c["oculta_regra"]:
             c.update(sugerido="", trecho="", origem="", conflito=False)
         saida.append(c)
     return saida
 
 
-def avisos_visiveis(item: Mapping[str, Any], ligada: bool) -> list[str]:
+def avisos_visiveis(item: Mapping[str, Any], ligada: int) -> list[str]:
     """Os avisos em texto limpo. **Com a regra desligada, sem o valor dela.**"""
     saida = []
     for aviso in item.get("avisos") or []:
@@ -648,6 +757,7 @@ def avisos_visiveis(item: Mapping[str, Any], ligada: bool) -> list[str]:
             if texto.startswith("O tipo do imóvel vai como"):
                 continue
             texto = re.sub(r" Vai o padrão \([^)]*\), e confira:", " Confira:", texto)
+        if int(ligada) < REGRA_TUDO:
             texto = texto.replace(" — o número vai como «0».", ".")
         saida.append(texto)
     return saida
@@ -705,12 +815,14 @@ def contar(con: Any) -> dict:
     """O progresso por classe. «Conferida» e «pronta» são contas diferentes."""
     bd = banco(con)
     classes: dict[tuple[str, str], dict] = {}
-    for r in bd.ler("SELECT livro, classe, situacao, pronta, COUNT(*) AS n FROM ri_ff_itens "
-                    "WHERE situacao <> %s GROUP BY livro, classe, situacao, pronta", (FORA,)):
+    for r in bd.ler("SELECT livro, classe, situacao, pronta, nivel, localiza, COUNT(*) AS n "
+                    "FROM ri_ff_itens WHERE situacao <> %s "
+                    "GROUP BY livro, classe, situacao, pronta, nivel, localiza", (FORA,)):
         c = classes.setdefault((r["livro"], r["classe"]), {
             "livro": r["livro"], "classe": r["classe"],
             "nome": NOME_DA_CLASSE.get(r["classe"], r["classe"]), "total": 0, "a_conferir": 0,
-            "puladas": 0, "aceitas": 0, "corrigidas": 0, "sinalizadas": 0, "prontas": 0})
+            "puladas": 0, "aceitas": 0, "corrigidas": 0, "sinalizadas": 0, "prontas": 0,
+            "so_falta_tipo": 0, "boas": 0, "parciais": 0, "fracas": 0})
         n = int(r["n"])
         c["total"] += n
         chave = {A_CONFERIR: "a_conferir", PULADA: "puladas", ACEITA: "aceitas",
@@ -719,6 +831,12 @@ def contar(con: Any) -> dict:
             c[chave] += n
         if int(r["pronta"] or 0):
             c["prontas"] += n
+            chave_local = {LOCALIZA_BOA: "boas", LOCALIZA_PARCIAL: "parciais",
+                           LOCALIZA_FRACA: "fracas"}.get(r["localiza"])
+            if chave_local:
+                c[chave_local] += n
+        if r["nivel"] == SO_FALTA_TIPO and r["situacao"] != SINALIZADA:
+            c["so_falta_tipo"] += n
     ordem = {PRONTA: 0, TEOR: 1, REGRA_CASA: 2, PESSOA: 3, DOC_TEOR: 4}
     linhas = sorted(classes.values(), key=lambda c: (c["livro"], ordem.get(c["classe"], 9)))
     for c in linhas:
@@ -770,8 +888,8 @@ def validar_campo(campo: str, valor: Any) -> str:
         if API.sem_acento(v) not in ONR.LOCALIZACAO_POR_NOME:
             raise FilaError("Escolha urbano ou rural.")
         return letra
-    if campo == "tipo_imovel" and API.sem_acento(v) not in API.CODIGO_DO_IMOVEL:
-        raise FilaError("O tipo tem de ser um dos dez que o ONR aceita.")
+    if campo == "tipo_imovel" and _chave(v) not in TIPOS_DO_MANUAL:
+        raise FilaError("O tipo tem de ser um dos 13 do manual do Indicador Real.")
     if campo == "logradouro" and ONR.partir_logradouro(v)["tipo_codigo"] is None:
         raise FilaError("O logradouro tem de começar por um tipo que o ONR conheça, "
                         "como «Rua» ou «Fazenda».")
@@ -819,15 +937,21 @@ def _registrar(bd: Any, item: Mapping[str, Any], campo: str, antes: Any, depois:
          origem, motivo, usuario, agora, amostra_id, desfaz_id))
 
 
-def _pronta_agora(con: Any, item: Mapping[str, Any], cns: str) -> bool:
-    if item["livro"] == LIVRO_PESSOAL:
-        return True
-    return bool(cns) and bool(ONR.montar_indicador(con, int(item["matricula_id"]), cns=cns)["pronto"])
+def _padrao_atual(bd: Any) -> dict:
+    return IR.padrao_do_arquivo({r["key"]: r["value"] for r in bd.ler(
+        "SELECT key, value FROM settings WHERE key LIKE 'ri_%%' OR key LIKE 'serventia_%%' "
+        "OR key LIKE 'onr_%%'")})
 
 
-def _gravar_na_ficha(con: Any, bd: Any, item: dict, novos: dict[str, tuple[str, str]],
-                     motivo: str, usuario: str, agora: str, situacao: str, cns: str,
-                     amostra_id: int | None = None) -> None:
+def _prontidao(bd: Any, matricula_id: int, padrao: Mapping[str, Any]) -> tuple[int, str, str]:
+    m = dict(bd.um("SELECT * FROM ri_matriculas WHERE id=%s", (int(matricula_id),)))
+    nivel = nivel_no_arquivo(m, padrao)
+    return int(nivel == VAI_NO_ARQUIVO), nivel, qualidade_para_localizar(m, padrao)
+
+
+def _gravar_na_ficha(bd: Any, item: dict, novos: dict[str, tuple[str, str]],
+                     motivo: str, usuario: str, agora: str, situacao: str,
+                     amostra_id: int | None = None, padrao: Mapping[str, Any] | None = None) -> None:
     """Grava os campos, o rastro e a decisão, na mesma transação."""
     m = bd.um("SELECT * FROM ri_matriculas WHERE id=%s FOR UPDATE", (int(item["matricula_id"]),))
     if not m or int(m.get("encerrada") or 0):
@@ -851,9 +975,11 @@ def _gravar_na_ficha(con: Any, bd: Any, item: dict, novos: dict[str, tuple[str, 
     for c in colunas:
         _registrar(bd, item, c, m.get(c), novos[c][0], novos[c][1], _txt(motivo), usuario,
                    agora, amostra_id)
-    bd.escrever("UPDATE ri_ff_itens SET situacao=%s, decidido_em=%s, decidido_por=%s, pronta=%s "
-                "WHERE id=%s", (situacao, agora, usuario,
-                                int(_pronta_agora(con, item, cns)), int(item["id"])))
+    pronta, nivel, localiza = _prontidao(bd, int(item["matricula_id"]),
+                                         padrao if padrao is not None else _padrao_atual(bd))
+    bd.escrever("UPDATE ri_ff_itens SET situacao=%s, decidido_em=%s, decidido_por=%s, pronta=%s, "
+                "nivel=%s, localiza=%s WHERE id=%s",
+                (situacao, agora, usuario, pronta, nivel, localiza, int(item["id"])))
 
 
 def _gravar_documento(con: Any, bd: Any, item: dict, documento: str, origem: str, motivo: str,
@@ -899,7 +1025,7 @@ def _exigir_usuario(usuario: Any) -> str:
 
 
 def aceitar(con: Any, item_id: int, *, campos: Iterable[str], agora: str, usuario: str,
-            ligada: bool, cns: str, motivo: str = "", mesma_pessoa: bool = False) -> dict:
+            ligada: int, motivo: str = "", mesma_pessoa: bool = False) -> dict:
     """Grava as sugestões que a pessoa marcou. Regra desligada é recusada aqui."""
     quem = _exigir_usuario(usuario)
     bd = banco(con)
@@ -923,16 +1049,16 @@ def aceitar(con: Any, item_id: int, *, campos: Iterable[str], agora: str, usuari
         linha = disponiveis.get(campo)
         if not linha:
             raise FilaError(f"O campo «{ROTULO_DO_CAMPO.get(campo, campo)}» não tem sugestão.")
-        if linha["origem"] == ORIGEM_REGRA and not ligada:
-            raise FilaError("A regra da casa está desligada: este valor não pode ser aceito. "
-                            "Quem liga é o titular.")
+        if linha["origem"] == ORIGEM_REGRA and not regra_permite(campo, ligada):
+            raise FilaError("A regra da casa não está ligada para este campo: o valor não pode "
+                            "ser aceito. Quem liga é o titular.")
         novos[campo] = (linha["sugerido"], linha["origem"])
-    _gravar_na_ficha(con, bd, item, novos, motivo, quem, agora, ACEITA, cns)
+    _gravar_na_ficha(bd, item, novos, motivo, quem, agora, ACEITA)
     return {"item": item, "gravados": sorted(novos)}
 
 
 def corrigir(con: Any, item_id: int, *, valores: Mapping[str, Any], agora: str, usuario: str,
-             cns: str, motivo: str = "", mesma_pessoa: bool = False) -> dict:
+             motivo: str = "", mesma_pessoa: bool = False) -> dict:
     """Grava o que a pessoa digitou. A origem fica MANUAL."""
     quem = _exigir_usuario(usuario)
     bd = banco(con)
@@ -953,7 +1079,7 @@ def corrigir(con: Any, item_id: int, *, valores: Mapping[str, Any], agora: str, 
         if API.area_em_metros(novos["area_valor"][0], novos["area_unidade"][0]) is None:
             raise FilaError("Esta área não dá para ler com segurança. Use a vírgula: "
                             "«38,08» ou «3.808,00».")
-    _gravar_na_ficha(con, bd, item, novos, motivo, quem, agora, CORRIGIDA, cns)
+    _gravar_na_ficha(bd, item, novos, motivo, quem, agora, CORRIGIDA)
     return {"item": item, "gravados": sorted(novos)}
 
 
@@ -973,8 +1099,8 @@ def _valor_da_coluna(campo: str, valor: Any) -> Any:
     return int(valor) if campo == "documento_valido" else valor
 
 
-def _desfazer_item(con: Any, bd: Any, item: Mapping[str, Any], motivo: str, usuario: str,
-                   agora: str, cns: str, amostra_id: int | None = None) -> list[str]:
+def _desfazer_item(bd: Any, item: Mapping[str, Any], motivo: str, usuario: str,
+                   agora: str, amostra_id: int | None = None) -> list[str]:
     linhas = [dict(r) for r in bd.ler(
         "SELECT a.* FROM ri_ff_alteracoes a WHERE a.item_id=%s AND a.origem <> %s "
         "AND NOT EXISTS (SELECT 1 FROM ri_ff_alteracoes d WHERE d.desfaz_id = a.id) "
@@ -1009,13 +1135,15 @@ def _desfazer_item(con: Any, bd: Any, item: Mapping[str, Any], motivo: str, usua
                    motivo, usuario, agora, desfaz_id=int(a["id"]))
     bd.escrever("UPDATE ri_matriculas SET atualizado_em=%s WHERE id=%s",
                 (agora, int(item["matricula_id"])))
-    pronta = False if item["livro"] == LIVRO_PESSOAL else _pronta_agora(con, item, cns)
+    pronta, nivel, localiza = (0, "", "") if item["livro"] == LIVRO_PESSOAL else _prontidao(
+        bd, int(item["matricula_id"]), _padrao_atual(bd))
     bd.escrever("UPDATE ri_ff_itens SET situacao=%s, decidido_em=NULL, decidido_por=NULL, "
-                "pronta=%s WHERE id=%s", (A_CONFERIR, int(pronta), int(item["id"])))
+                "pronta=%s, nivel=%s, localiza=%s WHERE id=%s",
+                (A_CONFERIR, pronta, nivel, localiza, int(item["id"])))
     return [a["campo"] for a in linhas]
 
 
-def desfazer(con: Any, item_id: int, *, motivo: str, agora: str, usuario: str, cns: str) -> dict:
+def desfazer(con: Any, item_id: int, *, motivo: str, agora: str, usuario: str) -> dict:
     """Volta os campos ao valor anterior e devolve o item à fila."""
     quem = _exigir_usuario(usuario)
     if len(_txt(motivo)) < MOTIVO_MINIMO:
@@ -1027,7 +1155,7 @@ def desfazer(con: Any, item_id: int, *, motivo: str, agora: str, usuario: str, c
     item = _abrir(r)
     if item["situacao"] not in DECIDIDAS:
         raise FilaError("Só se desfaz o que foi aceito ou corrigido.")
-    return {"item": item, "campos": _desfazer_item(con, bd, item, _txt(motivo), quem, agora, cns)}
+    return {"item": item, "campos": _desfazer_item(bd, item, _txt(motivo), quem, agora)}
 
 
 # ═══════════════════════════════════════════════════════════ amostra e lote
@@ -1067,7 +1195,7 @@ def estado_da_amostra(con: Any, amostra_id: int) -> dict | None:
     return d
 
 
-def fatias_de_lote(con: Any, ligada: bool) -> list[dict]:
+def fatias_de_lote(con: Any, ligada: int) -> list[dict]:
     """As fatias que podem ir em lote, com a amostra mais recente de cada uma."""
     bd = banco(con)
     saida = []
@@ -1086,7 +1214,7 @@ def fatias_de_lote(con: Any, ligada: bool) -> list[dict]:
     return saida
 
 
-def sortear_amostra(con: Any, fatia: str, *, agora: str, usuario: str, ligada: bool,
+def sortear_amostra(con: Any, fatia: str, *, agora: str, usuario: str, ligada: int,
                     tamanho: int = TAMANHO_DA_AMOSTRA) -> dict:
     """Sorteia a amostra. Cada item dela será conferido um a um."""
     quem = _exigir_usuario(usuario)
@@ -1116,7 +1244,7 @@ def sortear_amostra(con: Any, fatia: str, *, agora: str, usuario: str, ligada: b
 
 
 def aceitar_lote(con: Any, amostra_id: int, *, quantidade: Any, agora: str, usuario: str,
-                 ligada: bool, cns: str) -> dict:
+                 ligada: int) -> dict:
     """Aceita a fatia depois da amostra limpa. **Só preenche campo vazio.**
 
     `quantidade` é o número que a pessoa digitou: tem de bater com os elegíveis.
@@ -1134,8 +1262,8 @@ def aceitar_lote(con: Any, amostra_id: int, *, quantidade: Any, agora: str, usua
         raise FilaError("O lote só abre com a amostra inteira conferida e sem nenhuma correção.")
     if not _pode_lote(a["fatia"]):
         raise FilaError("Esta fatia não vai em lote.")
-    if bool(a["regra_casa"]) != bool(ligada):
-        raise FilaError("A regra da casa mudou depois desta amostra. Sorteie outra.")
+    if int(a["regra_casa"]) != int(ligada):
+        raise FilaError("O nível da regra da casa mudou depois desta amostra. Sorteie outra.")
     linhas = bd.ler(f"SELECT * FROM ri_ff_itens WHERE {_elegiveis_sql()} "
                     "AND calculado_em <= %s ORDER BY id FOR UPDATE",
                     (LIVRO_REAL, a["fatia"], A_CONFERIR, a["criada_em"]))
@@ -1146,11 +1274,12 @@ def aceitar_lote(con: Any, amostra_id: int, *, quantidade: Any, agora: str, usua
     if digitado != len(linhas):
         raise FilaError(f"Para confirmar, digite o número exato de fichas do lote: {len(linhas)}.")
     gravados = sem_campo = mudaram = 0
+    padrao = _padrao_atual(bd)
     for r in linhas:
         item = _abrir(r)
         novos = {c["campo"]: (c["sugerido"], c["origem"]) for c in item["campos"]
                  if not c["atual"] and c["sugerido"] and not c["conflito"]
-                 and (c["origem"] == ORIGEM_TEOR or (ligada and c["origem"] == ORIGEM_REGRA))}
+                 and (c["origem"] == ORIGEM_TEOR or regra_permite(c["campo"], ligada))}
         if len({"area_valor", "area_unidade"} & set(novos)) == 1:
             novos.pop("area_valor", None)
             novos.pop("area_unidade", None)
@@ -1159,8 +1288,8 @@ def aceitar_lote(con: Any, amostra_id: int, *, quantidade: Any, agora: str, usua
             continue
         try:
             with bd.ponto_de_retorno("ri_ff_lote"):
-                _gravar_na_ficha(con, bd, item, novos, "", quem, agora, ACEITA, cns,
-                                 amostra_id=int(amostra_id))
+                _gravar_na_ficha(bd, item, novos, "", quem, agora, ACEITA,
+                                 amostra_id=int(amostra_id), padrao=padrao)
         except FilaError:
             mudaram += 1  # a ficha foi editada: fica na fila para alguém olhar
             continue
@@ -1170,8 +1299,7 @@ def aceitar_lote(con: Any, amostra_id: int, *, quantidade: Any, agora: str, usua
     return {"gravados": gravados, "sem_campo": sem_campo, "mudaram": mudaram}
 
 
-def desfazer_lote(con: Any, amostra_id: int, *, motivo: str, agora: str, usuario: str,
-                  cns: str) -> dict:
+def desfazer_lote(con: Any, amostra_id: int, *, motivo: str, agora: str, usuario: str) -> dict:
     """Desfaz o lote inteiro. A ficha editada depois fica como está, e é contada."""
     quem = _exigir_usuario(usuario)
     if len(_txt(motivo)) < MOTIVO_MINIMO:
@@ -1188,7 +1316,7 @@ def desfazer_lote(con: Any, amostra_id: int, *, motivo: str, agora: str, usuario
         r = bd.um("SELECT * FROM ri_ff_itens WHERE id=%s FOR UPDATE", (item_id,))
         try:
             with bd.ponto_de_retorno("ri_ff_desfaz_lote"):
-                _desfazer_item(con, bd, _abrir(r), _txt(motivo), quem, agora, cns,
+                _desfazer_item(bd, _abrir(r), _txt(motivo), quem, agora,
                                amostra_id=int(amostra_id))
             desfeitos += 1
         except FilaError:

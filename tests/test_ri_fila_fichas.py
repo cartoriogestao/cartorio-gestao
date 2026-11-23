@@ -100,10 +100,10 @@ def _parte_linha(s, parte_id) -> dict:
         return dict(banco(con).um("SELECT * FROM ri_partes WHERE id=%s", (parte_id,)))
 
 
-def _aceitar(s, item_id, campos, *, ligada=False, motivo=""):
+def _aceitar(s, item_id, campos, *, ligada=F.REGRA_DESLIGADA, motivo=""):
     with s["db"].transaction() as con:
         return F.aceitar(con, item_id, campos=campos, agora=DEPOIS, usuario="Pessoa Teste",
-                         ligada=ligada, cns=CNS, motivo=motivo)
+                         ligada=ligada, motivo=motivo)
 
 
 def _do_teor(item) -> list[str]:
@@ -140,7 +140,7 @@ def test_aceitar_exige_quem_confirmou(casa):
     with pytest.raises(F.FilaError, match="quem confirmou"):
         with casa["db"].transaction() as con:
             F.aceitar(con, item["id"], campos=_do_teor(item), agora=DEPOIS, usuario=" ",
-                      ligada=False, cns=CNS)
+                      ligada=F.REGRA_DESLIGADA)
     assert not _coluna(casa, mid, "logradouro")
 
 
@@ -173,7 +173,7 @@ def test_encerramento_fica_so_com_o_oficial(casa, teor, situacao):
     with pytest.raises(F.FilaError, match="oficial"):
         with casa["db"].transaction() as con:
             F.corrigir(con, item["id"], valores={"bairro": "Jardim"}, agora=DEPOIS,
-                       usuario="Pessoa Teste", cns=CNS)
+                       usuario="Pessoa Teste")
     assert not _coluna(casa, mid, "logradouro")
     assert _coluna(casa, mid, "situacao") == situacao
     assert int(_coluna(casa, mid, "encerrada") or 0) == 0
@@ -186,10 +186,10 @@ def test_regra_desligada_por_padrao_nao_mostra_nem_aceita(casa):
     mid = _ficha(casa, 1, RURAL)
     _gerar(casa)
     item = _item(casa, mid)
-    assert not F.regra_ligada(casa["db"].get_settings())
+    assert not F.nivel_da_regra(casa["db"].get_settings())
     guardados = {c["campo"]: c for c in item["campos"]}
     assert guardados["bairro"]["origem"] == F.ORIGEM_REGRA
-    visiveis = {c["campo"]: c for c in F.campos_visiveis(item, False)}
+    visiveis = {c["campo"]: c for c in F.campos_visiveis(item, F.REGRA_DESLIGADA)}
     assert visiveis["bairro"]["sugerido"] == "" and visiveis["bairro"]["oculta_regra"]
     assert visiveis["cep"]["sugerido"] == ""
     html = casa["c"].get(f"/ri/fila-fichas/{item['id']}").get_data(as_text=True)
@@ -203,20 +203,99 @@ def test_regra_desligada_por_padrao_nao_mostra_nem_aceita(casa):
 
 def test_regra_ligada_aparece_marcada_e_grava_a_origem(casa):
     mid = _ficha(casa, 1, RURAL)
-    casa["db"].set_settings({F.CHAVE_REGRA_CASA: "1"})
+    casa["db"].set_settings({F.CHAVE_REGRA_CASA: "2"})
     _gerar(casa)
     item = _item(casa, mid)
-    assert {c["campo"]: c for c in F.campos_visiveis(item, True)}["bairro"]["sugerido"] \
+    assert {c["campo"]: c for c in F.campos_visiveis(item, F.REGRA_TUDO)}["bairro"]["sugerido"] \
         == "Zona Rural"
-    _aceitar(casa, item["id"], ["bairro"], ligada=True)
+    _aceitar(casa, item["id"], ["bairro"], ligada=F.REGRA_TUDO)
     assert _coluna(casa, mid, "bairro") == "Zona Rural"
     with casa["db"].connect() as con:
         assert F.alteracoes(con, item_id=item["id"])[0]["origem"] == F.ORIGEM_REGRA
 
 
-@pytest.mark.parametrize("valor", ["", "0", "sim", "true"])
-def test_so_o_valor_1_liga_a_regra(valor):
-    assert F.regra_ligada({F.CHAVE_REGRA_CASA: valor}) is False
+@pytest.mark.parametrize("valor", ["", "0", "3", "sim", "true"])
+def test_valor_desconhecido_deixa_a_regra_desligada(valor):
+    assert F.nivel_da_regra({F.CHAVE_REGRA_CASA: valor}) == F.REGRA_DESLIGADA
+
+
+def test_nivel_1_libera_so_o_que_o_arquivo_exige(casa):
+    mid = _ficha(casa, 1, RURAL)
+    casa["db"].set_settings({F.CHAVE_REGRA_CASA: "1"})
+    _gerar(casa)
+    item = _item(casa, mid)
+    visiveis = {c["campo"]: c for c in F.campos_visiveis(item, F.REGRA_OBRIGATORIOS)}
+    assert visiveis["tipo_imovel"]["sugerido"] == "Fazenda/Sítio/Chácara"
+    assert visiveis["cep"]["sugerido"] == "" and visiveis["cep"]["oculta_regra"]
+    assert visiveis["numero_predial"]["sugerido"] == ""
+    assert visiveis["bairro"]["sugerido"] == ""
+    with pytest.raises(F.FilaError, match="regra da casa"):
+        _aceitar(casa, item["id"], ["cep"], ligada=F.REGRA_OBRIGATORIOS)
+    _aceitar(casa, item["id"], [*_do_teor(item), "tipo_imovel"], ligada=F.REGRA_OBRIGATORIOS)
+    assert not _coluna(casa, mid, "cep")
+    aceito = _item(casa, mid)
+    assert aceito["pronta"] and aceito["nivel"] == F.VAI_NO_ARQUIVO
+    assert aceito["localiza"] == F.LOCALIZA_PARCIAL  # tem nome, e falta cadastro rural
+
+
+def test_lote_no_nivel_1_nao_escreve_opcional(casa):
+    ids = [_ficha(casa, n) for n in (1, 2, 3)]
+    casa["db"].set_settings({F.CHAVE_REGRA_CASA: "1"})
+    _gerar(casa)
+    fatia = _item(casa, ids[0])["fatia"]
+    with casa["db"].transaction() as con:
+        amostra = F.sortear_amostra(con, fatia, agora=AGORA, usuario="Pessoa Teste",
+                                    ligada=F.REGRA_OBRIGATORIOS, tamanho=1)["amostra_id"]
+    unica = _da_amostra(casa, amostra)[0]
+    _aceitar(casa, unica["id"], ["logradouro"], ligada=F.REGRA_OBRIGATORIOS)
+    with casa["db"].transaction() as con:
+        F.aceitar_lote(con, amostra, quantidade=2, agora=DEPOIS, usuario="Pessoa Teste",
+                       ligada=F.REGRA_OBRIGATORIOS)
+    outras = [i for i in ids if i != unica["matricula_id"]]
+    assert all(_coluna(casa, i, "tipo_imovel") for i in outras)
+    assert not any(_coluna(casa, i, "cep") for i in outras)
+
+
+def test_tipo_area_na_frente_do_nome_e_regra_da_casa(casa):
+    teor = _teor('Uma gleba rural denominada "Boa Esperança", no município de Cidade Exemplo.')
+    mid = _ficha(casa, 1, teor)
+    _gerar(casa)
+    linha = next(c for c in _item(casa, mid)["campos"] if c["campo"] == "logradouro")
+    assert linha["sugerido"].startswith("Área") and linha["origem"] == F.ORIGEM_REGRA
+    assert "o tipo «Área» é da casa" in linha["trecho"]
+
+
+@pytest.mark.parametrize("mudanca,esperado", [
+    ({}, F.VAI_NO_ARQUIVO),
+    ({"numero_predial": "", "bairro": "", "cep": ""}, F.VAI_NO_ARQUIVO),
+    ({"tipo_imovel": ""}, F.SO_FALTA_TIPO),
+    ({"cidade": ""}, F.NAO_VAI),
+    ({"uf": ""}, F.NAO_VAI),
+    ({"logradouro": ""}, F.NAO_VAI),
+    ({"rural_urbano": ""}, F.NAO_VAI),
+    ({"cep": "123"}, F.NAO_VAI),
+])
+def test_prontidao_segue_o_manual_do_arquivo(mudanca, esperado):
+    padrao = {"uf": "ZZ", "ceps": {"cidade exemplo": "00000000"}}
+    ficha = {"numero": "1", "livro_norm": "2", "rural_urbano": "U", "logradouro": "Rua das Flores",
+             "uf": "ZZ", "cidade": "Cidade Exemplo", "tipo_imovel": "Casa", "numero_predial": "9",
+             "bairro": "Jardim", "cep": "00000000"}
+    assert F.nivel_no_arquivo({**ficha, **mudanca}, padrao) == esperado
+
+
+def test_aceito_nao_quer_dizer_que_localiza():
+    padrao = {"bairro_rural": "Zona Rural", "bairro_urbano": "Centro"}
+    urbana = {"rural_urbano": "U", "logradouro": "Rua A", "numero_predial": "9", "bairro": "Jardim"}
+    assert F.qualidade_para_localizar(urbana, padrao) == F.LOCALIZA_BOA
+    assert F.qualidade_para_localizar({**urbana, "numero_predial": "0"}, padrao) \
+        == F.LOCALIZA_PARCIAL
+    assert F.qualidade_para_localizar({**urbana, "numero_predial": "0", "bairro": "Centro"},
+                                      padrao) == F.LOCALIZA_FRACA
+    rural = {"rural_urbano": "R", "logradouro": "Fazenda Boa Vista"}
+    assert F.qualidade_para_localizar(rural, padrao) == F.LOCALIZA_PARCIAL
+    assert F.qualidade_para_localizar({**rural, "ccir": "1"}, padrao) == F.LOCALIZA_BOA
+    assert F.qualidade_para_localizar({**rural, "logradouro": "Fazenda Sem Denominação"},
+                                      padrao) == F.LOCALIZA_FRACA
 
 
 def test_ligar_a_regra_reabre_a_ficha_conferida_sem_perder_o_rastro(casa):
@@ -225,7 +304,7 @@ def test_ligar_a_regra_reabre_a_ficha_conferida_sem_perder_o_rastro(casa):
     item = _item(casa, mid)
     _aceitar(casa, item["id"], _do_teor(item))
     assert _item(casa, mid)["situacao"] == F.ACEITA and not _item(casa, mid)["pronta"]
-    casa["db"].set_settings({F.CHAVE_REGRA_CASA: "1"})
+    casa["db"].set_settings({F.CHAVE_REGRA_CASA: "2"})
     _gerar(casa)
     assert _item(casa, mid)["situacao"] == F.A_CONFERIR
     with casa["db"].connect() as con:
@@ -241,9 +320,9 @@ def test_so_o_titular_liga_a_regra(casa):
     html = c.get("/ri/fila-fichas").get_data(as_text=True)
     assert "/ri/fila-fichas/regra-da-casa" not in html
     token = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html).group(1)
-    r = c.post("/ri/fila-fichas/regra-da-casa", data={"ligar": "1", "csrf_token": token})
+    r = c.post("/ri/fila-fichas/regra-da-casa", data={"nivel": "1", "csrf_token": token})
     assert r.status_code == 403
-    assert not F.regra_ligada(casa["db"].get_settings())
+    assert F.nivel_da_regra(casa["db"].get_settings()) == F.REGRA_DESLIGADA
 
 
 # ───────────────────────────────────────────────────── rastro e desfazer
@@ -263,7 +342,7 @@ def test_aceite_fica_na_auditoria_e_pode_ser_desfeito(casa):
                                          "Pessoa Teste")
     with casa["db"].transaction() as con:
         F.desfazer(con, item["id"], motivo="conferido errado no balcão", agora=DEPOIS,
-                   usuario="Outra Pessoa", cns=CNS)
+                   usuario="Outra Pessoa")
     assert _coluna(casa, mid, "logradouro") is None
     assert _item(casa, mid)["situacao"] == F.A_CONFERIR
     with casa["db"].connect() as con:
@@ -283,7 +362,7 @@ def test_desfazer_nao_apaga_edicao_posterior(casa):
     with pytest.raises(F.FilaError, match="mudou"):
         with casa["db"].transaction() as con:
             F.desfazer(con, item["id"], motivo="tentativa de desfazer", agora=DEPOIS,
-                       usuario="Pessoa Teste", cns=CNS)
+                       usuario="Pessoa Teste")
     assert _coluna(casa, mid, "logradouro") == "Rua Editada"
 
 
@@ -320,7 +399,7 @@ def test_correcao_valida_o_campo(casa, campo, valor):
     with pytest.raises(F.FilaError):
         with casa["db"].transaction() as con:
             F.corrigir(con, _item(casa, mid)["id"], valores={campo: valor}, agora=DEPOIS,
-                       usuario="Pessoa Teste", cns=CNS)
+                       usuario="Pessoa Teste")
     assert not _coluna(casa, mid, campo)
 
 
@@ -354,7 +433,7 @@ def test_documento_sugerido_grava_e_desfaz_sem_mexer_no_dono(casa):
     assert depois["proprietario_ativo"] == 0 and depois["papel"] == antes["papel"]
     with casa["db"].transaction() as con:
         F.desfazer(con, item["id"], motivo="número era de outra pessoa", agora=DEPOIS,
-                   usuario="Pessoa Teste", cns=CNS)
+                   usuario="Pessoa Teste")
     assert _parte_linha(casa, pid) == antes
 
 
@@ -367,7 +446,7 @@ def test_correcao_de_documento_valida_os_digitos(casa):
         with casa["db"].transaction() as con:
             F.corrigir(con, _item(casa, mid, "5", pid)["id"],
                        valores={"documento_numero": invalido}, agora=DEPOIS,
-                       usuario="Pessoa Teste", cns=CNS)
+                       usuario="Pessoa Teste")
     assert _parte_linha(casa, pid)["documento_numero"] is None
 
 
@@ -392,7 +471,7 @@ def test_documento_de_outra_pessoa_derruba_a_confianca():
 def test_documento_nao_tem_lote(casa):
     with pytest.raises(F.FilaError, match="não vai em lote"):
         with casa["db"].transaction() as con:
-            F.sortear_amostra(con, F.DOC_TEOR, agora=DEPOIS, usuario="Pessoa Teste", ligada=False)
+            F.sortear_amostra(con, F.DOC_TEOR, agora=DEPOIS, usuario="Pessoa Teste", ligada=F.REGRA_DESLIGADA)
 
 
 # ───────────────────────────────────────────────────── amostra e lote
@@ -408,14 +487,14 @@ def _fatia_com_fichas(s, quantas=5) -> tuple[list[int], str]:
 
 def _sortear(s, fatia, tamanho=2) -> int:
     with s["db"].transaction() as con:
-        return F.sortear_amostra(con, fatia, agora=AGORA, usuario="Pessoa Teste", ligada=False,
+        return F.sortear_amostra(con, fatia, agora=AGORA, usuario="Pessoa Teste", ligada=F.REGRA_DESLIGADA,
                                  tamanho=tamanho)["amostra_id"]
 
 
 def _lote(s, amostra_id, quantidade):
     with s["db"].transaction() as con:
         return F.aceitar_lote(con, amostra_id, quantidade=quantidade, agora=DEPOIS,
-                              usuario="Pessoa Teste", ligada=False, cns=CNS)
+                              usuario="Pessoa Teste", ligada=F.REGRA_DESLIGADA)
 
 
 def _da_amostra(s, amostra_id) -> list[dict]:
@@ -453,7 +532,7 @@ def test_uma_correcao_na_amostra_mantem_o_lote_fechado(casa):
     _aceitar(casa, primeira["id"], _do_teor(primeira))
     with casa["db"].transaction() as con:
         F.corrigir(con, segunda["id"], valores={"bairro": "Bairro Certo"}, agora=DEPOIS,
-                   usuario="Pessoa Teste", cns=CNS)
+                   usuario="Pessoa Teste")
     with pytest.raises(F.FilaError, match="sem nenhuma correção"):
         _lote(casa, amostra, 3)
     with casa["db"].connect() as con:
@@ -496,7 +575,7 @@ def test_desfazer_o_lote_inteiro(casa):
     assert all(_coluna(casa, i, "logradouro") for i in outras)
     with casa["db"].transaction() as con:
         feito = F.desfazer_lote(con, amostra, motivo="lote com leitura errada", agora=DEPOIS,
-                                usuario="Pessoa Teste", cns=CNS)
+                                usuario="Pessoa Teste")
     assert feito == {"desfeitos": 2, "ficaram": 0}
     assert not any(_coluna(casa, i, "logradouro") for i in outras)
     # A ficha da amostra foi conferida uma a uma e não é desfeita com o lote.
@@ -524,7 +603,7 @@ def test_correcao_da_area_exige_a_unidade(casa):
     with pytest.raises(F.FilaError, match="juntas"):
         with casa["db"].transaction() as con:
             F.corrigir(con, _item(casa, mid)["id"], valores={"area_valor": "250"},
-                       agora=DEPOIS, usuario="Pessoa Teste", cns=CNS)
+                       agora=DEPOIS, usuario="Pessoa Teste")
     assert not _coluna(casa, mid, "area_valor")
 
 
@@ -557,7 +636,7 @@ def test_cpf_ja_gravado_para_outra_pessoa_exige_conferencia(casa):
     assert _parte_linha(casa, joao)["documento_numero"] is None
     with casa["db"].transaction() as con:
         F.aceitar(con, item["id"], campos=["documento_numero"], agora=DEPOIS,
-                  usuario="Pessoa Teste", ligada=False, cns=CNS, mesma_pessoa=True)
+                  usuario="Pessoa Teste", ligada=F.REGRA_DESLIGADA, mesma_pessoa=True)
     with casa["db"].connect() as con:
         assert "mesma pessoa" in F.alteracoes(con, item_id=item["id"])[0]["motivo"]
 
@@ -568,15 +647,15 @@ def test_desfazer_volta_so_a_ultima_decisao(casa):
     item = _item(casa, mid)
     _aceitar(casa, item["id"], ["logradouro"])
     primeiro = _coluna(casa, mid, "logradouro")
-    casa["db"].set_settings({F.CHAVE_REGRA_CASA: "1"})
+    casa["db"].set_settings({F.CHAVE_REGRA_CASA: "2"})
     _gerar(casa)
     assert _item(casa, mid)["situacao"] == F.A_CONFERIR
     with casa["db"].transaction() as con:
         F.aceitar(con, item["id"], campos=["bairro"], agora="2026-11-23T12:00:00",
-                  usuario="Pessoa Teste", ligada=True, cns=CNS)
+                  usuario="Pessoa Teste", ligada=F.REGRA_TUDO)
     with casa["db"].transaction() as con:
         F.desfazer(con, item["id"], motivo="bairro não confere", agora="2026-11-23T13:00:00",
-                   usuario="Pessoa Teste", cns=CNS)
+                   usuario="Pessoa Teste")
     assert _coluna(casa, mid, "bairro") is None
     assert _coluna(casa, mid, "logradouro") == primeiro
 
@@ -594,7 +673,7 @@ def test_contador_separa_conferida_de_pronta(casa):
         linha = next(c for c in F.contar(con)["classes"] if c["classe"] == F.TEOR)
     assert (linha["total"], linha["aceitas"], linha["a_conferir"], linha["percentual"]) \
         == (2, 1, 1, 50)
-    assert linha["prontas"] == 0  # sem a regra da casa, faltam CEP e tipo
+    assert linha["prontas"] == 0  # sem a regra da casa, falta o tipo
 
 
 def test_tela_percorre_o_caminho_inteiro(casa):

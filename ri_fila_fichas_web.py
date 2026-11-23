@@ -49,7 +49,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
         amostra_id = request.args.get("amostra", type=int)
         pagina = max(request.args.get("pagina", 1, type=int), 1)
         s = _settings()
-        ligada = FILA.regra_ligada(s)
+        ligada = FILA.nivel_da_regra(s)
         with db.connect() as con:
             fila = FILA.listar(con, livro=livro, classe=classe, situacao=situacao,
                                confianca=confianca, prioridade=prioridade,
@@ -61,7 +61,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
             "ri_fila_fichas.html", fila=fila, contagem=contagem, fatias=fatias, livro=livro,
             classe=classe or "", situacao=situacao or "", confianca=confianca or "",
             prioridade=prioridade or "", amostra_id=amostra_id or "", pagina=pagina,
-            por_pagina=POR_PAGINA, ligada=ligada, e_titular=e_o_titular(),
+            por_pagina=POR_PAGINA, ligada=ligada, niveis=FILA.NOME_DO_NIVEL, e_titular=e_o_titular(),
             nome_da_classe=FILA.NOME_DA_CLASSE, nome_da_situacao=FILA.NOME_DA_SITUACAO,
             nome_da_prioridade=FILA.NOME_DA_PRIORIDADE)
 
@@ -86,7 +86,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
     @login_required
     @roles_required(*QUEM_VE)
     def ri_fila_ficha(item_id: int):
-        ligada = FILA.regra_ligada(_settings())
+        ligada = FILA.nivel_da_regra(_settings())
         with db.connect() as con:
             item = FILA.ler(con, item_id)
             rastro = FILA.alteracoes(con, item_id=item_id) if item else []
@@ -123,7 +123,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
         s = _settings()
         r = _decisao(item_id, "RI_FILA_ACEITE", lambda con: FILA.aceitar(
             con, item_id, campos=request.form.getlist("campo"), agora=db.now(),
-            usuario=usuario_nome(), ligada=FILA.regra_ligada(s), cns=FILA.cns_da_casa(s),
+            usuario=usuario_nome(), ligada=FILA.nivel_da_regra(s),
             motivo=request.form.get("motivo") or "",
             mesma_pessoa=request.form.get("mesma_pessoa") == "1"))
         if not isinstance(r, dict):
@@ -139,8 +139,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
         valores = {k[len("valor_"):]: v for k, v in request.form.items()
                    if k.startswith("valor_")}
         r = _decisao(item_id, "RI_FILA_CORRECAO", lambda con: FILA.corrigir(
-            con, item_id, valores=valores, agora=db.now(), usuario=usuario_nome(),
-            cns=FILA.cns_da_casa(s), motivo=request.form.get("motivo") or "",
+            con, item_id, valores=valores, agora=db.now(), usuario=usuario_nome(), motivo=request.form.get("motivo") or "",
             mesma_pessoa=request.form.get("mesma_pessoa") == "1"))
         if not isinstance(r, dict):
             return r
@@ -164,7 +163,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
         s = _settings()
         r = _decisao(item_id, "RI_FILA_DESFEITO", lambda con: FILA.desfazer(
             con, item_id, motivo=request.form.get("motivo") or "", agora=db.now(),
-            usuario=usuario_nome(), cns=FILA.cns_da_casa(s)))
+            usuario=usuario_nome()))
         if not isinstance(r, dict):
             return r
         flash("Desfeito: a ficha voltou ao valor anterior e o item voltou à fila.", "ok")
@@ -178,7 +177,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
         try:
             with db.transaction() as con:
                 feito = FILA.sortear_amostra(con, fatia, agora=db.now(), usuario=usuario_nome(),
-                                             ligada=FILA.regra_ligada(_settings()))
+                                             ligada=FILA.nivel_da_regra(_settings()))
         except FILA.FilaError as erro:
             flash(str(erro), "danger")
             return redirect(url_for("ri_fila_fichas"))
@@ -198,7 +197,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
                 feito = FILA.aceitar_lote(con, amostra_id,
                                           quantidade=request.form.get("quantidade"),
                                           agora=db.now(), usuario=usuario_nome(),
-                                          ligada=FILA.regra_ligada(s), cns=FILA.cns_da_casa(s))
+                                          ligada=FILA.nivel_da_regra(s))
         except FILA.FilaError as erro:
             flash(str(erro), "danger")
             return redirect(url_for("ri_fila_fichas"))
@@ -218,8 +217,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
             with db.transaction() as con:
                 feito = FILA.desfazer_lote(con, amostra_id,
                                            motivo=request.form.get("motivo") or "",
-                                           agora=db.now(), usuario=usuario_nome(),
-                                           cns=FILA.cns_da_casa(s))
+                                           agora=db.now(), usuario=usuario_nome())
         except FILA.FilaError as erro:
             flash(str(erro), "danger")
             return redirect(url_for("ri_fila_fichas"))
@@ -235,11 +233,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
     def ri_fila_regra_casa():
         if not e_o_titular():
             abort(403)
-        ligar = request.form.get("ligar") == "1"
-        db.set_settings({FILA.CHAVE_REGRA_CASA: "1" if ligar else "0"})
-        audit("RI_FILA_REGRA_CASA", "settings", None, "ligada" if ligar else "desligada")
-        flash("Regra da casa ligada: os valores-padrão aparecem como opção, marcados como tal."
-              if ligar else "Regra da casa desligada: os valores-padrão não aparecem mais.", "ok")
+        nivel = FILA.nivel_da_regra({FILA.CHAVE_REGRA_CASA: request.form.get("nivel")})
+        db.set_settings({FILA.CHAVE_REGRA_CASA: str(nivel)})
+        audit("RI_FILA_REGRA_CASA", "settings", None, FILA.NOME_DO_NIVEL[nivel])
+        flash(f"Regra da casa: {FILA.NOME_DO_NIVEL[nivel]}. Use «Atualizar a fila» para "
+              "reabrir as fichas que ganharam opção.", "ok")
         return redirect(url_for("ri_fila_fichas"))
 
     @app.route("/ri/fila-fichas/auditoria")

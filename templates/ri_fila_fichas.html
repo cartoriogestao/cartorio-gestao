@@ -28,7 +28,7 @@
   <div class="table-wrap">
     <table>
       <thead><tr><th>Livro</th><th>Classe</th><th>Total</th><th>A conferir</th><th>Puladas</th>
-        <th>Aceitas</th><th>Corrigidas</th><th>Só o oficial</th><th>Prontas para subir</th><th>Conferido</th></tr></thead>
+        <th>Aceitas</th><th>Corrigidas</th><th>Só o oficial</th><th>Vão no arquivo</th><th>Só falta o tipo</th><th>Boas para localizar</th><th>Conferido</th></tr></thead>
       <tbody>
         {% for c in contagem.classes %}
         <tr>
@@ -38,34 +38,37 @@
           <td>{{ c.aceitas }}</td><td>{{ c.corrigidas }}</td>
           <td>{% if c.sinalizadas %}<a href="{{ url_for('ri_fila_fichas', livro=c.livro, situacao='SINALIZADA') }}">{{ c.sinalizadas }}</a>{% else %}0{% endif %}</td>
           <td>{% if c.livro == '4' %}{{ c.prontas }}{% else %}—{% endif %}</td>
+          <td>{% if c.livro == '4' %}{{ c.so_falta_tipo }}{% else %}—{% endif %}</td>
+          <td>{% if c.livro == '4' %}<span title="{{ c.parciais }} parciais, {{ c.fracas }} fracas">{{ c.boas }}</span>{% else %}—{% endif %}</td>
           <td>{% if c.classe == 'PRONTA' %}—{% else %}{{ c.percentual }}%{% endif %}</td>
         </tr>
         {% else %}
-        <tr><td colspan="10">A fila ainda não foi montada. Use «Atualizar a fila».</td></tr>
+        <tr><td colspan="12">A fila ainda não foi montada. Use «Atualizar a fila».</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  <p><small><strong>Conferida não é o mesmo que pronta.</strong> Com a regra da casa desligada,
-    a ficha pode ser conferida e continuar sem CEP, número, bairro ou tipo, e aí não sobe.</small></p>
+  <p><small><strong>Conferida, aceita no arquivo e boa para localizar são três coisas.</strong>
+    O Manual do Indicador Real v2.0 exige localização, logradouro, UF e cidade; número, bairro, CEP e
+    tipo são opcionais. «Só falta o tipo» espera o ONR dizer como enviar a ficha sem ele. «Boa» é via
+    com número e bairro reais, ou imóvel rural com nome e cadastro; valor-padrão não conta.</small></p>
 </section>
 
 {% if livro == '4' %}
 <section class="card">
-  <h2>Regra da casa: {{ 'ligada' if ligada else 'desligada' }}</h2>
-  <p>
-    Bairro «Zona Rural» ou «Centro», logradouro «Sem Denominação», número «0», tipo pelo padrão,
-    CEP geral e cidade padrão não são leitura do livro.
-    {% if ligada %}Eles aparecem como opção, marcados como regra da casa.
-    {% else %}Enquanto desligada, eles não aparecem e não podem ser aceitos.{% endif %}
-  </p>
+  <h2>Regra da casa: {{ niveis[ligada] }}</h2>
+  <p><strong>Só o que o arquivo exige:</strong> município e UF, tipo de via, urbano/rural e tipo do imóvel,
+    quando o teor não os dá.
+    <strong>Inteira:</strong> também número «0», bairro «Zona Rural» ou «Centro», CEP geral e unidade presumida da área.
+    Fora do nível escolhido, o valor não aparece e não pode ser aceito.</p>
   {% if e_titular %}
   <form method="post" action="{{ url_for('ri_fila_regra_casa') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <input type="hidden" name="ligar" value="{{ '0' if ligada else '1' }}">
-    <button type="submit">{{ 'Desligar' if ligada else 'Ligar' }} a regra da casa</button>
+    {% for n, nome in niveis.items() %}
+    <button type="submit" name="nivel" value="{{ n }}" {% if n == ligada %}disabled{% endif %}>{{ nome|capitalize }}</button>
+    {% endfor %}
   </form>
-  {% else %}<p><small>Quem liga ou desliga é o titular.</small></p>{% endif %}
+  {% else %}<p><small>Quem muda é o titular.</small></p>{% endif %}
 </section>
 
 <section class="card">

@@ -431,7 +431,8 @@ no protocolo e, pagos, caem no caixa com os fundos separados.
 2. **Lançar**: natureza, forma de pagamento, valor, protocolo, pagador,
    documento, descrição. Na composição de emolumentos, use os valores efetivos.
    Os campos de fundos da tela seguem a lei do estado de origem **(norma
-   estadual — confira a do seu estado)**.
+   estadual — confira a do seu estado)**. A forma **PG feito pela CRC** é para
+   os pedidos feitos e pagos pela CRC, e se comporta como **PG feito pela ONR**.
 3. **Recibo**: nasce do lançamento e congela o teor; reabrir não cria recibo
    novo. Segundas vias em **Recibos**.
 4. **Corrigir**: caixa aberto — alterar, estornar ou excluir, com motivo; caixa

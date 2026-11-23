@@ -193,7 +193,7 @@ def test_a_cor_tem_os_seis_valores_do_manual():
 # =========================================== o gemeo, e o local do nascimento
 #
 # **O RELATO QUE ACHOU ISTO FOI DE UM REGISTRO SO:** «verifique o json do
-# nilton» — assento 1240 da producao, nascimento nº 5172 de 1974, cujo teor diz
+# registrado» — um nascimento da producao, cujo teor diz
 # com todas as letras «O registrado não é gêmeo». O arquivo dizia que sim.
 
 
@@ -213,9 +213,9 @@ def test_o_codigo_1_do_ibge_quer_dizer_que_NAO_e_gemeo(casa):
     """
     con = _con(casa)
     with con:
-        aid = _assento(con, especie="NASCIMENTO", nome="NILTON",
+        aid = _assento(con, especie="NASCIMENTO", nome="PESSOA EXEMPLO",
                        ibge_gemeo=1)
-        _pessoa(con, aid, "REGISTRADO", "NILTON", sexo="M")
+        _pessoa(con, aid, "REGISTRADO", "PESSOA EXEMPLO", sexo="M")
     xml = CRC.montar(con, [aid], cns=CNS)["xml"]
     assert "<POSSUIGEMEOS>N</POSSUIGEMEOS>" in xml
     assert "<POSSUIGEMEOS>S</POSSUIGEMEOS>" not in xml

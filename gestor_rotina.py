@@ -462,13 +462,24 @@ def gravar_achados(con, achados: list[dict],
                        resolvido_em=NULL WHERE id=%s""",
                 (a["regra"], a["gravidade"], a["setor"], a["titulo"], a["detalhe"],
                  a["prazo"], a["fundamento"], agora, linha["id"]))
+    sumiram = [r for r in bd.ler(
+        "SELECT id, chave, regra FROM ge_achados WHERE resolvido_em IS NULL "
+        "ORDER BY id") if r["chave"] not in vistos]
+    # A FUNAI SÓ FECHA COM CAUSA: envio, dispensa, cancelamento ou correção do
+    # assento. Item que apenas saiu da lista (teto, regra quebrada) segue aberto;
+    # sem medir, também — não se prova que foi comunicado.
+    da_funai = [r for r in sumiram if r["regra"] == "FUNAI"
+                and r["chave"].startswith(GC.PREFIXO_ACHADO_FUNAI)]
+    devidas = GC.chaves_funai_devidas(con, hoje) if da_funai else set()
+    seguem = {r["id"] for r in da_funai
+              if devidas is None or r["chave"] in devidas}
     resolvidos = 0
-    for r in bd.ler("SELECT id, chave FROM ge_achados WHERE resolvido_em IS NULL "
-                    "ORDER BY id"):
-        if r["chave"] not in vistos:
-            resolvidos += 1
-            bd.escrever("UPDATE ge_achados SET resolvido_em=%s WHERE id=%s",
-                        (agora, r["id"]))
+    for r in sumiram:
+        if r["id"] in seguem:
+            continue
+        resolvidos += 1
+        bd.escrever("UPDATE ge_achados SET resolvido_em=%s WHERE id=%s",
+                    (agora, r["id"]))
     return {"novos": novos, "resolvidos": resolvidos}
 
 

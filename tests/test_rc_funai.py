@@ -21,6 +21,7 @@ from __future__ import annotations
 import glob
 import sqlite3
 import sys
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -28,7 +29,11 @@ import pytest
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
 
+import gestor_cargas_rcpn as GCRC                                # noqa: E402
+import gestor_conferencia as GC                                  # noqa: E402
+import gestor_rotina as GR                                       # noqa: E402
 import rc_funai as FUNAI                                         # noqa: E402
+from gestor_schema import init_gestor_schema                     # noqa: E402
 
 SENHA = "Senha#12345"
 AGORA = "2026-08-20T09:00"
@@ -49,12 +54,12 @@ def _con(casa):
 
 
 def _nascimento(con, *, nome="CAMILO KRIKATI", cor="Indigena", numero=1,
-                data_ato="2026-08-05", especie="NASCIMENTO"):
+                data_ato="2026-08-05", especie="NASCIMENTO", origem="SISTEMA"):
     cur = con.execute(
         """INSERT INTO rc_assentos (serie, especie, numero, nome, data_ato,
                data_fato, situacao, origem, criado_em, cor_raca)
-           VALUES ('RC_A',?,?,?,?,?,'ATIVO','SISTEMA',?,?)""",
-        (especie, numero, nome, data_ato, data_ato, AGORA, cor))
+           VALUES ('RC_A',?,?,?,?,?,'ATIVO',?,?,?)""",
+        (especie, numero, nome, data_ato, data_ato, origem, AGORA, cor))
     return int(cur.lastrowid)
 
 
@@ -299,6 +304,135 @@ def test_o_que_se_escreveu_ao_dispensar_fica(casa):
         FUNAI.dispensar(con, aid, motivo="conferido no livro de papel",
                         agora=AGORA, por="mario")
     assert "conferido no livro" in FUNAI.historico(con)[0]["motivo"]
+
+
+# ------------------------------------------------ o teto, o acervo e o achado
+
+
+HOJE = date(2026, 11, 23)
+
+
+def _achado_funai(con, aid, *, resolvido_em=None):
+    """O achado como o gestor o grava."""
+    init_gestor_schema(con)
+    chave = f"FUNAI:rc_assentos:{aid}"
+    con.execute(
+        """INSERT INTO ge_achados (chave, regra, gravidade, setor, titulo,
+               primeiro_visto_em, ultimo_visto_em, resolvido_em)
+           VALUES (?,'FUNAI','VENCIDO','RCPN','FUNAI',?,?,?)""",
+        (chave, AGORA, AGORA, resolvido_em))
+    return chave
+
+
+def _resolvido_em(con, chave):
+    return con.execute("SELECT resolvido_em FROM ge_achados WHERE chave=?",
+                       (chave,)).fetchone()[0]
+
+
+def test_o_limite_vale_depois_do_filtro(casa):
+    """Mais de `limite` não indígenas antigos na frente não escondem o ato novo."""
+    con = _con(casa)
+    with con:
+        for n in range(1, 6):
+            _nascimento(con, nome=f"ANTIGO {n}", cor="Parda", numero=n,
+                        data_ato="1990-01-01", origem="IMPORTACAO")
+        _nascimento(con, nome="ATO NOVO", numero=6, data_ato="2026-10-20",
+                    origem="MANUAL")
+    assert [x["nome"] for x in FUNAI.pendentes(con, limite=3)] == [
+        "ATO NOVO"]
+    assert FUNAI.quantas_pendentes(con) == 1
+
+
+def test_o_limite_ainda_corta_os_indigenas(casa):
+    con = _con(casa)
+    with con:
+        for n in range(1, 4):
+            _nascimento(con, nome=f"INDIGENA {n}", numero=n,
+                        data_ato=f"2026-10-0{n}", origem="MANUAL")
+    assert [x["nome"] for x in FUNAI.pendentes(con, limite=2)] == [
+        "INDIGENA 1", "INDIGENA 2"]
+    assert FUNAI.quantas_pendentes(con) == 3
+
+
+def test_as_origens_do_acervo_cobrem_as_do_gestor():
+    assert set(GC.ORIGENS_DO_ACERVO) <= set(FUNAI.ORIGENS_DO_ACERVO)
+    assert "ACERVO" in FUNAI.ORIGENS_DO_ACERVO
+
+
+@pytest.mark.parametrize("origem", FUNAI.ORIGENS_DO_ACERVO)
+def test_acervo_fica_na_lista_e_nao_vira_achado(casa, origem):
+    """Mesmo com a data da digitação depois do corte."""
+    con = _con(casa)
+    with con:
+        aid = _nascimento(con, nome="DO ACERVO", data_ato="2026-10-22",
+                          origem=origem)
+        novo = _nascimento(con, nome="ATO NOVO", numero=2,
+                           data_ato="2026-10-20", origem="MANUAL")
+    init_gestor_schema(con)
+    assert {x["id"] for x in FUNAI.pendentes(con)} == {aid, novo}
+    assert FUNAI.quantas_por_grupo(con) == {"ato_novo": 1, "acervo": 1}
+    assert [a["chave"] for a in GC.regra_funai(con, HOJE)] == [
+        f"FUNAI:rc_assentos:{novo}"]
+
+
+def test_acervo_nao_vira_oficio_na_pasta(casa):
+    con = _con(casa)
+    with con:
+        _nascimento(con, nome="DO ACERVO", data_ato="2019-03-04",
+                    origem="IMPORTACAO")
+        novo = _nascimento(con, nome="ATO NOVO", numero=2,
+                           data_ato="2026-10-20", origem="MANUAL")
+    init_gestor_schema(con)
+    r = GCRC.preparar_funai(con, HOJE, s={"serventia_nome": CASA["nome"]}, ret={})
+    assert [a["assentos"] for a in r["arquivos"]] == [[novo]]
+
+
+def test_achado_dado_por_resolvido_sem_envio_reabre(casa):
+    con = _con(casa)
+    with con:
+        aid = _nascimento(con, data_ato="2026-10-01", origem="MANUAL")
+        chave = _achado_funai(con, aid, resolvido_em="2026-10-25T10:00:00")
+    with con:
+        GR.gravar_achados(con, GC.regra_funai(con, HOJE), HOJE)
+    assert _resolvido_em(con, chave) is None
+
+
+def test_achado_sem_envio_nao_fecha_ao_sair_da_lista(casa):
+    con = _con(casa)
+    with con:
+        aid = _nascimento(con, data_ato="2026-10-01", origem="MANUAL")
+        chave = _achado_funai(con, aid)
+    with con:
+        r = GR.gravar_achados(con, [], HOJE)
+    assert r["resolvidos"] == 0
+    assert _resolvido_em(con, chave) is None
+
+
+def test_achado_nao_fecha_quando_nao_deu_para_medir(casa, monkeypatch):
+    con = _con(casa)
+    with con:
+        aid = _nascimento(con, data_ato="2026-10-01", origem="MANUAL")
+        chave = _achado_funai(con, aid)
+
+    def quebra(*_a, **_k):
+        raise RuntimeError("não mediu")
+
+    monkeypatch.setattr(FUNAI, "atos_novos", quebra)
+    with con:
+        GR.gravar_achados(con, [], HOJE)
+    assert _resolvido_em(con, chave) is None
+
+
+def test_achado_fecha_com_o_envio_registrado(casa):
+    con = _con(casa)
+    with con:
+        aid = _nascimento(con, data_ato="2026-10-01", origem="MANUAL")
+        chave = _achado_funai(con, aid)
+        FUNAI.registrar_envio(con, aid, agora=AGORA, por="mario", teor="Ofício")
+    with con:
+        r = GR.gravar_achados(con, GC.regra_funai(con, HOJE), HOJE)
+    assert r["resolvidos"] == 1
+    assert _resolvido_em(con, chave) is not None
 
 
 # ------------------------------------------------ o módulo não envia

@@ -204,6 +204,19 @@ def _quantas(modulo: str, con: sqlite3.Connection) -> dict:
             "erro": f"o módulo {modulo} não tem por onde contar o que espera"}
 
 
+def _partes(modulo: str, con: sqlite3.Connection) -> dict:
+    """A divisão do número, para o módulo que a tem. Não engole erro."""
+    import importlib
+    funcao = getattr(importlib.import_module(modulo), "quantas_por_grupo", None)
+    if funcao is None:
+        return {}
+    try:
+        return {"partes": funcao(con)}
+    except Exception as erro:                # noqa: BLE001 — o motivo vai à tela
+        return {"quantas": None,
+                "erro": f"{modulo}.quantas_por_grupo não respondeu: {erro}"}
+
+
 def painel(con: sqlite3.Connection, *, hoje: str = "") -> list[dict]:
     """As seis linhas, do prazo mais curto ao mais longo, com o que espera.
 
@@ -214,6 +227,8 @@ def painel(con: sqlite3.Connection, *, hoje: str = "") -> list[dict]:
     for o in por_aperto():
         linha = dict(o)
         linha.update(_quantas(o["modulo"], con))
+        if not linha.get("erro"):
+            linha.update(_partes(o["modulo"], con))
         if o.get("mede") == "PRAZO" and hoje:
             # O PRAZO VEM POR CIMA DA CONTAGEM, e nao no lugar dela: as duas
             # respondem perguntas diferentes — quantos trimestres estao em

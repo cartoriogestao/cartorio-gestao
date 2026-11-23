@@ -67,7 +67,7 @@ from ri_doc_extrair import extrair as extrair_doc
 from ri_naturezas import nomes as nomes_natureza
 from serventia import (dados as dados_serventia, mascarar_documento,
                        mascarar_email, mascarar_telefone, mascarar_texto)
-from ri_onr import (TIPO_IMOVEL_ONR, gerar_indicador_pessoal, gerar_indicador_real,
+from ri_onr import (TIPO_IMOVEL_ONR, gerar_indicador_pessoal,
                     nome_arquivo)
 from ri_odt import (MIOLO_DA_CERTIDAO,
                     bloco_selo_html, bloco_selo_odf,
@@ -9039,9 +9039,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 mime = "application/xml"
                 registros = len(corpos)
             else:
-                conteudo = gerar_indicador_real([dict(m) for m in matriculas], cns)
-                mime = "application/json"
-                registros = len(matriculas)
+                # O JSON DO INDICADOR REAL SAI EM LOTE, COM VALIDAÇÃO E HISTÓRICO (23/11/2026). O
+                # botão antigo gerava um arquivo com UF, cidade e tipo de via zerados.
+                flash("O Indicador Real em JSON agora sai em «Indicador Real: lotes para o portal», "
+                      "só para o oficial, com validação e histórico.", "warning")
+                return redirect(url_for("ri_onr", inicio=inicio, fim=fim))
 
             arquivo = nome_arquivo(tipo, d1, d2)
             audit("RI_ONR_EXPORTADO", "RI_ONR", None,

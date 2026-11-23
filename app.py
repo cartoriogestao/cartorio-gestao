@@ -3652,6 +3652,8 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     # baixarem o programa precisam do botao».
     import onr_ir_inteiro_web
     onr_ir_inteiro_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+    import onr_ir_lotes_web
+    onr_ir_lotes_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
     import ri_onr_web
     ri_onr_web.registrar_rotas(app, db, login_required, roles_required, audit,

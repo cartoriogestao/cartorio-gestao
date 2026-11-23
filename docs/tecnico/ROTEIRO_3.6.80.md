@@ -29,7 +29,7 @@ Depois de aplicar, **Ctrl+F5** no navegador.
 
 ## O QUE VOCÊ PEDIU: o registro do Pessoa Exemplo
 
-**Assento 1240**, nascimento nº 5172 de 1974, livro A-12 fl. 154, lavrado no
+**Um nascimento do acervo**, lavrado no
 balcão hoje às 11h42 pelo teor colado. Origem `ARQUIVO`.
 
 **A filiação dele sobe completa** — o problema de ontem não o alcança:

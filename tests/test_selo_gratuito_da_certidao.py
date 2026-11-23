@@ -1,6 +1,6 @@
-"""O SELO GRATUITO DA CERTIDÃO DO CIVIL — o relato do Marcos Dione.
+"""O SELO GRATUITO DA CERTIDÃO DO CIVIL — o relato do incidente da certidão 16.
 
-    «verifique o problema do selo gratuito de certidao do marcos dione»
+    «verifique o problema do selo gratuito de certidao do [registrado]»
                                             — o oficial, 10/09/2026
 
 O QUE SE MEDIU NA PRODUÇÃO (só leitura)

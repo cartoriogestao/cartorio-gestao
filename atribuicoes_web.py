@@ -9511,7 +9511,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             img_path = _imagem_da_certidao_inteiro(assento_id)
 
         # GRATUIDADE_SEM_MOTIVO — 10/09/2026, do relato «segue sem
-        # funcionar, revise o caso do assento 1240».
+        # funcionar, revise o caso do registrado».
         #
         # **MARCAR «SELO GRATUITO» SEM ESCREVER O MOTIVO DEIXAVA A CERTIDAO
         # LAVRADA SEM SELO.** Medido numa copia do banco do balcao, no assento

@@ -597,7 +597,7 @@ def envelope_do_civil(*, especie: Any, tipo: Any, escrevente: Any, livro: Any,
     elif isento:
         # **O CAMPO DA ISENÇÃO SE CHAMA `isento`, E ISSO ESTÁ MEDIDO EM TRÊS
         # LUGARES — correção de 10/09/2026, do relato do oficial: «verifique o
-        # problema do selo gratuito de certidão do Marcos Dione».**
+        # problema do selo gratuito de certidão do [registrado]».**
         #
         # Aqui ia **só** `isentoGratuito: "GRATUITO"`, e esse par não existe:
         #

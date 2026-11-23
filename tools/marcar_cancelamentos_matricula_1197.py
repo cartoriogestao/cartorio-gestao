@@ -49,6 +49,8 @@ class Recusa(SystemExit):
 def _backup(caminho: Path) -> Path:
     carimbo = datetime.now().strftime("%Y%m%d-%H%M%S")
     destino = caminho.with_name(f"{caminho.stem}.ANTES-CANCEL-1197-{carimbo}{caminho.suffix}")
+    import pasta_das_copias as _PC
+    destino = _PC.destino_da_copia(destino, caminho)
     try:
         con = __import__("sqlite3").connect(str(caminho))
         con.execute(f"VACUUM INTO '{destino}'")

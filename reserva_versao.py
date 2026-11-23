@@ -10,15 +10,21 @@ COMO VAI
       leva essa linha como leva qualquer outra.
     - A sincronia do Mac lê o número. Se for o mesmo, não faz nada. Se o Mac estiver
       à frente, não desce. Se o esquema ainda não chegou, espera.
-    - Se o principal está mais novo e o esquema já é o dele, baixa a etiqueta
-      `vX.Y.Z` no GitHub (o repositório é público; é o mesmo código do `git pull`
-      daquela etiqueta, não o `main`, que pode estar na frente da casa) e troca a
-      pasta `sistema`. O `venv` fica do lado de fora. Se `requirements.txt` mudou,
-      instala, e só então reinicia o serviço.
+    - Se o principal está mais novo e o esquema já é o dele, baixa o pacote `.cgu`
+      da release `vX.Y.Z` (não o `main`, que pode estar na frente da casa), confere
+      a assinatura do oficial contra a chave desta instalação e monta a versão nova
+      sobre uma cópia da atual. Pacote sem assinatura que confira não entra.
+    - A chave (`chaves_de_atualizacao.json`) não vem em pacote nenhum: fica como
+      está, e pacote que tente trocá-la é recusado. Sem ela, o sistema cairia no
+      modo de transição e aceitaria pacote sem assinatura.
+    - O `venv` fica do lado de fora. Se `requirements.txt` mudou, instala, e só
+      então reinicia o serviço.
 
 O QUE ISTO NÃO FAZ
     Não instala a primeira vez: o Mac precisa desta sincronia já no ar. Não pega
-    correção que o principal esteja rodando sem etiqueta publicada.
+    correção que o principal esteja rodando sem release publicada. O pacote traz só
+    o que mudou desde o `min_version` dele: reserva mais velha que isso fica onde
+    está, e a atualização é à mão (roteiro).
 """
 from __future__ import annotations
 
@@ -26,7 +32,6 @@ import os
 import re
 import shutil
 import subprocess
-import tarfile
 import tempfile
 import urllib.parse
 import urllib.request
@@ -34,8 +39,10 @@ from pathlib import Path
 
 CHAVE = "sistema_versao"
 VERSAO_RE = re.compile(r"^\d+(?:\.\d+){1,3}$")
-HOSPEDES = frozenset({"github.com", "codeload.github.com", "objects.githubusercontent.com"})
-TAMANHO_MAXIMO = 200 * 1024 * 1024
+HOSPEDES = frozenset({"github.com", "objects.githubusercontent.com",
+                      "release-assets.githubusercontent.com"})
+TAMANHO_MAXIMO = 100 * 1024 * 1024
+ARQUIVO_DAS_CHAVES = "chaves_de_atualizacao.json"
 PREFIXO_RE = re.compile(r"[A-Za-z0-9.]{1,80}")
 IGNORAR_NA_COPIA = shutil.ignore_patterns(
     ".git", "venv", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache")
@@ -85,8 +92,8 @@ def publicar(db, versao: str) -> bool:
 def url_da_versao(versao: str) -> str:
     versao = validar_versao(versao)
     return (
-        "https://github.com/cartoriogestao/cartorio-gestao/archive/refs/tags/"
-        f"v{versao}.tar.gz"
+        "https://github.com/cartoriogestao/cartorio-gestao/releases/download/"
+        f"v{versao}/CartorioGestao-{versao}.cgu"
     )
 
 
@@ -95,7 +102,7 @@ def _hospede(url: str) -> str:
 
 
 def baixar_pacote(versao: str, destino: Path, abrir=None) -> None:
-    """Baixa a etiqueta. Recusa outro hospedeiro e pacote acima do teto."""
+    """Baixa o `.cgu` da release. Recusa outro hospedeiro e pacote acima do teto."""
     abrir = abrir or urllib.request.urlopen
     pedido = urllib.request.Request(url_da_versao(versao), headers={"User-Agent": "CartorioGestao-reserva"})
     with abrir(pedido, timeout=120) as resposta:
@@ -111,42 +118,46 @@ def baixar_pacote(versao: str, destino: Path, abrir=None) -> None:
                     break
                 lido += len(pedaco)
                 if lido > TAMANHO_MAXIMO:
-                    raise ValueError("o pacote da versão passou de 200 MB")
+                    raise ValueError("o pacote da versão passou de 100 MB")
                 saida.write(pedaco)
         if lido < 1000:
             raise ValueError("o pacote da versão veio vazio")
 
 
-def _partes(nome: str) -> list[str] | None:
-    if not nome or nome.startswith("/") or "\\" in nome:
-        return None
-    partes = nome.split("/")
-    if any(parte in {"", ".", ".."} or ":" in parte for parte in partes):
-        return None
-    return partes
+def montar_versao(pacote: Path, sistema: Path, pasta: Path, local: str, versao: str) -> Path:
+    """A versão nova numa pasta à parte: a atual mais o pacote assinado. Não toca em `sistema`.
 
+    `validate_and_stage` confere a assinatura, o hash de cada arquivo e o `min_version`.
+    Aqui se exige mais que na tela do Windows: `NAO_ASSINADO` (o modo de transição) não
+    entra sozinho.
+    """
+    import update_manager as UM
 
-def extrair(arquivo: Path, destino: Path, versao: str) -> Path:
-    """Abre o pacote numa pasta nova e devolve a raiz. Recusa caminho que sai dela."""
     versao = validar_versao(versao)
-    destino = Path(destino)
-    destino.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(arquivo, "r:gz") as tar:
-        membros = tar.getmembers()
-        if not membros:
-            raise ValueError("pacote vazio")
-        raizes: set[str] = set()
-        for membro in membros:
-            partes = _partes(membro.name)
-            if partes is None or membro.issym() or membro.islnk() or not (membro.isdir() or membro.isfile()):
-                raise ValueError(f"pacote recusado: {membro.name!r}")
-            raizes.add(partes[0])
-        if len(raizes) != 1:
-            raise ValueError("o pacote não tem uma pasta só")
-        tar.extractall(destino, members=membros, filter="data")
-    raiz = destino / next(iter(raizes))
-    conferir_arvore(raiz, versao)
-    return raiz
+    pasta = Path(pasta)
+    info = UM.validate_and_stage(Path(pacote), pasta / "preparo", validar_versao(local))
+    if info["version"] != versao:
+        raise ValueError(f"o pacote é da {info['version']}, e o principal está na {versao}")
+    if (info.get("assinatura") or {}).get("situacao") != "ASSINADO":
+        raise ValueError("o pacote não tem assinatura conferida pela chave desta instalação")
+    arquivos = [item["path"] for item in info["checked_files"]]
+    apagar = list(info["delete"])
+    if any(Path(rel).name.casefold() == ARQUIVO_DAS_CHAVES for rel in arquivos + apagar):
+        raise ValueError("o pacote tenta mexer na chave de atualização")
+    montada = pasta / "montada"
+    shutil.copytree(sistema, montada, ignore=IGNORAR_NA_COPIA, symlinks=False)
+    payload = Path(info["stage_dir"]) / "payload"
+    for rel in arquivos:
+        alvo = montada / rel
+        alvo.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(payload / rel, alvo)
+    for rel in apagar:
+        alvo = montada / rel
+        if alvo.is_dir():
+            raise ValueError(f"o pacote pede para apagar uma pasta: {rel}")
+        alvo.unlink(missing_ok=True)
+    conferir_arvore(montada, versao)
+    return montada
 
 
 def conferir_arvore(origem: Path, versao: str) -> None:
@@ -292,9 +303,9 @@ def executar(sistema: Path, principal: str, local: str, esquema_ok: bool, *,
     try:
         with tempfile.TemporaryDirectory(prefix="cg-versao-") as tmp_nome:
             tmp = Path(tmp_nome)
-            pacote = tmp / "codigo.tar.gz"
+            pacote = tmp / "pacote.cgu"
             baixar(principal, pacote)
-            origem = extrair(pacote, tmp / "src", principal)
+            origem = montar_versao(pacote, sistema, tmp / "versao", local, principal)
             trocar(origem, sistema)
     except Exception as erro:  # noqa: BLE001 — o código que está rodando continua
         print(f"versao: não troquei o código: {erro}")

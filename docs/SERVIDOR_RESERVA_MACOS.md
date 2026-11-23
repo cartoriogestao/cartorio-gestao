@@ -16,7 +16,7 @@
 | quem grava | o sistema, como sempre | **ninguém**: o sistema entra no banco com `cg_leitor`, que só tem SELECT |
 | arquivos | a pasta da casa (`archive_root`) e as pastas configuradas fora dela | cópia de 5 em 5 minutos, sem apagar nada (`sincronizar.sh`) |
 | segredos | `secret.key`, `cofre.key`, `*.cred` na pasta de dados | pacote cifrado **para a chave do Mac**, que chega pela réplica |
-| o programa | o número em `settings.sistema_versao`, gravado ao subir | a sincronia baixa a etiqueta `vX.Y.Z` no GitHub, depois do esquema |
+| o programa | o número em `settings.sistema_versao`, gravado ao subir | a sincronia baixa o `.cgu` assinado da release `vX.Y.Z`, depois do esquema |
 
 **Por que só lê.** Protocolo, selo, folha e ato saem de sequências do banco. Com os dois servidores
 lançando, o mesmo número sairia duas vezes, um em cada lado, e isso não tem conserto no livro.
@@ -29,8 +29,10 @@ mesmo idioma do banco. Windows e macOS não têm nem um nem outro em comum. A l�
 - **Esquema.** Uma versão nova pode criar tabela ou coluna. A sincronia roda o `reserva.py esquema`
   de 5 em 5 minutos. Sem isso, a réplica para na primeira linha que usa a coluna nova (ensaiado).
 - **Sequências.** O `assumir` acerta o próximo número de cada tabela pelo maior que já existe.
-- **O programa.** A réplica não leva o código. A sincronia baixa a etiqueta que o principal
-  gravou, e só quando o esquema dos dois lados já é o mesmo.
+- **O programa.** A réplica não leva o código. A sincronia baixa o pacote `.cgu` da versão que o
+  principal gravou, só quando o esquema dos dois lados já é o mesmo, e só instala se a assinatura
+  conferir com a chave do Mac (`chaves_de_atualizacao.json`, na pasta `sistema`). Essa chave não
+  vem em pacote nenhum, e a troca a mantém. Sem ela, a reserva não se atualiza sozinha.
 
 **O que a reserva mostra.** Medido na casa de ensaio, com o perfil ADMIN: das 893 telas, 848 abrem.
 As outras gravam algum rastro ao abrir e mostram «abra-a no servidor principal», em vez do erro 500.
@@ -227,10 +229,12 @@ que falta. Abra `http://<IP do Mac>:8775`: a faixa vermelha diz «SERVIDOR RESER
   não reiniciou: a volta seguinte tenta de novo, e o que está no ar continua o anterior.
 - **Versão nova:** atualize primeiro o principal, como sempre. Ao subir, ele grava o número
   em `settings`. O esquema chega à reserva sozinho em até 5 minutos, e a sincronia então
-  baixa essa etiqueta e troca o código. Não desce de versão. Código novo em esquema velho
-  não entra: a linha fica `ESPERA o esquema`. A primeira vez desta sincronia, no Mac, ainda
-  é à mão (`git pull` da mesma etiqueta e `instalar_reserva.sh`). Daí em diante, ela anda
-  sozinha. Correção sem etiqueta publicada no GitHub não viaja.
+  baixa o pacote assinado dessa versão e troca o código. Não desce de versão. Código novo em
+  esquema velho não entra: a linha fica `ESPERA o esquema`. Pacote sem assinatura válida também
+  não: a linha diz `não troquei o código`, e o que está no ar continua. O pacote traz só o que
+  mudou desde o `min_version` dele. Reserva mais velha que isso, e a primeira vez desta sincronia
+  no Mac, é à mão (`git pull` da mesma etiqueta e `instalar_reserva.sh`, que preserva a chave).
+  Daí em diante, ela anda sozinha. Correção sem release publicada no GitHub não viaja.
 - **Reserva desligada por dias:** passados os 20 GB, o principal descarta o log, e a réplica não
   retoma sozinha. Remonte com `reserva.py montar --refazer` (minutos).
 

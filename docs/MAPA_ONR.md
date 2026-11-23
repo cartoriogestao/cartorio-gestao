@@ -135,6 +135,8 @@ o `GRANT`.
 - **Área registrada ou geodésica no `AREA_HA`.** O plugin dá preferência à do
   banco (a registrada); o ONR fala da geodésica. Se a resposta for «sempre a
   geodésica», basta o plugin ignorar o `area_ha` da VIEW.
+  **Desde o RI011 a tela do mapa pergunta e guarda a escolha**
+  (`ri_mapa_area_regra`): ver «O polígono dentro do sistema».
 - **A mesma matrícula em dois livros.** A VIEW traz as duas fichas com o mesmo
   `matricula`, e o plugin pega uma qualquer (`fetchone`). Não foi medido na
   produção quantas há.
@@ -152,19 +154,78 @@ O contrário também vale: a ponte apaga tabela com `CASCADE` (como o SQLite,
 que apagava mesmo com outra apontando), e apagar uma dessas três leva a VIEW
 junto, em silêncio. A subida seguinte a recria; o `GRANT`, não.
 
-## O que FALTA (trabalho futuro)
+## O polígono dentro do sistema (RI011, S9)
 
-O que está acima é a parte que já era do Gestão. Para o sistema gerar o
-arquivo do ONR sozinho, faltam:
+Desde o RI011 o Gestão **guarda a geometria**. A tela está em *Registro de
+Imóveis → Mapa do ONR — polígonos* (`/registro-imoveis/mapa`); o código, em
+`geo_geodesia.py` (as contas), `geo_formatos.py` (os arquivos), `ri_geo.py` (o
+banco e a conferência) e `ri_geo_web.py` (a tela).
 
-1. **Importar a geometria** — de Shapefile, GeoPackage ou do SIGEF/INCRA
-   (parcelas certificadas) —, amarrada à matrícula, com a origem de cada
-   polígono guardada (quem desenhou, de que levantamento).
-2. **Calcular a área geodésica no sistema**, no elipsoide do SIRGAS 2000, e
-   mostrar ao lado da área registrada quando as duas não baterem.
-3. **Gerar o `.gpkg`/`.shp` final pelo sistema**, sem depender do QGIS, com
-   conferência antes (polígono fechado, sem sobreposição, matrícula que existe
-   e está aberta).
-4. **Uma tela no menu do RI**, em vez do endereço do CSV.
-5. **A área nova chegar à VIEW sem esperar a subida** — refazer o de-para ao
-   gravar a ficha, ou numa rotina do Agendador.
+**O que faz**
+
+1. **Importa** GeoPackage (`.gpkg`), Shapefile (`.zip` com `.shp`, `.dbf` e
+   `.prj`), GeoJSON e a parcela baixada do SIGEF (marca-se «é a parcela do
+   SIGEF»; o formato continua sendo o do arquivo). Aceita SIRGAS 2000
+   geográfico e UTM SIRGAS 2000 (EPSG:31965 a 31985); WGS 84 entra **com aviso**;
+   SAD 69 e Córrego Alegre são **recusados** (a passagem depende de parâmetros
+   que o sistema não tem — converta no QGIS).
+2. **Guarda cada polígono com a origem**: arquivo e SHA-256, camada, sistema de
+   coordenadas, de que levantamento é, quem o desenhou, quem importou e quando,
+   e os atributos como vieram.
+3. **Nunca adota sozinho.** O polígono entra PENDENTE; o atributo `MATRICULA` do
+   arquivo só **sugere** a ficha. Quem adota é a pessoa (um por vez ou em lote,
+   para as sugestões sem erro). Um polígono **vigente** por matrícula — o banco
+   recusa o segundo —, e trocar o vigente não apaga o antigo (fica SUBSTITUÍDO).
+4. **Mede a área no elipsoide** (GRS 1980, o do SIRGAS 2000) e a mostra **ao lado
+   da registrada**, com a diferença; «não bate» quando passa da tolerância.
+5. **Confere**: erro de fechamento (o último vértice longe do primeiro), anel que
+   se cruza, poucos vértices, coordenadas fora do Brasil, **sobreposição** com
+   os outros vigentes (área, % de cada um) e **matrícula aberta** (a mesma regra
+   do CSV). ERRO deixa o polígono fora do arquivo; AVISO vai no arquivo e é lido
+   por quem decide.
+6. **Gera o arquivo** com os atributos do ONR (`MATRICULA`, `CNS`, `PROPRIETAR`,
+   `AREA_HA`): `.gpkg` e Shapefile (`.zip` com `.shp .shx .dbf .prj .cpg`). Só o
+   ADMIN baixa (leva o nome dos proprietários), e a baixa fica na auditoria.
+   **O sistema não envia ao ONR.**
+
+**A área do arquivo é decisão do oficial.** O plugin de referência manda a
+registrada quando a ficha a tem; o ONR descreve a geodésica. A tela pergunta, e
+**sem a escolha o arquivo não se gera**: «a registrada, e a geodésica só no
+vazio» (a regra do plugin), «sempre a geodésica» ou «sempre a registrada»
+(chave `ri_mapa_area_regra`).
+
+**As tolerâncias são desta casa, não do ONR.** Fechamento (0,05 m), sobreposição
+que importa (1 m²) e diferença de área que «não bate» (1 %) são valores de
+trabalho, editáveis na tela: o art. 343-D, § 2º, V, remete as tolerâncias
+posicionais a um manual técnico do ONR que a casa não tem.
+
+**Atenção ao Shapefile:** `PROPRIETAR` cabe em 254 bytes (o teto do dBase). O que
+passar é cortado, e a geração diz qual matrícula foi cortada; o GeoPackage não
+tem esse limite.
+
+### Dependência: uma só
+
+`geographiclib` (MIT, pura em Python, 390 KB, roda `py3-none-any`): a conta de
+área de polígono de arestas geodésicas, a mesma do QGIS. GDAL, Fiona, PyProj e
+Shapely **não** entram — são rodas nativas de dezenas de MB. O Shapefile e o
+GeoPackage são lidos e escritos à mão (o GeoPackage é um SQLite, e o `sqlite3`
+já vem no Python), e a sobreposição é conta de plano escrita no sistema. Tudo foi
+**conferido contra o GDAL, o PROJ e o GEOS** na bancada do desenvolvedor; nada
+disso é instalado na produção. Sem a biblioteca, a tela diz o que instalar e o
+resto do sistema segue.
+
+## O que ainda FALTA
+
+- **O Manual 2 do Book C (topografia) não está disponível**, e o formato exato que
+  o Mapa do ONR espera para a carga (nomes de campo, sistema, geometria) segue
+  sendo o do plugin de referência — de terceiro, e não de documento do ONR.
+- **Desenho do polígono dentro do sistema** (digitar coordenadas, memorial
+  descritivo) e **importar o memorial em planilha** do SIGEF: hoje só o arquivo
+  geoespacial entra.
+- **O nome dos atributos da camada do SIGEF/Acervo Fundiário não foi achado em fonte
+  oficial**: o sistema só usa um punhado de nomes prováveis para **preencher** o
+  código da parcela, que a pessoa confere.
+- **A área nova chegar à VIEW `onr_mapa_imoveis` sem esperar a subida** (item 5
+  antigo): segue como estava.
+- **A mesma matrícula em dois livros**: a tela recusa adotar e pede ao oficial que
+  confira a numeração.

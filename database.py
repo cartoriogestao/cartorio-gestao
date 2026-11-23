@@ -80,6 +80,7 @@ from rc_schema import init_rc_schema
 from rg_schema import init_rg_schema
 from ri_onr_central_schema import init_ri_onr_central_schema
 from ri_mapa_onr import init_mapa_onr_schema
+from ri_geo import init_geo_schema
 from apostila import init_apostila_schema
 from livro_diario import init_livro_diario_schema
 from despesas import init_despesas_schema
@@ -848,6 +849,9 @@ class Database:
         # QGIS le e o de-para da area, refeito a cada subida. Depois do RI,
         # porque a VIEW le `ri_matriculas` e `ri_partes`.
         init_mapa_onr_schema(con)
+        # OS POLIGONOS DO MAPA (RI011, S9): a geometria ligada a matricula, com a origem. Depois do RI (chave
+        # estrangeira em `ri_matriculas`).
+        init_geo_schema(con)
         # A APOSTILA DE HAIA (LG03, 19/10/2026) — o pedido, o documento e o
         # controle numerado. As duas tabelas só apontam uma para a outra; a
         # cobrança é pelo item do protocolo geral, sem chave estrangeira.

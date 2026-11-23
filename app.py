@@ -3666,6 +3666,11 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     import ri_mapa_onr
     ri_mapa_onr.registrar_rotas(app, db, login_required, roles_required, audit)
 
+    # OS POLIGONOS DO MAPA (RI011, S9): guardar a geometria ligada a matricula, medir no elipsoide, conferir e
+    # gerar o .gpkg / Shapefile do ONR. O sistema gera o arquivo; nao envia.
+    import ri_geo_web
+    ri_geo_web.registrar_rotas(app, db, login_required, roles_required, audit)
+
     # A APOSTILA DE HAIA (LG03) — pedido, documento, emissão no CNJ, selo,
     # cobrança e controle. Chega DESLIGADA (`modulos_ligados`, NINGUEM).
     import apostila_web

@@ -152,7 +152,9 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Modelos", "livro3_modelos", antigo="Livro 3 — modelos (ficha e certidão)"),)),
          ("Consulta", (
              _i("Indicador Real", "ri_indicador_real"),
-             _i("Indicador Pessoal", "ri_indicador_pessoal"),)),
+             _i("Indicador Pessoal", "ri_indicador_pessoal"),
+             _i("Mapa do ONR: polígonos", "ri_geo", antigo="Mapa do ONR — polígonos",
+                termos="georreferenciamento poligono gpkg shapefile sigef sirgas qgis mosaico"),)),
          ("Centrais e obrigações", (
              _i("DOI", "ri_doi", AMA, antigo="DOI — Receita Federal", termos="receita federal declaracao"),
              _i("CTP", "ri_ctp", AMA, antigo="CTP — prefeituras", termos="prefeitura sefin"),
@@ -484,6 +486,7 @@ ENTRADAS_NOVAS: frozenset[tuple[str, tuple]] = frozenset({
 PAI: dict[str, tuple[str, str]] = {
     "caixa_protocolos": ("CAIXA", "Protocolo geral"),
     "ri_qualificacao_ia_nota": ("RI", "Protocolo"),
+    "ri_geo_ver": ("RI", "Consulta"),
     "at_ficha": ("TRABALHO", "Atendimentos"),
     "tr_aula": ("TRABALHO", "Treinamento"),
     "tr_normas": ("TRABALHO", "Treinamento"),

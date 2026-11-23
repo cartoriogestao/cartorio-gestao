@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% block title %}Polígono {{ g.id }}{% endblock %}
+{% block heading %}<h1>Polígono {{ g.id }}{% if g.rotulo %} — matrícula {{ g.rotulo }}{% endif %}</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('ri_geo') }}">&larr; Mapa do ONR — polígonos</a></div>
+
+<section class="panel">
+  <div class="panel-head"><span>De onde veio</span><span class="small muted">situação: <strong>{{ g.situacao }}</strong></span></div>
+  <div style="padding:12px">
+    <table class="table"><tbody>
+      <tr><th>Origem</th><td>{{ rotulo_da_origem.get(g.origem, g.origem) }} ({{ g.formato }}{% if g.camada %}, camada {{ g.camada }}{% endif %}, EPSG:{{ g.epsg }})</td></tr>
+      <tr><th>Arquivo</th><td>{{ g.arquivo_nome or '—' }} <small class="muted">SHA-256 {{ g.arquivo_sha256 }}</small></td></tr>
+      <tr><th>Importado</th><td>{{ g.importado_por or '—' }}, {{ (g.importado_em or '')[:16].replace('T', ' ') }} (feição {{ (g.origem_feicao or 0) + 1 }} do arquivo)</td></tr>
+      <tr><th>De que levantamento</th><td>{{ g.levantamento or '—' }}{% if g.sigef_codigo %} · SIGEF {{ g.sigef_codigo }}{% endif %}</td></tr>
+      <tr><th>Quem desenhou</th><td>{{ g.responsavel_tecnico or '—' }}</td></tr>
+      {% if g.adotada_por %}<tr><th>Adotado por</th><td>{{ g.adotada_por }}, {{ (g.adotada_em or '')[:16].replace('T', ' ') }}</td></tr>{% endif %}
+      {% if g.descartada_motivo %}<tr><th>Descartado</th><td>{{ g.descartada_motivo }}</td></tr>{% endif %}
+      {% if atributos %}<tr><th>Atributos do arquivo</th><td class="small">{% for k, v in atributos.items() %}<code>{{ k }}</code> = {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>{% endif %}
+    </tbody></table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Medidas no SIRGAS 2000 (elipsoide GRS 1980)</span></div>
+  <div style="padding:12px">
+    <table class="table"><tbody>
+      <tr><th>Área geodésica</th><td>{{ '%.4f'|format(areas.geodesica_ha) }} ha ({{ '{:,.1f}'.format(g.area_geodesica_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }} m²)</td></tr>
+      <tr><th>Área registrada na ficha</th><td>{% if areas.registrada_ha is not none %}{{ '%.4f'|format(areas.registrada_ha) }} ha — diferença {{ '%+.4f'|format(areas.diferenca_ha) }} ha ({{ '%+.2f'|format(areas.diferenca_pct) }}%){% if areas.bate == False %} <strong class="danger">— não bate (tolerância de trabalho: {{ cfg.divergencia_area_pct }}%)</strong>{% endif %}{% else %}— (a ficha não tem área que a régua da casa decida){% endif %}</td></tr>
+      <tr><th>Perímetro</th><td>{{ '{:,.2f}'.format(g.perimetro_m).replace(',', 'X').replace('.', ',').replace('X', '.') }} m</td></tr>
+      <tr><th>Vértices</th><td>{{ g.vertices }}</td></tr>
+      <tr><th>Erro de fechamento</th><td>{{ '%.3f'|format(g.fechamento_m) }} m (tolerância de trabalho: {{ cfg.tolerancia_fechamento_m }} m)</td></tr>
+    </tbody></table>
+    <h3>O que a conferência achou</h3>
+    {% for a in achados %}<div class="{{ 'danger' if a.nivel == 'ERRO' else 'muted' }}">{{ '✖' if a.nivel == 'ERRO' else '•' }} {{ a.texto }}</div>
+    {% else %}<p class="muted">Nada: o polígono fecha e não se cruza.</p>{% endfor %}
+    {% if g.situacao == 'VIGENTE' %}
+    <h3>Sobreposição com os outros polígonos vigentes</h3>
+    {% if not biblioteca %}<p class="muted">Indisponível: falta a biblioteca de geodésia.</p>
+    {% elif not sobrepostas %}<p class="muted">Nenhuma acima de {{ cfg.tolerancia_sobreposicao_m2 }} m².</p>{% endif %}
+    {% for s in sobrepostas %}<div>• matrícula {{ s.matricula }}:
+      {% if s.area_m2 is not none %}{{ '{:,.1f}'.format(s.area_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }} m² ({{ '%.2f'|format(s.pct_deste) }}% deste, {{ '%.2f'|format(s.pct_do_outro) }}% do outro){% else %}grande demais para conferir aqui{% endif %}
+      — <a href="{{ url_for('ri_geo_ver', geometria_id=s.id) }}">ver</a></div>{% endfor %}
+    {% endif %}
+  </div>
+</section>
+
+{% if desenho %}<section class="panel"><div class="panel-head"><span>O desenho</span><span class="small muted">este polígono em vermelho; os que o cobrem em azul</span></div>
+  <div style="padding:12px">{{ desenho|safe }}</div></section>{% endif %}
+
+{% if pode_gravar and g.situacao in ('PENDENTE', 'VIGENTE') %}
+<section class="panel"><div class="panel-head"><span>O que fazer com ele</span></div>
+  <div style="padding:12px">
+  {% if g.situacao == 'PENDENTE' %}
+  <form method="post" action="{{ url_for('ri_geo_adotar', geometria_id=g.id) }}" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Adotar para a matrícula <input name="matricula" value="{{ g.rotulo or g.matricula_declarada or '' }}" required></label>
+    <div><button class="button primary">Adotar como polígono vigente</button>
+      <small class="muted">Se a matrícula já tiver um polígono vigente, ele passa a SUBSTITUÍDO e fica no histórico.</small></div>
+  </form>
+  <form method="post" action="{{ url_for('ri_geo_descartar', geometria_id=g.id) }}" class="form-grid" style="margin-top:12px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="span2">Descartar — motivo <input name="motivo" maxlength="400" required></label>
+    <div><button class="button">Descartar (fica guardado, com o motivo)</button></div>
+  </form>
+  {% else %}<p class="muted">Este é o polígono vigente da matrícula. Para trocá-lo, importe o novo e adote-o para a mesma matrícula.</p>{% endif %}
+  </div></section>
+{% endif %}
+
+{% if historico %}<section class="panel"><div class="panel-head"><span>Outros polígonos desta matrícula</span></div>
+  <div style="padding:12px"><ul>{% for h in historico %}<li><a href="{{ url_for('ri_geo_ver', geometria_id=h.id) }}">#{{ h.id }}</a> — {{ h.situacao }} · {{ (h.criado_em or '')[:10] }}</li>{% endfor %}</ul></div></section>{% endif %}
+{% endblock %}

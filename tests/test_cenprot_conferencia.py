@@ -737,20 +737,46 @@ def _o_350574_2(con, monkeypatch, db, *, status="", codigo="1", ocorrencia="Pago
     return tid
 
 
-def test_o_pago_que_veio_do_nosso_d_nao_trava_o_protesto(monkeypatch):
-    """O CASO REAL: o protesto do 350574/2 TEM de passar, e o P dele é o que
-    corrige a CENPROT."""
+def test_o_pago_do_nosso_d_so_protesta_com_a_afirmacao(monkeypatch):
+    """Oficial, 23/11/2026: a API não separa o nosso D velho de uma liquidação
+    feita depois dele. O protesto continua possível, e o P dele corrige a
+    CENPROT, mas quem lavra afirma que olhou o portal."""
     con = banco()
     db = BancoDeMesa(con)
     tid = _o_350574_2(con, monkeypatch, db)
-    assert C.trava_do_protesto(db, tid) is None
+    with pytest.raises(C.ConferenciaError, match="comprovante de liquidação"):
+        C.trava_do_protesto(db, tid)
     linha = linha_de(con, tid)
     [pend] = [a for a in linha["achados"] if a["regra"] == "REENVIAR_XML"]
-    assert pend["nivel"] == C.DIVERGE and not pend["trava"]
+    assert pend["nivel"] == C.DIVERGE and pend["trava"]
+    assert not pend["contraria_o_pago"] and not linha["contraria_o_pago"]
     assert "tornado sem efeito aqui" in pend["frase"]
     assert "MA-2199999-01-D-20261021-01.xml" in pend["frase"]
-    assert "NÃO TRAVA" in pend["caminho"]
-    assert not linha["trava"] and not linha["contraria_o_pago"]
+    assert "NÃO PROTESTE" in pend["caminho"]
+    afirmada = C.trava_do_protesto(db, tid, afirmo="1", afirmacao=TEXTO)
+    assert afirmada["regra"] == C.REGRA_DIVERGENTE
+
+
+def test_o_pago_do_nosso_d_nao_se_afirma_no_lote_nem_por_robo(monkeypatch):
+    con = banco()
+    db = BancoDeMesa(con)
+    tid = _o_350574_2(con, monkeypatch, db)
+    with pytest.raises(C.ConferenciaError, match="título a título"):
+        C.trava_do_protesto(db, tid, afirmo="1", afirmacao=TEXTO, em_lote=True)
+    with pytest.raises(C.ConferenciaError, match="robô"):
+        C.trava_do_protesto(db, tid, afirmo="1", afirmacao=TEXTO, robo=True)
+
+
+def test_o_xml_mais_novo_nao_dispensa_a_afirmacao_do_pago(monkeypatch):
+    """Um XML gerado depois do D não prova que a Central o leu."""
+    con = banco()
+    db = BancoDeMesa(con)
+    tid = _o_350574_2(con, monkeypatch, db)
+    informado(con, tid, "PROTESTO", cancelado=1, letra="P", dia="2026-10-31",
+              data="2026-10-31")
+    with pytest.raises(C.ConferenciaError, match="comprovante de liquidação"):
+        C.trava_do_protesto(db, tid)
+    assert "XML_NOVO_A_CONFERIR" in {a["regra"] for a in linha_de(con, tid)["trava"]}
 
 
 def test_o_pago_do_nosso_d_nao_trava_os_outros_atos(monkeypatch):
@@ -758,7 +784,7 @@ def test_o_pago_do_nosso_d_nao_trava_os_outros_atos(monkeypatch):
     db = BancoDeMesa(con)
     tid = _o_350574_2(con, monkeypatch, db)
     C.consultar(db)
-    for ato_ in ("INTIMACAO", "DESISTENCIA", "APONTAMENTO", "PROTESTO"):
+    for ato_ in ("INTIMACAO", "DESISTENCIA", "APONTAMENTO"):
         assert C.trava_do_ato(db, tid, ato_) is None, ato_
 
 

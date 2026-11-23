@@ -718,10 +718,10 @@
     </datalist>
     {#- O MODELO QUE CANCELA OU EXTINGUE (decisão do oficial, 03/11/2026, «a1»): o cancelamento de hipoteca
         ou de garantia, a extinção do usufruto e o cancelamento de ato dizem QUAL ato, e ele recebe a mesma
-        marca do botão «Cancelar este ato». Os outros modelos não usam o campo. #}
-    <label data-passo="ato">Qual ato se cancela <small>— só nos modelos de cancelamento e de extinção</small>
-      <select name="cancela_ato_id">
-        <option value="">— nenhum —</option>
+        marca do botão «Cancelar este ato». Em ficha de acervo (20/11/2026) a AV de baixa pode cancelar
+        vários R citados no teor — o campo aceita mais de um; sem escolha, o teor resolve os rótulos. #}
+    <label data-passo="ato">Qual ato se cancela <small>— modelos de cancelamento/extinção; em acervo, também baixa (Ctrl/⌘ para vários)</small>
+      <select name="cancela_ato_id" multiple size="4">
         {% for a in atos if not a.cancelado %}
         <option value="{{ a.id }}">{{ a.tipo }}-{{ a.numero }} — {{ a.natureza_titulo or 'sem natureza' }}</option>
         {% endfor %}

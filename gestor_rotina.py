@@ -816,6 +816,12 @@ def despacho_do_oficial(con, hoje: date, resumo: dict,
     linhas.append(f"3. MALOTE PARA CIÊNCIA ({len(ciencia)}) — o agente leu; nada pedem à casa")
     for c in ciencia[:20]:
         linhas.append(f"   {c['protocolo'] or '#' + str(c['id'])}: {c['resumo'] or c['assunto']}")
+    obitos = GX.para_verificar_obito(con)
+    if obitos:
+        linhas.append(f"   VERIFICAR NO ACERVO RCPN ({len(obitos)}) — comunicação de óbito de "
+                      "outra serventia, sem tarefa; se a pessoa estiver aqui, avisar o oficial")
+        for c in obitos[:20]:
+            linhas.append(f"   {c['protocolo'] or '#' + str(c['id'])}: {c['resumo'] or c['assunto']}")
     linhas.append("")
     linhas.append("4. A EQUIPE — tarefas abertas e vencidas de cada um")
     for r in bd.ler(

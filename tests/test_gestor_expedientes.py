@@ -158,9 +158,16 @@ def test_a_tarefa_despacho_que_ja_existia_fecha_com_o_porque(con):
     assert st == "CONCLUIDA" and "relato" in nota
 
 
-def test_o_mesmo_oficio_que_chega_duas_vezes_nao_abre_duas_tarefas(con, com_chave, tmp_path):
-    _exp(con, "DECISÃO-COGEx - 16352026. Processo 491482026. Prazo de 15 dias")
-    _exp(con, "DECISÃO-COGEx - 16352026. Processo 491482026. Prazo de 15 dias.")
+def test_o_mesmo_oficio_que_chega_duas_vezes_nao_abre_duas_tarefas(con, com_chave, tmp_path, monkeypatch):
+    monkeypatch.setattr(GX, "texto_dos_anexos", lambda *a, **kw: "")
+    for eid in (_exp(con, "DECISÃO-COGEx - 16352026. Processo 491482026. Prazo de 15 dias"),
+                _exp(con, "DECISÃO-COGEx - 16352026. Processo 491482026. Prazo de 15 dias.")):
+        # A prova de que é o mesmo documento é o arquivo, e não o assunto.
+        con.execute("""INSERT INTO attachments (entity_type, entity_id, original_name, stored_name,
+                           stored_path, sha256, size_bytes, uploaded_at)
+                       VALUES ('EXPEDIENTE', ?, 'd.pdf', 'd.pdf', '/inexistente/d.pdf', ?, 1, ?)""",
+                    (eid, "c" * 64, "2026-10-01"))
+    con.commit()
     pede = {"tipo": "RESPOSTA", "setor": "GESTAO", "resumo": "x", "o_que_fazer": "y",
             "prazo_dias": 15, "dias_uteis": True, "data_limite": None, "urgencia": "ALTA",
             "quem_decide": "OFICIAL", "rascunho_resposta": None}
